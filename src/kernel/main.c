@@ -1,5 +1,8 @@
 #include "kernel.h"
+#include "vfs.h"
 #include "user_proc.h"
+#include "install_guide.h"
+#include "timer.h"
 
 void ramfs_init(void);
 void diskfs_init(void);
@@ -8,12 +11,6 @@ void procfs_init(void);
 
 extern unsigned char build_user_init_bin[];
 extern unsigned int build_user_init_bin_len;
-
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
 
 void panic(const char *msg) {
     serial_puts(SERIAL_COM1, "\n\nPANIC: ");
@@ -65,12 +62,19 @@ static void create_default_directories(void) {
 static void start_user_init(void) {
     serial_puts(SERIAL_COM1, "[INIT] Starting user-space init process...\n");
     
-    if (!pwid_has_original_root()) {
-        serial_puts(SERIAL_COM1, "[WARN] No root account found. Creating default...\n");
-        pwid_create_original_root("");
+    if (0 && install_guide_check_needed()) {
+        serial_puts(SERIAL_COM1, "\n[INSTALL] First boot detected. Starting installation wizard...\n");
+        install_guide_run();
+        serial_puts(SERIAL_COM1, "\n[INSTALL] Installation complete. Starting system...\n");
+    } else {
+        serial_puts(SERIAL_COM1, "[INSTALL] Skipping installation wizard for debug.\n");
+        if (!pwid_has_original_root()) {
+            pwid_create_original_root("");
+            serial_puts(SERIAL_COM1, "[INSTALL] Created default root account.\n");
+        }
     }
     
-    int pid = user_proc_create_from_binary(build_user_init_bin, build_user_init_bin_len, 0);
+    int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
     
     if (pid < 0) {
         serial_puts(SERIAL_COM1, "[INIT] FATAL: Failed to create init process\n");
@@ -84,6 +88,15 @@ static void start_user_init(void) {
     serial_puts(SERIAL_COM1, "[INIT] User init started with PID: ");
     serial_put_dec(SERIAL_COM1, pid);
     serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "[DEBUG] About to call scheduler_schedule() for first time\n");
+    
+    if (proc_has_runnable()) {
+        scheduler_schedule();
+        serial_puts(SERIAL_COM1, "[DEBUG] scheduler_schedule() returned!\n");
+    } else {
+        serial_puts(SERIAL_COM1, "[DEBUG] No runnable processes after schedule attempt\n");
+    }
     
     while (proc_has_runnable()) {
         interrupt_idle();
@@ -160,6 +173,8 @@ void kernel_main(void) {
     syscall_init();
     
     keyboard_init();
+    
+    timer_init();
     
     serial_puts(SERIAL_COM1, "\n[INIT] System initialized\n");
     serial_puts(SERIAL_COM1, "AntX is ready.\n");

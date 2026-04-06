@@ -1,6 +1,7 @@
 #include "vfs.h"
 #include "serial.h"
 #include "pwid.h"
+#include "string.h"
 
 #define DEVFS_MAX_DEVICES      16
 #define DEVFS_MAX_NAME         32
@@ -20,36 +21,9 @@ static struct devfs_device devfs_devices[DEVFS_MAX_DEVICES];
 static int devfs_device_count = 0;
 static struct vfs_filesystem devfs_fs;
 
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int str_cmp(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++; s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void str_cpy(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-}
-
-static void mem_set(void *dest, uint8_t val, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = val;
-    }
-}
-
 static struct devfs_device* find_device(const char *name) {
     for (int i = 0; i < DEVFS_MAX_DEVICES; i++) {
-        if (devfs_devices[i].used && str_cmp(devfs_devices[i].name, name) == 0) {
+        if (devfs_devices[i].used && strcmp(devfs_devices[i].name, name) == 0) {
             return &devfs_devices[i];
         }
     }
@@ -92,7 +66,7 @@ static int devfs_read(struct vfs_file *file, void *buf, uint32_t count) {
             return 0;
             
         case DEV_TYPE_ZERO:
-            mem_set(buf, 0, count);
+            memset(buf, 0, count);
             return count;
             
         case DEV_TYPE_CONSOLE:
@@ -149,7 +123,7 @@ static int devfs_readdir(struct vfs_file *file, struct vfs_dirent *entry) {
     
     entry->inode = devfs_devices[entry_idx].type;
     entry->type = VFS_TYPE_DEV;
-    str_cpy(entry->name, devfs_devices[entry_idx].name);
+    strcpy(entry->name, devfs_devices[entry_idx].name);
     
     file->offset = entry_idx + 1;
     
@@ -180,19 +154,19 @@ static int devfs_mount(const char *path) {
     }
     
     devfs_devices[0].used = 1;
-    str_cpy(devfs_devices[0].name, "null");
+    strcpy(devfs_devices[0].name, "null");
     devfs_devices[0].type = DEV_TYPE_NULL;
     
     devfs_devices[1].used = 1;
-    str_cpy(devfs_devices[1].name, "zero");
+    strcpy(devfs_devices[1].name, "zero");
     devfs_devices[1].type = DEV_TYPE_ZERO;
     
     devfs_devices[2].used = 1;
-    str_cpy(devfs_devices[2].name, "console");
+    strcpy(devfs_devices[2].name, "console");
     devfs_devices[2].type = DEV_TYPE_CONSOLE;
     
     devfs_devices[3].used = 1;
-    str_cpy(devfs_devices[3].name, "tty");
+    strcpy(devfs_devices[3].name, "tty");
     devfs_devices[3].type = DEV_TYPE_TTY;
     
     devfs_device_count = 4;

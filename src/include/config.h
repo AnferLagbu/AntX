@@ -1,0 +1,27 @@
+#ifndef _CONFIG_H
+#define _CONFIG_H
+
+#define CONFIG_MEMORY_SIZE       (128 * 1024 * 1024)
+#define CONFIG_KERNEL_END        0x110000
+
+#define CONFIG_MAX_PROCESSES     64
+#define CONFIG_MAX_THREADS       256
+#define CONFIG_MAX_SESSIONS      16
+
+#define CONFIG_MAX_PWID_ENTRIES  128
+
+#define CONFIG_TIME_SLICE        10
+
+#define CONFIG_VFS_MAX_PATH      128
+#define CONFIG_VFS_MAX_NAME      64
+#define CONFIG_VFS_MAX_FDS       16
+#define CONFIG_VFS_MAX_MOUNTS    8
+
+#define CONFIG_PMM_BITMAP_SIZE   32768
+
+#define CONFIG_SERIAL_BAUD       115200
+
+#define CONFIG_KERNEL_NAME       "AntX"
+#define CONFIG_KERNEL_VERSION    "0.1.0"
+
+#endif

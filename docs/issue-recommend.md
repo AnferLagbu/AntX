@@ -284,5 +284,149 @@ void secure_zero(void *ptr, size_t len) {
 
 ---
 
-*文档生成日期: 2024*
-*基于代码审查结果整理*
+## 9. 用户进程启动问题（当前未解决）
+
+### 问题描述
+内核成功切换到用户进程 (PID=1) 后，用户模式代码未能正常执行或输出。
+
+### 现状分析
+**已修复的问题：**
+- ✅ ELF 入口点不一致问题已解决
+  - 旧: `user_init_bin.c` 中 entry=0x400C7E（无效指令位置）
+  - 新: `user_init_bin.c` 中 entry=0x400C02（正确的 init_main 入口）
+- ✅ 嵌入式二进制数据与编译后的 init.bin 已同步
+
+**仍存在的问题：**
+- ❌ QEMU 测试日志显示系统在 "Schedule: switch to PID=1" 后停止输出
+- ❌ 未看到 `[INIT]` 消息或 "Starting shell" 等用户进程输出
+- ❌ 可能存在以下原因之一：
+  1. iretq 执行后立即崩溃（Page Fault / GPF / Invalid Opcode）
+  2. 用户栈指针设置不正确
+  3. 页表映射不完整（某些必需页面未映射）
+  4. 用户进程的 sys_write 系统调用未正确实现
+
+### 相关文件
+- [switch.asm](src/proc/switch.asm) - process_start_user_asm 实现
+- [user_proc.c](src/proc/user_proc.c) - 用户进程创建和 ELF 加载
+- [scheduler.c](src/proc/scheduler.c) - 调度器逻辑
+- [user_init_bin.c](src/user/embedded/user_init_bin.c) - 嵌入式 init 二进制
+
+### 调试信息
+最新测试日志 (`tests/scripts/logs/qemu_run_20260406_215942.log`) 关键行：
+
+```
+Line 78: ELF: entry=0x0x0000000000400C02 cr3=0x0x0000000000112000 stack=0x0x00007FFFFFFFFFFF
+Line 86: Schedule: switch to PID=1 entry=0x0x0000000000400C02 cr3=0x0x0000000000112000
+Line 87-88: [DEBUG] First process launch:
+           kernel_stack=
+```
+
+**注意**: kernel_stack 值为空，这可能是调试输出的问题，也可能是实际值未正确设置。
+
+### 改进建议
+1. **添加详细的异常处理调试**
+   - 在 IDT 中为 Page Fault、GPF、Invalid Opcode 添加详细处理器
+   - 打印完整的寄存器状态和错误码
+
+2. **验证 iretq 栈帧**
+   - 确认 SS、RSP、RFLAGS、CS、RIP 的值都正确
+   - 验证 CS=0x23, SS=0x1B（用户模式选择子）
+
+3. **检查页表完整性**
+   - 验证用户地址空间的所有必需页面都已映射
+   - 特别检查：代码段、数据段、栈区域
+
+4. **使用 GDB 远程调试**
+   ```bash
+   qemu-system-x86_64 -cdrom build/antx.iso -s -S
+   gdb -ex 'target remote :1234' build/kernel.bin
+   ```
+
+5. **启用 QEMU CPU 追踪**
+   ```bash
+   qemu-system-x86_64 -cdrom build/antx.iso -d int,cpu_reset
+   ```
+
+### 优先级
+🔴 **紧急** - 阻塞用户进程功能
+
+---
+
+## 10. 测试框架初步实现
+
+### 已完成工作
+✅ 创建了诊断测试脚本 `tests/scripts/diagnose_user_process.py`
+
+功能包括：
+1. **ELF 一致性检查**
+   - 对比嵌入式 `user_init_bin.c` 与编译后的 `init.bin`
+   - 验证入口点、文件大小、程序头数量等关键字段
+   - 自动检测入口点不匹配等根本原因
+
+2. **自动修复功能**
+   - `--fix` 选项可从 `build/user/init.bin` 重新生成 `user_init_bin.c`
+   - 确保嵌入式数据与编译结果一致
+
+3. **QEMU 自动化测试**
+   - 自动发送安装向导输入
+   - 捕获完整串口输出到日志文件
+   - 分析输出中的错误模式（Page Fault、GPF等）
+
+4. **日志管理**
+   - 所有日志保存到 `tests/logs/` 目录
+   - 时间戳命名避免覆盖
+   - 自动生成分析报告
+
+### 使用方法
+```bash
+# 仅检查ELF一致性
+python3 tests/scripts/diagnose_user_process.py --check
+
+# 检查并自动修复
+python3 tests/scripts/diagnose_user_process.py --check --fix
+
+# 完整测试流程
+python3 tests/scripts/diagnose_user_process.py --all
+
+# 仅运行QEMU测试
+python3 tests/scripts/diagnose_user_process.py --test --timeout 30
+```
+
+### 待改进项
+- [ ] 添加更多测试用例（边界条件、异常路径）
+- [ ] 实现自动化回归测试
+- [ ] 集成 CI/CD 流程
+
+---
+
+## 11. 近期代码更改汇总
+
+### 本次修改的核心文件
+
+#### 进程管理相关
+| 文件 | 更改内容 | 目的 |
+|------|----------|------|
+| `src/proc/switch.asm` | 重写 `process_start_user_asm` | 修复 iretq 栈帧构建 |
+| `src/proc/user_proc.c` | 添加内核栈映射、调试输出 | 支持用户进程切换 |
+| `src/proc/scheduler.c` | 添加上下文调试信息 | 便于诊断切换问题 |
+
+#### 内核初始化
+| 文件 | 更改内容 | 目的 |
+|------|----------|------|
+| `src/kernel/main.c` | 临时跳过安装向导 | 加速调试测试 |
+
+#### 测试工具
+| 文件 | 更改内容 | 目的 |
+|------|----------|------|
+| `tests/scripts/test_user_process.py` | 新建 - pexpect 测试脚本 | 自动化QEMU测试 |
+| `tests/scripts/diagnose_user_process.py` | 新建 - 诊断工具 | ELF检查+修复+测试 |
+
+#### 数据修复
+| 文件 | 更改内容 | 目的 |
+|------|----------|------|
+| `src/user/embedded/user_init_bin.c` | 从 init.bin 重新生成 | 修复入口点不匹配 |
+
+---
+
+*文档最后更新: 2026-04-06*
+*基于用户进程调试会话整理*

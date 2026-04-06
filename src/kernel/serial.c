@@ -30,6 +30,16 @@ void serial_puts(uint16_t port, const char *s) {
     }
 }
 
+void serial_write(uint16_t port, const void *buf, uint64_t count) {
+    const char *s = (const char *)buf;
+    for (uint64_t i = 0; i < count; i++) {
+        if (s[i] == '\n') {
+            serial_putc(port, '\r');
+        }
+        serial_putc(port, s[i]);
+    }
+}
+
 void serial_put_hex(uint16_t port, uint64_t val) {
     const char hex_chars[] = "0123456789ABCDEF";
     char buf[17];

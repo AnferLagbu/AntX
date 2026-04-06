@@ -52,6 +52,11 @@ struct elf_phdr {
 
 #define PT_LOAD 1
 
+#define PML4_INDEX(addr) (((addr) >> 39) & 0x1FF)
+#define PDPT_INDEX(addr) (((addr) >> 30) & 0x1FF)
+#define PD_INDEX(addr)   (((addr) >> 21) & 0x1FF)
+#define PT_INDEX(addr)   (((addr) >> 12) & 0x1FF)
+
 void user_proc_init(void);
 struct process* user_proc_create(struct user_proc_info *info, uint64_t pwid);
 void user_proc_enter(struct process *proc);
@@ -60,6 +65,7 @@ void user_proc_return_to_kernel(void);
 int sys_proc_create_user(void (*entry)(void), uint64_t pwid);
 int user_proc_load_elf(const char *path, uint64_t pwid);
 int user_proc_create_from_binary(const uint8_t *code, uint64_t code_size, uint64_t pwid);
+int user_proc_load_elf_from_memory(const uint8_t *elf_data, uint64_t elf_size, uint64_t pwid);
 
 extern struct user_proc_info user_programs[];
 

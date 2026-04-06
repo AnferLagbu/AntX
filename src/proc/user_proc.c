@@ -348,6 +348,10 @@ int user_proc_create_from_binary(const uint8_t *code, uint64_t code_size, uint64
         return -1;
     }
     
+    uint64_t kstack_phys = proc->kernel_stack - PAGE_SIZE;
+    vmm_map_page_in_table(proc->cr3, kstack_phys, kstack_phys, 
+                          PAGE_PRESENT | PAGE_WRITABLE);
+    
     proc->context.rip = USER_CODE_BASE;
     proc->context.cs = GDT_USER_CODE | 0x03;
     proc->context.rflags = 0x202;
@@ -357,6 +361,153 @@ int user_proc_create_from_binary(const uint8_t *code, uint64_t code_size, uint64
     proc->state = PROC_READY;
     
     serial_puts(SERIAL_COM1, "User process created from binary, entry=0x400000\n");
+    
+    scheduler_add(proc);
+    return proc->pid;
+}
+
+int user_proc_load_elf_from_memory(const uint8_t *elf_data, uint64_t elf_size, uint64_t pwid) {
+    if (elf_data == NULL || elf_size < sizeof(struct elf_header)) {
+        serial_puts(SERIAL_COM1, "ELF loader: invalid parameters\n");
+        return -1;
+    }
+    
+    struct elf_header *header = (struct elf_header *)elf_data;
+    
+    if (header->magic[0] != 0x7F || header->magic[1] != 'E' ||
+        header->magic[2] != 'L' || header->magic[3] != 'F') {
+        serial_puts(SERIAL_COM1, "ELF loader: invalid magic\n");
+        return -1;
+    }
+    
+    if (header->class != 2 || header->machine != 0x3E) {
+        serial_puts(SERIAL_COM1, "ELF loader: not 64-bit x86\n");
+        return -1;
+    }
+    
+    struct process *proc = process_create(NULL, 0, pwid);
+    if (proc == NULL) {
+        return -1;
+    }
+    
+    proc->cr3 = vmm_create_user_page_table();
+    if (proc->cr3 == 0) {
+        process_exit(proc, 1);
+        return -1;
+    }
+    
+    void *stack_pages = pmm_alloc_pages(USER_STACK_SIZE / PAGE_SIZE);
+    if (stack_pages == NULL) {
+        vmm_destroy_page_table(proc->cr3);
+        process_exit(proc, 1);
+        return -1;
+    }
+    
+    uint64_t stack_phys = (uint64_t)stack_pages;
+    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE;
+    
+    for (uint64_t i = 0; i < USER_STACK_SIZE / PAGE_SIZE; i++) {
+        vmm_map_page_in_table(proc->cr3, stack_virt + i * PAGE_SIZE,
+                              stack_phys + i * PAGE_SIZE,
+                              PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+    }
+    
+    proc->user_stack = USER_STACK_TOP;
+    proc->kernel_stack = (uint64_t)pmm_alloc_page() + PAGE_SIZE;
+    
+    if (proc->kernel_stack == PAGE_SIZE) {
+        vmm_destroy_page_table(proc->cr3);
+        process_exit(proc, 1);
+        return -1;
+    }
+    
+    uint64_t kstack_phys = proc->kernel_stack - PAGE_SIZE;
+    vmm_map_page_in_table(proc->cr3, kstack_phys, kstack_phys, 
+                          PAGE_PRESENT | PAGE_WRITABLE);
+    
+    for (int i = 0; i < header->phnum; i++) {
+        struct elf_phdr *phdr = (struct elf_phdr *)(elf_data + header->phoff + i * header->phentsize);
+        
+        if (phdr->p_type != PT_LOAD) continue;
+        
+        uint64_t vaddr_start = phdr->p_vaddr & ~0xFFF;
+        uint64_t vaddr_end = (phdr->p_vaddr + phdr->p_memsz + 0xFFF) & ~0xFFF;
+        uint64_t num_pages = (vaddr_end - vaddr_start) / PAGE_SIZE;
+        
+        uint64_t *page_phys_list = (uint64_t *)0x100000;
+        static uint64_t temp_page_storage[64];
+        page_phys_list = temp_page_storage;
+        
+        for (uint64_t j = 0; j < num_pages && j < 64; j++) {
+            void *page = pmm_alloc_page();
+            if (page == NULL) {
+                vmm_destroy_page_table(proc->cr3);
+                process_exit(proc, 1);
+                return -1;
+            }
+            
+            page_phys_list[j] = (uint64_t)page;
+            
+            memset(page, 0, PAGE_SIZE);
+            
+            uint64_t flags = PAGE_PRESENT | PAGE_USER;
+            if (phdr->p_flags & 0x02) flags |= PAGE_WRITABLE;
+            
+            vmm_map_page_in_table(proc->cr3, vaddr_start + j * PAGE_SIZE,
+                                  (uint64_t)page, flags);
+        }
+        
+        if (phdr->p_filesz > 0) {
+            uint64_t first_page_idx = 0;
+            uint64_t offset_in_first = phdr->p_vaddr & 0xFFF;
+            
+            for (uint64_t k = 0; k < phdr->p_filesz; k++) {
+                uint64_t page_idx = (offset_in_first + k) / PAGE_SIZE;
+                uint64_t offset_in_page = (offset_in_first + k) % PAGE_SIZE;
+                
+                if (page_idx < num_pages && page_idx < 64) {
+                    uint64_t phys = page_phys_list[page_idx];
+                    *((uint8_t*)phys + offset_in_page) = elf_data[phdr->p_offset + k];
+                }
+            }
+        }
+    }
+    
+    proc->context.rip = header->entry;
+    proc->context.cs = GDT_USER_CODE | 0x03;
+    proc->context.rflags = 0x202;
+    proc->context.rsp = proc->user_stack;
+    proc->context.ss = GDT_USER_DATA | 0x03;
+    proc->context.cr3 = proc->cr3;
+    
+    serial_puts(SERIAL_COM1, "ELF: entry=0x");
+    serial_put_hex(SERIAL_COM1, header->entry);
+    serial_puts(SERIAL_COM1, " cr3=0x");
+    serial_put_hex(SERIAL_COM1, proc->cr3);
+    serial_puts(SERIAL_COM1, " stack=0x");
+    serial_put_hex(SERIAL_COM1, proc->user_stack);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "[ELF] Checking page table...\n");
+    
+    pte_t* pml4_ptr = (pte_t*)proc->cr3;
+    uint64_t pml4_idx = (header->entry >> 39) & 0x1FF;
+    uint64_t pml4_val = pml4_ptr[pml4_idx].value;
+    serial_puts(SERIAL_COM1, "[ELF] PML4[");
+    serial_put_dec(SERIAL_COM1, pml4_idx);
+    serial_puts(SERIAL_COM1, "]=0x");
+    serial_put_hex(SERIAL_COM1, pml4_val);
+    serial_puts(SERIAL_COM1, " present=");
+    serial_put_dec(SERIAL_COM1, pml4_ptr[pml4_idx].fields.present);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "[ELF] Page table check done.\n");
+    
+    proc->state = PROC_READY;
+    
+    serial_puts(SERIAL_COM1, "Process created: PID=");
+    serial_put_dec(SERIAL_COM1, proc->pid);
+    serial_puts(SERIAL_COM1, "\n");
     
     scheduler_add(proc);
     return proc->pid;

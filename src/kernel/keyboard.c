@@ -158,6 +158,9 @@ int keyboard_read_line(char *buf, int max) {
     char c;
     
     while (i < max - 1) {
+        while (!keyboard_has_data()) {
+            __asm__ volatile ("hlt");
+        }
         c = keyboard_get_char();
         
         if (c == '\n') {

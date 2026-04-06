@@ -110,7 +110,7 @@ uint64_t vmm_create_user_page_table(void) {
         new_pml4[i].value = 0;
     }
     
-    for (int i = 0; i < 256; i++) {
+    for (int i = 256; i < 512; i++) {
         new_pml4[i].value = ((pte_t*)kernel_pml4)[i].value;
     }
     

@@ -1,6 +1,7 @@
 #include "vfs.h"
 #include "serial.h"
 #include "pwid.h"
+#include "string.h"
 
 #define RAMFS_MAX_INODES    64
 #define RAMFS_MAX_BLOCKS    256
@@ -47,41 +48,6 @@ static uint64_t get_time(void) {
     return tsc;
 }
 
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int str_cmp(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++; s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void str_cpy(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-}
-
-static void mem_set(void *dest, uint8_t val, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = val;
-    }
-}
-
-static void mem_cpy(void *dest, const void *src, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    const uint8_t *s = (const uint8_t *)src;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = s[i];
-    }
-}
-
 static uint8_t* get_block(uint32_t block_num) {
     if (block_num >= RAMFS_MAX_BLOCKS) return NULL;
     return &ramfs_data.data_area[block_num * RAMFS_BLOCK_SIZE];
@@ -114,7 +80,7 @@ static uint32_t block_alloc(void) {
     for (uint32_t i = 0; i < RAMFS_MAX_BLOCKS; i++) {
         if (block_is_free(i)) {
             block_set_used(i);
-            mem_set(get_block(i), 0, RAMFS_BLOCK_SIZE);
+            memset(get_block(i), 0, RAMFS_BLOCK_SIZE);
             return i;
         }
     }
@@ -202,7 +168,7 @@ static struct ramfs_inode* resolve_path(const char *path) {
         int num_entries = current->size / sizeof(struct ramfs_dirent);
         
         for (int i = 0; i < num_entries; i++) {
-            if (entries[i].inode != 0 && str_cmp(entries[i].name, name) == 0) {
+            if (entries[i].inode != 0 && strcmp(entries[i].name, name) == 0) {
                 current = get_inode(entries[i].inode);
                 found = 1;
                 break;
@@ -235,7 +201,7 @@ static int ramfs_open(struct vfs_file *file, int flags, uint64_t pwid) {
                 dir_path[0] = '/';
                 dir_path[1] = '\0';
             } else {
-                mem_cpy(dir_path, file->path, dir_len);
+                memcpy(dir_path, file->path, dir_len);
                 dir_path[dir_len] = '\0';
             }
             
@@ -263,7 +229,7 @@ static int ramfs_open(struct vfs_file *file, int flags, uint64_t pwid) {
             
             entries[num_entries].inode = inode->inode_num;
             entries[num_entries].type = VFS_TYPE_FILE;
-            str_cpy(entries[num_entries].name, filename);
+            strcpy(entries[num_entries].name, filename);
             
             parent->size += sizeof(struct ramfs_dirent);
             parent->mtime = get_time();
@@ -317,7 +283,7 @@ static int ramfs_read(struct vfs_file *file, void *buf, uint32_t count) {
         }
         
         if (block_idx < 8 && inode->direct_blocks[block_idx] != 0) {
-            mem_cpy(buffer + bytes_read,
+            memcpy(buffer + bytes_read,
                     get_block(inode->direct_blocks[block_idx]) + block_offset,
                     bytes_to_read);
         }
@@ -359,7 +325,7 @@ static int ramfs_write(struct vfs_file *file, const void *buf, uint32_t count) {
             if (inode->direct_blocks[block_idx] == 0) break;
         }
         
-        mem_cpy(get_block(inode->direct_blocks[block_idx]) + block_offset,
+        memcpy(get_block(inode->direct_blocks[block_idx]) + block_offset,
                 buffer + bytes_written, bytes_to_write);
         
         bytes_written += bytes_to_write;
@@ -425,7 +391,7 @@ static int ramfs_readdir(struct vfs_file *file, struct vfs_dirent *entry) {
     
     entry->inode = entries[entry_idx].inode;
     entry->type = entries[entry_idx].type;
-    str_cpy(entry->name, entries[entry_idx].name);
+    strcpy(entry->name, entries[entry_idx].name);
     
     file->offset += sizeof(struct ramfs_dirent);
     
@@ -458,18 +424,18 @@ static int ramfs_mkdir(struct vfs_file *parent, const char *name, uint64_t pwid)
     struct ramfs_dirent *new_entries = (struct ramfs_dirent *)get_block(new_dir->direct_blocks[0]);
     new_entries[0].inode = new_dir->inode_num;
     new_entries[0].type = VFS_TYPE_DIR;
-    str_cpy(new_entries[0].name, ".");
+    strcpy(new_entries[0].name, ".");
     
     new_entries[1].inode = parent_inode->inode_num;
     new_entries[1].type = VFS_TYPE_DIR;
-    str_cpy(new_entries[1].name, "..");
+    strcpy(new_entries[1].name, "..");
     
     struct ramfs_dirent *parent_entries = (struct ramfs_dirent *)get_block(parent_inode->direct_blocks[0]);
     int num_entries = parent_inode->size / sizeof(struct ramfs_dirent);
     
     parent_entries[num_entries].inode = new_dir->inode_num;
     parent_entries[num_entries].type = VFS_TYPE_DIR;
-    str_cpy(parent_entries[num_entries].name, name);
+    strcpy(parent_entries[num_entries].name, name);
     
     parent_inode->size += sizeof(struct ramfs_dirent);
     parent_inode->link_count++;
@@ -492,7 +458,7 @@ static int ramfs_rmdir(struct vfs_file *parent, const char *name, uint64_t pwid)
     int num_entries = parent_inode->size / sizeof(struct ramfs_dirent);
     
     for (int i = 0; i < num_entries; i++) {
-        if (str_cmp(entries[i].name, name) == 0 && entries[i].inode != 0) {
+        if (strcmp(entries[i].name, name) == 0 && entries[i].inode != 0) {
             struct ramfs_inode *dir = get_inode(entries[i].inode);
             if (dir == NULL || dir->type != VFS_TYPE_DIR) return -1;
             
@@ -535,7 +501,7 @@ static int ramfs_unlink(struct vfs_file *parent, const char *name, uint64_t pwid
     int num_entries = parent_inode->size / sizeof(struct ramfs_dirent);
     
     for (int i = 0; i < num_entries; i++) {
-        if (str_cmp(entries[i].name, name) == 0 && entries[i].inode != 0) {
+        if (strcmp(entries[i].name, name) == 0 && entries[i].inode != 0) {
             struct ramfs_inode *file = get_inode(entries[i].inode);
             if (file == NULL || file->type == VFS_TYPE_DIR) return -1;
             
@@ -582,7 +548,7 @@ static int ramfs_rename(struct vfs_file *old_parent, const char *old_name,
     uint8_t target_type = 0;
     
     for (int i = 0; i < old_num; i++) {
-        if (str_cmp(old_entries[i].name, old_name) == 0 && old_entries[i].inode != 0) {
+        if (strcmp(old_entries[i].name, old_name) == 0 && old_entries[i].inode != 0) {
             target_inode = old_entries[i].inode;
             target_type = old_entries[i].type;
             old_entries[i].inode = 0;
@@ -610,7 +576,7 @@ static int ramfs_rename(struct vfs_file *old_parent, const char *old_name,
     
     new_entries[insert_pos].inode = target_inode;
     new_entries[insert_pos].type = target_type;
-    str_cpy(new_entries[insert_pos].name, new_name);
+    strcpy(new_entries[insert_pos].name, new_name);
     
     old_parent_inode->mtime = get_time();
     new_parent_inode->mtime = get_time();
@@ -678,7 +644,7 @@ static int ramfs_chown(struct vfs_file *file, uint64_t owner_pwid, uint64_t pwid
 }
 
 static int ramfs_mount(const char *path) {
-    mem_set(&ramfs_data, 0, sizeof(ramfs_data));
+    memset(&ramfs_data, 0, sizeof(ramfs_data));
     
     ramfs_data.free_inodes = RAMFS_MAX_INODES - 1;
     ramfs_data.free_blocks = RAMFS_MAX_BLOCKS;
@@ -701,11 +667,11 @@ static int ramfs_mount(const char *path) {
     struct ramfs_dirent *root_entries = (struct ramfs_dirent *)get_block(root->direct_blocks[0]);
     root_entries[0].inode = 1;
     root_entries[0].type = VFS_TYPE_DIR;
-    str_cpy(root_entries[0].name, ".");
+    strcpy(root_entries[0].name, ".");
     
     root_entries[1].inode = 1;
     root_entries[1].type = VFS_TYPE_DIR;
-    str_cpy(root_entries[1].name, "..");
+    strcpy(root_entries[1].name, "..");
     
     serial_puts(SERIAL_COM1, "RamFS: mounted at '");
     serial_puts(SERIAL_COM1, path);

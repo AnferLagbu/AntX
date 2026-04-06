@@ -2,6 +2,7 @@
 #include "serial.h"
 #include "pwid.h"
 #include "proc.h"
+#include "string.h"
 
 #define PROCFS_MAX_ENTRIES     16
 #define PROCFS_MAX_NAME        32
@@ -25,41 +26,7 @@ static struct procfs_entry procfs_entries[PROCFS_MAX_ENTRIES];
 static int procfs_entry_count = 0;
 static struct vfs_filesystem procfs_fs;
 
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int str_cmp(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++; s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void str_cpy(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-}
-
-static void mem_set(void *dest, uint8_t val, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = val;
-    }
-}
-
-static void mem_cpy(void *dest, const void *src, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    const uint8_t *s = (const uint8_t *)src;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = s[i];
-    }
-}
-
+static void procfs_init_entries(void);
 static void uint_to_str(uint64_t val, char *buf) {
     char tmp[32];
     int i = 0;
@@ -84,7 +51,7 @@ static void uint_to_str(uint64_t val, char *buf) {
 
 static struct procfs_entry* find_entry(const char *name) {
     for (int i = 0; i < PROCFS_MAX_ENTRIES; i++) {
-        if (procfs_entries[i].used && str_cmp(procfs_entries[i].name, name) == 0) {
+        if (procfs_entries[i].used && strcmp(procfs_entries[i].name, name) == 0) {
             return &procfs_entries[i];
         }
     }
@@ -97,14 +64,14 @@ static void update_entry_content(struct procfs_entry *entry) {
     switch (entry->type) {
         case PROC_ENTRY_SELF:
             entry->content_len = 0;
-            str_cpy(entry->content, "self -> current process\n");
-            entry->content_len = str_len(entry->content);
+            strcpy(entry->content, "self -> current process\n");
+            entry->content_len = strlen(entry->content);
             break;
             
         case PROC_ENTRY_VERSION:
             entry->content_len = 0;
-            str_cpy(entry->content, "AntX OS version 0.1.0\n");
-            entry->content_len = str_len(entry->content);
+            strcpy(entry->content, "AntX OS version 0.1.0\n");
+            entry->content_len = strlen(entry->content);
             break;
             
         case PROC_ENTRY_UPTIME:
@@ -113,21 +80,21 @@ static void update_entry_content(struct procfs_entry *entry) {
                 __asm__ volatile ("rdtsc" : "=A"(tsc));
                 char uptime[32];
                 uint_to_str(tsc / 1000000, uptime);
-                str_cpy(entry->content, "uptime: ");
-                mem_cpy(entry->content + str_len(entry->content), uptime, str_len(uptime));
-                str_cpy(entry->content + str_len(entry->content), " ms\n");
-                entry->content_len = str_len(entry->content);
+                strcpy(entry->content, "uptime: ");
+                memcpy(entry->content + strlen(entry->content), uptime, strlen(uptime));
+                strcpy(entry->content + strlen(entry->content), " ms\n");
+                entry->content_len = strlen(entry->content);
             }
             break;
             
         case PROC_ENTRY_MEMINFO:
-            str_cpy(entry->content, "MemTotal: 128 MB\nMemFree: 64 MB\n");
-            entry->content_len = str_len(entry->content);
+            strcpy(entry->content, "MemTotal: 128 MB\nMemFree: 64 MB\n");
+            entry->content_len = strlen(entry->content);
             break;
             
         case PROC_ENTRY_CPUINFO:
-            str_cpy(entry->content, "processor: 0\nvendor: AntX CPU\n");
-            entry->content_len = str_len(entry->content);
+            strcpy(entry->content, "processor: 0\nvendor: AntX CPU\n");
+            entry->content_len = strlen(entry->content);
             break;
             
         default:
@@ -187,7 +154,7 @@ static int procfs_read(struct vfs_file *file, void *buf, uint32_t count) {
         if (bytes_read > count) {
             bytes_read = count;
         }
-        mem_cpy(buf, entry->content + file->offset, bytes_read);
+        memcpy(buf, entry->content + file->offset, bytes_read);
         file->offset += bytes_read;
     }
     
@@ -245,7 +212,7 @@ static int procfs_readdir(struct vfs_file *file, struct vfs_dirent *entry) {
     
     entry->inode = procfs_entries[entry_idx].type;
     entry->type = VFS_TYPE_FILE;
-    str_cpy(entry->name, procfs_entries[entry_idx].name);
+    strcpy(entry->name, procfs_entries[entry_idx].name);
     
     file->offset = entry_idx + 1;
     
@@ -285,23 +252,23 @@ static int procfs_mount(const char *path) {
     }
     
     procfs_entries[0].used = 1;
-    str_cpy(procfs_entries[0].name, "self");
+    strcpy(procfs_entries[0].name, "self");
     procfs_entries[0].type = PROC_ENTRY_SELF;
     
     procfs_entries[1].used = 1;
-    str_cpy(procfs_entries[1].name, "version");
+    strcpy(procfs_entries[1].name, "version");
     procfs_entries[1].type = PROC_ENTRY_VERSION;
     
     procfs_entries[2].used = 1;
-    str_cpy(procfs_entries[2].name, "uptime");
+    strcpy(procfs_entries[2].name, "uptime");
     procfs_entries[2].type = PROC_ENTRY_UPTIME;
     
     procfs_entries[3].used = 1;
-    str_cpy(procfs_entries[3].name, "meminfo");
+    strcpy(procfs_entries[3].name, "meminfo");
     procfs_entries[3].type = PROC_ENTRY_MEMINFO;
     
     procfs_entries[4].used = 1;
-    str_cpy(procfs_entries[4].name, "cpuinfo");
+    strcpy(procfs_entries[4].name, "cpuinfo");
     procfs_entries[4].type = PROC_ENTRY_CPUINFO;
     
     procfs_entry_count = 5;

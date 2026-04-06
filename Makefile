@@ -2,11 +2,11 @@ CC = x86_64-linux-gnu-gcc
 LD = x86_64-linux-gnu-ld
 AS = nasm
 
-CFLAGS = -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
+CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=kernel \
          -Isrc/include
 
-USER_CFLAGS = -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
+USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
               -Isrc/include
 
@@ -20,7 +20,7 @@ KERNEL_OBJS = build/boot.o build/main.o build/serial.o build/gdt.o build/gdt_asm
               build/pmm.o build/vmm.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
               build/vfs.o build/ramfs.o build/diskfs.o build/devfs.o build/procfs.o build/hvfs.o \
               build/syscall.o build/keyboard.o build/shell.o build/string.o build/printk.o build/ata.o build/install_guide.o \
-              build/user_proc.o build/user/embedded/user_init_bin.o
+              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o
 
 USER_LIB_OBJS = build/user/lib/user.o
 
@@ -200,7 +200,7 @@ iso: all user
 	echo 'menuentry "AntX" {' >> isodir/boot/grub/grub.cfg
 	echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
 	echo '}' >> isodir/boot/grub/grub.cfg
-	grub-mkrescue -o build/antx.iso isodir
+	grub2-mkrescue -o build/antx.iso isodir
 
 clean:
 	rm -rf build/ isodir/

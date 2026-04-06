@@ -4,6 +4,7 @@
 #include "syscall.h"
 #include "pwid.h"
 #include "hvfs.h"
+#include "string.h"
 
 static void print(const char *s) {
     serial_puts(SERIAL_COM1, s);
@@ -12,27 +13,6 @@ static void print(const char *s) {
 static void println(const char *s) {
     serial_puts(SERIAL_COM1, s);
     serial_puts(SERIAL_COM1, "\n");
-}
-
-static int strlen_local(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int strcmp_local(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++;
-        s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void strcpy_local(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
 }
 
 static void simple_delay(int count) {
@@ -60,7 +40,6 @@ static void welcome_page(void) {
 static int config_root_pwid(void) {
     char pw1[64];
     char pw2[64];
-    char note[64];
     
     println("");
     println("--- Step 1: Root Account Setup ---");
@@ -83,30 +62,23 @@ static int config_root_pwid(void) {
         print("Confirm root password: ");
         int len2 = keyboard_read_line(pw2, sizeof(pw2));
         
-        if (len1 != len2 || strcmp_local(pw1, pw2) != 0) {
+        if (len1 != len2 || strcmp(pw1, pw2) != 0) {
             println("Passwords do not match! Please try again.");
             continue;
-        }
-        
-        print("Enter root account note (default: root): ");
-        int note_len = keyboard_read_line(note, sizeof(note));
-        
-        if (note_len == 0) {
-            strcpy_local(note, "root");
         }
         
         println("");
         println("Creating root account...");
         
-        int result = sys_auth_create(pw1, note, PWID_LEVEL_ROOT);
+        int result = pwid_create_original_root(pw1);
         
-        if (result >= 0) {
+        if (result == 0) {
             println("Root account created successfully!");
+            pwid_login("root", pw1);
+            println("Logged in as root.");
             return 0;
         } else {
-            print("Failed to create root account (error: ");
-            serial_put_dec(SERIAL_COM1, result);
-            println("). Please try again.");
+            println("Failed to create root account. Please try again.");
         }
     }
 }
@@ -122,10 +94,10 @@ static void config_system(void) {
     int hostname_len = keyboard_read_line(hostname, sizeof(hostname));
     
     if (hostname_len == 0) {
-        strcpy_local(hostname, INSTALL_DEFAULT_HOSTNAME);
+        strcpy(hostname, INSTALL_DEFAULT_HOSTNAME);
     }
     
-    int result = sys_sethostname(hostname, strlen_local(hostname));
+    int result = sys_sethostname(hostname, strlen(hostname));
     if (result == 0) {
         print("Hostname set to: ");
         println(hostname);
@@ -135,7 +107,7 @@ static void config_system(void) {
     
     int fd = sys_fs_open(INSTALL_HOSTNAME_FILE, HVFS_O_CREAT | HVFS_O_WRONLY | HVFS_O_TRUNC, 0644);
     if (fd >= 0) {
-        sys_fs_write(fd, hostname, strlen_local(hostname));
+        sys_fs_write(fd, hostname, strlen(hostname));
         sys_fs_close(fd);
     }
     
@@ -160,7 +132,7 @@ static int complete_page(void) {
     }
     
     const char *marker_content = "installed\n";
-    sys_fs_write(fd, marker_content, strlen_local(marker_content));
+    sys_fs_write(fd, marker_content, strlen(marker_content));
     sys_fs_close(fd);
     
     sys_fs_sync();
@@ -195,7 +167,7 @@ int install_guide_create_marker(void) {
     }
     
     const char *marker_content = "installed\n";
-    sys_fs_write(fd, marker_content, strlen_local(marker_content));
+    sys_fs_write(fd, marker_content, strlen(marker_content));
     sys_fs_close(fd);
     
     return 0;

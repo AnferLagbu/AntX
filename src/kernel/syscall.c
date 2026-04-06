@@ -249,6 +249,11 @@ int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
 }
 
 int64_t sys_fs_write(int fd, const void *buf, uint64_t count) {
+    if (fd == 1 || fd == 2) {
+        serial_write(SERIAL_COM1, buf, count);
+        return count;
+    }
+    
     for (int i = 0; i < VFS_MAX_FDS; i++) {
         if (vfs_fd_table[i].used && vfs_fd_table[i].fd == fd) {
             return vfs_write(&vfs_fd_table[i], buf, count);

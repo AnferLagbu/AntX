@@ -1,6 +1,7 @@
 #include "pwid.h"
 #include "serial.h"
 #include "kernel.h"
+#include "string.h"
 
 struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
 int pwid_count = 0;
@@ -105,39 +106,6 @@ static void sha256(const uint8_t *data, size_t len, uint8_t *hash) {
     }
 }
 
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int str_cmp(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++; s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void str_cpy(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-}
-
-static void mem_cpy(uint8_t *dest, const uint8_t *src, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-        dest[i] = src[i];
-    }
-}
-
-static int mem_cmp(const uint8_t *a, const uint8_t *b, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-        if (a[i] != b[i]) return a[i] - b[i];
-    }
-    return 0;
-}
-
 void pwid_init(void) {
     for (int i = 0; i < MAX_PWID_ENTRIES; i++) {
         pwid_table[i].pwid = 0;
@@ -161,8 +129,8 @@ uint64_t pwid_generate(const char *password, const char *note, uint8_t level) {
     uint8_t hash[PWID_HASH_LEN];
     int pos = 0;
     
-    int pwd_len = str_len(password);
-    int note_len = str_len(note);
+    int pwd_len = strlen(password);
+    int note_len = strlen(note);
     
     for (int i = 0; i < pwd_len && pos < 128; i++) {
         input[pos++] = password[i];
@@ -192,9 +160,9 @@ int pwid_verify_password(uint64_t pwid, const char *password) {
     }
     
     uint8_t hash[PWID_HASH_LEN];
-    sha256((const uint8_t *)password, str_len(password), hash);
+    sha256((const uint8_t *)password, strlen(password), hash);
     
-    return mem_cmp(entry->password_hash, hash, PWID_HASH_LEN) == 0;
+    return memcmp(entry->password_hash, hash, PWID_HASH_LEN) == 0;
 }
 
 int pwid_create(const char *password, const char *note, uint8_t level) {
@@ -224,8 +192,8 @@ int pwid_create(const char *password, const char *note, uint8_t level) {
     entry->level = level;
     entry->flags = 0;
     
-    str_cpy(entry->note, note);
-    sha256((const uint8_t *)password, str_len(password), entry->password_hash);
+    strcpy(entry->note, note);
+    sha256((const uint8_t *)password, strlen(password), entry->password_hash);
     
     pwid_count++;
     
@@ -294,7 +262,7 @@ int pwid_change_password(uint64_t pwid, const char *old_password, const char *ne
         return -1;
     }
     
-    sha256((const uint8_t *)new_password, str_len(new_password), entry->password_hash);
+    sha256((const uint8_t *)new_password, strlen(new_password), entry->password_hash);
     entry->flags |= PWID_FLAG_MODIFIED;
     entry->flags &= ~PWID_FLAG_DEFAULT_PW;
     
@@ -313,7 +281,7 @@ int pwid_change_note(uint64_t pwid, const char *new_note) {
         return -1;
     }
     
-    str_cpy(entry->note, new_note);
+    strcpy(entry->note, new_note);
     return 0;
 }
 
@@ -328,7 +296,7 @@ struct pwid_entry* pwid_find(uint64_t pwid) {
 
 struct pwid_entry* pwid_find_by_note(const char *note) {
     for (int i = 0; i < MAX_PWID_ENTRIES; i++) {
-        if (pwid_table[i].pwid != 0 && str_cmp(pwid_table[i].note, note) == 0) {
+        if (pwid_table[i].pwid != 0 && strcmp(pwid_table[i].note, note) == 0) {
             return &pwid_table[i];
         }
     }
@@ -495,9 +463,9 @@ int pwid_login(const char *note, const char *password) {
     }
     
     uint8_t hash[PWID_HASH_LEN];
-    sha256((const uint8_t *)password, str_len(password), hash);
+    sha256((const uint8_t *)password, strlen(password), hash);
     
-    if (mem_cmp(entry->password_hash, hash, PWID_HASH_LEN) != 0) {
+    if (memcmp(entry->password_hash, hash, PWID_HASH_LEN) != 0) {
         serial_puts(SERIAL_COM1, "PWID: incorrect password\n");
         return PWID_ERR_PASSWORD;
     }

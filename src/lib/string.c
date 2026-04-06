@@ -145,3 +145,10 @@ void *memchr(const void *s, int c, size_t n) {
     }
     return NULL;
 }
+
+void secure_zero(void *ptr, size_t len) {
+    volatile uint8_t *p = (volatile uint8_t *)ptr;
+    while (len--) {
+        *p++ = 0;
+    }
+}

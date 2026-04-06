@@ -3,6 +3,7 @@
 #include "serial.h"
 #include "kernel.h"
 #include "pwid.h"
+#include "string.h"
 
 struct super_block hvfs_super;
 struct inode hvfs_inode_table[HVFS_MAX_INODES];
@@ -20,41 +21,6 @@ static struct inode* resolve_path(const char *path, uint64_t pwid);
 static uint8_t* get_block(uint32_t block_num) {
     if (block_num >= HVFS_MAX_BLOCKS) return NULL;
     return &hvfs_data_area[block_num * HVFS_BLOCK_SIZE];
-}
-
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int str_cmp(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++; s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void str_cpy(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-}
-
-static void mem_set(void *dest, uint8_t val, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = val;
-    }
-}
-
-static void mem_cpy(void *dest, const void *src, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    const uint8_t *s = (const uint8_t *)src;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = s[i];
-    }
 }
 
 static uint64_t get_time(void) {
@@ -90,7 +56,7 @@ static uint32_t block_alloc(void) {
     for (uint32_t i = hvfs_super.first_data_block; i < HVFS_MAX_BLOCKS; i++) {
         if (block_is_free(i)) {
             block_set_used(i);
-            mem_set(get_block(i), 0, HVFS_BLOCK_SIZE);
+            memset(get_block(i), 0, HVFS_BLOCK_SIZE);
             return i;
         }
     }
@@ -185,13 +151,13 @@ int hvfs_check_permission(struct inode *inode, uint64_t pwid, int access_type) {
 }
 
 void hvfs_init(void) {
-    mem_set(&hvfs_super, 0, sizeof(struct super_block));
-    mem_set(hvfs_inode_table, 0, sizeof(hvfs_inode_table));
-    mem_set(hvfs_block_bitmap, 0, sizeof(hvfs_block_bitmap));
-    mem_set(hvfs_inode_bitmap, 0, sizeof(hvfs_inode_bitmap));
-    mem_set(hvfs_data_area, 0, sizeof(hvfs_data_area));
+    memset(&hvfs_super, 0, sizeof(struct super_block));
+    memset(hvfs_inode_table, 0, sizeof(hvfs_inode_table));
+    memset(hvfs_block_bitmap, 0, sizeof(hvfs_block_bitmap));
+    memset(hvfs_inode_bitmap, 0, sizeof(hvfs_inode_bitmap));
+    memset(hvfs_data_area, 0, sizeof(hvfs_data_area));
     
-    mem_set(&current_context, 0, sizeof(struct hvfs_context));
+    memset(&current_context, 0, sizeof(struct hvfs_context));
     current_context.current_dir = 1;
     
     hvfs_initialized = 0;
@@ -247,7 +213,7 @@ int hvfs_format_disk(void) {
     
     serial_puts(SERIAL_COM1, "HvFS: Formatting disk...\n");
     
-    mem_set(super_buffer, 0, sizeof(super_buffer));
+    memset(super_buffer, 0, sizeof(super_buffer));
     super_disk->magic = HVFS_MAGIC;
     super_disk->version = HVFS_VERSION;
     super_disk->block_size = HVFS_BLOCK_SIZE;
@@ -273,7 +239,7 @@ int hvfs_format_disk(void) {
     }
     
     static uint8_t empty_sector[512];
-    mem_set(empty_sector, 0, 512);
+    memset(empty_sector, 0, 512);
     
     for (int i = 0; i < HVFS_INODE_SECTOR_COUNT; i++) {
         ata_write_sector(0, HVFS_INODE_SECTOR_START + i, empty_sector);
@@ -327,7 +293,7 @@ int hvfs_sync_super(void) {
     static uint8_t super_buffer[HVFS_SUPER_SECTOR_COUNT * HVFS_DISK_SECTOR_SIZE];
     struct hvfs_super_block_disk *super_disk = (struct hvfs_super_block_disk *)super_buffer;
     
-    mem_set(super_buffer, 0, sizeof(super_buffer));
+    memset(super_buffer, 0, sizeof(super_buffer));
     super_disk->magic = hvfs_super.magic;
     super_disk->version = hvfs_super.version;
     super_disk->block_size = hvfs_super.block_size;
@@ -397,7 +363,7 @@ int hvfs_sync_inode(struct inode *inode) {
     if (inode == NULL || inode->inode_num == 0) return -1;
     
     static uint8_t sector_buffer[512];
-    mem_set(sector_buffer, 0, sizeof(sector_buffer));
+    memset(sector_buffer, 0, sizeof(sector_buffer));
     
     struct hvfs_inode_disk *inode_disk = (struct hvfs_inode_disk *)sector_buffer;
     
@@ -447,7 +413,7 @@ int hvfs_load_block_bitmap(void) {
 int hvfs_sync_block_bitmap(void) {
     static uint8_t bitmap_buffer[HVFS_BLOCK_BITMAP_COUNT * HVFS_DISK_SECTOR_SIZE];
     
-    mem_set(bitmap_buffer, 0, sizeof(bitmap_buffer));
+    memset(bitmap_buffer, 0, sizeof(bitmap_buffer));
     memcpy(bitmap_buffer, hvfs_block_bitmap, sizeof(hvfs_block_bitmap));
     
     if (ata_write_sectors(0, HVFS_BLOCK_BITMAP_START, 
@@ -477,7 +443,7 @@ int hvfs_load_inode_bitmap(void) {
 int hvfs_sync_inode_bitmap(void) {
     static uint8_t bitmap_buffer[HVFS_INODE_BITMAP_COUNT * HVFS_DISK_SECTOR_SIZE];
     
-    mem_set(bitmap_buffer, 0, sizeof(bitmap_buffer));
+    memset(bitmap_buffer, 0, sizeof(bitmap_buffer));
     memcpy(bitmap_buffer, hvfs_inode_bitmap, sizeof(hvfs_inode_bitmap));
     
     if (ata_write_sectors(0, HVFS_INODE_BITMAP_START, 
@@ -623,11 +589,11 @@ int hvfs_sync(void) {
 }
 
 int hvfs_format(void) {
-    mem_set(&hvfs_super, 0, sizeof(struct super_block));
-    mem_set(hvfs_inode_table, 0, sizeof(hvfs_inode_table));
-    mem_set(hvfs_block_bitmap, 0, sizeof(hvfs_block_bitmap));
-    mem_set(hvfs_inode_bitmap, 0, sizeof(hvfs_inode_bitmap));
-    mem_set(hvfs_data_area, 0, sizeof(hvfs_data_area));
+    memset(&hvfs_super, 0, sizeof(struct super_block));
+    memset(hvfs_inode_table, 0, sizeof(hvfs_inode_table));
+    memset(hvfs_block_bitmap, 0, sizeof(hvfs_block_bitmap));
+    memset(hvfs_inode_bitmap, 0, sizeof(hvfs_inode_bitmap));
+    memset(hvfs_data_area, 0, sizeof(hvfs_data_area));
     
     hvfs_super.magic = HVFS_MAGIC;
     hvfs_super.version = HVFS_VERSION;
@@ -686,19 +652,19 @@ int hvfs_format(void) {
     root_dir[0].rec_len = sizeof(struct dir_entry);
     root_dir[0].name_len = 1;
     root_dir[0].file_type = HVFS_TYPE_DIR;
-    str_cpy(root_dir[0].name, ".");
+    strcpy(root_dir[0].name, ".");
     
     root_dir[1].inode = 1;
     root_dir[1].rec_len = sizeof(struct dir_entry);
     root_dir[1].name_len = 2;
     root_dir[1].file_type = HVFS_TYPE_DIR;
-    str_cpy(root_dir[1].name, "..");
+    strcpy(root_dir[1].name, "..");
     
     root_dir[2].inode = 2;
     root_dir[2].rec_len = sizeof(struct dir_entry);
     root_dir[2].name_len = 10;
     root_dir[2].file_type = HVFS_TYPE_DIR;
-    str_cpy(root_dir[2].name, "lost+found");
+    strcpy(root_dir[2].name, "lost+found");
     
     root->size = 3 * sizeof(struct dir_entry);
     
@@ -755,7 +721,7 @@ int hvfs_create_default_directories(void) {
     fd = hvfs_open("/etc/hostname", HVFS_O_CREAT | HVFS_O_WRONLY, 0);
     if (fd >= 0) {
         const char *default_hostname = "localhost";
-        hvfs_write(fd, default_hostname, str_len(default_hostname));
+        hvfs_write(fd, default_hostname, strlen(default_hostname));
         hvfs_close(fd);
         serial_puts(SERIAL_COM1, "HvFS: created '/etc/hostname'\n");
     }
@@ -803,7 +769,7 @@ static struct inode* resolve_path(const char *path, uint64_t pwid) {
         int num_entries = current->size / sizeof(struct dir_entry);
         
         for (int i = 0; i < num_entries; i++) {
-            if (entries[i].inode != 0 && str_cmp(entries[i].name, name) == 0) {
+            if (entries[i].inode != 0 && strcmp(entries[i].name, name) == 0) {
                 current = hvfs_get_inode(entries[i].inode);
                 found = 1;
                 break;
@@ -836,7 +802,7 @@ int hvfs_open(const char *path, int flags, uint64_t pwid) {
                 dir_path[0] = '/';
                 dir_path[1] = '\0';
             } else {
-                mem_cpy(dir_path, path, dir_len);
+                memcpy(dir_path, path, dir_len);
                 dir_path[dir_len] = '\0';
             }
             
@@ -870,9 +836,9 @@ int hvfs_open(const char *path, int flags, uint64_t pwid) {
             
             entries[num_entries].inode = inode->inode_num;
             entries[num_entries].rec_len = sizeof(struct dir_entry);
-            entries[num_entries].name_len = str_len(filename);
+            entries[num_entries].name_len = strlen(filename);
             entries[num_entries].file_type = HVFS_TYPE_FILE;
-            str_cpy(entries[num_entries].name, filename);
+            strcpy(entries[num_entries].name, filename);
             
             parent->size += sizeof(struct dir_entry);
             parent->mtime = get_time();
@@ -969,7 +935,7 @@ int hvfs_read(int fd, void *buf, uint32_t count) {
             if (hvfs_disk_mode) {
                 hvfs_load_data_block(inode->direct_blocks[block_idx]);
             }
-            mem_cpy(buffer + bytes_read, 
+            memcpy(buffer + bytes_read, 
                     get_block(inode->direct_blocks[block_idx]) + block_offset,
                     bytes_to_read);
         }
@@ -1023,7 +989,7 @@ int hvfs_write(int fd, const void *buf, uint32_t count) {
             hvfs_load_data_block(inode->direct_blocks[block_idx]);
         }
         
-        mem_cpy(get_block(inode->direct_blocks[block_idx]) + block_offset,
+        memcpy(get_block(inode->direct_blocks[block_idx]) + block_offset,
                 buffer + bytes_written, bytes_to_write);
         
         if (hvfs_disk_mode) {
@@ -1102,7 +1068,7 @@ int hvfs_mkdir(const char *path, uint64_t pwid) {
         parent_path[0] = '/';
         parent_path[1] = '\0';
     } else {
-        mem_cpy(parent_path, path, parent_len);
+        memcpy(parent_path, path, parent_len);
         parent_path[parent_len] = '\0';
     }
     
@@ -1133,13 +1099,13 @@ int hvfs_mkdir(const char *path, uint64_t pwid) {
     new_entries[0].rec_len = sizeof(struct dir_entry);
     new_entries[0].name_len = 1;
     new_entries[0].file_type = HVFS_TYPE_DIR;
-    str_cpy(new_entries[0].name, ".");
+    strcpy(new_entries[0].name, ".");
     
     new_entries[1].inode = parent->inode_num;
     new_entries[1].rec_len = sizeof(struct dir_entry);
     new_entries[1].name_len = 2;
     new_entries[1].file_type = HVFS_TYPE_DIR;
-    str_cpy(new_entries[1].name, "..");
+    strcpy(new_entries[1].name, "..");
     
     if (hvfs_disk_mode && parent->direct_blocks[0] != 0) {
         hvfs_load_data_block(parent->direct_blocks[0]);
@@ -1150,9 +1116,9 @@ int hvfs_mkdir(const char *path, uint64_t pwid) {
     
     parent_entries[num_entries].inode = new_dir->inode_num;
     parent_entries[num_entries].rec_len = sizeof(struct dir_entry);
-    parent_entries[num_entries].name_len = str_len(dirname);
+    parent_entries[num_entries].name_len = strlen(dirname);
     parent_entries[num_entries].file_type = HVFS_TYPE_DIR;
-    str_cpy(parent_entries[num_entries].name, dirname);
+    strcpy(parent_entries[num_entries].name, dirname);
     
     parent->size += sizeof(struct dir_entry);
     parent->link_count++;
@@ -1209,7 +1175,7 @@ int hvfs_rmdir(const char *path, uint64_t pwid) {
         parent_path[0] = '/';
         parent_path[1] = '\0';
     } else {
-        mem_cpy(parent_path, path, parent_len);
+        memcpy(parent_path, path, parent_len);
         parent_path[parent_len] = '\0';
     }
     
@@ -1224,7 +1190,7 @@ int hvfs_rmdir(const char *path, uint64_t pwid) {
     int num_entries = parent->size / sizeof(struct dir_entry);
     
     for (int i = 0; i < num_entries; i++) {
-        if (str_cmp(entries[i].name, dirname) == 0) {
+        if (strcmp(entries[i].name, dirname) == 0) {
             entries[i].inode = 0;
             break;
         }
@@ -1283,7 +1249,7 @@ int hvfs_readdir(int fd, struct dir_entry *entry) {
         return 0;
     }
     
-    mem_cpy(entry, &entries[entry_idx], sizeof(struct dir_entry));
+    memcpy(entry, &entries[entry_idx], sizeof(struct dir_entry));
     fdesc->offset += sizeof(struct dir_entry);
     
     return 1;
@@ -1299,7 +1265,7 @@ int hvfs_stat(const char *path, struct inode *stat_buf, uint64_t pwid) {
         return -1;
     }
     
-    mem_cpy(stat_buf, inode, sizeof(struct inode));
+    memcpy(stat_buf, inode, sizeof(struct inode));
     return 0;
 }
 
@@ -1330,7 +1296,7 @@ int hvfs_unlink(const char *path, uint64_t pwid) {
         parent_path[0] = '/';
         parent_path[1] = '\0';
     } else {
-        mem_cpy(parent_path, path, parent_len);
+        memcpy(parent_path, path, parent_len);
         parent_path[parent_len] = '\0';
     }
     
@@ -1345,7 +1311,7 @@ int hvfs_unlink(const char *path, uint64_t pwid) {
     int num_entries = parent->size / sizeof(struct dir_entry);
     
     for (int i = 0; i < num_entries; i++) {
-        if (str_cmp(entries[i].name, filename) == 0) {
+        if (strcmp(entries[i].name, filename) == 0) {
             entries[i].inode = 0;
             break;
         }
@@ -1381,7 +1347,7 @@ int hvfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
         old_parent_path[0] = '/';
         old_parent_path[1] = '\0';
     } else {
-        mem_cpy(old_parent_path, old_path, old_parent_len);
+        memcpy(old_parent_path, old_path, old_parent_len);
         old_parent_path[old_parent_len] = '\0';
     }
     
@@ -1401,7 +1367,7 @@ int hvfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
     
     struct inode *target_inode = NULL;
     for (int i = 0; i < old_num_entries; i++) {
-        if (str_cmp(old_entries[i].name, old_name) == 0 && old_entries[i].inode != 0) {
+        if (strcmp(old_entries[i].name, old_name) == 0 && old_entries[i].inode != 0) {
             target_inode = hvfs_get_inode(old_entries[i].inode);
             old_entries[i].inode = 0;
             break;
@@ -1423,7 +1389,7 @@ int hvfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
         new_parent_path[0] = '/';
         new_parent_path[1] = '\0';
     } else {
-        mem_cpy(new_parent_path, new_path, new_parent_len);
+        memcpy(new_parent_path, new_path, new_parent_len);
         new_parent_path[new_parent_len] = '\0';
     }
     
@@ -1456,9 +1422,9 @@ int hvfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
     
     new_entries[insert_pos].inode = target_inode->inode_num;
     new_entries[insert_pos].rec_len = sizeof(struct dir_entry);
-    new_entries[insert_pos].name_len = str_len(new_name);
+    new_entries[insert_pos].name_len = strlen(new_name);
     new_entries[insert_pos].file_type = (target_inode->mode >> 12) & 0xF;
-    str_cpy(new_entries[insert_pos].name, new_name);
+    strcpy(new_entries[insert_pos].name, new_name);
     
     new_parent->mtime = get_time();
     old_parent->mtime = get_time();

@@ -12,26 +12,6 @@ static char current_cwd[VFS_MAX_PATH] = "/";
 static uint32_t current_cwd_inode = 1;
 static uint32_t next_fd = 3;
 
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int str_cmp(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++; s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void str_cpy(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-}
-
 static int str_starts_with(const char *str, const char *prefix) {
     while (*prefix) {
         if (*str != *prefix) return 0;
@@ -84,12 +64,12 @@ int vfs_register_fs(const char *name, struct vfs_filesystem *fs) {
     }
     
     for (int i = 0; i < fs_registry_count; i++) {
-        if (str_cmp(fs_registry[i]->name, name) == 0) {
+        if (strcmp(fs_registry[i]->name, name) == 0) {
             return -1;
         }
     }
     
-    str_cpy(fs->name, name);
+    strcpy(fs->name, name);
     fs_registry[fs_registry_count++] = fs;
     
     serial_puts(SERIAL_COM1, "VFS: registered filesystem '");
@@ -101,7 +81,7 @@ int vfs_register_fs(const char *name, struct vfs_filesystem *fs) {
 
 int vfs_unregister_fs(const char *name) {
     for (int i = 0; i < fs_registry_count; i++) {
-        if (str_cmp(fs_registry[i]->name, name) == 0) {
+        if (strcmp(fs_registry[i]->name, name) == 0) {
             for (int j = i; j < fs_registry_count - 1; j++) {
                 fs_registry[j] = fs_registry[j + 1];
             }
@@ -114,7 +94,7 @@ int vfs_unregister_fs(const char *name) {
 
 struct vfs_filesystem* vfs_get_fs(const char *name) {
     for (int i = 0; i < fs_registry_count; i++) {
-        if (str_cmp(fs_registry[i]->name, name) == 0) {
+        if (strcmp(fs_registry[i]->name, name) == 0) {
             return fs_registry[i];
         }
     }
@@ -143,7 +123,7 @@ struct vfs_mount* vfs_find_mount(const char *path) {
 const char* vfs_get_relative_path(const char *path, struct vfs_mount *mount) {
     if (mount == NULL) return path;
     
-    int mount_len = str_len(mount->path);
+    int mount_len = strlen(mount->path);
     const char *rel_path = path + mount_len;
     
     while (*rel_path == '/') rel_path++;
@@ -164,7 +144,7 @@ int vfs_mount(const char *path, const char *fs_name) {
     
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
         if (!mount_table[i].used) {
-            str_cpy(mount_table[i].path, path);
+            strcpy(mount_table[i].path, path);
             mount_table[i].fs = fs;
             mount_table[i].used = 1;
             
@@ -187,7 +167,7 @@ int vfs_mount(const char *path, const char *fs_name) {
 
 int vfs_unmount(const char *path) {
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
-        if (mount_table[i].used && str_cmp(mount_table[i].path, path) == 0) {
+        if (mount_table[i].used && strcmp(mount_table[i].path, path) == 0) {
             if (mount_table[i].fs && mount_table[i].fs->sops && 
                 mount_table[i].fs->sops->unmount) {
                 mount_table[i].fs->sops->unmount();
@@ -248,7 +228,7 @@ struct vfs_file* vfs_open(const char *path, int flags, uint64_t pwid) {
     
     const char *rel_path = vfs_get_relative_path(path, mount);
     
-    str_cpy(file->path, rel_path);
+    strcpy(file->path, rel_path);
     file->flags = flags;
     file->pwid = pwid;
     file->fs_data = mount->fs->fs_data;
@@ -352,7 +332,7 @@ int vfs_mkdir(const char *path, uint64_t pwid) {
         
         struct vfs_file parent_file;
         parent_file.path[0] = '\0';
-        str_cpy(parent_file.path, parent_path);
+        strcpy(parent_file.path, parent_path);
         parent_file.fs_data = mount->fs->fs_data;
         parent_file.fops = mount->fs->fops;
         parent_file.pwid = pwid;
@@ -398,7 +378,7 @@ int vfs_rmdir(const char *path, uint64_t pwid) {
         }
         
         struct vfs_file parent_file;
-        str_cpy(parent_file.path, parent_path);
+        strcpy(parent_file.path, parent_path);
         parent_file.fs_data = mount->fs->fs_data;
         parent_file.fops = mount->fs->fops;
         parent_file.pwid = pwid;
@@ -444,7 +424,7 @@ int vfs_unlink(const char *path, uint64_t pwid) {
         }
         
         struct vfs_file parent_file;
-        str_cpy(parent_file.path, parent_path);
+        strcpy(parent_file.path, parent_path);
         parent_file.fs_data = mount->fs->fs_data;
         parent_file.fops = mount->fs->fops;
         parent_file.pwid = pwid;
@@ -513,13 +493,13 @@ int vfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
         }
         
         struct vfs_file old_parent_file;
-        str_cpy(old_parent_file.path, old_parent_path);
+        strcpy(old_parent_file.path, old_parent_path);
         old_parent_file.fs_data = old_mount->fs->fs_data;
         old_parent_file.fops = old_mount->fs->fops;
         old_parent_file.pwid = pwid;
         
         struct vfs_file new_parent_file;
-        str_cpy(new_parent_file.path, new_parent_path);
+        strcpy(new_parent_file.path, new_parent_path);
         new_parent_file.fs_data = new_mount->fs->fs_data;
         new_parent_file.fops = new_mount->fs->fops;
         new_parent_file.pwid = pwid;
@@ -555,7 +535,7 @@ int vfs_stat(const char *path, struct vfs_stat *st, uint64_t pwid) {
     
     struct vfs_file file;
     const char *rel_path = vfs_get_relative_path(path, mount);
-    str_cpy(file.path, rel_path);
+    strcpy(file.path, rel_path);
     file.fs_data = mount->fs->fs_data;
     file.fops = mount->fs->fops;
     file.pwid = pwid;
@@ -586,7 +566,7 @@ int vfs_chmod(const char *path, uint16_t mode, uint64_t pwid) {
     
     struct vfs_file file;
     const char *rel_path = vfs_get_relative_path(path, mount);
-    str_cpy(file.path, rel_path);
+    strcpy(file.path, rel_path);
     file.fs_data = mount->fs->fs_data;
     file.fops = mount->fs->fops;
     file.pwid = pwid;
@@ -617,7 +597,7 @@ int vfs_chown(const char *path, uint64_t owner_pwid, uint64_t pwid) {
     
     struct vfs_file file;
     const char *rel_path = vfs_get_relative_path(path, mount);
-    str_cpy(file.path, rel_path);
+    strcpy(file.path, rel_path);
     file.fs_data = mount->fs->fs_data;
     file.fops = mount->fs->fops;
     file.pwid = pwid;
@@ -657,7 +637,7 @@ int vfs_sync(void) {
 }
 
 void vfs_set_cwd(const char *path) {
-    str_cpy(current_cwd, path);
+    strcpy(current_cwd, path);
 }
 
 const char* vfs_get_cwd(void) {

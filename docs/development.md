@@ -4,28 +4,26 @@
 
 ### 1.1 推荐环境
 
-**Windows 11 + WSL (推荐)**
+**Fedora Linux (推荐)**
 
-本项目推荐在 Windows 11 上使用 WSL (Windows Subsystem for Linux) 进行开发，这是经过验证的稳定环境。
+本项目推荐在 Fedora Linux 上进行开发，这是经过验证的稳定环境。其他基于 RPM 的发行版（如 RHEL、CentOS Stream）也可使用。
 
 ### 1.2 所需工具
 
 | 工具 | 用途 | 安装方式 |
 |------|------|----------|
-| WSL2 | Linux 环境 | Windows 功能启用 |
-| GCC 交叉编译器 | C 编译器 | `sudo apt install gcc-x86-64-linux-gnu` |
-| NASM | 汇编器 | `sudo apt install nasm` |
-| QEMU | x86_64 模拟器 | `sudo apt install qemu-system-x86` |
-| GRUB | 引导加载程序 | `sudo apt install grub-pc-bin xorriso` |
-| GDB | 调试器 | `sudo apt install gdb` |
+| GCC 交叉编译器 | C 编译器 | `sudo dnf install gcc-x86_64-linux-gnu` |
+| NASM | 汇编器 | `sudo dnf install nasm` |
+| QEMU | x86_64 模拟器 | `sudo dnf install qemu-system-x86` |
+| GRUB | 引导加载程序 | `sudo dnf install grub2-tools xorriso` |
+| GDB | 调试器 | `sudo dnf install gdb` |
+| make | 构建工具 | `sudo dnf install make` |
 
 ### 1.3 环境安装
 
 ```bash
-sudo apt-get update
-
-sudo apt-get install -y build-essential nasm qemu-system-x86 gdb \
-    x86_64-linux-gnu-gcc x86_64-linux-gnu-ld grub-pc-bin xorriso
+sudo dnf install -y make nasm qemu-system-x86 gdb xorriso grub2-tools \
+    gcc-x86_64-linux-gnu binutils-x86_64-linux-gnu
 ```
 
 ### 1.4 环境验证
@@ -40,8 +38,8 @@ nasm --version
 # 验证 QEMU
 qemu-system-x86_64 --version
 
-# 验证 GRUB
-grub-mkrescue --version
+# 验证 GRUB (Fedora 使用 grub2-mkrescue)
+grub2-mkrescue --version
 
 # 验证 GDB
 gdb --version
@@ -146,7 +144,7 @@ CC = x86_64-linux-gnu-gcc
 LD = x86_64-linux-gnu-ld
 AS = nasm
 
-CFLAGS = -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
+CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=kernel \
          -Isrc/include
 
@@ -182,7 +180,7 @@ iso: all
 	echo 'menuentry "AntX" {' >> isodir/boot/grub/grub.cfg
 	echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
 	echo '}' >> isodir/boot/grub/grub.cfg
-	grub-mkrescue -o build/antx.iso isodir
+	grub2-mkrescue -o build/antx.iso isodir
 
 clean:
 	rm -rf build/ isodir/
@@ -527,29 +525,7 @@ make log
 cat logs/serial.log
 ```
 
-#### 方法2：QEMU + GDB 调试
-
-终端1:
-```bash
-make debug
-```
-
-终端2:
-```bash
-gdb
-(gdb) target remote localhost:1234
-(gdb) break kernel_main
-(gdb) continue
-```
-
-#### 方法3：串口输出调试
-
-```bash
-make log
-cat logs/serial.log
-```
-
-### 6.3 添加功能顺序
+### 6.7 添加功能顺序
 
 | 阶段 | 添加功能 | 说明 |
 |------|----------|------|
@@ -622,11 +598,11 @@ make run-iso
 
 ### 8.2 GRUB 工具未安装
 
-**问题**: `grub-mkrescue: command not found`
+**问题**: `grub2-mkrescue: command not found`
 
 **解决**: 安装 GRUB 工具包:
 ```bash
-sudo apt-get install grub-pc-bin xorriso
+sudo dnf install grub2-tools xorriso
 ```
 
 ### 8.3 交叉编译器问题
@@ -635,7 +611,18 @@ sudo apt-get install grub-pc-bin xorriso
 
 **解决**: 使用交叉编译工具链:
 ```bash
-sudo apt-get install gcc-x86-64-linux-gnu binutils-x86-64-linux-gnu
+sudo dnf install gcc-x86_64-linux-gnu binutils-x86_64-linux-gnu
+```
+
+### 8.4 GCC 版本兼容问题
+
+**问题**: `error: 'bool' cannot be defined via 'typedef'`
+
+**原因**: GCC 15 默认使用 C23 标准，`bool` 已成为关键字
+
+**解决**: 在 Makefile 中指定 C11 标准:
+```makefile
+CFLAGS = -std=c11 -m64 -Wall -Wextra ...
 ```
 
 ## 九、参考资源

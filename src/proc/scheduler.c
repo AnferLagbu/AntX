@@ -91,11 +91,49 @@ void scheduler_schedule(void) {
     
     serial_puts(SERIAL_COM1, "Schedule: switch to PID=");
     serial_put_dec(SERIAL_COM1, next->pid);
+    serial_puts(SERIAL_COM1, " entry=0x");
+    serial_put_hex(SERIAL_COM1, next->context.rip);
+    serial_puts(SERIAL_COM1, " cr3=0x");
+    serial_put_hex(SERIAL_COM1, next->cr3);
     serial_puts(SERIAL_COM1, "\n");
     
-    if (prev != NULL && prev != next) {
-        extern void process_switch_asm(struct cpu_context *old, struct cpu_context *new_ctx);
-        process_switch_asm(&prev->context, &next->context);
+    extern void tss_set_kernel_stack(uint64_t rsp0);
+    tss_set_kernel_stack(next->kernel_stack);
+    
+    if (prev == NULL) {
+        serial_puts(SERIAL_COM1, "[DEBUG] First process launch:\n");
+        serial_puts(SERIAL_COM1, "  kernel_stack=0x");
+        serial_put_hex(SERIAL_COM1, next->kernel_stack);
+        serial_puts(SERIAL_COM1, "\n");
+        serial_puts(SERIAL_COM1, "  ctx.rip=0x");
+        serial_put_hex(SERIAL_COM1, next->context.rip);
+        serial_puts(SERIAL_COM1, " cs=0x");
+        serial_put_hex(SERIAL_COM1, next->context.cs);
+        serial_puts(SERIAL_COM1, "\n");
+        serial_puts(SERIAL_COM1, "  ctx.rsp=0x");
+        serial_put_hex(SERIAL_COM1, next->context.rsp);
+        serial_puts(SERIAL_COM1, " ss=0x");
+        serial_put_hex(SERIAL_COM1, next->context.ss);
+        serial_puts(SERIAL_COM1, "\n");
+        serial_puts(SERIAL_COM1, "  ctx.rflags=0x");
+        serial_put_hex(SERIAL_COM1, next->context.rflags);
+        serial_puts(SERIAL_COM1, "\n");
+        serial_puts(SERIAL_COM1, "  ctx.cr3=0x");
+        serial_put_hex(SERIAL_COM1, next->context.cr3);
+        serial_puts(SERIAL_COM1, "\n");
+        serial_puts(SERIAL_COM1, "[DEBUG] Calling process_start_user_asm...\n");
+        
+        extern void process_start_user_asm(uint64_t kernel_stack, struct cpu_context *ctx);
+        process_start_user_asm(next->kernel_stack, &next->context);
+        
+        serial_puts(SERIAL_COM1, "[DEBUG] process_start_user_asm RETURNED!\n");
+    } else {
+        __asm__ volatile ("mov %0, %%cr3" : : "r"(next->cr3));
+        
+        if (prev != next) {
+            extern void process_switch_asm(struct cpu_context *old, struct cpu_context *new_ctx);
+            process_switch_asm(&prev->context, &next->context);
+        }
     }
 }
 

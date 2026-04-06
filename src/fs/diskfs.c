@@ -3,6 +3,7 @@
 #include "ata.h"
 #include "serial.h"
 #include "pwid.h"
+#include "string.h"
 
 #define DISKFS_MAX_FDS          16
 #define DISKFS_MAX_PATH         128
@@ -24,34 +25,6 @@ static uint64_t get_time(void) {
     uint64_t tsc;
     __asm__ volatile ("rdtsc" : "=A"(tsc));
     return tsc;
-}
-
-static int str_len(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int str_cmp(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++; s2++;
-    }
-    return *s1 - *s2;
-}
-
-static void str_cpy(char *dest, const char *src) {
-    while (*src) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-}
-
-static void mem_cpy(void *dest, const void *src, uint32_t count) {
-    uint8_t *d = (uint8_t *)dest;
-    const uint8_t *s = (const uint8_t *)src;
-    for (uint32_t i = 0; i < count; i++) {
-        d[i] = s[i];
-    }
 }
 
 static struct diskfs_fd* alloc_diskfs_fd(void) {
@@ -165,7 +138,7 @@ static int diskfs_read(struct vfs_file *file, void *buf, uint32_t count) {
         }
         
         if (block_idx < 12 && inode->direct_blocks[block_idx] != 0) {
-            mem_cpy(buffer + bytes_read,
+            memcpy(buffer + bytes_read,
                     hvfs_get_inode(0) + inode->direct_blocks[block_idx] * HVFS_BLOCK_SIZE + block_offset,
                     bytes_to_read);
         }
@@ -258,7 +231,7 @@ static int diskfs_readdir(struct vfs_file *file, struct vfs_dirent *entry) {
     
     entry->inode = hvfs_entry.inode;
     entry->type = hvfs_entry.file_type;
-    str_cpy(entry->name, hvfs_entry.name);
+    strcpy(entry->name, hvfs_entry.name);
     
     return 1;
 }
@@ -267,13 +240,13 @@ static int diskfs_mkdir(struct vfs_file *parent, const char *name, uint64_t pwid
     if (parent == NULL || name == NULL) return -1;
     
     char full_path[DISKFS_MAX_PATH];
-    str_cpy(full_path, parent->path);
-    int len = str_len(full_path);
+    strcpy(full_path, parent->path);
+    int len = strlen(full_path);
     if (len > 0 && full_path[len - 1] != '/') {
         full_path[len] = '/';
         len++;
     }
-    str_cpy(full_path + len, name);
+    strcpy(full_path + len, name);
     
     return hvfs_mkdir(full_path, pwid);
 }
@@ -282,13 +255,13 @@ static int diskfs_rmdir(struct vfs_file *parent, const char *name, uint64_t pwid
     if (parent == NULL || name == NULL) return -1;
     
     char full_path[DISKFS_MAX_PATH];
-    str_cpy(full_path, parent->path);
-    int len = str_len(full_path);
+    strcpy(full_path, parent->path);
+    int len = strlen(full_path);
     if (len > 0 && full_path[len - 1] != '/') {
         full_path[len] = '/';
         len++;
     }
-    str_cpy(full_path + len, name);
+    strcpy(full_path + len, name);
     
     return hvfs_rmdir(full_path, pwid);
 }
@@ -297,13 +270,13 @@ static int diskfs_unlink(struct vfs_file *parent, const char *name, uint64_t pwi
     if (parent == NULL || name == NULL) return -1;
     
     char full_path[DISKFS_MAX_PATH];
-    str_cpy(full_path, parent->path);
-    int len = str_len(full_path);
+    strcpy(full_path, parent->path);
+    int len = strlen(full_path);
     if (len > 0 && full_path[len - 1] != '/') {
         full_path[len] = '/';
         len++;
     }
-    str_cpy(full_path + len, name);
+    strcpy(full_path + len, name);
     
     return hvfs_unlink(full_path, pwid);
 }
@@ -313,22 +286,22 @@ static int diskfs_rename(struct vfs_file *old_parent, const char *old_name,
     if (old_parent == NULL || new_parent == NULL) return -1;
     
     char old_path[DISKFS_MAX_PATH];
-    str_cpy(old_path, old_parent->path);
-    int old_len = str_len(old_path);
+    strcpy(old_path, old_parent->path);
+    int old_len = strlen(old_path);
     if (old_len > 0 && old_path[old_len - 1] != '/') {
         old_path[old_len] = '/';
         old_len++;
     }
-    str_cpy(old_path + old_len, old_name);
+    strcpy(old_path + old_len, old_name);
     
     char new_path[DISKFS_MAX_PATH];
-    str_cpy(new_path, new_parent->path);
-    int new_len = str_len(new_path);
+    strcpy(new_path, new_parent->path);
+    int new_len = strlen(new_path);
     if (new_len > 0 && new_path[new_len - 1] != '/') {
         new_path[new_len] = '/';
         new_len++;
     }
-    str_cpy(new_path + new_len, new_name);
+    strcpy(new_path + new_len, new_name);
     
     return hvfs_rename(old_path, new_path, pwid);
 }
