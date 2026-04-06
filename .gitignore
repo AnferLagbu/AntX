@@ -1,0 +1,15 @@
+logs/
+build/
+isodir/
+*.log
+*.o
+*.bin
+*.elf
+*.iso
+*.img
+
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

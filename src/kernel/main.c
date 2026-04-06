@@ -1,0 +1,179 @@
+#include "kernel.h"
+#include "user_proc.h"
+
+void ramfs_init(void);
+void diskfs_init(void);
+void devfs_init(void);
+void procfs_init(void);
+
+extern unsigned char build_user_init_bin[];
+extern unsigned int build_user_init_bin_len;
+
+static int str_len(const char *s) {
+    int len = 0;
+    while (s[len]) len++;
+    return len;
+}
+
+void panic(const char *msg) {
+    serial_puts(SERIAL_COM1, "\n\nPANIC: ");
+    serial_puts(SERIAL_COM1, msg);
+    serial_puts(SERIAL_COM1, "\nSystem halted.\n");
+    
+    while (1) {
+        __asm__ volatile ("hlt");
+    }
+}
+
+void enable_interrupts(void) {
+    __asm__ volatile ("sti");
+}
+
+void disable_interrupts(void) {
+    __asm__ volatile ("cli");
+}
+
+void interrupt_idle(void) {
+    if (proc_has_runnable()) {
+        scheduler_schedule();
+        return;
+    }
+    
+    __asm__ volatile (
+        "sti\n"
+        "hlt\n"
+        "cli\n"
+        ::: "memory"
+    );
+}
+
+static void create_default_directories(void) {
+    vfs_mkdir("/bin", 0);
+    vfs_mkdir("/sbin", 0);
+    vfs_mkdir("/etc", 0);
+    vfs_mkdir("/home", 0);
+    vfs_mkdir("/tmp", 0);
+    vfs_mkdir("/dev", 0);
+    vfs_mkdir("/proc", 0);
+    vfs_mkdir("/sys", 0);
+    vfs_mkdir("/var", 0);
+    vfs_mkdir("/usr", 0);
+    vfs_mkdir("/usr/bin", 0);
+    vfs_mkdir("/usr/lib", 0);
+}
+
+static void start_user_init(void) {
+    serial_puts(SERIAL_COM1, "[INIT] Starting user-space init process...\n");
+    
+    if (!pwid_has_original_root()) {
+        serial_puts(SERIAL_COM1, "[WARN] No root account found. Creating default...\n");
+        pwid_create_original_root("");
+    }
+    
+    int pid = user_proc_create_from_binary(build_user_init_bin, build_user_init_bin_len, 0);
+    
+    if (pid < 0) {
+        serial_puts(SERIAL_COM1, "[INIT] FATAL: Failed to create init process\n");
+        serial_puts(SERIAL_COM1, "[KERNEL] System cannot start without init process.\n");
+        while (1) {
+            __asm__ volatile ("hlt");
+        }
+        return;
+    }
+    
+    serial_puts(SERIAL_COM1, "[INIT] User init started with PID: ");
+    serial_put_dec(SERIAL_COM1, pid);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    while (proc_has_runnable()) {
+        interrupt_idle();
+    }
+    
+    serial_puts(SERIAL_COM1, "[INIT] All user processes exited\n");
+}
+
+void kernel_main(void) {
+    serial_init(SERIAL_COM1);
+    
+    serial_puts(SERIAL_COM1, "\n");
+    serial_puts(SERIAL_COM1, "AntX OS v0.1.0\n");
+    serial_puts(SERIAL_COM1, "Copyright (c) 2024 AntX Project\n");
+    serial_puts(SERIAL_COM1, "========================================\n");
+    
+    serial_puts(SERIAL_COM1, "[BOOT] Initializing kernel...\n");
+    
+    gdt_init();
+    serial_puts(SERIAL_COM1, "  [OK] GDT\n");
+    
+    idt_init();
+    serial_puts(SERIAL_COM1, "  [OK] IDT\n");
+    
+    pmm_init(MEMORY_SIZE, KERNEL_END);
+    serial_puts(SERIAL_COM1, "  [OK] PMM - ");
+    serial_put_dec(SERIAL_COM1, pmm_get_free_pages());
+    serial_puts(SERIAL_COM1, " pages free\n");
+    
+    vmm_init();
+    serial_puts(SERIAL_COM1, "  [OK] VMM\n");
+    
+    process_init();
+    session_init();
+    scheduler_init();
+    user_proc_init();
+    serial_puts(SERIAL_COM1, "  [OK] Process Manager\n");
+    serial_puts(SERIAL_COM1, "  [OK] Session Manager\n");
+    serial_puts(SERIAL_COM1, "  [OK] Scheduler\n");
+    serial_puts(SERIAL_COM1, "  [OK] User Process Manager\n");
+    
+    pwid_init();
+    serial_puts(SERIAL_COM1, "  [OK] PWID Manager\n");
+    
+    ata_init();
+    serial_puts(SERIAL_COM1, "  [OK] ATA Driver\n");
+    
+    hvfs_init();
+    
+    vfs_init();
+    serial_puts(SERIAL_COM1, "  [OK] VFS Layer\n");
+    
+    ramfs_init();
+    diskfs_init();
+    devfs_init();
+    procfs_init();
+    
+    serial_puts(SERIAL_COM1, "[VFS] Mounting filesystems...\n");
+    
+    if (vfs_mount("/", "diskfs") != 0) {
+        serial_puts(SERIAL_COM1, "  [FALLBACK] Using RamFS for root\n");
+        vfs_mount("/", "ramfs");
+    }
+    
+    vfs_mount("/dev", "devfs");
+    vfs_mount("/proc", "procfs");
+    vfs_mount("/tmp", "ramfs");
+    
+    serial_puts(SERIAL_COM1, "  [OK] Filesystem mounts\n");
+    
+    create_default_directories();
+    serial_puts(SERIAL_COM1, "  [OK] Default directories\n");
+    
+    syscall_init();
+    
+    keyboard_init();
+    
+    serial_puts(SERIAL_COM1, "\n[INIT] System initialized\n");
+    serial_puts(SERIAL_COM1, "AntX is ready.\n");
+    serial_puts(SERIAL_COM1, "\nEnabling interrupts...\n");
+    
+    enable_interrupts();
+    
+    serial_puts(SERIAL_COM1, "[DONE] System running.\n");
+    
+    start_user_init();
+    
+    serial_puts(SERIAL_COM1, "[KERNEL] System shutdown.\n");
+    
+    while (1) {
+        interrupt_idle();
+    }
+}
