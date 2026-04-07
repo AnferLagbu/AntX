@@ -428,5 +428,148 @@ python3 tests/scripts/diagnose_user_process.py --test --timeout 30
 
 ---
 
-*文档最后更新: 2026-04-06*
+## 12. 开机调试信息缺乏真正的错误检测
+
+### 问题描述
+内核启动过程中的 `[OK]` 调试信息只是"流程指示"而非"流程验证"，无法真实反映初始化是否成功。
+
+### 现状分析
+**当前实现模式：**
+```c
+// main.c 中的典型代码
+gdt_init();                    // void 返回类型
+serial_puts(SERIAL_COM1, "  [OK] GDT\n");  // 直接输出，无检测
+
+idt_init();                    // void 返回类型
+serial_puts(SERIAL_COM1, "  [OK] IDT\n");  // 直接输出，无检测
+
+pmm_init(MEMORY_SIZE, KERNEL_END);
+serial_puts(SERIAL_COM1, "  [OK] PMM - ");
+```
+
+**问题点：**
+1. 所有初始化函数返回 `void`，无法传递错误状态
+2. `[OK]` 输出在函数调用后无条件执行
+3. 即使初始化失败，仍会显示成功信息
+4. 缺乏失败时的恢复或停止机制
+
+### 涉及文件
+- [main.c](src/kernel/main.c) - 启动流程控制
+- [gdt.c](src/kernel/gdt.c) - GDT 初始化
+- [idt.c](src/kernel/idt.c) - IDT 初始化
+- [pmm.c](src/mm/pmm.c) - 物理内存管理初始化
+- [vmm.c](src/mm/vmm.c) - 虚拟内存管理初始化
+- [process.c](src/proc/process.c) - 进程管理初始化
+
+### 改进建议
+
+#### 1. 定义统一的错误码
+```c
+// src/include/errno.h (已存在，需完善)
+#define ANTX_SUCCESS          0
+#define ANTX_ERR_NULL        -1
+#define ANTX_ERR_NOMEM       -2
+#define ANTX_ERR_INVALID     -3
+#define ANTX_ERR_HARDWARE    -4
+#define ANTX_ERR_INIT_FAIL   -5
+```
+
+#### 2. 修改初始化函数返回值
+```c
+// 修改前
+void gdt_init(void) {
+    // ... 初始化代码 ...
+    // 无返回值
+}
+
+// 修改后
+int gdt_init(void) {
+    if (gdt_ptr.base == 0) {
+        return ANTX_ERR_INIT_FAIL;
+    }
+    
+    // ... 初始化代码 ...
+    
+    gdt_flush();
+    
+    // 验证 GDT 是否正确加载
+    uint64_t gdtr;
+    __asm__ volatile ("sgdt %0" : "=m"(gdtr));
+    if (gdtr != (uint64_t)&gdt_ptr) {
+        return ANTX_ERR_HARDWARE;
+    }
+    
+    return ANTX_SUCCESS;
+}
+```
+
+#### 3. 在 main.c 中添加错误处理
+```c
+// 修改前
+gdt_init();
+serial_puts(SERIAL_COM1, "  [OK] GDT\n");
+
+// 修改后
+int ret = gdt_init();
+if (ret == ANTX_SUCCESS) {
+    serial_puts(SERIAL_COM1, "  [OK] GDT\n");
+} else {
+    serial_puts(SERIAL_COM1, "  [FAIL] GDT (error: ");
+    serial_put_dec(SERIAL_COM1, ret);
+    serial_puts(SERIAL_COM1, ")\n");
+    panic("GDT initialization failed");
+}
+```
+
+#### 4. 创建初始化检查宏简化代码
+```c
+// src/include/kernel.h
+#define INIT_CHECK(func, name) \
+    do { \
+        int __ret = func(); \
+        if (__ret == ANTX_SUCCESS) { \
+            serial_puts(SERIAL_COM1, "  [OK] " name "\n"); \
+        } else { \
+            serial_puts(SERIAL_COM1, "  [FAIL] " name " (err: "); \
+            serial_put_dec(SERIAL_COM1, __ret); \
+            serial_puts(SERIAL_COM1, ")\n"); \
+            panic(name " initialization failed"); \
+        } \
+    } while(0)
+
+// 使用方式
+INIT_CHECK(gdt_init, "GDT");
+INIT_CHECK(idt_init, "IDT");
+INIT_CHECK(pmm_init, "PMM");
+```
+
+### 需要修改的函数列表
+
+| 函数 | 当前返回值 | 需改为 | 关键检查点 |
+|------|-----------|--------|-----------|
+| `gdt_init()` | void | int | GDT 寄存器验证 |
+| `idt_init()` | void | int | IDT 寄存器验证 |
+| `pmm_init()` | void | int | 内存位图分配 |
+| `vmm_init()` | void | int | CR3 寄存器读取 |
+| `process_init()` | void | int | 进程表分配 |
+| `scheduler_init()` | void | int | 调度队列初始化 |
+| `pwid_init()` | void | int | PWID 表分配 |
+| `vfs_init()` | void | int | VFS 根目录创建 |
+
+### 预期收益
+1. ✅ 启动失败时能准确定位问题模块
+2. ✅ 避免在错误状态下继续运行导致更严重问题
+3. ✅ 提供有意义的错误码便于调试
+4. ✅ 增强系统健壮性和可靠性
+
+### 优先级
+🟡 **中** - 影响系统可靠性和调试效率
+
+### 相关 Issue
+- Issue #2: 错误处理机制不完善
+- Issue #5: 缺乏测试框架
+
+---
+
+*文档最后更新: 2026-04-07*
 *基于用户进程调试会话整理*
