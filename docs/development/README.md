@@ -40,6 +40,11 @@
 |------|------|
 | [keyboard.md](keyboard.md) | 键盘驱动 - PS/2 键盘驱动实现 |
 
+### 内核优化
+| 文档 | 说明 |
+|------|------|
+| [pic-implementation.md](pic-implementation.md) | PIC 位置无关代码 - 提高内核稳定性和灵活性 |
+
 ---
 
 ## 🔧 快速开始
