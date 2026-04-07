@@ -133,7 +133,7 @@ void irq_handler(struct interrupt_frame *frame) {
 extern uint64_t isr_table[];
 extern uint64_t irq_table[];
 
-void idt_init(void) {
+int idt_init(void) {
     idt_ptr.limit = sizeof(idt) - 1;
     idt_ptr.base = (uint64_t)&idt;
 
@@ -156,5 +156,5 @@ void idt_init(void) {
 
     idt_flush((uint64_t)&idt_ptr);
     
-    serial_puts(SERIAL_COM1, "IDT initialized\n");
+    return MODULE_INIT_SUCCESS;
 }

@@ -46,7 +46,7 @@ void tss_set_kernel_stack(uint64_t rsp0) {
     tss.rsp0 = rsp0;
 }
 
-void gdt_init(void) {
+int gdt_init(void) {
     gdt_ptr.limit = sizeof(gdt) - 1;
     gdt_ptr.base = (uint64_t)&gdt;
 
@@ -67,5 +67,5 @@ void gdt_init(void) {
     gdt_flush((uint64_t)&gdt_ptr);
     tss_flush();
     
-    serial_puts(SERIAL_COM1, "GDT initialized\n");
+    return MODULE_INIT_SUCCESS;
 }

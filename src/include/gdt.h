@@ -2,6 +2,7 @@
 #define _GDT_H
 
 #include "types.h"
+#include "module_check.h"
 
 #define GDT_ENTRIES 7
 
@@ -38,7 +39,7 @@ struct tss_entry {
     uint16_t iomap_base;
 } __attribute__((packed));
 
-void gdt_init(void);
+int gdt_init(void);
 void gdt_set_gate(uint8_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
 void tss_set_gate(uint8_t num, uint64_t tss_addr);
 void tss_set_kernel_stack(uint64_t rsp0);

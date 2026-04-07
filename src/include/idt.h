@@ -2,6 +2,7 @@
 #define _IDT_H
 
 #include "types.h"
+#include "module_check.h"
 
 #define IDT_ENTRIES 256
 #define IRQ_BASE    32
@@ -34,7 +35,7 @@ struct interrupt_frame {
 
 typedef void (*interrupt_handler_t)(struct interrupt_frame *frame);
 
-void idt_init(void);
+int idt_init(void);
 void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8_t type);
 void idt_set_handler(uint8_t num, interrupt_handler_t handler);
 void irq_handler(struct interrupt_frame *frame);

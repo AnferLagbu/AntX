@@ -3,6 +3,7 @@
 #include "user_proc.h"
 #include "install_guide.h"
 #include "timer.h"
+#include "module_check.h"
 
 void ramfs_init(void);
 void diskfs_init(void);
@@ -115,11 +116,8 @@ void kernel_main(void) {
     
     serial_puts(SERIAL_COM1, "[BOOT] Initializing kernel...\n");
     
-    gdt_init();
-    serial_puts(SERIAL_COM1, "  [OK] GDT\n");
-    
-    idt_init();
-    serial_puts(SERIAL_COM1, "  [OK] IDT\n");
+    MODULE_CHECK("GDT", gdt_init);
+    MODULE_CHECK("IDT", idt_init);
     
     pmm_init(MEMORY_SIZE, KERNEL_END);
     serial_puts(SERIAL_COM1, "  [OK] PMM - ");
