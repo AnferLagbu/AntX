@@ -488,21 +488,6 @@ int user_proc_load_elf_from_memory(const uint8_t *elf_data, uint64_t elf_size, u
     serial_put_hex(SERIAL_COM1, proc->user_stack);
     serial_puts(SERIAL_COM1, "\n");
     
-    serial_puts(SERIAL_COM1, "[ELF] Checking page table...\n");
-    
-    pte_t* pml4_ptr = (pte_t*)proc->cr3;
-    uint64_t pml4_idx = (header->entry >> 39) & 0x1FF;
-    uint64_t pml4_val = pml4_ptr[pml4_idx].value;
-    serial_puts(SERIAL_COM1, "[ELF] PML4[");
-    serial_put_dec(SERIAL_COM1, pml4_idx);
-    serial_puts(SERIAL_COM1, "]=0x");
-    serial_put_hex(SERIAL_COM1, pml4_val);
-    serial_puts(SERIAL_COM1, " present=");
-    serial_put_dec(SERIAL_COM1, pml4_ptr[pml4_idx].fields.present);
-    serial_puts(SERIAL_COM1, "\n");
-    
-    serial_puts(SERIAL_COM1, "[ELF] Page table check done.\n");
-    
     proc->state = PROC_READY;
     
     serial_puts(SERIAL_COM1, "Process created: PID=");
