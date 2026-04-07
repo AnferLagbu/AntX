@@ -1,5 +1,7 @@
 # AntX 内存管理设计
 
+> **实现状态说明**：本文档描述的内存管理设计，当前实现为简化版本。物理内存管理使用位图分配器，虚拟内存管理使用简单的页表映射。Buddy System 和 Slab Allocator 等高级特性尚未实现。
+
 ## 一、设计概述
 
 ### 1.1 设计目标
@@ -7,9 +9,21 @@
 - 简单可靠的分页内存管理
 - 支持进程隔离
 - 与 PWID 权限模型集成
-- 支持写时复制 (Copy-on-Write)
+- 支持写时复制 (Copy-on-Write) - **未实现**
 
-### 1.2 内存管理架构
+### 1.2 当前实现状态
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 物理内存管理 | ✅ 已实现 | 使用位图分配器 |
+| 虚拟内存管理 | ✅ 已实现 | 简单页表映射 |
+| 进程隔离 | ✅ 已实现 | 每个进程独立页表 |
+| Buddy System | ⏳ 未实现 | 计划中 |
+| Slab Allocator | ⏳ 未实现 | 计划中 |
+| 写时复制 | ⏳ 未实现 | 计划中 |
+| 内存映射 (mmap) | ⏳ 未实现 | 计划中 |
+
+### 1.3 内存管理架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -17,15 +31,15 @@
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │   ┌─────────────────────────────────────────────────────┐   │
-│   │                  页分配器                            │   │
-│   │  (Buddy System + Slab Allocator)                   │   │
+│   │              页分配器 (当前实现)                      │   │
+│   │  (Bitmap Allocator)                                 │   │
 │   └─────────────────────────────────────────────────────┘   │
 │                           │                                  │
 │        ┌──────────────────┼──────────────────┐            │
 │        ▼                  ▼                  ▼            │
 │   ┌─────────┐       ┌─────────┐         ┌─────────┐        │
 │   │ 进程页表  │       │ 内核页表  │         │ VM 模块  │        │
-│   │ (每个进程)│       │ (全局)   │         │        │        │
+│   │ (每个进程)│       │ (全局)   │         │(未实现) │        │
 │   └─────────┘       └─────────┘         └─────────┘        │
 │                           │                                  │
 └───────────────────────────┼──────────────────────────────────┘
@@ -185,11 +199,39 @@ struct pwid_page_table_entry {
 
 ## 四、内存分配器
 
-### 4.1 物理内存管理
+### 4.1 物理内存管理（当前实现）
+
+**实现方式**：位图分配器
+
+```c
+// 当前实现 (src/mm/pmm.c)
+#define BITMAP_SIZE 32768
+static uint32_t bitmap[BITMAP_SIZE];
+
+void* pmm_alloc_page(void) {
+    for (uint64_t i = 0; i < BITMAP_SIZE * 32; i++) {
+        if (test_bit(i)) {
+            clear_bit(i);
+            mem_info.free_pages--;
+            return (void*)(i * PAGE_SIZE);
+        }
+    }
+    return NULL;
+}
+```
+
+**特点**：
+- 简单高效的位图管理
+- 支持单页和连续多页分配
+- 固定 4KB 页大小
+
+### 4.2 Buddy System（未实现）
+
+计划实现的 Buddy System：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    物理内存管理                              │
+│                    物理内存管理（计划）                        │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │   ┌─────────────────────────────────────────────────────┐   │
@@ -217,60 +259,74 @@ struct pwid_page_table_entry {
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Buddy System
+### 4.3 虚拟内存管理（当前实现）
+
+**实现方式**：简单的四级页表映射
 
 ```c
-struct buddy_zone {
-    uint64_t start_addr;      // 区域起始地址
-    uint64_t size;            // 总大小
-    struct free_list {
-        struct list_head pages[MAX_ORDER];
-    } free_lists;
-    uint64_t free_pages;       // 空闲页数
-};
+// 当前实现 (src/mm/vmm.c)
+void vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags) {
+    pte_t* pml4 = (pte_t*)kernel_pml4;
+    
+    pte_t* pdpt = get_page_table((uint64_t)pml4, PML4_INDEX(virt), 1);
+    pte_t* pd = get_page_table((uint64_t)pdpt, PDPT_INDEX(virt), 1);
+    pte_t* pt = get_page_table((uint64_t)pd, PD_INDEX(virt), 1);
+    
+    pte_t* entry = &pt[PT_INDEX(virt)];
+    entry->fields.present = (flags & PAGE_PRESENT) ? 1 : 0;
+    entry->fields.rw = (flags & PAGE_WRITABLE) ? 1 : 0;
+    entry->fields.user = (flags & PAGE_USER) ? 1 : 0;
+    entry->fields.frame = phys >> 12;
+}
 ```
 
-### 4.3 虚拟内存管理
-
-```c
-struct vm_area_struct {
-    uint64_t vm_start;         // 起始地址
-    uint64_t vm_end;          // 结束地址
-    uint64_t vm_flags;        // 标志
-    uint64_t pwid;           // 关联 PWID
-    
-    struct file *vm_file;     // 映射文件
-    uint64_t vm_pgoff;        // 文件偏移
-    
-    struct vm_operations *vm_ops;
-    
-    struct list_head vm_list;
-};
-```
+**特点**：
+- 使用启动时创建的页表
+- 支持用户进程独立页表
+- 内核空间共享映射
 
 ## 五、进程内存管理
 
-### 5.1 进程内存结构
+### 5.1 进程内存结构（当前实现）
 
 ```c
-struct process_mm {
-    struct pgd *pgd;                 // 页目录指针
-    uint64_t start_code, end_code;  // 代码段
-    uint64_t start_data, end_data;  // 数据段
-    uint64_t start_brk, brk;        // 堆
-    uint64_t start_stack;           // 栈
-    uint64_t arg_start, arg_end;    // 命令行参数
-    uint64_t env_start, env_end;    // 环境变量
+// 当前实现 (src/include/proc.h)
+struct process {
+    uint64_t pid;
+    uint64_t session_id;
+    uint64_t parent_pid;
+    uint64_t pwid;
     
-    struct vm_area_struct *mmap;    // 内存映射链表
-    uint64_t total_vm;               // 映射的 VM 区域数
-    uint64_t locked_vm;             // 锁定的页数
+    enum process_state state;
+    uint64_t exit_code;
     
-    uint64_t pwid;                  // 进程 PWID
+    int priority;
+    uint64_t cpu_time;
+    uint64_t start_time;
+    uint64_t time_slice;
+    
+    uint64_t cr3;              // 页表基址
+    uint64_t kernel_stack;
+    uint64_t user_stack;
+    
+    struct cpu_context context;
+    
+    struct process *next;
+    struct process *prev;
+    struct process *parent;
+    struct process *children;
+    struct process *sibling;
 };
 ```
 
-### 5.2 写时复制 (Copy-on-Write)
+**当前实现特点**：
+- 每个进程有独立的页表 (cr3)
+- 内核栈和用户栈分离
+- 简单的进程控制块结构
+
+### 5.2 写时复制 (Copy-on-Write) - 未实现
+
+计划实现的 COW 机制：
 
 ```
 fork() 时的 COW 机制：
@@ -407,14 +463,29 @@ bool check_memory_access(uint64_t addr, int access_type, uint64_t pwid) {
 
 ### 9.1 现阶段的简化设计
 
-- 固定 4KB 页大小
-- 简单物理内存分配器（位图）
-- 不实现交换空间
-- 简化页面回收
+- 固定 4KB 页大小 ✅
+- 简单物理内存分配器（位图）✅
+- 不实现交换空间 ✅
+- 简化页面回收（未实现）
+- 进程独立页表 ✅
+- 内核空间共享映射 ✅
 
-### 9.2 未来可扩展
+### 9.2 已实现功能
+
+| 功能 | 文件 | 说明 |
+|------|------|------|
+| 物理内存分配 | src/mm/pmm.c | 位图分配器 |
+| 虚拟内存映射 | src/mm/vmm.c | 四级页表 |
+| 进程页表管理 | src/mm/vmm.c | 用户进程独立页表 |
+| 内核页表初始化 | src/kernel/boot.asm | 启动时创建 |
+
+### 9.3 未来可扩展
 
 - 支持大页 (Huge Pages)
 - 支持内存压缩
 - 支持持久内存
 - 支持 NUMA 感知
+- Buddy System 分配器
+- Slab 分配器
+- 写时复制 (COW)
+- 内存映射 (mmap)

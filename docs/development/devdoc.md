@@ -1,4 +1,7 @@
 # AntX 系统调用接口命名优化：更精准的英文表达 + 贴合自研特色
+
+> **文档状态说明**：本文档描述了系统调用命名的优化方案，但当前代码实现仍使用传统命名。用户态头文件 (`src/include/user/syscall.h`) 已定义优化后的命名，内核态实现 (`src/kernel/syscall.c`) 仍使用传统命名。后续开发将逐步迁移至优化命名。
+
 ## 一、核心优化原则
 1. **语义精准**：用更贴合操作本质的英文单词，替代 Unix/Linux 历史遗留的模糊命名；
 2. **统一风格**：所有接口采用「动作+对象」的动宾结构（如 `proc_create` → 保留，`fs_open` → 保留，`auth_login` → 优化），避免混合风格；
@@ -230,6 +233,12 @@ syscall(109, "my-antx-node", 11);
 | - | -106 | E_AUTH_DENY | `E_PWID_OPERATION_DENIED` | 明确「PWID 操作被拒绝」 |
 
 ## 五、优化总结
+
+### 当前实现状态
+- **内核态实现**：使用传统命名（如 `proc_exec`, `proc_exit`, `fs_chmod` 等）
+- **用户态接口**：已定义优化命名（如 `proc_execute`, `proc_terminate`, `fs_set_permissions` 等）
+- **迁移计划**：后续开发将逐步统一至优化命名
+
 ### 核心优化点
 1. **命名风格统一**：所有接口采用「动作+对象」的动宾结构，替换 Unix 缩写（如 `chmod`→`set_permissions`、`brk`→`set_break_addr`）；
 2. **语义精准无歧义**：补充关键修饰词（如 `sleep`→`sleep_ms`、`stat`→`get_stat_fd`），避免模糊表达；

@@ -1,5 +1,7 @@
 # AntX 进程与会话模型设计
 
+> **实现状态说明**：本文档描述的进程与会话模型设计，部分已实现，部分仍在开发中。当前实现了基本的进程创建、调度和会话管理，进程树结构和高级调度特性尚未完全实现。
+
 ## 一、设计概述
 
 ### 1.1 核心思想
@@ -10,6 +12,18 @@ AntX 的进程管理采用**会话级 PWID**模型，与多会话身份机制完
 - **PWID 绑定到会话**，而非单个进程
 - 同一会话内的所有进程共享该 PWID 权限
 - 进程创建时继承父进程的会话 PWID
+
+### 1.2 当前实现状态
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 进程创建 | ✅ 已实现 | process_create() |
+| 进程调度 | ✅ 已实现 | 简单轮转调度 |
+| 进程退出 | ✅ 已实现 | process_exit() |
+| 会话管理 | ✅ 已实现 | 基本会话结构 |
+| 进程树 | ⏳ 部分实现 | 父子关系已建立 |
+| 多级反馈队列 | ⏳ 未实现 | 计划中 |
+| PWID 感知调度 | ⏳ 未实现 | 计划中 |
 
 ### 1.2 与传统模型的对比
 
@@ -80,38 +94,43 @@ AntX 的进程管理采用**会话级 PWID**模型，与多会话身份机制完
 
 ## 三、进程设计
 
-### 3.1 进程结构
+### 3.1 进程结构（当前实现）
 
 ```c
+// 当前实现 (src/include/proc.h)
 struct process {
-    uint64_t pid;              // 进程 ID
-    uint64_t session_id;       // 所属会话 ID
-    uint64_t parent_pid;       // 父进程 PID
-    uint64_t pwid;            // 继承自会话的 PWID
+    uint64_t pid;
+    uint64_t session_id;
+    uint64_t parent_pid;
+    uint64_t pwid;
     
-    // 进程状态
     enum process_state state;
     uint64_t exit_code;
     
-    // 调度信息
     int priority;
     uint64_t cpu_time;
     uint64_t start_time;
+    uint64_t time_slice;
     
-    // 内存信息
     uint64_t cr3;              // 页表基址
-    uint64_t heap_start;
-    uint64_t stack_ptr;
+    uint64_t kernel_stack;
+    uint64_t user_stack;
     
-    // 文件描述符表
-    struct fd_table *fd_table;
+    struct cpu_context context;
     
-    // 链表指针
     struct process *next;
+    struct process *prev;
     struct process *parent;
     struct process *children;
+    struct process *sibling;
 };
 ```
+
+**当前实现特点**：
+- 简化的进程控制块
+- 包含基本的调度信息
+- 支持进程树结构（父子关系）
+- 独立的页表和栈空间
 
 ### 3.2 进程状态
 

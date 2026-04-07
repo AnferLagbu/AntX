@@ -1,5 +1,7 @@
 # AntX 系统调用接口设计
 
+> **实现状态说明**：本文档描述的系统调用接口设计，部分已实现，部分仍在开发中。具体实现状态见各系统调用说明。
+
 ## 一、设计概述
 
 ### 1.1 设计原则
@@ -59,99 +61,99 @@ AntX 使用软件中断实现系统调用：
 
 ### 2.1 进程管理
 
-| 调用号 | 名称 | 描述 | 参数 |
-|--------|------|------|------|
-| 0 | proc_create | 创建进程 | - |
-| 1 | proc_exec | 执行程序 | (path, argv, envp) |
-| 2 | proc_exit | 退出进程 | (exit_code) |
-| 3 | proc_wait | 等待子进程 | (pid, status) |
-| 4 | proc_getid | 获取进程ID | - |
-| 5 | proc_getppid | 获取父进程ID | - |
-| 6 | proc_getpwid | 获取当前PWID | - |
-| 7 | proc_setpwid | 设置当前PWID | (pwid) |
-| 8 | proc_setpri | 调整进程优先级 | (inc) |
-| 9 | proc_yield | 放弃CPU | - |
-| 10 | proc_sleep | 睡眠 | (milliseconds) |
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 0 | proc_create | 创建进程 | - | ✅ 已实现 |
+| 1 | proc_exec | 执行程序 | (path, argv, envp) | ✅ 已实现 |
+| 2 | proc_exit | 退出进程 | (exit_code) | ✅ 已实现 |
+| 3 | proc_wait | 等待子进程 | (pid, status) | ✅ 已实现 |
+| 4 | proc_getid | 获取进程ID | - | ✅ 已实现 |
+| 5 | proc_getppid | 获取父进程ID | - | ✅ 已实现 |
+| 6 | proc_getpwid | 获取当前PWID | - | ✅ 已实现 |
+| 7 | proc_setpwid | 设置当前PWID | (pwid) | ✅ 已实现 |
+| 8 | proc_setpri | 调整进程优先级 | (inc) | ⏳ 未实现 |
+| 9 | proc_yield | 放弃CPU | - | ✅ 已实现 |
+| 10 | proc_sleep | 睡眠 | (milliseconds) | ⏳ 未实现 |
 
 ### 2.2 文件操作
 
-| 调用号 | 名称 | 描述 | 参数 |
-|--------|------|------|------|
-| 20 | fs_open | 打开文件 | (path, flags, mode) |
-| 21 | fs_close | 关闭文件 | (fd) |
-| 22 | fs_read | 读取文件 | (fd, buf, count) |
-| 23 | fs_write | 写入文件 | (fd, buf, count) |
-| 24 | fs_seek | 移动文件指针 | (fd, offset, whence) |
-| 25 | fs_stat | 获取文件状态 | (path, stat_buf) |
-| 26 | fs_fstat | 获取文件状态(FD) | (fd, stat_buf) |
-| 27 | fs_chmod | 修改权限 | (path, mode) |
-| 28 | fs_chown | 修改所有者 | (path, pwid) |
-| 29 | fs_unlink | 删除文件 | (path) |
-| 30 | fs_rename | 重命名 | (old, new) |
-| 31 | fs_mkdir | 创建目录 | (path, mode) |
-| 32 | fs_rmdir | 删除目录 | (path) |
-| 33 | fs_readdir | 读取目录 | (fd, dirent) |
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 20 | fs_open | 打开文件 | (path, flags, mode) | ✅ 已实现 |
+| 21 | fs_close | 关闭文件 | (fd) | ✅ 已实现 |
+| 22 | fs_read | 读取文件 | (fd, buf, count) | ✅ 已实现 |
+| 23 | fs_write | 写入文件 | (fd, buf, count) | ✅ 已实现 |
+| 24 | fs_seek | 移动文件指针 | (fd, offset, whence) | ✅ 已实现 |
+| 25 | fs_stat | 获取文件状态 | (path, stat_buf) | ✅ 已实现 |
+| 26 | fs_fstat | 获取文件状态(FD) | (fd, stat_buf) | ⏳ 未实现 |
+| 27 | fs_chmod | 修改权限 | (path, mode) | ✅ 已实现 |
+| 28 | fs_chown | 修改所有者 | (path, pwid) | ✅ 已实现 |
+| 29 | fs_unlink | 删除文件 | (path) | ✅ 已实现 |
+| 30 | fs_rename | 重命名 | (old, new) | ✅ 已实现 |
+| 31 | fs_mkdir | 创建目录 | (path, mode) | ✅ 已实现 |
+| 32 | fs_rmdir | 删除目录 | (path) | ✅ 已实现 |
+| 33 | fs_readdir | 读取目录 | (fd, dirent) | ✅ 已实现 |
 
 ### 2.3 PWID 权限管理
 
-| 调用号 | 名称 | 描述 | 参数 |
-|--------|------|------|------|
-| 40 | auth_login | 登录获取PWID | (password, note) |
-| 41 | auth_logout | 注销会话 | - |
-| 42 | auth_elevate | 临时提权 | (command) |
-| 43 | auth_create | 创建新PWID(Root) | (password, note, level) |
-| 44 | auth_delete | 删除PWID(Root) | (target_pwid) |
-| 45 | auth_list | 列出所有PWID(Root) | - |
-| 46 | auth_info | 获取PWID信息 | (target_pwid) |
-| 47 | auth_setnote | 修改备注 | (new_note) |
-| 48 | auth_changepw | 修改密码 | (old_pw, new_pw) |
-| 49 | auth_verify | 验证密码 | (password) |
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 40 | auth_login | 登录获取PWID | (password, note) | ✅ 已实现 |
+| 41 | auth_logout | 注销会话 | - | ✅ 已实现 |
+| 42 | auth_elevate | 临时提权 | (command) | ⏳ 未实现 |
+| 43 | auth_create | 创建新PWID(Root) | (password, note, level) | ✅ 已实现 |
+| 44 | auth_delete | 删除PWID(Root) | (target_pwid) | ✅ 已实现 |
+| 45 | auth_list | 列出所有PWID(Root) | - | ✅ 已实现 |
+| 46 | auth_info | 获取PWID信息 | (target_pwid) | ✅ 已实现 |
+| 47 | auth_setnote | 修改备注 | (new_note) | ⏳ 未实现 |
+| 48 | auth_changepw | 修改密码 | (old_pw, new_pw) | ✅ 已实现 |
+| 49 | auth_verify | 验证密码 | (password) | ✅ 已实现 |
 
 ### 2.4 内存管理
 
-| 调用号 | 名称 | 描述 | 参数 |
-|--------|------|------|------|
-| 60 | mem_brk | 设置进程结束地址 | (addr) |
-| 61 | mem_map | 内存映射 | (addr, length, prot, flags, fd, offset) |
-| 62 | mem_unmap | 取消内存映射 | (addr, length) |
-| 63 | mem_protect | 设置内存保护 | (addr, length, prot) |
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 60 | mem_brk | 设置进程结束地址 | (addr) | ⏳ 未实现 |
+| 61 | mem_map | 内存映射 | (addr, length, prot, flags, fd, offset) | ⏳ 未实现 |
+| 62 | mem_unmap | 取消内存映射 | (addr, length) | ⏳ 未实现 |
+| 63 | mem_protect | 设置内存保护 | (addr, length, prot) | ⏳ 未实现 |
 
 ### 2.5 通信
 
-| 调用号 | 名称 | 描述 | 参数 |
-|--------|------|------|------|
-| 80 | ipc_pipe | 创建管道 | (fd[2]) |
-| 81 | net_socket | 创建套接字 | (domain, type, protocol) |
-| 82 | net_bind | 绑定地址 | (sockfd, addr, addrlen) |
-| 83 | net_listen | 监听 | (sockfd, backlog) |
-| 84 | net_accept | 接受连接 | (sockfd, addr, addrlen) |
-| 85 | net_connect | 连接 | (sockfd, addr, addrlen) |
-| 86 | net_send | 发送数据 | (sockfd, buf, len, flags) |
-| 87 | net_recv | 接收数据 | (sockfd, buf, len, flags) |
-| 88 | net_shutdown | 关闭连接 | (sockfd, how) |
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 80 | ipc_pipe | 创建管道 | (fd[2]) | ⏳ 未实现 |
+| 81 | net_socket | 创建套接字 | (domain, type, protocol) | ⏳ 未实现 |
+| 82 | net_bind | 绑定地址 | (sockfd, addr, addrlen) | ⏳ 未实现 |
+| 83 | net_listen | 监听 | (sockfd, backlog) | ⏳ 未实现 |
+| 84 | net_accept | 接受连接 | (sockfd, addr, addrlen) | ⏳ 未实现 |
+| 85 | net_connect | 连接 | (sockfd, addr, addrlen) | ⏳ 未实现 |
+| 86 | net_send | 发送数据 | (sockfd, buf, len, flags) | ⏳ 未实现 |
+| 87 | net_recv | 接收数据 | (sockfd, buf, len, flags) | ⏳ 未实现 |
+| 88 | net_shutdown | 关闭连接 | (sockfd, how) | ⏳ 未实现 |
 
 ### 2.6 系统信息
 
-| 调用号 | 名称 | 描述 | 参数 |
-|--------|------|------|------|
-| 100 | env_getcwd | 获取当前目录 | (buf, size) |
-| 101 | env_chdir | 改变目录 | (path) |
-| 102 | fs_sync | 同步文件系统 | - |
-| 103 | sys_reboot | 重启 | (cmd) |
-| 104 | sys_time | 获取时间 | - |
-| 105 | sys_info | 获取系统信息 | (buf) |
-| 106 | env_getvar | 获取环境变量 | (name) |
-| 107 | env_setvar | 设置环境变量 | (name, value, overwrite) |
-| 108 | sys_gethostname | 获取主机名 | (buf, size) |
-| 109 | sys_sethostname | 设置主机名(Root) | (name, len) |
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 100 | env_getcwd | 获取当前目录 | (buf, size) | ✅ 已实现 |
+| 101 | env_chdir | 改变目录 | (path) | ✅ 已实现 |
+| 102 | fs_sync | 同步文件系统 | - | ✅ 已实现 |
+| 103 | sys_reboot | 重启 | (cmd) | ⏳ 未实现 |
+| 104 | sys_time | 获取时间 | - | ⏳ 未实现 |
+| 105 | sys_info | 获取系统信息 | (buf) | ⏳ 未实现 |
+| 106 | env_getvar | 获取环境变量 | (name) | ⏳ 未实现 |
+| 107 | env_setvar | 设置环境变量 | (name, value, overwrite) | ⏳ 未实现 |
+| 108 | sys_gethostname | 获取主机名 | (buf, size) | ✅ 已实现 |
+| 109 | sys_sethostname | 设置主机名(Root) | (name, len) | ✅ 已实现 |
 
 ### 2.7 设备操作
 
-| 调用号 | 名称 | 描述 | 参数 |
-|--------|------|------|------|
-| 120 | dev_ioctl | 设备控制 | (fd, cmd, arg) |
-| 121 | dev_read | 读取设备 | (fd, buf, n) |
-| 122 | dev_write | 写入设备 | (fd, buf, n) |
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 120 | dev_ioctl | 设备控制 | (fd, cmd, arg) | ⏳ 未实现 |
+| 121 | dev_read | 读取设备 | (fd, buf, n) | ⏳ 未实现 |
+| 122 | dev_write | 写入设备 | (fd, buf, n) | ⏳ 未实现 |
 
 ## 三、核心系统调用详解
 
