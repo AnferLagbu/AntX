@@ -35,6 +35,11 @@
 | [hivefs.md](hivefs.md) | HiveFS 文件系统 - 设计与实现 |
 | [hvfs-disk.md](hvfs-disk.md) | HVFS 磁盘格式 - 磁盘布局与数据结构 |
 
+### 驱动程序
+| 文档 | 说明 |
+|------|------|
+| [keyboard.md](keyboard.md) | 键盘驱动 - PS/2 键盘驱动实现 |
+
 ---
 
 ## 🔧 快速开始
