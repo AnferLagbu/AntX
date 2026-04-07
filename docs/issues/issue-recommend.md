@@ -73,7 +73,7 @@ static void str_cpy(char *dest, const char *src) {
 
 ---
 
-## 2. 错误处理机制不完善
+## 2. 错误处理机制不完善 ⏳ 待解决
 
 ### 问题描述
 错误处理分散且不一致，缺乏统一的错误码定义和处理流程。
@@ -109,7 +109,7 @@ void log_info(const char *module, const char *msg);
 
 ---
 
-## 3. 内存管理功能不足
+## 3. 内存管理功能不足 ⏳ 待解决
 
 ### 问题描述
 当前只实现了页级物理内存分配，缺乏小内存分配能力。
@@ -141,7 +141,7 @@ struct mem_stats {
 
 ---
 
-## 4. 硬编码配置值
+## 4. 硬编码配置值 ⏳ 待解决
 
 ### 问题描述
 关键参数硬编码在源文件中，缺乏灵活性。
@@ -179,7 +179,7 @@ struct mem_stats {
 
 ---
 
-## 5. 缺乏测试框架
+## 5. 缺乏测试框架 ⏳ 待解决
 
 ### 问题描述
 项目没有单元测试和集成测试，难以验证代码正确性。
@@ -216,7 +216,7 @@ test: all
 
 ---
 
-## 6. 代码注释不足
+## 6. 代码注释不足 ⏳ 待解决
 
 ### 问题描述
 代码缺乏注释，复杂逻辑没有解释，不利于维护。
@@ -244,7 +244,7 @@ int pwid_create(const char *password, const char *note, uint8_t level);
 
 ---
 
-## 7. 安全性增强
+## 7. 安全性增强 ⏳ 待解决
 
 ### 问题描述
 安全相关实现需要更严格的验证。
@@ -270,7 +270,7 @@ void secure_zero(void *ptr, size_t len) {
 
 ---
 
-## 8. 其他建议
+## 8. 其他建议 ⏳ 待解决
 
 ### 8.1 进程管理增强
 - 实现进程优先级调度
@@ -309,7 +309,7 @@ void secure_zero(void *ptr, size_t len) {
 
 ---
 
-## 9. 用户进程启动问题（当前未解决）
+## 9. 用户进程启动问题 🔶 部分解决
 
 ### 问题描述
 内核成功切换到用户进程 (PID=1) 后，用户模式代码未能正常执行或输出。
@@ -331,10 +331,10 @@ void secure_zero(void *ptr, size_t len) {
   4. 用户进程的 sys_write 系统调用未正确实现
 
 ### 相关文件
-- [switch.asm](src/proc/switch.asm) - process_start_user_asm 实现
-- [user_proc.c](src/proc/user_proc.c) - 用户进程创建和 ELF 加载
-- [scheduler.c](src/proc/scheduler.c) - 调度器逻辑
-- [user_init_bin.c](src/user/embedded/user_init_bin.c) - 嵌入式 init 二进制
+- [switch.asm](../../src/proc/switch.asm) - process_start_user_asm 实现
+- [user_proc.c](../../src/proc/user_proc.c) - 用户进程创建和 ELF 加载
+- [scheduler.c](../../src/proc/scheduler.c) - 调度器逻辑
+- [user_init_bin.c](../../src/user/embedded/user_init_bin.c) - 嵌入式 init 二进制
 
 ### 调试信息
 最新测试日志 (`tests/scripts/logs/qemu_run_20260406_215942.log`) 关键行：
@@ -377,7 +377,7 @@ Line 87-88: [DEBUG] First process launch:
 
 ---
 
-## 10. 测试框架初步实现
+## 10. 测试框架初步实现 ✅ 已解决
 
 ### 已完成工作
 ✅ 创建了诊断测试脚本 `tests/scripts/diagnose_user_process.py`
@@ -424,7 +424,7 @@ python3 tests/scripts/diagnose_user_process.py --test --timeout 30
 
 ---
 
-## 11. 近期代码更改汇总
+## 11. 近期代码更改汇总 ✅ 已完成
 
 ### 本次修改的核心文件
 
@@ -453,7 +453,7 @@ python3 tests/scripts/diagnose_user_process.py --test --timeout 30
 
 ---
 
-## 12. 开机调试信息缺乏真正的错误检测
+## 12. 开机调试信息缺乏真正的错误检测 ⏳ 待解决
 
 ### 问题描述
 内核启动过程中的 `[OK]` 调试信息只是"流程指示"而非"流程验证"，无法真实反映初始化是否成功。
@@ -479,12 +479,12 @@ serial_puts(SERIAL_COM1, "  [OK] PMM - ");
 4. 缺乏失败时的恢复或停止机制
 
 ### 涉及文件
-- [main.c](src/kernel/main.c) - 启动流程控制
-- [gdt.c](src/kernel/gdt.c) - GDT 初始化
-- [idt.c](src/kernel/idt.c) - IDT 初始化
-- [pmm.c](src/mm/pmm.c) - 物理内存管理初始化
-- [vmm.c](src/mm/vmm.c) - 虚拟内存管理初始化
-- [process.c](src/proc/process.c) - 进程管理初始化
+- [main.c](../../src/kernel/main.c) - 启动流程控制
+- [gdt.c](../../src/kernel/gdt.c) - GDT 初始化
+- [idt.c](../../src/kernel/idt.c) - IDT 初始化
+- [pmm.c](../../src/mm/pmm.c) - 物理内存管理初始化
+- [vmm.c](../../src/mm/vmm.c) - 虚拟内存管理初始化
+- [process.c](../../src/proc/process.c) - 进程管理初始化
 
 ### 改进建议
 
