@@ -23,6 +23,11 @@ SECTIONS
     .data : {
         *(.data)
         *(.data.*)
+        
+        . = ALIGN(8);
+        _GLOBAL_OFFSET_TABLE_ = .;
+        *(.got)
+        *(.got.plt)
     }
     
     .bss : {
@@ -31,9 +36,30 @@ SECTIONS
         *(COMMON)
     }
     
+    .rela.dyn : {
+        *(.rela.init)
+        *(.rela.text .rela.text.*)
+        *(.rela.rodata .rela.rodata.*)
+        *(.rela.data .rela.data.*)
+        *(.rela.got)
+        *(.rela.bss .rela.bss.*)
+        *(.rela.ifunc)
+    }
+    
+    .dynsym : {
+        *(.dynsym)
+    }
+    
+    .dynstr : {
+        *(.dynstr)
+    }
+    
     /DISCARD/ : {
         *(.comment)
         *(.note.*)
         *(.eh_frame*)
     }
+    
+    _kernel_start = .;
+    _kernel_end = .;
 }

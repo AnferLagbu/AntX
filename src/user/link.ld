@@ -18,12 +18,21 @@ SECTIONS
     .data : {
         *(.data)
         *(.data.*)
+        
+        . = ALIGN(8);
+        _GLOBAL_OFFSET_TABLE_ = .;
+        *(.got)
+        *(.got.plt)
     }
     
     .bss : {
         *(.bss)
         *(.bss.*)
         *(COMMON)
+    }
+    
+    .rela.dyn : {
+        *(.rela.*)
     }
     
     /DISCARD/ : {

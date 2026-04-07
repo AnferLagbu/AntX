@@ -44,6 +44,7 @@
 | 文档 | 说明 |
 |------|------|
 | [pic-implementation.md](pic-implementation.md) | PIC 位置无关代码 - 提高内核稳定性和灵活性 |
+| [pic-quick-start.md](pic-quick-start.md) | PIC 快速开始 - 具体实现步骤和代码示例 |
 
 ---
 

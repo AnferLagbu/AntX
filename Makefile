@@ -2,11 +2,11 @@ CC = x86_64-linux-gnu-gcc
 LD = x86_64-linux-gnu-ld
 AS = nasm
 
-CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
-         -fno-asynchronous-unwind-tables -fno-ident -mcmodel=kernel \
+CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
+         -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
          -Isrc/include
 
-USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fno-pie -fno-stack-protector \
+USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
               -Isrc/include
 
