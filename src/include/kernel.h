@@ -15,6 +15,7 @@
 #include "string.h"
 #include "printk.h"
 #include "ata.h"
+#include "assert.h"
 
 #define KERNEL_NAME    "AntX"
 #define KERNEL_VERSION "0.1.0"

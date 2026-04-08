@@ -16,6 +16,7 @@
 #define SERIAL_LINE_STATUS_REG(port) (port + 5)
 
 void serial_init(uint16_t port);
+void serial_enable_log(void);
 void serial_putc(uint16_t port, char c);
 void serial_puts(uint16_t port, const char *s);
 void serial_write(uint16_t port, const void *buf, uint64_t count);

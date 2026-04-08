@@ -1,5 +1,8 @@
 #include "serial.h"
 #include "io.h"
+#include "log_buffer.h"
+
+static int log_enabled = 0;
 
 void serial_init(uint16_t port) {
     outb(SERIAL_INT_ENABLE_REG(port), 0x00);
@@ -12,6 +15,11 @@ void serial_init(uint16_t port) {
     outb(SERIAL_INT_ENABLE_REG(port), 0x01);
 }
 
+void serial_enable_log(void) {
+    log_enabled = 1;
+    log_init();
+}
+
 static int serial_is_transmit_empty(uint16_t port) {
     return inb(SERIAL_LINE_STATUS_REG(port)) & 0x20;
 }
@@ -19,6 +27,10 @@ static int serial_is_transmit_empty(uint16_t port) {
 void serial_putc(uint16_t port, char c) {
     while (serial_is_transmit_empty(port) == 0);
     outb(SERIAL_DATA_REG(port), c);
+    
+    if (log_enabled && c != '\r') {
+        log_write_char(c);
+    }
 }
 
 void serial_puts(uint16_t port, const char *s) {

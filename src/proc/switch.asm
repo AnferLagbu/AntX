@@ -104,3 +104,5 @@ process_start_user_asm:
     sti
     
     iretq
+
+section .note.GNU-stack noalloc noexec nowrite progbits

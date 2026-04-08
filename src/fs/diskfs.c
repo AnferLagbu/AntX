@@ -122,35 +122,21 @@ static int diskfs_read(struct vfs_file *file, void *buf, uint32_t count) {
         return -1;
     }
     
-    uint32_t bytes_read = 0;
-    uint8_t *buffer = (uint8_t *)buf;
+    int hvfs_fd = hvfs_open(file->path, HVFS_O_RDONLY, fdf->pwid);
+    if (hvfs_fd < 0) return -1;
     
-    while (bytes_read < count && fdf->offset < inode->size) {
-        uint32_t block_idx = fdf->offset / HVFS_BLOCK_SIZE;
-        uint32_t block_offset = fdf->offset % HVFS_BLOCK_SIZE;
-        uint32_t bytes_to_read = HVFS_BLOCK_SIZE - block_offset;
-        
-        if (bytes_to_read > count - bytes_read) {
-            bytes_to_read = count - bytes_read;
-        }
-        if (bytes_to_read > inode->size - fdf->offset) {
-            bytes_to_read = inode->size - fdf->offset;
-        }
-        
-        if (block_idx < 12 && inode->direct_blocks[block_idx] != 0) {
-            memcpy(buffer + bytes_read,
-                    hvfs_get_inode(0) + inode->direct_blocks[block_idx] * HVFS_BLOCK_SIZE + block_offset,
-                    bytes_to_read);
-        }
-        
-        bytes_read += bytes_to_read;
-        fdf->offset += bytes_to_read;
+    hvfs_seek(hvfs_fd, fdf->offset, 0);
+    
+    int result = hvfs_read(hvfs_fd, buf, count);
+    
+    if (result > 0) {
+        fdf->offset += result;
+        file->offset = fdf->offset;
     }
     
-    file->offset = fdf->offset;
-    inode->atime = get_time();
+    hvfs_close(hvfs_fd);
     
-    return bytes_read;
+    return result;
 }
 
 static int diskfs_write(struct vfs_file *file, const void *buf, uint32_t count) {
@@ -224,14 +210,24 @@ static int diskfs_readdir(struct vfs_file *file, struct vfs_dirent *entry) {
         return -1;
     }
     
+    int hvfs_fd = hvfs_open(file->path, HVFS_O_RDONLY, fdf->pwid);
+    if (hvfs_fd < 0) return -1;
+    
+    hvfs_seek(hvfs_fd, fdf->offset, 0);
+    
     struct dir_entry hvfs_entry;
-    int result = hvfs_readdir(fdf->fd, &hvfs_entry);
+    int result = hvfs_readdir(hvfs_fd, &hvfs_entry);
+    
+    hvfs_close(hvfs_fd);
     
     if (result <= 0) return result;
     
     entry->inode = hvfs_entry.inode;
     entry->type = hvfs_entry.file_type;
     strcpy(entry->name, hvfs_entry.name);
+    
+    fdf->offset += sizeof(struct dir_entry);
+    file->offset = fdf->offset;
     
     return 1;
 }

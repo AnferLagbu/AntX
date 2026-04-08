@@ -4,6 +4,7 @@
 #include "install_guide.h"
 #include "timer.h"
 #include "module_check.h"
+#include "log_buffer.h"
 
 void ramfs_init(void);
 void diskfs_init(void);
@@ -13,9 +14,18 @@ void procfs_init(void);
 extern unsigned char build_user_init_bin[];
 extern unsigned int build_user_init_bin_len;
 
+extern char _kernel_end[];
+
 void panic(const char *msg) {
-    serial_puts(SERIAL_COM1, "\n\nPANIC: ");
+    serial_puts(SERIAL_COM1, "\n\n");
+    serial_puts(SERIAL_COM1, "========================================\n");
+    serial_puts(SERIAL_COM1, "PANIC: ");
     serial_puts(SERIAL_COM1, msg);
+    serial_puts(SERIAL_COM1, "\n");
+    serial_puts(SERIAL_COM1, "========================================\n");
+    
+    log_dump_all();
+    
     serial_puts(SERIAL_COM1, "\nSystem halted.\n");
     
     while (1) {
@@ -108,6 +118,7 @@ static void start_user_init(void) {
 
 void kernel_main(void) {
     serial_init(SERIAL_COM1);
+    serial_enable_log();
     
     serial_puts(SERIAL_COM1, "\n");
     serial_puts(SERIAL_COM1, "AntX OS v0.1.0\n");
@@ -119,7 +130,7 @@ void kernel_main(void) {
     MODULE_CHECK("GDT", gdt_init);
     MODULE_CHECK("IDT", idt_init);
     
-    pmm_init(MEMORY_SIZE, KERNEL_END);
+    pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end);
     serial_puts(SERIAL_COM1, "  [OK] PMM - ");
     serial_put_dec(SERIAL_COM1, pmm_get_free_pages());
     serial_puts(SERIAL_COM1, " pages free\n");

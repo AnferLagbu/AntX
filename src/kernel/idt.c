@@ -93,26 +93,149 @@ static void pic_send_eoi(uint8_t irq) {
 }
 
 void exception_handler(struct interrupt_frame *frame) {
-    serial_puts(SERIAL_COM1, "\n!!! EXCEPTION: ");
+    serial_puts(SERIAL_COM1, "\n");
+    serial_puts(SERIAL_COM1, "========================================\n");
+    serial_puts(SERIAL_COM1, "!!! EXCEPTION: ");
     if (frame->int_no < 32) {
         serial_puts(SERIAL_COM1, exception_messages[frame->int_no]);
     } else {
         serial_puts(SERIAL_COM1, "Unknown");
     }
     serial_puts(SERIAL_COM1, " !!!\n");
+    serial_puts(SERIAL_COM1, "========================================\n");
     
-    serial_puts(SERIAL_COM1, "Interrupt number: 0x");
+    serial_puts(SERIAL_COM1, "  Interrupt: 0x");
     serial_put_hex(SERIAL_COM1, frame->int_no);
     serial_puts(SERIAL_COM1, "\n");
     
-    serial_puts(SERIAL_COM1, "Error code: 0x");
+    serial_puts(SERIAL_COM1, "  Error Code: 0x");
     serial_put_hex(SERIAL_COM1, frame->err_code);
     serial_puts(SERIAL_COM1, "\n");
     
-    serial_puts(SERIAL_COM1, "RIP: 0x");
+    serial_puts(SERIAL_COM1, "  RIP: 0x");
     serial_put_hex(SERIAL_COM1, frame->rip);
     serial_puts(SERIAL_COM1, "\n");
     
+    serial_puts(SERIAL_COM1, "  CS:  0x");
+    serial_put_hex(SERIAL_COM1, frame->cs);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "  RFLAGS: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rflags);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "  RSP: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rsp);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "  SS:  0x");
+    serial_put_hex(SERIAL_COM1, frame->ss);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "\n  Registers:\n");
+    serial_puts(SERIAL_COM1, "    RAX: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rax);
+    serial_puts(SERIAL_COM1, "  RBX: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rbx);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "    RCX: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rcx);
+    serial_puts(SERIAL_COM1, "  RDX: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rdx);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "    RSI: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rsi);
+    serial_puts(SERIAL_COM1, "  RDI: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rdi);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "    RBP: 0x");
+    serial_put_hex(SERIAL_COM1, frame->rbp);
+    serial_puts(SERIAL_COM1, "  R8:  0x");
+    serial_put_hex(SERIAL_COM1, frame->r8);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "    R9:  0x");
+    serial_put_hex(SERIAL_COM1, frame->r9);
+    serial_puts(SERIAL_COM1, "  R10: 0x");
+    serial_put_hex(SERIAL_COM1, frame->r10);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "    R11: 0x");
+    serial_put_hex(SERIAL_COM1, frame->r11);
+    serial_puts(SERIAL_COM1, "  R12: 0x");
+    serial_put_hex(SERIAL_COM1, frame->r12);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "    R13: 0x");
+    serial_put_hex(SERIAL_COM1, frame->r13);
+    serial_puts(SERIAL_COM1, "  R14: 0x");
+    serial_put_hex(SERIAL_COM1, frame->r14);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    serial_puts(SERIAL_COM1, "    R15: 0x");
+    serial_put_hex(SERIAL_COM1, frame->r15);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    if (frame->int_no == 14) {
+        uint64_t fault_addr;
+        __asm__ volatile ("mov %%cr2, %0" : "=r"(fault_addr));
+        
+        serial_puts(SERIAL_COM1, "\n  Page Fault Details:\n");
+        serial_puts(SERIAL_COM1, "    Fault Address (CR2): 0x");
+        serial_put_hex(SERIAL_COM1, fault_addr);
+        serial_puts(SERIAL_COM1, "\n");
+        
+        serial_puts(SERIAL_COM1, "    Access Type: ");
+        if (frame->err_code & 0x02) {
+            serial_puts(SERIAL_COM1, "Write\n");
+        } else {
+            serial_puts(SERIAL_COM1, "Read\n");
+        }
+        
+        serial_puts(SERIAL_COM1, "    Mode: ");
+        if (frame->err_code & 0x04) {
+            serial_puts(SERIAL_COM1, "User\n");
+        } else {
+            serial_puts(SERIAL_COM1, "Kernel\n");
+        }
+        
+        serial_puts(SERIAL_COM1, "    Cause: ");
+        if (frame->err_code & 0x01) {
+            serial_puts(SERIAL_COM1, "Protection Violation\n");
+        } else {
+            serial_puts(SERIAL_COM1, "Page Not Present\n");
+        }
+        
+        if (frame->err_code & 0x08) {
+            serial_puts(SERIAL_COM1, "    Reserved bit set in page table\n");
+        }
+        
+        if (frame->err_code & 0x10) {
+            serial_puts(SERIAL_COM1, "    Instruction fetch\n");
+        }
+    }
+    
+    if (frame->int_no == 13) {
+        serial_puts(SERIAL_COM1, "\n  General Protection Fault Details:\n");
+        serial_puts(SERIAL_COM1, "    Segment Selector: 0x");
+        serial_put_hex(SERIAL_COM1, frame->err_code & 0xFFFF);
+        serial_puts(SERIAL_COM1, "\n");
+        
+        if (frame->err_code & 0x01) {
+            serial_puts(SERIAL_COM1, "    External event\n");
+        }
+        if (frame->err_code & 0x02) {
+            serial_puts(SERIAL_COM1, "    IDT flag set\n");
+        }
+        if (frame->err_code & 0x04) {
+            serial_puts(SERIAL_COM1, "    LDT flag set\n");
+        }
+    }
+    
+    serial_puts(SERIAL_COM1, "\n========================================\n");
     serial_puts(SERIAL_COM1, "System halted.\n");
     
     while (1) {

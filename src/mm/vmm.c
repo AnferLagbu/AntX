@@ -1,9 +1,12 @@
 #include "mm.h"
 #include "serial.h"
+#include "assert.h"
 
 uint64_t kernel_pml4;
 
 static pte_t* get_page_table(uint64_t table, uint64_t index, int create) {
+    ASSERT(index < 512);
+    
     pte_t* tables = (pte_t*)(table & 0x000FFFFFFFFFF000ULL);
     pte_t* entry = &tables[index];
     
@@ -13,9 +16,7 @@ static pte_t* get_page_table(uint64_t table, uint64_t index, int create) {
     
     if (create) {
         void* new_table = pmm_alloc_page();
-        if (new_table == NULL) {
-            return NULL;
-        }
+        ASSERT(new_table != NULL);
         
         for (int i = 0; i < 512; i++) {
             pte_t* new_entry = &((pte_t*)new_table)[i];
@@ -36,7 +37,7 @@ static pte_t* get_page_table(uint64_t table, uint64_t index, int create) {
 void vmm_init(void) {
     __asm__ volatile ("mov %%cr3, %0" : "=r"(kernel_pml4));
     
-    serial_puts(SERIAL_COM1, "VMM initialized (using boot page table)\n");
+    serial_puts(SERIAL_COM1, "VMM initialized\n");
 }
 
 void vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags) {
@@ -56,6 +57,7 @@ void vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags) {
     entry->fields.present = (flags & PAGE_PRESENT) ? 1 : 0;
     entry->fields.rw = (flags & PAGE_WRITABLE) ? 1 : 0;
     entry->fields.user = (flags & PAGE_USER) ? 1 : 0;
+    entry->fields.xd = (flags & PAGE_NX) ? 1 : 0;
     entry->fields.frame = phys >> 12;
 }
 
@@ -134,6 +136,7 @@ void vmm_map_page_in_table(uint64_t pml4, uint64_t virt, uint64_t phys, uint64_t
     entry->fields.present = (flags & PAGE_PRESENT) ? 1 : 0;
     entry->fields.rw = (flags & PAGE_WRITABLE) ? 1 : 0;
     entry->fields.user = (flags & PAGE_USER) ? 1 : 0;
+    entry->fields.xd = (flags & PAGE_NX) ? 1 : 0;
     entry->fields.frame = phys >> 12;
 }
 

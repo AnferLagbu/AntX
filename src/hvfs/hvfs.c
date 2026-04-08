@@ -4,6 +4,7 @@
 #include "kernel.h"
 #include "pwid.h"
 #include "string.h"
+#include "assert.h"
 
 struct super_block hvfs_super;
 struct inode hvfs_inode_table[HVFS_MAX_INODES];
@@ -19,7 +20,7 @@ static uint32_t next_fd = 3;
 static struct inode* resolve_path(const char *path, uint64_t pwid);
 
 static uint8_t* get_block(uint32_t block_num) {
-    if (block_num >= HVFS_MAX_BLOCKS) return NULL;
+    ASSERT(block_num < HVFS_MAX_BLOCKS);
     return &hvfs_data_area[block_num * HVFS_BLOCK_SIZE];
 }
 
@@ -52,6 +53,12 @@ static void block_set_free(uint32_t block_num) {
     hvfs_super.free_blocks++;
 }
 
+#define INDIRECT_BLOCKS_PER_BLOCK (HVFS_BLOCK_SIZE / sizeof(uint32_t))
+
+static uint32_t get_block_for_index(struct inode *inode, uint32_t block_idx, int alloc);
+static int hvfs_load_data_block(uint32_t block_num);
+static int hvfs_sync_data_block(uint32_t block_num);
+
 static uint32_t block_alloc(void) {
     for (uint32_t i = hvfs_super.first_data_block; i < HVFS_MAX_BLOCKS; i++) {
         if (block_is_free(i)) {
@@ -61,13 +68,6 @@ static uint32_t block_alloc(void) {
         }
     }
     return 0;
-}
-
-static int inode_is_free(uint32_t inode_num) {
-    if (inode_num >= HVFS_MAX_INODES) return 0;
-    uint32_t byte_idx = inode_num / 8;
-    uint32_t bit_idx = inode_num % 8;
-    return !(hvfs_inode_bitmap[byte_idx] & (1 << bit_idx));
 }
 
 static void inode_set_used(uint32_t inode_num) {
@@ -112,10 +112,137 @@ static void inode_free(struct inode *inode) {
                 inode->direct_blocks[i] = 0;
             }
         }
+        
+        if (inode->indirect_block != 0) {
+            if (hvfs_disk_mode) {
+                hvfs_load_data_block(inode->indirect_block);
+            }
+            uint32_t *indirect = (uint32_t *)get_block(inode->indirect_block);
+            for (uint32_t i = 0; i < INDIRECT_BLOCKS_PER_BLOCK; i++) {
+                if (indirect[i] != 0) {
+                    block_set_free(indirect[i]);
+                }
+            }
+            block_set_free(inode->indirect_block);
+            inode->indirect_block = 0;
+        }
+        
+        if (inode->double_indirect != 0) {
+            if (hvfs_disk_mode) {
+                hvfs_load_data_block(inode->double_indirect);
+            }
+            uint32_t *double_indirect = (uint32_t *)get_block(inode->double_indirect);
+            for (uint32_t i = 0; i < INDIRECT_BLOCKS_PER_BLOCK; i++) {
+                if (double_indirect[i] != 0) {
+                    if (hvfs_disk_mode) {
+                        hvfs_load_data_block(double_indirect[i]);
+                    }
+                    uint32_t *indirect = (uint32_t *)get_block(double_indirect[i]);
+                    for (uint32_t j = 0; j < INDIRECT_BLOCKS_PER_BLOCK; j++) {
+                        if (indirect[j] != 0) {
+                            block_set_free(indirect[j]);
+                        }
+                    }
+                    block_set_free(double_indirect[i]);
+                }
+            }
+            block_set_free(inode->double_indirect);
+            inode->double_indirect = 0;
+        }
+        
         inode_set_free(inode->inode_num);
         inode->used = 0;
         inode->inode_num = 0;
     }
+}
+
+static uint32_t get_block_for_index(struct inode *inode, uint32_t block_idx, int alloc) {
+    if (inode == NULL || block_idx >= (12 + INDIRECT_BLOCKS_PER_BLOCK + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK)) {
+        return 0;
+    }
+    
+    if (block_idx < 12) {
+        return inode->direct_blocks[block_idx];
+    }
+    
+    uint32_t indirect_start = 12;
+    uint32_t indirect_end = 12 + INDIRECT_BLOCKS_PER_BLOCK;
+    
+    if (block_idx >= indirect_start && block_idx < indirect_end) {
+        if (inode->indirect_block == 0) {
+            if (!alloc) return 0;
+            inode->indirect_block = block_alloc();
+            if (inode->indirect_block == 0) return 0;
+            inode->dirty = 1;
+        }
+        
+        if (hvfs_disk_mode) {
+            hvfs_load_data_block(inode->indirect_block);
+        }
+        
+        uint32_t *indirect = (uint32_t *)get_block(inode->indirect_block);
+        uint32_t idx = block_idx - indirect_start;
+        
+        if (indirect[idx] == 0 && alloc) {
+            indirect[idx] = block_alloc();
+            if (indirect[idx] != 0) {
+                inode->dirty = 1;
+                if (hvfs_disk_mode) {
+                    hvfs_sync_data_block(inode->indirect_block);
+                }
+            }
+        }
+        
+        return indirect[idx];
+    }
+    
+    uint32_t double_start = indirect_end;
+    uint32_t double_idx = block_idx - double_start;
+    uint32_t first_level = double_idx / INDIRECT_BLOCKS_PER_BLOCK;
+    uint32_t second_level = double_idx % INDIRECT_BLOCKS_PER_BLOCK;
+    
+    if (inode->double_indirect == 0) {
+        if (!alloc) return 0;
+        inode->double_indirect = block_alloc();
+        if (inode->double_indirect == 0) return 0;
+        inode->dirty = 1;
+    }
+    
+    if (hvfs_disk_mode) {
+        hvfs_load_data_block(inode->double_indirect);
+    }
+    
+    uint32_t *double_indirect = (uint32_t *)get_block(inode->double_indirect);
+    
+    if (double_indirect[first_level] == 0 && alloc) {
+        double_indirect[first_level] = block_alloc();
+        if (double_indirect[first_level] != 0) {
+            inode->dirty = 1;
+            if (hvfs_disk_mode) {
+                hvfs_sync_data_block(inode->double_indirect);
+            }
+        }
+    }
+    
+    if (double_indirect[first_level] == 0) return 0;
+    
+    if (hvfs_disk_mode) {
+        hvfs_load_data_block(double_indirect[first_level]);
+    }
+    
+    uint32_t *indirect = (uint32_t *)get_block(double_indirect[first_level]);
+    
+    if (indirect[second_level] == 0 && alloc) {
+        indirect[second_level] = block_alloc();
+        if (indirect[second_level] != 0) {
+            inode->dirty = 1;
+            if (hvfs_disk_mode) {
+                hvfs_sync_data_block(double_indirect[first_level]);
+            }
+        }
+    }
+    
+    return indirect[second_level];
 }
 
 int hvfs_is_disk_mode(void) {
@@ -931,12 +1058,13 @@ int hvfs_read(int fd, void *buf, uint32_t count) {
             bytes_to_read = inode->size - fdesc->offset;
         }
         
-        if (block_idx < 12 && inode->direct_blocks[block_idx] != 0) {
+        uint32_t block_num = get_block_for_index(inode, block_idx, 0);
+        if (block_num != 0) {
             if (hvfs_disk_mode) {
-                hvfs_load_data_block(inode->direct_blocks[block_idx]);
+                hvfs_load_data_block(block_num);
             }
             memcpy(buffer + bytes_read, 
-                    get_block(inode->direct_blocks[block_idx]) + block_offset,
+                    get_block(block_num) + block_offset,
                     bytes_to_read);
         }
         
@@ -968,6 +1096,7 @@ int hvfs_write(int fd, const void *buf, uint32_t count) {
     
     uint32_t bytes_written = 0;
     const uint8_t *buffer = (const uint8_t *)buf;
+    uint32_t max_blocks = 12 + INDIRECT_BLOCKS_PER_BLOCK + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
     
     while (bytes_written < count) {
         uint32_t block_idx = fdesc->offset / HVFS_BLOCK_SIZE;
@@ -978,22 +1107,20 @@ int hvfs_write(int fd, const void *buf, uint32_t count) {
             bytes_to_write = count - bytes_written;
         }
         
-        if (block_idx >= 12) break;
+        if (block_idx >= max_blocks) break;
         
-        if (inode->direct_blocks[block_idx] == 0) {
-            inode->direct_blocks[block_idx] = block_alloc();
-            if (inode->direct_blocks[block_idx] == 0) break;
-        }
+        uint32_t block_num = get_block_for_index(inode, block_idx, 1);
+        if (block_num == 0) break;
         
         if (hvfs_disk_mode) {
-            hvfs_load_data_block(inode->direct_blocks[block_idx]);
+            hvfs_load_data_block(block_num);
         }
         
-        memcpy(get_block(inode->direct_blocks[block_idx]) + block_offset,
+        memcpy(get_block(block_num) + block_offset,
                 buffer + bytes_written, bytes_to_write);
         
         if (hvfs_disk_mode) {
-            hvfs_sync_data_block(inode->direct_blocks[block_idx]);
+            hvfs_sync_data_block(block_num);
         }
         
         bytes_written += bytes_to_write;

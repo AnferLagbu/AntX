@@ -1,5 +1,6 @@
 #include "mm.h"
 #include "serial.h"
+#include "assert.h"
 
 #define BITMAP_SIZE 32768
 
@@ -7,14 +8,17 @@ static uint32_t bitmap[BITMAP_SIZE];
 static struct memory_info mem_info;
 
 static void set_bit(uint64_t index) {
+    ASSERT(index < BITMAP_SIZE * 32);
     bitmap[index / 32] |= (1 << (index % 32));
 }
 
 static void clear_bit(uint64_t index) {
+    ASSERT(index < BITMAP_SIZE * 32);
     bitmap[index / 32] &= ~(1 << (index % 32));
 }
 
 static int test_bit(uint64_t index) {
+    ASSERT(index < BITMAP_SIZE * 32);
     return bitmap[index / 32] & (1 << (index % 32));
 }
 

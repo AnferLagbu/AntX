@@ -5,17 +5,17 @@ SECTIONS
 {
     . = 0x400000;
     
-    .text : {
+    .text : ALIGN(4096) {
         *(.text)
         *(.text.*)
     }
     
-    .rodata : {
+    .rodata : ALIGN(4096) {
         *(.rodata)
         *(.rodata.*)
     }
     
-    .data : {
+    .data : ALIGN(4096) {
         *(.data)
         *(.data.*)
         
@@ -25,7 +25,7 @@ SECTIONS
         *(.got.plt)
     }
     
-    .bss : {
+    .bss : ALIGN(4096) {
         *(.bss)
         *(.bss.*)
         *(COMMON)
@@ -37,7 +37,6 @@ SECTIONS
     
     /DISCARD/ : {
         *(.comment)
-        *(.note.*)
         *(.eh_frame)
     }
 }

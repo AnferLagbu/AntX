@@ -13,6 +13,7 @@
 #define PAGE_WRITABLE   (1 << 1)
 #define PAGE_USER       (1 << 2)
 #define PAGE_HUGE       (1 << 7)
+#define PAGE_NX         (1ULL << 63)
 
 #define PML4_INDEX(addr) (((addr) >> 39) & 0x1FF)
 #define PDPT_INDEX(addr) (((addr) >> 30) & 0x1FF)

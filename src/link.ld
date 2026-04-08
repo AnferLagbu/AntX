@@ -6,21 +6,23 @@ SECTIONS
 {
     . = 0x100000;
     
+    _kernel_start = .;
+    
     .multiboot2 : {
         *(.multiboot2)
     }
     
-    .text : {
+    .text : ALIGN(4096) {
         *(.text)
         *(.text.*)
     }
     
-    .rodata : {
+    .rodata : ALIGN(4096) {
         *(.rodata)
         *(.rodata.*)
     }
     
-    .data : {
+    .data : ALIGN(4096) {
         *(.data)
         *(.data.*)
         
@@ -30,7 +32,7 @@ SECTIONS
         *(.got.plt)
     }
     
-    .bss : {
+    .bss : ALIGN(4096) {
         *(.bss)
         *(.bss.*)
         *(COMMON)
@@ -56,10 +58,9 @@ SECTIONS
     
     /DISCARD/ : {
         *(.comment)
-        *(.note.*)
         *(.eh_frame*)
     }
     
-    _kernel_start = .;
+    . = ALIGN(4096);
     _kernel_end = .;
 }

@@ -2,17 +2,17 @@ CC = x86_64-linux-gnu-gcc
 LD = x86_64-linux-gnu-ld
 AS = nasm
 
-CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
+CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fstack-protector-all \
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
          -Isrc/include
 
-USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
+USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fstack-protector-all \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
               -Isrc/include
 
-LDFLAGS = -T src/link.ld -nostdlib
+LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
 
-USER_LDFLAGS = -T src/user/link.ld -nostdlib
+USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 
 ASFLAGS = -f elf64
 
@@ -20,9 +20,9 @@ KERNEL_OBJS = build/boot.o build/main.o build/serial.o build/gdt.o build/gdt_asm
               build/pmm.o build/vmm.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
               build/vfs.o build/ramfs.o build/diskfs.o build/devfs.o build/procfs.o build/hvfs.o \
               build/syscall.o build/keyboard.o build/shell.o build/string.o build/printk.o build/ata.o build/install_guide.o \
-              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o
+              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o
 
-USER_LIB_OBJS = build/user/lib/user.o
+USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
 USER_INIT_OBJS = build/user/init/main.o
 
@@ -144,7 +144,19 @@ build/printk.o: src/lib/printk.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
+build/stack_canary.o: src/kernel/stack_canary.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/log_buffer.o: src/kernel/log_buffer.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
 build/user/lib/user.o: src/user/lib/user.c
+	@mkdir -p build/user/lib
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+build/user/lib/stack_canary.o: src/user/lib/stack_canary.c
 	@mkdir -p build/user/lib
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 

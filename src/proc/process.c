@@ -1,6 +1,7 @@
 #include "proc.h"
 #include "mm.h"
 #include "serial.h"
+#include "assert.h"
 
 static struct process process_table[MAX_PROCESSES];
 static struct process *current_process = NULL;
@@ -48,18 +49,11 @@ struct process* process_create(void (*entry)(void), uint64_t session_id, uint64_
     proc->time_slice = TIME_SLICE;
     
     proc->kernel_stack = (uint64_t)pmm_alloc_page();
-    if (proc->kernel_stack == 0) {
-        proc->state = PROC_NEW;
-        return NULL;
-    }
+    ASSERT(proc->kernel_stack != 0);
     proc->kernel_stack += PAGE_SIZE;
     
     proc->cr3 = (uint64_t)pmm_alloc_page();
-    if (proc->cr3 == 0) {
-        pmm_free_page((void*)(proc->kernel_stack - PAGE_SIZE));
-        proc->state = PROC_NEW;
-        return NULL;
-    }
+    ASSERT(proc->cr3 != 0);
     
     proc->context.rip = (uint64_t)entry;
     proc->context.cs = 0x08;
