@@ -8,6 +8,7 @@
 #include "string.h"
 #include "gdt.h"
 #include "mm.h"
+#include "keyboard.h"
 
 int64_t sys_boot_check(int check_type);
 
@@ -240,6 +241,28 @@ int64_t sys_fs_close(int fd) {
 }
 
 int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
+    if (fd == 0) {
+        if (buf == NULL || count == 0) return -1;
+        
+        char *buffer = (char *)buf;
+        uint64_t read_count = 0;
+        
+        while (read_count < count) {
+            if (!keyboard_has_data()) {
+                if (read_count > 0) break;
+                __asm__ volatile ("hlt");
+                continue;
+            }
+            
+            char c = keyboard_get_char();
+            buffer[read_count++] = c;
+            
+            if (c == '\n') break;
+        }
+        
+        return (int64_t)read_count;
+    }
+    
     for (int i = 0; i < VFS_MAX_FDS; i++) {
         if (vfs_fd_table[i].used && vfs_fd_table[i].fd == fd) {
             return vfs_read(&vfs_fd_table[i], buf, count);

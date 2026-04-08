@@ -73,16 +73,12 @@ static void create_default_directories(void) {
 static void start_user_init(void) {
     serial_puts(SERIAL_COM1, "[INIT] Starting user-space init process...\n");
     
-    if (0 && install_guide_check_needed()) {
+    if (install_guide_check_needed()) {
         serial_puts(SERIAL_COM1, "\n[INSTALL] First boot detected. Starting installation wizard...\n");
         install_guide_run();
         serial_puts(SERIAL_COM1, "\n[INSTALL] Installation complete. Starting system...\n");
     } else {
-        serial_puts(SERIAL_COM1, "[INSTALL] Skipping installation wizard for debug.\n");
-        if (!pwid_has_original_root()) {
-            pwid_create_original_root("");
-            serial_puts(SERIAL_COM1, "[INSTALL] Created default root account.\n");
-        }
+        serial_puts(SERIAL_COM1, "[INSTALL] System already installed.\n");
     }
     
     int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
