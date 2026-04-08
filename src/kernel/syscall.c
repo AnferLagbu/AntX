@@ -512,7 +512,26 @@ int64_t sys_fs_sync(void) {
 }
 
 int64_t sys_reboot(int cmd) {
-    (void)cmd;
+    if (cmd == 0) {
+        serial_puts(SERIAL_COM1, "\n[SYSTEM] Rebooting...\n");
+        
+        vfs_sync();
+        
+        for (int i = 0; i < 100000000; i++) {
+            __asm__ volatile ("nop");
+        }
+        
+        __asm__ volatile (
+            "mov $0x64, %rax\n"
+            "mov $0x2000, %rdx\n"
+            "out %al, %dx\n"
+            "1: hlt\n"
+            "jmp 1b\n"
+        );
+        
+        return 0;
+    }
+    
     return E_PERM;
 }
 

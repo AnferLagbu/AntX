@@ -5,6 +5,7 @@
 #include "timer.h"
 #include "module_check.h"
 #include "log_buffer.h"
+#include "shell.h"
 
 void ramfs_init(void);
 void diskfs_init(void);
@@ -81,35 +82,12 @@ static void start_user_init(void) {
         serial_puts(SERIAL_COM1, "[INSTALL] System already installed.\n");
     }
     
-    int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
-    
-    if (pid < 0) {
-        serial_puts(SERIAL_COM1, "[INIT] FATAL: Failed to create init process\n");
-        serial_puts(SERIAL_COM1, "[KERNEL] System cannot start without init process.\n");
-        while (1) {
-            __asm__ volatile ("hlt");
-        }
-        return;
-    }
-    
-    serial_puts(SERIAL_COM1, "[INIT] User init started with PID: ");
-    serial_put_dec(SERIAL_COM1, pid);
+    serial_puts(SERIAL_COM1, "[INIT] Starting AntX Shell...\n");
     serial_puts(SERIAL_COM1, "\n");
     
-    serial_puts(SERIAL_COM1, "[DEBUG] About to call scheduler_schedule() for first time\n");
+    shell_run();
     
-    if (proc_has_runnable()) {
-        scheduler_schedule();
-        serial_puts(SERIAL_COM1, "[DEBUG] scheduler_schedule() returned!\n");
-    } else {
-        serial_puts(SERIAL_COM1, "[DEBUG] No runnable processes after schedule attempt\n");
-    }
-    
-    while (proc_has_runnable()) {
-        interrupt_idle();
-    }
-    
-    serial_puts(SERIAL_COM1, "[INIT] All user processes exited\n");
+    serial_puts(SERIAL_COM1, "[INIT] Shell exited. System halting.\n");
 }
 
 void kernel_main(void) {
