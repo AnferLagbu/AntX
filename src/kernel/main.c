@@ -95,8 +95,8 @@ void kernel_main(void) {
     serial_enable_log();
     
     serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "AntX OS v0.1.0\n");
-    serial_puts(SERIAL_COM1, "Copyright (c) 2024 AntX Project\n");
+    serial_puts(SERIAL_COM1, "AntX Operating System\n");
+    serial_puts(SERIAL_COM1, "Copyright (c) 2026 Anfer`s AntX Project\n");
     serial_puts(SERIAL_COM1, "========================================\n");
     
     serial_puts(SERIAL_COM1, "[BOOT] Initializing kernel...\n");
