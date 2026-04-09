@@ -4,7 +4,7 @@
 static void print_banner(void) {
     user_print("\n");
     user_println("========================================");
-    user_println("antxsh v0.1.0 - AntX Shell");
+    user_println("antxsh - AntX Shell");
     user_println("Type 'help' for available commands.");
     user_println("========================================");
     user_print("\n");
