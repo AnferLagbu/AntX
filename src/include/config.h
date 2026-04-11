@@ -2,7 +2,6 @@
 #define _CONFIG_H
 
 #define CONFIG_MEMORY_SIZE       (128 * 1024 * 1024)
-#define CONFIG_KERNEL_END        0x110000
 
 #define CONFIG_MAX_PROCESSES     64
 #define CONFIG_MAX_THREADS       256

@@ -91,6 +91,8 @@ process_start_user_asm:
     mov rdi, [rbx + 64]
     mov rsi, [rbx + 72]
     
+    mov cr3, r12
+    
     push qword [rbx + 152]
     push qword [rbx + 144]
     push qword [rbx + 136]
@@ -98,10 +100,6 @@ process_start_user_asm:
     push qword [rbx + 120]
     
     mov rbx, [rbx + 88]
-    
-    mov cr3, r12
-    
-    sti
     
     iretq
 

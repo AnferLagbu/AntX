@@ -6,8 +6,9 @@ CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fstack-protector
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
          -Isrc/include
 
-USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fstack-protector-all \
+USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
+              -fno-stack-protector \
               -Isrc/include
 
 LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
@@ -16,7 +17,7 @@ USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 
 ASFLAGS = -f elf64
 
-KERNEL_OBJS = build/boot.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
+KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/pmm.o build/vmm.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
               build/vfs.o build/ramfs.o build/diskfs.o build/devfs.o build/procfs.o build/hvfs.o \
               build/syscall.o build/keyboard.o build/shell.o build/string.o build/printk.o build/ata.o build/install_guide.o \
@@ -24,7 +25,7 @@ KERNEL_OBJS = build/boot.o build/main.o build/serial.o build/gdt.o build/gdt_asm
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
-USER_INIT_OBJS = build/user/init/main.o
+USER_INIT_OBJS = build/user/init/main.o build/user/antxsh/builtins.o
 
 USER_ANTXSH_OBJS = build/user/antxsh/main.o build/user/antxsh/builtins.o
 
@@ -53,6 +54,10 @@ build/%.o: src/kernel/%.asm
 	$(AS) $(ASFLAGS) $< -o $@
 
 build/gdt_asm.o: src/kernel/gdt.asm
+	@mkdir -p build
+	$(AS) $(ASFLAGS) $< -o $@
+
+build/entry.o: src/kernel/entry.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
@@ -230,3 +235,17 @@ log: all user
 	@mkdir -p $(LOG_DIR)
 	qemu-system-x86_64 -kernel build/kernel.bin -serial file:$(LOG_DIR)/serial.log -display none
 	@echo "Serial log saved to $(LOG_DIR)/serial.log"
+
+run-iso-debug: iso
+	@mkdir -p $(LOG_DIR)
+	timeout 10 qemu-system-x86_64 -cdrom build/antx.iso -serial stdio -no-reboot \
+		-d int,cpu_reset,unimp,guest_errors,in_asm \
+		-D $(LOG_DIR)/qemu_debug.log || true
+	@echo ""
+	@echo "QEMU debug log saved to $(LOG_DIR)/qemu_debug.log"
+	@echo "Run 'cat $(LOG_DIR)/qemu_debug.log' to view details"
+
+debug-iso: iso
+	qemu-system-x86_64 -cdrom build/antx.iso -serial stdio -no-reboot -s -S &
+	@echo "QEMU started in debug mode on port 1234"
+	@echo "Connect with: gdb -ex 'target remote localhost:1234' -ex 'symbol-file build/kernel.bin'"

@@ -182,11 +182,15 @@ syscall_handler:
     push r14
     push r15
     
-    mov rdi, rax
-    mov rsi, rbx
-    mov rdx, rcx
-    mov rcx, r10
-    mov r8, r8
+    mov r12, rax      ; r12 = syscall number
+    mov r13, rdi      ; r13 = arg0 (fd)
+    mov r14, rsi      ; r14 = arg1 (buf)
+    
+    mov rdi, r12      ; 1st param: syscall number
+    mov rsi, r13      ; 2nd param: arg0
+    mov rdx, r14      ; 3rd param: arg1
+    mov rcx, r10      ; 4th param: arg2
+    
     call syscall_dispatch
     
     pop r15

@@ -5,12 +5,41 @@
 uint64_t kernel_pml4;
 
 static pte_t* get_page_table(uint64_t table, uint64_t index, int create) {
-    ASSERT(index < 512);
-    
     pte_t* tables = (pte_t*)(table & 0x000FFFFFFFFFF000ULL);
     pte_t* entry = &tables[index];
     
     if (entry->fields.present) {
+        if (entry->fields.pat) {
+            if (!create) {
+                return NULL;
+            }
+            
+            uint64_t large_page_phys = entry->fields.frame << 12;
+            uint64_t large_page_flags = entry->value & 0xFFF;
+            
+            void* new_table = pmm_alloc_page();
+            if (new_table == NULL) {
+                return NULL;
+            }
+            
+            for (int i = 0; i < 512; i++) {
+                pte_t* new_entry = &((pte_t*)new_table)[i];
+                new_entry->value = 0;
+                new_entry->fields.present = 1;
+                new_entry->fields.rw = 1;
+                new_entry->fields.user = 1;
+                new_entry->fields.frame = (large_page_phys + i * PAGE_SIZE) >> 12;
+            }
+            
+            entry->value = 0;
+            entry->fields.present = 1;
+            entry->fields.rw = 1;
+            entry->fields.user = 1;
+            entry->fields.frame = (uint64_t)new_table >> 12;
+            
+            return (pte_t*)new_table;
+        }
+        
         return (pte_t*)(uint64_t)(entry->fields.frame << 12);
     }
     

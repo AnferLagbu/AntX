@@ -9,6 +9,8 @@ struct tss_entry tss;
 extern void gdt_flush(uint64_t gdt_ptr_addr);
 extern void tss_flush(void);
 
+extern char stack_top[];
+
 void gdt_set_gate(uint8_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
     gdt[num].base_low = (base & 0xFFFF);
     gdt[num].base_middle = (base >> 16) & 0xFF;
@@ -59,7 +61,7 @@ int gdt_init(void) {
     gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF);
     
     memset(&tss, 0, sizeof(tss));
-    tss.rsp0 = 0;
+    tss.rsp0 = (uint64_t)stack_top;
     tss.iomap_base = sizeof(struct tss_entry);
     
     tss_set_gate(5, (uint64_t)&tss);

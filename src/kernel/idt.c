@@ -236,7 +236,27 @@ void exception_handler(struct interrupt_frame *frame) {
     }
     
     serial_puts(SERIAL_COM1, "\n========================================\n");
-    serial_puts(SERIAL_COM1, "System halted.\n");
+    
+    int is_user_mode = (frame->cs & 0x03) == 3;
+    
+    if (is_user_mode) {
+        serial_puts(SERIAL_COM1, "User process crashed. Killing process.\n");
+        
+        extern struct process* process_get_current(void);
+        extern void process_exit(struct process *proc, uint64_t exit_code);
+        
+        struct process *current = process_get_current();
+        if (current != NULL) {
+            process_exit(current, 1);
+        }
+        
+        extern void scheduler_yield(void);
+        scheduler_yield();
+        
+        return;
+    }
+    
+    serial_puts(SERIAL_COM1, "Kernel panic! System halted.\n");
     
     while (1) {
         __asm__ volatile ("hlt");

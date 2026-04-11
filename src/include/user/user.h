@@ -61,4 +61,6 @@ int user_set_hostname(const char *name, int len);
 void user_delay(int seconds);
 void user_sync(void);
 
+int64_t sys_fs_read_dir(int fd, void *dirent_buf);
+
 #endif

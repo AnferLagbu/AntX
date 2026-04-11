@@ -121,6 +121,15 @@ void scheduler_schedule(void) {
         serial_puts(SERIAL_COM1, "  ctx.cr3=0x");
         serial_put_hex(SERIAL_COM1, next->context.cr3);
         serial_puts(SERIAL_COM1, "\n");
+        
+        if (next->context.rsp & 0xF) {
+            serial_puts(SERIAL_COM1, "[ERROR] User stack NOT 16-byte aligned! rsp=0x");
+            serial_put_hex(SERIAL_COM1, next->context.rsp);
+            serial_puts(SERIAL_COM1, "\n");
+        } else {
+            serial_puts(SERIAL_COM1, "[OK] User stack is 16-byte aligned\n");
+        }
+        
         serial_puts(SERIAL_COM1, "[DEBUG] Calling process_start_user_asm...\n");
         
         extern void process_start_user_asm(uint64_t kernel_stack, struct cpu_context *ctx);

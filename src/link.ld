@@ -2,6 +2,12 @@ OUTPUT_FORMAT("elf64-x86-64")
 OUTPUT_ARCH(i386:x86-64)
 ENTRY(_start)
 
+PHDRS
+{
+    boot PT_LOAD FLAGS(7);
+    kernel PT_LOAD FLAGS(7);
+}
+
 SECTIONS
 {
     . = 0x100000;
@@ -10,19 +16,41 @@ SECTIONS
     
     .multiboot2 : {
         *(.multiboot2)
-    }
+    } :boot
     
-    .text : ALIGN(4096) {
+    . = ALIGN(4096);
+    .boot.text : {
+        build/boot.o(.text)
+    } :boot
+    
+    . = ALIGN(4096);
+    .bootbss : {
+        *(.bootbss)
+    } :boot
+    
+    . = ALIGN(4096);
+    _boot_end = .;
+    
+    _kernel_text_lma = .;
+    _kernel_text_vma = 0xFFFF800001000000 + .;
+    
+    . = _kernel_text_vma;
+    
+    .text : AT(_kernel_text_lma) {
+        _kernel_text_start = .;
         *(.text)
         *(.text.*)
-    }
+        _kernel_text_end = .;
+    } :kernel
     
-    .rodata : ALIGN(4096) {
+    . = ALIGN(4096);
+    .rodata : AT(_kernel_text_lma + (ADDR(.rodata) - _kernel_text_vma)) {
         *(.rodata)
         *(.rodata.*)
-    }
+    } :kernel
     
-    .data : ALIGN(4096) {
+    . = ALIGN(4096);
+    .data : AT(_kernel_text_lma + (ADDR(.data) - _kernel_text_vma)) {
         *(.data)
         *(.data.*)
         
@@ -30,13 +58,14 @@ SECTIONS
         _GLOBAL_OFFSET_TABLE_ = .;
         *(.got)
         *(.got.plt)
-    }
+    } :kernel
     
-    .bss : ALIGN(4096) {
+    . = ALIGN(4096);
+    .bss : AT(_kernel_text_lma + (ADDR(.bss) - _kernel_text_vma)) {
         *(.bss)
         *(.bss.*)
         *(COMMON)
-    }
+    } :kernel
     
     .rela.dyn : {
         *(.rela.init)
@@ -63,4 +92,6 @@ SECTIONS
     
     . = ALIGN(4096);
     _kernel_end = .;
+    _kernel_size = _kernel_end - _kernel_text_vma;
+    _kernel_end_phys = _kernel_text_lma + _kernel_size;
 }

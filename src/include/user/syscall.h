@@ -162,6 +162,10 @@ static inline int64_t sys_fs_delete(const char *path) {
     return syscall1(SYS_FS_DELETE, (uint64_t)path);
 }
 
+static inline int64_t sys_fs_read_dir(int fd, void *dirent_buf) {
+    return syscall2(SYS_FS_READ_DIR, fd, (uint64_t)dirent_buf);
+}
+
 static inline int64_t sys_env_get_current_dir(char *buf, int size) {
     return syscall2(SYS_ENV_GET_CURRENT_DIR, (uint64_t)buf, size);
 }

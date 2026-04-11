@@ -18,31 +18,30 @@ multiboot2_header_start:
     dd 8
 multiboot2_header_end:
 
-section .bss
+KERNEL_PHYS_BASE     equ 0x100000
+KERNEL_VIRT_BASE     equ 0xFFFF800001000000
+
+section .bootbss
 align 4096
 pml4:
     resb 4096
-pdpt:
+pdpt_low:
     resb 4096
-pd:
+pdpt_high:
     resb 4096
+pd_low:
+    resb 4096
+pd_high:
+    resb 4096
+gdt64:
+    resb 30
 stack_bottom:
     resb 65536
+global stack_top
 stack_top:
 
-section .rodata
-align 16
-gdt64:
-    dw gdt64_end - gdt64_start - 1
-    dq gdt64_start
-
-gdt64_start:
-    dq 0
-.code64:
-    dq 0x00AF9A000000FFFF
-.data64:
-    dq 0x00CF92000000FFFF
-gdt64_end:
+kernel_info:
+    resq 3
 
 section .text
 global _start
@@ -51,32 +50,82 @@ extern kernel_main
 _start:
     cli
 
-    mov edi, pml4
+    call .get_eip
+.get_eip:
+    pop ebx
+    sub ebx, .get_eip - _start
+
+    lea edi, [ebx + (pml4 - _start)]
     xor eax, eax
-    mov ecx, 3072
+    mov ecx, 6144
     rep stosd
 
-    lea edi, [pml4]
-    lea eax, [pdpt]
+    lea edi, [ebx + (pml4 - _start)]
+    lea eax, [ebx + (pdpt_low - _start)]
+    or eax, 3
+    xor edx, edx
+    mov [edi], eax
+    mov [edi + 4], edx
+
+    lea edi, [ebx + (pml4 - _start) + 256 * 8]
+    lea eax, [ebx + (pdpt_high - _start)]
     or eax, 3
     mov [edi], eax
+    mov [edi + 4], edx
 
-    lea edi, [pdpt]
-    lea eax, [pd]
+    lea edi, [ebx + (pdpt_low - _start)]
+    lea eax, [ebx + (pd_low - _start)]
     or eax, 3
     mov [edi], eax
+    mov [edi + 4], edx
 
-    lea edi, [pd]
-    mov eax, 0x83
+    lea edi, [ebx + (pdpt_high - _start)]
+    lea eax, [ebx + (pd_high - _start)]
+    or eax, 3
+    mov [edi], eax
+    mov [edi + 4], edx
+
+    lea edi, [ebx + (pd_low - _start)]
+    mov eax, 0x87
+    xor edx, edx
     mov ecx, 512
-.map_page:
+.map_low:
     mov [edi], eax
+    mov [edi + 4], edx
     add eax, 0x200000
+    adc edx, 0
     add edi, 8
     dec ecx
-    jnz .map_page
+    jnz .map_low
 
-    lea eax, [pml4]
+    lea edi, [ebx + (pd_high - _start)]
+    mov eax, 0x87
+    xor edx, edx
+    mov ecx, 512
+.map_high:
+    mov [edi], eax
+    mov [edi + 4], edx
+    add eax, 0x200000
+    adc edx, 0
+    add edi, 8
+    dec ecx
+    jnz .map_high
+
+    lea edi, [ebx + (gdt64 - _start)]
+    mov word [edi], 23
+    lea eax, [ebx + (gdt64 - _start + 6)]
+    mov dword [edi + 2], eax
+
+    mov dword [edi + 6], 0
+    mov dword [edi + 10], 0
+    mov dword [edi + 14], 0x0000FFFF
+    mov dword [edi + 18], 0x00AF9A00
+    mov dword [edi + 22], 0x0000FFFF
+    mov dword [edi + 26], 0x00CF9200
+
+    lgdt [edi]
+
+    lea eax, [ebx + (pml4 - _start)]
     mov cr3, eax
 
     mov eax, cr4
@@ -92,12 +141,13 @@ _start:
     or eax, 1 << 31
     mov cr0, eax
 
-    lgdt [gdt64]
-
-    jmp 0x08:long_mode_start
+    lea eax, [ebx + (trampoline64 - _start)]
+    push dword 0x08
+    push eax
+    retf
 
 BITS 64
-long_mode_start:
+trampoline64:
     mov ax, 0x10
     mov ds, ax
     mov es, ax
@@ -105,9 +155,26 @@ long_mode_start:
     mov gs, ax
     mov ss, ax
 
+    lea rax, [rel trampoline64_high]
+    jmp rax
+
+BITS 64
+trampoline64_high:
+    mov rsi, qword 0x118000
+    mov rdi, qword 0xFFFF800001118000
+    mov rcx, qword 0x124000
+    shr rcx, 3
+    
+    cld
+    rep movsq
+
+    mov rax, cr3
+    mov cr3, rax
+
     mov rsp, stack_top
 
-    call kernel_main
+    mov rax, qword 0xFFFF800001118389
+    call rax
 
     cli
 .halt:

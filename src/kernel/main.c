@@ -1,11 +1,9 @@
 #include "kernel.h"
 #include "vfs.h"
 #include "user_proc.h"
-#include "install_guide.h"
 #include "timer.h"
 #include "module_check.h"
 #include "log_buffer.h"
-#include "shell.h"
 
 void ramfs_init(void);
 void diskfs_init(void);
@@ -16,6 +14,7 @@ extern unsigned char build_user_init_bin[];
 extern unsigned int build_user_init_bin_len;
 
 extern char _kernel_end[];
+extern char _kernel_end_phys[];
 
 void panic(const char *msg) {
     serial_puts(SERIAL_COM1, "\n\n");
@@ -74,20 +73,16 @@ static void create_default_directories(void) {
 static void start_user_init(void) {
     serial_puts(SERIAL_COM1, "[INIT] Starting user-space init process...\n");
     
-    if (install_guide_check_needed()) {
-        serial_puts(SERIAL_COM1, "\n[INSTALL] First boot detected. Starting installation wizard...\n");
-        install_guide_run();
-        serial_puts(SERIAL_COM1, "\n[INSTALL] Installation complete. Starting system...\n");
-    } else {
-        serial_puts(SERIAL_COM1, "[INSTALL] System already installed.\n");
+    int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
+    
+    if (pid < 0) {
+        serial_puts(SERIAL_COM1, "[INIT] Failed to load init process!\n");
+        return;
     }
     
-    serial_puts(SERIAL_COM1, "[INIT] Starting AntX Shell...\n");
+    serial_puts(SERIAL_COM1, "[INIT] Init process started with PID: ");
+    serial_put_dec(SERIAL_COM1, pid);
     serial_puts(SERIAL_COM1, "\n");
-    
-    shell_run();
-    
-    serial_puts(SERIAL_COM1, "[INIT] Shell exited. System halting.\n");
 }
 
 void kernel_main(void) {
@@ -104,7 +99,7 @@ void kernel_main(void) {
     MODULE_CHECK("GDT", gdt_init);
     MODULE_CHECK("IDT", idt_init);
     
-    pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end);
+    pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end_phys);
     serial_puts(SERIAL_COM1, "  [OK] PMM - ");
     serial_put_dec(SERIAL_COM1, pmm_get_free_pages());
     serial_puts(SERIAL_COM1, " pages free\n");

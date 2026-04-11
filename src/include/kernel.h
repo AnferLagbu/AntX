@@ -21,7 +21,6 @@
 #define KERNEL_VERSION "0.1.0"
 
 #define MEMORY_SIZE    (128 * 1024 * 1024)
-#define KERNEL_END     0x110000
 
 void kernel_main(void);
 void panic(const char *msg);

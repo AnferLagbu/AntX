@@ -12,6 +12,16 @@
   - `tests/scripts/test_user_process.py` - QEMU自动化测试脚本
 
 ### Changed - 变更
+- **内核启动架构重构** (2026-04-11)
+  - 采用 Linux/Windows/BSD 标准的双映射启动方案
+  - 实现恒等映射 + 高地址映射的双页表结构
+  - 使用 2MB 大页映射 1TB 物理内存
+  - 添加内核代码从 LMA 到 VMA 的复制机制
+  - 添加 TLB 刷新确保映射正确性
+  - 更新链接脚本支持 VMA/LMA 分离
+  - 更新文档：
+    - `docs/development/memory-management.md` - 新增双映射机制章节
+    - `docs/development/kernel-architecture.md` - 更新启动流程说明
 - 重写 `process_start_user_asm` (switch.asm)
   - 修复 iretq 栈帧构建顺序
   - 使用 rbx/r12 保存关键寄存器
@@ -20,6 +30,9 @@
 - 修复 `user_init_bin.c` ELF 入口点不匹配问题
   - 旧入口点: 0x400C7E (无效指令位置)
   - 新入口点: 0x400C02 (正确的 init_main 函数)
+- 修复高地址内核启动时的 Page Fault 问题
+  - 问题：GRUB 不加载高地址 VMA 段
+  - 解决：在 boot 代码中手动复制内核代码
 
 ---
 
