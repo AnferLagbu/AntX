@@ -273,16 +273,22 @@ mov ecx, 512
 
 ; 进入高地址后复制内核代码
 trampoline64_high:
-    mov rsi, _kernel_text_lma      ; 源: 物理地址
-    mov rdi, _kernel_text_vma      ; 目标: 高地址
-    mov rcx, _kernel_size
+    mov rsi, qword 0x118000         ; 源: 物理地址
+    mov rdi, qword 0xFFFF800001118000 ; 目标: 高地址
+    mov rcx, qword 0x124000
     shr rcx, 3
     rep movsq                       ; 复制
-    
+
+    mov rax, 0xFFFF800001118000    ; TLB 刷新
+    invlpg [rax]                    ; 使用寄存器间接寻址
+
     mov rax, cr3
     mov cr3, rax                    ; 刷新 TLB
-    
-    call kernel_main
+
+    mov rsp, qword 0xFFFF8000011701e ; 设置栈
+
+    mov rax, qword 0xFFFF8000011182bb ; kernel_main
+    call rax
 ```
 
 #### 2.4.6 技术优势

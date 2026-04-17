@@ -61,6 +61,16 @@ void init_main(void) {
 }
 
 void _start(void) {
+    __asm__ volatile(
+        "mov $0x23, %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+        ".byte 0xEB, 0xFE\n"  
+        : : : "ax", "memory"
+    );
+    
     init_main();
     
     sys_proc_exit(0);

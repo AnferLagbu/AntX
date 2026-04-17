@@ -274,6 +274,38 @@ proc_t *pcb_alloc(void) {
 | `src/mm/vmm.c` | 虚拟内存管理 |
 | `src/mm/pmm.c` | 物理内存管理 |
 
+### 4.4 用户态切换 (2026-04-13 调试)
+
+用户态进程启动涉及从内核态 (CPL=0) 通过 `iretq` 切换到用户态 (CPL=3)。
+
+**关键步骤**:
+1. 构建 iretq 栈帧: SS → RSP → RFLAGS → CS → RIP
+2. 设置 CR3 指向用户页表
+3. 设置 DS/ES 段寄存器为用户数据段 (0x23)
+4. 执行 `iretq` 切换到用户态
+
+**已验证正确的部分**:
+
+| 项目 | 状态 | 验证值 |
+|------|------|--------|
+| 用户代码页表映射 | ✅ | PTE: `P=1, RW=0, US=1, XD=0` |
+| 用户栈映射 | ✅ | 物理地址可访问 |
+| 内核栈映射到用户页表 | ✅ | 已映射 |
+| CR3 切换 | ✅ | 指向用户页表 |
+| 段选择子 | ✅ | CS=0x1B, SS=0x23 |
+| RSP 对齐 | ✅ | 16字节对齐 |
+| RFLAGS | ✅ | 0x202 (IF=1) |
+
+**相关文件**:
+
+| 文件 | 说明 |
+|------|------|
+| `src/proc/scheduler.c` | iretq 内联汇编 |
+| `src/proc/switch.asm` | process_start_user_asm |
+| `src/kernel/gdt.asm` | gdt_flush |
+
+**调试日志**: `logs/qemu_debug*.log`, `logs/serial.log`
+
 ## 六、存储布局
 
 ### 6.1 磁盘布局

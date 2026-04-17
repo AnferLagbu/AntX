@@ -26,7 +26,7 @@ struct process* user_proc_create(struct user_proc_info *info, uint64_t pwid) {
         return NULL;
     }
     
-    void *stack_pages = pmm_alloc_pages(USER_STACK_SIZE / PAGE_SIZE);
+    void *stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
     if (stack_pages == NULL) {
         vmm_destroy_page_table(proc->cr3);
         process_exit(proc, 1);
@@ -34,9 +34,9 @@ struct process* user_proc_create(struct user_proc_info *info, uint64_t pwid) {
     }
     
     uint64_t stack_phys = (uint64_t)stack_pages;
-    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE;
+    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
     
-    for (uint64_t i = 0; i < USER_STACK_SIZE / PAGE_SIZE; i++) {
+    for (uint64_t i = 0; i < (USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE; i++) {
         vmm_map_page_in_table(proc->cr3, stack_virt + i * PAGE_SIZE, 
                               stack_phys + i * PAGE_SIZE, 
                               PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
@@ -56,6 +56,16 @@ struct process* user_proc_create(struct user_proc_info *info, uint64_t pwid) {
     proc->context.rflags = 0x202;
     proc->context.rsp = proc->user_stack;
     proc->context.ss = GDT_USER_DATA | 0x03;
+    
+    serial_puts(SERIAL_COM1, "[ELF] Checking kernel space mapping in user page table...\n");
+    extern uint64_t kernel_pml4;
+    pte_t* user_pml4 = (pte_t*)proc->cr3;
+    pte_t* kern_pml4 = (pte_t*)kernel_pml4;
+    serial_puts(SERIAL_COM1, "[ELF] User PML4[256] = 0x");
+    serial_put_hex(SERIAL_COM1, user_pml4[256].value);
+    serial_puts(SERIAL_COM1, " (Kernel PML4[256] = 0x");
+    serial_put_hex(SERIAL_COM1, kern_pml4[256].value);
+    serial_puts(SERIAL_COM1, ")\n");
     
     proc->state = PROC_READY;
     
@@ -177,7 +187,7 @@ int user_proc_load_elf(const char *path, uint64_t pwid) {
         return -1;
     }
     
-    void *stack_pages = pmm_alloc_pages(USER_STACK_SIZE / PAGE_SIZE);
+    void *stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
     if (stack_pages == NULL) {
         vmm_destroy_page_table(proc->cr3);
         process_exit(proc, 1);
@@ -186,10 +196,11 @@ int user_proc_load_elf(const char *path, uint64_t pwid) {
     }
     
     uint64_t stack_phys = (uint64_t)stack_pages;
-    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE;
+    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
     
-    for (uint64_t i = 0; i < USER_STACK_SIZE / PAGE_SIZE; i++) {
-        vmm_map_page_in_table(proc->cr3, stack_virt + i * PAGE_SIZE,
+    for (uint64_t i = 0; i < (USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE; i++) {
+        uint64_t vaddr = stack_virt + i * PAGE_SIZE;
+        vmm_map_page_in_table(proc->cr3, vaddr,
                               stack_phys + i * PAGE_SIZE,
                               PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
     }
@@ -274,6 +285,30 @@ int user_proc_load_elf(const char *path, uint64_t pwid) {
     
     vfs_close(file);
     
+    serial_puts(SERIAL_COM1, "[ELF] Verifying page table for entry=0x");
+    serial_put_hex(SERIAL_COM1, header.entry);
+    serial_puts(SERIAL_COM1, " cr3=0x");
+    serial_put_hex(SERIAL_COM1, proc->cr3);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    uint64_t entry_paddr = vmm_get_physical_in_table(proc->cr3, header.entry);
+    serial_puts(SERIAL_COM1, "[ELF] Entry physical address: 0x");
+    serial_put_hex(SERIAL_COM1, entry_paddr);
+    if (entry_paddr == 0) {
+        serial_puts(SERIAL_COM1, " [NOT MAPPED!]\n");
+    } else {
+        serial_puts(SERIAL_COM1, " [OK]\n");
+    }
+    
+    uint64_t stack_paddr = vmm_get_physical_in_table(proc->cr3, proc->user_stack - 16);
+    serial_puts(SERIAL_COM1, "[ELF] Stack physical address: 0x");
+    serial_put_hex(SERIAL_COM1, stack_paddr);
+    if (stack_paddr == 0) {
+        serial_puts(SERIAL_COM1, " [NOT MAPPED!]\n");
+    } else {
+        serial_puts(SERIAL_COM1, " [OK]\n");
+    }
+    
     proc->context.rip = header.entry;
     proc->context.cs = GDT_USER_CODE | 0x03;
     proc->context.rflags = 0x202;
@@ -323,7 +358,7 @@ int user_proc_create_from_binary(const uint8_t *code, uint64_t code_size, uint64
                               (uint64_t)page, PAGE_PRESENT | PAGE_USER);
     }
     
-    void *stack_pages = pmm_alloc_pages(USER_STACK_SIZE / PAGE_SIZE);
+    void *stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
     if (stack_pages == NULL) {
         vmm_destroy_page_table(proc->cr3);
         process_exit(proc, 1);
@@ -331,9 +366,9 @@ int user_proc_create_from_binary(const uint8_t *code, uint64_t code_size, uint64
     }
     
     uint64_t stack_phys = (uint64_t)stack_pages;
-    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE;
+    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
     
-    for (uint64_t i = 0; i < USER_STACK_SIZE / PAGE_SIZE; i++) {
+    for (uint64_t i = 0; i < (USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE; i++) {
         vmm_map_page_in_table(proc->cr3, stack_virt + i * PAGE_SIZE,
                               stack_phys + i * PAGE_SIZE,
                               PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
@@ -396,7 +431,7 @@ int user_proc_load_elf_from_memory(const uint8_t *elf_data, uint64_t elf_size, u
         return -1;
     }
     
-    void *stack_pages = pmm_alloc_pages(USER_STACK_SIZE / PAGE_SIZE);
+    void *stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
     if (stack_pages == NULL) {
         vmm_destroy_page_table(proc->cr3);
         process_exit(proc, 1);
@@ -404,9 +439,9 @@ int user_proc_load_elf_from_memory(const uint8_t *elf_data, uint64_t elf_size, u
     }
     
     uint64_t stack_phys = (uint64_t)stack_pages;
-    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE;
+    uint64_t stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
     
-    for (uint64_t i = 0; i < USER_STACK_SIZE / PAGE_SIZE; i++) {
+    for (uint64_t i = 0; i < (USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE; i++) {
         vmm_map_page_in_table(proc->cr3, stack_virt + i * PAGE_SIZE,
                               stack_phys + i * PAGE_SIZE,
                               PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
@@ -424,6 +459,12 @@ int user_proc_load_elf_from_memory(const uint8_t *elf_data, uint64_t elf_size, u
     uint64_t kstack_phys = proc->kernel_stack - PAGE_SIZE;
     vmm_map_page_in_table(proc->cr3, kstack_phys, kstack_phys, 
                           PAGE_PRESENT | PAGE_WRITABLE);
+    
+    serial_puts(SERIAL_COM1, "[PROC] Kernel stack mapped: vaddr=0x");
+    serial_put_hex(SERIAL_COM1, kstack_phys);
+    serial_puts(SERIAL_COM1, " phys=0x");
+    serial_put_hex(SERIAL_COM1, kstack_phys);
+    serial_puts(SERIAL_COM1, "\n");
     
     for (int i = 0; i < header->phnum; i++) {
         struct elf_phdr *phdr = (struct elf_phdr *)(elf_data + header->phoff + i * header->phentsize);
@@ -487,6 +528,90 @@ int user_proc_load_elf_from_memory(const uint8_t *elf_data, uint64_t elf_size, u
     serial_puts(SERIAL_COM1, " stack=0x");
     serial_put_hex(SERIAL_COM1, proc->user_stack);
     serial_puts(SERIAL_COM1, "\n");
+    
+    uint64_t entry_paddr2 = vmm_get_physical_in_table(proc->cr3, header->entry);
+    serial_puts(SERIAL_COM1, "[ELF] Entry phys: 0x");
+    serial_put_hex(SERIAL_COM1, entry_paddr2);
+    if (entry_paddr2 == 0) {
+        serial_puts(SERIAL_COM1, " [NOT MAPPED!]\n");
+    } else {
+        serial_puts(SERIAL_COM1, " [OK]\n");
+    }
+    
+    serial_puts(SERIAL_COM1, "[ELF] Dumping PTE for entry address:\n");
+    uint64_t entry_addr = header->entry;
+    pte_t* pml4_ptr = (pte_t*)proc->cr3;
+    pte_t* pml4e = &pml4_ptr[PML4_INDEX(entry_addr)];
+    serial_puts(SERIAL_COM1, "  PML4["); serial_put_dec(SERIAL_COM1, PML4_INDEX(entry_addr));
+    serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, pml4e->value); serial_puts(SERIAL_COM1, "\n");
+    
+    if (pml4e->fields.present) {
+        pte_t* pdpt_ptr = (pte_t*)(uint64_t)(pml4e->fields.frame << 12);
+        pte_t* pdpte = &pdpt_ptr[PDPT_INDEX(entry_addr)];
+        serial_puts(SERIAL_COM1, "  PDPT["); serial_put_dec(SERIAL_COM1, PDPT_INDEX(entry_addr));
+        serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, pdpte->value); serial_puts(SERIAL_COM1, "\n");
+        
+        if (pdpte->fields.present) {
+            pte_t* pd_ptr = (pte_t*)(uint64_t)(pdpte->fields.frame << 12);
+            pte_t* pde = &pd_ptr[PD_INDEX(entry_addr)];
+            serial_puts(SERIAL_COM1, "  PD["); serial_put_dec(SERIAL_COM1, PD_INDEX(entry_addr));
+            serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, pde->value); serial_puts(SERIAL_COM1, "\n");
+            
+            if (pde->fields.present) {
+                pte_t* pt_ptr = (pte_t*)(uint64_t)(pde->fields.frame << 12);
+                pte_t* pte = &pt_ptr[PT_INDEX(entry_addr)];
+                serial_puts(SERIAL_COM1, "  PT["); serial_put_dec(SERIAL_COM1, PT_INDEX(entry_addr));
+                serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, pte->value); serial_puts(SERIAL_COM1, "\n");
+                serial_puts(SERIAL_COM1, "  PTE flags: P="); serial_put_dec(SERIAL_COM1, pte->fields.present);
+                serial_puts(SERIAL_COM1, " RW="); serial_put_dec(SERIAL_COM1, pte->fields.rw);
+                serial_puts(SERIAL_COM1, " US="); serial_put_dec(SERIAL_COM1, pte->fields.user);
+                serial_puts(SERIAL_COM1, " XD="); serial_put_dec(SERIAL_COM1, pte->fields.xd);
+                serial_puts(SERIAL_COM1, "\n");
+            }
+        }
+    }
+    
+    uint64_t stack_paddr2 = vmm_get_physical_in_table(proc->cr3, proc->user_stack - 16);
+    serial_puts(SERIAL_COM1, "[ELF] Stack phys: 0x");
+    serial_put_hex(SERIAL_COM1, stack_paddr2);
+    if (stack_paddr2 == 0) {
+        serial_puts(SERIAL_COM1, " [NOT MAPPED!]\n");
+    } else {
+        serial_puts(SERIAL_COM1, " [OK]\n");
+    }
+    
+    serial_puts(SERIAL_COM1, "[ELF] Dumping PTE for stack address (push target):\n");
+    uint64_t stack_addr = proc->user_stack - 8;
+    pte_t* stack_pml4_ptr = (pte_t*)proc->cr3;
+    pte_t* stack_pml4e = &stack_pml4_ptr[PML4_INDEX(stack_addr)];
+    serial_puts(SERIAL_COM1, "  PML4["); serial_put_dec(SERIAL_COM1, PML4_INDEX(stack_addr));
+    serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, stack_pml4e->value); serial_puts(SERIAL_COM1, "\n");
+    
+    if (stack_pml4e->fields.present) {
+        pte_t* stack_pdpt_ptr = (pte_t*)(uint64_t)(stack_pml4e->fields.frame << 12);
+        pte_t* stack_pdpte = &stack_pdpt_ptr[PDPT_INDEX(stack_addr)];
+        serial_puts(SERIAL_COM1, "  PDPT["); serial_put_dec(SERIAL_COM1, PDPT_INDEX(stack_addr));
+        serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, stack_pdpte->value); serial_puts(SERIAL_COM1, "\n");
+        
+        if (stack_pdpte->fields.present) {
+            pte_t* stack_pd_ptr = (pte_t*)(uint64_t)(stack_pdpte->fields.frame << 12);
+            pte_t* stack_pde = &stack_pd_ptr[PD_INDEX(stack_addr)];
+            serial_puts(SERIAL_COM1, "  PD["); serial_put_dec(SERIAL_COM1, PD_INDEX(stack_addr));
+            serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, stack_pde->value); serial_puts(SERIAL_COM1, "\n");
+            
+            if (stack_pde->fields.present) {
+                pte_t* stack_pt_ptr = (pte_t*)(uint64_t)(stack_pde->fields.frame << 12);
+                pte_t* stack_pte = &stack_pt_ptr[PT_INDEX(stack_addr)];
+                serial_puts(SERIAL_COM1, "  PT["); serial_put_dec(SERIAL_COM1, PT_INDEX(stack_addr));
+                serial_puts(SERIAL_COM1, "] = 0x"); serial_put_hex(SERIAL_COM1, stack_pte->value); serial_puts(SERIAL_COM1, "\n");
+                serial_puts(SERIAL_COM1, "  Stack PTE flags: P="); serial_put_dec(SERIAL_COM1, stack_pte->fields.present);
+                serial_puts(SERIAL_COM1, " RW="); serial_put_dec(SERIAL_COM1, stack_pte->fields.rw);
+                serial_puts(SERIAL_COM1, " US="); serial_put_dec(SERIAL_COM1, stack_pte->fields.user);
+                serial_puts(SERIAL_COM1, " XD="); serial_put_dec(SERIAL_COM1, stack_pte->fields.xd);
+                serial_puts(SERIAL_COM1, "\n");
+            }
+        }
+    }
     
     proc->state = PROC_READY;
     

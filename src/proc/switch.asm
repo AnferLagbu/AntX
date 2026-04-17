@@ -3,6 +3,9 @@ BITS 64
 section .text
 global process_switch_asm
 global process_start_user_asm
+global user_entry_trampoline
+extern user_entry_target
+extern user_entry_cr3
 
 process_switch_asm:
     mov [rdi + 0], r15
@@ -69,13 +72,13 @@ process_switch_asm:
 
 process_start_user_asm:
     mov rsp, rdi
-    
+
     cli
-    
+
     mov rbx, rsi
-    
+
     mov r12, [rbx + 160]
-    
+
     mov r15, [rbx + 0]
     mov r14, [rbx + 8]
     mov r13, [rbx + 16]
@@ -83,24 +86,36 @@ process_start_user_asm:
     mov r10, [rbx + 40]
     mov r9, [rbx + 48]
     mov r8, [rbx + 56]
-    
+
     mov rbp, [rbx + 80]
     mov rdx, [rbx + 96]
     mov rcx, [rbx + 104]
     mov rax, [rbx + 112]
     mov rdi, [rbx + 64]
     mov rsi, [rbx + 72]
-    
-    mov cr3, r12
-    
+
     push qword [rbx + 152]
     push qword [rbx + 144]
     push qword [rbx + 136]
     push qword [rbx + 128]
     push qword [rbx + 120]
-    
+
+    mov cr3, r12
+
     mov rbx, [rbx + 88]
-    
+
     iretq
+
+user_entry_trampoline:
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    
+    mov rax, [rel user_entry_cr3]
+    mov cr3, rax
+    
+    jmp [rel user_entry_target]
 
 section .note.GNU-stack noalloc noexec nowrite progbits

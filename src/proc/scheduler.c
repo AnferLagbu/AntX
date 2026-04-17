@@ -1,7 +1,11 @@
 #include "proc.h"
 #include "serial.h"
+#include "mm.h"
 
 struct scheduler sched;
+
+uint64_t user_entry_target = 0;
+uint64_t user_entry_cr3 = 0;
 
 void scheduler_init(void) {
     sched.ready_queue = NULL;
@@ -130,12 +134,56 @@ void scheduler_schedule(void) {
             serial_puts(SERIAL_COM1, "[OK] User stack is 16-byte aligned\n");
         }
         
-        serial_puts(SERIAL_COM1, "[DEBUG] Calling process_start_user_asm...\n");
+        serial_puts(SERIAL_COM1, "[DEBUG] First process launch - using inline asm iretq...\n");
         
-        extern void process_start_user_asm(uint64_t kernel_stack, struct cpu_context *ctx);
-        process_start_user_asm(next->kernel_stack, &next->context);
+        uint64_t current_rsp;
+        __asm__ volatile ("mov %%rsp, %0" : "=r"(current_rsp));
+        serial_puts(SERIAL_COM1, "[DEBUG] Current RSP=0x");
+        serial_put_hex(SERIAL_COM1, current_rsp);
+        serial_puts(SERIAL_COM1, " kernel_stack=0x");
+        serial_put_hex(SERIAL_COM1, next->kernel_stack);
+        serial_puts(SERIAL_COM1, "\n");
         
-        serial_puts(SERIAL_COM1, "[DEBUG] process_start_user_asm RETURNED!\n");
+        uint64_t rsp_page = current_rsp & ~0xFFF;
+        vmm_map_page_in_table(next->cr3, rsp_page, rsp_page, PAGE_PRESENT | PAGE_WRITABLE);
+        
+        serial_puts(SERIAL_COM1, "[DEBUG] Mapped kernel stack page 0x");
+        serial_put_hex(SERIAL_COM1, rsp_page);
+        serial_puts(SERIAL_COM1, " in user page table\n");
+        
+        uint64_t ss_val = next->context.ss;
+        uint64_t rsp_val = next->context.rsp;
+        uint64_t cs_val = next->context.cs;
+        uint64_t rip_val = next->context.rip;
+        
+        tss_set_kernel_stack(next->kernel_stack);
+        
+        serial_puts(SERIAL_COM1, "[DEBUG] TSS check done\n");
+        
+        __asm__ volatile (
+            "cli\n"
+            "movq %0, %%rax\n"
+            "pushq %%rax\n"
+            "movq %1, %%rax\n"
+            "pushq %%rax\n"
+            "pushq $0x202\n"
+            "movq %2, %%rax\n"
+            "pushq %%rax\n"
+            "movq %3, %%rax\n"
+            "pushq %%rax\n"
+            "mov %4, %%cr3\n"
+            "mov $0x23, %%ax\n"
+            "mov %%ax, %%ds\n"
+            "mov %%ax, %%es\n"
+            "mov %%ax, %%fs\n"
+            "mov %%ax, %%gs\n"
+            "iretq\n"
+            :
+            : "r"(ss_val), "r"(rsp_val), "r"(cs_val), "r"(rip_val), "r"(next->cr3)
+            : "rax", "memory"
+        );
+        
+        serial_puts(SERIAL_COM1, "[DEBUG] iretq RETURNED!\n");
     } else {
         __asm__ volatile ("mov %0, %%cr3" : : "r"(next->cr3));
         

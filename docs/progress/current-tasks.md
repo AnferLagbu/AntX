@@ -365,5 +365,43 @@ make run
 
 ---
 
-*最后更新: 2026-04-08*  
-*下一步: 实现临时提权机制（P0 核心创新，与 sudo 有本质区别）
+*最后更新: 2026-04-13*  
+*下一步: 调试用户态进程启动 GPF 问题*
+
+---
+
+## 📋 2026-04-13 开发记录
+
+### 用户态进程启动 GPF 问题
+
+**问题描述**: 从内核态切换到用户态时发生 GPF，错误码为 0
+
+**症状**:
+- GPF 发生在用户代码入口点 `0x400D28`
+- 异常发生时 `DS=ES=0x0000`，`CPL=3`
+- 内核启动成功，但 iretq 后执行用户代码时触发 GPF
+
+**修复内容**:
+
+| 日期 | 修复项 | 文件 | 说明 |
+|------|--------|------|------|
+| 2026-04-13 | USER_STACK_TOP 规范地址 | src/include/user_proc.h | `0x7FFFFFFFFFFF000` → `0x00007FFFFFFFFFF0ULL` |
+| 2026-04-13 | TSS 描述符 64 位 | src/kernel/gdt.c | 高 32 位地址正确设置 |
+| 2026-04-13 | iretq 前 DS/ES | src/proc/scheduler.c | 设置为 0x23 (用户数据段) |
+| 2026-04-13 | 禁用 stack canary | Makefile | `-fno-stack-protector` |
+| 2026-04-13 | kernel_main 地址 | src/kernel/boot.asm | 硬编码地址与实际地址匹配 |
+| 2026-04-13 | 栈地址高地址 | src/kernel/boot.asm | `0xFFFF8000011701e` |
+| 2026-04-13 | invlpg 语法 | src/kernel/boot.asm | 使用寄存器间接寻址 |
+| 2026-04-13 | retfq 语法 | src/kernel/gdt.asm | 修复汇编语法错误 |
+
+**当前状态**: 调试中
+
+**相关文件**:
+- [src/proc/scheduler.c](file:///home/anfer/Code/C/AntX/src/proc/scheduler.c) - iretq 内联汇编
+- [src/proc/switch.asm](file:///home/anfer/Code/C/AntX/src/proc/switch.asm) - process_start_user_asm
+- [src/kernel/boot.asm](file:///home/anfer/Code/C/AntX/src/kernel/boot.asm) - 高地址跳转
+- [src/kernel/gdt.asm](file:///home/anfer/Code/C/AntX/src/kernel/gdt.asm) - gdt_flush
+
+**调试日志**:
+- `logs/qemu_debug28.log` - QEMU 异常日志
+- `logs/serial.log` - 内核串口输出

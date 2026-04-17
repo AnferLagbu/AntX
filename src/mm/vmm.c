@@ -126,6 +126,24 @@ uint64_t vmm_get_physical(uint64_t virt) {
     return (entry->fields.frame << 12) | (virt & 0xFFF);
 }
 
+uint64_t vmm_get_physical_in_table(uint64_t pml4, uint64_t virt) {
+    pte_t* pml4_ptr = (pte_t*)pml4;
+    
+    pte_t* pdpt = get_page_table((uint64_t)pml4_ptr, PML4_INDEX(virt), 0);
+    if (pdpt == NULL) return 0;
+    
+    pte_t* pd = get_page_table((uint64_t)pdpt, PDPT_INDEX(virt), 0);
+    if (pd == NULL) return 0;
+    
+    pte_t* pt = get_page_table((uint64_t)pd, PD_INDEX(virt), 0);
+    if (pt == NULL) return 0;
+    
+    pte_t* entry = &pt[PT_INDEX(virt)];
+    if (!entry->fields.present) return 0;
+    
+    return (entry->fields.frame << 12) | (virt & 0xFFF);
+}
+
 void vmm_switch_page_table(uint64_t cr3) {
     __asm__ volatile ("mov %0, %%cr3" : : "r"(cr3) : "memory");
 }

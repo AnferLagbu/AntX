@@ -34,6 +34,21 @@
   - 问题：GRUB 不加载高地址 VMA 段
   - 解决：在 boot 代码中手动复制内核代码
 
+### Fixed - 用户态进程启动问题 (2026-04-13)
+
+| 日期 | 修复项 | 文件 |
+|------|--------|------|
+| 2026-04-13 | USER_STACK_TOP 规范地址修复 | src/include/user_proc.h |
+| 2026-04-13 | TSS 描述符 64 位地址设置 | src/kernel/gdt.c |
+| 2026-04-13 | iretq 前设置 DS/ES | src/proc/scheduler.c |
+| 2026-04-13 | 禁用内核 stack canary | Makefile |
+| 2026-04-13 | boot.asm kernel_main 地址修复 | src/kernel/boot.asm |
+| 2026-04-13 | boot.asm 栈地址高地址修复 | src/kernel/boot.asm |
+| 2026-04-13 | boot.asm invlpg 语法修复 | src/kernel/boot.asm |
+| 2026-04-13 | gdt.asm retfq 语法修复 | src/kernel/gdt.asm |
+
+**问题状态**: 调试中 - GPF 发生在用户代码入口点
+
 ---
 
 ## [0.1.0] - 2026-04-06
