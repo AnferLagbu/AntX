@@ -9,6 +9,7 @@ extern crate alloc;
 mod memory_allocator;
 pub mod proc;
 pub mod fs;
+pub mod pwid;
 
 use core::panic::PanicInfo;
 
