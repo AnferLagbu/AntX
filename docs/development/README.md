@@ -46,6 +46,12 @@
 | [pic-implementation.md](pic-implementation.md) | PIC 位置无关代码 - 提高内核稳定性和灵活性 |
 | [pic-quick-start.md](pic-quick-start.md) | PIC 快速开始 - 具体实现步骤和代码示例 |
 
+### Rust 重写计划
+| 文档 | 说明 |
+|------|------|
+| [rust-filesystem.md](rust-filesystem.md) | 文件系统 Rust 重写 - VFS、RamFS、DevFS 等模块的 Rust 实现方案 |
+| [rust-process.md](rust-process.md) | 进程管理 Rust 重写 - 进程、调度器、会话管理的 Rust 实现方案 |
+
 ---
 
 ## 🔧 快速开始
