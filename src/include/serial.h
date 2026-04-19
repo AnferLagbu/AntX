@@ -23,4 +23,7 @@ void serial_write(uint16_t port, const void *buf, uint64_t count);
 void serial_put_hex(uint16_t port, uint64_t val);
 void serial_put_dec(uint16_t port, int64_t val);
 
+int serial_has_data(uint16_t port);
+int serial_getc(uint16_t port);
+
 #endif

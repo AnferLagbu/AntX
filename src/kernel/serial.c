@@ -24,6 +24,17 @@ static int serial_is_transmit_empty(uint16_t port) {
     return inb(SERIAL_LINE_STATUS_REG(port)) & 0x20;
 }
 
+int serial_has_data(uint16_t port) {
+    return inb(SERIAL_LINE_STATUS_REG(port)) & 0x01;
+}
+
+int serial_getc(uint16_t port) {
+    while (!serial_has_data(port)) {
+        __asm__ volatile ("pause");
+    }
+    return inb(SERIAL_DATA_REG(port));
+}
+
 void serial_putc(uint16_t port, char c) {
     while (serial_is_transmit_empty(port) == 0);
     outb(SERIAL_DATA_REG(port), c);

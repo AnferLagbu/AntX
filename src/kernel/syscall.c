@@ -248,16 +248,23 @@ int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
         uint64_t read_count = 0;
         
         while (read_count < count) {
-            if (!keyboard_has_data()) {
+            int c = -1;
+            
+            if (keyboard_has_data()) {
+                c = keyboard_get_char();
+            } else if (serial_has_data(SERIAL_COM1)) {
+                c = serial_getc(SERIAL_COM1);
+            }
+            
+            if (c == -1 || c == 0) {
                 if (read_count > 0) break;
                 __asm__ volatile ("hlt");
                 continue;
             }
             
-            char c = keyboard_get_char();
-            buffer[read_count++] = c;
+            buffer[read_count++] = (char)c;
             
-            if (c == '\n') break;
+            if ((char)c == '\n') break;
         }
         
         return (int64_t)read_count;
