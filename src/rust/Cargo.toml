@@ -1,10 +1,10 @@
 [package]
-name = "antx-kernel"
+name = "queenx"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "antx_kernel"
+name = "queenx"
 crate-type = ["staticlib"]
 
 [profile.dev]

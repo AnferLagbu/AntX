@@ -17,7 +17,7 @@
 #include "ata.h"
 #include "assert.h"
 
-#define KERNEL_NAME    "AntX"
+#define KERNEL_NAME    "QueenX"
 #define KERNEL_VERSION "0.1.0"
 
 #define MEMORY_SIZE    (128 * 1024 * 1024)

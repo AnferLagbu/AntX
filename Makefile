@@ -13,7 +13,7 @@ USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
 
 LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
 
-RUST_LIB = src/rust/target/x86_64-unknown-none/release/libantx_kernel.a
+RUST_LIB = src/rust/target/x86_64-unknown-none/release/libqueenx.a
 
 USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 

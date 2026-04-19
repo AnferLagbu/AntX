@@ -369,59 +369,110 @@ int hvfs_mount(const char *device) {
 
 ## 启动流程集成
 
-### 当前启动流程
+### 当前启动流程 (2026-04-19 更新)
 
 ```
 kernel_main()
     │
-    ├── hvfs_init()      // 初始化内存结构
-    ├── hvfs_format()    // 格式化内存文件系统
-    └── ...              // 运行 Shell
+    ├── ata_init()           // 初始化 ATA 驱动
+    │
+    ├── vfs_init()           // 初始化 VFS 层
+    │   ├── ramfs_init()     // 注册 RamFS
+    │   ├── diskfs_init()    // 注册 DiskFS
+    │   ├── devfs_init()     // 注册 DevFS
+    │   └── procfs_init()    // 注册 ProcFS
+    │
+    ├── VFS 挂载
+    │   ├── 尝试: vfs_mount("/", "diskfs")
+    │   │   ├── 成功 → 使用磁盘文件系统 (持久化)
+    │   │   └── 失败 → 回退 RamFS (内存, 关机丢失)
+    │   └── ...
+    │
+    ├── 检测安装状态
+    │   ├── 存在 /.antx_installed → 跳过安装向导
+    │   └── 不存在 → 运行 install_guide_run()
+    │       ├── Step 1: 设置 root 密码 (pwid_create_original_root)
+    │       ├── Step 2: 配置主机名 (/etc/hostname)
+    │       └── Step 3: 完成安装 (sys_fs_sync + 创建标记)
+    │
+    └── 进入 Shell (antxsh, Ring 3 用户态)
 ```
 
-### 新启动流程
+### 磁盘挂载逻辑 ([diskfs.c](file:///home/anfer/Code/C/AntX/src/fs/diskfs.c))
 
-```
-kernel_main()
-    │
-    ├── ata_init()       // 初始化 ATA 驱动
-    │
-    ├── hvfs_disk_init() // 初始化磁盘文件系统
-    │   │
-    │   ├── 检测磁盘状态
-    │   │   ├── 有有效 HvFS → hvfs_mount()
-    │   │   └── 无有效 HvFS → 进入安装向导
-    │   │
-    │   └── 加载文件系统到内存
-    │
-    └── ...              // 运行 Shell
+```c
+static int diskfs_mount(const char *path) {
+    int status = hvfs_check_disk();
+    
+    switch (status) {
+        case HVFS_DISK_OK:
+            // 找到有效的 HvFS 文件系统，直接挂载
+            hvfs_mount();
+            break;
+            
+        case HVFS_DISK_NO_DISK:
+            // 无磁盘设备，返回错误（上层回退到 RamFS）
+            return -1;
+            
+        case HVFS_DISK_UNFORMATTED:
+            // 磁盘未格式化，自动格式化并初始化
+            hvfs_format_disk();
+            hvfs_format();
+            hvfs_sync();
+            break;
+    }
+}
 ```
 
 ## 安装向导集成
 
-### 磁盘检测
+### 安装向导实现状态 (2026-04-19 验证完成)
+
+AntX 提供两个版本的安装向导：
+
+| 版本 | 文件 | 运行模式 | 用途 |
+|------|------|----------|------|
+| 内核态版本 | [install_guide.c](file:///home/anfer/Code/C/AntX/src/kernel/install_guide.c) | Ring 0 | 调试/开发用 |
+| 用户态版本 | [user_install.c](file:///home/anfer/Code/C/AntX/src/user/install/user_install.c) | Ring 3 | 生产环境使用 |
+
+### 安装向导三步流程
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              AntX Installation Wizard                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Step 1: Root Account Setup                                 │
+│  ├── 输入 root 密码 (最少 4 字符)                            │
+│  ├── 确认密码                                               │
+│  └── pwid_create_original_root() → 创建原始 Root PWID        │
+│                                                             │
+│  Step 2: System Configuration                               │
+│  ├── 输入主机名 (默认: localhost)                             │
+│  ├── sys_sethostname() → 设置内核主机名                      │
+│  └── 写入 /etc/hostname                                     │
+│                                                             │
+│  Step 3: Finalizing Installation                            │
+│  ├── sys_fs_sync() → 同步文件系统到磁盘                     │
+│  ├── 创建 /.antx_installed 标记文件                          │
+│  └── sys_fs_sync() → 再次同步确保持久化                     │
+│                                                             │
+│  结果: 安装完成，下次启动跳过安装向导                         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 安装标记检测
 
 ```c
-int hvfs_check_disk(void) {
-    struct hvfs_super_block_disk super_disk;
-    
-    // 读取超级块
-    if (ata_read_sectors(0, HVFS_SUPER_SECTOR_START, 
-                         HVFS_SUPER_SECTOR_COUNT, &super_disk) != 0) {
-        return HVFS_DISK_NO_DISK;
+// 检查是否需要运行安装向导
+int install_guide_check_needed(void) {
+    int fd = sys_fs_open("/.antx_installed", HVFS_O_RDONLY, 0);
+    if (fd >= 0) {
+        sys_fs_close(fd);
+        return 0;  // 已安装，不需要再次运行
     }
-    
-    // 检查魔数
-    if (super_disk.magic != HVFS_MAGIC) {
-        return HVFS_DISK_UNFORMATTED;
-    }
-    
-    // 检查版本
-    if (super_disk.version > HVFS_VERSION) {
-        return HVFS_DISK_VERSION_ERROR;
-    }
-    
-    return HVFS_DISK_OK;
+    return 1;  // 未安装，需要运行安装向导
 }
 ```
 

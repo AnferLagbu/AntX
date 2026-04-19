@@ -6,10 +6,33 @@
 
 ## [Unreleased]
 
+### Changed - 变更
+
+#### 命名规范确立 (2026-04-19)
+
+**内核命名**: QueenX (简称 QX)
+- QueenX 是 AntX 操作系统的内核
+- QueenX + 用户态组件 = AntX 完整操作系统
+- 类似于 Linux 内核 + GNU 工具 = GNU/Linux
+
+| 组件 | 名称 | 说明 |
+|------|------|------|
+| 内核 | **QueenX (QX)** | Ring 0 特权级运行的内核代码 |
+| Shell | **antxsh** | AntX Shell |
+| 完整系统 | **AntX** | QueenX + 用户态组件 |
+
 ### Added - 新增功能
 - 测试框架初步实现
   - `tests/scripts/diagnose_user_process.py` - ELF一致性检查与自动修复工具
   - `tests/scripts/test_user_process.py` - QEMU自动化测试脚本
+- **串口输入支持** (2026-04-19)
+  - `sys_fs_read()` 现在同时支持键盘和串口输入
+  - 优先使用键盘输入，串口作为备选
+  - 用户态进程在 QEMU 串口终端中可正常交互
+- **用户态安装向导** (2026-04-19)
+  - `src/user/install/user_install.c` - 完整的用户态安装向导实现
+  - 支持设置 root 密码、配置主机名、创建安装标记
+  - 通过系统调用接口与内核交互
 
 ### Changed - 变更
 - **内核启动架构重构** (2026-04-11)
@@ -27,14 +50,25 @@
   - 使用 rbx/r12 保存关键寄存器
 
 ### Fixed - 修复
-- 修复 `user_init_bin.c` ELF 入口点不匹配问题
-  - 旧入口点: 0x400C7E (无效指令位置)
-  - 新入口点: 0x400C02 (正确的 init_main 函数)
-- 修复高地址内核启动时的 Page Fault 问题
-  - 问题：GRUB 不加载高地址 VMA 段
-  - 解决：在 boot 代码中手动复制内核代码
 
-### Fixed - 用户态进程启动问题 (2026-04-13)
+#### 键盘驱动修复 (2026-04-19)
+| 日期 | 修复项 | 文件 | 说明 |
+|------|--------|------|------|
+| 2026-04-19 | Backspace 扫描码映射 | src/kernel/keyboard.c | `0x0E` → `'\b'` |
+| 2026-04-19 | Tab 扫描码映射 | src/kernel/keyboard.c | `0x0F` → `'\t'` |
+
+**影响**: 用户现在可以在安装向导和 Shell 中正常使用退格键和 Tab 键
+
+#### 用户态进程输入修复 (2026-04-19)
+| 日期 | 修复项 | 文件 | 说明 |
+|------|--------|------|------|
+| 2026-04-19 | sys_fs_read 双源输入 | src/kernel/syscall.c | 支持键盘+串口输入 |
+| 2026-04-19 | serial_has_data 函数 | src/kernel/serial.c | 串口数据检测 |
+| 2026-04-19 | serial_getc 函数 | src/kernel/serial.c | 串口字符读取 |
+
+**影响**: 用户态程序（安装向导、Shell）可在串口终端环境中接收输入
+
+#### 用户态进程启动问题 (2026-04-13)
 
 | 日期 | 修复项 | 文件 |
 |------|--------|------|
@@ -47,7 +81,29 @@
 | 2026-04-13 | boot.asm invlpg 语法修复 | src/kernel/boot.asm |
 | 2026-04-13 | gdt.asm retfq 语法修复 | src/kernel/gdt.asm |
 
-**问题状态**: 调试中 - GPF 发生在用户代码入口点
+**状态**: ✅ 已解决 - 用户态进程可正常运行
+
+### Verified - 验证确认 (2026-04-19)
+
+#### 安装向导与 Shell 用户态运行验证
+- ✅ 安装向导 (`install_guide_run`) 在 Ring 3 (CPL=3) 运行
+- ✅ Shell (`antxsh`) 在 Ring 3 (CPL=3) 运行
+- ✅ 用户态上下文正确设置：CS=`GDT_USER_CODE|0x03`, SS=`GDT_USER_DATA|0x03`
+- ✅ 通过 `iretq` 指令完成特权级切换
+
+#### 系统安装与持久化能力验证
+- ✅ ATA 磁盘读写完整实现 (`src/disk/ata.c`)
+- ✅ HvFS 磁盘同步功能 (`hvfs_sync()`)
+- ✅ 安装向导三步流程：root 账户 → 系统配置 → 完成安装
+- ✅ 安装标记检测 (`/.antx_installed`)
+- ✅ 启动时自动挂载 DiskFS 或回退 RamFS
+
+#### 内核架构分层设计验证
+- ✅ 内核态/用户态边界清晰 (int $0x80 系统调用门)
+- ✅ VFS 抽象层完整 (vfs_file_operations / vfs_inode_operations)
+- ✅ 多文件系统注册 (RamFS, DiskFS, DevFS, ProcFS)
+- ✅ PWID 权限模型集成到系统调用
+- ✅ C/Rust 双语言架构分工明确
 
 ---
 

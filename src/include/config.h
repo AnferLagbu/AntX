@@ -20,7 +20,7 @@
 
 #define CONFIG_SERIAL_BAUD       115200
 
-#define CONFIG_KERNEL_NAME       "AntX"
+#define CONFIG_KERNEL_NAME       "QueenX"
 #define CONFIG_KERNEL_VERSION    "0.1.0"
 
 #endif

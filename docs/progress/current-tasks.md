@@ -1,5 +1,7 @@
-# AntX 当前开发任务清单
+# QueenX / AntX 当前开发任务清单
 
+> **命名规范**: QueenX (QX) = 内核 | AntX = QueenX + 用户态组件
+>
 > **最低纲领**: 抛弃历史包袱，部分借鉴 Unix/Linux 但绝不盲从跟随，否则 AntX 就失去了自己的特色。
 
 ---
@@ -13,6 +15,36 @@
 ---
 
 ## ✅ 已完成任务
+
+### 用户态进程完整支持 (2026-04-19)
+**状态**: ✅ 已完成
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 用户态进程创建 | ✅ 完成 | `user_proc_create()` 正确设置 Ring 3 上下文 |
+| ELF 加载器 | ✅ 完成 | `user_proc_load_elf()` 支持从文件加载用户程序 |
+| 用户态输入 | ✅ 完成 | `sys_fs_read()` 支持键盘+串口双源输入 |
+| 安装向导 (用户态) | ✅ 完成 | `user_install.c` 完整实现三步安装流程 |
+| Shell (用户态) | ✅ 完成 | `antxsh` 在 Ring 3 运行 |
+| iretq 特权级切换 | ✅ 完成 | CS=`0x1B`, SS=`0x23` (Ring 3) |
+
+### 键盘驱动完善 (2026-04-19)
+**状态**: ✅ 已完成
+
+| 修复项 | 状态 | 文件 |
+|--------|------|------|
+| Backspace 支持 | ✅ 完成 | src/kernel/keyboard.c (`0x0E → '\b'`) |
+| Tab 键支持 | ✅ 完成 | src/kernel/keyboard.c (`0x0F → '\t'`) |
+| Shift 状态同步 | ✅ 完成 | scancode_to_ascii_shift 同步更新 |
+
+### 串口输入支持 (2026-04-19)
+**状态**: ✅ 已完成
+
+| 功能 | 状态 | 文件 |
+|------|------|------|
+| serial_has_data() | ✅ 完成 | src/kernel/serial.c |
+| serial_getc() | ✅ 完成 | src/kernel/serial.c |
+| sys_fs_read 双源 | ✅ 完成 | src/kernel/syscall.c |
 
 ### 安全与稳定性机制 (2026-04-08)
 **状态**: ✅ 已完成
@@ -365,14 +397,43 @@ make run
 
 ---
 
-*最后更新: 2026-04-13*  
-*下一步: 调试用户态进程启动 GPF 问题*
+*最后更新: 2026-04-19*
+*当前状态: 用户态进程完整支持，键盘/串口输入正常工作*
 
 ---
 
-## 📋 2026-04-13 开发记录
+## 📋 开发记录
 
-### 用户态进程启动 GPF 问题
+### 2026-04-19: 用户态功能完善
+
+#### 完成项目
+1. **键盘驱动修复**
+   - Backspace (0x0E) 和 Tab (0x0F) 扫描码映射
+   - 正常和 Shift 状态转换表同步更新
+
+2. **串口输入支持**
+   - 实现 `serial_has_data()` 和 `serial_getc()` 函数
+   - `sys_fs_read()` 支持双源输入（键盘优先 + 串口备选）
+   - 用户态程序可在 QEMU 串口终端正常交互
+
+3. **用户态验证确认**
+   - 安装向导 (`install_guide_run`) 确认运行在 Ring 3
+   - Shell (`antxsh`) 确认运行在 Ring 3
+   - 进程上下文正确：CS=`GDT_USER_CODE|0x03`, SS=`GDT_USER_DATA|0x03`
+
+4. **系统安装与持久化验证**
+   - ATA 磁盘读写完整实现
+   - HvFS 磁盘同步功能正常
+   - 安装向导三步流程完整
+   - 启动时自动挂载 DiskFS 或回退 RamFS
+
+5. **内核架构分层验证**
+   - 内核态/用户态边界清晰
+   - VFS 抽象层完整（4种文件系统已注册）
+   - PWID 权限模型集成到系统调用
+   - C/Rust 双语言架构分工明确
+
+### 2026-04-13: 用户态进程启动 GPF 问题 (已解决)
 
 **问题描述**: 从内核态切换到用户态时发生 GPF，错误码为 0
 
@@ -394,14 +455,10 @@ make run
 | 2026-04-13 | invlpg 语法 | src/kernel/boot.asm | 使用寄存器间接寻址 |
 | 2026-04-13 | retfq 语法 | src/kernel/gdt.asm | 修复汇编语法错误 |
 
-**当前状态**: 调试中
+**状态**: ✅ 已解决
 
 **相关文件**:
 - [src/proc/scheduler.c](file:///home/anfer/Code/C/AntX/src/proc/scheduler.c) - iretq 内联汇编
 - [src/proc/switch.asm](file:///home/anfer/Code/C/AntX/src/proc/switch.asm) - process_start_user_asm
 - [src/kernel/boot.asm](file:///home/anfer/Code/C/AntX/src/kernel/boot.asm) - 高地址跳转
 - [src/kernel/gdt.asm](file:///home/anfer/Code/C/AntX/src/kernel/gdt.asm) - gdt_flush
-
-**调试日志**:
-- `logs/qemu_debug28.log` - QEMU 异常日志
-- `logs/serial.log` - 内核串口输出

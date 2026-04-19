@@ -478,6 +478,36 @@ void example_check_modifiers(void) {
 
 这表示键盘驱动已成功初始化并启用了增强功能。
 
+## 已知问题与修复记录
+
+### 退格键 (Backspace) 和 Tab 键不支持 (2026-04-19 修复)
+
+**问题描述**:
+- 扫描码 `0x0E` (Backspace) 未映射到 ASCII 字符
+- 扫描码 `0x0F` (Tab) 未映射到 ASCII 字符
+- 用户在终端中无法使用退格键删除输入，无法使用 Tab 键
+
+**修复方案**:
+在 `scancode_to_ascii` 和 `scancode_to_ascii_shift` 两个转换表中添加映射：
+
+```c
+// scancode_to_ascii[128] - 正常状态
+static const char scancode_to_ascii[128] = {
+    0,    0,   '1', '2', '3', '4', '5', '6',
+    '7', '8', '9', '0', '-', '=',   '\b',  0,   // 0x0E → '\b' (Backspace)
+    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i',
+    'o', 'p', '[', ']', '\n', 0,   'a', 's',
+    // ...
+    0,   ' ',   '\t',  0,   0,   0,   0,   0,   // 0x0F → '\t' (Tab)
+};
+
+// scancode_to_ascii_shift[128] - Shift 状态（同步更新）
+```
+
+**修改文件**: `src/kernel/keyboard.c`
+
+**验证结果**: ✅ 修复后用户可以在安装向导和 Shell 中正常使用退格键和 Tab 键
+
 ## 注意事项
 
 1. **线程安全**: 当前的实现不是线程安全的，如果多线程访问需要添加锁
@@ -489,7 +519,8 @@ void example_check_modifiers(void) {
 - [内核架构](kernel-architecture.md)
 - [中断处理](development.md)
 - [驱动程序](development.md)
+- [系统调用](syscall.md)
 
 ---
 
-*最后更新: 2026-04-07 (键盘驱动优化完成)*
+*最后更新: 2026-04-19 (退格键/Tab 键支持修复)*

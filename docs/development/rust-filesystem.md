@@ -324,7 +324,7 @@ pub static FS_REGISTRY: FileSystemRegistry = FileSystemRegistry::new();
 ```toml
 # Cargo.toml
 [package]
-name = "antx-kernel"
+name = "queenx"
 version = "0.1.0"
 edition = "2021"
 
@@ -484,7 +484,7 @@ mod tests {
 ```rust
 // tests/fs_integration.rs
 
-use antx_kernel::fs::*;
+use queenx::fs::*;
 
 #[test]
 fn test_vfs_mount() {
