@@ -1,7 +1,11 @@
+use alloc::string::String;
 use core::ffi::c_char;
 
 use super::vfs::VFS_MANAGER;
+use super::types::{VFS_MAX_MOUNTS, VFS_MAX_FDS};
 use super::ramfs::RAMFS_DATA;
+use super::hvfs::{get_hvfs, HVFS_DATA};
+use super::diskfs::{get_diskfs, DISKFS_DATA};
 use super::types::*;
 
 fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
@@ -18,6 +22,9 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 #[no_mangle]
 pub extern "C" fn rust_vfs_init() {
     super::vfs::init();
+    super::ramfs::init();
+    super::hvfs::init();
+    super::diskfs::init();
 }
 
 #[no_mangle]
@@ -30,6 +37,13 @@ pub extern "C" fn rust_vfs_mount(path: *const c_char, fs_name: *const c_char) ->
         if ramfs.mount(path) != 0 {
             return -1;
         }
+    } else if fs_name == "diskfs" {
+        let mut diskfs = get_diskfs().lock();
+        if diskfs.mount(path) != 0 {
+            return -1;
+        }
+    } else {
+        return -1;
     }
     
     VFS_MANAGER.mount(path, fs_name)
@@ -57,17 +71,42 @@ pub extern "C" fn rust_vfs_open(path: *const c_char, flags: u32, pwid: u64) -> i
         None => return -1,
     };
     
-    let mut ramfs = RAMFS_DATA.lock();
+    let fs_name: String = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            String::new()
+        }
+    };
     
-    match ramfs.open(rel_path, flags, pwid) {
-        Some((inode_num, offset, file_type)) => {
-            VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, rel_path);
-            fd_idx as i32
+    if fs_name == "ramfs" {
+        let mut ramfs = RAMFS_DATA.lock();
+        match ramfs.open(rel_path, flags, pwid) {
+            Some((inode_num, offset, file_type)) => {
+                VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, rel_path);
+                fd_idx as i32
+            }
+            None => {
+                VFS_MANAGER.free_fd(fd_idx);
+                -1
+            }
         }
-        None => {
-            VFS_MANAGER.free_fd(fd_idx);
-            -1
+    } else if fs_name == "diskfs" {
+        let mut diskfs = get_diskfs().lock();
+        match diskfs.open(rel_path, flags, pwid) {
+            Some((inode_num, offset, file_type)) => {
+                VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, rel_path);
+                fd_idx as i32
+            }
+            None => {
+                VFS_MANAGER.free_fd(fd_idx);
+                -1
+            }
         }
+    } else {
+        VFS_MANAGER.free_fd(fd_idx);
+        -1
     }
 }
 
@@ -101,13 +140,43 @@ pub extern "C" fn rust_vfs_read(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     
     let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
     
-    let mut ramfs = RAMFS_DATA.lock();
-    let mut offset = offset;
-    let result = ramfs.read(inode_num, &mut offset, buf_slice, pwid);
+    let (fs_type, path) = {
+        let fd_table = VFS_MANAGER.fd_table.lock();
+        let path_str = fd_table[fd_idx].get_path();
+        (fd_table[fd_idx].file_type, String::from(path_str))
+    };
     
-    VFS_MANAGER.set_fd_offset(fd_idx, offset);
+    let mount_idx = match VFS_MANAGER.find_mount(&path) {
+        Some(idx) => idx,
+        None => return -1,
+    };
     
-    result
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            String::new()
+        }
+    };
+    
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
+            let mut offset = offset;
+            let result = ramfs.read(inode_num, &mut offset, buf_slice, pwid);
+            VFS_MANAGER.set_fd_offset(fd_idx, offset);
+            result
+        }
+        "diskfs" => {
+            let mut diskfs = get_diskfs().lock();
+            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
+            let result = diskfs.read(inode_num, buf_slice, count);
+            result
+        }
+        _ => -1
+    }
 }
 
 #[no_mangle]
@@ -128,13 +197,42 @@ pub extern "C" fn rust_vfs_write(fd_idx: u32, buf: *const u8, count: u32) -> i32
     
     let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
     
-    let mut ramfs = RAMFS_DATA.lock();
-    let mut offset = offset;
-    let result = ramfs.write(inode_num, &mut offset, buf_slice, pwid);
+    let path = {
+        let fd_table = VFS_MANAGER.fd_table.lock();
+        String::from(fd_table[fd_idx].get_path())
+    };
     
-    VFS_MANAGER.set_fd_offset(fd_idx, offset);
+    let mount_idx = match VFS_MANAGER.find_mount(&path) {
+        Some(idx) => idx,
+        None => return -1,
+    };
     
-    result
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            String::new()
+        }
+    };
+    
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
+            let mut offset = offset;
+            let result = ramfs.write(inode_num, &mut offset, buf_slice, pwid);
+            VFS_MANAGER.set_fd_offset(fd_idx, offset);
+            result
+        }
+        "diskfs" => {
+            let mut diskfs = get_diskfs().lock();
+            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
+            let result = diskfs.write(inode_num, buf_slice, count);
+            result
+        }
+        _ => -1
+    }
 }
 
 #[no_mangle]
@@ -162,8 +260,26 @@ pub extern "C" fn rust_vfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
         return -1;
     }
     
-    let mut ramfs = RAMFS_DATA.lock();
-    ramfs.mkdir(parent_path, name, pwid)
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            String::new()
+        }
+    };
+    
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            ramfs.mkdir(parent_path, name, pwid)
+        }
+        "diskfs" => {
+            let mut diskfs = get_diskfs().lock();
+            diskfs.mkdir(parent_path, name, pwid)
+        }
+        _ => -1
+    }
 }
 
 #[no_mangle]
@@ -181,19 +297,36 @@ pub extern "C" fn rust_vfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64
     
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
     
-    let ramfs = RAMFS_DATA.lock();
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            String::new()
+        }
+    };
     
-    match ramfs.resolve_path(rel_path) {
-        Some(inode_num) => {
-            match ramfs.stat(inode_num) {
-                Some(stat) => {
-                    unsafe { *st = stat; }
-                    0
+    match fs_name.as_str() {
+        "ramfs" => {
+            let ramfs = RAMFS_DATA.lock();
+            match ramfs.resolve_path(rel_path) {
+                Some(inode_num) => {
+                    match ramfs.stat(inode_num) {
+                        Some(stat) => { unsafe { *st = stat; } 0 }
+                        None => -1
+                    }
                 }
                 None => -1
             }
         }
-        None => -1,
+        "diskfs" => {
+            let diskfs = get_diskfs().lock();
+            match diskfs.stat(rel_path, pwid) {
+                Some(stat) => { unsafe { *st = stat; } 0 }
+                None => -1
+            }
+        }
+        _ => -1
     }
 }
 
@@ -219,4 +352,38 @@ pub extern "C" fn rust_vfs_get_cwd(buf: *mut c_char, size: u32) -> i32 {
     }
     
     len as i32
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_init() {
+    super::hvfs::init();
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_format() -> i32 {
+    let mut hvfs = get_hvfs().lock();
+    hvfs.format()
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_check_disk() -> i32 {
+    let mut hvfs = get_hvfs().lock();
+    hvfs.check_disk()
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_set_disk_present(present: bool) {
+    let mut hvfs = get_hvfs().lock();
+    hvfs.set_disk_present(present);
+}
+
+#[no_mangle]
+pub extern "C" fn rust_diskfs_init() {
+    super::diskfs::init();
+}
+
+#[no_mangle]
+pub extern "C" fn rust_diskfs_is_mounted() -> i32 {
+    let diskfs = get_diskfs().lock();
+    if diskfs.is_mounted() { 1 } else { 0 }
 }

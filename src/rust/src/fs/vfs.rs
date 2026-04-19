@@ -87,11 +87,16 @@ impl VfsFile {
         self.path[..len].copy_from_slice(&bytes[..len]);
         self.path[len] = 0;
     }
+    
+    pub fn get_path(&self) -> &str {
+        let end = self.path.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_PATH);
+        core::str::from_utf8(&self.path[..end]).unwrap_or("")
+    }
 }
 
 pub struct VfsManager {
-    mounts: Mutex<[VfsMount; VFS_MAX_MOUNTS]>,
-    fd_table: Mutex<[VfsFile; VFS_MAX_FDS]>,
+    pub mounts: Mutex<[VfsMount; VFS_MAX_MOUNTS]>,
+    pub fd_table: Mutex<[VfsFile; VFS_MAX_FDS]>,
     next_fd: AtomicU32,
     cwd: Mutex<[u8; VFS_MAX_PATH]>,
     initialized: Mutex<bool>,

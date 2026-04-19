@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 #![feature(asm)]
+#![feature(str_as_str)]
 
 extern crate alloc;
 
