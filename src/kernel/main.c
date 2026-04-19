@@ -4,6 +4,7 @@
 #include "timer.h"
 #include "module_check.h"
 #include "log_buffer.h"
+#include "proc_rust.h"
 
 void ramfs_init(void);
 void diskfs_init(void);
@@ -128,10 +129,12 @@ void kernel_main(void) {
     process_init();
     session_init();
     scheduler_init();
+    rust_kernel_init();
     user_proc_init();
     serial_puts(SERIAL_COM1, "  [OK] Process Manager\n");
     serial_puts(SERIAL_COM1, "  [OK] Session Manager\n");
     serial_puts(SERIAL_COM1, "  [OK] Scheduler\n");
+    serial_puts(SERIAL_COM1, "  [OK] Rust Scheduler\n");
     serial_puts(SERIAL_COM1, "  [OK] User Process Manager\n");
     
     pwid_init();

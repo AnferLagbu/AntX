@@ -1,6 +1,7 @@
 #include "proc.h"
 #include "serial.h"
 #include "mm.h"
+#include "proc_rust.h"
 
 struct scheduler sched;
 
@@ -33,6 +34,8 @@ void scheduler_add(struct process *proc) {
         proc->next = sched.ready_queue;
         sched.ready_queue->prev = proc;
     }
+    
+    rust_sched_add((uint32_t)proc->pid);
     
     serial_puts(SERIAL_COM1, "Scheduler: added PID=");
     serial_put_dec(SERIAL_COM1, proc->pid);
@@ -73,7 +76,12 @@ void scheduler_schedule(void) {
     struct process *prev = sched.current;
     struct process *next = NULL;
     
-    if (sched.ready_queue != NULL) {
+    uint32_t rust_next_pid = rust_sched_schedule();
+    if (rust_next_pid != 0) {
+        next = process_find_by_pid(rust_next_pid);
+    }
+    
+    if (next == NULL && sched.ready_queue != NULL) {
         next = sched.ready_queue;
         scheduler_remove(next);
     }
@@ -92,6 +100,7 @@ void scheduler_schedule(void) {
     
     next->state = PROC_RUNNING;
     sched.current = next;
+    rust_sched_set_current((uint32_t)next->pid);
     
     serial_puts(SERIAL_COM1, "Schedule: switch to PID=");
     serial_put_dec(SERIAL_COM1, next->pid);

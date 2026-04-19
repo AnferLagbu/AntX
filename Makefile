@@ -13,6 +13,8 @@ USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
 
 LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
 
+RUST_LIB = src/rust/target/x86_64-unknown-none/release/libantx_kernel.a
+
 USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 
 ASFLAGS = -f elf64
@@ -42,8 +44,12 @@ all: build/kernel.bin user
 user: build/user/init.bin build/user/antxsh.bin build/user/install.bin
 	@echo "User programs built successfully"
 
-build/kernel.bin: $(KERNEL_OBJS)
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
+build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
+	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(RUST_LIB)
+
+$(RUST_LIB):
+	@echo "Building Rust kernel module..."
+	cd src/rust && cargo build --release
 
 build/%.o: src/kernel/%.c
 	@mkdir -p build
@@ -226,6 +232,7 @@ iso: all user
 
 clean:
 	rm -rf build/ isodir/
+	cd src/rust && cargo clean
 
 run: all user
 	qemu-system-x86_64 -kernel build/kernel.bin -serial stdio

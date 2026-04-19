@@ -8,6 +8,8 @@ isodir/
 *.iso
 *.img
 
+src/rust/target/
+
 .DS_Store
 Thumbs.db
 *.swp
