@@ -22,7 +22,7 @@ ASFLAGS = -f elf64
 KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/pmm.o build/vmm.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
               build/vfs.o build/ramfs.o build/diskfs.o build/devfs.o build/procfs.o build/hvfs.o \
-              build/syscall.o build/keyboard.o build/shell.o build/string.o build/printk.o build/ata.o \
+              build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
               build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
               build/thread.o build/scheduler_ex.o build/ipc.o
 
