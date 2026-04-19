@@ -76,20 +76,17 @@ void scheduler_schedule(void) {
     struct process *prev = sched.current;
     struct process *next = NULL;
     
-    uint32_t rust_next_pid = rust_sched_schedule();
-    if (rust_next_pid != 0) {
-        next = process_find_by_pid(rust_next_pid);
+    if (prev != NULL && prev->state == PROC_BLOCKED) {
+        sched.current = NULL;
+        prev = NULL;
     }
     
-    if (next == NULL && sched.ready_queue != NULL) {
+    if (sched.ready_queue != NULL) {
         next = sched.ready_queue;
         scheduler_remove(next);
     }
     
     if (next == NULL) {
-        if (prev != NULL && prev->state == PROC_RUNNING) {
-            return;
-        }
         return;
     }
     

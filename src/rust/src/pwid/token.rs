@@ -150,7 +150,7 @@ impl PwidToken {
 
 pub const MAX_TOKENS: usize = 64;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TokenManager {
     tokens: [PwidToken; MAX_TOKENS],
     count: usize,

@@ -65,7 +65,7 @@ static int config_root_pwid(void) {
         user_print("\n");
         user_println("Creating root account...");
         
-        int result = user_auth_create_pwid(pw1, note, 0);
+        int result = user_auth_create_original_root(pw1);
         
         if (result >= 0) {
             user_println("Root account created successfully!");

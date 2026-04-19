@@ -23,7 +23,8 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o
               build/pmm.o build/vmm.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
               build/vfs.o build/ramfs.o build/diskfs.o build/devfs.o build/procfs.o build/hvfs.o \
               build/syscall.o build/keyboard.o build/shell.o build/string.o build/printk.o build/ata.o build/install_guide.o \
-              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o
+              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
+              build/thread.o build/scheduler_ex.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -92,6 +93,14 @@ build/switch.o: src/proc/switch.asm
 	$(AS) $(ASFLAGS) $< -o $@
 
 build/user_proc.o: src/proc/user_proc.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/thread.o: src/proc/thread.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/scheduler_ex.o: src/proc/scheduler_ex.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

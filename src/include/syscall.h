@@ -44,6 +44,7 @@
 #define SYS_AUTH_SETNOTE   47
 #define SYS_AUTH_CHANGEPW  48
 #define SYS_AUTH_VERIFY    49
+#define SYS_AUTH_CREATE_ORIGINAL_ROOT 50
 
 #define SYS_MEM_BRK        60
 #define SYS_MEM_MAP        61

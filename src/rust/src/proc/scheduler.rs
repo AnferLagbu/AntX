@@ -96,12 +96,44 @@ impl Scheduler {
     
     pub fn schedule(&self) -> Option<Pid> {
         let mut ready = self.ready_queue.lock();
+        let current_pid = self.current.load(Ordering::SeqCst);
         
-        if let Some(next_pid) = ready.pop_front() {
-            let current_pid = self.current.load(Ordering::SeqCst);
-            
-            if current_pid != 0 {
-                ready.push_back(current_pid);
+        let mut next_pid: Option<Pid> = None;
+        let mut skipped: Vec<Pid> = Vec::new();
+        
+        while let Some(pid) = ready.pop_front() {
+            if let Some(process) = PROCESS_TABLE.get(pid) {
+                unsafe {
+                    let state = (*process).get_state();
+                    if state != ProcessState::Blocked && state != ProcessState::Zombie {
+                        next_pid = Some(pid);
+                        break;
+                    } else {
+                        skipped.push(pid);
+                    }
+                }
+            } else {
+                next_pid = Some(pid);
+                break;
+            }
+        }
+        
+        for pid in skipped {
+            ready.push_back(pid);
+        }
+        
+        if let Some(next_pid) = next_pid {
+            if current_pid != 0 && current_pid != next_pid {
+                if let Some(process) = PROCESS_TABLE.get(current_pid) {
+                    unsafe {
+                        let state = (*process).get_state();
+                        if state != ProcessState::Blocked && state != ProcessState::Zombie {
+                            ready.push_back(current_pid);
+                        }
+                    }
+                } else {
+                    ready.push_back(current_pid);
+                }
             }
             
             self.current.store(next_pid, Ordering::SeqCst);

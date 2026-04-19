@@ -2,6 +2,7 @@
 #include "io.h"
 #include "serial.h"
 #include "idt.h"
+#include "proc_rust.h"
 
 #define KBD_DATA_PORT    0x60
 #define KBD_STATUS_PORT  0x64
@@ -9,6 +10,11 @@
 
 struct keyboard_buffer kbd_buffer;
 struct keyboard_state kbd_state;
+static uint32_t waiting_pid = 0;
+
+void keyboard_set_waiting_pid(uint32_t pid) {
+    waiting_pid = pid;
+}
 
 static const char scancode_to_ascii[128] = {
     0,    0,   '1', '2', '3', '4', '5', '6',
@@ -208,6 +214,10 @@ static void keyboard_isr(struct interrupt_frame *frame) {
     
     if (c != 0) {
         kbd_buffer_put(c);
+        if (waiting_pid != 0) {
+            rust_proc_unblock(waiting_pid);
+            waiting_pid = 0;
+        }
     }
 }
 

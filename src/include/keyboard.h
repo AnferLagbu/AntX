@@ -146,6 +146,7 @@ int keyboard_read_char(void);
 int keyboard_read_line(char *buf, int max);
 bool keyboard_has_data(void);
 char keyboard_get_char(void);
+void keyboard_set_waiting_pid(uint32_t pid);
 
 uint16_t keyboard_get_modifiers(void);
 bool keyboard_is_shift_pressed(void);

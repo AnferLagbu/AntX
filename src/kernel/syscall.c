@@ -4,6 +4,7 @@
 #include "hvfs.h"
 #include "pwid.h"
 #include "proc.h"
+#include "proc_rust.h"
 #include "user_proc.h"
 #include "string.h"
 #include "gdt.h"
@@ -11,6 +12,7 @@
 #include "keyboard.h"
 
 int64_t sys_boot_check(int check_type);
+int64_t sys_auth_create_original_root(const char *password);
 
 static syscall_handler_t syscall_table[MAX_SYSCALLS];
 
@@ -53,6 +55,7 @@ void syscall_init(void) {
     syscall_register(SYS_AUTH_SETNOTE, (syscall_handler_t)sys_auth_setnote);
     syscall_register(SYS_AUTH_CHANGEPW, (syscall_handler_t)sys_auth_changepw);
     syscall_register(SYS_AUTH_VERIFY, (syscall_handler_t)sys_auth_verify);
+    syscall_register(SYS_AUTH_CREATE_ORIGINAL_ROOT, (syscall_handler_t)sys_auth_create_original_root);
     
     syscall_register(SYS_ENV_GETCWD, (syscall_handler_t)sys_env_getcwd);
     syscall_register(SYS_ENV_CHDIR, (syscall_handler_t)sys_env_chdir);
@@ -246,6 +249,7 @@ int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
         
         char *buffer = (char *)buf;
         uint64_t read_count = 0;
+        struct process *proc = process_get_current();
         
         while (read_count < count) {
             int c = -1;
@@ -258,7 +262,13 @@ int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
             
             if (c == -1 || c == 0) {
                 if (read_count > 0) break;
-                __asm__ volatile ("hlt");
+                if (proc) {
+                    proc->state = PROC_BLOCKED;
+                }
+                __asm__ volatile ("sti; hlt; cli");
+                if (proc) {
+                    proc->state = PROC_RUNNING;
+                }
                 continue;
             }
             
@@ -389,6 +399,19 @@ int64_t sys_auth_create(const char *password, const char *note, uint8_t level) {
         return E_BUSY;
     } else if (result == PWID_ERR_EXISTS) {
         return E_EXIST;
+    }
+    return E_PERM;
+}
+
+int64_t sys_auth_create_original_root(const char *password) {
+    if (pwid_has_original_root()) {
+        return E_EXIST;
+    }
+    
+    int result = pwid_create_original_root(password);
+    if (result == 0) {
+        pwid_login("root", password);
+        return 0;
     }
     return E_PERM;
 }

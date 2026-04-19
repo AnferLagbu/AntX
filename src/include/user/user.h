@@ -52,6 +52,7 @@ int user_chdir(const char *path);
 int user_auth_login(const char *password, const char *note);
 void user_auth_logout(void);
 int user_auth_create_pwid(const char *password, const char *note, uint8_t level);
+int user_auth_create_original_root(const char *password);
 int user_auth_change_password(const char *old_pw, const char *new_pw);
 int user_auth_verify_password(const char *password);
 

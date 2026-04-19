@@ -84,6 +84,12 @@ pub extern "C" fn rust_sched_init() {
 
 #[no_mangle]
 pub extern "C" fn rust_sched_add(pid: Pid) {
+    use super::process::PROCESS_TABLE;
+    
+    if PROCESS_TABLE.get(pid).is_none() {
+        let name = alloc::format!("proc_{}", pid);
+        let _ = SCHEDULER.create_process(&name, None);
+    }
     SCHEDULER.add(pid);
 }
 
