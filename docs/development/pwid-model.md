@@ -120,6 +120,12 @@ AntX 采用「锚点 + 派生」的多 Root 架构：
 | 密码可改 | 通过验证原密码后可修改 |
 | 初始化 | 首次启动时强制设置 |
 
+**安装向导实现** (2026-04-19 更新):
+- 安装向导不再询问备注，直接使用固定值 "root"
+- 用户只需设置密码，系统自动创建 Original Root
+- 系统调用: `sys_auth_create_original_root(password)`
+- 文件: `src/user/install/user_install.c` (用户态)
+
 ### 3.3 派生 Root 特性
 
 | 特性 | 说明 |
