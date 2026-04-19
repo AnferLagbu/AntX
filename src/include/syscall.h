@@ -52,6 +52,19 @@
 #define SYS_MEM_PROTECT    63
 
 #define SYS_IPC_PIPE       80
+#define SYS_IPC_SIGNAL     81
+#define SYS_IPC_SHM_CREATE 82
+#define SYS_IPC_SHM_ATTACH 83
+#define SYS_IPC_SHM_DETACH 84
+#define SYS_IPC_SHM_DESTROY 85
+#define SYS_IPC_MSGQ_CREATE 86
+#define SYS_IPC_MSGQ_SEND  87
+#define SYS_IPC_MSGQ_RECV  88
+#define SYS_IPC_MSGQ_DESTROY 89
+#define SYS_IPC_SEM_CREATE 90
+#define SYS_IPC_SEM_WAIT   91
+#define SYS_IPC_SEM_POST   92
+#define SYS_IPC_SEM_DESTROY 93
 #define SYS_NET_SOCKET     81
 #define SYS_NET_BIND       82
 #define SYS_NET_LISTEN     83

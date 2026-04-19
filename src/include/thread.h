@@ -3,6 +3,7 @@
 
 #include "types.h"
 
+#ifndef _PROC_H
 #define MAX_THREADS_PER_PROCESS  256
 #define MAX_PROCESSES            256
 #define DEFAULT_TIME_SLICE       10
@@ -14,6 +15,7 @@
 
 typedef uint64_t tid_t;
 typedef uint64_t pid_t;
+#endif
 
 enum thread_state {
     THREAD_CREATED = 0,
@@ -44,6 +46,7 @@ enum block_reason {
     BLOCK_WRITE
 };
 
+#ifndef _PROC_H
 struct cpu_context {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
     uint64_t rdi, rsi, rbp, rbx, rdx, rcx, rax;
@@ -52,6 +55,7 @@ struct cpu_context {
     uint64_t fs_base;
     uint64_t gs_base;
 };
+#endif
 
 struct thread {
     tid_t tid;
@@ -85,6 +89,7 @@ struct thread {
     uint64_t wait_tid;
 };
 
+#ifndef _PROC_H
 struct process {
     pid_t pid;
     pid_t parent_pid;
@@ -126,6 +131,7 @@ struct process {
         int stderr_fd;
     } stdio;
 };
+#endif
 
 struct wait_queue {
     struct thread *head;
