@@ -46,6 +46,7 @@ static int config_root_pwid(void) {
     println("");
     println("Creating the root (administrator) account.");
     println("This account has full system access.");
+    println("Note: Root account note is fixed as 'root'.");
     println("");
     
     while (1) {

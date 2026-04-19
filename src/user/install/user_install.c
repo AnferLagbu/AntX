@@ -27,13 +27,13 @@ static void welcome_page(void) {
 static int config_root_pwid(void) {
     char pw1[64];
     char pw2[64];
-    char note[64];
     
     user_print("\n");
     user_println("--- Step 1: Root Account Setup ---");
     user_print("\n");
     user_println("Creating the root (administrator) account.");
     user_println("This account has full system access.");
+    user_println("Note: Root account note is fixed as 'root' and cannot be changed.");
     user_print("\n");
     
     while (1) {
@@ -53,13 +53,6 @@ static int config_root_pwid(void) {
         if (len1 != len2 || user_strcmp(pw1, pw2) != 0) {
             user_println("Passwords do not match! Please try again.");
             continue;
-        }
-        
-        user_print("Enter root account note (default: root): ");
-        int note_len = user_read_line(note, sizeof(note));
-        
-        if (note_len == 0) {
-            user_strcpy(note, "root");
         }
         
         user_print("\n");
