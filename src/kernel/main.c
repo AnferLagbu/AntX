@@ -86,7 +86,20 @@ static void start_user_init(void) {
 }
 
 void kernel_main(void) {
-    serial_init(SERIAL_COM1);
+    __asm__ volatile (
+        "mov $0x3F8, %%dx\n"
+        "mov $'A', %%al\n"
+        "out %%al, %%dx\n"
+        "mov $'B', %%al\n"
+        "out %%al, %%dx\n"
+        "mov $'C', %%al\n"
+        "out %%al, %%dx\n"
+        "mov $'\\n', %%al\n"
+        "out %%al, %%dx\n"
+        : : : "ax", "dx"
+    );
+    
+    serial_puts(SERIAL_COM1, "[DEBUG] kernel_main started\n");
     serial_puts(SERIAL_COM1, "[DEBUG] serial_init done\n");
     serial_enable_log();
     serial_puts(SERIAL_COM1, "[DEBUG] serial_enable_log done\n");

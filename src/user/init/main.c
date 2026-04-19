@@ -60,22 +60,20 @@ void init_main(void) {
     user_println("\n[INIT] Shell exited. System shutting down.");
 }
 
-void _start(void) {
+__attribute__((naked)) void _start(void) {
     __asm__ volatile(
         "mov $0x23, %%ax\n"
         "mov %%ax, %%ds\n"
         "mov %%ax, %%es\n"
         "mov %%ax, %%fs\n"
         "mov %%ax, %%gs\n"
-        ".byte 0xEB, 0xFE\n"  
+        "xor %%rbp, %%rbp\n"
+        "call init_main\n"
+        "mov $2, %%rax\n"
+        "xor %%rdi, %%rdi\n"
+        "int $0x80\n"
+        "1: hlt\n"
+        "jmp 1b\n"
         : : : "ax", "memory"
     );
-    
-    init_main();
-    
-    sys_proc_exit(0);
-    
-    while (1) {
-        sys_proc_yield_cpu();
-    }
 }

@@ -148,6 +148,19 @@ void vmm_switch_page_table(uint64_t cr3) {
     __asm__ volatile ("mov %0, %%cr3" : : "r"(cr3) : "memory");
 }
 
+static void set_user_bit_recursive(uint64_t table, int level) {
+    pte_t* entries = (pte_t*)table;
+    for (int i = 0; i < 512; i++) {
+        if (entries[i].fields.present && !entries[i].fields.pat) {
+            entries[i].fields.user = 1;
+            if (level > 1) {
+                uint64_t next_table = entries[i].fields.frame << 12;
+                set_user_bit_recursive(next_table, level - 1);
+            }
+        }
+    }
+}
+
 uint64_t vmm_create_user_page_table(void) {
     uint64_t pml4 = (uint64_t)pmm_alloc_page();
     if (pml4 == 0) {
@@ -162,6 +175,14 @@ uint64_t vmm_create_user_page_table(void) {
     for (int i = 256; i < 512; i++) {
         new_pml4[i].value = ((pte_t*)kernel_pml4)[i].value;
     }
+    
+    for (int i = 0; i < 256; i++) {
+        if (((pte_t*)kernel_pml4)[i].fields.present) {
+            new_pml4[i].value = ((pte_t*)kernel_pml4)[i].value;
+        }
+    }
+    
+    set_user_bit_recursive(pml4, 4);
     
     return pml4;
 }

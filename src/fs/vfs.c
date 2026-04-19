@@ -144,13 +144,20 @@ int vfs_mount(const char *path, const char *fs_name) {
     
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
         if (!mount_table[i].used) {
+            if (fs->sops && fs->sops->mount) {
+                if (fs->sops->mount(path) != 0) {
+                    serial_puts(SERIAL_COM1, "VFS: failed to mount '");
+                    serial_puts(SERIAL_COM1, fs_name);
+                    serial_puts(SERIAL_COM1, "' at '");
+                    serial_puts(SERIAL_COM1, path);
+                    serial_puts(SERIAL_COM1, "'\n");
+                    return -1;
+                }
+            }
+            
             strcpy(mount_table[i].path, path);
             mount_table[i].fs = fs;
             mount_table[i].used = 1;
-            
-            if (fs->sops && fs->sops->mount) {
-                fs->sops->mount(path);
-            }
             
             serial_puts(SERIAL_COM1, "VFS: mounted '");
             serial_puts(SERIAL_COM1, fs_name);

@@ -12,7 +12,7 @@ void serial_init(uint16_t port) {
     outb(SERIAL_LINE_CTRL_REG(port), 0x03);
     outb(SERIAL_FIFO_CTRL_REG(port), 0xC7);
     outb(SERIAL_MODEM_CTRL_REG(port), 0x0B);
-    outb(SERIAL_INT_ENABLE_REG(port), 0x01);
+    outb(SERIAL_INT_ENABLE_REG(port), 0x00);
 }
 
 void serial_enable_log(void) {

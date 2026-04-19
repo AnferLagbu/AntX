@@ -4,7 +4,7 @@
 #include "types.h"
 #include "proc.h"
 
-#define USER_STACK_TOP    0x00007FFFFFFFFFF000ULL
+#define USER_STACK_TOP    0x00007FFFFFBFF000ULL
 #define USER_STACK_SIZE   (64 * 1024)
 #define USER_STACK_GUARD  (1 * PAGE_SIZE)
 #define USER_CODE_BASE    0x400000

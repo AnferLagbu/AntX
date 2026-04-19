@@ -55,7 +55,20 @@ void shell_main(void) {
     }
 }
 
-void _start(void) {
-    shell_main();
-    sys_proc_exit(0);
+__attribute__((naked)) void _start(void) {
+    __asm__ volatile(
+        "mov $0x23, %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+        "xor %%rbp, %%rbp\n"
+        "call shell_main\n"
+        "mov $2, %%rax\n"
+        "xor %%rdi, %%rdi\n"
+        "int $0x80\n"
+        "1: hlt\n"
+        "jmp 1b\n"
+        : : : "ax", "memory"
+    );
 }

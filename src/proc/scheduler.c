@@ -162,6 +162,11 @@ void scheduler_schedule(void) {
         
         __asm__ volatile (
             "cli\n"
+            "mov $0x23, %%ax\n"
+            "mov %%ax, %%ds\n"
+            "mov %%ax, %%es\n"
+            "mov %%ax, %%fs\n"
+            "mov %%ax, %%gs\n"
             "movq %0, %%rax\n"
             "pushq %%rax\n"
             "movq %1, %%rax\n"
@@ -172,11 +177,6 @@ void scheduler_schedule(void) {
             "movq %3, %%rax\n"
             "pushq %%rax\n"
             "mov %4, %%cr3\n"
-            "mov $0x23, %%ax\n"
-            "mov %%ax, %%ds\n"
-            "mov %%ax, %%es\n"
-            "mov %%ax, %%fs\n"
-            "mov %%ax, %%gs\n"
             "iretq\n"
             :
             : "r"(ss_val), "r"(rsp_val), "r"(cs_val), "r"(rip_val), "r"(next->cr3)

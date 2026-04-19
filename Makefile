@@ -89,7 +89,7 @@ build/user_proc.o: src/proc/user_proc.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/user/embedded/user_init_bin.o: src/user/embedded/user_init_bin.c
+build/user/embedded/user_init_bin.o: src/user/embedded/user_init_bin.c build/user/init.bin
 	@mkdir -p build/user/embedded
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -184,6 +184,8 @@ build/user/install/user_install.o: src/user/install/user_install.c
 build/user/init.bin: $(USER_LIB_OBJS) $(USER_INIT_OBJS) $(USER_INSTALL_OBJS)
 	@mkdir -p build/user
 	$(LD) $(USER_LDFLAGS) -o $@ $(USER_LIB_OBJS) $(USER_INIT_OBJS) $(USER_INSTALL_OBJS)
+	@echo "Generating embedded binary data..."
+	@python3 scripts/gen_embed.py $@ src/user/embedded/user_init_bin.c build_user_init_bin
 
 build/user/antxsh.bin: $(USER_LIB_OBJS) $(USER_ANTXSH_OBJS)
 	@mkdir -p build/user
@@ -192,6 +194,9 @@ build/user/antxsh.bin: $(USER_LIB_OBJS) $(USER_ANTXSH_OBJS)
 build/user/install.bin: $(USER_LIB_OBJS) $(USER_INSTALL_OBJS)
 	@mkdir -p build/user
 	$(LD) $(USER_LDFLAGS) -o $@ $(USER_LIB_OBJS) $(USER_INSTALL_OBJS)
+
+src/user/embedded/user_init_bin.c: build/user/init.bin
+	@python3 scripts/gen_embed.py $< $@ build_user_init_bin
 
 $(DISK_IMAGE): build/kernel.bin user
 	@echo "Creating disk image..."

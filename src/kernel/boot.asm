@@ -46,6 +46,7 @@ kernel_info:
 section .text
 global _start
 extern kernel_main
+extern stack_top
 
 _start:
     cli
@@ -159,82 +160,9 @@ trampoline64:
 
 BITS 64
 trampoline64_high:
-    mov dx, 0x3F8
-    mov al, 'H'
-    out dx, al
-    mov al, 'I'
-    out dx, al
-    mov al, 'G'
-    out dx, al
-    mov al, 'H'
-    out dx, al
-    mov al, '\n'
-    out dx, al
+    mov rsp, qword stack_top
 
-    mov rsi, qword 0x118000
-    mov rdi, qword 0xFFFF800001118000
-    mov rcx, qword 0x124000
-    shr rcx, 3
-    
-    cld
-    rep movsq
-
-    mov dx, 0x3F8
-    mov al, 'C'
-    out dx, al
-    mov al, 'O'
-    out dx, al
-    mov al, 'P'
-    out dx, al
-    mov al, 'Y'
-    out dx, al
-    mov al, '\n'
-    out dx, al
-
-    mov rax, 0xFFFF800001118000
-    invlpg [rax]
-
-    mov rax, cr3
-    mov cr3, rax
-
-    mov dx, 0x3F8
-    mov al, 'C'
-    out dx, al
-    mov al, 'R'
-    out dx, al
-    mov al, '3'
-    out dx, al
-    mov al, '\n'
-    out dx, al
-
-    mov rsp, qword 0xFFFF8000011701e
-
-    mov dx, 0x3F8
-    mov al, 'S'
-    out dx, al
-    mov al, 'T'
-    out dx, al
-    mov al, 'K'
-    out dx, al
-    mov al, '\n'
-    out dx, al
-
-    mov rax, qword 0xFFFF8000011182bb
-
-    mov dx, 0x3F8
-    mov al, 'C'
-    out dx, al
-    mov al, 'A'
-    out dx, al
-    mov al, 'L'
-    out dx, al
-    mov al, 'L'
-    out dx, al
-    mov al, '\n'
-    out dx, al
-
-    mov rax, qword 0xFFFF8000011182bb
-    call rax
+    call kernel_main
 
     cli
 .halt:

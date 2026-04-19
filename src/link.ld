@@ -24,7 +24,7 @@ SECTIONS
     } :boot
     
     . = ALIGN(4096);
-    .bootbss : {
+    .bootbss (NOLOAD) : {
         *(.bootbss)
     } :boot
     
@@ -34,8 +34,6 @@ SECTIONS
     _kernel_text_lma = .;
     _kernel_text_vma = 0xFFFF800001000000 + .;
     
-    . = _kernel_text_vma;
-    
     .text : AT(_kernel_text_lma) {
         _kernel_text_start = .;
         *(.text)
@@ -44,13 +42,13 @@ SECTIONS
     } :kernel
     
     . = ALIGN(4096);
-    .rodata : AT(_kernel_text_lma + (ADDR(.rodata) - _kernel_text_vma)) {
+    .rodata : AT(_kernel_text_lma + (ADDR(.rodata) - _kernel_text_lma)) {
         *(.rodata)
         *(.rodata.*)
     } :kernel
     
     . = ALIGN(4096);
-    .data : AT(_kernel_text_lma + (ADDR(.data) - _kernel_text_vma)) {
+    .data : AT(_kernel_text_lma + (ADDR(.data) - _kernel_text_lma)) {
         *(.data)
         *(.data.*)
         
@@ -61,7 +59,7 @@ SECTIONS
     } :kernel
     
     . = ALIGN(4096);
-    .bss : AT(_kernel_text_lma + (ADDR(.bss) - _kernel_text_vma)) {
+    .bss : AT(_kernel_text_lma + (ADDR(.bss) - _kernel_text_lma)) {
         *(.bss)
         *(.bss.*)
         *(COMMON)
@@ -92,6 +90,6 @@ SECTIONS
     
     . = ALIGN(4096);
     _kernel_end = .;
-    _kernel_size = _kernel_end - _kernel_text_vma;
+    _kernel_size = _kernel_end - _kernel_text_lma;
     _kernel_end_phys = _kernel_text_lma + _kernel_size;
 }

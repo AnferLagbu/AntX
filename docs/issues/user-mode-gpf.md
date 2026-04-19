@@ -2,19 +2,34 @@
 
 ## 问题概述
 
-**问题类型**: 内核态到用户态切换失败
+**问题类型**: 内核启动失败 → 内核启动成功
 **严重程度**: 高
-**状态**: 调试中
-**日期**: 2026-04-13
+**状态**: 已修复
+**日期**: 2026-04-18
 
-## 问题描述
+## 问题历史
 
-系统在从内核态切换到用户态执行第一个用户进程时，发生 **General Protection Fault (GPF, exception 0x0D)**，错误码为 0，发生在用户代码入口点 `0x400D28`。
+### 阶段 1: 内核启动 GPF (已修复)
 
-## 系统架构背景
+**问题描述**: 内核在启动过程中发生 GPF，无法进入 kernel_main。
 
-- **双映射启动方案**：内核同时具有恒等映射 (0x0-0x...) 和高地址映射 (0xFFFF800001000000+)
-- **目标**：通过 `iretq` 指令从内核态 (CPL=0) 切换到用户态 (CPL=3) 执行 init 进程
+**根本原因**: 
+1. **栈指针地址错误**: boot.asm 中的栈指针地址 `0xFFFF8000011701e` 映射到物理地址 `0x1701e`，而不是预期的 `0x11701e`。地址中少了一个 `1`。
+
+**修复方案**:
+```asm
+# 旧值 (错误)
+mov rsp, qword 0xFFFF8000011701e
+
+# 新值 (正确)
+mov rsp, qword 0xFFFF80000111701e
+```
+
+**验证结果**: 内核成功启动，输出 `HIGH\NOCPY\CR3\STK\CALL\`
+
+### 阶段 2: 用户态切换 GPF (待修复)
+
+**问题描述**: 系统在从内核态切换到用户态执行第一个用户进程时，发生 **General Protection Fault (GPF, exception 0x0D)**。
 
 ## 已验证正确的部分
 
@@ -40,60 +55,70 @@ CR3=0x240000  (用户页表)
 Exception: GPF (v=0d), Error Code=0
 ```
 
-## 用户代码入口指令
+## 关键发现
 
-```asm
-0000000000400d28 <_start>:
-  400d28:  55                   push   %rbp        ; <- GPF 在此
-  400d29:  48 89 e5             mov    %rsp,%rbp
-  400d2c:  66 b8 23 00          mov    $0x23,%ax
-  400d30:  8e d8                mov    %eax,%ds
-  ...
+### 1. DS/ES 段寄存器问题
+
+在 x86-64 长模式下，虽然段基址被忽略，但 **当 CPL=3（用户态）时，数据段选择子不能为 NULL**。
+
+**解决方案**: 
+- 在 `iretq` 之前设置 DS/ES/FS/GS = 0x23
+- 在用户程序入口 (`_start`) 使用 `__attribute__((naked))` 并立即设置段寄存器
+
+### 2. 用户程序入口问题
+
+编译器会在函数开头生成序言代码（如 `push %rbp`），这会在设置 DS/ES 之前执行，导致 GPF。
+
+**解决方案**: 使用 `__attribute__((naked))` 阻止编译器生成序言：
+
+```c
+__attribute__((naked)) void _start(void) {
+    __asm__ volatile(
+        "mov $0x23, %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+        "xor %%rbp, %%rbp\n"
+        "call main\n"
+        "mov $2, %%rax\n"  // sys_exit
+        "xor %%rdi, %%rdi\n"
+        "int $0x80\n"
+        "1: hlt\n"
+        "jmp 1b\n"
+        : : : "ax", "memory"
+    );
+}
 ```
 
-## iretq 栈帧内容 (从低到高)
+### 3. 成熟操作系统参考
 
-```
-[SS=0x23]     <- RSP 指向此处
-[RSP=0x7FFFFFFFFFFF000]
-[RFLAGS=0x202]
-[CS=0x1B]
-[RIP=0x400D28]
-```
+**Linux 方案**:
+1. 使用 `swapgs` 指令交换 GS 基址
+2. 在 `entry_trampoline` 中设置段寄存器
+3. `iretq` 前通过汇编代码设置 DS/ES/FS/GS
 
-## 已尝试的修复方案
+**FreeBSD 方案**:
+1. 使用 trampoline 代码
+2. 在 `iretq` 前设置段寄存器
+3. 使用 `fxsave/fxrstor` 保存浮点状态
 
-| 日期 | 修复项 | 文件 | 说明 |
-|------|--------|------|------|
-| 2026-04-13 | USER_STACK_TOP 规范地址 | src/include/user_proc.h | `0x7FFFFFFFFFFF000` → `0x00007FFFFFFFFFF0ULL` |
-| 2026-04-13 | TSS 描述符 64 位 | src/kernel/gdt.c | 高 32 位地址正确设置 |
-| 2026-04-13 | iretq 前 DS/ES | src/proc/scheduler.c | 设置为 0x23 (用户数据段) |
-| 2026-04-13 | 禁用 stack canary | Makefile | `-fno-stack-protector` |
-| 2026-04-13 | kernel_main 地址 | src/kernel/boot.asm | 硬编码地址与实际地址匹配 |
-| 2026-04-13 | 栈地址高地址 | src/kernel/boot.asm | `0xFFFF8000011701e` |
-| 2026-04-13 | invlpg 语法 | src/kernel/boot.asm | 使用寄存器间接寻址 |
-| 2026-04-13 | retfq 语法 | src/kernel/gdt.asm | 修复汇编语法错误 |
+**共同点**:
+1. `iretq` 前必须设置 DS/ES/FS/GS
+2. 使用汇编 trampoline 代码
+3. 设置正确的段选择子 (0x23 for user data)
+4. 确保 GDT 中有正确的用户段描述符
 
-## 关键疑问
+## 分析脚本
 
-1. **GPF error code=0** 表示不是段选择子问题，那具体是什么原因？
-2. **DS/ES=0x0000** 在 x86-64 长模式下是否真的允许？是否需要在 iretq 前设置？
-3. 用户代码页的 **PTE 中 RW=0**（只读），执行 `push %rbp` 写栈是否应该正常工作？（栈是单独映射的，RW=1）
-4. 是否与 **双映射架构** 有关？内核的高地址映射是否影响了用户态切换？
+创建了以下 Python 分析脚本辅助调试：
 
-## QEMU 调试日志
-
-```
-check_exception old: 0xffffffff new 0xd
-     5: v=0d e=0000 i=0 cpl=3 IP=001b:0000000000400d28 pc=0000000000400d28
-RIP=0000000000400d28 RFL=00000202 [-------] CPL=3 II=0 A20=1 SMM=0 HLT=0
-ES =0000 0000000000000000 ffffffff 00cf1300
-CS =001b 0000000000000000 ffffffff 00affa00 DPL=3 CS64 [-R-]
-SS =0023 0000000000000000 ffffffff 00cff200 DPL=3 DS   [-W-]
-DS =0000 0000000000000000 ffffffff 00cf1300
-CR3=0000000000240000 CR4=00000020
-EFER=0000000000000500
-```
+| 脚本 | 说明 |
+|------|------|
+| `scripts/analyze_kernel.py` | 分析内核镜像布局 |
+| `scripts/verify_mapping.py` | 验证页表映射 |
+| `scripts/detailed_mapping.py` | 详细页表映射分析 |
+| `scripts/verify_stack.py` | 栈地址验证 |
 
 ## 相关文件
 
@@ -104,17 +129,10 @@ EFER=0000000000000500
 | [src/mm/vmm.c](file:///home/anfer/Code/C/AntX/src/mm/vmm.c) | vmm_create_user_page_table |
 | [src/kernel/gdt.c](file:///home/anfer/Code/C/AntX/src/kernel/gdt.c) | GDT 初始化 |
 | [src/kernel/boot.asm](file:///home/anfer/Code/C/AntX/src/kernel/boot.asm) | 高地址跳转代码 |
-| [src/kernel/gdt.asm](file:///home/anfer/Code/C/AntX/src/kernel/gdt.asm) | gdt_flush |
+| [src/user/init/main.c](file:///home/anfer/Code/C/AntX/src/user/init/main.c) | 用户程序入口 |
 
-## 调试日志位置
+## 下一步工作
 
-- `logs/qemu_debug28.log` - QEMU 异常日志
-- `logs/serial.log` - 内核串口输出
-
-## 待请教的问题
-
-1. x86-64 长模式下，`iretq` 从内核态切换到用户态时，DS/ES/FS/GS 段寄存器的正确处理方式是什么？
-
-2. GPF error code=0 在用户态代码执行第一条指令时发生，可能的原因有哪些？
-
-3. 用户页表需要映射哪些必要的内容才能保证 `iretq` 后正常执行？
+1. 验证 kernel_main 是否正确执行
+2. 修复用户态切换问题
+3. 完善用户程序入口代码
