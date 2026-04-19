@@ -1,11 +1,13 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
+#![feature(asm)]
 
 extern crate alloc;
 
 mod memory_allocator;
 pub mod proc;
+pub mod fs;
 
 use core::panic::PanicInfo;
 
@@ -24,4 +26,5 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 #[no_mangle]
 pub extern "C" fn rust_kernel_init() {
     crate::proc::scheduler::init();
+    crate::fs::vfs::init();
 }
