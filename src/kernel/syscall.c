@@ -56,6 +56,13 @@ void syscall_init(void) {
     syscall_register(SYS_AUTH_CHANGEPW, (syscall_handler_t)sys_auth_changepw);
     syscall_register(SYS_AUTH_VERIFY, (syscall_handler_t)sys_auth_verify);
     syscall_register(SYS_AUTH_CREATE_ORIGINAL_ROOT, (syscall_handler_t)sys_auth_create_original_root);
+    syscall_register(SYS_AUTH_ELEVATE, (syscall_handler_t)sys_auth_elevate);
+    syscall_register(SYS_AUTH_TOKEN_CREATE, (syscall_handler_t)sys_auth_token_create);
+    syscall_register(SYS_AUTH_TOKEN_USE, (syscall_handler_t)sys_auth_token_use);
+    syscall_register(SYS_AUTH_TOKEN_REVOKE, (syscall_handler_t)sys_auth_token_revoke);
+    syscall_register(SYS_AUTH_TRUST_ADD, (syscall_handler_t)sys_auth_trust_add);
+    syscall_register(SYS_AUTH_TRUST_REMOVE, (syscall_handler_t)sys_auth_trust_remove);
+    syscall_register(SYS_AUTH_CHECK, (syscall_handler_t)sys_auth_check);
     
     syscall_register(SYS_ENV_GETCWD, (syscall_handler_t)sys_env_getcwd);
     syscall_register(SYS_ENV_CHDIR, (syscall_handler_t)sys_env_chdir);
@@ -384,7 +391,75 @@ int64_t sys_auth_logout(void) {
 int64_t sys_auth_elevate(const char *cmd_path, const char **argv) {
     (void)cmd_path;
     (void)argv;
-    return E_AUTH_NOROOT;
+    
+    uint64_t current_pwid = pwid_get_current();
+    if (current_pwid == 0) {
+        return E_AUTH_NOTFOUND;
+    }
+    
+    struct pwid_entry *entry = pwid_find(current_pwid);
+    if (entry == NULL) {
+        return E_AUTH_NOTFOUND;
+    }
+    
+    int64_t token = pwid_create_token(current_pwid, CAP_DOMAIN_SYSTEM, 
+                                       0xFFFFFFFFFFFFFFFFULL, 3600, 1);
+    if (token < 0) {
+        return E_PERM;
+    }
+    
+    return token;
+}
+
+int64_t sys_auth_token_create(uint64_t holder, uint16_t domain, uint64_t caps,
+                               uint64_t duration_secs, uint32_t max_uses) {
+    uint64_t current_pwid = pwid_get_current();
+    if (current_pwid == 0) {
+        return E_AUTH_NOTFOUND;
+    }
+    
+    if (!pwid_is_root(current_pwid)) {
+        return E_AUTH_NOROOT;
+    }
+    
+    return pwid_create_token(holder, domain, caps, duration_secs, max_uses);
+}
+
+int64_t sys_auth_token_use(uint64_t token_id) {
+    return rust_pwid_use_token(token_id);
+}
+
+int64_t sys_auth_token_revoke(uint64_t token_id) {
+    uint64_t current_pwid = pwid_get_current();
+    return rust_pwid_revoke_token(token_id, current_pwid);
+}
+
+int64_t sys_auth_trust_add(uint64_t trusted, uint8_t trust_level, 
+                            uint16_t domain, uint64_t cap_mask) {
+    uint64_t current_pwid = pwid_get_current();
+    if (current_pwid == 0) {
+        return E_AUTH_NOTFOUND;
+    }
+    
+    if (!pwid_is_root(current_pwid)) {
+        return E_AUTH_NOROOT;
+    }
+    
+    return pwid_add_trust_relation(current_pwid, trusted, trust_level, domain, cap_mask);
+}
+
+int64_t sys_auth_trust_remove(uint64_t trusted, uint16_t domain) {
+    uint64_t current_pwid = pwid_get_current();
+    if (current_pwid == 0) {
+        return E_AUTH_NOTFOUND;
+    }
+    
+    return rust_pwid_remove_trust(current_pwid, trusted, domain);
+}
+
+int64_t sys_auth_check(uint64_t pwid, uint64_t owner_pwid, 
+                        uint64_t access_type, uint16_t domain) {
+    return pwid_enhanced_check(pwid, owner_pwid, access_type, domain);
 }
 
 int64_t sys_auth_create(const char *password, const char *note, uint8_t level) {

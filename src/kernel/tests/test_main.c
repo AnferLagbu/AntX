@@ -15,6 +15,7 @@ void run_kernel_tests(void) {
     test_syscall_register();
     test_ipc_register();
     test_hvfs_register();
+    test_pwid_enhanced_register();
     
     serial_puts(SERIAL_COM1, "[TEST] Running all tests...\n");
     

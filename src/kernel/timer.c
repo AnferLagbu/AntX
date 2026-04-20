@@ -2,6 +2,7 @@
 #include "idt.h"
 #include "proc.h"
 #include "serial.h"
+#include "pwid.h"
 
 #define PIT_CHANNEL0    0x40
 #define PIT_COMMAND     0x43
@@ -9,12 +10,18 @@
 #define PIT_FREQ        1193182
 #define TIMER_HZ        100
 
+#define PWID_CLEANUP_INTERVAL 100
+
 static uint64_t timer_ticks = 0;
 
 static void timer_handler(struct interrupt_frame *frame) {
     (void)frame;
     timer_ticks++;
     scheduler_tick();
+    
+    if (timer_ticks % PWID_CLEANUP_INTERVAL == 0) {
+        rust_pwid_cleanup();
+    }
 }
 
 void timer_init(void) {

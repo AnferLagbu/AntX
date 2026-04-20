@@ -33,7 +33,8 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
               build/thread.o build/scheduler_ex.o build/ipc.o \
               build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
-              build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o
+              build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
+              build/test_pwid_enhanced.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -329,6 +330,10 @@ build/test_ipc.o: src/kernel/tests/test_ipc.c
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
 build/test_hvfs.o: src/kernel/tests/test_hvfs.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_pwid_enhanced.o: src/kernel/tests/test_pwid_enhanced.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 

@@ -24,6 +24,43 @@
 #define PWID_MODIFIED_MASK  0x0200000000000000ULL
 #define PWID_HASH_MASK      0x00FFFFFFFFFFFFFFULL
 
+#define CAP_DOMAIN_SYSTEM    0x0000
+#define CAP_DOMAIN_FS        0x0001
+#define CAP_DOMAIN_NET       0x0002
+#define CAP_DOMAIN_PROC      0x0003
+#define CAP_DOMAIN_DEVICE    0x0004
+#define CAP_DOMAIN_USER_MGMT 0x0005
+
+#define FS_CAP_READ    (1ULL << 0)
+#define FS_CAP_WRITE   (1ULL << 1)
+#define FS_CAP_EXECUTE (1ULL << 2)
+#define FS_CAP_CREATE  (1ULL << 3)
+#define FS_CAP_DELETE  (1ULL << 4)
+#define FS_CAP_CHMOD   (1ULL << 5)
+#define FS_CAP_CHOWN   (1ULL << 6)
+#define FS_CAP_MOUNT   (1ULL << 7)
+
+#define PROC_CAP_FORK  (1ULL << 0)
+#define PROC_CAP_EXEC  (1ULL << 1)
+#define PROC_CAP_KILL  (1ULL << 2)
+#define PROC_CAP_DEBUG (1ULL << 3)
+
+#define TRUST_LEVEL_NONE      0
+#define TRUST_LEVEL_BASIC     1
+#define TRUST_LEVEL_OPERATE   2
+#define TRUST_LEVEL_DELEGATE  3
+#define TRUST_LEVEL_FULL      4
+
+#define TOKEN_TYPE_ELEVATION  0
+#define TOKEN_TYPE_DELEGATION 1
+#define TOKEN_TYPE_SESSION    2
+#define TOKEN_TYPE_ONETIME    3
+
+#define TOKEN_FLAG_SINGLE_COMMAND 0x01
+#define TOKEN_FLAG_NO_TTY         0x02
+#define TOKEN_FLAG_REQUIRE_CONFIRM 0x04
+#define TOKEN_FLAG_AUDIT_ALL      0x08
+
 struct pwid_entry {
     uint64_t pwid;
     uint8_t level;
@@ -86,5 +123,30 @@ void pwid_list_all(void);
 extern struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
 extern int pwid_count;
 extern int original_root_created;
+
+void rust_pwid_init(void);
+int rust_pwid_check_permission(uint64_t pwid, uint64_t owner_pwid, 
+                                uint8_t pwid_level, uint8_t pwid_flags,
+                                uint64_t access_type, uint16_t domain,
+                                uint16_t other_perms);
+int64_t rust_pwid_create_elevation_token(uint64_t issuer, uint64_t holder,
+                                         const uint16_t *domains, const uint64_t *caps,
+                                         uint32_t count, uint64_t duration_secs,
+                                         uint32_t max_uses);
+int rust_pwid_use_token(uint64_t token_id);
+int rust_pwid_revoke_token(uint64_t token_id, uint64_t revoker);
+int rust_pwid_add_trust(uint64_t truster, uint64_t trusted, 
+                        uint8_t trust_level, uint16_t domain,
+                        uint64_t cap_mask, uint64_t expires_at);
+int rust_pwid_remove_trust(uint64_t truster, uint64_t trusted, uint16_t domain);
+void rust_pwid_cleanup(void);
+
+int pwid_enhanced_check(uint64_t pwid, uint64_t owner_pwid, 
+                        uint64_t access_type, uint16_t domain);
+int64_t pwid_create_token(uint64_t holder, uint16_t domain, uint64_t caps,
+                          uint64_t duration_secs, uint32_t max_uses);
+int pwid_add_trust_relation(uint64_t truster, uint64_t trusted,
+                            uint8_t trust_level, uint16_t domain, 
+                            uint64_t cap_mask);
 
 #endif

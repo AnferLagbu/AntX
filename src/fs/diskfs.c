@@ -4,6 +4,7 @@
 #include "serial.h"
 #include "pwid.h"
 #include "string.h"
+#include "hvfs_rust.h"
 
 #define DISKFS_MAX_FDS          16
 #define DISKFS_MAX_PATH         128
@@ -20,6 +21,13 @@ struct diskfs_fd {
 static struct diskfs_fd diskfs_fds[DISKFS_MAX_FDS];
 static uint32_t next_fd = 3;
 static int diskfs_mounted = 0;
+
+int diskfs_is_mounted(void) {
+    if (rust_diskfs_is_mounted()) {
+        return 1;
+    }
+    return diskfs_mounted;
+}
 
 static uint64_t get_time(void) {
     uint64_t tsc;
@@ -336,7 +344,7 @@ static int diskfs_sync(void) {
 }
 
 static int diskfs_mount(const char *path) {
-    if (diskfs_mounted) {
+    if (diskfs_is_mounted()) {
         serial_puts(SERIAL_COM1, "DiskFS: already mounted\n");
         return 0;
     }
@@ -379,7 +387,7 @@ static int diskfs_mount(const char *path) {
 }
 
 static int diskfs_unmount(void) {
-    if (!diskfs_mounted) return 0;
+    if (!diskfs_is_mounted()) return 0;
     
     hvfs_sync();
     diskfs_mounted = 0;

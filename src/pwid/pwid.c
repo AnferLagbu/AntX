@@ -2,6 +2,7 @@
 #include "serial.h"
 #include "kernel.h"
 #include "string.h"
+#include "hvfs_rust.h"
 
 struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
 int pwid_count = 0;
@@ -120,6 +121,8 @@ void pwid_init(void) {
     }
     pwid_count = 0;
     original_root_created = 0;
+    
+    rust_pwid_init();
     
     serial_puts(SERIAL_COM1, "PWID manager initialized\n");
 }
@@ -473,6 +476,8 @@ int pwid_login(const char *note, const char *password) {
     current_context.current = entry;
     current_context.session_pwid = entry->pwid;
     
+    rust_hvfs_set_current_pwid(entry->pwid);
+    
     serial_puts(SERIAL_COM1, "PWID: logged in as '");
     serial_puts(SERIAL_COM1, note);
     serial_puts(SERIAL_COM1, "'\n");
@@ -570,4 +575,56 @@ int pwid_create_user(const char *password, const char *note, uint8_t level) {
     }
     
     return result;
+}
+
+int pwid_enhanced_check(uint64_t pwid, uint64_t owner_pwid, 
+                        uint64_t access_type, uint16_t domain) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry == NULL) {
+        return 0;
+    }
+    
+    return rust_pwid_check_permission(
+        pwid,
+        owner_pwid,
+        entry->level,
+        entry->flags,
+        access_type,
+        domain,
+        0
+    );
+}
+
+int64_t pwid_create_token(uint64_t holder, uint16_t domain, uint64_t caps,
+                          uint64_t duration_secs, uint32_t max_uses) {
+    if (current_context.current == NULL) {
+        return -1;
+    }
+    
+    uint64_t issuer = current_context.session_pwid;
+    uint16_t domains[1] = { domain };
+    uint64_t capabilities[1] = { caps };
+    
+    return rust_pwid_create_elevation_token(
+        issuer,
+        holder,
+        domains,
+        capabilities,
+        1,
+        duration_secs,
+        max_uses
+    );
+}
+
+int pwid_add_trust_relation(uint64_t truster, uint64_t trusted,
+                            uint8_t trust_level, uint16_t domain, 
+                            uint64_t cap_mask) {
+    return rust_pwid_add_trust(
+        truster,
+        trusted,
+        trust_level,
+        domain,
+        cap_mask,
+        0
+    );
 }

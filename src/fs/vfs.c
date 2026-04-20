@@ -1,6 +1,7 @@
 #include "vfs.h"
 #include "serial.h"
 #include "string.h"
+#include "vfs_rust.h"
 
 static struct vfs_mount mount_table[VFS_MAX_MOUNTS];
 static struct vfs_filesystem *fs_registry[VFS_MAX_MOUNTS];
@@ -644,10 +645,15 @@ int vfs_sync(void) {
 }
 
 void vfs_set_cwd(const char *path) {
+    rust_vfs_set_cwd(path);
     strcpy(current_cwd, path);
 }
 
 const char* vfs_get_cwd(void) {
+    static char cwd_buf[VFS_MAX_PATH];
+    if (rust_vfs_get_cwd(cwd_buf, VFS_MAX_PATH) >= 0) {
+        return cwd_buf;
+    }
     return current_cwd;
 }
 

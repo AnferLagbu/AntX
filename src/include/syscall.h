@@ -45,6 +45,12 @@
 #define SYS_AUTH_CHANGEPW  48
 #define SYS_AUTH_VERIFY    49
 #define SYS_AUTH_CREATE_ORIGINAL_ROOT 50
+#define SYS_AUTH_TOKEN_CREATE 51
+#define SYS_AUTH_TOKEN_USE    52
+#define SYS_AUTH_TOKEN_REVOKE 53
+#define SYS_AUTH_TRUST_ADD    54
+#define SYS_AUTH_TRUST_REMOVE 55
+#define SYS_AUTH_CHECK        56
 
 #define SYS_MEM_BRK        60
 #define SYS_MEM_MAP        61
@@ -236,6 +242,15 @@ int64_t sys_auth_info(uint64_t target_pwid);
 int64_t sys_auth_setnote(const char *new_note);
 int64_t sys_auth_changepw(const char *old_pw, const char *new_pw);
 int64_t sys_auth_verify(const char *password);
+int64_t sys_auth_token_create(uint64_t holder, uint16_t domain, uint64_t caps,
+                               uint64_t duration_secs, uint32_t max_uses);
+int64_t sys_auth_token_use(uint64_t token_id);
+int64_t sys_auth_token_revoke(uint64_t token_id);
+int64_t sys_auth_trust_add(uint64_t trusted, uint8_t trust_level, 
+                            uint16_t domain, uint64_t cap_mask);
+int64_t sys_auth_trust_remove(uint64_t trusted, uint16_t domain);
+int64_t sys_auth_check(uint64_t pwid, uint64_t owner_pwid, 
+                        uint64_t access_type, uint16_t domain);
 
 int64_t sys_mem_brk(void *addr);
 int64_t sys_mem_map(void *addr, uint64_t len, int prot, int flags, int fd, int64_t offset);
