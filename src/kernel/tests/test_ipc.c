@@ -1,6 +1,7 @@
 #include "kernel_test.h"
 #include "ipc.h"
 #include "syscall.h"
+#include "thread.h"
 #include "serial.h"
 #include "string.h"
 
@@ -40,8 +41,10 @@ static int test_ipc_pipe_write_read(void) {
 }
 
 static int test_ipc_signal_send(void) {
-    int64_t pid = sys_proc_getid();
-    int result = signal_send(pid, 0);
+    pid_t current_pid = process_get_current_pid();
+    TEST_ASSERT_GT(current_pid, 0);
+    
+    int result = signal_send(current_pid, 0);
     TEST_ASSERT_EQ(result, 0);
     
     return TEST_PASS;

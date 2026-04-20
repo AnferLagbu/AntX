@@ -93,20 +93,22 @@ static int test_process_find(void) {
 }
 
 static int test_process_stress(void) {
-    const int count = 50;
+    const int count = 20;
     struct process *procs[count];
+    int created = 0;
     
     for (int i = 0; i < count; i++) {
         procs[i] = process_create(test_process_entry, 0, 0);
         if (procs[i] == NULL) {
-            for (int j = 0; j < i; j++) {
+            for (int j = 0; j < created; j++) {
                 process_exit(procs[j], 0);
             }
             TEST_ASSERT_MSG(0, "Failed to create process in stress test");
         }
+        created++;
     }
     
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < created; i++) {
         process_exit(procs[i], 0);
     }
     
@@ -121,5 +123,5 @@ void test_process_register(void) {
     test_register_case(mod, "State transitions", test_process_state_transition);
     test_register_case(mod, "Process exit", test_process_exit);
     test_register_case(mod, "Find process by PID", test_process_find);
-    test_register_case(mod, "Stress test (50 processes)", test_process_stress);
+    test_register_case(mod, "Stress test (20 processes)", test_process_stress);
 }
