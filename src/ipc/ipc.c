@@ -486,12 +486,8 @@ int msgq_recv(ipc_id_t id, uint64_t *type, void *data, uint64_t *size) {
         return -1;
     }
     
-    while (mq->head == NULL) {
-        struct thread *current = thread_get_current();
-        if (current != NULL) {
-            wait_queue_add(&mq->recv_wait, current);
-            scheduler_yield_ex();
-        }
+    if (mq->head == NULL) {
+        return -1;
     }
     
     struct message *msg = mq->head;
@@ -505,6 +501,7 @@ int msgq_recv(ipc_id_t id, uint64_t *type, void *data, uint64_t *size) {
         *type = msg->type;
     }
     
+    uint64_t read_size = msg->size;
     if (data != NULL && msg->size > 0) {
         memcpy(data, msg->data, msg->size);
     }
@@ -519,7 +516,7 @@ int msgq_recv(ipc_id_t id, uint64_t *type, void *data, uint64_t *size) {
         wait_queue_wake_one(&mq->send_wait);
     }
     
-    return 0;
+    return (int)read_size;
 }
 
 int msgq_destroy(ipc_id_t id) {

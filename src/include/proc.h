@@ -84,7 +84,7 @@ struct scheduler {
 
 void process_init(void);
 struct process* process_create(void (*entry)(void), uint64_t session_id, uint64_t pwid);
-void process_exit(struct process *proc, uint64_t exit_code);
+void process_exit(struct process *proc, int exit_code);
 struct process* process_get_current(void);
 struct process* process_find_by_pid(uint64_t pid);
 
@@ -100,6 +100,7 @@ void scheduler_tick(void);
 void scheduler_schedule(void);
 void scheduler_yield(void);
 bool proc_has_runnable(void);
+uint64_t scheduler_next_pid(void);
 
 extern struct scheduler sched;
 

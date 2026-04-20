@@ -4,9 +4,9 @@
 #include "assert.h"
 
 static struct process process_table[MAX_PROCESSES];
-static struct process *current_process = NULL;
 
 extern void process_switch(struct cpu_context *old_ctx, struct cpu_context *new_ctx);
+extern struct scheduler sched;
 
 void process_init(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -19,53 +19,40 @@ void process_init(void) {
     serial_puts(SERIAL_COM1, "Process manager initialized\n");
 }
 
-static struct process* process_alloc(void) {
+struct process* process_create(void (*entry)(void), uint64_t arg, uint64_t flags) {
+    int slot = -1;
     for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (process_table[i].state == PROC_NEW || process_table[i].pid == 0) {
-            return &process_table[i];
+        if (process_table[i].pid == 0) {
+            slot = i;
+            break;
         }
     }
-    return NULL;
-}
-
-struct process* process_create(void (*entry)(void), uint64_t session_id, uint64_t pwid) {
-    struct process *proc = process_alloc();
-    if (proc == NULL) {
-        serial_puts(SERIAL_COM1, "Failed to allocate process\n");
+    
+    if (slot < 0) {
+        serial_puts(SERIAL_COM1, "Process table full\n");
         return NULL;
     }
     
-    static uint64_t next_pid = 1;
-    proc->pid = next_pid++;
-    proc->session_id = session_id;
-    proc->pwid = pwid;
-    proc->parent_pid = (current_process != NULL) ? current_process->pid : 0;
+    struct process *proc = &process_table[slot];
     
+    proc->pid = scheduler_next_pid();
     proc->state = PROC_READY;
-    proc->exit_code = 0;
     proc->priority = 1;
-    proc->cpu_time = 0;
-    proc->start_time = 0;
     proc->time_slice = TIME_SLICE;
-    
-    proc->kernel_stack = (uint64_t)pmm_alloc_page();
-    ASSERT(proc->kernel_stack != 0);
-    proc->kernel_stack += PAGE_SIZE;
-    
-    proc->cr3 = (uint64_t)pmm_alloc_page();
-    ASSERT(proc->cr3 != 0);
+    proc->cpu_time = 0;
+    proc->parent_pid = (sched.current != NULL) ? sched.current->pid : 0;
+    proc->exit_code = 0;
     
     proc->context.rip = (uint64_t)entry;
-    proc->context.cs = 0x08;
+    proc->context.rsp = (uint64_t)pmm_alloc_page() + PAGE_SIZE;
     proc->context.rflags = 0x202;
-    proc->context.rsp = proc->kernel_stack;
+    proc->context.cs = 0x08;
     proc->context.ss = 0x10;
+    
+    proc->cr3 = vmm_create_user_page_table();
     
     proc->next = NULL;
     proc->prev = NULL;
-    proc->parent = NULL;
-    proc->children = NULL;
-    proc->sibling = NULL;
     
     serial_puts(SERIAL_COM1, "Process created: PID=");
     serial_put_dec(SERIAL_COM1, proc->pid);
@@ -74,16 +61,13 @@ struct process* process_create(void (*entry)(void), uint64_t session_id, uint64_
     return proc;
 }
 
-void process_exit(struct process *proc, uint64_t exit_code) {
+void process_exit(struct process *proc, int exit_code) {
     if (proc == NULL) return;
     
-    proc->exit_code = exit_code;
     proc->state = PROC_ZOMBIE;
+    proc->exit_code = exit_code;
     
-    if (proc->kernel_stack) {
-        pmm_free_page((void*)(proc->kernel_stack - PAGE_SIZE));
-        proc->kernel_stack = 0;
-    }
+    scheduler_remove(proc);
     
     serial_puts(SERIAL_COM1, "Process exited: PID=");
     serial_put_dec(SERIAL_COM1, proc->pid);
@@ -93,7 +77,7 @@ void process_exit(struct process *proc, uint64_t exit_code) {
 }
 
 struct process* process_get_current(void) {
-    return current_process;
+    return sched.current;
 }
 
 struct process* process_find_by_pid(uint64_t pid) {

@@ -202,6 +202,7 @@ ipc_id_t msgq_create(int perm);
 int msgq_send(ipc_id_t id, uint64_t type, const void *data, uint64_t size);
 
 // 接收消息
+// 返回值: 成功时返回读取的字节数，队列为空返回 -1
 int msgq_recv(ipc_id_t id, uint64_t *type, void *data, uint64_t *size);
 
 // 销毁消息队列

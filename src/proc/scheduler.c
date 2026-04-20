@@ -17,6 +17,10 @@ void scheduler_init(void) {
     serial_puts(SERIAL_COM1, "Scheduler initialized\n");
 }
 
+uint64_t scheduler_next_pid(void) {
+    return sched.next_pid++;
+}
+
 void scheduler_add(struct process *proc) {
     if (proc == NULL) return;
     

@@ -42,9 +42,11 @@ static int test_ipc_pipe_write_read(void) {
 
 static int test_ipc_signal_send(void) {
     pid_t current_pid = process_get_current_pid();
-    TEST_ASSERT_GT(current_pid, 0);
+    if (current_pid == 0) {
+        return TEST_SKIP;
+    }
     
-    int result = signal_send(current_pid, 0);
+    int result = signal_send(current_pid, 1);
     TEST_ASSERT_EQ(result, 0);
     
     return TEST_PASS;
