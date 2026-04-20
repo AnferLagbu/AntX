@@ -176,20 +176,29 @@ irq_common_stub:
 
 syscall_handler:
     push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
     push rbp
+    push r8
+    push r9
+    push r10
+    push r11
     push r12
     push r13
     push r14
     push r15
     
-    mov r12, rax      ; r12 = syscall number
-    mov r13, rdi      ; r13 = arg0 (fd)
-    mov r14, rsi      ; r14 = arg1 (buf)
+    mov r12, rax
+    mov r13, rdi
+    mov r14, rsi
+    mov r15, r10
     
-    mov rdi, r12      ; 1st param: syscall number
-    mov rsi, r13      ; 2nd param: arg0
-    mov rdx, r14      ; 3rd param: arg1
-    mov rcx, r10      ; 4th param: arg2
+    mov rdi, r12
+    mov rsi, r13
+    mov rdx, r14
+    mov rcx, r15
     
     call syscall_dispatch
     
@@ -197,7 +206,15 @@ syscall_handler:
     pop r14
     pop r13
     pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
     pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
     pop rbx
     
     iretq
