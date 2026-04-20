@@ -5,13 +5,20 @@
 #include "pwid.h"
 #include "string.h"
 #include "assert.h"
+#include "kmalloc.h"
 
 struct super_block hvfs_super;
-struct inode hvfs_inode_table[HVFS_MAX_INODES];
-uint8_t hvfs_block_bitmap[HVFS_MAX_BLOCKS / 8];
-uint8_t hvfs_inode_bitmap[HVFS_MAX_INODES / 8];
 
-static uint8_t hvfs_data_area[HVFS_MAX_BLOCKS * HVFS_BLOCK_SIZE];
+static struct inode *hvfs_inode_table = NULL;
+static uint8_t *hvfs_block_bitmap = NULL;
+static uint8_t *hvfs_inode_bitmap = NULL;
+static uint32_t hvfs_inode_table_size = 0;
+static uint32_t hvfs_block_bitmap_size = 0;
+static uint32_t hvfs_inode_bitmap_size = 0;
+
+static struct block_cache_entry *block_cache = NULL;
+static uint32_t cache_access_counter = 0;
+
 static struct hvfs_context current_context;
 static int hvfs_initialized = 0;
 static int hvfs_disk_mode = 0;
@@ -19,36 +26,93 @@ static uint32_t next_fd = 3;
 
 static struct inode* resolve_path(const char *path, uint64_t pwid);
 
-static uint8_t* get_block(uint32_t block_num) {
-    ASSERT(block_num < HVFS_MAX_BLOCKS);
-    return &hvfs_data_area[block_num * HVFS_BLOCK_SIZE];
-}
-
 static uint64_t get_time(void) {
     uint64_t tsc;
     __asm__ volatile ("rdtsc" : "=A"(tsc));
     return tsc;
 }
 
+static uint8_t* get_block(uint32_t block_num) {
+    if (block_num >= hvfs_super.total_blocks) return NULL;
+    
+    for (int i = 0; i < HVFS_CACHE_SIZE; i++) {
+        if (block_cache[i].valid && block_cache[i].block_num == block_num) {
+            block_cache[i].access_time = ++cache_access_counter;
+            return block_cache[i].data;
+        }
+    }
+    
+    int lru_idx = 0;
+    uint32_t lru_time = block_cache[0].access_time;
+    
+    for (int i = 1; i < HVFS_CACHE_SIZE; i++) {
+        if (!block_cache[i].valid) {
+            lru_idx = i;
+            break;
+        }
+        if (block_cache[i].access_time < lru_time) {
+            lru_time = block_cache[i].access_time;
+            lru_idx = i;
+        }
+    }
+    
+    if (block_cache[lru_idx].valid && block_cache[lru_idx].dirty) {
+        if (hvfs_disk_mode) {
+            for (int s = 0; s < HVFS_DISK_SECTORS_PER_BLOCK; s++) {
+                ata_write_sector(0, HVFS_DATA_SECTOR_START + block_cache[lru_idx].block_num * HVFS_DISK_SECTORS_PER_BLOCK + s,
+                    block_cache[lru_idx].data + s * HVFS_DISK_SECTOR_SIZE);
+            }
+        }
+    }
+    
+    block_cache[lru_idx].block_num = block_num;
+    block_cache[lru_idx].valid = 1;
+    block_cache[lru_idx].dirty = 0;
+    block_cache[lru_idx].access_time = ++cache_access_counter;
+    
+    if (hvfs_disk_mode) {
+        for (int s = 0; s < HVFS_DISK_SECTORS_PER_BLOCK; s++) {
+            ata_read_sector(0, HVFS_DATA_SECTOR_START + block_num * HVFS_DISK_SECTORS_PER_BLOCK + s,
+                block_cache[lru_idx].data + s * HVFS_DISK_SECTOR_SIZE);
+        }
+    } else {
+        memset(block_cache[lru_idx].data, 0, HVFS_BLOCK_SIZE);
+    }
+    
+    return block_cache[lru_idx].data;
+}
+
+static void mark_block_dirty(uint32_t block_num) {
+    for (int i = 0; i < HVFS_CACHE_SIZE; i++) {
+        if (block_cache[i].valid && block_cache[i].block_num == block_num) {
+            block_cache[i].dirty = 1;
+            return;
+        }
+    }
+}
+
 static int block_is_free(uint32_t block_num) {
-    if (block_num >= HVFS_MAX_BLOCKS) return 0;
+    if (block_num >= hvfs_super.total_blocks) return 0;
     uint32_t byte_idx = block_num / 8;
     uint32_t bit_idx = block_num % 8;
+    if (byte_idx >= hvfs_block_bitmap_size) return 0;
     return !(hvfs_block_bitmap[byte_idx] & (1 << bit_idx));
 }
 
 static void block_set_used(uint32_t block_num) {
-    if (block_num >= HVFS_MAX_BLOCKS) return;
+    if (block_num >= hvfs_super.total_blocks) return;
     uint32_t byte_idx = block_num / 8;
     uint32_t bit_idx = block_num % 8;
+    if (byte_idx >= hvfs_block_bitmap_size) return;
     hvfs_block_bitmap[byte_idx] |= (1 << bit_idx);
     hvfs_super.free_blocks--;
 }
 
 static void block_set_free(uint32_t block_num) {
-    if (block_num >= HVFS_MAX_BLOCKS) return;
+    if (block_num >= hvfs_super.total_blocks) return;
     uint32_t byte_idx = block_num / 8;
     uint32_t bit_idx = block_num % 8;
+    if (byte_idx >= hvfs_block_bitmap_size) return;
     hvfs_block_bitmap[byte_idx] &= ~(1 << bit_idx);
     hvfs_super.free_blocks++;
 }
@@ -60,44 +124,69 @@ static int hvfs_load_data_block(uint32_t block_num);
 static int hvfs_sync_data_block(uint32_t block_num);
 
 static uint32_t block_alloc(void) {
-    for (uint32_t i = hvfs_super.first_data_block; i < HVFS_MAX_BLOCKS; i++) {
+    for (uint32_t i = hvfs_super.first_data_block; i < hvfs_super.total_blocks; i++) {
         if (block_is_free(i)) {
             block_set_used(i);
-            memset(get_block(i), 0, HVFS_BLOCK_SIZE);
+            uint8_t *block = get_block(i);
+            if (block) memset(block, 0, HVFS_BLOCK_SIZE);
+            mark_block_dirty(i);
             return i;
         }
     }
+    
+    if (hvfs_super.total_blocks < HVFS_MAX_BLOCKS_LIMIT) {
+        uint32_t new_total = hvfs_super.total_blocks * 2;
+        if (new_total > HVFS_MAX_BLOCKS_LIMIT) new_total = HVFS_MAX_BLOCKS_LIMIT;
+        
+        if (hvfs_expand_blocks(new_total) == 0) {
+            return block_alloc();
+        }
+    }
+    
     return 0;
 }
 
 static void inode_set_used(uint32_t inode_num) {
-    if (inode_num >= HVFS_MAX_INODES) return;
+    if (inode_num >= hvfs_super.inode_count) return;
     uint32_t byte_idx = inode_num / 8;
     uint32_t bit_idx = inode_num % 8;
+    if (byte_idx >= hvfs_inode_bitmap_size) return;
     hvfs_inode_bitmap[byte_idx] |= (1 << bit_idx);
     hvfs_super.free_inodes--;
 }
 
 static void inode_set_free(uint32_t inode_num) {
-    if (inode_num >= HVFS_MAX_INODES) return;
+    if (inode_num >= hvfs_super.inode_count) return;
     uint32_t byte_idx = inode_num / 8;
     uint32_t bit_idx = inode_num % 8;
+    if (byte_idx >= hvfs_inode_bitmap_size) return;
     hvfs_inode_bitmap[byte_idx] &= ~(1 << bit_idx);
     hvfs_super.free_inodes++;
 }
 
 static struct inode* inode_alloc(void) {
-    for (int i = 1; i < HVFS_MAX_INODES; i++) {
+    for (uint32_t i = 1; i < hvfs_super.inode_count; i++) {
         if (!hvfs_inode_table[i].used) {
             hvfs_inode_table[i].used = 1;
             hvfs_inode_table[i].inode_num = i;
             hvfs_inode_table[i].ref_count = 1;
             hvfs_inode_table[i].link_count = 1;
             hvfs_inode_table[i].dirty = 0;
+            hvfs_inode_table[i].in_cache = 1;
             inode_set_used(i);
             return &hvfs_inode_table[i];
         }
     }
+    
+    if (hvfs_super.inode_count < HVFS_MAX_INODES_LIMIT) {
+        uint32_t new_count = hvfs_super.inode_count * 2;
+        if (new_count > HVFS_MAX_INODES_LIMIT) new_count = HVFS_MAX_INODES_LIMIT;
+        
+        if (hvfs_expand_inodes(new_count) == 0) {
+            return inode_alloc();
+        }
+    }
+    
     return NULL;
 }
 
@@ -114,13 +203,12 @@ static void inode_free(struct inode *inode) {
         }
         
         if (inode->indirect_block != 0) {
-            if (hvfs_disk_mode) {
-                hvfs_load_data_block(inode->indirect_block);
-            }
             uint32_t *indirect = (uint32_t *)get_block(inode->indirect_block);
-            for (uint32_t i = 0; i < INDIRECT_BLOCKS_PER_BLOCK; i++) {
-                if (indirect[i] != 0) {
-                    block_set_free(indirect[i]);
+            if (indirect) {
+                for (uint32_t i = 0; i < INDIRECT_BLOCKS_PER_BLOCK; i++) {
+                    if (indirect[i] != 0) {
+                        block_set_free(indirect[i]);
+                    }
                 }
             }
             block_set_free(inode->indirect_block);
@@ -128,26 +216,53 @@ static void inode_free(struct inode *inode) {
         }
         
         if (inode->double_indirect != 0) {
-            if (hvfs_disk_mode) {
-                hvfs_load_data_block(inode->double_indirect);
-            }
             uint32_t *double_indirect = (uint32_t *)get_block(inode->double_indirect);
-            for (uint32_t i = 0; i < INDIRECT_BLOCKS_PER_BLOCK; i++) {
-                if (double_indirect[i] != 0) {
-                    if (hvfs_disk_mode) {
-                        hvfs_load_data_block(double_indirect[i]);
-                    }
-                    uint32_t *indirect = (uint32_t *)get_block(double_indirect[i]);
-                    for (uint32_t j = 0; j < INDIRECT_BLOCKS_PER_BLOCK; j++) {
-                        if (indirect[j] != 0) {
-                            block_set_free(indirect[j]);
+            if (double_indirect) {
+                for (uint32_t i = 0; i < INDIRECT_BLOCKS_PER_BLOCK; i++) {
+                    if (double_indirect[i] != 0) {
+                        uint32_t *indirect = (uint32_t *)get_block(double_indirect[i]);
+                        if (indirect) {
+                            for (uint32_t j = 0; j < INDIRECT_BLOCKS_PER_BLOCK; j++) {
+                                if (indirect[j] != 0) {
+                                    block_set_free(indirect[j]);
+                                }
+                            }
                         }
+                        block_set_free(double_indirect[i]);
                     }
-                    block_set_free(double_indirect[i]);
                 }
             }
             block_set_free(inode->double_indirect);
             inode->double_indirect = 0;
+        }
+        
+        if (inode->triple_indirect != 0) {
+            uint32_t *triple = (uint32_t *)get_block(inode->triple_indirect);
+            if (triple) {
+                for (uint32_t i = 0; i < INDIRECT_BLOCKS_PER_BLOCK; i++) {
+                    if (triple[i] != 0) {
+                        uint32_t *double_indirect = (uint32_t *)get_block(triple[i]);
+                        if (double_indirect) {
+                            for (uint32_t j = 0; j < INDIRECT_BLOCKS_PER_BLOCK; j++) {
+                                if (double_indirect[j] != 0) {
+                                    uint32_t *indirect = (uint32_t *)get_block(double_indirect[j]);
+                                    if (indirect) {
+                                        for (uint32_t k = 0; k < INDIRECT_BLOCKS_PER_BLOCK; k++) {
+                                            if (indirect[k] != 0) {
+                                                block_set_free(indirect[k]);
+                                            }
+                                        }
+                                    }
+                                    block_set_free(double_indirect[j]);
+                                }
+                            }
+                        }
+                        block_set_free(triple[i]);
+                    }
+                }
+            }
+            block_set_free(inode->triple_indirect);
+            inode->triple_indirect = 0;
         }
         
         inode_set_free(inode->inode_num);
@@ -157,9 +272,11 @@ static void inode_free(struct inode *inode) {
 }
 
 static uint32_t get_block_for_index(struct inode *inode, uint32_t block_idx, int alloc) {
-    if (inode == NULL || block_idx >= (12 + INDIRECT_BLOCKS_PER_BLOCK + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK)) {
-        return 0;
-    }
+    uint64_t max_blocks = 12 + INDIRECT_BLOCKS_PER_BLOCK + 
+                          INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK +
+                          INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
+    
+    if (inode == NULL || block_idx >= max_blocks) return 0;
     
     if (block_idx < 12) {
         return inode->direct_blocks[block_idx];
@@ -176,20 +293,16 @@ static uint32_t get_block_for_index(struct inode *inode, uint32_t block_idx, int
             inode->dirty = 1;
         }
         
-        if (hvfs_disk_mode) {
-            hvfs_load_data_block(inode->indirect_block);
-        }
-        
         uint32_t *indirect = (uint32_t *)get_block(inode->indirect_block);
+        if (!indirect) return 0;
+        
         uint32_t idx = block_idx - indirect_start;
         
         if (indirect[idx] == 0 && alloc) {
             indirect[idx] = block_alloc();
             if (indirect[idx] != 0) {
                 inode->dirty = 1;
-                if (hvfs_disk_mode) {
-                    hvfs_sync_data_block(inode->indirect_block);
-                }
+                mark_block_dirty(inode->indirect_block);
             }
         }
         
@@ -197,52 +310,99 @@ static uint32_t get_block_for_index(struct inode *inode, uint32_t block_idx, int
     }
     
     uint32_t double_start = indirect_end;
-    uint32_t double_idx = block_idx - double_start;
-    uint32_t first_level = double_idx / INDIRECT_BLOCKS_PER_BLOCK;
-    uint32_t second_level = double_idx % INDIRECT_BLOCKS_PER_BLOCK;
+    uint32_t double_end = indirect_end + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
     
-    if (inode->double_indirect == 0) {
+    if (block_idx >= double_start && block_idx < double_end) {
+        if (inode->double_indirect == 0) {
+            if (!alloc) return 0;
+            inode->double_indirect = block_alloc();
+            if (inode->double_indirect == 0) return 0;
+            inode->dirty = 1;
+        }
+        
+        uint32_t *double_indirect = (uint32_t *)get_block(inode->double_indirect);
+        if (!double_indirect) return 0;
+        
+        uint32_t double_idx = block_idx - double_start;
+        uint32_t first_level = double_idx / INDIRECT_BLOCKS_PER_BLOCK;
+        uint32_t second_level = double_idx % INDIRECT_BLOCKS_PER_BLOCK;
+        
+        if (double_indirect[first_level] == 0 && alloc) {
+            double_indirect[first_level] = block_alloc();
+            if (double_indirect[first_level] != 0) {
+                inode->dirty = 1;
+                mark_block_dirty(inode->double_indirect);
+            }
+        }
+        
+        if (double_indirect[first_level] == 0) return 0;
+        
+        uint32_t *indirect = (uint32_t *)get_block(double_indirect[first_level]);
+        if (!indirect) return 0;
+        
+        if (indirect[second_level] == 0 && alloc) {
+            indirect[second_level] = block_alloc();
+            if (indirect[second_level] != 0) {
+                inode->dirty = 1;
+                mark_block_dirty(double_indirect[first_level]);
+            }
+        }
+        
+        return indirect[second_level];
+    }
+    
+    uint32_t triple_start = double_end;
+    uint32_t triple_idx = block_idx - triple_start;
+    uint32_t first_level = triple_idx / (INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK);
+    uint32_t remainder = triple_idx % (INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK);
+    uint32_t second_level = remainder / INDIRECT_BLOCKS_PER_BLOCK;
+    uint32_t third_level = remainder % INDIRECT_BLOCKS_PER_BLOCK;
+    
+    if (inode->triple_indirect == 0) {
         if (!alloc) return 0;
-        inode->double_indirect = block_alloc();
-        if (inode->double_indirect == 0) return 0;
+        inode->triple_indirect = block_alloc();
+        if (inode->triple_indirect == 0) return 0;
         inode->dirty = 1;
     }
     
-    if (hvfs_disk_mode) {
-        hvfs_load_data_block(inode->double_indirect);
-    }
+    uint32_t *triple = (uint32_t *)get_block(inode->triple_indirect);
+    if (!triple) return 0;
     
-    uint32_t *double_indirect = (uint32_t *)get_block(inode->double_indirect);
-    
-    if (double_indirect[first_level] == 0 && alloc) {
-        double_indirect[first_level] = block_alloc();
-        if (double_indirect[first_level] != 0) {
+    if (triple[first_level] == 0 && alloc) {
+        triple[first_level] = block_alloc();
+        if (triple[first_level] != 0) {
             inode->dirty = 1;
-            if (hvfs_disk_mode) {
-                hvfs_sync_data_block(inode->double_indirect);
-            }
+            mark_block_dirty(inode->triple_indirect);
         }
     }
     
-    if (double_indirect[first_level] == 0) return 0;
+    if (triple[first_level] == 0) return 0;
     
-    if (hvfs_disk_mode) {
-        hvfs_load_data_block(double_indirect[first_level]);
-    }
+    uint32_t *double_indirect = (uint32_t *)get_block(triple[first_level]);
+    if (!double_indirect) return 0;
     
-    uint32_t *indirect = (uint32_t *)get_block(double_indirect[first_level]);
-    
-    if (indirect[second_level] == 0 && alloc) {
-        indirect[second_level] = block_alloc();
-        if (indirect[second_level] != 0) {
+    if (double_indirect[second_level] == 0 && alloc) {
+        double_indirect[second_level] = block_alloc();
+        if (double_indirect[second_level] != 0) {
             inode->dirty = 1;
-            if (hvfs_disk_mode) {
-                hvfs_sync_data_block(double_indirect[first_level]);
-            }
+            mark_block_dirty(triple[first_level]);
         }
     }
     
-    return indirect[second_level];
+    if (double_indirect[second_level] == 0) return 0;
+    
+    uint32_t *indirect = (uint32_t *)get_block(double_indirect[second_level]);
+    if (!indirect) return 0;
+    
+    if (indirect[third_level] == 0 && alloc) {
+        indirect[third_level] = block_alloc();
+        if (indirect[third_level] != 0) {
+            inode->dirty = 1;
+            mark_block_dirty(double_indirect[second_level]);
+        }
+    }
+    
+    return indirect[third_level];
 }
 
 int hvfs_is_disk_mode(void) {
@@ -250,7 +410,7 @@ int hvfs_is_disk_mode(void) {
 }
 
 struct inode* hvfs_get_inode(uint32_t inode_num) {
-    if (inode_num == 0 || inode_num >= HVFS_MAX_INODES) return NULL;
+    if (inode_num == 0 || inode_num >= hvfs_super.inode_count) return NULL;
     if (!hvfs_inode_table[inode_num].used) return NULL;
     return &hvfs_inode_table[inode_num];
 }
@@ -277,12 +437,122 @@ int hvfs_check_permission(struct inode *inode, uint64_t pwid, int access_type) {
     return (other_perm & access_type) == access_type;
 }
 
+int hvfs_expand_inodes(uint32_t new_count) {
+    if (new_count <= hvfs_super.inode_count) return -1;
+    if (new_count > HVFS_MAX_INODES_LIMIT) return -1;
+    
+    uint32_t new_bitmap_size = (new_count + 7) / 8;
+    
+    struct inode *new_table = (struct inode*)krealloc(hvfs_inode_table, new_count * sizeof(struct inode));
+    if (new_table == NULL) {
+        new_table = (struct inode*)kmalloc(new_count * sizeof(struct inode));
+        if (new_table == NULL) {
+            serial_puts(SERIAL_COM1, "HvFS: Failed to expand inode table\n");
+            return -1;
+        }
+        if (hvfs_inode_table != NULL) {
+            memcpy(new_table, hvfs_inode_table, hvfs_super.inode_count * sizeof(struct inode));
+            kfree(hvfs_inode_table);
+        }
+    }
+    
+    uint8_t *new_bitmap = (uint8_t*)krealloc(hvfs_inode_bitmap, new_bitmap_size);
+    if (new_bitmap == NULL) {
+        new_bitmap = (uint8_t*)kmalloc(new_bitmap_size);
+        if (new_bitmap == NULL) {
+            serial_puts(SERIAL_COM1, "HvFS: Failed to expand inode bitmap\n");
+            return -1;
+        }
+        if (hvfs_inode_bitmap != NULL) {
+            memcpy(new_bitmap, hvfs_inode_bitmap, hvfs_inode_bitmap_size);
+            kfree(hvfs_inode_bitmap);
+        }
+    }
+    
+    for (uint32_t i = hvfs_super.inode_count; i < new_count; i++) {
+        memset(&new_table[i], 0, sizeof(struct inode));
+    }
+    
+    for (uint32_t i = hvfs_inode_bitmap_size; i < new_bitmap_size; i++) {
+        new_bitmap[i] = 0;
+    }
+    
+    hvfs_inode_table = new_table;
+    hvfs_inode_bitmap = new_bitmap;
+    hvfs_super.free_inodes += (new_count - hvfs_super.inode_count);
+    hvfs_super.inode_count = new_count;
+    hvfs_inode_table_size = new_count;
+    hvfs_inode_bitmap_size = new_bitmap_size;
+    hvfs_super.dynamic_inodes = 1;
+    
+    serial_puts(SERIAL_COM1, "HvFS: Expanded inodes to ");
+    serial_put_dec(SERIAL_COM1, new_count);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    return 0;
+}
+
+int hvfs_expand_blocks(uint32_t new_count) {
+    if (new_count <= hvfs_super.total_blocks) return -1;
+    if (new_count > HVFS_MAX_BLOCKS_LIMIT) return -1;
+    
+    uint32_t new_bitmap_size = (new_count + 7) / 8;
+    
+    uint8_t *new_bitmap = (uint8_t*)krealloc(hvfs_block_bitmap, new_bitmap_size);
+    if (new_bitmap == NULL) {
+        new_bitmap = (uint8_t*)kmalloc(new_bitmap_size);
+        if (new_bitmap == NULL) {
+            serial_puts(SERIAL_COM1, "HvFS: Failed to expand block bitmap\n");
+            return -1;
+        }
+        if (hvfs_block_bitmap != NULL) {
+            memcpy(new_bitmap, hvfs_block_bitmap, hvfs_block_bitmap_size);
+            kfree(hvfs_block_bitmap);
+        }
+    }
+    
+    for (uint32_t i = hvfs_block_bitmap_size; i < new_bitmap_size; i++) {
+        new_bitmap[i] = 0;
+    }
+    
+    hvfs_block_bitmap = new_bitmap;
+    hvfs_super.free_blocks += (new_count - hvfs_super.total_blocks);
+    hvfs_super.total_blocks = new_count;
+    hvfs_block_bitmap_size = new_bitmap_size;
+    hvfs_super.dynamic_blocks = 1;
+    
+    serial_puts(SERIAL_COM1, "HvFS: Expanded blocks to ");
+    serial_put_dec(SERIAL_COM1, new_count);
+    serial_puts(SERIAL_COM1, "\n");
+    
+    return 0;
+}
+
+uint32_t hvfs_get_total_blocks(void) { return hvfs_super.total_blocks; }
+uint32_t hvfs_get_free_blocks(void) { return hvfs_super.free_blocks; }
+uint32_t hvfs_get_total_inodes(void) { return hvfs_super.inode_count; }
+uint32_t hvfs_get_free_inodes(void) { return hvfs_super.free_inodes; }
+
 void hvfs_init(void) {
     memset(&hvfs_super, 0, sizeof(struct super_block));
-    memset(hvfs_inode_table, 0, sizeof(hvfs_inode_table));
-    memset(hvfs_block_bitmap, 0, sizeof(hvfs_block_bitmap));
-    memset(hvfs_inode_bitmap, 0, sizeof(hvfs_inode_bitmap));
-    memset(hvfs_data_area, 0, sizeof(hvfs_data_area));
+    
+    hvfs_inode_table = NULL;
+    hvfs_block_bitmap = NULL;
+    hvfs_inode_bitmap = NULL;
+    hvfs_inode_table_size = 0;
+    hvfs_block_bitmap_size = 0;
+    hvfs_inode_bitmap_size = 0;
+    
+    block_cache = (struct block_cache_entry*)kmalloc(HVFS_CACHE_SIZE * sizeof(struct block_cache_entry));
+    if (block_cache) {
+        for (int i = 0; i < HVFS_CACHE_SIZE; i++) {
+            block_cache[i].data = (uint8_t*)kmalloc(HVFS_BLOCK_SIZE);
+            block_cache[i].valid = 0;
+            block_cache[i].dirty = 0;
+            block_cache[i].block_num = 0;
+            block_cache[i].access_time = 0;
+        }
+    }
     
     memset(&current_context, 0, sizeof(struct hvfs_context));
     current_context.current_dir = 1;
@@ -298,32 +568,20 @@ int hvfs_check_disk(void) {
     struct hvfs_super_block_disk *super_disk = (struct hvfs_super_block_disk *)super_buffer;
     
     if (!ata_disk_present(0)) {
-        serial_puts(SERIAL_COM1, "HvFS: ata_disk_present returned false\n");
+        serial_puts(SERIAL_COM1, "HvFS: No disk present\n");
         return HVFS_DISK_NO_DISK;
     }
     
-    serial_puts(SERIAL_COM1, "HvFS: Disk present, reading super block...\n");
-    
     int result = ata_read_sectors(0, HVFS_SUPER_SECTOR_START, 
                          HVFS_SUPER_SECTOR_COUNT, super_buffer);
-    
-    serial_puts(SERIAL_COM1, "HvFS: ata_read_sectors returned ");
-    serial_put_dec(SERIAL_COM1, result);
-    serial_puts(SERIAL_COM1, "\n");
     
     if (result != 0) {
         serial_puts(SERIAL_COM1, "HvFS: Failed to read super block\n");
         return HVFS_DISK_NO_DISK;
     }
     
-    serial_puts(SERIAL_COM1, "HvFS: Super block magic = ");
-    serial_put_hex(SERIAL_COM1, super_disk->magic);
-    serial_puts(SERIAL_COM1, "\n");
-    
-    serial_puts(SERIAL_COM1, "HvFS: Checking magic...\n");
-    
     if (super_disk->magic != HVFS_MAGIC) {
-        serial_puts(SERIAL_COM1, "HvFS: Magic mismatch, returning UNFORMATTED\n");
+        serial_puts(SERIAL_COM1, "HvFS: Magic mismatch\n");
         return HVFS_DISK_UNFORMATTED;
     }
     
@@ -344,10 +602,10 @@ int hvfs_format_disk(void) {
     super_disk->magic = HVFS_MAGIC;
     super_disk->version = HVFS_VERSION;
     super_disk->block_size = HVFS_BLOCK_SIZE;
-    super_disk->total_blocks = HVFS_MAX_BLOCKS;
-    super_disk->free_blocks = HVFS_MAX_BLOCKS - HVFS_DATA_SECTOR_START;
-    super_disk->inode_count = HVFS_MAX_INODES;
-    super_disk->free_inodes = HVFS_MAX_INODES - 1;
+    super_disk->total_blocks = HVFS_DEFAULT_BLOCKS;
+    super_disk->free_blocks = HVFS_DEFAULT_BLOCKS - 100;
+    super_disk->inode_count = HVFS_DEFAULT_INODES;
+    super_disk->free_inodes = HVFS_DEFAULT_INODES - 1;
     super_disk->first_data_block = 0;
     super_disk->root_inode = 1;
     super_disk->block_bitmap_block = HVFS_BLOCK_BITMAP_START;
@@ -358,6 +616,8 @@ int hvfs_format_disk(void) {
     super_disk->mount_time = get_time();
     super_disk->mount_count = 1;
     super_disk->state = 0;
+    super_disk->dynamic_inodes = 1;
+    super_disk->dynamic_blocks = 1;
     
     if (ata_write_sectors(0, HVFS_SUPER_SECTOR_START, 
                           HVFS_SUPER_SECTOR_COUNT, super_buffer) != 0) {
@@ -411,6 +671,8 @@ int hvfs_load_super(void) {
     hvfs_super.modified_time = super_disk->modified_time;
     hvfs_super.mount_time = get_time();
     hvfs_super.mount_count = super_disk->mount_count + 1;
+    hvfs_super.dynamic_inodes = super_disk->dynamic_inodes;
+    hvfs_super.dynamic_blocks = super_disk->dynamic_blocks;
     
     serial_puts(SERIAL_COM1, "HvFS: Super block loaded\n");
     return 0;
@@ -438,6 +700,8 @@ int hvfs_sync_super(void) {
     super_disk->mount_time = hvfs_super.mount_time;
     super_disk->mount_count = hvfs_super.mount_count;
     super_disk->state = hvfs_super.state;
+    super_disk->dynamic_inodes = hvfs_super.dynamic_inodes;
+    super_disk->dynamic_blocks = hvfs_super.dynamic_blocks;
     
     if (ata_write_sectors(0, HVFS_SUPER_SECTOR_START, 
                           HVFS_SUPER_SECTOR_COUNT, super_buffer) != 0) {
@@ -449,16 +713,27 @@ int hvfs_sync_super(void) {
 }
 
 int hvfs_load_inode_table(void) {
+    if (hvfs_inode_table != NULL) {
+        kfree(hvfs_inode_table);
+    }
+    
+    hvfs_inode_table = (struct inode*)kcalloc(hvfs_super.inode_count, sizeof(struct inode));
+    if (hvfs_inode_table == NULL) {
+        serial_puts(SERIAL_COM1, "HvFS: Failed to allocate inode table\n");
+        return -1;
+    }
+    hvfs_inode_table_size = hvfs_super.inode_count;
+    
     static uint8_t sector_buffer[512];
     
-    for (int i = 0; i < HVFS_MAX_INODES; i++) {
+    for (uint32_t i = 0; i < hvfs_super.inode_count; i++) {
         if (ata_read_sector(0, HVFS_INODE_SECTOR_START + i, sector_buffer) != 0) {
             continue;
         }
         
         struct hvfs_inode_disk *inode_disk = (struct hvfs_inode_disk *)sector_buffer;
         
-        if (inode_disk->inode_num != 0 && inode_disk->inode_num < HVFS_MAX_INODES) {
+        if (inode_disk->inode_num != 0 && inode_disk->inode_num < hvfs_super.inode_count) {
             struct inode *inode = &hvfs_inode_table[inode_disk->inode_num];
             inode->inode_num = inode_disk->inode_num;
             inode->mode = inode_disk->mode;
@@ -473,12 +748,14 @@ int hvfs_load_inode_table(void) {
             inode->ref_count = 1;
             inode->used = 1;
             inode->dirty = 0;
+            inode->in_cache = 1;
             
             for (int j = 0; j < 12; j++) {
                 inode->direct_blocks[j] = inode_disk->direct_blocks[j];
             }
             inode->indirect_block = inode_disk->indirect_block;
             inode->double_indirect = inode_disk->double_indirect;
+            inode->triple_indirect = inode_disk->triple_indirect;
         }
     }
     
@@ -511,6 +788,7 @@ int hvfs_sync_inode(struct inode *inode) {
     }
     inode_disk->indirect_block = inode->indirect_block;
     inode_disk->double_indirect = inode->double_indirect;
+    inode_disk->triple_indirect = inode->triple_indirect;
     inode_disk->flags = 0;
     
     if (ata_write_sector(0, HVFS_INODE_SECTOR_START + inode->inode_num, sector_buffer) != 0) {
@@ -523,28 +801,43 @@ int hvfs_sync_inode(struct inode *inode) {
 }
 
 int hvfs_load_block_bitmap(void) {
+    uint32_t bitmap_size = (hvfs_super.total_blocks + 7) / 8;
+    
+    if (hvfs_block_bitmap != NULL) {
+        kfree(hvfs_block_bitmap);
+    }
+    
+    hvfs_block_bitmap = (uint8_t*)kmalloc(bitmap_size);
+    if (hvfs_block_bitmap == NULL) {
+        serial_puts(SERIAL_COM1, "HvFS: Failed to allocate block bitmap\n");
+        return -1;
+    }
+    hvfs_block_bitmap_size = bitmap_size;
+    
+    uint32_t sectors_needed = (bitmap_size + 511) / 512;
     static uint8_t bitmap_buffer[HVFS_BLOCK_BITMAP_COUNT * HVFS_DISK_SECTOR_SIZE];
     
     if (ata_read_sectors(0, HVFS_BLOCK_BITMAP_START, 
-                         HVFS_BLOCK_BITMAP_COUNT, bitmap_buffer) != 0) {
+                         sectors_needed, bitmap_buffer) != 0) {
         serial_puts(SERIAL_COM1, "HvFS: Failed to load block bitmap\n");
         return -1;
     }
     
-    memcpy(hvfs_block_bitmap, bitmap_buffer, sizeof(hvfs_block_bitmap));
+    memcpy(hvfs_block_bitmap, bitmap_buffer, bitmap_size);
     
     serial_puts(SERIAL_COM1, "HvFS: Block bitmap loaded\n");
     return 0;
 }
 
 int hvfs_sync_block_bitmap(void) {
+    uint32_t sectors_needed = (hvfs_block_bitmap_size + 511) / 512;
     static uint8_t bitmap_buffer[HVFS_BLOCK_BITMAP_COUNT * HVFS_DISK_SECTOR_SIZE];
     
     memset(bitmap_buffer, 0, sizeof(bitmap_buffer));
-    memcpy(bitmap_buffer, hvfs_block_bitmap, sizeof(hvfs_block_bitmap));
+    memcpy(bitmap_buffer, hvfs_block_bitmap, hvfs_block_bitmap_size);
     
     if (ata_write_sectors(0, HVFS_BLOCK_BITMAP_START, 
-                          HVFS_BLOCK_BITMAP_COUNT, bitmap_buffer) != 0) {
+                          sectors_needed, bitmap_buffer) != 0) {
         serial_puts(SERIAL_COM1, "HvFS: Failed to sync block bitmap\n");
         return -1;
     }
@@ -553,28 +846,43 @@ int hvfs_sync_block_bitmap(void) {
 }
 
 int hvfs_load_inode_bitmap(void) {
+    uint32_t bitmap_size = (hvfs_super.inode_count + 7) / 8;
+    
+    if (hvfs_inode_bitmap != NULL) {
+        kfree(hvfs_inode_bitmap);
+    }
+    
+    hvfs_inode_bitmap = (uint8_t*)kmalloc(bitmap_size);
+    if (hvfs_inode_bitmap == NULL) {
+        serial_puts(SERIAL_COM1, "HvFS: Failed to allocate inode bitmap\n");
+        return -1;
+    }
+    hvfs_inode_bitmap_size = bitmap_size;
+    
+    uint32_t sectors_needed = (bitmap_size + 511) / 512;
     static uint8_t bitmap_buffer[HVFS_INODE_BITMAP_COUNT * HVFS_DISK_SECTOR_SIZE];
     
     if (ata_read_sectors(0, HVFS_INODE_BITMAP_START, 
-                         HVFS_INODE_BITMAP_COUNT, bitmap_buffer) != 0) {
+                         sectors_needed, bitmap_buffer) != 0) {
         serial_puts(SERIAL_COM1, "HvFS: Failed to load inode bitmap\n");
         return -1;
     }
     
-    memcpy(hvfs_inode_bitmap, bitmap_buffer, sizeof(hvfs_inode_bitmap));
+    memcpy(hvfs_inode_bitmap, bitmap_buffer, bitmap_size);
     
     serial_puts(SERIAL_COM1, "HvFS: Inode bitmap loaded\n");
     return 0;
 }
 
 int hvfs_sync_inode_bitmap(void) {
+    uint32_t sectors_needed = (hvfs_inode_bitmap_size + 511) / 512;
     static uint8_t bitmap_buffer[HVFS_INODE_BITMAP_COUNT * HVFS_DISK_SECTOR_SIZE];
     
     memset(bitmap_buffer, 0, sizeof(bitmap_buffer));
-    memcpy(bitmap_buffer, hvfs_inode_bitmap, sizeof(hvfs_inode_bitmap));
+    memcpy(bitmap_buffer, hvfs_inode_bitmap, hvfs_inode_bitmap_size);
     
     if (ata_write_sectors(0, HVFS_INODE_BITMAP_START, 
-                          HVFS_INODE_BITMAP_COUNT, bitmap_buffer) != 0) {
+                          sectors_needed, bitmap_buffer) != 0) {
         serial_puts(SERIAL_COM1, "HvFS: Failed to sync inode bitmap\n");
         return -1;
     }
@@ -583,22 +891,25 @@ int hvfs_sync_inode_bitmap(void) {
 }
 
 static int hvfs_load_data_block(uint32_t block_num) {
-    if (block_num >= HVFS_MAX_BLOCKS) return -1;
-    
-    if (ata_read_sector(0, HVFS_DATA_SECTOR_START + block_num, 
-                        get_block(block_num)) != 0) {
-        return -1;
-    }
-    
+    if (block_num >= hvfs_super.total_blocks) return -1;
+    get_block(block_num);
     return 0;
 }
 
 static int hvfs_sync_data_block(uint32_t block_num) {
-    if (block_num >= HVFS_MAX_BLOCKS) return -1;
+    if (block_num >= hvfs_super.total_blocks) return -1;
     
-    if (ata_write_sector(0, HVFS_DATA_SECTOR_START + block_num, 
-                         get_block(block_num)) != 0) {
-        return -1;
+    for (int i = 0; i < HVFS_CACHE_SIZE; i++) {
+        if (block_cache[i].valid && block_cache[i].block_num == block_num) {
+            if (block_cache[i].dirty) {
+                for (int s = 0; s < HVFS_DISK_SECTORS_PER_BLOCK; s++) {
+                    ata_write_sector(0, HVFS_DATA_SECTOR_START + block_num * HVFS_DISK_SECTORS_PER_BLOCK + s,
+                        block_cache[i].data + s * HVFS_DISK_SECTOR_SIZE);
+                }
+                block_cache[i].dirty = 0;
+            }
+            return 0;
+        }
     }
     
     return 0;
@@ -606,10 +917,6 @@ static int hvfs_sync_data_block(uint32_t block_num) {
 
 int hvfs_disk_init(void) {
     int status = hvfs_check_disk();
-    
-    serial_puts(SERIAL_COM1, "HvFS: check_disk returned ");
-    serial_put_dec(SERIAL_COM1, status);
-    serial_puts(SERIAL_COM1, "\n");
     
     switch (status) {
         case HVFS_DISK_OK:
@@ -624,12 +931,9 @@ int hvfs_disk_init(void) {
         case HVFS_DISK_UNFORMATTED:
             serial_puts(SERIAL_COM1, "HvFS: Disk unformatted, formatting...\n");
             if (hvfs_format_disk() != 0) {
-                serial_puts(SERIAL_COM1, "HvFS: format_disk failed\n");
                 return -1;
             }
-            serial_puts(SERIAL_COM1, "HvFS: format_disk done, calling hvfs_format\n");
             hvfs_format();
-            serial_puts(SERIAL_COM1, "HvFS: hvfs_format done, calling hvfs_sync\n");
             hvfs_disk_mode = 1;
             hvfs_sync();
             serial_puts(SERIAL_COM1, "HvFS: Disk init complete\n");
@@ -640,7 +944,6 @@ int hvfs_disk_init(void) {
             return -1;
             
         default:
-            serial_puts(SERIAL_COM1, "HvFS: Unknown status\n");
             return -1;
     }
 }
@@ -687,27 +990,19 @@ int hvfs_sync(void) {
     
     serial_puts(SERIAL_COM1, "HvFS: Syncing to disk...\n");
     
-    if (hvfs_sync_super() != 0) {
-        return -1;
-    }
+    hvfs_sync_super();
+    hvfs_sync_inode_bitmap();
+    hvfs_sync_block_bitmap();
     
-    if (hvfs_sync_inode_bitmap() != 0) {
-        return -1;
-    }
-    
-    if (hvfs_sync_block_bitmap() != 0) {
-        return -1;
-    }
-    
-    for (int i = 1; i < HVFS_MAX_INODES; i++) {
+    for (uint32_t i = 1; i < hvfs_super.inode_count; i++) {
         if (hvfs_inode_table[i].used && hvfs_inode_table[i].dirty) {
             hvfs_sync_inode(&hvfs_inode_table[i]);
         }
     }
     
-    for (uint32_t i = 0; i < HVFS_MAX_BLOCKS; i++) {
-        if (!block_is_free(i)) {
-            hvfs_sync_data_block(i);
+    for (int i = 0; i < HVFS_CACHE_SIZE; i++) {
+        if (block_cache[i].valid && block_cache[i].dirty) {
+            hvfs_sync_data_block(block_cache[i].block_num);
         }
     }
     
@@ -716,25 +1011,41 @@ int hvfs_sync(void) {
 }
 
 int hvfs_format(void) {
+    if (hvfs_inode_table != NULL) {
+        kfree(hvfs_inode_table);
+    }
+    if (hvfs_block_bitmap != NULL) {
+        kfree(hvfs_block_bitmap);
+    }
+    if (hvfs_inode_bitmap != NULL) {
+        kfree(hvfs_inode_bitmap);
+    }
+    
     memset(&hvfs_super, 0, sizeof(struct super_block));
-    memset(hvfs_inode_table, 0, sizeof(hvfs_inode_table));
-    memset(hvfs_block_bitmap, 0, sizeof(hvfs_block_bitmap));
-    memset(hvfs_inode_bitmap, 0, sizeof(hvfs_inode_bitmap));
-    memset(hvfs_data_area, 0, sizeof(hvfs_data_area));
     
     hvfs_super.magic = HVFS_MAGIC;
     hvfs_super.version = HVFS_VERSION;
     hvfs_super.block_size = HVFS_BLOCK_SIZE;
-    hvfs_super.total_blocks = HVFS_MAX_BLOCKS;
-    hvfs_super.free_blocks = HVFS_MAX_BLOCKS - 100;
-    hvfs_super.inode_count = HVFS_MAX_INODES;
-    hvfs_super.free_inodes = HVFS_MAX_INODES - 2;
+    hvfs_super.total_blocks = HVFS_DEFAULT_BLOCKS;
+    hvfs_super.free_blocks = HVFS_DEFAULT_BLOCKS - 100;
+    hvfs_super.inode_count = HVFS_DEFAULT_INODES;
+    hvfs_super.free_inodes = HVFS_DEFAULT_INODES - 2;
     hvfs_super.first_data_block = 10;
     hvfs_super.root_inode = 1;
-    hvfs_super.max_path_depth = 128;
-    hvfs_super.max_entries = 65535;
+    hvfs_super.max_path_depth = 256;
+    hvfs_super.max_entries = 1048576;
     hvfs_super.created_time = get_time();
     hvfs_super.modified_time = get_time();
+    hvfs_super.dynamic_inodes = 1;
+    hvfs_super.dynamic_blocks = 1;
+    
+    hvfs_inode_table = (struct inode*)kcalloc(hvfs_super.inode_count, sizeof(struct inode));
+    hvfs_block_bitmap = (uint8_t*)kcalloc((hvfs_super.total_blocks + 7) / 8, 1);
+    hvfs_inode_bitmap = (uint8_t*)kcalloc((hvfs_super.inode_count + 7) / 8, 1);
+    
+    hvfs_inode_table_size = hvfs_super.inode_count;
+    hvfs_block_bitmap_size = (hvfs_super.total_blocks + 7) / 8;
+    hvfs_inode_bitmap_size = (hvfs_super.inode_count + 7) / 8;
     
     for (int i = 0; i < hvfs_super.first_data_block; i++) {
         block_set_used(i);
@@ -755,6 +1066,7 @@ int hvfs_format(void) {
     root->ref_count = 1;
     root->used = 1;
     root->dirty = 0;
+    root->in_cache = 1;
     inode_set_used(1);
     
     struct inode *lost_found = &hvfs_inode_table[2];
@@ -772,28 +1084,32 @@ int hvfs_format(void) {
     lost_found->ref_count = 1;
     lost_found->used = 1;
     lost_found->dirty = 0;
+    lost_found->in_cache = 1;
     inode_set_used(2);
     
     struct dir_entry *root_dir = (struct dir_entry *)get_block(root->direct_blocks[0]);
-    root_dir[0].inode = 1;
-    root_dir[0].rec_len = sizeof(struct dir_entry);
-    root_dir[0].name_len = 1;
-    root_dir[0].file_type = HVFS_TYPE_DIR;
-    strcpy(root_dir[0].name, ".");
-    
-    root_dir[1].inode = 1;
-    root_dir[1].rec_len = sizeof(struct dir_entry);
-    root_dir[1].name_len = 2;
-    root_dir[1].file_type = HVFS_TYPE_DIR;
-    strcpy(root_dir[1].name, "..");
-    
-    root_dir[2].inode = 2;
-    root_dir[2].rec_len = sizeof(struct dir_entry);
-    root_dir[2].name_len = 10;
-    root_dir[2].file_type = HVFS_TYPE_DIR;
-    strcpy(root_dir[2].name, "lost+found");
-    
-    root->size = 3 * sizeof(struct dir_entry);
+    if (root_dir) {
+        root_dir[0].inode = 1;
+        root_dir[0].rec_len = sizeof(struct dir_entry);
+        root_dir[0].name_len = 1;
+        root_dir[0].file_type = HVFS_TYPE_DIR;
+        strcpy(root_dir[0].name, ".");
+        
+        root_dir[1].inode = 1;
+        root_dir[1].rec_len = sizeof(struct dir_entry);
+        root_dir[1].name_len = 2;
+        root_dir[1].file_type = HVFS_TYPE_DIR;
+        strcpy(root_dir[1].name, "..");
+        
+        root_dir[2].inode = 2;
+        root_dir[2].rec_len = sizeof(struct dir_entry);
+        root_dir[2].name_len = 10;
+        root_dir[2].file_type = HVFS_TYPE_DIR;
+        strcpy(root_dir[2].name, "lost+found");
+        
+        root->size = 3 * sizeof(struct dir_entry);
+        mark_block_dirty(root->direct_blocks[0]);
+    }
     
     current_context.current_dir = 1;
     hvfs_initialized = 1;
@@ -803,14 +1119,13 @@ int hvfs_format(void) {
     serial_puts(SERIAL_COM1, "HvFS formatted successfully\n");
     serial_puts(SERIAL_COM1, "  Block size: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.block_size);
-    serial_puts(SERIAL_COM1, " bytes\n");
-    serial_puts(SERIAL_COM1, "  Total blocks: ");
+    serial_puts(SERIAL_COM1, " bytes\n  Total blocks: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.total_blocks);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Free blocks: ");
+    serial_puts(SERIAL_COM1, "\n  Free blocks: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.free_blocks);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Root inode: ");
+    serial_puts(SERIAL_COM1, "\n  Total inodes: ");
+    serial_put_dec(SERIAL_COM1, hvfs_super.inode_count);
+    serial_puts(SERIAL_COM1, "\n  Root inode: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.root_inode);
     serial_puts(SERIAL_COM1, "\n");
     
@@ -827,22 +1142,19 @@ int hvfs_create_default_directories(void) {
         "/dev",
         "/proc",
         "/sys",
+        "/var",
+        "/usr",
+        "/opt",
         NULL
     };
     
     for (int i = 0; dirs[i] != NULL; i++) {
-        int result = hvfs_mkdir(dirs[i], 0);
-        if (result == 0) {
-            serial_puts(SERIAL_COM1, "HvFS: created '");
-            serial_puts(SERIAL_COM1, dirs[i]);
-            serial_puts(SERIAL_COM1, "'\n");
-        }
+        hvfs_mkdir(dirs[i], 0);
     }
     
     int fd = hvfs_open("/etc/pwid.db", HVFS_O_CREAT | HVFS_O_WRONLY, 0);
     if (fd >= 0) {
         hvfs_close(fd);
-        serial_puts(SERIAL_COM1, "HvFS: created '/etc/pwid.db'\n");
     }
     
     fd = hvfs_open("/etc/hostname", HVFS_O_CREAT | HVFS_O_WRONLY, 0);
@@ -850,7 +1162,6 @@ int hvfs_create_default_directories(void) {
         const char *default_hostname = "localhost";
         hvfs_write(fd, default_hostname, strlen(default_hostname));
         hvfs_close(fd);
-        serial_puts(SERIAL_COM1, "HvFS: created '/etc/hostname'\n");
     }
     
     return 0;
@@ -888,14 +1199,12 @@ static struct inode* resolve_path(const char *path, uint64_t pwid) {
         
         int found = 0;
         
-        if (hvfs_disk_mode && current->direct_blocks[0] != 0) {
-            hvfs_load_data_block(current->direct_blocks[0]);
-        }
-        
         struct dir_entry *entries = (struct dir_entry *)get_block(current->direct_blocks[0]);
-        int num_entries = current->size / sizeof(struct dir_entry);
+        if (entries == NULL) return NULL;
         
-        for (int i = 0; i < num_entries; i++) {
+        uint32_t num_entries = current->size / sizeof(struct dir_entry);
+        
+        for (uint32_t i = 0; i < num_entries; i++) {
             if (entries[i].inode != 0 && strcmp(entries[i].name, name) == 0) {
                 current = hvfs_get_inode(entries[i].inode);
                 found = 1;
@@ -954,12 +1263,13 @@ int hvfs_open(const char *path, int flags, uint64_t pwid) {
             inode->direct_blocks[0] = block_alloc();
             inode->dirty = 1;
             
-            if (hvfs_disk_mode && parent->direct_blocks[0] != 0) {
-                hvfs_load_data_block(parent->direct_blocks[0]);
+            struct dir_entry *entries = (struct dir_entry *)get_block(parent->direct_blocks[0]);
+            if (entries == NULL) {
+                inode_free(inode);
+                return -1;
             }
             
-            struct dir_entry *entries = (struct dir_entry *)get_block(parent->direct_blocks[0]);
-            int num_entries = parent->size / sizeof(struct dir_entry);
+            uint32_t num_entries = parent->size / sizeof(struct dir_entry);
             
             entries[num_entries].inode = inode->inode_num;
             entries[num_entries].rec_len = sizeof(struct dir_entry);
@@ -970,9 +1280,9 @@ int hvfs_open(const char *path, int flags, uint64_t pwid) {
             parent->size += sizeof(struct dir_entry);
             parent->mtime = get_time();
             parent->dirty = 1;
+            mark_block_dirty(parent->direct_blocks[0]);
             
             if (hvfs_disk_mode) {
-                hvfs_sync_data_block(parent->direct_blocks[0]);
                 hvfs_sync_inode(parent);
                 hvfs_sync_inode(inode);
             }
@@ -1060,12 +1370,10 @@ int hvfs_read(int fd, void *buf, uint32_t count) {
         
         uint32_t block_num = get_block_for_index(inode, block_idx, 0);
         if (block_num != 0) {
-            if (hvfs_disk_mode) {
-                hvfs_load_data_block(block_num);
+            uint8_t *block = get_block(block_num);
+            if (block) {
+                memcpy(buffer + bytes_read, block + block_offset, bytes_to_read);
             }
-            memcpy(buffer + bytes_read, 
-                    get_block(block_num) + block_offset,
-                    bytes_to_read);
         }
         
         bytes_read += bytes_to_read;
@@ -1096,7 +1404,9 @@ int hvfs_write(int fd, const void *buf, uint32_t count) {
     
     uint32_t bytes_written = 0;
     const uint8_t *buffer = (const uint8_t *)buf;
-    uint32_t max_blocks = 12 + INDIRECT_BLOCKS_PER_BLOCK + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
+    uint64_t max_blocks = 12 + INDIRECT_BLOCKS_PER_BLOCK + 
+                          INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK +
+                          INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
     
     while (bytes_written < count) {
         uint32_t block_idx = fdesc->offset / HVFS_BLOCK_SIZE;
@@ -1112,16 +1422,11 @@ int hvfs_write(int fd, const void *buf, uint32_t count) {
         uint32_t block_num = get_block_for_index(inode, block_idx, 1);
         if (block_num == 0) break;
         
-        if (hvfs_disk_mode) {
-            hvfs_load_data_block(block_num);
-        }
+        uint8_t *block = get_block(block_num);
+        if (block == NULL) break;
         
-        memcpy(get_block(block_num) + block_offset,
-                buffer + bytes_written, bytes_to_write);
-        
-        if (hvfs_disk_mode) {
-            hvfs_sync_data_block(block_num);
-        }
+        memcpy(block + block_offset, buffer + bytes_written, bytes_to_write);
+        mark_block_dirty(block_num);
         
         bytes_written += bytes_to_write;
         fdesc->offset += bytes_to_write;
@@ -1222,24 +1527,29 @@ int hvfs_mkdir(const char *path, uint64_t pwid) {
     new_dir->dirty = 1;
     
     struct dir_entry *new_entries = (struct dir_entry *)get_block(new_dir->direct_blocks[0]);
-    new_entries[0].inode = new_dir->inode_num;
-    new_entries[0].rec_len = sizeof(struct dir_entry);
-    new_entries[0].name_len = 1;
-    new_entries[0].file_type = HVFS_TYPE_DIR;
-    strcpy(new_entries[0].name, ".");
-    
-    new_entries[1].inode = parent->inode_num;
-    new_entries[1].rec_len = sizeof(struct dir_entry);
-    new_entries[1].name_len = 2;
-    new_entries[1].file_type = HVFS_TYPE_DIR;
-    strcpy(new_entries[1].name, "..");
-    
-    if (hvfs_disk_mode && parent->direct_blocks[0] != 0) {
-        hvfs_load_data_block(parent->direct_blocks[0]);
+    if (new_entries) {
+        new_entries[0].inode = new_dir->inode_num;
+        new_entries[0].rec_len = sizeof(struct dir_entry);
+        new_entries[0].name_len = 1;
+        new_entries[0].file_type = HVFS_TYPE_DIR;
+        strcpy(new_entries[0].name, ".");
+        
+        new_entries[1].inode = parent->inode_num;
+        new_entries[1].rec_len = sizeof(struct dir_entry);
+        new_entries[1].name_len = 2;
+        new_entries[1].file_type = HVFS_TYPE_DIR;
+        strcpy(new_entries[1].name, "..");
+        
+        mark_block_dirty(new_dir->direct_blocks[0]);
     }
     
     struct dir_entry *parent_entries = (struct dir_entry *)get_block(parent->direct_blocks[0]);
-    int num_entries = parent->size / sizeof(struct dir_entry);
+    if (parent_entries == NULL) {
+        inode_free(new_dir);
+        return -1;
+    }
+    
+    uint32_t num_entries = parent->size / sizeof(struct dir_entry);
     
     parent_entries[num_entries].inode = new_dir->inode_num;
     parent_entries[num_entries].rec_len = sizeof(struct dir_entry);
@@ -1251,17 +1561,12 @@ int hvfs_mkdir(const char *path, uint64_t pwid) {
     parent->link_count++;
     parent->mtime = get_time();
     parent->dirty = 1;
+    mark_block_dirty(parent->direct_blocks[0]);
     
     if (hvfs_disk_mode) {
-        hvfs_sync_data_block(new_dir->direct_blocks[0]);
-        hvfs_sync_data_block(parent->direct_blocks[0]);
         hvfs_sync_inode(new_dir);
         hvfs_sync_inode(parent);
     }
-    
-    serial_puts(SERIAL_COM1, "HvFS: created directory '");
-    serial_puts(SERIAL_COM1, dirname);
-    serial_puts(SERIAL_COM1, "'\n");
     
     return 0;
 }
@@ -1281,7 +1586,6 @@ int hvfs_rmdir(const char *path, uint64_t pwid) {
     }
     
     if (dir->size > 2 * sizeof(struct dir_entry)) {
-        serial_puts(SERIAL_COM1, "HvFS: directory not empty\n");
         return -1;
     }
     
@@ -1309,14 +1613,12 @@ int hvfs_rmdir(const char *path, uint64_t pwid) {
     struct inode *parent = resolve_path(parent_path, pwid);
     if (parent == NULL) return -1;
     
-    if (hvfs_disk_mode && parent->direct_blocks[0] != 0) {
-        hvfs_load_data_block(parent->direct_blocks[0]);
-    }
-    
     struct dir_entry *entries = (struct dir_entry *)get_block(parent->direct_blocks[0]);
-    int num_entries = parent->size / sizeof(struct dir_entry);
+    if (entries == NULL) return -1;
     
-    for (int i = 0; i < num_entries; i++) {
+    uint32_t num_entries = parent->size / sizeof(struct dir_entry);
+    
+    for (uint32_t i = 0; i < num_entries; i++) {
         if (strcmp(entries[i].name, dirname) == 0) {
             entries[i].inode = 0;
             break;
@@ -1325,17 +1627,13 @@ int hvfs_rmdir(const char *path, uint64_t pwid) {
     
     parent->link_count--;
     parent->dirty = 1;
+    mark_block_dirty(parent->direct_blocks[0]);
     
     if (hvfs_disk_mode) {
-        hvfs_sync_data_block(parent->direct_blocks[0]);
         hvfs_sync_inode(parent);
     }
     
     inode_free(dir);
-    
-    serial_puts(SERIAL_COM1, "HvFS: removed directory '");
-    serial_puts(SERIAL_COM1, dirname);
-    serial_puts(SERIAL_COM1, "'\n");
     
     return 0;
 }
@@ -1358,14 +1656,12 @@ int hvfs_readdir(int fd, struct dir_entry *entry) {
         return -1;
     }
     
-    if (hvfs_disk_mode && inode->direct_blocks[0] != 0) {
-        hvfs_load_data_block(inode->direct_blocks[0]);
-    }
-    
     struct dir_entry *entries = (struct dir_entry *)get_block(inode->direct_blocks[0]);
-    int num_entries = inode->size / sizeof(struct dir_entry);
+    if (entries == NULL) return -1;
     
-    int entry_idx = fdesc->offset / sizeof(struct dir_entry);
+    uint32_t num_entries = inode->size / sizeof(struct dir_entry);
+    
+    uint32_t entry_idx = fdesc->offset / sizeof(struct dir_entry);
     
     while (entry_idx < num_entries && entries[entry_idx].inode == 0) {
         entry_idx++;
@@ -1430,14 +1726,12 @@ int hvfs_unlink(const char *path, uint64_t pwid) {
     struct inode *parent = resolve_path(parent_path, pwid);
     if (parent == NULL) return -1;
     
-    if (hvfs_disk_mode && parent->direct_blocks[0] != 0) {
-        hvfs_load_data_block(parent->direct_blocks[0]);
-    }
-    
     struct dir_entry *entries = (struct dir_entry *)get_block(parent->direct_blocks[0]);
-    int num_entries = parent->size / sizeof(struct dir_entry);
+    if (entries == NULL) return -1;
     
-    for (int i = 0; i < num_entries; i++) {
+    uint32_t num_entries = parent->size / sizeof(struct dir_entry);
+    
+    for (uint32_t i = 0; i < num_entries; i++) {
         if (strcmp(entries[i].name, filename) == 0) {
             entries[i].inode = 0;
             break;
@@ -1445,9 +1739,9 @@ int hvfs_unlink(const char *path, uint64_t pwid) {
     }
     
     parent->dirty = 1;
+    mark_block_dirty(parent->direct_blocks[0]);
     
     if (hvfs_disk_mode) {
-        hvfs_sync_data_block(parent->direct_blocks[0]);
         hvfs_sync_inode(parent);
     }
     
@@ -1485,15 +1779,13 @@ int hvfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
         return -1;
     }
     
-    if (hvfs_disk_mode && old_parent->direct_blocks[0] != 0) {
-        hvfs_load_data_block(old_parent->direct_blocks[0]);
-    }
-    
     struct dir_entry *old_entries = (struct dir_entry *)get_block(old_parent->direct_blocks[0]);
-    int old_num_entries = old_parent->size / sizeof(struct dir_entry);
+    if (old_entries == NULL) return -1;
+    
+    uint32_t old_num_entries = old_parent->size / sizeof(struct dir_entry);
     
     struct inode *target_inode = NULL;
-    for (int i = 0; i < old_num_entries; i++) {
+    for (uint32_t i = 0; i < old_num_entries; i++) {
         if (strcmp(old_entries[i].name, old_name) == 0 && old_entries[i].inode != 0) {
             target_inode = hvfs_get_inode(old_entries[i].inode);
             old_entries[i].inode = 0;
@@ -1527,15 +1819,13 @@ int hvfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
         return -1;
     }
     
-    if (hvfs_disk_mode && new_parent->direct_blocks[0] != 0) {
-        hvfs_load_data_block(new_parent->direct_blocks[0]);
-    }
-    
     struct dir_entry *new_entries = (struct dir_entry *)get_block(new_parent->direct_blocks[0]);
-    int new_num_entries = new_parent->size / sizeof(struct dir_entry);
+    if (new_entries == NULL) return -1;
+    
+    uint32_t new_num_entries = new_parent->size / sizeof(struct dir_entry);
     
     int insert_pos = -1;
-    for (int i = 0; i < new_num_entries; i++) {
+    for (uint32_t i = 0; i < new_num_entries; i++) {
         if (new_entries[i].inode == 0) {
             insert_pos = i;
             break;
@@ -1557,19 +1847,13 @@ int hvfs_rename(const char *old_path, const char *new_path, uint64_t pwid) {
     old_parent->mtime = get_time();
     new_parent->dirty = 1;
     old_parent->dirty = 1;
+    mark_block_dirty(old_parent->direct_blocks[0]);
+    mark_block_dirty(new_parent->direct_blocks[0]);
     
     if (hvfs_disk_mode) {
-        hvfs_sync_data_block(old_parent->direct_blocks[0]);
-        hvfs_sync_data_block(new_parent->direct_blocks[0]);
         hvfs_sync_inode(old_parent);
         hvfs_sync_inode(new_parent);
     }
-    
-    serial_puts(SERIAL_COM1, "HvFS: renamed '");
-    serial_puts(SERIAL_COM1, old_name);
-    serial_puts(SERIAL_COM1, "' to '");
-    serial_puts(SERIAL_COM1, new_name);
-    serial_puts(SERIAL_COM1, "'\n");
     
     return 0;
 }
@@ -1648,16 +1932,17 @@ void hvfs_list_root(void) {
         return;
     }
     
-    if (hvfs_disk_mode && root->direct_blocks[0] != 0) {
-        hvfs_load_data_block(root->direct_blocks[0]);
-    }
-    
     serial_puts(SERIAL_COM1, "\n=== HvFS Root Directory ===\n");
     
     struct dir_entry *entries = (struct dir_entry *)get_block(root->direct_blocks[0]);
-    int num_entries = root->size / sizeof(struct dir_entry);
+    if (entries == NULL) {
+        serial_puts(SERIAL_COM1, "HvFS: cannot read root directory\n");
+        return;
+    }
     
-    for (int i = 0; i < num_entries; i++) {
+    uint32_t num_entries = root->size / sizeof(struct dir_entry);
+    
+    for (uint32_t i = 0; i < num_entries; i++) {
         if (entries[i].inode != 0) {
             serial_puts(SERIAL_COM1, "  ");
             if (entries[i].file_type == HVFS_TYPE_DIR) {
@@ -1677,27 +1962,23 @@ void hvfs_dump_super(void) {
     serial_puts(SERIAL_COM1, "\n=== HvFS Super Block ===\n");
     serial_puts(SERIAL_COM1, "  Magic: 0x");
     serial_put_hex(SERIAL_COM1, hvfs_super.magic);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Version: ");
+    serial_puts(SERIAL_COM1, "\n  Version: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.version);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Block size: ");
+    serial_puts(SERIAL_COM1, "\n  Block size: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.block_size);
-    serial_puts(SERIAL_COM1, " bytes\n");
-    serial_puts(SERIAL_COM1, "  Total blocks: ");
+    serial_puts(SERIAL_COM1, " bytes\n  Total blocks: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.total_blocks);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Free blocks: ");
+    serial_puts(SERIAL_COM1, "\n  Free blocks: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.free_blocks);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Inode count: ");
+    serial_puts(SERIAL_COM1, "\n  Total inodes: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.inode_count);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Free inodes: ");
+    serial_puts(SERIAL_COM1, "\n  Free inodes: ");
     serial_put_dec(SERIAL_COM1, hvfs_super.free_inodes);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Disk mode: ");
+    serial_puts(SERIAL_COM1, "\n  Disk mode: ");
     serial_puts(SERIAL_COM1, hvfs_disk_mode ? "yes" : "no");
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "========================\n");
+    serial_puts(SERIAL_COM1, "\n  Dynamic inodes: ");
+    serial_puts(SERIAL_COM1, hvfs_super.dynamic_inodes ? "yes" : "no");
+    serial_puts(SERIAL_COM1, "\n  Dynamic blocks: ");
+    serial_puts(SERIAL_COM1, hvfs_super.dynamic_blocks ? "yes" : "no");
+    serial_puts(SERIAL_COM1, "\n========================\n");
 }

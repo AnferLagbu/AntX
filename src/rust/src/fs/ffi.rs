@@ -1,10 +1,8 @@
-use alloc::string::String;
 use core::ffi::c_char;
 
-use super::vfs::VFS_MANAGER;
-use super::types::{VFS_MAX_MOUNTS, VFS_MAX_FDS};
-use super::ramfs::RAMFS_DATA;
 use super::hvfs::{get_hvfs, HVFS_DATA};
+use super::vfs::VFS_MANAGER;
+use super::ramfs::RAMFS_DATA;
 use super::diskfs::{get_diskfs, DISKFS_DATA};
 use super::types::*;
 
@@ -71,12 +69,12 @@ pub extern "C" fn rust_vfs_open(path: *const c_char, flags: u32, pwid: u64) -> i
         None => return -1,
     };
     
-    let fs_name: String = {
+    let fs_name: alloc::string::String = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
-            String::from(mounts[mount_idx].get_fs_name())
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
         } else {
-            String::new()
+            alloc::string::String::new()
         }
     };
     
@@ -143,7 +141,7 @@ pub extern "C" fn rust_vfs_read(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     let (fs_type, path) = {
         let fd_table = VFS_MANAGER.fd_table.lock();
         let path_str = fd_table[fd_idx].get_path();
-        (fd_table[fd_idx].file_type, String::from(path_str))
+        (fd_table[fd_idx].file_type, alloc::string::String::from(path_str))
     };
     
     let mount_idx = match VFS_MANAGER.find_mount(&path) {
@@ -154,9 +152,9 @@ pub extern "C" fn rust_vfs_read(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
-            String::from(mounts[mount_idx].get_fs_name())
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
         } else {
-            String::new()
+            alloc::string::String::new()
         }
     };
     
@@ -172,8 +170,7 @@ pub extern "C" fn rust_vfs_read(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
         "diskfs" => {
             let mut diskfs = get_diskfs().lock();
             let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
-            let result = diskfs.read(inode_num, buf_slice, count);
-            result
+            diskfs.read(inode_num, buf_slice, count)
         }
         _ => -1
     }
@@ -199,7 +196,7 @@ pub extern "C" fn rust_vfs_write(fd_idx: u32, buf: *const u8, count: u32) -> i32
     
     let path = {
         let fd_table = VFS_MANAGER.fd_table.lock();
-        String::from(fd_table[fd_idx].get_path())
+        alloc::string::String::from(fd_table[fd_idx].get_path())
     };
     
     let mount_idx = match VFS_MANAGER.find_mount(&path) {
@@ -210,9 +207,9 @@ pub extern "C" fn rust_vfs_write(fd_idx: u32, buf: *const u8, count: u32) -> i32
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
-            String::from(mounts[mount_idx].get_fs_name())
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
         } else {
-            String::new()
+            alloc::string::String::new()
         }
     };
     
@@ -228,8 +225,7 @@ pub extern "C" fn rust_vfs_write(fd_idx: u32, buf: *const u8, count: u32) -> i32
         "diskfs" => {
             let mut diskfs = get_diskfs().lock();
             let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
-            let result = diskfs.write(inode_num, buf_slice, count);
-            result
+            diskfs.write(inode_num, buf_slice, count)
         }
         _ => -1
     }
@@ -263,9 +259,9 @@ pub extern "C" fn rust_vfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
-            String::from(mounts[mount_idx].get_fs_name())
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
         } else {
-            String::new()
+            alloc::string::String::new()
         }
     };
     
@@ -300,9 +296,9 @@ pub extern "C" fn rust_vfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
-            String::from(mounts[mount_idx].get_fs_name())
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
         } else {
-            String::new()
+            alloc::string::String::new()
         }
     };
     
@@ -375,6 +371,97 @@ pub extern "C" fn rust_hvfs_check_disk() -> i32 {
 pub extern "C" fn rust_hvfs_set_disk_present(present: bool) {
     let mut hvfs = get_hvfs().lock();
     hvfs.set_disk_present(present);
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let mut hvfs = get_hvfs().lock();
+    hvfs.open(path, flags, pwid)
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_close(fd: u32) -> i32 {
+    let mut hvfs = get_hvfs().lock();
+    hvfs.close(fd)
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
+    if buf.is_null() || count == 0 {
+        return -1;
+    }
+    
+    let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
+    let mut hvfs = get_hvfs().lock();
+    hvfs.read(fd, buf_slice)
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
+    if buf.is_null() || count == 0 {
+        return -1;
+    }
+    
+    let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
+    let mut hvfs = get_hvfs().lock();
+    hvfs.write(fd, buf_slice)
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let mut hvfs = get_hvfs().lock();
+    hvfs.mkdir(path, pwid)
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_sync() -> i32 {
+    let mut hvfs = get_hvfs().lock();
+    hvfs.sync()
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_get_stats(total_blocks: *mut u32, free_blocks: *mut u32, 
+                                       total_inodes: *mut u32, free_inodes: *mut u32) {
+    if total_blocks.is_null() || free_blocks.is_null() || 
+       total_inodes.is_null() || free_inodes.is_null() {
+        return;
+    }
+    
+    let hvfs = get_hvfs().lock();
+    let (tb, fb, ti, fi) = hvfs.get_stats();
+    
+    unsafe {
+        *total_blocks = tb;
+        *free_blocks = fb;
+        *total_inodes = ti;
+        *free_inodes = fi;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_set_current_dir(inode_num: u32) {
+    let mut hvfs = get_hvfs().lock();
+    hvfs.set_current_dir(inode_num);
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_get_current_dir() -> u32 {
+    let hvfs = get_hvfs().lock();
+    hvfs.get_current_dir()
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_set_current_pwid(pwid: u64) {
+    let mut hvfs = get_hvfs().lock();
+    hvfs.set_current_pwid(pwid);
+}
+
+#[no_mangle]
+pub extern "C" fn rust_hvfs_get_current_pwid() -> u64 {
+    let hvfs = get_hvfs().lock();
+    hvfs.get_current_pwid()
 }
 
 #[no_mangle]

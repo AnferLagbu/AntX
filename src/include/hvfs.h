@@ -5,13 +5,16 @@
 #include "pwid.h"
 
 #define HVFS_MAGIC          0x48564653
-#define HVFS_VERSION        1
-#define HVFS_BLOCK_SIZE     512
-#define HVFS_MAX_INODES     128
-#define HVFS_MAX_BLOCKS     1024
-#define HVFS_MAX_FDS        16
-#define HVFS_MAX_PATH       128
-#define HVFS_MAX_NAME       64
+#define HVFS_VERSION        2
+#define HVFS_BLOCK_SIZE     4096
+#define HVFS_MAX_FDS        64
+#define HVFS_MAX_PATH       256
+#define HVFS_MAX_NAME       128
+
+#define HVFS_DEFAULT_INODES     4096
+#define HVFS_DEFAULT_BLOCKS     65536
+#define HVFS_MAX_INODES_LIMIT   1048576
+#define HVFS_MAX_BLOCKS_LIMIT   16777216
 
 #define HVFS_TYPE_FILE      0
 #define HVFS_TYPE_DIR       1
@@ -33,7 +36,7 @@
 #define HVFS_O_APPEND       0x0400
 
 #define HVFS_DISK_SECTOR_SIZE       512
-#define HVFS_DISK_SECTORS_PER_BLOCK 1
+#define HVFS_DISK_SECTORS_PER_BLOCK 8
 
 #define HVFS_BOOT_SECTOR_START      0
 #define HVFS_BOOT_SECTOR_COUNT      2
@@ -42,19 +45,19 @@
 #define HVFS_SUPER_SECTOR_COUNT     8
 
 #define HVFS_INODE_SECTOR_START     208
-#define HVFS_INODE_SECTOR_COUNT     128
+#define HVFS_INODE_SECTOR_COUNT     8192
 #define HVFS_INODES_PER_SECTOR      1
 
-#define HVFS_BLOCK_BITMAP_START     336
-#define HVFS_BLOCK_BITMAP_COUNT     15
+#define HVFS_BLOCK_BITMAP_START     8400
+#define HVFS_BLOCK_BITMAP_COUNT     2048
 
-#define HVFS_INODE_BITMAP_START     351
-#define HVFS_INODE_BITMAP_COUNT     16
+#define HVFS_INODE_BITMAP_START     10448
+#define HVFS_INODE_BITMAP_COUNT     256
 
-#define HVFS_LOG_SECTOR_START       367
-#define HVFS_LOG_SECTOR_COUNT       2
+#define HVFS_LOG_SECTOR_START       10704
+#define HVFS_LOG_SECTOR_COUNT       16
 
-#define HVFS_DATA_SECTOR_START      369
+#define HVFS_DATA_SECTOR_START      10720
 
 #define HVFS_DIR_ENTRY_SIZE         128
 
@@ -63,6 +66,8 @@
 #define HVFS_DISK_UNFORMATTED       -2
 #define HVFS_DISK_VERSION_ERROR     -3
 #define HVFS_DISK_CORRUPT           -4
+
+#define HVFS_CACHE_SIZE             256
 
 struct super_block {
     uint32_t magic;
@@ -81,6 +86,8 @@ struct super_block {
     uint64_t mount_time;
     uint32_t mount_count;
     uint32_t state;
+    uint32_t dynamic_inodes;
+    uint32_t dynamic_blocks;
 };
 
 struct inode {
@@ -97,10 +104,12 @@ struct inode {
     uint32_t direct_blocks[12];
     uint32_t indirect_block;
     uint32_t double_indirect;
+    uint32_t triple_indirect;
     uint32_t link_count;
     uint32_t ref_count;
     uint8_t  used;
     uint8_t  dirty;
+    uint8_t  in_cache;
 };
 
 struct dir_entry {
@@ -144,8 +153,10 @@ struct hvfs_super_block_disk {
     uint64_t mount_time;
     uint32_t mount_count;
     uint32_t state;
+    uint32_t dynamic_inodes;
+    uint32_t dynamic_blocks;
     uint32_t checksum;
-    uint8_t  reserved[468];
+    uint8_t  reserved[452];
 } __attribute__((packed));
 
 struct hvfs_inode_disk {
@@ -164,8 +175,9 @@ struct hvfs_inode_disk {
     uint32_t direct_blocks[12];
     uint32_t indirect_block;
     uint32_t double_indirect;
+    uint32_t triple_indirect;
     uint8_t  flags;
-    uint8_t  reserved2[23];
+    uint8_t  reserved2[19];
 } __attribute__((packed));
 
 struct hvfs_dir_entry_disk {
@@ -176,6 +188,14 @@ struct hvfs_dir_entry_disk {
     char     name[64];
     uint8_t  reserved[52];
 } __attribute__((packed));
+
+struct block_cache_entry {
+    uint32_t block_num;
+    uint8_t *data;
+    uint8_t dirty;
+    uint8_t valid;
+    uint32_t access_time;
+};
 
 void hvfs_init(void);
 int hvfs_format(void);
@@ -231,9 +251,14 @@ void hvfs_dump_super(void);
 
 int hvfs_is_disk_mode(void);
 
+int hvfs_expand_inodes(uint32_t new_count);
+int hvfs_expand_blocks(uint32_t new_count);
+
+uint32_t hvfs_get_total_blocks(void);
+uint32_t hvfs_get_free_blocks(void);
+uint32_t hvfs_get_total_inodes(void);
+uint32_t hvfs_get_free_inodes(void);
+
 extern struct super_block hvfs_super;
-extern struct inode hvfs_inode_table[HVFS_MAX_INODES];
-extern uint8_t hvfs_block_bitmap[HVFS_MAX_BLOCKS / 8];
-extern uint8_t hvfs_inode_bitmap[HVFS_MAX_INODES / 8];
 
 #endif

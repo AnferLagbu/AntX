@@ -288,7 +288,7 @@ impl DiskFsData {
     }
 
     pub fn stat(&self, path: &str, pwid: u64) -> Option<VfsStat> {
-        let hvfs = get_hvfs().lock();
+        let mut hvfs = get_hvfs().lock();
         
         match hvfs.stat(path, pwid) {
             Some(inode) => Some(VfsStat {

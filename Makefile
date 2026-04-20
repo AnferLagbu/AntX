@@ -4,7 +4,7 @@ AS = nasm
 
 CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
-         -Isrc/include
+         -Isrc/include -Isrc/include/tests
 
 USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
@@ -20,11 +20,20 @@ USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 ASFLAGS = -f elf64
 
 KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
-              build/pmm.o build/vmm.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
-              build/vfs.o build/ramfs.o build/diskfs.o build/devfs.o build/procfs.o build/hvfs.o \
+              build/pmm.o build/vmm.o build/kmalloc.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
+              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o \
               build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
               build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
               build/thread.o build/scheduler_ex.o build/ipc.o
+
+KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
+              build/pmm.o build/vmm.o build/kmalloc.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
+              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o \
+              build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
+              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
+              build/thread.o build/scheduler_ex.o build/ipc.o \
+              build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
+              build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -38,7 +47,7 @@ DISK_IMAGE = build/antx.img
 
 LOG_DIR = logs
 
-.PHONY: all clean run debug log iso run-iso disk run-disk user
+.PHONY: all clean run debug log iso run-iso disk run-disk user test test-unit test-integration test-stress
 
 all: build/kernel.bin user
 
@@ -73,6 +82,10 @@ build/pmm.o: src/mm/pmm.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/vmm.o: src/mm/vmm.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/kmalloc.o: src/mm/kmalloc.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -124,19 +137,11 @@ build/ramfs.o: src/fs/ramfs.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/diskfs.o: src/fs/diskfs.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/devfs.o: src/fs/devfs.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/procfs.o: src/fs/procfs.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/hvfs.o: src/hvfs/hvfs.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -274,3 +279,90 @@ debug-iso: iso
 	qemu-system-x86_64 -cdrom build/antx.iso -serial stdio -no-reboot -s -S &
 	@echo "QEMU started in debug mode on port 1234"
 	@echo "Connect with: gdb -ex 'target remote localhost:1234' -ex 'symbol-file build/kernel.bin'"
+
+build/main.o: src/kernel/main.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/main_test.o: src/kernel/main.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/kernel_test.o: src/kernel/tests/kernel_test.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_main.o: src/kernel/tests/test_main.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_pmm.o: src/kernel/tests/test_pmm.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_vmm.o: src/kernel/tests/test_vmm.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_kmalloc.o: src/kernel/tests/test_kmalloc.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_process.o: src/kernel/tests/test_process.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_scheduler.o: src/kernel/tests/test_scheduler.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_vfs.o: src/kernel/tests/test_vfs.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_syscall.o: src/kernel/tests/test_syscall.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_ipc.o: src/kernel/tests/test_ipc.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_hvfs.o: src/kernel/tests/test_hvfs.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+test: test-unit
+
+build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
+	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map -o build/kernel_test.bin $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
+
+test-unit: build/kernel_test.bin user
+	@echo "Building test ISO..."
+	@mkdir -p isodir/boot/grub
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@mkdir -p isodir/bin
+	@cp build/user/init.bin isodir/bin/init
+	@cp build/user/antxsh.bin isodir/bin/antxsh
+	@cp build/user/install.bin isodir/bin/install
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'set default=0' >> isodir/boot/grub/grub.cfg
+	@echo '' >> isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX Test" {' >> isodir/boot/grub/grub.cfg
+	@echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
+	@echo '}' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_test.iso isodir
+	@echo "Running kernel unit tests..."
+	@mkdir -p tests/reports
+	@timeout 120 qemu-system-x86_64 -cdrom build/antx_test.iso -serial stdio -display none 2>&1 | tee tests/reports/unit_test_$(shell date +%Y%m%d_%H%M%S).log
+	@echo "Test completed. Check tests/reports/ for results."
+
+test-integration: iso
+	@echo "Running integration tests..."
+	@mkdir -p tests/reports
+	@python3 tests/integration/run_integration_tests.py
+
+test-stress: iso
+	@echo "Running stress tests..."
+	@mkdir -p tests/reports
+	@python3 tests/stress/run_stress_tests.py

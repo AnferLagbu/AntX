@@ -54,10 +54,15 @@ struct memory_info {
 };
 
 void pmm_init(uint64_t mem_size, uint64_t kernel_end);
+void pmm_init_bitmap(void);
 void* pmm_alloc_page(void);
 void pmm_free_page(void* addr);
 uint64_t pmm_get_free_pages(void);
+uint64_t pmm_get_total_pages(void);
+uint64_t pmm_get_used_pages(void);
 void* pmm_alloc_pages(size_t count);
+void pmm_free_pages(void* addr, size_t count);
+void pmm_dump_stats(void);
 
 void vmm_init(void);
 void vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags);
