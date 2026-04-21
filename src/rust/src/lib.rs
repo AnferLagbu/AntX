@@ -7,8 +7,14 @@
 extern crate alloc;
 
 mod memory_allocator;
-pub mod proc;
+
+#[path = "../../fs/mod.rs"]
 pub mod fs;
+
+#[path = "../../proc/mod.rs"]
+pub mod proc;
+
+#[path = "../../pwid/mod.rs"]
 pub mod pwid;
 
 use core::panic::PanicInfo;

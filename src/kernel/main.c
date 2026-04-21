@@ -192,6 +192,9 @@ void kernel_main(void) {
     
     timer_init();
     
+    extern void pwid_try_load(void);
+    pwid_try_load();
+    
     serial_puts(SERIAL_COM1, "\n[INIT] System initialized\n");
     serial_puts(SERIAL_COM1, "AntX is ready.\n");
     serial_puts(SERIAL_COM1, "\nEnabling interrupts...\n");

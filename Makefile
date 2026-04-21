@@ -21,20 +21,20 @@ ASFLAGS = -f elf64
 
 KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/pmm.o build/vmm.o build/kmalloc.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
-              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o \
+              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o build/hvfs.o \
               build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
               build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
               build/thread.o build/scheduler_ex.o build/ipc.o
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/pmm.o build/vmm.o build/kmalloc.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
-              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o \
+              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o build/hvfs.o \
               build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
               build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
               build/thread.o build/scheduler_ex.o build/ipc.o \
               build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
-              build/test_pwid_enhanced.o
+              build/test_pwid_enhanced.o build/test_persistence.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -143,6 +143,10 @@ build/devfs.o: src/fs/devfs.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/procfs.o: src/fs/procfs.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/hvfs.o: src/hvfs/hvfs.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -337,6 +341,10 @@ build/test_pwid_enhanced.o: src/kernel/tests/test_pwid_enhanced.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
+build/test_persistence.o: src/kernel/tests/test_persistence.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
 test: test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
@@ -359,7 +367,7 @@ test-unit: build/kernel_test.bin user
 	@grub2-mkrescue -o build/antx_test.iso isodir
 	@echo "Running kernel unit tests..."
 	@mkdir -p tests/reports
-	@timeout 120 qemu-system-x86_64 -cdrom build/antx_test.iso -serial stdio -display none 2>&1 | tee tests/reports/unit_test_$(shell date +%Y%m%d_%H%M%S).log
+	@timeout 120 qemu-system-x86_64 -m 512M -cdrom build/antx_test.iso -serial stdio -display none 2>&1 | tee tests/reports/unit_test_$(shell date +%Y%m%d_%H%M%S).log
 	@echo "Test completed. Check tests/reports/ for results."
 
 test-integration: iso

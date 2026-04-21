@@ -149,4 +149,10 @@ int pwid_add_trust_relation(uint64_t truster, uint64_t trusted,
                             uint8_t trust_level, uint16_t domain, 
                             uint64_t cap_mask);
 
+int pwid_save_to_disk(void);
+int pwid_load_from_disk(void);
+void pwid_set_modified(void);
+int pwid_is_modified(void);
+void pwid_try_load(void);
+
 #endif

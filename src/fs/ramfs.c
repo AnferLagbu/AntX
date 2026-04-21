@@ -80,7 +80,8 @@ static uint32_t block_alloc(void) {
     for (uint32_t i = 0; i < RAMFS_MAX_BLOCKS; i++) {
         if (block_is_free(i)) {
             block_set_used(i);
-            memset(get_block(i), 0, RAMFS_BLOCK_SIZE);
+            extern void *memset_optimized(void *s, int c, size_t n);
+            memset_optimized(get_block(i), 0, RAMFS_BLOCK_SIZE);
             return i;
         }
     }

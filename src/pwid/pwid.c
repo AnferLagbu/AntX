@@ -3,10 +3,12 @@
 #include "kernel.h"
 #include "string.h"
 #include "hvfs_rust.h"
+#include "hvfs.h"
 
 struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
 int pwid_count = 0;
 int original_root_created = 0;
+static int pwid_modified = 0;
 
 static uint32_t k[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
@@ -121,10 +123,19 @@ void pwid_init(void) {
     }
     pwid_count = 0;
     original_root_created = 0;
+    pwid_modified = 0;
     
     rust_pwid_init();
     
     serial_puts(SERIAL_COM1, "PWID manager initialized\n");
+}
+
+void pwid_try_load(void) {
+    if (pwid_load_from_disk() == 0) {
+        serial_puts(SERIAL_COM1, "PWID: Database loaded from disk\n");
+    } else {
+        serial_puts(SERIAL_COM1, "PWID: No database found, will create on first save\n");
+    }
 }
 
 uint64_t pwid_generate(const char *password, const char *note, uint8_t level) {
@@ -199,6 +210,7 @@ int pwid_create(const char *password, const char *note, uint8_t level) {
     sha256((const uint8_t *)password, strlen(password), entry->password_hash);
     
     pwid_count++;
+    pwid_set_modified();
     
     serial_puts(SERIAL_COM1, "PWID created: 0x");
     serial_put_hex(SERIAL_COM1, entry->pwid);
@@ -224,6 +236,7 @@ int pwid_delete(uint64_t pwid) {
     entry->level = 0;
     entry->flags = 0;
     pwid_count--;
+    pwid_set_modified();
     
     serial_puts(SERIAL_COM1, "PWID deleted\n");
     return 0;
@@ -268,6 +281,7 @@ int pwid_change_password(uint64_t pwid, const char *old_password, const char *ne
     sha256((const uint8_t *)new_password, strlen(new_password), entry->password_hash);
     entry->flags |= PWID_FLAG_MODIFIED;
     entry->flags &= ~PWID_FLAG_DEFAULT_PW;
+    pwid_set_modified();
     
     serial_puts(SERIAL_COM1, "PWID: password changed\n");
     return 0;
@@ -400,6 +414,7 @@ int pwid_create_original_root(const char *password) {
         if (entry) {
             entry->flags |= PWID_FLAG_ORIGINAL_ROOT | PWID_FLAG_DEFAULT_PW;
             original_root_created = 1;
+            pwid_set_modified();
             serial_puts(SERIAL_COM1, "PWID: original root created\n");
         }
     }
@@ -627,4 +642,157 @@ int pwid_add_trust_relation(uint64_t truster, uint64_t trusted,
         cap_mask,
         0
     );
+}
+
+void pwid_set_modified(void) {
+    pwid_modified = 1;
+}
+
+int pwid_is_modified(void) {
+    return pwid_modified;
+}
+
+#define PWID_DB_PATH "/etc/pwid.db"
+#define PWID_DB_MAGIC 0x50574944
+#define PWID_DB_VERSION 1
+
+struct pwid_db_header {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t count;
+    uint32_t original_root_created;
+    uint8_t reserved[48];
+} __attribute__((packed));
+
+struct pwid_db_entry {
+    uint64_t pwid;
+    uint8_t level;
+    uint8_t flags;
+    char note[PWID_NOTE_LEN];
+    uint8_t password_hash[PWID_HASH_LEN];
+    uint64_t created_time;
+    uint64_t expires_at;
+    uint8_t reserved[8];
+} __attribute__((packed));
+
+int pwid_save_to_disk(void) {
+    int fd = hvfs_open(PWID_DB_PATH, HVFS_O_CREAT | HVFS_O_WRONLY | HVFS_O_TRUNC, 0);
+    if (fd < 0) {
+        serial_puts(SERIAL_COM1, "PWID: Failed to open database file for writing\n");
+        return -1;
+    }
+    
+    struct pwid_db_header header;
+    memset(&header, 0, sizeof(header));
+    header.magic = PWID_DB_MAGIC;
+    header.version = PWID_DB_VERSION;
+    header.count = pwid_count;
+    header.original_root_created = original_root_created;
+    
+    if (hvfs_write(fd, &header, sizeof(header)) != sizeof(header)) {
+        serial_puts(SERIAL_COM1, "PWID: Failed to write database header\n");
+        hvfs_close(fd);
+        return -1;
+    }
+    
+    int saved_count = 0;
+    for (int i = 0; i < MAX_PWID_ENTRIES; i++) {
+        if (pwid_table[i].pwid != 0) {
+            struct pwid_db_entry entry;
+            memset(&entry, 0, sizeof(entry));
+            entry.pwid = pwid_table[i].pwid;
+            entry.level = pwid_table[i].level;
+            entry.flags = pwid_table[i].flags;
+            strcpy(entry.note, pwid_table[i].note);
+            memcpy(entry.password_hash, pwid_table[i].password_hash, PWID_HASH_LEN);
+            entry.created_time = pwid_table[i].created_time;
+            entry.expires_at = pwid_table[i].expires_at;
+            
+            if (hvfs_write(fd, &entry, sizeof(entry)) != sizeof(entry)) {
+                serial_puts(SERIAL_COM1, "PWID: Failed to write database entry\n");
+                hvfs_close(fd);
+                return -1;
+            }
+            saved_count++;
+        }
+    }
+    
+    hvfs_close(fd);
+    
+    pwid_modified = 0;
+    
+    serial_puts(SERIAL_COM1, "PWID: Saved ");
+    serial_put_dec(SERIAL_COM1, saved_count);
+    serial_puts(SERIAL_COM1, " entries to disk\n");
+    
+    return 0;
+}
+
+int pwid_load_from_disk(void) {
+    int fd = hvfs_open(PWID_DB_PATH, HVFS_O_RDONLY, 0);
+    if (fd < 0) {
+        serial_puts(SERIAL_COM1, "PWID: No database file found, starting fresh\n");
+        return -1;
+    }
+    
+    struct pwid_db_header header;
+    int bytes_read = hvfs_read(fd, &header, sizeof(header));
+    if (bytes_read != sizeof(header)) {
+        serial_puts(SERIAL_COM1, "PWID: Failed to read database header\n");
+        hvfs_close(fd);
+        return -1;
+    }
+    
+    if (header.magic != PWID_DB_MAGIC) {
+        serial_puts(SERIAL_COM1, "PWID: Invalid database magic\n");
+        hvfs_close(fd);
+        return -1;
+    }
+    
+    if (header.version > PWID_DB_VERSION) {
+        serial_puts(SERIAL_COM1, "PWID: Database version too new\n");
+        hvfs_close(fd);
+        return -1;
+    }
+    
+    pwid_count = 0;
+    original_root_created = header.original_root_created;
+    
+    for (uint32_t i = 0; i < header.count; i++) {
+        struct pwid_db_entry entry;
+        bytes_read = hvfs_read(fd, &entry, sizeof(entry));
+        if (bytes_read != sizeof(entry)) {
+            serial_puts(SERIAL_COM1, "PWID: Failed to read database entry\n");
+            break;
+        }
+        
+        int slot = -1;
+        for (int j = 0; j < MAX_PWID_ENTRIES; j++) {
+            if (pwid_table[j].pwid == 0) {
+                slot = j;
+                break;
+            }
+        }
+        
+        if (slot >= 0) {
+            pwid_table[slot].pwid = entry.pwid;
+            pwid_table[slot].level = entry.level;
+            pwid_table[slot].flags = entry.flags;
+            strcpy(pwid_table[slot].note, entry.note);
+            memcpy(pwid_table[slot].password_hash, entry.password_hash, PWID_HASH_LEN);
+            pwid_table[slot].created_time = entry.created_time;
+            pwid_table[slot].expires_at = entry.expires_at;
+            pwid_count++;
+        }
+    }
+    
+    hvfs_close(fd);
+    
+    pwid_modified = 0;
+    
+    serial_puts(SERIAL_COM1, "PWID: Loaded ");
+    serial_put_dec(SERIAL_COM1, pwid_count);
+    serial_puts(SERIAL_COM1, " entries from disk\n");
+    
+    return 0;
 }

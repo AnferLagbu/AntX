@@ -4,6 +4,9 @@
 
 uint64_t kernel_pml4;
 
+#define PHYS_TO_VIRT(x) ((x) + KERNEL_VIRT_BASE)
+#define KERNEL_VIRT_BASE 0xFFFF800001000000ULL
+
 static pte_t* get_page_table(uint64_t table, uint64_t index, int create) {
     pte_t* tables = (pte_t*)(table & 0x000FFFFFFFFFF000ULL);
     pte_t* entry = &tables[index];
@@ -88,6 +91,8 @@ void vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags) {
     entry->fields.user = (flags & PAGE_USER) ? 1 : 0;
     entry->fields.xd = (flags & PAGE_NX) ? 1 : 0;
     entry->fields.frame = phys >> 12;
+    
+    __asm__ volatile ("invlpg (%0)" : : "r"(virt) : "memory");
 }
 
 void vmm_unmap_page(uint64_t virt) {

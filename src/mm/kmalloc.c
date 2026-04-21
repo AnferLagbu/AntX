@@ -4,15 +4,19 @@
 #include "assert.h"
 #include "string.h"
 
-#define HEAP_START          0xFFFF800001000000ULL
-#define HEAP_MAX_SIZE       (256 * 1024 * 1024)
-#define MIN_BLOCK_SIZE      16
-#define ALIGN_SIZE          8
+extern char _kernel_end[];
+
+#define KERNEL_BASE        0xFFFF800000000000ULL
+#define HEAP_START         (KERNEL_BASE + (uint64_t)_kernel_end + 0x100000)
+#define HEAP_MAX_SIZE      (256 * 1024 * 1024)
+#define MIN_BLOCK_SIZE     16
+#define ALIGN_SIZE         8
 
 #define ALIGN_UP(x, align)  (((x) + (align) - 1) & ~((align) - 1))
 #define ALIGN_DOWN(x, align) ((x) & ~((align) - 1))
 
 #define EARLY_HEAP_PAGES    16
+#define MAX_EXPAND_PAGES    256
 
 static struct heap_header *free_list = NULL;
 static uint64_t heap_current = HEAP_START;
@@ -28,16 +32,44 @@ static void heap_expand(uint64_t min_size) {
     uint64_t pages_needed = ALIGN_UP(min_size, PAGE_SIZE) / PAGE_SIZE;
     uint64_t pages_available = (HEAP_MAX_SIZE - (heap_current - HEAP_START)) / PAGE_SIZE;
     
+    if (pages_needed < 16) {
+        pages_needed = 16;
+    }
+    
+    if (pages_needed > MAX_EXPAND_PAGES) {
+        pages_needed = MAX_EXPAND_PAGES;
+    }
+    
     if (pages_needed > pages_available) {
         pages_needed = pages_available;
     }
     
     if (pages_needed == 0) return;
     
+    uint64_t expand_start = heap_current;
+    
     for (uint64_t i = 0; i < pages_needed; i++) {
         void *page = pmm_alloc_page();
         if (page == NULL) {
-            serial_puts(SERIAL_COM1, "kmalloc: out of physical memory\n");
+            serial_puts(SERIAL_COM1, "kmalloc: out of physical memory at page ");
+            serial_put_dec(SERIAL_COM1, i);
+            serial_puts(SERIAL_COM1, "/");
+            serial_put_dec(SERIAL_COM1, pages_needed);
+            serial_puts(SERIAL_COM1, "\n");
+            if (i > 0) {
+                heap_end = heap_current;
+                struct heap_header *new_block = (struct heap_header *)expand_start;
+                new_block->size = (heap_end - expand_start) - sizeof(struct heap_header);
+                new_block->free = 1;
+                new_block->magic = HEAP_MAGIC;
+                new_block->next = free_list;
+                new_block->prev = NULL;
+                if (free_list != NULL) {
+                    free_list->prev = new_block;
+                }
+                free_list = new_block;
+                heap_free_total += new_block->size;
+            }
             return;
         }
         
@@ -47,7 +79,7 @@ static void heap_expand(uint64_t min_size) {
     
     heap_end = heap_current;
     
-    struct heap_header *new_block = (struct heap_header *)(heap_end - pages_needed * PAGE_SIZE);
+    struct heap_header *new_block = (struct heap_header *)expand_start;
     new_block->size = pages_needed * PAGE_SIZE - sizeof(struct heap_header);
     new_block->free = 1;
     new_block->magic = HEAP_MAGIC;
@@ -160,6 +192,12 @@ void* kmalloc(uint64_t size) {
     struct heap_header *best = NULL;
     
     while (current != NULL) {
+        if ((uint64_t)current < HEAP_START || (uint64_t)current > heap_end) {
+            serial_puts(SERIAL_COM1, "[kmalloc] CORRUPT: free_list entry at 0x");
+            serial_put_hex(SERIAL_COM1, (uint64_t)current);
+            serial_puts(SERIAL_COM1, " out of bounds!\n");
+            return NULL;
+        }
         if (current->free && current->size >= size) {
             if (best == NULL || current->size < best->size) {
                 best = current;
@@ -171,19 +209,44 @@ void* kmalloc(uint64_t size) {
     
     if (best == NULL) {
         uint64_t needed = size + sizeof(struct heap_header);
-        heap_expand(needed);
+        int expand_attempts = 0;
+        int max_expand_attempts = 16;
         
-        current = free_list;
-        while (current != NULL) {
-            if (current->free && current->size >= size) {
-                best = current;
+        while (best == NULL && expand_attempts < max_expand_attempts) {
+            uint64_t prev_heap_end = heap_end;
+            
+            heap_expand(needed);
+            
+            if (heap_end == prev_heap_end) {
+                serial_puts(SERIAL_COM1, "[kmalloc] heap_expand failed to grow heap\n");
                 break;
             }
-            current = current->next;
+            
+            current = free_list;
+            while (current != NULL) {
+                if (current->free) {
+                    coalesce_forward(current);
+                    coalesce_backward(current);
+                }
+                current = current->next;
+            }
+            
+            current = free_list;
+            while (current != NULL) {
+                if (current->free && current->size >= size) {
+                    best = current;
+                    break;
+                }
+                current = current->next;
+            }
+            
+            expand_attempts++;
         }
         
         if (best == NULL) {
-            serial_puts(SERIAL_COM1, "kmalloc: out of heap memory\n");
+            serial_puts(SERIAL_COM1, "kmalloc: out of heap memory after ");
+            serial_put_dec(SERIAL_COM1, expand_attempts);
+            serial_puts(SERIAL_COM1, " expand attempts\n");
             return NULL;
         }
     }
@@ -269,9 +332,13 @@ void* krealloc(void *ptr, uint64_t size) {
 
 void* kcalloc(uint64_t num, uint64_t size) {
     uint64_t total = num * size;
+    if (total > 0xFFFFFFFF) {
+        return NULL;
+    }
     void *ptr = kmalloc(total);
     if (ptr != NULL) {
-        memset(ptr, 0, total);
+        extern void *memset_optimized(void *s, int c, size_t n);
+        memset_optimized(ptr, 0, (size_t)total);
     }
     return ptr;
 }

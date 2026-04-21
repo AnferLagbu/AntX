@@ -59,10 +59,17 @@ SECTIONS
     } :kernel
     
     . = ALIGN(4096);
-    .bss : AT(_kernel_text_lma + (ADDR(.bss) - _kernel_text_lma)) {
+    .bss (NOLOAD) : AT(_kernel_text_lma + (ADDR(.bss) - _kernel_text_lma)) {
         *(.bss)
         *(.bss.*)
         *(COMMON)
+    } :kernel
+    
+    . = ALIGN(4096);
+    .lbss (NOLOAD) : AT(_kernel_text_lma + (ADDR(.lbss) - _kernel_text_lma)) {
+        *(.lbss)
+        *(.lbss.*)
+        *(LARGE_COMMON)
     } :kernel
     
     .rela.dyn : {
