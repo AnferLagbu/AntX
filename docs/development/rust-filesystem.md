@@ -10,12 +10,14 @@
 
 | 模块 | 文件 | 功能 |
 |------|------|------|
-| VFS | `src/fs/vfs.c` | 虚拟文件系统抽象层 |
-| RamFS | `src/fs/ramfs.c` | 内存文件系统 |
-| DiskFS | `src/fs/diskfs.c` | 磁盘文件系统 |
-| DevFS | `src/fs/devfs.c` | 设备文件系统 |
-| ProcFS | `src/fs/procfs.c` | 进程信息文件系统 |
-| HvFS | `src/hvfs/hvfs.c` | 高级虚拟文件系统 |
+| VFS | `src/fs/vfs/vfs.c`, `src/fs/vfs/vfs.rs` | 虚拟文件系统抽象层 |
+| RamFS | `src/fs/ramfs/ramfs.c`, `src/fs/ramfs/ramfs.rs` | 内存文件系统 |
+| DiskFS | `src/fs/diskfs/diskfs.c`, `src/fs/diskfs/diskfs.rs` | 磁盘文件系统 |
+| DevFS | `src/fs/devfs/devfs.c` | 设备文件系统 |
+| ProcFS | `src/fs/procfs/procfs.c` | 进程信息文件系统 |
+| HvFS | `src/fs/hvfs/hvfs.c`, `src/fs/hvfs/hvfs.rs` | 高级虚拟文件系统 |
+
+> **目录结构说明**: 文件系统模块采用"模块内聚"结构，每个文件系统的 C 和 Rust 代码放在同一目录下。
 
 ### 2.2 现有问题
 

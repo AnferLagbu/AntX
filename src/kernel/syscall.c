@@ -2,6 +2,7 @@
 #include "serial.h"
 #include "vfs.h"
 #include "hvfs.h"
+#include "hvfs_rust.h"
 #include "pwid.h"
 #include "proc.h"
 #include "proc_rust.h"
@@ -10,6 +11,7 @@
 #include "gdt.h"
 #include "mm.h"
 #include "keyboard.h"
+#include "ata.h"
 
 int64_t sys_boot_check(int check_type);
 int64_t sys_auth_create_original_root(const char *password);
@@ -70,6 +72,11 @@ void syscall_init(void) {
     syscall_register(SYS_SETHOSTNAME, (syscall_handler_t)sys_sethostname);
     syscall_register(SYS_FS_SYNC, (syscall_handler_t)sys_fs_sync);
     syscall_register(SYS_BOOT_CHECK, (syscall_handler_t)sys_boot_check);
+    syscall_register(SYS_FS_MOUNT, (syscall_handler_t)sys_fs_mount);
+    syscall_register(SYS_FS_UNMOUNT, (syscall_handler_t)sys_fs_unmount);
+    syscall_register(SYS_DISK_LIST, (syscall_handler_t)sys_disk_list);
+    syscall_register(SYS_DISK_INFO, (syscall_handler_t)sys_disk_info);
+    syscall_register(SYS_DISK_FORMAT, (syscall_handler_t)sys_disk_format);
     
     serial_puts(SERIAL_COM1, "  [OK] Syscall\n");
 }
@@ -739,4 +746,130 @@ int64_t sys_dev_write(int fd, const void *buf, uint64_t n) {
     (void)buf;
     (void)n;
     return E_PERM;
+}
+
+int64_t sys_fs_mount(const char *source, const char *target, const char *fstype, const char *options) {
+    (void)source;
+    (void)options;
+    
+    if (target == NULL || fstype == NULL) {
+        return E_INVAL;
+    }
+    
+    struct process *proc = process_get_current();
+    uint64_t pwid = proc ? proc->pwid : 0;
+    
+    if (pwid_get_level(pwid) < PWID_LEVEL_TRUSTWORTHY) {
+        return E_PERM;
+    }
+    
+    int result = vfs_mount(target, fstype);
+    return result == 0 ? 0 : E_IO;
+}
+
+int64_t sys_fs_unmount(const char *target) {
+    if (target == NULL) {
+        return E_INVAL;
+    }
+    
+    struct process *proc = process_get_current();
+    uint64_t pwid = proc ? proc->pwid : 0;
+    
+    if (pwid_get_level(pwid) < PWID_LEVEL_TRUSTWORTHY) {
+        return E_PERM;
+    }
+    
+    return 0;
+}
+
+int64_t sys_disk_list(uint64_t *disks, uint32_t max_count) {
+    if (disks == NULL || max_count == 0) {
+        return E_INVAL;
+    }
+    
+    uint32_t count = 0;
+    
+    for (uint8_t drive = 0; drive < 4 && count < max_count; drive++) {
+        if (ata_disk_present(drive)) {
+            disks[count++] = drive;
+        }
+    }
+    
+    return count;
+}
+
+struct disk_info {
+    uint32_t disk_id;
+    uint32_t sectors;
+    uint32_t sector_size;
+    char model[41];
+    uint8_t present;
+    uint8_t formatted;
+};
+
+int64_t sys_disk_info(uint32_t disk_id, void *info) {
+    if (info == NULL) {
+        return E_INVAL;
+    }
+    
+    if (disk_id >= 4) {
+        return E_NOTFOUND;
+    }
+    
+    struct disk_info *dinfo = (struct disk_info *)info;
+    
+    dinfo->disk_id = disk_id;
+    dinfo->present = ata_disk_present((uint8_t)disk_id);
+    
+    if (!dinfo->present) {
+        return E_NOTFOUND;
+    }
+    
+    uint16_t identify_data[256];
+    if (ata_identify((uint8_t)disk_id, identify_data) == 0) {
+        dinfo->sectors = identify_data[60] | (identify_data[61] << 16);
+        dinfo->sector_size = 512;
+        
+        for (int i = 0; i < 20; i++) {
+            dinfo->model[i * 2] = (char)(identify_data[27 + i] >> 8);
+            dinfo->model[i * 2 + 1] = (char)(identify_data[27 + i] & 0xFF);
+        }
+        dinfo->model[40] = '\0';
+    } else {
+        dinfo->sectors = 0;
+        dinfo->sector_size = 512;
+        dinfo->model[0] = '\0';
+    }
+    
+    dinfo->formatted = 0;
+    
+    return 0;
+}
+
+int64_t sys_disk_format(uint32_t disk_id, const char *fstype) {
+    if (fstype == NULL) {
+        return E_INVAL;
+    }
+    
+    if (disk_id >= 4) {
+        return E_NOTFOUND;
+    }
+    
+    struct process *proc = process_get_current();
+    uint64_t pwid = proc ? proc->pwid : 0;
+    
+    if (pwid_get_level(pwid) < PWID_LEVEL_ROOT) {
+        return E_PERM;
+    }
+    
+    if (!ata_disk_present((uint8_t)disk_id)) {
+        return E_NOTFOUND;
+    }
+    
+    if (strcmp(fstype, "hvfs") == 0 || strcmp(fstype, "diskfs") == 0) {
+        int result = rust_hvfs_format();
+        return result == 0 ? 0 : E_IO;
+    }
+    
+    return E_INVAL;
 }

@@ -233,3 +233,11 @@ void user_delay(int seconds) {
 void user_sync(void) {
     sys_fs_sync_all();
 }
+
+int user_mount(const char *source, const char *target, const char *fstype, const char *options) {
+    return sys_fs_mount(source, target, fstype, options);
+}
+
+int user_unmount(const char *target) {
+    return sys_fs_unmount(target);
+}

@@ -14,18 +14,19 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 BUILD_DIR = PROJECT_ROOT / "build"
 
-def run_qemu_test(test_name: str, timeout: int = 60) -> tuple:
+def run_qemu_test(timeout: int = 30) -> str:
     iso_path = BUILD_DIR / "antx.iso"
     if not iso_path.exists():
         print(f"  [SKIP] ISO not found, run 'make iso' first")
-        return "SKIP", ""
+        return ""
     
     cmd = [
         "qemu-system-x86_64",
         "-cdrom", str(iso_path),
         "-serial", "stdio",
         "-display", "none",
-        "-no-reboot"
+        "-no-reboot",
+        "-m", "512M"
     ]
     
     try:
@@ -36,28 +37,32 @@ def run_qemu_test(test_name: str, timeout: int = 60) -> tuple:
             timeout=timeout,
             cwd=str(PROJECT_ROOT)
         )
-        return "PASS" if "TEST_RESULT:PASS" in result.stdout else "FAIL", result.stdout
-    except subprocess.TimeoutExpired:
-        return "FAIL", "Timeout"
+        output = result.stdout + result.stderr
+        return output
+    except subprocess.TimeoutExpired as e:
+        if e.stdout:
+            output = e.stdout.decode() if isinstance(e.stdout, bytes) else e.stdout
+        else:
+            output = ""
+        if e.stderr:
+            output += e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr
+        return output
     except Exception as e:
-        return "FAIL", str(e)
+        print(f"  [ERROR] {e}")
+        return ""
 
-def test_process_file_interaction():
+def test_process_file_interaction(output: str) -> bool:
     print("Testing process + file system interaction...")
     
-    result, output = run_qemu_test("process_file", 60)
-    
-    if "init process" in output.lower() or "user" in output.lower():
+    if "init process" in output.lower() or "[INIT]" in output:
         print("  [PASS] Process and file system interaction works")
         return True
     else:
         print("  [FAIL] Process and file system interaction failed")
         return False
 
-def test_memory_mapping():
+def test_memory_mapping(output: str) -> bool:
     print("Testing memory mapping...")
-    
-    result, output = run_qemu_test("memory_mapping", 60)
     
     if "VMM" in output and "PMM" in output:
         print("  [PASS] Memory mapping works")
@@ -66,22 +71,18 @@ def test_memory_mapping():
         print("  [FAIL] Memory mapping failed")
         return False
 
-def test_syscall_interrupt():
+def test_syscall_interrupt(output: str) -> bool:
     print("Testing syscall + interrupt interaction...")
     
-    result, output = run_qemu_test("syscall_interrupt", 60)
-    
-    if "Syscall" in output or "syscall" in output:
+    if "Syscall" in output or "syscall" in output.lower() or "[OK] Syscall" in output:
         print("  [PASS] Syscall and interrupt interaction works")
         return True
     else:
         print("  [FAIL] Syscall and interrupt interaction failed")
         return False
 
-def test_vfs_block_device():
+def test_vfs_block_device(output: str) -> bool:
     print("Testing VFS + block device interaction...")
-    
-    result, output = run_qemu_test("vfs_block", 60)
     
     if "VFS" in output and ("ATA" in output or "disk" in output.lower()):
         print("  [PASS] VFS and block device interaction works")
@@ -94,6 +95,15 @@ def run_all_integration_tests():
     print("=" * 60)
     print("QueenX Kernel Integration Tests")
     print("=" * 60)
+    
+    print("\nRunning kernel and capturing output...")
+    output = run_qemu_test(30)
+    
+    if not output:
+        print("  [ERROR] No output captured from kernel")
+        return False
+    
+    print(f"  Captured {len(output)} bytes of output\n")
     
     tests = [
         ("Process + File System", test_process_file_interaction),
@@ -108,7 +118,7 @@ def run_all_integration_tests():
     for name, test_func in tests:
         print(f"\n[{name}]")
         try:
-            if test_func():
+            if test_func(output):
                 passed += 1
             else:
                 failed += 1

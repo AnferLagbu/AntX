@@ -11,10 +11,10 @@
 #include "kernel_test.h"
 #endif
 
-void ramfs_init(void);
+void rust_ramfs_init(void);
 void rust_diskfs_init(void);
-void devfs_init(void);
-void procfs_init(void);
+void rust_devfs_init(void);
+void rust_procfs_init(void);
 
 extern unsigned char build_user_init_bin[];
 extern unsigned int build_user_init_bin_len;
@@ -59,21 +59,6 @@ void interrupt_idle(void) {
         "cli\n"
         ::: "memory"
     );
-}
-
-static void create_default_directories(void) {
-    vfs_mkdir("/bin", 0);
-    vfs_mkdir("/sbin", 0);
-    vfs_mkdir("/etc", 0);
-    vfs_mkdir("/home", 0);
-    vfs_mkdir("/tmp", 0);
-    vfs_mkdir("/dev", 0);
-    vfs_mkdir("/proc", 0);
-    vfs_mkdir("/sys", 0);
-    vfs_mkdir("/var", 0);
-    vfs_mkdir("/usr", 0);
-    vfs_mkdir("/usr/bin", 0);
-    vfs_mkdir("/usr/lib", 0);
 }
 
 static void start_user_init(void) {
@@ -124,73 +109,59 @@ void kernel_main(void) {
     serial_puts(SERIAL_COM1, "[DEBUG] After IDT init\n");
     
     pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end_phys);
+    if (pmm_get_free_pages() == 0) {
+        panic("PMM initialization failed: no free pages");
+    }
     serial_puts(SERIAL_COM1, "  [OK] PMM basic init\n");
     
     kmalloc_init();
     serial_puts(SERIAL_COM1, "  [OK] Kernel Heap\n");
     
     pmm_init_bitmap();
-    serial_puts(SERIAL_COM1, "  [OK] PMM - ");
-    serial_put_dec(SERIAL_COM1, pmm_get_free_pages());
-    serial_puts(SERIAL_COM1, " pages free (");
-    serial_put_dec(SERIAL_COM1, pmm_get_free_pages() * 4 / 1024);
-    serial_puts(SERIAL_COM1, " MB)\n");
+    {
+        uint64_t free_pages = pmm_get_free_pages();
+        serial_puts(SERIAL_COM1, "  [OK] PMM - ");
+        serial_put_dec(SERIAL_COM1, free_pages);
+        serial_puts(SERIAL_COM1, " pages free (");
+        serial_put_dec(SERIAL_COM1, free_pages * 4 / 1024);
+        serial_puts(SERIAL_COM1, " MB)\n");
+    }
     
-    vmm_init();
-    serial_puts(SERIAL_COM1, "  [OK] VMM\n");
+    MODULE_CHECK_VOID("VMM", vmm_init);
     
-    process_init();
-    session_init();
-    scheduler_init();
-    rust_kernel_init();
-    user_proc_init();
-    serial_puts(SERIAL_COM1, "  [OK] Process Manager\n");
-    serial_puts(SERIAL_COM1, "  [OK] Session Manager\n");
-    serial_puts(SERIAL_COM1, "  [OK] Scheduler\n");
-    serial_puts(SERIAL_COM1, "  [OK] Rust Scheduler\n");
-    serial_puts(SERIAL_COM1, "  [OK] User Process Manager\n");
+    MODULE_CHECK_VOID("Process Manager", process_init);
+    MODULE_CHECK_VOID("Session Manager", session_init);
+    MODULE_CHECK_VOID("Scheduler", scheduler_init);
+    MODULE_CHECK_VOID("Rust Scheduler", rust_kernel_init);
+    MODULE_CHECK_VOID("User Process Manager", user_proc_init);
     
-    pwid_init();
-    serial_puts(SERIAL_COM1, "  [OK] PWID Manager\n");
+    MODULE_CHECK_VOID("PWID Manager", pwid_init);
     
-    ata_init();
-    serial_puts(SERIAL_COM1, "  [OK] ATA Driver\n");
+    MODULE_CHECK_VOID("ATA Driver", ata_init);
     
-    rust_hvfs_init();
-    serial_puts(SERIAL_COM1, "  [OK] HvFS (Rust)\n");
+    MODULE_CHECK_VOID("HvFS (Rust)", rust_hvfs_init);
     
-    vfs_init();
-    serial_puts(SERIAL_COM1, "  [OK] VFS Layer\n");
+    MODULE_CHECK_VOID("VFS Layer", vfs_init);
     
-    ramfs_init();
-    serial_puts(SERIAL_COM1, "  [OK] RamFS\n");
+    MODULE_CHECK_VOID("RamFS (Rust)", rust_ramfs_init);
+    MODULE_CHECK_VOID("DiskFS (Rust)", rust_diskfs_init);
+    MODULE_CHECK_VOID("DevFS (Rust)", rust_devfs_init);
+    MODULE_CHECK_VOID("ProcFS (Rust)", rust_procfs_init);
     
-    rust_diskfs_init();
-    serial_puts(SERIAL_COM1, "  [OK] DiskFS (Rust)\n");
-    devfs_init();
-    procfs_init();
-    
-    serial_puts(SERIAL_COM1, "[VFS] Mounting filesystems...\n");
+    serial_puts(SERIAL_COM1, "[VFS] Mounting root filesystem...\n");
     
     if (vfs_mount("/", "diskfs") != 0) {
         serial_puts(SERIAL_COM1, "  [FALLBACK] Using RamFS for root\n");
-        vfs_mount("/", "ramfs");
+        if (vfs_mount("/", "ramfs") != 0) {
+            panic("Failed to mount root filesystem");
+        }
     }
     
-    vfs_mount("/dev", "devfs");
-    vfs_mount("/proc", "procfs");
-    vfs_mount("/tmp", "ramfs");
+    serial_puts(SERIAL_COM1, "  [OK] Root filesystem mounted\n");
     
-    serial_puts(SERIAL_COM1, "  [OK] Filesystem mounts\n");
-    
-    create_default_directories();
-    serial_puts(SERIAL_COM1, "  [OK] Default directories\n");
-    
-    syscall_init();
-    
-    keyboard_init();
-    
-    timer_init();
+    MODULE_CHECK_VOID("Syscall", syscall_init);
+    MODULE_CHECK_VOID("Keyboard", keyboard_init);
+    MODULE_CHECK_VOID("Timer", timer_init);
     
     extern void pwid_try_load(void);
     pwid_try_load();

@@ -3,36 +3,29 @@
 
 static void print_banner(void) {
     user_print("\n");
-    user_println("========================================");
-    user_println("antxsh - AntX Shell");
-    user_println("Type 'help' for available commands.");
-    user_println("========================================");
-    user_print("\n");
+    user_println("  ___  _  _ ___");
+    user_println(" / _ \\| || | __|");
+    user_println("| (_) | || |__ \\");
+    user_println(" \\___/|_||_|___/");
+    user_println("");
+    user_println("axsh - AntX Shell");
+    user_println("Type 'help' for commands");
+    user_println("");
 }
 
 static void print_prompt(void) {
+    char cwd[64];
+    user_getcwd(cwd, sizeof(cwd));
+    
     uint64_t pwid = sys_proc_get_pwid();
     if (pwid != 0) {
-        user_print("antxsh@");
+        user_print("[");
         user_print_hex(pwid);
-        user_print("> ");
-    } else {
-        user_print("antxsh> ");
-    }
-}
-
-static int execute_builtin(int argc, char **argv) {
-    if (argc == 0) return 0;
-    
-    for (int i = 0; builtins[i].name != NULL; i++) {
-        if (user_strcmp(argv[0], builtins[i].name) == 0) {
-            return builtins[i].func(argc, argv);
-        }
+        user_print("]");
     }
     
-    user_print("Unknown command: ");
-    user_println(argv[0]);
-    return 1;
+    user_print(cwd);
+    user_print("> ");
 }
 
 void shell_main(void) {

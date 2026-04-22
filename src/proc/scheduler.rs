@@ -221,6 +221,11 @@ impl Scheduler {
     pub fn is_initialized(&self) -> bool {
         self.initialized.load(Ordering::SeqCst)
     }
+    
+    pub fn has_runnable(&self) -> bool {
+        let ready = self.ready_queue.lock();
+        !ready.is_empty()
+    }
 }
 
 pub static SCHEDULER: Scheduler = Scheduler::new();

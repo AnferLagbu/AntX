@@ -10,8 +10,12 @@ isodir/
 
 src/rust/target/
 
+tests/reports/*.json
+
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
 *~
+
+boot_disk*

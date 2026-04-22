@@ -1,7 +1,7 @@
 use spin::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use super::types::*;
+use crate::fs::vfs::types::*;
 
 extern "C" {
     fn serial_putc(port: u16, c: i8);

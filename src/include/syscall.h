@@ -91,6 +91,11 @@
 #define SYS_GETHOSTNAME    108
 #define SYS_SETHOSTNAME    109
 #define SYS_BOOT_CHECK     110
+#define SYS_FS_MOUNT       111
+#define SYS_FS_UNMOUNT     112
+#define SYS_DISK_LIST      113
+#define SYS_DISK_INFO      114
+#define SYS_DISK_FORMAT    115
 
 #define SYS_DEV_IOCTL      120
 #define SYS_DEV_READ       121
@@ -262,6 +267,11 @@ int64_t sys_ipc_pipe(int fd[2]);
 int64_t sys_env_getcwd(char *buf, uint64_t size);
 int64_t sys_env_chdir(const char *path);
 int64_t sys_fs_sync(void);
+int64_t sys_fs_mount(const char *source, const char *target, const char *fstype, const char *options);
+int64_t sys_fs_unmount(const char *target);
+int64_t sys_disk_list(uint64_t *disks, uint32_t max_count);
+int64_t sys_disk_info(uint32_t disk_id, void *info);
+int64_t sys_disk_format(uint32_t disk_id, const char *fstype);
 int64_t sys_reboot(int cmd);
 int64_t sys_time(void);
 int64_t sys_info(void *info_buf);

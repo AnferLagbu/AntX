@@ -9,7 +9,7 @@ CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protec
 USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
               -fno-stack-protector \
-              -Isrc/include
+              -Isrc/include -Isrc/user/install
 
 LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
 
@@ -20,27 +20,25 @@ USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 ASFLAGS = -f elf64
 
 KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
-              build/pmm.o build/vmm.o build/kmalloc.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
-              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o build/hvfs.o \
+              build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
               build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
-              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
-              build/thread.o build/scheduler_ex.o build/ipc.o
+              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
+              build/ipc.o
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
-              build/pmm.o build/vmm.o build/kmalloc.o build/process.o build/scheduler.o build/session.o build/switch.o build/pwid.o \
-              build/vfs.o build/ramfs.o build/devfs.o build/procfs.o build/hvfs.o \
+              build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
               build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
-              build/timer.o build/user_proc.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
-              build/thread.o build/scheduler_ex.o build/ipc.o \
+              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
+              build/ipc.o \
               build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
-              build/test_pwid_enhanced.o build/test_persistence.o
+              build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
-USER_INIT_OBJS = build/user/init/main.o build/user/antxsh/builtins.o
+USER_INIT_OBJS = build/user/init/main.o build/user/axsh/builtins.o
 
-USER_ANTXSH_OBJS = build/user/antxsh/main.o build/user/antxsh/builtins.o
+USER_AXSH_OBJS = build/user/axsh/main.o build/user/axsh/builtins.o
 
 USER_INSTALL_OBJS = build/user/install/user_install.o
 
@@ -52,11 +50,11 @@ LOG_DIR = logs
 
 all: build/kernel.bin user
 
-user: build/user/init.bin build/user/antxsh.bin build/user/install.bin
+user: build/user/init.bin build/user/axsh.bin build/user/install.bin
 	@echo "User programs built successfully"
 
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(RUST_LIB)
+	$(LD) $(LDFLAGS) -o $@ --whole-archive $(RUST_LIB) --no-whole-archive $(KERNEL_OBJS)
 
 $(RUST_LIB):
 	@echo "Building Rust kernel module..."
@@ -90,33 +88,9 @@ build/kmalloc.o: src/mm/kmalloc.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/process.o: src/proc/process.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/scheduler.o: src/proc/scheduler.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/session.o: src/proc/session.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/switch.o: src/proc/switch.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
-
-build/user_proc.o: src/proc/user_proc.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/thread.o: src/proc/thread.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/scheduler_ex.o: src/proc/scheduler_ex.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
 
 build/ipc.o: src/ipc/ipc.c
 	@mkdir -p build
@@ -127,26 +101,6 @@ build/user/embedded/user_init_bin.o: src/user/embedded/user_init_bin.c build/use
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/pwid.o: src/pwid/pwid.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/vfs.o: src/fs/vfs.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/ramfs.o: src/fs/ramfs.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/devfs.o: src/fs/devfs.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/procfs.o: src/fs/procfs.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/hvfs.o: src/hvfs/hvfs.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -198,12 +152,12 @@ build/user/init/main.o: src/user/init/main.c
 	@mkdir -p build/user/init
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-build/user/antxsh/main.o: src/user/antxsh/main.c
-	@mkdir -p build/user/antxsh
+build/user/axsh/main.o: src/user/axsh/main.c
+	@mkdir -p build/user/axsh
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-build/user/antxsh/builtins.o: src/user/antxsh/builtins.c
-	@mkdir -p build/user/antxsh
+build/user/axsh/builtins.o: src/user/axsh/builtins.c
+	@mkdir -p build/user/axsh
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 build/user/install/user_install.o: src/user/install/user_install.c
@@ -216,9 +170,9 @@ build/user/init.bin: $(USER_LIB_OBJS) $(USER_INIT_OBJS) $(USER_INSTALL_OBJS)
 	@echo "Generating embedded binary data..."
 	@python3 scripts/gen_embed.py $@ src/user/embedded/user_init_bin.c build_user_init_bin
 
-build/user/antxsh.bin: $(USER_LIB_OBJS) $(USER_ANTXSH_OBJS)
+build/user/axsh.bin: $(USER_LIB_OBJS) $(USER_AXSH_OBJS)
 	@mkdir -p build/user
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_LIB_OBJS) $(USER_ANTXSH_OBJS)
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_LIB_OBJS) $(USER_AXSH_OBJS)
 
 build/user/install.bin: $(USER_LIB_OBJS) $(USER_INSTALL_OBJS)
 	@mkdir -p build/user
@@ -243,7 +197,7 @@ iso: all user
 	cp build/kernel.bin isodir/boot/kernel.bin
 	mkdir -p isodir/bin
 	cp build/user/init.bin isodir/bin/init
-	cp build/user/antxsh.bin isodir/bin/antxsh
+	cp build/user/axsh.bin isodir/bin/axsh
 	cp build/user/install.bin isodir/bin/install
 	echo 'set timeout=0' > isodir/boot/grub/grub.cfg
 	echo 'set default=0' >> isodir/boot/grub/grub.cfg
@@ -345,6 +299,10 @@ build/test_persistence.o: src/kernel/tests/test_persistence.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
+build/test_filesystem_full.o: src/kernel/tests/test_filesystem_full.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
 test: test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
@@ -356,7 +314,7 @@ test-unit: build/kernel_test.bin user
 	@cp build/kernel_test.bin isodir/boot/kernel.bin
 	@mkdir -p isodir/bin
 	@cp build/user/init.bin isodir/bin/init
-	@cp build/user/antxsh.bin isodir/bin/antxsh
+	@cp build/user/axsh.bin isodir/bin/axsh
 	@cp build/user/install.bin isodir/bin/install
 	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
 	@echo 'set default=0' >> isodir/boot/grub/grub.cfg

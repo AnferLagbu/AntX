@@ -1,8 +1,8 @@
-pub mod types;
 pub mod vfs;
 pub mod ramfs;
-pub mod hvfs;
 pub mod diskfs;
-pub mod ffi;
+pub mod hvfs;
+pub mod devfs;
+pub mod procfs;
 
-pub use types::*;
+pub use vfs::*;

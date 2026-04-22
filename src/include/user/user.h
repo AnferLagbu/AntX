@@ -62,6 +62,9 @@ int user_set_hostname(const char *name, int len);
 void user_delay(int seconds);
 void user_sync(void);
 
+int user_mount(const char *source, const char *target, const char *fstype, const char *options);
+int user_unmount(const char *target);
+
 int64_t sys_fs_read_dir(int fd, void *dirent_buf);
 
 #endif

@@ -5,8 +5,6 @@
 
 #define INSTALL_MIN_PASSWORD_LEN  4
 #define INSTALL_DEFAULT_HOSTNAME  "localhost"
-#define INSTALL_MARKER_FILE       "/.antx_installed"
-#define INSTALL_HOSTNAME_FILE     "/etc/hostname"
 
 int user_install_check_needed(void);
 int user_install_create_marker(void);

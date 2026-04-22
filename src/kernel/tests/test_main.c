@@ -1,6 +1,8 @@
 #include "kernel_test.h"
 #include "serial.h"
 
+void test_filesystem_full_register(void);
+
 void run_kernel_tests(void) {
     test_framework_init();
     
@@ -17,6 +19,7 @@ void run_kernel_tests(void) {
     test_hvfs_register();
     test_pwid_enhanced_register();
     test_persistence_register();
+    test_filesystem_full_register();
     
     serial_puts(SERIAL_COM1, "[TEST] Running all tests...\n");
     

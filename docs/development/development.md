@@ -49,48 +49,238 @@ gdb --version
 
 ```
 AntX/
-├── README.md                 # 项目说明
-├── Makefile                  # 构建配置
-├── .gitignore               # Git 忽略配置
-├── docs/                    # 设计文档
-│   ├── development.md       # 开发指导
-│   ├── kernel-architecture.md
-│   ├── pwid-model.md
-│   ├── process-session.md
-│   ├── hivefs.md
-│   ├── memory-management.md
-│   └── syscall.md
-├── logs/                    # 日志目录
-│   └── serial.log           # 串口日志
-├── scripts/                 # 构建脚本
-│   └── build.sh
-├── src/                     # 源代码
-│   ├── include/             # 头文件
-│   │   ├── kernel.h
-│   │   ├── types.h
-│   │   ├── io.h
-│   │   └── serial.h
-│   ├── kernel/              # 内核主体
-│   │   ├── boot.asm        # 引导代码 (32→64位切换)
-│   │   ├── main.c          # 内核入口
-│   │   ├── gdt.c           # 全局描述符表
-│   │   ├── idt.c           # 中断描述符表
-│   │   └── serial.c        # 串口驱动
-│   ├── mm/                  # 内存管理
-│   │   └── alloc.c
-│   ├── proc/                # 进程管理
-│   │   └── schedule.c
-│   ├── pwid/                # PWID 权限模块
-│   │   └── pwid.c
-│   ├── fs/                  # 文件系统
-│   │   └── hvfs.c
-│   ├── lib/                 # 库函数
-│   │   └── string.c
-│   └── link.ld              # 链接脚本
-├── build/                   # 构建输出
-│   ├── kernel.bin          # 内核二进制
-│   └── antx.iso            # 可启动 ISO
-└── isodir/                  # ISO 临时目录
+├── README.md                     # 项目说明
+├── Makefile                      # 构建配置
+├── LICENSE                       # 许可证
+├── .gitignore                    # Git 忽略配置
+│
+├── docs/                         # 文档目录
+│   ├── README.md                 # 文档导航
+│   ├── development/              # 开发文档
+│   │   ├── README.md             # 开发文档索引
+│   │   ├── development.md        # 开发指导
+│   │   ├── devdoc.md             # 开发文档
+│   │   ├── kernel-architecture.md # 内核架构设计
+│   │   ├── memory-management.md  # 内存管理
+│   │   ├── process-session.md    # 进程与会话管理
+│   │   ├── thread-scheduler.md   # 线程与调度器
+│   │   ├── pwid-model.md         # PWID 权限模型
+│   │   ├── pwid-enhanced-v2.md   # PWID 增强版
+│   │   ├── syscall.md            # 系统调用接口
+│   │   ├── hivefs.md             # HiveFS 文件系统
+│   │   ├── hvfs-disk.md          # HVFS 磁盘格式
+│   │   ├── ipc.md                # 进程间通信
+│   │   ├── keyboard.md           # 键盘驱动
+│   │   ├── security-mechanisms.md # 安全机制
+│   │   ├── pic-implementation.md # PIC 位置无关代码
+│   │   ├── pic-quick-start.md    # PIC 快速开始
+│   │   ├── rust-filesystem.md    # Rust 文件系统重写
+│   │   └── rust-process.md       # Rust 进程管理重写
+│   ├── issues/                   # 问题文档
+│   │   ├── README.md
+│   │   ├── issue-recommend.md    # 问题追踪与建议
+│   │   └── user-mode-gpf.md      # 用户态 GPF 问题
+│   └── progress/                 # 进度文档
+│       ├── README.md
+│       ├── changelog.md          # 变更日志
+│       ├── current-tasks.md      # 当前任务
+│       ├── milestones.md         # 里程碑记录
+│       └── antx-focused-priority.md # 优先级规划
+│
+├── scripts/                      # 构建与分析脚本
+│   ├── build.sh                  # 构建脚本
+│   ├── gen_embed.py              # 嵌入二进制生成
+│   ├── requirements.sh           # 依赖安装
+│   ├── analyze_*.py              # 各类分析脚本
+│   ├── diagnose_*.py             # 诊断脚本
+│   └── verify_*.py               # 验证脚本
+│
+├── src/                          # 源代码
+│   ├── include/                  # 头文件
+│   │   ├── kernel.h              # 内核主头文件
+│   │   ├── types.h               # 基本类型定义
+│   │   ├── config.h              # 配置选项
+│   │   ├── io.h                  # 端口 I/O
+│   │   ├── serial.h              # 串口驱动
+│   │   ├── gdt.h                 # 全局描述符表
+│   │   ├── idt.h                 # 中断描述符表
+│   │   ├── mm.h                  # 内存管理
+│   │   ├── proc.h                # 进程管理
+│   │   ├── thread.h              # 线程管理
+│   │   ├── scheduler_ex.h        # 扩展调度器
+│   │   ├── pwid.h                # PWID 权限
+│   │   ├── vfs.h                 # 虚拟文件系统
+│   │   ├── hvfs.h                # HvFS 文件系统
+│   │   ├── syscall.h             # 系统调用
+│   │   ├── ipc.h                 # 进程间通信
+│   │   ├── keyboard.h            # 键盘驱动
+│   │   ├── timer.h               # 定时器
+│   │   ├── ata.h                 # ATA 磁盘驱动
+│   │   ├── kmalloc.h             # 内核内存分配
+│   │   ├── log_buffer.h          # 日志缓冲区
+│   │   ├── user_proc.h           # 用户进程
+│   │   ├── assert.h              # 断言宏
+│   │   ├── errno.h               # 错误码
+│   │   ├── string.h              # 字符串操作
+│   │   ├── printk.h              # 内核打印
+│   │   ├── user/                 # 用户态头文件
+│   │   │   ├── syscall.h         # 用户态系统调用
+│   │   │   └── user.h            # 用户态辅助
+│   │   └── tests/                # 测试头文件
+│   │       └── kernel_test.h
+│   │
+│   ├── kernel/                   # 内核核心
+│   │   ├── boot.asm              # 启动代码 (Multiboot2)
+│   │   ├── entry.asm             # 入口汇编
+│   │   ├── gdt.asm               # GDT 汇编部分
+│   │   ├── isr.asm               # 中断服务例程
+│   │   ├── main.c                # 内核入口
+│   │   ├── gdt.c                 # GDT 初始化
+│   │   ├── idt.c                 # IDT 初始化
+│   │   ├── serial.c              # 串口驱动
+│   │   ├── keyboard.c            # 键盘驱动
+│   │   ├── timer.c               # 定时器驱动
+│   │   ├── syscall.c             # 系统调用处理
+│   │   ├── stack_canary.c        # 栈保护
+│   │   ├── log_buffer.c          # 日志缓冲区
+│   │   └── tests/                # 内核测试
+│   │       ├── kernel_test.c
+│   │       ├── test_main.c
+│   │       ├── test_pmm.c
+│   │       ├── test_vmm.c
+│   │       ├── test_kmalloc.c
+│   │       ├── test_process.c
+│   │       ├── test_scheduler.c
+│   │       ├── test_vfs.c
+│   │       ├── test_syscall.c
+│   │       ├── test_ipc.c
+│   │       ├── test_hvfs.c
+│   │       ├── test_pwid_enhanced.c
+│   │       └── test_persistence.c
+│   │
+│   ├── mm/                       # 内存管理
+│   │   ├── pmm.c                 # 物理内存管理
+│   │   ├── vmm.c                 # 虚拟内存管理
+│   │   └── kmalloc.c             # 内核堆分配
+│   │
+│   ├── proc/                     # 进程管理
+│   │   ├── process.c             # 进程管理 (C)
+│   │   ├── process.rs            # 进程管理 (Rust)
+│   │   ├── scheduler.c           # 调度器 (C)
+│   │   ├── scheduler.rs          # 调度器 (Rust)
+│   │   ├── scheduler_ex.c        # MLFQ 调度器
+│   │   ├── thread.c              # 线程管理
+│   │   ├── session.c             # 会话管理
+│   │   ├── user_proc.c           # 用户进程
+│   │   ├── init.c                # 进程初始化
+│   │   ├── switch.asm            # 上下文切换
+│   │   ├── ffi.rs                # FFI 绑定
+│   │   ├── mod.rs                # Rust 模块
+│   │   └── types.rs              # Rust 类型定义
+│   │
+│   ├── pwid/                     # PWID 权限模块
+│   │   ├── pwid.c                # PWID 核心 (C)
+│   │   ├── mod.rs                # Rust 模块
+│   │   ├── types.rs              # 类型定义
+│   │   ├── capability.rs         # 能力系统
+│   │   ├── permission.rs         # 权限管理
+│   │   ├── token.rs              # 令牌管理
+│   │   ├── context.rs            # 上下文管理
+│   │   ├── trust_chain.rs        # 信任链
+│   │   └── ffi.rs                # FFI 绑定
+│   │
+│   ├── fs/                       # 文件系统 (模块内聚结构)
+│   │   ├── mod.rs                # Rust 模块入口
+│   │   ├── vfs/                  # VFS 核心层
+│   │   │   ├── vfs.c             # C 实现
+│   │   │   ├── vfs.rs            # Rust 实现
+│   │   │   ├── types.rs          # 类型定义
+│   │   │   ├── ffi.rs            # FFI 绑定
+│   │   │   └── mod.rs
+│   │   ├── ramfs/                # 内存文件系统
+│   │   │   ├── ramfs.c
+│   │   │   ├── ramfs.rs
+│   │   │   └── mod.rs
+│   │   ├── diskfs/               # 磁盘文件系统
+│   │   │   ├── diskfs.c
+│   │   │   ├── diskfs.rs
+│   │   │   └── mod.rs
+│   │   ├── hvfs/                 # HvFS 文件系统
+│   │   │   ├── hvfs.c
+│   │   │   ├── hvfs.rs
+│   │   │   └── mod.rs
+│   │   ├── devfs/                # 设备文件系统
+│   │   │   ├── devfs.c
+│   │   │   └── mod.rs
+│   │   └── procfs/               # 进程文件系统
+│   │       ├── procfs.c
+│   │       └── mod.rs
+│   │
+│   ├── ipc/                      # 进程间通信
+│   │   └── ipc.c                 # IPC 实现
+│   │
+│   ├── disk/                     # 磁盘驱动
+│   │   └── ata.c                 # ATA/IDE 驱动
+│   │
+│   ├── lib/                      # 内核库
+│   │   ├── string.c              # 字符串操作
+│   │   └── printk.c              # 格式化打印
+│   │
+│   ├── rust/                     # Rust 运行时
+│   │   ├── Cargo.toml            # Rust 配置
+│   │   ├── Cargo.lock            # 依赖锁定
+│   │   ├── .cargo/config.toml    # Cargo 配置
+│   │   └── src/
+│   │       ├── lib.rs            # Rust 库入口
+│   │       └── memory_allocator.rs # 内存分配器
+│   │
+│   ├── user/                     # 用户态程序
+│   │   ├── link.ld               # 用户程序链接脚本
+│   │   ├── init/                 # init 进程
+│   │   │   └── main.c
+│   │   ├── antxsh/               # Shell
+│   │   │   ├── main.c
+│   │   │   ├── builtins.c
+│   │   │   └── builtins.h
+│   │   ├── install/              # 安装向导
+│   │   │   ├── user_install.c
+│   │   │   └── user_install.h
+│   │   ├── lib/                  # 用户态库
+│   │   │   ├── user.c
+│   │   │   └── stack_canary.c
+│   │   └── embedded/             # 嵌入的二进制
+│   │       ├── user_init_bin.c
+│   │       ├── user_antxsh_bin.c
+│   │       └── user_install_bin.c
+│   │
+│   └── link.ld                   # 内核链接脚本
+│
+├── tests/                        # 测试框架
+│   ├── run_tests.py              # 测试运行器
+│   ├── integration/              # 集成测试
+│   │   └── run_integration_tests.py
+│   ├── stress/                   # 压力测试
+│   │   └── run_stress_tests.py
+│   ├── chaos/                    # 混沌测试
+│   │   └── run_chaos_tests.py
+│   ├── scripts/                  # 测试脚本
+│   │   ├── diagnose_user_mode.py
+│   │   ├── diagnose_user_process.py
+│   │   └── test_user_process.py
+│   └── reports/                  # 测试报告
+│       └── unit_test_*.json
+│
+├── build/                        # 构建输出 (gitignore)
+│   ├── kernel.bin                # 内核二进制
+│   ├── kernel.map                # 符号映射
+│   ├── user.map                  # 用户程序映射
+│   ├── antx.iso                  # 可启动 ISO
+│   └── antx.img                  # 磁盘镜像
+│
+├── logs/                         # 日志目录 (gitignore)
+│   └── serial.log                # 串口日志
+│
+└── isodir/                       # ISO 临时目录 (gitignore)
     └── boot/grub/
         └── grub.cfg
 ```

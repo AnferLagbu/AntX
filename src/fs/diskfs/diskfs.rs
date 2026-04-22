@@ -1,9 +1,9 @@
 use alloc::string::String;
 use spin::Mutex;
 
-use super::hvfs::{get_hvfs, HVFS_O_CREAT, HVFS_O_WRONLY, HVFS_PERM_R, HVFS_DISK_OK, HVFS_DISK_NO_DISK, 
+use crate::fs::hvfs::hvfs::{get_hvfs, HVFS_O_CREAT, HVFS_O_WRONLY, HVFS_PERM_R, HVFS_DISK_OK, HVFS_DISK_NO_DISK, 
                     HVFS_DISK_UNFORMATTED};
-use super::types::*;
+use crate::fs::vfs::types::*;
 
 extern "C" {
     fn serial_putc(port: u16, c: i8);
@@ -254,7 +254,7 @@ impl DiskFsData {
             if new_offset > inode.size as u64 {
                 inode.size = new_offset as u32;
             }
-            inode.mtime = super::hvfs::HvFsData::get_time();
+            inode.mtime = crate::fs::hvfs::hvfs::HvFsData::get_time();
             inode.dirty = true;
         }
         

@@ -173,3 +173,6 @@ impl ProcessTable {
 }
 
 pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
+
+pub fn init() {
+}

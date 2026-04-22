@@ -48,6 +48,11 @@
 #define SYS_GET_HOSTNAME 108
 #define SYS_SET_HOSTNAME 109
 #define SYS_BOOT_CHECK   110
+#define SYS_FS_MOUNT     111
+#define SYS_FS_UNMOUNT   112
+#define SYS_DISK_LIST    113
+#define SYS_DISK_INFO    114
+#define SYS_DISK_FORMAT  115
 
 static inline int64_t syscall0(uint64_t num) {
     int64_t ret;
@@ -213,6 +218,35 @@ static inline int64_t sys_fs_sync_all(void) {
 
 static inline int64_t sys_boot_check(int check_type) {
     return syscall1(SYS_BOOT_CHECK, check_type);
+}
+
+static inline int64_t sys_fs_mount(const char *source, const char *target, const char *fstype, const char *options) {
+    return syscall4(SYS_FS_MOUNT, (uint64_t)source, (uint64_t)target, (uint64_t)fstype, (uint64_t)options);
+}
+
+static inline int64_t sys_fs_unmount(const char *target) {
+    return syscall1(SYS_FS_UNMOUNT, (uint64_t)target);
+}
+
+struct user_disk_info {
+    uint32_t disk_id;
+    uint32_t sectors;
+    uint32_t sector_size;
+    char model[41];
+    uint8_t present;
+    uint8_t formatted;
+};
+
+static inline int64_t sys_disk_list(uint64_t *disks, uint32_t max_count) {
+    return syscall2(SYS_DISK_LIST, (uint64_t)disks, max_count);
+}
+
+static inline int64_t sys_disk_info(uint32_t disk_id, struct user_disk_info *info) {
+    return syscall2(SYS_DISK_INFO, disk_id, (uint64_t)info);
+}
+
+static inline int64_t sys_disk_format(uint32_t disk_id, const char *fstype) {
+    return syscall2(SYS_DISK_FORMAT, disk_id, (uint64_t)fstype);
 }
 
 #define BOOT_CHECK_HAS_ROOT   0

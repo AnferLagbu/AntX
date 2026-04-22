@@ -652,7 +652,7 @@ int pwid_is_modified(void) {
     return pwid_modified;
 }
 
-#define PWID_DB_PATH "/etc/pwid.db"
+#define PWID_DB_PATH "/cfg/system/pwid.db"
 #define PWID_DB_MAGIC 0x50574944
 #define PWID_DB_VERSION 1
 
