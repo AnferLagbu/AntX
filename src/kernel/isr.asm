@@ -194,11 +194,13 @@ syscall_handler:
     mov r13, rdi
     mov r14, rsi
     mov r15, r10
+    mov rbx, r8
     
     mov rdi, r12
     mov rsi, r13
     mov rdx, r14
     mov rcx, r15
+    mov r8, rbx
     
     call syscall_dispatch
     

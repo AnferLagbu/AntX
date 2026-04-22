@@ -241,20 +241,11 @@ int64_t sys_proc_sleep(uint64_t ms) {
 int64_t sys_fs_open(const char *path, int flags, int mode) {
     (void)mode;
     uint64_t pwid = pwid_get_current();
-    struct vfs_file *file = vfs_open(path, flags, pwid);
-    if (file == NULL) {
-        return -1;
-    }
-    return file->fd;
+    return vfs_open(path, flags, pwid);
 }
 
 int64_t sys_fs_close(int fd) {
-    for (int i = 0; i < VFS_MAX_FDS; i++) {
-        if (vfs_fd_table[i].used && vfs_fd_table[i].fd == fd) {
-            return vfs_close(&vfs_fd_table[i]);
-        }
-    }
-    return -1;
+    return vfs_close(fd);
 }
 
 int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
@@ -294,12 +285,7 @@ int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
         return (int64_t)read_count;
     }
     
-    for (int i = 0; i < VFS_MAX_FDS; i++) {
-        if (vfs_fd_table[i].used && vfs_fd_table[i].fd == fd) {
-            return vfs_read(&vfs_fd_table[i], buf, count);
-        }
-    }
-    return -1;
+    return vfs_read(fd, buf, count);
 }
 
 int64_t sys_fs_write(int fd, const void *buf, uint64_t count) {
@@ -308,21 +294,11 @@ int64_t sys_fs_write(int fd, const void *buf, uint64_t count) {
         return count;
     }
     
-    for (int i = 0; i < VFS_MAX_FDS; i++) {
-        if (vfs_fd_table[i].used && vfs_fd_table[i].fd == fd) {
-            return vfs_write(&vfs_fd_table[i], buf, count);
-        }
-    }
-    return -1;
+    return vfs_write(fd, buf, count);
 }
 
 int64_t sys_fs_seek(int fd, int64_t offset, int whence) {
-    for (int i = 0; i < VFS_MAX_FDS; i++) {
-        if (vfs_fd_table[i].used && vfs_fd_table[i].fd == fd) {
-            return vfs_seek(&vfs_fd_table[i], offset, whence);
-        }
-    }
-    return -1;
+    return vfs_seek(fd, offset, whence);
 }
 
 int64_t sys_fs_stat(const char *path, void *stat_buf) {
@@ -368,12 +344,7 @@ int64_t sys_fs_rmdir(const char *path) {
 }
 
 int64_t sys_fs_readdir(int fd, void *dirent_buf) {
-    for (int i = 0; i < VFS_MAX_FDS; i++) {
-        if (vfs_fd_table[i].used && vfs_fd_table[i].fd == fd) {
-            return vfs_readdir(&vfs_fd_table[i], (struct vfs_dirent *)dirent_buf);
-        }
-    }
-    return -1;
+    return vfs_readdir(fd, (struct vfs_dirent *)dirent_buf);
 }
 
 int64_t sys_auth_login(const char *password, const char *note) {

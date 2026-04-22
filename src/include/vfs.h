@@ -114,12 +114,12 @@ struct vfs_filesystem* vfs_get_fs(const char *name);
 int vfs_mount(const char *path, const char *fs_name);
 int vfs_unmount(const char *path);
 
-struct vfs_file* vfs_open(const char *path, int flags, uint64_t pwid);
-int vfs_close(struct vfs_file *file);
-int vfs_read(struct vfs_file *file, void *buf, uint32_t count);
-int vfs_write(struct vfs_file *file, const void *buf, uint32_t count);
-int vfs_seek(struct vfs_file *file, int64_t offset, int whence);
-int vfs_readdir(struct vfs_file *file, struct vfs_dirent *entry);
+int vfs_open(const char *path, int flags, uint64_t pwid);
+int vfs_close(int fd);
+int vfs_read(int fd, void *buf, uint32_t count);
+int vfs_write(int fd, const void *buf, uint32_t count);
+int vfs_seek(int fd, int64_t offset, int whence);
+int vfs_readdir(int fd, struct vfs_dirent *entry);
 
 int vfs_mkdir(const char *path, uint64_t pwid);
 int vfs_rmdir(const char *path, uint64_t pwid);
