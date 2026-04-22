@@ -1,4 +1,6 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use spin::Mutex;
+use super::process::PROCESS_TABLE;
 
 #[no_mangle]
 pub static mut user_entry_cr3: AtomicU64 = AtomicU64::new(0);
@@ -68,7 +70,7 @@ fn log_hex(n: u64) {
 pub const PAGE_SIZE: u64 = 4096;
 pub const USER_STACK_SIZE: u64 = 65536;
 pub const USER_STACK_GUARD: u64 = 4096;
-pub const USER_STACK_TOP: u64 = 0x7FFFFFFFFFFF;
+pub const USER_STACK_TOP: u64 = 0x7FFFFFFFE000;
 pub const USER_CODE_BASE: u64 = 0x400000;
 
 pub const PAGE_PRESENT: u64 = 1;
@@ -138,6 +140,7 @@ pub struct UserProcess {
 
 pub struct UserProcManager {
     current: AtomicU64,
+    processes: Mutex<alloc::collections::BTreeMap<u32, *mut UserProcess>>,
 }
 
 unsafe impl Send for UserProcManager {}
@@ -147,6 +150,7 @@ impl UserProcManager {
     pub const fn new() -> Self {
         Self {
             current: AtomicU64::new(0),
+            processes: Mutex::new(alloc::collections::BTreeMap::new()),
         }
     }
     
@@ -154,7 +158,13 @@ impl UserProcManager {
         log("[USER_PROC] User process manager initialized\n");
     }
     
+    pub fn get(&self, pid: u32) -> Option<*mut UserProcess> {
+        self.processes.lock().get(&pid).copied()
+    }
+    
     pub fn create(&self, info: &UserProcInfo, pwid: u64) -> Option<*mut UserProcess> {
+        let pid = PROCESS_TABLE.allocate_pid()?;
+        
         let proc = unsafe {
             let ptr = pmm_alloc_page() as *mut UserProcess;
             if ptr.is_null() {
@@ -166,6 +176,7 @@ impl UserProcManager {
         };
         
         unsafe {
+            (*proc).pid = pid;
             (*proc).cr3.store(vmm_create_user_page_table(), Ordering::SeqCst);
             if (*proc).cr3.load(Ordering::SeqCst) == 0 {
                 pmm_free_page(proc as *mut u8);
@@ -208,7 +219,11 @@ impl UserProcManager {
             (*proc).create_time = unsafe { timer_get_ticks() };
         }
         
-        log("[USER_PROC] Created process entry=0x");
+        self.processes.lock().insert(pid, proc);
+        
+        log("[USER_PROC] Created process pid=");
+        log_num(pid as u64);
+        log(" entry=0x");
         log_hex(info.entry);
         log("\n");
         
@@ -233,11 +248,11 @@ impl UserProcManager {
             
             core::arch::asm!(
                 "cli",
-                "mov ax, {ss}",
-                "mov ds, ax",
-                "mov es, ax",
-                "mov fs, ax",
-                "mov gs, ax",
+                "mov dx, {ss:x}",
+                "mov ds, dx",
+                "mov es, dx",
+                "mov fs, dx",
+                "mov gs, dx",
                 "push {ss}",
                 "push {rsp}",
                 "push {rflags}",

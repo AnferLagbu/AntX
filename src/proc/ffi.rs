@@ -108,6 +108,16 @@ pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: 
 }
 
 #[no_mangle]
+pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
+    if let Some(proc) = USER_PROC_MANAGER.get(pid) {
+        USER_PROC_MANAGER.enter(proc);
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn scheduler_tick() {
     SCHEDULER_EX.tick();
 }

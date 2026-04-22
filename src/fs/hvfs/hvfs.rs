@@ -384,12 +384,29 @@ impl HvFsData {
         self.current_pwid.store(0, Ordering::SeqCst);
         self.current_dir.store(1, Ordering::SeqCst);
         self.mounted = false;
-        self.disk_present = false;
         self.initialized = false;
         
         for entry in self.block_cache.iter_mut() {
             entry.valid = false;
             entry.dirty = false;
+        }
+        
+        unsafe {
+            if ata_disk_present(0) != 0 {
+                self.disk_present = true;
+                log("[HvFS-Rust] Disk detected at drive 0\n");
+            } else if ata_disk_present(1) != 0 {
+                self.disk_present = true;
+                log("[HvFS-Rust] Disk detected at drive 1\n");
+            } else if ata_disk_present(2) != 0 {
+                self.disk_present = true;
+                log("[HvFS-Rust] Disk detected at drive 2\n");
+            } else if ata_disk_present(3) != 0 {
+                self.disk_present = true;
+                log("[HvFS-Rust] Disk detected at drive 3\n");
+            } else {
+                self.disk_present = false;
+            }
         }
         
         log("[HvFS-Rust] Initialized (not formatted)\n");

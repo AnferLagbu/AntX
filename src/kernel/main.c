@@ -49,7 +49,12 @@ void disable_interrupts(void) {
 
 void interrupt_idle(void) {
     if (proc_has_runnable()) {
-        scheduler_schedule();
+        extern uint32_t rust_sched_schedule(void);
+        uint32_t pid = rust_sched_schedule();
+        if (pid > 0) {
+            extern int user_proc_enter_by_pid(uint32_t pid);
+            user_proc_enter_by_pid(pid);
+        }
         return;
     }
     
@@ -70,6 +75,8 @@ static void start_user_init(void) {
         serial_puts(SERIAL_COM1, "[INIT] Failed to load init process!\n");
         return;
     }
+    
+    rust_sched_add((uint32_t)pid);
     
     serial_puts(SERIAL_COM1, "[INIT] Init process started with PID: ");
     serial_put_dec(SERIAL_COM1, pid);
@@ -109,15 +116,15 @@ void kernel_main(void) {
     serial_puts(SERIAL_COM1, "[DEBUG] After IDT init\n");
     
     pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end_phys);
-    if (pmm_get_free_pages() == 0) {
-        panic("PMM initialization failed: no free pages");
-    }
     serial_puts(SERIAL_COM1, "  [OK] PMM basic init\n");
     
     kmalloc_init();
     serial_puts(SERIAL_COM1, "  [OK] Kernel Heap\n");
     
     pmm_init_bitmap();
+    if (pmm_get_free_pages() == 0) {
+        panic("PMM initialization failed: no free pages");
+    }
     {
         uint64_t free_pages = pmm_get_free_pages();
         serial_puts(SERIAL_COM1, "  [OK] PMM - ");
