@@ -54,6 +54,8 @@
 #define SYS_DISK_INFO    114
 #define SYS_DISK_FORMAT  115
 
+#define SYS_REBOOT       103
+
 static inline int64_t syscall0(uint64_t num) {
     int64_t ret;
     __asm__ volatile (
@@ -247,6 +249,10 @@ static inline int64_t sys_disk_info(uint32_t disk_id, struct user_disk_info *inf
 
 static inline int64_t sys_disk_format(uint32_t disk_id, const char *fstype) {
     return syscall2(SYS_DISK_FORMAT, disk_id, (uint64_t)fstype);
+}
+
+static inline int64_t sys_reboot(int cmd) {
+    return syscall1(SYS_REBOOT, cmd);
 }
 
 #define BOOT_CHECK_HAS_ROOT   0

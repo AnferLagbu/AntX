@@ -388,11 +388,16 @@ static int complete_page(void) {
     user_print("\n");
     user_println("AntX has been installed to your disk.");
     user_println("Please remove the installation media");
-    user_println("and reboot your system.");
+    user_println("and press ENTER to reboot your system.");
     user_print("\n");
-    user_println("Starting axsh in 3 seconds...");
     
-    user_delay(3);
+    char input_buf[16];
+    user_read_line(input_buf, sizeof(input_buf));
+    
+    user_println("Rebooting system...");
+    user_delay(1);
+    
+    sys_reboot(0);
     
     return 0;
 }
