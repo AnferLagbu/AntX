@@ -17,6 +17,12 @@
 #define PWID_FLAG_DISABLED      0x04
 #define PWID_FLAG_MODIFIED      0x08
 #define PWID_FLAG_DEFAULT_PW    0x10
+#define PWID_FLAG_LOCKED        0x20
+#define PWID_FLAG_EXPIRED       0x40
+
+#define PWID_MAX_LOGIN_ATTEMPTS  5
+#define PWID_LOCKOUT_DURATION    300
+#define PWID_DEFAULT_EXPIRY_DAYS 90
 
 #define PWID_LEVEL_MASK     0xF000000000000000ULL
 #define PWID_ORIGINAL_MASK  0x0800000000000000ULL
@@ -69,7 +75,33 @@ struct pwid_entry {
     uint8_t flags;
     uint64_t created_time;
     uint64_t expires_at;
+    uint8_t failed_attempts;
+    uint64_t lockout_until;
+    uint64_t last_login_time;
 };
+
+struct pwid_audit_entry {
+    uint64_t timestamp;
+    uint64_t pwid;
+    uint32_t action;
+    uint32_t result;
+    uint64_t target_pwid;
+    uint64_t details;
+};
+
+#define AUDIT_ACTION_LOGIN         1
+#define AUDIT_ACTION_LOGOUT        2
+#define AUDIT_ACTION_CREATE        3
+#define AUDIT_ACTION_DELETE        4
+#define AUDIT_ACTION_MODIFY        5
+#define AUDIT_ACTION_PERMISSION    6
+#define AUDIT_ACTION_TOKEN_CREATE  7
+#define AUDIT_ACTION_TOKEN_USE     8
+#define AUDIT_ACTION_ELEVATE       9
+
+#define AUDIT_RESULT_SUCCESS 0
+#define AUDIT_RESULT_FAILURE 1
+#define AUDIT_RESULT_DENIED  2
 
 struct pwid_context {
     struct pwid_entry *current;
@@ -154,5 +186,29 @@ int pwid_load_from_disk(void);
 void pwid_set_modified(void);
 int pwid_is_modified(void);
 void pwid_try_load(void);
+
+int pwid_is_expired(uint64_t pwid);
+int pwid_is_locked(uint64_t pwid);
+int pwid_check_expiry(uint64_t pwid);
+void pwid_set_expiry(uint64_t pwid, uint64_t expires_at);
+void pwid_extend_expiry(uint64_t pwid, uint64_t days);
+void pwid_clear_lockout(uint64_t pwid);
+
+int pwid_login_with_bruteforce_protection(const char *note, const char *password);
+void pwid_record_failed_login(uint64_t pwid);
+void pwid_clear_failed_attempts(uint64_t pwid);
+
+int pwid_elevate(uint64_t target_pwid, const char *password, uint64_t duration_secs);
+int pwid_elevate_with_token(uint64_t token_id);
+void pwid_end_elevation(void);
+int pwid_is_elevated(void);
+
+void pwid_audit_log(uint64_t pwid, uint32_t action, uint32_t result, 
+                    uint64_t target_pwid, uint64_t details);
+void pwid_audit_dump(void);
+int pwid_audit_save_to_disk(void);
+int pwid_audit_load_from_disk(void);
+
+void pwid_periodic_cleanup(void);
 
 #endif

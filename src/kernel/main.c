@@ -3,11 +3,10 @@
 #include "user_proc.h"
 #include "timer.h"
 #include "module_check.h"
-#include "log_buffer.h"
+#include "klog.h"
 #include "proc_ffi.h"
 #include "hvfs_ffi.h"
 #include "kmalloc.h"
-#include "printk.h"
 #ifdef KERNEL_TEST
 #include "kernel_test.h"
 #endif
@@ -28,7 +27,7 @@ void panic(const char *msg) {
     pr_crit("PANIC: %s\n", msg);
     pr_crit("========================================\n");
     
-    log_dump_all();
+    klog_dump();
     
     pr_crit("\nSystem halted.\n");
     
@@ -65,7 +64,7 @@ void interrupt_idle(void) {
 }
 
 static void start_user_init(void) {
-    klog_init("Starting user-space init process...\n");
+    klog_init_msg("Starting user-space init process...\n");
     
     int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
     
@@ -76,12 +75,12 @@ static void start_user_init(void) {
     
     sched_add_internal((uint32_t)pid);
     
-    klog_init("Init process started with PID: %d\n", pid);
+    klog_init_msg("Init process started with PID: %d\n", pid);
 }
 
 void kernel_main(void) {
     serial_init(SERIAL_COM1);
-    serial_enable_log();
+    klog_init();
     
     printk("\n");
     printk("AntX Operating System\n");
@@ -148,7 +147,7 @@ void kernel_main(void) {
     pwid_try_load();
     
     printk("\n");
-    klog_init("System initialized\n");
+    klog_init_msg("System initialized\n");
     printk("AntX is ready.\n");
     printk("\n");
     

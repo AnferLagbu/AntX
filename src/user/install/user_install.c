@@ -191,11 +191,30 @@ static int format_disk(void) {
     user_print("\n");
     user_println("--- Step 2: Disk Formatting ---");
     user_print("\n");
-    user_print("Formatting disk ");
-    user_print_dec(disk_list[selected_disk].disk_id);
-    user_println(" with HvFS...");
     
-    int64_t result = sys_disk_format(disk_list[selected_disk].disk_id, "hvfs");
+    user_println("Creating MBR partition table...");
+    int64_t result = sys_disk_partition(disk_list[selected_disk].disk_id, 
+                                         disk_list[selected_disk].sectors);
+    if (result != 0) {
+        user_print("  [WARN] Partition table creation failed (error: ");
+        user_print_dec(result);
+        user_println(")");
+    } else {
+        user_println("  [OK] Partition table created");
+    }
+    
+    user_println("Installing GRUB bootloader...");
+    result = sys_disk_install_grub(disk_list[selected_disk].disk_id);
+    if (result != 0) {
+        user_print("  [WARN] GRUB installation failed (error: ");
+        user_print_dec(result);
+        user_println(")");
+    } else {
+        user_println("  [OK] GRUB installed to MBR");
+    }
+    
+    user_print("Formatting system partition with HvFS...");
+    result = sys_disk_format(disk_list[selected_disk].disk_id, "hvfs");
     
     if (result != 0) {
         user_print("  [ERROR] Format failed (error: ");

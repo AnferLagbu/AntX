@@ -796,3 +796,374 @@ int pwid_load_from_disk(void) {
     
     return 0;
 }
+
+static uint64_t get_current_time(void) {
+    uint64_t tsc;
+    __asm__ volatile("rdtsc" : "=A"(tsc));
+    return tsc / 3000000000ULL;
+}
+
+int pwid_is_expired(uint64_t pwid) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry == NULL) {
+        return 1;
+    }
+    
+    if (entry->flags & PWID_FLAG_ORIGINAL_ROOT) {
+        return 0;
+    }
+    
+    if (entry->expires_at == 0) {
+        return 0;
+    }
+    
+    uint64_t now = get_current_time();
+    return now >= entry->expires_at;
+}
+
+int pwid_is_locked(uint64_t pwid) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry == NULL) {
+        return 1;
+    }
+    
+    if (entry->flags & PWID_FLAG_LOCKED) {
+        uint64_t now = get_current_time();
+        if (entry->lockout_until > 0 && now < entry->lockout_until) {
+            return 1;
+        }
+        entry->flags &= ~PWID_FLAG_LOCKED;
+        entry->lockout_until = 0;
+    }
+    
+    return 0;
+}
+
+int pwid_check_expiry(uint64_t pwid) {
+    if (pwid_is_expired(pwid)) {
+        struct pwid_entry *entry = pwid_find(pwid);
+        if (entry != NULL) {
+            entry->flags |= PWID_FLAG_EXPIRED;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+void pwid_set_expiry(uint64_t pwid, uint64_t expires_at) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry == NULL) {
+        return;
+    }
+    
+    if (entry->flags & PWID_FLAG_ORIGINAL_ROOT) {
+        return;
+    }
+    
+    entry->expires_at = expires_at;
+    entry->flags &= ~PWID_FLAG_EXPIRED;
+    pwid_set_modified();
+}
+
+void pwid_extend_expiry(uint64_t pwid, uint64_t days) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry == NULL) {
+        return;
+    }
+    
+    if (entry->flags & PWID_FLAG_ORIGINAL_ROOT) {
+        return;
+    }
+    
+    uint64_t now = get_current_time();
+    uint64_t extension = days * 86400;
+    
+    if (entry->expires_at > now) {
+        entry->expires_at += extension;
+    } else {
+        entry->expires_at = now + extension;
+    }
+    
+    entry->flags &= ~PWID_FLAG_EXPIRED;
+    pwid_set_modified();
+}
+
+void pwid_clear_lockout(uint64_t pwid) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry != NULL) {
+        entry->flags &= ~PWID_FLAG_LOCKED;
+        entry->lockout_until = 0;
+        entry->failed_attempts = 0;
+    }
+}
+
+void pwid_record_failed_login(uint64_t pwid) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry == NULL) {
+        return;
+    }
+    
+    entry->failed_attempts++;
+    
+    if (entry->failed_attempts >= PWID_MAX_LOGIN_ATTEMPTS) {
+        entry->flags |= PWID_FLAG_LOCKED;
+        entry->lockout_until = get_current_time() + PWID_LOCKOUT_DURATION;
+        serial_puts(SERIAL_COM1, "PWID: Account locked due to too many failed attempts\n");
+        pwid_audit_log(pwid, AUDIT_ACTION_LOGIN, AUDIT_RESULT_DENIED, 0, entry->failed_attempts);
+    }
+}
+
+void pwid_clear_failed_attempts(uint64_t pwid) {
+    struct pwid_entry *entry = pwid_find(pwid);
+    if (entry != NULL) {
+        entry->failed_attempts = 0;
+    }
+}
+
+int pwid_login_with_bruteforce_protection(const char *note, const char *password) {
+    struct pwid_entry *entry = pwid_find_by_note(note);
+    if (entry == NULL) {
+        serial_puts(SERIAL_COM1, "PWID: user not found\n");
+        return PWID_ERR_NOT_FOUND;
+    }
+    
+    if (pwid_is_locked(entry->pwid)) {
+        serial_puts(SERIAL_COM1, "PWID: account locked\n");
+        return PWID_ERR_DISABLED;
+    }
+    
+    if (pwid_is_expired(entry->pwid)) {
+        serial_puts(SERIAL_COM1, "PWID: account expired\n");
+        return PWID_ERR_DISABLED;
+    }
+    
+    if (entry->flags & PWID_FLAG_DISABLED) {
+        serial_puts(SERIAL_COM1, "PWID: account disabled\n");
+        return PWID_ERR_DISABLED;
+    }
+    
+    uint8_t hash[PWID_HASH_LEN];
+    sha256((const uint8_t *)password, strlen(password), hash);
+    
+    if (memcmp(entry->password_hash, hash, PWID_HASH_LEN) != 0) {
+        pwid_record_failed_login(entry->pwid);
+        serial_puts(SERIAL_COM1, "PWID: incorrect password\n");
+        pwid_audit_log(entry->pwid, AUDIT_ACTION_LOGIN, AUDIT_RESULT_FAILURE, 0, 0);
+        return PWID_ERR_PASSWORD;
+    }
+    
+    pwid_clear_failed_attempts(entry->pwid);
+    entry->last_login_time = get_current_time();
+    
+    current_context.current = entry;
+    current_context.session_pwid = entry->pwid;
+    
+    hvfs_set_current_pwid_internal(entry->pwid);
+    
+    pwid_audit_log(entry->pwid, AUDIT_ACTION_LOGIN, AUDIT_RESULT_SUCCESS, 0, 0);
+    
+    serial_puts(SERIAL_COM1, "PWID: logged in as '");
+    serial_puts(SERIAL_COM1, note);
+    serial_puts(SERIAL_COM1, "'\n");
+    
+    return PWID_OK;
+}
+
+static struct pwid_context saved_context = {NULL, 0};
+static uint64_t elevation_token_id = 0;
+
+int pwid_elevate(uint64_t target_pwid, const char *password, uint64_t duration_secs) {
+    if (current_context.current == NULL) {
+        return PWID_ERR_DENIED;
+    }
+    
+    struct pwid_entry *target = pwid_find(target_pwid);
+    if (target == NULL) {
+        return PWID_ERR_NOT_FOUND;
+    }
+    
+    if (target->level != PWID_LEVEL_ROOT) {
+        return PWID_ERR_DENIED;
+    }
+    
+    if (!pwid_verify_password(target_pwid, password)) {
+        pwid_audit_log(current_context.session_pwid, AUDIT_ACTION_ELEVATE, 
+                       AUDIT_RESULT_FAILURE, target_pwid, 0);
+        return PWID_ERR_PASSWORD;
+    }
+    
+    saved_context.current = current_context.current;
+    saved_context.session_pwid = current_context.session_pwid;
+    
+    uint16_t domains[] = {CAP_DOMAIN_SYSTEM, CAP_DOMAIN_FS, CAP_DOMAIN_PROC};
+    uint64_t caps[] = {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF};
+    
+    int64_t token = pwid_create_elevation_token_internal(
+        target_pwid,
+        current_context.session_pwid,
+        domains,
+        caps,
+        3,
+        duration_secs,
+        1
+    );
+    
+    if (token < 0) {
+        return PWID_ERR_DENIED;
+    }
+    
+    elevation_token_id = (uint64_t)token;
+    
+    current_context.current = target;
+    current_context.session_pwid = target_pwid;
+    hvfs_set_current_pwid_internal(target_pwid);
+    
+    pwid_audit_log(saved_context.session_pwid, AUDIT_ACTION_ELEVATE, 
+                   AUDIT_RESULT_SUCCESS, target_pwid, token);
+    
+    serial_puts(SERIAL_COM1, "PWID: Elevated to root for ");
+    serial_put_dec(SERIAL_COM1, duration_secs);
+    serial_puts(SERIAL_COM1, " seconds\n");
+    
+    return PWID_OK;
+}
+
+int pwid_elevate_with_token(uint64_t token_id) {
+    if (pwid_use_token_internal(token_id) != 0) {
+        return PWID_ERR_DENIED;
+    }
+    
+    pwid_audit_log(current_context.session_pwid, AUDIT_ACTION_TOKEN_USE,
+                   AUDIT_RESULT_SUCCESS, 0, token_id);
+    
+    return PWID_OK;
+}
+
+void pwid_end_elevation(void) {
+    if (saved_context.current != NULL) {
+        if (elevation_token_id != 0) {
+            pwid_revoke_token_internal(elevation_token_id, current_context.session_pwid);
+            elevation_token_id = 0;
+        }
+        
+        current_context.current = saved_context.current;
+        current_context.session_pwid = saved_context.session_pwid;
+        hvfs_set_current_pwid_internal(saved_context.session_pwid);
+        
+        pwid_audit_log(saved_context.session_pwid, AUDIT_ACTION_LOGOUT,
+                       AUDIT_RESULT_SUCCESS, 0, 0);
+        
+        saved_context.current = NULL;
+        saved_context.session_pwid = 0;
+        
+        serial_puts(SERIAL_COM1, "PWID: Elevation ended\n");
+    }
+}
+
+int pwid_is_elevated(void) {
+    return saved_context.current != NULL;
+}
+
+#define MAX_AUDIT_ENTRIES 256
+static struct pwid_audit_entry audit_log_entries[MAX_AUDIT_ENTRIES];
+static int audit_log_count = 0;
+
+void pwid_audit_log(uint64_t pwid, uint32_t action, uint32_t result,
+                    uint64_t target_pwid, uint64_t details) {
+    if (audit_log_count >= MAX_AUDIT_ENTRIES) {
+        for (int i = 0; i < MAX_AUDIT_ENTRIES - 1; i++) {
+            audit_log_entries[i] = audit_log_entries[i + 1];
+        }
+        audit_log_count = MAX_AUDIT_ENTRIES - 1;
+    }
+    
+    struct pwid_audit_entry *entry = &audit_log_entries[audit_log_count++];
+    entry->timestamp = get_current_time();
+    entry->pwid = pwid;
+    entry->action = action;
+    entry->result = result;
+    entry->target_pwid = target_pwid;
+    entry->details = details;
+}
+
+void pwid_audit_dump(void) {
+    serial_puts(SERIAL_COM1, "\n=== PWID Audit Log ===\n");
+    for (int i = 0; i < audit_log_count; i++) {
+        struct pwid_audit_entry *e = &audit_log_entries[i];
+        serial_puts(SERIAL_COM1, "  [");
+        serial_put_dec(SERIAL_COM1, e->timestamp);
+        serial_puts(SERIAL_COM1, "] PWID:0x");
+        serial_put_hex(SERIAL_COM1, e->pwid);
+        serial_puts(SERIAL_COM1, " Action:");
+        serial_put_dec(SERIAL_COM1, e->action);
+        serial_puts(SERIAL_COM1, " Result:");
+        serial_put_dec(SERIAL_COM1, e->result);
+        serial_puts(SERIAL_COM1, "\n");
+    }
+    serial_puts(SERIAL_COM1, "=====================\n");
+}
+
+#define AUDIT_DB_PATH "/cfg/system/pwid_audit.db"
+#define AUDIT_DB_MAGIC 0x41554449
+
+int pwid_audit_save_to_disk(void) {
+    int fd = hvfs_open(AUDIT_DB_PATH, HVFS_O_CREAT | HVFS_O_WRONLY | HVFS_O_TRUNC, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    
+    uint32_t header[2] = {AUDIT_DB_MAGIC, (uint32_t)audit_log_count};
+    hvfs_write(fd, header, sizeof(header));
+    hvfs_write(fd, audit_log_entries, sizeof(struct pwid_audit_entry) * audit_log_count);
+    hvfs_close(fd);
+    
+    return 0;
+}
+
+int pwid_audit_load_from_disk(void) {
+    int fd = hvfs_open(AUDIT_DB_PATH, HVFS_O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    
+    uint32_t header[2];
+    if (hvfs_read(fd, header, sizeof(header)) != sizeof(header)) {
+        hvfs_close(fd);
+        return -1;
+    }
+    
+    if (header[0] != AUDIT_DB_MAGIC) {
+        hvfs_close(fd);
+        return -1;
+    }
+    
+    int count = header[1];
+    if (count > MAX_AUDIT_ENTRIES) {
+        count = MAX_AUDIT_ENTRIES;
+    }
+    
+    hvfs_read(fd, audit_log_entries, sizeof(struct pwid_audit_entry) * count);
+    audit_log_count = count;
+    hvfs_close(fd);
+    
+    return 0;
+}
+
+void pwid_periodic_cleanup(void) {
+    pwid_cleanup_internal();
+    
+    for (int i = 0; i < MAX_PWID_ENTRIES; i++) {
+        if (pwid_table[i].pwid != 0) {
+            pwid_check_expiry(pwid_table[i].pwid);
+            
+            if (pwid_table[i].flags & PWID_FLAG_LOCKED) {
+                if (pwid_table[i].lockout_until > 0 && 
+                    get_current_time() >= pwid_table[i].lockout_until) {
+                    pwid_table[i].flags &= ~PWID_FLAG_LOCKED;
+                    pwid_table[i].lockout_until = 0;
+                    pwid_table[i].failed_attempts = 0;
+                }
+            }
+        }
+    }
+}

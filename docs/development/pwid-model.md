@@ -31,8 +31,10 @@ AntX 摒弃传统操作系统的"用户"实体概念，采用「密码 + 备注 
 | 原 Root 锚点 | ✅ 已实现 | 不可删除、不可修改 |
 | 派生 Root | ✅ 已实现 | 可创建和删除 |
 | 会话管理 | ✅ 已实现 | 会话级 PWID 绑定 |
-| 临时提权 | ⏳ 未实现 | 计划中 |
-| PWID 过期 | ⏳ 未实现 | 计划中 |
+| 临时提权 | ✅ 已实现 | 令牌机制支持 |
+| PWID 过期 | ✅ 已实现 | 过期检查与自动清理 |
+| 暴力破解防护 | ✅ 已实现 | 失败锁定机制 |
+| 审计日志 | ✅ 已实现 | 操作记录与持久化 |
 
 ### 1.2 密码即身份
 
@@ -238,46 +240,43 @@ AntX 是多会话系统，支持多个终端同时登录：
 当前会话 (PWID_A) → 输入新密码+备注 → 会话 PWID 更新为 PWID_B
 ```
 
-## 六、临时提权机制 - 未实现
+## 六、临时提权机制
 
-> **注意**：临时提权机制尚未实现，以下为设计方案。
+> **更新**: 临时提权机制已实现，通过令牌系统支持。
 
 ### 6.1 设计原则
 
-- 临时提权只能向**原 Root** 提权
-- 验证原 Root 密码后方可执行
-- 提权仅对单一命令有效
-- 命令执行完毕后自动恢复原身份
+- 临时提权只能向**Root身份**提权
+- 验证Root密码后方可执行
+- 提权通过令牌机制实现，支持时间限制
+- 提权结束后自动恢复原身份
 
-### 6.2 提权流程（计划）
+### 6.2 提权流程
 
 ```
-1. Trustworthy 会话执行提权命令（如 cmd --elevate）
-2. 系统提示输入原 Root 密码
+1. Trustworthy 会话执行 pwid_elevate(target_pwid, password, duration)
+2. 系统提示输入 Root 密码
 3. 验证密码正确性
-4. 创建临时子进程（PWID=原 Root）
-5. 以原 Root 权限执行命令
-6. 命令执行完毕，临时进程结束
-7. 父会话恢复 Trustworthy 身份
+4. 创建临时提权令牌
+5. 会话切换为 Root 身份
+6. 持续指定时间或手动结束
+7. 调用 pwid_end_elevation() 恢复原身份
 ```
 
-### 6.3 临时进程模型（计划）
+### 6.3 API 接口
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Trustworthy 会话 (PWID=Trustworthy)                    │
-│  ┌─────────┐  ┌─────────┐                                 │
-│  │ shell   │──│ proc-1  │                                 │
-│  └─────────┘  └─────────┘                                 │
-│                          │                                 │
-│              ┌───────────┴───────────┐                     │
-│              │  执行提权命令         │                     │
-│              ▼                       ▼                     │
-│  ┌─────────────────────────────────────────┐              │
-│  │     临时子进程 (PWID=原Root)            │              │
-│  │     执行完成后自动销毁                   │              │
-│  └─────────────────────────────────────────┘              │
-└─────────────────────────────────────────────────────────────┘
+```c
+// 临时提权
+int pwid_elevate(uint64_t target_pwid, const char *password, uint64_t duration_secs);
+
+// 使用令牌提权
+int pwid_elevate_with_token(uint64_t token_id);
+
+// 结束提权
+void pwid_end_elevation(void);
+
+// 检查是否处于提权状态
+int pwid_is_elevated(void);
 ```
 
 ## 七、初始化流程
@@ -328,11 +327,81 @@ AntX 是多会话系统，支持多个终端同时登录：
 
 ### 8.2 暴力破解防护
 
-- 连续错误密码输入后增加延迟
-- 错误次数阈值后锁定会话
+- 连续5次错误密码输入后锁定账户
+- 锁定持续时间：300秒
+- 锁定期自动解除机制
+- 登录成功后清除失败计数
+
+```c
+// 使用带暴力破解防护的登录
+int pwid_login_with_bruteforce_protection(const char *note, const char *password);
+
+// 检查账户是否被锁定
+int pwid_is_locked(uint64_t pwid);
+
+// 手动清除锁定
+void pwid_clear_lockout(uint64_t pwid);
+```
 
 ### 8.3 权限边界
 
 - 用户态无法直接访问内核数据结构
 - PWID 验证在内核态完成
 - 系统调用需通过内核权限检查
+
+### 8.4 审计日志
+
+所有关键操作都会记录审计日志：
+
+| 操作类型 | 说明 |
+|----------|------|
+| AUDIT_ACTION_LOGIN | 登录操作 |
+| AUDIT_ACTION_LOGOUT | 登出操作 |
+| AUDIT_ACTION_CREATE | 创建PWID |
+| AUDIT_ACTION_DELETE | 删除PWID |
+| AUDIT_ACTION_MODIFY | 修改PWID |
+| AUDIT_ACTION_PERMISSION | 权限检查 |
+| AUDIT_ACTION_TOKEN_CREATE | 创建令牌 |
+| AUDIT_ACTION_TOKEN_USE | 使用令牌 |
+| AUDIT_ACTION_ELEVATE | 临时提权 |
+
+```c
+// 记录审计日志
+void pwid_audit_log(uint64_t pwid, uint32_t action, uint32_t result,
+                    uint64_t target_pwid, uint64_t details);
+
+// 输出审计日志
+void pwid_audit_dump(void);
+
+// 持久化审计日志
+int pwid_audit_save_to_disk(void);
+int pwid_audit_load_from_disk(void);
+```
+
+### 8.5 PWID过期机制
+
+```c
+// 检查PWID是否过期
+int pwid_is_expired(uint64_t pwid);
+
+// 设置过期时间
+void pwid_set_expiry(uint64_t pwid, uint64_t expires_at);
+
+// 延长过期时间（天数）
+void pwid_extend_expiry(uint64_t pwid, uint64_t days);
+
+// 定期清理过期账户
+void pwid_periodic_cleanup(void);
+```
+
+## 九、新增标志位
+
+| 标志 | 值 | 说明 |
+|------|-----|------|
+| PWID_FLAG_ORIGINAL_ROOT | 0x01 | 原 Root 标识 |
+| PWID_FLAG_TEMPORARY | 0x02 | 临时 PWID |
+| PWID_FLAG_DISABLED | 0x04 | 已禁用 |
+| PWID_FLAG_MODIFIED | 0x08 | 密码已修改 |
+| PWID_FLAG_DEFAULT_PW | 0x10 | 使用默认密码 |
+| PWID_FLAG_LOCKED | 0x20 | 账户锁定 |
+| PWID_FLAG_EXPIRED | 0x40 | 已过期 |

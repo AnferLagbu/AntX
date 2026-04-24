@@ -167,6 +167,9 @@ int ata_disk_present(uint8_t drive) {
 }
 
 int ata_read_sector(uint8_t drive, uint32_t lba, void *buffer) {
+    if (buffer == NULL) {
+        return ATA_ERR;
+    }
     if (!ata_disk_present(drive)) {
         return ATA_NO_DISK;
     }
@@ -205,6 +208,9 @@ int ata_read_sector(uint8_t drive, uint32_t lba, void *buffer) {
 }
 
 int ata_write_sector(uint8_t drive, uint32_t lba, const void *buffer) {
+    if (buffer == NULL) {
+        return ATA_ERR;
+    }
     if (!ata_disk_present(drive)) {
         return ATA_NO_DISK;
     }
@@ -250,6 +256,9 @@ int ata_write_sector(uint8_t drive, uint32_t lba, const void *buffer) {
 }
 
 int ata_read_sectors(uint8_t drive, uint32_t lba, uint32_t count, void *buffer) {
+    if (buffer == NULL || count == 0) {
+        return ATA_ERR;
+    }
     uint8_t *buf = (uint8_t *)buffer;
     
     for (uint32_t i = 0; i < count; i++) {
@@ -263,6 +272,9 @@ int ata_read_sectors(uint8_t drive, uint32_t lba, uint32_t count, void *buffer) 
 }
 
 int ata_write_sectors(uint8_t drive, uint32_t lba, uint32_t count, const void *buffer) {
+    if (buffer == NULL || count == 0) {
+        return ATA_ERR;
+    }
     const uint8_t *buf = (const uint8_t *)buffer;
     
     for (uint32_t i = 0; i < count; i++) {
@@ -276,6 +288,9 @@ int ata_write_sectors(uint8_t drive, uint32_t lba, uint32_t count, const void *b
 }
 
 int ata_identify(uint8_t drive, uint16_t *identify_data) {
+    if (identify_data == NULL) {
+        return ATA_ERR;
+    }
     if (!ata_disk_present(drive)) {
         return ATA_NO_DISK;
     }

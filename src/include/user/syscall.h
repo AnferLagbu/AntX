@@ -53,6 +53,8 @@
 #define SYS_DISK_LIST    113
 #define SYS_DISK_INFO    114
 #define SYS_DISK_FORMAT  115
+#define SYS_DISK_PARTITION 116
+#define SYS_DISK_INSTALL_GRUB 117
 
 #define SYS_REBOOT       103
 

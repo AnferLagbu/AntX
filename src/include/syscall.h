@@ -96,6 +96,8 @@
 #define SYS_DISK_LIST      113
 #define SYS_DISK_INFO      114
 #define SYS_DISK_FORMAT    115
+#define SYS_DISK_PARTITION 116
+#define SYS_DISK_INSTALL_GRUB 117
 
 #define SYS_DEV_IOCTL      120
 #define SYS_DEV_READ       121
@@ -272,6 +274,8 @@ int64_t sys_fs_unmount(const char *target);
 int64_t sys_disk_list(uint64_t *disks, uint32_t max_count);
 int64_t sys_disk_info(uint32_t disk_id, void *info);
 int64_t sys_disk_format(uint32_t disk_id, const char *fstype);
+int64_t sys_disk_partition(uint32_t disk_id, uint64_t total_sectors);
+int64_t sys_disk_install_grub(uint32_t disk_id);
 int64_t sys_reboot(int cmd);
 int64_t sys_time(void);
 int64_t sys_info(void *info_buf);

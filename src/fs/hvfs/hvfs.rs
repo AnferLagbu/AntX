@@ -90,6 +90,44 @@ pub const HVFS_DISK_VERSION_ERROR: i32 = -3;
 
 pub const HVFS_CACHE_SIZE: usize = 256;
 
+#[derive(Debug, Clone)]
+pub enum FsckError {
+    NotInitialized,
+    InvalidMagic,
+    InvalidVersion,
+    InvalidRootInode,
+    RootInodeNotUsed,
+    OrphanInode(u32),
+    CorruptedDirectory(u32),
+}
+
+#[derive(Debug, Clone)]
+pub enum FsckWarning {
+    InodeCountMismatch { expected: u32, actual: u32 },
+    BlockCountMismatch { expected: u32, actual: u32 },
+    OrphanBlock(u32),
+    UnreferencedInode(u32),
+}
+
+#[derive(Debug, Clone)]
+pub struct FsckResult {
+    pub passed: bool,
+    pub fixed: bool,
+    pub errors: Vec<FsckError>,
+    pub warnings: Vec<FsckWarning>,
+}
+
+impl FsckResult {
+    pub fn new() -> Self {
+        Self {
+            passed: false,
+            fixed: false,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+}
+
 const PWID_LEVEL_ROOT: u8 = 0;
 
 const INDIRECT_BLOCKS_PER_BLOCK: usize = HVFS_BLOCK_SIZE / core::mem::size_of::<u32>();
@@ -1370,6 +1408,67 @@ impl HvFsData {
         }
         
         0
+    }
+
+    pub fn fsck(&mut self) -> FsckResult {
+        let mut result = FsckResult::new();
+        
+        if !self.initialized {
+            result.errors.push(FsckError::NotInitialized);
+            return result;
+        }
+        
+        if self.super_block.magic != HVFS_MAGIC {
+            result.errors.push(FsckError::InvalidMagic);
+            return result;
+        }
+        
+        if self.super_block.version > HVFS_VERSION {
+            result.errors.push(FsckError::InvalidVersion);
+            return result;
+        }
+        
+        let mut actual_free_inodes = 0u32;
+        for i in 0..self.super_block.inode_count as usize {
+            if i < self.inode_table.len() {
+                if !self.inode_table[i].used {
+                    actual_free_inodes += 1;
+                }
+            }
+        }
+        if actual_free_inodes != self.super_block.free_inodes {
+            result.warnings.push(FsckWarning::InodeCountMismatch {
+                expected: self.super_block.free_inodes,
+                actual: actual_free_inodes,
+            });
+            self.super_block.free_inodes = actual_free_inodes;
+            result.fixed = true;
+        }
+        
+        let mut actual_free_blocks = 0u32;
+        for i in 0..self.super_block.total_blocks {
+            if self.block_is_free(i) {
+                actual_free_blocks += 1;
+            }
+        }
+        if actual_free_blocks != self.super_block.free_blocks {
+            result.warnings.push(FsckWarning::BlockCountMismatch {
+                expected: self.super_block.free_blocks,
+                actual: actual_free_blocks,
+            });
+            self.super_block.free_blocks = actual_free_blocks;
+            result.fixed = true;
+        }
+        
+        if self.super_block.root_inode == 0 || self.super_block.root_inode >= self.super_block.inode_count {
+            result.errors.push(FsckError::InvalidRootInode);
+        } else if !self.inode_table.get(self.super_block.root_inode as usize)
+            .map(|i| i.used).unwrap_or(false) {
+            result.errors.push(FsckError::RootInodeNotUsed);
+        }
+        
+        result.passed = result.errors.is_empty();
+        result
     }
 
     pub fn get_stats(&self) -> (u32, u32, u32, u32) {

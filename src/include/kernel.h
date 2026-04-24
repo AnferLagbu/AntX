@@ -13,7 +13,7 @@
 #include "syscall.h"
 #include "keyboard.h"
 #include "string.h"
-#include "printk.h"
+#include "klog.h"
 #include "ata.h"
 #include "assert.h"
 

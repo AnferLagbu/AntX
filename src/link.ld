@@ -14,6 +14,10 @@ SECTIONS
     
     _kernel_start = .;
     
+    .multiboot1 : {
+        *(.multiboot1)
+    } :boot
+    
     .multiboot2 : {
         *(.multiboot2)
     } :boot

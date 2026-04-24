@@ -1,5 +1,22 @@
 BITS 32
 
+section .multiboot1
+align 4
+
+MULTIBOOT1_MAGIC    equ 0x1BADB002
+MULTIBOOT1_FLAGS    equ 0x00010003
+MULTIBOOT1_CHECKSUM equ -(MULTIBOOT1_MAGIC + MULTIBOOT1_FLAGS)
+
+multiboot1_header:
+    dd MULTIBOOT1_MAGIC
+    dd MULTIBOOT1_FLAGS
+    dd MULTIBOOT1_CHECKSUM
+    dd multiboot1_header
+    dd 0x100000
+    dd 0
+    dd 0
+    dd _start
+
 section .multiboot2
 align 8
 

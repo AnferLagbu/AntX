@@ -238,6 +238,12 @@ impl VfsManager {
     pub fn mount(&self, path: &str, fs_name: &str) -> i32 {
         let mut mounts = self.mounts.lock();
         
+        for mount in mounts.iter() {
+            if mount.used && mount.get_path() == path {
+                return -2;
+            }
+        }
+        
         for mount in mounts.iter_mut() {
             if !mount.used {
                 mount.set_path(path);

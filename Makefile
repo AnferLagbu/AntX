@@ -21,15 +21,15 @@ ASFLAGS = -f elf64
 
 KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
-              build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
-              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
-              build/ipc.o
+              build/syscall.o build/keyboard.o build/string.o build/ata.o \
+              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
+              build/ipc.o build/klog.o build/grub_install.o
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
-              build/syscall.o build/keyboard.o build/string.o build/printk.o build/ata.o \
-              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o build/log_buffer.o \
-              build/ipc.o \
+              build/syscall.o build/keyboard.o build/string.o build/ata.o \
+              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
+              build/ipc.o build/klog.o build/grub_install.o \
               build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
               build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o
@@ -128,15 +128,19 @@ build/string.o: src/lib/string.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/printk.o: src/lib/printk.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/stack_canary.o: src/kernel/stack_canary.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/log_buffer.o: src/kernel/log_buffer.c
+build/klog.o: src/kernel/klog.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/ipc.o: src/ipc/ipc.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/grub_install.o: src/kernel/grub_install.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

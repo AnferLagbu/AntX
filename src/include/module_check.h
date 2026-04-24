@@ -2,7 +2,7 @@
 #define _MODULE_CHECK_H
 
 #include "types.h"
-#include "printk.h"
+#include "klog.h"
 
 #define MODULE_INIT_SUCCESS 0
 #define MODULE_INIT_FAIL    1

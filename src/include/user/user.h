@@ -66,5 +66,7 @@ int user_mount(const char *source, const char *target, const char *fstype, const
 int user_unmount(const char *target);
 
 int64_t sys_fs_read_dir(int fd, void *dirent_buf);
+int64_t sys_disk_partition(uint32_t disk_id, uint64_t total_sectors);
+int64_t sys_disk_install_grub(uint32_t disk_id);
 
 #endif

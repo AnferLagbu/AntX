@@ -12,6 +12,7 @@
 #include "mm.h"
 #include "keyboard.h"
 #include "ata.h"
+#include "grub_install.h"
 
 int64_t sys_boot_check(int check_type);
 int64_t sys_auth_create_original_root(const char *password);
@@ -77,6 +78,8 @@ void syscall_init(void) {
     syscall_register(SYS_DISK_LIST, (syscall_handler_t)sys_disk_list);
     syscall_register(SYS_DISK_INFO, (syscall_handler_t)sys_disk_info);
     syscall_register(SYS_DISK_FORMAT, (syscall_handler_t)sys_disk_format);
+    syscall_register(SYS_DISK_PARTITION, (syscall_handler_t)sys_disk_partition);
+    syscall_register(SYS_DISK_INSTALL_GRUB, (syscall_handler_t)sys_disk_install_grub);
 }
 
 void syscall_register(uint64_t num, syscall_handler_t handler) {
@@ -835,4 +838,44 @@ int64_t sys_disk_format(uint32_t disk_id, const char *fstype) {
     }
     
     return E_INVAL;
+}
+
+int64_t sys_disk_partition(uint32_t disk_id, uint64_t total_sectors) {
+    if (disk_id >= 4) {
+        return E_NOTFOUND;
+    }
+    
+    struct process *proc = process_get_current();
+    uint64_t pwid = proc ? proc->pwid : 0;
+    
+    if (pwid_get_level(pwid) < PWID_LEVEL_ROOT) {
+        return E_PERM;
+    }
+    
+    if (!ata_disk_present((uint8_t)disk_id)) {
+        return E_NOTFOUND;
+    }
+    
+    int result = grub_create_partition_table(disk_id, total_sectors);
+    return result == 0 ? 0 : E_IO;
+}
+
+int64_t sys_disk_install_grub(uint32_t disk_id) {
+    if (disk_id >= 4) {
+        return E_NOTFOUND;
+    }
+    
+    struct process *proc = process_get_current();
+    uint64_t pwid = proc ? proc->pwid : 0;
+    
+    if (pwid_get_level(pwid) < PWID_LEVEL_ROOT) {
+        return E_PERM;
+    }
+    
+    if (!ata_disk_present((uint8_t)disk_id)) {
+        return E_NOTFOUND;
+    }
+    
+    int result = grub_install_mbr(disk_id);
+    return result == 0 ? 0 : E_IO;
 }
