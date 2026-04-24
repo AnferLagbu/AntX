@@ -7,8 +7,10 @@
 #define INSTALL_HOSTNAME_FILE     "/cfg/system/hostname"
 #define INSTALL_FSTAB_FILE        "/cfg/system/fstab"
 #define INSTALL_PWID_DB_PATH      "/cfg/system/pwid.db"
+#define INSTALL_BOOT_KERNEL       "/boot/kernel.bin"
 
 #define MAX_DISKS 4
+#define BOOT_PARTITION_SIZE_MB    200
 
 static int selected_disk = -1;
 static struct user_disk_info disk_list[MAX_DISKS];

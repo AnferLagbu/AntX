@@ -46,7 +46,7 @@ DISK_IMAGE = build/antx.img
 
 LOG_DIR = logs
 
-.PHONY: all clean run debug log iso run-iso disk run-disk user test test-unit test-integration test-stress
+.PHONY: all clean run debug log iso run-iso disk run-disk user test test-unit test-integration test-stress boot-disk run-boot-disk install-to-disk
 
 all: build/kernel.bin user
 
@@ -216,6 +216,18 @@ run: all user
 
 run-iso: iso
 	qemu-system-x86_64 -cdrom build/antx.iso -serial stdio
+
+boot-disk: iso
+	@echo "Creating bootable disk image..."
+	@chmod +x scripts/create_boot_disk.sh
+	@./scripts/create_boot_disk.sh 64 build/boot_disk.img build/kernel.bin
+
+run-boot-disk: boot-disk
+	qemu-system-x86_64 -drive file=build/boot_disk.img,format=raw -serial stdio
+
+install-to-disk: iso
+	@echo "Running AntX installer from ISO with disk attached..."
+	qemu-system-x86_64 -cdrom build/antx.iso -drive file=build/boot_disk.img,format=raw -serial stdio
 
 debug: all user
 	qemu-system-x86_64 -kernel build/kernel.bin -serial stdio -s -S
