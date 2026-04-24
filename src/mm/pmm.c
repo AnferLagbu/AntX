@@ -14,6 +14,7 @@ static struct memory_info mem_info;
 static int bitmap_initialized = 0;
 
 static uint64_t early_alloc_end = 0;
+static uint64_t memory_limit = 0;
 
 static void set_bit(uint64_t index) {
     if (index >= bitmap_size * 32) return;
@@ -80,6 +81,8 @@ void pmm_init(uint64_t mem_size, uint64_t kernel_end) {
     early_alloc_end = (kernel_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     early_alloc_end += 16 * PAGE_SIZE;
     
+    memory_limit = mem_size;
+    
     bitmap = NULL;
     bitmap_size = 0;
     bitmap_capacity = 0;
@@ -128,6 +131,10 @@ void pmm_init_bitmap(void) {
 
 void* pmm_alloc_page(void) {
     if (!bitmap_initialized) {
+        if (early_alloc_end + PAGE_SIZE > memory_limit) {
+            serial_puts(SERIAL_COM1, "PMM: Early alloc out of memory\n");
+            return NULL;
+        }
         uint64_t page = early_alloc_end;
         early_alloc_end += PAGE_SIZE;
         return (void*)page;
@@ -172,8 +179,13 @@ uint64_t pmm_get_used_pages(void) {
 void* pmm_alloc_pages(size_t count) {
     if (count == 0) return NULL;
     if (!bitmap_initialized) {
+        uint64_t needed = count * PAGE_SIZE;
+        if (early_alloc_end + needed > memory_limit) {
+            serial_puts(SERIAL_COM1, "PMM: Early alloc pages out of memory\n");
+            return NULL;
+        }
         uint64_t page = early_alloc_end;
-        early_alloc_end += count * PAGE_SIZE;
+        early_alloc_end += needed;
         return (void*)page;
     }
     if (count == 1) return pmm_alloc_page();

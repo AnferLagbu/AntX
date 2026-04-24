@@ -49,7 +49,10 @@ static pte_t* get_page_table(uint64_t table, uint64_t index, int create) {
     
     if (create) {
         void* new_table = pmm_alloc_page();
-        ASSERT(new_table != NULL);
+        if (new_table == NULL) {
+            serial_puts(SERIAL_COM1, "VMM: Failed to allocate page table\n");
+            return NULL;
+        }
         
         pte_t* new_table_virt = (pte_t*)PHYS_TO_VIRT((uint64_t)new_table);
         for (int i = 0; i < 512; i++) {
@@ -161,10 +164,13 @@ static void set_user_bit_recursive(uint64_t table, int level) {
 }
 
 uint64_t vmm_create_user_page_table(void) {
-    uint64_t pml4 = (uint64_t)pmm_alloc_page();
-    if (pml4 == 0) {
+    void* pml4_ptr = pmm_alloc_page();
+    if (pml4_ptr == NULL) {
+        serial_puts(SERIAL_COM1, "VMM: Failed to allocate user PML4\n");
         return 0;
     }
+    
+    uint64_t pml4 = (uint64_t)pml4_ptr;
     
     pte_t* new_pml4 = (pte_t*)PHYS_TO_VIRT(pml4);
     for (int i = 0; i < 512; i++) {

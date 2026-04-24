@@ -331,10 +331,24 @@ void* krealloc(void *ptr, uint64_t size) {
 }
 
 void* kcalloc(uint64_t num, uint64_t size) {
-    uint64_t total = num * size;
-    if (total > 0xFFFFFFFF) {
+    if (num == 0 || size == 0) {
         return NULL;
     }
+    
+    if (num > 0xFFFFFFFFULL || size > 0xFFFFFFFFULL) {
+        return NULL;
+    }
+    
+    uint64_t total = num * size;
+    
+    if (total / size != num) {
+        return NULL;
+    }
+    
+    if (total > 0xFFFFFFFFULL) {
+        return NULL;
+    }
+    
     void *ptr = kmalloc(total);
     if (ptr != NULL) {
         extern void *memset_optimized(void *s, int c, size_t n);
