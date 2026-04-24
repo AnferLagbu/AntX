@@ -13,31 +13,31 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_init() {
+pub extern "C" fn diskfs_init() {
     super::diskfs::init();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_is_mounted() -> i32 {
+pub extern "C" fn diskfs_is_mounted() -> i32 {
     let diskfs = get_diskfs().lock();
     if diskfs.is_mounted() { 1 } else { 0 }
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_mount(path: *const c_char) -> i32 {
+pub extern "C" fn diskfs_mount(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     let mut diskfs = get_diskfs().lock();
     diskfs.mount(path)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_unmount() -> i32 {
+pub extern "C" fn diskfs_unmount() -> i32 {
     let mut diskfs = get_diskfs().lock();
     diskfs.unmount()
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
+pub extern "C" fn diskfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
     let mut diskfs = get_diskfs().lock();
     match diskfs.open(path, flags, pwid) {
@@ -49,13 +49,13 @@ pub extern "C" fn rust_diskfs_open(path: *const c_char, flags: u32, pwid: u64) -
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_close(fd: u32) -> i32 {
+pub extern "C" fn diskfs_close(fd: u32) -> i32 {
     let mut diskfs = get_diskfs().lock();
     diskfs.close(fd)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
+pub extern "C" fn diskfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() {
         return -1;
     }
@@ -68,7 +68,7 @@ pub extern "C" fn rust_diskfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
+pub extern "C" fn diskfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() {
         return -1;
     }
@@ -81,7 +81,7 @@ pub extern "C" fn rust_diskfs_write(fd: u32, buf: *const u8, count: u32) -> i32 
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_mkdir(parent_path: *const c_char, name: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn diskfs_mkdir(parent_path: *const c_char, name: *const c_char, pwid: u64) -> i32 {
     let parent_path = ptr_to_str(parent_path);
     let name = ptr_to_str(name);
     let mut diskfs = get_diskfs().lock();
@@ -89,7 +89,7 @@ pub extern "C" fn rust_diskfs_mkdir(parent_path: *const c_char, name: *const c_c
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
+pub extern "C" fn diskfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
     if st.is_null() {
         return -1;
     }
@@ -106,7 +106,7 @@ pub extern "C" fn rust_diskfs_stat(path: *const c_char, st: *mut VfsStat, pwid: 
 }
 
 #[no_mangle]
-pub extern "C" fn rust_diskfs_sync() -> i32 {
+pub extern "C" fn diskfs_sync() -> i32 {
     let diskfs = get_diskfs().lock();
     diskfs.sync()
 }

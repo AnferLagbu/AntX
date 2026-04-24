@@ -4,16 +4,16 @@
 #include "string.h"
 #include "printk.h"
 
-extern uint64_t rust_proc_create(const char *name, uint64_t parent_pid);
-extern void rust_proc_exit(uint32_t exit_code);
-extern uint64_t rust_proc_get_current(void);
+extern uint64_t proc_create_internal(const char *name, uint64_t parent_pid);
+extern void proc_exit_internal(uint32_t exit_code);
+extern uint64_t proc_get_current_pid_internal(void);
 extern uint32_t process_get_current_pid(void);
-extern int rust_proc_set_priority(uint64_t pid, uint32_t priority);
-extern uint32_t rust_proc_get_state(uint64_t pid);
+extern int proc_set_priority(uint64_t pid, uint32_t priority);
+extern uint32_t proc_get_state(uint64_t pid);
 extern void scheduler_yield(void);
 
 static int test_process_create(void) {
-    uint64_t pid = rust_proc_create("test_proc", 0);
+    uint64_t pid = proc_create_internal("test_proc", 0);
     TEST_ASSERT_GT(pid, 0);
     
     return TEST_PASS;
@@ -34,7 +34,7 @@ static int test_process_pid_unique(void) {
         name[len++] = '0' + (i % 10);
         name[len] = '\0';
         
-        pids[i] = rust_proc_create(name, 0);
+        pids[i] = proc_create_internal(name, 0);
         
         if (pids[i] == 0) {
             TEST_ASSERT_MSG(0, "Failed to create process");
@@ -49,24 +49,24 @@ static int test_process_pid_unique(void) {
 }
 
 static int test_process_state_transition(void) {
-    uint64_t pid = rust_proc_create("state_test", 0);
+    uint64_t pid = proc_create_internal("state_test", 0);
     TEST_ASSERT_GT(pid, 0);
     
-    uint32_t state = rust_proc_get_state(pid);
+    uint32_t state = proc_get_state(pid);
     TEST_ASSERT_MSG(state != 0 || pid > 0, "Process state should be valid");
     
     return TEST_PASS;
 }
 
 static int test_process_exit(void) {
-    uint64_t pid = rust_proc_create("exit_test", 0);
+    uint64_t pid = proc_create_internal("exit_test", 0);
     TEST_ASSERT_GT(pid, 0);
     
     return TEST_PASS;
 }
 
 static int test_process_find(void) {
-    uint64_t pid = rust_proc_create("find_test", 0);
+    uint64_t pid = proc_create_internal("find_test", 0);
     TEST_ASSERT_GT(pid, 0);
     
     return TEST_PASS;
@@ -91,7 +91,7 @@ static int test_process_stress(void) {
         name[len++] = '0' + (i % 10);
         name[len] = '\0';
         
-        pids[i] = rust_proc_create(name, 0);
+        pids[i] = proc_create_internal(name, 0);
         if (pids[i] == 0) {
             TEST_ASSERT_MSG(0, "Failed to create process in stress test");
         }

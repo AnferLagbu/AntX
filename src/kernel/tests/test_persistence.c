@@ -1,5 +1,5 @@
 #include "kernel_test.h"
-#include "hvfs_rust.h"
+#include "hvfs_ffi.h"
 #include "hvfs.h"
 #include "pwid.h"
 #include "string.h"

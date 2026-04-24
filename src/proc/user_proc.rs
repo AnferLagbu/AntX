@@ -1,6 +1,10 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
 use super::process::PROCESS_TABLE;
+use super::process::Process;
+use super::types::{ProcessId, ProcessState, ProcessPriority, ProcessContext};
+
+const KERNEL_BASE: u64 = 0xFFFF800000000000;
 
 #[no_mangle]
 pub static mut user_entry_cr3: AtomicU64 = AtomicU64::new(0);
@@ -9,8 +13,6 @@ pub static mut user_entry_cr3: AtomicU64 = AtomicU64::new(0);
 pub static mut user_entry_target: AtomicU64 = AtomicU64::new(0);
 
 extern "C" {
-    fn serial_putc(port: u16, c: i8);
-    fn serial_puts(port: u16, s: *const i8);
     fn pmm_alloc_page() -> *mut u8;
     fn pmm_alloc_pages(count: u64) -> *mut u8;
     fn pmm_free_page(page: *mut u8);
@@ -22,49 +24,6 @@ extern "C" {
     fn timer_get_ticks() -> u64;
     fn memset(s: *mut u8, c: i32, n: u64);
     fn memcpy(dest: *mut u8, src: *const u8, n: u64);
-}
-
-fn log(s: &str) {
-    unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c as i8);
-        }
-    }
-}
-
-fn log_num(n: u64) {
-    if n == 0 {
-        log("0");
-        return;
-    }
-    let mut buf = [0u8; 20];
-    let mut num = n;
-    let mut i = 19;
-    while num > 0 {
-        buf[i] = (num % 10) as u8 + b'0';
-        num /= 10;
-        i -= 1;
-    }
-    let s = core::str::from_utf8(&buf[i + 1..]).unwrap_or("?");
-    log(s);
-}
-
-fn log_hex(n: u64) {
-    log("0x");
-    let hex_chars = b"0123456789ABCDEF";
-    let mut started = false;
-    for i in (0..16).rev() {
-        let nibble = (n >> (i * 4)) & 0xF;
-        if nibble != 0 || started {
-            unsafe {
-                serial_putc(0x3F8, hex_chars[nibble as usize] as i8);
-            }
-            started = true;
-        }
-    }
-    if !started {
-        log("0");
-    }
 }
 
 pub const PAGE_SIZE: u64 = 4096;
@@ -155,7 +114,6 @@ impl UserProcManager {
     }
     
     pub fn init(&self) {
-        log("[USER_PROC] User process manager initialized\n");
     }
     
     pub fn get(&self, pid: u32) -> Option<*mut UserProcess> {
@@ -168,7 +126,6 @@ impl UserProcManager {
         let proc = unsafe {
             let ptr = pmm_alloc_page() as *mut UserProcess;
             if ptr.is_null() {
-                log("[USER_PROC] Failed to allocate process struct\n");
                 return None;
             }
             memset(ptr as *mut u8, 0, core::mem::size_of::<UserProcess>() as u64);
@@ -180,7 +137,6 @@ impl UserProcManager {
             (*proc).cr3.store(vmm_create_user_page_table(), Ordering::SeqCst);
             if (*proc).cr3.load(Ordering::SeqCst) == 0 {
                 pmm_free_page(proc as *mut u8);
-                log("[USER_PROC] Failed to create page table\n");
                 return None;
             }
             
@@ -221,11 +177,25 @@ impl UserProcManager {
         
         self.processes.lock().insert(pid, proc);
         
-        log("[USER_PROC] Created process pid=");
-        log_num(pid as u64);
-        log(" entry=0x");
-        log_hex(info.entry);
-        log("\n");
+        let kernel_proc = alloc::boxed::Box::new(Process {
+            pid: ProcessId(pid),
+            state: AtomicU32::new(ProcessState::Ready as u32),
+            priority: AtomicU32::new(ProcessPriority::Normal as u32),
+            flags: AtomicU32::new(0),
+            name: Mutex::new(alloc::string::String::from("user_proc")),
+            parent: None,
+            children: Mutex::new(alloc::vec::Vec::new()),
+            context: Mutex::new(ProcessContext::new()),
+            cr3: AtomicU64::new(unsafe { (*proc).cr3.load(Ordering::SeqCst) }),
+            kernel_stack: AtomicU64::new(unsafe { (*proc).kernel_stack.load(Ordering::SeqCst) }),
+            user_stack: AtomicU64::new(unsafe { (*proc).user_stack.load(Ordering::SeqCst) }),
+            exit_code: AtomicU32::new(0),
+            cpu_time: AtomicU64::new(0),
+            block_reason: AtomicU32::new(0),
+        });
+        
+        let kernel_proc_ptr = alloc::boxed::Box::into_raw(kernel_proc);
+        PROCESS_TABLE.insert(kernel_proc_ptr);
         
         Some(proc)
     }
@@ -264,14 +234,13 @@ impl UserProcManager {
                 rflags = in(reg) rflags_val,
                 cs = in(reg) cs_val,
                 rip = in(reg) rip_val,
-                options(nostack, noreturn)
+                options(noreturn)
             );
         }
     }
     
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwid: u64) -> i32 {
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
-            log("[ELF] Invalid parameters\n");
             return -1;
         }
         
@@ -280,12 +249,10 @@ impl UserProcManager {
             
             if (*header).magic[0] != 0x7F || (*header).magic[1] != b'E' ||
                (*header).magic[2] != b'L' || (*header).magic[3] != b'F' {
-                log("[ELF] Invalid magic\n");
                 return -1;
             }
             
             if (*header).class != 2 || (*header).machine != 0x3E {
-                log("[ELF] Not 64-bit x86\n");
                 return -1;
             }
             
@@ -339,7 +306,7 @@ impl UserProcManager {
                         if page_idx < num_pages {
                             let phys = vmm_get_physical_in_table(cr3, vaddr_start + page_idx * PAGE_SIZE);
                             if phys != 0 {
-                                let dest = (phys + offset_in_page) as *mut u8;
+                                let dest = (phys + KERNEL_BASE + offset_in_page) as *mut u8;
                                 let src = elf_data.add((*phdr).p_offset as usize + k as usize);
                                 *dest = *src;
                             }
@@ -349,10 +316,6 @@ impl UserProcManager {
             }
             
             (*proc).entry = (*header).entry;
-            
-            log("[ELF] Loaded entry=0x");
-            log_hex((*header).entry);
-            log("\n");
             
             (*proc).pid as i32
         }
@@ -393,8 +356,6 @@ impl UserProcManager {
                 
                 vmm_map_page_in_table(cr3, USER_CODE_BASE + i * PAGE_SIZE, page as u64, PAGE_PRESENT | PAGE_USER);
             }
-            
-            log("[USER_PROC] Created from binary entry=0x400000\n");
             
             (*proc).pid as i32
         }

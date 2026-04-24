@@ -2,10 +2,10 @@
 #include "serial.h"
 #include "vfs.h"
 #include "hvfs.h"
-#include "hvfs_rust.h"
+#include "hvfs_ffi.h"
 #include "pwid.h"
 #include "proc.h"
-#include "proc_rust.h"
+#include "proc_ffi.h"
 #include "user_proc.h"
 #include "string.h"
 #include "gdt.h"
@@ -77,8 +77,6 @@ void syscall_init(void) {
     syscall_register(SYS_DISK_LIST, (syscall_handler_t)sys_disk_list);
     syscall_register(SYS_DISK_INFO, (syscall_handler_t)sys_disk_info);
     syscall_register(SYS_DISK_FORMAT, (syscall_handler_t)sys_disk_format);
-    
-    serial_puts(SERIAL_COM1, "  [OK] Syscall\n");
 }
 
 void syscall_register(uint64_t num, syscall_handler_t handler) {
@@ -138,7 +136,8 @@ int64_t sys_proc_exec(const char *path, char *const argv[], char *const envp[]) 
         return E_NOTFOUND;
     }
     
-    process_exit(proc, 0);
+    extern void sched_add_internal(uint32_t pid);
+    sched_add_internal((uint32_t)pid);
     
     return pid;
 }
@@ -254,7 +253,6 @@ int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
         
         char *buffer = (char *)buf;
         uint64_t read_count = 0;
-        struct process *proc = process_get_current();
         
         while (read_count < count) {
             int c = -1;
@@ -267,13 +265,7 @@ int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
             
             if (c == -1 || c == 0) {
                 if (read_count > 0) break;
-                if (proc) {
-                    proc->state = PROC_BLOCKED;
-                }
-                __asm__ volatile ("sti; hlt; cli");
-                if (proc) {
-                    proc->state = PROC_RUNNING;
-                }
+                __asm__ volatile ("pause");
                 continue;
             }
             
@@ -404,12 +396,12 @@ int64_t sys_auth_token_create(uint64_t holder, uint16_t domain, uint64_t caps,
 }
 
 int64_t sys_auth_token_use(uint64_t token_id) {
-    return rust_pwid_use_token(token_id);
+    return pwid_use_token_internal(token_id);
 }
 
 int64_t sys_auth_token_revoke(uint64_t token_id) {
     uint64_t current_pwid = pwid_get_current();
-    return rust_pwid_revoke_token(token_id, current_pwid);
+    return pwid_revoke_token_internal(token_id, current_pwid);
 }
 
 int64_t sys_auth_trust_add(uint64_t trusted, uint8_t trust_level, 
@@ -432,7 +424,7 @@ int64_t sys_auth_trust_remove(uint64_t trusted, uint16_t domain) {
         return E_AUTH_NOTFOUND;
     }
     
-    return rust_pwid_remove_trust(current_pwid, trusted, domain);
+    return pwid_remove_trust_internal(current_pwid, trusted, domain);
 }
 
 int64_t sys_auth_check(uint64_t pwid, uint64_t owner_pwid, 
@@ -838,7 +830,7 @@ int64_t sys_disk_format(uint32_t disk_id, const char *fstype) {
     }
     
     if (strcmp(fstype, "hvfs") == 0 || strcmp(fstype, "diskfs") == 0) {
-        int result = rust_hvfs_format();
+        int result = hvfs_format();
         return result == 0 ? 0 : E_IO;
     }
     

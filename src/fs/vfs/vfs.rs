@@ -141,7 +141,6 @@ impl VfsManager {
         
         self.next_fd.store(3, Ordering::SeqCst);
         
-        log("[VFS] Rust VFS initialized\n");
         *self.initialized.lock() = true;
     }
     
@@ -245,12 +244,6 @@ impl VfsManager {
                 mount.set_fs_name(fs_name);
                 mount.used = true;
                 
-                log("[VFS] Mounted '");
-                log(fs_name);
-                log("' at '");
-                log(path);
-                log("'\n");
-                
                 return 0;
             }
         }
@@ -264,9 +257,6 @@ impl VfsManager {
         for mount in mounts.iter_mut() {
             if mount.used && mount.get_path() == path {
                 mount.used = false;
-                log("[VFS] Unmounted '");
-                log(path);
-                log("'\n");
                 return 0;
             }
         }

@@ -12,29 +12,29 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_procfs_init() {
+pub extern "C" fn procfs_init() {
     super::procfs::init();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_procfs_mount(path: *const c_char) -> i32 {
+pub extern "C" fn procfs_mount(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     PROCFS_DATA.mount(path)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_procfs_add_process(pid: u32, name: *const c_char) -> i32 {
+pub extern "C" fn procfs_add_process(pid: u32, name: *const c_char) -> i32 {
     let name = ptr_to_str(name);
     PROCFS_DATA.add_process(pid, name)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_procfs_remove_process(pid: u32) -> i32 {
+pub extern "C" fn procfs_remove_process(pid: u32) -> i32 {
     PROCFS_DATA.remove_process(pid)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_procfs_read(name: *const c_char, buf: *mut u8, count: u32) -> i32 {
+pub extern "C" fn procfs_read(name: *const c_char, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() {
         return -1;
     }
@@ -47,6 +47,6 @@ pub extern "C" fn rust_procfs_read(name: *const c_char, buf: *mut u8, count: u32
 }
 
 #[no_mangle]
-pub extern "C" fn rust_procfs_entry_count() -> u32 {
+pub extern "C" fn procfs_entry_count() -> u32 {
     PROCFS_DATA.entry_count()
 }

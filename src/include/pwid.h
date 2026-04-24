@@ -124,22 +124,22 @@ extern struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
 extern int pwid_count;
 extern int original_root_created;
 
-void rust_pwid_init(void);
-int rust_pwid_check_permission(uint64_t pwid, uint64_t owner_pwid, 
+void pwid_enhanced_init(void);
+int pwid_check_permission_enhanced(uint64_t pwid, uint64_t owner_pwid, 
                                 uint8_t pwid_level, uint8_t pwid_flags,
                                 uint64_t access_type, uint16_t domain,
                                 uint16_t other_perms);
-int64_t rust_pwid_create_elevation_token(uint64_t issuer, uint64_t holder,
+int64_t pwid_create_elevation_token_internal(uint64_t issuer, uint64_t holder,
                                          const uint16_t *domains, const uint64_t *caps,
                                          uint32_t count, uint64_t duration_secs,
                                          uint32_t max_uses);
-int rust_pwid_use_token(uint64_t token_id);
-int rust_pwid_revoke_token(uint64_t token_id, uint64_t revoker);
-int rust_pwid_add_trust(uint64_t truster, uint64_t trusted, 
+int pwid_use_token_internal(uint64_t token_id);
+int pwid_revoke_token_internal(uint64_t token_id, uint64_t revoker);
+int pwid_add_trust_internal(uint64_t truster, uint64_t trusted, 
                         uint8_t trust_level, uint16_t domain,
                         uint64_t cap_mask, uint64_t expires_at);
-int rust_pwid_remove_trust(uint64_t truster, uint64_t trusted, uint16_t domain);
-void rust_pwid_cleanup(void);
+int pwid_remove_trust_internal(uint64_t truster, uint64_t trusted, uint16_t domain);
+void pwid_cleanup_internal(void);
 
 int pwid_enhanced_check(uint64_t pwid, uint64_t owner_pwid, 
                         uint64_t access_type, uint16_t domain);

@@ -369,8 +369,6 @@ impl HvFsData {
     }
 
     pub fn init(&mut self) {
-        log("[HvFS-Rust] Initializing\n");
-        
         self.super_block = Self::new_super_block();
         self.inode_table.clear();
         self.block_bitmap.clear();
@@ -394,22 +392,16 @@ impl HvFsData {
         unsafe {
             if ata_disk_present(0) != 0 {
                 self.disk_present = true;
-                log("[HvFS-Rust] Disk detected at drive 0\n");
             } else if ata_disk_present(1) != 0 {
                 self.disk_present = true;
-                log("[HvFS-Rust] Disk detected at drive 1\n");
             } else if ata_disk_present(2) != 0 {
                 self.disk_present = true;
-                log("[HvFS-Rust] Disk detected at drive 2\n");
             } else if ata_disk_present(3) != 0 {
                 self.disk_present = true;
-                log("[HvFS-Rust] Disk detected at drive 3\n");
             } else {
                 self.disk_present = false;
             }
         }
-        
-        log("[HvFS-Rust] Initialized (not formatted)\n");
     }
 
     fn block_is_free(&self, block_num: u32) -> bool {
@@ -657,10 +649,6 @@ impl HvFsData {
         self.super_block.inode_count = new_count;
         self.super_block.dynamic_inodes = 1;
         
-        log("[HvFS-Rust] Expanded inodes to ");
-        log_num(new_count as u64);
-        log("\n");
-        
         Ok(())
     }
 
@@ -675,10 +663,6 @@ impl HvFsData {
         self.super_block.free_blocks += new_count - self.super_block.total_blocks;
         self.super_block.total_blocks = new_count;
         self.super_block.dynamic_blocks = 1;
-        
-        log("[HvFS-Rust] Expanded blocks to ");
-        log_num(new_count as u64);
-        log("\n");
         
         Ok(())
     }
@@ -823,8 +807,6 @@ impl HvFsData {
     }
 
     pub fn format(&mut self) -> i32 {
-        log("[HvFS-Rust] Formatting filesystem...\n");
-        
         self.super_block.magic = HVFS_MAGIC;
         self.super_block.version = HVFS_VERSION;
         self.super_block.block_size = HVFS_BLOCK_SIZE as u32;
@@ -863,15 +845,6 @@ impl HvFsData {
         self.create_lost_found();
         
         self.initialized = true;
-        
-        log("[HvFS-Rust] Format complete\n");
-        log("  Block size: ");
-        log_num(HVFS_BLOCK_SIZE as u64);
-        log(" bytes\n  Total blocks: ");
-        log_num(HVFS_DEFAULT_BLOCKS as u64);
-        log("\n  Total inodes: ");
-        log_num(HVFS_DEFAULT_INODES as u64);
-        log("\n");
         
         0
     }
@@ -925,8 +898,6 @@ impl HvFsData {
         }
         
         self.mark_block_dirty(data_block);
-        
-        log("[HvFS-Rust] Root inode created\n");
     }
 
     fn create_lost_found(&mut self) {
@@ -980,42 +951,31 @@ impl HvFsData {
     }
 
     pub fn check_disk(&mut self) -> i32 {
-        log("[HvFS-Rust] Checking disk...\n");
-        
         if !self.disk_present {
-            log("[HvFS-Rust] No disk detected\n");
             return HVFS_DISK_NO_DISK;
         }
         
         if self.initialized {
-            log("[HvFS-Rust] Found valid filesystem\n");
             return HVFS_DISK_OK;
         }
         
-        log("[HvFS-Rust] Disk unformatted\n");
         HVFS_DISK_UNFORMATTED
     }
 
     pub fn set_disk_present(&mut self, present: bool) {
         self.disk_present = present;
-        if present {
-            log("[HvFS-Rust] Disk detected\n");
-        }
     }
 
     pub fn mount(&mut self) -> i32 {
         if self.mounted {
-            log("[HvFS-Rust] Already mounted\n");
             return 0;
         }
         
         if !self.disk_present {
-            log("[HvFS-Rust] No disk to mount\n");
             return -1;
         }
         
         if !self.initialized {
-            log("[HvFS-Rust] Formatting disk...\n");
             if self.format() != 0 {
                 return -1;
             }
@@ -1025,7 +985,6 @@ impl HvFsData {
         self.super_block.mount_count += 1;
         self.mounted = true;
         
-        log("[HvFS-Rust] Mounted successfully\n");
         0
     }
 
@@ -1389,10 +1348,6 @@ impl HvFsData {
             parent.mtime = Self::get_time();
         }
         
-        log("[HvFS-Rust] Created directory '");
-        log(dirname);
-        log("'\n");
-        
         0
     }
 
@@ -1406,8 +1361,6 @@ impl HvFsData {
     }
 
     pub fn sync(&mut self) -> i32 {
-        log("[HvFS-Rust] Syncing filesystem\n");
-        
         self.super_block.modified_time = Self::get_time();
         
         for entry in self.block_cache.iter() {

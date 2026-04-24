@@ -13,19 +13,19 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_init() {
+pub extern "C" fn ramfs_init() {
     super::ramfs::init();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_mount(path: *const c_char) -> i32 {
+pub extern "C" fn ramfs_mount(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     let mut ramfs = RAMFS_DATA.lock();
     ramfs.mount(path)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
+pub extern "C" fn ramfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
     let mut ramfs = RAMFS_DATA.lock();
     match ramfs.open(path, flags, pwid) {
@@ -37,7 +37,7 @@ pub extern "C" fn rust_ramfs_open(path: *const c_char, flags: u32, pwid: u64) ->
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_read(inode_num: u32, offset: *mut u64, buf: *mut u8, count: u32, pwid: u64) -> i32 {
+pub extern "C" fn ramfs_read(inode_num: u32, offset: *mut u64, buf: *mut u8, count: u32, pwid: u64) -> i32 {
     if buf.is_null() || offset.is_null() {
         return -1;
     }
@@ -51,7 +51,7 @@ pub extern "C" fn rust_ramfs_read(inode_num: u32, offset: *mut u64, buf: *mut u8
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_write(inode_num: u32, offset: *mut u64, buf: *const u8, count: u32, pwid: u64) -> i32 {
+pub extern "C" fn ramfs_write(inode_num: u32, offset: *mut u64, buf: *const u8, count: u32, pwid: u64) -> i32 {
     if buf.is_null() || offset.is_null() {
         return -1;
     }
@@ -65,7 +65,7 @@ pub extern "C" fn rust_ramfs_write(inode_num: u32, offset: *mut u64, buf: *const
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_mkdir(parent_path: *const c_char, name: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn ramfs_mkdir(parent_path: *const c_char, name: *const c_char, pwid: u64) -> i32 {
     let parent_path = ptr_to_str(parent_path);
     let name = ptr_to_str(name);
     let mut ramfs = RAMFS_DATA.lock();
@@ -73,7 +73,7 @@ pub extern "C" fn rust_ramfs_mkdir(parent_path: *const c_char, name: *const c_ch
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_stat(inode_num: u32, st: *mut VfsStat) -> i32 {
+pub extern "C" fn ramfs_stat(inode_num: u32, st: *mut VfsStat) -> i32 {
     if st.is_null() {
         return -1;
     }
@@ -89,7 +89,7 @@ pub extern "C" fn rust_ramfs_stat(inode_num: u32, st: *mut VfsStat) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_ramfs_resolve_path(path: *const c_char) -> u32 {
+pub extern "C" fn ramfs_resolve_path(path: *const c_char) -> u32 {
     let path = ptr_to_str(path);
     let ramfs = RAMFS_DATA.lock();
     match ramfs.resolve_path(path) {

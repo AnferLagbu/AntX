@@ -6,38 +6,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use super::types::*;
 use super::process::{Process, PROCESS_TABLE};
 
-extern "C" {
-    fn serial_putc(port: u16, c: i8);
-}
-
-fn log(s: &str) {
-    unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c as i8);
-        }
-    }
-}
-
-fn log_num(n: u32) {
-    let mut buf = [0u8; 12];
-    let mut num = n;
-    let mut i = 11;
-    
-    if num == 0 {
-        log("0");
-        return;
-    }
-    
-    while num > 0 {
-        buf[i] = (num % 10) as u8 + b'0';
-        num /= 10;
-        i -= 1;
-    }
-    
-    let s = core::str::from_utf8(&buf[i + 1..]).unwrap_or("?");
-    log(s);
-}
-
 pub struct Scheduler {
     ready_queue: Mutex<VecDeque<Pid>>,
     current: AtomicU32,
@@ -62,7 +30,6 @@ impl Scheduler {
     
     pub fn init(&self) {
         self.initialized.store(true, Ordering::SeqCst);
-        log("[SCHED] Rust scheduler initialized\n");
     }
     
     pub fn create_process(&self, name: &str, parent: Option<Pid>) -> Option<Pid> {
@@ -78,20 +45,12 @@ impl Scheduler {
             return None;
         }
         
-        log("[SCHED] Created process: ");
-        log_num(pid);
-        log("\n");
-        
         Some(pid)
     }
     
     pub fn add(&self, pid: Pid) {
         self.ready_queue.lock().push_back(pid);
         self.all_ready.lock().push(pid);
-        
-        log("[SCHED] Added process ");
-        log_num(pid);
-        log("\n");
     }
     
     pub fn schedule(&self) -> Option<Pid> {
@@ -137,10 +96,6 @@ impl Scheduler {
             }
             
             self.current.store(next_pid, Ordering::SeqCst);
-            
-            log("[SCHED] Scheduled process ");
-            log_num(next_pid);
-            log("\n");
             
             Some(next_pid)
         } else {

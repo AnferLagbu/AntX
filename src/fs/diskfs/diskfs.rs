@@ -87,13 +87,10 @@ impl DiskFsData {
         }
         self.next_fd = 3;
         self.mounted = false;
-        
-        log("[DiskFS] Initialized\n");
     }
 
     pub fn mount(&mut self, path: &str) -> i32 {
         if self.mounted {
-            log("[DiskFS] Already mounted\n");
             return 0;
         }
         
@@ -102,24 +99,20 @@ impl DiskFsData {
         
         match status {
             HVFS_DISK_OK => {
-                log("[DiskFS] Found valid disk filesystem\n");
                 if hvfs.mount() != 0 {
                     return -1;
                 }
             }
             HVFS_DISK_NO_DISK => {
-                log("[DiskFS] No disk detected\n");
                 return -1;
             }
             HVFS_DISK_UNFORMATTED => {
-                log("[DiskFS] Disk unformatted, formatting...\n");
                 if hvfs.format() != 0 {
                     return -1;
                 }
                 hvfs.sync();
             }
             _ => {
-                log("[DiskFS] Unknown disk status\n");
                 return -1;
             }
         }
@@ -127,10 +120,6 @@ impl DiskFsData {
         drop(hvfs);
         
         self.mounted = true;
-        
-        log("[DiskFS] Mounted at '");
-        log(path);
-        log("'\n");
         
         0
     }
@@ -147,7 +136,6 @@ impl DiskFsData {
         
         self.mounted = false;
         
-        log("[DiskFS] Unmounted\n");
         0
     }
 

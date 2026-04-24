@@ -18,7 +18,7 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_init() {
+pub extern "C" fn vfs_init_internal() {
     super::vfs::init();
     crate::fs::ramfs::ramfs::init();
     crate::fs::hvfs::hvfs::init();
@@ -26,7 +26,7 @@ pub extern "C" fn rust_vfs_init() {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_mount(path: *const c_char, fs_name: *const c_char) -> i32 {
+pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     let fs_name = ptr_to_str(fs_name);
     
@@ -48,13 +48,13 @@ pub extern "C" fn rust_vfs_mount(path: *const c_char, fs_name: *const c_char) ->
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_unmount(path: *const c_char) -> i32 {
+pub extern "C" fn vfs_unmount_internal(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     VFS_MANAGER.unmount(path)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
+pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
     
     let mount_idx = match VFS_MANAGER.find_mount(path) {
@@ -109,7 +109,7 @@ pub extern "C" fn rust_vfs_open(path: *const c_char, flags: u32, pwid: u64) -> i
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_close(fd_idx: u32) -> i32 {
+pub extern "C" fn vfs_close_internal(fd_idx: u32) -> i32 {
     let fd_idx = fd_idx as usize;
     
     if fd_idx >= VFS_MAX_FDS {
@@ -121,7 +121,7 @@ pub extern "C" fn rust_vfs_close(fd_idx: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_read(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
+pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -177,7 +177,7 @@ pub extern "C" fn rust_vfs_read(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_write(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
+pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -232,7 +232,7 @@ pub extern "C" fn rust_vfs_write(fd_idx: u32, buf: *const u8, count: u32) -> i32
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
     
     let mount_idx = match VFS_MANAGER.find_mount(path) {
@@ -279,7 +279,7 @@ pub extern "C" fn rust_vfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
+pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
     
     if st.is_null() {
@@ -327,13 +327,13 @@ pub extern "C" fn rust_vfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_set_cwd(path: *const c_char) {
+pub extern "C" fn vfs_set_cwd_internal(path: *const c_char) {
     let path = ptr_to_str(path);
     VFS_MANAGER.set_cwd(path);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_get_cwd(buf: *mut c_char, size: u32) -> i32 {
+pub extern "C" fn vfs_get_cwd_internal(buf: *mut c_char, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
         return -1;
     }
@@ -351,43 +351,43 @@ pub extern "C" fn rust_vfs_get_cwd(buf: *mut c_char, size: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_init() {
+pub extern "C" fn hvfs_init_internal() {
     crate::fs::hvfs::hvfs::init();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_format() -> i32 {
+pub extern "C" fn hvfs_format_internal() -> i32 {
     let mut hvfs = get_hvfs().lock();
     hvfs.format()
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_check_disk() -> i32 {
+pub extern "C" fn hvfs_check_disk_internal() -> i32 {
     let mut hvfs = get_hvfs().lock();
     hvfs.check_disk()
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_set_disk_present(present: bool) {
+pub extern "C" fn hvfs_set_disk_present_internal(present: bool) {
     let mut hvfs = get_hvfs().lock();
     hvfs.set_disk_present(present);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
+pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
     let mut hvfs = get_hvfs().lock();
     hvfs.open(path, flags, pwid)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_close(fd: u32) -> i32 {
+pub extern "C" fn hvfs_close_internal(fd: u32) -> i32 {
     let mut hvfs = get_hvfs().lock();
     hvfs.close(fd)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
+pub extern "C" fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -398,7 +398,7 @@ pub extern "C" fn rust_hvfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
+pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -409,20 +409,20 @@ pub extern "C" fn rust_hvfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn hvfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
     let mut hvfs = get_hvfs().lock();
     hvfs.mkdir(path, pwid)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_sync() -> i32 {
+pub extern "C" fn hvfs_sync_internal() -> i32 {
     let mut hvfs = get_hvfs().lock();
     hvfs.sync()
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_get_stats(total_blocks: *mut u32, free_blocks: *mut u32, 
+pub extern "C" fn hvfs_get_stats_internal(total_blocks: *mut u32, free_blocks: *mut u32, 
                                        total_inodes: *mut u32, free_inodes: *mut u32) {
     if total_blocks.is_null() || free_blocks.is_null() || 
        total_inodes.is_null() || free_inodes.is_null() {
@@ -441,57 +441,57 @@ pub extern "C" fn rust_hvfs_get_stats(total_blocks: *mut u32, free_blocks: *mut 
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_set_current_dir(inode_num: u32) {
+pub extern "C" fn hvfs_set_current_dir_internal(inode_num: u32) {
     let mut hvfs = get_hvfs().lock();
     hvfs.set_current_dir(inode_num);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_get_current_dir() -> u32 {
+pub extern "C" fn hvfs_get_current_dir_internal() -> u32 {
     let hvfs = get_hvfs().lock();
     hvfs.get_current_dir()
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_set_current_pwid(pwid: u64) {
+pub extern "C" fn hvfs_set_current_pwid_internal(pwid: u64) {
     let mut hvfs = get_hvfs().lock();
     hvfs.set_current_pwid(pwid);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_hvfs_get_current_pwid() -> u64 {
+pub extern "C" fn hvfs_get_current_pwid_internal() -> u64 {
     let hvfs = get_hvfs().lock();
     hvfs.get_current_pwid()
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
-    rust_vfs_open(path, flags, pwid)
+    vfs_open_internal(path, flags, pwid)
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_close(fd: u32) -> i32 {
-    rust_vfs_close(fd)
+    vfs_close_internal(fd)
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
-    rust_vfs_read(fd, buf, count)
+    vfs_read_internal(fd, buf, count)
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
-    rust_vfs_write(fd, buf, count)
+    vfs_write_internal(fd, buf, count)
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
-    rust_vfs_stat(path, st, pwid)
+    vfs_stat_internal(path, st, pwid)
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
-    rust_vfs_mkdir(path, pwid)
+    vfs_mkdir_internal(path, pwid)
 }
 
 #[no_mangle]
@@ -531,12 +531,12 @@ pub extern "C" fn vfs_sync() -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_get_cwd(buf: *mut c_char, size: u32) -> i32 {
-    rust_vfs_get_cwd(buf, size)
+    vfs_get_cwd_internal(buf, size)
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_set_cwd(path: *const c_char) {
-    rust_vfs_set_cwd(path)
+    vfs_set_cwd_internal(path)
 }
 
 static mut VFS_FD_TABLE: [u8; 1024] = [0; 1024];
@@ -548,12 +548,12 @@ pub extern "C" fn vfs_fd_table() -> *mut u8 {
 
 #[no_mangle]
 pub extern "C" fn vfs_init() {
-    rust_vfs_init()
+    vfs_init_internal()
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_mount(path: *const c_char, fs_name: *const c_char) -> i32 {
-    rust_vfs_mount(path, fs_name)
+    vfs_mount_internal(path, fs_name)
 }
 
 #[no_mangle]
@@ -581,43 +581,43 @@ pub extern "C" fn vfs_seek(fd: u32, offset: u32, whence: u32) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn hvfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
-    rust_hvfs_open(path, flags, pwid)
+    hvfs_open_internal(path, flags, pwid)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_close(fd: u32) -> i32 {
-    rust_hvfs_close(fd)
+    hvfs_close_internal(fd)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
-    rust_hvfs_read(fd, buf, count)
+    hvfs_read_internal(fd, buf, count)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
-    rust_hvfs_write(fd, buf, count)
+    hvfs_write_internal(fd, buf, count)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_init() -> i32 {
-    rust_hvfs_init();
+    hvfs_init_internal();
     0
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_format() -> i32 {
-    rust_hvfs_format()
+    hvfs_format_internal()
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
-    rust_hvfs_mkdir(path, pwid)
+    hvfs_mkdir_internal(path, pwid)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_sync() -> i32 {
-    rust_hvfs_sync()
+    hvfs_sync_internal()
 }
 
 #[no_mangle]
@@ -636,17 +636,17 @@ pub extern "C" fn hvfs_disk_init() -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_format(_path: *const c_char, _fs_type: *const c_char) -> i32 {
+pub extern "C" fn vfs_format_internal(_path: *const c_char, _fs_type: *const c_char) -> i32 {
     -1
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_sync() -> i32 {
+pub extern "C" fn vfs_sync_internal() -> i32 {
     0
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
+pub extern "C" fn vfs_seek_internal(fd: u32, offset: i32, whence: u32) -> i32 {
     let fd_idx = fd as usize;
     if fd_idx >= VFS_MAX_FDS {
         return -1;
@@ -673,11 +673,11 @@ pub extern "C" fn rust_vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_chmod(_path: *const c_char, _mode: u32, _pwid: u64) -> i32 {
+pub extern "C" fn vfs_chmod_internal(_path: *const c_char, _mode: u32, _pwid: u64) -> i32 {
     0
 }
 
 #[no_mangle]
-pub extern "C" fn rust_vfs_chown(_path: *const c_char, _uid: u32, _gid: u32, _pwid: u64) -> i32 {
+pub extern "C" fn vfs_chown_internal(_path: *const c_char, _uid: u32, _gid: u32, _pwid: u64) -> i32 {
     0
 }

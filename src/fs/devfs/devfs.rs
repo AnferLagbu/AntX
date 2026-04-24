@@ -83,10 +83,6 @@ impl DevfsData {
         
         self.device_count.store(4, Ordering::SeqCst);
         
-        log("DevFS: mounted at '");
-        log(path);
-        log("'\n");
-        
         0
     }
     
@@ -157,5 +153,4 @@ impl DevfsData {
 pub static DEVFS_DATA: DevfsData = DevfsData::new();
 
 pub fn init() {
-    log("[DevFS] Initialized\n");
 }

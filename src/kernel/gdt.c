@@ -45,36 +45,6 @@ void tss_set_gate(uint8_t num, uint64_t tss_addr) {
 
 void tss_set_kernel_stack(uint64_t rsp0) {
     tss.rsp0 = rsp0;
-    serial_puts(SERIAL_COM1, "[TSS] Set rsp0=0x");
-    serial_put_hex(SERIAL_COM1, rsp0);
-    serial_puts(SERIAL_COM1, " (readback=0x");
-    serial_put_hex(SERIAL_COM1, tss.rsp0);
-    serial_puts(SERIAL_COM1, ")\n");
-    serial_puts(SERIAL_COM1, "[TSS] TSS addr=0x");
-    serial_put_hex(SERIAL_COM1, (uint64_t)&tss);
-    serial_puts(SERIAL_COM1, " rsp0 offset=0x");
-    serial_put_hex(SERIAL_COM1, (uint64_t)&tss.rsp0 - (uint64_t)&tss);
-    serial_puts(SERIAL_COM1, "\n");
-    
-    extern struct gdt_entry gdt[];
-    serial_puts(SERIAL_COM1, "[TSS] GDT[5] = 0x");
-    serial_put_hex(SERIAL_COM1, ((uint64_t*)&gdt[5])[0]);
-    serial_puts(SERIAL_COM1, " 0x");
-    serial_put_hex(SERIAL_COM1, ((uint64_t*)&gdt[6])[0]);
-    serial_puts(SERIAL_COM1, "\n");
-    
-    serial_puts(SERIAL_COM1, "[TSS] TSS first 16 bytes: ");
-    uint8_t* tss_bytes = (uint8_t*)&tss;
-    for (int i = 0; i < 16; i++) {
-        uint8_t b = tss_bytes[i];
-        char hex[3];
-        hex[0] = "0123456789ABCDEF"[b >> 4];
-        hex[1] = "0123456789ABCDEF"[b & 0xF];
-        hex[2] = '\0';
-        serial_puts(SERIAL_COM1, hex);
-        serial_puts(SERIAL_COM1, " ");
-    }
-    serial_puts(SERIAL_COM1, "\n");
 }
 
 int gdt_init(void) {
@@ -95,11 +65,8 @@ int gdt_init(void) {
     
     tss_set_gate(5, (uint64_t)&tss);
 
-    serial_puts(SERIAL_COM1, "[GDT] Before gdt_flush\n");
     gdt_flush((uint64_t)&gdt_ptr);
-    serial_puts(SERIAL_COM1, "[GDT] After gdt_flush, before tss_flush\n");
     tss_flush();
-    serial_puts(SERIAL_COM1, "[GDT] After tss_flush, returning success\n");
     
     return MODULE_INIT_SUCCESS;
 }

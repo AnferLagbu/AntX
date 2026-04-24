@@ -12,18 +12,18 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_devfs_init() {
+pub extern "C" fn devfs_init() {
     super::devfs::init();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_devfs_mount(path: *const c_char) -> i32 {
+pub extern "C" fn devfs_mount(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     DEVFS_DATA.mount(path)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_devfs_open(path: *const c_char) -> i32 {
+pub extern "C" fn devfs_open(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     match DEVFS_DATA.open(path) {
         Some((dev_type, _)) => dev_type as i32,
@@ -32,7 +32,7 @@ pub extern "C" fn rust_devfs_open(path: *const c_char) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_devfs_read(dev_type: u8, buf: *mut u8, count: u32) -> i32 {
+pub extern "C" fn devfs_read(dev_type: u8, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() {
         return -1;
     }
@@ -44,7 +44,7 @@ pub extern "C" fn rust_devfs_read(dev_type: u8, buf: *mut u8, count: u32) -> i32
 }
 
 #[no_mangle]
-pub extern "C" fn rust_devfs_write(dev_type: u8, buf: *const u8, count: u32) -> i32 {
+pub extern "C" fn devfs_write(dev_type: u8, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() {
         return -1;
     }
@@ -56,6 +56,6 @@ pub extern "C" fn rust_devfs_write(dev_type: u8, buf: *const u8, count: u32) -> 
 }
 
 #[no_mangle]
-pub extern "C" fn rust_devfs_device_count() -> u32 {
+pub extern "C" fn devfs_device_count() -> u32 {
     DEVFS_DATA.device_count()
 }

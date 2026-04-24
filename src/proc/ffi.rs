@@ -28,7 +28,7 @@ pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid) -> Pid {
-    rust_proc_create(name, parent_pid)
+    proc_create_internal(name, parent_pid)
 }
 
 #[no_mangle]
@@ -97,9 +97,40 @@ pub extern "C" fn user_proc_init() {
     USER_PROC_MANAGER.init();
 }
 
+const ELF_MAX_SIZE: usize = 1024 * 1024;
+
+extern "C" {
+    fn pmm_alloc_pages(count: u64) -> *mut u8;
+}
+
 #[no_mangle]
-pub extern "C" fn user_proc_load_elf(_path: *const c_char, _pwid: u64) -> i32 {
-    -1
+pub extern "C" fn user_proc_load_elf(path: *const c_char, pwid: u64) -> i32 {
+    if path.is_null() {
+        return -1;
+    }
+    
+    let fd = unsafe { crate::fs::vfs::ffi::vfs_open(path, 0, pwid) };
+    if fd < 0 {
+        return -1;
+    }
+    
+    let buffer = unsafe { pmm_alloc_pages((ELF_MAX_SIZE / 4096) as u64) };
+    if buffer.is_null() {
+        unsafe { crate::fs::vfs::ffi::vfs_close(fd as u32) };
+        return -1;
+    }
+    
+    let bytes_read = unsafe { 
+        crate::fs::vfs::ffi::vfs_read(fd as u32, buffer, ELF_MAX_SIZE as u32) 
+    };
+    
+    unsafe { crate::fs::vfs::ffi::vfs_close(fd as u32) };
+    
+    if bytes_read <= 0 {
+        return -1;
+    }
+    
+    USER_PROC_MANAGER.load_elf_from_memory(buffer, bytes_read as u64, pwid)
 }
 
 #[no_mangle]
@@ -139,7 +170,7 @@ pub extern "C" fn thread_init() {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_create(name: *const c_char, parent_pid: Pid) -> Pid {
+pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid) -> Pid {
     if name.is_null() {
         return 0;
     }
@@ -160,33 +191,33 @@ pub extern "C" fn rust_proc_create(name: *const c_char, parent_pid: Pid) -> Pid 
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_exit(exit_code: u32) {
+pub extern "C" fn proc_exit_internal(exit_code: u32) {
     SCHEDULER.exit(exit_code);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_get_current() -> Pid {
+pub extern "C" fn proc_get_current_pid_internal() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_yield() {
+pub extern "C" fn proc_yield_internal() {
     SCHEDULER.yield_current();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_block(reason: u32) {
+pub extern "C" fn proc_block(reason: u32) {
     let block_reason = BlockReason::from_u8(reason as u8);
     SCHEDULER.block(block_reason);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_unblock(pid: Pid) {
+pub extern "C" fn proc_unblock(pid: Pid) {
     SCHEDULER.unblock(pid);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_set_priority(pid: Pid, priority: u32) -> i32 {
+pub extern "C" fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
     use super::process::PROCESS_TABLE;
     
     if let Some(process) = PROCESS_TABLE.get(pid) {
@@ -200,7 +231,7 @@ pub extern "C" fn rust_proc_set_priority(pid: Pid, priority: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_get_state(pid: Pid) -> u32 {
+pub extern "C" fn proc_get_state(pid: Pid) -> u32 {
     use super::process::PROCESS_TABLE;
     
     if let Some(process) = PROCESS_TABLE.get(pid) {
@@ -213,43 +244,37 @@ pub extern "C" fn rust_proc_get_state(pid: Pid) -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sched_init() {
+pub extern "C" fn sched_init_internal() {
     SCHEDULER.init();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sched_add(pid: Pid) {
-    use super::process::PROCESS_TABLE;
-    
-    if PROCESS_TABLE.get(pid).is_none() {
-        let name = alloc::format!("proc_{}", pid);
-        let _ = SCHEDULER.create_process(&name, None);
-    }
+pub extern "C" fn sched_add_internal(pid: Pid) {
     SCHEDULER.add(pid);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sched_schedule() -> Pid {
+pub extern "C" fn sched_schedule_internal() -> Pid {
     SCHEDULER.schedule().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sched_should_reschedule() -> i32 {
+pub extern "C" fn sched_should_reschedule() -> i32 {
     if SCHEDULER.should_reschedule() { 1 } else { 0 }
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sched_set_current(pid: Pid) {
+pub extern "C" fn sched_set_current(pid: Pid) {
     SCHEDULER.set_current(pid);
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sched_get_current() -> Pid {
+pub extern "C" fn sched_get_current() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_get_exit_code(pid: Pid) -> i32 {
+pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
     use super::process::PROCESS_TABLE;
     
     if let Some(process) = PROCESS_TABLE.get(pid) {
@@ -262,6 +287,6 @@ pub extern "C" fn rust_proc_get_exit_code(pid: Pid) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_proc_is_initialized() -> i32 {
+pub extern "C" fn proc_is_initialized() -> i32 {
     if SCHEDULER.is_initialized() { 1 } else { 0 }
 }

@@ -2,7 +2,7 @@
 #include "serial.h"
 #include "kernel.h"
 #include "string.h"
-#include "hvfs_rust.h"
+#include "hvfs_ffi.h"
 #include "hvfs.h"
 
 struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
@@ -125,7 +125,7 @@ void pwid_init(void) {
     original_root_created = 0;
     pwid_modified = 0;
     
-    rust_pwid_init();
+    pwid_enhanced_init();
     
     serial_puts(SERIAL_COM1, "PWID manager initialized\n");
 }
@@ -491,7 +491,7 @@ int pwid_login(const char *note, const char *password) {
     current_context.current = entry;
     current_context.session_pwid = entry->pwid;
     
-    rust_hvfs_set_current_pwid(entry->pwid);
+    hvfs_set_current_pwid_internal(entry->pwid);
     
     serial_puts(SERIAL_COM1, "PWID: logged in as '");
     serial_puts(SERIAL_COM1, note);
@@ -599,7 +599,7 @@ int pwid_enhanced_check(uint64_t pwid, uint64_t owner_pwid,
         return 0;
     }
     
-    return rust_pwid_check_permission(
+    return pwid_check_permission_enhanced(
         pwid,
         owner_pwid,
         entry->level,
@@ -620,7 +620,7 @@ int64_t pwid_create_token(uint64_t holder, uint16_t domain, uint64_t caps,
     uint16_t domains[1] = { domain };
     uint64_t capabilities[1] = { caps };
     
-    return rust_pwid_create_elevation_token(
+    return pwid_create_elevation_token_internal(
         issuer,
         holder,
         domains,
@@ -634,7 +634,7 @@ int64_t pwid_create_token(uint64_t holder, uint16_t domain, uint64_t caps,
 int pwid_add_trust_relation(uint64_t truster, uint64_t trusted,
                             uint8_t trust_level, uint16_t domain, 
                             uint64_t cap_mask) {
-    return rust_pwid_add_trust(
+    return pwid_add_trust_internal(
         truster,
         trusted,
         trust_level,

@@ -279,7 +279,6 @@ impl RamFsData {
         dotdot.file_type = VfsFileType::Dir as u8;
         dotdot.set_name("..");
         
-        log("[RamFS] Mounted\n");
         0
     }
     
@@ -506,10 +505,6 @@ impl RamFsData {
         self.inodes[parent_num as usize].size += dirent_size as u32;
         self.inodes[parent_num as usize].link_count += 1;
         self.inodes[parent_num as usize].mtime = Self::get_time();
-        
-        log("[RamFS] Created directory '");
-        log(name);
-        log("'\n");
         
         0
     }

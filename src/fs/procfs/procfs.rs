@@ -78,10 +78,6 @@ impl ProcfsData {
         
         self.entry_count.store(3, Ordering::SeqCst);
         
-        log("ProcFS: mounted at '");
-        log(path);
-        log("'\n");
-        
         0
     }
     
@@ -169,5 +165,4 @@ impl ProcfsData {
 pub static PROCFS_DATA: ProcfsData = ProcfsData::new();
 
 pub fn init() {
-    log("[ProcFS] Initialized\n");
 }

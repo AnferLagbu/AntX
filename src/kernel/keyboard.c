@@ -2,7 +2,7 @@
 #include "io.h"
 #include "serial.h"
 #include "idt.h"
-#include "proc_rust.h"
+#include "proc_ffi.h"
 
 #define KBD_DATA_PORT    0x60
 #define KBD_STATUS_PORT  0x64
@@ -215,7 +215,7 @@ static void keyboard_isr(struct interrupt_frame *frame) {
     if (c != 0) {
         kbd_buffer_put(c);
         if (waiting_pid != 0) {
-            rust_proc_unblock(waiting_pid);
+            proc_unblock(waiting_pid);
             waiting_pid = 0;
         }
     }
@@ -243,8 +243,6 @@ void keyboard_init(void) {
     outb(KBD_DATA_PORT, config);
     
     idt_set_handler(33, keyboard_isr);
-    
-    serial_puts(SERIAL_COM1, "  [OK] Keyboard (Enhanced)\n");
 }
 
 bool keyboard_has_data(void) {

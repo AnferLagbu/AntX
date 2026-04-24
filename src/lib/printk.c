@@ -3,6 +3,17 @@
 #include "string.h"
 
 static char printk_buf[1024];
+static int current_log_level = LOG_LEVEL_INFO;
+
+void printk_set_level(int level) {
+    if (level >= LOG_LEVEL_DEBUG && level <= LOG_LEVEL_CRITICAL) {
+        current_log_level = level;
+    }
+}
+
+int printk_get_level(void) {
+    return current_log_level;
+}
 
 static void puts_serial(const char *s) {
     while (*s) {

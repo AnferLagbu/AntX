@@ -1,36 +1,8 @@
-use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
-    fn serial_putc(port: u16, c: i8);
-    fn serial_puts(port: u16, s: *const i8);
     fn timer_get_ticks() -> u64;
     fn tss_set_kernel_stack(rsp0: u64);
-}
-
-fn log(s: &str) {
-    unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c as i8);
-        }
-    }
-}
-
-fn log_num(n: u64) {
-    if n == 0 {
-        log("0");
-        return;
-    }
-    let mut buf = [0u8; 20];
-    let mut num = n;
-    let mut i = 19;
-    while num > 0 {
-        buf[i] = (num % 10) as u8 + b'0';
-        num /= 10;
-        i -= 1;
-    }
-    let s = core::str::from_utf8(&buf[i + 1..]).unwrap_or("?");
-    log(s);
 }
 
 pub const SCHED_LEVELS: usize = 4;
@@ -182,7 +154,6 @@ impl SchedulerEx {
     }
     
     pub fn init(&self) {
-        log("[SCHED] MLFQ scheduler initialized\n");
     }
     
     pub fn add_thread(&self, thread: *mut ThreadNode) {
@@ -224,12 +195,6 @@ impl SchedulerEx {
             
             self.runq.counts[level].fetch_add(1, Ordering::SeqCst);
             self.runq.total.fetch_add(1, Ordering::SeqCst);
-            
-            log("[SCHED] Added thread TID=");
-            log_num((*thread).tid as u64);
-            log(" to level ");
-            log_num(level as u64);
-            log("\n");
         }
     }
     
@@ -362,18 +327,12 @@ impl SchedulerEx {
         self.need_reschedule.store(0, Ordering::SeqCst);
         self.stats.context_switches.fetch_add(1, Ordering::SeqCst);
         
-        log("[SCHED] Switch to TID=");
-        log_num(unsafe { (*next).tid as u64 });
-        log("\n");
-        
         unsafe {
             tss_set_kernel_stack((*next).kernel_stack.load(Ordering::SeqCst));
         }
     }
     
     pub fn boost_all(&self) {
-        log("[SCHED] Priority boost\n");
-        
         for level in 1..SCHED_LEVELS {
             while self.runq.queues[level].load(Ordering::SeqCst) != 0 {
                 if let Some(thread) = self.run_queue_pop(level) {
@@ -398,29 +357,6 @@ impl SchedulerEx {
     }
     
     pub fn dump_state(&self) {
-        log("=== Scheduler State ===\n");
-        log("Current TID: ");
-        if let Some(thread) = self.get_current() {
-            unsafe {
-                log_num((*thread).tid as u64);
-            }
-        } else {
-            log("none");
-        }
-        log("\n");
-        
-        log("Run queues:\n");
-        for i in 0..SCHED_LEVELS {
-            log("  Level ");
-            log_num(i as u64);
-            log(": ");
-            log_num(self.runq.counts[i].load(Ordering::SeqCst) as u64);
-            log(" threads\n");
-        }
-        
-        log("Context switches: ");
-        log_num(self.stats.context_switches.load(Ordering::SeqCst));
-        log("\n");
     }
 }
 

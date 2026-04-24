@@ -23,12 +23,12 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_init() {
+pub extern "C" fn pwid_enhanced_init() {
     let _checker = get_checker().lock();
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_check_permission(
+pub extern "C" fn pwid_check_permission_enhanced(
     pwid: u64,
     owner_pwid: u64,
     pwid_level: u8,
@@ -67,7 +67,7 @@ pub extern "C" fn rust_pwid_check_permission(
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_create_elevation_token(
+pub extern "C" fn pwid_create_elevation_token_internal(
     issuer: u64,
     holder: u64,
     domains: *const u16,
@@ -101,7 +101,7 @@ pub extern "C" fn rust_pwid_create_elevation_token(
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_use_token(token_id: u64) -> i32 {
+pub extern "C" fn pwid_use_token_internal(token_id: u64) -> i32 {
     let mut checker = get_checker().lock();
     match checker.use_elevation_token(token_id) {
         Ok(()) => 0,
@@ -110,13 +110,13 @@ pub extern "C" fn rust_pwid_use_token(token_id: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_revoke_token(token_id: u64, revoker: u64) -> i32 {
+pub extern "C" fn pwid_revoke_token_internal(token_id: u64, revoker: u64) -> i32 {
     let mut checker = get_checker().lock();
     if checker.revoke_token(token_id, revoker) { 0 } else { -1 }
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_add_trust(
+pub extern "C" fn pwid_add_trust_internal(
     truster: u64,
     trusted: u64,
     trust_level: u8,
@@ -139,7 +139,7 @@ pub extern "C" fn rust_pwid_add_trust(
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_remove_trust(
+pub extern "C" fn pwid_remove_trust_internal(
     truster: u64,
     trusted: u64,
     domain: u16,
@@ -149,7 +149,7 @@ pub extern "C" fn rust_pwid_remove_trust(
 }
 
 #[no_mangle]
-pub extern "C" fn rust_pwid_cleanup() {
+pub extern "C" fn pwid_cleanup_internal() {
     let mut checker = get_checker().lock();
     checker.cleanup();
 }

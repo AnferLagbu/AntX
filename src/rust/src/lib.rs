@@ -32,7 +32,7 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_kernel_init() {
+pub extern "C" fn kernel_init() {
     crate::proc::scheduler::init();
     crate::fs::vfs::init();
 }

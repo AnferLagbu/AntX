@@ -20,7 +20,7 @@ static void timer_handler(struct interrupt_frame *frame) {
     scheduler_tick();
     
     if (timer_ticks % PWID_CLEANUP_INTERVAL == 0) {
-        rust_pwid_cleanup();
+        pwid_cleanup_internal();
     }
 }
 
