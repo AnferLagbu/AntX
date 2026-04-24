@@ -127,6 +127,8 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwid: u64) -> i32 {
     unsafe { crate::fs::vfs::ffi::vfs_close(fd as u32) };
     
     if bytes_read <= 0 {
+        extern "C" { fn pmm_free_pages(addr: *mut u8, count: u64); }
+        unsafe { pmm_free_pages(buffer, (ELF_MAX_SIZE / 4096) as u64) };
         return -1;
     }
     
@@ -176,9 +178,13 @@ pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid) -> 
     }
     
     let name_str = unsafe {
-        let len = (0..).find(|&i| *name.add(i) == 0).unwrap_or(0);
+        const MAX_NAME_LEN: usize = 256;
+        let len = (0..MAX_NAME_LEN).find(|&i| *name.add(i) == 0).unwrap_or(MAX_NAME_LEN);
         let slice = core::slice::from_raw_parts(name as *const u8, len);
-        core::str::from_utf8_unchecked(slice)
+        match core::str::from_utf8(slice) {
+            Ok(s) => s,
+            Err(_) => return 0,
+        }
     };
     
     let parent = if parent_pid == 0 {

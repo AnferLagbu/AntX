@@ -163,6 +163,7 @@ impl UserProcManager {
             
             let kstack = pmm_alloc_page();
             if kstack.is_null() {
+                pmm_free_page(stack_pages);
                 pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut u8);
                 pmm_free_page(proc as *mut u8);
                 return None;
