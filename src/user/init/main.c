@@ -97,7 +97,7 @@ static void mount_filesystems_from_fstab(void) {
 }
 
 static void start_shell(void) {
-    user_println("[init] Starting xsh...");
+    user_println("[init] Starting axsh...");
     
     const char *argv[] = {"axsh", NULL};
     

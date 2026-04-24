@@ -390,7 +390,7 @@ static int complete_page(void) {
     user_println("Please remove the installation media");
     user_println("and reboot your system.");
     user_print("\n");
-    user_println("Starting xsh in 3 seconds...");
+    user_println("Starting axsh in 3 seconds...");
     
     user_delay(3);
     
