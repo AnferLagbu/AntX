@@ -2,7 +2,7 @@
 #include "proc.h"
 #include "serial.h"
 #include "string.h"
-#include "printk.h"
+#include "klog.h"
 
 extern uint64_t proc_create_internal(const char *name, uint64_t parent_pid);
 extern void proc_exit_internal(uint32_t exit_code);

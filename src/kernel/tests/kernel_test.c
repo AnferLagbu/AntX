@@ -1,7 +1,7 @@
 #include "kernel_test.h"
 #include "serial.h"
 #include "string.h"
-#include "printk.h"
+#include "klog.h"
 #include "kmalloc.h"
 
 static struct test_report report;
