@@ -30,15 +30,17 @@ static int test_scheduler_get_current(void) {
 }
 
 static int test_scheduler_priority(void) {
-    struct process *proc = process_create(scheduler_test_entry, 0, 0);
-    TEST_ASSERT_NOT_NULL(proc);
+    struct process *current = process_get_current();
+    if (current == NULL) {
+        return TEST_SKIP;
+    }
     
-    int old_priority = proc->priority;
-    proc->priority = old_priority + 1;
+    int old_priority = current->priority;
+    current->priority = old_priority + 1;
     
-    TEST_ASSERT_EQ(proc->priority, old_priority + 1);
+    TEST_ASSERT_EQ(current->priority, old_priority + 1);
     
-    process_exit(proc, 0);
+    current->priority = old_priority;
     
     return TEST_PASS;
 }

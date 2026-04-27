@@ -18,7 +18,7 @@ fn log(s: &str) {
 
 const RAMFS_MAX_INODES: usize = 64;
 const RAMFS_MAX_BLOCKS: usize = 256;
-const RAMFS_BLOCK_SIZE: usize = 512;
+const RAMFS_BLOCK_SIZE: usize = 4096;
 
 const PWID_LEVEL_ROOT: u8 = 0;
 

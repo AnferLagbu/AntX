@@ -9,8 +9,18 @@ extern int32_t vfs_read_internal(uint32_t fd, void *buf, uint32_t count);
 extern int32_t vfs_write_internal(uint32_t fd, const void *buf, uint32_t count);
 extern int32_t vfs_mkdir_internal(const char *path, uint64_t pwid);
 extern int32_t vfs_stat_internal(const char *path, void *st, uint64_t pwid);
+extern void vfs_init(void);
+extern void ramfs_init(void);
 
 static int test_vfs_init(void) {
+    vfs_init();
+    ramfs_init();
+    
+    int result = vfs_mount("/", "ramfs");
+    if (result != 0 && result != -2) {
+        TEST_ASSERT_MSG(0, "Failed to mount root filesystem");
+    }
+    
     return TEST_PASS;
 }
 
