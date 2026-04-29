@@ -166,6 +166,13 @@ else
     MISSING_PACKAGES+=("make")
 fi
 
+print_check "Script (terminal recorder)"
+if check_command "script"; then
+    print_ok
+else
+    MISSING_PACKAGES+=("util-linux")
+fi
+
 echo ""
 echo "========================================"
 echo "  Summary"
@@ -211,6 +218,7 @@ if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
             "binutils-x86-64-linux-gnu") INSTALL_CMD="$INSTALL_CMD binutils-x86_64-linux-gnu" ;;
             "grub2-common") INSTALL_CMD="$INSTALL_CMD grub2-tools" ;;
             "grub-pc-bin") INSTALL_CMD="$INSTALL_CMD grub2-pc-modules" ;;
+            "util-linux") ;;  # Already installed by default on Fedora
             *) INSTALL_CMD="$INSTALL_CMD $pkg" ;;
         esac
     done
