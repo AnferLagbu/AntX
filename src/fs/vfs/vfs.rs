@@ -164,11 +164,19 @@ impl VfsManager {
             }
 
             let mount_path = mount.get_path();
-            if path == mount_path || path.starts_with(mount_path) && 
-               path.as_bytes().get(mount_path.len()) == Some(&b'/') {
+            
+            if path == mount_path {
                 if mount_path.len() > best_len {
                     best_len = mount_path.len();
                     best_idx = Some(i);
+                }
+            } else if path.starts_with(mount_path) {
+                let next_char = path.as_bytes().get(mount_path.len());
+                if mount_path == "/" || next_char == Some(&b'/') {
+                    if mount_path.len() > best_len {
+                        best_len = mount_path.len();
+                        best_idx = Some(i);
+                    }
                 }
             }
         }

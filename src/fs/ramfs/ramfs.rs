@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::fs::vfs::types::*;
 
 extern "C" {
-    fn serial_putc(port: u16, c: i8);
+    fn serial_putc(port: u16, c: u8);
     fn pwid_get_level(pwid: u64) -> u8;
 }
 
@@ -193,7 +193,7 @@ impl RamFsData {
             }
             
             let block_num = inode.direct_blocks[0];
-            if block_num == 0 {
+            if block_num == u32::MAX {
                 return None;
             }
             
@@ -285,9 +285,17 @@ impl RamFsData {
     pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
         let inode_num = self.resolve_path(path);
         
+        unsafe {
+            for c in b"[RAMFS] " { serial_putc(0x3F8, *c as i8); }
+            for c in path.bytes() { serial_putc(0x3F8, c as i8); }
+            serial_putc(0x3F8, ' ' as i8);
+        }
+        
         let inode_num = if let Some(num) = inode_num {
+            unsafe { serial_putc(0x3F8, 'E' as i8); serial_putc(0x3F8, '\n' as i8); }
             num
         } else if (flags & VfsOpenFlags::CREAT.bits()) != 0 {
+            unsafe { serial_putc(0x3F8, 'C' as i8); }
             let path = if path.starts_with('/') { &path[1..] } else { path };
             
             let filename = if let Some(pos) = path.rfind('/') {
@@ -303,10 +311,18 @@ impl RamFsData {
             };
             
             if filename.is_empty() {
+                unsafe { serial_putc(0x3F8, 'F' as i8); serial_putc(0x3F8, '\n' as i8); }
                 return None;
             }
             
             let parent_num = self.resolve_path(dir_path)?;
+            
+            unsafe {
+                serial_putc(0x3F8, 'P' as i8);
+                serial_putc(0x3F8, ('0' as i8) + (parent_num / 10) as i8);
+                serial_putc(0x3F8, ('0' as i8) + (parent_num % 10) as i8);
+                serial_putc(0x3F8, '\n' as i8);
+            }
             
             if parent_num as usize >= RAMFS_MAX_INODES {
                 return None;
@@ -455,17 +471,16 @@ impl RamFsData {
             }
             
             let block_num = self.inodes[inode_num as usize].direct_blocks[block_idx];
-            let block_num = if block_num == 0 {
+            let block_num = if block_num == 0 || block_num == u32::MAX {
                 let new_block = self.block_alloc();
+                if new_block == u32::MAX {
+                    break;
+                }
                 self.inodes[inode_num as usize].direct_blocks[block_idx] = new_block;
                 new_block
             } else {
                 block_num
             };
-            
-            if block_num == 0 {
-                break;
-            }
             
             let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
             self.data_area[start..start + bytes_to_write]

@@ -34,7 +34,20 @@ static int test_vfs_mount(void) {
 }
 
 static int test_vfs_create_file(void) {
+    int mount_result = vfs_mount("/", "ramfs");
+    serial_puts(0x3F8, "[MOUNT] ");
+    if (mount_result < 0) serial_putc(0x3F8, '-');
+    serial_putc(0x3F8, '0' + (mount_result >= 0 ? mount_result % 10 : (-mount_result) % 10));
+    serial_puts(0x3F8, "\n");
+    
+    serial_puts(0x3F8, "[TEST] Calling vfs_open_internal...\n");
+    
     int32_t fd = vfs_open_internal("/test_create.txt", 0x0100 | 0x0002, 0);
+    serial_puts(0x3F8, "[TEST] returned: ");
+    if (fd < 0) { serial_putc(0x3F8, '-'); fd = -fd; }
+    if (fd >= 10) serial_putc(0x3F8, '0' + (fd / 10));
+    serial_putc(0x3F8, '0' + (fd % 10));
+    serial_puts(0x3F8, "\n");
     TEST_ASSERT_GE(fd, 0);
     
     if (fd >= 0) {

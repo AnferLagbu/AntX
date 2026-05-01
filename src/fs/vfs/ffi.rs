@@ -1,5 +1,9 @@
 use core::ffi::c_char;
 
+extern "C" {
+    fn serial_putc(port: u16, c: u8);
+}
+
 use crate::fs::hvfs::hvfs::{get_hvfs, HVFS_DATA};
 use super::vfs::VFS_MANAGER;
 use crate::fs::ramfs::ramfs::RAMFS_DATA;
@@ -55,14 +59,34 @@ pub extern "C" fn vfs_unmount_internal(path: *const c_char) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
+    unsafe { serial_putc(0x3F8, '>' as i8); }
+    
     let path = ptr_to_str(path);
+    
+    unsafe {
+        for c in b"[OPEN] " { serial_putc(0x3F8, *c as i8); }
+        for c in path.bytes() { serial_putc(0x3F8, c as i8); }
+        serial_putc(0x3F8, '\n' as i8);
+    }
 
     let mount_idx = match VFS_MANAGER.find_mount(path) {
-        Some(idx) => idx,
-        None => return -1,
+        Some(idx) => {
+            unsafe { serial_putc(0x3F8, ('0' as i8) + idx as i8); }
+            idx
+        },
+        None => {
+            unsafe { serial_putc(0x3F8, 'X' as i8); serial_putc(0x3F8, '\n' as i8); }
+            return -1;
+        },
     };
 
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+    
+    unsafe {
+        for c in b"[REL] " { serial_putc(0x3F8, *c as i8); }
+        for c in rel_path.bytes() { serial_putc(0x3F8, c as i8); }
+        serial_putc(0x3F8, '\n' as i8);
+    }
 
     let fd_idx = match VFS_MANAGER.alloc_fd() {
         Some(idx) => idx,
