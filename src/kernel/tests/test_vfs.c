@@ -13,12 +13,14 @@ extern void vfs_init(void);
 extern void ramfs_init(void);
 
 static int test_vfs_init(void) {
-    vfs_init();
-    ramfs_init();
-    
     int result = vfs_mount("/", "ramfs");
     if (result != 0 && result != -2) {
-        TEST_ASSERT_MSG(0, "Failed to mount root filesystem");
+        vfs_init();
+        ramfs_init();
+        result = vfs_mount("/", "ramfs");
+        if (result != 0 && result != -2) {
+            TEST_ASSERT_MSG(0, "Failed to mount root filesystem");
+        }
     }
     
     return TEST_PASS;

@@ -56,19 +56,19 @@ pub extern "C" fn vfs_unmount_internal(path: *const c_char) -> i32 {
 #[no_mangle]
 pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
-    
+
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
         None => return -1,
     };
-    
+
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
-    
+
     let fd_idx = match VFS_MANAGER.alloc_fd() {
         Some(idx) => idx,
         None => return -1,
     };
-    
+
     let fs_name: alloc::string::String = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
@@ -77,12 +77,12 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
             alloc::string::String::new()
         }
     };
-    
+
     if fs_name == "ramfs" {
         let mut ramfs = RAMFS_DATA.lock();
         match ramfs.open(rel_path, flags, pwid) {
             Some((inode_num, offset, file_type)) => {
-                VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, rel_path);
+                VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, path);
                 fd_idx as i32
             }
             None => {
@@ -94,7 +94,7 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
         let mut diskfs = get_diskfs().lock();
         match diskfs.open(rel_path, flags, pwid) {
             Some((inode_num, offset, file_type)) => {
-                VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, rel_path);
+                VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, path);
                 fd_idx as i32
             }
             None => {
@@ -125,30 +125,30 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
     if buf.is_null() || count == 0 {
         return -1;
     }
-    
+
     let fd_idx = fd_idx as usize;
     if fd_idx >= VFS_MAX_FDS {
         return -1;
     }
-    
-    let (inode_num, offset, pwid) = match VFS_MANAGER.get_fd_info(fd_idx) {
-        Some(info) => info,
-        None => return -1,
-    };
-    
-    let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
-    
-    let (fs_type, path) = {
+
+    let (inode_num, offset, pwid, fs_type, full_path) = {
         let fd_table = VFS_MANAGER.fd_table.lock();
-        let path_str = fd_table[fd_idx].get_path();
-        (fd_table[fd_idx].file_type, alloc::string::String::from(path_str))
+        if fd_idx < VFS_MAX_FDS && fd_table[fd_idx].used {
+            let path = alloc::string::String::from(fd_table[fd_idx].get_path());
+            (fd_table[fd_idx].inode_num, fd_table[fd_idx].offset, 
+             fd_table[fd_idx].pwid, fd_table[fd_idx].file_type, path)
+        } else {
+            return -1;
+        }
     };
-    
-    let mount_idx = match VFS_MANAGER.find_mount(&path) {
+
+    let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
+
+    let mount_idx = match VFS_MANAGER.find_mount(&full_path) {
         Some(idx) => idx,
         None => return -1,
     };
-    
+
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
@@ -157,11 +157,11 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
             alloc::string::String::new()
         }
     };
-    
+
     match fs_name.as_str() {
         "ramfs" => {
             let mut ramfs = RAMFS_DATA.lock();
-            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
+            let rel_path = VFS_MANAGER.get_relative_path(&full_path, mount_idx);
             let mut offset = offset;
             let result = ramfs.read(inode_num, &mut offset, buf_slice, pwid);
             VFS_MANAGER.set_fd_offset(fd_idx, offset);
@@ -169,7 +169,6 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
         }
         "diskfs" => {
             let mut diskfs = get_diskfs().lock();
-            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
             diskfs.read(inode_num, buf_slice, count)
         }
         _ => -1
@@ -181,29 +180,30 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
     if buf.is_null() || count == 0 {
         return -1;
     }
-    
+
     let fd_idx = fd_idx as usize;
     if fd_idx >= VFS_MAX_FDS {
         return -1;
     }
-    
-    let (inode_num, offset, pwid) = match VFS_MANAGER.get_fd_info(fd_idx) {
-        Some(info) => info,
-        None => return -1,
-    };
-    
-    let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
-    
-    let path = {
+
+    let (inode_num, offset, pwid, full_path) = {
         let fd_table = VFS_MANAGER.fd_table.lock();
-        alloc::string::String::from(fd_table[fd_idx].get_path())
+        if fd_idx < VFS_MAX_FDS && fd_table[fd_idx].used {
+            let path = alloc::string::String::from(fd_table[fd_idx].get_path());
+            (fd_table[fd_idx].inode_num, fd_table[fd_idx].offset,
+             fd_table[fd_idx].pwid, path)
+        } else {
+            return -1;
+        }
     };
-    
-    let mount_idx = match VFS_MANAGER.find_mount(&path) {
+
+    let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
+
+    let mount_idx = match VFS_MANAGER.find_mount(&full_path) {
         Some(idx) => idx,
         None => return -1,
     };
-    
+
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
@@ -212,11 +212,11 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
             alloc::string::String::new()
         }
     };
-    
+
     match fs_name.as_str() {
         "ramfs" => {
             let mut ramfs = RAMFS_DATA.lock();
-            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
+            let rel_path = VFS_MANAGER.get_relative_path(&full_path, mount_idx);
             let mut offset = offset;
             let result = ramfs.write(inode_num, &mut offset, buf_slice, pwid);
             VFS_MANAGER.set_fd_offset(fd_idx, offset);
@@ -224,7 +224,6 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
         }
         "diskfs" => {
             let mut diskfs = get_diskfs().lock();
-            let rel_path = VFS_MANAGER.get_relative_path(&path, mount_idx);
             diskfs.write(inode_num, buf_slice, count)
         }
         _ => -1

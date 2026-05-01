@@ -128,11 +128,20 @@ impl VfsManager {
         let mut mounts = self.mounts.lock();
         for mount in mounts.iter_mut() {
             mount.used = false;
+            mount.set_path("");
+            mount.set_fs_name("");
         }
         
         let mut fd_table = self.fd_table.lock();
         for fd in fd_table.iter_mut() {
             fd.used = false;
+            fd.fd = 0;
+            fd.inode_num = 0;
+            fd.offset = 0;
+            fd.flags = 0;
+            fd.pwid = 0;
+            fd.file_type = 0;
+            fd.set_path("");
         }
         
         let mut cwd = self.cwd.lock();
@@ -147,23 +156,23 @@ impl VfsManager {
     pub fn find_mount(&self, path: &str) -> Option<usize> {
         let mounts = self.mounts.lock();
         let mut best_idx: Option<usize> = None;
-        let mut best_depth = -1i32;
-        
+        let mut best_len = 0usize;
+
         for (i, mount) in mounts.iter().enumerate() {
             if !mount.used {
                 continue;
             }
-            
+
             let mount_path = mount.get_path();
-            if path.starts_with(mount_path) {
-                let depth = mount_path.matches('/').count() as i32;
-                if depth > best_depth {
-                    best_depth = depth;
+            if path == mount_path || path.starts_with(mount_path) && 
+               path.as_bytes().get(mount_path.len()) == Some(&b'/') {
+                if mount_path.len() > best_len {
+                    best_len = mount_path.len();
                     best_idx = Some(i);
                 }
             }
         }
-        
+
         best_idx
     }
     
