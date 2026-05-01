@@ -11,7 +11,7 @@ extern "C" {
 fn log(s: &str) {
     unsafe {
         for c in s.bytes() {
-            serial_putc(0x3F8, c as i8);
+            serial_putc(0x3F8, c);
         }
     }
 }
@@ -284,44 +284,44 @@ impl RamFsData {
     
     pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
         let inode_num = self.resolve_path(path);
-        
+
         unsafe {
-            for c in b"[RAMFS] " { serial_putc(0x3F8, *c as i8); }
-            for c in path.bytes() { serial_putc(0x3F8, c as i8); }
-            serial_putc(0x3F8, ' ' as i8);
+            for c in b"[RAMFS] " { serial_putc(0x3F8, *c); }
+            for c in path.bytes() { serial_putc(0x3F8, c); }
+            serial_putc(0x3F8, ' ' as u8);
         }
-        
+
         let inode_num = if let Some(num) = inode_num {
-            unsafe { serial_putc(0x3F8, 'E' as i8); serial_putc(0x3F8, '\n' as i8); }
+            unsafe { serial_putc(0x3F8, 'E' as u8); serial_putc(0x3F8, '\n' as u8); }
             num
         } else if (flags & VfsOpenFlags::CREAT.bits()) != 0 {
-            unsafe { serial_putc(0x3F8, 'C' as i8); }
+            unsafe { serial_putc(0x3F8, 'C' as u8); }
             let path = if path.starts_with('/') { &path[1..] } else { path };
-            
+
             let filename = if let Some(pos) = path.rfind('/') {
                 &path[pos + 1..]
             } else {
                 path
             };
-            
+
             let dir_path = if let Some(pos) = path.rfind('/') {
                 if pos == 0 { "/" } else { &path[..pos] }
             } else {
                 "/"
             };
-            
+
             if filename.is_empty() {
-                unsafe { serial_putc(0x3F8, 'F' as i8); serial_putc(0x3F8, '\n' as i8); }
+                unsafe { serial_putc(0x3F8, 'F' as u8); serial_putc(0x3F8, '\n' as u8); }
                 return None;
             }
-            
+
             let parent_num = self.resolve_path(dir_path)?;
-            
+
             unsafe {
-                serial_putc(0x3F8, 'P' as i8);
-                serial_putc(0x3F8, ('0' as i8) + (parent_num / 10) as i8);
-                serial_putc(0x3F8, ('0' as i8) + (parent_num % 10) as i8);
-                serial_putc(0x3F8, '\n' as i8);
+                serial_putc(0x3F8, 'P' as u8);
+                serial_putc(0x3F8, ('0' as u8) + (parent_num / 10) as u8);
+                serial_putc(0x3F8, ('0' as u8) + (parent_num % 10) as u8);
+                serial_putc(0x3F8, '\n' as u8);
             }
             
             if parent_num as usize >= RAMFS_MAX_INODES {
@@ -335,17 +335,33 @@ impl RamFsData {
             if !self.check_permission(&self.inodes[parent_num as usize], pwid, VFS_PERM_W) {
                 return None;
             }
-            
-            let new_inode_num = self.alloc_inode(VfsFileType::File as u8, pwid)?;
-            
+
             let dirent_size = core::mem::size_of::<RamFsDirent>();
             let parent_block_num = self.inodes[parent_num as usize].direct_blocks[0];
 
             if parent_block_num == u32::MAX {
                 return None;
             }
-            
+
             let num_entries = self.inodes[parent_num as usize].size as usize / dirent_size;
+
+            for i in 0..num_entries {
+                let check_offset = (parent_block_num as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
+                let entry: &RamFsDirent = unsafe {
+                    &*(&self.data_area[check_offset] as *const u8 as *const RamFsDirent)
+                };
+
+                if entry.inode != 0 {
+                    let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                    let existing_name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
+                    if existing_name == filename {
+                        return None;
+                    }
+                }
+            }
+
+            let new_inode_num = self.alloc_inode(VfsFileType::File as u8, pwid)?;
+
             let offset = (parent_block_num as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
             
             if offset + dirent_size > self.data_area.len() {
@@ -500,31 +516,69 @@ impl RamFsData {
     }
     
     pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {
+        unsafe {
+            for c in b"[RAMFS-MKDIR] " { serial_putc(0x3F8, *c); }
+            for c in parent_path.bytes() { serial_putc(0x3F8, c); }
+            serial_putc(0x3F8, ' ' as u8);
+            for c in name.bytes() { serial_putc(0x3F8, c); }
+            serial_putc(0x3F8, '\n' as u8);
+        }
+
         if name.is_empty() || name.contains('/') {
             return -1;
         }
-        
+
         let parent_num = match self.resolve_path(parent_path) {
-            Some(n) => n,
-            None => return -1,
+            Some(n) => {
+                unsafe { serial_putc(0x3F8, 'P' as u8); }
+                n
+            },
+            None => {
+                unsafe { serial_putc(0x3F8, 'X' as u8); serial_putc(0x3F8, '\n' as u8); }
+                return -1;
+            },
         };
-        
+
         if parent_num as usize >= RAMFS_MAX_INODES {
             return -1;
         }
-        
+
         if !self.inodes[parent_num as usize].used {
             return -1;
         }
-        
+
         if self.inodes[parent_num as usize].file_type != VfsFileType::Dir as u8 {
             return -1;
         }
-        
+
         if !self.check_permission(&self.inodes[parent_num as usize], pwid, VFS_PERM_W) {
             return -1;
         }
-        
+
+        let parent_block = self.inodes[parent_num as usize].direct_blocks[0];
+        if parent_block == u32::MAX {
+            return -1;
+        }
+
+        let dirent_size = core::mem::size_of::<RamFsDirent>();
+        let num_entries = self.inodes[parent_num as usize].size as usize / dirent_size;
+
+        for i in 0..num_entries {
+            let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
+            let entry: &RamFsDirent = unsafe {
+                &*(&self.data_area[offset] as *const u8 as *const RamFsDirent)
+            };
+
+            if entry.inode != 0 {
+                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let existing_name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
+                if existing_name == name {
+                    unsafe { serial_putc(0x3F8, 'E' as u8); serial_putc(0x3F8, '\n' as u8); }
+                    return -1;
+                }
+            }
+        }
+
         let new_inode_num = match self.alloc_inode(VfsFileType::Dir as u8, pwid) {
             Some(n) => n,
             None => return -1,
@@ -534,9 +588,7 @@ impl RamFsData {
         if block == u32::MAX {
             return -1;
         }
-        
-        let dirent_size = core::mem::size_of::<RamFsDirent>();
-        
+
         let dot: &mut RamFsDirent = unsafe {
             &mut *(&mut self.data_area[(block as usize) * RAMFS_BLOCK_SIZE] as *mut u8 as *mut RamFsDirent)
         };
