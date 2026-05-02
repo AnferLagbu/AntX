@@ -35,9 +35,33 @@ struct interrupt_frame {
 
 typedef void (*interrupt_handler_t)(struct interrupt_frame *frame);
 
+typedef struct {
+    interrupt_handler_t handler;
+    const char *name;
+    const char *description;
+    uint32_t flags;
+    uint64_t call_count;
+    uint64_t error_count;
+} interrupt_descriptor_t;
+
+#define IRQ_FLAG_SHARED     0x01
+#define IRQ_FLAG_EDGE       0x02
+#define IRQ_FLAG_LEVEL      0x04
+
 int idt_init(void);
 void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8_t type);
-void idt_set_handler(uint8_t num, interrupt_handler_t handler);
+int idt_set_handler(uint8_t num, interrupt_handler_t handler, const char *name);
+int idt_register_irq(uint8_t irq, interrupt_handler_t handler, const char *name, uint32_t flags);
+int idt_unregister_irq(uint8_t irq, interrupt_handler_t handler);
+void idt_enable_irq(uint8_t irq);
+void idt_disable_irq(uint8_t irq);
+
+void exception_handler(struct interrupt_frame *frame);
 void irq_handler(struct interrupt_frame *frame);
+
+void idt_dump_state(void);
+uint64_t idt_get_interrupt_count(uint8_t vector);
+const char* idt_get_exception_name(uint8_t vector);
+void idt_print_interrupt_stats(void);
 
 #endif

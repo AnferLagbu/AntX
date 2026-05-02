@@ -242,7 +242,7 @@ void keyboard_init(void) {
     outb(KBD_CMD_PORT, 0x60);
     outb(KBD_DATA_PORT, config);
     
-    idt_set_handler(33, keyboard_isr);
+    idt_set_handler(33, keyboard_isr, "keyboard");
 }
 
 bool keyboard_has_data(void) {

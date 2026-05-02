@@ -32,7 +32,7 @@ void timer_init(void) {
     outb(PIT_CHANNEL0, divisor & 0xFF);
     outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF);
     
-    idt_set_handler(IRQ_BASE + 0, timer_handler);
+    idt_set_handler(IRQ_BASE + 0, timer_handler, "timer");
     
     serial_puts(SERIAL_COM1, "Timer initialized (100 Hz)\n");
 }
