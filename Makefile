@@ -33,6 +33,9 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
               build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o \
+              build/test_memory_safety.o build/test_edge_cases.o build/test_error_handling.o build/test_performance.o \
+              build/test_process_enhanced.o build/test_scheduler_enhanced.o build/test_interrupt.o build/test_ipc_enhanced.o \
+              build/test_vfs_enhanced.o build/test_syscall_enhanced.o \
               build/process_stub.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
@@ -360,7 +363,47 @@ build/test_filesystem_full.o: src/kernel/tests/test_filesystem_full.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
+build/test_memory_safety.o: src/kernel/tests/test_memory_safety.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_edge_cases.o: src/kernel/tests/test_edge_cases.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_error_handling.o: src/kernel/tests/test_error_handling.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_performance.o: src/kernel/tests/test_performance.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
 build/process_stub.o: src/kernel/process_stub.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_process_enhanced.o: src/kernel/tests/test_process_enhanced.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_scheduler_enhanced.o: src/kernel/tests/test_scheduler_enhanced.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_interrupt.o: src/kernel/tests/test_interrupt.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_ipc_enhanced.o: src/kernel/tests/test_ipc_enhanced.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_vfs_enhanced.o: src/kernel/tests/test_vfs_enhanced.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_syscall_enhanced.o: src/kernel/tests/test_syscall_enhanced.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
@@ -407,20 +450,58 @@ test-unit: build/kernel_test.bin user
 		tail -80 tests/reports/unit_test_$${timestamp}.log; \
 	fi
 
-# 快速测试（短超时，适合频繁开发迭代）
+# 快速测试（中等超时，适合频繁开发迭代）
 test-quick: build/kernel_test.bin user
-	@echo "▶ Quick test mode (timeout: 30s)..."
+	@echo "▶ Quick test mode (timeout: 60s)..."
 	@mkdir -p isodir/boot/grub tests/reports
 	@cp build/kernel_test.bin isodir/boot/kernel.bin
 	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
 	@echo 'menuentry "AntX" { multiboot2 /boot/kernel.bin }' >> isodir/boot/grub/grub.cfg
 	@grub2-mkrescue -o build/antx_quick.iso isodir 2>/dev/null
-	@timeout 30 $(QEMU) $(QEMU_FLAGS) \
+	@timeout 60 $(QEMU) $(QEMU_FLAGS) \
+		-m 256 \
 		-cdrom build/antx_quick.iso \
 		-serial file:tests/reports/quick_test.log \
 		-display none || true
 	@echo "✓ Quick test log: tests/reports/quick_test.log"
-	@tail -30 tests/reports/quick_test.log 2>/dev/null || echo "(no output)"
+	@tail -40 tests/reports/quick_test.log 2>/dev/null || echo "(no output)"
+
+# 完整综合测试（长超时，包含所有新增测试）
+test-comprehensive: build/kernel_test.bin user
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║     Comprehensive Test Suite (180s)          ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@mkdir -p isodir/boot/grub tests/reports
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@mkdir -p isodir/bin
+	@cp build/user/init.bin isodir/bin/init
+	@cp build/user/axsh.bin isodir/bin/axsh
+	@cp build/user/install.bin isodir/bin/install
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'set default=0' >> isodir/boot/grub/grub.cfg
+	@echo '' >> isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX Comprehensive Test" {' >> isodir/boot/grub/grub.cfg
+	@echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
+	@echo '}' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_comprehensive.iso isodir 2>/dev/null
+	@echo ""
+	@echo "▶ Starting comprehensive QEMU test (timeout: 180s, memory: 512MB)..."
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	timeout 180 $(QEMU) $(QEMU_FLAGS) \
+		-m 512 \
+		-cdrom build/antx_comprehensive.iso \
+		-serial file:tests/reports/comprehensive_$${timestamp}.log \
+		-display none \
+		-d cpu_reset 2>tests/reports/qemu_stderr_$${timestamp}.log || true
+	@echo ""
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║  Comprehensive Test completed!               ║"
+	@echo "║  Report: tests/reports/comprehensive_$${timestamp}.log ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@if [ -f tests/reports/comprehensive_$${timestamp}.log ]; then \
+		echo "--- Summary ---"; \
+		grep -E "(Summary:|Passed:|Failed:|Skipped:|TEST_RESULT)" tests/reports/comprehensive_$${timestamp}.log | tail -10; \
+	fi
 
 # 详细调试模式（包含完整 QEMU 调试信息）
 test-verbose: build/kernel_test.bin user

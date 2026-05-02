@@ -478,17 +478,21 @@ impl RamFsData {
     }
 
     fn check_permission(&self, inode: &RamFsInode, pwid: u64, access_type: u16) -> bool {
+        if pwid == 0 {
+            return true;
+        }
+
         let level = unsafe { pwid_get_level(pwid) };
-        
+
         if level == PWID_LEVEL_ROOT {
             return true;
         }
-        
+
         if pwid == inode.owner_pwid {
             let owner_perm = (inode.perm >> 6) & 0x07;
             return (owner_perm & access_type) == access_type;
         }
-        
+
         let other_perm = inode.perm & 0x07;
         (other_perm & access_type) == access_type
     }

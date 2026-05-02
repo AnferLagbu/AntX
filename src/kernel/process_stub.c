@@ -77,11 +77,3 @@ int signal_send(pid_t pid, int sig) {
         return -1;
     }
 }
-
-uint64_t pwid_get_current(void) {
-    if (!init_created) {
-        init_created = 1;
-        serial_puts(SERIAL_COM1, "[PWID] C-layer PWID context initialized\n");
-    }
-    return current_pwid;
-}

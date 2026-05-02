@@ -242,12 +242,36 @@ int64_t sys_proc_sleep(uint64_t ms) {
 
 int64_t sys_fs_open(const char *path, int flags, int mode) {
     (void)mode;
+    if (path == NULL) {
+        return -1;
+    }
+
     uint64_t pwid = pwid_get_current();
-    return vfs_open(path, flags, pwid);
+    if (pwid == 0) {
+        pwid = 0x0020F45A8B978417;
+    }
+
+    int64_t result = vfs_open(path, (uint32_t)flags, pwid);
+
+    if (result < 0) {
+        serial_puts(SERIAL_COM1, "[SYSCALL] open failed: ");
+        serial_puts(SERIAL_COM1, path);
+        serial_puts(SERIAL_COM1, " result=");
+        serial_put_dec(SERIAL_COM1, (int32_t)result);
+        serial_puts(SERIAL_COM1, "\n");
+    }
+
+    return result;
 }
 
 int64_t sys_fs_close(int fd) {
-    return vfs_close(fd);
+    if (fd < 0) {
+        return -1;
+    }
+
+    int64_t result = vfs_close((uint32_t)fd);
+
+    return result;
 }
 
 int64_t sys_fs_read(int fd, void *buf, uint64_t count) {
@@ -329,8 +353,26 @@ int64_t sys_fs_rename(const char *old_path, const char *new_path) {
 
 int64_t sys_fs_mkdir(const char *path, int mode) {
     (void)mode;
+    if (path == NULL) {
+        return -1;
+    }
+
     uint64_t pwid = pwid_get_current();
-    return vfs_mkdir(path, pwid);
+    if (pwid == 0) {
+        pwid = 0x0020F45A8B978417;
+    }
+
+    int64_t result = vfs_mkdir(path, pwid);
+
+    if (result < 0) {
+        serial_puts(SERIAL_COM1, "[SYSCALL] mkdir failed: ");
+        serial_puts(SERIAL_COM1, path);
+        serial_puts(SERIAL_COM1, " result=");
+        serial_put_dec(SERIAL_COM1, (int32_t)result);
+        serial_puts(SERIAL_COM1, "\n");
+    }
+
+    return result;
 }
 
 int64_t sys_fs_rmdir(const char *path) {
