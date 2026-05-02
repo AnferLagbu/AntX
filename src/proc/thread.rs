@@ -2,7 +2,7 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
-    fn serial_putc(port: u16, c: i8);
+    fn serial_putc(port: u16, c: u8);
     fn pmm_alloc_pages(count: u64) -> *mut u8;
     fn pmm_free_page(page: *mut u8);
     fn vmm_create_user_page_table() -> u64;
@@ -12,7 +12,7 @@ extern "C" {
 fn log(s: &str) {
     unsafe {
         for c in s.bytes() {
-            serial_putc(0x3F8, c as i8);
+            serial_putc(0x3F8, c);
         }
     }
 }
