@@ -580,6 +580,308 @@ SpaceAfterCStyleCast: true
 
 ---
 
+## 📝 Git Commit 规范
+
+### **Commit 前缀格式**
+
+项目使用统一的 Commit 前缀，所有提交信息**必须使用中文**：
+
+| 前缀 | 含义 | 使用场景 |
+|------|------|---------|
+| `fix:` | 修复 Bug | 修复已知问题、解决崩溃、消除异常 |
+| `feat:` | 新增/增强功能 | 添加新特性、扩展现有功能、实现新模块 |
+| `docs:` | 文档相关 | 更新文档、添加注释、改进说明 |
+| `chore:` | 构建/工具相关 | 构建配置修改、依赖管理、脚本更新 |
+| `refactor:` | 重构代码 | 优化代码结构、改善设计模式、提升可读性 |
+| `test:` | 测试相关 | 添加测试用例、修改测试逻辑、增强覆盖率 |
+| `perf:` | 性能优化 | 提升运行性能、减少延迟、优化资源使用 |
+
+### **Commit 信息格式**
+
+```
+<前缀>: <简短描述（中文）>
+
+<详细说明（可选）>
+
+主要改动：
+- 改动点 1
+- 改动点 2
+- 改动点 3
+
+影响范围：
+- 模块 A
+- 模块 B
+
+测试结果：
+- 通过: X/Y
+- 失败: Z
+```
+
+### **示例**
+
+```bash
+# ✅ 好的 Commit
+fix: 修复VFS FFI层Invalid Opcode异常
+
+主要修复：
+- 添加 vfs_unlink_internal() 函数实现
+- 修复 test_interrupt.c 中断处理函数指针
+- 解决 Scheduler Enhanced 测试失败问题
+
+影响范围：
+- VFS FFI 层 (ffi.rs)
+- 测试框架 (test_*.c)
+
+测试结果：通过 80/84 (95.2%)
+
+# ❌ 不好的 Commit
+Fix bug
+update code
+test fix
+```
+
+### **Commit 最佳实践**
+
+1. **使用中文**：所有 commit 信息必须使用中文
+2. **简明扼要**：标题不超过 50 个字符
+3. **详细说明**：复杂改动需要在正文中详细说明
+4. **影响范围**：明确列出受影响的模块和文件
+5. **测试结果**：包含相关的测试验证结果
+6. **原子性**：每次提交只做一件事
+7. **可追溯**：commit 信息应该能让人理解做了什么以及为什么
+
+---
+
+## 🧪 测试代码规范
+
+### **测试文件命名**
+
+```
+test_<module_name>.c          # 标准测试模块
+test_<module_name>_enhanced.c # 增强版测试模块
+test_<category>.c             # 特定类型测试（如 memory_safety）
+```
+
+**示例**：
+```c
+test_pmm.c              // 物理内存管理基础测试
+test_process_enhanced.c // 进程管理增强测试
+test_memory_safety.c    // 内存安全专项测试
+test_performance.c      // 性能基准测试
+```
+
+### **测试函数命名**
+
+```c
+static int test_<module>_<feature>(void);
+static int test_<module>_<scenario>(void);
+```
+
+**示例**：
+```c
+// ✅ 正确的命名
+static int test_pmm_allocation_basic(void);
+static int test_vfs_nested_directories(void);
+static int test_perf_kmalloc_throughput(void);
+
+// ❌ 错误的命名
+static int TestPMMAllocation();          // PascalCase
+static int pmm_test_basic();             // 前缀错误
+static int test_pmm_alloc();             // 太模糊
+```
+
+### **测试用例结构**
+
+每个测试文件必须遵循以下结构：
+
+```c
+#include "kernel_test.h"
+#include "<相关头文件>.h"
+
+// 外部函数声明（如果需要）
+extern return_type function_name(params);
+
+// ==================== 测试用例实现 ====================
+
+/**
+ * @brief 简短描述测试目的
+ *
+ * 详细说明（可选）。
+ * 包括测试的场景、预期行为等。
+ *
+ * @return TEST_PASS 通过
+ * @return TEST_FAIL 失败
+ * @return TEST_SKIP 跳过（前置条件不满足）
+ */
+static int test_<name>(void) {
+    // 1. 准备阶段：创建测试数据和环境
+    void *ptr = kmalloc(100);
+    if (ptr == NULL) {
+        return TEST_SKIP;  // 资源不足时跳过
+    }
+
+    // 2. 执行阶段：调用被测函数
+    memset(ptr, 0xAA, 100);
+
+    // 3. 验证阶段：检查结果
+    TEST_ASSERT_EQ(ptr[0], 0xAA);  // 使用宏进行断言
+    TEST_ASSERT_NE(ptr, NULL);
+
+    // 4. 清理阶段：释放资源
+    kfree(ptr);
+
+    return TEST_PASS;  // 或 TEST_FAIL
+}
+
+// ==================== 模块注册 ====================
+
+void test_<module>_register(void) {
+    int mod = test_register_module("<模块显示名称>");
+    if (mod < 0) return;  // 注册失败则返回
+
+    // 注册所有测试用例
+    test_register_case(mod, "<用例1名称>", test_<case1>);
+    test_register_case(mod, "<用例2名称>", test_<case2>);
+    test_register_case(mod, "<用例3名称>", test_<case3>);
+}
+```
+
+### **断言宏使用**
+
+```c
+// 相等性检查
+TEST_ASSERT_EQ(actual, expected);       // actual == expected
+TEST_ASSERT_NE(actual, not_expected);   // actual != expected
+
+// 范围检查
+TEST_ASSERT_GT(value, threshold);       // value > threshold
+TEST_ASSERT_GE(value, min_value);       // value >= min_value
+TEST_ASSERT_LT(value, max_value);       // value < max_value
+TEST_ASSERT_LE(value, max_value);       // value <= max_value
+
+// 指针检查
+TEST_ASSERT_NOT_NULL(pointer);          // pointer != NULL
+TEST_ASSERT_NULL(pointer);              // pointer == NULL
+
+// 布尔检查
+TEST_ASSERT_TRUE(condition);            // condition 为真
+TEST_ASSERT_FALSE(condition);           // condition 为假
+```
+
+### **测试分类规范**
+
+#### **核心系统测试**
+```c
+void test_pmm_register(void) {
+    int mod = test_register_module("PMM");
+    
+    // 基础功能测试
+    test_register_case(mod, "Basic allocation", test_pmm_alloc_basic);
+    test_register_case(mod, "Free operation", test_pmm_free_basic);
+    
+    // 边界条件测试
+    test_register_case(mod, "Zero allocation", test_pmm_alloc_zero);
+    test_register_case(mod, "Large allocation", test_pmm_alloc_large);
+    
+    // 压力测试
+    test_register_case(mod, "Stress test", test_pmm_stress_50);
+}
+```
+
+#### **增强测试模块**
+```c
+void test_process_enhanced_register(void) {
+    int mod = test_register_module("Process Management Enhanced");
+    
+    // 高级场景测试
+    test_register_case(mod, "Process tree structure", test_process_tree_structure);
+    test_register_case(mod, "Priority inheritance", test_process_priority_inheritance);
+    test_register_case(mod, "Rapid create/destroy", test_process_rapid_create_destroy);
+    
+    // 并发和安全测试
+    test_register_case(mod, "Concurrent creation", test_process_concurrent_creation);
+    test_register_case(mod, "Resource limits", test_process_resource_limits);
+}
+```
+
+#### **质量保证测试**
+```c
+void test_memory_safety_register(void) {
+    int mod = test_register_module("Memory Safety");
+    
+    // 安全特性测试
+    test_register_case(mod, "NULL pointer handling", test_kmalloc_null_pointer);
+    test_register_case(mod, "Double-free protection", test_kmalloc_double_free_protection);
+    test_register_case(mod, "Buffer overflow detection", test_kmalloc_buffer_overflow_detection);
+}
+```
+
+### **测试输出规范**
+
+在测试中使用统一的日志格式：
+
+```c
+serial_puts(SERIAL_COM1, "[MODULE] Description: ");
+serial_put_dec(SERIAL_COM1, value);
+serial_puts(SERIAL_COM1, "\n");
+
+// 性能数据输出
+serial_puts(SERIAL_COM1, "[PERF] Operation: ");
+serial_put_dec(SERIAL_COM1, count);
+serial_puts(SERIAL_COM1, " iterations in ");
+serial_put_dec(SERIAL_COM1, elapsed_time);
+serial_puts(SERIAL_COM1, " ticks\n");
+```
+
+**日志级别标识**：
+- `[DEBUG]` - 调试信息（开发阶段）
+- `[INFO]` - 一般信息
+- `[WARN]` - 警告（非致命问题）
+- `[ERROR]` - 错误（测试失败原因）
+
+### **测试最佳实践**
+
+1. **幂等性**：测试可以重复执行且结果一致
+2. **独立性**：每个测试用例相互独立，不依赖执行顺序
+3. **快速执行**：单个测试用例应在合理时间内完成（<100ms）
+4. **清晰断言**：使用明确的断言消息说明预期 vs 实际
+5. **资源清理**：确保测试结束后释放所有分配的资源
+6. **跳过而非失败**：当前置条件不满足时返回 TEST_SKIP
+7. **覆盖边界**：包括正常值、边界值和异常值
+
+### **性能基准测试**
+
+对于性能测试，需要记录并输出关键指标：
+
+```c
+static int test_perf_operation(void) {
+    const int iterations = 100;
+    uint64_t start = timer_get_ticks();
+    
+    for (int i = 0; i < iterations; i++) {
+        perform_operation();
+    }
+    
+    uint64_t end = timer_get_ticks();
+    uint64_t elapsed = end - start;
+    
+    // 输出性能数据
+    serial_puts(SERIAL_COM1, "[PERF] ");
+    serial_puts(SERIAL_COM1, "Operation: ");
+    serial_put_dec(SERIAL_COM1, iterations);
+    serial_puts(SERIAL_COM1, " iters in ");
+    serial_put_dec(SERIAL_COM1, (uint32_t)elapsed);
+    serial_puts(SERIAL_COM1, " ticks (");
+    serial_put_dec(SERIAL_COM1, (uint32_t)(elapsed / (iterations > 0 ? iterations : 1)));
+    serial_puts(SERIAL_COM1, " us/iter)\n");
+    
+    TEST_ASSERT_GT(elapsed, 0);
+    return TEST_PASS;
+}
+```
+
+---
+
 **Maintainers**: QueenX Development Team  
 **Review Cycle**: Quarterly  
 **Last Review**: 2026-05-02

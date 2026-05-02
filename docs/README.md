@@ -109,17 +109,23 @@ docs/
 
 ## 📂 progress/ - 进度文档
 
-开发进度与里程碑记录：
-
+开发进度与里程碑记录：### 进度追踪
 | 文档 | 说明 |
 |------|------|
 | [README.md](progress/README.md) | 进度文档索引 |
-| [changelog.md](progress/changelog.md) | 变更日志 |
+| [changelog.md](progress/changelog.md) | 变更日志 ⭐ **已更新 (2026-05-02)** |
 | [current-tasks.md](progress/current-tasks.md) | 当前任务清单 |
 | [milestones.md](progress/milestones.md) | 里程碑记录 |
 | [antx-focused-priority.md](progress/antx-focused-priority.md) | 优先级规划 |
 
-## 🔗 快速导航
+### 📚 规范与标准
+| 文档 | 说明 |
+|------|------|
+| [CODE_STYLE.md](CODE_STYLE.md) | **代码规范 + Git Commit 规范 + 测试规范** ⭐ **新增** |
+
+---
+
+*最后更新: 2026-05-02*## 🔗 快速导航
 
 ### 新手入门
 1. [开发指南](development/development.md) - 了解如何开始开发
