@@ -1,5 +1,6 @@
 use spin::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
+use alloc::vec::Vec;
 
 use crate::fs::vfs::types::*;
 
@@ -17,8 +18,11 @@ fn log(s: &str) {
 }
 
 const RAMFS_MAX_INODES: usize = 64;
-const RAMFS_MAX_BLOCKS: usize = 256;
+const RAMFS_MAX_BLOCKS: usize = 2048;
 const RAMFS_BLOCK_SIZE: usize = 4096;
+
+const DIRECT_BLOCKS: usize = 12;
+const INDIRECT_BLOCKS_PER_BLOCK: usize = RAMFS_BLOCK_SIZE / 4; // 1024 blocks per indirect block
 
 const PWID_LEVEL_ROOT: u8 = 0;
 
@@ -32,7 +36,9 @@ pub struct RamFsInode {
     pub atime: u64,
     pub mtime: u64,
     pub ctime: u64,
-    pub direct_blocks: [u32; 8],
+    pub direct_blocks: [u32; DIRECT_BLOCKS],
+    pub indirect_block: u32,
+    pub double_indirect_block: u32,
     pub link_count: u32,
     pub used: bool,
 }
@@ -48,7 +54,9 @@ impl RamFsInode {
             atime: 0,
             mtime: 0,
             ctime: 0,
-            direct_blocks: [0; 8],
+            direct_blocks: [0; DIRECT_BLOCKS],
+            indirect_block: 0,
+            double_indirect_block: 0,
             link_count: 0,
             used: false,
         }
@@ -132,6 +140,152 @@ impl RamFsData {
         self.block_bitmap[byte_idx] |= 1 << bit_idx;
         self.free_blocks.fetch_sub(1, Ordering::SeqCst);
     }
+
+    fn block_set_free(&mut self, block_num: u32) {
+        if block_num as usize >= RAMFS_MAX_BLOCKS {
+            return;
+        }
+        let byte_idx = (block_num / 8) as usize;
+        let bit_idx = (block_num % 8) as usize;
+        self.block_bitmap[byte_idx] &= !(1 << bit_idx);
+        self.free_blocks.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn get_or_alloc_block(
+        inode: &mut RamFsInode,
+        data_area: &mut [u8],
+        block_bitmap: &mut [u8],
+        free_blocks: &AtomicU32,
+        block_idx: usize
+    ) -> Option<u32> {
+        let direct_limit = DIRECT_BLOCKS;
+        let indirect_limit = direct_limit + INDIRECT_BLOCKS_PER_BLOCK;
+        let double_indirect_limit = indirect_limit + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
+
+        if block_idx < direct_limit {
+            if inode.direct_blocks[block_idx] == 0 {
+                let new_block = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                if new_block == u32::MAX {
+                    return None;
+                }
+                inode.direct_blocks[block_idx] = new_block;
+            }
+            Some(inode.direct_blocks[block_idx])
+        } else if block_idx < indirect_limit {
+            if inode.indirect_block == 0 {
+                let new_indirect = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                if new_indirect == u32::MAX {
+                    return None;
+                }
+                inode.indirect_block = new_indirect;
+            }
+
+            let indirect_offset = block_idx - direct_limit;
+            let data_ptr = data_area.as_mut_ptr();
+            let indirect_ptr_addr = inode.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
+
+            let existing_block: u32 = unsafe {
+                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
+            };
+
+            if existing_block == 0 {
+                let new_data_block = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                if new_data_block == u32::MAX {
+                    return None;
+                }
+
+                unsafe {
+                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
+                    core::ptr::write_volatile(ptr, new_data_block);
+                }
+
+                Some(new_data_block)
+            } else {
+                Some(existing_block)
+            }
+        } else if block_idx < double_indirect_limit {
+            if inode.double_indirect_block == 0 {
+                let new_double_indirect = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                if new_double_indirect == u32::MAX {
+                    return None;
+                }
+                inode.double_indirect_block = new_double_indirect;
+            }
+
+            let double_indirect_offset = block_idx - indirect_limit;
+            let indirect_index = double_indirect_offset / INDIRECT_BLOCKS_PER_BLOCK;
+            let block_index_in_indirect = double_indirect_offset % INDIRECT_BLOCKS_PER_BLOCK;
+
+            let data_ptr = data_area.as_mut_ptr();
+            let indirect_ptr_addr = inode.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
+
+            let existing_indirect: u32 = unsafe {
+                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
+            };
+
+            let indirect_block_num = if existing_indirect == 0 {
+                let new_indirect = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                if new_indirect == u32::MAX {
+                    return None;
+                }
+
+                unsafe {
+                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
+                    core::ptr::write_volatile(ptr, new_indirect);
+                }
+
+                new_indirect
+            } else {
+                existing_indirect
+            };
+
+            let data_ptr_addr = indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
+
+            let existing_data: u32 = unsafe {
+                core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32)
+            };
+
+            if existing_data == 0 {
+                let new_data_block = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                if new_data_block == u32::MAX {
+                    return None;
+                }
+
+                unsafe {
+                    let ptr = data_ptr.add(data_ptr_addr) as *mut u32;
+                    core::ptr::write_volatile(ptr, new_data_block);
+                }
+
+                Some(new_data_block)
+            } else {
+                Some(existing_data)
+            }
+        } else {
+            None
+        }
+    }
+
+    fn alloc_block_internal(
+        data_area: &mut [u8],
+        block_bitmap: &mut [u8],
+        free_blocks: &AtomicU32
+    ) -> u32 {
+        for i in 0..RAMFS_MAX_BLOCKS {
+            let byte_idx = i / 8;
+            let bit_idx = i % 8;
+            if (block_bitmap[byte_idx] & (1 << bit_idx)) == 0 {
+                block_bitmap[byte_idx] |= 1 << bit_idx;
+                free_blocks.fetch_sub(1, Ordering::SeqCst);
+
+                let start = i * RAMFS_BLOCK_SIZE;
+                for b in &mut data_area[start..start + RAMFS_BLOCK_SIZE] {
+                    *b = 0;
+                }
+                return i as u32;
+            }
+        }
+        u32::MAX
+    }
     
     fn block_alloc(&mut self) -> u32 {
         for i in 0..RAMFS_MAX_BLOCKS {
@@ -156,7 +310,173 @@ impl RamFsData {
         self.inode_bitmap[byte_idx] |= 1 << bit_idx;
         self.free_inodes.fetch_sub(1, Ordering::SeqCst);
     }
-    
+
+    fn get_data_block(&mut self, inode: &mut RamFsInode, block_idx: usize) -> Option<u32> {
+        let direct_limit = DIRECT_BLOCKS;
+        let indirect_limit = direct_limit + INDIRECT_BLOCKS_PER_BLOCK;
+        let double_indirect_limit = indirect_limit + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
+
+        if block_idx < direct_limit {
+            if inode.direct_blocks[block_idx] == 0 {
+                let new_block = self.block_alloc();
+                if new_block == u32::MAX {
+                    return None;
+                }
+                inode.direct_blocks[block_idx] = new_block;
+            }
+            Some(inode.direct_blocks[block_idx])
+        } else if block_idx < indirect_limit {
+            if inode.indirect_block == 0 {
+                let new_indirect = self.block_alloc();
+                if new_indirect == u32::MAX {
+                    return None;
+                }
+                inode.indirect_block = new_indirect;
+            }
+
+            let indirect_offset = block_idx - direct_limit;
+            let data_ptr = self.data_area.as_mut_ptr();
+            let indirect_ptr_addr = inode.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
+
+            let existing_block: u32 = unsafe {
+                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
+            };
+
+            if existing_block == 0 {
+                let new_data_block = self.block_alloc();
+                if new_data_block == u32::MAX {
+                    return None;
+                }
+
+                unsafe {
+                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
+                    core::ptr::write_volatile(ptr, new_data_block);
+                }
+
+                Some(new_data_block)
+            } else {
+                Some(existing_block)
+            }
+        } else if block_idx < double_indirect_limit {
+            if inode.double_indirect_block == 0 {
+                let new_double_indirect = self.block_alloc();
+                if new_double_indirect == u32::MAX {
+                    return None;
+                }
+                inode.double_indirect_block = new_double_indirect;
+            }
+
+            let double_indirect_offset = block_idx - indirect_limit;
+            let indirect_index = double_indirect_offset / INDIRECT_BLOCKS_PER_BLOCK;
+            let block_index_in_indirect = double_indirect_offset % INDIRECT_BLOCKS_PER_BLOCK;
+
+            let data_ptr = self.data_area.as_mut_ptr();
+            let indirect_ptr_addr = inode.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
+
+            let existing_indirect: u32 = unsafe {
+                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
+            };
+
+            let indirect_block_num = if existing_indirect == 0 {
+                let new_indirect = self.block_alloc();
+                if new_indirect == u32::MAX {
+                    return None;
+                }
+
+                unsafe {
+                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
+                    core::ptr::write_volatile(ptr, new_indirect);
+                }
+
+                new_indirect
+            } else {
+                existing_indirect
+            };
+
+            let data_ptr_addr = indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
+
+            let existing_data: u32 = unsafe {
+                core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32)
+            };
+
+            if existing_data == 0 {
+                let new_data_block = self.block_alloc();
+                if new_data_block == u32::MAX {
+                    return None;
+                }
+
+                unsafe {
+                    let ptr = data_ptr.add(data_ptr_addr) as *mut u32;
+                    core::ptr::write_volatile(ptr, new_data_block);
+                }
+
+                Some(new_data_block)
+            } else {
+                Some(existing_data)
+            }
+        } else {
+            None
+        }
+    }
+
+    fn free_indirect_chain(&mut self, indirect_block: u32, start_idx: usize, end_idx: usize) {
+        if indirect_block == 0 {
+            return;
+        }
+
+        for i in start_idx..end_idx.min(INDIRECT_BLOCKS_PER_BLOCK) {
+            let ptr_addr = indirect_block as usize * RAMFS_BLOCK_SIZE + i * 4;
+
+            let block_num: u32 = unsafe {
+                core::ptr::read_volatile(self.data_area.as_ptr().add(ptr_addr) as *const u32)
+            };
+
+            if block_num != 0 {
+                self.block_set_free(block_num);
+            }
+        }
+
+        self.block_set_free(indirect_block);
+    }
+
+    fn free_double_indirect_chain(&mut self, double_indirect_block: u32,
+                                   start_global_idx: usize, end_global_idx: usize) {
+        if double_indirect_block == 0 {
+            return;
+        }
+
+        let start_indirect_idx = start_global_idx / INDIRECT_BLOCKS_PER_BLOCK;
+        let end_indirect_idx = (end_global_idx + INDIRECT_BLOCKS_PER_BLOCK - 1) / INDIRECT_BLOCKS_PER_BLOCK;
+
+        for indirect_idx in start_indirect_idx..end_indirect_idx.min(INDIRECT_BLOCKS_PER_BLOCK) {
+            let indirect_ptr_addr = double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_idx * 4;
+
+            let indirect_block_num: u32 = unsafe {
+                core::ptr::read_volatile(self.data_area.as_ptr().add(indirect_ptr_addr) as *const u32)
+            };
+
+            if indirect_block_num != 0 {
+                let local_start = if indirect_idx == start_indirect_idx {
+                    start_global_idx % INDIRECT_BLOCKS_PER_BLOCK
+                } else {
+                    0
+                };
+
+                let local_end = if indirect_idx == end_indirect_idx - 1 {
+                    end_global_idx % INDIRECT_BLOCKS_PER_BLOCK
+                } else {
+                    INDIRECT_BLOCKS_PER_BLOCK
+                };
+
+                if local_end > local_start {
+                    self.free_indirect_chain(indirect_block_num, local_start, local_end);
+                }
+            }
+        }
+
+        self.block_set_free(double_indirect_block);
+    }
+
     fn check_permission(&self, inode: &RamFsInode, pwid: u64, access_type: u16) -> bool {
         let level = unsafe { pwid_get_level(pwid) };
         
@@ -256,7 +576,9 @@ impl RamFsData {
             atime: Self::get_time(),
             mtime: Self::get_time(),
             ctime: Self::get_time(),
-            direct_blocks: [block, 0, 0, 0, 0, 0, 0, 0],
+            direct_blocks: [block, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            indirect_block: 0,
+            double_indirect_block: 0,
             link_count: 2,
             used: true,
         };
@@ -406,16 +728,18 @@ impl RamFsData {
                     inode_num: i as u32,
                     file_type,
                     perm: if file_type == VfsFileType::Dir as u8 { 0o755 } else { 0o644 },
-                    size: if file_type == VfsFileType::Dir as u8 { 
-                        (2 * core::mem::size_of::<RamFsDirent>()) as u32 
-                    } else { 
-                        0 
+                    size: if file_type == VfsFileType::Dir as u8 {
+                        (2 * core::mem::size_of::<RamFsDirent>()) as u32
+                    } else {
+                        0
                     },
                     owner_pwid: pwid,
                     atime: Self::get_time(),
                     mtime: Self::get_time(),
                     ctime: Self::get_time(),
-                    direct_blocks: [block, 0, 0, 0, 0, 0, 0, 0],
+                    direct_blocks: [block, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    indirect_block: 0,
+                    double_indirect_block: 0,
                     link_count: 1,
                     used: true,
                 };
@@ -428,41 +752,48 @@ impl RamFsData {
     
     pub fn read(&mut self, inode_num: u32, offset: &mut u64, buf: &mut [u8], pwid: u64) -> i32 {
         let inode = &self.inodes[inode_num as usize];
-        
+
         if !self.check_permission(inode, pwid, VFS_PERM_R) {
             return -1;
         }
-        
+
         let mut bytes_read = 0usize;
         let inode_size = inode.size as u64;
-        
+
         while bytes_read < buf.len() && *offset < inode_size {
             let block_idx = (*offset as usize) / RAMFS_BLOCK_SIZE;
             let block_offset = (*offset as usize) % RAMFS_BLOCK_SIZE;
             let mut bytes_to_read = RAMFS_BLOCK_SIZE - block_offset;
-            
+
             if bytes_to_read > buf.len() - bytes_read {
                 bytes_to_read = buf.len() - bytes_read;
             }
             if bytes_to_read > (inode_size - *offset) as usize {
                 bytes_to_read = (inode_size - *offset) as usize;
             }
-            
-            if block_idx < 12 {
-                let block_num = inode.direct_blocks[block_idx];
-                if block_num != 0 {
-                    let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
+
+            let block_num = Self::get_or_alloc_block(
+                &mut self.inodes[inode_num as usize],
+                &mut self.data_area,
+                &mut self.block_bitmap,
+                &self.free_blocks,
+                block_idx
+            );
+
+            if let Some(block_num) = block_num {
+                let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
+                if start + bytes_to_read <= self.data_area.len() {
                     buf[bytes_read..bytes_read + bytes_to_read]
                         .copy_from_slice(&self.data_area[start..start + bytes_to_read]);
                 }
             }
-            
+
             bytes_read += bytes_to_read;
             *offset += bytes_to_read as u64;
         }
-        
+
         self.inodes[inode_num as usize].atime = Self::get_time();
-        
+
         bytes_read as i32
     }
     
@@ -482,29 +813,28 @@ impl RamFsData {
                 bytes_to_write = buf.len() - bytes_written;
             }
 
-            if block_idx >= 12 {
-                break;
-            }
-            
-            let block_num = self.inodes[inode_num as usize].direct_blocks[block_idx];
-            let block_num = if block_num == 0 || block_num == u32::MAX {
-                let new_block = self.block_alloc();
-                if new_block == u32::MAX {
-                    break;
+            let block_num = Self::get_or_alloc_block(
+                &mut self.inodes[inode_num as usize],
+                &mut self.data_area,
+                &mut self.block_bitmap,
+                &self.free_blocks,
+                block_idx
+            );
+
+            match block_num {
+                Some(block_num) => {
+                    let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
+                    if start + bytes_to_write <= self.data_area.len() {
+                        self.data_area[start..start + bytes_to_write]
+                            .copy_from_slice(&buf[bytes_written..bytes_written + bytes_to_write]);
+                    }
                 }
-                self.inodes[inode_num as usize].direct_blocks[block_idx] = new_block;
-                new_block
-            } else {
-                block_num
-            };
-            
-            let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
-            self.data_area[start..start + bytes_to_write]
-                .copy_from_slice(&buf[bytes_written..bytes_written + bytes_to_write]);
-            
+                None => break,
+            }
+
             bytes_written += bytes_to_write;
             *offset += bytes_to_write as u64;
-            
+
             if *offset > self.inodes[inode_num as usize].size as u64 {
                 self.inodes[inode_num as usize].size = *offset as u32;
             }
@@ -555,23 +885,107 @@ impl RamFsData {
             let last_block_idx = ((new_size - 1) as usize) / RAMFS_BLOCK_SIZE;
             let offset_in_block = ((new_size - 1) as usize) % RAMFS_BLOCK_SIZE;
 
-            let (block_num, start, end) = {
-                let inode = &self.inodes[inode_num as usize];
-                if last_block_idx < 12 && inode.direct_blocks[last_block_idx] != 0 {
-                    let bn = inode.direct_blocks[last_block_idx];
-                    let s = bn as usize * RAMFS_BLOCK_SIZE + offset_in_block + 1;
-                    let e = bn as usize * RAMFS_BLOCK_SIZE + RAMFS_BLOCK_SIZE;
-                    (Some(bn), s, e)
-                } else {
-                    (None, 0, 0)
-                }
-            };
+            {
+                let block_num = Self::get_or_alloc_block(
+                    &mut self.inodes[inode_num as usize],
+                    &mut self.data_area,
+                    &mut self.block_bitmap,
+                    &self.free_blocks,
+                    last_block_idx
+                );
 
-            if let Some(bn) = block_num {
-                let data_len = self.data_area.len();
-                for byte in &mut self.data_area[start..end.min(data_len)] {
-                    *byte = 0;
+                if let Some(block_num) = block_num {
+                    if block_num != 0 {
+                        let start = block_num as usize * RAMFS_BLOCK_SIZE + offset_in_block + 1;
+                        let end = (block_num as usize + 1) * RAMFS_BLOCK_SIZE;
+                        let data_len = self.data_area.len();
+                        for byte in &mut self.data_area[start..end.min(data_len)] {
+                            *byte = 0;
+                        }
+                    }
                 }
+            }
+
+            let first_block_to_free = (new_size + RAMFS_BLOCK_SIZE as u64 - 1) as usize / RAMFS_BLOCK_SIZE + 1;
+            let last_block = (old_size + RAMFS_BLOCK_SIZE as u64 - 1) as usize / RAMFS_BLOCK_SIZE;
+
+            {
+                let mut blocks_to_free: Vec<u32> = Vec::new();
+                let inode_ref = &self.inodes[inode_num as usize];
+
+                for idx in first_block_to_free..last_block.min(DIRECT_BLOCKS) {
+                    if inode_ref.direct_blocks[idx] != 0 {
+                        blocks_to_free.push(inode_ref.direct_blocks[idx]);
+                    }
+                }
+
+                for block_num in blocks_to_free {
+                    self.block_set_free(block_num);
+                }
+
+                let inode_mut = &mut self.inodes[inode_num as usize];
+                for idx in first_block_to_free..last_block.min(DIRECT_BLOCKS) {
+                    if inode_mut.direct_blocks[idx] != 0 {
+                        inode_mut.direct_blocks[idx] = 0;
+                    }
+                }
+
+                let indirect_block = self.inodes[inode_num as usize].indirect_block;
+                if first_block_to_free < DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK && indirect_block != 0 {
+                    let indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS).max(0);
+                    let indirect_end = last_block.saturating_sub(DIRECT_BLOCKS).min(INDIRECT_BLOCKS_PER_BLOCK);
+                    self.free_indirect_chain(indirect_block, indirect_start, indirect_end);
+
+                    if indirect_start == 0 {
+                        self.inodes[inode_num as usize].indirect_block = 0;
+                    }
+                }
+
+                let double_indirect_block = self.inodes[inode_num as usize].double_indirect_block;
+                if first_block_to_free >= DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK && double_indirect_block != 0 {
+                    let double_indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK).max(0);
+                    let double_indirect_end = last_block.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK);
+                    self.free_double_indirect_chain(double_indirect_block, double_indirect_start, double_indirect_end);
+
+                    if double_indirect_start == 0 {
+                        self.inodes[inode_num as usize].double_indirect_block = 0;
+                    }
+                }
+            }
+        } else if new_size == 0 {
+            let mut blocks_to_free: Vec<u32> = Vec::new();
+            let indirect_blk = self.inodes[inode_num as usize].indirect_block;
+            let double_indirect_blk = self.inodes[inode_num as usize].double_indirect_block;
+
+            {
+                let inode = &self.inodes[inode_num as usize];
+                for i in 0..DIRECT_BLOCKS {
+                    if inode.direct_blocks[i] != 0 {
+                        blocks_to_free.push(inode.direct_blocks[i]);
+                    }
+                }
+            }
+
+            for block_num in blocks_to_free {
+                self.block_set_free(block_num);
+            }
+
+            let inode = &mut self.inodes[inode_num as usize];
+            for i in 0..DIRECT_BLOCKS {
+                if inode.direct_blocks[i] != 0 {
+                    inode.direct_blocks[i] = 0;
+                }
+            }
+
+            if indirect_blk != 0 {
+                self.free_indirect_chain(indirect_blk, 0, INDIRECT_BLOCKS_PER_BLOCK);
+                self.inodes[inode_num as usize].indirect_block = 0;
+            }
+
+            if double_indirect_blk != 0 {
+                self.free_double_indirect_chain(double_indirect_blk, 0,
+                                                  INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK);
+                self.inodes[inode_num as usize].double_indirect_block = 0;
             }
         }
 
@@ -700,11 +1114,11 @@ impl RamFsData {
     
     pub fn stat(&self, inode_num: u32) -> Option<VfsStat> {
         let inode = &self.inodes[inode_num as usize];
-        
+
         if !inode.used {
             return None;
         }
-        
+
         Some(VfsStat {
             inode_num: inode.inode_num,
             mode: inode.perm,
@@ -717,6 +1131,47 @@ impl RamFsData {
             file_type: inode.file_type,
             reserved: 0,
         })
+    }
+
+    pub fn seek(&self, inode_num: u32, offset: i64, whence: VfsSeekWhence) -> Option<u64> {
+        if inode_num as usize >= RAMFS_MAX_INODES {
+            return None;
+        }
+
+        let inode = &self.inodes[inode_num as usize];
+        if !inode.used {
+            return None;
+        }
+
+        let file_size = inode.size as i64;
+
+        let new_offset = match whence {
+            VfsSeekWhence::Set => offset,
+            VfsSeekWhence::Cur => {
+                let current = 0i64;
+                current + offset
+            }
+            VfsSeekWhence::End => file_size + offset,
+        };
+
+        if new_offset < 0 {
+            return None;
+        }
+
+        Some(new_offset as u64)
+    }
+
+    pub fn get_file_size(&self, inode_num: u32) -> Option<u32> {
+        if inode_num as usize >= RAMFS_MAX_INODES {
+            return None;
+        }
+
+        let inode = &self.inodes[inode_num as usize];
+        if !inode.used {
+            return None;
+        }
+
+        Some(inode.size)
     }
 }
 

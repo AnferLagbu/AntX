@@ -155,13 +155,7 @@ impl Scheduler {
             None
         }
     }
-            
-            Some(next_pid)
-        } else {
-            None
-        }
-    }
-    
+
     pub fn current(&self) -> Option<Pid> {
         let pid = self.current.load(Ordering::SeqCst);
         if pid == 0 {
