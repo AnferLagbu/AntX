@@ -1223,6 +1223,91 @@ impl HvFsData {
         Some(*inode)
     }
 
+    pub fn truncate_inode(&mut self, inode_num: u32, new_size: u64) -> i32 {
+        if inode_num as usize >= self.inode_table.len() {
+            return -1;
+        }
+
+        let old_size = {
+            let inode = match self.get_inode(inode_num) {
+                Some(i) => i,
+                None => return -1,
+            };
+            inode.size as u64
+        };
+
+        if new_size == old_size {
+            return 0;
+        }
+
+        if new_size < old_size {
+            let start_block = (new_size + HVFS_BLOCK_SIZE as u64 - 1) as usize / HVFS_BLOCK_SIZE;
+            let end_block = (old_size + HVFS_BLOCK_SIZE as u64 - 1) as usize / HVFS_BLOCK_SIZE;
+
+            let blocks_to_free: Vec<u32> = {
+                let inode = match self.get_inode(inode_num) {
+                    Some(i) => i,
+                    None => return -1,
+                };
+                (start_block..end_block.min(12))
+                    .filter_map(|idx| {
+                        if idx < 12 && inode.direct_blocks[idx] != 0 {
+                            Some(inode.direct_blocks[idx])
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            };
+
+            for block_num in blocks_to_free {
+                self.block_set_free(block_num);
+            }
+
+            if new_size > 0 && start_block < 12 {
+                let last_block_idx = start_block.saturating_sub(1);
+                let (block_to_clear, offset_in_block) = {
+                    let inode = match self.get_inode(inode_num) {
+                        Some(i) => i,
+                        None => return -1,
+                    };
+                    if last_block_idx < 12 && inode.direct_blocks[last_block_idx] != 0 {
+                        (Some(inode.direct_blocks[last_block_idx]), (new_size as usize) % HVFS_BLOCK_SIZE)
+                    } else {
+                        (None, 0)
+                    }
+                };
+
+                if let Some(block_num) = block_to_clear {
+                    if let Some(block_data) = self.get_block(block_num) {
+                        for byte in &mut block_data[offset_in_block..] {
+                            *byte = 0;
+                        }
+                        drop(block_data);
+                        self.mark_block_dirty(block_num);
+                    }
+                }
+            }
+
+            if let Some(inode) = self.get_inode_mut(inode_num) {
+                for idx in start_block..end_block.min(12) {
+                    inode.direct_blocks[idx] = 0;
+                }
+                inode.size = new_size as u32;
+                inode.mtime = Self::get_time();
+                inode.dirty = true;
+            }
+        } else {
+            if let Some(inode) = self.get_inode_mut(inode_num) {
+                inode.size = new_size as u32;
+                inode.mtime = Self::get_time();
+                inode.dirty = true;
+            }
+        }
+
+        0
+    }
+
     pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> i32 {
         if !self.initialized {
             return -1;
@@ -1945,8 +2030,26 @@ impl HvFsData {
     }
 
     pub fn sync(&mut self) -> i32 {
-        if !self.initialized || !self.disk_present {
+        if !self.initialized {
             return -1;
+        }
+
+        if !self.disk_present {
+            log("[SYNC] Memory-only mode: clearing dirty flags\n");
+            self.super_block.modified_time = Self::get_time();
+
+            for inode in self.inode_table.iter_mut() {
+                if inode.dirty {
+                    inode.dirty = false;
+                }
+            }
+
+            for entry in self.block_cache.iter_mut() {
+                entry.dirty = false;
+            }
+
+            log("[SYNC] Memory sync completed\n");
+            return 0;
         }
 
         log("[SYNC] Starting full persistence sync...\n");

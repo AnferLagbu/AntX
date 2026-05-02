@@ -106,6 +106,9 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
         let mut ramfs = RAMFS_DATA.lock();
         match ramfs.open(rel_path, flags, pwid) {
             Some((inode_num, offset, file_type)) => {
+                if (flags & VfsOpenFlags::TRUNC.bits()) != 0 {
+                    ramfs.truncate(inode_num, 0, pwid);
+                }
                 VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, path);
                 fd_idx as i32
             }
@@ -118,6 +121,9 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
         let mut diskfs = get_diskfs().lock();
         match diskfs.open(rel_path, flags, pwid) {
             Some((inode_num, offset, file_type)) => {
+                if (flags & VfsOpenFlags::TRUNC.bits()) != 0 {
+                    diskfs.truncate(inode_num, 0, pwid);
+                }
                 VFS_MANAGER.set_fd(fd_idx, inode_num, offset, flags, pwid, file_type, path);
                 fd_idx as i32
             }

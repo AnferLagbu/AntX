@@ -514,7 +514,74 @@ impl RamFsData {
         
         bytes_written as i32
     }
-    
+
+    pub fn truncate(&mut self, inode_num: u32, new_size: u64, pwid: u64) -> i32 {
+        if inode_num as usize >= RAMFS_MAX_INODES {
+            return -1;
+        }
+
+        {
+            let inode = &self.inodes[inode_num as usize];
+            if !inode.used {
+                return -1;
+            }
+            if !self.check_permission(inode, pwid, VFS_PERM_W) {
+                return -1;
+            }
+        }
+
+        unsafe {
+            for c in b"[RAMFS-TRUNC] " { serial_putc(0x3F8, *c); }
+            serial_putc(0x3F8, ('0' as u8) + (inode_num / 10) as u8);
+            serial_putc(0x3F8, ('0' as u8) + (inode_num % 10) as u8);
+            serial_putc(0x3F8, ' ' as u8);
+            serial_putc(0x3F8, ('0' as u8) + ((new_size / 1000) % 10) as u8);
+            serial_putc(0x3F8, ('0' as u8) + ((new_size / 100) % 10) as u8);
+            serial_putc(0x3F8, ('0' as u8) + ((new_size / 10) % 10) as u8);
+            serial_putc(0x3F8, ('0' as u8) + (new_size % 10) as u8);
+            serial_putc(0x3F8, '\n' as u8);
+        }
+
+        let old_size = {
+            let inode = &self.inodes[inode_num as usize];
+            inode.size as u64
+        };
+
+        if new_size == old_size {
+            return 0;
+        }
+
+        if new_size < old_size && new_size > 0 {
+            let last_block_idx = ((new_size - 1) as usize) / RAMFS_BLOCK_SIZE;
+            let offset_in_block = ((new_size - 1) as usize) % RAMFS_BLOCK_SIZE;
+
+            let (block_num, start, end) = {
+                let inode = &self.inodes[inode_num as usize];
+                if last_block_idx < 12 && inode.direct_blocks[last_block_idx] != 0 {
+                    let bn = inode.direct_blocks[last_block_idx];
+                    let s = bn as usize * RAMFS_BLOCK_SIZE + offset_in_block + 1;
+                    let e = bn as usize * RAMFS_BLOCK_SIZE + RAMFS_BLOCK_SIZE;
+                    (Some(bn), s, e)
+                } else {
+                    (None, 0, 0)
+                }
+            };
+
+            if let Some(bn) = block_num {
+                let data_len = self.data_area.len();
+                for byte in &mut self.data_area[start..end.min(data_len)] {
+                    *byte = 0;
+                }
+            }
+        }
+
+        let inode = &mut self.inodes[inode_num as usize];
+        inode.size = new_size as u32;
+        inode.mtime = Self::get_time();
+
+        0
+    }
+
     pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {
         unsafe {
             for c in b"[RAMFS-MKDIR] " { serial_putc(0x3F8, *c); }
@@ -633,11 +700,11 @@ impl RamFsData {
     
     pub fn stat(&self, inode_num: u32) -> Option<VfsStat> {
         let inode = &self.inodes[inode_num as usize];
-
+        
         if !inode.used {
             return None;
         }
-
+        
         Some(VfsStat {
             inode_num: inode.inode_num,
             mode: inode.perm,

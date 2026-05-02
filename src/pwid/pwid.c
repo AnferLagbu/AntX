@@ -4,7 +4,6 @@
 #include "string.h"
 #include "hvfs_ffi.h"
 #include "hvfs.h"
-#include "proc_ffi.h"
 
 struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
 int pwid_count = 0;
@@ -448,42 +447,25 @@ void pwid_list_all(void) {
     serial_puts(SERIAL_COM1, "=================\n");
 }
 
-static struct pwid_context g_current_context = {NULL, 0};
-
-#define MAX_ELEVATION_DEPTH 8
-
-static struct pwid_elevation_stack {
-    struct pwid_context contexts[MAX_ELEVATION_DEPTH];
-    int depth;
-    uint64_t elevation_start_time;
-    uint64_t token_id;
-    uint64_t elevated_process;
-};
-
-static struct pwid_elevation_stack g_elevation_stack = {
-    .depth = 0,
-    .elevation_start_time = 0,
-    .token_id = 0,
-    .elevated_process = 0
-};
+static struct pwid_context current_context = {NULL, 0};
 
 void pwid_set_context(uint64_t pwid) {
     struct pwid_entry *entry = pwid_find(pwid);
     if (entry != NULL && !(entry->flags & PWID_FLAG_DISABLED)) {
-        g_current_context.current = entry;
-        g_current_context.session_pwid = pwid;
+        current_context.current = entry;
+        current_context.session_pwid = pwid;
     } else {
-        g_current_context.current = NULL;
-        g_current_context.session_pwid = 0;
+        current_context.current = NULL;
+        current_context.session_pwid = 0;
     }
 }
 
 uint64_t pwid_get_current(void) {
-    return g_current_context.session_pwid;
+    return current_context.session_pwid;
 }
 
 struct pwid_entry* pwid_get_current_entry(void) {
-    return g_current_context.current;
+    return current_context.current;
 }
 
 int pwid_login(const char *note, const char *password) {
@@ -506,8 +488,8 @@ int pwid_login(const char *note, const char *password) {
         return PWID_ERR_PASSWORD;
     }
     
-    g_current_context.current = entry;
-    g_current_context.session_pwid = entry->pwid;
+    current_context.current = entry;
+    current_context.session_pwid = entry->pwid;
     
     hvfs_set_current_pwid_internal(entry->pwid);
     
@@ -519,13 +501,13 @@ int pwid_login(const char *note, const char *password) {
 }
 
 void pwid_logout(void) {
-    if (g_current_context.current != NULL) {
+    if (current_context.current != NULL) {
         serial_puts(SERIAL_COM1, "PWID: logged out from '");
-        serial_puts(SERIAL_COM1, g_current_context.current->note);
+        serial_puts(SERIAL_COM1, current_context.current->note);
         serial_puts(SERIAL_COM1, "'\n");
     }
-    g_current_context.current = NULL;
-    g_current_context.session_pwid = 0;
+    current_context.current = NULL;
+    current_context.session_pwid = 0;
 }
 
 int pwid_can_create_level(uint8_t creator_level, uint8_t target_level) {
@@ -566,17 +548,17 @@ int pwid_can_modify(uint64_t modifier_pwid, uint64_t target_pwid) {
 }
 
 int pwid_create_user(const char *password, const char *note, uint8_t level) {
-    if (g_current_context.current == NULL) {
+    if (current_context.current == NULL) {
         serial_puts(SERIAL_COM1, "PWID: no active session\n");
         return PWID_ERR_DENIED;
     }
     
-    if (g_current_context.current->flags & PWID_FLAG_DISABLED) {
+    if (current_context.current->flags & PWID_FLAG_DISABLED) {
         serial_puts(SERIAL_COM1, "PWID: current account disabled\n");
         return PWID_ERR_DISABLED;
     }
     
-    if (!pwid_can_create_level(g_current_context.current->level, level)) {
+    if (!pwid_can_create_level(current_context.current->level, level)) {
         serial_puts(SERIAL_COM1, "PWID: permission denied - cannot create level ");
         serial_put_dec(SERIAL_COM1, level);
         serial_puts(SERIAL_COM1, "\n");
@@ -603,7 +585,7 @@ int pwid_create_user(const char *password, const char *note, uint8_t level) {
         serial_puts(SERIAL_COM1, "PWID: user '");
         serial_puts(SERIAL_COM1, note);
         serial_puts(SERIAL_COM1, "' created by '");
-        serial_puts(SERIAL_COM1, g_current_context.current->note);
+        serial_puts(SERIAL_COM1, current_context.current->note);
         serial_puts(SERIAL_COM1, "'\n");
     }
     
@@ -630,11 +612,11 @@ int pwid_enhanced_check(uint64_t pwid, uint64_t owner_pwid,
 
 int64_t pwid_create_token(uint64_t holder, uint16_t domain, uint64_t caps,
                           uint64_t duration_secs, uint32_t max_uses) {
-    if (g_current_context.current == NULL) {
+    if (current_context.current == NULL) {
         return -1;
     }
     
-    uint64_t issuer = g_current_context.session_pwid;
+    uint64_t issuer = current_context.session_pwid;
     uint16_t domains[1] = { domain };
     uint64_t capabilities[1] = { caps };
     
@@ -973,8 +955,8 @@ int pwid_login_with_bruteforce_protection(const char *note, const char *password
     pwid_clear_failed_attempts(entry->pwid);
     entry->last_login_time = get_current_time();
     
-    g_current_context.current = entry;
-    g_current_context.session_pwid = entry->pwid;
+    current_context.current = entry;
+    current_context.session_pwid = entry->pwid;
     
     hvfs_set_current_pwid_internal(entry->pwid);
     
@@ -987,69 +969,70 @@ int pwid_login_with_bruteforce_protection(const char *note, const char *password
     return PWID_OK;
 }
 
-static struct pwid_context g_saved_context = {NULL, 0};
-static uint64_t g_elevation_token_id = 0;
+#define MAX_ELEVATION_DEPTH 8
+
+static struct {
+    struct pwid_context stack[MAX_ELEVATION_DEPTH];
+    int depth;
+} elevation_state = {{0}, 0};
+
+static uint64_t elevation_token_id = 0;
 
 int pwid_elevate(uint64_t target_pwid, const char *password, uint64_t duration_secs) {
-    if (g_current_context.current == NULL) {
+    if (current_context.current == NULL) {
         return PWID_ERR_DENIED;
     }
-
-    if (g_elevation_stack.depth >= MAX_ELEVATION_DEPTH) {
-        serial_puts(SERIAL_COM1, "PWID: Maximum elevation depth reached\n");
+    
+    if (elevation_state.depth >= MAX_ELEVATION_DEPTH) {
+        pwid_audit_log(current_context.session_pwid, AUDIT_ACTION_ELEVATE,
+                       AUDIT_RESULT_FAILURE, target_pwid, 0);
         return PWID_ERR_DENIED;
     }
-
+    
     struct pwid_entry *target = pwid_find(target_pwid);
     if (target == NULL) {
         return PWID_ERR_NOT_FOUND;
     }
-
+    
     if (target->level != PWID_LEVEL_ROOT) {
         return PWID_ERR_DENIED;
     }
-
+    
     if (!pwid_verify_password(target_pwid, password)) {
-        pwid_audit_log(g_current_context.session_pwid, AUDIT_ACTION_ELEVATE,
+        pwid_audit_log(current_context.session_pwid, AUDIT_ACTION_ELEVATE, 
                        AUDIT_RESULT_FAILURE, target_pwid, 0);
         return PWID_ERR_PASSWORD;
     }
 
-    // Push current context onto stack
-    int stack_idx = g_elevation_stack.depth;
-    g_elevation_stack.contexts[stack_idx].current = g_current_context.current;
-    g_elevation_stack.contexts[stack_idx].session_pwid = g_current_context.session_pwid;
-    g_elevation_stack.depth++;
-
+    elevation_state.stack[elevation_state.depth].current = current_context.current;
+    elevation_state.stack[elevation_state.depth].session_pwid = current_context.session_pwid;
+    elevation_state.depth++;
+    
     uint16_t domains[] = {CAP_DOMAIN_SYSTEM, CAP_DOMAIN_FS, CAP_DOMAIN_PROC};
     uint64_t caps[] = {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF};
-
-    // Bind token to current process for security
-    uint64_t current_pid = (uint64_t)proc_get_current_pid_internal();
-
+    
     int64_t token = pwid_create_elevation_token_internal(
         target_pwid,
-        g_current_context.session_pwid,
+        current_context.session_pwid,
         domains,
         caps,
         3,
         duration_secs,
         1
     );
-
+    
     if (token < 0) {
-        // Pop context back on failure
-        g_elevation_stack.depth--;
+        elevation_state.depth--;
         return PWID_ERR_DENIED;
     }
-
-    g_elevation_token_id = (uint64_t)token;
     
-    g_current_context.current = target;
-    g_current_context.session_pwid = target_pwid;
+    elevation_token_id = (uint64_t)token;
+    
+    current_context.current = target;
+    current_context.session_pwid = target_pwid;
     hvfs_set_current_pwid_internal(target_pwid);
     
-    pwid_audit_log(g_saved_context.session_pwid, AUDIT_ACTION_ELEVATE, 
+    pwid_audit_log(elevation_state.stack[elevation_state.depth - 1].session_pwid, AUDIT_ACTION_ELEVATE, 
                    AUDIT_RESULT_SUCCESS, target_pwid, token);
     
     serial_puts(SERIAL_COM1, "PWID: Elevated to root for ");
@@ -1064,46 +1047,38 @@ int pwid_elevate_with_token(uint64_t token_id) {
         return PWID_ERR_DENIED;
     }
     
-    pwid_audit_log(g_current_context.session_pwid, AUDIT_ACTION_TOKEN_USE,
+    pwid_audit_log(current_context.session_pwid, AUDIT_ACTION_TOKEN_USE,
                    AUDIT_RESULT_SUCCESS, 0, token_id);
     
     return PWID_OK;
 }
 
 void pwid_end_elevation(void) {
-    if (g_elevation_stack.depth > 0) {
-        // Pop context from stack
-        g_elevation_stack.depth--;
-        int stack_idx = g_elevation_stack.depth;
-
-        if (g_elevation_token_id != 0) {
-            pwid_revoke_token_internal(g_elevation_token_id, g_current_context.session_pwid);
-            g_elevation_token_id = 0;
+    if (elevation_state.depth > 0) {
+        elevation_state.depth--;
+        
+        if (elevation_token_id != 0) {
+            pwid_revoke_token_internal(elevation_token_id, current_context.session_pwid);
+            elevation_token_id = 0;
         }
-
-        g_current_context.current = g_elevation_stack.contexts[stack_idx].current;
-        g_current_context.session_pwid = g_elevation_stack.contexts[stack_idx].session_pwid;
-        hvfs_set_current_pwid_internal(g_elevation_stack.contexts[stack_idx].session_pwid);
-
-        // Clear the popped context
-        g_elevation_stack.contexts[stack_idx].current = NULL;
-        g_elevation_stack.contexts[stack_idx].session_pwid = 0;
-
-        pwid_audit_log(g_current_context.session_pwid, AUDIT_ACTION_LOGOUT,
+        
+        struct pwid_context prev = elevation_state.stack[elevation_state.depth];
+        
+        current_context.current = prev.current;
+        current_context.session_pwid = prev.session_pwid;
+        hvfs_set_current_pwid_internal(prev.session_pwid);
+        
+        pwid_audit_log(prev.session_pwid, AUDIT_ACTION_LOGOUT,
                        AUDIT_RESULT_SUCCESS, 0, 0);
-
+        
         serial_puts(SERIAL_COM1, "PWID: Elevation ended (depth=");
-        serial_put_dec(SERIAL_COM1, g_elevation_stack.depth);
+        serial_put_dec(SERIAL_COM1, elevation_state.depth);
         serial_puts(SERIAL_COM1, ")\n");
     }
 }
 
 int pwid_is_elevated(void) {
-    return g_elevation_stack.depth > 0;
-}
-
-int pwid_get_elevation_depth(void) {
-    return g_elevation_stack.depth;
+    return elevation_state.depth > 0;
 }
 
 #define MAX_AUDIT_ENTRIES 256

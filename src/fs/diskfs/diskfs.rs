@@ -313,6 +313,11 @@ impl DiskFsData {
         }
     }
 
+    pub fn truncate(&mut self, inode_num: u32, new_size: u64, pwid: u64) -> i32 {
+        let mut hvfs = get_hvfs().lock();
+        hvfs.truncate_inode(inode_num, new_size)
+    }
+
     pub fn sync(&self) -> i32 {
         let mut hvfs = get_hvfs().lock();
         hvfs.sync()
