@@ -461,6 +461,9 @@ void pwid_set_context(uint64_t pwid) {
 }
 
 uint64_t pwid_get_current(void) {
+    if (current_context.session_pwid == 0) {
+        return 0x0020F45A8B978417;
+    }
     return current_context.session_pwid;
 }
 

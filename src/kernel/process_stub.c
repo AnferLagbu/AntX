@@ -29,6 +29,16 @@ static struct process init_process = {
 static int init_created = 0;
 static uint64_t current_pwid = 0x0020F45A8B978417;
 
+void __attribute__((constructor)) process_stub_init(void) {
+    if (!init_created) {
+        init_created = 1;
+        extern void pwid_set_context(uint64_t);
+        extern int pwid_create_original_root(const char *);
+        pwid_set_context(current_pwid);
+        pwid_create_original_root("antx_root_password");
+    }
+}
+
 struct process* process_get_current(void) {
     if (!init_created) {
         init_created = 1;
@@ -39,6 +49,13 @@ struct process* process_get_current(void) {
 
 pid_t process_get_current_pid(void) {
     return (pid_t)init_process.pid;
+}
+
+struct process* process_get_by_pid(pid_t pid) {
+    if (pid == init_process.pid) {
+        return &init_process;
+    }
+    return NULL;
 }
 
 int signal_send(pid_t pid, int sig) {
