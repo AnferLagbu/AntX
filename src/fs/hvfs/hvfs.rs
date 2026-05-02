@@ -6,7 +6,7 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
-    fn serial_putc(port: u16, c: i8);
+    fn serial_putc(port: u16, c: u8);
     fn pwid_get_level(pwid: u64) -> u8;
     fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
     fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
@@ -18,7 +18,7 @@ extern "C" {
 fn log(s: &str) {
     unsafe {
         for c in s.bytes() {
-            serial_putc(0x3F8, c as i8);
+            serial_putc(0x3F8, c);
         }
     }
 }
@@ -798,6 +798,121 @@ impl HvFsData {
         Some(inode)
     }
 
+    pub fn read_file_data(&mut self, inode_num: u32, offset: u64, count: u32) -> Option<Vec<u8>> {
+        let (inode_size, direct_blocks) = {
+            let inode = self.get_inode(inode_num)?;
+            (inode.size, inode.direct_blocks)
+        };
+
+        if offset >= inode_size as u64 {
+            return Some(Vec::new());
+        }
+
+        let actual_count = (count as u64).min(inode_size as u64 - offset) as usize;
+        let mut data = Vec::with_capacity(actual_count);
+        let mut bytes_read = 0usize;
+
+        while bytes_read < actual_count {
+            let current_offset = offset + bytes_read as u64;
+            let block_idx = (current_offset / HVFS_BLOCK_SIZE as u64) as usize;
+            let block_offset = (current_offset % HVFS_BLOCK_SIZE as u64) as usize;
+
+            if block_idx >= 12 {
+                break;
+            }
+
+            let block_num = direct_blocks[block_idx];
+            if block_num == 0 {
+                break;
+            }
+
+            match self.get_block(block_num) {
+                Some(block_data) => {
+                    let bytes_to_copy = (HVFS_BLOCK_SIZE - block_offset).min(actual_count - bytes_read);
+                    data.extend_from_slice(&block_data[block_offset..block_offset + bytes_to_copy]);
+                    bytes_read += bytes_to_copy;
+                }
+                None => break,
+            }
+        }
+
+        Some(data)
+    }
+
+    pub fn write_file_data(&mut self, inode_num: u32, offset: u64, data: &[u8]) -> bool {
+        let mut new_size: Option<u32> = None;
+        let mut success = false;
+
+        let mut bytes_written = 0usize;
+        let mut blocks_to_mark_dirty: Vec<u32> = Vec::new();
+
+        while bytes_written < data.len() {
+            let current_offset = offset + bytes_written as u64;
+            let block_idx = (current_offset / HVFS_BLOCK_SIZE as u64) as usize;
+            let block_offset = (current_offset % HVFS_BLOCK_SIZE as u64) as usize;
+
+            if block_idx >= 12 {
+                break;
+            }
+
+            let (need_alloc, current_block_num) = {
+                let inode = match self.get_inode(inode_num) {
+                    Some(i) => i,
+                    None => return false,
+                };
+                let is_zero = inode.direct_blocks[block_idx] == 0;
+                (is_zero, inode.direct_blocks[block_idx])
+            };
+
+            if need_alloc {
+                let new_block_num = match self.alloc_block() {
+                    Some(nb) => nb,
+                    None => break,
+                };
+                if let Some(inode) = self.get_inode_mut(inode_num) {
+                    inode.direct_blocks[block_idx] = new_block_num;
+                }
+                continue;
+            }
+
+            let block_num = current_block_num;
+
+            match self.get_block(block_num) {
+                Some(block_data_ref) => {
+                    let bytes_to_copy = (HVFS_BLOCK_SIZE - block_offset).min(data.len() - bytes_written);
+                    for i in 0..bytes_to_copy {
+                        block_data_ref[block_offset + i] = data[bytes_written + i];
+                    }
+                    blocks_to_mark_dirty.push(block_num);
+                    bytes_written += bytes_to_copy;
+                }
+                None => break,
+            }
+        }
+
+        for block_num in blocks_to_mark_dirty {
+            self.mark_block_dirty(block_num);
+        }
+
+        if bytes_written > 0 {
+            let calculated_size = (offset + bytes_written as u64) as u32;
+            if let Some(inode) = self.get_inode(inode_num) {
+                if calculated_size > inode.size {
+                    new_size = Some(calculated_size);
+                }
+            }
+            success = true;
+        }
+
+        if let Some(size) = new_size {
+            if let Some(inode) = self.get_inode_mut(inode_num) {
+                inode.size = size;
+            }
+        }
+
+        success
+    }
+
     pub fn resolve_path(&mut self, path: &str) -> Option<u32> {
         let mut current = self.super_block.root_inode;
         let p = path.trim_start_matches('/');
@@ -845,6 +960,8 @@ impl HvFsData {
     }
 
     pub fn format(&mut self) -> i32 {
+        log("[FORMAT] Starting disk format...\n");
+
         self.super_block.magic = HVFS_MAGIC;
         self.super_block.version = HVFS_VERSION;
         self.super_block.block_size = HVFS_BLOCK_SIZE as u32;
@@ -860,30 +977,58 @@ impl HvFsData {
         self.super_block.modified_time = Self::get_time();
         self.super_block.dynamic_inodes = 1;
         self.super_block.dynamic_blocks = 1;
-        
+
         self.inode_table.clear();
         self.inode_table.reserve(HVFS_DEFAULT_INODES as usize);
         for _ in 0..HVFS_DEFAULT_INODES {
             self.inode_table.push(Self::new_inode());
         }
-        
+
         let block_bitmap_size = ((HVFS_DEFAULT_BLOCKS + 7) / 8) as usize;
         self.block_bitmap.clear();
         self.block_bitmap.resize(block_bitmap_size, 0);
-        
+
         let inode_bitmap_size = ((HVFS_DEFAULT_INODES + 7) / 8) as usize;
         self.inode_bitmap.clear();
         self.inode_bitmap.resize(inode_bitmap_size, 0);
-        
+
         for i in 0..self.super_block.first_data_block {
             self.block_set_used(i);
         }
-        
+
         self.create_root_inode();
         self.create_lost_found();
-        
+
+        if self.disk_present {
+            log("[FORMAT] Writing to disk...\n");
+            self.write_superblock_to_disk();
+            self.write_inode_table_to_disk();
+            self.write_bitmaps_to_disk();
+
+            let dirty_blocks: Vec<u32> = self.block_cache.iter()
+                .filter(|e| e.valid && e.dirty)
+                .map(|e| e.block_num)
+                .collect();
+
+            let mut dirty_data: Vec<(u32, [u8; HVFS_BLOCK_SIZE])> = Vec::new();
+
+            for block_num in dirty_blocks {
+                if let Some(entry) = self.block_cache.iter().find(|e| e.block_num == block_num && e.valid) {
+                    dirty_data.push((block_num, *entry.data));
+                }
+            }
+
+            for (block_num, data) in dirty_data {
+                self.write_block_to_disk(block_num, &data);
+                if let Some(entry) = self.block_cache.iter_mut().find(|e| e.block_num == block_num && e.valid) {
+                    entry.dirty = false;
+                }
+            }
+        }
+
         self.initialized = true;
-        
+
+        log("[FORMAT] Format completed\n");
         0
     }
 
@@ -992,12 +1137,31 @@ impl HvFsData {
         if !self.disk_present {
             return HVFS_DISK_NO_DISK;
         }
-        
+
         if self.initialized {
             return HVFS_DISK_OK;
         }
-        
-        HVFS_DISK_UNFORMATTED
+
+        let result = self.read_superblock_from_disk();
+
+        match result {
+            0 => {
+                log("[CHECK] Disk is formatted, can mount\n");
+                HVFS_DISK_OK
+            }
+            -2 => {
+                log("[CHECK] Disk not formatted\n");
+                HVFS_DISK_UNFORMATTED
+            }
+            -3 => {
+                log("[CHECK] Unsupported version\n");
+                HVFS_DISK_VERSION_ERROR
+            }
+            _ => {
+                log("[CHECK] Error reading disk\n");
+                HVFS_DISK_NO_DISK
+            }
+        }
     }
 
     pub fn set_disk_present(&mut self, present: bool) {
@@ -1008,21 +1172,43 @@ impl HvFsData {
         if self.mounted {
             return 0;
         }
-        
+
         if !self.disk_present {
+            log("[MOUNT] No disk present\n");
             return -1;
         }
-        
+
         if !self.initialized {
-            if self.format() != 0 {
-                return -1;
+            log("[MOUNT] Loading filesystem from disk...\n");
+
+            if self.read_superblock_from_disk() != 0 {
+                log("[MOUNT] Failed to read superblock, formatting...\n");
+                if self.format() != 0 {
+                    return -1;
+                }
+            } else {
+                log("[MOUNT] Reading inode table...\n");
+                if self.read_inode_table_from_disk() != 0 {
+                    log("[MOUNT] Failed to read inode table\n");
+                    return -2;
+                }
+
+                log("[MOUNT] Reading bitmaps...\n");
+                if self.read_bitmaps_from_disk() != 0 {
+                    log("[MOUNT] Failed to read bitmaps\n");
+                    return -3;
+                }
+
+                self.initialized = true;
+                log("[MOUNT] Filesystem loaded from disk successfully\n");
             }
         }
-        
+
         self.super_block.mount_time = Self::get_time();
         self.super_block.mount_count += 1;
         self.mounted = true;
-        
+
+        log("[MOUNT] Mount completed\n");
         0
     }
 
@@ -1398,15 +1584,397 @@ impl HvFsData {
         None
     }
 
+    fn write_superblock_to_disk(&self) -> i32 {
+        if !self.disk_present {
+            return -1;
+        }
+
+        let disk_sb = HvfsSuperBlockDisk {
+            magic: self.super_block.magic,
+            version: self.super_block.version,
+            block_size: self.super_block.block_size,
+            total_blocks: self.super_block.total_blocks,
+            free_blocks: self.super_block.free_blocks,
+            inode_count: self.super_block.inode_count,
+            free_inodes: self.super_block.free_inodes,
+            first_data_block: self.super_block.first_data_block,
+            root_inode: self.super_block.root_inode,
+            block_bitmap_block: HVFS_BLOCK_BITMAP_START / HVFS_SECTORS_PER_BLOCK as u32,
+            inode_bitmap_block: HVFS_INODE_BITMAP_START / HVFS_SECTORS_PER_BLOCK as u32,
+            inode_table_block: HVFS_INODE_SECTOR_START / HVFS_SECTORS_PER_BLOCK as u32,
+            created_time: self.super_block.created_time,
+            modified_time: self.super_block.modified_time,
+            mount_time: self.super_block.mount_time,
+            mount_count: self.super_block.mount_count,
+            state: self.super_block.state,
+            dynamic_inodes: self.super_block.dynamic_inodes,
+            dynamic_blocks: self.super_block.dynamic_blocks,
+            checksum: 0,
+            reserved: [0; 452],
+        };
+
+        let sb_ptr = &disk_sb as *const HvfsSuperBlockDisk as *const u8;
+        let sb_size = core::mem::size_of::<HvfsSuperBlockDisk>();
+
+        let sectors_needed = (sb_size + HVFS_DISK_SECTOR_SIZE - 1) / HVFS_DISK_SECTOR_SIZE;
+        for i in 0..sectors_needed {
+            let offset = i * HVFS_DISK_SECTOR_SIZE;
+            unsafe {
+                ata_write_sector(0, HVFS_SUPER_SECTOR_START + i as u32, sb_ptr.add(offset));
+            }
+        }
+
+        log("[PERSIST] SuperBlock written to disk\n");
+        0
+    }
+
+    fn read_superblock_from_disk(&mut self) -> i32 {
+        if !self.disk_present {
+            return -1;
+        }
+
+        let mut disk_sb = HvfsSuperBlockDisk {
+            magic: 0,
+            version: 0,
+            block_size: 0,
+            total_blocks: 0,
+            free_blocks: 0,
+            inode_count: 0,
+            free_inodes: 0,
+            first_data_block: 0,
+            root_inode: 0,
+            block_bitmap_block: 0,
+            inode_bitmap_block: 0,
+            inode_table_block: 0,
+            created_time: 0,
+            modified_time: 0,
+            mount_time: 0,
+            mount_count: 0,
+            state: 0,
+            dynamic_inodes: 0,
+            dynamic_blocks: 0,
+            checksum: 0,
+            reserved: [0; 452],
+        };
+
+        let sb_ptr = &mut disk_sb as *mut HvfsSuperBlockDisk as *mut u8;
+        let sb_size = core::mem::size_of::<HvfsSuperBlockDisk>();
+
+        let sectors_needed = (sb_size + HVFS_DISK_SECTOR_SIZE - 1) / HVFS_DISK_SECTOR_SIZE;
+        for i in 0..sectors_needed {
+            let offset = i * HVFS_DISK_SECTOR_SIZE;
+            unsafe {
+                ata_read_sector(0, HVFS_SUPER_SECTOR_START + i as u32, sb_ptr.add(offset));
+            }
+        }
+
+        if disk_sb.magic != HVFS_MAGIC {
+            log("[PERSIST] Invalid magic, disk unformatted\n");
+            return -2;
+        }
+
+        if disk_sb.version > HVFS_VERSION {
+            log("[PERSIST] Unsupported version\n");
+            return -3;
+        }
+
+        self.super_block.magic = disk_sb.magic;
+        self.super_block.version = disk_sb.version;
+        self.super_block.block_size = disk_sb.block_size;
+        self.super_block.total_blocks = disk_sb.total_blocks;
+        self.super_block.free_blocks = disk_sb.free_blocks;
+        self.super_block.inode_count = disk_sb.inode_count;
+        self.super_block.free_inodes = disk_sb.free_inodes;
+        self.super_block.first_data_block = disk_sb.first_data_block;
+        self.super_block.root_inode = disk_sb.root_inode;
+        self.super_block.created_time = disk_sb.created_time;
+        self.super_block.modified_time = disk_sb.modified_time;
+        self.super_block.mount_time = disk_sb.mount_time;
+        self.super_block.mount_count = disk_sb.mount_count;
+        self.super_block.state = disk_sb.state;
+        self.super_block.dynamic_inodes = disk_sb.dynamic_inodes;
+        self.super_block.dynamic_blocks = disk_sb.dynamic_blocks;
+
+        log("[PERSIST] SuperBlock read from disk\n");
+        0
+    }
+
+    fn write_inode_table_to_disk(&self) -> i32 {
+        if !self.disk_present || self.inode_table.is_empty() {
+            return -1;
+        }
+
+        let inode_disk_size = core::mem::size_of::<HvfsInodeDisk>();
+        let inodes_per_sector = HVFS_DISK_SECTOR_SIZE / inode_disk_size;
+        let mut sector_buf = [0u8; HVFS_DISK_SECTOR_SIZE];
+        let mut inode_idx = 0usize;
+
+        for sector_idx in 0.. {
+            let base_sector = HVFS_INODE_SECTOR_START + sector_idx;
+
+            sector_buf.fill(0);
+            let mut count = 0u32;
+
+            while count < inodes_per_sector as u32 && inode_idx < self.inode_table.len() {
+                let inode = &self.inode_table[inode_idx];
+                let disk_inode = HvfsInodeDisk {
+                    inode_num: inode.inode_num,
+                    mode: inode.mode,
+                    reserved: 0,
+                    size: inode.size,
+                    blocks: 0,
+                    atime: inode.atime,
+                    mtime: inode.mtime,
+                    ctime: inode.ctime,
+                    owner_pwid: inode.owner_pwid,
+                    group_pwid: inode.group_pwid,
+                    pwid_perm: inode.pwid_perm,
+                    link_count: inode.link_count,
+                    direct_blocks: inode.direct_blocks,
+                    indirect_block: inode.indirect_block,
+                    double_indirect: inode.double_indirect,
+                    triple_indirect: inode.triple_indirect,
+                    flags: if inode.used { 1 } else { 0 },
+                    reserved2: [0; 19],
+                };
+
+                let offset = count as usize * inode_disk_size;
+                let src = &disk_inode as *const HvfsInodeDisk as *const u8;
+                sector_buf[offset..offset + inode_disk_size].copy_from_slice(
+                    unsafe { core::slice::from_raw_parts(src, inode_disk_size) }
+                );
+
+                count += 1;
+                inode_idx += 1;
+            }
+
+            unsafe {
+                ata_write_sector(0, base_sector, sector_buf.as_ptr());
+            }
+
+            if inode_idx >= self.inode_table.len() {
+                break;
+            }
+        }
+
+        log("[PERSIST] Inode table written to disk\n");
+        0
+    }
+
+    fn read_inode_table_from_disk(&mut self) -> i32 {
+        if !self.disk_present {
+            return -1;
+        }
+
+        self.inode_table.clear();
+        self.inode_table.reserve(self.super_block.inode_count as usize);
+
+        let inode_disk_size = core::mem::size_of::<HvfsInodeDisk>();
+        let inodes_per_sector = HVFS_DISK_SECTOR_SIZE / inode_disk_size;
+        let mut sector_buf = [0u8; HVFS_DISK_SECTOR_SIZE];
+        let mut total_read = 0usize;
+
+        for sector_idx in 0.. {
+            if total_read >= self.super_block.inode_count as usize {
+                break;
+            }
+
+            let base_sector = HVFS_INODE_SECTOR_START + sector_idx;
+
+            unsafe {
+                ata_read_sector(0, base_sector, sector_buf.as_mut_ptr());
+            }
+
+            for i in 0..inodes_per_sector {
+                if total_read >= self.super_block.inode_count as usize {
+                    break;
+                }
+
+                let offset = i * inode_disk_size;
+                let disk_inode: HvfsInodeDisk = unsafe {
+                    core::ptr::read(sector_buf.as_ptr().add(offset) as *const HvfsInodeDisk)
+                };
+
+                let used = (disk_inode.flags & 1) != 0;
+
+                self.inode_table.push(HvfsInode {
+                    inode_num: disk_inode.inode_num,
+                    mode: disk_inode.mode,
+                    reserved_uid: disk_inode.reserved,
+                    size: disk_inode.size,
+                    atime: disk_inode.atime,
+                    mtime: disk_inode.mtime,
+                    ctime: disk_inode.ctime,
+                    owner_pwid: disk_inode.owner_pwid,
+                    group_pwid: disk_inode.group_pwid,
+                    pwid_perm: disk_inode.pwid_perm,
+                    direct_blocks: disk_inode.direct_blocks,
+                    indirect_block: disk_inode.indirect_block,
+                    double_indirect: disk_inode.double_indirect,
+                    triple_indirect: disk_inode.triple_indirect,
+                    link_count: disk_inode.link_count,
+                    ref_count: 1,
+                    used: used,
+                    dirty: false,
+                    in_cache: false,
+                });
+
+                total_read += 1;
+            }
+        }
+
+        log("[PERSIST] Inode table read from disk\n");
+        0
+    }
+
+    fn write_bitmaps_to_disk(&self) -> i32 {
+        if !self.disk_present {
+            return -1;
+        }
+
+        let block_bitmap_bytes = self.block_bitmap.len();
+        let inode_bitmap_bytes = self.inode_bitmap.len();
+
+        let mut sector_buf = [0u8; HVFS_DISK_SECTOR_SIZE];
+        let mut byte_idx = 0usize;
+
+        for sector_idx in 0.. {
+            let base_sector = HVFS_BLOCK_BITMAP_START + sector_idx;
+
+            sector_buf.fill(0);
+            let mut written = 0usize;
+
+            while written < HVFS_DISK_SECTOR_SIZE && byte_idx < block_bitmap_bytes {
+                sector_buf[written] = self.block_bitmap[byte_idx];
+                written += 1;
+                byte_idx += 1;
+            }
+
+            unsafe {
+                ata_write_sector(0, base_sector, sector_buf.as_ptr());
+            }
+
+            if byte_idx >= block_bitmap_bytes {
+                break;
+            }
+        }
+
+        byte_idx = 0;
+        for sector_idx in 0.. {
+            let base_sector = HVFS_INODE_BITMAP_START + sector_idx;
+
+            sector_buf.fill(0);
+            let mut written = 0usize;
+
+            while written < HVFS_DISK_SECTOR_SIZE && byte_idx < inode_bitmap_bytes {
+                sector_buf[written] = self.inode_bitmap[byte_idx];
+                written += 1;
+                byte_idx += 1;
+            }
+
+            unsafe {
+                ata_write_sector(0, base_sector, sector_buf.as_ptr());
+            }
+
+            if byte_idx >= inode_bitmap_bytes {
+                break;
+            }
+        }
+
+        log("[PERSIST] Bitmaps written to disk\n");
+        0
+    }
+
+    fn read_bitmaps_from_disk(&mut self) -> i32 {
+        if !self.disk_present {
+            return -1;
+        }
+
+        let block_bitmap_size = ((self.super_block.total_blocks + 7) / 8) as usize;
+        let inode_bitmap_size = ((self.super_block.inode_count + 7) / 8) as usize;
+
+        self.block_bitmap.resize(block_bitmap_size, 0);
+        self.inode_bitmap.resize(inode_bitmap_size, 0);
+
+        let mut sector_buf = [0u8; HVFS_DISK_SECTOR_SIZE];
+        let mut byte_idx = 0usize;
+
+        for sector_idx in 0.. {
+            if byte_idx >= block_bitmap_size {
+                break;
+            }
+
+            let base_sector = HVFS_BLOCK_BITMAP_START + sector_idx;
+
+            unsafe {
+                ata_read_sector(0, base_sector, sector_buf.as_mut_ptr());
+            }
+
+            for i in 0..HVFS_DISK_SECTOR_SIZE {
+                if byte_idx + i < block_bitmap_size {
+                    self.block_bitmap[byte_idx + i] = sector_buf[i];
+                }
+            }
+
+            byte_idx += HVFS_DISK_SECTOR_SIZE;
+        }
+
+        byte_idx = 0;
+        for sector_idx in 0.. {
+            if byte_idx >= inode_bitmap_size {
+                break;
+            }
+
+            let base_sector = HVFS_INODE_BITMAP_START + sector_idx;
+
+            unsafe {
+                ata_read_sector(0, base_sector, sector_buf.as_mut_ptr());
+            }
+
+            for i in 0..HVFS_DISK_SECTOR_SIZE {
+                if byte_idx + i < inode_bitmap_size {
+                    self.inode_bitmap[byte_idx + i] = sector_buf[i];
+                }
+            }
+
+            byte_idx += HVFS_DISK_SECTOR_SIZE;
+        }
+
+        log("[PERSIST] Bitmaps read from disk\n");
+        0
+    }
+
     pub fn sync(&mut self) -> i32 {
+        if !self.initialized || !self.disk_present {
+            return -1;
+        }
+
+        log("[SYNC] Starting full persistence sync...\n");
+
         self.super_block.modified_time = Self::get_time();
-        
+
+        if self.write_superblock_to_disk() != 0 {
+            log("[SYNC] Failed to write superblock\n");
+            return -1;
+        }
+
+        if self.write_inode_table_to_disk() != 0 {
+            log("[SYNC] Failed to write inode table\n");
+            return -2;
+        }
+
+        if self.write_bitmaps_to_disk() != 0 {
+            log("[SYNC] Failed to write bitmaps\n");
+            return -3;
+        }
+
         for entry in self.block_cache.iter() {
             if entry.valid && entry.dirty && self.disk_present {
                 self.write_block_to_disk(entry.block_num, &entry.data);
             }
         }
-        
+
+        log("[SYNC] Full persistence sync completed\n");
         0
     }
 

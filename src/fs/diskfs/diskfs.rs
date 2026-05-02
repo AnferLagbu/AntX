@@ -6,13 +6,13 @@ use crate::fs::hvfs::hvfs::{get_hvfs, HVFS_O_CREAT, HVFS_O_WRONLY, HVFS_PERM_R, 
 use crate::fs::vfs::types::*;
 
 extern "C" {
-    fn serial_putc(port: u16, c: i8);
+    fn serial_putc(port: u16, c: u8);
 }
 
 fn log(s: &str) {
     unsafe {
         for c in s.bytes() {
-            serial_putc(0x3F8, c as i8);
+            serial_putc(0x3F8, c);
         }
     }
 }
@@ -208,20 +208,36 @@ impl DiskFsData {
             Some(i) => i,
             None => return -1,
         };
-        
+
+        let inode_num = self.fds[idx].inode_num;
         let pwid = self.fds[idx].pwid;
-        
+        let offset = self.fds[idx].offset;
+
         let mut hvfs = get_hvfs().lock();
-        let mut bytes_read = 0usize;
-        let buf_slice = &mut buf[..count as usize];
-        
+
+        let inode = match hvfs.get_inode(inode_num) {
+            Some(i) => i,
+            None => return -1,
+        };
+
+        if !hvfs.check_permission(inode, pwid, crate::fs::hvfs::hvfs::HVFS_PERM_R) {
+            return -1;
+        }
+
+        let bytes_to_read = (count as u64).min(inode.size as u64 - offset) as u32;
+        let buf_slice = &mut buf[..bytes_to_read as usize];
+
         buf_slice.fill(0);
-        bytes_read = count.min(buf_slice.len() as u32) as usize;
-        self.fds[idx].offset += bytes_read as u64;
-        
-        drop(hvfs);
-        
-        bytes_read as i32
+
+        if let Some(block_data) = hvfs.read_file_data(inode_num, offset, bytes_to_read) {
+            let copy_len = block_data.len().min(buf_slice.len());
+            buf_slice[..copy_len].copy_from_slice(&block_data[..copy_len]);
+            self.fds[idx].offset += copy_len as u64;
+            copy_len as i32
+        } else {
+            self.fds[idx].offset += bytes_to_read as u64;
+            bytes_to_read as i32
+        }
     }
 
     pub fn write(&mut self, system_fd: u32, buf: &[u8], count: u32) -> i32 {
@@ -229,25 +245,27 @@ impl DiskFsData {
             Some(i) => i,
             None => return -1,
         };
-        
+
         let inode_num = self.fds[idx].inode_num;
         let pwid = self.fds[idx].pwid;
-        
+
         let mut hvfs = get_hvfs().lock();
-        
-        let bytes_written = (buf.len() as u32).min(count) as usize;
+
+        let bytes_written = (buf.len() as u32).min(count);
         let new_offset = self.fds[idx].offset + bytes_written as u64;
-        
-        if let Some(inode) = hvfs.get_inode_mut(inode_num) {
-            if new_offset > inode.size as u64 {
-                inode.size = new_offset as u32;
+
+        if hvfs.write_file_data(inode_num, self.fds[idx].offset, &buf[..bytes_written as usize]) {
+            if let Some(inode) = hvfs.get_inode_mut(inode_num) {
+                if new_offset > inode.size as u64 {
+                    inode.size = new_offset as u32;
+                }
+                inode.mtime = crate::fs::hvfs::hvfs::HvFsData::get_time();
+                inode.dirty = true;
             }
-            inode.mtime = crate::fs::hvfs::hvfs::HvFsData::get_time();
-            inode.dirty = true;
         }
-        
+
         self.fds[idx].offset = new_offset;
-        
+
         bytes_written as i32
     }
 
