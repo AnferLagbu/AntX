@@ -10,10 +10,69 @@ use super::user_proc::USER_PROC_MANAGER;
 use super::process::PROCESS_TABLE;
 
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
+static INIT_PROCESS_CREATED: AtomicU32 = AtomicU32::new(0);
+
+#[repr(C)]
+struct CProcess {
+    pid: u64,
+    session_id: u64,
+    parent_pid: u64,
+    pwid: u64,
+    state: u32,
+    exit_code: u64,
+    priority: i32,
+    cpu_time: u64,
+    start_time: u64,
+    time_slice: u64,
+}
+
+static mut C_CURRENT_PROCESS: CProcess = CProcess {
+    pid: 0,
+    session_id: 0,
+    parent_pid: 0,
+    pwid: 0,
+    state: 0,
+    exit_code: 0,
+    priority: 2,
+    cpu_time: 0,
+    start_time: 0,
+    time_slice: 10,
+};
 
 #[no_mangle]
 pub extern "C" fn process_get_current() -> u64 {
-    CURRENT_PROCESS_PTR.load(Ordering::SeqCst)
+    let ptr = CURRENT_PROCESS_PTR.load(Ordering::SeqCst);
+    if ptr == 0 {
+        if INIT_PROCESS_CREATED.load(Ordering::SeqCst) == 0 {
+            create_init_process();
+        }
+        CURRENT_PROCESS_PTR.load(Ordering::SeqCst)
+    } else {
+        ptr
+    }
+}
+
+fn create_init_process() {
+    INIT_PROCESS_CREATED.store(1, Ordering::SeqCst);
+    unsafe {
+        C_CURRENT_PROCESS.pid = 1;
+        C_CURRENT_PROCESS.state = 2;
+        C_CURRENT_PROCESS.priority = 2;
+        C_CURRENT_PROCESS.time_slice = 10;
+
+        extern "C" {
+            fn serial_puts(com: u16, s: *const u8);
+        }
+
+        let msg = b"[PROC] Init process created (pid=1)\n";
+        serial_puts(0x3F8, msg.as_ptr());
+    }
+    CURRENT_PROCESS_PTR.store(unsafe { &C_CURRENT_PROCESS as *const CProcess as u64 }, Ordering::SeqCst);
+}
+
+#[no_mangle]
+pub extern "C" fn update_current_process_ptr(ptr: u64) {
+    CURRENT_PROCESS_PTR.store(ptr, Ordering::SeqCst);
 }
 
 #[no_mangle]
@@ -295,4 +354,29 @@ pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
 #[no_mangle]
 pub extern "C" fn proc_is_initialized() -> i32 {
     if SCHEDULER.is_initialized() { 1 } else { 0 }
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_get_time_slice() -> u64 {
+    SCHEDULER.get_time_slice()
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_get_current_level() -> u32 {
+    SCHEDULER.get_current_level()
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_tick_mlfq() {
+    SCHEDULER.tick()
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_boost_priority() {
+    SCHEDULER.boost_priority()
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_add_with_priority(pid: Pid, level: usize) {
+    SCHEDULER.add_with_priority(pid, level)
 }

@@ -32,7 +32,8 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/ipc.o build/klog.o build/grub_install.o \
               build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
-              build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o
+              build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o \
+              build/process_stub.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -359,10 +360,14 @@ build/test_filesystem_full.o: src/kernel/tests/test_filesystem_full.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
+build/process_stub.o: src/kernel/process_stub.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
 test: test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
-	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map -o build/kernel_test.bin $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
+	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map --allow-multiple-definition -o build/kernel_test.bin $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
 
 # 单元测试（优化版）
 test-unit: build/kernel_test.bin user

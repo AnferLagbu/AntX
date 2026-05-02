@@ -448,7 +448,7 @@ impl RamFsData {
                 bytes_to_read = (inode_size - *offset) as usize;
             }
             
-            if block_idx < 8 {
+            if block_idx < 12 {
                 let block_num = inode.direct_blocks[block_idx];
                 if block_num != 0 {
                     let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
@@ -470,19 +470,19 @@ impl RamFsData {
         if !self.check_permission(&self.inodes[inode_num as usize], pwid, VFS_PERM_W) {
             return -1;
         }
-        
+
         let mut bytes_written = 0usize;
-        
+
         while bytes_written < buf.len() {
             let block_idx = (*offset as usize) / RAMFS_BLOCK_SIZE;
             let block_offset = (*offset as usize) % RAMFS_BLOCK_SIZE;
             let mut bytes_to_write = RAMFS_BLOCK_SIZE - block_offset;
-            
+
             if bytes_to_write > buf.len() - bytes_written {
                 bytes_to_write = buf.len() - bytes_written;
             }
-            
-            if block_idx >= 8 {
+
+            if block_idx >= 12 {
                 break;
             }
             
