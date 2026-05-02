@@ -633,11 +633,11 @@ impl RamFsData {
     
     pub fn stat(&self, inode_num: u32) -> Option<VfsStat> {
         let inode = &self.inodes[inode_num as usize];
-        
+
         if !inode.used {
             return None;
         }
-        
+
         Some(VfsStat {
             inode_num: inode.inode_num,
             mode: inode.perm,
