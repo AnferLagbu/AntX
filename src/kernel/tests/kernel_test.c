@@ -160,41 +160,98 @@ void test_run_all(void) {
 
 void test_print_report(void) {
     uint64_t total_time = report.end_time - report.start_time;
+    int total_tests = report.total_passed + report.total_failed + report.total_skipped;
+    int pass_rate = total_tests > 0 ? (report.total_passed * 100 / total_tests) : 0;
     
     serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "╔══════════════════════════════════════════════════════════════╗\n");
-    serial_puts(SERIAL_COM1, "║                    TEST REPORT SUMMARY                       ║\n");
-    serial_puts(SERIAL_COM1, "╠══════════════════════════════════════════════════════════════╣\n");
+    serial_puts(SERIAL_COM1, "╔══════════════════════════════════════════════════════════════════╗\n");
+    serial_puts(SERIAL_COM1, "║              COMPREHENSIVE TEST REPORT SUMMARY                  ║\n");
+    serial_puts(SERIAL_COM1, "╠══════════════════════════════════════════════════════════════════╣\n");
     
-    serial_puts(SERIAL_COM1, "║  Total Tests:  ");
-    serial_put_dec(SERIAL_COM1, report.total_passed + report.total_failed + report.total_skipped);
-    serial_puts(SERIAL_COM1, "\n");
+    serial_puts(SERIAL_COM1, "║  📊 Total Tests:   ");
+    serial_put_dec(SERIAL_COM1, total_tests);
+    serial_puts(SERIAL_COM1, " (across ");
+    serial_put_dec(SERIAL_COM1, report.module_count);
+    serial_puts(SERIAL_COM1, " modules)\n");
     
-    serial_puts(SERIAL_COM1, "║  ✓ Passed:     ");
+    serial_puts(SERIAL_COM1, "║  ✅ Passed:       ");
     serial_put_dec(SERIAL_COM1, report.total_passed);
-    serial_puts(SERIAL_COM1, "\n");
+    serial_puts(SERIAL_COM1, " (");
+    serial_put_dec(SERIAL_COM1, pass_rate);
+    serial_puts(SERIAL_COM1, "%)\n");
     
-    serial_puts(SERIAL_COM1, "║  ✗ Failed:     ");
+    serial_puts(SERIAL_COM1, "║  ❌ Failed:       ");
     serial_put_dec(SERIAL_COM1, report.total_failed);
     serial_puts(SERIAL_COM1, "\n");
     
-    serial_puts(SERIAL_COM1, "║  ○ Skipped:    ");
+    serial_puts(SERIAL_COM1, "║  ⏭️  Skipped:      ");
     serial_put_dec(SERIAL_COM1, report.total_skipped);
     serial_puts(SERIAL_COM1, "\n");
     
-    serial_puts(SERIAL_COM1, "║  Time:         ");
+    serial_puts(SERIAL_COM1, "║  ⏱️  Total Time:   ");
     serial_put_dec(SERIAL_COM1, total_time / 1000);
+    serial_puts(SERIAL_COM1, ".");
+    if (total_time % 1000 < 100) serial_puts(SERIAL_COM1, "0");
+    if (total_time % 1000 < 10) serial_puts(SERIAL_COM1, "0");
+    serial_put_dec(SERIAL_COM1, total_time % 1000);
     serial_puts(SERIAL_COM1, " ms\n");
     
-    if (report.total_failed == 0) {
-        serial_puts(SERIAL_COM1, "╠══════════════════════════════════════════════════════════════╣\n");
-        serial_puts(SERIAL_COM1, "║           🎉 ALL TESTS PASSED! 🎉                            ║\n");
-    } else {
-        serial_puts(SERIAL_COM1, "╠══════════════════════════════════════════════════════════════╣\n");
-        serial_puts(SERIAL_COM1, "║           ⚠️  SOME TESTS FAILED  ⚠️                          ║\n");
+    serial_puts(SERIAL_COM1, "╠══════════════════════════════════════════════════════════════════╣\n");
+    serial_puts(SERIAL_COM1, "║  📋 MODULE BREAKDOWN:                                        ║\n");
+    serial_puts(SERIAL_COM1, "╠══════════════════════════════════════════════════════════════════╣\n");
+    
+    for (int i = 0; i < report.module_count; i++) {
+        struct test_module *mod = &report.modules[i];
+        int mod_total = mod->passed + mod->failed + mod->skipped;
+        int mod_pass_rate = mod_total > 0 ? (mod->passed * 100 / mod_total) : 0;
+        
+        serial_puts(SERIAL_COM1, "║  • ");
+        
+        const char *name = mod->name;
+        int name_len = 0;
+        while (name[name_len] != '\0' && name_len < 35) {
+            name_len++;
+        }
+        
+        for (int j = 0; j < name_len; j++) {
+            serial_putc(SERIAL_COM1, name[j]);
+        }
+        for (int j = name_len; j < 35; j++) {
+            serial_putc(SERIAL_COM1, ' ');
+        }
+        
+        serial_puts(SERIAL_COM1, " ");
+        serial_put_dec(SERIAL_COM1, mod->passed);
+        serial_putc(SERIAL_COM1, '/');
+        serial_put_dec(SERIAL_COM1, mod_total);
+        
+        if (mod_total > 0) {
+            serial_puts(SERIAL_COM1, " (");
+            serial_put_dec(SERIAL_COM1, mod_pass_rate);
+            serial_putc(SERIAL_COM1, '%');
+            serial_putc(SERIAL_COM1, ')');
+        }
+        
+        if (mod->failed > 0) {
+            serial_puts(SERIAL_COM1, " ⚠️");
+        } else if (mod->passed == mod_total && mod_total > 0) {
+            serial_puts(SERIAL_COM1, " ✓");
+        }
+        
+        serial_puts(SERIAL_COM1, "\n");
     }
     
-    serial_puts(SERIAL_COM1, "╚══════════════════════════════════════════════════════════════╝\n");
+    serial_puts(SERIAL_COM1, "╠══════════════════════════════════════════════════════════════════╣\n");
+    
+    if (report.total_failed == 0) {
+        serial_puts(SERIAL_COM1, "║           🎉🎉🎉 ALL TESTS PASSED! 🎉🎉🎉                      ║\n");
+        serial_puts(SERIAL_COM1, "║           System is functioning correctly                    ║\n");
+    } else {
+        serial_puts(SERIAL_COM1, "║           ⚠️⚠️⚠️ SOME TESTS FAILED ⚠️⚠️⚠️                       ║\n");
+        serial_puts(SERIAL_COM1, "║           Review failed modules above                       ║\n");
+    }
+    
+    serial_puts(SERIAL_COM1, "╚══════════════════════════════════════════════════════════════════╝\n");
     serial_puts(SERIAL_COM1, "\n");
     
     serial_puts(SERIAL_COM1, "TEST_RESULT:");
@@ -205,6 +262,18 @@ void test_print_report(void) {
     } else {
         serial_puts(SERIAL_COM1, "FAIL\n");
     }
+    
+    serial_puts(SERIAL_COM1, "TEST_STATS:");
+    serial_put_dec(SERIAL_COM1, total_tests);
+    serial_putc(SERIAL_COM1, ',');
+    serial_put_dec(SERIAL_COM1, report.total_passed);
+    serial_putc(SERIAL_COM1, ',');
+    serial_put_dec(SERIAL_COM1, report.total_failed);
+    serial_putc(SERIAL_COM1, ',');
+    serial_put_dec(SERIAL_COM1, report.total_skipped);
+    serial_putc(SERIAL_COM1, ',');
+    serial_put_dec(SERIAL_COM1, pass_rate);
+    serial_puts(SERIAL_COM1, "%\n");
 }
 
 int test_get_result(void) {
