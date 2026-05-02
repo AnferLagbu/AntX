@@ -215,33 +215,85 @@ clean:
 	rm -rf build/ isodir/
 	cd src/rust && cargo clean
 
+# QEMU 基础配置
+QEMU := qemu-system-x86_64
+QEMU_FLAGS := -m 512 -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
+
+# 运行模式配置
+# mode-interactive: 需要图形界面，适合开发调试
+# mode-headless: 无头模式，适合 CI/CD 和服务器环境
+ifeq ($(QEMU_MODE),headless)
+	QEMU_DISPLAY := -display none -nographic -serial file:$(LOG_DIR)/serial.log
+else
+	QEMU_DISPLAY := -serial stdio -display gtk
+endif
+
 run: all user
-	qemu-system-x86_64 -kernel build/kernel.bin -serial stdio
+	@mkdir -p $(LOG_DIR)
+	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin $(QEMU_DISPLAY)
+
+run-headless: all user
+	@$(MAKE) QEMU_MODE=headless run
+	@echo "✓ Kernel output saved to $(LOG_DIR)/serial.log"
+	@cat $(LOG_DIR)/serial.log | head -100
 
 run-iso: iso
-	qemu-system-x86_64 -cdrom build/antx.iso -serial stdio
+	@mkdir -p $(LOG_DIR)
+	$(QEMU) $(QEMU_FLAGS) -cdrom build/antx.iso $(QEMU_DISPLAY)
 
 debug: all user
-	qemu-system-x86_64 -kernel build/kernel.bin -serial stdio -s -S
+	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin -serial stdio -s -S
 
 log: all user
 	@mkdir -p $(LOG_DIR)
-	qemu-system-x86_64 -kernel build/kernel.bin -serial file:$(LOG_DIR)/serial.log -display none
-	@echo "Serial log saved to $(LOG_DIR)/serial.log"
+	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin \
+		-serial file:$(LOG_DIR)/serial.log \
+		-display none \
+		-d cpu_reset,guest_errors 2>&1 | tee $(LOG_DIR)/qemu_stderr.log || true
+	@echo ""
+	@echo "╔══════════════════════════════════════════╗"
+	@echo "║  Serial log: $(LOG_DIR)/serial.log       ║"
+	@echo "║  QEMU stderr: $(LOG_DIR)/qemu_stderr.log ║"
+	@echo "╚══════════════════════════════════════════╝"
+	@if [ -f $(LOG_DIR)/serial.log ]; then \
+		echo "--- Last 50 lines of serial output ---"; \
+		tail -50 $(LOG_DIR)/serial.log; \
+	fi
 
 run-iso-debug: iso
 	@mkdir -p $(LOG_DIR)
-	timeout 10 qemu-system-x86_64 -cdrom build/antx.iso -serial stdio -no-reboot \
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	timeout 30 $(QEMU) $(QEMU_FLAGS) \
+		-cdrom build/antx.iso \
+		-serial file:$(LOG_DIR)/serial_$${timestamp}.log \
+		-display none \
+		-no-reboot \
 		-d int,cpu_reset,unimp,guest_errors,in_asm \
-		-D $(LOG_DIR)/qemu_debug.log || true
+		-D $(LOG_DIR)/qemu_debug_$${timestamp}.log || true
 	@echo ""
-	@echo "QEMU debug log saved to $(LOG_DIR)/qemu_debug.log"
-	@echo "Run 'cat $(LOG_DIR)/qemu_debug.log' to view details"
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║  Debug logs saved:                          ║"
+	@echo "║  Serial:  $(LOG_DIR)/serial_$${timestamp}.log    ║"
+	@echo "║  QEMU:    $(LOG_DIR)/qemu_debug_$${timestamp}.log ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@if [ -f $(LOG_DIR)/qemu_debug_$${timestamp}.log ]; then \
+		echo "--- QEMU Debug Output (last 50 lines) ---"; \
+		tail -50 $(LOG_DIR)/qemu_debug_$${timestamp}.log; \
+	fi
 
 debug-iso: iso
-	qemu-system-x86_64 -cdrom build/antx.iso -serial stdio -no-reboot -s -S &
-	@echo "QEMU started in debug mode on port 1234"
-	@echo "Connect with: gdb -ex 'target remote localhost:1234' -ex 'symbol-file build/kernel.bin'"
+	@mkdir -p $(LOG_DIR)
+	$(QEMU) $(QEMU_FLAGS) \
+		-cdrom build/antx.iso \
+		-serial stdio \
+		-no-reboot \
+		-s -S &
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║  QEMU started in debug mode on port 1234     ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@echo "Connect with:"
+	@echo "  gdb -ex 'target remote localhost:1234' \\"
+	@echo "      -ex 'symbol-file build/kernel.bin'"
 
 build/main.o: src/kernel/main.c
 	@mkdir -p build
@@ -312,8 +364,11 @@ test: test-unit
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
 	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map -o build/kernel_test.bin $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
 
+# 单元测试（优化版）
 test-unit: build/kernel_test.bin user
-	@echo "Building test ISO..."
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║     Building & Running Unit Tests             ║"
+	@echo "╚══════════════════════════════════════════════╝"
 	@mkdir -p isodir/boot/grub
 	@cp build/kernel_test.bin isodir/boot/kernel.bin
 	@mkdir -p isodir/bin
@@ -326,11 +381,57 @@ test-unit: build/kernel_test.bin user
 	@echo 'menuentry "AntX Test" {' >> isodir/boot/grub/grub.cfg
 	@echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
 	@echo '}' >> isodir/boot/grub/grub.cfg
-	@grub2-mkrescue -o build/antx_test.iso isodir
-	@echo "Running kernel unit tests..."
+	@grub2-mkrescue -o build/antx_test.iso isodir 2>/dev/null
+	@echo ""
+	@echo "▶ Starting QEMU (timeout: 120s, memory: 512MB)..."
 	@mkdir -p tests/reports
-	@timeout 120 qemu-system-x86_64 -m 512M -cdrom build/antx_test.iso -serial stdio -display none 2>&1 | tee tests/reports/unit_test_$(shell date +%Y%m%d_%H%M%S).log
-	@echo "Test completed. Check tests/reports/ for results."
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	timeout 120 $(QEMU) $(QEMU_FLAGS) \
+		-m 512 \
+		-cdrom build/antx_test.iso \
+		-serial file:tests/reports/unit_test_$${timestamp}.log \
+		-display none \
+		-d cpu_reset 2>tests/reports/qemu_stderr_$${timestamp}.log || true
+	@echo ""
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║  Test completed!                             ║"
+	@echo "║  Report: tests/reports/unit_test_$${timestamp}.log ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@if [ -f tests/reports/unit_test_$${timestamp}.log ]; then \
+		echo "--- Serial Output (last 80 lines) ---"; \
+		tail -80 tests/reports/unit_test_$${timestamp}.log; \
+	fi
+
+# 快速测试（短超时，适合频繁开发迭代）
+test-quick: build/kernel_test.bin user
+	@echo "▶ Quick test mode (timeout: 30s)..."
+	@mkdir -p isodir/boot/grub tests/reports
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX" { multiboot2 /boot/kernel.bin }' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_quick.iso isodir 2>/dev/null
+	@timeout 30 $(QEMU) $(QEMU_FLAGS) \
+		-cdrom build/antx_quick.iso \
+		-serial file:tests/reports/quick_test.log \
+		-display none || true
+	@echo "✓ Quick test log: tests/reports/quick_test.log"
+	@tail -30 tests/reports/quick_test.log 2>/dev/null || echo "(no output)"
+
+# 详细调试模式（包含完整 QEMU 调试信息）
+test-verbose: build/kernel_test.bin user
+	@echo "▶ Verbose test mode (with QEMU debug output)..."
+	@mkdir -p isodir/boot/grub tests/reports
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX" { multiboot2 /boot/kernel.bin }' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_verbose.iso isodir 2>/dev/null
+	@timeout 120 $(QEMU) $(QEMU_FLAGS) \
+		-cdrom build/antx_verbose.iso \
+		-serial stdio \
+		-display none \
+		-d int,cpu_reset,unimp,guest_errors,in_asm \
+		2>&1 | tee tests/reports/verbose_test.log | head -200 || true
+	@echo "✓ Full log saved to: tests/reports/verbose_test.log"
 
 test-integration: iso
 	@echo "Running integration tests..."
