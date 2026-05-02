@@ -4,10 +4,10 @@ extern "C" {
     fn serial_putc(port: u16, c: u8);
 }
 
-use crate::fs::hvfs::hvfs::{get_hvfs, HVFS_DATA};
+use crate::fs::hvfs::hvfs::get_hvfs;
 use super::vfs::VFS_MANAGER;
 use crate::fs::ramfs::ramfs::RAMFS_DATA;
-use crate::fs::diskfs::diskfs::{get_diskfs, DISKFS_DATA};
+use crate::fs::diskfs::diskfs::get_diskfs;
 use super::types::*;
 
 fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
