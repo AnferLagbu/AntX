@@ -1,5 +1,6 @@
 #include "ipc.h"
 #include "mm.h"
+#include "kmalloc.h"
 #include "serial.h"
 #include "string.h"
 #include "scheduler_ex.h"
@@ -437,33 +438,32 @@ int msgq_send(ipc_id_t id, uint64_t type, const void *data, uint64_t size) {
     if (mq == NULL) {
         return -1;
     }
-    
+
     if (size > MSG_MAX_SIZE) {
         return -1;
     }
-    
+
     if (mq->count >= mq->max_msgs) {
-        struct thread *current = thread_get_current();
-        if (current != NULL) {
-            wait_queue_add(&mq->send_wait, current);
-            scheduler_yield_ex();
-        }
-    }
-    
-    struct message *msg = (struct message *)pmm_alloc_page();
-    if (msg == NULL) {
         return -1;
     }
-    
+
+    struct message *msg = (struct message *)kmalloc(sizeof(struct message));
+    if (msg == NULL) {
+        serial_puts(SERIAL_COM1, "[IPC] Failed to allocate message memory\n");
+        return -1;
+    }
+
+    memset(msg, 0, sizeof(struct message));
+
     msg->type = type;
     msg->sender = process_get_current_pid();
     msg->size = size;
     msg->next = NULL;
-    
+
     if (data != NULL && size > 0) {
         memcpy(msg->data, data, size);
     }
-    
+
     if (mq->tail == NULL) {
         mq->head = msg;
         mq->tail = msg;
@@ -472,11 +472,17 @@ int msgq_send(ipc_id_t id, uint64_t type, const void *data, uint64_t size) {
         mq->tail = msg;
     }
     mq->count++;
-    
+
     if (mq->recv_wait.count > 0) {
         wait_queue_wake_one(&mq->recv_wait);
     }
-    
+
+    serial_puts(SERIAL_COM1, "[IPC] Message sent to queue ");
+    serial_put_dec(SERIAL_COM1, id);
+    serial_puts(SERIAL_COM1, " size=");
+    serial_put_dec(SERIAL_COM1, (uint32_t)size);
+    serial_puts(SERIAL_COM1, "\n");
+
     return 0;
 }
 
@@ -485,37 +491,43 @@ int msgq_recv(ipc_id_t id, uint64_t *type, void *data, uint64_t *size) {
     if (mq == NULL) {
         return -1;
     }
-    
+
     if (mq->head == NULL) {
         return -1;
     }
-    
+
     struct message *msg = mq->head;
     mq->head = msg->next;
     if (mq->head == NULL) {
         mq->tail = NULL;
     }
     mq->count--;
-    
+
     if (type != NULL) {
         *type = msg->type;
     }
-    
+
     uint64_t read_size = msg->size;
     if (data != NULL && msg->size > 0) {
         memcpy(data, msg->data, msg->size);
     }
-    
+
     if (size != NULL) {
         *size = msg->size;
     }
-    
-    pmm_free_page(msg);
-    
+
+    kfree(msg);
+
     if (mq->send_wait.count > 0) {
         wait_queue_wake_one(&mq->send_wait);
     }
-    
+
+    serial_puts(SERIAL_COM1, "[IPC] Message received from queue ");
+    serial_put_dec(SERIAL_COM1, id);
+    serial_puts(SERIAL_COM1, " size=");
+    serial_put_dec(SERIAL_COM1, (uint32_t)read_size);
+    serial_puts(SERIAL_COM1, "\n");
+
     return (int)read_size;
 }
 
@@ -524,19 +536,19 @@ int msgq_destroy(ipc_id_t id) {
     if (mq == NULL) {
         return -1;
     }
-    
+
     while (mq->head != NULL) {
         struct message *msg = mq->head;
         mq->head = msg->next;
-        pmm_free_page(msg);
+        kfree(msg);
     }
-    
+
     mq->id = 0;
-    
+
     serial_puts(SERIAL_COM1, "[IPC] Destroyed message queue id=");
     serial_put_dec(SERIAL_COM1, id);
     serial_puts(SERIAL_COM1, "\n");
-    
+
     return 0;
 }
 
