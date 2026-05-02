@@ -1,6 +1,6 @@
 pub const VFS_MAX_PATH: usize = 128;
 pub const VFS_MAX_NAME: usize = 64;
-pub const VFS_MAX_FDS: usize = 16;
+pub const VFS_MAX_FDS: usize = 32;
 pub const VFS_MAX_MOUNTS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

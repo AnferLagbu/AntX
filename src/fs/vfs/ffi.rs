@@ -206,6 +206,60 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
 }
 
 #[no_mangle]
+pub extern "C" fn vfs_unlink_internal(path: *const c_char) -> i32 {
+    let path = ptr_to_str(path);
+    
+    unsafe {
+        for c in b"[UNLINK] " { serial_putc(0x3F8, *c); }
+        for c in path.bytes() { serial_putc(0x3F8, c); }
+        serial_putc(0x3F8, '\n' as u8);
+    }
+    
+    let mount_idx = match VFS_MANAGER.find_mount(path) {
+        Some(idx) => idx,
+        None => return -1,
+    };
+    
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+    
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            alloc::string::String::new()
+        }
+    };
+    
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            match ramfs.resolve_path(rel_path) {
+                Some(inode_num) => {
+                    ramfs.truncate(inode_num, 0, 0)
+                }
+                None => -1
+            }
+        }
+        "diskfs" => {
+            -1
+        }
+        _ => -1
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
+    unsafe {
+        for c in b"[TRUNCATE] " { serial_putc(0x3F8, *c); }
+        serial_putc(0x3F8, ('0' as u8) + (fd % 10) as u8);
+        serial_putc(0x3F8, '\n' as u8);
+    }
+    
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
@@ -307,7 +361,7 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     if name.is_empty() {
         return -1;
     }
-    
+
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
@@ -316,7 +370,7 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
             alloc::string::String::new()
         }
     };
-    
+
     match fs_name.as_str() {
         "ramfs" => {
             let mut ramfs = RAMFS_DATA.lock();
