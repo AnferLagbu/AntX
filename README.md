@@ -116,8 +116,34 @@ cat tests/reports/unit_test_*.log | grep "TEST_RESULT"
 - **汇编器**: NASM
 - **调试器**: GDB
 - **Rust**: 部分模块使用 Rust 重写（安全关键组件）
+- **版本管理**: 基于 Git 的动态版本系统（自动生成）
 
 ## 快速开始
+
+### 方式一：使用依赖安装脚本（推荐）⭐
+
+```bash
+# 运行依赖检查与自动安装脚本 v2.0
+bash scripts/requirements.sh
+
+# 交互式选项:
+#   --auto         自动安装所有缺失依赖
+#   --verbose      显示详细信息
+#   --skip-optional 跳过可选依赖检查
+#   --force        强制重新检测
+
+# 示例：自动安装所有依赖
+bash scripts/requirements.sh --auto
+```
+
+**脚本功能**：
+- ✅ 自动检测 15+ 个必需和可选依赖
+- ✅ 支持交互式询问或全自动安装
+- ✅ 彩色输出，清晰显示每个工具的状态
+- ✅ 支持 Fedora/RHEL/CentOS 等基于 RPM 的发行版
+- ✅ 智能区分必需依赖和可选依赖（如 Rust 工具链）
+
+### 方式二：手动安装
 
 ```bash
 # 安装依赖 (Fedora)
@@ -142,6 +168,17 @@ ls tests/reports/
 tail -100 tests/reports/unit_test_*.log
 ```
 
+### 版本管理命令
+
+```bash
+# 生成版本信息（通常在构建时自动调用）
+make generate-version          # 正常生成（有缓存时跳过）
+make generate-version-force    # 强制重新生成
+
+# 查看当前版本信息
+make run-iso                   # 启动后在 Shell 中输入: sver
+```
+
 ## 项目结构
 
 ```
@@ -151,29 +188,38 @@ AntX/
 │   ├── issues/         # 问题追踪
 │   └── progress/       # 进度记录
 ├── scripts/        # 构建脚本
+│   ├── requirements.sh  # 🔧 依赖检查与自动安装 v2.0 ⭐ 新增
+│   ├── generate_version.sh # 🔄 动态版本生成脚本 ⭐ 新增
+│   ├── build.sh          # 构建脚本
+│   └── gen_embed.py      # 嵌入二进制生成
 ├── src/            # 源代码
 │   ├── include/    # 头文件
+│   │   ├── version_auto.h      # 🆕 动态版本信息（自动生成）
+│   │   ├── version_registry.h  # 🆕 模块版本注册表接口
+│   │   └── kernel.h            # 内核主头文件（集成版本信息）
 │   ├── kernel/     # 内核核心
-│   │   └── tests/  # 🔬 测试框架（20个模块）
-│   │       ├── kernel_test.c      # 测试框架核心
-│   │       ├── test_main.c        # 测试入口
-│   │       ├── test_pmm.c         # 物理内存管理测试
-│   │       ├── test_vmm.c         # 虚拟内存管理测试
-│   │       ├── test_process.c     # 进程管理测试
-│   │       ├── test_scheduler.c   # 调度器测试
-│   │       ├── test_vfs.c         # 文件系统测试
-│   │       ├── test_ipc.c         # IPC测试
-│   │       ├── test_pwid_enhanced.c # PWID安全测试
-│   │       ├── test_memory_safety.c  # 内存安全测试
-│   │       ├── test_edge_cases.c     # 边界条件测试
-│   │       ├── test_error_handling.c  # 错误处理测试
-│   │       ├── test_performance.c     # 性能基准测试
-│   │       ├── test_process_enhanced.c # 进程增强测试
-│   │       ├── test_scheduler_enhanced.c # 调度器增强测试
-│   │       ├── test_interrupt.c    # 中断处理测试
-│   │       ├── test_vfs_enhanced.c # VFS增强测试
-│   │       ├── test_syscall_enhanced.c # 系统调用增强测试
-│   │       └── test_ipc_enhanced.c # IPC增强测试
+│   │   ├── tests/  # 🔬 测试框架（20个模块）
+│   │   │   ├── kernel_test.c      # 测试框架核心
+│   │   │   ├── test_main.c        # 测试入口
+│   │   │   ├── test_pmm.c         # 物理内存管理测试
+│   │   │   ├── test_vmm.c         # 虚拟内存管理测试
+│   │   │   ├── test_process.c     # 进程管理测试
+│   │   │   ├── test_scheduler.c   # 调度器测试
+│   │   │   ├── test_vfs.c         # 文件系统测试
+│   │   │   ├── test_ipc.c         # IPC测试
+│   │   │   ├── test_pwid_enhanced.c # PWID安全测试
+│   │   │   ├── test_memory_safety.c  # 内存安全测试
+│   │   │   ├── test_edge_cases.c     # 边界条件测试
+│   │   │   ├── test_error_handling.c  # 错误处理测试
+│   │   │   ├── test_performance.c     # 性能基准测试
+│   │   │   ├── test_process_enhanced.c # 进程增强测试
+│   │   │   ├── test_scheduler_enhanced.c # 调度器增强测试
+│   │   │   ├── test_interrupt.c    # 中断处理测试
+│   │   │   ├── test_vfs_enhanced.c # VFS增强测试
+│   │   │   ├── test_syscall_enhanced.c # 系统调用增强测试
+│   │   │   └── test_ipc_enhanced.c # IPC增强测试
+│   │   ├── version_registry.c  # 🆕 模块版本注册表实现
+│   │   └── main.c              # 内核入口（含模块版本注册示例）
 │   ├── mm/         # 内存管理
 │   ├── proc/       # 进程管理 (C + Rust)
 │   ├── pwid/       # PWID 权限 (C + Rust)
@@ -189,6 +235,8 @@ AntX/
 │   ├── lib/        # 内核库
 │   ├── rust/       # Rust 运行时入口
 │   └── user/       # 用户态程序
+│       └── axsh/   # Shell 程序
+│           └── builtins.c  # Shell 内置命令（含 sver 版本显示）
 ├── tests/          # 测试输出和报告
 │   └── reports/    # 📊 测试日志和结果
 ├── build/          # 构建输出
@@ -215,6 +263,26 @@ AntX/
 ### 安全与权限
 - [PWID 权限模型](docs/development/pwid-model.md) - PWID 设计
 - [安全机制](docs/development/security-mechanisms.md) - 安全特性
+
+### 🆕 版本管理（2026-05-03 新增）
+- **动态版本系统**: 基于 Git commit hash 自动生成版本信息
+  - 移除硬编码版本号，改用 `version_auto.h`（自动生成）
+  - 版本信息包含：commit hash、分支、构建时间、脏状态检测
+  - Shell 命令 `sver` 显示完整构建信息
+
+- **模块化版本注册表** (`version_registry.h/c`)
+  - 支持最多 64 个模块注册版本信息
+  - 7 种模块类型分类：CORE, FS, DRIVER, NET, SECURITY, LIB, APP
+  - 语义化版本号 (major.minor.patch)
+  - 已注册核心模块：QueenX, KLog, VFS, RamFS, HvFS, PWID, MLFQ
+
+- **未来扩展示例**:
+  ```c
+  // 添加新模块只需一行代码：
+  version_register("lwIP", 2, 1, 0,
+                  "Lightweight TCP/IP Stack",
+                  MODULE_TYPE_NET);
+  ```
 
 ### 进度追踪
 - [当前任务](docs/progress/current-tasks.md) - 开发任务清单
@@ -253,6 +321,7 @@ test: 添加进程管理边界条件测试
 
 ---
 
-*最后更新: 2026-05-02*  
-*维护者: Anfer*  
-*版本: v0.2.1*
+*最后更新: 2026-05-03*
+*维护者: Anfer*
+*版本: Git-based Dynamic Versioning (见 `sver` 命令)*
+*构建状态: 通过所有单元测试 (84/84)* ⭐

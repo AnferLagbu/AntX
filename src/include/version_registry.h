@@ -39,14 +39,14 @@
  *   - 无全局状态 (线程安全)
  *   - 编译时可配置 (可禁用注册表)
  *
- * 创建时间: 2026-05-03 00:25:34
+ * 创建时间: 2026-05-04 01:58:09
  * ============================================================================
  */
 
 #ifndef __VERSION_REGISTRY_H__
 #define __VERSION_REGISTRY_H__
 
-#include "types.h"
+#include "types.h"  /* 内核类型定义 */
 #include "version_auto.h"
 
 #ifdef __cplusplus

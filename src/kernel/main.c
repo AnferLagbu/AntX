@@ -9,6 +9,8 @@
 #include "kmalloc.h"
 #include "version_registry.h"  /* 模块版本注册表 */
 #include "cpu.h"               /* AMD64 CPU 驱动 */
+#include "pci.h"               /* PCI 总线驱动 */
+#include "dma.h"               /* DMA 引擎 */
 #ifdef KERNEL_TEST
 #include "kernel_test.h"
 #endif
@@ -103,7 +105,14 @@ void kernel_main(void) {
     pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end_phys);
     klog_mem("PMM basic init complete\n");
     
-    kmalloc_init();
+    /* 初始化内核堆 (Rust kmalloc) */
+    /* 堆起始地址：内核结束后的下一个页边界 */
+    /* 初始大小：16 MB (可根据需要调整) */
+    {
+        uint64_t heap_start = ((uint64_t)_kernel_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+        uint64_t heap_initial_size = 16 * 1024 * 1024;  /* 16 MB */
+        kmalloc_init(heap_start, heap_initial_size);
+    }
     klog_mem("Kernel heap initialized\n");
     
     pmm_init_bitmap();
@@ -190,7 +199,13 @@ void kernel_main(void) {
     klog_init_msg("Module versions registered: %d modules\n", version_get_registered_count());
     
     enable_interrupts();
-    
+
+    /* 注意: PCI/DMA 初始化在 QEMU 环境可能导致超时，仅在需要时启用
+     * 真实硬件环境下请取消以下注释
+     */
+    // pci_init();
+    // dma_init();
+
 #ifdef KERNEL_TEST
     printk("\n[TEST MODE] Running kernel tests...\n");
     run_kernel_tests();

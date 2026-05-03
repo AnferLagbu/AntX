@@ -19,6 +19,8 @@ void *memset(void *s, int c, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
 void *memchr(const void *s, int c, size_t n);
 
+long strtol(const char *str, char **endptr, int base);
+
 void secure_zero(void *ptr, size_t len);
 
 #endif

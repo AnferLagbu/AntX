@@ -20,21 +20,25 @@ USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 ASFLAGS = -f elf64
 
 KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
-              build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
-              build/syscall.o build/keyboard.o build/string.o build/ata.o \
-              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
-              build/ipc.o build/klog.o build/grub_install.o \
-              build/version_registry.o \
-              build/cpu.o
-
-KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
-              build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
+              build/switch.o \
               build/syscall.o build/keyboard.o build/string.o build/ata.o \
               build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
               build/ipc.o build/klog.o build/grub_install.o \
               build/version_registry.o \
               build/cpu.o \
-              build/kernel_test.o build/test_main.o build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
+              build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
+              build/pci.o build/dma.o
+
+KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
+              build/switch.o \
+              build/syscall.o build/keyboard.o build/string.o build/ata.o \
+              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
+              build/ipc.o build/klog.o build/grub_install.o \
+              build/version_registry.o \
+              build/cpu.o \
+              build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
+              build/pci.o build/dma.o \
+              build/kernel_test.o build/test_main.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
               build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o \
               build/test_memory_safety.o build/test_edge_cases.o build/test_error_handling.o build/test_performance.o \
@@ -42,7 +46,10 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/test_vfs_enhanced.o build/test_syscall_enhanced.o \
               build/test_qemu_hardware.o \
               build/process_stub.o \
-              build/version_registry.o
+              build/version_registry.o \
+              build/test_spinlock.o build/test_atomic.o build/test_rwlock.o build/test_mutex.o build/test_slab.o \
+              build/test_pci.o build/test_dma.o \
+              build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -89,7 +96,10 @@ $(VERSION_AUTO_H):
 $(VERSION_REGISTRY_H):
 	@$(MAKE) generate-version
 
-.PHONY: all clean run debug log iso run-iso disk run-disk user test test-unit test-integration test-stress
+.PHONY: all clean run debug log iso run-iso disk run-disk user test test-unit test-integration test-stress \
+         test-quick test-comprehensive test-verbose test-enhanced \
+         test-qemu-hw test-qemu-full test-qemu-perf test-all \
+         test-cpu-host test-cpu-host-quick
 
 all: build/kernel.bin user
 
@@ -119,18 +129,6 @@ build/entry.o: src/kernel/entry.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
-build/pmm.o: src/mm/pmm.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/vmm.o: src/mm/vmm.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/kmalloc.o: src/mm/kmalloc.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/switch.o: src/proc/switch.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
@@ -143,11 +141,7 @@ build/user/embedded/user_init_bin.o: src/user/embedded/user_init_bin.c build/use
 	@mkdir -p build/user/embedded
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/pwid.o: src/pwid/pwid.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/ata.o: src/disk/ata.c
+build/ipc.o: src/ipc/ipc.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -175,10 +169,6 @@ build/stack_canary.o: src/kernel/stack_canary.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/klog.o: src/kernel/klog.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/ipc.o: src/ipc/ipc.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -192,6 +182,38 @@ build/version_registry.o: src/kernel/version_registry.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/cpu.o: src/kernel/cpu.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/spinlock.o: src/kernel/spinlock.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/atomic.o: src/kernel/atomic.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/rwlock.o: src/kernel/rwlock.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/mutex.o: src/kernel/mutex.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/slab.o: src/kernel/slab.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/pci.o: src/kernel/pci.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/dma.o: src/kernel/dma.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/ata.o: src/disk/ata.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -462,6 +484,47 @@ build/test_qemu_hardware.o: src/kernel/tests/test_qemu_hardware.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
+build/test_spinlock.o: src/kernel/tests/test_spinlock.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_atomic.o: src/kernel/tests/test_atomic.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_rwlock.o: src/kernel/tests/test_rwlock.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_mutex.o: src/kernel/tests/test_mutex.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_slab.o: src/kernel/tests/test_slab.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+# Rust MM 子系统测试 (PMM/VMM/Kmalloc)
+build/test_pmm.o: src/kernel/tests/test_pmm.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_vmm.o: src/kernel/tests/test_vmm.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_kmalloc.o: src/kernel/tests/test_kmalloc.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_pci.o: src/kernel/tests/test_pci.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_dma.o: src/kernel/tests/test_dma.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
 test: test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
@@ -715,6 +778,110 @@ test-enhanced: build/kernel_test.bin user
 		echo "QEMU Platform Info:"; \
 		grep -E "(QEMU-HW|QEMU-Platform|QEMU-Perf)" tests/reports/enhanced_$${timestamp}.log | tail -20; \
 	fi
+
+# ============================================================================
+# 宿主 CPU 模式测试 (暴露真实 CPU 特性)
+# ============================================================================
+# 使用 -cpu host -enable-kvm 暴露宿主机真实 CPU 特性
+# 用于验证 CPU 驱动在真实硬件上的行为
+
+test-cpu-host: build/kernel_test.bin user
+	@echo "╔═════════════════════════════════════════════════════════════════╗"
+	@echo "║     🖥️  QEMU Host CPU Mode Test (真实硬件特性)               ║"
+	@echo "╚═════════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "  ⚠️  注意事项:"
+	@echo "    • 使用宿主机 CPU 特性运行测试 (需要 KVM 支持)"
+	@echo "    • 可能需要 root 权限或用户权限配置"
+	@echo "    • 测试结果反映真实硬件特性，非仿真"
+	@echo ""
+	@echo "  测试内容:"
+	@echo "    • CPU 驱动初始化和基本信息"
+	@echo "    • 真实 CPUID 特性检测 (厂商/型号/扩展指令集)"
+	@echo "    • MSR 寄存器读写操作"
+	@echo "    • 缓存层次结构检测 (L1/L2/L3)"
+	@echo "    • 多核拓扑信息 (物理核/逻辑核/SMT)"
+	@echo "    • TSC 性能基准测试"
+	@echo ""
+	@mkdir -p isodir/boot/grub tests/reports tests/logs
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@mkdir -p isodir/bin
+	@cp build/user/init.bin isodir/bin/init
+	@cp build/user/axsh.bin isodir/bin/axsh
+	@cp build/user/install.bin isodir/bin/install
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'set default=0' >> isodir/boot/grub/grub.cfg
+	@echo '' >> isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX Host CPU Test" {' >> isodir/boot/grub/grub.cfg
+	@echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
+	@echo '}' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_host_cpu.iso isodir 2>/dev/null
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	echo ""; \
+	echo "▶ Starting Host CPU mode test..."; \
+	echo "  Mode: -cpu host -enable-kvm (passthrough)"; \
+	echo "  Memory: 1024MB (增加内存以支持完整特性检测)"; \
+	echo "  Timeout: 180s"; \
+	echo ""; \
+	timeout 180 $(QEMU) \
+		-cpu host \
+		-enable-kvm \
+		-m 1024 \
+		-no-reboot \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-display none \
+		-serial file:tests/reports/host_cpu_$${timestamp}.log \
+		-d cpu_reset,int,unimp,guest_errors,in_asm \
+		-D tests/logs/host_cpu_debug_$${timestamp}.log \
+		-cdrom build/antx_host_cpu.iso \
+		2>tests/reports/host_cpu_stderr_$${timestamp}.log || true; \
+	echo ""; \
+	echo "╔═════════════════════════════════════════════════════╗"; \
+	echo "║  Host CPU Test completed!                         ║"; \
+	echo "║  Report: tests/reports/host_cpu_$${timestamp}.log   ║"; \
+	echo "╚═════════════════════════════════════════════════════╝"; \
+	if [ -f tests/reports/host_cpu_$${timestamp}.log ]; then \
+		echo ""; \
+		echo "--- Host CPU Test Results ---"; \
+		echo ""; \
+		echo "[CPU Driver Initialization]"; \
+		grep -E "(CPU-DRV.*Init|CPU driver initialized)" tests/reports/host_cpu_$${timestamp}.log | head -5; \
+		echo ""; \
+		echo "[CPU Information]"; \
+		grep -E "(Vendor:|Brand:|Family:|Model:|Stepping:)" tests/reports/host_cpu_$${timestamp}.log | head -10; \
+		echo ""; \
+		echo "[Feature Detection]"; \
+		grep -E "(CPU-DRV.*Feature|SSE|AVX|Virtualization)" tests/reports/host_cpu_$${timestamp}.log | head -15; \
+		echo ""; \
+		echo "[Cache & Topology]"; \
+		grep -E "(Cache|Topology|Core|Thread)" tests/reports/host_cpu_$${timestamp}.log | head -10; \
+		echo ""; \
+		echo "[MSR & Performance]"; \
+		grep -E "(MSR|TSC|Benchmark)" tests/reports/host_cpu_$${timestamp}.log | head -10; \
+		echo ""; \
+		echo "[Test Summary]"; \
+		grep -E "(PASS|FAIL|SKIP|Summary:)" tests/reports/host_cpu_$${timestamp}.log | tail -20; \
+	fi
+
+# 快速宿主 CPU 测试 (60秒，仅运行 CPU 核心测试)
+test-cpu-host-quick: build/kernel_test.bin user
+	@echo "▶ Quick Host CPU test (60s)..."
+	@mkdir -p isodir/boot/grub tests/reports
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX" { multiboot2 /boot/kernel.bin }' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_host_quick.iso isodir 2>/dev/null
+	@timeout 60 $(QEMU) \
+		-cpu host \
+		-enable-kvm \
+		-m 512 \
+		-no-reboot \
+		-display none \
+		-serial file:tests/reports/host_cpu_quick.log \
+		-cdrom build/antx_host_quick.iso \
+		2>tests/reports/host_cpu_quick_stderr.log || true
+	@echo "✓ Quick Host CPU log: tests/reports/host_cpu_quick.log"
+	@grep -E "(CPU-DRV|Vendor:|Brand:|PASS|FAIL)" tests/reports/host_cpu_quick.log | tail -30 || echo "(no output)"
 
 # 测试全部 (包含 QEMU 仿真测试)
 test-all: test-quick test-qemu-hw test-unit test-comprehensive

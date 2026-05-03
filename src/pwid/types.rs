@@ -1,207 +1,256 @@
-pub type CapDomain = u16;
-pub type CapBits = u64;
+//! PWID Type Definitions
+//!
+//! Core data structures for the PWID management system.
+//! All types are designed to match C ABI for FFI compatibility.
 
-pub const CAP_DOMAIN_SYSTEM: CapDomain = 0x0000;
-pub const CAP_DOMAIN_FS: CapDomain = 0x0001;
-pub const CAP_DOMAIN_NET: CapDomain = 0x0002;
-pub const CAP_DOMAIN_PROC: CapDomain = 0x0003;
-pub const CAP_DOMAIN_DEVICE: CapDomain = 0x0004;
-pub const CAP_DOMAIN_USER_MGMT: CapDomain = 0x0005;
-pub const CAP_DOMAIN_CUSTOM_START: CapDomain = 0x0100;
+use core::sync::atomic::{AtomicU64, AtomicBool, AtomicU32, AtomicU16, AtomicU8};
 
-pub const FS_CAP_READ: CapBits = 1 << 0;
-pub const FS_CAP_WRITE: CapBits = 1 << 1;
-pub const FS_CAP_EXECUTE: CapBits = 1 << 2;
-pub const FS_CAP_CREATE: CapBits = 1 << 3;
-pub const FS_CAP_DELETE: CapBits = 1 << 4;
-pub const FS_CAP_CHMOD: CapBits = 1 << 5;
-pub const FS_CAP_CHOWN: CapBits = 1 << 6;
-pub const FS_CAP_MOUNT: CapBits = 1 << 7;
-pub const FS_CAP_LINK: CapBits = 1 << 8;
+/// Maximum number of PWID entries in the table
+pub const MAX_PWID_ENTRIES: usize = 256;
 
-pub const PROC_CAP_FORK: CapBits = 1 << 0;
-pub const PROC_CAP_EXEC: CapBits = 1 << 1;
-pub const PROC_CAP_KILL: CapBits = 1 << 2;
-pub const PROC_CAP_DEBUG: CapBits = 1 << 3;
-pub const PROC_CAP_NICE: CapBits = 1 << 4;
-pub const PROC_CAP_SCHED: CapBits = 1 << 5;
+/// Length of the note field (user description)
+pub const PWID_NOTE_LEN: usize = 128;
 
-pub const SYS_CAP_ALL: CapBits = !0;
+/// Length of SHA-256 hash output (in bytes)
+pub const PWID_HASH_LEN: usize = 32;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Trust/Permission levels (lower value = higher privilege)
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PwidLevel {
     Root = 0,
-    Trustworthy = 1,
-    Untrustworthy = 2,
+    Trusted = 1,
+    Standard = 2,
+    Untrustworthy = 3,
 }
 
 impl PwidLevel {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => PwidLevel::Root,
-            1 => PwidLevel::Trustworthy,
-            _ => PwidLevel::Untrustworthy,
+    pub fn from_u8(val: u8) -> Option<Self> {
+        match val {
+            0 => Some(PwidLevel::Root),
+            1 => Some(PwidLevel::Trusted),
+            2 => Some(PwidLevel::Standard),
+            3 => Some(PwidLevel::Untrustworthy),
+            _ => None,
         }
+    }
+
+    pub fn as_u8(self) -> u8 {
+        self as u8
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u8)]
-pub enum TrustLevel {
-    None = 0,
-    Basic = 1,
-    Operate = 2,
-    Delegate = 3,
-    Full = 4,
-}
-
-impl TrustLevel {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => TrustLevel::None,
-            1 => TrustLevel::Basic,
-            2 => TrustLevel::Operate,
-            3 => TrustLevel::Delegate,
-            _ => TrustLevel::Full,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum AuditLevel {
-    None = 0,
-    Critical = 1,
-    Important = 2,
-    All = 3,
-    Full = 4,
-}
-
-impl AuditLevel {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => AuditLevel::None,
-            1 => AuditLevel::Critical,
-            2 => AuditLevel::Important,
-            3 => AuditLevel::All,
-            _ => AuditLevel::Full,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(u8)]
-pub enum TimeOfDay {
-    Any = 0,
-    WorkHours = 1,
-    OffHours = 2,
-    Maintenance = 3,
-    Emergency = 4,
-}
-
-impl TimeOfDay {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => TimeOfDay::Any,
-            1 => TimeOfDay::WorkHours,
-            2 => TimeOfDay::OffHours,
-            3 => TimeOfDay::Maintenance,
-            _ => TimeOfDay::Emergency,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum SessionType {
-    Local = 0,
-    SSH = 1,
-    Serial = 2,
-    GUI = 3,
-    API = 4,
-}
-
-impl SessionType {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => SessionType::Local,
-            1 => SessionType::SSH,
-            2 => SessionType::Serial,
-            3 => SessionType::GUI,
-            _ => SessionType::API,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum LoginMethod {
-    Password = 0,
-    Token = 1,
-    Key = 2,
-    Biometric = 3,
-    Elevated = 4,
-}
-
-impl LoginMethod {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => LoginMethod::Password,
-            1 => LoginMethod::Token,
-            2 => LoginMethod::Key,
-            3 => LoginMethod::Biometric,
-            _ => LoginMethod::Elevated,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum TokenType {
-    Elevation = 0,
-    Delegation = 1,
-    Session = 2,
-    OneTime = 3,
-    Scoped = 4,
-}
-
-impl TokenType {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => TokenType::Elevation,
-            1 => TokenType::Delegation,
-            2 => TokenType::Session,
-            3 => TokenType::OneTime,
-            _ => TokenType::Scoped,
-        }
-    }
-}
-
-pub const PWID_FLAG_DISABLED: u8 = 0x01;
-pub const PWID_FLAG_LOCKED: u8 = 0x02;
-pub const PWID_FLAG_EXPIRED: u8 = 0x04;
-pub const PWID_FLAG_2FA_REQUIRED: u8 = 0x08;
-
-pub const TRUST_COND_TIME_LIMITED: u32 = 0x01;
-pub const TRUST_COND_IP_RESTRICTED: u32 = 0x02;
-pub const TRUST_COND_SINGLE_USE: u32 = 0x04;
-pub const TRUST_COND_REQUIRES_2FA: u32 = 0x08;
-
-pub const TOKEN_FLAG_SINGLE_COMMAND: u32 = 0x01;
-pub const TOKEN_FLAG_NO_TTY: u32 = 0x02;
-pub const TOKEN_FLAG_REQUIRE_CONFIRM: u32 = 0x04;
-pub const TOKEN_FLAG_AUDIT_ALL: u32 = 0x08;
-pub const TOKEN_FLAG_EXPIRE_ON_IDLE: u32 = 0x10;
-
+/// PWID entry flags (bitfield)
 bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct InheritFlags: u8 {
-        const INHERIT_PERMS = 0x01;
-        const INHERIT_TRUST_CHAIN = 0x02;
-        const INHERIT_CONTEXT_POLICY = 0x04;
-        const INHERIT_ACL = 0x08;
-        const NONE = 0x00;
-        const ALL = 0x0F;
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    pub struct PwidFlags: u16 {
+        const NONE                = 0;
+        const DISABLED            = 1 << 0;
+        const ORIGINAL_ROOT       = 1 << 1;
+        const DEFAULT_PW          = 1 << 2;
+        const MODIFIED            = 1 << 3;
+        const LOCKED              = 1 << 4;
+        const EXPIRED             = 1 << 5;
     }
+}
+
+impl Default for PwidFlags {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+/// PWID entry structure (matches C layout for compatibility)
+#[repr(C)]
+pub struct PwidEntry {
+    /// Unique process/user identifier
+    pub pwid: AtomicU64,
+    
+    /// Trust level (0=root, 3=untrustworthy)
+    pub level: AtomicU8,
+    
+    /// Entry flags
+    pub flags: AtomicU16,
+    
+    /// User description/note
+    pub note: [u8; PWID_NOTE_LEN],
+    
+    /// SHA-256 password hash
+    pub password_hash: [u8; PWID_HASH_LEN],
+    
+    /// Creation timestamp
+    pub created_time: AtomicU64,
+    
+    /// Expiration timestamp (0 = never expires)
+    pub expires_at: AtomicU64,
+    
+    /// Lockout end time (for brute-force protection)
+    pub lockout_until: AtomicU64,
+    
+    /// Number of failed login attempts
+    pub failed_attempts: AtomicU32,
+    
+    /// Last successful login time
+    pub last_login_time: AtomicU64,
+}
+
+impl Default for PwidEntry {
+    fn default() -> Self {
+        Self {
+            pwid: AtomicU64::new(0),
+            level: AtomicU8::new(0),
+            flags: AtomicU16::new(0),
+            note: [0u8; PWID_NOTE_LEN],
+            password_hash: [0u8; PWID_HASH_LEN],
+            created_time: AtomicU64::new(0),
+            expires_at: AtomicU64::new(0),
+            lockout_until: AtomicU64::new(0),
+            failed_attempts: AtomicU32::new(0),
+            last_login_time: AtomicU64::new(0),
+        }
+    }
+}
+
+impl PwidEntry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if this entry is valid (has a non-zero pwid)
+    pub fn is_valid(&self) -> bool {
+        self.pwid.load(core::sync::atomic::Ordering::Acquire) != 0
+    }
+
+    /// Get current trust level
+    pub fn get_level(&self) -> u8 {
+        self.level.load(core::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Set trust level
+    pub fn set_level(&self, level: u8) {
+        self.level.store(level, core::sync::atomic::Ordering::Release);
+    }
+
+    /// Get flags
+    pub fn get_flags(&self) -> PwidFlags {
+        PwidFlags::from_bits_truncate(
+            self.flags.load(core::sync::atomic::Ordering::Acquire)
+        )
+    }
+
+    /// Set flags
+    pub fn set_flags(&self, flags: PwidFlags) {
+        self.flags.store(flags.bits(), core::sync::atomic::Ordering::Release);
+    }
+
+    /// Add flag(s)
+    pub fn add_flags(&self, flags: PwidFlags) {
+        let current = self.get_flags();
+        self.set_flags(current | flags);
+    }
+
+    /// Remove flag(s)
+    pub fn remove_flags(&self, flags: PwidFlags) {
+        let current = self.get_flags();
+        self.set_flags(current & !flags);
+    }
+
+    /// Check if specific flag is set
+    pub fn has_flag(&self, flag: PwidFlags) -> bool {
+        self.get_flags().contains(flag)
+    }
+
+    /// Get note as string slice (returns until first null byte)
+    pub fn get_note_str(&self) -> &str {
+        let len = self.note.iter().position(|&b| b == 0).unwrap_or(self.note.len());
+        unsafe { core::str::from_utf8_unchecked(&self.note[..len]) }
+    }
+
+    /// Set note from string (truncates if necessary)
+    pub fn set_note(&mut self, note: &str) {
+        let bytes = note.as_bytes();
+        let len = bytes.len().min(PWID_NOTE_LEN - 1);
+        
+        self.note[..len].copy_from_slice(&bytes[..len]);
+        self.note[len] = 0; // Null terminate
+    }
+}
+
+/// Session context structure
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+pub struct PwidContext {
+    /// Pointer to current user's entry (stored as raw pointer for C compat)
+    pub current_entry: *const PwidEntry,
+    
+    /// Current session's pwid
+    pub session_pwid: u64,
+}
+
+/// Error codes returned by PWID operations
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PwidError {
+    Ok = 0,
+    NotFound = -1,
+    Disabled = -2,
+    PasswordIncorrect = -3,
+    PermissionDenied = -4,
+    TableFull = -5,
+    AlreadyExists = -6,
+    InvalidLevel = -7,
+    CannotDeleteOriginalRoot = -8,
+}
+
+impl PwidError {
+    pub fn as_i32(self) -> i32 {
+        self as i32
+    }
+}
+
+/// Audit action types
+#[repr(u32)]
+#[derive(Clone, Copy, Debug)]
+pub enum AuditAction {
+    Login = 1,
+    Logout = 2,
+    Create = 3,
+    Delete = 4,
+    Modify = 5,
+    Elevate = 6,
+    TokenUse = 7,
+    PasswordChange = 8,
+}
+
+/// Audit result codes
+#[repr(u32)]
+#[derive(Clone, Copy, Debug)]
+pub enum AuditResult {
+    Success = 0,
+    Failure = 1,
+    Denied = 2,
+}
+
+/// Audit log entry structure
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+pub struct AuditEntry {
+    /// Timestamp of the event
+    pub timestamp: u64,
+    
+    /// PWID that performed the action
+    pub pwid: u64,
+    
+    /// Action type
+    pub action: u32,
+    
+    /// Result code
+    pub result: u32,
+    
+    /// Target PWID (if applicable)
+    pub target_pwid: u64,
+    
+    /// Additional details
+    pub details: u64,
 }

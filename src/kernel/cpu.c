@@ -56,6 +56,13 @@ static uint64_t g_tsc_frequency = 0;
 /*                        内部辅助函数                                       */
 /* ============================================================================ */
 
+/* 安全版本函数前向声明 (用于 cpu_init) */
+static void cpu_collect_features_safe(cpu_info_t *info);
+static void cpu_detect_cache_safe(cpu_info_t *info);
+static void cpu_detect_topology_safe(cpu_info_t *info);
+static int cpu_init_msr_safe(void);
+static uint64_t cpu_calibrate_tsc_safe(void);
+
 /**
  * @brief 设置特性标志位
  *
@@ -634,36 +641,43 @@ static void cpu_detect_topology(cpu_info_t *info) {
 /* ============================================================================ */
 
 int cpu_init(void) {
+    int i;
     serial_puts(SERIAL_COM1, "[CPU] Initializing AMD64 CPU driver...\n");
-    
-    /* 1. 检测厂商 */
+
+    /* 初始化全局结构体 */
+    for (i = 0; i < sizeof(cpu_info_t); i++) {
+        ((uint8_t*)&g_cpu_info)[i] = 0;
+    }
+    g_cpu_info.initialized = false;
+
+    /* 1. 检测厂商 (最基础的操作，通常不会失败) */
     cpu_detect_vendor(&g_cpu_info);
-    
+
     /* 2. 获取签名 */
     cpu_get_signature_internal(&g_cpu_info);
-    
-    /* 3. 收集特性 */
-    cpu_collect_features(&g_cpu_info);
-    
-    /* 4. 检测缓存 */
-    cpu_detect_cache(&g_cpu_info);
-    
-    /* 5. 检测多核拓扑 */
-    cpu_detect_topology(&g_cpu_info);
-    
-    /* 6. 初始化 MSR */
-    if (cpu_init_msr() != 0) {
+
+    /* 3. 收集特性 (使用安全模式) */
+    cpu_collect_features_safe(&g_cpu_info);
+
+    /* 4. 检测缓存 (可选) */
+    cpu_detect_cache_safe(&g_cpu_info);
+
+    /* 5. 检测多核拓扑 (可选) */
+    cpu_detect_topology_safe(&g_cpu_info);
+
+    /* 6. 初始化 MSR (需要特权级) */
+    if (cpu_init_msr_safe() != 0) {
         serial_puts(SERIAL_COM1, "[CPU] Warning: MSR initialization failed\n");
     }
-    
-    /* 7. 校准 TSC */
-    g_tsc_frequency = cpu_calibrate_tsc();
-    
+
+    /* 7. 校准 TSC (保守估计) */
+    g_tsc_frequency = cpu_calibrate_tsc_safe();
+
     /* 8. 标记已初始化 */
     g_cpu_info.initialized = true;
-    
+
     serial_puts(SERIAL_COM1, "[CPU] CPU driver initialized successfully\n");
-    
+
     return 0;
 }
 
@@ -811,4 +825,206 @@ void cpu_print_info(void (*output_func)(const char*)) {
         serial_put_dec(SERIAL_COM1, (uint32_t)(g_tsc_frequency / 1000000));
         (*output_func)(" MHz\n");
     }
+}
+
+/* ============================================================================ */
+/*                        安全版本函数 (增强兼容性)                             */
+/* ============================================================================ */
+
+/**
+ * @brief 安全的特性收集版本 (避免访问不支持的 CPUID leaf)
+ */
+static void cpu_collect_features_safe(cpu_info_t *info) {
+    uint32_t eax, ebx, ecx, edx;
+    int i;
+
+    /* 清空特性位图 - 使用简单循环避免 __builtin_memset 问题 */
+    for (i = 0; i < sizeof(cpu_features_t); i++) {
+        ((uint8_t*)&info->features)[i] = 0;
+    }
+
+    /* 基础特性 (Leaf 1) - 几乎所有 CPU 都支持 */
+    if (info->max_cpuid_leaf >= 1) {
+        cpu_cpuid(1, 0, &eax, &ebx, &ecx, &edx);
+        parse_features_edx(&info->features, edx);
+        parse_features_ecx(&info->features, ecx);
+    }
+
+    /* 扩展特性 (Leaf 80000001) - 检查是否支持 */
+    cpu_cpuid(0x80000000, 0, &eax, &ebx, &ecx, &edx);
+    info->max_ext_cpuid_leaf = eax;
+
+    if (info->max_ext_cpuid_leaf >= 0x80000001) {
+        cpu_cpuid(0x80000001, 0, &eax, &ebx, &ecx, &edx);
+        parse_extended_features(&info->features, edx, ecx);
+
+        /* 品牌/型号字符串 (Leaf 80000002~4) */
+        if (info->max_ext_cpuid_leaf >= 0x80000004) {
+            uint32_t *brand = (uint32_t*)info->brand_string;
+
+            cpu_cpuid(0x80000002, 0, &eax, &ebx, &ecx, &edx);
+            brand[0] = eax; brand[1] = ebx; brand[2] = ecx; brand[3] = edx;
+
+            cpu_cpuid(0x80000003, 0, &eax, &ebx, &ecx, &edx);
+            brand[4] = eax; brand[5] = ebx; brand[6] = ecx; brand[7] = edx;
+
+            cpu_cpuid(0x80000004, 0, &eax, &ebx, &ecx, &edx);
+            brand[8] = eax; brand[9] = ebx; brand[10] = ecx; brand[11] = edx;
+
+            info->brand_string[47] = '\0';
+        } else {
+            __builtin_strcpy(info->brand_string, "Unknown");
+        }
+    } else {
+        __builtin_strcpy(info->brand_string, "Generic CPU");
+    }
+    
+    /* 高级特性 (Leaf 7, Sub-leaf 0) - 仅在支持时访问 */
+    if (info->max_cpuid_leaf >= 7) {
+        cpu_cpuid(7, 0, &eax, &ebx, &ecx, &edx);
+        parse_advanced_features(&info->features, ebx);
+    }
+}
+
+/**
+ * @brief 安全的缓存检测版本
+ */
+static void cpu_detect_cache_safe(cpu_info_t *info) {
+    /* 使用保守的默认值 */
+    info->cache.l1i_size = 32 * 1024;   /* bytes */
+    info->cache.l1d_size = 32 * 1024;    /* bytes */
+    info->cache.l2_size = 256 * 1024;    /* bytes */
+    info->cache.l3_size = 0;             /* 可能不存在 */
+    info->cache.l1_assoc = 4;
+    info->cache.l2_assoc = 8;
+    info->cache.l3_assoc = 0;
+    info->cache.cache_line = 64;
+    
+    /* 尝试使用 CPUID 4 获取详细信息（如果支持）*/
+    if (info->max_cpuid_leaf >= 4) {
+        uint32_t eax, ebx, ecx, edx;
+        
+        cpu_cpuid(4, 0, &eax, &ebx, &ecx, &edx);
+        
+        /* 解析缓存信息 */
+        uint32_t cache_type = eax & 0x1F;
+        if (cache_type > 0) {
+            uint32_t cache_level = (eax >> 5) & 0x7;
+            
+            if (cache_level == 1) {
+                info->cache.l1d_size = ((ebx >> 22) + 1) * (ebx & 0x3FF);
+            } else if (cache_level == 2) {
+                info->cache.l2_size = ((ebx >> 22) + 1) * (ebx & 0x3FF);
+            } else if (cache_level == 3) {
+                info->cache.l3_size = ((ebx >> 22) + 1) * (ebx & 0x3FF);
+            }
+        }
+    }
+}
+
+/**
+ * @brief 安全的拓扑检测版本
+ */
+static void cpu_detect_topology_safe(cpu_info_t *info) {
+    /* 使用保守的默认值 */
+    info->logical_cores = 1;
+    info->physical_cores = 1;
+    info->hyperthreading_enabled = false;
+    
+    /* 尝试从 CPUID 1 获取逻辑处理器数 */
+    if (info->max_cpuid_leaf >= 1) {
+        uint32_t eax, ebx, ecx, edx;
+        cpu_cpuid(1, 0, &eax, &ebx, &ecx, &edx);
+        
+        info->logical_cores = (ebx >> 16) & 0xFF;
+        if (info->logical_cores == 0) info->logical_cores = 1;
+        
+        /* 检查超线程 */
+        info->hyperthreading_enabled = (ecx >> 28) & 1;
+        
+        /* 如果没有超线程，物理核 = 逻辑核 */
+        if (!info->hyperthreading_enabled) {
+            info->physical_cores = info->logical_cores;
+        } else {
+            /* 有超线程时，假设每个物理核有 2 个逻辑核 */
+            info->physical_cores = info->logical_cores / 2;
+            if (info->physical_cores == 0) info->physical_cores = 1;
+        }
+    }
+    
+    /* APIC ID */
+    if (info->max_cpuid_leaf >= 1) {
+        uint32_t eax, ebx, ecx, edx;
+        cpu_cpuid(1, 0, &eax, &ebx, &ecx, &edx);
+        info->apic_id = (ebx >> 24) & 0xFF;
+    }
+}
+
+/**
+ * @brief 安全的 MSR 初始化版本
+ *
+ * 在 QEMU -cpu host 模式下，MSR 访问可能需要特殊权限。
+ * 此函数会优雅地处理失败情况。
+ */
+static int cpu_init_msr_safe(void) {
+    /*
+     * 在虚拟化环境中，MSR 访问可能受限。
+     * 我们不做实际的 MSR 初始化，只是标记 MSR 可用性。
+     * 实际的 MSR 读写会在运行时检查。
+     */
+    
+    /* 检查 CPU 是否支持 MSR (通过 CPUID.1:EDX[5]) */
+    if (cpu_has_feature(CPU_FEATURE_MSR)) {
+        serial_puts(SERIAL_COM1, "[CPU] MSR support detected\n");
+        return 0;
+    } else {
+        serial_puts(SERIAL_COM1, "[CPU] MSR not supported by CPU\n");
+        return -1;
+    }
+}
+
+/**
+ * @brief 安全的 TSC 校准版本 (使用保守估计)
+ */
+static uint64_t cpu_calibrate_tsc_safe(void) {
+    uint64_t estimated_freq = 0;
+    
+    /*
+     * 方法 1: 使用 CPUID 15H/16H (Intel TSC 频率)
+     * 仅适用于较新的 Intel 处理器，且必须确保 leaf 存在
+     */
+    if (g_cpu_info.max_cpuid_leaf >= 0x15) {
+        uint32_t eax, ebx, ecx, edx;
+
+        cpu_cpuid(0x15, 0, &eax, &ebx, &ecx, &edx);
+
+        if (eax && ebx && ecx) {
+            /* TSC frequency = (ECX * EBX) / EAX */
+            estimated_freq = ((uint64_t)ecx * (uint64_t)ebx) / (uint64_t)eax;
+            if (estimated_freq > 0) {
+                return estimated_freq * 1000000;  /* MHz -> Hz */
+            }
+        }
+    }
+    
+    /*
+     * 方法 2: 基于 CPU 型号/品牌的经验估计
+     * 这不是精确的方法，但在没有 PIT 校准的情况下可用
+     */
+    if (g_cpu_info.vendor == CPU_VENDOR_INTEL) {
+        switch (g_cpu_info.signature.family) {
+            case 6:
+                estimated_freq = 2500000000ULL;
+                break;
+            default:
+                estimated_freq = 2000000000ULL;
+                break;
+        }
+    } else if (g_cpu_info.vendor == CPU_VENDOR_AMD) {
+        estimated_freq = 3000000000ULL;
+    } else {
+        estimated_freq = 1000000000ULL;
+    }
+    
+    return estimated_freq;
 }

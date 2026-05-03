@@ -2,6 +2,7 @@
 #define _KERNEL_TEST_H
 
 #include "types.h"
+#include "string.h"
 
 #define TEST_PASS  1
 #define TEST_FAIL  0
@@ -68,6 +69,7 @@ void test_set_message(int module_idx, int case_idx, const char *msg);
 #define TEST_ASSERT_LE(a, b) TEST_ASSERT((a) <= (b))
 #define TEST_ASSERT_NOT_NULL(p) TEST_ASSERT((p) != NULL)
 #define TEST_ASSERT_NULL(p) TEST_ASSERT((p) == NULL)
+#define TEST_ASSERT_STR(a, b) TEST_ASSERT(strcmp((a), (b)) == 0)
 
 extern int current_module;
 extern int current_case;

@@ -178,7 +178,7 @@ generate_version_header_c() {
 #ifndef __VERSION_AUTO_H__
 #define __VERSION_AUTO_H__
 
-#include <stdint.h>
+#include "types.h"  /* 内核类型定义 (uint8_t, uint32_t 等) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -377,7 +377,7 @@ generate_version_registry_header() {
 #ifndef __VERSION_REGISTRY_H__
 #define __VERSION_REGISTRY_H__
 
-#include <stdint.h>
+#include "types.h"  /* 内核类型定义 */
 #include "version_auto.h"
 
 #ifdef __cplusplus

@@ -22,7 +22,7 @@ struct kmalloc_stats {
     uint64_t overhead;
 };
 
-void kmalloc_init(void);
+void kmalloc_init(uint64_t start, uint64_t initial_size);
 void* kmalloc(uint64_t size);
 void kfree(void *ptr);
 void* krealloc(void *ptr, uint64_t size);

@@ -8,6 +8,10 @@ extern crate alloc;
 
 mod memory_allocator;
 
+// Memory Management Subsystem (Rust rewrite of kernel/mm)
+#[path = "../../mm/mod.rs"]
+pub mod mm;
+
 #[path = "../../fs/mod.rs"]
 pub mod fs;
 
