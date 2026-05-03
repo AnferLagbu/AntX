@@ -21,6 +21,59 @@
 
 ### 1.3 环境安装
 
+#### 方式一：使用依赖检查脚本（推荐）⭐ v2.0 新功能
+
+```bash
+# 运行交互式依赖检查与安装脚本
+bash scripts/requirements.sh
+
+# 可选参数:
+#   --auto           自动安装所有缺失依赖（无需确认）
+#   --verbose        显示详细的检测和安装过程
+#   --skip-optional  跳过可选依赖（如 Rust 工具链）
+#   --force          强制重新检测（忽略缓存）
+
+# 示例：全自动安装
+bash scripts/requirements.sh --auto --verbose
+
+# 示例：仅检测，不安装（查看缺失项）
+bash scripts/requirements.sh --skip-optional
+```
+
+**脚本特性**：
+- ✅ **智能检测**: 自动识别 15+ 个必需和可选工具
+- ✅ **交互式询问**: 对每个缺失依赖提示是否安装
+- ✅ **彩色输出**: 清晰显示 ✓ 已安装 / ✗ 未找到 / ○ 可选
+- ✅ **分类显示**: 区分必需依赖（编译必须）和可选依赖（增强功能）
+- ✅ **支持发行版**: Fedora / RHEL / CentOS Stream 等 RPM 系统
+- ✅ **可选依赖**: Rust 工具链、GDB 调试器等标记为可选
+
+**输出示例**：
+```
+╔══════════════════════════════════════════════╗
+║     AntX 内核构建环境依赖检查工具 v2.0       ║
+╚══════════════════════════════════════════════╝
+
+━━━ 必需依赖 ━━━
+
+  gcc-x86_64-linux-gnu              ✓ 已安装
+  binutils-x86_64-linux-gnu         ✓ 已安装
+  nasm                              ✓ 已安装
+  make                              ✓ 已安装
+  qemu-system-x86                   ✓ 已安装
+  xorriso                           ✓ 已安装
+  grub2-tools                       ✓ 已安装
+
+━━━ 可选依赖 ━━━
+
+  rustc                             ○ 未安装 (可选) - Rust 编译器
+  gdb                               ✓ 已安装 - 调试器
+
+✓ 所有必需依赖已满足！可以开始构建。
+```
+
+#### 方式二：手动安装
+
 ```bash
 sudo dnf install -y make nasm qemu-system-x86 gdb xorriso grub2-tools \
     gcc-x86_64-linux-gnu binutils-x86_64-linux-gnu
@@ -88,9 +141,10 @@ AntX/
 │       └── antx-focused-priority.md # 优先级规划
 │
 ├── scripts/                      # 构建与分析脚本
+│   ├── requirements.sh           # 🔧 依赖检查与自动安装 v2.0 ⭐ 新增
+│   ├── generate_version.sh       # 🔄 动态版本生成脚本 ⭐ 新增
 │   ├── build.sh                  # 构建脚本
 │   ├── gen_embed.py              # 嵌入二进制生成
-│   ├── requirements.sh           # 依赖安装
 │   ├── analyze_*.py              # 各类分析脚本
 │   ├── diagnose_*.py             # 诊断脚本
 │   └── verify_*.py               # 验证脚本

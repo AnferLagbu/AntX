@@ -6,6 +6,91 @@
 
 ## [Unreleased]
 
+### 🚀 Major Update - 动态版本系统与模块化版本注册表 (2026-05-03)
+
+#### 核心功能：基于 Git 的动态版本管理
+
+**移除所有硬编码版本号，采用 Git commit hash 作为版本标识**
+
+| 组件 | 变更 | 说明 |
+|------|------|------|
+| **动态版本生成脚本** | 🆕 新增 | `scripts/generate_version.sh` - 从 Git 提取版本信息 |
+| **自动生成头文件** | 🆕 新增 | `src/include/version_auto.h` - 包含 GIT_COMMIT_HASH, BUILD_DATE 等 |
+| **模块注册表接口** | 🆕 新增 | `src/include/version_registry.h` - 定义版本注册 API |
+| **模块注册表实现** | 🆕 新增 | `src/kernel/version_registry.c` - 实现查询和导出功能 |
+| **内核主头文件** | ✏️ 修改 | `src/include/kernel.h` - 集成 version_auto.h |
+| **配置文件** | ✏️ 修改 | `src/include/config.h` - 移除 CONFIG_KERNEL_VERSION |
+| **Shell 命令** | ✏️ 修改 | `src/user/axsh/builtins.c` - sver 命令显示 Git 信息 |
+
+#### 版本信息内容
+
+```c
+// 自动生成的宏定义（示例）
+#define GIT_COMMIT_HASH    "f6a1e62a75a892c37ea6fe21201c2d95710aaacf"
+#define GIT_COMMIT_SHORT   "f6a1e62"
+#define GIT_BRANCH         "main"
+#define BUILD_DATE         "2026-05-03 00:25:34"
+#define IS_DIRTY_BUILD     1  // 1=有未提交修改, 0=干净构建
+```
+
+#### 模块化版本注册表
+
+**支持最多 64 个模块注册，7 种类型分类**
+
+已注册的核心模块（7个）：
+
+| 模块 | 版本 | 类型 | 说明 |
+|------|------|------|------|
+| QueenX | 0.1.0 | CORE | AntX Kernel Core |
+| KLog | 1.0.0 | LIB | Kernel Logging System |
+| VFS | 1.0.0 | LIB | Virtual File System Layer |
+| RamFS | 1.0.0 | FS | RAM-based File System |
+| HvFS | 2.0.0 | FS | Hybrid Virtual File System |
+| PWID | 1.0.0 | SECURITY | Permission & Identity System |
+| MLFQ | 1.0.0 | CORE | Multi-Level Feedback Queue Scheduler |
+
+#### 使用方法
+
+```bash
+# 生成版本信息（make all 时自动调用）
+make generate-version
+make generate-version-force  # 强制重新生成
+
+# 在代码中注册新模块
+#include "version_registry.h"
+
+version_register("MyModule", 1, 0, 0,
+                "Module Description",
+                MODULE_TYPE_CORE);
+```
+
+#### 构建系统集成
+
+**Makefile 更新**：
+- ✅ 新增 `generate-version` 目标
+- ✅ 新增 `generate-version-force` 目标
+- ✅ 构建 kernel.bin 时自动检查版本文件
+- ✅ 测试链接包含 version_registry.o
+
+#### 兼容性保证
+
+| 特性 | 状态 |
+|------|------|
+| 裸机环境支持 | ✅ 无标准库依赖 |
+| C/Rust 双语言 | ✅ FFI 兼容 |
+| 条件编译 | ✅ 支持 #ifdef |
+| 零运行时开销 | ✅ 静态数组实现 |
+| 未来扩展 | ✅ 64 个模块槽位 |
+
+#### 测试验证
+
+✅ **构建状态**: 成功（无错误）  
+✅ **单元测试**: 通过  
+✅ **版本注册**: 成功注册 7 个核心模块  
+✅ **日志输出**: `[INIT] Module versions registered: 7 modules`
+
+---
+
 ### 🎉 Major Update - 测试框架 v2.0 (2026-05-02)
 
 #### 测试框架全面增强

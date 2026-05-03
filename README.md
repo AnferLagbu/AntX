@@ -77,8 +77,9 @@ cat tests/reports/unit_test_*.log | grep "TEST_RESULT"
 
 ## 当前开发状态
 
-**版本**: v0.2.1  
-**整体完成度**: 约 60% (+5%)
+**版本**: 基于Git动态版本 (见 `sver` 命令)
+**整体完成度**: 约 65% (+5%)
+**构建时间**: 自动从 Git 提取 commit hash 和构建元数据
 
 ### 已完成功能
 

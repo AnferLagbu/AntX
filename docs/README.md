@@ -42,6 +42,45 @@ docs/
 └── progress/        # 进度文档 - 开发日志、里程碑记录
 ```
 
+## 🆕 版本管理文档（2026-05-03 新增）
+
+AntX 已从硬编码版本号迁移至 **基于 Git 的动态版本系统**：
+
+### 核心组件
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| **动态版本生成脚本** | `scripts/generate_version.sh` | 从 Git 提取 commit hash、分支、构建时间 |
+| **自动生成头文件** | `src/include/version_auto.h` | 包含 GIT_COMMIT_HASH, BUILD_DATE 等宏定义 |
+| **模块注册表接口** | `src/include/version_registry.h` | 定义 version_module_t 结构体和注册 API |
+| **模块注册表实现** | `src/kernel/version_registry.c` | 实现版本查询、导出（JSON/表格）功能 |
+
+### 使用方法
+```bash
+# 生成版本信息（make all 时自动调用）
+make generate-version
+
+# 在代码中使用
+#include "version_registry.h"
+
+// 注册新模块
+version_register("MyModule", 1, 0, 0,
+                "Description", MODULE_TYPE_CORE);
+
+// 查询版本信息
+const version_module_t *mod = version_query("MyModule");
+```
+
+### 已注册的核心模块（7个）
+- **QueenX** (0.1.0) - AntX Kernel Core [MODULE_TYPE_CORE]
+- **KLog** (1.0.0) - Kernel Logging System [MODULE_TYPE_LIB]
+- **VFS** (1.0.0) - Virtual File System Layer [MODULE_TYPE_LIB]
+- **RamFS** (1.0.0) - RAM-based File System [MODULE_TYPE_FS]
+- **HvFS** (2.0.0) - Hybrid Virtual File System [MODULE_TYPE_FS]
+- **PWID** (1.0.0) - Permission & Identity System [MODULE_TYPE_SECURITY]
+- **MLFQ** (1.0.0) - Multi-Level Feedback Queue Scheduler [MODULE_TYPE_CORE]
+
+详细设计见：[根目录 README.md](../README.md#️-版本管理-2026-05-03-新增)
+
 ## 📂 development/ - 开发文档
 
 系统设计与技术文档，包含：
@@ -109,7 +148,9 @@ docs/
 
 ## 📂 progress/ - 进度文档
 
-开发进度与里程碑记录：### 进度追踪
+开发进度与里程碑记录：
+
+### 进度追踪
 | 文档 | 说明 |
 |------|------|
 | [README.md](progress/README.md) | 进度文档索引 |
@@ -125,7 +166,10 @@ docs/
 
 ---
 
-*最后更新: 2026-05-02*## 🔗 快速导航
+*最后更新: 2026-05-03*
+*文档版本: v2.1 (新增版本管理文档)*
+
+## 🔗 快速导航
 
 ### 新手入门
 1. [开发指南](development/development.md) - 了解如何开始开发
