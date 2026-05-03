@@ -12,6 +12,7 @@ void test_interrupt_register(void);
 void test_ipc_enhanced_register(void);
 void test_vfs_enhanced_register(void);
 void test_syscall_enhanced_register(void);
+void test_qemu_hardware_register(void);  /* QEMU AMD64 硬件仿真测试 */
 
 void run_kernel_tests(void) {
     test_framework_init();
@@ -42,6 +43,9 @@ void run_kernel_tests(void) {
     
     serial_puts(SERIAL_COM1, "[TEST] → Security & permission tests\n");
     test_pwid_enhanced_register();
+    
+    serial_puts(SERIAL_COM1, "[TEST] → 🖥️  QEMU Hardware Simulation Tests (AMD64)\n");
+    test_qemu_hardware_register();  /* 注册 QEMU 硬件级测试 */
     
 #if 0
     serial_puts(SERIAL_COM1, "[TEST] → VFS Enhanced (temporarily disabled)\n");

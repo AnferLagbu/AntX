@@ -37,6 +37,7 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/test_memory_safety.o build/test_edge_cases.o build/test_error_handling.o build/test_performance.o \
               build/test_process_enhanced.o build/test_scheduler_enhanced.o build/test_interrupt.o build/test_ipc_enhanced.o \
               build/test_vfs_enhanced.o build/test_syscall_enhanced.o \
+              build/test_qemu_hardware.o \
               build/process_stub.o \
               build/version_registry.o
 
@@ -262,6 +263,10 @@ clean:
 QEMU := qemu-system-x86_64
 QEMU_FLAGS := -m 512 -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
+# QEMU CPU 模型配置 (用于硬件仿真测试)
+# 可选值: qemu64 (默认), host (使用宿主机CPU特性), Haswell-noTSX, Skylake-Client
+QEMU_CPU ?= qemu64
+
 # 运行模式配置
 # mode-interactive: 需要图形界面，适合开发调试
 # mode-headless: 无头模式，适合 CI/CD 和服务器环境
@@ -446,6 +451,10 @@ build/test_syscall_enhanced.o: src/kernel/tests/test_syscall_enhanced.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
+build/test_qemu_hardware.o: src/kernel/tests/test_qemu_hardware.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
 test: test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
@@ -567,3 +576,149 @@ test-stress: iso
 	@echo "Running stress tests..."
 	@mkdir -p tests/reports
 	@python3 tests/stress/run_stress_tests.py
+
+# ============================================================================
+# QEMU AMD64 仿真平台测试 (v3.0 - 集成到测试框架)
+# ============================================================================
+# 这些目标专门用于在真实 AMD64 CPU 仿真环境中验证硬件交互
+
+# QEMU 硬件级测试 (150秒超时，包含CPU/内存/中断/设备检测)
+test-qemu-hw: build/kernel_test.bin user
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     🖥️  QEMU AMD64 Hardware Simulation Test           ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "  测试内容:"
+	@echo "    • CPU 架构验证 (CPUID/长模式/SSE/MSR)"
+	@echo "    • 内存管理硬件测试 (PMM/VMM/kmalloc)"
+	@echo "    • 中断系统硬件测试 (IDT/IRQ/异常/定时器)"
+	@echo "    • 设备驱动硬件测试 (串口/键盘/VGA)"
+	@echo "    • QEMU 平台特性检测 (版本/SMP/性能)"
+	@echo ""
+	@mkdir -p isodir/boot/grub tests/reports tests/logs
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@mkdir -p isodir/bin
+	@cp build/user/init.bin isodir/bin/init
+	@cp build/user/axsh.bin isodir/bin/axsh
+	@cp build/user/install.bin isodir/bin/install
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'set default=0' >> isodir/boot/grub/grub.cfg
+	@echo '' >> isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX QEMU HW Test" {' >> isodir/boot/grub/grub.cfg
+	@echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
+	@echo '}' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_qemu_hw.iso isodir 2>/dev/null
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	echo ""; \
+	echo "▶ Starting QEMU hardware simulation test..."; \
+	echo "  CPU Model: $(QEMU_CPU)"; \
+	echo "  Memory: 512MB"; \
+	echo "  Timeout: 150s"; \
+	echo ""; \
+	timeout 150 $(QEMU) $(QEMU_FLAGS) \
+		-cpu $(QEMU_CPU) \
+		-m 512 \
+		-no-reboot \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-display none \
+		-serial file:tests/reports/qemu_hw_$${timestamp}.log \
+		-d cpu_reset,int,unimp,guest_errors \
+		-D tests/logs/qemu_hw_debug_$${timestamp}.log \
+		-cdrom build/antx_qemu_hw.iso \
+		2>tests/reports/qemu_hw_stderr_$${timestamp}.log || true; \
+	echo ""; \
+	echo "╔══════════════════════════════════════════════╗"; \
+	echo "║  QEMU HW Test completed!                    ║"; \
+	echo "║  Report: tests/reports/qemu_hw_$${timestamp}.log ║"; \
+	echo "╚══════════════════════════════════════════════╝"; \
+	if [ -f tests/reports/qemu_hw_$${timestamp}.log ]; then \
+		echo "--- QEMU Hardware Test Results ---"; \
+		grep -E "(QEMU-HW|PASS|FAIL|SKIP|WARN)" tests/reports/qemu_hw_$${timestamp}.log | tail -30; \
+	fi
+
+# QEMU 完整仿真测试套件 (按顺序执行所有测试类型)
+test-qemu-full: test-quick test-qemu-hw test-comprehensive
+	@echo ""
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║     ✅ QEMU Full Simulation Suite Complete   ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@echo "  已执行:"
+	@echo "    ✓ Quick Test (60s) - 基础功能验证"
+	@echo "    ✓ QEMU HW Test (150s) - 硬件级深度检测"
+	@echo "    ✓ Comprehensive Test (180s) - 全模块综合"
+	@echo ""
+
+# QEMU 性能基准测试 (120秒，采集性能指标)
+test-qemu-perf: build/kernel_test.bin user
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║     ⚡ QEMU Performance Benchmark              ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@mkdir -p isodir/boot/grub tests/reports
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX Perf" { multiboot2 /boot/kernel.bin }' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_perf.iso isodir 2>/dev/null
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	timeout 120 $(QEMU) $(QEMU_FLAGS) \
+		-cpu $(QEMU_CPU) \
+		-m 512 \
+		-no-reboot \
+		-display none \
+		-serial file:tests/reports/qemu_perf_$${timestamp}.log \
+		-d cpu_reset,in_asm \
+		-cdrom build/antx_perf.iso \
+		2>tests/reports/qemu_perf_stderr_$${timestamp}.log || true; \
+	echo "✓ Performance report: tests/reports/qemu_perf_$${timestamp}.log"
+
+# 增强版综合测试 (包含 QEMU 硬件信息收集)
+test-enhanced: build/kernel_test.bin user
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     Enhanced Comprehensive Test + QEMU Info          ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@mkdir -p isodir/boot/grub tests/reports tests/logs
+	@cp build/kernel_test.bin isodir/boot/kernel.bin
+	@mkdir -p isodir/bin
+	@cp build/user/init.bin isodir/bin/init
+	@cp build/user/axsh.bin isodir/bin/axsh
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX Enhanced" { multiboot2 /boot/kernel.bin }' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_enhanced.iso isodir 2>/dev/null
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	echo ""; \
+	echo "▶ Running enhanced comprehensive test (200s)..."; \
+	echo "  Collecting: Test results + QEMU platform info"; \
+	echo ""; \
+	timeout 200 $(QEMU) $(QEMU_FLAGS) \
+		-cpu $(QEMU_CPU) \
+		-m 512 \
+		-no-reboot \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-display none \
+		-serial file:tests/reports/enhanced_$${timestamp}.log \
+		-d cpu_reset,int,unimp,guest_errors \
+		-D tests/logs/enhanced_debug_$${timestamp}.log \
+		-cdrom build/antx_enhanced.iso \
+		2>tests/reports/enhanced_stderr_$${timestamp}.log || true; \
+	echo ""; \
+	echo "--- Enhanced Test Summary ---"; \
+	if [ -f tests/reports/enhanced_$${timestamp}.log ]; then \
+		echo "Test Results:"; \
+		grep -E "(Summary:|passed:|failed:|skipped:)" tests/reports/enhanced_$${timestamp}.log | tail -5; \
+		echo ""; \
+		echo "QEMU Platform Info:"; \
+		grep -E "(QEMU-HW|QEMU-Platform|QEMU-Perf)" tests/reports/enhanced_$${timestamp}.log | tail -20; \
+	fi
+
+# 测试全部 (包含 QEMU 仿真测试)
+test-all: test-quick test-qemu-hw test-unit test-comprehensive
+	@echo ""
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     🎉 All Tests Complete!                            ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@echo "  执行的测试套件:"
+	@echo "    1. Quick Test (60s)"
+	@echo "    2. QEMU Hardware Simulation (150s)"
+	@echo "    3. Unit Tests (120s)"
+	@echo "    4. Comprehensive Tests (180s)"
+	@echo "  总计: ~510 秒 (~8.5 分钟)"
+	@echo ""
