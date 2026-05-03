@@ -8,6 +8,7 @@
 #include "hvfs_ffi.h"
 #include "kmalloc.h"
 #include "version_registry.h"  /* 模块版本注册表 */
+#include "cpu.h"               /* AMD64 CPU 驱动 */
 #ifdef KERNEL_TEST
 #include "kernel_test.h"
 #endif
@@ -93,6 +94,12 @@ void kernel_main(void) {
     MODULE_CHECK("GDT", gdt_init);
     MODULE_CHECK("IDT", idt_init);
     
+    /* 初始化 AMD64 CPU 驱动 (特性检测/MSR/缓存信息) */
+    if (cpu_init() != 0) {
+        klog_kern_warn("CPU driver initialization failed, continuing...\n");
+    } else {
+        klog_kern("CPU driver initialized successfully\n");
+    }
     pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end_phys);
     klog_mem("PMM basic init complete\n");
     
