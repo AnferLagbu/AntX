@@ -1,5 +1,6 @@
 #include "builtins.h"
 #include "user/user.h"
+#include "version_auto.h"  /* 动态版本信息 (Git commit + 构建时间) */
 
 static int running = 1;
 
@@ -366,9 +367,17 @@ int cmd_shost(int argc, char **argv) {
 int cmd_sver(int argc, char **argv) {
     (void)argc;
     (void)argv;
-    user_println("AntX v0.1.0");
-    user_println("Kernel: QueenX");
-    user_println("Shell: axsh");
+    
+    user_println("AntX Operating System");
+    user_println("Kernel: QueenX (QX)");
+    user_println("Commit: " GIT_COMMIT_SHORT);
+#if IS_DIRTY_BUILD
+    user_println("Status: Development build [UNCOMMITTED CHANGES]");
+#else
+    user_println("Status: Clean build");
+#endif
+    user_println("Built:  " BUILD_DATE);
+    
     return 0;
 }
 

@@ -18,7 +18,7 @@
 #include "assert.h"
 
 #define KERNEL_NAME    "QueenX"
-#define KERNEL_VERSION "0.1.0"
+#include "version_auto.h"  /* 动态版本信息 (Git commit + 构建时间) */
 
 #define MEMORY_SIZE    (512 * 1024 * 1024)
 

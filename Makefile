@@ -23,7 +23,8 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o
               build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
               build/syscall.o build/keyboard.o build/string.o build/ata.o \
               build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
-              build/ipc.o build/klog.o build/grub_install.o
+              build/ipc.o build/klog.o build/grub_install.o \
+              build/version_registry.o
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/pmm.o build/vmm.o build/kmalloc.o build/switch.o build/pwid.o \
@@ -36,7 +37,8 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/test_memory_safety.o build/test_edge_cases.o build/test_error_handling.o build/test_performance.o \
               build/test_process_enhanced.o build/test_scheduler_enhanced.o build/test_interrupt.o build/test_ipc_enhanced.o \
               build/test_vfs_enhanced.o build/test_syscall_enhanced.o \
-              build/process_stub.o
+              build/process_stub.o \
+              build/version_registry.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -49,6 +51,39 @@ USER_INSTALL_OBJS = build/user/install/user_install.o
 DISK_IMAGE = build/antx.img
 
 LOG_DIR = logs
+
+# ============================================================================
+# 动态版本生成 (Git-based Versioning)
+# ============================================================================
+# 每次构建时自动从 Git 仓库获取版本信息
+# 生成文件: src/include/version_auto.h, src/include/version_registry.h
+#
+# 手动触发: make generate-version
+# 强制重新生成: make generate-version-force
+# ============================================================================
+
+.PHONY: generate-version generate-version-force
+
+VERSION_SCRIPT = scripts/generate_version.sh
+VERSION_AUTO_H = src/include/version_auto.h
+VERSION_REGISTRY_H = src/include/version_registry.h
+
+generate-version:
+	@echo "[GEN] Generating dynamic version info from Git..."
+	@bash $(VERSION_SCRIPT) --verbose
+	@echo "[GEN] Version files generated successfully"
+
+generate-version-force:
+	@echo "[GEN] Force regenerating version info..."
+	@bash $(VERSION_SCRIPT) --verbose --force
+	@echo "[GEN] Version files regenerated"
+
+# 确保版本头文件存在 (如果不存在则生成)
+$(VERSION_AUTO_H):
+	@$(MAKE) generate-version
+
+$(VERSION_REGISTRY_H):
+	@$(MAKE) generate-version
 
 .PHONY: all clean run debug log iso run-iso disk run-disk user test test-unit test-integration test-stress
 
@@ -145,6 +180,10 @@ build/ipc.o: src/ipc/ipc.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/grub_install.o: src/kernel/grub_install.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/version_registry.o: src/kernel/version_registry.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

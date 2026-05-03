@@ -7,6 +7,7 @@
 #include "proc_ffi.h"
 #include "hvfs_ffi.h"
 #include "kmalloc.h"
+#include "version_registry.h"  /* 模块版本注册表 */
 #ifdef KERNEL_TEST
 #include "kernel_test.h"
 #endif
@@ -150,6 +151,36 @@ void kernel_main(void) {
     klog_init_msg("System initialized\n");
     printk("AntX is ready.\n");
     printk("\n");
+
+    /* ================================================================= */
+    /*                    注册核心模块版本信息                          */
+    /* ================================================================= */
+    /*
+     * 示例: 如何为新模块注册版本信息
+     *
+     * 格式: VERSION_REGISTER("模块名", 主版本, 次版本, 补丁版本, "描述", 类型)
+     *
+     * 模块类型:
+     *   - MODULE_TYPE_CORE: 核心模块 (进程/内存/调度)
+     *   - MODULE_TYPE_FS:   文件系统 (RamFS/HvFS/DiskFS)
+     *   - MODULE_TYPE_DRIVER: 设备驱动 (E1000/键盘/VGA)
+     *   - MODULE_TYPE_NET:  网络协议 (TCP/IP/UDP/lwIP)
+     *   - MODULE_TYPE_SECURITY: 安全模块 (PWID/认证)
+     *   - MODULE_TYPE_LIB:  库/框架 (IPC/VFS/syscall)
+     *
+     * 未来新增模块时，只需在初始化函数中添加一行即可:
+     *   VERSION_REGISTER("lwIP", 2, 1, 0, "Lightweight TCP/IP Stack", MODULE_TYPE_NET);
+     */
+
+    version_register("QueenX", 0, 1, 0, "AntX Kernel Core", MODULE_TYPE_CORE);
+    version_register("KLog", 1, 0, 0, "Kernel Logging System", MODULE_TYPE_LIB);
+    version_register("VFS", 1, 0, 0, "Virtual File System Layer", MODULE_TYPE_LIB);
+    version_register("RamFS", 1, 0, 0, "RAM-based File System", MODULE_TYPE_FS);
+    version_register("HvFS", 2, 0, 0, "Hybrid Virtual File System", MODULE_TYPE_FS);
+    version_register("PWID", 1, 0, 0, "Permission & Identity System", MODULE_TYPE_SECURITY);
+    version_register("MLFQ", 1, 0, 0, "Multi-Level Feedback Queue Scheduler", MODULE_TYPE_CORE);
+
+    klog_init_msg("Module versions registered: %d modules\n", version_get_registered_count());
     
     enable_interrupts();
     

@@ -21,6 +21,6 @@
 #define CONFIG_SERIAL_BAUD       115200
 
 #define CONFIG_KERNEL_NAME       "QueenX"
-#define CONFIG_KERNEL_VERSION    "0.1.0"
+/* CONFIG_KERNEL_VERSION 已移至 version_auto.h (动态生成) */
 
 #endif
