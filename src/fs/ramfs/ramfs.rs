@@ -19,9 +19,10 @@ fn log(s: &str) {
     }
 }
 
-const RAMFS_MAX_INODES: usize = 64;
+const RAMFS_MAX_INODES: usize = 256;
 const RAMFS_MAX_BLOCKS: usize = 2048;
 const RAMFS_BLOCK_SIZE: usize = 4096;
+const RAMFS_MAX_ACES: usize = 128;
 
 const DIRECT_BLOCKS: usize = 12;
 const INDIRECT_BLOCKS_PER_BLOCK: usize = RAMFS_BLOCK_SIZE / 4;
@@ -100,11 +101,27 @@ impl RamFsDirent {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RamFsACE {
+    pub inode_num: u32,
+    pub pwid: u64,
+    pub allow_mask: u64,
+    pub deny_mask: u64,
+    pub used: bool,
+}
+
+impl RamFsACE {
+    pub const fn new() -> Self {
+        Self { inode_num: 0, pwid: 0, allow_mask: 0, deny_mask: 0, used: false }
+    }
+}
+
 pub struct RamFsData {
     pub inodes: [RamFsInode; RAMFS_MAX_INODES],
     pub data_area: [u8; RAMFS_MAX_BLOCKS * RAMFS_BLOCK_SIZE],
     pub inode_bitmap: [u8; RAMFS_MAX_INODES / 8],
     pub block_bitmap: [u8; RAMFS_MAX_BLOCKS / 8],
+    pub aces: [RamFsACE; RAMFS_MAX_ACES],
     pub root_inode: u32,
     pub free_inodes: AtomicU32,
     pub free_blocks: AtomicU32,
@@ -120,6 +137,7 @@ impl RamFsData {
             data_area: [0; RAMFS_MAX_BLOCKS * RAMFS_BLOCK_SIZE],
             inode_bitmap: [0; RAMFS_MAX_INODES / 8],
             block_bitmap: [0; RAMFS_MAX_BLOCKS / 8],
+            aces: [RamFsACE::new(); RAMFS_MAX_ACES],
             root_inode: 0,
             free_inodes: AtomicU32::new(0),
             free_blocks: AtomicU32::new(0),
@@ -489,10 +507,35 @@ impl RamFsData {
         self.block_set_free(double_indirect_block);
     }
 
-    /// Three-layer permission check (Permission Model v3):
-    /// Layer 1: Sensitivity label — pwid clearance >= inode sensitivity
-    /// Layer 2: ACE list — not yet implemented (Phase 3)
-    /// Layer 3: Capability matrix — pwid must possess the requested cap bit
+    fn ace_set(&mut self, inode_num: u32, pwid: u64, allow: u64, deny: u64) {
+        for ace in self.aces.iter_mut() {
+            if ace.used && ace.inode_num == inode_num && ace.pwid == pwid {
+                ace.allow_mask = allow;
+                ace.deny_mask = deny;
+                return;
+            }
+            if !ace.used {
+                ace.inode_num = inode_num;
+                ace.pwid = pwid;
+                ace.allow_mask = allow;
+                ace.deny_mask = deny;
+                ace.used = true;
+                return;
+            }
+        }
+    }
+
+    fn ace_clear(&mut self, inode_num: u32, pwid: u64) {
+        for ace in self.aces.iter_mut() {
+            if ace.used && ace.inode_num == inode_num && ace.pwid == pwid {
+                ace.used = false;
+                return;
+            }
+        }
+    }
+
+    /// Permission Model v3 — Five-layer check:
+    /// L0: Root bypass, L1: Sensitivity, L2: ACE, L3: Capability, L4: Trust chain
     fn check_permission(&self, inode: &RamFsInode, pwid: u64, cap: u64) -> bool {
         let level = unsafe { pwid_get_level(pwid) };
         if level == 0 {
@@ -507,6 +550,21 @@ impl RamFsData {
             };
             if clearance < inode.sensitivity {
                 return false;
+            }
+        }
+
+        // Layer 2: ACE — per-file per-PWID override
+        let ino = inode.inode_num;
+        for ace in self.aces.iter() {
+            if ace.used && ace.inode_num == ino {
+                if ace.pwid == 0 || ace.pwid == pwid {
+                    if (ace.deny_mask & cap) != 0 {
+                        return false;
+                    }
+                    if (ace.allow_mask & cap) != 0 {
+                        return true;
+                    }
+                }
             }
         }
 
@@ -597,6 +655,9 @@ impl RamFsData {
         }
         for b in self.block_bitmap.iter_mut() {
             *b = 0;
+        }
+        for ace in self.aces.iter_mut() {
+            *ace = RamFsACE::new();
         }
         
         self.free_inodes.store((RAMFS_MAX_INODES - 1) as u32, Ordering::SeqCst);

@@ -88,7 +88,6 @@ void run_kernel_tests(void) {
     serial_puts(SERIAL_COM1, "[TEST] → IPC Enhanced\n");
     test_ipc_enhanced_register();
     
-#if 0
     serial_puts(SERIAL_COM1, "[TEST] → Filesystem Full Test\n");
     test_filesystem_full_register();
     
@@ -103,7 +102,6 @@ void run_kernel_tests(void) {
     
     serial_puts(SERIAL_COM1, "[TEST] → Performance benchmarks\n");
     test_performance_register();
-#endif
     
     serial_puts(SERIAL_COM1, "[TEST] ════════════════════════════════════\n");
     serial_puts(SERIAL_COM1, "[TEST] Running all tests...\n");

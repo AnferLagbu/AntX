@@ -213,7 +213,5 @@ void test_process_enhanced_register(void) {
     test_register_case(mod, "Name validation", test_process_name_validation);
     test_register_case(mod, "Concurrent creation", test_process_concurrent_creation);
     test_register_case(mod, "Resource limits", test_process_resource_limits);
-#if 0
     test_register_case(mod, "User process bootstrap", test_user_process_bootstrap);
-#endif
 }
