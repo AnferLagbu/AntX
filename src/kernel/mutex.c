@@ -50,15 +50,12 @@ void mutex_lock(mutex_t *m)
 {
     struct process *current;
 
+    /* Fast path: uncontended lock */
     spin_lock(&m->lock_spinlock);
 
     if (!m->locked) {
         current = process_get_current();
-        if (current) {
-            m->owner = (int)current->pid;
-        } else {
-            m->owner = 0;  /* 内核上下文 */
-        }
+        m->owner = current ? (int)current->pid : 0;
         m->locked = 1;
         m->depth = 1;
         __asm__ volatile("rdtsc" : "=A"(m->acquire_time));
@@ -72,16 +69,18 @@ void mutex_lock(mutex_t *m)
 
     spin_unlock(&m->lock_spinlock);
 
+    /*
+     * Slow path: lock is contended.
+     * Yield to the scheduler so the lock holder gets CPU time
+     * to finish its critical section and release the lock.
+     * This avoids wasting CPU cycles on busy-waiting.
+     */
     while (1) {
         spin_lock(&m->lock_spinlock);
 
         if (!m->locked) {
             current = process_get_current();
-            if (current) {
-                m->owner = (int)current->pid;
-            } else {
-                m->owner = 0;
-            }
+            m->owner = current ? (int)current->pid : 0;
             m->locked = 1;
             m->depth = 1;
             __asm__ volatile("rdtsc" : "=A"(m->acquire_time));
@@ -91,7 +90,8 @@ void mutex_lock(mutex_t *m)
 
         spin_unlock(&m->lock_spinlock);
 
-        __asm__ volatile("pause" ::: "memory");
+        extern void scheduler_yield(void);
+        scheduler_yield();
     }
 }
 

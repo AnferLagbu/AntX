@@ -3,6 +3,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 extern "C" {
     fn serial_putc(port: u16, c: u8);
+    fn pmm_get_total_pages() -> u64;
+    fn pmm_get_free_pages() -> u64;
 }
 
 fn log(s: &str) {
@@ -116,21 +118,61 @@ impl ProcfsData {
     
     pub fn read(&self, name: &str, buf: &mut [u8]) -> i32 {
         if name == "cpuinfo" {
-            let info = b"CPU: x86_64\nVendor: AntX\n";
+            let info = b"CPU: x86_64 (AMD64)\nVendor: AntX\nCores: 1\n";
             let len = info.len().min(buf.len());
             buf[..len].copy_from_slice(&info[..len]);
             return len as i32;
         }
         
         if name == "meminfo" {
-            let info = b"Memory: 128 MB\nFree: 64 MB\n";
-            let len = info.len().min(buf.len());
-            buf[..len].copy_from_slice(&info[..len]);
-            return len as i32;
+            let total = unsafe { pmm_get_total_pages() };
+            let free = unsafe { pmm_get_free_pages() };
+            let total_mb = total * 4 / 1024;
+            let free_mb = free * 4 / 1024;
+
+            let mut pos = 0usize;
+            let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
+                let b = s.as_bytes();
+                let end = (*pos + b.len()).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&b[..len]);
+                *pos += len;
+            };
+            let write_u64 = |buf: &mut [u8], pos: &mut usize, val: u64| {
+                if val == 0 && *pos < buf.len() {
+                    buf[*pos] = b'0';
+                    *pos += 1;
+                    return;
+                }
+                let mut tmp = [0u8; 20];
+                let mut i = 20;
+                let mut v = val;
+                while v > 0 && i > 0 {
+                    i -= 1;
+                    tmp[i] = (v % 10) as u8 + b'0';
+                    v /= 10;
+                }
+                let end = (*pos + (20 - i)).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&tmp[i..i + len]);
+                *pos += len;
+            };
+
+            write_str(buf, &mut pos, "Total: ");
+            write_u64(buf, &mut pos, total);
+            write_str(buf, &mut pos, " pages (");
+            write_u64(buf, &mut pos, total_mb);
+            write_str(buf, &mut pos, " MB)\nFree:  ");
+            write_u64(buf, &mut pos, free);
+            write_str(buf, &mut pos, " pages (");
+            write_u64(buf, &mut pos, free_mb);
+            write_str(buf, &mut pos, " MB)\n");
+
+            return pos as i32;
         }
         
         if name == "self" {
-            let info = b"PID: 0\n";
+            let info = b"PID: 0\nName: kernel\n";
             let len = info.len().min(buf.len());
             buf[..len].copy_from_slice(&info[..len]);
             return len as i32;

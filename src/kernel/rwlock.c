@@ -4,6 +4,9 @@
  *
  * 实现写者优先的读写锁，防止写者饥饿。
  * 基于自旋锁保护内部状态，适用于读多写少场景。
+ *
+ * 锁获取失败时通过 scheduler_yield 让出 CPU，
+ * 避免 TOCTOU 竞态和 CPU 忙等浪费。
  */
 
 #include "rwlock.h"
@@ -27,25 +30,20 @@ void rwlock_init(rwlock_t *rw)
 
 void read_lock(rwlock_t *rw)
 {
-retry:
-    spin_lock(&rw->lock);
+    while (1) {
+        spin_lock(&rw->lock);
 
-    if (rw->writer) {
-        spin_unlock(&rw->lock);
-        while (rw->writer) {
-            __asm__ volatile("pause" ::: "memory");
+        if (!rw->writer && rw->pending_writers == 0) {
+            rw->readers++;
+            spin_unlock(&rw->lock);
+            return;
         }
-        goto retry;
-    }
 
-    if (rw->pending_writers > 0) {
         spin_unlock(&rw->lock);
-        __asm__ volatile("pause" ::: "memory");
-        goto retry;
-    }
 
-    rw->readers++;
-    spin_unlock(&rw->lock);
+        extern void scheduler_yield(void);
+        scheduler_yield();
+    }
 }
 
 void read_unlock(rwlock_t *rw)
@@ -86,20 +84,21 @@ void write_lock(rwlock_t *rw)
     rw->pending_writers++;
     spin_unlock(&rw->lock);
 
-retry:
-    spin_lock(&rw->lock);
+    while (1) {
+        spin_lock(&rw->lock);
 
-    if (rw->readers > 0 || rw->writer) {
-        spin_unlock(&rw->lock);
-        while (rw->readers > 0 || rw->writer) {
-            __asm__ volatile("pause" ::: "memory");
+        if (rw->readers == 0 && !rw->writer) {
+            rw->pending_writers--;
+            rw->writer = 1;
+            spin_unlock(&rw->lock);
+            return;
         }
-        goto retry;
-    }
 
-    rw->pending_writers--;
-    rw->writer = 1;
-    spin_unlock(&rw->lock);
+        spin_unlock(&rw->lock);
+
+        extern void scheduler_yield(void);
+        scheduler_yield();
+    }
 }
 
 void write_unlock(rwlock_t *rw)

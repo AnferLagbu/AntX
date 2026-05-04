@@ -7,6 +7,8 @@ use crate::fs::vfs::types::*;
 extern "C" {
     fn serial_putc(port: u16, c: u8);
     fn pwid_get_level(pwid: u64) -> u8;
+    fn pwid_get_fs_capability(pwid: u64) -> u64;
+    fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
 }
 
 fn log(s: &str) {
@@ -22,17 +24,26 @@ const RAMFS_MAX_BLOCKS: usize = 2048;
 const RAMFS_BLOCK_SIZE: usize = 4096;
 
 const DIRECT_BLOCKS: usize = 12;
-const INDIRECT_BLOCKS_PER_BLOCK: usize = RAMFS_BLOCK_SIZE / 4; // 1024 blocks per indirect block
+const INDIRECT_BLOCKS_PER_BLOCK: usize = RAMFS_BLOCK_SIZE / 4;
 
-const PWID_LEVEL_ROOT: u8 = 0;
+// Sensitivity label defaults
+const SENSITIVITY_PUBLIC: u8 = 0;
+const SENSITIVITY_PRIVATE: u8 = 64;
+
+// FS capability bits (mirrors pwid.h)
+const FS_CAP_READ: u64    = 1 << 0;
+const FS_CAP_WRITE: u64   = 1 << 1;
+const FS_CAP_EXECUTE: u64 = 1 << 2;
+const FS_CAP_CREATE: u64  = 1 << 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RamFsInode {
     pub inode_num: u32,
     pub file_type: u8,
+    pub sensitivity: u8,
+    pub owner_pwid: u64,
     pub perm: u16,
     pub size: u32,
-    pub owner_pwid: u64,
     pub atime: u64,
     pub mtime: u64,
     pub ctime: u64,
@@ -48,9 +59,10 @@ impl RamFsInode {
         Self {
             inode_num: 0,
             file_type: 0,
+            sensitivity: 0,
+            owner_pwid: 0,
             perm: 0,
             size: 0,
-            owner_pwid: 0,
             atime: 0,
             mtime: 0,
             ctime: 0,
@@ -477,24 +489,46 @@ impl RamFsData {
         self.block_set_free(double_indirect_block);
     }
 
-    fn check_permission(&self, inode: &RamFsInode, pwid: u64, access_type: u16) -> bool {
-        if pwid == 0 {
-            return true;
-        }
-
+    /// Three-layer permission check (Permission Model v3):
+    /// Layer 1: Sensitivity label — pwid clearance >= inode sensitivity
+    /// Layer 2: ACE list — not yet implemented (Phase 3)
+    /// Layer 3: Capability matrix — pwid must possess the requested cap bit
+    fn check_permission(&self, inode: &RamFsInode, pwid: u64, cap: u64) -> bool {
         let level = unsafe { pwid_get_level(pwid) };
-
-        if level == PWID_LEVEL_ROOT {
+        if level == 0 {
             return true;
         }
 
-        if pwid == inode.owner_pwid {
-            let owner_perm = (inode.perm >> 6) & 0x07;
-            return (owner_perm & access_type) == access_type;
+        if level > 0 && inode.sensitivity > 0 {
+            let clearance = match level {
+                1 => 255u8,
+                2 => 128u8,
+                _ => 64u8,
+            };
+            if clearance < inode.sensitivity {
+                return false;
+            }
         }
 
-        let other_perm = inode.perm & 0x07;
-        (other_perm & access_type) == access_type
+        let caps = unsafe { pwid_get_fs_capability(pwid) };
+        if caps == 0 {
+            return true;
+        }
+        if (caps & cap) == cap {
+            return true;
+        }
+
+        // Layer 4: Trust chain — owner may have delegated this capability
+        if inode.owner_pwid != 0 && inode.owner_pwid != pwid {
+            let has_trust = unsafe {
+                pwid_check_trust(pwid, inode.owner_pwid, 1 /* FS domain */, cap, 8)
+            };
+            if has_trust != 0 {
+                return true;
+            }
+        }
+
+        false
     }
     
     pub fn resolve_path(&self, path: &str) -> Option<u32> {
@@ -574,9 +608,10 @@ impl RamFsData {
         self.inodes[1] = RamFsInode {
             inode_num: 1,
             file_type: VfsFileType::Dir as u8,
-            perm: 0o755,
+            sensitivity: SENSITIVITY_PUBLIC,
+            owner_pwid: 1,
+            perm: 0o777,
             size: (2 * core::mem::size_of::<RamFsDirent>()) as u32,
-            owner_pwid: 0,
             atime: Self::get_time(),
             mtime: Self::get_time(),
             ctime: Self::get_time(),
@@ -658,7 +693,7 @@ impl RamFsData {
                 return None;
             }
             
-            if !self.check_permission(&self.inodes[parent_num as usize], pwid, VFS_PERM_W) {
+            if !self.check_permission(&self.inodes[parent_num as usize], pwid, FS_CAP_CREATE) {
                 return None;
             }
 
@@ -711,7 +746,7 @@ impl RamFsData {
         
         let inode = &self.inodes[inode_num as usize];
         
-        if !self.check_permission(inode, pwid, VFS_PERM_R) {
+        if !self.check_permission(inode, pwid, FS_CAP_READ) {
             return None;
         }
         
@@ -731,13 +766,14 @@ impl RamFsData {
                 self.inodes[i] = RamFsInode {
                     inode_num: i as u32,
                     file_type,
-                    perm: if file_type == VfsFileType::Dir as u8 { 0o755 } else { 0o644 },
+                    sensitivity: SENSITIVITY_PUBLIC,
+                    owner_pwid: pwid,
+                    perm: 0o644,
                     size: if file_type == VfsFileType::Dir as u8 {
                         (2 * core::mem::size_of::<RamFsDirent>()) as u32
                     } else {
                         0
                     },
-                    owner_pwid: pwid,
                     atime: Self::get_time(),
                     mtime: Self::get_time(),
                     ctime: Self::get_time(),
@@ -757,7 +793,7 @@ impl RamFsData {
     pub fn read(&mut self, inode_num: u32, offset: &mut u64, buf: &mut [u8], pwid: u64) -> i32 {
         let inode = &self.inodes[inode_num as usize];
 
-        if !self.check_permission(inode, pwid, VFS_PERM_R) {
+        if !self.check_permission(inode, pwid, FS_CAP_READ) {
             return -1;
         }
 
@@ -802,7 +838,7 @@ impl RamFsData {
     }
     
     pub fn write(&mut self, inode_num: u32, offset: &mut u64, buf: &[u8], pwid: u64) -> i32 {
-        if !self.check_permission(&self.inodes[inode_num as usize], pwid, VFS_PERM_W) {
+        if !self.check_permission(&self.inodes[inode_num as usize], pwid, FS_CAP_CREATE) {
             return -1;
         }
 
@@ -859,7 +895,7 @@ impl RamFsData {
             if !inode.used {
                 return -1;
             }
-            if !self.check_permission(inode, pwid, VFS_PERM_W) {
+            if !self.check_permission(inode, pwid, FS_CAP_WRITE) {
                 return -1;
             }
         }
@@ -1036,7 +1072,7 @@ impl RamFsData {
             return -1;
         }
 
-        if !self.check_permission(&self.inodes[parent_num as usize], pwid, VFS_PERM_W) {
+        if !self.check_permission(&self.inodes[parent_num as usize], pwid, FS_CAP_CREATE) {
             return -1;
         }
 

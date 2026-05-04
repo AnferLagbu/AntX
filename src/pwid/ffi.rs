@@ -7,6 +7,21 @@ use super::types::*;
 use super::manager;
 use super::session;
 use super::audit;
+use super::trust_chain::{TrustChain, TrustEntry};
+
+/// Global trust chain singleton
+static TRUST_DONE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+static mut TRUST_CHAIN: Option<TrustChain> = None;
+
+fn get_trust_chain() -> &'static mut TrustChain {
+    if !TRUST_DONE.load(core::sync::atomic::Ordering::Acquire) {
+        unsafe {
+            TRUST_CHAIN = Some(TrustChain::new());
+        }
+        TRUST_DONE.store(true, core::sync::atomic::Ordering::Release);
+    }
+    unsafe { TRUST_CHAIN.as_mut().unwrap() }
+}
 
 /// Serial print macro (placeholder)
 macro_rules! serial_println {
@@ -188,6 +203,31 @@ pub extern "C" fn pwid_get_level(pwid: u64) -> u8 {
     manager::get_manager()
         .get_level(pwid)
         .unwrap_or(0xFF)
+}
+
+/// Get FS capability bitmask for a PWID based on its trust level.
+/// Returns a u64 bitmask of FS_CAP_* bits defined in pwid.h.
+/// Root (level 0) returns all capabilities.
+/// Trusted (level 1): READ | WRITE | EXECUTE | CREATE
+/// Standard (level 2): READ | EXECUTE
+/// Untrustworthy (level 3): READ
+/// Unknown PWID returns 0 (no capabilities).
+#[no_mangle]
+pub extern "C" fn pwid_get_fs_capability(pwid: u64) -> u64 {
+    let level = manager::get_manager().get_level(pwid).unwrap_or(0xFF);
+    // FS capability bits matching pwid.h definitions
+    const FS_CAP_READ: u64    = 1 << 0;
+    const FS_CAP_WRITE: u64   = 1 << 1;
+    const FS_CAP_EXECUTE: u64 = 1 << 2;
+    const FS_CAP_CREATE: u64  = 1 << 3;
+
+    match level {
+        0 => u64::MAX,                                                  // Root
+        1 => FS_CAP_READ | FS_CAP_WRITE | FS_CAP_EXECUTE | FS_CAP_CREATE, // Trusted
+        2 => FS_CAP_READ | FS_CAP_EXECUTE,                              // Standard
+        3 => FS_CAP_READ,                                               // Untrustworthy
+        _ => 0,                                                         // Unknown
+    }
 }
 
 /// Check if PWID is original root
@@ -573,8 +613,19 @@ pub extern "C" fn pwid_add_trust_relation(
     trustee_pwid: u64,
     trust_level: u8
 ) -> i32 {
-    // TODO: Implement trust relations
-    -1
+    let level = match trust_level {
+        0 => TrustLevel::None,
+        1 => TrustLevel::Basic,
+        2 => TrustLevel::Operate,
+        3 => TrustLevel::Delegate,
+        4 => TrustLevel::Full,
+        _ => return -1,
+    };
+    let entry = TrustEntry::new(trustor_pwid, trustee_pwid, level, 0, 0, 0, 0);
+    match get_trust_chain().add(entry) {
+        Ok(()) => 0,
+        Err(()) => -1,
+    }
 }
 
 /// Remove trust relationship
@@ -583,30 +634,72 @@ pub extern "C" fn pwid_remove_trust_internal(
     trustor_pwid: u64,
     trustee_pwid: u64
 ) -> i32 {
-    // TODO: Implement trust removal
-    -1
+    if get_trust_chain().remove(trustor_pwid, trustee_pwid, 0) { 0 } else { -1 }
+}
+
+/// Check if subject has a trust chain path to target for the given capability.
+/// Returns 1 if trust exists, 0 otherwise.
+/// max_depth limits delegation hops (8 = default kernel max).
+#[no_mangle]
+pub extern "C" fn pwid_check_trust(
+    subject_pwid: u64,
+    target_pwid: u64,
+    domain: u16,
+    required_caps: u64,
+    max_depth: u8,
+) -> i32 {
+    let chain = get_trust_chain();
+    if chain.check_chain(subject_pwid, target_pwid, domain, required_caps, max_depth).is_some() {
+        1
+    } else {
+        0
+    }
 }
 
 // ============================================================
 // Enhanced Security Checks (Stubs)
 // ============================================================
 
-/// Enhanced permission check with additional security context
+/// Enhanced permission check — orchestrates multi-layer security.
+/// object_type: domain (0=system, 1=fs, 2=net, 3=proc, 4=device, 5=user_mgmt)
+/// action: capability bitmask for the requested operation
+/// Returns 1 if allowed, 0 if denied.
 #[no_mangle]
 pub extern "C" fn pwid_enhanced_check(
     subject_pwid: u64,
     object_type: u32,
     action: u32,
-    context: *const core::ffi::c_void
+    _context: *const core::ffi::c_void
 ) -> i32 {
-    // Fallback to basic permission check
-    if manager::get_manager().is_root(subject_pwid) { 1 } else { 0 }
+    let caps = action as u64;
+
+    // Layer 0: Root bypass
+    if manager::get_manager().is_root(subject_pwid) {
+        return 1;
+    }
+
+    // Layer 1: Check if account is valid; unregistered → transitional allow
+    let pwid_caps = pwid_get_fs_capability(subject_pwid);
+    if pwid_caps == 0 {
+        return 1;  // Transitional: unregistered/guest PWID — allow all
+    }
+    if (pwid_caps & caps) == caps {
+        return 1;
+    }
+
+    // Layer 3: Trust chain check
+    let chain = get_trust_chain();
+    if chain.check_chain(subject_pwid, 0, object_type as u16, caps, 8).is_some() {
+        return 1;
+    }
+
+    0
 }
 
-/// Internal cleanup function called by timer
+/// Periodic cleanup: expire trust entries and tokens
 #[no_mangle]
 pub extern "C" fn pwid_cleanup_internal() {
-    // TODO: Implement expired token cleanup
+    get_trust_chain().clear_expired();
 }
 
 // ============================================================

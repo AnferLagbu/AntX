@@ -110,12 +110,12 @@ void kernel_main(void) {
     /* 初始大小：16 MB (可根据需要调整) */
     {
         uint64_t heap_start = ((uint64_t)_kernel_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-        uint64_t heap_initial_size = 16 * 1024 * 1024;  /* 16 MB */
+        uint64_t heap_initial_size = 32 * 1024 * 1024;  /* 32 MB */
         kmalloc_init(heap_start, heap_initial_size);
     }
     klog_mem("Kernel heap initialized\n");
     
-    pmm_init_bitmap();
+    pmm_init_bitmap(32 * 1024 * 1024);
     if (pmm_get_free_pages() == 0) {
         panic("PMM initialization failed: no free pages");
     }
@@ -195,25 +195,35 @@ void kernel_main(void) {
     version_register("HvFS", 2, 0, 0, "Hybrid Virtual File System", MODULE_TYPE_FS);
     version_register("PWID", 1, 0, 0, "Permission & Identity System", MODULE_TYPE_SECURITY);
     version_register("MLFQ", 1, 0, 0, "Multi-Level Feedback Queue Scheduler", MODULE_TYPE_CORE);
+    version_register("DMA", 1, 0, 0, "Direct Memory Access Engine (Rust)", MODULE_TYPE_LIB);
+    version_register("PCI", 1, 0, 0, "PCI Bus Driver", MODULE_TYPE_DRIVER);
 
     klog_init_msg("Module versions registered: %d modules\n", version_get_registered_count());
     
     enable_interrupts();
 
-    /* 注意: PCI/DMA 初始化在 QEMU 环境可能导致超时，仅在需要时启用
-     * 真实硬件环境下请取消以下注释
-     */
-    // pci_init();
-    // dma_init();
-
 #ifdef KERNEL_TEST
     printk("\n[TEST MODE] Running kernel tests...\n");
     run_kernel_tests();
     printk("\n[TEST MODE] Tests completed. Halting.\n");
+    __asm__ volatile ("cli");
     while (1) {
         __asm__ volatile ("hlt");
     }
 #else
+    MODULE_CHECK_VOID("PCI Bus", pci_init);
+    MODULE_CHECK_VOID("DMA Engine", dma_init);
+    
+#ifdef CONFIG_SMP
+    extern int smp_init(void);
+    int smp_cpus = smp_init();
+    if (smp_cpus < 0) {
+        klog_init_msg("SMP init failed\n");
+    } else {
+        klog_init_msg("SMP: %d CPUs online\n", smp_cpus);
+    }
+#endif
+    
     start_user_init();
     
     while (1) {

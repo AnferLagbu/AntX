@@ -209,6 +209,31 @@ impl PwidError {
     }
 }
 
+// ============================================================
+// Trust Chain / Capability types (Permission Model v3)
+// ============================================================
+
+/// Capability domain (FS=1, NET=2, PROC=3, DEVICE=4, USER_MGMT=5)
+pub type CapDomain = u16;
+
+/// Capability bitmask (64 bits per domain)
+pub type CapBits = u64;
+
+/// Trust level for delegation chains
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TrustLevel {
+    None = 0,
+    Basic = 1,
+    Operate = 2,
+    Delegate = 3,
+    Full = 4,
+}
+
+impl Default for TrustLevel {
+    fn default() -> Self { TrustLevel::None }
+}
+
 /// Audit action types
 #[repr(u32)]
 #[derive(Clone, Copy, Debug)]

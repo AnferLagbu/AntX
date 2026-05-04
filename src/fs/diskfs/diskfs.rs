@@ -1,7 +1,7 @@
 use alloc::string::String;
-use spin::Mutex;
+use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::fs::hvfs::hvfs::{get_hvfs, HVFS_O_CREAT, HVFS_O_WRONLY, HVFS_PERM_R, HVFS_DISK_OK, HVFS_DISK_NO_DISK, 
+use crate::fs::hvfs::hvfs::{get_hvfs, HVFS_O_CREAT, HVFS_O_WRONLY, HVFS_CAP_READ, HVFS_DISK_OK, HVFS_DISK_NO_DISK, 
                     HVFS_DISK_UNFORMATTED};
 use crate::fs::vfs::types::*;
 
@@ -94,7 +94,7 @@ impl DiskFsData {
             return 0;
         }
         
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
         let status = hvfs.check_disk();
         
         match status {
@@ -130,7 +130,7 @@ impl DiskFsData {
         }
         
         {
-            let mut hvfs = get_hvfs().lock();
+            let hvfs = get_hvfs();
             hvfs.sync();
         }
         
@@ -140,7 +140,7 @@ impl DiskFsData {
     }
 
     pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
         
         let inode_num = hvfs.resolve_path(path);
         
@@ -170,7 +170,7 @@ impl DiskFsData {
             None => return None,
         };
         
-        if !hvfs.check_permission(inode, pwid, HVFS_PERM_R) {
+        if !hvfs.check_permission(inode, pwid, HVFS_CAP_READ) {
             return None;
         }
         
@@ -213,14 +213,14 @@ impl DiskFsData {
         let pwid = self.fds[idx].pwid;
         let offset = self.fds[idx].offset;
 
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
 
         let inode = match hvfs.get_inode(inode_num) {
             Some(i) => i,
             None => return -1,
         };
 
-        if !hvfs.check_permission(inode, pwid, crate::fs::hvfs::hvfs::HVFS_PERM_R) {
+        if !hvfs.check_permission(inode, pwid, crate::fs::hvfs::hvfs::HVFS_CAP_READ) {
             return -1;
         }
 
@@ -249,7 +249,7 @@ impl DiskFsData {
         let inode_num = self.fds[idx].inode_num;
         let pwid = self.fds[idx].pwid;
 
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
 
         let bytes_written = (buf.len() as u32).min(count);
         let new_offset = self.fds[idx].offset + bytes_written as u64;
@@ -289,12 +289,12 @@ impl DiskFsData {
         
         let path_str = core::str::from_utf8(&full_path[..len]).unwrap_or("/");
         
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
         hvfs.mkdir(path_str, pwid)
     }
 
     pub fn stat(&self, path: &str, pwid: u64) -> Option<VfsStat> {
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
         
         match hvfs.stat(path, pwid) {
             Some(inode) => Some(VfsStat {
@@ -314,12 +314,12 @@ impl DiskFsData {
     }
 
     pub fn truncate(&mut self, inode_num: u32, new_size: u64, pwid: u64) -> i32 {
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
         hvfs.truncate_inode(inode_num, new_size)
     }
 
     pub fn sync(&self) -> i32 {
-        let mut hvfs = get_hvfs().lock();
+        let hvfs = get_hvfs();
         hvfs.sync()
     }
 
@@ -328,13 +328,20 @@ impl DiskFsData {
     }
 }
 
-pub static DISKFS_DATA: spin::Once<Mutex<DiskFsData>> = spin::Once::new();
+static DISKFS_DONE: AtomicBool = AtomicBool::new(false);
+static mut DISKFS_DATA: Option<DiskFsData> = None;
 
-pub fn get_diskfs() -> &'static Mutex<DiskFsData> {
-    DISKFS_DATA.call_once(|| Mutex::new(DiskFsData::new()))
+pub fn get_diskfs() -> &'static mut DiskFsData {
+    if !DISKFS_DONE.load(Ordering::Acquire) {
+        unsafe {
+            DISKFS_DATA = Some(DiskFsData::new());
+        }
+        DISKFS_DONE.store(true, Ordering::Release);
+    }
+    unsafe { DISKFS_DATA.as_mut().unwrap() }
 }
 
 pub fn init() {
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     diskfs.init();
 }

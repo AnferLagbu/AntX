@@ -504,7 +504,11 @@ void irq_handler(struct interrupt_frame *frame) {
         } else if (interrupt_handlers[frame->int_no] != NULL) {
             interrupt_handlers[frame->int_no](frame);
         } else {
-            if (irq != 7 && irq != 15) {
+            /* Silent: IRQ 7/15 are standard PIC spurious vectors.
+             * IRQ 0 (timer) and IRQ 14 (primary ATA) may fire during
+             * idle when the handler is registered via idt_set_handler
+             * rather than idt_register_irq. */
+            if (irq != 0 && irq != 7 && irq != 14 && irq != 15) {
                 serial_puts(SERIAL_COM1, "[IRQ] Spurious IRQ: ");
                 serial_put_hex(SERIAL_COM1, irq);
                 serial_puts(SERIAL_COM1, "\n");

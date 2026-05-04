@@ -70,7 +70,7 @@ struct memory_info {
 };
 
 void pmm_init(uint64_t mem_size, uint64_t kernel_end);
-void pmm_init_bitmap(void);
+void pmm_init_bitmap(uint64_t reserved_after_kernel);
 void* pmm_alloc_page(void);
 void pmm_free_page(void* addr);
 uint64_t pmm_get_free_pages(void);

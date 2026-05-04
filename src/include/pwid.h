@@ -129,6 +129,7 @@ int pwid_change_password(uint64_t pwid, const char *old_password, const char *ne
 struct pwid_entry* pwid_find(uint64_t pwid);
 struct pwid_entry* pwid_find_by_note(const char *note);
 uint8_t pwid_get_level(uint64_t pwid);
+uint64_t pwid_get_fs_capability(uint64_t pwid);
 int pwid_is_original_root(uint64_t pwid);
 int pwid_is_root(uint64_t pwid);
 int pwid_check_permission(uint64_t pwid, uint8_t required_level);

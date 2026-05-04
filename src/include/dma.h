@@ -177,6 +177,26 @@ void dma_free_coherent(void *addr, size_t size);
  */
 uint64_t dma_get_device_address(void *cpu_addr);
 
+/**
+ * @brief 映射物理 MMIO 区域到内核虚拟地址空间 (ioremap)
+ *
+ * 将设备 MMIO BAR 的物理地址范围映射到内核可访问的虚拟地址。
+ * 映射属性: 无缓存(UC) + 写穿透(WT)，适合 MMIO 寄存器访问。
+ *
+ * @param phys_addr 物理基地址
+ * @param size 映射大小（字节）
+ * @return 内核虚拟地址，失败返回 NULL
+ */
+void *ioremap(uint64_t phys_addr, size_t size);
+
+/**
+ * @brief 取消 ioremap 映射
+ *
+ * @param virt_addr ioremap 返回的虚拟地址
+ * @param size 映射大小
+ */
+void iounmap(void *virt_addr, size_t size);
+
 /* ============================================================
  * 流式 DMA 映射
  * ============================================================ */

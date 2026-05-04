@@ -114,29 +114,50 @@ impl PhysicalMemoryManager {
     }
 
     /// Initialize the bitmap for normal operation
-    pub fn init_bitmap(&mut self) {
+    /// `reserved_after_kernel`: memory already in use AFTER kernel (e.g. kmalloc heap),
+    /// the bitmap will skip this range and mark it as used.
+    pub fn init_bitmap(&mut self, reserved_after_kernel: u64) {
         if self.initialized.load(Ordering::Acquire) {
             return;
         }
+
+        // Advance early_current past the reserved (heap) region
+        let reserved_aligned = (reserved_after_kernel + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        self.early_current.fetch_add(reserved_aligned, Ordering::Relaxed);
+
+        let total_bits = self.info.total_pages as usize;
+        let bitmap_words = (total_bits + 31) / 32;
+        let bitmap_bytes = bitmap_words * 4;
         
-        // Mark as initialized
+        let bitmap_phys = self.early_current.fetch_add(bitmap_bytes as u64, Ordering::Relaxed);
+        let bitmap_aligned = (bitmap_phys + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        self.early_current.store(bitmap_aligned + bitmap_bytes as u64 + PAGE_SIZE, Ordering::Relaxed);
+        
+        let bitmap_virt = bitmap_aligned + KERNEL_BASE;
+        
+        unsafe {
+            core::ptr::write_bytes(bitmap_virt as *mut u8, 0, bitmap_bytes);
+        }
+        
+        self.bitmap = Some(NonNull::new(bitmap_virt as *mut u32).unwrap());
+        self.bitmap_size = bitmap_words;
+        
+        // Mark kernel pages + reserved (heap) pages as used
+        let kernel_pages = ((self.kernel_end + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
+        let reserved_pages = (reserved_aligned / PAGE_SIZE) as usize;
+        let total_reserved = kernel_pages + reserved_pages;
+        for i in 0..total_reserved.min(total_bits) {
+            self.set_bit(i);
+        }
+        
         self.initialized.store(true, Ordering::Release);
         
-        // Calculate free pages based on memory layout
-        // Total pages - kernel pages = free pages
-        let kernel_pages = (self.kernel_end + PAGE_SIZE - 1) / PAGE_SIZE;
+        self.update_stats();
         
-        // Use raw pointer mutation to update stats
-        let info_ptr = &self.info as *const MemoryInfo as *mut MemoryInfo;
-        unsafe {
-            (*info_ptr).used_pages = kernel_pages;
-            (*info_ptr).free_pages = self.info.total_pages.saturating_sub(kernel_pages);
-            
-            serial_println!("[PMM] Bitmap initialized: {} total pages, {} free ({} MB)",
-                           self.info.total_pages, 
-                           (*info_ptr).free_pages,
-                           (*info_ptr).free_pages * 4 / 1024);
-        }
+        serial_println!("[PMM] Bitmap initialized: {} total, {} free ({} MB), reserved {} pages, bmp @0x{:X}",
+                       self.info.total_pages, self.info.free_pages,
+                       self.info.free_pages * 4 / 1024,
+                       total_reserved, bitmap_aligned);
     }
 
     /// Allocate a single 4KB physical page

@@ -79,29 +79,29 @@ void run_kernel_tests(void) {
     test_vmm_register();       /* 注册 VMM (Rust) 测试 */
     test_kmalloc_register();   /* 注册 Kmalloc (Rust) 测试 */
     
-#if 0
-    serial_puts(SERIAL_COM1, "[TEST] → VFS Enhanced (temporarily disabled)\n");
+    serial_puts(SERIAL_COM1, "[TEST] → VFS Enhanced\n");
     test_vfs_enhanced_register();
     
-    serial_puts(SERIAL_COM1, "[TEST] → Syscall Enhanced (temporarily disabled)\n");
+    serial_puts(SERIAL_COM1, "[TEST] → Syscall Enhanced\n");
     test_syscall_enhanced_register();
     
-    serial_puts(SERIAL_COM1, "[TEST] → IPC Enhanced (temporarily disabled)\n");
+    serial_puts(SERIAL_COM1, "[TEST] → IPC Enhanced\n");
     test_ipc_enhanced_register();
     
-    serial_puts(SERIAL_COM1, "[TEST] → Filesystem Full Test (temporarily disabled)\n");
+#if 0
+    serial_puts(SERIAL_COM1, "[TEST] → Filesystem Full Test\n");
     test_filesystem_full_register();
     
-    serial_puts(SERIAL_COM1, "[TEST] → Memory safety tests (temporarily disabled)\n");
+    serial_puts(SERIAL_COM1, "[TEST] → Memory safety tests\n");
     test_memory_safety_register();
     
-    serial_puts(SERIAL_COM1, "[TEST] → Edge case tests (temporarily disabled)\n");
+    serial_puts(SERIAL_COM1, "[TEST] → Edge case tests\n");
     test_edge_cases_register();
     
-    serial_puts(SERIAL_COM1, "[TEST] → Error handling tests (temporarily disabled)\n");
+    serial_puts(SERIAL_COM1, "[TEST] → Error handling tests\n");
     test_error_handling_register();
     
-    serial_puts(SERIAL_COM1, "[TEST] → Performance benchmarks (temporarily disabled)\n");
+    serial_puts(SERIAL_COM1, "[TEST] → Performance benchmarks\n");
     test_performance_register();
 #endif
     

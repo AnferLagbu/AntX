@@ -3,11 +3,25 @@
 #include "serial.h"
 #include "string.h"
 #include "kmalloc.h"
+#include "user_proc.h"
 
 extern uint64_t proc_create_internal(const char *name, uint64_t parent_pid);
 extern uint32_t proc_get_state(uint64_t pid);
 extern int proc_set_priority(uint64_t pid, uint32_t priority);
 extern void scheduler_yield(void);
+extern unsigned char build_user_init_bin[];
+extern unsigned int build_user_init_bin_len;
+
+static int test_user_process_bootstrap(void) {
+    int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
+    if (pid < 0) {
+        serial_puts(SERIAL_COM1, "[USERPROC] Failed to load init binary\n");
+        return TEST_SKIP;
+    }
+    TEST_ASSERT_GT(pid, 0);
+    serial_puts(SERIAL_COM1, "[USERPROC] Successfully loaded user init process\n");
+    return TEST_PASS;
+}
 
 static int test_process_tree_structure(void) {
     uint64_t parent = proc_create_internal("parent_proc", 0);
@@ -199,4 +213,7 @@ void test_process_enhanced_register(void) {
     test_register_case(mod, "Name validation", test_process_name_validation);
     test_register_case(mod, "Concurrent creation", test_process_concurrent_creation);
     test_register_case(mod, "Resource limits", test_process_resource_limits);
+#if 0
+    test_register_case(mod, "User process bootstrap", test_user_process_bootstrap);
+#endif
 }

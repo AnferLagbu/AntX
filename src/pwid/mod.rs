@@ -25,6 +25,7 @@ pub mod manager;
 pub mod session;
 pub mod audit;
 pub mod storage;
+pub mod trust_chain;
 pub mod ffi;
 
 // Re-export main types for convenience

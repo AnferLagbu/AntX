@@ -27,7 +27,7 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o
               build/version_registry.o \
               build/cpu.o \
               build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
-              build/pci.o build/dma.o
+              build/pci.o
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/switch.o \
@@ -37,7 +37,7 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/version_registry.o \
               build/cpu.o \
               build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
-              build/pci.o build/dma.o \
+              build/pci.o \
               build/kernel_test.o build/test_main.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
               build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o \
@@ -206,10 +206,6 @@ build/slab.o: src/kernel/slab.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/pci.o: src/kernel/pci.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/dma.o: src/kernel/dma.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

@@ -21,6 +21,9 @@ pub mod proc;
 #[path = "../../pwid/mod.rs"]
 pub mod pwid;
 
+#[path = "../../dma/mod.rs"]
+pub mod dma;
+
 use core::panic::PanicInfo;
 
 #[panic_handler]

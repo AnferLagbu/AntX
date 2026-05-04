@@ -24,9 +24,7 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 #[no_mangle]
 pub extern "C" fn vfs_init_internal() {
     super::vfs::init();
-    crate::fs::ramfs::ramfs::init();
-    crate::fs::hvfs::hvfs::init();
-    crate::fs::diskfs::diskfs::init();
+    // ramfs/hvfs/diskfs init is handled by main.c via MODULE_CHECK_VOID
 }
 
 #[no_mangle]
@@ -40,7 +38,7 @@ pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char
             return -1;
         }
     } else if fs_name == "diskfs" {
-        let mut diskfs = get_diskfs().lock();
+        let diskfs = get_diskfs();
         if diskfs.mount(path) != 0 {
             return -1;
         }
@@ -118,7 +116,7 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
             }
         }
     } else if fs_name == "diskfs" {
-        let mut diskfs = get_diskfs().lock();
+        let diskfs = get_diskfs();
         match diskfs.open(rel_path, flags, pwid) {
             Some((inode_num, offset, file_type)) => {
                 if (flags & VfsOpenFlags::TRUNC.bits()) != 0 {
@@ -198,7 +196,7 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
             result
         }
         "diskfs" => {
-            let mut diskfs = get_diskfs().lock();
+            let diskfs = get_diskfs();
             diskfs.read(inode_num, buf_slice, count)
         }
         _ => -1
@@ -307,7 +305,7 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
             result
         }
         "diskfs" => {
-            let mut diskfs = get_diskfs().lock();
+            let diskfs = get_diskfs();
             diskfs.write(inode_num, buf_slice, count)
         }
         _ => -1
@@ -377,7 +375,7 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
             ramfs.mkdir(parent_path, name, pwid)
         }
         "diskfs" => {
-            let mut diskfs = get_diskfs().lock();
+            let diskfs = get_diskfs();
             diskfs.mkdir(parent_path, name, pwid)
         }
         _ => -1
@@ -422,7 +420,7 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid:
             }
         }
         "diskfs" => {
-            let diskfs = get_diskfs().lock();
+            let diskfs = get_diskfs();
             match diskfs.stat(rel_path, pwid) {
                 Some(stat) => { unsafe { *st = stat; } 0 }
                 None => -1
@@ -463,32 +461,32 @@ pub extern "C" fn hvfs_init_internal() {
 
 #[no_mangle]
 pub extern "C" fn hvfs_format_internal() -> i32 {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.format()
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_check_disk_internal() -> i32 {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.check_disk()
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_set_disk_present_internal(present: bool) {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.set_disk_present(present);
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.open(path, flags, pwid)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_close_internal(fd: u32) -> i32 {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.close(fd)
 }
 
@@ -499,7 +497,7 @@ pub extern "C" fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     }
     
     let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.read(fd, buf_slice)
 }
 
@@ -510,20 +508,20 @@ pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i3
     }
     
     let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.write(fd, buf_slice)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.mkdir(path, pwid)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_sync_internal() -> i32 {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.sync()
 }
 
@@ -535,7 +533,7 @@ pub extern "C" fn hvfs_get_stats_internal(total_blocks: *mut u32, free_blocks: *
         return;
     }
     
-    let hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     let (tb, fb, ti, fi) = hvfs.get_stats();
     
     unsafe {
@@ -548,25 +546,25 @@ pub extern "C" fn hvfs_get_stats_internal(total_blocks: *mut u32, free_blocks: *
 
 #[no_mangle]
 pub extern "C" fn hvfs_set_current_dir_internal(inode_num: u32) {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.set_current_dir(inode_num);
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_get_current_dir_internal() -> u32 {
-    let hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.get_current_dir()
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_set_current_pwid_internal(pwid: u64) {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.set_current_pwid(pwid);
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_get_current_pwid_internal() -> u64 {
-    let hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.get_current_pwid()
 }
 

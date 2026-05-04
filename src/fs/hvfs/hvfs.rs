@@ -3,11 +3,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::VecDeque;
 use spin::Mutex;
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
     fn serial_putc(port: u16, c: u8);
     fn pwid_get_level(pwid: u64) -> u8;
+    fn pwid_get_fs_capability(pwid: u64) -> u64;
+    fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
     fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
     fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
     fn ata_read_sectors(disk: u8, start: u32, count: u32, buf: *mut u8) -> i32;
@@ -54,7 +56,12 @@ fn log_hex(n: u64) {
 }
 
 pub const HVFS_MAGIC: u32 = 0x48564653;
-pub const HVFS_VERSION: u32 = 2;
+
+/// Format version history:
+/// 1 - Initial format (before permission model v3)
+/// 2 - Pre-sensitivity field
+/// 3 - Permission Model v3: HvfsInodeDisk.sensitivity added, reserved2 shrunk to 18
+pub const HVFS_VERSION: u32 = 3;
 pub const HVFS_BLOCK_SIZE: usize = 4096;
 pub const HVFS_DISK_SECTOR_SIZE: usize = 512;
 pub const HVFS_SECTORS_PER_BLOCK: usize = HVFS_BLOCK_SIZE / HVFS_DISK_SECTOR_SIZE;
@@ -72,9 +79,10 @@ pub const HVFS_TYPE_FILE: u16 = 0;
 pub const HVFS_TYPE_DIR: u16 = 1;
 pub const HVFS_TYPE_SYMLINK: u16 = 2;
 
-pub const HVFS_PERM_R: u16 = 0x04;
-pub const HVFS_PERM_W: u16 = 0x02;
-pub const HVFS_PERM_X: u16 = 0x01;
+pub const HVFS_CAP_READ: u64 = 1 << 0;
+pub const HVFS_CAP_WRITE: u64 = 1 << 1;
+pub const HVFS_CAP_EXECUTE: u64 = 1 << 2;
+pub const HVFS_CAP_CREATE: u64 = 1 << 3;
 
 pub const HVFS_O_RDONLY: u32 = 0x0001;
 pub const HVFS_O_WRONLY: u32 = 0x0002;
@@ -127,8 +135,6 @@ impl FsckResult {
         }
     }
 }
-
-const PWID_LEVEL_ROOT: u8 = 0;
 
 const INDIRECT_BLOCKS_PER_BLOCK: usize = HVFS_BLOCK_SIZE / core::mem::size_of::<u32>();
 
@@ -194,6 +200,7 @@ pub struct HvfsSuperBlockDisk {
 pub struct HvfsInode {
     pub inode_num: u32,
     pub mode: u16,
+    pub sensitivity: u8,
     pub reserved_uid: u16,
     pub size: u32,
     pub atime: u64,
@@ -218,6 +225,7 @@ pub struct HvfsInode {
 pub struct HvfsInodeDisk {
     pub inode_num: u32,
     pub mode: u16,
+    pub sensitivity: u8,
     pub reserved: u16,
     pub size: u32,
     pub blocks: u32,
@@ -233,7 +241,7 @@ pub struct HvfsInodeDisk {
     pub double_indirect: u32,
     pub triple_indirect: u32,
     pub flags: u8,
-    pub reserved2: [u8; 19],
+    pub reserved2: [u8; 18],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -302,6 +310,16 @@ impl BlockCacheEntry {
             access_time: 0,
         }
     }
+    
+    pub fn new_uninit() -> Self {
+        Self {
+            block_num: 0,
+            data: Box::new([0u8; HVFS_BLOCK_SIZE]),
+            dirty: false,
+            valid: false,
+            access_time: 0,
+        }
+    }
 }
 
 pub struct HvFsData {
@@ -329,10 +347,9 @@ impl HvFsData {
             fd: 0, inode_num: 0, offset: 0, flags: 0, pwid: 0, used: false 
         }; HVFS_MAX_FDS];
         
-        let mut block_cache = Vec::with_capacity(HVFS_CACHE_SIZE);
-        for _ in 0..HVFS_CACHE_SIZE {
-            block_cache.push(BlockCacheEntry::new());
-        }
+        let mut block_cache = Vec::new();
+        // Temporarily skip cache pre-allocation; allocate lazily in get_block()
+
         
         Self {
             super_block: Self::new_super_block(),
@@ -378,6 +395,7 @@ impl HvFsData {
         HvfsInode {
             inode_num: 0,
             mode: 0,
+            sensitivity: 0,
             reserved_uid: 0,
             size: 0,
             atime: 0,
@@ -536,6 +554,28 @@ impl HvFsData {
             return Some(&mut self.block_cache[idx].data);
         }
         
+        // If cache not full, allocate a new entry
+        if self.block_cache.len() < HVFS_CACHE_SIZE {
+            let idx = self.block_cache.len();
+            self.block_cache.push(BlockCacheEntry::new());
+            self.block_cache[idx].block_num = block_num;
+            self.block_cache[idx].valid = true;
+            self.block_cache[idx].access_time = self.cache_access_counter.fetch_add(1, Ordering::SeqCst);
+            if self.disk_present {
+                let sector_start = HVFS_DATA_SECTOR_START + block_num * HVFS_SECTORS_PER_BLOCK as u32;
+                for s in 0..HVFS_SECTORS_PER_BLOCK {
+                    let offset = s * HVFS_DISK_SECTOR_SIZE;
+                    unsafe {
+                        ata_read_sector(0, sector_start + s as u32, self.block_cache[idx].data.as_mut_ptr().add(offset));
+                    }
+                }
+            } else {
+                self.block_cache[idx].data.fill(0);
+            }
+            return Some(&mut self.block_cache[idx].data);
+        }
+        
+        // Cache full: LRU eviction
         let mut lru_idx = 0;
         let mut lru_time = u32::MAX;
         
@@ -759,20 +799,41 @@ impl HvFsData {
         None
     }
 
-    pub fn check_permission(&self, inode: &HvfsInode, pwid: u64, access_type: u16) -> bool {
+    pub fn check_permission(&self, inode: &HvfsInode, pwid: u64, cap: u64) -> bool {
         let level = unsafe { pwid_get_level(pwid) };
-        
-        if level == PWID_LEVEL_ROOT {
+        if level == 0 {
             return true;
         }
-        
-        if pwid == inode.owner_pwid {
-            let owner_perm = (inode.pwid_perm >> 6) & 0x07;
-            return (owner_perm & access_type) == access_type;
+
+        if level > 0 && inode.sensitivity > 0 {
+            let clearance = match level {
+                1 => 255u8,
+                2 => 128u8,
+                _ => 64u8,
+            };
+            if clearance < inode.sensitivity {
+                return false;
+            }
         }
-        
-        let other_perm = inode.pwid_perm & 0x07;
-        (other_perm & access_type) == access_type
+
+        let caps = unsafe { pwid_get_fs_capability(pwid) };
+        if caps == 0 {
+            return true;
+        }
+        if (caps & cap) == cap {
+            return true;
+        }
+
+        if inode.owner_pwid != 0 && inode.owner_pwid != pwid {
+            let has_trust = unsafe {
+                pwid_check_trust(pwid, inode.owner_pwid, 1, cap, 8)
+            };
+            if has_trust != 0 {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn get_inode(&self, inode_num: u32) -> Option<&HvfsInode> {
@@ -1038,6 +1099,7 @@ impl HvFsData {
         self.inode_table[1] = HvfsInode {
             inode_num: 1,
             mode: (HVFS_TYPE_DIR << 12) | 0o755,
+            sensitivity: 0,
             reserved_uid: 0,
             size: 0,
             atime: Self::get_time(),
@@ -1094,6 +1156,7 @@ impl HvFsData {
         self.inode_table[inode_num as usize] = HvfsInode {
             inode_num,
             mode: (HVFS_TYPE_DIR << 12) | 0o755,
+            sensitivity: 0,
             reserved_uid: 0,
             size: 0,
             atime: Self::get_time(),
@@ -1216,7 +1279,7 @@ impl HvFsData {
         let inode_num = self.resolve_path(path)?;
         let inode = self.get_inode(inode_num)?;
         
-        if !self.check_permission(inode, pwid, HVFS_PERM_R) {
+        if !self.check_permission(inode, pwid, HVFS_CAP_READ) {
             return None;
         }
         
@@ -1340,7 +1403,7 @@ impl HvFsData {
             None => return -1,
         };
         
-        if !self.check_permission(inode, pwid, HVFS_PERM_R) {
+        if !self.check_permission(inode, pwid, HVFS_CAP_READ) {
             return -1;
         }
         
@@ -1377,7 +1440,7 @@ impl HvFsData {
         let parent_num = self.resolve_path(dir_path)?;
         
         if let Some(parent) = self.get_inode(parent_num) {
-            if !self.check_permission(parent, pwid, HVFS_PERM_W) {
+            if !self.check_permission(parent, pwid, HVFS_CAP_CREATE) {
                 return None;
             }
         }
@@ -1464,7 +1527,7 @@ impl HvFsData {
             None => return -1,
         };
         
-        if !self.check_permission(&inode, pwid, HVFS_PERM_R) {
+        if !self.check_permission(&inode, pwid, HVFS_CAP_READ) {
             return -1;
         }
         
@@ -1515,7 +1578,7 @@ impl HvFsData {
                 None => return -1,
             };
             
-            if !self.check_permission(&inode, pwid, HVFS_PERM_W) {
+            if !self.check_permission(&inode, pwid, HVFS_CAP_WRITE) {
                 return -1;
             }
         }
@@ -1580,7 +1643,7 @@ impl HvFsData {
         };
         
         if let Some(parent) = self.get_inode(parent_num) {
-            if !self.check_permission(parent, pwid, HVFS_PERM_W) {
+            if !self.check_permission(parent, pwid, HVFS_CAP_CREATE) {
                 return -1;
             }
         }
@@ -1758,8 +1821,8 @@ impl HvFsData {
             return -2;
         }
 
-        if disk_sb.version > HVFS_VERSION {
-            log("[PERSIST] Unsupported version\n");
+        if disk_sb.version != HVFS_VERSION {
+            log("[PERSIST] Unsupported format version\n");
             return -3;
         }
 
@@ -1805,6 +1868,7 @@ impl HvFsData {
                 let disk_inode = HvfsInodeDisk {
                     inode_num: inode.inode_num,
                     mode: inode.mode,
+                    sensitivity: inode.sensitivity,
                     reserved: 0,
                     size: inode.size,
                     blocks: 0,
@@ -1820,7 +1884,7 @@ impl HvFsData {
                     double_indirect: inode.double_indirect,
                     triple_indirect: inode.triple_indirect,
                     flags: if inode.used { 1 } else { 0 },
-                    reserved2: [0; 19],
+                    reserved2: [0; 18],
                 };
 
                 let offset = count as usize * inode_disk_size;
@@ -1885,6 +1949,7 @@ impl HvFsData {
                 self.inode_table.push(HvfsInode {
                     inode_num: disk_inode.inode_num,
                     mode: disk_inode.mode,
+                    sensitivity: disk_inode.sensitivity,
                     reserved_uid: disk_inode.reserved,
                     size: disk_inode.size,
                     atime: disk_inode.atime,
@@ -2170,13 +2235,23 @@ impl HvFsData {
     }
 }
 
-pub static HVFS_DATA: spin::Once<Mutex<HvFsData>> = spin::Once::new();
+static HVFS_DONE: AtomicBool = AtomicBool::new(false);
+static mut HVFS_DATA: Option<HvFsData> = None;
 
-pub fn get_hvfs() -> &'static Mutex<HvFsData> {
-    HVFS_DATA.call_once(|| Mutex::new(HvFsData::new()))
+/// Get mutable reference to the global HvFsData singleton.
+/// Initializes on first call via lazy init; subsequent calls return the same instance.
+/// Single-threaded access is guaranteed during init; later usage is guarded by caller.
+pub fn get_hvfs() -> &'static mut HvFsData {
+    if !HVFS_DONE.load(Ordering::Acquire) {
+        unsafe {
+            HVFS_DATA = Some(HvFsData::new());
+        }
+        HVFS_DONE.store(true, Ordering::Release);
+    }
+    unsafe { HVFS_DATA.as_mut().unwrap() }
 }
 
 pub fn init() {
-    let mut hvfs = get_hvfs().lock();
+    let hvfs = get_hvfs();
     hvfs.init();
 }

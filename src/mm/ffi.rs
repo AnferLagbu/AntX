@@ -25,11 +25,11 @@ pub extern "C" fn pmm_init(mem_size: u64, kernel_end: u64) {
 
 /// Initialize bitmap for normal operation
 /// 
-/// C signature: void pmm_init_bitmap(void)
+/// C signature: void pmm_init_bitmap(uint64_t reserved_after_kernel)
 #[no_mangle]
-pub extern "C" fn pmm_init_bitmap() {
+pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
     unsafe {
-        get_pmm_mut().init_bitmap();
+        get_pmm_mut().init_bitmap(reserved_after_kernel);
     }
 }
 

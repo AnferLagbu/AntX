@@ -1,6 +1,6 @@
 use core::ffi::c_char;
 
-use super::diskfs::{get_diskfs, DISKFS_DATA};
+use super::diskfs::get_diskfs;
 use crate::fs::vfs::types::*;
 
 fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
@@ -19,27 +19,27 @@ pub extern "C" fn diskfs_init() {
 
 #[no_mangle]
 pub extern "C" fn diskfs_is_mounted() -> i32 {
-    let diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     if diskfs.is_mounted() { 1 } else { 0 }
 }
 
 #[no_mangle]
 pub extern "C" fn diskfs_mount(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     diskfs.mount(path)
 }
 
 #[no_mangle]
 pub extern "C" fn diskfs_unmount() -> i32 {
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     diskfs.unmount()
 }
 
 #[no_mangle]
 pub extern "C" fn diskfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     match diskfs.open(path, flags, pwid) {
         Some((inode_num, offset, file_type)) => {
             ((inode_num as i32) & 0xFFFF) | ((offset as i32) << 16)
@@ -50,7 +50,7 @@ pub extern "C" fn diskfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32
 
 #[no_mangle]
 pub extern "C" fn diskfs_close(fd: u32) -> i32 {
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     diskfs.close(fd)
 }
 
@@ -60,7 +60,7 @@ pub extern "C" fn diskfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
         return -1;
     }
     
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     unsafe {
         let buffer = core::slice::from_raw_parts_mut(buf, count as usize);
         diskfs.read(fd, buffer, count)
@@ -73,7 +73,7 @@ pub extern "C" fn diskfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
         return -1;
     }
     
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     unsafe {
         let buffer = core::slice::from_raw_parts(buf, count as usize);
         diskfs.write(fd, buffer, count)
@@ -84,7 +84,7 @@ pub extern "C" fn diskfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
 pub extern "C" fn diskfs_mkdir(parent_path: *const c_char, name: *const c_char, pwid: u64) -> i32 {
     let parent_path = ptr_to_str(parent_path);
     let name = ptr_to_str(name);
-    let mut diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     diskfs.mkdir(parent_path, name, pwid)
 }
 
@@ -95,7 +95,7 @@ pub extern "C" fn diskfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64) 
     }
     
     let path = ptr_to_str(path);
-    let diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     match diskfs.stat(path, pwid) {
         Some(stat) => {
             unsafe { *st = stat; }
@@ -107,6 +107,6 @@ pub extern "C" fn diskfs_stat(path: *const c_char, st: *mut VfsStat, pwid: u64) 
 
 #[no_mangle]
 pub extern "C" fn diskfs_sync() -> i32 {
-    let diskfs = get_diskfs().lock();
+    let diskfs = get_diskfs();
     diskfs.sync()
 }
