@@ -976,11 +976,40 @@ static int cpu_init_msr_safe(void) {
     /* 检查 CPU 是否支持 MSR (通过 CPUID.1:EDX[5]) */
     if (cpu_has_feature(CPU_FEATURE_MSR)) {
         serial_puts(SERIAL_COM1, "[CPU] MSR support detected\n");
-        return 0;
     } else {
         serial_puts(SERIAL_COM1, "[CPU] MSR not supported by CPU\n");
         return -1;
     }
+
+    /*
+     * 启用 SSE/SSE2 支持
+     * x86-64 要求 SSE/SSE2 存在，但 OS 必须设置 CR4.OSFXSR(bit9)
+     * 和 CR4.OSXMMEXCPT(bit10) 才能使用 SSE 指令。
+     * 否则 pxor/movaps 等 SSE 指令会触发 #UD (Invalid Opcode)。
+     */
+    {
+        uint64_t cr4;
+        __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+        cr4 |= (1UL << 9);   /* CR4.OSFXSR - enable FXSAVE/FXRSTOR + SSE */
+        cr4 |= (1UL << 10);  /* CR4.OSXMMEXCPT - enable #XF exception */
+        __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
+        serial_puts(SERIAL_COM1, "[CPU] SSE/SSE2 enabled (CR4.OSFXSR+OSXMMEXCPT)\n");
+    }
+
+    /* 启用 FPU (设置 CR0.TS=0, CR0.EM=0, CR0.MP=1) */
+    {
+        uint64_t cr0;
+        __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+        cr0 &= ~(1UL << 3);  /* CR0.TS=0 - no task switched */
+        cr0 &= ~(1UL << 2);  /* CR0.EM=0 - no FPU emulation */
+        cr0 |= (1UL << 1);   /* CR0.MP=1 - monitor coprocessor */
+        __asm__ volatile("mov %0, %%cr0" :: "r"(cr0) : "memory");
+
+        /* 执行 FNINIT 初始化 FPU 状态 */
+        __asm__ volatile("fninit");
+    }
+
+    return 0;
 }
 
 /**
