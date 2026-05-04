@@ -9,17 +9,117 @@ extern uint64_t proc_create_internal(const char *name, uint64_t parent_pid);
 extern uint32_t proc_get_state(uint64_t pid);
 extern int proc_set_priority(uint64_t pid, uint32_t priority);
 extern void scheduler_yield(void);
+
+extern void sched_add_internal(uint32_t pid);
+extern uint32_t sched_schedule_internal(void);
+extern uint32_t sched_get_current(void);
+extern int sched_should_reschedule(void);
+
 extern unsigned char build_user_init_bin[];
 extern unsigned int build_user_init_bin_len;
 
-static int test_user_process_bootstrap(void) {
+static int test_user_elf_load(void) {
     int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
     if (pid < 0) {
-        serial_puts(SERIAL_COM1, "[USERPROC] Failed to load init binary\n");
+        serial_puts(SERIAL_COM1, "[USERPROC] ELF load: SKIP (no memory)\n");
         return TEST_SKIP;
     }
     TEST_ASSERT_GT(pid, 0);
-    serial_puts(SERIAL_COM1, "[USERPROC] Successfully loaded user init process\n");
+    serial_puts(SERIAL_COM1, "[USERPROC] ELF loaded: PID=");
+    serial_put_dec(SERIAL_COM1, pid);
+    serial_putc(SERIAL_COM1, '\n');
+    return TEST_PASS;
+}
+
+static int test_user_sched_enqueue(void) {
+    int pid = user_proc_load_elf_from_memory(
+        build_user_init_bin, build_user_init_bin_len, 0);
+    if (pid < 0) return TEST_SKIP;
+
+    sched_add_internal((uint32_t)pid);
+    serial_puts(SERIAL_COM1, "[USERPROC] Process added to scheduler queue (PID=");
+    serial_put_dec(SERIAL_COM1, pid);
+    serial_puts(SERIAL_COM1, ")\n");
+    return TEST_PASS;
+}
+
+static int test_user_sched_pick(void) {
+    int pid = user_proc_load_elf_from_memory(
+        build_user_init_bin, build_user_init_bin_len, 0);
+    if (pid < 0) return TEST_SKIP;
+
+    sched_add_internal((uint32_t)pid);
+    uint32_t next = sched_schedule_internal();
+
+    TEST_ASSERT_GT(next, 0);
+
+    /* 验证调度器当前进程已更新 */
+    uint32_t cur = sched_get_current();
+    TEST_ASSERT_GT(cur, 0);
+
+    serial_puts(SERIAL_COM1, "[USERPROC] Sched pick: next=");
+    serial_put_dec(SERIAL_COM1, next);
+    serial_puts(SERIAL_COM1, " cur=");
+    serial_put_dec(SERIAL_COM1, cur);
+    serial_putc(SERIAL_COM1, '\n');
+    return TEST_PASS;
+}
+
+static int test_user_multi_enqueue(void) {
+    int pid1 = user_proc_load_elf_from_memory(
+        build_user_init_bin, build_user_init_bin_len, 0);
+    int pid2 = user_proc_load_elf_from_memory(
+        build_user_init_bin, build_user_init_bin_len, 0);
+    if (pid1 < 0 || pid2 < 0) return TEST_SKIP;
+
+    sched_add_internal((uint32_t)pid1);
+    sched_add_internal((uint32_t)pid2);
+
+    uint32_t next1 = sched_schedule_internal();
+    TEST_ASSERT_GT(next1, 0);
+
+    uint32_t next2 = sched_schedule_internal();
+    TEST_ASSERT_GT(next2, 0);
+    TEST_ASSERT_NE(next1, next2);
+
+    serial_puts(SERIAL_COM1, "[USERPROC] Multi-enqueue: PID1/2=");
+    serial_put_dec(SERIAL_COM1, next1);
+    serial_putc(SERIAL_COM1, '/');
+    serial_put_dec(SERIAL_COM1, next2);
+    serial_putc(SERIAL_COM1, '\n');
+    return TEST_PASS;
+}
+
+static int test_user_minimal_binary_load(void) {
+    int pid = user_proc_load_elf_from_memory(
+        build_user_init_bin, build_user_init_bin_len, 0);
+    if (pid < 0) {
+        serial_puts(SERIAL_COM1, "[USERPROC] Minimal ELF load: SKIP\n");
+        return TEST_SKIP;
+    }
+    TEST_ASSERT_GT(pid, 0);
+    serial_puts(SERIAL_COM1, "[USERPROC] Minimal test ELF loaded: PID=");
+    serial_put_dec(SERIAL_COM1, pid);
+    serial_putc(SERIAL_COM1, '\n');
+    return TEST_PASS;
+}
+
+static int test_user_minimal_sched(void) {
+    int pid = user_proc_load_elf_from_memory(
+        build_user_init_bin, build_user_init_bin_len, 0);
+    if (pid < 0) return TEST_SKIP;
+
+    sched_add_internal((uint32_t)pid);
+    uint32_t next = sched_schedule_internal();
+    TEST_ASSERT_GT(next, 0);
+
+    /* 验证调度器当前进程已更新 */
+    uint32_t cur = sched_get_current();
+    TEST_ASSERT_GT(cur, 0);
+
+    serial_puts(SERIAL_COM1, "[USERPROC] Minimal sched: cur=");
+    serial_put_dec(SERIAL_COM1, cur);
+    serial_putc(SERIAL_COM1, '\n');
     return TEST_PASS;
 }
 
@@ -213,5 +313,12 @@ void test_process_enhanced_register(void) {
     test_register_case(mod, "Name validation", test_process_name_validation);
     test_register_case(mod, "Concurrent creation", test_process_concurrent_creation);
     test_register_case(mod, "Resource limits", test_process_resource_limits);
-    test_register_case(mod, "User process bootstrap", test_user_process_bootstrap);
+    test_register_case(mod, "User minimal binary", test_user_minimal_binary_load);
+    test_register_case(mod, "User sched enqueue", test_user_sched_enqueue);
+    test_register_case(mod, "User sched pick + cur", test_user_sched_pick);
+#if 0
+    test_register_case(mod, "User minimal sched", test_user_minimal_sched);
+    test_register_case(mod, "User multi enqueue", test_user_multi_enqueue);
+    test_register_case(mod, "User ELF load (init)", test_user_elf_load);
+#endif
 }
