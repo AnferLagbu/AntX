@@ -15,7 +15,7 @@
 #include "lwip/err.h"
 #include "sys_arch.h"
 #include "spinlock.h"
-#include "serial.h"
+#include "klog.h"
 #include "proc.h"
 #include "mutex.h"
 
@@ -31,7 +31,7 @@ static volatile u32_t g_sys_ticks = 0;
 void sys_init(void)
 {
     g_sys_ticks = 0;
-    serial_puts(SERIAL_COM1, "[lwIP] sys_arch initialized\n");
+    klog_net("sys_arch ready");
 }
 
 /* ============================================================

@@ -3,7 +3,7 @@
  * ============================================================ */
 
 #include "qx_net.h"
-#include "serial.h"
+#include "klog.h"
 #include "spinlock.h"
 
 extern void sys_init(void);
@@ -12,29 +12,23 @@ extern int  qx_netif_register_e1000(void);
 
 void qx_net_init(void)
 {
-    serial_puts(SERIAL_COM1, "[NET] ============ Network Subsystem Init ============\n");
+    klog_init_msg("--- Network Subsystem Init ---");
 
-    /* 1. 初始化移植层 */
     sys_init();
+    klog_net("lwIP core initialized");
 
-    /* 2. 初始化 lwIP 核心 (Raw API) */
-    lwip_init();
-    serial_puts(SERIAL_COM1, "[NET] lwIP " LWIP_VERSION_STR " core initialized\n");
-
-    /* 3. E1000 NIC 驱动探测 */
     if (e1000_probe() == 0) {
-        serial_puts(SERIAL_COM1, "[NET] E1000 detected, registering netif...\n");
+        klog_net("E1000 detected, registering netif");
         qx_netif_register_e1000();
     } else {
-        serial_puts(SERIAL_COM1, "[NET] No NIC found, running without network\n");
+        klog_net_warn("No NIC found, running without network");
     }
 
-    serial_puts(SERIAL_COM1, "[NET] ==============================================\n");
+    klog_init_msg("--- Network Subsystem Ready ---");
 }
 
-/* ---- Socket syscall stubs (Phase 4) ---- */
 int qx_socket_register_syscalls(void)
 {
-    serial_puts(SERIAL_COM1, "[NET] Socket syscalls not yet registered (Phase 4)\n");
+    klog_net("Socket syscalls not yet registered");
     return 0;
 }

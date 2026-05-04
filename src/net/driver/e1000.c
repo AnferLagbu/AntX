@@ -9,7 +9,7 @@
 
 #include "e1000.h"
 #include "e1000_regs.h"
-#include "serial.h"
+#include "klog.h"
 #include "pci.h"
 #include "dma.h"
 #include "kmalloc.h"
@@ -92,11 +92,10 @@ static int e1000_setup_rings(e1000_dev_t *dev)
         dev->tx_descs[i].addr   = 0;
         dev->tx_descs[i].length = 0;
         dev->tx_descs[i].cmd    = 0;
-        dev->tx_descs[i].status = E1000_TXD_STAT_DD;  /* 标记为可用 */
+        dev->tx_descs[i].status = E1000_TXD_STAT_DD;
     }
     dev->tx_tail = 0;
 
-    /* 配置 TX 描述符环 */
     uint64_t tx_phys = (uint64_t)(uintptr_t)dev->tx_descs;
     mmio_write32(base, E1000_TDBAL, (uint32_t)(tx_phys & 0xFFFFFFFF));
     mmio_write32(base, E1000_TDBAH, (uint32_t)(tx_phys >> 32));
@@ -104,7 +103,6 @@ static int e1000_setup_rings(e1000_dev_t *dev)
     mmio_write32(base, E1000_TDH,   0);
     mmio_write32(base, E1000_TDT,   0);
 
-    /* 分配 RX 描述符 (16字节对齐) */
     dev->rx_descs = (e1000_rx_desc_t *)kmalloc_align(
         sizeof(e1000_rx_desc_t) * E1000_RX_RING_SIZE, 16);
     if (!dev->rx_descs) return -1;
@@ -119,7 +117,6 @@ static int e1000_setup_rings(e1000_dev_t *dev)
     }
     dev->rx_tail = 0;
 
-    /* 配置 RX 描述符环 */
     uint64_t rx_phys = (uint64_t)(uintptr_t)dev->rx_descs;
     mmio_write32(base, E1000_RDBAL, (uint32_t)(rx_phys & 0xFFFFFFFF));
     mmio_write32(base, E1000_RDBAH, (uint32_t)(rx_phys >> 32));
@@ -136,65 +133,55 @@ static int e1000_setup_rings(e1000_dev_t *dev)
 int e1000_probe(void)
 {
     uint8_t bus, dev_idx, func;
-    serial_puts(SERIAL_COM1, "[E1000] Direct PCI scan for Intel 82540EM...\n");
+    klog_drv("E1000: Direct PCI scan for Intel 82540EM...");
 
-    /* 扫描所有可能的 PCI 总线 (0-255, 快速跳过无效总线) */
     for (bus = 0; bus < 255; bus++) {
-        /* 快速探测此总线是否存在 */
         outl(PCI_CONFIG_ADDR_PORT,
              0x80000000 | ((uint32_t)bus << 16) | 0x00);
         uint16_t bus_vendor = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
         if (bus_vendor == 0xFFFF || bus_vendor == 0x0000) {
-            if (bus > 0) continue; /* 跳过无效总线 */
+            if (bus > 0) continue;
         }
 
         for (dev_idx = 0; dev_idx < 32; dev_idx++) {
             for (func = 0; func < 8; func++) {
-                /* 读取 Vendor ID */
                 outl(PCI_CONFIG_ADDR_PORT,
                      0x80000000 | ((uint32_t)bus << 16) |
                      ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x00);
                 uint16_t vendor_id = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
 
                 if (vendor_id == 0xFFFF || vendor_id == 0x0000) {
-                    if (func == 0) break; /* 无设备，跳过此 device */
+                    if (func == 0) break;
                     continue;
                 }
 
-                /* 读取 Device ID */
                 outl(PCI_CONFIG_ADDR_PORT,
                      0x80000000 | ((uint32_t)bus << 16) |
                      ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x02);
                 uint16_t device_id = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
 
-                /* 读取 Class Code (offset 0x08 dword→base_class在bit31:24) */
                 outl(PCI_CONFIG_ADDR_PORT,
                      0x80000000 | ((uint32_t)bus << 16) |
                      ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x08);
                 uint32_t class_code = inl(PCI_CONFIG_DATA_PORT);
                 uint8_t base_class = (uint8_t)(class_code >> 24);
 
-                /* 找到 Intel 网络设备 */
                 if (vendor_id == 0x8086 && base_class == 0x02) {
-                    serial_puts(SERIAL_COM1, "[E1000] Found NIC: vendor=8086 dev=");
-                    serial_put_hex(SERIAL_COM1, device_id);
-                    serial_puts(SERIAL_COM1, " bus=");
-                    serial_put_dec(SERIAL_COM1, bus);
-                    serial_puts(SERIAL_COM1, " slot=");
-                    serial_put_dec(SERIAL_COM1, dev_idx);
-                    serial_putc(SERIAL_COM1, '\n');
+                    char buf[128];
+                    snprintf(buf, sizeof(buf),
+                             "E1000: Found NIC vendor=8086 dev=0x%x bus=%d slot=%d",
+                             device_id, bus, dev_idx);
+                    klog_drv("%s", buf);
 
                     g_e1000.bus    = bus;
                     g_e1000.device = dev_idx;
                     g_e1000.func   = func;
 
-                    /* 读取 BAR0 (offset 0x10) */
                     outl(PCI_CONFIG_ADDR_PORT,
                          0x80000000 | ((uint32_t)bus << 16) |
                          ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
                     uint32_t bar0lo = inl(PCI_CONFIG_DATA_PORT);
 
-                    /* 写入全1以探测BAR大小 */
                     outl(PCI_CONFIG_ADDR_PORT,
                          0x80000000 | ((uint32_t)bus << 16) |
                          ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
@@ -204,7 +191,6 @@ int e1000_probe(void)
                          ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
                     uint32_t bar_size_mask = inl(PCI_CONFIG_DATA_PORT);
 
-                    /* 恢复 BAR0 */
                     outl(PCI_CONFIG_ADDR_PORT,
                          0x80000000 | ((uint32_t)bus << 16) |
                          ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
@@ -222,22 +208,20 @@ int e1000_probe(void)
                         bar0_size = ~(bar_size_mask & ~0x0F) + 1;
                     }
 
-                    serial_puts(SERIAL_COM1, "[E1000] BAR0: phys=0x");
-                    serial_put_hex(SERIAL_COM1, (uint32_t)bar0_phys);
-                    serial_puts(SERIAL_COM1, " size=0x");
-                    serial_put_hex(SERIAL_COM1, (uint32_t)bar0_size);
-                    serial_puts(SERIAL_COM1, bar_is_io ? " (IO)\n" : " (MMIO)\n");
+                    snprintf(buf, sizeof(buf),
+                             "E1000: BAR0 phys=0x%x size=%u (%s)",
+                             (uint32_t)bar0_phys, (uint32_t)bar0_size,
+                             bar_is_io ? "IO" : "MMIO");
+                    klog_drv("%s", buf);
 
                     if (bar_is_io) {
-                        serial_puts(SERIAL_COM1, "[E1000] I/O BAR not supported\n");
+                        klog_drv_err("E1000: I/O BAR not supported");
                         return -1;
                     }
 
                     g_e1000.mmio_phys = bar0_phys;
 
-                    /* 直接映射 MMIO: 在 PDPT identity 映射中添加条目
-                     * CR3 → PML4; PDPT entry 3 = 物理 3-4GB 范围
-                     * 分配新 PD, 用 2MB 大页映射 */
+                    /* 动态页表映射: CR3 → PML4 → pdpt_low[3] 映射 3-4GB */
                     {
                         volatile uint64_t *pml4;
                         volatile uint64_t *pdpt_low;
@@ -245,17 +229,15 @@ int e1000_probe(void)
 
                         __asm__ volatile("mov %%cr3, %0" : "=r"(pml4));
                         pdpt_low = (volatile uint64_t *)((uint64_t)(uintptr_t)pml4 + 0x1000);
-                        /* pdpt_low = PML4 entry 0 指向的 PDPT (identity mapping) */
 
                         pd_new = (volatile uint64_t *)kmalloc_align(4096, 4096);
                         if (!pd_new) {
-                            serial_puts(SERIAL_COM1, "[E1000] Failed to alloc page table\n");
+                            klog_drv_err("E1000: Failed to alloc page table");
                             return -1;
                         }
 
                         for (int pi = 0; pi < 512; pi++) pd_new[pi] = 0;
 
-                        /* 2MB 大页映射: phys → PD entry with PS=1 */
                         uint64_t mmio_base_2m = bar0_phys & ~0x1FFFFFULL;
                         int pd_idx = (int)((bar0_phys >> 21) & 0x1FF);
                         pd_new[pd_idx] = mmio_base_2m | 0x93;
@@ -263,11 +245,9 @@ int e1000_probe(void)
                             pd_new[pd_idx + 1] = (mmio_base_2m + 0x200000ULL) | 0x93;
                         }
 
-                        /* PDPT[3] → 指向新 PD (物理 3-4GB 身份映射) */
                         uint64_t pd_phys = (uint64_t)(uintptr_t)pd_new;
                         pdpt_low[3] = pd_phys | 0x03;
 
-                        /* TLB flush */
                         {
                             uint64_t cr3_val;
                             __asm__ volatile("mov %%cr3, %0; mov %0, %%cr3"
@@ -277,51 +257,37 @@ int e1000_probe(void)
                         g_e1000.mmio_base = (volatile uint8_t *)(uintptr_t)bar0_phys;
                     }
 
-                    /* 启用 Bus Mastering + MMIO */
                     outl(PCI_CONFIG_ADDR_PORT,
                          0x80000000 | ((uint32_t)bus << 16) |
                          ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x04);
                     uint32_t cmd_reg = inl(PCI_CONFIG_DATA_PORT);
-                    cmd_reg |= 0x06;  /* Bus Master + MMIO */
+                    cmd_reg |= 0x06;
                     outl(PCI_CONFIG_DATA_PORT, cmd_reg);
 
-                    /* 读取 IRQ */
                     outl(PCI_CONFIG_ADDR_PORT,
                          0x80000000 | ((uint32_t)bus << 16) |
                          ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x3C);
                     g_e1000.irq = (uint8_t)inl(PCI_CONFIG_DATA_PORT);
-                    serial_puts(SERIAL_COM1, "[E1000] IRQ=");
-                    serial_put_dec(SERIAL_COM1, g_e1000.irq);
-                    serial_putc(SERIAL_COM1, '\n');
 
-                    /* 读 MAC */
                     e1000_read_mac(g_e1000.mmio_base, g_e1000.mac);
-                    serial_puts(SERIAL_COM1, "[E1000] MAC: ");
-                    serial_put_hex(SERIAL_COM1, g_e1000.mac[0]);
-                    serial_putc(SERIAL_COM1, ':');
-                    serial_put_hex(SERIAL_COM1, g_e1000.mac[1]);
-                    serial_putc(SERIAL_COM1, ':');
-                    serial_put_hex(SERIAL_COM1, g_e1000.mac[2]);
-                    serial_putc(SERIAL_COM1, ':');
-                    serial_put_hex(SERIAL_COM1, g_e1000.mac[3]);
-                    serial_putc(SERIAL_COM1, ':');
-                    serial_put_hex(SERIAL_COM1, g_e1000.mac[4]);
-                    serial_putc(SERIAL_COM1, ':');
-                    serial_put_hex(SERIAL_COM1, g_e1000.mac[5]);
-                    serial_putc(SERIAL_COM1, '\n');
+                    snprintf(buf, sizeof(buf),
+                             "E1000: MAC %02x:%02x:%02x:%02x:%02x:%02x IRQ %d",
+                             g_e1000.mac[0], g_e1000.mac[1], g_e1000.mac[2],
+                             g_e1000.mac[3], g_e1000.mac[4], g_e1000.mac[5],
+                             g_e1000.irq);
+                    klog_drv("%s", buf);
 
                     return 0;
                 }
 
                 if (func == 0 && !(vendor_id & 0x8000)) {
-                    /* 单功能设备，跳过后续 func */
                     break;
                 }
             }
         }
     }
 
-    serial_puts(SERIAL_COM1, "[E1000] No Intel NIC found on PCI bus\n");
+    klog_drv_err("E1000: No Intel NIC found on PCI bus");
     return -1;
 }
 
@@ -335,15 +301,11 @@ err_t e1000_init(struct netif *netif)
 
     g_e1000.netif = netif;
 
-    /* 1. 复位设备 */
     mmio_write32(base, E1000_CTRL, E1000_CTRL_RST);
     for (volatile int i = 0; i < 100000; i++) { __asm__ volatile("pause"); }
-    /* CTRL.RST 自动清除 */
 
-    /* 2. 禁用中断 */
     mmio_write32(base, E1000_IMC, 0xFFFFFFFF);
 
-    /* 3. 设置链路: 1000M 全双工, 开启链路 */
     uint32_t ctrl = mmio_read32(base, E1000_CTRL);
     ctrl |= E1000_CTRL_SLU;
     ctrl |= E1000_CTRL_ASDE;
@@ -351,32 +313,28 @@ err_t e1000_init(struct netif *netif)
     ctrl |= E1000_CTRL_FRCDPX | E1000_CTRL_FD;
     mmio_write32(base, E1000_CTRL, ctrl);
 
-    /* 4. 等待链路就绪 */
-    serial_puts(SERIAL_COM1, "[E1000] Waiting for link...\n");
+    klog_drv("E1000: Waiting for link...");
     for (volatile int i = 0; i < 500000; i++) {
         if (mmio_read32(base, E1000_STATUS) & E1000_STATUS_LU) break;
         __asm__ volatile("pause");
     }
     if (mmio_read32(base, E1000_STATUS) & E1000_STATUS_LU) {
-        serial_puts(SERIAL_COM1, "[E1000] Link up! speed=");
         uint32_t spd = mmio_read32(base, E1000_STATUS) & (3 << 6);
-        if (spd == E1000_STATUS_SPEED_1000) serial_puts(SERIAL_COM1, "1000Mbps");
-        else if (spd == E1000_STATUS_SPEED_100) serial_puts(SERIAL_COM1, "100Mbps");
-        else serial_puts(SERIAL_COM1, "10Mbps");
-        if (mmio_read32(base, E1000_STATUS) & E1000_STATUS_FD)
-            serial_puts(SERIAL_COM1, " Full-Duplex");
-        serial_putc(SERIAL_COM1, '\n');
+        const char *speed_str;
+        if (spd == E1000_STATUS_SPEED_1000) speed_str = "1000Mbps";
+        else if (spd == E1000_STATUS_SPEED_100) speed_str = "100Mbps";
+        else speed_str = "10Mbps";
+        int fd = (mmio_read32(base, E1000_STATUS) & E1000_STATUS_FD) ? 1 : 0;
+        klog_drv("E1000: Link up! %s %s", speed_str, fd ? "Full-Duplex" : "Half-Duplex");
     } else {
-        serial_puts(SERIAL_COM1, "[E1000] Warning: link not detected\n");
+        klog_drv_warn("E1000: Link not detected");
     }
 
-    /* 5. 设置描述符环 */
     if (e1000_setup_rings(&g_e1000) != 0) {
-        serial_puts(SERIAL_COM1, "[E1000] Failed to setup descriptor rings\n");
+        klog_drv_err("E1000: Failed to setup descriptor rings");
         return ERR_MEM;
     }
 
-    /* 6. 配置接收控制 */
     uint32_t rctl = E1000_RCTL_EN
                   | E1000_RCTL_SBP
                   | E1000_RCTL_UPE
@@ -386,17 +344,14 @@ err_t e1000_init(struct netif *netif)
                   | E1000_RCTL_BSIZE_2048;
     mmio_write32(base, E1000_RCTL, rctl);
 
-    /* 7. 配置发送控制 */
     uint32_t tctl = E1000_TCTL_EN
                   | E1000_TCTL_PSP
                   | E1000_TCTL_CT(0x10)
                   | E1000_TCTL_COLD(0x40);
     mmio_write32(base, E1000_TCTL, tctl);
 
-    /* 8. 帧间间隔 */
     mmio_write32(base, E1000_TIPG, 0x0060200A);
 
-    /* 9. 设置 netif */
     netif->hwaddr_len = 6;
     for (int i = 0; i < 6; i++) {
         netif->hwaddr[i] = g_e1000.mac[i];
@@ -406,23 +361,17 @@ err_t e1000_init(struct netif *netif)
     netif->output = etharp_output;
     netif->linkoutput = e1000_send;
 
-    /* 10. 启用 RX 中断 */
     mmio_write32(base, E1000_IMS, E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC);
 
-    /* 11. 注册 IRQ 中断处理器 */
     {
         extern void e1000_irq_entry(struct interrupt_frame *);
         idt_register_irq(g_e1000.irq, e1000_irq_entry, "e1000", 0);
-        serial_puts(SERIAL_COM1, "[E1000] IRQ handler registered for IRQ ");
-        serial_put_dec(SERIAL_COM1, g_e1000.irq);
-        serial_putc(SERIAL_COM1, '\n');
     }
 
-    serial_puts(SERIAL_COM1, "[E1000] Initialization complete\n");
+    klog_drv("E1000: IRQ %d handler registered, init complete", g_e1000.irq);
     return ERR_OK;
 }
 
-/* ---- IRQ handler wrapper (符合 idt interrupt_frame 签名) ---- */
 void e1000_irq_entry(struct interrupt_frame *frame)
 {
     (void)frame;
@@ -442,18 +391,16 @@ err_t e1000_send(struct netif *netif, struct pbuf *p)
 
     if (!desc) return ERR_OK;
 
-    /* 等待上一个描述符完成 */
     int timeout = 100000;
     while (!(desc->status & E1000_TXD_STAT_DD) && timeout > 0) {
         __asm__ volatile("pause");
         timeout--;
     }
     if (timeout == 0) {
-        serial_puts(SERIAL_COM1, "[E1000] TX timeout\n");
+        klog_drv_err("E1000: TX timeout");
         return ERR_TIMEOUT;
     }
 
-    /* 将 pbuf 链拷入连续缓冲区 */
     static uint8_t tx_buf[2048];
     size_t total_len = 0;
     struct pbuf *q;
@@ -468,7 +415,6 @@ err_t e1000_send(struct netif *netif, struct pbuf *p)
     desc->cmd    = E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS;
     desc->status = 0;
 
-    /* 推进尾指针 */
     g_e1000.tx_tail = (tail + 1) % E1000_TX_RING_SIZE;
     mmio_write32(base, E1000_TDT, g_e1000.tx_tail);
 
@@ -484,25 +430,23 @@ void e1000_isr(void)
     if (!base) return;
 
     uint32_t icr = mmio_read32(base, E1000_ICR);
-    if (icr == 0) return;  /* 不是我们的中断 */
+    if (icr == 0) return;
 
-    /* 链路状态改变 */
     if (icr & E1000_ICR_LSC) {
         uint32_t status = mmio_read32(base, E1000_STATUS);
         if (status & E1000_STATUS_LU) {
             if (g_e1000.netif && !(g_e1000.netif->flags & NETIF_FLAG_LINK_UP)) {
-                serial_puts(SERIAL_COM1, "[E1000] Link up!\n");
+                klog_drv("E1000: Link up");
                 g_e1000.netif->flags |= NETIF_FLAG_LINK_UP;
             }
         } else {
             if (g_e1000.netif && (g_e1000.netif->flags & NETIF_FLAG_LINK_UP)) {
-                serial_puts(SERIAL_COM1, "[E1000] Link down!\n");
+                klog_drv("E1000: Link down");
                 g_e1000.netif->flags &= ~NETIF_FLAG_LINK_UP;
             }
         }
     }
 
-    /* 接收数据包 */
     if (icr & (E1000_ICR_RXT0 | E1000_ICR_RXDMT0)) {
         uint32_t rdh = mmio_read32(base, E1000_RDH);
         while (g_e1000.rx_tail != rdh) {
@@ -513,7 +457,6 @@ void e1000_isr(void)
 
                 if (!(desc->errors & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE |
                                        E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE))) {
-                    /* 将数据提交给 lwIP */
                     struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
                     if (p) {
                         pbuf_take(p, g_e1000.rx_buffers[g_e1000.rx_tail], len);
@@ -530,7 +473,6 @@ void e1000_isr(void)
                 desc->status = 0;
             }
 
-            /* 推进 RX 尾指针 */
             uint16_t prev = g_e1000.rx_tail;
             g_e1000.rx_tail = (g_e1000.rx_tail + 1) % E1000_RX_RING_SIZE;
             mmio_write32(base, E1000_RDT, prev);
