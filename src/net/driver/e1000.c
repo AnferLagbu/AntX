@@ -14,6 +14,7 @@
 #include "dma.h"
 #include "kmalloc.h"
 #include "types.h"
+#include "io.h"
 
 #include "lwip/opt.h"
 #include "lwip/pbuf.h"
@@ -129,94 +130,198 @@ static int e1000_setup_rings(e1000_dev_t *dev)
 }
 
 /* ============================================================
- * PCI 探测
+ * PCI 探测 (独立扫描，不依赖 pci_find_class)
  * ============================================================ */
 int e1000_probe(void)
 {
-    pci_device_t *dev;
-    serial_puts(SERIAL_COM1, "[E1000] Probing PCI bus for Intel 82540EM...\n");
+    uint8_t bus, dev_idx, func;
+    serial_puts(SERIAL_COM1, "[E1000] Direct PCI scan for Intel 82540EM...\n");
 
-    /* 搜索网络类以太网子类的 PCI 设备 */
-    dev = pci_find_class(0x02, 0x00, NULL);
-    if (!dev) {
-        serial_puts(SERIAL_COM1, "[E1000] No network PCI device found\n");
-        return -1;
+    /* 扫描所有可能的 PCI 总线 (0-255, 快速跳过无效总线) */
+    for (bus = 0; bus < 255; bus++) {
+        /* 快速探测此总线是否存在 */
+        outl(PCI_CONFIG_ADDR_PORT,
+             0x80000000 | ((uint32_t)bus << 16) | 0x00);
+        uint16_t bus_vendor = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
+        if (bus_vendor == 0xFFFF || bus_vendor == 0x0000) {
+            if (bus > 0) continue; /* 跳过无效总线 */
+        }
+
+        for (dev_idx = 0; dev_idx < 32; dev_idx++) {
+            for (func = 0; func < 8; func++) {
+                /* 读取 Vendor ID */
+                outl(PCI_CONFIG_ADDR_PORT,
+                     0x80000000 | ((uint32_t)bus << 16) |
+                     ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x00);
+                uint16_t vendor_id = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
+
+                if (vendor_id == 0xFFFF || vendor_id == 0x0000) {
+                    if (func == 0) break; /* 无设备，跳过此 device */
+                    continue;
+                }
+
+                /* 读取 Device ID */
+                outl(PCI_CONFIG_ADDR_PORT,
+                     0x80000000 | ((uint32_t)bus << 16) |
+                     ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x02);
+                uint16_t device_id = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
+
+                /* 读取 Class Code (offset 0x08 dword→base_class在bit31:24) */
+                outl(PCI_CONFIG_ADDR_PORT,
+                     0x80000000 | ((uint32_t)bus << 16) |
+                     ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x08);
+                uint32_t class_code = inl(PCI_CONFIG_DATA_PORT);
+                uint8_t base_class = (uint8_t)(class_code >> 24);
+
+                /* 找到 Intel 网络设备 */
+                if (vendor_id == 0x8086 && base_class == 0x02) {
+                    serial_puts(SERIAL_COM1, "[E1000] Found NIC: vendor=8086 dev=");
+                    serial_put_hex(SERIAL_COM1, device_id);
+                    serial_puts(SERIAL_COM1, " bus=");
+                    serial_put_dec(SERIAL_COM1, bus);
+                    serial_puts(SERIAL_COM1, " slot=");
+                    serial_put_dec(SERIAL_COM1, dev_idx);
+                    serial_putc(SERIAL_COM1, '\n');
+
+                    g_e1000.bus    = bus;
+                    g_e1000.device = dev_idx;
+                    g_e1000.func   = func;
+
+                    /* 读取 BAR0 (offset 0x10) */
+                    outl(PCI_CONFIG_ADDR_PORT,
+                         0x80000000 | ((uint32_t)bus << 16) |
+                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
+                    uint32_t bar0lo = inl(PCI_CONFIG_DATA_PORT);
+
+                    /* 写入全1以探测BAR大小 */
+                    outl(PCI_CONFIG_ADDR_PORT,
+                         0x80000000 | ((uint32_t)bus << 16) |
+                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
+                    outl(PCI_CONFIG_DATA_PORT, 0xFFFFFFFF);
+                    outl(PCI_CONFIG_ADDR_PORT,
+                         0x80000000 | ((uint32_t)bus << 16) |
+                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
+                    uint32_t bar_size_mask = inl(PCI_CONFIG_DATA_PORT);
+
+                    /* 恢复 BAR0 */
+                    outl(PCI_CONFIG_ADDR_PORT,
+                         0x80000000 | ((uint32_t)bus << 16) |
+                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
+                    outl(PCI_CONFIG_DATA_PORT, bar0lo);
+
+                    uint64_t bar0_phys;
+                    uint64_t bar0_size;
+                    int bar_is_io = (bar0lo & 0x01);
+
+                    if (bar_is_io) {
+                        bar0_phys = bar0lo & ~0x03;
+                        bar0_size = ~(bar_size_mask & ~0x03) + 1;
+                    } else {
+                        bar0_phys = bar0lo & ~0x0F;
+                        bar0_size = ~(bar_size_mask & ~0x0F) + 1;
+                    }
+
+                    serial_puts(SERIAL_COM1, "[E1000] BAR0: phys=0x");
+                    serial_put_hex(SERIAL_COM1, (uint32_t)bar0_phys);
+                    serial_puts(SERIAL_COM1, " size=0x");
+                    serial_put_hex(SERIAL_COM1, (uint32_t)bar0_size);
+                    serial_puts(SERIAL_COM1, bar_is_io ? " (IO)\n" : " (MMIO)\n");
+
+                    if (bar_is_io) {
+                        serial_puts(SERIAL_COM1, "[E1000] I/O BAR not supported\n");
+                        return -1;
+                    }
+
+                    g_e1000.mmio_phys = bar0_phys;
+
+                    /* 直接映射 MMIO: 在 PDPT identity 映射中添加条目
+                     * CR3 → PML4; PDPT entry 3 = 物理 3-4GB 范围
+                     * 分配新 PD, 用 2MB 大页映射 */
+                    {
+                        volatile uint64_t *pml4;
+                        volatile uint64_t *pdpt_low;
+                        volatile uint64_t *pd_new;
+
+                        __asm__ volatile("mov %%cr3, %0" : "=r"(pml4));
+                        pdpt_low = (volatile uint64_t *)((uint64_t)(uintptr_t)pml4 + 0x1000);
+                        /* pdpt_low = PML4 entry 0 指向的 PDPT (identity mapping) */
+
+                        pd_new = (volatile uint64_t *)kmalloc_align(4096, 4096);
+                        if (!pd_new) {
+                            serial_puts(SERIAL_COM1, "[E1000] Failed to alloc page table\n");
+                            return -1;
+                        }
+
+                        for (int pi = 0; pi < 512; pi++) pd_new[pi] = 0;
+
+                        /* 2MB 大页映射: phys → PD entry with PS=1 */
+                        uint64_t mmio_base_2m = bar0_phys & ~0x1FFFFFULL;
+                        int pd_idx = (int)((bar0_phys >> 21) & 0x1FF);
+                        pd_new[pd_idx] = mmio_base_2m | 0x93;
+                        if (pd_idx < 511) {
+                            pd_new[pd_idx + 1] = (mmio_base_2m + 0x200000ULL) | 0x93;
+                        }
+
+                        /* PDPT[3] → 指向新 PD (物理 3-4GB 身份映射) */
+                        uint64_t pd_phys = (uint64_t)(uintptr_t)pd_new;
+                        pdpt_low[3] = pd_phys | 0x03;
+
+                        /* TLB flush */
+                        {
+                            uint64_t cr3_val;
+                            __asm__ volatile("mov %%cr3, %0; mov %0, %%cr3"
+                                             : "=r"(cr3_val) :: "memory");
+                        }
+
+                        g_e1000.mmio_base = (volatile uint8_t *)(uintptr_t)bar0_phys;
+                    }
+
+                    /* 启用 Bus Mastering + MMIO */
+                    outl(PCI_CONFIG_ADDR_PORT,
+                         0x80000000 | ((uint32_t)bus << 16) |
+                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x04);
+                    uint32_t cmd_reg = inl(PCI_CONFIG_DATA_PORT);
+                    cmd_reg |= 0x06;  /* Bus Master + MMIO */
+                    outl(PCI_CONFIG_DATA_PORT, cmd_reg);
+
+                    /* 读取 IRQ */
+                    outl(PCI_CONFIG_ADDR_PORT,
+                         0x80000000 | ((uint32_t)bus << 16) |
+                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x3C);
+                    g_e1000.irq = (uint8_t)inl(PCI_CONFIG_DATA_PORT);
+                    serial_puts(SERIAL_COM1, "[E1000] IRQ=");
+                    serial_put_dec(SERIAL_COM1, g_e1000.irq);
+                    serial_putc(SERIAL_COM1, '\n');
+
+                    /* 读 MAC */
+                    e1000_read_mac(g_e1000.mmio_base, g_e1000.mac);
+                    serial_puts(SERIAL_COM1, "[E1000] MAC: ");
+                    serial_put_hex(SERIAL_COM1, g_e1000.mac[0]);
+                    serial_putc(SERIAL_COM1, ':');
+                    serial_put_hex(SERIAL_COM1, g_e1000.mac[1]);
+                    serial_putc(SERIAL_COM1, ':');
+                    serial_put_hex(SERIAL_COM1, g_e1000.mac[2]);
+                    serial_putc(SERIAL_COM1, ':');
+                    serial_put_hex(SERIAL_COM1, g_e1000.mac[3]);
+                    serial_putc(SERIAL_COM1, ':');
+                    serial_put_hex(SERIAL_COM1, g_e1000.mac[4]);
+                    serial_putc(SERIAL_COM1, ':');
+                    serial_put_hex(SERIAL_COM1, g_e1000.mac[5]);
+                    serial_putc(SERIAL_COM1, '\n');
+
+                    return 0;
+                }
+
+                if (func == 0 && !(vendor_id & 0x8000)) {
+                    /* 单功能设备，跳过后续 func */
+                    break;
+                }
+            }
+        }
     }
 
-    /* 验证是 Intel 82540EM (QEMU 默认) */
-    if (dev->vendor_id != 0x8086) {
-        serial_puts(SERIAL_COM1, "[E1000] Not an Intel NIC (vendor=");
-        serial_put_hex(SERIAL_COM1, dev->vendor_id);
-        serial_puts(SERIAL_COM1, ")\n");
-        return -1;
-    }
-
-    serial_puts(SERIAL_COM1, "[E1000] Found Intel NIC: ");
-    serial_put_hex(SERIAL_COM1, dev->vendor_id);
-    serial_puts(SERIAL_COM1, ":");
-    serial_put_hex(SERIAL_COM1, dev->device_id);
-    serial_puts(SERIAL_COM1, " at bus=");
-    serial_put_dec(SERIAL_COM1, dev->bus);
-    serial_puts(SERIAL_COM1, " dev=");
-    serial_put_dec(SERIAL_COM1, dev->device);
-    serial_puts(SERIAL_COM1, " func=");
-    serial_put_dec(SERIAL_COM1, dev->function);
-    serial_putc(SERIAL_COM1, '\n');
-
-    g_e1000.bus    = dev->bus;
-    g_e1000.device = dev->device;
-    g_e1000.func   = dev->function;
-
-    /* BAR0 应为 MMIO */
-    if (dev->bars[0].type != PCI_BAR_MEMORY_32 &&
-        dev->bars[0].type != PCI_BAR_MEMORY_64) {
-        serial_puts(SERIAL_COM1, "[E1000] BAR0 is not MMIO\n");
-        return -1;
-    }
-
-    g_e1000.mmio_phys = dev->bars[0].base_addr;
-    serial_puts(SERIAL_COM1, "[E1000] BAR0 phys=0x");
-    serial_put_hex(SERIAL_COM1, (uint32_t)g_e1000.mmio_phys);
-    serial_puts(SERIAL_COM1, " size=");
-    serial_put_dec(SERIAL_COM1, (uint32_t)dev->bars[0].size);
-    serial_putc(SERIAL_COM1, '\n');
-
-    /* MMIO 映射 */
-    g_e1000.mmio_base = (volatile uint8_t *)ioremap(
-        g_e1000.mmio_phys, (size_t)dev->bars[0].size);
-    if (!g_e1000.mmio_base) {
-        serial_puts(SERIAL_COM1, "[E1000] ioremap failed\n");
-        return -1;
-    }
-
-    serial_puts(SERIAL_COM1, "[E1000] MMIO mapped at 0x");
-    serial_put_hex(SERIAL_COM1, (uint64_t)(uintptr_t)g_e1000.mmio_base);
-    serial_putc(SERIAL_COM1, '\n');
-
-    /* 读取 MAC */
-    e1000_read_mac(g_e1000.mmio_base, g_e1000.mac);
-    serial_puts(SERIAL_COM1, "[E1000] MAC: ");
-    serial_put_hex(SERIAL_COM1, g_e1000.mac[0]);
-    serial_putc(SERIAL_COM1, ':');
-    serial_put_hex(SERIAL_COM1, g_e1000.mac[1]);
-    serial_putc(SERIAL_COM1, ':');
-    serial_put_hex(SERIAL_COM1, g_e1000.mac[2]);
-    serial_putc(SERIAL_COM1, ':');
-    serial_put_hex(SERIAL_COM1, g_e1000.mac[3]);
-    serial_putc(SERIAL_COM1, ':');
-    serial_put_hex(SERIAL_COM1, g_e1000.mac[4]);
-    serial_putc(SERIAL_COM1, ':');
-    serial_put_hex(SERIAL_COM1, g_e1000.mac[5]);
-    serial_putc(SERIAL_COM1, '\n');
-
-    /* IRQ 分配 */
-    pci_enable_bus_master(dev);
-    g_e1000.irq = dev->interrupt_line;
-    serial_puts(SERIAL_COM1, "[E1000] IRQ=");
-    serial_put_dec(SERIAL_COM1, g_e1000.irq);
-    serial_putc(SERIAL_COM1, '\n');
-
-    return 0;
+    serial_puts(SERIAL_COM1, "[E1000] No Intel NIC found on PCI bus\n");
+    return -1;
 }
 
 /* ============================================================

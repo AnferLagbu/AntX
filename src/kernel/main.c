@@ -222,7 +222,9 @@ void kernel_main(void) {
         __asm__ volatile ("hlt");
     }
 #else
-    MODULE_CHECK_VOID("PCI Bus", pci_init);
+    /* PCI init 在 Rust FFI 路径有已知崩溃，跳过;
+     * e1000_probe() 自主执行直接 PCI 扫描 */
+    /* MODULE_CHECK_VOID("PCI Bus", pci_init); */
     MODULE_CHECK_VOID("DMA Engine", dma_init);
     
     extern void qx_net_init(void);
