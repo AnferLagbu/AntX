@@ -225,6 +225,9 @@ void kernel_main(void) {
     MODULE_CHECK_VOID("PCI Bus", pci_init);
     MODULE_CHECK_VOID("DMA Engine", dma_init);
     
+    extern void qx_net_init(void);
+    MODULE_CHECK_VOID("Network Stack", qx_net_init);
+
 #ifdef CONFIG_SMP
     extern int smp_init(void);
     int smp_cpus = smp_init();
