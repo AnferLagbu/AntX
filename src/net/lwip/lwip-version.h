@@ -1,0 +1,11 @@
+#ifndef QX_LWIP_VERSION_H
+#define QX_LWIP_VERSION_H
+
+#define LWIP_VERSION_STR    "2.2.1"
+#define LWIP_VERSION_MAJOR  2
+#define LWIP_VERSION_MINOR  2
+#define LWIP_VERSION_PATCH  1
+#define LWIP_INTEGRATED_FOR "AntX (QueenX) Kernel"
+#define LWIP_INTEGRATION_DATE "2026-05-04"
+
+#endif

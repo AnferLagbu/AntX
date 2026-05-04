@@ -4,7 +4,29 @@ AS = nasm
 
 CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
-         -Isrc/include -Isrc/include/tests
+         -Wno-builtin-declaration-mismatch \
+         -Isrc/include -Isrc/include/tests \
+         -Isrc/net -Isrc/net/lwip -Isrc/net/lwip/src/include -Isrc/net/arch -Isrc/net/driver
+
+NET_CORE_C = $(wildcard src/net/lwip/src/core/*.c) \
+             $(wildcard src/net/lwip/src/core/ipv4/*.c) \
+             $(wildcard src/net/lwip/src/core/ipv6/*.c)
+NET_API_C  = $(wildcard src/net/lwip/src/api/*.c)
+NET_NETIF_C = src/net/lwip/src/netif/ethernet.c
+NET_APPS_C = $(wildcard src/net/lwip/src/apps/http/httpd.c) \
+             $(wildcard src/net/lwip/src/apps/http/fs.c) \
+             $(wildcard src/net/lwip/src/apps/mdns/*.c) \
+             $(wildcard src/net/lwip/src/apps/mqtt/*.c) \
+             $(wildcard src/net/lwip/src/apps/netbiosns/*.c) \
+             $(wildcard src/net/lwip/src/apps/smtp/*.c) \
+             $(wildcard src/net/lwip/src/apps/sntp/*.c) \
+             $(wildcard src/net/lwip/src/apps/tftp/*.c) \
+             $(wildcard src/net/lwip/src/apps/lwiperf/*.c)
+NET_QX_C   = src/net/arch/sys_arch.c \
+             src/net/qx_net_init.c
+
+NET_ALL_C  = $(NET_CORE_C) $(NET_API_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
+NET_OBJS   = $(patsubst src/net/%.c,build/net/%.o,$(NET_ALL_C))
 
 USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
@@ -27,7 +49,8 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o
               build/version_registry.o \
               build/cpu.o \
               build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
-              build/pci.o
+              build/pci.o \
+              $(NET_OBJS)
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/switch.o \
@@ -50,6 +73,7 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/test_spinlock.o build/test_atomic.o build/test_rwlock.o build/test_mutex.o build/test_slab.o \
               build/test_pci.o build/test_dma.o \
               build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
+              $(NET_OBJS)
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -270,6 +294,13 @@ src/user/embedded/test_minimal_bin.c: build/user/test_minimal.bin
 build/user/embedded/test_minimal_bin.o: src/user/embedded/test_minimal_bin.c
 	@mkdir -p build/user/embedded
 	$(CC) -m64 -nostdinc -Isrc/include -c $< -o $@
+
+# ============================================================
+# 网络子系统 (lwIP 2.2.1)
+# ============================================================
+build/net/%.o: src/net/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(DISK_IMAGE): build/kernel.bin user
 	@echo "Creating disk image..."
