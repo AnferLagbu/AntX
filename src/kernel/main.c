@@ -205,7 +205,18 @@ void kernel_main(void) {
 #ifdef KERNEL_TEST
     printk("\n[TEST MODE] Running kernel tests...\n");
     run_kernel_tests();
-    printk("\n[TEST MODE] Tests completed. Halting.\n");
+    printk("\n[TEST MODE] Tests completed.\n");
+    
+    /* 如果有用户进程在调度队列中，进入 idle 循环让它们运行 */
+    extern int proc_has_runnable(void);
+    if (proc_has_runnable()) {
+        printk("[TEST MODE] Entering user-mode idle loop...\n");
+        while (1) {
+            interrupt_idle();
+        }
+    }
+    
+    printk("[TEST MODE] No runnable user processes. Halting.\n");
     __asm__ volatile ("cli");
     while (1) {
         __asm__ volatile ("hlt");

@@ -17,6 +17,8 @@ extern int sched_should_reschedule(void);
 
 extern unsigned char build_user_init_bin[];
 extern unsigned int build_user_init_bin_len;
+extern unsigned char build_user_test_minimal_bin[];
+extern unsigned int build_user_test_minimal_bin_len;
 
 static int test_user_elf_load(void) {
     int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
@@ -33,7 +35,7 @@ static int test_user_elf_load(void) {
 
 static int test_user_sched_enqueue(void) {
     int pid = user_proc_load_elf_from_memory(
-        build_user_init_bin, build_user_init_bin_len, 0);
+        build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
     if (pid < 0) return TEST_SKIP;
 
     sched_add_internal((uint32_t)pid);
@@ -45,7 +47,7 @@ static int test_user_sched_enqueue(void) {
 
 static int test_user_sched_pick(void) {
     int pid = user_proc_load_elf_from_memory(
-        build_user_init_bin, build_user_init_bin_len, 0);
+        build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
     if (pid < 0) return TEST_SKIP;
 
     sched_add_internal((uint32_t)pid);
@@ -92,34 +94,54 @@ static int test_user_multi_enqueue(void) {
 
 static int test_user_minimal_binary_load(void) {
     int pid = user_proc_load_elf_from_memory(
-        build_user_init_bin, build_user_init_bin_len, 0);
+        build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
     if (pid < 0) {
         serial_puts(SERIAL_COM1, "[USERPROC] Minimal ELF load: SKIP\n");
         return TEST_SKIP;
     }
     TEST_ASSERT_GT(pid, 0);
-    serial_puts(SERIAL_COM1, "[USERPROC] Minimal test ELF loaded: PID=");
+    serial_puts(SERIAL_COM1, "[USERPROC] Minimal ELF loaded: PID=");
     serial_put_dec(SERIAL_COM1, pid);
-    serial_putc(SERIAL_COM1, '\n');
+    serial_puts(SERIAL_COM1, " (14B, SYS_EXIT(42))\n");
     return TEST_PASS;
 }
 
 static int test_user_minimal_sched(void) {
     int pid = user_proc_load_elf_from_memory(
-        build_user_init_bin, build_user_init_bin_len, 0);
+        build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
     if (pid < 0) return TEST_SKIP;
 
     sched_add_internal((uint32_t)pid);
     uint32_t next = sched_schedule_internal();
     TEST_ASSERT_GT(next, 0);
 
-    /* 验证调度器当前进程已更新 */
     uint32_t cur = sched_get_current();
     TEST_ASSERT_GT(cur, 0);
 
-    serial_puts(SERIAL_COM1, "[USERPROC] Minimal sched: cur=");
+    serial_puts(SERIAL_COM1, "[USERPROC] Minimal sched: next=");
+    serial_put_dec(SERIAL_COM1, next);
+    serial_puts(SERIAL_COM1, " cur=");
     serial_put_dec(SERIAL_COM1, cur);
     serial_putc(SERIAL_COM1, '\n');
+    return TEST_PASS;
+}
+
+static int test_user_ring3_handoff(void) {
+    /* 加载最小化二进制并加入调度队列
+     * 测试完成后 main.c 的 idle 循环将 iretq 到 ring3
+     * 用户进程执行 SYS_PROC_EXIT(42) → int 0x80 → 内核处理退出 */
+    int pid = user_proc_load_elf_from_memory(
+        build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
+    if (pid < 0) {
+        serial_puts(SERIAL_COM1, "[RING3] SKIP: minimal ELF load failed\n");
+        return TEST_SKIP;
+    }
+
+    sched_add_internal((uint32_t)pid);
+    serial_puts(SERIAL_COM1, "[RING3] Queued PID=");
+    serial_put_dec(SERIAL_COM1, pid);
+    serial_puts(SERIAL_COM1, " for ring3 execution\n");
+    serial_puts(SERIAL_COM1, "[RING3] Will iretq after tests complete...\n");
     return TEST_PASS;
 }
 
@@ -316,8 +338,9 @@ void test_process_enhanced_register(void) {
     test_register_case(mod, "User minimal binary", test_user_minimal_binary_load);
     test_register_case(mod, "User sched enqueue", test_user_sched_enqueue);
     test_register_case(mod, "User sched pick + cur", test_user_sched_pick);
-#if 0
     test_register_case(mod, "User minimal sched", test_user_minimal_sched);
+    test_register_case(mod, "Ring3 iretq handoff", test_user_ring3_handoff);
+#if 0
     test_register_case(mod, "User multi enqueue", test_user_multi_enqueue);
     test_register_case(mod, "User ELF load (init)", test_user_elf_load);
 #endif

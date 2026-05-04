@@ -32,7 +32,7 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/serial.o build/gdt.o
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/switch.o \
               build/syscall.o build/keyboard.o build/string.o build/ata.o \
-              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
+              build/timer.o build/user/embedded/user_init_bin.o build/user/embedded/test_minimal_bin.o build/stack_canary.o \
               build/ipc.o build/klog.o build/grub_install.o \
               build/version_registry.o \
               build/cpu.o \
@@ -253,6 +253,23 @@ build/user/install.bin: $(USER_LIB_OBJS) $(USER_INSTALL_OBJS)
 
 src/user/embedded/user_init_bin.c: build/user/init.bin
 	@python3 scripts/gen_embed.py $< $@ build_user_init_bin
+
+# 最小化用户态测试二进制 (14B asm → int 0x80)
+build/user/test/minimal.o: src/user/test/minimal.asm
+	@mkdir -p build/user/test
+	$(AS) $(ASFLAGS) $< -o $@
+
+build/user/test_minimal.bin: build/user/test/minimal.o
+	@mkdir -p build/user
+	$(LD) -T src/user/link.ld -nostdlib -o $@ $<
+
+src/user/embedded/test_minimal_bin.c: build/user/test_minimal.bin
+	@mkdir -p src/user/embedded
+	@python3 scripts/gen_embed.py $< $@ build_user_test_minimal_bin
+
+build/user/embedded/test_minimal_bin.o: src/user/embedded/test_minimal_bin.c
+	@mkdir -p build/user/embedded
+	$(CC) -m64 -nostdinc -Isrc/include -c $< -o $@
 
 $(DISK_IMAGE): build/kernel.bin user
 	@echo "Creating disk image..."
