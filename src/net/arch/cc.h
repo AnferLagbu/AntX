@@ -48,9 +48,7 @@ typedef uintptr_t mem_ptr_t;
 
 /* ---- 诊断宏 ---- */
 #define LWIP_PLATFORM_DIAG(x)   do { } while (0)
-#define LWIP_PLATFORM_ASSERT(x) do { \
-    serial_puts(SERIAL_COM1, "[lwIP] Assert: " #x "\n"); \
-} while (0)
+#define LWIP_PLATFORM_ASSERT(x) do { } while (0)
 
 /* ---- 随机数 ---- */
 #define LWIP_RAND()  ((u32_t)0xDEADBEEF)  /* Phase 2: 替换为 TSC */

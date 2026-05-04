@@ -8,7 +8,7 @@
  * ============================================================ */
 
 /* ---- 操作系统模式 ---- */
-#define NO_SYS                      0   /* 使用 OS 模式 (多线程) */
+#define NO_SYS                      1   /* Raw API 单线程模式 */
 #define LWIP_TIMERS                 1
 #define LWIP_TIMERS_CUSTOM          0
 
@@ -53,8 +53,8 @@
 #define LWIP_IPV6                   1
 #define LWIP_IPV6_DHCP6             1
 #define LWIP_IPV6_MLD               1
-#define LWIP_IPV6_FRAG              1
-#define LWIP_IPV6_REASS             1
+#define LWIP_IPV6_FRAG              0
+#define LWIP_IPV6_REASS             0
 #define LWIP_ND6                    1
 #define LWIP_ND6_ALLOW_RA_UPDATES   1
 #define LWIP_IPV6_AUTOCONFIG        1
@@ -68,22 +68,17 @@
 #define LWIP_TCP_SACK_OUT           1
 #define LWIP_UDP                    1
 #define LWIP_RAW                    1
-#define LWIP_TCPIP_CORE_LOCKING     1
-#define LWIP_TCPIP_CORE_LOCKING_INPUT 1
+#define LWIP_TCPIP_CORE_LOCKING     0
+#define LWIP_TCPIP_CORE_LOCKING_INPUT 0
+#define SYS_LIGHTWEIGHT_PROT         0
 
-/* ---- Socket / Netconn API ---- */
-#define LWIP_NETCONN                1
-#define LWIP_SOCKET                 1
-#define LWIP_COMPAT_SOCKETS         0
-#define LWIP_POSIX_SOCKETS_IO_NAMES 0
-#define LWIP_SO_RCVTIMEO            1
-#define LWIP_SO_SNDTIMEO            1
-#define LWIP_SO_RCVBUF              1
-#define LWIP_TCP_KEEPALIVE          1
+/* ---- Socket / Netconn API (NO_SYS=1 禁用) ---- */
+#define LWIP_NETCONN                0
+#define LWIP_SOCKET                 0
+#define LWIP_NETIF_API              0
 
 /* ---- 网络接口 ---- */
 #define LWIP_NETIF_HOSTNAME         1
-#define LWIP_NETIF_API              1
 #define LWIP_NETIF_STATUS_CALLBACK  1
 #define LWIP_NETIF_LINK_CALLBACK    1
 #define LWIP_NETIF_REMOVE_CALLBACK  1

@@ -17,8 +17,8 @@ void qx_net_init(void)
     /* 1. 初始化移植层 */
     sys_init();
 
-    /* 2. 初始化 lwIP 核心 */
-    tcpip_init(NULL, NULL);
+    /* 2. 初始化 lwIP 核心 (Raw API) */
+    lwip_init();
     serial_puts(SERIAL_COM1, "[NET] lwIP " LWIP_VERSION_STR " core initialized\n");
 
     /* 3. E1000 NIC 驱动探测 */

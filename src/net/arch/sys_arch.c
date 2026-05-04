@@ -49,8 +49,9 @@ void sys_tick_inc(void)
 }
 
 /* ============================================================
- * 信号量 (基于 QX Mutex)
+ * 信号量 (基于 QX Mutex) — NO_SYS=0 时使用
  * ============================================================ */
+#if !NO_SYS
 err_t sys_sem_new(sys_sem_t *sem, u8_t count)
 {
     mutex_init(sem);
@@ -267,6 +268,8 @@ sys_thread_t sys_thread_new(const char *name, void (*thread)(void *arg),
      */
     return 0;
 }
+
+#endif /* !NO_SYS */
 
 /* ============================================================
  * 临界区保护 (中断禁用/恢复)

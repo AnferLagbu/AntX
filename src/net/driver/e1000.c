@@ -15,6 +15,7 @@
 #include "kmalloc.h"
 #include "types.h"
 #include "io.h"
+#include "idt.h"
 
 #include "lwip/opt.h"
 #include "lwip/pbuf.h"
@@ -408,8 +409,24 @@ err_t e1000_init(struct netif *netif)
     /* 10. 启用 RX 中断 */
     mmio_write32(base, E1000_IMS, E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC);
 
+    /* 11. 注册 IRQ 中断处理器 */
+    {
+        extern void e1000_irq_entry(struct interrupt_frame *);
+        idt_register_irq(g_e1000.irq, e1000_irq_entry, "e1000", 0);
+        serial_puts(SERIAL_COM1, "[E1000] IRQ handler registered for IRQ ");
+        serial_put_dec(SERIAL_COM1, g_e1000.irq);
+        serial_putc(SERIAL_COM1, '\n');
+    }
+
     serial_puts(SERIAL_COM1, "[E1000] Initialization complete\n");
     return ERR_OK;
+}
+
+/* ---- IRQ handler wrapper (符合 idt interrupt_frame 签名) ---- */
+void e1000_irq_entry(struct interrupt_frame *frame)
+{
+    (void)frame;
+    e1000_isr();
 }
 
 /* ============================================================

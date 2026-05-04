@@ -14,10 +14,18 @@
 
 static uint64_t timer_ticks = 0;
 
+/* lwIP 时间 hooks (定义于 sys_arch.c) */
+extern void sys_tick_inc(void);
+extern void sys_check_timeouts(void);
+
 static void timer_handler(struct interrupt_frame *frame) {
     (void)frame;
     timer_ticks++;
     scheduler_tick();
+
+    /* lwIP 时钟: 每次 tick (10ms) 推进 */
+    sys_tick_inc();
+    sys_check_timeouts();
     
     if (timer_ticks % PWID_CLEANUP_INTERVAL == 0) {
         pwid_cleanup_internal();
