@@ -430,7 +430,19 @@ int klog_get_entry(uint64_t index, klog_entry_t *entry) {
     if (entry == NULL || index >= klog_entry_count) {
         return -1;
     }
-    
+
     memset(entry, 0, sizeof(klog_entry_t));
     return 0;
+}
+
+void klog_ffi_info(const char *msg) {
+    klog_write(KLOG_INFO, KLOG_CAT_KERNEL, "ffi", NULL, 0, "%s", msg);
+}
+
+void klog_ffi_warn(const char *msg) {
+    klog_write(KLOG_WARN, KLOG_CAT_KERNEL, "ffi", NULL, 0, "%s", msg);
+}
+
+void klog_ffi_error(const char *msg) {
+    klog_write(KLOG_ERROR, KLOG_CAT_KERNEL, "ffi", NULL, 0, "%s", msg);
 }

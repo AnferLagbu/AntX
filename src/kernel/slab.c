@@ -10,7 +10,6 @@
 #include "mm.h"
 #include "kmalloc.h"
 #include "klog.h"
-#include "serial.h"
 #include "string.h"
 
 /* ============================================================
@@ -206,17 +205,14 @@ int slab_system_init(void)
         general_caches[i] = kmem_cache_create(name,
                                                slab_general_sizes[i]);
         if (!general_caches[i]) {
-            serial_puts(SERIAL_COM1,
-                        "[SLAB] ERROR: failed to create general cache\n");
+            klog_mem_err("SLAB: failed to create general cache");
             return -1;
         }
     }
 
     slab_initialized = 1;
 
-    serial_puts(SERIAL_COM1, "[SLAB] System initialized with ");
-    serial_put_dec(SERIAL_COM1, SLAB_GENERAL_CACHE_NUM);
-    serial_puts(SERIAL_COM1, " general caches\n");
+    klog_mem("SLAB: System initialized with %d general caches", SLAB_GENERAL_CACHE_NUM);
 
     return 0;
 }
@@ -528,8 +524,8 @@ void slab_dump_all_caches(void)
 {
     unsigned long total_mem = 0, used_mem = 0;
 
-    serial_puts(SERIAL_COM1, "\n=== Slab Allocator Status ===\n");
-    serial_puts(SERIAL_COM1, "  General Caches:\n");
+    klog_mem("=== Slab Allocator Status ===");
+    klog_mem("  General Caches:");
 
     for (int i = 0; i < SLAB_GENERAL_CACHE_NUM; i++) {
         KmemCache *cache = general_caches[i];
@@ -541,28 +537,15 @@ void slab_dump_all_caches(void)
 
         kmem_cache_get_stats(cache, &total_obj, &active_obj, &total_slabs);
 
-        serial_puts(SERIAL_COM1, "    [");
-        serial_puts(SERIAL_COM1, cache->name);
-        serial_puts(SERIAL_COM1, "] Size=");
-        serial_put_dec(SERIAL_COM1, (uint32_t)cache->object_size);
-        serial_puts(SERIAL_COM1, "B, Slabs=");
-        serial_put_dec(SERIAL_COM1, total_slabs);
-        serial_puts(SERIAL_COM1, ", Active=");
-        serial_put_dec(SERIAL_COM1, active_obj);
-        serial_puts(SERIAL_COM1, "/");
-        serial_put_dec(SERIAL_COM1, total_obj);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_mem("    [%s] Size=%dB, Slabs=%d, Active=%d/%d",
+                 cache->name, (uint32_t)cache->object_size,
+                 total_slabs, active_obj, total_obj);
 
         total_mem += (unsigned long)total_obj * cache->object_size;
         used_mem += (unsigned long)active_obj * cache->object_size;
     }
 
-    serial_puts(SERIAL_COM1, "  Total: ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(used_mem / 1024));
-    serial_puts(SERIAL_COM1, "KB/");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(total_mem / 1024));
-    serial_puts(SERIAL_COM1, "KB used\n");
-    serial_puts(SERIAL_COM1, "==============================\n");
+    klog_mem("  Total: %dKB/%dKB used", (uint32_t)(used_mem / 1024), (uint32_t)(total_mem / 1024));
 }
 
 void kmem_cache_dump(KmemCache *cache)
@@ -575,34 +558,13 @@ void kmem_cache_dump(KmemCache *cache)
 
     kmem_cache_get_stats(cache, &total_obj, &active_obj, &total_slabs);
 
-    serial_puts(SERIAL_COM1, "\n--- Cache: ");
-    serial_puts(SERIAL_COM1, cache->name);
-    serial_puts(SERIAL_COM1, " ---\n");
-    serial_puts(SERIAL_COM1, "  Object Size: ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)cache->object_size);
-    serial_puts(SERIAL_COM1, " bytes\n");
-    serial_puts(SERIAL_COM1, "  Objects/Slab: ");
-    serial_put_dec(SERIAL_COM1, cache->objects_per_slab);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Total Slabs: ");
-    serial_put_dec(SERIAL_COM1, total_slabs);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Active Objects: ");
-    serial_put_dec(SERIAL_COM1, active_obj);
-    serial_puts(SERIAL_COM1, "/");
-    serial_put_dec(SERIAL_COM1, total_obj);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Allocs/Frees: ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)cache->total_allocs);
-    serial_puts(SERIAL_COM1, "/");
-    serial_put_dec(SERIAL_COM1, (uint32_t)cache->total_frees);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "  Hit/Miss Ratio: ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)cache->cache_hits);
-    serial_puts(SERIAL_COM1, "/");
-    serial_put_dec(SERIAL_COM1, (uint32_t)cache->cache_misses);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "-------------------------\n");
+    klog_mem("--- Cache: %s ---", cache->name);
+    klog_mem("  Object Size: %d bytes", (uint32_t)cache->object_size);
+    klog_mem("  Objects/Slab: %d", cache->objects_per_slab);
+    klog_mem("  Total Slabs: %d", total_slabs);
+    klog_mem("  Active Objects: %d/%d", active_obj, total_obj);
+    klog_mem("  Allocs/Frees: %d/%d", (uint32_t)cache->total_allocs, (uint32_t)cache->total_frees);
+    klog_mem("  Hit/Miss Ratio: %d/%d", (uint32_t)cache->cache_hits, (uint32_t)cache->cache_misses);
 }
 
 void slab_get_system_stats(unsigned long *total_memory,

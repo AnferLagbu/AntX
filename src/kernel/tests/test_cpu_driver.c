@@ -31,7 +31,7 @@
 
 #include "kernel_test.h"
 #include "cpu.h"
-#include "serial.h"
+#include "klog.h"
 #include "timer.h"
 
 /* ============================================================================ */
@@ -48,16 +48,16 @@ static int test_cpu_init(void) {
     const cpu_info_t *info = cpu_get_info();
     
     if (!info) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] ERROR: cpu_get_info() returned NULL\n");
+        klog_kern("[CPU-TEST] ERROR: cpu_get_info() returned NULL");
         return TEST_FAIL;
     }
     
     if (!info->initialized) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: CPU not initialized\n");
+        klog_kern("[CPU-TEST] FAIL: CPU not initialized");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] PASS: CPU driver initialized\n");
+    klog_kern("[CPU-TEST] PASS: CPU driver initialized");
     return TEST_PASS;
 }
 
@@ -73,30 +73,30 @@ static int test_cpu_info_validity(void) {
     
     /* 检查厂商字符串非空 */
     if (info->vendor_string[0] == '\0') {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Vendor string empty\n");
+        klog_kern("[CPU-TEST] FAIL: Vendor string empty");
         return TEST_FAIL;
     }
     
     /* 检查厂商类型有效 */
     if (info->vendor == CPU_VENDOR_UNKNOWN && 
         info->vendor != CPU_VENDOR_QEMU) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Unknown vendor\n");
+        klog_kern("[CPU-TEST] WARN: Unknown vendor");
         /* 不算失败，QEMU 可能返回未知字符串 */
     }
     
     /* 检查最大 CPUID leaf 合理 */
     if (info->max_cpuid_leaf < 0x01 || info->max_cpuid_leaf > 0x20) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Invalid max_cpuid_leaf\n");
+        klog_kern("[CPU-TEST] FAIL: Invalid max_cpuid_leaf");
         return TEST_FAIL;
     }
     
     /* 检查逻辑核心数 >= 1 */
     if (info->logical_cores < 1) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Invalid core count\n");
+        klog_kern("[CPU-TEST] FAIL: Invalid core count");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] PASS: CPU info structure valid\n");
+    klog_kern("[CPU-TEST] PASS: CPU info structure valid");
     return TEST_PASS;
 }
 
@@ -114,17 +114,17 @@ static int test_cpu_brand_string(void) {
     if (info->brand_string[0] != '\0') {
         /* 检查不是默认的 "Unknown" */
         if (__builtin_strncmp(info->brand_string, "Unknown", 7) == 0) {
-            serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Brand string is default\n");
+            klog_kern("[CPU-TEST] WARN: Brand string is default");
             return TEST_WARN;  /* 可能是旧 CPU 或虚拟机 */
         }
         
-        serial_puts(SERIAL_COM1, "[CPU-TEST] Brand: ");
-        serial_puts(SERIAL_COM1, info->brand_string);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern("[CPU-TEST] Brand: ");
+        klog_kern("%s", info->brand_string);
+        klog_kern("");
         
         return TEST_PASS;
     } else {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] SKIP: No brand string (old CPU)\n");
+        klog_kern("[CPU-TEST] SKIP: No brand string (old CPU)");
         return TEST_SKIP;
     }
 }
@@ -146,7 +146,7 @@ static int test_cpuid_basic(void) {
     
     /* 最大叶号应 >= 1 */
     if (eax < 1) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Max CPUID leaf too small\n");
+        klog_kern("[CPU-TEST] FAIL: Max CPUID leaf too small");
         return TEST_FAIL;
     }
     
@@ -166,15 +166,13 @@ static int test_cpuid_basic(void) {
     }
     
     if (valid_chars < 8) {  /* 至少 8 个可打印字符 */
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Vendor string looks invalid\n");
+        klog_kern("[CPU-TEST] WARN: Vendor string looks invalid");
         return TEST_WARN;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] CPUID Leaf 0 OK (max=");
-    serial_put_hex(SERIAL_COM1, eax);
-    serial_puts(SERIAL_COM1, ", vendor=");
-    serial_puts(SERIAL_COM1, vendor);
-    serial_puts(SERIAL_COM1, ")\n");
+    klog_kern("[CPU-TEST] CPUID Leaf 0 OK (max=0x%x, vendor=", eax);
+    klog_kern("%s", vendor);
+    klog_kern(")");
     
     return TEST_PASS;
 }
@@ -189,31 +187,25 @@ static int test_cpuid_signature(void) {
     
     /* 步进应在 0-15 范围内 */
     if (sig.stepping > 15) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Stepping out of range\n");
+        klog_kern("[CPU-TEST] FAIL: Stepping out of range");
         return TEST_FAIL;
     }
     
     /* 型号应在 0-15 范围内 (基础) 或扩展后更大 */
     uint8_t model = sig.ext_model ? (sig.ext_model << 4) | sig.model : sig.model;
     if (model > 127) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Unusual model number\n");
+        klog_kern("[CPU-TEST] WARN: Unusual model number");
         /* 不算失败，某些新 CPU 可能有高型号号 */
     }
     
     /* 家族应 >= 6 (P6 及以后的处理器) 或扩展后更大 */
     uint8_t family = sig.ext_family ? (sig.ext_family + 16) : sig.family;
     if (family < 6 && family != 0xF) {  /* 0xF 表示使用扩展家族 */
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Old CPU family (<6)\n");
+        klog_kern("[CPU-TEST] WARN: Old CPU family (<6)");
         return TEST_WARN;  /* 可能是极旧的 CPU */
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Signature: Family=");
-    serial_put_dec(SERIAL_COM1, family);
-    serial_puts(SERIAL_COM1, ", Model=");
-    serial_put_dec(SERIAL_COM1, model);
-    serial_puts(SERIAL_COM1, ", Stepping=");
-    serial_put_dec(SERIAL_COM1, sig.stepping);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[CPU-TEST] Signature: Family=%d, Model=%d, Stepping=%d", family, model, sig.stepping);
     
     return TEST_PASS;
 }
@@ -228,7 +220,7 @@ static int test_cpuid_extended(void) {
     
     /* 现代处理器应支持扩展 CPUID */
     if (max_ext < 0x80000001) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: No extended CPUID support\n");
+        klog_kern("[CPU-TEST] WARN: No extended CPUID support");
         return TEST_WARN;  /* 老式 CPU 可能不支持 */
     }
     
@@ -236,14 +228,12 @@ static int test_cpuid_extended(void) {
     if (max_ext >= 0x80000001) {
         if (!cpu_has_feature(CPU_FEATURE_LM)) {
             /* 我们运行在 64 位模式，但 CPU 不报告 LM？ */
-            serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Running in 64-bit but no LM flag\n");
+            klog_kern("[CPU-TEST] WARN: Running in 64-bit but no LM flag");
             return TEST_WARN;  /* QEMU 可能不报告此位 */
         }
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Extended CPUID: max=0x");
-    serial_put_hex(SERIAL_COM1, max_ext);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[CPU-TEST] Extended CPUID: max=0x0x%x", max_ext);
     
     return TEST_PASS;
 }
@@ -257,7 +247,7 @@ static int test_cpuid_advanced(void) {
     uint32_t max_leaf = cpu_get_max_cpuid_leaf();
     
     if (max_leaf < 7) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] SKIP: No advanced CPUID (Leaf 7)\n");
+        klog_kern("[CPU-TEST] SKIP: No advanced CPUID (Leaf 7)");
         return TEST_SKIP;
     }
     
@@ -266,11 +256,11 @@ static int test_cpuid_advanced(void) {
     
     /* EBX 不应全为零（至少有一些高级特性） */
     if (ebx == 0 && ecx == 0 && edx == 0) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Leaf 7 returns all zeros\n");
+        klog_kern("[CPU-TEST] WARN: Leaf 7 returns all zeros");
         return TEST_WARN;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Advanced features present\n");
+    klog_kern("[CPU-TEST] Advanced features present");
     return TEST_PASS;
 }
 
@@ -302,21 +292,19 @@ static int test_required_features_64bit(void) {
     
     for (size_t i = 0; i < sizeof(required)/sizeof(required[0]); i++) {
         if (!cpu_has_feature(required[i].feat)) {
-            serial_puts(SERIAL_COM1, "[CPU-TEST] MISSING: ");
-            serial_puts(SERIAL_COM1, required[i].name);
-            serial_puts(SERIAL_COM1, "\n");
+            klog_kern("[CPU-TEST] MISSING: ");
+            klog_kern("%s", required[i].name);
+            klog_kern("");
             missing++;
         }
     }
     
     if (missing > 0) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Missing ");
-        serial_put_dec(SERIAL_COM1, missing);
-        serial_puts(SERIAL_COM1, " required features for 64-bit mode\n");
+        klog_kern("[CPU-TEST] WARN: Missing %d required features for 64-bit mode", missing);
         return TEST_WARN;  /* QEMU 可能不完全模拟所有特性 */
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] PASS: All required 64-bit features present\n");
+    klog_kern("[CPU-TEST] PASS: All required 64-bit features present");
     return TEST_PASS;
 }
 
@@ -337,27 +325,15 @@ static int test_sse_features(void) {
     
     /* SSE 和 SSE2 是现代 x86-64 的标准配置 */
     if (!has_sse || !has_sse2) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: SSE/SSE2 not supported!\n");
+        klog_kern("[CPU-TEST] FAIL: SSE/SSE2 not supported!");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] SIMD Support:\n");
-    serial_puts(SERIAL_COM1, "  SSE:");
-    serial_puts(SERIAL_COM1, has_sse ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  SSE2:");
-    serial_puts(SERIAL_COM1, has_sse2 ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  SSE3:");
-    serial_puts(SERIAL_COM1, has_sse3 ? " ✓" : " ✗\n");
-    serial_puts(SERIAL_COM1, "  SSSE3:");
-    serial_puts(SERIAL_COM1, has_ssse3 ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  SSE4.1:");
-    serial_puts(SERIAL_COM1, has_sse41 ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  SSE4.2:");
-    serial_puts(SERIAL_COM1, has_sse42 ? " ✓" : " ✗\n");
-    serial_puts(SERIAL_COM1, "  AVX:");
-    serial_puts(SERIAL_COM1, has_avx ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  AVX2:");
-    serial_puts(SERIAL_COM1, has_avx2 ? " ✓" : " ✗\n");
+    klog_kern("[CPU-TEST] SIMD: SSE=%s SSE2=%s SSE3=%s SSSE3=%s SSE4.1=%s SSE4.2=%s AVX=%s AVX2=%s",
+              has_sse ? "✓" : "✗", has_sse2 ? "✓" : "✗",
+              has_sse3 ? "✓" : "✗", has_ssse3 ? "✓" : "✗",
+              has_sse41 ? "✓" : "✗", has_sse42 ? "✓" : "✗",
+              has_avx ? "✓" : "✗", has_avx2 ? "✓" : "✗");
     
     return TEST_PASS;
 }
@@ -372,13 +348,9 @@ static int test_virtualization_features(void) {
     bool has_svm = cpu_has_feature(CPU_FEATURE_SVM);
     bool is_vm = cpu_is_virtualized();
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Virtualization:\n");
-    serial_puts(SERIAL_COM1, "  VMX (Intel):");
-    serial_puts(SERIAL_COM1, has_vmx ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  SVM (AMD):");
-    serial_puts(SERIAL_COM1, has_svm ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  Virtualized:");
-    serial_puts(SERIAL_COM1, is_vm ? " Yes\n" : " No (Bare metal)\n");
+    klog_kern("[CPU-TEST] Virtualization: VMX=%s SVM=%s Virtualized=%s",
+              has_vmx ? "✓" : "✗", has_svm ? "✓" : "✗",
+              is_vm ? "Yes" : "No (Bare metal)");
     
     /* 在虚拟机中运行是正常的 */
     return TEST_PASS;
@@ -399,23 +371,14 @@ static int test_memory_features(void) {
     
     /* PAE 是 64 位模式的必需项 */
     if (!has_pae) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: PAE not supported in 64-bit mode!\n");
+        klog_kern("[CPU-TEST] FAIL: PAE not supported in 64-bit mode!");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Memory Features:\n");
-    serial_puts(SERIAL_COM1, "  PGE:");
-    serial_puts(SERIAL_COM1, has_pge ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  PAT:");
-    serial_puts(SERIAL_COM1, has_pat ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  PSE:");
-    serial_puts(SERIAL_COM1, has_pse ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  PAE:");
-    serial_puts(SERIAL_COM1, has_pae ? " ✓" : " ✗\n");
-    serial_puts(SERIAL_COM1, "  1GB Pages:");
-    serial_puts(SERIAL_COM1, has_1gb ? " ✓" : " ✗");
-    serial_puts(SERIAL_COM1, "  PCID:");
-    serial_puts(SERIAL_COM1, has_pcid ? " ✓" : " ✗\n");
+    klog_kern("[CPU-TEST] Memory: PGE=%s PAT=%s PSE=%s PAE=%s 1GB=%s PCID=%s",
+              has_pge ? "✓" : "✗", has_pat ? "✓" : "✗",
+              has_pse ? "✓" : "✗", has_pae ? "✓" : "✗",
+              has_1gb ? "✓" : "✗", has_pcid ? "✓" : "✗");
     
     return TEST_PASS;
 }
@@ -437,7 +400,7 @@ static int test_msr_efer(void) {
     
     /* 验证 LMA 位已设置 (我们在 64 位模式下) */
     if (!(efer_orig & (1ULL << 10))) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: EFER.LMA not set\n");
+        klog_kern("[CPU-TEST] WARN: EFER.LMA not set");
         /* 继续测试，可能是 QEMU 模拟问题 */
     }
     
@@ -451,7 +414,7 @@ static int test_msr_efer(void) {
             /* 读回验证 */
             uint64_t efer_verify = cpu_read_msr64(0xC0000080);
             if (!(efer_verify & (1ULL << 11))) {
-                serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: NXE bit not set after write\n");
+                klog_kern("[CPU-TEST] FAIL: NXE bit not set after write");
                 return TEST_FAIL;
             }
             
@@ -460,7 +423,7 @@ static int test_msr_efer(void) {
         }
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] PASS: IA32_EFER read/write OK\n");
+    klog_kern("[CPU-TEST] PASS: IA32_EFER read/write OK");
     return TEST_PASS;
 }
 
@@ -482,13 +445,11 @@ static int test_msr_tsc(void) {
     
     /* TSC 应该递增 */
     if (tsc2 <= tsc1) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: TSC not incrementing\n");
+        klog_kern("[CPU-TEST] FAIL: TSC not incrementing");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] PASS: TSC working (delta=");
-    serial_put_hex(SERIAL_COM1, (uint32_t)(tsc2 - tsc1));
-    serial_puts(SERIAL_COM1, ")\n");
+    klog_kern("[CPU-TEST] PASS: TSC working (delta=0x%x)", (uint32_t);
     
     return TEST_PASS;
 }
@@ -509,11 +470,11 @@ static int test_msr_error_handling(void) {
     int result = cpu_read_msr(0x1B, &low, &high);
     
     if (result != 0) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: APIC_BASE MSR failed\n");
+        klog_kern("[CPU-TEST] WARN: APIC_BASE MSR failed");
         return TEST_WARN;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] PASS: MSR error handling OK\n");
+    klog_kern("[CPU-TEST] PASS: MSR error handling OK");
     return TEST_PASS;
 }
 
@@ -531,11 +492,11 @@ static int test_msr_32bit_interface(void) {
     uint64_t reconstructed = ((uint64_t)high << 32) | low;
     
     if (value_64 != reconstructed) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: 32-bit vs 64-bit mismatch\n");
+        klog_kern("[CPU-TEST] FAIL: 32-bit vs 64-bit mismatch");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] PASS: 32-bit MSR interface consistent\n");
+    klog_kern("[CPU-TEST] PASS: 32-bit MSR interface consistent");
     return TEST_PASS;
 }
 
@@ -552,41 +513,31 @@ static int test_cache_sizes(void) {
     const cpu_cache_info_t *cache = cpu_get_cache_info();
     
     if (!cache) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] SKIP: No cache info available\n");
+        klog_kern("[CPU-TEST] SKIP: No cache info available");
         return TEST_SKIP;
     }
     
     /* L1 数据缓存通常 16KB-64KB */
     if (cache->l1d_size > 0) {
         if (cache->l1d_size < 16384 || cache->l1d_size > 131072) {
-            serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Unusual L1D size\n");
+            klog_kern("[CPU-TEST] WARN: Unusual L1D size");
         }
     }
     
     /* L2 缓存通常 128KB-2MB */
     if (cache->l2_size > 0) {
         if (cache->l2_size < 131072 || cache->l2_size > 16777216) {
-            serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Unusual L2 size\n");
+            klog_kern("[CPU-TEST] WARN: Unusual L2 size");
         }
     }
     
     /* 缓存行大小通常是 32、64 或 128 字节 */
     if (cache->cache_line != 32 && cache->cache_line != 64 && 
         cache->cache_line != 128) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: Unusual cache line size\n");
+        klog_kern("[CPU-TEST] WARN: Unusual cache line size");
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Cache sizes:\n");
-    serial_puts(SERIAL_COM1, "  L1D: ");
-    serial_put_dec(SERIAL_COM1, cache->l1d_size / 1024);
-    serial_puts(SERIAL_COM1, " KB, L1I: ");
-    serial_put_dec(SERIAL_COM1, cache->l1i_size / 1024);
-    serial_puts(SERIAL_COM1, " KB\n");
-    serial_puts(SERIAL_COM1, "  L2: ");
-    serial_put_dec(SERIAL_COM1, cache->l2_size / 1024);
-    serial_puts(SERIAL_COM1, " KB, Line: ");
-    serial_put_dec(SERIAL_COM1, cache->cache_line);
-    serial_puts(SERIAL_COM1, " bytes\n");
+    klog_kern("[CPU-TEST] Cache sizes:\n  L1D: %d KB, L1I: %d KB\n  L2: %d KB, Line: %d bytes", cache->l1d_size / 1024, cache->l1i_size / 1024, cache->l2_size / 1024, cache->cache_line);
     
     return TEST_PASS;
 }
@@ -599,13 +550,11 @@ static int test_apic_id(void) {
     
     /* BSP 的 APIC ID 通常为 0 */
     if (apic_id > 255) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Invalid APIC ID\n");
+        klog_kern("[CPU-TEST] FAIL: Invalid APIC ID");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] APIC ID: ");
-    serial_put_dec(SERIAL_COM1, apic_id);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[CPU-TEST] APIC ID: %d", apic_id);
     
     return TEST_PASS;
 }
@@ -624,33 +573,29 @@ static int test_core_count_consistency(void) {
     uint8_t physical = cpu_get_physical_cores();
     
     if (physical > logical) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Physical cores > Logical cores\n");
+        klog_kern("[CPU-TEST] FAIL: Physical cores > Logical cores");
         return TEST_FAIL;
     }
     
     if (logical < 1 || physical < 1) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] FAIL: Core count < 1\n");
+        klog_kern("[CPU-TEST] FAIL: Core count < 1");
         return TEST_FAIL;
     }
     
     /* 单核情况 */
     if (logical == 1 && physical == 1) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] Single-core system detected\n");
+        klog_kern("[CPU-TEST] Single-core system detected");
         return TEST_PASS;
     }
     
     /* 多核情况 */
     if (logical > physical) {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] Multi-core with Hyper-Threading\n");
+        klog_kern("[CPU-TEST] Multi-core with Hyper-Threading");
     } else {
-        serial_puts(SERIAL_COM1, "[CPU-TEST] Multi-core without HT\n");
+        klog_kern("[CPU-TEST] Multi-core without HT");
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Cores: ");
-    serial_put_dec(SERIAL_COM1, physical);
-    serial_puts(SERIAL_COM1, " physical / ");
-    serial_put_dec(SERIAL_COM1, logical);
-    serial_puts(SERIAL_COM1, " logical\n");
+    klog_kern("[CPU-TEST] Cores: %d physical / %d logical", physical, logical);
     
     return TEST_PASS;
 }
@@ -665,12 +610,12 @@ static int test_hyperthreading_status(void) {
     
     if (info->hyperthreading_enabled) {
         if (info->logical_cores < 2 * info->physical_cores) {
-            serial_puts(SERIAL_COM1, "[CPU-TEST] WARN: HT enabled but ratio unexpected\n");
+            klog_kern("[CPU-TEST] WARN: HT enabled but ratio unexpected");
         }
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-TEST] Hyper-Threading: ");
-    serial_puts(SERIAL_COM1, info->hyperthreading_enabled ? "Enabled\n" : "Disabled\n");
+    klog_kern("[CPU-TEST] Hyper-Threading: %s",
+              info->hyperthreading_enabled ? "Enabled" : "Disabled");
     
     return TEST_PASS;
 }
@@ -695,13 +640,7 @@ static int test_cpuid_performance(void) {
     uint64_t end = timer_get_ticks();
     uint64_t elapsed = end - start;
     
-    serial_puts(SERIAL_COM1, "[CPU-PERF] CPUID (");
-    serial_put_dec(SERIAL_COM1, CPUID_ITERATIONS);
-    serial_puts(SERIAL_COM1, " calls): ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)elapsed);
-    serial_puts(SERIAL_COM1, " ticks (");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(elapsed / CPUID_ITERATIONS));
-    serial_puts(SERIAL_COM1, " us/call)\n");
+    klog_kern("[CPU-PERF] CPUID (%d calls): %d ticks (%d us/call)", CPUID_ITERATIONS, (uint32_t, (uint32_t);
     
     #undef CPUID_ITERATIONS
     
@@ -734,16 +673,12 @@ static int test_tsc_performance(void) {
     }
     uint64_t avg = sum / TSC_SAMPLES;
     
-    serial_puts(SERIAL_COM1, "[CPU-PERF] TSC avg delta (10 samples): ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)avg);
-    serial_puts(SERIAL_COM1, " cycles\n");
+    klog_kern("[CPU-PERF] TSC avg delta (10 samples): %d cycles", (uint32_t);
     
     /* 报告估算频率 */
     uint64_t freq = cpu_get_tsc_frequency();
     if (freq > 0) {
-        serial_puts(SERIAL_COM1, "[CPU-PERF] Estimated frequency: ~");
-        serial_put_dec(SERIAL_COM1, (uint32_t)(freq / 1000000));
-        serial_puts(SERIAL_COM1, " MHz\n");
+        klog_kern("[CPU-PERF] Estimated frequency: ~%d MHz", (uint32_t);
     }
     
     #undef TSC_SAMPLES

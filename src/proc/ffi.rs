@@ -61,11 +61,11 @@ fn create_init_process() {
         C_CURRENT_PROCESS.time_slice = 10;
 
         extern "C" {
-            fn serial_puts(com: u16, s: *const u8);
+            fn klog_ffi_info(msg: *const u8);
         }
 
-        let msg = b"[PROC] Init process created (pid=1)\n";
-        serial_puts(0x3F8, msg.as_ptr());
+        let msg = b"[PROC] Init process created (pid=1)";
+        unsafe { klog_ffi_info(msg.as_ptr()); }
     }
     CURRENT_PROCESS_PTR.store(unsafe { &C_CURRENT_PROCESS as *const CProcess as u64 }, Ordering::SeqCst);
 }

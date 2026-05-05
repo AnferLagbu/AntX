@@ -8,7 +8,6 @@
 
 #include "tests/kernel_test.h"
 #include "mm.h"          /* FFI 接口 */
-#include "serial.h"
 
 /* ============================================================
  * 初始化与基础功能测试

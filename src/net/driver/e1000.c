@@ -26,6 +26,17 @@
 
 e1000_dev_t g_e1000 = {0};
 
+#define KERNEL_VMA_BASE  0xFFFF800000000000ULL
+
+static inline uint64_t virt_to_phys(void *virt)
+{
+    uint64_t v = (uint64_t)(uintptr_t)virt;
+    if (v >= KERNEL_VMA_BASE) {
+        return v - KERNEL_VMA_BASE;
+    }
+    return v;
+}
+
 /* ---- 对齐分配辅助 ---- */
 static void *kmalloc_align(size_t size, size_t align)
 {
@@ -96,7 +107,7 @@ static int e1000_setup_rings(e1000_dev_t *dev)
     }
     dev->tx_tail = 0;
 
-    uint64_t tx_phys = (uint64_t)(uintptr_t)dev->tx_descs;
+    uint64_t tx_phys = virt_to_phys(dev->tx_descs);
     mmio_write32(base, E1000_TDBAL, (uint32_t)(tx_phys & 0xFFFFFFFF));
     mmio_write32(base, E1000_TDBAH, (uint32_t)(tx_phys >> 32));
     mmio_write32(base, E1000_TDLEN, sizeof(e1000_tx_desc_t) * E1000_TX_RING_SIZE);
@@ -111,13 +122,13 @@ static int e1000_setup_rings(e1000_dev_t *dev)
         dev->rx_buffers[i] = (uint8_t *)kmalloc_align(E1000_RX_BUFFER_SIZE, 16);
         if (!dev->rx_buffers[i]) return -1;
 
-        dev->rx_descs[i].addr   = (uint64_t)(uintptr_t)dev->rx_buffers[i];
+        dev->rx_descs[i].addr   = virt_to_phys(dev->rx_buffers[i]);
         dev->rx_descs[i].length = 0;
         dev->rx_descs[i].status = 0;
     }
     dev->rx_tail = 0;
 
-    uint64_t rx_phys = (uint64_t)(uintptr_t)dev->rx_descs;
+    uint64_t rx_phys = virt_to_phys(dev->rx_descs);
     mmio_write32(base, E1000_RDBAL, (uint32_t)(rx_phys & 0xFFFFFFFF));
     mmio_write32(base, E1000_RDBAH, (uint32_t)(rx_phys >> 32));
     mmio_write32(base, E1000_RDLEN, sizeof(e1000_rx_desc_t) * E1000_RX_RING_SIZE);
@@ -245,7 +256,7 @@ int e1000_probe(void)
                             pd_new[pd_idx + 1] = (mmio_base_2m + 0x200000ULL) | 0x93;
                         }
 
-                        uint64_t pd_phys = (uint64_t)(uintptr_t)pd_new;
+                        uint64_t pd_phys = virt_to_phys((void *)pd_new);
                         pdpt_low[3] = pd_phys | 0x03;
 
                         {
@@ -366,9 +377,19 @@ err_t e1000_init(struct netif *netif)
     {
         extern void e1000_irq_entry(struct interrupt_frame *);
         idt_register_irq(g_e1000.irq, e1000_irq_entry, "e1000", 0);
+        idt_enable_irq(g_e1000.irq);
     }
 
-    klog_drv("E1000: IRQ %d handler registered, init complete", g_e1000.irq);
+    {
+        uint8_t master_imr = inb(0x21);
+        uint8_t slave_imr  = inb(0xA1);
+        klog_drv("E1000: PIC IMR master=0x%02x slave=0x%02x (cascade=%s IRQ11=%s)",
+                 master_imr, slave_imr,
+                 (master_imr & (1 << 2)) ? "MASKED" : "ok",
+                 (slave_imr & (1 << 3)) ? "MASKED" : "ok");
+    }
+
+    klog_drv("E1000: IRQ %d enabled, init complete", g_e1000.irq);
     return ERR_OK;
 }
 
@@ -378,14 +399,13 @@ void e1000_irq_entry(struct interrupt_frame *frame)
     e1000_isr();
 }
 
-/* ============================================================
- * 发送数据包
- * ============================================================ */
 err_t e1000_send(struct netif *netif, struct pbuf *p)
 {
     (void)netif;
 
     volatile uint8_t *base = g_e1000.mmio_base;
+    if (!base) return ERR_IF;
+
     uint16_t tail = g_e1000.tx_tail;
     e1000_tx_desc_t *desc = &g_e1000.tx_descs[tail];
 
@@ -410,7 +430,7 @@ err_t e1000_send(struct netif *netif, struct pbuf *p)
         }
     }
 
-    desc->addr   = (uint64_t)(uintptr_t)tx_buf;
+    desc->addr   = virt_to_phys(tx_buf);
     desc->length = (uint16_t)total_len;
     desc->cmd    = E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS;
     desc->status = 0;
@@ -418,12 +438,53 @@ err_t e1000_send(struct netif *netif, struct pbuf *p)
     g_e1000.tx_tail = (tail + 1) % E1000_TX_RING_SIZE;
     mmio_write32(base, E1000_TDT, g_e1000.tx_tail);
 
+    g_e1000.tx_count++;
+
+    if (g_e1000.tx_count <= 5) {
+        klog_drv("E1000: TX #%lu len=%d", g_e1000.tx_count, (int)total_len);
+    }
+
     return ERR_OK;
 }
 
-/* ============================================================
- * 中断处理
- * ============================================================ */
+static void e1000_rx_process(void)
+{
+    volatile uint8_t *base = g_e1000.mmio_base;
+    uint32_t rdh = mmio_read32(base, E1000_RDH);
+
+    while (g_e1000.rx_tail != rdh) {
+        e1000_rx_desc_t *desc = &g_e1000.rx_descs[g_e1000.rx_tail];
+
+        if (desc->status & E1000_RXD_STAT_DD) {
+            uint16_t len = desc->length;
+
+            if (!(desc->errors & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE |
+                                   E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE))) {
+                struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
+                if (p) {
+                    pbuf_take(p, g_e1000.rx_buffers[g_e1000.rx_tail], len);
+                    if (g_e1000.netif) {
+                        if (g_e1000.netif->input(p, g_e1000.netif) != ERR_OK) {
+                            pbuf_free(p);
+                        }
+                    } else {
+                        pbuf_free(p);
+                    }
+                }
+            }
+
+            desc->status = 0;
+            g_e1000.rx_count++;
+        }
+
+        uint16_t prev = g_e1000.rx_tail;
+        g_e1000.rx_tail = (g_e1000.rx_tail + 1) % E1000_RX_RING_SIZE;
+        mmio_write32(base, E1000_RDT, prev);
+
+        rdh = mmio_read32(base, E1000_RDH);
+    }
+}
+
 void e1000_isr(void)
 {
     volatile uint8_t *base = g_e1000.mmio_base;
@@ -432,7 +493,14 @@ void e1000_isr(void)
     uint32_t icr = mmio_read32(base, E1000_ICR);
     if (icr == 0) return;
 
+    g_e1000.isr_count++;
+
+    if (g_e1000.isr_count <= 3) {
+        klog_drv("E1000 ISR: ICR=0x%x (#%lu)", icr, g_e1000.isr_count);
+    }
+
     if (icr & E1000_ICR_LSC) {
+        g_e1000.link_change_count++;
         uint32_t status = mmio_read32(base, E1000_STATUS);
         if (status & E1000_STATUS_LU) {
             if (g_e1000.netif && !(g_e1000.netif->flags & NETIF_FLAG_LINK_UP)) {
@@ -448,36 +516,38 @@ void e1000_isr(void)
     }
 
     if (icr & (E1000_ICR_RXT0 | E1000_ICR_RXDMT0)) {
-        uint32_t rdh = mmio_read32(base, E1000_RDH);
-        while (g_e1000.rx_tail != rdh) {
-            e1000_rx_desc_t *desc = &g_e1000.rx_descs[g_e1000.rx_tail];
+        e1000_rx_process();
+    }
+}
 
-            if (desc->status & E1000_RXD_STAT_DD) {
-                uint16_t len = desc->length;
+void e1000_poll(void)
+{
+    volatile uint8_t *base = g_e1000.mmio_base;
+    if (!base) return;
 
-                if (!(desc->errors & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE |
-                                       E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE))) {
-                    struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
-                    if (p) {
-                        pbuf_take(p, g_e1000.rx_buffers[g_e1000.rx_tail], len);
-                        if (g_e1000.netif) {
-                            if (g_e1000.netif->input(p, g_e1000.netif) != ERR_OK) {
-                                pbuf_free(p);
-                            }
-                        } else {
-                            pbuf_free(p);
-                        }
-                    }
-                }
-
-                desc->status = 0;
+    uint32_t icr = mmio_read32(base, E1000_ICR);
+    if (icr & E1000_ICR_LSC) {
+        g_e1000.link_change_count++;
+        uint32_t status = mmio_read32(base, E1000_STATUS);
+        if (status & E1000_STATUS_LU) {
+            if (g_e1000.netif && !(g_e1000.netif->flags & NETIF_FLAG_LINK_UP)) {
+                klog_drv("E1000: Link up (poll)");
+                g_e1000.netif->flags |= NETIF_FLAG_LINK_UP;
             }
-
-            uint16_t prev = g_e1000.rx_tail;
-            g_e1000.rx_tail = (g_e1000.rx_tail + 1) % E1000_RX_RING_SIZE;
-            mmio_write32(base, E1000_RDT, prev);
-
-            rdh = mmio_read32(base, E1000_RDH);
+        } else {
+            if (g_e1000.netif && (g_e1000.netif->flags & NETIF_FLAG_LINK_UP)) {
+                klog_drv("E1000: Link down (poll)");
+                g_e1000.netif->flags &= ~NETIF_FLAG_LINK_UP;
+            }
         }
     }
+
+    e1000_rx_process();
+}
+
+void e1000_dump_stats(void)
+{
+    klog_drv("E1000 Stats: ISR=%lu RX=%lu TX=%lu LinkChg=%lu",
+             g_e1000.isr_count, g_e1000.rx_count,
+             g_e1000.tx_count, g_e1000.link_change_count);
 }

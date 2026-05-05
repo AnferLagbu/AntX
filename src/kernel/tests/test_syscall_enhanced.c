@@ -1,7 +1,7 @@
 #include "kernel_test.h"
 #include "syscall.h"
 #include "vfs.h"
-#include "serial.h"
+#include "klog.h"
 #include "string.h"
 
 static int test_syscall_basic_file_ops(void) {
@@ -15,9 +15,7 @@ static int test_syscall_basic_file_ops(void) {
     
     sys_fs_close(fd);
     
-    serial_puts(SERIAL_COM1, "[SYSCALL+] Basic file ops: ");
-    serial_put_dec(SERIAL_COM1, (int32_t)written);
-    serial_puts(SERIAL_COM1, " bytes written\n");
+    klog_kern("[SYSCALL+] Basic file ops: %d bytes writte", (int32_t);
     
     return TEST_PASS;
 }
@@ -32,7 +30,7 @@ static int test_syscall_error_codes(void) {
     int64_t result3 = sys_fs_mkdir(NULL, 0755);
     TEST_ASSERT_LT(result3, 0);
     
-    serial_puts(SERIAL_COM1, "[SYSCALL+] Error codes validated\n");
+    klog_kern("[SYSCALL+] Error codes validated");
     return TEST_PASS;
 }
 
@@ -68,11 +66,7 @@ static int test_syscall_multiple_opens(void) {
     
     TEST_ASSERT_EQ(opened, count);
     
-    serial_puts(SERIAL_COM1, "[SYSCALL+] Multiple opens: ");
-    serial_put_dec(SERIAL_COM1, opened);
-    serial_puts(SERIAL_COM1, "/");
-    serial_put_dec(SERIAL_COM1, count);
-    serial_puts(SERIAL_COM1, " files\n");
+    klog_kern("[SYSCALL+] Multiple opens: %d/%d files", opened, count);
     
     return TEST_PASS;
 }
@@ -98,9 +92,9 @@ static int test_syscall_read_write_cycle(void) {
         buffer[read] = '\0';
         TEST_ASSERT_EQ(strcmp(buffer, test_data), 0);
         
-        serial_puts(SERIAL_COM1, "[SYSCALL+] R/W cycle: \"");
-        serial_puts(SERIAL_COM1, buffer);
-        serial_puts(SERIAL_COM1, "\"\n");
+        klog_kern("[SYSCALL+] R/W cycle: \"");
+        klog_kern("%s", buffer);
+        klog_kern("\"");
     }
     
     return TEST_PASS;
@@ -119,9 +113,7 @@ static int test_syscall_mkdir_chain(void) {
     
     TEST_ASSERT_GT(created, 0);
     
-    serial_puts(SERIAL_COM1, "[SYSCALL+] Mkdir chain: ");
-    serial_put_dec(SERIAL_COM1, created);
-    serial_puts(SERIAL_COM1, " directories\n");
+    klog_kern("[SYSCALL+] Mkdir chain: %d directories", created);
     
     return TEST_PASS;
 }
@@ -145,11 +137,7 @@ static int test_syscall_boundary_sizes(void) {
     
     TEST_ASSERT_GT(r1 + r2 + r3, 0);
     
-    serial_puts(SERIAL_COM1, "[SYSCALL+] Boundary sizes: 1+");
-    serial_put_dec(SERIAL_COM1, (int32_t)r2);
-    serial_puts(SERIAL_COM1, "+");
-    serial_put_dec(SERIAL_COM1, (int32_t)r3);
-    serial_puts(SERIAL_COM1, " bytes\n");
+    klog_kern("[SYSCALL+] Boundary sizes: 1+%d+%d bytes", (int32_t, (int32_t);
     
     return TEST_PASS;
 }

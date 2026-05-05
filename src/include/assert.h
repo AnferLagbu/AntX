@@ -11,11 +11,8 @@
 #else
 #define ASSERT(cond) do { \
     if (!(cond)) { \
-        serial_puts(SERIAL_COM1, "\n[ASSERT FAILED] "); \
-        serial_puts(SERIAL_COM1, #cond); \
-        serial_puts(SERIAL_COM1, "\n  File: " __FILE__); \
-        serial_puts(SERIAL_COM1, "\n  Line: " STRINGIFY(__LINE__)); \
-        serial_puts(SERIAL_COM1, "\n"); \
+        klog_kern_crit("ASSERT FAILED: %s", #cond); \
+        klog_kern_crit("  File: %s:%d", __FILE__, __LINE__); \
         panic("Assertion failed"); \
     } \
 } while(0)
@@ -23,12 +20,9 @@
 
 #define ASSERT_MSG(cond, msg) do { \
     if (!(cond)) { \
-        serial_puts(SERIAL_COM1, "\n[ASSERT FAILED] "); \
-        serial_puts(SERIAL_COM1, msg); \
-        serial_puts(SERIAL_COM1, "\n  Condition: " #cond); \
-        serial_puts(SERIAL_COM1, "\n  File: " __FILE__); \
-        serial_puts(SERIAL_COM1, "\n  Line: " STRINGIFY(__LINE__)); \
-        serial_puts(SERIAL_COM1, "\n"); \
+        klog_kern_crit("ASSERT FAILED: %s", msg); \
+        klog_kern_crit("  Condition: %s", #cond); \
+        klog_kern_crit("  File: %s:%d", __FILE__, __LINE__); \
         panic("Assertion failed: " msg); \
     } \
 } while(0)
@@ -42,18 +36,12 @@
 } while(0)
 
 #define UNREACHABLE() do { \
-    serial_puts(SERIAL_COM1, "\n[UNREACHABLE] "); \
-    serial_puts(SERIAL_COM1, __FILE__); \
-    serial_puts(SERIAL_COM1, ":" STRINGIFY(__LINE__)); \
-    serial_puts(SERIAL_COM1, "\n"); \
+    klog_kern_crit("UNREACHABLE: %s:%d", __FILE__, __LINE__); \
     panic("Unreachable code reached"); \
 } while(0)
 
 #define NOT_IMPLEMENTED() do { \
-    serial_puts(SERIAL_COM1, "\n[NOT IMPLEMENTED] "); \
-    serial_puts(SERIAL_COM1, __FILE__); \
-    serial_puts(SERIAL_COM1, ":" STRINGIFY(__LINE__)); \
-    serial_puts(SERIAL_COM1, "\n"); \
+    klog_kern_crit("NOT IMPLEMENTED: %s:%d", __FILE__, __LINE__); \
     panic("Function not implemented"); \
 } while(0)
 

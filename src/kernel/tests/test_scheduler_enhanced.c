@@ -1,6 +1,6 @@
 #include "kernel_test.h"
 #include "proc.h"
-#include "serial.h"
+#include "klog.h"
 #include "timer.h"
 
 extern void scheduler_yield(void);
@@ -14,9 +14,7 @@ static int test_scheduler_mlfq_levels(void) {
     TEST_ASSERT_GE(initial_level, 0);
     TEST_ASSERT_LT(initial_level, 4);
     
-    serial_puts(SERIAL_COM1, "[SCHED] MLFQ level: ");
-    serial_put_dec(SERIAL_COM1, initial_level);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[SCHED] MLFQ level: %d", initial_level);
     
     return TEST_PASS;
 }
@@ -40,11 +38,7 @@ static int test_scheduler_timeslice_expiry(void) {
     
     TEST_ASSERT_GE(end - start, 0);
     
-    serial_puts(SERIAL_COM1, "[SCHED] Time slice test: ");
-    serial_put_dec(SERIAL_COM1, initial_slice);
-    serial_puts(SERIAL_COM1, " ticks, elapsed: ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[SCHED] Time slice test: %d ticks, elapsed: %d ticks", initial_slice, (uint32_t);
     
     return TEST_PASS;
 }
@@ -63,7 +57,7 @@ static int test_scheduler_priority_boost(void) {
         current->priority = old_priority;
     }
     
-    serial_puts(SERIAL_COM1, "[SCHED] Priority boost tested\n");
+    klog_kern("[SCHED] Priority boost tested");
     return TEST_PASS;
 }
 
@@ -79,9 +73,7 @@ static int test_scheduler_multiple_yields(void) {
     
     TEST_ASSERT_GT(current->pid, 0);
     
-    serial_puts(SERIAL_COM1, "[SCHED] Multiple yields: ");
-    serial_put_dec(SERIAL_COM1, yields);
-    serial_puts(SERIAL_COM1, " completed\n");
+    klog_kern("[SCHED] Multiple yields: %d completed", yields);
     
     return TEST_PASS;
 }
@@ -109,11 +101,7 @@ static int test_scheduler_context_switch_overhead(void) {
     
     TEST_ASSERT_GE(elapsed, 0);
     
-    serial_puts(SERIAL_COM1, "[SCHED] Context switch overhead: ");
-    serial_put_dec(SERIAL_COM1, switches);
-    serial_puts(SERIAL_COM1, " yields in ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)elapsed);
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[SCHED] Context switch overhead: %d yields in %d ticks", switches, (uint32_t);
     
     return TEST_PASS;
 }

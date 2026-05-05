@@ -1,7 +1,6 @@
 #include "kernel_test.h"
 #include "pwid.h"
 #include "syscall.h"
-#include "serial.h"
 #include "string.h"
 
 static int test_pwid_capability_constants(void) {

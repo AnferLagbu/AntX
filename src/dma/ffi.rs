@@ -15,15 +15,49 @@ use crate::dma::DmaPoolStats;
 // ============================================================
 
 extern "C" {
-    fn serial_puts(port: u16, s: *const u8);
-    fn serial_put_dec(port: u16, val: u64);
-    fn serial_put_hex(port: u16, val: u64);
+    fn klog_ffi_info(msg: *const u8);
+    fn klog_ffi_warn(msg: *const u8);
+    fn klog_ffi_error(msg: *const u8);
 }
 
-const COM1: u16 = 0x3F8;
+macro_rules! klog_info {
+    ($($arg:tt)*) => {
+        {
+            use core::fmt::Write;
+            let mut buf: [u8; 256] = [0u8; 256];
+            let mut cursor = 0;
+            let _ = core::fmt::write(&mut CursorWriter::new(&mut buf, &mut cursor), format_args!($($arg)*));
+            if cursor > 0 {
+                unsafe { klog_ffi_info(buf.as_ptr()); }
+            }
+        }
+    };
+}
+
+struct CursorWriter<'a> {
+    buf: &'a mut [u8],
+    cursor: &'a mut usize,
+}
+
+impl<'a> CursorWriter<'a> {
+    fn new(buf: &'a mut [u8], cursor: &'a mut usize) -> Self {
+        Self { buf, cursor }
+    }
+}
+
+impl<'a> core::fmt::Write for CursorWriter<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let bytes = s.as_bytes();
+        let remaining = self.buf.len() - *self.cursor;
+        let to_write = bytes.len().min(remaining);
+        self.buf[*self.cursor..*self.cursor + to_write].copy_from_slice(&bytes[..to_write]);
+        *self.cursor += to_write;
+        Ok(())
+    }
+}
 
 fn print(s: &str) {
-    unsafe { serial_puts(COM1, s.as_ptr()); }
+    unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
 // ============================================================
@@ -490,38 +524,23 @@ pub extern "C" fn dma_get_stats(stats_out: *mut DmaPoolStats) {
 #[no_mangle]
 pub extern "C" fn dma_dump_stats() {
     let s = engine().get_stats();
-    print("\n=== DMA Engine Statistics ===\n");
-
-    print("  Total Allocations: ");
-    unsafe { serial_put_dec(COM1, s.total_allocations); }
-    print("\n  Total Frees: ");
-    unsafe { serial_put_dec(COM1, s.total_frees); }
-    print("\n  Total Mappings: ");
-    unsafe { serial_put_dec(COM1, s.total_mappings); }
-    print("\n  Total Unmappings: ");
-    unsafe { serial_put_dec(COM1, s.total_unmappings); }
-    print("\n  Current Active: ");
-    unsafe { serial_put_dec(COM1, s.current_in_use); }
-    print("\n  Max Concurrent: ");
-    unsafe { serial_put_dec(COM1, s.max_concurrent); }
-    print("\n  Coherence Fails: ");
-    unsafe { serial_put_dec(COM1, s.coherence_fails); }
-    print("\n  Total Bytes Allocated: ");
-    unsafe { serial_put_dec(COM1, s.total_bytes_allocated / 1024); }
-    print(" KB\n  Current Bytes Used: ");
-    unsafe { serial_put_dec(COM1, s.current_bytes_used / 1024); }
-    print(" KB\n=============================\n");
+    klog_info!("=== DMA Engine Statistics ===");
+    klog_info!("  Total Allocations: {}", s.total_allocations);
+    klog_info!("  Total Frees: {}", s.total_frees);
+    klog_info!("  Total Mappings: {}", s.total_mappings);
+    klog_info!("  Total Unmappings: {}", s.total_unmappings);
+    klog_info!("  Current Active: {}", s.current_in_use);
+    klog_info!("  Max Concurrent: {}", s.max_concurrent);
+    klog_info!("  Coherence Fails: {}", s.coherence_fails);
+    klog_info!("  Total Bytes Allocated: {} KB", s.total_bytes_allocated / 1024);
+    klog_info!("  Current Bytes Used: {} KB", s.current_bytes_used / 1024);
 }
 
 #[no_mangle]
 pub extern "C" fn dump_active_mappings() {
-    print("\n--- Active DMA Mappings (Rust managed) ---\n");
-    print("  Total: ");
-    unsafe {
-        let s = engine().get_stats();
-        serial_put_dec(COM1, s.current_in_use);
-    }
-    print(" mappings\n--------------------------\n");
+    let s = engine().get_stats();
+    klog_info!("--- Active DMA Mappings (Rust managed) ---");
+    klog_info!("  Total: {} mappings", s.current_in_use);
 }
 
 #[no_mangle]

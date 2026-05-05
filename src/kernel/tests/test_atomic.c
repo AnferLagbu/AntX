@@ -7,7 +7,7 @@
 
 #include "tests/kernel_test.h"
 #include "atomic.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 原子读写测试
@@ -277,11 +277,7 @@ static int test_atomic_performance(void)
 
     elapsed = end - start;
 
-    serial_puts(SERIAL_COM1, "[性能] Atomic Inc: ");
-    serial_put_dec(SERIAL_COM1, iterations);
-    serial_puts(SERIAL_COM1, " 次操作，耗时 ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(elapsed / iterations));
-    serial_puts(SERIAL_COM1, " cycles/次\n");
+    klog_kern("[性能] Atomic Inc: %d 次操作，耗时 %d cycles/次", iterations, (uint32_t);
 
     TEST_ASSERT_EQ(atomic_read(&counter), iterations);
     TEST_ASSERT(elapsed > 0);

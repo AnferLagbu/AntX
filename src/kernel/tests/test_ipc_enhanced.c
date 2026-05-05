@@ -1,11 +1,11 @@
 #include "kernel_test.h"
 #include "ipc.h"
-#include "serial.h"
+#include "klog.h"
 
 static int test_ipc_initialization(void) {
     ipc_init();
     
-    serial_puts(SERIAL_COM1, "[IPC] IPC initialized\n");
+    klog_kern("[IPC] IPC initialized");
     return TEST_PASS;
 }
 

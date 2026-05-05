@@ -7,7 +7,7 @@
  */
 
 #include "atomic.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 统计信息 (可选)
@@ -34,16 +34,11 @@ void atomic_dec_stats(void)
 
 void atomic_dump_stats(void)
 {
-    serial_puts(SERIAL_COM1, "\n=== Atomic Operation Statistics ===\n");
-    serial_puts(SERIAL_COM1, "  inc operations: ");
-    serial_put_dec(SERIAL_COM1, atomic_stats.total_inc);
-    serial_puts(SERIAL_COM1, "\n  dec operations: ");
-    serial_put_dec(SERIAL_COM1, atomic_stats.total_dec);
-    serial_puts(SERIAL_COM1, "\n  cmpxchg success: ");
-    serial_put_dec(SERIAL_COM1, atomic_stats.total_cmpxchg_success);
-    serial_puts(SERIAL_COM1, "\n  cmpxchg fail: ");
-    serial_put_dec(SERIAL_COM1, atomic_stats.total_cmpxchg_fail);
-    serial_puts(SERIAL_COM1, "\n=====================================\n");
+    klog_kern("=== Atomic Operation Statistics ===");
+    klog_kern("  inc operations: %d", atomic_stats.total_inc);
+    klog_kern("  dec operations: %d", atomic_stats.total_dec);
+    klog_kern("  cmpxchg success: %d", atomic_stats.total_cmpxchg_success);
+    klog_kern("  cmpxchg fail: %d", atomic_stats.total_cmpxchg_fail);
 }
 
 #endif /* CONFIG_ATOMIC_STATS */

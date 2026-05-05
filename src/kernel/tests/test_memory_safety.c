@@ -1,7 +1,6 @@
 #include "kernel_test.h"
 #include "kmalloc.h"
 #include "mm.h"
-#include "serial.h"
 #include "string.h"
 
 static int test_kmalloc_null_pointer(void) {

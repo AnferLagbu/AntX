@@ -8,12 +8,44 @@
 //! - Early boot allocation (before bitmap initialization)
 //! - Statistics tracking
 
-/// Serial print macro (placeholder - will be replaced with actual implementation)
-macro_rules! serial_println {
+/// klog output macro for PMM
+macro_rules! klog_pmm {
     ($($arg:tt)*) => {
-        // Placeholder for serial output
-        // In actual implementation, this would call serial_puts
+        {
+            extern "C" {
+                fn klog_ffi_info(msg: *const u8);
+            }
+            use core::fmt::Write;
+            let mut buf: [u8; 256] = [0u8; 256];
+            let mut cursor = 0;
+            let _ = core::fmt::write(&mut CursorWriter::new(&mut buf, &mut cursor), format_args!($($arg)*));
+            if cursor > 0 {
+                unsafe { klog_ffi_info(buf.as_ptr()); }
+            }
+        }
     };
+}
+
+struct CursorWriter<'a> {
+    buf: &'a mut [u8],
+    cursor: &'a mut usize,
+}
+
+impl<'a> CursorWriter<'a> {
+    fn new(buf: &'a mut [u8], cursor: &'a mut usize) -> Self {
+        Self { buf, cursor }
+    }
+}
+
+impl<'a> core::fmt::Write for CursorWriter<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let bytes = s.as_bytes();
+        let remaining = self.buf.len() - *self.cursor;
+        let to_write = bytes.len().min(remaining);
+        self.buf[*self.cursor..*self.cursor + to_write].copy_from_slice(&bytes[..to_write]);
+        *self.cursor += to_write;
+        Ok(())
+    }
 }
 
 use super::*;
@@ -109,7 +141,7 @@ impl PhysicalMemoryManager {
         self.info.total_pages = total_pages;
         self.info.kernel_end = kernel_end;
         
-        serial_println!("[PMM] Initialized: {} MB, {} pages, kernel ends at 0x{:X}",
+        klog_pmm!("[PMM] Initialized: {} MB, {} pages, kernel ends at 0x{:X}",
                        mem_size / (1024 * 1024), total_pages, kernel_end);
     }
 
@@ -154,7 +186,7 @@ impl PhysicalMemoryManager {
         
         self.update_stats();
         
-        serial_println!("[PMM] Bitmap initialized: {} total, {} free ({} MB), reserved {} pages, bmp @0x{:X}",
+        klog_pmm!("[PMM] Bitmap initialized: {} total, {} free ({} MB), reserved {} pages, bmp @0x{:X}",
                        self.info.total_pages, self.info.free_pages,
                        self.info.free_pages * 4 / 1024,
                        total_reserved, bitmap_aligned);
@@ -191,7 +223,7 @@ impl PhysicalMemoryManager {
         self.acquire_lock();
         
         if !self.initialized.load(Ordering::Acquire) {
-            serial_println!("[PMM] Warning: Cannot free page at 0x{:X} before bitmap init", addr.0);
+            klog_pmm!("[PMM] Warning: Cannot free page at 0x{:X} before bitmap init", addr.0);
             self.release_lock();
             return;
         }
@@ -199,13 +231,13 @@ impl PhysicalMemoryManager {
         let page_num = addr.0 / PAGE_SIZE;
         
         if page_num >= self.info.total_pages {
-            serial_println!("[PMM] Error: Invalid page address 0x{:X}", addr.0);
+            klog_pmm!("[PMM] Error: Invalid page address 0x{:X}", addr.0);
             self.release_lock();
             return;
         }
         
         if !self.test_bit(page_num as usize) {
-            serial_println!("[PMM] Warning: Double free detected at page {}", page_num);
+            klog_pmm!("[PMM] Warning: Double free detected at page {}", page_num);
             self.release_lock();
             return;
         }
@@ -250,7 +282,7 @@ impl PhysicalMemoryManager {
         self.acquire_lock();
         
         if !self.initialized.load(Ordering::Acquire) {
-            serial_println!("[PMM] Warning: Cannot free pages before bitmap init");
+            klog_pmm!("[PMM] Warning: Cannot free pages before bitmap init");
             self.release_lock();
             return;
         }
@@ -263,7 +295,7 @@ impl PhysicalMemoryManager {
             if page_num >= self.info.total_pages { break; }
             
             if !self.test_bit(page_num as usize) {
-                serial_println!("[PMM] Warning: Double free at page {}", page_num);
+                klog_pmm!("[PMM] Warning: Double free at page {}", page_num);
                 continue;
             }
             
@@ -343,17 +375,17 @@ impl PhysicalMemoryManager {
 
     /// Print PMM statistics
     pub fn dump_stats(&self) {
-        serial_println!("=== PMM Statistics ===");
-        serial_println!("Total Memory: {} MB", self.mem_size / (1024 * 1024));
-        serial_println!("Total Pages: {}", self.info.total_pages);
-        serial_println!("Free Pages:  {}", self.info.free_pages);
-        serial_println!("Used Pages:  {}", self.info.used_pages);
-        serial_println!("Kernel End:  0x{:X}", self.info.kernel_end);
-        serial_println!("Total Allocs: {}", self.total_allocs.load(Ordering::Relaxed));
-        serial_println!("Total Frees:  {}", self.total_frees.load(Ordering::Relaxed));
-        serial_println!("Failed Allocs:{}", self.failed_allocs.load(Ordering::Relaxed));
-        serial_println!("Initialized:  {}", self.initialized.load(Ordering::Relaxed));
-        serial_println!("=====================");
+        klog_pmm!("=== PMM Statistics ===");
+        klog_pmm!("Total Memory: {} MB", self.mem_size / (1024 * 1024));
+        klog_pmm!("Total Pages: {}", self.info.total_pages);
+        klog_pmm!("Free Pages:  {}", self.info.free_pages);
+        klog_pmm!("Used Pages:  {}", self.info.used_pages);
+        klog_pmm!("Kernel End:  0x{:X}", self.info.kernel_end);
+        klog_pmm!("Total Allocs: {}", self.total_allocs.load(Ordering::Relaxed));
+        klog_pmm!("Total Frees:  {}", self.total_frees.load(Ordering::Relaxed));
+        klog_pmm!("Failed Allocs:{}", self.failed_allocs.load(Ordering::Relaxed));
+        klog_pmm!("Initialized:  {}", self.initialized.load(Ordering::Relaxed));
+        klog_pmm!("=====================");
     }
 
     // ==================== Private Methods ====================
@@ -555,7 +587,7 @@ impl PhysicalMemoryManager {
         }
         
         if aligned >= self.mem_size {
-            serial_println!("[PMM] Error: Early allocation out of memory!");
+            klog_pmm!("[PMM] Error: Early allocation out of memory!");
             return None;
         }
         
@@ -580,7 +612,7 @@ impl PhysicalMemoryManager {
         }
         
         if aligned + size > self.mem_size {
-            serial_println!("[PMM] Error: Early multi-page alloc out of memory!");
+            klog_pmm!("[PMM] Error: Early multi-page alloc out of memory!");
             return None;
         }
         
@@ -606,7 +638,7 @@ impl PhysicalMemoryManager {
         }
         
         if aligned + size > self.mem_size {
-            serial_println!("[PMM] Error: Early huge page alloc out of memory!");
+            klog_pmm!("[PMM] Error: Early huge page alloc out of memory!");
             return None;
         }
         

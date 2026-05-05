@@ -2,15 +2,11 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
-    fn serial_putc(port: u16, c: u8);
+    fn klog_ffi_info(msg: *const u8);
 }
 
 fn log(s: &str) {
-    unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c);
-        }
-    }
+    unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
 pub const MAX_SESSIONS: usize = 16;

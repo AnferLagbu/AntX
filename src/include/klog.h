@@ -127,6 +127,7 @@ const char *klog_category_string(klog_category_t cat);
 #define klog_drv(fmt, ...)     klog_info(LOG_DRV, fmt, ##__VA_ARGS__)
 #define klog_net(fmt, ...)     klog_info(LOG_NET, fmt, ##__VA_ARGS__)
 #define klog_syscall(fmt, ...) klog_info(LOG_SYSCALL, fmt, ##__VA_ARGS__)
+#define klog_ipc(fmt, ...)    klog_info(LOG_IPC, fmt, ##__VA_ARGS__)
 
 #define klog_boot_warn(fmt, ...)  klog_warn(LOG_BOOT, fmt, ##__VA_ARGS__)
 #define klog_init_warn(fmt, ...)  klog_warn(LOG_INIT, fmt, ##__VA_ARGS__)
@@ -135,7 +136,9 @@ const char *klog_category_string(klog_category_t cat);
 #define klog_proc_warn(fmt, ...)  klog_warn(LOG_PROC, fmt, ##__VA_ARGS__)
 #define klog_fs_warn(fmt, ...)    klog_warn(LOG_FS, fmt, ##__VA_ARGS__)
 #define klog_drv_warn(fmt, ...)   klog_warn(LOG_DRV, fmt, ##__VA_ARGS__)
-#define klog_net_warn(fmt, ...)   klog_warn(LOG_NET, fmt, ##__VA_ARGS__)
+#define klog_net_warn(fmt, ...)    klog_warn(LOG_NET, fmt, ##__VA_ARGS__)
+#define klog_ipc_warn(fmt, ...)    klog_warn(LOG_IPC, fmt, ##__VA_ARGS__)
+#define klog_syscall_warn(fmt, ...) klog_warn(LOG_SYSCALL, fmt, ##__VA_ARGS__)
 
 #define klog_boot_err(fmt, ...)   klog_error(LOG_BOOT, fmt, ##__VA_ARGS__)
 #define klog_init_err(fmt, ...)   klog_error(LOG_INIT, fmt, ##__VA_ARGS__)
@@ -145,6 +148,14 @@ const char *klog_category_string(klog_category_t cat);
 #define klog_fs_err(fmt, ...)     klog_error(LOG_FS, fmt, ##__VA_ARGS__)
 #define klog_drv_err(fmt, ...)    klog_error(LOG_DRV, fmt, ##__VA_ARGS__)
 #define klog_net_err(fmt, ...)    klog_error(LOG_NET, fmt, ##__VA_ARGS__)
+#define klog_ipc_err(fmt, ...)    klog_error(LOG_IPC, fmt, ##__VA_ARGS__)
+#define klog_syscall_err(fmt, ...) klog_error(LOG_SYSCALL, fmt, ##__VA_ARGS__)
+
+#define klog_boot_crit(fmt, ...)   klog_crit(LOG_BOOT, fmt, ##__VA_ARGS__)
+#define klog_kern_crit(fmt, ...)   klog_crit(LOG_KERN, fmt, ##__VA_ARGS__)
+#define klog_mem_crit(fmt, ...)    klog_crit(LOG_MEM, fmt, ##__VA_ARGS__)
+#define klog_drv_crit(fmt, ...)    klog_crit(LOG_DRV, fmt, ##__VA_ARGS__)
+#define klog_net_crit(fmt, ...)    klog_crit(LOG_NET, fmt, ##__VA_ARGS__)
 
 #define klog_sec_info(fmt, ...)  klog_info(LOG_SEC, fmt, ##__VA_ARGS__)
 #define klog_sec_warn(fmt, ...)  klog_warn(LOG_SEC, fmt, ##__VA_ARGS__)

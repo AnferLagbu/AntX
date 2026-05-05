@@ -32,16 +32,6 @@ void serial_putc(uint16_t port, char c) {
     outb(SERIAL_DATA_REG(port), c);
 }
 
-void serial_puts(uint16_t port, const char *s) {
-    if (s == NULL) return;
-    while (*s) {
-        if (*s == '\n') {
-            serial_putc(port, '\r');
-        }
-        serial_putc(port, *s++);
-    }
-}
-
 void serial_write(uint16_t port, const void *buf, uint64_t count) {
     if (buf == NULL || count == 0) return;
     const char *s = (const char *)buf;
@@ -51,47 +41,4 @@ void serial_write(uint16_t port, const void *buf, uint64_t count) {
         }
         serial_putc(port, s[i]);
     }
-}
-
-void serial_put_hex(uint16_t port, uint64_t val) {
-    const char hex_chars[] = "0123456789ABCDEF";
-    char buf[17];
-    
-    for (int i = 15; i >= 0; i--) {
-        buf[i] = hex_chars[val & 0xF];
-        val >>= 4;
-    }
-    buf[16] = '\0';
-    
-    serial_puts(port, "0x");
-    serial_puts(port, buf);
-}
-
-void serial_put_dec(uint16_t port, int64_t val) {
-    char buf[21];
-    int i = 20;
-    int neg = 0;
-    
-    buf[i] = '\0';
-    
-    if (val < 0) {
-        neg = 1;
-        val = -val;
-    }
-    
-    if (val == 0) {
-        serial_putc(port, '0');
-        return;
-    }
-    
-    while (val > 0 && i > 0) {
-        buf[--i] = '0' + (val % 10);
-        val /= 10;
-    }
-    
-    if (neg) {
-        buf[--i] = '-';
-    }
-    
-    serial_puts(port, &buf[i]);
 }

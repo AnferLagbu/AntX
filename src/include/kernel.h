@@ -3,22 +3,16 @@
 
 #include "types.h"
 #include "io.h"
-#include "serial.h"
 #include "gdt.h"
 #include "idt.h"
 #include "mm.h"
 #include "proc.h"
-#include "pwid.h"
-#include "hvfs.h"
-#include "syscall.h"
-#include "keyboard.h"
 #include "string.h"
 #include "klog.h"
-#include "ata.h"
 #include "assert.h"
 
 #define KERNEL_NAME    "QueenX"
-#include "version_auto.h"  /* 动态版本信息 (Git commit + 构建时间) */
+#include "version_auto.h"
 
 #define MEMORY_SIZE    (512 * 1024 * 1024)
 

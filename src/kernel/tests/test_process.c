@@ -1,6 +1,5 @@
 #include "kernel_test.h"
 #include "proc.h"
-#include "serial.h"
 #include "string.h"
 #include "klog.h"
 

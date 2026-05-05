@@ -3,7 +3,7 @@
 #include "hvfs.h"
 #include "pwid.h"
 #include "string.h"
-#include "serial.h"
+#include "klog.h"
 
 static int test_persistence_module = -1;
 static int hvfs_initialized = 0;
@@ -24,21 +24,21 @@ static int ensure_hvfs_initialized(void) {
         if (root) {
             test_root_pwid = root->pwid;
         } else {
-            serial_puts(SERIAL_COM1, "[Persistence Test] Failed to create root PWID\n");
+            klog_kern("[Persistence Test] Failed to create root PWID");
             return -1;
         }
         
         if (hvfs_disk_init() == 0) {
             disk_mode_available = 1;
-            serial_puts(SERIAL_COM1, "[Persistence Test] Disk mode enabled\n");
+            klog_kern("[Persistence Test] Disk mode enabled");
         } else {
             hvfs_init();
             if (hvfs_format() != 0) {
-                serial_puts(SERIAL_COM1, "[Persistence Test] HvFS format failed\n");
+                klog_kern("[Persistence Test] HvFS format failed");
                 return -1;
             }
             disk_mode_available = 0;
-            serial_puts(SERIAL_COM1, "[Persistence Test] Memory mode (no disk)\n");
+            klog_kern("[Persistence Test] Memory mode (no disk)");
         }
         
         hvfs_mkdir("/etc", test_root_pwid);
@@ -54,7 +54,7 @@ static int test_hvfs_file_persistence(void) {
     }
     
     if (!disk_mode_available) {
-        serial_puts(SERIAL_COM1, "[SKIP] No disk available for persistence test\n");
+        klog_kern("[SKIP] No disk available for persistence test");
         return TEST_SKIP;
     }
     
@@ -64,17 +64,13 @@ static int test_hvfs_file_persistence(void) {
     
     int fd = hvfs_open(test_file, HVFS_O_CREAT | HVFS_O_WRONLY | HVFS_O_TRUNC, test_root_pwid);
     if (fd < 0) {
-        serial_puts(SERIAL_COM1, "[FAIL] Failed to open file for write\n");
+        klog_kern("[FAIL] Failed to open file for write");
     }
     TEST_ASSERT(fd >= 0);
     
     int written = hvfs_write(fd, test_data, strlen(test_data));
     if (written != (int)strlen(test_data)) {
-        serial_puts(SERIAL_COM1, "[FAIL] Write failed: expected ");
-        serial_put_dec(SERIAL_COM1, strlen(test_data));
-        serial_puts(SERIAL_COM1, ", got ");
-        serial_put_dec(SERIAL_COM1, written);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern("[FAIL] Write failed: expected %d, got %d", strlen(test_data, written);
     }
     TEST_ASSERT(written == (int)strlen(test_data));
     
@@ -84,27 +80,19 @@ static int test_hvfs_file_persistence(void) {
     
     fd = hvfs_open(test_file, HVFS_O_RDONLY, test_root_pwid);
     if (fd < 0) {
-        serial_puts(SERIAL_COM1, "[FAIL] Failed to open file for read\n");
+        klog_kern("[FAIL] Failed to open file for read");
     }
     TEST_ASSERT(fd >= 0);
     
     memset(read_buf, 0, sizeof(read_buf));
     int bytes_read = hvfs_read(fd, read_buf, sizeof(read_buf) - 1);
     if (bytes_read != (int)strlen(test_data)) {
-        serial_puts(SERIAL_COM1, "[FAIL] Read failed: expected ");
-        serial_put_dec(SERIAL_COM1, strlen(test_data));
-        serial_puts(SERIAL_COM1, ", got ");
-        serial_put_dec(SERIAL_COM1, bytes_read);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern("[FAIL] Read failed: expected %d, got %d", strlen(test_data, bytes_read);
     }
     TEST_ASSERT(bytes_read == (int)strlen(test_data));
     
     if (strcmp(read_buf, test_data) != 0) {
-        serial_puts(SERIAL_COM1, "[FAIL] Data mismatch: expected '");
-        serial_puts(SERIAL_COM1, test_data);
-        serial_puts(SERIAL_COM1, "', got '");
-        serial_puts(SERIAL_COM1, read_buf);
-        serial_puts(SERIAL_COM1, "'\n");
+        klog_kern("[FAIL] Data mismatch: expected '%s', got '%s'", test_data, read_buf);
     }
     TEST_ASSERT(strcmp(read_buf, test_data) == 0);
     

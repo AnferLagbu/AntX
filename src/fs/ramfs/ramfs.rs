@@ -5,18 +5,14 @@ use alloc::vec::Vec;
 use crate::fs::vfs::types::*;
 
 extern "C" {
-    fn serial_putc(port: u16, c: u8);
+    fn klog_ffi_info(msg: *const u8);
     fn pwid_get_level(pwid: u64) -> u8;
     fn pwid_get_fs_capability(pwid: u64) -> u64;
     fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
 }
 
 fn log(s: &str) {
-    unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c);
-        }
-    }
+    unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
 const RAMFS_MAX_INODES: usize = 256;
@@ -707,17 +703,15 @@ impl RamFsData {
     pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
         let inode_num = self.resolve_path(path);
 
-        unsafe {
-            for c in b"[RAMFS] " { serial_putc(0x3F8, *c); }
-            for c in path.bytes() { serial_putc(0x3F8, c); }
-            serial_putc(0x3F8, ' ' as u8);
+        unsafe {log("[RAMFS] ");
+            log(" ");
         }
 
         let inode_num = if let Some(num) = inode_num {
-            unsafe { serial_putc(0x3F8, 'E' as u8); serial_putc(0x3F8, '\n' as u8); }
+            unsafe { log("E"); }
             num
         } else if (flags & VfsOpenFlags::CREAT.bits()) != 0 {
-            unsafe { serial_putc(0x3F8, 'C' as u8); }
+            unsafe { log("C"); }
             let path = if path.starts_with('/') { &path[1..] } else { path };
 
             let filename = if let Some(pos) = path.rfind('/') {
@@ -733,17 +727,14 @@ impl RamFsData {
             };
 
             if filename.is_empty() {
-                unsafe { serial_putc(0x3F8, 'F' as u8); serial_putc(0x3F8, '\n' as u8); }
+                unsafe { log("F"); }
                 return None;
             }
 
             let parent_num = self.resolve_path(dir_path)?;
 
             unsafe {
-                serial_putc(0x3F8, 'P' as u8);
-                serial_putc(0x3F8, ('0' as u8) + (parent_num / 10) as u8);
-                serial_putc(0x3F8, ('0' as u8) + (parent_num % 10) as u8);
-                serial_putc(0x3F8, '\n' as u8);
+                log("P");
             }
             
             if parent_num as usize >= RAMFS_MAX_INODES {
@@ -961,16 +952,8 @@ impl RamFsData {
             }
         }
 
-        unsafe {
-            for c in b"[RAMFS-TRUNC] " { serial_putc(0x3F8, *c); }
-            serial_putc(0x3F8, ('0' as u8) + (inode_num / 10) as u8);
-            serial_putc(0x3F8, ('0' as u8) + (inode_num % 10) as u8);
-            serial_putc(0x3F8, ' ' as u8);
-            serial_putc(0x3F8, ('0' as u8) + ((new_size / 1000) % 10) as u8);
-            serial_putc(0x3F8, ('0' as u8) + ((new_size / 100) % 10) as u8);
-            serial_putc(0x3F8, ('0' as u8) + ((new_size / 10) % 10) as u8);
-            serial_putc(0x3F8, ('0' as u8) + (new_size % 10) as u8);
-            serial_putc(0x3F8, '\n' as u8);
+        unsafe {log("[RAMFS-TRUNC] ");
+            log(" ");
         }
 
         let old_size = {
@@ -1098,12 +1081,8 @@ impl RamFsData {
     }
 
     pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {
-        unsafe {
-            for c in b"[RAMFS-MKDIR] " { serial_putc(0x3F8, *c); }
-            for c in parent_path.bytes() { serial_putc(0x3F8, c); }
-            serial_putc(0x3F8, ' ' as u8);
-            for c in name.bytes() { serial_putc(0x3F8, c); }
-            serial_putc(0x3F8, '\n' as u8);
+        unsafe {log("[RAMFS-MKDIR] ");
+            log(" ");
         }
 
         if name.is_empty() || name.contains('/') {
@@ -1112,11 +1091,11 @@ impl RamFsData {
 
         let parent_num = match self.resolve_path(parent_path) {
             Some(n) => {
-                unsafe { serial_putc(0x3F8, 'P' as u8); }
+                unsafe { log("P"); }
                 n
             },
             None => {
-                unsafe { serial_putc(0x3F8, 'X' as u8); serial_putc(0x3F8, '\n' as u8); }
+                unsafe { log("X"); }
                 return -1;
             },
         };
@@ -1155,7 +1134,7 @@ impl RamFsData {
                 let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
                 let existing_name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
                 if existing_name == name {
-                    unsafe { serial_putc(0x3F8, 'E' as u8); serial_putc(0x3F8, '\n' as u8); }
+                    unsafe { log("E"); }
                     return -1;
                 }
             }

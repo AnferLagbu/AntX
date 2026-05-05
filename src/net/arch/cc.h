@@ -7,7 +7,6 @@
 
 #include "types.h"
 #include "string.h"
-#include "serial.h"
 
 /* ---- 避免 lwIP arch.h 包含标准 C 头文件 ---- */
 #define LWIP_NO_STDINT_H    1

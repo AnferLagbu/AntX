@@ -1,6 +1,6 @@
 #include "ata.h"
 #include "io.h"
-#include "serial.h"
+#include "klog.h"
 
 static int ata_primary_present = 0;
 static int ata_secondary_present = 0;
@@ -123,15 +123,15 @@ void ata_init(void) {
     
     if (count == 0x55 && num == 0xAA) {
         ata_primary_present = 1;
-        serial_puts(SERIAL_COM1, "ATA: Primary controller detected\n");
-        
+        klog_drv("ATA: Primary controller detected");
+
         if (ata_detect_drive(ATA_PRIMARY_IO, ATA_PRIMARY_CTRL, 0)) {
             ata_master_present[0] = 1;
-            serial_puts(SERIAL_COM1, "ATA: Primary master detected\n");
+            klog_drv("ATA: Primary master detected");
         }
         if (ata_detect_drive(ATA_PRIMARY_IO, ATA_PRIMARY_CTRL, 1)) {
             ata_master_present[1] = 1;
-            serial_puts(SERIAL_COM1, "ATA: Primary slave detected\n");
+            klog_drv("ATA: Primary slave detected");
         }
     }
     
@@ -148,15 +148,15 @@ void ata_init(void) {
     
     if (count == 0x55 && num == 0xAA) {
         ata_secondary_present = 1;
-        serial_puts(SERIAL_COM1, "ATA: Secondary controller detected\n");
-        
+        klog_drv("ATA: Secondary controller detected");
+
         if (ata_detect_drive(ATA_SECONDARY_IO, ATA_SECONDARY_CTRL, 0)) {
             ata_master_present[2] = 1;
-            serial_puts(SERIAL_COM1, "ATA: Secondary master detected\n");
+            klog_drv("ATA: Secondary master detected");
         }
         if (ata_detect_drive(ATA_SECONDARY_IO, ATA_SECONDARY_CTRL, 1)) {
             ata_master_present[3] = 1;
-            serial_puts(SERIAL_COM1, "ATA: Secondary slave detected\n");
+            klog_drv("ATA: Secondary slave detected");
         }
     }
 }

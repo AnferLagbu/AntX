@@ -1,6 +1,6 @@
 #include "keyboard.h"
 #include "io.h"
-#include "serial.h"
+#include "klog.h"
 #include "idt.h"
 #include "proc_ffi.h"
 
@@ -271,16 +271,14 @@ int keyboard_read_line(char *buf, int max) {
         c = keyboard_get_char();
         
         if (c == '\n') {
-            serial_puts(SERIAL_COM1, "\n");
+            klog_kern("");
             break;
         } else if (c == '\b' || c == 0x7F) {
             if (i > 0) {
                 i--;
-                serial_puts(SERIAL_COM1, "\b \b");
             }
         } else if (c >= ' ' && c <= '~') {
             buf[i++] = c;
-            serial_putc(SERIAL_COM1, c);
         }
     }
     

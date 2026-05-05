@@ -1,6 +1,6 @@
 #include "kernel_test.h"
 #include "vfs.h"
-#include "serial.h"
+#include "klog.h"
 #include "string.h"
 #include "kmalloc.h"
 
@@ -32,7 +32,7 @@ static int test_vfs_nested_directories(void) {
     vfs_write_internal(fd, data, strlen(data));
     vfs_close_internal(fd);
     
-    serial_puts(SERIAL_COM1, "[VFS+] Nested directories: 3 levels deep\n");
+    klog_kern("[VFS+] Nested directories: 3 levels deep");
     return TEST_PASS;
 }
 
@@ -60,9 +60,9 @@ static int test_vfs_file_append_mode(void) {
     
     if (read > 0) {
         buffer[read] = '\0';
-        serial_puts(SERIAL_COM1, "[VFS+] Append mode: \"");
-        serial_puts(SERIAL_COM1, buffer);
-        serial_puts(SERIAL_COM1, "\"\n");
+        klog_kern("[VFS+] Append mode: \"");
+        klog_kern("%s", buffer);
+        klog_kern("\"");
     }
     
     return TEST_PASS;
@@ -105,9 +105,7 @@ static int test_vfs_fd_reuse(void) {
         vfs_close_internal(new_fd);
     }
     
-    serial_puts(SERIAL_COM1, "[VFS+] FD reuse: ");
-    serial_put_dec(SERIAL_COM1, opened);
-    serial_puts(SERIAL_COM1, " FDs opened and closed\n");
+    klog_kern("[VFS+] FD reuse: %d FDs opened and closed", opened);
     
     return TEST_PASS;
 }
@@ -146,9 +144,7 @@ static int test_vfs_concurrent_operations(void) {
     
     TEST_ASSERT_EQ(opened, files);
     
-    serial_puts(SERIAL_COM1, "[VFS+] Concurrent ops: ");
-    serial_put_dec(SERIAL_COM1, files);
-    serial_puts(SERIAL_COM1, " simultaneous file operations\n");
+    klog_kern("[VFS+] Concurrent ops: %d simultaneous file operations", files);
     
     return TEST_PASS;
 }
@@ -170,9 +166,7 @@ static int test_vfs_path_resolution(void) {
     
     TEST_ASSERT_GT(tested, 0);
     
-    serial_puts(SERIAL_COM1, "[VFS+] Path resolution: ");
-    serial_put_dec(SERIAL_COM1, tested);
-    serial_puts(SERIAL_COM1, " paths tested\n");
+    klog_kern("[VFS+] Path resolution: %d paths tested", tested);
     
     return TEST_PASS;
 }
@@ -201,11 +195,9 @@ static int test_vfs_truncate_operation(void) {
     
     if (read >= 0 && read <= (int)strlen(short_data)) {
         buffer[read] = '\0';
-        serial_puts(SERIAL_COM1, "[VFS+] Truncate: \"");
-        serial_puts(SERIAL_COM1, buffer);
-        serial_puts(SERIAL_COM1, "\" (");
-        serial_put_dec(SERIAL_COM1, read);
-        serial_puts(SERIAL_COM1, " bytes)\n");
+        klog_kern("[VFS+] Truncate: \"");
+        klog_kern("%s", buffer);
+        klog_kern("\" (%d bytes)", read);
     }
     
     return TEST_PASS;
@@ -237,9 +229,7 @@ static int test_vfs_mixed_read_write(void) {
     
     TEST_ASSERT_GT(total_read, 0);
     
-    serial_puts(SERIAL_COM1, "[VFS+] Mixed R/W: ");
-    serial_put_dec(SERIAL_COM1, total_read);
-    serial_puts(SERIAL_COM1, " bytes read back\n");
+    klog_kern("[VFS+] Mixed R/W: %d bytes read back", total_read);
     
     return TEST_PASS;
 }

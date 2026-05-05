@@ -1,6 +1,6 @@
 #include "idt.h"
 #include "gdt.h"
-#include "serial.h"
+#include "klog.h"
 #include "io.h"
 
 struct idt_entry idt[IDT_ENTRIES];
@@ -81,9 +81,7 @@ int idt_register_irq(uint8_t irq, interrupt_handler_t handler, const char *name,
     uint8_t vector = IRQ_BASE + irq;
 
     if ((flags & IRQ_FLAG_SHARED) == 0 && interrupt_handlers[vector] != NULL) {
-        serial_puts(SERIAL_COM1, "[IRQ] Warning: Replacing existing handler for IRQ ");
-        serial_put_hex(SERIAL_COM1, irq);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern_warn("IRQ: Replacing existing handler for IRQ 0x%x", irq);
     }
 
     irq_descriptors[irq].handler = handler;
@@ -95,11 +93,7 @@ int idt_register_irq(uint8_t irq, interrupt_handler_t handler, const char *name,
 
     interrupt_handlers[vector] = handler;
 
-    serial_puts(SERIAL_COM1, "[IRQ] Registered handler '");
-    serial_puts(SERIAL_COM1, name ? name : "unnamed");
-    serial_puts(SERIAL_COM1, "' for IRQ ");
-    serial_put_hex(SERIAL_COM1, irq);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("IRQ: Registered handler '%s' for IRQ 0x%x", name ? name : "unnamed", irq);
 
     return 0;
 }
@@ -114,9 +108,7 @@ int idt_unregister_irq(uint8_t irq, interrupt_handler_t handler) {
         irq_descriptors[irq].handler = NULL;
         irq_descriptors[irq].name = NULL;
 
-        serial_puts(SERIAL_COM1, "[IRQ] Unregistered handler for IRQ ");
-        serial_put_hex(SERIAL_COM1, irq);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern("IRQ: Unregistered handler for IRQ 0x%x", irq);
 
         return 0;
     }
@@ -129,8 +121,10 @@ void idt_enable_irq(uint8_t irq) {
         uint8_t mask = inb(0x21) & ~(1 << irq);
         outb(0x21, mask);
     } else if (irq < 16) {
-        uint8_t mask = inb(0xA1) & ~(1 << (irq - 8));
-        outb(0xA1, mask);
+        uint8_t slave_mask = inb(0xA1) & ~(1 << (irq - 8));
+        outb(0xA1, slave_mask);
+        uint8_t master_mask = inb(0x21) & ~(1 << 2);
+        outb(0x21, master_mask);
     }
 }
 
@@ -174,8 +168,8 @@ static void pic_send_eoi(uint8_t irq) {
 }
 
 static void print_stack_trace(struct interrupt_frame *frame) {
-    serial_puts(SERIAL_COM1, "\n  Stack Trace:\n");
-    
+    klog_kern("  Stack Trace:");
+
     uint64_t *rbp_ptr = (uint64_t *)frame->rbp;
     int frame_count = 0;
     const int max_frames = 10;
@@ -185,20 +179,10 @@ static void print_stack_trace(struct interrupt_frame *frame) {
 
         if (rip_val == 0) break;
 
-        serial_puts(SERIAL_COM1, "    #");
-        serial_put_dec(SERIAL_COM1, frame_count);
-        serial_puts(SERIAL_COM1, " [RIP=0x");
-        serial_put_hex(SERIAL_COM1, rip_val);
-        
-        if (rip_val >= 0xFFFFFFFF80000000ULL) {
-            serial_puts(SERIAL_COM1, " kernel]");
-        } else {
-            serial_puts(SERIAL_COM1, " user]");
-        }
-        
-        serial_puts(SERIAL_COM1, " [RBP=0x");
-        serial_put_hex(SERIAL_COM1, (uint64_t)rbp_ptr);
-        serial_puts(SERIAL_COM1, "]\n");
+        klog_kern("    #%d [RIP=0x%x %s] [RBP=0x%x]",
+                  frame_count, rip_val,
+                  rip_val >= 0xFFFFFFFF80000000ULL ? "kernel" : "user",
+                  (uint64_t)rbp_ptr);
 
         rbp_ptr = (uint64_t *)*rbp_ptr;
         frame_count++;
@@ -209,15 +193,12 @@ static int handle_double_fault(struct interrupt_frame *frame) {
     static int double_fault_count = 0;
     double_fault_count++;
 
-    serial_puts(SERIAL_COM1, "\n!!! DOUBLE FAULT DETECTED !!!\n");
-    serial_puts(SERIAL_COM1, "  Occurrence: ");
-    serial_put_dec(SERIAL_COM1, double_fault_count);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern_crit("DOUBLE FAULT DETECTED! Occurrence: %d", double_fault_count);
 
     print_stack_trace(frame);
 
     if (double_fault_count <= 3) {
-        serial_puts(SERIAL_COM1, "  Attempting recovery...\n");
+        klog_kern("  Attempting recovery...");
 
         extern void scheduler_yield(void);
         scheduler_yield();
@@ -225,7 +206,7 @@ static int handle_double_fault(struct interrupt_frame *frame) {
         return 1;
     }
 
-    serial_puts(SERIAL_COM1, "  Multiple double faults - system unstable\n");
+    klog_kern_err("  Multiple double faults - system unstable");
     return 0;
 }
 
@@ -233,101 +214,62 @@ static int handle_page_fault(struct interrupt_frame *frame) {
     uint64_t fault_addr;
     __asm__ volatile ("mov %%cr2, %0" : "=r"(fault_addr));
 
-    serial_puts(SERIAL_COM1, "\n  Page Fault Details:\n");
-    serial_puts(SERIAL_COM1, "    Fault Address (CR2): 0x");
-    serial_put_hex(SERIAL_COM1, fault_addr);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    Access Type: ");
-    if (frame->err_code & 0x02) {
-        serial_puts(SERIAL_COM1, "Write\n");
-    } else {
-        serial_puts(SERIAL_COM1, "Read\n");
-    }
-
-    serial_puts(SERIAL_COM1, "    Mode: ");
-    if (frame->err_code & 0x04) {
-        serial_puts(SERIAL_COM1, "User\n");
-    } else {
-        serial_puts(SERIAL_COM1, "Kernel\n");
-    }
-
-    serial_puts(SERIAL_COM1, "    Cause: ");
-    if (frame->err_code & 0x01) {
-        serial_puts(SERIAL_COM1, "Protection Violation\n");
-    } else {
-        serial_puts(SERIAL_COM1, "Page Not Present\n");
-    }
-
-    if (fault_addr >= 0xFFFFFFFF80000000ULL) {
-        serial_puts(SERIAL_COM1, "    Location: Kernel space\n");
-    } else {
-        serial_puts(SERIAL_COM1, "    Location: User space\n");
-    }
+    klog_kern_err("  Page Fault Details:");
+    klog_kern("    Fault Address (CR2): 0x%x", fault_addr);
+    klog_kern("    Access Type: %s", (frame->err_code & 0x02) ? "Write" : "Read");
+    klog_kern("    Mode: %s", (frame->err_code & 0x04) ? "User" : "Kernel");
+    klog_kern("    Cause: %s", (frame->err_code & 0x01) ? "Protection Violation" : "Page Not Present");
+    klog_kern("    Location: %s", fault_addr >= 0xFFFFFFFF80000000ULL ? "Kernel space" : "User space");
 
     int is_user_mode = (frame->cs & 0x03) == 3;
 
     if (is_user_mode) {
-        serial_puts(SERIAL_COM1, "  User page fault - killing process\n");
+        klog_kern_warn("  User page fault - killing process");
         return 1;
     }
 
-    /*
-     * 内核态 Page Fault 恢复策略:
-     * 1. 检查是否是空指针解引用 (地址接近 NULL)
-     * 2. 检查 RIP 是否在无效区域
-     * 3. 尝试跳过导致故障的指令
-     */
-    serial_puts(SERIAL_COM1, "  Kernel page fault - attempting recovery...\n");
+    klog_kern("  Kernel page fault - attempting recovery...");
 
-    /* 情况 1: 空指针或接近空指针的访问 */
     if (fault_addr < 0x1000) {
-        serial_puts(SERIAL_COM1, "  → Null pointer access detected\n");
-        serial_puts(SERIAL_COM1, "  → Skipping faulty instruction (RIP += 2)\n");
+        klog_kern("  -> Null pointer access detected");
+        klog_kern("  -> Skipping faulty instruction (RIP += 2)");
 
-        /* 尝试跳过当前指令 (假设典型指令长度为 2-15 字节) */
-        frame->rip += 2;  /* 最小指令长度 */
+        frame->rip += 2;
 
-        return 1;  /* 告诉调用者可以恢复 */
+        return 1;
     }
 
-    /* 情况 2: RIP 在低地址区域 (可能是函数指针损坏) */
     if (frame->rip < 0xFFFFFFFF80000000ULL && frame->rip > 0xFFFFF) {
-        serial_puts(SERIAL_COM1, "  → Invalid function pointer detected\n");
-        serial_puts(SERIAL_COM1, "  → Returning to caller (simulated)\n");
+        klog_kern("  -> Invalid function pointer detected");
+        klog_kern("  -> Returning to caller (simulated)");
 
-        /* 尝试从 RSP 恢复返回地址 */
-        frame->rsp += 8;  /* 弹出损坏的返回地址 */
-        /* 这里我们无法知道真正的返回地址，只能标记不可恢复 */
+        frame->rsp += 8;
 
         return 0;
     }
 
-    /* 默认: 无法自动恢复 */
-    serial_puts(SERIAL_COM1, "  → Unknown kernel page fault pattern\n");
+    klog_kern_err("  -> Unknown kernel page fault pattern");
     return 0;
 }
 
 static int handle_general_protection_fault(struct interrupt_frame *frame) {
-    serial_puts(SERIAL_COM1, "\n  General Protection Fault Details:\n");
-    serial_puts(SERIAL_COM1, "    Segment Selector: 0x");
-    serial_put_hex(SERIAL_COM1, frame->err_code & 0xFFFF);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern_err("  General Protection Fault Details:");
+    klog_kern("    Segment Selector: 0x%x", frame->err_code & 0xFFFF);
 
     if (frame->err_code & 0x01) {
-        serial_puts(SERIAL_COM1, "    External event\n");
+        klog_kern("    External event");
     }
     if (frame->err_code & 0x02) {
-        serial_puts(SERIAL_COM1, "    IDT flag set (interrupt from gate)\n");
+        klog_kern("    IDT flag set (interrupt from gate)");
     }
     if (frame->err_code & 0x04) {
-        serial_puts(SERIAL_COM1, "    LDT/GDT reference\n");
+        klog_kern("    LDT/GDT reference");
     }
 
     int is_user_mode = (frame->cs & 0x03) == 3;
 
     if (is_user_mode) {
-        serial_puts(SERIAL_COM1, "  User GPF - killing process\n");
+        klog_kern_warn("  User GPF - killing process");
         return 1;
     }
 
@@ -343,99 +285,26 @@ void exception_handler(struct interrupt_frame *frame) {
         exception_counts[frame->int_no]++;
     }
 
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "========================================\n");
-    serial_puts(SERIAL_COM1, "!!! EXCEPTION: ");
-    if (frame->int_no < 32) {
-        serial_puts(SERIAL_COM1, exception_messages[frame->int_no]);
-    } else {
-        serial_puts(SERIAL_COM1, "Unknown");
-    }
-    serial_puts(SERIAL_COM1, " !!!\n");
-    serial_puts(SERIAL_COM1, "========================================\n");
+    const char *exc_name = (frame->int_no < 32) ? exception_messages[frame->int_no] : "Unknown";
+    klog_kern_crit("EXCEPTION: %s", exc_name);
+    klog_kern("  Interrupt: 0x%x (%d)", frame->int_no, frame->int_no);
+    klog_kern("  Error Code: 0x%x", frame->err_code);
+    klog_kern("  RIP: 0x%x", frame->rip);
+    klog_kern("  CS:  0x%x (DPL=%d)", frame->cs, frame->cs & 0x03);
+    klog_kern("  RFLAGS: 0x%x", frame->rflags);
+    klog_kern("  RSP: 0x%x", frame->rsp);
+    klog_kern("  SS:  0x%x", frame->ss);
+    klog_kern("  Nested Level: %d", nested_interrupt_count);
 
-    serial_puts(SERIAL_COM1, "  Interrupt: 0x");
-    serial_put_hex(SERIAL_COM1, frame->int_no);
-    serial_puts(SERIAL_COM1, " (");
-    serial_put_dec(SERIAL_COM1, frame->int_no);
-    serial_puts(SERIAL_COM1, ")\n");
-
-    serial_puts(SERIAL_COM1, "  Error Code: 0x");
-    serial_put_hex(SERIAL_COM1, frame->err_code);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "  RIP: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rip);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "  CS:  0x");
-    serial_put_hex(SERIAL_COM1, frame->cs);
-    serial_puts(SERIAL_COM1, " (DPL=");
-    serial_put_dec(SERIAL_COM1, frame->cs & 0x03);
-    serial_puts(SERIAL_COM1, ")\n");
-
-    serial_puts(SERIAL_COM1, "  RFLAGS: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rflags);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "  RSP: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rsp);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "  SS:  0x");
-    serial_put_hex(SERIAL_COM1, frame->ss);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "  Nested Level: ");
-    serial_put_dec(SERIAL_COM1, nested_interrupt_count);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "\n  Registers:\n");
-    serial_puts(SERIAL_COM1, "    RAX: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rax);
-    serial_puts(SERIAL_COM1, "  RBX: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rbx);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    RCX: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rcx);
-    serial_puts(SERIAL_COM1, "  RDX: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rdx);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    RSI: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rsi);
-    serial_puts(SERIAL_COM1, "  RDI: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rdi);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    RBP: 0x");
-    serial_put_hex(SERIAL_COM1, frame->rbp);
-    serial_puts(SERIAL_COM1, "  R8:  0x");
-    serial_put_hex(SERIAL_COM1, frame->r8);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    R9:  0x");
-    serial_put_hex(SERIAL_COM1, frame->r9);
-    serial_puts(SERIAL_COM1, "  R10: 0x");
-    serial_put_hex(SERIAL_COM1, frame->r10);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    R11: 0x");
-    serial_put_hex(SERIAL_COM1, frame->r11);
-    serial_puts(SERIAL_COM1, "  R12: 0x");
-    serial_put_hex(SERIAL_COM1, frame->r12);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    R13: 0x");
-    serial_put_hex(SERIAL_COM1, frame->r13);
-    serial_puts(SERIAL_COM1, "  R14: 0x");
-    serial_put_hex(SERIAL_COM1, frame->r14);
-    serial_puts(SERIAL_COM1, "\n");
-
-    serial_puts(SERIAL_COM1, "    R15: 0x");
-    serial_put_hex(SERIAL_COM1, frame->r15);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("  Registers:");
+    klog_kern("    RAX: 0x%x  RBX: 0x%x", frame->rax, frame->rbx);
+    klog_kern("    RCX: 0x%x  RDX: 0x%x", frame->rcx, frame->rdx);
+    klog_kern("    RSI: 0x%x  RDI: 0x%x", frame->rsi, frame->rdi);
+    klog_kern("    RBP: 0x%x  R8:  0x%x", frame->rbp, frame->r8);
+    klog_kern("    R9: 0x%x  R10: 0x%x", frame->r9, frame->r10);
+    klog_kern("    R11: 0x%x  R12: 0x%x", frame->r11, frame->r12);
+    klog_kern("    R13: 0x%x  R14: 0x%x", frame->r13, frame->r14);
+    klog_kern("    R15: 0x%x", frame->r15);
 
     int can_recover = 0;
 
@@ -454,12 +323,10 @@ void exception_handler(struct interrupt_frame *frame) {
             break;
     }
 
-    serial_puts(SERIAL_COM1, "\n========================================\n");
-
     int is_user_mode = (frame->cs & 0x03) == 3;
 
     if (can_recover && is_user_mode) {
-        serial_puts(SERIAL_COM1, "User process crashed. Killing process.\n");
+        klog_kern("User process crashed. Killing process.");
 
         extern struct process* process_get_current(void);
         extern void process_exit(struct process *proc, uint64_t exit_code);
@@ -478,7 +345,7 @@ void exception_handler(struct interrupt_frame *frame) {
     }
 
     if (!can_recover) {
-        serial_puts(SERIAL_COM1, "Kernel panic! System halted.\n");
+        klog_kern_crit("Kernel panic! System halted.");
 
         __asm__ volatile ("cli");
 
@@ -504,14 +371,8 @@ void irq_handler(struct interrupt_frame *frame) {
         } else if (interrupt_handlers[frame->int_no] != NULL) {
             interrupt_handlers[frame->int_no](frame);
         } else {
-            /* Silent: IRQ 7/15 are standard PIC spurious vectors.
-             * IRQ 0 (timer) and IRQ 14 (primary ATA) may fire during
-             * idle when the handler is registered via idt_set_handler
-             * rather than idt_register_irq. */
             if (irq != 0 && irq != 7 && irq != 14 && irq != 15) {
-                serial_puts(SERIAL_COM1, "[IRQ] Spurious IRQ: ");
-                serial_put_hex(SERIAL_COM1, irq);
-                serial_puts(SERIAL_COM1, "\n");
+                klog_kern_warn("IRQ: Spurious IRQ: 0x%x", irq);
             }
         }
     }
@@ -523,7 +384,7 @@ extern uint64_t isr_table[];
 extern uint64_t irq_table[];
 
 int idt_init(void) {
-    serial_puts(SERIAL_COM1, "[IDT] Initializing Interrupt Descriptor Table...\n");
+    klog_kern("Initializing Interrupt Descriptor Table...");
 
     idt_ptr.limit = sizeof(idt) - 1;
     idt_ptr.base = (uint64_t)&idt;
@@ -558,49 +419,31 @@ int idt_init(void) {
 
     idt_flush((uint64_t)&idt_ptr);
 
-    serial_puts(SERIAL_COM1, "[IDT] IDT initialized successfully\n");
-    serial_puts(SERIAL_COM1, "[IDT]   Total entries: ");
-    serial_put_dec(SERIAL_COM1, IDT_ENTRIES);
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "[IDT]   Exceptions: 0-31\n");
-    serial_puts(SERIAL_COM1, "[IDT]   IRQs: 32-47 (base ");
-    serial_put_dec(SERIAL_COM1, IRQ_BASE);
-    serial_puts(SERIAL_COM1, ")\n");
-    serial_puts(SERIAL_COM1, "[IDT]   Syscall: 0x80\n");
+    klog_kern("IDT initialized successfully");
+    klog_kern("  Total entries: %d", IDT_ENTRIES);
+    klog_kern("  Exceptions: 0-31");
+    klog_kern("  IRQs: 32-47 (base %d)", IRQ_BASE);
+    klog_kern("  Syscall: 0x80");
 
     return MODULE_INIT_SUCCESS;
 }
 
 void idt_dump_state(void) {
-    serial_puts(SERIAL_COM1, "\n=== IDT State Dump ===\n");
-    serial_puts(SERIAL_COM1, "Nested interrupts: ");
-    serial_put_dec(SERIAL_COM1, nested_interrupt_count);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("=== IDT State Dump ===");
+    klog_kern("Nested interrupts: %d", nested_interrupt_count);
 
     if (current_interrupt_vector != 0xFFFFFFFFFFFFFFFFULL) {
-        serial_puts(SERIAL_COM1, "Current interrupt: ");
-        serial_put_dec(SERIAL_COM1, current_interrupt_vector);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern("Current interrupt: %d", current_interrupt_vector);
     }
 
-    serial_puts(SERIAL_COM1, "\nRegistered IRQ handlers:\n");
+    klog_kern("Registered IRQ handlers:");
     for (int i = 0; i < 16; i++) {
         if (irq_descriptors[i].handler != NULL) {
-            serial_puts(SERIAL_COM1, "  IRQ ");
-            serial_put_dec(SERIAL_COM1, i);
-            serial_puts(SERIAL_COM1, ": ");
-
-            if (irq_descriptors[i].name) {
-                serial_puts(SERIAL_COM1, irq_descriptors[i].name);
-            } else {
-                serial_puts(SERIAL_COM1, "(anonymous)");
-            }
-
-            serial_puts(SERIAL_COM1, " [calls=");
-            serial_put_dec(SERIAL_COM1, irq_descriptors[i].call_count);
-            serial_puts(SERIAL_COM1, ", errors=");
-            serial_put_dec(SERIAL_COM1, irq_descriptors[i].error_count);
-            serial_puts(SERIAL_COM1, "]\n");
+            klog_kern("  IRQ %d: %s [calls=%d, errors=%d]",
+                      i,
+                      irq_descriptors[i].name ? irq_descriptors[i].name : "(anonymous)",
+                      irq_descriptors[i].call_count,
+                      irq_descriptors[i].error_count);
         }
     }
 }
@@ -622,22 +465,16 @@ const char* idt_get_exception_name(uint8_t vector) {
 }
 
 void idt_print_interrupt_stats(void) {
-    serial_puts(SERIAL_COM1, "\n=== Interrupt Statistics ===\n");
+    klog_kern("=== Interrupt Statistics ===");
 
-    serial_puts(SERIAL_COM1, "\nException counts:\n");
+    klog_kern("Exception counts:");
     for (int i = 0; i < 32; i++) {
         if (exception_counts[i] > 0) {
-            serial_puts(SERIAL_COM1, "  #");
-            serial_put_dec(SERIAL_COM1, i);
-            serial_puts(SERIAL_COM1, " (");
-            serial_puts(SERIAL_COM1, exception_messages[i]);
-            serial_puts(SERIAL_COM1, "): ");
-            serial_put_dec(SERIAL_COM1, exception_counts[i]);
-            serial_puts(SERIAL_COM1, "\n");
+            klog_kern("  #%d (%s): %d", i, exception_messages[i], exception_counts[i]);
         }
     }
 
-    serial_puts(SERIAL_COM1, "\nIRQ counts:\n");
+    klog_kern("IRQ counts:");
     for (int i = 0; i < 16; i++) {
         if (irq_counts[i] > 0) {
             const char *irq_names[] = {
@@ -647,24 +484,15 @@ void idt_print_interrupt_stats(void) {
                 "Secondary ATA", "Spurious"
             };
 
-            serial_puts(SERIAL_COM1, "  IRQ");
-            serial_put_dec(SERIAL_COM1, i);
-            serial_puts(SERIAL_COM1, " (");
-            serial_puts(SERIAL_COM1, irq_names[i]);
-            serial_puts(SERIAL_COM1, "): ");
-            serial_put_dec(SERIAL_COM1, irq_counts[i]);
-
             if (irq_descriptors[i].handler != NULL) {
-                serial_puts(SERIAL_COM1, " [handler='");
-                serial_puts(SERIAL_COM1, irq_descriptors[i].name ? irq_descriptors[i].name : "?");
-                serial_puts(SERIAL_COM1, "']");
+                klog_kern("  IRQ%d (%s): %d [handler='%s']",
+                          i, irq_names[i], irq_counts[i],
+                          irq_descriptors[i].name ? irq_descriptors[i].name : "?");
+            } else {
+                klog_kern("  IRQ%d (%s): %d", i, irq_names[i], irq_counts[i]);
             }
-
-            serial_puts(SERIAL_COM1, "\n");
         }
     }
 
-    serial_puts(SERIAL_COM1, "\nTotal nested interrupts: ");
-    serial_put_dec(SERIAL_COM1, nested_interrupt_count);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("Total nested interrupts: %d", nested_interrupt_count);
 }

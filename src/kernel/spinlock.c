@@ -7,7 +7,7 @@
  */
 
 #include "spinlock.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 内联汇编辅助函数
@@ -119,7 +119,7 @@ void spin_assert_held(spinlock_t *lock)
 {
 #ifdef CONFIG_DEBUG_SPINLOCK
     if (!spin_is_locked(lock) || lock->owner == NULL) {
-        serial_puts(SERIAL_COM1, "[SPINLOCK] ASSERT FAILED: lock not held\n");
+        klog_kern_err("SPINLOCK: ASSERT FAILED: lock not held");
         while (1) {
             __asm__ volatile("hlt");
         }
@@ -173,24 +173,11 @@ void spin_lock_debug(spinlock_t *lock, const char *file, int line)
 
     __asm__ volatile("rdtsc" : "=A"(end));
 
-    serial_puts(SERIAL_COM1, "[SPINLOCK] Acquired: ");
-    if (lock->name) {
-        serial_puts(SERIAL_COM1, lock->name);
-    } else {
-        serial_puts(SERIAL_COM1, "(unnamed)");
-    }
-    serial_puts(SERIAL_COM1, " at ");
-    serial_puts(SERIAL_COM1, file);
-    serial_puts(SERIAL_COM1, ":");
-    serial_put_dec(SERIAL_COM1, line);
-
-    if (end - start > 1000000ULL) {  /* >1ms 可能异常 */
-        serial_puts(SERIAL_COM1, " WARNING: long wait (");
-        serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-        serial_puts(SERIAL_COM1, " cycles)");
-    }
-
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("SPINLOCK: Acquired: %s at %s:%d%s",
+              lock->name ? lock->name : "(unnamed)",
+              file, line,
+              (end - start > 1000000ULL) ?
+              " WARNING: long wait" : "");
 }
 
 void spin_lock_irqsave_debug(spinlock_t *lock, unsigned long *flags,

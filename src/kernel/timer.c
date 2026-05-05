@@ -1,7 +1,7 @@
 #include "timer.h"
 #include "idt.h"
 #include "proc.h"
-#include "serial.h"
+#include "klog.h"
 #include "pwid.h"
 
 #define PIT_CHANNEL0    0x40
@@ -42,7 +42,7 @@ void timer_init(void) {
     
     idt_register_irq(0, timer_handler, "timer", 0);
     
-    serial_puts(SERIAL_COM1, "Timer initialized (100 Hz)\n");
+    klog_kern("Timer initialized (100 Hz)");
 }
 
 uint64_t timer_get_ticks(void) {

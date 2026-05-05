@@ -1,5 +1,5 @@
 #include "proc.h"
-#include "serial.h"
+#include "klog.h"
 #include "pwid.h"
 
 #ifndef pid_t
@@ -42,7 +42,7 @@ void __attribute__((constructor)) process_stub_init(void) {
 struct process* process_get_current(void) {
     if (!init_created) {
         init_created = 1;
-        serial_puts(SERIAL_COM1, "[PROC] C-layer init process created\n");
+        klog_proc("C-layer init process created");
     }
     return &init_process;
 }
@@ -60,20 +60,15 @@ struct process* process_get_by_pid(pid_t pid) {
 
 int signal_send(pid_t pid, int sig) {
     if (pid == 0 || sig <= 0) {
-        serial_puts(SERIAL_COM1, "[SIGNAL] Invalid parameters\n");
+        klog_kern_err("SIGNAL: Invalid parameters");
         return -1;
     }
 
-    serial_puts(SERIAL_COM1, "[SIGNAL] Signal ");
-    serial_put_dec(SERIAL_COM1, sig);
-    serial_puts(SERIAL_COM1, " sent to PID=");
-    serial_put_dec(SERIAL_COM1, (uint32_t)pid);
-
     if (sig >= 1 && sig <= 31) {
-        serial_puts(SERIAL_COM1, " [VALID]\n");
+        klog_kern("SIGNAL: Signal %d sent to PID=%d [VALID]", sig, (uint32_t)pid);
         return 0;
     } else {
-        serial_puts(SERIAL_COM1, " [INVALID SIGNAL NUMBER]\n");
+        klog_kern_warn("SIGNAL: Signal %d sent to PID=%d [INVALID SIGNAL NUMBER]", sig, (uint32_t)pid);
         return -1;
     }
 }

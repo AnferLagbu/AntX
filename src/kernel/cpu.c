@@ -30,7 +30,7 @@
  */
 
 #include "cpu.h"
-#include "serial.h"
+#include "klog.h"
 #include "string.h"
 
 /**
@@ -38,7 +38,7 @@
  */
 static void serial_output_wrapper(const char *str) {
     if (str) {
-        serial_puts(SERIAL_COM1, str);
+        klog_kern("%s", str);
     }
 }
 
@@ -642,7 +642,7 @@ static void cpu_detect_topology(cpu_info_t *info) {
 
 int cpu_init(void) {
     int i;
-    serial_puts(SERIAL_COM1, "[CPU] Initializing AMD64 CPU driver...\n");
+    klog_kern("Initializing AMD64 CPU driver...");
 
     /* 初始化全局结构体 */
     for (i = 0; i < sizeof(cpu_info_t); i++) {
@@ -667,7 +667,7 @@ int cpu_init(void) {
 
     /* 6. 初始化 MSR (需要特权级) */
     if (cpu_init_msr_safe() != 0) {
-        serial_puts(SERIAL_COM1, "[CPU] Warning: MSR initialization failed\n");
+        klog_kern_warn("MSR initialization failed");
     }
 
     /* 7. 校准 TSC (保守估计) */
@@ -676,7 +676,7 @@ int cpu_init(void) {
     /* 8. 标记已初始化 */
     g_cpu_info.initialized = true;
 
-    serial_puts(SERIAL_COM1, "[CPU] CPU driver initialized successfully\n");
+    klog_kern("CPU driver initialized successfully");
 
     return 0;
 }
@@ -810,20 +810,21 @@ void cpu_print_info(void (*output_func)(const char*)) {
     (*output_func)(info->vendor_string);
     (*output_func)("\nBrand: ");
     (*output_func)(info->brand_string);
-    (*output_func)("\nCores: ");
-    serial_put_dec(SERIAL_COM1, info->physical_cores);
-    (*output_func)(" physical, ");
-    serial_put_dec(SERIAL_COM1, info->logical_cores);
-    (*output_func)(" logical\n");
-    
+
+    char num_buf[32];
+
+    snprintf(num_buf, sizeof(num_buf), "\nCores: %d physical, %d logical\n",
+             info->physical_cores, info->logical_cores);
+    (*output_func)(num_buf);
+
     if (cpu_has_feature(CPU_FEATURE_LM)) {
         (*output_func)("Mode: 64-bit Long Mode\n");
     }
-    
+
     if (g_tsc_frequency > 0) {
-        (*output_func)("TSC: ~");
-        serial_put_dec(SERIAL_COM1, (uint32_t)(g_tsc_frequency / 1000000));
-        (*output_func)(" MHz\n");
+        snprintf(num_buf, sizeof(num_buf), "TSC: ~%d MHz\n",
+                 (uint32_t)(g_tsc_frequency / 1000000));
+        (*output_func)(num_buf);
     }
 }
 
@@ -975,9 +976,9 @@ static int cpu_init_msr_safe(void) {
     
     /* 检查 CPU 是否支持 MSR (通过 CPUID.1:EDX[5]) */
     if (cpu_has_feature(CPU_FEATURE_MSR)) {
-        serial_puts(SERIAL_COM1, "[CPU] MSR support detected\n");
+        klog_kern("MSR support detected");
     } else {
-        serial_puts(SERIAL_COM1, "[CPU] MSR not supported by CPU\n");
+        klog_kern_warn("MSR not supported by CPU");
         return -1;
     }
 
@@ -993,7 +994,7 @@ static int cpu_init_msr_safe(void) {
         cr4 |= (1UL << 9);   /* CR4.OSFXSR - enable FXSAVE/FXRSTOR + SSE */
         cr4 |= (1UL << 10);  /* CR4.OSXMMEXCPT - enable #XF exception */
         __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
-        serial_puts(SERIAL_COM1, "[CPU] SSE/SSE2 enabled (CR4.OSFXSR+OSXMMEXCPT)\n");
+        klog_kern("SSE/SSE2 enabled (CR4.OSFXSR+OSXMMEXCPT)");
     }
 
     /* 启用 FPU (设置 CR0.TS=0, CR0.EM=0, CR0.MP=1) */

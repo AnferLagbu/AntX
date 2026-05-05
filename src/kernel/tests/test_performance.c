@@ -3,7 +3,7 @@
 #include "mm.h"
 #include "vfs.h"
 #include "timer.h"
-#include "serial.h"
+#include "klog.h"
 #include "string.h"
 
 extern int32_t vfs_open_internal(const char *path, uint32_t flags, uint64_t pwid);
@@ -35,11 +35,7 @@ static int test_perf_kmalloc_throughput(void) {
     
     TEST_ASSERT_GE(count, iterations * 80 / 100);
     
-    serial_puts(SERIAL_COM1, "[PERF] kmalloc: ");
-    serial_put_dec(SERIAL_COM1, count);
-    serial_puts(SERIAL_COM1, "/100 allocs in ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[PERF] kmalloc: %d/100 allocs in %d ticks", count, (uint32_t);
     
     return TEST_PASS;
 }
@@ -89,11 +85,7 @@ static int test_perf_vfs_file_create_delete(void) {
     
     end = timer_get_ticks();
     
-    serial_puts(SERIAL_COM1, "[PERF] File create/delete: ");
-    serial_put_dec(SERIAL_COM1, files);
-    serial_puts(SERIAL_COM1, " files in ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[PERF] File create/delete: %d files in %d ticks", files, (uint32_t);
     
     return TEST_PASS;
 }
@@ -122,11 +114,7 @@ static int test_perf_vfs_sequential_write(void) {
     
     TEST_ASSERT_GT(total_written, 0);
     
-    serial_puts(SERIAL_COM1, "[PERF] Sequential write: ");
-    serial_put_dec(SERIAL_COM1, total_written / 1024);
-    serial_puts(SERIAL_COM1, " KB in ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[PERF] Sequential write: %d KB in %d ticks", total_written / 1024, (uint32_t);
     
     return TEST_PASS;
 }
@@ -151,11 +139,7 @@ static int test_perf_vfs_sequential_read(void) {
     
     vfs_close_internal(fd);
     
-    serial_puts(SERIAL_COM1, "[PERF] Sequential read: ");
-    serial_put_dec(SERIAL_COM1, total_read / 1024);
-    serial_puts(SERIAL_COM1, " KB in ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[PERF] Sequential read: %d KB in %d ticks", total_read / 1024, (uint32_t);
     
     return TEST_PASS;
 }
@@ -199,9 +183,7 @@ static int test_perf_memory_fragmentation(void) {
         }
     }
     
-    serial_puts(SERIAL_COM1, "[PERF] Fragmentation test: ");
-    serial_put_dec(SERIAL_COM1, allocated);
-    serial_puts(SERIAL_COM1, " allocations completed\n");
+    klog_kern("[PERF] Fragmentation test: %d allocations completed", allocated);
     
     return TEST_PASS;
 }
@@ -222,11 +204,7 @@ static int test_perf_string_operations(void) {
     
     end = timer_get_ticks();
     
-    serial_puts(SERIAL_COM1, "[PERF] String ops: ");
-    serial_put_dec(SERIAL_COM1, iterations);
-    serial_puts(SERIAL_COM1, " iterations in ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[PERF] String ops: %d iterations in %d ticks", iterations, (uint32_t);
     
     return TEST_PASS;
 }

@@ -52,15 +52,20 @@ typedef struct {
     uint16_t         tx_tail;       /* 下一个发送位置 */
     uint16_t         rx_tail;       /* 下一个接收位置 */
 
-    /* 关联的 lwIP 网络接口 */
     struct netif     *netif;
+
+    volatile uint64_t isr_count;
+    volatile uint64_t rx_count;
+    volatile uint64_t tx_count;
+    volatile uint64_t link_change_count;
 } e1000_dev_t;
 
-/* ---- 驱动接口 ---- */
 int   e1000_probe(void);
 err_t e1000_init(struct netif *netif);
 err_t e1000_send(struct netif *netif, struct pbuf *p);
 void  e1000_isr(void);
+void  e1000_poll(void);
+void  e1000_dump_stats(void);
 
 extern e1000_dev_t g_e1000;
 

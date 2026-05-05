@@ -25,7 +25,7 @@
  *   - 与 Rust FFI 层兼容
  *   - 支持条件编译 (#ifdef)
  *
- * 生成时间: 2026-05-04 01:58:09
+ * 生成时间: 2026-05-05 16:31:54
  * 生成工具: scripts/generate_version.sh v1.0
  * ============================================================================
  */
@@ -44,10 +44,10 @@ extern "C" {
 /* ============================================================================ */
 
 /** @brief 完整 Git commit hash (40字符) */
-#define GIT_COMMIT_HASH         "76c374de13f80a741388278a928c85a5c07070db"
+#define GIT_COMMIT_HASH         "59c22bd9ee944d4e5c285bb5c95cafc8a7590e67"
 
 /** @brief 短格式 Git commit hash (7字符) */
-#define GIT_COMMIT_SHORT        "76c374d"
+#define GIT_COMMIT_SHORT        "59c22bd"
 
 /** @brief 当前 Git 分支名 */
 #define GIT_BRANCH              "main"
@@ -60,7 +60,7 @@ extern "C" {
 /* ============================================================================ */
 
 /** @brief 构建日期时间 (YYYY-MM-DD HH:MM:SS) */
-#define BUILD_DATE              "2026-05-04 01:58:09"
+#define BUILD_DATE              "2026-05-05 16:31:54"
 
 /** @brief 构建用户名 */
 #define BUILD_USER              "anfer"
@@ -73,7 +73,7 @@ extern "C" {
 /* ============================================================================ */
 
 /** @brief GCC 编译器版本 */
-#define CC_VERSION              "16.0.1"
+#define CC_VERSION              "16.1.1"
 
 /** @brief Rust 编译器版本 (如果可用) */
 #define RUST_VERSION            "1.97.0-nightly"

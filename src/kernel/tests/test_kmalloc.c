@@ -8,7 +8,6 @@
 
 #include "tests/kernel_test.h"
 #include "kmalloc.h"
-#include "serial.h"
 #include "string.h"
 
 /* ============================================================

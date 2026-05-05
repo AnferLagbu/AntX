@@ -85,6 +85,7 @@ void test_ipc_register(void);
 void test_hvfs_register(void);
 void test_pwid_enhanced_register(void);
 void test_persistence_register(void);
+void test_network_register(void);
 
 void run_kernel_tests(void);
 

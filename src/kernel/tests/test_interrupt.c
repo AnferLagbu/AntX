@@ -1,6 +1,6 @@
 #include "kernel_test.h"
 #include "idt.h"
-#include "serial.h"
+#include "klog.h"
 
 /**
  * @brief 安全的空中断处理程序 (用于测试)
@@ -17,7 +17,7 @@ static int test_idt_initialization(void) {
 
     TEST_ASSERT_GE(result, 0);
 
-    serial_puts(SERIAL_COM1, "[IDT] IDT initialized\n");
+    klog_kern("[IDT] IDT initialized");
 
     return TEST_PASS;
 }
@@ -45,7 +45,7 @@ static int test_interrupt_registration(void) {
         idt_set_handler(test_vector, test_safe_isr_handler, "test_safe");
     }
 
-    serial_puts(SERIAL_COM1, "[IDT] Interrupt gate API tested (16 vectors)\n");
+    klog_kern("[IDT] Interrupt gate API tested (16 vectors)");
 
     return TEST_PASS;
 }
@@ -60,9 +60,7 @@ static int test_exception_handling(void) {
     TEST_ASSERT_GE(if_flag, 0);
     TEST_ASSERT_LE(if_flag, 1);
 
-    serial_puts(SERIAL_COM1, "[IDT] Exception handling: IF flag=");
-    serial_put_dec(SERIAL_COM1, if_flag);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[IDT] Exception handling: IF flag=%d", if_flag);
 
     return TEST_PASS;
 }
@@ -88,9 +86,7 @@ static int test_nested_interrupts(void) {
 
     TEST_ASSERT_EQ(depth, max_depth);
 
-    serial_puts(SERIAL_COM1, "[IDT] Nested interrupts: depth=");
-    serial_put_dec(SERIAL_COM1, depth);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[IDT] Nested interrupts: depth=%d", depth);
 
     return TEST_PASS;
 }

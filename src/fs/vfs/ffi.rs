@@ -1,7 +1,11 @@
 use core::ffi::c_char;
 
 extern "C" {
-    fn serial_putc(port: u16, c: u8);
+    fn klog_ffi_info(msg: *const u8);
+}
+
+fn log(s: &str) {
+    unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
 use crate::fs::hvfs::hvfs::get_hvfs;
@@ -57,33 +61,26 @@ pub extern "C" fn vfs_unmount_internal(path: *const c_char) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
-    unsafe { serial_putc(0x3F8, '>' as u8); }
+    unsafe { log(">"); }
 
     let path = ptr_to_str(path);
 
-    unsafe {
-        for c in b"[OPEN] " { serial_putc(0x3F8, *c); }
-        for c in path.bytes() { serial_putc(0x3F8, c); }
-        serial_putc(0x3F8, '\n' as u8);
+    unsafe {log("[OPEN] ");
     }
 
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => {
-            unsafe { serial_putc(0x3F8, ('0' as u8) + idx as u8); }
             idx
         },
         None => {
-            unsafe { serial_putc(0x3F8, 'X' as u8); serial_putc(0x3F8, '\n' as u8); }
+            unsafe { log("X"); }
             return -1;
         },
     };
 
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    unsafe {
-        for c in b"[REL] " { serial_putc(0x3F8, *c); }
-        for c in rel_path.bytes() { serial_putc(0x3F8, c); }
-        serial_putc(0x3F8, '\n' as u8);
+    unsafe {log("[REL] ");
     }
 
     let fd_idx = match VFS_MANAGER.alloc_fd() {
@@ -207,10 +204,7 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
 pub extern "C" fn vfs_unlink_internal(path: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     
-    unsafe {
-        for c in b"[UNLINK] " { serial_putc(0x3F8, *c); }
-        for c in path.bytes() { serial_putc(0x3F8, c); }
-        serial_putc(0x3F8, '\n' as u8);
+    unsafe {log("[UNLINK] ");
     }
     
     let mount_idx = match VFS_MANAGER.find_mount(path) {
@@ -248,10 +242,7 @@ pub extern "C" fn vfs_unlink_internal(path: *const c_char) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
-    unsafe {
-        for c in b"[TRUNCATE] " { serial_putc(0x3F8, *c); }
-        serial_putc(0x3F8, ('0' as u8) + (fd % 10) as u8);
-        serial_putc(0x3F8, '\n' as u8);
+    unsafe {log("[TRUNCATE] ");
     }
     
     0
@@ -316,26 +307,20 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
 pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
 
-    unsafe {
-        for c in b"[MKDIR] " { serial_putc(0x3F8, *c); }
-        for c in path.bytes() { serial_putc(0x3F8, c); }
-        serial_putc(0x3F8, '\n' as u8);
+    unsafe {log("[MKDIR] ");
     }
 
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
         None => {
-            unsafe { serial_putc(0x3F8, 'N' as u8); serial_putc(0x3F8, '\n' as u8); }
+            unsafe { log("N"); }
             return -1;
         },
     };
 
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    unsafe {
-        for c in b"[REL] " { serial_putc(0x3F8, *c); }
-        for c in rel_path.bytes() { serial_putc(0x3F8, c); }
-        serial_putc(0x3F8, '\n' as u8);
+    unsafe {log("[REL] ");
     }
 
     let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
@@ -348,12 +333,8 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
         ("/", rel_path)
     };
 
-    unsafe {
-        for c in b"[PARENT] " { serial_putc(0x3F8, *c); }
-        for c in parent_path.bytes() { serial_putc(0x3F8, c); }
-        serial_putc(0x3F8, ' ' as u8);
-        for c in name.bytes() { serial_putc(0x3F8, c); }
-        serial_putc(0x3F8, '\n' as u8);
+    unsafe {log("[PARENT] ");
+        log(" ");
     }
 
     if name.is_empty() {

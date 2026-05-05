@@ -2,7 +2,6 @@
 #include "ipc.h"
 #include "syscall.h"
 #include "thread.h"
-#include "serial.h"
 #include "string.h"
 
 static int test_ipc_pipe_create(void) {

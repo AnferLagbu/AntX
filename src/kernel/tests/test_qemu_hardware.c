@@ -32,7 +32,7 @@
 #include "idt.h"
 #include "mm.h"              /* PMM/VMM 函数 */
 #include "kmalloc.h"
-#include "serial.h"
+#include "klog.h"
 #include "timer.h"
 #include "keyboard.h"
 #include "cpu.h"              /* QX AMD64 CPU 驱动 */
@@ -61,12 +61,12 @@ static int test_qemu_cpuid_basic(void) {
     if (ebx == 0x756E6547 && /* "Genu" */
         edx == 0x49656E69 && /* "ineI" */
         ecx == 0x6C65746E) { /* "ntel" 或 "AMD" */
-        serial_puts(SERIAL_COM1, "[QEMU-HW] CPUID: GenuineIntel/AMD detected\n");
+        klog_kern("[QEMU-HW] CPUID: GenuineIntel/AMD detected");
         return TEST_PASS;
     }
     
     /* QEMU 通常返回 "GenuineIntel" 即使使用 AMD CPU 模拟 */
-    serial_puts(SERIAL_COM1, "[QEMU-HW] CPUID: Vendor string OK\n");
+    klog_kern("[QEMU-HW] CPUID: Vendor string OK");
     return TEST_PASS;
 }
 
@@ -86,16 +86,16 @@ static int test_qemu_long_mode(void) {
     /* 在长模式下，CS 应该是 64 位代码段 (通常为 0x08 或 0x10) */
     if ((cs_selector & 0x04) == 0) {
         /* RPL=0, TI=GDT, Index=1 或 2 (64位代码段) */
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Long Mode: Active (64-bit CS)\n");
+        klog_kern("[QEMU-HW] Long Mode: Active (64-bit CS)");
         
         /* 验证 64 位寄存器工作正常 */
         if (test_val == 0xFFFFFFFFFFFFFFFFULL) {
-            serial_puts(SERIAL_COM1, "[QEMU-HW] Long Mode: 64-bit registers working\n");
+            klog_kern("[QEMU-HW] Long Mode: 64-bit registers working");
             return TEST_PASS;
         }
     }
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Long Mode: Not in 64-bit mode!\n");
+    klog_kern("[QEMU-HW] Long Mode: Not in 64-bit mode!");
     return TEST_FAIL;
 }
 
@@ -121,11 +121,11 @@ static int test_qemu_sse_support(void) {
     int has_sse2 = (edx >> 26) & 1;
     
     if (has_sse && has_sse2) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] SSE: SSE+SSE2 supported\n");
+        klog_kern("[QEMU-HW] SSE: SSE+SSE2 supported");
         return TEST_PASS;
     }
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] SSE: Missing SSE/SSE2!\n");
+    klog_kern("[QEMU-HW] SSE: Missing SSE/SSE2!");
     return TEST_FAIL;
 }
 
@@ -152,9 +152,9 @@ static int test_qemu_cpu_features(void) {
     /* NX/XD bit (bit 20 in EDX) */
     int nx_bit = (edx >> 20) & 1;
     if (nx_bit) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Features: NX bit ✓\n");
+        klog_kern("[QEMU-HW] Features: NX bit ✓");
     } else {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Features: NX bit ✗\n");
+        klog_kern("[QEMU-HW] Features: NX bit ✗");
         features_ok = 0;  /* 不算失败，但记录警告 */
     }
     
@@ -162,17 +162,17 @@ static int test_qemu_cpu_features(void) {
     int tsc = (edx >> 4) & 1;
     if (!tsc) {
         features_ok = 0;
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Features: TSC missing! ✗\n");
+        klog_kern("[QEMU-HW] Features: TSC missing! ✗");
         return TEST_FAIL;  /* TSC 是必须的 */
     }
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Features: TSC ✓\n");
+    klog_kern("[QEMU-HW] Features: TSC ✓");
     
     /* APIC on-chip (bit 9 in EDX) */
     int apic = (edx >> 9) & 1;
     if (apic) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Features: APIC ✓\n");
+        klog_kern("[QEMU-HW] Features: APIC ✓");
     } else {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Features: No APIC\n");
+        klog_kern("[QEMU-HW] Features: No APIC");
     }
     
     if (features_ok || tsc) {  /* 至少有 TSC 就算通过 */
@@ -204,9 +204,9 @@ static int test_qemu_msr_access(void) {
     int lme = (efer >> 8) & 1;
     
     if (lma && lme) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] MSR: EFER.LMA+ELE active\n");
+        klog_kern("[QEMU-HW] MSR: EFER.LMA+ELE active");
     } else {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] MSR: EFER not in long mode\n");
+        klog_kern("[QEMU-HW] MSR: EFER not in long mode");
         return TEST_FAIL;
     }
     
@@ -217,11 +217,11 @@ static int test_qemu_msr_access(void) {
     );
     
     if (tsc != 0) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] MSR: TSC working\n");
+        klog_kern("[QEMU-HW] MSR: TSC working");
         return TEST_PASS;
     }
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] MSR: TSC returned zero!\n");
+    klog_kern("[QEMU-HW] MSR: TSC returned zero!");
     return TEST_FAIL;
 }
 
@@ -246,7 +246,7 @@ static int test_qemu_pmm_hardware(void) {
     page3 = pmm_alloc_page();
     
     if (!page1 || !page2 || !page3) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] PMM: Allocation failed\n");
+        klog_kern("[QEMU-HW] PMM: Allocation failed");
         return TEST_FAIL;
     }
     
@@ -254,7 +254,7 @@ static int test_qemu_pmm_hardware(void) {
     if (((uint64_t)page1 & 0xFFF) || 
         ((uint64_t)page2 & 0xFFF) || 
         ((uint64_t)page3 & 0xFFF)) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] PMM: Pages not aligned!\n");
+        klog_kern("[QEMU-HW] PMM: Pages not aligned!");
         pmm_free_page(page1);
         pmm_free_page(page2);
         pmm_free_page(page3);
@@ -263,7 +263,7 @@ static int test_qemu_pmm_hardware(void) {
     
     /* 验证分配的地址不同 */
     if (page1 == page2 || page2 == page3 || page1 == page3) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] PMM: Duplicate pages!\n");
+        klog_kern("[QEMU-HW] PMM: Duplicate pages!");
         pmm_free_page(page1);
         pmm_free_page(page2);
         pmm_free_page(page3);
@@ -276,7 +276,7 @@ static int test_qemu_pmm_hardware(void) {
     
     /* page4 可能等于 page2 (如果立即回收)，但必须有效且对齐 */
     if (!page4 || ((uint64_t)page4 & 0xFFF)) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] PMM: Re-allocation failed\n");
+        klog_kern("[QEMU-HW] PMM: Re-allocation failed");
         pmm_free_page(page1);
         pmm_free_page(page3);
         pmm_free_page(page4);
@@ -288,7 +288,7 @@ static int test_qemu_pmm_hardware(void) {
     pmm_free_page(page3);
     pmm_free_page(page4);
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] PMM: Hardware allocation OK\n");
+    klog_kern("[QEMU-HW] PMM: Hardware allocation OK");
     return TEST_PASS;
 }
 
@@ -306,7 +306,7 @@ static int test_qemu_vmm_hardware(void) {
     void *phys_addr = pmm_alloc_page();
     
     if (!phys_addr) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] VMM: Failed to alloc phys page\n");
+        klog_kern("[QEMU-HW] VMM: Failed to alloc phys page");
         return TEST_SKIP;
     }
     
@@ -320,7 +320,7 @@ static int test_qemu_vmm_hardware(void) {
     
     /* 验证写入成功 */
     if (*test_ptr != 0xDEADBEEF) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] VMM: Write verification failed\n");
+        klog_kern("[QEMU-HW] VMM: Write verification failed");
         vmm_unmap_page((uint64_t)virt_addr);
         pmm_free_page(phys_addr);
         return TEST_FAIL;
@@ -330,7 +330,7 @@ static int test_qemu_vmm_hardware(void) {
     vmm_unmap_page((uint64_t)virt_addr);
     pmm_free_page(phys_addr);
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] VMM: Page table hardware OK\n");
+    klog_kern("[QEMU-HW] VMM: Page table hardware OK");
     return TEST_PASS;
 }
 
@@ -356,9 +356,7 @@ static int test_qemu_kmalloc_benchmark(void) {
     for (i = 0; i < BENCHMARK_COUNT; i++) {
         ptrs[i] = kmalloc(ALLOC_SIZE);
         if (!ptrs[i]) {
-            serial_puts(SERIAL_COM1, "[QEMU-HW] kmalloc: Out of memory at ");
-            serial_put_dec(SERIAL_COM1, i);
-            serial_puts(SERIAL_COM1, "\n");
+            klog_kern("[QEMU-HW] kmalloc: Out of memory at %d", i);
             
             /* 清理已分配的 */
             int j;
@@ -381,21 +379,15 @@ static int test_qemu_kmalloc_benchmark(void) {
     }
     
     /* 输出性能数据 */
-    serial_puts(SERIAL_COM1, "[QEMU-HW] kmalloc: ");
-    serial_put_dec(SERIAL_COM1, BENCHMARK_COUNT);
-    serial_puts(SERIAL_COM1, " allocations of ");
-    serial_put_dec(SERIAL_COM1, ALLOC_SIZE);
-    serial_puts(SERIAL_COM1, " bytes in ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)elapsed);
-    serial_puts(SERIAL_COM1, " ticks\n");
+    klog_kern("[QEMU-HW] kmalloc: %d allocations of %d bytes in %d ticks", BENCHMARK_COUNT, ALLOC_SIZE, (uint32_t);
     
     /* 合理的性能：100次分配应该在合理时间内完成 (<10000 ticks) */
     if (elapsed > 10000) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] kmalloc: Slow performance!\n");
+        klog_kern("[QEMU-HW] kmalloc: Slow performance!");
         return TEST_PASS;  /* 性能差但不失败 */
     }
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] kmalloc: Performance acceptable\n");
+    klog_kern("[QEMU-HW] kmalloc: Performance acceptable");
     return TEST_PASS;
     
     #undef BENCHMARK_COUNT
@@ -419,9 +411,9 @@ static int test_qemu_large_allocations(void) {
         ptrs[i] = kmalloc(sizes[i]);
         
         if (!ptrs[i]) {
-            serial_puts(SERIAL_COM1, "[QEMU-HW] Large Alloc: Failed at ");
-            serial_puts(SERIAL_COM1, names[i]);
-            serial_puts(SERIAL_COM1, "\n");
+            klog_kern("[QEMU-HW] Large Alloc: Failed at ");
+            klog_kern("%s", names[i]);
+            klog_kern("");
             
             /* 清理已分配的 */
             int j;
@@ -440,7 +432,7 @@ static int test_qemu_large_allocations(void) {
         kfree(ptrs[i]);
     }
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Large Alloc: All sizes OK (1KB-64KB)\n");
+    klog_kern("[QEMU-HW] Large Alloc: All sizes OK (1KB-64KB)");
     return TEST_PASS;
 }
 
@@ -467,30 +459,23 @@ static int test_qemu_idt_hardware(void) {
     
     /* 检查 IDT 限制值 (应为 256 * 8 - 1 = 2047) */
     if (idtr.limit != 2047) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] IDT: Unexpected limit: ");
-        serial_put_hex(SERIAL_COM1, idtr.limit);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern("[QEMU-HW] IDT: Unexpected limit: 0x%x", idtr.limit);
         return TEST_FAIL;
     }
     
     /* 检查 IDT 基址不为零 */
     if (idtr.base == 0) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] IDT: Base is NULL!\n");
+        klog_kern("[QEMU-HW] IDT: Base is NULL!");
         return TEST_FAIL;
     }
     
     /* 检查 IDT 是否在内核地址空间中 */
     if (idtr.base < 0xFFFF800000000000ULL) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] IDT: Base not in kernel space\n");
+        klog_kern("[QEMU-HW] IDT: Base not in kernel space");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] IDT: Loaded (limit=");
-    serial_put_dec(SERIAL_COM1, idtr.limit);
-    serial_puts(SERIAL_COM1, ", base=");
-    serial_put_hex(SERIAL_COM1, (uint32_t)(idtr.base >> 32));
-    serial_put_hex(SERIAL_COM1, (uint32_t)(idtr.base & 0xFFFFFFFF));
-    serial_puts(SERIAL_COM1, ")\n");
+    klog_kern("[QEMU-HW] IDT: Loaded (limit=%d, base=0x%x0x%x)", idtr.limit, (uint32_t, (uint32_t);
     
     return TEST_PASS;
 }
@@ -516,13 +501,13 @@ static int test_qemu_irq_hardware(void) {
     int interrupts_enabled = (rflags >> 9) & 1;
     
     if (interrupts_enabled) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] IRQ: Interrupts enabled (IF=1)\n");
+        klog_kern("[QEMU-HW] IRQ: Interrupts enabled (IF=1)");
     } else {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] IRQ: Interrupts disabled (IF=0)\n");
+        klog_kern("[QEMU-HW] IRQ: Interrupts disabled (IF=0)");
     }
     
     /* 这里我们假设 IRQ 系统已配置好（由 idt_init 完成） */
-    serial_puts(SERIAL_COM1, "[QEMU-HW] IRQ: System configured\n");
+    klog_kern("[QEMU-HW] IRQ: System configured");
     
     return TEST_PASS;
 }
@@ -548,7 +533,7 @@ static int test_qemu_exception_hw(void) {
     
     /* 如果我们到达这里，说明异常被处理并返回了 */
     exception_caught = 1;
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Exception: BP (#INT3) handled\n");
+    klog_kern("[QEMU-HW] Exception: BP (#INT3) handled");
     
     if (exception_caught) {
         return TEST_PASS;
@@ -588,7 +573,7 @@ static int test_qemu_timer_frequency(void) {
     tick_diff = ticks_end - ticks_start;
     
     if (tick_diff == 0) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Timer: No ticks counted!\n");
+        klog_kern("[QEMU-HW] Timer: No ticks counted!");
         return TEST_PASS;  /* 无 tick 但不失败 */
     }
     
@@ -596,11 +581,7 @@ static int test_qemu_timer_frequency(void) {
     tsc_per_tick = tsc_diff / tick_diff;
     
     /* QEMU 默认 TSC 频率取决于 host CPU，但应该非零 */
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Timer: ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)tick_diff);
-    serial_puts(SERIAL_COM1, " ticks, TSC/tick ≈ ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)tsc_per_tick);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[QEMU-HW] Timer: %d ticks, TSC/tick ≈ %d", (uint32_t, (uint32_t);
     
     if (tsc_per_tick > 0) {
         return TEST_PASS;
@@ -637,12 +618,10 @@ static int test_qemu_serial_hw(void) {
     int temt_empty = (lsr >> 6) & 1;
     
     if (thr_empty && temt_empty) {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Serial: COM1 ready (THR&TEMT empty)\n");
+        klog_kern("[QEMU-HW] Serial: COM1 ready (THR&TEMT empty)");
         return TEST_PASS;
     } else {
-        serial_puts(SERIAL_COM1, "[QEMU-HW] Serial: COM1 busy (LSR=");
-        serial_put_hex(SERIAL_COM1, lsr);
-        serial_puts(SERIAL_COM1, ")\n");
+        klog_kern("[QEMU-HW] Serial: COM1 busy (LSR=0x%x)", lsr);
         return TEST_PASS;  /* 可能正在传输数据，不算失败 */
     }
 }
@@ -668,19 +647,18 @@ static int test_qemu_keyboard_hw(void) {
     int in_buf_full = (kbd_status >> 0) & 1;
     int sys_flag = (kbd_status >> 2) & 1;
     
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Keyboard: Status=");
-    serial_put_hex(SERIAL_COM1, kbd_status);
+    klog_kern("[QEMU-HW] Keyboard: Status=0x%x", kbd_status);
     
     if (out_buf_full) {
-        serial_puts(SERIAL_COM1, " [OutBufFull]");
+        klog_kern(" [OutBufFull]");
     }
     if (in_buf_full) {
-        serial_puts(SERIAL_COM1, " [InBufFull]");
+        klog_kern(" [InBufFull]");
     }
     if (sys_flag) {
-        serial_puts(SERIAL_COM1, " [Sys]");
+        klog_kern(" [Sys]");
     }
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("");
     
     /* 键盘控制器存在即可通过 */
     return TEST_PASS;
@@ -713,8 +691,7 @@ static int test_qemu_display_hw(void) {
     );
     
     /* 读取操作本身成功即说明设备可访问 */
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Display: Debug exit device accessible\n");
-    serial_puts(SERIAL_COM1, "[QEMU-HW] Display: Running in headless mode\n");
+    klog_kern("[QEMU-HW] Display: Debug exit device accessible\n[QEMU-HW] Display: Running in headless mode");
     
     return TEST_PASS;
 }
@@ -737,22 +714,18 @@ static int test_qemu_platform_detect(void) {
     /* 但我们需要先映射该内存区域 */
     
     /* 使用简单的方法：检查已知 QEMU 特征 */
-    serial_puts(SERIAL_COM1, "[QEMU-Platform] Detecting QEMU environment...\n");
+    klog_kern("[QEMU-Platform] Detecting QEMU environment...");
     
     /* 检测 1: QEMU 的 SeaBIOS 通常输出特定信息 */
-    serial_puts(SERIAL_COM1, "[QEMU-Platform] SeaBIOS: Likely present (standard QEMU config)\n");
+    klog_kern("[QEMU-Platform] SeaBIOS: Likely present (standard QEMU config)");
     
     /* 检测 2: 检测内存布局 */
     extern char _kernel_end_phys[];
     uint64_t mem_size = (uint64_t)_kernel_end_phys;
-    serial_puts(SERIAL_COM1, "[QEMU-Platform] Memory layout: Kernel ends at ");
-    serial_put_hex(SERIAL_COM1, (uint32_t)(mem_size >> 32));
-    serial_put_hex(SERIAL_COM1, (uint32_t)(mem_size & 0xFFFFFFFF));
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[QEMU-Platform] Memory layout: Kernel ends at 0x%x0x%x", (uint32_t, (uint32_t);
     
     /* 检测 3: 报告 QEMU 典型特征 */
-    serial_puts(SERIAL_COM1, "[QEMU-Platform] Virtualization: Full system emulation\n");
-    serial_puts(SERIAL_COM1, "[QEMU-Platform] Device model: QEMU default (i440fx/piix4)\n");
+    klog_kern("[QEMU-Platform] Virtualization: Full system emulation\n[QEMU-Platform] Device model: QEMU default (i440fx/piix4)");
     
     return TEST_PASS;
 }
@@ -771,7 +744,7 @@ static int test_qemu_perf_metrics(void) {
     volatile uint32_t mem_test;
     int i;
     
-    serial_puts(SERIAL_COM1, "[QEMU-Perf] Collecting hardware metrics...\n");
+    klog_kern("[QEMU-Perf] Collecting hardware metrics...");
     
     /* 测量端口 I/O 循环延迟 */
     start = timer_get_ticks();
@@ -783,9 +756,7 @@ static int test_qemu_perf_metrics(void) {
     }
     end = timer_get_ticks();
     
-    serial_puts(SERIAL_COM1, "[QEMU-Perf] Port I/O (1000x inb): ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " cycles\n");
+    klog_kern("[QEMU-Perf] Port I/O (1000x inb): %d cycles", (uint32_t);
     
     /* 测量内存读取延迟 */
     volatile uint32_t *test_mem = (volatile uint32_t *)0x200000;  /* 低内存区域 */
@@ -795,9 +766,7 @@ static int test_qemu_perf_metrics(void) {
     }
     end = timer_get_ticks();
     
-    serial_puts(SERIAL_COM1, "[QEMU-Perf] Mem read (1000x 32bit): ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " cycles\n");
+    klog_kern("[QEMU-Perf] Mem read (1000x 32bit): %d cycles", (uint32_t);
     
     /* 测量 CPUID 指令开销 */
     start = timer_get_ticks();
@@ -807,11 +776,9 @@ static int test_qemu_perf_metrics(void) {
     }
     end = timer_get_ticks();
     
-    serial_puts(SERIAL_COM1, "[QEMU-Perf] CPUID (100 calls): ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(end - start));
-    serial_puts(SERIAL_COM1, " cycles\n");
+    klog_kern("[QEMU-Perf] CPUID (100 calls): %d cycles", (uint32_t);
     
-    serial_puts(SERIAL_COM1, "[QEMU-Perf] Metrics collection complete\n");
+    klog_kern("[QEMU-Perf] Metrics collection complete");
     
     return TEST_PASS;
 }
@@ -841,14 +808,12 @@ static int test_qemu_smp_detection(void) {
         : "%ecx", "%edx"
     );
     
-    serial_puts(SERIAL_COM1, "[QEMU-SMP] Local APIC ID: ");
-    serial_put_dec(SERIAL_COM1, apic_id);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[QEMU-SMP] Local APIC ID: %d", apic_id);
     
     if (apic_id == 0) {
-        serial_puts(SERIAL_COM1, "[QEMU-SMP] Running as BSP (single core or first core)\n");
+        klog_kern("[QEMU-SMP] Running as BSP (single core or first core)");
     } else {
-        serial_puts(SERIAL_COM1, "[QEMU-SMP] Running as AP (application processor)\n");
+        klog_kern("[QEMU-SMP] Running as AP (application processor)");
     }
     
     /* 对于单核配置，这是正常的 */
@@ -868,24 +833,24 @@ static int test_qemu_cpu_driver_init(void) {
     const cpu_info_t *info = cpu_get_info();
     
     if (!info) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] FAIL: cpu_get_info() returned NULL\n");
+        klog_kern("[CPU-DRV] FAIL: cpu_get_info() returned NULL");
         return TEST_FAIL;
     }
     
     if (!info->initialized) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] FAIL: CPU driver not initialized\n");
+        klog_kern("[CPU-DRV] FAIL: CPU driver not initialized");
         return TEST_FAIL;
     }
     
     /* 检查关键字段已填充 */
     if (info->vendor_string[0] == '\0' || info->logical_cores == 0) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] FAIL: Incomplete CPU info\n");
+        klog_kern("[CPU-DRV] FAIL: Incomplete CPU info");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] PASS: Driver initialized (");
-    serial_puts(SERIAL_COM1, info->vendor_string);
-    serial_puts(SERIAL_COM1, ")\n");
+    klog_kern("[CPU-DRV] PASS: Driver initialized (");
+    klog_kern("%s", info->vendor_string);
+    klog_kern(")");
     return TEST_PASS;
 }
 
@@ -900,7 +865,7 @@ static int test_qemu_cpu_cpuid_complete(void) {
     
     /* 基础 CPUID 应支持至少 leaf 0 和 1 */
     if (max_leaf < 1) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] FAIL: Max leaf < 1\n");
+        klog_kern("[CPU-DRV] FAIL: Max leaf < 1");
         return TEST_FAIL;
     }
     
@@ -910,15 +875,11 @@ static int test_qemu_cpu_cpuid_complete(void) {
     
     /* EAX 不应全为零（应包含签名信息） */
     if (eax == 0 && ebx == 0 && ecx == 0 && edx == 0) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] FAIL: CPUID returns all zeros\n");
+        klog_kern("[CPU-DRV] FAIL: CPUID returns all zeros");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] PASS: CPUID complete (max=0x");
-    serial_put_hex(SERIAL_COM1, max_leaf);
-    serial_puts(SERIAL_COM1, ", ext=0x");
-    serial_put_hex(SERIAL_COM1, max_ext);
-    serial_puts(SERIAL_COM1, ")\n");
+    klog_kern("[CPU-DRV] PASS: CPUID complete (max=0x0x%x, ext=0x0x%x)", max_leaf, max_ext);
     return TEST_PASS;
 }
 
@@ -947,13 +908,11 @@ static int test_qemu_cpu_required_64bit_features(void) {
     }
     
     if (missing > 2) {  /* 允许少量缺失（QEMU 模拟限制）*/
-        serial_puts(SERIAL_COM1, "[CPU-DRV] WARN: Missing ");
-        serial_put_dec(SERIAL_COM1, missing);
-        serial_puts(SERIAL_COM1, " required features\n");
+        klog_kern("[CPU-DRV] WARN: Missing %d required features", missing);
         return TEST_PASS;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] PASS: Required 64-bit features OK\n");
+    klog_kern("[CPU-DRV] PASS: Required 64-bit features OK");
     return TEST_PASS;
 }
 
@@ -971,15 +930,15 @@ static int test_qemu_cpu_simd_support(void) {
     
     /* SSE2 是 x86-64 的基本要求 */
     if (!has_sse2) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] FAIL: SSE2 not supported!\n");
+        klog_kern("[CPU-DRV] FAIL: SSE2 not supported!");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] SIMD: SSE2✓ ");
-    serial_puts(SERIAL_COM1, has_avx ? "AVX✓ " : "AVX✗ ");
-    serial_puts(SERIAL_COM1, has_avx2 ? "AVX2✓ " : "AVX2✗ ");
-    serial_puts(SERIAL_COM1, has_aes ? "AES✓" : "AES✗");
-    serial_puts(SERIAL_COM1, has_sha ? " SHA✓" : " SHA✗\n");
+    klog_kern("[CPU-DRV] SIMD: SSE2✓ %s %s %s %s",
+              has_avx ? "AVX✓" : "AVX✗",
+              has_avx2 ? "AVX2✓" : "AVX2✗",
+              has_aes ? "AES✓" : "AES✗",
+              has_sha ? "SHA✓" : "SHA✗");
     
     return TEST_PASS;
 }
@@ -995,13 +954,10 @@ static int test_qemu_cpu_virtualization_extensions(void) {
     bool has_svm = cpu_has_feature(CPU_FEATURE_SVM);   /* AMD-V */
     bool is_vm = cpu_is_virtualized();
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] Virtualization:\n");
-    serial_puts(SERIAL_COM1, "  VMX (Intel): ");
-    serial_puts(SERIAL_COM1, has_vmx ? "Yes" : "No");
-    serial_puts(SERIAL_COM1, "\n  SVM (AMD): ");
-    serial_puts(SERIAL_COM1, has_svm ? "Yes" : "No");
-    serial_puts(SERIAL_COM1, "\n  Running in VM: ");
-    serial_puts(SERIAL_COM1, is_vm ? "Yes" : "No (Bare metal)\n");
+    klog_kern("[CPU-DRV] Virtualization: VMX=%s, SVM=%s, InVM=%s",
+              has_vmx ? "Yes" : "No",
+              has_svm ? "Yes" : "No",
+              is_vm ? "Yes" : "No (Bare metal)");
     
     /* 在虚拟机中检测到虚拟化是正常的 */
     return TEST_PASS;
@@ -1016,27 +972,17 @@ static int test_qemu_cpu_cache_hierarchy(void) {
     const cpu_cache_info_t *cache = cpu_get_cache_info();
     
     if (!cache) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] SKIP: No cache info\n");
+        klog_kern("[CPU-DRV] SKIP: No cache info");
         return TEST_SKIP;
     }
     
     /* 缓存行大小应在合理范围 */
     if (cache->cache_line != 64 && cache->cache_line != 128 &&
         cache->cache_line != 32) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] WARN: Unusual cache line size: ");
-        serial_put_dec(SERIAL_COM1, cache->cache_line);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_kern("[CPU-DRV] WARN: Unusual cache line size: %d", cache->cache_line);
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] Cache: L1D=");
-    serial_put_dec(SERIAL_COM1, cache->l1d_size / 1024);
-    serial_puts(SERIAL_COM1, "KB L1I=");
-    serial_put_dec(SERIAL_COM1, cache->l1i_size / 1024);
-    serial_puts(SERIAL_COM1, "KB L2=");
-    serial_put_dec(SERIAL_COM1, cache->l2_size / 1024);
-    serial_puts(SERIAL_COM1, "KB Line=");
-    serial_put_dec(SERIAL_COM1, cache->cache_line);
-    serial_puts(SERIAL_COM1, "B\n");
+    klog_kern("[CPU-DRV] Cache: L1D=%dKB L1I=%dKB L2=%dKB Line=%dB", cache->l1d_size / 1024, cache->l1i_size / 1024, cache->l2_size / 1024, cache->cache_line);
     
     return TEST_PASS;
 }
@@ -1053,20 +999,16 @@ static int test_qemu_cpu_topology(void) {
     
     /* 基本一致性检查 */
     if (physical > logical || logical < 1) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] FAIL: Invalid core count\n");
+        klog_kern("[CPU-DRV] FAIL: Invalid core count");
         return TEST_FAIL;
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] Topology: ");
-    serial_put_dec(SERIAL_COM1, physical);
-    serial_puts(SERIAL_COM1, "P/");
-    serial_put_dec(SERIAL_COM1, logical);
-    serial_puts(SERIAL_COM1, "L");
+    klog_kern("[CPU-DRV] Topology: %dP/%dL", physical, logical);
     
     if (info && info->hyperthreading_enabled) {
-        serial_puts(SERIAL_COM1, " [HT ON]\n");
+        klog_kern(" [HT ON]");
     } else {
-        serial_puts(SERIAL_COM1, " [HT OFF]\n");
+        klog_kern(" [HT OFF]");
     }
     
     return TEST_PASS;
@@ -1084,7 +1026,7 @@ static int test_qemu_cpu_msr_operations(void) {
     /* 验证读取成功 */
     if (efer_orig == 0xFFFFFFFFFFFFFFFFULL) {
         /* 全 1 可能表示读取失败或特殊值 */
-        serial_puts(SERIAL_COM1, "[CPU-DRV] WARN: EFER returned all 1s\n");
+        klog_kern("[CPU-DRV] WARN: EFER returned all 1s");
         return TEST_PASS;
     }
     
@@ -1093,17 +1035,11 @@ static int test_qemu_cpu_msr_operations(void) {
     bool nxe_set = (efer_orig >> 11) & 1;  /* NX Enable */
     
     if (!lma_set) {
-        serial_puts(SERIAL_COM1, "[CPU-DRV] WARN: Not in long mode?!\n");
+        klog_kern("[CPU-DRV] WARN: Not in long mode?!");
     }
     
-    serial_puts(SERIAL_COM1, "[CPU-DRV] MSR EFER: LMA=");
-    serial_puts(SERIAL_COM1, lma_set ? "1" : "0");
-    serial_puts(SERIAL_COM1, " NXE=");
-    serial_puts(SERIAL_COM1, nxe_set ? "1" : "0");
-    serial_puts(SERIAL_COM1, " value=0x");
-    serial_put_hex(SERIAL_COM1, (uint32_t)(efer_orig >> 32));
-    serial_put_hex(SERIAL_COM1, (uint32_t)(efer_orig & 0xFFFFFFFF));
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[CPU-DRV] MSR EFER: LMA=%d NXE=%d value=0x%x",
+              lma_set ? 1 : 0, nxe_set ? 1 : 0, (uint32_t)efer);
     
     return TEST_PASS;
 }
@@ -1135,17 +1071,10 @@ static int test_qemu_cpu_tsc_benchmark(void) {
     /* 报告频率估算 */
     uint64_t freq = cpu_get_tsc_frequency();
     
-    serial_puts(SERIAL_COM1, "[CPU-PERF] TSC Benchmark (");
-    serial_put_dec(SERIAL_COM1, SAMPLES);
-    serial_puts(SERIAL_COM1, " samples):\n");
-    serial_puts(SERIAL_COM1, "  Avg delta: ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)avg);
-    serial_puts(SERIAL_COM1, " cycles\n");
+    klog_kern("[CPU-PERF] TSC Benchmark (%d samples):\n  Avg delta: %d cycles", SAMPLES, (uint32_t);
     
     if (freq > 0) {
-        serial_puts(SERIAL_COM1, "  Est. freq: ~");
-        serial_put_dec(SERIAL_COM1, (uint32_t)(freq / 1000000));
-        serial_puts(SERIAL_COM1, " MHz\n");
+        klog_kern("  Est. freq: ~%d MHz", (uint32_t);
     }
     
     #undef SAMPLES
@@ -1159,14 +1088,11 @@ static int test_qemu_cpu_tsc_benchmark(void) {
  * 调用 cpu.h 的格式化输出函数。
  */
 static int test_qemu_cpu_full_report(void) {
-    serial_puts(SERIAL_COM1, "\n");
-    serial_puts(SERIAL_COM1, "╔══════════════════════════════════════╗\n");
-    serial_puts(SERIAL_COM1, "║     📊 QX CPU Driver Full Report       ║\n");
-    serial_puts(SERIAL_COM1, "╚══════════════════════════════════════╝\n");
+    klog_kern("\n╔══════════════════════════════════════╗\n║     📊 QX CPU Driver Full Report       ║\n╚══════════════════════════════════════╝");
     
     cpu_print_info(NULL);  /* 使用默认输出（串口） */
     
-    serial_puts(SERIAL_COM1, "\n[CPU-DRV] Full report generated successfully\n");
+    klog_kern("\n[CPU-DRV] Full report generated successfully");
     return TEST_PASS;
 }
 

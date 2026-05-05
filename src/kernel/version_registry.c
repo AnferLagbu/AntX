@@ -34,9 +34,8 @@
  */
 
 #include "version_registry.h"
-#include "serial.h"
-#include "string.h"
 #include "klog.h"
+#include "string.h"
 
 /* ============================================================================ */
 /*                        内部数据结构                                   */
@@ -57,7 +56,7 @@ static int registered_count = 0;
  */
 static void serial_output_wrapper(const char *str) {
     if (str) {
-        serial_puts(SERIAL_COM1, str);
+        klog_kern("%s", str);
     }
 }
 

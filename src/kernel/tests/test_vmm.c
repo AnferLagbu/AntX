@@ -8,7 +8,7 @@
 
 #include "tests/kernel_test.h"
 #include "mm.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 页表项 (PTE) 操作测试
@@ -177,7 +177,7 @@ static int test_huge_page_mapping(void)
         pmm_free_huge_page(huge_phys, PAGE_SIZE_2M);
     } else {
         /* 内存不足时跳过此测试 */
-        serial_puts(SERIAL_COM1, "[SKIP] 无法分配 2MB 大页\n");
+        klog_kern("[SKIP] 无法分配 2MB 大页");
     }
     
     return TEST_PASS;

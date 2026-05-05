@@ -11,17 +11,18 @@ CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protec
 NET_CORE_C = $(wildcard src/net/lwip/src/core/*.c) \
              $(wildcard src/net/lwip/src/core/ipv4/*.c) \
              $(wildcard src/net/lwip/src/core/ipv6/*.c)
-NET_API_C  = $(wildcard src/net/lwip/src/api/*.c)
 NET_NETIF_C = src/net/lwip/src/netif/ethernet.c
-NET_APPS_C = $(wildcard src/net/lwip/src/apps/http/httpd.c) \
-             $(wildcard src/net/lwip/src/apps/http/fs.c) \
+NET_APPS_C = src/net/lwip/src/apps/http/httpd.c \
+             src/net/lwip/src/apps/http/fs.c \
+             src/net/lwip/src/apps/http/http_client.c \
              $(wildcard src/net/lwip/src/apps/mdns/*.c) \
              $(wildcard src/net/lwip/src/apps/mqtt/*.c) \
              $(wildcard src/net/lwip/src/apps/netbiosns/*.c) \
              $(wildcard src/net/lwip/src/apps/smtp/*.c) \
              $(wildcard src/net/lwip/src/apps/sntp/*.c) \
              $(wildcard src/net/lwip/src/apps/tftp/*.c) \
-             $(wildcard src/net/lwip/src/apps/lwiperf/*.c)
+             $(wildcard src/net/lwip/src/apps/lwiperf/*.c) \
+             $(wildcard src/net/lwip/src/apps/snmp/*.c)
 NET_QX_C   = src/net/arch/sys_arch.c \
              src/net/qx_net_init.c \
              src/net/qx_netif.c \
@@ -76,6 +77,7 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/test_spinlock.o build/test_atomic.o build/test_rwlock.o build/test_mutex.o build/test_slab.o \
               build/test_pci.o build/test_dma.o \
               build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
+              build/test_network.o \
               $(NET_OBJS)
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
@@ -123,7 +125,7 @@ $(VERSION_AUTO_H):
 $(VERSION_REGISTRY_H):
 	@$(MAKE) generate-version
 
-.PHONY: all clean run debug log iso run-iso disk run-disk user test test-unit test-integration test-stress \
+.PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-unit test-integration test-stress \
          test-quick test-comprehensive test-verbose test-enhanced \
          test-qemu-hw test-qemu-full test-qemu-perf test-all \
          test-cpu-host test-cpu-host-quick
@@ -139,6 +141,22 @@ build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 $(RUST_LIB):
 	@echo "Building Rust kernel module..."
 	cd src/rust && cargo build --release
+
+build/pci.o: src/driver/pci.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/keyboard.o: src/driver/keyboard.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/serial.o: src/driver/serial.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/ata.o: src/driver/ata.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/%.o: src/kernel/%.c
 	@mkdir -p build
@@ -173,10 +191,6 @@ build/ipc.o: src/ipc/ipc.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/syscall.o: src/kernel/syscall.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/keyboard.o: src/kernel/keyboard.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -229,14 +243,6 @@ build/mutex.o: src/kernel/mutex.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/slab.o: src/kernel/slab.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/pci.o: src/kernel/pci.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/ata.o: src/disk/ata.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -339,6 +345,9 @@ clean:
 QEMU := qemu-system-x86_64
 QEMU_FLAGS := -m 512 -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
+QEMU_NET := -device e1000,netdev=n0 \
+            -netdev user,id=n0,hostfwd=tcp::8080-:80,hostname=antx
+
 # QEMU CPU 模型配置 (用于硬件仿真测试)
 # 可选值: qemu64 (默认), host (使用宿主机CPU特性), Haswell-noTSX, Skylake-Client
 QEMU_CPU ?= qemu64
@@ -355,6 +364,10 @@ endif
 run: all user
 	@mkdir -p $(LOG_DIR)
 	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin $(QEMU_DISPLAY)
+
+run-net: all user
+	@mkdir -p $(LOG_DIR)
+	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin $(QEMU_NET) $(QEMU_DISPLAY)
 
 run-headless: all user
 	@$(MAKE) QEMU_MODE=headless run
@@ -374,6 +387,20 @@ log: all user
 		-serial file:$(LOG_DIR)/serial.log \
 		-display none \
 		-d cpu_reset,guest_errors 2>&1 | tee $(LOG_DIR)/qemu_stderr.log || true
+
+log-net: all user
+	@mkdir -p $(LOG_DIR)
+	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin \
+		$(QEMU_NET) \
+		-serial file:$(LOG_DIR)/serial.log \
+		-display none \
+		-d cpu_reset,guest_errors 2>&1 | tee $(LOG_DIR)/qemu_stderr.log || true
+	@echo ""
+	@echo "=== Network Log ==="
+	@grep -E "NETWORK|DRIVER.*E1000|Ping|HTTP|DNS|DHCP|ISR" $(LOG_DIR)/serial.log | head -30
+	@echo ""
+	@echo "=== HTTP Test ==="
+	@curl -s --max-time 3 http://localhost:8080/ 2>/dev/null && echo "OK" || echo "FAIL (no response)"
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
 	@echo "║  Serial log: $(LOG_DIR)/serial.log       ║"
@@ -572,6 +599,10 @@ build/test_dma.o: src/kernel/tests/test_dma.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
+build/test_network.o: src/kernel/tests/test_network.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
 test: test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
@@ -602,6 +633,7 @@ test-unit: build/kernel_test.bin user
 	timeout 120 $(QEMU) $(QEMU_FLAGS) \
 		-m 512 \
 		-cdrom build/antx_test.iso \
+		$(QEMU_NET) \
 		-serial file:tests/reports/unit_test_$${timestamp}.log \
 		-display none \
 		-d cpu_reset 2>tests/reports/qemu_stderr_$${timestamp}.log || true

@@ -1,7 +1,6 @@
 #include "kernel_test.h"
 #include "vfs.h"
 #include "syscall.h"
-#include "serial.h"
 #include "string.h"
 
 extern int32_t vfs_open_internal(const char *path, uint32_t flags, uint64_t pwid);

@@ -7,7 +7,7 @@
 
 #include "tests/kernel_test.h"
 #include "pci.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 初始化测试
@@ -508,11 +508,7 @@ static int test_pci_performance(void)
 
     elapsed = end - start;
 
-    serial_puts(SERIAL_COM1, "[性能] PCI Config Read: ");
-    serial_put_dec(SERIAL_COM1, iterations);
-    serial_puts(SERIAL_COM1, " 次，耗时 ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(elapsed / iterations));
-    serial_puts(SERIAL_COM1, " cycles/次\n");
+    klog_kern("[性能] PCI Config Read: %d 次，耗时 %d cycles/次", iterations, (uint32_t);
 
     TEST_ASSERT(elapsed > 0);
 

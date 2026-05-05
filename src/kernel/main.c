@@ -7,10 +7,16 @@
 #include "proc_ffi.h"
 #include "hvfs_ffi.h"
 #include "kmalloc.h"
-#include "version_registry.h"  /* 模块版本注册表 */
-#include "cpu.h"               /* AMD64 CPU 驱动 */
-#include "pci.h"               /* PCI 总线驱动 */
-#include "dma.h"               /* DMA 引擎 */
+#include "version_registry.h"
+#include "cpu.h"
+#include "pci.h"
+#include "dma.h"
+#include "serial.h"
+#include "ata.h"
+#include "keyboard.h"
+#include "pwid.h"
+#include "hvfs.h"
+#include "syscall.h"
 #ifdef KERNEL_TEST
 #include "kernel_test.h"
 #endif
@@ -27,13 +33,9 @@ extern char _kernel_end[];
 extern char _kernel_end_phys[];
 
 void panic(const char *msg) {
-    pr_crit("\n========================================\n");
-    pr_crit("PANIC: %s\n", msg);
-    pr_crit("========================================\n");
-    
+    klog_kern_crit("PANIC: %s", msg);
     klog_dump();
-    
-    pr_crit("\nSystem halted.\n");
+    klog_kern_crit("System halted");
     
     while (1) {
         __asm__ volatile ("hlt");
@@ -68,42 +70,42 @@ void interrupt_idle(void) {
 }
 
 static void start_user_init(void) {
-    klog_init_msg("Starting user-space init process...\n");
-    
+    klog_init_msg("Starting user-space init process...");
+
     int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
-    
+
     if (pid < 0) {
-        pr_err("Failed to load init process!\n");
+        klog_init_err("Failed to load init process!");
         return;
     }
     
     sched_add_internal((uint32_t)pid);
     
-    klog_init_msg("Init process started with PID: %d\n", pid);
+    klog_init_msg("Init process started with PID: %d", pid);
 }
 
 void kernel_main(void) {
     serial_init(SERIAL_COM1);
     klog_init();
     
-    printk("\n");
-    printk("AntX Operating System\n");
-    printk("Copyright (c) 2026 Anfer's AntX Project\n");
-    printk("========================================\n");
+    klog_boot("");
+    klog_boot("AntX Operating System");
+    klog_boot("Copyright (c) 2026 Anfer's AntX Project");
+    klog_boot("========================================");
     
-    klog_boot("Initializing kernel...\n");
+    klog_boot("Initializing kernel...");
     
     MODULE_CHECK("GDT", gdt_init);
     MODULE_CHECK("IDT", idt_init);
     
     /* 初始化 AMD64 CPU 驱动 (特性检测/MSR/缓存信息) */
     if (cpu_init() != 0) {
-        klog_kern_warn("CPU driver initialization failed, continuing...\n");
+        klog_kern_warn("CPU driver initialization failed, continuing...");
     } else {
-        klog_kern("CPU driver initialized successfully\n");
+        klog_kern("CPU driver initialized successfully");
     }
     pmm_init(MEMORY_SIZE, (uint64_t)_kernel_end_phys);
-    klog_mem("PMM basic init complete\n");
+    klog_mem("PMM basic init complete");
     
     /* 初始化内核堆 (Rust kmalloc) */
     /* 堆起始地址：内核结束后的下一个页边界 */
@@ -113,7 +115,7 @@ void kernel_main(void) {
         uint64_t heap_initial_size = 32 * 1024 * 1024;  /* 32 MB */
         kmalloc_init(heap_start, heap_initial_size);
     }
-    klog_mem("Kernel heap initialized\n");
+    klog_mem("Kernel heap initialized");
     
     pmm_init_bitmap(32 * 1024 * 1024);
     if (pmm_get_free_pages() == 0) {
@@ -121,7 +123,7 @@ void kernel_main(void) {
     }
     {
         uint64_t free_pages = pmm_get_free_pages();
-        klog_mem("PMM: %d pages free (%d MB)\n", free_pages, free_pages * 4 / 1024);
+        klog_mem("PMM: %d pages free (%d MB)", free_pages, free_pages * 4 / 1024);
     }
     
     MODULE_CHECK_VOID("VMM", vmm_init);
@@ -145,16 +147,16 @@ void kernel_main(void) {
     MODULE_CHECK_VOID("DevFS", devfs_init);
     MODULE_CHECK_VOID("ProcFS", procfs_init);
     
-    klog_fs("Mounting root filesystem...\n");
+    klog_fs("Mounting root filesystem...");
     
     if (vfs_mount("/", "diskfs") != 0) {
-        pr_warn("Using RamFS for root\n");
+        klog_fs_warn("Using RamFS for root");
         if (vfs_mount("/", "ramfs") != 0) {
             panic("Failed to mount root filesystem");
         }
     }
     
-    klog_fs("Root filesystem mounted\n");
+    klog_fs("Root filesystem mounted");
     
     MODULE_CHECK_VOID("Syscall", syscall_init);
     MODULE_CHECK_VOID("Keyboard", keyboard_init);
@@ -163,10 +165,8 @@ void kernel_main(void) {
     extern void pwid_try_load(void);
     pwid_try_load();
     
-    printk("\n");
-    klog_init_msg("System initialized\n");
-    printk("AntX is ready.\n");
-    printk("\n");
+    klog_boot("System initialized");
+    klog_boot("AntX is ready");
 
     /* ================================================================= */
     /*                    注册核心模块版本信息                          */
@@ -197,26 +197,28 @@ void kernel_main(void) {
     version_register("MLFQ", 1, 0, 0, "Multi-Level Feedback Queue Scheduler", MODULE_TYPE_CORE);
     version_register("DMA", 1, 0, 0, "Direct Memory Access Engine (Rust)", MODULE_TYPE_LIB);
     version_register("PCI", 1, 0, 0, "PCI Bus Driver", MODULE_TYPE_DRIVER);
+    version_register("lwIP", 2, 2, 1, "Lightweight TCP/IP Stack", MODULE_TYPE_NET);
+    version_register("E1000", 1, 0, 0, "Intel 82540EM NIC Driver", MODULE_TYPE_DRIVER);
 
-    klog_init_msg("Module versions registered: %d modules\n", version_get_registered_count());
+    klog_init_msg("Module versions registered: %d modules", version_get_registered_count());
     
     enable_interrupts();
 
 #ifdef KERNEL_TEST
-    printk("\n[TEST MODE] Running kernel tests...\n");
+    klog_boot("[TEST MODE] Running kernel tests...");
     run_kernel_tests();
-    printk("\n[TEST MODE] Tests completed.\n");
+    klog_boot("[TEST MODE] Tests completed.");
     
     /* 如果有用户进程在调度队列中，进入 idle 循环让它们运行 */
     extern int proc_has_runnable(void);
     if (proc_has_runnable()) {
-        printk("[TEST MODE] Entering user-mode idle loop...\n");
+        klog_boot("[TEST MODE] Entering user-mode idle loop...");
         while (1) {
             interrupt_idle();
         }
     }
     
-    printk("[TEST MODE] No runnable user processes. Halting.\n");
+    klog_boot("[TEST MODE] No runnable user processes. Halting.");
     __asm__ volatile ("cli");
     while (1) {
         __asm__ volatile ("hlt");
@@ -234,15 +236,18 @@ void kernel_main(void) {
     extern int smp_init(void);
     int smp_cpus = smp_init();
     if (smp_cpus < 0) {
-        klog_init_msg("SMP init failed\n");
+        klog_init_msg("SMP init failed");
     } else {
-        klog_init_msg("SMP: %d CPUs online\n", smp_cpus);
+        klog_init_msg("SMP: %d CPUs online", smp_cpus);
     }
 #endif
     
     start_user_init();
     
     while (1) {
+        extern void e1000_poll(void);
+        e1000_poll();
+
         interrupt_idle();
     }
 #endif

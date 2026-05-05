@@ -14,8 +14,11 @@ void qx_net_init(void)
 {
     klog_init_msg("--- Network Subsystem Init ---");
 
-    sys_init();
+    lwip_init();
     klog_net("lwIP core initialized");
+
+    sys_init();
+    klog_net("sys_arch ready");
 
     if (e1000_probe() == 0) {
         klog_net("E1000 detected, registering netif");

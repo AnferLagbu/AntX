@@ -1,7 +1,6 @@
 #include "kernel_test.h"
 #include "syscall.h"
 #include "vfs.h"
-#include "serial.h"
 #include "string.h"
 
 static int test_syscall_getpid(void) {

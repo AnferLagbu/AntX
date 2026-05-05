@@ -8,7 +8,7 @@
 #include "tests/kernel_test.h"
 #include "slab.h"
 #include "kmalloc.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 缓存管理测试
@@ -419,11 +419,7 @@ static int test_slab_performance(void)
 
     elapsed = end - start;
 
-    serial_puts(SERIAL_COM1, "[性能] Slab Alloc: ");
-    serial_put_dec(SERIAL_COM1, iterations);
-    serial_puts(SERIAL_COM1, " 次分配，耗时 ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(elapsed / iterations));
-    serial_puts(SERIAL_COM1, " cycles/次\n");
+    klog_kern("[性能] Slab Alloc: %d 次分配，耗时 %d cycles/次", iterations, (uint32_t);
 
     __asm__ volatile("rdtsc" : "=A"(start));
 
@@ -435,11 +431,7 @@ static int test_slab_performance(void)
 
     elapsed = end - start;
 
-    serial_puts(SERIAL_COM1, "[性能] Slab Free: ");
-    serial_put_dec(SERIAL_COM1, iterations);
-    serial_puts(SERIAL_COM1, " 次释放，耗时 ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(elapsed / iterations));
-    serial_puts(SERIAL_COM1, " cycles/次\n");
+    klog_kern("[性能] Slab Free: %d 次释放，耗时 %d cycles/次", iterations, (uint32_t);
 
     kfree(objs);
     kmem_cache_destroy(cache);

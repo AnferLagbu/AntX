@@ -1,6 +1,7 @@
 #include "syscall.h"
-#include "serial.h"
+#include "klog.h"
 #include "vfs.h"
+#include "serial.h"
 #include "hvfs.h"
 #include "hvfs_ffi.h"
 #include "pwid.h"
@@ -254,11 +255,7 @@ int64_t sys_fs_open(const char *path, int flags, int mode) {
     int64_t result = vfs_open(path, (uint32_t)flags, pwid);
 
     if (result < 0) {
-        serial_puts(SERIAL_COM1, "[SYSCALL] open failed: ");
-        serial_puts(SERIAL_COM1, path);
-        serial_puts(SERIAL_COM1, " result=");
-        serial_put_dec(SERIAL_COM1, (int32_t)result);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_syscall("open failed: %s result=%d", path, (int32_t)result);
     }
 
     return result;
@@ -365,11 +362,7 @@ int64_t sys_fs_mkdir(const char *path, int mode) {
     int64_t result = vfs_mkdir(path, pwid);
 
     if (result < 0) {
-        serial_puts(SERIAL_COM1, "[SYSCALL] mkdir failed: ");
-        serial_puts(SERIAL_COM1, path);
-        serial_puts(SERIAL_COM1, " result=");
-        serial_put_dec(SERIAL_COM1, (int32_t)result);
-        serial_puts(SERIAL_COM1, "\n");
+        klog_syscall("mkdir failed: %s result=%d", path, (int32_t)result);
     }
 
     return result;
@@ -633,7 +626,7 @@ int64_t sys_fs_sync(void) {
 
 int64_t sys_reboot(int cmd) {
     if (cmd == 0) {
-        serial_puts(SERIAL_COM1, "\n[SYSTEM] Rebooting...\n");
+        klog_kern("Rebooting...");
         
         vfs_sync();
         

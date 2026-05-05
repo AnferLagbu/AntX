@@ -1,6 +1,6 @@
 #include "kernel_test.h"
 #include "proc.h"
-#include "serial.h"
+#include "klog.h"
 #include "string.h"
 #include "kmalloc.h"
 #include "user_proc.h"
@@ -23,13 +23,11 @@ extern unsigned int build_user_test_minimal_bin_len;
 static int test_user_elf_load(void) {
     int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
     if (pid < 0) {
-        serial_puts(SERIAL_COM1, "[USERPROC] ELF load: SKIP (no memory)\n");
+        klog_kern("[USERPROC] ELF load: SKIP (no memory)");
         return TEST_SKIP;
     }
     TEST_ASSERT_GT(pid, 0);
-    serial_puts(SERIAL_COM1, "[USERPROC] ELF loaded: PID=");
-    serial_put_dec(SERIAL_COM1, pid);
-    serial_putc(SERIAL_COM1, '\n');
+    klog_kern("[USERPROC] ELF loaded: PID=%d%c", pid, '\n');
     return TEST_PASS;
 }
 
@@ -39,9 +37,7 @@ static int test_user_sched_enqueue(void) {
     if (pid < 0) return TEST_SKIP;
 
     sched_add_internal((uint32_t)pid);
-    serial_puts(SERIAL_COM1, "[USERPROC] Process added to scheduler queue (PID=");
-    serial_put_dec(SERIAL_COM1, pid);
-    serial_puts(SERIAL_COM1, ")\n");
+    klog_kern("[USERPROC] Process added to scheduler queue (PID=%d)", pid);
     return TEST_PASS;
 }
 
@@ -59,11 +55,7 @@ static int test_user_sched_pick(void) {
     uint32_t cur = sched_get_current();
     TEST_ASSERT_GT(cur, 0);
 
-    serial_puts(SERIAL_COM1, "[USERPROC] Sched pick: next=");
-    serial_put_dec(SERIAL_COM1, next);
-    serial_puts(SERIAL_COM1, " cur=");
-    serial_put_dec(SERIAL_COM1, cur);
-    serial_putc(SERIAL_COM1, '\n');
+    klog_kern("[USERPROC] Sched pick: next=%d cur=%d%c", next, cur, '\n');
     return TEST_PASS;
 }
 
@@ -84,11 +76,7 @@ static int test_user_multi_enqueue(void) {
     TEST_ASSERT_GT(next2, 0);
     TEST_ASSERT_NE(next1, next2);
 
-    serial_puts(SERIAL_COM1, "[USERPROC] Multi-enqueue: PID1/2=");
-    serial_put_dec(SERIAL_COM1, next1);
-    serial_putc(SERIAL_COM1, '/');
-    serial_put_dec(SERIAL_COM1, next2);
-    serial_putc(SERIAL_COM1, '\n');
+    klog_kern("[USERPROC] Multi-enqueue: PID1/2=%d%c%d%c", next1, '/', next2, '\n');
     return TEST_PASS;
 }
 
@@ -96,13 +84,11 @@ static int test_user_minimal_binary_load(void) {
     int pid = user_proc_load_elf_from_memory(
         build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
     if (pid < 0) {
-        serial_puts(SERIAL_COM1, "[USERPROC] Minimal ELF load: SKIP\n");
+        klog_kern("[USERPROC] Minimal ELF load: SKIP");
         return TEST_SKIP;
     }
     TEST_ASSERT_GT(pid, 0);
-    serial_puts(SERIAL_COM1, "[USERPROC] Minimal ELF loaded: PID=");
-    serial_put_dec(SERIAL_COM1, pid);
-    serial_puts(SERIAL_COM1, " (14B, SYS_EXIT(42))\n");
+    klog_kern("[USERPROC] Minimal ELF loaded: PID=%d (14B, SYS_EXIT(42))", pid);
     return TEST_PASS;
 }
 
@@ -118,11 +104,7 @@ static int test_user_minimal_sched(void) {
     uint32_t cur = sched_get_current();
     TEST_ASSERT_GT(cur, 0);
 
-    serial_puts(SERIAL_COM1, "[USERPROC] Minimal sched: next=");
-    serial_put_dec(SERIAL_COM1, next);
-    serial_puts(SERIAL_COM1, " cur=");
-    serial_put_dec(SERIAL_COM1, cur);
-    serial_putc(SERIAL_COM1, '\n');
+    klog_kern("[USERPROC] Minimal sched: next=%d cur=%d%c", next, cur, '\n');
     return TEST_PASS;
 }
 
@@ -133,15 +115,12 @@ static int test_user_ring3_handoff(void) {
     int pid = user_proc_load_elf_from_memory(
         build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
     if (pid < 0) {
-        serial_puts(SERIAL_COM1, "[RING3] SKIP: minimal ELF load failed\n");
+        klog_kern("[RING3] SKIP: minimal ELF load failed");
         return TEST_SKIP;
     }
 
     sched_add_internal((uint32_t)pid);
-    serial_puts(SERIAL_COM1, "[RING3] Queued PID=");
-    serial_put_dec(SERIAL_COM1, pid);
-    serial_puts(SERIAL_COM1, " for ring3 execution\n");
-    serial_puts(SERIAL_COM1, "[RING3] Will iretq after tests complete...\n");
+    klog_kern("[RING3] Queued PID=%d for ring3 execution\n[RING3] Will iretq after tests complete...", pid);
     return TEST_PASS;
 }
 
@@ -159,13 +138,7 @@ static int test_process_tree_structure(void) {
     TEST_ASSERT_NE(child1, parent);
     TEST_ASSERT_NE(child2, parent);
     
-    serial_puts(SERIAL_COM1, "[PROC] Process tree: parent=");
-    serial_put_hex(SERIAL_COM1, parent);
-    serial_puts(SERIAL_COM1, ", children=");
-    serial_put_hex(SERIAL_COM1, child1);
-    serial_puts(SERIAL_COM1, ",");
-    serial_put_hex(SERIAL_COM1, child2);
-    serial_puts(SERIAL_COM1, "\n");
+    klog_kern("[PROC] Process tree: parent=0x%x, children=0x%x,0x%x", parent, child1, child2);
     
     return TEST_PASS;
 }
@@ -179,7 +152,7 @@ static int test_process_priority_inheritance(void) {
     if (result >= 0) {
         uint64_t child = proc_create_internal("child_prio", pid);
         if (child > 0) {
-            serial_puts(SERIAL_COM1, "[PROC] Priority inheritance tested\n");
+            klog_kern("[PROC] Priority inheritance tested");
         }
     }
     
@@ -222,11 +195,7 @@ static int test_process_rapid_create_destroy(void) {
     
     TEST_ASSERT_GE(created, iterations * 80 / 100);
     
-    serial_puts(SERIAL_COM1, "[PROC] Rapid create/destroy: ");
-    serial_put_dec(SERIAL_COM1, created);
-    serial_puts(SERIAL_COM1, "/");
-    serial_put_dec(SERIAL_COM1, iterations);
-    serial_puts(SERIAL_COM1, " processes created\n");
+    klog_kern("[PROC] Rapid create/destroy: %d/%d processes created", created, iterations);
     
     return TEST_PASS;
 }
@@ -246,7 +215,7 @@ static int test_process_name_validation(void) {
         (void)proc_create_internal(invalid_names[i], 0);
     }
     
-    serial_puts(SERIAL_COM1, "[PROC] Name validation completed\n");
+    klog_kern("[PROC] Name validation completed");
     return TEST_PASS;
 }
 
@@ -289,11 +258,7 @@ static int test_process_concurrent_creation(void) {
     
     TEST_ASSERT_EQ(total_created, batch_size * batches);
     
-    serial_puts(SERIAL_COM1, "[PROC] Concurrent creation: ");
-    serial_put_dec(SERIAL_COM1, total_created);
-    serial_puts(SERIAL_COM1, " processes in ");
-    serial_put_dec(SERIAL_COM1, batches);
-    serial_puts(SERIAL_COM1, " batches\n");
+    klog_kern("[PROC] Concurrent creation: %d processes in %d batches", total_created, batches);
     
     return TEST_PASS;
 }
@@ -321,7 +286,7 @@ static int test_process_resource_limits(void) {
     uint64_t pid = proc_create_internal("resource_test", 0);
     if (pid == 0) return TEST_SKIP;
     
-    serial_puts(SERIAL_COM1, "[PROC] Resource limits tested\n");
+    klog_kern("[PROC] Resource limits tested");
     return TEST_PASS;
 }
 

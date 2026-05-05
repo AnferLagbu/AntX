@@ -1,6 +1,5 @@
 #include "kernel_test.h"
 #include "hvfs_ffi.h"
-#include "serial.h"
 #include "string.h"
 
 static int test_hvfs_init(void) {

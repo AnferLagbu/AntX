@@ -6,7 +6,7 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
-    fn serial_putc(port: u16, c: u8);
+    fn klog_ffi_info(msg: *const u8);
     fn pwid_get_level(pwid: u64) -> u8;
     fn pwid_get_fs_capability(pwid: u64) -> u64;
     fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
@@ -18,11 +18,7 @@ extern "C" {
 }
 
 fn log(s: &str) {
-    unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c);
-        }
-    }
+    unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
 fn log_num(n: u64) {

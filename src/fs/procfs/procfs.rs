@@ -2,17 +2,13 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 extern "C" {
-    fn serial_putc(port: u16, c: u8);
+    fn klog_ffi_info(msg: *const u8);
     fn pmm_get_total_pages() -> u64;
     fn pmm_get_free_pages() -> u64;
 }
 
 fn log(s: &str) {
-    unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c);
-        }
-    }
+    unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;

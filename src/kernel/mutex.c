@@ -10,7 +10,7 @@
 
 #include "mutex.h"
 #include "proc.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 等待队列内部实现 (简化版)
@@ -64,7 +64,7 @@ void mutex_lock(mutex_t *m)
     }
 
 #ifdef CONFIG_DEBUG_MUTEX
-    serial_puts(SERIAL_COM1, "[MUTEX] WARNING: lock contention detected\n");
+    klog_kern_warn("MUTEX: lock contention detected");
 #endif
 
     spin_unlock(&m->lock_spinlock);
@@ -149,7 +149,7 @@ void mutex_unlock(mutex_t *m)
 
 #ifdef CONFIG_DEBUG_MUTEX
     if (!m->locked) {
-        serial_puts(SERIAL_COM1, "[MUTEX] ERROR: unlock on unlocked mutex\n");
+        klog_kern_err("MUTEX: unlock on unlocked mutex");
     }
 #endif
 
@@ -221,7 +221,7 @@ void mutex_assert_held(mutex_t *m)
     struct process *current = process_get_current();
 
     if (!m->locked || (current && m->owner != (int)current->pid)) {
-        serial_puts(SERIAL_COM1, "[MUTEX] ASSERT FAILED: not held by current process\n");
+        klog_kern_err("MUTEX: ASSERT FAILED: not held by current process");
         while (1) {
             __asm__ volatile("hlt");
         }
@@ -230,30 +230,15 @@ void mutex_assert_held(mutex_t *m)
 
 void mutex_dump(mutex_t *m)
 {
-    serial_puts(SERIAL_COM1, "\n=== Mutex Status ===\n");
-    serial_puts(SERIAL_COM1, "  Name: ");
-
-    if (m->name) {
-        serial_puts(SERIAL_COM1, m->name);
-    } else {
-        serial_puts(SERIAL_COM1, "(unnamed)");
-    }
-
-    serial_puts(SERIAL_COM1, "\n  Locked: ");
-    serial_put_dec(SERIAL_COM1, m->locked);
-    serial_puts(SERIAL_COM1, "\n  Owner PID: ");
-    serial_put_dec(SERIAL_COM1, m->owner);
-    serial_puts(SERIAL_COM1, "\n  Depth: ");
-    serial_put_dec(SERIAL_COM1, m->depth);
+    klog_kern("=== Mutex Status ===");
+    klog_kern("  Name: %s", m->name ? m->name : "(unnamed)");
+    klog_kern("  Locked: %d", m->locked);
+    klog_kern("  Owner PID: %d", m->owner);
+    klog_kern("  Depth: %d", m->depth);
 
     if (m->file) {
-        serial_puts(SERIAL_COM1, "\n  Acquired at: ");
-        serial_puts(SERIAL_COM1, m->file);
-        serial_puts(SERIAL_COM1, ":");
-        serial_put_dec(SERIAL_COM1, m->line);
+        klog_kern("  Acquired at: %s:%d", m->file, m->line);
     }
-
-    serial_puts(SERIAL_COM1, "\n=====================\n");
 }
 
 #endif /* CONFIG_DEBUG_MUTEX */

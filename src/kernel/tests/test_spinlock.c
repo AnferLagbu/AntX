@@ -7,7 +7,7 @@
 
 #include "tests/kernel_test.h"
 #include "spinlock.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 基础功能测试
@@ -229,11 +229,7 @@ static int test_spinlock_performance(void)
 
     elapsed = end - start;
 
-    serial_puts(SERIAL_COM1, "[性能] Spinlock: ");
-    serial_put_dec(SERIAL_COM1, iterations);
-    serial_puts(SERIAL_COM1, " 次 lock/unlock，耗时 ");
-    serial_put_dec(SERIAL_COM1, (uint32_t)(elapsed / iterations));
-    serial_puts(SERIAL_COM1, " cycles/次\n");
+    klog_kern("[性能] Spinlock: %d 次 lock/unlock，耗时 %d cycles/次", iterations, (uint32_t);
 
     TEST_ASSERT(elapsed > 0);
     TEST_ASSERT(elapsed < iterations * 1000UL);  /* 合理上限 */

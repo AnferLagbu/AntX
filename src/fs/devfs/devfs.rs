@@ -2,15 +2,12 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
-    fn serial_putc(port: u16, c: u8);
-    fn serial_puts(port: u16, s: *const i8);
+    fn klog_ffi_info(msg: *const u8);
 }
 
 fn log(s: &str) {
     unsafe {
-        for c in s.bytes() {
-            serial_putc(0x3F8, c);
-        }
+        klog_ffi_info(s.as_ptr());
     }
 }
 
@@ -119,7 +116,7 @@ impl DevfsData {
             DEV_TYPE_NULL | DEV_TYPE_ZERO => buf.len() as i32,
             DEV_TYPE_CONSOLE | DEV_TYPE_TTY => {
                 unsafe {
-                    serial_puts(0x3F8, buf.as_ptr() as *const i8);
+                    klog_ffi_info(buf.as_ptr());
                 }
                 buf.len() as i32
             }

@@ -10,7 +10,7 @@
  */
 
 #include "rwlock.h"
-#include "serial.h"
+#include "klog.h"
 
 /* ============================================================
  * 初始化
@@ -53,7 +53,7 @@ void read_unlock(rwlock_t *rw)
     if (rw->readers > 0) {
         rw->readers--;
     } else {
-        serial_puts(SERIAL_COM1, "[RWLOCK] ERROR: read_unlock without read_lock\n");
+        klog_kern_err("RWLOCK: read_unlock without read_lock");
     }
 
     spin_unlock(&rw->lock);
@@ -108,7 +108,7 @@ void write_unlock(rwlock_t *rw)
     if (rw->writer) {
         rw->writer = 0;
     } else {
-        serial_puts(SERIAL_COM1, "[RWLOCK] ERROR: write_unlock without write_lock\n");
+        klog_kern_err("RWLOCK: write_unlock without write_lock");
     }
 
     spin_unlock(&rw->lock);
