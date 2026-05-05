@@ -1,6 +1,7 @@
 logs/
 build/
 isodir/
+tmp/
 *.log
 *.o
 *.bin
