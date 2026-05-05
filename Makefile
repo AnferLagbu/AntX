@@ -25,7 +25,8 @@ NET_APPS_C = $(wildcard src/net/lwip/src/apps/http/httpd.c) \
 NET_QX_C   = src/net/arch/sys_arch.c \
              src/net/qx_net_init.c \
              src/net/qx_netif.c \
-             src/net/driver/e1000.c
+             src/net/driver/e1000.c \
+             src/net/qx_net_apps.c
 
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
 NET_OBJS   = $(patsubst src/net/%.c,build/net/%.o,$(NET_ALL_C))

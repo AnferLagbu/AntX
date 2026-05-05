@@ -97,7 +97,8 @@
 #define LWIP_HTTPD_SSI              1
 #define LWIP_HTTPD_MAX_CGI_PARAMETERS 8
 #define LWIP_HTTPD_DYNAMIC_HEADERS  1
-#define HTTPD_USE_CUSTOM_FSDATA     0
+#define HTTPD_USE_CUSTOM_FSDATA     1
+#define HTTPD_FSDATA_FILE           "qx_fsdata.c"
 
 /* ---- HTTP 客户端 ---- */
 #define LWIP_HTTP_CLIENT            1

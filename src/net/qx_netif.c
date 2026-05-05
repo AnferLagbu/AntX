@@ -19,17 +19,9 @@
 
 static struct netif g_qx_netif;
 
-static void qx_netif_status(struct netif *netif)
-{
-    uint32_t ip = netif->ip_addr.u_addr.ip4.addr;
-    uint8_t *b = (uint8_t *)&ip;
-    const char *state = netif_is_up(netif) ? "UP" : "DOWN";
-
-    klog_net("netif status: %s IP=%d.%d.%d.%d", state, b[0], b[1], b[2], b[3]);
-}
-
 int qx_netif_register_e1000(void)
 {
+    ip4_addr_t ip, mask, gw;
     klog_net("Registering E1000 as lwIP netif");
 
     if (!g_e1000.mmio_base) {
@@ -37,8 +29,12 @@ int qx_netif_register_e1000(void)
         return -1;
     }
 
+    IP4_ADDR(&ip,   10, 0, 2, 15);
+    IP4_ADDR(&mask, 255, 255, 255, 0);
+    IP4_ADDR(&gw,   10, 0, 2, 2);
+
     struct netif *netif = netif_add(&g_qx_netif,
-                                     NULL, NULL, NULL, NULL,
+                                     &ip, &mask, &gw, NULL,
                                      e1000_init,
                                      ethernet_input);
 
@@ -49,10 +45,11 @@ int qx_netif_register_e1000(void)
 
     netif_set_default(netif);
     netif_set_up(netif);
-    netif_set_status_callback(netif, qx_netif_status);
 
-    klog_net("E1000 registered as default netif, starting DHCP");
-    dhcp_start(netif);
+    klog_net("E1000 static IP 10.0.2.15/24 gw=10.0.2.2");
+
+    extern void qx_net_apps_init(struct netif *netif);
+    qx_net_apps_init(netif);
 
     return 0;
 }
