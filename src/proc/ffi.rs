@@ -380,3 +380,24 @@ pub extern "C" fn scheduler_boost_priority() {
 pub extern "C" fn scheduler_add_with_priority(pid: Pid, level: usize) {
     SCHEDULER.add_with_priority(pid, level)
 }
+
+#[no_mangle]
+pub extern "C" fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
+    use super::scheduler::SchedPolicy;
+    SCHEDULER.add_rt_task(pid, rt_priority, SchedPolicy::from_u32(policy))
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32 {
+    use super::scheduler::SchedPolicy;
+    if SCHEDULER.set_sched_policy(pid, SchedPolicy::from_u32(policy), rt_priority) {
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_get_rt_count() -> usize {
+    SCHEDULER.get_rt_count()
+}

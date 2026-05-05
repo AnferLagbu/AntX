@@ -508,7 +508,7 @@ static int test_pci_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] PCI Config Read: %d 次，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] PCI Config Read: %d 次，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     TEST_ASSERT(elapsed > 0);
 

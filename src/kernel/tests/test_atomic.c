@@ -277,7 +277,7 @@ static int test_atomic_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] Atomic Inc: %d 次操作，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] Atomic Inc: %d 次操作，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     TEST_ASSERT_EQ(atomic_read(&counter), iterations);
     TEST_ASSERT(elapsed > 0);

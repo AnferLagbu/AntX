@@ -379,7 +379,7 @@ static int test_qemu_kmalloc_benchmark(void) {
     }
     
     /* 输出性能数据 */
-    klog_kern("[QEMU-HW] kmalloc: %d allocations of %d bytes in %d ticks", BENCHMARK_COUNT, ALLOC_SIZE, (uint32_t);
+    klog_kern("[QEMU-HW] kmalloc: %d allocations of %d bytes in %d ticks", BENCHMARK_COUNT, ALLOC_SIZE, (uint32_t)elapsed);
     
     /* 合理的性能：100次分配应该在合理时间内完成 (<10000 ticks) */
     if (elapsed > 10000) {
@@ -475,7 +475,7 @@ static int test_qemu_idt_hardware(void) {
         return TEST_FAIL;
     }
     
-    klog_kern("[QEMU-HW] IDT: Loaded (limit=%d, base=0x%x0x%x)", idtr.limit, (uint32_t, (uint32_t);
+    klog_kern("[QEMU-HW] IDT: Loaded (limit=%d, base=0x%x)", idtr.limit, (uint32_t)idtr.base);
     
     return TEST_PASS;
 }
@@ -581,7 +581,7 @@ static int test_qemu_timer_frequency(void) {
     tsc_per_tick = tsc_diff / tick_diff;
     
     /* QEMU 默认 TSC 频率取决于 host CPU，但应该非零 */
-    klog_kern("[QEMU-HW] Timer: %d ticks, TSC/tick ≈ %d", (uint32_t, (uint32_t);
+    klog_kern("[QEMU-HW] Timer: %d ticks, TSC/tick ≈ %d", (uint32_t)tick_diff, (uint32_t)tsc_per_tick);
     
     if (tsc_per_tick > 0) {
         return TEST_PASS;
@@ -722,7 +722,7 @@ static int test_qemu_platform_detect(void) {
     /* 检测 2: 检测内存布局 */
     extern char _kernel_end_phys[];
     uint64_t mem_size = (uint64_t)_kernel_end_phys;
-    klog_kern("[QEMU-Platform] Memory layout: Kernel ends at 0x%x0x%x", (uint32_t, (uint32_t);
+    klog_kern("[QEMU-Platform] Memory layout: Kernel ends at 0x%x", (uint32_t)mem_size);
     
     /* 检测 3: 报告 QEMU 典型特征 */
     klog_kern("[QEMU-Platform] Virtualization: Full system emulation\n[QEMU-Platform] Device model: QEMU default (i440fx/piix4)");
@@ -756,7 +756,7 @@ static int test_qemu_perf_metrics(void) {
     }
     end = timer_get_ticks();
     
-    klog_kern("[QEMU-Perf] Port I/O (1000x inb): %d cycles", (uint32_t);
+    klog_kern("[QEMU-Perf] Port I/O (1000x inb): %d cycles", (uint32_t)(end - start));
     
     /* 测量内存读取延迟 */
     volatile uint32_t *test_mem = (volatile uint32_t *)0x200000;  /* 低内存区域 */
@@ -766,7 +766,7 @@ static int test_qemu_perf_metrics(void) {
     }
     end = timer_get_ticks();
     
-    klog_kern("[QEMU-Perf] Mem read (1000x 32bit): %d cycles", (uint32_t);
+    klog_kern("[QEMU-Perf] Mem read (1000x 32bit): %d cycles", (uint32_t)(end - start));
     
     /* 测量 CPUID 指令开销 */
     start = timer_get_ticks();
@@ -776,7 +776,7 @@ static int test_qemu_perf_metrics(void) {
     }
     end = timer_get_ticks();
     
-    klog_kern("[QEMU-Perf] CPUID (100 calls): %d cycles", (uint32_t);
+    klog_kern("[QEMU-Perf] CPUID (100 calls): %d cycles", (uint32_t)(end - start));
     
     klog_kern("[QEMU-Perf] Metrics collection complete");
     
@@ -1039,7 +1039,7 @@ static int test_qemu_cpu_msr_operations(void) {
     }
     
     klog_kern("[CPU-DRV] MSR EFER: LMA=%d NXE=%d value=0x%x",
-              lma_set ? 1 : 0, nxe_set ? 1 : 0, (uint32_t)efer);
+              lma_set ? 1 : 0, nxe_set ? 1 : 0, (uint32_t)efer_orig);
     
     return TEST_PASS;
 }
@@ -1071,10 +1071,10 @@ static int test_qemu_cpu_tsc_benchmark(void) {
     /* 报告频率估算 */
     uint64_t freq = cpu_get_tsc_frequency();
     
-    klog_kern("[CPU-PERF] TSC Benchmark (%d samples):\n  Avg delta: %d cycles", SAMPLES, (uint32_t);
+    klog_kern("[CPU-PERF] TSC Benchmark (%d samples):\n  Avg delta: %d cycles", SAMPLES, (uint32_t)avg);
     
     if (freq > 0) {
-        klog_kern("  Est. freq: ~%d MHz", (uint32_t);
+        klog_kern("  Est. freq: ~%d MHz", (uint32_t)(freq / 1000000));
     }
     
     #undef SAMPLES

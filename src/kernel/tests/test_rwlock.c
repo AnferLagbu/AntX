@@ -293,7 +293,7 @@ static int test_read_lock_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] ReadLock: %d 次操作，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] ReadLock: %d 次操作，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     TEST_ASSERT(elapsed > 0);
 
@@ -320,7 +320,7 @@ static int test_write_lock_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] WriteLock: %d 次操作，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] WriteLock: %d 次操作，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     TEST_ASSERT(elapsed > 0);
 

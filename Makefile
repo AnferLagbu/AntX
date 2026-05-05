@@ -78,6 +78,9 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/test_pci.o build/test_dma.o \
               build/test_pmm.o build/test_vmm.o build/test_kmalloc.o \
               build/test_network.o \
+              build/test_scheduler_rt.o \
+              build/test_smp.o \
+              build/smp.o \
               $(NET_OBJS)
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
@@ -602,6 +605,18 @@ build/test_dma.o: src/kernel/tests/test_dma.c
 build/test_network.o: src/kernel/tests/test_network.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_scheduler_rt.o: src/kernel/tests/test_scheduler_rt.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_smp.o: src/kernel/tests/test_smp.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/smp.o: src/kernel/smp.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
 
 test: test-unit
 

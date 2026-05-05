@@ -8,6 +8,21 @@
 #define AP_STACK_SIZE      0x4000  /* 16KB per CPU */
 #define APIC_ID_INVALID    0xFF
 
+/* 负载均衡参数 */
+#define LOAD_BALANCE_INTERVAL   100     /* 每100个tick进行负载均衡 */
+#define LOAD_BALANCE_THRESHOLD 2       /* 负载差超过2时触发迁移 */
+#define MAX_MIGRATION_PER_CYCLE 4      /* 每次最多迁移4个进程 */
+
+/**
+ * @brief Per-CPU 运行队列 (简化版)
+ */
+typedef struct per_cpu_runqueue {
+    uint32_t runnable_count;        /**< 就绪进程数 */
+    uint32_t total_load;            /**< 总负载值 (基于优先级) */
+    uint64_t last_balance_tick;     /**< 上次负载均衡时间 */
+    int need_reschedule;            /**< 需要重新调度标志 */
+} per_cpu_rq_t;
+
 /**
  * @brief CPU 状态枚举
  */
@@ -49,6 +64,9 @@ typedef struct {
     uint64_t current_thread;        /**< 当前运行的线程 ID */
     uint64_t scheduler_ticks;       /**< 调度器 tick 计数 */
     int      preempt_count;         /**< 抢占计数器 */
+    
+    /** Per-CPU 运行队列 */
+    per_cpu_rq_t runqueue;          /**< 本地运行队列 */
 
     /** 统计信息 */
     uint64_t interrupts_total;      /**< 总中断数 */
@@ -174,5 +192,65 @@ int smp_stop_cpu(uint8_t apic_id);
  * @return 0 成功，-1 失败
  */
 int smp_restart_cpu(uint8_t apic_id);
+
+/* ==================== Per-CPU 调度接口 ==================== */
+
+/**
+ * @brief 初始化 Per-CPU 运行队列
+ */
+void smp_init_runqueues(void);
+
+/**
+ * @brief 获取指定 CPU 的运行队列
+ *
+ * @param cpu_id CPU 编号
+ * @return 运行队列指针，无效返回 NULL
+ */
+per_cpu_rq_t* smp_get_runqueue(int cpu_id);
+
+/**
+ * @brief 增加 CPU 负载 (进程入队时调用)
+ *
+ * @param cpu_id CPU 编号
+ * @param load 负载值 (通常为1)
+ */
+void smp_add_load(int cpu_id, uint32_t load);
+
+/**
+ * @brief 减少 CPU 负载 (进程出队/阻塞时调用)
+ *
+ * @param cpu_id CPU 编号
+ * @param load 负载值
+ */
+void smp_remove_load(int cpu_id, uint32_t load);
+
+/**
+ * @brief 触发负载均衡检查
+ *
+ * @param current_tick 当前 tick 数
+ * @return 是否执行了迁移
+ */
+int smp_try_balance_load(uint64_t current_tick);
+
+/**
+ * @brief 设置进程亲和性
+ *
+ * @param pid 进程 ID
+ * @param cpu_mask CPU 掩码 (bit[i]=1 表示可在CPU i运行)
+ * @return 0 成功，-1 失败
+ */
+int smp_set_affinity(uint32_t pid, uint64_t cpu_mask);
+
+/**
+ * @brief 获取最空闲的 CPU ID
+ *
+ * @return CPU 编号，如果没有活跃 CPU 返回 -1
+ */
+int smp_find_idlest_cpu(void);
+
+/**
+ * @brief 获取系统总负载
+ */
+uint32_t smp_get_total_load(void);
 
 #endif /* _SMP_H */

@@ -419,7 +419,7 @@ static int test_slab_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] Slab Alloc: %d 次分配，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] Slab Alloc: %d 次分配，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     __asm__ volatile("rdtsc" : "=A"(start));
 
@@ -431,7 +431,7 @@ static int test_slab_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] Slab Free: %d 次释放，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] Slab Free: %d 次释放，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     kfree(objs);
     kmem_cache_destroy(cache);

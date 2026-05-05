@@ -193,6 +193,8 @@ impl UserProcManager {
             exit_code: AtomicU32::new(0),
             cpu_time: AtomicU64::new(0),
             block_reason: AtomicU32::new(0),
+            sched_policy: AtomicU32::new(super::scheduler::SchedPolicy::Normal as u32),
+            rt_priority: AtomicU32::new(0),
         });
         
         let kernel_proc_ptr = alloc::boxed::Box::into_raw(kernel_proc);

@@ -35,7 +35,7 @@ static int test_perf_kmalloc_throughput(void) {
     
     TEST_ASSERT_GE(count, iterations * 80 / 100);
     
-    klog_kern("[PERF] kmalloc: %d/100 allocs in %d ticks", count, (uint32_t);
+    klog_kern("[PERF] kmalloc: %d/100 allocs in %d ticks", count, (uint32_t)(end - start));
     
     return TEST_PASS;
 }
@@ -85,7 +85,7 @@ static int test_perf_vfs_file_create_delete(void) {
     
     end = timer_get_ticks();
     
-    klog_kern("[PERF] File create/delete: %d files in %d ticks", files, (uint32_t);
+    klog_kern("[PERF] File create/delete: %d files in %d ticks", files, (uint32_t)(end - start));
     
     return TEST_PASS;
 }
@@ -114,7 +114,7 @@ static int test_perf_vfs_sequential_write(void) {
     
     TEST_ASSERT_GT(total_written, 0);
     
-    klog_kern("[PERF] Sequential write: %d KB in %d ticks", total_written / 1024, (uint32_t);
+    klog_kern("[PERF] Sequential write: %d KB in %d ticks", total_written / 1024, (uint32_t)(end - start));
     
     return TEST_PASS;
 }
@@ -139,7 +139,7 @@ static int test_perf_vfs_sequential_read(void) {
     
     vfs_close_internal(fd);
     
-    klog_kern("[PERF] Sequential read: %d KB in %d ticks", total_read / 1024, (uint32_t);
+    klog_kern("[PERF] Sequential read: %d KB in %d ticks", total_read / 1024, (uint32_t)(end - start));
     
     return TEST_PASS;
 }
@@ -204,7 +204,7 @@ static int test_perf_string_operations(void) {
     
     end = timer_get_ticks();
     
-    klog_kern("[PERF] String ops: %d iterations in %d ticks", iterations, (uint32_t);
+    klog_kern("[PERF] String ops: %d iterations in %d ticks", iterations, (uint32_t)(end - start));
     
     return TEST_PASS;
 }

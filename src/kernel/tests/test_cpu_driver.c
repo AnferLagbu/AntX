@@ -678,7 +678,7 @@ static int test_tsc_performance(void) {
     /* 报告估算频率 */
     uint64_t freq = cpu_get_tsc_frequency();
     if (freq > 0) {
-        klog_kern("[CPU-PERF] Estimated frequency: ~%d MHz", (uint32_t);
+        klog_kern("[CPU-PERF] Estimated frequency: ~%d MHz", (uint32_t)(freq / 1000000));
     }
     
     #undef TSC_SAMPLES

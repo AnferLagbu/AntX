@@ -4,6 +4,7 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::types::*;
+use super::scheduler::{SchedPolicy};
 
 extern "C" {
     fn pmm_alloc_pages(count: u64) -> *mut u8;
@@ -30,6 +31,9 @@ pub struct Process {
     pub cpu_time: AtomicU64,
     
     pub block_reason: AtomicU32,
+    
+    pub sched_policy: AtomicU32,
+    pub rt_priority: AtomicU32,
 }
 
 unsafe impl Send for Process {}
@@ -52,6 +56,8 @@ impl Process {
             exit_code: AtomicU32::new(0),
             cpu_time: AtomicU64::new(0),
             block_reason: AtomicU32::new(BlockReason::Unknown as u32),
+            sched_policy: AtomicU32::new(SchedPolicy::Normal as u32),
+            rt_priority: AtomicU32::new(0),
         }
     }
     
@@ -106,6 +112,22 @@ impl Process {
             flags &= !ProcessFlags::IS_KERNEL.bits();
         }
         self.flags.store(flags, Ordering::SeqCst);
+    }
+    
+    pub fn get_sched_policy(&self) -> SchedPolicy {
+        SchedPolicy::from_u32(self.sched_policy.load(Ordering::SeqCst))
+    }
+    
+    pub fn set_sched_policy(&self, policy: SchedPolicy) {
+        self.sched_policy.store(policy as u32, Ordering::SeqCst);
+    }
+    
+    pub fn get_rt_priority(&self) -> u8 {
+        self.rt_priority.load(Ordering::SeqCst) as u8
+    }
+    
+    pub fn set_rt_priority(&self, priority: u8) {
+        self.rt_priority.store(priority as u32, Ordering::SeqCst);
     }
 }
 

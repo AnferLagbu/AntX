@@ -8,6 +8,8 @@ void test_error_handling_register(void);
 void test_performance_register(void);
 void test_process_enhanced_register(void);
 void test_scheduler_enhanced_register(void);
+void test_scheduler_rt_register(void);
+void test_smp_register(void);
 void test_interrupt_register(void);
 void test_ipc_enhanced_register(void);
 void test_vfs_enhanced_register(void);
@@ -45,6 +47,12 @@ void run_kernel_tests(void) {
     klog_kern("[TEST] → Enhanced process & scheduler tests");
     test_process_enhanced_register();
     test_scheduler_enhanced_register();
+    
+    klog_kern("[TEST] → 🚀 Scheduler RT Enhancements (P0/P1)");
+    test_scheduler_rt_register();
+    
+    klog_kern("[TEST] → 🔥 SMP & Per-CPU Scheduler");
+    test_smp_register();
 
 #if 0
     /* IDT 重新初始化会清掉已注册的 timer 中断 handler

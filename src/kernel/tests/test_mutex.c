@@ -232,7 +232,7 @@ static int test_mutex_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] Mutex: %d 次 lock/unlock，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] Mutex: %d 次 lock/unlock，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     TEST_ASSERT(elapsed > 0);
     TEST_ASSERT(elapsed < iterations * 10000UL);  /* 合理上限 */

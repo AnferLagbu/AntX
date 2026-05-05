@@ -70,7 +70,7 @@ static int test_hvfs_file_persistence(void) {
     
     int written = hvfs_write(fd, test_data, strlen(test_data));
     if (written != (int)strlen(test_data)) {
-        klog_kern("[FAIL] Write failed: expected %d, got %d", strlen(test_data, written);
+        klog_kern("[FAIL] Write failed: expected %d, got %d", (int)strlen(test_data), written);
     }
     TEST_ASSERT(written == (int)strlen(test_data));
     
@@ -87,7 +87,7 @@ static int test_hvfs_file_persistence(void) {
     memset(read_buf, 0, sizeof(read_buf));
     int bytes_read = hvfs_read(fd, read_buf, sizeof(read_buf) - 1);
     if (bytes_read != (int)strlen(test_data)) {
-        klog_kern("[FAIL] Read failed: expected %d, got %d", strlen(test_data, bytes_read);
+        klog_kern("[FAIL] Read failed: expected %d, got %d", (int)strlen(test_data), bytes_read);
     }
     TEST_ASSERT(bytes_read == (int)strlen(test_data));
     

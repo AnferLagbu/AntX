@@ -582,7 +582,7 @@ static int test_coherent_alloc_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] Coherent Alloc: %d 次，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] Coherent Alloc: %d 次，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     for (int i = 0; i < iterations; i++) {
         if (ptrs[i]) {
@@ -625,7 +625,7 @@ static int test_dma_copy_performance(void)
 
     elapsed = end - start;
 
-    klog_kern("[性能] DMA Memcpy: %d 次 (4KB)，耗时 %d cycles/次", iterations, (uint32_t);
+    klog_kern("[性能] DMA Memcpy: %d 次 (4KB)，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
     dma_free_coherent(src, 4096);
     dma_free_coherent(dst, 4096);

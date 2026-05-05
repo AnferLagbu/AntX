@@ -38,7 +38,7 @@ static int test_scheduler_timeslice_expiry(void) {
     
     TEST_ASSERT_GE(end - start, 0);
     
-    klog_kern("[SCHED] Time slice test: %d ticks, elapsed: %d ticks", initial_slice, (uint32_t);
+    klog_kern("[SCHED] Time slice test: %d ticks, elapsed: %d ticks", initial_slice, (uint32_t)(end - start));
     
     return TEST_PASS;
 }
@@ -101,7 +101,7 @@ static int test_scheduler_context_switch_overhead(void) {
     
     TEST_ASSERT_GE(elapsed, 0);
     
-    klog_kern("[SCHED] Context switch overhead: %d yields in %d ticks", switches, (uint32_t);
+    klog_kern("[SCHED] Context switch overhead: %d yields in %d ticks", switches, (uint32_t)elapsed);
     
     return TEST_PASS;
 }

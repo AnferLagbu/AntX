@@ -15,7 +15,7 @@ static int test_syscall_basic_file_ops(void) {
     
     sys_fs_close(fd);
     
-    klog_kern("[SYSCALL+] Basic file ops: %d bytes writte", (int32_t);
+    klog_kern("[SYSCALL+] Basic file ops: %d bytes written", (int32_t)written);
     
     return TEST_PASS;
 }
@@ -137,7 +137,7 @@ static int test_syscall_boundary_sizes(void) {
     
     TEST_ASSERT_GT(r1 + r2 + r3, 0);
     
-    klog_kern("[SYSCALL+] Boundary sizes: 1+%d+%d bytes", (int32_t, (int32_t);
+    klog_kern("[SYSCALL+] Boundary sizes: 1+%d+%d bytes", (int32_t)r1, (int32_t)r2);
     
     return TEST_PASS;
 }

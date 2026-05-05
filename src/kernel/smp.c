@@ -3,6 +3,8 @@
 #include "idt.h"
 #include "io.h"
 #include "string.h"
+#include <stdint.h>
+#include "kmalloc.h"
 
 static cpu_info_t cpus[MAX_CPUS];
 static int cpu_count = 0;
@@ -14,14 +16,15 @@ static volatile int barrier_count = 0;
 static volatile int barrier_target = 0;
 
 __attribute__((aligned(4096)))
-static uint8_t ap_boot_code[] = {
-    0xFA,
-    0xB8, 0x00, 0xA0, 0x00, 0x00,
-    0x8E, 0xD8,
-    0x8E, 0xC0,
-    0x8E, 0xD0,
-    0xBC, 0x00, 0x7C, 0x00, 0x00,
-    0xEA, ...
+static uint8_t ap_boot_code[256] = {
+    0xFA,                           /* CLI */
+    0xB8, 0x00, 0xA0, 0x00, 0x00,  /* MOV AX, 0xA000 */
+    0x8E, 0xD8,                    /* MOV DS, AX */
+    0x8E, 0xC0,                    /* MOV ES, AX */
+    0x8E, 0xD0,                    /* MOV SS, AX */
+    0xBC, 0x00, 0x7C, 0x00, 0x00,  /* MOV SP, 0x7C00 */
+    0xEA, 0x00, 0x00, 0x80, 0x00, 0x00,  /* JMP FAR 0x80:0000 (long mode entry) */
+    /* 剩余填充为 0 */
 };
 
 static inline uint64_t read_msr(uint32_t msr) {
@@ -42,6 +45,11 @@ static inline void write_msr(uint32_t msr, uint64_t value) {
         :
         : "c"(msr), "a"(low), "d"(high)
     );
+}
+
+static inline void write_gs_base(uint64_t base) {
+    /* MSR 0xC0000101 - GS Base */
+    write_msr(0xC0000101, base);
 }
 
 static int init_local_apic(cpu_info_t *cpu) {
@@ -67,7 +75,7 @@ static int init_local_apic(cpu_info_t *cpu) {
         return -1;
     }
 
-    uint32_t svr = cpu->local_apid[0xF0 / sizeof(uint32_t)];
+    uint32_t svr = cpu->local_apic[0xF0 / sizeof(uint32_t)];
     svr |= 0x100;
     cpu->local_apic[0xF0 / sizeof(uint32_t)] = svr;
 
@@ -78,13 +86,14 @@ static int init_local_apic(cpu_info_t *cpu) {
 
 static void* allocate_ap_stack(int cpu_id) {
     extern void* kmalloc(uint64_t size);
-    extern void* kcalloc(uint64_t num, uint64_t size);
 
-    void *stack = kcalloc(1, AP_STACK_SIZE);
+    void *stack = kmalloc(AP_STACK_SIZE);
     if (stack == NULL) {
         klog_kern_err("SMP: Failed to allocate stack for CPU %d", cpu_id);
         return NULL;
     }
+    
+    memset(stack, 0, AP_STACK_SIZE);
 
     return (void*)((uint8_t*)stack + AP_STACK_SIZE);
 }
@@ -158,7 +167,6 @@ static int init_bsp(void) {
         return -1;
     }
 
-    extern void write_gs_base(uint64_t base);
     write_gs_base((uint64_t)bsp);
 
     klog_kern("SMP: BSP initialized: APIC ID=%d, CPU ID=0", bsp->apic_id);
@@ -251,6 +259,9 @@ int smp_init(void) {
     idt_set_handler(0xF4, (interrupt_handler_t)smp_ipi_handler, "IPI_CallFunc");
 
     klog_kern("SMP: Initialization complete: %d/%d CPUs active", started_count, total_cpus);
+
+    /* 初始化 Per-CPU 运行队列 */
+    smp_init_runqueues();
 
     return started_count;
 }
@@ -360,6 +371,7 @@ void smp_dump_status(void) {
     klog_kern("=== SMP Status ===");
     klog_kern("Total CPUs: %d", cpu_count);
     klog_kern("Active CPUs: %d", smp_get_active_cpu_count());
+    klog_kern("Total Load: %d", smp_get_total_load());
 
     for (int i = 0; i < cpu_count; i++) {
         const char *state_str;
@@ -378,6 +390,14 @@ void smp_dump_status(void) {
                   cpus[i].interrupts_total,
                   cpus[i].ipi_received,
                   cpus[i].ipi_sent);
+        
+        /* 显示运行队列信息 */
+        if (cpus[i].state == CPU_STATE_RUNNING) {
+            klog_kern("  └─ RQ: runnable=%d load=%d last_bal=%d",
+                      cpus[i].runqueue.runnable_count,
+                      cpus[i].runqueue.total_load,
+                      (uint32_t)cpus[i].runqueue.last_balance_tick);
+        }
     }
 }
 
@@ -398,4 +418,143 @@ int smp_restart_cpu(uint8_t apic_id) {
     send_startup_ipi(apic_id, AP_BOOT_ADDR >> 12);
 
     return 0;
+}
+
+/* ==================== Per-CPU 调度实现 ==================== */
+
+void smp_init_runqueues(void) {
+    for (int i = 0; i < MAX_CPUS; i++) {
+        cpus[i].runqueue.runnable_count = 0;
+        cpus[i].runqueue.total_load = 0;
+        cpus[i].runqueue.last_balance_tick = 0;
+        cpus[i].runqueue.need_reschedule = 0;
+    }
+    
+    klog_kern("SMP: Per-CPU runqueues initialized for %d CPUs", cpu_count);
+}
+
+per_cpu_rq_t* smp_get_runqueue(int cpu_id) {
+    if (cpu_id < 0 || cpu_id >= MAX_CPUS) {
+        return NULL;
+    }
+    return &cpus[cpu_id].runqueue;
+}
+
+void smp_add_load(int cpu_id, uint32_t load) {
+    if (cpu_id < 0 || cpu_id >= MAX_CPUS) return;
+    
+    cpus[cpu_id].runqueue.runnable_count++;
+    cpus[cpu_id].runqueue.total_load += load;
+}
+
+void smp_remove_load(int cpu_id, uint32_t load) {
+    if (cpu_id < 0 || cpu_id >= MAX_CPUS) return;
+    
+    if (cpus[cpu_id].runqueue.runnable_count > 0) {
+        cpus[cpu_id].runqueue.runnable_count--;
+    }
+    if (cpus[cpu_id].runqueue.total_load >= load) {
+        cpus[cpu_id].runqueue.total_load -= load;
+    } else {
+        cpus[cpu_id].runqueue.total_load = 0;
+    }
+}
+
+static int smp_calc_imbalance(int src_cpu, int dst_cpu) {
+    if (src_cpu < 0 || dst_cpu >= MAX_CPUS) return 0;
+    if (dst_cpu < 0 || src_cpu >= MAX_CPUS) return 0;
+    
+    int src_load = (int)cpus[src_cpu].runqueue.runnable_count;
+    int dst_load = (int)cpus[dst_cpu].runqueue.runnable_count;
+    
+    return src_load - dst_load;
+}
+
+int smp_try_balance_load(uint64_t current_tick) {
+    if (cpu_count <= 1) return 0;
+    
+    cpu_info_t *current = smp_get_current_cpu();
+    if (current == NULL) return 0;
+    
+    /* 检查是否到了负载均衡时间 */
+    if (current_tick - current->runqueue.last_balance_tick < LOAD_BALANCE_INTERVAL) {
+        return 0;
+    }
+    
+    current->runqueue.last_balance_tick = current_tick;
+    
+    int migrations = 0;
+    int my_cpu = current->cpu_id;
+    int my_load = (int)current->runqueue.runnable_count;
+    
+    /* 查找最忙和最空闲的 CPU */
+    int busiest_cpu = my_cpu;
+    int idlest_cpu = my_cpu;
+    int max_load = my_load;
+    int min_load = my_load;
+    
+    for (int i = 0; i < cpu_count; i++) {
+        if (cpus[i].state != CPU_STATE_RUNNING) continue;
+        
+        int load = (int)cpus[i].runqueue.runnable_count;
+        if (load > max_load) {
+            max_load = load;
+            busiest_cpu = i;
+        }
+        if (load < min_load) {
+            min_load = load;
+            idlest_cpu = i;
+        }
+    }
+    
+    /* 如果负载差超过阈值，触发迁移 */
+    int imbalance = smp_calc_imbalance(busiest_cpu, idlest_cpu);
+    
+    if (imbalance > LOAD_BALANCE_THRESHOLD && migrations < MAX_MIGRATION_PER_CYCLE) {
+        /* 从最忙的CPU迁移到最空闲的CPU */
+        smp_remove_load(busiest_cpu, 1);
+        smp_add_load(idlest_cpu, 1);
+        migrations++;
+        
+        klog_kern("SMP: Load balance: CPU%d(%d)->CPU%d(%d)", 
+                  busiest_cpu, max_load-1, idlest_cpu, min_load+1);
+    }
+    
+    return migrations;
+}
+
+int smp_set_affinity(uint32_t pid, uint64_t cpu_mask) {
+    (void)pid;
+    (void)cpu_mask;
+    
+    /* TODO: 完整实现需要与调度器集成 */
+    klog_kern("SMP: Set affinity pid=%d mask=0x%x (stub)", pid, (uint32_t)cpu_mask);
+    
+    return 0;
+}
+
+int smp_find_idlest_cpu(void) {
+    int idlest = -1;
+    uint32_t min_load = 0xFFFFFFFF;  /* UINT32_MAX */
+    
+    for (int i = 0; i < cpu_count; i++) {
+        if (cpus[i].state != CPU_STATE_RUNNING) continue;
+        
+        if (cpus[i].runqueue.runnable_count < min_load) {
+            min_load = cpus[i].runqueue.runnable_count;
+            idlest = i;
+        }
+    }
+    
+    return idlest;
+}
+
+uint32_t smp_get_total_load(void) {
+    uint32_t total = 0;
+    
+    for (int i = 0; i < cpu_count; i++) {
+        total += cpus[i].runqueue.total_load;
+    }
+    
+    return total;
 }
