@@ -5,7 +5,7 @@
 #include "pwid.h"
 
 #define HVFS_MAGIC          0x48564653
-#define HVFS_VERSION        2
+#define HVFS_VERSION        3
 #define HVFS_BLOCK_SIZE     4096
 #define HVFS_MAX_FDS        64
 #define HVFS_MAX_PATH       256

@@ -12,7 +12,12 @@ extern "C" {
 }
 
 fn log(s: &str) {
-    unsafe { klog_ffi_info(s.as_ptr()); }
+    let mut buf = [0u8; 256];
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(255);
+    buf[..len].copy_from_slice(&bytes[..len]);
+    buf[len] = 0;
+    unsafe { klog_ffi_info(buf.as_ptr()); }
 }
 
 const RAMFS_MAX_INODES: usize = 256;
@@ -701,116 +706,30 @@ impl RamFsData {
     }
     
     pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
-        let inode_num = self.resolve_path(path);
+        log("[RAMFS-OPEN] ");
 
-        unsafe {log("[RAMFS] ");
-            log(" ");
-        }
-
-        let inode_num = if let Some(num) = inode_num {
-            unsafe { log("E"); }
-            num
-        } else if (flags & VfsOpenFlags::CREAT.bits()) != 0 {
-            unsafe { log("C"); }
-            let path = if path.starts_with('/') { &path[1..] } else { path };
-
-            let filename = if let Some(pos) = path.rfind('/') {
-                &path[pos + 1..]
-            } else {
-                path
-            };
-
-            let dir_path = if let Some(pos) = path.rfind('/') {
-                if pos == 0 { "/" } else { &path[..pos] }
-            } else {
-                "/"
-            };
-
-            if filename.is_empty() {
-                unsafe { log("F"); }
-                return None;
-            }
-
-            let parent_num = self.resolve_path(dir_path)?;
-
-            unsafe {
-                log("P");
-            }
-            
-            if parent_num as usize >= RAMFS_MAX_INODES {
-                return None;
-            }
-            
-            if !self.inodes[parent_num as usize].used {
-                return None;
-            }
-            
-            if !self.check_permission(&self.inodes[parent_num as usize], pwid, FS_CAP_CREATE) {
-                return None;
-            }
-
-            let dirent_size = core::mem::size_of::<RamFsDirent>();
-            let parent_block_num = self.inodes[parent_num as usize].direct_blocks[0];
-
-            if parent_block_num == u32::MAX {
-                return None;
-            }
-
-            let num_entries = self.inodes[parent_num as usize].size as usize / dirent_size;
-
-            for i in 0..num_entries {
-                let check_offset = (parent_block_num as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-                let entry: &RamFsDirent = unsafe {
-                    &*(&self.data_area[check_offset] as *const u8 as *const RamFsDirent)
-                };
-
-                if entry.inode != 0 {
-                    let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
-                    let existing_name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
-                    if existing_name == filename {
-                        return None;
-                    }
-                }
-            }
-
-            let new_inode_num = self.alloc_inode(VfsFileType::File as u8, pwid)?;
-
-            let offset = (parent_block_num as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
-            
-            if offset + dirent_size > self.data_area.len() {
-                return None;
-            }
-            
-            let entry: &mut RamFsDirent = unsafe {
-                &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirent)
-            };
-            entry.inode = new_inode_num;
-            entry.file_type = VfsFileType::File as u8;
-            entry.set_name(filename);
-            
-            self.inodes[parent_num as usize].size += dirent_size as u32;
-            self.inodes[parent_num as usize].mtime = Self::get_time();
-            
-            new_inode_num
-        } else {
-            return None;
-        };
-        
-        let inode = &self.inodes[inode_num as usize];
-        
-        if !self.check_permission(inode, pwid, FS_CAP_READ) {
+        if path.is_empty() {
             return None;
         }
-        
-        let offset = if (flags & VfsOpenFlags::APPEND.bits()) != 0 {
-            inode.size as u64
-        } else {
-            0
+
+        let inode_num = match self.resolve_path(path) {
+            Some(n) => n,
+            None => return None,
         };
-        
-        Some((inode_num, offset, inode.file_type))
+
+        if inode_num as usize >= RAMFS_MAX_INODES || !self.inodes[inode_num as usize].used {
+            return None;
+        }
+
+        if !self.check_permission(&self.inodes[inode_num as usize], pwid, FS_CAP_READ) {
+            return None;
+        }
+
+        self.inodes[inode_num as usize].atime = Self::get_time();
+
+        Some((inode_num, 0, self.inodes[inode_num as usize].file_type))
     }
-    
+
     fn alloc_inode(&mut self, file_type: u8, pwid: u64) -> Option<u32> {
         for i in 1..RAMFS_MAX_INODES {
             if !self.inodes[i].used {

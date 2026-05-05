@@ -1,7 +1,6 @@
 #include "kernel.h"
 #include "vfs.h"
 #include "user_proc.h"
-#include "smart_mount.h"
 #include "timer.h"
 #include "module_check.h"
 #include "klog.h"
@@ -150,10 +149,16 @@ void kernel_main(void) {
     MODULE_CHECK_VOID("DevFS", devfs_init);
     MODULE_CHECK_VOID("ProcFS", procfs_init);
     
-    /* Smart Persistent Storage Mount */
-    smart_mount_root();
+    klog_fs("Mounting root filesystem...");
     
-    klog_fs("Root filesystem mounted (smart mode: %c)", get_persistent_mode());
+    if (vfs_mount("/", "diskfs") != 0) {
+        klog_fs_warn("Using RamFS for root");
+        if (vfs_mount("/", "ramfs") != 0) {
+            panic("Failed to mount root filesystem");
+        }
+    }
+    
+    klog_fs("Root filesystem mounted");
     
     MODULE_CHECK_VOID("Syscall", syscall_init);
     MODULE_CHECK_VOID("Keyboard", keyboard_init);

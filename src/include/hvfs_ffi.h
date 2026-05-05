@@ -17,6 +17,8 @@ int32_t hvfs_close_internal(uint32_t fd);
 int32_t hvfs_read_internal(uint32_t fd, uint8_t *buf, uint32_t count);
 int32_t hvfs_write_internal(uint32_t fd, const uint8_t *buf, uint32_t count);
 int32_t hvfs_mkdir_internal(const char *path, uint64_t pwid);
+int32_t hvfs_unlink_internal(const char *path, uint64_t pwid);
+int32_t hvfs_rmdir_internal(const char *path, uint64_t pwid);
 int32_t hvfs_sync_internal(void);
 
 void hvfs_get_stats_internal(uint32_t *total_blocks, uint32_t *free_blocks,

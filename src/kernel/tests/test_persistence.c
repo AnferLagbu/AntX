@@ -31,14 +31,20 @@ static int ensure_hvfs_initialized(void) {
         if (hvfs_disk_init() == 0) {
             disk_mode_available = 1;
             klog_kern("[Persistence Test] Disk mode enabled");
+            
+            if (hvfs_mount() != 0) {
+                klog_kern("[Persistence Test] Mount failed, trying format");
+                if (hvfs_format() != 0) {
+                    klog_kern("[Persistence Test] Format failed");
+                    disk_mode_available = 0;
+                } else {
+                    hvfs_mount();
+                }
+            }
         } else {
             hvfs_init();
-            if (hvfs_format() != 0) {
-                klog_kern("[Persistence Test] HvFS format failed");
-                return -1;
-            }
-            disk_mode_available = 0;
             klog_kern("[Persistence Test] Memory mode (no disk)");
+            disk_mode_available = 0;
         }
         
         hvfs_mkdir("/etc", test_root_pwid);

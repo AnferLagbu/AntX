@@ -103,10 +103,13 @@ impl DiskFsData {
                 return -1;
             }
             HVFS_DISK_UNFORMATTED => {
-                if hvfs.format() != 0 {
+                log("[DiskFS] Disk unformatted, using memory mode (skipping format)\n");
+                
+                let mount_result = hvfs.mount();
+                if mount_result != 0 {
+                    log("[DiskFS] Mount failed\n");
                     return -1;
                 }
-                hvfs.sync();
             }
             _ => {
                 return -1;

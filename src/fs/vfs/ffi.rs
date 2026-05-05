@@ -5,7 +5,12 @@ extern "C" {
 }
 
 fn log(s: &str) {
-    unsafe { klog_ffi_info(s.as_ptr()); }
+    let mut buf = [0u8; 256];
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(255);
+    buf[..len].copy_from_slice(&bytes[..len]);
+    buf[len] = 0;
+    unsafe { klog_ffi_info(buf.as_ptr()); }
 }
 
 use crate::fs::hvfs::hvfs::get_hvfs;
@@ -706,17 +711,39 @@ pub extern "C" fn hvfs_sync() -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_unlink(_path: *const c_char) -> i32 {
-    -1
+pub extern "C" fn hvfs_unlink(path: *const c_char, pwid: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let hvfs = get_hvfs();
+    hvfs.unlink(path, pwid)
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_rmdir(_path: *const c_char) -> i32 {
-    -1
+pub extern "C" fn hvfs_rmdir(path: *const c_char, pwid: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let hvfs = get_hvfs();
+    hvfs.rmdir(path, pwid)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_disk_init() -> i32 {
+    let hvfs = get_hvfs();
+    let status = hvfs.check_disk();
+    if status == crate::fs::hvfs::hvfs::HVFS_DISK_OK ||
+       status == crate::fs::hvfs::hvfs::HVFS_DISK_UNFORMATTED {
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn hvfs_mount() -> i32 {
+    let hvfs = get_hvfs();
+    hvfs.mount()
+}
+
+#[no_mangle]
+pub extern "C" fn hvfs_unmount() -> i32 {
     0
 }
 
@@ -765,4 +792,10 @@ pub extern "C" fn vfs_chmod_internal(_path: *const c_char, _mode: u32, _pwid: u6
 #[no_mangle]
 pub extern "C" fn vfs_chown_internal(_path: *const c_char, _uid: u32, _gid: u32, _pwid: u64) -> i32 {
     0
+}
+
+#[no_mangle]
+pub extern "C" fn hvfs_check_disk() -> i32 {
+    let hvfs = get_hvfs();
+    hvfs.check_disk()
 }

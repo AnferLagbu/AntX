@@ -1,26 +1,21 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
 
-#define CONFIG_MEMORY_SIZE       (128 * 1024 * 1024)
+#ifdef BUILD_RELEASE
+    #define CONFIG_MODE_RELEASE 1
+    #define CONFIG_MODE_TEST    0
+    #define CONFIG_MODE_DEV     0
+#elif defined(BUILD_TEST)
+    #define CONFIG_MODE_RELEASE 0
+    #define CONFIG_MODE_TEST    1
+    #define CONFIG_MODE_DEV     0
+#else
+    #define CONFIG_MODE_RELEASE 0
+    #define CONFIG_MODE_TEST    0
+    #define CONFIG_MODE_DEV     1
+#endif
 
-#define CONFIG_MAX_PROCESSES     64
-#define CONFIG_MAX_THREADS       256
-#define CONFIG_MAX_SESSIONS      16
-
-#define CONFIG_MAX_PWID_ENTRIES  128
-
-#define CONFIG_TIME_SLICE        10
-
-#define CONFIG_VFS_MAX_PATH      128
-#define CONFIG_VFS_MAX_NAME      64
-#define CONFIG_VFS_MAX_FDS       16
-#define CONFIG_VFS_MAX_MOUNTS    8
-
-#define CONFIG_PMM_BITMAP_SIZE   32768
-
-#define CONFIG_SERIAL_BAUD       115200
-
-#define CONFIG_KERNEL_NAME       "QueenX"
-/* CONFIG_KERNEL_VERSION 已移至 version_auto.h (动态生成) */
+#define CONFIG_PERSISTENT_AUTO_FORMAT  1
+#define CONFIG_PERSISTENT_ASK_CONFIRM  1
 
 #endif
