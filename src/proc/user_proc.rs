@@ -209,32 +209,38 @@ impl UserProcManager {
             (*proc).state.store(2, Ordering::SeqCst);
             
             tss_set_kernel_stack((*proc).kernel_stack.load(Ordering::SeqCst));
-            vmm_switch_page_table((*proc).cr3.load(Ordering::SeqCst));
             
             let ss_val = GDT_USER_DATA | 0x03;
             let cs_val = GDT_USER_CODE | 0x03;
             let rip_val = (*proc).entry;
             let rsp_val = (*proc).user_stack.load(Ordering::SeqCst);
-            let rflags_val: u64 = 0x202;
+            let rflags_val: u64 = 0x3202;
+            let cr3_val = (*proc).cr3.load(Ordering::SeqCst);
             
             core::arch::asm!(
-                "cli",
+                "mov rax, rsp",
+                "mov rbx, 0xFFFF800000000000",
+                "or rax, rbx",
+                "mov rsp, rax",
                 "mov ds, dx",
                 "mov es, dx",
                 "mov fs, dx",
                 "mov gs, dx",
                 "push {ss}",
-                "push {rsp}",
+                "push {rsp_val}",
                 "push {rflags}",
                 "push {cs}",
                 "push {rip}",
+                "mov rax, {cr3}",
+                "mov cr3, rax",
                 "iretq",
                 in("dx") ss_val,
                 ss = in(reg) ss_val,
-                rsp = in(reg) rsp_val,
+                rsp_val = in(reg) rsp_val,
                 rflags = in(reg) rflags_val,
                 cs = in(reg) cs_val,
                 rip = in(reg) rip_val,
+                cr3 = in(reg) cr3_val,
                 options(noreturn)
             );
         }

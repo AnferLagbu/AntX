@@ -214,8 +214,10 @@ pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: 
 
 #[no_mangle]
 pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
+    unsafe { core::arch::asm!("mov al, 0xF1", "mov dx, 0x3F8", "out dx, al"); }
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
         unsafe {
+            core::arch::asm!("mov al, 0xF2", "mov dx, 0x3F8", "out dx, al");
             C_CURRENT_PROCESS.pid = (*proc).pid as u64;
             C_CURRENT_PROCESS.pwid = (*proc).pwid.load(Ordering::SeqCst);
             C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
