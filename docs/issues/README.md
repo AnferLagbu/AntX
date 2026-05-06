@@ -47,3 +47,10 @@
 ---
 
 *最后更新: 2026-04-07*
+
+### [user-mode-init-crash.md](user-mode-init-crash.md) — 2026-05-07
+用户态 init_main 执行 2 秒后跳入内核 BSS 区 (0x9EA987)
+- 现象: RIP=0x9EA987 CS=0x1B DPL=3 CR2=0xFFFFE000
+- 疑点: ISR 寄存器帧不匹配 / syscall 返回路径 / 函数指针未初始化
+- 状态: 待解决 (外部求助)
+
