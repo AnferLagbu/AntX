@@ -182,6 +182,13 @@ impl PhysicalMemoryManager {
             self.set_bit(i);
         }
         
+        // Mark bitmap pages themselves as used (they live after the heap)
+        let bitmap_start_page = (bitmap_aligned / PAGE_SIZE) as usize;
+        let bitmap_pages = ((bitmap_bytes as u64 + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
+        for i in bitmap_start_page..(bitmap_start_page + bitmap_pages).min(total_bits) {
+            self.set_bit(i);
+        }
+        
         self.initialized.store(true, Ordering::Release);
         
         self.update_stats();

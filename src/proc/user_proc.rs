@@ -24,6 +24,7 @@ extern "C" {
     fn timer_get_ticks() -> u64;
     fn memset(s: *mut u8, c: i32, n: u64);
     fn memcpy(dest: *mut u8, src: *const u8, n: u64);
+    fn kmalloc(size: u64) -> *mut u8;
 }
 
 pub const PAGE_SIZE: u64 = 4096;
@@ -124,7 +125,7 @@ impl UserProcManager {
         let pid = PROCESS_TABLE.allocate_pid()?;
         
         let proc = unsafe {
-            let ptr = pmm_alloc_page() as *mut UserProcess;
+            let ptr = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
             if ptr.is_null() {
                 return None;
             }
@@ -136,14 +137,12 @@ impl UserProcManager {
             (*proc).pid = pid;
             (*proc).cr3.store(vmm_create_user_page_table(), Ordering::SeqCst);
             if (*proc).cr3.load(Ordering::SeqCst) == 0 {
-                pmm_free_page(proc as *mut u8);
                 return None;
             }
             
             let stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
             if stack_pages.is_null() {
                 pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut u8);
-                pmm_free_page(proc as *mut u8);
                 return None;
             }
             
@@ -165,7 +164,6 @@ impl UserProcManager {
             if kstack.is_null() {
                 pmm_free_page(stack_pages);
                 pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut u8);
-                pmm_free_page(proc as *mut u8);
                 return None;
             }
             (*proc).kernel_stack.store(kstack as u64 + PAGE_SIZE, Ordering::SeqCst);
@@ -173,7 +171,7 @@ impl UserProcManager {
             (*proc).entry = info.entry;
             (*proc).pwid.store(pwid, Ordering::SeqCst);
             (*proc).state.store(1, Ordering::SeqCst);
-            (*proc).create_time = unsafe { timer_get_ticks() };
+            (*proc).create_time = timer_get_ticks();
         }
         
         self.processes.lock().insert(pid, proc);

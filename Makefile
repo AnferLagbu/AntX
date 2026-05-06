@@ -141,6 +141,9 @@ user: build/user/init.bin build/user/axsh.bin build/user/install.bin
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 	$(LD) $(LDFLAGS) -o $@ --whole-archive $(RUST_LIB) --no-whole-archive $(KERNEL_OBJS)
 
+build/kernel.flat: build/kernel.bin
+	objcopy -O binary $< $@
+
 $(RUST_LIB):
 	@echo "Building Rust kernel module..."
 	cd src/rust && cargo build --release
@@ -364,13 +367,13 @@ else
 	QEMU_DISPLAY := -serial stdio -display gtk
 endif
 
-run: all user
+run: all user build/kernel.flat
 	@mkdir -p $(LOG_DIR)
-	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin $(QEMU_DISPLAY)
+	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat $(QEMU_DISPLAY)
 
-run-net: all user
+run-net: all user build/kernel.flat
 	@mkdir -p $(LOG_DIR)
-	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin $(QEMU_NET) $(QEMU_DISPLAY)
+	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat $(QEMU_NET) $(QEMU_DISPLAY)
 
 run-headless: all user
 	@$(MAKE) QEMU_MODE=headless run
@@ -381,19 +384,19 @@ run-iso: iso
 	@mkdir -p $(LOG_DIR)
 	$(QEMU) $(QEMU_FLAGS) -cdrom build/antx.iso $(QEMU_DISPLAY)
 
-debug: all user
-	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin -serial stdio -s -S
+debug: all user build/kernel.flat
+	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat -serial stdio -s -S
 
-log: all user
+log: all user build/kernel.flat
 	@mkdir -p $(LOG_DIR)
-	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin \
+	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat \
 		-serial file:$(LOG_DIR)/serial.log \
 		-display none \
 		-d cpu_reset,guest_errors 2>&1 | tee $(LOG_DIR)/qemu_stderr.log || true
 
-log-net: all user
+log-net: all user build/kernel.flat
 	@mkdir -p $(LOG_DIR)
-	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.bin \
+	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat \
 		$(QEMU_NET) \
 		-serial file:$(LOG_DIR)/serial.log \
 		-display none \

@@ -76,7 +76,7 @@ static void start_user_init(void) {
     int pid = user_proc_load_elf_from_memory(build_user_init_bin, build_user_init_bin_len, 0);
 
     if (pid < 0) {
-        klog_init_err("Failed to load init process!");
+        klog_init_err("Failed to load init process! (pid=%d)", pid);
         return;
     }
     
@@ -199,9 +199,8 @@ void kernel_main(void) {
 
     klog_init_msg("Module versions registered: %d modules", version_get_registered_count());
     
-    klog_boot("[MAIN] About to enable interrupts...");
-    /* enable_interrupt();  Temporarily disabled for debugging */
-    klog_boot("[MAIN] Interrupts disabled for debugging");
+    klog_boot("[MAIN] Interrupts disabled - safe boot mode");
+    /* enable_interrupts();  TODO: Fix GPF before re-enabling */
 
 #ifdef KERNEL_TEST
     klog_boot("[TEST MODE] Running kernel tests...");
