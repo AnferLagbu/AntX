@@ -194,6 +194,33 @@ pub extern "C" fn vmm_unmap_page(virt: u64) {
     get_vmm().unmap_page(VirtAddr(virt));
 }
 
+/// Split a 2MB huge page into 512 4KB pages
+/// 
+/// C signature: int vmm_split_2mb_page(uint64_t virt)
+#[no_mangle]
+pub extern "C" fn vmm_split_2mb_page(virt: u64) -> i32 {
+    match get_vmm().split_2mb_page(virt) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+/// Set USER flag on PML4 entry for a virtual address
+/// 
+/// C signature: void vmm_ensure_pml4_user(uint64_t virt)
+#[no_mangle]
+pub extern "C" fn vmm_ensure_pml4_user(virt: u64) {
+    get_vmm().ensure_pml4_user(virt);
+}
+
+/// Set USER flag on all page table entries in path for user access
+/// 
+/// C signature: void vmm_ensure_path_user(uint64_t virt)
+#[no_mangle]
+pub extern "C" fn vmm_ensure_path_user(virt: u64) {
+    get_vmm().ensure_path_user(virt);
+}
+
 /// Get physical address for virtual address
 /// 
 /// C signature: uint64_t vmm_get_physical(uint64_t virt)

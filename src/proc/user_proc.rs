@@ -18,6 +18,9 @@ extern "C" {
     fn pmm_free_page(page: *mut u8);
     fn vmm_create_user_page_table() -> u64;
     fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
+    fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
+    fn vmm_split_2mb_page(vaddr: u64) -> i32;
+    fn vmm_ensure_path_user(vaddr: u64);
     fn vmm_switch_page_table(table: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
     fn tss_set_kernel_stack(rsp0: u64);
@@ -150,12 +153,16 @@ impl UserProcManager {
             let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
             
             for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
+                let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
+                let sphys = stack_phys + i * PAGE_SIZE;
                 vmm_map_page_in_table(
                     (*proc).cr3.load(Ordering::SeqCst),
-                    stack_virt + USER_STACK_GUARD + i * PAGE_SIZE,
-                    stack_phys + i * PAGE_SIZE,
+                    svirt, sphys,
                     PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER
                 );
+                // Also map into kernel PML4 (PML4[255] not covered by huge pages)
+                vmm_map_page(svirt, sphys, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+                vmm_ensure_path_user(svirt);
             }
             
             (*proc).user_stack.store(USER_STACK_TOP, Ordering::SeqCst);
@@ -215,32 +222,26 @@ impl UserProcManager {
             let rip_val = (*proc).entry;
             let rsp_val = (*proc).user_stack.load(Ordering::SeqCst);
             let rflags_val: u64 = 0x3202;
-            let cr3_val = (*proc).cr3.load(Ordering::SeqCst);
             
+            // Use kernel CR3 — user pages already mapped with PAGE_USER flag
             core::arch::asm!(
-                "mov rax, rsp",
-                "mov rbx, 0xFFFF800000000000",
-                "or rax, rbx",
-                "mov rsp, rax",
+                "cli",
                 "mov ds, dx",
                 "mov es, dx",
                 "mov fs, dx",
                 "mov gs, dx",
                 "push {ss}",
-                "push {rsp_val}",
+                "push {rsp}",
                 "push {rflags}",
                 "push {cs}",
                 "push {rip}",
-                "mov rax, {cr3}",
-                "mov cr3, rax",
                 "iretq",
                 in("dx") ss_val,
                 ss = in(reg) ss_val,
-                rsp_val = in(reg) rsp_val,
+                rsp = in(reg) rsp_val,
                 rflags = in(reg) rflags_val,
                 cs = in(reg) cs_val,
                 rip = in(reg) rip_val,
-                cr3 = in(reg) cr3_val,
                 options(noreturn)
             );
         }
@@ -301,6 +302,12 @@ impl UserProcManager {
                     }
                     
                     vmm_map_page_in_table(cr3, vaddr_start + j * PAGE_SIZE, page as u64, flags);
+                    
+                    // Also map into kernel PML4 so user code runs under kernel CR3
+                    let vaddr = vaddr_start + j * PAGE_SIZE;
+                    vmm_split_2mb_page(vaddr);
+                    vmm_map_page(vaddr, page as u64, flags);
+                    vmm_ensure_path_user(vaddr);
                 }
                 
                 if (*phdr).p_filesz > 0 {
@@ -362,6 +369,12 @@ impl UserProcManager {
                 memcpy(page, code.add((i * PAGE_SIZE) as usize), copy_size);
                 
                 vmm_map_page_in_table(cr3, USER_CODE_BASE + i * PAGE_SIZE, page as u64, PAGE_PRESENT | PAGE_USER);
+                
+                // Also map into kernel PML4
+                let vaddr = USER_CODE_BASE + i * PAGE_SIZE;
+                vmm_split_2mb_page(vaddr);
+                vmm_map_page(vaddr, page as u64, PAGE_PRESENT | PAGE_USER);
+                vmm_ensure_path_user(vaddr);
             }
             
             (*proc).pid as i32

@@ -508,6 +508,103 @@ impl VirtualMemoryManager {
         }
     }
 
+    /// Split a 2MB huge page into 512 4KB pages at the given virtual address.
+    /// Required before adding 4KB user mappings to kernel PML4.
+    pub fn split_2mb_page(&self, virt: u64) -> Result<(), &'static str> {
+        let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
+        if pml4_base == 0 { return Err("VMM not initialized"); }
+        
+        let pml4_virt = PhysAddr(pml4_base).to_virt();
+        let v = VirtAddr(virt);
+        
+        unsafe {
+            let pml4 = pml4_virt.0 as *mut PageTableEntry;
+            let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false);
+            if pdpt.is_null() { return Err("PDPT not present"); }
+            
+            let pd_entry = &mut *pdpt.add(v.pdpt_idx());
+            if !pd_entry.is_present() { return Err("PD entry not present"); }
+            if !pd_entry.is_huge() { return Ok(()); } // Already split
+            
+            let huge_frame = pd_entry.frame();
+            let huge_flags = pd_entry.flags();
+            
+            // Allocate new page table
+            let pmm = get_pmm();
+            let pt_page = match pmm.alloc_page() {
+                Some(p) => p,
+                None => return Err("Failed to allocate PT"),
+            };
+            let pt = pt_page.to_virt().0 as *mut PageTableEntry;
+            core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
+            
+            // Fill PT with 4KB entries
+            for i in 0..512 {
+                let pte = &mut *pt.add(i);
+                pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * 4096));
+                pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
+                pte.set_present(true);
+            }
+            
+            // Replace PD entry: point to new PT, clear PS bit
+            pd_entry.set_frame(pt_page);
+            let new_flags = (huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT;
+            pd_entry.set_flags(new_flags);
+            
+            self.flush_tlb(virt);
+        }
+        
+        Ok(())
+    }
+
+    /// Set USER flag on PML4 entry for a virtual address.
+    /// Required before user-mode code can access pages through kernel CR3.
+    pub fn ensure_pml4_user(&self, virt: u64) {
+        let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
+        if pml4_base == 0 { return; }
+        
+        let pml4_virt = PhysAddr(pml4_base).to_virt();
+        let v = VirtAddr(virt);
+        
+        unsafe {
+            let pml4 = pml4_virt.0 as *mut PageTableEntry;
+            let entry = &mut *pml4.add(v.pml4_idx());
+            if entry.is_present() && !entry.is_user() {
+                entry.set_user(true);
+            }
+        }
+    }
+
+    /// Set USER flag on all page table entries in the path for user access.
+    pub fn ensure_path_user(&self, virt: u64) {
+        let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
+        if pml4_base == 0 { return; }
+        
+        let pml4_virt = PhysAddr(pml4_base).to_virt();
+        let v = VirtAddr(virt);
+        
+        unsafe {
+            let pml4 = pml4_virt.0 as *mut PageTableEntry;
+            
+            // PML4
+            let pml4e = &mut *pml4.add(v.pml4_idx());
+            if !pml4e.is_present() { return; }
+            pml4e.set_user(true);
+            
+            // PDPT
+            let pdpt = pml4e.frame().to_virt().0 as *mut PageTableEntry;
+            let pdpte = &mut *pdpt.add(v.pdpt_idx());
+            if !pdpte.is_present() { return; }
+            pdpte.set_user(true);
+            
+            // PD
+            let pd = pdpte.frame().to_virt().0 as *mut PageTableEntry;
+            let pde = &mut *pd.add(v.pd_idx());
+            if !pde.is_present() { return; }
+            pde.set_user(true);
+        }
+    }
+
     /// Find free slot in user page table tracking array
     fn find_free_user_slot(&self) -> usize {
         for i in 0..MAX_USER_PAGE_TABLES {
