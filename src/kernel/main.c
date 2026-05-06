@@ -199,8 +199,9 @@ void kernel_main(void) {
 
     klog_init_msg("Module versions registered: %d modules", version_get_registered_count());
     
-    klog_boot("[MAIN] Interrupts disabled - safe boot mode");
-    /* enable_interrupts();  TODO: Fix GPF before re-enabling */
+    klog_boot("[MAIN] Enabling interrupts...");
+    enable_interrupts();
+    klog_boot("[MAIN] Interrupts enabled");
 
 #ifdef KERNEL_TEST
     klog_boot("[TEST MODE] Running kernel tests...");

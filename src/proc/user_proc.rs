@@ -219,7 +219,6 @@ impl UserProcManager {
             
             core::arch::asm!(
                 "cli",
-                "mov dx, {ss:x}",
                 "mov ds, dx",
                 "mov es, dx",
                 "mov fs, dx",
@@ -230,6 +229,7 @@ impl UserProcManager {
                 "push {cs}",
                 "push {rip}",
                 "iretq",
+                in("dx") ss_val,
                 ss = in(reg) ss_val,
                 rsp = in(reg) rsp_val,
                 rflags = in(reg) rflags_val,

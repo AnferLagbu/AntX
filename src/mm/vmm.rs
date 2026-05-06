@@ -63,6 +63,9 @@ impl VirtualMemoryManager {
         
         KERNEL_PML4.store(cr3, Ordering::Release);
         
+        // Also set the C-visible global for ISR CR3 switching
+        unsafe { super::ffi::kernel_pml4 = cr3; }
+        
         serial_println!("[VMM] Initialized with kernel PML4 at 0x{:X}", cr3);
     }
 
@@ -246,7 +249,9 @@ impl VirtualMemoryManager {
             core::ptr::write_bytes(pml4_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
         }
         
-        // Copy kernel mappings from kernel PML4 (upper half)
+        // Copy kernel higher-half mappings (256-511) so that
+        // interrupt handlers can execute when in user mode.
+        // PML4 entry 0 stays as-is — contains user page mappings.
         let kernel_pml4 = KERNEL_PML4.load(Ordering::Acquire);
         let kernel_pml4_virt = PhysAddr(kernel_pml4).to_virt();
         
@@ -255,7 +260,7 @@ impl VirtualMemoryManager {
             let dst = pml4_virt.0 as *mut PageTableEntry;
             
             for i in 256..512 {
-                dst.write(src.add(i).read());
+                dst.add(i).write(src.add(i).read());
             }
         }
         

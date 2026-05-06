@@ -77,7 +77,6 @@ struct session {
 
 struct process* process_get_current(void);
 struct process* process_get_by_pid(uint64_t pid);
-void process_exit(struct process *proc, int exit_code);
 
 bool proc_has_runnable(void);
 uint64_t scheduler_next_pid(void);

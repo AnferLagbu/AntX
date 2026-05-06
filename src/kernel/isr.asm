@@ -96,7 +96,15 @@ irq_table:
     dq irq8, irq9, irq10, irq11, irq12, irq13, irq14, irq15
 
 section .text
+extern kernel_pml4
+
 isr_common_stub:
+    ; Switch CR3 to kernel PML4 — ensure kernel code accessible
+    push rax
+    mov rax, [kernel_pml4]
+    mov cr3, rax
+    pop rax
+    
     push rax
     push rbx
     push rcx
@@ -136,6 +144,12 @@ isr_common_stub:
     iretq
 
 irq_common_stub:
+    ; Switch CR3 to kernel PML4
+    push rax
+    mov rax, [kernel_pml4]
+    mov cr3, rax
+    pop rax
+
     push rax
     push rbx
     push rcx
@@ -175,6 +189,12 @@ irq_common_stub:
     iretq
 
 syscall_handler:
+    ; Switch CR3 to kernel PML4
+    push rax
+    mov rax, [kernel_pml4]
+    mov cr3, rax
+    pop rax
+
     push rbx
     push rcx
     push rdx

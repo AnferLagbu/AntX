@@ -328,13 +328,8 @@ void exception_handler(struct interrupt_frame *frame) {
     if (can_recover && is_user_mode) {
         klog_kern("User process crashed. Killing process.");
 
-        extern struct process* process_get_current(void);
-        extern void process_exit(struct process *proc, uint64_t exit_code);
-
-        struct process *current = process_get_current();
-        if (current != NULL) {
-            process_exit(current, 1);
-        }
+        extern void process_exit(uint32_t exit_code);
+        process_exit(1);
 
         extern void scheduler_yield(void);
         scheduler_yield();

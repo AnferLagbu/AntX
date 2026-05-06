@@ -100,10 +100,15 @@ int64_t sys_proc_create(void) {
     struct process *parent = process_get_current();
     uint64_t pwid = parent ? parent->pwid : 0;
     
-    struct process *child = process_create(NULL, 0, pwid);
-    if (child == NULL) {
+    // process_create returns PID (uint32_t), not process pointer
+    uint32_t child_pid = process_create(NULL, 0);
+    (void)pwid;
+    if (child_pid == 0) {
         return E_NOMEM;
     }
+    
+    struct process *child = process_find_by_pid(child_pid);
+    if (!child) return E_NOMEM;
     
     if (parent) {
         child->parent_pid = parent->pid;
@@ -112,14 +117,14 @@ int64_t sys_proc_create(void) {
         if (parent->cr3) {
             child->cr3 = vmm_create_user_page_table();
             if (child->cr3 == 0) {
-                process_exit(child, 1);
+                process_exit(1);
                 return E_NOMEM;
             }
         }
     }
     
     child->state = PROC_READY;
-    scheduler_add(child);
+    scheduler_add(child_pid);
     
     return child->pid;
 }
@@ -147,10 +152,7 @@ int64_t sys_proc_exec(const char *path, char *const argv[], char *const envp[]) 
 }
 
 int64_t sys_proc_exit(int status) {
-    struct process *proc = process_get_current();
-    if (proc) {
-        process_exit(proc, status);
-    }
+    process_exit((uint32_t)status);
     return 0;
 }
 
