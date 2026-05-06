@@ -32,7 +32,7 @@ NET_QX_C   = src/net/arch/sys_arch.c \
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
 NET_OBJS   = $(patsubst src/net/%.c,build/net/%.o,$(NET_ALL_C))
 
-USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
+USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
               -fno-stack-protector \
               -Isrc/include -Isrc/user/install
