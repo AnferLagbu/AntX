@@ -32,7 +32,7 @@ NET_QX_C   = src/net/arch/sys_arch.c \
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
 NET_OBJS   = $(patsubst src/net/%.c,build/net/%.o,$(NET_ALL_C))
 
-USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib \
+USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
               -fno-stack-protector \
               -Isrc/include -Isrc/user/install
@@ -56,7 +56,7 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/smart_mount.o build/
               build/pci.o \
               $(NET_OBJS)
 
-KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
+KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/switch.o \
               build/syscall.o build/keyboard.o build/string.o build/ata.o \
               build/timer.o build/user/embedded/user_init_bin.o build/user/embedded/test_minimal_bin.o build/stack_canary.o \

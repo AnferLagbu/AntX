@@ -6,6 +6,9 @@
 #include "scheduler_ex.h"
 #include "thread.h"
 
+extern uint32_t process_get_current_pid(void);
+extern struct process *process_get_by_pid(uint32_t pid);
+
 static struct ipc_namespace ipc_ns;
 static ipc_id_t next_ipc_id = 1;
 

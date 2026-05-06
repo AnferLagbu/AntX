@@ -8,6 +8,8 @@
 #include "tests/kernel_test.h"
 #include "mutex.h"
 #include "thread.h"
+
+extern uint32_t process_get_current_pid(void);
 #include "klog.h"
 
 /* ============================================================

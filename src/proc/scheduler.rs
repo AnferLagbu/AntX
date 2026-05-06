@@ -160,14 +160,24 @@ impl Scheduler {
         {
             let mut rt_queue = self.rt_queue.lock();
             
-            if !rt_queue.is_empty() {
+            while !rt_queue.is_empty() {
                 let rt_task = rt_queue.pop_front().unwrap();
                 let rt_pid = rt_task.pid;
+                
+                let alive = PROCESS_TABLE.get(rt_pid).map_or(false, |p| unsafe {
+                    let state = (*p).get_state();
+                    state != ProcessState::Zombie
+                });
+                
+                if !alive {
+                    continue;
+                }
                 
                 match rt_task.policy {
                     SchedPolicy::Fifo => {
                         next_pid = Some(rt_pid);
                         self.rt_running.store(true, Ordering::SeqCst);
+                        break;
                     }
                     SchedPolicy::Rr => {
                         next_pid = Some(rt_pid);
@@ -175,13 +185,17 @@ impl Scheduler {
                         let mut updated_rt = rt_task;
                         updated_rt.time_slice_remaining = RT_TIME_SLICE;
                         rt_queue.push_back(updated_rt);
+                        break;
                     }
                     _ => {
                         self.queues[0].lock().push_back(rt_pid);
                         self.rt_running.store(false, Ordering::SeqCst);
+                        break;
                     }
                 }
-            } else {
+            }
+            
+            if next_pid.is_none() {
                 self.rt_running.store(false, Ordering::SeqCst);
             }
         }
@@ -199,7 +213,7 @@ impl Scheduler {
                                 self.current_level.store(level as u32, Ordering::SeqCst);
                                 self.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
                                 break;
-                            } else {
+                            } else if state == ProcessState::Blocked {
                                 queue.push_back(pid);
                             }
                         }

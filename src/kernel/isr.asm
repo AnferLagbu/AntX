@@ -99,6 +99,9 @@ section .text
 extern kernel_pml4
 
 isr_common_stub:
+    ; IMPORTANT: push order below MUST match struct interrupt_frame in idt.h:
+    ;   frame fields (low→high): rax, rbx, rcx, rdx, rbp, rsi, rdi, r8..r15
+    ;   DO NOT change push order without updating idt.h
     ; Switch CR3 to kernel PML4 — ensure kernel code accessible
     push rax
     mov rax, [kernel_pml4]
@@ -210,17 +213,16 @@ syscall_handler:
     push r14
     push r15
     
-    mov r12, rax
-    mov r13, rdi
-    mov r14, rsi
-    mov r15, r10
-    mov rbx, r8
+    mov r12, rax        ; r12 = syscall number
+    mov r13, rdi        ; r13 = arg1
+    mov r14, rsi        ; r14 = arg2
+    mov r15, rdx        ; r15 = arg3
     
-    mov rdi, r12
-    mov rsi, r13
-    mov rdx, r14
-    mov rcx, r15
-    mov r8, rbx
+    mov rdi, r12        ; arg0 = syscall number
+    mov rsi, r13        ; arg1 = original rdi
+    mov rdx, r14        ; arg2 = original rsi
+    mov rcx, r15        ; arg3 = original rdx
+    mov r8, [rsp+40]    ; arg4 = original r10 (from stack at offset 5*8)
     
     call syscall_dispatch
     

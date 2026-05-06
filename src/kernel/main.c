@@ -205,8 +205,8 @@ void kernel_main(void) {
 
 #ifdef KERNEL_TEST
     klog_boot("[TEST MODE] Running kernel tests...");
-    /* run_kernel_tests();  Temporarily disabled for debugging */
-    klog_boot("[TEST MODE] Tests disabled for debugging.");
+    run_kernel_tests();
+    klog_boot("[TEST MODE] Tests completed.");
     
     /* 如果有用户进程在调度队列中，进入 idle 循环让它们运行 */
     extern int proc_has_runnable(void);

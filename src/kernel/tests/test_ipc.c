@@ -4,6 +4,8 @@
 #include "thread.h"
 #include "string.h"
 
+extern uint32_t process_get_current_pid(void);
+
 static int test_ipc_pipe_create(void) {
     int pipefd[2];
     int result = pipe_create(pipefd);

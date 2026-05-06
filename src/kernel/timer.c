@@ -20,6 +20,7 @@ extern void sys_tick_inc(void);
 extern void sys_check_timeouts(void);
 
 /* 调度器FFI接口 */
+extern void scheduler_tick(void);
 extern void scheduler_boost_priority(void);
 
 static void timer_handler(struct interrupt_frame *frame) {
