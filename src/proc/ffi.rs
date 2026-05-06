@@ -82,7 +82,14 @@ pub extern "C" fn process_get_current_pid() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
-    0
+    // Return current C process pointer if pid matches, otherwise 0
+    unsafe {
+        if _pid as u64 == C_CURRENT_PROCESS.pid {
+            &C_CURRENT_PROCESS as *const CProcess as u64
+        } else {
+            PROCESS_TABLE.get(_pid).map(|p| p as u64).unwrap_or(0)
+        }
+    }
 }
 
 #[no_mangle]
@@ -92,6 +99,12 @@ pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid) -> Pid {
 
 #[no_mangle]
 pub extern "C" fn process_exit(exit_code: u32) {
+    SCHEDULER.exit(exit_code);
+}
+
+#[no_mangle]
+pub extern "C" fn process_kill(pid: u32, exit_code: u32) {
+    // Set exit code and exit the process
     SCHEDULER.exit(exit_code);
 }
 
@@ -107,7 +120,7 @@ pub extern "C" fn proc_has_runnable() -> i32 {
 
 #[no_mangle]
 pub extern "C" fn thread_get_current() -> u64 {
-    THREAD_MANAGER.get_current_thread().map(|_| 1).unwrap_or(0) as u64
+    THREAD_MANAGER.get_current_thread().unwrap_or(0)
 }
 
 #[no_mangle]
@@ -202,6 +215,12 @@ pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: 
 #[no_mangle]
 pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
+        unsafe {
+            C_CURRENT_PROCESS.pid = (*proc).pid as u64;
+            C_CURRENT_PROCESS.pwid = (*proc).pwid.load(Ordering::SeqCst);
+            C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
+            C_CURRENT_PROCESS.parent_pid = 1; // init is parent
+        }
         USER_PROC_MANAGER.enter(proc);
         0
     } else {

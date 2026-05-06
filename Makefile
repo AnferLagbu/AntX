@@ -72,7 +72,6 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/serial.o b
               build/test_process_enhanced.o build/test_scheduler_enhanced.o build/test_interrupt.o build/test_ipc_enhanced.o \
               build/test_vfs_enhanced.o build/test_syscall_enhanced.o \
               build/test_qemu_hardware.o \
-              build/process_stub.o \
               build/version_registry.o \
               build/test_spinlock.o build/test_atomic.o build/test_rwlock.o build/test_mutex.o build/test_slab.o \
               build/test_pci.o build/test_dma.o \
@@ -529,10 +528,6 @@ build/test_error_handling.o: src/kernel/tests/test_error_handling.c
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
 build/test_performance.o: src/kernel/tests/test_performance.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
-
-build/process_stub.o: src/kernel/process_stub.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
