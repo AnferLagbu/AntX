@@ -5,19 +5,9 @@ use alloc::vec::Vec;
 use crate::fs::vfs::types::*;
 
 extern "C" {
-    fn klog_ffi_info(msg: *const u8);
     fn pwid_get_level(pwid: u64) -> u8;
     fn pwid_get_fs_capability(pwid: u64) -> u64;
     fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
-}
-
-fn log(s: &str) {
-    let mut buf = [0u8; 256];
-    let bytes = s.as_bytes();
-    let len = bytes.len().min(255);
-    buf[..len].copy_from_slice(&bytes[..len]);
-    buf[len] = 0;
-    unsafe { klog_ffi_info(buf.as_ptr()); }
 }
 
 const RAMFS_MAX_INODES: usize = 256;
@@ -705,10 +695,7 @@ impl RamFsData {
         0
     }
     
-    pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
-        log("[RAMFS-OPEN] ");
-
-        if path.is_empty() {
+    pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {if path.is_empty() {
             return None;
         }
 
@@ -869,13 +856,7 @@ impl RamFsData {
             if !self.check_permission(inode, pwid, FS_CAP_WRITE) {
                 return -1;
             }
-        }
-
-        unsafe {log("[RAMFS-TRUNC] ");
-            log(" ");
-        }
-
-        let old_size = {
+        }let old_size = {
             let inode = &self.inodes[inode_num as usize];
             inode.size as u64
         };
@@ -999,23 +980,14 @@ impl RamFsData {
         0
     }
 
-    pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {
-        unsafe {log("[RAMFS-MKDIR] ");
-            log(" ");
-        }
-
-        if name.is_empty() || name.contains('/') {
+    pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {if name.is_empty() || name.contains('/') {
             return -1;
         }
 
         let parent_num = match self.resolve_path(parent_path) {
-            Some(n) => {
-                unsafe { log("P"); }
-                n
+            Some(n) => {n
             },
-            None => {
-                unsafe { log("X"); }
-                return -1;
+            None => {return -1;
             },
         };
 
@@ -1052,9 +1024,7 @@ impl RamFsData {
             if entry.inode != 0 {
                 let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
                 let existing_name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
-                if existing_name == name {
-                    unsafe { log("E"); }
-                    return -1;
+                if existing_name == name {return -1;
                 }
             }
         }
@@ -1171,6 +1141,63 @@ impl RamFsData {
         }
 
         Some(inode.size)
+    }
+
+    pub fn link(&mut self, parent_inode: u32, target_inode: u32, name: &str, pwid: u64) -> i32 {
+        if name.is_empty() || name.contains('/') {
+            return -1;
+        }
+        if parent_inode as usize >= RAMFS_MAX_INODES || target_inode as usize >= RAMFS_MAX_INODES {
+            return -1;
+        }
+        if !self.inodes[parent_inode as usize].used || !self.inodes[target_inode as usize].used {
+            return -1;
+        }
+        if self.inodes[parent_inode as usize].file_type != VfsFileType::Dir as u8 {
+            return -1;
+        }
+
+        let parent = &self.inodes[parent_inode as usize];
+        let parent_block = parent.direct_blocks[0];
+        if parent_block == u32::MAX {
+            return -1;
+        }
+
+        let dirent_size = core::mem::size_of::<RamFsDirent>();
+        let num_entries = parent.size as usize / dirent_size;
+
+        for i in 0..num_entries {
+            let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
+            let entry: &RamFsDirent = unsafe {
+                &*(&self.data_area[offset] as *const u8 as *const RamFsDirent)
+            };
+            if entry.inode != 0 {
+                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let existing = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
+                if existing == name {
+                    return -1;
+                }
+            }
+        }
+
+        let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
+        if offset + dirent_size > self.data_area.len() {
+            return -1;
+        }
+
+        let entry: &mut RamFsDirent = unsafe {
+            &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirent)
+        };
+        entry.inode = target_inode;
+        entry.file_type = self.inodes[target_inode as usize].file_type;
+        entry.set_name(name);
+
+        self.inodes[parent_inode as usize].size += dirent_size as u32;
+        self.inodes[parent_inode as usize].link_count += 1;
+        self.inodes[parent_inode as usize].mtime = Self::get_time();
+        self.inodes[target_inode as usize].link_count += 1;
+
+        0
     }
 }
 

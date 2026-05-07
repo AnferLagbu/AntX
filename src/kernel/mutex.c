@@ -189,14 +189,20 @@ void cond_init(cond_var_t *cv)
 void cond_wait(cond_var_t *cv, mutex_t *m)
 {
     mutex_unlock(m);
+    extern void scheduler_yield(void);
+    scheduler_yield();
     mutex_lock(m);
+    (void)cv;
 }
 
 int cond_wait_timeout(cond_var_t *cv, mutex_t *m, unsigned int timeout_ms)
 {
     (void)timeout_ms;
     mutex_unlock(m);
+    extern void scheduler_yield(void);
+    scheduler_yield();
     mutex_lock(m);
+    (void)cv;
     return 1;
 }
 

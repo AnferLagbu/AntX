@@ -1,18 +1,5 @@
 use core::ffi::c_char;
 
-extern "C" {
-    fn klog_ffi_info(msg: *const u8);
-}
-
-fn log(s: &str) {
-    let mut buf = [0u8; 256];
-    let bytes = s.as_bytes();
-    let len = bytes.len().min(255);
-    buf[..len].copy_from_slice(&bytes[..len]);
-    buf[len] = 0;
-    unsafe { klog_ffi_info(buf.as_ptr()); }
-}
-
 use crate::fs::hvfs::hvfs::get_hvfs;
 use super::vfs::VFS_MANAGER;
 use crate::fs::ramfs::ramfs::RAMFS_DATA;
@@ -33,14 +20,13 @@ fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
 #[no_mangle]
 pub extern "C" fn vfs_init_internal() {
     super::vfs::init();
-    // ramfs/hvfs/diskfs init is handled by main.c via MODULE_CHECK_VOID
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char) -> i32 {
     let path = ptr_to_str(path);
     let fs_name = ptr_to_str(fs_name);
-    
+
     if fs_name == "ramfs" {
         let mut ramfs = RAMFS_DATA.lock();
         if ramfs.mount(path) != 0 {
@@ -54,7 +40,7 @@ pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char
     } else {
         return -1;
     }
-    
+
     VFS_MANAGER.mount(path, fs_name)
 }
 
@@ -66,27 +52,14 @@ pub extern "C" fn vfs_unmount_internal(path: *const c_char) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
-    unsafe { log(">"); }
-
     let path = ptr_to_str(path);
 
-    unsafe {log("[OPEN] ");
-    }
-
     let mount_idx = match VFS_MANAGER.find_mount(path) {
-        Some(idx) => {
-            idx
-        },
-        None => {
-            unsafe { log("X"); }
-            return -1;
-        },
+        Some(idx) => idx,
+        None => return -1,
     };
 
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
-
-    unsafe {log("[REL] ");
-    }
 
     let fd_idx = match VFS_MANAGER.alloc_fd() {
         Some(idx) => idx,
@@ -141,11 +114,9 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
 #[no_mangle]
 pub extern "C" fn vfs_close_internal(fd_idx: u32) -> i32 {
     let fd_idx = fd_idx as usize;
-    
     if fd_idx >= VFS_MAX_FDS {
         return -1;
     }
-    
     VFS_MANAGER.free_fd(fd_idx);
     0
 }
@@ -161,12 +132,12 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
         return -1;
     }
 
-    let (inode_num, offset, pwid, fs_type, full_path) = {
+    let (inode_num, offset, pwid, full_path) = {
         let fd_table = VFS_MANAGER.fd_table.lock();
         if fd_idx < VFS_MAX_FDS && fd_table[fd_idx].used {
             let path = alloc::string::String::from(fd_table[fd_idx].get_path());
-            (fd_table[fd_idx].inode_num, fd_table[fd_idx].offset, 
-             fd_table[fd_idx].pwid, fd_table[fd_idx].file_type, path)
+            (fd_table[fd_idx].inode_num, fd_table[fd_idx].offset,
+             fd_table[fd_idx].pwid, path)
         } else {
             return -1;
         }
@@ -206,19 +177,16 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_unlink_internal(path: *const c_char) -> i32 {
+pub extern "C" fn vfs_unlink_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
-    
-    unsafe {log("[UNLINK] ");
-    }
-    
+
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
         None => return -1,
     };
-    
+
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
-    
+
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
@@ -227,19 +195,18 @@ pub extern "C" fn vfs_unlink_internal(path: *const c_char) -> i32 {
             alloc::string::String::new()
         }
     };
-    
+
     match fs_name.as_str() {
         "ramfs" => {
             let mut ramfs = RAMFS_DATA.lock();
             match ramfs.resolve_path(rel_path) {
-                Some(inode_num) => {
-                    ramfs.truncate(inode_num, 0, 0)
-                }
+                Some(inode_num) => ramfs.truncate(inode_num, 0, pwid),
                 None => -1
             }
         }
         "diskfs" => {
-            -1
+            let hvfs = get_hvfs();
+            hvfs.unlink(rel_path, pwid)
         }
         _ => -1
     }
@@ -247,10 +214,43 @@ pub extern "C" fn vfs_unlink_internal(path: *const c_char) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
-    unsafe {log("[TRUNCATE] ");
+    let fd_idx = fd as usize;
+    if fd_idx >= VFS_MAX_FDS {
+        return -1;
     }
-    
-    0
+
+    let (inode_num, _, pwid, full_path) = {
+        let fd_table = VFS_MANAGER.fd_table.lock();
+        if fd_idx < VFS_MAX_FDS && fd_table[fd_idx].used {
+            let path = alloc::string::String::from(fd_table[fd_idx].get_path());
+            (fd_table[fd_idx].inode_num, fd_table[fd_idx].offset,
+             fd_table[fd_idx].pwid, path)
+        } else {
+            return -1;
+        }
+    };
+
+    let mount_idx = match VFS_MANAGER.find_mount(&full_path) {
+        Some(idx) => idx,
+        None => return -1,
+    };
+
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            alloc::string::String::new()
+        }
+    };
+
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            ramfs.truncate(inode_num, size, pwid)
+        }
+        _ => -1
+    }
 }
 
 #[no_mangle]
@@ -312,21 +312,12 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
 pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
 
-    unsafe {log("[MKDIR] ");
-    }
-
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
-        None => {
-            unsafe { log("N"); }
-            return -1;
-        },
+        None => return -1,
     };
 
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
-
-    unsafe {log("[REL] ");
-    }
 
     let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
         if pos == 0 {
@@ -337,10 +328,6 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     } else {
         ("/", rel_path)
     };
-
-    unsafe {log("[PARENT] ");
-        log(" ");
-    }
 
     if name.is_empty() {
         return -1;
@@ -369,20 +356,16 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
+pub extern "C" fn vfs_rmdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
-    
-    if st.is_null() {
-        return -1;
-    }
-    
+
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
         None => return -1,
     };
-    
+
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
-    
+
     let fs_name = {
         let mounts = VFS_MANAGER.mounts.lock();
         if mount_idx < VFS_MAX_MOUNTS {
@@ -391,7 +374,53 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid:
             alloc::string::String::new()
         }
     };
-    
+
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            match ramfs.resolve_path(rel_path) {
+                Some(inode_num) => {
+                    let stat = ramfs.stat(inode_num);
+                    match stat {
+                        Some(s) if s.file_type == VfsFileType::Dir as u8 => ramfs.truncate(inode_num, 0, pwid),
+                        _ => -1,
+                    }
+                }
+                None => -1
+            }
+        }
+        "diskfs" => {
+            let hvfs = get_hvfs();
+            hvfs.rmdir(rel_path, pwid)
+        }
+        _ => -1
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
+    let path = ptr_to_str(path);
+
+    if st.is_null() {
+        return -1;
+    }
+
+    let mount_idx = match VFS_MANAGER.find_mount(path) {
+        Some(idx) => idx,
+        None => return -1,
+    };
+
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            alloc::string::String::new()
+        }
+    };
+
     match fs_name.as_str() {
         "ramfs" => {
             let ramfs = RAMFS_DATA.lock();
@@ -417,6 +446,87 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid:
 }
 
 #[no_mangle]
+pub extern "C" fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirent) -> i32 {
+    if entry.is_null() {
+        return -1;
+    }
+
+    let fd_idx = fd as usize;
+    if fd_idx >= VFS_MAX_FDS {
+        return -1;
+    }
+
+    let (inode_num, offset, pwid, full_path) = {
+        let fd_table = VFS_MANAGER.fd_table.lock();
+        if fd_idx < VFS_MAX_FDS && fd_table[fd_idx].used {
+            let path = alloc::string::String::from(fd_table[fd_idx].get_path());
+            (fd_table[fd_idx].inode_num, fd_table[fd_idx].offset,
+             fd_table[fd_idx].pwid, path)
+        } else {
+            return -1;
+        }
+    };
+
+    let mount_idx = match VFS_MANAGER.find_mount(&full_path) {
+        Some(idx) => idx,
+        None => return -1,
+    };
+
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            alloc::string::String::new()
+        }
+    };
+
+    let dirent_size = core::mem::size_of::<crate::fs::ramfs::ramfs::RamFsDirent>() as u64;
+
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            let mut dir_offset = offset;
+            let mut raw_entry = crate::fs::ramfs::ramfs::RamFsDirent::new();
+            let raw_size = dirent_size as usize;
+            let entry_slice = unsafe {
+                core::slice::from_raw_parts_mut(
+                    &mut raw_entry as *mut crate::fs::ramfs::ramfs::RamFsDirent as *mut u8,
+                    raw_size,
+                )
+            };
+
+            let result = ramfs.read(inode_num, &mut dir_offset, entry_slice, pwid);
+            if result <= 0 || raw_entry.inode == 0 {
+                return 0;
+            }
+
+            unsafe {
+                (*entry).inode = raw_entry.inode;
+                (*entry).file_type = raw_entry.file_type;
+                let name_len = raw_entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let copy_len = name_len.min(VFS_MAX_NAME);
+                core::ptr::copy_nonoverlapping(
+                    raw_entry.name.as_ptr(),
+                    (*entry).name.as_mut_ptr(),
+                    copy_len,
+                );
+                if name_len < VFS_MAX_NAME {
+                    (*entry).name[name_len] = 0;
+                }
+            }
+
+            VFS_MANAGER.set_fd_offset(fd_idx, dir_offset);
+            (raw_entry.inode != 0) as i32
+        }
+        "diskfs" => {
+            -1
+        }
+        _ => -1
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn vfs_set_cwd_internal(path: *const c_char) {
     let path = ptr_to_str(path);
     VFS_MANAGER.set_cwd(path);
@@ -427,16 +537,16 @@ pub extern "C" fn vfs_get_cwd_internal(buf: *mut c_char, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
         return -1;
     }
-    
+
     let cwd = VFS_MANAGER.get_cwd();
     let bytes = cwd.as_bytes();
     let len = bytes.len().min((size - 1) as usize);
-    
+
     unsafe {
         core::ptr::copy_nonoverlapping(bytes.as_ptr(), buf as *mut u8, len);
         *buf.add(len) = 0;
     }
-    
+
     len as i32
 }
 
@@ -481,7 +591,6 @@ pub extern "C" fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
-    
     let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
     let hvfs = get_hvfs();
     hvfs.read(fd, buf_slice)
@@ -492,7 +601,6 @@ pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i3
     if buf.is_null() || count == 0 {
         return -1;
     }
-    
     let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
     let hvfs = get_hvfs();
     hvfs.write(fd, buf_slice)
@@ -512,16 +620,14 @@ pub extern "C" fn hvfs_sync_internal() -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_get_stats_internal(total_blocks: *mut u32, free_blocks: *mut u32, 
+pub extern "C" fn hvfs_get_stats_internal(total_blocks: *mut u32, free_blocks: *mut u32,
                                        total_inodes: *mut u32, free_inodes: *mut u32) {
-    if total_blocks.is_null() || free_blocks.is_null() || 
+    if total_blocks.is_null() || free_blocks.is_null() ||
        total_inodes.is_null() || free_inodes.is_null() {
         return;
     }
-    
     let hvfs = get_hvfs();
     let (tb, fb, ti, fi) = hvfs.get_stats();
-    
     unsafe {
         *total_blocks = tb;
         *free_blocks = fb;
@@ -554,6 +660,10 @@ pub extern "C" fn hvfs_get_current_pwid_internal() -> u64 {
     hvfs.get_current_pwid()
 }
 
+// ============================================================
+// Public VFS API (matches vfs.h signatures)
+// ============================================================
+
 #[no_mangle]
 pub extern "C" fn vfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     vfs_open_internal(path, flags, pwid)
@@ -585,38 +695,88 @@ pub extern "C" fn vfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_chmod(_path: *const c_char, _mode: u32) -> i32 {
-    -1
+pub extern "C" fn vfs_chmod(path: *const c_char, mode: u16, pwid: u64) -> i32 {
+    vfs_chmod_internal(path, mode as u32, pwid)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_chown(_path: *const c_char, _uid: u32, _gid: u32) -> i32 {
-    -1
+pub extern "C" fn vfs_chown(path: *const c_char, owner_pwid: u64, pwid: u64) -> i32 {
+    vfs_chown_internal(path, 0, 0, pwid)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_unlink(_path: *const c_char) -> i32 {
-    -1
+pub extern "C" fn vfs_unlink(path: *const c_char, pwid: u64) -> i32 {
+    vfs_unlink_internal(path, pwid)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_rename(_old_path: *const c_char, _new_path: *const c_char) -> i32 {
-    -1
+pub extern "C" fn vfs_rename(old_path: *const c_char, new_path: *const c_char, pwid: u64) -> i32 {
+    let old = ptr_to_str(old_path);
+    let new = ptr_to_str(new_path);
+
+    let mount_idx = match VFS_MANAGER.find_mount(old) {
+        Some(idx) => idx,
+        None => return -1,
+    };
+
+    let rel_old = VFS_MANAGER.get_relative_path(old, mount_idx);
+    let rel_new = VFS_MANAGER.get_relative_path(new, mount_idx);
+
+    let fs_name = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        if mount_idx < VFS_MAX_MOUNTS {
+            alloc::string::String::from(mounts[mount_idx].get_fs_name())
+        } else {
+            alloc::string::String::new()
+        }
+    };
+
+    match fs_name.as_str() {
+        "ramfs" => {
+            let mut ramfs = RAMFS_DATA.lock();
+            let old_inode = match ramfs.resolve_path(rel_old) {
+                Some(ino) => ino,
+                None => return -1,
+            };
+
+            let parent_path = if let Some(pos) = rel_new.rfind('/') {
+                if pos == 0 { "/" } else { &rel_new[..pos] }
+            } else { "/" };
+
+            let new_name = if let Some(pos) = rel_new.rfind('/') {
+                &rel_new[pos + 1..]
+            } else {
+                rel_new
+            };
+
+            let parent_inode = match ramfs.resolve_path(parent_path) {
+                Some(ino) => ino,
+                None => return -1,
+            };
+
+            if ramfs.link(parent_inode, old_inode, new_name, pwid) < 0 {
+                return -1;
+            }
+
+            ramfs.truncate(old_inode, 0, pwid)
+        }
+        _ => -1
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_rmdir(_path: *const c_char) -> i32 {
-    -1
+pub extern "C" fn vfs_rmdir(path: *const c_char, pwid: u64) -> i32 {
+    vfs_rmdir_internal(path, pwid)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_readdir(_fd: u32, _buf: *mut u8, _count: u32) -> i32 {
-    -1
+pub extern "C" fn vfs_readdir(fd: u32, entry: *mut VfsDirent) -> i32 {
+    vfs_readdir_internal(fd, entry)
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_sync() -> i32 {
-    0
+    hvfs_sync_internal()
 }
 
 #[no_mangle]
@@ -652,19 +812,19 @@ pub extern "C" fn vfs_seek(fd: u32, offset: u32, whence: u32) -> i32 {
     if fd_idx >= VFS_MAX_FDS {
         return -1;
     }
-    
+
     let current_offset = match VFS_MANAGER.get_fd_info(fd_idx) {
         Some((_, off, _)) => off,
         None => return -1,
     };
-    
+
     let new_offset: u64 = match whence {
         0 => offset as u64,
         1 => current_offset + offset as u64,
         2 => return -1,
         _ => return -1,
     };
-    
+
     VFS_MANAGER.set_fd_offset(fd_idx, new_offset);
     new_offset as i32
 }
@@ -754,7 +914,7 @@ pub extern "C" fn vfs_format_internal(_path: *const c_char, _fs_type: *const c_c
 
 #[no_mangle]
 pub extern "C" fn vfs_sync_internal() -> i32 {
-    0
+    hvfs_sync_internal()
 }
 
 #[no_mangle]
@@ -763,23 +923,23 @@ pub extern "C" fn vfs_seek_internal(fd: u32, offset: i32, whence: u32) -> i32 {
     if fd_idx >= VFS_MAX_FDS {
         return -1;
     }
-    
+
     let current_offset = match VFS_MANAGER.get_fd_info(fd_idx) {
         Some((_, off, _)) => off,
         None => return -1,
     };
-    
+
     let new_offset: i64 = match whence {
         0 => offset as i64,
         1 => current_offset as i64 + offset as i64,
         2 => -1,
         _ => return -1,
     };
-    
+
     if new_offset < 0 {
         return -1;
     }
-    
+
     VFS_MANAGER.set_fd_offset(fd_idx, new_offset as u64);
     new_offset as i32
 }
