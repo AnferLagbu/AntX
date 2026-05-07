@@ -214,8 +214,8 @@ int64_t sys_pwid_elevate(const char *command, const char **argv);
 //   失败: 负数错误码
 
 // 流程
-// 1. 验证原 Root 密码
-// 2. 创建临时子进程 (PWID=原Root)
+// 1. 验证 PWID 能力掩码 (pwid_has_capability)
+// 2. 创建子进程 (继承父 PWID) 
 // 3. 执行命令
 // 4. 命令结束，销毁临时进程
 // 5. 恢复原 PWID
@@ -411,8 +411,8 @@ syscall(109, "my-antx", 7);
       │
       ▼
 ┌──────────────────┐
-│ 检查权限级别     │
-│ (Root/Trustworthy/Untrustworthy)│
+│ 检查能力掩码     │
+│ (pwid_has_capability)│
 └──────────────────┘
       │
       ▼
@@ -421,20 +421,30 @@ syscall(109, "my-antx", 7);
 └──────────────────┘
 ```
 
-### 5.2 权限级别检查
+### 5.2 权限级别检查 (v4: 能力掩码)
 
 ```c
-// 内核中的权限检查
-int check_pwid_permission(int required_level) {
+// v4: 基于能力掩码的权限检查（替代等级检查）
+int check_pwid_permission(uint16_t domain, uint64_t required_cap) {
     uint64_t current_pwid = get_current_pwid();
-    int current_level = get_pwid_level(current_pwid);
-    
-    if (current_level > required_level) {
-        return -EPWID_NOT_ROOT;
+    // 直接查询 PWID 的 capability_mask[domain] 是否包含 required_cap
+    if (!pwid_has_capability(current_pwid, domain, required_cap)) {
+        return -E_PERM;
     }
     return 0;
 }
+
+// 现有门控示例:
+// sys_disk_format     → pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_DEVICE_DISK)
+// sys_proc_setpwid    → pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_SYS_ADMIN)
+// sys_auth_create_user → pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_USER_CREATE)
+// sys_auth_token_create → pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_TOKEN_ISSUE)
+// sys_auth_trust_add  → pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_TRUST_ADD)
+// sys_proc_sched_set  → pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_SYS_ADMIN)
 ```
+
+> **v3→v4**: `pwid_is_root()` 已从整个代码库中移除。`E_AUTH_NOROOT` 和
+> `EPWID_NOT_ROOT` 错误码仅在遗留代码路径中存在，新代码使用 `E_PERM`。
 
 ## 六、未来扩展
 

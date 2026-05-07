@@ -28,9 +28,9 @@
 ### 安全与权限
 | 文档 | 说明 |
 |------|------|
-| [pwid-model.md](pwid-model.md) | PWID 权限模型 - 三级权限、原Root锚点、令牌提权 |
-| [pwid-enhanced-v2.md](pwid-enhanced-v2.md) | PWID v2 增强 - 能力系统、信任链、审计 |
-| [permission-model-v3.md](permission-model-v3.md) | 权限模型 v3 - sensitivity + ACE + Capability Matrix |
+| [pwid-model.md](pwid-model.md) | PWID v4 能力流动模型 — First Token、能力掩码、令牌提权 |
+| [pwid-enhanced-v2.md](pwid-enhanced-v2.md) | PWID v2 增强设计 (已被 v4 取代，保留作参考) |
+| [permission-model-v3.md](permission-model-v3.md) | 权限检查 v3→v4 — 5 层检查架构 (sensitivity + ACE + capability + trust) |
 | [security-mechanisms.md](security-mechanisms.md) | 安全机制 - Stack Canary/PIC/NX/ASSERT/Map文件 |
 
 ### 文件系统

@@ -133,18 +133,20 @@ P3: 个人表达 > 行业标准   (按创始人审美组织)
 
 **关键文件**: `src/dma/mod.rs`, `src/dma/engine.rs`
 
-### 2.7 PWID 权限系统
+### 2.7 PWID 权限系统 (v4: 能力流动模型)
 
 **已实现**:
 - PWID 生成/验证 (SHA-256)
-- 三级权限 (Root/Trustworthy/Untrustworthy)
-- 原 Root 锚点 (不可删除)
-- 令牌提权 (token_create/use/revoke)
-- 信任链 (trust_add/remove)
+- v4 能力掩码模型 — 每个 PWID 携带 16×64 位能力，不再从等级推导权限
+- First Token（创世令牌）— 首次启动自动生成一次性全能力令牌
+- `--first` 引导参数 → 系统恢复通道
+- 令牌系统 (token_create/use/revoke/expire) — 有时限的能力授予
+- 信任链 (trust_add/remove) — 最多 8 跳，每跳能力取交集
 - 暴力破解防护
 - 审计日志
-- 能力矩阵 (capability)
-- PWID 过期
+- 能力矩阵 (capability_mask: [u64; 16])
+- PWID 感知调度: per-PWID CPU 配额 + 进程数限制
+- `pwid_is_root()` 已从整个代码库中移除 — 全部替换为基于能力掩码的检查
 
 ### 2.8 IPC 子系统
 
@@ -190,7 +192,7 @@ void kernel_main(void) {
     kernel_init();  user_proc_init();
 
     // 5. PWID 权限
-    pwid_init();
+    pwid_init();                        // 包含 First Token 检测
 
     // 6. 驱动和文件系统
     ata_init();     hvfs_init();        vfs_init();
@@ -202,8 +204,10 @@ void kernel_main(void) {
     // 8. 系统调用 + 外设
     syscall_init(); keyboard_init();    timer_init();
 
-    // 9. PWID 恢复
-    pwid_try_load();
+    // 9. 引导身份检查 (v4: 空表自动生成 First Token)
+    if (!pwid_any_identity_exists()) {
+        pwid_request_genesis();         // 触发创世令牌生成
+    }
 
     // 10. 模块版本注册
     version_register("QueenX", ...); // +10个模块

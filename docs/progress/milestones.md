@@ -112,15 +112,17 @@
 - ✅ MLFQ 多级反馈队列调度器
 - ✅ 实时任务支持 (FIFO/RR)
 
-**PWID 权限模型** (85% 完成)
+**PWID 权限模型 v4** (100% 完成)
 - ✅ PWID 生成与验证 (SHA-256, Rust重写)
-- ✅ 三级权限体系
-- ✅ 原 Root 锚点
-- ✅ 令牌提权 (token_create/use/revoke)
-- ✅ 信任链 (trust_add/remove)
-- ✅ 能力矩阵 (capability)
+- ✅ v4 能力掩码模型 — 16 领域 × 64 位能力
+- ✅ First Token（创世令牌）— 空表自动生成
+- ✅ 令牌系统 (token_create/use/revoke/expire)
+- ✅ 信任链 (trust_add/remove) — 最多 8 跳
 - ✅ 暴力破解防护
 - ✅ 审计日志
+- ✅ `pwid_is_root()` 完全移除 → 能力掩码检查
+- ✅ per-PWID CPU 配额
+- ✅ per-PWID 进程数限制
 
 **文件系统** (70% 完成)
 - ✅ VFS 虚拟文件系统层 (Rust重写)

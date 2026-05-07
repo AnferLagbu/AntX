@@ -43,16 +43,18 @@
 | ELF 加载器 + 用户态切换 | ✅ |
 | 会话管理 | ✅ |
 
-### PWID 权限 (Rust 重写完成)
+### PWID 权限 v4 (能力流动模型)
 | 功能 | 状态 |
 |------|------|
 | SHA-256 PWID 生成/验证 | ✅ |
-| 三级权限 (Root/Trustworthy/Untrustworthy) | ✅ |
-| 原 Root 锚点 | ✅ |
-| 令牌提权 (token_create/use/revoke) | ✅ |
-| 信任链 (trust_add/remove) | ✅ |
-| 能力矩阵 (capability) | ✅ |
+| v4 能力掩码模型 — 16 领域 × 64 位 | ✅ |
+| First Token（创世令牌）— 空表自动生成 | ✅ |
+| 令牌系统 (token_create/use/revoke/expire) | ✅ |
+| 信任链 (trust_add/remove) — 8 跳 | ✅ |
 | 暴力破解防护 + 审计日志 | ✅ |
+| `pwid_is_root()` 完全移除 → 能力掩码检查 | ✅ |
+| per-PWID CPU 配额 | ✅ |
+| per-PWID 进程数限制 | ✅ |
 
 ### IPC
 | 功能 | 状态 |

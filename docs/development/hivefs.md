@@ -146,33 +146,36 @@ struct inode {
 └────────────────────────────────────────────────────────────┘
 ```
 
-### 2.5 PWID 权限检查
+### 2.5 PWID 权限检查 (v4: 能力掩码)
 
-```c
-// 文件权限检查逻辑
-bool check_pwid_permission(struct inode *inode, uint64_t pwid, int access_type) {
-    // 获取调用者的权限等级
-    int level = get_pwid_level(pwid);
-    
-    // Root 权限直接通过
-    if (level == PWID_LEVEL_ROOT) {
-        return true;
+```rust
+// v4: capability-based permission check (5 layers)
+pub fn check_permission(&self, inode: &HvfsInode, pwid: u64, cap: u64) -> bool {
+    // L0: 无效身份检查
+    let level = pwid_get_level(pwid);
+    if level > 3 { return false; }
+
+    // L1: sensitivity 标签 (数值比较)
+    if inode.sensitivity > 0 { ... }
+
+    // L2: 能力掩码检查 — pwid_has_capability(pwid, domain, cap)
+    let caps = pwid_get_fs_capability(pwid);
+    if caps == 0 { return true; }      // 无 FS 能力 = 仅所有者/trust 可访问
+    if (caps & cap) == cap { return true; }
+
+    // L3: ACE 列表 (Access Control Entries)
+    ...
+
+    // L4: 信任链 (最多 8 跳)
+    if inode.owner_pwid != 0 && inode.owner_pwid != pwid {
+        let has_trust = pwid_check_trust(pwid, inode.owner_pwid, 1, cap, 8);
+        ...
     }
-    
-    // 检查所有者 PWID
-    if (pwid == inode->owner_pwid) {
-        return (inode->pwid_perm >> 8) & (access_type << 4);
-    }
-    
-    // 检查组 PWID（预留）
-    if (pwid == inode->group_pwid) {
-        return (inode->pwid_perm >> 4) & (access_type << 4);
-    }
-    
-    // 其他 PWID
-    return inode->pwid_perm & (access_type << 4);
 }
 ```
+
+> **v3→v4 变更**: 移除了 `level==0 → true` 的硬编码 Root 旁路。
+> v4 中没有任何身份天生有权——能力掩码中必须有对应位才授权。
 
 ## 三、目录结构
 

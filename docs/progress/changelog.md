@@ -5,6 +5,31 @@
 ---
 ## [Unreleased]
 
+### 🏗️ PWID v4 能力流动模型 (2026-05-07)
+
+PWID 权限系统重大架构升级 — v3→v4:
+
+**废除**: 三级等级权限 (Root/Trustworthy/Untrustworthy)、原 Root 锚点（不可删除）、`pwid_is_root()` 硬编码特权检查
+
+**引入**:
+- 能力掩码模型: 每个 PWID 携带 `capability_mask: [u64; 16]` — 16 领域 × 64 位
+- First Token（创世令牌）: 首次启动自动生成一次性全能力令牌
+- `--first` 引导参数恢复通道
+- `pwid_has_capability(pwid, domain, cap)` 替代所有等级检查
+- `pwid_is_root()` 从代码库完全移除 (4→0)
+
+**调度器集成**:
+- `Process.pwid` 字段: fork 自动继承
+- Per-PWID CPU 配额 (`PwidQuota`): max_runtime/period/consumed
+- Per-PWID 进程数限制 (`PwidLimit`): max_procs/current
+- `PROC_CAP_RT_SCHED` 能力位
+- RT FIFO watchdog (500 ticks → 强制 preempt)
+- Blocked 进程死循环修复
+
+**测试**: 203 passed / 0 failed / 15 skipped / 0 panic
+
+详见 [pwid-model.md](docs/development/pwid-model.md)
+
 ### 🐛 Bug Fix - 用户态 init 崩溃修复 (2026-05-07)
 
 三个根因导致的 init 进程 Page Fault 崩溃:
