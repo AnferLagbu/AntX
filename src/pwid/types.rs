@@ -47,7 +47,7 @@ bitflags::bitflags! {
     pub struct PwidFlags: u16 {
         const NONE                = 0;
         const DISABLED            = 1 << 0;
-        const ORIGINAL_ROOT       = 1 << 1;
+        const ORIGINAL_ROOT       = 1 << 1;  // @deprecated v4 — kept for DB compatibility
         const DEFAULT_PW          = 1 << 2;
         const MODIFIED            = 1 << 3;
         const LOCKED              = 1 << 4;
@@ -204,7 +204,6 @@ pub enum PwidError {
     TableFull = -5,
     AlreadyExists = -6,
     InvalidLevel = -7,
-    CannotDeleteOriginalRoot = -8,
 }
 
 impl PwidError {

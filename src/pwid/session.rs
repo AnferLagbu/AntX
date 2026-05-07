@@ -290,17 +290,12 @@ impl SessionManager {
         self.elevation_depth.load(Ordering::Acquire) > 0
     }
 
-    /// Check if a PWID is expired
+    /// Check if a PWID is expired (v4: no special protection)
     pub fn is_expired(&self, pwid: u64) -> bool {
         let mgr = manager::get_manager();
         
         match mgr.find(pwid) {
             Some(entry) => {
-                // Original root never expires
-                if entry.has_flag(PwidFlags::ORIGINAL_ROOT) {
-                    return false;
-                }
-                
                 let expires_at = entry.expires_at.load(Ordering::Acquire);
                 
                 // Zero means never expires
@@ -380,11 +375,9 @@ impl SessionManager {
         let mgr = manager::get_manager();
         
         if let Some(entry) = mgr.find(pwid) {
-            if !entry.has_flag(PwidFlags::ORIGINAL_ROOT) {
-                entry.expires_at.store(expires_at, Ordering::Release);
-                entry.remove_flags(PwidFlags::EXPIRED);
-                mgr.set_modified();
-            }
+            entry.expires_at.store(expires_at, Ordering::Release);
+            entry.remove_flags(PwidFlags::EXPIRED);
+            mgr.set_modified();
         }
     }
 
@@ -393,21 +386,19 @@ impl SessionManager {
         let mgr = manager::get_manager();
         
         if let Some(entry) = mgr.find(pwid) {
-            if !entry.has_flag(PwidFlags::ORIGINAL_ROOT) {
-                let now = get_current_time();
-                let extension = days * 86400; // seconds per day
-                
-                let current_expiry = entry.expires_at.load(Ordering::Acquire);
-                let new_expiry = if current_expiry > now {
-                    current_expiry + extension
-                } else {
-                    now + extension
-                };
-                
-                entry.expires_at.store(new_expiry, Ordering::Release);
-                entry.remove_flags(PwidFlags::EXPIRED);
-                mgr.set_modified();
-            }
+            let now = get_current_time();
+            let extension = days * 86400; // seconds per day
+            
+            let current_expiry = entry.expires_at.load(Ordering::Acquire);
+            let new_expiry = if current_expiry > now {
+                current_expiry + extension
+            } else {
+                now + extension
+            };
+            
+            entry.expires_at.store(new_expiry, Ordering::Release);
+            entry.remove_flags(PwidFlags::EXPIRED);
+            mgr.set_modified();
         }
     }
 

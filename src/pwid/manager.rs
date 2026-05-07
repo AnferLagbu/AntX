@@ -252,14 +252,9 @@ impl PwidManager {
         Ok(())
     }
 
-    /// Change note/description for an entry
+    /// Change note/description for an entry (v4: all identities can change notes)
     pub fn change_note(&self, pwid: u64, new_note: &str) -> Result<(), PwidError> {
         let slot = self.find_slot(pwid).ok_or(PwidError::NotFound)?;
-        
-        if self.entries[slot].has_flag(PwidFlags::ORIGINAL_ROOT) {
-            return Err(PwidError::CannotDeleteOriginalRoot);
-        }
-        
         unsafe {
             let entry_ptr = &self.entries[slot] as *const PwidEntry as *mut PwidEntry;
             (*entry_ptr).set_note(new_note);
@@ -288,14 +283,12 @@ impl PwidManager {
         self.find(pwid).map(|e| e.get_level())
     }
 
-    /// Check if PWID is original root
+    /// Check if PWID is original root (@deprecated v4)
     pub fn is_original_root(&self, pwid: u64) -> bool {
-        self.find(pwid)
-            .map(|e| e.has_flag(PwidFlags::ORIGINAL_ROOT))
-            .unwrap_or(false)
+        false
     }
 
-    /// Check if PWID is root level
+    /// Check if PWID is root level (@deprecated v4 — use capability check)
     pub fn is_root(&self, pwid: u64) -> bool {
         self.get_level(pwid) == Some(PwidLevel::Root.as_u8())
     }

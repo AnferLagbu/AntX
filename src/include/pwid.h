@@ -12,7 +12,7 @@
 #define PWID_LEVEL_TRUSTWORTHY  1
 #define PWID_LEVEL_UNTRUSTWORTHY 2
 
-#define PWID_FLAG_ORIGINAL_ROOT 0x01
+#define PWID_FLAG_ORIGINAL_ROOT 0x01  // @deprecated v4 — kept for DB compat
 #define PWID_FLAG_TEMPORARY     0x02
 #define PWID_FLAG_DISABLED      0x04
 #define PWID_FLAG_MODIFIED      0x08
@@ -175,7 +175,6 @@ void pwid_list_all(void);
 
 extern struct pwid_entry pwid_table[MAX_PWID_ENTRIES];
 extern int pwid_count;
-extern int original_root_created;
 
 void pwid_enhanced_init(void);
 int pwid_check_permission_enhanced(uint64_t pwid, uint64_t owner_pwid, 
