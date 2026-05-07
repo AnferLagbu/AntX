@@ -20,8 +20,8 @@ pub struct PwidManager {
     /// Number of active entries
     count: AtomicUsize,
     
-    /// Flag indicating if original root has been created
-    original_root_created: AtomicBool,
+    /// Flag indicating if any identity exists in the system
+    any_identity_exists: AtomicBool,
     
     /// Flag indicating if database has been modified
     modified: AtomicBool,
@@ -50,7 +50,7 @@ impl PwidManager {
         Self {
             entries: [DEFAULT_ENTRY; MAX_PWID_ENTRIES],
             count: AtomicUsize::new(0),
-            original_root_created: AtomicBool::new(false),
+            any_identity_exists: AtomicBool::new(false),
             modified: AtomicBool::new(false),
             lock: AtomicBool::new(false),
         }
@@ -64,7 +64,7 @@ impl PwidManager {
         }
         
         self.count.store(0, Ordering::Release);
-        self.original_root_created.store(false, Ordering::Release);
+        self.any_identity_exists.store(false, Ordering::Release);
         self.modified.store(false, Ordering::Release);
         
         serial_println!("[PWID] Manager initialized");
@@ -283,11 +283,6 @@ impl PwidManager {
         self.find(pwid).map(|e| e.get_level())
     }
 
-    /// Check if PWID is original root (@deprecated v4)
-    pub fn is_original_root(&self, pwid: u64) -> bool {
-        false
-    }
-
     /// Check if PWID is root level (@deprecated v4 — use capability check)
     pub fn is_root(&self, pwid: u64) -> bool {
         self.get_level(pwid) == Some(PwidLevel::Root.as_u8())
@@ -381,8 +376,8 @@ impl PwidManager {
     }
 
     /// Create first identity (via First Token — no prior auth needed)
-    pub fn create_original_root(&self, password: &str) -> Result<u64, PwidError> {
-        if self.original_root_created.load(Ordering::Acquire) && !self.wants_genesis() {
+    pub fn create_first_identity(&self, password: &str) -> Result<u64, PwidError> {
+        if self.any_identity_exists.load(Ordering::Acquire) {
             return Err(PwidError::AlreadyExists);
         }
 
@@ -391,20 +386,16 @@ impl PwidManager {
 
         if let Some(entry) = self.find_by_note("root") {
             entry.add_flags(PwidFlags::DEFAULT_PW);
-            self.original_root_created.store(true, Ordering::Release);
+            self.any_identity_exists.store(true, Ordering::Release);
             self.set_modified();
         }
 
         Ok(pwid)
     }
 
-    fn wants_genesis(&self) -> bool {
-        false
-    }
-
-    /// Check if original root exists
-    pub fn has_original_root(&self) -> bool {
-        self.original_root_created.load(Ordering::Acquire)
+    /// Check if any identity exists in the system
+    pub fn any_identity_exists(&self) -> bool {
+        self.any_identity_exists.load(Ordering::Acquire)
     }
 
     /// List all PWID entries
@@ -421,9 +412,6 @@ impl PwidManager {
                     entry.get_note_str()
                 );
                 
-                if entry.has_flag(PwidFlags::ORIGINAL_ROOT) {
-                    serial_println!("    [ORIG]");
-                }
                 if entry.has_flag(PwidFlags::DISABLED) {
                     serial_println!("    [DISABLED]");
                 }

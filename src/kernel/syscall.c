@@ -16,7 +16,7 @@
 #include "grub_install.h"
 
 int64_t sys_boot_check(int check_type);
-int64_t sys_auth_create_original_root(const char *password);
+int64_t sys_auth_create_first(const char *password);
 
 static syscall_handler_t syscall_table[MAX_SYSCALLS];
 
@@ -59,7 +59,7 @@ void syscall_init(void) {
     syscall_register(SYS_AUTH_SETNOTE, (syscall_handler_t)sys_auth_setnote);
     syscall_register(SYS_AUTH_CHANGEPW, (syscall_handler_t)sys_auth_changepw);
     syscall_register(SYS_AUTH_VERIFY, (syscall_handler_t)sys_auth_verify);
-    syscall_register(SYS_AUTH_CREATE_ORIGINAL_ROOT, (syscall_handler_t)sys_auth_create_original_root);
+    syscall_register(SYS_AUTH_CREATE_FIRST, (syscall_handler_t)sys_auth_create_first);
     syscall_register(SYS_AUTH_ELEVATE, (syscall_handler_t)sys_auth_elevate);
     syscall_register(SYS_AUTH_TOKEN_CREATE, (syscall_handler_t)sys_auth_token_create);
     syscall_register(SYS_AUTH_TOKEN_USE, (syscall_handler_t)sys_auth_token_use);
@@ -485,12 +485,12 @@ int64_t sys_auth_create(const char *password, const char *note, uint8_t level) {
     return E_PERM;
 }
 
-int64_t sys_auth_create_original_root(const char *password) {
-    if (pwid_has_original_root()) {
+int64_t sys_auth_create_first(const char *password) {
+    if (pwid_any_identity_exists()) {
         return E_EXIST;
     }
     
-    int result = pwid_create_original_root(password);
+    int result = pwid_create_first_identity(password);
     if (result == 0) {
         pwid_login("root", password);
         return 0;
@@ -713,7 +713,7 @@ static const char *INSTALL_MARKER_FILE = "/.antx_installed";
 int64_t sys_boot_check(int check_type) {
     switch (check_type) {
         case 0:
-            return pwid_has_original_root() ? 1 : 0;
+            return pwid_any_identity_exists() ? 1 : 0;
         case 1: {
             int fd = sys_fs_open(INSTALL_MARKER_FILE, HVFS_O_RDONLY, 0);
             if (fd >= 0) {

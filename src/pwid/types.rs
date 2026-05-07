@@ -47,7 +47,7 @@ bitflags::bitflags! {
     pub struct PwidFlags: u16 {
         const NONE                = 0;
         const DISABLED            = 1 << 0;
-        const ORIGINAL_ROOT       = 1 << 1;  // @deprecated v4 — kept for DB compatibility
+        /// Bit 1 (0x0002) — reserved
         const DEFAULT_PW          = 1 << 2;
         const MODIFIED            = 1 << 3;
         const LOCKED              = 1 << 4;

@@ -40,7 +40,7 @@
 #define SYS_AUTH_SET_PWID_NOTE 47
 #define SYS_AUTH_CHANGE_PWID_PASSWORD 48
 #define SYS_AUTH_VERIFY_PWID_PASSWORD 49
-#define SYS_AUTH_CREATE_ORIGINAL_ROOT 50
+#define SYS_AUTH_CREATE_FIRST 50
 
 #define SYS_ENV_GET_CURRENT_DIR 100
 #define SYS_ENV_SET_CURRENT_DIR 101
@@ -204,8 +204,8 @@ static inline int64_t sys_auth_verify_pwid_password(const char *password) {
     return syscall1(SYS_AUTH_VERIFY_PWID_PASSWORD, (uint64_t)password);
 }
 
-static inline int64_t sys_auth_create_original_root(const char *password) {
-    return syscall1(SYS_AUTH_CREATE_ORIGINAL_ROOT, (uint64_t)password);
+static inline int64_t sys_auth_create_first(const char *password) {
+    return syscall1(SYS_AUTH_CREATE_FIRST, (uint64_t)password);
 }
 
 static inline int64_t sys_get_hostname(char *buf, int size) {

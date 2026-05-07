@@ -242,12 +242,6 @@ pub extern "C" fn pwid_get_capability_raw(pwid: u64, domain: u16) -> u64 {
     }
 }
 
-/// Check if PWID is original root
-#[no_mangle]
-pub extern "C" fn pwid_is_original_root(pwid: u64) -> i32 {
-    if manager::get_manager().is_original_root(pwid) { 1 } else { 0 }
-}
-
 /// Check if PWID has root privileges
 #[no_mangle]
 pub extern "C" fn pwid_is_root(pwid: u64) -> i32 {
@@ -322,24 +316,24 @@ pub extern "C" fn pwid_delete_derived_root(pwid: u64) -> i32 {
     }
 }
 
-/// Create original root user (one-time operation)
+/// Create first identity (one-time operation via First Token)
 #[no_mangle]
-pub extern "C" fn pwid_create_original_root(password: *const i8) -> i32 {
+pub extern "C" fn pwid_create_first_identity(password: *const i8) -> i32 {
     let pwd = match unsafe { cstr_to_str(password) } {
         Ok(s) => s,
         Err(_) => return PwidError::PasswordIncorrect.as_i32(),
     };
     
-    match manager::get_manager().create_original_root(pwd) {
+    match manager::get_manager().create_first_identity(pwd) {
         Ok(_) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Check if original root exists
+/// Check if any identity exists in the system
 #[no_mangle]
-pub extern "C" fn pwid_has_original_root() -> i32 {
-    if manager::get_manager().has_original_root() { 1 } else { 0 }
+pub extern "C" fn pwid_any_identity_exists() -> i32 {
+    if manager::get_manager().any_identity_exists() { 1 } else { 0 }
 }
 
 // ============================================================

@@ -211,8 +211,8 @@ int user_auth_verify_password(const char *password) {
     return sys_auth_verify_pwid_password(password);
 }
 
-int user_auth_create_original_root(const char *password) {
-    return sys_auth_create_original_root(password);
+int user_auth_create_first(const char *password) {
+    return sys_auth_create_first(password);
 }
 
 int user_get_hostname(char *buf, int size) {

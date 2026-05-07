@@ -330,7 +330,7 @@ static int config_root_pwid(void) {
         user_print("\n");
         user_println("Creating root identity...");
         
-        int result = user_auth_create_original_root(pw1);
+        int result = user_auth_create_first(pw1);
         
         if (result >= 0) {
             user_println("Root identity created successfully!");

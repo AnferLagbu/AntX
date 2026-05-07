@@ -18,7 +18,7 @@ static int ensure_hvfs_initialized(void) {
             pwid_initialized = 1;
         }
         
-        pwid_create_original_root("test_root_password");
+        pwid_create_first_identity("test_root_password");
         
         struct pwid_entry *root = pwid_find_by_note("root");
         if (root) {
@@ -232,7 +232,7 @@ static int test_pwid_persistence_save(void) {
     
     struct pwid_entry *existing_root = pwid_find_by_note("root");
     if (existing_root == NULL) {
-        pwid_create_original_root("test_root_password");
+        pwid_create_first_identity("test_root_password");
     }
     
     int result = pwid_create("test_password_1", "test_user_1", PWID_LEVEL_TRUSTWORTHY);
@@ -264,14 +264,14 @@ static int test_pwid_persistence_load(void) {
     return TEST_PASS;
 }
 
-static int test_pwid_original_root_persistence(void) {
+static int test_pwid_first_identity(void) {
     if (ensure_hvfs_initialized() != 0) {
         return TEST_SKIP;
     }
     
     struct pwid_entry *root = pwid_find_by_note("root");
     if (root == NULL) {
-        int result = pwid_create_original_root("root_secret_password");
+        int result = pwid_create_first_identity("root_secret_password");
         if (result != 0) return TEST_SKIP;
         root = pwid_find_by_note("root");
     }
@@ -332,7 +332,7 @@ void test_persistence_register(void) {
     
     test_register_case(test_persistence_module, "PWID save to disk", test_pwid_persistence_save);
     test_register_case(test_persistence_module, "PWID load from disk", test_pwid_persistence_load);
-    test_register_case(test_persistence_module, "PWID original root persistence", test_pwid_original_root_persistence);
+    test_register_case(test_persistence_module, "First identity", test_pwid_first_identity);
     test_register_case(test_persistence_module, "HvFS file persistence", test_hvfs_file_persistence);
     test_register_case(test_persistence_module, "HvFS directory persistence", test_hvfs_directory_persistence);
     test_register_case(test_persistence_module, "HvFS large file persistence", test_hvfs_large_file_persistence);

@@ -63,20 +63,20 @@ static int test_pwid_enhanced_check_no_session(void) {
     return TEST_SKIP;
 }
 
-static int test_pwid_original_root_creation(void) {
-    if (pwid_has_original_root()) {
+static int test_pwid_first_identity(void) {
+    if (pwid_any_identity_exists()) {
         return TEST_SKIP;
     }
     
-    int result = pwid_create_original_root("test_root_pw");
+    int result = pwid_create_first_identity("test_root_pw");
     TEST_ASSERT_EQ(result, 0);
-    TEST_ASSERT(pwid_has_original_root());
+    TEST_ASSERT(pwid_any_identity_exists());
     
     return TEST_PASS;
 }
 
 static int test_pwid_level_assignment(void) {
-    if (!pwid_has_original_root()) {
+    if (!pwid_any_identity_exists()) {
         return TEST_SKIP;
     }
     
@@ -100,6 +100,6 @@ void test_pwid_enhanced_register(void) {
     test_register_case(module, "Token constants", test_pwid_token_constants);
     test_register_case(module, "Syscall numbers", test_pwid_syscall_numbers);
     test_register_case(module, "Enhanced check", test_pwid_enhanced_check_no_session);
-    test_register_case(module, "Original root creation", test_pwid_original_root_creation);
+    test_register_case(module, "First identity creation", test_pwid_first_identity);
     test_register_case(module, "Level assignment", test_pwid_level_assignment);
 }

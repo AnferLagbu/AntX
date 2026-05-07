@@ -12,7 +12,6 @@
 #define PWID_LEVEL_TRUSTWORTHY  1
 #define PWID_LEVEL_UNTRUSTWORTHY 2
 
-#define PWID_FLAG_ORIGINAL_ROOT 0x01  // @deprecated v4 — kept for DB compat
 #define PWID_FLAG_TEMPORARY     0x02
 #define PWID_FLAG_DISABLED      0x04
 #define PWID_FLAG_MODIFIED      0x08
@@ -150,7 +149,6 @@ struct pwid_entry* pwid_find(uint64_t pwid);
 struct pwid_entry* pwid_find_by_note(const char *note);
 uint8_t pwid_get_level(uint64_t pwid);
 uint64_t pwid_get_fs_capability(uint64_t pwid);
-int pwid_is_original_root(uint64_t pwid);
 int pwid_is_root(uint64_t pwid);
 int pwid_check_permission(uint64_t pwid, uint8_t required_level);
 int pwid_has_default_password(uint64_t pwid);
@@ -158,8 +156,8 @@ void pwid_clear_default_password_flag(uint64_t pwid);
 
 int pwid_create_derived_root(const char *password, const char *note);
 int pwid_delete_derived_root(uint64_t pwid);
-int pwid_create_original_root(const char *password);
-int pwid_has_original_root(void);
+int pwid_create_first_identity(const char *password);
+int pwid_any_identity_exists(void);
 
 void pwid_set_context(uint64_t pwid);
 uint64_t pwid_get_current(void);
