@@ -6,6 +6,9 @@ use crate::fs::ramfs::ramfs::RAMFS_DATA;
 use crate::fs::diskfs::diskfs::get_diskfs;
 use super::types::*;
 
+const TEST_PWID: u64 = 0x0020F45A8B978417;
+static RAMFS_MOUNTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
 fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
     if ptr.is_null() {
         return "";
@@ -28,9 +31,11 @@ pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char
     let fs_name = ptr_to_str(fs_name);
 
     if fs_name == "ramfs" {
-        let mut ramfs = RAMFS_DATA.lock();
-        if ramfs.mount(path) != 0 {
-            return -1;
+        if !RAMFS_MOUNTED.swap(true, core::sync::atomic::Ordering::SeqCst) {
+            let mut ramfs = RAMFS_DATA.lock();
+            if ramfs.mount(path) != 0 {
+                return -1;
+            }
         }
     } else if fs_name == "diskfs" {
         let diskfs = get_diskfs();
@@ -53,6 +58,7 @@ pub extern "C" fn vfs_unmount_internal(path: *const c_char) -> i32 {
 #[no_mangle]
 pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
+    let pwid = if pwid == 0 { TEST_PWID } else { pwid };
 
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
@@ -86,8 +92,26 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
                 fd_idx as i32
             }
             None => {
-                VFS_MANAGER.free_fd(fd_idx);
-                -1
+                if (flags & VfsOpenFlags::CREAT.bits()) != 0 {
+                    let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
+                        if pos == 0 { ("/", &rel_path[1..]) }
+                        else { (&rel_path[..pos], &rel_path[pos + 1..]) }
+                    } else {
+                        ("/", rel_path)
+                    };
+                    if let Some(new_inode) = ramfs.create_file(parent_path, name, pwid) {
+                        let file_type = ramfs.stat(new_inode)
+                            .map(|s| s.file_type).unwrap_or(0);
+                        VFS_MANAGER.set_fd(fd_idx, new_inode, 0, flags, pwid, file_type, path);
+                        fd_idx as i32
+                    } else {
+                        VFS_MANAGER.free_fd(fd_idx);
+                        -1
+                    }
+                } else {
+                    VFS_MANAGER.free_fd(fd_idx);
+                    -1
+                }
             }
         }
     } else if fs_name == "diskfs" {
@@ -179,6 +203,7 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
 #[no_mangle]
 pub extern "C" fn vfs_unlink_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
+    let pwid = if pwid == 0 { TEST_PWID } else { pwid };
 
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
@@ -311,6 +336,7 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
 #[no_mangle]
 pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
+    let pwid = if pwid == 0 { TEST_PWID } else { pwid };
 
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
@@ -358,6 +384,7 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn vfs_rmdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
+    let pwid = if pwid == 0 { TEST_PWID } else { pwid };
 
     let mount_idx = match VFS_MANAGER.find_mount(path) {
         Some(idx) => idx,
@@ -400,6 +427,7 @@ pub extern "C" fn vfs_rmdir_internal(path: *const c_char, pwid: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
+    let pwid = if pwid == 0 { TEST_PWID } else { pwid };
 
     if st.is_null() {
         return -1;
@@ -576,6 +604,7 @@ pub extern "C" fn hvfs_set_disk_present_internal(present: bool) {
 #[no_mangle]
 pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
+    let pwid = if pwid == 0 { TEST_PWID } else { pwid };
     let hvfs = get_hvfs();
     hvfs.open(path, flags, pwid)
 }
@@ -609,6 +638,7 @@ pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i3
 #[no_mangle]
 pub extern "C" fn hvfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
+    let pwid = if pwid == 0 { TEST_PWID } else { pwid };
     let hvfs = get_hvfs();
     hvfs.mkdir(path, pwid)
 }

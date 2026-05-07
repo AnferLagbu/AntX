@@ -18,6 +18,11 @@ SECTIONS
     .data : ALIGN(4096) {
         *(.data)
         *(.data.*)
+        
+        . = ALIGN(8);
+        _GLOBAL_OFFSET_TABLE_ = .;
+        *(.got)
+        *(.got.plt)
     }
     
     .bss : ALIGN(4096) {
@@ -26,11 +31,12 @@ SECTIONS
         *(COMMON)
     }
     
+    .rela.dyn : {
+        *(.rela.*)
+    }
+    
     /DISCARD/ : {
         *(.comment)
         *(.eh_frame)
-        *(.got)
-        *(.got.plt)
-        *(.rela.*)
     }
 }
