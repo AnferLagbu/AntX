@@ -155,6 +155,8 @@ impl UserProcManager {
             for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
                 let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
                 let sphys = stack_phys + i * PAGE_SIZE;
+                // Split any huge page that covers this address
+                vmm_split_2mb_page(svirt);
                 vmm_map_page_in_table(
                     (*proc).cr3.load(Ordering::SeqCst),
                     svirt, sphys,
@@ -218,31 +220,37 @@ impl UserProcManager {
             
             tss_set_kernel_stack((*proc).kernel_stack.load(Ordering::SeqCst));
             
+            let user_cr3 = (*proc).cr3.load(Ordering::SeqCst);
             let ss_val = GDT_USER_DATA | 0x03;
             let cs_val = GDT_USER_CODE | 0x03;
             let rip_val = (*proc).entry;
             let rsp_val = (*proc).user_stack.load(Ordering::SeqCst);
             let rflags_val: u64 = 0x3202;
             
-            // Use kernel CR3 — user pages already mapped with PAGE_USER flag
+            // Switch to user CR3 so user page tables are active
+            core::arch::asm!(
+                "mov cr3, {}",
+                in(reg) user_cr3,
+            );
+            
             core::arch::asm!(
                 "cli",
                 "mov ds, dx",
                 "mov es, dx",
                 "mov fs, dx",
                 "mov gs, dx",
-                "push {ss}",
-                "push {rsp}",
-                "push {rflags}",
-                "push {cs}",
-                "push {rip}",
+                "push {user_ss}",
+                "push {user_rsp}",
+                "push {user_rflags}",
+                "push {user_cs}",
+                "push {user_rip}",
                 "iretq",
                 in("dx") ss_val,
-                ss = in(reg) ss_val,
-                rsp = in(reg) rsp_val,
-                rflags = in(reg) rflags_val,
-                cs = in(reg) cs_val,
-                rip = in(reg) rip_val,
+                user_ss = in(reg) ss_val,
+                user_rsp = in(reg) rsp_val,
+                user_rflags = in(reg) rflags_val,
+                user_cs = in(reg) cs_val,
+                user_rip = in(reg) rip_val,
                 options(noreturn)
             );
         }

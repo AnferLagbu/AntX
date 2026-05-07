@@ -179,7 +179,7 @@ static void print_stack_trace(struct interrupt_frame *frame) {
 
         if (rip_val == 0) break;
 
-        klog_kern("    #%d [RIP=0x%x %s] [RBP=0x%x]",
+        klog_kern("    #%d [RIP=0x%lx %s] [RBP=0x%lx]",
                   frame_count, rip_val,
                   rip_val >= 0xFFFFFFFF80000000ULL ? "kernel" : "user",
                   (uint64_t)rbp_ptr);
@@ -215,7 +215,7 @@ static int handle_page_fault(struct interrupt_frame *frame) {
     __asm__ volatile ("mov %%cr2, %0" : "=r"(fault_addr));
 
     klog_kern_err("  Page Fault Details:");
-    klog_kern("    Fault Address (CR2): 0x%x", fault_addr);
+    klog_kern("    Fault Address (CR2): 0x%lx", fault_addr);
     klog_kern("    Access Type: %s", (frame->err_code & 0x02) ? "Write" : "Read");
     klog_kern("    Mode: %s", (frame->err_code & 0x04) ? "User" : "Kernel");
     klog_kern("    Cause: %s", (frame->err_code & 0x01) ? "Protection Violation" : "Page Not Present");
@@ -288,23 +288,23 @@ void exception_handler(struct interrupt_frame *frame) {
     const char *exc_name = (frame->int_no < 32) ? exception_messages[frame->int_no] : "Unknown";
     klog_kern_crit("EXCEPTION: %s", exc_name);
     klog_kern("  Interrupt: 0x%x (%d)", frame->int_no, frame->int_no);
-    klog_kern("  Error Code: 0x%x", frame->err_code);
-    klog_kern("  RIP: 0x%x", frame->rip);
-    klog_kern("  CS:  0x%x (DPL=%d)", frame->cs, frame->cs & 0x03);
-    klog_kern("  RFLAGS: 0x%x", frame->rflags);
-    klog_kern("  RSP: 0x%x", frame->rsp);
-    klog_kern("  SS:  0x%x", frame->ss);
+    klog_kern("  Error Code: 0x%lx", frame->err_code);
+    klog_kern("  RIP: 0x%lx", frame->rip);
+    klog_kern("  CS:  0x%x (DPL=%d)", frame->cs & 0xFFFF, frame->cs & 0x03);
+    klog_kern("  RFLAGS: 0x%lx", frame->rflags);
+    klog_kern("  RSP: 0x%lx", frame->rsp);
+    klog_kern("  SS:  0x%x", frame->ss & 0xFFFF);
     klog_kern("  Nested Level: %d", nested_interrupt_count);
 
     klog_kern("  Registers:");
-    klog_kern("    RAX: 0x%x  RBX: 0x%x", frame->rax, frame->rbx);
-    klog_kern("    RCX: 0x%x  RDX: 0x%x", frame->rcx, frame->rdx);
-    klog_kern("    RSI: 0x%x  RDI: 0x%x", frame->rsi, frame->rdi);
-    klog_kern("    RBP: 0x%x  R8:  0x%x", frame->rbp, frame->r8);
-    klog_kern("    R9: 0x%x  R10: 0x%x", frame->r9, frame->r10);
-    klog_kern("    R11: 0x%x  R12: 0x%x", frame->r11, frame->r12);
-    klog_kern("    R13: 0x%x  R14: 0x%x", frame->r13, frame->r14);
-    klog_kern("    R15: 0x%x", frame->r15);
+    klog_kern("    RAX: 0x%lx  RBX: 0x%lx", frame->rax, frame->rbx);
+    klog_kern("    RCX: 0x%lx  RDX: 0x%lx", frame->rcx, frame->rdx);
+    klog_kern("    RSI: 0x%lx  RDI: 0x%lx", frame->rsi, frame->rdi);
+    klog_kern("    RBP: 0x%lx  R8:  0x%lx", frame->rbp, frame->r8);
+    klog_kern("    R9: 0x%lx  R10: 0x%lx", frame->r9, frame->r10);
+    klog_kern("    R11: 0x%lx  R12: 0x%lx", frame->r11, frame->r12);
+    klog_kern("    R13: 0x%lx  R14: 0x%lx", frame->r13, frame->r14);
+    klog_kern("    R15: 0x%lx", frame->r15);
 
     int can_recover = 0;
 
