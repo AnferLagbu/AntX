@@ -1,8 +1,12 @@
-# QueenX 权限模型 v3：三层权限架构
+# QueenX 权限模型 v3 → v4：5层权限架构
+
+> **最后更新**: 2026-05-07 | **状态**: v4 实施中
+>
+> 本文档定义 QueenX 的 5 层权限检查架构。**L0/L1/L2/L4 各层自 v3 起不变**；L3 (Capability Matrix) 在 v4 中从"等级→固定能力"改为"PWID 自带能力掩码"。详见 `pwid-model.md`。
 
 ## 1. 概述
 
-本文档定义 AntX/QueenX 内核的第三代权限模型，以三层架构取代传统 Unix rwx 权限位。
+本文档定义 AntX/QueenX 内核的权限模型，以 5 层架构取代传统 Unix rwx 权限位。
 核心原则：**身份驱动权限，而非文件携带权限**。
 
 ### 1.1 设计目标
@@ -11,18 +15,18 @@
 |------|------|
 | 废除 rwx | 不再依赖 per-inode 的 owner/group/other 三元组 |
 | 废除组 (group) | 用 ACE 例外列表 + 信任链委托替代组管理 |
-| 身份即权限 | PWID 自带能力矩阵，文件只需敏感标签 |
+| 身份即权限 | PWID 自带能力矩阵 (v4: capability_mask)，文件只需敏感标签 |
 | 信息流控制 | sensitivity 字段提供 BLP 风格的强制访问控制 |
 | 可审计 | 每次拒绝携带结构化的 DenyReason |
 
 ### 1.2 与 Unix rwx 的对比
 
-| 维度 | Unix rwx | QueenX v3 |
+| 维度 | Unix rwx | QueenX v4 |
 |------|----------|-----------|
 | 文件权限 | 9 bits (owner/group/other) | 1 byte sensitivity + 可选 ACE |
 | 身份粒度 | UID + GID（两组） | PWID（单一 64 位） |
-| 操作粒度 | r/w/x 三位 | 64 位能力位掩码（可扩展） |
-| 特权通道 | root (UID=0) 硬编码 | Root PWID + 令牌临时提权 |
+| 操作粒度 | r/w/x 三位 | capability_mask: [u64; 16] |
+| 特权通道 | root (UID=0) 硬编码 | First Token 一次性授予 + 令牌提权 |
 | 委托 | sudo（进程外） | 信任链（内核内，8 跳限界） |
 | 组 | /etc/group | 无 — ACE + 令牌替代 |
 | 审计 | 无 | DenyReason 枚举（14 种原因） |
@@ -56,16 +60,13 @@
 │                                                        │
 ├────────────────────────────────────────────────────────┤
 │                                                        │
-│  Layer 3: Capability Matrix（能力矩阵）※ 主要路径       │
+│  Layer 3: Capability Matrix（能力矩阵）※ v4: PWID自带    │
 │  ─────────────────────────────────────                 │
-│  PWID → Level → Default Capability Bits                 │
+│  pwid.capability_mask[domain] & operation               │
 │                                                        │
-│  Root:        FS_CAP_ALL (0xFFFF...)                    │
-│  Trusted:     READ | WRITE | EXECUTE | CREATE            │
-│  Standard:    READ | EXECUTE                            │
-│  Untrustworthy: READ                                   │
+│  (v4: 不再从等级推导，每个 PWID 独立的能力掩码)           │
 │                                                        │
-│  Rule: pwid.caps.has(op) ?                              │
+│  Rule: (pwid.caps & op) == op ?                        │
 │  ↓ Yes          ↓ No                                    │
 │  ALLOWED        DENIED(InsufficientCapability)           │
 │                                                        │

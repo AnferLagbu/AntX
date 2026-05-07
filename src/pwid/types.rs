@@ -67,11 +67,14 @@ pub struct PwidEntry {
     /// Unique process/user identifier
     pub pwid: AtomicU64,
     
-    /// Trust level (0=root, 3=untrustworthy)
+    /// Trust level (0=root, 3=untrustworthy) — v4: label only, not used for permissions
     pub level: AtomicU8,
     
     /// Entry flags
     pub flags: AtomicU16,
+    
+    /// Capability mask: 16 domains × 64 bits each
+    pub capability_mask: [u64; 16],
     
     /// User description/note
     pub note: [u8; PWID_NOTE_LEN],
@@ -101,6 +104,7 @@ impl Default for PwidEntry {
             pwid: AtomicU64::new(0),
             level: AtomicU8::new(0),
             flags: AtomicU16::new(0),
+            capability_mask: [0; 16],
             note: [0u8; PWID_NOTE_LEN],
             password_hash: [0u8; PWID_HASH_LEN],
             created_time: AtomicU64::new(0),

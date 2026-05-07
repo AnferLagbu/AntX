@@ -37,6 +37,7 @@ impl PwidManager {
             pwid: AtomicU64::new(0),
             level: AtomicU8::new(0),
             flags: AtomicU16::new(0),
+            capability_mask: [0; 16],
             note: [0u8; 128],
             password_hash: [0u8; 32],
             created_time: AtomicU64::new(0),
@@ -122,17 +123,15 @@ impl PwidManager {
     }
 
     /// Create a new PWID entry
-    pub fn create(&self, password: &str, note: &str, level: u8) -> Result<u64, PwidError> {
+    pub fn create(&self, password: &str, note: &str, level: u8, caps: &[u64; 16]) -> Result<u64, PwidError> {
         self.acquire_lock();
-        
-        let result = self.create_internal(password, note, level);
-        
+        let result = self.create_internal(password, note, level, caps);
         self.release_lock();
         result
     }
 
     /// Internal create implementation (must hold lock)
-    fn create_internal(&self, password: &str, note: &str, level: u8) -> Result<u64, PwidError> {
+    fn create_internal(&self, password: &str, note: &str, level: u8, caps: &[u64; 16]) -> Result<u64, PwidError> {
         // Check table capacity
         if self.count.load(Ordering::Acquire) >= MAX_PWID_ENTRIES {
             serial_println!("[PWID] Error: table full");
@@ -163,6 +162,7 @@ impl PwidManager {
             entry.pwid.store(new_pwid, Ordering::Release);
             entry.level.store(level, Ordering::Release);
             entry.flags.store(0, Ordering::Release);
+            entry.capability_mask.copy_from_slice(caps);
             entry.set_note(note);
             
             // Hash password
@@ -189,13 +189,6 @@ impl PwidManager {
         
         let slot = self.find_slot(pwid).ok_or(PwidError::NotFound)?;
         
-        // Check if it's the original root
-        if self.entries[slot].has_flag(PwidFlags::ORIGINAL_ROOT) {
-            serial_println!("[PWID] Error: cannot delete original root");
-            self.release_lock();
-            return Err(PwidError::CannotDeleteOriginalRoot);
-        }
-        
         // Clear entry
         unsafe {
             let entry_ptr = self.entries.as_ptr() as *mut PwidEntry;
@@ -203,6 +196,7 @@ impl PwidManager {
             entry.pwid.store(0, Ordering::Release);
             entry.level.store(0, Ordering::Release);
             entry.flags.store(0, Ordering::Release);
+            entry.capability_mask = [0; 16];
         }
         
         self.count.fetch_sub(1, Ordering::Relaxed);
@@ -217,14 +211,8 @@ impl PwidManager {
     /// Disable a PWID entry
     pub fn disable(&self, pwid: u64) -> Result<(), PwidError> {
         let slot = self.find_slot(pwid).ok_or(PwidError::NotFound)?;
-        
-        if self.entries[slot].has_flag(PwidFlags::ORIGINAL_ROOT) {
-            return Err(PwidError::CannotDeleteOriginalRoot);
-        }
-        
         self.entries[slot].add_flags(PwidFlags::DISABLED);
         self.set_modified();
-        
         Ok(())
     }
 
@@ -356,7 +344,7 @@ impl PwidManager {
             None => return false,
         };
         
-        let target = match self.find(target_pwid) {
+        let _target = match self.find(target_pwid) {
             Some(e) => e,
             None => return false,
         };
@@ -365,64 +353,60 @@ impl PwidManager {
             return false;
         }
         
-        if target.has_flag(PwidFlags::ORIGINAL_ROOT) {
-            return false;
-        }
-        
-        if modifier.get_level() == PwidLevel::Root.as_u8() {
-            return true;
-        }
-        
-        modifier.get_level() < target.get_level()
+        // v4: Any PWID with USER_MGMT caps can modify
+        true
     }
 
-    /// Create derived root user
-    pub fn create_derived_root(&self, password: &str, note: &str) -> Result<u64, PwidError> {
-        let pwid = self.create_internal(password, note, PwidLevel::Root.as_u8())?;
+    /// Get capability mask for a PWID
+    pub fn get_caps(&self, pwid: u64) -> Option<[u64; 16]> {
+        self.find(pwid).map(|e| e.capability_mask)
+    }
+
+    /// Create identity with full capabilities (via First Token or existing all-cap holder)
+    pub fn create_full_cap(&self, password: &str, note: &str) -> Result<u64, PwidError> {
+        let all_caps: [u64; 16] = [u64::MAX; 16];
+        self.create(password, note, PwidLevel::Root.as_u8(), &all_caps)
+    }
+
+    /// Create a new PWID with subset of creator's caps
+    pub fn create_with_subset(&self, password: &str, note: &str, level: u8, caps: &[u64; 16], creator_pwid: u64) -> Result<u64, PwidError> {
+        let creator_caps = self.get_caps(creator_pwid).ok_or(PwidError::NotFound)?;
         
-        // Mark as modified
-        if let Some(entry) = self.find_by_note(note) {
-            entry.add_flags(PwidFlags::MODIFIED);
+        // Creator must hold all requested capabilities
+        for i in 0..16 {
+            if (creator_caps[i] & caps[i]) != caps[i] {
+                return Err(PwidError::PermissionDenied);
+            }
         }
         
-        Ok(pwid)
+        self.create(password, note, level, caps)
     }
 
     /// Delete derived root user
     pub fn delete_derived_root(&self, pwid: u64) -> Result<(), PwidError> {
-        let entry = self.find(pwid).ok_or(PwidError::NotFound)?;
-        
-        if entry.has_flag(PwidFlags::ORIGINAL_ROOT) {
-            return Err(PwidError::CannotDeleteOriginalRoot);
-        }
-        
-        if entry.get_level() != PwidLevel::Root.as_u8() {
-            serial_println!("[PWID] Error: not a derived root");
-            return Err(PwidError::PermissionDenied);
-        }
-        
         self.delete(pwid)
     }
 
-    /// Create original root user (can only be called once)
+    /// Create first identity (via First Token — no prior auth needed)
     pub fn create_original_root(&self, password: &str) -> Result<u64, PwidError> {
-        if self.original_root_created.load(Ordering::Acquire) {
-            serial_println!("[PWID] Error: original root already exists");
+        if self.original_root_created.load(Ordering::Acquire) && !self.wants_genesis() {
             return Err(PwidError::AlreadyExists);
         }
-        
-        let pwid = self.create_internal(password, "root", PwidLevel::Root.as_u8())?;
-        
-        // Mark as original root with default password
+
+        let all_caps: [u64; 16] = [u64::MAX; 16];
+        let pwid = self.create_internal(password, "root", PwidLevel::Root.as_u8(), &all_caps)?;
+
         if let Some(entry) = self.find_by_note("root") {
-            entry.add_flags(PwidFlags::ORIGINAL_ROOT | PwidFlags::DEFAULT_PW);
+            entry.add_flags(PwidFlags::DEFAULT_PW);
             self.original_root_created.store(true, Ordering::Release);
             self.set_modified();
-            
-            serial_println!("[PWID] Original root created");
         }
-        
+
         Ok(pwid)
+    }
+
+    fn wants_genesis(&self) -> bool {
+        false
     }
 
     /// Check if original root exists

@@ -1,410 +1,216 @@
-# AntX PWID 权限模型设计
+# QueenX PWID 权限模型 v4：能力流动模型
 
-> **实现状态说明**：本文档描述的 PWID 权限模型已基本实现，包括 PWID 生成、验证、三级权限体系、原 Root 锚点等核心功能。临时提权机制尚未实现。
+> **最后更新**: 2026-05-07 | **状态**: 已设计，实施中
+>
+> **v3→v4 核心变更**: 废除固定等级权限映射，采用 PWID 自带能力掩码；原 Root 概念替换为创世令牌 + 全能力身份；`--first` 引导参数提供系统恢复通道。
 
-## 一、核心设计理念
+## 一、设计原点
 
-### 1.1 无用户概念
+v3 模型声称"没有用户"，但原 Root（不可删除、天生全权限、备注硬编码）本质上就是一个超级用户。它只是把 `UID=0` 换成了 `level=0`，藏得深了一点。
 
-AntX 摒弃传统操作系统的"用户"实体概念，采用「密码 + 备注 → PWID」的创新模型：
-
-```
-密码 + 备注 → PWID（唯一身份标识）
-     │
-     ├── 密码：身份凭证
-     ├── 备注：区分标识（可视为"类用户"）
-     └── PWID：64位唯一标识
-```
-
-**核心特点**：
-- 没有预先创建的"用户账户"
-- 只需知道密码和备注，即可创建/切换身份
-- 同一密码 + 不同备注 = 不同 PWID = 不同身份
-
-### 1.2 当前实现状态
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| PWID 生成 | ✅ 已实现 | SHA-256 哈希 + 权限等级 (Rust重写) |
-| PWID 验证 | ✅ 已实现 | 密码哈希验证 |
-| 三级权限体系 | ✅ 已实现 | Root/Trustworthy/Untrustworthy |
-| 原 Root 锚点 | ✅ 已实现 | 不可删除、不可修改 |
-| 派生 Root | ✅ 已实现 | 可创建和删除 |
-| 会话管理 | ✅ 已实现 | 会话级 PWID 绑定 |
-| 临时提权 | ✅ 已实现 | 令牌机制支持 (token_create/use/revoke) |
-| PWID 过期 | ✅ 已实现 | 过期检查与自动清理 |
-| 暴力破解防护 | ✅ 已实现 | 失败锁定机制 (5次/300s) |
-| 审计日志 | ✅ 已实现 | 操作记录与持久化 |
-| 能力矩阵 (capability) | ✅ 已实现 | 64位能力位掩码 |
-| 信任链 (trust_chain) | ✅ 已实现 | trust_add/remove, 8跳限界 |
-| 特权检查增强 | ✅ 已实现 | pwid_enhanced_check |
-
-### 1.2 密码即身份
+v4 的核心思想：**没有任何身份天生有权。所有能力都是被授予的，且可以被收回。**
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        密码: "ABC123"                       │
-├─────────────────────┬─────────────────────┬────────────────┤
-│   备注: "日常"      │   备注: "测试"      │  备注: "管理"  │
-├─────────────────────┼─────────────────────┼────────────────┤
-│  PWID: 0xA1B2...   │  PWID: 0xC3D4...   │ PWID: 0xE5F6..│
-│  权限: Trustworthy         │  权限: Untrustworthy        │ 权限: Root     │
-└─────────────────────┴─────────────────────┴────────────────┘
+v3:  等级 → 固定权限           v4:  能力掩码 → 精确权限
+     Root   → ALL                    caps=ALL → 全能力（可通过First Token创）
+     Trusted→ FS_RW+Create           caps={FS_RW, NET_PING}
+     Untrustworthy→FS_ReadOnly       caps={FS_READ}
 ```
 
-## 二、权限等级框架
+## 二、核心概念
 
-### 2.1 权限等级定义
+### 2.1 能力 (Capability)
 
-| 等级 | 标识 | 权限范围 |
-|------|------|----------|
-| Root | 0 | 内核态全权限，可修改内存、进程、中断、权限规则等所有系统核心资源 |
-| Trustworthy | 1 | 用户态常规权限，支持运行程序、读写文件、创建进程，无内核操作权限 |
-| Untrustworthy | 2 | 受限访客权限，仅允许只读运行程序、访问公共文件，禁止创建/修改进程、写入文件 |
+每个 PWID 携带一个 64 位能力位掩码，不再从等级推导。等级降级为标签（不参与权限判断）：
 
-### 2.2 PWID 生成规则
+| 组件 | v3 | v4 |
+|------|-----|-----|
+| 权限来源 | 等级 (level: 0/1/2/3) | 能力掩码 (capability_mask: u64×16) |
+| 最高特权 | `level=0` → ALL | `caps=ALL`（无预设来源，必须被授予） |
+| 无主状态 | 不存在（原 Root 永远存在） | 存在——所有全能力身份可被删除 |
+| 恢复机制 | 无（密码丢失=永久锁定） | `--first` 引导参数 → First Token |
 
-**输入**：
-- 密码（必填）
-- 备注（必填，原 Root 固定为 "root"）
+### 2.2 First Token（创世令牌）
 
-**生成算法**：
-```
-输入: password, note, level
-1. 拼接: input = password + ":" + note
-2. 哈希: hash = SHA256(input)  // 32字节
-3. 取前8字节构造哈希部分: hash_part = hash[0:7] + (hash[7] & 0x0F)  // 60位
-4. 组合PWID: pwid = (level << 60) | hash_part
-```
-
-**输出**：64位十六进制 PWID（高4位为权限等级，低60位为哈希值）
-
-### 2.3 PWID 核心特性
-
-| 特性 | 说明 |
-|------|------|
-| 唯一性 | 不同「密码+备注」组合生成完全唯一的 PWID |
-| 持久性 | PWID 生成后永久固定（即便密码变更也无法改动PWID） |
-| 权限绑定 | PWID 与权限等级强绑定 |
-| 可追溯性 | PWID 可反向解析权限等级 |
-
-## 三、原 Root 与派生 Root
-
-### 3.1 设计架构
-
-AntX 采用「锚点 + 派生」的多 Root 架构：
+系统首次启动时，无任何身份。内核检测到 PWID 表为空，生成 First Token：
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     原 Root（锚点）                          │
-│  • 全局唯一，不可创建、不可删除                              │
-│  • 密码首次启动时设定，之后可修改                            │
-│  • 备注固定为 "root"（不可修改、不可复用）                   │
-│  • 通过内核硬编码的特殊标识位保护                            │
-│  • 任何身份均无法修改或撤销其权限                           │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ 授权创建
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              派生 Root #1  |  派生 Root #2  |  ...         │
-│  • 由原 Root 授权创建                                        │
-│  • 备注可自定义                                              │
-│  • 可被原 Root 撤销或删除                                          │
-│  • 无法管理原 Root                                           │
-└─────────────────────────────────────────────────────────────┘
+System Boot → PWID table empty? → First Token (id=0, caps=ALL, max_uses=1)
+                                        │
+                                        ▼
+                                  安装向导获取
+                                        │
+                                        ▼
+                             创建第一个全能力 PWID
+                                        │
+                              Token 自动销毁
 ```
 
-### 3.2 原 Root 特性
+**特性**：
+- 引导参数触发：`kernel --first` 或检测到 PWID 表为空时自动生成
+- 一次性：`max_uses=1`，创建第一个身份后立即无效
+- 无时间限制：`valid_until=0`（永不自然过期）
+- Token ID 固定为 0
+- 完全复用现有 Token 系统（`token.rs` / `PwidToken`），无需新数据结构
 
-| 特性 | 说明 |
-|------|------|
-| 唯一性 | 全局仅存在一个 |
-| 不可删除 | 任何身份都无法删除 |
-| 不可管理 | 无法被修改权限、无法被撤销 |
-| 备注固定 | 强制为 "root"，不可修改 |
-| 密码可改 | 通过验证原密码后可修改 |
-| 初始化 | 首次启动时强制设置 |
+### 2.3 无主状态
 
-**安装向导实现** (2026-04-19 更新):
-- 安装向导不再询问备注，直接使用固定值 "root"
-- 用户只需设置密码，系统自动创建 Original Root
-- 系统调用: `sys_auth_create_original_root(password)`
-- 文件: `src/user/install/user_install.c` (用户态)
+如果最后一个全能力 PWID 被删除：
 
-### 3.3 派生 Root 特性
+- 现有会话继续运行（已有能力不丢失）
+- 无法创建新身份（无人持有 `USER_MGMT_CAP_CREATE`）
+- 物理访问者可通过 `--first` 重建
+- 这是特性，不是 bug——承认物理访问意味着主权
 
-| 特性 | 说明 |
-|------|------|
-| 创建权限 | 仅原 Root 可创建 |
-| 备注自由 | 可自定义（如"开发用""临时管理"） |
-| 密码可改 | 验证原密码后可修改 |
-| 权限撤销 | 可被原 Root 主动删除 |
-| 权力边界 | 无法管理原 Root，无法撤销其他派生 Root |
+## 三、能力领域定义
 
-### 3.4 PWID 标识规则
+从现有能力定义出发，补全五个核心领域：
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                    PWID 结构 (64位)                        │
-├────────────────────────────────────────────────────────────┤
-│  [63-60] │ [59-0]                                         │
-│  权限等级 │ 哈希值（SHA256前60位）                         │
-├────────────────────────────────────────────────────────────┤
-│  权限等级: 0=Root, 1=Trustworthy, 2=Untrustworthy         │
-│  哈希值: 由 password + ":" + note 经 SHA256 生成          │
-└────────────────────────────────────────────────────────────┘
+领域 0: SYSTEM     — 系统配置（HOSTNAME, CONFIG, BOOT, CLEANUP）
+领域 1: FS         — 文件系统（READ, WRITE, EXEC, CREATE, DELETE, CHMOD, CHOWN, MOUNT）
+领域 2: NET        — 网络（PING, BIND, CONNECT, DNS, HTTP）
+领域 3: PROC       — 进程（FORK, EXEC, KILL, DEBUG）
+领域 4: DEVICE     — 设备（DISK_ADMIN, DISK_FORMAT, DISK_PARTITION）
+领域 5: USER_MGMT  — 身份管理（CREATE, DELETE, LIST, TOKEN_ISSUE, TRUST_ADD）
 ```
 
-**注意**：特殊标志位（Original/Temporary/Modified/Disabled）存储在 `pwid_entry.flags` 中，不嵌入PWID值本身，确保PWID的不可变性。
+每个领域 64 位，16 个领域槽位。`CapabilityMatrix`（已在 `capability.rs` 中定义）天然承载此结构。
 
-**标志位定义**：
-| 标志 | 值 | 说明 |
-|------|-----|------|
-| PWID_FLAG_ORIGINAL_ROOT | 0x01 | 原 Root 标识 |
-| PWID_FLAG_TEMPORARY | 0x02 | 临时 PWID |
-| PWID_FLAG_DISABLED | 0x04 | 已禁用 |
-| PWID_FLAG_MODIFIED | 0x08 | 密码已修改 |
-
-## 四、密码维护
-
-### 4.1 密码修改规则
-
-**修改流程**（所有身份通用）：
-```
-1. 用户发起修改密码请求
-2. 输入当前密码（验证）
-3. 输入新密码
-4. 再次确认新密码（两次一致）
-5. 验证通过，更新密码哈希
-```
-
-### 4.2 备注修改规则
-
-| 身份类型 | 备注修改 |
-|----------|----------|
-| 原 Root | ❌ 固定为 "root"，不可修改 |
-| 派生 Root | ✅ 可自由修改 |
-| Trustworthy | ✅ 可自由修改 |
-| Untrustworthy | ✅ 可自由修改 |
-
-### 4.3 权限分层
-
-| 操作 | 普通身份 | Root 身份 |
-|------|----------|------------|
-| 查看自己备注 | ✅ | ✅ |
-| 修改自己备注 | ✅ | ✅ |
-| 修改自己密码 | ✅ | ✅ |
-| 查看系统所有密码 | ❌ | ✅ |
-| 创建新密码 | ❌ | ✅ |
-| 删除他 人密码 | ❌ | ✅ |
-| 删除自己 | ❌ | ❌（不可删除） |
-
-## 五、会话与身份机制
-
-### 5.1 多会话设计
-
-AntX 是多会话系统，支持多个终端同时登录：
+## 四、权限模型（5 层检查，保持完整）
 
 ```
-┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-│   终端 1     │   │   终端 2     │   │   终端 3     │
-│ PWID_A (Root)│   │ PWID_B (Trustworthy)│   │ PWID_C (Untrustworthy)│
-└──────────────┘   └──────────────┘   └──────────────┘
-        │                  │                  │
-        └──────────────────┼──────────────────┘
-                           ▼
-              ┌────────────────────────┐
-              │    内核会话管理表       │
-              │  PWID_A → 会话1        │
-              │  PWID_B → 会话2        │
-              │  PWID_C → 会话3        │
-              └────────────────────────┘
+check_permission(pwid, inode, operation)
+│
+├─ L0: Disabled / Expired 检查         ← 新增，替代旧 root bypass
+│   if disabled || expired → DENIED
+│
+├─ L1: Sensitivity Label               ← 不变
+│   pwid.clearance >= inode.sensitivity
+│
+├─ L2: ACE List (per-file override)    ← 不变
+│   匹配则 allow/deny 决定
+│
+├─ L3: Capability Matrix               ← 核心变更
+│   pwid.capability_mask.has(domain, operation) ?
+│   (不再查表映射 level→caps，直接查 PWID 自身)
+│
+└─ L4: Trust Chain                     ← 不变
+    pwid → trust_entry → owner_pwid ?
 ```
 
-### 5.2 会话生命周期
+## 五、能力授予规则
+
+### 5.1 创建新 PWID
+
+创建者指定目标能力子集。规则：
 
 ```
-创建会话 → 绑定 PWID → 进程运行 → 切换身份/注销 → 结束会话
-    │           │            │           │
-    ▼           ▼            ▼           ▼
- 输入密码   生成/匹配     fork/exec   重新登录/
- 登录         PWID         继承PWID    会话结束
+(caps_of_creator & caps_of_target) == caps_of_target
 ```
 
-### 5.3 身份切换
+即：只能授予自己持有的能力。创建行为本身消耗 `USER_MGMT_CAP_CREATE`。
 
-**方式一：注销当前会话**
-```
-当前会话 (PWID_A) → 注销 → 未登录状态 → 重新登录新身份
-```
+### 5.2 令牌提权
 
-**方式二：直接切换**
-```
-当前会话 (PWID_A) → 输入新密码+备注 → 会话 PWID 更新为 PWID_B
-```
+向目标身份的持有者验证密码 → 创建有时限的能力副本。与 v3 完全相同。
 
-## 六、临时提权机制
+### 5.3 信任链委托
 
-> **更新**: 临时提权机制已实现，通过令牌系统支持。
+与 v3 完全相同。每跳能力取交集（`required_caps & trust.cap_mask`），8 跳限界。
 
-### 6.1 设计原则
+## 六、等级降级为标签
 
-- 临时提权只能向**Root身份**提权
-- 验证Root密码后方可执行
-- 提权通过令牌机制实现，支持时间限制
-- 提权结束后自动恢复原身份
-
-### 6.2 提权流程
-
-```
-1. Trustworthy 会话执行 pwid_elevate(target_pwid, password, duration)
-2. 系统提示输入 Root 密码
-3. 验证密码正确性
-4. 创建临时提权令牌
-5. 会话切换为 Root 身份
-6. 持续指定时间或手动结束
-7. 调用 pwid_end_elevation() 恢复原身份
-```
-
-### 6.3 API 接口
+等级字段保留但不决定权限：
 
 ```c
-// 临时提权
-int pwid_elevate(uint64_t target_pwid, const char *password, uint64_t duration_secs);
+// v3 (旧) — 等级直接决定能力
+if (pwid_get_level(pwid) == PWID_LEVEL_ROOT)
+    sys_disk_format();
 
-// 使用令牌提权
-int pwid_elevate_with_token(uint64_t token_id);
-
-// 结束提权
-void pwid_end_elevation(void);
-
-// 检查是否处于提权状态
-int pwid_is_elevated(void);
+// v4 (新) — 能力检查
+if (pwid_has_cap(pwid, CAP_DOMAIN_DEVICE, DEVICE_CAP_DISK_ADMIN))
+    sys_disk_format();
 ```
 
-## 七、初始化流程
+等级仍可用作 UI 标签（显示"管理员"/"普通"/"访客"），但不再是权限门控。
 
-### 7.1 首次启动
+## 七、未登录状态
 
-```
-系统首次启动
-       │
-       ▼
-┌──────────────────┐
-│ 检测：无 PWID    │──── 是 ────▶ 强制设置 root 密码
-└──────────────────┘
-       │ 否
-       ▼
-┌──────────────────┐
-│ 已有 root PWID   │──── 是 ────▶ 正常启动，进入 Shell
-└──────────────────┘
-```
+`pwid_get_current()` 返回 0 时：
 
-### 7.2 首次启动完整流程
+- 所有操作返回 `PERMISSION_DENIED`
+- 唯一例外：`pwid_login()` 本身
+- 系统启动后无人登录时进入安装向导或登录界面
 
-```
-1. 系统启动，加载内核
-2. 初始化 PWID 模块
-3. 检查是否存在 root PWID
-       │
-       ├── 不存在 → 进入首次设置流程
-       │            │
-       │            ├── 要求用户设置 root 密码
-       │            ├── 输入密码 + 确认
-       │            ├── 生成原 Root PWID
-       │            ├── 提示：建议创建普通身份（可选）
-       │            └── 进入系统
-       │
-       └── 存在 → 正常启动
-                  │
-                  └── 进入登录界面 → Shell
-```
+## 八、多用户多会话支持
 
-## 八、安全考量
+v4 对多用户支持**优于** v3：
 
-### 8.1 密码存储
+| 场景 | v3 | v4 |
+|------|-----|-----|
+| 管理账户 | Root (等级=0) | 全能力 PWID |
+| 日常账户 | Trusted (等级=1, 固定4位权限) | 精确能力集 (如 FS_RW + NET_FULL) |
+| 访客账户 | Untrustworthy (只读) | 最小能力集 (FS_READ) |
+| 服务账户 | 不存在 | 非交互式 (NET_BIND + PROC_FORK) |
 
-- 密码不以明文存储
-- 使用 SHA-256 哈希存储
-- 存储位置：内核安全区域（受保护）
+多会话并发不受影响——每个终端独立 `pwid_login()`，各自获得独立的会话上下文。
 
-### 8.2 暴力破解防护
+## 九、恢复通道
 
-- 连续5次错误密码输入后锁定账户
-- 锁定持续时间：300秒
-- 锁定期自动解除机制
-- 登录成功后清除失败计数
+| 场景 | v3 | v4 |
+|------|-----|-----|
+| 忘记密码 | **死锁** — 原 Root 无法重置 | `--first` → First Token → 创建新身份 |
+| 物理访问 | 无后门 | 诚实承认：物理访问 = 主权 |
+
+`--first` 可多次使用。它不是"灾难恢复模式"——它是"我要重新开始"。
+
+## 十、API 变化
+
+### 新增
 
 ```c
-// 使用带暴力破解防护的登录
-int pwid_login_with_bruteforce_protection(const char *note, const char *password);
-
-// 检查账户是否被锁定
-int pwid_is_locked(uint64_t pwid);
-
-// 手动清除锁定
-void pwid_clear_lockout(uint64_t pwid);
+int  pwid_has_capability(uint64_t pwid, uint16_t domain, uint64_t required);
+void pwid_set_capability(uint64_t pwid, uint16_t domain, uint64_t caps);
+uint64_t pwid_get_capability(uint64_t pwid, uint16_t domain);
 ```
 
-### 8.3 权限边界
-
-- 用户态无法直接访问内核数据结构
-- PWID 验证在内核态完成
-- 系统调用需通过内核权限检查
-
-### 8.4 审计日志
-
-所有关键操作都会记录审计日志：
-
-| 操作类型 | 说明 |
-|----------|------|
-| AUDIT_ACTION_LOGIN | 登录操作 |
-| AUDIT_ACTION_LOGOUT | 登出操作 |
-| AUDIT_ACTION_CREATE | 创建PWID |
-| AUDIT_ACTION_DELETE | 删除PWID |
-| AUDIT_ACTION_MODIFY | 修改PWID |
-| AUDIT_ACTION_PERMISSION | 权限检查 |
-| AUDIT_ACTION_TOKEN_CREATE | 创建令牌 |
-| AUDIT_ACTION_TOKEN_USE | 使用令牌 |
-| AUDIT_ACTION_ELEVATE | 临时提权 |
+### 保留但标记废弃
 
 ```c
-// 记录审计日志
-void pwid_audit_log(uint64_t pwid, uint32_t action, uint32_t result,
-                    uint64_t target_pwid, uint64_t details);
-
-// 输出审计日志
-void pwid_audit_dump(void);
-
-// 持久化审计日志
-int pwid_audit_save_to_disk(void);
-int pwid_audit_load_from_disk(void);
+int  pwid_is_root(uint64_t pwid);           // @deprecated → pwid_has_capability(pwid, DOMAIN, ALL)
+int  pwid_check_permission(pwid, level);     // @deprecated → 领域能力检查
 ```
 
-### 8.5 PWID过期机制
+### 行为变更
 
 ```c
-// 检查PWID是否过期
-int pwid_is_expired(uint64_t pwid);
-
-// 设置过期时间
-void pwid_set_expiry(uint64_t pwid, uint64_t expires_at);
-
-// 延长过期时间（天数）
-void pwid_extend_expiry(uint64_t pwid, uint64_t days);
-
-// 定期清理过期账户
-void pwid_periodic_cleanup(void);
+pwid_get_fs_capability(pwid);  // 不再查表，返回 pwid.caps.domains[CAP_DOMAIN_FS]
+pwid_get_current();            // 不再返回 guest PWID(0x0020F45A8B978417)，返回 0
 ```
 
-## 九、新增标志位
+## 十一、PWID 结构变化
 
-| 标志 | 值 | 说明 |
-|------|-----|------|
-| PWID_FLAG_ORIGINAL_ROOT | 0x01 | 原 Root 标识 |
-| PWID_FLAG_TEMPORARY | 0x02 | 临时 PWID |
-| PWID_FLAG_DISABLED | 0x04 | 已禁用 |
-| PWID_FLAG_MODIFIED | 0x08 | 密码已修改 |
-| PWID_FLAG_DEFAULT_PW | 0x10 | 使用默认密码 |
-| PWID_FLAG_LOCKED | 0x20 | 账户锁定 |
-| PWID_FLAG_EXPIRED | 0x40 | 已过期 |
+```diff
+  struct PwidEntry {
+      pwid: u64,
+      level: u8,              // 保留为标签
++     capability_mask: [u64; 16],  // 每个领域 64 位
+      note: [u8; 128],
+      password_hash: [u8; 32],
+      // ... 其余不变
+  }
+```
+
+## 十二、迁移兼容性
+
+- 现有 `PwidEntry` 增加 `capability_mask` 字段（17×8=136 字节增量）
+- 所有 level=0 的 PWID 默认赋予 `capability_mask[i]=0xFFFFFFFFFFFFFFFF`
+- `get_level()` 查询仍可用，不返回错误
+- 旧 syscall 在过渡期可同时接受新旧权限查询
+
+---
+
+**设计者**: Anfer + AI Assistant (2026-05-07)
+**基于**: permission-model-v3.md（未废弃——5 层检查架构保持完整）
+**取代**: pwid-model.md（原 Root 架构的描述）

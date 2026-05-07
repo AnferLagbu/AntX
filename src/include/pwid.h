@@ -67,6 +67,26 @@
 #define TOKEN_FLAG_REQUIRE_CONFIRM 0x04
 #define TOKEN_FLAG_AUDIT_ALL      0x08
 
+/* v4: Capability domains */
+#define CAP_DOMAIN_SYSTEM_CFG  (1ULL << 0)
+#define CAP_DOMAIN_DEVICE_DISK (1ULL << 1)
+#define CAP_DOMAIN_USER_CREATE (1ULL << 2)
+#define CAP_DOMAIN_USER_DELETE (1ULL << 3)
+#define CAP_DOMAIN_USER_LIST   (1ULL << 4)
+#define CAP_DOMAIN_TOKEN_ISSUE (1ULL << 5)
+#define CAP_DOMAIN_TRUST_ADD   (1ULL << 6)
+#define CAP_DOMAIN_SYS_ADMIN   0xFFFFFFFFFFFFFFFFULL
+
+/* v4: FFI declarations */
+uint64_t pwid_get_capability_raw(uint64_t pwid, uint16_t domain);
+int pwid_has_capability(uint64_t pwid, uint16_t domain, uint64_t required);
+
+/* v4: Helper — check if pwid has a specific capability in a domain */
+static inline int pwid_has_cap_raw(uint64_t pwid, uint16_t domain, uint64_t cap) {
+    uint64_t caps = pwid_get_capability_raw(pwid, domain);
+    return (caps & cap) == cap ? 1 : 0;
+}
+
 struct pwid_entry {
     uint64_t pwid;
     uint8_t level;

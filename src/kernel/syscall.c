@@ -220,7 +220,7 @@ int64_t sys_proc_setpwid(uint64_t pwid) {
         return E_PERM;
     }
     
-    if (!pwid_is_root(pwid_get_current())) {
+    if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
         return E_AUTH_NOROOT;
     }
     
@@ -250,9 +250,6 @@ int64_t sys_fs_open(const char *path, int flags, int mode) {
     }
 
     uint64_t pwid = pwid_get_current();
-    if (pwid == 0) {
-        pwid = 0x0020F45A8B978417;
-    }
 
     int64_t result = vfs_open(path, (uint32_t)flags, pwid);
 
@@ -473,7 +470,7 @@ int64_t sys_auth_check(uint64_t pwid, uint64_t owner_pwid,
 }
 
 int64_t sys_auth_create(const char *password, const char *note, uint8_t level) {
-    if (!pwid_is_root(pwid_get_current())) {
+    if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
         return E_AUTH_NOROOT;
     }
     
@@ -502,7 +499,7 @@ int64_t sys_auth_create_original_root(const char *password) {
 }
 
 int64_t sys_auth_delete(uint64_t target_pwid) {
-    if (!pwid_is_root(pwid_get_current())) {
+    if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
         return E_AUTH_NOROOT;
     }
     
@@ -516,7 +513,7 @@ int64_t sys_auth_delete(uint64_t target_pwid) {
 }
 
 int64_t sys_auth_list(void) {
-    if (!pwid_is_root(pwid_get_current())) {
+    if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
         return E_AUTH_NOROOT;
     }
     pwid_list_all();
@@ -687,7 +684,7 @@ int64_t sys_gethostname(char *buf, uint64_t size) {
 }
 
 int64_t sys_sethostname(const char *name, uint64_t len) {
-    if (!pwid_is_root(pwid_get_current())) {
+    if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
         return E_AUTH_NOROOT;
     }
     
@@ -762,7 +759,7 @@ int64_t sys_fs_mount(const char *source, const char *target, const char *fstype,
     struct process *proc = process_get_current();
     uint64_t pwid = proc ? proc->pwid : 0;
     
-    if (pwid_get_level(pwid) < PWID_LEVEL_TRUSTWORTHY) {
+    if (!pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_SYS_ADMIN)) {
         return E_PERM;
     }
     
@@ -778,7 +775,7 @@ int64_t sys_fs_unmount(const char *target) {
     struct process *proc = process_get_current();
     uint64_t pwid = proc ? proc->pwid : 0;
     
-    if (pwid_get_level(pwid) < PWID_LEVEL_TRUSTWORTHY) {
+    if (!pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_SYS_ADMIN)) {
         return E_PERM;
     }
     
@@ -861,7 +858,7 @@ int64_t sys_disk_format(uint32_t disk_id, const char *fstype) {
     struct process *proc = process_get_current();
     uint64_t pwid = proc ? proc->pwid : 0;
     
-    if (pwid_get_level(pwid) < PWID_LEVEL_ROOT) {
+    if (!pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_DEVICE_DISK)) {
         return E_PERM;
     }
     
@@ -885,7 +882,7 @@ int64_t sys_disk_partition(uint32_t disk_id, uint64_t total_sectors) {
     struct process *proc = process_get_current();
     uint64_t pwid = proc ? proc->pwid : 0;
     
-    if (pwid_get_level(pwid) < PWID_LEVEL_ROOT) {
+    if (!pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_DEVICE_DISK)) {
         return E_PERM;
     }
     
@@ -905,7 +902,7 @@ int64_t sys_disk_install_grub(uint32_t disk_id) {
     struct process *proc = process_get_current();
     uint64_t pwid = proc ? proc->pwid : 0;
     
-    if (pwid_get_level(pwid) < PWID_LEVEL_ROOT) {
+    if (!pwid_has_cap_raw(pwid, 0, CAP_DOMAIN_DEVICE_DISK)) {
         return E_PERM;
     }
     

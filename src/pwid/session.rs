@@ -88,13 +88,8 @@ impl SessionManager {
     pub fn get_current(&self) -> u64 {
         unsafe {
             let ctx = &*self.current.get();
-            
-            if ctx.session_pwid == 0 {
-                // Return default guest PWID if no session
-                0x0020F45A8B978417u64
-            } else {
-                ctx.session_pwid
-            }
+            // v4: return 0 for no session (no guest PWID)
+            ctx.session_pwid
         }
     }
 
@@ -203,7 +198,8 @@ impl SessionManager {
         }
         
         // Create the user
-        let new_pwid = mgr.create(password, note, level)?;
+        let empty_caps: [u64; 16] = [0; 16];
+        let new_pwid = mgr.create(password, note, level, &empty_caps)?;
         
         serial_println!("[PWID] User '{}' created by '{}'", 
                        note, current_entry.get_note_str());

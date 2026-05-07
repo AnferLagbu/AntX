@@ -101,7 +101,8 @@ pub extern "C" fn pwid_create(password: *const i8, note: *const i8, level: u8) -
         None => return PwidError::NotFound.as_i32(),
     };
     
-    match manager::get_manager().create(pwd, note, level) {
+    let empty_caps: [u64; 16] = [0; 16];
+    match manager::get_manager().create(pwd, note, level, &empty_caps) {
         Ok(_) => 0,
         Err(e) => e.as_i32(),
     }
@@ -205,28 +206,39 @@ pub extern "C" fn pwid_get_level(pwid: u64) -> u8 {
         .unwrap_or(0xFF)
 }
 
-/// Get FS capability bitmask for a PWID based on its trust level.
-/// Returns a u64 bitmask of FS_CAP_* bits defined in pwid.h.
-/// Root (level 0) returns all capabilities.
-/// Trusted (level 1): READ | WRITE | EXECUTE | CREATE
-/// Standard (level 2): READ | EXECUTE
-/// Untrustworthy (level 3): READ
-/// Unknown PWID returns 0 (no capabilities).
+/// Get FS capability bitmask for a PWID from its capability matrix (v4).
+/// No longer derives caps from level — reads pwidentry.capability_mask[CAP_DOMAIN_FS].
 #[no_mangle]
 pub extern "C" fn pwid_get_fs_capability(pwid: u64) -> u64 {
-    let level = manager::get_manager().get_level(pwid).unwrap_or(0xFF);
-    // FS capability bits matching pwid.h definitions
-    const FS_CAP_READ: u64    = 1 << 0;
-    const FS_CAP_WRITE: u64   = 1 << 1;
-    const FS_CAP_EXECUTE: u64 = 1 << 2;
-    const FS_CAP_CREATE: u64  = 1 << 3;
+    let mgr = manager::get_manager();
+    match mgr.get_caps(pwid) {
+        Some(caps) => caps[1],  // CAP_DOMAIN_FS = 1
+        None => 0,
+    }
+}
 
-    match level {
-        0 => u64::MAX,                                                  // Root
-        1 => FS_CAP_READ | FS_CAP_WRITE | FS_CAP_EXECUTE | FS_CAP_CREATE, // Trusted
-        2 => FS_CAP_READ | FS_CAP_EXECUTE,                              // Standard
-        3 => FS_CAP_READ,                                               // Untrustworthy
-        _ => 0,                                                         // Unknown
+/// Check if pwid has capability in a domain (v4).
+/// domain: 0..15, required: bitmask
+/// Returns 1 if the pwid's cap_mask[domain] superset-of required.
+#[no_mangle]
+pub extern "C" fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> i32 {
+    let mgr = manager::get_manager();
+    match mgr.get_caps(pwid) {
+        Some(caps) => {
+            let idx = (domain as usize) % 16;
+            if (caps[idx] & required) == required { 1 } else { 0 }
+        }
+        None => 0,
+    }
+}
+
+/// Get raw capability mask for a PWID in a specific domain (for C inline helper)
+#[no_mangle]
+pub extern "C" fn pwid_get_capability_raw(pwid: u64, domain: u16) -> u64 {
+    let mgr = manager::get_manager();
+    match mgr.get_caps(pwid) {
+        Some(caps) => caps[(domain as usize) % 16],
+        None => 0,
     }
 }
 
@@ -287,7 +299,7 @@ pub extern "C" fn pwid_can_modify(modifier_pwid: u64, target_pwid: u64) -> i32 {
 // Root User Management
 // ============================================================
 
-/// Create derived root user
+/// Create derived root user (v4: create full-cap identity)
 #[no_mangle]
 pub extern "C" fn pwid_create_derived_root(password: *const i8, note: *const i8) -> i32 {
     let (pwd, note) = match get_two_strings(password, note) {
@@ -295,7 +307,7 @@ pub extern "C" fn pwid_create_derived_root(password: *const i8, note: *const i8)
         None => return PwidError::NotFound.as_i32(),
     };
     
-    match manager::get_manager().create_derived_root(pwd, note) {
+    match manager::get_manager().create_full_cap(pwd, note) {
         Ok(_) => 0,
         Err(e) => e.as_i32(),
     }
@@ -673,12 +685,7 @@ pub extern "C" fn pwid_enhanced_check(
 ) -> i32 {
     let caps = action as u64;
 
-    // Layer 0: Root bypass
-    if manager::get_manager().is_root(subject_pwid) {
-        return 1;
-    }
-
-    // Layer 1: Check if account is valid; unregistered → transitional allow
+    // Layer 0: Check if account is valid; unregistered → transitional allow
     let pwid_caps = pwid_get_fs_capability(subject_pwid);
     if pwid_caps == 0 {
         return 1;  // Transitional: unregistered/guest PWID — allow all

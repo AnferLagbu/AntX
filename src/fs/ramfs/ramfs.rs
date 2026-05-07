@@ -529,8 +529,10 @@ impl RamFsData {
     /// L0: Root bypass, L1: Sensitivity, L2: ACE, L3: Capability, L4: Trust chain
     fn check_permission(&self, inode: &RamFsInode, pwid: u64, cap: u64) -> bool {
         let level = unsafe { pwid_get_level(pwid) };
-        if level == 0 {
-            return true;
+
+        // v4: No root bypass — check DISABLED first
+        if level > 3 {
+            return false;
         }
 
         if level > 0 && inode.sensitivity > 0 {
@@ -695,7 +697,8 @@ impl RamFsData {
         0
     }
     
-    pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {if path.is_empty() {
+    pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
+        if path.is_empty() {
             return None;
         }
 
@@ -980,7 +983,75 @@ impl RamFsData {
         0
     }
 
-    pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {if name.is_empty() || name.contains('/') {
+    pub fn create_file(&mut self, parent_path: &str, name: &str, pwid: u64) -> Option<u32> {
+        if name.is_empty() || name.contains('/') {
+            return None;
+        }
+
+        let parent_num = match self.resolve_path(parent_path) {
+            Some(n) => n,
+            None => return None,
+        };
+
+        if parent_num as usize >= RAMFS_MAX_INODES || !self.inodes[parent_num as usize].used {
+            return None;
+        }
+
+        if self.inodes[parent_num as usize].file_type != VfsFileType::Dir as u8 {
+            return None;
+        }
+
+        if !self.check_permission(&self.inodes[parent_num as usize], pwid, FS_CAP_CREATE) {
+            return None;
+        }
+
+        let parent_block = self.inodes[parent_num as usize].direct_blocks[0];
+        if parent_block == u32::MAX {
+            return None;
+        }
+
+        let dirent_size = core::mem::size_of::<RamFsDirent>();
+        let num_entries = self.inodes[parent_num as usize].size as usize / dirent_size;
+
+        for i in 0..num_entries {
+            let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
+            let entry: &RamFsDirent = unsafe {
+                &*(&self.data_area[offset] as *const u8 as *const RamFsDirent)
+            };
+            if entry.inode != 0 {
+                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                if core::str::from_utf8(&entry.name[..end]).unwrap_or("") == name {
+                    return None;
+                }
+            }
+        }
+
+        let new_inode_num = self.alloc_inode(VfsFileType::File as u8, pwid)?;
+
+        let parent_block = self.inodes[parent_num as usize].direct_blocks[0];
+        let num_entries = self.inodes[parent_num as usize].size as usize / dirent_size;
+        let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
+
+        if offset + dirent_size > self.data_area.len() {
+            return None;
+        }
+
+        let entry: &mut RamFsDirent = unsafe {
+            &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirent)
+        };
+        entry.inode = new_inode_num;
+        entry.file_type = VfsFileType::File as u8;
+        entry.set_name(name);
+
+        self.inodes[parent_num as usize].size += dirent_size as u32;
+        self.inodes[parent_num as usize].link_count += 1;
+        self.inodes[parent_num as usize].mtime = Self::get_time();
+
+        Some(new_inode_num)
+    }
+
+    pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {
+        if name.is_empty() || name.contains('/') {
             return -1;
         }
 
