@@ -14,6 +14,7 @@ extern "C" {
 
 pub struct Process {
     pub pid: ProcessId,
+    pub pwid: AtomicU64,        // v4: identity this process runs under
     pub state: AtomicU32,
     pub priority: AtomicU32,
     pub flags: AtomicU32,
@@ -43,6 +44,7 @@ impl Process {
     pub fn new(pid: Pid, name: &str, parent: Option<ProcessId>) -> Self {
         Self {
             pid: ProcessId(pid),
+            pwid: AtomicU64::new(0),
             state: AtomicU32::new(ProcessState::Created as u32),
             priority: AtomicU32::new(ProcessPriority::Normal as u32),
             flags: AtomicU32::new(0),
@@ -128,6 +130,14 @@ impl Process {
     
     pub fn set_rt_priority(&self, priority: u8) {
         self.rt_priority.store(priority as u32, Ordering::SeqCst);
+    }
+    
+    pub fn get_pwid(&self) -> u64 {
+        self.pwid.load(Ordering::SeqCst)
+    }
+    
+    pub fn set_pwid(&self, pwid: u64) {
+        self.pwid.store(pwid, Ordering::SeqCst);
     }
 }
 

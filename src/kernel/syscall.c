@@ -100,9 +100,7 @@ int64_t sys_proc_create(void) {
     struct process *parent = process_get_current();
     uint64_t pwid = parent ? parent->pwid : 0;
     
-    // process_create returns PID (uint32_t), not process pointer
-    uint32_t child_pid = process_create(NULL, 0);
-    (void)pwid;
+    uint32_t child_pid = process_create(NULL, 0, pwid);
     if (child_pid == 0) {
         return E_NOMEM;
     }
@@ -113,6 +111,7 @@ int64_t sys_proc_create(void) {
     if (parent) {
         child->parent_pid = parent->pid;
         child->parent = parent;
+        child->pwid = pwid;
         
         if (parent->cr3) {
             child->cr3 = vmm_create_user_page_table();

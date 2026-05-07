@@ -7,7 +7,7 @@ use super::thread::THREAD_MANAGER;
 use super::scheduler_ex::SCHEDULER_EX;
 use super::session::SESSION_MANAGER;
 use super::user_proc::USER_PROC_MANAGER;
-use super::process::PROCESS_TABLE;
+use super::process::{Process, PROCESS_TABLE};
 
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
 static INIT_PROCESS_CREATED: AtomicU32 = AtomicU32::new(0);
@@ -73,6 +73,13 @@ fn create_init_process() {
 #[no_mangle]
 pub extern "C" fn update_current_process_ptr(ptr: u64) {
     CURRENT_PROCESS_PTR.store(ptr, Ordering::SeqCst);
+    if ptr != 0 {
+        let proc_ptr = ptr as *const Process;
+        unsafe {
+            C_CURRENT_PROCESS.pid = (*proc_ptr).pid.0 as u64;
+            C_CURRENT_PROCESS.pwid = (*proc_ptr).get_pwid();
+        }
+    }
 }
 
 #[no_mangle]
@@ -93,8 +100,8 @@ pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
 }
 
 #[no_mangle]
-pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid) -> Pid {
-    proc_create_internal(name, parent_pid)
+pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid, pwid: u64) -> Pid {
+    proc_create_internal(name, parent_pid, pwid)
 }
 
 #[no_mangle]
@@ -250,7 +257,7 @@ pub extern "C" fn thread_init() {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid) -> Pid {
+pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid, pwid: u64) -> Pid {
     if name.is_null() {
         return 0;
     }
@@ -271,7 +278,32 @@ pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid) -> 
         Some(parent_pid)
     };
     
-    SCHEDULER.create_process(name_str, parent).unwrap_or(0)
+    SCHEDULER.create_process(name_str, parent, pwid).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_get_current_pwid() -> u64 {
+    if let Some(pid) = SCHEDULER.current() {
+        if let Some(process) = PROCESS_TABLE.get(pid) {
+            return unsafe { (*process).get_pwid() };
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_set_quota(pwid: u64, max_runtime: u64, period: u64) {
+    SCHEDULER.set_quota(pwid, max_runtime, period);
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_remove_quota(pwid: u64) {
+    SCHEDULER.remove_quota(pwid);
+}
+
+#[no_mangle]
+pub extern "C" fn scheduler_set_proc_limit(pwid: u64, max_procs: u32) {
+    SCHEDULER.set_limit(pwid, max_procs);
 }
 
 #[no_mangle]

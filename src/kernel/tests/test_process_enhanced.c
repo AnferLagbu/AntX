@@ -5,7 +5,7 @@
 #include "kmalloc.h"
 #include "user_proc.h"
 
-extern uint64_t proc_create_internal(const char *name, uint64_t parent_pid);
+extern uint64_t proc_create_internal(const char *name, uint64_t parent_pid, uint64_t pwid);
 extern uint32_t proc_get_state(uint64_t pid);
 extern int proc_set_priority(uint64_t pid, uint32_t priority);
 extern void scheduler_yield(void);
@@ -125,13 +125,13 @@ static int test_user_ring3_handoff(void) {
 }
 
 static int test_process_tree_structure(void) {
-    uint64_t parent = proc_create_internal("parent_proc", 0);
+    uint64_t parent = proc_create_internal("parent_proc", 0, 0);
     if (parent == 0) return TEST_SKIP;
     
-    uint64_t child1 = proc_create_internal("child_1", parent);
+    uint64_t child1 = proc_create_internal("child_1", parent, 0);
     if (child1 == 0) return TEST_SKIP;
     
-    uint64_t child2 = proc_create_internal("child_2", parent);
+    uint64_t child2 = proc_create_internal("child_2", parent, 0);
     if (child2 == 0) return TEST_SKIP;
     
     TEST_ASSERT_NE(child1, child2);
@@ -144,13 +144,13 @@ static int test_process_tree_structure(void) {
 }
 
 static int test_process_priority_inheritance(void) {
-    uint64_t pid = proc_create_internal("prio_inherit", 0);
+    uint64_t pid = proc_create_internal("prio_inherit", 0, 0);
     if (pid == 0) return TEST_SKIP;
     
     int result = proc_set_priority(pid, 3);
     
     if (result >= 0) {
-        uint64_t child = proc_create_internal("child_prio", pid);
+        uint64_t child = proc_create_internal("child_prio", pid, 0);
         if (child > 0) {
             klog_kern("[PROC] Priority inheritance tested");
         }
@@ -187,7 +187,7 @@ static int test_process_rapid_create_destroy(void) {
         }
         strcat(name, num);
         
-        pids[i] = proc_create_internal(name, 0);
+        pids[i] = proc_create_internal(name, 0, 0);
         if (pids[i] != 0) {
             created++;
         }
@@ -205,14 +205,14 @@ static int test_process_name_validation(void) {
     const char *invalid_names[] = {NULL, "", NULL};
     
     for (int i = 0; valid_names[i] != NULL; i++) {
-        uint64_t pid = proc_create_internal(valid_names[i], 0);
+        uint64_t pid = proc_create_internal(valid_names[i], 0, 0);
         if (pid == 0) {
             return TEST_SKIP;
         }
     }
     
     for (int i = 0; invalid_names[i] != NULL; i++) {
-        (void)proc_create_internal(invalid_names[i], 0);
+        (void)proc_create_internal(invalid_names[i], 0, 0);
     }
     
     klog_kern("[PROC] Name validation completed");
@@ -247,7 +247,7 @@ static int test_process_concurrent_creation(void) {
             strcat(name, "_");
             strcat(name, i_str);
             
-            uint64_t pid = proc_create_internal(name, 0);
+            uint64_t pid = proc_create_internal(name, 0, 0);
             if (pid != 0) {
                 total_created++;
             }
@@ -283,7 +283,7 @@ static int test_process_resource_limits(void) {
     kfree(mem2);
     kfree(mem3);
     
-    uint64_t pid = proc_create_internal("resource_test", 0);
+    uint64_t pid = proc_create_internal("resource_test", 0, 0);
     if (pid == 0) return TEST_SKIP;
     
     klog_kern("[PROC] Resource limits tested");

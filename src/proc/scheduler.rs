@@ -11,6 +11,39 @@ const TIME_SLICES: [u64; MLFQ_LEVELS] = [10, 20, 40, 80];
 
 const RT_PRIORITY_MAX: u8 = 99;
 const RT_TIME_SLICE: u64 = 5;
+const RT_FIFO_WATCHDOG: u64 = 500;  // ticks before forced preempt (5s)
+const BOOST_INTERVAL: u64 = 1000;
+
+/// Per-PWID CPU quota (cgroup-style lightweight)
+pub struct PwidQuota {
+    pub pwid: u64,
+    pub used: bool,
+    pub max_runtime: u64,     // max ticks per period (0 = unlimited)
+    pub period: u64,          // period length in ticks
+    pub consumed: u64,        // consumed this period
+    pub next_reset: u64,      // absolute tick when period resets
+}
+
+impl PwidQuota {
+    const fn new() -> Self {
+        Self { pwid: 0, used: false, max_runtime: 0, period: 0, consumed: 0, next_reset: 0 }
+    }
+}
+
+const MAX_QUOTAS: usize = 32;
+
+/// Per-PWID process count limit
+pub struct PwidLimit {
+    pub pwid: u64,
+    pub used: bool,
+    pub max_procs: u32,
+    pub current: u32,
+}
+
+const MAX_LIMITS: usize = 32;
+
+/// Global tick counter for quota periods
+static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedPolicy {
@@ -49,6 +82,9 @@ pub struct Scheduler {
     current_level: AtomicU32,
     time_remaining: AtomicU64,
     rt_running: AtomicBool,
+    fifo_watchdog: AtomicU64,                     // RT FIFO preempt countdown
+    quotas: Mutex<[PwidQuota; MAX_QUOTAS]>,        // per-PWID CPU quotas
+    limits: Mutex<[PwidLimit; MAX_LIMITS]>,         // per-PWID proc limits
 }
 
 unsafe impl Send for Scheduler {}
@@ -56,6 +92,8 @@ unsafe impl Sync for Scheduler {}
 
 impl Scheduler {
     pub const fn new() -> Self {
+        const QUOTA_ZERO: PwidQuota = PwidQuota::new();
+        const LIMIT_ZERO: PwidLimit = PwidLimit { pwid: 0, used: false, max_procs: 0, current: 0 };
         Self {
             queues: [
                 Mutex::new(VecDeque::new()),
@@ -71,13 +109,16 @@ impl Scheduler {
             current_level: AtomicU32::new(0),
             time_remaining: AtomicU64::new(TIME_SLICES[0]),
             rt_running: AtomicBool::new(false),
+            fifo_watchdog: AtomicU64::new(0),
+            quotas: Mutex::new([QUOTA_ZERO; MAX_QUOTAS]),
+            limits: Mutex::new([LIMIT_ZERO; MAX_LIMITS]),
         }
     }
     
     pub fn init(&self) {
         self.initialized.store(true, Ordering::SeqCst);
 
-        let init_pid = self.create_process("init", None);
+        let init_pid = self.create_process("init", None, 0);
         if let Some(pid) = init_pid {
             if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
                 unsafe {
@@ -96,11 +137,26 @@ impl Scheduler {
         }
     }
     
-    pub fn create_process(&self, name: &str, parent: Option<Pid>) -> Option<Pid> {
+    pub fn create_process(&self, name: &str, parent: Option<Pid>, pwid: u64) -> Option<Pid> {
         let pid = PROCESS_TABLE.allocate_pid()?;
+
+        // L4: per-PWID proc count limit
+        if pwid != 0 {
+            let mut limits = self.limits.lock();
+            for l in limits.iter_mut() {
+                if l.used && l.pwid == pwid {
+                    if l.max_procs > 0 && l.current >= l.max_procs {
+                        return None;
+                    }
+                    l.current += 1;
+                    break;
+                }
+            }
+        }
         
         let parent_id = parent.map(ProcessId);
-        let process = alloc::boxed::Box::new(Process::new(pid, name, parent_id));
+        let mut process = alloc::boxed::Box::new(Process::new(pid, name, parent_id));
+        process.set_pwid(pwid);
         
         let process_ptr = alloc::boxed::Box::into_raw(process);
         
@@ -177,6 +233,7 @@ impl Scheduler {
                     SchedPolicy::Fifo => {
                         next_pid = Some(rt_pid);
                         self.rt_running.store(true, Ordering::SeqCst);
+                        self.fifo_watchdog.store(RT_FIFO_WATCHDOG, Ordering::SeqCst);
                         break;
                     }
                     SchedPolicy::Rr => {
@@ -213,8 +270,6 @@ impl Scheduler {
                                 self.current_level.store(level as u32, Ordering::SeqCst);
                                 self.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
                                 break;
-                            } else if state == ProcessState::Blocked {
-                                queue.push_back(pid);
                             }
                         }
                     } else {
@@ -353,8 +408,10 @@ impl Scheduler {
         if let Some(pid) = self.current() {
             if let Some(process) = PROCESS_TABLE.get(pid) {
                 unsafe {
+                    let pwid = (*process).get_pwid();
                     (*process).exit_code.store(exit_code, Ordering::SeqCst);
                     (*process).set_state(ProcessState::Zombie);
+                    self.dec_limit(pwid);
                     
                     if let Some(parent_pid) = (*process).parent {
                         self.unblock(parent_pid.0);
@@ -417,7 +474,43 @@ impl Scheduler {
 
     pub fn tick(&self) {
         let is_rt = self.rt_running.load(Ordering::SeqCst);
+        let tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
         
+        // RT FIFO watchdog: force preempt after RT_FIFO_WATCHDOG ticks
+        if is_rt && self.fifo_watchdog.load(Ordering::SeqCst) > 0 {
+            let remaining = self.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
+            if remaining <= 1 {
+                self.need_reschedule.store(true, Ordering::SeqCst);
+                self.rt_running.store(false, Ordering::SeqCst);
+            }
+        }
+        
+        // Per-PWID quota check
+        if let Some(pid) = self.current() {
+            if let Some(process) = PROCESS_TABLE.get(pid) {
+                let pwid = unsafe { (*process).get_pwid() };
+                if pwid != 0 {
+                    let mut quotas = self.quotas.lock();
+                    for q in quotas.iter_mut() {
+                        if q.used && q.pwid == pwid {
+                            if q.max_runtime > 0 {
+                                if tick >= q.next_reset {
+                                    q.consumed = 0;
+                                    q.next_reset = tick + q.period;
+                                }
+                                q.consumed += 1;
+                                if q.consumed >= q.max_runtime {
+                                    self.need_reschedule.store(true, Ordering::SeqCst);
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Standard time-slice accounting
         if is_rt {
             let remaining = self.time_remaining.fetch_sub(1, Ordering::SeqCst);
             if remaining <= 1 {
@@ -456,6 +549,76 @@ impl Scheduler {
     
     pub fn get_rt_count(&self) -> usize {
         self.rt_queue.lock().len()
+    }
+    
+    /// Set CPU quota for a PWID. Caller must hold SYSTEM_CAP_QUOTA_ADMIN.
+    pub fn set_quota(&self, pwid: u64, max_runtime: u64, period: u64) {
+        let mut quotas = self.quotas.lock();
+        let now = TICK_COUNT.load(Ordering::SeqCst);
+        for q in quotas.iter_mut() {
+            if q.used && q.pwid == pwid {
+                q.max_runtime = max_runtime;
+                q.period = period;
+                q.consumed = 0;
+                q.next_reset = now + period;
+                return;
+            }
+        }
+        for q in quotas.iter_mut() {
+            if !q.used {
+                q.used = true;
+                q.pwid = pwid;
+                q.max_runtime = max_runtime;
+                q.period = period;
+                q.consumed = 0;
+                q.next_reset = now + period;
+                return;
+            }
+        }
+    }
+    
+    /// Remove CPU quota for a PWID
+    pub fn remove_quota(&self, pwid: u64) {
+        let mut quotas = self.quotas.lock();
+        for q in quotas.iter_mut() {
+            if q.used && q.pwid == pwid {
+                q.used = false;
+                q.pwid = 0;
+                return;
+            }
+        }
+    }
+    
+    /// Set process count limit for a PWID
+    pub fn set_limit(&self, pwid: u64, max_procs: u32) {
+        let mut limits = self.limits.lock();
+        for l in limits.iter_mut() {
+            if l.used && l.pwid == pwid {
+                l.max_procs = max_procs;
+                return;
+            }
+        }
+        for l in limits.iter_mut() {
+            if !l.used {
+                l.used = true;
+                l.pwid = pwid;
+                l.max_procs = max_procs;
+                l.current = 0;
+                return;
+            }
+        }
+    }
+    
+    /// Decrement proc count when a process exits (called from exit())
+    fn dec_limit(&self, pwid: u64) {
+        if pwid == 0 { return; }
+        let mut limits = self.limits.lock();
+        for l in limits.iter_mut() {
+            if l.used && l.pwid == pwid && l.current > 0 {
+                l.current -= 1;
+                return;
+            }
+        }
     }
 }
 

@@ -185,6 +185,7 @@ impl UserProcManager {
         
         let kernel_proc = alloc::boxed::Box::new(Process {
             pid: ProcessId(pid),
+            pwid: AtomicU64::new(pwid),
             state: AtomicU32::new(ProcessState::Ready as u32),
             priority: AtomicU32::new(ProcessPriority::Normal as u32),
             flags: AtomicU32::new(0),

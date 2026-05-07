@@ -49,6 +49,7 @@
 #define PROC_CAP_EXEC  (1ULL << 1)
 #define PROC_CAP_KILL  (1ULL << 2)
 #define PROC_CAP_DEBUG (1ULL << 3)
+#define PROC_CAP_RT_SCHED (1ULL << 4)  // v4: set SCHED_FIFO/SCHED_RR
 
 #define TRUST_LEVEL_NONE      0
 #define TRUST_LEVEL_BASIC     1
