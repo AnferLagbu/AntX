@@ -1,5 +1,23 @@
 use super::types::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum TokenType {
+    Elevation = 0,
+    Delegation = 1,
+    Session = 2,
+    Onetime = 3,
+}
+
+impl Default for TokenType {
+    fn default() -> Self { TokenType::Elevation }
+}
+
+pub const TOKEN_FLAG_SINGLE_COMMAND: u32 = 0x01;
+pub const TOKEN_FLAG_NO_TTY: u32         = 0x02;
+pub const TOKEN_FLAG_REQUIRE_CONFIRM: u32 = 0x04;
+pub const TOKEN_FLAG_AUDIT_ALL: u32      = 0x08;
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PwidToken {

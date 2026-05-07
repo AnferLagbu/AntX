@@ -180,15 +180,9 @@ impl SessionManager {
             return Err(PwidError::Disabled);
         }
         
-        // Check creation permissions (inline logic to avoid method lookup issues)
-        let can_create = match PwidLevel::from_u8(current_entry.get_level()) {
-            Some(PwidLevel::Root) => true,
-            Some(PwidLevel::Trusted) => level == PwidLevel::Untrustworthy.as_u8(),
-            _ => false,
-        };
-        
-        if !can_create {
-            serial_println!("[PWID] Permission denied: cannot create level {}", level);
+        // v4: Check if creator holds USER_MGMT_CAP_CREATE
+        let creator_caps = mgr.get_caps(current_pwid).unwrap_or([0; 16]);
+        if (creator_caps[5] & 4) == 0 {  // USER_MGMT_CAP_CREATE = 1<<2
             return Err(PwidError::PermissionDenied);
         }
         
@@ -197,9 +191,8 @@ impl SessionManager {
             return Err(PwidError::AlreadyExists);
         }
         
-        // Create the user
-        let empty_caps: [u64; 16] = [0; 16];
-        let new_pwid = mgr.create(password, note, level, &empty_caps)?;
+        // Create the user with creator's caps as ceiling
+        let new_pwid = mgr.create(password, note, level, &creator_caps)?;
         
         serial_println!("[PWID] User '{}' created by '{}'", 
                        note, current_entry.get_note_str());

@@ -425,7 +425,7 @@ int64_t sys_auth_token_create(uint64_t holder, uint16_t domain, uint64_t caps,
         return E_AUTH_NOTFOUND;
     }
     
-    if (!pwid_is_root(current_pwid)) {
+    if (!pwid_has_cap_raw(current_pwid, 0, CAP_DOMAIN_TOKEN_ISSUE)) {
         return E_AUTH_NOROOT;
     }
     
@@ -448,7 +448,7 @@ int64_t sys_auth_trust_add(uint64_t trusted, uint8_t trust_level,
         return E_AUTH_NOTFOUND;
     }
     
-    if (!pwid_is_root(current_pwid)) {
+    if (!pwid_has_cap_raw(current_pwid, 0, CAP_DOMAIN_TRUST_ADD)) {
         return E_AUTH_NOROOT;
     }
     

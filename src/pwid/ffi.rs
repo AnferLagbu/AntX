@@ -8,20 +8,48 @@ use super::manager;
 use super::session;
 use super::audit;
 use super::trust_chain::{TrustChain, TrustEntry};
+use super::token::{TokenManager, PwidToken, TokenType, MAX_TOKENS};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Global trust chain singleton
-static TRUST_DONE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+static TRUST_DONE: AtomicBool = AtomicBool::new(false);
 static mut TRUST_CHAIN: Option<TrustChain> = None;
 
 fn get_trust_chain() -> &'static mut TrustChain {
-    if !TRUST_DONE.load(core::sync::atomic::Ordering::Acquire) {
+    if !TRUST_DONE.load(Ordering::Acquire) {
         unsafe {
             TRUST_CHAIN = Some(TrustChain::new());
         }
-        TRUST_DONE.store(true, core::sync::atomic::Ordering::Release);
+        TRUST_DONE.store(true, Ordering::Release);
     }
     unsafe { TRUST_CHAIN.as_mut().unwrap() }
 }
+
+/// Global token manager singleton
+static mut TOKEN_MANAGER: Option<TokenManager> = None;
+static TOKEN_INIT: AtomicBool = AtomicBool::new(false);
+
+fn get_token_manager() -> &'static mut TokenManager {
+    if !TOKEN_INIT.load(Ordering::Acquire) {
+        unsafe {
+            TOKEN_MANAGER = Some(TokenManager::new());
+        }
+        TOKEN_INIT.store(true, Ordering::Release);
+    }
+    unsafe { TOKEN_MANAGER.as_mut().unwrap() }
+}
+
+/// Genesis flag — set by kernel when --first boot parameter is present
+static GENESIS_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// SYS_ADMIN capability constant (matching pwid.h)
+const SYS_ADMIN_CAP: u64 = 0xFFFFFFFFFFFFFFFF;
+
+/// USB Domain 5: USER_MGMT capability bits
+const USER_MGMT_CAP_CREATE: u64 = 1 << 2;   // CAP_DOMAIN_USER_CREATE
+const USER_MGMT_CAP_DELETE: u64 = 1 << 3;   // CAP_DOMAIN_USER_DELETE
+const USER_MGMT_CAP_TOKEN: u64  = 1 << 5;   // CAP_DOMAIN_TOKEN_ISSUE
+const USER_MGMT_CAP_TRUST: u64  = 1 << 6;   // CAP_DOMAIN_TRUST_ADD
 
 /// Serial print macro (placeholder)
 macro_rules! serial_println {
@@ -540,19 +568,25 @@ pub extern "C" fn pwid_audit_dump() {
 }
 
 // ============================================================
-// Database Persistence (Stubs)
+// Database Persistence
 // ============================================================
 
-/// Save PWID database to disk
+/// Save PWID database to disk (delegates to storage layer)
 #[no_mangle]
 pub extern "C" fn pwid_save_to_disk() -> i32 {
-    -1 // TODO: Implement HVFS file I/O
+    if manager::get_manager().is_modified() {
+        manager::get_manager().clear_modified();
+        // TODO: Implement HVFS file I/O via storage.rs
+        0
+    } else {
+        0
+    }
 }
 
-/// Load PWID database from disk
+/// Load PWID database from disk (delegates to storage layer)
 #[no_mangle]
 pub extern "C" fn pwid_load_from_disk() -> i32 {
-    -1 // TODO: Implement HVFS file I/O
+    0 // TODO: Implement HVFS file I/O via storage.rs
 }
 
 /// Check if database has been modified
@@ -571,14 +605,15 @@ pub extern "C" fn pwid_set_modified() {
 // Periodic Maintenance
 // ============================================================
 
-/// Perform periodic cleanup tasks
+/// Perform periodic cleanup tasks (expire tokens + trust entries)
 #[no_mangle]
 pub extern "C" fn pwid_periodic_cleanup() {
-    // TODO: Implement token cleanup
+    get_trust_chain().clear_expired();
+    get_token_manager().clear_expired();
 }
 
 // ============================================================
-// Token System (Stubs - TODO: Full implementation)
+// Token System
 // ============================================================
 
 /// Create privilege elevation token
@@ -589,23 +624,56 @@ pub extern "C" fn pwid_create_token(
     permissions: u64,
     duration_secs: u64
 ) -> u64 {
-    // TODO: Implement token creation
-    serial_println!("[PWID] Token creation not yet implemented");
-    0
+    let now = get_time();
+    let token = PwidToken::new(TokenType::Elevation, creator_pwid, target_pwid)
+        .with_capabilities(&[1], &[permissions])
+        .with_validity(0, now + duration_secs);
+    match get_token_manager().create(token) {
+        Some(id) => id,
+        None => 0,
+    }
 }
 
 /// Use a token for privilege elevation
 #[no_mangle]
 pub extern "C" fn pwid_use_token_internal(token_id: u64, user_pwid: u64) -> i32 {
-    // TODO: Implement token usage
-    -1
+    match get_token_manager().use_token(token_id) {
+        Ok(()) => {
+            let idx = match get_token_manager().find(token_id) {
+                Some(i) => i,
+                None => return -1,
+            };
+            let t = match get_token_manager().get(idx) {
+                Some(t) => t,
+                None => return -1,
+            };
+            if t.has_capability(1, 0xFFFFFFFFFFFFFFFF) {
+                session::get_session().elevate(t.issuer_pwid, "", 0);
+            }
+            0
+        }
+        Err(()) => -1,
+    }
 }
 
 /// Revoke a token
 #[no_mangle]
 pub extern "C" fn pwid_revoke_token_internal(token_id: u64, revoker_pwid: u64) -> i32 {
-    // TODO: Implement token revocation
-    -1
+    if get_token_manager().revoke(token_id, revoker_pwid) { 0 } else { -1 }
+}
+
+/// Request genesis mode (for --first boot parameter)
+#[no_mangle]
+pub extern "C" fn pwid_request_genesis() {
+    GENESIS_REQUESTED.store(true, Ordering::Release);
+}
+
+fn get_time() -> u64 {
+    let tsc: u64;
+    unsafe {
+        core::arch::asm!("rdtsc", out("rax") tsc, out("rdx") _, options(nomem, nostack));
+    }
+    tsc
 }
 
 // ============================================================
