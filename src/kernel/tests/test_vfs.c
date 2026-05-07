@@ -1,5 +1,6 @@
 #include "kernel_test.h"
 #include "vfs.h"
+#include "pwid.h"
 #include "klog.h"
 #include "string.h"
 
@@ -12,6 +13,14 @@ extern int32_t vfs_stat_internal(const char *path, void *st, uint64_t pwid);
 extern void vfs_init(void);
 extern void ramfs_init(void);
 
+static void ensure_test_session(void) {
+    if (pwid_get_current() != 0) return;
+    if (!pwid_any_identity_exists()) {
+        pwid_create_first_identity("test_session_pw");
+    }
+    pwid_login("root", "test_session_pw");
+}
+
 static int test_vfs_init(void) {
     int result = vfs_mount("/", "ramfs");
     if (result != 0 && result != -2) {
@@ -22,7 +31,8 @@ static int test_vfs_init(void) {
             TEST_ASSERT_MSG(0, "Failed to mount root filesystem");
         }
     }
-    
+
+    ensure_test_session();
     return TEST_PASS;
 }
 
@@ -39,7 +49,7 @@ static int test_vfs_create_file(void) {
 
     klog_kern("[TEST] Calling vfs_open_internal...");
 
-    int32_t fd = vfs_open_internal("/test_create.txt", 0x0100 | 0x0002, 0);
+    int32_t fd = vfs_open_internal("/test_create.txt", 0x0100 | 0x0002, pwid_get_current());
     klog_kern("[TEST] returned: %d", fd);
     TEST_ASSERT_GE(fd, 0);
     
@@ -54,7 +64,7 @@ static int test_vfs_write_read(void) {
     const char *test_data = "Hello, VFS World!";
     int len = strlen(test_data);
     
-    int32_t fd = vfs_open_internal("/test_rw.txt", 0x0100 | 0x0002, 0);
+    int32_t fd = vfs_open_internal("/test_rw.txt", 0x0100 | 0x0002, pwid_get_current());
     if (fd < 0) {
         TEST_ASSERT_MSG(0, "Failed to create file");
     }
@@ -64,7 +74,7 @@ static int test_vfs_write_read(void) {
     
     vfs_close_internal(fd);
     
-    fd = vfs_open_internal("/test_rw.txt", 0x0001, 0);
+    fd = vfs_open_internal("/test_rw.txt", 0x0001, pwid_get_current());
     if (fd < 0) {
         TEST_ASSERT_MSG(0, "Failed to open file for reading");
     }
@@ -79,14 +89,14 @@ static int test_vfs_write_read(void) {
 }
 
 static int test_vfs_mkdir(void) {
-    int32_t result = vfs_mkdir_internal("/test_dir", 0);
+    int32_t result = vfs_mkdir_internal("/test_dir", pwid_get_current());
     TEST_ASSERT_GE(result, 0);
     
     return TEST_PASS;
 }
 
 static int test_vfs_stat(void) {
-    int32_t fd = vfs_open_internal("/test_stat.txt", 0x0100 | 0x0002, 0);
+    int32_t fd = vfs_open_internal("/test_stat.txt", 0x0100 | 0x0002, pwid_get_current());
     if (fd < 0) {
         TEST_ASSERT_MSG(0, "Failed to create file");
     }
@@ -96,14 +106,14 @@ static int test_vfs_stat(void) {
     vfs_close_internal(fd);
     
     char st[128];
-    int32_t result = vfs_stat_internal("/test_stat.txt", st, 0);
+    int32_t result = vfs_stat_internal("/test_stat.txt", st, pwid_get_current());
     TEST_ASSERT_GE(result, 0);
     
     return TEST_PASS;
 }
 
 static int test_vfs_delete(void) {
-    int32_t fd = vfs_open_internal("/test_delete.txt", 0x0100 | 0x0002, 0);
+    int32_t fd = vfs_open_internal("/test_delete.txt", 0x0100 | 0x0002, pwid_get_current());
     if (fd >= 0) {
         vfs_close_internal(fd);
     }
@@ -113,7 +123,7 @@ static int test_vfs_delete(void) {
 }
 
 static int test_vfs_large_file(void) {
-    int32_t fd = vfs_open_internal("/test_large.bin", 0x0100 | 0x0002, 0);
+    int32_t fd = vfs_open_internal("/test_large.bin", 0x0100 | 0x0002, pwid_get_current());
     if (fd < 0) {
         TEST_ASSERT_MSG(0, "Failed to create large file");
     }

@@ -1,6 +1,15 @@
 #include "kernel_test.h"
+#include "pwid.h"
 #include "hvfs_ffi.h"
 #include "string.h"
+
+static void ensure_test_session(void) {
+    if (pwid_get_current() != 0) return;
+    if (!pwid_any_identity_exists()) {
+        pwid_create_first_identity("test_session_pw");
+    }
+    pwid_login("root", "test_session_pw");
+}
 
 static int test_hvfs_init(void) {
     TEST_ASSERT_EQ(hvfs_check_disk_internal(), -1);
@@ -15,7 +24,8 @@ static int test_hvfs_format(void) {
 }
 
 static int test_hvfs_create_file(void) {
-    int fd = hvfs_open_internal("/test_file.txt", 0x0100 | 0x0002, 0);
+    ensure_test_session();
+    int fd = hvfs_open_internal("/test_file.txt", 0x0100 | 0x0002, pwid_get_current());
     TEST_ASSERT_GE(fd, 0);
     
     hvfs_close_internal(fd);
@@ -24,7 +34,8 @@ static int test_hvfs_create_file(void) {
 }
 
 static int test_hvfs_write_read(void) {
-    int fd = hvfs_open_internal("/rw_test.txt", 0x0100 | 0x0002, 0);
+    ensure_test_session();
+    int fd = hvfs_open_internal("/rw_test.txt", 0x0100 | 0x0002, pwid_get_current());
     TEST_ASSERT_GE(fd, 0);
     
     const char *data = "HvFS test data";
@@ -35,7 +46,7 @@ static int test_hvfs_write_read(void) {
     
     hvfs_close_internal(fd);
     
-    fd = hvfs_open_internal("/rw_test.txt", 0x0001, 0);
+    fd = hvfs_open_internal("/rw_test.txt", 0x0001, pwid_get_current());
     TEST_ASSERT_GE(fd, 0);
     
     char buffer[64] = {0};
@@ -49,7 +60,8 @@ static int test_hvfs_write_read(void) {
 }
 
 static int test_hvfs_mkdir(void) {
-    int result = hvfs_mkdir_internal("/test_dir", 0);
+    ensure_test_session();
+    int result = hvfs_mkdir_internal("/test_dir", pwid_get_current());
     TEST_ASSERT_EQ(result, 0);
     
     return TEST_PASS;

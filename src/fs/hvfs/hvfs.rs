@@ -797,8 +797,10 @@ impl HvFsData {
 
     pub fn check_permission(&self, inode: &HvfsInode, pwid: u64, cap: u64) -> bool {
         let level = unsafe { pwid_get_level(pwid) };
-        if level == 0 {
-            return true;
+
+        // v4: No root bypass — capability mask decides
+        if level > 3 {
+            return false;
         }
 
         if level > 0 && inode.sensitivity > 0 {

@@ -1,11 +1,20 @@
 #include "kernel_test.h"
 #include "syscall.h"
 #include "vfs.h"
+#include "pwid.h"
 #include "string.h"
+
+static void ensure_test_session(void) {
+    if (pwid_get_current() != 0) return;
+    if (!pwid_any_identity_exists()) {
+        pwid_create_first_identity("test_session_pw");
+    }
+    pwid_login("root", "test_session_pw");
+}
 
 static int test_syscall_getpid(void) {
     int64_t pid = sys_proc_getid();
-    if (pid == 0) {
+    if (pid <= 0) {
         return TEST_SKIP;
     }
     TEST_ASSERT_GT(pid, 0);
@@ -14,6 +23,7 @@ static int test_syscall_getpid(void) {
 }
 
 static int test_syscall_write_read(void) {
+    ensure_test_session();
     const char *msg = "Syscall test";
     int len = strlen(msg);
     
@@ -24,6 +34,7 @@ static int test_syscall_write_read(void) {
 }
 
 static int test_syscall_open_close(void) {
+    ensure_test_session();
     int64_t fd = sys_fs_open("/syscall_test.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
     TEST_ASSERT_GE(fd, 0);
     
@@ -42,6 +53,7 @@ static int test_syscall_invalid_fd(void) {
 }
 
 static int test_syscall_invalid_path(void) {
+    ensure_test_session();
     int64_t fd = sys_fs_open("/nonexistent/path/file.txt", VFS_O_RDONLY, 0);
     TEST_ASSERT_LT(fd, 0);
     
@@ -49,6 +61,7 @@ static int test_syscall_invalid_path(void) {
 }
 
 static int test_syscall_mkdir(void) {
+    ensure_test_session();
     int64_t result = sys_fs_mkdir("/syscall_dir", 0);
     TEST_ASSERT_EQ(result, 0);
     

@@ -1,5 +1,6 @@
 #include "kernel_test.h"
 #include "vfs.h"
+#include "pwid.h"
 #include "hvfs_ffi.h"
 #include "string.h"
 
@@ -17,6 +18,14 @@ extern int32_t vfs_seek_internal(uint32_t fd, int32_t offset, uint32_t whence);
 extern int32_t vfs_chmod_internal(const char *path, uint32_t mode, uint64_t pwid);
 extern int32_t vfs_chown_internal(const char *path, uint32_t uid, uint32_t gid, uint64_t pwid);
 
+static void ensure_test_session(void) {
+    if (pwid_get_current() != 0) return;
+    if (!pwid_any_identity_exists()) {
+        pwid_create_first_identity("test_session_pw");
+    }
+    pwid_login("root", "test_session_pw");
+}
+
 #define VFS_O_RDONLY 0x0001
 #define VFS_O_WRONLY 0x0002
 #define VFS_O_RDWR   0x0004
@@ -29,6 +38,7 @@ extern int32_t vfs_chown_internal(const char *path, uint32_t uid, uint32_t gid, 
 #define SEEK_END 2
 
 static int test_vfs_mount_ramfs(void) {
+    ensure_test_session();
     int result = vfs_mount_internal("/mnt/ramfs", "ramfs");
     TEST_ASSERT_EQ(result, 0);
     return TEST_PASS;
@@ -77,7 +87,7 @@ static int test_vfs_create_deep_directory(void) {
     vfs_mkdir_internal("/deep/level1/level2", 0);
     vfs_mkdir_internal("/deep/level1/level2/level3", 0);
     
-    int fd = vfs_open_internal("/deep/level1/level2/level3/test.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/deep/level1/level2/level3/test.txt", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     TEST_ASSERT_GE(fd, 0);
     
     if (fd >= 0) {
@@ -88,7 +98,7 @@ static int test_vfs_create_deep_directory(void) {
 }
 
 static int test_vfs_file_seek(void) {
-    int fd = vfs_open_internal("/seek_test.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/seek_test.txt", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -97,7 +107,7 @@ static int test_vfs_file_seek(void) {
     vfs_write_internal(fd, data, 16);
     vfs_close_internal(fd);
     
-    fd = vfs_open_internal("/seek_test.txt", VFS_O_RDONLY, 0);
+    fd = vfs_open_internal("/seek_test.txt", VFS_O_RDONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -118,7 +128,7 @@ static int test_vfs_file_seek(void) {
 }
 
 static int test_vfs_file_append(void) {
-    int fd = vfs_open_internal("/append_test.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/append_test.txt", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -127,7 +137,7 @@ static int test_vfs_file_append(void) {
     vfs_write_internal(fd, data1, 5);
     vfs_close_internal(fd);
     
-    fd = vfs_open_internal("/append_test.txt", VFS_O_WRONLY | VFS_O_APPEND, 0);
+    fd = vfs_open_internal("/append_test.txt", VFS_O_WRONLY | VFS_O_APPEND, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -136,7 +146,7 @@ static int test_vfs_file_append(void) {
     vfs_write_internal(fd, data2, 6);
     vfs_close_internal(fd);
     
-    fd = vfs_open_internal("/append_test.txt", VFS_O_RDONLY, 0);
+    fd = vfs_open_internal("/append_test.txt", VFS_O_RDONLY, pwid_get_current());
     char buf[16] = {0};
     int read = vfs_read_internal(fd, buf, sizeof(buf));
     TEST_ASSERT_EQ(read, 11);
@@ -148,7 +158,7 @@ static int test_vfs_file_append(void) {
 }
 
 static int test_vfs_file_truncate(void) {
-    int fd = vfs_open_internal("/trunc_test.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/trunc_test.txt", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -157,7 +167,7 @@ static int test_vfs_file_truncate(void) {
     vfs_write_internal(fd, data, 39);
     vfs_close_internal(fd);
     
-    fd = vfs_open_internal("/trunc_test.txt", VFS_O_WRONLY | VFS_O_TRUNC, 0);
+    fd = vfs_open_internal("/trunc_test.txt", VFS_O_WRONLY | VFS_O_TRUNC, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -166,7 +176,7 @@ static int test_vfs_file_truncate(void) {
     vfs_write_internal(fd, short_data, 5);
     vfs_close_internal(fd);
     
-    fd = vfs_open_internal("/trunc_test.txt", VFS_O_RDONLY, 0);
+    fd = vfs_open_internal("/trunc_test.txt", VFS_O_RDONLY, pwid_get_current());
     char buf[64] = {0};
     int read = vfs_read_internal(fd, buf, sizeof(buf));
     TEST_ASSERT_EQ(read, 5);
@@ -253,7 +263,7 @@ static int test_vfs_stress_many_files(void) {
 }
 
 static int test_vfs_stress_large_file(void) {
-    int fd = vfs_open_internal("/large_stress.bin", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/large_stress.bin", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -275,7 +285,7 @@ static int test_vfs_stress_large_file(void) {
     
     TEST_ASSERT_GT(total_written, 0);
     
-    fd = vfs_open_internal("/large_stress.bin", VFS_O_RDONLY, 0);
+    fd = vfs_open_internal("/large_stress.bin", VFS_O_RDONLY, pwid_get_current());
     if (fd >= 0) {
         char verify[1024];
         int read = vfs_read_internal(fd, verify, 1024);
@@ -287,7 +297,7 @@ static int test_vfs_stress_large_file(void) {
 }
 
 static int test_vfs_stress_random_access(void) {
-    int fd = vfs_open_internal("/random_access.bin", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/random_access.bin", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -302,7 +312,7 @@ static int test_vfs_stress_random_access(void) {
     }
     vfs_close_internal(fd);
     
-    fd = vfs_open_internal("/random_access.bin", VFS_O_RDONLY, 0);
+    fd = vfs_open_internal("/random_access.bin", VFS_O_RDONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -326,7 +336,7 @@ static int test_vfs_stress_random_access(void) {
 }
 
 static int test_vfs_error_handling(void) {
-    int fd = vfs_open_internal("/nonexistent_file.txt", VFS_O_RDONLY, 0);
+    int fd = vfs_open_internal("/nonexistent_file.txt", VFS_O_RDONLY, pwid_get_current());
     TEST_ASSERT_LT(fd, 0);
     
     int result = vfs_read_internal(9999, NULL, 0);
@@ -339,7 +349,7 @@ static int test_vfs_error_handling(void) {
 }
 
 static int test_vfs_permission_check(void) {
-    int fd = vfs_open_internal("/permission_test.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/permission_test.txt", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd >= 0) {
         vfs_close_internal(fd);
     }
@@ -360,7 +370,7 @@ static int test_vfs_directory_operations(void) {
     result = vfs_mkdir_internal("/test_dir_ops/subdir2", 0);
     TEST_ASSERT_GE(result, -1);
     
-    int fd = vfs_open_internal("/test_dir_ops/file_in_dir.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/test_dir_ops/file_in_dir.txt", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd >= 0) {
         vfs_write_internal(fd, "content", 7);
         vfs_close_internal(fd);
@@ -370,7 +380,7 @@ static int test_vfs_directory_operations(void) {
 }
 
 static int test_vfs_file_stat(void) {
-    int fd = vfs_open_internal("/stat_test.txt", VFS_O_CREAT | VFS_O_WRONLY, 0);
+    int fd = vfs_open_internal("/stat_test.txt", VFS_O_CREAT | VFS_O_WRONLY, pwid_get_current());
     if (fd < 0) {
         return TEST_SKIP;
     }
@@ -380,7 +390,7 @@ static int test_vfs_file_stat(void) {
     vfs_close_internal(fd);
     
     char stat_buf[128];
-    int result = vfs_stat_internal("/stat_test.txt", stat_buf, 0);
+    int result = vfs_stat_internal("/stat_test.txt", stat_buf, pwid_get_current());
     TEST_ASSERT_GE(result, -1);
     
     return TEST_PASS;
