@@ -3,8 +3,70 @@
 本文件记录 AntX 操作系统的重要变更历史。
 
 ---
-
 ## [Unreleased]
+
+### 🐛 Bug Fix - 用户态 init 崩溃修复 (2026-05-07)
+
+三个根因导致的 init 进程 Page Fault 崩溃:
+1. `interrupt_frame` 结构体 `rbx/rdx/rcx` 字段顺序与 ISR push 顺序不匹配
+2. `syscall_handler` 中 `rdx`(arg3) 被 `r10`(arg4) 错误覆盖
+3. 调度器将 ZOMBIE 进程无限重入队
+
+详见 `docs/implementation-report-user-mode-init-crash.md`
+
+---
+
+### 🚀 Major Update - 网络栈集成 (lwIP 2.2.1 + E1000)
+
+**状态**: ✅ 已完成 (2026-05-06)
+
+| 组件 | 状态 | 说明 |
+|------|------|------|
+| lwIP 2.2.1 | ✅ 集成 | 完整 TCP/IP 协议栈 |
+| E1000 驱动 | ✅ 实现 | Intel 82540EM |
+| DHCP | ✅ | 自动获取 IP |
+| ICMP | ✅ | Ping 支持 |
+| DNS | ✅ | 域名解析 |
+| HTTP | ✅ | Server + Client |
+| mDNS/MQTT/SNMP/SNTP/TFTP | ✅ | 应用层协议 |
+
+---
+
+### 🚀 Major Update - Smart Mount 智能持久化挂载 (2026-05-05)
+
+三种构建模式 (DEV/TEST/RELEASE)，通过 `smart_mount_root()` 根据环境自动选择 RamFS 或 DiskFS。
+
+详见 `docs/development/smart-persistent-storage.md` 和 `docs/implementation-report.md`
+
+---
+
+### 🚀 Major Update - DMA 引擎 (Rust) + PCI 总线 + 同步原语 (2026-05-04)
+
+| 模块 | 状态 | 语言 |
+|------|------|------|
+| DMA Engine | ✅ | Rust |
+| PCI Bus | ✅ | C |
+| Spinlock | ✅ | C |
+| Atomic | ✅ | C |
+| R/W Lock | ✅ | C |
+| Mutex | ✅ | C |
+| Slab Allocator | ✅ | C |
+
+---
+
+### 🚀 Major Update - Rust 重写完成 (2026-05-02)
+
+所有安全关键模块完成 C→Rust 重写:
+
+| 模块 | 重写状态 | 文件 |
+|------|---------|------|
+| 内存管理 (PMM/VMM/kmalloc) | ✅ 完成 | `src/mm/` |
+| 进程调度 (process/scheduler) | ✅ 完成 | `src/proc/` |
+| 文件系统 (vfs/ramfs/diskfs/hvfs) | ✅ 完成 | `src/fs/` |
+| PWID 权限 (manager/audit/token/trust) | ✅ 完成 | `src/pwid/` |
+| DMA 引擎 | ✅ 完成 | `src/dma/` |
+
+---
 
 ### 🚀 Major Update - 动态版本系统与模块化版本注册表 (2026-05-03)
 
@@ -37,7 +99,7 @@
 
 **支持最多 64 个模块注册，7 种类型分类**
 
-已注册的核心模块（7个）：
+已注册的核心模块（11个）：
 
 | 模块 | 版本 | 类型 | 说明 |
 |------|------|------|------|
@@ -48,6 +110,10 @@
 | HvFS | 2.0.0 | FS | Hybrid Virtual File System |
 | PWID | 1.0.0 | SECURITY | Permission & Identity System |
 | MLFQ | 1.0.0 | CORE | Multi-Level Feedback Queue Scheduler |
+| DMA | 1.0.0 | LIB | Direct Memory Access Engine (Rust) |
+| PCI | 1.0.0 | DRIVER | PCI Bus Driver |
+| lwIP | 2.2.1 | NET | Lightweight TCP/IP Stack |
+| E1000 | 1.0.0 | DRIVER | Intel 82540EM NIC Driver |
 
 #### 使用方法
 
@@ -86,10 +152,12 @@ version_register("MyModule", 1, 0, 0,
 
 ✅ **构建状态**: 成功（无错误）  
 ✅ **单元测试**: 通过  
-✅ **版本注册**: 成功注册 7 个核心模块  
-✅ **日志输出**: `[INIT] Module versions registered: 7 modules`
+✅ **版本注册**: 成功注册 11 个核心模块  
+✅ **日志输出**: `[INIT] Module versions registered: 11 modules`
 
 ---
+
+*最后更新: 2026-05-07*
 
 ### 🎉 Major Update - 测试框架 v2.0 (2026-05-02)
 
@@ -107,12 +175,12 @@ version_register("MyModule", 1, 0, 0,
 | 错误处理测试 | 1 | ~9 | 🔒 已禁用 |
 | 性能基准测试 | 1 | ~6 | 🔒 已禁用 |
 
-**当前活跃测试状态 (13 个模块)**：
+**当前活跃测试状态 (20 个模块, 2026-05-07)**：
 ```
-✅ 总测试数: 84
-✅ 通过率: 95.2% (80/84)
-✅ 失败数: 3 (3.6%)
-✅ 跳过数: 1 (1.2%)
+✅ 总测试数: 192+
+✅ 通过率: ~90%
+✅ 失败数: 15 (主要集中在 VFS/HvFS 磁盘相关)
+✅ 跳过数: 9 (磁盘不可用场景)
 ✅ 系统稳定性: 无崩溃、无 Kernel panic
 ```
 

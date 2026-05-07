@@ -100,14 +100,21 @@ AntX 使用软件中断实现系统调用：
 |--------|------|------|------|---------|
 | 40 | auth_login | 登录获取PWID | (password, note) | ✅ 已实现 |
 | 41 | auth_logout | 注销会话 | - | ✅ 已实现 |
-| 42 | auth_elevate | 临时提权 | (command) | ⏳ 未实现 |
+| 42 | auth_elevate | 临时提权 | (command) | ✅ 已实现 |
 | 43 | auth_create | 创建新PWID(Root) | (password, note, level) | ✅ 已实现 |
 | 44 | auth_delete | 删除PWID(Root) | (target_pwid) | ✅ 已实现 |
 | 45 | auth_list | 列出所有PWID(Root) | - | ✅ 已实现 |
 | 46 | auth_info | 获取PWID信息 | (target_pwid) | ✅ 已实现 |
-| 47 | auth_setnote | 修改备注 | (new_note) | ⏳ 未实现 |
+| 47 | auth_setnote | 修改备注 | (new_note) | ⏳ 预留 |
 | 48 | auth_changepw | 修改密码 | (old_pw, new_pw) | ✅ 已实现 |
 | 49 | auth_verify | 验证密码 | (password) | ✅ 已实现 |
+| 50 | auth_create_original_root | 创建原Root | (password) | ✅ 已实现 |
+| 51 | auth_token_create | 创建令牌 | (holder, domain, caps, duration, max_uses) | ✅ 已实现 |
+| 52 | auth_token_use | 使用令牌 | (token_id) | ✅ 已实现 |
+| 53 | auth_token_revoke | 撤销令牌 | (token_id) | ✅ 已实现 |
+| 54 | auth_trust_add | 添加信任 | (trusted, trust_level, domain, cap_mask) | ✅ 已实现 |
+| 55 | auth_trust_remove | 移除信任 | (trusted, domain) | ✅ 已实现 |
+| 56 | auth_check | 权限检查 | (pwid, owner_pwid, access_type, domain) | ✅ 已实现 |
 
 ### 2.4 内存管理
 
@@ -132,7 +139,24 @@ AntX 使用软件中断实现系统调用：
 | 87 | net_recv | 接收数据 | (sockfd, buf, len, flags) | ⏳ 未实现 |
 | 88 | net_shutdown | 关闭连接 | (sockfd, how) | ⏳ 未实现 |
 
-### 2.6 系统信息
+### 2.6 文件系统操作
+
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 111 | fs_mount | 挂载文件系统 | (source, target, fstype, options) | ✅ 已实现 |
+| 112 | fs_unmount | 卸载文件系统 | (target) | ✅ 已实现 |
+
+### 2.7 磁盘操作
+
+| 调用号 | 名称 | 描述 | 参数 | 实现状态 |
+|--------|------|------|------|---------|
+| 113 | disk_list | 列出磁盘 | (disks, max_count) | ✅ 已实现 |
+| 114 | disk_info | 磁盘信息 | (disk_id, info) | ✅ 已实现 |
+| 115 | disk_format | 格式化磁盘 | (disk_id, fstype) | ✅ 已实现 |
+| 116 | disk_partition | 分区 | (disk_id, total_sectors) | ✅ 已实现 |
+| 117 | disk_install_grub | 安装GRUB | (disk_id) | ✅ 已实现 |
+
+### 2.8 系统信息
 
 | 调用号 | 名称 | 描述 | 参数 | 实现状态 |
 |--------|------|------|------|---------|
@@ -147,13 +171,13 @@ AntX 使用软件中断实现系统调用：
 | 108 | sys_gethostname | 获取主机名 | (buf, size) | ✅ 已实现 |
 | 109 | sys_sethostname | 设置主机名(Root) | (name, len) | ✅ 已实现 |
 
-### 2.7 设备操作
+### 2.9 设备操作
 
 | 调用号 | 名称 | 描述 | 参数 | 实现状态 |
 |--------|------|------|------|---------|
-| 120 | dev_ioctl | 设备控制 | (fd, cmd, arg) | ⏳ 未实现 |
-| 121 | dev_read | 读取设备 | (fd, buf, n) | ⏳ 未实现 |
-| 122 | dev_write | 写入设备 | (fd, buf, n) | ⏳ 未实现 |
+| 120 | dev_ioctl | 设备控制 | (fd, cmd, arg) | ⏳ 预留 |
+| 121 | dev_read | 读取设备 | (fd, buf, n) | ⏳ 预留 |
+| 122 | dev_write | 写入设备 | (fd, buf, n) | ⏳ 预留 |
 
 ## 三、核心系统调用详解
 
