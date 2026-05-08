@@ -78,6 +78,13 @@ void run_kernel_tests(void) {
     test_qemu_hardware_register();
 #endif
 
+    klog_kern("[TEST] → 🦀 P2 阶段: Rust 内存管理子系统 (MM) 测试");
+    test_pmm_register();       /* 注册 PMM (Rust) 测试 */
+    test_kmalloc_register();   /* 注册 Kmalloc (Rust) 测试 */
+
+    klog_kern("[TEST] → Recovery (Barrier Stack)");
+    test_recovery_register();
+
     klog_kern("[TEST] → 🔧 内核强基工程: 并发基础设施测试");
     test_spinlock_register();   /* 注册 Spinlock 测试 */
     test_atomic_register();     /* 注册 Atomic 操作测试 */
@@ -93,13 +100,6 @@ void run_kernel_tests(void) {
     klog_kern("[TEST] → 🚗 P1 阶段: 设备驱动基础设施测试");
     // test_pci_register();       /* 注册 PCI 总线驱动测试 */
     // test_dma_register();       /* 注册 DMA 引擎测试 */
-
-    klog_kern("[TEST] → 🦀 P2 阶段: Rust 内存管理子系统 (MM) 测试");
-    test_pmm_register();       /* 注册 PMM (Rust) 测试 */
-    test_kmalloc_register();   /* 注册 Kmalloc (Rust) 测试 */
-
-    klog_kern("[TEST] → Recovery (Barrier Stack)");
-    test_recovery_register();
 
     klog_kern("[TEST] → Network Stack (lwIP + E1000)");
     test_network_register();

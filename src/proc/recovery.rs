@@ -57,6 +57,16 @@ impl UndoLog {
     }
 
     pub fn record<T: Copy>(&mut self, field: *mut T, old_value: T) {
+        let field_ptr = field as *mut u8;
+
+        // Same-generation same-field dedup: keep only the oldest value
+        if self.count > 0 {
+            let last = &self.entries[self.count - 1];
+            if last.field_ptr == field_ptr && last.generation == self.current_generation {
+                return;
+            }
+        }
+
         if self.count >= MAX_UNDO_ENTRIES {
             self.emergency_compact(self.current_generation.saturating_sub(1));
         }
@@ -72,7 +82,7 @@ impl UndoLog {
 
         self.entries[self.count] = UndoEntry {
             generation: self.current_generation,
-            field_ptr: field as *mut u8,
+            field_ptr,
             old_value: old_bytes,
         };
         self.count += 1;
@@ -202,26 +212,38 @@ impl RecoveryDomain {
     }
 }
 
+const DIRECT_MAP_SIZE: usize = 64;
+
 pub struct RecoveryManager {
     pub domains: [Option<&'static RecoveryDomain>; MAX_RECOVERY_DOMAINS],
+    pub direct_map: [Option<&'static RecoveryDomain>; DIRECT_MAP_SIZE],
     pub count: AtomicU32,
 }
 
 impl RecoveryManager {
     pub const fn new() -> Self {
         const NONE: Option<&'static RecoveryDomain> = None;
-        Self { domains: [NONE; MAX_RECOVERY_DOMAINS], count: AtomicU32::new(0) }
+        Self {
+            domains: [NONE; MAX_RECOVERY_DOMAINS],
+            direct_map: [NONE; DIRECT_MAP_SIZE],
+            count: AtomicU32::new(0),
+        }
     }
 
     pub fn register(&mut self, domain: &'static RecoveryDomain) -> Option<u64> {
         let idx = self.count.load(Ordering::SeqCst) as usize;
         if idx >= MAX_RECOVERY_DOMAINS { return None; }
+        let id = domain.id as usize;
+        if id < DIRECT_MAP_SIZE {
+            self.direct_map[id] = Some(domain);
+        }
         self.domains[idx] = Some(domain);
         self.count.fetch_add(1, Ordering::SeqCst);
         Some(domain.id)
     }
 
     pub fn tick(&self, current_tick: u64) {
+        if self.count.load(Ordering::Relaxed) == 0 { return; }
         for i in 0..self.count.load(Ordering::SeqCst) as usize {
             if let Some(dom) = self.domains[i] {
                 if dom.is_active() && current_tick >= dom.next_barrier_tick.load(Ordering::SeqCst) {
@@ -235,8 +257,13 @@ impl RecoveryManager {
     }
 
     pub fn find(&self, id: u64) -> Option<&'static RecoveryDomain> {
-        (0..self.count.load(Ordering::SeqCst) as usize)
-            .find_map(|i| self.domains[i].filter(|d| d.id == id))
+        let idx = id as usize;
+        if idx < DIRECT_MAP_SIZE {
+            self.direct_map[idx]
+        } else {
+            (0..self.count.load(Ordering::SeqCst) as usize)
+                .find_map(|i| self.domains[i].filter(|d| d.id == id))
+        }
     }
 }
 
