@@ -33,6 +33,11 @@
 | [permission-model-v3.md](permission-model-v3.md) | 权限检查 v3→v4 — 5 层检查架构 (sensitivity + ACE + capability + trust) |
 | [security-mechanisms.md](security-mechanisms.md) | 安全机制 - Stack Canary/PIC/NX/ASSERT/Map文件 |
 
+### 故障恢复与可靠性
+| 文档 | 说明 |
+|------|------|
+| [barrier-stack-design.md](barrier-stack-design.md) | 🚧 栏栈设计 — 宏内核故障恢复、增量回滚、循环防护 |
+
 ### 文件系统
 | 文档 | 说明 |
 |------|------|
