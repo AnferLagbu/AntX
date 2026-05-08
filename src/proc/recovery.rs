@@ -1,5 +1,10 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
+/// Set by panic handler; polled by IDT exception_handler for recovery
+pub static PANIC_FLAG: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+/// Panic message buffer for post-recovery diagnostics
+pub static mut PANIC_MSG: [u8; 128] = [0u8; 128];
+
 pub const MAX_RECOVERY_DOMAINS: usize = 32;
 pub const MAX_DOMAIN_DEPENDENCIES: usize = 8;
 pub const MAX_UNDO_ENTRIES: usize = 256;
@@ -318,5 +323,68 @@ pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64)
         }
     } else {
         -1
+    }
+}
+
+/// C FFI: check if panic flag is set (polled by IDT exception_handler)
+static RECOVERY_ATTEMPTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+#[no_mangle]
+pub extern "C" fn recovery_panic_flag_is_set() -> bool {
+    PANIC_FLAG.load(Ordering::SeqCst)
+}
+
+/// C FFI: clear panic flag after recovery attempt
+#[no_mangle]
+pub extern "C" fn recovery_panic_flag_clear() {
+    PANIC_FLAG.store(false, Ordering::SeqCst)
+}
+
+/// C FFI: attempt recovery for the first registered domain (called from IDT on fatal)
+#[no_mangle]
+pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
+    use super::scheduler::TICK_COUNT;
+    let tick = TICK_COUNT.load(Ordering::SeqCst);
+
+    if RECOVERY_ATTEMPTED.swap(true, Ordering::SeqCst) {
+        return -2;
+    }
+
+    let mgr = RECOVERY_MANAGER.lock();
+    let count = mgr.count.load(Ordering::SeqCst) as usize;
+    if count == 0 {
+        return -1;
+    }
+
+    if let Some(dom) = mgr.domains[0] {
+        if dom.try_rollback(tick, 0) {
+            dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
+            let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
+            let mut undo = dom.undo.lock();
+            undo.rollback_to(target_gen);
+            dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
+            dom.mark_recovered();
+            recovery_panic_flag_clear();
+            RECOVERY_ATTEMPTED.store(false, Ordering::SeqCst);
+            return 0;
+        }
+    }
+    -1
+}
+
+/// C FFI: deliberately trigger a panic for end-to-end recovery testing
+#[no_mangle]
+pub extern "C" fn recovery_trigger_panic() -> ! {
+    PANIC_FLAG.store(true, Ordering::SeqCst);
+    panic!("[RECOVERY-TEST] Deliberate panic for barrier-stack E2E test");
+}
+
+/// C FFI: check if recovery was attempted (for test verification)
+#[no_mangle]
+pub extern "C" fn recovery_was_attempted() -> i32 {
+    if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) {
+        1
+    } else {
+        0
     }
 }

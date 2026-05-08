@@ -2,6 +2,7 @@
 #include "gdt.h"
 #include "klog.h"
 #include "io.h"
+#include "recovery.h"
 
 struct idt_entry idt[IDT_ENTRIES];
 struct idt_ptr idt_ptr;
@@ -308,6 +309,21 @@ void exception_handler(struct interrupt_frame *frame) {
 
     int can_recover = 0;
 
+    /* int 0x82: dedicated recovery interrupt from Rust panic_handler */
+    if (frame->int_no == 0x82) {
+        int recov = recovery_try_recover_from_idt();
+        if (recov == 0) {
+            klog_kern("RECOVERY: Domain-level recovery succeeded, continuing execution");
+            nested_interrupt_count--;
+            current_interrupt_vector = 0xFFFFFFFFFFFFFFFFULL;
+            return;
+        }
+        if (recov == -2) {
+            klog_kern_err("RECOVERY: Already attempted, refusing to loop");
+        }
+        /* Recovery failed — fall through to normal panic path */
+    }
+
     switch (frame->int_no) {
         case 8:
             can_recover = handle_double_fault(frame);
@@ -340,6 +356,18 @@ void exception_handler(struct interrupt_frame *frame) {
     }
 
     if (!can_recover) {
+        /* v4 barrier-stack: attempt domain-level recovery before halting */
+        int recov = recovery_try_recover_from_idt();
+        if (recov == 0) {
+            klog_kern("RECOVERY: Domain-level recovery succeeded, continuing execution");
+            nested_interrupt_count--;
+            current_interrupt_vector = 0xFFFFFFFFFFFFFFFFULL;
+            return;
+        }
+        if (recov == -2) {
+            klog_kern_err("RECOVERY: Already attempted, refusing to loop");
+        }
+
         klog_kern_crit("Kernel panic! System halted.");
 
         __asm__ volatile ("cli");
@@ -377,6 +405,7 @@ void irq_handler(struct interrupt_frame *frame) {
 
 extern uint64_t isr_table[];
 extern uint64_t irq_table[];
+extern void isr0x82(void);
 
 int idt_init(void) {
     klog_kern("Initializing Interrupt Descriptor Table...");
@@ -409,6 +438,9 @@ int idt_init(void) {
     }
 
     idt_set_gate(0x80, (uint64_t)syscall_handler, GDT_KERNEL_CODE, IDT_TYPE_TRAP | IDT_DPL_USER);
+
+    /* v4 barrier-stack: dedicated recovery interrupt (int 0x82) */
+    idt_set_gate(0x82, (uint64_t)isr0x82, GDT_KERNEL_CODE, IDT_TYPE_TRAP);
 
     pic_remap(IRQ_BASE, IRQ_BASE + 8);
 

@@ -64,6 +64,9 @@ ISR_NOERRCODE 29
 ISR_NOERRCODE 30
 ISR_NOERRCODE 31
 
+; v4 barrier-stack: dedicated recovery interrupt (int 0x82)
+ISR_NOERRCODE 0x82
+
 IRQ 0, 32
 IRQ 1, 33
 IRQ 2, 34

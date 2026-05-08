@@ -44,6 +44,35 @@ void recovery_barrier_maintenance(void);
  */
 int32_t recovery_test_rollback(uint64_t domain_id, uint64_t crash_fingerprint);
 
+/**
+ * Check if the panic handler has set the recovery flag.
+ * @return 1 if panic occurred, 0 otherwise
+ */
+int32_t recovery_panic_flag_is_set(void);
+
+/**
+ * Clear the panic flag after successful recovery.
+ */
+void recovery_panic_flag_clear(void);
+
+/**
+ * Attempt domain-level recovery from the IDT exception handler.
+ * Must be called BEFORE the kernel panic halt.
+ * @return 0 if recovery succeeded, -1 if no domains, -2 if already attempted
+ */
+int32_t recovery_try_recover_from_idt(void);
+
+/**
+ * Deliberately trigger a panic for end-to-end testing.
+ * WARNING: This is noreturn — only call from a safe context.
+ */
+void recovery_trigger_panic(void) __attribute__((noreturn));
+
+/**
+ * Check if a recovery was attempted (post-recovery verification).
+ */
+int32_t recovery_was_attempted(void);
+
 #ifdef __cplusplus
 }
 #endif

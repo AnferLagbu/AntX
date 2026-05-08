@@ -25,11 +25,27 @@ pub mod pwid;
 pub mod dma;
 
 use core::panic::PanicInfo;
+use core::sync::atomic::Ordering;
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
+fn panic(info: &PanicInfo) -> ! {
+    // Signal to the scheduler/IDT that a recoverable panic occurred
+    crate::proc::recovery::PANIC_FLAG.store(true, Ordering::SeqCst);
+
+    // Store panic message for recovery diagnostics
+    let msg = alloc::format!("{}", info);
+    let bytes = msg.as_bytes();
+    let len = bytes.len().min(127);
+    unsafe {
+        crate::proc::recovery::PANIC_MSG[..len].copy_from_slice(&bytes[..len]);
+        crate::proc::recovery::PANIC_MSG[len] = 0;
+    }
+
+    // Trigger int 0x82 — dedicated recovery interrupt.
+    // The IDT handler will check PANIC_FLAG → attempt domain recovery → return.
+    // If recovery fails, it falls through to kernel panic.
+    unsafe {
+        core::arch::asm!("int 0x82", options(noreturn));
     }
 }
 
