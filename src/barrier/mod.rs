@@ -1,3 +1,25 @@
+//! # Barrier Stack — AntX 宏内核故障恢复子系统
+//!
+//! 栏栈是 AntX 在宏内核架构下实现模块级"重生"的核心基础设施。
+//! 原理详见 [docs/development/barrier-stack-design.md](docs/development/barrier-stack-design.md)。
+//!
+//! ## 架构
+//!
+//! ```text
+//! Rust panic!() → panic_handler → PANIC_FLAG → int 0x82
+//!   → isr0x82 → exception_handler → recovery_try_recover_from_idt()
+//!     → RecoveryManager::find(domain) → try_rollback()
+//!       → DomainState::RollingBack → undo.rollback_to(gen)
+//!         → mark_recovered() → PANIC_FLAG clear → IDT return
+//! ```
+//!
+//! ## 关键组件
+//!
+//! - `RecoveryDomain`: 恢复域 — 一个可独立回滚的内核模块
+//! - `UndoLog`: 增量撤销日志 — 每个可变操作自动记录旧值
+//! - `RecoveryManager`: 全局恢复域管理器 — 最多 32 个域
+//! - `PANIC_FLAG`: 全局 panic 信号 — 由 panic_handler 设置, IDT 消费
+
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Set by panic handler; polled by IDT exception_handler for recovery
@@ -281,10 +303,12 @@ pub trait Recoverable {
 
 pub static RECOVERY_MANAGER: spin::Mutex<RecoveryManager> = spin::Mutex::new(RecoveryManager::new());
 
+// ── C FFI ──
+
 /// C FFI: advance barrier generations
 #[no_mangle]
 pub extern "C" fn recovery_barrier_maintenance() {
-    use super::scheduler::TICK_COUNT;
+    use crate::proc::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
     RECOVERY_MANAGER.lock().tick(tick);
 }
@@ -306,7 +330,7 @@ pub extern "C" fn recovery_domain_register(domain_id: u64) -> i32 {
 /// C FFI: test rollback trigger
 #[no_mangle]
 pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
-    use super::scheduler::TICK_COUNT;
+    use crate::proc::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
     let mgr = RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
@@ -326,9 +350,10 @@ pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64)
     }
 }
 
-/// C FFI: check if panic flag is set (polled by IDT exception_handler)
+/// Internal: prevent IDT recovery loop
 static RECOVERY_ATTEMPTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
+/// C FFI: check if panic flag is set (polled by IDT exception_handler)
 #[no_mangle]
 pub extern "C" fn recovery_panic_flag_is_set() -> bool {
     PANIC_FLAG.load(Ordering::SeqCst)
@@ -343,7 +368,7 @@ pub extern "C" fn recovery_panic_flag_clear() {
 /// C FFI: attempt recovery for the first registered domain (called from IDT on fatal)
 #[no_mangle]
 pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
-    use super::scheduler::TICK_COUNT;
+    use crate::proc::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
 
     if RECOVERY_ATTEMPTED.swap(true, Ordering::SeqCst) {
@@ -382,9 +407,5 @@ pub extern "C" fn recovery_trigger_panic() -> ! {
 /// C FFI: check if recovery was attempted (for test verification)
 #[no_mangle]
 pub extern "C" fn recovery_was_attempted() -> i32 {
-    if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) {
-        1
-    } else {
-        0
-    }
+    if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) { 1 } else { 0 }
 }

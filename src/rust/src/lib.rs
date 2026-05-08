@@ -24,21 +24,24 @@ pub mod pwid;
 #[path = "../../dma/mod.rs"]
 pub mod dma;
 
+#[path = "../../barrier/mod.rs"]
+pub mod barrier;
+
 use core::panic::PanicInfo;
 use core::sync::atomic::Ordering;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     // Signal to the scheduler/IDT that a recoverable panic occurred
-    crate::proc::recovery::PANIC_FLAG.store(true, Ordering::SeqCst);
+    crate::barrier::PANIC_FLAG.store(true, Ordering::SeqCst);
 
     // Store panic message for recovery diagnostics
     let msg = alloc::format!("{}", info);
     let bytes = msg.as_bytes();
     let len = bytes.len().min(127);
     unsafe {
-        crate::proc::recovery::PANIC_MSG[..len].copy_from_slice(&bytes[..len]);
-        crate::proc::recovery::PANIC_MSG[len] = 0;
+        crate::barrier::PANIC_MSG[..len].copy_from_slice(&bytes[..len]);
+        crate::barrier::PANIC_MSG[len] = 0;
     }
 
     // Trigger int 0x82 — dedicated recovery interrupt.

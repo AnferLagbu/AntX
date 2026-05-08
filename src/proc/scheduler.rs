@@ -477,7 +477,7 @@ impl Scheduler {
         let tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
         
         // Barrier stack: advance barrier generations for all recovery domains
-        super::recovery::RECOVERY_MANAGER.lock().tick(tick);
+        crate::barrier::RECOVERY_MANAGER.lock().tick(tick);
         
         // RT FIFO watchdog: force preempt after RT_FIFO_WATCHDOG ticks
         if is_rt && self.fifo_watchdog.load(Ordering::SeqCst) > 0 {

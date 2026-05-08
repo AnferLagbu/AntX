@@ -5,7 +5,6 @@ pub mod thread;
 pub mod session;
 pub mod scheduler_ex;
 pub mod user_proc;
-pub mod recovery;
 pub mod ffi;
 
 pub use types::*;
@@ -15,4 +14,5 @@ pub use thread::*;
 pub use session::*;
 pub use scheduler_ex::*;
 pub use user_proc::*;
-pub use recovery::*;
+// Recovery subsystem moved to src/barrier/ — re-export for backward compat
+pub use crate::barrier::*;
