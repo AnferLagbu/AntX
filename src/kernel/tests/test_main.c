@@ -98,6 +98,9 @@ void run_kernel_tests(void) {
     test_pmm_register();       /* 注册 PMM (Rust) 测试 */
     test_kmalloc_register();   /* 注册 Kmalloc (Rust) 测试 */
 
+    klog_kern("[TEST] → Recovery (Barrier Stack)");
+    test_recovery_register();
+
     klog_kern("[TEST] → Network Stack (lwIP + E1000)");
     test_network_register();
 

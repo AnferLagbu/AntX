@@ -15,6 +15,7 @@ pub enum ProcessState {
     Blocked = 3,
     Zombie = 4,
     Terminated = 5,
+    Frozen = 6,
 }
 
 impl ProcessState {
@@ -26,8 +27,12 @@ impl ProcessState {
             3 => ProcessState::Blocked,
             4 => ProcessState::Zombie,
             5 => ProcessState::Terminated,
+            6 => ProcessState::Frozen,
             _ => ProcessState::Created,
         }
+    }
+    pub fn from_u32(value: u32) -> Self {
+        Self::from_u8(value as u8)
     }
 }
 

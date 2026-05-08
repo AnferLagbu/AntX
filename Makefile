@@ -67,7 +67,7 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_moun
               build/pci.o \
               build/kernel_test.o build/test_main.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
-              build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o \
+              build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o build/test_recovery.o \
               build/test_memory_safety.o build/test_edge_cases.o build/test_error_handling.o build/test_performance.o \
               build/test_process_enhanced.o build/test_scheduler_enhanced.o build/test_interrupt.o build/test_ipc_enhanced.o \
               build/test_vfs_enhanced.o build/test_syscall_enhanced.o \
@@ -512,6 +512,10 @@ build/test_persistence.o: src/kernel/tests/test_persistence.c
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
 build/test_filesystem_full.o: src/kernel/tests/test_filesystem_full.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
+
+build/test_recovery.o: src/kernel/tests/test_recovery.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
