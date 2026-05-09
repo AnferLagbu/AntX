@@ -6,9 +6,6 @@
 //! Replaces the C implementation at src/kernel/dma.c
 //! with type-safe PhysAddr/VirtAddr and lock-free statistics.
 
-#![no_std]
-#![allow(dead_code)]
-
 extern crate alloc;
 
 use crate::mm::{PhysAddr, VirtAddr, PhysAddr as DmaAddr};

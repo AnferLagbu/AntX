@@ -23,7 +23,6 @@ extern "C" {
 macro_rules! klog_info {
     ($($arg:tt)*) => {
         {
-            use core::fmt::Write;
             let mut buf: [u8; 256] = [0u8; 256];
             let mut cursor = 0;
             let _ = core::fmt::write(&mut CursorWriter::new(&mut buf, &mut cursor), format_args!($($arg)*));

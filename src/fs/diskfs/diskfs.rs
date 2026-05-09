@@ -1,4 +1,3 @@
-use alloc::string::String;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::fs::hvfs::hvfs::{get_hvfs, HVFS_O_CREAT, HVFS_O_WRONLY, HVFS_CAP_READ, HVFS_DISK_OK, HVFS_DISK_NO_DISK, 

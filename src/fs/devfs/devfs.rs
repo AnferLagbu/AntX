@@ -5,12 +5,6 @@ extern "C" {
     fn klog_ffi_info(msg: *const u8);
 }
 
-fn log(s: &str) {
-    unsafe {
-        klog_ffi_info(s.as_ptr());
-    }
-}
-
 pub const DEVFS_MAX_DEVICES: usize = 16;
 pub const DEVFS_MAX_NAME: usize = 32;
 

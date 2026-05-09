@@ -2,13 +2,8 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 extern "C" {
-    fn klog_ffi_info(msg: *const u8);
     fn pmm_get_total_pages() -> u64;
     fn pmm_get_free_pages() -> u64;
-}
-
-fn log(s: &str) {
-    unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;

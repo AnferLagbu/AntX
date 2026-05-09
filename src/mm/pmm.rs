@@ -15,7 +15,6 @@ macro_rules! klog_pmm {
             extern "C" {
                 fn klog_ffi_info(msg: *const u8);
             }
-            use core::fmt::Write;
             let mut buf: [u8; 256] = [0u8; 256];
             let mut cursor = 0;
             let _ = core::fmt::write(&mut CursorWriter::new(&mut buf, &mut cursor), format_args!($($arg)*));

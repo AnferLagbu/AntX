@@ -4,14 +4,10 @@
 //! Provides physical memory management, virtual memory mapping,
 //! and kernel heap allocation with memory safety guarantees.
 
-#![no_std]
-#![allow(dead_code)]
-#![allow(non_upper_case_globals)]
-
 extern crate alloc;
 
 use core::sync::atomic::{AtomicU64, AtomicU32, Ordering, fence};
-use core::ptr::{self, NonNull};
+use core::ptr::NonNull;
 
 pub mod pmm;
 pub mod vmm;

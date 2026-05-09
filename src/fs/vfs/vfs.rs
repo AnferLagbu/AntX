@@ -4,14 +4,6 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::types::*;
 
-extern "C" {
-    fn klog_ffi_info(msg: *const u8);
-}
-
-fn log(s: &str) {
-    unsafe { klog_ffi_info(s.as_ptr()); }
-}
-
 pub struct VfsMount {
     pub path: [u8; VFS_MAX_PATH],
     pub fs_name: [u8; 32],
