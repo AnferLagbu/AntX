@@ -171,22 +171,8 @@ void kernel_main(void) {
     if (!pwid_any_identity_exists()) {
         klog_kern("============================================");
         klog_kern("  GENESIS MODE: No identities found");
-        klog_kern("  First boot detected — identity table empty");
-        klog_kern("  Attempting automatic bootstrap...");
+        klog_kern("  First boot — init will run installation wizard");
         klog_kern("============================================");
-        
-        /* Try Genesis with default password --- env var or compile-time default */
-        extern int pwid_try_genesis(const char *password);
-        const char *default_pw = "antx1234";
-        int gen_rc = pwid_try_genesis(default_pw);
-        if (gen_rc == 0) {
-            klog_init_msg("Genesis root identity created (pw: %s)", default_pw);
-            klog_init_msg("CHANGE THIS PASSWORD ON FIRST LOGIN!");
-        } else if (gen_rc == 1) {
-            klog_init_msg("Genesis: identity already exists (loaded from disk)");
-        } else {
-            klog_init_msg("Genesis failed — init will prompt for manual creation");
-        }
     }
     
     klog_boot("System initialized");
@@ -250,15 +236,14 @@ void kernel_main(void) {
         __asm__ volatile ("hlt");
     }
 #else
-    /* PCI init 在 Rust FFI 路径有已知崩溃，跳过;
-     * e1000_probe() 自主执行直接 PCI 扫描 */
-    /* MODULE_CHECK_VOID("PCI Bus", pci_init); */
     MODULE_CHECK_VOID("DMA Engine", dma_init);
+    
+    MODULE_CHECK_VOID("PCI Bus", pci_init);
     
     extern void qx_net_init(void);
     MODULE_CHECK_VOID("Network Stack", qx_net_init);
 
-#ifdef CONFIG_SMP
+    /* SMP: always attempt — gracefully falls back to single-core if no APs detected */
     extern int smp_init(void);
     int smp_cpus = smp_init();
     if (smp_cpus <= 0) {
@@ -266,7 +251,6 @@ void kernel_main(void) {
     } else {
         klog_init_msg("SMP: %d CPUs online", smp_cpus + 1);
     }
-#endif
     
     start_user_init();
     

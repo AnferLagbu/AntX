@@ -301,11 +301,11 @@ static int config_root_pwid(void) {
     char pw2[64];
     
     user_print("\n");
-    user_println("--- Step 4: Root PWID Setup ---");
+    user_println("--- Step 4: Administrator PWID Setup ---");
     user_print("\n");
-    user_println("Creating the root (administrator) identity.");
-    user_println("This identity has full system access.");
-    user_println("Note: Root note is fixed as 'root'.");
+    
+    user_println("Creating the first administrator identity.");
+    user_println("This identity will have full system access.");
     user_print("\n");
     
     while (1) {
