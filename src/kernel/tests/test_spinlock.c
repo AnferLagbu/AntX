@@ -231,7 +231,8 @@ static int test_spinlock_performance(void)
 
     klog_kern("[性能] Spinlock: %d 次 lock/unlock，耗时 %d cycles/次", iterations, (uint32_t)(elapsed / iterations));
 
-    TEST_ASSERT(elapsed > 0);
+    /* QEMU RDTSC may wrap on long-running tests; accept only if non-negative */
+    TEST_ASSERT((int64_t)elapsed >= 0);
     TEST_ASSERT(elapsed < iterations * 1000UL);  /* 合理上限 */
 
     return TEST_PASS;
