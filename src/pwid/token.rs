@@ -60,7 +60,7 @@ impl PwidToken {
         issuer: u64,
         holder: u64,
     ) -> Self {
-        let time = get_time();
+        let _time = get_time();
         Self {
             token_id: generate_token_id(),
             issuer_pwid: issuer,

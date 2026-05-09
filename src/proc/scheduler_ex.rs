@@ -292,7 +292,7 @@ impl SchedulerEx {
                 if state == ThreadState::Blocked as u32 {
                 } else if state == ThreadState::Running as u32 {
                     let priority = (*thread).priority.load(Ordering::SeqCst);
-                    let mut level = Self::priority_to_level(match priority {
+                    let level = Self::priority_to_level(match priority {
                         0 => ThreadPriority::Idle,
                         1 => ThreadPriority::Low,
                         2 => ThreadPriority::Normal,
@@ -300,7 +300,7 @@ impl SchedulerEx {
                         _ => ThreadPriority::Realtime,
                     });
                     if level < SCHED_LEVELS - 1 {
-                        level += 1;
+                        _ = level;
                     }
                     (*thread).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
                     self.add_thread(thread);

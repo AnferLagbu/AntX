@@ -84,7 +84,7 @@ impl DiskFsData {
         self.mounted = false;
     }
 
-    pub fn mount(&mut self, path: &str) -> i32 {
+    pub fn mount(&mut self, _path: &str) -> i32 {
         if self.mounted {
             return 0;
         }
@@ -114,8 +114,6 @@ impl DiskFsData {
                 return -1;
             }
         }
-        
-        drop(hvfs);
         
         self.mounted = true;
         
@@ -188,8 +186,6 @@ impl DiskFsData {
         self.fds[fd_idx].flags = flags;
         self.fds[fd_idx].pwid = pwid;
         
-        drop(hvfs);
-        
         Some((inode_num, offset, file_type))
     }
 
@@ -244,7 +240,7 @@ impl DiskFsData {
         };
 
         let inode_num = self.fds[idx].inode_num;
-        let pwid = self.fds[idx].pwid;
+        let _pwid = self.fds[idx].pwid;
 
         let hvfs = get_hvfs();
 

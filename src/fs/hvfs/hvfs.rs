@@ -1,7 +1,5 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use alloc::collections::VecDeque;
-use spin::Mutex;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
@@ -11,43 +9,11 @@ extern "C" {
     fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
     fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
     fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
-    fn ata_read_sectors(disk: u8, start: u32, count: u32, buf: *mut u8) -> i32;
-    fn ata_write_sectors(disk: u8, start: u32, count: u32, buf: *const u8) -> i32;
     fn ata_disk_present(disk: u8) -> i32;
 }
 
 fn log(s: &str) {
     unsafe { klog_ffi_info(s.as_ptr()); }
-}
-
-fn log_num(n: u64) {
-    if n == 0 {
-        log("0");
-        return;
-    }
-    let mut buf = [0u8; 24];
-    let mut num = n;
-    let mut i = 23;
-    while num > 0 {
-        buf[i] = (num % 10) as u8 + b'0';
-        num /= 10;
-        i -= 1;
-    }
-    let s = core::str::from_utf8(&buf[i + 1..]).unwrap_or("?");
-    log(s);
-}
-
-fn log_hex(n: u64) {
-    log("0x");
-    let hex_chars = b"0123456789ABCDEF";
-    let mut started = false;
-    for i in (0..16).rev() {
-        let nibble = (n >> (i * 4)) & 0xF;
-        if nibble != 0 || started || i == 0 {
-            log(unsafe { core::str::from_utf8_unchecked(&[hex_chars[nibble as usize]]) });
-            started = true;
-        }
-    }
 }
 
 pub const HVFS_MAGIC: u32 = 0x48564653;
@@ -133,9 +99,7 @@ impl FsckResult {
 
 const INDIRECT_BLOCKS_PER_BLOCK: usize = HVFS_BLOCK_SIZE / core::mem::size_of::<u32>();
 
-const HVFS_BOOT_SECTOR_START: u32 = 0;
 const HVFS_SUPER_SECTOR_START: u32 = 200;
-const HVFS_SUPER_SECTOR_COUNT: u32 = 8;
 const HVFS_INODE_SECTOR_START: u32 = 208;
 const HVFS_BLOCK_BITMAP_START: u32 = 8400;
 const HVFS_INODE_BITMAP_START: u32 = 10448;
@@ -338,11 +302,11 @@ unsafe impl Sync for HvFsData {}
 
 impl HvFsData {
     pub fn new() -> Self {
-        let mut fds = [HvfsFd { 
+        let fds = [HvfsFd { 
             fd: 0, inode_num: 0, offset: 0, flags: 0, pwid: 0, used: false 
         }; HVFS_MAX_FDS];
         
-        let mut block_cache = Vec::new();
+        let block_cache = Vec::new();
         // Temporarily skip cache pre-allocation; allocate lazily in get_block()
 
         
@@ -1329,7 +1293,6 @@ impl HvFsData {
                         for byte in &mut block_data[offset_in_block..] {
                             *byte = 0;
                         }
-                        drop(block_data);
                         self.mark_block_dirty(block_num);
                     }
                 }
@@ -1502,7 +1465,7 @@ impl HvFsData {
         };
         
         let inode_num = self.fds[fd_idx].inode_num;
-        let offset = self.fds[fd_idx].offset;
+        let _offset = self.fds[fd_idx].offset;
         let pwid = self.fds[fd_idx].pwid;
         
         let inode = match self.get_inode(inode_num) {

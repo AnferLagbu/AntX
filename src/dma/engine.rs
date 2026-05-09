@@ -5,7 +5,7 @@
 //! Uses PhysAddr/VirtAddr type safety and lock-free atomics.
 
 use super::*;
-use crate::mm::{self, PhysAddr, VirtAddr, PageFlags};
+use crate::mm::{PhysAddr, VirtAddr, PageFlags};
 use core::sync::atomic::{AtomicBool, Ordering};
 use alloc::vec::Vec;
 use spin::Mutex;

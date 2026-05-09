@@ -110,7 +110,7 @@ pub extern "C" fn process_exit(exit_code: u32) {
 }
 
 #[no_mangle]
-pub extern "C" fn process_kill(pid: u32, exit_code: u32) {
+pub extern "C" fn process_kill(_pid: u32, exit_code: u32) {
     // Set exit code and exit the process
     SCHEDULER.exit(exit_code);
 }

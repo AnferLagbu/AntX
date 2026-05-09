@@ -301,7 +301,7 @@ impl KernelHeap {
 
     /// Print heap statistics
     pub fn dump_stats(&self) {
-        let stats = self.get_stats();
+        let _stats = self.get_stats();
         serial_println!("=== Kmalloc Statistics ===");
         serial_println!("Heap Range:     0x{:X} - 0x{:X}", stats.heap_start.0, stats.heap_end.0);
         serial_println!("Total Allocated: {} KB", stats.total_allocated / 1024);
@@ -509,7 +509,7 @@ impl KernelHeap {
         let phys = pmm.alloc_pages(pages_needed as usize)?;
         
         let new_start = self.heap_end;
-        let new_end = VirtAddr(self.heap_end.0 + expand_by);
+        let _new_end = VirtAddr(self.heap_end.0 + expand_by);
         
         for i in 0..pages_needed {
             let page_phys = PhysAddr(phys.as_u64() + i * PAGE_SIZE);

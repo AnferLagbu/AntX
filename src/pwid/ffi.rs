@@ -10,7 +10,7 @@ use super::audit;
 use super::storage;
 use super::trust_chain::{TrustChain, TrustEntry};
 
-use super::token::{TokenManager, PwidToken, TokenType, MAX_TOKENS};
+use super::token::{TokenManager, PwidToken, TokenType};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Global trust chain singleton (TOCTOU-safe CAS pattern)
@@ -55,20 +55,6 @@ fn get_token_manager() -> &'static mut TokenManager {
 
 /// Genesis flag — set by kernel when --first boot parameter is present
 static GENESIS_REQUESTED: AtomicBool = AtomicBool::new(false);
-
-/// SYS_ADMIN capability constant (matching pwid.h)
-const SYS_ADMIN_CAP: u64 = 0xFFFFFFFFFFFFFFFF;
-
-/// USB Domain 5: USER_MGMT capability bits
-const USER_MGMT_CAP_CREATE: u64 = 1 << 2;   // CAP_DOMAIN_USER_CREATE
-const USER_MGMT_CAP_DELETE: u64 = 1 << 3;   // CAP_DOMAIN_USER_DELETE
-const USER_MGMT_CAP_TOKEN: u64  = 1 << 5;   // CAP_DOMAIN_TOKEN_ISSUE
-const USER_MGMT_CAP_TRUST: u64  = 1 << 6;   // CAP_DOMAIN_TRUST_ADD
-
-/// Serial print macro (placeholder)
-macro_rules! serial_println {
-    ($($arg:tt)*) => {};
-}
 
 // ============================================================
 // Initialization
@@ -712,7 +698,7 @@ pub extern "C" fn pwid_create_token(
 
 /// Use a token for privilege elevation
 #[no_mangle]
-pub extern "C" fn pwid_use_token_internal(token_id: u64, user_pwid: u64) -> i32 {
+pub extern "C" fn pwid_use_token_internal(token_id: u64, _user_pwid: u64) -> i32 {
     match get_token_manager().use_token(token_id) {
         Ok(()) => {
             let idx = match get_token_manager().find(token_id) {

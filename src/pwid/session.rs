@@ -5,7 +5,6 @@
 
 use super::types::*;
 use super::manager;
-use super::sha256;
 use core::sync::atomic::{AtomicU64, AtomicIsize, AtomicBool, Ordering};
 
 /// Constant-time byte array comparison (prevents timing side-channel attacks)
@@ -173,7 +172,7 @@ impl SessionManager {
             let ctx = &*self.current.get();
             
             if !ctx.current_entry.is_null() {
-                let entry = &*ctx.current_entry;
+                let _entry = &*ctx.current_entry;
                 serial_println!("[PWID] Logged out from '{}'", entry.get_note_str());
             }
         }
@@ -232,7 +231,7 @@ impl SessionManager {
     }
 
     /// Elevate privileges to root (requires root password)
-    pub fn elevate(&self, target_pwid: u64, password: &str, duration_secs: u64) -> PwidError {
+    pub fn elevate(&self, target_pwid: u64, password: &str, _duration_secs: u64) -> PwidError {
         self.acquire_lock();
         let mgr = manager::get_manager();
         let current_pwid = self.get_current();

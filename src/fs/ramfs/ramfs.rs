@@ -20,12 +20,10 @@ const INDIRECT_BLOCKS_PER_BLOCK: usize = RAMFS_BLOCK_SIZE / 4;
 
 // Sensitivity label defaults
 const SENSITIVITY_PUBLIC: u8 = 0;
-const SENSITIVITY_PRIVATE: u8 = 64;
 
 // FS capability bits (mirrors pwid.h)
 const FS_CAP_READ: u64    = 1 << 0;
 const FS_CAP_WRITE: u64   = 1 << 1;
-const FS_CAP_EXECUTE: u64 = 1 << 2;
 const FS_CAP_CREATE: u64  = 1 << 3;
 
 #[derive(Debug, Clone, Copy)]
@@ -695,7 +693,7 @@ impl RamFsData {
         0
     }
     
-    pub fn open(&mut self, path: &str, flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
+    pub fn open(&mut self, path: &str, _flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
         if path.is_empty() {
             return None;
         }
@@ -1240,7 +1238,7 @@ impl RamFsData {
         Some(inode.size)
     }
 
-    pub fn link(&mut self, parent_inode: u32, target_inode: u32, name: &str, pwid: u64) -> i32 {
+    pub fn link(&mut self, parent_inode: u32, target_inode: u32, name: &str, _pwid: u64) -> i32 {
         if name.is_empty() || name.contains('/') {
             return -1;
         }

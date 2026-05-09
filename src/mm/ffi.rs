@@ -7,7 +7,7 @@
 //! allowing a drop-in replacement without modifying existing C code.
 
 use super::*;
-use core::ffi::{c_void, c_char};
+use core::ffi::c_void;
 
 // ============================================================
 // PMM FFI Functions
@@ -381,7 +381,7 @@ pub extern "C" fn krealloc(ptr: *mut c_void, size: u64) -> *mut c_void {
 /// 
 /// Note: This is a simplified version that doesn't fill the struct yet
 #[no_mangle]
-pub extern "C" fn kmalloc_stats(stats: *mut c_void) {
+pub extern "C" fn kmalloc_stats(_stats: *mut c_void) {
     // TODO: Fill stats struct with actual data from Rust implementation
     // For now, this is a placeholder to satisfy the linker
 }

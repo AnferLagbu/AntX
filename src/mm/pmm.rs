@@ -50,9 +50,6 @@ impl<'a> core::fmt::Write for CursorWriter<'a> {
 use super::*;
 use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering};
 
-/// Magic number for heap header validation (matching C implementation)
-const HEAP_MAGIC: u32 = 0xDEADBEEF;
-
 /// Maximum number of early allocations to track
 const MAX_EARLY_ALLOCS: usize = 256;
 
@@ -559,7 +556,7 @@ impl PhysicalMemoryManager {
 
     /// Allocate with specific alignment requirement
     fn alloc_aligned(&self, count: usize, alignment: u64) -> Option<PhysAddr> {
-        let align_pages = (alignment / PAGE_SIZE) as usize;
+        let _align_pages = (alignment / PAGE_SIZE) as usize;
         
         if let Some(start_bit) = self.find_contiguous_free(count, alignment) {
             let addr = (start_bit as u64) * PAGE_SIZE;

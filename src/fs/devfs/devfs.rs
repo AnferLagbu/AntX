@@ -1,5 +1,5 @@
 use spin::Mutex;
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 extern "C" {
     fn klog_ffi_info(msg: *const u8);
@@ -53,7 +53,7 @@ impl DevfsData {
         device.name[len] = 0;
     }
     
-    pub fn mount(&self, path: &str) -> i32 {
+    pub fn mount(&self, _path: &str) -> i32 {
         let mut devices = self.devices.lock();
         
         Self::set_name(&mut devices[0], "null");

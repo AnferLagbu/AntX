@@ -51,7 +51,7 @@ impl ProcfsData {
         entry.name[len] = 0;
     }
     
-    pub fn mount(&self, path: &str) -> i32 {
+    pub fn mount(&self, _path: &str) -> i32 {
         let mut entries = self.entries.lock();
         
         Self::set_name(&mut entries[0], "self");

@@ -186,7 +186,7 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
     match fs_name.as_str() {
         "ramfs" => {
             let mut ramfs = RAMFS_DATA.lock();
-            let rel_path = VFS_MANAGER.get_relative_path(&full_path, mount_idx);
+            let _rel_path = VFS_MANAGER.get_relative_path(&full_path, mount_idx);
             let mut offset = offset;
             let result = ramfs.read(inode_num, &mut offset, buf_slice, pwid);
             VFS_MANAGER.set_fd_offset(fd_idx, offset);
@@ -316,7 +316,7 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
     match fs_name.as_str() {
         "ramfs" => {
             let mut ramfs = RAMFS_DATA.lock();
-            let rel_path = VFS_MANAGER.get_relative_path(&full_path, mount_idx);
+            let _rel_path = VFS_MANAGER.get_relative_path(&full_path, mount_idx);
             let mut offset = offset;
             let result = ramfs.write(inode_num, &mut offset, buf_slice, pwid);
             VFS_MANAGER.set_fd_offset(fd_idx, offset);
@@ -727,7 +727,7 @@ pub extern "C" fn vfs_chmod(path: *const c_char, mode: u16, pwid: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_chown(path: *const c_char, owner_pwid: u64, pwid: u64) -> i32 {
+pub extern "C" fn vfs_chown(path: *const c_char, _owner_pwid: u64, pwid: u64) -> i32 {
     vfs_chown_internal(path, 0, 0, pwid)
 }
 

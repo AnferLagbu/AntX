@@ -3,7 +3,7 @@
 //! Core data structures for the PWID management system.
 //! All types are designed to match C ABI for FFI compatibility.
 
-use core::sync::atomic::{AtomicU64, AtomicBool, AtomicU32, AtomicU16, AtomicU8};
+use core::sync::atomic::{AtomicU64, AtomicU32, AtomicU16, AtomicU8};
 
 /// Maximum number of PWID entries in the table
 pub const MAX_PWID_ENTRIES: usize = 256;
@@ -42,7 +42,7 @@ impl PwidLevel {
     }
 }
 
-/// PWID entry flags (bitfield)
+// PWID entry flags (bitfield)
 bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug)]

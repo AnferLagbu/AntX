@@ -41,7 +41,7 @@ pub extern "C" fn diskfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32
     let path = ptr_to_str(path);
     let diskfs = get_diskfs();
     match diskfs.open(path, flags, pwid) {
-        Some((inode_num, offset, file_type)) => {
+        Some((inode_num, offset, _file_type)) => {
             ((inode_num as i32) & 0xFFFF) | ((offset as i32) << 16)
         }
         None => -1

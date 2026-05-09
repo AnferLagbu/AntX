@@ -16,8 +16,6 @@ use crate::dma::DmaPoolStats;
 
 extern "C" {
     fn klog_ffi_info(msg: *const u8);
-    fn klog_ffi_warn(msg: *const u8);
-    fn klog_ffi_error(msg: *const u8);
 }
 
 macro_rules! klog_info {

@@ -8,12 +8,11 @@
 
 extern crate alloc;
 
-use crate::mm::{PhysAddr, VirtAddr, PhysAddr as DmaAddr};
+use crate::mm::{PhysAddr, VirtAddr};
 use crate::mm::pmm::get_pmm;
 use crate::mm::vmm::get_vmm;
-use crate::mm::PageFlags;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use core::ptr::{self, NonNull};
+use core::sync::atomic::{AtomicU64, Ordering};
+use core::ptr::{self};
 use core::ffi::c_void;
 
 pub mod engine;

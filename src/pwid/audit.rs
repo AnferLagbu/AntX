@@ -48,8 +48,8 @@ impl AuditLog {
                     }
                 }
                 match self.count.compare_exchange_weak(count, MAX_AUDIT_ENTRIES - 1, Ordering::Release, Ordering::Relaxed) {
-                    Ok(_) => { count = MAX_AUDIT_ENTRIES - 1; break; }
-                    Err(c) => count = c,  // Retry with updated value
+                    Ok(_) => break,
+                    Err(c) => count = c,
                 }
             } else {
                 break;
@@ -84,7 +84,7 @@ impl AuditLog {
             let entries = &*self.entries.get();
             
             for i in 0..count.min(MAX_AUDIT_ENTRIES) {
-                let e = &entries[i];
+                let _e = &entries[i];
                 
                 serial_println!("  [{}] PWID:0x{:016X} Action:{} Result:{}",
                                e.timestamp, e.pwid, e.action, e.result);

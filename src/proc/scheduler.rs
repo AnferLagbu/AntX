@@ -11,8 +11,7 @@ const TIME_SLICES: [u64; MLFQ_LEVELS] = [10, 20, 40, 80];
 
 const RT_PRIORITY_MAX: u8 = 99;
 const RT_TIME_SLICE: u64 = 5;
-const RT_FIFO_WATCHDOG: u64 = 500;  // ticks before forced preempt (5s)
-const BOOST_INTERVAL: u64 = 1000;
+const RT_FIFO_WATCHDOG: u64 = 500;
 
 /// Per-PWID CPU quota (cgroup-style lightweight)
 pub struct PwidQuota {
@@ -155,7 +154,7 @@ impl Scheduler {
         }
         
         let parent_id = parent.map(ProcessId);
-        let mut process = alloc::boxed::Box::new(Process::new(pid, name, parent_id));
+        let process = alloc::boxed::Box::new(Process::new(pid, name, parent_id));
         process.set_pwid(pwid);
         
         let process_ptr = alloc::boxed::Box::into_raw(process);

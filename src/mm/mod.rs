@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use core::sync::atomic::{AtomicU64, AtomicU32, Ordering, fence};
+use core::sync::atomic::{AtomicU64, Ordering};
 use core::ptr::NonNull;
 
 pub mod pmm;
@@ -220,7 +220,7 @@ impl VirtAddr {
     }
 }
 
-/// Page table entry flags (bitflags style)
+// Page table entry flags (bitflags style)
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct PageFlags: u64 {
