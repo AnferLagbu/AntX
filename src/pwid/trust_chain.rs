@@ -206,7 +206,7 @@ impl TrustChain {
     pub fn clear_expired(&mut self) {
         let mut write_idx = 0;
         for read_idx in 0..self.count {
-            if self.entries[read_idx].is_valid() || read_idx == write_idx {
+            if self.entries[read_idx].is_valid() {
                 if read_idx != write_idx {
                     self.entries[write_idx] = self.entries[read_idx];
                 }

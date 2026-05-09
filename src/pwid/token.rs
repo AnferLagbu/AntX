@@ -287,7 +287,7 @@ impl TokenManager {
     fn compact(&mut self) {
         let mut write_idx = 0;
         for read_idx in 0..self.count {
-            if self.tokens[read_idx].token_id != 0 || read_idx == write_idx {
+            if self.tokens[read_idx].token_id != 0 {
                 if read_idx != write_idx {
                     self.tokens[write_idx] = self.tokens[read_idx];
                 }

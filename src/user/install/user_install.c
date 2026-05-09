@@ -179,7 +179,7 @@ static int select_disk(void) {
     char confirm[8];
     user_read_line(confirm, sizeof(confirm));
     
-    if (confirm[0] != 'y' || confirm[1] != 'e' || confirm[2] != 's') {
+    if ((confirm[0] | 0x20) != 'y' || (confirm[1] | 0x20) != 'e' || (confirm[2] | 0x20) != 's') {
         user_println("  Installation cancelled.");
         return -1;
     }

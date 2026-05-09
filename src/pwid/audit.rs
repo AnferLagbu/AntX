@@ -36,26 +36,32 @@ impl AuditLog {
 
     /// Record an audit event
     pub fn log(&self, pwid: u64, action: u32, result: u32, target_pwid: u64, details: u64) {
-        let count = self.count.load(Ordering::Acquire);
+        let mut count = self.count.load(Ordering::Acquire);
         
-        // If at capacity, shift entries (FIFO)
-        if count >= MAX_AUDIT_ENTRIES {
-            unsafe {
-                let entries = &mut *self.entries.get();
-                for i in 0..MAX_AUDIT_ENTRIES - 1 {
-                    entries[i] = entries[i + 1];
+        // If at capacity, shift entries (FIFO) — attempt atomic bump
+        loop {
+            if count >= MAX_AUDIT_ENTRIES {
+                unsafe {
+                    let entries = &mut *self.entries.get();
+                    for i in 0..MAX_AUDIT_ENTRIES - 1 {
+                        entries[i] = entries[i + 1];
+                    }
                 }
-                self.count.store(MAX_AUDIT_ENTRIES - 1, Ordering::Release);
+                match self.count.compare_exchange_weak(count, MAX_AUDIT_ENTRIES - 1, Ordering::Release, Ordering::Relaxed) {
+                    Ok(_) => { count = MAX_AUDIT_ENTRIES - 1; break; }
+                    Err(c) => count = c,  // Retry with updated value
+                }
+            } else {
+                break;
             }
         }
         
         // Add new entry
-        let idx = self.count.fetch_add(1, Ordering::Relaxed);
-        
-        unsafe {
-            let entries = &mut *self.entries.get();
-            
-            if idx < MAX_AUDIT_ENTRIES {
+        if let Ok(idx) = self.count.fetch_update(Ordering::Acquire, Ordering::Relaxed, |c| {
+            if c < MAX_AUDIT_ENTRIES { Some(c + 1) } else { None }
+        }) {
+            unsafe {
+                let entries = &mut *self.entries.get();
                 entries[idx] = AuditEntry {
                     timestamp: get_current_time(),
                     pwid,

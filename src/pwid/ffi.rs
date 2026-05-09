@@ -12,30 +12,42 @@ use super::trust_chain::{TrustChain, TrustEntry};
 use super::token::{TokenManager, PwidToken, TokenType, MAX_TOKENS};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Global trust chain singleton
+/// Global trust chain singleton (TOCTOU-safe CAS pattern)
 static TRUST_DONE: AtomicBool = AtomicBool::new(false);
 static mut TRUST_CHAIN: Option<TrustChain> = None;
 
 fn get_trust_chain() -> &'static mut TrustChain {
     if !TRUST_DONE.load(Ordering::Acquire) {
-        unsafe {
-            TRUST_CHAIN = Some(TrustChain::new());
+        // Second check with potential CAS (only first caller succeeds)
+        if TRUST_DONE.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+            unsafe {
+                TRUST_CHAIN = Some(TrustChain::new());
+            }
+        } else {
+            // Another thread is creating — spin until done
+            while !TRUST_DONE.load(Ordering::Acquire) {
+                core::hint::spin_loop();
+            }
         }
-        TRUST_DONE.store(true, Ordering::Release);
     }
     unsafe { TRUST_CHAIN.as_mut().unwrap() }
 }
 
-/// Global token manager singleton
+/// Global token manager singleton (TOCTOU-safe CAS pattern)
 static mut TOKEN_MANAGER: Option<TokenManager> = None;
 static TOKEN_INIT: AtomicBool = AtomicBool::new(false);
 
 fn get_token_manager() -> &'static mut TokenManager {
     if !TOKEN_INIT.load(Ordering::Acquire) {
-        unsafe {
-            TOKEN_MANAGER = Some(TokenManager::new());
+        if TOKEN_INIT.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+            unsafe {
+                TOKEN_MANAGER = Some(TokenManager::new());
+            }
+        } else {
+            while !TOKEN_INIT.load(Ordering::Acquire) {
+                core::hint::spin_loop();
+            }
         }
-        TOKEN_INIT.store(true, Ordering::Release);
     }
     unsafe { TOKEN_MANAGER.as_mut().unwrap() }
 }

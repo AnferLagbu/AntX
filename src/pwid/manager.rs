@@ -5,6 +5,7 @@
 
 use super::types::*;
 use super::sha256;
+use super::audit;
 use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, AtomicU8, AtomicU16, AtomicU32, Ordering};
 
 /// Serial print macro (placeholder)
@@ -216,6 +217,7 @@ impl PwidManager {
         // Update count
         self.count.fetch_add(1, Ordering::Relaxed);
         self.set_modified();
+        audit::get_audit().log(new_pwid, 2, 1, 0, 0);  // action=2: create, result=1: success
         
         serial_println!("[PWID] Created: 0x{:016X} note='{}' level={}", 
                        new_pwid, note, level);
@@ -241,6 +243,7 @@ impl PwidManager {
         
         self.count.fetch_sub(1, Ordering::Relaxed);
         self.set_modified();
+        audit::get_audit().log(pwid, 3, 1, 0, 0);  // action=3: delete, result=1: success
         
         serial_println!("[PWID] Deleted: 0x{:016X}", pwid);
         
@@ -250,37 +253,46 @@ impl PwidManager {
 
     /// Disable a PWID entry
     pub fn disable(&self, pwid: u64) -> Result<(), PwidError> {
+        self.acquire_lock();
         let slot = self.find_slot(pwid).ok_or(PwidError::NotFound)?;
         self.entries[slot].add_flags(PwidFlags::DISABLED);
         self.set_modified();
+        audit::get_audit().log(pwid, 4, 1, 0, 0);  // action=4: disable, result=1: success
+        self.release_lock();
         Ok(())
     }
 
     /// Enable a previously disabled PWID entry
     pub fn enable(&self, pwid: u64) -> Result<(), PwidError> {
+        self.acquire_lock();
         let slot = self.find_slot(pwid).ok_or(PwidError::NotFound)?;
-        
         self.entries[slot].remove_flags(PwidFlags::DISABLED);
         self.set_modified();
-        
+        audit::get_audit().log(pwid, 5, 1, 0, 0);  // action=5: enable, result=1: success
+        self.release_lock();
         Ok(())
     }
 
     /// Change password for an entry
     pub fn change_password(&self, pwid: u64, old_password: &str, new_password: &str) -> Result<(), PwidError> {
+        self.acquire_lock();
         let slot = self.find_slot(pwid).ok_or(PwidError::NotFound)?;
         
         // Verify old password
         if !self.verify_password(pwid, old_password) {
             serial_println!("[PWID] Error: old password incorrect");
+            self.release_lock();
             return Err(PwidError::PasswordIncorrect);
         }
         
-        // Update hash
-        let hash = sha256::sha256(new_password.as_bytes());
+        // Re-hash with the existing salt (or generate new salt)
+        let stored = &self.entries[slot].password_hash;
+        let mut salt = [0u8; PWID_SALT_LEN];
+        salt.copy_from_slice(&stored[PWID_DIGEST_LEN..PWID_HASH_LEN]);
+        let hash = hash_with_salt(new_password, &salt);
         unsafe {
             let entry_ptr = self.entries[slot].password_hash.as_ptr() as *mut u8;
-            core::ptr::copy_nonoverlapping(hash.as_ptr(), entry_ptr, PWID_HASH_LEN);
+            core::ptr::copy_nonoverlapping(hash.as_ptr(), entry_ptr, PWID_DIGEST_LEN);
         }
         
         self.entries[slot].add_flags(PwidFlags::MODIFIED);
@@ -289,17 +301,21 @@ impl PwidManager {
         
         serial_println!("[PWID] Password changed for 0x{:016X}", pwid);
         
+        audit::get_audit().log(pwid, 6, 1, 0, 0);  // action=6: change_password, result=1: success
+        self.release_lock();
         Ok(())
     }
 
     /// Change note/description for an entry (v4: all identities can change notes)
     pub fn change_note(&self, pwid: u64, new_note: &str) -> Result<(), PwidError> {
+        self.acquire_lock();
         let slot = self.find_slot(pwid).ok_or(PwidError::NotFound)?;
         unsafe {
             let entry_ptr = &self.entries[slot] as *const PwidEntry as *mut PwidEntry;
             (*entry_ptr).set_note(new_note);
         }
-        
+        audit::get_audit().log(pwid, 7, 1, 0, 0);  // action=7: change_note, result=1: success
+        self.release_lock();
         Ok(())
     }
 

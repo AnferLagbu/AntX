@@ -315,6 +315,13 @@ impl DiskFsData {
 
     pub fn truncate(&mut self, inode_num: u32, new_size: u64, pwid: u64) -> i32 {
         let hvfs = get_hvfs();
+        let inode = match hvfs.get_inode(inode_num) {
+            Some(i) => i,
+            None => return -1,
+        };
+        if !hvfs.check_permission(inode, pwid, crate::fs::hvfs::hvfs::HVFS_CAP_WRITE) {
+            return -1;
+        }
         hvfs.truncate_inode(inode_num, new_size)
     }
 

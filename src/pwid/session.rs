@@ -217,35 +217,40 @@ impl SessionManager {
 
     /// Elevate privileges to root (requires root password)
     pub fn elevate(&self, target_pwid: u64, password: &str, duration_secs: u64) -> PwidError {
+        self.acquire_lock();
         let mgr = manager::get_manager();
         let current_pwid = self.get_current();
         
         // Must have an active session
         if current_pwid == 0 || self.get_current_entry().is_null() {
+            self.release_lock();
             return PwidError::PermissionDenied;
         }
         
         // Check elevation depth limit
         if self.elevation_depth.load(Ordering::Acquire) >= MAX_ELEVATION_DEPTH as isize {
+            self.release_lock();
             return PwidError::PermissionDenied;
         }
         
         // Find target (must be root)
         let target = match mgr.find(target_pwid) {
             Some(e) => e,
-            None => return PwidError::NotFound,
+            None => { self.release_lock(); return PwidError::NotFound; },
         };
         
         if target.get_level() != PwidLevel::Root.as_u8() {
+            self.release_lock();
             return PwidError::PermissionDenied;
         }
         
         // Verify target's password
         if !mgr.verify_password(target_pwid, password) {
+            self.release_lock();
             return PwidError::PasswordIncorrect;
         }
         
-        // Save current context to elevation stack
+        // Save current context to elevation stack (lock held)
         let depth = self.elevation_depth.fetch_add(1, Ordering::Relaxed) as usize;
         
         unsafe {
@@ -265,11 +270,13 @@ impl SessionManager {
         
         serial_println!("[PWID] Elevated to root for {} seconds", duration_secs);
         
+        self.release_lock();
         PwidError::Ok
     }
 
     /// End privilege elevation and restore previous context
     pub fn end_elevation(&self) {
+        self.acquire_lock();
         let depth = self.elevation_depth.load(Ordering::Acquire);
         
         if depth > 0 {
@@ -291,6 +298,7 @@ impl SessionManager {
                 serial_println!("[PWID] Elevation ended (depth={})", new_depth);
             }
         }
+        self.release_lock();
     }
 
     /// Check if currently elevated
