@@ -249,6 +249,7 @@ void test_recovery_register(void) {
     test_register_case(mod, "Quarantine threshold", test_recovery_quarantine_threshold);
     test_register_case(mod, "Different fingerprints", test_recovery_different_fingerprints);
     test_register_case(mod, "UndoLog lifecycle", test_recovery_undo_log_record);
+    test_register_case(mod, "Cascade dependency rollback", test_recovery_cascade_dependency);
     test_register_case(mod, "Max domains limit", test_recovery_max_domains);
     test_register_case(mod, "E2E IDT recovery path", test_recovery_e2e_idt_path);
     test_register_case(mod, "Panic flag lifecycle", test_recovery_panic_flag_lifecycle);
@@ -257,5 +258,4 @@ void test_recovery_register(void) {
     test_register_case(mod, "Empty tick no-op", test_recovery_empty_tick_noop);
     test_register_case(mod, "Quarantine isolation", test_recovery_quarantine_isolated);
     test_register_case(mod, "Backoff respected", test_recovery_backoff_respected);
-    test_register_case(mod, "Cascade dependency rollback", test_recovery_cascade_dependency);
 }

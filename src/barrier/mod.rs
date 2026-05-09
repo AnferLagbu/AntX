@@ -341,60 +341,61 @@ impl RecoveryManager {
     pub fn cascade_rollback(&self, domain_id: u64, tick: u64, fingerprint: u64) -> usize {
         let count = self.count.load(Ordering::SeqCst) as usize;
         let mut rolled_back = 0usize;
-        // First pass: rollback the target domain
-        if let Some(dom) = self.find(domain_id) {
-            if dom.try_rollback(tick, fingerprint) {
-                dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
-                let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
-                let mut undo = dom.undo.lock();
-                undo.rollback_to(target_gen);
-                if let Some(cb) = *dom.rollback_cb.lock() {
-                    unsafe { cb(); }
+        // affected[i] = true means domains[i] has been rolled back
+        let mut affected = [false; MAX_RECOVERY_DOMAINS];
+
+        // Find the target domain's slot index
+        let target_idx = (0..count).find(|&i| {
+            self.domains[i].map_or(false, |d| d.id == domain_id)
+        });
+
+        // Rollback the target domain
+        if let Some(idx) = target_idx {
+            if let Some(dom) = self.domains[idx] {
+                if dom.try_rollback(tick, fingerprint) {
+                    dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
+                    let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
+                    let mut undo = dom.undo.lock();
+                    undo.rollback_to(target_gen);
+                    if let Some(cb) = *dom.rollback_cb.lock() { unsafe { cb(); } }
+                    dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
+                    dom.mark_recovered();
+                    affected[idx] = true;
+                    rolled_back += 1;
                 }
-                dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
-                dom.mark_recovered();
-                rolled_back += 1;
             }
         }
-        // Second pass: find and rollback domains that depend on affected domains
-        let mut affected = [false; MAX_RECOVERY_DOMAINS];
-        affected[domain_id as usize % MAX_RECOVERY_DOMAINS] = true;
-        // Floyd-style: keep iterating until no new dependents found
+
+        // Floyd-style cascade: propagate through dependency edges
         loop {
             let mut new_affected = false;
             for i in 0..count {
+                if affected[i] { continue; }
                 if let Some(dom) = self.domains[i] {
-                    if affected[i] || affected[dom.id as usize % MAX_RECOVERY_DOMAINS] { continue; }
-                     // Check if this domain depends on any affected domain
-                     let mut depends = false;
-                     for dep_idx in 0..MAX_RECOVERY_DOMAINS {
-                         if affected[dep_idx] {
-                             if dom.depends_on_id(dep_idx as u64) {
-                                 depends = true;
-                                 break;
-                             }
-                         }
-                     }
-                     if depends {
-                                // Rollback this dependent domain
-                                if dom.try_rollback(tick, fingerprint) {
-                                    dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
-                                    let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
-                                    let mut undo = dom.undo.lock();
-                                    undo.rollback_to(target_gen);
-                                    if let Some(cb) = *dom.rollback_cb.lock() {
-                                        unsafe { cb(); }
+                    // Does this domain depend on any already-affected domain?
+                    for j in 0..count {
+                        if affected[j] {
+                            if let Some(affected_dom) = self.domains[j] {
+                                if dom.depends_on_id(affected_dom.id) {
+                                    if dom.try_rollback(tick, fingerprint) {
+                                        dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
+                                        let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
+                                        let mut undo = dom.undo.lock();
+                                        undo.rollback_to(target_gen);
+                                        if let Some(cb) = *dom.rollback_cb.lock() { unsafe { cb(); } }
+                                        dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
+                                        dom.mark_recovered();
+                                        rolled_back += 1;
                                     }
-                                    dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
-                                    dom.mark_recovered();
-                                    rolled_back += 1;
+                                    affected[i] = true;
+                                    new_affected = true;
+                                    break;
                                 }
-                                affected[dom.id as usize % MAX_RECOVERY_DOMAINS] = true;
-                                new_affected = true;
-                                break;
+                            }
                         }
                     }
                 }
+            }
             if !new_affected { break; }
         }
         rolled_back
