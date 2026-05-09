@@ -446,3 +446,9 @@ pub extern "C" fn pci_read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) 
 pub extern "C" fn pci_write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
     write_config_word(bus, dev, func, offset, val)
 }
+
+/// C FFI: write config dword
+#[no_mangle]
+pub extern "C" fn pci_write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
+    write_config_dword(bus, dev, func, offset, val)
+}

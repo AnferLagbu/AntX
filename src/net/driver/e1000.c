@@ -10,11 +10,9 @@
 #include "e1000.h"
 #include "e1000_regs.h"
 #include "klog.h"
-#include "pci.h"
 #include "dma.h"
 #include "kmalloc.h"
 #include "types.h"
-#include "io.h"
 #include "idt.h"
 
 #include "lwip/opt.h"
@@ -139,43 +137,35 @@ static int e1000_setup_rings(e1000_dev_t *dev)
 }
 
 /* ============================================================
- * PCI 探测 (独立扫描，不依赖 pci_find_class)
+ * PCI 探测 — 使用共享 Rust PCI 原语 (pci_read_config_* / pci_write_config_*)
  * ============================================================ */
 int e1000_probe(void)
 {
+    extern uint16_t pci_read_config_word(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset);
+    extern uint32_t pci_read_config_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset);
+    extern void     pci_write_config_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset, uint32_t val);
+
     uint8_t bus, dev_idx, func;
-    klog_drv("E1000: Direct PCI scan for Intel 82540EM...");
+    klog_drv("E1000: PCI device scan using Rust PCI primitives...");
 
     for (bus = 0; bus < 255; bus++) {
-        outl(PCI_CONFIG_ADDR_PORT,
-             0x80000000 | ((uint32_t)bus << 16) | 0x00);
-        uint16_t bus_vendor = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
+        uint16_t bus_vendor = pci_read_config_word(bus, 0, 0, 0x00);
         if (bus_vendor == 0xFFFF || bus_vendor == 0x0000) {
             if (bus > 0) continue;
         }
 
         for (dev_idx = 0; dev_idx < 32; dev_idx++) {
             for (func = 0; func < 8; func++) {
-                outl(PCI_CONFIG_ADDR_PORT,
-                     0x80000000 | ((uint32_t)bus << 16) |
-                     ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x00);
-                uint16_t vendor_id = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
+                uint16_t vendor_id = pci_read_config_word(bus, dev_idx, func, 0x00);
 
                 if (vendor_id == 0xFFFF || vendor_id == 0x0000) {
                     if (func == 0) break;
                     continue;
                 }
 
-                outl(PCI_CONFIG_ADDR_PORT,
-                     0x80000000 | ((uint32_t)bus << 16) |
-                     ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x02);
-                uint16_t device_id = (uint16_t)inl(PCI_CONFIG_DATA_PORT);
-
-                outl(PCI_CONFIG_ADDR_PORT,
-                     0x80000000 | ((uint32_t)bus << 16) |
-                     ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x08);
-                uint32_t class_code = inl(PCI_CONFIG_DATA_PORT);
-                uint8_t base_class = (uint8_t)(class_code >> 24);
+                uint16_t device_id = pci_read_config_word(bus, dev_idx, func, 0x02);
+                uint32_t class_code = pci_read_config_dword(bus, dev_idx, func, 0x08);
+                uint8_t  base_class = (uint8_t)(class_code >> 24);
 
                 if (vendor_id == 0x8086 && base_class == 0x02) {
                     char buf[128];
@@ -188,24 +178,10 @@ int e1000_probe(void)
                     g_e1000.device = dev_idx;
                     g_e1000.func   = func;
 
-                    outl(PCI_CONFIG_ADDR_PORT,
-                         0x80000000 | ((uint32_t)bus << 16) |
-                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
-                    uint32_t bar0lo = inl(PCI_CONFIG_DATA_PORT);
-
-                    outl(PCI_CONFIG_ADDR_PORT,
-                         0x80000000 | ((uint32_t)bus << 16) |
-                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
-                    outl(PCI_CONFIG_DATA_PORT, 0xFFFFFFFF);
-                    outl(PCI_CONFIG_ADDR_PORT,
-                         0x80000000 | ((uint32_t)bus << 16) |
-                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
-                    uint32_t bar_size_mask = inl(PCI_CONFIG_DATA_PORT);
-
-                    outl(PCI_CONFIG_ADDR_PORT,
-                         0x80000000 | ((uint32_t)bus << 16) |
-                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x10);
-                    outl(PCI_CONFIG_DATA_PORT, bar0lo);
+                    uint32_t bar0lo = pci_read_config_dword(bus, dev_idx, func, 0x10);
+                    pci_write_config_dword(bus, dev_idx, func, 0x10, 0xFFFFFFFF);
+                    uint32_t bar_size_mask = pci_read_config_dword(bus, dev_idx, func, 0x10);
+                    pci_write_config_dword(bus, dev_idx, func, 0x10, bar0lo);
 
                     uint64_t bar0_phys;
                     uint64_t bar0_size;
@@ -268,17 +244,13 @@ int e1000_probe(void)
                         g_e1000.mmio_base = (volatile uint8_t *)(uintptr_t)bar0_phys;
                     }
 
-                    outl(PCI_CONFIG_ADDR_PORT,
-                         0x80000000 | ((uint32_t)bus << 16) |
-                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x04);
-                    uint32_t cmd_reg = inl(PCI_CONFIG_DATA_PORT);
-                    cmd_reg |= 0x06;
-                    outl(PCI_CONFIG_DATA_PORT, cmd_reg);
+                    {
+                        uint32_t cmd_reg = pci_read_config_dword(bus, dev_idx, func, 0x04);
+                        cmd_reg |= 0x06;
+                        pci_write_config_dword(bus, dev_idx, func, 0x04, cmd_reg);
+                    }
 
-                    outl(PCI_CONFIG_ADDR_PORT,
-                         0x80000000 | ((uint32_t)bus << 16) |
-                         ((uint32_t)dev_idx << 11) | ((uint32_t)func << 8) | 0x3C);
-                    g_e1000.irq = (uint8_t)inl(PCI_CONFIG_DATA_PORT);
+                    g_e1000.irq = (uint8_t)pci_read_config_dword(bus, dev_idx, func, 0x3C);
 
                     e1000_read_mac(g_e1000.mmio_base, g_e1000.mac);
                     snprintf(buf, sizeof(buf),
@@ -380,16 +352,7 @@ err_t e1000_init(struct netif *netif)
         idt_enable_irq(g_e1000.irq);
     }
 
-    {
-        uint8_t master_imr = inb(0x21);
-        uint8_t slave_imr  = inb(0xA1);
-        klog_drv("E1000: PIC IMR master=0x%02x slave=0x%02x (cascade=%s IRQ11=%s)",
-                 master_imr, slave_imr,
-                 (master_imr & (1 << 2)) ? "MASKED" : "ok",
-                 (slave_imr & (1 << 3)) ? "MASKED" : "ok");
-    }
-
-    klog_drv("E1000: IRQ %d enabled, init complete", g_e1000.irq);
+    klog_drv("E1000: IRQ %d enabled via IDT (IOAPIC/PIC auto-routed), init complete", g_e1000.irq);
     return ERR_OK;
 }
 

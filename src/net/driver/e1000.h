@@ -49,8 +49,8 @@ typedef struct {
     e1000_tx_desc_t *tx_descs;
     e1000_rx_desc_t *rx_descs;
     uint8_t         *rx_buffers[E1000_RX_RING_SIZE];
-    uint16_t         tx_tail;       /* 下一个发送位置 */
-    uint16_t         rx_tail;       /* 下一个接收位置 */
+    volatile uint16_t tx_tail;       /* 下一个发送位置 */
+    volatile uint16_t rx_tail;       /* 下一个接收位置 */
 
     struct netif     *netif;
 
