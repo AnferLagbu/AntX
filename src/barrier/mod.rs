@@ -170,7 +170,7 @@ pub struct RecoveryDomain {
     pub last_crash_fingerprint: AtomicU64,
     pub last_rollback_time: AtomicU64,
     pub backoff_until: AtomicU64,
-    pub depends_on: [Option<u64>; MAX_DOMAIN_DEPENDENCIES],
+    pub depends_on: spin::Mutex<[Option<u64>; MAX_DOMAIN_DEPENDENCIES]>,
     pub dom_cap_mask: AtomicU64,
     pub cpu_quota_max: u64,
     pub cpu_quota_period: u64,
@@ -200,7 +200,7 @@ impl RecoveryDomain {
             last_crash_fingerprint: AtomicU64::new(0),
             last_rollback_time: AtomicU64::new(0),
             backoff_until: AtomicU64::new(0),
-            depends_on: [None; MAX_DOMAIN_DEPENDENCIES],
+            depends_on: spin::Mutex::new([None; MAX_DOMAIN_DEPENDENCIES]),
             dom_cap_mask: AtomicU64::new(0),
             cpu_quota_max: 0,
             cpu_quota_period: 0,
@@ -245,6 +245,30 @@ impl RecoveryDomain {
 
     pub fn mark_recovered(&self) {
         self.consecutive_failures.store(0, Ordering::SeqCst);
+    }
+
+    pub fn add_dependency(&self, dependency_id: u64) -> bool {
+        let mut deps = self.depends_on.lock();
+        for slot in deps.iter() {
+            if let Some(existing) = *slot {
+                if existing == dependency_id { return true; }
+            }
+        }
+        for slot in deps.iter_mut() {
+            if slot.is_none() {
+                *slot = Some(dependency_id);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn dependency_count(&self) -> usize {
+        self.depends_on.lock().iter().filter(|s| s.is_some()).count()
+    }
+
+    pub fn depends_on_id(&self, dep_id: u64) -> bool {
+        self.depends_on.lock().iter().any(|s| *s == Some(dep_id))
     }
 
     pub fn consume_quota_tick(&self) -> bool {
@@ -311,6 +335,71 @@ impl RecoveryManager {
                 .find_map(|i| self.domains[i].filter(|d| d.id == id))
         }
     }
+
+    /// Execute a cascade rollback: rollback domain + all domains that depend on it.
+    /// Returns domains rolled back. O(n²) where n ≤ 32.
+    pub fn cascade_rollback(&self, domain_id: u64, tick: u64, fingerprint: u64) -> usize {
+        let count = self.count.load(Ordering::SeqCst) as usize;
+        let mut rolled_back = 0usize;
+        // First pass: rollback the target domain
+        if let Some(dom) = self.find(domain_id) {
+            if dom.try_rollback(tick, fingerprint) {
+                dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
+                let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
+                let mut undo = dom.undo.lock();
+                undo.rollback_to(target_gen);
+                if let Some(cb) = *dom.rollback_cb.lock() {
+                    unsafe { cb(); }
+                }
+                dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
+                dom.mark_recovered();
+                rolled_back += 1;
+            }
+        }
+        // Second pass: find and rollback domains that depend on affected domains
+        let mut affected = [false; MAX_RECOVERY_DOMAINS];
+        affected[domain_id as usize % MAX_RECOVERY_DOMAINS] = true;
+        // Floyd-style: keep iterating until no new dependents found
+        loop {
+            let mut new_affected = false;
+            for i in 0..count {
+                if let Some(dom) = self.domains[i] {
+                    if affected[i] || affected[dom.id as usize % MAX_RECOVERY_DOMAINS] { continue; }
+                     // Check if this domain depends on any affected domain
+                     let mut depends = false;
+                     for dep_idx in 0..MAX_RECOVERY_DOMAINS {
+                         if affected[dep_idx] {
+                             if dom.depends_on_id(dep_idx as u64) {
+                                 depends = true;
+                                 break;
+                             }
+                         }
+                     }
+                     if depends {
+                                // Rollback this dependent domain
+                                if dom.try_rollback(tick, fingerprint) {
+                                    dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
+                                    let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
+                                    let mut undo = dom.undo.lock();
+                                    undo.rollback_to(target_gen);
+                                    if let Some(cb) = *dom.rollback_cb.lock() {
+                                        unsafe { cb(); }
+                                    }
+                                    dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
+                                    dom.mark_recovered();
+                                    rolled_back += 1;
+                                }
+                                affected[dom.id as usize % MAX_RECOVERY_DOMAINS] = true;
+                                new_affected = true;
+                                break;
+                        }
+                    }
+                }
+            }
+            if !new_affected { break; }
+        }
+        rolled_back
+    }
 }
 
 pub trait Recoverable {
@@ -372,21 +461,8 @@ pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64)
     use crate::proc::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
     let mgr = RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
-        if dom.try_rollback(tick, crash_fingerprint) {
-            dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
-            let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
-            let mut undo = dom.undo.lock();
-            undo.rollback_to(target_gen);
-            dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
-            dom.mark_recovered();
-            0
-        } else {
-            -1
-        }
-    } else {
-        -1
-    }
+    let rollbacks = mgr.cascade_rollback(domain_id, tick, crash_fingerprint);
+    if rollbacks > 0 { 0 } else { -1 }
 }
 
 /// Internal: prevent IDT recovery loop
@@ -439,22 +515,14 @@ pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
         h
     };
 
-    // Try all registered domains — not just domains[0]
+    // Try all registered domains with cascade rollback
+    let mut recovered = 0;
     for i in 0..count {
-        if let Some(dom) = mgr.domains[i] {
-            if dom.try_rollback(tick, fingerprint) {
-                dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
-                let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
-                let mut undo = dom.undo.lock();
-                undo.rollback_to(target_gen);
-                // Invoke module rollback callback if registered
-                let rollback_ok = if let Some(cb) = *dom.rollback_cb.lock() {
-                    unsafe { cb() }
-                } else {
-                    true
-                };
-                dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
-                dom.mark_recovered();
+        if let Some(_dom) = mgr.domains[i] {
+            let did = _dom.id;
+            let rollbacks = mgr.cascade_rollback(did, tick, fingerprint);
+            if rollbacks > 0 {
+                recovered = rollbacks;
                 recovery_panic_flag_clear();
                 RECOVERY_ATTEMPTED.store(false, Ordering::SeqCst);
                 return 0;
@@ -509,6 +577,28 @@ pub extern "C" fn recovery_undo_count(domain_id: u64) -> i32 {
     let mgr = RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         dom.undo.lock().count as i32
+    } else {
+        -1
+    }
+}
+
+/// C FFI: add a dependency edge (domain depends on dep_id)
+#[no_mangle]
+pub extern "C" fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
+    let mgr = RECOVERY_MANAGER.lock();
+    if let Some(dom) = mgr.find(domain_id) {
+        if dom.add_dependency(dep_id) { 0 } else { -1 }
+    } else {
+        -1
+    }
+}
+
+/// C FFI: get dependency count for a domain
+#[no_mangle]
+pub extern "C" fn recovery_domain_dep_count(domain_id: u64) -> i32 {
+    let mgr = RECOVERY_MANAGER.lock();
+    if let Some(dom) = mgr.find(domain_id) {
+        dom.dependency_count() as i32
     } else {
         -1
     }

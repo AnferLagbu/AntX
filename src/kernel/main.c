@@ -260,6 +260,7 @@ void kernel_main(void) {
     /* Register all 6 core recovery domains for barrier-stack rollback */
     {
         extern int32_t recovery_domain_register(uint64_t domain_id);
+        extern int32_t recovery_domain_add_dep(uint64_t domain_id, uint64_t dep_id);
         int d_ok = 0;
         d_ok += (recovery_domain_register(1) == 0);  /* RECOVERY_DOMAIN_RAMFS  */
         d_ok += (recovery_domain_register(2) == 0);  /* RECOVERY_DOMAIN_VFS    */
@@ -268,6 +269,16 @@ void kernel_main(void) {
         d_ok += (recovery_domain_register(5) == 0);  /* RECOVERY_DOMAIN_NET    */
         d_ok += (recovery_domain_register(6) == 0);  /* RECOVERY_DOMAIN_PROCFS */
         klog_init_msg("Recovery domains registered: %d/%d", d_ok, 6);
+
+        /* Dependency graph: cascade rollback edges */
+        /* VFS(2) depends on RAMFS(1) and HVFS(3) — VFS delegates I/O to both */
+        recovery_domain_add_dep(2, 1);
+        recovery_domain_add_dep(2, 3);
+        /* DISKFS(4) depends on VFS(2) and HVFS(3) — diskfs is a file system */
+        recovery_domain_add_dep(4, 2);
+        recovery_domain_add_dep(4, 3);
+        /* PROCFS(6) depends on VFS(2) — procfs is a VFS delegate */
+        recovery_domain_add_dep(6, 2);
     }
     
     start_user_init();

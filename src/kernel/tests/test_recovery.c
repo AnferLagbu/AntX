@@ -13,6 +13,8 @@ extern int32_t recovery_was_attempted(void);
 extern void    recovery_trigger_panic(void) __attribute__((noreturn));
 extern int32_t recovery_undo_record(uint64_t domain_id, void *field_ptr, uint64_t old_value);
 extern int32_t recovery_undo_count(uint64_t domain_id);
+extern int32_t recovery_domain_add_dep(uint64_t domain_id, uint64_t dep_id);
+extern int32_t recovery_domain_dep_count(uint64_t domain_id);
 
 static int test_recovery_e2e_idt_path(void) {
     /* Register a fresh domain and verify IDT recovery path doesn't crash */
@@ -194,6 +196,48 @@ static int test_recovery_backoff_respected(void) {
     return TEST_PASS;
 }
 
+static int test_recovery_cascade_dependency(void) {
+    extern int32_t recovery_domain_add_dep(uint64_t domain_id, uint64_t dep_id);
+
+    /* Register two domains with a parent-child dependency */
+    int r300 = recovery_domain_register(300);
+    int r301 = recovery_domain_register(301);
+    if (r300 != 0 || r301 != 0) {
+        klog_kern("[RECOV] Cascade: domain registration failed, skip");
+        return TEST_PASS;
+    }
+
+    /* 301 depends on 300 — when 300 rolls back, 301 cascades */
+    recovery_domain_add_dep(301, 300);
+    int dep = recovery_domain_dep_count(301);
+    klog_kern("[RECOV] Cascade: domain 301 deps=%d (expect 1)", dep);
+    TEST_ASSERT_EQ(dep, 1);
+
+    /* Record undo entries on both domains */
+    static int d1, d2;
+    recovery_undo_record(300, (void *)&d1, 0x1111);
+    recovery_undo_record(301, (void *)&d2, 0x2222);
+
+    int count300 = recovery_undo_count(300);
+    int count301 = recovery_undo_count(301);
+    klog_kern("[RECOV] Cascade: undo counts before=%d,%d (expect 1,1)", count300, count301);
+    TEST_ASSERT_EQ(count300, 1);
+    TEST_ASSERT_EQ(count301, 1);
+
+    /* Rollback domain 300 — should cascade and also rollback 301 */
+    int rb = recovery_test_rollback(300, 0xAAAA);
+    klog_kern("[RECOV] Cascade: rollback result=%d (expect 0)", rb);
+    TEST_ASSERT_EQ(rb, 0);
+
+    /* Both domains should now have empty undo logs */
+    int c300 = recovery_undo_count(300);
+    int c301 = recovery_undo_count(301);
+    klog_kern("[RECOV] Cascade: undo counts after=%d,%d (expect 0,0)", c300, c301);
+    TEST_ASSERT_EQ(c300, 0);
+    TEST_ASSERT_EQ(c301, 0);
+    return TEST_PASS;
+}
+
 void test_recovery_register(void) {
     int mod = test_register_module("Recovery (Barrier Stack)");
     if (mod < 0) return;
@@ -213,4 +257,5 @@ void test_recovery_register(void) {
     test_register_case(mod, "Empty tick no-op", test_recovery_empty_tick_noop);
     test_register_case(mod, "Quarantine isolation", test_recovery_quarantine_isolated);
     test_register_case(mod, "Backoff respected", test_recovery_backoff_respected);
+    test_register_case(mod, "Cascade dependency rollback", test_recovery_cascade_dependency);
 }

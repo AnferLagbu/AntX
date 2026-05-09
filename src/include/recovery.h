@@ -106,6 +106,19 @@ int32_t recovery_domain_set_cbs(uint64_t domain_id,
                                  void (*capture_fn)(void),
                                  int32_t (*rollback_fn)(void));
 
+/**
+ * Add a dependency edge: domain_id depends on dep_id.
+ * When dep_id rolls back, domain_id cascades too.
+ * @return 0 on success, -1 if domain not found or deps full
+ */
+int32_t recovery_domain_add_dep(uint64_t domain_id, uint64_t dep_id);
+
+/**
+ * Get dependency count for a domain.
+ * @return count, -1 if domain not found
+ */
+int32_t recovery_domain_dep_count(uint64_t domain_id);
+
 #ifdef __cplusplus
 }
 #endif
