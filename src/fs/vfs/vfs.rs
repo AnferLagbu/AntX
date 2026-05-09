@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::boxed::Box;
 use spin::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -8,6 +9,16 @@ pub struct VfsMount {
     pub path: [u8; VFS_MAX_PATH],
     pub fs_name: [u8; 32],
     pub used: bool,
+}
+
+impl Clone for VfsMount {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path,
+            fs_name: self.fs_name,
+            used: self.used,
+        }
+    }
 }
 
 impl VfsMount {
@@ -55,6 +66,16 @@ pub struct VfsFile {
     pub path: [u8; VFS_MAX_PATH],
 }
 
+impl Clone for VfsFile {
+    fn clone(&self) -> Self {
+        Self {
+            fd: self.fd, inode_num: self.inode_num, offset: self.offset,
+            flags: self.flags, pwid: self.pwid, used: self.used,
+            file_type: self.file_type, path: self.path,
+        }
+    }
+}
+
 impl VfsFile {
     pub const fn new() -> Self {
         Self {
@@ -88,6 +109,17 @@ pub struct VfsManager {
     next_fd: AtomicU32,
     cwd: Mutex<[u8; VFS_MAX_PATH]>,
     initialized: Mutex<bool>,
+    /// Barrier stack snapshot — captured at each barrier tick, restored on rollback
+    snapshot: Mutex<Option<VfsSnapshot>>,
+}
+
+/// Compact snapshot of VFS mutable state for barrier-stack rollback
+#[derive(Clone)]
+struct VfsSnapshot {
+    mounts: [VfsMount; VFS_MAX_MOUNTS],
+    fd_table: [VfsFile; VFS_MAX_FDS],
+    cwd: [u8; VFS_MAX_PATH],
+    next_fd: u32,
 }
 
 unsafe impl Send for VfsManager {}
@@ -113,6 +145,7 @@ impl VfsManager {
             next_fd: AtomicU32::new(3),
             cwd: Mutex::new([0; VFS_MAX_PATH]),
             initialized: Mutex::new(false),
+            snapshot: Mutex::new(None),
         }
     }
     
@@ -143,6 +176,12 @@ impl VfsManager {
         self.next_fd.store(3, Ordering::SeqCst);
         
         *self.initialized.lock() = true;
+
+        // Register barrier-stack snapshot callbacks for VFS domain (ID=2)
+        if let Some(dom) = crate::barrier::RECOVERY_MANAGER.lock().find(2) {
+            *dom.capture_cb.lock() = Some(vfs_barrier_capture_cb);
+            *dom.rollback_cb.lock() = Some(vfs_barrier_rollback_cb);
+        }
     }
     
     pub fn find_mount(&self, path: &str) -> Option<usize> {
@@ -292,10 +331,49 @@ impl VfsManager {
         let end = cwd.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_PATH);
         String::from(core::str::from_utf8(&cwd[..end]).unwrap_or("/"))
     }
+
+    /// Capture full VFS state into a snapshot for barrier-stack recovery
+    pub fn capture_snapshot(&self) {
+        let mounts_data = {
+            let m = self.mounts.lock();
+            m.clone()
+        };
+        let fd_data = {
+            let f = self.fd_table.lock();
+            f.clone()
+        };
+        let cwd_data = *self.cwd.lock();
+        let nf = self.next_fd.load(Ordering::SeqCst);
+        *self.snapshot.lock() = Some(VfsSnapshot {
+            mounts: mounts_data,
+            fd_table: fd_data,
+            cwd: cwd_data,
+            next_fd: nf,
+        });
+    }
+
+    /// Restore VFS state from the last captured snapshot
+    pub fn restore_from_snapshot(&self) {
+        if let Some(ref snap) = *self.snapshot.lock() {
+            *self.mounts.lock() = snap.mounts.clone();
+            *self.fd_table.lock() = snap.fd_table.clone();
+            *self.cwd.lock() = snap.cwd;
+            self.next_fd.store(snap.next_fd, Ordering::SeqCst);
+        }
+    }
 }
 
 pub static VFS_MANAGER: VfsManager = VfsManager::new();
 
 pub fn init() {
     VFS_MANAGER.init();
+}
+
+extern "C" fn vfs_barrier_capture_cb() {
+    VFS_MANAGER.capture_snapshot();
+}
+
+extern "C" fn vfs_barrier_rollback_cb() -> bool {
+    VFS_MANAGER.restore_from_snapshot();
+    true
 }

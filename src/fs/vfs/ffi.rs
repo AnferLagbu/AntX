@@ -994,3 +994,16 @@ pub extern "C" fn hvfs_check_disk() -> i32 {
     let hvfs = get_hvfs();
     hvfs.check_disk()
 }
+
+/// Barrier-stack: capture VFS state snapshot (called from scheduler tick)
+#[no_mangle]
+pub extern "C" fn vfs_barrier_capture() {
+    VFS_MANAGER.capture_snapshot();
+}
+
+/// Barrier-stack: restore VFS state from last snapshot (called during rollback)
+#[no_mangle]
+pub extern "C" fn vfs_barrier_restore() -> i32 {
+    VFS_MANAGER.restore_from_snapshot();
+    1
+}

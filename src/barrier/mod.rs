@@ -178,6 +178,10 @@ pub struct RecoveryDomain {
     pub proc_limit_max: u32,
     pub proc_limit_current: AtomicU32,
     pub undo: spin::Mutex<UndoLog>,
+    /// Module callback: called at each barrier tick to capture current state
+    pub capture_cb: spin::Mutex<Option<unsafe extern "C" fn()>>,
+    /// Module callback: called during rollback to restore captured state
+    pub rollback_cb: spin::Mutex<Option<unsafe extern "C" fn() -> bool>>,
 }
 
 unsafe impl Send for RecoveryDomain {}
@@ -204,6 +208,8 @@ impl RecoveryDomain {
             proc_limit_max: 0,
             proc_limit_current: AtomicU32::new(0),
             undo: spin::Mutex::new(UndoLog::new()),
+            capture_cb: spin::Mutex::new(None),
+            rollback_cb: spin::Mutex::new(None),
         }
     }
 
@@ -287,6 +293,10 @@ impl RecoveryManager {
                     dom.next_barrier_tick.store(
                         current_tick + dom.barrier_interval_ticks, Ordering::SeqCst,
                     );
+                    // Invoke module capture callback if registered
+                    if let Some(cb) = *dom.capture_cb.lock() {
+                        unsafe { cb(); }
+                    }
                 }
             }
         }
@@ -437,6 +447,12 @@ pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
                 let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
                 let mut undo = dom.undo.lock();
                 undo.rollback_to(target_gen);
+                // Invoke module rollback callback if registered
+                let rollback_ok = if let Some(cb) = *dom.rollback_cb.lock() {
+                    unsafe { cb() }
+                } else {
+                    true
+                };
                 dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
                 dom.mark_recovered();
                 recovery_panic_flag_clear();
@@ -459,6 +475,19 @@ pub extern "C" fn recovery_trigger_panic() -> ! {
 #[no_mangle]
 pub extern "C" fn recovery_was_attempted() -> i32 {
     if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) { 1 } else { 0 }
+}
+
+/// C FFI: set capture/rollback callbacks for a domain
+#[no_mangle]
+pub extern "C" fn recovery_domain_set_cbs(domain_id: u64, capture_fn: Option<unsafe extern "C" fn()>, rollback_fn: Option<unsafe extern "C" fn() -> bool>) -> i32 {
+    let mgr = RECOVERY_MANAGER.lock();
+    if let Some(dom) = mgr.find(domain_id) {
+        *dom.capture_cb.lock() = capture_fn;
+        *dom.rollback_cb.lock() = rollback_fn;
+        0
+    } else {
+        -1
+    }
 }
 
 /// C FFI: record a test value into a domain's UndoLog

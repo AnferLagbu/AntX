@@ -96,6 +96,16 @@ int32_t recovery_undo_record(uint64_t domain_id, void *field_ptr, uint64_t old_v
  */
 int32_t recovery_undo_count(uint64_t domain_id);
 
+/**
+ * Set capture/rollback callbacks for a domain.
+ * capture_fn is called at each barrier tick to snapshot module state.
+ * rollback_fn is called during rollback to restore module state.
+ * @return 0 on success, -1 if domain not found
+ */
+int32_t recovery_domain_set_cbs(uint64_t domain_id,
+                                 void (*capture_fn)(void),
+                                 int32_t (*rollback_fn)(void));
+
 #ifdef __cplusplus
 }
 #endif
