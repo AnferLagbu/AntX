@@ -944,7 +944,7 @@ pub extern "C" fn hvfs_unmount() -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_format_internal(_path: *const c_char, _fs_type: *const c_char) -> i32 {
-    -1  // Not yet implemented
+    hvfs_format_internal()
 }
 
 #[no_mangle]

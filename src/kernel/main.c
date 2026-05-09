@@ -172,10 +172,21 @@ void kernel_main(void) {
         klog_kern("============================================");
         klog_kern("  GENESIS MODE: No identities found");
         klog_kern("  First boot detected — identity table empty");
-        klog_kern("  Init process will prompt for root creation");
-        klog_kern("  Use: SYS_AUTH_CREATE_FIRST to bootstrap");
-        klog_kern("  PWID database will be saved to /pwid.db");
+        klog_kern("  Attempting automatic bootstrap...");
         klog_kern("============================================");
+        
+        /* Try Genesis with default password --- env var or compile-time default */
+        extern int pwid_try_genesis(const char *password);
+        const char *default_pw = "antx1234";
+        int gen_rc = pwid_try_genesis(default_pw);
+        if (gen_rc == 0) {
+            klog_init_msg("Genesis root identity created (pw: %s)", default_pw);
+            klog_init_msg("CHANGE THIS PASSWORD ON FIRST LOGIN!");
+        } else if (gen_rc == 1) {
+            klog_init_msg("Genesis: identity already exists (loaded from disk)");
+        } else {
+            klog_init_msg("Genesis failed — init will prompt for manual creation");
+        }
     }
     
     klog_boot("System initialized");

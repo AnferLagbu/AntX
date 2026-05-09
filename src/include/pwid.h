@@ -207,6 +207,7 @@ int pwid_load_from_disk(void);
 void pwid_set_modified(void);
 int pwid_is_modified(void);
 void pwid_try_load(void);
+int pwid_try_genesis(const char *password);
 
 int pwid_is_expired(uint64_t pwid);
 int pwid_is_locked(uint64_t pwid);

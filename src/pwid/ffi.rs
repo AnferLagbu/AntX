@@ -88,6 +88,40 @@ pub extern "C" fn pwid_try_load() {
     storage::load_database();
 }
 
+/// Auto-bootstrap: create first root identity if table is empty
+/// Returns 0 on success (identity created), 1 if already exists, -1 on error
+#[no_mangle]
+pub extern "C" fn pwid_try_genesis(password: *const core::ffi::c_char) -> i32 {
+    if password.is_null() {
+        return -1;
+    }
+    
+    if manager::get_manager().any_identity_exists.load(core::sync::atomic::Ordering::Acquire) {
+        return 1;  // Already bootstrapped
+    }
+    
+    let pwd = match unsafe { cstr_to_str(password) } {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    
+    if pwd.len() < 4 {
+        return -1;
+    }
+    
+    match unsafe { manager::get_manager_mut() }.create_first_identity(pwd) {
+        Ok(_pwid_val) => {
+            // Auto-login as root via the standard login path
+            let note_cstr = b"root\0" as *const u8 as *const i8;
+            unsafe { pwid_login(note_cstr, password); }
+            // Force save to disk
+            storage::save_database();
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
 // ============================================================
 // PWID Generation and Verification
 // ============================================================
@@ -745,28 +779,36 @@ pub extern "C" fn pwid_check_trust(
 /// Enhanced permission check — orchestrates multi-layer security.
 /// object_type: domain (0=system, 1=fs, 2=net, 3=proc, 4=device, 5=user_mgmt)
 /// action: capability bitmask for the requested operation
+/// Enhanced permission check (v4) — full RBAC check with capability matrix
 /// Returns 1 if allowed, 0 if denied.
 #[no_mangle]
 pub extern "C" fn pwid_enhanced_check(
     subject_pwid: u64,
-    object_type: u32,
-    action: u32,
-    _context: *const core::ffi::c_void
+    owner_pwid: u64,
+    access_type: u64,
+    domain: u16,
 ) -> i32 {
-    let caps = action as u64;
-
-    // Layer 0: Check if account exists; unregistered → deny
-    let pwid_caps = pwid_get_fs_capability(subject_pwid);
+    // Layer 0: Null PWID → deny
     if subject_pwid == 0 {
-        return 0;  // Null PWID — deny all
+        return 0;
     }
+
+    let caps = access_type;
+
+    // Layer 1: Subject == owner → allow (ownership bypass)
+    if subject_pwid == owner_pwid {
+        return 1;
+    }
+
+    // Layer 2: Check capability matrix
+    let pwid_caps = pwid_get_fs_capability(subject_pwid);
     if (pwid_caps & caps) == caps {
         return 1;
     }
 
     // Layer 3: Trust chain check
     let chain = get_trust_chain();
-    if chain.check_chain(subject_pwid, 0, object_type as u16, caps, 8).is_some() {
+    if chain.check_chain(subject_pwid, owner_pwid, domain, caps, 8).is_some() {
         return 1;
     }
 

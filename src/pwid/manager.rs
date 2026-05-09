@@ -200,16 +200,16 @@ impl PwidManager {
             
             // Generate random salt from TSC + loop iteration entropy
             let mut salt = [0u8; PWID_SALT_LEN];
-            for i in 0..PWID_SALT_LEN {
-                let tsc: u64;
-                unsafe { core::arch::asm!("rdtsc", out("rax") tsc, out("rdx") _, options(nomem, nostack)); }
-                salt[i] = (tsc.wrapping_add(i as u64).wrapping_mul(0x9E3779B97F4A7C15) >> 32) as u8;
-            }
-            
-            // Hash password with salt
-            let hash = hash_with_salt(password, &salt);
-            entry.password_hash[..PWID_DIGEST_LEN].copy_from_slice(&hash);
-            entry.password_hash[PWID_DIGEST_LEN..PWID_HASH_LEN].copy_from_slice(&salt);
+        for i in 0..PWID_SALT_LEN {
+            let tsc: u64;
+            unsafe { core::arch::asm!("rdtsc", out("rax") tsc, out("rdx") _, options(nomem, nostack)); }
+            salt[i] = (tsc.wrapping_add(i as u64).wrapping_mul(0x9E3779B97F4A7C15) >> 32) as u8;
+        }
+        
+        // Hash password with salt
+        let hash = hash_with_salt(password, &salt);
+        entry.password_hash[..PWID_DIGEST_LEN].copy_from_slice(&hash);
+        entry.password_hash[PWID_DIGEST_LEN..PWID_HASH_LEN].copy_from_slice(&salt);
             
             // Set creation time
             entry.created_time.store(get_current_time(), Ordering::Release);
