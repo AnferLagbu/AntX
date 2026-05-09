@@ -84,6 +84,13 @@ static int init_local_apic(cpu_info_t *cpu) {
     return 0;
 }
 
+void lapic_send_eoi(void) {
+    cpu_info_t *cpu = smp_get_current_cpu();
+    if (cpu && cpu->local_apic) {
+        cpu->local_apic[0xB0 / sizeof(uint32_t)] = 0;
+    }
+}
+
 static void* allocate_ap_stack(int cpu_id) {
     extern void* kmalloc(uint64_t size);
 

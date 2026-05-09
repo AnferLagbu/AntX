@@ -252,6 +252,8 @@ void kernel_main(void) {
         klog_init_msg("SMP: %d CPUs online", smp_cpus + 1);
     }
     
+    MODULE_CHECK_VOID("IO APIC", ioapic_init);
+    
     start_user_init();
     
     uint64_t idle_ticks = 0;

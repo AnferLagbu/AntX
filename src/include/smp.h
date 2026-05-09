@@ -224,6 +224,8 @@ void smp_add_load(int cpu_id, uint32_t load);
  */
 void smp_remove_load(int cpu_id, uint32_t load);
 
+void lapic_send_eoi(void);
+
 /**
  * @brief 触发负载均衡检查
  *

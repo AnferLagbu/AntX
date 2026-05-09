@@ -53,7 +53,7 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/smart_mount.o build/
               build/version_registry.o \
               build/cpu.o \
               build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
-              build/pci.o \
+              build/pci.o build/smp.o build/ioapic.o \
               $(NET_OBJS)
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
@@ -79,7 +79,7 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_moun
               build/test_network.o \
               build/test_scheduler_rt.o \
               build/test_smp.o \
-              build/smp.o \
+              build/smp.o build/ioapic.o \
               $(NET_OBJS)
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
@@ -617,6 +617,10 @@ build/test_smp.o: src/kernel/tests/test_smp.c
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
 build/smp.o: src/kernel/smp.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/ioapic.o: src/kernel/ioapic.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

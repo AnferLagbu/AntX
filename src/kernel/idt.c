@@ -3,6 +3,8 @@
 #include "klog.h"
 #include "io.h"
 #include "recovery.h"
+#include "ioapic.h"
+#include "smp.h"
 
 struct idt_entry idt[IDT_ENTRIES];
 struct idt_ptr idt_ptr;
@@ -57,8 +59,6 @@ static const char *exception_messages[] = {
 };
 
 void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8_t type) {
-    if (num >= IDT_ENTRIES) return;
-
     idt[num].offset_low = handler & 0xFFFF;
     idt[num].offset_mid = (handler >> 16) & 0xFFFF;
     idt[num].offset_high = (handler >> 32) & 0xFFFFFFFF;
@@ -70,8 +70,7 @@ void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8_t type
 }
 
 int idt_set_handler(uint8_t num, interrupt_handler_t handler, const char *name) {
-    if (num >= IDT_ENTRIES) return -1;
-
+    (void)name;
     interrupt_handlers[num] = handler;
     return 0;
 }
@@ -93,6 +92,11 @@ int idt_register_irq(uint8_t irq, interrupt_handler_t handler, const char *name,
     irq_descriptors[irq].error_count = 0;
 
     interrupt_handlers[vector] = handler;
+
+    if (ioapic_is_present()) {
+        ioapic_redirect_irq(irq, vector, 0, IOAPIC_DELIVERY_FIXED);
+        ioapic_unmask_irq(irq);
+    }
 
     klog_kern("IRQ: Registered handler '%s' for IRQ 0x%x", name ? name : "unnamed", irq);
 
@@ -118,6 +122,10 @@ int idt_unregister_irq(uint8_t irq, interrupt_handler_t handler) {
 }
 
 void idt_enable_irq(uint8_t irq) {
+    if (ioapic_is_present()) {
+        ioapic_unmask_irq(irq);
+        return;
+    }
     if (irq < 8) {
         uint8_t mask = inb(0x21) & ~(1 << irq);
         outb(0x21, mask);
@@ -130,6 +138,10 @@ void idt_enable_irq(uint8_t irq) {
 }
 
 void idt_disable_irq(uint8_t irq) {
+    if (ioapic_is_present()) {
+        ioapic_mask_irq(irq);
+        return;
+    }
     if (irq < 8) {
         uint8_t mask = inb(0x21) | (1 << irq);
         outb(0x21, mask);
@@ -400,7 +412,11 @@ void irq_handler(struct interrupt_frame *frame) {
         }
     }
 
-    pic_send_eoi(irq);
+    if (ioapic_is_present()) {
+        lapic_send_eoi();
+    } else {
+        pic_send_eoi(irq);
+    }
 }
 
 extern uint64_t isr_table[];
