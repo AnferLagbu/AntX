@@ -80,6 +80,22 @@ void recovery_trigger_panic(void) __attribute__((noreturn));
  */
 int32_t recovery_was_attempted(void);
 
+/**
+ * Record a value into a domain's UndoLog (for testing).
+ * @param domain_id  target domain
+ * @param field_ptr  fake field address (just a key for dedup)
+ * @param old_value  64-bit old value to record
+ * @return 0 on success, -1 if domain not found
+ */
+int32_t recovery_undo_record(uint64_t domain_id, void *field_ptr, uint64_t old_value);
+
+/**
+ * Get current UndoLog entry count for a domain.
+ * @param domain_id  target domain
+ * @return entry count, -1 if domain not found
+ */
+int32_t recovery_undo_count(uint64_t domain_id);
+
 #ifdef __cplusplus
 }
 #endif

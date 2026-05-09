@@ -417,17 +417,32 @@ pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
         return -1;
     }
 
-    if let Some(dom) = mgr.domains[0] {
-        if dom.try_rollback(tick, 0) {
-            dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
-            let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
-            let mut undo = dom.undo.lock();
-            undo.rollback_to(target_gen);
-            dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
-            dom.mark_recovered();
-            recovery_panic_flag_clear();
-            RECOVERY_ATTEMPTED.store(false, Ordering::SeqCst);
-            return 0;
+    // Compute crash fingerprint: djb2 hash of PANIC_MSG
+    let fingerprint = {
+        let mut h: u64 = 5381;
+        unsafe {
+            for &b in PANIC_MSG.iter().take(128) {
+                if b == 0 { break; }
+                h = h.wrapping_mul(33).wrapping_add(b as u64);
+            }
+        }
+        h
+    };
+
+    // Try all registered domains — not just domains[0]
+    for i in 0..count {
+        if let Some(dom) = mgr.domains[i] {
+            if dom.try_rollback(tick, fingerprint) {
+                dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
+                let target_gen = dom.barrier_generation.load(Ordering::SeqCst);
+                let mut undo = dom.undo.lock();
+                undo.rollback_to(target_gen);
+                dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
+                dom.mark_recovered();
+                recovery_panic_flag_clear();
+                RECOVERY_ATTEMPTED.store(false, Ordering::SeqCst);
+                return 0;
+            }
         }
     }
     -1
@@ -444,4 +459,28 @@ pub extern "C" fn recovery_trigger_panic() -> ! {
 #[no_mangle]
 pub extern "C" fn recovery_was_attempted() -> i32 {
     if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) { 1 } else { 0 }
+}
+
+/// C FFI: record a test value into a domain's UndoLog
+#[no_mangle]
+pub extern "C" fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) -> i32 {
+    let mgr = RECOVERY_MANAGER.lock();
+    if let Some(dom) = mgr.find(domain_id) {
+        let mut undo = dom.undo.lock();
+        undo.record(field_ptr as *mut u64, old_val);
+        0
+    } else {
+        -1
+    }
+}
+
+/// C FFI: return current UndoLog entry count for a domain
+#[no_mangle]
+pub extern "C" fn recovery_undo_count(domain_id: u64) -> i32 {
+    let mgr = RECOVERY_MANAGER.lock();
+    if let Some(dom) = mgr.find(domain_id) {
+        dom.undo.lock().count as i32
+    } else {
+        -1
+    }
 }

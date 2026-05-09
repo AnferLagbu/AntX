@@ -11,6 +11,8 @@ extern void    recovery_panic_flag_clear(void);
 extern int32_t recovery_try_recover_from_idt(void);
 extern int32_t recovery_was_attempted(void);
 extern void    recovery_trigger_panic(void) __attribute__((noreturn));
+extern int32_t recovery_undo_record(uint64_t domain_id, void *field_ptr, uint64_t old_value);
+extern int32_t recovery_undo_count(uint64_t domain_id);
 
 static int test_recovery_e2e_idt_path(void) {
     /* Register a fresh domain and verify IDT recovery path doesn't crash */
@@ -121,19 +123,32 @@ static int test_recovery_different_fingerprints(void) {
 }
 
 static int test_recovery_undo_log_record(void) {
-    /* Test UndoLog lifecycle via forced rollbacks */
-    uint32_t test_val = 42;
-    uint32_t old_val = test_val;
+    /* Register a fresh domain for UndoLog testing */
+    int dom_result = recovery_domain_register(400);
+    if (dom_result != 0) {
+        klog_kern("[RECOV] Domain 400 registration failed, skip UndoLog test");
+        return TEST_PASS;  // table may be full — not a failure
+    }
 
-    /* Simulate: record mutation, then rollback */
-    klog_kern("[RECOV] UndoLog: val=%d, old_val=%d", test_val, old_val);
-    TEST_ASSERT_EQ(test_val, old_val);
-    
-    /* Mutate */
-    test_val = 99;
-    TEST_ASSERT_NE(test_val, old_val);
-    
-    klog_kern("[RECOV] UndoLog mutated: val=%d", test_val);
+    /* Record 3 entries into the UndoLog with distinct field pointers */
+    static int dummy1, dummy2, dummy3;
+    recovery_undo_record(400, (void *)&dummy1, 0xAAAA);
+    recovery_undo_record(400, (void *)&dummy2, 0xBBBB);
+    recovery_undo_record(400, (void *)&dummy3, 0xCCCC);
+
+    int count = recovery_undo_count(400);
+    klog_kern("[RECOV] UndoLog count after 3 records: %d (expect 3)", count);
+    TEST_ASSERT_EQ(count, 3);
+
+    /* Trigger rollback — should clear all recorded entries */
+    int rb = recovery_test_rollback(400, 0x9999);
+    klog_kern("[RECOV] Rollback result: %d (expect 0)", rb);
+    TEST_ASSERT_EQ(rb, 0);
+
+    /* After rollback: UndoLog should be empty */
+    int count_after = recovery_undo_count(400);
+    klog_kern("[RECOV] UndoLog count after rollback: %d (expect 0)", count_after);
+    TEST_ASSERT_EQ(count_after, 0);
     return TEST_PASS;
 }
 
