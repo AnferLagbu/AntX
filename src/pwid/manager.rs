@@ -341,7 +341,15 @@ impl PwidManager {
             return false;
         }
         
-        // v4: Any PWID with USER_MGMT caps can modify
+        // v4: Require SYS_ADMIN capability (domain 0, full mask)
+        if let Some(caps) = self.get_caps(modifier.pwid.load(Ordering::Acquire)) {
+            if caps[0] != u64::MAX {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        
         true
     }
 

@@ -815,9 +815,7 @@ impl HvFsData {
         }
 
         let caps = unsafe { pwid_get_fs_capability(pwid) };
-        if caps == 0 {
-            return true;
-        }
+        // v4: caps==0 means no capability — deny
         if (caps & cap) == cap {
             return true;
         }

@@ -77,6 +77,11 @@ static void start_user_init(void) {
 
     if (pid < 0) {
         klog_init_err("Failed to load init process! (pid=%d)", pid);
+        klog_kern_crit("============================================");
+        klog_kern_crit("  FATAL: User-space init failed to load");
+        klog_kern_crit("  System is running in kernel-only mode");
+        klog_kern_crit("  Check: init binary size / VMM / RamFS");
+        klog_kern_crit("============================================");
         return;
     }
     

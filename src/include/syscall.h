@@ -105,6 +105,7 @@
 
 #define E_PERM             (-1)
 #define E_NOTFOUND         (-2)
+#define E_NOSYS            (-3)
 #define E_INTR             (-4)
 #define E_IO               (-5)
 #define E_NOEXEC           (-8)

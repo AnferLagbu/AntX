@@ -224,10 +224,7 @@ pub extern "C" fn vfs_unlink_internal(path: *const c_char, pwid: u64) -> i32 {
     match fs_name.as_str() {
         "ramfs" => {
             let mut ramfs = RAMFS_DATA.lock();
-            match ramfs.resolve_path(rel_path) {
-                Some(inode_num) => ramfs.truncate(inode_num, 0, pwid),
-                None => -1
-            }
+            ramfs.unlink(rel_path, pwid)
         }
         "diskfs" => {
             let hvfs = get_hvfs();

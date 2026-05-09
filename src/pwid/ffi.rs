@@ -748,10 +748,10 @@ pub extern "C" fn pwid_enhanced_check(
 ) -> i32 {
     let caps = action as u64;
 
-    // Layer 0: Check if account is valid; unregistered → transitional allow
+    // Layer 0: Check if account exists; unregistered → deny
     let pwid_caps = pwid_get_fs_capability(subject_pwid);
-    if pwid_caps == 0 {
-        return 1;  // Transitional: unregistered/guest PWID — allow all
+    if subject_pwid == 0 {
+        return 0;  // Null PWID — deny all
     }
     if (pwid_caps & caps) == caps {
         return 1;

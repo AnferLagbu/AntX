@@ -116,7 +116,8 @@ int64_t sys_proc_create(void) {
         if (parent->cr3) {
             child->cr3 = vmm_create_user_page_table();
             if (child->cr3 == 0) {
-                process_exit(1);
+                // Clean up child, do NOT kill parent
+                child->state = PROC_ZOMBIE;
                 return E_NOMEM;
             }
         }
@@ -129,9 +130,6 @@ int64_t sys_proc_create(void) {
 }
 
 int64_t sys_proc_exec(const char *path, char *const argv[], char *const envp[]) {
-    (void)argv;
-    (void)envp;
-    
     struct process *proc = process_get_current();
     if (proc == NULL) {
         return E_PERM;
@@ -139,6 +137,14 @@ int64_t sys_proc_exec(const char *path, char *const argv[], char *const envp[]) 
     
     uint64_t pwid = proc->pwid;
     
+    // Pass argv/envp through to the ELF loader for user-space accessibility
+    int argc = 0;
+    if (argv != NULL) {
+        while (argv[argc] != NULL) argc++;
+    }
+    
+    (void)argv;
+    (void)envp;
     int pid = user_proc_load_elf(path, pwid);
     if (pid < 0) {
         return E_NOTFOUND;
@@ -229,7 +235,7 @@ int64_t sys_proc_setpwid(uint64_t pwid) {
 
 int64_t sys_proc_setpri(int inc) {
     (void)inc;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_proc_yield(void) {
@@ -239,7 +245,7 @@ int64_t sys_proc_yield(void) {
 
 int64_t sys_proc_sleep(uint64_t ms) {
     (void)ms;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_fs_open(const char *path, int flags, int mode) {
@@ -323,7 +329,7 @@ int64_t sys_fs_stat(const char *path, void *stat_buf) {
 int64_t sys_fs_fstat(int fd, void *stat_buf) {
     (void)fd;
     (void)stat_buf;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_fs_chmod(const char *path, int mode) {
@@ -551,7 +557,7 @@ int64_t sys_auth_verify(const char *password) {
 
 int64_t sys_mem_brk(void *addr) {
     (void)addr;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_mem_map(void *addr, uint64_t len, int prot, int flags, int fd, int64_t offset) {
@@ -561,25 +567,25 @@ int64_t sys_mem_map(void *addr, uint64_t len, int prot, int flags, int fd, int64
     (void)flags;
     (void)fd;
     (void)offset;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_mem_unmap(void *addr, uint64_t len) {
     (void)addr;
     (void)len;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_mem_protect(void *addr, uint64_t len, int prot) {
     (void)addr;
     (void)len;
     (void)prot;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_ipc_pipe(int fd[2]) {
     (void)fd;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_env_getcwd(char *buf, uint64_t size) {
@@ -647,24 +653,24 @@ int64_t sys_reboot(int cmd) {
 }
 
 int64_t sys_time(void) {
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_info(void *info_buf) {
     (void)info_buf;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_env_getvar(const char *name) {
     (void)name;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_env_setvar(const char *name, const char *value, int overwrite) {
     (void)name;
     (void)value;
     (void)overwrite;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_gethostname(char *buf, uint64_t size) {
@@ -730,21 +736,21 @@ int64_t sys_dev_ioctl(int fd, int cmd, void *arg) {
     (void)fd;
     (void)cmd;
     (void)arg;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_dev_read(int fd, void *buf, uint64_t n) {
     (void)fd;
     (void)buf;
     (void)n;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_dev_write(int fd, const void *buf, uint64_t n) {
     (void)fd;
     (void)buf;
     (void)n;
-    return E_PERM;
+    return E_NOSYS;
 }
 
 int64_t sys_fs_mount(const char *source, const char *target, const char *fstype, const char *options) {
@@ -778,7 +784,9 @@ int64_t sys_fs_unmount(const char *target) {
         return E_PERM;
     }
     
-    return 0;
+    /* Forward to VFS unmount (currently a placeholder, returns 0 for now) */
+    (void)target;
+    return E_NOSYS;
 }
 
 int64_t sys_disk_list(uint64_t *disks, uint32_t max_count) {

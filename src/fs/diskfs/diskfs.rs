@@ -226,16 +226,14 @@ impl DiskFsData {
         let bytes_to_read = (count as u64).min(inode.size as u64 - offset) as u32;
         let buf_slice = &mut buf[..bytes_to_read as usize];
 
-        buf_slice.fill(0);
-
         if let Some(block_data) = hvfs.read_file_data(inode_num, offset, bytes_to_read) {
             let copy_len = block_data.len().min(buf_slice.len());
             buf_slice[..copy_len].copy_from_slice(&block_data[..copy_len]);
             self.fds[idx].offset += copy_len as u64;
             copy_len as i32
         } else {
-            self.fds[idx].offset += bytes_to_read as u64;
-            bytes_to_read as i32
+            // I/O error — do NOT advance offset and do NOT claim success
+            -1
         }
     }
 
@@ -261,6 +259,9 @@ impl DiskFsData {
                 inode.mtime = crate::fs::hvfs::hvfs::HvFsData::get_time();
                 inode.dirty = true;
             }
+        } else {
+            // Write failed — do NOT advance offset and do NOT claim success
+            return -1;
         }
 
         self.fds[idx].offset = new_offset;

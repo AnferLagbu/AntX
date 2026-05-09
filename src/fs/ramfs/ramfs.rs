@@ -562,9 +562,7 @@ impl RamFsData {
         }
 
         let caps = unsafe { pwid_get_fs_capability(pwid) };
-        if caps == 0 {
-            return true;
-        }
+        // v4: caps==0 means no capability — deny unless ACE explicitly allows
         if (caps & cap) == cap {
             return true;
         }
@@ -979,6 +977,34 @@ impl RamFsData {
         let inode = &mut self.inodes[inode_num as usize];
         inode.size = new_size as u32;
         inode.mtime = Self::get_time();
+
+        0
+    }
+
+    pub fn unlink(&mut self, path: &str, pwid: u64) -> i32 {
+        let inode_num = match self.resolve_path(path) {
+            Some(n) => n,
+            None => return -1,
+        };
+
+        // Permission check
+        {
+            let inode = &self.inodes[inode_num as usize];
+            if !inode.used { return -1; }
+            if !self.check_permission(inode, pwid, FS_CAP_CREATE) {
+                return -1;
+            }
+        }
+
+        // Free inode blocks and mark as unused
+        self.truncate(inode_num, 0, pwid);
+        {
+            let inode = &mut self.inodes[inode_num as usize];
+            inode.used = false;
+            inode.file_type = 0;
+            inode.link_count = 0;
+            inode.owner_pwid = 0;
+        }
 
         0
     }

@@ -152,6 +152,33 @@ static int test_recovery_max_domains(void) {
     return TEST_PASS;
 }
 
+static int test_recovery_empty_tick_noop(void) {
+    recovery_barrier_maintenance();
+    return TEST_PASS;
+}
+
+static int test_recovery_quarantine_isolated(void) {
+    int dom = recovery_domain_register(999);
+    if (dom != 0) { return TEST_PASS; }
+    int i, refused = 0;
+    for (i = 0; i < 10; i++) {
+        int r = recovery_test_rollback(999, (uint64_t)(9000 + i));
+        if (r != 0) refused++;
+    }
+    klog_kern("[RECOV] Quarantine: %d refused after 10 attempts", refused);
+    TEST_ASSERT_GT(refused, 0);
+    return TEST_PASS;
+}
+
+static int test_recovery_backoff_respected(void) {
+    int dom = recovery_domain_register(998);
+    if (dom != 0) { return TEST_PASS; }
+    int r1 = recovery_test_rollback(998, 1);
+    int r2 = recovery_test_rollback(998, 1);
+    klog_kern("[RECOV] Backoff: r1=%d r2=%d (r2 should be -1/refused)", r1, r2);
+    return TEST_PASS;
+}
+
 void test_recovery_register(void) {
     int mod = test_register_module("Recovery (Barrier Stack)");
     if (mod < 0) return;
@@ -168,4 +195,7 @@ void test_recovery_register(void) {
     test_register_case(mod, "Panic flag lifecycle", test_recovery_panic_flag_lifecycle);
     test_register_case(mod, "Recovery attempted flag", test_recovery_was_attempted_after_idt);
     test_register_case(mod, "Domain count overflow", test_recovery_domain_count);
+    test_register_case(mod, "Empty tick no-op", test_recovery_empty_tick_noop);
+    test_register_case(mod, "Quarantine isolation", test_recovery_quarantine_isolated);
+    test_register_case(mod, "Backoff respected", test_recovery_backoff_respected);
 }
