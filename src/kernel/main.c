@@ -254,6 +254,19 @@ void kernel_main(void) {
     
     MODULE_CHECK_VOID("IO APIC", ioapic_init);
     
+    /* Register all 6 core recovery domains for barrier-stack rollback */
+    {
+        extern int32_t recovery_domain_register(uint64_t domain_id);
+        int d_ok = 0;
+        d_ok += (recovery_domain_register(1) == 0);  /* RECOVERY_DOMAIN_RAMFS  */
+        d_ok += (recovery_domain_register(2) == 0);  /* RECOVERY_DOMAIN_VFS    */
+        d_ok += (recovery_domain_register(3) == 0);  /* RECOVERY_DOMAIN_HVFS   */
+        d_ok += (recovery_domain_register(4) == 0);  /* RECOVERY_DOMAIN_DISKFS */
+        d_ok += (recovery_domain_register(5) == 0);  /* RECOVERY_DOMAIN_NET    */
+        d_ok += (recovery_domain_register(6) == 0);  /* RECOVERY_DOMAIN_PROCFS */
+        klog_init_msg("Recovery domains registered: %d/%d", d_ok, 6);
+    }
+    
     start_user_init();
     
     uint64_t idle_ticks = 0;

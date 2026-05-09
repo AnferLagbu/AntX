@@ -13,6 +13,15 @@
 //!         → mark_recovered() → PANIC_FLAG clear → IDT return
 //! ```
 //!
+//! ## SMP 安全
+//!
+//! `recovery_try_recover_from_idt()` 使用 `try_lock()` 而非 `lock()`。
+//! 若调度器正在 tick() 中持有 RECOVERY_MANAGER 锁，恢复路径会返回 -3 (busy)
+//! 而非自旋死锁。调度器 tick 在下一次 tick 会自然释放锁。
+//!
+//! `int 0x82` 是软件陷阱 (trap gate)，不经过 IOAPIC/8259 中断控制器，
+//! 因此无需 EOI 发送。与 IOAPIC/PIC 驱动完全解耦。
+//!
 //! ## 关键组件
 //!
 //! - `RecoveryDomain`: 恢复域 — 一个可独立回滚的内核模块
@@ -327,6 +336,26 @@ pub extern "C" fn recovery_domain_register(domain_id: u64) -> i32 {
     }
 }
 
+/// C FFI: unregister a recovery domain (for test cleanup)
+#[no_mangle]
+pub extern "C" fn recovery_domain_unregister(domain_id: u64) -> i32 {
+    let mut mgr = RECOVERY_MANAGER.lock();
+    let count = mgr.count.load(Ordering::SeqCst) as usize;
+    for i in 0..count {
+        if let Some(dom) = mgr.domains[i] {
+            if dom.id == domain_id {
+                mgr.domains[i] = None;
+                let id_idx = domain_id as usize;
+                if id_idx < DIRECT_MAP_SIZE {
+                    mgr.direct_map[id_idx] = None;
+                }
+                return 0;
+            }
+        }
+    }
+    -1
+}
+
 /// C FFI: test rollback trigger
 #[no_mangle]
 pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
@@ -366,6 +395,7 @@ pub extern "C" fn recovery_panic_flag_clear() {
 }
 
 /// C FFI: attempt recovery for the first registered domain (called from IDT on fatal)
+/// Returns 0 on success, -1 if no domains to recover, -2 if already attempted, -3 if lock busy
 #[no_mangle]
 pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
     use crate::proc::scheduler::TICK_COUNT;
@@ -375,7 +405,13 @@ pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
         return -2;
     }
 
-    let mgr = RECOVERY_MANAGER.lock();
+    let Some(mgr) = RECOVERY_MANAGER.try_lock() else {
+        // SMP safety: scheduler tick is in progress holding the lock;
+        // return -3 (busy/retry) instead of deadlocking
+        RECOVERY_ATTEMPTED.store(false, Ordering::SeqCst);
+        return -3;
+    };
+
     let count = mgr.count.load(Ordering::SeqCst) as usize;
     if count == 0 {
         return -1;

@@ -31,6 +31,13 @@ extern "C" {
 int32_t recovery_domain_register(uint64_t domain_id);
 
 /**
+ * Unregister a recovery domain (for test cleanup).
+ * @param domain_id  domain to remove
+ * @return 0 on success, -1 if not found
+ */
+int32_t recovery_domain_unregister(uint64_t domain_id);
+
+/**
  * Advance barrier generations for all active domains.
  * Called from scheduler tick.
  */
@@ -58,7 +65,7 @@ void recovery_panic_flag_clear(void);
 /**
  * Attempt domain-level recovery from the IDT exception handler.
  * Must be called BEFORE the kernel panic halt.
- * @return 0 if recovery succeeded, -1 if no domains, -2 if already attempted
+ * @return 0 if recovery succeeded, -1 if no domains, -2 if already attempted, -3 if lock busy
  */
 int32_t recovery_try_recover_from_idt(void);
 
