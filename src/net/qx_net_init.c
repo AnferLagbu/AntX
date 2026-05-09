@@ -24,7 +24,7 @@ void qx_net_init(void)
         klog_net("E1000 detected, registering netif");
         qx_netif_register_e1000();
     } else {
-        klog_net_warn("No NIC found, running without network");
+        klog_net("No NIC found, running without network (expected in VMs)");
     }
 
     klog_init_msg("--- Network Subsystem Ready ---");

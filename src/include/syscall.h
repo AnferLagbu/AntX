@@ -131,7 +131,8 @@
 #define E_AUTH_DISABLED    (-102)
 #define E_AUTH_EXPIRED     (-103)
 #define E_AUTH_PWERR       (-104)
-#define E_AUTH_NOROOT      (-105)
+#define E_AUTH_CAP         (-105)  /* insufficient capability (v4: replaces E_AUTH_NOROOT) */
+#define E_AUTH_NOROOT      (-105)  /* deprecated: use E_AUTH_CAP */
 #define E_AUTH_DENY        (-106)
 
 struct syscall_regs {

@@ -991,7 +991,7 @@ impl RamFsData {
         {
             let inode = &self.inodes[inode_num as usize];
             if !inode.used { return -1; }
-            if !self.check_permission(inode, pwid, FS_CAP_CREATE) {
+            if !self.check_permission(inode, pwid, FS_CAP_WRITE) {
                 return -1;
             }
         }

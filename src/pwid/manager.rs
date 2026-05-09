@@ -12,6 +12,36 @@ macro_rules! serial_println {
     ($($arg:tt)*) => {};
 }
 
+/// Constant-time byte array comparison (prevents timing side-channel attacks)
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for i in 0..a.len() {
+        diff |= a[i] ^ b[i];
+    }
+    diff == 0
+}
+
+/// Hash password with salt: sha256(salt || password)
+pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWID_SALT_LEN]) -> [u8; 32] {
+    let mut input = [0u8; 256];
+    let mut pos = 0usize;
+    for byte in salt.iter() {
+        input[pos] = *byte;
+        pos += 1;
+    }
+    for byte in password.bytes().take(255 - pos) {
+        input[pos] = byte;
+        pos += 1;
+    }
+    let hash = sha256::sha256(&input[..pos]);
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&hash[..32.min(hash.len())]);
+    result
+}
+
 /// Global PWID manager instance
 pub struct PwidManager {
     /// Table of all PWID entries
@@ -38,8 +68,8 @@ impl PwidManager {
             level: AtomicU8::new(0),
             flags: AtomicU16::new(0),
             capability_mask: [0; 16],
-            note: [0u8; 128],
-            password_hash: [0u8; 32],
+            note: [0u8; PWID_NOTE_LEN],
+            password_hash: [0u8; PWID_HASH_LEN],
             created_time: AtomicU64::new(0),
             expires_at: AtomicU64::new(0),
             lockout_until: AtomicU64::new(0),
@@ -109,14 +139,15 @@ impl PwidManager {
         pwid
     }
 
-    /// Verify a password against stored hash
+    /// Verify a password against stored hash (constant-time, salted)
     pub fn verify_password(&self, pwid: u64, password: &str) -> bool {
         match self.find(pwid) {
             Some(entry) => {
-                let hash = sha256::sha256(password.as_bytes());
-                
-                // Compare hashes
-                &entry.password_hash == &hash
+                let stored = &entry.password_hash;
+                let mut salt = [0u8; PWID_SALT_LEN];
+                salt.copy_from_slice(&stored[PWID_DIGEST_LEN..PWID_HASH_LEN]);
+                let hash = hash_with_salt(password, &salt);
+                constant_time_eq(&hash, &stored[..PWID_DIGEST_LEN])
             }
             None => false,
         }
@@ -165,9 +196,18 @@ impl PwidManager {
             entry.capability_mask.copy_from_slice(caps);
             entry.set_note(note);
             
-            // Hash password
-            let hash = sha256::sha256(password.as_bytes());
-            entry.password_hash.copy_from_slice(&hash);
+            // Generate random salt from TSC + loop iteration entropy
+            let mut salt = [0u8; PWID_SALT_LEN];
+            for i in 0..PWID_SALT_LEN {
+                let tsc: u64;
+                unsafe { core::arch::asm!("rdtsc", out("rax") tsc, out("rdx") _, options(nomem, nostack)); }
+                salt[i] = (tsc.wrapping_add(i as u64).wrapping_mul(0x9E3779B97F4A7C15) >> 32) as u8;
+            }
+            
+            // Hash password with salt
+            let hash = hash_with_salt(password, &salt);
+            entry.password_hash[..PWID_DIGEST_LEN].copy_from_slice(&hash);
+            entry.password_hash[PWID_DIGEST_LEN..PWID_HASH_LEN].copy_from_slice(&salt);
             
             // Set creation time
             entry.created_time.store(get_current_time(), Ordering::Release);

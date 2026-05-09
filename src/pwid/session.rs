@@ -8,6 +8,18 @@ use super::manager;
 use super::sha256;
 use core::sync::atomic::{AtomicU64, AtomicIsize, AtomicBool, Ordering};
 
+/// Constant-time byte array comparison (prevents timing side-channel attacks)
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for i in 0..a.len() {
+        diff |= a[i] ^ b[i];
+    }
+    diff == 0
+}
+
 /// Serial print macro (placeholder)
 macro_rules! serial_println {
     ($($arg:tt)*) => {};
@@ -123,9 +135,12 @@ impl SessionManager {
             return PwidError::Disabled;
         }
         
-        // Verify password
-        let hash = super::sha256::sha256(password.as_bytes());
-        if &entry.password_hash != &hash {
+        // Verify password with salted hash (constant-time comparison)
+        let stored = &entry.password_hash;
+        let mut salt = [0u8; PWID_SALT_LEN];
+        salt.copy_from_slice(&stored[PWID_DIGEST_LEN..PWID_HASH_LEN]);
+        let hash = super::manager::hash_with_salt(password, &salt);
+        if !constant_time_eq(&hash, &stored[..PWID_DIGEST_LEN]) {
             serial_println!("[PWID] Login: incorrect password for '{}'", note);
             self.record_failed_login(entry.pwid.load(Ordering::Acquire));
             return PwidError::PasswordIncorrect;

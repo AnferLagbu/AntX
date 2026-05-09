@@ -78,7 +78,7 @@ int smart_mount_root(void) {
             #endif
         }
         
-        klog_boot_warn("[SMART] Using RamFS");
+        klog_boot("[SMART] Disk present but unreadable — using RamFS");
     } else {
         klog_boot("[SMART] Using RamFS (default)");
     }

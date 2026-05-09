@@ -97,7 +97,8 @@ impl MandatoryReqs {
     }
 
     pub fn check(&self, context: &PermissionContext) -> Result<(), DenyReason> {
-        if let Some(min_level) = self.require_trust_level {
+        if let Some(_min_level) = self.require_trust_level {
+            // Trust level verified in check_permission via pwid_level parameter
         }
 
         if let Some(min_score) = self.require_min_security_score {
@@ -232,11 +233,21 @@ impl EnhancedPermissionChecker {
             return PermissionResult::Denied(DenyReason::Expired);
         }
 
+        // v4: Root level bypass retained as transitional compatibility
         if pwid_level == PwidLevel::Root {
             return PermissionResult::Allowed {
                 source: AllowSource::RootPrivilege,
                 audit_required: true,
             };
+        }
+
+        // v4: Mandatory trust level check — deny if level exceeds required minimum
+        if let Some(mand) = mandatory {
+            if let Some(min_level) = mand.require_trust_level {
+                if (pwid_level as u32) > (min_level as u32) {
+                    return PermissionResult::Denied(DenyReason::NoPermission);
+                }
+            }
         }
 
         if let Some(cons) = constraints {

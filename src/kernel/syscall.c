@@ -226,7 +226,7 @@ int64_t sys_proc_setpwid(uint64_t pwid) {
     }
     
     if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
-        return E_AUTH_NOROOT;
+        return E_AUTH_CAP;
     }
     
     proc->pwid = pwid;
@@ -251,7 +251,7 @@ int64_t sys_proc_sleep(uint64_t ms) {
 int64_t sys_fs_open(const char *path, int flags, int mode) {
     (void)mode;
     if (path == NULL) {
-        return -1;
+        return E_INVAL;
     }
 
     uint64_t pwid = pwid_get_current();
@@ -267,7 +267,7 @@ int64_t sys_fs_open(const char *path, int flags, int mode) {
 
 int64_t sys_fs_close(int fd) {
     if (fd < 0) {
-        return -1;
+        return E_BADFD;
     }
 
     int64_t result = vfs_close((uint32_t)fd);
@@ -431,7 +431,7 @@ int64_t sys_auth_token_create(uint64_t holder, uint16_t domain, uint64_t caps,
     }
     
     if (!pwid_has_cap_raw(current_pwid, 0, CAP_DOMAIN_TOKEN_ISSUE)) {
-        return E_AUTH_NOROOT;
+        return E_AUTH_CAP;
     }
     
     return pwid_create_token(holder, domain, caps, duration_secs, max_uses);
@@ -454,7 +454,7 @@ int64_t sys_auth_trust_add(uint64_t trusted, uint8_t trust_level,
     }
     
     if (!pwid_has_cap_raw(current_pwid, 0, CAP_DOMAIN_TRUST_ADD)) {
-        return E_AUTH_NOROOT;
+        return E_AUTH_CAP;
     }
     
     return pwid_add_trust_relation(current_pwid, trusted, trust_level, domain, cap_mask);
@@ -476,7 +476,7 @@ int64_t sys_auth_check(uint64_t pwid, uint64_t owner_pwid,
 
 int64_t sys_auth_create(const char *password, const char *note, uint8_t level) {
     if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
-        return E_AUTH_NOROOT;
+        return E_AUTH_CAP;
     }
     
     int result = pwid_create_user(password, note, level);
@@ -505,7 +505,7 @@ int64_t sys_auth_create_first(const char *password) {
 
 int64_t sys_auth_delete(uint64_t target_pwid) {
     if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
-        return E_AUTH_NOROOT;
+        return E_AUTH_CAP;
     }
     
     int result = pwid_delete(target_pwid);
@@ -519,7 +519,7 @@ int64_t sys_auth_delete(uint64_t target_pwid) {
 
 int64_t sys_auth_list(void) {
     if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
-        return E_AUTH_NOROOT;
+        return E_AUTH_CAP;
     }
     pwid_list_all();
     return 0;
@@ -690,7 +690,7 @@ int64_t sys_gethostname(char *buf, uint64_t size) {
 
 int64_t sys_sethostname(const char *name, uint64_t len) {
     if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
-        return E_AUTH_NOROOT;
+        return E_AUTH_CAP;
     }
     
     if (name == NULL || len == 0 || len > 63) {

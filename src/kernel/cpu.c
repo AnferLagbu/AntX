@@ -667,7 +667,7 @@ int cpu_init(void) {
 
     /* 6. 初始化 MSR (需要特权级) */
     if (cpu_init_msr_safe() != 0) {
-        klog_kern_warn("MSR initialization failed");
+        klog_kern("MSR initialization unavailable (expected in VMs)");
     }
 
     /* 7. 校准 TSC (保守估计) */

@@ -5,7 +5,9 @@
 
 #define MAX_PWID_ENTRIES    64
 #define PWID_NOTE_LEN       32
-#define PWID_HASH_LEN       32
+#define PWID_HASH_LEN       48   /* 32 bytes digest + 16 bytes salt */
+#define PWID_SALT_LEN       16
+#define PWID_DIGEST_LEN     32   /* SHA-256 output */
 #define PWID_PASSWORD_MAX   64
 
 #define PWID_LEVEL_ROOT         0

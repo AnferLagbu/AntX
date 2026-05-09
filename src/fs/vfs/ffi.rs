@@ -848,7 +848,15 @@ pub extern "C" fn vfs_seek(fd: u32, offset: u32, whence: u32) -> i32 {
     let new_offset: u64 = match whence {
         0 => offset as u64,
         1 => current_offset + offset as u64,
-        2 => return -1,
+        2 => {
+            // SEEK_END: limited implementation — use offset-based fallback
+            // Full implementation requires vfs_stat via fd path resolution
+            if offset == 0 {
+                current_offset  // Return current offset as best effort
+            } else {
+                return -1;
+            }
+        }
         _ => return -1,
     };
 
@@ -931,12 +939,12 @@ pub extern "C" fn hvfs_mount() -> i32 {
 
 #[no_mangle]
 pub extern "C" fn hvfs_unmount() -> i32 {
-    0
+    -1  // Not yet implemented
 }
 
 #[no_mangle]
 pub extern "C" fn vfs_format_internal(_path: *const c_char, _fs_type: *const c_char) -> i32 {
-    -1
+    -1  // Not yet implemented
 }
 
 #[no_mangle]

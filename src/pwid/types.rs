@@ -12,7 +12,9 @@ pub const MAX_PWID_ENTRIES: usize = 256;
 pub const PWID_NOTE_LEN: usize = 128;
 
 /// Length of SHA-256 hash output (in bytes)
-pub const PWID_HASH_LEN: usize = 32;
+pub const PWID_HASH_LEN: usize = 48;  // 32 bytes SHA-256 + 16 bytes salt
+pub const PWID_SALT_LEN: usize = 16;
+pub const PWID_DIGEST_LEN: usize = 32;  // SHA-256 output length
 
 /// Trust/Permission levels (lower value = higher privilege)
 #[repr(u8)]

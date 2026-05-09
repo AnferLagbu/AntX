@@ -116,6 +116,20 @@ static inline int64_t syscall4(uint64_t num, uint64_t arg0, uint64_t arg1, uint6
     return ret;
 }
 
+static inline int64_t syscall5(uint64_t num, uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
+    int64_t ret;
+    register uint64_t r10 __asm__("r10") = arg2;
+    register uint64_t r8 __asm__("r8") = arg3;
+    register uint64_t r9 __asm__("r9") = arg4;
+    __asm__ volatile (
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(num), "D"(arg0), "S"(arg1), "r"(r10), "r"(r8), "r"(r9)
+        : "memory"
+    );
+    return ret;
+}
+
 static inline int64_t sys_proc_exit(int status) {
     return syscall1(SYS_PROC_TERMINATE, status);
 }
@@ -255,6 +269,51 @@ static inline int64_t sys_disk_format(uint32_t disk_id, const char *fstype) {
 
 static inline int64_t sys_reboot(int cmd) {
     return syscall1(SYS_REBOOT, cmd);
+}
+
+/* v4: Additional syscall wrappers */
+static inline int64_t sys_fs_seek(int fd, int offset, int whence) {
+    return syscall3(SYS_FS_SEEK_OFFSET, fd, offset, whence);
+}
+
+static inline int64_t sys_fs_fstat(int fd, void *stat_buf) {
+    return syscall2(SYS_FS_GET_STAT_FD, fd, (uint64_t)stat_buf);
+}
+
+static inline int64_t sys_fs_chmod(const char *path, int mode) {
+    return syscall2(SYS_FS_SET_PERMISSIONS, (uint64_t)path, mode);
+}
+
+static inline int64_t sys_fs_chown(const char *path, uint64_t owner_pwid) {
+    return syscall2(SYS_FS_SET_OWNER, (uint64_t)path, owner_pwid);
+}
+
+static inline int64_t sys_fs_rename(const char *old_path, const char *new_path) {
+    return syscall2(SYS_FS_RENAME, (uint64_t)old_path, (uint64_t)new_path);
+}
+
+static inline int64_t sys_auth_token_create(uint64_t holder, uint16_t domain, uint64_t caps, uint32_t duration_secs, uint32_t max_uses) {
+    return syscall5(SYS_AUTH_TOKEN_CREATE, holder, domain, caps, duration_secs, max_uses);
+}
+
+static inline int64_t sys_auth_token_use(int64_t token_id) {
+    return syscall1(SYS_AUTH_TOKEN_USE, token_id);
+}
+
+static inline int64_t sys_auth_token_revoke(int64_t token_id) {
+    return syscall1(SYS_AUTH_TOKEN_REVOKE, token_id);
+}
+
+static inline int64_t sys_auth_trust_add(uint64_t trustee_pwid, uint16_t domain, uint64_t caps, uint64_t expires_in, uint8_t max_depth) {
+    return syscall5(SYS_AUTH_TRUST_ADD, trustee_pwid, domain, caps, expires_in, max_depth);
+}
+
+static inline int64_t sys_auth_trust_remove(uint64_t trustee_pwid, uint16_t domain) {
+    return syscall2(SYS_AUTH_TRUST_REMOVE, trustee_pwid, domain);
+}
+
+static inline int64_t sys_auth_check(uint64_t pwid, uint16_t domain, uint64_t cap) {
+    return syscall3(SYS_AUTH_CHECK, pwid, domain, cap);
 }
 
 #define BOOT_CHECK_HAS_ROOT   0
