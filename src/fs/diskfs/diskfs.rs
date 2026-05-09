@@ -152,13 +152,14 @@ impl DiskFsData {
             }
             num
         } else if (flags & VfsOpenFlags::CREAT.bits()) != 0 {
+            // O_EXCL: fail if file already exists
+            if (flags & 0x0800) != 0 {
+                if hvfs.resolve_path(path).is_some() {
+                    return None;  // File exists, O_EXCL requires it not to
+                }
+            }
             let hvfs_flags = HVFS_O_CREAT | HVFS_O_WRONLY;
-            let result = hvfs.open(path, hvfs_flags, pwid);
-            
-            if result < 0 { return None; }
-            
-            hvfs.close(result as u32);
-            
+            let _result = hvfs.open(path, hvfs_flags, pwid);
             hvfs.resolve_path(path)?
         } else {
             return None;

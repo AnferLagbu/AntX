@@ -256,6 +256,127 @@ impl UserProcManager {
         }
     }
     
+    /// Write argc/argv/envp to the user process stack
+    /// Returns the new stack pointer (RSP) after setup
+    pub unsafe fn setup_user_stack(
+        &self,
+        proc: *mut UserProcess,
+        argv: *const *const u8,
+        argc: usize,
+        _envp: *const *const u8,
+        envc: usize,
+    ) -> u64 {
+        if proc.is_null() { return 0; }
+        
+        let stack_top = (*proc).user_stack.load(Ordering::SeqCst);
+        let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+        
+        // Space needed: argc(8) + argv_ptrs(8*(argc+1)) + envp_ptrs(8*(envc+1)) + strings
+        let mut string_bytes: usize = 0;
+        let mut arg_lens: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
+        
+        if !argv.is_null() {
+            for i in 0..argc {
+                let s = *argv.add(i);
+                if !s.is_null() {
+                    let mut len: usize = 0;
+                    while *s.add(len) != 0 { len += 1; }
+                    arg_lens.push(len + 1);
+                    string_bytes += len + 1;
+                } else {
+                    arg_lens.push(1);
+                    string_bytes += 1;
+                }
+            }
+        }
+        
+        let ptr_count = 1 + (argc + 1) + (envc + 1); // argc(1) + argv(n+1) + envp(m+1)
+        let total = ptr_count * 8 + string_bytes;
+        // Ensure 16-byte alignment
+        let total = (total + 15) & !15;
+        
+        if total as u64 > stack_top - USER_STACK_TOP + USER_STACK_SIZE {
+            return 0; // Stack overflow
+        }
+        
+        let new_sp = stack_top - total as u64;
+        let mut pos = new_sp as usize;
+        
+        // Write argc
+        let argc_off = pos; pos += 8;
+        // Skip argv ptrs (written after strings)
+        let argv_start_off = pos; pos += (argc + 1) * 8;
+        // Skip envp ptrs
+        let envp_start_off = pos; pos += (envc + 1) * 8;
+        // String area starts here
+        let strings_off = pos;
+        
+        // Resolve virtual addresses in user space by writing through kernel mapping
+        let w64 = |off: usize, v: u64| {
+            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
+            if phys != 0 {
+                let addr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u8;
+                core::ptr::write_unaligned(addr as *mut u64, v);
+            }
+        };
+        let w8 = |off: usize, v: u8| {
+            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
+            if phys != 0 {
+                let addr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u8;
+                *addr = v;
+            }
+        };
+        
+        // Write argc
+        w64(argc_off, argc as u64);
+        
+        // Write argv strings + pointers
+        let mut str_off = strings_off;
+        for i in 0..argc {
+            w64(argv_start_off + i * 8, new_sp.wrapping_add(str_off as u64 - new_sp as u64 + strings_off as u64 - strings_off as u64));
+            // Actually compute absolute user-space address:
+            let abs_addr = str_off as u64;
+            // Write pointer: user-space address
+            let p_addr = argv_start_off + i * 8;
+            let p_phys = vmm_get_physical_in_table(cr3, p_addr as u64 & !0xFFF);
+            if p_phys != 0 {
+                let p_ptr = (p_phys + KERNEL_BASE + (p_addr as u64 & 0xFFF)) as *mut u64;
+                core::ptr::write_unaligned(p_ptr, abs_addr);
+            }
+            
+            if !argv.is_null() && (i < argc) {
+                let src = *argv.add(i);
+                let l = arg_lens[i];
+                for j in 0..l {
+                    let b = if src.is_null() { 0u8 } else { unsafe { *src.add(j) } };
+                    w8(str_off + j, b);
+                }
+                str_off += l;
+            }
+        }
+        // argv NULL terminator
+        let null_ptr_off = argv_start_off + argc * 8;
+        let np_phys = vmm_get_physical_in_table(cr3, null_ptr_off as u64 & !0xFFF);
+        if np_phys != 0 {
+            let np_ptr = (np_phys + KERNEL_BASE + (null_ptr_off as u64 & 0xFFF)) as *mut u64;
+            core::ptr::write_unaligned(np_ptr, 0u64);
+        }
+        
+        // envp pointers (all NULL for now)
+        for i in 0..(envc + 1) {
+            let ep_off = envp_start_off + i * 8;
+            let ep_phys = vmm_get_physical_in_table(cr3, ep_off as u64 & !0xFFF);
+            if ep_phys != 0 {
+                let ep_ptr = (ep_phys + KERNEL_BASE + (ep_off as u64 & 0xFFF)) as *mut u64;
+                core::ptr::write_unaligned(ep_ptr, 0u64);
+            }
+        }
+        
+        // Update process stack pointer
+        (*proc).user_stack.store(new_sp, Ordering::SeqCst);
+        new_sp
+    }
+    
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwid: u64) -> i32 {
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
             return -1;

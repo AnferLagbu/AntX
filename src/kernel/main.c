@@ -165,7 +165,18 @@ void kernel_main(void) {
     MODULE_CHECK_VOID("Timer", timer_init);
     
     extern void pwid_try_load(void);
+    extern int pwid_any_identity_exists(void);
     pwid_try_load();
+    
+    if (!pwid_any_identity_exists()) {
+        klog_kern("============================================");
+        klog_kern("  GENESIS MODE: No identities found");
+        klog_kern("  First boot detected — identity table empty");
+        klog_kern("  Init process will prompt for root creation");
+        klog_kern("  Use: SYS_AUTH_CREATE_FIRST to bootstrap");
+        klog_kern("  PWID database will be saved to /pwid.db");
+        klog_kern("============================================");
+    }
     
     klog_boot("System initialized");
     klog_boot("AntX is ready");
@@ -239,18 +250,25 @@ void kernel_main(void) {
 #ifdef CONFIG_SMP
     extern int smp_init(void);
     int smp_cpus = smp_init();
-    if (smp_cpus < 0) {
-        klog_init_msg("SMP init failed");
+    if (smp_cpus <= 0) {
+        klog_init_msg("SMP: single-core mode (no additional CPUs detected)");
     } else {
-        klog_init_msg("SMP: %d CPUs online", smp_cpus);
+        klog_init_msg("SMP: %d CPUs online", smp_cpus + 1);
     }
 #endif
     
     start_user_init();
     
+    uint64_t idle_ticks = 0;
     while (1) {
         extern void e1000_poll(void);
         e1000_poll();
+
+        /* Periodic PWID cleanup: expire tokens + trust entries */
+        if (++idle_ticks % 1000 == 0) {
+            extern void pwid_periodic_cleanup(void);
+            pwid_periodic_cleanup();
+        }
 
         interrupt_idle();
     }

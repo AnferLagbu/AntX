@@ -7,6 +7,7 @@ use super::types::*;
 use super::manager;
 use super::session;
 use super::audit;
+use super::storage;
 use super::trust_chain::{TrustChain, TrustEntry};
 
 use super::token::{TokenManager, PwidToken, TokenType, MAX_TOKENS};
@@ -84,7 +85,7 @@ pub extern "C" fn pwid_init() {
 /// Try to load PWID database from disk
 #[no_mangle]
 pub extern "C" fn pwid_try_load() {
-    // TODO: Implement storage loading
+    storage::load_database();
 }
 
 // ============================================================
@@ -587,19 +588,13 @@ pub extern "C" fn pwid_audit_dump() {
 /// Save PWID database to disk (delegates to storage layer)
 #[no_mangle]
 pub extern "C" fn pwid_save_to_disk() -> i32 {
-    if manager::get_manager().is_modified() {
-        manager::get_manager().clear_modified();
-        // TODO: Implement HVFS file I/O via storage.rs
-        0
-    } else {
-        0
-    }
+    storage::save_database()
 }
 
 /// Load PWID database from disk (delegates to storage layer)
 #[no_mangle]
 pub extern "C" fn pwid_load_from_disk() -> i32 {
-    0 // TODO: Implement HVFS file I/O via storage.rs
+    storage::load_database()
 }
 
 /// Check if database has been modified

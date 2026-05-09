@@ -219,6 +219,31 @@ pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: 
     USER_PROC_MANAGER.load_elf_from_memory(elf_data, elf_size, pwid)
 }
 
+/// Set up argv/envp on user stack after ELF loading (for exec syscall)
+#[no_mangle]
+pub unsafe extern "C" fn user_proc_setup_argv(
+    pid: u32,
+    argv: *const *const u8,
+    argc: u32,
+    envp: *const *const u8,
+    envc: u32,
+) -> i32 {
+    let proc = match USER_PROC_MANAGER.get(pid) {
+        Some(p) => p,
+        None => return -1,
+    };
+    
+    let sp = USER_PROC_MANAGER.setup_user_stack(
+        proc,
+        argv,
+        argc as usize,
+        envp,
+        envc as usize,
+    );
+    
+    if sp == 0 { -1 } else { 0 }
+}
+
 #[no_mangle]
 pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {

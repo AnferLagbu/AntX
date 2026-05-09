@@ -6,6 +6,7 @@
 use super::types::*;
 use super::sha256;
 use super::audit;
+use super::storage;
 use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, AtomicU8, AtomicU16, AtomicU32, Ordering};
 
 /// Serial print macro (placeholder)
@@ -46,13 +47,13 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWID_SALT_LEN]) -> [u8;
 /// Global PWID manager instance
 pub struct PwidManager {
     /// Table of all PWID entries
-    entries: [PwidEntry; MAX_PWID_ENTRIES],
+    pub entries: [PwidEntry; MAX_PWID_ENTRIES],
     
     /// Number of active entries
-    count: AtomicUsize,
+    pub count: AtomicUsize,
     
     /// Flag indicating if any identity exists in the system
-    any_identity_exists: AtomicBool,
+    pub any_identity_exists: AtomicBool,
     
     /// Flag indicating if database has been modified
     modified: AtomicBool,
@@ -495,9 +496,13 @@ impl PwidManager {
         self.modified.load(Ordering::Acquire)
     }
 
-    /// Mark database as modified
+    /// Mark database as modified (triggers auto-save if identities exist)
     pub fn set_modified(&self) {
         self.modified.store(true, Ordering::Release);
+        // Auto-save if there are identities to persist
+        if self.any_identity_exists.load(Ordering::Acquire) {
+            storage::save_database();
+        }
     }
 
     /// Clear modification flag
@@ -517,7 +522,7 @@ impl PwidManager {
         None
     }
 
-    /// Find first free slot
+    /// Find first free slot (for internal use)
     fn find_free_slot(&self) -> Option<usize> {
         for i in 0..MAX_PWID_ENTRIES {
             if !self.entries[i].is_valid() {
@@ -525,6 +530,16 @@ impl PwidManager {
             }
         }
         None
+    }
+
+    /// Find first free slot without lock acquisition (for storage loading)
+    pub fn find_free_slot_lockless(&self) -> Option<usize> {
+        self.find_free_slot()
+    }
+
+    /// Reference to entries array (for storage module access)
+    pub fn get_entries_ptr(&self) -> *const PwidEntry {
+        self.entries.as_ptr()
     }
 
     #[inline(always)]

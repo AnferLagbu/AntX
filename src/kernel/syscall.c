@@ -137,17 +137,27 @@ int64_t sys_proc_exec(const char *path, char *const argv[], char *const envp[]) 
     
     uint64_t pwid = proc->pwid;
     
-    // Pass argv/envp through to the ELF loader for user-space accessibility
     int argc = 0;
     if (argv != NULL) {
         while (argv[argc] != NULL) argc++;
     }
     
-    (void)argv;
-    (void)envp;
+    int envc = 0;
+    if (envp != NULL) {
+        while (envp[envc] != NULL) envc++;
+    }
+    
     int pid = user_proc_load_elf(path, pwid);
     if (pid < 0) {
         return E_NOTFOUND;
+    }
+    
+    /* Set up argv/envp on the new process's user stack */
+    if (argc > 0) {
+        extern int user_proc_setup_argv(uint32_t pid, const char **argv, uint32_t argc,
+                                        const char **envp, uint32_t envc);
+        user_proc_setup_argv((uint32_t)pid, (const char **)argv, (uint32_t)argc,
+                            (const char **)envp, (uint32_t)envc);
     }
     
     extern void sched_add_internal(uint32_t pid);
@@ -384,7 +394,7 @@ int64_t sys_fs_readdir(int fd, void *dirent_buf) {
 int64_t sys_auth_login(const char *password, const char *note) {
     int result = pwid_login(note, password);
     if (result == PWID_OK) {
-        return 1;
+        return 0;  /* Standard: 0 = success */
     } else if (result == PWID_ERR_PASSWORD) {
         return E_AUTH_PWERR;
     } else if (result == PWID_ERR_NOT_FOUND) {
