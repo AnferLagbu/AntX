@@ -25,6 +25,9 @@ pub mod dma;
 #[path = "../../barrier/mod.rs"]
 pub mod barrier;
 
+#[path = "../../pci/mod.rs"]
+pub mod pci;
+
 use core::panic::PanicInfo;
 use core::sync::atomic::Ordering;
 

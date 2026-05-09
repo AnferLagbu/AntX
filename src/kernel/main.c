@@ -238,7 +238,10 @@ void kernel_main(void) {
 #else
     MODULE_CHECK_VOID("DMA Engine", dma_init);
     
-    MODULE_CHECK_VOID("PCI Bus", pci_init);
+    {
+        extern int32_t pci_rust_init(void);
+        MODULE_CHECK_VOID("PCI Bus (Rust)", pci_rust_init);
+    }
     
     extern void qx_net_init(void);
     MODULE_CHECK_VOID("Network Stack", qx_net_init);
