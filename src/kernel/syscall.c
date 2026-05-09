@@ -17,6 +17,8 @@
 
 int64_t sys_boot_check(int check_type);
 int64_t sys_auth_create_first(const char *password);
+int64_t sys_auth_create_with_caps(const char *password, const char *note, uint8_t level,
+                                   const uint64_t *caps_array);
 
 static syscall_handler_t syscall_table[MAX_SYSCALLS];
 
@@ -67,6 +69,7 @@ void syscall_init(void) {
     syscall_register(SYS_AUTH_TRUST_ADD, (syscall_handler_t)sys_auth_trust_add);
     syscall_register(SYS_AUTH_TRUST_REMOVE, (syscall_handler_t)sys_auth_trust_remove);
     syscall_register(SYS_AUTH_CHECK, (syscall_handler_t)sys_auth_check);
+    syscall_register(SYS_AUTH_CREATE_WITH_CAPS, (syscall_handler_t)sys_auth_create_with_caps);
     
     syscall_register(SYS_ENV_GETCWD, (syscall_handler_t)sys_env_getcwd);
     syscall_register(SYS_ENV_CHDIR, (syscall_handler_t)sys_env_chdir);
@@ -490,6 +493,24 @@ int64_t sys_auth_create(const char *password, const char *note, uint8_t level) {
     }
     
     int result = pwid_create_user(password, note, level);
+    if (result == PWID_OK) {
+        return 0;
+    } else if (result == PWID_ERR_FULL) {
+        return E_BUSY;
+    } else if (result == PWID_ERR_EXISTS) {
+        return E_EXIST;
+    }
+    return E_PERM;
+}
+
+/* Create user with explicit capability mask (v4: precise delegation) */
+int64_t sys_auth_create_with_caps(const char *password, const char *note, uint8_t level,
+                                   const uint64_t *caps_array) {
+    if (!pwid_has_cap_raw(pwid_get_current(), 0, CAP_DOMAIN_SYS_ADMIN)) {
+        return E_AUTH_CAP;
+    }
+    
+    int result = pwid_create_user_with_caps(password, note, level, caps_array);
     if (result == PWID_OK) {
         return 0;
     } else if (result == PWID_ERR_FULL) {

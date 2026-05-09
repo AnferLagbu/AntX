@@ -47,6 +47,7 @@
 #define SYS_AUTH_TRUST_ADD   54
 #define SYS_AUTH_TRUST_REMOVE 55
 #define SYS_AUTH_CHECK       56
+#define SYS_AUTH_CREATE_WITH_CAPS 57
 
 #define SYS_ENV_GET_CURRENT_DIR 100
 #define SYS_ENV_SET_CURRENT_DIR 101
@@ -214,6 +215,13 @@ static inline int64_t sys_auth_invalidate_session(void) {
 
 static inline int64_t sys_auth_create_pwid(const char *password, const char *note, uint8_t level) {
     return syscall3(SYS_AUTH_CREATE_PWID, (uint64_t)password, (uint64_t)note, level);
+}
+
+/* Create identity with explicit capability mask (v4: precise delegation) */
+static inline int64_t sys_auth_create_with_caps(const char *password, const char *note,
+                                                 uint8_t level, const uint64_t *caps_array) {
+    return syscall4(SYS_AUTH_CREATE_WITH_CAPS, (uint64_t)password, (uint64_t)note,
+                    level, (uint64_t)caps_array);
 }
 
 static inline int64_t sys_auth_change_pwid_password(const char *old_pw, const char *new_pw) {

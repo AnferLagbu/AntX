@@ -51,6 +51,7 @@
 #define SYS_AUTH_TRUST_ADD    54
 #define SYS_AUTH_TRUST_REMOVE 55
 #define SYS_AUTH_CHECK        56
+#define SYS_AUTH_CREATE_WITH_CAPS 57
 
 #define SYS_MEM_BRK        60
 #define SYS_MEM_MAP        61

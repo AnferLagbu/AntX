@@ -182,7 +182,9 @@ impl SessionManager {
     }
 
     /// Create a new user (requires active session with appropriate permissions)
-    pub fn create_user(&self, password: &str, note: &str, level: u8) -> Result<u64, PwidError> {
+    /// If caps is None, the new user inherits the creator's full capability mask as ceiling
+    /// If caps is Some(arr), the creator must hold a superset of each requested domain
+    pub fn create_user(&self, password: &str, note: &str, level: u8, caps: Option<[u64; 16]>) -> Result<u64, PwidError> {
         let mgr = manager::get_manager();
         
         // Get current session
@@ -206,8 +208,22 @@ impl SessionManager {
             return Err(PwidError::AlreadyExists);
         }
         
-        // Create the user with creator's caps as ceiling
-        let new_pwid = mgr.create(password, note, level, &creator_caps)?;
+        // Use explicitly provided caps (subset-checked) or inherit creator's full caps
+        let effective_caps = match caps {
+            Some(requested) => {
+                // Creator must hold superset of all requested capabilities
+                for i in 0..16 {
+                    if (creator_caps[i] & requested[i]) != requested[i] {
+                        return Err(PwidError::PermissionDenied);
+                    }
+                }
+                requested
+            }
+            None => creator_caps,
+        };
+        
+        // Create the user with the effective capability mask
+        let new_pwid = mgr.create(password, note, level, &effective_caps)?;
         
         serial_println!("[PWID] User '{}' created by '{}'", 
                        note, current_entry.get_note_str());

@@ -158,6 +158,7 @@ int pwid_has_default_password(uint64_t pwid);
 void pwid_clear_default_password_flag(uint64_t pwid);
 
 int pwid_create_derived_root(const char *password, const char *note);
+int pwid_create_user_with_caps(const char *password, const char *note, uint8_t level, const uint64_t *caps_array);
 int pwid_delete_derived_root(uint64_t pwid);
 int pwid_create_first_identity(const char *password);
 int pwid_any_identity_exists(void);

@@ -415,8 +415,12 @@ impl PwidManager {
         self.find(pwid).map(|e| e.capability_mask)
     }
 
-    /// Create identity with full capabilities (via First Token or existing all-cap holder)
-    pub fn create_full_cap(&self, password: &str, note: &str) -> Result<u64, PwidError> {
+    /// Create identity with full capabilities (requires caller to hold SYS_ADMIN or full caps)
+    pub fn create_full_cap(&self, password: &str, note: &str, creator_pwid: u64) -> Result<u64, PwidError> {
+        let creator_caps = self.get_caps(creator_pwid).ok_or(PwidError::NotFound)?;
+        if creator_caps[0] != u64::MAX {
+            return Err(PwidError::PermissionDenied);
+        }
         let all_caps: [u64; 16] = [u64::MAX; 16];
         self.create(password, note, PwidLevel::Root.as_u8(), &all_caps)
     }

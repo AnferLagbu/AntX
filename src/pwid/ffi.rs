@@ -369,7 +369,7 @@ pub extern "C" fn pwid_can_modify(modifier_pwid: u64, target_pwid: u64) -> i32 {
 // Root User Management
 // ============================================================
 
-/// Create derived root user (v4: create full-cap identity)
+/// Create derived root user (v4: create full-cap identity, requires SYS_ADMIN caller)
 #[no_mangle]
 pub extern "C" fn pwid_create_derived_root(password: *const i8, note: *const i8) -> i32 {
     let (pwd, note) = match get_two_strings(password, note) {
@@ -377,7 +377,8 @@ pub extern "C" fn pwid_create_derived_root(password: *const i8, note: *const i8)
         None => return PwidError::NotFound.as_i32(),
     };
     
-    match manager::get_manager().create_full_cap(pwd, note) {
+    let creator = session::get_session().get_current();
+    match manager::get_manager().create_full_cap(pwd, note, creator) {
         Ok(_) => 0,
         Err(e) => e.as_i32(),
     }
@@ -461,7 +462,7 @@ pub extern "C" fn pwid_logout() {
     session::get_session().logout()
 }
 
-/// Create user (requires active session)
+/// Create user (requires active session) — inherits creator's capability ceiling
 #[no_mangle]
 pub extern "C" fn pwid_create_user(password: *const i8, note: *const i8, level: u8) -> i32 {
     let (pwd, note) = match get_two_strings(password, note) {
@@ -469,7 +470,40 @@ pub extern "C" fn pwid_create_user(password: *const i8, note: *const i8, level: 
         None => return PwidError::PermissionDenied.as_i32(),
     };
     
-    match session::get_session().create_user(pwd, note, level) {
+    match session::get_session().create_user(pwd, note, level, None) {
+        Ok(_) => 0,
+        Err(e) => e.as_i32(),
+    }
+}
+
+/// Create user with explicit capability mask (v4: precise delegation)
+/// caps_array: pointer to [u64; 16] capability bitmask array
+/// Creator must hold a superset of all requested capabilities
+#[no_mangle]
+pub extern "C" fn pwid_create_user_with_caps(
+    password: *const i8,
+    note: *const i8,
+    level: u8,
+    caps_array: *const u64,
+) -> i32 {
+    let (pwd, note) = match get_two_strings(password, note) {
+        Some(pair) => pair,
+        None => return PwidError::PermissionDenied.as_i32(),
+    };
+    
+    let caps = if caps_array.is_null() {
+        None
+    } else {
+        let mut arr = [0u64; 16];
+        unsafe {
+            for i in 0..16 {
+                arr[i] = *caps_array.add(i);
+            }
+        }
+        Some(arr)
+    };
+    
+    match session::get_session().create_user(pwd, note, level, caps) {
         Ok(_) => 0,
         Err(e) => e.as_i32(),
     }
