@@ -1,5 +1,36 @@
 use super::types::*;
 
+// ============================================================
+// 能力常量定义 (v4 规范)
+// ============================================================
+
+/// 全能力掩码 (所有位为 1)
+pub const SYS_CAP_ALL: u64 = 0xFFFFFFFFFFFFFFFF;
+
+/// 领域索引常量
+pub const CAP_DOMAIN_SYSTEM: u16 = 0;
+pub const CAP_DOMAIN_FS: u16     = 1;
+pub const CAP_DOMAIN_NET: u16    = 2;
+pub const CAP_DOMAIN_PROC: u16   = 3;
+pub const CAP_DOMAIN_DEVICE: u16 = 4;
+pub const CAP_DOMAIN_USER_MGMT: u16 = 5;
+
+/// 文件系统领域操作权限
+pub const FS_CAP_READ:    u64 = 0x0000000000000001;  // 位 0: 读
+pub const FS_CAP_WRITE:   u64 = 0x0000000000000002;  // 位 1: 写
+pub const FS_CAP_EXECUTE: u64 = 0x0000000000000004;  // 位 2: 执行
+pub const FS_CAP_CREATE:  u64 = 0x0000000000000008;  // 位 3: 创建
+pub const FS_CAP_DELETE:  u64 = 0x0000000000000010;  // 位 4: 删除
+
+/// 进程领域操作权限
+pub const PROC_CAP_FORK:  u64 = 0x0000000000000001;  // 位 0: fork
+pub const PROC_CAP_EXEC:  u64 = 0x0000000000000002;  // 位 1: exec
+pub const PROC_CAP_KILL:  u64 = 0x0000000000000004;  // 位 2: kill
+pub const PROC_CAP_DEBUG: u64 = 0x0000000000000008;  // 位 3: debug
+
+/// 用户管理领域操作权限
+pub const CAP_DOMAIN_USER_LIST: u64 = 0x0000000000000001;  // 列出用户
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct CapabilityMatrix {

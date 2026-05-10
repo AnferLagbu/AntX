@@ -53,7 +53,7 @@ bitflags::bitflags! {
         const DEFAULT_PW          = 1 << 2;
         const MODIFIED            = 1 << 3;
         const LOCKED              = 1 << 4;
-        const EXPIRED             = 1 << 5;
+        const EXPIRED             = 1 << 5;  // v4: 过期标志
     }
 }
 

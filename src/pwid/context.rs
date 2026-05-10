@@ -1,225 +1,150 @@
+//! PWID Context Types
+//!
+//! 定义权限检查上下文相关的类型（v4 规范 L1/L2 层预留）
+
 use super::types::*;
 
-#[derive(Debug, Clone, Copy)]
-pub struct TimeContext {
-    pub time_of_day: TimeOfDay,
-    pub day_of_week: u8,
-    pub is_holiday: bool,
+/// 会话类型 (L1 Sensitivity Label 预留)
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u8)]
+pub enum SessionType {
+    Local = 0,
+    Remote = 1,
+    Service = 2,
 }
 
-impl Default for TimeContext {
+impl Default for SessionType {
+    fn default() -> Self { SessionType::Local }
+}
+
+/// 登录方式
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u8)]
+pub enum LoginMethod {
+    Password = 0,
+    Token = 1,
+    Biometric = 2,
+    Elevated = 3,  // 权限提升
+}
+
+impl Default for LoginMethod {
+    fn default() -> Self { LoginMethod::Password }
+}
+
+/// 时间段限制 (L1 预留)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TimeOfDay {
+    pub start_hour: u8,
+    pub end_hour: u8,
+}
+
+impl Default for TimeOfDay {
     fn default() -> Self {
-        Self {
-            time_of_day: TimeOfDay::Any,
-            day_of_week: 0,
-            is_holiday: false,
-        }
+        TimeOfDay { start_hour: 0, end_hour: 24 }
     }
 }
 
-impl TimeContext {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn from_tsc(tsc: u64) -> Self {
-        let seconds = (tsc / 3_000_000_000) % 86400;
-        let hour = (seconds / 3600) as u8;
-        
-        let time_of_day = match hour {
-            9..=17 => TimeOfDay::WorkHours,
-            _ => TimeOfDay::OffHours,
-        };
-
-        let day_of_week = ((tsc / (86400 * 3_000_000_000)) % 7) as u8;
-
-        Self {
-            time_of_day,
-            day_of_week,
-            is_holiday: false,
-        }
-    }
-
-    pub fn matches_mask(&self, mask: u8) -> bool {
-        mask == 0 || (mask & (1 << self.time_of_day as u8)) != 0
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct LocationContext {
-    pub current_path: [u8; 256],
-    pub mount_point: [u8; 128],
-    pub depth_from_root: u8,
-}
-
-impl Default for LocationContext {
-    fn default() -> Self {
-        Self {
-            current_path: [0; 256],
-            mount_point: [0; 128],
-            depth_from_root: 0,
-        }
-    }
-}
-
-impl LocationContext {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn set_path(&mut self, path: &str) {
-        let bytes = path.as_bytes();
-        let len = bytes.len().min(255);
-        self.current_path[..len].copy_from_slice(&bytes[..len]);
-        self.current_path[len] = 0;
-        self.depth_from_root = path.matches('/').count() as u8;
-    }
-
-    pub fn get_path(&self) -> &str {
-        let end = self.current_path.iter().position(|&b| b == 0).unwrap_or(256);
-        core::str::from_utf8(&self.current_path[..end]).unwrap_or("/")
-    }
-
-    pub fn starts_with(&self, prefix: &str) -> bool {
-        self.get_path().starts_with(prefix)
-    }
-
-    pub fn set_mount_point(&mut self, mount: &str) {
-        let bytes = mount.as_bytes();
-        let len = bytes.len().min(127);
-        self.mount_point[..len].copy_from_slice(&bytes[..len]);
-        self.mount_point[len] = 0;
-    }
-
-    pub fn get_mount_point(&self) -> &str {
-        let end = self.mount_point.iter().position(|&b| b == 0).unwrap_or(128);
-        core::str::from_utf8(&self.mount_point[..end]).unwrap_or("")
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
+/// 会话上下文信息
+#[derive(Debug, Clone, Default)]
 pub struct SessionContext {
     pub session_type: SessionType,
     pub login_method: LoginMethod,
-    pub consecutive_failures: u8,
-    pub risk_score: u8,
+    pub login_time: u64,
 }
 
-impl Default for SessionContext {
-    fn default() -> Self {
-        Self {
-            session_type: SessionType::Local,
-            login_method: LoginMethod::Password,
-            consecutive_failures: 0,
-            risk_score: 0,
-        }
-    }
-}
-
-impl SessionContext {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn is_high_risk(&self) -> bool {
-        self.risk_score > 70
-    }
-
-    pub fn is_suspicious(&self) -> bool {
-        self.consecutive_failures >= 3 || self.risk_score > 50
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct DeviceContext {
-    pub device_id: [u8; 32],
-    pub device_type: u8,
-    pub is_trusted_device: bool,
-}
-
-impl Default for DeviceContext {
-    fn default() -> Self {
-        Self {
-            device_id: [0; 32],
-            device_type: 0,
-            is_trusted_device: false,
-        }
-    }
-}
-
-impl DeviceContext {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
+/// 权限检查完整上下文 (v4 五层模型 L0-L4 输入)
 #[derive(Debug, Clone)]
 pub struct PermissionContext {
-    pub time_context: TimeContext,
-    pub location_context: LocationContext,
+    /// 当前请求的 PWID
+    pub pwid: u64,
+    
+    /// 目标对象/资源
+    pub target: u64,
+    
+    /// 请求的操作域和位掩码
+    pub domain: CapDomain,
+    pub requested_caps: CapBits,
+    
+    /// 会话上下文
     pub session_context: SessionContext,
-    pub device_context: DeviceContext,
+    
+    /// 是否写操作
+    pub is_write: bool,
+    
+    /// 时间上下文 (L1 Sensitivity Label 预留)
+    pub time_context: TimeContext,
+    
+    /// 位置上下文 (L1 预留)
+    pub location_context: LocationContext,
+}
+
+/// 位置上下文 (L1 预留)
+#[derive(Debug, Clone, Default)]
+pub struct LocationContext {
+    pub is_local: bool,
+    pub path: Option<alloc::string::String>,  // L1 预留：路径信息
+}
+
+impl LocationContext {
+    /// 获取路径 (L1 预留)
+    pub fn get_path(&self) -> Option<&str> {
+        self.path.as_ref().map(|s| s.as_str())
+    }
+}
+
+/// 时间上下文 (L1 预留)
+#[derive(Debug, Clone, Default)]
+pub struct TimeContext {
+    pub time_of_day: TimeOfDay,
+}
+
+impl TimeContext {
+    /// 检查当前时间是否在允许的时间段内
+    pub fn matches_mask(&self, _allowed_times: u8) -> bool {
+        // L1 预留：暂时返回 true（时间限制功能待实现）
+        true
+    }
 }
 
 impl Default for PermissionContext {
     fn default() -> Self {
         Self {
-            time_context: TimeContext::new(),
-            location_context: LocationContext::new(),
-            session_context: SessionContext::new(),
-            device_context: DeviceContext::new(),
+            pwid: 0,
+            target: 0,
+            domain: 0,
+            requested_caps: 0,
+            session_context: SessionContext::default(),
+            is_write: false,
+            time_context: TimeContext::default(),
+            location_context: LocationContext::default(),
         }
     }
 }
 
 impl PermissionContext {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn from_current() -> Self {
-        let tsc: u64;
-        unsafe { core::arch::asm!("rdtsc", out("rax") tsc, out("rdx") _, options(nomem, nostack)); }
-        
-        Self {
-            time_context: TimeContext::from_tsc(tsc),
-            location_context: LocationContext::new(),
-            session_context: SessionContext::new(),
-            device_context: DeviceContext::new(),
-        }
-    }
-
-    pub fn with_location(mut self, path: &str) -> Self {
-        self.location_context.set_path(path);
-        self
-    }
-
-    pub fn with_session(mut self, session_type: SessionType, method: LoginMethod) -> Self {
-        self.session_context.session_type = session_type;
-        self.session_context.login_method = method;
-        self
-    }
-
-    pub fn with_risk_score(mut self, score: u8) -> Self {
-        self.session_context.risk_score = score;
-        self
-    }
-
+    /// 计算组合风险分数 (v4 L1 Sensitivity Label 预留)
+    /// 返回值范围: 0-255 (越高越危险, u8 类型以匹配 SensitivityPolicy.max_risk_score)
     pub fn get_combined_risk(&self) -> u8 {
-        let mut risk = self.session_context.risk_score;
+        let mut risk: u16 = 0;
         
-        if self.session_context.consecutive_failures >= 3 {
-            risk = risk.saturating_add(20);
+        // 基础风险：写操作比读操作更危险
+        if self.is_write { risk += 200; }
+        
+        // 登录方式风险
+        match self.session_context.login_method {
+            LoginMethod::Password => risk += 100,
+            LoginMethod::Token    => risk += 150,
+            LoginMethod::Biometric => risk += 50,
+            LoginMethod::Elevated => risk += 300,  // 权限提升最危险
         }
         
-        if !self.device_context.is_trusted_device {
-            risk = risk.saturating_add(10);
+        // 会话类型风险
+        match self.session_context.session_type {
+            SessionType::Local   => risk += 0,
+            SessionType::Remote  => risk += 150,
+            SessionType::Service => risk += 100,
         }
-
-        if self.session_context.login_method == LoginMethod::Elevated {
-            risk = risk.saturating_sub(10);
-        }
-
-        risk.min(100)
+        
+        risk.min(255) as u8  // 上限 255 (u8)
     }
 }

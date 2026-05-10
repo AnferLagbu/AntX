@@ -21,12 +21,15 @@ pub use serial_println;
 
 pub mod types;
 pub mod sha256;
+pub mod capability;  // 能力矩阵和权限定义
+pub mod context;     // 权限上下文类型
 pub mod manager;
 pub mod session;
 pub mod audit;
 pub mod storage;
 pub mod trust_chain;
 pub mod token;
+pub mod permission;  // 权限检查模块
 pub mod ffi;
 
 // Re-export main types for convenience

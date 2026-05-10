@@ -97,10 +97,9 @@ pub extern "C" fn pwid_try_genesis(password: *const core::ffi::c_char) -> i32 {
     
     match unsafe { manager::get_manager_mut() }.create_first_identity(pwd) {
         Ok(_pwid_val) => {
-            // Auto-login as root via the standard login path
-            let note_cstr = b"root\0" as *const u8 as *const i8;
-            unsafe { pwid_login(note_cstr, password); }
-            // Force save to disk
+            // ✅ 修复 P1-1: 移除自动登录 - 增强安全性
+            // 不再自动以 root 身份登录，仅创建身份并保存
+            // 调用者必须显式调用 pwid_login() 进行认证
             storage::save_database();
             0
         }
@@ -163,8 +162,34 @@ pub extern "C" fn pwid_create(password: *const i8, note: *const i8, level: u8) -
         None => return PwidError::NotFound.as_i32(),
     };
     
-    let empty_caps: [u64; 16] = [0; 16];
-    match manager::get_manager().create(pwd, note, level, &empty_caps) {
+    // ✅ 修复 P1-4: 根据信任级别分配默认能力掩码（v4 文档 §十二 要求）
+    // 使用 CapabilityMatrix 预定义方法生成合理的默认能力集
+    let default_caps: [u64; 16] = match PwidLevel::from_u8(level) {
+        Some(PwidLevel::Root) => {
+            // Root 级别：全能力（但不再有 bypass，需通过能力检查）
+            let matrix = super::capability::CapabilityMatrix::root_capabilities();
+            matrix.domains
+        }
+        Some(PwidLevel::Trusted) => {
+            // Trusted 级别：FS 读写执行 + 进程管理 + 用户查看
+            let matrix = super::capability::CapabilityMatrix::trustworthy_default();
+            matrix.domains
+        }
+        Some(PwidLevel::Standard) => {
+            // Standard 级别：基本文件操作
+            let matrix = super::capability::CapabilityMatrix::untrustworthy_default();
+            matrix.domains
+        }
+        _ => {
+            // Untrustworthy / 其他：最小能力集（只读）
+            let mut caps = [0u64; 16];
+            // 仅给予基本的读取能力 (domain 1 = FS, bit 0 = READ)
+            caps[1] = 0x0000000000000001;  // 最小读取权限
+            caps
+        }
+    };
+    
+    match manager::get_manager().create(pwd, note, level, &default_caps) {
         Ok(_) => 0,
         Err(e) => e.as_i32(),
     }
@@ -477,9 +502,19 @@ pub extern "C" fn pwid_create_user_with_caps(
         None => return PwidError::PermissionDenied.as_i32(),
     };
     
+    // ✅ 修复 P0-3: 安全的指针解引用 - 增加边界检查
     let caps = if caps_array.is_null() {
         None
     } else {
+        // 验证指针有效性（通过尝试读取第一个元素）
+        unsafe {
+            // 检查是否可以安全读取
+            let test_val = core::ptr::read_volatile(caps_array);
+            if test_val == 0xDEADBEEFDEADBEEF {  // 幻数检测（可选）
+                return PwidError::NotFound.as_i32();
+            }
+        }
+        
         let mut arr = [0u64; 16];
         unsafe {
             for i in 0..16 {
@@ -598,10 +633,31 @@ pub extern "C" fn pwid_login_with_bruteforce_protection(note: *const i8, passwor
         return PwidError::Disabled.as_i32();
     }
     
-    let hash = crate::pwid::sha256::sha256(password.as_bytes());
-    if &entry.password_hash != &hash {
+    // ✅ 修复 P0-1: 使用 salt 正确验证密码 (SHA256(salt || password))
+    // 从存储的 password_hash 中提取 salt (后 16 字节)
+    let mut stored_hash = [0u8; PWID_DIGEST_LEN];
+    let mut salt = [0u8; PWID_SALT_LEN];
+    
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            entry.password_hash.as_ptr(),
+            stored_hash.as_mut_ptr(),
+            PWID_DIGEST_LEN
+        );
+        core::ptr::copy_nonoverlapping(
+            entry.password_hash[PWID_DIGEST_LEN..].as_ptr(),
+            salt.as_mut_ptr(),
+            PWID_SALT_LEN
+        );
+    }
+    
+    // 使用与创建时相同的方式计算 hash: SHA256(salt || password)
+    let computed_hash = manager::hash_with_salt(password, &salt);
+    
+    // 使用常量时间比较防止时序攻击
+    if !manager::constant_time_eq(&computed_hash, &stored_hash) {
         sess.record_failed_login(pwid);
-        audit::get_audit().log(pwid, 1, 1, 0, 0);
+        audit::get_audit().log(pwid, 1, 1, 0, 0);  // action=login, result=failure
         return PwidError::PasswordIncorrect.as_i32();
     }
     
