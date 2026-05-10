@@ -234,7 +234,10 @@ static int handle_page_fault(struct interrupt_frame *frame) {
     klog_kern("    Cause: %s", (frame->err_code & 0x01) ? "Protection Violation" : "Page Not Present");
     klog_kern("    Location: %s", fault_addr >= 0xFFFFFFFF80000000ULL ? "Kernel space" : "User space");
 
-    int is_user_mode = (frame->cs & 0x03) == 3;
+    /* 使用双重判断：CS 段选择子 + RIP 地址范围 */
+    int is_user_mode_cs = (frame->cs & 0x03) == 3;
+    int is_user_mode_rip = frame->rip < 0xFFFFFFFF80000000ULL && frame->rip > 0xFFFF;
+    int is_user_mode = is_user_mode_cs || is_user_mode_rip;
 
     if (is_user_mode) {
         klog_kern_warn("  User page fault - killing process");
@@ -279,10 +282,13 @@ static int handle_general_protection_fault(struct interrupt_frame *frame) {
         klog_kern("    LDT/GDT reference");
     }
 
-    int is_user_mode = (frame->cs & 0x03) == 3;
+    /* 使用双重判断：CS 段选择子 + RIP 地址范围 */
+    int is_user_mode_cs = (frame->cs & 0x03) == 3;
+    int is_user_mode_rip = frame->rip < 0xFFFFFFFF80000000ULL && frame->rip > 0xFFFF;
+    int is_user_mode = is_user_mode_cs || is_user_mode_rip;
 
     if (is_user_mode) {
-        klog_kern_warn("  User GPF - killing process");
+        klog_kern_warn("  User GPF - killing process (RIP=0x%lx, CS=0x%x)", frame->rip, frame->cs);
         return 1;
     }
 
@@ -346,12 +352,32 @@ void exception_handler(struct interrupt_frame *frame) {
         case 13:
             can_recover = handle_general_protection_fault(frame);
             break;
+        case 0: {
+            /* Division By Zero - 检查是否由 user态 代码触发 */
+            /* 注意: 某些情况下 frame->cs 可能不准确，
+             * 因此使用 RIP 地址范围作为备用判断 */
+            int is_user_rip = frame->rip < 0xFFFFFFFF80000000ULL && frame->rip > 0xFFFF;
+            int is_user_cs = (frame->cs & 0x03) == 3;
+
+            if (is_user_rip || is_user_cs) {
+                klog_kern_warn("  User-mode Division By Zero detected");
+                klog_kern("    RIP=0x%lx (user space), CS=0x%x", frame->rip, frame->cs);
+                klog_kern("  Killing user process to prevent system crash");
+                can_recover = 1; /* 允许恢复：杀死 user 进程 */
+            } else {
+                print_stack_trace(frame);
+            }
+            break;
+        }
         default:
             print_stack_trace(frame);
             break;
     }
 
-    int is_user_mode = (frame->cs & 0x03) == 3;
+    /* 使用双重判断：CS 段选择子 + RIP 地址范围 */
+    int is_user_mode_cs = (frame->cs & 0x03) == 3;
+    int is_user_mode_rip = frame->rip < 0xFFFFFFFF80000000ULL && frame->rip > 0xFFFF;
+    int is_user_mode = is_user_mode_cs || is_user_mode_rip;
 
     if (can_recover && is_user_mode) {
         klog_kern("User process crashed. Killing process.");

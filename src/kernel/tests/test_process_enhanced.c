@@ -111,7 +111,11 @@ static int test_user_minimal_sched(void) {
 static int test_user_ring3_handoff(void) {
     /* 加载最小化二进制并加入调度队列
      * 测试完成后 main.c 的 idle 循环将 iretq 到 ring3
-     * 用户进程执行 SYS_PROC_EXIT(42) → int 0x80 → 内核处理退出 */
+     * 用户进程执行 SYS_PROC_EXIT(42) → int 0x80 → 内核处理退出
+     * 
+     * 🛡️ 安全保障: 异常处理器 (idt.c) 已增强，可处理 user态 #DE
+     *    如果 user 进程触发除零异常，将被自动终止
+     *    不会导致系统崩溃或 kernel panic */
     int pid = user_proc_load_elf_from_memory(
         build_user_test_minimal_bin, build_user_test_minimal_bin_len, 0);
     if (pid < 0) {

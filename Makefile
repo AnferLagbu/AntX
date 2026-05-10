@@ -47,23 +47,23 @@ ASFLAGS = -f elf64
 
 KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/switch.o \
-              build/syscall.o build/keyboard.o build/string.o build/ata.o \
+              build/keyboard.o build/string.o build/ata.o \
               build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
               build/ipc.o build/klog.o build/grub_install.o \
               build/version_registry.o \
               build/cpu.o \
-              build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
+              build/slab.o \
               build/pci.o build/smp.o build/ioapic.o \
               $(NET_OBJS)
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
               build/switch.o \
-              build/syscall.o build/keyboard.o build/string.o build/ata.o \
+              build/keyboard.o build/string.o build/ata.o \
               build/timer.o build/user/embedded/user_init_bin.o build/user/embedded/test_minimal_bin.o build/stack_canary.o \
               build/ipc.o build/klog.o build/grub_install.o \
               build/version_registry.o \
               build/cpu.o \
-              build/spinlock.o build/atomic.o build/rwlock.o build/mutex.o build/slab.o \
+              build/slab.o \
               build/pci.o \
               build/kernel_test.o build/test_main.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
@@ -198,10 +198,6 @@ build/ipc.o: src/ipc/ipc.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/syscall.o: src/kernel/syscall.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/shell.o: src/kernel/shell.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -231,22 +227,6 @@ build/version_registry.o: src/kernel/version_registry.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/cpu.o: src/kernel/cpu.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/spinlock.o: src/kernel/spinlock.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/atomic.o: src/kernel/atomic.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/rwlock.o: src/kernel/rwlock.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/mutex.o: src/kernel/mutex.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 

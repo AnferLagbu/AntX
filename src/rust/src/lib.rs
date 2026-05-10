@@ -28,6 +28,18 @@ pub mod barrier;
 #[path = "../../pci/mod.rs"]
 pub mod pci;
 
+// Interrupt Descriptor Table (Rust rewrite of kernel/idt.c)
+#[path = "../../idt/mod.rs"]
+pub mod idt;
+
+// Synchronization Primitives (Rust rewrite of kernel/{spinlock,mutex,rwlock,atomic}.c)
+#[path = "../../sync/mod.rs"]
+pub mod sync;
+
+// System Call Interface (Rust rewrite of kernel/syscall.c)
+#[path = "../../syscall/mod.rs"]
+pub mod syscall;
+
 use core::panic::PanicInfo;
 use core::sync::atomic::Ordering;
 
