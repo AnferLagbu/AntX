@@ -79,6 +79,8 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_moun
               build/test_network.o \
               build/test_scheduler_rt.o \
               build/test_smp.o \
+              build/test_devfs.o build/test_timer.o build/test_driver_basic.o \
+              build/test_e1000.o build/test_pci.o build/test_json_export.o \
               build/smp.o build/ioapic.o \
               $(NET_OBJS)
 
@@ -138,7 +140,8 @@ user: build/user/init.bin build/user/axsh.bin build/user/install.bin
 	@echo "User programs built successfully"
 
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
-	$(LD) $(LDFLAGS) -o $@ --whole-archive $(RUST_LIB) --no-whole-archive $(KERNEL_OBJS)
+	@echo "[LINK] Linking kernel..."
+	$(LD) $(LDFLAGS) --allow-multiple-definition -o $@ --whole-archive $(RUST_LIB) --no-whole-archive $(KERNEL_OBJS)
 
 build/kernel.flat: build/kernel.bin
 	objcopy -O binary $< $@
@@ -983,8 +986,91 @@ test-cpu-host-quick: build/kernel_test.bin user
 	@echo "✓ Quick Host CPU log: tests/reports/host_cpu_quick.log"
 	@grep -E "(CPU-DRV|Vendor:|Brand:|PASS|FAIL)" tests/reports/host_cpu_quick.log | tail -30 || echo "(no output)"
 
-# 测试全部 (包含 QEMU 仿真测试)
-test-all: test-quick test-qemu-hw test-unit test-comprehensive
+# ============================================================================
+# 独立中断测试目标 (Phase 1 - 解除环境限制)
+# ============================================================================
+# 文档参考: test-framework.md §3.1 & §4 Phase 1
+#
+# 解决 IDT 测试会清除 timer handler 导致后续测试悬挂的问题。
+# 使用独立的最小化内核，仅运行中断模块。
+# ============================================================================
+
+INTERRUPT_TEST_OBJS = build/boot.o build/entry.o build/main_interrupt_test.o \
+                       build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
+                       build/string.o build/klog.o build/kernel_test.o \
+                       build/test_main_interrupt.o build/test_interrupt.o
+
+build/kernel_interrupt_test.bin: $(INTERRUPT_TEST_OBJS) $(RUST_LIB)
+	@echo "[LINK] Building interrupt test kernel (minimal)..."
+	$(LD) $(LDFLAGS) --allow-multiple-definition -o $@ --whole-archive $(RUST_LIB) --no-whole-archive $(INTERRUPT_TEST_OBJS)
+
+build/main_interrupt_test.o: src/kernel/main_interrupt_test.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DKERNEL_TEST=1 -c $< -o $@
+
+build/test_main_interrupt.o: src/kernel/tests/test_main_interrupt.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+test-interrupt: build/kernel_interrupt_test.bin
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     🔌 Independent Interrupt Test (Isolated Mode)      ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "  ⚠️  说明:"
+	@echo "    • 仅运行中断测试模块（IDT/ISR/IRQ）"
+	@echo "    • 使用最小化内核，避免与其他模块冲突"
+	@echo "    • 解决 IDT 重初始化清除 timer handler 的问题"
+	@echo ""
+	@mkdir -p isodir/boot/grub tests/reports
+	@cp build/kernel_interrupt_test.bin isodir/boot/kernel.bin
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX Interrupt Test" { multiboot2 /boot/kernel.bin }' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_interrupt_test.iso isodir 2>/dev/null
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	timeout 60 $(QEMU) $(QEMU_FLAGS) \
+		-m 256 \
+		-no-reboot \
+		-display none \
+		-serial file:tests/reports/interrupt_test_$${timestamp}.log \
+		-cdrom build/antx_interrupt_test.iso \
+		2>tests/reports/interrupt_stderr_$${timestamp}.log || true; \
+	echo ""; \
+	echo "--- Interrupt Test Results ---"; \
+	if [ -f tests/reports/interrupt_test_$${timestamp}.log ]; then \
+		echo "✓ Log: tests/reports/interrupt_test_$${timestamp}.log"; \
+		grep -E "(Summary:|passed:|failed:|skipped:|TEST_RESULT)" tests/reports/interrupt_test_$${timestamp}.log | tail -10; \
+	fi
+
+# P0 新增测试模块编译规则
+build/test_devfs.o: src/kernel/tests/test_devfs.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/test_timer.o: src/kernel/tests/test_timer.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/test_driver_basic.o: src/kernel/tests/test_driver_basic.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Phase 3 新增测试模块编译规则
+build/test_e1000.o: src/kernel/tests/test_e1000.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/test_pci.o: src/kernel/tests/test_pci.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Phase 4 增强: JSON 导出功能
+build/test_json_export.o: src/kernel/tests/test_json_export.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# 测试全部 (包含 QEMU 仿真测试 + 独立中断测试)
+test-all: test-quick test-qemu-hw test-unit test-comprehensive test-interrupt
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════╗"
 	@echo "║     🎉 All Tests Complete!                            ║"

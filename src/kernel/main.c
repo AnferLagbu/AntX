@@ -12,6 +12,7 @@
 #include "cpu.h"
 #include "pci.h"
 #include "dma.h"
+#include "ioapic.h"
 #include "serial.h"
 #include "ata.h"
 #include "keyboard.h"

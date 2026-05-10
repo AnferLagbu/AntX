@@ -88,6 +88,20 @@ void test_persistence_register(void);
 void test_network_register(void);
 void test_recovery_register(void);
 
+/* P0 新增测试模块 (基于 test-framework.md Phase 1 & 3) */
+void test_devfs_register(void);        /* DevFS 设备文件系统测试 */
+void test_timer_register(void);         /* Timer 定时器测试 */
+void test_driver_basic_register(void);  /* 驱动基础测试 (Serial/Keyboard) */
+
 void run_kernel_tests(void);
+
+/* Phase 4 增强: JSON 导出和过滤机制 */
+void test_results_export_json(void);
+const char* test_get_json_output(void);
+void test_filter_module(const char *pattern);
+void test_filter_keyword(const char *keyword);
+void test_run_filtered(void);
+const char* test_framework_version(void);
+struct test_report* test_get_report(void);
 
 #endif

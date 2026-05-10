@@ -74,6 +74,7 @@ static unsigned int calculate_objects_per_slab(size_t object_size)
  * @brief 创建一个新的 Slab
  *
  * 从 PMM 分配一页物理内存并初始化为 Slab。
+ * 包含边界检查以防止 GPF（General Protection Fault）。
  *
  * @param cache 所属缓存指针
  * @return 新创建的 Slab 指针，失败返回 NULL
@@ -83,6 +84,7 @@ static Slab *slab_new(KmemCache *cache)
     void *page;
     Slab *slab;
     unsigned int bitmap_bytes;
+    size_t total_needed;
 
     page = pmm_alloc_page();
     if (!page) {
@@ -98,8 +100,47 @@ static Slab *slab_new(KmemCache *cache)
     slab->full = 0;
 
     bitmap_bytes = (cache->objects_per_slab + 7) / 8;
+
+    /*
+     * 🔧 Phase 2 修复: 边界检查防止 GPF
+     *
+     * 确保 [Slab header] + [objects] + [bitmap] 不超过页面大小
+     * 如果超出，动态减少 obj_count 以适应页面限制
+     */
+    total_needed = (size_t)((uint8_t *)slab->start_addr - (uint8_t *)page) +
+                    (size_t)cache->objects_per_slab * cache->object_size +
+                    bitmap_bytes;
+
+    if (total_needed > SLAB_DEFAULT_SIZE) {
+        /* 重新计算可容纳的最大对象数 */
+        size_t available_space = SLAB_DEFAULT_SIZE -
+                                  sizeof(Slab) - bitmap_bytes;
+        unsigned int max_objects = (unsigned int)(available_space / cache->object_size);
+
+        if (max_objects < 1) {
+            klog_mem_err("SLAB: Object size %zu too large for single page", 
+                        cache->object_size);
+            pmm_free_page(page);
+            return NULL;
+        }
+
+        klog_mem_warn("SLAB: Reduced objects from %u to %u (size=%zu)",
+                     cache->objects_per_slab, max_objects, cache->object_size);
+        
+        slab->obj_count = max_objects;
+        bitmap_bytes = (max_objects + 7) / 8;
+    }
+
     slab->bitmap = (unsigned char *)(slab->start_addr) +
-                    cache->objects_per_slab * cache->object_size;
+                    slab->obj_count * cache->object_size;
+
+    /* 最终安全检查: 确保 bitmap 在页面内 */
+    if ((uintptr_t)slab->bitmap + bitmap_bytes > 
+        (uintptr_t)page + SLAB_DEFAULT_SIZE) {
+        klog_mem_err("SLAB: Bitmap overflow detected, aborting slab creation");
+        pmm_free_page(page);
+        return NULL;
+    }
 
     memset(slab->bitmap, 0, bitmap_bytes);
 
