@@ -40,6 +40,10 @@ pub mod sync;
 #[path = "../../syscall/mod.rs"]
 pub mod syscall;
 
+// Network Subsystem (Rust rewrite of net/arch/sys_arch.c + qx_*.c)
+#[path = "../../net/mod.rs"]
+pub mod net;
+
 use core::panic::PanicInfo;
 use core::sync::atomic::Ordering;
 

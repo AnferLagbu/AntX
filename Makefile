@@ -23,11 +23,14 @@ NET_APPS_C = src/net/lwip/src/apps/http/httpd.c \
              $(wildcard src/net/lwip/src/apps/tftp/*.c) \
              $(wildcard src/net/lwip/src/apps/lwiperf/*.c) \
              $(wildcard src/net/lwip/src/apps/snmp/*.c)
-NET_QX_C   = src/net/arch/sys_arch.c \
-             src/net/qx_net_init.c \
-             src/net/qx_netif.c \
-             src/net/driver/e1000.c \
-             src/net/qx_net_apps.c
+NET_QX_C   = src/net/driver/e1000.c \
+             src/net/qx_net_apps.c \
+             src/net/net_ffi_bridge.c \
+             src/net/lib_compat.c
+# 注意: 以下文件已用 Rust 重写:
+#   - src/net/arch/sys_arch.c → src/net/sys_arch.rs
+#   - src/net/qx_net_init.c   → src/net/init.rs
+#   - src/net/qx_netif.c     → src/net/netif.rs
 
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
 NET_OBJS   = $(patsubst src/net/%.c,build/net/%.o,$(NET_ALL_C))
