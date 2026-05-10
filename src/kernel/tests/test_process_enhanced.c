@@ -305,8 +305,6 @@ void test_process_enhanced_register(void) {
     test_register_case(mod, "User sched pick + cur", test_user_sched_pick);
     test_register_case(mod, "User minimal sched", test_user_minimal_sched);
     test_register_case(mod, "Ring3 iretq handoff", test_user_ring3_handoff);
-#if 0
     test_register_case(mod, "User multi enqueue", test_user_multi_enqueue);
     test_register_case(mod, "User ELF load (init)", test_user_elf_load);
-#endif
 }

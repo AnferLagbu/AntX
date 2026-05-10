@@ -38,9 +38,7 @@ void run_kernel_tests(void) {
     klog_kern("[TEST] Registering test modules...\n[TEST] ════════════════════════════════════");
 
     klog_kern("[TEST] → Core system tests");
-    // test_pmm_register();
-    // test_vmm_register();
-    // test_kmalloc_register();
+    // Core MM tests moved after filesystem+concurrency init (PMM/VMM/Kmalloc below)
     test_process_register();
     test_scheduler_register();
 
@@ -53,13 +51,6 @@ void run_kernel_tests(void) {
     
     klog_kern("[TEST] → 🔥 SMP & Per-CPU Scheduler");
     test_smp_register();
-
-#if 0
-    /* IDT 重新初始化会清掉已注册的 timer 中断 handler
-     * 后续测试需要 timer 正常工作，故移到最后或暂时禁用 */
-    klog_kern("[TEST] → Interrupt handling tests");
-    test_interrupt_register();
-#endif
 
     klog_kern("[TEST] → Filesystem tests");
     test_vfs_register();
@@ -95,9 +86,9 @@ void run_kernel_tests(void) {
     test_slab_register();      /* 注册 Slab 分配器测试 */
 #endif
 
-    // 注意: PCI/DMA 测试已实现，但在 QEMU 环境下 I/O 端口访问可能导致超时
+    // 注意: PCI/DMA 测试已实现，但 I/O 端口访问在 QEMU 下导致测试悬挂/超时
     // 建议在真实硬件或完整虚拟化环境下测试
-    klog_kern("[TEST] → 🚗 P1 阶段: 设备驱动基础设施测试");
+    klog_kern("[TEST] → 🚗 P1 阶段: 设备驱动基础设施测试 (SKIP — needs real HW)");
     // test_pci_register();       /* 注册 PCI 总线驱动测试 */
     // test_dma_register();       /* 注册 DMA 引擎测试 */
 
@@ -129,6 +120,14 @@ void run_kernel_tests(void) {
     
     klog_kern("[TEST] → Performance benchmarks");
     test_performance_register();
+
+#if 0
+    /* 中断测试必须最后执行 — IDT 重新初始化会清掉已注册的 timer handler
+     * 导致后续测试无法进行 (时钟中断失效 → 系统悬挂)
+     * 仅可在独立运行模式下测试 */
+    klog_kern("[TEST] → Interrupt handling tests (LAST)");
+    test_interrupt_register();
+#endif
 
     klog_kern("[TEST] ════════════════════════════════════\n[TEST] Running all tests...");
     
