@@ -49,7 +49,7 @@ USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 
 ASFLAGS = -f elf64
 
-KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
+KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/isr.o \
               build/switch.o \
               build/keyboard.o build/string.o build/ata.o \
               build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
@@ -60,7 +60,7 @@ KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/smart_mount.o build/
               build/pci.o build/smp.o build/ioapic.o \
               $(NET_OBJS)
 
-KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/idt.o build/isr.o \
+KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/isr.o \
               build/switch.o \
               build/keyboard.o build/string.o build/ata.o \
               build/timer.o build/user/embedded/user_init_bin.o build/user/embedded/test_minimal_bin.o build/stack_canary.o \
