@@ -114,8 +114,9 @@
 #define LWIP_HTTPD_DYNAMIC_HEADERS  1
 #define LWIP_HTTPD_MAX_TAG_NAME_LEN 8
 #define LWIP_HTTPD_MAX_TAG_INSERT_LEN 1024
-#define HTTPD_USE_CUSTOM_FSDATA     1
-#define HTTPD_FSDATA_FILE           "qx_fsdata.c"
+// 注意: HTTP 数据已由 Rust fsdata.rs 通过 FFI 导出 (FS_ROOT, FsFileEntry)
+// 不再需要 C 版本的 qx_fsdata.c
+// #define HTTPD_FSDATA_FILE           "qx_fsdata.c"
 
 /* ---- HTTP 客户端 ---- */
 #define LWIP_HTTP_CLIENT            1
