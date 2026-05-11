@@ -11,6 +11,8 @@ use core::ptr::NonNull;
 
 pub mod pmm;
 pub mod vmm;
+
+pub mod slab;
 pub mod kmalloc;
 pub mod ffi;
 

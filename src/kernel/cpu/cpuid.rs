@@ -1,0 +1,67 @@
+//! CPUID 指令封装
+//!
+//! 提供 safe wrapper for x86 CPUID instruction.
+
+/// 执行 CPUID 指令并返回 (EAX, EBX, ECX, EDX)
+/// 
+/// # Arguments
+/// * `leaf` - CPUID 主叶号 (EAX)
+/// * `subleaf` - CPUID 子叶号 (ECX, 用于 Leaf 4/B 等)
+/// 
+/// # Returns
+/// 元组 (eax, ebx, ecx, edx)
+/// 
+/// # Safety
+/// CPUID 指令本身是安全的, 但返回值的解释需要硬件手册知识。
+#[inline(always)]
+pub fn cpuid(leaf: u32, subleaf: u32) -> (u32, u32, u32, u32) {
+    let (eax, ebx, ecx, edx): (u32, u32, u32, u32);
+    
+    unsafe {
+        core::arch::asm!(
+            "cpuid",
+            inlateout("eax") leaf => eax,
+            inlateout("ecx") subleaf => ecx,
+            out("ebx") ebx,
+            out("edx") edx,
+            options(nomem, preserves_flags),
+        );
+    }
+    
+    (eax, ebx, ecx, edx)
+}
+
+/// 检查 CPUID leaf 是否受支持
+/// 
+/// # Arguments
+/// * `leaf` - 要检查的叶号
+/// 
+/// # Returns
+/// true - 支持, false - 不支持
+#[inline]
+pub fn is_leaf_supported(leaf: u32) -> bool {
+    let (max_leaf, _, _, _) = cpuid(0, 0);
+    leaf <= max_leaf
+}
+
+#[cfg(test)]
+mod tests {
+    
+    #[test]
+    fn test_cpuid_leaf_0() {
+        // Leaf 0 总是被支持
+        let (eax, ebx, ecx, edx) = cpuid(0, 0);
+        assert!(eax > 0, "Max leaf should be > 0");
+        
+        // 厂商字符串不应全为零
+        assert!(ebx != 0 || ecx != 0 || edx != 0);
+    }
+    
+    #[test]
+    fn test_is_leaf_supported() {
+        assert!(is_leaf_supported(0));
+        assert!(is_leaf_supported(1));
+        // Leaf 0xFFFFFFFF 通常不被支持
+        assert!(!is_leaf_supported(0xFFFF_FFFF));
+    }
+}
