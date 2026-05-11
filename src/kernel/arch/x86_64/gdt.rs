@@ -309,7 +309,7 @@ static mut TSS_INSTANCE: super::tss::TaskStateSegment = super::tss::TaskStateSeg
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn gdt_init() -> i32 {
-    use crate::logging::klog::{klog_write, LogLevel, LogCategory};
+    use crate::kernel::logging::{klog_write, LogLevel, LogCategory};
     
     static INIT_MSG: &[u8] = b"Initializing GDT and TSS...\0";
     unsafe {
@@ -368,7 +368,7 @@ pub extern "C" fn gdt_init() -> i32 {
         // TODO: 设置 RSP0 为内核栈顶 (需要从外部获取)
         // TSS_INSTANCE.rsp0 = kernel_stack_top;
         
-        TSS_INSTANCE.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
+        TSS_INSTANCE.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u32;
         
         // Step 5: 设置 TSS 描述符 (占用索引 5 和 6)
         let tss_addr = &TSS_INSTANCE as *const _ as u64;
@@ -442,7 +442,7 @@ unsafe fn gdt_flush(gdt_ptr: &GdtPtr) {
 #[inline(always)]
 unsafe fn tss_flush(selector: u16) {
     core::arch::asm!(
-        "ltr {0}",
+        "ltr {0:x}",  // 使用 16 位子寄存器
         in(reg) selector,
         options(nostack, nomem, preserves_flags),
     );

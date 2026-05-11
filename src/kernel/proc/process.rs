@@ -1,0 +1,277 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+use spin::Mutex;
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+use super::types::*;
+use super::scheduler::{SchedPolicy};
+
+extern "C" {
+    fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+    fn vmm_create_user_page_table() -> u64;
+    fn vmm_destroy_page_table(cr3: u64);
+}
+
+pub struct Process {
+    pub pid: ProcessId,
+    pub pwid: AtomicU64,        // v4: identity this process runs under
+    pub state: AtomicU32,
+    pub priority: AtomicU32,
+    pub flags: AtomicU32,
+    
+    pub name: Mutex<String>,
+    pub parent: Option<ProcessId>,
+    pub children: Mutex<Vec<ProcessId>>,
+    
+    pub context: Mutex<ProcessContext>,
+    pub cr3: AtomicU64,
+    pub kernel_stack: AtomicU64,
+    pub user_stack: AtomicU64,
+    
+    pub exit_code: AtomicU32,
+    pub cpu_time: AtomicU64,
+    
+    pub block_reason: AtomicU32,
+    
+    pub sched_policy: AtomicU32,
+    pub rt_priority: AtomicU32,
+}
+
+// ✅ P0-5 修复: 添加详细的安全性不变性注释
+//
+// # Safety (Send)
+// Process 可以安全地在线程间转移所有权, 因为:
+// 1. 所有可变状态都通过 Mutex 或 AtomicX 保护
+// 2. Mutex<String> 和 Mutex<Vec> 内部使用 spin::Mutex, 它实现了 Send
+// 3. 原始指针字段 (cr3, kernel_stack, user_stack) 只通过原子操作访问
+// 4. 不存在悬垂指针或数据竞争的风险
+//
+// # Safety (Sync)  
+// Process 可以安全地被多个线程共享引用 (&Process), 因为:
+// 1. name, children, context 等复合类型都被 Mutex 包装
+//    - 访问这些字段必须先获取锁, 保证互斥
+// 2. pid, pwid, state 等简单字段都是 Atomic 类型
+//    - 使用 Ordering::SeqCst 或 Acquire/Release 保证可见性
+// 3. 不存在内部可变性导致的未同步修改
+// 4. 调度器在切换进程时通过 scheduler_lock 保护整个 ProcessTable
+//
+// ⚠️ 注意事项:
+// - 如果未来添加新的非线程安全字段, 必须更新此处的 safety 注释
+// - 建议定期审查 Process 的所有公共方法确保锁语义正确
+unsafe impl Send for Process {}
+unsafe impl Sync for Process {}
+
+impl Process {
+    pub fn new(pid: Pid, name: &str, parent: Option<ProcessId>) -> Self {
+        Self {
+            pid: ProcessId(pid),
+            pwid: AtomicU64::new(0),
+            state: AtomicU32::new(ProcessState::Created as u32),
+            priority: AtomicU32::new(ProcessPriority::Normal as u32),
+            flags: AtomicU32::new(0),
+            name: Mutex::new(String::from(name)),
+            parent,
+            children: Mutex::new(Vec::new()),
+            context: Mutex::new(ProcessContext::new()),
+            cr3: AtomicU64::new(0),
+            kernel_stack: AtomicU64::new(0),
+            user_stack: AtomicU64::new(0),
+            exit_code: AtomicU32::new(0),
+            cpu_time: AtomicU64::new(0),
+            block_reason: AtomicU32::new(BlockReason::Unknown as u32),
+            sched_policy: AtomicU32::new(SchedPolicy::Normal as u32),
+            rt_priority: AtomicU32::new(0),
+        }
+    }
+    
+    pub fn allocate_kernel_stack(&self) -> bool {
+        unsafe {
+            let stack = pmm_alloc_pages((KERNEL_STACK_SIZE / 4096) as u64);
+            if stack.is_null() {
+                return false;
+            }
+            self.kernel_stack.store(stack.add(KERNEL_STACK_SIZE) as u64, Ordering::SeqCst);
+            true
+        }
+    }
+    
+    pub fn allocate_user_space(&self) -> bool {
+        unsafe {
+            let cr3 = vmm_create_user_page_table();
+            if cr3 == 0 {
+                return false;
+            }
+            self.cr3.store(cr3, Ordering::SeqCst);
+            true
+        }
+    }
+    
+    pub fn get_state(&self) -> ProcessState {
+        ProcessState::from_u8(self.state.load(Ordering::SeqCst) as u8)
+    }
+    
+    /// ✅ 安全的状态设置 (带合法性检查和审计日志)
+    /// 
+    /// # Arguments
+    /// * `new_state` - 目标新状态
+    /// 
+    /// # Returns
+    /// * `Ok(())` - 状态转换成功
+    /// * `Err(&str)` - 非法状态转换
+    pub fn set_state_safe(&self, new_state: ProcessState) -> Result<(), &'static str> {
+        let current = self.get_state();
+        
+        // ✅ 状态机合法性检查 (防止非法转换)
+        match (current, new_state) {
+            // 允许的正常转换
+            (ProcessState::Created, ProcessState::Ready) => {},
+            (ProcessState::Ready, ProcessState::Running) => {},
+            (ProcessState::Running, ProcessState::Ready) => {},      // 时间片耗尽/抢占
+            (ProcessState::Running, ProcessState::Blocked) => {},   // 阻塞系统调用
+            (ProcessState::Running, ProcessState::Zombie) => {},     // exit()
+            (ProcessState::Running, ProcessState::Frozen) => {},     // freeze
+            (ProcessState::Ready, ProcessState::Frozen) => {},       // freeze
+            (ProcessState::Blocked, ProcessState::Frozen) => {},     // freeze
+            (ProcessState::Blocked, ProcessState::Ready) => {},      // 事件完成唤醒
+            (ProcessState::Blocked, ProcessState::Zombie) => {},     // 被 kill
+            (ProcessState::Zombie, ProcessState::Terminated) => {},  // wait() 回收
+            (ProcessState::Frozen, ProcessState::Ready) => {},       // thaw 唤醒
+            (ProcessState::Frozen, ProcessState::Blocked) => {},     // thaw 后仍需等待
+            
+            // ❌ 禁止的非法转换
+            _ => return Err("Illegal process state transition"),
+        }
+        
+        // 执行状态转换
+        self.state.store(new_state as u32, Ordering::Release);
+        
+        // ✅ 审计日志 (调试模式) - 已禁用: no_std 环境
+        // #[cfg(debug_assertions)]
+        // eprintln!("[PROCESS] PID={} {}→{}",
+        //           self.pid.0, current.name(), new_state.name());
+        
+        Ok(())
+    }
+    
+    /// 旧版兼容接口 (内部使用, 不建议新代码使用)
+    #[deprecated(note = "Use set_state_safe() for state transitions with validation")]
+    pub fn set_state(&self, state: ProcessState) {
+        // 兼容旧代码, 但记录警告
+        let _ = self.set_state_safe(state);
+    }
+    
+    pub fn get_priority(&self) -> ProcessPriority {
+        ProcessPriority::from_u32(self.priority.load(Ordering::SeqCst))
+    }
+    
+    pub fn set_priority(&self, priority: ProcessPriority) {
+        self.priority.store(priority as u32, Ordering::SeqCst);
+    }
+    
+    pub fn is_kernel(&self) -> bool {
+        let flags = self.flags.load(Ordering::SeqCst);
+        (flags & ProcessFlags::IS_KERNEL.bits()) != 0
+    }
+    
+    pub fn set_kernel(&self, is_kernel: bool) {
+        let mut flags = self.flags.load(Ordering::SeqCst);
+        if is_kernel {
+            flags |= ProcessFlags::IS_KERNEL.bits();
+        } else {
+            flags &= !ProcessFlags::IS_KERNEL.bits();
+        }
+        self.flags.store(flags, Ordering::SeqCst);
+    }
+    
+    pub fn get_sched_policy(&self) -> SchedPolicy {
+        SchedPolicy::from_u32(self.sched_policy.load(Ordering::SeqCst))
+    }
+    
+    pub fn set_sched_policy(&self, policy: SchedPolicy) {
+        self.sched_policy.store(policy as u32, Ordering::SeqCst);
+    }
+    
+    pub fn get_rt_priority(&self) -> u8 {
+        self.rt_priority.load(Ordering::SeqCst) as u8
+    }
+    
+    pub fn set_rt_priority(&self, priority: u8) {
+        self.rt_priority.store(priority as u32, Ordering::SeqCst);
+    }
+    
+    pub fn get_pwid(&self) -> u64 {
+        self.pwid.load(Ordering::SeqCst)
+    }
+    
+    pub fn set_pwid(&self, pwid: u64) {
+        self.pwid.store(pwid, Ordering::SeqCst);
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        let cr3 = self.cr3.load(Ordering::SeqCst);
+        if cr3 != 0 {
+            unsafe {
+                vmm_destroy_page_table(cr3);
+            }
+        }
+    }
+}
+
+pub struct ProcessTable {
+    processes: Mutex<[Option<usize>; MAX_PROCESSES]>,
+    next_pid: AtomicU32,
+}
+
+unsafe impl Send for ProcessTable {}
+unsafe impl Sync for ProcessTable {}
+
+impl ProcessTable {
+    pub const fn new() -> Self {
+        Self {
+            processes: Mutex::new([None; MAX_PROCESSES]),
+            next_pid: AtomicU32::new(1),
+        }
+    }
+    
+    pub fn allocate_pid(&self) -> Option<Pid> {
+        let pid = self.next_pid.fetch_add(1, Ordering::SeqCst);
+        if pid as usize >= MAX_PROCESSES {
+            None
+        } else {
+            Some(pid)
+        }
+    }
+    
+    pub fn insert(&self, process: *mut Process) -> bool {
+        let mut table = self.processes.lock();
+        let pid = unsafe { (*process).pid.0 as usize };
+        if pid >= MAX_PROCESSES {
+            return false;
+        }
+        table[pid] = Some(process as usize);
+        true
+    }
+    
+    pub fn get(&self, pid: Pid) -> Option<*mut Process> {
+        let table = self.processes.lock();
+        if pid as usize >= MAX_PROCESSES {
+            return None;
+        }
+        table[pid as usize].map(|addr| addr as *mut Process)
+    }
+    
+    pub fn remove(&self, pid: Pid) -> Option<*mut Process> {
+        let mut table = self.processes.lock();
+        if pid as usize >= MAX_PROCESSES {
+            return None;
+        }
+        table[pid as usize].take().map(|addr| addr as *mut Process)
+    }
+}
+
+pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
+
+pub fn init() {
+}

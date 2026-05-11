@@ -116,19 +116,18 @@ impl CpuVendor {
     }
 }
 
-/// CPU 特性标志 (使用 bitflags 宏生成位操作方法)
-///
-/// # Example
-/// ```ignore
-/// let features = CpuFeatures::empty();
-/// features.set(CpuFeatures::SSE, true);
-/// assert!(features.contains(CpuFeatures::SSE));
-/// ```
 bitflags::bitflags! {
     /// CPU 特性标志集
     ///
     /// 包含 x86/x86-64 所有重要特性位。
     /// 通过 CPUID 不同 leaf 收集。
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let features = CpuFeatures::empty();
+    /// features.set(CpuFeatures::SSE, true);
+    /// assert!(features.contains(CpuFeatures::SSE));
+    /// ```
     #[derive(Debug, Clone, Copy, Default)]
     pub struct CpuFeatures: u128 {  // u128 支持最多128个特性标志
         
@@ -185,7 +184,7 @@ bitflags::bitflags! {
         const MONITOR     = 1 << 35;
         /// VMX (Intel VT-x 虚拟化) 支持
         const VMX         = 1 << 37;
-        /// SVM (AMD-V 虚拟化) 支持
+        /// SMX (Intel Safer Mode Extensions)
         const SMX         = 1 << 38;
         const EST         = 1 << 39;
         const TM2         = 1 << 40;
@@ -219,33 +218,35 @@ bitflags::bitflags! {
         const RDTSCP      = 1 << 91;  // 64+27
         /// LM (Long Mode) - x86-64 支持!
         const LM          = 1 << 93;  // 64+29
-        const _3DNOWEXT   = 1 << 94;  // 64+30
-        const _3DNOW      = 1 << 95;  // 64+31
+        /// SVM (AMD-V 虚拟化) 支持
+        const SVM         = 1 << 94;  // 64+30
+        const _3DNOWEXT   = 1 << 95;  // 64+31
+        const _3DNOW      = 1 << 96;  // 64+32
         
-        // ====== 高级特性 (Leaf 7 EBX, 映射到 +128) ======
-        
-        const FSGSBASE    = 1 << 128;
-        const BMI1        = 1 << 131;
-        const HLE         = 1 << 132;
+        // ====== 高级特性 (Leaf 7 EBX, 映射到 +96) ======
+
+        const FSGSBASE    = 1 << 96;
+        const BMI1        = 1 << 97;
+        const HLE         = 1 << 98;
         /// AVX2 支持
-        const AVX2        = 1 << 133;
-        const BMI2        = 1 << 136;
-        const ERMS        = 1 << 137;
-        const INVPCID     = 1 << 138;
-        const RTM         = 1 << 139;
-        const MPX         = 1 << 142;
+        const AVX2        = 1 << 99;
+        const BMI2        = 1 << 100;
+        const ERMS        = 1 << 101;
+        const INVPCID     = 1 << 102;
+        const RTM         = 1 << 103;
+        const MPX         = 1 << 104;
         /// AVX-512 Foundation
-        const AVX512F     = 1 << 144;
-        const AVX512DQ    = 1 << 145;
-        const RDSEED      = 1 << 147;
-        const ADX         = 1 << 148;
-        const AVX512IFMA  = 1 << 149;
-        const CLWB        = 1 << 152;
-        const AVX512CD    = 1 << 156;
+        const AVX512F     = 1 << 105;
+        const AVX512DQ    = 1 << 106;
+        const RDSEED      = 1 << 107;
+        const ADX         = 1 << 108;
+        const AVX512IFMA  = 1 << 109;
+        const CLWB        = 1 << 110;
+        const AVX512CD    = 1 << 111;
         /// SHA (SHA-1/SHA-256) 指令
-        const SHA         = 1 << 157;
-        const AVX512BW    = 1 << 158;
-        const AVX512VL    = 1 << 159;
+        const SHA         = 1 << 112;
+        const AVX512BW    = 1 << 113;
+        const AVX512VL    = 1 << 114;
     }
 }
 
@@ -270,19 +271,19 @@ impl CpuFeatures {
     
     /// 检查是否支持 SIMD 向量指令
     #[inline]
-    pub const fn supports_simd(&self) -> bool {
+    pub fn supports_simd(&self) -> bool {
         self.contains(Self::SSE | Self::SSE2)
     }
-    
+
     /// 检查是否支持 AVX/AVX2
     #[inline]
-    pub const fn supports_avx(&self) -> bool {
+    pub fn supports_avx(&self) -> bool {
         self.contains(Self::AVX | Self::AVX2)
     }
-    
+
     /// 检查是否支持虚拟化扩展
     #[inline]
-    pub const fn supports_virtualization(&self) -> bool {
+    pub fn supports_virtualization(&self) -> bool {
         self.contains(Self::VMX | Self::SVM)
     }
 }
@@ -339,13 +340,33 @@ impl CpuSignature {
     }
     
     /// 格式化为人类可读字符串 (如 "6-158-10" 表示 Family 6, Model 158, Stepping 10)
-    pub fn to_string(&self) -> heapless::String<32> {
-        let mut s = heapless::String::<32>::new();
-        write!(s, "{}-{}-{}", 
-               self.effective_family(), 
-               self.effective_model(), 
-               self.stepping).ok();
-        s
+    /// 返回一个静态数组 (避免堆分配)
+    pub fn to_string(&self) -> [u8; 16] {
+        let mut buf = [0u8; 16];
+        let fam = self.effective_family();
+        let mod_ = self.effective_model();
+        let step = self.stepping;
+
+        // 简单的整数转字符串 (无堆分配)
+        let mut i = 0usize;
+        
+        // Family
+        if fam >= 100 { buf[i] = (fam / 100) as u8 + b'0'; i += 1; }
+        if fam >= 10 { buf[i] = ((fam / 10) % 10) as u8 + b'0'; i += 1; }
+        buf[i] = (fam % 10) as u8 + b'0'; i += 1;
+        buf[i] = b'-'; i += 1;
+        
+        // Model
+        if mod_ >= 100 { buf[i] = (mod_ / 100) as u8 + b'0'; i += 1; }
+        if mod_ >= 10 { buf[i] = ((mod_ / 10) % 10) as u8 + b'0'; i += 1; }
+        buf[i] = (mod_ % 10) as u8 + b'0'; i += 1;
+        buf[i] = b'-'; i += 1;
+        
+        // Stepping
+        buf[i] = (step / 10) as u8 + b'0'; i += 1;
+        buf[i] = (step % 10) as u8 + b'0';
+        
+        buf
     }
 }
 
@@ -454,7 +475,7 @@ impl Default for CpuInfo {
             initialized: false,
             vendor: CpuVendor::Unknown,
             vendor_string: [0; VENDOR_STRING_LEN],
-            brand_string: [b'U', b'n', b'k', b'n', b'o', b'w', b'n', 0], // "Unknown\0..."
+            brand_string: [0; BRAND_STRING_LEN], // 初始化为全零
             signature: CpuSignature::default(),
             features: CpuFeatures::default(),
             cache: CacheInfo::default(),
@@ -481,14 +502,14 @@ impl CpuInfo {
     
     /// 检查是否在虚拟化环境中运行
     #[inline]
-    pub const fn is_virtualized(&self) -> bool {
-        self.vendor.is_virtualized() || 
+    pub fn is_virtualized(&self) -> bool {
+        self.vendor.is_virtualized() ||
            self.features.contains(CpuFeatures::VMX | CpuFeatures::SVM)
     }
-    
+
     /// 检查是否支持指定特性
     #[inline]
-    pub const fn has_feature(&self, feature: CpuFeatures) -> bool {
+    pub fn has_feature(&self, feature: CpuFeatures) -> bool {
         self.features.contains(feature)
     }
     
@@ -511,19 +532,23 @@ impl CpuInfo {
 // 全局状态 (静态单例, 使用 OnceCell 保证只初始化一次)
 // ============================================================================
 
-use once_cell::sync::OnceCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// 全局 CPU 信息实例 (延迟初始化)
-static CPU_INFO: OnceCell<CpuInfo> = OnceCell::new();
+static mut CPU_INFO: Option<CpuInfo> = None;
+static CPU_INFO_INIT: AtomicBool = AtomicBool::new(false);
 
 /// 获取全局 CPU 信息引用 (必须先调用 cpu_init())
-/// 
+///
 /// # Returns
 /// * Some(&CpuInfo) - 成功获取
 /// * None - 尚未初始化
 #[inline]
 pub fn get_cpu_info() -> Option<&'static CpuInfo> {
-    CPU_INFO.get()
+    if !CPU_INFO_INIT.load(Ordering::Acquire) {
+        return None;
+    }
+    unsafe { CPU_INFO.as_ref() }
 }
 
 // ============================================================================
@@ -554,7 +579,7 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_init() -> i32 {
-    use crate::logging::klog::{klog_write, LogLevel, LogCategory};
+    use crate::kernel::logging::{klog_write, LogLevel, LogCategory};
     
     static INIT_MSG: &[u8] = b"Initializing QX AMD64 CPU driver...\0";
     unsafe {
@@ -606,9 +631,9 @@ pub extern "C" fn cpu_init() -> i32 {
     
     // 标记初始化完成
     info.initialized = true;
-    
+
     // 存储到全局单例
-    if CPU_INFO.set(info).is_err() {
+    if CPU_INFO_INIT.swap(true, Ordering::AcqRel) {
         static ERR_MSG: &[u8] = b"ERROR: cpu_init called twice!\0";
         unsafe {
             klog_write(LogLevel::Error as u8, LogCategory::Kernel as u8,
@@ -616,6 +641,10 @@ pub extern "C" fn cpu_init() -> i32 {
                       ERR_MSG.as_ptr() as *const i8);
         }
         return -1;
+    }
+
+    unsafe {
+        CPU_INFO = Some(info);
     }
     
     static OK_MSG: &[u8] = b"CPU driver initialized successfully\0";
@@ -638,7 +667,7 @@ pub extern "C" fn cpu_init() -> i32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info as *const CpuInfo,
         None => core::ptr::null(),
     }
@@ -650,7 +679,7 @@ pub extern "C" fn cpu_get_info() -> *const CpuInfo {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.features.contains(CpuFeatures::from_bits_truncate(feature_bit as u128)),
         None => false,
     }
@@ -662,7 +691,7 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_intel() -> bool {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.is_intel(),
         None => false,
     }
@@ -674,7 +703,7 @@ pub extern "C" fn cpu_is_intel() -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_amd() -> bool {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.is_amd(),
         None => false,
     }
@@ -686,7 +715,7 @@ pub extern "C" fn cpu_is_amd() -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_virtualized() -> bool {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.is_virtualized(),
         None => false,
     }
@@ -698,7 +727,7 @@ pub extern "C" fn cpu_is_virtualized() -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.max_standard_leaf,
         None => 0,
     }
@@ -710,7 +739,7 @@ pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.max_ext_leaf,
         None => 0,
     }
@@ -722,7 +751,7 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_apic_id() -> u32 {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.topology.apic_id as u32,
         None => 0,
     }
@@ -734,7 +763,7 @@ pub extern "C" fn cpu_get_apic_id() -> u32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_logical_cores() -> u8 {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.topology.logical_threads,
         None => 1,
     }
@@ -746,7 +775,7 @@ pub extern "C" fn cpu_get_logical_cores() -> u8 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_physical_cores() -> u8 {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.topology.physical_cores,
         None => 1,
     }
@@ -758,7 +787,7 @@ pub extern "C" fn cpu_get_physical_cores() -> u8 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_signature() -> CpuSignature {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.signature,
         _ => CpuSignature::default(),
     }
@@ -770,7 +799,7 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => &info.cache as *const CacheInfo,
         None => core::ptr::null(),
     }
@@ -782,7 +811,7 @@ pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_tsc_frequency() -> u64 {
-    match CPU_INFO.get() {
+    match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.tsc_frequency_hz,
         None => 0,
     }
@@ -972,11 +1001,11 @@ fn detect_cache(cache_out: &mut CacheInfo,
                 (2, 1) => cache_out.l1i_size = size,      // L1 Instruction
                 (3, 2) => {                               // L2 Unified
                     cache_out.l2_size = size;
-                    cache_out.l2_associativity = assoc;
+                    cache_out.l2_associativity = assoc as u8;
                 },
                 (3, 3) => {                               // L3 Unified
                     cache_out.l3_size = size;
-                    cache_out.l3_associativity = assoc;
+                    cache_out.l3_associativity = assoc as u8;
                 },
                 _ => {},
             }
@@ -1018,7 +1047,7 @@ fn detect_cache(cache_out: &mut CacheInfo,
 
 /// 探测多核拓扑 (Intel: Leaf 0xB, AMD: Leaf 80000008)
 fn detect_topology(topo_out: &mut TopologyInfo,
-                   sig: &CpuSignature,
+                   _sig: &CpuSignature,
                    feat: &CpuFeatures,
                    max_std: u32, max_ext: u32,
                    vendor: CpuVendor) {
@@ -1087,7 +1116,7 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
         core::arch::asm!("mov {0}, cr4", out(reg) cr4, options(nostack, nomem));
         
         let new_cr4 = cr4 | (1 << 9) | (1 << 10); // OSFXSR + OSXMMEXCPT
-        core::asm!("mov cr4, {0}", in(reg) new_cr4, options(nostack, nomem, preserves_flags));
+        core::arch::asm!("mov cr4, {0}", in(reg) new_cr4, options(nostack, nomem, preserves_flags));
     }
     
     // 启用 FPU (清除 CR0.TS + CR0.EM, 设置 CR0.MP)
@@ -1096,7 +1125,7 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
         core::arch::asm!("mov {0}, cr0", out(reg) cr0, options(nostack, nomem));
         
         let new_cr0 = (cr0 & !((1 << 3) | (1 << 2))) | (1 << 1); // Clear TS/EM, Set MP
-        core::asm!("mov cr0, {0}", in(reg) new_cr0, options(nostack, nomem, preserves_flags));
+        core::arch::asm!("mov cr0, {0}", in(reg) new_cr0, options(nostack, nomem, preserves_flags));
         
         // 初始化 FPU 状态
         core::arch::asm!("fninit", options(nostack, nomem, preserves_flags));

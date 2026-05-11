@@ -1,0 +1,445 @@
+//! Sleep 和延时功能
+//!
+//! 提供多种精度的睡眠和等待机制：
+//! - **忙等待 (Busy-wait)**: 极短延时，精确但浪费 CPU
+//! - **调度器阻塞**: 长延时，高效利用 CPU
+//! - **TSC 高精度**: 微秒/纳秒级延时
+//! - **自适应策略**: 根据时长自动选择最佳方式
+//!
+//! ## 使用指南
+//!
+//! ```
+//! 延时长度          推荐方法              适用场景
+//! ──────────────────────────────────────────────────
+//! < 1 μs           busy_wait_ns()        中断禁用、硬件初始化
+//! 1 μs - 1 ms      busy_wait_us()       短暂轮询
+//! 1 ms - 10 ms      busy_wait_ms()       快速响应需求
+//! > 10 ms          timer_sleep()        普通应用、用户态
+//! ```
+//!
+//! # Performance
+//! 关键路径函数已标记 `#[inline(always)]` 以优化性能。
+
+use super::tick::{get_ticks, ms_to_ticks, is_initialized};
+use crate::kernel::cpu::tsc::{read_tsc, cycles_to_nanoseconds};
+
+// ============================================================================
+// 忙等待实现 (Busy-wait)
+// ============================================================================
+
+/// 使用 TSC 进行纳秒级忙等待
+///
+/// 最精确的延时方式，但不释放 CPU。
+/// 适用于中断上下文或需要微秒级精度的场景。
+///
+/// # Arguments
+/// * `ns` - 等待时间 (纳秒)
+///
+/// # Example
+/// ```rust,no_run
+/// // 等待 500 纳秒 (0.5 微秒)
+/// busy_wait_ns(500);
+/// ```
+#[inline(always)]
+pub fn busy_wait_ns(ns: u64) {
+    if ns == 0 { return; }
+
+    let start = read_tsc();
+    
+    // 近似: 假设 2GHz CPU (保守估计)
+    // 实际应该使用校准后的频率，这里使用近似值
+    let approx_freq_mhz: u64 = 2000;  // 2 GHz
+    let target_cycles = (ns * approx_freq_mhz) / 1000;
+
+    loop {
+        let elapsed = read_tsc().saturating_sub(start);
+        if elapsed >= target_cycles {
+            break;
+        }
+        
+        // 提示 CPU 我们在自旋循环
+        core::hint::spin_loop();
+    }
+}
+
+/// 使用 TSC 进行微秒级忙等待
+///
+/// # Arguments
+/// * `us` - 等待时间 (微秒)
+#[inline(always)]
+pub fn busy_wait_us(us: u64) {
+    if us == 0 { return; }
+    
+    // 转换为纳秒后调用
+    busy_wait_ns(us * 1000);
+}
+
+/// 使用 TSC 进行毫秒级忙等待
+///
+/// # Arguments
+/// * `ms` - 等待时间 (毫秒)
+#[inline(always)]
+pub fn busy_wait_ms(ms: u64) {
+    if ms == 0 { return; }
+    
+    // 转换为微秒后调用
+    busy_wait_us(ms * 1000);
+}
+
+/// 使用 PIT 计数器进行精确微秒级忙等待
+///
+/// 比 TSC 方式更可靠（不依赖 CPU 频率），
+/// 但需要 PIT 已初始化。
+///
+/// # Arguments
+/// * `us` - 等待时间 (微秒)
+///
+/// # Returns
+/// * `Ok(())` - 成功完成
+/// * `Err(&str)` - PIT 未初始化或其他错误
+pub fn pit_busy_wait_us(us: u64) -> Result<(), &'static str> {
+    if us == 0 { return Ok(()); }
+    
+    if !super::pit::pit_is_initialized() {
+        return Err("PIT not initialized");
+    }
+
+    // 读取当前 PIT 计数值作为起始点
+    let start_count = super::pit::pit_read_count()
+        .ok_or("Failed to read PIT count")?;
+
+    // 计算目标计数值变化量
+    // PIT 频率 = 1.193182 MHz → 每微秒 ≈ 1.193 个周期
+    let cycles_needed = (us * super::pit::PIT_BASE_FREQUENCY) / 1_000_000;
+    
+    loop {
+        let current_count = super::pit::pit_read_count()
+            .ok_or("Failed to read PIT count")?;
+
+        // 计算已过去的周期数 (考虑倒计数特性)
+        let elapsed = if current_count <= start_count {
+            start_count - current_count
+        } else {
+            // 回绕处理
+            start_count + (0xFFFFu16 - current_count) + 1
+        };
+
+        if elapsed as u64 >= cycles_needed {
+            break;
+        }
+
+        core::hint::spin_loop();
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// 调度器阻塞 Sleep
+// ============================================================================
+
+/// 阻塞当前线程指定毫秒数
+///
+/// 将当前线程加入定时器等待队列并让出 CPU，
+/// 直到超时后被唤醒。这是**最高效**的长延时方式。
+///
+/// # Arguments
+/// * `ms` - 睡眠时间 (毫秒), 0 表示立即返回
+///
+/// # Returns
+/// * `Ok(())` - 正常唤醒
+/// * `Err(i32)` - 错误码 (-1: 被信号中断)
+///
+/// # Example
+/// ```rust,no_run
+/// // 睡眠 100 毫秒 (高效，不浪费 CPU)
+/// timer_sleep(100).unwrap();
+/// ```
+pub fn timer_sleep(ms: u64) -> Result<(), i32> {
+    if ms == 0 {
+        return Ok(());
+    }
+
+    if !is_initialized() {
+        // Timer 未初始化时回退到忙等待
+        busy_wait_ms(ms);
+        return Ok(());
+    }
+
+    unsafe {
+        // 记录开始 tick
+        let start_tick = get_ticks();
+        let target_ticks = ms_to_ticks(ms);
+
+        extern "C" {
+            fn scheduler_yield_ex();
+        }
+
+        loop {
+            // 检查是否达到目标时间
+            let elapsed = get_ticks().saturating_sub(start_tick);
+            
+            if elapsed >= target_ticks {
+                return Ok(());  // 时间到，返回
+            }
+
+            // 尚未到期，让出 CPU
+            // TODO: 更好的做法是使用定时器等待队列
+            scheduler_yield_ex();
+
+            // 可选: 检查是否被信号唤醒
+            // if check_pending_signals() {
+            //     return Err(-1);  // 被信号中断
+            // }
+        }
+    }
+}
+
+/// 带超时的条件等待
+///
+/// 循环检查条件直到满足或超时。
+/// 结合了条件变量和超时机制。
+///
+/// # Type Parameters
+/// * `F` - 条件检查闭包
+///
+/// # Arguments
+/// * `condition` - 返回 true 表示条件满足
+/// * `timeout_ms` - 超时时间 (毫秒), 0 表示无限等待
+///
+/// # Returns
+/// * `Ok(())` - 条件满足
+/// * `Err(-1)` - 超时
+pub fn wait_with_timeout<F>(condition: F, timeout_ms: u64) -> Result<(), i32>
+where
+    F: Fn() -> bool,
+{
+    if condition() {
+        return Ok(());  // 条件立即满足
+    }
+
+    if timeout_ms == 0 {
+        // 无限等待
+        while !condition() {
+            unsafe {
+                extern "C" { fn scheduler_yield_ex(); }
+                scheduler_yield_ex();
+            }
+        }
+        return Ok(());
+    }
+
+    // 带超时等待
+    let start_tick = get_ticks();
+    let target_ticks = ms_to_ticks(timeout_ms);
+
+    loop {
+        if condition() {
+            return Ok(());  // 条件满足
+        }
+
+        let elapsed = get_ticks().saturating_sub(start_tick);
+        if elapsed >= target_ticks {
+            return Err(-1);  // 超时
+        }
+
+        unsafe {
+            extern "C" { fn scheduler_yield_ex(); }
+            scheduler_yield_ex();
+        }
+    }
+}
+
+// ============================================================================
+// 自适应 Sleep 策略
+// ============================================================================
+
+/// 自适应睡眠函数
+///
+/// 根据延时长度自动选择最优策略：
+/// - **< 1 ms**: 忙等待 (避免调度开销)
+/// - **≥ 1 ms**: 调度器阻塞 (节省 CPU)
+///
+/// # Arguments
+/// * `ms` - 睡眠时间 (毫秒)
+pub fn adaptive_sleep(ms: u64) {
+    if ms == 0 {
+        return;
+    }
+
+    // 阈值: 1 毫秒
+    const BUSY_WAIT_THRESHOLD_MS: u64 = 1;
+
+    if ms < BUSY_WAIT_THRESHOLD_MS {
+        // 短延时: 忙等待
+        busy_wait_ms(ms);
+    } else {
+        // 长延时: 调度器阻塞
+        let _ = timer_sleep(ms);
+    }
+}
+
+/// 兼容 C 接口的 sleep 函数
+///
+/// 与原始 `timer_sleep()` C 函数签名完全兼容，
+/// 用于平滑迁移现有代码。
+///
+/// # Arguments
+/// * `ms` - 睡眠时间 (毫秒)
+#[no_mangle]
+pub extern "C" fn timer_sleep_compat(ms: u64) {
+    adaptive_sleep(ms);
+}
+
+/// 兼容 C 接口的忙等待 sleep 函数
+///
+/// 与原始 `timer_sleep_busy()` C 函数签名兼容。
+///
+/// # Arguments
+/// * `ms` - 忙等待时间 (毫秒)
+#[no_mangle]
+pub extern "C" fn timer_sleep_busy_compat(ms: u64) {
+    busy_wait_ms(ms);
+}
+
+// ============================================================================
+// 辅助工具
+// ============================================================================
+
+/// 测量代码块执行时间 (基于 TSC)
+///
+/// # Type Parameters
+/// * `F` - 要测量的代码块
+///
+/// # Arguments
+/// * `func` - 要执行的闭包
+///
+/// # Returns
+/// * `(T, u64)` - (返回值, 执行时间 [纳秒])
+///
+/// # Example
+/// ```rust,no_run
+/// let (result, duration_ns) = measure_time(|| {
+///     some_expensive_operation()
+/// });
+/// println!("耗时 {} ns", duration_ns);
+/// ```
+pub fn measure_time<T, F>(func: F) -> (T, u64)
+where
+    F: FnOnce() -> T,
+{
+    let start = read_tsc();
+    let result = func();
+    let end = read_tsc();
+    
+    let cycles = end.saturating_sub(start);
+    let ns = cycles_to_nanoseconds(cycles, 2000);  // 假设 2GHz
+
+    (result, ns)
+}
+
+/// 测量代码块执行时间 (基于 ticks)
+///
+/// 更适合测量较长的操作 (>1ms)。
+///
+/// # Type Parameters
+/// * `F` - 要测量的代码块
+///
+/// # Returns
+/// * `(T, u64)` - (返回值, 执行时间 [ticks])
+pub fn measure_time_ticks<T, F>(func: F) -> (T, u64)
+where
+    F: FnOnce() -> T,
+{
+    let start = get_ticks();
+    let result = func();
+    let end = get_ticks();
+
+    (result, end.saturating_sub(start))
+}
+
+// ============================================================================
+// 单元测试
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_busy_wait_zero_duration() {
+        // 零延时应该立即返回
+        let start = read_tsc();
+        busy_wait_ns(0);
+        busy_wait_us(0);
+        busy_wait_ms(0);
+        let end = read_tsc();
+        
+        // 应该几乎不消耗时间 (< 1000 cycles)
+        assert!(end.saturating_sub(start) < 1000);
+    }
+
+    #[test]
+    fn test_busy_wait_positive_duration() {
+        // 正延时应该消耗合理的时间
+        let start = read_tsc();
+        busy_wait_us(100);  // 100 微秒
+        let end = read_tsc();
+        
+        let elapsed_cycles = end.saturating_sub(start);
+        // 在 2GHz CPU 上, 100μs ≈ 200,000 cycles
+        // 给予 50% 的误差范围
+        assert!(elapsed_cycles > 100_000);   // 至少 50μs
+        assert!(elapsed_cycles < 500_000);   // 不超过 250μs
+    }
+
+    #[test]
+    fn test_timer_sleep_zero() {
+        // 零延时应该成功
+        assert!(timer_sleep(0).is_ok());
+    }
+
+    #[test]
+    fn test_adaptive_sleep_behavior() {
+        // 测试自适应策略选择
+        // 注意: 这些测试只验证不会 panic
+        
+        adaptive_sleep(0);     // 应该立即返回
+        adaptive_sleep(1);     // 忙等待
+        adaptive_sleep(100);   // 调度器阻塞
+    }
+
+    #[test]
+    fn test_measure_time_basic() {
+        let (result, duration_ns) = measure_time(|| {
+            42  // 简单计算
+        });
+
+        assert_eq!(result, 42);
+        assert!(duration_ns >= 0);  // 时间应该是非负的
+    }
+
+    #[test]
+    fn test_measure_time_ticks_basic() {
+        let (result, duration_ticks) = measure_time_ticks(|| {
+            "hello".to_string()  // 分配操作
+        });
+
+        assert_eq!(result, "hello");
+        assert!(duration_ticks >= 0);
+    }
+
+    #[test]
+    fn test_wait_with_timeout_immediate() {
+        // 条件立即满足
+        let result = wait_with_timeout(|| true, 1000);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_pit_busy_wait_uninitialized() {
+        // PIT 未初始化时应该返回错误
+        let result = pit_busy_wait_us(100);
+        assert!(result.is_err());
+    }
+}

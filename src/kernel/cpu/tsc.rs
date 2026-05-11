@@ -32,7 +32,7 @@ pub fn read_tsc() -> u64 {
 /// 适用于性能测量场景。
 #[inline(always)]
 pub fn read_tsc_serialized() -> u64 {
-    let (lo, hi): (u32, r32);
+    let (lo, hi): (u32, u32);  // ✅ 修复: r32 → u32 (类型错误)
     
     unsafe {
         core::arch::asm!(
@@ -40,7 +40,7 @@ pub fn read_tsc_serialized() -> u64 {
             "rdtsc",
             out("eax") lo,
             out("edx") hi,
-            options(nostack, nominm, preserves_flags),
+            options(nostack, nomem, preserves_flags),
         );
     }
     

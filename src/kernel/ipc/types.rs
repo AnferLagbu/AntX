@@ -1,0 +1,461 @@
+//! IPC 数据类型定义
+//!
+//! 提供所有 IPC 子系统使用的核心数据结构、常量和枚举
+
+/// IPC 资源 ID 类型 (全局唯一标识符)
+pub type IpcId = u32;
+
+// ============================================================================
+// 常量定义
+// ============================================================================
+
+/// 最大管道数量
+pub const IPC_MAX_PIPES: usize = 64;
+/// 最大信号数量
+pub const IPC_MAX_SIGNALS: usize = 32;
+/// 最大共享内存段数量
+pub const IPC_MAX_SHM_SEGS: usize = 16;
+/// 最大消息队列数量
+pub const IPC_MAX_MSG_QUEUES: usize = 32;
+/// 最大信号量数量
+pub const IPC_MAX_SEMAPHORES: usize = 64;
+
+/// 管道缓冲区大小 (4KB)
+pub const PIPE_BUFFER_SIZE: usize = 4096;
+/// 最大共享内存大小 (16MB)
+pub const SHM_MAX_SIZE: u64 = 16 * 1024 * 1024;
+/// 最大单条消息大小 (4KB)
+pub const MSG_MAX_SIZE: usize = 4096;
+/// 单个队列最大消息数
+pub const MSG_QUEUE_MAX_MSGS: u32 = 64;
+
+// ============================================================================
+// 枚举定义
+// ============================================================================
+
+/// IPC 资源类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IpcType {
+    /// 管道
+    Pipe = 1,
+    /// 信号
+    Signal,
+    /// 共享内存
+    Shm,
+    /// 消息队列
+    MsgQ,
+    /// 信号量
+    Sem,
+}
+
+/// 信号编号 (POSIX 兼容)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SignalNum {
+    /// 无效/空信号
+    None = 0,
+    /// 中断 (Ctrl+C)
+    Int = 1,
+    /// 非法指令
+    Ill = 2,
+    /// 浮点异常
+    Fpe = 3,
+    /// 段错误
+    Segv = 4,
+    /// 终止请求
+    Term = 5,
+    /// 强制终止
+    Kill = 6,
+    /// 停止进程
+    Stop = 7,
+    /// 继续执行
+    Cont = 8,
+    /// 子进程状态改变
+    Chld = 9,
+    /// 用户自定义信号 1
+    Usr1 = 10,
+    /// 用户自定义信号 2
+    Usr2 = 11,
+    /// 定时器到期
+    Alarm = 12,
+    /// 管道断裂
+    Pipe = 13,
+}
+
+impl From<u8> for SignalNum {
+    fn from(val: u8) -> Self {
+        match val {
+            0 => SignalNum::None,
+            1 => SignalNum::Int,
+            2 => SignalNum::Ill,
+            3 => SignalNum::Fpe,
+            4 => SignalNum::Segv,
+            5 => SignalNum::Term,
+            6 => SignalNum::Kill,
+            7 => SignalNum::Stop,
+            8 => SignalNum::Cont,
+            9 => SignalNum::Chld,
+            10 => SignalNum::Usr1,
+            11 => SignalNum::Usr2,
+            12 => SignalNum::Alarm,
+            13 => SignalNum::Pipe,
+            _ => SignalNum::None,
+        }
+    }
+}
+
+/// 信号处理动作
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SignalAction {
+    /// 默认处理 (终止/忽略)
+    Default = 0,
+    /// 忽略信号
+    Ignore,
+    /// 用户自定义处理器
+    Handler,
+    /// 阻塞信号
+    Block,
+}
+
+// ============================================================================
+// 核心数据结构
+// ============================================================================
+
+/// 等待队列项 (简化版，用于阻塞等待)
+///
+/// 在完整实现中应使用内核的 wait_queue 机制
+#[derive(Debug, Clone, Copy)]
+pub struct WaitQueueItem {
+    /// 线程 ID
+    pub tid: u32,
+}
+
+/// 简化版等待队列 (环形缓冲区)
+#[derive(Debug)]
+pub struct WaitQueue {
+    items: [Option<WaitQueueItem>; 4],
+    count: u32,
+}
+
+impl WaitQueue {
+    pub const fn new() -> Self {
+        Self {
+            items: [const { None }; 4],
+            count: 0,
+        }
+    }
+
+    pub fn init(&mut self) {
+        self.items = [None; 4];
+        self.count = 0;
+    }
+
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    pub fn add(&mut self, item: WaitQueueItem) {
+        if self.count < 4 {
+            for i in 0..4 {
+                if self.items[i].is_none() {
+                    self.items[i] = Some(item);
+                    self.count += 1;
+                    return;
+                }
+            }
+        }
+    }
+
+    pub fn wake_one(&mut self) -> Option<WaitQueueItem> {
+        for i in 0..4 {
+            if let Some(item) = self.items[i].take() {
+                self.count -= 1;
+                return Some(item);
+            }
+        }
+        None
+    }
+
+    pub fn wake_all(&mut self) {
+        for item in &mut self.items {
+            *item = None;
+        }
+        self.count = 0;
+    }
+}
+
+/// 管道结构体
+///
+/// 实现字节流通信，支持阻塞式读写
+#[derive(Debug)]
+pub struct Pipe {
+    /// 全局唯一 ID
+    pub id: IpcId,
+    /// 环形缓冲区
+    pub buffer: [u8; PIPE_BUFFER_SIZE],
+    /// 读位置
+    pub read_pos: u32,
+    /// 写位置
+    pub write_pos: u32,
+    /// 当前缓冲区中的字节数
+    pub count: u32,
+
+    /// 创建者 PID (读端)
+    pub read_pid: u32,
+    /// 写端 PID
+    pub write_pid: u32,
+
+    /// 文件描述符 (读端)
+    pub read_fd: i32,
+    /// 文件描述符 (写端)
+    pub write_fd: i32,
+
+    /// 当前读者数量
+    pub readers: i32,
+    /// 当前写者数量
+    pub writers: i32,
+
+    /// 读等待队列
+    pub read_wait: WaitQueue,
+    /// 写等待队列
+    pub write_wait: WaitQueue,
+
+    /// 标志位 (O_NONBLOCK 等)
+    pub flags: i32,
+}
+
+impl Pipe {
+    pub const fn new() -> Self {
+        Self {
+            id: 0,
+            buffer: [0u8; PIPE_BUFFER_SIZE],
+            read_pos: 0,
+            write_pos: 0,
+            count: 0,
+            read_pid: 0,
+            write_pid: 0,
+            read_fd: 0,
+            write_fd: 0,
+            readers: 0,
+            writers: 0,
+            read_wait: WaitQueue::new(),
+            write_wait: WaitQueue::new(),
+            flags: 0,
+        }
+    }
+}
+
+/// 信号处理函数签名
+pub type SignalHandlerFn = extern "C" fn(i32);
+
+/// 信号处理结构
+#[derive(Debug, Clone, Copy)]
+pub struct SignalHandler {
+    /// 处理函数指针 (C ABI)
+    pub handler: Option<SignalHandlerFn>,
+    /// 处理函数地址 (用户空间)
+    pub handler_addr: u64,
+    /// 栈地址 (用户空间)
+    pub stack_addr: u64,
+    /// 标志位
+    pub flags: u32,
+    /// 信号掩码
+    pub mask: u32,
+}
+
+/// 待处理信号状态
+#[derive(Debug)]
+pub struct SignalPending {
+    /// 待处理信号位图
+    pub pending: u32,
+    /// 已屏蔽信号位图
+    pub blocked: u32,
+    /// 已注册的处理函数表
+    pub handlers: [SignalHandler; IPC_MAX_SIGNALS],
+}
+
+impl SignalPending {
+    pub const fn new() -> Self {
+        Self {
+            pending: 0,
+            blocked: 0,
+            handlers: [SignalHandler {
+                handler: None,
+                handler_addr: 0,
+                stack_addr: 0,
+                flags: 0,
+                mask: 0,
+            }; IPC_MAX_SIGNALS],
+        }
+    }
+}
+
+/// 共享内存段
+#[derive(Debug)]
+pub struct ShmSegment {
+    /// 全局唯一 ID
+    pub id: IpcId,
+    /// 物理起始地址
+    pub phys_addr: u64,
+    /// 段大小 (字节)
+    pub size: u64,
+
+    /// 创建者 PID
+    pub creator: u32,
+    /// 引用计数
+    pub ref_count: u32,
+
+    /// 已附加的 PID 列表
+    pub attached_pids: [u32; 16],
+    /// 当前附加进程数
+    pub attach_count: u32,
+
+    /// 标志位
+    pub flags: i32,
+    /// 权限 (如 0666)
+    pub perm: i32,
+}
+
+impl ShmSegment {
+    pub const fn new() -> Self {
+        Self {
+            id: 0,
+            phys_addr: 0,
+            size: 0,
+            creator: 0,
+            ref_count: 0,
+            attached_pids: [0u32; 16],
+            attach_count: 0,
+            flags: 0,
+            perm: 0,
+        }
+    }
+}
+
+/// 消息结构
+#[derive(Debug)]
+pub struct Message {
+    /// 消息类型 (用户自定义)
+    pub type_: u64,
+    /// 发送者 PID
+    pub sender: u64,
+    /// 数据长度
+    pub size: u64,
+    /// 消息数据
+    pub data: [u8; MSG_MAX_SIZE],
+    /// 下一条消息 (链表)
+    pub next: *mut Message,
+}
+
+impl Message {
+    pub const fn new() -> Self {
+        Self {
+            type_: 0,
+            sender: 0,
+            size: 0,
+            data: [0u8; MSG_MAX_SIZE],
+            next: core::ptr::null_mut(),
+        }
+    }
+}
+
+/// 消息队列
+#[derive(Debug)]
+pub struct MsgQueue {
+    /// 全局唯一 ID
+    pub id: IpcId,
+    /// 所有者 PID
+    pub owner: u32,
+
+    /// 队列头指针
+    pub head: *mut Message,
+    /// 队列尾指针
+    pub tail: *mut Message,
+    /// 当前消息数
+    pub count: u32,
+    /// 最大消息数
+    pub max_msgs: u32,
+    /// 单条最大字节数
+    pub max_size: u32,
+
+    /// 发送等待队列
+    pub send_wait: WaitQueue,
+    /// 接收等待队列
+    pub recv_wait: WaitQueue,
+
+    /// 标志位
+    pub flags: i32,
+    /// 权限
+    pub perm: i32,
+}
+
+impl MsgQueue {
+    pub const fn new() -> Self {
+        Self {
+            id: 0,
+            owner: 0,
+            head: core::ptr::null_mut(),
+            tail: core::ptr::null_mut(),
+            count: 0,
+            max_msgs: MSG_QUEUE_MAX_MSGS,
+            max_size: MSG_MAX_SIZE as u32,
+            send_wait: WaitQueue::new(),
+            recv_wait: WaitQueue::new(),
+            flags: 0,
+            perm: 0,
+        }
+    }
+}
+
+/// 信号量
+#[derive(Debug)]
+pub struct Semaphore {
+    /// 全局唯一 ID
+    pub id: IpcId,
+    /// 所有者 PID
+    pub owner: u32,
+
+    /// 当前计数 (可为负表示等待线程数)
+    pub count: i32,
+    /// 最大计数值
+    pub max_count: u32,
+
+    /// 等待队列
+    pub wait: WaitQueue,
+
+    /// 标志位
+    pub flags: i32,
+    /// 权限
+    pub perm: i32,
+}
+
+impl Semaphore {
+    pub const fn new() -> Self {
+        Self {
+            id: 0,
+            owner: 0,
+            count: 0,
+            max_count: 0,
+            wait: WaitQueue::new(),
+            flags: 0,
+            perm: 0,
+        }
+    }
+}
+
+/// IPC 命名空间 (全局资源容器)
+///
+/// 存储所有 IPC 资源的静态数组
+#[derive(Debug)]
+pub struct IpcNamespace {
+    /// 管道数组
+    pub pipes: [Pipe; IPC_MAX_PIPES],
+    /// 共享内存段数组
+    pub shm_segs: [ShmSegment; IPC_MAX_SHM_SEGS],
+    /// 消息队列数组
+    pub msg_queues: [MsgQueue; IPC_MAX_MSG_QUEUES],
+    /// 信号量数组
+    pub semaphores: [Semaphore; IPC_MAX_SEMAPHORES],
+}

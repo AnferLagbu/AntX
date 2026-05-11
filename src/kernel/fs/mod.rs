@@ -1,2 +1,8 @@
-//! fs 子模块
-// TODO: 实现具体功能
+pub mod vfs;
+pub mod ramfs;
+pub mod diskfs;
+pub mod hvfs;
+pub mod devfs;
+pub mod procfs;
+
+pub use vfs::*;

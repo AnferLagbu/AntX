@@ -16,16 +16,21 @@
 #[inline(always)]
 pub fn cpuid(leaf: u32, subleaf: u32) -> (u32, u32, u32, u32) {
     let (eax, ebx, ecx, edx): (u32, u32, u32, u32);
-    
+
     unsafe {
+        // 注意: LLVM 保留 rbx 寄存器，需要通过栈变量间接访问
+        let mut ebx_val: u32 = 0;
         core::arch::asm!(
+            "xchg {tmp:e}, rbx",  // 保存 rbx 到临时变量 (使用 32 位格式)
             "cpuid",
+            "xchg {tmp:e}, rbx",  // 恢复 rbx
             inlateout("eax") leaf => eax,
             inlateout("ecx") subleaf => ecx,
-            out("ebx") ebx,
+            tmp = inout(reg) ebx_val,
             out("edx") edx,
             options(nomem, preserves_flags),
         );
+        ebx = ebx_val;
     }
     
     (eax, ebx, ecx, edx)

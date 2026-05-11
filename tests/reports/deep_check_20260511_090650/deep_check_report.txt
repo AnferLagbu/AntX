@@ -1,0 +1,133 @@
+======================================================================
+🦀 AntX Rust 内核 - 深度代码质量检查
+   目标目录: src/kernel
+   开始时间: 2026-05-11 09:06:50
+======================================================================
+📂 发现 33 个Rust文件
+
+======================================================================
+🔍 PHASE 1: 死代码检测 (Dead Code Detection)
+======================================================================
+  ⚠️  处理文件错误 src/kernel/mod.rs: 'src/kernel/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/arch/mod.rs: 'src/kernel/arch/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/boot/mod.rs: 'src/kernel/boot/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/mod.rs: 'src/kernel/cpu/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/cpuid.rs: 'src/kernel/cpu/cpuid.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/msr.rs: 'src/kernel/cpu/msr.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/tsc.rs: 'src/kernel/cpu/tsc.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/cache.rs: 'src/kernel/cpu/cache.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/topology.rs: 'src/kernel/cpu/topology.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/fs/mod.rs: 'src/kernel/fs/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/interrupt/mod.rs: 'src/kernel/interrupt/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/interrupt/ioapic.rs: 'src/kernel/interrupt/ioapic.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/logging/mod.rs: 'src/kernel/logging/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/logging/klog.rs: 'src/kernel/logging/klog.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/memory/mod.rs: 'src/kernel/memory/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/meta/mod.rs: 'src/kernel/meta/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/smp/mod.rs: 'src/kernel/smp/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/time/mod.rs: 'src/kernel/time/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/time/timer.rs: 'src/kernel/time/timer.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/time/backup/mod.rs: 'src/kernel/time/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/interrupt/backup/mod.rs: 'src/kernel/interrupt/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/backup/cache.rs: 'src/kernel/cpu/backup/cache.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/backup/cpuid.rs: 'src/kernel/cpu/backup/cpuid.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/backup/mod.rs: 'src/kernel/cpu/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/backup/msr.rs: 'src/kernel/cpu/backup/msr.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/backup/topology.rs: 'src/kernel/cpu/backup/topology.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/cpu/backup/tsc.rs: 'src/kernel/cpu/backup/tsc.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/arch/x86_64/mod.rs: 'src/kernel/arch/x86_64/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/arch/x86_64/gdt.rs: 'src/kernel/arch/x86_64/gdt.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/arch/x86_64/tss.rs: 'src/kernel/arch/x86_64/tss.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/arch/x86_64/backup/gdt.rs: 'src/kernel/arch/x86_64/backup/gdt.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/arch/x86_64/backup/mod.rs: 'src/kernel/arch/x86_64/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  处理文件错误 src/kernel/arch/x86_64/backup/tss.rs: 'src/kernel/arch/x86_64/backup/tss.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+
+======================================================================
+🧠 PHASE 2: 逻辑正确性验证 (Logic Correctness)
+======================================================================
+  ⚠️  错误: 'src/kernel/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/boot/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/cpuid.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/msr.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/tsc.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/cache.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/topology.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/fs/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/interrupt/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/interrupt/ioapic.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/logging/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/logging/klog.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/memory/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/meta/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/smp/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/time/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/time/timer.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/time/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/interrupt/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/cache.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/cpuid.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/msr.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/topology.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/tsc.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/gdt.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/tss.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/backup/gdt.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/backup/tss.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+
+======================================================================
+🔗 PHASE 3: FFI接口完整性 (FFI Interface Integrity)
+======================================================================
+  ⚠️  错误: 'src/kernel/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/boot/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/cpuid.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/msr.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/tsc.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/cache.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/topology.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/fs/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/interrupt/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/interrupt/ioapic.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/logging/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/logging/klog.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/memory/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/meta/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/smp/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/time/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/time/timer.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/time/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/interrupt/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/cache.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/cpuid.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/msr.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/topology.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/cpu/backup/tsc.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/gdt.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/tss.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/backup/gdt.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/backup/mod.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+  ⚠️  错误: 'src/kernel/arch/x86_64/backup/tss.rs' is not in the subpath of '/home/anfer/Code/C/AntX'
+
+  📊 发现 0 个FFI导出函数
+  📊 发现 0 个FFI导入函数
+Traceback (most recent call last):
+  File "/home/anfer/Code/C/AntX/tests/deep_quality_checker.py", line 660, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/anfer/Code/C/AntX/tests/deep_quality_checker.py", line 649, in main
+    report = checker.run_all_checks()
+  File "/home/anfer/Code/C/AntX/tests/deep_quality_checker.py", line 579, in run_all_checks
+    self.check_performance()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/anfer/Code/C/AntX/tests/deep_quality_checker.py", line 438, in check_performance
+    print("\n" + "="*70)
+    ^^^^^
+UnboundLocalError: cannot access local variable 'print' where it is not associated with a value
