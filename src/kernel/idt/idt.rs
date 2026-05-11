@@ -210,7 +210,7 @@ impl IdtManager {
         core::arch::asm!(
             "lidt [{0}]",
             in(reg) &idt_ptr,
-            options(nomem, nostack, preserves_flags)
+            options(nostack, preserves_flags)
         );
     }
 
