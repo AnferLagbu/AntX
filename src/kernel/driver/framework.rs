@@ -31,9 +31,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 #[inline(always)]
 pub unsafe fn outb(port: u16, value: u8) {
     core::arch::asm!(
-        "outb {value}, dx",
-        value = in(reg_byte) value,
+        "out dx, al",
         in("dx") port,
+        in("al") value,
         options(nomem, nostack, preserves_flags),
     );
 }
@@ -43,7 +43,7 @@ pub unsafe fn outb(port: u16, value: u8) {
 pub unsafe fn inb(port: u16) -> u8 {
     let value: u8;
     core::arch::asm!(
-        "inb al, dx",
+        "in al, dx",
         out("al") value,
         in("dx") port,
         options(nomem, nostack, preserves_flags),
@@ -55,9 +55,9 @@ pub unsafe fn inb(port: u16) -> u8 {
 #[inline(always)]
 pub unsafe fn outw(port: u16, value: u16) {
     core::arch::asm!(
-        "outw {0:x}, dx",
-        in(reg) value,
+        "out dx, ax",
         in("dx") port,
+        in("ax") value,
         options(nomem, nostack, preserves_flags),
     );
 }
@@ -67,8 +67,8 @@ pub unsafe fn outw(port: u16, value: u16) {
 pub unsafe fn inw(port: u16) -> u16 {
     let value: u16;
     core::arch::asm!(
-        "inw {0:x}, dx",
-        out(reg) value,
+        "in ax, dx",
+        out("ax") value,
         in("dx") port,
         options(nomem, nostack, preserves_flags),
     );
@@ -79,10 +79,10 @@ pub unsafe fn inw(port: u16) -> u16 {
 #[inline(always)]
 pub unsafe fn outl(port: u16, value: u32) {
     core::arch::asm!(
-        "outl {0:e}, dx",
-        in(reg) value,
+        "out dx, eax",
         in("dx") port,
-        options(nomem,nostack,preserves_flags),
+        in("eax") value,
+        options(nomem, nostack, preserves_flags),
     );
 }
 
@@ -91,8 +91,8 @@ pub unsafe fn outl(port: u16, value: u32) {
 pub unsafe fn inl(port: u16) -> u32 {
     let value: u32;
     core::arch::asm!(
-        "inl {0:e}, dx",
-        out(reg) value,
+        "in eax, dx",
+        out("eax") value,
         in("dx") port,
         options(nomem, nostack, preserves_flags),
     );

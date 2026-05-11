@@ -22,13 +22,11 @@ use super::types::{WaitQueue, WaitQueueItem};
 #[inline]
 pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Result<(), i32> {
     unsafe {
-        // 获取当前线程信息
-        extern "C" { fn thread_get_current() -> *mut core::ffi::c_void; }
-        let thread_ptr = thread_get_current();
+        extern "C" { fn thread_get_current() -> u64; }
+        let thread_addr = thread_get_current();
 
-        if !thread_ptr.is_null() {
-            // 提取线程 ID (假设线程结构体前 4 字节是 tid)
-            let tid = *(thread_ptr as *const u32);
+        if thread_addr != 0 {
+            let tid = *(thread_addr as *const u32);
             
             // 创建等待项并加入队列
             let item = WaitQueueItem { tid };

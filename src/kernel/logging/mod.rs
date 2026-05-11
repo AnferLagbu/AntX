@@ -68,3 +68,35 @@ pub unsafe extern "C" fn klog_write(
 
     0  // 成功
 }
+
+/// FFI: 便捷信息日志 (被多个内核模块通过 extern "C" 调用)
+#[no_mangle]
+pub unsafe extern "C" fn klog_ffi_info(_msg: *const u8) {}
+
+/// FFI: 便捷警告日志
+#[no_mangle]
+pub unsafe extern "C" fn klog_ffi_warn(_msg: *const u8) {}
+
+/// FFI: 网络日志
+#[no_mangle]
+pub unsafe extern "C" fn klog_net(_msg: *const i8) {}
+
+/// FFI: 内核日志 (可变参数, 仅作桩)
+#[no_mangle]
+pub unsafe extern "C" fn klog_kern(_fmt: *const i8) {}
+
+/// FFI: 系统调用日志
+#[no_mangle]
+pub unsafe extern "C" fn klog_syscall(_fmt: *const i8) {}
+
+/// FFI: 通用信息日志
+#[no_mangle]
+pub unsafe extern "C" fn klog_info(_fmt: *const i8) {}
+
+/// FFI: 网络错误日志
+#[no_mangle]
+pub unsafe extern "C" fn klog_net_err(_msg: *const i8) {}
+
+/// FFI: 日志系统初始化 (C 兼容名)
+#[no_mangle]
+pub unsafe extern "C" fn klog_init_msg(_msg: *const i8) {}

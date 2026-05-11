@@ -100,31 +100,13 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 pub extern "C" fn kernel_init() {
     // 1. 初始化定时器子系统 (必须在启用中断前)
     match crate::kernel::timer::timer_init(1000) {
-        Ok(_freq) => {
-            // 成功: 注册 IRQ0 handler
-            let _ = crate::kernel::timer::irq::register_timer_irq();
-
-            // 2. 执行 TSC 频率校准 (提高时间测量精度)
-            match crate::kernel::timer::calibrate_tsc(20) {
-                Ok(tsc_mhz) => {
-                    // 校准成功: 可使用高精度时间函数
-                    let _ = tsc_mhz;
-                },
-                Err(_) => {
-                    // 校准失败: 使用近似值 (不影响基本功能)
-                    // TSC 函数将返回 None 或使用默认估计值
-                }
-            }
-        },
-        Err(msg) => {
-            // 失败: 使用默认值继续 (Timer 将回退到忙等待模式)
-            let _ = msg;
-        }
+        Ok(_freq) => {},
+        Err(_msg) => { let _ = _msg; }
     }
 
-    // 3. 初始化调度器
+    // 2. 初始化调度器
     crate::kernel::proc::scheduler::init();
 
-    // 4. 初始化文件系统
+    // 3. 初始化文件系统
     crate::kernel::fs::vfs::init();
 }

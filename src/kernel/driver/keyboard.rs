@@ -654,6 +654,18 @@ pub extern "C" fn keyboard_has_char() -> i32 {
     }
 }
 
+/// C 兼容别名: keyboard_has_data (旧C代码/FFI调用的名称)
+#[no_mangle]
+pub extern "C" fn keyboard_has_data() -> bool {
+    keyboard_has_char() != 0
+}
+
+/// C 兼容别名: keyboard_get_char
+#[no_mangle]
+pub extern "C" fn keyboard_get_char() -> i32 {
+    keyboard_read_char()
+}
+
 // ============================================================================
 // 单元测试
 // ============================================================================

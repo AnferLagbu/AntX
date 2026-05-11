@@ -100,9 +100,9 @@ static LAST_TICK_COUNT: AtomicU16 = AtomicU16::new(0);
 #[inline(always)]
 unsafe fn outb(port: u16, value: u8) {
     core::arch::asm!(
-        "outb {value}, dx",
-        value = in(reg_byte) value,
+        "out dx, al",
         in("dx") port,
+        in("al") value,
         options(nomem, nostack, preserves_flags),
     );
 }
@@ -115,7 +115,7 @@ unsafe fn outb(port: u16, value: u8) {
 unsafe fn inb(port: u16) -> u8 {
     let value: u8;
     core::arch::asm!(
-        "inb al, dx",
+        "in al, dx",
         out("al") value,
         in("dx") port,
         options(nomem, nostack, preserves_flags),

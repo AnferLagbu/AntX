@@ -49,26 +49,11 @@ USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 
 ASFLAGS = -f elf64
 
-KERNEL_OBJS = build/boot.o build/entry.o build/main.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/isr.o \
-              build/switch.o \
-              build/keyboard.o build/string.o build/ata.o \
-              build/timer.o build/user/embedded/user_init_bin.o build/stack_canary.o \
-              build/ipc.o build/klog.o build/grub_install.o \
-              build/version_registry.o \
-              build/cpu.o \
-              build/slab.o \
-              build/pci.o build/smp.o build/ioapic.o \
-              $(NET_OBJS)
+KERNEL_OBJS = build/boot.o build/entry.o build/switch.o \
+              build/user/embedded/user_init_bin.o
 
-KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_mount.o build/serial.o build/gdt.o build/gdt_asm.o build/isr.o \
-              build/switch.o \
-              build/keyboard.o build/string.o build/ata.o \
-              build/timer.o build/user/embedded/user_init_bin.o build/user/embedded/test_minimal_bin.o build/stack_canary.o \
-              build/ipc.o build/klog.o build/grub_install.o \
-              build/version_registry.o \
-              build/cpu.o \
-              build/slab.o \
-              build/pci.o \
+KERNEL_TEST_OBJS = build/boot.o build/entry.o build/switch.o \
+              build/user/embedded/user_init_bin.o build/user/embedded/test_minimal_bin.o \
               build/kernel_test.o build/test_main.o \
               build/test_process.o build/test_scheduler.o build/test_vfs.o build/test_syscall.o build/test_ipc.o build/test_hvfs.o \
               build/test_pwid_enhanced.o build/test_persistence.o build/test_filesystem_full.o build/test_recovery.o \
@@ -85,8 +70,7 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/main_test.o build/smart_moun
               build/test_smp.o \
               build/test_devfs.o build/test_timer.o build/test_driver_basic.o \
               build/test_e1000.o build/test_pci.o build/test_json_export.o \
-              build/smp.o build/ioapic.o \
-              $(NET_OBJS)
+              build/smp.o build/ioapic.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -178,15 +162,15 @@ build/%.o: src/kernel/%.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
+build/%.o: src/kernel/boot/%.asm
+	@mkdir -p build
+	$(AS) $(ASFLAGS) $< -o $@
+
 build/gdt_asm.o: src/kernel/gdt.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
-build/entry.o: src/kernel/entry.asm
-	@mkdir -p build
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/switch.o: src/proc/switch.asm
+build/switch.o: src/kernel/proc/switch.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 

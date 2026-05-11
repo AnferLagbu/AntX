@@ -241,11 +241,3 @@ int user_mount(const char *source, const char *target, const char *fstype, const
 int user_unmount(const char *target) {
     return sys_fs_unmount(target);
 }
-
-int64_t sys_disk_partition(uint32_t disk_id, uint64_t total_sectors) {
-    return syscall2(SYS_DISK_PARTITION, disk_id, total_sectors);
-}
-
-int64_t sys_disk_install_grub(uint32_t disk_id) {
-    return syscall1(SYS_DISK_INSTALL_GRUB, disk_id);
-}

@@ -24,10 +24,10 @@ pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
     // 当前简化实现仅验证参数有效性
     
     unsafe {
-        extern "C" { fn process_get_by_pid(pid: u32) -> *mut core::ffi::c_void; }
-        let proc = process_get_by_pid(target_pid);
+        extern "C" { fn process_get_by_pid(pid: u32) -> u64; }
+        let proc_addr = process_get_by_pid(target_pid);
 
-        if proc.is_null() {
+        if proc_addr == 0 {
             return Err(-2);
         }
     }

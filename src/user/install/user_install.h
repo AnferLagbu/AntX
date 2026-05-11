@@ -1,7 +1,7 @@
 #ifndef _USER_INSTALL_H
 #define _USER_INSTALL_H
 
-#include "types.h"
+#include "user/user.h"
 
 #define INSTALL_MIN_PASSWORD_LEN  4
 #define INSTALL_DEFAULT_HOSTNAME  "localhost"

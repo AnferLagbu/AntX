@@ -63,6 +63,7 @@ SECTIONS
     } :kernel
     
     . = ALIGN(4096);
+    __bss_start = .;
     .bss (NOLOAD) : AT(_kernel_text_lma + (ADDR(.bss) - _kernel_text_lma)) {
         *(.bss)
         *(.bss.*)

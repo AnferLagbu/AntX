@@ -644,6 +644,21 @@ pub extern "C" fn serial_irq_handler(com: u32) {
     }
 }
 
+/// C 兼容别名: serial_has_data
+#[no_mangle]
+pub extern "C" fn serial_has_data(com: i32) -> bool {
+    serial_has_char(com as u32) != 0
+}
+
+/// C 兼容别名: serial_write(buf, count 参数交换以匹配旧 C API)
+#[no_mangle]
+pub unsafe extern "C" fn serial_write(com: i32, buf: *const core::ffi::c_void, count: u64) {
+    let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
+    for &b in bytes {
+        serial_putc(com as u32, b as i32);
+    }
+}
+
 // ============================================================================
 // 单元测试
 // ============================================================================

@@ -48,6 +48,7 @@ pub mod types;      // 基础类型、常量、FFI声明
 pub mod sys_arch;   // lwIP OS 抽象层
 pub mod init;       // 网络初始化 (状态机)
 pub mod netif;      // 网络接口管理 (DHCP)
+pub mod stubs;     // lwIP C 兼容桩 (C→Rust 迁移过渡)
 
 // ============================================================================
 // 网卡驱动模块 (新增)
