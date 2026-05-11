@@ -136,78 +136,45 @@ pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 pub extern "C" fn idt_init() -> i32 {
     let manager = IdtManager::instance();
     
-    // 获取 ISR 地址表 (从 isr.asm 导出的符号)
+    // 获取 ISR 地址表 (从 isr.asm 导出的符号, 使用 fn 指针)
     extern "C" {
-        static isr0: u64;
-        static isr1: u64;
-        static isr2: u64;
-        static isr3: u64;
-        static isr4: u64;
-        static isr5: u64;
-        static isr6: u64;
-        static isr7: u64;
-        static isr8: u64;
-        static isr9: u64;
-        static isr10: u64;
-        static isr11: u64;
-        static isr12: u64;
-        static isr13: u64;
-        static isr14: u64;
-        static isr15: u64;
-        static isr16: u64;
-        static isr17: u64;
-        static isr18: u64;
-        static isr19: u64;
-        static isr20: u64;
-        static isr21: u64;
-        static isr22: u64;
-        static isr23: u64;
-        static isr24: u64;
-        static isr25: u64;
-        static isr26: u64;
-        static isr27: u64;
-        static isr28: u64;
-        static isr29: u64;
-        static isr30: u64;
-        static isr31: u64;
-        
-        // IRQ handlers
-        static irq0: u64;
-        static irq1: u64;
-        static irq2: u64;
-        static irq3: u64;
-        static irq4: u64;
-        static irq5: u64;
-        static irq6: u64;
-        static irq7: u64;
-        static irq8: u64;
-        static irq9: u64;
-        static irq10: u64;
-        static irq11: u64;
-        static irq12: u64;
-        static irq13: u64;
-        static irq14: u64;
-        static irq15: u64;
-        
-        // Special handlers
-        static syscall_handler: u64;
-        static isr0x82: u64;
+        fn isr0();  fn isr1();  fn isr2();  fn isr3();
+        fn isr4();  fn isr5();  fn isr6();  fn isr7();
+        fn isr8();  fn isr9();  fn isr10(); fn isr11();
+        fn isr12(); fn isr13(); fn isr14(); fn isr15();
+        fn isr16(); fn isr17(); fn isr18(); fn isr19();
+        fn isr20(); fn isr21(); fn isr22(); fn isr23();
+        fn isr24(); fn isr25(); fn isr26(); fn isr27();
+        fn isr28(); fn isr29(); fn isr30(); fn isr31();
+        fn irq0();  fn irq1();  fn irq2();  fn irq3();
+        fn irq4();  fn irq5();  fn irq6();  fn irq7();
+        fn irq8();  fn irq9();  fn irq10(); fn irq11();
+        fn irq12(); fn irq13(); fn irq14(); fn irq15();
+        fn syscall_handler();
+        fn isr0x82();
     }
     
     unsafe {
+        macro_rules! addr { ($f:ident) => { $f as usize as u64 }; }
         let isr_table: [u64; 32] = [
-            isr0, isr1, isr2, isr3, isr4, isr5, isr6, isr7,
-            isr8, isr9, isr10, isr11, isr12, isr13, isr14, isr15,
-            isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23,
-            isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31,
+            addr!(isr0), addr!(isr1), addr!(isr2), addr!(isr3),
+            addr!(isr4), addr!(isr5), addr!(isr6), addr!(isr7),
+            addr!(isr8), addr!(isr9), addr!(isr10), addr!(isr11),
+            addr!(isr12), addr!(isr13), addr!(isr14), addr!(isr15),
+            addr!(isr16), addr!(isr17), addr!(isr18), addr!(isr19),
+            addr!(isr20), addr!(isr21), addr!(isr22), addr!(isr23),
+            addr!(isr24), addr!(isr25), addr!(isr26), addr!(isr27),
+            addr!(isr28), addr!(isr29), addr!(isr30), addr!(isr31),
         ];
         
         let irq_table: [u64; 16] = [
-            irq0, irq1, irq2, irq3, irq4, irq5, irq6, irq7,
-            irq8, irq9, irq10, irq11, irq12, irq13, irq14, irq15,
+            addr!(irq0), addr!(irq1), addr!(irq2), addr!(irq3),
+            addr!(irq4), addr!(irq5), addr!(irq6), addr!(irq7),
+            addr!(irq8), addr!(irq9), addr!(irq10), addr!(irq11),
+            addr!(irq12), addr!(irq13), addr!(irq14), addr!(irq15),
         ];
         
-        match manager.init(&isr_table, &irq_table, syscall_handler, isr0x82) {
+        match manager.init(&isr_table, &irq_table, addr!(syscall_handler), addr!(isr0x82)) {
             Ok(()) => MODULE_INIT_SUCCESS,
             Err(msg) => {
                 // TODO: 使用 klog 记录错误 (Phase 3)

@@ -98,9 +98,18 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 
 #[no_mangle]
 pub extern "C" fn kernel_init() {
-    // 1. 初始化定时器子系统 (必须在启用中断前)
+    // 0. 初始化 IDT (含 PIC 重映射)
+    crate::kernel::idt::idt_init();
+
+    // 1. 初始化定时器子系统
     match crate::kernel::timer::timer_init(1000) {
-        Ok(_freq) => {},
+        Ok(_freq) => {
+            // TODO: 修复 IRQ0 handler 崩溃 (spin::Mutex 在 init() 中死锁)
+            // 当前 IRQ 框架已就绪但 IRQ0 未启用:
+            //   let _ = crate::kernel::timer::irq::register_timer_irq();
+            //   unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+            //   crate::kernel::timer::calibrate_tsc(20);
+        },
         Err(_msg) => { let _ = _msg; }
     }
 

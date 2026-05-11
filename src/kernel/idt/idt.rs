@@ -36,6 +36,27 @@ unsafe fn port_outb(port: u16, value: u8) {
     core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
 }
 
+/// I/O 等待
+#[inline(always)]
+unsafe fn io_wait() { port_outb(0x80, 0); }
+
+/// 重映射 8259A PIC: IRQ0-7→vec32-39, IRQ8-15→vec40-47
+unsafe fn remap_pic() {
+    let m = port_inb(0x21);
+    let s = port_inb(0xA1);
+    port_outb(0x20, 0x11); io_wait();
+    port_outb(0xA0, 0x11); io_wait();
+    port_outb(0x21, 0x20); io_wait();
+    port_outb(0xA1, 0x28); io_wait();
+    port_outb(0x21, 0x04); io_wait();
+    port_outb(0xA1, 0x02); io_wait();
+    port_outb(0x21, 0x01); io_wait();
+    port_outb(0xA1, 0x01); io_wait();
+    port_outb(0x21, 0xFF);
+    port_outb(0xA1, 0xFF);
+    let _ = (m, s);
+}
+
 /// 禁用中断
 #[inline(always)]
 unsafe fn cli() {
@@ -135,6 +156,8 @@ impl IdtManager {
         syscall_handler: u64,
         isr0x82: u64,
     ) -> Result<(), &'static str> {
+        unsafe { remap_pic(); }
+
         let mut state = self.state.lock();
 
         // 1. 清空所有条目
