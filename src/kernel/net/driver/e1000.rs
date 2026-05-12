@@ -874,6 +874,26 @@ pub extern "C" fn get_e1000_instance() -> *mut core::ffi::c_void {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn e1000_dump_stats() {
+    let instance = unsafe { &E1000_INSTANCE };
+    if let Some(ref dev) = *instance {
+        let _ = dev.mmio_base;
+    }
+}
+
+static mut KALLOC_BUF: [u8; 524288] = [0; 524288];
+static mut KALLOC_OFF: usize = 0;
+
+#[no_mangle]
+pub unsafe extern "C" fn kmalloc_align(size: u64, _align: u64) -> *mut core::ffi::c_void {
+    let s = size as usize;
+    if KALLOC_OFF + s > KALLOC_BUF.len() { return core::ptr::null_mut(); }
+    let ptr = KALLOC_BUF.as_mut_ptr().add(KALLOC_OFF) as *mut core::ffi::c_void;
+    KALLOC_OFF += s;
+    ptr
+}
+
 // ============================================================================
 // 单元测试
 // ============================================================================

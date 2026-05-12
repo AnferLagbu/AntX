@@ -19,8 +19,12 @@
 #define LWIP_NO_STDLIB_H    1
 
 /* ---- 标准常量 (替代 limits.h) ---- */
+#ifndef INT_MAX
 #define INT_MAX    2147483647
+#endif
+#ifndef UINT_MAX
 #define UINT_MAX   4294967295U
+#endif
 
 /* ---- 让 lwIP 提供自己的 errno ---- */
 #define LWIP_PROVIDE_ERRNO  1

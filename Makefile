@@ -6,35 +6,34 @@ CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protec
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
          -Wno-builtin-declaration-mismatch \
          -Isrc/include -Isrc/include/tests \
-         -Isrc/net -Isrc/net/lwip -Isrc/net/lwip/src/include -Isrc/net/arch -Isrc/net/driver
+         -Isrc/kernel/net -Isrc/kernel/net/lwip -Isrc/kernel/net/lwip/src/include -Isrc/kernel/net/arch -Isrc/kernel/net/driver
 
-NET_CORE_C = $(wildcard src/net/lwip/src/core/*.c) \
-             $(wildcard src/net/lwip/src/core/ipv4/*.c) \
-             $(wildcard src/net/lwip/src/core/ipv6/*.c)
-NET_NETIF_C = src/net/lwip/src/netif/ethernet.c
-NET_APPS_C = src/net/lwip/src/apps/http/httpd.c \
-             src/net/lwip/src/apps/http/fs.c \
-             src/net/lwip/src/apps/http/http_client.c \
-             $(wildcard src/net/lwip/src/apps/mdns/*.c) \
-             $(wildcard src/net/lwip/src/apps/mqtt/*.c) \
-             $(wildcard src/net/lwip/src/apps/netbiosns/*.c) \
-             $(wildcard src/net/lwip/src/apps/smtp/*.c) \
-             $(wildcard src/net/lwip/src/apps/sntp/*.c) \
-             $(wildcard src/net/lwip/src/apps/tftp/*.c) \
-             $(wildcard src/net/lwip/src/apps/lwiperf/*.c) \
-             $(wildcard src/net/lwip/src/apps/snmp/*.c)
-NET_QX_C   = src/net/driver/e1000.c \
-             src/net/net_ffi_bridge.c \
-             src/net/lib_compat.c
+NET_CORE_C = $(wildcard src/kernel/net/lwip/src/core/*.c) \
+             $(wildcard src/kernel/net/lwip/src/core/ipv4/*.c) \
+             $(wildcard src/kernel/net/lwip/src/core/ipv6/*.c)
+NET_NETIF_C = src/kernel/net/lwip/src/netif/ethernet.c
+NET_APPS_C = src/kernel/net/lwip/src/apps/http/httpd.c \
+             src/kernel/net/lwip/src/apps/http/fs.c \
+             src/kernel/net/lwip/src/apps/http/http_client.c \
+             $(wildcard src/kernel/net/lwip/src/apps/mdns/*.c) \
+             $(wildcard src/kernel/net/lwip/src/apps/mqtt/*.c) \
+             $(wildcard src/kernel/net/lwip/src/apps/netbiosns/*.c) \
+             $(wildcard src/kernel/net/lwip/src/apps/smtp/*.c) \
+             $(wildcard src/kernel/net/lwip/src/apps/sntp/*.c) \
+             $(wildcard src/kernel/net/lwip/src/apps/tftp/*.c) \
+             $(wildcard src/kernel/net/lwip/src/apps/lwiperf/*.c) \
+             $(wildcard src/kernel/net/lwip/src/apps/snmp/*.c)
+# C 桥接文件已被 Rust 重写 (sys_arch.rs / init.rs / netif.rs / apps.rs / e1000.rs)
+NET_QX_C   =
 # 注意: 以下文件已用 Rust 重写:
-#   - src/net/arch/sys_arch.c → src/net/sys_arch.rs
-#   - src/net/qx_net_init.c   → src/net/init.rs
-#   - src/net/qx_netif.c     → src/net/netif.rs
-#   - src/net/qx_net_apps.c   → src/net/apps.rs
-#   - src/net/qx_fsdata.c     → src/net/fsdata.rs
+#   - src/kernel/net/arch/sys_arch.c → sys_arch.rs
+#   - src/kernel/net/qx_net_init.c → init.rs
+#   - src/kernel/net/qx_netif.c    → netif.rs
+#   - src/kernel/net/qx_net_apps.c → apps.rs
+#   - src/kernel/net/qx_fsdata.c   → fsdata.rs
 
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
-NET_OBJS   = $(patsubst src/net/%.c,build/net/%.o,$(NET_ALL_C))
+NET_OBJS   = $(patsubst src/kernel/net/%.c,build/net/%.o,$(NET_ALL_C))
 
 USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
               -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
@@ -50,7 +49,9 @@ USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 ASFLAGS = -f elf64
 
 KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-              build/user/embedded/user_init_bin.o
+              build/user/embedded/user_init_bin.o \
+              build/lib/string.o \
+              $(NET_OBJS)
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
               build/user/embedded/user_init_bin.o build/user/embedded/test_minimal_bin.o \
@@ -137,6 +138,10 @@ build/kernel.flat: build/kernel.bin
 $(RUST_LIB):
 	@echo "Building Rust kernel module..."
 	cd src/rust && cargo build --release
+
+build/lib/string.o: src/lib/string.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/pci.o: src/driver/pci.c
 	@mkdir -p build
@@ -283,7 +288,7 @@ build/user/embedded/test_minimal_bin.o: src/user/embedded/test_minimal_bin.c
 # ============================================================
 # 网络子系统 (lwIP 2.2.1)
 # ============================================================
-build/net/%.o: src/net/%.c
+build/net/%.o: src/kernel/net/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

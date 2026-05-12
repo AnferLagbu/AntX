@@ -126,4 +126,7 @@ pub extern "C" fn kernel_init() {
     // 4. VFS
     crate::kernel::fs::vfs::init();
     crate::klog_boot_info!("VFS ready");
+
+    // 5. Network (lwIP + E1000)
+    crate::kernel::net::init::qx_net_init();
 }
