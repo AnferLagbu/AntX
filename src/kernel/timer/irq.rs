@@ -35,6 +35,13 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     // 1. 更新全局 tick 计数器 (核心功能)
     crate::kernel::timer::on_timer_interrupt();
 
+    // 2. lwIP 协议栈定时器处理 (DHCP/TCP/ARP 状态机)
+    // 每 100 个 tick (100ms) 调用一次，避免过于频繁
+    if crate::kernel::timer::get_ticks() % 100 == 0 {
+        extern "C" { fn sys_check_timeouts(); }
+        unsafe { sys_check_timeouts(); }
+    }
+
     // 2. 可选: 触发调度器 tick (用于时间片轮转)
     // 注意: 调度器 tick 可能会导致进程切换，
     // 需要确保 frame 指针有效且不会被释放

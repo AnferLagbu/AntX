@@ -753,7 +753,6 @@ static mut E1000_INSTANCE: Option<E1000Device> = None;
 pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
     extern "C" {
         fn antx_netif_init(netif: *mut core::ffi::c_void, mac: *const u8);
-        fn klog_net(fmt: *const i8);
     }
     unsafe {
         match &mut E1000_INSTANCE {
