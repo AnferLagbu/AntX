@@ -139,7 +139,7 @@ $(RUST_LIB):
 	@echo "Building Rust kernel module..."
 	cd src/rust && cargo build --release
 
-build/lib/string.o: src/lib/string.c
+build/lib/string.o: src/kernel/lib/string.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
