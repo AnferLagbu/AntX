@@ -204,12 +204,12 @@ pub enum LogCategory {
 impl LogLevel {
     fn prefix(&self) -> &[u8] {
         match self {
-            LogLevel::Debug => b"[DBG]  ",
-            LogLevel::Info  => b"[INFO] ",
-            LogLevel::Note  => b"[NOTE] ",
-            LogLevel::Warn  => b"[WARN] ",
-            LogLevel::Error => b"[ERR]  ",
-            LogLevel::Crit  => b"[CRIT] ",
+            LogLevel::Debug => b"[DBG] ",
+            LogLevel::Info  => b"[INFO]",
+            LogLevel::Note  => b"[NOTE]",
+            LogLevel::Warn  => b"[WARN]",
+            LogLevel::Error => b"[ERR] ",
+            LogLevel::Crit  => b"[CRIT]",
         }
     }
 }
@@ -217,16 +217,16 @@ impl LogLevel {
 impl LogCategory {
     fn name(&self) -> &[u8] {
         match self {
-            LogCategory::Boot     => b"BOOT    ",
-            LogCategory::Kernel   => b"KERNEL  ",
-            LogCategory::Memory   => b"MEMORY  ",
-            LogCategory::Process  => b"PROCESS ",
-            LogCategory::FS       => b"FS      ",
-            LogCategory::Net      => b"NET     ",
-            LogCategory::Driver   => b"DRIVER  ",
-            LogCategory::Syscall  => b"SYSCALL ",
-            LogCategory::IPC      => b"IPC     ",
-            LogCategory::Security => b"SECURITY",
+            LogCategory::Boot     => b"BOOT",
+            LogCategory::Kernel   => b"KERN",
+            LogCategory::Memory   => b"MEM",
+            LogCategory::Process  => b"PROC",
+            LogCategory::FS       => b"FS",
+            LogCategory::Net      => b"NET",
+            LogCategory::Driver   => b"DRV",
+            LogCategory::Syscall  => b"SYSCALL",
+            LogCategory::IPC      => b"IPC",
+            LogCategory::Security => b"SEC",
         }
     }
 }
@@ -291,18 +291,21 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     let ts = format_ts(&mut ts_buf, tsc);
 
     // 串口输出: 在锁外完成, 避免慢速 I/O 期间 IRQ 死锁
+    // 格式: <ts> [LEVEL][CAT] message\n
     serial_write_bytes(ts);
     serial_write_bytes(level.prefix());
+    serial_write_bytes(b" ");
     serial_write_bytes(b"[");
     serial_write_bytes(cat.name());
     serial_write_bytes(b"] ");
     serial_write_bytes(msg);
     serial_putc(b'\n');
 
-    // 环形缓冲
+    // 环形缓冲: 仅此处持锁, 极短临界区
     let ring = unsafe { &mut *RING.inner.get() };
     ring.push_str(ts);
     ring.push_str(level.prefix());
+    ring.push(b' ');
     ring.push(b'[');
     ring.push_str(cat.name());
     ring.push(b']');
