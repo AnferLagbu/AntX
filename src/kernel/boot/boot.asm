@@ -48,6 +48,12 @@ pdpt_high:
     resb 4096
 pd_low:
     resb 4096
+pd_low2:
+    resb 4096
+pd_low3:
+    resb 4096
+pd_low4:
+    resb 4096
 pd_high:
     resb 4096
 gdt64:
@@ -76,7 +82,7 @@ _start:
 
     lea edi, [ebx + (pml4 - _start)]
     xor eax, eax
-    mov ecx, 6144
+    mov ecx, 8192
     rep stosd
 
     lea edi, [ebx + (pml4 - _start)]
@@ -86,14 +92,29 @@ _start:
     mov [edi], eax
     mov [edi + 4], edx
 
-    lea edi, [ebx + (pml4 - _start) + 256 * 8]
-    lea eax, [ebx + (pdpt_high - _start)]
+    lea edi, [ebx + (pdpt_low - _start)]
+    lea eax, [ebx + (pd_low - _start)]
     or eax, 3
     mov [edi], eax
     mov [edi + 4], edx
 
-    lea edi, [ebx + (pdpt_low - _start)]
-    lea eax, [ebx + (pd_low - _start)]
+    lea eax, [ebx + (pd_low2 - _start)]
+    or eax, 3
+    mov [edi + 8], eax
+    mov [edi + 12], edx
+
+    lea eax, [ebx + (pd_low3 - _start)]
+    or eax, 3
+    mov [edi + 16], eax
+    mov [edi + 20], edx
+
+    lea eax, [ebx + (pd_low4 - _start)]
+    or eax, 3
+    mov [edi + 24], eax
+    mov [edi + 28], edx
+
+    lea edi, [ebx + (pml4 - _start) + 256 * 8]
+    lea eax, [ebx + (pdpt_high - _start)]
     or eax, 3
     mov [edi], eax
     mov [edi + 4], edx
@@ -105,7 +126,7 @@ _start:
     mov [edi + 4], edx
 
     lea edi, [ebx + (pd_low - _start)]
-    mov eax, 0x87
+    mov eax, 0x83
     xor edx, edx
     mov ecx, 512
 .map_low:
@@ -118,7 +139,7 @@ _start:
     jnz .map_low
 
     lea edi, [ebx + (pd_high - _start)]
-    mov eax, 0x87
+    mov eax, 0x83
     xor edx, edx
     mov ecx, 512
 .map_high:
@@ -129,6 +150,45 @@ _start:
     add edi, 8
     dec ecx
     jnz .map_high
+
+    lea edi, [ebx + (pd_low2 - _start)]
+    mov eax, 0x40000083
+    xor edx, edx
+    mov ecx, 512
+.map_low2:
+    mov [edi], eax
+    mov [edi + 4], edx
+    add eax, 0x200000
+    adc edx, 0
+    add edi, 8
+    dec ecx
+    jnz .map_low2
+
+    lea edi, [ebx + (pd_low3 - _start)]
+    mov eax, 0x80000083
+    xor edx, edx
+    mov ecx, 512
+.map_low3:
+    mov [edi], eax
+    mov [edi + 4], edx
+    add eax, 0x200000
+    adc edx, 0
+    add edi, 8
+    dec ecx
+    jnz .map_low3
+
+    lea edi, [ebx + (pd_low4 - _start)]
+    mov eax, 0xC0000083
+    xor edx, edx
+    mov ecx, 512
+.map_low4:
+    mov [edi], eax
+    mov [edi + 4], edx
+    add eax, 0x200000
+    adc edx, 0
+    add edi, 8
+    dec ecx
+    jnz .map_low4
 
     lea edi, [ebx + (gdt64 - _start)]
     mov word [edi], 23

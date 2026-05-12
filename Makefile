@@ -24,7 +24,7 @@ NET_APPS_C = src/kernel/net/lwip/src/apps/http/httpd.c \
              $(wildcard src/kernel/net/lwip/src/apps/lwiperf/*.c) \
              $(wildcard src/kernel/net/lwip/src/apps/snmp/*.c)
 # C 桥接文件已被 Rust 重写 (sys_arch.rs / init.rs / netif.rs / apps.rs / e1000.rs)
-NET_QX_C   =
+NET_QX_C   = src/kernel/net/arch/net_glue.c
 # 注意: 以下文件已用 Rust 重写:
 #   - src/kernel/net/arch/sys_arch.c → sys_arch.rs
 #   - src/kernel/net/qx_net_init.c → init.rs

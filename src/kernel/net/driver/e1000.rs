@@ -36,7 +36,7 @@ use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result};
 
 /// TX/RX 描述符环大小
 const E1000_TX_RING_SIZE: usize = 64;
-const E1000_RX_RING_SIZE: usize = 256;
+const E1000_RX_RING_SIZE: usize = 128;
 
 /// RX 缓冲区大小
 const E1000_RX_BUFFER_SIZE: usize = 2048;
@@ -565,6 +565,9 @@ impl E1000Device {
                         cmd |= 0x06;
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x04, cmd) };
 
+                        // 设置 MMIO 基址 (boot 页表恒等映射物理地址)
+                        self.mmio_base = self.mmio_phys as *mut u8;
+
                         read_mac_address(self);
 
                         return Ok(());
@@ -745,15 +748,31 @@ extern "C" {
 /// 全局 E1000 实例
 static mut E1000_INSTANCE: Option<E1000Device> = None;
 
-/// 初始化 E1000 并注册为 lwIP 网络接口
+/// 初始化 E1000 并设置 netif 结构体字段
 #[no_mangle]
-pub extern "C" fn e1000_init(_netif: *mut core::ffi::c_void) -> i32 {
+pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
+    extern "C" {
+        fn antx_netif_init(netif: *mut core::ffi::c_void, mac: *const u8);
+        fn klog_net(fmt: *const i8);
+    }
     unsafe {
         match &mut E1000_INSTANCE {
             Some(ref mut dev) => {
+                if dev.mmio_base.is_null() { return -5; }
                 match dev.init() {
-                    Ok(()) => 0,
-                    Err(_) => -5,
+                    Ok(()) => {
+                        antx_netif_init(netif, dev.mac.as_ptr());
+                        // 注册 E1000 IRQ 处理器
+                        if dev.irq != 0 && dev.irq != 255 {
+                            extern "C" {
+                                fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u8) -> i32;
+                            }
+                            idt_register_irq(dev.irq, e1000_irq_entry, b"e1000\0".as_ptr() as *const i8, 0);
+                        }
+                        klog_net("E1000 initialized, IRQ registered\0".as_ptr() as *const i8);
+                        0
+                    },
+                    Err(_e) => -5,
                 }
             },
             None => -5,
@@ -882,7 +901,7 @@ pub extern "C" fn e1000_dump_stats() {
     }
 }
 
-static mut KALLOC_BUF: [u8; 524288] = [0; 524288];
+static mut KALLOC_BUF: [u8; 1048576] = [0; 1048576];
 static mut KALLOC_OFF: usize = 0;
 
 #[no_mangle]
