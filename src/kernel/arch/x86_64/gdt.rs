@@ -309,7 +309,7 @@ static mut TSS_INSTANCE: super::tss::TaskStateSegment = super::tss::TaskStateSeg
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn gdt_init() -> i32 {
-    use crate::kernel::logging::{klog_write, LogLevel, LogCategory};
+    use crate::kernel::klog::{klog_write, LogLevel, LogCategory};
     
     static INIT_MSG: &[u8] = b"Initializing GDT and TSS...\0";
     unsafe {

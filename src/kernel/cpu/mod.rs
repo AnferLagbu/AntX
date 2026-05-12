@@ -579,7 +579,7 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_init() -> i32 {
-    use crate::kernel::logging::{klog_write, LogLevel, LogCategory};
+    use crate::kernel::klog::{klog_write, LogLevel, LogCategory};
     
     static INIT_MSG: &[u8] = b"Initializing QX AMD64 CPU driver...\0";
     unsafe {

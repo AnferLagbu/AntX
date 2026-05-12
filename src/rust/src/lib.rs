@@ -64,7 +64,7 @@ pub mod kernel;
 
 // 重新导出常用类型 (方便直接使用 crate::xxx 而非 crate::kernel::xxx)
 pub use kernel::cpu::CpuInfo;
-pub use kernel::logging::LogLevel;
+pub use kernel::klog::LogLevel;
 
 use core::panic::PanicInfo;
 use core::sync::atomic::Ordering;
@@ -98,30 +98,31 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 
 #[no_mangle]
 pub extern "C" fn kernel_init() {
-    // 0. 初始化 IDT (含 PIC 重映射 + lidt) — 必须在任何中断操作之前
-    crate::kernel::idt::idt_init();
+    // 0. KLog — 自举串口驱动, 必须先于所有子系统
+    unsafe { crate::kernel::klog::klog_init(); }
+    unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"AntX kernel starting...\0".as_ptr() as *const i8); }
 
-    // 1. 初始化定时器子系统
+    // 1. IDT + PIC
+    crate::kernel::idt::idt_init();
+    unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"IDT+PIC ready\0".as_ptr() as *const i8); }
+
+    // 2. Timer + IRQ0
     match crate::kernel::timer::timer_init(1000) {
         Ok(_freq) => {
-            // 注册 IRQ0 handler + 启用 IRQ0
+            unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"PIT timer configured\0".as_ptr() as *const i8); }
+
             let _ = crate::kernel::timer::irq::register_timer_irq();
+            unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"IRQ0 handler registered\0".as_ptr() as *const i8); }
+            unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"Interrupts enabled\0".as_ptr() as *const i8); }
 
-            // 启用中断
             unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
-
-            // TSC 频率校准
-            match crate::kernel::timer::calibrate_tsc(20) {
-                Ok(_) => {},
-                Err(_) => {}
-            }
         },
         Err(_msg) => { let _ = _msg; }
     }
 
-    // 2. 初始化调度器
+    // 3. Scheduler
     crate::kernel::proc::scheduler::init();
 
-    // 3. 初始化文件系统
+    // 4. VFS
     crate::kernel::fs::vfs::init();
 }
