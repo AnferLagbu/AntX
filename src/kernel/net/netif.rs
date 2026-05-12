@@ -113,7 +113,7 @@ static G_NET_INITIALIZED: AtomicU8 = AtomicU8::new(0);
 
 /// 全局网络接口实例 (✅ 静态存储, 整个程序生命周期有效)
 /// 大小需匹配 lwIP netif 结构体 (通常 256-512 字节)
-static mut G_NETIF_BUFFER: [u8; 512] = [0u8; 512];  // ✅ 静态分配
+static mut G_NETIF_BUFFER: [u8; 2048] = [0u8; 2048];  // ✅ 静态分配
 
 /// 保存全局网络接口指针
 static mut G_NETIF_PTR: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -209,17 +209,13 @@ pub unsafe extern "C" fn ethernet_input_from_e1000(
     data: *mut core::ffi::c_void,
     len: u16,
 ) -> i32 {
-    // 检查网络接口是否已初始化
-    if G_NETIF_PTR.is_null() || data.is_null() || len == 0 {
-        return LwipErr::Val as i32; // 无效参数
+    extern "C" {
+        fn antx_rx_packet(netif: *mut core::ffi::c_void, data: *const core::ffi::c_void, len: u16) -> i32;
     }
-
-    // 调用 lwIP ethernet_input 处理数据包
-    // 注意: 这里需要将原始数据包装成 pbuf 结构，或者直接使用内存指针
-    // 简化实现: 直接传递给 ethernet_input (假设 lwIP 能处理原始指针)
-    let result = ethernet_input(data, G_NETIF_PTR);
-
-    result
+    if G_NETIF_PTR.is_null() || data.is_null() || len == 0 {
+        return LwipErr::Val as i32;
+    }
+    antx_rx_packet(G_NETIF_PTR, data as *const core::ffi::c_void, len)
 }
 
 // ============================================================================
@@ -253,7 +249,7 @@ pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
     let netif_ptr = G_NETIF_BUFFER.as_mut_ptr() as *mut core::ffi::c_void;
     
     // 清零 buffer
-    core::ptr::write_bytes(G_NETIF_BUFFER.as_mut_ptr(), 0, 512);
+    core::ptr::write_bytes(G_NETIF_BUFFER.as_mut_ptr(), 0, 2048);
     
     // 调用 lwIP netif_add
     let result = netif_add(
@@ -279,6 +275,8 @@ pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
     
     // 启动接口
     netif_set_up(result);
+    extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
+    netif_set_link_up(result);
     
     // ✅ 保存到全局变量 (静态存储, 安全)
     G_NETIF_PTR = result;
@@ -394,7 +392,7 @@ pub fn init_network_with_rust_e1000() -> Result<(), &'static str> {
 
         // 3. 注册到 lwIP (使用现有的 C 函数)
         let netif_ptr = G_NETIF_BUFFER.as_mut_ptr() as *mut core::ffi::c_void;
-        core::ptr::write_bytes(G_NETIF_BUFFER.as_mut_ptr(), 0, 512);
+        core::ptr::write_bytes(G_NETIF_BUFFER.as_mut_ptr(), 0, 2048);
 
         let result = netif_add(
             netif_ptr,
@@ -413,6 +411,8 @@ pub fn init_network_with_rust_e1000() -> Result<(), &'static str> {
         netif_set_default(result);
         netif_set_status_callback(result, status_callback_wrapper);
         netif_set_up(result);
+    extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
+    netif_set_link_up(result);
         G_NETIF_PTR = result;
         G_NET_INITIALIZED.store(1, Ordering::Release);
 

@@ -745,6 +745,15 @@ extern "C" {
     fn ethernet_input_from_e1000(data: *mut core::ffi::c_void, len: u16) -> i32;
 }
 
+unsafe fn pic_outb(port: u16, value: u8) {
+    core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack));
+}
+unsafe fn pic_inb(port: u16) -> u8 {
+    let value: u8;
+    core::arch::asm!("in al, dx", out("al") value, in("dx") port, options(nomem, nostack));
+    value
+}
+
 /// 全局 E1000 实例
 static mut E1000_INSTANCE: Option<E1000Device> = None;
 
@@ -753,6 +762,7 @@ static mut E1000_INSTANCE: Option<E1000Device> = None;
 pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
     extern "C" {
         fn antx_netif_init(netif: *mut core::ffi::c_void, mac: *const u8);
+        fn klog_net(fmt: *const i8);
     }
     unsafe {
         match &mut E1000_INSTANCE {
@@ -764,9 +774,16 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
                         // 注册 E1000 IRQ 处理器
                         if dev.irq != 0 && dev.irq != 255 {
                             extern "C" {
-                                fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u8) -> i32;
+                                fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u32) -> i32;
                             }
-                            idt_register_irq(dev.irq, e1000_irq_entry, b"e1000\0".as_ptr() as *const i8, 0);
+                            idt_register_irq(dev.irq, e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void), b"e1000\0".as_ptr() as *const i8, 0);
+                            if dev.irq < 8 {
+                                let mask = pic_inb(0x21);
+                                pic_outb(0x21, mask & !(1u8 << dev.irq));
+                            } else {
+                                let mask = pic_inb(0xA1);
+                                pic_outb(0xA1, mask & !(1u8 << (dev.irq - 8)));
+                            }
                         }
                         klog_net("E1000 initialized, IRQ registered\0".as_ptr() as *const i8);
                         0
@@ -825,30 +842,15 @@ pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::
 /// # Safety
 /// 此函数操作 lwIP 内部数据结构
 unsafe fn extract_pbuf_data(p: *mut core::ffi::c_void) -> (usize, *mut u8) {
-    // 简化版: 假设 p 指向连续内存区域
-    // 完整版需要遍历 pbuf 链表
-
-    // 尝试读取 pbuf 的 next、len、payload 字段
-    // 注意: 这里需要根据实际的 lwIP pbuf 结构定义来调整偏移量
-
+    extern "C" {
+        fn antx_pbuf_copyout(p: *mut core::ffi::c_void, buf: *mut u8, out_len: *mut u16);
+    }
     let pbuf_base = p as *mut u8;
-
-    // pbuf 结构大致布局 (x86_64):
-    // +0x00: next      (*pbuf)
-    // +0x08: payload   (*void)
-    // +0x10: tot_len   (u16_t)
-    // +0x12: len       (u16_t)
-    // +0x14: type      (u8)
-    // +0x15: flags     (u8)
-    // +0x16: ref       (u16_t)
-
-    // 读取 tot_len (假设小端序)
-    let len = *(pbuf_base.add(0x10) as *const u16) as usize;
-
-    // 读取 payload 指针
-    let payload = *(pbuf_base.add(0x08) as *const *mut u8);
-
-    (len, payload)
+    let total = *(pbuf_base.add(0x10) as *const u16) as usize;
+    static mut TX_BUF: [u8; 1600] = [0u8; 1600];
+    let mut out_len: u16 = total.min(1600) as u16;
+    antx_pbuf_copyout(p, TX_BUF.as_mut_ptr(), &mut out_len);
+    (out_len as usize, TX_BUF.as_mut_ptr())
 }
 
 /// E1000 中断入口

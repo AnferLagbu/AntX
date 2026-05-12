@@ -1,3 +1,11 @@
+#!/bin/bash
+# 关键修复: netif_set_link_up
+set -e
+cd /home/anfer/Code/C/AntX
+
+cp src/kernel/net/arch/net_glue.c backup/net_dhcp_fix/net_glue.c.bak_link
+
+cat > src/kernel/net/arch/net_glue.c << 'GEOFIX'
 #include "lwip/netif.h"
 #include "lwip/etharp.h"
 #include "lwip/ethip6.h"
@@ -17,20 +25,17 @@ void antx_netif_init(struct netif *netif, const uint8_t *mac) {
     netif->linkoutput = e1000_send;
     netif->name[0] = 'e';
     netif->name[1] = 'n';
+    netif_set_link_up(netif);
 }
 
 err_t antx_rx_packet(struct netif *netif, const void *data, u16_t len) {
     struct pbuf *p;
     u16_t copied;
-
     if (netif == NULL || data == NULL || len == 0) return ERR_VAL;
-
     p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
     if (p == NULL) return ERR_MEM;
-
     copied = pbuf_take(p, data, len);
     if (copied != len) { pbuf_free(p); return ERR_MEM; }
-
     if (netif->input(p, netif) != ERR_OK) { pbuf_free(p); return ERR_IF; }
     return ERR_OK;
 }
@@ -46,3 +51,7 @@ void antx_pbuf_copyout(struct pbuf *p, void *buf, u16_t *out_len) {
     }
     *out_len = total;
 }
+GEOFIX
+echo "Fixed: netif_set_link_up added to init"
+
+cd src/rust && cargo check 2>&1 | head -3 && echo "---" && cd ../.. && rm -rf build/net build/kernel.bin && make all 2>&1 | tail -2 && make iso 2>/dev/null && echo "=== QEMU 35s ===" && timeout 35 qemu-system-x86_64 -cdrom build/antx.iso -serial stdio -display none -no-reboot -m 128M -device e1000,netdev=n0 -netdev user,id=n0 2>&1 | grep -E "DHCP|E1000|NET\]|Ready|bound|Status|IP" ; echo "EXIT:$?"
