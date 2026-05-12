@@ -458,9 +458,9 @@ pub fn get_e1000_device() -> Option<&'static E1000Device> {
 /// # Returns
 /// * `Ok(usize)` - 成功发送的字节数
 /// * `Err(DriverError)` - 发送失败
-pub fn send_packet(data: &[u8]) -> Result<usize, DriverError> {
+pub fn send_packet(_data: &[u8]) -> Result<usize, DriverError> {
     match get_e1000_device() {
-        Some(dev) => {
+        Some(_dev) => {
             // 注意: 这里需要可变引用，但全局实例是静态的
             // 实际实现可能需要使用内部可变性或 Mutex
             Err(DriverError::NotInitialized)

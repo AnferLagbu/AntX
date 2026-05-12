@@ -155,7 +155,7 @@ pub extern "C" fn idt_init() -> i32 {
     }
     
     unsafe {
-        macro_rules! addr { ($f:ident) => { $f as usize as u64 }; }
+        macro_rules! addr { ($f:ident) => { ($f as *const ()) as usize as u64 }; }
         let isr_table: [u64; 32] = [
             addr!(isr0), addr!(isr1), addr!(isr2), addr!(isr3),
             addr!(isr4), addr!(isr5), addr!(isr6), addr!(isr7),

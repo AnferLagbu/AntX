@@ -260,11 +260,11 @@ unsafe fn sys_boot_check(check_type: i32) -> i64 {
 
 unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     if disks.is_null() || max_count == 0 { return SyscallError::E_INVAL.as_i64(); }
-    extern "C" { fn ata_disk_present(drive: u8) -> bool; }
+    extern "C" { fn ata_disk_present(drive: u8) -> i32; }
     let mut count: u32 = 0;
     for drive in 0..4u8 {
         if count >= max_count { break; }
-        if ata_disk_present(drive) { *disks.add(count as usize) = drive as u64; count += 1; }
+        if ata_disk_present(drive) != 0 { *disks.add(count as usize) = drive as u64; count += 1; }
     }
     count as i64
 }
@@ -282,7 +282,7 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     if crate::kernel::pwid::ffi::pwid_has_capability(pwid, 4, 0) == 0 {
         return SyscallError::E_AUTH_CAP.as_i64();
     }
-    extern "C" { fn ata_disk_present(drive: u8) -> bool; }
-    if !ata_disk_present(disk_id as u8) { return SyscallError::E_NOTFOUND.as_i64(); }
+    extern "C" { fn ata_disk_present(drive: u8) -> i32; }
+    if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
     SyscallError::E_NOSYS.as_i64()
 }

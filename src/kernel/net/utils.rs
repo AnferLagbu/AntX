@@ -352,12 +352,12 @@ pub fn format_ipv4(ip: [u8; 4], buf: &mut [u8]) -> usize {
 pub fn parse_ipv4(str: &[u8]) -> Option<[u8; 4]> {
     let mut result = [0u8; 4];
     let mut octet_idx = 0;
-    let mut current_val: u8 = 0;
+    let mut current_val: u16 = 0;
 
     for &ch in str {
         match ch {
             b'0'..=b'9' => {
-                current_val = current_val.wrapping_mul(10).wrapping_add(ch - b'0');
+                current_val = current_val.wrapping_mul(10).wrapping_add((ch - b'0') as u16);
                 if current_val > 255 {
                     return None;
                 }
@@ -366,7 +366,7 @@ pub fn parse_ipv4(str: &[u8]) -> Option<[u8; 4]> {
                 if octet_idx >= 3 {
                     return None;
                 }
-                result[octet_idx] = current_val;
+                result[octet_idx] = current_val as u8;
                 octet_idx += 1;
                 current_val = 0;
             }
@@ -378,7 +378,7 @@ pub fn parse_ipv4(str: &[u8]) -> Option<[u8; 4]> {
     if octet_idx != 3 {
         return None;
     }
-    result[octet_idx] = current_val;
+    result[octet_idx] = current_val as u8;
 
     Some(result)
 }

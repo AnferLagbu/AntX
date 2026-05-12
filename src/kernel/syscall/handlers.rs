@@ -24,7 +24,7 @@ extern "C" {
     /// 串口写入
     fn serial_write(com: i32, buf: *const core::ffi::c_void, count: u64);
     /// ATA 磁盘存在检测
-    fn ata_disk_present(drive: u8) -> bool;
+    fn ata_disk_present(drive: u8) -> i32;
 }
 
 /// 创建新进程
@@ -818,7 +818,7 @@ pub unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     for drive in 0..4u8 {
         if count >= max_count { break; }
         
-        if ata_disk_present(drive) {
+        if ata_disk_present(drive) != 0 {
             *disks.add(count as usize) = drive as u64;
             count += 1;
         }
@@ -865,7 +865,7 @@ pub unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
         return SyscallError::E_PERM.as_i64();
     }
     
-    if !ata_disk_present(disk_id as u8) {
+    if ata_disk_present(disk_id as u8) == 0 {
         return SyscallError::E_NOTFOUND.as_i64();
     }
     
@@ -919,7 +919,7 @@ pub unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
         return SyscallError::E_PERM.as_i64();
     }
     
-    if !ata_disk_present(disk_id as u8) {
+    if ata_disk_present(disk_id as u8) == 0 {
         return SyscallError::E_NOTFOUND.as_i64();
     }
     
@@ -945,7 +945,7 @@ pub unsafe fn sys_disk_install_grub(disk_id: u32) -> i64 {
         return SyscallError::E_PERM.as_i64();
     }
     
-    if !ata_disk_present(disk_id as u8) {
+    if ata_disk_present(disk_id as u8) == 0 {
         return SyscallError::E_NOTFOUND.as_i64();
     }
     

@@ -29,7 +29,6 @@
 //! 此模块直接操作硬件 MMIO 和 PCI 配置空间。
 
 use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result};
-use crate::kernel::driver::framework::{outb, inb, outw, inw};
 
 // ============================================================================
 // E1000 硬件常量定义
@@ -536,7 +535,7 @@ impl E1000Device {
                         continue;
                     }
 
-                    let did = unsafe { pci_read_config_word(bus, dev_idx, func, 0x02) };
+                    let _did = unsafe { pci_read_config_word(bus, dev_idx, func, 0x02) };
                     let class_code = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x08) };
                     let base_class = ((class_code >> 24) & 0xFF) as u8;
 
@@ -548,7 +547,7 @@ impl E1000Device {
                         let bar0_lo = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
                         
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x10, 0xFFFFFFFF) };
-                        let bar_size_mask = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
+                        let _bar_size_mask = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x10, bar0_lo) };
 
                         let is_io = (bar0_lo & 0x01) != 0;
@@ -652,7 +651,7 @@ impl E1000Device {
                               E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE) == 0 {
                     // 有效数据包 - 传递给 lwIP
                     if !self.rx_buffers[self.rx_tail].is_null() {
-                        let pkt_data = unsafe {
+                        let _pkt_data = unsafe {
                             core::slice::from_raw_parts(
                                 self.rx_buffers[self.rx_tail],
                                 len
@@ -737,9 +736,9 @@ impl E1000Device {
 // FFI 兼容接口 (供 lwIP 调用)
 // ============================================================================
 
-/// 外部声明: lwIP ethernet_input 函数
+// 外部声明: lwIP ethernet_input 函数
 extern "C" {
-    /// 将接收到的以太网帧传递给 lwIP 协议栈处理
+    // 将接收到的以太网帧传递给 lwIP 协议栈处理
     fn ethernet_input_from_e1000(data: *mut core::ffi::c_void, len: u16) -> i32;
 }
 
@@ -748,7 +747,7 @@ static mut E1000_INSTANCE: Option<E1000Device> = None;
 
 /// 初始化 E1000 并注册为 lwIP 网络接口
 #[no_mangle]
-pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
+pub extern "C" fn e1000_init(_netif: *mut core::ffi::c_void) -> i32 {
     unsafe {
         match &mut E1000_INSTANCE {
             Some(ref mut dev) => {
@@ -774,7 +773,7 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
 /// * `ERR_OK` (0) - 成功
 /// * `-1` - 失败
 #[no_mangle]
-pub extern "C" fn e1000_send(netif: *mut core::ffi::c_void, p: *mut core::ffi::c_void) -> i32 {
+pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::c_void) -> i32 {
     unsafe {
         if E1000_INSTANCE.is_none() || p.is_null() {
             return -1;
