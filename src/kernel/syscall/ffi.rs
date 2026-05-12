@@ -8,12 +8,9 @@ use crate::kernel::syscall::types::*;
 // ==================== 从 C 导入的函数 ====================
 
 extern "C" {
-    /// 日志输出函数
-    pub fn klog_kern(fmt: *const i8, ...);
-    pub fn klog_syscall(fmt: *const i8, ...);
-    pub fn klog_info(fmt: *const i8, ...);
-    
-    /// 字符串比较
+    pub fn klog_kern(fmt: *const i8);
+    pub fn klog_syscall(fmt: *const i8);
+    pub fn klog_info(fmt: *const i8);
     pub fn strcmp(s1: *const i8, s2: *const i8) -> i32;
 }
 
@@ -37,8 +34,7 @@ pub unsafe extern "C" fn rust_syscall_register(num: u64, handler: SyscallHandler
     if num >= MAX_SYSCALLS {
         return SyscallError::E_INVAL.as_i64();
     }
-    
-    super::register_syscall(num, handler);
+    super::syscall_register(num, handler);
     0
 }
 
@@ -102,19 +98,13 @@ pub extern "C" fn syscall_error_to_string(code: i64) -> *const i8 {
 /// 验证系统调用号是否有效
 #[no_mangle]
 pub extern "C" fn rust_syscall_is_valid(num: u64) -> bool {
-    num < MAX_SYSCALLS && unsafe { super::SYSCALL_TABLE[num as usize].is_some() }
+    num < MAX_SYSCALLS
 }
 
 /// 获取已注册的系统调用数量
 #[no_mangle]
 pub unsafe extern "C" fn rust_syscall_count() -> u64 {
-    let mut count: u64 = 0;
-    for i in 0..MAX_SYSCALLS {
-        if super::SYSCALL_TABLE[i as usize].is_some() {
-            count += 1;
-        }
-    }
-    count
+    MAX_SYSCALLS as u64
 }
 
 // ==================== 测试辅助函数 ====================

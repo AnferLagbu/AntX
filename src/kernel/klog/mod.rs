@@ -11,6 +11,77 @@
 use core::sync::atomic::{AtomicU8, Ordering};
 
 // ============================================================================
+// 格式化宏 — 统一输出格式: [时间戳][级别][分类] 消息
+//
+// 输出格式: <ts_s>.<ts_us> [LEVEL] [CATEGORY] message\n
+//
+// 使用方式:
+//   klog!(Info, Boot, "AntX kernel starting...");
+//   klog_warn!(Kernel, "warning message");
+//   klog_err!(Driver, "driver error: {}", code);
+// ============================================================================
+
+pub const KLOG_BUF: usize = 256;
+
+pub struct KlogWriter { buf: [u8; KLOG_BUF], pos: usize }
+impl KlogWriter { pub const fn new() -> Self { Self { buf: [0; KLOG_BUF], pos: 0 } } }
+
+impl core::fmt::Write for KlogWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(self.buf.len() - self.pos);
+        self.buf[self.pos..self.pos+len].copy_from_slice(&bytes[..len]);
+        self.pos += len;
+        Ok(())
+    }
+}
+
+impl KlogWriter {
+    pub fn as_slice(&self) -> &[u8] { &self.buf[..self.pos] }
+}
+
+/// 通用格式化日志宏 — 单入口，所有模块共用
+#[macro_export]
+macro_rules! klog_fmt {
+    ($lvl:ident, $cat:ident, $($arg:tt)*) => {{
+        let mut w = $crate::kernel::klog::KlogWriter::new();
+        let _ = core::fmt::Write::write_fmt(&mut w, format_args!($($arg)*));
+        unsafe {
+            $crate::kernel::klog::klog_write(
+                $crate::kernel::klog::LogLevel::$lvl as u8,
+                $crate::kernel::klog::LogCategory::$cat as u8,
+                core::ptr::null(), core::ptr::null(), 0,
+                w.as_slice().as_ptr() as *const i8,
+            );
+        }
+    }};
+}
+
+/// 便捷宏: 按级别
+#[macro_export]
+macro_rules! klog_info  { ($cat:ident, $($arg:tt)*) => { $crate::klog_fmt!(Info,  $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_warn  { ($cat:ident, $($arg:tt)*) => { $crate::klog_fmt!(Warn,  $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_err   { ($cat:ident, $($arg:tt)*) => { $crate::klog_fmt!(Error, $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_debug { ($cat:ident, $($arg:tt)*) => { $crate::klog_fmt!(Debug, $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_crit  { ($cat:ident, $($arg:tt)*) => { $crate::klog_fmt!(Crit,  $cat, $($arg)*) }; }
+
+/// 便捷宏: 按类别+级别 (常用组合)
+#[macro_export]
+macro_rules! klog_boot_info  { ($($arg:tt)*) => { $crate::klog_info!(Boot, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_kern_warn { ($($arg:tt)*) => { $crate::klog_warn!(Kernel, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_kern_err  { ($($arg:tt)*) => { $crate::klog_err!(Kernel, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_drv_warn  { ($($arg:tt)*) => { $crate::klog_warn!(Driver, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_drv_err   { ($($arg:tt)*) => { $crate::klog_err!(Driver, $($arg)*) }; }
+
+// ============================================================================
 // 端口 I/O 原语 (无需 driver 框架)
 // ============================================================================
 

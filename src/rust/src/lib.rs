@@ -100,20 +100,19 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 pub extern "C" fn kernel_init() {
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
     unsafe { crate::kernel::klog::klog_init(); }
-    unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"AntX kernel starting...\0".as_ptr() as *const i8); }
+    crate::klog_boot_info!("AntX kernel starting {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
     // 1. IDT + PIC
     crate::kernel::idt::idt_init();
-    unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"IDT+PIC ready\0".as_ptr() as *const i8); }
+    crate::klog_boot_info!("IDT+PIC ready");
 
     // 2. Timer + IRQ0
     match crate::kernel::timer::timer_init(1000) {
         Ok(_freq) => {
-            unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"PIT timer configured\0".as_ptr() as *const i8); }
-
+            crate::klog_boot_info!("PIT timer configured");
             let _ = crate::kernel::timer::irq::register_timer_irq();
-            unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"IRQ0 handler registered\0".as_ptr() as *const i8); }
-            unsafe { crate::kernel::klog::klog_write(1, 0, core::ptr::null(), core::ptr::null(), 0, b"Interrupts enabled\0".as_ptr() as *const i8); }
+            crate::klog_boot_info!("IRQ0 handler registered");
+            crate::klog_boot_info!("Interrupts enabled");
 
             unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
         },
@@ -122,7 +121,9 @@ pub extern "C" fn kernel_init() {
 
     // 3. Scheduler
     crate::kernel::proc::scheduler::init();
+    crate::klog_boot_info!("Scheduler ready");
 
     // 4. VFS
     crate::kernel::fs::vfs::init();
+    crate::klog_boot_info!("VFS ready");
 }
