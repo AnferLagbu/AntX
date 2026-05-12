@@ -185,7 +185,6 @@
 #define CHECKSUM_CHECK_ICMP6        1
 #define LWIP_CHECKSUM_ON_COPY       1
 
-/* ---- 钩子 ---- */
-#define LWIP_HOOK_FILENAME          "arch/qx_hooks.h"
+/* ---- 钩子 (由 arch/cc.h 直接提供空实现) ---- */
 
 #endif /* QX_LWIPOPTS_H */
