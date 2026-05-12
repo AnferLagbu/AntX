@@ -1,91 +1,62 @@
 # AntX
 
-AntX 是一台从零构建的 x86_64 操作系统。它不是 Linux 的简化版，也不是某个教程的课后作业——它的每一行代码都是为了回答一个问题：**如果由我自己来设计，操作系统应该是什么样子？**
+AntX 是一个从零构建的 x86_64 操作系统，目标是成为一个功能相对完整的自研 OS。
 
-内核名为 **QueenX**，全部用户态组件加上内核，合称 **AntX**。
+> **AntX = QueenX 内核 + 任意用户态**
 
-技术栈是 C、Rust 和一点点 x86_64 汇编，运行在 QEMU 模拟器上。
+---
 
-## 设计原则
+## 内核架构
 
-三条原则贯穿整个项目：
+| 层级 | 组件 | 语言 |
+|------|------|------|
+| 引导 | Multiboot2 → 长模式过渡 → 4GB 恒等映射 | NASM |
+| 内核核心 | QueenX (`libqueenx.a`) — 静态库, 无 `main.rs` | Rust + 少量 C |
+| 协议栈 | lwIP 2.2.1 — DHCP / TCP / UDP / HTTP / DNS / mDNS / MQTT | C |
+| 驱动 | E1000 网卡 + COM1 串口 | Rust |
+| 用户态 | init / axsh (交互 shell, 19 个内置命令) / install | C |
 
-- **可理解性优先** — 保持相对轻量，每一行都有其存在的理由
-- **独立性优先** — 借鉴 Unix/Linux 的思想但不盲从，不做"Linux 的缩水版"
-- **实验性优先** — 这是个人探索项目，不合理就改，不背历史包袱
+## 特色子系统
 
-## 它有什么特别的
+- **HVFS** — 类 ext2 的原生文件系统, 支持三级间接块, LRU 块缓存, FSCK, 磁盘持久化
+- **PWID** — 基于能力的权限模型, 支持令牌委托/信任链/域隔离
+- **Barrier** — 故障恢复屏障, VFS 快照与级联回滚
+- **KLog** — 自举日志系统, 内建串口驱动, RDTSC 时间戳, `[INFO] [NET]` 格式化输出
+- **MLFQ 调度器** — 4 级反馈队列 + RT (FIFO/RR), 256 进程槽位
+- **IDT/PIC/IRQ** — 完整中断框架, 32 ISR + 16 IRQ + syscall + recovery stub
 
-### 没有"用户"这个概念 — PWID v4 能力流动模型
+## 构建与运行
 
-传统操作系统都有 UID/GID，有 `/etc/passwd`，有 `root` 用户。AntX 没有这些。
+```bash
+make all          # 编译内核 + 用户态
+make iso          # 生成 bootable ISO (GRUB2)
+make run          # QEMU 运行
 
-取而代之的是 **PWID**——一个由密码加备注信息经 SHA-256 哈希生成的 64 位身份标识。不需要"创建账户"，知道密码就能登录；同一密码配合不同备注就是不同身份。
+make run-net      # QEMU 带 E1000 网卡 (DHCP + HTTP)
+```
 
-**v4 核心思想**：没有任何身份天生有权。每个 PWID 携带一个 16×64=1024 位的**能力掩码**（capability mask），涵盖系统配置、文件系统、网络、进程、设备、身份管理等 16 个领域。能力可以被授予，也可以被收回。
+内核输出到串口 (`-serial stdio`), 启动日志格式:
 
-系统首次启动时不存在任何身份。内核检测 PWID 表为空，自动生成 **First Token**（创世令牌）——一条一次性、全能力的引导令牌，用于创建第一个全能力身份。通过 `--first` 引导参数也可以在任何时候重新触发 Genesis。
+```
+0.721 [INFO] [BOOT] KLog v2.0 initialized
+0.722 [INFO] [BOOT] AntX kernel starting queenx 0.1.0
+0.723 [INFO] [BOOT] IDT+PIC ready
+0.724 [INFO] [BOOT] PIT timer configured
+0.924 [INFO] [NET]  E1000 initialized, IRQ registered
+0.925 [INFO] [NET]  DHCP client started successfully
+1.026 [INFO] [BOOT] --- Network Subsystem Ready ---
+```
 
-身份创建时，新 PWID 的能力上限是创建者能力的子集——能力只能流动，不能凭空产生。临时提权通过**有时限的能力令牌**实现，到期自动失效。信任链支持最多 8 跳委派，每跳能力取交集。
+## 项目状态
 
-这套模型的内核实现约 2500 行 Rust，完整支持了：能力掩码、令牌系统（创建/使用/撤销/过期）、信任链委派、暴力破解防护、审计日志，以及与调度器的 PWID 感知 CPU 配额和进程数限制。
-
-### C 和 Rust 共同构成内核
-
-安全攸关的部分全部用 Rust 写了：
-
-| 模块 | 语言 | 
+| 指标 | 数值 |
 |------|------|
-| 物理/虚拟内存管理 | Rust |
-| MLFQ 调度器 + 实时任务 | Rust |
-| 文件系统 (VFS/HvFS/RamFS/DiskFS) | Rust |
-| PWID 权限系统 | Rust |
-| DMA 引擎 | Rust |
+| 内核代码量 | ~35000 行 (Rust + C + ASM) |
+| 合规检查 | 800+ / 800+, 100% |
+| Cargo 依赖 | 2 (`spin`, `bitflags`) |
+| Nightly features | 2 (`asm`, `alloc_error_handler`) |
+| TODO/FIXME | ~105 |
 
-C 负责驱动层、系统调用分发、IPC 和与汇编的衔接。汇编只出现在启动代码和上下文切换这种无法避免的地方。
+---
 
-### 调度器不只是"先来先服务"
-
-实现的是多级反馈队列（MLFQ），四个优先级层级，时间片从 10ms 递增到 80ms。用完时间片降级，定期统一提升防止饥饿。另外有一个独立的实时任务队列，支持 FIFO 和 Round-Robin 策略。
-
-### 文件系统
-
-HvFS（Hive File System）是一个为适配AntX的类 ext2 的自用原生文件系统，有 Super Block、Inode 结构、间接块索引和 LRU 块缓存。上面架了一层 VFS，统一了 RamFS、DiskFS、DevFS、ProcFS 五个后端的接口。启动时通过 Smart Mount 自动选择：开发模式下默认用 RamFS 快速启动，有磁盘就切持久化；发布模式强制要求磁盘。
-
-### 网络栈是"拿来即用"的
-
-集成了完整的 lwIP 2.2.1 协议栈加 Intel E1000 网卡驱动，DHCP 自动拿 IP，ICMP Ping 通了，HTTP Server 能返回页面，mDNS、MQTT、SNMP 这些应用层协议也都挂着。
-
-## 跑起来看看
-
-```bash
-# 装依赖（Fedora）
-bash scripts/requirements.sh --auto
-
-# 三条命令就能启动
-make all
-make run-iso        # ISO 启动
-make run-net        # 带网络启动
-```
-
-启动后你会进入一个叫 **antxsh** 的 Shell，在用户态（Ring 3）运行。它认得十几个命令：`fls` 列目录、`fcat` 看文件、`ilogin` 切换身份、`sver` 显示基于 Git commit 的动态版本号。
-
-还有一套 200+ 测试用例的测试框架：
-
-```bash
-make test-quick     # 60 秒快速验证
-make test-unit      # 120 秒完整单元测试
-```
-
-## 更多内容
-
-代码本身是最好的文档。除此之外：
-
-- [内核架构设计](docs/development/kernel-architecture.md) — 模块划分、初始化顺序、代码量统计
-- [PWID 权限模型](docs/development/pwid-model.md) — 为什么不要"用户"、PWID 如何生成、权限如何流转
-- [测试框架与进度](docs/progress/milestones.md) — 当前完成度、历史里程碑、下一步计划
-- [变更日志](docs/progress/changelog.md) — 从第一天到现在的所有重要变更
-
-## 许可证
-
-MIT © 2026 Anfer
+> 个人理念与兴趣驱动的实验性项目。持续演进中。
