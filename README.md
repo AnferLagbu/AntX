@@ -17,7 +17,7 @@ AntX 是一个完全自研的操作系统——从 Multiboot 引导的第一条�
 - **HVFS** — 自研文件系统，类 ext2 设计，三级间接块，FSCK，磁盘持久化
 - **PWID** — 基于能力的权限模型，令牌委托、信任链、域隔离
 - **Barrier（栏栈）** — 故障恢复屏障，VFS 快照与级联回滚
-- **lwIP 2.2.1** — 完整 TCP/IP 协议栈，DHCP / TCP / UDP / HTTP / DNS（因为懒得写网络栈了就薅了个现成的）
+- **lwIP 2.2.1** — 完整 TCP/IP 协议栈，DHCP / TCP / UDP / HTTP / DNS（因为我懒得写网络栈了就薅了个现成的）
 
 ## 设计原则
 
@@ -40,4 +40,4 @@ AntX 是一个完全自研的操作系统——从 Multiboot 引导的第一条�
 
 ---
 
-> *"一个从零开始的操作系统，因为想知道每一层到底是怎么运作的。"*
+> *"Till queendom come." — AURORA, Queendom*
