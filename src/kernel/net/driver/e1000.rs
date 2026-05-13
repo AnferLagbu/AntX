@@ -802,8 +802,8 @@ impl E1000Device {
 
         self.isr_count += 1;
         
-        // 输出中断原因
-        if self.isr_count <= 10 {
+        // 输出中断原因（仅前几次）
+        if self.isr_count <= 5 {
             unsafe { klog_net("e1000: ISR triggered\0".as_ptr() as *const i8); }
         }
 
@@ -813,7 +813,7 @@ impl E1000Device {
         }
 
         if icr & (E1000_ICR_RXT0 | E1000_ICR_RXDMT0) != 0 {
-            if self.isr_count <= 10 {
+            if self.isr_count <= 5 {
                 unsafe { klog_net("e1000: RX interrupt\0".as_ptr() as *const i8); }
             }
             self.process_rx_packets();

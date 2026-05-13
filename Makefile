@@ -371,7 +371,7 @@ log: all user build/kernel.flat
 
 log-net: all user build/kernel.flat
 	@mkdir -p $(LOG_DIR)
-	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat \
+	timeout 60 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat \
 		$(QEMU_NET) \
 		-serial file:$(LOG_DIR)/serial.log \
 		-display none \
