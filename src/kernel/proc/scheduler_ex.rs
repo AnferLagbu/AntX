@@ -453,7 +453,12 @@ impl SchedulerEx {
         self.stats.context_switches.fetch_add(1, Ordering::SeqCst);
         
         unsafe {
-            tss_set_kernel_stack((*next).kernel_stack.load(Ordering::SeqCst));
+            let kstack = (*next).kernel_stack.load(Ordering::SeqCst);
+            if !crate::kernel::proc::process::kernel_stack_check_canary(kstack) {
+                crate::klog_err!(Kernel, "STACK CANARY CORRUPTED on thread TID={} kstack=0x{:x}", 
+                    (*next).tid, kstack);
+            }
+            tss_set_kernel_stack(kstack);
         }
     }
     

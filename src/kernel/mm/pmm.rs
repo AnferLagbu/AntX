@@ -701,3 +701,55 @@ pub fn get_pmm() -> &'static PhysicalMemoryManager {
 pub unsafe fn get_pmm_mut() -> &'static mut PhysicalMemoryManager {
     &mut GLOBAL_PMM
 }
+
+#[derive(Clone, Copy)]
+struct PmmSnapshot {
+    total_allocs: u64,
+    total_frees: u64,
+    failed_allocs: u64,
+    info: super::MemoryInfo,
+}
+
+static mut PMM_SNAPSHOT: Option<PmmSnapshot> = None;
+
+pub fn pmm_barrier_capture() {
+    unsafe {
+        let pmm = &GLOBAL_PMM;
+        PMM_SNAPSHOT = Some(PmmSnapshot {
+            total_allocs: pmm.total_allocs.load(Ordering::SeqCst),
+            total_frees: pmm.total_frees.load(Ordering::SeqCst),
+            failed_allocs: pmm.failed_allocs.load(Ordering::SeqCst),
+            info: pmm.info,
+        });
+    }
+}
+
+pub fn pmm_barrier_rollback() -> bool {
+    unsafe {
+        if let Some(ref snap) = PMM_SNAPSHOT {
+            let pmm = &mut GLOBAL_PMM;
+            pmm.total_allocs.store(snap.total_allocs, Ordering::SeqCst);
+            pmm.total_frees.store(snap.total_frees, Ordering::SeqCst);
+            pmm.failed_allocs.store(snap.failed_allocs, Ordering::SeqCst);
+            let info_ptr = &mut pmm.info as *mut super::MemoryInfo;
+            core::ptr::write(info_ptr, snap.info);
+        }
+    }
+    true
+}
+
+extern "C" fn pmm_barrier_capture_cb() {
+    pmm_barrier_capture();
+}
+
+extern "C" fn pmm_barrier_rollback_cb() -> bool {
+    pmm_barrier_rollback()
+}
+
+pub fn pmm_register_barrier_domain() {
+    crate::kernel::barrier::recovery_domain_register(3);
+    if let Some(dom) = crate::kernel::barrier::RECOVERY_MANAGER.lock().find(3) {
+        *dom.capture_cb.lock() = Some(pmm_barrier_capture_cb);
+        *dom.rollback_cb.lock() = Some(pmm_barrier_rollback_cb);
+    }
+}

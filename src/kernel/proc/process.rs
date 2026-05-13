@@ -12,6 +12,27 @@ extern "C" {
     fn vmm_destroy_page_table(cr3: u64);
 }
 
+pub const KERNEL_STACK_CANARY: u64 = 0xDEADBEEF_CAFEBABE;
+
+pub fn kernel_stack_check_canary(stack_top: u64) -> bool {
+    if stack_top == 0 { return true; }
+    unsafe {
+        let canary_ptr = (stack_top - 8) as *const u64;
+        if (canary_ptr as u64) < 0x1000 { return true; }
+        let value = core::ptr::read_volatile(canary_ptr);
+        value == KERNEL_STACK_CANARY
+    }
+}
+
+pub fn kernel_stack_write_canary(stack_top: u64) {
+    if stack_top == 0 { return; }
+    unsafe {
+        let canary_ptr = (stack_top - 8) as *mut u64;
+        if (canary_ptr as u64) < 0x1000 { return; }
+        core::ptr::write_volatile(canary_ptr, KERNEL_STACK_CANARY);
+    }
+}
+
 pub struct Process {
     pub pid: ProcessId,
     pub pwid: AtomicU64,        // v4: identity this process runs under
@@ -90,7 +111,9 @@ impl Process {
             if stack.is_null() {
                 return false;
             }
-            self.kernel_stack.store(stack.add(KERNEL_STACK_SIZE) as u64, Ordering::SeqCst);
+            let stack_top = stack.add(KERNEL_STACK_SIZE) as u64;
+            self.kernel_stack.store(stack_top, Ordering::SeqCst);
+            kernel_stack_write_canary(stack_top);
             true
         }
     }
@@ -272,6 +295,51 @@ impl ProcessTable {
 }
 
 pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
+
+#[derive(Clone, Copy)]
+struct ProcSnapshot {
+    next_pid: u32,
+    slots: [Option<usize>; MAX_PROCESSES],
+}
+
+static mut PROC_SNAPSHOT: Option<ProcSnapshot> = None;
+
+pub fn proc_barrier_capture() {
+    unsafe {
+        let table = &PROCESS_TABLE;
+        PROC_SNAPSHOT = Some(ProcSnapshot {
+            next_pid: table.next_pid.load(Ordering::SeqCst),
+            slots: *table.processes.lock(),
+        });
+    }
+}
+
+pub fn proc_barrier_rollback() -> bool {
+    unsafe {
+        if let Some(ref snap) = PROC_SNAPSHOT {
+            let table = &PROCESS_TABLE;
+            table.next_pid.store(snap.next_pid, Ordering::SeqCst);
+            *table.processes.lock() = snap.slots;
+        }
+    }
+    true
+}
+
+extern "C" fn proc_barrier_capture_cb() {
+    proc_barrier_capture();
+}
+
+extern "C" fn proc_barrier_rollback_cb() -> bool {
+    proc_barrier_rollback()
+}
+
+pub fn proc_register_barrier_domain() {
+    crate::kernel::barrier::recovery_domain_register(4);
+    if let Some(dom) = crate::kernel::barrier::RECOVERY_MANAGER.lock().find(4) {
+        *dom.capture_cb.lock() = Some(proc_barrier_capture_cb);
+        *dom.rollback_cb.lock() = Some(proc_barrier_rollback_cb);
+    }
+}
 
 pub fn init() {
 }

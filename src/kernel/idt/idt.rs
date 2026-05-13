@@ -171,6 +171,16 @@ impl IdtManager {
             self.set_gate_internal(&mut state, i, isr_table[i as usize], GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT);
         }
 
+        // 2a. 为关键异常设置 IST 专用栈
+        // Double Fault (#DF, vector 8) → IST0
+        state.entries[8] = IdtEntry::new_with_ist(
+            isr_table[8], GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, 1  // IST1 (TSS ist[0])
+        );
+        // NMI (vector 2) → IST1
+        state.entries[2] = IdtEntry::new_with_ist(
+            isr_table[2], GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, 2  // IST2 (TSS ist[1])
+        );
+
         // 3. 设置 IRQ 门描述符 (向量 32-47)
         for i in 0..16u8 {
             let vector = IRQ_BASE + i;
@@ -180,8 +190,10 @@ impl IdtManager {
         // 4. 设置系统调用门 (int 0x80, DPL=3 允许 user 调用)
         self.set_gate_internal(&mut state, 0x80, syscall_handler, GDT_KERNEL_CODE, IDT_TYPE_TRAP | IDT_DPL_USER);
 
-        // 5. 设置恢复中断 (int 0x82, barrier-stack)
-        self.set_gate_internal(&mut state, 0x82, isr0x82, GDT_KERNEL_CODE, IDT_TYPE_TRAP);
+        // 5. 设置恢复中断 (int 0x82, barrier-stack) — 使用 IST2 专用栈
+        state.entries[0x82] = IdtEntry::new_with_ist(
+            isr0x82, GDT_KERNEL_CODE, IDT_TYPE_TRAP, 3  // IST3 (TSS ist[2])
+        );
 
         drop(state); // 释放锁，准备加载 IDT
 
@@ -446,10 +458,14 @@ impl IdtManager {
     /// Page Fault 处理
     fn handle_page_fault(&self, frame: &InterruptFrame) {
         let fault_addr = unsafe { frame.fault_address() };
-        let _error_flags = frame.error_code_flags();
+        let error_flags = frame.error_code_flags();
 
         if frame.is_user_mode() {
-            // User-mode PF: 终止进程
+            if !error_flags.contains(super::types::ErrorFlags::PRESENT) {
+                if crate::kernel::proc::user_proc::try_expand_user_stack(fault_addr) {
+                    return;
+                }
+            }
             self.terminate_user_process(frame, 1);
             return;
         }

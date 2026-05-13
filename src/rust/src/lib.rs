@@ -164,6 +164,12 @@ pub extern "C" fn kernel_init() {
     // 10. Network (lwIP + E1000)
     crate::kernel::net::init::qx_net_init();
 
+    // 11. Barrier-Stack recovery domains
+    crate::kernel::mm::pmm::pmm_register_barrier_domain();
+    crate::kernel::proc::process::proc_register_barrier_domain();
+    crate::kernel::net::netif::net_register_barrier_domain();
+    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4, NET=5)");
+
     crate::klog_boot_info!("AntX kernel initialized, entering main loop...");
 
     // 主循环 — 轮询网络数据包

@@ -33,6 +33,9 @@ pub const PAGE_SIZE: u64 = 4096;
 pub const USER_STACK_SIZE: u64 = 65536;
 pub const USER_STACK_GUARD: u64 = 4096;
 pub const USER_STACK_TOP: u64 = 0x7FFFFFFFE000;
+pub const USER_KSTACK_SIZE: u64 = 16384;
+pub const USER_STACK_MAX_SIZE: u64 = 8 * 1024 * 1024;
+pub const USER_STACK_EXPAND_LIMIT: u64 = USER_STACK_TOP - USER_STACK_MAX_SIZE;
 pub const USER_CODE_BASE: u64 = 0x400000;
 
 pub const PAGE_PRESENT: u64 = 1;
@@ -95,6 +98,7 @@ pub struct UserProcess {
     pub cr3: AtomicU64,
     pub kernel_stack: AtomicU64,
     pub user_stack: AtomicU64,
+    pub stack_bottom: AtomicU64,
     pub entry: u64,
     pub state: AtomicU32,
     pub create_time: u64,
@@ -167,14 +171,18 @@ impl UserProcManager {
             }
             
             (*proc).user_stack.store(USER_STACK_TOP, Ordering::SeqCst);
+            let initial_stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
+            (*proc).stack_bottom.store(initial_stack_bottom, Ordering::SeqCst);
             
-            let kstack = pmm_alloc_page();
+            let kstack = pmm_alloc_pages(USER_KSTACK_SIZE / PAGE_SIZE);
             if kstack.is_null() {
                 pmm_free_page(stack_pages);
                 pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut core::ffi::c_void);
                 return None;
             }
-            (*proc).kernel_stack.store(kstack as u64 + PAGE_SIZE, Ordering::SeqCst);
+            let kstack_top = kstack as u64 + USER_KSTACK_SIZE;
+            (*proc).kernel_stack.store(kstack_top, Ordering::SeqCst);
+            crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
             
             (*proc).entry = info.entry;
             (*proc).pwid.store(pwid, Ordering::SeqCst);
@@ -524,4 +532,48 @@ pub static USER_PROC_MANAGER: UserProcManager = UserProcManager::new();
 
 pub fn init() {
     USER_PROC_MANAGER.init();
+}
+
+pub fn try_expand_user_stack(fault_addr: u64) -> bool {
+    if fault_addr >= USER_STACK_TOP { return false; }
+    if fault_addr < USER_STACK_EXPAND_LIMIT { return false; }
+
+    let proc = match USER_PROC_MANAGER.get_current() {
+        Some(p) => p,
+        None => return false,
+    };
+
+    unsafe {
+        let stack_bottom = (*proc).stack_bottom.load(Ordering::SeqCst);
+        if fault_addr >= stack_bottom { return false; }
+
+        let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+        if cr3 == 0 { return false; }
+
+        let page_addr = fault_addr & !(PAGE_SIZE - 1);
+        let pages_needed = ((stack_bottom - page_addr) / PAGE_SIZE) as u64;
+
+        for i in 0..pages_needed {
+            let vaddr = page_addr + i * PAGE_SIZE;
+            if vaddr >= stack_bottom { break; }
+
+            let phys = vmm_get_physical_in_table(cr3, vaddr);
+            if phys != 0 { continue; }
+
+            let new_page = pmm_alloc_page();
+            if new_page.is_null() { return false; }
+
+            memset(new_page as *mut u8, 0, PAGE_SIZE);
+
+            vmm_split_2mb_page(vaddr);
+            vmm_map_page_in_table(cr3, vaddr, new_page as u64,
+                PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+            vmm_map_page(vaddr, new_page as u64,
+                PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+            vmm_ensure_path_user(vaddr);
+        }
+
+        (*proc).stack_bottom.store(page_addr, Ordering::SeqCst);
+        true
+    }
 }

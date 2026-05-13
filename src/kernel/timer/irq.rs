@@ -32,11 +32,6 @@ use crate::kernel::idt::types::InterruptFrame;
 /// 此函数从中断上下文调用，必须快速执行。
 #[no_mangle]
 pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
-    // RAW heartbet - output byte to serial to verify ISR is being called
-    unsafe {
-        core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'!');
-    }
-
     // 1. 更新全局 tick 计数器
     crate::kernel::timer::on_timer_interrupt();
 

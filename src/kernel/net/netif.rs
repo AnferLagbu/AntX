@@ -526,14 +526,54 @@ mod tests {
     
     #[test]
     fn test_static_storage_safety() {
-        // 测试静态存储的安全性
         unsafe {
-            // 初始状态应为空
             assert!(G_NETIF_PTR.is_null());
-            
-            // 注意: 不在这里真正调用 qx_netif_register_e1000()
-            // 因为它依赖硬件 (E1000)
-            // 仅验证静态变量的存在性和初始值
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct NetSnapshot {
+    netif_buffer: [u8; 2048],
+    initialized: u8,
+    dhcp_done: u8,
+}
+
+static mut NET_SNAPSHOT: Option<NetSnapshot> = None;
+
+pub fn net_barrier_capture() {
+    unsafe {
+        NET_SNAPSHOT = Some(NetSnapshot {
+            netif_buffer: G_NETIF_BUFFER,
+            initialized: G_NET_INITIALIZED.load(Ordering::SeqCst),
+            dhcp_done: G_DHCP_DONE.load(Ordering::SeqCst),
+        });
+    }
+}
+
+pub fn net_barrier_rollback() -> bool {
+    unsafe {
+        if let Some(ref snap) = NET_SNAPSHOT {
+            G_NETIF_BUFFER = snap.netif_buffer;
+            G_NET_INITIALIZED.store(snap.initialized, Ordering::SeqCst);
+            G_DHCP_DONE.store(snap.dhcp_done, Ordering::SeqCst);
+        }
+    }
+    true
+}
+
+extern "C" fn net_barrier_capture_cb() {
+    net_barrier_capture();
+}
+
+extern "C" fn net_barrier_rollback_cb() -> bool {
+    net_barrier_rollback()
+}
+
+pub fn net_register_barrier_domain() {
+    crate::kernel::barrier::recovery_domain_register(5);
+    if let Some(dom) = crate::kernel::barrier::RECOVERY_MANAGER.lock().find(5) {
+        *dom.capture_cb.lock() = Some(net_barrier_capture_cb);
+        *dom.rollback_cb.lock() = Some(net_barrier_rollback_cb);
     }
 }

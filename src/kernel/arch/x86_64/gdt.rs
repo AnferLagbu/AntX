@@ -285,6 +285,13 @@ static mut GDT_POINTER: GdtPtr = GdtPtr { limit: 0, base: 0 };
 /// TSS 实例 (静态存储期)
 static mut TSS_INSTANCE: super::tss::TaskStateSegment = super::tss::TaskStateSegment::zeroed();
 
+/// IST0 栈 (Double Fault, 16KB)
+static mut IST0_STACK: [u8; 16384] = [0u8; 16384];
+/// IST1 栈 (NMI, 16KB)
+static mut IST1_STACK: [u8; 16384] = [0u8; 16384];
+/// IST2 栈 (Recovery int 0x82, 16KB)
+static mut IST2_STACK: [u8; 16384] = [0u8; 16384];
+
 // ============================================================================
 // 公共 API
 // ============================================================================
@@ -365,8 +372,10 @@ pub extern "C" fn gdt_init() -> i32 {
         // Step 4: 初始化 TSS
         TSS_INSTANCE = super::tss::TaskStateSegment::zeroed();
         
-        // TODO: 设置 RSP0 为内核栈顶 (需要从外部获取)
-        // TSS_INSTANCE.rsp0 = kernel_stack_top;
+        // 设置 IST0 (Double Fault) 和 IST1 (NMI) 和 IST2 (Recovery) 专用栈
+        TSS_INSTANCE.set_ist(0, IST0_STACK.as_ptr() as u64 + IST0_STACK.len() as u64);
+        TSS_INSTANCE.set_ist(1, IST1_STACK.as_ptr() as u64 + IST1_STACK.len() as u64);
+        TSS_INSTANCE.set_ist(2, IST2_STACK.as_ptr() as u64 + IST2_STACK.len() as u64);
         
         TSS_INSTANCE.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u32;
         
