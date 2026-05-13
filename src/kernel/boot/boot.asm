@@ -67,6 +67,9 @@ stack_top:
 kernel_info:
     resq 3
 
+saved_multiboot_info:
+    resd 1
+
 section .text
 global _start
 extern kernel_init
@@ -75,10 +78,14 @@ extern stack_top
 _start:
     cli
 
+    mov esi, ebx
+
     call .get_eip
 .get_eip:
     pop ebx
     sub ebx, .get_eip - _start
+
+    mov [ebx + (saved_multiboot_info - _start)], esi
 
     lea edi, [ebx + (pml4 - _start)]
     xor eax, eax
@@ -239,6 +246,10 @@ trampoline64:
 BITS 64
 trampoline64_high:
     mov rsp, qword stack_top
+
+    extern boot_set_multiboot_info
+    mov rdi, rsi
+    call boot_set_multiboot_info
 
     call kernel_init
 

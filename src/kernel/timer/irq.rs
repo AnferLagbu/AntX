@@ -32,6 +32,11 @@ use crate::kernel::idt::types::InterruptFrame;
 /// 此函数从中断上下文调用，必须快速执行。
 #[no_mangle]
 pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
+    // RAW heartbet - output byte to serial to verify ISR is being called
+    unsafe {
+        core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'!');
+    }
+
     // 1. 更新全局 tick 计数器
     crate::kernel::timer::on_timer_interrupt();
 
@@ -39,22 +44,24 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     crate::kernel::net::types::sys_tick_inc();
 
     // 3. lwIP 协议栈定时器处理 (DHCP/TCP/ARP)
-    extern "C" { fn sys_check_timeouts(); }
+    extern "C" {
+        fn sys_check_timeouts();
+        fn e1000_poll_rx();
+    }
     unsafe { sys_check_timeouts(); }
 
-    // 2. 可选: 触发调度器 tick (用于时间片轮转)
-    // 注意: 调度器 tick 可能会导致进程切换，
-    // 需要确保 frame 指针有效且不会被释放
+    // 4. 周期性轮询 E1000 RX 环
+    let t = crate::kernel::timer::get_ticks();
+    if t % 10 == 0 {
+        unsafe { e1000_poll_rx(); }
+    }
+
+    // 5. 可选: 触发调度器 tick
     #[cfg(feature = "scheduler_tick")]
     {
         extern "C" { fn scheduler_tick(frame: *mut InterruptFrame); }
         scheduler_tick(frame);
     }
-
-    // TODO: 未来可添加:
-    // - 定时器队列检查 (alarm, itimer)
-    // - 性能统计采样
-    // - CPU 使用率计算
 }
 
 /// 注册 Timer IRQ0 handler 到 IDT 系统

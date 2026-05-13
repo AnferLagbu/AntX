@@ -2,6 +2,7 @@
 #include "lwip/etharp.h"
 #include "lwip/ethip6.h"
 #include "lwip/pbuf.h"
+#include "lwip/ip4_addr.h"
 
 extern err_t e1000_send(struct netif *netif, struct pbuf *p);
 
@@ -45,4 +46,9 @@ void antx_pbuf_copyout(struct pbuf *p, void *buf, u16_t *out_len) {
         q = q->next;
     }
     *out_len = total;
+}
+
+u32_t antx_netif_ip4_addr_u32(const struct netif *netif) {
+    if (netif == NULL) return 0;
+    return ip4_addr_get_u32(netif_ip4_addr(netif));
 }

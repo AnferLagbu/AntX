@@ -290,8 +290,17 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     let mut ts_buf = [0u8; 32];
     let ts = format_ts(&mut ts_buf, tsc);
 
-    // 串口输出: 在锁外完成, 避免慢速 I/O 期间 IRQ 死锁
-    // 格式: <ts> [LEVEL][CAT] message\n
+    let saved_if: u64;
+    unsafe {
+        core::arch::asm!(
+            "pushfq",
+            "pop {0}",
+            "cli",
+            out(reg) saved_if,
+            options(nomem)
+        );
+    }
+
     serial_write_bytes(ts);
     serial_write_bytes(level.prefix());
     serial_write_bytes(b" ");
@@ -301,7 +310,15 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     serial_write_bytes(msg);
     serial_putc(b'\n');
 
-    // 环形缓冲: 仅此处持锁, 极短临界区
+    unsafe {
+        core::arch::asm!(
+            "push {0}",
+            "popfq",
+            in(reg) saved_if,
+            options(nomem)
+        );
+    }
+
     let ring = unsafe { &mut *RING.inner.get() };
     ring.push_str(ts);
     ring.push_str(level.prefix());

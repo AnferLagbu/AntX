@@ -6,6 +6,7 @@
 //! kernel/
 //! ├── arch/          # 架构相关 (GDT, TSS, x86_64 特定)
 //! │   └── x86_64/
+//! ├── boot/          # 启动信息 (Multiboot, 内存映射)
 //! ├── cpu/           # CPU 管理 (CPUID, MSR, TSC, 缓存, 拓扑)
 //! ├── lib/           # 基础库 (字符串/内存操作, C 标准库函数)
 //! ├── mm/            # 内存管理 (PMM, VMM, Slab, Kmalloc)
@@ -37,6 +38,9 @@
 
 /// 架构相关模块 (GDT, TSS)
 pub mod arch;
+
+/// 启动信息模块 (Multiboot, 内存映射)
+pub mod boot;
 
 /// CPU 驱动核心 (CPUID, MSR, TSC, 缓存检测, 多核拓扑)
 pub mod cpu;

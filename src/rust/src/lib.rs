@@ -102,11 +102,45 @@ pub extern "C" fn kernel_init() {
     unsafe { crate::kernel::klog::klog_init(); }
     crate::klog_boot_info!("AntX kernel starting {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
-    // 1. IDT + PIC
+    // 1. Boot Info — 解析Multiboot信息获取内存布局
+    let boot_info = crate::kernel::boot::init();
+    crate::klog_boot_info!("Boot info: mem={} MB, kernel_end=0x{:X}", 
+        boot_info.mem_size / (1024 * 1024), boot_info.kernel_end);
+
+    // 2. PMM — 物理内存管理器初始化
+    unsafe {
+        crate::kernel::mm::pmm::get_pmm_mut().init(boot_info.mem_size, boot_info.kernel_end);
+    }
+    crate::klog_boot_info!("PMM initialized");
+
+    // 3. VMM — 虚拟内存管理器初始化 (必须在PMM之后)
+    unsafe {
+        crate::kernel::mm::vmm::get_vmm_mut().init();
+    }
+    crate::klog_boot_info!("VMM initialized");
+
+    // 4. kmalloc — 内核堆初始化
+    const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
+    let heap_start = crate::kernel::mm::VirtAddr(
+        crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000 // 在内核结束后的2MB处
+    );
+    unsafe {
+        crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
+    }
+    crate::klog_boot_info!("kmalloc initialized at 0x{:X}, size={} MB", 
+        heap_start.0, KMALLOC_HEAP_SIZE / (1024 * 1024));
+
+    // 5. PMM Bitmap — 初始化位图分配器
+    unsafe {
+        crate::kernel::mm::pmm::get_pmm_mut().init_bitmap(KMALLOC_HEAP_SIZE);
+    }
+    crate::klog_boot_info!("PMM bitmap initialized");
+
+    // 6. IDT + PIC
     crate::kernel::idt::idt_init();
     crate::klog_boot_info!("IDT+PIC ready");
 
-    // 2. Timer + IRQ0
+    // 7. Timer + IRQ0
     match crate::kernel::timer::timer_init(1000) {
         Ok(_freq) => {
             crate::klog_boot_info!("PIT timer configured");
@@ -119,14 +153,33 @@ pub extern "C" fn kernel_init() {
         Err(_msg) => { let _ = _msg; }
     }
 
-    // 3. Scheduler
+    // 8. Scheduler
     crate::kernel::proc::scheduler::init();
     crate::klog_boot_info!("Scheduler ready");
 
-    // 4. VFS
+    // 9. VFS
     crate::kernel::fs::vfs::init();
     crate::klog_boot_info!("VFS ready");
 
-    // 5. Network (lwIP + E1000)
+    // 10. Network (lwIP + E1000)
     crate::kernel::net::init::qx_net_init();
+
+    crate::klog_boot_info!("AntX kernel initialized, entering main loop...");
+
+    // 主循环 — 轮询网络数据包
+    loop {
+        extern "C" {
+            fn e1000_poll_rx();
+        }
+        unsafe { e1000_poll_rx(); }
+
+        unsafe {
+            core::arch::asm!(
+                "sti",
+                "hlt",
+                "cli",
+                options(nomem, nostack)
+            );
+        }
+    }
 }

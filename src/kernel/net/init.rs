@@ -120,6 +120,8 @@ pub extern "C" fn qx_net_init() {
     unsafe {
         klog_init_msg("--- Network Subsystem Init ---\0".as_ptr() as *const i8);
         
+        klog_net("Step1: transition state to LwipReady\0".as_ptr() as *const i8);
+        
         // Step 1: 初始化 lwIP
         if transition_state(InitState::Uninitialized, InitState::LwipReady).is_err() {
             // 可能已经初始化过或处于其他状态
@@ -143,6 +145,7 @@ pub extern "C" fn qx_net_init() {
         }
         
         // 执行 lwIP 初始化
+        klog_net("Calling lwip_init...\0".as_ptr() as *const i8);
         lwip_init();
         klog_net("lwIP core initialized\0".as_ptr() as *const i8);
         
