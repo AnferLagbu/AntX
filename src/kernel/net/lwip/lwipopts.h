@@ -17,27 +17,27 @@
 #define MEM_LIBC_MALLOC             0
 #define MEMP_MEM_MALLOC             0
 #define MEM_ALIGNMENT               4
-#define MEM_SIZE                    (128 * 1024)
-#define MEMP_NUM_PBUF               64
-#define MEMP_NUM_UDP_PCB            16
-#define MEMP_NUM_TCP_PCB            32
-#define MEMP_NUM_TCP_PCB_LISTEN    8
-#define MEMP_NUM_TCP_SEG           512
-#define MEMP_NUM_SYS_TIMEOUT        16
-#define MEMP_NUM_NETBUF             16
-#define MEMP_NUM_TCPIP_MSG_API      32
-#define MEMP_NUM_TCPIP_MSG_INPKT    32
-#define MEMP_NUM_ARP_QUEUE          16
-#define MEMP_NUM_IGMP_GROUP         8
-#define MEMP_NUM_NETDB              8
-#define MEMP_NUM_LOCALHOSTLIST      4
-#define MEMP_NUM_RAW_PCB            16
+#define MEM_SIZE                    (256 * 1024)  /* Increased from 128KB to 256KB for DHCP */
+#define MEMP_NUM_PBUF               128           /* Increased from 64 */
+#define MEMP_NUM_UDP_PCB            32            /* Increased from 16 */
+#define MEMP_NUM_TCP_PCB            64            /* Increased from 32 */
+#define MEMP_NUM_TCP_PCB_LISTEN    16            /* Increased from 8 */
+#define MEMP_NUM_TCP_SEG           1024          /* Increased from 512 */
+#define MEMP_NUM_SYS_TIMEOUT        32            /* Increased from 16 */
+#define MEMP_NUM_NETBUF             32            /* Increased from 16 */
+#define MEMP_NUM_TCPIP_MSG_API      64            /* Increased from 32 */
+#define MEMP_NUM_TCPIP_MSG_INPKT    64            /* Increased from 32 */
+#define MEMP_NUM_ARP_QUEUE          32            /* Increased from 16 */
+#define MEMP_NUM_IGMP_GROUP         16            /* Increased from 8 */
+#define MEMP_NUM_NETDB              16            /* Increased from 8 */
+#define MEMP_NUM_LOCALHOSTLIST      8             /* Increased from 4 */
+#define MEMP_NUM_RAW_PCB            32            /* Increased from 16 */
 #define MEMP_NUM_SNMP_NODE          32
 #define MEMP_NUM_SNMP_ROOTNODE      16
 #define MEMP_NUM_SNMP_VARBIND       16
 #define MEMP_NUM_SNMP_VALUE         16
 #define MEMP_NUM_SNMP_TRAP          4
-#define PBUF_POOL_SIZE              128
+#define PBUF_POOL_SIZE              256           /* Increased from 128 */
 #define PBUF_POOL_BUFSIZE           1536
 
 /* ---- IPv4 ---- */

@@ -156,14 +156,20 @@ pub unsafe extern "C" fn qx_netif_status_callback(netif: *mut core::ffi::c_void)
         return;
     }
     
-    // 输出网络接口状态变更日志
+    extern "C" {
+        fn antx_netif_ip4_addr_u32(netif: *const core::ffi::c_void) -> u32;
+    }
+    
+    let ip = antx_netif_ip4_addr_u32(netif);
+    if ip == 0 {
+        return;
+    }
+    
     klog_net("Network interface status changed\0".as_ptr() as *const i8);
     
-    // 标记DHCP可能已完成 (实际需要检查IP地址有效性)
     if G_DHCP_DONE.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
         klog_net("DHCP bound or IP address assigned\0".as_ptr() as *const i8);
         
-        // 初始化网络应用 (HTTP客户端等)
         qx_net_apps_init(netif);
         
         klog_net("Network applications initialized\0".as_ptr() as *const i8);
@@ -270,13 +276,13 @@ pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
     // 设置为默认接口
     netif_set_default(result);
     
-    // 注册状态回调
-    netif_set_status_callback(result, status_callback_wrapper);
-    
-    // 启动接口
+    // 启动接口 (会在 lwIP 内部触发状态变更, 先不注册回调)
     netif_set_up(result);
     extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
     netif_set_link_up(result);
+    
+    // 注册状态回调 (在 set_up 之后, 避免初始 link-up 事件误触发 DHCP done)
+    netif_set_status_callback(result, status_callback_wrapper);
     
     // ✅ 保存到全局变量 (静态存储, 安全)
     G_NETIF_PTR = result;
@@ -302,7 +308,14 @@ pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
     if dhcp_result == 0 {
         klog_net("DHCP client started successfully\0".as_ptr() as *const i8);
     } else {
-        klog_net_err("DHCP start failed\0".as_ptr() as *const i8);
+        // 打印具体的错误码
+        if dhcp_result == -1 {
+            klog_net_err("DHCP start failed: ERR_MEM (-1)\0".as_ptr() as *const i8);
+        } else if dhcp_result == -16 {
+            klog_net_err("DHCP start failed: ERR_ARG (-16)\0".as_ptr() as *const i8);
+        } else {
+            klog_net_err("DHCP start failed: unknown error\0".as_ptr() as *const i8);
+        }
     }
     
     // 输出接口注册成功日志
@@ -409,10 +422,10 @@ pub fn init_network_with_rust_e1000() -> Result<(), &'static str> {
         }
 
         netif_set_default(result);
-        netif_set_status_callback(result, status_callback_wrapper);
         netif_set_up(result);
     extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
     netif_set_link_up(result);
+        netif_set_status_callback(result, status_callback_wrapper);
         G_NETIF_PTR = result;
         G_NET_INITIALIZED.store(1, Ordering::Release);
 
