@@ -730,16 +730,27 @@ impl E1000Device {
         let mut processed = 0u32;
 
         loop {
-            // 检查 rx_tail 指向的描述符的 DD 位
+            // 读取 RDH（硬件维护的接收描述符头指针）
+            let rdh = unsafe { mmio_read32(self.mmio_base, E1000_RDH) as usize };
+
+            // 检查是否有新的描述符被硬件填充
+            // 当 rx_tail == rdh 时，说明没有新数据包
+            if self.rx_tail == rdh {
+                break; // 没有更多数据包
+            }
+
+            // 获取当前描述符
             let desc = unsafe { &mut *rx_descs.add(self.rx_tail) };
             
+            // 检查 DD 位，确认描述符已被硬件填充
             if desc.status & E1000_RXD_STAT_DD == 0 {
-                // DD 位未设置，说明这个描述符还没有被硬件填充
-                let count = POLL_COUNT.fetch_add(1, Ordering::Relaxed);
-                if count < 3 {
-                    unsafe { klog_net("e1000: RX DD not set\0".as_ptr() as *const i8); }
+                // DD 位未设置，跳过这个描述符
+                let prev = self.rx_tail;
+                self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
+                unsafe {
+                    mmio_write32(self.mmio_base, E1000_RDT, prev as u32);
                 }
-                break; // 没有更多数据包
+                continue;
             }
 
             let len = desc.length as usize;
@@ -771,12 +782,14 @@ impl E1000Device {
             desc.status = 0;
             self.rx_count += 1;
 
-            // 移到下一个描述符
+            // 保存当前 tail，然后移到下一个描述符
+            let prev = self.rx_tail;
             self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
 
             // 更新 RDT，通知硬件这个描述符已经可用
+            // RDT 应该指向最后一个可用描述符（即 prev）
             unsafe {
-                mmio_write32(self.mmio_base, E1000_RDT, self.rx_tail as u32);
+                mmio_write32(self.mmio_base, E1000_RDT, prev as u32);
             }
         }
 
