@@ -112,9 +112,10 @@ const E1000_RDT: u32 = 0x2818;
 const E1000_IMC: u32 = 0x00D8;
 const E1000_ICR: u32 = 0x00C0;
 const E1000_IMS: u32 = 0x00D0;
-const E1000_ICR_RXT0: u32 = 1 << 6;      // Receive Timer Interrupt
+const E1000_ICR_LSC: u32 = 1 << 2;       // Link Status Change
 const E1000_ICR_RXDMT0: u32 = 1 << 4;    // Receive Descriptor Minimum Threshold
-const E1000_ICR_LSC: u32 = 1 << 2;      // Link Status Change
+const E1000_ICR_RXO: u32 = 1 << 6;       // Receiver Overrun
+const E1000_ICR_RXT0: u32 = 1 << 7;      // Receive Timer Interrupt
 
 /// IPG (Inter-Packet Gap)
 const E1000_IPG: u32 = 0x00B0;
@@ -900,10 +901,12 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
                         if dev.irq != 0 && dev.irq != 255 {
                             extern "C" {
                                 fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u32) -> i32;
+                                fn idt_enable_irq(irq: u8);
                                 fn klog_net(fmt: *const i8, ...);
                             }
                             klog_net("e1000: registering IRQ %d\0".as_ptr() as *const i8, dev.irq as i32);
                             idt_register_irq(dev.irq, e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void), b"e1000\0".as_ptr() as *const i8, 0);
+                            idt_enable_irq(dev.irq);  // 关键：启用 IRQ
                             if dev.irq < 8 {
                                 let mask = pic_inb(0x21);
                                 pic_outb(0x21, mask & !(1u8 << dev.irq));
