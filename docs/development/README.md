@@ -1,75 +1,104 @@
-# 开发文档
+# AntX 开发文档
 
-本目录包含 AntX 操作系统的技术设计文档。
+> **最后更新**: 2026-05-13 | **版本**: v3.0 (Rust 重写后)
 
-## 📚 文档列表
+## 文档索引
 
-### 入门指南
-| 文档 | 说明 |
-|------|------|
-| [development.md](development.md) | 开发指南 - 项目结构、构建方法、开发规范 |
-| [devdoc.md](devdoc.md) | 开发文档 - 详细开发说明 |
+### 核心架构
 
-### 系统架构
-| 文档 | 说明 |
-|------|------|
-| [kernel-architecture.md](kernel-architecture.md) | 内核架构设计 - 整体架构、模块划分、初始化顺序 |
+- [内核架构设计](kernel-architecture.md) - 系统整体架构、模块划分、初始化流程
+- [内存管理](memory-management.md) - PMM、VMM、kmalloc、Slab 分配器
+- [进程调度](thread-scheduler.md) - MLFQ 调度器、实时任务、线程模型
+- [文件系统](hivefs.md) - VFS 层、HvFS、RamFS、DiskFS、DevFS、ProcFS
 
-### 核心模块
-| 文档 | 说明 |
-|------|------|
-| [memory-management.md](memory-management.md) | 内存管理 - PMM(位图分配器)、VMM(四级页表)、kmalloc、Slab |
-| [process-session.md](process-session.md) | 进程与会话管理 - 进程模型、会话生命周期 |
-| [thread-scheduler.md](thread-scheduler.md) | 线程与调度器 - MLFQ + RT 调度、线程状态机 |
-| [syscall.md](syscall.md) | 系统调用接口 - API 定义、37 个已注册 syscall |
-| [ipc.md](ipc.md) | 进程间通信 - 管道/信号/共享内存/消息队列/信号量 |
-| [klog-system.md](klog-system.md) | KLog 日志系统 - 6级日志、12种分类、环形缓冲区 |
+### 核心子系统
 
-### 安全与权限
-| 文档 | 说明 |
-|------|------|
-| [pwid-model.md](pwid-model.md) | PWID v4 能力流动模型 — First Token、能力掩码、令牌提权 |
-| [pwid-enhanced-v2.md](pwid-enhanced-v2.md) | PWID v2 增强设计 (已被 v4 取代，保留作参考) |
-| [permission-model-v3.md](permission-model-v3.md) | 权限检查 v3→v4 — 5 层检查架构 (sensitivity + ACE + capability + trust) |
-| [security-mechanisms.md](security-mechanisms.md) | 安全机制 - Stack Canary/PIC/NX/ASSERT/Map文件 |
+- [PWID 权限模型](pwid-model.md) - v4 能力流动模型、令牌系统、信任链
+- [Barrier 栈设计](barrier-stack-design.md) - 故障恢复、增量回滚、循环防护
+- [系统调用接口](syscall.md) - 72 个系统调用、调用约定、实现状态
+- [IPC 子系统](ipc.md) - 管道、信号、共享内存、消息队列、信号量
 
-### 故障恢复与可靠性
-| 文档 | 说明 |
-|------|------|
-| [barrier-stack-design.md](barrier-stack-design.md) | 🚧 栏栈设计 — 宏内核故障恢复、增量回滚、循环防护 |
+### 硬件相关
 
-### 文件系统
-| 文档 | 说明 |
-|------|------|
-| [hivefs.md](hivefs.md) | HvFS 文件系统 - 设计与实现、VFS 层、PWID 集成 |
-| [hvfs-disk.md](hvfs-disk.md) | HvFS 磁盘格式 - Super Block/Inode/间接块、持久化 |
-| [smart-persistent-storage.md](smart-persistent-storage.md) | Smart Mount - 三种构建模式 (DEV/TEST/RELEASE) |
+- [DMA 引擎](dma-engine.md) - 一致性 DMA、流式 DMA、MMIO 映射
+- [中断处理](interrupt-handling.md) - IDT、ISR、IRQ 管理
+- [驱动开发](driver-development.md) - ATA、键盘、串口、E1000 网卡
 
-### 驱动
-| 文档 | 说明 |
-|------|------|
-| [keyboard.md](keyboard.md) | 键盘驱动 - PS/2 键盘驱动实现 |
+### 网络子系统
 
-### 内核优化
-| 文档 | 说明 |
-|------|------|
-| [pic-implementation.md](pic-implementation.md) | PIC 位置无关代码 - `-fPIC -mcmodel=medium` |
-| [pic-quick-start.md](pic-quick-start.md) | PIC 快速开始 |
+- [网络架构](network-architecture.md) - lwIP 集成、E1000 驱动、DHCP
+- [TCP/IP 协议栈](tcpip-stack.md) - lwIP 2.2.1 配置和使用
 
-### Rust 重写 (已实施)
-| 文档 | 说明 |
-|------|------|
-| [rust-filesystem.md](rust-filesystem.md) | 文件系统 Rust 重写 - vfs/ramfs/diskfs/hvfs/devfs/procfs |
-| [rust-process.md](rust-process.md) | 进程管理 Rust 重写 - process/scheduler/session/thread/user_proc |
+## Rust 重写状态
+
+### 已完成 Rust 重写的模块
+
+| 模块 | 文件数 | 估计行数 | 状态 |
+|------|--------|----------|------|
+| 内存管理 | ~5 | ~2,400 | ✅ |
+| 进程调度 | ~8 | ~2,000 | ✅ |
+| 文件系统 | ~15 | ~3,000 | ✅ |
+| PWID | ~12 | ~2,500 | ✅ |
+| Barrier | ~1 | ~620 | ✅ |
+| DMA | ~3 | ~500 | ✅ |
+| IPC | ~10 | ~1,000 | ✅ |
+| 同步原语 | ~6 | ~800 | ✅ |
+| IDT | ~6 | ~1,000 | ✅ |
+| KLog | ~1 | ~500 | ✅ |
+| 驱动 | ~6 | ~2,000 | ✅ |
+
+### 仍为 C 实现的模块
+
+| 模块 | 文件数 | 估计行数 | 状态 |
+|------|--------|----------|------|
+| lwIP 网络栈 | ~100 | ~50,000 | 第三方库 |
+| 引导/中断入口 | ~3 | ~500 | 汇编 |
+
+## 开发指南
+
+### 构建系统
+
+```bash
+# 完整构建
+make all
+
+# 运行内核
+make run
+
+# 网络测试
+make log-net
+
+# 清理
+make clean
+```
+
+### 代码风格
+
+- Rust 代码：遵循 `rustfmt` 标准
+- C 代码：遵循 `clang-format` 标准
+- 汇编代码：NASM 语法
+
+### 测试框架
+
+```bash
+# 单元测试
+make test-unit
+
+# 集成测试
+make test-integration
+
+# 压力测试
+make test-stress
+```
+
+## 文档维护规范
+
+1. **同步更新**：源码修改后，同步更新相关文档
+2. **版本标记**：每个文档标注最后更新日期和版本
+3. **代码引用**：使用相对路径引用源码文件
+4. **语言要求**：文档使用中文编写，代码注释使用英文
 
 ---
-
-## 🔧 快速开始
-
-1. 阅读 [开发指南](development.md) 了解项目概况
-2. 阅读 [内核架构](kernel-architecture.md) 理解系统设计
-3. 根据兴趣选择具体模块文档深入学习
-
----
-
-*最后更新: 2026-05-07 (根据源码实现订正)*
+**文档维护者**: AI Assistant
+**创建日期**: 2026-05-06
+**最后更新**: 2026-05-13
