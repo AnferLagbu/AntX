@@ -645,11 +645,16 @@ impl E1000Device {
                         cmd |= 0x06;
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x04, cmd) };
 
-                        // 设置 MMIO 基址 (boot 页表恒等映射物理地址)
+                        // 设置 MMIO 基址
+                        // 注意: 当前假设 boot 页表有恒等映射或高地址映射
+                        // TODO: 如果 MMIO 访问失败，需要添加动态页表映射
                         self.mmio_base = self.mmio_phys as *mut u8;
                         {
-                            extern "C" { fn klog_net(fmt: *const i8); }
-                            unsafe { klog_net("e1000: MMIO base mapped successfully\0".as_ptr() as *const i8); }
+                            extern "C" { fn klog_net(fmt: *const i8, ...); }
+                            unsafe { 
+                                klog_net("e1000: MMIO phys=0x%x virt=0x%x\0".as_ptr() as *const i8,
+                                         self.mmio_phys as u32, self.mmio_phys as u32);
+                            }
                         }
 
                         read_mac_address(self);
