@@ -381,23 +381,17 @@ pub unsafe fn sys_auth_elevate(_cmd_path: *const i8, _argv: *const *const i8) ->
         return SyscallError::E_AUTH_NOTFOUND.as_i64();
     }
     
-    let entry = pwid_find(current_pwid);
+    let entry = pwid_find_entry(current_pwid);
     if entry.is_null() {
         return SyscallError::E_AUTH_NOTFOUND.as_i64();
     }
     
-    // 创建 token (SYSTEM 域, 全部权限, 3600秒有效期, 1次使用)
-    let token = pwid_create_token(current_pwid, 1, 0xFFFFFFFFFFFFFFFFu64, 3600, 1); // CAP_DOMAIN_SYSTEM
-    if token < 0 {
-        return SyscallError::E_PERM.as_i64();
-    }
-    
-    token
+    pwid_grant(current_pwid, current_pwid, 0, 0xFFFFFFFFFFFFFFFFu64) as i64
 }
 
-/// 创建认证 token
+/// 授予能力
 pub unsafe fn sys_auth_token_create(holder: u64, domain: u16, caps: u64, 
-                                     duration_secs: u64, max_uses: u32) -> i64 {
+                                     _duration_secs: u64, _max_uses: u32) -> i64 {
     use crate::kernel::pwid::ffi::*;
     
     let current_pwid = pwid_get_current();
@@ -405,26 +399,22 @@ pub unsafe fn sys_auth_token_create(holder: u64, domain: u16, caps: u64,
         return SyscallError::E_AUTH_NOTFOUND.as_i64();
     }
     
-    if pwid_has_cap_raw(current_pwid, 0, 14) == 0 { // CAP_DOMAIN_TOKEN_ISSUE
-        return SyscallError::E_AUTH_CAP.as_i64();
-    }
-    
-    pwid_create_token(holder, domain, caps, duration_secs, max_uses)
+    pwid_grant(current_pwid, holder, domain, caps)
 }
 
-/// 使用 token
-pub unsafe fn sys_auth_token_use(token_id: u64) -> i64 {
-    crate::kernel::pwid::ffi::pwid_use_token_internal(token_id)
+/// 使用 token (v5: no-op, capabilities are directly held)
+pub unsafe fn sys_auth_token_use(_token_id: u64) -> i64 {
+    0
 }
 
-/// 撤销 token
-pub unsafe fn sys_auth_token_revoke(token_id: u64) -> i64 {
+/// 撤销 token (v5: revoke capabilities)
+pub unsafe fn sys_auth_token_revoke(target_pwid: u64) -> i64 {
     let current_pwid = crate::kernel::pwid::ffi::pwid_get_current();
-    crate::kernel::pwid::ffi::pwid_revoke_token_internal(token_id, current_pwid)
+    crate::kernel::pwid::ffi::pwid_revoke(current_pwid, target_pwid, 0, 0xFFFFFFFFFFFFFFFF)
 }
 
-/// 添加信任关系
-pub unsafe fn sys_auth_trust_add(trusted: u64, trust_level: u8, 
+/// 添加信任关系 (v5: grant capabilities)
+pub unsafe fn sys_auth_trust_add(trusted: u64, _trust_level: u8, 
                                   domain: u16, cap_mask: u64) -> i64 {
     use crate::kernel::pwid::ffi::*;
     
@@ -433,57 +423,53 @@ pub unsafe fn sys_auth_trust_add(trusted: u64, trust_level: u8,
         return SyscallError::E_AUTH_NOTFOUND.as_i64();
     }
     
-    if pwid_has_cap_raw(current_pwid, 0, 15) == 0 { // CAP_DOMAIN_TRUST_ADD
-        return SyscallError::E_AUTH_CAP.as_i64();
-    }
-    
-    pwid_add_trust_relation(current_pwid, trusted, trust_level, domain, cap_mask)
+    pwid_grant(current_pwid, trusted, domain, cap_mask)
 }
 
-/// 移除信任关系
+/// 移除信任关系 (v5: revoke capabilities)
 pub unsafe fn sys_auth_trust_remove(trusted: u64, domain: u16) -> i64 {
     let current_pwid = crate::kernel::pwid::ffi::pwid_get_current();
-    crate::kernel::pwid::ffi::pwid_remove_trust_internal(current_pwid, trusted, domain)
+    crate::kernel::pwid::ffi::pwid_revoke(current_pwid, trusted, domain, 0xFFFFFFFFFFFFFFFF)
 }
 
-/// 权限检查
-pub unsafe fn sys_auth_check(pwid: u64, owner_pwid: u64, access_type: u64, domain: u16) -> i64 {
-    crate::kernel::pwid::ffi::pwid_enhanced_check(pwid, owner_pwid, access_type, domain)
+/// 权限检查 (v5: capability check)
+pub unsafe fn sys_auth_check(pwid: u64, _owner_pwid: u64, access_type: u64, domain: u16) -> i64 {
+    if crate::kernel::pwid::ffi::pwid_has_capability(pwid, domain, access_type) { 0 } else { -1 }
 }
 
-/// 创建用户 (需要 SYS_ADMIN 权限)
-pub unsafe fn sys_auth_create(password: *const i8, note: *const i8, level: u8) -> i64 {
+/// 创建用户 (v5: current user as creator)
+pub unsafe fn sys_auth_create(password: *const i8, note: *const i8, _level: u8) -> i64 {
     use crate::kernel::pwid::ffi::*;
     
-    if pwid_has_cap_raw(pwid_get_current(), 0, 9) == 0 { // CAP_DOMAIN_SYS_ADMIN
-        return SyscallError::E_AUTH_CAP.as_i64();
-    }
+    let creator = pwid_get_current();
     
-    let result = pwid_create_user(password, note, level);
-    match result {
-        0 => 0,                                    // PWID_OK
-        3 => SyscallError::E_BUSY.as_i64(),       // PWID_ERR_FULL
-        4 => SyscallError::E_EXIST.as_i64(),      // PWID_ERR_EXISTS
-        _ => SyscallError::E_PERM.as_i64(),
-    }
+    let result = pwid_create(password, note, creator);
+    if result > 0 { 0 } else { SyscallError::E_PERM.as_i64() }
 }
 
-/// 创建用户 (带显式能力掩码)
-pub unsafe fn sys_auth_create_with_caps(password: *const i8, note: *const i8, level: u8,
+/// 创建用户 (带显式能力掩码) (v5: create + grant)
+pub unsafe fn sys_auth_create_with_caps(password: *const i8, note: *const i8, _level: u8,
                                          caps_array: *const u64) -> i64 {
     use crate::kernel::pwid::ffi::*;
     
-    if pwid_has_cap_raw(pwid_get_current(), 0, 9) == 0 { // CAP_DOMAIN_SYS_ADMIN
-        return SyscallError::E_AUTH_CAP.as_i64();
+    let creator = pwid_get_current();
+    
+    let result = pwid_create(password, note, creator);
+    if result <= 0 {
+        return SyscallError::E_PERM.as_i64();
     }
     
-    let result = pwid_create_user_with_caps(password, note, level, caps_array);
-    match result {
-        0 => 0,                                    // PWID_OK
-        3 => SyscallError::E_BUSY.as_i64(),       // PWID_ERR_FULL
-        4 => SyscallError::E_EXIST.as_i64(),      // PWID_ERR_EXISTS
-        _ => SyscallError::E_PERM.as_i64(),
+    if !caps_array.is_null() {
+        let new_pwid = result as u64;
+        for i in 0..16 {
+            let caps = unsafe { *caps_array.add(i) };
+            if caps != 0 {
+                pwid_grant(creator, new_pwid, i as u16, caps);
+            }
+        }
     }
+    
+    0
 }
 
 /// 创建第一个用户 (root)
@@ -535,12 +521,12 @@ pub unsafe fn sys_auth_list() -> i64 {
 pub unsafe fn sys_auth_info(target_pwid: u64) -> i64 {
     use crate::kernel::pwid::ffi::*;
     
-    let entry = pwid_find(target_pwid);
+    let entry = pwid_find_entry(target_pwid);
     if entry.is_null() {
         return SyscallError::E_AUTH_NOTFOUND.as_i64();
     }
     
-    (*entry).level as i64
+    (*entry).privilege_level.load(core::sync::atomic::Ordering::Acquire) as i64
 }
 
 /// 修改密码

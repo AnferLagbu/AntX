@@ -1,132 +1,73 @@
-//! Audit Log System
+//! PWID v5 Audit Log
 //!
-//! Records security-relevant events for forensics and compliance.
+//! Ring buffer audit logging for security events.
 
 use super::types::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-/// Maximum number of audit entries to keep
-const MAX_AUDIT_ENTRIES: usize = 256;
+const AUDIT_CAPACITY: usize = 256;
 
-/// Audit Log - records PWID-related security events
 pub struct AuditLog {
-    /// Array of audit entries
-    entries: core::cell::UnsafeCell<[AuditEntry; MAX_AUDIT_ENTRIES]>,
-    
-    /// Current number of entries
+    entries: [AuditEntry; AUDIT_CAPACITY],
     count: AtomicUsize,
 }
 
 impl AuditLog {
     pub const fn new() -> Self {
-        const DEFAULT_ENTRY: AuditEntry = AuditEntry {
-            timestamp: 0,
-            pwid: 0,
-            action: 0,
-            result: 0,
-            target_pwid: 0,
-            details: 0,
-        };
-        
         Self {
-            entries: core::cell::UnsafeCell::new([DEFAULT_ENTRY; MAX_AUDIT_ENTRIES]),
+            entries: [AuditEntry {
+                timestamp: 0,
+                pwid: 0,
+                action: 0,
+                result: 0,
+                target_pwid: 0,
+                details: 0,
+            }; AUDIT_CAPACITY],
             count: AtomicUsize::new(0),
         }
     }
 
-    /// Record an audit event
-    pub fn log(&self, pwid: u64, action: u32, result: u32, target_pwid: u64, details: u64) {
-        let mut count = self.count.load(Ordering::Acquire);
-        
-        // If at capacity, shift entries (FIFO) — attempt atomic bump
-        loop {
-            if count >= MAX_AUDIT_ENTRIES {
-                unsafe {
-                    let entries = &mut *self.entries.get();
-                    for i in 0..MAX_AUDIT_ENTRIES - 1 {
-                        entries[i] = entries[i + 1];
-                    }
-                }
-                match self.count.compare_exchange_weak(count, MAX_AUDIT_ENTRIES - 1, Ordering::Release, Ordering::Relaxed) {
-                    Ok(_) => break,
-                    Err(c) => count = c,
-                }
-            } else {
-                break;
-            }
-        }
-        
-        // Add new entry
-        if let Ok(idx) = self.count.fetch_update(Ordering::Acquire, Ordering::Relaxed, |c| {
-            if c < MAX_AUDIT_ENTRIES { Some(c + 1) } else { None }
-        }) {
-            unsafe {
-                let entries = &mut *self.entries.get();
-                entries[idx] = AuditEntry {
-                    timestamp: get_current_time(),
-                    pwid,
-                    action,
-                    result,
-                    target_pwid,
-                    details,
-                };
-            }
+    pub fn log(&self, pwid: u64, action: AuditAction, target_pwid: u64, domain: u64, caps: u64) {
+        let now = super::first_token::pwid_now();
+        let idx = self.count.fetch_add(1, Ordering::AcqRel) % AUDIT_CAPACITY;
+        let entry = &self.entries[idx];
+        let ep = entry as *const AuditEntry as *mut AuditEntry;
+        unsafe {
+            (*ep).timestamp = now;
+            (*ep).pwid = pwid;
+            (*ep).action = action as u32;
+            (*ep).result = AuditResult::Success as u32;
+            (*ep).target_pwid = target_pwid;
+            (*ep).details = (domain << 32) | (caps & 0xFFFFFFFF);
         }
     }
 
-    /// Dump all audit entries to serial
     pub fn dump(&self) {
         let count = self.count.load(Ordering::Acquire);
-        
-        serial_println!("\n=== PWID Audit Log ===");
-        
-        unsafe {
-            let entries = &*self.entries.get();
-            
-            for i in 0..count.min(MAX_AUDIT_ENTRIES) {
-                let _e = &entries[i];
-                
-                serial_println!("  [{}] PWID:0x{:016X} Action:{} Result:{}",
-                               e.timestamp, e.pwid, e.action, e.result);
-            }
+        let len = if count > AUDIT_CAPACITY { AUDIT_CAPACITY } else { count };
+        for i in 0..len {
+            let idx = if count > AUDIT_CAPACITY {
+                (count - AUDIT_CAPACITY + i) % AUDIT_CAPACITY
+            } else {
+                i
+            };
+            let _e = &self.entries[idx];
+            crate::serial_println!("[AUDIT] t={} pwid={:#x} action={} target={:#x} details={:#x}",
+                e.timestamp, e.pwid, e.action, e.target_pwid, e.details);
         }
-        
-        serial_println!("=====================");
     }
 
-    /// Get entry count
-    pub fn get_count(&self) -> usize {
-        self.count.load(Ordering::Acquire)
-    }
-
-    /// Get all entries (for persistence)
-    pub fn get_entries(&self) -> &[AuditEntry] {
-        let count = self.count.load(Ordering::Acquire).min(MAX_AUDIT_ENTRIES);
-        
-        unsafe {
-            let entries = &*self.entries.get();
-            &entries[..count]
-        }
+    pub fn get_entries(&self) -> &[AuditEntry; AUDIT_CAPACITY] {
+        &self.entries
     }
 }
 
-/// Get current time from TSC register
-fn get_current_time() -> u64 {
-    unsafe {
-        let tsc: u64;
-        core::arch::asm!(
-            "rdtsc",
-            out("eax") tsc,
-            options(nostack, nomem)
-        );
-        tsc / 3_000_000_000u64
-    }
-}
-
-// Global instance
 static mut GLOBAL_AUDIT: AuditLog = AuditLog::new();
 
-/// Get reference to global audit log
-pub fn get_audit() -> &'static AuditLog {
-    unsafe { &GLOBAL_AUDIT }
+pub fn log(pwid: u64, action: AuditAction, target_pwid: u64, domain: u64, caps: u64) {
+    unsafe { GLOBAL_AUDIT.log(pwid, action, target_pwid, domain, caps); }
+}
+
+pub fn dump() {
+    unsafe { GLOBAL_AUDIT.dump(); }
 }

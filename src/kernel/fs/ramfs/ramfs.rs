@@ -5,9 +5,9 @@ use alloc::vec::Vec;
 use crate::kernel::fs::vfs::types::*;
 
 extern "C" {
-    fn pwid_get_level(pwid: u64) -> u8;
+    fn pwid_get_privilege_level(pwid: u64) -> u8;
     fn pwid_get_fs_capability(pwid: u64) -> u64;
-    fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
+    fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool;
 }
 
 const RAMFS_MAX_INODES: usize = 256;
@@ -526,15 +526,15 @@ impl RamFsData {
     /// Permission Model v3 — Five-layer check:
     /// L0: Root bypass, L1: Sensitivity, L2: ACE, L3: Capability, L4: Trust chain
     fn check_permission(&self, inode: &RamFsInode, pwid: u64, cap: u64) -> bool {
-        let level = unsafe { pwid_get_level(pwid) };
+        let level = unsafe { pwid_get_privilege_level(pwid) };
 
-        // v4: No root bypass — check DISABLED first
-        if level > 3 {
+        if level == 0xFF {
             return false;
         }
 
         if level > 0 && inode.sensitivity > 0 {
             let clearance = match level {
+                0 => 255u8,
                 1 => 255u8,
                 2 => 128u8,
                 _ => 64u8,
@@ -560,17 +560,15 @@ impl RamFsData {
         }
 
         let caps = unsafe { pwid_get_fs_capability(pwid) };
-        // v4: caps==0 means no capability — deny unless ACE explicitly allows
         if (caps & cap) == cap {
             return true;
         }
 
-        // Layer 4: Trust chain — owner may have delegated this capability
         if inode.owner_pwid != 0 && inode.owner_pwid != pwid {
-            let has_trust = unsafe {
-                pwid_check_trust(pwid, inode.owner_pwid, 1 /* FS domain */, cap, 8)
+            let has_cap = unsafe {
+                pwid_has_capability(pwid, 1, cap)
             };
-            if has_trust != 0 {
+            if has_cap {
                 return true;
             }
         }

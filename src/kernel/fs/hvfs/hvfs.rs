@@ -4,9 +4,9 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 extern "C" {
     fn klog_ffi_info(msg: *const u8);
-    fn pwid_get_level(pwid: u64) -> u8;
+    fn pwid_get_privilege_level(pwid: u64) -> u8;
     fn pwid_get_fs_capability(pwid: u64) -> u64;
-    fn pwid_check_trust(subject: u64, target: u64, domain: u16, caps: u64, max_depth: u8) -> i32;
+    fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool;
     fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
     fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
     fn ata_disk_present(disk: u8) -> i32;
@@ -759,15 +759,15 @@ impl HvFsData {
     }
 
     pub fn check_permission(&self, inode: &HvfsInode, pwid: u64, cap: u64) -> bool {
-        let level = unsafe { pwid_get_level(pwid) };
+        let level = unsafe { pwid_get_privilege_level(pwid) };
 
-        // v4: No root bypass — capability mask decides
-        if level > 3 {
+        if level == 0xFF {
             return false;
         }
 
         if level > 0 && inode.sensitivity > 0 {
             let clearance = match level {
+                0 => 255u8,
                 1 => 255u8,
                 2 => 128u8,
                 _ => 64u8,
@@ -778,16 +778,15 @@ impl HvFsData {
         }
 
         let caps = unsafe { pwid_get_fs_capability(pwid) };
-        // v4: caps==0 means no capability — deny
         if (caps & cap) == cap {
             return true;
         }
 
         if inode.owner_pwid != 0 && inode.owner_pwid != pwid {
-            let has_trust = unsafe {
-                pwid_check_trust(pwid, inode.owner_pwid, 1, cap, 8)
+            let has_cap = unsafe {
+                pwid_has_capability(pwid, 1, cap)
             };
-            if has_trust != 0 {
+            if has_cap {
                 return true;
             }
         }

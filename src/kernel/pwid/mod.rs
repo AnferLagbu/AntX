@@ -1,17 +1,8 @@
-//! PWID (Process/User ID) Management System - Rust Implementation
+//! PWID v5 Management System
 //!
-//! Complete rewrite of the C implementation with enhanced safety and type guarantees.
-//! Provides:
-//! - SHA-256 password hashing
-//! - User identity management (CRUD)
-//! - Trust level and permission system
-//! - Session management and context switching
-//! - Audit logging
-//! - Persistent storage via HVFS
-//! - Security features (expiry, lockout, brute-force protection)
-//! - Privilege elevation token system
+//! Zero-concept + numeric privilege level + kernel isolation + First Token.
+//! PWID初心: 密码决定身份 | 无预设特权 | 能力来自授予
 
-/// Serial print macro (placeholder for kernel serial output)
 #[macro_export]
 macro_rules! serial_println {
     ($($arg:tt)*) => {};
@@ -21,19 +12,18 @@ pub use serial_println;
 
 pub mod types;
 pub mod sha256;
-pub mod capability;  // 能力矩阵和权限定义
-pub mod context;     // 权限上下文类型
-pub mod manager;
+pub mod capability;
+pub mod kernel_cap;
+pub mod table;
+pub mod grant_record;
+pub mod first_token;
+pub mod engine;
 pub mod session;
 pub mod audit;
 pub mod storage;
-pub mod trust_chain;
-pub mod token;
-pub mod permission;  // 权限检查模块
 pub mod ffi;
 
-// Re-export main types for convenience
 pub use types::*;
-pub use manager::PwidManager;
+pub use table::PwidTable;
 pub use session::SessionManager;
 pub use audit::AuditLog;

@@ -1,21 +1,13 @@
-//! PWID FFI Interface Layer
+//! PWID v5 FFI Interface Layer
 //!
-//! Provides extern "C" functions for C code to call into the Rust PWID implementation.
-//! Maintains full API compatibility with original C implementation.
+//! Extern "C" functions for C code to call into the Rust PWID v5 implementation.
 
 use super::types::*;
-use super::manager;
+use super::table;
 use super::session;
+use super::engine;
 use super::audit;
 use super::storage;
-use super::trust_chain::{TrustChain, TrustEntry};
-
-use super::token::{TokenManager, PwidToken, TokenType};
-use core::sync::atomic::{AtomicBool, Ordering};
-
-// ============================================================================
-// ✅ 日志宏 (与 pmm.rs 保持一致)
-// ============================================================================
 
 macro_rules! klog_pwid {
     ($($arg:tt)*) => {
@@ -23,938 +15,267 @@ macro_rules! klog_pwid {
     };
 }
 
-/// Global trust chain singleton (TOCTOU-safe CAS pattern)
-static TRUST_DONE: AtomicBool = AtomicBool::new(false);
-static mut TRUST_CHAIN: Option<TrustChain> = None;
+static INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
-fn get_trust_chain() -> &'static mut TrustChain {
-    if !TRUST_DONE.load(Ordering::Acquire) {
-        // Second check with potential CAS (only first caller succeeds)
-        if TRUST_DONE.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_ok() {
-            unsafe {
-                TRUST_CHAIN = Some(TrustChain::new());
-            }
-        } else {
-            // Another thread is creating — spin until done
-            while !TRUST_DONE.load(Ordering::Acquire) {
-                core::hint::spin_loop();
-            }
-        }
-    }
-    // ✅ 安全访问: 添加防御性检查避免 unwrap panic
-    match unsafe { TRUST_CHAIN.as_mut() } {
-        Some(chain) => chain,
-        None => {
-            klog_pwid!("[PWID] FATAL: TrustChain not initialized after CAS");
-            // 返回一个空的可变引用 (不安全, 但比 panic 好)
-            unsafe { TRUST_CHAIN.get_or_insert_with(TrustChain::new) }
-        }
-    }
-}
-
-/// Global token manager singleton (TOCTOU-safe CAS pattern)
-static mut TOKEN_MANAGER: Option<TokenManager> = None;
-static TOKEN_INIT: AtomicBool = AtomicBool::new(false);
-
-fn get_token_manager() -> &'static mut TokenManager {
-    if !TOKEN_INIT.load(Ordering::Acquire) {
-        if TOKEN_INIT.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
-            unsafe {
-                TOKEN_MANAGER = Some(TokenManager::new());
-            }
-        } else {
-            while !TOKEN_INIT.load(Ordering::Acquire) {
-                core::hint::spin_loop();
-            }
-        }
-    }
-    
-    // ✅ 安全访问: 添加防御性检查避免 unwrap panic
-    match unsafe { TOKEN_MANAGER.as_mut() } {
-        Some(mgr) => mgr,
-        None => {
-            klog_pwid!("[PWID] FATAL: TokenManager not initialized after CAS");
-            unsafe { TOKEN_MANAGER.get_or_insert_with(TokenManager::new) }
-        }
-    }
-}
-
-/// Genesis flag — set by kernel when --first boot parameter is present
-static GENESIS_REQUESTED: AtomicBool = AtomicBool::new(false);
-
-// ============================================================
-// Initialization
-// ============================================================
-
-/// Initialize PWID system
 #[no_mangle]
 pub extern "C" fn pwid_init() {
-    unsafe {
-        manager::get_manager_mut().init();
+    if INITIALIZED.compare_exchange(
+        false, true,
+        core::sync::atomic::Ordering::AcqRel,
+        core::sync::atomic::Ordering::Relaxed,
+    ).is_err() {
+        return;
     }
+    let t = unsafe { table::get_table_mut() };
+    t.init();
+    klog_pwid!("PWID v5 initialized");
 }
 
-/// Try to load PWID database from disk
 #[no_mangle]
-pub extern "C" fn pwid_try_load() {
-    storage::load_database();
+pub extern "C" fn pwid_try_load() -> i32 {
+    storage::load_database()
 }
 
-/// Auto-bootstrap: create first root identity if table is empty
-/// Returns 0 on success (identity created), 1 if already exists, -1 on error
 #[no_mangle]
-pub extern "C" fn pwid_try_genesis(password: *const core::ffi::c_char) -> i32 {
-    if password.is_null() {
-        return -1;
-    }
-    
-    if manager::get_manager().any_identity_exists.load(core::sync::atomic::Ordering::Acquire) {
-        return 1;  // Already bootstrapped
-    }
-    
-    let pwd = match unsafe { cstr_to_str(password) } {
-        Ok(s) => s,
-        Err(_) => return -1,
-    };
-    
-    if pwd.len() < 4 {
-        return -1;
-    }
-    
-    match unsafe { manager::get_manager_mut() }.create_first_identity(pwd) {
-        Ok(_pwid_val) => {
-            // ✅ 修复 P1-1: 移除自动登录 - 增强安全性
-            // 不再自动以 root 身份登录，仅创建身份并保存
-            // 调用者必须显式调用 pwid_login() 进行认证
-            storage::save_database();
-            0
-        }
-        Err(_) => -1,
-    }
+pub extern "C" fn pwid_any_identity_exists() -> bool {
+    table::get_table().any_identity_exists()
 }
 
-// ============================================================
-// PWID Generation and Verification
-// ============================================================
-
-/// Generate a unique PWID from password, note, and level
 #[no_mangle]
-pub extern "C" fn pwid_generate(password: *const i8, note: *const i8, level: u8) -> u64 {
-    if password.is_null() || note.is_null() {
-        return 0;
+pub extern "C" fn pwid_try_genesis(password: *const core::ffi::c_char) -> i64 {
+    if password.is_null() { return PwidError::InvalidPassword.as_i32() as i64; }
+    let pwd = unsafe { core::ffi::CStr::from_ptr(password) };
+    let pwd_str = pwd.to_str().unwrap_or("");
+    match table::get_table().bootstrap(pwd_str, "root") {
+        Ok(pwid) => pwid as i64,
+        Err(e) => e.as_i32() as i64,
     }
-    
-    let pwd = match unsafe { cstr_to_str(password) } {
-        Ok(s) => s,
-        Err(_) => return 0,
-    };
-    
-    let note = match unsafe { cstr_to_str(note) } {
-        Ok(s) => s,
-        Err(_) => return 0,
-    };
-    
-    manager::get_manager().generate(pwd, note, level)
 }
 
-/// Verify password for a given PWID
 #[no_mangle]
-pub extern "C" fn pwid_verify_password(pwid: u64, password: *const i8) -> i32 {
-    if password.is_null() {
-        return 0;
-    }
-    
-    let password = match unsafe { cstr_to_str(password) } {
-        Ok(s) => s,
-        Err(_) => return 0,
-    };
-    
-    if manager::get_manager().verify_password(pwid, password) {
-        1
-    } else {
-        0
+pub extern "C" fn pwid_create(password: *const core::ffi::c_char, note: *const core::ffi::c_char, creator_pwid: u64) -> i64 {
+    if password.is_null() || note.is_null() { return PwidError::InvalidPassword.as_i32() as i64; }
+    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+    let nte = unsafe { core::ffi::CStr::from_ptr(note) }.to_str().unwrap_or("");
+    match table::get_table().create(pwd, nte, creator_pwid) {
+        Ok(pwid) => pwid as i64,
+        Err(e) => e.as_i32() as i64,
     }
 }
 
-// ============================================================
-// User Management CRUD
-// ============================================================
-
-/// Create a new PWID entry
-#[no_mangle]
-pub extern "C" fn pwid_create(password: *const i8, note: *const i8, level: u8) -> i32 {
-    let (pwd, note) = match get_two_strings(password, note) {
-        Some(pair) => pair,
-        None => return PwidError::NotFound.as_i32(),
-    };
-    
-    // ✅ 修复 P1-4: 根据信任级别分配默认能力掩码（v4 文档 §十二 要求）
-    // 使用 CapabilityMatrix 预定义方法生成合理的默认能力集
-    let default_caps: [u64; 16] = match PwidLevel::from_u8(level) {
-        Some(PwidLevel::Root) => {
-            // Root 级别：全能力（但不再有 bypass，需通过能力检查）
-            let matrix = super::capability::CapabilityMatrix::root_capabilities();
-            matrix.domains
-        }
-        Some(PwidLevel::Trusted) => {
-            // Trusted 级别：FS 读写执行 + 进程管理 + 用户查看
-            let matrix = super::capability::CapabilityMatrix::trustworthy_default();
-            matrix.domains
-        }
-        Some(PwidLevel::Standard) => {
-            // Standard 级别：基本文件操作
-            let matrix = super::capability::CapabilityMatrix::untrustworthy_default();
-            matrix.domains
-        }
-        _ => {
-            // Untrustworthy / 其他：最小能力集（只读）
-            let mut caps = [0u64; 16];
-            // 仅给予基本的读取能力 (domain 1 = FS, bit 0 = READ)
-            caps[1] = 0x0000000000000001;  // 最小读取权限
-            caps
-        }
-    };
-    
-    match manager::get_manager().create(pwd, note, level, &default_caps) {
-        Ok(_) => 0,
-        Err(e) => e.as_i32(),
-    }
-}
-
-/// Delete a PWID entry
 #[no_mangle]
 pub extern "C" fn pwid_delete(pwid: u64) -> i32 {
-    match manager::get_manager().delete(pwid) {
+    match table::get_table().delete(pwid) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Disable a PWID entry
 #[no_mangle]
 pub extern "C" fn pwid_disable(pwid: u64) -> i32 {
-    match manager::get_manager().disable(pwid) {
+    match table::get_table().disable(pwid) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Enable a disabled PWID entry
 #[no_mangle]
 pub extern "C" fn pwid_enable(pwid: u64) -> i32 {
-    match manager::get_manager().enable(pwid) {
+    match table::get_table().enable(pwid) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Change password for a PWID entry
 #[no_mangle]
-pub extern "C" fn pwid_change_password(
-    pwid: u64, 
-    old_password: *const i8, 
-    new_password: *const i8
-) -> i32 {
-    let (old_pwd, new_pwd) = match get_two_strings(old_password, new_password) {
-        Some(pair) => pair,
-        None => return PwidError::PasswordIncorrect.as_i32(),
-    };
-    
-    match manager::get_manager().change_password(pwid, old_pwd, new_pwd) {
+pub extern "C" fn pwid_verify_password(pwid: u64, password: *const core::ffi::c_char) -> bool {
+    if password.is_null() { return false; }
+    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+    table::get_table().verify_password(pwid, pwd)
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_change_password(pwid: u64, old: *const core::ffi::c_char, new: *const core::ffi::c_char) -> i32 {
+    if old.is_null() || new.is_null() { return PwidError::InvalidPassword.as_i32(); }
+    let o = unsafe { core::ffi::CStr::from_ptr(old) }.to_str().unwrap_or("");
+    let n = unsafe { core::ffi::CStr::from_ptr(new) }.to_str().unwrap_or("");
+    match table::get_table().change_password(pwid, o, n) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Change note/description for a PWID entry
 #[no_mangle]
-pub extern "C" fn pwid_change_note(pwid: u64, new_note: *const i8) -> i32 {
-    let note = match unsafe { cstr_to_str(new_note) } {
-        Ok(s) => s,
-        Err(_) => return PwidError::NotFound.as_i32(),
-    };
-    
-    match manager::get_manager().change_note(pwid, note) {
-        Ok(()) => 0,
-        Err(e) => e.as_i32(),
-    }
+pub extern "C" fn pwid_find(pwid: u64) -> bool {
+    table::find(pwid).is_some()
 }
 
-// ============================================================
-// Lookup Functions
-// ============================================================
-
-/// Find entry by PWID (returns pointer or NULL)
 #[no_mangle]
-pub extern "C" fn pwid_find(pwid: u64) -> *const PwidEntry {
-    match manager::get_manager().find(pwid) {
-        Some(entry) => entry as *const PwidEntry,
+pub extern "C" fn pwid_find_entry(pwid: u64) -> *const PwidEntry {
+    match table::find(pwid) {
+        Some(e) => e as *const PwidEntry,
         None => core::ptr::null(),
     }
 }
 
-/// Find entry by note string (returns pointer or NULL)
 #[no_mangle]
-pub extern "C" fn pwid_find_by_note(note: *const i8) -> *const PwidEntry {
-    if note.is_null() {
-        return core::ptr::null();
-    }
-    
-    let note_str = match unsafe { cstr_to_str(note) } {
-        Ok(s) => s,
-        Err(_) => return core::ptr::null(),
-    };
-    
-    match manager::get_manager().find_by_note(note_str) {
-        Some(entry) => entry as *const PwidEntry,
-        None => core::ptr::null(),
+pub extern "C" fn pwid_has_cap_raw(pwid: u64, domain: u16, _cap_bit: u8) -> u64 {
+    engine::get_caps(pwid, domain)
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_create_first_identity(password: *const core::ffi::c_char) -> i64 {
+    if password.is_null() { return PwidError::InvalidPassword.as_i32() as i64; }
+    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+    match table::get_table().bootstrap(pwd, "root") {
+        Ok(pwid) => pwid as i64,
+        Err(e) => e.as_i32() as i64,
     }
 }
 
-/// Get trust level for a PWID
-#[no_mangle]
-pub extern "C" fn pwid_get_level(pwid: u64) -> u8 {
-    manager::get_manager()
-        .get_level(pwid)
-        .unwrap_or(0xFF)
-}
-
-/// Get FS capability bitmask for a PWID from its capability matrix (v4).
-/// No longer derives caps from level — reads pwidentry.capability_mask[CAP_DOMAIN_FS].
 #[no_mangle]
 pub extern "C" fn pwid_get_fs_capability(pwid: u64) -> u64 {
-    let mgr = manager::get_manager();
-    match mgr.get_caps(pwid) {
-        Some(caps) => caps[1],  // CAP_DOMAIN_FS = 1
-        None => 0,
-    }
+    engine::get_caps(pwid, 1)
 }
 
-/// Check if pwid has capability in a domain (v4).
-/// domain: 0..15, required: bitmask
-/// Returns 1 if the pwid's cap_mask[domain] superset-of required.
 #[no_mangle]
-pub extern "C" fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> i32 {
-    let mgr = manager::get_manager();
-    match mgr.get_caps(pwid) {
-        Some(caps) => {
-            let idx = (domain as usize) % 16;
-            if (caps[idx] & required) == required { 1 } else { 0 }
-        }
-        None => 0,
-    }
+pub extern "C" fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool {
+    engine::check(pwid, domain, required)
 }
 
-/// Get raw capability mask for a PWID in a specific domain (for C inline helper)
 #[no_mangle]
 pub extern "C" fn pwid_get_capability_raw(pwid: u64, domain: u16) -> u64 {
-    let mgr = manager::get_manager();
-    match mgr.get_caps(pwid) {
-        Some(caps) => caps[(domain as usize) % 16],
-        None => 0,
-    }
+    engine::get_caps(pwid, domain)
 }
 
-/// Check if PWID has root privileges
 #[no_mangle]
-pub extern "C" fn pwid_is_root(pwid: u64) -> i32 {
-    if manager::get_manager().is_root(pwid) { 1 } else { 0 }
+pub extern "C" fn pwid_get_privilege_level(pwid: u64) -> u8 {
+    engine::get_privilege_level(pwid)
 }
 
-/// Check if entry uses default password
 #[no_mangle]
-pub extern "C" fn pwid_has_default_password(pwid: u64) -> i32 {
-    if manager::get_manager().has_default_password(pwid) { 1 } else { 0 }
+pub extern "C" fn pwid_get_creator(pwid: u64) -> u64 {
+    engine::get_creator(pwid)
 }
 
-/// Clear default password flag
 #[no_mangle]
-pub extern "C" fn pwid_clear_default_password_flag(pwid: u64) {
-    manager::get_manager().clear_default_password_flag(pwid);
-}
-
-// ============================================================
-// Permission Checking
-// ============================================================
-
-/// Check permission based on trust level
-#[no_mangle]
-pub extern "C" fn pwid_check_permission(pwid: u64, required_level: u8) -> i32 {
-    if manager::get_manager().check_permission(pwid, required_level) { 1 } else { 0 }
-}
-
-/// Check if creator can create target level
-#[no_mangle]
-pub extern "C" fn pwid_can_create_level(creator_level: u8, target_level: u8) -> i32 {
-    // Inline logic (same as PwidManager::can_create_level)
-    let can_create = match PwidLevel::from_u8(creator_level) {
-        Some(PwidLevel::Root) => true,
-        Some(PwidLevel::Trusted) => target_level == PwidLevel::Untrustworthy.as_u8(),
-        _ => false,
-    };
-    
-    if can_create { 1 } else { 0 }
-}
-
-/// Check if modifier can modify target
-#[no_mangle]
-pub extern "C" fn pwid_can_modify(modifier_pwid: u64, target_pwid: u64) -> i32 {
-    if manager::get_manager().can_modify(modifier_pwid, target_pwid) { 1 } else { 0 }
-}
-
-// ============================================================
-// Root User Management
-// ============================================================
-
-/// Create derived root user (v4: create full-cap identity, requires SYS_ADMIN caller)
-#[no_mangle]
-pub extern "C" fn pwid_create_derived_root(password: *const i8, note: *const i8) -> i32 {
-    let (pwd, note) = match get_two_strings(password, note) {
-        Some(pair) => pair,
-        None => return PwidError::NotFound.as_i32(),
-    };
-    
-    let creator = session::get_session().get_current();
-    match manager::get_manager().create_full_cap(pwd, note, creator) {
-        Ok(_) => 0,
-        Err(e) => e.as_i32(),
-    }
-}
-
-/// Delete derived root user
-#[no_mangle]
-pub extern "C" fn pwid_delete_derived_root(pwid: u64) -> i32 {
-    match manager::get_manager().delete_derived_root(pwid) {
+pub extern "C" fn pwid_grant(grantor_pwid: u64, grantee_pwid: u64, domain: u16, caps: u64) -> i32 {
+    match table::get_table().grant(grantor_pwid, grantee_pwid, domain, caps) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Create first identity (one-time operation via First Token)
 #[no_mangle]
-pub extern "C" fn pwid_create_first_identity(password: *const i8) -> i32 {
-    let pwd = match unsafe { cstr_to_str(password) } {
-        Ok(s) => s,
-        Err(_) => return PwidError::PasswordIncorrect.as_i32(),
-    };
-    
-    match manager::get_manager().create_first_identity(pwd) {
-        Ok(_) => 0,
+pub extern "C" fn pwid_revoke(revoker_pwid: u64, target_pwid: u64, domain: u16, caps: u64) -> i32 {
+    match table::get_table().revoke(revoker_pwid, target_pwid, domain, caps) {
+        Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Check if any identity exists in the system
 #[no_mangle]
-pub extern "C" fn pwid_any_identity_exists() -> i32 {
-    if manager::get_manager().any_identity_exists() { 1 } else { 0 }
+pub extern "C" fn pwid_transfer_creator(current_creator: u64, target: u64, new_creator: u64) -> i32 {
+    match table::get_table().transfer_creator(current_creator, target, new_creator) {
+        Ok(()) => 0,
+        Err(e) => e.as_i32(),
+    }
 }
 
-// ============================================================
-// Listing
-// ============================================================
-
-/// List all PWID entries
 #[no_mangle]
-pub extern "C" fn pwid_list_all() {
-    manager::get_manager().list_all();
+pub extern "C" fn pwid_check_privilege(operator: u64, target: u64) -> bool {
+    engine::check_privilege(operator, target)
 }
 
-// ============================================================
-// Session Management
-// ============================================================
-
-/// Set current session context
 #[no_mangle]
-pub extern "C" fn pwid_set_context(pwid: u64) {
-    session::get_session().set_context(pwid)
+pub extern "C" fn pwid_login(note: *const core::ffi::c_char, password: *const core::ffi::c_char) -> i64 {
+    if note.is_null() || password.is_null() { return PwidError::InvalidPassword.as_i32() as i64; }
+    let n = unsafe { core::ffi::CStr::from_ptr(note) }.to_str().unwrap_or("");
+    let p = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+    match session::login(n, p) {
+        Ok(pwid) => pwid as i64,
+        Err(e) => e.as_i32() as i64,
+    }
 }
 
-/// Get current session's PWID
-#[no_mangle]
-pub extern "C" fn pwid_get_current() -> u64 {
-    session::get_session().get_current()
-}
-
-/// Get current session's entry pointer
-#[no_mangle]
-pub extern "C" fn pwid_get_current_entry() -> *const PwidEntry {
-    session::get_session().get_current_entry()
-}
-
-/// Login with username and password
-#[no_mangle]
-pub extern "C" fn pwid_login(note: *const i8, password: *const i8) -> i32 {
-    let (note, password) = match get_two_strings(note, password) {
-        Some(pair) => pair,
-        None => return PwidError::NotFound.as_i32(),
-    };
-    
-    session::get_session().login(note, password).as_i32()
-}
-
-/// Logout from current session
 #[no_mangle]
 pub extern "C" fn pwid_logout() {
-    session::get_session().logout()
+    session::logout();
 }
 
-/// Create user (requires active session) — inherits creator's capability ceiling
 #[no_mangle]
-pub extern "C" fn pwid_create_user(password: *const i8, note: *const i8, level: u8) -> i32 {
-    let (pwd, note) = match get_two_strings(password, note) {
-        Some(pair) => pair,
-        None => return PwidError::PermissionDenied.as_i32(),
-    };
-    
-    match session::get_session().create_user(pwd, note, level, None) {
-        Ok(_) => 0,
+pub extern "C" fn pwid_get_current() -> u64 {
+    session::get_current_pwid()
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_get_current_entry() -> *const PwidEntry {
+    session::get_current_entry()
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_is_logged_in() -> bool {
+    session::is_logged_in()
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_clear_lockout(pwid: u64) -> i32 {
+    match session::clear_lockout(pwid) {
+        Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
 }
 
-/// Create user with explicit capability mask (v4: precise delegation)
-/// caps_array: pointer to [u64; 16] capability bitmask array
-/// Creator must hold a superset of all requested capabilities
-#[no_mangle]
-pub extern "C" fn pwid_create_user_with_caps(
-    password: *const i8,
-    note: *const i8,
-    level: u8,
-    caps_array: *const u64,
-) -> i32 {
-    let (pwd, note) = match get_two_strings(password, note) {
-        Some(pair) => pair,
-        None => return PwidError::PermissionDenied.as_i32(),
-    };
-    
-    // ✅ P2-1 修复: 移除不可靠的幻数检测
-    // 
-    // 原代码使用 0xDEADBEEFDEADBEEF 幻数检测指针有效性, 但:
-    // 1. 正常数据可能等于此值 (概率虽低但存在)
-    // 2. 不是标准的指针验证方法
-    // 3. 可能导致合法请求被拒绝
-    //
-    // 新方案: 信任调用者传入有效指针 (C/Rust FFI 契约)
-    // 调用者必须确保 caps_array 指向有效的 [u64; 16] 数组
-    let caps = if caps_array.is_null() {
-        None
-    } else {
-        unsafe {
-            // 直接读取能力掩码数组 (调用者保证有效性)
-            let mut caps_array_local = [0u64; 16];
-            core::ptr::copy_nonoverlapping(
-                caps_array,
-                caps_array_local.as_mut_ptr(),
-                16
-            );
-            Some(caps_array_local)
-        }
-    };
-    
-    match session::get_session().create_user(pwd, note, level, caps) {
-        Ok(_) => 0,
-        Err(e) => e.as_i32(),
-    }
-}
-
-// ============================================================
-// Privilege Elevation
-// ============================================================
-
-/// Elevate privileges to root
-#[no_mangle]
-pub extern "C" fn pwid_elevate(target_pwid: u64, password: *const i8, duration_secs: u64) -> i32 {
-    let pwd = match unsafe { cstr_to_str(password) } {
-        Ok(s) => s,
-        Err(_) => return PwidError::PasswordIncorrect.as_i32(),
-    };
-    
-    session::get_session().elevate(target_pwid, pwd, duration_secs).as_i32()
-}
-
-/// End privilege elevation
-#[no_mangle]
-pub extern "C" fn pwid_end_elevation() {
-    session::get_session().end_elevation()
-}
-
-/// Check if currently elevated
-#[no_mangle]
-pub extern "C" fn pwid_is_elevated() -> i32 {
-    if session::get_session().is_elevated() { 1 } else { 0 }
-}
-
-// ============================================================
-// Security Features
-// ============================================================
-
-/// Check if PWID is expired
-#[no_mangle]
-pub extern "C" fn pwid_is_expired(pwid: u64) -> i32 {
-    if session::get_session().is_expired(pwid) { 1 } else { 0 }
-}
-
-/// Check if PWID is locked out
-#[no_mangle]
-pub extern "C" fn pwid_is_locked(pwid: u64) -> i32 {
-    if session::get_session().is_locked(pwid) { 1 } else { 0 }
-}
-
-/// Set expiry time
-#[no_mangle]
-pub extern "C" fn pwid_set_expiry(pwid: u64, expires_at: u64) {
-    session::get_session().set_expiry(pwid, expires_at)
-}
-
-/// Extend expiry by days
-#[no_mangle]
-pub extern "C" fn pwid_extend_expiry(pwid: u64, days: u64) {
-    session::get_session().extend_expiry(pwid, days)
-}
-
-/// Clear lockout status
-#[no_mangle]
-pub extern "C" fn pwid_clear_lockout(pwid: u64) {
-    session::get_session().clear_lockout(pwid)
-}
-
-/// Record failed login attempt
-#[no_mangle]
-pub extern "C" fn pwid_record_failed_login(pwid: u64) {
-    session::get_session().record_failed_login(pwid)
-}
-
-/// Clear failed login attempts
-#[no_mangle]
-pub extern "C" fn pwid_clear_failed_attempts(pwid: u64) {
-    session::get_session().clear_failed_attempts(pwid)
-}
-
-/// Login with brute-force protection
-#[no_mangle]
-pub extern "C" fn pwid_login_with_bruteforce_protection(note: *const i8, password: *const i8) -> i32 {
-    let (note, password) = match get_two_strings(note, password) {
-        Some(pair) => pair,
-        None => return PwidError::NotFound.as_i32(),
-    };
-    
-    let mgr = manager::get_manager();
-    let sess = session::get_session();
-    
-    let entry = match mgr.find_by_note(note) {
-        Some(e) => e,
-        None => return PwidError::NotFound.as_i32(),
-    };
-    
-    let pwid = entry.pwid.load(core::sync::atomic::Ordering::Acquire);
-    
-    if entry.has_flag(PwidFlags::DISABLED) {
-        return PwidError::Disabled.as_i32();
-    }
-    
-    if sess.is_locked(pwid) {
-        return PwidError::Disabled.as_i32();
-    }
-    
-    if sess.is_expired(pwid) {
-        return PwidError::Disabled.as_i32();
-    }
-    
-    // ✅ 修复 P0-1: 使用 salt 正确验证密码 (SHA256(salt || password))
-    // 从存储的 password_hash 中提取 salt (后 16 字节)
-    let mut stored_hash = [0u8; PWID_DIGEST_LEN];
-    let mut salt = [0u8; PWID_SALT_LEN];
-    
-    unsafe {
-        core::ptr::copy_nonoverlapping(
-            entry.password_hash.as_ptr(),
-            stored_hash.as_mut_ptr(),
-            PWID_DIGEST_LEN
-        );
-        core::ptr::copy_nonoverlapping(
-            entry.password_hash[PWID_DIGEST_LEN..].as_ptr(),
-            salt.as_mut_ptr(),
-            PWID_SALT_LEN
-        );
-    }
-    
-    // 使用与创建时相同的方式计算 hash: SHA256(salt || password)
-    let computed_hash = manager::hash_with_salt(password, &salt);
-    
-    // 使用常量时间比较防止时序攻击
-    if !manager::constant_time_eq(&computed_hash, &stored_hash) {
-        sess.record_failed_login(pwid);
-        audit::get_audit().log(pwid, 1, 1, 0, 0);  // action=login, result=failure
-        return PwidError::PasswordIncorrect.as_i32();
-    }
-    
-    sess.clear_failed_attempts(pwid);
-    entry.last_login_time.store(get_current_time(), core::sync::atomic::Ordering::Release);
-    
-    unsafe {
-        let ctx = &mut *sess.current.get();
-        ctx.current_entry = entry as *const PwidEntry;
-        ctx.session_pwid = pwid;
-    }
-    
-    audit::get_audit().log(pwid, 1, 0, 0, 0);
-    
-    PwidError::Ok.as_i32()
-}
-
-// ============================================================
-// Audit Log
-// ============================================================
-
-/// Record audit event
-#[no_mangle]
-pub extern "C" fn pwid_audit_log(pwid: u64, action: u32, result: u32, target_pwid: u64, details: u64) {
-    audit::get_audit().log(pwid, action, result, target_pwid, details)
-}
-
-/// Dump audit log to serial
-#[no_mangle]
-pub extern "C" fn pwid_audit_dump() {
-    audit::get_audit().dump()
-}
-
-// ============================================================
-// Database Persistence
-// ============================================================
-
-/// Save PWID database to disk (delegates to storage layer)
 #[no_mangle]
 pub extern "C" fn pwid_save_to_disk() -> i32 {
     storage::save_database()
 }
 
-/// Load PWID database from disk (delegates to storage layer)
 #[no_mangle]
 pub extern "C" fn pwid_load_from_disk() -> i32 {
     storage::load_database()
 }
 
-/// Check if database has been modified
 #[no_mangle]
-pub extern "C" fn pwid_is_modified() -> i32 {
-    if manager::get_manager().is_modified() { 1 } else { 0 }
+pub extern "C" fn pwid_is_modified() -> bool {
+    table::get_table().is_modified()
 }
 
-/// Mark database as modified
 #[no_mangle]
 pub extern "C" fn pwid_set_modified() {
-    manager::get_manager().set_modified()
+    table::get_table().set_modified();
 }
 
-// ============================================================
-// Periodic Maintenance
-// ============================================================
-
-/// Perform periodic cleanup tasks (expire tokens + trust entries)
 #[no_mangle]
-pub extern "C" fn pwid_periodic_cleanup() {
-    get_trust_chain().clear_expired();
-    get_token_manager().clear_expired();
-}
-
-// ============================================================
-// Token System
-// ============================================================
-
-/// Create privilege elevation token
-#[no_mangle]
-pub extern "C" fn pwid_create_token(
-    creator_pwid: u64,
-    target_pwid: u64,
-    permissions: u64,
-    duration_secs: u64
-) -> u64 {
-    let now = get_time();
-    let token = PwidToken::new(TokenType::Elevation, creator_pwid, target_pwid)
-        .with_capabilities(&[1], &[permissions])
-        .with_validity(0, now + duration_secs);
-    match get_token_manager().create(token) {
-        Some(id) => id,
-        None => 0,
-    }
-}
-
-/// Use a token for privilege elevation
-#[no_mangle]
-pub extern "C" fn pwid_use_token_internal(token_id: u64, _user_pwid: u64) -> i32 {
-    match get_token_manager().use_token(token_id) {
-        Ok(()) => {
-            let idx = match get_token_manager().find(token_id) {
-                Some(i) => i,
-                None => return -1,
-            };
-            let t = match get_token_manager().get(idx) {
-                Some(t) => t,
-                None => return -1,
-            };
-            if t.has_capability(1, 0xFFFFFFFFFFFFFFFF) {
-                session::get_session().elevate(t.issuer_pwid, "", 0);
-            }
-            0
-        }
-        Err(()) => -1,
-    }
-}
-
-/// Revoke a token
-#[no_mangle]
-pub extern "C" fn pwid_revoke_token_internal(token_id: u64, revoker_pwid: u64) -> i32 {
-    if get_token_manager().revoke(token_id, revoker_pwid) { 0 } else { -1 }
-}
-
-/// Request genesis mode (for --first boot parameter)
-#[no_mangle]
-pub extern "C" fn pwid_request_genesis() {
-    GENESIS_REQUESTED.store(true, Ordering::Release);
-}
-
-fn get_time() -> u64 {
-    let tsc: u64;
-    unsafe {
-        core::arch::asm!("rdtsc", out("rax") tsc, out("rdx") _, options(nomem, nostack));
-    }
-    tsc
-}
-
-// ============================================================
-// Trust Relations (Stubs - TODO: Full implementation)
-// ============================================================
-
-/// Add trust relationship between users
-#[no_mangle]
-pub extern "C" fn pwid_add_trust_relation(
-    trustor_pwid: u64,
-    trustee_pwid: u64,
-    trust_level: u8
-) -> i32 {
-    let level = match trust_level {
-        0 => TrustLevel::None,
-        1 => TrustLevel::Basic,
-        2 => TrustLevel::Operate,
-        3 => TrustLevel::Delegate,
-        4 => TrustLevel::Full,
-        _ => return -1,
+pub extern "C" fn pwid_audit_log(pwid: u64, action: u32, target: u64, details: u64) {
+    let act = match action {
+        1 => AuditAction::Login,
+        2 => AuditAction::Logout,
+        3 => AuditAction::Create,
+        4 => AuditAction::Delete,
+        5 => AuditAction::Modify,
+        8 => AuditAction::PasswordChange,
+        10 => AuditAction::Grant,
+        11 => AuditAction::Revoke,
+        12 => AuditAction::TransferCreator,
+        13 => AuditAction::FirstTokenGrant,
+        _ => AuditAction::Modify,
     };
-    let entry = TrustEntry::new(trustor_pwid, trustee_pwid, level, 0, 0, 0, 0);
-    match get_trust_chain().add(entry) {
-        Ok(()) => 0,
-        Err(()) => -1,
-    }
+    audit::log(pwid, act, target, 0, details);
 }
 
-/// Remove trust relationship
 #[no_mangle]
-pub extern "C" fn pwid_remove_trust_internal(
-    trustor_pwid: u64,
-    trustee_pwid: u64
-) -> i32 {
-    if get_trust_chain().remove(trustor_pwid, trustee_pwid, 0) { 0 } else { -1 }
+pub extern "C" fn pwid_audit_dump() {
+    audit::dump();
 }
 
-/// Check if subject has a trust chain path to target for the given capability.
-/// Returns 1 if trust exists, 0 otherwise.
-/// max_depth limits delegation hops (8 = default kernel max).
 #[no_mangle]
-pub extern "C" fn pwid_check_trust(
-    subject_pwid: u64,
-    target_pwid: u64,
-    domain: u16,
-    required_caps: u64,
-    max_depth: u8,
-) -> i32 {
-    let chain = get_trust_chain();
-    if chain.check_chain(subject_pwid, target_pwid, domain, required_caps, max_depth).is_some() {
-        1
-    } else {
-        0
-    }
-}
-
-// ============================================================
-// Enhanced Security Checks (Stubs)
-// ============================================================
-
-/// Enhanced permission check — orchestrates multi-layer security.
-/// object_type: domain (0=system, 1=fs, 2=net, 3=proc, 4=device, 5=user_mgmt)
-/// action: capability bitmask for the requested operation
-/// Enhanced permission check (v4) — full RBAC check with capability matrix
-/// Returns 1 if allowed, 0 if denied.
-#[no_mangle]
-pub extern "C" fn pwid_enhanced_check(
-    subject_pwid: u64,
-    owner_pwid: u64,
-    access_type: u64,
-    domain: u16,
-) -> i32 {
-    // Layer 0: Null PWID → deny
-    if subject_pwid == 0 {
-        return 0;
-    }
-
-    let caps = access_type;
-
-    // Layer 1: Subject == owner → allow (ownership bypass)
-    if subject_pwid == owner_pwid {
-        return 1;
-    }
-
-    // Layer 2: Check capability matrix
-    let pwid_caps = pwid_get_fs_capability(subject_pwid);
-    if (pwid_caps & caps) == caps {
-        return 1;
-    }
-
-    // Layer 3: Trust chain check
-    let chain = get_trust_chain();
-    if chain.check_chain(subject_pwid, owner_pwid, domain, caps, 8).is_some() {
-        return 1;
-    }
-
-    0
-}
-
-/// Periodic cleanup: expire trust entries and tokens
-#[no_mangle]
-pub extern "C" fn pwid_cleanup_internal() {
-    get_trust_chain().clear_expired();
-}
-
-// ============================================================
-// Helper Functions
-// ============================================================
-
-/// Convert C string to Rust string slice
-unsafe fn cstr_to_str(ptr: *const i8) -> Result<&'static str, ()> {
-    if ptr.is_null() {
-        return Err(());
-    }
-    
-    let cstr = core::ffi::CStr::from_ptr(ptr);
-    cstr.to_str().map_err(|_| ())
-}
-
-/// Get two C strings as Rust strings (for functions with 2 string params)
-fn get_two_strings(s1: *const i8, s2: *const i8) -> Option<(&'static str, &'static str)> {
-    let str1 = unsafe { cstr_to_str(s1).ok()? };
-    let str2 = unsafe { cstr_to_str(s2).ok()? };
-    Some((str1, str2))
-}
-
-/// Get current time from TSC register
-fn get_current_time() -> u64 {
-    unsafe {
-        let tsc: u64;
-        core::arch::asm!(
-            "rdtsc",
-            out("eax") tsc,
-            options(nostack, nomem)
-        );
-        tsc / 3_000_000_000u64
+pub extern "C" fn pwid_recover_first(password: *const core::ffi::c_char, note: *const core::ffi::c_char) -> i64 {
+    if password.is_null() || note.is_null() { return PwidError::InvalidPassword.as_i32() as i64; }
+    let p = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+    let n = unsafe { core::ffi::CStr::from_ptr(note) }.to_str().unwrap_or("");
+    match table::get_table().recover_with_first(p, n) {
+        Ok(pwid) => pwid as i64,
+        Err(e) => e.as_i32() as i64,
     }
 }

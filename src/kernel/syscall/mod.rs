@@ -188,8 +188,9 @@ unsafe fn sys_auth_logout() -> i64 {
     0
 }
 
-unsafe fn sys_auth_create(password: *const i8, note: *const i8, level: u8) -> i64 {
-    crate::kernel::pwid::ffi::pwid_create_user(password, note, level) as i64
+unsafe fn sys_auth_create(password: *const i8, note: *const i8, _level: u8) -> i64 {
+    let creator = crate::kernel::pwid::ffi::pwid_get_current();
+    crate::kernel::pwid::ffi::pwid_create(password, note, creator) as i64
 }
 
 unsafe fn sys_auth_delete(target: u64) -> i64 {
@@ -197,7 +198,7 @@ unsafe fn sys_auth_delete(target: u64) -> i64 {
 }
 
 unsafe fn sys_auth_info(target: u64) -> i64 {
-    crate::kernel::pwid::ffi::pwid_get_level(target) as i64
+    crate::kernel::pwid::ffi::pwid_get_privilege_level(target) as i64
 }
 
 unsafe fn sys_auth_changepw(old_pw: *const i8, new_pw: *const i8) -> i64 {
@@ -210,20 +211,17 @@ unsafe fn sys_auth_verify(password: *const i8) -> i64 {
     crate::kernel::pwid::ffi::pwid_verify_password(pwid, password) as i64
 }
 
-unsafe fn sys_auth_token_create(holder: u64, domain: u16, caps: u64, duration: u64, _max_uses: u32) -> i64 {
+unsafe fn sys_auth_token_create(holder: u64, domain: u16, caps: u64, _duration: u64, _max_uses: u32) -> i64 {
     let creator = crate::kernel::pwid::ffi::pwid_get_current();
-    let _ = domain;
-    crate::kernel::pwid::ffi::pwid_create_token(creator, holder, caps, duration) as i64
+    crate::kernel::pwid::ffi::pwid_grant(creator, holder, domain, caps) as i64
 }
 
-unsafe fn sys_auth_token_use(token_id: u64) -> i64 {
-    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
-    crate::kernel::pwid::ffi::pwid_use_token_internal(token_id, pwid) as i64
+unsafe fn sys_auth_token_use(_token_id: u64) -> i64 {
+    0
 }
 
-unsafe fn sys_auth_token_revoke(token_id: u64) -> i64 {
-    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
-    crate::kernel::pwid::ffi::pwid_revoke_token_internal(token_id, pwid) as i64
+unsafe fn sys_auth_token_revoke(_token_id: u64) -> i64 {
+    0
 }
 
 // ============================================================================
@@ -253,7 +251,7 @@ unsafe fn sys_gethostname(buf: *mut i8, size: u64) -> i64 {
 unsafe fn sys_sethostname(name: *const i8, len: u64) -> i64 {
     if name.is_null() || len == 0 || len > 63 { return SyscallError::E_INVAL.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
-    if crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 9) == 0 {
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 9) {
         return SyscallError::E_AUTH_CAP.as_i64();
     }
     0
@@ -262,7 +260,7 @@ unsafe fn sys_sethostname(name: *const i8, len: u64) -> i64 {
 unsafe fn sys_boot_check(check_type: i32) -> i64 {
     match check_type {
         0 => {
-            if crate::kernel::pwid::ffi::pwid_any_identity_exists() != 0 { 1 } else { 0 }
+            if crate::kernel::pwid::ffi::pwid_any_identity_exists() { 1 } else { 0 }
         }
         _ => -1,
     }
@@ -293,7 +291,7 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     if fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
-    if crate::kernel::pwid::ffi::pwid_has_capability(pwid, 4, 0) == 0 {
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 4, 0) {
         return SyscallError::E_AUTH_CAP.as_i64();
     }
     extern "C" { fn ata_disk_present(drive: u8) -> i32; }
