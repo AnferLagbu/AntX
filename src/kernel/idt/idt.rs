@@ -284,7 +284,7 @@ impl IdtManager {
             let registered_ptr = registered as *const ();
             let input_ptr = handler as *const ();
             
-            if registered_ptr == input_ptr || true {  // 允许 NULL 注销所有
+            if registered_ptr == input_ptr {
                 state.handlers[vector] = None;
                 state.irq_descriptors[irq as usize] = IrqDescriptor::empty();
                 return Ok(());
@@ -472,20 +472,12 @@ impl IdtManager {
 
         // Kernel-mode PF: 尝试恢复
         if is_null_or_invalid(fault_addr) {
-            // Null pointer access: 跳过指令
-            unsafe {
-                let frame_mut = frame as *const InterruptFrame as *mut InterruptFrame;
-                (*frame_mut).rip += 2;
-            }
+            self.attempt_domain_recovery(frame);
             return;
         }
 
         if is_valid_user_address(frame.rip) && !is_valid_kernel_address(frame.rip) {
-            // Invalid function pointer: 模拟返回
-            unsafe {
-                let frame_mut = frame as *const InterruptFrame as *mut InterruptFrame;
-                (*frame_mut).rsp += 8;
-            }
+            self.attempt_domain_recovery(frame);
             return;
         }
 
@@ -596,27 +588,21 @@ impl IdtManager {
         let irq = (vector - IRQ_BASE) as u8;
 
         if irq < 16 {
-            // 记录统计
             self.stats.record_irq(irq);
 
-            // 获取 handler
             let handler_opt = {
                 let state = self.state.lock();
-                state.irq_descriptors[irq as usize].handler
-            };
-
-            if let Some(handler) = handler_opt {
-                // 更新调用计数
-                let state = self.state.lock();
+                let handler = state.irq_descriptors[irq as usize].handler;
                 if let Some(desc) = state.irq_descriptors.get(irq as usize) {
                     desc.call_count.fetch_add(1, Ordering::Relaxed);
                 }
+                handler
+            };
 
-                // 调用 handler
+            if let Some(handler) = handler_opt {
                 unsafe { handler(frame); }
             }
 
-            // 发送 EOI
             self.send_eoi(irq);
         }
     }

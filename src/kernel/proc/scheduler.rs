@@ -10,40 +10,9 @@ use super::process::{Process, PROCESS_TABLE};
 // ✅ 日志宏 (与 pmm.rs 保持一致)
 // ============================================================================
 
-/// klog output macro for Scheduler (warning level)
 macro_rules! klog_sched_warn {
     ($($arg:tt)*) => {
-        {
-            extern "C" {
-                fn klog_ffi_warn(msg: *const u8);
-            }
-            let mut buf: [u8; 256] = [0u8; 256];
-            let mut cursor = 0;
-            
-            struct CursorWriter<'a> {
-                buf: &'a mut [u8],
-                cursor: &'a mut usize,
-            }
-            
-            impl<'a> core::fmt::Write for CursorWriter<'a> {
-                fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                    let bytes = s.as_bytes();
-                    let space = self.buf.len() - *self.cursor;
-                    let to_write = bytes.len().min(space);
-                    self.buf[*self.cursor..*self.cursor + to_write].copy_from_slice(&bytes[..to_write]);
-                    *self.cursor += to_write;
-                    Ok(())
-                }
-            }
-            
-            let _ = core::fmt::write(
-                &mut CursorWriter { buf: &mut buf, cursor: &mut cursor }, 
-                format_args!($($arg)*)
-            );
-            if cursor > 0 {
-                unsafe { klog_ffi_warn(buf.as_ptr()); }
-            }
-        }
+        $crate::klog_ffi!(klog_ffi_warn, $($arg)*)
     };
 }
 

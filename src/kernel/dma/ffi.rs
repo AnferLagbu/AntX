@@ -18,39 +18,10 @@ extern "C" {
     fn klog_ffi_info(msg: *const u8);
 }
 
-macro_rules! klog_info {
+macro_rules! klog_dma_info {
     ($($arg:tt)*) => {
-        {
-            let mut buf: [u8; 256] = [0u8; 256];
-            let mut cursor = 0;
-            let _ = core::fmt::write(&mut CursorWriter::new(&mut buf, &mut cursor), format_args!($($arg)*));
-            if cursor > 0 {
-                unsafe { klog_ffi_info(buf.as_ptr()); }
-            }
-        }
+        $crate::klog_ffi!(klog_ffi_info, $($arg)*)
     };
-}
-
-struct CursorWriter<'a> {
-    buf: &'a mut [u8],
-    cursor: &'a mut usize,
-}
-
-impl<'a> CursorWriter<'a> {
-    fn new(buf: &'a mut [u8], cursor: &'a mut usize) -> Self {
-        Self { buf, cursor }
-    }
-}
-
-impl<'a> core::fmt::Write for CursorWriter<'a> {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let bytes = s.as_bytes();
-        let remaining = self.buf.len() - *self.cursor;
-        let to_write = bytes.len().min(remaining);
-        self.buf[*self.cursor..*self.cursor + to_write].copy_from_slice(&bytes[..to_write]);
-        *self.cursor += to_write;
-        Ok(())
-    }
 }
 
 fn print(s: &str) {
@@ -521,23 +492,23 @@ pub extern "C" fn dma_get_stats(stats_out: *mut DmaPoolStats) {
 #[no_mangle]
 pub extern "C" fn dma_dump_stats() {
     let s = engine().get_stats();
-    klog_info!("=== DMA Engine Statistics ===");
-    klog_info!("  Total Allocations: {}", s.total_allocations);
-    klog_info!("  Total Frees: {}", s.total_frees);
-    klog_info!("  Total Mappings: {}", s.total_mappings);
-    klog_info!("  Total Unmappings: {}", s.total_unmappings);
-    klog_info!("  Current Active: {}", s.current_in_use);
-    klog_info!("  Max Concurrent: {}", s.max_concurrent);
-    klog_info!("  Coherence Fails: {}", s.coherence_fails);
-    klog_info!("  Total Bytes Allocated: {} KB", s.total_bytes_allocated / 1024);
-    klog_info!("  Current Bytes Used: {} KB", s.current_bytes_used / 1024);
+    klog_dma_info!("=== DMA Engine Statistics ===");
+    klog_dma_info!("  Total Allocations: {}", s.total_allocations);
+    klog_dma_info!("  Total Frees: {}", s.total_frees);
+    klog_dma_info!("  Total Mappings: {}", s.total_mappings);
+    klog_dma_info!("  Total Unmappings: {}", s.total_unmappings);
+    klog_dma_info!("  Current Active: {}", s.current_in_use);
+    klog_dma_info!("  Max Concurrent: {}", s.max_concurrent);
+    klog_dma_info!("  Coherence Fails: {}", s.coherence_fails);
+    klog_dma_info!("  Total Bytes Allocated: {} KB", s.total_bytes_allocated / 1024);
+    klog_dma_info!("  Current Bytes Used: {} KB", s.current_bytes_used / 1024);
 }
 
 #[no_mangle]
 pub extern "C" fn dump_active_mappings() {
     let s = engine().get_stats();
-    klog_info!("--- Active DMA Mappings (Rust managed) ---");
-    klog_info!("  Total: {} mappings", s.current_in_use);
+    klog_dma_info!("--- Active DMA Mappings (Rust managed) ---");
+    klog_dma_info!("  Total: {} mappings", s.current_in_use);
 }
 
 #[no_mangle]

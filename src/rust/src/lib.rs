@@ -78,9 +78,10 @@ fn panic(info: &PanicInfo) -> ! {
     let msg = alloc::format!("{}", info);
     let bytes = msg.as_bytes();
     let len = bytes.len().min(127);
-    unsafe {
-        crate::kernel::barrier::PANIC_MSG[..len].copy_from_slice(&bytes[..len]);
-        crate::kernel::barrier::PANIC_MSG[len] = 0;
+    {
+        let mut panic_msg = crate::kernel::barrier::PANIC_MSG.lock();
+        panic_msg[..len].copy_from_slice(&bytes[..len]);
+        panic_msg[len] = 0;
     }
 
     // Trigger int 0x82 — dedicated recovery interrupt.
@@ -108,15 +109,11 @@ pub extern "C" fn kernel_init() {
         boot_info.mem_size / (1024 * 1024), boot_info.kernel_end);
 
     // 2. PMM — 物理内存管理器初始化
-    unsafe {
-        crate::kernel::mm::pmm::get_pmm_mut().init(boot_info.mem_size, boot_info.kernel_end);
-    }
+    crate::kernel::mm::pmm::pmm_init(boot_info.mem_size, boot_info.kernel_end);
     crate::klog_boot_info!("PMM initialized");
 
     // 3. VMM — 虚拟内存管理器初始化 (必须在PMM之后)
-    unsafe {
-        crate::kernel::mm::vmm::get_vmm_mut().init();
-    }
+    crate::kernel::mm::vmm::vmm_init();
     crate::klog_boot_info!("VMM initialized");
 
     // 4. kmalloc — 内核堆初始化
@@ -131,9 +128,7 @@ pub extern "C" fn kernel_init() {
         heap_start.0, KMALLOC_HEAP_SIZE / (1024 * 1024));
 
     // 5. PMM Bitmap — 初始化位图分配器
-    unsafe {
-        crate::kernel::mm::pmm::get_pmm_mut().init_bitmap(KMALLOC_HEAP_SIZE);
-    }
+    crate::kernel::mm::pmm::pmm_init_bitmap(KMALLOC_HEAP_SIZE);
     crate::klog_boot_info!("PMM bitmap initialized");
 
     // 6. IDT + PIC

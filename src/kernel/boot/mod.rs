@@ -1,8 +1,12 @@
 //! Boot Information Module
 //!
-//! Parses Multiboot information to obtain memory map and other boot parameters.
-
-use core::mem::size_of;
+//! Parses Multiboot1 and Multiboot2 information to obtain memory map and
+//! other boot parameters.
+//!
+//! # Safety
+//! Interior mutability for `BOOT_INFO` is achieved via `spin::Once` (write-once
+//! at boot, then read-only). `MULTIBOOT_INFO_PTR` uses `spin::Mutex` since it
+//! is set before init and read during init.
 
 pub const MULTIBOOT1_MAGIC: u32 = 0x2BADB002;
 pub const MULTIBOOT2_MAGIC: u32 = 0x36D76289;
@@ -80,75 +84,172 @@ impl BootInfo {
     }
 }
 
-static mut BOOT_INFO: BootInfo = BootInfo::new();
-static mut MULTIBOOT_INFO_PTR: *const Multiboot1Info = core::ptr::null();
+struct MultibootPtr(*const u8);
+unsafe impl Send for MultibootPtr {}
+unsafe impl Sync for MultibootPtr {}
+
+static BOOT_INFO: spin::Once<BootInfo> = spin::Once::new();
+static MULTIBOOT_INFO_PTR: spin::Mutex<MultibootPtr> = spin::Mutex::new(MultibootPtr(core::ptr::null()));
+static MULTIBOOT_MAGIC: spin::Mutex<u32> = spin::Mutex::new(0);
 
 extern "C" {
     static _kernel_end: u8;
 }
 
 pub fn get_boot_info() -> &'static BootInfo {
-    unsafe { &BOOT_INFO }
+    BOOT_INFO.get().expect("[BOOT] accessed before initialization")
 }
 
 #[no_mangle]
-pub extern "C" fn boot_set_multiboot_info(ptr: *const Multiboot1Info) {
-    unsafe {
-        MULTIBOOT_INFO_PTR = ptr;
-    }
+pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
+    *MULTIBOOT_MAGIC.lock() = magic;
+    *MULTIBOOT_INFO_PTR.lock() = MultibootPtr(ptr);
 }
 
-pub fn init() -> BootInfo {
-    unsafe {
-        let kernel_end = &_kernel_end as *const u8 as u64;
-        
-        let mut mem_size: u64 = 128 * 1024 * 1024;
-        
-        if !MULTIBOOT_INFO_PTR.is_null() {
-            let mbi = &*MULTIBOOT_INFO_PTR;
-            
-            if mbi.flags & MBOOT1_FLAG_MEM != 0 {
-                mem_size = (mbi.mem_upper as u64 + 1024) * 1024;
+fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
+    let mbi = unsafe { &*(ptr as *const Multiboot1Info) };
+    let mut mem_size: u64 = 128 * 1024 * 1024;
+    let mut mmap_entries: usize = 0;
+
+    if mbi.flags & MBOOT1_FLAG_MEM != 0 {
+        mem_size = (mbi.mem_upper as u64 + 1024) * 1024;
+    }
+
+    if mbi.flags & MBOOT1_FLAG_MMAP != 0 {
+        let mmap_start = mbi.mmap_addr as *const MemoryMapEntry;
+        let mmap_end = (mbi.mmap_addr + mbi.mmap_length) as *const MemoryMapEntry;
+        let mut max_addr: u64 = 0;
+
+        let mut current = mmap_start;
+        while current < mmap_end {
+            let entry = unsafe { &*current };
+            let end = entry.base_addr() + entry.length();
+            if end > max_addr && entry.is_available() {
+                max_addr = end;
             }
-            
-            if mbi.flags & MBOOT1_FLAG_MMAP != 0 {
-                let mmap_start = mbi.mmap_addr as *const MemoryMapEntry;
-                let mmap_end = (mbi.mmap_addr + mbi.mmap_length) as *const MemoryMapEntry;
+            mmap_entries += 1;
+            current = unsafe { (current as *const u8).add(entry.size as usize + 4) as *const MemoryMapEntry };
+        }
+
+        if max_addr > 0 {
+            mem_size = max_addr;
+        }
+    }
+
+    (mem_size, mmap_entries)
+}
+
+fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
+    let total_size = unsafe { *(ptr as *const u32) };
+    let mut mem_size: u64 = 128 * 1024 * 1024;
+    let mut mmap_entries: usize = 0;
+
+    let mut offset: usize = 8;
+    let end = total_size as usize;
+
+    while offset + 8 <= end {
+        let tag_ptr = unsafe { ptr.add(offset) };
+        let tag_type = unsafe { *(tag_ptr as *const u32) };
+        let tag_size = unsafe { *((tag_ptr as *const u32).add(1)) };
+
+        if tag_type == 0 || tag_size == 0 {
+            break;
+        }
+
+        match tag_type {
+            4 => {
+                let basic_ptr = unsafe { tag_ptr.add(8) };
+                let _mem_lower = unsafe { *(basic_ptr as *const u32) };
+                let mem_upper = unsafe { *((basic_ptr as *const u32).add(1)) };
+                mem_size = (mem_upper as u64 + 1024) * 1024;
+            }
+            6 => {
+                let entry_size = unsafe { *(tag_ptr.add(8) as *const u32) };
+                let _entry_version = unsafe { *((tag_ptr.add(8) as *const u32).add(1)) };
+                let entries_start = unsafe { tag_ptr.add(16) };
+                let entries_end = unsafe { tag_ptr.add(tag_size as usize) };
                 let mut max_addr: u64 = 0;
-                let mut entry_count = 0usize;
-                
-                let mut current = mmap_start;
-                while current < mmap_end {
-                    let entry = &*current;
-                    let end = entry.base_addr() + entry.length();
-                    if end > max_addr && entry.is_available() {
-                        max_addr = end;
+
+                let mut pos = entries_start;
+                while unsafe { pos.add(entry_size as usize) <= entries_end } {
+                    let base = unsafe {
+                        let lo = *(pos as *const u32);
+                        let hi = *((pos as *const u32).add(1));
+                        ((hi as u64) << 32) | (lo as u64)
+                    };
+                    let len = unsafe {
+                        let lo = *((pos as *const u32).add(2));
+                        let hi = *((pos as *const u32).add(3));
+                        ((hi as u64) << 32) | (lo as u64)
+                    };
+                    let mtype = unsafe { *((pos as *const u32).add(4)) };
+
+                    if mtype == 1 {
+                        let end_addr = base + len;
+                        if end_addr > max_addr {
+                            max_addr = end_addr;
+                        }
                     }
-                    entry_count += 1;
-                    current = (current as *const u8).add(entry.size as usize + 4) as *const MemoryMapEntry;
+                    mmap_entries += 1;
+                    pos = unsafe { pos.add(entry_size as usize) };
                 }
-                
+
                 if max_addr > 0 {
                     mem_size = max_addr;
                 }
-                
-                BOOT_INFO.mmap_entries = entry_count;
             }
+            _ => {}
         }
-        
-        BOOT_INFO.mem_size = mem_size;
-        BOOT_INFO.kernel_end = kernel_end;
-        
-        BOOT_INFO
+
+        offset += tag_size as usize;
+        offset = (offset + 7) & !7;
     }
+
+    (mem_size, mmap_entries)
+}
+
+pub fn init() -> BootInfo {
+    let kernel_end = unsafe { &_kernel_end as *const u8 as u64 };
+
+    let mut mem_size: u64 = 128 * 1024 * 1024;
+    let mut mmap_entries: usize = 0;
+
+    let magic = *MULTIBOOT_MAGIC.lock();
+    let ptr = MULTIBOOT_INFO_PTR.lock().0;
+
+    if !ptr.is_null() {
+        match magic {
+            MULTIBOOT1_MAGIC => {
+                let (ms, me) = parse_multiboot1(ptr);
+                mem_size = ms;
+                mmap_entries = me;
+            }
+            MULTIBOOT2_MAGIC => {
+                let (ms, me) = parse_multiboot2(ptr);
+                mem_size = ms;
+                mmap_entries = me;
+            }
+            _ => {}
+        }
+    }
+
+    let info = BootInfo {
+        mem_size,
+        kernel_end,
+        mmap_entries,
+    };
+
+    BOOT_INFO.call_once(|| info);
+
+    info
 }
 
 #[no_mangle]
 pub extern "C" fn boot_get_mem_size() -> u64 {
-    unsafe { BOOT_INFO.mem_size }
+    get_boot_info().mem_size
 }
 
 #[no_mangle]
 pub extern "C" fn boot_get_kernel_end() -> u64 {
-    unsafe { BOOT_INFO.kernel_end }
+    get_boot_info().kernel_end
 }

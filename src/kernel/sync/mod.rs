@@ -19,6 +19,7 @@ pub mod spinlock;
 pub mod mutex;
 pub mod rwlock;
 pub mod atomic;
+pub mod seqlock;
 
 use core::sync::atomic::Ordering;
 

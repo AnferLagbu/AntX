@@ -18,9 +18,7 @@ use core::ffi::c_void;
 /// C signature: void pmm_init(uint64_t mem_size, uint64_t kernel_end)
 #[no_mangle]
 pub extern "C" fn pmm_init(mem_size: u64, kernel_end: u64) {
-    unsafe {
-        get_pmm_mut().init(mem_size, kernel_end);
-    }
+    super::pmm::pmm_init(mem_size, kernel_end);
 }
 
 /// Initialize bitmap for normal operation
@@ -28,9 +26,7 @@ pub extern "C" fn pmm_init(mem_size: u64, kernel_end: u64) {
 /// C signature: void pmm_init_bitmap(uint64_t reserved_after_kernel)
 #[no_mangle]
 pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
-    unsafe {
-        get_pmm_mut().init_bitmap(reserved_after_kernel);
-    }
+    super::pmm::pmm_init_bitmap(reserved_after_kernel);
 }
 
 /// Allocate a single 4KB page
@@ -151,9 +147,7 @@ pub extern "C" fn pmm_is_aligned_for_huge(addr: *const c_void, size_type: PageSi
 /// C signature: void vmm_init(void)
 #[no_mangle]
 pub extern "C" fn vmm_init() {
-    unsafe {
-        get_vmm_mut().init();
-    }
+    super::vmm::vmm_init();
 }
 
 /// Map a virtual page to physical page

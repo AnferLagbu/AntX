@@ -1,0 +1,228 @@
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+use super::types::*;
+use super::undo_log::UndoLog;
+
+pub struct RecoveryDomain {
+    pub id: u64,
+    pub state: AtomicU32,
+    pub barrier_generation: AtomicU64,
+    pub barrier_interval_ticks: u64,
+    pub next_barrier_tick: AtomicU64,
+    pub rollback_count: AtomicU32,
+    pub consecutive_failures: AtomicU32,
+    pub last_crash_fingerprint: AtomicU64,
+    pub last_rollback_time: AtomicU64,
+    pub backoff_until: AtomicU64,
+    pub depends_on: spin::Mutex<[Option<u64>; MAX_DOMAIN_DEPENDENCIES]>,
+    pub depended_by: spin::Mutex<[Option<u64>; MAX_DOMAIN_DEPENDENCIES]>,
+    pub dom_cap_mask: AtomicU64,
+    pub original_cap_mask: AtomicU64,
+    pub cpu_quota_max: u64,
+    pub cpu_quota_period: u64,
+    pub cpu_quota_consumed: AtomicU64,
+    pub proc_limit_max: u32,
+    pub proc_limit_current: AtomicU32,
+    pub undo: spin::Mutex<UndoLog>,
+    pub capture_cb: spin::Mutex<Option<unsafe extern "C" fn()>>,
+    pub rollback_cb: spin::Mutex<Option<unsafe extern "C" fn() -> bool>>,
+    pub barrier_stack: spin::Mutex<[BarrierSnapshot; MAX_BARRIER_SNAPSHOTS]>,
+    pub barrier_stack_top: AtomicU32,
+    pub addr_ranges: spin::Mutex<[(u64, u64); MAX_ADDR_RANGES]>,
+    pub addr_range_count: AtomicU32,
+}
+
+unsafe impl Send for RecoveryDomain {}
+unsafe impl Sync for RecoveryDomain {}
+
+impl RecoveryDomain {
+    pub fn new(id: u64) -> Self {
+        Self {
+            id,
+            state: AtomicU32::new(DomainState::Active as u32),
+            barrier_generation: AtomicU64::new(0),
+            barrier_interval_ticks: DEFAULT_BARRIER_INTERVAL,
+            next_barrier_tick: AtomicU64::new(DEFAULT_BARRIER_INTERVAL),
+            rollback_count: AtomicU32::new(0),
+            consecutive_failures: AtomicU32::new(0),
+            last_crash_fingerprint: AtomicU64::new(0),
+            last_rollback_time: AtomicU64::new(0),
+            backoff_until: AtomicU64::new(0),
+            depends_on: spin::Mutex::new([None; MAX_DOMAIN_DEPENDENCIES]),
+            depended_by: spin::Mutex::new([None; MAX_DOMAIN_DEPENDENCIES]),
+            dom_cap_mask: AtomicU64::new(u64::MAX),
+            original_cap_mask: AtomicU64::new(u64::MAX),
+            cpu_quota_max: 0,
+            cpu_quota_period: 0,
+            cpu_quota_consumed: AtomicU64::new(0),
+            proc_limit_max: 0,
+            proc_limit_current: AtomicU32::new(0),
+            undo: spin::Mutex::new(UndoLog::new()),
+            capture_cb: spin::Mutex::new(None),
+            rollback_cb: spin::Mutex::new(None),
+            barrier_stack: spin::Mutex::new([BarrierSnapshot {
+                generation: 0, tick: 0, undo_offset: 0,
+            }; MAX_BARRIER_SNAPSHOTS]),
+            barrier_stack_top: AtomicU32::new(0),
+            addr_ranges: spin::Mutex::new([(0, 0); MAX_ADDR_RANGES]),
+            addr_range_count: AtomicU32::new(0),
+        }
+    }
+
+    pub fn get_state(&self) -> DomainState {
+        DomainState::from_u32(self.state.load(Ordering::SeqCst))
+    }
+
+    pub fn is_active(&self) -> bool {
+        let s = self.get_state();
+        s == DomainState::Active || s == DomainState::Degraded
+    }
+
+    pub fn try_rollback(&self, current_tick: u64, crash_fingerprint: u64) -> bool {
+        let failures = self.consecutive_failures.load(Ordering::SeqCst);
+
+        if failures >= MAX_CONSECUTIVE_FAILURES {
+            self.state.store(DomainState::Quarantined as u32, Ordering::SeqCst);
+            return false;
+        }
+
+        let prev_fp = self.last_crash_fingerprint.swap(crash_fingerprint, Ordering::SeqCst);
+        if crash_fingerprint != 0 && prev_fp == crash_fingerprint {
+            self.consecutive_failures.store(MAX_CONSECUTIVE_FAILURES, Ordering::SeqCst);
+            self.state.store(DomainState::Quarantined as u32, Ordering::SeqCst);
+            return false;
+        }
+
+        let backoff = (1u64 << failures.min(8)) * BACKOFF_BASE_TICKS;
+        let bu = self.backoff_until.load(Ordering::SeqCst);
+        if current_tick < bu { return false; }
+        self.backoff_until.store(current_tick + backoff, Ordering::SeqCst);
+        self.consecutive_failures.fetch_add(1, Ordering::SeqCst);
+        self.rollback_count.fetch_add(1, Ordering::SeqCst);
+        self.last_rollback_time.store(current_tick, Ordering::SeqCst);
+
+        self.apply_degradation();
+
+        true
+    }
+
+    fn apply_degradation(&self) {
+        let failures = self.consecutive_failures.load(Ordering::SeqCst);
+        let original = self.original_cap_mask.load(Ordering::SeqCst);
+        match failures {
+            1..=2 => {
+                self.dom_cap_mask.store(original, Ordering::SeqCst);
+            }
+            3 => {
+                let degraded = original & !(CAP_FS_WRITE);
+                self.dom_cap_mask.store(degraded, Ordering::SeqCst);
+                self.state.store(DomainState::Degraded as u32, Ordering::SeqCst);
+            }
+            4 => {
+                let degraded = original & !(CAP_FS_WRITE | CAP_NET_SEND | CAP_PROC_CREATE);
+                self.dom_cap_mask.store(degraded, Ordering::SeqCst);
+                self.state.store(DomainState::Degraded as u32, Ordering::SeqCst);
+            }
+            _ => {
+                self.state.store(DomainState::Quarantined as u32, Ordering::SeqCst);
+            }
+        }
+    }
+
+    pub fn mark_recovered(&self) {
+        self.consecutive_failures.store(0, Ordering::SeqCst);
+        let original = self.original_cap_mask.load(Ordering::SeqCst);
+        self.dom_cap_mask.store(original, Ordering::SeqCst);
+    }
+
+    pub fn add_dependency(&self, dependency_id: u64) -> bool {
+        {
+            let mut deps = self.depends_on.lock();
+            for slot in deps.iter() {
+                if let Some(existing) = *slot {
+                    if existing == dependency_id { return true; }
+                }
+            }
+            for slot in deps.iter_mut() {
+                if slot.is_none() {
+                    *slot = Some(dependency_id);
+                    break;
+                }
+            }
+        }
+        true
+    }
+
+    pub fn add_depended_by(&self, dependent_id: u64) -> bool {
+        let mut deps = self.depended_by.lock();
+        for slot in deps.iter() {
+            if let Some(existing) = *slot {
+                if existing == dependent_id { return true; }
+            }
+        }
+        for slot in deps.iter_mut() {
+            if slot.is_none() {
+                *slot = Some(dependent_id);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn dependency_count(&self) -> usize {
+        self.depends_on.lock().iter().filter(|s| s.is_some()).count()
+    }
+
+    pub fn depends_on_id(&self, dep_id: u64) -> bool {
+        self.depends_on.lock().iter().any(|s| *s == Some(dep_id))
+    }
+
+    pub fn consume_quota_tick(&self) -> bool {
+        if self.cpu_quota_max == 0 { return false; }
+        let c = self.cpu_quota_consumed.fetch_add(1, Ordering::SeqCst) + 1;
+        c >= self.cpu_quota_max
+    }
+
+    pub fn push_barrier_snapshot(&self, tick: u64) {
+        let gen = self.barrier_generation.load(Ordering::SeqCst);
+        let undo_count = self.undo.lock().count;
+        let mut stack = self.barrier_stack.lock();
+        let top = self.barrier_stack_top.load(Ordering::SeqCst) as usize;
+        let idx = top % MAX_BARRIER_SNAPSHOTS;
+        stack[idx] = BarrierSnapshot {
+            generation: gen,
+            tick,
+            undo_offset: undo_count,
+        };
+        self.barrier_stack_top.store((top as u32) + 1, Ordering::SeqCst);
+    }
+
+    pub fn get_rollback_generation(&self, levels_back: u32) -> u64 {
+        let stack = self.barrier_stack.lock();
+        let top = self.barrier_stack_top.load(Ordering::SeqCst) as usize;
+        if top == 0 { return 0; }
+        let target = top.saturating_sub(levels_back as usize);
+        let idx = target.saturating_sub(1) % MAX_BARRIER_SNAPSHOTS;
+        stack[idx].generation
+    }
+
+    pub fn add_addr_range(&self, start: u64, end: u64) -> bool {
+        let count = self.addr_range_count.load(Ordering::SeqCst) as usize;
+        if count >= MAX_ADDR_RANGES { return false; }
+        let mut ranges = self.addr_ranges.lock();
+        ranges[count] = (start, end);
+        self.addr_range_count.store((count + 1) as u32, Ordering::SeqCst);
+        true
+    }
+
+    pub fn contains_addr(&self, addr: u64) -> bool {
+        let count = self.addr_range_count.load(Ordering::SeqCst) as usize;
+        let ranges = self.addr_ranges.lock();
+        for i in 0..count {
+            if addr >= ranges[i].0 && addr < ranges[i].1 {
+                return true;
+            }
+        }
+        false
+    }
+}

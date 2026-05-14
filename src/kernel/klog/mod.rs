@@ -40,6 +40,44 @@ impl KlogWriter {
     pub fn as_slice(&self) -> &[u8] { &self.buf[..self.pos] }
 }
 
+pub struct CursorWriter<'a> {
+    buf: &'a mut [u8],
+    cursor: &'a mut usize,
+}
+
+impl<'a> CursorWriter<'a> {
+    pub fn new(buf: &'a mut [u8], cursor: &'a mut usize) -> Self {
+        Self { buf, cursor }
+    }
+}
+
+impl<'a> core::fmt::Write for CursorWriter<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let bytes = s.as_bytes();
+        let remaining = self.buf.len() - *self.cursor;
+        let to_write = bytes.len().min(remaining);
+        self.buf[*self.cursor..*self.cursor + to_write].copy_from_slice(&bytes[..to_write]);
+        *self.cursor += to_write;
+        Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! klog_ffi {
+    ($ffi_fn:ident, $($arg:tt)*) => {{
+        extern "C" { fn $ffi_fn(msg: *const u8); }
+        let mut buf: [u8; 256] = [0u8; 256];
+        let mut cursor = 0;
+        let _ = core::fmt::write(
+            &mut $crate::kernel::klog::CursorWriter::new(&mut buf, &mut cursor),
+            format_args!($($arg)*),
+        );
+        if cursor > 0 {
+            unsafe { $ffi_fn(buf.as_ptr()); }
+        }
+    }};
+}
+
 /// 通用格式化日志宏 — 单入口，所有模块共用
 #[macro_export]
 macro_rules! klog_fmt {
