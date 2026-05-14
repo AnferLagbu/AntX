@@ -1,6 +1,6 @@
 //! PWID v5 Management System
 //!
-//! Zero-concept + numeric privilege level + kernel isolation + First Token.
+//! Zero-concept + numeric privilege level + First Token.
 //! PWID初心: 密码决定身份 | 无预设特权 | 能力来自授予
 
 #[macro_export]
@@ -13,7 +13,6 @@ pub use serial_println;
 pub mod types;
 pub mod sha256;
 pub mod capability;
-pub mod kernel_cap;
 pub mod table;
 pub mod grant_record;
 pub mod first_token;

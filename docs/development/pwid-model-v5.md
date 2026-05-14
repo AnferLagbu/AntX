@@ -2,7 +2,7 @@
 
 > **最后更新**: 2026-05-14 | **状态**: 🏗️ 设计中
 >
-> **设计原则**: 零概念 + 数值化特权级 + 内核隔离 + First Token。密码→身份→特权级→能力，能力来自授予。
+> **设计原则**: 零概念 + 数值化特权级 + First Token。密码→身份→特权级→能力，能力来自授予。
 >
 > **PWID 初心**: ✅ 密码决定身份 | ✅ 无预设特权 | ✅ 能力来自授予
 >
@@ -480,73 +480,27 @@ if (after_revoke & VIABLE_FLOOR[domain as usize]) != VIABLE_FLOOR[domain as usiz
 }
 ```
 
-## 七、内核特权层与 First Token
+## 七、First Token 机制
 
-### 7.1 三层特权架构
+### 7.1 为什么没有内核特权层？
 
 ```
-┌─────────────────────────────────────┐
-│  内核特权层 (KERNEL)                 │
-│  - privilege: 0xFF (特殊标记)        │
-│  - 能力: 内存/中断/调度/设备/IPC      │
-│  - 限制: 不能操作用户身份能力         │
-└─────────────────────────────────────┘
-           ↑ 内核内部使用
-           ↓ 用户态不可见
+内核特权层的问题：
+  1. 没有消费者 — 没有内核子系统会检查 KERNEL_CAP_*
+  2. 无法强制 — 内核运行在 ring 0，任何代码都能绕过
+  3. 违背零概念 — 添加一个没有实际用途的概念
 
-┌─────────────────────────────────────┐
-│  用户特权层 (USER)                   │
-│  - privilege: 0-254                 │
-│  - 能力: FS/NET/PROC/...            │
-│  - 规则: 高特权级操作低特权级         │
-└─────────────────────────────────────┘
-           ↑ 受特权级规则约束
-           ↓ 能力来自授予
+结论：
+  AntX 是宏内核，内核 = 信任计算基（TCB）
+  内核代码天然可信，不需要检查自己的权限
+  内核特权层 = 死代码 = 违背零概念原则
 
-┌─────────────────────────────────────┐
-│  First Token (一次性授予)            │
-│  - 系统引导时生成                    │
-│  - 授予系统引导身份初始能力           │
-│  - 用完即弃，不可重复                │
-└─────────────────────────────────────┘
+如果将来 AntX 演进为微内核架构：
+  可以重新引入内核能力模型
+  但现在，YAGNI（You Aren't Gonna Need It）
 ```
 
-### 7.2 内核特权定义
-
-```rust
-// 内核特权级（独立于用户特权级）
-pub const KERNEL_PRIVILEGE: u8 = 0xFF;
-
-// 内核能力域
-pub enum KernelCapDomain {
-    MEMORY_MGMT = 0,   // 内存管理
-    INTERRUPT = 1,     // 中断处理
-    SCHEDULER = 2,     // 调度器
-    DEVICE = 3,        // 设备驱动
-    IPC = 4,           // 进程间通信
-    BARRIER = 5,       // 栏栈系统
-}
-
-// 内核能力
-pub const KERNEL_CAP_MEMORY: u64     = 1 << 0;
-pub const KERNEL_CAP_INTERRUPT: u64  = 1 << 1;
-pub const KERNEL_CAP_SCHEDULER: u64  = 1 << 2;
-pub const KERNEL_CAP_DEVICE: u64     = 1 << 3;
-pub const KERNEL_CAP_IPC: u64        = 1 << 4;
-pub const KERNEL_CAP_BARRIER: u64    = 1 << 5;
-pub const KERNEL_CAP_ALL: u64        = 
-    KERNEL_CAP_MEMORY | KERNEL_CAP_INTERRUPT | 
-    KERNEL_CAP_SCHEDULER | KERNEL_CAP_DEVICE |
-    KERNEL_CAP_IPC | KERNEL_CAP_BARRIER;
-```
-
-**内核特权规则**：
-1. 内核特权独立于用户特权，不受用户特权级规则约束
-2. 内核只能操作内核能力，不能操作用户能力
-3. 内核不能授予/撤销用户身份的能力
-4. 内核特权不暴露给用户态
-
-### 7.3 First Token 机制
+### 7.2 First Token 机制
 
 ```rust
 /// First Token：一次性全能力授予
@@ -599,7 +553,7 @@ pub fn grant_from_first_token(
 }
 ```
 
-### 7.4 系统引导流程
+### 7.3 系统引导流程
 
 ```rust
 /// 系统引导：创建系统引导身份
@@ -804,7 +758,6 @@ pub fn get_max_processes(pwid: u64) -> u32 {
 | **代码行数** | ~2500 | ~4000 | ~4500 | ~3500 | **~2000** |
 | **数据结构** | PwidEntry | +Token | +Pheromone | +Caste | **PwidEntry + GrantRecord + FirstToken** |
 | **特权级** | ❌ 无 | ❌ 无 | ❌ 无 | ⚠️ 工种隐含 | **✅ 数值化 (0-254)** |
-| **内核特权** | ❌ 无 | ❌ 无 | ❌ 无 | ❌ 无 | **✅ 独立隔离** |
 | **预设特权** | ❌ 无 | ⚠️ First Token | ⚠️ First Token | ⚠️ 工种预设 | **✅ 无（First Token 授予）** |
 | **栏栈集成** | 无 | 无 | 蒸发 | 降级 | **直接操作 caps** |
 | **调度集成** | 独立 | 独立 | 浓度 | 工种→配额 | **caps→配额** |
@@ -823,15 +776,14 @@ pub fn get_max_processes(pwid: u64) -> u32 {
 | **能力来源** | 预设，自动获得 | First Token 授予 |
 | **可撤销性** | 不可撤销（root 永远是 root） | 可撤销（如果有人特权级更高） |
 | **可替代性** | 不可替代（UID=0 固定） | 可替代（任何特权级 0 的身份） |
-| **内核特权** | root = 内核特权 | 用户特权与内核特权分离 |
+| **内核特权** | root = 内核特权 | 内核 = TCB，无需特权层 |
 | **安全边界** | root 绕过所有检查 | 受特权级规则约束 |
 | **恢复机制** | 单用户模式 | --first 参数 + First Token |
 
 **关键区别**：
 1. **无硬编码特权**：系统引导身份不是 UID=0，而是密码生成的 PWID
 2. **能力非预设**：能力来自 First Token 授予，而非自动获得
-3. **内核隔离**：内核特权独立，不与用户特权混淆
-4. **可审计**：所有能力授予都有审计记录
+3. **可审计**：所有能力授予都有审计记录
 
 ## 十四、直通模型的哲学
 
@@ -861,12 +813,6 @@ pub fn get_max_processes(pwid: u64) -> u32 {
   - 授予/撤销时检查特权级关系
   - 简单、直观、安全
 
-内核特权的作用：
-  - 内核操作独立于用户特权
-  - 内核不能操作用户能力
-  - 用户不能操作内核能力
-  - 隔离、安全、清晰
-
 First Token 的作用：
   - 系统引导时授予初始能力
   - 一次性，用完即弃
@@ -876,6 +822,12 @@ First Token 的作用：
 这就是 AntX 的特色：
   不是"有复杂的权限模型"
   而是"有最简单、安全且符合初心的权限模型"
+
+为什么没有内核特权层：
+  AntX 是宏内核，内核 = 信任计算基（TCB）
+  内核代码天然可信，不需要检查自己的权限
+  内核特权层 = 死代码 = 违背零概念原则
+  YAGNI（You Aren't Gonna Need It）
 
 PWID 初心验证：
   ✅ 密码决定身份：PWID 由密码生成
@@ -891,7 +843,6 @@ pwid/
 ├── time.rs          # 统一时间源
 ├── types.rs         # PwidEntry（含 caps）
 ├── capability.rs    # 能力常量 + VIABLE_FLOOR
-├── kernel_cap.rs    # 内核能力定义（独立于用户能力）
 ├── crypto.rs        # SHA-256 + salt + PWID 生成
 ├── table.rs         # PWID 表 + create/grant/revoke/transfer_creator + 查找
 ├── grant_record.rs  # GrantRecord 表管理
@@ -903,7 +854,7 @@ pwid/
 └── ffi.rs           # FFI 接口层
 ```
 
-**13 个文件**。比 v5-caste 少 1 个，比 v5-pheromone 少 2 个。
+**12 个文件**。比 v5-caste 少 2 个，比 v5-pheromone 少 3 个。
 
 ## 十六、FFI 接口
 
@@ -991,27 +942,25 @@ v5 迁移:
 2. `types.rs` — PwidEntry（含 caps + privilege_level + creator_pwid）
 3. `crypto.rs` — 密码学工具
 4. `capability.rs` — 能力常量 + VIABLE_FLOOR
-5. `kernel_cap.rs` — 内核能力定义（独立于用户能力）
 
 ### Phase 2: 核心操作
-6. `table.rs` — PWID 表 + create/grant/revoke/transfer_creator + 查找
-7. `grant_record.rs` — GrantRecord 表管理
-8. `first_token.rs` — First Token 生成和使用
-9. `engine.rs` — 权限检查 + 特权级检查
+5. `table.rs` — PWID 表 + create/grant/revoke/transfer_creator + 查找
+6. `grant_record.rs` — GrantRecord 表管理
+7. `first_token.rs` — First Token 生成和使用
+8. `engine.rs` — 权限检查 + 特权级检查
 
 ### Phase 3: 辅助系统
-10. `session.rs` — 多终端会话
-11. `audit.rs` — 环形缓冲区
-12. `storage.rs` — 持久化 + v4 迁移
-13. `ffi.rs` — FFI 接口
+9. `session.rs` — 多终端会话
+10. `audit.rs` — 环形缓冲区
+11. `storage.rs` — 持久化 + v4 迁移
+12. `ffi.rs` — FFI 接口
 
 ---
 
 **设计者**: Anfer + AI Assistant (2026-05-14)
-**设计原则**: 零概念 + 数值化特权级 + 内核隔离 + First Token
+**设计原则**: 零概念 + 数值化特权级 + First Token
 **PWID 初心**: ✅ 密码决定身份 | ✅ 无预设特权 | ✅ 能力来自授予
 **特权级规则**: 0=最高用户特权，创建时+1，高特权级操作低特权级
-**内核特权**: 独立于用户特权，仅用于内核内部操作，不暴露给用户态
 **First Token**: 一次性授予，用完即弃，通过 --first 参数恢复
-**拒绝**: 工种、委托、令牌、信息素、轨迹、蒸发、过期、角色、审批
+**拒绝**: 工种、委托、令牌、信息素、轨迹、蒸发、过期、角色、审批、内核特权层
 **AntX 特色**: 不是"有复杂的权限模型"，而是"有最简单、安全且符合初心的权限模型"
