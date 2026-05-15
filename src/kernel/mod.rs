@@ -59,6 +59,7 @@ pub mod proc;
 pub mod fs;
 
 /// 网络协议栈 (lwIP, OS 抽象层, e1000 驱动)
+#[cfg(not(feature = "kernel_test"))]
 pub mod net;
 
 /// 中断描述符表 (IDT, ISR, 异常处理, 统计)
@@ -99,6 +100,9 @@ pub mod klog;
 
 /// SMP 多核支持 (桩实现, feature=smp 时启用真实 IPI)
 pub mod smp;
+
+/// 内核测试框架
+pub mod tests;
 
 // ============================================================================
 // 重新导出常用类型 (方便其他模块使用)

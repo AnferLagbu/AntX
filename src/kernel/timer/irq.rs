@@ -36,19 +36,22 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     crate::kernel::timer::on_timer_interrupt();
 
     // 2. 驱动 lwIP 时间基准 (sys_now 依赖此计数)
-    crate::kernel::net::types::sys_tick_inc();
+    #[cfg(not(feature = "kernel_test"))]
+    {
+        crate::kernel::net::types::sys_tick_inc();
 
-    // 3. lwIP 协议栈定时器处理 (DHCP/TCP/ARP)
-    extern "C" {
-        fn sys_check_timeouts();
-        fn e1000_poll_rx();
-    }
-    unsafe { sys_check_timeouts(); }
+        // 3. lwIP 协议栈定时器处理 (DHCP/TCP/ARP)
+        extern "C" {
+            fn sys_check_timeouts();
+            fn e1000_poll_rx();
+        }
+        unsafe { sys_check_timeouts(); }
 
-    // 4. 周期性轮询 E1000 RX 环
-    let t = crate::kernel::timer::get_ticks();
-    if t % 10 == 0 {
-        unsafe { e1000_poll_rx(); }
+        // 4. 周期性轮询 E1000 RX 环
+        let t = crate::kernel::timer::get_ticks();
+        if t % 10 == 0 {
+            unsafe { e1000_poll_rx(); }
+        }
     }
 
     // 5. 可选: 触发调度器 tick

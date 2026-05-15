@@ -43,6 +43,7 @@ USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
 LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
 
 RUST_LIB = src/rust/target/x86_64-unknown-none/release/libqueenx.a
+RUST_LIB_TEST = src/rust/target/test-release/x86_64-unknown-none/release/libqueenx.a
 
 USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 
@@ -71,7 +72,8 @@ KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
               build/test_smp.o \
               build/test_devfs.o build/test_timer.o build/test_driver_basic.o \
               build/test_e1000.o build/test_pci.o build/test_json_export.o \
-              build/smp.o build/ioapic.o
+              build/smp.o build/ioapic.o \
+              build/test_net_stubs.o
 
 USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
 
@@ -138,6 +140,10 @@ build/kernel.flat: build/kernel.bin
 $(RUST_LIB):
 	@echo "Building Rust kernel module..."
 	cd src/rust && cargo build --release
+
+$(RUST_LIB_TEST):
+	@echo "Building Rust test kernel..."
+	cd src/rust && cargo build --release --features kernel_test --target-dir target/test-release
 
 build/lib/string.o: src/kernel/lib/string.c
 	@mkdir -p $(dir $@)
@@ -596,14 +602,18 @@ build/smp.o: src/kernel/smp.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
+build/test_net_stubs.o: src/kernel/tests/test_net_stubs.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
 build/ioapic.o: src/kernel/ioapic.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
 test: test-unit
 
-build/kernel_test.bin: $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
-	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map --allow-multiple-definition -o build/kernel_test.bin $(KERNEL_TEST_OBJS) src/rust/target/x86_64-unknown-none/release/libqueenx.a
+build/kernel_test.bin: $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
+	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map --allow-multiple-definition -o build/kernel_test.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
 
 # 单元测试（优化版）
 test-unit: build/kernel_test.bin user

@@ -103,6 +103,31 @@ pub extern "C" fn kernel_init() {
     unsafe { crate::kernel::klog::klog_init(); }
     crate::klog_boot_info!("AntX kernel starting {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
+    // Test mode: skip normal init, run unit tests
+    #[cfg(feature = "kernel_test")]
+    {
+        // Minimal init: boot + PMM + VMM + kmalloc + IDT (for Mutex)
+        let boot_info = crate::kernel::boot::init();
+        crate::kernel::mm::pmm::pmm_init(boot_info.mem_size, boot_info.kernel_end);
+        crate::kernel::mm::vmm::vmm_init();
+        const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024;
+        let heap_start = crate::kernel::mm::VirtAddr(
+            crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000
+        );
+        unsafe {
+            crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
+        }
+        // Initialize IDT and interrupts (needed for spin::Mutex)
+        crate::kernel::idt::idt_init();
+        crate::klog_boot_info!("Test mode: IDT initialized");
+        crate::kernel::tests::test_runner_init();
+        crate::klog_boot_info!("Tests complete, halting");
+        // Halt after tests
+        loop {
+            unsafe { core::arch::asm!("hlt", options(nomem, nostack)); }
+        }
+    }
+
     // 1. Boot Info — 解析Multiboot信息获取内存布局
     let boot_info = crate::kernel::boot::init();
     crate::klog_boot_info!("Boot info: mem={} MB, kernel_end=0x{:X}", 
@@ -157,11 +182,13 @@ pub extern "C" fn kernel_init() {
     crate::klog_boot_info!("VFS ready");
 
     // 10. Network (lwIP + E1000)
+    #[cfg(not(feature = "kernel_test"))]
     crate::kernel::net::init::qx_net_init();
 
     // 11. Barrier-Stack recovery domains
     crate::kernel::mm::pmm::pmm_register_barrier_domain();
     crate::kernel::proc::process::proc_register_barrier_domain();
+    #[cfg(not(feature = "kernel_test"))]
     crate::kernel::net::netif::net_register_barrier_domain();
     crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4, NET=5)");
 

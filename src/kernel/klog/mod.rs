@@ -237,6 +237,7 @@ pub enum LogCategory {
     Syscall  = 7,
     IPC      = 8,
     Security = 9,
+    Test     = 10,
 }
 
 impl LogLevel {
@@ -265,6 +266,7 @@ impl LogCategory {
             LogCategory::Syscall  => b"SYSCALL",
             LogCategory::IPC      => b"IPC",
             LogCategory::Security => b"SEC",
+            LogCategory::Test     => b"TEST",
         }
     }
 }
@@ -413,7 +415,7 @@ pub unsafe extern "C" fn klog_write(
         0 => LogCategory::Boot, 1 => LogCategory::Kernel, 2 => LogCategory::Memory,
         3 => LogCategory::Process, 4 => LogCategory::FS, 5 => LogCategory::Net,
         6 => LogCategory::Driver, 7 => LogCategory::Syscall, 8 => LogCategory::IPC,
-        9 => LogCategory::Security, _ => LogCategory::Kernel,
+        9 => LogCategory::Security, 10 => LogCategory::Test, _ => LogCategory::Kernel,
     };
 
     let min = MIN_LEVEL.load(Ordering::Relaxed);
