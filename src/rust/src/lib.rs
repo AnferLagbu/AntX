@@ -129,6 +129,8 @@ pub extern "C" fn kernel_init() {
     }
 
     // 1. Boot Info — 解析Multiboot信息获取内存布局
+    #[cfg(not(feature = "kernel_test"))]
+    {
     let boot_info = crate::kernel::boot::init();
     crate::klog_boot_info!("Boot info: mem={} MB, kernel_end=0x{:X}", 
         boot_info.mem_size / (1024 * 1024), boot_info.kernel_end);
@@ -210,4 +212,5 @@ pub extern "C" fn kernel_init() {
             );
         }
     }
+    } // end #[cfg(not(feature = "kernel_test"))]
 }

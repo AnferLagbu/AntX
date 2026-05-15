@@ -81,12 +81,15 @@ pub mod barrier;
 pub mod pci;
 
 /// 系统调用接口 (syscall 表, 参数验证)
+#[cfg(not(feature = "kernel_test"))]
 pub mod syscall;
 
 /// 设备驱动 (ATA 磁盘, 键盘, 串口)
+#[cfg(not(feature = "kernel_test"))]
 pub mod driver;
 
 /// IPC 子系统 (管道, 共享内存, 消息队列, 信号量, 信号)
+#[cfg(not(feature = "kernel_test"))]
 pub mod ipc;
 
 /// Timer 子系统 (PIT 驱动, Tick 计数器, Sleep 机制)
