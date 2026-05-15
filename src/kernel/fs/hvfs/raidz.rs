@@ -1,13 +1,13 @@
 use alloc::vec;
 use alloc::vec::Vec;
-use crate::kernel::fs::zvfs::bp::ZvDva;
+use crate::kernel::fs::hvfs::bp::HvDva;
 
-pub const ZV_RAIDZ_MIN_COLS: usize = 2;
-pub const ZV_RAIDZ_MAX_COLS: usize = 16;
+pub const HV_RAIDZ_MIN_COLS: usize = 2;
+pub const HV_RAIDZ_MAX_COLS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvRaidzLevel {
+pub enum HvRaidzLevel {
     Single = 0,
     RaidZ1 = 1,
     RaidZ2 = 2,
@@ -15,7 +15,7 @@ pub enum ZvRaidzLevel {
     Mirror = 4,
 }
 
-impl ZvRaidzLevel {
+impl HvRaidzLevel {
     pub fn parity_cols(&self) -> usize {
         match self {
             Self::Single => 0,
@@ -37,15 +37,15 @@ impl ZvRaidzLevel {
     }
 }
 
-pub struct ZvRaidzMap {
-    pub level: ZvRaidzLevel,
+pub struct HvRaidzMap {
+    pub level: HvRaidzLevel,
     pub ncols: usize,
     pub nparity: usize,
     pub ashift: u8,
-    pub cols: Vec<ZvRaidzCol>,
+    pub cols: Vec<HvRaidzCol>,
 }
 
-pub struct ZvRaidzCol {
+pub struct HvRaidzCol {
     pub col_id: usize,
     pub devidx: usize,
     pub offset: u64,
@@ -54,12 +54,12 @@ pub struct ZvRaidzCol {
     pub is_parity: bool,
 }
 
-impl ZvRaidzMap {
-    pub fn new(level: ZvRaidzLevel, ncols: usize, ashift: u8) -> Self {
+impl HvRaidzMap {
+    pub fn new(level: HvRaidzLevel, ncols: usize, ashift: u8) -> Self {
         let nparity = level.parity_cols();
         Self {
             level,
-            ncols: ncols.max(ZV_RAIDZ_MIN_COLS).min(ZV_RAIDZ_MAX_COLS),
+            ncols: ncols.max(HV_RAIDZ_MIN_COLS).min(HV_RAIDZ_MAX_COLS),
             nparity,
             ashift,
             cols: Vec::new(),
@@ -167,24 +167,24 @@ impl ZvRaidzMap {
     }
 }
 
-pub struct ZvRaidzEngine;
+pub struct HvRaidzEngine;
 
-impl ZvRaidzEngine {
-    pub fn create_stripe(level: ZvRaidzLevel, ncols: usize, ashift: u8) -> ZvRaidzMap {
-        ZvRaidzMap::new(level, ncols, ashift)
+impl HvRaidzEngine {
+    pub fn create_stripe(level: HvRaidzLevel, ncols: usize, ashift: u8) -> HvRaidzMap {
+        HvRaidzMap::new(level, ncols, ashift)
     }
 
-    pub fn scrub_block(map: &ZvRaidzMap, parity_data: &[Vec<u8>]) -> ZvScrubResult {
+    pub fn scrub_block(map: &HvRaidzMap, parity_data: &[Vec<u8>]) -> HvScrubResult {
         if map.verify_parity(parity_data) {
-            ZvScrubResult::Clean
+            HvScrubResult::Clean
         } else {
-            ZvScrubResult::Corrupted { failed_cols: vec![0] }
+            HvScrubResult::Corrupted { failed_cols: vec![0] }
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ZvScrubResult {
+pub enum HvScrubResult {
     Clean,
     Corrupted { failed_cols: Vec<usize> },
     Repaired { repaired_cols: Vec<usize> },

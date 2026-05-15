@@ -2,25 +2,25 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use crate::kernel::sync::mutex::Mutex;
 
-pub const ZV_ZAP_MAX_NAME: usize = 64;
-pub const ZV_ZAP_MAX_VALUE: usize = 128;
-pub const ZV_ZAP_MAX_ENTRIES: usize = 256;
+pub const HV_ZAP_MAX_NAME: usize = 64;
+pub const HV_ZAP_MAX_VALUE: usize = 128;
+pub const HV_ZAP_MAX_ENTRIES: usize = 256;
 
 #[derive(Debug, Clone)]
-pub struct ZvZapEntry {
-    pub name: [u8; ZV_ZAP_MAX_NAME],
-    pub value: [u8; ZV_ZAP_MAX_VALUE],
+pub struct HvZapEntry {
+    pub name: [u8; HV_ZAP_MAX_NAME],
+    pub value: [u8; HV_ZAP_MAX_VALUE],
     pub value_len: u16,
     pub hash: u64,
     pub used: bool,
 }
 
-impl ZvZapEntry {
+impl HvZapEntry {
     pub fn new(name: &str, value: &[u8]) -> Self {
-        let mut n = [0u8; ZV_ZAP_MAX_NAME];
-        let mut v = [0u8; ZV_ZAP_MAX_VALUE];
-        let nlen = name.as_bytes().len().min(ZV_ZAP_MAX_NAME);
-        let vlen = value.len().min(ZV_ZAP_MAX_VALUE);
+        let mut n = [0u8; HV_ZAP_MAX_NAME];
+        let mut v = [0u8; HV_ZAP_MAX_VALUE];
+        let nlen = name.as_bytes().len().min(HV_ZAP_MAX_NAME);
+        let vlen = value.len().min(HV_ZAP_MAX_VALUE);
         n[..nlen].copy_from_slice(&name.as_bytes()[..nlen]);
         v[..vlen].copy_from_slice(&value[..vlen]);
         let hash = Self::hash_name(name);
@@ -28,7 +28,7 @@ impl ZvZapEntry {
     }
 
     pub fn get_name(&self) -> &str {
-        let end = self.name.iter().position(|&b| b == 0).unwrap_or(ZV_ZAP_MAX_NAME);
+        let end = self.name.iter().position(|&b| b == 0).unwrap_or(HV_ZAP_MAX_NAME);
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
     }
 
@@ -56,29 +56,29 @@ impl ZvZapEntry {
     }
 }
 
-pub struct ZvZap {
-    pub entries: Mutex<Vec<ZvZapEntry>>,
+pub struct HvZap {
+    pub entries: Mutex<Vec<HvZapEntry>>,
     pub capacity: usize,
-    pub zap_type: ZvZapType,
+    pub zap_type: HvZapType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvZapType {
+pub enum HvZapType {
     Micro = 0,
     Normal = 1,
     Leaf = 2,
 }
 
-unsafe impl Send for ZvZap {}
-unsafe impl Sync for ZvZap {}
+unsafe impl Send for HvZap {}
+unsafe impl Sync for HvZap {}
 
-impl ZvZap {
+impl HvZap {
     pub fn new() -> Self {
         Self {
             entries: Mutex::new(Vec::new()),
-            capacity: ZV_ZAP_MAX_ENTRIES,
-            zap_type: ZvZapType::Micro,
+            capacity: HV_ZAP_MAX_ENTRIES,
+            zap_type: HvZapType::Micro,
         }
     }
 
@@ -86,21 +86,21 @@ impl ZvZap {
         Self {
             entries: Mutex::new(Vec::new()),
             capacity,
-            zap_type: if capacity <= 64 { ZvZapType::Micro } else { ZvZapType::Normal },
+            zap_type: if capacity <= 64 { HvZapType::Micro } else { HvZapType::Normal },
         }
     }
 
     pub fn insert(&self, name: &str, value: &[u8]) -> bool {
         let mut entries = self.entries.lock();
         if entries.len() >= self.capacity { return false; }
-        let hash = ZvZapEntry::hash_name(name);
+        let hash = HvZapEntry::hash_name(name);
         if let Some(existing) = entries.iter_mut().find(|e| e.used && e.hash == hash && e.get_name() == name) {
-            let vlen = value.len().min(ZV_ZAP_MAX_VALUE);
+            let vlen = value.len().min(HV_ZAP_MAX_VALUE);
             existing.value[..vlen].copy_from_slice(&value[..vlen]);
             existing.value_len = vlen as u16;
             return true;
         }
-        entries.push(ZvZapEntry::new(name, value));
+        entries.push(HvZapEntry::new(name, value));
         true
     }
 
@@ -110,7 +110,7 @@ impl ZvZap {
 
     pub fn lookup(&self, name: &str) -> Option<Vec<u8>> {
         let entries = self.entries.lock();
-        let hash = ZvZapEntry::hash_name(name);
+        let hash = HvZapEntry::hash_name(name);
         for entry in entries.iter() {
             if entry.used && entry.hash == hash && entry.get_name() == name {
                 return Some(entry.get_value().to_vec());
@@ -121,7 +121,7 @@ impl ZvZap {
 
     pub fn lookup_u64(&self, name: &str) -> Option<u64> {
         let entries = self.entries.lock();
-        let hash = ZvZapEntry::hash_name(name);
+        let hash = HvZapEntry::hash_name(name);
         for entry in entries.iter() {
             if entry.used && entry.hash == hash && entry.get_name() == name {
                 return Some(entry.get_value_u64());
@@ -132,7 +132,7 @@ impl ZvZap {
 
     pub fn remove(&self, name: &str) -> bool {
         let mut entries = self.entries.lock();
-        let hash = ZvZapEntry::hash_name(name);
+        let hash = HvZapEntry::hash_name(name);
         let idx = entries.iter().position(|e| e.used && e.hash == hash && e.get_name() == name);
         match idx {
             Some(i) => { entries.remove(i); true }
@@ -142,7 +142,7 @@ impl ZvZap {
 
     pub fn contains(&self, name: &str) -> bool {
         let entries = self.entries.lock();
-        let hash = ZvZapEntry::hash_name(name);
+        let hash = HvZapEntry::hash_name(name);
         entries.iter().any(|e| e.used && e.hash == hash && e.get_name() == name)
     }
 

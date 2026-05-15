@@ -1,14 +1,14 @@
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::zvfs::bp::ZvBlockPointer;
+use crate::kernel::fs::hvfs::bp::HvBlockPointer;
 
-pub const ZV_ZIL_MAX_RECORDS: usize = 1024;
-pub const ZV_ZIL_BLOCK_SIZE: usize = 4096;
+pub const HV_ZIL_MAX_RECORDS: usize = 1024;
+pub const HV_ZIL_BLOCK_SIZE: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvZilRecordType {
+pub enum HvZilRecordType {
     Create = 1,
     Remove = 2,
     Link = 3,
@@ -22,8 +22,8 @@ pub enum ZvZilRecordType {
 }
 
 #[derive(Debug, Clone)]
-pub struct ZvZilRecord {
-    pub rec_type: ZvZilRecordType,
+pub struct HvZilRecord {
+    pub rec_type: HvZilRecordType,
     pub txg: u64,
     pub obj_id: u64,
     pub parent_obj: u64,
@@ -34,10 +34,10 @@ pub struct ZvZilRecord {
     pub seq: u64,
 }
 
-impl ZvZilRecord {
+impl HvZilRecord {
     pub fn new_write(txg: u64, obj_id: u64, offset: u64, size: u32) -> Self {
         Self {
-            rec_type: ZvZilRecordType::Write,
+            rec_type: HvZilRecordType::Write,
             txg,
             obj_id,
             parent_obj: 0,
@@ -55,7 +55,7 @@ impl ZvZilRecord {
         let len = b.len().min(127);
         n[..len].copy_from_slice(&b[..len]);
         Self {
-            rec_type: ZvZilRecordType::Create,
+            rec_type: HvZilRecordType::Create,
             txg,
             obj_id: 0,
             parent_obj,
@@ -73,7 +73,7 @@ impl ZvZilRecord {
         let len = b.len().min(127);
         n[..len].copy_from_slice(&b[..len]);
         Self {
-            rec_type: ZvZilRecordType::Remove,
+            rec_type: HvZilRecordType::Remove,
             txg,
             obj_id: 0,
             parent_obj,
@@ -91,7 +91,7 @@ impl ZvZilRecord {
         let len = b.len().min(127);
         n[..len].copy_from_slice(&b[..len]);
         Self {
-            rec_type: ZvZilRecordType::Mkdir,
+            rec_type: HvZilRecordType::Mkdir,
             txg,
             obj_id: 0,
             parent_obj,
@@ -105,7 +105,7 @@ impl ZvZilRecord {
 
     pub fn new_setattr(txg: u64, obj_id: u64) -> Self {
         Self {
-            rec_type: ZvZilRecordType::SetAttr,
+            rec_type: HvZilRecordType::SetAttr,
             txg,
             obj_id,
             parent_obj: 0,
@@ -118,27 +118,27 @@ impl ZvZilRecord {
     }
 }
 
-pub struct ZvZil {
-    pub records: Mutex<Vec<ZvZilRecord>>,
+pub struct HvZil {
+    pub records: Mutex<Vec<HvZilRecord>>,
     pub committed_seq: AtomicU64,
     pub current_seq: AtomicU64,
-    pub log_bp: Mutex<ZvBlockPointer>,
+    pub log_bp: Mutex<HvBlockPointer>,
     pub itxg: AtomicU64,
     pub syncing: AtomicBool,
     pub replaying: AtomicBool,
     pub enabled: AtomicBool,
 }
 
-unsafe impl Send for ZvZil {}
-unsafe impl Sync for ZvZil {}
+unsafe impl Send for HvZil {}
+unsafe impl Sync for HvZil {}
 
-impl ZvZil {
+impl HvZil {
     pub fn new() -> Self {
         Self {
             records: Mutex::new(Vec::new()),
             committed_seq: AtomicU64::new(0),
             current_seq: AtomicU64::new(0),
-            log_bp: Mutex::new(ZvBlockPointer::null()),
+            log_bp: Mutex::new(HvBlockPointer::null()),
             itxg: AtomicU64::new(0),
             syncing: AtomicBool::new(false),
             replaying: AtomicBool::new(false),
@@ -153,7 +153,7 @@ impl ZvZil {
         self.enabled.store(true, Ordering::Release);
     }
 
-    pub fn add_record(&self, record: ZvZilRecord) {
+    pub fn add_record(&self, record: HvZilRecord) {
         if !self.enabled.load(Ordering::Acquire) { return; }
         let seq = self.current_seq.fetch_add(1, Ordering::AcqRel) + 1;
         let mut rec = record;
@@ -183,7 +183,7 @@ impl ZvZil {
         self.syncing.store(false, Ordering::Release);
     }
 
-    pub fn replay(&self) -> Vec<ZvZilRecord> {
+    pub fn replay(&self) -> Vec<HvZilRecord> {
         if self.replaying.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err() {
             return Vec::new();
         }

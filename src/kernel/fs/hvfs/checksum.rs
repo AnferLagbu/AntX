@@ -1,28 +1,28 @@
-use crate::kernel::fs::zvfs::bp::ZvCksumType;
+use crate::kernel::fs::hvfs::bp::HvCksumType;
 
-pub const ZV_CKSUM_FLETCHER2: usize = 1;
-pub const ZV_CKSUM_FLETCHER4: usize = 2;
-pub const ZV_CKSUM_SHA256: usize = 3;
+pub const HV_CKSUM_FLETCHER2: usize = 1;
+pub const HV_CKSUM_FLETCHER4: usize = 2;
+pub const HV_CKSUM_SHA256: usize = 3;
 
 #[derive(Debug, Clone, Copy)]
-pub struct ZvChecksum {
-    pub kind: ZvCksumType,
+pub struct HvChecksum {
+    pub kind: HvCksumType,
     pub value: [u64; 4],
 }
 
-impl ZvChecksum {
-    pub fn new(kind: ZvCksumType) -> Self {
+impl HvChecksum {
+    pub fn new(kind: HvCksumType) -> Self {
         Self { kind, value: [0; 4] }
     }
 
-    pub fn compute(kind: ZvCksumType, data: &[u8]) -> Self {
+    pub fn compute(kind: HvCksumType, data: &[u8]) -> Self {
         let mut ck = Self::new(kind);
         match kind {
-            ZvCksumType::Off => {},
-            ZvCksumType::Fletcher2 => ck.fletcher2(data),
-            ZvCksumType::Fletcher4 => ck.fletcher4(data),
-            ZvCksumType::SHA256 => ck.sha256(data),
-            ZvCksumType::EdonR => ck.fletcher4(data),
+            HvCksumType::Off => {},
+            HvCksumType::Fletcher2 => ck.fletcher2(data),
+            HvCksumType::Fletcher4 => ck.fletcher4(data),
+            HvCksumType::SHA256 => ck.sha256(data),
+            HvCksumType::EdonR => ck.fletcher4(data),
         }
         ck
     }

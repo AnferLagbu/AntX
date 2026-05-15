@@ -2,16 +2,16 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::zvfs::bp::ZvBlockPointer;
-use crate::kernel::fs::zvfs::dmu::{ZvObjSet, ZvObjType, ZV_DMU_OBJ_ROOT};
-use crate::kernel::fs::zvfs::zap::ZvZap;
+use crate::kernel::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::fs::hvfs::dmu::{HvObjSet, HvObjType, HV_DMU_OBJ_ROOT};
+use crate::kernel::fs::hvfs::zap::HvZap;
 
-pub const ZV_DS_MAX_NAME: usize = 128;
-pub const ZV_DS_MAX_DATASETS: usize = 16;
+pub const HV_DS_MAX_NAME: usize = 128;
+pub const HV_DS_MAX_DATASETS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvDsState {
+pub enum HvDsState {
     Uninit = 0,
     Creating = 1,
     Active = 2,
@@ -21,7 +21,7 @@ pub enum ZvDsState {
 }
 
 #[derive(Debug, Clone)]
-pub struct ZvDsProps {
+pub struct HvDsProps {
     pub record_size: u32,
     pub compression: u8,
     pub checksum: u8,
@@ -35,7 +35,7 @@ pub struct ZvDsProps {
     pub ref_reservation: u64,
 }
 
-impl ZvDsProps {
+impl HvDsProps {
     pub fn default() -> Self {
         Self {
             record_size: 131072,
@@ -53,93 +53,93 @@ impl ZvDsProps {
     }
 }
 
-pub struct ZvDataset {
+pub struct HvDataset {
     pub ds_id: u64,
-    pub name: [u8; ZV_DS_MAX_NAME],
+    pub name: [u8; HV_DS_MAX_NAME],
     pub state: AtomicU8,
-    pub props: ZvDsProps,
-    pub objset: ZvObjSet,
-    pub dir_zap: ZvZap,
-    pub xattr_zap: ZvZap,
+    pub props: HvDsProps,
+    pub objset: HvObjSet,
+    pub dir_zap: HvZap,
+    pub xattr_zap: HvZap,
     pub parent_id: Option<u64>,
     pub child_ids: Vec<u64>,
     pub used_space: AtomicU64,
     pub ref_count: AtomicU64,
     pub birth_txg: AtomicU64,
-    pub root_bp: Mutex<ZvBlockPointer>,
+    pub root_bp: Mutex<HvBlockPointer>,
     pub is_snapshot: bool,
     pub snapshot_origin: Option<u64>,
     pub prev_snap: Option<u64>,
     pub next_snap: Option<u64>,
-    pub snap_name: [u8; ZV_DS_MAX_NAME],
+    pub snap_name: [u8; HV_DS_MAX_NAME],
     pub writeable: bool,
     pub mounted: AtomicBool,
 }
 
-unsafe impl Send for ZvDataset {}
-unsafe impl Sync for ZvDataset {}
+unsafe impl Send for HvDataset {}
+unsafe impl Sync for HvDataset {}
 
-impl ZvDataset {
+impl HvDataset {
     pub fn new(ds_id: u64, name: &str, owner_pwid: u64) -> Self {
-        let mut n = [0u8; ZV_DS_MAX_NAME];
+        let mut n = [0u8; HV_DS_MAX_NAME];
         let b = name.as_bytes();
-        let len = b.len().min(ZV_DS_MAX_NAME - 1);
+        let len = b.len().min(HV_DS_MAX_NAME - 1);
         n[..len].copy_from_slice(&b[..len]);
-        let mut props = ZvDsProps::default();
+        let mut props = HvDsProps::default();
         props.owner_pwid = owner_pwid;
         Self {
             ds_id,
             name: n,
-            state: AtomicU8::new(ZvDsState::Creating as u8),
+            state: AtomicU8::new(HvDsState::Creating as u8),
             props,
-            objset: ZvObjSet::new(),
-            dir_zap: ZvZap::new(),
-            xattr_zap: ZvZap::new(),
+            objset: HvObjSet::new(),
+            dir_zap: HvZap::new(),
+            xattr_zap: HvZap::new(),
             parent_id: None,
             child_ids: Vec::new(),
             used_space: AtomicU64::new(0),
             ref_count: AtomicU64::new(1),
             birth_txg: AtomicU64::new(0),
-            root_bp: Mutex::new(ZvBlockPointer::null()),
+            root_bp: Mutex::new(HvBlockPointer::null()),
             is_snapshot: false,
             snapshot_origin: None,
             prev_snap: None,
             next_snap: None,
-            snap_name: [0; ZV_DS_MAX_NAME],
+            snap_name: [0; HV_DS_MAX_NAME],
             writeable: true,
             mounted: AtomicBool::new(false),
         }
     }
 
     pub fn get_name(&self) -> &str {
-        let end = self.name.iter().position(|&b| b == 0).unwrap_or(ZV_DS_MAX_NAME);
+        let end = self.name.iter().position(|&b| b == 0).unwrap_or(HV_DS_MAX_NAME);
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
     }
 
     pub fn init(&self, owner_pwid: u64) {
         self.objset.init(owner_pwid);
-        self.state.store(ZvDsState::Active as u8, Ordering::Release);
+        self.state.store(HvDsState::Active as u8, Ordering::Release);
         self.mounted.store(true, Ordering::Release);
     }
 
     pub fn is_active(&self) -> bool {
-        self.state.load(Ordering::Acquire) == ZvDsState::Active as u8
+        self.state.load(Ordering::Acquire) == HvDsState::Active as u8
     }
 
     pub fn is_writeable(&self) -> bool {
-        self.writeable && self.state.load(Ordering::Acquire) == ZvDsState::Active as u8
+        self.writeable && self.state.load(Ordering::Acquire) == HvDsState::Active as u8
     }
 
     pub fn create_file(&self, name: &str, owner_pwid: u64) -> Option<u64> {
         if !self.is_writeable() { return None; }
-        let obj_id = self.objset.alloc_obj(ZvObjType::File, owner_pwid)?;
+        let obj_id = self.objset.alloc_obj(HvObjType::File, owner_pwid)?;
         self.dir_zap.insert_u64(name, obj_id);
         Some(obj_id)
     }
 
     pub fn create_dir(&self, name: &str, owner_pwid: u64) -> Option<u64> {
         if !self.is_writeable() { return None; }
-        let obj_id = self.objset.alloc_obj(ZvObjType::Dir, owner_pwid)?;
+        let obj_id = self.objset.alloc_obj(HvObjType::Dir, owner_pwid)?;
         self.dir_zap.insert_u64(name, obj_id);
         Some(obj_id)
     }

@@ -857,7 +857,6 @@ pub unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     
     // 比较 fs 类型
     let hvfs_str = "hvfs\0";
-    let diskfs_str = "diskfs\0";
     
     // 简单字符串比较
     let is_hvfs = {
@@ -871,18 +870,7 @@ pub unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
         *fstype.add(i) == 0 && *hvfs_str.as_ptr().add(i) == 0
     };
     
-    let is_diskfs = {
-        let mut i = 0;
-        loop {
-            let c = *fstype.add(i);
-            if c == 0 { break; }
-            if c != *diskfs_str.as_ptr().add(i) { break; }
-            i += 1;
-        }
-        *fstype.add(i) == 0 && *diskfs_str.as_ptr().add(i) == 0
-    };
-    
-    if is_hvfs || is_diskfs {
+    if is_hvfs {
         let result = crate::kernel::fs::hvfs::ffi::hvfs_format();
         if result == 0 { 0 } else { SyscallError::E_IO.as_i64() }
     } else {

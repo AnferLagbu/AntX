@@ -175,7 +175,7 @@ unsafe fn sys_fs_mount(_source: *const i8, target: *const i8, fstype: *const i8,
 }
 
 unsafe fn sys_fs_seek(fd: i32, offset: i64, whence: i32) -> i64 {
-    crate::kernel::fs::vfs::ffi::vfs_seek(fd as u32, offset as u32, whence as u32) as i64
+    crate::kernel::fs::vfs::ffi::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
 }
 
 unsafe fn sys_fs_stat(path: *const i8, st_buf: *mut core::ffi::c_void) -> i64 {

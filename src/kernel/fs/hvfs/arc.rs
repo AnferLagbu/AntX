@@ -4,14 +4,14 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
 use crate::kernel::sync::mutex::Mutex;
 
-pub const ZV_ARC_DEFAULT_SIZE: usize = 256;
-pub const ZV_ARC_MAX_SIZE: usize = 4096;
-pub const ZV_ARC_BUF_SIZE: usize = 4096;
-pub const ZV_ARC_META_SIZE: usize = 16384;
+pub const HV_ARC_DEFAULT_SIZE: usize = 256;
+pub const HV_ARC_MAX_SIZE: usize = 4096;
+pub const HV_ARC_BUF_SIZE: usize = 4096;
+pub const HV_ARC_META_SIZE: usize = 16384;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvArcState {
+pub enum HvArcState {
     Anon = 0,
     Mru = 1,
     Mfu = 2,
@@ -22,19 +22,19 @@ pub enum ZvArcState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvArcBufType {
+pub enum HvArcBufType {
     Data = 0,
     Metadata = 1,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ZvArcKey {
+pub struct HvArcKey {
     pub vdev_id: u16,
     pub offset: u64,
     pub birth_txg: u64,
 }
 
-impl ZvArcKey {
+impl HvArcKey {
     pub fn new(vdev_id: u16, offset: u64, birth_txg: u64) -> Self {
         Self { vdev_id, offset, birth_txg }
     }
@@ -51,12 +51,12 @@ impl ZvArcKey {
     }
 }
 
-pub struct ZvArcBuf {
-    pub key: ZvArcKey,
+pub struct HvArcBuf {
+    pub key: HvArcKey,
     pub data: Box<[u8]>,
     pub size: usize,
-    pub buf_type: ZvArcBufType,
-    pub state: ZvArcState,
+    pub buf_type: HvArcBufType,
+    pub state: HvArcState,
     pub ref_count: AtomicU32,
     pub access_count: u32,
     pub dirty: bool,
@@ -64,11 +64,11 @@ pub struct ZvArcBuf {
     pub compressed: bool,
 }
 
-unsafe impl Send for ZvArcBuf {}
-unsafe impl Sync for ZvArcBuf {}
+unsafe impl Send for HvArcBuf {}
+unsafe impl Sync for HvArcBuf {}
 
-impl ZvArcBuf {
-    pub fn new(key: ZvArcKey, size: usize, buf_type: ZvArcBufType) -> Self {
+impl HvArcBuf {
+    pub fn new(key: HvArcKey, size: usize, buf_type: HvArcBufType) -> Self {
         let mut data = Vec::with_capacity(size);
         data.resize(size, 0);
         Self {
@@ -76,7 +76,7 @@ impl ZvArcBuf {
             data: data.into_boxed_slice(),
             size,
             buf_type,
-            state: ZvArcState::Anon,
+            state: HvArcState::Anon,
             ref_count: AtomicU32::new(1),
             access_count: 1,
             dirty: false,
@@ -98,7 +98,7 @@ impl ZvArcBuf {
     }
 }
 
-pub struct ZvArcStats {
+pub struct HvArcStats {
     pub hits: AtomicU64,
     pub misses: AtomicU64,
     pub mru_hits: AtomicU64,
@@ -114,7 +114,7 @@ pub struct ZvArcStats {
     pub meta_size: AtomicU64,
 }
 
-impl ZvArcStats {
+impl HvArcStats {
     pub fn new() -> Self {
         Self {
             hits: AtomicU64::new(0), misses: AtomicU64::new(0),
@@ -128,44 +128,44 @@ impl ZvArcStats {
     }
 }
 
-struct ZvArcInner {
+struct HvArcInner {
     mru: VecDeque<usize>,
     mfu: VecDeque<usize>,
-    ghost_mru: VecDeque<ZvArcKey>,
-    ghost_mfu: VecDeque<ZvArcKey>,
-    buffers: Vec<Option<ZvArcBuf>>,
+    ghost_mru: VecDeque<HvArcKey>,
+    ghost_mfu: VecDeque<HvArcKey>,
+    buffers: Vec<Option<HvArcBuf>>,
     max_size: usize,
     p: usize,
 }
 
-pub struct ZvArc {
-    inner: Mutex<ZvArcInner>,
-    stats: ZvArcStats,
+pub struct HvArc {
+    inner: Mutex<HvArcInner>,
+    stats: HvArcStats,
     initialized: AtomicBool,
 }
 
-unsafe impl Send for ZvArc {}
-unsafe impl Sync for ZvArc {}
+unsafe impl Send for HvArc {}
+unsafe impl Sync for HvArc {}
 
-impl ZvArc {
+impl HvArc {
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(ZvArcInner {
+            inner: Mutex::new(HvArcInner {
                 mru: VecDeque::new(),
                 mfu: VecDeque::new(),
                 ghost_mru: VecDeque::new(),
                 ghost_mfu: VecDeque::new(),
                 buffers: Vec::new(),
-                max_size: ZV_ARC_DEFAULT_SIZE,
+                max_size: HV_ARC_DEFAULT_SIZE,
                 p: 0,
             }),
-            stats: ZvArcStats::new(),
+            stats: HvArcStats::new(),
             initialized: AtomicBool::new(false),
         }
     }
 
     pub fn init(&self, max_size: usize) {
-        let max = if max_size == 0 { ZV_ARC_DEFAULT_SIZE } else { max_size.min(ZV_ARC_MAX_SIZE) };
+        let max = if max_size == 0 { HV_ARC_DEFAULT_SIZE } else { max_size.min(HV_ARC_MAX_SIZE) };
         let mut inner = self.inner.lock();
         inner.max_size = max;
         inner.buffers.clear();
@@ -177,7 +177,7 @@ impl ZvArc {
         self.initialized.store(true, Ordering::Release);
     }
 
-    pub fn lookup(&self, key: &ZvArcKey) -> Option<*const u8> {
+    pub fn lookup(&self, key: &HvArcKey) -> Option<*const u8> {
         let mut inner = self.inner.lock();
         let mut found_idx: Option<usize> = None;
         let mut found_ptr: Option<*const u8> = None;
@@ -189,13 +189,13 @@ impl ZvArc {
                     && buf.key.birth_txg == key.birth_txg
                 {
                     self.stats.hits.fetch_add(1, Ordering::Relaxed);
-                    if buf.state == ZvArcState::Mru {
+                    if buf.state == HvArcState::Mru {
                         self.stats.mru_hits.fetch_add(1, Ordering::Relaxed);
-                    } else if buf.state == ZvArcState::Mfu {
+                    } else if buf.state == HvArcState::Mfu {
                         self.stats.mfu_hits.fetch_add(1, Ordering::Relaxed);
                     }
                     buf.access_count += 1;
-                    if buf.state == ZvArcState::Mru {
+                    if buf.state == HvArcState::Mru {
                         promote_to_mfu = true;
                     }
                     buf.add_ref();
@@ -209,7 +209,7 @@ impl ZvArc {
             if promote_to_mfu {
                 inner.mru.retain(|&i| i != idx);
                 if let Some(ref mut buf) = inner.buffers[idx] {
-                    buf.state = ZvArcState::Mfu;
+                    buf.state = HvArcState::Mfu;
                 }
                 inner.mfu.push_back(idx);
             }
@@ -234,12 +234,12 @@ impl ZvArc {
         None
     }
 
-    pub fn insert(&self, key: ZvArcKey, data: &[u8], buf_type: ZvArcBufType) -> Option<*const u8> {
+    pub fn insert(&self, key: HvArcKey, data: &[u8], buf_type: HvArcBufType) -> Option<*const u8> {
         let mut inner = self.inner.lock();
         self.evict_if_needed(&mut inner, data.len());
-        let mut buf = ZvArcBuf::new(key, data.len(), buf_type);
+        let mut buf = HvArcBuf::new(key, data.len(), buf_type);
         buf.data[..data.len()].copy_from_slice(data);
-        buf.state = ZvArcState::Mru;
+        buf.state = HvArcState::Mru;
         let slot_idx = inner.buffers.iter().position(|s| s.is_none());
         let idx = match slot_idx {
             Some(i) => {
@@ -253,7 +253,7 @@ impl ZvArc {
         };
         inner.mru.push_back(idx);
         self.stats.size.fetch_add(data.len() as u64, Ordering::Relaxed);
-        if buf_type == ZvArcBufType::Data {
+        if buf_type == HvArcBufType::Data {
             self.stats.data_size.fetch_add(data.len() as u64, Ordering::Relaxed);
         } else {
             self.stats.meta_size.fetch_add(data.len() as u64, Ordering::Relaxed);
@@ -265,7 +265,7 @@ impl ZvArc {
         })
     }
 
-    fn evict_if_needed(&self, inner: &mut ZvArcInner, incoming_size: usize) {
+    fn evict_if_needed(&self, inner: &mut HvArcInner, incoming_size: usize) {
         let current: usize = inner.mru.len() + inner.mfu.len();
         while current + 1 > inner.max_size {
             if inner.mru.len() > inner.p {
@@ -297,7 +297,7 @@ impl ZvArc {
         }
     }
 
-    pub fn release(&self, key: &ZvArcKey) {
+    pub fn release(&self, key: &HvArcKey) {
         let mut inner = self.inner.lock();
         for slot in inner.buffers.iter_mut() {
             if let Some(ref mut buf) = slot {
@@ -312,7 +312,7 @@ impl ZvArc {
         }
     }
 
-    pub fn mark_dirty(&self, key: &ZvArcKey) {
+    pub fn mark_dirty(&self, key: &HvArcKey) {
         let mut inner = self.inner.lock();
         for slot in inner.buffers.iter_mut() {
             if let Some(ref mut buf) = slot {

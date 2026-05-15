@@ -1,0 +1,164 @@
+use alloc::vec::Vec;
+
+pub const HV_VDEV_MAX: usize = 8;
+pub const HV_VDEV_TYPE_DISK: u8 = 0;
+pub const HV_VDEV_TYPE_MIRROR: u8 = 1;
+pub const HV_VDEV_TYPE_RAIDZ1: u8 = 2;
+pub const HV_VDEV_TYPE_RAIDZ2: u8 = 3;
+pub const HV_VDEV_TYPE_RAIDZ3: u8 = 4;
+pub const HV_VDEV_TYPE_SPARE: u8 = 5;
+pub const HV_VDEV_TYPE_LOG: u8 = 6;
+pub const HV_VDEV_TYPE_L2CACHE: u8 = 7;
+
+pub const HV_VDEV_ASIZE_DEFAULT: u64 = 32 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HvVdevState {
+    Unknown = 0, Closed = 1, Offline = 2,
+    Removed = 3, CantOpen = 4, Faulted = 5,
+    Degraded = 6, Healthy = 7,
+}
+
+impl HvVdevState {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Closed, 2 => Self::Offline, 3 => Self::Removed,
+            4 => Self::CantOpen, 5 => Self::Faulted, 6 => Self::Degraded,
+            7 => Self::Healthy, _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HvVdevConfig {
+    pub vdev_id: u16,
+    pub vdev_type: u8,
+    pub guid: u64,
+    pub path: [u8; 64],
+    pub ashift: u8,
+    pub asize: u64,
+    pub nparity: u8,
+    pub children: u16,
+    pub is_log: bool,
+    pub sector_count: u64,
+}
+
+impl HvVdevConfig {
+    pub fn new_disk(vdev_id: u16, path: &str, ashift: u8) -> Self {
+        let mut p = [0u8; 64];
+        let b = path.as_bytes();
+        let len = b.len().min(63);
+        p[..len].copy_from_slice(&b[..len]);
+        Self {
+            vdev_id, vdev_type: HV_VDEV_TYPE_DISK,
+            guid: 0, path: p, ashift,
+            asize: HV_VDEV_ASIZE_DEFAULT,
+            nparity: 0, children: 1, is_log: false,
+            sector_count: 0,
+        }
+    }
+}
+
+pub struct HvVdev {
+    pub config: HvVdevConfig,
+    pub state: HvVdevState,
+    pub parent_id: Option<u16>,
+    pub child_ids: Vec<u16>,
+    pub ms_count: u32,
+    pub ms_active: u32,
+    pub initializing: bool,
+    pub trim_supported: bool,
+    pub total_reads: u64,
+    pub total_writes: u64,
+}
+
+unsafe impl Send for HvVdev {}
+unsafe impl Sync for HvVdev {}
+
+impl HvVdev {
+    pub fn new(config: HvVdevConfig) -> Self {
+        Self {
+            config,
+            state: HvVdevState::Closed,
+            parent_id: None, child_ids: Vec::new(),
+            ms_count: 0, ms_active: 0,
+            initializing: false, trim_supported: false,
+            total_reads: 0, total_writes: 0,
+        }
+    }
+
+    pub fn probe_disk_size(drive: u8) -> u64 {
+        extern "C" { fn ata_disk_present(disk: u8) -> i32; }
+        if unsafe { ata_disk_present(drive) } == 0 { return 0; }
+        32 * 1024 * 1024
+    }
+
+    pub fn is_healthy(&self) -> bool {
+        self.state == HvVdevState::Healthy
+    }
+
+    pub fn is_available(&self) -> bool {
+        matches!(self.state, HvVdevState::Healthy | HvVdevState::Degraded)
+    }
+
+    pub fn open(&mut self) {
+        extern "C" { fn ata_disk_present(disk: u8) -> i32; }
+        if self.config.vdev_type == HV_VDEV_TYPE_DISK {
+            let present = unsafe { ata_disk_present(self.config.vdev_id as u8) != 0 };
+            if present {
+                self.state = HvVdevState::Healthy;
+                if self.config.asize == 0 {
+                    self.config.asize = Self::probe_disk_size(self.config.vdev_id as u8);
+                }
+                if self.config.asize > 0 {
+                    self.config.sector_count = self.config.asize / 512;
+                }
+            } else {
+                self.state = HvVdevState::CantOpen;
+            }
+        }
+    }
+
+    pub fn read_sectors(&mut self, sector: u64, count: u32, buf: &mut [u8]) -> i32 {
+        extern "C" {
+            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
+        }
+        let need_bytes = (count as u64) * 512;
+        if buf.len() < need_bytes as usize { return -1; }
+        let mut offset = 0usize;
+        let mut sec = sector as u32;
+        for _ in 0..count {
+            if offset + 512 > buf.len() { break; }
+            let result = unsafe {
+                ata_read_sector(self.config.vdev_id as u8, sec, buf[offset..].as_mut_ptr())
+            };
+            if result < 0 { return -1; }
+            sec += 1;
+            offset += 512;
+        }
+        self.total_reads += 1;
+        0
+    }
+
+    pub fn write_sectors(&mut self, sector: u64, count: u32, buf: &[u8]) -> i32 {
+        extern "C" {
+            fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
+        }
+        let need_bytes = (count as u64) * 512;
+        if buf.len() < need_bytes as usize { return -1; }
+        let mut offset = 0usize;
+        let mut sec = sector as u32;
+        for _ in 0..count {
+            if offset + 512 > buf.len() { break; }
+            let result = unsafe {
+                ata_write_sector(self.config.vdev_id as u8, sec, buf[offset..].as_ptr())
+            };
+            if result < 0 { return -1; }
+            sec += 1;
+            offset += 512;
+        }
+        self.total_writes += 1;
+        0
+    }
+}

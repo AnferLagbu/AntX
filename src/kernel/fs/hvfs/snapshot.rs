@@ -1,25 +1,25 @@
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::zvfs::bp::ZvBlockPointer;
-use crate::kernel::fs::zvfs::dataset::{ZvDataset, ZV_DS_MAX_DATASETS};
+use crate::kernel::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::fs::hvfs::dataset::{HvDataset, HV_DS_MAX_DATASETS};
 
-pub const ZV_SNAP_MAX: usize = 64;
+pub const HV_SNAP_MAX: usize = 64;
 
-pub struct ZvSnapshotManager {
-    pub snapshots: Mutex<Vec<ZvSnapshot>>,
+pub struct HvSnapshotManager {
+    pub snapshots: Mutex<Vec<HvSnapshot>>,
     pub next_snap_id: AtomicU64,
 }
 
-unsafe impl Send for ZvSnapshotManager {}
-unsafe impl Sync for ZvSnapshotManager {}
+unsafe impl Send for HvSnapshotManager {}
+unsafe impl Sync for HvSnapshotManager {}
 
 #[derive(Debug, Clone)]
-pub struct ZvSnapshot {
+pub struct HvSnapshot {
     pub snap_id: u64,
     pub ds_id: u64,
     pub name: [u8; 128],
-    pub root_bp: ZvBlockPointer,
+    pub root_bp: HvBlockPointer,
     pub birth_txg: u64,
     pub used_space: u64,
     pub ref_count: u64,
@@ -27,8 +27,8 @@ pub struct ZvSnapshot {
     pub origin_snap: Option<u64>,
 }
 
-impl ZvSnapshot {
-    pub fn new(snap_id: u64, ds_id: u64, name: &str, root_bp: ZvBlockPointer, txg: u64) -> Self {
+impl HvSnapshot {
+    pub fn new(snap_id: u64, ds_id: u64, name: &str, root_bp: HvBlockPointer, txg: u64) -> Self {
         let mut n = [0u8; 128];
         let b = name.as_bytes();
         let len = b.len().min(127);
@@ -52,7 +52,7 @@ impl ZvSnapshot {
     }
 }
 
-impl ZvSnapshotManager {
+impl HvSnapshotManager {
     pub fn new() -> Self {
         Self {
             snapshots: Mutex::new(Vec::new()),
@@ -60,10 +60,10 @@ impl ZvSnapshotManager {
         }
     }
 
-    pub fn create_snapshot(&self, ds: &ZvDataset, name: &str, txg: u64) -> Option<u64> {
+    pub fn create_snapshot(&self, ds: &HvDataset, name: &str, txg: u64) -> Option<u64> {
         let snap_id = self.next_snap_id.fetch_add(1, Ordering::AcqRel);
         let root_bp = *ds.root_bp.lock();
-        let mut snap = ZvSnapshot::new(snap_id, ds.ds_id, name, root_bp, txg);
+        let mut snap = HvSnapshot::new(snap_id, ds.ds_id, name, root_bp, txg);
         snap.used_space = ds.get_used();
         self.snapshots.lock().push(snap);
         Some(snap_id)
@@ -83,11 +83,11 @@ impl ZvSnapshotManager {
         }
     }
 
-    pub fn create_clone(&self, snap_id: u64, ds_id: u64, name: &str, txg: u64) -> Option<ZvDataset> {
+    pub fn create_clone(&self, snap_id: u64, ds_id: u64, name: &str, txg: u64) -> Option<HvDataset> {
         let mut snaps = self.snapshots.lock();
         let snap = snaps.iter_mut().find(|s| s.snap_id == snap_id)?;
         let root_bp = snap.root_bp;
-        let mut ds = ZvDataset::new(ds_id, name, 0);
+        let mut ds = HvDataset::new(ds_id, name, 0);
         *ds.root_bp.lock() = root_bp;
         ds.birth_txg.store(txg, Ordering::Release);
         ds.is_snapshot = false;
@@ -97,15 +97,15 @@ impl ZvSnapshotManager {
         Some(ds)
     }
 
-    pub fn get_snapshot(&self, snap_id: u64) -> Option<ZvSnapshot> {
+    pub fn get_snapshot(&self, snap_id: u64) -> Option<HvSnapshot> {
         self.snapshots.lock().iter().find(|s| s.snap_id == snap_id).cloned()
     }
 
-    pub fn list_snapshots(&self, ds_id: u64) -> Vec<ZvSnapshot> {
+    pub fn list_snapshots(&self, ds_id: u64) -> Vec<HvSnapshot> {
         self.snapshots.lock().iter().filter(|s| s.ds_id == ds_id).cloned().collect()
     }
 
-    pub fn rollback(&self, snap_id: u64, ds: &ZvDataset) -> bool {
+    pub fn rollback(&self, snap_id: u64, ds: &HvDataset) -> bool {
         let snaps = self.snapshots.lock();
         let snap = match snaps.iter().find(|s| s.snap_id == snap_id) {
             Some(s) => s,

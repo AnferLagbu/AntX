@@ -94,7 +94,7 @@ impl RecoveryManager {
 
         let prefixes: &[(&[u8], u64)] = &[
             (b"PMM", 3), (b"PROC", 4), (b"NET", 5),
-            (b"VFS", 2), (b"HVFS", 2), (b"RAMFS", 2),
+            (b"VFS", 2), (b"HvFS", 2), (b"RAMFS", 2),
         ];
 
         for &(prefix, domain_id) in prefixes {

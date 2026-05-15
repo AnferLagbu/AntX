@@ -2,24 +2,24 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
 use crate::kernel::sync::mutex::Mutex;
 
-pub const ZV_MS_BLOCK_SIZE: u64 = 4096;
-pub const ZV_MS_MAX_BLOCKS: u32 = 16384;
-pub const ZV_MS_SHIFT: u8 = 14;
+pub const HV_MS_BLOCK_SIZE: u64 = 4096;
+pub const HV_MS_MAX_BLOCKS: u32 = 16384;
+pub const HV_MS_SHIFT: u8 = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvMsState {
+pub enum HvMsState {
     Uninit = 0,
     Active = 1,
     Full = 2,
 }
 
-pub struct ZvMetaslab {
+pub struct HvMetaslab {
     pub id: u32,
     pub vdev_id: u16,
     pub start: u64,
     pub size: u64,
-    pub state: ZvMsState,
+    pub state: HvMsState,
     pub allocated: AtomicU64,
     pub freed: AtomicU64,
     pub space: AtomicU64,
@@ -31,12 +31,12 @@ pub struct ZvMetaslab {
     pub condensing: bool,
 }
 
-unsafe impl Send for ZvMetaslab {}
-unsafe impl Sync for ZvMetaslab {}
+unsafe impl Send for HvMetaslab {}
+unsafe impl Sync for HvMetaslab {}
 
-impl ZvMetaslab {
+impl HvMetaslab {
     pub fn new(id: u32, vdev_id: u16, start: u64, size: u64) -> Self {
-        let nblocks = (size / ZV_MS_BLOCK_SIZE) as u32;
+        let nblocks = (size / HV_MS_BLOCK_SIZE) as u32;
         let bitmap_len = ((nblocks as usize) + 63) / 64;
         let mut bitmap = Vec::with_capacity(bitmap_len);
         bitmap.resize(bitmap_len, !0u64);
@@ -46,7 +46,7 @@ impl ZvMetaslab {
             vdev_id,
             start,
             size,
-            state: ZvMsState::Active,
+            state: HvMsState::Active,
             allocated: AtomicU64::new(0),
             freed: AtomicU64::new(0),
             space: AtomicU64::new(size),
@@ -61,30 +61,30 @@ impl ZvMetaslab {
 
     pub fn alloc(&mut self, size: u64) -> Option<u64> {
         if size == 0 || size > self.size { return None; }
-        let nblocks = ((size + ZV_MS_BLOCK_SIZE - 1) / ZV_MS_BLOCK_SIZE) as u32;
+        let nblocks = ((size + HV_MS_BLOCK_SIZE - 1) / HV_MS_BLOCK_SIZE) as u32;
         if nblocks > self.max_block { return None; }
         let start = self.find_contiguous(nblocks)?;
         for b in start..start + nblocks {
             self.clear_bit(b);
         }
-        let offset = self.start + (start as u64) * ZV_MS_BLOCK_SIZE;
-        self.allocated.fetch_add(nblocks as u64 * ZV_MS_BLOCK_SIZE, Ordering::Relaxed);
-        self.free_space.fetch_sub(nblocks as u64 * ZV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        let offset = self.start + (start as u64) * HV_MS_BLOCK_SIZE;
+        self.allocated.fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        self.free_space.fetch_sub(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.update_weight();
         Some(offset)
     }
 
     pub fn free(&mut self, offset: u64, size: u64) {
         let rel = offset.saturating_sub(self.start);
-        let start_block = (rel / ZV_MS_BLOCK_SIZE) as u32;
-        let nblocks = ((size + ZV_MS_BLOCK_SIZE - 1) / ZV_MS_BLOCK_SIZE) as u32;
+        let start_block = (rel / HV_MS_BLOCK_SIZE) as u32;
+        let nblocks = ((size + HV_MS_BLOCK_SIZE - 1) / HV_MS_BLOCK_SIZE) as u32;
         for b in start_block..start_block + nblocks {
             if (b as usize) < self.max_block as usize {
                 self.set_bit(b);
             }
         }
-        self.freed.fetch_add(nblocks as u64 * ZV_MS_BLOCK_SIZE, Ordering::Relaxed);
-        self.free_space.fetch_add(nblocks as u64 * ZV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        self.freed.fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        self.free_space.fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.update_weight();
     }
 
@@ -132,7 +132,7 @@ impl ZvMetaslab {
     }
 
     pub fn is_available(&self) -> bool {
-        self.state == ZvMsState::Active && self.free_space.load(Ordering::Relaxed) > 0
+        self.state == HvMsState::Active && self.free_space.load(Ordering::Relaxed) > 0
     }
 
     pub fn fragmentation(&self) -> u8 {
@@ -144,9 +144,9 @@ impl ZvMetaslab {
     pub fn sync(&mut self) {
         let free = self.free_space.load(Ordering::Relaxed);
         if free == 0 {
-            self.state = ZvMsState::Full;
+            self.state = HvMsState::Full;
         } else {
-            self.state = ZvMsState::Active;
+            self.state = HvMsState::Active;
         }
     }
 }

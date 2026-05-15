@@ -1,60 +1,60 @@
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
 use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::zvfs::bp::ZvBlockPointer;
+use crate::kernel::fs::hvfs::bp::HvBlockPointer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvTxgState {
+pub enum HvTxgState {
     Open = 0,
     Quiescing = 1,
     Syncing = 2,
     Committed = 3,
 }
 
-pub const ZV_TXG_SIZE: usize = 3;
+pub const HV_TXG_SIZE: usize = 3;
 
 #[derive(Debug, Clone)]
-pub struct ZvIo {
-    pub bp: ZvBlockPointer,
+pub struct HvIo {
+    pub bp: HvBlockPointer,
     pub offset: u64,
     pub size: u32,
-    pub io_type: ZvIoType,
+    pub io_type: HvIoType,
     pub priority: u8,
     pub ready: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvIoType {
+pub enum HvIoType {
     Read = 0,
     Write = 1,
     Free = 2,
     Claim = 3,
 }
 
-pub struct ZvTxg {
+pub struct HvTxg {
     pub txg_id: u64,
-    pub state: ZvTxgState,
+    pub state: HvTxgState,
     pub birth_time: u64,
     pub nwrites: AtomicU64,
     pub nalloc: AtomicU64,
     pub nfree: AtomicU64,
     pub space_delta: AtomicU64,
-    pub dirty_bps: Mutex<Vec<ZvBlockPointer>>,
-    pub free_bps: Mutex<Vec<ZvBlockPointer>>,
-    pub io_list: Mutex<Vec<ZvIo>>,
+    pub dirty_bps: Mutex<Vec<HvBlockPointer>>,
+    pub free_bps: Mutex<Vec<HvBlockPointer>>,
+    pub io_list: Mutex<Vec<HvIo>>,
     pub synced: AtomicBool,
 }
 
-unsafe impl Send for ZvTxg {}
-unsafe impl Sync for ZvTxg {}
+unsafe impl Send for HvTxg {}
+unsafe impl Sync for HvTxg {}
 
-impl ZvTxg {
+impl HvTxg {
     pub fn new(txg_id: u64) -> Self {
         Self {
             txg_id,
-            state: ZvTxgState::Open,
+            state: HvTxgState::Open,
             birth_time: 0,
             nwrites: AtomicU64::new(0),
             nalloc: AtomicU64::new(0),
@@ -68,69 +68,69 @@ impl ZvTxg {
     }
 
     pub fn open(&mut self) {
-        self.state = ZvTxgState::Open;
+        self.state = HvTxgState::Open;
         self.synced.store(false, Ordering::Release);
     }
 
     pub fn quiesce(&mut self) {
-        self.state = ZvTxgState::Quiescing;
+        self.state = HvTxgState::Quiescing;
     }
 
     pub fn sync_start(&mut self) {
-        self.state = ZvTxgState::Syncing;
+        self.state = HvTxgState::Syncing;
     }
 
     pub fn commit(&mut self) {
-        self.state = ZvTxgState::Committed;
+        self.state = HvTxgState::Committed;
         self.synced.store(true, Ordering::Release);
     }
 
     pub fn is_open(&self) -> bool {
-        self.state == ZvTxgState::Open
+        self.state == HvTxgState::Open
     }
 
     pub fn is_quiescing(&self) -> bool {
-        self.state == ZvTxgState::Quiescing
+        self.state == HvTxgState::Quiescing
     }
 
     pub fn is_syncing(&self) -> bool {
-        self.state == ZvTxgState::Syncing
+        self.state == HvTxgState::Syncing
     }
 
-    pub fn add_dirty(&self, bp: ZvBlockPointer) {
+    pub fn add_dirty(&self, bp: HvBlockPointer) {
         self.dirty_bps.lock().push(bp);
         self.nwrites.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn add_free(&self, bp: ZvBlockPointer) {
+    pub fn add_free(&self, bp: HvBlockPointer) {
         self.free_bps.lock().push(bp);
         self.nfree.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn add_io(&self, io: ZvIo) {
+    pub fn add_io(&self, io: HvIo) {
         self.io_list.lock().push(io);
     }
 
-    pub fn drain_dirty(&self) -> Vec<ZvBlockPointer> {
+    pub fn drain_dirty(&self) -> Vec<HvBlockPointer> {
         let mut dirty = self.dirty_bps.lock();
-        let drained: Vec<ZvBlockPointer> = dirty.drain(..).collect();
+        let drained: Vec<HvBlockPointer> = dirty.drain(..).collect();
         drained
     }
 
-    pub fn drain_free(&self) -> Vec<ZvBlockPointer> {
+    pub fn drain_free(&self) -> Vec<HvBlockPointer> {
         let mut free = self.free_bps.lock();
-        let drained: Vec<ZvBlockPointer> = free.drain(..).collect();
+        let drained: Vec<HvBlockPointer> = free.drain(..).collect();
         drained
     }
 
-    pub fn drain_io(&self) -> Vec<ZvIo> {
+    pub fn drain_io(&self) -> Vec<HvIo> {
         let mut io = self.io_list.lock();
         io.drain(..).collect()
     }
 }
 
-pub struct ZvTxgGroup {
-    pub txgs: [Option<ZvTxg>; ZV_TXG_SIZE],
+pub struct HvTxgGroup {
+    pub txgs: [Option<HvTxg>; HV_TXG_SIZE],
     pub current: AtomicU64,
     pub open_txg: AtomicU32,
     pub quiescing_txg: AtomicU32,
@@ -140,10 +140,10 @@ pub struct ZvTxgGroup {
     pub total_dirty: AtomicU64,
 }
 
-unsafe impl Send for ZvTxgGroup {}
-unsafe impl Sync for ZvTxgGroup {}
+unsafe impl Send for HvTxgGroup {}
+unsafe impl Sync for HvTxgGroup {}
 
-impl ZvTxgGroup {
+impl HvTxgGroup {
     pub fn new() -> Self {
         Self {
             txgs: [const { None }, const { None }, const { None }],
@@ -159,8 +159,8 @@ impl ZvTxgGroup {
 
     pub fn init(&mut self, start_txg: u64) {
         self.current.store(start_txg, Ordering::Release);
-        for i in 0..ZV_TXG_SIZE {
-            self.txgs[i] = Some(ZvTxg::new(start_txg + i as u64));
+        for i in 0..HV_TXG_SIZE {
+            self.txgs[i] = Some(HvTxg::new(start_txg + i as u64));
         }
         self.open_txg.store(0, Ordering::Release);
         self.quiescing_txg.store(1, Ordering::Release);
@@ -170,19 +170,19 @@ impl ZvTxgGroup {
         if let Some(ref mut txg) = self.txgs[2] { txg.sync_start(); }
     }
 
-    pub fn get_open_txg(&self) -> Option<&ZvTxg> {
+    pub fn get_open_txg(&self) -> Option<&HvTxg> {
         let idx = self.open_txg.load(Ordering::Acquire) as usize;
-        if idx < ZV_TXG_SIZE { self.txgs[idx].as_ref() } else { None }
+        if idx < HV_TXG_SIZE { self.txgs[idx].as_ref() } else { None }
     }
 
-    pub fn get_open_txg_mut(&mut self) -> Option<&mut ZvTxg> {
+    pub fn get_open_txg_mut(&mut self) -> Option<&mut HvTxg> {
         let idx = self.open_txg.load(Ordering::Acquire) as usize;
-        if idx < ZV_TXG_SIZE { self.txgs[idx].as_mut() } else { None }
+        if idx < HV_TXG_SIZE { self.txgs[idx].as_mut() } else { None }
     }
 
-    pub fn get_syncing_txg(&self) -> Option<&ZvTxg> {
+    pub fn get_syncing_txg(&self) -> Option<&HvTxg> {
         let idx = self.syncing_txg.load(Ordering::Acquire) as usize;
-        if idx < ZV_TXG_SIZE { self.txgs[idx].as_ref() } else { None }
+        if idx < HV_TXG_SIZE { self.txgs[idx].as_ref() } else { None }
     }
 
     pub fn transition(&mut self) -> u64 {
@@ -198,10 +198,10 @@ impl ZvTxgGroup {
         if let Some(ref mut txg) = self.txgs[old_syncing] {
             txg.commit();
         }
-        let new_txg_id = self.current.fetch_add(1, Ordering::AcqRel) + ZV_TXG_SIZE as u64;
+        let new_txg_id = self.current.fetch_add(1, Ordering::AcqRel) + HV_TXG_SIZE as u64;
         let new_open = old_syncing;
         if let Some(ref mut txg) = self.txgs[new_open] {
-            *txg = ZvTxg::new(new_txg_id);
+            *txg = HvTxg::new(new_txg_id);
             txg.open();
         }
         self.open_txg.store(new_open as u32, Ordering::Release);
@@ -215,16 +215,22 @@ impl ZvTxgGroup {
         self.current.load(Ordering::Acquire)
     }
 
-    pub fn add_dirty_to_open(&self, bp: ZvBlockPointer) {
+    pub fn add_dirty_to_open(&self, bp: HvBlockPointer) {
         if let Some(txg) = self.get_open_txg() {
             txg.add_dirty(bp);
             self.total_dirty.fetch_add(1, Ordering::Relaxed);
         }
     }
 
-    pub fn add_free_to_open(&self, bp: ZvBlockPointer) {
+    pub fn add_free_to_open(&self, bp: HvBlockPointer) {
         if let Some(txg) = self.get_open_txg() {
             txg.add_free(bp);
+        }
+    }
+
+    pub fn add_io_to_open(&self, io: HvIo) {
+        if let Some(txg) = self.get_open_txg() {
+            txg.add_io(io);
         }
     }
 }

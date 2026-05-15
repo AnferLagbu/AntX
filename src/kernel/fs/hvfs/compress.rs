@@ -1,27 +1,27 @@
 use alloc::vec::Vec;
-use crate::kernel::fs::zvfs::bp::ZvCompType;
+use crate::kernel::fs::hvfs::bp::HvCompType;
 
-pub const ZV_COMP_MIN_SIZE: usize = 64;
+pub const HV_COMP_MIN_SIZE: usize = 64;
 
-pub fn compress(data: &[u8], comp_type: ZvCompType) -> Option<Vec<u8>> {
-    if data.len() < ZV_COMP_MIN_SIZE { return None; }
+pub fn compress(data: &[u8], comp_type: HvCompType) -> Option<Vec<u8>> {
+    if data.len() < HV_COMP_MIN_SIZE { return None; }
     match comp_type {
-        ZvCompType::Off => None,
-        ZvCompType::LZ4 => compress_lz4(data),
-        ZvCompType::ZSTD => compress_zstd_fallback(data),
-        ZvCompType::Gzip1 => compress_rle(data),
-        ZvCompType::Gzip9 => compress_rle(data),
-        ZvCompType::ZLE => compress_zle(data),
+        HvCompType::Off => None,
+        HvCompType::LZ4 => compress_lz4(data),
+        HvCompType::ZSTD => compress_zstd_fallback(data),
+        HvCompType::Gzip1 => compress_rle(data),
+        HvCompType::Gzip9 => compress_rle(data),
+        HvCompType::ZLE => compress_zle(data),
     }
 }
 
-pub fn decompress(compressed: &[u8], expected_size: usize, comp_type: ZvCompType) -> Option<Vec<u8>> {
+pub fn decompress(compressed: &[u8], expected_size: usize, comp_type: HvCompType) -> Option<Vec<u8>> {
     match comp_type {
-        ZvCompType::Off => None,
-        ZvCompType::LZ4 => decompress_lz4(compressed, expected_size),
-        ZvCompType::ZSTD => decompress_zstd_fallback(compressed, expected_size),
-        ZvCompType::Gzip1 | ZvCompType::Gzip9 => decompress_rle(compressed, expected_size),
-        ZvCompType::ZLE => decompress_zle(compressed, expected_size),
+        HvCompType::Off => None,
+        HvCompType::LZ4 => decompress_lz4(compressed, expected_size),
+        HvCompType::ZSTD => decompress_zstd_fallback(compressed, expected_size),
+        HvCompType::Gzip1 | HvCompType::Gzip9 => decompress_rle(compressed, expected_size),
+        HvCompType::ZLE => decompress_zle(compressed, expected_size),
     }
 }
 

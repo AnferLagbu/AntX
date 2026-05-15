@@ -1,17 +1,17 @@
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::zvfs::bp::*;
+use crate::kernel::fs::hvfs::bp::*;
 
-pub const ZV_DMU_OBJ_NUM: u64 = 0;
-pub const ZV_DMU_OBJ_META: u64 = 1;
-pub const ZV_DMU_OBJ_ROOT: u64 = 2;
-pub const ZV_DMU_MAX_BLOCKPTR: usize = 16;
-pub const ZV_DMU_MAX_NAME: usize = 256;
+pub const HV_DMU_OBJ_NUM: u64 = 0;
+pub const HV_DMU_OBJ_META: u64 = 1;
+pub const HV_DMU_OBJ_ROOT: u64 = 2;
+pub const HV_DMU_MAX_BLOCKPTR: usize = 16;
+pub const HV_DMU_MAX_NAME: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZvObjType {
+pub enum HvObjType {
     None = 0,
     File = 1,
     Dir = 2,
@@ -23,7 +23,7 @@ pub enum ZvObjType {
     ObjSet = 8,
 }
 
-impl ZvObjType {
+impl HvObjType {
     pub fn from_u8(v: u8) -> Self {
         match v {
             1 => Self::File,
@@ -41,13 +41,13 @@ impl ZvObjType {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct ZvDmuObject {
+pub struct HvDmuObject {
     pub obj_id: u64,
-    pub obj_type: ZvObjType,
+    pub obj_type: HvObjType,
     pub block_size: u32,
     pub nblocks: u64,
     pub size: u64,
-    pub bp: ZvBlockPointer,
+    pub bp: HvBlockPointer,
     pub atime: u64,
     pub mtime: u64,
     pub ctime: u64,
@@ -63,15 +63,15 @@ pub struct ZvDmuObject {
     pub used: bool,
 }
 
-impl ZvDmuObject {
+impl HvDmuObject {
     pub fn new_file(obj_id: u64, owner_pwid: u64) -> Self {
         Self {
             obj_id,
-            obj_type: ZvObjType::File,
+            obj_type: HvObjType::File,
             block_size: 4096,
             nblocks: 0,
             size: 0,
-            bp: ZvBlockPointer::null(),
+            bp: HvBlockPointer::null(),
             atime: 0, mtime: 0, ctime: 0,
             owner_pwid,
             group_pwid: 0,
@@ -89,11 +89,11 @@ impl ZvDmuObject {
     pub fn new_dir(obj_id: u64, owner_pwid: u64) -> Self {
         Self {
             obj_id,
-            obj_type: ZvObjType::Dir,
+            obj_type: HvObjType::Dir,
             block_size: 4096,
             nblocks: 0,
             size: 0,
-            bp: ZvBlockPointer::null(),
+            bp: HvBlockPointer::null(),
             atime: 0, mtime: 0, ctime: 0,
             owner_pwid,
             group_pwid: 0,
@@ -111,11 +111,11 @@ impl ZvDmuObject {
     pub fn new_zap(obj_id: u64) -> Self {
         Self {
             obj_id,
-            obj_type: ZvObjType::Zap,
+            obj_type: HvObjType::Zap,
             block_size: 4096,
             nblocks: 0,
             size: 0,
-            bp: ZvBlockPointer::null(),
+            bp: HvBlockPointer::null(),
             atime: 0, mtime: 0, ctime: 0,
             owner_pwid: 0,
             group_pwid: 0,
@@ -130,39 +130,39 @@ impl ZvDmuObject {
         }
     }
 
-    pub fn is_file(&self) -> bool { self.obj_type == ZvObjType::File }
-    pub fn is_dir(&self) -> bool { self.obj_type == ZvObjType::Dir }
-    pub fn is_zap(&self) -> bool { self.obj_type == ZvObjType::Zap || self.obj_type == ZvObjType::ZapMicro }
-    pub fn is_snapshot(&self) -> bool { self.obj_type == ZvObjType::Snapshot }
+    pub fn is_file(&self) -> bool { self.obj_type == HvObjType::File }
+    pub fn is_dir(&self) -> bool { self.obj_type == HvObjType::Dir }
+    pub fn is_zap(&self) -> bool { self.obj_type == HvObjType::Zap || self.obj_type == HvObjType::ZapMicro }
+    pub fn is_snapshot(&self) -> bool { self.obj_type == HvObjType::Snapshot }
 
     pub fn mark_dirty(&mut self, txg: u64) {
         self.dirty = true;
         self.birth_txg = txg;
     }
 
-    pub fn cow_bp(&mut self, new_bp: ZvBlockPointer, txg: u64) {
+    pub fn cow_bp(&mut self, new_bp: HvBlockPointer, txg: u64) {
         self.bp = new_bp;
         self.birth_txg = txg;
         self.dirty = true;
     }
 }
 
-pub struct ZvObjSet {
-    pub objects: Mutex<Vec<ZvDmuObject>>,
+pub struct HvObjSet {
+    pub objects: Mutex<Vec<HvDmuObject>>,
     pub next_obj_id: AtomicU64,
     pub root_obj: u64,
     pub initialized: AtomicBool,
 }
 
-unsafe impl Send for ZvObjSet {}
-unsafe impl Sync for ZvObjSet {}
+unsafe impl Send for HvObjSet {}
+unsafe impl Sync for HvObjSet {}
 
-impl ZvObjSet {
+impl HvObjSet {
     pub fn new() -> Self {
         Self {
             objects: Mutex::new(Vec::new()),
-            next_obj_id: AtomicU64::new(ZV_DMU_OBJ_ROOT + 1),
-            root_obj: ZV_DMU_OBJ_ROOT,
+            next_obj_id: AtomicU64::new(HV_DMU_OBJ_ROOT + 1),
+            root_obj: HV_DMU_OBJ_ROOT,
             initialized: AtomicBool::new(false),
         }
     }
@@ -170,21 +170,21 @@ impl ZvObjSet {
     pub fn init(&self, owner_pwid: u64) {
         let mut objs = self.objects.lock();
         objs.clear();
-        let mut root = ZvDmuObject::new_dir(ZV_DMU_OBJ_ROOT, owner_pwid);
+        let mut root = HvDmuObject::new_dir(HV_DMU_OBJ_ROOT, owner_pwid);
         root.birth_txg = 1;
         objs.push(root);
-        let zap = ZvDmuObject::new_zap(ZV_DMU_OBJ_META);
+        let zap = HvDmuObject::new_zap(HV_DMU_OBJ_META);
         objs.push(zap);
-        self.next_obj_id.store(ZV_DMU_OBJ_ROOT + 2, Ordering::Release);
+        self.next_obj_id.store(HV_DMU_OBJ_ROOT + 2, Ordering::Release);
         self.initialized.store(true, Ordering::Release);
     }
 
-    pub fn alloc_obj(&self, obj_type: ZvObjType, owner_pwid: u64) -> Option<u64> {
+    pub fn alloc_obj(&self, obj_type: HvObjType, owner_pwid: u64) -> Option<u64> {
         let obj_id = self.next_obj_id.fetch_add(1, Ordering::AcqRel);
         let obj = match obj_type {
-            ZvObjType::File => ZvDmuObject::new_file(obj_id, owner_pwid),
-            ZvObjType::Dir => ZvDmuObject::new_dir(obj_id, owner_pwid),
-            ZvObjType::Zap | ZvObjType::ZapMicro => ZvDmuObject::new_zap(obj_id),
+            HvObjType::File => HvDmuObject::new_file(obj_id, owner_pwid),
+            HvObjType::Dir => HvDmuObject::new_dir(obj_id, owner_pwid),
+            HvObjType::Zap | HvObjType::ZapMicro => HvDmuObject::new_zap(obj_id),
             _ => return None,
         };
         self.objects.lock().push(obj);
@@ -205,12 +205,12 @@ impl ZvObjSet {
         }
     }
 
-    pub fn get_obj(&self, obj_id: u64) -> Option<ZvDmuObject> {
+    pub fn get_obj(&self, obj_id: u64) -> Option<HvDmuObject> {
         let objs = self.objects.lock();
         objs.iter().find(|o| o.obj_id == obj_id && o.used).cloned()
     }
 
-    pub fn update_obj(&self, obj: &ZvDmuObject) -> bool {
+    pub fn update_obj(&self, obj: &HvDmuObject) -> bool {
         let mut objs = self.objects.lock();
         if let Some(existing) = objs.iter_mut().find(|o| o.obj_id == obj.obj_id) {
             *existing = obj.clone();
@@ -220,7 +220,7 @@ impl ZvObjSet {
         }
     }
 
-    pub fn get_root(&self) -> Option<ZvDmuObject> {
+    pub fn get_root(&self) -> Option<HvDmuObject> {
         self.get_obj(self.root_obj)
     }
 
