@@ -85,7 +85,7 @@
 #define LWIP_TCPIP_CORE_LOCKING_INPUT 0
 #define SYS_LIGHTWEIGHT_PROT         0
 
-/* ---- Socket / Netconn API (NO_SYS=1 禁用) ---- */
+/* ---- Socket / Netconn API ---- */
 #define LWIP_NETCONN                0
 #define LWIP_SOCKET                 0
 #define LWIP_NETIF_API              0

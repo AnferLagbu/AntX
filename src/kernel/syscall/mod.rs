@@ -31,6 +31,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_PROC_GETPPID => dispatch!(sys_proc_getppid(), b"proc_getppid\0"),
         SYS_PROC_YIELD   => dispatch!(sys_proc_yield(), b"proc_yield\0"),
         SYS_PROC_EXIT    => dispatch!(sys_proc_exit(a0 as i32), b"proc_exit\0"),
+        SYS_PROC_CREATE  => dispatch!(sys_proc_create(a0 as *const i8, a1 as *const *const u8, a2 as u32), b"proc_create\0"),
+        SYS_PROC_EXEC    => dispatch!(sys_proc_exec(a0 as *const i8, a1 as *const *const u8, a2 as u32), b"proc_exec\0"),
+        SYS_PROC_WAIT    => dispatch!(sys_proc_wait(a0 as u32), b"proc_wait\0"),
+        SYS_PROC_GETPWID => dispatch!(sys_proc_getpwid(), b"proc_getpwid\0"),
+        SYS_PROC_SETPWID => dispatch!(sys_proc_setpwid(a0), b"proc_setpwid\0"),
+        SYS_PROC_SETPRI  => dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"proc_setpri\0"),
+        SYS_PROC_SLEEP   => dispatch!(sys_proc_sleep(a0), b"proc_sleep\0"),
 
         SYS_FS_OPEN      => dispatch!(sys_fs_open(a0 as *const i8, a1 as i32, a2 as i32), b"fs_open\0"),
         SYS_FS_CLOSE     => dispatch!(sys_fs_close(a0 as i32), b"fs_close\0"),
@@ -66,6 +73,26 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_DISK_INFO    => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"disk_info\0"),
         SYS_DISK_FORMAT  => dispatch!(sys_disk_format(a0 as u32, a1 as *const i8), b"disk_format\0"),
 
+        SYS_MEM_BRK      => dispatch!(sys_mem_brk(a0), b"mem_brk\0"),
+        SYS_MEM_MAP      => dispatch!(sys_mem_map(a0, a1, a2), b"mem_map\0"),
+        SYS_MEM_UNMAP    => dispatch!(sys_mem_unmap(a0, a1), b"mem_unmap\0"),
+        SYS_MEM_PROTECT  => dispatch!(sys_mem_protect(a0, a1, a2), b"mem_protect\0"),
+
+        SYS_NET_SOCKET   => dispatch!(sys_net_socket(a0 as i32, a1 as i32, a2 as i32), b"net_socket\0"),
+        SYS_NET_BIND     => dispatch!(sys_net_bind(a0 as i32, a1, a2 as u32), b"net_bind\0"),
+        SYS_NET_LISTEN   => dispatch!(sys_net_listen(a0 as i32, a1 as i32), b"net_listen\0"),
+        SYS_NET_ACCEPT   => dispatch!(sys_net_accept(a0 as i32, a1, a2), b"net_accept\0"),
+        SYS_NET_CONNECT  => dispatch!(sys_net_connect(a0 as i32, a1, a2 as u32), b"net_connect\0"),
+        SYS_NET_SEND     => dispatch!(sys_net_send(a0 as i32, a1, a2 as u32, a3 as i32), b"net_send\0"),
+        SYS_NET_RECV     => dispatch!(sys_net_recv(a0 as i32, a1, a2 as u32, a3 as i32), b"net_recv\0"),
+        SYS_NET_SHUTDOWN => dispatch!(sys_net_shutdown(a0 as i32, a1 as i32), b"net_shutdown\0"),
+
+        SYS_IPC_PIPE     => dispatch!(sys_ipc_pipe(a0 as *mut i32, a1 as *mut i32), b"ipc_pipe\0"),
+
+        SYS_DEV_IOCTL    => dispatch!(sys_dev_ioctl(a0 as i32, a1, a2), b"dev_ioctl\0"),
+        SYS_DEV_READ     => dispatch!(sys_dev_read(a0 as i32, a1, a2), b"dev_read\0"),
+        SYS_DEV_WRITE    => dispatch!(sys_dev_write(a0 as i32, a1, a2), b"dev_write\0"),
+
         _ => SyscallError::E_NOSYS.as_i64(),
     }
 }
@@ -78,10 +105,6 @@ pub unsafe extern "C" fn syscall_register(_num: u64, _handler: SyscallHandler) {
 // ============================================================================
 
 unsafe fn sys_proc_getid() -> i64 {
-    crate::kernel::proc::ffi::process_get_current_pid() as i64
-}
-
-unsafe fn sys_proc_getppid() -> i64 {
     crate::kernel::proc::ffi::process_get_current_pid() as i64
 }
 
@@ -296,5 +319,256 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     }
     extern "C" { fn ata_disk_present(drive: u8) -> i32; }
     if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
+    SyscallError::E_NOSYS.as_i64()
+}
+
+// ============================================================================
+// 进程管理 syscall (补全)
+// ============================================================================
+
+unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, argc: u32) -> i64 {
+    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if pwid == 0 { return SyscallError::E_AUTH_NOTFOUND.as_i64(); }
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 3, 0x01) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    let pid = crate::kernel::proc::ffi::proc_create_user(path, argv, argc, pwid);
+    if pid == 0 { SyscallError::E_BUSY.as_i64() } else { pid as i64 }
+}
+
+unsafe fn sys_proc_exec(path: *const i8, argv: *const *const u8, argc: u32) -> i64 {
+    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let result = crate::kernel::proc::ffi::proc_exec_replace(path, argv, argc);
+    if result < 0 { SyscallError::E_NOTFOUND.as_i64() } else { 0 }
+}
+
+unsafe fn sys_proc_wait(pid: u32) -> i64 {
+    let result = crate::kernel::proc::ffi::proc_wait_child(pid);
+    result as i64
+}
+
+unsafe fn sys_proc_sleep(ms: u64) -> i64 {
+    crate::kernel::proc::ffi::proc_sleep_ms(ms);
+    0
+}
+
+unsafe fn sys_proc_getppid() -> i64 {
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    crate::kernel::proc::ffi::proc_get_ppid(pid) as i64
+}
+
+unsafe fn sys_proc_getpwid() -> i64 {
+    crate::kernel::pwid::ffi::pwid_get_current() as i64
+}
+
+unsafe fn sys_proc_setpwid(pwid: u64) -> i64 {
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    crate::kernel::proc::ffi::proc_set_pwid(pid, pwid) as i64
+}
+
+unsafe fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
+    crate::kernel::proc::ffi::proc_set_priority(pid, priority) as i64
+}
+
+// ============================================================================
+// 内存管理 syscall
+// ============================================================================
+
+unsafe fn sys_mem_brk(addr: u64) -> i64 {
+    extern "C" { fn kmalloc(size: u64) -> *mut core::ffi::c_void; }
+    if addr == 0 {
+        0
+    } else {
+        SyscallError::E_NOSYS.as_i64()
+    }
+}
+
+unsafe fn sys_mem_map(_addr: u64, size: u64, _prot: u64) -> i64 {
+    if size == 0 { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 7, 0x01) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+    let pages = (size + 4095) / 4096;
+    let ptr = pmm_alloc_pages(pages);
+    if ptr.is_null() { SyscallError::E_BUSY.as_i64() } else { ptr as i64 }
+}
+
+unsafe fn sys_mem_unmap(addr: u64, size: u64) -> i64 {
+    if addr == 0 || size == 0 { return SyscallError::E_INVAL.as_i64(); }
+    extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+    let pages = (size + 4095) / 4096;
+    pmm_free_pages(addr as *mut core::ffi::c_void, pages);
+    0
+}
+
+unsafe fn sys_mem_protect(_addr: u64, _size: u64, _prot: u64) -> i64 {
+    SyscallError::E_NOSYS.as_i64()
+}
+
+// ============================================================================
+// 网络 syscall
+// ============================================================================
+
+unsafe fn sys_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 2, 0x01) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    extern "C" { fn lwip_socket(domain: i32, sock_type: i32, protocol: i32) -> i32; }
+    lwip_socket(domain, sock_type, protocol) as i64
+}
+
+unsafe fn sys_net_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
+    extern "C" { fn lwip_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
+    lwip_bind(sockfd, addr as *const u8, addrlen) as i64
+}
+
+unsafe fn sys_net_listen(sockfd: i32, backlog: i32) -> i64 {
+    extern "C" { fn lwip_listen(sockfd: i32, backlog: i32) -> i32; }
+    lwip_listen(sockfd, backlog) as i64
+}
+
+unsafe fn sys_net_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
+    extern "C" { fn lwip_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32; }
+    lwip_accept(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
+}
+
+unsafe fn sys_net_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
+    extern "C" { fn lwip_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
+    lwip_connect(sockfd, addr as *const u8, addrlen) as i64
+}
+
+unsafe fn sys_net_send(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
+    extern "C" { fn lwip_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32; }
+    lwip_send(sockfd, buf as *const u8, len, flags) as i64
+}
+
+unsafe fn sys_net_recv(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
+    extern "C" { fn lwip_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32; }
+    lwip_recv(sockfd, buf as *mut u8, len, flags) as i64
+}
+
+unsafe fn sys_net_shutdown(sockfd: i32, _how: i32) -> i64 {
+    extern "C" { fn lwip_close(sockfd: i32) -> i32; }
+    lwip_close(sockfd) as i64
+}
+
+// ============================================================================
+// IPC syscall
+// ============================================================================
+
+unsafe fn sys_ipc_pipe(read_fd: *mut i32, write_fd: *mut i32) -> i64 {
+    if read_fd.is_null() || write_fd.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 6, 0x01) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    let (r, w) = {
+        let mut pipefd: [i32; 2] = [0; 2];
+        let result = crate::kernel::ipc::pipe::ipc_pipe_create(pipefd.as_mut_ptr());
+        if result < 0 { return SyscallError::E_BUSY.as_i64(); }
+        (pipefd[0], pipefd[1])
+    };
+    if r < 0 || w < 0 { return SyscallError::E_BUSY.as_i64(); }
+    *read_fd = r;
+    *write_fd = w;
+    0
+}
+
+// ============================================================================
+// 设备 I/O syscall
+// ============================================================================
+
+unsafe fn sys_dev_ioctl(_fd: i32, _cmd: u64, _arg: u64) -> i64 {
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_dev_read(fd: i32, buf: u64, count: u64) -> i64 {
+    crate::kernel::fs::vfs::ffi::vfs_read(fd as u32, buf as *mut u8, count as u32) as i64
+}
+
+unsafe fn sys_dev_write(fd: i32, buf: u64, count: u64) -> i64 {
+    crate::kernel::fs::vfs::ffi::vfs_write(fd as u32, buf as *const u8, count as u32) as i64
+}
+
+// ============================================================================
+// 环境/系统 syscall (补全)
+// ============================================================================
+
+unsafe fn sys_reboot(cmd: i32) -> i64 {
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 0x01) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    match cmd {
+        0 => { loop {} }
+        1 => { extern "C" { fn reboot_internal() -> !; } unsafe { reboot_internal(); } }
+        _ => SyscallError::E_INVAL.as_i64(),
+    }
+}
+
+unsafe fn sys_time(buf: *mut u64) -> i64 {
+    if buf.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    extern "C" { fn timer_get_ticks() -> u64; }
+    let ticks = timer_get_ticks();
+    *buf = ticks;
+    ticks as i64
+}
+
+unsafe fn sys_sysinfo(info: *mut u8) -> i64 {
+    if info.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_getvar(name: *const i8, buf: *mut i8, _size: u64) -> i64 {
+    if name.is_null() || buf.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_setvar(name: *const i8, _value: *const i8) -> i64 {
+    if name.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_sync() -> i64 {
+    crate::kernel::fs::vfs::ffi::vfs_sync();
+    0
+}
+
+unsafe fn sys_mount(source: *const i8, target: *const i8, fstype: *const i8) -> i64 {
+    if source.is_null() || target.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 0x01) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    crate::kernel::fs::vfs::ffi::vfs_mount(target, fstype) as i64
+}
+
+unsafe fn sys_unmount(target: *const i8) -> i64 {
+    if target.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 0x01) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_install_grub(_disk_id: u32) -> i64 {
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_disk_partition(_disk_id: u32) -> i64 {
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_fchmod(_fd: i32, _mode: u32) -> i64 {
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_rename(old: *const i8, new: *const i8) -> i64 {
+    if old.is_null() || new.is_null() { return SyscallError::E_INVAL.as_i64(); }
     SyscallError::E_NOSYS.as_i64()
 }

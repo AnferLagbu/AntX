@@ -1,15 +1,33 @@
-//! SMP (Symmetric Multiprocessing) Stub Module
+//! SMP (Symmetric Multi-Processing) Support
 //!
-//! Provides stub implementations for SMP functionality.
-//! When the `smp` feature is enabled, these will be replaced with
-//! real implementations using IPI (Inter-Processor Interrupts).
+//! Multi-processor initialization, IPI, and per-CPU state management.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 static SMP_ENABLED: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU32 = AtomicU32::new(1);
+static BSP_ID: AtomicU32 = AtomicU32::new(0);
 
-pub fn is_smp_enabled() -> bool {
+const MAX_CPUS: usize = 256;
+
+static CPU_APIC_IDS: [AtomicU32; MAX_CPUS] = [const { AtomicU32::new(0xFFFF) }; MAX_CPUS];
+
+static CPU_ONLINE: [AtomicBool; MAX_CPUS] = [const { AtomicBool::new(false) }; MAX_CPUS];
+
+pub fn init() {
+    let bsp_apic_id = crate::kernel::arch::x86_64::apic::get_id();
+    BSP_ID.store(bsp_apic_id, Ordering::Release);
+
+    CPU_APIC_IDS[0].store(bsp_apic_id, Ordering::Release);
+    CPU_ONLINE[0].store(true, Ordering::Release);
+    CPU_COUNT.store(1, Ordering::Release);
+
+    unsafe {
+        crate::kernel::klog::klog_info(b"[SMP] BSP initialized\0".as_ptr() as *const i8);
+    }
+}
+
+pub fn is_enabled() -> bool {
     SMP_ENABLED.load(Ordering::Acquire)
 }
 
@@ -18,31 +36,69 @@ pub fn get_cpu_count() -> u32 {
 }
 
 pub fn get_current_cpu() -> u32 {
-    0
+    crate::kernel::arch::x86_64::apic::get_id()
 }
 
-pub fn send_tlb_invalidate_ipi(_addr: u64) {
+pub fn register_cpu(apic_id: u32) -> bool {
+    let count = CPU_COUNT.fetch_add(1, Ordering::AcqRel);
+    if count as usize >= MAX_CPUS {
+        CPU_COUNT.fetch_sub(1, Ordering::AcqRel);
+        return false;
+    }
+
+    CPU_APIC_IDS[count as usize].store(apic_id, Ordering::Release);
+    CPU_ONLINE[count as usize].store(true, Ordering::Release);
+    SMP_ENABLED.store(true, Ordering::Release);
+    true
 }
 
-pub fn send_broadcast_ipi(_vector: u8) {
+pub fn is_cpu_online(cpu_index: u32) -> bool {
+    if cpu_index as usize >= MAX_CPUS { return false; }
+    CPU_ONLINE[cpu_index as usize].load(Ordering::Acquire)
 }
 
-pub fn init_smp() {
-    SMP_ENABLED.store(false, Ordering::Release);
-    CPU_COUNT.store(1, Ordering::Release);
+pub fn get_apic_id(cpu_index: u32) -> u32 {
+    if cpu_index as usize >= MAX_CPUS { return 0xFFFF; }
+    CPU_APIC_IDS[cpu_index as usize].load(Ordering::Acquire)
+}
+
+pub fn send_tlb_invalidate_ipi(target_apic_id: u8) {
+    crate::kernel::arch::x86_64::apic::send_ipi(target_apic_id, 0xFD);
+}
+
+pub fn send_broadcast_ipi(vector: u8) {
+    crate::kernel::arch::x86_64::apic::broadcast_ipi(vector);
+}
+
+pub fn broadcast_tlb_invalidate() {
+    if is_enabled() {
+        send_broadcast_ipi(0xFD);
+    }
+}
+
+pub fn send_reschedule_ipi(target_apic_id: u8) {
+    crate::kernel::arch::x86_64::apic::send_ipi(target_apic_id, 0xFE);
+}
+
+pub fn broadcast_reschedule() {
+    if is_enabled() {
+        send_broadcast_ipi(0xFE);
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn smp_init() {
-    init_smp();
-}
-
+pub extern "C" fn smp_init() { init(); }
 #[no_mangle]
-pub extern "C" fn smp_is_enabled() -> bool {
-    is_smp_enabled()
-}
-
+pub extern "C" fn smp_is_enabled() -> bool { is_enabled() }
 #[no_mangle]
-pub extern "C" fn smp_get_cpu_count() -> u32 {
-    get_cpu_count()
-}
+pub extern "C" fn smp_get_cpu_count() -> u32 { get_cpu_count() }
+#[no_mangle]
+pub extern "C" fn smp_get_current_cpu() -> u32 { get_current_cpu() }
+#[no_mangle]
+pub extern "C" fn smp_register_cpu(apic_id: u32) -> bool { register_cpu(apic_id) }
+#[no_mangle]
+pub extern "C" fn smp_send_tlb_invalidate_ipi(target_apic_id: u8) { send_tlb_invalidate_ipi(target_apic_id); }
+#[no_mangle]
+pub extern "C" fn smp_broadcast_tlb_invalidate() { broadcast_tlb_invalidate(); }
+#[no_mangle]
+pub extern "C" fn smp_send_reschedule_ipi(target_apic_id: u8) { send_reschedule_ipi(target_apic_id); }

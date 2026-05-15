@@ -357,3 +357,80 @@ pub unsafe fn get_dma_mut() -> &'static mut DmaEngine {
 pub(crate) fn dma() -> &'static DmaEngine {
     unsafe { &GLOBAL_DMA }
 }
+
+// =============== DMA Transfer Engine ===============
+
+#[repr(C)]
+pub struct DmaTransfer {
+    pub src_addr: PhysAddr,
+    pub dst_addr: PhysAddr,
+    pub size: usize,
+    pub direction: DmaDirection,
+    pub completed: core::sync::atomic::AtomicBool,
+    pub callback: Option<DmaCallback>,
+}
+
+pub type DmaCallback = fn(*const DmaTransfer);
+
+impl DmaTransfer {
+    pub const fn new(src: PhysAddr, dst: PhysAddr, size: usize, dir: DmaDirection) -> Self {
+        Self {
+            src_addr: src,
+            dst_addr: dst,
+            size,
+            direction: dir,
+            completed: core::sync::atomic::AtomicBool::new(false),
+            callback: None,
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.completed.load(Ordering::Acquire)
+    }
+
+    pub fn wait(&self) {
+        while !self.is_complete() {
+            core::hint::spin_loop();
+        }
+    }
+}
+
+const MAX_DMA_TRANSFERS: usize = 32;
+
+static DMA_TRANSFERS: [core::sync::atomic::AtomicU8; MAX_DMA_TRANSFERS] = 
+    [const { core::sync::atomic::AtomicU8::new(0) }; MAX_DMA_TRANSFERS];
+
+pub fn submit_transfer(src: PhysAddr, dst: PhysAddr, size: usize, _dir: DmaDirection) -> Option<usize> {
+    let _slot = (0..MAX_DMA_TRANSFERS).find(|i| {
+        DMA_TRANSFERS[*i].compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed).is_ok()
+    })?;
+
+    unsafe {
+        let src_virt = ioremap(src.0, size)?;
+        let dst_virt = ioremap(dst.0, size)?;
+
+        core::ptr::copy_nonoverlapping(src_virt as *const u8, dst_virt as *mut u8, size);
+
+        DmaEngine::barrier_device();
+    }
+
+    Some(0)
+}
+
+pub fn submit_transfer_async(src: PhysAddr, dst: PhysAddr, size: usize, dir: DmaDirection, callback: DmaCallback) -> Option<usize> {
+    let id = submit_transfer(src, dst, size, dir)?;
+    let transfer = DmaTransfer {
+        src_addr: src,
+        dst_addr: dst,
+        size,
+        direction: dir,
+        completed: core::sync::atomic::AtomicBool::new(true),
+        callback: Some(callback),
+    };
+    callback(&transfer);
+    Some(id)
+}
+
+unsafe fn ioremap(phys: u64, size: usize) -> Option<u64> {
+    dma().ioremap(PhysAddr(phys), size).map(|v| v.0)
+}

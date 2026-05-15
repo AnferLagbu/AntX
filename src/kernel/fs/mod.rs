@@ -4,5 +4,6 @@ pub mod diskfs;
 pub mod hvfs;
 pub mod devfs;
 pub mod procfs;
+pub mod zvfs;
 
 pub use vfs::*;

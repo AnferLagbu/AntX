@@ -477,3 +477,95 @@ pub extern "C" fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority:
 pub extern "C" fn scheduler_get_rt_count() -> usize {
     SCHEDULER.get_rt_count()
 }
+
+#[no_mangle]
+pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, argc: u32, pwid: u64) -> Pid {
+    if path.is_null() { return 0; }
+
+    let parent_pid = SCHEDULER.current().unwrap_or(0);
+    let name_str = unsafe {
+        let cstr = core::ffi::CStr::from_ptr(path);
+        cstr.to_str().unwrap_or("user")
+    };
+
+    let child_pid = SCHEDULER.create_process(name_str, if parent_pid != 0 { Some(parent_pid) } else { None }, pwid).unwrap_or(0);
+    if child_pid == 0 { return 0; }
+
+    let load_result = user_proc_load_elf(path, pwid);
+    if load_result < 0 {
+        PROCESS_TABLE.remove(child_pid);
+        return 0;
+    }
+
+    if !argv.is_null() && argc > 0 {
+        let envp: *const *const u8 = core::ptr::null();
+        unsafe { user_proc_setup_argv(child_pid, argv, argc, envp, 0); }
+    }
+
+    child_pid
+}
+
+#[no_mangle]
+pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8, argc: u32) -> i32 {
+    if path.is_null() { return -1; }
+
+    let current_pid = SCHEDULER.current().unwrap_or(0);
+    if current_pid == 0 { return -1; }
+
+    let pwid = scheduler_get_current_pwid();
+    let load_result = user_proc_load_elf(path, pwid);
+    if load_result < 0 { return -1; }
+
+    if !argv.is_null() && argc > 0 {
+        let envp: *const *const u8 = core::ptr::null();
+        unsafe { user_proc_setup_argv(current_pid, argv, argc, envp, 0); }
+    }
+
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn proc_wait_child(pid: Pid) -> i32 {
+    if pid == 0 { return -1; }
+
+    let proc = PROCESS_TABLE.get(pid);
+    if proc.is_none() { return -1; }
+
+    let process = unsafe { &*proc.unwrap() };
+    let state = process.get_state();
+    if state == ProcessState::Zombie {
+        let code = process.exit_code.load(Ordering::SeqCst) as i32;
+        PROCESS_TABLE.remove(pid);
+        return code;
+    }
+
+    SCHEDULER.block(BlockReason::WaitingForChild);
+    -2
+}
+
+#[no_mangle]
+pub extern "C" fn proc_sleep_ms(ms: u64) {
+    extern "C" { fn timer_sleep_busy(ms: u64); }
+    unsafe { timer_sleep_busy(ms); }
+}
+
+#[no_mangle]
+pub extern "C" fn proc_get_ppid(pid: Pid) -> Pid {
+    let proc = PROCESS_TABLE.get(pid);
+    if let Some(p) = proc {
+        unsafe { (*p).parent.map(|p| p.0).unwrap_or(0) }
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn proc_set_pwid(pid: Pid, pwid: u64) -> i32 {
+    let proc = PROCESS_TABLE.get(pid);
+    if let Some(p) = proc {
+        unsafe { (*p).pwid.store(pwid, Ordering::SeqCst); }
+        0
+    } else {
+        -1
+    }
+}

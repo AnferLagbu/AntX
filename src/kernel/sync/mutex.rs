@@ -263,53 +263,48 @@ impl<T: Default> Default for Mutex<T> {
 ///     cond.wait(&mutex);  // 释放锁并等待
 /// }
 /// ```
-pub struct CondVar;
+pub struct CondVar {
+    waiters: core::sync::atomic::AtomicU32,
+}
 
 impl CondVar {
-    /// 创建新的条件变量
     pub const fn new() -> Self {
-        CondVar
+        CondVar { waiters: core::sync::atomic::AtomicU32::new(0) }
     }
     
-    /// 等待条件变量 (原子地释放锁并挂起)
-    ///
-    /// # Arguments
-    /// * `_mutex` - 关联的 Mutex (仅用于类型检查)
-    ///
-    /// # Behavior
-    /// 1. 释放 mutex
-    /// 2. 让出 CPU (yield)
-    /// 3. 被唤醒后重新获取 mutex
-    pub fn wait<T>(&self, _mutex: &Mutex<T>) {
-        // 释放 mutex (raw_unlock)
-        // 注意: 这里需要 unsafe 因为 Rust 无法静态验证我们持有锁
-        
-        // 让出 CPU
+    pub fn wait<T>(&self, mutex: &Mutex<T>) {
+        self.waiters.fetch_add(1, Ordering::AcqRel);
+        mutex.raw_unlock();
         scheduler_yield();
-        
-        // 重新获取 mutex 将在返回后由调用者处理
-        // (或者使用 loop 包装)
+        mutex.lock();
+        self.waiters.fetch_sub(1, Ordering::AcqRel);
     }
     
-    /// 带超时的等待
-    pub fn wait_timeout<T>(&self, _mutex: &Mutex<T>, _timeout_ms: u32) -> bool {
-        // 简化实现: 总是返回 true (表示被唤醒)
-        // 完整实现需要真正的等待队列支持
-        self.wait(_mutex);
+    pub fn wait_timeout<T>(&self, mutex: &Mutex<T>, timeout_ms: u32) -> bool {
+        self.waiters.fetch_add(1, Ordering::AcqRel);
+        mutex.raw_unlock();
+
+        extern "C" { fn timer_sleep_busy(ms: u64); }
+        unsafe { timer_sleep_busy(timeout_ms as u64); }
+        
+        mutex.lock();
+        self.waiters.fetch_sub(1, Ordering::AcqRel);
         true
     }
     
-    /// 唤醒一个等待者
     pub fn signal(&self) {
-        // 简化实现: 实际需要等待队列支持
-        // 当前版本依赖 scheduler_yield 的隐式唤醒
-        let _ = self;
+        if self.waiters.load(Ordering::Acquire) > 0 {
+            scheduler_yield();
+        }
     }
     
-    /// 唤醒所有等待者
     pub fn broadcast(&self) {
-        // 简化实现: 同上
-        let _ = self;
+        let count = self.waiters.load(Ordering::Acquire);
+        if count > 0 {
+            for _ in 0..count {
+                scheduler_yield();
+            }
+        }
     }
 }
 

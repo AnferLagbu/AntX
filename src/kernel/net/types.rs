@@ -166,3 +166,42 @@ pub unsafe extern "C" fn rust_klog_net(fmt: *const i8) {
     // 目前仅作为桩函数
     let _ = fmt;
 }
+
+// ============================================================================
+// lwIP Socket API 所需的全局变量和函数
+// ============================================================================
+
+/// lwIP errno 变量 (Socket API 需要)
+#[no_mangle]
+pub static mut errno: i32 = 0;
+
+/// ISR 安全版本的 sys_mbox_trypost
+/// 在中断上下文中调用，与 sys_mbox_trypost 功能相同
+#[no_mangle]
+pub extern "C" fn sys_mbox_trypost_fromisr(mbox: *mut crate::kernel::net::sys_arch::SysMbox, msg: *mut core::ffi::c_void) -> i32 {
+    crate::kernel::net::sys_arch::sys_mbox_trypost(mbox, msg)
+}
+
+#[no_mangle]
+pub extern "C" fn lwip_socket(_domain: i32, _type: i32, _protocol: i32) -> i32 { -1 }
+
+#[no_mangle]
+pub extern "C" fn lwip_bind(_s: i32, _name: *const core::ffi::c_void, _namelen: u32) -> i32 { -1 }
+
+#[no_mangle]
+pub extern "C" fn lwip_listen(_s: i32, _backlog: i32) -> i32 { -1 }
+
+#[no_mangle]
+pub extern "C" fn lwip_accept(_s: i32, _addr: *mut core::ffi::c_void, _addrlen: *mut u32) -> i32 { -1 }
+
+#[no_mangle]
+pub extern "C" fn lwip_connect(_s: i32, _name: *const core::ffi::c_void, _namelen: u32) -> i32 { -1 }
+
+#[no_mangle]
+pub extern "C" fn lwip_send(_s: i32, _data: *const core::ffi::c_void, _size: usize, _flags: i32) -> isize { -1 }
+
+#[no_mangle]
+pub extern "C" fn lwip_recv(_s: i32, _mem: *mut core::ffi::c_void, _len: usize, _flags: i32) -> isize { -1 }
+
+#[no_mangle]
+pub extern "C" fn lwip_close(_s: i32) -> i32 { -1 }

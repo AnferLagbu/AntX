@@ -402,12 +402,9 @@ impl KmemCache {
     
     /// 创建新的 Slab (分配一页物理内存)
     fn new_slab(&self) -> Option<*mut SlabHeader> {
-        // TODO: 调用 PMM 分配一页
-        // let page = pmm_alloc_page()?;
-        
-        // 使用全局分配器分配内存 (替代 std::alloc)
-        let layout = core::alloc::Layout::from_size_align(SLAB_DEFAULT_SIZE, 4096).ok()?;
-        let page = unsafe { alloc::alloc::alloc(layout) };
+        extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+        let pages_needed = (SLAB_DEFAULT_SIZE + 4095) / 4096;
+        let page = unsafe { pmm_alloc_pages(pages_needed as u64) };
         
         if page.is_null() {
             return None;
@@ -418,7 +415,7 @@ impl KmemCache {
         unsafe {
             // 初始化 Slab 头部
             (*slab) = SlabHeader {
-                start_addr: page.add(core::mem::size_of::<SlabHeader>()),
+                start_addr: page.add(core::mem::size_of::<SlabHeader>()) as *mut u8,
                 obj_count: self.objects_per_slab,
                 active_count: 0,
                 is_full: false,
@@ -434,11 +431,12 @@ impl KmemCache {
             
             // 边界检查: 确保 [header + objects + bitmap] 不超出页面
             let bitmap_end = bitmap_start.add(bitmap_bytes as usize);
-            let page_end = page.add(SLAB_DEFAULT_SIZE);
+            let page_end = page as *mut u8; // for comparison only
             
             if bitmap_end > page_end {
-                // 对象太大, 无法放入单个页面
-                unsafe { alloc::alloc::dealloc(page, layout) };
+                extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+                let pages_needed = (SLAB_DEFAULT_SIZE + 4095) / 4096;
+                unsafe { pmm_free_pages(page as *mut core::ffi::c_void, pages_needed as u64); }
                 return None;
             }
             
@@ -672,8 +670,8 @@ impl CacheStats {
 // ============================================================================
 
 /// 通用缓存数组 (预定义 8 个大小的缓存)
-static mut GENERAL_CACHES: [*const KmemCache; SLAB_GENERAL_CACHE_NUM] = 
-    [core::ptr::null(); SLAB_GENERAL_CACHE_NUM]; // Note: 实际需要可变引用
+static mut GENERAL_CACHES: [Option<KmemCache>; SLAB_GENERAL_CACHE_NUM] = 
+    [const { None }; SLAB_GENERAL_CACHE_NUM];
 
 /// 系统是否已初始化
 static mut SLAB_INITIALIZED: bool = false;
@@ -685,16 +683,17 @@ static mut SLAB_INITIALIZED: bool = false;
 pub extern "C" fn slab_system_init() -> i32 {
     klog_slab!("[SLAB] Initializing Slab allocator...");
     
-    // TODO: 实际初始化逻辑 (需要解决全局可变状态问题)
-    // 这里简化处理, 仅输出日志
-    
-    klog_slab!("[SLAB] System initialized with 8 general caches");
-    
     unsafe {
+        for (i, &cache_size) in GENERAL_CACHE_SIZES.iter().enumerate() {
+            if let Ok(cache) = KmemCache::create("", cache_size) {
+                GENERAL_CACHES[i] = Some(cache);
+            }
+        }
         SLAB_INITIALIZED = true;
     }
     
-    0 // 成功
+    klog_slab!("[SLAB] System initialized with 8 general caches");
+    0
 }
 
 /// 根据请求大小查找合适的通用缓存索引
@@ -720,28 +719,42 @@ fn find_general_cache_index(size: usize) -> Option<usize> {
 #[no_mangle]
 pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
     if size == 0 || size > SLAB_MAX_OBJECT_SIZE {
-        return core::ptr::null_mut(); // 回退到 kmalloc
+        return core::ptr::null_mut();
+    }
+    
+    if !unsafe { SLAB_INITIALIZED } {
+        return core::ptr::null_mut();
     }
     
     match find_general_cache_index(size) {
-        Some(_idx) => {
-            // TODO: 从通用缓存分配
-            // general_caches[idx].allocate()
-            core::ptr::null_mut() // 临时返回
+        Some(idx) => {
+            unsafe {
+                if let Some(ref mut cache) = GENERAL_CACHES[idx] {
+                    match cache.allocate() {
+                        Some(ptr) => ptr as *mut u8,
+                        None => core::ptr::null_mut(),
+                    }
+                } else {
+                    core::ptr::null_mut()
+                }
+            }
         },
-        None => core::ptr::null_mut(), // 回退到 kmalloc
+        None => core::ptr::null_mut(),
     }
 }
 
-/// 通用释放接口 (FFI 兼容)
 #[no_mangle]
 pub extern "C" fn slab_free(ptr: *mut u8) {
-    if ptr.is_null() {
-        return;
-    }
+    if ptr.is_null() { return; }
+    if !unsafe { SLAB_INITIALIZED } { return; }
     
-    // TODO: 查找对象所属缓存并释放
-    // 需要遍历所有通用缓存的 Slab 链表
+    unsafe {
+        for i in 0..GENERAL_CACHE_SIZES.len() {
+            if let Some(ref mut cache) = GENERAL_CACHES[i] {
+                cache.deallocate(ptr);
+            }
+        }
+    }
 }
 
 /// 获取系统级统计信息 (FFI 兼容)

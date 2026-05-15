@@ -42,6 +42,8 @@ pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char
         if diskfs.mount(path) != 0 {
             return -1;
         }
+    } else if fs_name == "zvfs" {
+        crate::kernel::fs::zvfs::zvfs::get_zvfs().init();
     } else {
         return -1;
     }
