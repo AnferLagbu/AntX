@@ -14,10 +14,11 @@ AntX 是一个完全自研的操作系统——从 Multiboot 引导的第一条�
 
 ## 内核能做什么
 
-- **HVFS** — 自研文件系统，类 ext2 设计，三级间接块，FSCK，磁盘持久化
+- **HvFS v2** — 自研 ZFS 风格文件系统，SPA/DMU/ZAP/TXG 分层架构，COW 事务组，ZIL 意图日志，ARC 自适应缓存，RAID-Z，快照
 - **PWID** — 基于能力的权限模型，令牌委托、信任链、域隔离
-- **Barrier（栏栈）** — 故障恢复屏障，VFS 快照与级联回滚
+- **Barrier（栏栈）** — 故障恢复屏障，UndoLog 回滚，RecoveryDomain 级联恢复
 - **lwIP 2.2.1** — 完整 TCP/IP 协议栈，DHCP / TCP / UDP / HTTP / DNS（因为我懒得写网络栈了就薅了个现成的）
+- **测试框架** — Rust 原生 no_std 测试框架，手动注册 + QEMU Runner，31 个单元测试全部通过
 
 ## 设计原则
 
@@ -30,12 +31,13 @@ AntX 是一个完全自研的操作系统——从 Multiboot 引导的第一条�
 技术细节、开发日志和设计文档在 `docs/` 目录下：
 
 - [内核架构设计](docs/development/kernel-architecture.md)
-- [HVFS 文件系统](docs/development/hivefs.md)
+- [HvFS v2 文件系统](docs/development/hivefs.md)
 - [PWID 权限模型](docs/development/pwid-model.md)
 - [KLog 日志系统](docs/development/klog-system.md)
 - [内存管理](docs/development/memory-management.md)
 - [调度器设计](docs/development/thread-scheduler.md)
 - [系统调用接口](docs/development/syscall.md)
+- [测试框架](docs/development/test-framework.md)
 - [完整文档索引](docs/README.md)
 
 ---
