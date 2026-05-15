@@ -4,6 +4,7 @@ use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result};
 use crate::klog_info;
 use crate::klog_err;
 use crate::klog_warn;
+use crate::klog_debug;
 
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
@@ -214,7 +215,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
 
     unsafe {
         let tx_phys = virt_to_phys(tx_ptr as u64);
-        klog_info!(Net, "e1000: TX ring virt=0x{:x} phys=0x{:x} len={}", tx_ptr as u64, tx_phys, tx_size);
+        klog_debug!(Net, "e1000: TX ring virt=0x{:x} phys=0x{:x} len={}", tx_ptr as u64, tx_phys, tx_size);
         mmio_write32(dev.mmio_base, E1000_TDBAL, (tx_phys & 0xFFFFFFFF) as u32);
         mmio_write32(dev.mmio_base, E1000_TDBAH, (tx_phys >> 32) as u32);
         mmio_write32(dev.mmio_base, E1000_TDLEN, tx_size as u32);
@@ -244,7 +245,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
             (*rx_descs.add(i)).status = 0;
         }
         if i == 0 {
-            klog_info!(Net, "e1000: RX buf[0] virt=0x{:x} phys=0x{:x}", buf_ptr as u64, buf_phys);
+            klog_debug!(Net, "e1000: RX buf[0] virt=0x{:x} phys=0x{:x}", buf_ptr as u64, buf_phys);
         }
     }
     dev.rx_tail = 0;
@@ -252,7 +253,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
 
     unsafe {
         let rx_phys = virt_to_phys(rx_ptr as u64);
-        klog_info!(Net, "e1000: RX ring virt=0x{:x} phys=0x{:x} len={}", rx_ptr as u64, rx_phys, rx_size);
+        klog_debug!(Net, "e1000: RX ring virt=0x{:x} phys=0x{:x} len={}", rx_ptr as u64, rx_phys, rx_size);
         mmio_write32(dev.mmio_base, E1000_RDBAL, (rx_phys & 0xFFFFFFFF) as u32);
         mmio_write32(dev.mmio_base, E1000_RDBAH, (rx_phys >> 32) as u32);
         mmio_write32(dev.mmio_base, E1000_RDLEN, rx_size as u32);
@@ -329,22 +330,19 @@ impl Driver for E1000Device {
                         else if status & E1000_STATUS_SPEED_100 != 0 { "100" } 
                         else { "10" };
             let duplex = if status & E1000_STATUS_FD != 0 { "FD" } else { "HD" };
-            klog_info!(Net, "e1000: link up speed={}Mbps {}", speed, duplex);
+            klog_info!(Net, "e1000: NIC Link is Up {} Mbps Full Duplex", speed);
+            let _ = duplex;
         }
 
         setup_descriptor_rings(self)?;
 
         let tctl = E1000_TCTL_EN | E1000_TCTL_PSP | E1000_TCTL_COLD_FD | E1000_TCTL_CT_FD;
         unsafe { mmio_write32(base, E1000_TCTL, tctl); }
-        let tctl_rb = unsafe { mmio_read32(base, E1000_TCTL) };
-        klog_info!(Net, "e1000: TCTL=0x{:x} EN={}", tctl_rb, tctl_rb & E1000_TCTL_EN != 0);
 
         let rctl = E1000_RCTL_EN | E1000_RCTL_SBP | E1000_RCTL_UPE
                  | E1000_RCTL_MPE | E1000_RCTL_BAM
                  | E1000_RCTL_SECRC | E1000_RCTL_BSIZE_2048;
         unsafe { mmio_write32(base, E1000_RCTL, rctl); }
-        let rctl_rb = unsafe { mmio_read32(base, E1000_RCTL) };
-        klog_info!(Net, "e1000: RCTL=0x{:x} EN={}", rctl_rb, rctl_rb & E1000_RCTL_EN != 0);
 
         {
             let ral = (self.mac[0] as u32)
@@ -375,17 +373,10 @@ impl Driver for E1000Device {
         }
 
         unsafe {
-            let rdh = mmio_read32(base, E1000_RDH);
-            let rdt = mmio_read32(base, E1000_RDT);
-            let rdbal = mmio_read32(base, E1000_RDBAL);
-            let rdbah = mmio_read32(base, E1000_RDBAH);
-            let rdlen = mmio_read32(base, E1000_RDLEN);
             let ctrl = mmio_read32(base, E1000_CTRL);
-            let ims = mmio_read32(base, E1000_IMS);
-            klog_info!(Net, "e1000: POST-INIT: CTRL=0x{:x} STATUS=0x{:x}", ctrl, mmio_read32(base, E1000_STATUS));
-            klog_info!(Net, "e1000: RDBAL=0x{:x} RDBAH=0x{:x} RDLEN={}", rdbal, rdbah, rdlen);
-            klog_info!(Net, "e1000: RDH={} RDT={} rx_tail={}", rdh, rdt, self.rx_tail);
-            klog_info!(Net, "e1000: IMS=0x{:x}", ims);
+            klog_info!(Net, "e1000: initialized (CTRL=0x{:x} RDLEN=0x{:x})",
+                ctrl,
+                mmio_read32(base, E1000_RDLEN));
         }
 
         self.initialized = true;
@@ -605,7 +596,7 @@ impl E1000Device {
         }
 
         if processed > 0 {
-            klog_info!(Net, "e1000: RX processed {} packets (total={})", processed, self.rx_count);
+            klog_debug!(Net, "e1000: RX processed {} packets (total={})", processed, self.rx_count);
         }
     }
 
@@ -622,7 +613,7 @@ impl E1000Device {
         self.isr_count += 1;
         
         if self.isr_count <= 5 {
-            klog_info!(Net, "e1000: ISR icr=0x{:x}", icr);
+            klog_debug!(Net, "e1000: ISR icr=0x{:x}", icr);
         }
 
         if icr & E1000_ICR_LSC != 0 {
@@ -632,7 +623,7 @@ impl E1000Device {
 
         if icr & (E1000_ICR_RXT0 | E1000_ICR_RXDMT0) != 0 {
             if self.isr_count <= 5 {
-                klog_info!(Net, "e1000: RX interrupt");
+                klog_debug!(Net, "e1000: RX interrupt");
             }
             self.process_rx_packets();
         }
@@ -722,7 +713,7 @@ pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::
             match dev.send_packet(packet) {
                 Ok(n) => {
                     if dev.tx_count <= 3 {
-                        klog_info!(Net, "e1000_send: OK len={}", n);
+                        klog_debug!(Net, "e1000_send: OK len={}", n);
                     }
                     0
                 }
@@ -788,6 +779,7 @@ pub extern "C" fn get_e1000_instance() -> *mut core::ffi::c_void {
 
 #[no_mangle]
 pub extern "C" fn e1000_dump_regs() {
+    #[cfg(feature = "e1000-verbose")]
     unsafe {
         if let Some(ref dev) = E1000_INSTANCE {
             let base = dev.mmio_base;
@@ -815,16 +807,20 @@ pub extern "C" fn e1000_dump_regs() {
             klog_info!(Net, "tx_count={} rx_count={} isr_count={}", dev.tx_count, dev.rx_count, dev.isr_count);
         }
     }
+    #[cfg(not(feature = "e1000-verbose"))]
+    let _ = &();
 }
 
 #[no_mangle]
 pub extern "C" fn e1000_dump_stats() {
+    #[cfg(feature = "e1000-verbose")]
     unsafe {
         if let Some(ref dev) = E1000_INSTANCE {
             klog_info!(Net, "e1000 stats: tx={} rx={} isr={} link_chg={}", 
                 dev.tx_count, dev.rx_count, dev.isr_count, dev.link_change_count);
         }
     }
+    let _ = &();
 }
 
 #[no_mangle]
@@ -840,13 +836,14 @@ pub extern "C" fn e1000_poll_rx() {
             let rdt = mmio_read32(dev.mmio_base, E1000_RDT);
 
             if poll_n % 50000 == 0 {
-                klog_info!(Net, "e1000_poll[{}]: RDH={} RDT={} tail={} ICR=0x{:x} rx={}", 
+                klog_debug!(Net, "e1000_poll[{}]: RDH={} RDT={} tail={} ICR=0x{:x} rx={}", 
                     poll_n, rdh, rdt, dev.rx_tail, icr, dev.rx_count);
+                #[cfg(feature = "e1000-verbose")]
                 e1000_dump_regs();
             }
 
             if icr & E1000_ICR_LSC != 0 {
-                klog_info!(Net, "e1000_poll: link status change ICR=0x{:x}", icr);
+                klog_info!(Net, "e1000: link status change ICR=0x{:x}", icr);
             }
 
             dev.process_rx_packets();
