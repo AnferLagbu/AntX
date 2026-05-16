@@ -539,25 +539,21 @@ struct NetSnapshot {
     dhcp_done: u8,
 }
 
-static mut NET_SNAPSHOT: Option<NetSnapshot> = None;
+static NET_SNAPSHOT: spin::Mutex<Option<NetSnapshot>> = spin::Mutex::new(None);
 
 pub fn net_barrier_capture() {
-    unsafe {
-        NET_SNAPSHOT = Some(NetSnapshot {
-            netif_buffer: G_NETIF_BUFFER,
-            initialized: G_NET_INITIALIZED.load(Ordering::SeqCst),
-            dhcp_done: G_DHCP_DONE.load(Ordering::SeqCst),
-        });
-    }
+    *NET_SNAPSHOT.lock() = Some(NetSnapshot {
+        netif_buffer: unsafe { G_NETIF_BUFFER },
+        initialized: G_NET_INITIALIZED.load(Ordering::SeqCst),
+        dhcp_done: G_DHCP_DONE.load(Ordering::SeqCst),
+    });
 }
 
 pub fn net_barrier_rollback() -> bool {
-    unsafe {
-        if let Some(ref snap) = NET_SNAPSHOT {
-            G_NETIF_BUFFER = snap.netif_buffer;
-            G_NET_INITIALIZED.store(snap.initialized, Ordering::SeqCst);
-            G_DHCP_DONE.store(snap.dhcp_done, Ordering::SeqCst);
-        }
+    if let Some(ref snap) = *NET_SNAPSHOT.lock() {
+        unsafe { G_NETIF_BUFFER = snap.netif_buffer; }
+        G_NET_INITIALIZED.store(snap.initialized, Ordering::SeqCst);
+        G_DHCP_DONE.store(snap.dhcp_done, Ordering::SeqCst);
     }
     true
 }

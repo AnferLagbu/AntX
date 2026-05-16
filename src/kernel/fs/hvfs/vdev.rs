@@ -89,9 +89,26 @@ impl HvVdev {
     }
 
     pub fn probe_disk_size(drive: u8) -> u64 {
-        extern "C" { fn ata_disk_present(disk: u8) -> i32; }
+        extern "C" {
+            fn ata_disk_present(disk: u8) -> i32;
+            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
+        }
         if unsafe { ata_disk_present(drive) } == 0 { return 0; }
-        32 * 1024 * 1024
+
+        let mut lo: u32 = 0;
+        let mut hi: u32 = 0xFFFF;
+        let mut buf = [0u8; 512];
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if unsafe { ata_read_sector(drive, mid, buf.as_mut_ptr()) } >= 0 {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if lo == 0 { return HV_VDEV_ASIZE_DEFAULT; }
+        let detected = (lo as u64) * 512;
+        if detected > 0 { detected } else { HV_VDEV_ASIZE_DEFAULT }
     }
 
     pub fn is_healthy(&self) -> bool {

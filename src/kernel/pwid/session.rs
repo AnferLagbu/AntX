@@ -1,7 +1,3 @@
-//! PWID v5 Session Management
-//!
-//! Multi-terminal session with brute-force protection.
-
 use super::types::*;
 use super::table;
 use core::sync::atomic::{AtomicIsize, AtomicBool, Ordering};
@@ -22,7 +18,7 @@ impl SessionManager {
     pub const fn new() -> Self {
         const CTX: PwidContext = PwidContext {
             current_entry: core::ptr::null(),
-            session_pwid: 0,
+            session_pwid: PwidId::ZERO,
         };
         Self {
             current: UnsafeCell::new(CTX),
@@ -75,7 +71,7 @@ impl SessionManager {
         unsafe {
             let ctx = &mut *self.current.get();
             ctx.current_entry = entry;
-            ctx.session_pwid = pwid;
+            ctx.session_pwid = PwidId(pwid);
         }
         self.release();
 
@@ -88,16 +84,16 @@ impl SessionManager {
         self.acquire();
         unsafe {
             let ctx = &mut *self.current.get();
-            let pwid = ctx.session_pwid;
+            let pwid = ctx.session_pwid.as_u64();
             ctx.current_entry = core::ptr::null();
-            ctx.session_pwid = 0;
+            ctx.session_pwid = PwidId::ZERO;
             super::audit::log(pwid, AuditAction::Logout, pwid, 0, 0);
         }
         self.release();
     }
 
     pub fn get_current_pwid(&self) -> u64 {
-        unsafe { (*self.current.get()).session_pwid }
+        unsafe { (*self.current.get()).session_pwid.as_u64() }
     }
 
     pub fn get_current_entry(&self) -> *const PwidEntry {
@@ -117,28 +113,30 @@ impl SessionManager {
     }
 }
 
-static mut GLOBAL_SESSION: SessionManager = SessionManager::new();
+use spin::Mutex;
+
+static GLOBAL_SESSION: Mutex<SessionManager> = Mutex::new(SessionManager::new());
 
 pub fn login(note: &str, password: &str) -> Result<u64, PwidError> {
-    unsafe { GLOBAL_SESSION.login(note, password) }
+    GLOBAL_SESSION.lock().login(note, password)
 }
 
 pub fn logout() {
-    unsafe { GLOBAL_SESSION.logout(); }
+    GLOBAL_SESSION.lock().logout();
 }
 
 pub fn get_current_pwid() -> u64 {
-    unsafe { GLOBAL_SESSION.get_current_pwid() }
+    GLOBAL_SESSION.lock().get_current_pwid()
 }
 
 pub fn get_current_entry() -> *const PwidEntry {
-    unsafe { GLOBAL_SESSION.get_current_entry() }
+    GLOBAL_SESSION.lock().get_current_entry()
 }
 
 pub fn is_logged_in() -> bool {
-    unsafe { GLOBAL_SESSION.is_logged_in() }
+    GLOBAL_SESSION.lock().is_logged_in()
 }
 
 pub fn clear_lockout(pwid: u64) -> Result<(), PwidError> {
-    unsafe { GLOBAL_SESSION.clear_lockout(pwid) }
+    GLOBAL_SESSION.lock().clear_lockout(pwid)
 }

@@ -25,13 +25,15 @@
  *   - 与 Rust FFI 层兼容
  *   - 支持条件编译 (#ifdef)
  *
- * 生成时间: 2026-05-13 23:29:10
+ * 生成时间: 2026-05-16 00:34:58
  * 生成工具: scripts/generate_version.sh v1.0
  * ============================================================================
  */
 
 #ifndef __VERSION_AUTO_H__
 #define __VERSION_AUTO_H__
+
+#include "types.h"  /* 内核类型定义 (uint8_t, uint32_t 等) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,10 +44,10 @@ extern "C" {
 /* ============================================================================ */
 
 /** @brief 完整 Git commit hash (40字符) */
-#define GIT_COMMIT_HASH         "f507757e844040689dd5c31d66e5db4d741962b5"
+#define GIT_COMMIT_HASH         "d3b3b61c4b0d00921ae8cf7eeeffddb273dde665"
 
 /** @brief 短格式 Git commit hash (7字符) */
-#define GIT_COMMIT_SHORT        "f507757"
+#define GIT_COMMIT_SHORT        "d3b3b61"
 
 /** @brief 当前 Git 分支名 */
 #define GIT_BRANCH              "main"
@@ -58,7 +60,7 @@ extern "C" {
 /* ============================================================================ */
 
 /** @brief 构建日期时间 (YYYY-MM-DD HH:MM:SS) */
-#define BUILD_DATE              "2026-05-13 23:29:10"
+#define BUILD_DATE              "2026-05-16 00:34:58"
 
 /** @brief 构建用户名 */
 #define BUILD_USER              "anfer"
@@ -104,7 +106,7 @@ extern "C" {
  * 示例: "a3f7b2d (main) [DIRTY] 2026-05-02 23:45"
  */
 #define KERNEL_VERSION_FULL     \
-    GIT_COMMIT_SHORT " (" GIT_BRANCH ") " \
+    GIT_COMMIT_SHORT " (" GIT_BRANCH ")" " \
     IS_DIRTY_STR " " BUILD_DATE
 
 /** @brief 脏状态标记字符串 */

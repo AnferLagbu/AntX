@@ -12,6 +12,7 @@ use crate::kernel::fs::hvfs::snapshot::*;
 use crate::kernel::fs::hvfs::zil::*;
 use crate::kernel::fs::hvfs::compress;
 use crate::kernel::fs::hvfs::arc::{HvArcBufType, HvArcKey};
+use crate::kernel::fs::vfs::types::KernelError;
 
 extern "C" {
     fn klog_ffi_info(msg: *const u8);
@@ -65,31 +66,32 @@ pub struct HvfsData {
 unsafe impl Send for HvfsData {}
 unsafe impl Sync for HvfsData {}
 
-static mut HVFS_DATA: Option<Box<HvfsData>> = None;
+static HVFS_DATA: Mutex<Option<Box<HvfsData>>> = Mutex::new(None);
 
 pub fn get_hvfs() -> &'static HvfsData {
-    unsafe {
-        if HVFS_DATA.is_none() {
-            let data = Box::new(HvfsData {
-                spa: HvSpa::new(),
-                txg_group: Mutex::new(None),
-                datasets: Mutex::new(Vec::new()),
-                snap_mgr: HvSnapshotManager::new(),
-                zil: HvZil::new(),
-                fds: Mutex::new([HvfsFd { fd: 0, obj_id: 0, ds_id: 0, offset: 0, flags: 0, pwid: 0, used: false }; HVFS_MAX_FDS]),
-                next_fd: AtomicU32::new(0),
-                current_pwid: AtomicU64::new(0),
-                current_dir: AtomicU64::new(HV_DMU_OBJ_ROOT),
-                mounted: AtomicBool::new(false),
-                initialized: AtomicBool::new(false),
-                root_ds_id: AtomicU64::new(0),
-                mode: AtomicU8::new(HvfsMode::Memory as u8),
-                disk_drive: 0,
-            });
-            HVFS_DATA = Some(data);
-        }
-        HVFS_DATA.as_ref().unwrap().as_ref()
+    let mut guard = HVFS_DATA.lock();
+    if guard.is_none() {
+        let data = Box::new(HvfsData {
+            spa: HvSpa::new(),
+            txg_group: Mutex::new(None),
+            datasets: Mutex::new(Vec::new()),
+            snap_mgr: HvSnapshotManager::new(),
+            zil: HvZil::new(),
+            fds: Mutex::new([HvfsFd { fd: 0, obj_id: 0, ds_id: 0, offset: 0, flags: 0, pwid: 0, used: false }; HVFS_MAX_FDS]),
+            next_fd: AtomicU32::new(0),
+            current_pwid: AtomicU64::new(0),
+            current_dir: AtomicU64::new(HV_DMU_OBJ_ROOT),
+            mounted: AtomicBool::new(false),
+            initialized: AtomicBool::new(false),
+            root_ds_id: AtomicU64::new(0),
+            mode: AtomicU8::new(HvfsMode::Memory as u8),
+            disk_drive: 0,
+        });
+        *guard = Some(data);
     }
+    let ptr: *const HvfsData = guard.as_ref().unwrap().as_ref() as *const HvfsData;
+    drop(guard);
+    unsafe { &*ptr }
 }
 
 impl HvfsData {
@@ -260,8 +262,8 @@ impl HvfsData {
         unsafe { pwid_has_capability(pwid, 3, cap) }
     }
 
-    pub fn open(&self, path: &str, flags: u32, pwid: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+    pub fn open(&self, path: &str, flags: u32, pwid: u64) -> Result<i32, KernelError> {
+        if !self.is_initialized() { return Err(KernelError::NotInitialized); }
         let name = path.trim_start_matches('/');
         let obj_id = {
             let datasets = self.datasets.lock();
@@ -273,14 +275,14 @@ impl HvfsData {
                 }
             }
         };
-        let obj_id = match obj_id { Some(id) => id, None => return -2 };
+        let obj_id = match obj_id { Some(id) => id, None => return Err(KernelError::NotFound) };
         let obj = {
             let datasets = self.datasets.lock();
             datasets[0].objset.get_obj(obj_id)
         };
-        let obj = match obj { Some(o) => o, None => return -1 };
-        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
-        let fd_idx = match self.alloc_fd() { Some(i) => i, None => return -4 };
+        let obj = match obj { Some(o) => o, None => return Err(KernelError::NotFound) };
+        if !self.check_permission(&obj, pwid, 0x01) { return Err(KernelError::PermissionDenied); }
+        let fd_idx = match self.alloc_fd() { Some(i) => i, None => return Err(KernelError::NoSpace) };
         {
             let mut fds = self.fds.lock();
             fds[fd_idx].obj_id = obj_id;
@@ -290,7 +292,7 @@ impl HvfsData {
             fds[fd_idx].pwid = pwid;
         }
         self.zil.add_record(HvZilRecord::new_create(0, 0, name));
-        fd_idx as i32
+        Ok(fd_idx as i32)
     }
 
     pub fn close(&self, fd: u32) -> i32 {

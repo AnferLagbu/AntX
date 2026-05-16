@@ -1,7 +1,3 @@
-//! PWID v5 FFI Interface Layer
-//!
-//! Extern "C" functions for C code to call into the Rust PWID v5 implementation.
-
 use super::types::*;
 use super::table;
 use super::session;
@@ -120,7 +116,7 @@ pub extern "C" fn pwid_find_entry(pwid: u64) -> *const PwidEntry {
 
 #[no_mangle]
 pub extern "C" fn pwid_has_cap_raw(pwid: u64, domain: u16, _cap_bit: u8) -> u64 {
-    engine::get_caps(pwid, domain)
+    engine::get_caps(pwid, CapDomain(domain)).as_u64()
 }
 
 #[no_mangle]
@@ -135,17 +131,17 @@ pub extern "C" fn pwid_create_first_identity(password: *const core::ffi::c_char)
 
 #[no_mangle]
 pub extern "C" fn pwid_get_fs_capability(pwid: u64) -> u64 {
-    engine::get_caps(pwid, 1)
+    engine::get_caps(pwid, CapDomain::FS).as_u64()
 }
 
 #[no_mangle]
 pub extern "C" fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool {
-    engine::check(pwid, domain, required)
+    engine::check(pwid, CapDomain(domain), CapBits(required))
 }
 
 #[no_mangle]
 pub extern "C" fn pwid_get_capability_raw(pwid: u64, domain: u16) -> u64 {
-    engine::get_caps(pwid, domain)
+    engine::get_caps(pwid, CapDomain(domain)).as_u64()
 }
 
 #[no_mangle]
@@ -160,7 +156,7 @@ pub extern "C" fn pwid_get_creator(pwid: u64) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn pwid_grant(grantor_pwid: u64, grantee_pwid: u64, domain: u16, caps: u64) -> i32 {
-    match table::get_table().grant(grantor_pwid, grantee_pwid, domain, caps) {
+    match table::get_table().grant(grantor_pwid, grantee_pwid, CapDomain(domain), CapBits(caps)) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
@@ -168,7 +164,7 @@ pub extern "C" fn pwid_grant(grantor_pwid: u64, grantee_pwid: u64, domain: u16, 
 
 #[no_mangle]
 pub extern "C" fn pwid_revoke(revoker_pwid: u64, target_pwid: u64, domain: u16, caps: u64) -> i32 {
-    match table::get_table().revoke(revoker_pwid, target_pwid, domain, caps) {
+    match table::get_table().revoke(revoker_pwid, target_pwid, CapDomain(domain), CapBits(caps)) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }

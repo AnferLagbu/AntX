@@ -2,7 +2,12 @@ use alloc::vec::Vec;
 use crate::kernel::sync::mutex::Mutex;
 
 pub mod test_barrier;
+pub mod test_barrier_ext;
 pub mod test_hvfs;
+pub mod test_hvfs_ext;
+pub mod test_pwid;
+pub mod test_mm;
+pub mod test_vfs;
 
 pub type TestFn = fn() -> Result<(), &'static str>;
 
@@ -97,9 +102,13 @@ pub fn run_all_tests() {
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === AntX Kernel Test Framework ===");
 
-    // Register all subsystem tests
     test_barrier::register_barrier_tests();
+    test_barrier_ext::register_barrier_ext_tests();
     test_hvfs::register_hvfs_tests();
+    test_hvfs_ext::register_hvfs_ext_tests();
+    test_pwid::register_pwid_tests();
+    test_mm::register_mm_tests();
+    test_vfs::register_vfs_tests();
 
     let r = runner();
     let count = r.tests.lock().len();

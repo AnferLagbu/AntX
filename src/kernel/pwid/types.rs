@@ -13,8 +13,105 @@ pub const PWID_SALT_LEN: usize = 16;
 pub const PWID_DIGEST_LEN: usize = 32;
 pub const MAX_GRANT_RECORDS: usize = 1024;
 
-pub type CapDomain = u16;
-pub type CapBits = u64;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct PwidId(pub u64);
+
+impl PwidId {
+    pub const ZERO: PwidId = PwidId(0);
+    pub const TEST: PwidId = PwidId(0x0020F45A8B978417);
+
+    pub fn is_valid(&self) -> bool {
+        self.0 != 0
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for PwidId {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct CapDomain(pub u16);
+
+impl CapDomain {
+    pub const SYSTEM: CapDomain = CapDomain(0);
+    pub const FS: CapDomain = CapDomain(1);
+    pub const NET: CapDomain = CapDomain(2);
+    pub const PROC: CapDomain = CapDomain(3);
+    pub const DEVICE: CapDomain = CapDomain(4);
+    pub const USER_MGMT: CapDomain = CapDomain(5);
+    pub const IPC: CapDomain = CapDomain(6);
+    pub const MEM: CapDomain = CapDomain(7);
+    pub const TIME: CapDomain = CapDomain(8);
+    pub const BARRIER: CapDomain = CapDomain(9);
+    pub const SIGNAL: CapDomain = CapDomain(10);
+    pub const SHM: CapDomain = CapDomain(11);
+    pub const SEM: CapDomain = CapDomain(12);
+    pub const MSGQ: CapDomain = CapDomain(13);
+    pub const DMA: CapDomain = CapDomain(14);
+    pub const RESERVED: CapDomain = CapDomain(15);
+
+    pub fn as_usize(&self) -> usize {
+        (self.0 as usize) % 16
+    }
+
+    pub fn as_u16(&self) -> u16 {
+        self.0
+    }
+}
+
+impl From<u16> for CapDomain {
+    fn from(v: u16) -> Self {
+        CapDomain(v)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct CapBits(pub u64);
+
+impl CapBits {
+    pub const NONE: CapBits = CapBits(0);
+    pub const ALL: CapBits = CapBits(0xFFFFFFFFFFFFFFFF);
+
+    pub fn contains(&self, other: CapBits) -> bool {
+        (self.0 & other.0) == other.0
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
+impl core::ops::BitOr for CapBits {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self { CapBits(self.0 | rhs.0) }
+}
+
+impl core::ops::BitAnd for CapBits {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self { CapBits(self.0 & rhs.0) }
+}
+
+impl core::ops::BitOrAssign for CapBits {
+    fn bitor_assign(&mut self, rhs: Self) { self.0 |= rhs.0; }
+}
+
+impl core::ops::BitAndAssign for CapBits {
+    fn bitand_assign(&mut self, rhs: Self) { self.0 &= rhs.0; }
+}
+
+impl core::ops::Not for CapBits {
+    type Output = Self;
+    fn not(self) -> Self { CapBits(!self.0) }
+}
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -77,6 +174,14 @@ impl PwidEntry {
         self.pwid.load(core::sync::atomic::Ordering::Acquire) != 0
     }
 
+    pub fn get_pwid(&self) -> PwidId {
+        PwidId(self.pwid.load(core::sync::atomic::Ordering::Acquire))
+    }
+
+    pub fn get_creator_pwid(&self) -> PwidId {
+        PwidId(self.creator_pwid.load(core::sync::atomic::Ordering::Acquire))
+    }
+
     pub fn get_flags(&self) -> PwidFlags {
         PwidFlags::from_bits_truncate(
             self.flags.load(core::sync::atomic::Ordering::Acquire)
@@ -114,28 +219,28 @@ impl PwidEntry {
     }
 
     pub fn load_caps(&self, domain: CapDomain) -> CapBits {
-        let idx = (domain as usize) % 16;
-        self.caps[idx].load(core::sync::atomic::Ordering::Acquire)
+        let idx = domain.as_usize();
+        CapBits(self.caps[idx].load(core::sync::atomic::Ordering::Acquire))
     }
 
     pub fn store_caps(&self, domain: CapDomain, caps: CapBits) {
-        let idx = (domain as usize) % 16;
-        self.caps[idx].store(caps, core::sync::atomic::Ordering::Release);
+        let idx = domain.as_usize();
+        self.caps[idx].store(caps.0, core::sync::atomic::Ordering::Release);
     }
 
     pub fn fetch_or_caps(&self, domain: CapDomain, caps: CapBits) {
-        let idx = (domain as usize) % 16;
-        self.caps[idx].fetch_or(caps, core::sync::atomic::Ordering::AcqRel);
+        let idx = domain.as_usize();
+        self.caps[idx].fetch_or(caps.0, core::sync::atomic::Ordering::AcqRel);
     }
 
     pub fn fetch_and_caps(&self, domain: CapDomain, caps: CapBits) {
-        let idx = (domain as usize) % 16;
-        self.caps[idx].fetch_and(caps, core::sync::atomic::Ordering::AcqRel);
+        let idx = domain.as_usize();
+        self.caps[idx].fetch_and(caps.0, core::sync::atomic::Ordering::AcqRel);
     }
 
     pub fn has_capability(&self, domain: CapDomain, required: CapBits) -> bool {
         let current = self.load_caps(domain);
-        (current & required) == required
+        current.contains(required)
     }
 }
 
@@ -143,14 +248,14 @@ impl PwidEntry {
 #[repr(C)]
 pub struct PwidContext {
     pub current_entry: *const PwidEntry,
-    pub session_pwid: u64,
+    pub session_pwid: PwidId,
 }
 
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct GrantRecord {
-    pub grantor_pwid: u64,
-    pub grantee_pwid: u64,
+    pub grantor_pwid: PwidId,
+    pub grantee_pwid: PwidId,
     pub domain: CapDomain,
     pub caps: CapBits,
     pub granted_at: u64,
@@ -158,15 +263,15 @@ pub struct GrantRecord {
 
 impl GrantRecord {
     pub const EMPTY: Self = Self {
-        grantor_pwid: 0,
-        grantee_pwid: 0,
-        domain: 0,
-        caps: 0,
+        grantor_pwid: PwidId::ZERO,
+        grantee_pwid: PwidId::ZERO,
+        domain: CapDomain(0),
+        caps: CapBits::NONE,
         granted_at: 0,
     };
 
     pub fn is_empty(&self) -> bool {
-        self.grantor_pwid == 0
+        self.grantor_pwid == PwidId::ZERO
     }
 }
 
@@ -197,35 +302,49 @@ impl PwidError {
 }
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum AuditAction {
+    #[default]
+    Login = 1,
+    Logout = 2,
     Create = 3,
     Delete = 4,
     Modify = 5,
+    PasswordChange = 8,
     Grant = 10,
     Revoke = 11,
     TransferCreator = 12,
     FirstTokenGrant = 13,
-    Login = 1,
-    Logout = 2,
-    PasswordChange = 8,
+}
+
+impl AuditAction {
+    pub fn as_u32(self) -> u32 {
+        self as u32
+    }
 }
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum AuditResult {
+    #[default]
     Success = 0,
     Failure = 1,
     Denied = 2,
+}
+
+impl AuditResult {
+    pub fn as_u32(self) -> u32 {
+        self as u32
+    }
 }
 
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct AuditEntry {
     pub timestamp: u64,
-    pub pwid: u64,
-    pub action: u32,
-    pub result: u32,
-    pub target_pwid: u64,
+    pub pwid: PwidId,
+    pub action: AuditAction,
+    pub result: AuditResult,
+    pub target_pwid: PwidId,
     pub details: u64,
 }

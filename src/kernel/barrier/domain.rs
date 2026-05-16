@@ -5,7 +5,7 @@ use super::undo_log::UndoLog;
 
 pub struct RecoveryDomain {
     pub id: u64,
-    pub state: AtomicU32,
+    state: AtomicU32,
     pub barrier_generation: AtomicU64,
     pub barrier_interval_ticks: u64,
     pub next_barrier_tick: AtomicU64,
@@ -29,7 +29,7 @@ pub struct RecoveryDomain {
     pub barrier_stack: spin::Mutex<[BarrierSnapshot; MAX_BARRIER_SNAPSHOTS]>,
     pub barrier_stack_top: AtomicU32,
     pub addr_ranges: spin::Mutex<[(u64, u64); MAX_ADDR_RANGES]>,
-    pub addr_range_count: AtomicU32,
+    addr_range_count: AtomicU32,
 }
 
 unsafe impl Send for RecoveryDomain {}
@@ -69,8 +69,12 @@ impl RecoveryDomain {
         }
     }
 
+    pub fn set_state(&self, new_state: DomainState, ordering: Ordering) {
+        self.state.store(new_state as u32, ordering);
+    }
+
     pub fn get_state(&self) -> DomainState {
-        DomainState::from_u32(self.state.load(Ordering::SeqCst))
+        DomainState::from_u32_fallback(self.state.load(Ordering::SeqCst))
     }
 
     pub fn is_active(&self) -> bool {
@@ -82,14 +86,14 @@ impl RecoveryDomain {
         let failures = self.consecutive_failures.load(Ordering::SeqCst);
 
         if failures >= MAX_CONSECUTIVE_FAILURES {
-            self.state.store(DomainState::Quarantined as u32, Ordering::SeqCst);
+            self.set_state(DomainState::Quarantined, Ordering::SeqCst);
             return false;
         }
 
         let prev_fp = self.last_crash_fingerprint.swap(crash_fingerprint, Ordering::SeqCst);
         if crash_fingerprint != 0 && prev_fp == crash_fingerprint {
             self.consecutive_failures.store(MAX_CONSECUTIVE_FAILURES, Ordering::SeqCst);
-            self.state.store(DomainState::Quarantined as u32, Ordering::SeqCst);
+            self.set_state(DomainState::Quarantined, Ordering::SeqCst);
             return false;
         }
 
@@ -116,15 +120,15 @@ impl RecoveryDomain {
             3 => {
                 let degraded = original & !(CAP_FS_WRITE);
                 self.dom_cap_mask.store(degraded, Ordering::SeqCst);
-                self.state.store(DomainState::Degraded as u32, Ordering::SeqCst);
+                self.set_state(DomainState::Degraded, Ordering::SeqCst);
             }
             4 => {
                 let degraded = original & !(CAP_FS_WRITE | CAP_NET_SEND | CAP_PROC_CREATE);
                 self.dom_cap_mask.store(degraded, Ordering::SeqCst);
-                self.state.store(DomainState::Degraded as u32, Ordering::SeqCst);
+                self.set_state(DomainState::Degraded, Ordering::SeqCst);
             }
             _ => {
-                self.state.store(DomainState::Quarantined as u32, Ordering::SeqCst);
+                self.set_state(DomainState::Quarantined, Ordering::SeqCst);
             }
         }
     }
@@ -194,7 +198,7 @@ impl RecoveryDomain {
             tick,
             undo_offset: undo_count,
         };
-        self.barrier_stack_top.store((top as u32) + 1, Ordering::SeqCst);
+        self.barrier_stack_top.store(top as u32 + 1, Ordering::SeqCst);
     }
 
     pub fn get_rollback_generation(&self, levels_back: u32) -> u64 {
@@ -211,7 +215,7 @@ impl RecoveryDomain {
         if count >= MAX_ADDR_RANGES { return false; }
         let mut ranges = self.addr_ranges.lock();
         ranges[count] = (start, end);
-        self.addr_range_count.store((count + 1) as u32, Ordering::SeqCst);
+        self.addr_range_count.store(count as u32 + 1, Ordering::SeqCst);
         true
     }
 

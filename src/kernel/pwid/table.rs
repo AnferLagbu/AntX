@@ -1,7 +1,3 @@
-//! PWID v5 Table - Core Identity Management
-//!
-//! Manages PWID entries: create, find, grant, revoke, transfer_creator, bootstrap.
-
 use super::types::*;
 use super::sha256;
 use super::audit;
@@ -247,9 +243,12 @@ impl PwidTable {
         &self,
         grantor_pwid: u64,
         grantee_pwid: u64,
-        domain: CapDomain,
-        caps: CapBits,
+        domain: impl Into<CapDomain>,
+        caps: impl Into<CapBits>,
     ) -> Result<(), PwidError> {
+        let domain = domain.into();
+        let caps = caps.into();
+
         let grantor = self.find(grantor_pwid).ok_or(PwidError::NotFound)?;
         let grantee = self.find(grantee_pwid).ok_or(PwidError::NotFound)?;
 
@@ -271,14 +270,14 @@ impl PwidTable {
         grantee.fetch_or_caps(domain, caps);
 
         grant_record::add_record(GrantRecord {
-            grantor_pwid,
-            grantee_pwid,
+            grantor_pwid: PwidId(grantor_pwid),
+            grantee_pwid: PwidId(grantee_pwid),
             domain,
             caps,
             granted_at: first_token::pwid_now(),
         })?;
 
-        audit::log(grantor_pwid, AuditAction::Grant, grantee_pwid, domain as u64, caps);
+        audit::log(grantor_pwid, AuditAction::Grant, grantee_pwid, domain.as_u16() as u64, caps.as_u64());
 
         Ok(())
     }
@@ -287,9 +286,12 @@ impl PwidTable {
         &self,
         revoker_pwid: u64,
         target_pwid: u64,
-        domain: CapDomain,
-        caps: CapBits,
+        domain: impl Into<CapDomain>,
+        caps: impl Into<CapBits>,
     ) -> Result<(), PwidError> {
+        let domain = domain.into();
+        let caps = caps.into();
+
         let revoker = self.find(revoker_pwid).ok_or(PwidError::NotFound)?;
         let target = self.find(target_pwid).ok_or(PwidError::NotFound)?;
 
@@ -310,7 +312,7 @@ impl PwidTable {
 
         let current = target.load_caps(domain);
         let after_revoke = current & !caps;
-        if (after_revoke & VIABLE_FLOOR[domain as usize]) != VIABLE_FLOOR[domain as usize] {
+        if (after_revoke & CapBits(VIABLE_FLOOR[domain.as_usize()])) != CapBits(VIABLE_FLOOR[domain.as_usize()]) {
             return Err(PwidError::WouldBreakFloor);
         }
 
@@ -320,7 +322,7 @@ impl PwidTable {
 
         self.set_modified();
 
-        audit::log(revoker_pwid, AuditAction::Revoke, target_pwid, domain as u64, caps);
+        audit::log(revoker_pwid, AuditAction::Revoke, target_pwid, domain.as_u16() as u64, caps.as_u64());
 
         Ok(())
     }
@@ -365,8 +367,8 @@ impl PwidTable {
 
         let pwid = self.create(password, note, 0)?;
 
-        for i in 0..16 {
-            first_token::grant_from_first_token(pwid, i as CapDomain, 0xFFFFFFFFFFFFFFFF)?;
+        for i in 0..16u16 {
+            first_token::grant_from_first_token(pwid, CapDomain(i), CapBits::ALL)?;
         }
 
         Ok(pwid)
@@ -382,8 +384,8 @@ impl PwidTable {
 
         first_token::generate_first_token();
 
-        for i in 0..16 {
-            first_token::grant_from_first_token(pwid, i as CapDomain, 0xFFFFFFFFFFFFFFFF)?;
+        for i in 0..16u16 {
+            first_token::grant_from_first_token(pwid, CapDomain(i), CapBits::ALL)?;
         }
 
         Ok(pwid)

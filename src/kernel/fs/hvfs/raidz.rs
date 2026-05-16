@@ -106,37 +106,47 @@ impl HvRaidzMap {
     pub fn reconstruct_data(&self, parity_data: &[Vec<u8>], failed_cols: &[usize]) -> Option<Vec<u8>> {
         let data_cols = self.data_cols();
         if failed_cols.len() > self.level.max_failures() { return None; }
-        let unit_size = 4096;
-        let mut all_data = parity_data.to_vec();
-        for &failed in failed_cols {
-            if failed < self.ncols {
-                all_data[failed] = vec![0u8; all_data[failed].len()];
-            }
+
+        if self.level != HvRaidzLevel::Single && !failed_cols.is_empty() {
+            return None;
         }
-        for &failed in failed_cols {
+
+        if self.level == HvRaidzLevel::RaidZ1 && failed_cols.len() == 1 {
+            let failed = failed_cols[0];
             if failed >= self.nparity && failed < self.ncols {
-                let mut reconstructed = vec![0u8; all_data[failed].len()];
-                for p in 0..self.nparity {
-                    for col in 0..data_cols {
-                        let dcol = self.nparity + col;
-                        if dcol == failed { continue; }
-                        let src = &all_data[dcol];
-                        for (i, byte) in src.iter().enumerate() {
-                            if i < reconstructed.len() {
-                                reconstructed[i] ^= byte;
+                let unit_size = 4096;
+                let total_units = parity_data.get(self.nparity).map(|d| d.len() / unit_size).unwrap_or(0);
+                let mut reconstructed = vec![0u8; total_units * unit_size];
+                for unit_idx in 0..total_units {
+                    let mut block = vec![0u8; unit_size];
+                    for col in 0..self.ncols {
+                        if col == failed { continue; }
+                        let src = &parity_data[col];
+                        let src_start = unit_idx * unit_size;
+                        let src_end = (src_start + unit_size).min(src.len());
+                        if src_start < src.len() {
+                            for (i, byte) in src[src_start..src_end].iter().enumerate() {
+                                block[i] ^= byte;
                             }
                         }
                     }
-                    let parity = &all_data[p];
-                    for (i, byte) in parity.iter().enumerate() {
-                        if i < reconstructed.len() {
-                            reconstructed[i] ^= byte;
-                        }
+                    let dst_start = unit_idx * unit_size;
+                    let dst_end = (dst_start + unit_size).min(reconstructed.len());
+                    reconstructed[dst_start..dst_end].copy_from_slice(&block[..dst_end - dst_start]);
+                }
+                let mut result = Vec::new();
+                for col in self.nparity..self.ncols {
+                    if col == failed {
+                        result.extend_from_slice(&reconstructed);
+                    } else {
+                        result.extend_from_slice(&parity_data[col]);
                     }
                 }
-                all_data[failed] = reconstructed;
+                return Some(result);
             }
         }
+
+        let mut all_data = parity_data.to_vec();
         let mut result = Vec::new();
         for col in self.nparity..self.ncols {
             result.extend_from_slice(&all_data[col]);

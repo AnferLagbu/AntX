@@ -14,6 +14,7 @@ pub const CAP_NET_SEND: u64 = 1 << 1;
 pub const CAP_PROC_CREATE: u64 = 1 << 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
 pub enum DomainState {
     Active = 0,
     Freezing = 1,
@@ -24,13 +25,17 @@ pub enum DomainState {
 }
 
 impl DomainState {
-    pub fn from_u32(v: u32) -> Self {
+    pub fn from_u32(v: u32) -> Option<Self> {
         match v {
-            0 => Self::Active, 1 => Self::Freezing,
-            2 => Self::RollingBack, 3 => Self::Recovering,
-            4 => Self::Degraded, 5 => Self::Quarantined,
-            _ => Self::Active,
+            0 => Some(Self::Active), 1 => Some(Self::Freezing),
+            2 => Some(Self::RollingBack), 3 => Some(Self::Recovering),
+            4 => Some(Self::Degraded), 5 => Some(Self::Quarantined),
+            _ => None,
         }
+    }
+
+    pub fn from_u32_fallback(v: u32) -> Self {
+        Self::from_u32(v).unwrap_or(Self::Quarantined)
     }
 }
 

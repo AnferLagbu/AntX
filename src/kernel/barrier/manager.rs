@@ -20,6 +20,21 @@ fn log_rollback_event(event: RollbackEvent) {
     );
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanicDomainMapping {
+    pub prefix: &'static [u8],
+    pub domain_id: u64,
+}
+
+const PANIC_DOMAIN_MAP: [PanicDomainMapping; 6] = [
+    PanicDomainMapping { prefix: b"PMM",   domain_id: 3 },
+    PanicDomainMapping { prefix: b"PROC",  domain_id: 4 },
+    PanicDomainMapping { prefix: b"NET",   domain_id: 5 },
+    PanicDomainMapping { prefix: b"VFS",   domain_id: 2 },
+    PanicDomainMapping { prefix: b"HvFS",  domain_id: 2 },
+    PanicDomainMapping { prefix: b"RAMFS", domain_id: 2 },
+];
+
 pub struct RecoveryManager {
     pub domains: [Option<&'static RecoveryDomain>; MAX_RECOVERY_DOMAINS],
     pub direct_map: [Option<&'static RecoveryDomain>; DIRECT_MAP_SIZE],
@@ -92,26 +107,12 @@ impl RecoveryManager {
         let msg = super::PANIC_MSG.lock();
         let count = self.count.load(Ordering::SeqCst) as usize;
 
-        let prefixes: &[(&[u8], u64)] = &[
-            (b"PMM", 3), (b"PROC", 4), (b"NET", 5),
-            (b"VFS", 2), (b"HvFS", 2), (b"RAMFS", 2),
-        ];
-
-        for &(prefix, domain_id) in prefixes {
-            if msg.len() >= prefix.len() {
-                let mut found = true;
-                for j in 0..prefix.len() {
-                    if msg[j] != prefix[j] {
-                        found = false;
-                        break;
-                    }
-                }
-                if found {
-                    for i in 0..count {
-                        if let Some(dom) = self.domains[i] {
-                            if dom.id == domain_id {
-                                return Some(domain_id);
-                            }
+        for mapping in &PANIC_DOMAIN_MAP {
+            if msg.len() >= mapping.prefix.len() && msg[..mapping.prefix.len()] == *mapping.prefix {
+                for i in 0..count {
+                    if let Some(dom) = self.domains[i] {
+                        if dom.id == mapping.domain_id {
+                            return Some(mapping.domain_id);
                         }
                     }
                 }
@@ -128,7 +129,7 @@ impl RecoveryManager {
             gen_from
         };
 
-        dom.state.store(DomainState::RollingBack as u32, Ordering::SeqCst);
+        dom.set_state(DomainState::RollingBack, Ordering::SeqCst);
 
         let entries_rolled_back;
         {
@@ -142,7 +143,7 @@ impl RecoveryManager {
         }
 
         let result = if entries_rolled_back > 0 { 0 } else { -1 };
-        dom.state.store(DomainState::Active as u32, Ordering::SeqCst);
+        dom.set_state(DomainState::Active, Ordering::SeqCst);
         dom.mark_recovered();
 
         log_rollback_event(RollbackEvent {

@@ -1,7 +1,3 @@
-//! PWID v5 Grant Record Management
-//!
-//! Tracks who granted what capabilities to whom.
-
 use super::types::*;
 use core::sync::atomic::Ordering;
 
@@ -42,8 +38,8 @@ pub fn is_grantor(grantor_pwid: u64, grantee_pwid: u64, domain: CapDomain, caps:
     let records = unsafe { &GRANT_RECORDS };
     let mut found = false;
     for record in records.iter() {
-        if record.grantor_pwid == grantor_pwid
-            && record.grantee_pwid == grantee_pwid
+        if record.grantor_pwid.0 == grantor_pwid
+            && record.grantee_pwid.0 == grantee_pwid
             && record.domain == domain
             && (record.caps & caps) == caps
         {
@@ -59,12 +55,12 @@ pub fn clear_records(revoker_pwid: u64, target_pwid: u64, domain: CapDomain, cap
     lock_grants();
     let records = unsafe { &mut GRANT_RECORDS };
     for record in records.iter_mut() {
-        if record.grantor_pwid == revoker_pwid
-            && record.grantee_pwid == target_pwid
+        if record.grantor_pwid.0 == revoker_pwid
+            && record.grantee_pwid.0 == target_pwid
             && record.domain == domain
         {
-            record.caps &= !caps;
-            if record.caps == 0 {
+            record.caps = CapBits(record.caps.0 & !caps.0);
+            if record.caps == CapBits::NONE {
                 *record = GrantRecord::EMPTY;
             }
         }

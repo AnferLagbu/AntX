@@ -128,12 +128,15 @@ impl HvArcStats {
     }
 }
 
+const HV_ARC_HASH_BUCKETS: usize = 256;
+
 struct HvArcInner {
     mru: VecDeque<usize>,
     mfu: VecDeque<usize>,
     ghost_mru: VecDeque<HvArcKey>,
     ghost_mfu: VecDeque<HvArcKey>,
     buffers: Vec<Option<HvArcBuf>>,
+    hash_table: Vec<Vec<usize>>,
     max_size: usize,
     p: usize,
 }
@@ -156,6 +159,7 @@ impl HvArc {
                 ghost_mru: VecDeque::new(),
                 ghost_mfu: VecDeque::new(),
                 buffers: Vec::new(),
+                hash_table: (0..HV_ARC_HASH_BUCKETS).map(|_| Vec::new()).collect(),
                 max_size: HV_ARC_DEFAULT_SIZE,
                 p: 0,
             }),
@@ -173,17 +177,22 @@ impl HvArc {
         inner.mfu.clear();
         inner.ghost_mru.clear();
         inner.ghost_mfu.clear();
+        for bucket in inner.hash_table.iter_mut() {
+            bucket.clear();
+        }
         inner.p = max / 2;
         self.initialized.store(true, Ordering::Release);
     }
 
     pub fn lookup(&self, key: &HvArcKey) -> Option<*const u8> {
         let mut inner = self.inner.lock();
+        let bucket_idx = (key.hash() as usize) % HV_ARC_HASH_BUCKETS;
         let mut found_idx: Option<usize> = None;
         let mut found_ptr: Option<*const u8> = None;
         let mut promote_to_mfu = false;
-        for (idx, slot) in inner.buffers.iter_mut().enumerate() {
-            if let Some(ref mut buf) = slot {
+
+        for &idx in &inner.hash_table[bucket_idx] {
+            if let Some(ref buf) = inner.buffers[idx] {
                 if buf.key.vdev_id == key.vdev_id
                     && buf.key.offset == key.offset
                     && buf.key.birth_txg == key.birth_txg
@@ -194,12 +203,14 @@ impl HvArc {
                     } else if buf.state == HvArcState::Mfu {
                         self.stats.mfu_hits.fetch_add(1, Ordering::Relaxed);
                     }
-                    buf.access_count += 1;
-                    if buf.state == HvArcState::Mru {
-                        promote_to_mfu = true;
+                    if let Some(ref mut buf) = inner.buffers[idx] {
+                        buf.access_count += 1;
+                        if buf.state == HvArcState::Mru {
+                            promote_to_mfu = true;
+                        }
+                        buf.add_ref();
+                        found_ptr = Some(buf.data.as_ptr());
                     }
-                    buf.add_ref();
-                    found_ptr = Some(buf.data.as_ptr());
                     found_idx = Some(idx);
                     break;
                 }
@@ -251,6 +262,8 @@ impl HvArc {
                 inner.buffers.len() - 1
             }
         };
+        let bucket_idx = (key.hash() as usize) % HV_ARC_HASH_BUCKETS;
+        inner.hash_table[bucket_idx].push(idx);
         inner.mru.push_back(idx);
         self.stats.size.fetch_add(data.len() as u64, Ordering::Relaxed);
         if buf_type == HvArcBufType::Data {
@@ -271,6 +284,8 @@ impl HvArc {
             if inner.mru.len() > inner.p {
                 if let Some(idx) = inner.mru.pop_front() {
                     if let Some(buf) = inner.buffers[idx].take() {
+                        let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
+                        inner.hash_table[bucket_idx].retain(|&i| i != idx);
                         inner.ghost_mru.push_back(buf.key);
                         self.stats.mru_size.fetch_sub(buf.size as u64, Ordering::Relaxed);
                         self.stats.size.fetch_sub(buf.size as u64, Ordering::Relaxed);
@@ -280,6 +295,8 @@ impl HvArc {
             } else {
                 if let Some(idx) = inner.mfu.pop_front() {
                     if let Some(buf) = inner.buffers[idx].take() {
+                        let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
+                        inner.hash_table[bucket_idx].retain(|&i| i != idx);
                         inner.ghost_mfu.push_back(buf.key);
                         self.stats.mfu_size.fetch_sub(buf.size as u64, Ordering::Relaxed);
                         self.stats.size.fetch_sub(buf.size as u64, Ordering::Relaxed);

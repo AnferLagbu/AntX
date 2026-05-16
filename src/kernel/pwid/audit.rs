@@ -1,7 +1,3 @@
-//! PWID v5 Audit Log
-//!
-//! Ring buffer audit logging for security events.
-
 use super::types::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -17,10 +13,10 @@ impl AuditLog {
         Self {
             entries: [AuditEntry {
                 timestamp: 0,
-                pwid: 0,
-                action: 0,
-                result: 0,
-                target_pwid: 0,
+                pwid: PwidId::ZERO,
+                action: AuditAction::Login,
+                result: AuditResult::Success,
+                target_pwid: PwidId::ZERO,
                 details: 0,
             }; AUDIT_CAPACITY],
             count: AtomicUsize::new(0),
@@ -34,10 +30,10 @@ impl AuditLog {
         let ep = entry as *const AuditEntry as *mut AuditEntry;
         unsafe {
             (*ep).timestamp = now;
-            (*ep).pwid = pwid;
-            (*ep).action = action as u32;
-            (*ep).result = AuditResult::Success as u32;
-            (*ep).target_pwid = target_pwid;
+            (*ep).pwid = PwidId(pwid);
+            (*ep).action = action;
+            (*ep).result = AuditResult::Success;
+            (*ep).target_pwid = PwidId(target_pwid);
             (*ep).details = (domain << 32) | (caps & 0xFFFFFFFF);
         }
     }
@@ -51,9 +47,9 @@ impl AuditLog {
             } else {
                 i
             };
-            let _e = &self.entries[idx];
+            let e = &self.entries[idx];
             crate::serial_println!("[AUDIT] t={} pwid={:#x} action={} target={:#x} details={:#x}",
-                e.timestamp, e.pwid, e.action, e.target_pwid, e.details);
+                e.timestamp, e.pwid.as_u64(), e.action.as_u32(), e.target_pwid.as_u64(), e.details);
         }
     }
 

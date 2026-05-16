@@ -29,7 +29,10 @@ fn cstr_to_str(ptr: *const c_char) -> &'static str {
 #[no_mangle]
 pub extern "C" fn hvfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path_str = cstr_to_str(path);
-    crate::kernel::fs::hvfs::hvfs::get_hvfs().open(path_str, flags, pwid)
+    match crate::kernel::fs::hvfs::hvfs::get_hvfs().open(path_str, flags, pwid) {
+        Ok(fd) => fd,
+        Err(e) => e.as_i32(),
+    }
 }
 
 #[no_mangle]

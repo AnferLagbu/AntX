@@ -3,6 +3,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use alloc::vec::Vec;
 
 use crate::kernel::fs::vfs::types::*;
+use crate::kernel::fs::vfs::types::KernelError;
 
 extern "C" {
     fn pwid_get_privilege_level(pwid: u64) -> u8;
@@ -749,7 +750,7 @@ impl RamFsData {
         let inode = &self.inodes[inode_num as usize];
 
         if !self.check_permission(inode, pwid, FS_CAP_READ) {
-            return -1;
+            return KernelError::PermissionDenied.as_i32();
         }
 
         let mut bytes_read = 0usize;
@@ -794,7 +795,7 @@ impl RamFsData {
     
     pub fn write(&mut self, inode_num: u32, offset: &mut u64, buf: &[u8], pwid: u64) -> i32 {
         if !self.check_permission(&self.inodes[inode_num as usize], pwid, FS_CAP_CREATE) {
-            return -1;
+            return KernelError::PermissionDenied.as_i32();
         }
 
         let mut bytes_written = 0usize;
@@ -1195,7 +1196,7 @@ impl RamFsData {
         })
     }
 
-    pub fn seek(&self, inode_num: u32, offset: i64, whence: VfsSeekWhence) -> Option<u64> {
+    pub fn seek(&self, inode_num: u32, current_offset: u64, offset: i64, whence: VfsSeekWhence) -> Option<u64> {
         if inode_num as usize >= RAMFS_MAX_INODES {
             return None;
         }
@@ -1210,7 +1211,7 @@ impl RamFsData {
         let new_offset = match whence {
             VfsSeekWhence::Set => offset,
             VfsSeekWhence::Cur => {
-                let current = 0i64;
+                let current = current_offset as i64;
                 current + offset
             }
             VfsSeekWhence::End => file_size + offset,

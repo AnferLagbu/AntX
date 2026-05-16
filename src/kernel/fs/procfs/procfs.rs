@@ -109,10 +109,38 @@ impl ProcfsData {
     
     pub fn read(&self, name: &str, buf: &mut [u8]) -> i32 {
         if name == "cpuinfo" {
-            let info = b"CPU: x86_64 (AMD64)\nVendor: AntX\nCores: 1\n";
-            let len = info.len().min(buf.len());
-            buf[..len].copy_from_slice(&info[..len]);
-            return len as i32;
+            let mut pos = 0usize;
+            let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
+                let b = s.as_bytes();
+                let end = (*pos + b.len()).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&b[..len]);
+                *pos += len;
+            };
+
+            let cpu_info = crate::kernel::cpu::get_cpu_info();
+            match cpu_info {
+                Some(info) => {
+                    write_str(buf, &mut pos, "CPU: ");
+                    write_str(buf, &mut pos, info.brand_name());
+                    write_str(buf, &mut pos, "\nVendor: ");
+                    write_str(buf, &mut pos, info.vendor.name());
+                    write_str(buf, &mut pos, "\nCores: ");
+                    let cores = info.topology.physical_cores;
+                    if cores >= 10 {
+                        buf[pos] = (cores / 10) as u8 + b'0'; pos += 1;
+                    }
+                    buf[pos] = (cores % 10) as u8 + b'0'; pos += 1;
+                    write_str(buf, &mut pos, "\n");
+                }
+                None => {
+                    let info = b"CPU: x86_64 (Unknown)\nVendor: N/A\nCores: 1\n";
+                    let len = info.len().min(buf.len());
+                    buf[..len].copy_from_slice(&info[..len]);
+                    return len as i32;
+                }
+            }
+            return pos as i32;
         }
         
         if name == "meminfo" {

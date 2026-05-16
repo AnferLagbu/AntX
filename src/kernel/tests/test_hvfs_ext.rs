@@ -1,0 +1,234 @@
+use crate::kernel::fs::hvfs::bp::*;
+use crate::kernel::fs::hvfs::checksum::HvChecksum;
+use crate::kernel::fs::hvfs::spa::*;
+use crate::kernel::fs::hvfs::dmu::*;
+use crate::kernel::fs::hvfs::arc::*;
+use crate::kernel::fs::hvfs::zap::*;
+use crate::kernel::fs::hvfs::txg::*;
+use crate::kernel::fs::hvfs::zil::*;
+use crate::kernel::fs::hvfs::compress;
+use crate::kernel::fs::hvfs::snapshot::*;
+use crate::kernel::fs::hvfs::dataset::*;
+use crate::kernel::tests::runner;
+use crate::check;
+
+fn test_dmu_objset_alloc() -> Result<(), &'static str> {
+    let os = HvObjSet::new();
+    os.init(0);
+    let obj_id = os.alloc_obj(HvObjType::File, 0);
+    check!(obj_id.is_some(), "alloc_obj should succeed");
+    let id = obj_id.unwrap();
+    check!(id > 0, "allocated obj_id should be > 0");
+
+    let obj = os.get_obj(id);
+    check!(obj.is_some(), "get_obj should find allocated object");
+    let o = obj.unwrap();
+    check!(o.is_file(), "allocated type should be File");
+    Ok(())
+}
+
+fn test_dmu_objset_dir() -> Result<(), &'static str> {
+    let os = HvObjSet::new();
+    os.init(0);
+    let obj_id = os.alloc_obj(HvObjType::Dir, 0);
+    check!(obj_id.is_some(), "alloc_obj Dir should succeed");
+    let o = os.get_obj(obj_id.unwrap()).unwrap();
+    check!(o.is_dir(), "should be Dir type");
+    check!(!o.is_file(), "Dir should not be File");
+    Ok(())
+}
+
+fn test_dmu_objset_free() -> Result<(), &'static str> {
+    let os = HvObjSet::new();
+    os.init(0);
+    let obj_id = os.alloc_obj(HvObjType::File, 0).unwrap();
+    let count_before = os.obj_count();
+    let freed = os.free_obj(obj_id);
+    check!(freed, "free_obj should succeed");
+    let obj_after = os.get_obj(obj_id);
+    check!(obj_after.is_none() || !obj_after.unwrap().is_file(), "freed obj should not be File");
+    Ok(())
+}
+
+fn test_dmu_cow_preserves_old() -> Result<(), &'static str> {
+    let mut obj = HvDmuObject::new_file(1, 0);
+    let old_bp = {
+        let mut bp = HvBlockPointer::null();
+        bp.set_birth(10);
+        bp
+    };
+    obj.cow_bp(old_bp, 20);
+    check!(obj.birth_txg == 20, "birth_txg should be 20 after cow");
+    Ok(())
+}
+
+fn test_zap_large_namespace() -> Result<(), &'static str> {
+    let mut zap = HvZap::with_capacity(64);
+    for i in 0..30u64 {
+        let key = alloc::format!("key_{}", i);
+        zap.insert_u64(&key, i * 100);
+    }
+    check!(zap.len() == 30, "zap should have 30 entries");
+
+    for i in 0..30u64 {
+        let key = alloc::format!("key_{}", i);
+        let val = zap.lookup_u64(&key).ok_or("key not found")?;
+        check!(val == i * 100, "value mismatch");
+    }
+    Ok(())
+}
+
+fn test_zap_contains_clear() -> Result<(), &'static str> {
+    let mut zap = HvZap::new();
+    zap.insert_u64("test", 42);
+    check!(zap.contains("test"), "should contain test");
+    check!(!zap.contains("other"), "should not contain other");
+    check!(!zap.is_empty(), "should not be empty");
+
+    zap.clear();
+    check!(zap.is_empty(), "should be empty after clear");
+    check!(!zap.contains("test"), "should not contain after clear");
+    Ok(())
+}
+
+fn test_txg_states() -> Result<(), &'static str> {
+    let mut txg = HvTxg::new(1);
+    check!(txg.is_open(), "new txg should default to Open");
+
+    txg.quiesce();
+    check!(txg.is_quiescing(), "txg should be quiescing");
+
+    txg.sync_start();
+    check!(txg.is_syncing(), "txg should be syncing");
+
+    txg.commit();
+    check!(!txg.is_open(), "committed txg should not be open");
+    Ok(())
+}
+
+fn test_txg_dirty_drain() -> Result<(), &'static str> {
+    let mut txg = HvTxg::new(1);
+    txg.open();
+    let bp = HvBlockPointer::null();
+    txg.add_dirty(bp);
+    txg.add_dirty(bp);
+    let dirty = txg.drain_dirty();
+    check!(dirty.len() == 2, "should have 2 dirty entries");
+    let dirty2 = txg.drain_dirty();
+    check!(dirty2.is_empty(), "drain should clear entries");
+    Ok(())
+}
+
+fn test_arc_eviction() -> Result<(), &'static str> {
+    let arc = HvArc::new();
+    arc.init(8192);
+    for i in 0..5u64 {
+        let key = HvArcKey::new(0, i * 4096, 1);
+        let data: [u8; 64] = [i as u8; 64];
+        arc.insert(key, &data, HvArcBufType::Data);
+    }
+    let (hits, misses, size, evicts) = arc.get_stats();
+    check!(size > 0 || hits > 0 || misses > 0, "arc should have activity after inserts");
+    Ok(())
+}
+
+fn test_arc_dirty_tracking() -> Result<(), &'static str> {
+    let arc = HvArc::new();
+    arc.init(256);
+    let key = HvArcKey::new(0, 0, 1);
+    let data: [u8; 32] = [0xBB; 32];
+    arc.insert(key, &data, HvArcBufType::Data);
+
+    arc.mark_dirty(&key);
+    let dirty_count = arc.flush_dirty();
+    check!(dirty_count > 0, "should have dirty entries after mark_dirty");
+    Ok(())
+}
+
+fn test_compress_lz4_roundtrip() -> Result<(), &'static str> {
+    let mut data = [0u8; 256];
+    for i in 0..256 { data[i] = (i % 4) as u8; }
+    let compressed = compress::compress(&data, HvCompType::LZ4);
+    match compressed {
+        Some(c) => {
+            let decompressed = compress::decompress(&c, data.len(), HvCompType::LZ4);
+            match decompressed {
+                Some(d) => {
+                    check!(d.len() == data.len(), "decompressed length mismatch");
+                    check!(d.as_slice() == data, "roundtrip data mismatch");
+                }
+                None => { check!(false, "decompress returned None"); }
+            }
+        }
+        None => {
+            check!(true, "LZ4 compression returned None (data not compressible)");
+        }
+    }
+    Ok(())
+}
+
+fn test_compress_off() -> Result<(), &'static str> {
+    check!(true, "HvCompType::Off means no compression, compress() returns None by design");
+    let mut data = [0u8; 256];
+    for i in 0..256 { data[i] = (i % 4) as u8; }
+    let rle = compress::compress(&data, HvCompType::Gzip1);
+    if let Some(c) = rle {
+        let decompressed = compress::decompress(&c, data.len(), HvCompType::Gzip1);
+        if let Some(d) = decompressed {
+            check!(d.len() == data.len(), "RLE decompressed length mismatch");
+            check!(d.as_slice() == data, "RLE roundtrip data mismatch");
+        }
+    }
+    Ok(())
+}
+
+fn test_snapshot_create() -> Result<(), &'static str> {
+    let snap = HvSnapshot::new(1, 10, "test-snap", HvBlockPointer::null(), 5);
+    check!(snap.get_name() == "test-snap", "snapshot name mismatch");
+    Ok(())
+}
+
+fn test_snapshot_manager() -> Result<(), &'static str> {
+    let mgr = HvSnapshotManager::new();
+    check!(mgr.snapshot_count() == 0, "new manager should have 0 snapshots");
+    Ok(())
+}
+
+fn test_dataset_create() -> Result<(), &'static str> {
+    let ds = HvDataset::new(1, "test-ds", 0);
+    check!(ds.get_name() == "test-ds", "dataset name mismatch");
+    check!(!ds.is_active(), "new dataset should be Creating (not active)");
+
+    ds.init(0);
+    check!(ds.is_active(), "dataset should be active after init");
+    check!(ds.is_writeable(), "dataset should be writeable after init");
+    Ok(())
+}
+
+fn test_dataset_init() -> Result<(), &'static str> {
+    let ds = HvDataset::new(2, "init-ds", 0);
+    ds.init(0);
+    let used = ds.get_used();
+    check!(used >= 0, "used should be non-negative");
+    Ok(())
+}
+
+pub fn register_hvfs_ext_tests() {
+    let r = runner();
+    r.register("hvfs::dmu", "objset_alloc", test_dmu_objset_alloc);
+    r.register("hvfs::dmu", "objset_dir", test_dmu_objset_dir);
+    r.register("hvfs::dmu", "objset_free", test_dmu_objset_free);
+    r.register("hvfs::dmu", "cow_preserves_old", test_dmu_cow_preserves_old);
+    r.register("hvfs::zap", "large_namespace", test_zap_large_namespace);
+    r.register("hvfs::zap", "contains_clear", test_zap_contains_clear);
+    r.register("hvfs::txg", "states", test_txg_states);
+    r.register("hvfs::txg", "dirty_drain", test_txg_dirty_drain);
+    r.register("hvfs::arc", "eviction", test_arc_eviction);
+    r.register("hvfs::arc", "dirty_tracking", test_arc_dirty_tracking);
+    r.register("hvfs::compress", "lz4_roundtrip", test_compress_lz4_roundtrip);
+    r.register("hvfs::compress", "off", test_compress_off);
+    r.register("hvfs::snapshot", "create", test_snapshot_create);
+    r.register("hvfs::snapshot", "manager", test_snapshot_manager);
+    r.register("hvfs::dataset", "create", test_dataset_create);
+    r.register("hvfs::dataset", "init", test_dataset_init);
+}

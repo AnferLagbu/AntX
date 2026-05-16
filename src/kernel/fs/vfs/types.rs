@@ -4,12 +4,65 @@ pub const VFS_MAX_FDS: usize = 32;
 pub const VFS_MAX_MOUNTS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
+pub enum KernelError {
+    NotFound,
+    AlreadyExists,
+    NoSpace,
+    PermissionDenied,
+    InvalidArgument,
+    NotInitialized,
+    IoError,
+    OutOfMemory,
+    Busy,
+    NotSupported,
+    NotADirectory,
+    IsDirectory,
+    ReadOnly,
+    Overflow,
+}
+
+impl KernelError {
+    pub fn as_i32(self) -> i32 {
+        match self {
+            Self::NotFound => -2,
+            Self::AlreadyExists => -17,
+            Self::NoSpace => -28,
+            Self::PermissionDenied => -13,
+            Self::InvalidArgument => -22,
+            Self::NotInitialized => -5,
+            Self::IoError => -5,
+            Self::OutOfMemory => -12,
+            Self::Busy => -16,
+            Self::NotSupported => -95,
+            Self::NotADirectory => -20,
+            Self::IsDirectory => -21,
+            Self::ReadOnly => -30,
+            Self::Overflow => -75,
+        }
+    }
+}
+
+pub type KernelResult<T> = Result<T, KernelError>;
+
+pub trait IntoI32 {
+    fn as_i32(self) -> i32;
+}
+
+impl IntoI32 for Result<(), KernelError> {
+    fn as_i32(self) -> i32 {
+        match self {
+            Ok(()) => 0,
+            Err(e) => e.as_i32(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VfsFileType {
-    File = 0,
-    Dir = 1,
-    Dev = 2,
-    Symlink = 3,
+    File,
+    Dir,
+    Dev,
+    Symlink,
 }
 
 impl VfsFileType {
@@ -20,6 +73,15 @@ impl VfsFileType {
             2 => VfsFileType::Dev,
             3 => VfsFileType::Symlink,
             _ => VfsFileType::File,
+        }
+    }
+
+    pub fn as_u8(self) -> u8 {
+        match self {
+            VfsFileType::File => 0,
+            VfsFileType::Dir => 1,
+            VfsFileType::Dev => 2,
+            VfsFileType::Symlink => 3,
         }
     }
 }
@@ -41,20 +103,44 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
 pub enum VfsSeekWhence {
-    Set = 0,
-    Cur = 1,
-    End = 2,
+    Set,
+    Cur,
+    End,
 }
 
 impl VfsSeekWhence {
-    pub fn from_i32(value: i32) -> Self {
+    pub fn from_u32(value: u32) -> Self {
         match value {
             0 => VfsSeekWhence::Set,
             1 => VfsSeekWhence::Cur,
             2 => VfsSeekWhence::End,
             _ => VfsSeekWhence::Set,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FsType {
+    RamFs,
+    HvFs,
+    Unknown,
+}
+
+impl FsType {
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "ramfs" => FsType::RamFs,
+            "hvfs" => FsType::HvFs,
+            _ => FsType::Unknown,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FsType::RamFs => "ramfs",
+            FsType::HvFs => "hvfs",
+            FsType::Unknown => "unknown",
         }
     }
 }
@@ -107,14 +193,14 @@ impl VfsDirent {
             name: [0; VFS_MAX_NAME],
         }
     }
-    
+
     pub fn set_name(&mut self, name: &str) {
         let bytes = name.as_bytes();
         let len = bytes.len().min(VFS_MAX_NAME - 1);
         self.name[..len].copy_from_slice(&bytes[..len]);
         self.name[len] = 0;
     }
-    
+
     pub fn get_name(&self) -> &str {
         let end = self.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
         core::str::from_utf8(&self.name[..end]).unwrap_or("")

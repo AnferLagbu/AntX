@@ -302,25 +302,21 @@ struct ProcSnapshot {
     slots: [Option<usize>; MAX_PROCESSES],
 }
 
-static mut PROC_SNAPSHOT: Option<ProcSnapshot> = None;
+static PROC_SNAPSHOT: Mutex<Option<ProcSnapshot>> = Mutex::new(None);
 
 pub fn proc_barrier_capture() {
-    unsafe {
-        let table = &PROCESS_TABLE;
-        PROC_SNAPSHOT = Some(ProcSnapshot {
-            next_pid: table.next_pid.load(Ordering::SeqCst),
-            slots: *table.processes.lock(),
-        });
-    }
+    let table = &PROCESS_TABLE;
+    *PROC_SNAPSHOT.lock() = Some(ProcSnapshot {
+        next_pid: table.next_pid.load(Ordering::SeqCst),
+        slots: *table.processes.lock(),
+    });
 }
 
 pub fn proc_barrier_rollback() -> bool {
-    unsafe {
-        if let Some(ref snap) = PROC_SNAPSHOT {
-            let table = &PROCESS_TABLE;
-            table.next_pid.store(snap.next_pid, Ordering::SeqCst);
-            *table.processes.lock() = snap.slots;
-        }
+    if let Some(ref snap) = *PROC_SNAPSHOT.lock() {
+        let table = &PROCESS_TABLE;
+        table.next_pid.store(snap.next_pid, Ordering::SeqCst);
+        *table.processes.lock() = snap.slots;
     }
     true
 }

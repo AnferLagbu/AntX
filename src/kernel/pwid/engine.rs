@@ -1,7 +1,3 @@
-//! PWID v5 Engine - Permission Checking
-//!
-//! Combines privilege level + capability domain checks.
-
 use super::types::*;
 use super::table;
 use core::sync::atomic::Ordering;
@@ -49,9 +45,10 @@ pub fn get_creator(pwid: u64) -> u64 {
     }
 }
 
-pub fn get_caps(pwid: u64, domain: CapDomain) -> CapBits {
+pub fn get_caps(pwid: u64, domain: impl Into<CapDomain>) -> CapBits {
+    let domain = domain.into();
     match table::find(pwid) {
         Some(e) => e.load_caps(domain),
-        None => 0,
+        None => CapBits::NONE,
     }
 }

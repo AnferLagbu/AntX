@@ -53,6 +53,46 @@ impl DevfsData {
         device.name[len] = 0;
     }
     
+    pub fn register_device(&self, name: &str, dev_type: u8) -> i32 {
+        let mut devices = self.devices.lock();
+        for device in devices.iter() {
+            if device.used {
+                let end = device.name.iter().position(|&b| b == 0).unwrap_or(DEVFS_MAX_NAME);
+                let existing = core::str::from_utf8(&device.name[..end]).unwrap_or("");
+                if existing == name {
+                    return -1;
+                }
+            }
+        }
+        for device in devices.iter_mut() {
+            if !device.used {
+                Self::set_name(device, name);
+                device.dev_type = dev_type;
+                device.used = true;
+                self.device_count.fetch_add(1, Ordering::SeqCst);
+                return 0;
+            }
+        }
+        -1
+    }
+
+    pub fn unregister_device(&self, name: &str) -> i32 {
+        let mut devices = self.devices.lock();
+        for device in devices.iter_mut() {
+            if device.used {
+                let end = device.name.iter().position(|&b| b == 0).unwrap_or(DEVFS_MAX_NAME);
+                let existing = core::str::from_utf8(&device.name[..end]).unwrap_or("");
+                if existing == name {
+                    device.used = false;
+                    device.dev_type = 0;
+                    self.device_count.fetch_sub(1, Ordering::SeqCst);
+                    return 0;
+                }
+            }
+        }
+        -1
+    }
+
     pub fn mount(&self, _path: &str) -> i32 {
         let mut devices = self.devices.lock();
         
