@@ -7,10 +7,27 @@ pub mod types;
 pub mod ffi;
 
 use crate::kernel::syscall::types::*;
+use crate::kernel::idt::types::InterruptFrame;
 
 #[no_mangle]
 pub unsafe extern "C" fn syscall_init() {
     unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, b"syscall subsystem ready\0".as_ptr() as *const i8); }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) {
+    if frame.is_null() { return; }
+
+    let f = &mut *frame;
+    let syscall_num = f.rax;
+    let a0 = f.rdi;
+    let a1 = f.rsi;
+    let a2 = f.rdx;
+    let a3 = f.r10;
+
+    let result = syscall_dispatch(syscall_num, a0, a1, a2, a3);
+
+    f.rax = result as u64;
 }
 
 /// 系统调用分发宏 — 每个分发点记一条日志

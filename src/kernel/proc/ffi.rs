@@ -110,9 +110,33 @@ pub extern "C" fn process_exit(exit_code: u32) {
 }
 
 #[no_mangle]
-pub extern "C" fn process_kill(_pid: u32, exit_code: u32) {
-    // Set exit code and exit the process
-    SCHEDULER.exit(exit_code);
+pub extern "C" fn process_kill(pid: u32, exit_code: i32) -> i32 {
+    if pid == 0 { return -1; }
+
+    let current_pid = SCHEDULER.current().unwrap_or(0);
+
+    if pid == current_pid {
+        SCHEDULER.exit(exit_code as u32);
+        return 0;
+    }
+
+    match PROCESS_TABLE.get(pid) {
+        Some(proc_ptr) => unsafe {
+            let state = (*proc_ptr).get_state();
+            if state == ProcessState::Zombie || state == ProcessState::Terminated {
+                return -1;
+            }
+            (*proc_ptr).exit_code.store(exit_code as u32, Ordering::SeqCst);
+            (*proc_ptr).state.store(ProcessState::Zombie as u32, Ordering::SeqCst);
+
+            let ppid = (*proc_ptr).parent.map(|p| p.0).unwrap_or(0);
+            if ppid != 0 {
+                let _ = SCHEDULER.unblock(ppid);
+            }
+            0
+        },
+        None => -1,
+    }
 }
 
 #[no_mangle]
@@ -262,6 +286,7 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn scheduler_tick() {
+    SCHEDULER.tick();
     SCHEDULER_EX.tick();
 }
 

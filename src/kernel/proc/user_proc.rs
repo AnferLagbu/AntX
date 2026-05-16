@@ -204,6 +204,7 @@ impl UserProcManager {
             context: Mutex::new(ProcessContext::new()),
             cr3: AtomicU64::new(unsafe { (*proc).cr3.load(Ordering::SeqCst) }),
             kernel_stack: AtomicU64::new(unsafe { (*proc).kernel_stack.load(Ordering::SeqCst) }),
+            kernel_rsp: AtomicU64::new(unsafe { (*proc).kernel_stack.load(Ordering::SeqCst) }),
             user_stack: AtomicU64::new(unsafe { (*proc).user_stack.load(Ordering::SeqCst) }),
             exit_code: AtomicU32::new(0),
             cpu_time: AtomicU64::new(0),
@@ -340,15 +341,12 @@ impl UserProcManager {
         // Write argv strings + pointers
         let mut str_off = strings_off;
         for i in 0..argc {
-            w64(argv_start_off + i * 8, new_sp.wrapping_add(str_off as u64 - new_sp as u64 + strings_off as u64 - strings_off as u64));
-            // Actually compute absolute user-space address:
-            let abs_addr = str_off as u64;
-            // Write pointer: user-space address
+            let user_argv_ptr = str_off as u64;
             let p_addr = argv_start_off + i * 8;
             let p_phys = vmm_get_physical_in_table(cr3, p_addr as u64 & !0xFFF);
             if p_phys != 0 {
                 let p_ptr = (p_phys + KERNEL_BASE + (p_addr as u64 & 0xFFF)) as *mut u64;
-                core::ptr::write_unaligned(p_ptr, abs_addr);
+                core::ptr::write_unaligned(p_ptr, user_argv_ptr);
             }
             
             if !argv.is_null() && (i < argc) {
@@ -545,6 +543,12 @@ pub fn try_expand_user_stack(fault_addr: u64) -> bool {
 
     unsafe {
         let stack_bottom = (*proc).stack_bottom.load(Ordering::SeqCst);
+        let guard_end = stack_bottom.saturating_sub(USER_STACK_GUARD as u64);
+
+        if fault_addr >= guard_end && fault_addr < stack_bottom {
+            return false;
+        }
+
         if fault_addr >= stack_bottom { return false; }
 
         let cr3 = (*proc).cr3.load(Ordering::SeqCst);
