@@ -120,6 +120,14 @@ pub extern "C" fn kernel_init() {
         // Initialize IDT and interrupts (needed for spin::Mutex)
         crate::kernel::idt::idt_init();
         crate::klog_boot_info!("Test mode: IDT initialized");
+
+        #[cfg(feature = "fault_injection")]
+        {
+            let rate = option_env!("FAULT_RATE").and_then(|s| s.parse::<u32>().ok()).unwrap_or(50);
+            crate::kernel::barrier::fault_inject::FAULT_INJECTION_RATE.store(rate, core::sync::atomic::Ordering::Relaxed);
+            crate::klog_boot_info!("[CHAOS] Fault injection enabled, rate={}/1000", rate);
+        }
+
         crate::kernel::tests::test_runner_init();
         crate::klog_boot_info!("Tests complete, halting");
         // Halt after tests

@@ -115,6 +115,9 @@ impl SessionManager {
 
 use spin::Mutex;
 
+unsafe impl Send for SessionManager {}
+unsafe impl Sync for SessionManager {}
+
 static GLOBAL_SESSION: Mutex<SessionManager> = Mutex::new(SessionManager::new());
 
 pub fn login(note: &str, password: &str) -> Result<u64, PwidError> {

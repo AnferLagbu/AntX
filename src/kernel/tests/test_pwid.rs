@@ -6,10 +6,10 @@ use crate::kernel::pwid::capability;
 use crate::kernel::pwid::grant_record;
 use crate::kernel::pwid::audit;
 use crate::kernel::pwid::first_token;
-use crate::kernel::tests::runner;
+use crate::kernel::tests::{runner, TestResult};
 use crate::check;
 
-fn test_sha256_vectors() -> Result<(), &'static str> {
+fn test_sha256_vectors() -> TestResult {
     let hash = sha256::sha256(b"");
     check!(hash[0] == 0xe3, "SHA-256('') byte 0 mismatch");
     check!(hash[1] == 0xb0, "SHA-256('') byte 1 mismatch");
@@ -18,10 +18,10 @@ fn test_sha256_vectors() -> Result<(), &'static str> {
     let hash2 = sha256::sha256(b"abc");
     check!(hash2[0] == 0xba, "SHA-256('abc') byte 0 mismatch");
     check!(hash2[1] == 0x78, "SHA-256('abc') byte 1 mismatch");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_pwid_id_newtype() -> Result<(), &'static str> {
+fn test_pwid_id_newtype() -> TestResult {
     let id = PwidId(42);
     check!(id.is_valid(), "non-zero PwidId should be valid");
     check!(id.as_u64() == 42, "as_u64 mismatch");
@@ -32,10 +32,10 @@ fn test_pwid_id_newtype() -> Result<(), &'static str> {
 
     let test = PwidId::TEST;
     check!(test.is_valid(), "TEST PwidId should be valid");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_cap_domain_newtype() -> Result<(), &'static str> {
+fn test_cap_domain_newtype() -> TestResult {
     let fs = CapDomain::FS;
     check!(fs.as_u16() == 1, "FS domain should be 1");
     check!(fs.as_usize() == 1, "FS domain usize should be 1");
@@ -45,10 +45,10 @@ fn test_cap_domain_newtype() -> Result<(), &'static str> {
 
     let sys = CapDomain::SYSTEM;
     check!(sys.as_usize() == 0, "SYSTEM domain usize should be 0");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_cap_bits_newtype() -> Result<(), &'static str> {
+fn test_cap_bits_newtype() -> TestResult {
     let none = CapBits::NONE;
     check!(none.as_u64() == 0, "NONE should be 0");
 
@@ -67,10 +67,10 @@ fn test_cap_bits_newtype() -> Result<(), &'static str> {
     check!(caps.contains(read), "after |= should contain read");
     caps &= !read;
     check!(!caps.contains(read), "after &= ! should not contain read");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_pwidentry_caps() -> Result<(), &'static str> {
+fn test_pwidentry_caps() -> TestResult {
     let entry = PwidEntry::new();
     check!(!entry.is_valid(), "new entry should not be valid");
 
@@ -89,10 +89,10 @@ fn test_pwidentry_caps() -> Result<(), &'static str> {
 
     check!(entry.has_capability(CapDomain::FS, CapBits(capability::FS_CAP_READ)), "has_capability should be true");
     check!(!entry.has_capability(CapDomain::FS, CapBits(capability::FS_CAP_DELETE)), "has_capability DELETE should be false");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_pwidentry_flags() -> Result<(), &'static str> {
+fn test_pwidentry_flags() -> TestResult {
     let entry = PwidEntry::new();
     check!(!entry.has_flag(PwidFlags::DISABLED), "new entry should not be disabled");
 
@@ -103,10 +103,10 @@ fn test_pwidentry_flags() -> Result<(), &'static str> {
 
     entry.remove_flags(PwidFlags::DISABLED);
     check!(!entry.has_flag(PwidFlags::DISABLED), "should not be disabled after remove");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_grant_record() -> Result<(), &'static str> {
+fn test_grant_record() -> TestResult {
     let rec = GrantRecord {
         grantor_pwid: PwidId(1),
         grantee_pwid: PwidId(2),
@@ -119,10 +119,10 @@ fn test_grant_record() -> Result<(), &'static str> {
     let empty = GrantRecord::EMPTY;
     check!(empty.is_empty(), "EMPTY record should be empty");
     check!(empty.grantor_pwid == PwidId::ZERO, "EMPTY grantor should be ZERO");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_audit_entry() -> Result<(), &'static str> {
+fn test_audit_entry() -> TestResult {
     let entry = AuditEntry {
         timestamp: 1000,
         pwid: PwidId(42),
@@ -134,25 +134,25 @@ fn test_audit_entry() -> Result<(), &'static str> {
     check!(entry.pwid.as_u64() == 42, "audit pwid mismatch");
     check!(entry.action.as_u32() == 3, "Create action should be 3");
     check!(entry.result.as_u32() == 0, "Success result should be 0");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_pwidentry_note() -> Result<(), &'static str> {
+fn test_pwidentry_note() -> TestResult {
     let mut entry = PwidEntry::new();
     entry.set_note("test-identity");
     let note = entry.get_note_str();
     check!(note == "test-identity", "note mismatch");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_viable_floor() -> Result<(), &'static str> {
+fn test_viable_floor() -> TestResult {
     check!(capability::VIABLE_FLOOR[CapDomain::FS.as_usize()] != 0, "FS viable floor should be non-zero");
     check!(capability::VIABLE_FLOOR[CapDomain::PROC.as_usize()] != 0, "PROC viable floor should be non-zero");
     check!(capability::VIABLE_FLOOR[CapDomain::SYSTEM.as_usize()] == 0, "SYSTEM viable floor should be zero");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_pwidentry_cow_bp() -> Result<(), &'static str> {
+fn test_pwidentry_cow_bp() -> TestResult {
     use crate::kernel::fs::hvfs::bp::HvBlockPointer;
     use crate::kernel::fs::hvfs::dmu::HvDmuObject;
 
@@ -160,7 +160,7 @@ fn test_pwidentry_cow_bp() -> Result<(), &'static str> {
     let bp = HvBlockPointer::null();
     obj.cow_bp(bp, 5);
     check!(obj.birth_txg == 5, "birth txg should be 5 after cow_bp");
-    Ok(())
+    TestResult::Pass
 }
 
 pub fn register_pwid_tests() {

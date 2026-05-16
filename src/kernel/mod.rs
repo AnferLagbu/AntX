@@ -89,7 +89,6 @@ pub mod syscall;
 pub mod driver;
 
 /// IPC 子系统 (管道, 共享内存, 消息队列, 信号量, 信号)
-#[cfg(not(feature = "kernel_test"))]
 pub mod ipc;
 
 /// Timer 子系统 (PIT 驱动, Tick 计数器, Sleep 机制)

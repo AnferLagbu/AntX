@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use crate::kernel::sync::mutex::Mutex;
+use spin::Mutex;
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::spa::*;
 use crate::kernel::fs::hvfs::txg::*;
@@ -66,7 +66,7 @@ pub struct HvfsData {
 unsafe impl Send for HvfsData {}
 unsafe impl Sync for HvfsData {}
 
-static HVFS_DATA: Mutex<Option<Box<HvfsData>>> = Mutex::new(None);
+static HVFS_DATA: spin::Mutex<Option<Box<HvfsData>>> = spin::Mutex::new(None);
 
 pub fn get_hvfs() -> &'static HvfsData {
     let mut guard = HVFS_DATA.lock();

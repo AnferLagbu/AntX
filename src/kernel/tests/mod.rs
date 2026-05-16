@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
+use alloc::string::String;
 use crate::kernel::sync::mutex::Mutex;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 pub mod test_barrier;
 pub mod test_barrier_ext;
@@ -8,8 +10,17 @@ pub mod test_hvfs_ext;
 pub mod test_pwid;
 pub mod test_mm;
 pub mod test_vfs;
+pub mod test_ipc;
+pub mod test_devfs;
+pub mod test_proc;
 
-pub type TestFn = fn() -> Result<(), &'static str>;
+pub type TestFn = fn() -> TestResult;
+
+pub enum TestResult {
+    Pass,
+    Fail(&'static str),
+    Skip(&'static str),
+}
 
 pub struct TestCase {
     pub module: &'static str,
@@ -19,16 +30,18 @@ pub struct TestCase {
 
 pub struct TestRunner {
     pub tests: Mutex<Vec<TestCase>>,
-    pub passed: Mutex<usize>,
-    pub failed: Mutex<usize>,
+    pub passed: AtomicU32,
+    pub failed: AtomicU32,
+    pub skipped: AtomicU32,
 }
 
 impl TestRunner {
     pub fn new() -> Self {
         Self {
             tests: Mutex::new(Vec::new()),
-            passed: Mutex::new(0),
-            failed: Mutex::new(0),
+            passed: AtomicU32::new(0),
+            failed: AtomicU32::new(0),
+            skipped: AtomicU32::new(0),
         }
     }
 
@@ -39,47 +52,70 @@ impl TestRunner {
     pub fn run_all(&self) {
         let tests = self.tests.lock();
         let total = tests.len();
-        crate::klog_info!(Test, "=== Running {} tests ===", total);
+        crate::klog_info!(Test, "");
+        crate::klog_info!(Test, "========================================");
+        crate::klog_info!(Test, "  AntX Kernel Test Suite");
+        crate::klog_info!(Test, "  {} test cases registered", total);
+        crate::klog_info!(Test, "========================================");
+        crate::klog_info!(Test, "");
 
-        for tc in tests.iter() {
+        for (i, tc) in tests.iter().enumerate() {
+            let start_tick = Self::current_tick();
             let result = (tc.func)();
+            let elapsed = Self::current_tick().saturating_sub(start_tick);
+
             match result {
-                Ok(()) => {
-                    *self.passed.lock() += 1;
+                TestResult::Pass => {
+                    self.passed.fetch_add(1, Ordering::Relaxed);
+                    crate::klog_info!(Test, "  [{:3}/{}] PASS {}::{} ({}ms)",
+                        i + 1, total, tc.module, tc.name, elapsed);
                 }
-                Err(msg) => {
-                    *self.failed.lock() += 1;
-                    crate::klog_err!(Test, "  FAIL {}::{} : {}", tc.module, tc.name, msg);
+                TestResult::Fail(msg) => {
+                    self.failed.fetch_add(1, Ordering::Relaxed);
+                    crate::klog_err!(Test, "  [{:3}/{}] FAIL {}::{} : {} ({}ms)",
+                        i + 1, total, tc.module, tc.name, msg, elapsed);
+                }
+                TestResult::Skip(reason) => {
+                    self.skipped.fetch_add(1, Ordering::Relaxed);
+                    crate::klog_info!(Test, "  [{:3}/{}] SKIP {}::{} : {}",
+                        i + 1, total, tc.module, tc.name, reason);
                 }
             }
         }
 
-        let p = *self.passed.lock();
-        let f = *self.failed.lock();
+        let p = self.passed.load(Ordering::Relaxed);
+        let f = self.failed.load(Ordering::Relaxed);
+        let s = self.skipped.load(Ordering::Relaxed);
+
+        crate::klog_info!(Test, "");
+        crate::klog_info!(Test, "========================================");
         if f > 0 {
-            crate::klog_info!(Test, "=== DONE: {}/{} passed, {} FAILED ===", p, total, f);
+            crate::klog_info!(Test, "  RESULT: {} passed, {} FAILED, {} skipped (total: {})",
+                p, f, s, total);
         } else {
-            crate::klog_info!(Test, "=== DONE: {}/{} passed ===", p, total);
+            crate::klog_info!(Test, "  RESULT: ALL {} TESTS PASSED ({} skipped)", p, s);
         }
+        crate::klog_info!(Test, "========================================");
+        crate::klog_info!(Test, "");
+    }
+
+    fn current_tick() -> u64 {
+        extern "C" { fn timer_get_ticks() -> u64; }
+        unsafe { timer_get_ticks() }
     }
 }
 
-static mut TEST_RUNNER: Option<TestRunner> = None;
+static TEST_RUNNER: spin::Once<TestRunner> = spin::Once::new();
 
 pub fn runner() -> &'static TestRunner {
-    unsafe {
-        if TEST_RUNNER.is_none() {
-            TEST_RUNNER = Some(TestRunner::new());
-        }
-        TEST_RUNNER.as_ref().unwrap()
-    }
+    TEST_RUNNER.call_once(|| TestRunner::new())
 }
 
 #[macro_export]
 macro_rules! check {
     ($cond:expr, $msg:literal $(,)?) => {
         if !($cond) {
-            return Err($msg);
+            return $crate::kernel::tests::TestResult::Fail($msg);
         }
     };
 }
@@ -90,8 +126,15 @@ macro_rules! assert_eq_test {
         let l = $left;
         let r = $right;
         if l != r {
-            return Err($msg);
+            return $crate::kernel::tests::TestResult::Fail($msg);
         }
+    };
+}
+
+#[macro_export]
+macro_rules! skip_test {
+    ($reason:literal $(,)?) => {
+        return $crate::kernel::tests::TestResult::Skip($reason);
     };
 }
 
@@ -109,6 +152,9 @@ pub fn test_runner_init() {
     test_pwid::register_pwid_tests();
     test_mm::register_mm_tests();
     test_vfs::register_vfs_tests();
+    test_ipc::register_ipc_tests();
+    test_devfs::register_devfs_tests();
+    test_proc::register_proc_tests();
 
     let r = runner();
     let count = r.tests.lock().len();
@@ -116,10 +162,10 @@ pub fn test_runner_init() {
 
     r.run_all();
 
-    let p = *r.passed.lock();
-    let f = *r.failed.lock();
+    let p = r.passed.load(Ordering::Relaxed);
+    let f = r.failed.load(Ordering::Relaxed);
     if f == 0 {
-        crate::klog_boot_info!("[TEST] ALL TESTS PASSED ({}/{})", p, p + f);
+        crate::klog_boot_info!("[TEST] ALL TESTS PASSED ({}/{})", p, p + r.skipped.load(Ordering::Relaxed));
     } else {
         crate::klog_boot_info!("[TEST] COMPLETE: {} passed, {} FAILED", p, f);
     }

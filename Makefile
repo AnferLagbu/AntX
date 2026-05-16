@@ -44,6 +44,7 @@ LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
 
 RUST_LIB = src/rust/target/x86_64-unknown-none/release/libqueenx.a
 RUST_LIB_TEST = src/rust/target/test-release/x86_64-unknown-none/release/libqueenx.a
+RUST_LIB_CHAOS = src/rust/target/chaos-release/x86_64-unknown-none/release/libqueenx.a
 
 USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
 
@@ -104,7 +105,7 @@ $(VERSION_REGISTRY_H):
 	@$(MAKE) generate-version
 
 .PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-unit test-integration test-stress \
-         test-all
+         test-all test-chaos test-smp
 
 all: build/kernel.bin user
 
@@ -125,6 +126,10 @@ $(RUST_LIB):
 $(RUST_LIB_TEST):
 	@echo "Building Rust test kernel..."
 	cd src/rust && cargo build --release --features kernel_test --target-dir target/test-release
+
+$(RUST_LIB_CHAOS):
+	@echo "Building Rust chaos kernel (fault_injection enabled)..."
+	cd src/rust && cargo build --release --features "kernel_test fault_injection" --target-dir target/chaos-release
 
 build/lib/string.o: src/kernel/lib/string.c
 	@mkdir -p $(dir $@)
@@ -493,3 +498,79 @@ test-all: test-unit
 	@echo "    4. Comprehensive Tests (180s)"
 	@echo "  总计: ~510 秒 (~8.5 分钟)"
 	@echo ""
+
+FAULT_RATE ?= 50
+
+build/kernel_chaos.bin: $(KERNEL_TEST_OBJS) $(RUST_LIB_CHAOS)
+	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_chaos.map --allow-multiple-definition -o build/kernel_chaos.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_CHAOS)
+
+test-chaos: build/kernel_chaos.bin user
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     Chaos/Fault Injection Tests (fault_injection=on)   ║"
+	@echo "║     FAULT_RATE=$(FAULT_RATE)/1000                        ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@mkdir -p isodir/boot/grub
+	@cp build/kernel_chaos.bin isodir/boot/kernel.bin
+	@mkdir -p isodir/bin
+	@cp build/user/init.bin isodir/bin/init
+	@cp build/user/axsh.bin isodir/bin/axsh
+	@cp build/user/install.bin isodir/bin/install
+	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	@echo 'set default=0' >> isodir/boot/grub/grub.cfg
+	@echo '' >> isodir/boot/grub/grub.cfg
+	@echo 'menuentry "AntX Chaos Test" {' >> isodir/boot/grub/grub.cfg
+	@echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
+	@echo '}' >> isodir/boot/grub/grub.cfg
+	@grub2-mkrescue -o build/antx_chaos.iso isodir 2>/dev/null
+	@mkdir -p tests/reports
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	echo "▶ Starting QEMU with fault injection (rate=$(FAULT_RATE)/1000, timeout: 120s)..."; \
+	timeout 120 $(QEMU) $(QEMU_FLAGS) \
+		-m 512 \
+		-cdrom build/antx_chaos.iso \
+		-serial file:tests/reports/chaos_test_$${timestamp}.log \
+		-display none \
+		-d cpu_reset 2>tests/reports/qemu_chaos_stderr_$${timestamp}.log || true
+	@echo ""
+	@timestamp=$$(ls -t tests/reports/chaos_test_*.log 2>/dev/null | head -1 | sed 's/.*chaos_test_//;s/\.log//'); \
+	if [ -n "$$timestamp" ]; then \
+		echo "╔══════════════════════════════════════════════╗"; \
+		echo "║  Chaos Test Report                           ║"; \
+		echo "╚══════════════════════════════════════════════╝"; \
+		python3 tests/chaos/analyze_chaos.py tests/reports/chaos_test_$${timestamp}.log 2>/dev/null || \
+		echo "  (Run 'python3 tests/chaos/analyze_chaos.py tests/reports/chaos_test_$${timestamp}.log' for analysis)"; \
+		echo ""; \
+		echo "--- Last 80 lines of serial output ---"; \
+		tail -80 tests/reports/chaos_test_$${timestamp}.log; \
+	fi
+
+test-integration: iso
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     Integration Tests                                   ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@python3 tests/integration/run_integration_tests.py
+
+test-stress: iso
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     Stress Tests                                        ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@python3 tests/stress/run_stress_tests.py
+
+test-smp: all user build/kernel.flat
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     SMP Tests (2 cores)                                 ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@mkdir -p tests/reports
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	timeout 60 $(QEMU) $(QEMU_FLAGS) \
+		-m 512 -smp 2 \
+		-kernel build/kernel.flat \
+		-serial file:tests/reports/smp_test_$${timestamp}.log \
+		-display none \
+		-d cpu_reset 2>tests/reports/qemu_smp_stderr_$${timestamp}.log || true
+	@echo ""
+	@smp_log=$$(ls -t tests/reports/smp_test_*.log 2>/dev/null | head -1); \
+	if [ -n "$$smp_log" ]; then \
+		echo "--- SMP Test Output (last 60 lines) ---"; \
+		tail -60 "$$smp_log"; \
+	fi

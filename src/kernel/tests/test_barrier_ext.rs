@@ -1,10 +1,10 @@
 use crate::kernel::barrier::types::*;
 use crate::kernel::barrier::domain::RecoveryDomain;
 use crate::kernel::barrier::manager::RecoveryManager;
-use crate::kernel::tests::runner;
+use crate::kernel::tests::{runner, TestResult};
 use crate::check;
 
-fn test_domain_state_semantic() -> Result<(), &'static str> {
+fn test_domain_state_semantic() -> TestResult {
     let dom = RecoveryDomain::new(1);
     check!(dom.get_state() == DomainState::Active, "new domain should be Active");
 
@@ -18,10 +18,10 @@ fn test_domain_state_semantic() -> Result<(), &'static str> {
     dom.set_state(DomainState::Quarantined, core::sync::atomic::Ordering::SeqCst);
     check!(dom.get_state() == DomainState::Quarantined, "should be Quarantined");
     check!(!dom.is_active(), "Quarantined should not be active");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_domain_from_u32_safe() -> Result<(), &'static str> {
+fn test_domain_from_u32_safe() -> TestResult {
     let valid = DomainState::from_u32(3);
     check!(valid == Some(DomainState::Recovering), "3 should be Recovering");
 
@@ -33,10 +33,10 @@ fn test_domain_from_u32_safe() -> Result<(), &'static str> {
 
     let fallback_active = DomainState::from_u32_fallback(0);
     check!(fallback_active == DomainState::Active, "0 should fallback to Active");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_domain_degradation() -> Result<(), &'static str> {
+fn test_domain_degradation() -> TestResult {
     let dom = RecoveryDomain::new(2);
     dom.original_cap_mask.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
     dom.dom_cap_mask.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
@@ -52,10 +52,10 @@ fn test_domain_degradation() -> Result<(), &'static str> {
     let state = dom.get_state();
     check!(state == DomainState::Degraded || state == DomainState::Quarantined,
         "after many failures should be Degraded or Quarantined");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_domain_quarantine() -> Result<(), &'static str> {
+fn test_domain_quarantine() -> TestResult {
     let dom = RecoveryDomain::new(3);
     dom.original_cap_mask.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
     dom.dom_cap_mask.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
@@ -64,10 +64,10 @@ fn test_domain_quarantine() -> Result<(), &'static str> {
     let rolled = dom.try_rollback(100, 0xCC);
     check!(!rolled, "quarantined domain should not rollback");
     check!(dom.get_state() == DomainState::Quarantined, "should be Quarantined");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_domain_backoff() -> Result<(), &'static str> {
+fn test_domain_backoff() -> TestResult {
     let dom = RecoveryDomain::new(4);
     dom.original_cap_mask.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
     dom.dom_cap_mask.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
@@ -77,19 +77,19 @@ fn test_domain_backoff() -> Result<(), &'static str> {
 
     let backoff_until = dom.backoff_until.load(core::sync::atomic::Ordering::SeqCst);
     check!(backoff_until > 100, "backoff should be in the future");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_domain_addr_range() -> Result<(), &'static str> {
+fn test_domain_addr_range() -> TestResult {
     let dom = RecoveryDomain::new(5);
     check!(dom.add_addr_range(0x1000, 0x2000), "add_addr_range should succeed");
     check!(dom.contains_addr(0x1500), "0x1500 should be in range");
     check!(!dom.contains_addr(0x0FFF), "0x0FFF should be below range");
     check!(!dom.contains_addr(0x2000), "0x2000 should be at range end (exclusive)");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_manager_register_find() -> Result<(), &'static str> {
+fn test_manager_register_find() -> TestResult {
     let mut mgr = RecoveryManager::new();
     let dom: &'static RecoveryDomain = {
         let bx = alloc::boxed::Box::new(RecoveryDomain::new(10));
@@ -104,10 +104,10 @@ fn test_manager_register_find() -> Result<(), &'static str> {
 
     let not_found = mgr.find(999);
     check!(not_found.is_none(), "find 999 should be None");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_manager_panic_msg_locate() -> Result<(), &'static str> {
+fn test_manager_panic_msg_locate() -> TestResult {
     let mut mgr = RecoveryManager::new();
     let dom: &'static RecoveryDomain = {
         let bx = alloc::boxed::Box::new(RecoveryDomain::new(3));
@@ -125,10 +125,10 @@ fn test_manager_panic_msg_locate() -> Result<(), &'static str> {
     let located = mgr.locate_domain_by_panic_msg();
     check!(located.is_some(), "should locate PMM domain");
     check!(located.unwrap() == 3, "should locate domain 3 for PMM");
-    Ok(())
+    TestResult::Pass
 }
 
-fn test_domain_mark_recovered() -> Result<(), &'static str> {
+fn test_domain_mark_recovered() -> TestResult {
     let dom = RecoveryDomain::new(6);
     dom.original_cap_mask.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
     dom.dom_cap_mask.store(0, core::sync::atomic::Ordering::SeqCst);
@@ -139,7 +139,7 @@ fn test_domain_mark_recovered() -> Result<(), &'static str> {
     check!(failures == 0, "failures should be 0 after recovery");
     let caps = dom.dom_cap_mask.load(core::sync::atomic::Ordering::SeqCst);
     check!(caps == u64::MAX, "caps should be restored after recovery");
-    Ok(())
+    TestResult::Pass
 }
 
 pub fn register_barrier_ext_tests() {

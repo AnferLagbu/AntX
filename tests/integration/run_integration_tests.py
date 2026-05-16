@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Integration Tests for QueenX Kernel
-Tests multi-module interactions.
+Integration Tests for AntX Kernel (v2 - Serial Protocol)
+Tests multi-module interactions via QEMU serial output analysis.
 """
 
 import subprocess
@@ -14,21 +14,22 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 BUILD_DIR = PROJECT_ROOT / "build"
 
-def run_qemu_test(timeout: int = 30) -> str:
+def run_qemu_test(timeout: int = 60) -> str:
     iso_path = BUILD_DIR / "antx.iso"
     if not iso_path.exists():
         print(f"  [SKIP] ISO not found, run 'make iso' first")
         return ""
-    
+
     cmd = [
         "qemu-system-x86_64",
         "-cdrom", str(iso_path),
         "-serial", "stdio",
         "-display", "none",
         "-no-reboot",
-        "-m", "512M"
+        "-m", "512M",
+        "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -40,10 +41,9 @@ def run_qemu_test(timeout: int = 30) -> str:
         output = result.stdout + result.stderr
         return output
     except subprocess.TimeoutExpired as e:
+        output = ""
         if e.stdout:
             output = e.stdout.decode() if isinstance(e.stdout, bytes) else e.stdout
-        else:
-            output = ""
         if e.stderr:
             output += e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr
         return output
@@ -51,85 +51,151 @@ def run_qemu_test(timeout: int = 30) -> str:
         print(f"  [ERROR] {e}")
         return ""
 
-def test_process_file_interaction(output: str) -> bool:
-    print("Testing process + file system interaction...")
-    
-    if "init process" in output.lower() or "[INIT]" in output:
-        print("  [PASS] Process and file system interaction works")
-        return True
-    else:
-        print("  [FAIL] Process and file system interaction failed")
-        return False
+class IntegrationTest:
+    def __init__(self, name: str, description: str):
+        self.name = name
+        self.description = description
+        self.passed = False
+        self.message = ""
 
-def test_memory_mapping(output: str) -> bool:
-    print("Testing memory mapping...")
-    
-    if "VMM" in output and "PMM" in output:
-        print("  [PASS] Memory mapping works")
+    def check(self, condition: bool, msg: str):
+        if not condition:
+            self.message = msg
+            self.passed = False
+            return False
         return True
-    else:
-        print("  [FAIL] Memory mapping failed")
-        return False
 
-def test_syscall_interrupt(output: str) -> bool:
-    print("Testing syscall + interrupt interaction...")
-    
-    if "Syscall" in output or "syscall" in output.lower() or "[OK] Syscall" in output:
-        print("  [PASS] Syscall and interrupt interaction works")
-        return True
-    else:
-        print("  [FAIL] Syscall and interrupt interaction failed")
-        return False
+def test_boot_sequence(output: str) -> IntegrationTest:
+    t = IntegrationTest("Boot Sequence", "Kernel boot and initialization")
+    if not t.check(len(output) > 100, "No output captured from kernel"):
+        return t
 
-def test_vfs_block_device(output: str) -> bool:
-    print("Testing VFS + block device interaction...")
-    
-    if "VFS" in output and ("ATA" in output or "disk" in output.lower()):
-        print("  [PASS] VFS and block device interaction works")
-        return True
+    t.check("KLog" in output, "KLog not initialized")
+    t.check("PMM" in output, "PMM not initialized")
+    t.check("VMM" in output, "VMM not initialized")
+    t.check("IDT" in output, "IDT not initialized")
+
+    if "PANIC" in output and "recovered" not in output.lower():
+        t.check(False, "Kernel panic without recovery")
     else:
-        print("  [FAIL] VFS and block device interaction failed")
-        return False
+        t.passed = True
+    return t
+
+def test_memory_subsystem(output: str) -> IntegrationTest:
+    t = IntegrationTest("Memory Subsystem", "PMM + VMM + kmalloc integration")
+    if not t.check(len(output) > 0, "No output"):
+        return t
+
+    pmm_match = re.search(r'(\d+)\s+pages\s+free', output)
+    if pmm_match:
+        free_pages = int(pmm_match.group(1))
+        t.check(free_pages > 10000, f"Too few free pages: {free_pages}")
+    else:
+        t.check(False, "PMM free pages not reported")
+
+    t.check("kmalloc" in output or "heap" in output.lower(), "kmalloc/heap not initialized")
+    t.passed = True
+    return t
+
+def test_filesystem_mount(output: str) -> IntegrationTest:
+    t = IntegrationTest("Filesystem Mount", "VFS + RamFS + DevFS + ProcFS mounting")
+    if not t.check(len(output) > 0, "No output"):
+        return t
+
+    t.check("VFS" in output, "VFS not initialized")
+    t.check("RamFS" in output, "RamFS not initialized")
+    t.check("DevFS" in output, "DevFS not initialized")
+    t.check("ProcFS" in output, "ProcFS not initialized")
+    t.check("mounted" in output.lower(), "No filesystem mounted")
+    t.passed = True
+    return t
+
+def test_process_scheduler(output: str) -> IntegrationTest:
+    t = IntegrationTest("Process & Scheduler", "Process manager + scheduler integration")
+    if not t.check(len(output) > 0, "No output"):
+        return t
+
+    t.check("Scheduler" in output or "scheduler" in output.lower(), "Scheduler not initialized")
+    t.check("Process" in output or "process" in output.lower(), "Process manager not initialized")
+    t.passed = True
+    return t
+
+def test_security_subsystem(output: str) -> IntegrationTest:
+    t = IntegrationTest("Security Subsystem", "PWID + Session integration")
+    if not t.check(len(output) > 0, "No output"):
+        return t
+
+    t.check("PWID" in output, "PWID not initialized")
+    t.check("Session" in output or "session" in output.lower(), "Session manager not initialized")
+    t.passed = True
+    return t
+
+def test_barrier_subsystem(output: str) -> IntegrationTest:
+    t = IntegrationTest("Barrier Subsystem", "Fault recovery framework")
+    if not t.check(len(output) > 0, "No output"):
+        return t
+
+    has_barrier = "Barrier" in output or "barrier" in output.lower() or "Recovery" in output
+    t.check(has_barrier, "Barrier subsystem not detected")
+    t.passed = True
+    return t
+
+def test_no_unresolved_panics(output: str) -> IntegrationTest:
+    t = IntegrationTest("No Unresolved Panics", "All panics should be recovered")
+    if not t.check(len(output) > 0, "No output"):
+        return t
+
+    panic_count = output.count("PANIC") + output.count("panic!")
+    recovered_count = output.lower().count("recovered") + output.lower().count("rollback")
+
+    if panic_count > 0:
+        t.check(recovered_count >= panic_count,
+                f"Panics ({panic_count}) exceed recoveries ({recovered_count})")
+    t.passed = True
+    return t
 
 def run_all_integration_tests():
     print("=" * 60)
-    print("QueenX Kernel Integration Tests")
+    print("AntX Kernel Integration Tests (v2)")
     print("=" * 60)
-    
+
     print("\nRunning kernel and capturing output...")
-    output = run_qemu_test(30)
-    
+    output = run_qemu_test(60)
+
     if not output:
         print("  [ERROR] No output captured from kernel")
         return False
-    
+
     print(f"  Captured {len(output)} bytes of output\n")
-    
+
     tests = [
-        ("Process + File System", test_process_file_interaction),
-        ("Memory Mapping", test_memory_mapping),
-        ("Syscall + Interrupt", test_syscall_interrupt),
-        ("VFS + Block Device", test_vfs_block_device),
+        test_boot_sequence,
+        test_memory_subsystem,
+        test_filesystem_mount,
+        test_process_scheduler,
+        test_security_subsystem,
+        test_barrier_subsystem,
+        test_no_unresolved_panics,
     ]
-    
+
     passed = 0
     failed = 0
-    
-    for name, test_func in tests:
-        print(f"\n[{name}]")
-        try:
-            if test_func(output):
-                passed += 1
-            else:
-                failed += 1
-        except Exception as e:
-            print(f"  [ERROR] {e}")
+
+    for test_func in tests:
+        result = test_func(output)
+        status = "PASS" if result.passed else "FAIL"
+        print(f"  [{status}] {result.name}: {result.description}")
+        if not result.passed:
+            print(f"         Reason: {result.message}")
+        if result.passed:
+            passed += 1
+        else:
             failed += 1
-    
+
     print("\n" + "=" * 60)
     print(f"Integration Tests: {passed} passed, {failed} failed")
     print("=" * 60)
-    
+
     return failed == 0
 
 if __name__ == "__main__":

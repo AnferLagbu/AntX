@@ -113,13 +113,13 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
         }
         FsType::HvFs => {
             let hvfs = get_hvfs();
-            let result = hvfs.open(rel_path, flags, pwid);
-            if result >= 0 {
-                let fd_idx = match VFS_MANAGER.alloc_fd() { Some(i) => i, None => return -1 };
-                VFS_MANAGER.set_fd(fd_idx, result as u32, 0, flags, pwid, 0, path);
-                fd_idx as i32
-            } else {
-                result
+            match hvfs.open(rel_path, flags, pwid) {
+                Ok(hvfs_fd) => {
+                    let fd_idx = match VFS_MANAGER.alloc_fd() { Some(i) => i, None => return -1 };
+                    VFS_MANAGER.set_fd(fd_idx, hvfs_fd as u32, 0, flags, pwid, 0, path);
+                    fd_idx as i32
+                }
+                Err(e) => e.as_i32(),
             }
         }
         FsType::Unknown => -1,
@@ -422,7 +422,10 @@ pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwid: u64)
     let path = ptr_to_str(path);
     let pwid = resolve_pwid(pwid);
     let hvfs = get_hvfs();
-    hvfs.open(path, flags, pwid)
+    match hvfs.open(path, flags, pwid) {
+        Ok(fd) => fd,
+        Err(e) => e.as_i32(),
+    }
 }
 
 #[no_mangle]
