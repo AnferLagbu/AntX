@@ -87,6 +87,7 @@ pub static RECOVERY_CONFIG: RecoveryConfig = RecoveryConfig::default();
 
 pub static CURRENT_LAYER: AtomicU32 = AtomicU32::new(0);
 pub static RESET_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+pub static BBR_ATTEMPT_COUNT: AtomicU32 = AtomicU32::new(0);
 pub static BSR_ATTEMPT_COUNT: AtomicU32 = AtomicU32::new(0);
 pub static BHR_ATTEMPT_COUNT: AtomicU32 = AtomicU32::new(0);
 pub static LAST_RESET_TICK: AtomicU64 = AtomicU64::new(0);
@@ -106,6 +107,10 @@ pub fn get_current_layer() -> RecoveryLayer {
 
 pub fn set_current_layer(layer: RecoveryLayer) {
     CURRENT_LAYER.store(layer as u32, Ordering::SeqCst);
+}
+
+pub fn increment_bbr_count() -> u32 {
+    BBR_ATTEMPT_COUNT.fetch_add(1, Ordering::SeqCst)
 }
 
 pub fn increment_bsr_count() -> u32 {

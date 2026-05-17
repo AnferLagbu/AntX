@@ -1,6 +1,6 @@
-//! # BSR/BHR 单元测试
+//! # BBR/BSR/BHR 单元测试
 //!
-//! 测试 Barrier Soft Reset 和 Barrier Hard Reset 功能
+//! 测试 Barrier Base/Soft/Hard Recovery 功能
 
 use crate::kernel::tests::{TestResult, check, assert_eq_test};
 
@@ -32,6 +32,18 @@ fn audit_log_basic() -> TestResult {
 fn audit_log_count() -> TestResult {
     use crate::kernel::barrier::reset::audit::tests;
     check!(tests::test_audit_count_by_layer(), "audit count by layer");
+    TestResult::Pass
+}
+
+fn bbr_fingerprint() -> TestResult {
+    use crate::kernel::barrier::reset::bbr::tests;
+    check!(tests::test_compute_fingerprint(), "compute fingerprint");
+    TestResult::Pass
+}
+
+fn bbr_should_attempt() -> TestResult {
+    use crate::kernel::barrier::reset::bbr::tests;
+    check!(tests::test_should_attempt(), "should attempt");
     TestResult::Pass
 }
 
@@ -131,6 +143,18 @@ fn recovery_stats_api() -> TestResult {
     TestResult::Pass
 }
 
+fn recovery_status_api() -> TestResult {
+    use crate::kernel::barrier::{get_recovery_status, reset_stats};
+    
+    reset_stats();
+    let status = get_recovery_status();
+    assert_eq_test!(status.bbr_count, 0, "bbr count");
+    assert_eq_test!(status.bsr_count, 0, "bsr count");
+    assert_eq_test!(status.bhr_count, 0, "bhr count");
+    
+    TestResult::Pass
+}
+
 pub fn register_tests() {
     let runner = unsafe { crate::kernel::tests::TEST_RUNNER.get().unwrap() };
     runner.register("barrier::config", "recovery_result", config_recovery_result);
@@ -138,6 +162,8 @@ pub fn register_tests() {
     runner.register("barrier::config", "stats", config_stats);
     runner.register("barrier::audit", "basic", audit_log_basic);
     runner.register("barrier::audit", "count", audit_log_count);
+    runner.register("barrier::bbr", "fingerprint", bbr_fingerprint);
+    runner.register("barrier::bbr", "should_attempt", bbr_should_attempt);
     runner.register("barrier::bsr", "freeze_unfreeze", bsr_freeze_unfreeze);
     runner.register("barrier::parallel", "dependency_layer", parallel_dependency_layer);
     runner.register("barrier::parallel", "compute_layers", parallel_compute_layers);
@@ -147,4 +173,5 @@ pub fn register_tests() {
     runner.register("barrier::reset", "rollback_mode", rollback_mode_enum);
     runner.register("barrier::snapshot", "register_api", snapshot_register_api);
     runner.register("barrier::reset", "stats_api", recovery_stats_api);
+    runner.register("barrier::reset", "status_api", recovery_status_api);
 }

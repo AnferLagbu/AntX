@@ -1,15 +1,16 @@
 //! # Barrier Reset 模块
 //!
-//! 分层恢复策略：BSR (Barrier Soft Reset) 和 BHR (Barrier Hard Reset)
+//! 分层恢复策略：BBR → BSR → BHR
 //!
 //! ```text
-//! Layer 1: Barrier Recovery (模块级回滚)  ~1μs   >95%成功率
-//! Layer 2: BSR (Barrier Soft Reset)      ~50ms  >80%成功率
-//! Layer 3: BHR (Barrier Hard Reset)      ~120ms ~100%成功率
+//! Layer 1: BBR (Barrier Base Recovery)  ~1μs   >95%成功率
+//! Layer 2: BSR (Barrier Soft Reset)     ~50ms  >80%成功率
+//! Layer 3: BHR (Barrier Hard Reset)     ~120ms ~100%成功率
 //! ```
 
 pub mod config;
 pub mod audit;
+pub mod bbr;
 pub mod bsr;
 pub mod bhr;
 pub mod parallel;
@@ -23,6 +24,7 @@ pub use config::{
     RECOVERY_CONFIG,
     CURRENT_LAYER,
     RESET_IN_PROGRESS,
+    BBR_ATTEMPT_COUNT,
     BSR_ATTEMPT_COUNT,
     BHR_ATTEMPT_COUNT,
     is_reset_in_progress,
@@ -41,6 +43,16 @@ pub use audit::{
     audit_record_domain,
     audit_get_last,
     audit_clear,
+};
+
+pub use bbr::{
+    execute as bbr_execute,
+    locate_domain_from_panic,
+    try_rollback_single,
+    cascade_rollback,
+    compute_fingerprint,
+    mark_recovered,
+    should_attempt_recovery,
 };
 
 pub use bsr::{
@@ -78,7 +90,7 @@ pub use parallel::{
 pub use layered::{
     execute_layered as recovery_execute_layered,
     execute_from_panic,
-    try_layer1_first,
+    try_bbr_first,
     get_recovery_status,
     RecoveryStatus,
 };

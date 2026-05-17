@@ -1,8 +1,17 @@
 //! # 分层恢复入口
 //!
-//! 统一的恢复策略：Layer 1 → Layer 2 → Layer 3
+//! 统一的恢复策略：BBR → BSR → BHR
+//!
+//! ```text
+//! Layer 1: BBR (Barrier Base Recovery)  ~1μs   >95%成功率
+//! Layer 2: BSR (Barrier Soft Reset)     ~50ms  >80%成功率
+//! Layer 3: BHR (Barrier Hard Reset)     ~120ms ~100%成功率
+//! ```
+
+use core::sync::atomic::Ordering;
 
 use super::config::{self, RecoveryLayer, RecoveryResult};
+use super::bbr;
 use super::bsr;
 use super::bhr;
 
@@ -41,21 +50,46 @@ pub fn execute_layered() -> ! {
     bhr::execute_fallback()
 }
 
-pub fn execute_from_panic() -> ! {
+pub fn execute_from_panic(panic_info: &core::panic::PanicInfo<'_>) -> ! {
     crate::klog_crit!(Kernel, "[RECOVERY] Panic detected, initiating layered recovery");
+    
+    if config::RECOVERY_CONFIG.enable_layer1 {
+        config::set_current_layer(RecoveryLayer::Layer1);
+        
+        match bbr::execute(panic_info) {
+            RecoveryResult::Success => {
+                crate::klog_crit!(Kernel, "[RECOVERY] Layer 1 (BBR) succeeded");
+                config::set_reset_in_progress(false);
+                #[cfg(not(feature = "kernel_test"))]
+                unsafe {
+                    core::hint::unreachable_unchecked();
+                }
+                #[cfg(feature = "kernel_test")]
+                loop { core::hint::spin_loop(); }
+            }
+            RecoveryResult::Escalate => {
+                crate::klog_warn!(Kernel, "[RECOVERY] Layer 1 (BBR) failed, escalating to Layer 2");
+            }
+            RecoveryResult::Failed => {
+                crate::klog_err!(Kernel, "[RECOVERY] Layer 1 (BBR) failed");
+            }
+        }
+    }
+    
     execute_layered()
 }
 
-pub fn try_layer1_first() -> RecoveryResult {
-    RecoveryResult::Escalate
+pub fn try_bbr_first(panic_info: &core::panic::PanicInfo<'_>) -> RecoveryResult {
+    bbr::execute(panic_info)
 }
 
 pub fn get_recovery_status() -> RecoveryStatus {
     RecoveryStatus {
         current_layer: config::get_current_layer(),
         reset_in_progress: config::is_reset_in_progress(),
-        bsr_count: config::BSR_ATTEMPT_COUNT.load(core::sync::atomic::Ordering::SeqCst),
-        bhr_count: config::BHR_ATTEMPT_COUNT.load(core::sync::atomic::Ordering::SeqCst),
+        bbr_count: config::BBR_ATTEMPT_COUNT.load(Ordering::SeqCst),
+        bsr_count: config::BSR_ATTEMPT_COUNT.load(Ordering::SeqCst),
+        bhr_count: config::BHR_ATTEMPT_COUNT.load(Ordering::SeqCst),
     }
 }
 
@@ -63,6 +97,7 @@ pub fn get_recovery_status() -> RecoveryStatus {
 pub struct RecoveryStatus {
     pub current_layer: RecoveryLayer,
     pub reset_in_progress: bool,
+    pub bbr_count: u32,
     pub bsr_count: u32,
     pub bhr_count: u32,
 }
@@ -73,6 +108,6 @@ pub mod tests {
 
     pub fn test_recovery_status() -> bool {
         let status = get_recovery_status();
-        status.bsr_count == 0 || status.bsr_count > 0
+        status.bbr_count == 0 || status.bbr_count > 0
     }
 }
