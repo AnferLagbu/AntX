@@ -312,9 +312,7 @@ static mut IST2_STACK: [u8; 16384] = [0u8; 16384];
 /// * Ok(()) - 成功
 /// * Err(&str) - 错误描述
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
-/// FFI export function (C-callable)
 pub extern "C" fn gdt_init() -> i32 {
     use crate::kernel::klog::{klog_write, LogLevel, LogCategory};
     

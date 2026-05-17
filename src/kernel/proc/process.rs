@@ -35,7 +35,7 @@ pub fn kernel_stack_write_canary(stack_top: u64) {
 
 pub struct Process {
     pub pid: ProcessId,
-    pub pwid: AtomicU64,        // v4: identity this process runs under
+    pub pwid: AtomicU64,
     pub state: AtomicU32,
     pub priority: AtomicU32,
     pub flags: AtomicU32,
@@ -49,6 +49,12 @@ pub struct Process {
     pub kernel_stack: AtomicU64,
     pub kernel_rsp: AtomicU64,
     pub user_stack: AtomicU64,
+    
+    pub heap_base: AtomicU64,
+    pub heap_brk: AtomicU64,
+    pub heap_limit: AtomicU64,
+    pub mmap_base: AtomicU64,
+    pub mmap_brk: AtomicU64,
     
     pub exit_code: AtomicU32,
     pub cpu_time: AtomicU64,
@@ -99,6 +105,11 @@ impl Process {
             kernel_stack: AtomicU64::new(0),
             kernel_rsp: AtomicU64::new(0),
             user_stack: AtomicU64::new(0),
+            heap_base: AtomicU64::new(0),
+            heap_brk: AtomicU64::new(0),
+            heap_limit: AtomicU64::new(0),
+            mmap_base: AtomicU64::new(0),
+            mmap_brk: AtomicU64::new(0),
             exit_code: AtomicU32::new(0),
             cpu_time: AtomicU64::new(0),
             block_reason: AtomicU32::new(BlockReason::Unknown as u32),
@@ -247,20 +258,20 @@ impl Drop for Process {
         let kstack = self.kernel_stack.load(Ordering::SeqCst);
         if kstack != 0 {
             extern "C" {
-                fn pmm_free_pages(addr: u64, count: u64);
+                fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
             }
             let kstack_pages = KERNEL_STACK_SIZE / 4096;
-            unsafe { pmm_free_pages(kstack - KERNEL_STACK_SIZE as u64, kstack_pages as u64); }
+            unsafe { pmm_free_pages((kstack - KERNEL_STACK_SIZE as u64) as *mut core::ffi::c_void, kstack_pages as u64); }
             self.kernel_stack.store(0, Ordering::SeqCst);
         }
 
         let ustack = self.user_stack.load(Ordering::SeqCst);
         if ustack != 0 {
             extern "C" {
-                fn pmm_free_pages(addr: u64, count: u64);
+                fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
             }
             let ustack_pages = USER_STACK_SIZE / 4096;
-            unsafe { pmm_free_pages(ustack - USER_STACK_SIZE as u64, ustack_pages as u64); }
+            unsafe { pmm_free_pages((ustack - USER_STACK_SIZE as u64) as *mut core::ffi::c_void, ustack_pages as u64); }
             self.user_stack.store(0, Ordering::SeqCst);
         }
     }
@@ -269,7 +280,7 @@ impl Drop for Process {
 pub struct ProcessTable {
     processes: Mutex<[Option<usize>; MAX_PROCESSES]>,
     next_pid: AtomicU32,
-    free_pids: Mutex<alloc::collections::VecDeque<u32>>,
+    pub free_pids: Mutex<alloc::collections::VecDeque<u32>>,
 }
 
 unsafe impl Send for ProcessTable {}

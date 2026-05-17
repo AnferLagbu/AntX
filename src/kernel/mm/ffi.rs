@@ -29,6 +29,49 @@ pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
     super::pmm::pmm_init_bitmap(reserved_after_kernel);
 }
 
+/// Initialize buddy system allocator
+/// 
+/// C signature: void pmm_init_buddy(void)
+#[no_mangle]
+pub extern "C" fn pmm_init_buddy() {
+    super::pmm::pmm_init_buddy();
+}
+
+/// Initialize COW reference counting
+/// 
+/// C signature: void cow_init(uint64_t total_pages)
+#[no_mangle]
+pub extern "C" fn cow_init(total_pages: u64) {
+    super::cow::cow_init(total_pages);
+}
+
+/// Clone a page table with COW semantics
+/// 
+/// C signature: uint64_t vmm_clone_page_table(uint64_t src_pml4)
+#[no_mangle]
+pub extern "C" fn vmm_clone_page_table(src_pml4: u64) -> u64 {
+    match super::cow::clone_page_table(src_pml4) {
+        Some(pml4) => pml4,
+        None => 0,
+    }
+}
+
+/// Handle COW page fault
+/// 
+/// C signature: int vmm_handle_cow_fault(uint64_t virt_addr, uint64_t pml4)
+#[no_mangle]
+pub extern "C" fn vmm_handle_cow_fault(virt_addr: u64, pml4: u64) -> i32 {
+    if super::cow::handle_cow_fault(virt_addr, pml4) { 1 } else { 0 }
+}
+
+/// Check if a page is COW
+/// 
+/// C signature: int vmm_is_cow_page(uint64_t virt_addr, uint64_t pml4)
+#[no_mangle]
+pub extern "C" fn vmm_is_cow_page(virt_addr: u64, pml4: u64) -> i32 {
+    if super::cow::is_cow_page(virt_addr, pml4) { 1 } else { 0 }
+}
+
 /// Allocate a single 4KB page
 /// 
 /// C signature: void* pmm_alloc_page(void)
@@ -266,6 +309,30 @@ pub extern "C" fn vmm_map_page_in_table(pml4: u64, virt: u64, phys: u64, flags: 
     let page_flags = PageFlags::from_bits_truncate(flags);
     
     get_vmm().map_page_in_table(pml4, virt_addr, phys_addr, page_flags);
+}
+
+/// Unmap page in specific table and return physical address
+/// 
+/// C signature: uint64_t vmm_unmap_page_in_table(uint64_t pml4, uint64_t virt)
+#[no_mangle]
+pub extern "C" fn vmm_unmap_page_in_table(pml4: u64, virt: u64) -> u64 {
+    match get_vmm().unmap_page_in_table(pml4, VirtAddr(virt)) {
+        Some(phys) => phys.as_u64(),
+        None => 0,
+    }
+}
+
+/// Change page protection in specific table
+/// 
+/// C signature: int vmm_protect_page_in_table(uint64_t pml4, uint64_t virt, uint64_t new_flags)
+#[no_mangle]
+pub extern "C" fn vmm_protect_page_in_table(pml4: u64, virt: u64, new_flags: u64) -> i32 {
+    let page_flags = PageFlags::from_bits_truncate(new_flags);
+    if get_vmm().protect_page_in_table(pml4, VirtAddr(virt), page_flags) {
+        0
+    } else {
+        -1
+    }
 }
 
 /// Destroy a page table and free all associated memory

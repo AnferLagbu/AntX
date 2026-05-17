@@ -5,7 +5,7 @@ use crate::kernel::tests::{runner, TestResult};
 use crate::check;
 
 fn test_undo_log_basic() -> TestResult {
-    let mut undo = Box::new(UndoLog::new());
+    let undo = Box::new(UndoLog::new());
     check!(undo.count == 0, "expected empty undo log");
     TestResult::Pass
 }
@@ -45,7 +45,7 @@ fn test_undo_log_rollback() -> TestResult {
 
     let mut v: u64 = 42;
     undo.record(&mut v as *mut u64, v);
-    v = 99;
+    unsafe { core::ptr::write_volatile(&mut v, 99); }
 
     check!(undo.count == 1, "should have 1 entry");
 

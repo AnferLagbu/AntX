@@ -62,12 +62,12 @@ fn test_vfs_mount_unmount() -> TestResult {
 
 fn test_vfs_resolve_mount() -> TestResult {
     let mgr = VfsManager::new();
-    mgr.mount("/", "ramfs");
-    mgr.mount("/home", "hvfs");
+    let _ = mgr.mount("/", "ramfs");
+    let _ = mgr.mount("/home", "hvfs");
 
     let root = mgr.resolve_mount("/");
     check!(root.is_some(), "should resolve /");
-    let (idx, fs_type) = root.unwrap();
+    let (_idx, fs_type) = root.unwrap();
     check!(fs_type == FsType::RamFs, "/ should be RamFs");
 
     let home = mgr.resolve_mount("/home/user/file.txt");
@@ -113,10 +113,10 @@ fn test_vfs_cwd() -> TestResult {
 
 fn test_vfs_snapshot_restore() -> TestResult {
     let mgr = VfsManager::new();
-    mgr.mount("/", "ramfs");
+    let _ = mgr.mount("/", "ramfs");
     mgr.capture_snapshot();
 
-    mgr.unmount("/");
+    let _ = mgr.unmount("/");
     check!(mgr.find_mount("/").is_none(), "mount should be gone after unmount");
 
     mgr.restore_from_snapshot();

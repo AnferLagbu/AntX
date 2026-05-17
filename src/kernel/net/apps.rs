@@ -117,6 +117,13 @@ impl PingStats {
     pub fn reset_reply(&self) {
         self.reply_received.store(0, Ordering::Relaxed);
     }
+
+    pub fn reset(&self) {
+        self.sent.store(0, Ordering::Relaxed);
+        self.received.store(0, Ordering::Relaxed);
+        self.seq_num.store(0, Ordering::Relaxed);
+        self.reply_received.store(0, Ordering::Relaxed);
+    }
 }
 
 /// 全局Ping统计实例
@@ -635,9 +642,23 @@ pub fn get_ping_stats() -> (u32, u32, bool) {
 
 /// 重置 Ping 统计
 pub fn reset_ping_stats() {
-    // 由于 PingStats 是 const fn new() 创建的静态变量，
-    // 我们无法直接重置它。这里仅作为API占位。
-    // 如果需要重置功能，可以使用 UnsafeCell 或其他机制。
+    G_PING_STATS.reset();
+}
+
+#[no_mangle]
+pub extern "C" fn qx_net_get_ping_stats(sent: *mut u32, recv: *mut u32, done: *mut i32) {
+    if sent.is_null() || recv.is_null() || done.is_null() { return; }
+    let (s, r, d) = get_ping_stats();
+    unsafe {
+        *sent = s;
+        *recv = r;
+        *done = if d { 1 } else { 0 };
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn qx_net_reset_ping_stats() {
+    reset_ping_stats();
 }
 
 // ============================================================================

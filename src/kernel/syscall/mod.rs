@@ -8,6 +8,7 @@ pub mod ffi;
 
 use crate::kernel::syscall::types::*;
 use crate::kernel::idt::types::InterruptFrame;
+use core::sync::atomic::Ordering;
 
 #[no_mangle]
 pub unsafe extern "C" fn syscall_init() {
@@ -65,30 +66,50 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_FS_MOUNT     => dispatch!(sys_fs_mount(a0 as *const i8, a1 as *const i8, a2 as *const i8, a3 as *const i8), b"fs_mount\0"),
         SYS_FS_SEEK      => dispatch!(sys_fs_seek(a0 as i32, a1 as i64, a2 as i32), b"fs_seek\0"),
         SYS_FS_STAT      => dispatch!(sys_fs_stat(a0 as *const i8, a1 as *mut core::ffi::c_void), b"fs_stat\0"),
+        SYS_FS_FSTAT     => dispatch!(sys_fs_fstat(a0 as i32, a1 as *mut core::ffi::c_void), b"fs_fstat\0"),
+        SYS_FS_CHMOD     => dispatch!(sys_fs_chmod(a0 as *const i8, a1 as u32), b"fs_chmod\0"),
+        SYS_FS_CHOWN     => dispatch!(sys_fs_chown(a0 as *const i8, a1 as u64), b"fs_chown\0"),
         SYS_FS_READDIR   => dispatch!(sys_fs_readdir(a0 as i32, a1 as *mut core::ffi::c_void), b"fs_readdir\0"),
         SYS_FS_UNLINK    => dispatch!(sys_fs_unlink(a0 as *const i8), b"fs_unlink\0"),
+        SYS_FS_RENAME    => dispatch!(sys_fs_rename(a0 as *const i8, a1 as *const i8), b"fs_rename\0"),
         SYS_FS_SYNC      => dispatch!(sys_fs_sync(), b"fs_sync\0"),
+        SYS_FS_UNMOUNT   => dispatch!(sys_fs_unmount(a0 as *const i8), b"fs_unmount\0"),
 
         SYS_AUTH_LOGIN        => dispatch!(sys_auth_login(a0 as *const i8, a1 as *const i8), b"auth_login\0"),
         SYS_AUTH_LOGOUT       => dispatch!(sys_auth_logout(), b"auth_logout\0"),
+        SYS_AUTH_ELEVATE      => dispatch!(sys_auth_elevate(a0 as *const i8, a1 as *const *const i8), b"auth_elevate\0"),
         SYS_AUTH_CREATE       => dispatch!(sys_auth_create(a0 as *const i8, a1 as *const i8, a2 as u8), b"auth_create\0"),
         SYS_AUTH_DELETE       => dispatch!(sys_auth_delete(a0), b"auth_delete\0"),
+        SYS_AUTH_LIST         => dispatch!(sys_auth_list(), b"auth_list\0"),
         SYS_AUTH_INFO         => dispatch!(sys_auth_info(a0), b"auth_info\0"),
+        SYS_AUTH_SETNOTE      => dispatch!(sys_auth_setnote(a0, a1 as *const i8), b"auth_setnote\0"),
         SYS_AUTH_CHANGEPW     => dispatch!(sys_auth_changepw(a0 as *const i8, a1 as *const i8), b"auth_changepw\0"),
         SYS_AUTH_VERIFY       => dispatch!(sys_auth_verify(a0 as *const i8), b"auth_verify\0"),
+        SYS_AUTH_CREATE_FIRST => dispatch!(sys_auth_create_first(a0 as *const i8), b"auth_create_first\0"),
         SYS_AUTH_TOKEN_CREATE => dispatch!(sys_auth_token_create(a0, a1 as u16, a2, a3, 1), b"auth_token_create\0"),
         SYS_AUTH_TOKEN_USE    => dispatch!(sys_auth_token_use(a0), b"auth_token_use\0"),
         SYS_AUTH_TOKEN_REVOKE => dispatch!(sys_auth_token_revoke(a0), b"auth_token_revoke\0"),
+        SYS_AUTH_TRUST_ADD    => dispatch!(sys_auth_trust_add(a0, a1 as u8, a2 as u16, a3), b"auth_trust_add\0"),
+        SYS_AUTH_TRUST_REMOVE => dispatch!(sys_auth_trust_remove(a0, a1 as u16), b"auth_trust_remove\0"),
+        SYS_AUTH_CHECK        => dispatch!(sys_auth_check(a0, a1, a2, a3 as u16), b"auth_check\0"),
+        SYS_AUTH_CREATE_WITH_CAPS => dispatch!(sys_auth_create_with_caps(a0 as *const i8, a1 as *const i8, a2 as u8, a3 as *const u64), b"auth_create_with_caps\0"),
 
         SYS_ENV_GETCWD    => dispatch!(sys_env_getcwd(a0 as *mut i8, a1), b"env_getcwd\0"),
         SYS_ENV_CHDIR     => dispatch!(sys_env_chdir(a0 as *const i8), b"env_chdir\0"),
         SYS_GETHOSTNAME   => dispatch!(sys_gethostname(a0 as *mut i8, a1), b"gethostname\0"),
         SYS_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const i8, a1), b"sethostname\0"),
         SYS_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"boot_check\0"),
+        SYS_REBOOT        => dispatch!(sys_reboot(a0 as i32), b"reboot\0"),
+        SYS_TIME          => dispatch!(sys_time(a0 as *mut u64), b"time\0"),
+        SYS_INFO          => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
+        SYS_ENV_GETVAR    => dispatch!(sys_getvar(a0 as *const i8, a1 as *mut i8, a2), b"getvar\0"),
+        SYS_ENV_SETVAR    => dispatch!(sys_setvar(a0 as *const i8, a1 as *const i8), b"setvar\0"),
 
         SYS_DISK_LIST    => dispatch!(sys_disk_list(a0 as *mut u64, a1 as u32), b"disk_list\0"),
         SYS_DISK_INFO    => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"disk_info\0"),
         SYS_DISK_FORMAT  => dispatch!(sys_disk_format(a0 as u32, a1 as *const i8), b"disk_format\0"),
+        SYS_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32), b"disk_partition\0"),
+        SYS_DISK_INSTALL_GRUB => dispatch!(sys_disk_install_grub(a0 as u32), b"disk_install_grub\0"),
 
         SYS_MEM_BRK      => dispatch!(sys_mem_brk(a0), b"mem_brk\0"),
         SYS_MEM_MAP      => dispatch!(sys_mem_map(a0, a1, a2), b"mem_map\0"),
@@ -186,6 +207,39 @@ unsafe fn sys_fs_rmdir(path: *const i8) -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_rmdir(path, pwid) as i64
 }
 
+unsafe fn sys_fs_fstat(fd: i32, st_buf: *mut core::ffi::c_void) -> i64 {
+    if fd < 0 { return SyscallError::E_BADFD.as_i64(); }
+    if st_buf.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    crate::kernel::fs::vfs::ffi::vfs_fstat(fd as u32, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat) as i64
+}
+
+unsafe fn sys_fs_chmod(path: *const i8, mode: u32) -> i64 {
+    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    crate::kernel::fs::vfs::ffi::vfs_chmod(path, mode as u16, pwid) as i64
+}
+
+unsafe fn sys_fs_chown(path: *const i8, owner_pwid: u64) -> i64 {
+    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    crate::kernel::fs::vfs::ffi::vfs_chown(path, owner_pwid, pwid) as i64
+}
+
+unsafe fn sys_fs_rename(old_path: *const i8, new_path: *const i8) -> i64 {
+    if old_path.is_null() || new_path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    crate::kernel::fs::vfs::ffi::vfs_rename(old_path, new_path, pwid) as i64
+}
+
+unsafe fn sys_fs_unmount(target: *const i8) -> i64 {
+    if target.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 9) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    SyscallError::E_NOSYS.as_i64()
+}
+
 unsafe fn sys_fs_mount(_source: *const i8, target: *const i8, fstype: *const i8, _options: *const i8) -> i64 {
     if target.is_null() || fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
     crate::kernel::fs::vfs::ffi::vfs_mount(target, fstype) as i64
@@ -228,6 +282,14 @@ unsafe fn sys_auth_logout() -> i64 {
     0
 }
 
+unsafe fn sys_auth_elevate(_cmd_path: *const i8, _argv: *const *const i8) -> i64 {
+    let current_pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if current_pwid == 0 {
+        return SyscallError::E_AUTH_NOTFOUND.as_i64();
+    }
+    crate::kernel::pwid::ffi::pwid_grant(current_pwid, current_pwid, 0, 0xFFFFFFFFFFFFFFFFu64) as i64
+}
+
 unsafe fn sys_auth_create(password: *const i8, note: *const i8, _level: u8) -> i64 {
     let creator = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::pwid::ffi::pwid_create(password, note, creator) as i64
@@ -235,6 +297,70 @@ unsafe fn sys_auth_create(password: *const i8, note: *const i8, _level: u8) -> i
 
 unsafe fn sys_auth_delete(target: u64) -> i64 {
     crate::kernel::pwid::ffi::pwid_delete(target) as i64
+}
+
+unsafe fn sys_auth_list() -> i64 {
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 9) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    crate::kernel::pwid::ffi::pwid_list_all();
+    0
+}
+
+unsafe fn sys_auth_setnote(target_pwid: u64, note: *const i8) -> i64 {
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 9) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    crate::kernel::pwid::ffi::pwid_set_note(target_pwid, note) as i64
+}
+
+unsafe fn sys_auth_create_first(password: *const i8) -> i64 {
+    if crate::kernel::pwid::ffi::pwid_any_identity_exists() {
+        return SyscallError::E_EXIST.as_i64();
+    }
+    let result = crate::kernel::pwid::ffi::pwid_create_first_identity(password);
+    if result == 0 {
+        crate::kernel::pwid::ffi::pwid_login(b"root\0".as_ptr() as *const i8, password);
+        return 0;
+    }
+    SyscallError::E_PERM.as_i64()
+}
+
+unsafe fn sys_auth_trust_add(trusted: u64, _trust_level: u8, domain: u16, cap_mask: u64) -> i64 {
+    let current_pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if current_pwid == 0 {
+        return SyscallError::E_AUTH_NOTFOUND.as_i64();
+    }
+    crate::kernel::pwid::ffi::pwid_grant(current_pwid, trusted, domain, cap_mask) as i64
+}
+
+unsafe fn sys_auth_trust_remove(trusted: u64, domain: u16) -> i64 {
+    let current_pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    crate::kernel::pwid::ffi::pwid_revoke(current_pwid, trusted, domain, 0xFFFFFFFFFFFFFFFF) as i64
+}
+
+unsafe fn sys_auth_check(pwid: u64, _owner_pwid: u64, access_type: u64, domain: u16) -> i64 {
+    if crate::kernel::pwid::ffi::pwid_has_capability(pwid, domain, access_type) { 0 } else { -1 }
+}
+
+unsafe fn sys_auth_create_with_caps(password: *const i8, note: *const i8, _level: u8, caps_array: *const u64) -> i64 {
+    let creator = crate::kernel::pwid::ffi::pwid_get_current();
+    let result = crate::kernel::pwid::ffi::pwid_create(password, note, creator);
+    if result <= 0 {
+        return SyscallError::E_PERM.as_i64();
+    }
+    if !caps_array.is_null() {
+        let new_pwid = result as u64;
+        for i in 0..16u64 {
+            let caps = unsafe { *caps_array.add(i as usize) };
+            if caps != 0 {
+                crate::kernel::pwid::ffi::pwid_grant(creator, new_pwid, i as u16, caps);
+            }
+        }
+    }
+    0
 }
 
 unsafe fn sys_auth_info(target: u64) -> i64 {
@@ -393,36 +519,260 @@ unsafe fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_mem_brk(addr: u64) -> i64 {
-    extern "C" { fn kmalloc(size: u64) -> *mut core::ffi::c_void; }
-    if addr == 0 {
-        0
-    } else {
-        SyscallError::E_NOSYS.as_i64()
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    if pid == 0 { return SyscallError::E_INVAL.as_i64(); }
+
+    let proc = match crate::kernel::proc::process::PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return SyscallError::E_INVAL.as_i64(),
+    };
+
+    let heap_base = (*proc).heap_base.load(Ordering::SeqCst);
+
+    if heap_base == 0 {
+        (*proc).heap_base.store(0x600000, Ordering::SeqCst);
+        (*proc).heap_brk.store(0x600000, Ordering::SeqCst);
+        (*proc).heap_limit.store(0x80000000, Ordering::SeqCst);
     }
+
+    let brk = (*proc).heap_brk.load(Ordering::SeqCst);
+
+    if addr == 0 {
+        return brk as i64;
+    }
+
+    if addr < (*proc).heap_base.load(Ordering::SeqCst) {
+        return SyscallError::E_INVAL.as_i64();
+    }
+
+    if addr > (*proc).heap_limit.load(Ordering::SeqCst) {
+        return SyscallError::E_NOMEM.as_i64();
+    }
+
+    let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+    if cr3 == 0 {
+        return SyscallError::E_INVAL.as_i64();
+    }
+
+    if addr > brk {
+        let old_page_end = (brk + 4095) & !0xFFF;
+        let new_page_end = (addr + 4095) & !0xFFF;
+
+        let mut vaddr = old_page_end;
+        while vaddr < new_page_end {
+            extern "C" {
+                fn pmm_alloc_page() -> *mut core::ffi::c_void;
+                fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
+                fn vmm_split_2mb_page(vaddr: u64) -> i32;
+                fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
+                fn vmm_ensure_path_user(vaddr: u64);
+            }
+
+            let page = pmm_alloc_page();
+            if page.is_null() {
+                (*proc).heap_brk.store(vaddr, Ordering::SeqCst);
+                return vaddr as i64;
+            }
+
+            extern "C" { fn memset(s: *mut u8, c: i32, n: u64); }
+            memset(page as *mut u8, 0, 4096);
+
+            let flags: u64 = 1 | 2 | 4;
+            vmm_split_2mb_page(vaddr);
+            vmm_map_page_in_table(cr3, vaddr, page as u64, flags);
+            vmm_map_page(vaddr, page as u64, flags);
+            vmm_ensure_path_user(vaddr);
+
+            vaddr += 4096;
+        }
+    } else if addr < brk {
+        let old_page_end = (brk + 4095) & !0xFFF;
+        let new_page_end = (addr + 4095) & !0xFFF;
+
+        let mut vaddr = new_page_end;
+        while vaddr < old_page_end {
+            extern "C" {
+                fn vmm_unmap_page_in_table(table: u64, vaddr: u64) -> u64;
+                fn vmm_unmap_page(vaddr: u64);
+                fn pmm_free_page(page: *mut core::ffi::c_void);
+            }
+
+            let phys = vmm_unmap_page_in_table(cr3, vaddr);
+            if phys != 0 {
+                pmm_free_page(phys as *mut core::ffi::c_void);
+            }
+            vmm_unmap_page(vaddr);
+
+            vaddr += 4096;
+        }
+    }
+
+    (*proc).heap_brk.store(addr, Ordering::SeqCst);
+    addr as i64
 }
 
-unsafe fn sys_mem_map(_addr: u64, size: u64, _prot: u64) -> i64 {
+unsafe fn sys_mem_map(addr: u64, size: u64, prot: u64) -> i64 {
     if size == 0 { return SyscallError::E_INVAL.as_i64(); }
-    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
-    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 7, 0x01) {
-        return SyscallError::E_AUTH_CAP.as_i64();
+
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    if pid == 0 { return SyscallError::E_INVAL.as_i64(); }
+
+    let proc = match crate::kernel::proc::process::PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return SyscallError::E_INVAL.as_i64(),
+    };
+
+    let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+    if cr3 == 0 {
+        return SyscallError::E_INVAL.as_i64();
     }
-    extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+
     let pages = (size + 4095) / 4096;
-    let ptr = pmm_alloc_pages(pages);
-    if ptr.is_null() { SyscallError::E_BUSY.as_i64() } else { ptr as i64 }
+
+    let map_addr = if addr == 0 {
+        let base = (*proc).mmap_brk.load(Ordering::SeqCst);
+        if base == 0 {
+            let init_base = 0x80000000u64;
+            (*proc).mmap_base.store(init_base, Ordering::SeqCst);
+            (*proc).mmap_brk.store(init_base, Ordering::SeqCst);
+            init_base
+        } else {
+            base
+        }
+    } else {
+        if addr & 0xFFF != 0 {
+            return SyscallError::E_INVAL.as_i64();
+        }
+        addr
+    };
+
+    let aligned_size = pages * 4096;
+
+    extern "C" {
+        fn pmm_alloc_page() -> *mut core::ffi::c_void;
+        fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
+        fn vmm_split_2mb_page(vaddr: u64) -> i32;
+        fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
+        fn vmm_ensure_path_user(vaddr: u64);
+        fn memset(s: *mut u8, c: i32, n: u64);
+    }
+
+    let mut flags: u64 = 1 | 4;
+    if prot & 0x02 != 0 || prot & 0x01 != 0 {
+        flags |= 2;
+    }
+
+    for i in 0..pages {
+        let vaddr = map_addr + i * 4096;
+
+        let page = pmm_alloc_page();
+        if page.is_null() {
+            if i > 0 {
+                for j in 0..i {
+                    extern "C" {
+                        fn vmm_unmap_page_in_table(table: u64, vaddr: u64) -> u64;
+                        fn vmm_unmap_page(vaddr: u64);
+                        fn pmm_free_page(page: *mut core::ffi::c_void);
+                    }
+                    let phys = vmm_unmap_page_in_table(cr3, map_addr + j * 4096);
+                    if phys != 0 { pmm_free_page(phys as *mut core::ffi::c_void); }
+                    vmm_unmap_page(map_addr + j * 4096);
+                }
+            }
+            return SyscallError::E_NOMEM.as_i64();
+        }
+
+        memset(page as *mut u8, 0, 4096);
+
+        vmm_split_2mb_page(vaddr);
+        vmm_map_page_in_table(cr3, vaddr, page as u64, flags);
+        vmm_map_page(vaddr, page as u64, flags);
+        vmm_ensure_path_user(vaddr);
+    }
+
+    if addr == 0 {
+        let new_brk = map_addr + aligned_size;
+        (*proc).mmap_brk.store(new_brk, Ordering::SeqCst);
+    }
+
+    map_addr as i64
 }
 
 unsafe fn sys_mem_unmap(addr: u64, size: u64) -> i64 {
     if addr == 0 || size == 0 { return SyscallError::E_INVAL.as_i64(); }
-    extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+    if addr & 0xFFF != 0 { return SyscallError::E_INVAL.as_i64(); }
+
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    if pid == 0 { return SyscallError::E_INVAL.as_i64(); }
+
+    let proc = match crate::kernel::proc::process::PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return SyscallError::E_INVAL.as_i64(),
+    };
+
+    let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+    if cr3 == 0 {
+        return SyscallError::E_INVAL.as_i64();
+    }
+
     let pages = (size + 4095) / 4096;
-    pmm_free_pages(addr as *mut core::ffi::c_void, pages);
+
+    extern "C" {
+        fn vmm_unmap_page_in_table(table: u64, vaddr: u64) -> u64;
+        fn vmm_unmap_page(vaddr: u64);
+        fn pmm_free_page(page: *mut core::ffi::c_void);
+    }
+
+    for i in 0..pages {
+        let vaddr = addr + i * 4096;
+
+        let phys = vmm_unmap_page_in_table(cr3, vaddr);
+        if phys != 0 {
+            pmm_free_page(phys as *mut core::ffi::c_void);
+        }
+        vmm_unmap_page(vaddr);
+    }
+
     0
 }
 
-unsafe fn sys_mem_protect(_addr: u64, _size: u64, _prot: u64) -> i64 {
-    SyscallError::E_NOSYS.as_i64()
+unsafe fn sys_mem_protect(addr: u64, size: u64, prot: u64) -> i64 {
+    if addr == 0 || size == 0 { return SyscallError::E_INVAL.as_i64(); }
+    if addr & 0xFFF != 0 { return SyscallError::E_INVAL.as_i64(); }
+
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    if pid == 0 { return SyscallError::E_INVAL.as_i64(); }
+
+    let proc = match crate::kernel::proc::process::PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return SyscallError::E_INVAL.as_i64(),
+    };
+
+    let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+    if cr3 == 0 {
+        return SyscallError::E_INVAL.as_i64();
+    }
+
+    let pages = (size + 4095) / 4096;
+
+    extern "C" {
+        fn vmm_protect_page_in_table(table: u64, vaddr: u64, new_flags: u64) -> i32;
+    }
+
+    let mut flags: u64 = 1 | 4;
+    if prot & 0x02 != 0 || prot & 0x01 != 0 {
+        flags |= 2;
+    }
+    if prot & 0x04 != 0 {
+        flags |= 1u64 << 63;
+    }
+
+    for i in 0..pages {
+        let vaddr = addr + i * 4096;
+        vmm_protect_page_in_table(cr3, vaddr, flags);
+    }
+
+    0
 }
 
 // ============================================================================
@@ -578,6 +928,10 @@ unsafe fn sys_install_grub(_disk_id: u32) -> i64 {
 }
 
 unsafe fn sys_disk_partition(_disk_id: u32) -> i64 {
+    SyscallError::E_NOSYS.as_i64()
+}
+
+unsafe fn sys_disk_install_grub(_disk_id: u32) -> i64 {
     SyscallError::E_NOSYS.as_i64()
 }
 

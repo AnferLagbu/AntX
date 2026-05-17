@@ -7,7 +7,7 @@ use crate::kernel::fs::hvfs::zap::*;
 use crate::kernel::fs::hvfs::txg::*;
 use crate::kernel::fs::hvfs::zil::*;
 use crate::kernel::tests::{runner, TestResult};
-use crate::{check, assert_eq_test};
+use crate::check;
 
 fn test_bp_null() -> TestResult {
     let bp = HvBlockPointer::null();
@@ -111,7 +111,7 @@ fn test_dmu_object_dir_type() -> TestResult {
 }
 
 fn test_zap_insert_lookup() -> TestResult {
-    let mut zap = HvZap::new();
+    let zap = HvZap::new();
     zap.insert_u64("key1", 42);
     let val = match zap.lookup_u64("key1") { Some(v) => v, None => return TestResult::Fail("key1 not found") };
     check!(val == 42, "value mismatch");
@@ -119,7 +119,7 @@ fn test_zap_insert_lookup() -> TestResult {
 }
 
 fn test_zap_overwrite() -> TestResult {
-    let mut zap = HvZap::new();
+    let zap = HvZap::new();
     zap.insert_u64("key1", 10);
     zap.insert_u64("key1", 99);
     let val = match zap.lookup_u64("key1") { Some(v) => v, None => return TestResult::Fail("key1 not found after overwrite") };
@@ -134,7 +134,7 @@ fn test_zap_nonexistent() -> TestResult {
 }
 
 fn test_zap_remove() -> TestResult {
-    let mut zap = HvZap::new();
+    let zap = HvZap::new();
     zap.insert_u64("rm_me", 7);
     check!(zap.lookup_u64("rm_me").is_some(), "should exist before remove");
     zap.remove("rm_me");
@@ -172,7 +172,7 @@ fn test_zil_record_write() -> TestResult {
 }
 
 fn test_zil_add_and_sync() -> TestResult {
-    let mut zil = HvZil::new();
+    let zil = HvZil::new();
     zil.init();
     zil.add_record(HvZilRecord::new_write(1, 5, 0, 512));
     zil.sync(1);

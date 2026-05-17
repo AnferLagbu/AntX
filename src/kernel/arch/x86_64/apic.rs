@@ -141,6 +141,20 @@ pub fn broadcast_ipi(vector: u8) {
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
+pub fn send_init_ipi(apic_id: u8) {
+    if !is_initialized() { return; }
+    apic_write(APIC_ICR_HIGH, (apic_id as u32) << 24);
+    apic_write(APIC_ICR_LOW, 0x00000500);
+    while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
+}
+
+pub fn send_sipi(apic_id: u8, vector: u8) {
+    if !is_initialized() { return; }
+    apic_write(APIC_ICR_HIGH, (apic_id as u32) << 24);
+    apic_write(APIC_ICR_LOW, 0x00000600 | vector as u32);
+    while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
+}
+
 pub fn init_timer(vector: u8, periodic: bool, divisor: u32) {
     if !is_initialized() { return; }
 
@@ -239,6 +253,10 @@ pub extern "C" fn apic_get_id() -> u32 { get_id() }
 pub extern "C" fn apic_send_ipi(apic_id: u8, vector: u8) { send_ipi(apic_id, vector); }
 #[no_mangle]
 pub extern "C" fn apic_broadcast_ipi(vector: u8) { broadcast_ipi(vector); }
+#[no_mangle]
+pub extern "C" fn apic_send_init_ipi(apic_id: u8) { send_init_ipi(apic_id); }
+#[no_mangle]
+pub extern "C" fn apic_send_sipi(apic_id: u8, vector: u8) { send_sipi(apic_id, vector); }
 #[no_mangle]
 pub extern "C" fn apic_init_timer(vector: u8, periodic: bool, divisor: u32) { init_timer(vector, periodic, divisor); }
 #[no_mangle]

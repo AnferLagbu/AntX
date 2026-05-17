@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use crate::kernel::sync::mutex::Mutex;
 use crate::kernel::fs::hvfs::bp::HvBlockPointer;
-use crate::kernel::fs::hvfs::dmu::{HvObjSet, HvObjType, HV_DMU_OBJ_ROOT};
+use crate::kernel::fs::hvfs::dmu::{HvObjSet, HvObjType};
 use crate::kernel::fs::hvfs::zap::HvZap;
 
 pub const HV_DS_MAX_NAME: usize = 128;

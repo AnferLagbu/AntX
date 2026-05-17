@@ -48,7 +48,7 @@ impl AuditLog {
                 i
             };
             let e = &self.entries[idx];
-            crate::serial_println!("[AUDIT] t={} pwid={:#x} action={} target={:#x} details={:#x}",
+            crate::klog_ffi!(klog_ffi_info, "[AUDIT] t={} pwid={:#x} action={} target={:#x} details={:#x}",
                 e.timestamp, e.pwid.as_u64(), e.action.as_u32(), e.target_pwid.as_u64(), e.details);
         }
     }
@@ -66,4 +66,13 @@ pub fn log(pwid: u64, action: AuditAction, target_pwid: u64, domain: u64, caps: 
 
 pub fn dump() {
     unsafe { GLOBAL_AUDIT.dump(); }
+}
+
+pub fn get_entries() -> &'static [AuditEntry; AUDIT_CAPACITY] {
+    unsafe { GLOBAL_AUDIT.get_entries() }
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_audit_get_count() -> u32 {
+    unsafe { GLOBAL_AUDIT.count.load(Ordering::Acquire) as u32 }
 }

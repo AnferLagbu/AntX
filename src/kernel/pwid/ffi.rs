@@ -275,3 +275,25 @@ pub extern "C" fn pwid_recover_first(password: *const core::ffi::c_char, note: *
         Err(e) => e.as_i32() as i64,
     }
 }
+
+#[no_mangle]
+pub extern "C" fn pwid_list_all() {
+    let t = table::get_table();
+    let entries = t.list_all();
+    for entry in entries {
+        crate::klog_ffi!(klog_ffi_info, "[PWID] pwid={:016X} note={} level={}",
+            entry.get_pwid().as_u64(),
+            entry.get_note_str(),
+            entry.privilege_level.load(core::sync::atomic::Ordering::Acquire));
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_set_note(target_pwid: u64, note: *const core::ffi::c_char) -> i32 {
+    if note.is_null() { return PwidError::InvalidPassword.as_i32(); }
+    let n = unsafe { core::ffi::CStr::from_ptr(note) }.to_str().unwrap_or("");
+    match table::get_table().set_note(target_pwid, n) {
+        Ok(()) => 0,
+        Err(e) => e.as_i32(),
+    }
+}

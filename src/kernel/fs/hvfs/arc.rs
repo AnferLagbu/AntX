@@ -278,7 +278,7 @@ impl HvArc {
         })
     }
 
-    fn evict_if_needed(&self, inner: &mut HvArcInner, incoming_size: usize) {
+    fn evict_if_needed(&self, inner: &mut HvArcInner, _incoming_size: usize) {
         let current: usize = inner.mru.len() + inner.mfu.len();
         while current + 1 > inner.max_size {
             if inner.mru.len() > inner.p {

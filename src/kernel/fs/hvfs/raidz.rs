@@ -1,6 +1,5 @@
 use alloc::vec;
 use alloc::vec::Vec;
-use crate::kernel::fs::hvfs::bp::HvDva;
 
 pub const HV_RAIDZ_MIN_COLS: usize = 2;
 pub const HV_RAIDZ_MAX_COLS: usize = 16;
@@ -104,7 +103,7 @@ impl HvRaidzMap {
     }
 
     pub fn reconstruct_data(&self, parity_data: &[Vec<u8>], failed_cols: &[usize]) -> Option<Vec<u8>> {
-        let data_cols = self.data_cols();
+        let _data_cols = self.data_cols();
         if failed_cols.len() > self.level.max_failures() { return None; }
 
         if self.level != HvRaidzLevel::Single && !failed_cols.is_empty() {
@@ -146,7 +145,7 @@ impl HvRaidzMap {
             }
         }
 
-        let mut all_data = parity_data.to_vec();
+        let all_data = parity_data.to_vec();
         let mut result = Vec::new();
         for col in self.nparity..self.ncols {
             result.extend_from_slice(&all_data[col]);

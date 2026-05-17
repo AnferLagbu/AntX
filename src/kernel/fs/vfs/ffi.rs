@@ -571,6 +571,13 @@ pub extern "C" fn vfs_unlink(path: *const c_char, pwid: u64) -> i32 {
 pub extern "C" fn vfs_rename(_old: *const c_char, _new: *const c_char, _pwid: u64) -> i32 { -1 }
 
 #[no_mangle]
+pub extern "C" fn vfs_fstat(fd: u32, st_buf: *mut VfsStat) -> i32 {
+    if st_buf.is_null() { return -1; }
+    let _ = fd;
+    -1
+}
+
+#[no_mangle]
 pub extern "C" fn vfs_rmdir(path: *const c_char, pwid: u64) -> i32 {
     vfs_rmdir_internal(path, pwid)
 }
@@ -601,7 +608,7 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let fd_info = VFS_MANAGER.get_fd_info(fd as usize);
     let current_offset = fd_info.map(|(_, off, _)| off).unwrap_or(0);
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(
+    let (_mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(
         &VFS_MANAGER.fd_table.lock()[fd as usize].get_path()
     ) {
         Some(r) => r,

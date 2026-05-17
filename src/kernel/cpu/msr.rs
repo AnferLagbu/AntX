@@ -51,7 +51,6 @@ pub unsafe fn write_msr(msr: u32, value: u64) {
 
 /// FFI 兼容: 读取 MSR (返回两个 32 位值)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -> i32 {
@@ -68,7 +67,6 @@ pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -
 
 /// FFI 兼容: 写入 MSR
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub unsafe extern "C" fn cpu_write_msr(msr: u32, low: u32, high: u32) -> i32 {
@@ -78,7 +76,6 @@ pub unsafe extern "C" fn cpu_write_msr(msr: u32, low: u32, high: u32) -> i32 {
 
 /// FFI 兼容: 读取 64 位 MSR
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub unsafe extern "C" fn cpu_read_msr64(msr: u32) -> u64 {
@@ -87,7 +84,6 @@ pub unsafe extern "C" fn cpu_read_msr64(msr: u32) -> u64 {
 
 /// FFI 兼容: 写入 64 位 MSR
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub unsafe extern "C" fn cpu_write_msr64(msr: u32, value: u64) -> i32 {

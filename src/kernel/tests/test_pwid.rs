@@ -1,11 +1,7 @@
 use crate::kernel::pwid::sha256;
 use crate::kernel::pwid::types::*;
-use crate::kernel::pwid::table;
 use crate::kernel::pwid::engine;
 use crate::kernel::pwid::capability;
-use crate::kernel::pwid::grant_record;
-use crate::kernel::pwid::audit;
-use crate::kernel::pwid::first_token;
 use crate::kernel::tests::{runner, TestResult};
 use crate::check;
 

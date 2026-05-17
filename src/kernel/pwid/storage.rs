@@ -210,3 +210,8 @@ pub fn remove_database() -> i32 {
     let path = path_to_bytes(DB_PATH);
     unsafe { vfs_unlink_internal(path.as_ptr() as *const i8, 0) }
 }
+
+#[no_mangle]
+pub extern "C" fn pwid_remove_database() -> i32 {
+    remove_database()
+}

@@ -225,6 +225,16 @@ pub extern "C" fn recovery_domain_get_failures(domain_id: u64) -> i32 {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn recovery_domain_consume_quota(domain_id: u64) -> i32 {
+    let mgr = super::RECOVERY_MANAGER.lock();
+    if let Some(dom) = mgr.find(domain_id) {
+        if dom.consume_quota_tick() { 1 } else { 0 }
+    } else {
+        -1
+    }
+}
+
 #[cfg(feature = "fault_injection")]
 #[no_mangle]
 pub extern "C" fn recovery_set_fault_rate(rate: u32) {

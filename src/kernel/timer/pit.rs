@@ -46,7 +46,6 @@ const PIT_MAX_COUNT: u16 = 0xFFFF;      // 65535
 const PIT_MIN_COUNT: u16 = 0x0001;      // 1
 
 /// 控制字格式
-#[allow(dead_code)]
 mod control_word {
     /// 选择通道
     pub const SELECT_CHANNEL_0: u8 = 0x00;

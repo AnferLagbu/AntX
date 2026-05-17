@@ -1,5 +1,4 @@
 use alloc::vec::Vec;
-use alloc::string::String;
 use crate::kernel::sync::mutex::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
 

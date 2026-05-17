@@ -1,11 +1,8 @@
 use crate::kernel::fs::hvfs::bp::*;
-use crate::kernel::fs::hvfs::checksum::HvChecksum;
-use crate::kernel::fs::hvfs::spa::*;
 use crate::kernel::fs::hvfs::dmu::*;
 use crate::kernel::fs::hvfs::arc::*;
 use crate::kernel::fs::hvfs::zap::*;
 use crate::kernel::fs::hvfs::txg::*;
-use crate::kernel::fs::hvfs::zil::*;
 use crate::kernel::fs::hvfs::compress;
 use crate::kernel::fs::hvfs::snapshot::*;
 use crate::kernel::fs::hvfs::dataset::*;
@@ -42,7 +39,7 @@ fn test_dmu_objset_free() -> TestResult {
     let os = HvObjSet::new();
     os.init(0);
     let obj_id = os.alloc_obj(HvObjType::File, 0).unwrap();
-    let count_before = os.obj_count();
+    let _count_before = os.obj_count();
     let freed = os.free_obj(obj_id);
     check!(freed, "free_obj should succeed");
     let obj_after = os.get_obj(obj_id);
@@ -63,7 +60,7 @@ fn test_dmu_cow_preserves_old() -> TestResult {
 }
 
 fn test_zap_large_namespace() -> TestResult {
-    let mut zap = HvZap::with_capacity(64);
+    let zap = HvZap::with_capacity(64);
     for i in 0..30u64 {
         let key = alloc::format!("key_{}", i);
         zap.insert_u64(&key, i * 100);
@@ -79,7 +76,7 @@ fn test_zap_large_namespace() -> TestResult {
 }
 
 fn test_zap_contains_clear() -> TestResult {
-    let mut zap = HvZap::new();
+    let zap = HvZap::new();
     zap.insert_u64("test", 42);
     check!(zap.contains("test"), "should contain test");
     check!(!zap.contains("other"), "should not contain other");
@@ -127,7 +124,7 @@ fn test_arc_eviction() -> TestResult {
         let data: [u8; 64] = [i as u8; 64];
         arc.insert(key, &data, HvArcBufType::Data);
     }
-    let (hits, misses, size, evicts) = arc.get_stats();
+    let (hits, misses, size, _evicts) = arc.get_stats();
     check!(size > 0 || hits > 0 || misses > 0, "arc should have activity after inserts");
     TestResult::Pass
 }
@@ -208,8 +205,7 @@ fn test_dataset_create() -> TestResult {
 fn test_dataset_init() -> TestResult {
     let ds = HvDataset::new(2, "init-ds", 0);
     ds.init(0);
-    let used = ds.get_used();
-    check!(used >= 0, "used should be non-negative");
+    let _used = ds.get_used();
     TestResult::Pass
 }
 

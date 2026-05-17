@@ -1,7 +1,7 @@
 use crate::kernel::tests::{runner, TestResult};
 use crate::check;
 use crate::kernel::ipc::types::*;
-use crate::kernel::ipc::{pipe, shm, msgq, sem};
+use crate::kernel::ipc::{pipe, shm, sem};
 
 fn create_test_namespace() -> IpcNamespace {
     IpcNamespace {

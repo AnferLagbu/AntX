@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
-use crate::kernel::sync::mutex::Mutex;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub const HV_MS_BLOCK_SIZE: u64 = 4096;
 pub const HV_MS_MAX_BLOCKS: u32 = 16384;

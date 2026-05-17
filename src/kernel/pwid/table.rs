@@ -131,6 +131,16 @@ impl PwidTable {
         None
     }
 
+    pub fn find_mut(&mut self, pwid: u64) -> Option<&mut PwidEntry> {
+        if pwid == 0 { return None; }
+        for entry in self.entries.iter_mut() {
+            if entry.pwid.load(Ordering::Acquire) == pwid {
+                return Some(entry);
+            }
+        }
+        None
+    }
+
     pub fn find_by_note(&self, note: &str) -> Option<&PwidEntry> {
         for entry in self.entries.iter() {
             if !entry.is_valid() { continue; }
@@ -438,6 +448,30 @@ impl PwidTable {
 
     pub fn any_identity_exists(&self) -> bool {
         self.any_identity_exists.load(Ordering::Acquire)
+    }
+
+    pub fn list_all(&self) -> alloc::vec::Vec<&PwidEntry> {
+        let mut result = alloc::vec::Vec::new();
+        for i in 0..self.count.load(Ordering::Acquire) {
+            if self.entries[i].is_valid() {
+                result.push(&self.entries[i]);
+            }
+        }
+        result
+    }
+
+    pub fn set_note(&self, pwid: u64, note: &str) -> Result<(), PwidError> {
+        for entry in self.entries.iter() {
+            if entry.pwid.load(Ordering::Acquire) == pwid {
+                unsafe {
+                    let e = entry as *const PwidEntry as *mut PwidEntry;
+                    (*e).set_note(note);
+                }
+                self.set_modified();
+                return Ok(());
+            }
+        }
+        Err(PwidError::NotFound)
     }
 }
 

@@ -62,3 +62,16 @@ pub fn pwid_now() -> u64 {
         tsc
     }
 }
+
+#[no_mangle]
+pub extern "C" fn pwid_first_token_generate() {
+    generate_first_token();
+}
+
+#[no_mangle]
+pub extern "C" fn pwid_first_token_grant(target_pwid: u64, domain: u16, caps: u64) -> i32 {
+    match grant_from_first_token(target_pwid, CapDomain::from(domain), CapBits(caps)) {
+        Ok(()) => 0,
+        Err(e) => e.as_i32(),
+    }
+}

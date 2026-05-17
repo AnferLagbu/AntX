@@ -505,7 +505,7 @@ impl HvfsData {
         let ds_id = { self.datasets.lock().len() as u64 };
         let txg = self.spa.current_txg();
         match self.snap_mgr.create_clone(snap_id, ds_id, name, txg) {
-            Some(mut ds) => {
+            Some(ds) => {
                 ds.init(0);
                 self.datasets.lock().push(ds);
                 ds_id as i32

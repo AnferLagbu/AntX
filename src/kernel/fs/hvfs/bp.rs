@@ -1,4 +1,3 @@
-use core::mem::size_of;
 
 pub const HV_DVA_MAX: usize = 2;
 pub const HV_BP_CHECKSUM_SIZE: usize = 32;

@@ -38,7 +38,7 @@ fn compress_lz4(data: &[u8]) -> Option<Vec<u8>> {
         let mut match_len = 0;
         let mut ref_pos = 0;
         if ip + 4 <= src_len {
-            let hash = lz4_hash(data, ip);
+            let _hash = lz4_hash(data, ip);
             let search_start = if ip > 65536 { ip - 65536 } else { 0 };
             for s in (search_start..ip).step_by(4) {
                 if s + 4 <= src_len && data[s..s + 4] == data[ip..ip + 4] {

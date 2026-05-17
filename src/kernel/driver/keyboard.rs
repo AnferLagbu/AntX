@@ -602,14 +602,14 @@ impl KeyboardDriver {
 // ============================================================================
 
 /// 全局键盘驱动实例
-static mut KEYBOARD_DRIVER: Option<KeyboardDriver> = None;
+pub(crate) static mut KEYBOARD: Option<KeyboardDriver> = None;
 
 /// 初始化键盘 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn keyboard_init() {
     unsafe {
-        KEYBOARD_DRIVER = Some(KeyboardDriver::new());
-        if let Some(ref mut driver) = KEYBOARD_DRIVER {
+        KEYBOARD = Some(KeyboardDriver::new());
+        if let Some(ref mut driver) = KEYBOARD {
             let _ = driver.init();
         }
     }
@@ -619,7 +619,7 @@ pub extern "C" fn keyboard_init() {
 #[no_mangle]
 pub extern "C" fn keyboard_irq_handler() {
     unsafe {
-        if let Some(ref mut driver) = KEYBOARD_DRIVER {
+        if let Some(ref mut driver) = KEYBOARD {
             driver.handle_interrupt();
         }
     }
@@ -629,7 +629,7 @@ pub extern "C" fn keyboard_irq_handler() {
 #[no_mangle]
 pub extern "C" fn keyboard_read_char() -> i32 {
     unsafe {
-        match &mut KEYBOARD_DRIVER {
+        match &mut KEYBOARD {
             Some(driver) => {
                 match driver.read_char() {
                     Some(ch) => ch as i32,
@@ -645,7 +645,7 @@ pub extern "C" fn keyboard_read_char() -> i32 {
 #[no_mangle]
 pub extern "C" fn keyboard_has_char() -> i32 {
     unsafe {
-        match &KEYBOARD_DRIVER {
+        match &KEYBOARD {
             Some(driver) => {
                 if !driver.is_buffer_empty() { 1 } else { 0 }
             },

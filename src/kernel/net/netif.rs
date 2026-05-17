@@ -474,11 +474,44 @@ pub fn get_e1000_device() -> Option<&'static E1000Device> {
 pub fn send_packet(_data: &[u8]) -> Result<usize, DriverError> {
     match get_e1000_device() {
         Some(_dev) => {
-            // 注意: 这里需要可变引用，但全局实例是静态的
-            // 实际实现可能需要使用内部可变性或 Mutex
             Err(DriverError::NotInitialized)
         },
         None => Err(DriverError::NotInitialized),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn qx_netif_get_ipv4() -> u32 {
+    get_ipv4_address()
+        .map(|[a, b, c, d]| ((a as u32) << 24) | ((b as u32) << 16) | ((c as u32) << 8) | d as u32)
+        .unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn qx_netif_is_dhcp_done() -> i32 {
+    if is_dhcp_done() { 1 } else { 0 }
+}
+
+#[no_mangle]
+pub extern "C" fn qx_netif_init_rust_e1000() -> i32 {
+    match init_network_with_rust_e1000() {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn qx_netif_get_ptr() -> *mut core::ffi::c_void {
+    unsafe { get_netif().unwrap_or(core::ptr::null_mut()) }
+}
+
+#[no_mangle]
+pub extern "C" fn qx_netif_send_packet(data: *const u8, len: usize) -> i32 {
+    if data.is_null() || len == 0 { return -1; }
+    let slice = unsafe { core::slice::from_raw_parts(data, len) };
+    match send_packet(slice) {
+        Ok(n) => n as i32,
+        Err(_) => -1,
     }
 }
 

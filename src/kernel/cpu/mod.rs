@@ -575,7 +575,6 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 /// # Safety
 /// 此函数执行内联汇编和 MSR 写入, 必须在特权级(Ring 0)调用。
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_init() -> i32 {
@@ -663,7 +662,6 @@ pub extern "C" fn cpu_init() -> i32 {
 /// * 非 NULL - 指向全局 CpuInfo 的指针
 /// * NULL - 未初始化
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
@@ -675,7 +673,6 @@ pub extern "C" fn cpu_get_info() -> *const CpuInfo {
 
 /// 检查 CPU 是否支持指定特性 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
@@ -687,7 +684,6 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 
 /// 检查是否为 Intel CPU (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_intel() -> bool {
@@ -699,7 +695,6 @@ pub extern "C" fn cpu_is_intel() -> bool {
 
 /// 检查是否为 AMD CPU (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_amd() -> bool {
@@ -711,7 +706,6 @@ pub extern "C" fn cpu_is_amd() -> bool {
 
 /// 检查是否在虚拟化环境中 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_virtualized() -> bool {
@@ -723,7 +717,6 @@ pub extern "C" fn cpu_is_virtualized() -> bool {
 
 /// 获取最大标准 CPUID leaf 号 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
@@ -735,7 +728,6 @@ pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
 
 /// 获取最大扩展 CPUID leaf 号 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
@@ -747,7 +739,6 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 
 /// 获取 APIC ID (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_apic_id() -> u32 {
@@ -759,7 +750,6 @@ pub extern "C" fn cpu_get_apic_id() -> u32 {
 
 /// 获取逻辑线程数 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_logical_cores() -> u8 {
@@ -771,7 +761,6 @@ pub extern "C" fn cpu_get_logical_cores() -> u8 {
 
 /// 获取物理核心数 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_physical_cores() -> u8 {
@@ -783,7 +772,6 @@ pub extern "C" fn cpu_get_physical_cores() -> u8 {
 
 /// 获取 CPU 签名 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_signature() -> CpuSignature {
@@ -795,7 +783,6 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 
 /// 获取缓存信息指针 (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
@@ -807,7 +794,6 @@ pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
 
 /// 获取 TSC 频率 (Hz) (FFI兼容)
 /// FFI export function (C-callable)
-#[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_tsc_frequency() -> u64 {

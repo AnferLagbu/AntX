@@ -193,6 +193,78 @@ pub extern "C" fn driver_shutdown() {
     let _ = shutdown_all();
 }
 
+#[no_mangle]
+pub extern "C" fn keyboard_read_line(buf: *mut u8, max_len: usize) -> i32 {
+    if buf.is_null() || max_len == 0 { return -1; }
+    unsafe {
+        if let Some(ref mut kb) = keyboard::KEYBOARD {
+            let slice = core::slice::from_raw_parts_mut(buf, max_len);
+            match kb.read_line(slice, max_len) {
+                Ok(n) => n as i32,
+                Err(_) => -1,
+            }
+        } else {
+            -1
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn keyboard_buffer_length() -> i32 {
+    unsafe {
+        if let Some(ref kb) = keyboard::KEYBOARD {
+            kb.buffer_length() as i32
+        } else {
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn keyboard_clear_buffer() {
+    unsafe {
+        if let Some(ref mut kb) = keyboard::KEYBOARD {
+            kb.clear_buffer();
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn serial_send_string(port: u8, s: *const u8, len: usize) -> i32 {
+    if s.is_null() || len == 0 { return -1; }
+    unsafe {
+        if let Some(ref mut sp) = serial::SERIAL_PORTS[port as usize] {
+            let slice = core::slice::from_raw_parts(s, len);
+            match sp.send_string(slice) {
+                Ok(n) => n as i32,
+                Err(_) => -1,
+            }
+        } else {
+            -1
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn serial_available_bytes(port: u8) -> i32 {
+    unsafe {
+        if let Some(ref sp) = serial::SERIAL_PORTS[port as usize] {
+            sp.available_bytes() as i32
+        } else {
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn serial_clear_rx_buffer(port: u8) {
+    unsafe {
+        if let Some(ref mut sp) = serial::SERIAL_PORTS[port as usize] {
+            sp.clear_rx_buffer();
+        }
+    }
+}
+
 // ============================================================================
 // 单元测试
 // ============================================================================

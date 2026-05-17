@@ -1,5 +1,5 @@
 use crate::kernel::mm::{PhysAddr, VirtAddr, PageSize, PageFlags, PageTableEntry, MemoryInfo};
-use crate::kernel::mm::{PAGE_SIZE, KERNEL_BASE, PAGE_PRESENT, PAGE_WRITABLE, PAGE_USER, PAGE_NX};
+use crate::kernel::mm::KERNEL_BASE;
 use crate::kernel::mm::{pml4_index, pdpt_index, pd_index, pt_index, phys_to_virt, virt_to_phys};
 use crate::kernel::tests::{runner, TestResult};
 use crate::check;
@@ -46,7 +46,7 @@ fn test_page_size() -> TestResult {
 }
 
 fn test_page_table_entry() -> TestResult {
-    let mut pte = PageTableEntry::new();
+    let pte = PageTableEntry::new();
     check!(!pte.is_present(), "new PTE should not be present");
 
     pte.set_present(true);

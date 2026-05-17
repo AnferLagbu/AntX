@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use crate::kernel::sync::mutex::Mutex;
 use crate::kernel::fs::hvfs::bp::HvBlockPointer;
-use crate::kernel::fs::hvfs::dataset::{HvDataset, HV_DS_MAX_DATASETS};
+use crate::kernel::fs::hvfs::dataset::HvDataset;
 
 pub const HV_SNAP_MAX: usize = 64;
 
