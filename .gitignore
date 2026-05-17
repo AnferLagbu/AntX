@@ -10,6 +10,7 @@ tmp/
 *.img
 
 src/rust/target/
+host-tests/target/
 
 tests/reports/*.json
 

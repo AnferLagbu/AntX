@@ -104,7 +104,7 @@ $(VERSION_AUTO_H):
 $(VERSION_REGISTRY_H):
 	@$(MAKE) generate-version
 
-.PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-unit test-integration test-stress \
+.PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-host test-unit test-integration test-stress \
          test-all test-chaos test-smp
 
 all: build/kernel.bin user
@@ -448,6 +448,13 @@ build/kernel_test.bin: $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
 	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map --allow-multiple-definition -o build/kernel_test.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
 
 # 单元测试（优化版）
+test-host:
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║     Running Host-Side Unit Tests             ║"
+	@echo "╚══════════════════════════════════════════════╝"
+	@cd host-tests && cargo test --quiet 2>&1 | tee tests/reports/host_test_$$(date +%Y%m%d_%H%M%S).log
+	@echo ""
+
 test-unit: build/kernel_test.bin user
 	@echo "╔══════════════════════════════════════════════╗"
 	@echo "║     Building & Running Unit Tests             ║"
@@ -504,7 +511,7 @@ test-unit: build/kernel_test.bin user
 		tail -80 tests/reports/unit_test_$${timestamp}.log; \
 	fi
 
-test-all: test-unit
+test-all: test-host test-unit
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════╗"
 	@echo "║     🎉 All Tests Complete!                            ║"

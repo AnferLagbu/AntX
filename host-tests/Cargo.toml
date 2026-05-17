@@ -1,0 +1,25 @@
+[package]
+name = "antx-host-tests"
+version = "0.1.0"
+edition = "2021"
+description = "AntX kernel host-side unit tests"
+authors = ["Anfer"]
+
+[dependencies]
+bitflags = "2.4"
+
+[[test]]
+name = "capability"
+path = "src/capability.rs"
+
+[[test]]
+name = "checksum"
+path = "src/checksum.rs"
+
+[[test]]
+name = "sha256"
+path = "src/sha256.rs"
+
+[[test]]
+name = "buddy"
+path = "src/buddy.rs"
