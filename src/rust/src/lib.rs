@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
-#![feature(asm)]  // 内联汇编支持 (x86_64 特定指令)
+#![feature(asm)]
 
 // ============================================================================
 // ✅ 全局警告抑制配置 (内核开发环境特有)
@@ -129,11 +129,11 @@ pub extern "C" fn kernel_init() {
         }
 
         crate::kernel::tests::test_runner_init();
-        crate::klog_boot_info!("Tests complete, halting");
-        // Halt after tests
-        loop {
-            unsafe { core::arch::asm!("hlt", options(nomem, nostack)); }
-        }
+        crate::klog_boot_info!("Tests complete");
+
+        let r = crate::kernel::tests::runner();
+        let failed = r.failed.load(Ordering::SeqCst);
+        crate::kernel::tests::qemu_exit(failed == 0);
     }
 
     // 1. Boot Info — 解析Multiboot信息获取内存布局

@@ -1,6 +1,6 @@
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
-use crate::assert_eq_test;
+use super::check;
+use super::assert_eq_test;
 use crate::kernel::proc::types::*;
 
 fn test_process_state_from_u8() -> TestResult {

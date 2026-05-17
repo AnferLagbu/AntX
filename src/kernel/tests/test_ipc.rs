@@ -1,5 +1,5 @@
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 use crate::kernel::ipc::types::*;
 use crate::kernel::ipc::{pipe, shm, sem};
 

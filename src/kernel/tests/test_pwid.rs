@@ -3,7 +3,7 @@ use crate::kernel::pwid::types::*;
 use crate::kernel::pwid::engine;
 use crate::kernel::pwid::capability;
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 
 fn test_sha256_vectors() -> TestResult {
     let hash = sha256::sha256(b"");

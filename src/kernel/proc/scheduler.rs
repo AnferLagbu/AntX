@@ -4,7 +4,7 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use super::types::*;
-use super::process::{Process, PROCESS_TABLE, kernel_stack_check_canary};
+use super::process::{Process, PROCESS_TABLE};
 
 // ============================================================================
 // ✅ 日志宏 (与 pmm.rs 保持一致)
@@ -357,29 +357,11 @@ impl Scheduler {
                 unsafe {
                     extern "C" {
                         fn update_current_process_ptr(ptr: u64);
-                        fn switch_to(old_rsp: *mut u64, new_rsp: u64, new_cr3: u64);
-                        fn tss_set_kernel_stack(stack: u64);
                     }
                     update_current_process_ptr(process_ptr as u64);
 
-                    if !kernel_stack_check_canary((*process_ptr).kernel_stack.load(Ordering::SeqCst)) {
-                        crate::klog_err!(Kernel, "STACK OVERFLOW detected in pid {} before switch!", next_pid);
-                    }
-
+                    // ✅ 修复: deprecated → set_state_safe
                     let _ = (*process_ptr).set_state_safe(ProcessState::Running);
-
-                    let new_kstack = (*process_ptr).kernel_stack.load(Ordering::SeqCst);
-                    let new_rsp = (*process_ptr).kernel_rsp.load(Ordering::SeqCst);
-                    let new_cr3 = (*process_ptr).cr3.load(Ordering::SeqCst);
-
-                    tss_set_kernel_stack(new_kstack);
-
-                    if current_pid != 0 && current_pid != next_pid {
-                        if let Some(old_proc) = PROCESS_TABLE.get(current_pid) {
-                            let old_rsp_ptr = &(*old_proc).kernel_rsp as *const AtomicU64 as *mut u64;
-                            switch_to(old_rsp_ptr, new_rsp, new_cr3);
-                        }
-                    }
                 }
             }
 

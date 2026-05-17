@@ -552,7 +552,7 @@ impl SerialPort {
 // ============================================================================
 
 /// 全局串口实例数组
-pub(crate) static mut SERIAL_PORTS: [Option<SerialPort>; MAX_COM_PORTS] = [None, None, None, None];
+static mut SERIAL_PORTS: [Option<SerialPort>; MAX_COM_PORTS] = [None, None, None, None];
 
 /// 初始化指定串口 (C 兼容接口)
 #[no_mangle]

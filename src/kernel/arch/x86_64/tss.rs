@@ -228,6 +228,7 @@ impl Default for TaskStateSegment {
 /// # Arguments
 /// * `rsp0` - 新的 RSP0 值
 /// FFI export function (C-callable)
+#[allow(dead_code)]
 #[no_mangle]
 pub extern "C" fn tss_set_kernel_stack(rsp0: u64) {
     unsafe {
@@ -238,6 +239,7 @@ pub extern "C" fn tss_set_kernel_stack(rsp0: u64) {
 
 /// 获取 TSS 的内核栈指针 (FFI兼容)
 /// FFI export function (C-callable)
+#[allow(dead_code)]
 #[no_mangle]
 pub extern "C" fn tss_get_kernel_stack() -> u64 {
     unsafe {

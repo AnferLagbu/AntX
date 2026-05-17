@@ -170,35 +170,6 @@ irq_stub 13, 45
 irq_stub 14, 46
 irq_stub 15, 47
 
-; ── context switch ──────────────────────────────────────────────────────
-; void switch_to(old_rsp: *mut u64, new_rsp: u64, new_cr3: u64)
-; Save current RSP to *old_rsp, load new_rsp into RSP, switch CR3 if non-zero
-global switch_to
-switch_to:
-    push rbp
-    push rbx
-    push r12
-    push r13
-    push r14
-    push r15
-
-    mov [rdi], rsp
-
-    mov rsp, rsi
-
-    test rdx, rdx
-    jz .no_cr3_switch
-    mov cr3, rdx
-.no_cr3_switch:
-
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop rbx
-    pop rbp
-    ret
-
 ; ── syscall / recovery ─────────────────────────────────────────────────
 extern syscall_dispatch_from_frame
 

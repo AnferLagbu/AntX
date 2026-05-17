@@ -7,7 +7,7 @@ use crate::kernel::fs::hvfs::zap::*;
 use crate::kernel::fs::hvfs::txg::*;
 use crate::kernel::fs::hvfs::zil::*;
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 
 fn test_bp_null() -> TestResult {
     let bp = HvBlockPointer::null();

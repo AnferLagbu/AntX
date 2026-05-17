@@ -11,8 +11,6 @@ use core::ptr::NonNull;
 
 pub mod pmm;
 pub mod vmm;
-pub mod buddy;
-pub mod cow;
 
 pub mod slab;
 pub mod kmalloc;
@@ -22,8 +20,6 @@ pub mod ffi;
 pub use pmm::*;
 pub use vmm::*;
 pub use kmalloc::*;
-pub use buddy::*;
-pub use cow::*;
 
 /// Page size constants (matching C implementation)
 pub const PAGE_SIZE: u64 = 4096;
@@ -239,7 +235,6 @@ bitflags::bitflags! {
         const DIRTY       = 1 << 6;
         const HUGE_PAGE   = 1 << 7;
         const GLOBAL      = 1 << 8;
-        const COW         = 1 << 9;
         const NX          = 1u64 << 63;
     }
 }

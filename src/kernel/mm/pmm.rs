@@ -153,39 +153,11 @@ impl PhysicalMemoryManager {
                        total_reserved, bitmap_aligned);
     }
 
-    pub fn init_buddy(&self) {
-        if !self.initialized.load(Ordering::Acquire) {
-            klog_pmm!("[PMM] Cannot init buddy before bitmap init");
-            return;
-        }
-
-        let info = self.info.get();
-        let bitmap_ptr = match self.bitmap.get() {
-            Some(ptr) => ptr.as_ptr(),
-            None => {
-                klog_pmm!("[PMM] Cannot init buddy: no bitmap");
-                return;
-            }
-        };
-
-        super::buddy::buddy_init(info.total_pages, bitmap_ptr, self.bitmap_size.get());
-        klog_pmm!("[PMM] Buddy system initialized");
-    }
-
     pub fn alloc_page(&self) -> Option<PhysAddr> {
         self.acquire_lock();
 
         let result = if !self.initialized.load(Ordering::Acquire) {
             self.early_alloc_single()
-        } else if super::buddy::get_buddy().is_initialized() {
-            match super::buddy::get_buddy().alloc_order(0) {
-                Some(addr) => {
-                    let page = addr.0 / PAGE_SIZE;
-                    self.set_bit(page as usize);
-                    Some(addr)
-                }
-                None => None,
-            }
         } else {
             self.alloc_from_bitmap(1)
         };
@@ -232,10 +204,6 @@ impl PhysicalMemoryManager {
 
         self.clear_bit(page_num as usize);
 
-        if super::buddy::get_buddy().is_initialized() {
-            super::buddy::get_buddy().free_page(addr);
-        }
-
         self.total_frees.fetch_add(1, Ordering::Relaxed);
         self.release_lock();
     }
@@ -248,18 +216,6 @@ impl PhysicalMemoryManager {
 
         let result = if !self.initialized.load(Ordering::Acquire) {
             self.early_alloc_multiple(count as u64)
-        } else if super::buddy::get_buddy().is_initialized() {
-            match super::buddy::get_buddy().alloc_pages(count) {
-                Some(addr) => {
-                    let order = super::buddy::BuddyAllocator::order_for_count(count);
-                    let block_pages = 1u64 << order;
-                    for i in 0..block_pages {
-                        self.set_bit((addr.0 / PAGE_SIZE + i) as usize);
-                    }
-                    Some(addr)
-                }
-                None => None,
-            }
         } else {
             self.alloc_from_bitmap(count)
         };
@@ -305,10 +261,6 @@ impl PhysicalMemoryManager {
             self.clear_bit(page_num as usize);
         }
 
-        if super::buddy::get_buddy().is_initialized() {
-            super::buddy::get_buddy().free_pages(addr, count);
-        }
-
         self.total_frees.fetch_add(count as u64, Ordering::Relaxed);
         self.release_lock();
     }
@@ -316,49 +268,15 @@ impl PhysicalMemoryManager {
     pub fn alloc_huge_page(&self, size_type: PageSize) -> Option<PhysAddr> {
         match size_type {
             PageSize::Size4K => self.alloc_page(),
-            PageSize::Size2M => {
-                let num_4k_pages = (HUGE_PAGE_2M_SIZE / PAGE_SIZE) as usize;
-
-                self.acquire_lock();
-
-                let result = if !self.initialized.load(Ordering::Acquire) {
-                    self.early_alloc_huge(size_type)
-                } else if super::buddy::get_buddy().is_initialized() {
-                    match super::buddy::get_buddy().alloc_order(9) {
-                        Some(addr) => {
-                            for i in 0..num_4k_pages {
-                                self.set_bit((addr.0 / PAGE_SIZE + i as u64) as usize);
-                            }
-                            Some(addr)
-                        }
-                        None => None,
-                    }
-                } else {
-                    self.alloc_aligned(num_4k_pages, HUGE_PAGE_2M_SIZE)
-                };
-
-                match result {
-                    Some(addr) => {
-                        self.total_allocs.fetch_add(num_4k_pages as u64, Ordering::Relaxed);
-                        self.release_lock();
-                        Some(addr)
-                    }
-                    None => {
-                        self.failed_allocs.fetch_add(1, Ordering::Relaxed);
-                        self.release_lock();
-                        None
-                    }
-                }
-            }
-            PageSize::Size1G => {
-                let num_4k_pages = (HUGE_PAGE_1G_SIZE / PAGE_SIZE) as usize;
+            PageSize::Size2M | PageSize::Size1G => {
+                let num_4k_pages = (size_type.size() / PAGE_SIZE) as usize;
 
                 self.acquire_lock();
 
                 let result = if !self.initialized.load(Ordering::Acquire) {
                     self.early_alloc_huge(size_type)
                 } else {
-                    self.alloc_aligned(num_4k_pages, HUGE_PAGE_1G_SIZE)
+                    self.alloc_aligned(num_4k_pages, size_type.size())
                 };
 
                 match result {
@@ -669,13 +587,7 @@ impl PhysicalMemoryManager {
     }
 
     fn update_stats(&self) {
-        if super::buddy::get_buddy().is_initialized() {
-            let free = super::buddy::get_buddy().count_free_pages();
-            let mut info = self.info.get();
-            info.free_pages = free;
-            info.used_pages = info.total_pages - free;
-            self.info.set(info);
-        } else if let Some(bitmap_ptr) = self.bitmap.get() {
+        if let Some(bitmap_ptr) = self.bitmap.get() {
             let bitmap_size = self.bitmap_size.get();
             unsafe {
                 let bitmap = bitmap_ptr.as_ptr();
@@ -709,11 +621,6 @@ pub fn pmm_init(mem_size: u64, kernel_end: u64) -> &'static PhysicalMemoryManage
 pub fn pmm_init_bitmap(reserved_after_kernel: u64) {
     let pmm = GLOBAL_PMM.get().expect("[PMM] pmm_init_bitmap called before pmm_init");
     pmm.init_bitmap(reserved_after_kernel);
-}
-
-pub fn pmm_init_buddy() {
-    let pmm = GLOBAL_PMM.get().expect("[PMM] pmm_init_buddy called before pmm_init");
-    pmm.init_buddy();
 }
 
 pub fn get_pmm() -> &'static PhysicalMemoryManager {

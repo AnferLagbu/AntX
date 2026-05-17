@@ -7,7 +7,7 @@ use crate::kernel::fs::hvfs::compress;
 use crate::kernel::fs::hvfs::snapshot::*;
 use crate::kernel::fs::hvfs::dataset::*;
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 
 fn test_dmu_objset_alloc() -> TestResult {
     let os = HvObjSet::new();

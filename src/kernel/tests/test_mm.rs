@@ -2,7 +2,7 @@ use crate::kernel::mm::{PhysAddr, VirtAddr, PageSize, PageFlags, PageTableEntry,
 use crate::kernel::mm::KERNEL_BASE;
 use crate::kernel::mm::{pml4_index, pdpt_index, pd_index, pt_index, phys_to_virt, virt_to_phys};
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 
 fn test_phys_addr() -> TestResult {
     let pa = PhysAddr::new(0x1000);

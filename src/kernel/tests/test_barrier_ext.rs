@@ -2,7 +2,7 @@ use crate::kernel::barrier::types::*;
 use crate::kernel::barrier::domain::RecoveryDomain;
 use crate::kernel::barrier::manager::RecoveryManager;
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 
 fn test_domain_state_semantic() -> TestResult {
     let dom = RecoveryDomain::new(1);

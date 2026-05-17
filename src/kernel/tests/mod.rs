@@ -137,6 +137,8 @@ macro_rules! skip_test {
     };
 }
 
+pub use {check, assert_eq_test, skip_test};
+
 pub fn run_all_tests() {
     runner().run_all();
 }
@@ -168,4 +170,18 @@ pub fn test_runner_init() {
     } else {
         crate::klog_boot_info!("[TEST] COMPLETE: {} passed, {} FAILED", p, f);
     }
+}
+
+pub fn qemu_exit(success: bool) -> ! {
+    let exit_code = if success { 0x10 } else { 0x11 };
+    unsafe {
+        use core::arch::asm;
+        asm!(
+            "out dx, al",
+            in("dx") 0xf4u16,
+            in("al") exit_code as u8,
+            options(nomem, nostack)
+        );
+    }
+    loop { unsafe { core::arch::asm!("hlt") } }
 }

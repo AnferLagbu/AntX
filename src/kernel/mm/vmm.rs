@@ -279,71 +279,6 @@ impl VirtualMemoryManager {
         }
     }
 
-    pub fn unmap_page_in_table(&self, pml4: u64, virt: VirtAddr) -> Option<PhysAddr> {
-        if pml4 == 0 { return None; }
-
-        let pml4_virt = PhysAddr(pml4).to_virt();
-
-        unsafe {
-            let pml4 = pml4_virt.0 as *const PageTableEntry;
-
-            let pml4e = &*pml4.add(virt.pml4_idx());
-            if !pml4e.is_present() { return None; }
-
-            let pdpt = pml4e.frame().to_virt().0 as *const PageTableEntry;
-            let pdpte = &*pdpt.add(virt.pdpt_idx());
-            if !pdpte.is_present() { return None; }
-
-            if pdpte.is_huge() { return None; }
-
-            let pd = pdpte.frame().to_virt().0 as *const PageTableEntry;
-            let pde = &*pd.add(virt.pd_idx());
-            if !pde.is_present() { return None; }
-
-            if pde.is_huge() { return None; }
-
-            let pt = pde.frame().to_virt().0 as *mut PageTableEntry;
-            let pte = &mut *pt.add(virt.pt_idx());
-            if !pte.is_present() { return None; }
-
-            let phys = pte.frame();
-            pte.set_value(0);
-            self.flush_tlb(virt.0);
-            Some(phys)
-        }
-    }
-
-    pub fn protect_page_in_table(&self, pml4: u64, virt: VirtAddr, new_flags: PageFlags) -> bool {
-        if pml4 == 0 { return false; }
-
-        let pml4_virt = PhysAddr(pml4).to_virt();
-
-        unsafe {
-            let pml4 = pml4_virt.0 as *const PageTableEntry;
-
-            let pml4e = &*pml4.add(virt.pml4_idx());
-            if !pml4e.is_present() { return false; }
-
-            let pdpt = pml4e.frame().to_virt().0 as *const PageTableEntry;
-            let pdpte = &*pdpt.add(virt.pdpt_idx());
-            if !pdpte.is_present() { return false; }
-
-            let pd = pdpte.frame().to_virt().0 as *const PageTableEntry;
-            let pde = &*pd.add(virt.pd_idx());
-            if !pde.is_present() { return false; }
-
-            let pt = pde.frame().to_virt().0 as *mut PageTableEntry;
-            let pte = &mut *pt.add(virt.pt_idx());
-            if !pte.is_present() { return false; }
-
-            let frame = pte.frame();
-            pte.set_frame(frame);
-            pte.set_flags(new_flags);
-            self.flush_tlb(virt.0);
-            true
-        }
-    }
-
     pub fn destroy_page_table(&self, pml4: u64) {
         if pml4 == 0 { return; }
 
@@ -648,7 +583,7 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
-    pub fn flush_tlb(&self, addr: u64) {
+    fn flush_tlb(&self, addr: u64) {
         unsafe {
             core::arch::asm!(
                 "invlpg [{}]",

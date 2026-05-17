@@ -35,7 +35,7 @@ pub fn kernel_stack_write_canary(stack_top: u64) {
 
 pub struct Process {
     pub pid: ProcessId,
-    pub pwid: AtomicU64,
+    pub pwid: AtomicU64,        // v4: identity this process runs under
     pub state: AtomicU32,
     pub priority: AtomicU32,
     pub flags: AtomicU32,
@@ -47,14 +47,7 @@ pub struct Process {
     pub context: Mutex<ProcessContext>,
     pub cr3: AtomicU64,
     pub kernel_stack: AtomicU64,
-    pub kernel_rsp: AtomicU64,
     pub user_stack: AtomicU64,
-    
-    pub heap_base: AtomicU64,
-    pub heap_brk: AtomicU64,
-    pub heap_limit: AtomicU64,
-    pub mmap_base: AtomicU64,
-    pub mmap_brk: AtomicU64,
     
     pub exit_code: AtomicU32,
     pub cpu_time: AtomicU64,
@@ -103,13 +96,7 @@ impl Process {
             context: Mutex::new(ProcessContext::new()),
             cr3: AtomicU64::new(0),
             kernel_stack: AtomicU64::new(0),
-            kernel_rsp: AtomicU64::new(0),
             user_stack: AtomicU64::new(0),
-            heap_base: AtomicU64::new(0),
-            heap_brk: AtomicU64::new(0),
-            heap_limit: AtomicU64::new(0),
-            mmap_base: AtomicU64::new(0),
-            mmap_brk: AtomicU64::new(0),
             exit_code: AtomicU32::new(0),
             cpu_time: AtomicU64::new(0),
             block_reason: AtomicU32::new(BlockReason::Unknown as u32),
@@ -126,7 +113,6 @@ impl Process {
             }
             let stack_top = stack.add(KERNEL_STACK_SIZE) as u64;
             self.kernel_stack.store(stack_top, Ordering::SeqCst);
-            self.kernel_rsp.store(stack_top, Ordering::SeqCst);
             kernel_stack_write_canary(stack_top);
             true
         }
@@ -247,32 +233,11 @@ impl Process {
 
 impl Drop for Process {
     fn drop(&mut self) {
-        let cr3_val = self.cr3.load(Ordering::SeqCst);
-        if cr3_val != 0 {
+        let cr3 = self.cr3.load(Ordering::SeqCst);
+        if cr3 != 0 {
             unsafe {
-                vmm_destroy_page_table(cr3_val);
+                vmm_destroy_page_table(cr3);
             }
-            self.cr3.store(0, Ordering::SeqCst);
-        }
-
-        let kstack = self.kernel_stack.load(Ordering::SeqCst);
-        if kstack != 0 {
-            extern "C" {
-                fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
-            }
-            let kstack_pages = KERNEL_STACK_SIZE / 4096;
-            unsafe { pmm_free_pages((kstack - KERNEL_STACK_SIZE as u64) as *mut core::ffi::c_void, kstack_pages as u64); }
-            self.kernel_stack.store(0, Ordering::SeqCst);
-        }
-
-        let ustack = self.user_stack.load(Ordering::SeqCst);
-        if ustack != 0 {
-            extern "C" {
-                fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
-            }
-            let ustack_pages = USER_STACK_SIZE / 4096;
-            unsafe { pmm_free_pages((ustack - USER_STACK_SIZE as u64) as *mut core::ffi::c_void, ustack_pages as u64); }
-            self.user_stack.store(0, Ordering::SeqCst);
         }
     }
 }
@@ -280,7 +245,6 @@ impl Drop for Process {
 pub struct ProcessTable {
     processes: Mutex<[Option<usize>; MAX_PROCESSES]>,
     next_pid: AtomicU32,
-    pub free_pids: Mutex<alloc::collections::VecDeque<u32>>,
 }
 
 unsafe impl Send for ProcessTable {}
@@ -291,17 +255,10 @@ impl ProcessTable {
         Self {
             processes: Mutex::new([None; MAX_PROCESSES]),
             next_pid: AtomicU32::new(1),
-            free_pids: Mutex::new(alloc::collections::VecDeque::new()),
         }
     }
-
+    
     pub fn allocate_pid(&self) -> Option<Pid> {
-        {
-            let mut free = self.free_pids.lock();
-            if let Some(pid) = free.pop_front() {
-                return Some(pid);
-            }
-        }
         let pid = self.next_pid.fetch_add(1, Ordering::SeqCst);
         if pid as usize >= MAX_PROCESSES {
             None
@@ -333,10 +290,7 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
-        table[pid as usize].take().map(|addr| {
-            self.free_pids.lock().push_back(pid);
-            addr as *mut Process
-        })
+        table[pid as usize].take().map(|addr| addr as *mut Process)
     }
 }
 

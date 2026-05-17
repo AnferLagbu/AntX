@@ -1,7 +1,7 @@
 use crate::kernel::fs::vfs::vfs::VfsManager;
 use crate::kernel::fs::vfs::types::*;
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 
 fn test_fstype_from_name() -> TestResult {
     let ramfs = FsType::from_name("ramfs");

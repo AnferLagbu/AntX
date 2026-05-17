@@ -475,12 +475,25 @@ test-unit: build/kernel_test.bin user
 		$(QEMU_NET) \
 		-serial file:tests/reports/unit_test_$${timestamp}.log \
 		-display none \
-		-d cpu_reset 2>tests/reports/qemu_stderr_$${timestamp}.log || true
-	@echo ""
-	@echo "╔══════════════════════════════════════════════╗"
-	@echo "║  Test completed!                             ║"
-	@echo "║  Report: tests/reports/unit_test_$${timestamp}.log ║"
-	@echo "╚══════════════════════════════════════════════╝"
+		-d cpu_reset 2>tests/reports/qemu_stderr_$${timestamp}.log; \
+	exit_code=$$?; \
+	if [ $$exit_code -eq 0 ]; then \
+		echo ""; \
+		echo "╔══════════════════════════════════════════════╗"; \
+		echo "║  ✅ ALL TESTS PASSED (QEMU exit: $$exit_code)   ║"; \
+		echo "╚══════════════════════════════════════════════╝"; \
+	elif [ $$exit_code -eq 33 ]; then \
+		echo ""; \
+		echo "╔══════════════════════════════════════════════╗"; \
+		echo "║  ❌ TESTS FAILED (QEMU exit: $$exit_code)        ║"; \
+		echo "╚══════════════════════════════════════════════╝"; \
+	else \
+		echo ""; \
+		echo "╔══════════════════════════════════════════════╗"; \
+		echo "║  ⚠️  QEMU exited with code $$exit_code (timeout/crash) ║"; \
+		echo "╚══════════════════════════════════════════════╝"; \
+	fi
+	@echo "  Report: tests/reports/unit_test_$${timestamp}.log"
 	@if [ -f tests/reports/unit_test_$${timestamp}.log ]; then \
 		echo "--- Serial Output (last 80 lines) ---"; \
 		tail -80 tests/reports/unit_test_$${timestamp}.log; \

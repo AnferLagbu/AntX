@@ -241,44 +241,24 @@ pub extern "C" fn dma_unmap_sg(mapping: *mut c_dma_mapping) {
 
 #[no_mangle]
 pub extern "C" fn dma_sync_for_device(
-    mapping: *mut c_dma_mapping,
+    _mapping: *mut c_dma_mapping,
     _offset: usize,
     _size: usize,
 ) {
-    if mapping.is_null() { return; }
-    unsafe {
-        let inner = super::DmaMapping {
-            cpu_addr: VirtAddr((*mapping).cpu_addr as u64),
-            dma_addr: PhysAddr((*mapping).dma_addr),
-            size: (*mapping).size,
-            direction: super::DmaDirection::Bidirectional,
-            cache: super::DmaCachePolicy::Writeback,
-            is_coherent: (*mapping).is_coherent != 0,
-            is_mapped: (*mapping).is_mapped != 0,
-        };
-        engine().sync_for_device(&inner, _offset, _size);
-    }
+    // sfence + compiler barrier
+    unsafe { core::arch::asm!("sfence", options(nomem, nostack)); }
+    core::sync::atomic::fence(Ordering::SeqCst);
 }
 
 #[no_mangle]
 pub extern "C" fn dma_sync_for_cpu(
-    mapping: *mut c_dma_mapping,
+    _mapping: *mut c_dma_mapping,
     _offset: usize,
     _size: usize,
 ) {
-    if mapping.is_null() { return; }
-    unsafe {
-        let inner = super::DmaMapping {
-            cpu_addr: VirtAddr((*mapping).cpu_addr as u64),
-            dma_addr: PhysAddr((*mapping).dma_addr),
-            size: (*mapping).size,
-            direction: super::DmaDirection::Bidirectional,
-            cache: super::DmaCachePolicy::Writeback,
-            is_coherent: (*mapping).is_coherent != 0,
-            is_mapped: (*mapping).is_mapped != 0,
-        };
-        engine().sync_for_cpu(&inner, _offset, _size);
-    }
+    // lfence + compiler barrier
+    unsafe { core::arch::asm!("lfence", options(nomem, nostack)); }
+    core::sync::atomic::fence(Ordering::SeqCst);
 }
 
 #[no_mangle]
@@ -287,19 +267,8 @@ pub extern "C" fn dma_sync_both(
     offset: usize,
     size: usize,
 ) {
-    if mapping.is_null() { return; }
-    unsafe {
-        let inner = super::DmaMapping {
-            cpu_addr: VirtAddr((*mapping).cpu_addr as u64),
-            dma_addr: PhysAddr((*mapping).dma_addr),
-            size: (*mapping).size,
-            direction: super::DmaDirection::Bidirectional,
-            cache: super::DmaCachePolicy::Writeback,
-            is_coherent: (*mapping).is_coherent != 0,
-            is_mapped: (*mapping).is_mapped != 0,
-        };
-        engine().sync_both(&inner, offset, size);
-    }
+    dma_sync_for_device(mapping, offset, size);
+    dma_sync_for_cpu(mapping, offset, size);
 }
 
 // ============================================================
@@ -464,7 +433,10 @@ pub extern "C" fn dma_destroy_transfer(transfer: *mut c_dma_transfer) {
 #[no_mangle]
 pub extern "C" fn dma_sg_init(sglist: *mut super::DmaScatterList) {
     if sglist.is_null() { return; }
-    engine().sg_init(unsafe { &mut *sglist });
+    unsafe {
+        (*sglist).entry_count = 0;
+        (*sglist).total_length = 0;
+    }
 }
 
 #[no_mangle]
@@ -476,13 +448,33 @@ pub extern "C" fn dma_sg_add_entry(
     if sglist.is_null() || addr.is_null() || length == 0 {
         return -1;
     }
-    engine().sg_add_entry(unsafe { &mut *sglist }, VirtAddr(addr as u64), length)
+
+    unsafe {
+        if (*sglist).entry_count as usize >= super::DMA_MAX_SCATTER_ENTRIES {
+            return -1;
+        }
+
+        let idx = (*sglist).entry_count as usize;
+
+        let phys = crate::kernel::mm::vmm::get_vmm()
+            .get_physical(VirtAddr(addr as u64))
+            .map(|p| p.0)
+            .unwrap_or(0);
+
+        (*sglist).entries[idx].phys_addr = phys;
+        (*sglist).entries[idx].length = length;
+        (*sglist).entries[idx].page_addr = addr as usize;
+
+        (*sglist).entry_count += 1;
+        (*sglist).total_length += length;
+    }
+    0
 }
 
 #[no_mangle]
 pub extern "C" fn dma_sg_total_length(sglist: *mut super::DmaScatterList) -> usize {
     if sglist.is_null() { return 0; }
-    engine().sg_total_length(unsafe { &*sglist })
+    unsafe { (*sglist).total_length }
 }
 
 // ============================================================

@@ -1,5 +1,5 @@
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 use crate::kernel::fs::devfs::devfs::{DEVFS_DATA, DEVFS_MAX_DEVICES};
 
 fn test_devfs_mount() -> TestResult {

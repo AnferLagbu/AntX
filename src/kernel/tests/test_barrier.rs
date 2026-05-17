@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use crate::kernel::barrier::undo_log::UndoLog;
 use crate::kernel::barrier::domain::RecoveryDomain;
 use crate::kernel::tests::{runner, TestResult};
-use crate::check;
+use super::check;
 
 fn test_undo_log_basic() -> TestResult {
     let undo = Box::new(UndoLog::new());
