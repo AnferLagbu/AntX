@@ -682,7 +682,7 @@ static mut E1000_INSTANCE: Option<E1000Device> = None;
 #[no_mangle]
 pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
     extern "C" {
-        fn antx_netif_init(netif: *mut core::ffi::c_void, mac: *const u8);
+        fn qx_netif_init(netif: *mut core::ffi::c_void, mac: *const u8);
     }
     unsafe {
         match &mut E1000_INSTANCE {
@@ -690,7 +690,7 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
                 if dev.mmio_base.is_null() { return -5; }
                 match dev.init() {
                     Ok(()) => {
-                        antx_netif_init(netif, dev.mac.as_ptr());
+                        qx_netif_init(netif, dev.mac.as_ptr());
                         if dev.irq != 0 && dev.irq != 255 {
                             extern "C" {
                                 fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u32) -> i32;
@@ -758,13 +758,13 @@ pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::
 #[cfg(not(feature = "kernel_test"))]
 unsafe fn extract_pbuf_data(p: *mut core::ffi::c_void) -> (usize, *mut u8) {
     extern "C" {
-        fn antx_pbuf_copyout(p: *mut core::ffi::c_void, buf: *mut u8, out_len: *mut u16);
+        fn qx_pbuf_copyout(p: *mut core::ffi::c_void, buf: *mut u8, out_len: *mut u16);
     }
     let pbuf_base = p as *mut u8;
     let total = *(pbuf_base.add(0x10) as *const u16) as usize;
     static mut TX_BUF: [u8; 1600] = [0u8; 1600];
     let mut out_len: u16 = total.min(1600) as u16;
-    antx_pbuf_copyout(p, TX_BUF.as_mut_ptr(), &mut out_len);
+    qx_pbuf_copyout(p, TX_BUF.as_mut_ptr(), &mut out_len);
     (out_len as usize, TX_BUF.as_mut_ptr())
 }
 

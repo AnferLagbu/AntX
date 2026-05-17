@@ -6,7 +6,7 @@
 
 extern err_t e1000_send(struct netif *netif, struct pbuf *p);
 
-void antx_netif_init(struct netif *netif, const uint8_t *mac) {
+void qx_netif_init(struct netif *netif, const uint8_t *mac) {
     netif->hwaddr_len = 6;
     int i;
     for (i = 0; i < 6; i++) netif->hwaddr[i] = mac[i];
@@ -20,7 +20,7 @@ void antx_netif_init(struct netif *netif, const uint8_t *mac) {
     netif->name[1] = 'n';
 }
 
-err_t antx_rx_packet(struct netif *netif, const void *data, u16_t len) {
+err_t qx_rx_packet(struct netif *netif, const void *data, u16_t len) {
     struct pbuf *p;
     u16_t copied;
 
@@ -36,7 +36,7 @@ err_t antx_rx_packet(struct netif *netif, const void *data, u16_t len) {
     return ERR_OK;
 }
 
-void antx_pbuf_copyout(struct pbuf *p, void *buf, u16_t *out_len) {
+void qx_pbuf_copyout(struct pbuf *p, void *buf, u16_t *out_len) {
     u16_t total = 0;
     struct pbuf *q = p;
     u8_t *dst = (u8_t *)buf;
@@ -48,7 +48,7 @@ void antx_pbuf_copyout(struct pbuf *p, void *buf, u16_t *out_len) {
     *out_len = total;
 }
 
-u32_t antx_netif_ip4_addr_u32(const struct netif *netif) {
+u32_t qx_netif_ip4_addr_u32(const struct netif *netif) {
     if (netif == NULL) return 0;
     return ip4_addr_get_u32(netif_ip4_addr(netif));
 }

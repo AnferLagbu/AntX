@@ -157,10 +157,10 @@ pub unsafe extern "C" fn qx_netif_status_callback(netif: *mut core::ffi::c_void)
     }
     
     extern "C" {
-        fn antx_netif_ip4_addr_u32(netif: *const core::ffi::c_void) -> u32;
+        fn qx_netif_ip4_addr_u32(netif: *const core::ffi::c_void) -> u32;
     }
     
-    let ip = antx_netif_ip4_addr_u32(netif);
+    let ip = qx_netif_ip4_addr_u32(netif);
     if ip == 0 {
         return;
     }
@@ -216,12 +216,12 @@ pub unsafe extern "C" fn ethernet_input_from_e1000(
     len: u16,
 ) -> i32 {
     extern "C" {
-        fn antx_rx_packet(netif: *mut core::ffi::c_void, data: *const core::ffi::c_void, len: u16) -> i32;
+        fn qx_rx_packet(netif: *mut core::ffi::c_void, data: *const core::ffi::c_void, len: u16) -> i32;
     }
     if G_NETIF_PTR.is_null() || data.is_null() || len == 0 {
         return LwipErr::Val as i32;
     }
-    antx_rx_packet(G_NETIF_PTR, data as *const core::ffi::c_void, len)
+    qx_rx_packet(G_NETIF_PTR, data as *const core::ffi::c_void, len)
 }
 
 // ============================================================================
