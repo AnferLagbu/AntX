@@ -106,7 +106,7 @@ extern "C" {
  * 示例: "a3f7b2d (main) [DIRTY] 2026-05-02 23:45"
  */
 #define KERNEL_VERSION_FULL     \
-    GIT_COMMIT_SHORT " (" GIT_BRANCH ")" " \
+    GIT_COMMIT_SHORT " (" GIT_BRANCH ") " \
     IS_DIRTY_STR " " BUILD_DATE
 
 /** @brief 脏状态标记字符串 */

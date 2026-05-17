@@ -557,10 +557,52 @@ pub extern "C" fn vfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_chmod(_path: *const c_char, _mode: u16, _pwid: u64) -> i32 { 0 }
+pub extern "C" fn vfs_chmod(path: *const c_char, mode: u16, pwid: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let pwid = resolve_pwid(pwid);
+    
+    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+        Some(r) => r, 
+        None => return -1,
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+    
+    match fs_type {
+        FsType::RamFs => { 
+            let mut ramfs = RAMFS_DATA.lock(); 
+            ramfs.chmod(rel_path, mode, pwid) 
+        }
+        FsType::HvFs => { 
+            let hvfs = get_hvfs(); 
+            hvfs.chmod(rel_path, mode, pwid) 
+        }
+        FsType::Unknown => -1,
+    }
+}
 
 #[no_mangle]
-pub extern "C" fn vfs_chown(_path: *const c_char, _owner_pwid: u64, _pwid: u64) -> i32 { 0 }
+pub extern "C" fn vfs_chown(path: *const c_char, owner_pwid: u64, pwid: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let pwid = resolve_pwid(pwid);
+    
+    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+        Some(r) => r, 
+        None => return -1,
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+    
+    match fs_type {
+        FsType::RamFs => { 
+            let mut ramfs = RAMFS_DATA.lock(); 
+            ramfs.chown(rel_path, owner_pwid, pwid) 
+        }
+        FsType::HvFs => { 
+            let hvfs = get_hvfs(); 
+            hvfs.chown(rel_path, owner_pwid, pwid) 
+        }
+        FsType::Unknown => -1,
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn vfs_unlink(path: *const c_char, pwid: u64) -> i32 {
@@ -637,7 +679,26 @@ pub extern "C" fn vfs_fd_table() -> *const core::ffi::c_void {
 
 #[no_mangle]
 pub extern "C" fn vfs_format_internal(path: *const c_char, fs_type: *const c_char) -> i32 {
-    let _fs_type = ptr_to_str(fs_type);
+    let fs_type_str = ptr_to_str(fs_type);
     let _path = ptr_to_str(path);
+    
+    if fs_type_str.is_empty() {
+        return -1;
+    }
+    
+    // Parse filesystem type
+    if fs_type_str == "hvfs" || fs_type_str == "HvFS" {
+        let hvfs = get_hvfs();
+        hvfs.format_disk();
+        if hvfs.is_disk_mode() {
+            return 0;
+        } else {
+            return -1;
+        }
+    } else if fs_type_str == "ramfs" || fs_type_str == "RamFS" {
+        // RamFS doesn't need formatting, it's always in-memory
+        return 0;
+    }
+    
     -1
 }

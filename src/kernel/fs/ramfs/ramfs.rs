@@ -993,6 +993,40 @@ impl RamFsData {
             }
         }
 
+        // Split path into parent and name
+        let (parent_path, _name) = if let Some(pos) = path.rfind('/') {
+            if pos == 0 { ("/", &path[1..]) }
+            else { (&path[..pos], &path[pos + 1..]) }
+        } else {
+            ("/", path)
+        };
+
+        // Find parent directory
+        let parent_num = match self.resolve_path(parent_path) {
+            Some(n) => n,
+            None => return -1,
+        };
+
+        // Remove directory entry from parent
+        let parent_block = self.inodes[parent_num as usize].direct_blocks[0];
+        if parent_block != u32::MAX {
+            let dirent_size = core::mem::size_of::<RamFsDirent>();
+            let num_entries = self.inodes[parent_num as usize].size as usize / dirent_size;
+            
+            for i in 0..num_entries {
+                let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
+                let entry: &mut RamFsDirent = unsafe {
+                    &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirent)
+                };
+                
+                if entry.inode == inode_num {
+                    // Mark entry as deleted
+                    entry.inode = 0;
+                    break;
+                }
+            }
+        }
+
         // Free inode blocks and mark as unused
         self.truncate(inode_num, 0, pwid);
         {
@@ -1194,6 +1228,52 @@ impl RamFsData {
             file_type: inode.file_type,
             reserved: 0,
         })
+    }
+
+    pub fn chmod(&mut self, path: &str, mode: u16, pwid: u64) -> i32 {
+        let inode_num = match self.resolve_path(path) {
+            Some(n) => n,
+            None => return -1,
+        };
+
+        let inode = &mut self.inodes[inode_num as usize];
+        if !inode.used {
+            return -1;
+        }
+
+        // Permission check: only owner or privileged user can change permissions
+        if inode.owner_pwid != pwid {
+            let level = unsafe { pwid_get_privilege_level(pwid) };
+            if level != 0 {
+                return -1;
+            }
+        }
+
+        inode.perm = mode;
+        inode.ctime = Self::get_time();
+        0
+    }
+
+    pub fn chown(&mut self, path: &str, owner_pwid: u64, pwid: u64) -> i32 {
+        let inode_num = match self.resolve_path(path) {
+            Some(n) => n,
+            None => return -1,
+        };
+
+        let inode = &mut self.inodes[inode_num as usize];
+        if !inode.used {
+            return -1;
+        }
+
+        // Permission check: only privileged user can change owner
+        let level = unsafe { pwid_get_privilege_level(pwid) };
+        if level != 0 {
+            return -1;
+        }
+
+        inode.owner_pwid = owner_pwid;
+        inode.ctime = Self::get_time();
+        0
     }
 
     pub fn seek(&self, inode_num: u32, current_offset: u64, offset: i64, whence: VfsSeekWhence) -> Option<u64> {

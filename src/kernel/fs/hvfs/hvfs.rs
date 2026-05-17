@@ -254,7 +254,7 @@ impl HvfsData {
     }
 
     fn check_permission(&self, obj: &HvDmuObject, pwid: u64, cap: u64) -> bool {
-        if pwid == 0 { return true; }
+        if pwid == 0 { return false; }
         let level = unsafe { pwid_get_privilege_level(pwid) };
         if level == 0xFF { return false; }
         if level == 0 { return true; }
@@ -445,6 +445,74 @@ impl HvfsData {
         let obj = ds.objset.get_obj(obj_id)?;
         if !self.check_permission(&obj, pwid, 0x01) { return None; }
         Some(obj)
+    }
+
+    pub fn chmod(&self, path: &str, mode: u16, pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let name = path.trim_start_matches('/');
+        
+        let mut datasets = self.datasets.lock();
+        let ds = &mut datasets[0];
+        let obj_id = match ds.lookup(name) {
+            Some(id) => id,
+            None => return -1,
+        };
+        
+        let mut obj = match ds.objset.get_obj(obj_id) {
+            Some(o) => o,
+            None => return -1,
+        };
+        
+        // Permission check: only owner or privileged user can change permissions
+        if obj.owner_pwid != pwid {
+            let level = unsafe { pwid_get_privilege_level(pwid) };
+            if level != 0 {
+                return -1;
+            }
+        }
+        
+        obj.pwid_perm = mode;
+        obj.ctime = unsafe { timer_get_ticks() };
+        obj.dirty = true;
+        
+        if ds.objset.update_obj(&obj) {
+            return 0;
+        }
+        
+        -1
+    }
+
+    pub fn chown(&self, path: &str, owner_pwid: u64, pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let name = path.trim_start_matches('/');
+        
+        // Permission check: only privileged user can change owner
+        let level = unsafe { pwid_get_privilege_level(pwid) };
+        if level != 0 {
+            return -1;
+        }
+        
+        let mut datasets = self.datasets.lock();
+        let ds = &mut datasets[0];
+        let obj_id = match ds.lookup(name) {
+            Some(id) => id,
+            None => return -1,
+        };
+        
+        let mut obj = match ds.objset.get_obj(obj_id) {
+            Some(o) => o,
+            None => return -1,
+        };
+        
+        obj.owner_pwid = owner_pwid;
+        obj.ctime = unsafe { timer_get_ticks() };
+        obj.dirty = true;
+        
+        if ds.objset.update_obj(&obj) {
+            return 0;
+        }
+        
+        -1
     }
 
     pub fn sync(&self) -> i32 {
