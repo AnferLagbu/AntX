@@ -33,7 +33,14 @@
 //! ├── recoverable.rs   可恢复原语：Snapshot trait + RecoverableMutex
 //! ├── fault_inject.rs  故障注入：maybe_inject_fault (feature gate)
 //! ├── snapshot.rs      设备快照：DeviceSnapshot + DeviceSnapshotRegistry
-//! ├── reset.rs         BSR/BHR：Barrier Soft/Hard Reset
+//! ├── reset/           BSR/BHR 模块化实现
+//! │   ├── config.rs    配置与类型定义
+//! │   ├── audit.rs     审计日志
+//! │   ├── bsr.rs       Barrier Soft Reset
+//! │   ├── bhr.rs       Barrier Hard Reset
+//! │   ├── parallel.rs  并发回滚机制
+//! │   ├── layered.rs   分层恢复入口
+//! │   └── mod.rs       模块导出
 //! └── ffi.rs           C FFI 桥接层
 //! ```
 
@@ -70,14 +77,30 @@ pub use reset::{
     RecoveryLayer,
     RecoveryResult,
     RecoveryConfig,
+    RollbackMode,
     RECOVERY_CONFIG,
+    CURRENT_LAYER,
+    RESET_IN_PROGRESS,
+    BSR_ATTEMPT_COUNT,
+    BHR_ATTEMPT_COUNT,
+    ResetAuditLog,
+    ResetAuditEntry,
+    RESET_AUDIT_LOG,
+    DependencyLayer,
+    DependencyLayers,
+    RecoveryStatus,
     bsr_execute,
     bhr_execute,
     bhr_execute_fallback,
     recovery_execute_layered,
-    recovery_get_current_layer,
-    recovery_get_stats,
-    recovery_reset_stats,
+    get_current_layer,
+    get_stats,
+    reset_stats,
+    compute_dependency_layers,
+    rollback_all,
+    rollback_all_parallel,
+    get_parallel_stats,
+    get_recovery_status,
 };
 
 pub use ffi::{

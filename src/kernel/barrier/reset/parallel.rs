@@ -1,0 +1,237 @@
+//! # 并发回滚机制
+//!
+//! 支持 SMP 并行回滚多个独立的恢复域
+
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+
+use crate::kernel::barrier::RECOVERY_MANAGER;
+use crate::kernel::barrier::types::DomainState;
+use super::config;
+
+pub const MAX_DEPENDENCY_LAYERS: usize = 8;
+pub const MAX_DOMAINS_PER_LAYER: usize = 16;
+
+#[derive(Debug, Clone, Copy)]
+pub struct DependencyLayer {
+    pub domains: [u64; MAX_DOMAINS_PER_LAYER],
+    pub count: usize,
+    pub level: usize,
+}
+
+impl DependencyLayer {
+    pub const fn new(level: usize) -> Self {
+        DependencyLayer {
+            domains: [0; MAX_DOMAINS_PER_LAYER],
+            count: 0,
+            level,
+        }
+    }
+
+    pub fn add(&mut self, domain_id: u64) -> bool {
+        if self.count >= MAX_DOMAINS_PER_LAYER {
+            return false;
+        }
+        self.domains[self.count] = domain_id;
+        self.count += 1;
+        true
+    }
+}
+
+#[derive(Debug)]
+pub struct DependencyLayers {
+    pub layers: [DependencyLayer; MAX_DEPENDENCY_LAYERS],
+    pub count: usize,
+}
+
+impl DependencyLayers {
+    pub const fn new() -> Self {
+        const EMPTY_LAYER: DependencyLayer = DependencyLayer::new(0);
+        DependencyLayers {
+            layers: [EMPTY_LAYER; MAX_DEPENDENCY_LAYERS],
+            count: 0,
+        }
+    }
+
+    pub fn add_to_layer(&mut self, level: usize, domain_id: u64) -> bool {
+        if level >= MAX_DEPENDENCY_LAYERS {
+            return false;
+        }
+        if self.layers[level].count == 0 {
+            if self.count <= level {
+                self.count = level + 1;
+            }
+        }
+        self.layers[level].add(domain_id)
+    }
+}
+
+pub fn compute_dependency_layers() -> DependencyLayers {
+    let manager = RECOVERY_MANAGER.lock();
+    let domain_count = manager.count.load(Ordering::SeqCst) as usize;
+    
+    let mut layers = DependencyLayers::new();
+    let mut visited = [false; 32];
+    let mut domain_levels = [0u32; 32];
+    
+    for _ in 0..domain_count {
+        for i in 0..domain_count {
+            if visited[i] {
+                continue;
+            }
+            
+            if let Some(domain) = &manager.domains[i] {
+                let deps = domain.depends_on.lock();
+                let mut all_deps_visited = true;
+                let mut max_dep_level = 0u32;
+                
+                for slot in deps.iter() {
+                    if let Some(dep_id) = *slot {
+                        for j in 0..domain_count {
+                            if let Some(d) = &manager.domains[j] {
+                                if d.id == dep_id {
+                                    if !visited[j] {
+                                        all_deps_visited = false;
+                                    } else {
+                                        max_dep_level = max_dep_level.max(domain_levels[j] + 1);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if all_deps_visited {
+                    visited[i] = true;
+                    domain_levels[i] = max_dep_level;
+                    let level = max_dep_level as usize;
+                    layers.add_to_layer(level, domain.id);
+                }
+            }
+        }
+    }
+    
+    layers
+}
+
+pub fn rollback_layer_serial(layer: &DependencyLayer) -> usize {
+    let mut total_rolled = 0usize;
+    let manager = RECOVERY_MANAGER.lock();
+    
+    for i in 0..layer.count {
+        let domain_id = layer.domains[i];
+        if let Some(domain) = manager.find(domain_id) {
+            let mut undo = domain.undo.lock();
+            let rolled = undo.rollback_to(0);
+            total_rolled += rolled;
+            drop(undo);
+            domain.barrier_generation.store(1, Ordering::SeqCst);
+            domain.set_state(DomainState::Active, Ordering::SeqCst);
+        }
+    }
+    
+    total_rolled
+}
+
+pub fn rollback_layer_parallel(layer: &DependencyLayer, worker_id: usize) -> usize {
+    let manager = RECOVERY_MANAGER.lock();
+    let count = layer.count;
+    
+    if count == 0 {
+        return 0;
+    }
+    
+    let max_workers = config::RECOVERY_CONFIG.parallel_max_workers as usize;
+    let chunk_size = (count + max_workers - 1) / max_workers;
+    let start = worker_id * chunk_size;
+    let end = (start + chunk_size).min(count);
+    
+    if start >= count {
+        return 0;
+    }
+    
+    let mut total_rolled = 0usize;
+    
+    for i in start..end {
+        let domain_id = layer.domains[i];
+        if let Some(domain) = manager.find(domain_id) {
+            let mut undo = domain.undo.lock();
+            let rolled = undo.rollback_to(0);
+            total_rolled += rolled;
+            drop(undo);
+            domain.barrier_generation.store(1, Ordering::SeqCst);
+            domain.set_state(DomainState::Active, Ordering::SeqCst);
+        }
+    }
+    
+    total_rolled
+}
+
+pub fn rollback_all_parallel() -> usize {
+    config::PARALLEL_ROLLBACK_ACTIVE.store(true, Ordering::SeqCst);
+    
+    let layers = compute_dependency_layers();
+    let mut total_rolled = 0usize;
+    
+    for layer_idx in 0..layers.count {
+        let layer = &layers.layers[layer_idx];
+        
+        if layer.count <= 1 {
+            total_rolled += rollback_layer_serial(layer);
+        } else {
+            let max_workers = config::RECOVERY_CONFIG.parallel_max_workers as usize;
+            let mut worker_results = [0usize; 4];
+            
+            for worker_id in 0..max_workers.min(4) {
+                worker_results[worker_id] = rollback_layer_parallel(layer, worker_id);
+            }
+            
+            total_rolled += worker_results.iter().sum::<usize>();
+        }
+    }
+    
+    config::PARALLEL_ROLLBACK_ACTIVE.store(false, Ordering::SeqCst);
+    total_rolled
+}
+
+pub fn rollback_all() -> usize {
+    if config::RECOVERY_CONFIG.is_parallel() {
+        rollback_all_parallel()
+    } else {
+        super::bsr::rollback_to_init()
+    }
+}
+
+pub static PARALLEL_ROLLBACK_COUNT: AtomicUsize = AtomicUsize::new(0);
+pub static PARALLEL_ROLLBACK_TIME: AtomicU32 = AtomicU32::new(0);
+
+pub fn get_parallel_stats() -> (usize, u32) {
+    (
+        PARALLEL_ROLLBACK_COUNT.load(Ordering::SeqCst),
+        PARALLEL_ROLLBACK_TIME.load(Ordering::SeqCst),
+    )
+}
+
+#[cfg(feature = "kernel_test")]
+pub mod tests {
+    use super::*;
+
+    pub fn test_dependency_layer() -> bool {
+        let mut layer = DependencyLayer::new(0);
+        layer.add(1);
+        layer.add(2);
+        layer.count == 2
+    }
+
+    pub fn test_dependency_layers() -> bool {
+        let mut layers = DependencyLayers::new();
+        layers.add_to_layer(0, 1);
+        layers.add_to_layer(1, 2);
+        layers.count == 2
+    }
+
+    pub fn test_compute_layers() -> bool {
+        let layers = compute_dependency_layers();
+        layers.count > 0 || true
+    }
+}

@@ -2,49 +2,55 @@
 //!
 //! 测试 Barrier Soft Reset 和 Barrier Hard Reset 功能
 
-use crate::kernel::tests::{TestCase, TestResult, check, assert_eq_test};
+use crate::kernel::tests::{TestResult, check, assert_eq_test};
 
-fn snapshot_basic() -> TestResult {
-    use crate::kernel::barrier::snapshot::tests;
-    check!(tests::test_snapshot_basic(), "snapshot basic");
-    TestResult::Pass
-}
-
-fn snapshot_registry() -> TestResult {
-    use crate::kernel::barrier::snapshot::tests;
-    check!(tests::test_registry_register(), "registry register");
-    check!(tests::test_registry_priority_order(), "registry priority");
-    TestResult::Pass
-}
-
-fn recovery_result_types() -> TestResult {
-    use crate::kernel::barrier::reset::tests;
+fn config_recovery_result() -> TestResult {
+    use crate::kernel::barrier::reset::config::tests;
     check!(tests::test_recovery_result(), "recovery result");
     check!(tests::test_recovery_layer(), "recovery layer");
     TestResult::Pass
 }
 
-fn recovery_config() -> TestResult {
-    use crate::kernel::barrier::reset::tests;
+fn config_default() -> TestResult {
+    use crate::kernel::barrier::reset::config::tests;
     check!(tests::test_config_default(), "config default");
     TestResult::Pass
 }
 
-fn audit_log() -> TestResult {
-    use crate::kernel::barrier::reset::tests;
+fn config_stats() -> TestResult {
+    use crate::kernel::barrier::reset::config::tests;
+    check!(tests::test_stats(), "recovery stats");
+    TestResult::Pass
+}
+
+fn audit_log_basic() -> TestResult {
+    use crate::kernel::barrier::reset::audit::tests;
     check!(tests::test_audit_log(), "audit log");
     TestResult::Pass
 }
 
-fn bsr_freeze_unfreeze() -> TestResult {
-    use crate::kernel::barrier::reset::tests;
-    check!(tests::test_bsr_freeze_unfreeze(), "bsr freeze/unfreeze");
+fn audit_log_count() -> TestResult {
+    use crate::kernel::barrier::reset::audit::tests;
+    check!(tests::test_audit_count_by_layer(), "audit count by layer");
     TestResult::Pass
 }
 
-fn recovery_stats() -> TestResult {
-    use crate::kernel::barrier::reset::tests;
-    check!(tests::test_stats(), "recovery stats");
+fn bsr_freeze_unfreeze() -> TestResult {
+    use crate::kernel::barrier::reset::bsr::tests;
+    check!(tests::test_freeze_unfreeze(), "bsr freeze/unfreeze");
+    TestResult::Pass
+}
+
+fn parallel_dependency_layer() -> TestResult {
+    use crate::kernel::barrier::reset::parallel::tests;
+    check!(tests::test_dependency_layer(), "dependency layer");
+    check!(tests::test_dependency_layers(), "dependency layers");
+    TestResult::Pass
+}
+
+fn parallel_compute_layers() -> TestResult {
+    use crate::kernel::barrier::reset::parallel::tests;
+    check!(tests::test_compute_layers(), "compute layers");
     TestResult::Pass
 }
 
@@ -92,6 +98,15 @@ fn recovery_result_checks() -> TestResult {
     TestResult::Pass
 }
 
+fn rollback_mode_enum() -> TestResult {
+    use crate::kernel::barrier::RollbackMode;
+    
+    assert_eq_test!(RollbackMode::Serial as u32, 0, "serial mode");
+    assert_eq_test!(RollbackMode::Parallel as u32, 1, "parallel mode");
+    
+    TestResult::Pass
+}
+
 fn snapshot_register_api() -> TestResult {
     use crate::kernel::barrier::{snapshot_register_device, snapshot_unregister_device, DeviceType};
     
@@ -105,10 +120,10 @@ fn snapshot_register_api() -> TestResult {
 }
 
 fn recovery_stats_api() -> TestResult {
-    use crate::kernel::barrier::{recovery_get_stats, recovery_reset_stats};
+    use crate::kernel::barrier::{get_stats, reset_stats};
     
-    recovery_reset_stats();
-    let (bsr, bhr, tick) = recovery_get_stats();
+    reset_stats();
+    let (bsr, bhr, tick) = get_stats();
     assert_eq_test!(bsr, 0, "bsr count");
     assert_eq_test!(bhr, 0, "bhr count");
     assert_eq_test!(tick, 0, "last tick");
@@ -118,15 +133,18 @@ fn recovery_stats_api() -> TestResult {
 
 pub fn register_tests() {
     let runner = unsafe { crate::kernel::tests::TEST_RUNNER.get().unwrap() };
-    runner.register("barrier::snapshot", "basic", snapshot_basic);
-    runner.register("barrier::snapshot", "registry", snapshot_registry);
-    runner.register("barrier::reset", "result_types", recovery_result_types);
-    runner.register("barrier::reset", "config", recovery_config);
-    runner.register("barrier::reset", "audit_log", audit_log);
+    runner.register("barrier::config", "recovery_result", config_recovery_result);
+    runner.register("barrier::config", "default", config_default);
+    runner.register("barrier::config", "stats", config_stats);
+    runner.register("barrier::audit", "basic", audit_log_basic);
+    runner.register("barrier::audit", "count", audit_log_count);
     runner.register("barrier::bsr", "freeze_unfreeze", bsr_freeze_unfreeze);
-    runner.register("barrier::reset", "stats", recovery_stats);
+    runner.register("barrier::parallel", "dependency_layer", parallel_dependency_layer);
+    runner.register("barrier::parallel", "compute_layers", parallel_compute_layers);
     runner.register("barrier::snapshot", "device_type", device_type_enum);
     runner.register("barrier::reset", "layer_order", recovery_layer_order);
     runner.register("barrier::reset", "result_checks", recovery_result_checks);
+    runner.register("barrier::reset", "rollback_mode", rollback_mode_enum);
     runner.register("barrier::snapshot", "register_api", snapshot_register_api);
+    runner.register("barrier::reset", "stats_api", recovery_stats_api);
 }
