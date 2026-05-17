@@ -206,7 +206,7 @@ pub fn is_null_or_invalid(ptr: u64) -> bool {
 /// `true` 如果地址在合法的用户空间范围内
 #[inline]
 pub fn is_valid_user_address(addr: u64) -> bool {
-    addr > 0xFFFF && addr < 0xFFFFFFFF80000000
+    addr > 0xFFFF && addr < 0xFFFF800000000000
 }
 
 /// 验证内核态地址范围
@@ -218,7 +218,7 @@ pub fn is_valid_user_address(addr: u64) -> bool {
 /// `true` 如果地址在内核空间范围内
 #[inline]
 pub fn is_valid_kernel_address(addr: u64) -> bool {
-    addr >= 0xFFFFFFFF80000000
+    addr >= 0xFFFF800000000000
 }
 
 #[cfg(test)]
@@ -259,4 +259,9 @@ mod tests {
         assert!(is_valid_kernel_address(0xFFFFFFFF80000000));
         assert!(!is_valid_kernel_address(0x400000));
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_idt_safety_tests() {
+    crate::kernel::tests::idt::register_idt_safety_tests();
 }

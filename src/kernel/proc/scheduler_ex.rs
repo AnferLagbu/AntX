@@ -263,7 +263,7 @@ impl SchedulerEx {
         }
     }
     
-    fn priority_to_level(priority: ThreadPriority) -> usize {
+    pub(crate) fn priority_to_level(priority: ThreadPriority) -> usize {
         match priority {
             ThreadPriority::Realtime => 0,
             ThreadPriority::High => 1,
@@ -272,7 +272,7 @@ impl SchedulerEx {
         }
     }
     
-    fn level_to_quantum(level: usize) -> u32 {
+    pub(crate) fn level_to_quantum(level: usize) -> u32 {
         match level {
             0 => SCHED_LEVEL_0_QUANTUM,
             1 => SCHED_LEVEL_1_QUANTUM,
@@ -327,7 +327,7 @@ impl SchedulerEx {
         }
     }
     
-    fn run_queue_pop(&self, level: usize) -> Option<*mut ThreadNode> {
+    pub(crate) fn run_queue_pop(&self, level: usize) -> Option<*mut ThreadNode> {
         if level >= SCHED_LEVELS { return None; }
         
         let head = self.runq.queues[level].load(Ordering::SeqCst);
@@ -978,4 +978,9 @@ mod tests {
         };
         assert_eq!(priority, ThreadPriority::Realtime);
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_sched_ex_tests() {
+    crate::kernel::tests::sched::register_sched_ex_tests();
 }

@@ -136,6 +136,12 @@ impl PhysicalMemoryManager {
             self.set_bit(i);
         }
 
+        // Always reserve page 0 — PhysAddr(0) must never be handed out
+        // because FFI layers convert it to a null pointer.
+        if total_bits > 0 {
+            self.set_bit(0);
+        }
+
         let bitmap_start_page = (bitmap_aligned / PAGE_SIZE) as usize;
         let bitmap_pages = ((bitmap_bytes as u64 + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
         for i in bitmap_start_page..(bitmap_start_page + bitmap_pages).min(total_bits) {
@@ -366,7 +372,7 @@ impl PhysicalMemoryManager {
                 let bit_index = bit % 32;
 
                 if word_index < self.bitmap_size.get() {
-                    let atomic_ptr = bitmap as *const core::sync::atomic::AtomicU32;
+                    let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
                     (*atomic_ptr).fetch_or(1u32 << bit_index, core::sync::atomic::Ordering::SeqCst);
                 }
             }
@@ -381,7 +387,7 @@ impl PhysicalMemoryManager {
                 let bit_index = bit % 32;
 
                 if word_index < self.bitmap_size.get() {
-                    let atomic_ptr = bitmap as *const core::sync::atomic::AtomicU32;
+                    let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
                     (*atomic_ptr).fetch_and(!(1u32 << bit_index), core::sync::atomic::Ordering::SeqCst);
                 }
             }
@@ -396,7 +402,7 @@ impl PhysicalMemoryManager {
                 let bit_index = bit % 32;
 
                 if word_index < self.bitmap_size.get() {
-                    let atomic_ptr = bitmap as *const core::sync::atomic::AtomicU32;
+                    let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
                     let value = (*atomic_ptr).load(core::sync::atomic::Ordering::SeqCst);
                     (value & (1u32 << bit_index)) != 0
                 } else {

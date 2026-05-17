@@ -106,7 +106,8 @@ pub extern "C" fn kernel_init() {
     // Test mode: skip normal init, run unit tests
     #[cfg(feature = "kernel_test")]
     {
-        // Minimal init: boot + PMM + VMM + kmalloc + IDT (for Mutex)
+        unsafe { core::arch::asm!("cli", options(nomem, nostack)); }
+
         let boot_info = crate::kernel::boot::init();
         crate::kernel::mm::pmm::pmm_init(boot_info.mem_size, boot_info.kernel_end);
         crate::kernel::mm::vmm::vmm_init();
@@ -117,7 +118,7 @@ pub extern "C" fn kernel_init() {
         unsafe {
             crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
         }
-        // Initialize IDT and interrupts (needed for spin::Mutex)
+        crate::kernel::mm::pmm::pmm_init_bitmap(KMALLOC_HEAP_SIZE);
         crate::kernel::idt::idt_init();
         crate::klog_boot_info!("Test mode: IDT initialized");
 

@@ -29,6 +29,7 @@
 /// - **内存安全**: 编译时保证无缓冲区溢出
 
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+#[cfg(not(feature = "kernel_test"))]
 use crate::kernel::net::types::*;
 
 // ============================================================================
@@ -126,6 +127,7 @@ static G_PING_STATS: PingStats = PingStats::new();
 // FFI 声明 - lwIP 和 E1000 函数
 // ============================================================================
 
+#[cfg(not(feature = "kernel_test"))]
 extern "C" {
     // 日志函数 (已在 types.rs 声明)
     
@@ -241,6 +243,7 @@ extern "C" {
     ) -> i32;
 }
 
+#[cfg(not(feature = "kernel_test"))]
 // ============================================================================
 // ICMP/Ping 实现
 // ============================================================================
@@ -249,7 +252,7 @@ const PING_DATA_SIZE: usize = 32;
 const PING_ID: u16 = 0xA701;
 
 /// 计算 Internet 校验和 (RFC 1071)
-fn internet_checksum(data: &[u8]) -> u16 {
+pub(crate) fn internet_checksum(data: &[u8]) -> u16 {
     let mut sum: u32 = 0;
     let mut i = 0;
     
@@ -271,6 +274,7 @@ fn internet_checksum(data: &[u8]) -> u16 {
     
     (!sum) as u16
 }
+#[cfg(not(feature = "kernel_test"))]
 
 /// Ping 回调处理 (接收ICMP回复)
 extern "C" fn ping_recv_callback(
@@ -300,6 +304,7 @@ extern "C" fn ping_recv_callback(
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 /// 发送 Ping 请求
 fn ping_send(raw_pcb: *mut core::ffi::c_void, target: *const core::ffi::c_void) -> NetAppError {
     if raw_pcb.is_null() || target.is_null() {
@@ -342,6 +347,7 @@ fn ping_send(raw_pcb: *mut core::ffi::c_void, target: *const core::ffi::c_void) 
 // ============================================================================
 
 /// DNS 解析结果回调
+#[cfg(not(feature = "kernel_test"))]
 extern "C" fn dns_found_callback(
     name: *const i8,
     addr: *const core::ffi::c_void,
@@ -385,6 +391,7 @@ extern "C" fn dns_found_callback(
 /// 11. **SNMP** - 网络管理(如果启用)
 /// 12. **NetBIOS** - Windows兼容(如果启用)
 /// 13. **lwiperf** - 性能测试(如果启用)
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub unsafe extern "C" fn qx_net_apps_init(netif: *mut core::ffi::c_void) {
     klog_net("--- Initializing Network Applications ---\0".as_ptr() as *const i8);
@@ -468,6 +475,7 @@ pub unsafe extern "C" fn qx_net_apps_init(netif: *mut core::ffi::c_void) {
 // ============================================================================
 
 /// 初始化 Ping 功能
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_ping(_netif: *mut core::ffi::c_void) {
     klog_net("Ping: testing gateway connectivity...\0".as_ptr() as *const i8);
     
@@ -496,6 +504,7 @@ unsafe fn init_ping(_netif: *mut core::ffi::c_void) {
 }
 
 /// 初始化 HTTP Server
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_http_server() {
     httpd_init();
     klog_net("HTTP Server: started on port 80\0".as_ptr() as *const i8);
@@ -503,6 +512,7 @@ unsafe fn init_http_server() {
 
 /// 初始化 HTTP Client (可选功能)
 #[cfg(feature = "http_client")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_http_client(_netif: *mut core::ffi::c_void) {
     klog_net("HTTP Client: testing GET request...\0".as_ptr() as *const i8);
     // httpc_get_file(...) - 需要配置目标服务器
@@ -510,6 +520,7 @@ unsafe fn init_http_client(_netif: *mut core::ffi::c_void) {
 }
 
 /// 初始化 DNS 测试
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_dns_test() {
     klog_net("DNS: resolving example.com...\0".as_ptr() as *const i8);
     
@@ -523,6 +534,7 @@ unsafe fn init_dns_test() {
 
 /// 初始化 mDNS (可选功能)
 #[cfg(feature = "mdns")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_mdns(netif: *mut core::ffi::c_void) {
     klog_net("mDNS: initializing responder...\0".as_ptr() as *const i8);
     
@@ -536,6 +548,7 @@ unsafe fn init_mdns(netif: *mut core::ffi::c_void) {
 
 /// 初始化 MQTT (可选功能)
 #[cfg(feature = "mqtt")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_mqtt(_netif: *mut core::ffi::c_void) {
     klog_net("MQTT: allocating client...\0".as_ptr() as *const i8);
     
@@ -550,6 +563,7 @@ unsafe fn init_mqtt(_netif: *mut core::ffi::c_void) {
 
 /// 初始化 SNTP (可选功能)
 #[cfg(feature = "sntp")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_sntp() {
     klog_net("SNTP: configuring time servers...\0".as_ptr() as *const i8);
     
@@ -563,6 +577,7 @@ unsafe fn init_sntp() {
 
 /// 初始化 SMTP (可选功能)
 #[cfg(feature = "smtp")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_smtp() {
     klog_net("SMTP: configuring mail server...\0".as_ptr() as *const i8);
     
@@ -574,6 +589,7 @@ unsafe fn init_smtp() {
 
 /// 初始化 TFTP (可选功能)
 #[cfg(feature = "tftp")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_tftp() {
     klog_net("TFTP: starting server on port 69...\0".as_ptr() as *const i8);
     
@@ -584,6 +600,7 @@ unsafe fn init_tftp() {
 
 /// 初始化 SNMP (可选功能)
 #[cfg(feature = "snmp")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_snmp() {
     klog_net("SNMP: configuring agent...\0".as_ptr() as *const i8);
     
@@ -605,6 +622,7 @@ unsafe fn init_snmp() {
 
 /// 初始化 NetBIOS (可选功能)
 #[cfg(feature = "netbios")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_netbios() {
     klog_net("NetBIOS: setting name...\0".as_ptr() as *const i8);
     
@@ -616,6 +634,7 @@ unsafe fn init_netbios() {
 
 /// 初始化 lwiperf (可选功能)
 #[cfg(feature = "lwiperf")]
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn init_lwiperf() {
     klog_net("lwiperf: starting TCP server on port 5001...\0".as_ptr() as *const i8);
     

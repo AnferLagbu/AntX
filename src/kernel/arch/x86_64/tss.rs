@@ -60,11 +60,11 @@ pub struct TaskStateSegment {
     
     /// 特权级 1 栈指针 (Offset 0x0A, 8 bytes)
     /// 在 x86-64 中未使用 (仅 0 和 3 有效), 但必须存在。
-    rsp1: u64,
+    pub(crate) rsp1: u64,
     
     /// 特权级 2 栈指针 (Offset 0x12, 8 bytes)
     /// 同上, 未使用但必须存在。
-    rsp2: u64,
+    pub(crate) rsp2: u64,
     
     /// 保留字段 (Offset 0x1A, 2 bytes)
     /// 必须为 0
@@ -323,4 +323,8 @@ mod tests {
         
         println!("TSS size: {} bytes", TSS_SIZE);
     }
+}
+#[cfg(feature = "kernel_test")]
+pub fn register_tss_tests() {
+    crate::kernel::tests::arch::register_tss_tests();
 }

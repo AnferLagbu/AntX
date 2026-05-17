@@ -43,8 +43,8 @@ const KB_CMD_IDENTIFY: u8 = 0xF2;         // Identify Keyboard
 
 /// LED 标志位
 const KB_LED_SCROLL_LOCK: u8 = 0x01;
-const KB_LED_NUM_LOCK: u8 = 0x02;
-const KB_LED_CAPS_LOCK: u8 = 0x04;
+pub(crate) const KB_LED_NUM_LOCK: u8 = 0x02;
+pub(crate) const KB_LED_CAPS_LOCK: u8 = 0x04;
 
 /// 缓冲区大小
 const KEYBOARD_BUFFER_SIZE: usize = 128;
@@ -55,7 +55,7 @@ const KEYBOARD_BUFFER_SIZE: usize = 128;
 
 /// 标准 US QWERTY 键盘 Scancode Set 1 映射表
 /// [scancode] -> ASCII 字符 (无修饰键)
-const SCANCODE_TABLE: &[u8; 87] = &[
+pub(crate) const SCANCODE_TABLE: &[u8; 87] = &[
     0x00, 0x1B, '1' as u8, '2' as u8, '3' as u8, '4' as u8,
     '5' as u8, '6' as u8, '7' as u8, '8' as u8, '9' as u8,
     '0' as u8, '-' as u8, '=' as u8, 0x08, 0x09,
@@ -79,7 +79,7 @@ const SCANCODE_TABLE: &[u8; 87] = &[
 ];
 
 /// Shift 修饰键下的字符映射表
-const SHIFT_TABLE: &[u8; 87] = &[
+pub(crate) const SHIFT_TABLE: &[u8; 87] = &[
     0x00, 0x1B, '!' as u8, '@' as u8, '#' as u8, '$' as u8,
     '%' as u8, '^' as u8, '&' as u8, '*' as u8, '(' as u8,
     ')' as u8, '_' as u8, '+' as u8, 0x08, 0x09,
@@ -146,7 +146,7 @@ pub enum SpecialKey {
 }
 
 /// 特殊按键 scancode 映射
-fn get_special_key(scancode: u8) -> SpecialKey {
+pub(crate) fn get_special_key(scancode: u8) -> SpecialKey {
     match scancode {
         0x0D => SpecialKey::Enter,
         0x0F => SpecialKey::Tab,
@@ -243,7 +243,7 @@ impl ModifierState {
 }
 
 /// 环形键盘缓冲区
-struct KeyboardBuffer {
+pub(crate) struct KeyboardBuffer {
     buffer: [u8; KEYBOARD_BUFFER_SIZE],
     head: usize,
     tail: usize,
@@ -262,7 +262,7 @@ impl Default for KeyboardBuffer {
 }
 
 impl KeyboardBuffer {
-    fn push(&mut self, byte: u8) -> Result<()> {
+    pub(crate) fn push(&mut self, byte: u8) -> Result<()> {
         if self.count >= KEYBOARD_BUFFER_SIZE {
             return Err(DriverError::Busy);
         }
@@ -273,7 +273,7 @@ impl KeyboardBuffer {
         Ok(())
     }
 
-    fn pop(&mut self) -> Option<u8> {
+    pub(crate) fn pop(&mut self) -> Option<u8> {
         if self.count == 0 {
             return None;
         }
@@ -284,11 +284,11 @@ impl KeyboardBuffer {
         Some(byte)
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.count == 0
     }
 
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.count
     }
 
@@ -562,6 +562,7 @@ impl KeyboardDriver {
             }
 
             // 让出 CPU (避免忙等待)
+            #[cfg(not(feature = "kernel_test"))]
             unsafe {
                 extern "C" { fn scheduler_yield_ex(); }
                 scheduler_yield_ex();

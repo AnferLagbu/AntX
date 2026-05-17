@@ -69,3 +69,7 @@ mod tests {
         assert!(!is_leaf_supported(0xFFFF_FFFF));
     }
 }
+#[cfg(feature = "kernel_test")]
+pub fn register_cpuid_tests() {
+    crate::kernel::tests::arch::register_cpuid_tests();
+}

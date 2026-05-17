@@ -477,15 +477,20 @@ test-unit: build/kernel_test.bin user
 		-display none \
 		-d cpu_reset 2>tests/reports/qemu_stderr_$${timestamp}.log; \
 	exit_code=$$?; \
-	if [ $$exit_code -eq 0 ]; then \
+	if [ $$exit_code -eq 33 ]; then \
 		echo ""; \
 		echo "╔══════════════════════════════════════════════╗"; \
 		echo "║  ✅ ALL TESTS PASSED (QEMU exit: $$exit_code)   ║"; \
 		echo "╚══════════════════════════════════════════════╝"; \
-	elif [ $$exit_code -eq 33 ]; then \
+	elif [ $$exit_code -eq 35 ]; then \
 		echo ""; \
 		echo "╔══════════════════════════════════════════════╗"; \
 		echo "║  ❌ TESTS FAILED (QEMU exit: $$exit_code)        ║"; \
+		echo "╚══════════════════════════════════════════════╝"; \
+	elif [ $$exit_code -eq 0 ]; then \
+		echo ""; \
+		echo "╔══════════════════════════════════════════════╗"; \
+		echo "║  ⚠️  QEMU exited normally (no isa-debug-exit)    ║"; \
 		echo "╚══════════════════════════════════════════════╝"; \
 	else \
 		echo ""; \

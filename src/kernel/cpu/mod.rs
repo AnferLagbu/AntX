@@ -1247,3 +1247,7 @@ mod tests {
         assert!(mono.is_single_core());
     }
 }
+#[cfg(feature = "kernel_test")]
+pub fn register_cpu_tests() {
+    crate::kernel::tests::arch::register_cpu_tests();
+}

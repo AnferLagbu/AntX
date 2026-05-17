@@ -29,13 +29,13 @@ use super::framework::{outb, inb, outw, inw};
 // ============================================================================
 
 /// Primary 通道 I/O 基地址
-const ATA_PRIMARY_IO: u16 = 0x1F0;
+pub(crate) const ATA_PRIMARY_IO: u16 = 0x1F0;
 /// Primary 通道控制寄存器基址
-const ATA_PRIMARY_CTRL: u16 = 0x3F6;
+pub(crate) const ATA_PRIMARY_CTRL: u16 = 0x3F6;
 /// Secondary 通道 I/O 基址
-const ATA_SECONDARY_IO: u16 = 0x170;
+pub(crate) const ATA_SECONDARY_IO: u16 = 0x170;
 /// Secondary 通道控制寄存器基址
-const ATA_SECONDARY_CTRL: u16 = 0x376;
+pub(crate) const ATA_SECONDARY_CTRL: u16 = 0x376;
 
 /// I/O 寄存器偏移量
 const ATA_DATA: u16 = 0;           // 数据寄存器 (16位)
@@ -77,10 +77,10 @@ const ATA_TIMEOUT_ERR: i32 = -2;
 const ATA_NO_DISK: i32 = -3;
 
 /// 每个扇区的字数 (256 × 16bit = 512 bytes)
-const WORDS_PER_SECTOR: usize = 256;
+pub(crate) const WORDS_PER_SECTOR: usize = 256;
 
 /// 最大支持设备数量 (2通道 × 2驱动器)
-const MAX_ATA_DEVICES: usize = 4;
+pub(crate) const MAX_ATA_DEVICES: usize = 4;
 
 // ============================================================================
 // 设备状态结构体
@@ -126,12 +126,12 @@ pub struct AtaController {
 // ============================================================================
 
 /// 获取指定设备的 I/O 基地址
-fn get_io_base(drive: u8) -> u16 {
+pub(crate) fn get_io_base(drive: u8) -> u16 {
     if drive < 2 { ATA_PRIMARY_IO } else { ATA_SECONDARY_IO }
 }
 
 /// 获取指定设备的控制寄存器基地址
-fn get_ctrl_base(drive: u8) -> u16 {
+pub(crate) fn get_ctrl_base(drive: u8) -> u16 {
     if drive < 2 { ATA_PRIMARY_CTRL } else { ATA_SECONDARY_CTRL }
 }
 

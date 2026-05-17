@@ -75,7 +75,7 @@ const _: () = assert!(
 
 impl InterruptFrame {
     /// 创建新的中断帧 (用于测试)
-    #[cfg(test)]
+    #[cfg(any(test, feature = "kernel_test"))]
     pub fn new_test_frame(int_no: u64, rip: u64, cs: u64) -> Self {
         Self {
             r15: 0, r14: 0, r13: 0, r12: 0, r11: 0, r10: 0,
@@ -528,4 +528,9 @@ mod tests {
         assert_eq!(get_irq_name(1), "Keyboard");
         assert_eq!(get_irq_name(20), "Unknown");
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_idt_types_tests() {
+    crate::kernel::tests::idt::register_idt_types_tests();
 }

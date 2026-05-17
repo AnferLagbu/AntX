@@ -40,10 +40,10 @@ pub const PIT_BASE_FREQUENCY: u64 = 1_193_182;
 pub const DEFAULT_INTERRUPT_FREQ_HZ: u32 = 1000;
 
 /// 最大分频值 (16位计数器)
-const PIT_MAX_COUNT: u16 = 0xFFFF;      // 65535
+pub const PIT_MAX_COUNT: u16 = 0xFFFF;
 
 /// 最小分频值
-const PIT_MIN_COUNT: u16 = 0x0001;      // 1
+pub const PIT_MIN_COUNT: u16 = 0x0001;
 
 /// 控制字格式
 #[allow(dead_code)]
@@ -352,4 +352,40 @@ mod tests {
         assert!(pit_read_count().is_none());
         assert!(pit_elapsed_since_tick_us().is_none());
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_pit_tests() {
+    use crate::kernel::tests::{runner, TestFn, TestResult};
+    let r = runner();
+
+    fn constants() -> TestResult {
+        crate::assert_eq_test!(PIT_BASE_FREQUENCY, 1_193_182u64, "base freq");
+        crate::check!(DEFAULT_INTERRUPT_FREQ_HZ > 0, "default freq positive");
+        crate::assert_eq_test!(PIT_MAX_COUNT, 65535u16, "max count");
+        crate::assert_eq_test!(PIT_MIN_COUNT, 1u16, "min count");
+        TestResult::Pass
+    }
+
+    fn divisor_calculation() -> TestResult {
+        let divisor = PIT_BASE_FREQUENCY / 1000;
+        crate::assert_eq_test!(divisor, 1193u64, "1000Hz divisor");
+        let actual_freq = PIT_BASE_FREQUENCY / divisor;
+        crate::check!((actual_freq - 1000) < 5, "actual freq close to 1000");
+        TestResult::Pass
+    }
+
+    fn frequency_bounds() -> TestResult {
+        crate::check!(PIT_MIN_COUNT >= 1, "min count >= 1");
+        crate::check!(PIT_MAX_COUNT as u64 <= 65535, "max count <= 65535");
+        let max_freq = PIT_BASE_FREQUENCY / PIT_MIN_COUNT as u64;
+        crate::check!(max_freq > 1_000_000, "max freq > 1MHz");
+        let min_freq = PIT_BASE_FREQUENCY / PIT_MAX_COUNT as u64;
+        crate::check!(min_freq < 20, "min freq < 20Hz");
+        TestResult::Pass
+    }
+
+    r.register("timer::pit", "constants", constants as TestFn);
+    r.register("timer::pit", "divisor_calculation", divisor_calculation as TestFn);
+    r.register("timer::pit", "frequency_bounds", frequency_bounds as TestFn);
 }

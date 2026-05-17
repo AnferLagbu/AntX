@@ -321,3 +321,8 @@ mod tests {
         assert!(signal::signal_unblock_safe(34).is_err());
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_ipc_tests() {
+    crate::kernel::tests::test_ipc::register_ipc_tests();
+}

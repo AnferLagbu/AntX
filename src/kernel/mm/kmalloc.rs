@@ -252,8 +252,8 @@ impl KernelHeap {
         self.total_freed.fetch_add(freed_size, Ordering::Relaxed);
         self.current_usage.fetch_sub(freed_size, Ordering::Relaxed);
         
-        self.coalesce(header);
-        self.add_to_free_list(header);
+        let effective = self.coalesce(header);
+        self.add_to_free_list(effective);
         
         self.release_lock();
     }
@@ -411,14 +411,13 @@ impl KernelHeap {
     }
 
     /// Coalesce adjacent free blocks
-    fn coalesce(&self, header: *mut HeapHeader) {
+    fn coalesce(&self, header: *mut HeapHeader) -> *mut HeapHeader {
         unsafe {
             self.coalesce_forward(header);
-            self.coalesce_backward(header);
+            self.coalesce_backward(header)
         }
     }
 
-    /// Coalesce with next block if it's free
     unsafe fn coalesce_forward(&self, header: *mut HeapHeader) {
         let next_addr = (header as *mut u8).add((*header).size as usize) as *mut HeapHeader;
         let heap_end = self.heap_end.0 as *mut u8;
@@ -428,36 +427,29 @@ impl KernelHeap {
             
             if next_header.magic == HEAP_MAGIC && next_header.free {
                 self.remove_from_free_list(next_addr);
-                
                 (*header).size += next_header.size;
-                
-                if !next_header.next.is_null() {
-                    (*header).next = next_header.next;
-                    (*(*header).next).prev = header;
-                } else {
-                    (*header).next = core::ptr::null_mut();
-                }
             }
         }
     }
 
-    /// Coalesce with previous block if it's free
-    unsafe fn coalesce_backward(&self, header: *mut HeapHeader) {
-        if !(*header).prev.is_null() {
-            let prev = (*header).prev;
-            let expected_prev_end = (prev as *mut u8).add((*prev).size as usize);
+    unsafe fn coalesce_backward(&self, header: *mut HeapHeader) -> *mut HeapHeader {
+        let mut current = *self.free_list_head.get();
+        
+        while !current.is_null() {
+            let candidate = current;
+            let candidate_end = (candidate as *mut u8).add((*candidate).size as usize);
             
-            if expected_prev_end == (header as *mut u8) {
-                self.remove_from_free_list(prev);
-                
-                (*prev).size += (*header).size;
-                
-                if !(*header).next.is_null() {
-                    (*prev).next = (*header).next;
-                    (*(*header).next).prev = prev;
-                }
+            if candidate_end == (header as *mut u8) {
+                self.remove_from_free_list(candidate);
+                (*candidate).size += (*header).size;
+                (*candidate).free = true;
+                return candidate;
             }
+            
+            current = (*candidate).next;
         }
+        
+        header
     }
 
     /// Add a block to the free list

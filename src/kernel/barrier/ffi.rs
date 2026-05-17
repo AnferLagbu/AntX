@@ -43,6 +43,7 @@ pub extern "C" fn recovery_domain_unregister(domain_id: u64) -> i32 {
     -1
 }
 
+#[cfg(feature = "kernel_test")]
 #[no_mangle]
 pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
     use crate::kernel::proc::scheduler::TICK_COUNT;

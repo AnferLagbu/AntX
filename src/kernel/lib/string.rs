@@ -905,3 +905,8 @@ mod tests {
         assert_eq!(safe_memcmp(&[1, 2, 3], &[1, 2, 4]), core::cmp::Ordering::Less);
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_string_tests() {
+    crate::kernel::tests::string::register_string_tests();
+}

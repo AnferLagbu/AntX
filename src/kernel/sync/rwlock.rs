@@ -330,3 +330,8 @@ mod tests {
         assert!(rwlock.try_write().is_some());
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_rwlock_tests() {
+    crate::kernel::tests::sync::register_rwlock_tests();
+}

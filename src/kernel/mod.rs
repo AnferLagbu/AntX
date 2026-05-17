@@ -59,7 +59,6 @@ pub mod proc;
 pub mod fs;
 
 /// 网络协议栈 (lwIP, OS 抽象层, e1000 驱动)
-#[cfg(not(feature = "kernel_test"))]
 pub mod net;
 
 /// 中断描述符表 (IDT, ISR, 异常处理, 统计)
@@ -81,11 +80,9 @@ pub mod barrier;
 pub mod pci;
 
 /// 系统调用接口 (syscall 表, 参数验证)
-#[cfg(not(feature = "kernel_test"))]
 pub mod syscall;
 
 /// 设备驱动 (ATA 磁盘, 键盘, 串口)
-#[cfg(not(feature = "kernel_test"))]
 pub mod driver;
 
 /// IPC 子系统 (管道, 共享内存, 消息队列, 信号量, 信号)

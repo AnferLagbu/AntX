@@ -119,3 +119,17 @@ mod tests {
         let _ = result;
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_timer_irq_tests() {
+    use crate::kernel::tests::{runner, TestFn, TestResult};
+
+    fn timer_irq0_handler_signature() -> TestResult {
+        let _handler: extern "C" fn(*mut InterruptFrame) = timer_irq0_handler;
+        let _ = _handler;
+        TestResult::Pass
+    }
+
+    let r = runner();
+    r.register("timer::irq", "handler_signature", timer_irq0_handler_signature as TestFn);
+}

@@ -337,7 +337,6 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
             "pop {0}",
             "cli",
             out(reg) saved_if,
-            options(nomem)
         );
     }
 
@@ -355,7 +354,6 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
             "push {0}",
             "popfq",
             in(reg) saved_if,
-            options(nomem)
         );
     }
 

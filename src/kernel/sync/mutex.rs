@@ -370,3 +370,8 @@ mod tests {
         let _ = cond;  // 仅验证可以创建
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_mutex_tests() {
+    crate::kernel::tests::sync::register_mutex_tests();
+}

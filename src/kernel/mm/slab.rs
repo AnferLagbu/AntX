@@ -118,10 +118,10 @@ pub struct KmemCache {
     name: &'static str,
     
     /// 单个对象的大小 (bytes)
-    object_size: usize,
+    pub(crate) object_size: usize,
     
     /// 每个 Slab 可容纳的对象数
-    objects_per_slab: u32,
+    pub(crate) objects_per_slab: u32,
     
     /// 完全使用的 Slab 链表头
     slabs_full: *mut SlabHeader,
@@ -133,7 +133,7 @@ pub struct KmemCache {
     slabs_free: *mut SlabHeader,
     
     /// 总 Slab 数量
-    slab_count: u32,
+    pub(crate) slab_count: u32,
     
     /// 统计: 总分配次数
     total_allocs: u64,
@@ -697,7 +697,7 @@ pub extern "C" fn slab_system_init() -> i32 {
 }
 
 /// 根据请求大小查找合适的通用缓存索引
-fn find_general_cache_index(size: usize) -> Option<usize> {
+pub(crate) fn find_general_cache_index(size: usize) -> Option<usize> {
     for (i, &cache_size) in GENERAL_CACHE_SIZES.iter().enumerate() {
         if size <= cache_size {
             return Some(i);
@@ -835,4 +835,9 @@ mod tests {
         assert_eq!(find_general_cache_index(2048), Some(7));
         assert_eq!(find_general_cache_index(3000), None); // 超出范围
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_slab_tests() {
+    crate::kernel::tests::sys::register_slab_tests();
 }

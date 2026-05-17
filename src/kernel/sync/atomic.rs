@@ -205,3 +205,8 @@ mod tests {
         }
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_atomic_tests() {
+    crate::kernel::tests::sync::register_atomic_tests();
+}

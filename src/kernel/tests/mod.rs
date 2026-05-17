@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-use crate::kernel::sync::mutex::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub mod test_barrier;
@@ -12,6 +10,22 @@ pub mod test_vfs;
 pub mod test_ipc;
 pub mod test_devfs;
 pub mod test_proc;
+#[cfg(feature = "kernel_test")]
+pub mod arch;
+#[cfg(feature = "kernel_test")]
+pub mod sys;
+#[cfg(feature = "kernel_test")]
+pub mod string;
+#[cfg(feature = "kernel_test")]
+pub mod sched;
+#[cfg(feature = "kernel_test")]
+pub mod idt;
+#[cfg(feature = "kernel_test")]
+pub mod sync;
+#[cfg(feature = "kernel_test")]
+pub mod driver;
+#[cfg(feature = "kernel_test")]
+pub mod net;
 
 pub type TestFn = fn() -> TestResult;
 
@@ -21,23 +35,51 @@ pub enum TestResult {
     Skip(&'static str),
 }
 
+#[derive(Copy, Clone)]
 pub struct TestCase {
     pub module: &'static str,
     pub name: &'static str,
     pub func: TestFn,
 }
 
+const MAX_TESTS: usize = 256;
+
+fn noop_test() -> TestResult { TestResult::Pass }
+
+const NOOP_CASE: TestCase = TestCase { module: "", name: "", func: noop_test };
+
+struct TestRegistry {
+    count: usize,
+    cases: [TestCase; MAX_TESTS],
+}
+
+impl TestRegistry {
+    const fn new() -> Self {
+        Self {
+            count: 0,
+            cases: [NOOP_CASE; MAX_TESTS],
+        }
+    }
+
+    fn register(&mut self, module: &'static str, name: &'static str, func: TestFn) {
+        if self.count < MAX_TESTS {
+            self.cases[self.count] = TestCase { module, name, func };
+            self.count += 1;
+        }
+    }
+}
+
 pub struct TestRunner {
-    pub tests: Mutex<Vec<TestCase>>,
+    registry: spin::Mutex<TestRegistry>,
     pub passed: AtomicU32,
     pub failed: AtomicU32,
     pub skipped: AtomicU32,
 }
 
 impl TestRunner {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            tests: Mutex::new(Vec::new()),
+            registry: spin::Mutex::new(TestRegistry::new()),
             passed: AtomicU32::new(0),
             failed: AtomicU32::new(0),
             skipped: AtomicU32::new(0),
@@ -45,69 +87,147 @@ impl TestRunner {
     }
 
     pub fn register(&self, module: &'static str, name: &'static str, func: TestFn) {
-        self.tests.lock().push(TestCase { module, name, func });
+        self.registry.lock().register(module, name, func);
     }
 
     pub fn run_all(&self) {
-        let tests = self.tests.lock();
-        let total = tests.len();
-        crate::klog_info!(Test, "");
-        crate::klog_info!(Test, "========================================");
-        crate::klog_info!(Test, "  AntX Kernel Test Suite");
-        crate::klog_info!(Test, "  {} test cases registered", total);
-        crate::klog_info!(Test, "========================================");
-        crate::klog_info!(Test, "");
+        let reg = self.registry.lock();
+        let total = reg.count;
 
-        for (i, tc) in tests.iter().enumerate() {
-            let start_tick = Self::current_tick();
-            let result = (tc.func)();
-            let elapsed = Self::current_tick().saturating_sub(start_tick);
+        Self::serial_print(b"\n========================================\n");
+        Self::serial_print(b"  AntX Kernel Test Suite\n  ");
+        Self::serial_print_num(total as u64);
+        Self::serial_print(b" test cases registered\n");
+        Self::serial_print(b"========================================\n\n");
+
+        unsafe { core::arch::asm!("cli", options(nomem, nostack)); }
+
+        for i in 0..total {
+            let tc = reg.cases[i];
+            let module = tc.module;
+            let name = tc.name;
+            let func = tc.func;
+
+            Self::serial_print(b"[");
+            Self::serial_print_num((i + 1) as u64);
+            Self::serial_print(b"/");
+            Self::serial_print_num(total as u64);
+            Self::serial_print(b"] ");
+            Self::serial_print(module.as_bytes());
+            Self::serial_print(b"::");
+            Self::serial_print(name.as_bytes());
+            Self::serial_print(b"...");
+
+            let result = func();
 
             match result {
                 TestResult::Pass => {
                     self.passed.fetch_add(1, Ordering::Relaxed);
-                    crate::klog_info!(Test, "  [{:3}/{}] PASS {}::{} ({}ms)",
-                        i + 1, total, tc.module, tc.name, elapsed);
+                    Self::serial_print(b"PASS\n");
                 }
                 TestResult::Fail(msg) => {
                     self.failed.fetch_add(1, Ordering::Relaxed);
-                    crate::klog_err!(Test, "  [{:3}/{}] FAIL {}::{} : {} ({}ms)",
-                        i + 1, total, tc.module, tc.name, msg, elapsed);
+                    Self::serial_print(b"FAIL: ");
+                    Self::serial_print(msg.as_bytes());
+                    Self::serial_print(b"\n");
                 }
                 TestResult::Skip(reason) => {
                     self.skipped.fetch_add(1, Ordering::Relaxed);
-                    crate::klog_info!(Test, "  [{:3}/{}] SKIP {}::{} : {}",
-                        i + 1, total, tc.module, tc.name, reason);
+                    Self::serial_print(b"SKIP: ");
+                    Self::serial_print(reason.as_bytes());
+                    Self::serial_print(b"\n");
                 }
             }
         }
+
+        drop(reg);
 
         let p = self.passed.load(Ordering::Relaxed);
         let f = self.failed.load(Ordering::Relaxed);
         let s = self.skipped.load(Ordering::Relaxed);
 
-        crate::klog_info!(Test, "");
-        crate::klog_info!(Test, "========================================");
+        Self::serial_print(b"\n========================================\n");
         if f > 0 {
-            crate::klog_info!(Test, "  RESULT: {} passed, {} FAILED, {} skipped (total: {})",
-                p, f, s, total);
+            Self::serial_print(b"  RESULT: ");
+            Self::serial_print_num(p as u64);
+            Self::serial_print(b" passed, ");
+            Self::serial_print_num(f as u64);
+            Self::serial_print(b" FAILED, ");
+            Self::serial_print_num(s as u64);
+            Self::serial_print(b" skipped\n");
         } else {
-            crate::klog_info!(Test, "  RESULT: ALL {} TESTS PASSED ({} skipped)", p, s);
+            Self::serial_print(b"  RESULT: ALL ");
+            Self::serial_print_num(p as u64);
+            Self::serial_print(b" TESTS PASSED (");
+            Self::serial_print_num(s as u64);
+            Self::serial_print(b" skipped)\n");
         }
-        crate::klog_info!(Test, "========================================");
-        crate::klog_info!(Test, "");
+        Self::serial_print(b"========================================\n");
     }
 
-    fn current_tick() -> u64 {
-        extern "C" { fn timer_get_ticks() -> u64; }
-        unsafe { timer_get_ticks() }
+    fn serial_print(s: &[u8]) {
+        serial_print(s);
+    }
+
+    fn serial_print_num(n: u64) {
+        serial_print_num(n);
+    }
+}
+
+#[inline(always)]
+unsafe fn port_inb(port: u16) -> u8 {
+    let value: u8;
+    core::arch::asm!("in al, dx", out("al") value, in("dx") port, options(nomem, nostack, preserves_flags));
+    value
+}
+
+#[inline(always)]
+unsafe fn port_outb(port: u16, value: u8) {
+    core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
+}
+
+pub fn serial_print(s: &[u8]) {
+    const COM1: u16 = 0x3F8;
+    for &b in s {
+        unsafe {
+            while (port_inb(COM1 + 5) & 0x20) == 0 {
+                core::hint::spin_loop();
+            }
+            port_outb(COM1, b);
+        }
+        if b == b'\n' {
+            unsafe { port_outb(COM1, b'\r'); }
+        }
+    }
+}
+
+pub fn serial_print_num(mut n: u64) {
+    if n == 0 {
+        serial_print(b"0");
+        return;
+    }
+    let mut buf = [0u8; 20];
+    let mut pos = 0usize;
+    while n > 0 {
+        buf[pos] = (n % 10) as u8 + b'0';
+        pos += 1;
+        n /= 10;
+    }
+    for i in (0..pos).rev() {
+        unsafe {
+            const COM1: u16 = 0x3F8;
+            while (port_inb(COM1 + 5) & 0x20) == 0 {
+                core::hint::spin_loop();
+            }
+            port_outb(COM1, buf[i]);
+        }
     }
 }
 
 static TEST_RUNNER: spin::Once<TestRunner> = spin::Once::new();
 
 pub fn runner() -> &'static TestRunner {
-    TEST_RUNNER.call_once(|| TestRunner::new())
+    TEST_RUNNER.call_once(TestRunner::new)
 }
 
 #[macro_export]
@@ -139,10 +259,6 @@ macro_rules! skip_test {
 
 pub use {check, assert_eq_test, skip_test};
 
-pub fn run_all_tests() {
-    runner().run_all();
-}
-
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === AntX Kernel Test Framework ===");
 
@@ -157,8 +273,25 @@ pub fn test_runner_init() {
     test_devfs::register_devfs_tests();
     test_proc::register_proc_tests();
 
+    #[cfg(feature = "kernel_test")]
+    {
+        arch::register_tests();
+        sys::register_tests();
+        string::register_tests();
+        sched::register_tests();
+        idt::register_tests();
+        sync::register_tests();
+        driver::register_tests();
+        net::register_tests();
+        crate::kernel::timer::pit::register_pit_tests();
+        crate::kernel::timer::tick::register_timer_tick_tests();
+        crate::kernel::timer::calibration::register_timer_calibration_tests();
+        crate::kernel::timer::irq::register_timer_irq_tests();
+        crate::kernel::timer::sleep::register_timer_sleep_tests();
+    }
+
     let r = runner();
-    let count = r.tests.lock().len();
+    let count = r.registry.lock().count;
     crate::klog_boot_info!("[TEST] Registered {} test cases", count);
 
     r.run_all();

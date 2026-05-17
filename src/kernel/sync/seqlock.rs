@@ -28,7 +28,7 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicUsize, Ordering, compiler_fence};
 
 pub struct SeqLock<T> {
-    sequence: AtomicUsize,
+    pub(crate) sequence: AtomicUsize,
     data: UnsafeCell<T>,
 }
 
@@ -40,6 +40,10 @@ impl<T> SeqLock<T> {
             sequence: AtomicUsize::new(0),
             data: UnsafeCell::new(data),
         }
+    }
+
+    pub fn current_sequence(&self) -> usize {
+        self.sequence.load(Ordering::Relaxed)
     }
 
     pub fn read(&self) -> SeqLockReadGuard<'_, T> {
@@ -187,4 +191,9 @@ mod tests {
         }
         assert_eq!(lock.sequence.load(Ordering::Relaxed), 2);
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_seqlock_tests() {
+    crate::kernel::tests::sync::register_seqlock_tests();
 }

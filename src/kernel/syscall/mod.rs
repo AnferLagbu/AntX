@@ -86,8 +86,11 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const i8, a1), b"sethostname\0"),
         SYS_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"boot_check\0"),
 
+        #[cfg(not(feature = "kernel_test"))]
         SYS_DISK_LIST    => dispatch!(sys_disk_list(a0 as *mut u64, a1 as u32), b"disk_list\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_DISK_INFO    => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"disk_info\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_DISK_FORMAT  => dispatch!(sys_disk_format(a0 as u32, a1 as *const i8), b"disk_format\0"),
 
         SYS_MEM_BRK      => dispatch!(sys_mem_brk(a0), b"mem_brk\0"),
@@ -95,19 +98,30 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_MEM_UNMAP    => dispatch!(sys_mem_unmap(a0, a1), b"mem_unmap\0"),
         SYS_MEM_PROTECT  => dispatch!(sys_mem_protect(a0, a1, a2), b"mem_protect\0"),
 
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_SOCKET   => dispatch!(sys_net_socket(a0 as i32, a1 as i32, a2 as i32), b"net_socket\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_BIND     => dispatch!(sys_net_bind(a0 as i32, a1, a2 as u32), b"net_bind\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_LISTEN   => dispatch!(sys_net_listen(a0 as i32, a1 as i32), b"net_listen\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_ACCEPT   => dispatch!(sys_net_accept(a0 as i32, a1, a2), b"net_accept\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_CONNECT  => dispatch!(sys_net_connect(a0 as i32, a1, a2 as u32), b"net_connect\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_SEND     => dispatch!(sys_net_send(a0 as i32, a1, a2 as u32, a3 as i32), b"net_send\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_RECV     => dispatch!(sys_net_recv(a0 as i32, a1, a2 as u32, a3 as i32), b"net_recv\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_NET_SHUTDOWN => dispatch!(sys_net_shutdown(a0 as i32, a1 as i32), b"net_shutdown\0"),
 
         SYS_IPC_PIPE     => dispatch!(sys_ipc_pipe(a0 as *mut i32, a1 as *mut i32), b"ipc_pipe\0"),
 
+        #[cfg(not(feature = "kernel_test"))]
         SYS_DEV_IOCTL    => dispatch!(sys_dev_ioctl(a0 as i32, a1, a2), b"dev_ioctl\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_DEV_READ     => dispatch!(sys_dev_read(a0 as i32, a1, a2), b"dev_read\0"),
+        #[cfg(not(feature = "kernel_test"))]
         SYS_DEV_WRITE    => dispatch!(sys_dev_write(a0 as i32, a1, a2), b"dev_write\0"),
 
         _ => SyscallError::E_NOSYS.as_i64(),
@@ -154,10 +168,13 @@ unsafe fn sys_fs_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 { return -1; }
     if fd == 1 || fd == 2 { return SyscallError::E_BADFD.as_i64(); }
     if fd == 0 {
-        extern "C" { fn keyboard_has_data() -> bool; fn keyboard_get_char() -> i32; }
-        extern "C" { fn serial_has_data(com: i32) -> bool; fn serial_getc(com: i32) -> i32; }
-        if keyboard_has_data() { let c = keyboard_get_char(); if c > 0 { *buf = c as u8; return 1; } }
-        if serial_has_data(0) { let c = serial_getc(0); if c > 0 { *buf = c as u8; return 1; } }
+        #[cfg(not(feature = "kernel_test"))]
+        {
+            extern "C" { fn keyboard_has_data() -> bool; fn keyboard_get_char() -> i32; }
+            extern "C" { fn serial_has_data(com: i32) -> bool; fn serial_getc(com: i32) -> i32; }
+            if keyboard_has_data() { let c = keyboard_get_char(); if c > 0 { *buf = c as u8; return 1; } }
+            if serial_has_data(0) { let c = serial_getc(0); if c > 0 { *buf = c as u8; return 1; } }
+        }
         return 0;
     }
     crate::kernel::fs::vfs::ffi::vfs_read(fd as u32, buf as *mut u8, count as u32) as i64
@@ -166,8 +183,11 @@ unsafe fn sys_fs_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
 unsafe fn sys_fs_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 { return -1; }
     if fd == 1 || fd == 2 {
-        extern "C" { fn serial_write(com: i32, buf: *const core::ffi::c_void, count: u64); }
-        serial_write(0, buf as *const core::ffi::c_void, count);
+        #[cfg(not(feature = "kernel_test"))]
+        {
+            extern "C" { fn serial_write(com: i32, buf: *const core::ffi::c_void, count: u64); }
+            serial_write(0, buf as *const core::ffi::c_void, count);
+        }
         return count as i64;
     }
     crate::kernel::fs::vfs::ffi::vfs_write(fd as u32, buf as *const u8, count as u32) as i64
@@ -310,6 +330,7 @@ unsafe fn sys_boot_check(check_type: i32) -> i64 {
 // 磁盘管理 syscall
 // ============================================================================
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     if disks.is_null() || max_count == 0 { return SyscallError::E_INVAL.as_i64(); }
     extern "C" { fn ata_disk_present(drive: u8) -> i32; }
@@ -321,12 +342,14 @@ unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     count as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     if info.is_null() { return SyscallError::E_INVAL.as_i64(); }
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
     0
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     if fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
@@ -429,6 +452,7 @@ unsafe fn sys_mem_protect(_addr: u64, _size: u64, _prot: u64) -> i64 {
 // 网络 syscall
 // ============================================================================
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 2, 0x01) {
@@ -438,36 +462,43 @@ unsafe fn sys_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
     lwip_socket(domain, sock_type, protocol) as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
     extern "C" { fn lwip_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
     lwip_bind(sockfd, addr as *const u8, addrlen) as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_listen(sockfd: i32, backlog: i32) -> i64 {
     extern "C" { fn lwip_listen(sockfd: i32, backlog: i32) -> i32; }
     lwip_listen(sockfd, backlog) as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     extern "C" { fn lwip_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32; }
     lwip_accept(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
     extern "C" { fn lwip_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
     lwip_connect(sockfd, addr as *const u8, addrlen) as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_send(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
     extern "C" { fn lwip_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32; }
     lwip_send(sockfd, buf as *const u8, len, flags) as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_recv(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
     extern "C" { fn lwip_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32; }
     lwip_recv(sockfd, buf as *mut u8, len, flags) as i64
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_net_shutdown(sockfd: i32, _how: i32) -> i64 {
     extern "C" { fn lwip_close(sockfd: i32) -> i32; }
     lwip_close(sockfd) as i64

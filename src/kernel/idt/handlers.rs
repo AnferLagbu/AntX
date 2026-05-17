@@ -382,11 +382,11 @@ static DEFAULT_HANDLER: DefaultHandler = DefaultHandler { vector: 0 };
 
 /// 异常统计收集器
 pub struct ExceptionStatisticsCollector {
-    total_exceptions: AtomicU64,
-    by_category: [AtomicU64; 6],  // 6 种分类
-    by_severity: [AtomicU64; 5],  // 5 种严重性
+    pub(crate) total_exceptions: AtomicU64,
+    pub(crate) by_category: [AtomicU64; 6],
+    by_severity: [AtomicU64; 5],
     recoveries: AtomicU64,
-    process_terminations: AtomicU64,
+    pub(crate) process_terminations: AtomicU64,
     panics: AtomicU64,
 }
 
@@ -399,6 +399,22 @@ impl ExceptionStatisticsCollector {
             recoveries: AtomicU64::new(0),
             process_terminations: AtomicU64::new(0),
             panics: AtomicU64::new(0),
+        }
+    }
+
+    pub fn total(&self) -> u64 {
+        self.total_exceptions.load(Ordering::Relaxed)
+    }
+
+    pub fn terminations(&self) -> u64 {
+        self.process_terminations.load(Ordering::Relaxed)
+    }
+
+    pub fn category_count(&self, idx: usize) -> u64 {
+        if idx < 6 {
+            self.by_category[idx].load(Ordering::Relaxed)
+        } else {
+            0
         }
     }
     
@@ -557,4 +573,9 @@ mod tests {
         assert_eq!(info.rip, 0xDEADBEEF);
         assert_eq!(info.reason, "Test panic");
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_idt_handlers_tests() {
+    crate::kernel::tests::idt::register_idt_handlers_tests();
 }

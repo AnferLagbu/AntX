@@ -48,7 +48,6 @@ pub use ffi::{
     recovery_barrier_maintenance,
     recovery_domain_register,
     recovery_domain_unregister,
-    recovery_test_rollback,
     recovery_panic_flag_is_set,
     recovery_panic_flag_clear,
     recovery_try_recover_from_idt,
@@ -64,6 +63,9 @@ pub use ffi::{
     recovery_domain_get_state,
     recovery_domain_get_failures,
 };
+
+#[cfg(feature = "kernel_test")]
+pub use ffi::recovery_test_rollback;
 
 #[cfg(feature = "fault_injection")]
 pub use ffi::{recovery_set_fault_rate, recovery_get_fault_rate};

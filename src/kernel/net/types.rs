@@ -177,6 +177,7 @@ pub static mut errno: i32 = 0;
 
 /// ISR 安全版本的 sys_mbox_trypost
 /// 在中断上下文中调用，与 sys_mbox_trypost 功能相同
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn sys_mbox_trypost_fromisr(mbox: *mut crate::kernel::net::sys_arch::SysMbox, msg: *mut core::ffi::c_void) -> i32 {
     crate::kernel::net::sys_arch::sys_mbox_trypost(mbox, msg)

@@ -1,0 +1,175 @@
+use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::kernel::lib::string::{
+    strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr,
+    memcpy, memmove, memset, memchr, secure_zero,
+    safe_memcpy, safe_memset, safe_memcmp,
+};
+
+fn strlen_basic() -> TestResult {
+    unsafe {
+        assert_eq_test!(strlen(b"Hello\0".as_ptr() as *const i8), 5, "strlen Hello");
+        assert_eq_test!(strlen(b"\0".as_ptr() as *const i8), 0, "strlen empty");
+        assert_eq_test!(strlen(b"A longer test string\0".as_ptr() as *const i8), 20, "strlen long");
+    }
+    TestResult::Pass
+}
+
+fn strcmp_operations() -> TestResult {
+    unsafe {
+        assert_eq_test!(strcmp(b"test\0".as_ptr() as *const i8, b"test\0".as_ptr() as *const i8), 0, "equal");
+        check!(strcmp(b"abc\0".as_ptr() as *const i8, b"abd\0".as_ptr() as *const i8) < 0, "less than");
+        check!(strcmp(b"xyz\0".as_ptr() as *const i8, b"xya\0".as_ptr() as *const i8) > 0, "greater than");
+    }
+    TestResult::Pass
+}
+
+fn strncmp_limit() -> TestResult {
+    unsafe {
+        assert_eq_test!(strncmp(b"abcdef\0".as_ptr() as *const i8, b"abcxyz\0".as_ptr() as *const i8, 3), 0, "first 3 equal");
+        check!(strncmp(b"abcdef\0".as_ptr() as *const i8, b"abcxyz\0".as_ptr() as *const i8, 4) < 0, "first 4 differ");
+    }
+    TestResult::Pass
+}
+
+fn strcpy_and_strncpy() -> TestResult {
+    unsafe {
+        let mut buffer = [0i8; 20];
+        strcpy(buffer.as_mut_ptr(), b"Hello World\0".as_ptr() as *const i8);
+        assert_eq_test!(strlen(buffer.as_ptr()), 11, "strcpy len");
+        let mut buffer2 = [0i8; 10];
+        strncpy(buffer2.as_mut_ptr(), b"Testing\0".as_ptr() as *const i8, 5);
+        assert_eq_test!(strlen(buffer2.as_ptr()), 5, "strncpy len");
+        strncpy(buffer2.as_mut_ptr(), b"Hi\0".as_ptr() as *const i8, 5);
+        assert_eq_test!(buffer2[2], 0, "strncpy padding");
+    }
+    TestResult::Pass
+}
+
+fn strcat_basic() -> TestResult {
+    unsafe {
+        let mut buffer = [0i8; 30];
+        strcpy(buffer.as_mut_ptr(), b"Hello \0".as_ptr() as *const i8);
+        strcat(buffer.as_mut_ptr(), b"World!\0".as_ptr() as *const i8);
+        assert_eq_test!(strlen(buffer.as_ptr()), 12, "strcat len");
+    }
+    TestResult::Pass
+}
+
+fn strchr_and_strrchr() -> TestResult {
+    unsafe {
+        let s = b"Hello World\0";
+        let result = strchr(s.as_ptr() as *const i8, 'o' as i32);
+        check!(!result.is_null(), "strchr found");
+        assert_eq_test!(*result, 'o' as i8, "strchr value");
+        let result = strrchr(s.as_ptr() as *const i8, 'o' as i32);
+        check!(!result.is_null(), "strrchr found");
+    }
+    TestResult::Pass
+}
+
+fn strstr_basic() -> TestResult {
+    unsafe {
+        let haystack = b"The quick brown fox jumps over the lazy dog\0";
+        let result = strstr(haystack.as_ptr() as *const i8, b"brown fox\0".as_ptr() as *const i8);
+        check!(!result.is_null(), "strstr found");
+        let result = strstr(haystack.as_ptr() as *const i8, b"cat\0".as_ptr() as *const i8);
+        check!(result.is_null(), "strstr not found");
+        let result = strstr(haystack.as_ptr() as *const i8, b"\0".as_ptr() as *const i8);
+        check!(!result.is_null(), "strstr empty returns haystack");
+    }
+    TestResult::Pass
+}
+
+fn memcpy_and_memmove() -> TestResult {
+    unsafe {
+        let mut dest = [0u8; 10];
+        let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        memcpy(dest.as_mut_ptr() as *mut core::ffi::c_void, src.as_ptr() as *const core::ffi::c_void, 10);
+        assert_eq_test!(dest, src, "memcpy result");
+        let mut overlap = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        memmove(overlap.as_mut_ptr() as *mut core::ffi::c_void, overlap.as_ptr().add(2) as *const core::ffi::c_void, 8);
+        assert_eq_test!(overlap, [3u8, 4, 5, 6, 7, 8, 9, 10, 9, 10], "memmove overlap");
+    }
+    TestResult::Pass
+}
+
+fn memset_operations() -> TestResult {
+    unsafe {
+        let mut buffer = [0xABu8; 20];
+        memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0x00, 20);
+        assert_eq_test!(buffer, [0u8; 20], "memset zero");
+        memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0xFF, 10);
+        for i in 0..10 { assert_eq_test!(buffer[i], 0xFF, "memset FF"); }
+        for i in 10..20 { assert_eq_test!(buffer[i], 0x00, "memset untouched"); }
+    }
+    TestResult::Pass
+}
+
+fn memcmp_basic() -> TestResult {
+    unsafe {
+        let a = [1u8, 2, 3, 4, 5];
+        let b = [1u8, 2, 3, 4, 5];
+        let c = [1u8, 2, 3, 4, 6];
+        assert_eq_test!(safe_memcmp(&a, &b), core::cmp::Ordering::Equal, "equal");
+        check!(safe_memcmp(&a, &c) == core::cmp::Ordering::Less, "less than");
+    }
+    TestResult::Pass
+}
+
+fn memchr_basic() -> TestResult {
+    unsafe {
+        let data = [1, 2, 3, 4, 5, 3, 7, 8];
+        let result = memchr(data.as_ptr() as *const core::ffi::c_void, 3, 8);
+        check!(!result.is_null(), "memchr found");
+        let offset = (result as *const u8).offset_from(data.as_ptr()) as usize;
+        assert_eq_test!(offset, 2, "memchr offset");
+        let result = memchr(data.as_ptr() as *const core::ffi::c_void, 9, 8);
+        check!(result.is_null(), "memchr not found");
+    }
+    TestResult::Pass
+}
+
+fn secure_zero_basic() -> TestResult {
+    unsafe {
+        let mut secret = [0xDEu8, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
+        secure_zero(secret.as_mut_ptr() as *mut core::ffi::c_void, 6);
+        for byte in secret.iter() {
+            assert_eq_test!(*byte, 0, "secure zero");
+        }
+    }
+    TestResult::Pass
+}
+
+fn safe_interfaces() -> TestResult {
+    let mut dest = [0u8; 10];
+    let src = [1, 2, 3, 4, 5];
+    let copied = safe_memcpy(&mut dest, &src);
+    assert_eq_test!(copied, 5, "safe_memcpy count");
+    assert_eq_test!(&dest[..5], &src[..], "safe_memcpy data");
+    safe_memset(&mut dest, 0xFF, None);
+    assert_eq_test!(dest, [0xFF; 10], "safe_memset");
+    assert_eq_test!(safe_memcmp(&[1, 2, 3], &[1, 2, 3]), core::cmp::Ordering::Equal, "safe_memcmp equal");
+    assert_eq_test!(safe_memcmp(&[1, 2, 3], &[1, 2, 4]), core::cmp::Ordering::Less, "safe_memcmp less");
+    TestResult::Pass
+}
+
+pub fn register_string_tests() {
+    let r = runner();
+    r.register("lib::string", "strlen", strlen_basic as TestFn);
+    r.register("lib::string", "strcmp", strcmp_operations as TestFn);
+    r.register("lib::string", "strncmp", strncmp_limit as TestFn);
+    r.register("lib::string", "strcpy_strncpy", strcpy_and_strncpy as TestFn);
+    r.register("lib::string", "strcat", strcat_basic as TestFn);
+    r.register("lib::string", "strchr_strrchr", strchr_and_strrchr as TestFn);
+    r.register("lib::string", "strstr", strstr_basic as TestFn);
+    r.register("lib::string", "memcpy_memmove", memcpy_and_memmove as TestFn);
+    r.register("lib::string", "memset", memset_operations as TestFn);
+    r.register("lib::string", "memcmp", memcmp_basic as TestFn);
+    r.register("lib::string", "memchr", memchr_basic as TestFn);
+    r.register("lib::string", "secure_zero", secure_zero_basic as TestFn);
+    r.register("lib::string", "safe_interfaces", safe_interfaces as TestFn);
+}
+
+pub fn register_tests() {
+    register_string_tests();
+}

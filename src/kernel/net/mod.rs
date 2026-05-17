@@ -44,9 +44,13 @@
 // 核心模块
 // ============================================================================
 
+#[cfg(not(feature = "kernel_test"))]
 pub mod types;      // 基础类型、常量、FFI声明
+#[cfg(not(feature = "kernel_test"))]
 pub mod sys_arch;   // lwIP OS 抽象层
+#[cfg(not(feature = "kernel_test"))]
 pub mod init;       // 网络初始化 (状态机)
+#[cfg(not(feature = "kernel_test"))]
 pub mod netif;      // 网络接口管理 (DHCP)
 pub mod driver;     // 网卡驱动 (E1000 等)
 
@@ -54,21 +58,21 @@ pub mod driver;     // 网卡驱动 (E1000 等)
 // 应用模块 (新增)
 // ============================================================================
 
-pub mod apps;       // ✨ 网络应用集 (Ping/DNS/HTTP等)
-pub mod fsdata;     // ✨ HTTP 静态文件数据
+pub mod apps;       // 网络应用集 (Ping/DNS/HTTP等)
+#[cfg(not(feature = "kernel_test"))]
+pub mod fsdata;     // HTTP 静态文件数据
 
 // ============================================================================
 // 工具模块 (新增) - 替代 lib_compat.c
 // ============================================================================
 
-pub mod utils;      // ✨ 网络工具函数 (atoi/checksum/字节序等)
+pub mod utils;      // 网络工具函数 (atoi/checksum/字节序等)
 
 // ============================================================================
 // 公共 API 导出 (方便其他模块使用)
 // ============================================================================
 
-// 核心类型
+#[cfg(not(feature = "kernel_test"))]
 pub use types::*;
-
-// 工具函数导出
+#[cfg(not(feature = "kernel_test"))]
 pub use utils::*;

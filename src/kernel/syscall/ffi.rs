@@ -133,3 +133,8 @@ mod tests {
         assert_eq!(format!("{}", SyscallError::E_NOSYS), "Function not implemented");
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_syscall_ffi_tests() {
+    crate::kernel::tests::sys::register_syscall_ffi_tests();
+}

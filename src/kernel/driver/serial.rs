@@ -36,13 +36,13 @@ use super::framework::{outb, inb};
 // ============================================================================
 
 /// COM 端口基址
-const COM1_BASE: u16 = 0x3F8;
-const COM2_BASE: u16 = 0x2F8;
+pub(crate) const COM1_BASE: u16 = 0x3F8;
+pub(crate) const COM2_BASE: u16 = 0x2F8;
 const COM3_BASE: u16 = 0x3E8;
 const COM4_BASE: u16 = 0x2E8;
 
 /// 最大支持的 COM 端口数量
-const MAX_COM_PORTS: usize = 4;
+pub(crate) const MAX_COM_PORTS: usize = 4;
 
 /// UART 寄存器偏移量
 const UART_RBR: u16 = 0;   // 接收缓冲寄存器 (只读)
@@ -78,7 +78,7 @@ const BAUD_57600: u16 = 2;
 const BAUD_115200: u16 = 1;
 
 /// 缓冲区大小
-const SERIAL_BUFFER_SIZE: usize = 256;
+pub(crate) const SERIAL_BUFFER_SIZE: usize = 256;
 
 // ============================================================================
 // 配置结构体
@@ -119,7 +119,7 @@ pub enum BaudRate {
 }
 
 impl BaudRate {
-    fn to_divisor(&self) -> u16 {
+    pub(crate) fn to_divisor(&self) -> u16 {
         match self {
             Self::Baud9600 => BAUD_9600,
             Self::Baud19200 => BAUD_19200,
@@ -140,7 +140,7 @@ pub enum DataBits {
 }
 
 impl DataBits {
-    fn to_lcr_value(&self) -> u8 {
+    pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::Bits5 => 0x00,
             Self::Bits6 => 0x01,
@@ -158,7 +158,7 @@ pub enum StopBits {
 }
 
 impl StopBits {
-    fn to_lcr_value(&self) -> u8 {
+    pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::One => 0x00,
             Self::Two => 0x04,
@@ -177,7 +177,7 @@ pub enum ParityMode {
 }
 
 impl ParityMode {
-    fn to_lcr_value(&self) -> u8 {
+    pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::None => 0x00,
             Self::Odd => 0x08,
@@ -192,7 +192,7 @@ impl ParityMode {
 // 环形缓冲区
 // ============================================================================
 
-struct RingBuffer<T> {
+pub(crate) struct RingBuffer<T> {
     buffer: [T; SERIAL_BUFFER_SIZE],
     head: usize,
     tail: usize,
@@ -211,7 +211,7 @@ impl<T: Default + Copy> Default for RingBuffer<T> {
 }
 
 impl<T: Default + Copy> RingBuffer<T> {
-    fn push(&mut self, item: T) -> Result<()> {
+    pub(crate) fn push(&mut self, item: T) -> Result<()> {
         if self.count >= SERIAL_BUFFER_SIZE {
             return Err(DriverError::Busy);
         }
@@ -222,7 +222,7 @@ impl<T: Default + Copy> RingBuffer<T> {
         Ok(())
     }
 
-    fn pop(&mut self) -> Option<T> {
+    pub(crate) fn pop(&mut self) -> Option<T> {
         if self.count == 0 {
             return None;
         }
@@ -233,15 +233,15 @@ impl<T: Default + Copy> RingBuffer<T> {
         Some(item)
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.count == 0
     }
 
-    fn is_full(&self) -> bool {
+    pub(crate) fn is_full(&self) -> bool {
         self.count >= SERIAL_BUFFER_SIZE
     }
 
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.count
     }
 

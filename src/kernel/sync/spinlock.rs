@@ -347,7 +347,7 @@ mod tests {
         let flags = lock.lock_irqsave();
         assert!(lock.is_locked());
         
-        lock.unlock_irqrestore(flags);
+        lock.unlock_irqrestore(&flags);
         assert!(!lock.is_locked());
     }
     
@@ -361,4 +361,9 @@ mod tests {
             lock.assert_held();
         }).expect_err("assert_held should panic when not holding lock");
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_spinlock_tests() {
+    crate::kernel::tests::sync::register_spinlock_tests();
 }

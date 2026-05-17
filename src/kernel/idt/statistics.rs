@@ -305,7 +305,7 @@ impl DetailedStatistics {
     }
 
     /// 重置所有统计计数器 (仅用于测试)
-    #[cfg(test)]
+    #[cfg(any(test, feature = "kernel_test"))]
     pub fn reset(&self) {
         self.total_count.store(0, Ordering::Relaxed);
         
@@ -506,4 +506,9 @@ mod tests {
         assert_eq!(stats.get_vector_count(255), 0);  // Invalid vector
         assert_eq!(stats.get_vector_count(100), 0);   // Not exception or IRQ
     }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_idt_statistics_tests() {
+    crate::kernel::tests::idt::register_idt_statistics_tests();
 }

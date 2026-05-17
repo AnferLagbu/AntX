@@ -59,11 +59,10 @@ pub fn shm_create_safe(
         // 计算需要的页数并分配物理内存
         let pages = (size + 4095) / 4096;
         
-        extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
-        let phys = pmm_alloc_pages(pages);
-
+        let phys = crate::kernel::mm::ffi::pmm_alloc_pages(pages as usize);
+        
         if phys.is_null() {
-            return Err(-3);  // 内存分配失败
+            return Err(-3);
         }
 
         // 初始化共享内存段
@@ -150,7 +149,9 @@ pub fn shm_detach_safe(
         // 查找并移除当前进程的附加记录
         for i in 0..shm.attach_count as usize {
             if shm.attached_pids[i] == current_pid {
-                shm.attached_pids[i] = 0;
+                shm.attached_pids[i] = shm.attached_pids[shm.attach_count as usize - 1];
+                shm.attached_pids[shm.attach_count as usize - 1] = 0;
+                shm.attach_count -= 1;
                 shm.ref_count -= 1;
                 return Ok(());
             }
@@ -182,9 +183,8 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
         }
 
         // 释放物理页
-        extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
         let pages = (shm.size + 4095) / 4096;
-        pmm_free_pages(shm.phys_addr as *mut core::ffi::c_void, pages);
+        crate::kernel::mm::ffi::pmm_free_pages(shm.phys_addr as *mut core::ffi::c_void, pages as usize);
 
         // 清理结构体
         shm.id = 0;

@@ -9,17 +9,16 @@ extern "C" {
     fn kfree(ptr: *mut core::ffi::c_void);
 }
 
+const KERNEL_BASE: u64 = 0xFFFF800000000000u64;
+
 pub struct KernelAllocator;
 
-/// Page threshold: allocations ≤ PAGE_THRESHOLD use kmalloc,
-/// larger allocations use pmm_alloc_pages directly.
 const PAGE_THRESHOLD: usize = 2048;
 
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
 
-        // Small allocations: use kmalloc free-list (no page waste)
         if size <= PAGE_THRESHOLD {
             let ptr = kmalloc(size as u64);
             if !ptr.is_null() {
@@ -27,12 +26,13 @@ unsafe impl GlobalAlloc for KernelAllocator {
             }
         }
 
-        // Large allocations / kmalloc fallback: direct page allocation
         let pages_needed = (size + 4095) / 4096;
         if pages_needed == 1 {
-            pmm_alloc_page() as *mut u8
+            let phys = pmm_alloc_page() as u64;
+            (phys + KERNEL_BASE) as *mut u8
         } else {
-            pmm_alloc_pages(pages_needed as u64) as *mut u8
+            let phys = pmm_alloc_pages(pages_needed as u64) as u64;
+            (phys + KERNEL_BASE) as *mut u8
         }
     }
 
@@ -44,10 +44,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
             kfree(ptr as *mut core::ffi::c_void);
         } else {
             let pages = ((size + 4095) / 4096) as u64;
+            let phys_addr = (ptr as u64) - KERNEL_BASE;
             if pages <= 1 {
-                pmm_free_page(ptr as *mut core::ffi::c_void);
+                pmm_free_page(phys_addr as *mut core::ffi::c_void);
             } else {
-                pmm_free_pages(ptr as *mut core::ffi::c_void, pages);
+                pmm_free_pages(phys_addr as *mut core::ffi::c_void, pages);
             }
         }
     }

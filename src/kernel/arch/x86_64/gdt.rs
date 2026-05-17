@@ -60,7 +60,7 @@ pub const SELECTOR_TSS: u16 = 0x28;
 
 /// 访问权限字节 (Access Byte) 标志
 #[derive(Debug, Clone, Copy)]
-pub struct AccessByte(u8);
+pub struct AccessByte(pub(crate) u8);
 
 impl AccessByte {
     /// 已访问 (Accessed) - CPU 设置此位
@@ -121,7 +121,7 @@ impl AccessByte {
 
 /// 粒度标志 (Granularity Byte) 标志
 #[derive(Debug, Clone, Copy)]
-pub struct Granularity(u8);
+pub struct Granularity(pub(crate) u8);
 
 impl Granularity {
     /// 段限制单位 (Limit granularity)
@@ -501,4 +501,8 @@ mod tests {
         assert_eq!(SELECTOR_USER_DATA, 0x20);
         assert_eq!(SELECTOR_TSS, 0x28);
     }
+}
+#[cfg(feature = "kernel_test")]
+pub fn register_gdt_tests() {
+    crate::kernel::tests::arch::register_gdt_tests();
 }

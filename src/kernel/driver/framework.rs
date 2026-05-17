@@ -242,7 +242,7 @@ pub trait Driver {
 static NEXT_DEVICE_ID: AtomicU32 = AtomicU32::new(1);
 
 /// 分配新的设备 ID
-fn allocate_device_id() -> u32 {
+pub(crate) fn allocate_device_id() -> u32 {
     NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed)
 }
 

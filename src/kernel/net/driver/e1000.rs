@@ -1,16 +1,24 @@
+#[cfg(not(feature = "kernel_test"))]
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result};
+use crate::kernel::driver::framework::{Driver, DeviceType, Result};
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::driver::framework::DriverError;
+#[cfg(not(feature = "kernel_test"))]
 use crate::klog_info;
+#[cfg(not(feature = "kernel_test"))]
 use crate::klog_err;
+#[cfg(not(feature = "kernel_test"))]
 use crate::klog_warn;
+#[cfg(not(feature = "kernel_test"))]
 use crate::klog_debug;
 
+#[cfg(not(feature = "kernel_test"))]
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
-const E1000_TX_RING_SIZE: usize = 64;
-const E1000_RX_RING_SIZE: usize = 128;
-const E1000_RX_BUFFER_SIZE: usize = 2048;
+pub(crate) const E1000_TX_RING_SIZE: usize = 64;
+pub(crate) const E1000_RX_RING_SIZE: usize = 128;
+pub(crate) const E1000_RX_BUFFER_SIZE: usize = 2048;
 const E1000_TIMEOUT: u32 = 100000;
 
 const E1000_CTRL: u32 = 0x0000;
@@ -75,7 +83,7 @@ const E1000_RAH_AV: u32 = 1 << 31;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-struct E1000TxDesc {
+pub(crate) struct E1000TxDesc {
     addr: u64,
     length: u16,
     cso: u8,
@@ -87,7 +95,7 @@ struct E1000TxDesc {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-struct E1000RxDesc {
+pub(crate) struct E1000RxDesc {
     addr: u64,
     length: u16,
     checksum: u16,
@@ -192,6 +200,7 @@ fn read_mac_address(dev: &mut E1000Device) {
     dev.mac[5] = ((lo2 >> 8) & 0xFF) as u8;
 }
 
+#[cfg(not(feature = "kernel_test"))]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     extern "C" { fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi::c_void; }
 
@@ -265,7 +274,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     Ok(())
 }
 
-fn virt_to_phys(virt: u64) -> u64 {
+pub(crate) fn virt_to_phys(virt: u64) -> u64 {
     const KERNEL_VMA_BASE: u64 = 0xFFFF800000000000;
     if virt >= KERNEL_VMA_BASE {
         virt - KERNEL_VMA_BASE
@@ -283,6 +292,7 @@ impl Driver for E1000Device {
         DeviceType::Network
     }
 
+    #[cfg(not(feature = "kernel_test"))]
     fn init(&mut self) -> Result<()> {
         if self.mmio_base.is_null() || self.mmio_base == core::ptr::null_mut() {
             return Err(DriverError::NotInitialized);
@@ -383,8 +393,15 @@ impl Driver for E1000Device {
         Ok(())
     }
 
+    #[cfg(feature = "kernel_test")]
+    fn init(&mut self) -> Result<()> {
+        self.initialized = true;
+        Ok(())
+    }
+
     fn shutdown(&mut self) -> Result<()> {
-        if !self.initialized {
+        if !self.initialized || self.mmio_base.is_null() {
+            self.initialized = false;
             return Ok(());
         }
         unsafe {
@@ -419,6 +436,7 @@ impl E1000Device {
         Self::default()
     }
 
+    #[cfg(not(feature = "kernel_test"))]
     pub fn probe(&mut self) -> Result<()> {
         extern "C" {
             fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16;
@@ -500,6 +518,7 @@ impl E1000Device {
         Err(DriverError::DeviceNotFound)
     }
 
+    #[cfg(not(feature = "kernel_test"))]
     pub fn send_packet(&mut self, data: &[u8]) -> Result<usize> {
         if !self.is_ready() {
             return Err(DriverError::NotInitialized);
@@ -542,6 +561,7 @@ impl E1000Device {
         Ok(total_len)
     }
 
+    #[cfg(not(feature = "kernel_test"))]
     pub fn process_rx_packets(&mut self) {
         if !self.is_ready() {
             return;
@@ -600,6 +620,7 @@ impl E1000Device {
         }
     }
 
+    #[cfg(not(feature = "kernel_test"))]
     pub fn handle_interrupt(&mut self) {
         if !self.is_ready() {
             return;
@@ -638,21 +659,26 @@ impl E1000Device {
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 extern "C" {
     fn ethernet_input_from_e1000(data: *mut core::ffi::c_void, len: u16) -> i32;
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn pic_outb(port: u16, value: u8) {
     core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack));
 }
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn pic_inb(port: u16) -> u8 {
     let value: u8;
     core::arch::asm!("in al, dx", out("al") value, in("dx") port, options(nomem, nostack));
     value
 }
 
+#[cfg(not(feature = "kernel_test"))]
 static mut E1000_INSTANCE: Option<E1000Device> = None;
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
     extern "C" {
@@ -694,6 +720,7 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::c_void) -> i32 {
     unsafe {
@@ -728,6 +755,7 @@ pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn extract_pbuf_data(p: *mut core::ffi::c_void) -> (usize, *mut u8) {
     extern "C" {
         fn antx_pbuf_copyout(p: *mut core::ffi::c_void, buf: *mut u8, out_len: *mut u16);
@@ -740,6 +768,7 @@ unsafe fn extract_pbuf_data(p: *mut core::ffi::c_void) -> (usize, *mut u8) {
     (out_len as usize, TX_BUF.as_mut_ptr())
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_irq_entry(_frame: *mut core::ffi::c_void) {
     unsafe {
@@ -749,6 +778,7 @@ pub extern "C" fn e1000_irq_entry(_frame: *mut core::ffi::c_void) {
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_probe() -> i32 {
     unsafe {
@@ -767,6 +797,7 @@ pub extern "C" fn e1000_probe() -> i32 {
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn get_e1000_instance() -> *mut core::ffi::c_void {
     unsafe {
@@ -777,6 +808,7 @@ pub extern "C" fn get_e1000_instance() -> *mut core::ffi::c_void {
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_dump_regs() {
     #[cfg(feature = "e1000-verbose")]
@@ -811,6 +843,7 @@ pub extern "C" fn e1000_dump_regs() {
     let _ = &();
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_dump_stats() {
     #[cfg(feature = "e1000-verbose")]
@@ -823,6 +856,7 @@ pub extern "C" fn e1000_dump_stats() {
     let _ = &();
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_poll_rx() {
     unsafe {
@@ -851,14 +885,18 @@ pub extern "C" fn e1000_poll_rx() {
     }
 }
 
+#[cfg(not(feature = "kernel_test"))]
 #[repr(C, align(4096))]
 struct AlignedKallocBuf {
     data: [u8; 1048576],
 }
 
+#[cfg(not(feature = "kernel_test"))]
 static mut KALLOC_BUF: AlignedKallocBuf = AlignedKallocBuf { data: [0; 1048576] };
+#[cfg(not(feature = "kernel_test"))]
 static mut KALLOC_OFF: usize = 0;
 
+#[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi::c_void {
     let s = size as usize;

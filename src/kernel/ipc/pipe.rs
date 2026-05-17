@@ -119,17 +119,13 @@ pub fn pipe_read_safe(
 
         while read_count < count {
             if pipe.count == 0 {
-                // 缓冲区为空
                 if pipe.writers == 0 {
-                    // 所有写者已关闭
                     break;
                 }
                 if read_count > 0 {
-                    // 已读取部分数据，立即返回
                     break;
                 }
-                // TODO: 阻塞等待 (需要调度器支持)
-                continue;
+                return Err(-4);
             }
 
             // 读取一个字节
@@ -189,9 +185,7 @@ pub fn pipe_write_safe(
 
         while written < count {
             if pipe.count >= PIPE_BUFFER_SIZE as u32 {
-                // 缓冲区满
-                // TODO: 阻塞等待 (需要调度器支持)
-                continue;
+                return Err(-4);
             }
 
             // 写入一个字节
@@ -228,14 +222,14 @@ pub fn pipe_close_safe(namespace: &mut IpcNamespace, fd: i32) -> Result<(), i32>
 
         if fd == pipe.read_fd {
             pipe.readers -= 1;
+            pipe.read_fd = 0;
             if pipe.readers == 0 {
-                // 所有读者关闭，唤醒写者
                 pipe.write_wait.wake_all();
             }
         } else if fd == pipe.write_fd {
             pipe.writers -= 1;
+            pipe.write_fd = 0;
             if pipe.writers == 0 {
-                // 所有写者关闭，唤醒读者
                 pipe.read_wait.wake_all();
             }
         }

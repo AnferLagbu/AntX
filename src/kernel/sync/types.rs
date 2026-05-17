@@ -447,3 +447,8 @@ mod tests {
         assert_ne!(acquired, would_block);
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_sync_types_tests() {
+    crate::kernel::tests::sync::register_sync_types_tests();
+}

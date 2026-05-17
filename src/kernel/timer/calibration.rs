@@ -365,3 +365,45 @@ mod tests {
         assert!(quick_calibrate(0).is_err());
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_timer_calibration_tests() {
+    use crate::kernel::tests::{runner, TestFn, TestResult};
+    let r = runner();
+
+    fn initial_state() -> TestResult {
+        crate::check!(!is_calibrated(), "not calibrated");
+        crate::check!(get_tsc_frequency_mhz().is_none(), "mhz none");
+        crate::check!(get_tsc_frequency_hz().is_none(), "hz none");
+        crate::check!(tsc_to_nanoseconds(1000).is_none(), "tsc_to_ns none");
+        crate::check!(get_time_ns().is_none(), "time_ns none");
+        TestResult::Pass
+    }
+
+    fn conversion_functions_unavailable() -> TestResult {
+        crate::check!(tsc_to_nanoseconds(0).is_none(), "ns none");
+        crate::check!(tsc_to_microseconds(0).is_none(), "us none");
+        crate::check!(tsc_to_milliseconds(0).is_none(), "ms none");
+        crate::check!(nanoseconds_to_tsc(0).is_none(), "ns_to_tsc none");
+        TestResult::Pass
+    }
+
+    fn calibration_info_unavailable() -> TestResult {
+        let (mhz, hz, range) = get_calibration_info();
+        crate::check!(mhz.is_none(), "mhz none");
+        crate::check!(hz.is_none(), "hz none");
+        crate::check!(range.is_none(), "range none");
+        TestResult::Pass
+    }
+
+    fn zero_duration_rejected() -> TestResult {
+        crate::check!(calibrate_tsc(0).is_err(), "zero rejected");
+        crate::check!(quick_calibrate(0).is_err(), "quick zero rejected");
+        TestResult::Pass
+    }
+
+    r.register("timer::calibration", "initial_state", initial_state as TestFn);
+    r.register("timer::calibration", "conversion_unavailable", conversion_functions_unavailable as TestFn);
+    r.register("timer::calibration", "calibration_info_unavailable", calibration_info_unavailable as TestFn);
+    r.register("timer::calibration", "zero_duration_rejected", zero_duration_rejected as TestFn);
+}

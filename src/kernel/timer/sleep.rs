@@ -443,3 +443,57 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub fn register_timer_sleep_tests() {
+    use crate::kernel::tests::{runner, TestFn, TestResult};
+    let r = runner();
+
+    fn busy_wait_zero_duration() -> TestResult {
+        let start = read_tsc();
+        busy_wait_ns(0);
+        busy_wait_us(0);
+        busy_wait_ms(0);
+        let end = read_tsc();
+        crate::check!(end.saturating_sub(start) < 100_000, "zero wait fast");
+        TestResult::Pass
+    }
+
+    fn timer_sleep_zero() -> TestResult {
+        crate::check!(timer_sleep(0).is_ok(), "sleep 0 ok");
+        TestResult::Pass
+    }
+
+    fn measure_time_basic() -> TestResult {
+        let (result, duration_ns) = measure_time(|| 42u64);
+        crate::assert_eq_test!(result, 42u64, "result");
+        let _ = duration_ns;
+        TestResult::Pass
+    }
+
+    fn measure_time_ticks_basic() -> TestResult {
+        let (result, duration_ticks) = measure_time_ticks(|| 123u64);
+        crate::assert_eq_test!(result, 123u64, "result");
+        let _ = duration_ticks;
+        TestResult::Pass
+    }
+
+    fn wait_with_timeout_immediate() -> TestResult {
+        let result = wait_with_timeout(|| true, 1000);
+        crate::check!(result.is_ok(), "immediate condition ok");
+        TestResult::Pass
+    }
+
+    fn pit_busy_wait_uninitialized() -> TestResult {
+        let result = pit_busy_wait_us(100);
+        crate::check!(result.is_err(), "pit not initialized");
+        TestResult::Pass
+    }
+
+    r.register("timer::sleep", "busy_wait_zero", busy_wait_zero_duration as TestFn);
+    r.register("timer::sleep", "timer_sleep_zero", timer_sleep_zero as TestFn);
+    r.register("timer::sleep", "measure_time", measure_time_basic as TestFn);
+    r.register("timer::sleep", "measure_time_ticks", measure_time_ticks_basic as TestFn);
+    r.register("timer::sleep", "wait_with_timeout_immediate", wait_with_timeout_immediate as TestFn);
+    r.register("timer::sleep", "pit_uninitialized", pit_busy_wait_uninitialized as TestFn);
+}
