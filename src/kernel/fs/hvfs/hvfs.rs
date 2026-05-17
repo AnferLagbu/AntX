@@ -26,7 +26,7 @@ fn log(s: &str) {
     unsafe { klog_ffi_info(s.as_ptr()); }
 }
 
-pub const HVFS_MAX_FDS: usize = 64;
+pub const HVFS_MAX_FDS: usize = 256;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HvfsFd {
@@ -513,6 +513,416 @@ impl HvfsData {
         }
         
         -1
+    }
+
+    pub fn rename(&self, old_path: &str, new_path: &str, pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let old_name = old_path.trim_start_matches('/');
+        let new_name = new_path.trim_start_matches('/');
+        
+        // 查找源文件
+        let obj_id = {
+            let datasets = self.datasets.lock();
+            match datasets[0].lookup(old_name) {
+                Some(id) => id,
+                None => return -2,
+            }
+        };
+        
+        // 检查权限
+        let obj = {
+            let datasets = self.datasets.lock();
+            match datasets[0].objset.get_obj(obj_id) {
+                Some(o) => o,
+                None => return -1,
+            }
+        };
+        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        
+        // 检查目标是否已存在
+        {
+            let datasets = self.datasets.lock();
+            if datasets[0].lookup(new_name).is_some() {
+                return -4; // 目标已存在
+            }
+        }
+        
+        // 执行重命名
+        {
+            let mut datasets = self.datasets.lock();
+            let ds = &mut datasets[0];
+            
+            // 从旧位置删除
+            if !ds.unlink(old_name) {
+                return -1;
+            }
+            
+            // 添加到新位置
+            if !ds.link(new_name, obj_id) {
+                return -1;
+            }
+        }
+        
+        // 记录到ZIL
+        let txg = self.spa.current_txg();
+        self.zil.add_record(HvZilRecord::new_rename(txg, 0, old_name, new_name));
+        
+        0
+    }
+
+    pub fn symlink(&self, target: &str, linkpath: &str, pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let link_name = linkpath.trim_start_matches('/');
+        
+        // 检查链接路径是否已存在
+        {
+            let datasets = self.datasets.lock();
+            if datasets[0].lookup(link_name).is_some() {
+                return -2; // 已存在
+            }
+        }
+        
+        // 创建符号链接对象
+        let obj_id = {
+            let mut datasets = self.datasets.lock();
+            let ds = &mut datasets[0];
+            
+            // 分配新对象
+            match ds.objset.alloc_obj(HvObjType::Symlink, pwid) {
+                Some(id) => id,
+                None => return -1,
+            }
+        };
+        
+        // 设置目标路径
+        {
+            let mut datasets = self.datasets.lock();
+            let ds = &mut datasets[0];
+            
+            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+                obj.obj_type = HvObjType::Symlink;
+                obj.size = target.len() as u64;
+                obj.dirty = true;
+            }
+            
+            // 将目标路径写入对象数据
+            let target_bytes = target.as_bytes();
+            let txg = self.spa.current_txg();
+            let cksum_type = HvCksumType::Fletcher4;
+            let comp_type = HvCompType::Off;
+            
+            if let Some(new_bp) = self.spa.allocate(target_bytes.len() as u64, cksum_type, comp_type, txg) {
+                if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+                    obj.bp = new_bp;
+                }
+            }
+            
+            // 添加到目录
+            if !ds.link(link_name, obj_id) {
+                return -1;
+            }
+        }
+        
+        // 记录到ZIL
+        let txg = self.spa.current_txg();
+        self.zil.add_record(HvZilRecord::new_symlink(txg, 0, link_name, target));
+        
+        0
+    }
+
+    pub fn link(&self, old_path: &str, new_path: &str, pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let old_name = old_path.trim_start_matches('/');
+        let new_name = new_path.trim_start_matches('/');
+        
+        // 查找源文件
+        let obj_id = {
+            let datasets = self.datasets.lock();
+            match datasets[0].lookup(old_name) {
+                Some(id) => id,
+                None => return -2,
+            }
+        };
+        
+        // 检查源文件类型（不能是目录）
+        let obj = {
+            let datasets = self.datasets.lock();
+            match datasets[0].objset.get_obj(obj_id) {
+                Some(o) => o,
+                None => return -1,
+            }
+        };
+        if obj.obj_type == HvObjType::Dir {
+            return -3; // 不能创建目录的硬链接
+        }
+        
+        // 检查权限
+        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        
+        // 检查目标是否已存在
+        {
+            let datasets = self.datasets.lock();
+            if datasets[0].lookup(new_name).is_some() {
+                return -4; // 目标已存在
+            }
+        }
+        
+        // 创建硬链接
+        {
+            let mut datasets = self.datasets.lock();
+            let ds = &mut datasets[0];
+            
+            // 增加链接计数
+            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+                obj.link_count += 1;
+                obj.dirty = true;
+            }
+            
+            // 添加到目录
+            if !ds.link(new_name, obj_id) {
+                return -1;
+            }
+        }
+        
+        // 记录到ZIL
+        let txg = self.spa.current_txg();
+        self.zil.add_record(HvZilRecord::new_link(txg, 0, new_name, obj_id));
+        
+        0
+    }
+
+    pub fn readlink(&self, path: &str, buf: &mut [u8], pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let name = path.trim_start_matches('/');
+        
+        // 查找符号链接
+        let obj_id = {
+            let datasets = self.datasets.lock();
+            match datasets[0].lookup(name) {
+                Some(id) => id,
+                None => return -2,
+            }
+        };
+        
+        let obj = {
+            let datasets = self.datasets.lock();
+            match datasets[0].objset.get_obj(obj_id) {
+                Some(o) => o,
+                None => return -1,
+            }
+        };
+        
+        // 检查是否为符号链接
+        if obj.obj_type != HvObjType::Symlink {
+            return -3; // 不是符号链接
+        }
+        
+        // 检查权限
+        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
+        
+        // 读取目标路径
+        if obj.bp.is_null() {
+            return 0;
+        }
+        
+        let target_len = obj.size as usize;
+        let to_read = target_len.min(buf.len());
+        
+        // 从ARC读取数据
+        let block_key = HvArcKey::new(0, 0, obj.birth_txg);
+        if let Some(data_ptr) = self.spa.arc.lookup(&block_key) {
+            let data = unsafe { core::slice::from_raw_parts(data_ptr, target_len) };
+            buf[..to_read].copy_from_slice(&data[..to_read]);
+            return to_read as i32;
+        }
+        
+        -1
+    }
+
+    pub fn setxattr(&self, path: &str, name: &str, value: &[u8], pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let obj_name = path.trim_start_matches('/');
+        
+        // 查找对象
+        let obj_id = {
+            let datasets = self.datasets.lock();
+            match datasets[0].lookup(obj_name) {
+                Some(id) => id,
+                None => return -2,
+            }
+        };
+        
+        // 检查权限
+        let obj = {
+            let datasets = self.datasets.lock();
+            match datasets[0].objset.get_obj(obj_id) {
+                Some(o) => o,
+                None => return -1,
+            }
+        };
+        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        
+        // 设置扩展属性
+        {
+            let mut datasets = self.datasets.lock();
+            let ds = &mut datasets[0];
+            
+            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+                // 简单实现：将xattr存储在对象的data_hash字段中
+                // 实际实现应该使用ZAP对象存储
+                let name_hash = Self::hash_xattr_name(name);
+                if name_hash < 4 {
+                    let mut hash = [0u64; 4];
+                    hash.copy_from_slice(&obj.data_hash);
+                    hash[name_hash] = Self::hash_xattr_value(value);
+                    obj.data_hash = hash;
+                    obj.dirty = true;
+                    return 0;
+                }
+            }
+        }
+        
+        -1
+    }
+
+    pub fn getxattr(&self, path: &str, name: &str, buf: &mut [u8], pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let obj_name = path.trim_start_matches('/');
+        
+        // 查找对象
+        let obj_id = {
+            let datasets = self.datasets.lock();
+            match datasets[0].lookup(obj_name) {
+                Some(id) => id,
+                None => return -2,
+            }
+        };
+        
+        let obj = {
+            let datasets = self.datasets.lock();
+            match datasets[0].objset.get_obj(obj_id) {
+                Some(o) => o,
+                None => return -1,
+            }
+        };
+        
+        // 检查权限
+        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
+        
+        // 获取扩展属性
+        let name_hash = Self::hash_xattr_name(name);
+        if name_hash < 4 {
+            let value_hash = obj.data_hash[name_hash];
+            if value_hash != 0 {
+                // 简单实现：返回哈希值作为数据
+                let hash_bytes = value_hash.to_le_bytes();
+                let to_copy = hash_bytes.len().min(buf.len());
+                buf[..to_copy].copy_from_slice(&hash_bytes[..to_copy]);
+                return to_copy as i32;
+            }
+        }
+        
+        -1
+    }
+
+    pub fn listxattr(&self, path: &str, buf: &mut [u8], pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let obj_name = path.trim_start_matches('/');
+        
+        // 查找对象
+        let obj_id = {
+            let datasets = self.datasets.lock();
+            match datasets[0].lookup(obj_name) {
+                Some(id) => id,
+                None => return -2,
+            }
+        };
+        
+        let obj = {
+            let datasets = self.datasets.lock();
+            match datasets[0].objset.get_obj(obj_id) {
+                Some(o) => o,
+                None => return -1,
+            }
+        };
+        
+        // 检查权限
+        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
+        
+        // 列出扩展属性
+        let mut offset = 0;
+        for i in 0..4 {
+            if obj.data_hash[i] != 0 {
+                let attr_name = format!("user.attr{}\0", i);
+                let name_bytes = attr_name.as_bytes();
+                if offset + name_bytes.len() <= buf.len() {
+                    buf[offset..offset+name_bytes.len()].copy_from_slice(name_bytes);
+                    offset += name_bytes.len();
+                }
+            }
+        }
+        
+        offset as i32
+    }
+
+    pub fn removexattr(&self, path: &str, name: &str, pwid: u64) -> i32 {
+        if !self.is_initialized() { return -1; }
+        let obj_name = path.trim_start_matches('/');
+        
+        // 查找对象
+        let obj_id = {
+            let datasets = self.datasets.lock();
+            match datasets[0].lookup(obj_name) {
+                Some(id) => id,
+                None => return -2,
+            }
+        };
+        
+        // 检查权限
+        let obj = {
+            let datasets = self.datasets.lock();
+            match datasets[0].objset.get_obj(obj_id) {
+                Some(o) => o,
+                None => return -1,
+            }
+        };
+        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        
+        // 删除扩展属性
+        {
+            let mut datasets = self.datasets.lock();
+            let ds = &mut datasets[0];
+            
+            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+                let name_hash = Self::hash_xattr_name(name);
+                if name_hash < 4 {
+                    let mut hash = [0u64; 4];
+                    hash.copy_from_slice(&obj.data_hash);
+                    hash[name_hash] = 0;
+                    obj.data_hash = hash;
+                    obj.dirty = true;
+                    return 0;
+                }
+            }
+        }
+        
+        -1
+    }
+
+    fn hash_xattr_name(name: &str) -> usize {
+        let mut hash: u64 = 5381;
+        for byte in name.bytes() {
+            hash = ((hash << 5).wrapping_add(hash)).wrapping_add(byte as u64);
+        }
+        (hash % 4) as usize
+    }
+
+    fn hash_xattr_value(value: &[u8]) -> u64 {
+        let mut hash: u64 = 5381;
+        for byte in value {
+            hash = ((hash << 5).wrapping_add(hash)).wrapping_add(*byte as u64);
+        }
+        hash
     }
 
     pub fn sync(&self) -> i32 {

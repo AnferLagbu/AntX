@@ -19,6 +19,7 @@ pub enum HvZilRecordType {
     Acl = 8,
     CreateAcl = 9,
     Mkdir = 10,
+    Symlink = 11,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +113,66 @@ impl HvZilRecord {
             offset: 0,
             size: 0,
             name: [0; 128],
+            data_hash: [0; 4],
+            seq: 0,
+        }
+    }
+
+    pub fn new_link(txg: u64, parent_obj: u64, name: &str, obj_id: u64) -> Self {
+        let mut n = [0u8; 128];
+        let b = name.as_bytes();
+        let len = b.len().min(127);
+        n[..len].copy_from_slice(&b[..len]);
+        Self {
+            rec_type: HvZilRecordType::Link,
+            txg,
+            obj_id,
+            parent_obj,
+            offset: 0,
+            size: 0,
+            name: n,
+            data_hash: [0; 4],
+            seq: 0,
+        }
+    }
+
+    pub fn new_rename(txg: u64, parent_obj: u64, old_name: &str, new_name: &str) -> Self {
+        let mut n = [0u8; 128];
+        let b = old_name.as_bytes();
+        let len = b.len().min(63);
+        n[..len].copy_from_slice(&b[..len]);
+        let b2 = new_name.as_bytes();
+        let len2 = b2.len().min(63);
+        n[64..64+len2].copy_from_slice(&b2[..len2]);
+        Self {
+            rec_type: HvZilRecordType::Rename,
+            txg,
+            obj_id: 0,
+            parent_obj,
+            offset: 0,
+            size: 0,
+            name: n,
+            data_hash: [0; 4],
+            seq: 0,
+        }
+    }
+
+    pub fn new_symlink(txg: u64, parent_obj: u64, link_name: &str, target: &str) -> Self {
+        let mut n = [0u8; 128];
+        let b = link_name.as_bytes();
+        let len = b.len().min(63);
+        n[..len].copy_from_slice(&b[..len]);
+        let b2 = target.as_bytes();
+        let len2 = b2.len().min(63);
+        n[64..64+len2].copy_from_slice(&b2[..len2]);
+        Self {
+            rec_type: HvZilRecordType::Symlink,
+            txg,
+            obj_id: 0,
+            parent_obj,
+            offset: 0,
+            size: 0,
+            name: n,
             data_hash: [0; 4],
             seq: 0,
         }

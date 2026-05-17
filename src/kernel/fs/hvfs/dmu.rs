@@ -21,6 +21,7 @@ pub enum HvObjType {
     Volume = 6,
     SpaceMap = 7,
     ObjSet = 8,
+    Symlink = 9,
 }
 
 impl HvObjType {
