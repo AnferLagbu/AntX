@@ -13,6 +13,14 @@
 //!         → mark_recovered() → audit_log → PANIC_FLAG clear → IDT return
 //! ```
 //!
+//! ## 分层恢复策略
+//!
+//! ```text
+//! Layer 1: Barrier Recovery (模块级回滚)  ~1μs   >95%成功率
+//! Layer 2: BSR (Barrier Soft Reset)      ~50ms  >80%成功率
+//! Layer 3: BHR (Barrier Hard Reset)      ~120ms ~100%成功率
+//! ```
+//!
 //! ## 模块组织
 //!
 //! ```text
@@ -24,6 +32,8 @@
 //! ├── manager.rs       管理器：RecoveryManager + 审计日志
 //! ├── recoverable.rs   可恢复原语：Snapshot trait + RecoverableMutex
 //! ├── fault_inject.rs  故障注入：maybe_inject_fault (feature gate)
+//! ├── snapshot.rs      设备快照：DeviceSnapshot + DeviceSnapshotRegistry
+//! ├── reset.rs         BSR/BHR：Barrier Soft/Hard Reset
 //! └── ffi.rs           C FFI 桥接层
 //! ```
 
@@ -35,6 +45,8 @@ pub mod domain;
 pub mod manager;
 pub mod recoverable;
 pub mod fault_inject;
+pub mod snapshot;
+pub mod reset;
 pub mod ffi;
 
 pub use types::*;
@@ -43,6 +55,30 @@ pub use domain::RecoveryDomain;
 pub use manager::{RecoveryManager, ROLLBACK_LOG};
 pub use recoverable::{Snapshot, Recoverable, RecoverableMutex};
 pub use fault_inject::maybe_inject_fault;
+pub use snapshot::{
+    DeviceSnapshot,
+    DeviceSnapshotRegistry,
+    DeviceType,
+    DEVICE_SNAPSHOTS,
+    snapshot_register_device,
+    snapshot_unregister_device,
+    snapshot_capture_init,
+    snapshot_restore_all,
+    snapshot_is_init_captured,
+};
+pub use reset::{
+    RecoveryLayer,
+    RecoveryResult,
+    RecoveryConfig,
+    RECOVERY_CONFIG,
+    bsr_execute,
+    bhr_execute,
+    bhr_execute_fallback,
+    recovery_execute_layered,
+    recovery_get_current_layer,
+    recovery_get_stats,
+    recovery_reset_stats,
+};
 
 pub use ffi::{
     recovery_barrier_maintenance,

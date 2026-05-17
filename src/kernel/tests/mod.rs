@@ -26,6 +26,8 @@ pub mod sync;
 pub mod driver;
 #[cfg(feature = "kernel_test")]
 pub mod net;
+#[cfg(feature = "kernel_test")]
+pub mod reset;
 
 pub type TestFn = fn() -> TestResult;
 
@@ -283,6 +285,7 @@ pub fn test_runner_init() {
         sync::register_tests();
         driver::register_tests();
         net::register_tests();
+        reset::register_tests();
         crate::kernel::timer::pit::register_pit_tests();
         crate::kernel::timer::tick::register_timer_tick_tests();
         crate::kernel::timer::calibration::register_timer_calibration_tests();
