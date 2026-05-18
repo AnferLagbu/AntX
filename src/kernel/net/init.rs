@@ -172,6 +172,7 @@ pub extern "C" fn qx_net_init() {
 
         if register_result == 0 {
             let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
+            crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
             klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
         } else {
             set_failed();

@@ -3,7 +3,7 @@
 /// 提供 lwIP OS 抽象层所需的类型别名和常量。
 /// 同时包含公共的 FFI 声明（日志函数等）。
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 // ============================================================================
 // 公共 FFI 声明 - 日志输出函数 (供所有子模块使用)
@@ -95,6 +95,10 @@ impl From<i32> for LwipErr {
 
 /// 全局 tick 计数器 (100Hz)
 static SYS_TICKS: AtomicU32 = AtomicU32::new(0);
+
+/// 网络子系统是否完全就绪 (lwip_init + netif注册完成)
+/// timer ISR 在 lwIP 就位前不调用 sys_check_timeouts / e1000_poll_rx
+pub static NET_READY: AtomicBool = AtomicBool::new(false);
 
 /// 系统初始化 - 同时供 Rust 和 FFI 使用
 #[no_mangle]

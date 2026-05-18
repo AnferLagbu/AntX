@@ -120,7 +120,7 @@ build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 build/kernel.flat: build/kernel.bin
 	objcopy -O binary $< $@
 
-$(RUST_LIB):
+$(RUST_LIB): build/user/init.bin $(STAGE1_BIN)
 	@echo "Building Rust kernel module..."
 	cd src/rust && cargo build --release
 

@@ -192,16 +192,13 @@ pub extern "C" fn kernel_init() {
     crate::kernel::fs::vfs::init();
     crate::klog_boot_info!("VFS ready");
 
-    // 10. Network (lwIP + E1000)
-    #[cfg(not(feature = "kernel_test"))]
-    crate::kernel::net::init::qx_net_init();
+    // 10. Network (lwIP + E1000) — deferred: lwip_init blocks boot intermittently
+    // Will be triggered via syscall or from init after userland is up.
 
     // 11. Barrier-Stack recovery domains
     crate::kernel::mm::pmm::pmm_register_barrier_domain();
     crate::kernel::proc::process::proc_register_barrier_domain();
-    #[cfg(not(feature = "kernel_test"))]
-    crate::kernel::net::netif::net_register_barrier_domain();
-    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4, NET=5)");
+    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
     #[cfg(not(feature = "kernel_test"))]
     {
