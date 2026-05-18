@@ -59,6 +59,7 @@ KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
               $(NET_OBJS)
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
+              build/user/embedded/user_init_bin.o \
               build/kernel_test.o build/test_main.o build/test_hvfs.o \
               build/test_hw_stubs.o
 
