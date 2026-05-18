@@ -1,12 +1,12 @@
-/// 应用部署 — 批量复制系统二进制文件至安装目标
+//! 应用部署 — 批量复制系统二进制文件至安装目标
 
-use crate::io::{print, println, print_dec};
-use crate::fs::file_copy;
+use userlib::{print, println, print_dec};
+use userlib::fs;
 
 pub struct AppManifest {
-    pub src:  &'static [u8],   // 源路径 (RamFS 上的 Live 文件)
-    pub dst:  &'static [u8],   // 目标路径 (磁盘 HvFS)
-    pub desc: &'static str,    // 人类可读名称
+    pub src:  &'static [u8],
+    pub dst:  &'static [u8],
+    pub desc: &'static str,
 }
 
 static MANIFEST: &[AppManifest] = &[
@@ -25,7 +25,7 @@ pub fn deploy_all() -> i32 {
     let mut fail = 0u32;
     for m in MANIFEST {
         print("  "); print(m.desc);
-        if file_copy(m.src, m.dst) { println(" ... OK"); ok += 1; }
+        if fs::file_copy(m.src, m.dst) { println(" ... OK"); ok += 1; }
         else { println(" ... FAIL"); fail += 1; }
     }
     println("");

@@ -1,13 +1,7 @@
 //! 磁盘准备: 分区表创建、FAT16/HvFS 格式化、引导器安装
-//!
-//! 调用顺序:
-//!   1. disk_partition(did, sectors) → 双分区 MBR
-//!   2. fat_format(did)              → FAT16 boot 分区
-//!   3. disk_format(did)             → HvFS 系统分区
-//!   4. boot_install(did)            → Stage1 + kernel raw 写入
 
-use crate::io::{print, println, print_dec};
-use crate::sys;
+use userlib::{print, println, print_dec};
+use userlib::sys;
 
 pub fn execute(disk_id: u32, sectors: u64) -> i32 {
     println(""); println("--- Step 2: Disk Partitioning & Formatting ---"); println("");

@@ -19,6 +19,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-    install_wizard::run();
+    install::wizard::run();
     proc_exit(0);
 }

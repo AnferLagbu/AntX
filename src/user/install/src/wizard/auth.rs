@@ -1,10 +1,9 @@
-//! 根身份创建 — 交互式密码输入 + syscall 调用
+//! 根身份创建 — 交互式密码输入
+
+use userlib::{print, println, print_dec, read_line, cmp};
+use userlib::sys;
 
 const MIN_PASSWORD_LEN: usize = 4;
-
-use crate::io::{print, println, print_dec, read_line};
-use crate::str::cmp as bytes_cmp;
-use crate::sys;
 
 pub fn create() -> i32 {
     println(""); println("--- Step 4: Administrator PWID Setup ---"); println("");
@@ -20,7 +19,7 @@ pub fn create() -> i32 {
         }
         print("Confirm root password: ");
         let mut pw2 = [0u8; 64]; let len2 = read_line(&mut pw2);
-        if len1 != len2 || bytes_cmp(&pw1[..len1], &pw2[..len2]) != 0 {
+        if len1 != len2 || cmp(&pw1[..len1], &pw2[..len2]) != 0 {
             println("Passwords do not match! Please try again."); continue;
         }
         println(""); println("Creating root identity...");

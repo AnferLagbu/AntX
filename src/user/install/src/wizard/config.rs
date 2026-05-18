@@ -1,9 +1,8 @@
 //! 系统配置 — 主机名、目录结构、fstab
 
-use crate::io::{print, println, read_line};
-use crate::sys;
-use crate::fs::file_open;
-use crate::sys::{O_CREAT, O_TRUNC, O_WRONLY};
+use userlib::{print, println, read_line};
+use userlib::sys;
+use userlib::fs;
 
 const DEFAULT_HOSTNAME: &[u8] = b"localhost\0";
 const HOSTNAME_FILE: &[u8] = b"/cfg/system/hostname\0";
@@ -25,7 +24,7 @@ pub fn hostname() {
     let r = sys::sethostname(&name[..name_len]);
     if r == 0 { print("Hostname set to: "); let s = core::str::from_utf8(&name[..name_len]).unwrap_or("?"); println(s); }
     else { println("Warning: Failed to set hostname, using default."); }
-    let fd = file_open(HOSTNAME_FILE, O_CREAT | O_WRONLY | O_TRUNC);
+    let fd = fs::file_open(HOSTNAME_FILE, sys::O_CREAT | sys::O_WRONLY | sys::O_TRUNC);
     if fd >= 0 { sys::fs_write(fd, &name[..name_len]); sys::fs_close(fd); }
     println(""); println("System configuration complete!");
 }
@@ -46,7 +45,7 @@ pub fn directory_tree() {
 }
 
 pub fn fstab() {
-    let fd = file_open(FSTAB_FILE, O_CREAT | O_WRONLY | O_TRUNC);
+    let fd = fs::file_open(FSTAB_FILE, sys::O_CREAT | sys::O_WRONLY | sys::O_TRUNC);
     if fd < 0 { println("  [WARN] Failed to create fstab"); return; }
     let content = b"# AntX Filesystem Configuration\n# Format: source mountpoint type options\n\nnone    /dev    devfs   defaults\nnone    /proc   procfs  defaults\nnone    /temp   ramfs   defaults,size=64M\n";
     sys::fs_write(fd, content); sys::fs_close(fd);

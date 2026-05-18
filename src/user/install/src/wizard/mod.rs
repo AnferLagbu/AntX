@@ -9,9 +9,9 @@
 //!   finish   — Step 6: 安装标记、sync、重启
 //!
 //! 用法:
-//!   use userlib::install_wizard;
-//!   install_wizard::run();           // 完整安装
-//!   if install_wizard::check_needed() { ... }  // 检测是否需要安装
+//!   use install::wizard;
+//!   wizard::run();
+//!   if wizard::needed() { ... }
 
 mod probe;
 mod prepare;
@@ -20,7 +20,7 @@ mod auth;
 mod config;
 mod finish;
 
-use crate::io::{println, read_line};
+use userlib::{println, read_line};
 
 fn welcome_page() {
     println("");
@@ -72,6 +72,6 @@ pub fn run() {
     }
 }
 
-pub fn check_needed() -> bool {
+pub fn needed() -> bool {
     finish::check_marker()
 }

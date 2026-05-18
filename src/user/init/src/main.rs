@@ -103,10 +103,10 @@ fn init_main() {
     println("[init] AntX init process started");
     println("");
 
-    if install_wizard::check_needed() {
+    if install::wizard::needed() {
         println("[init] First boot detected, launching installation wizard...");
         println("");
-        install_wizard::run();
+        install::wizard::run();
         println("");
         println("[init] Installation complete, continuing boot...");
         println("");

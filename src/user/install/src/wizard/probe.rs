@@ -1,9 +1,7 @@
 //! 磁盘探测与选择
-//!
-//! 管理全局状态: DISK_LIST (最多4块磁盘), SELECTED_DISK, DISK_COUNT
 
-use crate::io::{print, println, print_dec, read_line};
-use crate::sys::{self, UserDiskInfo};
+use userlib::{print, println, print_dec, read_line};
+use userlib::sys::{self, UserDiskInfo};
 
 pub(crate) const MAX_DISKS: usize = 4;
 
@@ -28,7 +26,6 @@ fn atoi(buf: &[u8], len: usize) -> i32 {
     v
 }
 
-/// 扫描 ATA 总线, 列出所有磁盘。成功返回 0。
 pub fn detect() -> i32 {
     println("");
     println("--- Step 1: Disk Detection ---");
@@ -56,7 +53,6 @@ pub fn detect() -> i32 {
     0
 }
 
-/// 交互式选择目标磁盘。成功返回 0。
 pub fn choose() -> i32 {
     println(""); println("Select a disk for installation:");
     let count = unsafe { DISK_COUNT as usize };
