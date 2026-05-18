@@ -35,18 +35,18 @@ NET_QX_C   = src/kernel/net/arch/net_glue.c
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
 NET_OBJS   = $(patsubst src/kernel/net/%.c,build/net/%.o,$(NET_ALL_C))
 
-USER_CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC \
-              -fno-asynchronous-unwind-tables -fno-ident -fno-builtin \
-              -fno-stack-protector \
-              -Isrc/include -Isrc/user/install
-
 LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
 
 RUST_LIB = src/rust/target/x86_64-unknown-none/release/libqueenx.a
 RUST_LIB_TEST = src/rust/target/test-release/x86_64-unknown-none/release/libqueenx.a
 RUST_LIB_CHAOS = src/rust/target/chaos-release/x86_64-unknown-none/release/libqueenx.a
 
-USER_LDFLAGS = -T src/user/link.ld -nostdlib -Map=build/user.map
+RUST_USER_DIR = src/user/rust
+RUST_USER_TARGET = $(RUST_USER_DIR)/target/x86_64-unknown-none/release
+
+USER_INIT_ELF = $(RUST_USER_TARGET)/init
+USER_SHELL_ELF = $(RUST_USER_TARGET)/shell
+USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 
 ASFLAGS = -f elf64
 
@@ -58,14 +58,6 @@ KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
               build/kernel_test.o build/test_main.o build/test_hvfs.o \
               build/test_hw_stubs.o
-
-USER_LIB_OBJS = build/user/lib/user.o build/user/lib/stack_canary.o
-
-USER_INIT_OBJS = build/user/init/main.o build/user/axsh/builtins.o
-
-USER_AXSH_OBJS = build/user/axsh/main.o build/user/axsh/builtins.o
-
-USER_INSTALL_OBJS = build/user/install/user_install.o
 
 DISK_IMAGE = build/antx.img
 
@@ -109,8 +101,16 @@ $(VERSION_REGISTRY_H):
 
 all: build/kernel.bin user
 
-user: build/user/init.bin build/user/axsh.bin build/user/install.bin
-	@echo "User programs built successfully"
+user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF)
+	@mkdir -p build/user
+	@cp $(USER_INIT_ELF) build/user/init.bin
+	@cp $(USER_SHELL_ELF) build/user/axsh.bin
+	@cp $(USER_INSTALL_ELF) build/user/install.bin
+	@echo "User programs built successfully (Rust)"
+
+$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF):
+	@echo "Building Rust user programs..."
+	cd $(RUST_USER_DIR) && cargo build --release
 
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 	@echo "[LINK] Linking kernel..."
@@ -163,46 +163,21 @@ build/net/%.o: src/kernel/net/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/user/lib/user.o: src/user/lib/user.c
-	@mkdir -p build/user/lib
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-build/user/lib/stack_canary.o: src/user/lib/stack_canary.c
-	@mkdir -p build/user/lib
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-build/user/init/main.o: src/user/init/main.c
-	@mkdir -p build/user/init
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-build/user/axsh/main.o: src/user/axsh/main.c
-	@mkdir -p build/user/axsh
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-build/user/axsh/builtins.o: src/user/axsh/builtins.c
-	@mkdir -p build/user/axsh
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-build/user/install/user_install.o: src/user/install/user_install.c
-	@mkdir -p build/user/install
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-build/user/init.bin: $(USER_LIB_OBJS) $(USER_INIT_OBJS) $(USER_INSTALL_OBJS)
-	@mkdir -p build/user
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_LIB_OBJS) $(USER_INIT_OBJS) $(USER_INSTALL_OBJS)
-	@echo "Generating embedded binary data..."
-	@python3 scripts/gen_embed.py $@ src/user/embedded/user_init_bin.c build_user_init_bin
-
-build/user/axsh.bin: $(USER_LIB_OBJS) $(USER_AXSH_OBJS)
-	@mkdir -p build/user
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_LIB_OBJS) $(USER_AXSH_OBJS)
-
-build/user/install.bin: $(USER_LIB_OBJS) $(USER_INSTALL_OBJS)
-	@mkdir -p build/user
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_LIB_OBJS) $(USER_INSTALL_OBJS)
-
 src/user/embedded/user_init_bin.c: build/user/init.bin
 	@python3 scripts/gen_embed.py $< $@ build_user_init_bin
+
+build/user/init.bin: $(USER_INIT_ELF)
+	@mkdir -p build/user
+	@cp $< $@
+	@python3 scripts/gen_embed.py $@ src/user/embedded/user_init_bin.c build_user_init_bin
+
+build/user/axsh.bin: $(USER_SHELL_ELF)
+	@mkdir -p build/user
+	@cp $< $@
+
+build/user/install.bin: $(USER_INSTALL_ELF)
+	@mkdir -p build/user
+	@cp $< $@
 
 # 最小化用户态测试二进制 (14B asm → int 0x80)
 build/user/test/minimal.o: src/user/test/minimal.asm
@@ -257,6 +232,7 @@ iso: all user
 clean:
 	rm -rf build/ isodir/
 	cd src/rust && cargo clean
+	cd $(RUST_USER_DIR) && cargo clean
 
 # QEMU 基础配置
 QEMU := qemu-system-x86_64
