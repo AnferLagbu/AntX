@@ -1,4 +1,4 @@
-//! 应用部署 — 批量复制系统二进制文件至安装目标
+//! 应用部署 — 批量复制系统二进制文件至安装目标 (/mnt)
 
 use userlib::{print, println, print_dec};
 use userlib::fs;
@@ -10,10 +10,10 @@ pub struct AppManifest {
 }
 
 static MANIFEST: &[AppManifest] = &[
-    AppManifest { src: b"/boot/kernel.bin\0", dst: b"/cfg/boot/kernel.bin\0", desc: "Kernel" },
-    AppManifest { src: b"/bin/init\0",        dst: b"/app/sys/init\0",        desc: "Init process" },
-    AppManifest { src: b"/bin/axsh\0",        dst: b"/app/sys/axsh\0",        desc: "axsh Shell" },
-    AppManifest { src: b"/bin/install\0",     dst: b"/app/sys/installguide\0",desc: "Install guide" },
+    AppManifest { src: b"/boot/kernel.bin\0", dst: b"/mnt/cfg/boot/kernel.bin\0", desc: "Kernel" },
+    AppManifest { src: b"/bin/init\0",        dst: b"/mnt/app/sys/init\0",        desc: "Init process" },
+    AppManifest { src: b"/bin/axsh\0",        dst: b"/mnt/app/sys/axsh\0",        desc: "axsh Shell" },
+    AppManifest { src: b"/bin/install\0",     dst: b"/mnt/app/sys/installguide\0",desc: "Install guide" },
 ];
 
 #[allow(dead_code)]

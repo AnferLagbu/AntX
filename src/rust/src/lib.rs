@@ -203,6 +203,26 @@ pub extern "C" fn kernel_init() {
     crate::kernel::net::netif::net_register_barrier_domain();
     crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4, NET=5)");
 
+    #[cfg(not(feature = "kernel_test"))]
+    {
+        extern "C" { fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32; }
+        let mut cfg = [0u8; 512];
+        if unsafe { ata_read_sector(0, 2046, cfg.as_mut_ptr()) } >= 0
+            && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X'
+        {
+            let hvfs_lba = u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]]);
+            crate::klog_boot_info!("Disk boot: HvFS at LBA {} → mounting root", hvfs_lba);
+            crate::kernel::fs::hvfs::hvfs::get_hvfs().spa.disk_present.store(true, core::sync::atomic::Ordering::Release);
+            crate::kernel::fs::hvfs::hvfs::get_hvfs().init();
+            let r = crate::kernel::fs::vfs::ffi::vfs_mount_internal(
+                b"/\0".as_ptr() as *const i8,
+                b"hvfs\0".as_ptr() as *const i8,
+            );
+            if r == 0 { crate::klog_boot_info!("Root filesystem: HvFS (disk)"); }
+            else { crate::klog_boot_info!("HvFS mount failed"); }
+        }
+    }
+
     crate::klog_boot_info!("AntX kernel initialized, entering user mode...");
 
     // 12. Launch first user process (Ring 3)

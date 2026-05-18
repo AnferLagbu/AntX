@@ -670,9 +670,11 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     }
 
     let kernel_sector_count = if copy_sectors == 0 { 1u32 } else { copy_sectors };
-    let mut mbr_readback = [0u8; 512];
-    if ata_read_sector(disk_id as u8, 0, mbr_readback.as_mut_ptr()) >= 0 {
-    }
+    let mut cfg = [0u8; 512];
+    cfg[0] = b'A'; cfg[1] = b'N'; cfg[2] = b'T'; cfg[3] = b'X';
+    write_le32(&mut cfg, 4, BOOT_PART_SECTORS);
+    cfg[510] = 0x55; cfg[511] = 0xAA;
+    ata_write_sector(disk_id as u8, 2046, cfg.as_ptr());
     0
 }
 

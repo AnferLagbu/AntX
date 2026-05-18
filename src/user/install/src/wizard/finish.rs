@@ -1,16 +1,13 @@
-//! 安装完成: 标记文件写入 + sync + 重启
+//! 安装完成: 标记文件写入 (/mnt) + sync + 重启
 
 use userlib::{println, read_line, delay_loop};
 use userlib::sys;
 use userlib::fs;
 
-const MARKER_FILE: &[u8] = b"/.antx_installed\0";
+const MARKER_FILE: &[u8] = b"/mnt/.antx_installed\0";
 
 pub fn execute() -> i32 {
     println(""); println("--- Step 6: Finalizing Installation ---"); println("");
-
-    super::config::directory_tree();
-    super::config::fstab();
 
     println("Syncing filesystem to disk..."); sys::fs_sync();
 

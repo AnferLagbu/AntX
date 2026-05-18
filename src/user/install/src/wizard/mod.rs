@@ -1,17 +1,4 @@
-//! 安装向导 — 6 步交互式系统安装
-//!
-//! 模块划分:
-//!   probe    — Step 1: 磁盘探测与选择
-//!   prepare  — Step 2: 分区、格式化、引导安装
-//!   deploy   — Step 3: 应用批量部署
-//!   auth     — Step 4: 管理员 PWID 创建
-//!   config   — Step 5: 主机名、目录树、fstab
-//!   finish   — Step 6: 安装标记、sync、重启
-//!
-//! 用法:
-//!   use install::wizard;
-//!   wizard::run();
-//!   if wizard::needed() { ... }
+//! 安装向导 — 6 步交互式系统安装 → 持久化到磁盘
 
 mod probe;
 mod prepare;
@@ -20,7 +7,18 @@ mod auth;
 mod config;
 mod finish;
 
-use userlib::{println, read_line};
+use userlib::{println, read_line, fs_mount, fs_unmount};
+
+const MOUNT_POINT: &[u8] = b"/mnt\0";
+
+fn mount_target() -> bool {
+    let r = fs_mount(b"none\0", MOUNT_POINT, b"hvfs\0", b"defaults\0");
+    r == 0
+}
+
+fn unmount_target() {
+    fs_unmount(MOUNT_POINT);
+}
 
 fn welcome_page() {
     println("");
@@ -56,20 +54,36 @@ pub fn run() {
         println("Installation failed: Disk preparation error.");
         return;
     }
+
+    println(""); println("Mounting target filesystem...");
+    if !mount_target() {
+        println("  [ERROR] Failed to mount HvFS to /mnt");
+        println("Installation failed: Unable to access target disk.");
+        return;
+    }
+    println("  [OK] Target mounted at /mnt");
+
     if deploy::deploy_all() != 0 {
         println("Installation failed: Application deployment error.");
+        unmount_target();
         return;
     }
     if auth::create() != 0 {
         println("Installation failed at root identity setup.");
+        unmount_target();
         return;
     }
 
     config::hostname();
+    config::directory_tree();
+    config::fstab();
 
     if finish::execute() != 0 {
         println("Warning: Installation may be incomplete.");
     }
+
+    println("Unmounting target filesystem...");
+    unmount_target();
 }
 
 pub fn needed() -> bool {

@@ -1,12 +1,12 @@
-//! 系统配置 — 主机名、目录结构、fstab
+//! 系统配置 — 主机名 + 目录树 + fstab (写入 /mnt)
 
 use userlib::{print, println, read_line};
 use userlib::sys;
 use userlib::fs;
 
 const DEFAULT_HOSTNAME: &[u8] = b"localhost\0";
-const HOSTNAME_FILE: &[u8] = b"/cfg/system/hostname\0";
-const FSTAB_FILE:   &[u8] = b"/cfg/system/fstab\0";
+const HOSTNAME_FILE: &[u8] = b"/mnt/cfg/system/hostname\0";
+const FSTAB_FILE:   &[u8] = b"/mnt/cfg/system/fstab\0";
 
 fn mkdir(path: &[u8]) {
     let mut p = [0u8; 128];
@@ -32,14 +32,14 @@ pub fn hostname() {
 pub fn directory_tree() {
     println("Creating directory structure...");
     for dir in [
-        b"/cfg\0".as_slice(), b"/cfg/boot\0".as_slice(), b"/cfg/kernel\0".as_slice(),
-        b"/cfg/system\0".as_slice(), b"/cfg/gui\0".as_slice(),
-        b"/app\0".as_slice(), b"/app/bin\0".as_slice(), b"/app/sys\0".as_slice(),
-        b"/data\0".as_slice(), b"/data/id\0".as_slice(), b"/data/share\0".as_slice(),
-        b"/data/var\0".as_slice(), b"/data/var/log\0".as_slice(), b"/data/var/run\0".as_slice(),
-        b"/gui\0".as_slice(), b"/gui/font\0".as_slice(), b"/gui/theme\0".as_slice(),
-        b"/gui/wallpaper\0".as_slice(), b"/gui/cursor\0".as_slice(),
-        b"/dev\0".as_slice(), b"/proc\0".as_slice(), b"/temp\0".as_slice(), b"/mnt\0".as_slice(),
+        b"/mnt/cfg\0".as_slice(), b"/mnt/cfg/boot\0".as_slice(), b"/mnt/cfg/kernel\0".as_slice(),
+        b"/mnt/cfg/system\0".as_slice(), b"/mnt/cfg/gui\0".as_slice(),
+        b"/mnt/app\0".as_slice(), b"/mnt/app/bin\0".as_slice(), b"/mnt/app/sys\0".as_slice(),
+        b"/mnt/data\0".as_slice(), b"/mnt/data/id\0".as_slice(), b"/mnt/data/share\0".as_slice(),
+        b"/mnt/data/var\0".as_slice(), b"/mnt/data/var/log\0".as_slice(), b"/mnt/data/var/run\0".as_slice(),
+        b"/mnt/gui\0".as_slice(), b"/mnt/gui/font\0".as_slice(), b"/mnt/gui/theme\0".as_slice(),
+        b"/mnt/gui/wallpaper\0".as_slice(), b"/mnt/gui/cursor\0".as_slice(),
+        b"/mnt/dev\0".as_slice(), b"/mnt/proc\0".as_slice(), b"/mnt/temp\0".as_slice(), b"/mnt/mnt\0".as_slice(),
     ] { mkdir(dir); }
     println("  [OK] Directory structure created");
 }
