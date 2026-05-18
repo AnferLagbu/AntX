@@ -179,23 +179,6 @@ build/user/install.bin: $(USER_INSTALL_ELF)
 	@mkdir -p build/user
 	@cp $< $@
 
-# 最小化用户态测试二进制 (14B asm → int 0x80)
-build/user/test/minimal.o: src/user/test/minimal.asm
-	@mkdir -p build/user/test
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/user/test_minimal.bin: build/user/test/minimal.o
-	@mkdir -p build/user
-	$(LD) -T src/user/link.ld -nostdlib -o $@ $<
-
-src/user/embedded/test_minimal_bin.c: build/user/test_minimal.bin
-	@mkdir -p src/user/embedded
-	@python3 scripts/gen_embed.py $< $@ build_user_test_minimal_bin
-
-build/user/embedded/test_minimal_bin.o: src/user/embedded/test_minimal_bin.c
-	@mkdir -p build/user/embedded
-	$(CC) -m64 -nostdinc -Isrc/include -c $< -o $@
-
 # ============================================================
 # 网络子系统 (lwIP 2.2.1)
 # ============================================================

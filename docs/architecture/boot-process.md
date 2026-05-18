@@ -310,7 +310,7 @@ fn mount_filesystems() {
 
 ### 8. 启动用户态init进程
 
-**文件**: `src/user/init/main.c`
+**文件**: `src/user/rust/src/bin/init.rs`
 
 **流程**:
 
@@ -347,7 +347,7 @@ void start_user_init() {
 
 ### 9. 用户态Shell阶段
 
-**文件**: `src/user/axsh/main.c`
+**文件**: `src/user/rust/src/bin/shell.rs`
 
 **启动流程**:
 
