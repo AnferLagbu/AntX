@@ -1,146 +1,172 @@
 # AntX 已知问题与待解决项
 
-> 最后更新: 2026-05-19
+> 最后更新: 2026-05-19 01:30
 
 ---
 
-## ⚠️ 未解决问题
+## ⚠️ 未解决问题 (5项)
 
-### 1. lwIP `lwip_init()` 间歇性卡死启动 (P0)
+### 1. lwIP `lwip_init()` 间歇性卡死内核启动 (P0)
 
-**状态**: 🔴 临时绕过 (kernel 启动时跳过网络初始化)
+**状态**: 🔴 临时绕过 — 内核启动时跳过网络初始化 | **发现**: 2026-05-18
 
 **现象**:
-- `kernel_init()` 调用 `qx_net_init()` → `lwip_init()` 时，内核停止输出
-- 间歇性发生，约 50% 概率
-- 卡在 `[NET] Step3: init lwIP core` 之后无任何输出
+- `kernel_init()` → `qx_net_init()` → `lwip_init()` 时串口输出停止
+- 概率约 40%~60%，卡在 `[NET] Step3: init lwIP core` 后无任何输出
+- 系统完全无响应 (无 panic、无 watchdog)
 
-**根因分析**:
-- `lwip_init()` 内部可能触发 DHCP 或其他协议栈定时器回调
-- 在 `NO_SYS=1` 单线程模式下，某些回调路径可能导致 busy-loop 或死锁
-- timer ISR 的 `sys_check_timeouts()` 调用可能在 lwIP 内部状态未完全初始化时闯入
+**根因** (3层):
+1. `lwip-src/core/init.c:lwip_init()` 内部注册协议栈定时器 (`dhcp_tmr`, `tcp_tmr`, `arp_tmr` 等)
+2. `NO_SYS=1` 单线程模式下，定时器由 timer ISR 的 `sys_check_timeouts()` 驱动
+3. timer ISR 在 lwIP 半初始化状态闯入 → 访问未初始化的 `netif_list`/`tcp_pcbs` → busy-loop/死锁
 
-**当前绕过方案** (2026-05-19):
-- `lib.rs`: kernel_init 中不调用 `qx_net_init()`
-- `timer/irq.rs`: 添加 `NET_READY` 原子门，在 lwIP 就绪前不调用 `sys_check_timeouts()` / `e1000_poll_rx()`
-- 网络子系统初始化推迟到用户态 init 完成后再触发
+**绕过方案** (commit `30b0f20`):
+- `net/types.rs:L99` — 新增 `NET_READY: AtomicBool`
+- `net/init.rs:L174` — FullyInitialized 时设 `NET_READY = true`
+- `timer/irq.rs:L43` — ISR 检查 `NET_READY` 后才调 lwIP 回调
+- `lib.rs:L196` — **不调用** `qx_net_init()` — 网络完全延迟
 
-**正确修复方向**:
-- 将 `lwip_init()` 改为在用户态通过 syscall 触发 (如 `sys_net_init`)
-- 或者在 `lwip_init()` 调用前确保所有 timer 回调路径不会干扰初始化
+**副作用**: QEMU 无 E1000/DHCP, 用户态无 socket API
 
-**影响**:
-- QEMU 启动时无网络 (E1000 DHCP 不运行)
-- 用户态程序暂时无法使用 socket API
+**修复路线**:
+1. **短期**: `qx_net_init()` 改为用户态 syscall 触发 (`SYS_NET_INIT = 120`)
+2. **中期**: `lwip_init()` 前后 `cli`/`sti` 保护临界区
+3. **长期**: lwIP 定时器从 ISR 分离到内核线程
 
 ---
 
-### 2. 安装向导 init 进程无输出 (P1)
+### 2. 用户态 init 进程进入 Ring 3 后无任何输出 (P0)
 
-**状态**: 🔴 待定位
+**状态**: 🔴 定位中 | **发现**: 2026-05-19
 
 **现象**:
-- 内核成功进入 Ring 3 (`[USER] Entering Ring 3 (init pid=2)...`)
-- 之后无任何用户态输出
-- 看不到 `[init] AntX init process started` 
+```
+0.152755 [BOOT] [USER] Launching init process...
+0.169990 [BOOT] [USER] Entering Ring 3 (init pid=2)...
+                                                     ← 之后无任何输出
+```
+期望: `[init] AntX init process started` → 安装向导 banner
 
-**可能原因**:
-- init ELF 的 entry point 或内存布局问题 (修复了 embed 方式后需验证)
-- `proc_exec` / `load_elf_from_memory` 的用户栈或 GDT 段选择子不正确
-- init 二进制过大或链接脚本偏移不兼容
+**排查矩阵**: `include_bytes!` 嵌入路径变化 / `load_elf_from_memory` 用户栈段选择子 / init ELF 链接基址 `0x400000` / `switch.S` 上下文 / VFS fd 表可见性
 
-**验证方法**:
-- 用 `-serial file:` 模式捕获完整输出查是否有 panic 消息
-- 检查 `include_bytes!` 路径和 ELF 内容完整性
-- 对比 embed 方式变更前后的 init ELF md5
-
----
-
-### 3. HvFS mount 逻辑缺少磁盘 LBA 参数 (P1)
-
-**状态**: 🟡 架构设计中
-
-**现象**:
-- 内核 `kernel_init()` 中的 HvFS mount 逻辑硬编码了读写 `ata_read_sector(0, 2046, ...)`
-- 但 HvFS 的 `spa.disk_present` 和 `init()` 是否真的能从原始磁盘挂载未经验证
-- HvFS 格式化时调用的是 `hvfs.format_disk()`，但该函数是否接受 `disk_id` 参数不清楚
-- 安装完成后重启时，内核能否正确识别已安装的 HvFS 分区未经端到端测试
-
-**需要实现**:
-- HvFS 的 `spa` 初始化需要知道磁盘号 (目前 `disk_format(disk_id)` 可能只是格式化 Live RamFS)
-- `vfs_mount_internal` 中的 HvFS 路径需要接收磁盘参数
-- boot config sector 中的 `hvfs_lba` 需要被 `hvfs.init()` 正确使用
+**下一步验证**:
+1. `hexdump -C build/user/init.bin | head -4` 确认 ELF magic
+2. `-serial file:qemu_full.log -d int,cpu_reset` 抓完整日志
+3. 对比 `include_bytes!` 前后 init ELF 的 md5
+4. 在 `load_elf_from_memory` 中打印 ELF header 偏移
 
 ---
 
-## ✅ 已解决问题
+### 3. HvFS 磁盘挂载路径未经验证 (P1)
 
-### 4. `KERNEL_TEST_OBJS` 缺少 `user_init_bin.o` → 测试链接失败
+**状态**: 🟡 代码已写，端到端未测试
 
-**修复**: Makefile 添加 `build/user/embedded/user_init_bin.o` 到 `KERNEL_TEST_OBJS`
-**提交**: `4c2faf3`
+**问题链**: `sys_disk_format` → `hvfs.format_disk()` 是否写 VDEV label? / config sector LBA 2046 / 重启后 `hvfs.init()` 能否从磁盘读取
 
----
+**涉及文件**: `syscall/mod.rs:L589`, `syscall/mod.rs:L548`, `fs/vfs/ffi.rs:L64`, `fs/hvfs/spa.rs:L189`, `fs/hvfs/hvfs.rs:L118`, `lib.rs:L207`
 
-### 5. 网络初始化顺序错误 → 系统启动挂死
-
-**根因**: `lwip_init()` 在 `sys_init()` 之前调用
-**修复**: 调整顺序为 `e1000_probe → sys_init → lwip_init`
-**提交**: `04a3c28`
-
----
-
-### 6. `make test-host` 日志目录缺失 + tee 退出码
-
-**修复**: 添加 `mkdir -p tests/reports` + `; true`
-**提交**: `04a3c28`
+**验证清单**:
+- [ ] format → 立即回读校验
+- [ ] `disk_present=true` → `hvfs.init()` → 打开磁盘 VDEV
+- [ ] 安装向导写 `/mnt/.antx_installed` → umount → mount → 文件存在
+- [ ] 完整安装 → 重启 → 内核自动 mount → 跳过向导
 
 ---
 
-### 7. 定时器 ISR 与 lwIP 的竞态条件 (部分修复)
+### 4. install crate 跨 crate 依赖复杂 (P2)
 
-**根因**: timer ISR 在 lwIP 初始化前调用 `sys_check_timeouts()`
-**修复**: 添加 `NET_READY` 原子标志位，ISR 端检查后再调用
-**提交**: 待推送 (与问题 #1 一起)
+**状态**: 🟡 可工作，需简化
 
----
+**当前依赖**: `init → install(lib) → userlib`, `install(bin) → install(lib)`
 
-### 8. `gen_embed.py` + `embedded/` 冗余中间层
-
-**根因**: 用户态 ELF 通过 Python → C → gcc → ld 链嵌入内核
-**修复**: Rust `include_bytes!` 直接嵌入，删除 1265 行死代码
-**提交**: `1e32381`
+**问题**: `wizard` 模块路径硬编码 `/mnt/...`，建议提取 `run_with_prefix(prefix: &str)`
 
 ---
 
-### 9. Makefile 依赖顺序: Rust 内核编译时 `build/` 可能为空
+### 5. 系统无 panic 回溯 / 无调试信息输出 (P2)
 
-**根因**: `make clean` 后 `cargo build` 先于 `stage1.bin` / `init.bin` 生成，`include_bytes!` 找不到文件
-**修复**: `$(RUST_LIB)` 添加依赖 `build/user/init.bin $(STAGE1_BIN)`
-**提交**: 待推送
+**状态**: 🔴 缺失 — panic 无寄存器 dump / 无 backtrace / 调试依赖日志推测
 
 ---
 
-## 🔧 技术债务
+## ✅ 已解决问题 (7项)
+
+### 6. `KERNEL_TEST_OBJS` 缺少 `user_init_bin.o` → 测试链接失败
+**提交**: `4c2faf3` | **日期**: 2026-05-18
+
+### 7. 网络初始化顺序错误 → 系统启动挂死
+**提交**: `04a3c28` | **日期**: 2026-05-18 — `e1000_probe → sys_init → lwip_init → netif_register`
+
+### 8. `make test-host` 日志目录缺失 + tee 非零退出码
+**提交**: `04a3c28` | **日期**: 2026-05-18
+
+### 9. `gen_embed.py` + `embedded/` 冗余嵌入工具链
+**提交**: `1e32381` | **日期**: 2026-05-19 — **-1251行** 死代码，2个 `include_bytes!` 替代
+
+### 10. Makefile: `$(RUST_LIB)` 依赖缺失 → clean build 失败
+**提交**: `30b0f20` | **日期**: 2026-05-19
+
+### 11. 用户态目录结构重组为 workspace
+**提交**: `073eaef`, `41091db`, `b1b353b` | **日期**: 2026-05-19
+
+### 12. 安装向导持久化流 — HvFS mount + /mnt 部署 + 磁盘引导检测
+**提交**: `a4ceff7`, `3c95656` | **日期**: 2026-05-19
+
+---
+
+## 🔧 技术债务 (7项)
 
 | 项 | 说明 | 优先级 |
 |----|------|--------|
-| lib/fs.rs 未使用 `O_TRUNC` 导入 | 仅 `deploy/fput` 使用，但导入在 `fs.rs` 顶层 | low |
-| lwIP C 源码与 Rust 内核集成 | NO_SYS=1 单线程模式, 未来可考虑迁移到 Rust 实现 | medium |
-| VFS 根挂载依赖用户态 init | 内核不挂载 `/`, 由 init 进程负责; 磁盘引导时需先在内核挂 HvFS | medium |
-| 网络 barrier domain 注册 | 因 qx_net_init 推迟, NET=5 barrier 暂未注册 | low |
+| `lib/fs.rs` `O_TRUNC` unused import | 仅 `deploy` 使用, 导入在 `fs.rs` 顶层 | low |
+| lwIP NO_SYS=1 单线程 | 迁移到 `tcpip_thread` 可根除问题 #1 | medium |
+| VFS `/` 根目录依赖用户态 mount | 磁盘引导时需内核先挂 HvFS | medium |
+| NET=5 barrier domain 未注册 | `qx_net_init` 延迟导致 | low |
+| `axsh` help 文本与 BUILTINS 不同步 | 新命令需改两处 | low |
+| `userlib::*` 全局导出 syscall | `pub use sys::*` 污染命名空间 | low |
+| `diagnose_user_process.py` 引用已删除的 `gen_embed.py` | 需清理 | low |
 
 ---
 
-## 📋 安装流端到端验证清单
+## 📋 安装流端到端验证矩阵
 
-| 步骤 | 预期 | 状态 |
-|------|------|------|
-| 1. QEMU -kernel 启动 | 内核日志完整, 进入 Ring 3 | 🟡 内核到 Ring 3, 用户态无输出 |
-| 2. init 打印 banner | `[init] AntX init process started` | 🔴 未验证 |
-| 3. 磁盘选择 | 显示 64MB 磁盘, 选择 0 | 🔴 未验证 |
-| 4. 分区/格式化 | 无 fatal error | 🔴 未验证 |
-| 5. HvFS mount → /mnt | mount 成功 | 🔴 未验证 |
-| 6. 文件复制 | 4/4 OK | 🔴 未验证 |
-| 7. 安装完成重启 | 写 `/.antx_installed` → reboot | 🔴 未验证 |
-| 8. 二次引导 | BIOS → Stage1 → HvFS mount → 跳过向导 → shell | 🔴 未验证 |
+| # | 步骤 | 预期 | 状态 |
+|---|------|------|------|
+| 1 | QEMU `-kernel -drive` | 内核到 `Entering Ring 3` | 🟡 内核 OK, 用户态无输出 |
+| 2 | init banner | `[init] AntX init process started` | 🔴 |
+| 3 | 安装向导 welcome | `AntX Installation Wizard` | 🔴 |
+| 4 | 磁盘探测/选择 | 1 个 64MB 盘, 选 0, yes | 🔴 |
+| 5 | 分区/格式化 | 无 fatal error | 🔴 |
+| 6 | HvFS mount /mnt | mount 成功 | 🔴 |
+| 7 | 应用部署 | 4/4 OK | 🔴 |
+| 8 | PWID 创建 | 密码确认 → 成功 | 🔴 |
+| 9 | 主机名 | 输入 → 成功 | 🔴 |
+| 10 | 安装完成 | 写标记 → sync → umount → reboot | 🔴 |
+| 11 | 磁盘引导 | BIOS→Stage1→kernel→mount HvFS→init | 🔴 |
+| 12 | 第二次 init | marker 存在 → 跳过向导 | 🔴 |
+| 13 | axsh Shell | `axsh> ` prompt | 🔴 |
+
+---
+
+## 🔬 调试工具状态
+
+| 功能 | 状态 |
+|------|------|
+| KLog 串口日志 | ✅ |
+| 内核 panic handler | ✅ `int 0x82` → barrier |
+| 用户态 panic handler | ✅ `proc_exit` + 文件/行号 |
+| 寄存器 dump (panic) | 🔴 |
+| Backtrace | 🔴 |
+| QEMU `-d int,cpu_reset` | ✅ |
+| GDB stub | ✅ 基础 |
+| host-tests (67 passed) | ✅ |
+| kernel tests (256/256) | ✅ |
+
+---
+
+## 📖 相关文档
+
+- [开发规划](./roadmap.md)
+- [内核架构](../architecture/kernel-architecture.md)
+- [启动流程](../architecture/boot-process.md)
+- [构建系统](./build-system.md)
