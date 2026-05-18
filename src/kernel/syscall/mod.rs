@@ -82,17 +82,28 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         SYS_AUTH_LOGIN        => dispatch!(sys_auth_login(a0 as *const i8, a1 as *const i8), b"auth_login\0"),
         SYS_AUTH_LOGOUT       => dispatch!(sys_auth_logout(), b"auth_logout\0"),
+        SYS_AUTH_ELEVATE      => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_elevate\0"),
         SYS_AUTH_CREATE       => dispatch!(sys_auth_create(a0 as *const i8, a1 as *const i8, a2 as u8), b"auth_create\0"),
         SYS_AUTH_DELETE       => dispatch!(sys_auth_delete(a0), b"auth_delete\0"),
+        SYS_AUTH_LIST         => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_list\0"),
         SYS_AUTH_INFO         => dispatch!(sys_auth_info(a0), b"auth_info\0"),
+        SYS_AUTH_SETNOTE      => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_setnote\0"),
         SYS_AUTH_CHANGEPW     => dispatch!(sys_auth_changepw(a0 as *const i8, a1 as *const i8), b"auth_changepw\0"),
         SYS_AUTH_VERIFY       => dispatch!(sys_auth_verify(a0 as *const i8), b"auth_verify\0"),
+        SYS_AUTH_CREATE_FIRST => dispatch!(sys_auth_create_first(a0 as *const i8), b"auth_create_first\0"),
         SYS_AUTH_TOKEN_CREATE => dispatch!(sys_auth_token_create(a0, a1 as u16, a2, a3, 1), b"auth_token_create\0"),
         SYS_AUTH_TOKEN_USE    => dispatch!(sys_auth_token_use(a0), b"auth_token_use\0"),
         SYS_AUTH_TOKEN_REVOKE => dispatch!(sys_auth_token_revoke(a0), b"auth_token_revoke\0"),
+        SYS_AUTH_TRUST_ADD    => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_trust_add\0"),
+        SYS_AUTH_TRUST_REMOVE => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_trust_remove\0"),
+        SYS_AUTH_CHECK        => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_check\0"),
+        SYS_AUTH_CREATE_WITH_CAPS => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_create_with_caps\0"),
 
         SYS_ENV_GETCWD    => dispatch!(sys_env_getcwd(a0 as *mut i8, a1), b"env_getcwd\0"),
         SYS_ENV_CHDIR     => dispatch!(sys_env_chdir(a0 as *const i8), b"env_chdir\0"),
+        SYS_INFO          => dispatch!(SyscallError::E_NOSYS.as_i64(), b"sys_info\0"),
+        SYS_ENV_GETVAR    => dispatch!(SyscallError::E_NOSYS.as_i64(), b"env_getvar\0"),
+        SYS_ENV_SETVAR    => dispatch!(SyscallError::E_NOSYS.as_i64(), b"env_setvar\0"),
         SYS_GETHOSTNAME   => dispatch!(sys_gethostname(a0 as *mut i8, a1), b"gethostname\0"),
         SYS_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const i8, a1), b"sethostname\0"),
         SYS_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"boot_check\0"),
@@ -103,6 +114,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_DISK_INFO    => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"disk_info\0"),
         #[cfg(not(feature = "kernel_test"))]
         SYS_DISK_FORMAT  => dispatch!(sys_disk_format(a0 as u32, a1 as *const i8), b"disk_format\0"),
+        #[cfg(not(feature = "kernel_test"))]
+        SYS_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32, a1), b"disk_partition\0"),
+        #[cfg(not(feature = "kernel_test"))]
+        SYS_DISK_INSTALL_GRUB => dispatch!(sys_install_grub(a0 as u32), b"disk_install_grub\0"),
 
         SYS_MEM_BRK      => dispatch!(sys_mem_brk(a0), b"mem_brk\0"),
         SYS_MEM_MAP      => dispatch!(sys_mem_map(a0, a1, a2), b"mem_map\0"),
@@ -285,6 +300,11 @@ unsafe fn sys_auth_verify(password: *const i8) -> i64 {
     crate::kernel::pwid::ffi::pwid_verify_password(pwid, password) as i64
 }
 
+unsafe fn sys_auth_create_first(password: *const i8) -> i64 {
+    if password.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    crate::kernel::pwid::ffi::pwid_create_first_identity(password) as i64
+}
+
 unsafe fn sys_auth_token_create(holder: u64, domain: u16, caps: u64, _duration: u64, _max_uses: u32) -> i64 {
     let creator = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::pwid::ffi::pwid_grant(creator, holder, domain, caps) as i64
@@ -361,6 +381,58 @@ unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
 unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     if info.is_null() { return SyscallError::E_INVAL.as_i64(); }
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
+
+    extern "C" {
+        fn ata_disk_present(drive: u8) -> i32;
+        fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
+    }
+
+    let drive = disk_id as u8;
+    let present = if ata_disk_present(drive) != 0 { 1u32 } else { 0u32 };
+
+    let mut sectors: u32 = 0;
+    if present != 0 {
+        let mut lo: u32 = 0;
+        let mut hi: u32 = 0x1FFFF;
+        let mut probe_buf = [0u8; 512];
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if ata_read_sector(drive, mid, probe_buf.as_mut_ptr()) >= 0 {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        sectors = lo;
+    }
+
+    let model_bytes = b"ATA Disk";
+    let mut model = [0u8; 64];
+    let copy_len = if model_bytes.len() < 63 { model_bytes.len() } else { 63 };
+    core::ptr::copy_nonoverlapping(model_bytes.as_ptr(), model.as_mut_ptr(), copy_len);
+
+    #[repr(C)]
+    struct UserDiskInfo {
+        disk_id: u32,
+        present: u32,
+        total_sectors: u32,
+        sectors: u32,
+        model: [u8; 64],
+    }
+
+    let disk_info = UserDiskInfo {
+        disk_id,
+        present,
+        total_sectors: sectors,
+        sectors,
+        model,
+    };
+
+    core::ptr::copy_nonoverlapping(
+        &disk_info as *const UserDiskInfo as *const u8,
+        info,
+        core::mem::size_of::<UserDiskInfo>(),
+    );
     0
 }
 
@@ -372,8 +444,63 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 4, 0) {
         return SyscallError::E_AUTH_CAP.as_i64();
     }
-    extern "C" { fn ata_disk_present(drive: u8) -> i32; }
+    extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
     if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
+
+    let mut sector_buf = [0u8; 512];
+    sector_buf[0] = 0x48; sector_buf[1] = 0x56; sector_buf[2] = 0x46; sector_buf[3] = 0x53;
+    sector_buf[8] = 0x02; sector_buf[9] = 0x00;
+
+    let write_result = ata_write_sector(disk_id as u8, 0, sector_buf.as_ptr());
+    if write_result < 0 { return SyscallError::E_IO.as_i64(); }
+    0
+}
+
+#[cfg(not(feature = "kernel_test"))]
+unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
+    if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 4, 0) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
+    if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
+
+    let mut mbr = [0u8; 512];
+    mbr[510] = 0x55;
+    mbr[511] = 0xAA;
+
+    let max_lba = if total_sectors > 0 && total_sectors <= 0xFFFFFFFF {
+        total_sectors as u32 - 1
+    } else {
+        0xFFFFFFFFu32
+    };
+
+    mbr[446] = 0x80;
+    mbr[447] = 0xFE;
+    mbr[448] = 0xFF;
+    mbr[449] = 0xFF;
+    mbr[450] = 0x83;
+    mbr[451] = 0xFE;
+    mbr[452] = 0xFF;
+    mbr[453] = 0xFF;
+    mbr[454] = 0x01;
+    mbr[455] = 0x00;
+    mbr[456] = 0x00;
+    mbr[457] = 0x00;
+    mbr[458] = (max_lba & 0xFF) as u8;
+    mbr[459] = ((max_lba >> 8) & 0xFF) as u8;
+    mbr[460] = ((max_lba >> 16) & 0xFF) as u8;
+    mbr[461] = ((max_lba >> 24) & 0xFF) as u8;
+
+    let write_result = ata_write_sector(disk_id as u8, 0, mbr.as_ptr());
+    if write_result < 0 { return SyscallError::E_IO.as_i64(); }
+    0
+}
+
+#[cfg(not(feature = "kernel_test"))]
+unsafe fn sys_install_grub(_disk_id: u32) -> i64 {
+    unsafe { crate::kernel::klog::klog_write(3, 5, core::ptr::null(), core::ptr::null(), 0, b"GRUB install not implemented - install manually\0".as_ptr() as *const i8); }
     SyscallError::E_NOSYS.as_i64()
 }
 
@@ -381,8 +508,12 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
 // 进程管理 syscall (补全)
 // ============================================================================
 
-unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, argc: u32) -> i64 {
+unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, mut argc: u32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
+    if argc == 0 && !argv.is_null() {
+        let mut p = argv;
+        while !(*p).is_null() { argc += 1; p = p.add(1); }
+    }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     if pwid == 0 { return SyscallError::E_AUTH_NOTFOUND.as_i64(); }
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 3, 0x01) {
@@ -392,8 +523,12 @@ unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, argc: u32) ->
     if pid == 0 { SyscallError::E_BUSY.as_i64() } else { pid as i64 }
 }
 
-unsafe fn sys_proc_exec(path: *const i8, argv: *const *const u8, argc: u32) -> i64 {
+unsafe fn sys_proc_exec(path: *const i8, argv: *const *const u8, mut argc: u32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
+    if argc == 0 && !argv.is_null() {
+        let mut p = argv;
+        while !(*p).is_null() { argc += 1; p = p.add(1); }
+    }
     let result = crate::kernel::proc::ffi::proc_exec_replace(path, argv, argc);
     if result < 0 { SyscallError::E_NOTFOUND.as_i64() } else { 0 }
 }
@@ -616,14 +751,6 @@ unsafe fn sys_unmount(target: *const i8) -> i64 {
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 0x01) {
         return SyscallError::E_AUTH_CAP.as_i64();
     }
-    SyscallError::E_NOSYS.as_i64()
-}
-
-unsafe fn sys_install_grub(_disk_id: u32) -> i64 {
-    SyscallError::E_NOSYS.as_i64()
-}
-
-unsafe fn sys_disk_partition(_disk_id: u32) -> i64 {
     SyscallError::E_NOSYS.as_i64()
 }
 

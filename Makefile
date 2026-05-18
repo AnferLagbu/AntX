@@ -135,22 +135,6 @@ build/lib/string.o: src/kernel/lib/string.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/pci.o: src/driver/pci.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/keyboard.o: src/driver/keyboard.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/serial.o: src/driver/serial.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/ata.o: src/driver/ata.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/%.o: src/kernel/%.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -171,51 +155,12 @@ build/switch.o: src/kernel/proc/switch.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
-build/ipc.o: src/ipc/ipc.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/user/embedded/user_init_bin.o: src/user/embedded/user_init_bin.c build/user/init.bin
 	@mkdir -p build/user/embedded
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/ipc.o: src/ipc/ipc.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/shell.o: src/kernel/shell.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/install_guide.o: src/kernel/install_guide.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/string.o: src/lib/string.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/stack_canary.o: src/kernel/stack_canary.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/ipc.o: src/ipc/ipc.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/grub_install.o: src/kernel/grub_install.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/cpu.o: src/kernel/cpu.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/slab.o: src/kernel/slab.c
-	@mkdir -p build
+build/net/%.o: src/kernel/net/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/user/lib/user.o: src/user/lib/user.c

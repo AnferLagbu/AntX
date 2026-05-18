@@ -283,20 +283,25 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn launch_first_user_process() -> ! {
-    crate::klog_boot_info!("[USER] Launching first user process...");
+    crate::klog_boot_info!("[USER] Launching init process...");
 
     extern "C" {
-        static build_user_test_minimal_bin: u8;
-        fn build_user_test_minimal_bin_len() -> u32;
+        static build_user_init_bin: u8;
+        static build_user_init_bin_len: u32;
     }
 
     unsafe {
-        let bin_ptr = &build_user_test_minimal_bin as *const u8;
-        let bin_size = 8792u64;
+        let bin_ptr = &build_user_init_bin as *const u8;
+        let bin_size = *(&raw const build_user_init_bin_len) as u64;
+
+        if bin_size == 0 {
+            crate::klog_err!(Boot, "[USER] init binary is empty");
+            crate::kernel::tests::qemu_exit(false);
+        }
 
         let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
         if pid <= 0 {
-            crate::klog_boot_info!("[USER] Failed to load embedded test ELF, pid={}", pid);
+            crate::klog_err!(Boot, "[USER] Failed to load init ELF, pid={}", pid);
             crate::kernel::tests::qemu_exit(false);
         }
 
@@ -309,7 +314,7 @@ pub extern "C" fn launch_first_user_process() -> ! {
 
         SCHEDULER.add(pid_u32);
 
-        crate::klog_boot_info!("[USER] Entering Ring 3 with pid={}...", pid_u32);
+        crate::klog_boot_info!("[USER] Entering Ring 3 (init pid={})...", pid_u32);
         user_proc_enter_by_pid(pid_u32);
     }
 
@@ -587,15 +592,29 @@ pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8,
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid == 0 { return -1; }
 
+    USER_PROC_MANAGER.destroy_by_pid(current_pid);
+    PROCESS_TABLE.remove(current_pid);
+
     let pwid = scheduler_get_current_pwid();
-    let load_result = user_proc_load_elf(path, pwid);
-    if load_result < 0 { return -1; }
+    let new_pid = user_proc_load_elf(path, pwid);
+    if new_pid < 0 { return -1; }
+
+    let new_pid_u32 = new_pid as u32;
 
     if !argv.is_null() && argc > 0 {
         let envp: *const *const u8 = core::ptr::null();
-        unsafe { user_proc_setup_argv(current_pid, argv, argc, envp, 0); }
+        unsafe { user_proc_setup_argv(new_pid_u32, argv, argc, envp, 0); }
     }
 
+    if let Some(proc) = USER_PROC_MANAGER.get(new_pid_u32) {
+        unsafe {
+            C_CURRENT_PROCESS.pid = (*proc).pid as u64;
+            C_CURRENT_PROCESS.pwid = (*proc).pwid.load(Ordering::SeqCst);
+            C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
+        }
+    }
+
+    user_proc_enter_by_pid(new_pid_u32);
     0
 }
 

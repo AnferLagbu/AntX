@@ -2,15 +2,15 @@ use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
 use crate::kernel::driver::framework::{
     DriverError, DeviceType, DeviceInfo, allocate_device_id, Result,
 };
-use crate::kernel::driver::keyboard::{
+use crate::kernel::driver::input::keyboard::{
     SCANCODE_TABLE, SHIFT_TABLE, get_special_key, SpecialKey,
     ModifierState, KeyboardBuffer, KeyboardDriver, KB_LED_CAPS_LOCK, KB_LED_NUM_LOCK,
 };
-use crate::kernel::driver::serial::{
+use crate::kernel::driver::char::serial::{
     COM1_BASE, COM2_BASE, MAX_COM_PORTS, SerialConfig, BaudRate, DataBits,
     StopBits, ParityMode, SerialPort, RingBuffer, SERIAL_BUFFER_SIZE,
 };
-use crate::kernel::driver::ata::{
+use crate::kernel::driver::storage::ata::{
     ATA_PRIMARY_IO, ATA_SECONDARY_IO, WORDS_PER_SECTOR, MAX_ATA_DEVICES,
     AtaDevice, AtaController, get_io_base, get_ctrl_base, ATA_PRIMARY_CTRL, ATA_SECONDARY_CTRL,
 };
