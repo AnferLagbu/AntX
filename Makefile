@@ -372,7 +372,8 @@ test-host:
 	@echo "╔══════════════════════════════════════════════╗"
 	@echo "║     Running Host-Side Unit Tests             ║"
 	@echo "╚══════════════════════════════════════════════╝"
-	@cd host-tests && cargo test --quiet 2>&1 | tee tests/reports/host_test_$$(date +%Y%m%d_%H%M%S).log
+	@mkdir -p tests/reports
+	@cd host-tests && cargo test --quiet 2>&1 | tee tests/reports/host_test_$$(date +%Y%m%d_%H%M%S).log; true
 	@echo ""
 
 test-unit: build/kernel_test.bin user

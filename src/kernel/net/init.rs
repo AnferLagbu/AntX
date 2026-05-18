@@ -119,93 +119,63 @@ fn set_failed() {
 pub extern "C" fn qx_net_init() {
     unsafe {
         klog_init_msg("--- Network Subsystem Init ---\0".as_ptr() as *const i8);
-        
-        klog_net("Step1: transition state to LwipReady\0".as_ptr() as *const i8);
-        
-        // Step 1: 初始化 lwIP
+
         if transition_state(InitState::Uninitialized, InitState::LwipReady).is_err() {
-            // 可能已经初始化过或处于其他状态
             let current = G_INIT_STATE.load(Ordering::Acquire);
             if current == InitState::FullyInitialized as u8 {
                 klog_net("Network already initialized\0".as_ptr() as *const i8);
                 return;
             } else if current == InitState::Failed as u8 {
                 klog_net_err("Previous initialization failed, retrying...\0".as_ptr() as *const i8);
-                // 允许重试
                 G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
             } else {
                 klog_net_err("Invalid init state, aborting\0".as_ptr() as *const i8);
                 return;
             }
-            
-            // 重试状态转换
             if transition_state(InitState::Uninitialized, InitState::LwipReady).is_err() {
                 return;
             }
         }
-        
-        // 执行 lwIP 初始化
-        klog_net("Calling lwip_init...\0".as_ptr() as *const i8);
-        lwip_init();
-        klog_net("lwIP core initialized\0".as_ptr() as *const i8);
-        
-        // Step 2: 初始化 OS 抽象层
+
+        klog_net("Step1: hardware probe\0".as_ptr() as *const i8);
+        let probe_result = e1000_probe();
+
+        if probe_result != 0 {
+            let _ = transition_state(InitState::LwipReady, InitState::FullyInitialized);
+            klog_net("No NIC found, running without network (expected in VMs)\0".as_ptr() as *const i8);
+            klog_init_msg("--- Network Subsystem Ready (No Network) ---\0".as_ptr() as *const i8);
+            return;
+        }
+
+        klog_net("Step2: init OS abstraction layer\0".as_ptr() as *const i8);
         if transition_state(InitState::LwipReady, InitState::SysArchReady).is_err() {
             set_failed();
-            klog_net_err("Failed to transition to SysArchReady state\0".as_ptr() as *const i8);
+            klog_net_err("Failed to transition to SysArchReady\0".as_ptr() as *const i8);
             return;
         }
-        
-        // 初始化 OS 抽象层 (直接调用 types 模块的 sys_init)
         crate::kernel::net::types::sys_init();
         klog_net("sys_arch ready\0".as_ptr() as *const i8);
-        
-        // Step 3: 探测网卡硬件
+
+        klog_net("Step3: init lwIP core\0".as_ptr() as *const i8);
         if transition_state(InitState::SysArchReady, InitState::HardwareProbed).is_err() {
             set_failed();
-            klog_net_err("Failed to transition to HardwareProbed state\0".as_ptr() as *const i8);
+            klog_net_err("Failed to transition to HardwareProbed\0".as_ptr() as *const i8);
             return;
         }
-        
-        let probe_result = e1000_probe();
-        
-        if probe_result == 0 {
-            klog_net("E1000 detected, registering netif\0".as_ptr() as *const i8);
-            
-            // Step 4: 注册网络接口
-            // 注意: 这里调用 Rust 版本的 qx_netif_register_e1000
-            extern "C" {
-                fn qx_netif_register_e1000() -> i32;
-            }
-            
-            let register_result = qx_netif_register_e1000();
-            
-            if register_result == 0 {
-                // 成功完成所有初始化
-                let _ = transition_state(
-                    InitState::HardwareProbed,
-                    InitState::FullyInitialized,
-                );
-                
-                klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
-            } else {
-                set_failed();
-                klog_net_err("Failed to register E1000 netif\0".as_ptr() as *const i8);
-                // 注意: 不返回错误, 系统可以无网络运行
-            }
+
+        lwip_init();
+        klog_net("lwIP core initialized\0".as_ptr() as *const i8);
+
+        klog_net("E1000 detected, registering netif\0".as_ptr() as *const i8);
+        extern "C" { fn qx_netif_register_e1000() -> i32; }
+        let register_result = qx_netif_register_e1000();
+
+        if register_result == 0 {
+            let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
+            klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
         } else {
-            // 无网卡 (在虚拟机中是正常的)
-            klog_net(
-                "No NIC found, running without network (expected in VMs)\0".as_ptr() as *const i8,
-            );
-            
-            // 标记为完全初始化 (即使没有网络)
-            let _ = transition_state(
-                InitState::HardwareProbed,
-                InitState::FullyInitialized,
-            );
-            
-            klog_init_msg("--- Network Subsystem Ready (No Network) ---\0".as_ptr() as *const i8);
+            set_failed();
+            klog_net_err("Failed to register E1000 netif\0".as_ptr() as *const i8);
         }
     }
 }
