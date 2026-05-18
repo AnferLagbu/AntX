@@ -117,7 +117,9 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         #[cfg(not(feature = "kernel_test"))]
         SYS_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32, a1), b"disk_partition\0"),
         #[cfg(not(feature = "kernel_test"))]
-        SYS_DISK_INSTALL_GRUB => dispatch!(sys_install_grub(a0 as u32), b"disk_install_grub\0"),
+        SYS_DISK_INSTALL_GRUB => dispatch!(sys_boot_install(a0 as u32), b"boot_install\0"),
+        #[cfg(not(feature = "kernel_test"))]
+        SYS_FAT_FORMAT => dispatch!(sys_fat_format(a0 as u32), b"fat_format\0"),
 
         SYS_MEM_BRK      => dispatch!(sys_mem_brk(a0), b"mem_brk\0"),
         SYS_MEM_MAP      => dispatch!(sys_mem_map(a0, a1, a2), b"mem_map\0"),
@@ -447,14 +449,24 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
     if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
 
+    let hvfs_start_lba: u32 = 18432;
     let mut sector_buf = [0u8; 512];
     sector_buf[0] = 0x48; sector_buf[1] = 0x56; sector_buf[2] = 0x46; sector_buf[3] = 0x53;
     sector_buf[8] = 0x02; sector_buf[9] = 0x00;
 
-    let write_result = ata_write_sector(disk_id as u8, 0, sector_buf.as_ptr());
+    let write_result = ata_write_sector(disk_id as u8, hvfs_start_lba, sector_buf.as_ptr());
     if write_result < 0 { return SyscallError::E_IO.as_i64(); }
     0
 }
+
+fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
+    buf[offset] = val as u8;
+    buf[offset+1] = (val >> 8) as u8;
+    buf[offset+2] = (val >> 16) as u8;
+    buf[offset+3] = (val >> 24) as u8;
+}
+
+const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
@@ -466,9 +478,12 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
     if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
 
-    let mut mbr = [0u8; 512];
-    mbr[510] = 0x55;
-    mbr[511] = 0xAA;
+    let hvfs_start = BOOT_PART_SECTORS;
+    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
+        total_sectors - hvfs_start as u64
+    } else {
+        0xFFFFFFFFu64
+    };
 
     let max_lba = if total_sectors > 0 && total_sectors <= 0xFFFFFFFF {
         total_sectors as u32 - 1
@@ -476,22 +491,21 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
         0xFFFFFFFFu32
     };
 
-    mbr[446] = 0x80;
-    mbr[447] = 0xFE;
-    mbr[448] = 0xFF;
-    mbr[449] = 0xFF;
-    mbr[450] = 0x83;
-    mbr[451] = 0xFE;
-    mbr[452] = 0xFF;
-    mbr[453] = 0xFF;
-    mbr[454] = 0x01;
-    mbr[455] = 0x00;
-    mbr[456] = 0x00;
-    mbr[457] = 0x00;
-    mbr[458] = (max_lba & 0xFF) as u8;
-    mbr[459] = ((max_lba >> 8) & 0xFF) as u8;
-    mbr[460] = ((max_lba >> 16) & 0xFF) as u8;
-    mbr[461] = ((max_lba >> 24) & 0xFF) as u8;
+    let mut mbr = [0u8; 512];
+
+    write_le32(&mut mbr, 446, 0x00000800);
+    write_le32(&mut mbr, 450, 0x06FEFFFF);
+    write_le32(&mut mbr, 454, 64u32);
+    write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
+
+    write_le32(&mut mbr, 462, (hvfs_start & 0xFFFFFFFF) as u32);
+    write_le32(&mut mbr, 466, 0x83FEFFFF);
+    let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
+    write_le32(&mut mbr, 470, hvfs_start);
+    write_le32(&mut mbr, 474, hvfs_len);
+
+    mbr[510] = 0x55;
+    mbr[511] = 0xAA;
 
     let write_result = ata_write_sector(disk_id as u8, 0, mbr.as_ptr());
     if write_result < 0 { return SyscallError::E_IO.as_i64(); }
@@ -499,9 +513,169 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-unsafe fn sys_install_grub(_disk_id: u32) -> i64 {
-    unsafe { crate::kernel::klog::klog_write(3, 5, core::ptr::null(), core::ptr::null(), 0, b"GRUB install not implemented - install manually\0".as_ptr() as *const i8); }
-    SyscallError::E_NOSYS.as_i64()
+unsafe fn sys_fat_format(disk_id: u32) -> i64 {
+    if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 4, 0) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
+    if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
+
+    let fat_start_lba: u32 = 2048;
+    let total_sectors: u16 = BOOT_PART_SECTIONS as u16 - 64;
+    let sectors_per_cluster: u8 = 8;
+    let reserved_sectors: u16 = 1;
+    let num_fats: u8 = 2;
+    let root_entries: u16 = 512;
+    let sectors_per_fat: u16 = ((total_sectors as u32 - 1 - 32) / (sectors_per_cluster as u32 * 256 + 2) + 1) as u16;
+
+    let mut bpb = [0u8; 512];
+    bpb[0] = 0xEB; bpb[1] = 0x3C; bpb[2] = 0x90;
+    bpb[3] = b'A'; bpb[4] = b'N'; bpb[5] = b'T'; bpb[6] = b'X';
+    bpb[7] = b'B'; bpb[8] = b'O'; bpb[9] = b'O'; bpb[10] = b'T';
+    write_le16(&mut bpb, 11, 512);
+    bpb[13] = sectors_per_cluster;
+    write_le16(&mut bpb, 14, reserved_sectors);
+    bpb[16] = num_fats;
+    write_le16(&mut bpb, 17, root_entries);
+    write_le16(&mut bpb, 19, total_sectors);
+    bpb[21] = 0xF8;
+    write_le16(&mut bpb, 22, sectors_per_fat);
+    bpb[36] = 0x80;
+    bpb[38] = 0x29;
+    bpb[39] = 0x11; bpb[40] = 0x22; bpb[41] = 0x33; bpb[42] = 0x44;
+    bpb[43] = b'A'; bpb[44] = b'N'; bpb[45] = b'T'; bpb[46] = b'X';
+    bpb[47] = b'B'; bpb[48] = b'O'; bpb[49] = b'O'; bpb[50] = b'T';
+    bpb[51] = b' '; bpb[52] = b' '; bpb[53] = b' ';
+    bpb[510] = 0x55; bpb[511] = 0xAA;
+
+    if ata_write_sector(disk_id as u8, fat_start_lba, bpb.as_ptr()) < 0 {
+        return SyscallError::E_IO.as_i64();
+    }
+
+    let fat_begin = fat_start_lba + reserved_sectors as u32;
+    let mut fat_sector = [0u8; 512];
+    fat_sector[0] = 0xF8; fat_sector[1] = 0xFF; fat_sector[2] = 0xFF; fat_sector[3] = 0xFF;
+    for i in 0..num_fats {
+        let lba = fat_begin + i as u32 * sectors_per_fat as u32;
+        if ata_write_sector(disk_id as u8, lba, fat_sector.as_ptr()) < 0 {
+            return SyscallError::E_IO.as_i64();
+        }
+        let zero = [0u8; 512];
+        for s in 1..sectors_per_fat as u32 {
+            if ata_write_sector(disk_id as u8, lba + s, zero.as_ptr()) < 0 {
+                return SyscallError::E_IO.as_i64();
+            }
+        }
+    }
+
+    let root_dir_lba = fat_begin + num_fats as u32 * sectors_per_fat as u32;
+    let root_dir_sectors = (root_entries as u32 * 32 + 511) / 512;
+    let zero = [0u8; 512];
+    for s in 0..root_dir_sectors {
+        if ata_write_sector(disk_id as u8, root_dir_lba + s, zero.as_ptr()) < 0 {
+            return SyscallError::E_IO.as_i64();
+        }
+    }
+    0
+}
+
+fn write_le16(buf: &mut [u8], offset: usize, val: u16) {
+    buf[offset] = val as u8;
+    buf[offset+1] = (val >> 8) as u8;
+}
+
+const BOOT_PART_SECTIONS: u32 = 16384;
+
+#[cfg(not(feature = "kernel_test"))]
+unsafe fn sys_boot_install(disk_id: u32) -> i64 {
+    if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 4, 0) {
+        return SyscallError::E_AUTH_CAP.as_i64();
+    }
+    extern "C" {
+        fn ata_disk_present(drive: u8) -> i32;
+        fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
+        fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
+        static stage1_bootblk: u8;
+    }
+
+    if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
+
+    let mut mbr = [0u8; 512];
+    if ata_read_sector(disk_id as u8, 0, mbr.as_mut_ptr()) < 0 {
+        return SyscallError::E_IO.as_i64();
+    }
+
+    let stage1_ptr = &stage1_bootblk as *const u8;
+    core::ptr::copy_nonoverlapping(stage1_ptr, mbr.as_mut_ptr(), 440);
+
+    let total_sectors = {
+        let mut lo: u32 = 0;
+        let mut hi: u32 = 0x1FFFF;
+        let mut probe = [0u8; 512];
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if ata_read_sector(disk_id as u8, mid, probe.as_mut_ptr()) >= 0 { lo = mid + 1; }
+            else { hi = mid; }
+        }
+        lo as u64
+    };
+
+    let hvfs_start = BOOT_PART_SECTIONS;
+    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
+        total_sectors - hvfs_start as u64
+    } else { 0xFFFFFFFFu64 };
+
+    write_le32(&mut mbr, 446, 0x00000800);
+    write_le32(&mut mbr, 450, 0x06FEFFFF);
+    write_le32(&mut mbr, 454, 64u32);
+    write_le32(&mut mbr, 458, BOOT_PART_SECTIONS - 64);
+
+    write_le32(&mut mbr, 462, (hvfs_start & 0xFFFFFFFF) as u32);
+    write_le32(&mut mbr, 466, 0x83FEFFFF);
+    write_le32(&mut mbr, 470, hvfs_start);
+    let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
+    write_le32(&mut mbr, 474, hvfs_len);
+
+    mbr[510] = 0x55; mbr[511] = 0xAA;
+
+    if ata_write_sector(disk_id as u8, 0, mbr.as_ptr()) < 0 {
+        return SyscallError::E_IO.as_i64();
+    }
+
+    extern "C" {
+        static build_user_init_bin: u8;
+        static build_user_init_bin_len: u32;
+    }
+
+    let kernel_ptr = &build_user_init_bin as *const u8;
+    let kernel_len = *(&raw const build_user_init_bin_len) as usize;
+
+    let mut buf = [0u8; 512];
+    let total_kernel_sectors = ((kernel_len + 511) / 512) as u32;
+    let max_sectors = 2047u32;
+    let copy_sectors = if total_kernel_sectors > max_sectors { max_sectors } else { total_kernel_sectors };
+
+    for s in 0..copy_sectors {
+        let offset = s as usize * 512;
+        let remaining = kernel_len.saturating_sub(offset);
+        if remaining == 0 { break; }
+        let n = if remaining < 512 { remaining } else { 512 };
+        buf = [0u8; 512];
+        core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n);
+        if ata_write_sector(disk_id as u8, 1 + s, buf.as_ptr()) < 0 {
+            return SyscallError::E_IO.as_i64();
+        }
+    }
+
+    let kernel_sector_count = if copy_sectors == 0 { 1u32 } else { copy_sectors };
+    let mut mbr_readback = [0u8; 512];
+    if ata_read_sector(disk_id as u8, 0, mbr_readback.as_mut_ptr()) >= 0 {
+    }
+    0
 }
 
 // ============================================================================

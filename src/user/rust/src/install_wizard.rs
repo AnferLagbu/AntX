@@ -157,38 +157,47 @@ fn select_disk() -> i32 {
 
 fn format_disk() -> i32 {
     println("");
-    println("--- Step 2: Disk Formatting ---");
+    println("--- Step 2: Disk Partitioning & Formatting ---");
     println("");
 
     let sel = unsafe { SELECTED_DISK } as usize;
     let info = unsafe { &DISK_LIST[sel] };
 
-    println("Creating MBR partition table...");
+    println("Creating partition table (FAT16 boot + HvFS)...");
     let r = syscall::disk_partition(info.disk_id, info.sectors as u64);
     if r != 0 {
         print("  [WARN] Partition table creation failed (error: ");
         print_dec(r); println(")");
     } else {
-        println("  [OK] Partition table created");
+        println("  [OK] Partitions created");
     }
 
-    println("Installing GRUB bootloader...");
-    let r = syscall::disk_install_grub(info.disk_id);
+    println("Formatting boot partition (FAT16)...");
+    let r = syscall::fat_format(info.disk_id);
     if r != 0 {
-        print("  [WARN] GRUB installation failed (error: ");
+        print("  [WARN] FAT16 format failed (error: ");
         print_dec(r); println(")");
     } else {
-        println("  [OK] GRUB installed to MBR");
+        println("  [OK] Boot partition formatted");
     }
 
-    println("Formatting system partition with HvFS...");
+    println("Formatting system partition (HvFS)...");
     let r = syscall::disk_format(info.disk_id);
     if r != 0 {
-        print("  [ERROR] Format failed (error: ");
+        print("  [ERROR] HvFS format failed (error: ");
         print_dec(r as i64); println(")");
         return -1;
     }
-    println("  [OK] Disk formatted successfully");
+    println("  [OK] System partition formatted");
+
+    println("Installing bootloader...");
+    let r = syscall::boot_install(info.disk_id);
+    if r != 0 {
+        print("  [ERROR] Bootloader installation failed (error: ");
+        print_dec(r); println(")");
+        return -1;
+    }
+    println("  [OK] Bootloader installed (Stage1 + kernel)");
     0
 }
 

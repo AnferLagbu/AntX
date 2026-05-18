@@ -50,8 +50,11 @@ USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 
 ASFLAGS = -f elf64
 
+STAGE1_BIN = build/stage1.bin
+
 KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
               build/user/embedded/user_init_bin.o \
+              build/boot/stage1_embed.o \
               build/lib/string.o \
               $(NET_OBJS)
 
@@ -138,6 +141,18 @@ build/lib/string.o: src/kernel/lib/string.c
 build/%.o: src/kernel/%.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
+
+build/boot/stage1_embed.c: $(STAGE1_BIN)
+	@mkdir -p build/boot
+	@python3 scripts/gen_embed.py $< $@ stage1_bootblk
+
+build/boot/stage1_embed.o: build/boot/stage1_embed.c
+	@mkdir -p build/boot
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(STAGE1_BIN): src/kernel/boot/stage1.asm
+	@mkdir -p build
+	nasm -f bin $< -o $@
 
 build/%.o: src/kernel/%.asm
 	@mkdir -p build

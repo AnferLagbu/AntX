@@ -50,6 +50,7 @@ pub const SYS_DISK_INFO: u64 = 114;
 pub const SYS_DISK_FORMAT: u64 = 115;
 pub const SYS_DISK_PARTITION: u64 = 116;
 pub const SYS_DISK_INSTALL_GRUB: u64 = 117;
+pub const SYS_FAT_FORMAT: u64 = 118;
 
 #[repr(C)]
 pub struct UserDirent {
@@ -211,6 +212,10 @@ pub fn disk_partition(disk_id: u32, sectors: u64) -> i64 {
     unsafe { sys2(SYS_DISK_PARTITION, disk_id as u64, sectors) }
 }
 
-pub fn disk_install_grub(disk_id: u32) -> i64 {
+pub fn boot_install(disk_id: u32) -> i64 {
     unsafe { sys1(SYS_DISK_INSTALL_GRUB, disk_id as u64) }
+}
+
+pub fn fat_format(disk_id: u32) -> i64 {
+    unsafe { sys1(SYS_FAT_FORMAT, disk_id as u64) as i64 }
 }

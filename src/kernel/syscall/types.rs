@@ -95,6 +95,8 @@ pub const SYS_DISK_INFO: u64 = 114;
 pub const SYS_DISK_FORMAT: u64 = 115;
 pub const SYS_DISK_PARTITION: u64 = 116;
 pub const SYS_DISK_INSTALL_GRUB: u64 = 117;
+pub const SYS_BOOT_INSTALL: u64 = 117;
+pub const SYS_FAT_FORMAT: u64 = 118;
 
 // ==================== 设备 I/O syscall ====================
 pub const SYS_DEV_IOCTL: u64 = 120;
