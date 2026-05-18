@@ -53,13 +53,10 @@ ASFLAGS = -f elf64
 STAGE1_BIN = build/stage1.bin
 
 KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-              build/user/embedded/user_init_bin.o \
-              build/boot/stage1_embed.o \
               build/lib/string.o \
               $(NET_OBJS)
 
 KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-              build/user/embedded/user_init_bin.o \
               build/kernel_test.o build/test_main.o build/test_hvfs.o \
               build/test_hw_stubs.o
 
@@ -143,14 +140,6 @@ build/%.o: src/kernel/%.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/boot/stage1_embed.c: $(STAGE1_BIN)
-	@mkdir -p build/boot
-	@python3 scripts/gen_embed.py $< $@ stage1_bootblk
-
-build/boot/stage1_embed.o: build/boot/stage1_embed.c
-	@mkdir -p build/boot
-	$(CC) $(CFLAGS) -c $< -o $@
-
 $(STAGE1_BIN): src/kernel/boot/stage1.asm
 	@mkdir -p build
 	nasm -f bin $< -o $@
@@ -171,21 +160,13 @@ build/switch.o: src/kernel/proc/switch.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
-build/user/embedded/user_init_bin.o: src/user/embedded/user_init_bin.c build/user/init.bin
-	@mkdir -p build/user/embedded
-	$(CC) $(CFLAGS) -c $< -o $@
-
 build/net/%.o: src/kernel/net/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-src/user/embedded/user_init_bin.c: build/user/init.bin
-	@python3 scripts/gen_embed.py $< $@ build_user_init_bin
-
 build/user/init.bin: $(USER_INIT_ELF)
 	@mkdir -p build/user
 	@cp $< $@
-	@python3 scripts/gen_embed.py $@ src/user/embedded/user_init_bin.c build_user_init_bin
 
 build/user/axsh.bin: $(USER_SHELL_ELF)
 	@mkdir -p build/user

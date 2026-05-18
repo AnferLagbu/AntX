@@ -597,8 +597,9 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         fn ata_disk_present(drive: u8) -> i32;
         fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        static stage1_bootblk: u8;
     }
+
+    let stage1 = include_bytes!("../../../build/stage1.bin");
 
     if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
 
@@ -607,7 +608,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         return SyscallError::E_IO.as_i64();
     }
 
-    let stage1_ptr = &stage1_bootblk as *const u8;
+    let stage1_ptr = stage1.as_ptr();
     core::ptr::copy_nonoverlapping(stage1_ptr, mbr.as_mut_ptr(), 440);
 
     let total_sectors = {
@@ -644,13 +645,10 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         return SyscallError::E_IO.as_i64();
     }
 
-    extern "C" {
-        static build_user_init_bin: u8;
-        static build_user_init_bin_len: u32;
-    }
+    let kernel = include_bytes!("../../../build/user/init.bin");
 
-    let kernel_ptr = &build_user_init_bin as *const u8;
-    let kernel_len = *(&raw const build_user_init_bin_len) as usize;
+    let kernel_ptr = kernel.as_ptr();
+    let kernel_len = kernel.len();
 
     let mut buf = [0u8; 512];
     let total_kernel_sectors = ((kernel_len + 511) / 512) as u32;

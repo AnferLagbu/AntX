@@ -285,14 +285,11 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
 pub extern "C" fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
-    extern "C" {
-        static build_user_init_bin: u8;
-        static build_user_init_bin_len: u32;
-    }
+    let bin = include_bytes!("../../../build/user/init.bin");
 
     unsafe {
-        let bin_ptr = &build_user_init_bin as *const u8;
-        let bin_size = *(&raw const build_user_init_bin_len) as u64;
+        let bin_ptr = bin.as_ptr();
+        let bin_size = bin.len() as u64;
 
         if bin_size == 0 {
             crate::klog_err!(Boot, "[USER] init binary is empty");
