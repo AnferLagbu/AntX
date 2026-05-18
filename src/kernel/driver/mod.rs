@@ -1,21 +1,36 @@
 //! 设备驱动子系统 (Driver Subsystem)
 //!
-//! 提供完整的硬件驱动支持：
+//! 提供完整的硬件驱动支持，按功能模块化组织：
 //! - **统一框架**: Driver Trait 和设备管理
-//! - **ATA 磁盘**: ATA/IDE 硬盘驱动
-//! - **键盘**: PS/2 键盘驱动
-//! - **串口**: COM 端口驱动 (COM1-COM4)
-//! - **PCI**: PCI 总线枚举和配置
+//! - **总线驱动**: PCI、PCIe等总线支持
+//! - **字符设备**: 串口、VGA等字符设备
+//! - **输入设备**: 键盘、鼠标等输入设备
+//! - **存储设备**: NVMe、AHCI、ATA等存储设备
+//! - **显示设备**: HDMI、DisplayPort等显示接口
+//! - **USB设备**: USB主机控制器和设备
 //!
 //! ## 架构设计
 //!
 //! ```text
 //! Driver Subsystem
 //! ├── framework.rs   # 统一接口和基础设施
-//! ├── ata.rs         # ATA/IDE 磁盘驱动
-//! ├── keyboard.rs    # PS/2 键盘驱动
-//! ├── serial.rs      # 串口驱动
-//! └── pci.rs         # PCI 总线驱动
+//! ├── bus/           # 总线驱动
+//! │   └── pci.rs     # PCI总线驱动
+//! ├── char/          # 字符设备驱动
+//! │   ├── serial.rs  # 串口驱动
+//! │   └── vga.rs     # VGA驱动
+//! ├── input/         # 输入设备驱动
+//! │   └── keyboard.rs # 键盘驱动
+//! ├── storage/       # 存储设备驱动
+//! │   ├── nvme.rs    # NVMe驱动
+//! │   ├── ahci.rs    # AHCI/SATA驱动
+//! │   └── ata.rs     # ATA/IDE驱动
+//! ├── display/       # 显示设备驱动
+//! │   ├── hdmi.rs    # HDMI驱动
+//! │   └── dp.rs      # DisplayPort驱动
+//! └── usb/           # USB子系统
+//!     ├── usb_core.rs # USB核心
+//!     └── xhci.rs    # xHCI控制器
 //! ```
 //!
 //! ## 使用示例
@@ -24,13 +39,13 @@
 //! // 初始化所有驱动
 //! driver::init_all();
 //!
-//! // 使用 ATA 驱动读取磁盘
+//! // 使用存储驱动读取数据
 //! let mut buf = [0u8; 512];
-//! ata::ata_read_sector(0, 0, buf.as_mut_ptr());
+//! storage::ata::ata_read_sector(0, 0, buf.as_mut_ptr());
 //!
 //! // 从键盘读取字符
-//! if keyboard::keyboard_has_char() > 0 {
-//!     let ch = keyboard::keyboard_read_char();
+//! if input::keyboard::keyboard_has_char() > 0 {
+//!     let ch = input::keyboard::keyboard_read_char();
 //!     println!("Key: {}", ch);
 //! }
 //! ```
@@ -42,17 +57,23 @@
 /// 统一驱动框架 (Trait, IO 操作, 错误码)
 pub mod framework;
 
-/// ATA/IDE 磁盘驱动
-pub mod ata;
+/// 总线驱动子系统
+pub mod bus;
 
-/// PS/2 键盘驱动
-pub mod keyboard;
+/// 字符设备驱动子系统
+pub mod char;
 
-/// COM 串口驱动
-pub mod serial;
+/// 输入设备驱动子系统
+pub mod input;
 
-/// PCI 总线驱动
-pub mod pci;
+/// 存储设备驱动子系统
+pub mod storage;
+
+/// 显示设备驱动子系统
+pub mod display;
+
+/// USB 子系统
+pub mod usb;
 
 // ============================================================================
 // 公共 API 导出 (便捷访问)
@@ -67,27 +88,53 @@ pub use framework::{
     Result as DriverResult,
 };
 
-// --- ATA 驱动导出 ---
-pub use ata::{
-    AtaController,
-    AtaDevice,
+// --- 总线驱动导出 ---
+pub use bus::{
+    PciController,
+    PciDevice,
+    PciConfig,
+    PciClass,
 };
 
-// --- 键盘驱动导出 ---
-pub use keyboard::{
-    KeyboardDriver,
-    ModifierState,
-    SpecialKey,
-};
-
-// --- 串口驱动导出 ---
-pub use serial::{
+// --- 字符设备导出 ---
+pub use char::{
     SerialPort,
     SerialConfig,
     BaudRate,
     DataBits,
     StopBits,
     ParityMode,
+    VgaDriver,
+    Color,
+    TextAttribute,
+    VgaChar,
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT,
+};
+
+// --- 输入设备导出 ---
+pub use input::{
+    KeyboardDriver,
+    KeyEvent,
+    KeyCode,
+    KeyState,
+};
+
+// --- 存储设备导出 ---
+pub use storage::{
+    NvmeController,
+    NvmeCommand,
+    NvmeCompletion,
+    AhciController,
+    AhciPort,
+    H2dFis,
+    AtaCommand,
+};
+
+// 为了向后兼容，保留一些直接导入
+pub use storage::ata::{
+    AtaController,
+    AtaDevice,
 };
 
 // ============================================================================
@@ -97,33 +144,38 @@ pub use serial::{
 /// 初始化所有设备驱动
 ///
 /// 按照依赖顺序初始化各个子系统：
-/// 1. PCI 总线 (发现硬件)
-/// 2. ATA 控制器 (磁盘)
-/// 3. PS/2 键盘
-/// 4. COM1 串口 (用于调试输出)
+/// 1. 字符设备 (VGA、串口)
+/// 2. 总线驱动 (PCI)
+/// 3. 存储设备 (NVMe、AHCI、ATA)
+/// 4. 输入设备 (键盘)
+/// 5. 显示设备 (HDMI、DP)
+/// 6. USB设备
 ///
 /// # Returns
 /// * `Ok(())` - 所有驱动初始化成功
 /// * `Err(DriverError)` - 某个驱动初始化失败
 pub fn init_all() -> framework::Result<()> {
-    // 使用 klog 或其他方式输出初始化信息
-    // (在 no_std 环境中无法使用 println!)
-
-    // 1. 初始化 PCI (可选，用于设备发现)
+    // 1. 初始化字符设备 (显示和调试输出)
+    char::char_init()?;
+    
+    // 2. 初始化总线驱动 (设备发现)
     #[cfg(feature = "pci")]
     {
-        let _ = pci::pci_init();
+        let _ = bus::bus_init();
     }
-
-    // 2. 初始化 ATA 控制器
-    ata::ata_init();
-
-    // 3. 初始化键盘
-    keyboard::keyboard_init();
-
-    // 4. 初始化 COM1 (用于内核调试输出)
-    serial::serial_init(0);
-
+    
+    // 3. 初始化存储设备
+    let _ = storage::storage_init();
+    
+    // 4. 初始化输入设备
+    input::input_init()?;
+    
+    // 5. 初始化显示设备
+    let _ = display::display_init();
+    
+    // 6. 初始化USB
+    let _ = usb::usb_init();
+    
     Ok(())
 }
 
@@ -133,18 +185,24 @@ pub fn init_all() -> framework::Result<()> {
 pub fn shutdown_all() -> framework::Result<()> {
     // 关闭顺序与初始化相反
     
-    // 4. 关闭串口
-    // TODO: 实现 serial_shutdown()
+    // 6. 关闭USB
+    // TODO: 实现 usb_shutdown()
     
-    // 3. 关闭键盘
-    // TODO: 实现 keyboard_shutdown()
+    // 5. 关闭显示设备
+    // TODO: 实现 display_shutdown()
     
-    // 2. 关闭 ATA
-    // TODO: 实现 ata_shutdown()
+    // 4. 关闭输入设备
+    // TODO: 实现 input_shutdown()
     
-    // 1. 关闭 PCI
-    // TODO: 实现 pci_shutdown()
-
+    // 3. 关闭存储设备
+    // TODO: 实现 storage_shutdown()
+    
+    // 2. 关闭总线驱动
+    // TODO: 实现 bus_shutdown()
+    
+    // 1. 关闭字符设备
+    // TODO: 实现 char_shutdown()
+    
     Ok(())
 }
 
@@ -158,20 +216,35 @@ pub fn list_devices() -> alloc::string::String {
     let mut info = alloc::string::String::from("=== Detected Devices ===\n\n");
     
     // ATA 设备
-    info.push_str("ATA Devices:\n");
+    info.push_str("Storage Devices:\n");
     unsafe {
-        if let Some(ref controller) = crate::kernel::driver::ata::ATA_CONTROLLER {
+        if let Some(ref controller) = crate::kernel::driver::storage::ata::ATA_CONTROLLER {
             for i in 0..4 {
                 if controller.disk_present(i) {
                     let channel = if i < 2 { "Primary" } else { "Secondary" };
                     let role = if i % 2 == 0 { "Master" } else { "Slave" };
-                    info.push_str(&format!("  [{}] {}-{}\n", i, channel, role));
+                    info.push_str(&format!("  ATA [{}] {}-{}\n", i, channel, role));
                 }
             }
         }
     }
     
-    // 其他设备可以继续添加...
+    // NVMe 设备
+    info.push_str("  NVMe: (scan PCI bus for controllers)\n");
+    
+    // AHCI 设备
+    info.push_str("  AHCI: (scan PCI bus for controllers)\n");
+    
+    info.push_str("\nInput Devices:\n");
+    info.push_str("  Keyboard: PS/2\n");
+    
+    info.push_str("\nDisplay Devices:\n");
+    info.push_str("  VGA: Text Mode (80x25)\n");
+    info.push_str("  HDMI: (detect via HPD)\n");
+    info.push_str("  DisplayPort: (detect via HPD)\n");
+    
+    info.push_str("\nUSB Devices:\n");
+    info.push_str("  Controllers: (scan PCI bus for xHCI/EHCI)\n");
     
     info.push('\n');
     info
@@ -209,13 +282,13 @@ mod tests {
         assert_eq!(DeviceType::Block.to_string(), "Block");
         assert_eq!(DeviceType::Char.to_string(), "Char");
         
-        // ATA
+        // Storage - ATA
         let _controller = AtaController::new();
         
-        // Keyboard
+        // Input - Keyboard
         let _driver = KeyboardDriver::new();
         
-        // Serial
+        // Char - Serial
         assert!(SerialPort::new(0).is_some());
         assert!(SerialPort::new(5).is_none());
     }

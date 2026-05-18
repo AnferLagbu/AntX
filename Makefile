@@ -599,3 +599,97 @@ test-smp: all user build/kernel.flat
 		echo "--- SMP Test Output (last 60 lines) ---"; \
 		tail -60 "$$smp_log"; \
 	fi
+
+# ============================================================================
+# QEMU 调试脚本支持 (QEMU Debug Script Support)
+# ============================================================================
+
+.PHONY: qemu-debug qemu-debug-gdb qemu-headless qemu-network driver-test
+
+# 使用 QEMU 调试脚本启动 (正常模式)
+qemu-debug:
+	@chmod +x scripts/qemu_debug.sh
+	@./scripts/qemu_debug.sh -k build/kernel.flat
+
+# 使用 QEMU 调试脚本启动 (GDB 调试模式)
+qemu-debug-gdb:
+	@chmod +x scripts/qemu_debug.sh
+	@./scripts/qemu_debug.sh -k build/kernel.flat -d
+	@echo ""
+	@echo "╔══════════════════════════════════════════════╗"
+	@echo "║  GDB Debug Session                           ║"
+	@echo "╠══════════════════════════════════════════════╣"
+	@echo "║  In another terminal, run:                   ║"
+	@echo "║  gdb -x .gdbinit.antx                        ║"
+	@echo "╚══════════════════════════════════════════════╝"
+
+# 无头模式 (Headless mode)
+qemu-headless:
+	@chmod +x scripts/qemu_debug.sh
+	@./scripts/qemu_debug.sh -k build/kernel.flat -D none
+
+# 网络模式 (Network mode)
+qemu-network:
+	@chmod +x scripts/qemu_debug.sh
+	@./scripts/qemu_debug.sh -k build/kernel.flat -n
+
+# ============================================================================
+# 驱动测试 (Driver Tests)
+# ============================================================================
+
+driver-test: all build/kernel.flat
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     Hardware Driver Tests                                ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@mkdir -p tests/reports
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	echo "[TEST] Starting driver tests in QEMU..."; \
+	timeout 30 $(QEMU) $(QEMU_FLAGS) \
+		-kernel build/kernel.flat \
+		-serial file:tests/reports/driver_test_$${timestamp}.log \
+		-display none \
+		-d cpu_reset,guest_errors,unimp 2>tests/reports/qemu_driver_stderr_$${timestamp}.log || true
+	@echo ""
+	@driver_log=$$(ls -t tests/reports/driver_test_*.log 2>/dev/null | head -1); \
+	if [ -n "$$driver_log" ]; then \
+		echo "--- Driver Test Output ---"; \
+		cat "$$driver_log"; \
+		echo ""; \
+		echo "--- QEMU Warnings (if any) ---"; \
+		qemu_err=$$(ls -t tests/reports/qemu_driver_stderr_*.log 2>/dev/null | head -1); \
+		if [ -f "$$qemu_err" ] && [ -s "$$qemu_err" ]; then \
+			cat "$$qemu_err"; \
+		else \
+			echo "No warnings."; \
+		fi \
+	fi
+
+# ============================================================================
+# 帮助信息更新 (Updated Help)
+# ============================================================================
+
+.PHONY: help-drivers
+
+help-drivers:
+	@echo ""
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║     Hardware Driver Commands                             ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "  QEMU Debug Commands:"
+	@echo "    make qemu-debug        - Start QEMU with VGA display"
+	@echo "    make qemu-debug-gdb    - Start QEMU in GDB debug mode"
+	@echo "    make qemu-headless     - Start QEMU in headless mode"
+	@echo "    make qemu-network      - Start QEMU with network"
+	@echo ""
+	@echo "  Driver Test Commands:"
+	@echo "    make driver-test       - Run hardware driver tests"
+	@echo ""
+	@echo "  Available Drivers:"
+	@echo "    - VGA Text Mode (80x25)"
+	@echo "    - Serial Port (COM1-COM4, UART 16550)"
+	@echo "    - PIT Timer (8254)"
+	@echo "    - PS/2 Keyboard"
+	@echo "    - ATA/IDE Disk"
+	@echo "    - PCI Bus"
+	@echo ""
