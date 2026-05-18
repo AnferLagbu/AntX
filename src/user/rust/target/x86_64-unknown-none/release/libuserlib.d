@@ -1,0 +1,1 @@
+/home/anfer/Code/AntX/src/user/rust/target/x86_64-unknown-none/release/libuserlib.rlib: /home/anfer/Code/AntX/src/user/rust/src/install_wizard.rs /home/anfer/Code/AntX/src/user/rust/src/lib.rs /home/anfer/Code/AntX/src/user/rust/src/syscall.rs

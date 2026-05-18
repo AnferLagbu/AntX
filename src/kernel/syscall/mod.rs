@@ -523,7 +523,7 @@ unsafe fn sys_fat_format(disk_id: u32) -> i64 {
     if ata_disk_present(disk_id as u8) == 0 { return SyscallError::E_NOTFOUND.as_i64(); }
 
     let fat_start_lba: u32 = 2048;
-    let total_sectors: u16 = BOOT_PART_SECTIONS as u16 - 64;
+    let total_sectors: u16 = BOOT_PART_SECTORS as u16 - 64;
     let sectors_per_cluster: u8 = 8;
     let reserved_sectors: u16 = 1;
     let num_fats: u8 = 2;
@@ -586,8 +586,6 @@ fn write_le16(buf: &mut [u8], offset: usize, val: u16) {
     buf[offset+1] = (val >> 8) as u8;
 }
 
-const BOOT_PART_SECTIONS: u32 = 16384;
-
 #[cfg(not(feature = "kernel_test"))]
 unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
@@ -624,7 +622,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         lo as u64
     };
 
-    let hvfs_start = BOOT_PART_SECTIONS;
+    let hvfs_start = BOOT_PART_SECTORS;
     let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
         total_sectors - hvfs_start as u64
     } else { 0xFFFFFFFFu64 };
@@ -632,7 +630,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     write_le32(&mut mbr, 446, 0x00000800);
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
-    write_le32(&mut mbr, 458, BOOT_PART_SECTIONS - 64);
+    write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
 
     write_le32(&mut mbr, 462, (hvfs_start & 0xFFFFFFFF) as u32);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
