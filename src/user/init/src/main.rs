@@ -1,6 +1,6 @@
 //! AntX Init — 首个用户态进程
 //!
-//! 职责: 检测首次启动 → 运行安装向导 → 挂载文件系统 → 启动 axsh Shell
+//! 检测首次启动 → 运行安装向导 → 挂载文件系统 → 启动 axsh Shell
 
 #![no_std]
 #![no_main]
@@ -12,12 +12,12 @@ const SHELL_PATH: &[u8] = b"/app/sys/axsh\0";
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    print("[init] PANIC: ");
+    userlib::print("[init] PANIC: ");
     if let Some(loc) = info.location() {
-        print("at "); print(loc.file());
-        print(":"); print_dec(loc.line() as i64);
+        userlib::print("at "); userlib::print(loc.file());
+        userlib::print(":"); print_dec(loc.line() as i64);
     }
-    print("\n");
+    userlib::print("\n");
     proc_exit(1);
 }
 

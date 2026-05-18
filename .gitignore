@@ -11,7 +11,7 @@ tmp/
 
 src/rust/target/
 host-tests/target/
-src/user/rust/target/
+src/user/target/
 
 tests/reports/*.json
 

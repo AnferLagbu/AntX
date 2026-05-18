@@ -1,0 +1,15 @@
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+resolver = "2"
+members = ["lib", "init", "axsh", "install"]
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+
+[profile.dev]
+panic = "abort"

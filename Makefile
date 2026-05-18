@@ -41,11 +41,11 @@ RUST_LIB = src/rust/target/x86_64-unknown-none/release/libqueenx.a
 RUST_LIB_TEST = src/rust/target/test-release/x86_64-unknown-none/release/libqueenx.a
 RUST_LIB_CHAOS = src/rust/target/chaos-release/x86_64-unknown-none/release/libqueenx.a
 
-RUST_USER_DIR = src/user/rust
+RUST_USER_DIR = src/user
 RUST_USER_TARGET = $(RUST_USER_DIR)/target/x86_64-unknown-none/release
 
 USER_INIT_ELF = $(RUST_USER_TARGET)/init
-USER_SHELL_ELF = $(RUST_USER_TARGET)/shell
+USER_SHELL_ELF = $(RUST_USER_TARGET)/axsh
 USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 
 ASFLAGS = -f elf64
@@ -114,7 +114,7 @@ user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF)
 
 $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF):
 	@echo "Building Rust user programs..."
-	cd $(RUST_USER_DIR) && cargo build --release
+	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib" cargo build --release
 
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 	@echo "[LINK] Linking kernel..."
