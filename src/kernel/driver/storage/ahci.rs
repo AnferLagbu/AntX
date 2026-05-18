@@ -32,6 +32,7 @@
 
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use core::ptr;
+use alloc::vec::Vec;
 
 // ============================================================================
 // AHCI 常量定义

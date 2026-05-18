@@ -599,7 +599,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+            if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.obj_type = HvObjType::Symlink;
                 obj.size = target.len() as u64;
                 obj.dirty = true;
@@ -612,7 +612,7 @@ impl HvfsData {
             let comp_type = HvCompType::Off;
             
             if let Some(new_bp) = self.spa.allocate(target_bytes.len() as u64, cksum_type, comp_type, txg) {
-                if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+                if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                     obj.bp = new_bp;
                 }
             }
@@ -673,7 +673,7 @@ impl HvfsData {
             let ds = &mut datasets[0];
             
             // 增加链接计数
-            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+            if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.link_count += 1;
                 obj.dirty = true;
             }
@@ -767,7 +767,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+            if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 // 简单实现：将xattr存储在对象的data_hash字段中
                 // 实际实现应该使用ZAP对象存储
                 let name_hash = Self::hash_xattr_name(name);
@@ -853,7 +853,7 @@ impl HvfsData {
         let mut offset = 0;
         for i in 0..4 {
             if obj.data_hash[i] != 0 {
-                let attr_name = format!("user.attr{}\0", i);
+                let attr_name = alloc::format!("user.attr{}\0", i);
                 let name_bytes = attr_name.as_bytes();
                 if offset + name_bytes.len() <= buf.len() {
                     buf[offset..offset+name_bytes.len()].copy_from_slice(name_bytes);
@@ -893,7 +893,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            if let Some(obj) = ds.objset.get_obj_mut(obj_id) {
+            if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 let name_hash = Self::hash_xattr_name(name);
                 if name_hash < 4 {
                     let mut hash = [0u64; 4];

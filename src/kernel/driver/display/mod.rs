@@ -67,7 +67,6 @@ pub use controller::{
 pub fn display_init() -> framework::Result<()> {
     // 1. 初始化显示管理器
     let mut manager = DisplayManager::new();
-    manager.init()?;
     
     // 2. 扫描显示控制器
     // TODO: 扫描PCI总线查找GPU

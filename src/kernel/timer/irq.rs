@@ -54,11 +54,14 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
         }
     }
 
-    // 5. 可选: 触发调度器 tick
-    #[cfg(feature = "scheduler_tick")]
-    {
-        extern "C" { fn scheduler_tick(frame: *mut InterruptFrame); }
-        scheduler_tick(frame);
+    // 5. 触发调度器 tick (主调度器 + 线程调度器)
+    extern "C" {
+        fn scheduler_tick_mlfq();
+        fn scheduler_tick();
+    }
+    unsafe {
+        scheduler_tick_mlfq();
+        scheduler_tick();
     }
 }
 

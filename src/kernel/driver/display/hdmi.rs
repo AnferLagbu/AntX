@@ -19,6 +19,7 @@
 //! # Safety
 //! HDMI驱动涉及MMIO寄存器和I2C通信。
 
+use alloc::vec::Vec;
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 
 // ============================================================================
@@ -128,7 +129,7 @@ pub struct Edid {
     /// 制造周
     pub week: u8,
     /// 制造年
-    pub year: u8,
+    pub year: u16,
     /// EDID版本
     pub version: u8,
     /// EDID修订
@@ -198,7 +199,7 @@ impl Edid {
             serial_number: (data[12] as u32) | ((data[13] as u32) << 8)
                 | ((data[14] as u32) << 16) | ((data[15] as u32) << 24),
             week: data[16],
-            year: data[17] + 1990,
+            year: data[17] as u16 + 1990,
             version: data[18],
             revision: data[19],
             basic_display: EdidBasicDisplay {
@@ -272,16 +273,16 @@ impl Default for VideoModeFlags {
 
 /// 标准视频模式列表
 pub const STANDARD_VIDEO_MODES: &[VideoMode] = &[
-    VideoMode { width: 640, height: 480, refresh_rate: 60, pixel_clock_khz: 25175, flags: VideoModeFlags::default() },
-    VideoMode { width: 800, height: 600, refresh_rate: 60, pixel_clock_khz: 40000, flags: VideoModeFlags::default() },
-    VideoMode { width: 1024, height: 768, refresh_rate: 60, pixel_clock_khz: 65000, flags: VideoModeFlags::default() },
-    VideoMode { width: 1280, height: 720, refresh_rate: 60, pixel_clock_khz: 74250, flags: VideoModeFlags::default() },
-    VideoMode { width: 1280, height: 1024, refresh_rate: 60, pixel_clock_khz: 108000, flags: VideoModeFlags::default() },
-    VideoMode { width: 1920, height: 1080, refresh_rate: 60, pixel_clock_khz: 148500, flags: VideoModeFlags::default() },
-    VideoMode { width: 1920, height: 1200, refresh_rate: 60, pixel_clock_khz: 193250, flags: VideoModeFlags::default() },
-    VideoMode { width: 2560, height: 1440, refresh_rate: 60, pixel_clock_khz: 241500, flags: VideoModeFlags::default() },
-    VideoMode { width: 3840, height: 2160, refresh_rate: 30, pixel_clock_khz: 297000, flags: VideoModeFlags::default() },
-    VideoMode { width: 3840, height: 2160, refresh_rate: 60, pixel_clock_khz: 594000, flags: VideoModeFlags::default() },
+    VideoMode { width: 640, height: 480, refresh_rate: 60, pixel_clock_khz: 25175, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 800, height: 600, refresh_rate: 60, pixel_clock_khz: 40000, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 1024, height: 768, refresh_rate: 60, pixel_clock_khz: 65000, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 1280, height: 720, refresh_rate: 60, pixel_clock_khz: 74250, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 1280, height: 1024, refresh_rate: 60, pixel_clock_khz: 108000, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 1920, height: 1080, refresh_rate: 60, pixel_clock_khz: 148500, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 1920, height: 1200, refresh_rate: 60, pixel_clock_khz: 193250, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 2560, height: 1440, refresh_rate: 60, pixel_clock_khz: 241500, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 3840, height: 2160, refresh_rate: 30, pixel_clock_khz: 297000, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
+    VideoMode { width: 3840, height: 2160, refresh_rate: 60, pixel_clock_khz: 594000, flags: VideoModeFlags { interlaced: false, double_scan: false, hsync_positive: false, vsync_positive: false } },
 ];
 
 // ============================================================================

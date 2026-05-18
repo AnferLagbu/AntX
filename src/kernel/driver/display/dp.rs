@@ -19,6 +19,8 @@
 //! # Safety
 //! DisplayPort驱动涉及高速串行通信和链路训练。
 
+use alloc::vec;
+use alloc::vec::Vec;
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 
 // ============================================================================

@@ -155,12 +155,12 @@ pub struct ProcessContext {
     pub r13: u64,
     pub r14: u64,
     pub r15: u64,
-    pub cs: u16,
-    pub ds: u16,
-    pub es: u16,
-    pub fs: u16,
-    pub gs: u16,
-    pub ss: u16,
+    pub cs: u64,
+    pub ds: u64,
+    pub es: u64,
+    pub fs: u64,
+    pub gs: u64,
+    pub ss: u64,
 }
 
 impl ProcessContext {

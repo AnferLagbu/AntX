@@ -89,12 +89,7 @@ pub use framework::{
 };
 
 // --- 总线驱动导出 ---
-pub use bus::{
-    PciController,
-    PciDevice,
-    PciConfig,
-    PciClass,
-};
+pub use bus::pci;
 
 // --- 字符设备导出 ---
 pub use char::{
@@ -113,12 +108,7 @@ pub use char::{
 };
 
 // --- 输入设备导出 ---
-pub use input::{
-    KeyboardDriver,
-    KeyEvent,
-    KeyCode,
-    KeyState,
-};
+pub use input::keyboard;
 
 // --- 存储设备导出 ---
 pub use storage::{

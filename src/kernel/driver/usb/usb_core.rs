@@ -20,6 +20,7 @@
 //! # Safety
 //! USB驱动涉及DMA和硬件寄存器操作，需要特别小心。
 
+use alloc::vec::Vec;
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -433,7 +434,8 @@ impl UsbCore {
     
     /// 枚举所有设备
     pub fn enumerate_devices(&mut self) -> Result<()> {
-        for &controller_ptr in &self.controllers {
+        let controllers: Vec<*mut dyn HostController> = self.controllers.iter().copied().collect();
+        for &controller_ptr in &controllers {
             let controller = unsafe { &mut *controller_ptr };
             
             for port in 0..controller.num_ports() {

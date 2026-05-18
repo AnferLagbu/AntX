@@ -6,6 +6,7 @@
 //! - **热插拔支持**: 显示器动态连接
 //! - **显示输出路由**: 控制输出到哪个显示器
 
+use alloc::vec::Vec;
 use super::super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use super::framebuffer::{Framebuffer, PixelFormat, Color, Rect};
 use super::hdmi::{HdmiController, VideoMode};

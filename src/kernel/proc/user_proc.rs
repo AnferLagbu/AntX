@@ -122,9 +122,44 @@ impl UserProcManager {
     
     pub fn init(&self) {
     }
+
+    fn destroy(&self, proc: *mut UserProcess) {
+        if proc.is_null() { return; }
+        unsafe {
+            let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+            if cr3 != 0 {
+                extern "C" { fn vmm_destroy_page_table(cr3: u64); }
+                vmm_destroy_page_table(cr3);
+            }
+            let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
+            if kstack != 0 {
+                let kstack_base = kstack - USER_KSTACK_SIZE;
+                for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
+                    pmm_free_page((kstack_base + i * PAGE_SIZE) as *mut core::ffi::c_void);
+                }
+            }
+            let ustack = (*proc).user_stack.load(Ordering::SeqCst);
+            if ustack != 0 {
+                let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
+                for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
+                    let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
+                    let phys = vmm_get_physical_in_table(cr3, svirt);
+                    if phys != 0 { pmm_free_page(phys as *mut core::ffi::c_void); }
+                }
+            }
+            let pid = (*proc).pid;
+            self.processes.lock().remove(&pid);
+        }
+    }
     
     pub fn get(&self, pid: u32) -> Option<*mut UserProcess> {
         self.processes.lock().get(&pid).copied()
+    }
+
+    pub fn destroy_by_pid(&self, pid: u32) {
+        if let Some(proc) = self.get(pid) {
+            self.destroy(proc);
+        }
     }
     
     pub fn create(&self, info: &UserProcInfo, pwid: u64) -> Option<*mut UserProcess> {
@@ -210,6 +245,8 @@ impl UserProcManager {
             block_reason: AtomicU32::new(0),
             sched_policy: AtomicU32::new(super::scheduler::SchedPolicy::Normal as u32),
             rt_priority: AtomicU32::new(0),
+            session_id: AtomicU64::new(0),
+            fd_table: super::process::FdTable::new(),
         });
         
         let kernel_proc_ptr = alloc::boxed::Box::into_raw(kernel_proc);
@@ -414,9 +451,17 @@ impl UserProcManager {
             };
             
             let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            
-            for i in 0..(*header).phnum as usize {
+
+            let mut allocated_pages: [u64; 1024] = [0; 1024];
+            let mut page_count: usize = 0;
+
+            let mut phnum = (*header).phnum as usize;
+            if phnum > 256 { self.destroy(proc); return -1; }
+
+            for i in 0..phnum {
+                let phdr_size = core::mem::size_of::<ElfPhdr>() as u64;
                 let phdr_offset = (*header).phoff + (i as u64) * (*header).phentsize as u64;
+                if phdr_offset + phdr_size > elf_size { self.destroy(proc); return -1; }
                 let phdr = (elf_data.add(phdr_offset as usize)) as *const ElfPhdr;
                 
                 if (*phdr).p_type != PT_LOAD { continue; }
@@ -428,7 +473,15 @@ impl UserProcManager {
                 for j in 0..num_pages {
                     let page = pmm_alloc_page();
                     if page.is_null() {
+                        for pi in 0..page_count {
+                            pmm_free_page(allocated_pages[pi] as *mut core::ffi::c_void);
+                        }
+                        self.destroy(proc);
                         return -1;
+                    }
+                    if page_count < 1024 {
+                        allocated_pages[page_count] = page as u64;
+                        page_count += 1;
                     }
                     
                     memset(page as *mut u8, 0, PAGE_SIZE);
@@ -524,6 +577,14 @@ impl UserProcManager {
             Some(current as *mut UserProcess)
         } else {
             None
+        }
+    }
+
+    pub fn set_current(&self, proc: Option<*mut UserProcess>) {
+        if let Some(p) = proc {
+            self.current.store(p as u64, Ordering::SeqCst);
+        } else {
+            self.current.store(0, Ordering::SeqCst);
         }
     }
 }

@@ -27,6 +27,8 @@
 //! # Safety
 //! xHCI驱动涉及复杂的DMA操作和MMIO寄存器访问。
 
+use alloc::vec;
+use alloc::vec::Vec;
 use super::usb_core::{HostController, UsbSpeed, Urb, DeviceState};
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use core::ptr;
@@ -235,7 +237,7 @@ impl Trb {
             16 => TrbType::SetTrDequeuePointer,
             17 => TrbType::ResetDevice,
             18 => TrbType::ForceEvent,
-            19 => TrbType::NegotiateBandwith,
+            19 => TrbType::NegotiateBandwidth,
             20 => TrbType::SetLatencyToleranceValue,
             21 => TrbType::GetPortBandwidth,
             22 => TrbType::ForceHeader,

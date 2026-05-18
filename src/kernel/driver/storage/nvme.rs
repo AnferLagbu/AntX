@@ -30,6 +30,7 @@
 
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use core::ptr;
+use alloc::vec::Vec;
 
 // ============================================================================
 // NVMe 常量定义
@@ -122,11 +123,10 @@ mod csts {
 // NVMe 命令定义
 // ============================================================================
 
-/// NVMe命令操作码
+/// NVMe Admin命令操作码
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum NvmeOpcode {
-    // Admin命令
+pub enum NvmeAdminOpcode {
     DeleteSq = 0x00,
     CreateSq = 0x01,
     GetLogPage = 0x02,
@@ -140,8 +140,12 @@ pub enum NvmeOpcode {
     NsManage = 0x0D,
     NsAttachment = 0x0E,
     KeepAlive = 0x0F,
-    
-    // NVM命令
+}
+
+/// NVMe NVM命令操作码
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum NvmeNvmOpcode {
     Flush = 0x00,
     Write = 0x01,
     Read = 0x02,
@@ -188,7 +192,7 @@ impl NvmeCommand {
     /// 创建读命令
     pub fn read(nsid: u32, slba: u64, nlb: u16, dptr: u64) -> Self {
         Self {
-            opcode: NvmeOpcode::Read as u8,
+            opcode: NvmeNvmOpcode::Read as u8,
             flags: 0,
             cid: 0,
             nsid,
@@ -207,7 +211,7 @@ impl NvmeCommand {
     /// 创建写命令
     pub fn write(nsid: u32, slba: u64, nlb: u16, dptr: u64) -> Self {
         Self {
-            opcode: NvmeOpcode::Write as u8,
+            opcode: NvmeNvmOpcode::Write as u8,
             flags: 0,
             cid: 0,
             nsid,
@@ -226,7 +230,7 @@ impl NvmeCommand {
     /// 创建Identify命令
     pub fn identify(nsid: u32, cns: u8, dptr: u64) -> Self {
         Self {
-            opcode: NvmeOpcode::Identify as u8,
+            opcode: NvmeAdminOpcode::Identify as u8,
             flags: 0,
             cid: 0,
             nsid,
@@ -747,7 +751,7 @@ mod tests {
     #[test]
     fn test_nvme_command_creation() {
         let cmd = NvmeCommand::read(1, 0, 1, 0x1000);
-        assert_eq!(cmd.opcode, NvmeOpcode::Read as u8);
+        assert_eq!(cmd.opcode, NvmeNvmOpcode::Read as u8);
         assert_eq!(cmd.nsid, 1);
     }
     

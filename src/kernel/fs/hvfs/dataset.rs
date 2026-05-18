@@ -159,6 +159,12 @@ impl HvDataset {
         }
     }
 
+    pub fn link(&self, name: &str, obj_id: u64) -> bool {
+        if !self.is_writeable() { return false; }
+        self.dir_zap.insert_u64(name, obj_id);
+        true
+    }
+
     pub fn list_entries(&self) -> Vec<(String, u64)> {
         let keys = self.dir_zap.keys();
         let mut result = Vec::new();

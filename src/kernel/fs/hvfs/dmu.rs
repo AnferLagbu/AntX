@@ -59,6 +59,7 @@ pub struct HvDmuObject {
     pub link_count: u32,
     pub flags: u32,
     pub birth_txg: u64,
+    pub data_hash: [u64; 4],
     pub fill: u64,
     pub dirty: bool,
     pub used: bool,
@@ -81,6 +82,7 @@ impl HvDmuObject {
             link_count: 1,
             flags: 0,
             birth_txg: 0,
+            data_hash: [0; 4],
             fill: 0,
             dirty: false,
             used: true,
@@ -103,6 +105,7 @@ impl HvDmuObject {
             link_count: 2,
             flags: 0,
             birth_txg: 0,
+            data_hash: [0; 4],
             fill: 0,
             dirty: false,
             used: true,
@@ -121,10 +124,11 @@ impl HvDmuObject {
             owner_pwid: 0,
             group_pwid: 0,
             sensitivity: 0,
-            pwid_perm: 0,
+            pwid_perm: 0o644,
             link_count: 1,
             flags: 0,
             birth_txg: 0,
+            data_hash: [0; 4],
             fill: 0,
             dirty: false,
             used: true,
@@ -209,6 +213,10 @@ impl HvObjSet {
     pub fn get_obj(&self, obj_id: u64) -> Option<HvDmuObject> {
         let objs = self.objects.lock();
         objs.iter().find(|o| o.obj_id == obj_id && o.used).cloned()
+    }
+
+    pub fn get_obj_mut(&self, obj_id: u64) -> Option<HvDmuObject> {
+        self.get_obj(obj_id)
     }
 
     pub fn update_obj(&self, obj: &HvDmuObject) -> bool {

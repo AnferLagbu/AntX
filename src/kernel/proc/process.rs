@@ -6,6 +6,28 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use super::types::*;
 use super::scheduler::{SchedPolicy};
 
+const MAX_FDS_PER_PROCESS: usize = 64;
+
+#[derive(Debug)]
+pub struct FdTable {
+    entries: Mutex<[i32; MAX_FDS_PER_PROCESS]>,
+}
+
+impl FdTable {
+    pub const fn new() -> Self {
+        Self {
+            entries: Mutex::new([-1; MAX_FDS_PER_PROCESS]),
+        }
+    }
+
+    pub fn init(&self) {
+        let mut entries = self.entries.lock();
+        for e in entries.iter_mut() {
+            *e = -1;
+        }
+    }
+}
+
 extern "C" {
     fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
     fn vmm_create_user_page_table() -> u64;
@@ -35,7 +57,7 @@ pub fn kernel_stack_write_canary(stack_top: u64) {
 
 pub struct Process {
     pub pid: ProcessId,
-    pub pwid: AtomicU64,        // v4: identity this process runs under
+    pub pwid: AtomicU64,
     pub state: AtomicU32,
     pub priority: AtomicU32,
     pub flags: AtomicU32,
@@ -56,6 +78,9 @@ pub struct Process {
     
     pub sched_policy: AtomicU32,
     pub rt_priority: AtomicU32,
+
+    pub session_id: AtomicU64,
+    pub fd_table: FdTable,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -102,6 +127,8 @@ impl Process {
             block_reason: AtomicU32::new(BlockReason::Unknown as u32),
             sched_policy: AtomicU32::new(SchedPolicy::Normal as u32),
             rt_priority: AtomicU32::new(0),
+            session_id: AtomicU64::new(0),
+            fd_table: FdTable::new(),
         }
     }
     

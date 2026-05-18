@@ -106,6 +106,10 @@ pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid, pwid: u64
 
 #[no_mangle]
 pub extern "C" fn process_exit(exit_code: u32) {
+    let current_pid = SCHEDULER.current().unwrap_or(0);
+    if current_pid != 0 {
+        USER_PROC_MANAGER.destroy_by_pid(current_pid);
+    }
     SCHEDULER.exit(exit_code);
 }
 
@@ -187,31 +191,48 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwid: u64) -> i32 {
     if path.is_null() {
         return -1;
     }
-    
+
+    let mut st: crate::kernel::fs::vfs::types::VfsStat = unsafe { core::mem::zeroed() };
+    let stat_result = unsafe { crate::kernel::fs::vfs::ffi::vfs_stat(path, &mut st, pwid) };
+    if stat_result < 0 {
+        return -1;
+    }
+
+    let file_size = st.size as u64;
+    if file_size == 0 || file_size > ELF_MAX_SIZE as u64 {
+        return -1;
+    }
+
     let fd = unsafe { crate::kernel::fs::vfs::ffi::vfs_open(path, 0, pwid) };
     if fd < 0 {
         return -1;
     }
-    
-    let buffer = unsafe { pmm_alloc_pages((ELF_MAX_SIZE / 4096) as u64) };
+
+    let pages = (file_size + 4096u64 - 1) / 4096u64;
+    let buffer = unsafe { pmm_alloc_pages(pages) };
     if buffer.is_null() {
         unsafe { crate::kernel::fs::vfs::ffi::vfs_close(fd as u32) };
         return -1;
     }
-    
+
     let bytes_read = unsafe {
-        crate::kernel::fs::vfs::ffi::vfs_read(fd as u32, buffer as *mut u8, ELF_MAX_SIZE as u32)
+        crate::kernel::fs::vfs::ffi::vfs_read(fd as u32, buffer as *mut u8, file_size as u32)
     };
-    
+
     unsafe { crate::kernel::fs::vfs::ffi::vfs_close(fd as u32) };
-    
+
     if bytes_read <= 0 {
         extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
-        unsafe { pmm_free_pages(buffer as *mut core::ffi::c_void, (ELF_MAX_SIZE / 4096) as u64) };
+        unsafe { pmm_free_pages(buffer as *mut core::ffi::c_void, pages as u64) };
         return -1;
     }
-    
-    USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwid)
+
+    let result = USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwid);
+
+    extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+    unsafe { pmm_free_pages(buffer as *mut core::ffi::c_void, pages as u64) };
+
+    result
 }
 
 #[no_mangle]
@@ -258,6 +279,41 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
     } else {
         -1
     }
+}
+
+#[no_mangle]
+pub extern "C" fn launch_first_user_process() -> ! {
+    crate::klog_boot_info!("[USER] Launching first user process...");
+
+    extern "C" {
+        static build_user_test_minimal_bin: u8;
+        fn build_user_test_minimal_bin_len() -> u32;
+    }
+
+    unsafe {
+        let bin_ptr = &build_user_test_minimal_bin as *const u8;
+        let bin_size = 8792u64;
+
+        let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
+        if pid <= 0 {
+            crate::klog_boot_info!("[USER] Failed to load embedded test ELF, pid={}", pid);
+            crate::kernel::tests::qemu_exit(false);
+        }
+
+        let pid_u32 = pid as u32;
+
+        C_CURRENT_PROCESS.pid = pid_u32 as u64;
+        C_CURRENT_PROCESS.pwid = 0;
+        C_CURRENT_PROCESS.state = 2;
+        C_CURRENT_PROCESS.parent_pid = 1;
+
+        SCHEDULER.add(pid_u32);
+
+        crate::klog_boot_info!("[USER] Entering Ring 3 with pid={}...", pid_u32);
+        user_proc_enter_by_pid(pid_u32);
+    }
+
+    loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack)); } }
 }
 
 #[no_mangle]
@@ -491,9 +547,28 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
     let child_pid = SCHEDULER.create_process(name_str, if parent_pid != 0 { Some(parent_pid) } else { None }, pwid).unwrap_or(0);
     if child_pid == 0 { return 0; }
 
+    // Create session for the new user process
+    if let Some(sid) = SESSION_MANAGER.create(pwid) {
+        if let Some(proc) = PROCESS_TABLE.get(child_pid) {
+            unsafe { (*proc).session_id.store(sid, Ordering::SeqCst); }
+        }
+    }
+
+    // Initialize per-process fd_table
+    if let Some(proc) = PROCESS_TABLE.get(child_pid) {
+        unsafe { (*proc).fd_table.init(); }
+    }
+
     let load_result = user_proc_load_elf(path, pwid);
     if load_result < 0 {
-        PROCESS_TABLE.remove(child_pid);
+        let pid = child_pid;
+        PROCESS_TABLE.remove(pid);
+        if let Some(sid) = {
+            PROCESS_TABLE.get(pid).map(|p| unsafe { (*p).session_id.load(Ordering::SeqCst) })
+        } {
+            SESSION_MANAGER.destroy(sid);
+        }
+        USER_PROC_MANAGER.destroy_by_pid(pid as u32);
         return 0;
     }
 

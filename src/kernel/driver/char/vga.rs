@@ -298,7 +298,7 @@ impl VgaDriver {
                     self.cursor_y += 1;
                 }
             }
-            b'\b' => {
+            0x08 => {
                 if self.cursor_x > 0 {
                     self.cursor_x -= 1;
                 }
@@ -446,19 +446,19 @@ impl VgaDriver {
         self.attribute = TextAttribute::new(Color::White, Color::Blue);
         
         for col in x..x + width {
-            self.write_at(col, y, b'─');
-            self.write_at(col, y + height - 1, b'─');
+            self.write_at(col, y, 0xC4);
+            self.write_at(col, y + height - 1, 0xC4);
         }
         
         for row in y..y + height {
-            self.write_at(x, row, b'│');
-            self.write_at(x + width - 1, row, b'│');
+            self.write_at(x, row, 0xB3);
+            self.write_at(x + width - 1, row, 0xB3);
         }
         
-        self.write_at(x, y, b'┌');
-        self.write_at(x + width - 1, y, b'┐');
-        self.write_at(x, y + height - 1, b'└');
-        self.write_at(x + width - 1, y + height - 1, b'┘');
+        self.write_at(x, y, 0xDA);
+        self.write_at(x + width - 1, y, 0xBF);
+        self.write_at(x, y + height - 1, 0xC0);
+        self.write_at(x + width - 1, y + height - 1, 0xD9);
         
         self.attribute = old_attr;
     }

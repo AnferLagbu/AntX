@@ -16,23 +16,10 @@
 
 pub mod keyboard;
 
-// 导出常用类型
-pub use keyboard::{
-    KeyboardDriver,
-    KeyEvent,
-    KeyCode,
-    KeyState,
-};
+pub use keyboard::KeyboardDriver;
 
-// ============================================================================
-// 初始化函数
-// ============================================================================
-
-/// 初始化输入设备子系统
 pub fn input_init() -> framework::Result<()> {
-    // 初始化键盘
     keyboard::keyboard_init();
-    
     Ok(())
 }
 

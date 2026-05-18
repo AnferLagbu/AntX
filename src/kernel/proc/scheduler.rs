@@ -6,6 +6,11 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use super::types::*;
 use super::process::{Process, PROCESS_TABLE};
 
+extern "C" {
+    fn process_switch_asm(prev: *mut ProcessContext, next: *const ProcessContext);
+    fn tss_set_kernel_stack(rsp0: u64);
+}
+
 // ============================================================================
 // ✅ 日志宏 (与 pmm.rs 保持一致)
 // ============================================================================
@@ -145,6 +150,10 @@ impl Scheduler {
                 }
             }
         }
+
+        if self.need_reschedule.swap(false, Ordering::SeqCst) {
+            self.schedule();
+        }
     }
     
     pub fn create_process(&self, name: &str, parent: Option<Pid>, pwid: u64) -> Option<Pid> {
@@ -227,11 +236,9 @@ impl Scheduler {
             let mut rt_queue = self.rt_queue.lock();
             
             while !rt_queue.is_empty() {
-                // ✅ P1-9 修复: 防御性检查 - 虽然 is_empty() 已保证非空, 但增加安全性
                 let rt_task = match rt_queue.pop_front() {
                     Some(task) => task,
                     None => {
-                        // 异常情况: 队列在检查后被清空 (并发修改?)
                         klog_sched_warn!("[SCHEDULER] RT queue race condition detected");
                         break;
                     }
@@ -304,71 +311,82 @@ impl Scheduler {
             }
         }
 
-        if current_pid != 0 && current_pid != next_pid.unwrap_or(0) {
-            if let Some(process) = PROCESS_TABLE.get(current_pid) {
-                unsafe {
-                    let state = (*process).get_state();
-                    if state == ProcessState::Running {
-                        let is_rt = self.rt_running.load(Ordering::SeqCst);
-                        
-                        if is_rt {
-                            let mut rt_queue = self.rt_queue.lock();
-                            let rt_priority = (*process).get_rt_priority();
-                            let policy = (*process).get_sched_policy();
-                            
-                            if policy != SchedPolicy::Fifo {
-                                let mut inserted = false;
-                                for i in 0..rt_queue.len() {
-                                    if rt_queue[i].rt_priority < rt_priority {
-                                        rt_queue.insert(i, RtTaskInfo {
-                                            pid: current_pid,
-                                            rt_priority,
-                                            policy,
-                                            time_slice_remaining: RT_TIME_SLICE,
-                                        });
-                                        inserted = true;
-                                        break;
-                                    }
-                                }
-                                if !inserted {
-                                    rt_queue.push_back(RtTaskInfo {
-                                        pid: current_pid,
-                                        rt_priority,
-                                        policy,
-                                        time_slice_remaining: RT_TIME_SLICE,
-                                    });
-                                }
-                            }
-                        } else {
-                            let level = (self.current_level.load(Ordering::SeqCst) as usize + 1).min(MLFQ_LEVELS - 1);
-                            self.queues[level].lock().push_back(current_pid);
-                        }
-                        // ✅ 修复: deprecated → set_state_safe
-                        let _ = (*process).set_state_safe(ProcessState::Ready);
-                    }
-                }
-            }
-        }
+        let next = match next_pid {
+            Some(pid) => pid,
+            None => return None,
+        };
 
-        if let Some(next_pid) = next_pid {
-            self.current.store(next_pid, Ordering::SeqCst);
+        if next == current_pid { return Some(next); }
 
-            if let Some(process_ptr) = PROCESS_TABLE.get(next_pid) {
-                unsafe {
-                    extern "C" {
-                        fn update_current_process_ptr(ptr: u64);
-                    }
-                    update_current_process_ptr(process_ptr as u64);
-
-                    // ✅ 修复: deprecated → set_state_safe
-                    let _ = (*process_ptr).set_state_safe(ProcessState::Running);
-                }
-            }
-
-            Some(next_pid)
+        let prev_ptr = if current_pid != 0 {
+            PROCESS_TABLE.get(current_pid)
         } else {
             None
+        };
+
+        let next_ptr = PROCESS_TABLE.get(next);
+
+        if next_ptr.is_none() { return None; }
+
+        let next_proc = unsafe { &*next_ptr.unwrap() };
+        let _ = next_proc.set_state_safe(ProcessState::Running);
+
+        let next_kernel_stack = next_proc.kernel_stack.load(Ordering::SeqCst);
+        if next_kernel_stack != 0 {
+            unsafe { tss_set_kernel_stack(next_kernel_stack); }
         }
+
+        self.current.store(next, Ordering::SeqCst);
+
+        unsafe { crate::kernel::proc::ffi::update_current_process_ptr(next_proc as *const Process as u64); }
+
+        if let Some(user_proc) = super::user_proc::USER_PROC_MANAGER.get(next) {
+            super::user_proc::USER_PROC_MANAGER.set_current(Some(user_proc));
+        }
+
+        if let Some(ref prev_proc) = prev_ptr {
+            let was_rt = self.rt_running.load(Ordering::SeqCst);
+            let raw = *prev_proc;
+            if was_rt {
+                let rt_priority = unsafe { (&*raw).get_rt_priority() };
+                let policy = unsafe { (&*raw).get_sched_policy() };
+                if policy != SchedPolicy::Fifo {
+                    let mut rt_queue = self.rt_queue.lock();
+                    let mut inserted = false;
+                    for i in 0..rt_queue.len() {
+                        if rt_queue[i].rt_priority < rt_priority {
+                            rt_queue.insert(i, RtTaskInfo { pid: current_pid, rt_priority, policy, time_slice_remaining: RT_TIME_SLICE });
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if !inserted {
+                        rt_queue.push_back(RtTaskInfo { pid: current_pid, rt_priority, policy, time_slice_remaining: RT_TIME_SLICE });
+                    }
+                }
+            } else {
+                let level = (self.current_level.load(Ordering::SeqCst) as usize + 1).min(MLFQ_LEVELS - 1);
+                self.queues[level].lock().push_back(current_pid);
+            }
+            unsafe { let _ = (&*raw).set_state_safe(ProcessState::Ready); }
+        }
+
+        let prev_ctx_ptr = prev_ptr.map_or(
+            core::ptr::null_mut(),
+            |p| unsafe { &raw mut (*p).context } as *mut Mutex<ProcessContext>,
+        );
+
+        let next_ctx_ptr = unsafe { &raw const (*next_proc).context as *const Mutex<ProcessContext> };
+
+        if !prev_ctx_ptr.is_null() {
+            unsafe {
+                let mut prev_ctx = (*prev_ctx_ptr).lock();
+                let next_ctx = (*next_ctx_ptr).lock();
+                process_switch_asm(&mut *prev_ctx as *mut ProcessContext, &*next_ctx as *const ProcessContext);
+            }
+        }
+
+        Some(next)
     }
 
     pub fn current(&self) -> Option<Pid> {
@@ -432,21 +450,47 @@ impl Scheduler {
                 unsafe {
                     let pwid = (*process).get_pwid();
                     (*process).exit_code.store(exit_code, Ordering::SeqCst);
-                    // ✅ 修复: deprecated → set_state_safe
                     let _ = (*process).set_state_safe(ProcessState::Zombie);
                     self.dec_limit(pwid);
                     
                     if let Some(parent_pid) = (*process).parent {
                         self.unblock(parent_pid.0);
                     }
+
+                    for child_pid in (*process).children.lock().iter() {
+                        if let Some(child) = PROCESS_TABLE.get(child_pid.0) {
+                            let state = (*child).get_state();
+                            if state == ProcessState::Zombie {
+                                let _ = (*child).set_state_safe(ProcessState::Terminated);
+                                PROCESS_TABLE.remove(child_pid.0);
+                            } else {
+                                (*child).parent = Some(ProcessId(1));
+                            }
+                        }
+                    }
+                    (*process).children.lock().clear();
                 }
             }
-            self.need_reschedule.store(true, Ordering::SeqCst);
+        }
+
+        self.need_reschedule.store(true, Ordering::SeqCst);
+
+        if self.schedule().is_none() {
+            unsafe {
+                core::arch::asm!(
+                    "out dx, al",
+                    in("dx") 0xf4u16,
+                    in("al") (exit_code as u8).wrapping_shl(1) | 1,
+                    options(nomem, nostack)
+                );
+            }
+            loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack)); } }
         }
     }
     
     pub fn yield_current(&self) {
         self.need_reschedule.store(true, Ordering::SeqCst);
+        self.schedule();
     }
     
     pub fn should_reschedule(&self) -> bool {
@@ -549,6 +593,10 @@ impl Scheduler {
                 self.need_reschedule.store(true, Ordering::SeqCst);
                 self.time_remaining.store(TIME_SLICES[self.current_level.load(Ordering::SeqCst) as usize], Ordering::SeqCst);
             }
+        }
+
+        if self.need_reschedule.swap(false, Ordering::SeqCst) {
+            self.schedule();
         }
     }
 

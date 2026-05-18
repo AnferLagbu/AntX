@@ -203,23 +203,12 @@ pub extern "C" fn kernel_init() {
     crate::kernel::net::netif::net_register_barrier_domain();
     crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4, NET=5)");
 
-    crate::klog_boot_info!("AntX kernel initialized, entering main loop...");
+    crate::klog_boot_info!("AntX kernel initialized, entering user mode...");
 
-    // 主循环 — 轮询网络数据包
-    loop {
-        extern "C" {
-            fn e1000_poll_rx();
-        }
-        unsafe { e1000_poll_rx(); }
-
-        unsafe {
-            core::arch::asm!(
-                "sti",
-                "hlt",
-                "cli",
-                options(nomem, nostack)
-            );
-        }
+    // 12. Launch first user process (Ring 3)
+    unsafe {
+        crate::kernel::proc::ffi::launch_first_user_process();
     }
+    // unreachable: launch_first_user_process is noreturn
     } // end #[cfg(not(feature = "kernel_test"))]
 }

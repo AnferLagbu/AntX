@@ -157,10 +157,14 @@ impl ExceptionHandler for PageFaultHandler {
     fn handle(&self, frame: &InterruptFrame) -> RecoveryAction {
         let fault_addr = unsafe { frame.fault_address() };
         let analysis = Self::analyze_error_code(frame.err_code);
-        
-        // User-mode PF: 直接终止进程
+
+        // User-mode PF: 先尝试栈自动扩展，再尝试 barrier 恢复
         if frame.is_user_mode() {
-            return RecoveryAction::TerminateProcess(1);
+            if crate::kernel::proc::user_proc::try_expand_user_stack(fault_addr) {
+                return RecoveryAction::Recovered;
+            }
+            let pid = crate::kernel::proc::ffi::process_get_current_pid();
+            return RecoveryAction::TerminateProcess(pid);
         }
         
         // Kernel-mode PF: 根据原因尝试恢复
@@ -353,9 +357,9 @@ impl ExceptionHandler for DefaultHandler {
 
 /// 判断当前是否在 user-mode 执行
 fn is_currently_user_mode() -> bool {
-    let rflags: u64;
-    unsafe { core::arch::asm!("pushfq; pop {}", out(reg) rflags, options(nomem, nostack)) };
-    (rflags & (1 << 9)) == 0  // IF=0 通常表示 kernel mode
+    let cs: u16;
+    unsafe { core::arch::asm!("mov {0:x}, cs", out(reg) cs, options(nomem, nostack)) };
+    (cs & 0x03) == 3
 }
 
 /// 异常分发器 (工厂模式 - 返回静态引用以避免 Box 分配)

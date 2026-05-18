@@ -9,6 +9,17 @@ pub mod ffi;
 use crate::kernel::syscall::types::*;
 use crate::kernel::idt::types::InterruptFrame;
 
+const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
+
+fn validate_user_ptr(ptr: u64) -> bool {
+    ptr > 0 && ptr < USER_ADDR_MAX
+}
+
+fn validate_user_buf(ptr: u64, len: u64) -> bool {
+    if len == 0 { return true; }
+    validate_user_ptr(ptr) && ptr + len <= USER_ADDR_MAX
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn syscall_init() {
     unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, b"syscall subsystem ready\0".as_ptr() as *const i8); }
@@ -154,7 +165,7 @@ unsafe fn sys_proc_exit(status: i32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_fs_open(path: *const i8, flags: i32, _mode: i32) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_open(path, flags as u32, pwid) as i64
 }
@@ -166,6 +177,7 @@ unsafe fn sys_fs_close(fd: i32) -> i64 {
 
 unsafe fn sys_fs_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 { return -1; }
+    if !validate_user_buf(buf as u64, count) { return SyscallError::E_FAULT.as_i64(); }
     if fd == 1 || fd == 2 { return SyscallError::E_BADFD.as_i64(); }
     if fd == 0 {
         #[cfg(not(feature = "kernel_test"))]
@@ -182,6 +194,7 @@ unsafe fn sys_fs_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
 
 unsafe fn sys_fs_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 { return -1; }
+    if !validate_user_buf(buf as u64, count) { return SyscallError::E_FAULT.as_i64(); }
     if fd == 1 || fd == 2 {
         #[cfg(not(feature = "kernel_test"))]
         {
@@ -194,20 +207,21 @@ unsafe fn sys_fs_write(fd: i32, buf: *const u8, count: u64) -> i64 {
 }
 
 unsafe fn sys_fs_mkdir(path: *const i8, _mode: i32) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     let pwid = if pwid == 0 { 0x0020F45A8B978417 } else { pwid };
     crate::kernel::fs::vfs::ffi::vfs_mkdir(path, pwid) as i64
 }
 
 unsafe fn sys_fs_rmdir(path: *const i8) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_rmdir(path, pwid) as i64
 }
 
 unsafe fn sys_fs_mount(_source: *const i8, target: *const i8, fstype: *const i8, _options: *const i8) -> i64 {
-    if target.is_null() || fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if target.is_null() || !validate_user_ptr(target as u64) { return SyscallError::E_FAULT.as_i64(); }
+    if fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
     crate::kernel::fs::vfs::ffi::vfs_mount(target, fstype) as i64
 }
 
@@ -216,7 +230,7 @@ unsafe fn sys_fs_seek(fd: i32, offset: i64, whence: i32) -> i64 {
 }
 
 unsafe fn sys_fs_stat(path: *const i8, st_buf: *mut core::ffi::c_void) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_stat(path, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwid) as i64
 }
@@ -226,7 +240,7 @@ unsafe fn sys_fs_readdir(fd: i32, entry: *mut core::ffi::c_void) -> i64 {
 }
 
 unsafe fn sys_fs_unlink(path: *const i8) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_unlink(path, pwid) as i64
 }
@@ -290,17 +304,18 @@ unsafe fn sys_auth_token_revoke(_token_id: u64) -> i64 {
 
 unsafe fn sys_env_getcwd(buf: *mut i8, size: u64) -> i64 {
     if buf.is_null() || size == 0 { return SyscallError::E_INVAL.as_i64(); }
+    if !validate_user_buf(buf as u64, size) { return SyscallError::E_FAULT.as_i64(); }
     crate::kernel::fs::vfs::ffi::vfs_get_cwd(buf, size as u32) as i64
 }
 
 unsafe fn sys_env_chdir(path: *const i8) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     crate::kernel::fs::vfs::ffi::vfs_set_cwd(path);
     0
 }
 
 unsafe fn sys_gethostname(buf: *mut i8, size: u64) -> i64 {
-    if buf.is_null() || size == 0 { return SyscallError::E_INVAL.as_i64(); }
+    if buf.is_null() || size == 0 || !validate_user_buf(buf as u64, size) { return SyscallError::E_FAULT.as_i64(); }
     let hostname = b"localhost\0";
     let copy_len = hostname.len().min(size as usize - 1);
     core::ptr::copy_nonoverlapping(hostname.as_ptr(), buf as *mut u8, copy_len);
@@ -367,7 +382,7 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
 // ============================================================================
 
 unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, argc: u32) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     if pwid == 0 { return SyscallError::E_AUTH_NOTFOUND.as_i64(); }
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 3, 0x01) {
@@ -378,7 +393,7 @@ unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, argc: u32) ->
 }
 
 unsafe fn sys_proc_exec(path: *const i8, argv: *const *const u8, argc: u32) -> i64 {
-    if path.is_null() { return SyscallError::E_INVAL.as_i64(); }
+    if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let result = crate::kernel::proc::ffi::proc_exec_replace(path, argv, argc);
     if result < 0 { SyscallError::E_NOTFOUND.as_i64() } else { 0 }
 }
