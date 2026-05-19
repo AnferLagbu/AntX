@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Chaos Engineering Tests for AntX Kernel (v2 - Real Fault Injection)
+Chaos Engineering Tests for QueenX (v2 - Real Fault Injection)
 Tests system resilience using kernel's built-in fault injection framework.
 Requires: make test-chaos (builds with fault_injection feature enabled)
 """
@@ -209,7 +209,7 @@ def test_normal_kernel_stability():
 
 def run_all_chaos_tests():
     print("=" * 60)
-    print("AntX Kernel Chaos Engineering Tests (v2)")
+    print("QueenX Chaos Engineering Tests (v2)")
     print("=" * 60)
     print()
     print("These tests use the kernel's built-in fault injection framework.")

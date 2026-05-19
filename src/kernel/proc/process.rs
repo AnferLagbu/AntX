@@ -133,12 +133,15 @@ impl Process {
     }
     
     pub fn allocate_kernel_stack(&self) -> bool {
+        const KERNEL_BASE: u64 = 0xFFFF800000000000;
         unsafe {
             let stack = pmm_alloc_pages((KERNEL_STACK_SIZE / 4096) as u64);
             if stack.is_null() {
                 return false;
             }
-            let stack_top = stack.add(KERNEL_STACK_SIZE) as u64;
+            // Convert physical address to higher-half virtual address so that
+            // TSS RSP0 is accessible when the user page table is loaded.
+            let stack_top = stack as u64 + KERNEL_BASE + KERNEL_STACK_SIZE as u64;
             self.kernel_stack.store(stack_top, Ordering::SeqCst);
             kernel_stack_write_canary(stack_top);
             true

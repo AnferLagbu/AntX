@@ -41,10 +41,7 @@ start:
     pop cx
     loop .rd
 
-    mov ax, 0x1000
-    mov es, ax
-    cmp dword [es:0], MAGIC
-    jne err
+    ; 魔数校验移入保护模式 (32-bit 平坦寻址)，16-bit 模式下无法直接访问 0x100000+
 
     xor ebx, ebx
     mov di, E820_BUF
@@ -120,7 +117,20 @@ BITS 32
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    jmp 0x08:KERNEL_LOAD
+    
+    ; 在保护模式下校验 Multiboot2 魔数 (flat binary 偏移 40)
+    cmp dword [KERNEL_LOAD + 40], MAGIC
+    jne err_pm
+    
+    ; 从 Multiboot1 头读取入口地址 (偏移 8 + 28 = 36)
+    mov eax, [KERNEL_LOAD + 36]
+    push 0x08
+    push eax
+    retf
+
+err_pm:
+    hlt
+    jmp err_pm
 
 err:
     mov si, msg

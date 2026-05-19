@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration Tests for AntX Kernel (v2 - Serial Protocol)
+Integration Tests for QueenX (v2 - Serial Protocol)
 Tests multi-module interactions via QEMU serial output analysis.
 """
 
@@ -156,7 +156,7 @@ def test_no_unresolved_panics(output: str) -> IntegrationTest:
 
 def run_all_integration_tests():
     print("=" * 60)
-    print("AntX Kernel Integration Tests (v2)")
+    print("QueenX Integration Tests (v2)")
     print("=" * 60)
 
     print("\nRunning kernel and capturing output...")

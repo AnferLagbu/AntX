@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Analyze chaos test logs from AntX kernel.
+Analyze chaos test logs from QueenX.
 Parses serial output to compute fault injection recovery rate.
 """
 

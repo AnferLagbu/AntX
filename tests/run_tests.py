@@ -78,7 +78,7 @@ class TestEnvironment:
 class TestMetadata:
     """Test plan metadata (IEEE 829 §4)"""
     plan_id: str = "ANTX-KERNEL-TEST-001"
-    plan_name: str = "AntX Kernel Regression Test Suite"
+    plan_name: str = "QueenX Regression Test Suite"
     version: str = "2.0.0"
     author: str = "AntX QA Automation"
     approver: str = "Kernel Team Lead"

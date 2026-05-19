@@ -605,7 +605,7 @@ unsafe fn init_snmp() {
     klog_net("SNMP: configuring agent...\0".as_ptr() as *const i8);
     
     // 设置系统描述
-    let descr = b"AntX QueenX Kernel\0";
+    let descr = b"QueenX\0";
     let contact = b"root@antx\0";
     let name = b"antx\0";
     let location = b"QEMU\0";

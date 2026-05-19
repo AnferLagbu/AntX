@@ -644,10 +644,20 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         return SyscallError::E_IO.as_i64();
     }
 
-    let kernel = include_bytes!("../../../build/user/init.bin");
-
-    let kernel_ptr = kernel.as_ptr();
-    let kernel_len = kernel.len();
+    // 从物理内存中读取当前内核二进制 (GRUB 加载到 0x100000 且恒等映射)
+    // 不再使用 include_bytes! — 内核编译产物 kernel.flat 在此编译阶段尚不存在
+    extern "C" {
+        static _kernel_start: u8;
+        static _kernel_end: u8;
+    }
+    let kernel_ptr = unsafe { &_kernel_start as *const u8 };
+    let kernel_len = {
+        let vma_end = unsafe { &_kernel_end as *const u8 as usize };
+        // _kernel_end 在 higher-half VMA 空间, 减去 HHDM 偏移得到物理地址
+        const HHDM_OFFSET: usize = 0xFFFF_8000_0000_0000;
+        let phys_end = vma_end.wrapping_sub(HHDM_OFFSET);
+        phys_end - (kernel_ptr as usize)
+    };
 
     let mut buf = [0u8; 512];
     let total_kernel_sectors = ((kernel_len + 511) / 512) as u32;
@@ -660,7 +670,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         if remaining == 0 { break; }
         let n = if remaining < 512 { remaining } else { 512 };
         buf = [0u8; 512];
-        core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n);
+        unsafe { core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n); }
         if ata_write_sector(disk_id as u8, 1 + s, buf.as_ptr()) < 0 {
             return SyscallError::E_IO.as_i64();
         }

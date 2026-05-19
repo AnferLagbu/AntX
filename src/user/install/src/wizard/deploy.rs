@@ -1,7 +1,10 @@
 //! 应用部署 — 批量复制系统二进制文件至安装目标 (/mnt)
+//!
+//! 部署前预检所有源文件是否存在，避免部分写入后才发现缺失。
 
 use userlib::{print, println, print_dec};
 use userlib::fs;
+use userlib::sys;
 
 pub struct AppManifest {
     pub src:  &'static [u8],
@@ -30,11 +33,30 @@ fn build_dst<'a>(rel: &[u8], buf: &'a mut [u8; 64]) -> &'a [u8] {
     &buf[..pos - 1]
 }
 
-#[allow(dead_code)]
-pub fn register(_app: AppManifest) {}
-
 pub fn deploy_all() -> i32 {
     println(""); println("--- Step 3: Application Deployment ---"); println("");
+
+    // 预检: 所有源文件是否存在
+    let mut missing = false;
+    for m in MANIFEST {
+        let fd = fs::file_open(m.src, sys::O_RDONLY);
+        if fd < 0 {
+            print("  [MISSING] "); println(m.desc);
+            missing = true;
+        } else {
+            sys::fs_close(fd);
+        }
+    }
+    if missing {
+        println("");
+        println("  [ABORT] One or more source files are missing.");
+        println("  The install media may be incomplete or corrupted.");
+        return -1;
+    }
+
+    // 执行复制
+    println("  All source files verified. Copying...");
+    println("");
     let mut ok = 0u32;
     let mut fail = 0u32;
     for m in MANIFEST {
@@ -42,11 +64,21 @@ pub fn deploy_all() -> i32 {
         let mut dst_buf = [0u8; 64];
         let dst = build_dst(m.dst_rel, &mut dst_buf);
         if fs::file_copy(m.src, dst) { println(" ... OK"); ok += 1; }
-        else { println(" ... FAIL"); fail += 1; }
+        else {
+            println(" ... FAIL");
+            print("      src: "); 
+            let src_str = core::str::from_utf8(m.src).unwrap_or("?").trim_end_matches('\0');
+            println(src_str);
+            fail += 1;
+        }
     }
     println("");
-    print("  Installed: "); print_dec(ok as i64);
+    print("  Deployed: "); print_dec(ok as i64);
     print(" / "); print_dec((ok + fail) as i64); println("");
-    if fail > 0 { return -1; }
+    if fail > 0 {
+        println("  [ERROR] Some files could not be written to disk.");
+        println("  Check that the target filesystem has enough space.");
+        return -1;
+    }
     0
 }

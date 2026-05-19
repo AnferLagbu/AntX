@@ -97,7 +97,7 @@ impl TestRunner {
         let total = reg.count;
 
         Self::serial_print(b"\n========================================\n");
-        Self::serial_print(b"  AntX Kernel Test Suite\n  ");
+        Self::serial_print(b"  QueenX Test Suite\n  ");
         Self::serial_print_num(total as u64);
         Self::serial_print(b" test cases registered\n");
         Self::serial_print(b"========================================\n\n");
@@ -262,7 +262,7 @@ macro_rules! skip_test {
 pub use {check, assert_eq_test, skip_test};
 
 pub fn test_runner_init() {
-    crate::klog_boot_info!("[TEST] === AntX Kernel Test Framework ===");
+    crate::klog_boot_info!("[TEST] === QueenX Test Framework ===");
 
     test_barrier::register_barrier_tests();
     test_barrier_ext::register_barrier_ext_tests();

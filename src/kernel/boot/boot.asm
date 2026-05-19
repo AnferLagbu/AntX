@@ -1,5 +1,13 @@
 BITS 32
 
+; === Stage1 入口跳板 ===
+; Stage1 裸加载器跳转到 0x100000，此处的 jmp 重定向到真正的 _start
+; Multiboot 头位于偏移 8 处，GRUB 在首 8KB 内搜索 4 字节对齐的魔数，不受影响
+section .stage1_entry
+    jmp near _start          ; 5 bytes (E9 xx xx xx xx)
+    times 3 db 0x90           ; NOP 填充至 8 字节对齐
+
+; === Multiboot1 头 (偏移 8, 4 字节对齐) ===
 section .multiboot1
 align 4
 

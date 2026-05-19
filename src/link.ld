@@ -14,6 +14,10 @@ SECTIONS
     
     _kernel_start = .;
     
+    .stage1_entry : {
+        *(.stage1_entry)
+    } :boot
+    
     .multiboot1 : {
         *(.multiboot1)
     } :boot
@@ -102,6 +106,6 @@ SECTIONS
     
     . = ALIGN(4096);
     _kernel_end = .;
-    _kernel_size = _kernel_end - _kernel_text_lma;
+    _kernel_size = _kernel_end - _kernel_text_vma;
     _kernel_end_phys = _kernel_text_lma + _kernel_size;
 }

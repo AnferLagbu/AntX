@@ -13,7 +13,7 @@
  *
  * 使用示例:
  *   // 获取内核版本字符串
- *   printf("AntX Kernel %s\n", KERNEL_VERSION_FULL);
+ *   printf("QueenX %s\n", KERNEL_VERSION_FULL);
  *
  *   // 检查是否为脏构建
  *   #if IS_DIRTY_BUILD

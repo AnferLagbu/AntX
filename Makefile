@@ -183,10 +183,11 @@ build/net/%.o: src/kernel/net/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(DISK_IMAGE): build/kernel.bin user
+$(DISK_IMAGE): build/kernel.flat user
 	@echo "Creating disk image..."
 	@dd if=/dev/zero of=$@ bs=1M count=4 2>/dev/null
-	@dd if=build/kernel.bin of=$@ bs=512 seek=2 conv=notrunc 2>/dev/null
+	@dd if=build/stage1.bin of=$@ bs=512 seek=0 conv=notrunc 2>/dev/null
+	@dd if=build/kernel.flat of=$@ bs=512 seek=1 conv=notrunc 2>/dev/null
 	@echo "Disk image created: $@ (4MB)"
 
 disk: $(DISK_IMAGE)

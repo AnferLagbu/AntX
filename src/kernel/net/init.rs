@@ -163,18 +163,25 @@ pub extern "C" fn qx_net_init() {
             return;
         }
 
+        // Critical section: disable interrupts during lwIP core init and netif
+        // registration to prevent timer ISR from accessing half-initialized
+        // lwIP data structures (root cause of the intermittent hang).
+        core::arch::asm!("cli", options(nomem, nostack));
         lwip_init();
         klog_net("lwIP core initialized\0".as_ptr() as *const i8);
 
         klog_net("E1000 detected, registering netif\0".as_ptr() as *const i8);
         extern "C" { fn qx_netif_register_e1000() -> i32; }
         let register_result = qx_netif_register_e1000();
+        // Re-enable interrupts only after lwIP is fully initialized
+        crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
+        core::arch::asm!("sti", options(nomem, nostack));
 
         if register_result == 0 {
             let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
-            crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
             klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
         } else {
+            crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
             set_failed();
             klog_net_err("Failed to register E1000 netif\0".as_ptr() as *const i8);
         }

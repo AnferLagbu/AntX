@@ -165,7 +165,7 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 pub extern "C" fn kernel_init() {
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
     unsafe { crate::kernel::klog::klog_init(); }
-    crate::klog_boot_info!("AntX kernel starting {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    crate::klog_boot_info!("QueenX starting {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
     // Test mode: skip normal init, run unit tests
     #[cfg(feature = "kernel_test")]
@@ -289,7 +289,7 @@ pub extern "C" fn kernel_init() {
         }
     }
 
-    crate::klog_boot_info!("AntX kernel initialized, entering user mode...");
+    crate::klog_boot_info!("QueenX initialized, entering user mode...");
 
     // 12. Launch first user process (Ring 3)
     unsafe {

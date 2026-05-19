@@ -151,11 +151,14 @@ pub fn init_all() -> framework::Result<()> {
     // 2. 初始化总线驱动 (设备发现)
     #[cfg(feature = "pci")]
     {
-        let _ = bus::bus_init();
+        bus::bus_init()?;
     }
+
+    // 2.5 初始化 DMA 引擎 (存储/USB驱动需要)
+    crate::kernel::dma::engine::get_dma().init();
     
-    // 3. 初始化存储设备
-    let _ = storage::storage_init();
+    // 3. 初始化存储设备 (需要 DMA)
+    storage::storage_init()?;
     
     // 4. 初始化输入设备
     input::input_init()?;
@@ -185,7 +188,7 @@ pub fn shutdown_all() -> framework::Result<()> {
     // TODO: 实现 input_shutdown()
     
     // 3. 关闭存储设备
-    // TODO: 实现 storage_shutdown()
+    let _ = storage::storage_shutdown();
     
     // 2. 关闭总线驱动
     // TODO: 实现 bus_shutdown()
@@ -220,10 +223,10 @@ pub fn list_devices() -> alloc::string::String {
     }
     
     // NVMe 设备
-    info.push_str("  NVMe: (scan PCI bus for controllers)\n");
-    
+    info.push_str(&format!("  NVMe: {} controller(s)\n", storage::nvme_controller_count()));
+
     // AHCI 设备
-    info.push_str("  AHCI: (scan PCI bus for controllers)\n");
+    info.push_str(&format!("  AHCI: {} port(s)\n", storage::ahci_port_count()));
     
     info.push_str("\nInput Devices:\n");
     info.push_str("  Keyboard: PS/2\n");

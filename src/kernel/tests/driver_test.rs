@@ -82,7 +82,7 @@ fn test_serial() {
     serial_init(0);
     
     // 发送测试字符串
-    serial_puts(0, b"AntX Kernel - Serial Port Test\n");
+    serial_puts(0, b"QueenX - Serial Port Test\n");
     serial_puts(0, b"COM1 initialized at 115200 baud\n");
     serial_puts(0, b"8N1 configuration\n");
     

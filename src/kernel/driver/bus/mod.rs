@@ -14,9 +14,15 @@
 
 pub mod pci;
 
-pub fn bus_init() -> framework::Result<()> {
-    pci::pci_init();
-    Ok(())
-}
-
 use super::framework;
+use crate::klog_info;
+
+pub fn bus_init() -> framework::Result<()> {
+    let count = pci::pci_init();
+    if count >= 0 {
+        klog_info!(Driver, "PCI bus initialized: {} device(s)", count);
+        Ok(())
+    } else {
+        Err(framework::DriverError::HardwareError)
+    }
+}

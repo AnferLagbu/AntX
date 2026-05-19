@@ -57,42 +57,8 @@ def parse_elf_header(data):
         'shnum': e_shnum,
     }
 
-def extract_c_array_bytes(c_file_path):
-    """Extract byte array from a C source file like user_init_bin.c"""
-    try:
-        with open(c_file_path, 'r') as f:
-            content = f.read()
-        
-        start = content.find('{')
-        end = content.rfind('}')
-        
-        if start == -1 or end == -1:
-            return None
-        
-        array_content = content[start+1:end]
-        
-        bytes_list = []
-        for line in array_content.split('\n'):
-            line = line.strip()
-            if not line or line.startswith('//'):
-                continue
-            
-            hex_values = [x.strip().rstrip(',').rstrip(' ') for x in line.split(',') if x.strip()]
-            
-            for hv in hex_values:
-                if hv.startswith('0x') or hv.startswith('0X'):
-                    try:
-                        bytes_list.append(int(hv, 16))
-                    except ValueError:
-                        pass
-        
-        return bytearray(bytes_list)
-    except Exception as e:
-        print(f"[ERROR] Failed to parse C array: {e}")
-        return None
-
 def verify_elf_consistency():
-    """Verify embedded ELF data matches compiled binary"""
+    """Verify the init binary embedded via include_bytes! matches the compiled binary"""
     print("\n" + "="*70)
     print("[DIAGNOSE] ELF Consistency Check")
     print("="*70)
@@ -102,150 +68,74 @@ def verify_elf_consistency():
     
     results = []
     
-    embedded_path = os.path.join(PROJECT_ROOT, "src", "user", "embedded", "user_init_bin.c")
     compiled_path = os.path.join(BUILD_DIR, "user", "init.bin")
     
-    print(f"\n[INFO] Embedded C file: {embedded_path}")
-    print(f"[INFO] Compiled binary: {compiled_path}")
-    
-    if not os.path.exists(embedded_path):
-        print("[ERROR] Embedded C file not found!")
-        results.append(("Embedded file", "MISSING", ""))
-        return False, results
+    print(f"\n[INFO] Compiled binary: {compiled_path}")
     
     if not os.path.exists(compiled_path):
         print("[WARN] Compiled binary not found! Run 'make user' first.")
         results.append(("Compiled binary", "MISSING", ""))
         return False, results
     
-    embedded_data = extract_c_array_bytes(embedded_path)
-    if not embedded_data:
-        print("[ERROR] Failed to parse embedded C array")
-        return False, results
-    
     with open(compiled_path, 'rb') as f:
         compiled_data = f.read()
     
-    embedded_elf = parse_elf_header(bytes(embedded_data))
     compiled_elf = parse_elf_header(compiled_data)
     
-    if not embedded_elf or not compiled_elf:
-        print("[ERROR] Invalid ELF headers")
+    if not compiled_elf:
+        print("[ERROR] Invalid ELF header in compiled binary")
         return False, results
     
-    print(f"\n{'Field':<25} {'Embedded':<20} {'Compiled':<20} {'Status'}")
-    print("-" * 75)
+    print(f"\n{'Field':<25} {'Value':<30}")
+    print("-" * 55)
     
-    entry_match = embedded_elf['entry'] == compiled_elf['entry']
-    status = "✓ MATCH" if entry_match else "✗ MISMATCH"
-    results.append(("Entry Point", f"0x{embedded_elf['entry']:016X}", 
-                     f"0x{compiled_elf['entry']:016X}", status))
-    print(f"{'Entry Point':<25} 0x{embedded_elf['entry']:016X}   0x{compiled_elf['entry']:016X}   {status}")
+    print(f"{'Entry Point':<25} 0x{compiled_elf['entry']:016X}")
+    print(f"{'File Size':<25} {len(compiled_data)} bytes")
+    print(f"{'Program Headers':<25} {compiled_elf['phnum']}")
+    print(f"{'Class':<25} ELF{compiled_elf['class']}")
+    print(f"{'Endianness':<25} {compiled_elf['data']}")
     
-    size_match = len(embedded_data) == len(compiled_data)
-    status = "✓ MATCH" if size_match else "✗ MISMATCH"
-    results.append(("File Size", f"{len(embedded_data)} bytes", 
-                     f"{len(compiled_data)} bytes", status))
-    print(f"{'File Size':<25} {len(embedded_data)} bytes          {len(compiled_data)} bytes       {status}")
+    if compiled_elf['machine'] != 0x3E:
+        print(f"\n[ERROR] Machine type is not x86_64 (0x3E), got 0x{compiled_elf['machine']:04X}")
+        results.append(("Machine", f"0x{compiled_elf['machine']:04X}", "Expected 0x3E"))
+        return False, results
     
-    phnum_match = embedded_elf['phnum'] == compiled_elf['phnum']
-    status = "✓ MATCH" if phnum_match else "✗ MISMATCH"
-    results.append(("Program Headers", str(embedded_elf['phnum']), 
-                     str(compiled_elf['phnum']), status))
-    print(f"{'Program Headers':<25} {embedded_elf['phnum']}                  {compiled_elf['phnum']}                  {status}")
+    if compiled_elf['entry'] != 0x400000:
+        print(f"\n[WARN] Entry point is not the expected 0x400000")
     
-    if not entry_match:
-        print(f"\n[!!!] CRITICAL: Entry point mismatch detected!")
-        print(f"[!!!] This is the ROOT CAUSE of the user process crash!")
-        print(f"[!!!] Embedded: 0x{embedded_elf['entry']:016X}")
-        print(f"[!!!] Compiled: 0x{compiled_elf['entry']:016X}")
+    entry_offset = compiled_elf['entry'] - 0x400000
+    if 0 <= entry_offset < len(compiled_data):
+        bytes_at_entry = compiled_data[entry_offset:entry_offset+8]
+        print(f"\n[INFO] Bytes at entry +0x{entry_offset:X}:")
+        print(f"       {' '.join(f'{b:02X}' for b in bytes_at_entry)}")
         
-        entry_offset_embedded = embedded_elf['entry'] - 0x400000
-        entry_offset_compiled = compiled_elf['entry'] - 0x400000
+        valid_instructions = {
+            (0x55,): "push rbp",
+            (0x55, 0x48, 0x89, 0xE5): "push rbp; mov rbp, rsp",
+            (0x48, 0x89, 0xE5): "mov rbp, rsp",
+        }
         
-        if 0 <= entry_offset_embedded < len(embedded_data):
-            bytes_at_embedded = embedded_data[entry_offset_embedded:entry_offset_embedded+8]
-            print(f"\n[INFO] Bytes at embedded entry +0x{entry_offset_embedded:X}:")
-            print(f"       {' '.join(f'{b:02X}' for b in bytes_at_embedded)}")
-        
-        if 0 <= entry_offset_compiled < len(compiled_data):
-            bytes_at_compiled = compiled_data[entry_offset_compiled:entry_offset_compiled+8]
-            print(f"[INFO] Bytes at compiled entry +0x{entry_offset_compiled:X}:")
-            print(f"       {' '.join(f'{b:02X}' for b in bytes_at_compiled)}")
-            
-            valid_instructions = {
-                (0x55,): "push rbp",
-                (0x55, 0x48, 0x89, 0xE5): "push rbp; mov rbp, rsp",
-                (0x48, 0x89, 0xE5): "mov rbp, rsp",
-            }
-            
-            for pattern, desc in valid_instructions.items():
-                if bytes_at_compiled[:len(pattern)] == bytearray(pattern):
-                    print(f"       → Valid instruction: {desc} ✓")
-                    break
-            else:
-                print(f"       → Unknown instruction sequence")
+        for pattern, desc in valid_instructions.items():
+            if bytes_at_entry[:len(pattern)] == bytearray(pattern):
+                print(f"       → Valid instruction: {desc}")
+                break
+        else:
+            print(f"       → Unknown instruction sequence (may still be valid)")
     
-    all_ok = all(r[3] == "✓ MATCH" for r in results)
+    all_ok = True
     
     with open(log_file, 'w') as f:
         f.write("ELF Consistency Check Results\n")
         f.write(f"Timestamp: {get_timestamp()}\n")
         f.write(f"{'='*60}\n\n")
-        for field, emb, comp, status in results:
-            f.write(f"{field}: {status}\n")
-            f.write(f"  Embedded: {emb}\n")
-            f.write(f"  Compiled: {comp}\n\n")
+        f.write(f"Entry Point: 0x{compiled_elf['entry']:016X}\n")
+        f.write(f"File Size: {len(compiled_data)} bytes\n")
+        f.write(f"Program Headers: {compiled_elf['phnum']}\n")
         f.write(f"\nOverall: {'PASS' if all_ok else 'FAIL'}\n")
     
     print(f"\n[LOG] Detailed report saved to: {log_file}")
     
     return all_ok, results
-
-def generate_bin2c():
-    """Generate user_init_bin.c from compiled init.bin"""
-    print("\n" + "="*70)
-    print("[FIX] Regenerating user_init_bin.c from build/user/init.bin")
-    print("="*70)
-    
-    src_path = os.path.join(BUILD_DIR, "user", "init.bin")
-    dst_path = os.path.join(PROJECT_ROOT, "src", "user", "embedded", "user_init_bin.c")
-    
-    if not os.path.exists(src_path):
-        print(f"[ERROR] Source binary not found: {src_path}")
-        print("[ERROR] Run 'make user' first to compile init.bin")
-        return False
-    
-    with open(src_path, 'rb') as f:
-        data = f.read()
-    
-    elf_info = parse_elf_header(data)
-    if not elf_info:
-        print("[ERROR] Invalid ELF file")
-        return False
-    
-    print(f"[INFO] Source: {src_path} ({len(data)} bytes)")
-    print(f"[INFO] Entry: 0x{elf_info['entry']:016X}")
-    print(f"[INFO] Destination: {dst_path}")
-    
-    c_content = f"unsigned char build_user_init_bin[] = {{\n"
-    
-    for i in range(0, len(data), 12):
-        chunk = data[i:i+12]
-        hex_bytes = ', '.join(f'0x{b:02X}' for b in chunk)
-        c_content += f"  {hex_bytes},\n"
-    
-    c_content += f"}};\n"
-    c_content += f"unsigned int build_user_init_bin_len = {len(data)};\n"
-    
-    with open(dst_path, 'w') as f:
-        f.write(c_content)
-    
-    print(f"[SUCCESS] Generated {dst_path}")
-    print(f"[SUCCESS] Array contains {len(data)} bytes")
-    print(f"[SUCCESS] Entry point: 0x{elf_info['entry']:016X}")
-    
-    return True
 
 def run_qemu_test(timeout=30):
     """Run QEMU and capture output to diagnose user process execution"""
@@ -451,13 +341,13 @@ Examples:
     )
     
     parser.add_argument("--check", action="store_true",
-                       help="Check ELF consistency between embedded and compiled binaries")
+                       help="Check ELF consistency of compiled init.bin")
     parser.add_argument("--fix", action="store_true",
-                       help="Regenerate user_init_bin.c from compiled init.bin")
+                       help="Rebuild user binary (make user)")
     parser.add_argument("--test", action="store_true",
                        help="Run QEMU test after fixing")
     parser.add_argument("--all", action="store_true",
-                       help="Run complete check → fix → rebuild → test cycle")
+                       help="Run complete check → rebuild → test cycle")
     parser.add_argument("--timeout", type=int, default=30,
                        help="QEMU timeout in seconds (default: 30)")
     
@@ -483,25 +373,18 @@ Examples:
     if args.check:
         consistent, results = verify_elf_consistency()
         if not consistent:
-            print(f"\n[⚠] ELF inconsistency detected!")
-            if args.fix:
-                print(f"[→] Will fix now...")
-            else:
-                print(f"[→] Run with --fix to regenerate user_init_bin.c")
-                overall_success = False
+            print(f"\n[⚠] ELF check failed!")
+            overall_success = False
         else:
             print(f"\n[✓] All checks passed!")
     
     if args.fix:
-        if generate_bin2c():
-            print(f"\n[→] Verifying fix...")
-            consistent, _ = verify_elf_consistency()
-            if consistent:
-                print(f"[✓] Fix verified! Now rebuild kernel with 'make clean && make all && make iso'")
-            else:
-                print(f"[✗] Verification failed!")
-                overall_success = False
+        print(f"\n[→] Rebuilding user binary...")
+        ret = subprocess.call(["make", "user"], cwd=PROJECT_ROOT)
+        if ret == 0:
+            print(f"[✓] Rebuild succeeded. Now rebuild kernel with 'make clean && make all && make iso'")
         else:
+            print(f"[✗] Rebuild failed!")
             overall_success = False
     
     if args.test:

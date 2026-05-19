@@ -127,8 +127,7 @@ src/
 │   └── syscall.h          # 系统调用号
 │
 └── scripts/               # 构建脚本
-    ├── generate_version.sh
-    └── gen_embed.py
+    └── generate_version.sh
 ```
 
 ---

@@ -16,7 +16,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 // 输出格式: <ts_s>.<ts_us> [LEVEL] [CATEGORY] message\n
 //
 // 使用方式:
-//   klog!(Info, Boot, "AntX kernel starting...");
+//   klog!(Info, Boot, "QueenX starting...");
 //   klog_warn!(Kernel, "warning message");
 //   klog_err!(Driver, "driver error: {}", code);
 // ============================================================================
@@ -146,7 +146,7 @@ fn serial_putc(c: u8) {
     }
 }
 
-fn serial_write_bytes(data: &[u8]) {
+pub fn serial_write_bytes(data: &[u8]) {
     for &byte in data {
         if byte == b'\n' {
             serial_putc(b'\r');
@@ -207,7 +207,7 @@ static RING: RingLock = RingLock { inner: core::cell::UnsafeCell::new(RingBuf::n
 // ============================================================================
 
 static MIN_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
-static KLOG_INIT: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+pub static KLOG_INIT: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 // ============================================================================
 // 日志级别 / 分类

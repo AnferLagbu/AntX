@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stress Tests for AntX Kernel (v2 - Real Stress)
+Stress Tests for QueenX (v2 - Real Stress)
 Tests system behavior under actual stress conditions via serial output analysis.
 """
 
@@ -170,7 +170,7 @@ def test_rapid_reboot():
 
 def run_all_stress_tests():
     print("=" * 60)
-    print("AntX Kernel Stress Tests (v2)")
+    print("QueenX Stress Tests (v2)")
     print("=" * 60)
     print()
 

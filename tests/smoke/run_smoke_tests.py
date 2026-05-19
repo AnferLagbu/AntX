@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Smoke Test for AntX Kernel — Ring 3 User-Mode Bootstrap
+Smoke Test for QueenX — Ring 3 User-Mode Bootstrap
 Boots the ISO and verifies the init process reaches user mode.
 """
 
@@ -127,7 +127,7 @@ def test_no_triple_fault(output: str) -> SmokeTest:
 
 def run_all_smoke_tests():
     print("=" * 60)
-    print("  AntX Kernel Smoke Tests — Ring 3 Bootstrap")
+    print("  QueenX Smoke Tests — Ring 3 Bootstrap")
     print("=" * 60)
 
     print("\n  Booting kernel ISO...")

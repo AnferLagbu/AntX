@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AntX Kernel Test Orchestrator (Python + QEMU)
+QueenX Test Orchestrator (Python + QEMU)
 v2.0 — Rust-powered test framework runner
 
 用法:
@@ -163,7 +163,7 @@ def print_report(run: TestRun):
     stats = [r for r in run.results if r.status == "STATS"]
     
     print("\n" + "=" * 60)
-    print("  AntX Kernel Test Results")
+    print("  QueenX Test Results")
     print("=" * 60)
     
     if fails:
@@ -186,7 +186,7 @@ def print_report(run: TestRun):
     print("=" * 60)
 
 def main():
-    parser = argparse.ArgumentParser(description="AntX Kernel Test Orchestrator")
+    parser = argparse.ArgumentParser(description="QueenX Test Orchestrator")
     parser.add_argument("--build", action="store_true", help="Build test kernel first")
     parser.add_argument("--quick", action="store_true", help="Quick mode (60s timeout)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")

@@ -2,7 +2,7 @@
 name = "antx-host-tests"
 version = "0.1.0"
 edition = "2021"
-description = "AntX kernel host-side unit tests"
+description = "QueenX host-side unit tests"
 authors = ["Anfer"]
 
 [dependencies]
