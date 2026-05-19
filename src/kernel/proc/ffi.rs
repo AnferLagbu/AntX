@@ -9,6 +9,10 @@ use super::session::SESSION_MANAGER;
 use super::user_proc::USER_PROC_MANAGER;
 use super::process::{Process, PROCESS_TABLE};
 
+extern "C" {
+    fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
+}
+
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
 static INIT_PROCESS_CREATED: AtomicU32 = AtomicU32::new(0);
 
@@ -272,7 +276,7 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
             C_CURRENT_PROCESS.pid = (*proc).pid as u64;
             C_CURRENT_PROCESS.pwid = (*proc).pwid.load(Ordering::SeqCst);
             C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
-            C_CURRENT_PROCESS.parent_pid = 1; // init is parent
+            C_CURRENT_PROCESS.parent_pid = 1;
         }
         USER_PROC_MANAGER.enter(proc);
         0
