@@ -265,17 +265,17 @@ impl VirtualMemoryManager {
         unsafe {
             let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
 
-            let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true);
+            let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() {
                 self.release_lock(); return;
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true);
+            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
             if pd.is_null() {
                 self.release_lock(); return;
             }
 
-            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true);
+            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, 0x1000);
             if pt.is_null() {
                 self.release_lock(); return;
             }
@@ -377,13 +377,13 @@ impl VirtualMemoryManager {
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
-            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true);
+            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() { return Err("Failed to allocate PDPT"); }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true);
+            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
             if pd.is_null() { return Err("Failed to allocate PD"); }
 
-            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true);
+            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, 0x1000);
             if pt.is_null() { return Err("Failed to allocate PT"); }
 
             let pte = &mut *pt.add(virt.pt_idx());
@@ -407,13 +407,16 @@ impl VirtualMemoryManager {
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
-            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true);
+            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() { return Err("Failed to allocate PDPT"); }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true);
+            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
             if pd.is_null() { return Err("Failed to allocate PD"); }
 
             let pde = &mut *pd.add(virt.pd_idx());
+            if pde.is_present() && !pde.is_huge() {
+                return Err("PD entry already split to PT, cannot map 2MB page");
+            }
             pde.set_frame(phys);
             pde.set_flags(flags);
 
@@ -434,10 +437,13 @@ impl VirtualMemoryManager {
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
-            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true);
+            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() { return Err("Failed to allocate PDPT"); }
 
             let pdpte = &mut *pdpt.add(virt.pdpt_idx());
+            if pdpte.is_present() && !pdpte.is_huge() {
+                return Err("PDPT entry already split, cannot map 1GB page");
+            }
             pdpte.set_frame(phys);
             pdpte.set_flags(flags);
 
@@ -447,7 +453,7 @@ impl VirtualMemoryManager {
         Ok(())
     }
 
-    unsafe fn get_or_create_table_entry(&self, entry: *mut PageTableEntry, create: bool) -> *mut PageTableEntry {
+    unsafe fn get_or_create_table_entry(&self, entry: *mut PageTableEntry, create: bool, huge_step: u64) -> *mut PageTableEntry {
         let e = &*entry;
 
         if e.is_present() && !e.is_huge() {
@@ -463,9 +469,10 @@ impl VirtualMemoryManager {
                 if e.is_huge() {
                     let huge_frame = e.frame();
                     let huge_flags = e.flags();
+                    let step = if huge_step > 0 { huge_step } else { 4096 };
                     for i in 0..512 {
                         let pte = &mut *pt.add(i);
-                        pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * 4096));
+                        pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * step));
                         pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
                     }
                 }
@@ -491,10 +498,10 @@ impl VirtualMemoryManager {
 
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
-            let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false);
+            let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false, 0);
             if pdpt.is_null() { return Err("PDPT not present"); }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(v.pdpt_idx()), false);
+            let pd = self.get_or_create_table_entry(pdpt.add(v.pdpt_idx()), false, 0);
             if pd.is_null() { return Err("PD not present"); }
 
             let pd_entry = &mut *pd.add(v.pd_idx());
@@ -563,6 +570,8 @@ impl VirtualMemoryManager {
             let pdpte = &mut *pdpt.add(v.pdpt_idx());
             if !pdpte.is_present() { return; }
             pdpte.set_user(true);
+
+            if pdpte.is_huge() { return; }
 
             let pd = pdpte.frame().to_virt().0 as *mut PageTableEntry;
             let pde = &mut *pd.add(v.pd_idx());

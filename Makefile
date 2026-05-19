@@ -97,7 +97,7 @@ $(VERSION_AUTO_H):
 $(VERSION_REGISTRY_H):
 	@$(MAKE) generate-version
 
-.PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-host test-unit test-integration test-stress \
+.PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-host test-unit test-integration test-smoke test-stress \
          test-all test-chaos test-smp
 
 all: build/kernel.bin user
@@ -476,6 +476,24 @@ test-integration: iso
 	@echo "║     Integration Tests                                   ║"
 	@echo "╚══════════════════════════════════════════════════════════╝"
 	@python3 tests/integration/run_integration_tests.py
+
+test-smoke: iso
+	@echo "[SMOKE] Booting kernel ISO, checking for init output..."
+	@rm -f logs/smoke_test.log
+	@timeout 25 $(QEMU) $(QEMU_FLAGS) \
+		-cdrom build/antx.iso \
+		-serial file:logs/smoke_test.log \
+		-display none >/dev/null 2>&1; \
+	grep -q "init\]" logs/smoke_test.log; \
+	if [ $$? -eq 0 ]; then \
+		echo "[PASS] Init process started successfully"; \
+		grep "init\]" logs/smoke_test.log | head -5; \
+		grep -q "Entering Ring" logs/smoke_test.log && echo "[PASS] Ring 3 entered"; \
+	else \
+		echo "[FAIL] No init output found"; \
+		tail -10 logs/smoke_test.log; \
+		exit 1; \
+	fi
 
 test-stress: iso
 	@echo "╔══════════════════════════════════════════════════════════╗"
