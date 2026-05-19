@@ -457,7 +457,18 @@ impl VirtualMemoryManager {
 
             if let Some(page) = pmm.alloc_page() {
                 let page_virt = page.to_virt();
-                core::ptr::write_bytes(page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
+                let pt = page_virt.0 as *mut PageTableEntry;
+                core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
+
+                if e.is_huge() {
+                    let huge_frame = e.frame();
+                    let huge_flags = e.flags();
+                    for i in 0..512 {
+                        let pte = &mut *pt.add(i);
+                        pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * 4096));
+                        pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
+                    }
+                }
 
                 (*entry).set_frame(page);
                 (*entry).set_flags(PageFlags::PRESENT | PageFlags::WRITABLE);

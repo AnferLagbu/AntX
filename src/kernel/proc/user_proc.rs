@@ -165,15 +165,11 @@ impl UserProcManager {
     }
     
     pub fn create(&self, info: &UserProcInfo, pwid: u64) -> Option<*mut UserProcess> {
-        crate::kernel::klog::serial_write_bytes(b"[PROC] create: start\n");
         let pid = PROCESS_TABLE.allocate_pid()?;
         
         let proc = unsafe {
             let ptr = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
-            if ptr.is_null() {
-                crate::kernel::klog::serial_write_bytes(b"[PROC] create: kmalloc null\n");
-                return None;
-            }
+            if ptr.is_null() { return None; }
             memset(ptr as *mut u8, 0, core::mem::size_of::<UserProcess>() as u64);
             ptr
         };
@@ -182,15 +178,10 @@ impl UserProcManager {
             (*proc).pid = pid;
             let cr3_val = vmm_create_user_page_table();
             (*proc).cr3.store(cr3_val, Ordering::SeqCst);
-            if cr3_val == 0 {
-                crate::kernel::klog::serial_write_bytes(b"[PROC] create: cr3 null\n");
-                return None;
-            }
-            crate::kernel::klog::serial_write_bytes(b"[PROC] create: cr3 ok\n");
+            if cr3_val == 0 { return None; }
             
             let stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
             if stack_pages.is_null() {
-                crate::kernel::klog::serial_write_bytes(b"[PROC] create: stack_pages null\n");
                 pmm_free_page(cr3_val as *mut core::ffi::c_void);
                 return None;
             }
@@ -261,7 +252,6 @@ impl UserProcManager {
         let kernel_proc_ptr = alloc::boxed::Box::into_raw(kernel_proc);
         PROCESS_TABLE.insert(kernel_proc_ptr);
         
-        crate::kernel::klog::serial_write_bytes(b"[PROC] create: done\n");
         Some(proc)
     }
     
@@ -421,9 +411,7 @@ impl UserProcManager {
     }
     
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwid: u64) -> i32 {
-        crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: start\n");
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
-            crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: null or too small\n");
             return -1;
         }
         
@@ -436,11 +424,8 @@ impl UserProcManager {
             }
             
             if (*header).class != 2 || (*header).machine != 0x3E {
-                crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: bad class/machine\n");
                 return -1;
             }
-            
-            crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: elf valid\n");
             
             let info = UserProcInfo {
                 entry: (*header).entry,
@@ -451,14 +436,10 @@ impl UserProcManager {
             
             let proc = match self.create(&info, pwid) {
                 Some(p) => p,
-                None => {
-                    crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: create failed\n");
-                    return -1;
-                }
+                None => return -1,
             };
             
             let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: proc created, mapping\n");
 
             let mut allocated_pages: [u64; 1024] = [0; 1024];
             let mut page_count: usize = 0;

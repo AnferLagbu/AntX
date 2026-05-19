@@ -213,10 +213,9 @@ unsafe fn sys_fs_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 { return -1; }
     if !validate_user_buf(buf as u64, count) { return SyscallError::E_FAULT.as_i64(); }
     if fd == 1 || fd == 2 {
-        #[cfg(not(feature = "kernel_test"))]
-        {
-            extern "C" { fn serial_write(com: i32, buf: *const core::ffi::c_void, count: u64); }
-            serial_write(0, buf as *const core::ffi::c_void, count);
+        if count > 0 {
+            let data = unsafe { core::slice::from_raw_parts(buf, count as usize) };
+            crate::kernel::klog::serial_write_bytes(data);
         }
         return count as i64;
     }
