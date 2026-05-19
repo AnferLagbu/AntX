@@ -5,16 +5,30 @@ use userlib::fs;
 
 pub struct AppManifest {
     pub src:  &'static [u8],
-    pub dst:  &'static [u8],
+    pub dst_rel: &'static [u8],
     pub desc: &'static str,
 }
 
+static TARGET_PREFIX: &[u8] = b"/mnt";
+
 static MANIFEST: &[AppManifest] = &[
-    AppManifest { src: b"/boot/kernel.bin\0", dst: b"/mnt/cfg/boot/kernel.bin\0", desc: "Kernel" },
-    AppManifest { src: b"/bin/init\0",        dst: b"/mnt/app/sys/init\0",        desc: "Init process" },
-    AppManifest { src: b"/bin/axsh\0",        dst: b"/mnt/app/sys/axsh\0",        desc: "axsh Shell" },
-    AppManifest { src: b"/bin/install\0",     dst: b"/mnt/app/sys/installguide\0",desc: "Install guide" },
+    AppManifest { src: b"/boot/kernel.bin\0", dst_rel: b"cfg/boot/kernel.bin\0",   desc: "Kernel" },
+    AppManifest { src: b"/bin/init\0",        dst_rel: b"app/sys/init\0",          desc: "Init process" },
+    AppManifest { src: b"/bin/axsh\0",        dst_rel: b"app/sys/axsh\0",          desc: "axsh Shell" },
+    AppManifest { src: b"/bin/install\0",     dst_rel: b"app/sys/installguide\0",  desc: "Install guide" },
 ];
+
+fn build_dst<'a>(rel: &[u8], buf: &'a mut [u8; 64]) -> &'a [u8] {
+    let mut pos = 0;
+    for &b in TARGET_PREFIX { buf[pos] = b; pos += 1; }
+    if !rel.starts_with(b"/") && pos < buf.len() { buf[pos] = b'/'; pos += 1; }
+    for &b in rel {
+        if b == 0 { break; }
+        if pos < buf.len() { buf[pos] = b; pos += 1; }
+    }
+    if pos < buf.len() { buf[pos] = 0; pos += 1; }
+    &buf[..pos - 1]
+}
 
 #[allow(dead_code)]
 pub fn register(_app: AppManifest) {}
@@ -25,7 +39,9 @@ pub fn deploy_all() -> i32 {
     let mut fail = 0u32;
     for m in MANIFEST {
         print("  "); print(m.desc);
-        if fs::file_copy(m.src, m.dst) { println(" ... OK"); ok += 1; }
+        let mut dst_buf = [0u8; 64];
+        let dst = build_dst(m.dst_rel, &mut dst_buf);
+        if fs::file_copy(m.src, dst) { println(" ... OK"); ok += 1; }
         else { println(" ... FAIL"); fail += 1; }
     }
     println("");
