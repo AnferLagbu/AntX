@@ -1,11 +1,11 @@
-/// 身份认证命令: ilogin, ilogout, iwho, ipasswd
+/// 身份认证命令: login, logout, who, passwd
 
 use userlib::*;
 
 use super::{Cmd, as_str};
 
-pub fn ilogin(cmd: &Cmd) {
-    if cmd.n < 3 { println("ilogin: usage: ilogin <note> <password>"); return; }
+pub fn login(cmd: &Cmd) {
+    if cmd.n < 3 { println("login: usage: login <note> <password>"); return; }
     let note = as_str(cmd.get(1)); let pw = as_str(cmd.get(2));
     let mut nb = [0u8; 128]; let nbl = core::cmp::min(note.as_bytes().len(), 127);
     nb[..nbl].copy_from_slice(&note.as_bytes()[..nbl]); nb[nbl] = 0;
@@ -13,19 +13,19 @@ pub fn ilogin(cmd: &Cmd) {
     pb[..pbl].copy_from_slice(&pw.as_bytes()[..pbl]); pb[pbl] = 0;
     let result = auth_login(&nb[..nbl + 1], &pb[..pbl + 1]);
     if result > 0 { print("Logged in: "); print_hex(proc_get_pwid()); print("\n"); }
-    else if result == -104 { println("ilogin: wrong password"); }
-    else if result == -101 { println("ilogin: not found"); }
-    else { println("ilogin: failed"); }
+    else if result == -104 { println("login: wrong password"); }
+    else if result == -101 { println("login: not found"); }
+    else { println("login: failed"); }
 }
 
-pub fn ilogout(_: &Cmd) { auth_logout(); println("Logged out"); }
+pub fn logout(_: &Cmd) { auth_logout(); println("Logged out"); }
 
-pub fn iwho(_: &Cmd) {
+pub fn who(_: &Cmd) {
     let pwid = proc_get_pwid();
     if pwid == 0 { println("Not logged in"); } else { print("PWID: "); print_hex(pwid); print("\n"); }
 }
 
-pub fn ipasswd(_: &Cmd) {
+pub fn passwd(_: &Cmd) {
     if proc_get_pwid() == 0 { println("Not logged in"); return; }
     print("Current password: "); let mut old = [0u8; 64]; read_line(&mut old);
     print("New password: "); let mut new = [0u8; 64]; read_line(&mut new);

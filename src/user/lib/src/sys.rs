@@ -21,6 +21,7 @@ pub const SYS_FS_CLOSE: u64 = 21;
 pub const SYS_FS_READ: u64 = 22;
 pub const SYS_FS_WRITE: u64 = 23;
 pub const SYS_FS_UNLINK: u64 = 29;
+pub const SYS_FS_RENAME: u64 = 30;
 pub const SYS_FS_MKDIR: u64 = 31;
 pub const SYS_FS_RMDIR: u64 = 32;
 pub const SYS_FS_READDIR: u64 = 33;
@@ -36,6 +37,7 @@ pub const SYS_AUTH_CREATE_FIRST: u64 = 50;
 pub const SYS_ENV_GETCWD: u64 = 100;
 pub const SYS_ENV_CHDIR: u64 = 101;
 pub const SYS_REBOOT: u64 = 103;
+pub const SYS_PROC_LIST: u64 = 11;
 pub const SYS_GETHOSTNAME: u64 = 108;
 pub const SYS_SETHOSTNAME: u64 = 109;
 pub const SYS_DISK_LIST: u64 = 113;
@@ -65,6 +67,7 @@ pub fn fs_write(fd: i32, buf: &[u8]) -> i32                  { unsafe { sys3(SYS
 pub fn fs_mkdir(path: &[u8]) -> i32                          { unsafe { sys2(SYS_FS_MKDIR, path.as_ptr() as u64, 0o755) as i32 } }
 pub fn fs_rmdir(path: &[u8]) -> i32                          { unsafe { sys1(SYS_FS_RMDIR, path.as_ptr() as u64) as i32 } }
 pub fn fs_unlink(path: &[u8]) -> i32                         { unsafe { sys1(SYS_FS_UNLINK, path.as_ptr() as u64) as i32 } }
+pub fn fs_rename(old: &[u8], new: &[u8]) -> i32              { unsafe { sys2(SYS_FS_RENAME, old.as_ptr() as u64, new.as_ptr() as u64) as i32 } }
 pub fn fs_readdir(fd: i32, entry: &mut UserDirent) -> i32    { unsafe { sys2(SYS_FS_READDIR, fd as u64, entry as *mut UserDirent as u64) as i32 } }
 pub fn fs_sync()                                             { unsafe { sys0(SYS_FS_SYNC); } }
 pub fn fs_mount(src: &[u8], tgt: &[u8], typ: &[u8], opt: &[u8]) -> i32 { unsafe { sys4(SYS_FS_MOUNT, src.as_ptr() as u64, tgt.as_ptr() as u64, typ.as_ptr() as u64, opt.as_ptr() as u64) as i32 } }
@@ -78,6 +81,7 @@ pub fn env_chdir(path: &[u8]) -> i32                         { unsafe { sys1(SYS
 pub fn gethostname(buf: &mut [u8]) -> i32                    { unsafe { sys2(SYS_GETHOSTNAME, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
 pub fn sethostname(name: &[u8]) -> i32                       { unsafe { sys2(SYS_SETHOSTNAME, name.as_ptr() as u64, name.len() as u64) as i32 } }
 pub fn reboot(cmd: i32) -> i64                               { unsafe { sys1(SYS_REBOOT, cmd as u64) } }
+pub fn proc_list(buf: &mut [u8], max_entries: u32) -> i32     { unsafe { sys2(SYS_PROC_LIST, buf.as_mut_ptr() as u64, max_entries as u64) as i32 } }
 pub fn disk_list(disks: &mut [u64]) -> i32                   { unsafe { sys2(SYS_DISK_LIST, disks.as_mut_ptr() as u64, disks.len() as u64) as i32 } }
 pub fn disk_info(id: u32, info: &mut UserDiskInfo) -> i32    { unsafe { sys2(SYS_DISK_INFO, id as u64, info as *mut UserDiskInfo as u64) as i32 } }
 pub fn disk_format(id: u32) -> i32                           { unsafe { sys2(SYS_DISK_FORMAT, id as u64, b"hvfs\0".as_ptr() as u64) as i32 } }

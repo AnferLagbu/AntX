@@ -1,81 +1,134 @@
-/// 命令表、分发调度与共享工具函数
-///
-/// 子模块:
-///   general  — help, cls, echo, exit
-///   fileops  — fls, fcd, fpwd, fcat, fmk, fmd, frm, fput, fsync
-///   identity — ilogin, ilogout, iwho, ipasswd
-///   system   — shost, sver
+//! 命令注册与路由 (Command Registry & Dispatch)
 
-mod general;
-mod fileops;
-mod identity;
-mod system;
+pub mod general;
+pub mod fileops;
+pub mod system;
+pub mod identity;
 
-use userlib::{print, println};
+use core::str::from_utf8;
 
-use core::sync::atomic::{AtomicBool, Ordering};
+// ── Cmd 解析结构 ──
 
-pub(crate) static RUNNING: AtomicBool = AtomicBool::new(true);
-
-pub fn is_running() -> bool { RUNNING.load(Ordering::Relaxed) }
-
-pub struct Cmd { argv: *const *const u8, n: usize }
+#[derive(Clone)]
+pub struct Cmd {
+    pub n: usize,
+    args: [u8; 1024],  // 原始参数字节
+    offsets: [usize; 32], // 每个参数的起始偏移
+}
 
 impl Cmd {
-    pub fn get(&self, i: usize) -> *const u8 {
-        if i >= self.n { return core::ptr::null(); }
-        unsafe { *self.argv.add(i) }
+    pub fn new(input: &[u8]) -> Self {
+        let mut offsets = [0usize; 32];
+        let mut args = [0u8; 1024];
+        let mut n = 0usize;
+        let mut pos = 0usize;
+        let len = input.len().min(1023);
+
+        // 复制输入 (去除尾随换行)
+        let end = if len > 0 && input[len - 1] == b'\n' { len - 1 } else { len };
+        let end = if end > 0 && input[end - 1] == b'\r' { end - 1 } else { end };
+        let end = end.min(1023);
+        args[..end].copy_from_slice(&input[..end]);
+        args[end] = 0;
+
+        // 分词
+        let mut i = 0;
+        while i < end {
+            // 跳过空白
+            while i < end && (args[i] == b' ' || args[i] == b'\t') { i += 1; }
+            if i >= end { break; }
+
+            // 引号处理
+            if args[i] == b'"' {
+                i += 1;
+                offsets[n] = i;
+                while i < end && args[i] != b'"' { i += 1; }
+                if i < end { args[i] = 0; i += 1; }
+            } else {
+                offsets[n] = i;
+                while i < end && args[i] != b' ' && args[i] != b'\t' { i += 1; }
+                if i < end { args[i] = 0; i += 1; }
+            }
+            n += 1;
+            if n >= 32 { break; }
+        }
+        Self { n, args, offsets }
+    }
+
+    pub fn get(&self, idx: usize) -> &[u8] {
+        if idx >= self.n { return b""; }
+        let start = self.offsets[idx];
+        let end = start + core::ffi::CStr::from_bytes_until_nul(&self.args[start..])
+            .map(|c| c.to_bytes().len()).unwrap_or(0);
+        &self.args[start..start + end]
     }
 }
 
-pub fn as_str(ptr: *const u8) -> &'static str {
-    if ptr.is_null() { return ""; }
-    unsafe {
-        let mut len = 0;
-        while *ptr.add(len) != 0 { len += 1; }
-        core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr, len))
-    }
+pub fn as_str(slice: &[u8]) -> &str { from_utf8(slice).unwrap_or("") }
+
+/// 从 cmd 获取 path 参数 (支持引号路径)
+pub fn path_arg(cmd: &Cmd) -> Option<[u8; 256]> {
+    if cmd.n < 2 { return None; }
+    let mut buf = [0u8; 256];
+    let raw = cmd.get(1);
+    let len = raw.len().min(255);
+    buf[..len].copy_from_slice(&raw[..len]);
+    buf[len] = 0;
+    Some(buf)
 }
 
-pub fn path_arg(args: &Cmd) -> Option<[u8; 256]> {
-    if args.n < 2 { return None; }
-    let s = as_str(args.get(1)).as_bytes();
-    let len = core::cmp::min(s.len(), 255);
-    let mut p = [0u8; 256];
-    p[..len].copy_from_slice(&s[..len]); p[len] = 0;
-    Some(p)
-}
+// ── 命令注册表 & 调度 ──
 
 type CmdFn = fn(&Cmd);
 
-struct Builtin { name: &'static str, func: CmdFn }
+struct Entry {
+    name: &'static str,
+    func: CmdFn,
+}
 
-static BUILTINS: &[Builtin] = &[
-    Builtin { name: "help",    func: general::help },
-    Builtin { name: "cls",     func: general::cls },
-    Builtin { name: "echo",    func: general::echo },
-    Builtin { name: "exit",    func: general::exit },
-    Builtin { name: "fls",     func: fileops::fls },
-    Builtin { name: "fcd",     func: fileops::fcd },
-    Builtin { name: "fpwd",    func: fileops::fpwd },
-    Builtin { name: "fcat",    func: fileops::fcat },
-    Builtin { name: "fmk",     func: fileops::fmk },
-    Builtin { name: "fmd",     func: fileops::fmd },
-    Builtin { name: "frm",     func: fileops::frm },
-    Builtin { name: "fput",    func: fileops::fput },
-    Builtin { name: "fsync",   func: fileops::fsync },
-    Builtin { name: "ilogin",  func: identity::ilogin },
-    Builtin { name: "ilogout", func: identity::ilogout },
-    Builtin { name: "iwho",    func: identity::iwho },
-    Builtin { name: "ipasswd", func: identity::ipasswd },
-    Builtin { name: "shost",   func: system::shost },
-    Builtin { name: "sver",    func: system::sver },
+static TABLE: &[Entry] = &[
+    // Shell 内置
+    Entry { name: "help",   func: general::help  },
+    Entry { name: "clear",  func: general::clear },
+    Entry { name: "echo",   func: general::echo  },
+    Entry { name: "exit",   func: general::exit  },
+    // 文件操作
+    Entry { name: "dir",    func: fileops::dir   },
+    Entry { name: "cd",     func: fileops::cd    },
+    Entry { name: "pwd",    func: fileops::pwd   },
+    Entry { name: "cat",    func: fileops::cat   },
+    Entry { name: "mkdir",  func: fileops::mkdir },
+    Entry { name: "touch",  func: fileops::touch },
+    Entry { name: "del",    func: fileops::del   },
+    Entry { name: "cp",     func: fileops::cp    },
+    Entry { name: "mv",     func: fileops::mv    },
+    Entry { name: "save",   func: fileops::save  },
+    // 身份
+    Entry { name: "login",  func: identity::login  },
+    Entry { name: "logout", func: identity::logout },
+    Entry { name: "who",    func: identity::who    },
+    Entry { name: "passwd", func: identity::passwd },
+    // 系统
+    Entry { name: "osinfo", func: system::osinfo },
+    Entry { name: "host",   func: system::host   },
+    Entry { name: "ps",     func: system::ps     },
+    Entry { name: "reboot", func: system::reboot },
+    Entry { name: "halt",   func: system::halt   },
 ];
 
-pub fn dispatch(args: &[*const u8], argc: usize) {
-    if argc == 0 { return; }
-    let cmd_name = as_str(args[0]);
-    let cmd = Cmd { argv: args.as_ptr(), n: argc };
-    for b in BUILTINS { if cmd_name == b.name { (b.func)(&cmd); return; } }
-    print("Unknown: "); println(cmd_name);
+pub fn dispatch(cmd: &Cmd) {
+    let name = as_str(cmd.get(0));
+    if name.is_empty() { return; }
+
+    // 搜索精确匹配
+    for entry in TABLE {
+        if entry.name == name {
+            (entry.func)(cmd);
+            return;
+        }
+    }
+
+    userlib::print("axsh: '");
+    userlib::print(name);
+    userlib::println("' unknown — try 'help'");
 }

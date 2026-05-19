@@ -8,6 +8,10 @@
 mod commands;
 
 use userlib::*;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// 全局退出标记 (由 `exit` 命令设置)
+pub static MAIN_EXIT: AtomicBool = AtomicBool::new(false);
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -24,7 +28,7 @@ fn banner() {
     println(""); println("  ___  _  _ ___");
     println(" / _ \\| || | __|"); println("| (_) | || |__ \\");
     println(" \\___/|_||_|___/"); println("");
-    println("axsh - AntX Shell"); println("Type 'help' for commands"); println("");
+    println("axsh - AntX Shell  (type 'help')"); println("");
 }
 
 fn prompt() {
@@ -38,11 +42,16 @@ fn prompt() {
 fn shell_main() {
     banner();
     let mut line = [0u8; 256];
-    while commands::is_running() {
+    loop {
+        if MAIN_EXIT.load(Ordering::SeqCst) { break; }
         prompt();
-        let len = read_line(&mut line); if len == 0 { continue; }
-        let (args, argc) = parse_args(&line[..len]); if argc == 0 { continue; }
-        commands::dispatch(args, argc);
+        let len = read_line(&mut line);
+        if len == 0 { continue; }
+
+        // 构建 Cmd 并分发
+        let cmd = commands::Cmd::new(&line[..len]);
+        if cmd.n == 0 { continue; }
+        commands::dispatch(&cmd);
     }
 }
 

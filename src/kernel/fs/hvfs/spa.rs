@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use crate::kernel::sync::mutex::Mutex;
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::dva::HvDva;
@@ -125,6 +125,7 @@ pub struct HvSpa {
     pub last_sync_time: AtomicU64,
     pub scrub_in_progress: AtomicBool,
     pub scrub_last_txg: AtomicU64,
+    pub partition_start: AtomicU32,
 }
 
 unsafe impl Send for HvSpa {}
@@ -151,6 +152,7 @@ impl HvSpa {
             last_sync_time: AtomicU64::new(0),
             scrub_in_progress: AtomicBool::new(false),
             scrub_last_txg: AtomicU64::new(0),
+            partition_start: AtomicU32::new(0),
         }
     }
 
@@ -175,7 +177,8 @@ impl HvSpa {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
         if buf.len() < 512 { return -1; }
-        unsafe { ata_read_sector(0, sector, buf.as_mut_ptr()) }
+        let phys = sector + self.partition_start.load(Ordering::Acquire);
+        unsafe { ata_read_sector(0, phys, buf.as_mut_ptr()) }
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
@@ -183,7 +186,8 @@ impl HvSpa {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         }
         if buf.len() < 512 { return -1; }
-        unsafe { ata_write_sector(0, sector, buf.as_ptr()) }
+        let phys = sector + self.partition_start.load(Ordering::Acquire);
+        unsafe { ata_write_sector(0, phys, buf.as_ptr()) }
     }
 
     pub fn init(&self, name: &str) {

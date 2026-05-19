@@ -42,6 +42,7 @@ pub struct HvVdevConfig {
     pub children: u16,
     pub is_log: bool,
     pub sector_count: u64,
+    pub partition_start: u32,
 }
 
 impl HvVdevConfig {
@@ -56,6 +57,7 @@ impl HvVdevConfig {
             asize: HV_VDEV_ASIZE_DEFAULT,
             nparity: 0, children: 1, is_log: false,
             sector_count: 0,
+            partition_start: 0,
         }
     }
 }
@@ -145,10 +147,11 @@ impl HvVdev {
         if buf.len() < need_bytes as usize { return -1; }
         let mut offset = 0usize;
         let mut sec = sector as u32;
+        let part_start = self.config.partition_start;
         for _ in 0..count {
             if offset + 512 > buf.len() { break; }
             let result = unsafe {
-                ata_read_sector(self.config.vdev_id as u8, sec, buf[offset..].as_mut_ptr())
+                ata_read_sector(self.config.vdev_id as u8, part_start + sec, buf[offset..].as_mut_ptr())
             };
             if result < 0 { return -1; }
             sec += 1;
@@ -166,10 +169,11 @@ impl HvVdev {
         if buf.len() < need_bytes as usize { return -1; }
         let mut offset = 0usize;
         let mut sec = sector as u32;
+        let part_start = self.config.partition_start;
         for _ in 0..count {
             if offset + 512 > buf.len() { break; }
             let result = unsafe {
-                ata_write_sector(self.config.vdev_id as u8, sec, buf[offset..].as_ptr())
+                ata_write_sector(self.config.vdev_id as u8, part_start + sec, buf[offset..].as_ptr())
             };
             if result < 0 { return -1; }
             sec += 1;

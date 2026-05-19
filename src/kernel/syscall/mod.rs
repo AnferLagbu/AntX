@@ -64,6 +64,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_PROC_WAIT    => dispatch!(sys_proc_wait(a0 as u32), b"proc_wait\0"),
         SYS_PROC_GETPWID => dispatch!(sys_proc_getpwid(), b"proc_getpwid\0"),
         SYS_PROC_SETPWID => dispatch!(sys_proc_setpwid(a0), b"proc_setpwid\0"),
+        SYS_PROC_LIST    => dispatch!(sys_proc_list(a0 as *mut u8, a1 as u32), b"proc_list\0"),
         SYS_PROC_SETPRI  => dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"proc_setpri\0"),
         SYS_PROC_SLEEP   => dispatch!(sys_proc_sleep(a0), b"proc_sleep\0"),
 
@@ -78,6 +79,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_FS_STAT      => dispatch!(sys_fs_stat(a0 as *const i8, a1 as *mut core::ffi::c_void), b"fs_stat\0"),
         SYS_FS_READDIR   => dispatch!(sys_fs_readdir(a0 as i32, a1 as *mut core::ffi::c_void), b"fs_readdir\0"),
         SYS_FS_UNLINK    => dispatch!(sys_fs_unlink(a0 as *const i8), b"fs_unlink\0"),
+        SYS_FS_RENAME    => dispatch!(sys_fs_rename(a0 as *const i8, a1 as *const i8), b"fs_rename\0"),
         SYS_FS_SYNC      => dispatch!(sys_fs_sync(), b"fs_sync\0"),
 
         SYS_AUTH_LOGIN        => dispatch!(sys_auth_login(a0 as *const i8, a1 as *const i8), b"auth_login\0"),
@@ -263,6 +265,14 @@ unsafe fn sys_fs_unlink(path: *const i8) -> i64 {
 
 unsafe fn sys_fs_sync() -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_sync() as i64
+}
+
+unsafe fn sys_fs_rename(old: *const i8, new: *const i8) -> i64 {
+    if old.is_null() || new.is_null() || !validate_user_ptr(old as u64) || !validate_user_ptr(new as u64) {
+        return SyscallError::E_FAULT.as_i64();
+    }
+    let pwid = crate::kernel::pwid::ffi::pwid_get_current();
+    crate::kernel::fs::vfs::ffi::vfs_rename(old, new, pwid) as i64
 }
 
 // ============================================================================
@@ -740,6 +750,51 @@ unsafe fn sys_proc_setpwid(pwid: u64) -> i64 {
 
 unsafe fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
     crate::kernel::proc::ffi::proc_set_priority(pid, priority) as i64
+}
+
+/// 进程列表 — 用户传入缓冲区，内核填充 ProcListEntry 数组
+#[repr(C)]
+struct ProcListEntry {
+    pid: u32,
+    state: u8,
+    _pad: [u8; 3],
+    pwid: u64,
+    priority: u32,
+    _pad2: u32,
+    name: [u8; 48],
+}
+
+unsafe fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
+    if buf.is_null() || !validate_user_ptr(buf as u64) {
+        return SyscallError::E_FAULT.as_i64();
+    }
+
+    let entry_size = core::mem::size_of::<ProcListEntry>() as u32;
+    let mut count: i32 = 0;
+
+    let table = &crate::kernel::proc::process::PROCESS_TABLE;
+    table.for_each(|proc| {
+        if (count as u32) < max_entries {
+            let entry = &mut *(buf.add(count as usize * entry_size as usize) as *mut ProcListEntry);
+            entry.pid = proc.pid.0 as u32;
+            entry.state = proc.get_state() as u8;
+            entry._pad = [0u8; 3];
+            entry.pwid = proc.get_pwid();
+            entry.priority = proc.get_priority() as u32;
+            entry._pad2 = 0;
+
+            let name = proc.name.lock();
+            let name_bytes = name.as_bytes();
+            let len = name_bytes.len().min(47);
+            entry.name[..len].copy_from_slice(&name_bytes[..len]);
+            entry.name[len] = 0;
+
+            count += 1;
+        }
+        true // continue iterating
+    });
+
+    count as i64
 }
 
 // ============================================================================

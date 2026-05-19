@@ -20,6 +20,7 @@ pub const SYS_PROC_SETPWID: u64 = 7;
 pub const SYS_PROC_SETPRI: u64 = 8;
 pub const SYS_PROC_YIELD: u64 = 9;
 pub const SYS_PROC_SLEEP: u64 = 10;
+pub const SYS_PROC_LIST: u64 = 11;
 
 // ==================== 文件系统 syscall ====================
 pub const SYS_FS_OPEN: u64 = 20;

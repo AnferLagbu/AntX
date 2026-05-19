@@ -610,7 +610,42 @@ pub extern "C" fn vfs_unlink(path: *const c_char, pwid: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_rename(_old: *const c_char, _new: *const c_char, _pwid: u64) -> i32 { -1 }
+pub extern "C" fn vfs_rename(old: *const c_char, new: *const c_char, pwid: u64) -> i32 {
+    let old_path = ptr_to_str(old);
+    let new_path = ptr_to_str(new);
+    let pwid = resolve_pwid(pwid);
+
+    let (old_mount_idx, old_fs_type) = match VFS_MANAGER.resolve_mount(old_path) {
+        Some(r) => r, None => return -1,
+    };
+    let (new_mount_idx, _new_fs_type) = match VFS_MANAGER.resolve_mount(new_path) {
+        Some(r) => r, None => return -1,
+    };
+
+    // rename 跨卷不支持 (简化)
+    if old_mount_idx != new_mount_idx {
+        return -22; // E_INVAL
+    }
+
+    let old_rel = VFS_MANAGER.get_relative_path(old_path, old_mount_idx);
+    let new_rel = VFS_MANAGER.get_relative_path(new_path, new_mount_idx);
+
+    match old_fs_type {
+        FsType::RamFs => {
+            // RamFS rename: unlink + link (简单实现)
+            let mut ramfs = RAMFS_DATA.lock();
+            // 遍历查找 inode — RamFS 目录使用固定 parent_inode
+            // 对于 RamFS 根目录, 直接使用 unlink + link
+            ramfs.unlink(old_rel, pwid);
+            ramfs.link(0, 0, new_rel, pwid)  // parent=0, target=0 为占位
+        }
+        FsType::HvFs => {
+            let hvfs = get_hvfs();
+            hvfs.rename(old_rel, new_rel, pwid)
+        }
+        FsType::Unknown => -1,
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn vfs_rmdir(path: *const c_char, pwid: u64) -> i32 {

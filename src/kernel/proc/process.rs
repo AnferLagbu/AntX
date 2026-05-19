@@ -322,6 +322,17 @@ impl ProcessTable {
         }
         table[pid as usize].take().map(|addr| addr as *mut Process)
     }
+
+    /// 遍历所有进程 (回调返回 false 时提前终止)
+    pub fn for_each<F: FnMut(&Process) -> bool>(&self, mut f: F) {
+        let table = self.processes.lock();
+        for entry in table.iter() {
+            if let &Some(addr) = entry {
+                let proc = unsafe { &*(addr as *const Process) };
+                if !f(proc) { break; }
+            }
+        }
+    }
 }
 
 pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
