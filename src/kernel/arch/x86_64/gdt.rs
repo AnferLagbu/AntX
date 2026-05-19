@@ -127,14 +127,14 @@ impl Granularity {
     /// 段限制单位 (Limit granularity)
     /// - 0: 1 字节粒度
     /// - 1: 4KB 页粒度
-    pub const PAGE_GRANULARITY: u8 = 1 << 3;
+    pub const PAGE_GRANULARITY: u8 = 1 << 7;
     /// 默认操作数大小 (Default Operation Size)
     /// - 0: 16-bit 保护模式
     /// - 1: 32-bit 保护模式 (在 64-bit 长模式下忽略)
-    pub const SIZE_32BIT: u8       = 1 << 2;
+    pub const SIZE_32BIT: u8       = 1 << 6;
     /// 64-bit 代码段标志 (Long Mode)
     /// 仅对代码段有效, 设置后启用 64-bit 模式
-    pub const LONG_MODE: u8        = 1 << 1;
+    pub const LONG_MODE: u8        = 1 << 5;
     
     /// 创建 64-bit 代码段粒度 (4KB 粒度, Long Mode)
     #[inline]
@@ -377,7 +377,7 @@ pub extern "C" fn gdt_init() -> i32 {
         TSS_INSTANCE.set_ist(1, IST1_STACK.as_ptr() as u64 + IST1_STACK.len() as u64);
         TSS_INSTANCE.set_ist(2, IST2_STACK.as_ptr() as u64 + IST2_STACK.len() as u64);
         
-        TSS_INSTANCE.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u32;
+        TSS_INSTANCE.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
         
         // Step 5: 设置 TSS 描述符 (占用索引 5 和 6)
         let tss_addr = &TSS_INSTANCE as *const _ as u64;

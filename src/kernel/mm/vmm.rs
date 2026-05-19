@@ -169,46 +169,40 @@ impl VirtualMemoryManager {
         let pml4_virt = PhysAddr(pml4).to_virt();
 
         unsafe {
-            let pml4 = pml4_virt.0 as *const PageTableEntry;
+            let pml4_raw = pml4_virt.0 as *const u64;
+            let pml4e = pml4_raw.add(virt.pml4_idx()).read_volatile();
+            if (pml4e & 1) == 0 { return None; }
 
-            let pml4e = &*pml4.add(virt.pml4_idx());
-            if !pml4e.is_present() {
-                return None;
-            }
+            let pdpt_phys = (pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pdpt_raw = pdpt_phys as *const u64;
+            let pdpte = pdpt_raw.add(virt.pdpt_idx()).read_volatile();
+            if (pdpte & 1) == 0 { return None; }
 
-            let pdpt = pml4e.frame().to_virt().0 as *const PageTableEntry;
-            let pdpte = &*pdpt.add(virt.pdpt_idx());
-            if !pdpte.is_present() {
-                return None;
-            }
-
-            if pdpte.is_huge() {
-                let frame = pdpte.frame();
+            if (pdpte & 0x80) != 0 {
+                let frame = pdpte & 0x000FFFFFFFFFF000;
                 let offset = virt.0 & (HUGE_PAGE_1G_SIZE - 1);
-                return Some(PhysAddr(frame.0 + offset));
+                return Some(PhysAddr(frame + offset));
             }
 
-            let pd = pdpte.frame().to_virt().0 as *const PageTableEntry;
-            let pde = &*pd.add(virt.pd_idx());
-            if !pde.is_present() {
-                return None;
-            }
+            let pd_phys = (pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pd_raw = pd_phys as *const u64;
+            let pde = pd_raw.add(virt.pd_idx()).read_volatile();
+            if (pde & 1) == 0 { return None; }
 
-            if pde.is_huge() {
-                let frame = pde.frame();
+            if (pde & 0x80) != 0 {
+                let frame = pde & 0x000FFFFFFFFFF000;
                 let offset = virt.0 & (HUGE_PAGE_2M_SIZE - 1);
-                return Some(PhysAddr(frame.0 + offset));
+                return Some(PhysAddr(frame + offset));
             }
 
-            let pt = pde.frame().to_virt().0 as *const PageTableEntry;
-            let pte = &*pt.add(virt.pt_idx());
-            if !pte.is_present() {
-                return None;
-            }
+            let pt_phys = (pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pt_raw = pt_phys as *const u64;
+            let pte = pt_raw.add(virt.pt_idx()).read_volatile();
+            if (pte & 1) == 0 { return None; }
 
-            let frame = pte.frame();
+            let frame = pte & 0x000FFFFFFFFFF000;
             let offset = virt.0 & (PAGE_SIZE - 1);
-            Some(PhysAddr(frame.0 + offset))
+            Some(PhysAddr(frame + offset))
         }
     }
 
@@ -231,11 +225,18 @@ impl VirtualMemoryManager {
         let kernel_pml4_virt = PhysAddr(kernel_pml4).to_virt();
 
         unsafe {
-            let src = kernel_pml4_virt.0 as *const PageTableEntry;
-            let dst = pml4_virt.0 as *mut PageTableEntry;
+            let src = kernel_pml4_virt.0 as *const u64;
+            let dst = pml4_virt.0 as *mut u64;
 
-            for i in 256..512 {
-                dst.add(i).write(src.add(i).read());
+            core::ptr::copy_nonoverlapping(src.add(256), dst.add(256), 256);
+
+            core::arch::asm!("invlpg [{}]", in(reg) dst.add(256), options(nostack));
+
+            let e256_src = src.add(256).read_volatile();
+            let e256_dst = dst.add(256).read_volatile();
+            if e256_src != e256_dst || (e256_src & 1) == 0 {
+                pmm.free_page(pml4_phys);
+                return None;
             }
         }
 
@@ -257,19 +258,33 @@ impl VirtualMemoryManager {
             return;
         }
 
+        self.acquire_lock();
+
         let pml4_virt = PhysAddr(pml4).to_virt();
 
         unsafe {
-            let pml4 = pml4_virt.0 as *mut PageTableEntry;
+            let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
 
-            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true);
-            if pdpt.is_null() { return; }
+            let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true);
+            if pdpt.is_null() {
+                self.release_lock(); return;
+            }
 
             let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true);
-            if pd.is_null() { return; }
+            if pd.is_null() {
+                self.release_lock(); return;
+            }
 
             let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true);
-            if pt.is_null() { return; }
+            if pt.is_null() {
+                self.release_lock(); return;
+            }
+
+            if flags.contains(PageFlags::USER) {
+                (*pml4_ptr.add(virt.pml4_idx())).set_user(true);
+                (*pdpt.add(virt.pdpt_idx())).set_user(true);
+                (*pd.add(virt.pd_idx())).set_user(true);
+            }
 
             let pte = &mut *pt.add(virt.pt_idx());
             pte.set_frame(phys);
@@ -277,10 +292,14 @@ impl VirtualMemoryManager {
 
             self.flush_tlb(virt.0);
         }
+
+        self.release_lock();
     }
 
     pub fn destroy_page_table(&self, pml4: u64) {
         if pml4 == 0 { return; }
+
+        self.acquire_lock();
 
         let pmm = get_pmm();
         let pml4_virt = PhysAddr(pml4).to_virt();
@@ -333,6 +352,8 @@ impl VirtualMemoryManager {
                 break;
             }
         }
+
+        self.release_lock();
     }
 
     pub fn get_stats(&self) -> (u64, u64, u64) {
@@ -429,7 +450,7 @@ impl VirtualMemoryManager {
     unsafe fn get_or_create_table_entry(&self, entry: *mut PageTableEntry, create: bool) -> *mut PageTableEntry {
         let e = &*entry;
 
-        if e.is_present() {
+        if e.is_present() && !e.is_huge() {
             e.frame().to_virt().0 as *mut PageTableEntry
         } else if create {
             let pmm = get_pmm();
@@ -462,7 +483,10 @@ impl VirtualMemoryManager {
             let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false);
             if pdpt.is_null() { return Err("PDPT not present"); }
 
-            let pd_entry = &mut *pdpt.add(v.pdpt_idx());
+            let pd = self.get_or_create_table_entry(pdpt.add(v.pdpt_idx()), false);
+            if pd.is_null() { return Err("PD not present"); }
+
+            let pd_entry = &mut *pd.add(v.pd_idx());
             if !pd_entry.is_present() { return Err("PD entry not present"); }
             if !pd_entry.is_huge() { return Ok(()); }
 

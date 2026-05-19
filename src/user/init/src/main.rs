@@ -120,6 +120,7 @@ fn init_main() {
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    unsafe { core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'R', options(nomem, nostack)); }
     init_main();
     proc_exit(0);
 }

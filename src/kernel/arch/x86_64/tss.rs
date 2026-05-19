@@ -47,30 +47,30 @@
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct TaskStateSegment {
-    /// 保留字段 (Offset 0x00, 2 bytes)
+    /// 保留字段 (Offset 0x00, 4 bytes)
     /// 必须为 0, 供未来扩展使用
-    reserved_0: u16,
+    reserved_0: u32,
     
-    /// 特权级 0 栈指针 (Offset 0x02, 8 bytes)
+    /// 特权级 0 栈指针 (Offset 0x04, 8 bytes)
     /// 
     /// 当从 Ring 3 (用户态) 发生中断/异常/调用进入 Ring 0 (内核态) 时,
     /// CPU 自动将 RSP 设置为此值。
     /// **这是最重要的字段!** 必须指向有效的内核栈。
     pub rsp0: u64,
     
-    /// 特权级 1 栈指针 (Offset 0x0A, 8 bytes)
+    /// 特权级 1 栈指针 (Offset 0x0C, 8 bytes)
     /// 在 x86-64 中未使用 (仅 0 和 3 有效), 但必须存在。
     pub(crate) rsp1: u64,
     
-    /// 特权级 2 栈指针 (Offset 0x12, 8 bytes)
+    /// 特权级 2 栈指针 (Offset 0x14, 8 bytes)
     /// 同上, 未使用但必须存在。
     pub(crate) rsp2: u64,
     
-    /// 保留字段 (Offset 0x1A, 2 bytes)
+    /// 保留字段 (Offset 0x1C, 8 bytes)
     /// 必须为 0
-    reserved_1: u16,
+    reserved_1: u64,
     
-    /// 中断栈表 (Interrupt Stack Table, Offset 0x1C)
+    /// 中断栈表 (Interrupt Stack Table, Offset 0x24)
     /// 
     /// 7 个条目, 每个 8 字节, 用于特定中断向量的独立栈。
     /// IDT 中的 Gate Descriptor 可以指定使用哪个 IST 条目 (0-6)。
@@ -81,15 +81,15 @@ pub struct TaskStateSegment {
     /// - 其他: 可选, 用于关键中断
     pub ist: [u64; 7],
     
-    /// 保留字段 (Offset 0x58, 4 bytes)
+    /// 保留字段 (Offset 0x5C, 8 bytes)
     /// 必须为 0
-    reserved_2: u32,
+    reserved_2: u64,
     
-    /// 保留字段 (Offset 0x5C, 4 bytes)
+    /// 保留字段 (Offset 0x64, 2 bytes)
     /// 必须为 0
-    reserved_3: u32,
+    reserved_3: u16,
     
-    /// I/O 权限位图基址 (Offset 0x60, 4 bytes)
+    /// I/O 权限位图基址 (Offset 0x66, 2 bytes)
     /// 
     /// 指向 I/O 位图的偏移量 (相对于 TSS 起始位置)。
     /// - 如果等于 TSS 大小, 表示没有 I/O 位图
@@ -97,7 +97,7 @@ pub struct TaskStateSegment {
     /// 
     /// I/O 位图用于 Ring 3 进程的 I/O 端口权限检查。
     /// 通常设置为 TSS_SIZE (禁用 I/O 位图) 以简化实现。
-    pub iomap_base: u32,
+    pub iomap_base: u16,
 }
 
 // ============================================================================
@@ -114,7 +114,7 @@ pub const TSS_SIZE: usize = core::mem::size_of::<TaskStateSegment>();
 pub const IST_COUNT: usize = 7;
 
 /// 默认 I/O 位图基址 (设置为 TSS 末尾, 表示无 I/O 位图)
-pub const DEFAULT_IOMAP_BASE: u32 = TSS_SIZE as u32;
+pub const DEFAULT_IOMAP_BASE: u16 = TSS_SIZE as u16;
 
 // ============================================================================
 // 方法实现
@@ -196,7 +196,7 @@ impl TaskStateSegment {
     /// # Arguments
     /// * `offset` - 相对于 TSS 起始的字节偏移
     #[inline]
-    pub fn enable_iomap(&mut self, offset: u32) {
+    pub fn enable_iomap(&mut self, offset: u16) {
         self.iomap_base = offset;
     }
     
@@ -209,7 +209,7 @@ impl TaskStateSegment {
     /// 检查是否启用了 I/O 位图
     #[inline]
     pub fn has_iomap(&self) -> bool {
-        self.iomap_base < TSS_SIZE as u32
+        self.iomap_base < TSS_SIZE as u16
     }
 }
 

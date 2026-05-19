@@ -71,10 +71,8 @@ use core::sync::atomic::Ordering;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    // Signal to the scheduler/IDT that a recoverable panic occurred
     crate::kernel::barrier::PANIC_FLAG.store(true, Ordering::SeqCst);
 
-    // Store panic message for recovery diagnostics
     let msg = alloc::format!("{}", info);
     let bytes = msg.as_bytes();
     let len = bytes.len().min(127);
@@ -84,9 +82,75 @@ fn panic(info: &PanicInfo) -> ! {
         panic_msg[len] = 0;
     }
 
-    // Trigger int 0x82 — dedicated recovery interrupt.
-    // The IDT handler will check PANIC_FLAG → attempt domain recovery → return.
-    // If recovery fails, it falls through to kernel panic.
+    // Emit panic diagnostics to serial console before entering recovery
+    if crate::kernel::klog::KLOG_INIT.load(Ordering::Acquire) {
+        crate::kernel::klog::serial_write_bytes(b"\n========== KERNEL PANIC ==========\n");
+        crate::kernel::klog::serial_write_bytes(msg.as_bytes());
+        crate::kernel::klog::serial_write_bytes(b"\n");
+
+        let mut regs: [u64; 16] = [0; 16];
+        unsafe {
+            core::arch::asm!(
+                "mov {0}, rax", "mov {1}, rbx", "mov {2}, rcx",
+                "mov {3}, rdx", "mov {4}, rsi", "mov {5}, rdi",
+                out(reg) regs[0], out(reg) regs[1], out(reg) regs[2],
+                out(reg) regs[3], out(reg) regs[4], out(reg) regs[5],
+                options(nostack, preserves_flags)
+            );
+            core::arch::asm!(
+                "mov {0}, rbp", "mov {1}, rsp", "mov {2}, r8",
+                "mov {3}, r9",  "mov {4}, r10", "mov {5}, r11",
+                out(reg) regs[6], out(reg) regs[7], out(reg) regs[8],
+                out(reg) regs[9], out(reg) regs[10], out(reg) regs[11],
+                options(nostack, preserves_flags)
+            );
+            core::arch::asm!(
+                "mov {0}, r12", "mov {1}, r13", "mov {2}, r14", "mov {3}, r15",
+                out(reg) regs[12], out(reg) regs[13], out(reg) regs[14], out(reg) regs[15],
+                options(nostack, preserves_flags)
+            );
+        }
+        let reg_names = [
+            b"RAX", b"RBX", b"RCX", b"RDX",
+            b"RSI", b"RDI", b"RBP", b"RSP",
+            b"R8 ", b"R9 ", b"R10", b"R11",
+            b"R12", b"R13", b"R14", b"R15",
+        ];
+        crate::kernel::klog::serial_write_bytes(b"--- Register Dump ---\n");
+        for i in 0..16 {
+            crate::kernel::klog::serial_write_bytes(b"  ");
+            crate::kernel::klog::serial_write_bytes(reg_names[i]);
+            crate::kernel::klog::serial_write_bytes(b"= 0x");
+            let mut hex_buf = [0u8; 16];
+            let v = regs[i];
+            for d in 0..16 {
+                let nibble = ((v >> (60 - d * 4)) & 0xF) as u8;
+                hex_buf[d] = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
+            }
+            crate::kernel::klog::serial_write_bytes(&hex_buf);
+            if i % 4 == 3 {
+                crate::kernel::klog::serial_write_bytes(b"\n");
+            }
+        }
+        let mut cr2: u64 = 0;
+        let mut cr3_val: u64 = 0;
+        unsafe {
+            core::arch::asm!("mov {}, cr2", out(reg) cr2);
+            core::arch::asm!("mov {}, cr3", out(reg) cr3_val);
+        }
+        crate::kernel::klog::serial_write_bytes(b"  CR2= 0x");
+        for d in 0..16 {
+            let nibble = ((cr2 >> (60 - d * 4)) & 0xF) as u8;
+            crate::kernel::klog::serial_write_bytes(&[if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 }]);
+        }
+        crate::kernel::klog::serial_write_bytes(b"  CR3= 0x");
+        for d in 0..16 {
+            let nibble = ((cr3_val >> (60 - d * 4)) & 0xF) as u8;
+            crate::kernel::klog::serial_write_bytes(&[if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 }]);
+        }
+        crate::kernel::klog::serial_write_bytes(b"\n===================================\n");
+    }
+
     unsafe {
         core::arch::asm!("int 0x82", options(noreturn));
     }
@@ -168,6 +232,7 @@ pub extern "C" fn kernel_init() {
     crate::klog_boot_info!("PMM bitmap initialized");
 
     // 6. IDT + PIC
+    crate::kernel::arch::x86_64::gdt::gdt_init();
     crate::kernel::idt::idt_init();
     crate::klog_boot_info!("IDT+PIC ready");
 
@@ -192,12 +257,16 @@ pub extern "C" fn kernel_init() {
     crate::kernel::fs::vfs::init();
     crate::klog_boot_info!("VFS ready");
 
-    // 10. Network (lwIP + E1000) — deferred: lwip_init blocks boot intermittently
-    // Will be triggered via syscall or from init after userland is up.
+    // 10. Network (lwIP + E1000) — now safe: cli/sti critical section protects lwip_init
+    crate::kernel::net::init::qx_net_init();
+    crate::klog_boot_info!("Network subsystem initialized");
 
     // 11. Barrier-Stack recovery domains
+    crate::kernel::klog::serial_write_bytes(b"[BOOT] step 11 start\n");
     crate::kernel::mm::pmm::pmm_register_barrier_domain();
+    crate::kernel::klog::serial_write_bytes(b"[BOOT] step 11 pmm done\n");
     crate::kernel::proc::process::proc_register_barrier_domain();
+    crate::kernel::klog::serial_write_bytes(b"[BOOT] step 11 proc done\n");
     crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
     #[cfg(not(feature = "kernel_test"))]

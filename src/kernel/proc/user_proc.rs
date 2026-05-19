@@ -133,9 +133,11 @@ impl UserProcManager {
             }
             let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
             if kstack != 0 {
-                let kstack_base = kstack - USER_KSTACK_SIZE;
+                // kstack is a higher-half virtual address; convert back to physical for PMM
+                let kstack_base_virt = kstack - USER_KSTACK_SIZE;
+                let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
                 for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
-                    pmm_free_page((kstack_base + i * PAGE_SIZE) as *mut core::ffi::c_void);
+                    pmm_free_page((kstack_base_phys + i * PAGE_SIZE) as *mut core::ffi::c_void);
                 }
             }
             let ustack = (*proc).user_stack.load(Ordering::SeqCst);
@@ -163,11 +165,13 @@ impl UserProcManager {
     }
     
     pub fn create(&self, info: &UserProcInfo, pwid: u64) -> Option<*mut UserProcess> {
+        crate::kernel::klog::serial_write_bytes(b"[PROC] create: start\n");
         let pid = PROCESS_TABLE.allocate_pid()?;
         
         let proc = unsafe {
             let ptr = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
             if ptr.is_null() {
+                crate::kernel::klog::serial_write_bytes(b"[PROC] create: kmalloc null\n");
                 return None;
             }
             memset(ptr as *mut u8, 0, core::mem::size_of::<UserProcess>() as u64);
@@ -176,14 +180,18 @@ impl UserProcManager {
         
         unsafe {
             (*proc).pid = pid;
-            (*proc).cr3.store(vmm_create_user_page_table(), Ordering::SeqCst);
-            if (*proc).cr3.load(Ordering::SeqCst) == 0 {
+            let cr3_val = vmm_create_user_page_table();
+            (*proc).cr3.store(cr3_val, Ordering::SeqCst);
+            if cr3_val == 0 {
+                crate::kernel::klog::serial_write_bytes(b"[PROC] create: cr3 null\n");
                 return None;
             }
+            crate::kernel::klog::serial_write_bytes(b"[PROC] create: cr3 ok\n");
             
             let stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
             if stack_pages.is_null() {
-                pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+                crate::kernel::klog::serial_write_bytes(b"[PROC] create: stack_pages null\n");
+                pmm_free_page(cr3_val as *mut core::ffi::c_void);
                 return None;
             }
             
@@ -193,14 +201,11 @@ impl UserProcManager {
             for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
                 let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
                 let sphys = stack_phys + i * PAGE_SIZE;
-                // Split any huge page that covers this address
-                vmm_split_2mb_page(svirt);
                 vmm_map_page_in_table(
                     (*proc).cr3.load(Ordering::SeqCst),
                     svirt, sphys,
                     PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER
                 );
-                // Also map into kernel PML4 (PML4[255] not covered by huge pages)
                 vmm_map_page(svirt, sphys, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
                 vmm_ensure_path_user(svirt);
             }
@@ -215,7 +220,11 @@ impl UserProcManager {
                 pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut core::ffi::c_void);
                 return None;
             }
-            let kstack_top = kstack as u64 + USER_KSTACK_SIZE;
+            // Convert physical address to higher-half virtual address.
+            // The user page table only maps PML4[256..511] (kernel higher-half),
+            // so the TSS RSP0 must be a higher-half address to be accessible
+            // when an interrupt fires in Ring 3 with the user CR3 loaded.
+            let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
             (*proc).kernel_stack.store(kstack_top, Ordering::SeqCst);
             crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
             
@@ -252,6 +261,7 @@ impl UserProcManager {
         let kernel_proc_ptr = alloc::boxed::Box::into_raw(kernel_proc);
         PROCESS_TABLE.insert(kernel_proc_ptr);
         
+        crate::kernel::klog::serial_write_bytes(b"[PROC] create: done\n");
         Some(proc)
     }
     
@@ -262,39 +272,28 @@ impl UserProcManager {
             self.current.store(proc as u64, Ordering::SeqCst);
             (*proc).state.store(2, Ordering::SeqCst);
             
-            tss_set_kernel_stack((*proc).kernel_stack.load(Ordering::SeqCst));
-            
-            let user_cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            let ss_val = GDT_USER_DATA | 0x03;
-            let cs_val = GDT_USER_CODE | 0x03;
+            let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
             let rip_val = (*proc).entry;
             let rsp_val = (*proc).user_stack.load(Ordering::SeqCst);
+            let ss_val = GDT_USER_DATA | 0x03;
+            let cs_val = GDT_USER_CODE | 0x03;
             let rflags_val: u64 = 0x3202;
             
-            // Switch to user CR3 so user page tables are active
-            core::arch::asm!(
-                "mov cr3, {}",
-                in(reg) user_cr3,
-            );
+            tss_set_kernel_stack(kstack);
             
             core::arch::asm!(
                 "cli",
-                "mov ds, dx",
-                "mov es, dx",
-                "mov fs, dx",
-                "mov gs, dx",
-                "push {user_ss}",
-                "push {user_rsp}",
-                "push {user_rflags}",
-                "push {user_cs}",
-                "push {user_rip}",
+                "push r8",
+                "push r9",
+                "push r10",
+                "push r11",
+                "push r12",
                 "iretq",
-                in("dx") ss_val,
-                user_ss = in(reg) ss_val,
-                user_rsp = in(reg) rsp_val,
-                user_rflags = in(reg) rflags_val,
-                user_cs = in(reg) cs_val,
-                user_rip = in(reg) rip_val,
+                in("r8") ss_val,
+                in("r9") rsp_val,
+                in("r10") rflags_val,
+                in("r11") cs_val,
+                in("r12") rip_val,
                 options(noreturn)
             );
         }
@@ -422,7 +421,9 @@ impl UserProcManager {
     }
     
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwid: u64) -> i32 {
+        crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: start\n");
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
+            crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: null or too small\n");
             return -1;
         }
         
@@ -435,8 +436,11 @@ impl UserProcManager {
             }
             
             if (*header).class != 2 || (*header).machine != 0x3E {
+                crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: bad class/machine\n");
                 return -1;
             }
+            
+            crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: elf valid\n");
             
             let info = UserProcInfo {
                 entry: (*header).entry,
@@ -447,10 +451,14 @@ impl UserProcManager {
             
             let proc = match self.create(&info, pwid) {
                 Some(p) => p,
-                None => return -1,
+                None => {
+                    crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: create failed\n");
+                    return -1;
+                }
             };
             
             let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+            crate::kernel::klog::serial_write_bytes(b"[PROC] load_elf: proc created, mapping\n");
 
             let mut allocated_pages: [u64; 1024] = [0; 1024];
             let mut page_count: usize = 0;
@@ -471,50 +479,61 @@ impl UserProcManager {
                 let num_pages = (vaddr_end - vaddr_start) / PAGE_SIZE;
                 
                 for j in 0..num_pages {
-                    let page = pmm_alloc_page();
-                    if page.is_null() {
-                        for pi in 0..page_count {
-                            pmm_free_page(allocated_pages[pi] as *mut core::ffi::c_void);
-                        }
-                        self.destroy(proc);
-                        return -1;
-                    }
-                    if page_count < 1024 {
-                        allocated_pages[page_count] = page as u64;
-                        page_count += 1;
-                    }
-                    
-                    memset(page as *mut u8, 0, PAGE_SIZE);
+                    let vaddr = vaddr_start + j * PAGE_SIZE;
                     
                     let mut flags = PAGE_PRESENT | PAGE_USER;
                     if (*phdr).p_flags & 0x02 != 0 {
                         flags |= PAGE_WRITABLE;
                     }
                     
-                    vmm_map_page_in_table(cr3, vaddr_start + j * PAGE_SIZE, page as u64, flags);
+                    // Check if this page is already mapped (shared by a previous PHDR)
+                    let existing_phys = vmm_get_physical_in_table(cr3, vaddr);
                     
-                    // Also map into kernel PML4 so user code runs under kernel CR3
-                    let vaddr = vaddr_start + j * PAGE_SIZE;
-                    vmm_split_2mb_page(vaddr);
-                    vmm_map_page(vaddr, page as u64, flags);
-                    vmm_ensure_path_user(vaddr);
+                    if existing_phys == 0 {
+                        let page = pmm_alloc_page();
+                        if page.is_null() {
+                            for pi in 0..page_count {
+                                pmm_free_page(allocated_pages[pi] as *mut core::ffi::c_void);
+                            }
+                            self.destroy(proc);
+                            return -1;
+                        }
+                        if page_count < 1024 {
+                            allocated_pages[page_count] = page as u64;
+                            page_count += 1;
+                        }
+                        memset(page as *mut u8, 0, PAGE_SIZE);
+                        vmm_map_page_in_table(cr3, vaddr, page as u64, flags);
+                        vmm_map_page(vaddr, page as u64, flags);
+                        vmm_ensure_path_user(vaddr);
+                    } else {
+                        // Reuse existing page, record it
+                        if page_count < 1024 {
+                            allocated_pages[page_count] = existing_phys;
+                            page_count += 1;
+                        }
+                    }
                 }
                 
                 if (*phdr).p_filesz > 0 {
-                    let offset_in_first = (*phdr).p_vaddr & 0xFFF;
+                    let file_offset_bytes = (*phdr).p_offset as usize;
+                    let mut copied: u64 = 0;
+                    let first_page_offset = (*phdr).p_vaddr & 0xFFF;
+                    let start_idx = page_count.saturating_sub(num_pages as usize);
                     
-                    for k in 0..(*phdr).p_filesz {
-                        let page_idx = (offset_in_first + k) / PAGE_SIZE;
-                        let offset_in_page = (offset_in_first + k) % PAGE_SIZE;
+                    for j in 0..num_pages {
+                        if copied >= (*phdr).p_filesz { break; }
+                        let page_phys = allocated_pages[start_idx + j as usize];
+                        if page_phys == 0 { continue; }
                         
-                        if page_idx < num_pages {
-                            let phys = vmm_get_physical_in_table(cr3, vaddr_start + page_idx * PAGE_SIZE);
-                            if phys != 0 {
-                                let dest = (phys + KERNEL_BASE + offset_in_page) as *mut u8;
-                                let src = elf_data.add((*phdr).p_offset as usize + k as usize);
-                                *dest = *src;
-                            }
-                        }
+                        let off_in_page = if j == 0 { first_page_offset } else { 0 };
+                        let dest = (page_phys + KERNEL_BASE + off_in_page) as *mut u8;
+                        let src = elf_data.add(file_offset_bytes + (copied as usize));
+                        let max_in_page = PAGE_SIZE - off_in_page;
+                        let remaining = (*phdr).p_filesz as u64 - copied;
+                        let chunk = if max_in_page < remaining { max_in_page } else { remaining };
+                        memcpy(dest, src, chunk);
+                        copied += chunk;
                     }
                 }
             }
@@ -562,7 +581,6 @@ impl UserProcManager {
                 
                 // Also map into kernel PML4
                 let vaddr = USER_CODE_BASE + i * PAGE_SIZE;
-                vmm_split_2mb_page(vaddr);
                 vmm_map_page(vaddr, page as u64, PAGE_PRESENT | PAGE_USER);
                 vmm_ensure_path_user(vaddr);
             }
@@ -626,7 +644,6 @@ pub fn try_expand_user_stack(fault_addr: u64) -> bool {
 
             memset(new_page as *mut u8, 0, PAGE_SIZE);
 
-            vmm_split_2mb_page(vaddr);
             vmm_map_page_in_table(cr3, vaddr, new_page as u64,
                 PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
             vmm_map_page(vaddr, new_page as u64,
