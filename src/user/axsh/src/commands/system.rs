@@ -9,9 +9,6 @@ pub fn osinfo(_: &Cmd) {
     println("Kernel:  QueenX (QX)");
     println("Userland: Rust");
     println("Arch:    x86_64");
-    // format 日期
-    let version = option_env!("CARGO_PKG_VERSION").unwrap_or("dev");
-    println!("Build:   {}", version);
 }
 
 pub fn host(cmd: &Cmd) {

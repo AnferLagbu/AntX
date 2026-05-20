@@ -64,39 +64,6 @@ DISK_IMAGE = build/antx.img
 
 LOG_DIR = logs
 
-# ============================================================================
-# 动态版本生成 (Git-based Versioning)
-# ============================================================================
-# 每次构建时自动从 Git 仓库获取版本信息
-# 生成文件: src/include/version_auto.h, src/include/version_registry.h
-#
-# 手动触发: make generate-version
-# 强制重新生成: make generate-version-force
-# ============================================================================
-
-.PHONY: generate-version generate-version-force
-
-VERSION_SCRIPT = scripts/generate_version.sh
-VERSION_AUTO_H = src/include/version_auto.h
-VERSION_REGISTRY_H = src/include/version_registry.h
-
-generate-version:
-	@echo "[GEN] Generating dynamic version info from Git..."
-	@bash $(VERSION_SCRIPT) --verbose
-	@echo "[GEN] Version files generated successfully"
-
-generate-version-force:
-	@echo "[GEN] Force regenerating version info..."
-	@bash $(VERSION_SCRIPT) --verbose --force
-	@echo "[GEN] Version files regenerated"
-
-# 确保版本头文件存在 (如果不存在则生成)
-$(VERSION_AUTO_H):
-	@$(MAKE) generate-version
-
-$(VERSION_REGISTRY_H):
-	@$(MAKE) generate-version
-
 .PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-host test-unit test-integration test-smoke test-stress \
          test-all test-chaos test-smp
 
