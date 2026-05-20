@@ -54,17 +54,17 @@ impl ProcfsData {
     pub fn mount(&self, _path: &str) -> i32 {
         let mut entries = self.entries.lock();
         
-        Self::set_name(&mut entries[0], "self");
+        Self::set_name(&mut entries[0], "current");
         entries[0].pid = 0;
         entries[0].entry_type = 2;
         entries[0].used = true;
         
-        Self::set_name(&mut entries[1], "cpuinfo");
+        Self::set_name(&mut entries[1], "sys/cpu");
         entries[1].pid = 0;
         entries[1].entry_type = 1;
         entries[1].used = true;
         
-        Self::set_name(&mut entries[2], "meminfo");
+        Self::set_name(&mut entries[2], "sys/memory");
         entries[2].pid = 0;
         entries[2].entry_type = 1;
         entries[2].used = true;
@@ -108,7 +108,7 @@ impl ProcfsData {
     }
     
     pub fn read(&self, name: &str, buf: &mut [u8]) -> i32 {
-        if name == "cpuinfo" {
+        if name == "sys/cpu" {
             let mut pos = 0usize;
             let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
                 let b = s.as_bytes();
@@ -143,7 +143,7 @@ impl ProcfsData {
             return pos as i32;
         }
         
-        if name == "meminfo" {
+        if name == "sys/memory" {
             let total = unsafe { pmm_get_total_pages() };
             let free = unsafe { pmm_get_free_pages() };
             let total_mb = total * 4 / 1024;
@@ -190,7 +190,7 @@ impl ProcfsData {
             return pos as i32;
         }
         
-        if name == "self" {
+        if name == "current" {
             let info = b"PID: 0\nName: kernel\n";
             let len = info.len().min(buf.len());
             buf[..len].copy_from_slice(&info[..len]);

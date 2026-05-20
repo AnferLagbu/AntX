@@ -96,7 +96,7 @@ fn test_vfs_fd_alloc_free() -> TestResult {
 }
 
 fn test_vfs_dirent() -> TestResult {
-    let mut dirent = VfsDirent::new();
+    let mut dirent = VfsDirEntry::new();
     dirent.set_name("test.txt");
     let name = dirent.get_name();
     check!(name == "test.txt", "dirent name mismatch");

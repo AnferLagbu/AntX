@@ -81,7 +81,7 @@ fn tss_ist_operations() -> TestResult {
 fn tss_iomap() -> TestResult {
     let mut tss = TaskStateSegment::zeroed();
     check!(!tss.has_iomap(), "should not have iomap by default");
-    let offset = (TSS_SIZE / 2) as u32;
+    let offset = (TSS_SIZE / 2) as u16;
     tss.enable_iomap(offset);
     check!(tss.has_iomap(), "should have iomap after enable");
     assert_eq_test!(tss.iomap_base, offset, "iomap_base mismatch");

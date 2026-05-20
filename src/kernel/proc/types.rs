@@ -145,16 +145,17 @@ bitflags::bitflags! {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct ProcessContext {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub rbx: u64,
+    pub rbp: u64,
+    pub rax: u64,    // ✅ fork 返回值控制
     pub rip: u64,
     pub rsp: u64,
-    pub rbp: u64,
     pub rflags: u64,
     pub cr3: u64,
-    pub rbx: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
-    pub r15: u64,
     pub cs: u64,
     pub ds: u64,
     pub es: u64,
@@ -166,22 +167,23 @@ pub struct ProcessContext {
 impl ProcessContext {
     pub const fn new() -> Self {
         Self {
+            r15: 0,
+            r14: 0,
+            r13: 0,
+            r12: 0,
+            rbx: 0,
+            rbp: 0,
+            rax: 0,
             rip: 0,
             rsp: 0,
-            rbp: 0,
-            rflags: 0x202,
+            rflags: 0,
             cr3: 0,
-            rbx: 0,
-            r12: 0,
-            r13: 0,
-            r14: 0,
-            r15: 0,
-            cs: 0x08,
-            ds: 0x10,
-            es: 0x10,
-            fs: 0x10,
-            gs: 0x10,
-            ss: 0x10,
+            cs: 0,
+            ds: 0,
+            es: 0,
+            fs: 0,
+            gs: 0,
+            ss: 0,
         }
     }
     
@@ -206,3 +208,73 @@ pub const MAX_PROCESSES: usize = 256;
 pub const MAX_OPEN_FILES: usize = 32;
 pub const KERNEL_STACK_SIZE: usize = 65536;
 pub const USER_STACK_SIZE: usize = 65536;
+
+// === 线程调度常量 ===
+pub const SCHED_LEVEL_0_QUANTUM: u32 = 80;
+pub const SCHED_LEVEL_1_QUANTUM: u32 = 60;
+pub const SCHED_LEVEL_2_QUANTUM: u32 = 40;
+pub const SCHED_LEVEL_3_QUANTUM: u32 = 20;
+pub const SCHED_BOOST_INTERVAL: u64 = 1000;
+pub const SCHED_RT_WATCHDOG_TICKS: u64 = 500;
+
+/// 线程调度优先级
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ThreadPriority {
+    Idle = 0,
+    Low = 1,
+    Normal = 2,
+    High = 3,
+    Realtime = 4,
+}
+
+impl ThreadPriority {
+    pub fn from_u32(value: u32) -> Self {
+        match value {
+            0 => ThreadPriority::Idle,
+            1 => ThreadPriority::Low,
+            2 => ThreadPriority::Normal,
+            3 => ThreadPriority::High,
+            4 => ThreadPriority::Realtime,
+            _ => ThreadPriority::Normal,
+        }
+    }
+}
+
+/// 线程状态 (七状态模型)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadState {
+    Created = 0,
+    Ready = 1,
+    Running = 2,
+    Blocked = 3,
+    Zombie = 4,
+    Terminated = 5,
+    Frozen = 6,
+}
+
+impl ThreadState {
+    pub fn from_u32(value: u32) -> Self {
+        match value {
+            0 => ThreadState::Created,
+            1 => ThreadState::Ready,
+            2 => ThreadState::Running,
+            3 => ThreadState::Blocked,
+            4 => ThreadState::Zombie,
+            5 => ThreadState::Terminated,
+            6 => ThreadState::Frozen,
+            _ => ThreadState::Created,
+        }
+    }
+
+    pub fn is_runnable(&self) -> bool {
+        matches!(self, ThreadState::Ready | ThreadState::Running)
+    }
+
+    pub fn is_alive(&self) -> bool {
+        !matches!(self, ThreadState::Zombie | ThreadState::Terminated)
+    }
+
+    pub fn can_freeze(&self) -> bool {
+        matches!(self, ThreadState::Running | ThreadState::Ready | ThreadState::Blocked)
+    }
+}

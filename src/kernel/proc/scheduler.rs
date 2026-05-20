@@ -229,6 +229,14 @@ impl Scheduler {
     }
     
     pub fn schedule(&self) -> Option<Pid> {
+        // ✅ 中断安全: 禁用中断保护整个调度临界区
+        // process_switch_asm 中的 iretq 会恢复中断标志
+        // 如果无实际切换(next==current)或无可运行进程, 则手动恢复
+        let saved_flags: u64;
+        unsafe {
+            core::arch::asm!("pushfq; pop {}; cli", out(reg) saved_flags, options(nomem, nostack));
+        }
+        
         let current_pid = self.current.load(Ordering::SeqCst);
         let mut next_pid: Option<Pid> = None;
 
@@ -313,10 +321,22 @@ impl Scheduler {
 
         let next = match next_pid {
             Some(pid) => pid,
-            None => return None,
+            None => {
+                // ✅ 无进程可调度, 恢复中断
+                if saved_flags & 0x200 != 0 {
+                    unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+                }
+                return None;
+            }
         };
 
-        if next == current_pid { return Some(next); }
+        if next == current_pid {
+            // ✅ 无需切换, 恢复中断
+            if saved_flags & 0x200 != 0 {
+                unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+            }
+            return Some(next);
+        }
 
         let prev_ptr = if current_pid != 0 {
             PROCESS_TABLE.get(current_pid)
@@ -326,7 +346,12 @@ impl Scheduler {
 
         let next_ptr = PROCESS_TABLE.get(next);
 
-        if next_ptr.is_none() { return None; }
+        if next_ptr.is_none() {
+            if saved_flags & 0x200 != 0 {
+                unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+            }
+            return None;
+        }
 
         let next_proc = unsafe { &*next_ptr.unwrap() };
         let _ = next_proc.set_state_safe(ProcessState::Running);
@@ -337,6 +362,9 @@ impl Scheduler {
         }
 
         self.current.store(next, Ordering::SeqCst);
+
+        // ✅ 同步线程调度器 current 指针
+        super::scheduler_ex::SCHEDULER_EX.current.store(next as u64, Ordering::SeqCst);
 
         unsafe { crate::kernel::proc::ffi::update_current_process_ptr(next_proc as *const Process as u64); }
 
@@ -382,6 +410,7 @@ impl Scheduler {
             unsafe {
                 let mut prev_ctx = (*prev_ctx_ptr).lock();
                 let next_ctx = (*next_ctx_ptr).lock();
+                // ✅ process_switch_asm 中的 iretq 会恢复中断标志 (RFLAGS.IF)
                 process_switch_asm(&mut *prev_ctx as *mut ProcessContext, &*next_ctx as *const ProcessContext);
             }
         }
@@ -462,7 +491,8 @@ impl Scheduler {
                             let state = (*child).get_state();
                             if state == ProcessState::Zombie {
                                 let _ = (*child).set_state_safe(ProcessState::Terminated);
-                                PROCESS_TABLE.remove(child_pid.0);
+                                // ✅ 修复内存泄漏: Box<Process> 正确释放
+                                PROCESS_TABLE.remove_and_free(child_pid.0);
                             } else {
                                 (*child).parent = Some(ProcessId(1));
                             }
@@ -492,9 +522,19 @@ impl Scheduler {
         self.need_reschedule.store(true, Ordering::SeqCst);
         self.schedule();
     }
+
+    /// ✅ 设置需要重新调度标志 (替代直接访问 need_reschedule)
+    pub fn set_need_reschedule(&self) {
+        self.need_reschedule.store(true, Ordering::SeqCst);
+    }
     
     pub fn should_reschedule(&self) -> bool {
         self.need_reschedule.swap(false, Ordering::SeqCst)
+    }
+
+    /// ✅ 将进程加入就绪队列 (MLFQ level 0)
+    pub fn add_to_run_queue(&self, pid: Pid) {
+        self.queues[0].lock().push_back(pid);
     }
     
     pub fn set_current(&self, pid: Pid) {
@@ -546,6 +586,9 @@ impl Scheduler {
         // Barrier stack: advance barrier generations for all recovery domains
         crate::kernel::barrier::RECOVERY_MANAGER.lock().tick(tick);
         
+        // ✅ 线程级时间记账 (不触发独立调度)
+        crate::kernel::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
+        
         // RT FIFO watchdog: force preempt after RT_FIFO_WATCHDOG ticks
         if is_rt && self.fifo_watchdog.load(Ordering::SeqCst) > 0 {
             let remaining = self.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
@@ -577,6 +620,73 @@ impl Scheduler {
                         }
                     }
                 }
+            }
+        }
+        
+        // ✅ 睡眠唤醒: 检查 Blocked+Sleeping 进程是否到期 (Fix 6)
+        {
+            let current_ticks = tick;
+            // 快速遍历进程表: 按 PID 扫描, 跳过 NULL 表项
+            // 为防止锁竞争, 先收集需要唤醒的 PID 列表
+            let mut to_wake: [Pid; 8] = [0; 8];
+            let mut wake_count = 0;
+            for pid in 1..=255 {
+                if wake_count >= 8 { break; }
+                if pid == self.current().unwrap_or(0) { continue; }
+                if let Some(proc) = PROCESS_TABLE.get(pid) {
+                    unsafe {
+                        let state = (*proc).get_state();
+                        if state == ProcessState::Blocked {
+                            let reason = (*proc).block_reason.load(Ordering::Relaxed);
+                            if reason == BlockReason::Sleeping as u32 {
+                                let until = (*proc).sleep_until.load(Ordering::SeqCst);
+                                if until > 0 && current_ticks >= until {
+                                    to_wake[wake_count] = pid;
+                                    wake_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // 唤醒收集到的睡眠进程
+            for i in 0..wake_count {
+                self.unblock(to_wake[i]);
+            }
+        }
+
+        // ✅ 孤儿僵尸进程回收 (Fix 9): 每 SOCKS_CLEAN_INTERVAL tick 执行一次
+        // 回收父进程已退出且没有 wait 的僵尸子进程
+        let socks_clean_interval: u64 = 1000;
+        if tick % socks_clean_interval == 0 {
+            let mut to_reap: [Pid; 16] = [0; 16];
+            let mut reap_count = 0;
+            for pid in 1..=255 {
+                if reap_count >= 16 { break; }
+                if let Some(proc) = PROCESS_TABLE.get(pid) {
+                    unsafe {
+                        if (*proc).get_state() == ProcessState::Zombie {
+                            let parent_alive = (*proc).parent.map_or(true, |ppid| {
+                                PROCESS_TABLE.get(ppid.0).map_or(false, |p| {
+                                    let s = (*p).get_state();
+                                    s != ProcessState::Zombie && s != ProcessState::Terminated
+                                })
+                            });
+                            if !parent_alive || (*proc).parent == Some(ProcessId(1)) {
+                                to_reap[reap_count] = pid;
+                                reap_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            for i in 0..reap_count {
+                if let Some(proc) = PROCESS_TABLE.get(to_reap[i]) {
+                    unsafe {
+                        let _ = (*proc).set_state_safe(ProcessState::Terminated);
+                    }
+                }
+                PROCESS_TABLE.remove_and_free(to_reap[i]);
             }
         }
         

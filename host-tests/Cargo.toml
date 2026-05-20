@@ -23,3 +23,11 @@ path = "src/sha256.rs"
 [[test]]
 name = "buddy"
 path = "src/buddy.rs"
+
+[[test]]
+name = "hvfs"
+path = "src/hvfs_test.rs"
+
+[[test]]
+name = "hvfs_persist"
+path = "src/persist_test.rs"

@@ -1,5 +1,6 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::boxed::Box;
 use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -24,6 +25,41 @@ impl FdTable {
         let mut entries = self.entries.lock();
         for e in entries.iter_mut() {
             *e = -1;
+        }
+    }
+
+    /// ✅ 分配 per-process FD slot, 返回本地 fd 编号
+    pub fn alloc_fd(&self, global_fd: i32) -> Option<usize> {
+        let mut entries = self.entries.lock();
+        for i in 0..MAX_FDS_PER_PROCESS {
+            if entries[i] == -1 {
+                entries[i] = global_fd;
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// ✅ 通过本地 fd 获取全局 FD 编号
+    pub fn get_global_fd(&self, local_fd: usize) -> Option<i32> {
+        let entries = self.entries.lock();
+        if local_fd < MAX_FDS_PER_PROCESS {
+            let gfd = entries[local_fd];
+            if gfd != -1 { Some(gfd) } else { None }
+        } else {
+            None
+        }
+    }
+
+    /// ✅ 关闭本地 fd
+    pub fn close_fd(&self, local_fd: usize) -> bool {
+        if local_fd >= MAX_FDS_PER_PROCESS { return false; }
+        let mut entries = self.entries.lock();
+        if entries[local_fd] != -1 {
+            entries[local_fd] = -1;
+            true
+        } else {
+            false
         }
     }
 }
@@ -81,6 +117,9 @@ pub struct Process {
 
     pub session_id: AtomicU64,
     pub fd_table: FdTable,
+    
+    /// ✅ 阻塞睡眠到期时间 (ticks), 用于 proc_sleep_ms
+    pub sleep_until: AtomicU64,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -129,6 +168,7 @@ impl Process {
             rt_priority: AtomicU32::new(0),
             session_id: AtomicU64::new(0),
             fd_table: FdTable::new(),
+            sleep_until: AtomicU64::new(0),
         }
     }
     
@@ -321,6 +361,17 @@ impl ProcessTable {
             return None;
         }
         table[pid as usize].take().map(|addr| addr as *mut Process)
+    }
+
+    /// ✅ 移除进程并释放 Box<Process> 内存 (Fix 4: 内存泄漏修复)
+    pub fn remove_and_free(&self, pid: Pid) {
+        if let Some(ptr) = self.remove(pid) {
+            unsafe {
+                let boxed = Box::from_raw(ptr);
+                // Process::Drop 会自动销毁页表 (vmm_destroy_page_table)
+                drop(boxed);
+            }
+        }
     }
 
     /// 遍历所有进程 (回调返回 false 时提前终止)

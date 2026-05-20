@@ -268,6 +268,14 @@ pub extern "C" fn vmm_map_page_in_table(pml4: u64, virt: u64, phys: u64, flags: 
     get_vmm().map_page_in_table(pml4, virt_addr, phys_addr, page_flags);
 }
 
+/// Clone a user page table (deep copy of all user-space mappings)
+/// 
+/// C signature: uint64_t vmm_clone_user_page_table(uint64_t parent_pml4)
+#[no_mangle]
+pub extern "C" fn vmm_clone_user_page_table(parent_pml4: u64) -> u64 {
+    get_vmm().clone_user_page_table(parent_pml4).unwrap_or(0)
+}
+
 /// Destroy a page table and free all associated memory
 /// 
 /// C signature: void vmm_destroy_page_table(uint64_t pml4)

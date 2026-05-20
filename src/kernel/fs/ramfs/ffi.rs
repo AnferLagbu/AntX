@@ -29,15 +29,15 @@ pub extern "C" fn ramfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 
     let path = ptr_to_str(path);
     let mut ramfs = RAMFS_DATA.lock();
     match ramfs.open(path, flags, pwid) {
-        Some((inode_num, offset, _file_type)) => {
-            ((inode_num as i32) & 0xFFFF) | ((offset as i32) << 16)
+        Some((node_id, offset, _file_type)) => {
+            ((node_id as i32) & 0xFFFF) | ((offset as i32) << 16)
         }
         None => -1
     }
 }
 
 #[no_mangle]
-pub extern "C" fn ramfs_read(inode_num: u32, offset: *mut u64, buf: *mut u8, count: u32, pwid: u64) -> i32 {
+pub extern "C" fn ramfs_read(node_id: u32, offset: *mut u64, buf: *mut u8, count: u32, pwid: u64) -> i32 {
     if buf.is_null() || offset.is_null() {
         return -1;
     }
@@ -46,12 +46,12 @@ pub extern "C" fn ramfs_read(inode_num: u32, offset: *mut u64, buf: *mut u8, cou
     unsafe {
         let buffer = core::slice::from_raw_parts_mut(buf, count as usize);
         let off = &mut *offset;
-        ramfs.read(inode_num, off, buffer, pwid)
+        ramfs.read(node_id, off, buffer, pwid)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn ramfs_write(inode_num: u32, offset: *mut u64, buf: *const u8, count: u32, pwid: u64) -> i32 {
+pub extern "C" fn ramfs_write(node_id: u32, offset: *mut u64, buf: *const u8, count: u32, pwid: u64) -> i32 {
     if buf.is_null() || offset.is_null() {
         return -1;
     }
@@ -60,7 +60,7 @@ pub extern "C" fn ramfs_write(inode_num: u32, offset: *mut u64, buf: *const u8, 
     unsafe {
         let buffer = core::slice::from_raw_parts(buf, count as usize);
         let off = &mut *offset;
-        ramfs.write(inode_num, off, buffer, pwid)
+        ramfs.write(node_id, off, buffer, pwid)
     }
 }
 
@@ -73,13 +73,13 @@ pub extern "C" fn ramfs_mkdir(parent_path: *const c_char, name: *const c_char, p
 }
 
 #[no_mangle]
-pub extern "C" fn ramfs_stat(inode_num: u32, st: *mut VfsStat) -> i32 {
+pub extern "C" fn ramfs_stat(node_id: u32, st: *mut VfsStat) -> i32 {
     if st.is_null() {
         return -1;
     }
     
     let ramfs = RAMFS_DATA.lock();
-    match ramfs.stat(inode_num) {
+    match ramfs.stat(node_id) {
         Some(stat) => {
             unsafe { *st = stat; }
             0

@@ -1,8 +1,8 @@
-use alloc::boxed::Box;
-use alloc::vec::Vec;
-use alloc::vec;
+use std::boxed::Box;
+use std::vec::Vec;
+use std::vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use spin::Mutex;
+use crate::kernel::sync::mutex::Mutex;
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::spa::*;
 use crate::kernel::fs::hvfs::txg::*;
@@ -67,7 +67,7 @@ pub struct HvfsData {
 unsafe impl Send for HvfsData {}
 unsafe impl Sync for HvfsData {}
 
-static HVFS_DATA: spin::Mutex<Option<Box<HvfsData>>> = spin::Mutex::new(None);
+pub static HVFS_DATA: Mutex<Option<Box<HvfsData>>> = Mutex::new(None);
 
 pub fn get_hvfs() -> &'static HvfsData {
     let mut guard = HVFS_DATA.lock();
@@ -930,7 +930,7 @@ impl HvfsData {
         let mut offset = 0;
         for i in 0..4 {
             if obj.data_hash[i] != 0 {
-                let attr_name = alloc::format!("user.attr{}\0", i);
+                let attr_name = format!("user.attr{}\0", i);
                 let name_bytes = attr_name.as_bytes();
                 if offset + name_bytes.len() <= buf.len() {
                     buf[offset..offset+name_bytes.len()].copy_from_slice(name_bytes);

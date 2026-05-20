@@ -1,6 +1,6 @@
-use alloc::boxed::Box;
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
+use std::boxed::Box;
+use std::collections::VecDeque;
+use std::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
 use crate::kernel::sync::mutex::Mutex;
 

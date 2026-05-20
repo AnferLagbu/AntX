@@ -53,14 +53,13 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
         }
     }
 
-    // 5. 触发调度器 tick (主调度器 + 线程调度器)
+    // 5. 触发调度器 tick (统一入口: MLFQ 进程调度器负责线程记账 + 调度决策)
+    // ✅ 修复: 原来双调度器独立做调度决策导致竞争条件, 现在统一为单入口
     extern "C" {
         fn scheduler_tick_mlfq();
-        fn scheduler_tick();
     }
     unsafe {
         scheduler_tick_mlfq();
-        scheduler_tick();
     }
 }
 

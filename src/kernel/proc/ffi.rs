@@ -118,9 +118,25 @@ pub extern "C" fn process_exit(exit_code: u32) {
 }
 
 #[no_mangle]
-pub extern "C" fn process_kill(_pid: u32, exit_code: u32) {
-    // Set exit code and exit the process
-    SCHEDULER.exit(exit_code);
+pub extern "C" fn process_kill(pid: u32, exit_code: u32) {
+    // ✅ 修复: 杀指定 PID, 而非当前进程
+    if pid == 0 { return; }
+    
+    if let Some(proc) = PROCESS_TABLE.get(pid) {
+        unsafe {
+            let state = (*proc).get_state();
+            if state == ProcessState::Zombie || state == ProcessState::Terminated {
+                return; // already dead
+            }
+            (*proc).exit_code.store(exit_code, Ordering::SeqCst);
+            let _ = (*proc).set_state_safe(ProcessState::Zombie);
+        }
+        
+        // 如果目标正在阻塞, 唤醒它使其能立即调度到并退出
+        SCHEDULER.unblock(pid);
+        // 触发重新调度
+        SCHEDULER.set_need_reschedule();
+    }
 }
 
 #[no_mangle]
@@ -568,10 +584,11 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
     let load_result = user_proc_load_elf(path, pwid);
     if load_result < 0 {
         let pid = child_pid;
-        PROCESS_TABLE.remove(pid);
-        if let Some(sid) = {
-            PROCESS_TABLE.get(pid).map(|p| unsafe { (*p).session_id.load(Ordering::SeqCst) })
-        } {
+        // 保存 session_id 在释放之前
+        let sid = PROCESS_TABLE.get(pid)
+            .map(|p| unsafe { (*p).session_id.load(Ordering::SeqCst) });
+        PROCESS_TABLE.remove_and_free(pid);
+        if let Some(sid) = sid.and_then(|s| if s != 0 { Some(s) } else { None }) {
             SESSION_MANAGER.destroy(sid);
         }
         USER_PROC_MANAGER.destroy_by_pid(pid as u32);
@@ -594,7 +611,7 @@ pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8,
     if current_pid == 0 { return -1; }
 
     USER_PROC_MANAGER.destroy_by_pid(current_pid);
-    PROCESS_TABLE.remove(current_pid);
+    PROCESS_TABLE.remove_and_free(current_pid);
 
     let pwid = scheduler_get_current_pwid();
     let new_pid = user_proc_load_elf(path, pwid);
@@ -630,7 +647,8 @@ pub extern "C" fn proc_wait_child(pid: Pid) -> i32 {
     let state = process.get_state();
     if state == ProcessState::Zombie {
         let code = process.exit_code.load(Ordering::SeqCst) as i32;
-        PROCESS_TABLE.remove(pid);
+        // ✅ 修复内存泄漏: 回收 Zombie 子进程 PCB
+        PROCESS_TABLE.remove_and_free(pid);
         return code;
     }
 
@@ -640,8 +658,150 @@ pub extern "C" fn proc_wait_child(pid: Pid) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn proc_sleep_ms(ms: u64) {
-    extern "C" { fn timer_sleep_busy(ms: u64); }
-    unsafe { timer_sleep_busy(ms); }
+    // ✅ 修复: 阻塞式睡眠, 不再忙等 (Fix 6)
+    if ms == 0 { return; }
+    
+    let pid = SCHEDULER.current().unwrap_or(0);
+    if pid == 0 { return; }
+    
+    // 获取当前 tick 并计算到期时间
+    extern "C" { fn timer_get_ticks() -> u64; }
+    let current_ticks = unsafe { timer_get_ticks() };
+    // 假设每 tick = 10ms (100Hz), 转换 ms → ticks (最少 1 tick)
+    let ticks_to_sleep = (ms + 9) / 10;
+    if ticks_to_sleep == 0 { return; }
+    
+    let wakeup_at = current_ticks + ticks_to_sleep;
+    
+    // 设置 sleep_until 并阻塞进程
+    if let Some(proc) = PROCESS_TABLE.get(pid) {
+        unsafe {
+            (*proc).sleep_until.store(wakeup_at, Ordering::SeqCst);
+        }
+    }
+    
+    SCHEDULER.block(BlockReason::Sleeping);
+    SCHEDULER.schedule();
+}
+
+/// ✅ fork 系统调用实现 (Fix 7)
+/// 深拷贝进程地址空间, 创建子进程并从同一位置继续执行
+/// 父进程返回 >0 (子进程 PID), 子进程返回 0
+/// 失败返回 0
+#[no_mangle]
+pub extern "C" fn sys_fork() -> Pid {
+    let parent_pid = SCHEDULER.current().unwrap_or(0);
+    if parent_pid == 0 {
+        unsafe {
+            extern "C" { fn klog_ffi_info(msg: *const u8); }
+            klog_ffi_info(b"[FORK] No current process\n\0".as_ptr());
+        }
+        return 0;
+    }
+    
+    let parent_ptr = match PROCESS_TABLE.get(parent_pid) {
+        Some(p) => p,
+        None => { return 0; }
+    };
+    
+    let parent = unsafe { &*parent_ptr };
+    
+    // Clone page table
+    let parent_cr3 = parent.cr3.load(Ordering::SeqCst);
+    extern "C" { fn vmm_clone_user_page_table(parent_pml4: u64) -> u64; }
+    let child_cr3 = unsafe { vmm_clone_user_page_table(parent_cr3) };
+    if child_cr3 == 0 {
+        unsafe {
+            extern "C" { fn klog_ffi_info(msg: *const u8); }
+            klog_ffi_info(b"[FORK] Page table clone failed\n\0".as_ptr());
+        }
+        return 0;
+    }
+    
+    // Allocate child PID
+    extern "C" { fn proc_alloc_pid() -> Pid; }
+    let child_pid = unsafe { proc_alloc_pid() };
+    if child_pid == 0 {
+        extern "C" { fn vmm_destroy_page_table(pml4: u64); }
+        unsafe { vmm_destroy_page_table(child_cr3); }
+        return 0;
+    }
+    
+    // Clone parent name
+    let parent_name = unsafe { parent.name.lock() };
+    let name_str = alloc::string::String::clone(&*parent_name);
+    drop(parent_name);
+    let name_ref = name_str.as_str();
+    
+    // Create child Process
+    let child = unsafe {
+        let layout = alloc::alloc::Layout::new::<Process>();
+        let ptr = alloc::alloc::alloc(layout) as *mut Process;
+        core::ptr::write(ptr, Process::new(child_pid, name_ref, Some(ProcessId(parent_pid))));
+        &mut *ptr
+    };
+    
+    // Copy remaining parent properties
+    child.pwid.store(parent.pwid.load(Ordering::SeqCst), Ordering::SeqCst);
+    child.cr3.store(child_cr3, Ordering::SeqCst);
+    child.sched_policy.store(parent.sched_policy.load(Ordering::SeqCst), Ordering::SeqCst);
+    child.rt_priority.store(parent.rt_priority.load(Ordering::SeqCst), Ordering::SeqCst);
+    
+    // Add child to parent's children list
+    parent.children.lock().push(ProcessId(child_pid));
+    
+    // Allocate kernel stack for child
+    if !child.allocate_kernel_stack() {
+        unsafe {
+            drop(alloc::boxed::Box::from_raw(child as *mut Process));
+            extern "C" { fn vmm_destroy_page_table(pml4: u64); }
+            vmm_destroy_page_table(child_cr3);
+        }
+        return 0;
+    }
+    
+    // Copy parent's kernel stack contents to child's kernel stack
+    {
+        let parent_kstack = parent.kernel_stack.load(Ordering::SeqCst);
+        let child_kstack = child.kernel_stack.load(Ordering::SeqCst);
+        let stack_size: usize = 65536;
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                parent_kstack as *const u8,
+                child_kstack as *mut u8,
+                stack_size,
+            );
+        }
+        crate::kernel::proc::process::kernel_stack_write_canary(child_kstack);
+    }
+    
+    // Copy parent's ProcessContext to child's, but set RAX=0 for child
+    {
+        let parent_ctx = parent.context.lock();
+        let mut child_ctx = child.context.lock();
+        *child_ctx = *parent_ctx;
+        child_ctx.cr3 = child_cr3;
+        child_ctx.rax = 0;
+    }
+    
+    // Register child in process table
+    PROCESS_TABLE.insert(child as *const Process as *mut Process);
+    
+    // Create UserProc for child
+    if let Some(parent_up) = USER_PROC_MANAGER.get(parent_pid) {
+        extern "C" { fn user_proc_clone(parent_pid: Pid, child_pid: Pid) -> i32; }
+        let clone_result = unsafe { user_proc_clone(parent_pid, child_pid) };
+        if clone_result < 0 {
+            PROCESS_TABLE.remove_and_free(child_pid);
+            return 0;
+        }
+    }
+    
+    // Add child to scheduler
+    let _ = unsafe { (*child).set_state_safe(ProcessState::Ready) };
+    SCHEDULER.add_to_run_queue(child_pid);
+    
+    child_pid
 }
 
 #[no_mangle]

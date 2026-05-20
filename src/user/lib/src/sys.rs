@@ -47,7 +47,7 @@ pub const SYS_DISK_PARTITION: u64 = 116;
 pub const SYS_DISK_INSTALL_GRUB: u64 = 117;
 pub const SYS_FAT_FORMAT: u64 = 118;
 
-#[repr(C)] pub struct UserDirent { pub inode: u32, pub file_type: u8, pub name: [u8; 256] }
+#[repr(C)] pub struct UserDirEntry { pub node: u32, pub file_type: u8, pub name: [u8; 256] }
 #[repr(C)] pub struct UserDiskInfo { pub disk_id: u32, pub present: u32, pub total_sectors: u32, pub sectors: u32, pub model: [u8; 64] }
 
 unsafe fn sys0(num: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, lateout("rax") ret); ret }
@@ -68,7 +68,7 @@ pub fn fs_mkdir(path: &[u8]) -> i32                          { unsafe { sys2(SYS
 pub fn fs_rmdir(path: &[u8]) -> i32                          { unsafe { sys1(SYS_FS_RMDIR, path.as_ptr() as u64) as i32 } }
 pub fn fs_unlink(path: &[u8]) -> i32                         { unsafe { sys1(SYS_FS_UNLINK, path.as_ptr() as u64) as i32 } }
 pub fn fs_rename(old: &[u8], new: &[u8]) -> i32              { unsafe { sys2(SYS_FS_RENAME, old.as_ptr() as u64, new.as_ptr() as u64) as i32 } }
-pub fn fs_readdir(fd: i32, entry: &mut UserDirent) -> i32    { unsafe { sys2(SYS_FS_READDIR, fd as u64, entry as *mut UserDirent as u64) as i32 } }
+pub fn fs_readdir(fd: i32, entry: &mut UserDirEntry) -> i32    { unsafe { sys2(SYS_FS_READDIR, fd as u64, entry as *mut UserDirEntry as u64) as i32 } }
 pub fn fs_sync()                                             { unsafe { sys0(SYS_FS_SYNC); } }
 pub fn fs_mount(src: &[u8], tgt: &[u8], typ: &[u8], opt: &[u8]) -> i32 { unsafe { sys4(SYS_FS_MOUNT, src.as_ptr() as u64, tgt.as_ptr() as u64, typ.as_ptr() as u64, opt.as_ptr() as u64) as i32 } }
 pub fn fs_unmount(t: &[u8]) -> i32                           { unsafe { sys1(SYS_FS_UNMOUNT, t.as_ptr() as u64) as i32 } }

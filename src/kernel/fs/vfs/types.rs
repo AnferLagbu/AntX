@@ -148,7 +148,7 @@ impl FsType {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct VfsStat {
-    pub inode_num: u32,
+    pub node_id: u32,
     pub mode: u16,
     pub size: u32,
     pub atime: u64,
@@ -163,7 +163,7 @@ pub struct VfsStat {
 impl Default for VfsStat {
     fn default() -> Self {
         Self {
-            inode_num: 0,
+            node_id: 0,
             mode: 0,
             size: 0,
             atime: 0,
@@ -179,16 +179,16 @@ impl Default for VfsStat {
 
 #[derive(Debug, Clone)]
 #[repr(C)]
-pub struct VfsDirent {
-    pub inode: u32,
+pub struct VfsDirEntry {
+    pub node: u32,
     pub file_type: u8,
     pub name: [u8; VFS_MAX_NAME],
 }
 
-impl VfsDirent {
+impl VfsDirEntry {
     pub fn new() -> Self {
         Self {
-            inode: 0,
+            node: 0,
             file_type: 0,
             name: [0; VFS_MAX_NAME],
         }

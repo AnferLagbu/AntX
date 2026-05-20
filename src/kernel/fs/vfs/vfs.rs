@@ -57,7 +57,7 @@ impl VfsMount {
 
 pub struct VfsFile {
     pub fd: u32,
-    pub inode_num: u32,
+    pub node_id: u32,
     pub offset: u64,
     pub flags: u32,
     pub pwid: u64,
@@ -69,7 +69,7 @@ pub struct VfsFile {
 impl Clone for VfsFile {
     fn clone(&self) -> Self {
         Self {
-            fd: self.fd, inode_num: self.inode_num, offset: self.offset,
+            fd: self.fd, node_id: self.node_id, offset: self.offset,
             flags: self.flags, pwid: self.pwid, used: self.used,
             file_type: self.file_type, path: self.path,
         }
@@ -80,7 +80,7 @@ impl VfsFile {
     pub const fn new() -> Self {
         Self {
             fd: 0,
-            inode_num: 0,
+            node_id: 0,
             offset: 0,
             flags: 0,
             pwid: 0,
@@ -165,7 +165,7 @@ impl VfsManager {
         for fd in fd_table.iter_mut() {
             fd.used = false;
             fd.fd = 0;
-            fd.inode_num = 0;
+            fd.node_id = 0;
             fd.offset = 0;
             fd.flags = 0;
             fd.pwid = 0;
@@ -269,15 +269,15 @@ impl VfsManager {
         if idx < VFS_MAX_FDS {
             fd_table[idx].used = false;
             fd_table[idx].fd = 0;
-            fd_table[idx].inode_num = 0;
+            fd_table[idx].node_id = 0;
             fd_table[idx].offset = 0;
         }
     }
 
-    pub fn set_fd(&self, idx: usize, inode_num: u32, offset: u64, flags: u32, pwid: u64, file_type: u8, path: &str) {
+    pub fn set_fd(&self, idx: usize, node_id: u32, offset: u64, flags: u32, pwid: u64, file_type: u8, path: &str) {
         let mut fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS {
-            fd_table[idx].inode_num = inode_num;
+            fd_table[idx].node_id = node_id;
             fd_table[idx].offset = offset;
             fd_table[idx].flags = flags;
             fd_table[idx].pwid = pwid;
@@ -289,7 +289,7 @@ impl VfsManager {
     pub fn get_fd_info(&self, idx: usize) -> Option<(u32, u64, u64)> {
         let fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS && fd_table[idx].used {
-            Some((fd_table[idx].inode_num, fd_table[idx].offset, fd_table[idx].pwid))
+            Some((fd_table[idx].node_id, fd_table[idx].offset, fd_table[idx].pwid))
         } else {
             None
         }

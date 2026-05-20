@@ -12,9 +12,9 @@ pub fn dir(cmd: &Cmd) {
     if fd < 0 { print("dir: '"); print_nb(&p); println("' not found"); return; }
     let mut count = 0;
     loop {
-        let mut entry = UserDirent { inode: 0, file_type: 0, name: [0; 256] };
+        let mut entry = UserDirEntry { node: 0, file_type: 0, name: [0; 256] };
         if fs_readdir(fd, &mut entry) <= 0 { break; }
-        if entry.inode != 0 {
+        if entry.node != 0 {
             if entry.file_type == FT_DIR { print("  [D] "); } else { print("  [F] "); }
             println(core::str::from_utf8(&entry.name).unwrap_or("?").trim_end_matches('\0'));
             count += 1;

@@ -580,6 +580,120 @@ impl VirtualMemoryManager {
         }
     }
 
+    /// ✅ fork 页面表深拷贝 (Fix 7)
+    /// 将 parent_pml4 的所有用户空间页面深拷贝到新的 PML4 中
+    pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
+        if parent_pml4 == 0 { return None; }
+        
+        self.acquire_lock();
+        
+        let pmm = get_pmm();
+        let child_pml4_phys = pmm.alloc_page()?;
+        let child_pml4_base = child_pml4_phys.to_virt().0 as *mut u64;
+        
+        unsafe { core::ptr::write_bytes(child_pml4_base, 0, PAGE_SIZE as usize); }
+        
+        // Copy kernel-space entries (256-511)
+        let kernel_pml4 = KERNEL_PML4.load(Ordering::Acquire);
+        let kernel_pml4_virt = PhysAddr(kernel_pml4).to_virt().0 as *const u64;
+        unsafe {
+            core::ptr::copy_nonoverlapping(kernel_pml4_virt.add(256), child_pml4_base.add(256), 256);
+        }
+        
+        let parent_pml4_virt = PhysAddr(parent_pml4).to_virt().0 as *const u64;
+        
+        for i in 0..256u16 {
+            let parent_pml4e = unsafe { parent_pml4_virt.add(i as usize).read_volatile() };
+            if (parent_pml4e & 1) == 0 { continue; }
+            
+            let child_pdpt_phys = pmm.alloc_page()?;
+            let child_pdpt = child_pdpt_phys.to_virt().0 as *mut u64;
+            unsafe { core::ptr::write_bytes(child_pdpt, 0, PAGE_SIZE as usize); }
+            
+            let mut child_pml4e = parent_pml4e;
+            child_pml4e = (child_pml4e & 0xFFF) | (child_pdpt_phys.as_u64() & 0x000FFFFFFFFFF000);
+            unsafe { child_pml4_base.add(i as usize).write_volatile(child_pml4e); }
+            
+            let parent_pdpt_phys = (parent_pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let parent_pdpt = parent_pdpt_phys as *const u64;
+            
+            for j in 0..512u16 {
+                let parent_pdpte = unsafe { parent_pdpt.add(j as usize).read_volatile() };
+                if (parent_pdpte & 1) == 0 { continue; }
+                if (parent_pdpte & 0x80) != 0 { continue; } // skip 1GB pages
+                
+                let child_pd_phys = pmm.alloc_page()?;
+                let child_pd = child_pd_phys.to_virt().0 as *mut u64;
+                unsafe { core::ptr::write_bytes(child_pd, 0, PAGE_SIZE as usize); }
+                
+                let mut child_pdpte_v = parent_pdpte;
+                child_pdpte_v = (child_pdpte_v & 0xFFF) | (child_pd_phys.as_u64() & 0x000FFFFFFFFFF000);
+                unsafe { child_pdpt.add(j as usize).write_volatile(child_pdpte_v); }
+                
+                let parent_pd_phys = (parent_pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+                let parent_pd = parent_pd_phys as *const u64;
+                
+                for k in 0..512u16 {
+                    let parent_pde = unsafe { parent_pd.add(k as usize).read_volatile() };
+                    if (parent_pde & 1) == 0 { continue; }
+                    
+                    if (parent_pde & 0x80) != 0 {
+                        // 2MB huge page
+                        let huge_phys = pmm.alloc_pages(512)?;
+                        let huge_virt = PhysAddr(huge_phys.as_u64()).to_virt().0;
+                        let parent_huge = (parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+                        unsafe {
+                            core::ptr::copy_nonoverlapping(
+                                parent_huge as *const u8,
+                                huge_virt as *mut u8,
+                                2 * 1024 * 1024,
+                            );
+                        }
+                        let mut child_pde_v = parent_pde;
+                        child_pde_v = (child_pde_v & 0xFFF) | (huge_phys.as_u64() & 0x000FFFFFFFFFF000);
+                        unsafe { child_pd.add(k as usize).write_volatile(child_pde_v); }
+                        continue;
+                    }
+                    
+                    let child_pt_phys = pmm.alloc_page()?;
+                    let child_pt = child_pt_phys.to_virt().0 as *mut u64;
+                    unsafe { core::ptr::write_bytes(child_pt, 0, PAGE_SIZE as usize); }
+                    
+                    let mut child_pde_v = parent_pde;
+                    child_pde_v = (child_pde_v & 0xFFF) | (child_pt_phys.as_u64() & 0x000FFFFFFFFFF000);
+                    unsafe { child_pd.add(k as usize).write_volatile(child_pde_v); }
+                    
+                    let parent_pt_phys = (parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+                    let parent_pt = parent_pt_phys as *const u64;
+                    
+                    for l in 0..512u16 {
+                        let parent_pte = unsafe { parent_pt.add(l as usize).read_volatile() };
+                        if (parent_pte & 1) == 0 { continue; }
+                        
+                        let child_page_phys = pmm.alloc_page()?;
+                        let child_page_virt = PhysAddr(child_page_phys.as_u64()).to_virt().0;
+                        let parent_page_phys = (parent_pte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+                        
+                        unsafe {
+                            core::ptr::copy_nonoverlapping(
+                                parent_page_phys as *const u8,
+                                child_page_virt as *mut u8,
+                                PAGE_SIZE as usize,
+                            );
+                        }
+                        
+                        let mut child_pte_v = parent_pte;
+                        child_pte_v = (child_pte_v & 0xFFF) | (child_page_phys.as_u64() & 0x000FFFFFFFFFF000);
+                        unsafe { child_pt.add(l as usize).write_volatile(child_pte_v); }
+                    }
+                }
+            }
+        }
+        
+        self.release_lock();
+        Some(child_pml4_phys.as_u64())
+    }
+
     fn find_free_user_slot(&self) -> usize {
         let tables = unsafe { &*self.user_tables.get() };
         for i in 0..MAX_USER_PAGE_TABLES {

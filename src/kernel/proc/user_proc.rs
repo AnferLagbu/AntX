@@ -247,6 +247,7 @@ impl UserProcManager {
             rt_priority: AtomicU32::new(0),
             session_id: AtomicU64::new(0),
             fd_table: super::process::FdTable::new(),
+            sleep_until: AtomicU64::new(0),
         });
         
         let kernel_proc_ptr = alloc::boxed::Box::into_raw(kernel_proc);

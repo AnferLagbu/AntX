@@ -11,63 +11,78 @@ extern user_entry_cr3
 ; RSI = *const ProcessContext (load next register state from here)
 ;
 ; ProcessContext layout (each field 8 bytes):
-;   +0:   rip
-;   +8:   rsp
-;  +16:   rbp
-;  +24:   rflags
-;  +32:   cr3
-;  +40:   rbx
-;  +48:   r12
-;  +56:   r13
-;  +64:   r14
-;  +72:   r15
-;  +80:   cs
-;  +88:   ds
-;  +96:   es
-; +104:   fs
-; +112:   gs
-; +120:   ss
+;   +0:   r15
+;   +8:   r14
+;  +16:   r13
+;  +24:   r12
+;  +32:   rbx
+;  +40:   rbp
+;  +48:   rax
+;  +56:   rip
+;  +64:   rsp
+;  +72:   rflags
+;  +80:   cr3
+;  +88:   cs
+;  +96:   ds
+; +104:   es
+; +112:   fs
+; +120:   gs
+; +128:   ss
 
 process_switch_asm:
     cli
 
+    ; Save current context to [RDI] (prev)
+    mov [rdi + 0], r15
+    mov [rdi + 8], r14
+    mov [rdi + 16], r13
+    mov [rdi + 24], r12
+    mov [rdi + 32], rbx
+    mov [rdi + 40], rbp
+    mov [rdi + 48], rax
+
+    ; Save rip, rsp, rflags from stack
     mov rax, [rsp]
-    mov [rdi + 0], rax
+    mov [rdi + 56], rax        ; rip (return address)
     lea rax, [rsp + 8]
-    mov [rdi + 8], rax
-    mov [rdi + 16], rbp
+    mov [rdi + 64], rax        ; rsp
     pushfq
     pop rax
-    mov [rdi + 24], rax
+    mov [rdi + 72], rax        ; rflags
+
+    ; Save cr3
     mov rax, cr3
-    mov [rdi + 32], rax
-    mov [rdi + 40], rbx
-    mov [rdi + 48], r12
-    mov [rdi + 56], r13
-    mov [rdi + 64], r14
-    mov [rdi + 72], r15
-    mov [rdi + 80], cs
-    mov [rdi + 88], ds
-    mov [rdi + 96], es
-    mov [rdi + 104], fs
-    mov [rdi + 112], gs
-    mov [rdi + 120], ss
+    mov [rdi + 80], rax
 
-    mov r15, [rsi + 72]
-    mov r14, [rsi + 64]
-    mov r13, [rsi + 56]
-    mov r12, [rsi + 48]
-    mov rbx, [rsi + 40]
-    mov rbp, [rsi + 16]
+    ; Save segment registers
+    mov [rdi + 88], cs
+    mov [rdi + 96], ds
+    mov [rdi + 104], es
+    mov [rdi + 112], fs
+    mov [rdi + 120], gs
+    mov [rdi + 128], ss
 
-    push qword [rsi + 120]
-    push qword [rsi + 8]
-    push qword [rsi + 24]
-    push qword [rsi + 80]
-    push qword [rsi + 0]
+    ; Restore next context from [RSI] (next)
+    mov r15, [rsi + 0]
+    mov r14, [rsi + 8]
+    mov r13, [rsi + 16]
+    mov r12, [rsi + 24]
+    mov rbx, [rsi + 32]
+    mov rbp, [rsi + 40]
 
-    mov rax, [rsi + 32]
+    ; Set cr3
+    mov rax, [rsi + 80]
     mov cr3, rax
+
+    ; Build iretq frame
+    push qword [rsi + 128]      ; ss
+    push qword [rsi + 64]       ; rsp
+    push qword [rsi + 72]       ; rflags
+    push qword [rsi + 88]       ; cs
+    push qword [rsi + 56]       ; rip
+
+    ; Restore rax before iretq
+    mov rax, [rsi + 48]
 
     iretq
 
