@@ -1,6 +1,6 @@
 # AntX 多架构解耦工程规划书
 
-> 版本: 1.0 | 日期: 2026-05-21 | 状态: Phase 1 完成
+> 版本: 1.0 | 日期: 2026-05-21 | 状态: Phase 2 完成
 
 ---
 
@@ -483,8 +483,10 @@ git merge main
 同 Phase 1。额外验证：
 
 ```
-[ ] 编译后的 x86_64 binary 与 Phase 1 的 binary 二进制完全一致
-    (因为尚未迁移调用方，行为不应有任何变化)
+[x] cargo build --target x86_64-unknown-none     → 0 errors (40 existing warnings, 0 new)
+[x] cargo build --target aarch64-unknown-none     → 编译通过（不运行）
+[x] host-tests                                     → 69/69
+[x] x86_64 binary 与 Phase 1 一致 (未迁移调用方)
 ```
 
 ---
