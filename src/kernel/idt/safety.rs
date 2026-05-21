@@ -46,9 +46,7 @@ impl CpuFeatures {
 /// Page Fault 触发时的线性地址
 #[inline(always)]
 pub unsafe fn read_cr2() -> u64 {
-    let cr2: u64;
-    core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack));
-    cr2
+    crate::arch!(read_fault_address()) as u64
 }
 
 /// 中断控制函数
@@ -56,13 +54,13 @@ pub unsafe fn read_cr2() -> u64 {
 /// 禁用中断 (cli)
 #[inline(always)]
 pub unsafe fn disable_interrupts() {
-    core::arch::asm!("cli", options(nomem, nostack));
+    let _ = crate::arch!(interrupt_disable());
 }
 
 /// 启用中断 (sti)
 #[inline(always)]
 pub unsafe fn enable_interrupts() {
-    core::arch::asm!("sti", options(nomem, nostack));
+    crate::arch!(interrupt_enable());
 }
 
 /// RFLAGS 寄存器操作
@@ -83,29 +81,27 @@ pub fn interrupts_enabled() -> bool {
 
 /// 内存屏障操作
 
-/// 全局内存屏障 (mfence)
+/// 全局内存屏障 (mfence → Arch trait)
 #[inline(always)]
 pub unsafe fn memory_fence() {
-    core::arch::asm!("mfence", options(nostack));
+    crate::arch!(fence());
 }
 
-/// 写内存屏障 (sfence)
+/// 写内存屏障 (sfence → Arch trait)
 #[inline(always)]
 pub unsafe fn store_fence() {
-    core::arch::asm!("sfence", options(nostack));
+    crate::arch!(fence_w());
 }
 
 /// TSC 时间戳计数器
 
-/// 读取 TSC (时间戳计数器)
+/// 读取 TSC (时间戳计数器 → Arch trait)
 ///
 /// # Returns
 /// 当前 CPU 周期数 (可用于性能测量)
 #[inline]
 pub fn rdtsc() -> u64 {
-    let tsc: u64;
-    unsafe { core::arch::asm!("rdtsc", out("rax") tsc, options(nomem, nostack)) };
-    tsc
+    crate::arch!(timestamp())
 }
 
 /// 读取带 fence 的 TSC (更精确)
@@ -131,14 +127,7 @@ pub fn rdtsc_fence() -> u64 {
 /// port 必须是有效的 I/O 端口地址
 #[inline(always)]
 pub unsafe fn inb(port: u16) -> u8 {
-    let value: u8;
-    core::arch::asm!(
-        "in al, dx",
-        in("dx") port,
-        out("al") value,
-        options(nomem, nostack, preserves_flags)
-    );
-    value
+    crate::arch!(inb(port))
 }
 
 /// 向端口写字节
@@ -147,12 +136,7 @@ pub unsafe fn inb(port: u16) -> u8 {
 /// port 必须是有效的 I/O 端口地址
 #[inline(always)]
 pub unsafe fn outb(port: u16, value: u8) {
-    core::arch::asm!(
-        "out dx, al",
-        in("dx") port,
-        in("al") value,
-        options(nomem, nostack, preserves_flags)
-    );
+    crate::arch!(outb(port, value));
 }
 
 /// I/O 延时 (用于 PIC 初始化序列)
@@ -164,7 +148,7 @@ pub fn io_wait() {
 /// HALT 指令 (暂停 CPU 直到下一个中断)
 #[inline(always)]
 pub unsafe fn halt() {
-    core::arch::asm!("hlt", options(nomem, nostack));
+    crate::arch!(halt());
 }
 
 /// 无限循环 (用于 panic 后停止系统)

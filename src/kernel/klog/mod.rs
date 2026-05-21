@@ -127,14 +127,12 @@ const COM1: u16 = 0x3F8;
 
 #[inline(always)]
 unsafe fn port_outb(port: u16, value: u8) {
-    core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
+    crate::arch!(outb(port, value));
 }
 
 #[inline(always)]
 unsafe fn port_inb(port: u16) -> u8 {
-    let value: u8;
-    core::arch::asm!("in al, dx", out("al") value, in("dx") port, options(nomem, nostack, preserves_flags));
-    value
+    crate::arch!(inb(port))
 }
 
 fn serial_putc(c: u8) {
@@ -286,11 +284,7 @@ unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] {
 }
 
 fn rdtsc() -> u64 {
-    unsafe {
-        let lo: u32; let hi: u32;
-        core::arch::asm!("rdtsc", out("eax") lo, out("edx") hi);
-        ((hi as u64) << 32) | (lo as u64)
-    }
+    crate::arch!(timestamp())
 }
 
 /// 格式化 u64 → 栈上 buffer (最小化依赖)
@@ -330,15 +324,7 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     let mut ts_buf = [0u8; 32];
     let ts = format_ts(&mut ts_buf, tsc);
 
-    let saved_if: u64;
-    unsafe {
-        core::arch::asm!(
-            "pushfq",
-            "pop {0}",
-            "cli",
-            out(reg) saved_if,
-        );
-    }
+    let saved_if = crate::arch!(interrupt_disable());
 
     serial_write_bytes(ts);
     serial_write_bytes(level.prefix());
@@ -349,13 +335,7 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     serial_write_bytes(msg);
     serial_putc(b'\n');
 
-    unsafe {
-        core::arch::asm!(
-            "push {0}",
-            "popfq",
-            in(reg) saved_if,
-        );
-    }
+    crate::arch!(interrupt_restore(saved_if as usize));
 
     let ring = unsafe { &mut *RING.inner.get() };
     ring.push_str(ts);

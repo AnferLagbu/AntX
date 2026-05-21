@@ -25,15 +25,13 @@ use super::statistics::*;
 /// 从端口读字节
 #[inline(always)]
 unsafe fn port_inb(port: u16) -> u8 {
-    let value: u8;
-    core::arch::asm!("in al, dx", in("dx") port, out("al") value, options(nomem, nostack, preserves_flags));
-    value
+    crate::arch!(inb(port))
 }
 
 /// 向端口写字节
 #[inline(always)]
 unsafe fn port_outb(port: u16, value: u8) {
-    core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
+    crate::arch!(outb(port, value));
 }
 
 /// I/O 等待
@@ -60,12 +58,12 @@ unsafe fn remap_pic() {
 /// 禁用中断
 #[inline(always)]
 unsafe fn cli() {
-    core::arch::asm!("cli", options(nomem, nostack));
+    let _ = crate::arch!(interrupt_disable());
 }
 
 /// Halt 循环 (永不返回)
 fn halt_loop() -> ! {
-    loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack)); } }
+    loop { crate::arch!(halt()); }
 }
 
 /// 检查指针是否为 null 或无效

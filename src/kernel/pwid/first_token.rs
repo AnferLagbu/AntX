@@ -23,7 +23,7 @@ static FIRST_TOKEN_CREATED: AtomicU64 = AtomicU64::new(0);
 
 pub fn generate_first_token() {
     let token_id = {
-        let tsc = unsafe { core::arch::x86_64::_rdtsc() };
+        let tsc = crate::arch!(timestamp());
         tsc.wrapping_mul(0x9e3779b97f4a7c15) >> 32
     };
     FIRST_TOKEN_ID.store(token_id, Ordering::Release);
@@ -51,7 +51,7 @@ pub fn grant_from_first_token(
 }
 
 pub fn pwid_now() -> u64 {
-    let tsc = unsafe { core::arch::x86_64::_rdtsc() };
+    let tsc = crate::arch!(timestamp());
     extern "C" {
         fn cpu_get_tsc_frequency() -> u64;
     }

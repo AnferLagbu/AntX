@@ -230,7 +230,7 @@ impl VirtualMemoryManager {
 
             core::ptr::copy_nonoverlapping(src.add(256), dst.add(256), 256);
 
-            core::arch::asm!("invlpg [{}]", in(reg) dst.add(256), options(nostack));
+            crate::arch!(tlb_flush_page(dst.add(256) as usize));
 
             let e256_src = src.add(256).read_volatile();
             let e256_dst = dst.add(256).read_volatile();
@@ -722,33 +722,17 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
     unsafe fn read_cr3(&self) -> u64 {
-        let cr3: u64;
-        core::arch::asm!(
-            "mov {}, cr3",
-            out(reg) cr3,
-            options(nostack, preserves_flags)
-        );
-        cr3
+        crate::arch!(read_page_table_base())
     }
 
     #[inline(always)]
     unsafe fn write_cr3(&self, val: u64) {
-        core::arch::asm!(
-            "mov cr3, {}",
-            in(reg) val,
-            options(nostack, preserves_flags)
-        );
+        crate::arch!(write_page_table_base(val));
     }
 
     #[inline(always)]
     fn flush_tlb(&self, addr: u64) {
-        unsafe {
-            core::arch::asm!(
-                "invlpg [{}]",
-                in(reg) addr,
-                options(nostack, preserves_flags)
-            );
-        }
+        crate::arch!(tlb_flush_page(addr as usize));
 
         #[cfg(feature = "smp")]
         {

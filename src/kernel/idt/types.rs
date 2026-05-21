@@ -108,9 +108,7 @@ impl InterruptFrame {
     /// 仅在 Page Fault (#PF) 异常中调用此方法
     #[inline]
     pub unsafe fn fault_address(&self) -> u64 {
-        let cr2: u64;
-        core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack));
-        cr2
+        crate::arch!(read_fault_address()) as u64
     }
 
     /// 获取错误码的各个位域
@@ -334,9 +332,7 @@ impl InterruptStatistics {
         }
         // 更新时间戳 (使用 rdtsc)
         unsafe {
-            let tsc: u64;
-            core::arch::asm!("rdtsc", out("rax") tsc, options(nomem, nostack));
-            self.last_exception_tsc.store(tsc, Ordering::Relaxed);
+            self.last_exception_tsc.store(crate::arch!(timestamp()), Ordering::Relaxed);
         }
     }
 

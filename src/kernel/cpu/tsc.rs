@@ -4,6 +4,9 @@
 
 /// 读取当前 TSC 值 (时钟周期数)
 /// 
+/// 通过 Arch trait 的 timestamp() 实现，架构无关。
+/// 在 x86_64 上映射为 rdtsc，在 ARM64 上映射为 CNTVCT_EL0 读取。
+///
 /// # Returns
 /// 自 CPU 复位以来的时钟周期数
 /// 
@@ -12,18 +15,7 @@
 /// 在 3GHz CPU 上, 1 个周期 ≈ 0.33 纳秒。
 #[inline(always)]
 pub fn read_tsc() -> u64 {
-    let (lo, hi): (u32, u32);
-    
-    unsafe {
-        core::arch::asm!(
-            "rdtsc",
-            out("eax") lo,
-            out("edx") hi,
-            options(nostack, nomem, preserves_flags),
-        );
-    }
-    
-    ((hi as u64) << 32) | (lo as u64)
+    crate::arch!(timestamp())
 }
 
 /// 读取 TSC 并附带序列化 (防止乱序执行)
@@ -32,19 +24,7 @@ pub fn read_tsc() -> u64 {
 /// 适用于性能测量场景。
 #[inline(always)]
 pub fn read_tsc_serialized() -> u64 {
-    let (lo, hi): (u32, u32);  // ✅ 修复: r32 → u32 (类型错误)
-    
-    unsafe {
-        core::arch::asm!(
-            "cpuid",          // 序列化屏障
-            "rdtsc",
-            out("eax") lo,
-            out("edx") hi,
-            options(nostack, nomem, preserves_flags),
-        );
-    }
-    
-    ((hi as u64) << 32) | (lo as u64)
+    crate::arch!(timestamp())
 }
 
 /// 将 TSC 周期转换为纳秒 (近似值)

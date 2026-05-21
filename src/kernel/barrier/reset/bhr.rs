@@ -7,20 +7,17 @@ use super::audit;
 
 pub fn disable_interrupts() {
     #[cfg(not(feature = "kernel_test"))]
-    unsafe {
-        core::arch::asm!("cli", options(nomem, nostack));
+    {
+        let _ = crate::arch!(interrupt_disable());
     }
 }
 
 pub fn mask_all_irqs() {
     #[cfg(not(feature = "kernel_test"))]
-    unsafe {
-        core::arch::asm!(
-            "mov al, 0xFF",
-            "out 0xA1, al",
-            "out 0x21, al",
-            options(nomem, nostack)
-        );
+    {
+        // 屏蔽所有 PIC 中断 (8259 主/从片)
+        crate::arch!(outb(0xA1, 0xFF)); // 从片 IMR
+        crate::arch!(outb(0x21, 0xFF)); // 主片 IMR
     }
 }
 
@@ -40,12 +37,8 @@ pub fn save_crash_info() {
 
 pub fn keyboard_reset() -> ! {
     #[cfg(not(feature = "kernel_test"))]
-    unsafe {
-        core::arch::asm!(
-            "mov al, 0xFE",
-            "out 0x64, al",
-            options(nomem, nostack)
-        );
+    {
+        crate::arch!(outb(0x64, 0xFE)); // 8042 键盘控制器 reset
     }
 
     #[cfg(feature = "kernel_test")]
@@ -55,7 +48,7 @@ pub fn keyboard_reset() -> ! {
 
     #[cfg(not(feature = "kernel_test"))]
     loop {
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack)); }
+        crate::arch!(halt());
     }
 }
 

@@ -25,7 +25,7 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWID_SALT_LEN]) -> [u8;
 }
 
 pub(crate) fn generate_salt() -> [u8; PWID_SALT_LEN] {
-    let tsc = unsafe { core::arch::x86_64::_rdtsc() };
+    let tsc = crate::arch!(timestamp());
     let mut salt = [0u8; PWID_SALT_LEN];
     let mut v = tsc;
     for i in 0..PWID_SALT_LEN {

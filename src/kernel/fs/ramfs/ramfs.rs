@@ -135,11 +135,7 @@ impl RamFsData {
     }
     
     fn get_time() -> u64 {
-        let tsc: u64;
-        unsafe {
-            core::arch::asm!("rdtsc", out("rax") tsc, out("rdx") _, options(nomem, nostack));
-        }
-        tsc
+        crate::arch!(timestamp())
     }
     
     fn block_is_free(&self, block_num: u32) -> bool {

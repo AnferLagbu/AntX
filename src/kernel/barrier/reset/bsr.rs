@@ -65,8 +65,8 @@ pub fn reset_devices() -> RecoveryResult {
 
 pub fn reset_interrupts() {
     #[cfg(not(feature = "kernel_test"))]
-    unsafe {
-        core::arch::asm!("cli", options(nomem, nostack));
+    {
+        let _ = crate::arch!(interrupt_disable());
     }
 }
 

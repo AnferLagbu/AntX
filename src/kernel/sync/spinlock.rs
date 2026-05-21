@@ -67,9 +67,8 @@ impl SpinLock {
             Ordering::Acquire,
             Ordering::Relaxed,
         ).is_err() {
-            // pause 指令提示 CPU 我们在自旋等待
-            // 减少总线压力和功耗
-            unsafe { core::arch::asm!("pause", options(nostack, nomem)) };
+            // 提示 CPU 我们在自旋等待 (pause / yield)
+            core::hint::spin_loop();
         }
         
         #[cfg(debug_assertions)]
@@ -116,7 +115,7 @@ impl SpinLock {
                 return TryLockResult::Acquired;
             }
             
-            unsafe { core::arch::asm!("pause", options(nostack, nomem)) };
+            core::hint::spin_loop();
         }
         
         // 超时: 记录警告 (调试模式) - 已禁用: no_std 环境
@@ -236,9 +235,7 @@ impl SpinLock {
         self.inner.owner = rsp as *const ();
         
         // 记录获取时间 (TSC)
-        let tsc: u64;
-        unsafe { core::arch::asm!("rdtsc", out("rax") tsc, options(nostack, nomem)) };
-        self.inner.acquire_time = tsc;
+        self.inner.acquire_time = crate::arch!(timestamp());
     }
     
     /// 断言当前线程持有锁 (仅 debug 模式)
@@ -261,30 +258,22 @@ impl Default for SpinLock {
 // ============================================================================
 
 /// 禁用中断并返回当前中断标志
+///
+/// 通过 Arch trait 的 interrupt_disable 实现，架构无关。
 pub fn disable_interrupts() -> IrqSaveFlags {
-    let flags: u64;
-    unsafe {
-        core::arch::asm!(
-            "pushfq",
-            "pop {0}",
-            "cli",
-            out(reg) flags,
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-    IrqSaveFlags(flags)
+    IrqSaveFlags(crate::arch!(interrupt_disable()) as u64)
 }
 
 /// 恢复中断标志
+///
+/// 通过 Arch trait 的 interrupt_restore 实现，架构无关。
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
-    if flags.interrupts_enabled() {
-        unsafe { core::arch::asm!("sti", options(nomem, nostack)) };
-    }
+    crate::arch!(interrupt_restore(flags.0 as usize));
 }
 
 /// 启用中断
 fn enable_interrupts() {
-    unsafe { core::arch::asm!("sti", options(nomem, nostack)) };
+    crate::arch!(interrupt_enable());
 }
 
 // ============================================================================

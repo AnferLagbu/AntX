@@ -79,7 +79,7 @@ impl SysSem {
                 return !0; // SYS_ARCH_TIMEOUT
             }
             
-            unsafe { core::arch::asm!("pause", options(nostack, nomem)) };
+            core::hint::spin_loop();;
         }
     }
 }

@@ -95,7 +95,7 @@ impl SpinLockInner {
             }
             
             // pause 指令提示 CPU 我们在自旋等待
-            unsafe { core::arch::asm!("pause", options(nostack, nomem)) };
+            core::hint::spin_loop();
         }
     }
     

@@ -99,12 +99,7 @@ static LAST_TICK_COUNT: AtomicU16 = AtomicU16::new(0);
 /// 必须在特权级执行，且端口地址有效。
 #[inline(always)]
 unsafe fn outb(port: u16, value: u8) {
-    core::arch::asm!(
-        "out dx, al",
-        in("dx") port,
-        in("al") value,
-        options(nomem, nostack, preserves_flags),
-    );
+    crate::arch!(outb(port, value));
 }
 
 /// 从指定端口读入字节
@@ -113,14 +108,7 @@ unsafe fn outb(port: u16, value: u8) {
 /// 必须在特权级执行，且端口地址有效。
 #[inline(always)]
 unsafe fn inb(port: u16) -> u8 {
-    let value: u8;
-    core::arch::asm!(
-        "in al, dx",
-        out("al") value,
-        in("dx") port,
-        options(nomem, nostack, preserves_flags),
-    );
-    value
+    crate::arch!(inb(port))
 }
 
 // ============================================================================

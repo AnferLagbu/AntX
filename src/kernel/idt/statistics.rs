@@ -125,10 +125,7 @@ impl DetailedStatistics {
         
         // 更新时间戳
         unsafe {
-            let tsc: u64;
-            core::arch::asm!("rdtsc", out("rax") tsc, options(nomem, nostack));
-            // TODO: 存储最后异常时间戳
-            let _ = tsc;
+            let _ = crate::arch!(timestamp());
         }
     }
 
@@ -177,11 +174,8 @@ impl DetailedStatistics {
         let mut history = self.history.lock();
         
         unsafe {
-            let tsc: u64;
-            core::arch::asm!("rdtsc", out("rax") tsc, options(nomem, nostack));
-            
             let event = InterruptEvent {
-                timestamp: tsc,
+                timestamp: crate::arch!(timestamp()),
                 vector,
                 rip,
                 is_user,

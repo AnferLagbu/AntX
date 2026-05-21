@@ -166,7 +166,7 @@ pub extern "C" fn qx_net_init() {
         // Critical section: disable interrupts during lwIP core init and netif
         // registration to prevent timer ISR from accessing half-initialized
         // lwIP data structures (root cause of the intermittent hang).
-        core::arch::asm!("cli", options(nomem, nostack));
+        let _ = crate::arch!(interrupt_disable());
         lwip_init();
         klog_net("lwIP core initialized\0".as_ptr() as *const i8);
 
@@ -175,7 +175,7 @@ pub extern "C" fn qx_net_init() {
         let register_result = qx_netif_register_e1000();
         // Re-enable interrupts only after lwIP is fully initialized
         crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
-        core::arch::asm!("sti", options(nomem, nostack));
+        crate::arch!(interrupt_enable());
 
         if register_result == 0 {
             let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);

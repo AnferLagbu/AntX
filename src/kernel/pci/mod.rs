@@ -34,7 +34,7 @@ use core::fmt;
 
 #[inline(always)]
 unsafe fn outb(port: u16, val: u8) {
-    core::arch::asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack));
+    crate::arch!(outb(port, val));
 }
 
 #[inline(always)]
@@ -44,14 +44,12 @@ unsafe fn outw(port: u16, val: u16) {
 
 #[inline(always)]
 unsafe fn outl(port: u16, val: u32) {
-    core::arch::asm!("out dx, eax", in("dx") port, in("eax") val, options(nomem, nostack));
+    crate::arch!(outl(port, val));
 }
 
 #[inline(always)]
 unsafe fn inb(port: u16) -> u8 {
-    let ret: u8;
-    core::arch::asm!("in al, dx", out("al") ret, in("dx") port, options(nomem, nostack));
-    ret
+    crate::arch!(inb(port))
 }
 
 #[inline(always)]
@@ -63,9 +61,7 @@ unsafe fn inw(port: u16) -> u16 {
 
 #[inline(always)]
 unsafe fn inl(port: u16) -> u32 {
-    let ret: u32;
-    core::arch::asm!("in eax, dx", out("eax") ret, in("dx") port, options(nomem, nostack));
-    ret
+    crate::arch!(inl(port))
 }
 
 // ── Constants ──

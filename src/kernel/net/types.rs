@@ -131,17 +131,7 @@ pub struct SysProt(pub u64);
 /// 进入临界区
 #[no_mangle]
 pub extern "C" fn sys_arch_protect() -> SysProt {
-    let flags: u64;
-    
-    unsafe {
-        core::arch::asm!(
-            "pushfq",
-            "cli",
-            "pop {}",
-            out(reg) flags,
-            options(nostack, nomem)
-        );
-    }
+    let flags = crate::arch!(interrupt_disable()) as u64;
     
     SysProt(flags)
 }
@@ -149,14 +139,7 @@ pub extern "C" fn sys_arch_protect() -> SysProt {
 /// 退出临界区
 #[no_mangle]
 pub extern "C" fn sys_arch_unprotect(pval: SysProt) {
-    unsafe {
-        core::arch::asm!(
-            "push {}",
-            "popfq",
-            in(reg) pval.0,
-            options(nostack, nomem)
-        );
-    }
+    crate::arch!(interrupt_restore(pval.0 as usize));
 }
 
 // ============================================================================

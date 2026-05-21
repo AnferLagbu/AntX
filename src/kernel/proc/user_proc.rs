@@ -272,21 +272,7 @@ impl UserProcManager {
             
             tss_set_kernel_stack(kstack);
             
-            core::arch::asm!(
-                "cli",
-                "push r8",
-                "push r9",
-                "push r10",
-                "push r11",
-                "push r12",
-                "iretq",
-                in("r8") ss_val,
-                in("r9") rsp_val,
-                in("r10") rflags_val,
-                in("r11") cs_val,
-                in("r12") rip_val,
-                options(noreturn)
-            );
+            crate::arch!(enter_user(rip_val as usize, rsp_val as usize, 0));
         }
     }
     

@@ -75,7 +75,7 @@ pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
                 break;
             }
             
-            unsafe { core::arch::asm!("pause", options(nostack, nomem)) };
+            core::hint::spin_loop();
         }
     }
 }
@@ -380,7 +380,7 @@ pub extern "C" fn spin_lock_irq(lock: *const SpinLockInner) {
 #[no_mangle]
 pub extern "C" fn spin_unlock_irq(lock: *const SpinLockInner) {
     spin_unlock(lock);
-    unsafe { core::arch::asm!("sti", options(nomem, nostack)) };
+    crate::arch!(interrupt_enable());
 }
 
 // ============================================================================

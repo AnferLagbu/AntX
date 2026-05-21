@@ -232,10 +232,7 @@ impl Scheduler {
         // ✅ 中断安全: 禁用中断保护整个调度临界区
         // process_switch_asm 中的 iretq 会恢复中断标志
         // 如果无实际切换(next==current)或无可运行进程, 则手动恢复
-        let saved_flags: u64;
-        unsafe {
-            core::arch::asm!("pushfq; pop {}; cli", out(reg) saved_flags, options(nomem, nostack));
-        }
+        let saved_flags = crate::arch!(interrupt_disable()) as u64;
         
         let current_pid = self.current.load(Ordering::SeqCst);
         let mut next_pid: Option<Pid> = None;
@@ -324,7 +321,7 @@ impl Scheduler {
             None => {
                 // ✅ 无进程可调度, 恢复中断
                 if saved_flags & 0x200 != 0 {
-                    unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+                    crate::arch!(interrupt_enable());
                 }
                 return None;
             }
@@ -333,7 +330,7 @@ impl Scheduler {
         if next == current_pid {
             // ✅ 无需切换, 恢复中断
             if saved_flags & 0x200 != 0 {
-                unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+                crate::arch!(interrupt_enable());
             }
             return Some(next);
         }
@@ -348,7 +345,7 @@ impl Scheduler {
 
         if next_ptr.is_none() {
             if saved_flags & 0x200 != 0 {
-                unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+                crate::arch!(interrupt_enable());
             }
             return None;
         }
@@ -506,15 +503,8 @@ impl Scheduler {
         self.need_reschedule.store(true, Ordering::SeqCst);
 
         if self.schedule().is_none() {
-            unsafe {
-                core::arch::asm!(
-                    "out dx, al",
-                    in("dx") 0xf4u16,
-                    in("al") (exit_code as u8).wrapping_shl(1) | 1,
-                    options(nomem, nostack)
-                );
-            }
-            loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack)); } }
+            crate::arch!(outb(0xf4, (exit_code as u8).wrapping_shl(1) | 1));
+            loop { crate::arch!(halt()); }
         }
     }
     

@@ -353,17 +353,7 @@ where
 
 /// 读取 TSC 时间戳计数器
 fn rdtsc() -> u64 {
-    unsafe {
-        let mut lo: u32;
-        let mut hi: u32;
-        core::arch::asm!(
-            "rdtsc",
-            out("eax") lo,
-            out("edx") hi,
-            options(nomem, nostack, preserves_flags),
-        );
-        ((hi as u64) << 32) | (lo as u64)
-    }
+    crate::arch!(timestamp())
 }
 
 /// 将毫秒转换为 TSC ticks (近似值)

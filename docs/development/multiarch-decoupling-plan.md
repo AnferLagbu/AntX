@@ -1,6 +1,6 @@
 # AntX 多架构解耦工程规划书
 
-> 版本: 1.0 | 日期: 2026-05-21 | 状态: Phase 2 完成
+> 版本: 1.0 | 日期: 2026-05-21 | 状态: Phase 3 完成
 
 ---
 
@@ -535,6 +535,30 @@ git checkout feat/arch-abstraction && git merge main
 | 3.11 | `pwid/` | `_rdtsc()` → `arch!(timestamp)` | 2 |
 | 3.12 | `barrier/` | 系统重置 `arch!(shutdown/reboot)` | 2 |
 | 3.13 | `user/` | 系统调用指令抽象 | 1 |
+
+#### 验证清单
+
+```
+[x] 3.1  sync/       — spinlock/mutex/mutex_types: cli/pause/rdtsc → arch!()
+[x] 3.2  cpu/        — tsc(cpuid+rdtsc)→arch!(timestamp()), cpuid/msr/fpu 保留(x86特有)
+[x] 3.3  mm/         — read_cr3/write_cr3/invlpg → arch!()
+[x] 3.4  idt/        — fault_address/timestamp/fence/inb/outb/halt → arch!()
+[x] 3.5  timer/      — PIT outb/inb → arch!()
+[x] 3.6  proc/       — context_switch/enter_user/halt/cli/sti → arch!()
+[x] 3.7  smp/        — IPI cli/sti → arch!() (in scheduler.rs)
+[x] 3.8  boot/       — Multiboot 保留, 无需架构抽象
+[x] 3.9  klog/       — outb/inb/rdtsc/interrupt_disable/interrupt_restore → arch!()
+[x] 3.10 driver/     — outb/inb/outl/inl/sfence → arch!() (outw/inw/VGA 保留,x86特有)
+[x] 3.11 pwid/       — _rdtsc() → arch!(timestamp())
+[x] 3.12 barrier/    — cli/outb/halt → arch!() (triple_fault 保留,x86特有)
+[x] 3.13 user/       — iretq → arch!(enter_user())
+[x] cargo build --target x86_64-unknown-none     → 0 errors
+[x] 额外覆盖: net/types(SysProt cli/sti)、dma/ffi(sfence/rdtsc)、dma/engine(sfence)、
+             ahci(sfence)、ipc(async_ipc/scheduler_integration rdtsc)、fs/ramfs(rdtsc)、
+             pci(outb/inb/outl/inl)、e1000(outb/inb)
+[x] 不可迁移保留: lfence(无等价Arch方法)、rep stosb(字符串指令)、lidt/lgdt(GDT特有)、
+                 rdmsr/wrmsr(MSR)、cpuid、cr0/cr4/fninit(FPU)、VGA光标、triple_fault
+```
 
 #### 禁用模式检查（每个子步骤后执行）
 

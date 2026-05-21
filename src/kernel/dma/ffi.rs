@@ -246,7 +246,7 @@ pub extern "C" fn dma_sync_for_device(
     _size: usize,
 ) {
     // sfence + compiler barrier
-    unsafe { core::arch::asm!("sfence", options(nomem, nostack)); }
+    crate::arch!(fence_w());
     core::sync::atomic::fence(Ordering::SeqCst);
 }
 
@@ -256,7 +256,7 @@ pub extern "C" fn dma_sync_for_cpu(
     _offset: usize,
     _size: usize,
 ) {
-    // lfence + compiler barrier
+    // lfence + compiler barrier (lfence not in Arch trait, keep asm)
     unsafe { core::arch::asm!("lfence", options(nomem, nostack)); }
     core::sync::atomic::fence(Ordering::SeqCst);
 }
@@ -344,10 +344,7 @@ pub extern "C" fn dma_wait_for_completion(
 ) -> i32 {
     if transfer.is_null() { return -1; }
 
-    let start: u64;
-    unsafe {
-        core::arch::asm!("rdtsc", out("rax") start, options(nomem, nostack));
-    }
+    let start = crate::arch!(timestamp());
 
     loop {
         let completed = unsafe { (*transfer).completed != 0 };
@@ -356,10 +353,7 @@ pub extern "C" fn dma_wait_for_completion(
         }
 
         if timeout_ms > 0 {
-            let current: u64;
-            unsafe {
-                core::arch::asm!("rdtsc", out("rax") current, options(nomem, nostack));
-            }
+            let current = crate::arch!(timestamp());
             if current.wrapping_sub(start) > timeout_ms as u64 * 2400000u64 {
                 return -1;
             }

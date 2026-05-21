@@ -318,11 +318,9 @@ impl Default for CondVar {
 // 辅助函数
 // ============================================================================
 
-/// 读取 TSC 时间戳计数器
+/// 读取 TSC 时间戳计数器 (架构无关封装)
 fn rdtsc() -> u64 {
-    let tsc: u64;
-    unsafe { core::arch::asm!("rdtsc", out("rax") tsc, options(nomem, nostack)) };
-    tsc
+    crate::arch!(timestamp())
 }
 
 /// 让出 CPU 给调度器

@@ -27,31 +27,19 @@ use core::sync::atomic::{AtomicU32, Ordering};
 // IO 端口操作安全封装
 // ============================================================================
 
-/// 向指定端口写入字节
+/// 向指定端口写入字节 (架构无关: x86_64 → out, AArch64 → MMIO)
 #[inline(always)]
 pub unsafe fn outb(port: u16, value: u8) {
-    core::arch::asm!(
-        "out dx, al",
-        in("dx") port,
-        in("al") value,
-        options(nomem, nostack, preserves_flags),
-    );
+    crate::arch!(outb(port, value));
 }
 
-/// 从指定端口读入字节
+/// 从指定端口读入字节 (架构无关: x86_64 → in, AArch64 → MMIO)
 #[inline(always)]
 pub unsafe fn inb(port: u16) -> u8 {
-    let value: u8;
-    core::arch::asm!(
-        "in al, dx",
-        out("al") value,
-        in("dx") port,
-        options(nomem, nostack, preserves_flags),
-    );
-    value
+    crate::arch!(inb(port))
 }
 
-/// 向指定端口写入字
+/// 向指定端口写入字 (x86_64 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 pub unsafe fn outw(port: u16, value: u16) {
     core::arch::asm!(
@@ -62,7 +50,7 @@ pub unsafe fn outw(port: u16, value: u16) {
     );
 }
 
-/// 从指定端口读入字
+/// 从指定端口读入字 (x86_64 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 pub unsafe fn inw(port: u16) -> u16 {
     let value: u16;
@@ -75,28 +63,16 @@ pub unsafe fn inw(port: u16) -> u16 {
     value
 }
 
-/// 向指定端口写入双字
+/// 向指定端口写入双字 (架构无关: x86_64 → out, AArch64 → MMIO)
 #[inline(always)]
 pub unsafe fn outl(port: u16, value: u32) {
-    core::arch::asm!(
-        "out dx, eax",
-        in("dx") port,
-        in("eax") value,
-        options(nomem, nostack, preserves_flags),
-    );
+    crate::arch!(outl(port, value));
 }
 
-/// 从指定端口读入双字
+/// 从指定端口读入双字 (架构无关: x86_64 → in, AArch64 → MMIO)
 #[inline(always)]
 pub unsafe fn inl(port: u16) -> u32 {
-    let value: u32;
-    core::arch::asm!(
-        "in eax, dx",
-        out("eax") value,
-        in("dx") port,
-        options(nomem, nostack, preserves_flags),
-    );
-    value
+    crate::arch!(inl(port))
 }
 
 // ============================================================================

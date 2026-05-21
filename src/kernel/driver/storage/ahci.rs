@@ -512,7 +512,7 @@ impl AhciPort {
 
         // ── 发布命令 ──
         // sfence: 确保内存写入对设备可见
-        unsafe { core::arch::asm!("sfence", options(nomem, nostack)); }
+        crate::arch!(fence_w());
         regs.ci = 1 << slot;
 
         // ── 等待完成 ──

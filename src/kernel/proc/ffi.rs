@@ -335,7 +335,7 @@ pub extern "C" fn launch_first_user_process() -> ! {
         user_proc_enter_by_pid(pid_u32);
     }
 
-    loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack)); } }
+    loop { crate::arch!(halt()); }
 }
 
 #[no_mangle]

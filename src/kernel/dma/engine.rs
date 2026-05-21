@@ -326,9 +326,7 @@ impl DmaEngine {
     #[inline(always)]
     fn barrier_device() {
         // sfence: ensure all stores are visible before DMA
-        unsafe {
-            core::arch::asm!("sfence", options(nomem, nostack));
-        }
+        crate::arch!(fence_w());
         core::sync::atomic::fence(Ordering::SeqCst);
     }
 
