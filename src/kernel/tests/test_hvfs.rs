@@ -65,7 +65,6 @@ fn test_spa_uberblock_null() -> TestResult {
 fn test_spa_uberblock_checksum() -> TestResult {
     let mut ub = HvUberblock {
         magic: HV_SPA_MAGIC,
-        version: HV_SPA_VERSION,
         txg: 1,
         root_bp: HvBlockPointer::null(),
         timestamp: 100,

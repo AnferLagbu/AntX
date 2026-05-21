@@ -9,7 +9,6 @@ use crate::kernel::fs::hvfs::arc::HvArc;
 use crate::kernel::fs::hvfs::checksum::HvChecksum;
 
 pub const HV_SPA_MAGIC: u32 = 0x48564653;
-pub const HV_SPA_VERSION: u32 = 2;
 pub const HV_UBERBLOCK_COUNT: usize = 128;
 pub const HV_UBERBLOCK_SECTOR: u32 = 0;
 pub const HV_VDEV_LABEL_SIZE: u64 = 262144;
@@ -35,7 +34,6 @@ pub enum HvPoolState {
 #[repr(C)]
 pub struct HvUberblock {
     pub magic: u32,
-    pub version: u32,
     pub txg: u64,
     pub root_bp: HvBlockPointer,
     pub timestamp: u64,
@@ -50,7 +48,7 @@ pub struct HvUberblock {
 impl HvUberblock {
     pub const fn null() -> Self {
         Self {
-            magic: 0, version: 0, txg: 0,
+            magic: 0, txg: 0,
             root_bp: HvBlockPointer::null(),
             timestamp: 0, root_dataset_obj: 0,
             pool_guid: 0, checkpoint_txg: 0,
@@ -60,7 +58,7 @@ impl HvUberblock {
     }
 
     pub fn is_valid(&self) -> bool {
-        self.magic == HV_SPA_MAGIC && self.version == HV_SPA_VERSION
+        self.magic == HV_SPA_MAGIC
     }
 
     pub fn compute_checksum(&mut self) {
@@ -204,7 +202,6 @@ impl HvSpa {
         {
             let mut ub = self.uberblock.lock();
             ub.magic = HV_SPA_MAGIC;
-            ub.version = HV_SPA_VERSION;
             ub.txg = 1;
             ub.pool_guid = self.config.lock().guid;
             ub.root_dataset_obj = 0;
