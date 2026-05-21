@@ -5,7 +5,7 @@ AS = nasm
 CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
          -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
          -Wno-builtin-declaration-mismatch \
-         -Isrc/include -Isrc/include/tests \
+         -Isrc/kernel/lib \
          -Isrc/kernel/net -Isrc/kernel/net/lwip -Isrc/kernel/net/lwip/src/include -Isrc/kernel/net/arch -Isrc/kernel/net/driver
 
 NET_CORE_C = $(wildcard src/kernel/net/lwip/src/core/*.c) \
