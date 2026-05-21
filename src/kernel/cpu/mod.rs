@@ -38,6 +38,7 @@ pub mod msr;
 pub mod tsc;
 pub mod cache;
 pub mod topology;
+pub mod arch;
 
 // ============================================================================
 // 常量定义 (编译时常量)

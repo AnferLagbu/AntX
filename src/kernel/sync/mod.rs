@@ -20,6 +20,7 @@ pub mod mutex;
 pub mod rwlock;
 pub mod atomic;
 pub mod seqlock;
+pub mod arch;
 
 use core::sync::atomic::Ordering;
 

@@ -15,6 +15,7 @@ pub mod vmm;
 pub mod slab;
 pub mod kmalloc;
 pub mod ffi;
+pub mod arch;
 
 // Re-export commonly used types
 pub use pmm::*;
