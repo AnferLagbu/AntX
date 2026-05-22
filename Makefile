@@ -1,10 +1,31 @@
-CC = x86_64-linux-gnu-gcc
-LD = x86_64-linux-gnu-ld
-AS = nasm
+ARCH ?= x86_64
 
-CFLAGS = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
-         -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
-         -Wno-builtin-declaration-mismatch \
+ifeq ($(ARCH),aarch64)
+    CC = aarch64-linux-gnu-gcc
+    LD = aarch64-linux-gnu-ld
+    AS = aarch64-linux-gnu-as
+    RUST_TARGET = aarch64-unknown-none
+    QEMU = qemu-system-aarch64
+    QEMU_MACHINE = virt
+    QEMU_CPU ?= cortex-a72
+    LDSCRIPT = src/kernel/link/aarch64.ld
+    CFLAGS_BASE = -std=c11 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
+                  -fno-asynchronous-unwind-tables -fno-ident \
+                  -Wno-builtin-declaration-mismatch
+else
+    CC = x86_64-linux-gnu-gcc
+    LD = x86_64-linux-gnu-ld
+    AS = nasm
+    RUST_TARGET = x86_64-unknown-none
+    QEMU = qemu-system-x86_64
+    QEMU_CPU ?= qemu64
+    LDSCRIPT = src/kernel/link/x86_64.ld
+    CFLAGS_BASE = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
+                  -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
+                  -Wno-builtin-declaration-mismatch
+endif
+
+CFLAGS = $(CFLAGS_BASE) \
          -Isrc/kernel/lib \
          -Isrc/kernel/net -Isrc/kernel/net/lwip -Isrc/kernel/net/lwip/src/include -Isrc/kernel/net/arch -Isrc/kernel/net/driver
 
@@ -35,20 +56,24 @@ NET_QX_C   = src/kernel/net/arch/net_glue.c
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
 NET_OBJS   = $(patsubst src/kernel/net/%.c,build/net/%.o,$(NET_ALL_C))
 
-LDFLAGS = -T src/link.ld -nostdlib -Map=build/kernel.map
+LDFLAGS = -T $(LDSCRIPT) -nostdlib -Map=build/kernel.map
 
-RUST_LIB = src/rust/target/x86_64-unknown-none/release/libqueenx.a
-RUST_LIB_TEST = src/rust/target/test-release/x86_64-unknown-none/release/libqueenx.a
-RUST_LIB_CHAOS = src/rust/target/chaos-release/x86_64-unknown-none/release/libqueenx.a
+RUST_LIB = src/rust/target/$(RUST_TARGET)/release/libqueenx.a
+RUST_LIB_TEST = src/rust/target/test-release/$(RUST_TARGET)/release/libqueenx.a
+RUST_LIB_CHAOS = src/rust/target/chaos-release/$(RUST_TARGET)/release/libqueenx.a
 
 RUST_USER_DIR = src/user
-RUST_USER_TARGET = $(RUST_USER_DIR)/target/x86_64-unknown-none/release
+RUST_USER_TARGET = $(RUST_USER_DIR)/target/$(RUST_TARGET)/release
 
 USER_INIT_ELF = $(RUST_USER_TARGET)/init
 USER_SHELL_ELF = $(RUST_USER_TARGET)/axsh
 USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 
+ifeq ($(ARCH),aarch64)
+ASFLAGS = -march=armv8-a
+else
 ASFLAGS = -f elf64
+endif
 
 STAGE1_BIN = build/stage1.bin
 
@@ -78,7 +103,7 @@ user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF)
 
 $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF):
 	@echo "Building Rust user programs..."
-	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib" cargo build --release
+	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib" cargo build --release --target $(RUST_TARGET)
 
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 	@echo "[LINK] Linking kernel..."
@@ -89,15 +114,15 @@ build/kernel.flat: build/kernel.bin
 
 $(RUST_LIB): build/user/init.bin $(STAGE1_BIN)
 	@echo "Building Rust kernel module..."
-	cd src/rust && cargo build --release
+	cd src/rust && cargo build --release --target $(RUST_TARGET)
 
 $(RUST_LIB_TEST):
 	@echo "Building Rust test kernel..."
-	cd src/rust && cargo build --release --features kernel_test --target-dir target/test-release
+	cd src/rust && cargo build --release --target $(RUST_TARGET) --features kernel_test --target-dir target/test-release
 
 $(RUST_LIB_CHAOS):
 	@echo "Building Rust chaos kernel (fault_injection enabled)..."
-	cd src/rust && cargo build --release --features "kernel_test fault_injection" --target-dir target/chaos-release
+	cd src/rust && cargo build --release --target $(RUST_TARGET) --features "kernel_test fault_injection" --target-dir target/chaos-release
 
 build/lib/string.o: src/kernel/lib/string.c
 	@mkdir -p $(dir $@)
@@ -109,7 +134,7 @@ build/%.o: src/kernel/%.c
 
 $(STAGE1_BIN): src/kernel/boot/stage1.asm
 	@mkdir -p build
-	nasm -f bin $< -o $@
+	$(AS) -f bin $< -o $@
 
 build/%.o: src/kernel/%.asm
 	@mkdir -p build
@@ -160,7 +185,7 @@ $(DISK_IMAGE): build/kernel.flat user
 disk: $(DISK_IMAGE)
 
 run-disk: $(DISK_IMAGE)
-	qemu-system-x86_64 -drive file=$(DISK_IMAGE),format=raw -serial stdio
+	$(QEMU) -drive file=$(DISK_IMAGE),format=raw -serial stdio
 
 iso: all user
 	@mkdir -p isodir/boot/grub
@@ -183,7 +208,6 @@ clean:
 	cd $(RUST_USER_DIR) && cargo clean
 
 # QEMU 基础配置
-QEMU := qemu-system-x86_64
 QEMU_FLAGS := -m 512 -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 QEMU_NET := -device e1000,netdev=n0 \
@@ -314,7 +338,7 @@ build/test_hw_stubs.o: src/kernel/tests/test_hw_stubs.c
 test: test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
-	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_test.map --allow-multiple-definition -o build/kernel_test.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
+	$(LD) -T $(LDSCRIPT) -nostdlib -Map=build/kernel_test.map --allow-multiple-definition -o build/kernel_test.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
 
 # 单元测试（优化版）
 test-host:
@@ -397,7 +421,7 @@ test-all: test-smoke test-host test-unit
 FAULT_RATE ?= 50
 
 build/kernel_chaos.bin: $(KERNEL_TEST_OBJS) $(RUST_LIB_CHAOS)
-	x86_64-linux-gnu-ld -T src/link.ld -nostdlib -Map=build/kernel_chaos.map --allow-multiple-definition -o build/kernel_chaos.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_CHAOS)
+	$(LD) -T $(LDSCRIPT) -nostdlib -Map=build/kernel_chaos.map --allow-multiple-definition -o build/kernel_chaos.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_CHAOS)
 
 test-chaos: build/kernel_chaos.bin user
 	@echo "╔══════════════════════════════════════════════════════════╗"
