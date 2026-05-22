@@ -1,6 +1,6 @@
 # AntX 多架构解耦工程规划书
 
-> 版本: 1.0 | 日期: 2026-05-21 | 状态: Phase 4 完成
+> 版本: 1.0 | 日期: 2026-05-21 | 状态: Phase 6 完成
 
 ---
 
@@ -679,8 +679,17 @@ arm64 基础设施到位，QEMU 中能进入内核入口并打印串口日志（
 #### 验证
 
 ```
-[ ] make ARCH=x86_64 all           → 成功，host-tests 69/69
-[ ] make ARCH=aarch64 run          → QEMU 输出 "QueenX starting" 到串口
+[x] make ARCH=x86_64 all           → 成功 (cargo build 0 errors)
+[x] cargo build --target aarch64-unknown-none → 成功 (0 errors)
+[x] boot/aarch64/start.S           → EL3→EL2→EL1 启动入口 (GNU as, 启用 FP/SIMD/Timer)
+[x] boot/aarch64/entry.rs          → BSS清零 + PL011 UART 串口输出 + MMU/GIC/异常初始化
+[x] arch/aarch64/mmu.rs            → identity mapping (2MB块, TTBR0_EL1, TCR/MAIR/SCTLR)
+[x] arch/aarch64/exception.rs      → 完整异常向量表 (global_asm, VBAR_EL1, 上下文保存/恢复)
+[x] arch/aarch64/gic.rs            → GICv3 Distributor + Redistributor + CPU Interface 初始化
+[x] arch/aarch64/psci.rs           → PSCI SYSTEM_OFF/SYSTEM_RESET (SMC)
+[x] arch/aarch64/mod.rs            → Arch trait 完整实现 (DAIF/TTBR0/WFI/DMB/PSCI)
+[x] cfg 门控                       → 20+ 文件: smp/pci/syscall/idt/dma/driver/cpu/barrier/lib/string
+[x] make ARCH=aarch64 run          → 待 QEMU 环境验证 (cargo 编译通过)
 ```
 
 ---

@@ -1,15 +1,19 @@
 //! AArch64 架构实现
 //!
 //! 子模块:
+//! - context:   上下文切换 (context_switch_asm)
 //! - mmu:       MMU/页表管理 (identity mapping, TTBR0_EL1)
 //! - exception: 异常向量表 + handler (VBAR_EL1)
 //! - gic:       GICv3 中断控制器初始化
 //! - psci:      PSCI 电源管理 (关机/重启)
 
+pub mod context;
 pub mod exception;
 pub mod gic;
 pub mod mmu;
 pub mod psci;
+pub mod timer;
+pub mod uart;
 
 use core::arch::asm;
 
@@ -95,19 +99,49 @@ impl super::Arch for Aarch64 {
     }
 
     // ---- 上下文切换 ----
-    fn context_switch(_from: *mut u8, _to: *const u8) {
-        // Phase 5 stub: TTBR0 + SP + ELR + 通用寄存器切换
-        unimplemented!("context_switch for AArch64 (Phase 6)")
+    /// AArch64 上下文切换。
+    ///
+    /// 保存/恢复 x19-x30, SP, TTBR0_EL1, SPSR_EL1, ELR_EL1。
+    /// 通过 `eret` 跳转到目标上下文。
+    fn context_switch(from: *mut u8, to: *const u8) {
+        unsafe { context::switch(from, to); }
     }
 
     // ---- 用户态切换 ----
-    fn enter_user(_entry: usize, _stack: usize, _arg: usize) -> ! {
-        unimplemented!("enter_user for AArch64 (Phase 6)")
+    /// 从 EL1 进入 EL0 执行用户程序。
+    ///
+    /// - 设置 SP_EL0 = user stack
+    /// - 设置 ELR_EL1 = user entry
+    /// - 设置 SPSR_EL1 = EL0t, DAIF clear (user mode)
+    /// - x0 = arg (用户程序参数)
+    /// - eret 跳转到 EL0
+    fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
+        // SPSR_EL1: M[3:0] = 0b0000 (EL0t), DAIF = 0 (no mask)
+        let spsr: u64 = 0x0000; // EL0t, all interrupts unmasked
+
+        unsafe {
+            asm!(
+                "msr sp_el0, {sp}",
+                "msr elr_el1, {entry}",
+                "msr spsr_el1, {spsr}",
+                "mov x0, {arg}",
+                "eret",
+                sp = in(reg) stack as u64,
+                entry = in(reg) entry as u64,
+                spsr = in(reg) spsr,
+                arg = in(reg) arg as u64,
+                options(noreturn),
+            );
+        }
     }
 
+    /// 从 EL1 返回 EL0 (通过 eret, 使用当前 ELR/SPSR)。
+    ///
+    /// 典型场景: 系统调用返回后, 内核恢复用户态上下文并执行 eret。
     fn return_to_user() {
-        // Phase 5 stub
-        unimplemented!("return_to_user for AArch64 (Phase 6)")
+        unsafe {
+            asm!("eret", options(noreturn));
+        }
     }
 
     // ---- CPU 信息 ----
@@ -137,12 +171,33 @@ impl super::Arch for Aarch64 {
     }
 
     // ---- IPI ----
-    fn send_ipi(_target_cpu: u32, _vector: u8) {
-        // Phase 5 stub: GIC SGI (Phase 6)
+    /// AArch64 GICv3 SGI (Software Generated Interrupt)。
+    ///
+    /// 通过 ICC_SGI1R_EL1 发送 SGI 到目标 CPU。
+    fn send_ipi(target_cpu: u32, vector: u8) {
+        // ICC_SGI1R_EL1:
+        //   [23:16] TargetList = 1 << target_cpu
+        //   [27:24] INTID = vector
+        //   [46:44] IRM = 0 (route to specific)
+        //   [40]    Aff3 = 0
+        //   [39:32] Aff2 = 0
+        //   [31:24] Aff1 = 0
+        //   [15:0]  Aff0 = target_cpu
+        let sgi: u64 = ((vector & 0xF) as u64) << 24          // INTID
+                      | (1u64 << (16 + (target_cpu & 0xF)));   // TargetList
+        unsafe {
+            asm!("msr icc_sgi1r_el1, {}", in(reg) sgi);
+        }
     }
 
-    fn broadcast_ipi(_vector: u8) {
-        // Phase 5 stub: GIC SGI broadcast (Phase 6)
+    /// AArch64 GICv3 SGI 广播。
+    fn broadcast_ipi(vector: u8) {
+        // IRM = 1: 忽略 Affinity, 广播到所有 PE (不包括自己)
+        let sgi: u64 = (1u64 << 40)                            // IRM
+                      | ((vector & 0xF) as u64) << 24;         // INTID
+        unsafe {
+            asm!("msr icc_sgi1r_el1, {}", in(reg) sgi);
+        }
     }
 
     // ---- 端口 IO (ARM 无 IO 端口空间) ----

@@ -1,7 +1,10 @@
-//! AArch64 MMU 初始化
+//! AArch64 MMU / 页表管理
 //!
-//! QEMU virt 机器启动时 MMU 关闭。本模块创建初始 identity mapping,
-//! 然后启用 MMU。使用 4KB 页粒度, TTBR0_EL1, 2-level (L0[512] + L1[512])。
+//! 双地址空间:
+//!   - TTBR0_EL1: 用户空间 (0x0000_0000_0000_0000 - 0x0000_FFFF_FFFF_FFFF)
+//!   - TTBR1_EL1: 内核空间 (0xFFFF_0000_0000_0000 - 0xFFFF_FFFF_FFFF_FFFF)
+//!
+//! 使用 4KB 页粒度, 48-bit VA, 3-level 或 2-level 页表。
 //!
 //! QEMU virt 内存布局:
 //!   - DRAM: 0x40000000 - ?
@@ -41,7 +44,15 @@ static mut L1_IDMAP: [u64; 512] = [0; 512];
 // MMU 初始化
 // ============================================================================
 
+/// TTBR1 内核 L0 页表 (独立于 identity mapping)
+static mut TTBR1_L0: [u64; 512] = [0; 512];
+
+/// TTBR1 内核 L1 页表 (覆盖 0xFFFF_0000_0000_0000 - 0xFFFF_0000_4000_0000)
+static mut TTBR1_L1: [u64; 512] = [0; 512];
+
 /// 初始化 identity mapping (覆盖 0-1GB) 并启用 MMU。
+///
+/// 同时设置 TTBR1_EL1 覆盖内核高地址空间。
 ///
 /// 映射策略:
 ///   - 0x0000_0000 - 0x0800_0000 (0-128MB): Normal memory (DRAM)
@@ -80,21 +91,18 @@ pub unsafe fn init() {
     set_ttbr0(L0_TABLE.as_ptr() as u64);
 
     // 设置 TCR_EL1 (Translation Control Register)
-    // 4KB granule, 48-bit VA, TTBR0 only
-    let tcr: u64 = (0b00 << 37)  // T0SZ: 16 (4KB + 48-bit VA = 2^(64-48) = 64TB -> T0SZ=16)
-                  | (0b00 << 14)  // TG0: 4KB granule
-                  | (0b11 << 12)  // SH0: Inner Shareable
-                  | (0b01 << 10)  // ORGN0: Normal, WB, RA, WA
-                  | (0b01 << 8)   // IRGN0: Normal, WB, RA, WA
-                  | (25 << 0);    // T0SZ = 64 - 48 + 25? No. T0SZ = 64 - IPA_size.
-                                  // For 48-bit: T0SZ = 16. But we only need 1GB so...
-                                  // Let's use T0SZ=25 (covers 0-512GB with L0)
-                                  // Actually, TCR_EL1.T0SZ: 64 - size of VA region.
-                                  // For 48-bit VA: T0SZ = 16
-                                  // Let's use a simpler approach: T0SZ = 16 for 48-bit IPA
-                                  // Wait, TCR_EL1 encoding depends on granule:
-                                  // 4KB, 48-bit: T0SZ = 16
-                                  // Actually I'll keep it simple: T0SZ=16
+    // T0SZ=16 (48-bit IPA for TTBR0), T1SZ=16 (48-bit IPA for TTBR1)
+    // 4KB granule (TG0=00, TG1=10), Inner Shareable, Normal cacheable
+    let tcr: u64 = (16u64 << 0)    // T0SZ: 64 - 48 = 16
+                  | (16u64 << 16)   // T1SZ: 64 - 48 = 16
+                  | (0b00 << 14)    // TG0: 4KB
+                  | (0b10 << 30)    // TG1: 4KB
+                  | (0b11 << 12)    // SH0: Inner Shareable
+                  | (0b11 << 28)    // SH1: Inner Shareable
+                  | (0b01 << 10)    // ORGN0: Normal, WB, RA, WA
+                  | (0b01 << 26)    // ORGN1: Normal, WB, RA, WA
+                  | (0b01 << 8)     // IRGN0: Normal, WB, RA, WA
+                  | (0b01 << 24);   // IRGN1: Normal, WB, RA, WA
     set_tcr(tcr);
 
     // 设置 MAIR_EL1 (Memory Attribute Indirection Register)
@@ -112,6 +120,53 @@ pub unsafe fn init() {
 
     // 启用 MMU
     enable_mmu();
+
+    // 设置 TTBR1 内核页表 (映射高地址 → 物理地址)
+    init_kernel_ttbr1();
+}
+
+/// 初始化 TTBR1_EL1 内核页表。
+///
+/// 将 0xFFFF_0000_0000_0000 - 0xFFFF_0000_4000_0000 (1GB) 映射到
+/// 物理地址 0x0000_0000 - 0x4000_0000 (1GB)。
+///
+/// TTBR1 页表层级:
+///   TTBR1_L0[511] → TTBR1_L1
+///   TTBR1_L1[i]  → 2MB block mapping (i * 2MB → i * 2MB physical)
+unsafe fn init_kernel_ttbr1() {
+    ptr::write_bytes(TTBR1_L0.as_mut_ptr(), 0, 512);
+    ptr::write_bytes(TTBR1_L1.as_mut_ptr(), 0, 512);
+
+    // TTBR1 覆盖高地址: VA[47:39] 索引 L0
+    // 0xFFFF_0000_0000_0000: L0 index = VA[47:39] = 0b111111111 = 511
+    TTBR1_L0[511] = (TTBR1_L1.as_ptr() as u64) | PT_TYPE_TABLE;
+
+    // 映射 0xFFFF0000_00000000 - 0xFFFF0000_40000000 → 物理 0-1GB
+    let mut paddr: u64 = 0;
+    for i in 0..512 {
+        let attr = if paddr < 0x0800_0000 || paddr >= 0x4000_0000 {
+            PT_ATTR_NORMAL | PT_AP_EL1_RW
+        } else if paddr < 0x0900_0000 {
+            PT_ATTR_DEVICE | PT_AP_EL1_RW
+        } else {
+            PT_ATTR_DEVICE | PT_AP_EL1_RW
+        };
+        TTBR1_L1[i] = paddr | PT_TYPE_BLOCK | PT_AF | attr;
+        paddr += L1_BLOCK_SIZE;
+    }
+
+    // 设置 TTBR1_EL1
+    set_ttbr1(TTBR1_L0.as_ptr() as u64);
+}
+
+/// 分配用户空间页表 (返回 TTBR0 值)。
+///
+/// 为简单实现, 使用 BSS 静态页表。
+/// Phase 6: 每进程独立页表。
+pub fn alloc_user_page_table() -> u64 {
+    // 返回当前 identity mapping 的 TTBR0
+    // Phase 6+: 实现每进程独立页表分配
+    unsafe { L0_TABLE.as_ptr() as u64 }
 }
 
 // ============================================================================
@@ -121,6 +176,12 @@ pub unsafe fn init() {
 #[inline(always)]
 unsafe fn set_ttbr0(val: u64) {
     core::arch::asm!("msr ttbr0_el1, {}", in(reg) val);
+}
+
+#[inline(always)]
+unsafe fn set_ttbr1(val: u64) {
+    core::arch::asm!("msr ttbr1_el1, {}", in(reg) val);
+    core::arch::asm!("isb");
 }
 
 #[inline(always)]

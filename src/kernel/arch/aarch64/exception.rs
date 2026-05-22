@@ -177,11 +177,145 @@ curr_el_spx_serror:
 // -------- EL0 in AArch64 --------
 .balign 128
 lower_el_aarch64_sync:
-    b   unexpected_exception
+    // SVC / 数据异常等从 EL0 同步进入
+    // 保存 EL0 完整上下文到内核栈
+    sub  sp, sp, #(8 * 35)
+    stp  x0, x1, [sp, #(8 * 0)]
+    stp  x2, x3, [sp, #(8 * 2)]
+    stp  x4, x5, [sp, #(8 * 4)]
+    stp  x6, x7, [sp, #(8 * 6)]
+    stp  x8, x9, [sp, #(8 * 8)]
+    stp  x10, x11, [sp, #(8 * 10)]
+    stp  x12, x13, [sp, #(8 * 12)]
+    stp  x14, x15, [sp, #(8 * 14)]
+    stp  x16, x17, [sp, #(8 * 16)]
+    stp  x18, x19, [sp, #(8 * 18)]
+    stp  x20, x21, [sp, #(8 * 20)]
+    stp  x22, x23, [sp, #(8 * 22)]
+    stp  x24, x25, [sp, #(8 * 24)]
+    stp  x26, x27, [sp, #(8 * 26)]
+    stp  x28, x29, [sp, #(8 * 28)]
+    str  x30, [sp, #(8 * 30)]
+
+    mrs  x0, elr_el1
+    mrs  x1, spsr_el1
+    stp  x0, x1, [sp, #(8 * 31)]
+    mrs  x1, sp_el0
+    str  x1, [sp, #(8 * 33)]
+
+    // 检查 ESR_EL1.EC 判断异常类型
+    mrs  x0, esr_el1
+    lsr  x0, x0, #26        // EC = ESR[31:26]
+    cmp  x0, #0x15          // SVC from AArch64
+    beq  handle_svc
+
+    // 其他 EL0 同步异常 → sync_exception_handler
+    mov  x0, sp
+    bl   sync_exception_handler
+
+    // 恢复上下文并返回 EL0
+    ldr  x1, [sp, #(8 * 33)]
+    msr  sp_el0, x1
+    ldr  x30, [sp, #(8 * 30)]
+    ldp  x0, x1, [sp, #(8 * 31)]
+    msr  elr_el1, x0
+    msr  spsr_el1, x1
+    ldp  x0, x1, [sp, #(8 * 0)]
+    ldp  x2, x3, [sp, #(8 * 2)]
+    ldp  x4, x5, [sp, #(8 * 4)]
+    ldp  x6, x7, [sp, #(8 * 6)]
+    ldp  x8, x9, [sp, #(8 * 8)]
+    ldp  x10, x11, [sp, #(8 * 10)]
+    ldp  x12, x13, [sp, #(8 * 12)]
+    ldp  x14, x15, [sp, #(8 * 14)]
+    ldp  x16, x17, [sp, #(8 * 16)]
+    ldp  x18, x19, [sp, #(8 * 18)]
+    ldp  x20, x21, [sp, #(8 * 20)]
+    ldp  x22, x23, [sp, #(8 * 22)]
+    ldp  x24, x25, [sp, #(8 * 24)]
+    ldp  x26, x27, [sp, #(8 * 26)]
+    ldp  x28, x29, [sp, #(8 * 28)]
+    add  sp, sp, #(8 * 35)
+    eret
+
+handle_svc:
+    // SVC #0: x0 = 系统调用号, x1-x5 = 参数
+    mov  x0, sp             // x0 = ExceptionFrame*
+    bl   svc_handler
+
+    // 返回值在 x0 中，恢复上下文后返回 EL0
+    // 把返回值存入帧内 x0
+    str  x0, [sp, #(8 * 0)]
+
+    ldr  x1, [sp, #(8 * 33)]
+    msr  sp_el0, x1
+    ldr  x30, [sp, #(8 * 30)]
+    ldp  x0, x1, [sp, #(8 * 31)]
+    msr  elr_el1, x0
+    msr  spsr_el1, x1
+    ldp  x0, x1, [sp, #(8 * 0)]
+    ldp  x2, x3, [sp, #(8 * 2)]
+    ldp  x4, x5, [sp, #(8 * 4)]
+    ldp  x6, x7, [sp, #(8 * 6)]
+    ldp  x8, x9, [sp, #(8 * 8)]
+    ldp  x10, x11, [sp, #(8 * 10)]
+    ldp  x12, x13, [sp, #(8 * 12)]
+    ldp  x14, x15, [sp, #(8 * 14)]
+    ldp  x16, x17, [sp, #(8 * 16)]
+    ldp  x18, x19, [sp, #(8 * 18)]
+    ldp  x20, x21, [sp, #(8 * 20)]
+    ldp  x22, x23, [sp, #(8 * 22)]
+    ldp  x24, x25, [sp, #(8 * 24)]
+    ldp  x26, x27, [sp, #(8 * 26)]
+    ldp  x28, x29, [sp, #(8 * 28)]
+    add  sp, sp, #(8 * 35)
+    eret
 
 .balign 128
 lower_el_aarch64_irq:
-    b   unexpected_exception
+    // Save context from EL0
+    sub  sp, sp, #(8 * 35)
+    stp  x0, x1, [sp, #(8 * 0)]
+    stp  x2, x3, [sp, #(8 * 2)]
+    stp  x4, x5, [sp, #(8 * 4)]
+    stp  x6, x7, [sp, #(8 * 6)]
+    stp  x8, x9, [sp, #(8 * 8)]
+    stp  x10, x11, [sp, #(8 * 10)]
+    stp  x12, x13, [sp, #(8 * 12)]
+    stp  x14, x15, [sp, #(8 * 14)]
+    stp  x16, x17, [sp, #(8 * 16)]
+    stp  x18, x19, [sp, #(8 * 18)]
+    str  x30, [sp, #(8 * 30)]
+
+    mrs  x0, elr_el1
+    mrs  x1, spsr_el1
+    stp  x0, x1, [sp, #(8 * 31)]
+    mrs  x1, sp_el0
+    str  x1, [sp, #(8 * 33)]
+
+    // Handle IRQ
+    mov  x0, sp
+    bl   irq_handler_el0
+
+    // Restore context for EL0
+    ldr  x1, [sp, #(8 * 33)]
+    msr  sp_el0, x1
+    ldr  x30, [sp, #(8 * 30)]
+    ldp  x0, x1, [sp, #(8 * 31)]
+    msr  elr_el1, x0
+    msr  spsr_el1, x1
+    ldp  x0, x1, [sp, #(8 * 0)]
+    ldp  x2, x3, [sp, #(8 * 2)]
+    ldp  x4, x5, [sp, #(8 * 4)]
+    ldp  x6, x7, [sp, #(8 * 6)]
+    ldp  x8, x9, [sp, #(8 * 8)]
+    ldp  x10, x11, [sp, #(8 * 10)]
+    ldp  x12, x13, [sp, #(8 * 12)]
+    ldp  x14, x15, [sp, #(8 * 14)]
+    ldp  x16, x17, [sp, #(8 * 16)]
+    ldp  x18, x19, [sp, #(8 * 18)]
+    add  sp, sp, #(8 * 35)
+    eret
 
 .balign 128
 lower_el_aarch64_fiq:
@@ -275,6 +409,52 @@ extern "C" {
 // 异常处理函数
 // ============================================================================
 
+/// SVC 系统调用处理。
+///
+/// 从 EL0 通过 `svc #0` 进入。frame.x8 包含 svc 立即数 (通常为 0)。
+/// 系统调用号在 frame.x0 中 (ARM EABI / Linux 惯例)。
+/// 返回值为新的 x0。
+#[no_mangle]
+pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
+    let syscall_nr = frame.x8 as usize; // SVC number
+    let arg0 = frame.x0 as usize;
+    let arg1 = frame.x1 as usize;
+    let arg2 = frame.x2 as usize;
+    let arg3 = frame.x3 as usize;
+    let _arg4 = frame.x4 as usize;
+
+    // 调用内核系统调用分发器
+    // 使用 arch! 宏确保 x86_64 编译不受影响
+    #[cfg(target_arch = "aarch64")]
+    {
+        // 直接调用内核 syscall handler (通过外部符号)
+        // 注意: 此函数链接到 crate::kernel::syscall::syscall_dispatch
+        extern "C" {
+            fn syscall_handler(nr: usize, a0: usize, a1: usize, a2: usize, a3: usize) -> usize;
+        }
+        unsafe { syscall_handler(syscall_nr, arg0, arg1, arg2, arg3) as u64 }
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = (syscall_nr, arg0, arg1, arg2, arg3);
+        0
+    }
+}
+
+/// EL0 IRQ 处理器 (Phase 6 stub)
+#[no_mangle]
+pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
+    // GIC ACK + handle + EOI
+    let intid = super::gic::acknowledge();
+    if intid >= 1020 {
+        // Spurious interrupt, no EOI needed
+        return;
+    }
+    // Phase 6: 调用通用中断处理
+    super::gic::end_of_interrupt(intid);
+}
+
 /// 默认同步异常处理 (EL1h)
 #[no_mangle]
 pub extern "C" fn sync_exception_handler(frame: &ExceptionFrame) {
@@ -294,7 +474,12 @@ pub extern "C" fn sync_exception_handler(frame: &ExceptionFrame) {
 /// 默认 IRQ 处理 (EL1h)
 #[no_mangle]
 pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
-    // Phase 5 stub: GIC 中断处理 (Phase 6 完善)
+    // GIC ACK + EOI
+    let intid = super::gic::acknowledge();
+    if intid >= 1020 {
+        return;
+    }
+    super::gic::end_of_interrupt(intid);
 }
 
 /// 默认 FIQ 处理 (EL1h)
