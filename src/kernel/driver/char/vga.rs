@@ -153,6 +153,7 @@ impl Default for VgaChar {
 
 /// 向指定端口写入字节
 #[inline(always)]
+#[cfg(target_arch = "x86_64")]
 unsafe fn outb(port: u16, value: u8) {
     core::arch::asm!(
         "out dx, al",
@@ -164,6 +165,7 @@ unsafe fn outb(port: u16, value: u8) {
 
 /// 从指定端口读入字节
 #[inline(always)]
+#[cfg(target_arch = "x86_64")]
 unsafe fn inb(port: u16) -> u8 {
     let value: u8;
     core::arch::asm!(
@@ -211,6 +213,7 @@ impl Driver for VgaDriver {
     fn init(&mut self) -> Result<()> {
         self.clear_screen();
         self.set_cursor(0, 0);
+        #[cfg(target_arch = "x86_64")]
         self.enable_cursor(true);
         self.initialized = true;
         Ok(())
@@ -263,6 +266,7 @@ impl VgaDriver {
         
         self.cursor_x = 0;
         self.cursor_y = 0;
+        #[cfg(target_arch = "x86_64")]
         self.update_hardware_cursor();
     }
 
@@ -323,6 +327,7 @@ impl VgaDriver {
             }
         }
         
+        #[cfg(target_arch = "x86_64")]
         self.update_hardware_cursor();
     }
 
@@ -362,6 +367,7 @@ impl VgaDriver {
     pub fn set_cursor(&mut self, x: usize, y: usize) {
         self.cursor_x = x.min(SCREEN_WIDTH - 1);
         self.cursor_y = y.min(SCREEN_HEIGHT - 1);
+        #[cfg(target_arch = "x86_64")]
         self.update_hardware_cursor();
     }
 
@@ -371,6 +377,7 @@ impl VgaDriver {
     }
 
     /// 更新硬件光标位置
+    #[cfg(target_arch = "x86_64")]
     fn update_hardware_cursor(&mut self) {
         let pos = (self.cursor_y * SCREEN_WIDTH + self.cursor_x) as u16;
         
@@ -384,6 +391,7 @@ impl VgaDriver {
     }
 
     /// 启用/禁用光标
+    #[cfg(target_arch = "x86_64")]
     pub fn enable_cursor(&mut self, enable: bool) {
         unsafe {
             outb(VGA_CTRL_REGISTER, 0x0A);

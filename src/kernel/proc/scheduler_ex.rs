@@ -382,6 +382,7 @@ impl SchedulerEx {
 
         // 更新 TSS 内核栈
         let kernel_stack = unsafe { (*next).kernel_stack.load(Ordering::SeqCst) };
+        #[cfg(target_arch = "x86_64")]
         if kernel_stack != 0 {
             unsafe { crate::kernel::arch::x86_64::tss::tss_set_kernel_stack(kernel_stack); }
         }

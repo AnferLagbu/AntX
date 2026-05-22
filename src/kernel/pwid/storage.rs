@@ -12,6 +12,12 @@ const DB_MAGIC: [u8; 4] = [b'P', b'W', b'I', b'D'];
 const DB_VER_MAJOR: u16 = 5;
 const DB_VER_MINOR: u16 = 0;
 
+use core::ffi::c_char;
+
+// Helper: cast byte slice pointer to c_char pointer (i8 on x86_64, u8 on aarch64)
+fn as_cstr(p: &[u8]) -> *const c_char {
+    p.as_ptr() as *const c_char
+}
 const ENTRY_SZ: usize = 8 + 8 + 1 + 2 + 128 + PWID_NOTE_LEN + PWID_HASH_LEN + 8 + 8;
 const HDR_SZ: usize = 4 + 2 + 2 + 4;
 
@@ -96,7 +102,7 @@ pub fn save_database() -> i32 {
 
     let path = path_to_bytes(DB_PATH);
     let flags = O_WRONLY | O_CREAT | O_TRUNC;
-    let fd = unsafe { vfs_open_internal(path.as_ptr() as *const i8, flags, 0) };
+    let fd = unsafe { vfs_open_internal(as_cstr(&path), flags, 0) };
     if fd < 0 { return -1; }
 
     let written = unsafe { vfs_write_internal(fd as u32, buf.as_ptr(), sz as u32) };
@@ -109,7 +115,7 @@ pub fn save_database() -> i32 {
 
 pub fn load_database() -> i32 {
     let path = path_to_bytes(DB_PATH);
-    let fd = unsafe { vfs_open_internal(path.as_ptr() as *const i8, O_RDONLY, 0) };
+    let fd = unsafe { vfs_open_internal(as_cstr(&path), O_RDONLY, 0) };
     if fd < 0 { return 0; }
 
     let mut hdr = [0u8; HDR_SZ];
@@ -208,5 +214,5 @@ pub fn load_database() -> i32 {
 
 pub fn remove_database() -> i32 {
     let path = path_to_bytes(DB_PATH);
-    unsafe { vfs_unlink_internal(path.as_ptr() as *const i8, 0) }
+    unsafe { vfs_unlink_internal(as_cstr(&path), 0) }
 }

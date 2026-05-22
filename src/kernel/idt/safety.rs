@@ -67,6 +67,7 @@ pub unsafe fn enable_interrupts() {
 
 /// 读取当前 RFLAGS
 #[inline]
+#[cfg(target_arch = "x86_64")]
 pub fn read_rflags() -> u64 {
     let rflags: u64;
     unsafe { core::arch::asm!("pushfq; pop {}", out(reg) rflags, options(nomem, nostack)) };
@@ -75,6 +76,7 @@ pub fn read_rflags() -> u64 {
 
 /// 检查中断是否启用 (IF flag)
 #[inline]
+#[cfg(target_arch = "x86_64")]
 pub fn interrupts_enabled() -> bool {
     (read_rflags() & (1 << 9)) != 0
 }
@@ -106,6 +108,7 @@ pub fn rdtsc() -> u64 {
 
 /// 读取带 fence 的 TSC (更精确)
 #[inline]
+#[cfg(target_arch = "x86_64")]
 pub fn rdtsc_fence() -> u64 {
     let tsc: u64;
     unsafe {
@@ -163,6 +166,7 @@ pub fn halt_loop() -> ! {
 
 /// 保存当前栈帧指针 (RBP)
 #[inline]
+#[cfg(target_arch = "x86_64")]
 pub fn save_frame_pointer() -> u64 {
     let rbp: u64;
     unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp, options(nomem, nostack)) };
@@ -217,6 +221,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_rflags_operations() {
         let flags = read_rflags();
         // IF bit (bit 9) 应该在某个状态
@@ -224,6 +229,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_rdtsc_monotonic() {
         let tsc1 = rdtsc();
         let tsc2 = rdtsc();

@@ -77,9 +77,11 @@ pub mod dma;
 pub mod barrier;
 
 /// PCI 设备管理 (枚举, 配置空间访问)
+#[cfg(target_arch = "x86_64")]
 pub mod pci;
 
 /// 系统调用接口 (syscall 表, 参数验证)
+#[cfg(target_arch = "x86_64")]
 pub mod syscall;
 
 /// 设备驱动 (ATA 磁盘, 键盘, 串口)
@@ -98,6 +100,7 @@ pub mod lib;
 pub mod klog;
 
 /// SMP 多核支持 (桩实现, feature=smp 时启用真实 IPI)
+#[cfg(target_arch = "x86_64")]
 pub mod smp;
 
 /// 内核测试框架

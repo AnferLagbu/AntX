@@ -53,7 +53,7 @@ pub fn keyboard_reset() -> ! {
 }
 
 pub fn triple_fault() -> ! {
-    #[cfg(not(feature = "kernel_test"))]
+    #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     unsafe {
         core::arch::asm!(
             "lidt [0]",

@@ -22,7 +22,9 @@
 //! 此模块直接操作硬件端口，必须在特权级执行。
 
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use super::framework::{outb, inb, outw, inw};
+use super::framework::{outb, inb};
+#[cfg(target_arch = "x86_64")]
+use super::framework::{outw, inw};
 
 // ============================================================================
 // ATA 硬件常量定义
@@ -200,6 +202,7 @@ fn select_drive(io: u16, ctrl: u16, slave: bool) -> Result<()> {
 }
 
 /// 检测驱动器是否存在
+#[cfg(target_arch = "x86_64")]
 fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
     // 选择驱动器
     if select_drive(io, ctrl, slave).is_err() {
@@ -258,6 +261,7 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
 // Driver Trait 实现
 // ============================================================================
 
+#[cfg(target_arch = "x86_64")]
 impl Driver for AtaController {
     fn name(&self) -> &'static str {
         "ATA/IDE Controller"
@@ -407,6 +411,7 @@ impl AtaController {
     /// # Returns
     /// * `Ok(())` - 读取成功
     /// * `Err(DriverError)` - 错误
+    #[cfg(target_arch = "x86_64")]
     pub fn read_sector(&self, drive: u8, lba: u32, buffer: &mut [u8; 512]) -> Result<()> {
         if !self.disk_present(drive) {
             return Err(DriverError::DeviceNotFound);
@@ -453,6 +458,7 @@ impl AtaController {
     /// * `drive` - 驱动器编号 (0-3)
     /// * `lba` - 逻辑块地址
     /// * `buffer` - 输入缓冲区 (512 字节)
+    #[cfg(target_arch = "x86_64")]
     pub fn write_sector(&self, drive: u8, lba: u32, buffer: &[u8; 512]) -> Result<()> {
         if !self.disk_present(drive) {
             return Err(DriverError::DeviceNotFound);
@@ -501,6 +507,7 @@ impl AtaController {
     }
 
     /// 读取多个扇区
+    #[cfg(target_arch = "x86_64")]
     pub fn read_sectors(&self, drive: u8, lba: u32, count: u32, buffer: &mut [u8]) -> Result<usize> {
         let required_size = (count as usize) * 512;
         if buffer.len() < required_size {
@@ -520,6 +527,7 @@ impl AtaController {
     }
 
     /// 写入多个扇区
+    #[cfg(target_arch = "x86_64")]
     pub fn write_sectors(&self, drive: u8, lba: u32, count: u32, buffer: &[u8]) -> Result<usize> {
         let required_size = (count as usize) * 512;
         if buffer.len() < required_size {
@@ -557,6 +565,7 @@ static mut ATA_CONTROLLER: Option<AtaController> = None;
 
 /// 初始化 ATA 子系统 (C 兼容接口)
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_init() {
     unsafe {
         ATA_CONTROLLER = Some(AtaController::new());
@@ -581,6 +590,7 @@ pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
 
 /// 读取扇区 (C 兼容接口)
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
     unsafe {
         if buffer.is_null() {
@@ -605,6 +615,7 @@ pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
 
 /// 写入扇区 (C 兼容接口)
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_write_sector(drive: u8, lba: u32, buffer: *const u8) -> i32 {
     unsafe {
         if buffer.is_null() {

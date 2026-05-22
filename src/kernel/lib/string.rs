@@ -522,6 +522,7 @@ pub unsafe extern "C" fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> 
 /// # Returns
 /// 目标地址
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn memset_optimized(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
     if s.is_null() || n == 0 {
         return s;

@@ -89,6 +89,7 @@ pub use framework::{
 };
 
 // --- 总线驱动导出 ---
+#[cfg(target_arch = "x86_64")]
 pub use bus::pci;
 
 // --- 字符设备导出 ---
@@ -158,6 +159,7 @@ pub fn init_all() -> framework::Result<()> {
     crate::kernel::dma::engine::get_dma().init();
     
     // 3. 初始化存储设备 (需要 DMA)
+    #[cfg(target_arch = "x86_64")]
     storage::storage_init()?;
     
     // 4. 初始化输入设备

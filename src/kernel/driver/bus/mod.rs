@@ -12,11 +12,13 @@
 //! └── pcie.rs   # PCIe总线驱动 (未来)
 //! ```
 
+#[cfg(target_arch = "x86_64")]
 pub mod pci;
 
 use super::framework;
 use crate::klog_info;
 
+#[cfg(target_arch = "x86_64")]
 pub fn bus_init() -> framework::Result<()> {
     let count = pci::pci_init();
     if count >= 0 {

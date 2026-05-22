@@ -120,7 +120,10 @@ impl ExceptionHandler for DivisionByZeroHandler {
     }
     
     fn severity(&self) -> Severity {
+        #[cfg(target_arch = "x86_64")]
         if is_currently_user_mode() { Severity::Error } else { Severity::Fatal }
+        #[cfg(not(target_arch = "x86_64"))]
+        { Severity::Error }
     }
     
     fn category(&self) -> ExceptionCategory { ExceptionCategory::Arithmetic }
@@ -206,7 +209,10 @@ impl ExceptionHandler for PageFaultHandler {
     }
     
     fn severity(&self) -> Severity {
+        #[cfg(target_arch = "x86_64")]
         if is_currently_user_mode() { Severity::Error } else { Severity::Fatal }
+        #[cfg(not(target_arch = "x86_64"))]
+        { Severity::Error }
     }
     
     fn category(&self) -> ExceptionCategory { ExceptionCategory::MemoryAccess }
@@ -253,7 +259,10 @@ impl ExceptionHandler for GeneralProtectionFaultHandler {
     }
     
     fn severity(&self) -> Severity {
+        #[cfg(target_arch = "x86_64")]
         if is_currently_user_mode() { Severity::Error } else { Severity::Fatal }
+        #[cfg(not(target_arch = "x86_64"))]
+        { Severity::Error }
     }
     
     fn category(&self) -> ExceptionCategory { ExceptionCategory::Protection }
@@ -356,6 +365,7 @@ impl ExceptionHandler for DefaultHandler {
 // ============================================================================
 
 /// 判断当前是否在 user-mode 执行
+#[cfg(target_arch = "x86_64")]
 fn is_currently_user_mode() -> bool {
     let cs: u16;
     unsafe { core::arch::asm!("mov {0:x}, cs", out(reg) cs, options(nomem, nostack)) };

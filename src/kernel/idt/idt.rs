@@ -196,6 +196,7 @@ impl IdtManager {
         drop(state); // 释放锁，准备加载 IDT
 
         // 6. 加载 IDT 到 CPU
+        #[cfg(target_arch = "x86_64")]
         unsafe { self.load_idt(); }
 
         Ok(())
@@ -211,6 +212,7 @@ impl IdtManager {
     ///
     /// # Safety
     /// 必须确保 IDT 表已正确初始化
+    #[cfg(target_arch = "x86_64")]
     unsafe fn load_idt(&self) {
         let state = self.state.lock();
         let base_addr = state.entries.as_ptr() as u64;

@@ -89,6 +89,7 @@ fn panic(info: &PanicInfo) -> ! {
         crate::kernel::klog::serial_write_bytes(b"\n");
 
         let mut regs: [u64; 16] = [0; 16];
+        #[cfg(target_arch = "x86_64")]
         unsafe {
             core::arch::asm!(
                 "mov {0}, rax", "mov {1}, rbx", "mov {2}, rcx",
@@ -134,6 +135,7 @@ fn panic(info: &PanicInfo) -> ! {
         }
         let mut cr2: u64 = 0;
         let mut cr3_val: u64 = 0;
+        #[cfg(target_arch = "x86_64")]
         unsafe {
             core::arch::asm!("mov {}, cr2", out(reg) cr2);
             core::arch::asm!("mov {}, cr3", out(reg) cr3_val);
@@ -151,8 +153,13 @@ fn panic(info: &PanicInfo) -> ! {
         crate::kernel::klog::serial_write_bytes(b"\n===================================\n");
     }
 
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         core::arch::asm!("int 0x82", options(noreturn));
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    loop {
+        unsafe { core::arch::asm!("wfi"); }
     }
 }
 
@@ -232,6 +239,7 @@ pub extern "C" fn kernel_init() {
     crate::klog_boot_info!("PMM bitmap initialized");
 
     // 6. IDT + PIC
+    #[cfg(target_arch = "x86_64")]
     crate::kernel::arch::x86_64::gdt::gdt_init();
     crate::kernel::idt::idt_init();
     crate::klog_boot_info!("IDT+PIC ready");
@@ -244,6 +252,7 @@ pub extern "C" fn kernel_init() {
             crate::klog_boot_info!("IRQ0 handler registered");
             crate::klog_boot_info!("Interrupts enabled");
 
+            #[cfg(target_arch = "x86_64")]
             unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
         },
         Err(_msg) => { let _ = _msg; }
@@ -281,8 +290,8 @@ pub extern "C" fn kernel_init() {
             crate::kernel::fs::hvfs::hvfs::get_hvfs().spa.disk_present.store(true, core::sync::atomic::Ordering::Release);
             crate::kernel::fs::hvfs::hvfs::get_hvfs().init();
             let r = crate::kernel::fs::vfs::ffi::vfs_mount_internal(
-                b"/\0".as_ptr() as *const i8,
-                b"hvfs\0".as_ptr() as *const i8,
+                b"/\0".as_ptr() as *const core::ffi::c_char,
+                b"hvfs\0".as_ptr() as *const core::ffi::c_char,
             );
             if r == 0 { crate::klog_boot_info!("Root filesystem: HvFS (disk)"); }
             else { crate::klog_boot_info!("HvFS mount failed"); }

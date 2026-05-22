@@ -3,6 +3,8 @@
 //! 对接真实的 PCI 子系统 (crate::kernel::pci)，
 //! 提供设备枚举、配置空间访问和 C FFI 导出。
 
+#![cfg(target_arch = "x86_64")]
+
 use crate::klog_info;
 
 /// 初始化 PCI 子系统

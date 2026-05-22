@@ -33,7 +33,9 @@
 //! ```
 
 // 子模块声明
+#[cfg(target_arch = "x86_64")]
 pub mod cpuid;
+#[cfg(target_arch = "x86_64")]
 pub mod msr;
 pub mod tsc;
 pub mod cache;
@@ -578,6 +580,7 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 /// FFI export function (C-callable)
 #[no_mangle]
 /// FFI export function (C-callable)
+#[cfg(target_arch = "x86_64")]
 pub extern "C" fn cpu_init() -> i32 {
     use crate::kernel::klog::{klog_write, LogLevel, LogCategory};
     
@@ -809,6 +812,7 @@ pub extern "C" fn cpu_get_tsc_frequency() -> u64 {
 // ============================================================================
 
 /// 检测 CPU 厂商 (通过 CPUID Leaf 0)
+#[cfg(target_arch = "x86_64")]
 fn detect_vendor(vendor_out: &mut [u8; VENDOR_STRING_LEN]) -> CpuVendor {
     let (_, ebx, ecx, edx) = cpuid::cpuid(0, 0);
     
@@ -822,6 +826,7 @@ fn detect_vendor(vendor_out: &mut [u8; VENDOR_STRING_LEN]) -> CpuVendor {
 }
 
 /// 获取 CPU 签名 (通过 CPUID Leaf 1 EAX)
+#[cfg(target_arch = "x86_64")]
 fn get_signature(sig_out: &mut CpuSignature, 
                  apic_id_out: &mut u8,
                  logical_cores_out: &mut u8) {
@@ -846,6 +851,7 @@ fn get_signature(sig_out: &mut CpuSignature,
 }
 
 /// 收集 CPU 特性标志 (多个 CPUID leaf)
+#[cfg(target_arch = "x86_64")]
 fn collect_features(features_out: &mut CpuFeatures,
                     brand_out: &mut [u8; BRAND_STRING_LEN],
                     max_std_out: &mut u32,
@@ -954,6 +960,7 @@ fn collect_features(features_out: &mut CpuFeatures,
 }
 
 /// 检测缓存配置 (Intel: Leaf 4, AMD: Leaf 80000005/6)
+#[cfg(target_arch = "x86_64")]
 fn detect_cache(cache_out: &mut CacheInfo,
                  max_std: u32, max_ext: u32,
                  vendor: CpuVendor) {
@@ -1033,6 +1040,7 @@ fn detect_cache(cache_out: &mut CacheInfo,
 }
 
 /// 探测多核拓扑 (Intel: Leaf 0xB, AMD: Leaf 80000008)
+#[cfg(target_arch = "x86_64")]
 fn detect_topology(topo_out: &mut TopologyInfo,
                    _sig: &CpuSignature,
                    feat: &CpuFeatures,
@@ -1091,6 +1099,7 @@ fn detect_topology(topo_out: &mut TopologyInfo,
 }
 
 /// 初始化关键 MSR 寄存器
+#[cfg(target_arch = "x86_64")]
 fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
     // 检查 MSR 支持
     if !features.contains(CpuFeatures::MSR) {
@@ -1122,6 +1131,7 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
 }
 
 /// 校准 TSC 频率 (Hz)
+#[cfg(target_arch = "x86_64")]
 fn calibrate_tsc(max_std: u32, vendor: CpuVendor) -> u64 {
     // 方法 1: Intel CPUID Leaf 0x15 (精确频率)
     if vendor == CpuVendor::Intel && max_std >= 0x15 {

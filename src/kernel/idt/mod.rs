@@ -206,6 +206,7 @@ pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
 /// # Safety
 /// 此函数在中断上下文中调用，需要发送 EOI
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) {
     if frame.is_null() { return; }
     

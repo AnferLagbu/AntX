@@ -42,6 +42,7 @@ static NVME_CONTROLLERS: Mutex<Vec<NvmeController>> = Mutex::new(Vec::new());
 /// 初始化存储子系统
 ///
 /// 扫描 PCI 总线发现 AHCI/NVMe 控制器，然后初始化它们。
+#[cfg(target_arch = "x86_64")]
 pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
     let pci_count = crate::kernel::pci::init();

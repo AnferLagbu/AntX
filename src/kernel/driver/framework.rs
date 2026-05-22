@@ -41,6 +41,7 @@ pub unsafe fn inb(port: u16) -> u8 {
 
 /// 向指定端口写入字 (x86_64 特有, 无 Arch trait 等价方法)
 #[inline(always)]
+#[cfg(target_arch = "x86_64")]
 pub unsafe fn outw(port: u16, value: u16) {
     core::arch::asm!(
         "out dx, ax",
@@ -52,6 +53,7 @@ pub unsafe fn outw(port: u16, value: u16) {
 
 /// 从指定端口读入字 (x86_64 特有, 无 Arch trait 等价方法)
 #[inline(always)]
+#[cfg(target_arch = "x86_64")]
 pub unsafe fn inw(port: u16) -> u16 {
     let value: u16;
     core::arch::asm!(

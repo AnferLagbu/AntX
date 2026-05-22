@@ -93,6 +93,10 @@ impl TestRunner {
     }
 
     pub fn run_all(&self) {
+        #[cfg(not(target_arch = "x86_64"))]
+        { let _ = self; return; }
+        #[cfg(target_arch = "x86_64")]
+        {
         let reg = self.registry.lock();
         let total = reg.count;
 
@@ -165,18 +169,22 @@ impl TestRunner {
             Self::serial_print(b" skipped)\n");
         }
         Self::serial_print(b"========================================\n");
+        } // end cfg(x86_64) block
     }
 
     fn serial_print(s: &[u8]) {
+        #[cfg(target_arch = "x86_64")]
         serial_print(s);
     }
 
     fn serial_print_num(n: u64) {
+        #[cfg(target_arch = "x86_64")]
         serial_print_num(n);
     }
 }
 
 #[inline(always)]
+#[cfg(target_arch = "x86_64")]
 unsafe fn port_inb(port: u16) -> u8 {
     let value: u8;
     core::arch::asm!("in al, dx", out("al") value, in("dx") port, options(nomem, nostack, preserves_flags));
@@ -184,10 +192,12 @@ unsafe fn port_inb(port: u16) -> u8 {
 }
 
 #[inline(always)]
+#[cfg(target_arch = "x86_64")]
 unsafe fn port_outb(port: u16, value: u8) {
     core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
 }
 
+#[cfg(target_arch = "x86_64")]
 pub fn serial_print(s: &[u8]) {
     const COM1: u16 = 0x3F8;
     for &b in s {
@@ -203,6 +213,7 @@ pub fn serial_print(s: &[u8]) {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 pub fn serial_print_num(mut n: u64) {
     if n == 0 {
         serial_print(b"0");
@@ -228,6 +239,12 @@ pub fn serial_print_num(mut n: u64) {
 
 static TEST_RUNNER: spin::Once<TestRunner> = spin::Once::new();
 
+#[cfg(target_arch = "x86_64")]
+pub fn runner() -> &'static TestRunner {
+    TEST_RUNNER.call_once(TestRunner::new)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
 pub fn runner() -> &'static TestRunner {
     TEST_RUNNER.call_once(TestRunner::new)
 }
@@ -261,6 +278,7 @@ macro_rules! skip_test {
 
 pub use {check, assert_eq_test, skip_test};
 
+#[cfg(target_arch = "x86_64")]
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === QueenX Test Framework ===");
 
@@ -309,6 +327,8 @@ pub fn test_runner_init() {
 }
 
 pub fn qemu_exit(success: bool) -> ! {
+    #[cfg(target_arch = "x86_64")]
+    {
     let exit_code = if success { 0x10 } else { 0x11 };
     unsafe {
         use core::arch::asm;
@@ -319,5 +339,15 @@ pub fn qemu_exit(success: bool) -> ! {
             options(nomem, nostack)
         );
     }
-    loop { unsafe { core::arch::asm!("hlt") } }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = success;
+    }
+    loop {
+        #[cfg(target_arch = "x86_64")]
+        unsafe { core::arch::asm!("hlt"); }
+        #[cfg(not(target_arch = "x86_64"))]
+        unsafe { core::arch::asm!("wfi"); }
+    }
 }

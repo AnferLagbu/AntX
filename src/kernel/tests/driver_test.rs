@@ -1,3 +1,4 @@
+#![cfg(target_arch = "x86_64")]
 //! 硬件驱动测试示例 (Hardware Driver Test Example)
 //!
 //! 测试所有基本硬件驱动的功能：

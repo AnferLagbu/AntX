@@ -333,6 +333,7 @@ impl DmaEngine {
     #[inline(always)]
     fn barrier_cpu() {
         // lfence: ensure all loads reflect DMA writes
+        #[cfg(target_arch = "x86_64")]
         unsafe {
             core::arch::asm!("lfence", options(nomem, nostack));
         }

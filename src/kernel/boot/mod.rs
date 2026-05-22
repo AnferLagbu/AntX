@@ -8,6 +8,9 @@
 //! at boot, then read-only). `MULTIBOOT_INFO_PTR` uses `spin::Mutex` since it
 //! is set before init and read during init.
 
+#[cfg(target_arch = "aarch64")]
+pub mod aarch64;
+
 pub const MULTIBOOT1_MAGIC: u32 = 0x2BADB002;
 pub const MULTIBOOT2_MAGIC: u32 = 0x36D76289;
 
