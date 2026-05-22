@@ -6,11 +6,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use super::types::*;
 use super::process::{Process, PROCESS_TABLE};
 
-extern "C" {
-    fn process_switch_asm(prev: *mut ProcessContext, next: *const ProcessContext);
-    fn tss_set_kernel_stack(rsp0: u64);
-}
-
 // ============================================================================
 // ✅ 日志宏 (与 pmm.rs 保持一致)
 // ============================================================================
@@ -355,7 +350,7 @@ impl Scheduler {
 
         let next_kernel_stack = next_proc.kernel_stack.load(Ordering::SeqCst);
         if next_kernel_stack != 0 {
-            unsafe { tss_set_kernel_stack(next_kernel_stack); }
+            crate::kernel::cpu::arch::set_kernel_stack(next_kernel_stack);
         }
 
         self.current.store(next, Ordering::SeqCst);
@@ -407,8 +402,11 @@ impl Scheduler {
             unsafe {
                 let mut prev_ctx = (*prev_ctx_ptr).lock();
                 let next_ctx = (*next_ctx_ptr).lock();
-                // ✅ process_switch_asm 中的 iretq 会恢复中断标志 (RFLAGS.IF)
-                process_switch_asm(&mut *prev_ctx as *mut ProcessContext, &*next_ctx as *const ProcessContext);
+                // ✅ context_switch 由 arch!() 分发，适配 x86_64/aarch64 各自实现
+                crate::arch!(context_switch(
+                    &mut *prev_ctx as *mut ProcessContext as *mut u8,
+                    &*next_ctx as *const ProcessContext as *const u8
+                ));
             }
         }
 

@@ -407,10 +407,7 @@ impl SchedulerEx {
                         );
                     }
                     
-                    extern "C" {
-                        fn process_switch_asm(prev: *mut super::types::ProcessContext, next: *const super::types::ProcessContext);
-                    }
-                    process_switch_asm(prev_ctx, next_ctx);
+                    crate::arch!(context_switch(prev_ctx as *mut u8, next_ctx as *const u8));
                 }
             }
         }

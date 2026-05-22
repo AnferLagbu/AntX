@@ -148,6 +148,7 @@ fn test_viable_floor() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn test_pwidentry_cow_bp() -> TestResult {
     use crate::kernel::fs::hvfs::bp::HvBlockPointer;
     use crate::kernel::fs::hvfs::dmu::HvDmuObject;
@@ -171,5 +172,6 @@ pub fn register_pwid_tests() {
     r.register("pwid::audit", "entry", test_audit_entry);
     r.register("pwid::entry", "note", test_pwidentry_note);
     r.register("pwid::capability", "viable_floor", test_viable_floor);
+    #[cfg(target_arch = "x86_64")]
     r.register("pwid::dmu", "cow_bp", test_pwidentry_cow_bp);
 }

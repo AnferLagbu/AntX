@@ -2,7 +2,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 pub mod test_barrier;
 pub mod test_barrier_ext;
+#[cfg(target_arch = "x86_64")]
 pub mod test_hvfs;
+#[cfg(target_arch = "x86_64")]
 pub mod test_hvfs_ext;
 pub mod test_pwid;
 pub mod test_mm;

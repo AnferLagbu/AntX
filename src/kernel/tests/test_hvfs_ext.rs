@@ -1,3 +1,5 @@
+#![cfg(target_arch = "x86_64")]
+
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::dmu::*;
 use crate::kernel::fs::hvfs::arc::*;

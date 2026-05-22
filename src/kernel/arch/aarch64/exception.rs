@@ -427,12 +427,10 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     // 使用 arch! 宏确保 x86_64 编译不受影响
     #[cfg(target_arch = "aarch64")]
     {
-        // 直接调用内核 syscall handler (通过外部符号)
-        // 注意: 此函数链接到 crate::kernel::syscall::syscall_dispatch
-        extern "C" {
-            fn syscall_handler(nr: usize, a0: usize, a1: usize, a2: usize, a3: usize) -> usize;
-        }
-        unsafe { syscall_handler(syscall_nr, arg0, arg1, arg2, arg3) as u64 }
+        // aarch64: syscall 模块未实现，返回 ENOSYS
+        // TODO: 实现 aarch64 syscall 支持
+        unsafe { crate::kernel::klog::serial_write_bytes(b"[SYSCALL] ENOSYS\n"); }
+        0u64
     }
 
     #[cfg(not(target_arch = "aarch64"))]

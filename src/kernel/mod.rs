@@ -59,6 +59,8 @@ pub mod proc;
 pub mod fs;
 
 /// 网络协议栈 (lwIP, OS 抽象层, e1000 驱动)
+/// 全网模块依赖 lwIP C 第三方库, 仅 x86_64 编译
+#[cfg(target_arch = "x86_64")]
 pub mod net;
 
 /// 中断描述符表 (IDT, ISR, 异常处理, 统计)
@@ -81,6 +83,8 @@ pub mod barrier;
 pub mod pci;
 
 /// 系统调用接口 (syscall 表, 参数验证)
+/// 注意: syscall 模块依赖 VFS 的 c_char 类型，x86_64(c_char=i8) 与 aarch64(c_char=u8) 不兼容
+/// aarch64 syscall 支持需后续重构
 #[cfg(target_arch = "x86_64")]
 pub mod syscall;
 

@@ -7,6 +7,7 @@ pub mod types;
 pub mod ffi;
 
 use crate::kernel::syscall::types::*;
+#[cfg(target_arch = "x86_64")]
 use crate::kernel::idt::types::InterruptFrame;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
@@ -25,6 +26,8 @@ pub unsafe extern "C" fn syscall_init() {
     unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, b"syscall subsystem ready\0".as_ptr() as *const i8); }
 }
 
+/// 从 InterruptFrame 分发系统调用 (仅 x86_64)
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) {
     if frame.is_null() { return; }
@@ -110,17 +113,17 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const i8, a1), b"sethostname\0"),
         SYS_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"boot_check\0"),
 
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_DISK_LIST    => dispatch!(sys_disk_list(a0 as *mut u64, a1 as u32), b"disk_list\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_DISK_INFO    => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"disk_info\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_DISK_FORMAT  => dispatch!(sys_disk_format(a0 as u32, a1 as *const i8), b"disk_format\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32, a1), b"disk_partition\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_DISK_INSTALL_GRUB => dispatch!(sys_boot_install(a0 as u32), b"boot_install\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_FAT_FORMAT => dispatch!(sys_fat_format(a0 as u32), b"fat_format\0"),
 
         SYS_MEM_BRK      => dispatch!(sys_mem_brk(a0), b"mem_brk\0"),
@@ -377,6 +380,7 @@ unsafe fn sys_boot_check(check_type: i32) -> i64 {
 // ============================================================================
 
 #[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     if disks.is_null() || max_count == 0 { return SyscallError::E_INVAL.as_i64(); }
     extern "C" { fn ata_disk_present(drive: u8) -> i32; }
@@ -389,6 +393,7 @@ unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     if info.is_null() { return SyscallError::E_INVAL.as_i64(); }
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
@@ -448,6 +453,7 @@ unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
     if fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
@@ -478,6 +484,7 @@ fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
 const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
@@ -522,6 +529,7 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_fat_format(disk_id: u32) -> i64 {
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
@@ -596,6 +604,7 @@ fn write_le16(buf: &mut [u8], offset: usize, val: u16) {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();

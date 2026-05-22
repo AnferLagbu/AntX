@@ -1,5 +1,6 @@
 use core::ffi::c_char;
 
+#[cfg(target_arch = "x86_64")]
 use crate::kernel::fs::hvfs::hvfs::get_hvfs;
 use super::vfs::VFS_MANAGER;
 use crate::kernel::fs::ramfs::ramfs::RAMFS_DATA;
@@ -61,10 +62,13 @@ pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char
                 if ramfs.mount(path) != 0 { return -1; }
             }
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => {
             let hvfs = get_hvfs();
             if !hvfs.is_initialized() { hvfs.init(); }
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => return -1,
         FsType::Unknown => return -1,
     }
 
@@ -111,6 +115,7 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
                 }
             }
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => {
             let hvfs = get_hvfs();
             match hvfs.open(rel_path, flags, pwid) {
@@ -122,6 +127,8 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwid: u64) 
                 Err(e) => e.as_i32(),
             }
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -156,10 +163,13 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
             VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
             result
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => {
             let hvfs = get_hvfs();
             hvfs.read(node_id as u32, buf_slice, count)
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -176,7 +186,10 @@ pub extern "C" fn vfs_unlink_internal(path: *const c_char, pwid: u64) -> i32 {
 
     match fs_type {
         FsType::RamFs => { let mut ramfs = RAMFS_DATA.lock(); ramfs.unlink(rel_path, pwid) }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => { let hvfs = get_hvfs(); hvfs.unlink(rel_path, pwid) }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -225,10 +238,13 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
             VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
             result
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => {
             let hvfs = get_hvfs();
             hvfs.write(node_id as u32, buf_slice, count)
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -248,7 +264,10 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
 
     match fs_type {
         FsType::RamFs => { let mut ramfs = RAMFS_DATA.lock(); ramfs.mkdir(parent_path, name, pwid) }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => { let hvfs = get_hvfs(); hvfs.mkdir(rel_path, pwid) }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -277,7 +296,10 @@ pub extern "C" fn vfs_rmdir_internal(path: *const c_char, pwid: u64) -> i32 {
                 None => -1
             }
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => { let hvfs = get_hvfs(); hvfs.unlink(rel_path, pwid) }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -304,6 +326,7 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid:
                 None => -1
             }
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => {
             let hvfs = get_hvfs();
             match hvfs.stat(rel_path, pwid) {
@@ -321,6 +344,8 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid:
                 None => -1
             }
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -364,7 +389,11 @@ pub extern "C" fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 
             VFS_MANAGER.set_fd_offset(fd as usize, dir_offset);
             (raw_entry.node != 0) as i32
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => -1,
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs | FsType::Unknown => -1,
+        #[cfg(target_arch = "x86_64")]
         FsType::Unknown => -1,
     }
 }
@@ -392,12 +421,14 @@ pub extern "C" fn vfs_get_cwd_internal(buf: *mut c_char, size: u32) -> i32 {
 // HvFS v2 直接接口 (internal wrappers)
 // ============================================================================
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_init_internal() {
     let hvfs = get_hvfs();
     if !hvfs.is_initialized() { hvfs.init(); }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_format_internal() -> i32 {
     let hvfs = get_hvfs();
@@ -405,18 +436,21 @@ pub extern "C" fn hvfs_format_internal() -> i32 {
     0
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_check_disk_internal() -> i32 {
     let hvfs = get_hvfs();
     hvfs.is_disk_mode() as i32
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_set_disk_present_internal(present: bool) {
     let hvfs = get_hvfs();
     if present { hvfs.spa.disk_present.store(true, core::sync::atomic::Ordering::Release); }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -428,12 +462,14 @@ pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwid: u64)
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_close_internal(fd: u32) -> i32 {
     let hvfs = get_hvfs();
     hvfs.close(fd)
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 { return -1; }
@@ -442,6 +478,7 @@ pub extern "C" fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     hvfs.read(fd, buf_slice, count)
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 { return -1; }
@@ -450,6 +487,7 @@ pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i3
     hvfs.write(fd, buf_slice, count)
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -458,12 +496,14 @@ pub extern "C" fn hvfs_mkdir_internal(path: *const c_char, pwid: u64) -> i32 {
     hvfs.mkdir(path, pwid)
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_sync_internal() -> i32 {
     let hvfs = get_hvfs();
     hvfs.sync()
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_get_stats_internal(total_blocks: *mut u32, free_blocks: *mut u32,
                                            total_nodes: *mut u32, free_nodes: *mut u32) {
@@ -477,24 +517,28 @@ pub extern "C" fn hvfs_get_stats_internal(total_blocks: *mut u32, free_blocks: *
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_set_current_dir_internal(_node_id: u32) {
     let hvfs = get_hvfs();
     hvfs.current_dir.store(_node_id as u64, core::sync::atomic::Ordering::Release);
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_get_current_dir_internal() -> u32 {
     let hvfs = get_hvfs();
     hvfs.current_dir.load(core::sync::atomic::Ordering::Acquire) as u32
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_set_current_pwid_internal(pwid: u64) {
     let hvfs = get_hvfs();
     hvfs.current_pwid.store(pwid, core::sync::atomic::Ordering::Release);
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hvfs_get_current_pwid_internal() -> u64 {
     let hvfs = get_hvfs();
@@ -572,10 +616,13 @@ pub extern "C" fn vfs_chmod(path: *const c_char, mode: u16, pwid: u64) -> i32 {
             let mut ramfs = RAMFS_DATA.lock(); 
             ramfs.chmod(rel_path, mode, pwid) 
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => { 
             let hvfs = get_hvfs(); 
             hvfs.chmod(rel_path, mode, pwid) 
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -596,10 +643,13 @@ pub extern "C" fn vfs_chown(path: *const c_char, owner_pwid: u64, pwid: u64) -> 
             let mut ramfs = RAMFS_DATA.lock(); 
             ramfs.chown(rel_path, owner_pwid, pwid) 
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => { 
             let hvfs = get_hvfs(); 
             hvfs.chown(rel_path, owner_pwid, pwid) 
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -639,10 +689,13 @@ pub extern "C" fn vfs_rename(old: *const c_char, new: *const c_char, pwid: u64) 
             ramfs.unlink(old_rel, pwid);
             ramfs.link(0, 0, new_rel, pwid)  // parent=0, target=0 为占位
         }
+        #[cfg(target_arch = "x86_64")]
         FsType::HvFs => {
             let hvfs = get_hvfs();
             hvfs.rename(old_rel, new_rel, pwid)
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs => -1,
         FsType::Unknown => -1,
     }
 }
@@ -658,6 +711,7 @@ pub extern "C" fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
 }
 
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub extern "C" fn vfs_sync() -> i32 {
     hvfs_sync_internal()
 }
@@ -682,10 +736,13 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
         &VFS_MANAGER.fd_table.lock()[fd as usize].get_path()
     ) {
         Some(r) => r,
+        #[cfg(target_arch = "x86_64")]
         None => {
             let hvfs = get_hvfs();
             return hvfs.seek(fd, offset as i64, whence as u32) as i32;
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        None => return -1,
     };
 
     match fs_type {
@@ -700,10 +757,13 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
                 None => KernelError::InvalidArgument.as_i32(),
             }
         }
+        #[cfg(target_arch = "x86_64")]
         _ => {
             let hvfs = get_hvfs();
             hvfs.seek(fd, offset as i64, whence as u32) as i32
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FsType::HvFs | FsType::Unknown => -1,
     }
 }
 
@@ -722,6 +782,7 @@ pub extern "C" fn vfs_format_internal(path: *const c_char, fs_type: *const c_cha
     }
     
     // Parse filesystem type
+    #[cfg(target_arch = "x86_64")]
     if fs_type_str == "hvfs" || fs_type_str == "HvFS" {
         let hvfs = get_hvfs();
         hvfs.format_disk();

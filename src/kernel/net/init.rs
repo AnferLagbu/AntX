@@ -167,23 +167,38 @@ pub extern "C" fn qx_net_init() {
         // registration to prevent timer ISR from accessing half-initialized
         // lwIP data structures (root cause of the intermittent hang).
         let _ = crate::arch!(interrupt_disable());
-        lwip_init();
+
+        // lwIP 和 E1000 仅 x86_64 支持 (C 第三方库)
+        #[cfg(target_arch = "x86_64")]
+        {
+            extern "C" { fn lwip_init(); }
+            lwip_init();
+        }
         klog_net("lwIP core initialized\0".as_ptr() as *const i8);
 
-        klog_net("E1000 detected, registering netif\0".as_ptr() as *const i8);
-        extern "C" { fn qx_netif_register_e1000() -> i32; }
-        let register_result = qx_netif_register_e1000();
-        // Re-enable interrupts only after lwIP is fully initialized
-        crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
-        crate::arch!(interrupt_enable());
+        #[cfg(target_arch = "x86_64")]
+        {
+            klog_net("E1000 detected, registering netif\0".as_ptr() as *const i8);
+            extern "C" { fn qx_netif_register_e1000() -> i32; }
+            let register_result = qx_netif_register_e1000();
+            // Re-enable interrupts only after lwIP is fully initialized
+            crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
+            crate::arch!(interrupt_enable());
 
-        if register_result == 0 {
-            let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
-            klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
-        } else {
-            crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
-            set_failed();
-            klog_net_err("Failed to register E1000 netif\0".as_ptr() as *const i8);
+            if register_result == 0 {
+                let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
+                klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
+            } else {
+                crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
+                set_failed();
+                klog_net_err("Failed to register E1000 netif\0".as_ptr() as *const i8);
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            // aarch64: 无 lwIP/E1000，网络子系统不可用
+            crate::arch!(interrupt_enable());
+            klog_net("Network subsystem skipped (aarch64)\0".as_ptr() as *const i8);
         }
     }
 }

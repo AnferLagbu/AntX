@@ -133,6 +133,7 @@ pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 /// - `MODULE_INIT_SUCCESS` (0): 成功
 /// - `MODULE_INIT_FAILURE` (-1): 失败
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub extern "C" fn idt_init() -> i32 {
     let manager = IdtManager::instance();
     

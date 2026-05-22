@@ -19,36 +19,34 @@
 //!   └── scheduler::tick() (可选)
 //! ```
 
+#[cfg(target_arch = "x86_64")]
 use crate::kernel::idt::types::InterruptFrame;
 use core::sync::atomic::Ordering;
 
-/// Timer IRQ0 中断处理程序
-///
-/// 每次定时器中断时由 IDT 系统调用。
-///
-/// # Arguments
-/// * `frame` - 中断帧指针 (包含寄存器状态)
-///
-/// # Safety
-/// 此函数从中断上下文调用，必须快速执行。
+/// Timer IRQ0 中断处理程序 (仅 x86_64)
+/// aarch64 定时器中断由 exception.rs 的 irq_handler_el1 处理
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     crate::kernel::timer::on_timer_interrupt();
 
     #[cfg(not(feature = "kernel_test"))]
     {
-        crate::kernel::net::types::sys_tick_inc();
+        #[cfg(target_arch = "x86_64")]
+        {
+            crate::kernel::net::types::sys_tick_inc();
 
-        if crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
-            extern "C" {
-                fn sys_check_timeouts();
-                fn e1000_poll_rx();
-            }
-            unsafe { sys_check_timeouts(); }
+            if crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
+                extern "C" {
+                    fn sys_check_timeouts();
+                    fn e1000_poll_rx();
+                }
+                unsafe { sys_check_timeouts(); }
 
-            let t = crate::kernel::timer::get_ticks();
-            if t % 10 == 0 {
-                unsafe { e1000_poll_rx(); }
+                let t = crate::kernel::timer::get_ticks();
+                if t % 10 == 0 {
+                    unsafe { e1000_poll_rx(); }
+                }
             }
         }
     }
@@ -63,13 +61,8 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     }
 }
 
-/// 注册 Timer IRQ0 handler 到 IDT 系统
-///
-/// 应在内核初始化早期调用，在启用中断之前。
-///
-/// # Returns
-/// * `Ok(())` - 注册成功
-/// * `Err(&str)` - 注册失败
+/// 注册 Timer IRQ0 handler 到 IDT 系统 (仅 x86_64)
+#[cfg(target_arch = "x86_64")]
 pub fn register_timer_irq() -> Result<(), &'static str> {
     use crate::kernel::idt::IdtManager;
     
@@ -93,7 +86,7 @@ pub fn register_timer_irq() -> Result<(), &'static str> {
 // 单元测试
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, target_arch = "x86_64"))]
 mod tests {
     use super::*;
 
@@ -121,7 +114,7 @@ mod tests {
     }
 }
 
-#[cfg(feature = "kernel_test")]
+#[cfg(all(feature = "kernel_test", target_arch = "x86_64"))]
 pub fn register_timer_irq_tests() {
     use crate::kernel::tests::{runner, TestFn, TestResult};
 

@@ -23,7 +23,6 @@ extern "C" {
     fn vmm_ensure_path_user(vaddr: u64);
     fn vmm_switch_page_table(table: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
-    fn tss_set_kernel_stack(rsp0: u64);
     fn memset(s: *mut u8, c: i32, n: u64);
     fn memcpy(dest: *mut u8, src: *const u8, n: u64);
     fn kmalloc(size: u64) -> *mut core::ffi::c_void;
@@ -270,7 +269,7 @@ impl UserProcManager {
             let cs_val = GDT_USER_CODE | 0x03;
             let rflags_val: u64 = 0x3202;
             
-            tss_set_kernel_stack(kstack);
+            crate::kernel::cpu::arch::set_kernel_stack(kstack);
             
             crate::arch!(enter_user(rip_val as usize, rsp_val as usize, 0));
         }

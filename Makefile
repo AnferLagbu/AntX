@@ -1,4 +1,5 @@
 ARCH ?= x86_64
+LOG_DIR := build/log
 
 ifeq ($(ARCH),aarch64)
     CC = aarch64-linux-gnu-gcc
@@ -236,12 +237,6 @@ clean:
 	rm -rf build/ isodir/
 	cd src/rust && cargo clean
 	cd $(RUST_USER_DIR) && cargo clean
-
-# QEMU 基础配置
-QEMU_FLAGS := -m 512 -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
-
-QEMU_NET := -device e1000,netdev=n0 \
-            -netdev user,id=n0,hostfwd=tcp::8080-:80,hostname=antx
 
 # QEMU CPU 模型配置 (用于硬件仿真测试)
 # 可选值: qemu64 (默认), host (使用宿主机CPU特性), Haswell-noTSX, Skylake-Client

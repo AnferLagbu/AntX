@@ -241,6 +241,7 @@ pub extern "C" fn kernel_init() {
     // 6. IDT + PIC
     #[cfg(target_arch = "x86_64")]
     crate::kernel::arch::x86_64::gdt::gdt_init();
+    #[cfg(target_arch = "x86_64")]
     crate::kernel::idt::idt_init();
     crate::klog_boot_info!("IDT+PIC ready");
 
@@ -248,6 +249,7 @@ pub extern "C" fn kernel_init() {
     match crate::kernel::timer::timer_init(1000) {
         Ok(_freq) => {
             crate::klog_boot_info!("PIT timer configured");
+            #[cfg(target_arch = "x86_64")]
             let _ = crate::kernel::timer::irq::register_timer_irq();
             crate::klog_boot_info!("IRQ0 handler registered");
             crate::klog_boot_info!("Interrupts enabled");
@@ -266,7 +268,8 @@ pub extern "C" fn kernel_init() {
     crate::kernel::fs::vfs::init();
     crate::klog_boot_info!("VFS ready");
 
-    // 10. Network (lwIP + E1000) — now safe: cli/sti critical section protects lwip_init
+    // 10. Network (lwIP + E1000) — 仅 x86_64 支持
+    #[cfg(target_arch = "x86_64")]
     crate::kernel::net::init::qx_net_init();
     crate::klog_boot_info!("Network subsystem initialized");
 
@@ -278,7 +281,8 @@ pub extern "C" fn kernel_init() {
     crate::kernel::klog::serial_write_bytes(b"[BOOT] step 11 proc done\n");
     crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
-    #[cfg(not(feature = "kernel_test"))]
+    // HvFS + ATA 磁盘挂载 (仅 x86_64, 依赖 ATA C 驱动)
+    #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     {
         extern "C" { fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32; }
         let mut cfg = [0u8; 512];
