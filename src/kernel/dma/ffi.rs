@@ -256,9 +256,8 @@ pub extern "C" fn dma_sync_for_cpu(
     _offset: usize,
     _size: usize,
 ) {
-    // lfence + compiler barrier (lfence not in Arch trait, keep asm)
-    #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::asm!("lfence", options(nomem, nostack)); }
+    // lfence + compiler barrier
+    crate::arch!(fence_r());
     core::sync::atomic::fence(Ordering::SeqCst);
 }
 

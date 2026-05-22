@@ -143,6 +143,15 @@ pub fn storage_init() -> framework::Result<()> {
     }
 }
 
+/// AArch64 存储初始化 stub — ARM 平台通过 MMIO 访问存储控制器，非 PCI 枚举。
+#[cfg(not(target_arch = "x86_64"))]
+pub fn storage_init() -> framework::Result<()> {
+    // ARM virt 平台使用 virtio-blk 或 MMC 存储
+    // PCIe NVMe 在 ARM 服务器上存在但通过 ECAM 访问
+    // 当前阶段返回 Ok — virtio 驱动属于后续工作
+    Ok(())
+}
+
 /// 获取所有已发现的 AHCI 端口总数
 pub fn ahci_port_count() -> usize {
     let mut total = 0usize;

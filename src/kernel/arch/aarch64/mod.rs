@@ -67,6 +67,12 @@ impl CoreArch for Aarch64 {
     fn fence_w() {
         unsafe { asm!("dmb st", options(nomem, nostack)); }
     }
+
+    /// 读内存屏障 (dmb ld)。
+    #[inline(always)]
+    fn fence_r() {
+        unsafe { asm!("dmb ld", options(nomem, nostack)); }
+    }
 }
 
 // ── InterruptArch: 中断 + IPI ────────────────────────────────────────

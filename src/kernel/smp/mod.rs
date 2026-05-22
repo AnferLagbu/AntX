@@ -15,7 +15,7 @@ static CPU_APIC_IDS: [AtomicU32; MAX_CPUS] = [const { AtomicU32::new(0xFFFF) }; 
 static CPU_ONLINE: [AtomicBool; MAX_CPUS] = [const { AtomicBool::new(false) }; MAX_CPUS];
 
 pub fn init() {
-    let bsp_apic_id = crate::kernel::arch::x86_64::apic::get_id();
+    let bsp_apic_id = crate::arch!(cpu_id());
     BSP_ID.store(bsp_apic_id, Ordering::Release);
 
     CPU_APIC_IDS[0].store(bsp_apic_id, Ordering::Release);
@@ -36,7 +36,7 @@ pub fn get_cpu_count() -> u32 {
 }
 
 pub fn get_current_cpu() -> u32 {
-    crate::kernel::arch::x86_64::apic::get_id()
+    crate::arch!(cpu_id())
 }
 
 pub fn register_cpu(apic_id: u32) -> bool {
@@ -63,11 +63,11 @@ pub fn get_apic_id(cpu_index: u32) -> u32 {
 }
 
 pub fn send_tlb_invalidate_ipi(target_apic_id: u8) {
-    crate::kernel::arch::x86_64::apic::send_ipi(target_apic_id, 0xFD);
+    crate::arch!(send_ipi(target_apic_id as u32, 0xFD));
 }
 
 pub fn send_broadcast_ipi(vector: u8) {
-    crate::kernel::arch::x86_64::apic::broadcast_ipi(vector);
+    crate::arch!(broadcast_ipi(vector));
 }
 
 pub fn broadcast_tlb_invalidate() {
@@ -77,7 +77,7 @@ pub fn broadcast_tlb_invalidate() {
 }
 
 pub fn send_reschedule_ipi(target_apic_id: u8) {
-    crate::kernel::arch::x86_64::apic::send_ipi(target_apic_id, 0xFE);
+    crate::arch!(send_ipi(target_apic_id as u32, 0xFE));
 }
 
 pub fn broadcast_reschedule() {

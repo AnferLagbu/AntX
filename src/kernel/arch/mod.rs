@@ -63,7 +63,7 @@ pub mod aarch64;
 /// - `cpu_id()` — CPU 唯一标识
 /// - `timestamp()` — 高精度时间戳/计数器
 /// - `halt()` — CPU 暂停直到中断
-/// - `fence()` / `fence_w()` — 内存屏障
+/// - `fence()` / `fence_w()` / `fence_r()` — 内存屏障
 pub trait CoreArch {
     /// 获取当前 CPU ID (APIC ID / MPIDR_EL1)。
     fn cpu_id() -> u32;
@@ -75,6 +75,8 @@ pub trait CoreArch {
     fn fence();
     /// 写内存屏障 (sfence / dmb st)。
     fn fence_w();
+    /// 读内存屏障 (lfence / dmb ld)。
+    fn fence_r();
 }
 
 // ── InterruptArch: 中断 + 核间中断 ──────────────────────────────────────
@@ -172,6 +174,7 @@ pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
     fn halt()                             { <Self as CoreArch>::halt(); }
     fn fence()                            { <Self as CoreArch>::fence(); }
     fn fence_w()                          { <Self as CoreArch>::fence_w(); }
+    fn fence_r()                          { <Self as CoreArch>::fence_r(); }
 
     // ── 委托到 InterruptArch ────────────────────────────
     fn interrupt_disable() -> usize       { <Self as InterruptArch>::interrupt_disable() }

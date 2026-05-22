@@ -660,6 +660,15 @@ pub extern "C" fn cpu_init() -> i32 {
     0 // 成功
 }
 
+/// AArch64 CPU 初始化 stub — ARMv8-A 在启动代码中已完成 EL 初始化。
+#[cfg(not(target_arch = "x86_64"))]
+#[no_mangle]
+pub extern "C" fn cpu_init() -> i32 {
+    // AArch64 的 CPU 特性初始化在 boot/aarch64/start.S 和 entry.rs 中完成
+    // (EL3→EL2→EL1, FP/SIMD/Timer enable)，无需此 x86 CR0/CR4/FPU 初始化
+    0
+}
+
 /// 获取 CPU 信息指针 (FFI兼容)
 /// 
 /// # Returns

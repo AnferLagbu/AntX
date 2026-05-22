@@ -184,17 +184,13 @@ impl TestRunner {
 }
 
 #[inline(always)]
-#[cfg(target_arch = "x86_64")]
 unsafe fn port_inb(port: u16) -> u8 {
-    let value: u8;
-    core::arch::asm!("in al, dx", out("al") value, in("dx") port, options(nomem, nostack, preserves_flags));
-    value
+    crate::arch!(inb(port))
 }
 
 #[inline(always)]
-#[cfg(target_arch = "x86_64")]
 unsafe fn port_outb(port: u16, value: u8) {
-    core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
+    crate::arch!(outb(port, value));
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -345,9 +341,6 @@ pub fn qemu_exit(success: bool) -> ! {
         let _ = success;
     }
     loop {
-        #[cfg(target_arch = "x86_64")]
-        unsafe { core::arch::asm!("hlt"); }
-        #[cfg(not(target_arch = "x86_64"))]
-        unsafe { core::arch::asm!("wfi"); }
+        crate::arch!(halt());
     }
 }

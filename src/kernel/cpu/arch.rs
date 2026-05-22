@@ -43,3 +43,19 @@ pub fn send_ipi(target_cpu: u32, vector: u8) {
 pub fn broadcast_ipi(vector: u8) {
     <crate::kernel::arch::CurrentArch as Arch>::broadcast_ipi(vector);
 }
+
+/// 设置当前 CPU 的内核栈指针。
+///
+/// x86_64: 写入 TSS 的 RSP0 字段 (ring 0 栈)。
+/// aarch64: 无操作 — SP_EL1 由上下文切换直接管理。
+#[inline(always)]
+pub fn set_kernel_stack(_stack: u64) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        crate::kernel::arch::x86_64::tss::tss_set_kernel_stack(_stack);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = _stack;
+    }
+}

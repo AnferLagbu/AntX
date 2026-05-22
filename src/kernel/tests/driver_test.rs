@@ -25,9 +25,7 @@ pub extern "C" fn _start() -> ! {
     
     // 进入无限循环
     loop {
-        unsafe {
-            core::arch::asm!("hlt");
-        }
+        crate::arch!(halt());
     }
 }
 
@@ -265,8 +263,6 @@ fn panic(_info: &PanicInfo) -> ! {
     }
     
     loop {
-        unsafe {
-            core::arch::asm!("hlt");
-        }
+        crate::arch!(halt());
     }
 }

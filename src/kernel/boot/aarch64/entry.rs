@@ -46,7 +46,7 @@ pub unsafe extern "C" fn entry() -> ! {
 
     // kernel_init() returns, but entry must diverge
     loop {
-        core::arch::asm!("wfi", options(nomem, nostack));
+        crate::arch!(halt());
     }
 }
 

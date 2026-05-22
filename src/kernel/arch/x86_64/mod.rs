@@ -82,6 +82,12 @@ impl CoreArch for X8664 {
     fn fence_w() {
         unsafe { core::arch::asm!("sfence", options(nostack, preserves_flags)); }
     }
+
+    /// 读内存屏障 (lfence)。
+    #[inline(always)]
+    fn fence_r() {
+        unsafe { core::arch::asm!("lfence", options(nostack, preserves_flags)); }
+    }
 }
 
 // ── InterruptArch: 中断 + IPI ────────────────────────────────────────

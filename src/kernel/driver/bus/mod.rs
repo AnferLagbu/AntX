@@ -28,3 +28,12 @@ pub fn bus_init() -> framework::Result<()> {
         Err(framework::DriverError::HardwareError)
     }
 }
+
+/// AArch64 总线初始化 stub — ARM 平台通过设备树/FDT 发现设备，无需 PCI 枚举。
+#[cfg(not(target_arch = "x86_64"))]
+pub fn bus_init() -> framework::Result<()> {
+    // ARM 平台使用 FDT (Flattened Device Tree) 或 ACPI 发现设备
+    // PCIe 在 ARM 上存在但通过 ECAM 而非 legacy PCI 访问
+    // 当前阶段返回 Ok — 设备树解析属于后续工作
+    Ok(())
+}
