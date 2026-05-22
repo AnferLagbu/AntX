@@ -1,6 +1,6 @@
 # AntX
 
-从零构建的 x86_64 操作系统。个人兴趣驱动，持续演进中。
+从零构建的个人操作系统内核，支持 x86_64 和 aarch64 双架构。个人兴趣驱动，持续演进中。
 
 > **AntX = QueenX 内核 + 任意用户态**
 
@@ -20,6 +20,28 @@ AntX 是一个完全自研的操作系统——从 Multiboot 引导的第一条�
 - **lwIP 2.2.1** — 完整 TCP/IP 协议栈，DHCP / TCP / UDP / HTTP / DNS（因为我懒得写网络栈了就薅了个现成的）
 - **测试框架** — Rust 原生 no_std 测试框架，手动注册 + QEMU Runner，31 个单元测试全部通过
 
+## 支持的架构
+
+| 架构 | 目标三元组 | Makefile 参数 | 状态 |
+|------|-----------|--------------|------|
+| x86_64 | `x86_64-unknown-none` | `ARCH=x86_64` (默认) | 生产就绪 |
+| aarch64 | `aarch64-unknown-none` | `ARCH=aarch64` | Phase 6 完成，QEMU 验证中 |
+
+### 构建
+
+```bash
+# x86_64 (默认)
+make
+
+# aarch64
+make ARCH=aarch64
+
+# 运行测试
+make test-host
+```
+
+新架构移植请参考 [移植指南](docs/development/arch-porting-guide.md)。
+
 ## 设计原则
 
 > **可理解性 > 性能** — 每行代码都应知其存在原因  
@@ -38,6 +60,8 @@ AntX 是一个完全自研的操作系统——从 Multiboot 引导的第一条�
 - [调度器设计](docs/development/thread-scheduler.md)
 - [系统调用接口](docs/development/syscall.md)
 - [测试框架](docs/development/test-framework.md)
+- [多架构解耦工程](docs/development/multiarch-decoupling-plan.md)
+- [架构移植指南](docs/development/arch-porting-guide.md)
 - [完整文档索引](docs/README.md)
 
 ---

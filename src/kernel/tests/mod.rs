@@ -106,7 +106,7 @@ impl TestRunner {
         Self::serial_print(b" test cases registered\n");
         Self::serial_print(b"========================================\n\n");
 
-        unsafe { core::arch::asm!("cli", options(nomem, nostack)); }
+        crate::arch!(interrupt_disable());
 
         for i in 0..total {
             let tc = reg.cases[i];
