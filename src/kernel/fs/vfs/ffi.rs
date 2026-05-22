@@ -307,7 +307,7 @@ pub extern "C" fn vfs_rmdir_internal(path: *const c_char, pwid: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwid: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwid = resolve_pwid(pwid);
+    let _pwid = resolve_pwid(pwid);
     if st.is_null() { return -1; }
 
     let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {

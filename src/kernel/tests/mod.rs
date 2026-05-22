@@ -1,4 +1,6 @@
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::AtomicU32;
+#[cfg(target_arch = "x86_64")]
+use core::sync::atomic::Ordering;
 
 pub mod test_barrier;
 pub mod test_barrier_ext;
@@ -174,14 +176,14 @@ impl TestRunner {
         } // end cfg(x86_64) block
     }
 
-    fn serial_print(s: &[u8]) {
+    fn serial_print(_s: &[u8]) {
         #[cfg(target_arch = "x86_64")]
-        serial_print(s);
+        serial_print(_s);
     }
 
-    fn serial_print_num(n: u64) {
+    fn serial_print_num(_n: u64) {
         #[cfg(target_arch = "x86_64")]
-        serial_print_num(n);
+        serial_print_num(_n);
     }
 }
 

@@ -17,6 +17,10 @@ use crate::kernel::arch::aarch64::uart;
 
 #[no_mangle]
 pub unsafe extern "C" fn entry() -> ! {
+    // 0. 启用 FP/SIMD (编译器会生成 NEON 指令如 movi v0.2d)
+    //    CPACR_EL1.FPEN[21:20] = 0b11 → 不 trap FP/SIMD
+    core::arch::asm!("mrs x0, cpacr_el1", "orr x0, x0, #(0x3 << 20)", "msr cpacr_el1, x0", out("x0") _);
+
     // 1. BSS 清零
     clear_bss();
 
@@ -42,9 +46,30 @@ pub unsafe extern "C" fn entry() -> ! {
 
     // 7. 跳转内核主循环
     uart::puts("[aarch64] Booting kernel...");
-    crate::kernel_init();
+    kernel_init_aarch64();
 
-    // kernel_init() returns, but entry must diverge
+    // 不应该到达这里
+    loop {
+        crate::arch!(halt());
+    }
+}
+
+/// AArch64 内核初始化 (最小化, 替代 kernel_init)
+#[no_mangle]
+pub unsafe extern "C" fn kernel_init_aarch64() {
+    crate::kernel::klog::klog_init();
+    crate::klog_boot_info!("[aarch64] KLog initialized");
+    crate::klog_boot_info!("[aarch64] QueenX aarch64 boot complete");
+
+    // TODO: 后续实现:
+    // - 物理内存管理 (PMM)
+    // - 虚拟内存管理 (VMM)
+    // - 内核堆 (kmalloc)
+    // - 调度器
+    // - 文件系统
+    // - 用户进程
+    crate::klog_boot_info!("[aarch64] Halting — init not yet implemented");
+
     loop {
         crate::arch!(halt());
     }

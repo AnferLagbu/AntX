@@ -79,7 +79,7 @@ impl SysSem {
                 return !0; // SYS_ARCH_TIMEOUT
             }
             
-            core::hint::spin_loop();;
+            core::hint::spin_loop();
         }
     }
 }

@@ -123,44 +123,70 @@ macro_rules! klog_drv_err   { ($($arg:tt)*) => { $crate::klog_err!(Driver, $($ar
 // 端口 I/O 原语 (无需 driver 框架)
 // ============================================================================
 
-const COM1: u16 = 0x3F8;
+#[cfg(target_arch = "x86_64")]
+mod serial_impl {
+    const COM1: u16 = 0x3F8;
 
-#[inline(always)]
-unsafe fn port_outb(port: u16, value: u8) {
-    crate::arch!(outb(port, value));
-}
+    #[inline(always)]
+    unsafe fn port_outb(port: u16, value: u8) {
+        crate::arch!(outb(port, value));
+    }
 
-#[inline(always)]
-unsafe fn port_inb(port: u16) -> u8 {
-    crate::arch!(inb(port))
-}
+    #[inline(always)]
+    unsafe fn port_inb(port: u16) -> u8 {
+        crate::arch!(inb(port))
+    }
 
-fn serial_putc(c: u8) {
-    unsafe {
-        while (port_inb(COM1 + 5) & 0x20) == 0 {
-            core::hint::spin_loop();
+    pub fn serial_init() {
+        unsafe {
+            port_outb(COM1 + 1, 0x00); // 禁用中断
+            port_outb(COM1 + 3, 0x80); // 启用 DLAB
+            port_outb(COM1 + 0, 0x03); // 除数低字节 (38400 baud)
+            port_outb(COM1 + 1, 0x00); // 除数高字节
+            port_outb(COM1 + 3, 0x03); // 8N1
+            port_outb(COM1 + 2, 0xC7); // 启用 FIFO
+            port_outb(COM1 + 4, 0x0B); // 启用 IRQ
         }
-        port_outb(COM1, c);
+    }
+
+    pub fn serial_putc(c: u8) {
+        unsafe {
+            while (port_inb(COM1 + 5) & 0x20) == 0 {
+                core::hint::spin_loop();
+            }
+            port_outb(COM1, c);
+        }
+    }
+
+    pub fn serial_read_ready() -> bool {
+        unsafe { (port_inb(COM1 + 5) & 0x01) != 0 }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+mod serial_impl {
+    use crate::kernel::arch::aarch64::uart;
+
+    pub fn serial_init() {
+        // UART already initialized in entry.rs
+    }
+
+    pub fn serial_putc(c: u8) {
+        unsafe { uart::putc(c); }
+    }
+
+    pub fn serial_read_ready() -> bool {
+        false // PL011 read not implemented yet
     }
 }
 
 pub fn serial_write_bytes(data: &[u8]) {
     for &byte in data {
         if byte == b'\n' {
-            serial_putc(b'\r');
+            serial_impl::serial_putc(b'\r');
         }
-        serial_putc(byte);
+        serial_impl::serial_putc(byte);
     }
-}
-
-unsafe fn serial_init() {
-    port_outb(COM1 + 1, 0x00);  // 禁用中断
-    port_outb(COM1 + 3, 0x80);  // 启用 DLAB
-    port_outb(COM1 + 0, 0x03);  // 波特率 38400 (divisor=3)
-    port_outb(COM1 + 1, 0x00);
-    port_outb(COM1 + 3, 0x03);  // 8N1
-    port_outb(COM1 + 2, 0xC7);  // 启用 FIFO
-    port_outb(COM1 + 4, 0x0B);  // DTR + RTS
 }
 
 // ============================================================================
@@ -333,7 +359,7 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     serial_write_bytes(cat.name());
     serial_write_bytes(b"] ");
     serial_write_bytes(msg);
-    serial_putc(b'\n');
+    serial_impl::serial_putc(b'\n');
 
     crate::arch!(interrupt_restore(saved_if as usize));
 
@@ -370,7 +396,7 @@ pub fn klog_get_level() -> LogLevel {
 
 #[no_mangle]
 pub unsafe extern "C" fn klog_init() {
-    serial_init();
+    serial_impl::serial_init();
     KLOG_INIT.store(true, Ordering::Release);
     klog_output(LogLevel::Info, LogCategory::Boot, b"KLog v2.0 initialized");
 }

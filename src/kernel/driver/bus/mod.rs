@@ -16,6 +16,7 @@
 pub mod pci;
 
 use super::framework;
+#[cfg(target_arch = "x86_64")]
 use crate::klog_info;
 
 #[cfg(target_arch = "x86_64")]

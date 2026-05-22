@@ -30,7 +30,6 @@ use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::kernel::dma::engine::get_dma;
 use core::ptr;
-use alloc::vec::Vec;
 use crate::klog_info;
 
 // ============================================================================

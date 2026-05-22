@@ -676,6 +676,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
+            #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.obj_type = HvObjType::Symlink;
                 obj.size = target.len() as u64;
@@ -689,6 +690,7 @@ impl HvfsData {
             let comp_type = HvCompType::Off;
             
             if let Some(new_bp) = self.spa.allocate(target_bytes.len() as u64, cksum_type, comp_type, txg) {
+                #[allow(unused_assignments, unused_variables)]
                 if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                     obj.bp = new_bp;
                 }
@@ -750,6 +752,7 @@ impl HvfsData {
             let ds = &mut datasets[0];
             
             // 增加链接计数
+            #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.link_count += 1;
                 obj.dirty = true;
@@ -844,6 +847,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
+            #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 // 简单实现：将xattr存储在对象的data_hash字段中
                 // 实际实现应该使用ZAP对象存储
@@ -970,6 +974,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
+            #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 let name_hash = Self::hash_xattr_name(name);
                 if name_hash < 4 {
@@ -1035,7 +1040,7 @@ impl HvfsData {
             let ds = &datasets[0];
             let objs = ds.objset.objects.lock();
             let obj_clones: Vec<HvDmuObject> = objs.iter().filter(|o| o.used).cloned().collect();
-            let obj_count = obj_clones.len();
+            let _obj_count = obj_clones.len();
             let dir_list = ds.dir_zap.entries();
             let next = ds.objset.next_obj_id.load(Ordering::Acquire);
             (obj_clones, dir_list, next)

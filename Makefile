@@ -8,7 +8,7 @@ ifeq ($(ARCH),aarch64)
     RUST_TARGET = aarch64-unknown-none
     QEMU = qemu-system-aarch64
     QEMU_MACHINE = virt
-    QEMU_CPU ?= cortex-a72
+    QEMU_CPU := max
     LDSCRIPT = src/kernel/link/aarch64.ld
     ASFLAGS = -march=armv8-a
     CFLAGS_BASE = -std=c11 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
@@ -64,7 +64,7 @@ LDFLAGS = -T $(LDSCRIPT) -nostdlib -Map=build/kernel.map
 # ── 架构条件 QEMU 标志 ────────────────────────────────────────────────
 ifeq ($(ARCH),aarch64)
     # AArch64: QEMU virt 机器，无 ISA debug-exit，无 PCI 网络
-    QEMU_FLAGS := -M $(QEMU_MACHINE) -cpu $(QEMU_CPU) -m 512 -no-reboot
+    QEMU_FLAGS := -M $(QEMU_MACHINE),gic-version=3 -cpu $(QEMU_CPU) -m 512 -no-reboot
     QEMU_NET :=
     KERNEL_IMAGE := build/kernel.bin
     QEMU_KERNEL_FLAG := -kernel

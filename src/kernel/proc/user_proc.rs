@@ -265,9 +265,9 @@ impl UserProcManager {
             let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
             let rip_val = (*proc).entry;
             let rsp_val = (*proc).user_stack.load(Ordering::SeqCst);
-            let ss_val = GDT_USER_DATA | 0x03;
-            let cs_val = GDT_USER_CODE | 0x03;
-            let rflags_val: u64 = 0x3202;
+            let _ss_val = GDT_USER_DATA | 0x03;
+            let _cs_val = GDT_USER_CODE | 0x03;
+            let _rflags_val: u64 = 0x3202;
             
             crate::kernel::cpu::arch::set_kernel_stack(kstack);
             
@@ -430,7 +430,7 @@ impl UserProcManager {
             let mut allocated_pages: [u64; 1024] = [0; 1024];
             let mut page_count: usize = 0;
 
-            let mut phnum = (*header).phnum as usize;
+            let phnum = (*header).phnum as usize;
             if phnum > 256 { self.destroy(proc); return -1; }
 
             for i in 0..phnum {

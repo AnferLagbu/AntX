@@ -16,9 +16,7 @@
 //! └── 双缓冲支持
 //! ```
 
-use alloc::vec::Vec;
 use super::super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use core::ptr;
 
 // ============================================================================
 // 像素格式定义

@@ -21,6 +21,7 @@
 
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::idt::types::InterruptFrame;
+#[cfg(any(target_arch = "x86_64", feature = "net"))]
 use core::sync::atomic::Ordering;
 
 /// Timer IRQ0 中断处理程序 (仅 x86_64)

@@ -14,7 +14,7 @@ use core::ptr::{read_volatile, write_volatile};
 /// Distributor 基地址 (每个CPU共享)
 const GICD_BASE: u64 = 0x08000000;
 /// Redistributor 基地址 (每个CPU独立)
-const GICR_BASE: u64 = 0x080A0000;
+const GICR_BASE: u64 = 0x080A_0000;
 
 /// GICD 寄存器偏移
 const GICD_CTLR: u64 = 0x0000;      // Distributor Control
@@ -51,22 +51,32 @@ const TIMER_PPI: u32 = 27;  // EL1 Physical Timer
 
 #[inline(always)]
 unsafe fn gicd_read(offset: u64) -> u32 {
-    read_volatile((GICD_BASE + offset) as *const u32)
+    core::arch::asm!("dsb sy");
+    let val = read_volatile((GICD_BASE + offset) as *const u32);
+    core::arch::asm!("dsb sy");
+    val
 }
 
 #[inline(always)]
 unsafe fn gicd_write(offset: u64, val: u32) {
+    core::arch::asm!("dsb sy");
     write_volatile((GICD_BASE + offset) as *mut u32, val);
+    core::arch::asm!("dsb sy");
 }
 
 #[inline(always)]
 unsafe fn gicr_read(offset: u64) -> u32 {
-    read_volatile((GICR_BASE + offset) as *const u32)
+    core::arch::asm!("dsb sy");
+    let val = read_volatile((GICR_BASE + offset) as *const u32);
+    core::arch::asm!("dsb sy");
+    val
 }
 
 #[inline(always)]
 unsafe fn gicr_write(offset: u64, val: u32) {
+    core::arch::asm!("dsb sy");
     write_volatile((GICR_BASE + offset) as *mut u32, val);
+    core::arch::asm!("dsb sy");
 }
 
 // ============================================================================
@@ -82,38 +92,22 @@ pub unsafe fn init_distributor() {
     // 1. 禁用 Distributor
     gicd_write(GICD_CTLR, 0);
 
-    // 2. 设置所有 SPIs 为 Group 0 (安全世界) — 跳过 SGIs/PPIs
-    // GICD_IGROUPR: 32bits per register, 32 interrupts. We need regs for SPI_BASE..max
-    // For simplicity, just configure the first 32+32 interrupts
+    // 2. 设置所有 SPIs 为 Group 0
     for i in 0..2 {
-        // SPI_BASE(32) → register at GICD_IGROUPR + (SPI_BASE/32)*4
-        // Register 0: SGIs+PPIs(0-31), Register 1: SPIs(32-63)
         gicd_write(GICD_IGROUPR + (i as u64 * 4), 0);
     }
 
-    // 3. 设置中断优先级: 所有为 0xA0 (lowest priority = 0xFF, but we use 0x80 as default)
-    // GICD_IPRIORITYR: 1 byte per interrupt, 4 per register
-    // Just set first few registers
+    // 3. 设置中断优先级
     for i in 0..32 {
         gicd_write(GICD_IPRIORITYR + (i as u64 * 4), 0xA0A0_A0A0);
     }
 
-    // 4. 禁所有中断 (ICENABLER)
-    // All interrupts start disabled; ISENABLER enables specific ones
+    // 4. 使能 Distributor (Group0 + Group1)
+    gicd_write(GICD_CTLR, 0x3);
 
-    // 5. 设置 SPIs 为 level-sensitive (default)
-    // GICD_ICFGR: 2 bits per interrupt, 16 per register
-    // PPI 0-15 are edge-triggered by default
-    // Timer PPI (27) should be level-sensitive (set to 0 in ICFGR1)
-    // Actually, ARM Generic Timer uses level-sensitive interrupts in GICv3
-
-    // 6. 使能 Distributor
-    gicd_write(GICD_CTLR, 0x3); // Group0 + Group1 enable (bits 1:0)
-
-    // 7. 设置 CPU interface target: all PPIs to CPU0
-    // GICD_ITARGETSR: 1 byte per interrupt, 4 per register
-    gicd_write(GICD_ITARGETSR, 0x0101_0101); // interrupt 0-3 → CPU0
-    gicd_write(GICD_ITARGETSR + 4, 0x0101_0101); // interrupt 4-7 → CPU0
+    // 5. 设置 CPU interface target: PPIs to CPU0
+    gicd_write(GICD_ITARGETSR, 0x0101_0101);
+    gicd_write(GICD_ITARGETSR + 4, 0x0101_0101);
 }
 
 /// 初始化 GICv3 Redistributor (当前 CPU):
@@ -131,7 +125,7 @@ pub unsafe fn init_redistributor() {
     // 2. 设置 PPI 优先级
     gicr_write(GICR_IPRIORITYR, 0xA0A0_A0A0);
     gicr_write(GICR_IPRIORITYR + 4, 0xA0A0_A0A0);
-    gicr_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0); // Timer PPI is at PPI_BASE+11=27, byte 3 of reg 6
+    gicr_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0);
 
     // 3. Timer PPI 低优先级
     let prio_addr = GICR_IPRIORITYR + ((TIMER_PPI as u64 / 4) * 4);
@@ -152,9 +146,7 @@ pub unsafe fn init_cpu_interface() {
     core::arch::asm!("msr icc_bpr1_el1, {}", in(reg) 0u64);
 
     // 启用 Group 0 + Group 1 中断
-    // ICC_IGRPEN0_EL1: Group 0 enable
     core::arch::asm!("msr icc_igrpen0_el1, {}", in(reg) 1u64);
-    // ICC_IGRPEN1_EL1: Group 1 enable  
     core::arch::asm!("msr icc_igrpen1_el1, {}", in(reg) 1u64);
 
     // EOI mode: drop priority (ICC_CTLR_EL1.EOImode = 0)
@@ -165,13 +157,9 @@ pub unsafe fn init_cpu_interface() {
 
 /// 使能 Timer PPI 中断
 pub unsafe fn enable_timer_ppi() {
-    // 1. 在 redistributor 中使能 PPI 27 (Timer)
-    let enable_offset = GICR_ISENABLER0; // SGIs + PPIs 0-31
+    let enable_offset = GICR_ISENABLER0;
     let bit = 1u32 << (TIMER_PPI % 32);
     gicr_write(enable_offset, bit);
-
-    // 2. 在 distributor 中确保不使能 SPI (timer PPI 不在 distributor ISENABLER 中)
-    // Timer PPI is managed by redistributor, not distributor.
 }
 
 /// 获取中断 ID (IAR) — 用于 IRQ handler

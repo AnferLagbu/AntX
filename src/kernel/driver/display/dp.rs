@@ -261,7 +261,7 @@ impl DpController {
     }
     
     /// AUX通道写操作
-    pub fn aux_write(&mut self, address: u16, data: &[u8]) -> Result<()> {
+    pub fn aux_write(&mut self, _address: u16, _data: &[u8]) -> Result<()> {
         if !self.connected {
             return Err(DriverError::DeviceNotFound);
         }
@@ -405,7 +405,7 @@ impl Driver for DpController {
         } else if !self.connected {
             "DP no display connected"
         } else if self.is_link_trained() {
-            if let Some(bw) = self.get_bandwidth_gbps() {
+            if let Some(_bw) = self.get_bandwidth_gbps() {
                 "DP link trained"
             } else {
                 "DP link trained"

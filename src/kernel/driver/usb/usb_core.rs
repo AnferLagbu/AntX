@@ -21,7 +21,7 @@
 //! USB驱动涉及DMA和硬件寄存器操作，需要特别小心。
 
 use alloc::vec::Vec;
-use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
+use super::framework::{Driver, DeviceType, Result, DeviceInfo};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 // ============================================================================
@@ -494,7 +494,7 @@ impl UsbCore {
         };
         
         let mut descriptor = DeviceDescriptor::default();
-        let mut urb = Urb {
+        let urb = Urb {
             id: 0,
             device: device.address,
             endpoint: 0,

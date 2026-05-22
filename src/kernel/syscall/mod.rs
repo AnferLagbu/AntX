@@ -501,6 +501,7 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
         0xFFFFFFFFu64
     };
 
+    #[allow(unused_variables)]
     let max_lba = if total_sectors > 0 && total_sectors <= 0xFFFFFFFF {
         total_sectors as u32 - 1
     } else {
@@ -678,6 +679,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         phys_end - (kernel_ptr as usize)
     };
 
+    #[allow(unused_assignments)]
     let mut buf = [0u8; 512];
     let total_kernel_sectors = ((kernel_len + 511) / 512) as u32;
     let max_sectors = 2047u32;
@@ -695,6 +697,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         }
     }
 
+    #[allow(unused_variables)]
     let kernel_sector_count = if copy_sectors == 0 { 1u32 } else { copy_sectors };
     let mut cfg = [0u8; 512];
     cfg[0] = b'A'; cfg[1] = b'N'; cfg[2] = b'T'; cfg[3] = b'X';

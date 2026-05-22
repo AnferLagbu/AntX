@@ -63,6 +63,11 @@ el2_entry:
     orr  x0, x0, #(1 << 1)  // SWIO=1
     msr  hcr_el2, x0
 
+    // CPTR_EL2: 清零 TFP (bit 10) — 否则即使 CPACR_EL1 允许, EL1 的 FP/SIMD 也会 trap 到 EL2
+    mrs  x0, cptr_el2
+    bic  x0, x0, #(1 << 10) // Clear TFP
+    msr  cptr_el2, x0
+
     // 为 CPACR_EL1 和 CNTHCTL_EL2 设置最大访问权限 (EL1/EL0 可访问 FP/SIMD + Timer)
     mov  x0, #(0x3 << 20)   // FPEN = 0b11 (trap none)
     msr  cpacr_el1, x0

@@ -1,5 +1,4 @@
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use core::ptr;
 
 use super::thread::Thread;
 pub use super::types::{
@@ -399,12 +398,9 @@ impl SchedulerEx {
                     let canary = *(canary_addr as *const u64);
                     if canary != 0xDEADBEEF_CAFEBABE_u64 {
                         extern "C" {
-                            fn klog_ffi_info(msg: *const u8, val: u64);
+                            fn klog_ffi_info(msg: *const u8);
                         }
-                        klog_ffi_info(
-                            b"[SCHED_EX] KERNEL STACK CANARY CORRUPTED\0".as_ptr(),
-                            canary
-                        );
+                        klog_ffi_info(b"[SCHED_EX] KERNEL STACK CANARY CORRUPTED\0".as_ptr());
                     }
                     
                     crate::arch!(context_switch(prev_ctx as *mut u8, next_ctx as *const u8));

@@ -88,6 +88,7 @@ fn panic(info: &PanicInfo) -> ! {
         crate::kernel::klog::serial_write_bytes(msg.as_bytes());
         crate::kernel::klog::serial_write_bytes(b"\n");
 
+        #[allow(unused_mut)]
         let mut regs: [u64; 16] = [0; 16];
         #[cfg(target_arch = "x86_64")]
         unsafe {
@@ -133,7 +134,9 @@ fn panic(info: &PanicInfo) -> ! {
                 crate::kernel::klog::serial_write_bytes(b"\n");
             }
         }
+        #[allow(unused_mut)]
         let mut cr2: u64 = 0;
+        #[allow(unused_mut)]
         let mut cr3_val: u64 = 0;
         #[cfg(target_arch = "x86_64")]
         unsafe {
@@ -170,7 +173,20 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 
 #[no_mangle]
 pub extern "C" fn kernel_init() {
+    // aarch64: minimal boot path (most subsystems are x86-only)
+    #[cfg(target_arch = "aarch64")]
+    {
+        unsafe { crate::kernel::klog::klog_init(); }
+        crate::klog_boot_info!("[aarch64] kernel_init reached");
+        crate::klog_boot_info!("[aarch64] Halting (init not yet implemented)");
+        loop {
+            unsafe { core::arch::asm!("wfi"); }
+        }
+    }
+
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
+    #[cfg(target_arch = "x86_64")]
+    {
     unsafe { crate::kernel::klog::klog_init(); }
     crate::klog_boot_info!("QueenX starting");
 
@@ -310,4 +326,5 @@ pub extern "C" fn kernel_init() {
     }
     // unreachable: launch_first_user_process is noreturn
     } // end #[cfg(not(feature = "kernel_test"))]
+    } // end #[cfg(target_arch = "x86_64")]
 }

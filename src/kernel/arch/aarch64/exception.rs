@@ -416,25 +416,25 @@ extern "C" {
 /// 返回值为新的 x0。
 #[no_mangle]
 pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
-    let syscall_nr = frame.x8 as usize; // SVC number
-    let arg0 = frame.x0 as usize;
-    let arg1 = frame.x1 as usize;
-    let arg2 = frame.x2 as usize;
-    let arg3 = frame.x3 as usize;
-    let _arg4 = frame.x4 as usize;
-
     // 调用内核系统调用分发器
     // 使用 arch! 宏确保 x86_64 编译不受影响
     #[cfg(target_arch = "aarch64")]
     {
         // aarch64: syscall 模块未实现，返回 ENOSYS
         // TODO: 实现 aarch64 syscall 支持
+        let _ = frame; // x86_64 路径使用 frame 参数, aarch64 暂不需要
         unsafe { crate::kernel::klog::serial_write_bytes(b"[SYSCALL] ENOSYS\n"); }
         0u64
     }
 
     #[cfg(not(target_arch = "aarch64"))]
     {
+        let syscall_nr = frame.x8 as usize; // SVC number
+        let arg0 = frame.x0 as usize;
+        let arg1 = frame.x1 as usize;
+        let arg2 = frame.x2 as usize;
+        let arg3 = frame.x3 as usize;
+        let _arg4 = frame.x4 as usize;
         let _ = (syscall_nr, arg0, arg1, arg2, arg3);
         0
     }

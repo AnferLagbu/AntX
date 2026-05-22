@@ -8,9 +8,7 @@
 
 use alloc::vec::Vec;
 use super::super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use super::framebuffer::{Framebuffer, PixelFormat, Color, Rect};
-use super::hdmi::{HdmiController, VideoMode};
-use super::dp::{DpController, LinkRate, LaneCount};
+use super::framebuffer::{Framebuffer, PixelFormat};
 
 // ============================================================================
 // 显示输出类型

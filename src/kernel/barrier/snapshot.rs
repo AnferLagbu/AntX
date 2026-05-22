@@ -242,7 +242,7 @@ impl DeviceSnapshotRegistry {
         self.init_captured.load(Ordering::SeqCst) == 1
     }
 
-    pub fn iter(&self) -> DeviceSnapshotIter {
+    pub fn iter(&self) -> DeviceSnapshotIter<'_> {
         DeviceSnapshotIter {
             registry: self,
             index: 0,

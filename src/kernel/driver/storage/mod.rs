@@ -27,7 +27,9 @@ use alloc::vec::Vec;
 use spin::Mutex;
 
 use super::framework::{self, Driver};
+#[cfg(target_arch = "x86_64")]
 use crate::klog_info;
+#[cfg(target_arch = "x86_64")]
 use crate::klog_warn;
 
 /// PCI 存储控制器类码

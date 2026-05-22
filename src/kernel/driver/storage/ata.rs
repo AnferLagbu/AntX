@@ -21,7 +21,9 @@
 //! # Safety
 //! 此模块直接操作硬件端口，必须在特权级执行。
 
-use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
+#[cfg(target_arch = "x86_64")]
+use super::framework::Driver;
+use super::framework::{DeviceType, DriverError, Result, DeviceInfo};
 use super::framework::{outb, inb};
 #[cfg(target_arch = "x86_64")]
 use super::framework::{outw, inw};

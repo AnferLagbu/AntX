@@ -486,7 +486,7 @@ impl Driver for HdmiController {
             "HDMI not initialized"
         } else if !self.connected {
             "HDMI no display connected"
-        } else if let Some(ref mode) = self.current_mode {
+        } else if let Some(ref _mode) = self.current_mode {
             "HDMI connected and active"
         } else {
             "HDMI connected"

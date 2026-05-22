@@ -29,7 +29,7 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use super::usb_core::{HostController, UsbSpeed, Urb, DeviceState};
+use super::usb_core::{HostController, UsbSpeed, Urb};
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use core::ptr;
 
