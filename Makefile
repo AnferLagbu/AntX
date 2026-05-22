@@ -9,6 +9,7 @@ ifeq ($(ARCH),aarch64)
     QEMU_MACHINE = virt
     QEMU_CPU ?= cortex-a72
     LDSCRIPT = src/kernel/link/aarch64.ld
+    ASFLAGS = -march=armv8-a
     CFLAGS_BASE = -std=c11 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
                   -fno-asynchronous-unwind-tables -fno-ident \
                   -Wno-builtin-declaration-mismatch
@@ -20,6 +21,7 @@ else
     QEMU = qemu-system-x86_64
     QEMU_CPU ?= qemu64
     LDSCRIPT = src/kernel/link/x86_64.ld
+    ASFLAGS = -f elf64
     CFLAGS_BASE = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
                   -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
                   -Wno-builtin-declaration-mismatch
@@ -58,6 +60,35 @@ NET_OBJS   = $(patsubst src/kernel/net/%.c,build/net/%.o,$(NET_ALL_C))
 
 LDFLAGS = -T $(LDSCRIPT) -nostdlib -Map=build/kernel.map
 
+# ── 架构条件 QEMU 标志 ────────────────────────────────────────────────
+ifeq ($(ARCH),aarch64)
+    # AArch64: QEMU virt 机器，无 ISA debug-exit，无 PCI 网络
+    QEMU_FLAGS := -M $(QEMU_MACHINE) -cpu $(QEMU_CPU) -m 512 -no-reboot
+    QEMU_NET :=
+    KERNEL_IMAGE := build/kernel.bin
+    QEMU_KERNEL_FLAG := -kernel
+else
+    QEMU_FLAGS := -m 512 -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04
+    QEMU_NET := -device e1000,netdev=n0 \
+                -netdev user,id=n0,hostfwd=tcp::8080-:80,hostname=antx
+    KERNEL_IMAGE := build/kernel.flat
+    QEMU_KERNEL_FLAG := -kernel
+endif
+
+# ── 架构条件构建对象 ─────────────────────────────────────────────────
+ifeq ($(ARCH),aarch64)
+    # AArch64: start.S (GNU as) 替代 boot.asm/entry.asm/isr.asm
+    KERNEL_OBJS = build/boot.o
+    KERNEL_TEST_OBJS = build/boot.o
+else
+    KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
+                  build/lib/string.o \
+                  $(NET_OBJS)
+    KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
+                  build/kernel_test.o build/test_main.o build/test_hvfs.o \
+                  build/test_hw_stubs.o
+endif
+
 RUST_LIB = src/rust/target/$(RUST_TARGET)/release/libqueenx.a
 RUST_LIB_TEST = src/rust/target/test-release/$(RUST_TARGET)/release/libqueenx.a
 RUST_LIB_CHAOS = src/rust/target/chaos-release/$(RUST_TARGET)/release/libqueenx.a
@@ -69,30 +100,13 @@ USER_INIT_ELF = $(RUST_USER_TARGET)/init
 USER_SHELL_ELF = $(RUST_USER_TARGET)/axsh
 USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 
-ifeq ($(ARCH),aarch64)
-ASFLAGS = -march=armv8-a
-else
-ASFLAGS = -f elf64
-endif
-
 STAGE1_BIN = build/stage1.bin
-
-KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-              build/lib/string.o \
-              $(NET_OBJS)
-
-KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-              build/kernel_test.o build/test_main.o build/test_hvfs.o \
-              build/test_hw_stubs.o
-
 DISK_IMAGE = build/antx.img
-
-LOG_DIR = logs
 
 .PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-host test-unit test-integration test-smoke test-stress \
          test-all test-chaos test-smp
 
-all: build/kernel.bin user
+all: build/kernel.bin
 
 user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF)
 	@mkdir -p build/user
@@ -112,9 +126,15 @@ build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 build/kernel.flat: build/kernel.bin
 	objcopy -O binary $< $@
 
-$(RUST_LIB): build/user/init.bin $(STAGE1_BIN)
+# NOTE: user 程序依赖 axsh 等，当前有预存编译问题 (print! 宏缺失)
+# 开发期间可仅构建内核: make ARCH=x86_64 build/kernel.bin
+ifeq ($(ARCH),x86_64)
+$(RUST_LIB): $(STAGE1_BIN)
+else
+$(RUST_LIB):
+endif
 	@echo "Building Rust kernel module..."
-	cd src/rust && cargo build --release --target $(RUST_TARGET)
+	@cd src/rust && cargo build --release --target $(RUST_TARGET)
 
 $(RUST_LIB_TEST):
 	@echo "Building Rust test kernel..."
@@ -143,6 +163,13 @@ build/%.o: src/kernel/%.asm
 build/%.o: src/kernel/boot/%.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
+
+# AArch64 启动汇编 (GNU as)
+ifeq ($(ARCH),aarch64)
+build/boot.o: src/kernel/boot/aarch64/start.S
+	@mkdir -p build
+	$(AS) $(ASFLAGS) $< -o $@
+endif
 
 build/gdt_asm.o: src/kernel/gdt.asm
 	@mkdir -p build
@@ -175,6 +202,8 @@ build/net/%.o: src/kernel/net/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# 磁盘镜像 — 仅 x86_64
+ifeq ($(ARCH),x86_64)
 $(DISK_IMAGE): build/kernel.flat user
 	@echo "Creating disk image..."
 	@dd if=/dev/zero of=$@ bs=1M count=4 2>/dev/null
@@ -186,6 +215,7 @@ disk: $(DISK_IMAGE)
 
 run-disk: $(DISK_IMAGE)
 	$(QEMU) -drive file=$(DISK_IMAGE),format=raw -serial stdio
+endif
 
 iso: all user
 	@mkdir -p isodir/boot/grub
@@ -226,33 +256,47 @@ else
 	QEMU_DISPLAY := -serial stdio -display gtk
 endif
 
-run: all user build/kernel.flat
+run: all $(KERNEL_IMAGE)
 	@mkdir -p $(LOG_DIR)
-	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat $(QEMU_DISPLAY)
+	$(QEMU) $(QEMU_FLAGS) $(QEMU_KERNEL_FLAG) $(KERNEL_IMAGE) $(QEMU_DISPLAY)
 
+# 网络 QEMU — 仅 x86_64 (依赖 e1000 PCI 设备)
+ifeq ($(ARCH),x86_64)
 run-net: all user build/kernel.flat
 	@mkdir -p $(LOG_DIR)
 	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat $(QEMU_NET) $(QEMU_DISPLAY)
+else
+run-net:
+	@echo "run-net is not supported on aarch64 (no PCI/e1000)"
+endif
 
-run-headless: all user
+run-headless: all $(KERNEL_IMAGE)
 	@$(MAKE) QEMU_MODE=headless run
 	@echo "✓ Kernel output saved to $(LOG_DIR)/serial.log"
 	@cat $(LOG_DIR)/serial.log | head -100
 
+# ISO — 仅 x86_64 (依赖 GRUB + BIOS)
+ifeq ($(ARCH),x86_64)
 run-iso: iso
 	@mkdir -p $(LOG_DIR)
 	$(QEMU) $(QEMU_FLAGS) -cdrom build/antx.iso $(QEMU_DISPLAY)
+else
+run-iso:
+	@echo "run-iso is not supported on aarch64 (BIOS/GRUB only)"
+endif
 
-debug: all user build/kernel.flat
-	$(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat -serial stdio -s -S
+debug: all $(KERNEL_IMAGE)
+	$(QEMU) $(QEMU_FLAGS) $(QEMU_KERNEL_FLAG) $(KERNEL_IMAGE) -serial stdio -s -S
 
-log: all user build/kernel.flat
+log: all $(KERNEL_IMAGE)
 	@mkdir -p $(LOG_DIR)
-	timeout 30 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat \
+	timeout 30 $(QEMU) $(QEMU_FLAGS) $(QEMU_KERNEL_FLAG) $(KERNEL_IMAGE) \
 		-serial file:$(LOG_DIR)/serial.log \
 		-display none \
 		-d cpu_reset,guest_errors 2>&1 | tee $(LOG_DIR)/qemu_stderr.log || true
 
+# 网络日志 — 仅 x86_64
+ifeq ($(ARCH),x86_64)
 log-net: all user build/kernel.flat
 	@mkdir -p $(LOG_DIR)
 	timeout 60 $(QEMU) $(QEMU_FLAGS) -kernel build/kernel.flat \
@@ -263,6 +307,10 @@ log-net: all user build/kernel.flat
 	@echo ""
 	@echo "=== Network Log ==="
 	@grep -E "NETWORK|DRIVER.*E1000|Ping|HTTP|DNS|DHCP|ISR" $(LOG_DIR)/serial.log | head -30
+else
+log-net:
+	@echo "log-net is not supported on aarch64 (no PCI/e1000)"
+endif
 	@echo ""
 	@echo "=== HTTP Test ==="
 	@curl -s --max-time 3 http://localhost:8080/ 2>/dev/null && echo "OK" || echo "FAIL (no response)"

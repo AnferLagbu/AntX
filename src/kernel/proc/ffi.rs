@@ -6,11 +6,13 @@ use super::scheduler::SCHEDULER;
 use super::thread::THREAD_MANAGER;
 use super::scheduler_ex::SCHEDULER_EX;
 use super::session::SESSION_MANAGER;
-use super::user_proc::USER_PROC_MANAGER;
+use super::user_proc::{USER_PROC_MANAGER, proc_alloc_pid, user_proc_clone};
 use super::process::{Process, PROCESS_TABLE};
 
 extern "C" {
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
+    fn vmm_clone_user_page_table(parent_pml4: u64) -> u64;
+    fn vmm_destroy_page_table(pml4: u64);
 }
 
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
@@ -708,7 +710,6 @@ pub extern "C" fn sys_fork() -> Pid {
     
     // Clone page table
     let parent_cr3 = parent.cr3.load(Ordering::SeqCst);
-    extern "C" { fn vmm_clone_user_page_table(parent_pml4: u64) -> u64; }
     let child_cr3 = unsafe { vmm_clone_user_page_table(parent_cr3) };
     if child_cr3 == 0 {
         unsafe {
@@ -719,10 +720,8 @@ pub extern "C" fn sys_fork() -> Pid {
     }
     
     // Allocate child PID
-    extern "C" { fn proc_alloc_pid() -> Pid; }
-    let child_pid = unsafe { proc_alloc_pid() };
+    let child_pid = proc_alloc_pid();
     if child_pid == 0 {
-        extern "C" { fn vmm_destroy_page_table(pml4: u64); }
         unsafe { vmm_destroy_page_table(child_cr3); }
         return 0;
     }
@@ -754,7 +753,6 @@ pub extern "C" fn sys_fork() -> Pid {
     if !child.allocate_kernel_stack() {
         unsafe {
             drop(alloc::boxed::Box::from_raw(child as *mut Process));
-            extern "C" { fn vmm_destroy_page_table(pml4: u64); }
             vmm_destroy_page_table(child_cr3);
         }
         return 0;
@@ -788,9 +786,8 @@ pub extern "C" fn sys_fork() -> Pid {
     PROCESS_TABLE.insert(child as *const Process as *mut Process);
     
     // Create UserProc for child
-    if let Some(parent_up) = USER_PROC_MANAGER.get(parent_pid) {
-        extern "C" { fn user_proc_clone(parent_pid: Pid, child_pid: Pid) -> i32; }
-        let clone_result = unsafe { user_proc_clone(parent_pid, child_pid) };
+    if USER_PROC_MANAGER.get(parent_pid).is_some() {
+        let clone_result = user_proc_clone(parent_pid, child_pid);
         if clone_result < 0 {
             PROCESS_TABLE.remove_and_free(child_pid);
             return 0;

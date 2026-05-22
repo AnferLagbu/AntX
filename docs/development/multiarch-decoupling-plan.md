@@ -799,6 +799,35 @@ git push origin --delete feat/arch-abstraction
 
 ---
 
+### Phase 8：Arch trait 子 trait 拆分 (风险优化)
+
+#### 背景
+
+Phase 1-7 的 `Arch` trait 包含 20 个方法，在双架构下够用，但随着架构增多会膨胀。按 Tock OS 模式拆分为子 trait，提升可扩展性和可测试性。
+
+#### 变更
+
+| 子 trait | 方法数 | 职责 |
+|---------|--------|------|
+| `CoreArch` | 5 | cpu_id, timestamp, halt, fence, fence_w |
+| `InterruptArch` | 6 | interrupt_disable/enable/restore/is_enabled, send_ipi, broadcast_ipi |
+| `MmuArch` | 8 | tlb_flush_page/all, read/write_page_table_base, read_fault_address, context_switch, enter_user, return_to_user |
+| `SystemArch` | 6 | outb/inb/outl/inl, shutdown, reboot |
+
+`Arch` 保持为超 trait (`Arch: CoreArch + InterruptArch + MmuArch + SystemArch`)，通过默认委托方法保持向后兼容，所有现有调用方（`arch!()` 宏、薄封装层）无需修改。
+
+#### 验证
+
+```
+[x] cargo build --target x86_64-unknown-none     → 0 errors
+[x] cargo build --target aarch64-unknown-none     → 0 errors
+[x] make test-host                                 → 27/27 通过
+[x] ci/build.sh all                                → 4/4 通过
+[x] 新架构移植路径: impl CoreArch → InterruptArch → MmuArch → SystemArch → impl Arch {}
+```
+
+---
+
 ## 六、编码规范
 
 ### 6.1 内联汇编处理

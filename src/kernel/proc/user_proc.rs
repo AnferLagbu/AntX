@@ -581,6 +581,49 @@ pub fn init() {
     USER_PROC_MANAGER.init();
 }
 
+/// 分配一个新的 PID（供 sys_fork 使用）
+#[no_mangle]
+pub extern "C" fn proc_alloc_pid() -> u32 {
+    PROCESS_TABLE.allocate_pid().unwrap_or(0)
+}
+
+/// 克隆父进程的 UserProcess 给子进程（供 sys_fork 使用）
+/// 子进程的 CR3 和内核栈已在 sys_fork 中分配好，此处仅创建 UserProcess 记录
+#[no_mangle]
+pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
+    let parent_proc = match USER_PROC_MANAGER.get(parent_pid) {
+        Some(p) => p,
+        None => return -1,
+    };
+    
+    let child_kernel_proc = match PROCESS_TABLE.get(child_pid) {
+        Some(p) => p,
+        None => return -1,
+    };
+    
+    unsafe {
+        let child_up = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
+        if child_up.is_null() {
+            return -1;
+        }
+        memset(child_up as *mut u8, 0, core::mem::size_of::<UserProcess>() as u64);
+        
+        (*child_up).pid = child_pid;
+        (*child_up).pwid.store((*parent_proc).pwid.load(Ordering::SeqCst), Ordering::SeqCst);
+        (*child_up).cr3.store((*child_kernel_proc).cr3.load(Ordering::SeqCst), Ordering::SeqCst);
+        (*child_up).kernel_stack.store((*child_kernel_proc).kernel_stack.load(Ordering::SeqCst), Ordering::SeqCst);
+        (*child_up).user_stack.store((*parent_proc).user_stack.load(Ordering::SeqCst), Ordering::SeqCst);
+        (*child_up).stack_bottom.store((*parent_proc).stack_bottom.load(Ordering::SeqCst), Ordering::SeqCst);
+        (*child_up).entry = (*parent_proc).entry;
+        (*child_up).state.store(1, Ordering::SeqCst); // Ready
+        (*child_up).create_time = crate::kernel::timer::get_ticks();
+        
+        USER_PROC_MANAGER.processes.lock().insert(child_pid, child_up);
+    }
+    
+    0
+}
+
 pub fn try_expand_user_stack(fault_addr: u64) -> bool {
     if fault_addr >= USER_STACK_TOP { return false; }
     if fault_addr < USER_STACK_EXPAND_LIMIT { return false; }
