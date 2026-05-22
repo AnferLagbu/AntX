@@ -307,8 +307,10 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
 pub extern "C" fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
+    #[cfg(target_arch = "x86_64")]
     let bin = include_bytes!("../../../build/user/init.bin");
 
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         let bin_ptr = bin.as_ptr();
         let bin_size = bin.len() as u64;

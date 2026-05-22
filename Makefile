@@ -129,8 +129,11 @@ build/kernel.flat: build/kernel.bin
 
 # NOTE: user 程序依赖 axsh 等，当前有预存编译问题 (print! 宏缺失)
 # 开发期间可仅构建内核: make ARCH=x86_64 build/kernel.bin
+# include_bytes! 编译时需要 init.bin 存在，x86_64 先创建空占位文件
 ifeq ($(ARCH),x86_64)
 $(RUST_LIB): $(STAGE1_BIN)
+	@mkdir -p build/user
+	@touch build/user/init.bin
 else
 $(RUST_LIB):
 endif
