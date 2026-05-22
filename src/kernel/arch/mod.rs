@@ -2,28 +2,36 @@
 //!
 //! ## 架构抽象层 (Architecture Abstraction Layer)
 //!
-//! 定义了 `Arch` trait 作为所有 CPU 架构的统一接口。
+//! 采用 **多子 trait + 超 trait** 模式：
+//! - `CoreArch` — 基础核心能力 (halt, cpu_id, timestamp, 内存屏障)
+//! - `InterruptArch` — 中断 + IPI
+//! - `MmuArch` — 内存管理 + 上下文切换 + 用户态
+//! - `SystemArch` — 端口IO + 电源管理
+//! - `Arch` — 超 trait，要求全部子 trait
+//!
 //! 通过 `CurrentArch` 类型别名和 `arch!` 宏实现编译期架构分发。
 //!
 //! ```text
 //! arch/
-//! ├── mod.rs         # Arch trait 定义 + CurrentArch + arch! 宏
-//! ├── x86_64/
-//! │   └── mod.rs     # X8664 结构体 (x86_64 实现)
-//! └── aarch64/
-//!     └── mod.rs     # Aarch64 结构体 (ARM64 stub)
+//!  ├── mod.rs         # CoreArch/InterruptArch/MmuArch/SystemArch 子 trait
+//!  │                  # + Arch 超 trait + CurrentArch + arch! 宏
+//!  ├── x86_64/
+//!  │   └── mod.rs     # impl CoreArch/InterruptArch/MmuArch/SystemArch/Arch for X8664
+//!  └── aarch64/
+//!      └── mod.rs     # impl CoreArch/InterruptArch/MmuArch/SystemArch/Arch for Aarch64
 //! ```
 //!
-//! ## Phase 1 状态
-//! - [x] Arch trait 定义 (完整方法签名)
-//! - [x] CurrentArch 类型别名 (编译期架构选择)
-//! - [x] arch! 宏 (编译期零开销分发)
-//! - [ ] X8664 完整实现 (Phase 2)
-//! - [ ] Aarch64 完整实现 (Phase 3+)
+//! ## 设计动机
+//!
+//! 单 `Arch` trait 在双架构下够用，但随着架构增多 (riscv64, loongarch64) 会膨胀。
+//! 拆分子 trait 后：
+//! - 新架构可按优先级分阶段实现 (先 CoreArch 跑起来, 再加 InterruptArch)
+//! - 各子 trait 可独立单元测试
+//! - 调用方可按需导入 (如 MMU 代码只需 `use MmuArch`)
 //!
 //! ## 安全说明
 //!
-//! Arch trait 方法标记为 `unsafe` 因为它们直接操作硬件:
+//! 所有 trait 方法标记为 `unsafe` 因为它们直接操作硬件:
 //! - MMIO/PMIO 操作 (端口读写)
 //! - 特权指令 (cli/sti, 写 CR3, invlpg)
 //! - 跨地址空间操作 (context_switch)
@@ -44,27 +52,39 @@ pub mod x86_64;
 pub mod aarch64;
 
 // ============================================================================
-// Arch Trait 定义 (Phase 1 核心产出)
+// Trait 定义 — 多子 trait + 超 trait (Phase 8: refactored from monolithic Arch)
 // ============================================================================
 
-/// 架构抽象 trait — 所有 CPU 架构的统一接口。
-///
-/// 方法分类:
-/// - **中断控制**: `interrupt_disable/restore/enable/is_enabled`
-/// - **MMU 操作**: `tlb_flush_page/all`, `read/write_page_table_base`, `read_fault_address`
-/// - **上下文切换**: `context_switch`, `enter_user`, `return_to_user`
-/// - **CPU 信息**: `cpu_id`, `timestamp`
-/// - **内存屏障**: `fence`, `fence_w`
-/// - **核间中断**: `send_ipi`, `broadcast_ipi`
-/// - **端口 I/O**: `outb/inb/outl/inl` (x86 特有)
-/// - **系统控制**: `shutdown`, `reboot`, `halt`
-///
-/// # Safety
-///
-/// 实现此 trait 需要对目标架构的特权指令和内存模型有深入理解。
-pub trait Arch {
-    // --- 中断控制 ---
+// ── CoreArch: 基础核心能力 ──────────────────────────────────────────────
 
+/// 基础架构能力 — 任何新架构必须首先实现此 trait。
+///
+/// 方法:
+/// - `cpu_id()` — CPU 唯一标识
+/// - `timestamp()` — 高精度时间戳/计数器
+/// - `halt()` — CPU 暂停直到中断
+/// - `fence()` / `fence_w()` — 内存屏障
+pub trait CoreArch {
+    /// 获取当前 CPU ID (APIC ID / MPIDR_EL1)。
+    fn cpu_id() -> u32;
+    /// 获取高精度时间戳 (rdtsc / mrs cntpct_el0)。
+    fn timestamp() -> u64;
+    /// 暂停 CPU 直到下一次中断 (hlt / wfi)。
+    fn halt();
+    /// 全内存屏障 (mfence / dsb sy)。
+    fn fence();
+    /// 写内存屏障 (sfence / dmb st)。
+    fn fence_w();
+}
+
+// ── InterruptArch: 中断 + 核间中断 ──────────────────────────────────────
+
+/// 中断控制能力。
+///
+/// 方法:
+/// - `interrupt_disable/enable/restore/is_enabled` — 中断屏蔽
+/// - `send_ipi` / `broadcast_ipi` — 核间中断
+pub trait InterruptArch {
     /// 禁用中断并返回之前的中断状态标志 (cli / msr daifset)。
     fn interrupt_disable() -> usize;
     /// 恢复之前保存的中断状态 (写 RFLAGS / msr daif)。
@@ -73,14 +93,23 @@ pub trait Arch {
     fn interrupt_enable();
     /// 检查中断是否已启用。
     fn is_interrupt_enabled() -> bool;
+    /// 向目标 CPU 发送核间中断。
+    fn send_ipi(target_cpu: u32, vector: u8);
+    /// 向所有 CPU (不含自身) 广播 IPI。
+    fn broadcast_ipi(vector: u8);
+}
 
-    // --- CPU 控制 ---
+// ── MmuArch: 内存管理 + 上下文切换 + 用户态 ───────────────────────────
 
-    /// 暂停 CPU 直到下一次中断 (hlt / wfi)。
-    fn halt();
-
-    // --- 内存管理单元 (MMU) ---
-
+/// 内存管理与上下文切换能力。
+///
+/// 方法:
+/// - `tlb_flush_page/all` — TLB 管理
+/// - `read/write_page_table_base` — 页表切换
+/// - `read_fault_address` — 页错误诊断
+/// - `context_switch` — 进程上下文切换
+/// - `enter_user` / `return_to_user` — 用户态入口/出口
+pub trait MmuArch {
     /// 刷新单个虚拟地址的 TLB 条目 (invlpg / tlbi vaae1)。
     fn tlb_flush_page(vaddr: usize);
     /// 刷新整个 TLB (写 CR3 / tlbi vmalle1)。
@@ -91,48 +120,25 @@ pub trait Arch {
     fn write_page_table_base(paddr: u64);
     /// 读取触发页错误的地址 (mov cr2 / mrs FAR_EL1)。
     fn read_fault_address() -> usize;
-
-    // --- 上下文切换 ---
-
     /// 保存当前上下文到 `from`，从 `to` 恢复上下文。
     ///
     /// # Safety
-    ///
     /// `from` 和 `to` 必须指向有效的 ProcessContext 内存。
     fn context_switch(from: *mut u8, to: *const u8);
-
-    // --- 用户态切换 ---
-
-    /// 进入用户态执行 (sysret / eret)。
-    ///
-    /// 此函数不会返回 — 执行流之后将进入用户态入口点。
+    /// 进入用户态执行 (sysret / eret)，此函数不会返回。
     fn enter_user(entry: usize, stack: usize, arg: usize) -> !;
     /// 从内核态返回到用户态 (iretq / eret)。
     fn return_to_user();
+}
 
-    // --- CPU 信息 ---
+// ── SystemArch: 端口 IO + 电源管理 ────────────────────────────────────
 
-    /// 获取当前 CPU ID (APIC ID / MPIDR_EL1)。
-    fn cpu_id() -> u32;
-    /// 获取高精度时间戳 (rdtsc / mrs CNTVCT_EL0)。
-    fn timestamp() -> u64;
-
-    // --- 内存屏障 ---
-
-    /// 全内存屏障 (mfence / dsb sy)。
-    fn fence();
-    /// 写内存屏障 (sfence / dmb st)。
-    fn fence_w();
-
-    // --- 核间中断 (IPI) ---
-
-    /// 向目标 CPU 发送核间中断。
-    fn send_ipi(target_cpu: u32, vector: u8);
-    /// 向所有 CPU (不含自身) 广播 IPI。
-    fn broadcast_ipi(vector: u8);
-
-    // --- 端口 I/O (x86 特有，其他架构 stub) ---
-
+/// 系统控制与 IO 能力。
+///
+/// 方法:
+/// - `outb/inb/outl/inl` — 端口 IO (x86 特有，ARM 提供 stub)
+/// - `shutdown` / `reboot` — 电源管理
+pub trait SystemArch {
     /// 向 I/O 端口写入字节 (out dx, al)。
     fn outb(port: u16, value: u8);
     /// 从 I/O 端口读取字节 (in al, dx)。
@@ -141,13 +147,57 @@ pub trait Arch {
     fn outl(port: u16, value: u32);
     /// 从 I/O 端口读取双字 (in eax, dx)。
     fn inl(port: u16) -> u32;
-
-    // --- 系统控制 ---
-
-    /// 关机 (ACPI / PSCI SYSTEM_OFF)。
+    /// 关机 (ACPI / PSCI SYSTEM_OFF)，永不返回。
     fn shutdown() -> !;
-    /// 重启 (8042 / PSCI SYSTEM_RESET)。
+    /// 重启 (8042 / PSCI SYSTEM_RESET)，永不返回。
     fn reboot() -> !;
+}
+
+// ── Arch: 超 trait (委托模式) ─────────────────────────────────────────
+
+/// 完整架构能力 — 要求所有子 trait。
+///
+/// 每个方法有默认实现，委托到对应的子 trait:
+/// - `CoreArch` → cpu_id, timestamp, halt, fence, fence_w
+/// - `InterruptArch` → interrupt_disable/enable/restore/is_enabled, send_ipi, broadcast_ipi
+/// - `MmuArch` → tlb_flush_page/all, read/write_page_table_base, read_fault_address,
+///                context_switch, enter_user, return_to_user
+/// - `SystemArch` → outb/inb/outl/inl, shutdown, reboot
+///
+/// 新架构移植时，实现子 trait 后加 `impl Arch for MyArch {}` 即可获得完整接口。
+pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
+    // ── 委托到 CoreArch ─────────────────────────────────
+    fn cpu_id() -> u32                    { <Self as CoreArch>::cpu_id() }
+    fn timestamp() -> u64                 { <Self as CoreArch>::timestamp() }
+    fn halt()                             { <Self as CoreArch>::halt(); }
+    fn fence()                            { <Self as CoreArch>::fence(); }
+    fn fence_w()                          { <Self as CoreArch>::fence_w(); }
+
+    // ── 委托到 InterruptArch ────────────────────────────
+    fn interrupt_disable() -> usize       { <Self as InterruptArch>::interrupt_disable() }
+    fn interrupt_restore(flags: usize)    { <Self as InterruptArch>::interrupt_restore(flags); }
+    fn interrupt_enable()                 { <Self as InterruptArch>::interrupt_enable(); }
+    fn is_interrupt_enabled() -> bool     { <Self as InterruptArch>::is_interrupt_enabled() }
+    fn send_ipi(target_cpu: u32, vector: u8) { <Self as InterruptArch>::send_ipi(target_cpu, vector); }
+    fn broadcast_ipi(vector: u8)          { <Self as InterruptArch>::broadcast_ipi(vector); }
+
+    // ── 委托到 MmuArch ─────────────────────────────────
+    fn tlb_flush_page(vaddr: usize)       { <Self as MmuArch>::tlb_flush_page(vaddr); }
+    fn tlb_flush_all()                    { <Self as MmuArch>::tlb_flush_all(); }
+    fn read_page_table_base() -> u64      { <Self as MmuArch>::read_page_table_base() }
+    fn write_page_table_base(paddr: u64)  { <Self as MmuArch>::write_page_table_base(paddr); }
+    fn read_fault_address() -> usize      { <Self as MmuArch>::read_fault_address() }
+    fn context_switch(from: *mut u8, to: *const u8) { <Self as MmuArch>::context_switch(from, to); }
+    fn enter_user(entry: usize, stack: usize, arg: usize) -> ! { <Self as MmuArch>::enter_user(entry, stack, arg) }
+    fn return_to_user()                   { <Self as MmuArch>::return_to_user(); }
+
+    // ── 委托到 SystemArch ──────────────────────────────
+    fn outb(port: u16, value: u8)         { <Self as SystemArch>::outb(port, value); }
+    fn inb(port: u16) -> u8               { <Self as SystemArch>::inb(port) }
+    fn outl(port: u16, value: u32)        { <Self as SystemArch>::outl(port, value); }
+    fn inl(port: u16) -> u32              { <Self as SystemArch>::inl(port) }
+    fn shutdown() -> !                    { <Self as SystemArch>::shutdown() }
+    fn reboot() -> !                      { <Self as SystemArch>::reboot() }
 }
 
 // ============================================================================

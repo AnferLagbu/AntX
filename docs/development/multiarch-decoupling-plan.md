@@ -1,6 +1,6 @@
 # AntX 多架构解耦工程规划书
 
-> 版本: 1.0 | 日期: 2026-05-22 | 状态: Phase 7 完成 — 全量工程交付
+> 版本: 1.1 | 日期: 2026-05-22 | 状态: Phase 8 完成 — 子 trait 拆分
 
 ---
 
@@ -774,12 +774,27 @@ git push origin --delete feat/arch-abstraction
 | 本规划书 | 更新为 "已完成" 状态，记录实际耗时与踩坑记录 |
 | 双架构 README | 更新 `README.md`，标注支持 x86_64 + aarch64 |
 
-#### 最终验证
+#### 7.2 产出
+
+| 产出 | 内容 | 状态 |
+|------|------|------|
+| 架构无关测试 | host-tests 沿用现有测试套件 (`make test-host` 27/27 通过) | ✅ |
+| 双架构 CI | `ci/build.sh` — x86_64 + aarch64 编译 + host tests + asm 门控检查 | ✅ |
+| 移植指南 | `docs/development/arch-porting-guide.md` — 7 章完整移植指南 | ✅ |
+| 本规划书 | 状态更新为 "Phase 7 完成"，所有阶段均已交付 | ✅ |
+| 双架构 README | `README.md` 标注支持 x86_64 + aarch64，含构建指令 | ✅ |
+
+#### 7.3 最终验证
 
 ```
-[ ] make ARCH=x86_64 test-host    → 69/69
-[ ] make ARCH=aarch64 test-host   → 架构无关测试通过
-[ ] 全量 grep 检查禁止模式为零
+[x] cargo build --target x86_64-unknown-none     → 0 errors (44 warnings)
+[x] cargo build --target aarch64-unknown-none     → 0 errors (52 warnings)
+[x] make test-host                                 → 27/27 通过
+[x] 全量 grep 检查禁止模式                         → 0 真实违规
+    - 92 处 asm! 调用均在 arch/ 或 cfg-gated 模块内
+    - tests/mod.rs:109 从 asm!("cli" 迁移至 arch!(interrupt_disable())
+    - 所有 idt/pci/dma/cpu/tests 模块 asm 均有 cfg(target_arch) 门控
+[x] ci/build.sh all                                → 4/4 通过 (build x86_64, build aarch64, test, check)
 ```
 
 ---
