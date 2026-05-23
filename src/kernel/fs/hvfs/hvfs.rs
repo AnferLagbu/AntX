@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use alloc::vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use spin::Mutex;
+use crate::kernel::driver::block;
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::spa::*;
 use crate::kernel::fs::hvfs::txg::*;
@@ -19,7 +20,6 @@ extern "C" {
     fn pwid_get_privilege_level(pwid: u64) -> u8;
     fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool;
     fn timer_get_ticks() -> u64;
-    fn ata_disk_present(disk: u8) -> i32;
 }
 
 fn log(s: &str) {
@@ -98,25 +98,19 @@ pub fn get_hvfs() -> &'static HvfsData {
 
 impl HvfsData {
     fn check_disk(&self) -> bool {
-        unsafe { ata_disk_present(self.disk_drive) != 0 }
+        block::hdd_is_present(self.disk_drive)
     }
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
-        extern "C" {
-            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        }
         if buf.len() < 512 { return -1; }
         let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        unsafe { ata_read_sector(self.disk_drive, phys_sector, buf.as_mut_ptr()) }
+        block::hdd_read_sector(self.disk_drive, phys_sector as u64, buf)
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
-        extern "C" {
-            fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
-        }
         if buf.len() < 512 { return -1; }
         let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        unsafe { ata_write_sector(self.disk_drive, phys_sector, buf.as_ptr()) }
+        block::hdd_write_sector(self.disk_drive, phys_sector as u64, buf)
     }
 
     pub fn init(&self) {
@@ -201,11 +195,8 @@ impl HvfsData {
     }
 
     fn read_partition_start(&self) -> u32 {
-        extern "C" {
-            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        }
         let mut cfg = [0u8; 512];
-        let r = unsafe { ata_read_sector(self.disk_drive, 2046, cfg.as_mut_ptr()) };
+        let r = block::hdd_read_sector(self.disk_drive, 2046, &mut cfg);
         if r >= 0 && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X' {
             u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]])
         } else {
@@ -215,18 +206,14 @@ impl HvfsData {
     }
 
     fn probe_partition_size(&self, part_start: u32) -> u64 {
-        extern "C" {
-            fn ata_disk_present(disk: u8) -> i32;
-            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        }
-        if unsafe { ata_disk_present(self.disk_drive) } == 0 { return 0; }
+        if !block::hdd_is_present(self.disk_drive) { return 0; }
         let mut lo: u32 = part_start;
         let mut hi: u32 = 0xFFFF;
         let mut buf = [0u8; 512];
         let mut last_ok = lo;
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            if unsafe { ata_read_sector(self.disk_drive, mid, buf.as_mut_ptr()) } >= 0 {
+            if block::hdd_read_sector(self.disk_drive, mid as u64, &mut buf) >= 0 {
                 last_ok = mid;
                 lo = mid + 1;
             } else {

@@ -214,27 +214,42 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
 pub fn init() -> BootInfo {
     let kernel_end = unsafe { &_kernel_end as *const u8 as u64 };
 
-    let mut mem_size: u64 = 128 * 1024 * 1024;
-    let mut mmap_entries: usize = 0;
+    #[cfg(target_arch = "x86_64")]
+    let (mem_size, mmap_entries) = {
+        let magic = *MULTIBOOT_MAGIC.lock();
+        let ptr = MULTIBOOT_INFO_PTR.lock().0;
 
-    let magic = *MULTIBOOT_MAGIC.lock();
-    let ptr = MULTIBOOT_INFO_PTR.lock().0;
+        let mut ms: u64 = 128 * 1024 * 1024;
+        let mut me: usize = 0;
 
-    if !ptr.is_null() {
-        match magic {
-            MULTIBOOT1_MAGIC => {
-                let (ms, me) = parse_multiboot1(ptr);
-                mem_size = ms;
-                mmap_entries = me;
+        if !ptr.is_null() {
+            match magic {
+                MULTIBOOT1_MAGIC => {
+                    let (m, e) = parse_multiboot1(ptr);
+                    ms = m;
+                    me = e;
+                }
+                MULTIBOOT2_MAGIC => {
+                    let (m, e) = parse_multiboot2(ptr);
+                    ms = m;
+                    me = e;
+                }
+                _ => {}
             }
-            MULTIBOOT2_MAGIC => {
-                let (ms, me) = parse_multiboot2(ptr);
-                mem_size = ms;
-                mmap_entries = me;
-            }
-            _ => {}
         }
-    }
+        (ms, me)
+    };
+
+    #[cfg(target_arch = "aarch64")]
+    let (mem_size, mmap_entries) = {
+        // On QEMU virt machine, default to 512MB.
+        // Can be overridden by AARCH64_MEM_SIZE environment/build variable.
+        let ms: u64 = option_env!("AARCH64_MEM_MB")
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(|mb| mb * 1024 * 1024)
+            .unwrap_or(512 * 1024 * 1024);
+        (ms, 0)
+    };
 
     let info = BootInfo {
         mem_size,

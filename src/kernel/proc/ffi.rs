@@ -339,6 +339,37 @@ pub extern "C" fn launch_first_user_process() -> ! {
         user_proc_enter_by_pid(pid_u32);
     }
 
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        // On aarch64, init.bin is an AArch64 ELF binary built from src/user/
+        let bin = include_bytes!("../../../build/user/init.bin");
+        let bin_ptr = bin.as_ptr();
+        let bin_size = bin.len() as u64;
+
+        if bin_size == 0 {
+            crate::klog_err!(Boot, "[USER] init ELF is empty");
+            loop { crate::arch!(halt()); }
+        }
+
+        let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
+        if pid <= 0 {
+            crate::klog_err!(Boot, "[USER] Failed to load init ELF, pid={}", pid);
+            loop { crate::arch!(halt()); }
+        }
+
+        let pid_u32 = pid as u32;
+
+        C_CURRENT_PROCESS.pid = pid_u32 as u64;
+        C_CURRENT_PROCESS.pwid = 0;
+        C_CURRENT_PROCESS.state = 2;
+        C_CURRENT_PROCESS.parent_pid = 1;
+
+        SCHEDULER.add(pid_u32);
+
+        crate::klog_boot_info!("[USER] Entering EL0 (init pid={})...", pid_u32);
+        user_proc_enter_by_pid(pid_u32);
+    }
+
     loop { crate::arch!(halt()); }
 }
 

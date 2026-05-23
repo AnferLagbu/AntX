@@ -25,6 +25,24 @@ use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering};
 
 const MAX_EARLY_ALLOCS: usize = 256;
 
+/// Physical RAM base address
+/// x86_64: 0 (multiboot-provided physical memory starts at 0)
+/// aarch64: 0x40000000 (QEMU virt machine RAM base)
+#[cfg(target_arch = "x86_64")]
+const RAM_BASE: u64 = 0;
+#[cfg(target_arch = "aarch64")]
+const RAM_BASE: u64 = 0x40000000;
+
+/// Convert physical address to page number within the PMM bitmap
+fn phys_to_page(phys: u64) -> u64 {
+    (phys - RAM_BASE) / PAGE_SIZE
+}
+
+/// Convert page number back to physical address
+fn page_to_phys(page: u64) -> u64 {
+    RAM_BASE + page * PAGE_SIZE
+}
+
 #[derive(Clone, Copy)]
 struct EarlyAlloc {
     addr: u64,
@@ -129,7 +147,7 @@ impl PhysicalMemoryManager {
         self.bitmap_size.set(bitmap_words);
 
         let kernel_end_val = self.kernel_end.get();
-        let kernel_pages = ((kernel_end_val + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
+        let kernel_pages = phys_to_page(kernel_end_val + PAGE_SIZE - 1) as usize;
         let reserved_pages = (reserved_aligned / PAGE_SIZE) as usize;
         let total_reserved = kernel_pages + reserved_pages;
         for i in 0..total_reserved.min(total_bits) {
@@ -142,7 +160,7 @@ impl PhysicalMemoryManager {
             self.set_bit(0);
         }
 
-        let bitmap_start_page = (bitmap_aligned / PAGE_SIZE) as usize;
+        let bitmap_start_page = phys_to_page(bitmap_aligned) as usize;
         let bitmap_pages = ((bitmap_bytes as u64 + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
         for i in bitmap_start_page..(bitmap_start_page + bitmap_pages).min(total_bits) {
             self.set_bit(i);
@@ -194,7 +212,7 @@ impl PhysicalMemoryManager {
         }
 
         let info = self.info.get();
-        let page_num = addr.0 / PAGE_SIZE;
+        let page_num = phys_to_page(addr.0);
 
         if page_num >= info.total_pages {
             klog_pmm!("[PMM] Error: Invalid page address 0x{:X}", addr.0);
@@ -485,7 +503,7 @@ impl PhysicalMemoryManager {
         if count == 1 {
             if let Some(bit) = self.find_first_free(0) {
                 self.set_bit(bit);
-                let addr = PhysAddr((bit as u64) * PAGE_SIZE);
+                let addr = PhysAddr(page_to_phys(bit as u64));
                 self.update_stats();
                 return Some(addr);
             }
@@ -495,7 +513,7 @@ impl PhysicalMemoryManager {
                     self.set_bit(start_bit + i);
                 }
 
-                let addr = PhysAddr((start_bit as u64) * PAGE_SIZE);
+                let addr = PhysAddr(page_to_phys(start_bit as u64));
                 self.update_stats();
                 return Some(addr);
             }
@@ -535,7 +553,7 @@ impl PhysicalMemoryManager {
             }
         }
 
-        if aligned >= self.mem_size.get() {
+        if aligned >= RAM_BASE + self.mem_size.get() {
             klog_pmm!("[PMM] Error: Early allocation out of memory!");
             return None;
         }
@@ -559,7 +577,7 @@ impl PhysicalMemoryManager {
             }
         }
 
-        if aligned + size > self.mem_size.get() {
+        if aligned + size > RAM_BASE + self.mem_size.get() {
             klog_pmm!("[PMM] Error: Early multi-page alloc out of memory!");
             return None;
         }
@@ -584,7 +602,7 @@ impl PhysicalMemoryManager {
             }
         }
 
-        if aligned + size > self.mem_size.get() {
+        if aligned + size > RAM_BASE + self.mem_size.get() {
             klog_pmm!("[PMM] Error: Early huge page alloc out of memory!");
             return None;
         }

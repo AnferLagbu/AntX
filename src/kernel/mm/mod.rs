@@ -10,6 +10,11 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use core::ptr::NonNull;
 
 pub mod pmm;
+
+#[cfg(target_arch = "x86_64")]
+pub mod vmm;
+#[cfg(target_arch = "aarch64")]
+#[path = "vmm_aarch64.rs"]
 pub mod vmm;
 
 pub mod slab;
@@ -32,8 +37,13 @@ pub const HUGE_PAGE_1G_SIZE: u64 = 1024 * 1024 * 1024; // 1 GB
 pub const HUGE_PAGE_2M_SHIFT: u64 = 21;
 pub const HUGE_PAGE_1G_SHIFT: u64 = 30;
 
-/// Memory layout constants (x86_64)
+/// Memory layout constants
+/// x86_64: high-half mapping (0xFFFF_8000_0000_0000)
+/// aarch64: identity-mapped (PA=VA in low 2GB)
+#[cfg(target_arch = "x86_64")]
 pub const KERNEL_BASE: u64 = 0xFFFF800000000000u64;
+#[cfg(target_arch = "aarch64")]
+pub const KERNEL_BASE: u64 = 0;
 pub const PHYSICAL_BASE: u64 = 0x0000000000000000u64;
 
 /// Page table entry flags (matching C definitions)

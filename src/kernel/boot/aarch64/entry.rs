@@ -26,50 +26,29 @@ pub unsafe extern "C" fn entry() -> ! {
 
     // 2. 初始化 UART
     uart::init();
-    uart::puts("[aarch64] QueenX starting...");
+    uart::puts("[BOOT] QueenX starting...");
 
     // 3. 初始化 MMU (identity mapping + TTBR1)
-    uart::puts("[aarch64] Initializing MMU...");
+    uart::puts("[BOOT] Initializing MMU...");
     crate::kernel::arch::aarch64::mmu::init();
 
     // 4. 初始化异常向量表
-    uart::puts("[aarch64] Setting up exception vectors...");
+    uart::puts("[BOOT] Setting up exception vectors...");
     crate::kernel::arch::aarch64::exception::init();
 
     // 5. 初始化 GICv3
-    uart::puts("[aarch64] Initializing GICv3...");
+    uart::puts("[BOOT] Initializing GICv3...");
     crate::kernel::arch::aarch64::gic::init();
 
     // 6. 初始化定时器
-    uart::puts("[aarch64] Initializing timer...");
+    uart::puts("[BOOT] Initializing timer...");
     crate::kernel::arch::aarch64::timer::init();
 
-    // 7. 跳转内核主循环
-    uart::puts("[aarch64] Booting kernel...");
-    kernel_init_aarch64();
+    // 7. 跳转统一内核入口
+    uart::puts("[BOOT] Booting kernel...");
+    crate::kernel_init();
 
     // 不应该到达这里
-    loop {
-        crate::arch!(halt());
-    }
-}
-
-/// AArch64 内核初始化 (最小化, 替代 kernel_init)
-#[no_mangle]
-pub unsafe extern "C" fn kernel_init_aarch64() {
-    crate::kernel::klog::klog_init();
-    crate::klog_boot_info!("[aarch64] KLog initialized");
-    crate::klog_boot_info!("[aarch64] QueenX aarch64 boot complete");
-
-    // TODO: 后续实现:
-    // - 物理内存管理 (PMM)
-    // - 虚拟内存管理 (VMM)
-    // - 内核堆 (kmalloc)
-    // - 调度器
-    // - 文件系统
-    // - 用户进程
-    crate::klog_boot_info!("[aarch64] Halting — init not yet implemented");
-
     loop {
         crate::arch!(halt());
     }

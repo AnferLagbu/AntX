@@ -4,7 +4,18 @@
 //! Provides PCI configuration space access, bus scanning,
 //! BAR parsing, device enumeration, and driver matching.
 //!
-//! Port I/O via x86 0xCF8/0xCFC configuration mechanism.
+//! ## Config Access Mechanisms
+//!
+//! | Arch   | Mechanism | Details |
+//! |--------|-----------|---------|
+//! | x86_64 | Port I/O  | 0xCF8 (addr) / 0xCFC (data) |
+//! | aarch64| ECAM MMIO | Memory-mapped config space at ECAM_BASE |
+//!
+//! ECAM maps each (bus, device, function) to a 4KB-aligned MMIO window:
+//!   addr = ECAM_BASE + (bus << 20) | (dev << 15) | (func << 12) | offset
+//!
+//! QEMU virt aarch64: ECAM_BASE = 0x3F000000 (without highmem)
+//! Real ARM servers: varies by platform (DTB/ACPI driven)
 //!
 //! ## Architecture
 //!
@@ -30,44 +41,55 @@ use spin::Mutex;
 
 use core::fmt;
 
-// ── Port I/O primitives ──
+// ── Port I/O primitives (x86_64 only) ──
 
-#[inline(always)]
-unsafe fn outb(port: u16, val: u8) {
-    crate::arch!(outb(port, val));
-}
+#[cfg(target_arch = "x86_64")]
+mod port_io {
+    #[inline(always)]
+    pub unsafe fn outb(port: u16, val: u8) {
+        crate::arch!(outb(port, val));
+    }
 
-#[inline(always)]
-unsafe fn outw(port: u16, val: u16) {
-    core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
-}
+    #[inline(always)]
+    pub unsafe fn outw(port: u16, val: u16) {
+        core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
+    }
 
-#[inline(always)]
-unsafe fn outl(port: u16, val: u32) {
-    crate::arch!(outl(port, val));
-}
+    #[inline(always)]
+    pub unsafe fn outl(port: u16, val: u32) {
+        crate::arch!(outl(port, val));
+    }
 
-#[inline(always)]
-unsafe fn inb(port: u16) -> u8 {
-    crate::arch!(inb(port))
-}
+    #[inline(always)]
+    pub unsafe fn inb(port: u16) -> u8 {
+        crate::arch!(inb(port))
+    }
 
-#[inline(always)]
-unsafe fn inw(port: u16) -> u16 {
-    let ret: u16;
-    core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
-    ret
-}
+    #[inline(always)]
+    pub unsafe fn inw(port: u16) -> u16 {
+        let ret: u16;
+        core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
+        ret
+    }
 
-#[inline(always)]
-unsafe fn inl(port: u16) -> u32 {
-    crate::arch!(inl(port))
+    #[inline(always)]
+    pub unsafe fn inl(port: u16) -> u32 {
+        crate::arch!(inl(port))
+    }
 }
 
 // ── Constants ──
 
+#[cfg(target_arch = "x86_64")]
 const PCI_CONFIG_ADDR: u16 = 0xCF8;
+#[cfg(target_arch = "x86_64")]
 const PCI_CONFIG_DATA: u16 = 0xCFC;
+
+/// ECAM base address for aarch64.
+/// QEMU virt aarch64 (without highmem): 0x3F000000
+/// This value MUST be kept in sync with the MMU identity mapping.
+#[cfg(target_arch = "aarch64")]
+const ECAM_BASE: u64 = 0x3F00_0000;
 
 const PCI_MAX_BUS:   u8 = 255;
 const PCI_MAX_DEV:   u8 = 32;
@@ -153,6 +175,19 @@ static PCI_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::Ato
 
 // ── Config space access ──
 
+/// Compute ECAM MMIO address for a given (bus, device, function, offset).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn ecam_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u64 {
+    ECAM_BASE
+        | ((bus as u64) << 20)
+        | (((dev & 0x1F) as u64) << 15)
+        | (((func & 0x07) as u64) << 12)
+        | (offset as u64 & 0xFFF)
+}
+
+/// Compute x86 port I/O config address.
+#[cfg(target_arch = "x86_64")]
 fn make_config_addr(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     0x8000_0000u32
         | ((bus as u32) << 16)
@@ -162,62 +197,110 @@ fn make_config_addr(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
 }
 
 pub fn read_config_byte(bus: u8, dev: u8, func: u8, offset: u8) -> u8 {
-    let addr = make_config_addr(bus, dev, func, offset);
-    unsafe {
-        outl(PCI_CONFIG_ADDR, addr);
-        let val = inl(PCI_CONFIG_DATA);
-        ((val >> ((offset & 3) * 8)) & 0xFF) as u8
+    #[cfg(target_arch = "x86_64")]
+    {
+        let addr = make_config_addr(bus, dev, func, offset);
+        unsafe {
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            let val = port_io::inl(PCI_CONFIG_DATA);
+            ((val >> ((offset & 3) * 8)) & 0xFF) as u8
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let addr = ecam_addr(bus, dev, func, offset) as *const u8;
+        unsafe { core::ptr::read_volatile(addr) }
     }
 }
 
 pub fn read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
-    let addr = make_config_addr(bus, dev, func, offset);
-    unsafe {
-        outl(PCI_CONFIG_ADDR, addr);
-        let val = inl(PCI_CONFIG_DATA);
-        ((val >> ((offset & 2) * 8)) & 0xFFFF) as u16
+    #[cfg(target_arch = "x86_64")]
+    {
+        let addr = make_config_addr(bus, dev, func, offset);
+        unsafe {
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            let val = port_io::inl(PCI_CONFIG_DATA);
+            ((val >> ((offset & 2) * 8)) & 0xFFFF) as u16
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let addr = ecam_addr(bus, dev, func, offset) as *const u16;
+        unsafe { core::ptr::read_volatile(addr) }
     }
 }
 
 pub fn read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
-    let addr = make_config_addr(bus, dev, func, offset);
-    unsafe {
-        outl(PCI_CONFIG_ADDR, addr);
-        inl(PCI_CONFIG_DATA)
+    #[cfg(target_arch = "x86_64")]
+    {
+        let addr = make_config_addr(bus, dev, func, offset);
+        unsafe {
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            port_io::inl(PCI_CONFIG_DATA)
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let addr = ecam_addr(bus, dev, func, offset) as *const u32;
+        unsafe { core::ptr::read_volatile(addr) }
     }
 }
 
 pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
-    let addr = make_config_addr(bus, dev, func, offset);
-    unsafe {
-        outl(PCI_CONFIG_ADDR, addr);
-        let old = inl(PCI_CONFIG_DATA);
-        let shift = (offset & 3) * 8;
-        let mask = !(0xFFu32 << shift);
-        let new = (old & mask) | ((val as u32) << shift);
-        outl(PCI_CONFIG_ADDR, addr);
-        outl(PCI_CONFIG_DATA, new);
+    #[cfg(target_arch = "x86_64")]
+    {
+        let addr = make_config_addr(bus, dev, func, offset);
+        unsafe {
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            let old = port_io::inl(PCI_CONFIG_DATA);
+            let shift = (offset & 3) * 8;
+            let mask = !(0xFFu32 << shift);
+            let new = (old & mask) | ((val as u32) << shift);
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            port_io::outl(PCI_CONFIG_DATA, new);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let addr = ecam_addr(bus, dev, func, offset) as *mut u8;
+        unsafe { core::ptr::write_volatile(addr, val); }
     }
 }
 
 pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
-    let addr = make_config_addr(bus, dev, func, offset);
-    unsafe {
-        outl(PCI_CONFIG_ADDR, addr);
-        let old = inl(PCI_CONFIG_DATA);
-        let shift = (offset & 2) * 8;
-        let mask = !(0xFFFFu32 << shift);
-        let new = (old & mask) | ((val as u32) << shift);
-        outl(PCI_CONFIG_ADDR, addr);
-        outl(PCI_CONFIG_DATA, new);
+    #[cfg(target_arch = "x86_64")]
+    {
+        let addr = make_config_addr(bus, dev, func, offset);
+        unsafe {
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            let old = port_io::inl(PCI_CONFIG_DATA);
+            let shift = (offset & 2) * 8;
+            let mask = !(0xFFFFu32 << shift);
+            let new = (old & mask) | ((val as u32) << shift);
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            port_io::outl(PCI_CONFIG_DATA, new);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let addr = ecam_addr(bus, dev, func, offset) as *mut u16;
+        unsafe { core::ptr::write_volatile(addr, val); }
     }
 }
 
 pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
-    let addr = make_config_addr(bus, dev, func, offset);
-    unsafe {
-        outl(PCI_CONFIG_ADDR, addr);
-        outl(PCI_CONFIG_DATA, val);
+    #[cfg(target_arch = "x86_64")]
+    {
+        let addr = make_config_addr(bus, dev, func, offset);
+        unsafe {
+            port_io::outl(PCI_CONFIG_ADDR, addr);
+            port_io::outl(PCI_CONFIG_DATA, val);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let addr = ecam_addr(bus, dev, func, offset) as *mut u32;
+        unsafe { core::ptr::write_volatile(addr, val); }
     }
 }
 

@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use crate::kernel::driver::block;
 
 pub const HV_VDEV_MAX: usize = 8;
 pub const HV_VDEV_TYPE_DISK: u8 = 0;
@@ -91,18 +92,19 @@ impl HvVdev {
     }
 
     pub fn probe_disk_size(drive: u8) -> u64 {
-        extern "C" {
-            fn ata_disk_present(disk: u8) -> i32;
-            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        }
-        if unsafe { ata_disk_present(drive) } == 0 { return 0; }
+        if !block::hdd_is_present(drive) { return 0; }
 
+        // Use BlockDevice's total_sectors if available (avoids binary search)
+        let from_registry = block::hdd_total_sectors(drive);
+        if from_registry > 0 { return from_registry * 512; }
+
+        // Fallback: binary search for highest readable sector
         let mut lo: u32 = 0;
         let mut hi: u32 = 0xFFFF;
         let mut buf = [0u8; 512];
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            if unsafe { ata_read_sector(drive, mid, buf.as_mut_ptr()) } >= 0 {
+            if block::hdd_read_sector(drive, mid as u64, &mut buf) >= 0 {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -122,9 +124,8 @@ impl HvVdev {
     }
 
     pub fn open(&mut self) {
-        extern "C" { fn ata_disk_present(disk: u8) -> i32; }
         if self.config.vdev_type == HV_VDEV_TYPE_DISK {
-            let present = unsafe { ata_disk_present(self.config.vdev_id as u8) != 0 };
+            let present = block::hdd_is_present(self.config.vdev_id as u8);
             if present {
                 self.state = HvVdevState::Healthy;
                 if self.config.asize == 0 {
@@ -140,19 +141,14 @@ impl HvVdev {
     }
 
     pub fn read_sectors(&mut self, sector: u64, count: u32, buf: &mut [u8]) -> i32 {
-        extern "C" {
-            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        }
         let need_bytes = (count as u64) * 512;
         if buf.len() < need_bytes as usize { return -1; }
         let mut offset = 0usize;
-        let mut sec = sector as u32;
-        let part_start = self.config.partition_start;
+        let mut sec = sector;
+        let part_start = self.config.partition_start as u64;
         for _ in 0..count {
             if offset + 512 > buf.len() { break; }
-            let result = unsafe {
-                ata_read_sector(self.config.vdev_id as u8, part_start + sec, buf[offset..].as_mut_ptr())
-            };
+            let result = block::hdd_read_sector(self.config.vdev_id as u8, part_start + sec, &mut buf[offset..]);
             if result < 0 { return -1; }
             sec += 1;
             offset += 512;
@@ -162,19 +158,14 @@ impl HvVdev {
     }
 
     pub fn write_sectors(&mut self, sector: u64, count: u32, buf: &[u8]) -> i32 {
-        extern "C" {
-            fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
-        }
         let need_bytes = (count as u64) * 512;
         if buf.len() < need_bytes as usize { return -1; }
         let mut offset = 0usize;
-        let mut sec = sector as u32;
-        let part_start = self.config.partition_start;
+        let mut sec = sector;
+        let part_start = self.config.partition_start as u64;
         for _ in 0..count {
             if offset + 512 > buf.len() { break; }
-            let result = unsafe {
-                ata_write_sector(self.config.vdev_id as u8, part_start + sec, buf[offset..].as_ptr())
-            };
+            let result = block::hdd_write_sector(self.config.vdev_id as u8, part_start + sec, &buf[offset..]);
             if result < 0 { return -1; }
             sec += 1;
             offset += 512;

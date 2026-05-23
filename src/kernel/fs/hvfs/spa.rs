@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use crate::kernel::sync::mutex::Mutex;
+use crate::kernel::driver::block;
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::dva::HvDva;
 use crate::kernel::fs::hvfs::vdev::*;
@@ -166,26 +167,19 @@ impl HvSpa {
     }
 
     fn check_disk_present(&self) -> bool {
-        extern "C" { fn ata_disk_present(disk: u8) -> i32; }
-        unsafe { ata_disk_present(0) != 0 }
+        block::hdd_is_present(0)
     }
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
-        extern "C" {
-            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        }
         if buf.len() < 512 { return -1; }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
-        unsafe { ata_read_sector(0, phys, buf.as_mut_ptr()) }
+        block::hdd_read_sector(0, phys as u64, buf)
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
-        extern "C" {
-            fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
-        }
         if buf.len() < 512 { return -1; }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
-        unsafe { ata_write_sector(0, phys, buf.as_ptr()) }
+        block::hdd_write_sector(0, phys as u64, buf)
     }
 
     pub fn init(&self, name: &str) {

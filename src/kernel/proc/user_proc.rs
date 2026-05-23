@@ -4,7 +4,10 @@ use super::process::PROCESS_TABLE;
 use super::process::Process;
 use super::types::{ProcessId, ProcessState, ProcessPriority, ProcessContext};
 
+#[cfg(target_arch = "x86_64")]
 const KERNEL_BASE: u64 = 0xFFFF800000000000;
+#[cfg(target_arch = "aarch64")]
+const KERNEL_BASE: u64 = 0;
 
 #[no_mangle]
 pub static mut user_entry_cr3: AtomicU64 = AtomicU64::new(0);
@@ -165,10 +168,15 @@ impl UserProcManager {
     
     pub fn create(&self, info: &UserProcInfo, pwid: u64) -> Option<*mut UserProcess> {
         let pid = PROCESS_TABLE.allocate_pid()?;
+        crate::klog_info!(Process, "[PROC] create: pid={}", pid);
         
         let proc = unsafe {
             let ptr = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
-            if ptr.is_null() { return None; }
+            if ptr.is_null() { 
+                crate::klog_err!(Process, "[PROC] kmalloc UserProcess failed");
+                return None; 
+            }
+            crate::klog_info!(Process, "[PROC] kmalloc UserProcess OK at 0x{:X}", ptr as u64);
             memset(ptr as *mut u8, 0, core::mem::size_of::<UserProcess>() as u64);
             ptr
         };
@@ -176,11 +184,17 @@ impl UserProcManager {
         unsafe {
             (*proc).pid = pid;
             let cr3_val = vmm_create_user_page_table();
+            crate::klog_info!(Process, "[PROC] vmm_create_user_page_table: 0x{:X}", cr3_val);
             (*proc).cr3.store(cr3_val, Ordering::SeqCst);
-            if cr3_val == 0 { return None; }
+            if cr3_val == 0 { 
+                crate::klog_err!(Process, "[PROC] vmm_create_user_page_table returned 0");
+                return None; 
+            }
             
             let stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
+            crate::klog_info!(Process, "[PROC] pmm_alloc_pages stack: {:?}", stack_pages);
             if stack_pages.is_null() {
+                crate::klog_err!(Process, "[PROC] pmm_alloc_pages stack failed");
                 pmm_free_page(cr3_val as *mut core::ffi::c_void);
                 return None;
             }
@@ -199,21 +213,17 @@ impl UserProcManager {
                 vmm_map_page(svirt, sphys, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
                 vmm_ensure_path_user(svirt);
             }
-            
+
             (*proc).user_stack.store(USER_STACK_TOP, Ordering::SeqCst);
             let initial_stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
             (*proc).stack_bottom.store(initial_stack_bottom, Ordering::SeqCst);
-            
+
             let kstack = pmm_alloc_pages(USER_KSTACK_SIZE / PAGE_SIZE);
             if kstack.is_null() {
                 pmm_free_page(stack_pages);
                 pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut core::ffi::c_void);
                 return None;
             }
-            // Convert physical address to higher-half virtual address.
-            // The user page table only maps PML4[256..511] (kernel higher-half),
-            // so the TSS RSP0 must be a higher-half address to be accessible
-            // when an interrupt fires in Ring 3 with the user CR3 loaded.
             let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
             (*proc).kernel_stack.store(kstack_top, Ordering::SeqCst);
             crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
@@ -409,7 +419,8 @@ impl UserProcManager {
                 return -1;
             }
             
-            if (*header).class != 2 || (*header).machine != 0x3E {
+            // Accept ELF64 for both x86_64 (0x3E) and AArch64 (0xB7)
+            if (*header).class != 2 || ((*header).machine != 0x3E && (*header).machine != 0xB7) {
                 return -1;
             }
             

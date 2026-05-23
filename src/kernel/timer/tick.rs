@@ -67,13 +67,29 @@ pub fn timer_init(frequency_hz: u32) -> Result<u32, &'static str> {
         return Err("Timer frequency must be > 0");
     }
 
-    // 1. 初始化 PIT 硬件
+    // 1. 初始化定时器硬件
+    #[cfg(target_arch = "x86_64")]
     let actual_freq = super::pit::pit_init(frequency_hz)?;
+    #[cfg(target_arch = "aarch64")]
+    let actual_freq = {
+        // ARM Generic Timer already initialized by arch/aarch64/timer::init().
+        // We use the requested frequency for tick bookkeeping only.
+        frequency_hz
+    };
 
-    // 2. 记录启动 TSC 值
-    let boot_tsc = crate::kernel::cpu::tsc::read_tsc();
-    BOOT_TSC.store(boot_tsc, Ordering::Relaxed);
-    LAST_TSC.store(boot_tsc, Ordering::Relaxed);
+    // 2. 记录启动时间戳
+    #[cfg(target_arch = "x86_64")]
+    {
+        let boot_tsc = crate::kernel::cpu::tsc::read_tsc();
+        BOOT_TSC.store(boot_tsc, Ordering::Relaxed);
+        LAST_TSC.store(boot_tsc, Ordering::Relaxed);
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let boot_cnt = crate::arch!(timestamp());
+        BOOT_TSC.store(boot_cnt, Ordering::Relaxed);
+        LAST_TSC.store(boot_cnt, Ordering::Relaxed);
+    }
 
     // 3. 更新频率和时间转换常量
     TIMER_FREQ_HZ.store(actual_freq, Ordering::Relaxed);
@@ -115,12 +131,21 @@ pub fn on_timer_interrupt() {
     // 递增 tick 计数
     TICK_COUNT.fetch_add(1, Ordering::Relaxed);
 
-    // 更新 PIT 内部状态
+    // 更新 PIT 内部状态 (x86_64 only)
+    #[cfg(target_arch = "x86_64")]
     super::pit::pit_on_interrupt();
 
-    // 更新 TSC 时间戳 (用于高精度测量)
-    let current_tsc = crate::kernel::cpu::tsc::read_tsc();
-    LAST_TSC.store(current_tsc, Ordering::Relaxed);
+    // 更新时间戳 (用于高精度测量)
+    #[cfg(target_arch = "x86_64")]
+    {
+        let current_tsc = crate::kernel::cpu::tsc::read_tsc();
+        LAST_TSC.store(current_tsc, Ordering::Relaxed);
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let current_cnt = crate::arch!(timestamp());
+        LAST_TSC.store(current_cnt, Ordering::Relaxed);
+    }
 }
 
 /// 获取当前 tick 数

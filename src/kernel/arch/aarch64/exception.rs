@@ -472,11 +472,21 @@ pub extern "C" fn sync_exception_handler(frame: &ExceptionFrame) {
 /// 默认 IRQ 处理 (EL1h)
 #[no_mangle]
 pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
-    // GIC ACK + EOI
+    // GIC ACK
     let intid = super::gic::acknowledge();
     if intid >= 1020 {
         return;
     }
+
+    // Timer interrupt (PPI 30 = non-secure physical timer)
+    if intid == 30 {
+        crate::kernel::timer::on_timer_interrupt();
+        extern "C" {
+            fn scheduler_tick_mlfq();
+        }
+        unsafe { scheduler_tick_mlfq(); }
+    }
+
     super::gic::end_of_interrupt(intid);
 }
 

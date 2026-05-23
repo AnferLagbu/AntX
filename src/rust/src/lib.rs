@@ -173,20 +173,7 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 
 #[no_mangle]
 pub extern "C" fn kernel_init() {
-    // aarch64: minimal boot path (most subsystems are x86-only)
-    #[cfg(target_arch = "aarch64")]
-    {
-        unsafe { crate::kernel::klog::klog_init(); }
-        crate::klog_boot_info!("[aarch64] kernel_init reached");
-        crate::klog_boot_info!("[aarch64] Halting (init not yet implemented)");
-        loop {
-            unsafe { core::arch::asm!("wfi"); }
-        }
-    }
-
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
-    #[cfg(target_arch = "x86_64")]
-    {
     unsafe { crate::kernel::klog::klog_init(); }
     crate::klog_boot_info!("QueenX starting");
 
@@ -224,7 +211,7 @@ pub extern "C" fn kernel_init() {
         crate::kernel::tests::qemu_exit(failed == 0);
     }
 
-    // 1. Boot Info — 解析Multiboot信息获取内存布局
+    // 1. Boot Info — 获取内存布局
     #[cfg(not(feature = "kernel_test"))]
     {
     let boot_info = crate::kernel::boot::init();
@@ -241,9 +228,12 @@ pub extern "C" fn kernel_init() {
 
     // 4. kmalloc — 内核堆初始化
     const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
+    #[cfg(target_arch = "x86_64")]
     let heap_start = crate::kernel::mm::VirtAddr(
-        crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000 // 在内核结束后的2MB处
+        crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000
     );
+    #[cfg(target_arch = "aarch64")]
+    let heap_start = crate::kernel::mm::VirtAddr(boot_info.kernel_end + 0x200000);
     unsafe {
         crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
     }
@@ -254,24 +244,35 @@ pub extern "C" fn kernel_init() {
     crate::kernel::mm::pmm::pmm_init_bitmap(KMALLOC_HEAP_SIZE);
     crate::klog_boot_info!("PMM bitmap initialized");
 
-    // 6. IDT + PIC
+    // 6. 中断/异常设置
     #[cfg(target_arch = "x86_64")]
-    crate::kernel::arch::x86_64::gdt::gdt_init();
-    #[cfg(target_arch = "x86_64")]
-    crate::kernel::idt::idt_init();
-    crate::klog_boot_info!("IDT+PIC ready");
+    {
+        crate::kernel::arch::x86_64::gdt::gdt_init();
+        crate::kernel::idt::idt_init();
+        crate::klog_boot_info!("IDT+GDT ready");
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        // Exception vectors, GICv3, timer already configured by entry.rs
+        crate::klog_boot_info!("AArch64 GICv3+Exception vectors ready");
+    }
 
-    // 7. Timer + IRQ0
+    // 7. Timer + 中断使能
     match crate::kernel::timer::timer_init(1000) {
         Ok(_freq) => {
-            crate::klog_boot_info!("PIT timer configured");
+            crate::klog_boot_info!("Timer configured");
             #[cfg(target_arch = "x86_64")]
-            let _ = crate::kernel::timer::irq::register_timer_irq();
-            crate::klog_boot_info!("IRQ0 handler registered");
+            {
+                let _ = crate::kernel::timer::irq::register_timer_irq();
+                crate::klog_boot_info!("IRQ0 handler registered");
+                unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                crate::klog_boot_info!("AArch64 timer IRQ ready");
+                crate::arch!(interrupt_enable());
+            }
             crate::klog_boot_info!("Interrupts enabled");
-
-            #[cfg(target_arch = "x86_64")]
-            unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
         },
         Err(_msg) => { let _ = _msg; }
     }
@@ -286,23 +287,38 @@ pub extern "C" fn kernel_init() {
 
     // 10. Network (lwIP + E1000) — 仅 x86_64 支持
     #[cfg(target_arch = "x86_64")]
-    crate::kernel::net::init::qx_net_init();
-    crate::klog_boot_info!("Network subsystem initialized");
+    {
+        crate::kernel::net::init::qx_net_init();
+        crate::klog_boot_info!("Network subsystem initialized");
+    }
 
-    // 11. Barrier-Stack recovery domains
-    crate::kernel::klog::serial_write_bytes(b"[BOOT] step 11 start\n");
-    crate::kernel::mm::pmm::pmm_register_barrier_domain();
-    crate::kernel::klog::serial_write_bytes(b"[BOOT] step 11 pmm done\n");
-    crate::kernel::proc::process::proc_register_barrier_domain();
-    crate::kernel::klog::serial_write_bytes(b"[BOOT] step 11 proc done\n");
-    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
+    // 10.5. Storage driver init (PCI AHCI/NVMe on x86_64, virtio-blk on aarch64)
+    {
+        // storage_init is #[cfg] gated: PCI scan on x86_64, virtio probe on aarch64
+        let _ = crate::kernel::driver::storage::storage_init();
+        crate::klog_boot_info!("Storage subsystem initialized");
+    }
 
-    // HvFS + ATA 磁盘挂载 (仅 x86_64, 依赖 ATA C 驱动)
+    // 11. Barrier-Stack recovery domains (x86_64 only; aarch64: skip for now)
+    crate::klog_boot_info!("Step 11: Barrier-stack domain init");
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::kernel::mm::pmm::pmm_register_barrier_domain();
+        crate::klog_boot_info!("Step 11: PMM domain registered");
+        crate::kernel::proc::process::proc_register_barrier_domain();
+        crate::klog_boot_info!("Step 11: PROC domain registered");
+        crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::klog_boot_info!("Barrier-stack recovery domains skipped (aarch64)");
+    }
+
+    // HvFS + 磁盘挂载 — 通过 BlockDevice 注册表发现磁盘 (当前仅 x86_64 启用 HvFS 模块)
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     {
-        extern "C" { fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32; }
         let mut cfg = [0u8; 512];
-        if unsafe { ata_read_sector(0, 2046, cfg.as_mut_ptr()) } >= 0
+        if crate::kernel::driver::block::hdd_read_sector(0, 2046, &mut cfg) >= 0
             && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X'
         {
             let hvfs_lba = u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]]);
@@ -320,11 +336,10 @@ pub extern "C" fn kernel_init() {
 
     crate::klog_boot_info!("QueenX initialized, entering user mode...");
 
-    // 12. Launch first user process (Ring 3)
+    // 12. Launch first user process
     unsafe {
         crate::kernel::proc::ffi::launch_first_user_process();
     }
     // unreachable: launch_first_user_process is noreturn
     } // end #[cfg(not(feature = "kernel_test"))]
-    } // end #[cfg(target_arch = "x86_64")]
 }

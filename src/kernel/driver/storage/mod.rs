@@ -18,6 +18,7 @@
 pub mod ata;
 pub mod ahci;
 pub mod nvme;
+pub mod ata_block;
 
 // Re-export key types for driver/mod.rs convenience
 pub use ahci::{AhciController, AhciPort, H2dFis, AtaCommand};
@@ -27,7 +28,6 @@ use alloc::vec::Vec;
 use spin::Mutex;
 
 use super::framework::{self, Driver};
-#[cfg(target_arch = "x86_64")]
 use crate::klog_info;
 #[cfg(target_arch = "x86_64")]
 use crate::klog_warn;
@@ -133,6 +133,20 @@ pub fn storage_init() -> framework::Result<()> {
         crate::kernel::driver::storage::ata::ata_init();
     }
 
+    // Step 3.5: 将 ATA 磁盘注册到 BlockDevice 全局表
+    {
+        use crate::kernel::driver::block::{self, BlockDevice};
+        use crate::kernel::driver::storage::ata_block::AtaBlockDevice;
+        for drive in 0..4u8 {
+            if let Some(dev) = AtaBlockDevice::new(drive) {
+                let sectors = dev.blk_total_sectors();
+                block::register(alloc::boxed::Box::new(dev));
+                klog_info!(Driver, "ATA: drive {} registered, {} sectors ({:.1} MB)",
+                    drive, sectors, (sectors * 512) as f64 / (1024.0 * 1024.0));
+            }
+        }
+    }
+
     klog_info!(Driver, "storage: {} AHCI, {} NVMe, ATA detected",
         ahci_found, nvme_found);
 
@@ -145,12 +159,26 @@ pub fn storage_init() -> framework::Result<()> {
     }
 }
 
-/// AArch64 存储初始化 stub — ARM 平台通过 MMIO 访问存储控制器，非 PCI 枚举。
+/// AArch64 存储初始化 — 通过 virtio-mmio 发现块设备。
 #[cfg(not(target_arch = "x86_64"))]
 pub fn storage_init() -> framework::Result<()> {
-    // ARM virt 平台使用 virtio-blk 或 MMC 存储
-    // PCIe NVMe 在 ARM 服务器上存在但通过 ECAM 访问
-    // 当前阶段返回 Ok — virtio 驱动属于后续工作
+    use crate::kernel::driver::virtio::{self, VIRTIO_ID_BLOCK};
+
+    // 扫描 virtio-mmio 区域，寻找块设备
+    let devices = virtio::probe_all();
+    let mut blk_count = 0u32;
+
+    for dev in devices {
+        if dev.device_id == VIRTIO_ID_BLOCK {
+            if let Some(blk) = virtio::blk::VirtioBlk::new(dev) {
+                crate::kernel::driver::block::register(alloc::boxed::Box::new(blk));
+                blk_count += 1;
+                klog_info!(Driver, "virtio-blk: registered device #{}", blk_count);
+            }
+        }
+    }
+
+    klog_info!(Driver, "storage: {} virtio-blk device(s) found", blk_count);
     Ok(())
 }
 

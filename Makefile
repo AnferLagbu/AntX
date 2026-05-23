@@ -109,6 +109,8 @@ DISK_IMAGE = build/antx.img
 
 all: build/kernel.bin
 
+# ====== x86_64 Rust user programs ======
+ifeq ($(ARCH),x86_64)
 user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF)
 	@mkdir -p build/user
 	@cp $(USER_INIT_ELF) build/user/init.bin
@@ -120,6 +122,19 @@ $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF):
 	@echo "Building Rust user programs..."
 	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib" cargo build --release --target $(RUST_TARGET)
 
+build/user/init.bin: $(USER_INIT_ELF)
+	@mkdir -p build/user
+	@cp $< $@
+
+build/user/axsh.bin: $(USER_SHELL_ELF)
+	@mkdir -p build/user
+	@cp $< $@
+
+build/user/install.bin: $(USER_INSTALL_ELF)
+	@mkdir -p build/user
+	@cp $< $@
+endif
+
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 	@echo "[LINK] Linking kernel..."
 	$(LD) $(LDFLAGS) --allow-multiple-definition -o $@ --whole-archive $(RUST_LIB) --no-whole-archive $(KERNEL_OBJS)
@@ -127,18 +142,35 @@ build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 build/kernel.flat: build/kernel.bin
 	objcopy -O binary $< $@
 
+# AArch64 用户程序: 直接从汇编构建最小 init
+ifeq ($(ARCH),aarch64)
+USER_INIT_AARCH64_SRC = src/user/init/src/arch/aarch64.S
+USER_INIT_AARCH64_LINK = src/user/init/link_aarch64.x
+
+build/user/init.elf: $(USER_INIT_AARCH64_SRC) $(USER_INIT_AARCH64_LINK)
+	@mkdir -p build/user
+	@echo "[USER] Building aarch64 init from assembly..."
+	$(AS) $(ASFLAGS) -o build/user/init.o $(USER_INIT_AARCH64_SRC)
+	$(LD) -T $(USER_INIT_AARCH64_LINK) -nostdlib -o build/user/init.elf build/user/init.o
+
+build/user/init.bin: build/user/init.elf
+	@cp $< $@
+
+$(RUST_LIB): build/user/init.bin
+	@echo "Building Rust kernel module..."
+	@cd src/rust && cargo build --release --target $(RUST_TARGET)
+else
+# x86_64: 用 Cargo 构建 Rust 用户程序 + 内核
 # NOTE: user 程序依赖 axsh 等，当前有预存编译问题 (print! 宏缺失)
 # 开发期间可仅构建内核: make ARCH=x86_64 build/kernel.bin
-# include_bytes! 编译时需要 init.bin 存在，x86_64 先创建空占位文件
-ifeq ($(ARCH),x86_64)
+# include_bytes! 编译时需要 init.bin 存在，创建占位文件 (双架构)
+
 $(RUST_LIB): $(STAGE1_BIN)
 	@mkdir -p build/user
 	@touch build/user/init.bin
-else
-$(RUST_LIB):
-endif
 	@echo "Building Rust kernel module..."
 	@cd src/rust && cargo build --release --target $(RUST_TARGET)
+endif
 
 $(RUST_LIB_TEST):
 	@echo "Building Rust test kernel..."
@@ -186,18 +218,6 @@ build/switch.o: src/kernel/proc/switch.asm
 build/net/%.o: src/kernel/net/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
-
-build/user/init.bin: $(USER_INIT_ELF)
-	@mkdir -p build/user
-	@cp $< $@
-
-build/user/axsh.bin: $(USER_SHELL_ELF)
-	@mkdir -p build/user
-	@cp $< $@
-
-build/user/install.bin: $(USER_INSTALL_ELF)
-	@mkdir -p build/user
-	@cp $< $@
 
 # ============================================================
 # 网络子系统 (lwIP 2.2.1)
