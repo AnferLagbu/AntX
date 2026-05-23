@@ -78,14 +78,10 @@ pub mod dma;
 /// 故障恢复屏障 (panic 恢复, 域隔离)
 pub mod barrier;
 
-/// PCI 设备管理 (枚举, 配置空间访问)
-#[cfg(target_arch = "x86_64")]
+/// PCI 设备管理 (枚举, 配置空间访问, 双架构 ECAM/Port I/O)
 pub mod pci;
 
-/// 系统调用接口 (syscall 表, 参数验证)
-/// 注意: syscall 模块依赖 VFS 的 c_char 类型，x86_64(c_char=i8) 与 aarch64(c_char=u8) 不兼容
-/// aarch64 syscall 支持需后续重构
-#[cfg(target_arch = "x86_64")]
+/// 系统调用接口 (syscall 表, 参数验证, 双架构支持)
 pub mod syscall;
 
 /// 设备驱动 (ATA 磁盘, 键盘, 串口)
@@ -103,8 +99,7 @@ pub mod lib;
 /// 日志系统 (KLog, 多级别, 分类输出)
 pub mod klog;
 
-/// SMP 多核支持 (桩实现, feature=smp 时启用真实 IPI)
-#[cfg(target_arch = "x86_64")]
+/// SMP 多核支持 (双架构桩实现, feature=smp 时启用真实 IPI)
 pub mod smp;
 
 /// 内核测试框架

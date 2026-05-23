@@ -89,7 +89,7 @@ macro_rules! klog_fmt {
                 $crate::kernel::klog::LogLevel::$lvl as u8,
                 $crate::kernel::klog::LogCategory::$cat as u8,
                 core::ptr::null(), core::ptr::null(), 0,
-                w.as_slice().as_ptr() as *const i8,
+                w.as_slice().as_ptr() as *const core::ffi::c_char,
             );
         }
     }};
@@ -404,8 +404,8 @@ pub unsafe extern "C" fn klog_init() {
 #[no_mangle]
 pub unsafe extern "C" fn klog_write(
     level: u8, cat: u8,
-    _file: *const i8, _func: *const i8, _line: u32,
-    fmt: *const i8,
+    _file: *const core::ffi::c_char, _func: *const core::ffi::c_char, _line: u32,
+    fmt: *const core::ffi::c_char,
 ) -> i32 {
     if fmt.is_null() { return -1; }
 
@@ -452,14 +452,14 @@ pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn klog_net(fmt: *const i8) {
+pub unsafe extern "C" fn klog_net(fmt: *const core::ffi::c_char) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Net, s);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn klog_net_err(fmt: *const i8) {
+pub unsafe extern "C" fn klog_net_err(fmt: *const core::ffi::c_char) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Error, LogCategory::Net, s);

@@ -23,7 +23,7 @@ fn validate_user_buf(ptr: u64, len: u64) -> bool {
 
 #[no_mangle]
 pub unsafe extern "C" fn syscall_init() {
-    unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, b"syscall subsystem ready\0".as_ptr() as *const i8); }
+    unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, b"syscall subsystem ready\0".as_ptr() as *const core::ffi::c_char); }
 }
 
 /// 从 InterruptFrame 分发系统调用 (仅 x86_64)
@@ -49,7 +49,7 @@ macro_rules! dispatch {
     ($num:expr, $name:expr) => {
         {
             let ret = $num;
-            unsafe { crate::kernel::klog::klog_write(0, 7, core::ptr::null(), core::ptr::null(), 0, $name.as_ptr() as *const i8); }
+            unsafe { crate::kernel::klog::klog_write(0, 7, core::ptr::null(), core::ptr::null(), 0, $name.as_ptr() as *const core::ffi::c_char); }
             ret
         }
     };
@@ -62,8 +62,8 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_PROC_GETPPID => dispatch!(sys_proc_getppid(), b"proc_getppid\0"),
         SYS_PROC_YIELD   => dispatch!(sys_proc_yield(), b"proc_yield\0"),
         SYS_PROC_EXIT    => dispatch!(sys_proc_exit(a0 as i32), b"proc_exit\0"),
-        SYS_PROC_CREATE  => dispatch!(sys_proc_create(a0 as *const i8, a1 as *const *const u8, a2 as u32), b"proc_create\0"),
-        SYS_PROC_EXEC    => dispatch!(sys_proc_exec(a0 as *const i8, a1 as *const *const u8, a2 as u32), b"proc_exec\0"),
+        SYS_PROC_CREATE  => dispatch!(sys_proc_create(a0 as *const core::ffi::c_char, a1 as *const *const u8, a2 as u32), b"proc_create\0"),
+        SYS_PROC_EXEC    => dispatch!(sys_proc_exec(a0 as *const core::ffi::c_char, a1 as *const *const u8, a2 as u32), b"proc_exec\0"),
         SYS_PROC_WAIT    => dispatch!(sys_proc_wait(a0 as u32), b"proc_wait\0"),
         SYS_PROC_GETPWID => dispatch!(sys_proc_getpwid(), b"proc_getpwid\0"),
         SYS_PROC_SETPWID => dispatch!(sys_proc_setpwid(a0), b"proc_setpwid\0"),
@@ -71,31 +71,31 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_PROC_SETPRI  => dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"proc_setpri\0"),
         SYS_PROC_SLEEP   => dispatch!(sys_proc_sleep(a0), b"proc_sleep\0"),
 
-        SYS_FS_OPEN      => dispatch!(sys_fs_open(a0 as *const i8, a1 as i32, a2 as i32), b"fs_open\0"),
+        SYS_FS_OPEN      => dispatch!(sys_fs_open(a0 as *const core::ffi::c_char, a1 as i32, a2 as i32), b"fs_open\0"),
         SYS_FS_CLOSE     => dispatch!(sys_fs_close(a0 as i32), b"fs_close\0"),
         SYS_FS_READ      => dispatch!(sys_fs_read(a0 as i32, a1 as *mut u8, a2), b"fs_read\0"),
         SYS_FS_WRITE     => dispatch!(sys_fs_write(a0 as i32, a1 as *const u8, a2), b"fs_write\0"),
-        SYS_FS_MKDIR     => dispatch!(sys_fs_mkdir(a0 as *const i8, a1 as i32), b"fs_mkdir\0"),
-        SYS_FS_RMDIR     => dispatch!(sys_fs_rmdir(a0 as *const i8), b"fs_rmdir\0"),
-        SYS_FS_MOUNT     => dispatch!(sys_fs_mount(a0 as *const i8, a1 as *const i8, a2 as *const i8, a3 as *const i8), b"fs_mount\0"),
+        SYS_FS_MKDIR     => dispatch!(sys_fs_mkdir(a0 as *const core::ffi::c_char, a1 as i32), b"fs_mkdir\0"),
+        SYS_FS_RMDIR     => dispatch!(sys_fs_rmdir(a0 as *const core::ffi::c_char), b"fs_rmdir\0"),
+        SYS_FS_MOUNT     => dispatch!(sys_fs_mount(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char, a2 as *const core::ffi::c_char, a3 as *const core::ffi::c_char), b"fs_mount\0"),
         SYS_FS_SEEK      => dispatch!(sys_fs_seek(a0 as i32, a1 as i64, a2 as i32), b"fs_seek\0"),
-        SYS_FS_STAT      => dispatch!(sys_fs_stat(a0 as *const i8, a1 as *mut core::ffi::c_void), b"fs_stat\0"),
+        SYS_FS_STAT      => dispatch!(sys_fs_stat(a0 as *const core::ffi::c_char, a1 as *mut core::ffi::c_void), b"fs_stat\0"),
         SYS_FS_READDIR   => dispatch!(sys_fs_readdir(a0 as i32, a1 as *mut core::ffi::c_void), b"fs_readdir\0"),
-        SYS_FS_UNLINK    => dispatch!(sys_fs_unlink(a0 as *const i8), b"fs_unlink\0"),
-        SYS_FS_RENAME    => dispatch!(sys_fs_rename(a0 as *const i8, a1 as *const i8), b"fs_rename\0"),
+        SYS_FS_UNLINK    => dispatch!(sys_fs_unlink(a0 as *const core::ffi::c_char), b"fs_unlink\0"),
+        SYS_FS_RENAME    => dispatch!(sys_fs_rename(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"fs_rename\0"),
         SYS_FS_SYNC      => dispatch!(sys_fs_sync(), b"fs_sync\0"),
 
-        SYS_AUTH_LOGIN        => dispatch!(sys_auth_login(a0 as *const i8, a1 as *const i8), b"auth_login\0"),
+        SYS_AUTH_LOGIN        => dispatch!(sys_auth_login(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"auth_login\0"),
         SYS_AUTH_LOGOUT       => dispatch!(sys_auth_logout(), b"auth_logout\0"),
         SYS_AUTH_ELEVATE      => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_elevate\0"),
-        SYS_AUTH_CREATE       => dispatch!(sys_auth_create(a0 as *const i8, a1 as *const i8, a2 as u8), b"auth_create\0"),
+        SYS_AUTH_CREATE       => dispatch!(sys_auth_create(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char, a2 as u8), b"auth_create\0"),
         SYS_AUTH_DELETE       => dispatch!(sys_auth_delete(a0), b"auth_delete\0"),
         SYS_AUTH_LIST         => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_list\0"),
         SYS_AUTH_INFO         => dispatch!(sys_auth_info(a0), b"auth_info\0"),
         SYS_AUTH_SETNOTE      => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_setnote\0"),
-        SYS_AUTH_CHANGEPW     => dispatch!(sys_auth_changepw(a0 as *const i8, a1 as *const i8), b"auth_changepw\0"),
-        SYS_AUTH_VERIFY       => dispatch!(sys_auth_verify(a0 as *const i8), b"auth_verify\0"),
-        SYS_AUTH_CREATE_FIRST => dispatch!(sys_auth_create_first(a0 as *const i8), b"auth_create_first\0"),
+        SYS_AUTH_CHANGEPW     => dispatch!(sys_auth_changepw(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"auth_changepw\0"),
+        SYS_AUTH_VERIFY       => dispatch!(sys_auth_verify(a0 as *const core::ffi::c_char), b"auth_verify\0"),
+        SYS_AUTH_CREATE_FIRST => dispatch!(sys_auth_create_first(a0 as *const core::ffi::c_char), b"auth_create_first\0"),
         SYS_AUTH_TOKEN_CREATE => dispatch!(sys_auth_token_create(a0, a1 as u16, a2, a3, 1), b"auth_token_create\0"),
         SYS_AUTH_TOKEN_USE    => dispatch!(sys_auth_token_use(a0), b"auth_token_use\0"),
         SYS_AUTH_TOKEN_REVOKE => dispatch!(sys_auth_token_revoke(a0), b"auth_token_revoke\0"),
@@ -104,13 +104,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_AUTH_CHECK        => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_check\0"),
         SYS_AUTH_CREATE_WITH_CAPS => dispatch!(SyscallError::E_NOSYS.as_i64(), b"auth_create_with_caps\0"),
 
-        SYS_ENV_GETCWD    => dispatch!(sys_env_getcwd(a0 as *mut i8, a1), b"env_getcwd\0"),
-        SYS_ENV_CHDIR     => dispatch!(sys_env_chdir(a0 as *const i8), b"env_chdir\0"),
+        SYS_ENV_GETCWD    => dispatch!(sys_env_getcwd(a0 as *mut core::ffi::c_char, a1), b"env_getcwd\0"),
+        SYS_ENV_CHDIR     => dispatch!(sys_env_chdir(a0 as *const core::ffi::c_char), b"env_chdir\0"),
         SYS_INFO          => dispatch!(SyscallError::E_NOSYS.as_i64(), b"sys_info\0"),
         SYS_ENV_GETVAR    => dispatch!(SyscallError::E_NOSYS.as_i64(), b"env_getvar\0"),
         SYS_ENV_SETVAR    => dispatch!(SyscallError::E_NOSYS.as_i64(), b"env_setvar\0"),
-        SYS_GETHOSTNAME   => dispatch!(sys_gethostname(a0 as *mut i8, a1), b"gethostname\0"),
-        SYS_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const i8, a1), b"sethostname\0"),
+        SYS_GETHOSTNAME   => dispatch!(sys_gethostname(a0 as *mut core::ffi::c_char, a1), b"gethostname\0"),
+        SYS_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const core::ffi::c_char, a1), b"sethostname\0"),
         SYS_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"boot_check\0"),
 
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
@@ -118,7 +118,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_DISK_INFO    => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"disk_info\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_DISK_FORMAT  => dispatch!(sys_disk_format(a0 as u32, a1 as *const i8), b"disk_format\0"),
+        SYS_DISK_FORMAT  => dispatch!(sys_disk_format(a0 as u32, a1 as *const core::ffi::c_char), b"disk_format\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32, a1), b"disk_partition\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
@@ -131,21 +131,21 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_MEM_UNMAP    => dispatch!(sys_mem_unmap(a0, a1), b"mem_unmap\0"),
         SYS_MEM_PROTECT  => dispatch!(sys_mem_protect(a0, a1, a2), b"mem_protect\0"),
 
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_SOCKET   => dispatch!(sys_net_socket(a0 as i32, a1 as i32, a2 as i32), b"net_socket\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_BIND     => dispatch!(sys_net_bind(a0 as i32, a1, a2 as u32), b"net_bind\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_LISTEN   => dispatch!(sys_net_listen(a0 as i32, a1 as i32), b"net_listen\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_ACCEPT   => dispatch!(sys_net_accept(a0 as i32, a1, a2), b"net_accept\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_CONNECT  => dispatch!(sys_net_connect(a0 as i32, a1, a2 as u32), b"net_connect\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_SEND     => dispatch!(sys_net_send(a0 as i32, a1, a2 as u32, a3 as i32), b"net_send\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_RECV     => dispatch!(sys_net_recv(a0 as i32, a1, a2 as u32, a3 as i32), b"net_recv\0"),
-        #[cfg(not(feature = "kernel_test"))]
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_NET_SHUTDOWN => dispatch!(sys_net_shutdown(a0 as i32, a1 as i32), b"net_shutdown\0"),
 
         SYS_IPC_PIPE     => dispatch!(sys_ipc_pipe(a0 as *mut i32, a1 as *mut i32), b"ipc_pipe\0"),
@@ -186,7 +186,7 @@ unsafe fn sys_proc_exit(status: i32) -> i64 {
 // 文件系统 syscall
 // ============================================================================
 
-unsafe fn sys_fs_open(path: *const i8, flags: i32, _mode: i32) -> i64 {
+unsafe fn sys_fs_open(path: *const core::ffi::c_char, flags: i32, _mode: i32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_open(path, flags as u32, pwid) as i64
@@ -227,20 +227,20 @@ unsafe fn sys_fs_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_write(fd as u32, buf as *const u8, count as u32) as i64
 }
 
-unsafe fn sys_fs_mkdir(path: *const i8, _mode: i32) -> i64 {
+unsafe fn sys_fs_mkdir(path: *const core::ffi::c_char, _mode: i32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     let pwid = if pwid == 0 { 0x0020F45A8B978417 } else { pwid };
     crate::kernel::fs::vfs::ffi::vfs_mkdir(path, pwid) as i64
 }
 
-unsafe fn sys_fs_rmdir(path: *const i8) -> i64 {
+unsafe fn sys_fs_rmdir(path: *const core::ffi::c_char) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_rmdir(path, pwid) as i64
 }
 
-unsafe fn sys_fs_mount(_source: *const i8, target: *const i8, fstype: *const i8, _options: *const i8) -> i64 {
+unsafe fn sys_fs_mount(_source: *const core::ffi::c_char, target: *const core::ffi::c_char, fstype: *const core::ffi::c_char, _options: *const core::ffi::c_char) -> i64 {
     if target.is_null() || !validate_user_ptr(target as u64) { return SyscallError::E_FAULT.as_i64(); }
     if fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
     crate::kernel::fs::vfs::ffi::vfs_mount(target, fstype) as i64
@@ -250,7 +250,7 @@ unsafe fn sys_fs_seek(fd: i32, offset: i64, whence: i32) -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
 }
 
-unsafe fn sys_fs_stat(path: *const i8, st_buf: *mut core::ffi::c_void) -> i64 {
+unsafe fn sys_fs_stat(path: *const core::ffi::c_char, st_buf: *mut core::ffi::c_void) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_stat(path, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwid) as i64
@@ -260,7 +260,7 @@ unsafe fn sys_fs_readdir(fd: i32, entry: *mut core::ffi::c_void) -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_readdir(fd as u32, entry as *mut crate::kernel::fs::vfs::types::VfsDirEntry) as i64
 }
 
-unsafe fn sys_fs_unlink(path: *const i8) -> i64 {
+unsafe fn sys_fs_unlink(path: *const core::ffi::c_char) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::fs::vfs::ffi::vfs_unlink(path, pwid) as i64
@@ -270,7 +270,7 @@ unsafe fn sys_fs_sync() -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_sync() as i64
 }
 
-unsafe fn sys_fs_rename(old: *const i8, new: *const i8) -> i64 {
+unsafe fn sys_fs_rename(old: *const core::ffi::c_char, new: *const core::ffi::c_char) -> i64 {
     if old.is_null() || new.is_null() || !validate_user_ptr(old as u64) || !validate_user_ptr(new as u64) {
         return SyscallError::E_FAULT.as_i64();
     }
@@ -282,7 +282,7 @@ unsafe fn sys_fs_rename(old: *const i8, new: *const i8) -> i64 {
 // PWID 认证/权限 syscall
 // ============================================================================
 
-unsafe fn sys_auth_login(password: *const i8, note: *const i8) -> i64 {
+unsafe fn sys_auth_login(password: *const core::ffi::c_char, note: *const core::ffi::c_char) -> i64 {
     crate::kernel::pwid::ffi::pwid_login(note, password) as i64
 }
 
@@ -291,7 +291,7 @@ unsafe fn sys_auth_logout() -> i64 {
     0
 }
 
-unsafe fn sys_auth_create(password: *const i8, note: *const i8, _level: u8) -> i64 {
+unsafe fn sys_auth_create(password: *const core::ffi::c_char, note: *const core::ffi::c_char, _level: u8) -> i64 {
     let creator = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::pwid::ffi::pwid_create(password, note, creator) as i64
 }
@@ -304,17 +304,17 @@ unsafe fn sys_auth_info(target: u64) -> i64 {
     crate::kernel::pwid::ffi::pwid_get_privilege_level(target) as i64
 }
 
-unsafe fn sys_auth_changepw(old_pw: *const i8, new_pw: *const i8) -> i64 {
+unsafe fn sys_auth_changepw(old_pw: *const core::ffi::c_char, new_pw: *const core::ffi::c_char) -> i64 {
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::pwid::ffi::pwid_change_password(pwid, old_pw, new_pw) as i64
 }
 
-unsafe fn sys_auth_verify(password: *const i8) -> i64 {
+unsafe fn sys_auth_verify(password: *const core::ffi::c_char) -> i64 {
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     crate::kernel::pwid::ffi::pwid_verify_password(pwid, password) as i64
 }
 
-unsafe fn sys_auth_create_first(password: *const i8) -> i64 {
+unsafe fn sys_auth_create_first(password: *const core::ffi::c_char) -> i64 {
     if password.is_null() { return SyscallError::E_INVAL.as_i64(); }
     crate::kernel::pwid::ffi::pwid_create_first_identity(password) as i64
 }
@@ -336,19 +336,19 @@ unsafe fn sys_auth_token_revoke(_token_id: u64) -> i64 {
 // 系统信息 syscall
 // ============================================================================
 
-unsafe fn sys_env_getcwd(buf: *mut i8, size: u64) -> i64 {
+unsafe fn sys_env_getcwd(buf: *mut core::ffi::c_char, size: u64) -> i64 {
     if buf.is_null() || size == 0 { return SyscallError::E_INVAL.as_i64(); }
     if !validate_user_buf(buf as u64, size) { return SyscallError::E_FAULT.as_i64(); }
     crate::kernel::fs::vfs::ffi::vfs_get_cwd(buf, size as u32) as i64
 }
 
-unsafe fn sys_env_chdir(path: *const i8) -> i64 {
+unsafe fn sys_env_chdir(path: *const core::ffi::c_char) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     crate::kernel::fs::vfs::ffi::vfs_set_cwd(path);
     0
 }
 
-unsafe fn sys_gethostname(buf: *mut i8, size: u64) -> i64 {
+unsafe fn sys_gethostname(buf: *mut core::ffi::c_char, size: u64) -> i64 {
     if buf.is_null() || size == 0 || !validate_user_buf(buf as u64, size) { return SyscallError::E_FAULT.as_i64(); }
     let hostname = b"localhost\0";
     let copy_len = hostname.len().min(size as usize - 1);
@@ -357,7 +357,7 @@ unsafe fn sys_gethostname(buf: *mut i8, size: u64) -> i64 {
     0
 }
 
-unsafe fn sys_sethostname(name: *const i8, len: u64) -> i64 {
+unsafe fn sys_sethostname(name: *const core::ffi::c_char, len: u64) -> i64 {
     if name.is_null() || len == 0 || len > 63 { return SyscallError::E_INVAL.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 9) {
@@ -454,7 +454,7 @@ unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
 
 #[cfg(not(feature = "kernel_test"))]
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-unsafe fn sys_disk_format(disk_id: u32, fstype: *const i8) -> i64 {
+unsafe fn sys_disk_format(disk_id: u32, fstype: *const core::ffi::c_char) -> i64 {
     if fstype.is_null() { return SyscallError::E_INVAL.as_i64(); }
     if disk_id >= 4 { return SyscallError::E_NOTFOUND.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
@@ -711,7 +711,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
 // 进程管理 syscall (补全)
 // ============================================================================
 
-unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, mut argc: u32) -> i64 {
+unsafe fn sys_proc_create(path: *const core::ffi::c_char, argv: *const *const u8, mut argc: u32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     if argc == 0 && !argv.is_null() {
         let mut p = argv;
@@ -726,7 +726,7 @@ unsafe fn sys_proc_create(path: *const i8, argv: *const *const u8, mut argc: u32
     if pid == 0 { SyscallError::E_BUSY.as_i64() } else { pid as i64 }
 }
 
-unsafe fn sys_proc_exec(path: *const i8, argv: *const *const u8, mut argc: u32) -> i64 {
+unsafe fn sys_proc_exec(path: *const core::ffi::c_char, argv: *const *const u8, mut argc: u32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return SyscallError::E_FAULT.as_i64(); }
     if argc == 0 && !argv.is_null() {
         let mut p = argv;
@@ -850,7 +850,7 @@ unsafe fn sys_mem_protect(_addr: u64, _size: u64, _prot: u64) -> i64 {
 // 网络 syscall
 // ============================================================================
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 2, 0x01) {
@@ -860,43 +860,43 @@ unsafe fn sys_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
     lwip_socket(domain, sock_type, protocol) as i64
 }
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
     extern "C" { fn lwip_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
     lwip_bind(sockfd, addr as *const u8, addrlen) as i64
 }
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_listen(sockfd: i32, backlog: i32) -> i64 {
     extern "C" { fn lwip_listen(sockfd: i32, backlog: i32) -> i32; }
     lwip_listen(sockfd, backlog) as i64
 }
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     extern "C" { fn lwip_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32; }
     lwip_accept(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
 }
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
     extern "C" { fn lwip_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
     lwip_connect(sockfd, addr as *const u8, addrlen) as i64
 }
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_send(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
     extern "C" { fn lwip_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32; }
     lwip_send(sockfd, buf as *const u8, len, flags) as i64
 }
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_recv(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
     extern "C" { fn lwip_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32; }
     lwip_recv(sockfd, buf as *mut u8, len, flags) as i64
 }
 
-#[cfg(not(feature = "kernel_test"))]
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_net_shutdown(sockfd: i32, _how: i32) -> i64 {
     extern "C" { fn lwip_close(sockfd: i32) -> i32; }
     lwip_close(sockfd) as i64
@@ -969,12 +969,12 @@ unsafe fn sys_sysinfo(info: *mut u8) -> i64 {
     SyscallError::E_NOSYS.as_i64()
 }
 
-unsafe fn sys_getvar(name: *const i8, buf: *mut i8, _size: u64) -> i64 {
+unsafe fn sys_getvar(name: *const core::ffi::c_char, buf: *mut core::ffi::c_char, _size: u64) -> i64 {
     if name.is_null() || buf.is_null() { return SyscallError::E_INVAL.as_i64(); }
     SyscallError::E_NOSYS.as_i64()
 }
 
-unsafe fn sys_setvar(name: *const i8, _value: *const i8) -> i64 {
+unsafe fn sys_setvar(name: *const core::ffi::c_char, _value: *const core::ffi::c_char) -> i64 {
     if name.is_null() { return SyscallError::E_INVAL.as_i64(); }
     SyscallError::E_NOSYS.as_i64()
 }
@@ -984,7 +984,7 @@ unsafe fn sys_sync() -> i64 {
     0
 }
 
-unsafe fn sys_mount(source: *const i8, target: *const i8, fstype: *const i8) -> i64 {
+unsafe fn sys_mount(source: *const core::ffi::c_char, target: *const core::ffi::c_char, fstype: *const core::ffi::c_char) -> i64 {
     if source.is_null() || target.is_null() { return SyscallError::E_INVAL.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 0x01) {
@@ -993,7 +993,7 @@ unsafe fn sys_mount(source: *const i8, target: *const i8, fstype: *const i8) -> 
     crate::kernel::fs::vfs::ffi::vfs_mount(target, fstype) as i64
 }
 
-unsafe fn sys_unmount(target: *const i8) -> i64 {
+unsafe fn sys_unmount(target: *const core::ffi::c_char) -> i64 {
     if target.is_null() { return SyscallError::E_INVAL.as_i64(); }
     let pwid = crate::kernel::pwid::ffi::pwid_get_current();
     if !crate::kernel::pwid::ffi::pwid_has_capability(pwid, 0, 0x01) {
@@ -1006,7 +1006,7 @@ unsafe fn sys_fchmod(_fd: i32, _mode: u32) -> i64 {
     SyscallError::E_NOSYS.as_i64()
 }
 
-unsafe fn sys_rename(old: *const i8, new: *const i8) -> i64 {
+unsafe fn sys_rename(old: *const core::ffi::c_char, new: *const core::ffi::c_char) -> i64 {
     if old.is_null() || new.is_null() { return SyscallError::E_INVAL.as_i64(); }
     SyscallError::E_NOSYS.as_i64()
 }

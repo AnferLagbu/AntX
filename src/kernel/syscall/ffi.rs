@@ -8,10 +8,10 @@ use crate::kernel::syscall::types::*;
 // ==================== 从 C 导入的函数 ====================
 
 extern "C" {
-    pub fn klog_kern(fmt: *const i8);
-    pub fn klog_syscall(fmt: *const i8);
-    pub fn klog_info(fmt: *const i8);
-    pub fn strcmp(s1: *const i8, s2: *const i8) -> i32;
+    pub fn klog_kern(fmt: *const core::ffi::c_char);
+    pub fn klog_syscall(fmt: *const core::ffi::c_char);
+    pub fn klog_info(fmt: *const core::ffi::c_char);
+    pub fn strcmp(s1: *const core::ffi::c_char, s2: *const core::ffi::c_char) -> i32;
 }
 
 // ==================== 导出到 C 的接口 ====================
@@ -42,7 +42,7 @@ pub unsafe extern "C" fn rust_syscall_register(num: u64, handler: SyscallHandler
 
 /// 将错误码转换为可读字符串 (用于调试)
 #[no_mangle]
-pub extern "C" fn syscall_error_to_string(code: i64) -> *const i8 {
+pub extern "C" fn syscall_error_to_string(code: i64) -> *const core::ffi::c_char {
     static ERROR_MESSAGES: [&str; 39] = [
         "Operation not permitted",           // E_PERM (-1)
         "No such file or directory",         // E_NOTFOUND (-2)
@@ -89,9 +89,9 @@ pub extern "C" fn syscall_error_to_string(code: i64) -> *const i8 {
     let idx = ((-code) as usize).saturating_sub(1);
     
     if idx < ERROR_MESSAGES.len() {
-        ERROR_MESSAGES[idx].as_ptr() as *const i8
+        ERROR_MESSAGES[idx].as_ptr() as *const core::ffi::c_char
     } else {
-        "Unknown error\0".as_ptr() as *const i8
+        "Unknown error\0".as_ptr() as *const core::ffi::c_char
     }
 }
 
