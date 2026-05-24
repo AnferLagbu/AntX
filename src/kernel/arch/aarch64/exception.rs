@@ -475,7 +475,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
 /// 默认同步异常处理 (EL1h)
 #[no_mangle]
-pub extern "C" fn sync_exception_handler(frame: &ExceptionFrame) {
+pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     let esr: u64;
     let far: u64;
     let elr: u64;
