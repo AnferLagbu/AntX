@@ -72,12 +72,15 @@ impl VirtioBlk {
         }
 
         // Allocate the virtqueue
-        let vq = VirtQueue::new()?;
+        let vq = VirtQueue::new(false)?; // x86_64 uses modern mode
 
         // Set up virtqueue 0 on the device
         if device.setup_vq(0, &vq).is_err() {
             return None;
         }
+
+        // Set DRIVER_OK — device goes live after queue configuration
+        device.set_driver_ok();
 
         // Read capacity from config space
         let capacity = device.read_config64(BLK_CONFIG_CAPACITY_LO);

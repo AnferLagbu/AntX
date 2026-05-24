@@ -83,15 +83,25 @@ unsafe impl Sync for VirtQueue {}
 impl VirtQueue {
     /// Allocate and initialize a split virtqueue.
     ///
-    /// Allocates `VQ_SIZE` descriptors, available ring, and used ring
-    /// from physically contiguous memory.
-    pub fn new() -> Option<Self> {
+    /// When `legacy` is true, the used ring is aligned to a 4096-byte boundary
+    /// (as required by QEMU's legacy VirtIO transport — VIRTIO_PCI_VRING_ALIGN).
+    /// This requires 2 pages instead of 1.
+    pub fn new(legacy: bool) -> Option<Self> {
         let desc_size  = VQ_SIZE as usize * core::mem::size_of::<VqDesc>();
         let avail_size = core::mem::size_of::<VqAvail>() + 2 /* event index padding */;
         let used_size  = core::mem::size_of::<VqUsed>() + 2 /* event index padding */;
-        let total_size = align_up(desc_size + avail_size + used_size, 4096);
-        let pages = (total_size + 4095) / 4096;
 
+        // Compute offsets: desc | avail (4-aligned) | used
+        let desc_off  = 0usize;
+        let avail_off = desc_off + desc_size;
+        let used_off  = if legacy {
+            4096  // Legacy: used ring must be page-aligned (QEMU uses VIRTIO_PCI_VRING_ALIGN)
+        } else {
+            align_up(avail_off + avail_size, 4)
+        };
+        let total_size = align_up(used_off + used_size, 4096);
+
+        let pages = (total_size + 4095) / 4096;
         extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
         let mem = unsafe { pmm_alloc_pages(pages as u64) };
         if mem.is_null() { return None; }
@@ -100,19 +110,21 @@ impl VirtQueue {
         let mem_virt = (mem_phys + KERNEL_BASE) as *mut u8;
 
         unsafe {
-            // Zero-initialize all memory
             core::ptr::write_bytes(mem_virt, 0, total_size);
 
             let desc_ptr  = mem_virt as *mut VqDesc;
-            let avail_ptr = unsafe { mem_virt.add(desc_size) } as *mut VqAvail;
-            let used_ptr  = unsafe { mem_virt.add(align_up(desc_size + avail_size, 4096)) } as *mut VqUsed;
+            let avail_ptr = mem_virt.add(avail_off as usize) as *mut VqAvail;
+            let used_ptr  = mem_virt.add(used_off as usize) as *mut VqUsed;
 
-            // Initialize free descriptor list: desc[i].next = i + 1
             for i in 0..VQ_SIZE {
-                let desc = unsafe { &mut *desc_ptr.add(i as usize) };
+                let desc = &mut *desc_ptr.add(i as usize);
                 desc.flags = 0;
                 desc.next = if i + 1 < VQ_SIZE { i + 1 } else { 0 };
             }
+
+            // Zero avail and used rings (critical: device sees these)
+            core::ptr::write_bytes(avail_ptr as *mut u8, 0, avail_size);
+            core::ptr::write_bytes(used_ptr as *mut u8, 0, used_size);
 
             Some(VirtQueue {
                 desc:         desc_ptr,
@@ -122,9 +134,9 @@ impl VirtQueue {
                 free_head:    0,
                 last_used_idx: 0,
                 next_avail_idx: 0,
-                desc_phys:    mem_phys,
-                avail_phys:   mem_phys + desc_size as u64,
-                used_phys:    mem_phys + align_up(desc_size + avail_size, 4096) as u64,
+                desc_phys:    mem_phys + desc_off as u64,
+                avail_phys:   mem_phys + avail_off as u64,
+                used_phys:    mem_phys + used_off as u64,
             })
         }
     }
@@ -142,12 +154,13 @@ impl VirtQueue {
         let head = self.free_head;
         unsafe {
             let desc = &mut *self.desc.add(head as usize);
+            let next_free = desc.next;  // Save before overwriting
             desc.addr = buf_paddr;
             desc.len  = buf_len;
             desc.flags = if write { VQ_DESC_F_WRITE } else { 0 };
             desc.next = 0;
             // Move free_head to next free descriptor
-            self.free_head = desc.next;
+            self.free_head = next_free;
         }
         head
     }
@@ -156,7 +169,10 @@ impl VirtQueue {
     /// Returns the available ring index that was submitted.
     pub fn submit(&mut self, desc_head: u16) -> u16 {
         unsafe {
-            (*self.avail).ring[self.next_avail_idx as usize % VQ_SIZE as usize] = desc_head;
+            core::ptr::write_volatile(
+                &mut (*self.avail).ring[self.next_avail_idx as usize % VQ_SIZE as usize],
+                desc_head,
+            );
         }
         let idx = self.next_avail_idx;
         self.next_avail_idx = self.next_avail_idx.wrapping_add(1);
@@ -166,16 +182,17 @@ impl VirtQueue {
     /// Notify device after submission (caller must set avail->idx and write QueueNotify).
     pub fn commit_and_kick(&mut self) {
         unsafe {
-            // Memory barrier: ensure descriptor and ring writes are visible
+            // DSB + memory barrier: ensure descriptor and ring writes are globally visible
+            core::arch::asm!("dsb sy");
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-            (*self.avail).idx = self.next_avail_idx;
+            core::ptr::write_volatile(&mut (*self.avail).idx, self.next_avail_idx);
         }
     }
 
     /// Check if any used descriptors are available and return them.
     pub fn pop_used(&mut self) -> Option<(u16, u32)> {
         unsafe {
-            let used_idx = (*self.used).idx;
+            let used_idx = core::ptr::read_volatile(&(*self.used).idx);
             if self.last_used_idx == used_idx {
                 return None;
             }

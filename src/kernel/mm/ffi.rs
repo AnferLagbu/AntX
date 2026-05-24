@@ -34,10 +34,14 @@ pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
 /// C signature: void* pmm_alloc_page(void)
 #[no_mangle]
 pub extern "C" fn pmm_alloc_page() -> *mut c_void {
-    match get_pmm().alloc_page() {
+    let result = match get_pmm().alloc_page() {
         Some(addr) => addr.0 as *mut c_void,
         None => core::ptr::null_mut(),
-    }
+    };
+    // DIAGNOSTIC: FFI return
+    #[cfg(target_arch = "aarch64")]
+    unsafe { crate::kernel::arch::aarch64::uart::putc(b'R'); }
+    result
 }
 
 /// Free a single page
@@ -79,10 +83,15 @@ pub extern "C" fn pmm_get_used_pages() -> u64 {
 /// C signature: void* pmm_alloc_pages(size_t count)
 #[no_mangle]
 pub extern "C" fn pmm_alloc_pages(count: usize) -> *mut c_void {
-    match get_pmm().alloc_pages(count) {
+    #[cfg(target_arch = "aarch64")]
+    unsafe { crate::kernel::arch::aarch64::uart::putc(b'a'); }
+    let result = match get_pmm().alloc_pages(count) {
         Some(addr) => addr.0 as *mut c_void,
         None => core::ptr::null_mut(),
-    }
+    };
+    #[cfg(target_arch = "aarch64")]
+    unsafe { crate::kernel::arch::aarch64::uart::putc(b'b'); }
+    result
 }
 
 /// Free multiple contiguous pages

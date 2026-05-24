@@ -95,12 +95,14 @@ el2_entry:
 // ============================================================
 el1_entry:
     // 4.1 设置栈指针 (boot stack)
-    adr  x0, _boot_stack_top
+    adrp x0, _boot_stack_top
+    add  x0, x0, #:lo12:_boot_stack_top
     mov  sp, x0
 
     // 4.2 保存 x0 (可能包含 fdt 指针)
     // QEMU 启动时 x0 可能包含设备树地址，暂存
-    adr  x1, _fdt_addr
+    adrp x1, _fdt_addr
+    add  x1, x1, #:lo12:_fdt_addr
     str  x0, [x1]
 
     // 4.3 跳转 Rust entry()
@@ -124,5 +126,5 @@ _fdt_addr:
 .bss
 .align 16
 _boot_stack_bottom:
-    .space 65536            // 64KB boot stack
+    .space 262144            // 256KB boot stack
 _boot_stack_top:

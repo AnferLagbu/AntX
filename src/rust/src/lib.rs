@@ -241,7 +241,14 @@ pub extern "C" fn kernel_init() {
         heap_start.0, KMALLOC_HEAP_SIZE / (1024 * 1024));
 
     // 5. PMM Bitmap — 初始化位图分配器
-    crate::kernel::mm::pmm::pmm_init_bitmap(KMALLOC_HEAP_SIZE);
+    // Must include the 2MB gap between kernel_end and heap_start,
+    // otherwise PMM bitmap will allocate from within the kmalloc heap
+    // (pages 7165+), causing heap corruption when alloc_table() zeros
+    // newly allocated page table pages.
+    // GAP_SIZE + KMALLOC_HEAP_SIZE = 0x200000 + 16MB = 18MB total reserved after kernel.
+    const GAP_SIZE: u64 = 0x200000;
+    let reserved_after_kernel = GAP_SIZE + KMALLOC_HEAP_SIZE;
+    crate::kernel::mm::pmm::pmm_init_bitmap(reserved_after_kernel);
     crate::klog_boot_info!("PMM bitmap initialized");
 
     // 6. 中断/异常设置
@@ -280,13 +287,16 @@ pub extern "C" fn kernel_init() {
     // 8. Scheduler
     crate::kernel::proc::scheduler::init();
     crate::klog_boot_info!("Scheduler ready");
+    #[cfg(target_arch = "aarch64")]
+    crate::kernel::arch::aarch64::exception::SCHEDULER_READY.store(true, core::sync::atomic::Ordering::Release);
 
     // 9. VFS
     crate::kernel::fs::vfs::init();
     crate::klog_boot_info!("VFS ready");
 
-    // 10. Network (lwIP + E1000) — 仅 x86_64 支持
-    #[cfg(target_arch = "x86_64")]
+    // 10. Network (lwIP + 网卡驱动)
+    // x86_64: E1000 PCI 网卡驱动
+    // aarch64: virtio-net MMIO 网卡驱动
     {
         crate::kernel::net::init::qx_net_init();
         crate::klog_boot_info!("Network subsystem initialized");
@@ -332,6 +342,13 @@ pub extern "C" fn kernel_init() {
             if r == 0 { crate::klog_boot_info!("Root filesystem: HvFS (disk)"); }
             else { crate::klog_boot_info!("HvFS mount failed"); }
         }
+    }
+
+    // 启动定时器 (延迟到所有子系统初始化完成后)
+    #[cfg(target_arch = "aarch64")]
+    {
+        let interval = crate::kernel::arch::aarch64::exception::TIMER_INTERVAL_TICKS.load(core::sync::atomic::Ordering::Relaxed);
+        crate::kernel::arch::aarch64::timer::start_interval(interval);
     }
 
     crate::klog_boot_info!("QueenX initialized, entering user mode...");

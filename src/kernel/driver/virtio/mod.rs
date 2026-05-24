@@ -37,6 +37,7 @@
 
 pub mod queue;
 pub mod blk;
+pub mod net;
 
 use crate::kernel::mm::KERNEL_BASE;
 use crate::klog_info;
@@ -56,6 +57,7 @@ const QUEUE_SEL:          usize = 0x030;
 const QUEUE_NUM_MAX:      usize = 0x034;
 const QUEUE_NUM:          usize = 0x038;
 const QUEUE_READY:        usize = 0x044;
+const QUEUE_PFN:          usize = 0x040; // Legacy: QueuePFN (page number)
 const QUEUE_NOTIFY:       usize = 0x050;
 const INTERRUPT_STATUS:   usize = 0x060;
 const INTERRUPT_ACK:      usize = 0x064;
@@ -213,9 +215,15 @@ impl VirtioMmioDevice {
             }
 
             // Step 6: DRIVER_OK (final step - device is live)
-            self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK);
-
+            // Moved to set_driver_ok() — caller must call it after queue setup.
             Ok(())
+        }
+    }
+
+    /// Set DRIVER_OK (device goes live). Must be called after all virtqueues are configured.
+    pub fn set_driver_ok(&self) {
+        unsafe {
+            self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK);
         }
     }
 
@@ -230,18 +238,47 @@ impl VirtioMmioDevice {
             if vq.queue_size as u32 > max_size {
                 klog_warn!(Driver, "virtio: queue size {} exceeds max {}", vq.queue_size, max_size);
             }
+            klog_info!(Driver, "virtio: vq{} max_size={}", vq_index, max_size);
 
             // Set queue size
             self.write32(QUEUE_NUM, vq.queue_size as u32);
+            klog_info!(Driver, "virtio: vq{} QUEUE_NUM set, writing desc={:#x}", vq_index, vq.desc_paddr());
 
             // Set physical addresses of the three ring parts
             self.write64(QUEUE_DESC_LOW, QUEUE_DESC_HIGH, vq.desc_paddr());
+            klog_info!(Driver, "virtio: vq{} desc written", vq_index);
             self.write64(QUEUE_DRIVER_LOW, QUEUE_DRIVER_HIGH, vq.avail_paddr());
+            klog_info!(Driver, "virtio: vq{} avail written", vq_index);
             self.write64(QUEUE_DEVICE_LOW, QUEUE_DEVICE_HIGH, vq.used_paddr());
+            klog_info!(Driver, "virtio: vq{} used written", vq_index);
 
             // Mark queue as ready
             self.write32(QUEUE_READY, 1);
+            klog_info!(Driver, "virtio: vq{} ready", vq_index);
 
+            Ok(())
+        }
+    }
+
+    /// Configure a virtqueue using legacy QueuePFN interface (VirtIO 0.9.5).
+    /// Used when VIRTIO_F_VERSION_1 is NOT negotiated (transitional/legacy devices).
+    pub fn setup_vq_legacy(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
+        unsafe {
+            self.write32(QUEUE_SEL, vq_index as u32);
+
+            let max_size = self.read32(QUEUE_NUM_MAX);
+            if vq.queue_size as u32 > max_size {
+                klog_warn!(Driver, "virtio: legacy queue size {} exceeds max {}", vq.queue_size, max_size);
+            }
+
+            self.write32(QUEUE_NUM, vq.queue_size as u32);
+
+            // Legacy: write guest-physical page number of the queue
+            // The queue (desc + avail + used) is laid out contiguously within one page
+            let pfn = (vq.desc_paddr() >> 12) as u32;
+            self.write32(QUEUE_PFN, pfn);
+
+            klog_info!(Driver, "virtio: legacy vq{} pfn={:#x} (desc={:#x})", vq_index, pfn, vq.desc_paddr());
             Ok(())
         }
     }

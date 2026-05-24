@@ -178,7 +178,15 @@ impl PhysicalMemoryManager {
     }
 
     pub fn alloc_page(&self) -> Option<PhysAddr> {
+        // --- DIAGNOSTIC: entry ---
+        #[cfg(target_arch = "aarch64")]
+        unsafe { crate::kernel::arch::aarch64::uart::putc(b'A'); }
+        
         self.acquire_lock();
+
+        // --- DIAGNOSTIC: lock acquired ---
+        #[cfg(target_arch = "aarch64")]
+        unsafe { crate::kernel::arch::aarch64::uart::putc(b'L'); }
 
         let result = if !self.initialized.load(Ordering::Acquire) {
             self.early_alloc_single()
@@ -186,15 +194,25 @@ impl PhysicalMemoryManager {
             self.alloc_from_bitmap(1)
         };
 
+        // --- DIAGNOSTIC: alloc done ---
+        #[cfg(target_arch = "aarch64")]
+        unsafe { crate::kernel::arch::aarch64::uart::putc(b'D'); }
+
         match result {
             Some(addr) => {
                 self.total_allocs.fetch_add(1, Ordering::Relaxed);
                 self.release_lock();
+                // --- DIAGNOSTIC: success ---
+                #[cfg(target_arch = "aarch64")]
+                unsafe { crate::kernel::arch::aarch64::uart::putc(b'+'); }
                 Some(addr)
             }
             None => {
                 self.failed_allocs.fetch_add(1, Ordering::Relaxed);
                 self.release_lock();
+                // --- DIAGNOSTIC: fail ---
+                #[cfg(target_arch = "aarch64")]
+                unsafe { crate::kernel::arch::aarch64::uart::putc(b'-'); }
                 None
             }
         }
@@ -438,6 +456,9 @@ impl PhysicalMemoryManager {
                 let bitmap = bitmap_ptr.as_ptr();
                 let total_bits = self.bitmap_size.get() * 32;
 
+                #[cfg(target_arch = "aarch64")]
+                crate::kernel::arch::aarch64::uart::putc(b'f');
+
                 for i in start..total_bits {
                     let word_index = i / 32;
                     let bit_index = i % 32;
@@ -445,11 +466,15 @@ impl PhysicalMemoryManager {
                     let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
                     let value = (*atomic_ptr).load(core::sync::atomic::Ordering::SeqCst);
                     if (value & (1u32 << bit_index)) == 0 {
+                        #[cfg(target_arch = "aarch64")]
+                        crate::kernel::arch::aarch64::uart::putc(b'F');
                         return Some(i);
                     }
                 }
             }
         }
+        #[cfg(target_arch = "aarch64")]
+        unsafe { crate::kernel::arch::aarch64::uart::putc(b'n'); }
         None
     }
 

@@ -1,14 +1,26 @@
 /// 系统命令: osinfo, host, ps, reboot, halt
 
 use userlib::{print, println, print_dec, gethostname, sethostname, reboot as sys_reboot};
+use core::fmt::Write;
 
 use super::{Cmd, as_str};
+
+struct FmtWriter;
+impl Write for FmtWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        print(s);
+        Ok(())
+    }
+}
 
 pub fn osinfo(_: &Cmd) {
     println("AntX Operating System");
     println("Kernel:  QueenX (QX)");
     println("Userland: Rust");
+    #[cfg(target_arch = "x86_64")]
     println("Arch:    x86_64");
+    #[cfg(target_arch = "aarch64")]
+    println("Arch:    aarch64");
 }
 
 pub fn host(cmd: &Cmd) {
@@ -53,7 +65,7 @@ pub fn ps(_: &Cmd) {
         for j in 0..48 { name[j] = entry[name_start + j]; if entry[name_start + j] == 0 { break; } }
         let name_str = core::str::from_utf8(&name).unwrap_or("?").trim_end_matches('\0');
 
-        print!("{:<5} {:<6} {:08X}  {:>4}  ", pid, state_str, pwid, pri);
+        let _ = write!(FmtWriter, "{:<5} {:<6} {:08X}  {:>4}  ", pid, state_str, pwid, pri);
         println(name_str);
     }
 }

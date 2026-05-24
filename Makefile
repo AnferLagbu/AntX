@@ -79,7 +79,7 @@ endif
 # ── 架构条件构建对象 ─────────────────────────────────────────────────
 ifeq ($(ARCH),aarch64)
     # AArch64: start.S (GNU as) 替代 boot.asm/entry.asm/isr.asm
-    KERNEL_OBJS = build/boot.o
+    KERNEL_OBJS = build/boot.o build/lib/string.o $(NET_OBJS)
     KERNEL_TEST_OBJS = build/boot.o
 else
     KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
@@ -142,18 +142,21 @@ build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
 build/kernel.flat: build/kernel.bin
 	objcopy -O binary $< $@
 
-# AArch64 用户程序: 直接从汇编构建最小 init
+# AArch64 用户程序: 使用 Cargo 编译 Rust 用户程序
 ifeq ($(ARCH),aarch64)
-USER_INIT_AARCH64_SRC = src/user/init/src/arch/aarch64.S
-USER_INIT_AARCH64_LINK = src/user/init/link_aarch64.x
-
-build/user/init.elf: $(USER_INIT_AARCH64_SRC) $(USER_INIT_AARCH64_LINK)
+user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF)
 	@mkdir -p build/user
-	@echo "[USER] Building aarch64 init from assembly..."
-	$(AS) $(ASFLAGS) -o build/user/init.o $(USER_INIT_AARCH64_SRC)
-	$(LD) -T $(USER_INIT_AARCH64_LINK) -nostdlib -o build/user/init.elf build/user/init.o
+	@cp $(USER_INIT_ELF) build/user/init.bin
+	@cp $(USER_SHELL_ELF) build/user/axsh.bin
+	@cp $(USER_INSTALL_ELF) build/user/install.bin
+	@echo "User programs built (Rust aarch64)"
 
-build/user/init.bin: build/user/init.elf
+$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF):
+	@echo "Building Rust user programs (aarch64)..."
+	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link_aarch64.x -C link-arg=-nostdlib" cargo build --release --target $(RUST_TARGET)
+
+build/user/init.bin: $(USER_INIT_ELF)
+	@mkdir -p build/user
 	@cp $< $@
 
 $(RUST_LIB): build/user/init.bin

@@ -57,8 +57,11 @@ pub fn clear(_: &Cmd) {
 }
 
 pub fn echo(cmd: &Cmd) {
-    let parts: alloc::vec::Vec<&str> = (1..cmd.n).map(|i| as_str(cmd.get(i))).collect();
-    println(&parts.join(" "));
+    for i in 1..cmd.n {
+        if i > 1 { print(" "); }
+        print(as_str(cmd.get(i)));
+    }
+    println("");
 }
 
 pub fn exit(_: &Cmd) {

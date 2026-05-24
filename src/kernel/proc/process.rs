@@ -338,12 +338,18 @@ impl ProcessTable {
     }
     
     pub fn insert(&self, process: *mut Process) -> bool {
+        #[cfg(target_arch = "aarch64")]
+        unsafe { crate::kernel::arch::aarch64::uart::putc(b'i'); }
         let mut table = self.processes.lock();
+        #[cfg(target_arch = "aarch64")]
+        unsafe { crate::kernel::arch::aarch64::uart::putc(b'I'); }
         let pid = unsafe { (*process).pid.0 as usize };
         if pid >= MAX_PROCESSES {
             return false;
         }
         table[pid] = Some(process as usize);
+        #[cfg(target_arch = "aarch64")]
+        unsafe { crate::kernel::arch::aarch64::uart::putc(b'J'); }
         true
     }
     

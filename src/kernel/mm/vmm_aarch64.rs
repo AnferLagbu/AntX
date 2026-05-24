@@ -367,7 +367,12 @@ impl Aarch64Vmm {
                 // Allocate new table
                 let new_paddr = self.alloc_table().expect("[VMM] Out of physical memory for page table");
                 let desc = table_descriptor(new_paddr);
+                // ARM requires DSB after page table descriptor writes to ensure
+                // the MMU's page table walker sees the update. Without this,
+                // subsequent accesses through this table level may fault or
+                // read stale data from the TLB caching the old (invalid) entry.
                 ptr::write_volatile(table.add(idx), desc);
+                core::arch::asm!("dsb ishst");
                 // Physical == virtual for kernel (identity mapped)
                 // But user tables need phys_to_virt conversion
                 // For now, tables are allocated in low physical memory which is identity-mapped
@@ -380,7 +385,26 @@ impl Aarch64Vmm {
 
     pub fn create_user_page_table(&self) -> Option<u64> {
         // Allocate a clean L0 table for user space (TTBR0_EL1)
-        self.alloc_table()
+        let user_l0 = self.alloc_table()?;
+
+        // Copy kernel identity-mapped TTBR0 entries into the user page table.
+        // The kernel on aarch64 uses identity mapping (VA==PA), so all kernel
+        // code and devices are accessed via TTBR0_EL1. After switching TTBR0_EL1
+        // to the user page table, kernel code must remain reachable —
+        // otherwise the code following the TTBR0 switch cannot execute.
+        //
+        // Note: shared L1/L2 tables are safe because user mappings only
+        // overlay unused address ranges (L2_DEVICE[0] → new L3 table).
+        let kernel_l0 = self.kernel_l0 as *const u64;
+        let user_l0_ptr = user_l0 as *mut u64;
+        unsafe {
+            for i in 0..TABLE_ENTRIES {
+                let entry = ptr::read_volatile(kernel_l0.add(i));
+                ptr::write_volatile(user_l0_ptr.add(i), entry);
+            }
+        }
+
+        Some(user_l0)
     }
 
     pub fn ensure_pml4_user(&self, _virt: u64) {

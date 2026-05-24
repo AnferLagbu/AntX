@@ -61,20 +61,39 @@ pub fn read_control() -> u64 {
     ctl
 }
 
-/// 初始化定时器子系统
+/// 初始化定时器子系统 (延迟启动)
 ///
-/// 读取 CNTFRQ_EL0, 设置为 10ms 周期。
-pub fn init() {
+/// 读取 CNTFRQ_EL0, 计算 10ms 间隔, 但不启动定时器。
+/// 返回 (频率, 间隔ticks)。稍后调用 start_interval() 开始计时。
+pub fn init_deferred() -> (u64, u64) {
     let freq = read_frequency();
-    if freq == 0 {
-        // QEMU 某些版本可能未设置 CNTFRQ, 使用默认值
-        // 通过写 CNTFRQ_EL0 设置
-    }
+    let freq = if freq == 0 {
+        // QEMU 某些版本可能未设置 CNTFRQ, 使用默认值 62.5MHz
+        unsafe { core::arch::asm!("msr cntfrq_el0, {}", in(reg) TIMER_FREQ_HZ); }
+        TIMER_FREQ_HZ
+    } else {
+        freq
+    };
 
-    // 设置 10ms 定时器
+    // 10ms 间隔
     let ticks_ms = freq / 1000;
-    let interval = ticks_ms * 10; // 10ms
-    set_timer(interval);
+    let interval = ticks_ms * 10;
+    (freq, interval)
+}
+
+/// 启动周期性定时器 (必须在 GIC + 调度器初始化之后调用)
+///
+/// 设置 CNTP_TVAL_EL0 并启用 CNTP_CTL_EL0。
+pub fn start_interval(interval_ticks: u64) {
+    set_timer(interval_ticks);
+    enable();
+}
+
+/// 重新装载定时器 (在中断处理中调用)
+///
+/// 重新设置 CNTP_TVAL_EL0, 确保下一个中断准时触发。
+pub fn reload(interval_ticks: u64) {
+    set_timer(interval_ticks);
     enable();
 }
 

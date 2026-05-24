@@ -13,8 +13,10 @@ use core::ptr::{read_volatile, write_volatile};
 
 /// Distributor 基地址 (每个CPU共享)
 const GICD_BASE: u64 = 0x08000000;
-/// Redistributor 基地址 (每个CPU独立)
+/// Redistributor RD frame 基地址 (每个CPU独立)
 const GICR_BASE: u64 = 0x080A_0000;
+/// Redistributor SGI frame 基地址 (SGI/PPI registers)
+const GICR_SGI_BASE: u64 = 0x080B_0000;
 
 /// GICD 寄存器偏移
 const GICD_CTLR: u64 = 0x0000;      // Distributor Control
@@ -42,8 +44,8 @@ const GICR_ICFGR1: u64 = 0x0C04;    // Configuration for PPIs
 const PPI_BASE: u32 = 16;
 const SPI_BASE: u32 = 32;
 
-/// ARM 架构定时器 PPI
-const TIMER_PPI: u32 = 27;  // EL1 Physical Timer
+/// ARM 架构定时器 PPI (Non-secure Physical Timer)
+const TIMER_PPI: u32 = 30;  // CNTPNSIRQ
 
 // ============================================================================
 // 寄存器读写辅助
@@ -76,6 +78,21 @@ unsafe fn gicr_read(offset: u64) -> u32 {
 unsafe fn gicr_write(offset: u64, val: u32) {
     core::arch::asm!("dsb sy");
     write_volatile((GICR_BASE + offset) as *mut u32, val);
+    core::arch::asm!("dsb sy");
+}
+
+#[inline(always)]
+unsafe fn gicr_sgi_read(offset: u64) -> u32 {
+    core::arch::asm!("dsb sy");
+    let val = read_volatile((GICR_SGI_BASE + offset) as *const u32);
+    core::arch::asm!("dsb sy");
+    val
+}
+
+#[inline(always)]
+unsafe fn gicr_sgi_write(offset: u64, val: u32) {
+    core::arch::asm!("dsb sy");
+    write_volatile((GICR_SGI_BASE + offset) as *mut u32, val);
     core::arch::asm!("dsb sy");
 }
 
@@ -122,16 +139,16 @@ pub unsafe fn init_redistributor() {
         core::hint::spin_loop();
     }
 
-    // 2. 设置 PPI 优先级
-    gicr_write(GICR_IPRIORITYR, 0xA0A0_A0A0);
-    gicr_write(GICR_IPRIORITYR + 4, 0xA0A0_A0A0);
-    gicr_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0);
+    // 2. 设置 PPI 优先级 (SGI frame)
+    gicr_sgi_write(GICR_IPRIORITYR, 0xA0A0_A0A0);
+    gicr_sgi_write(GICR_IPRIORITYR + 4, 0xA0A0_A0A0);
+    gicr_sgi_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0);
 
     // 3. Timer PPI 低优先级
     let prio_addr = GICR_IPRIORITYR + ((TIMER_PPI as u64 / 4) * 4);
-    let prio = gicr_read(prio_addr);
+    let prio = gicr_sgi_read(prio_addr);
     let shift = ((TIMER_PPI % 4) * 8) as u64;
-    gicr_write(prio_addr, (prio & !(0xFF << shift)) | (0x40 << shift));
+    gicr_sgi_write(prio_addr, (prio & !(0xFF << shift)) | (0x40 << shift));
 
     // 4. Enable redistributor
     gicr_write(GICR_CTLR, 0x1); // Enable
@@ -159,7 +176,7 @@ pub unsafe fn init_cpu_interface() {
 pub unsafe fn enable_timer_ppi() {
     let enable_offset = GICR_ISENABLER0;
     let bit = 1u32 << (TIMER_PPI % 32);
-    gicr_write(enable_offset, bit);
+    gicr_sgi_write(enable_offset, bit);
 }
 
 /// 获取中断 ID (IAR) — 用于 IRQ handler

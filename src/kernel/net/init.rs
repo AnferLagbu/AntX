@@ -32,9 +32,12 @@ extern "C" {
     /// lwIP 协议栈初始化
     fn lwip_init();
     
-    /// E1000 网卡探测
+    /// E1000 网卡探测 (x86_64)
     fn e1000_probe() -> i32;
     
+    /// virtio-net 网卡探测 (aarch64)
+    fn virtio_net_probe() -> i32;
+
     // 注意: klog_net, klog_net_err, klog_init_msg 已在 types.rs 中声明
     // 这里直接使用即可 (通过 use crate::kernel::net::types::* 导入)
 }
@@ -138,7 +141,12 @@ pub extern "C" fn qx_net_init() {
         }
 
         klog_net("Step1: hardware probe\0".as_ptr() as *const i8);
+
+        // 根据架构选择不同的网卡探测
+        #[cfg(target_arch = "x86_64")]
         let probe_result = e1000_probe();
+        #[cfg(target_arch = "aarch64")]
+        let probe_result = virtio_net_probe();
 
         if probe_result != 0 {
             let _ = transition_state(InitState::LwipReady, InitState::FullyInitialized);
@@ -163,19 +171,12 @@ pub extern "C" fn qx_net_init() {
             return;
         }
 
-        // Critical section: disable interrupts during lwIP core init and netif
-        // registration to prevent timer ISR from accessing half-initialized
-        // lwIP data structures (root cause of the intermittent hang).
-        let _ = crate::arch!(interrupt_disable());
-
-        // lwIP 和 E1000 仅 x86_64 支持 (C 第三方库)
-        #[cfg(target_arch = "x86_64")]
-        {
-            extern "C" { fn lwip_init(); }
-            lwip_init();
-        }
+        // lwIP 在所有架构均可编译 (C 第三方库交叉编译)
+        extern "C" { fn lwip_init(); }
+        lwip_init();
         klog_net("lwIP core initialized\0".as_ptr() as *const i8);
 
+        // 根据架构注册不同网卡驱动
         #[cfg(target_arch = "x86_64")]
         {
             klog_net("E1000 detected, registering netif\0".as_ptr() as *const i8);
@@ -194,11 +195,22 @@ pub extern "C" fn qx_net_init() {
                 klog_net_err("Failed to register E1000 netif\0".as_ptr() as *const i8);
             }
         }
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(target_arch = "aarch64")]
         {
-            // aarch64: 无 lwIP/E1000，网络子系统不可用
+            klog_net("virtio-net detected, registering netif\0".as_ptr() as *const i8);
+            extern "C" { fn qx_netif_register_virtio() -> i32; }
+            let register_result = qx_netif_register_virtio();
             crate::arch!(interrupt_enable());
-            klog_net("Network subsystem skipped (aarch64)\0".as_ptr() as *const i8);
+
+            if register_result == 0 {
+                crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
+                let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
+                klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
+            } else {
+                crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
+                set_failed();
+                klog_net_err("Failed to register virtio-net netif\0".as_ptr() as *const i8);
+            }
         }
     }
 }

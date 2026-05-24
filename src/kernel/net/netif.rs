@@ -224,103 +224,82 @@ pub unsafe extern "C" fn ethernet_input_from_e1000(
     qx_rx_packet(G_NETIF_PTR, data as *const core::ffi::c_void, len)
 }
 
+/// virtio-net 初始化包装器 (FFI, 供 lwIP netif_add 调用)
+extern "C" fn virtio_net_init_wrapper(netif: *mut core::ffi::c_void) -> i32 {
+    extern "C" {
+        fn virtio_net_init(netif: *mut core::ffi::c_void) -> i32;
+    }
+    unsafe { virtio_net_init(netif) }
+}
+
+/// virtio-net 数据包输入处理函数
+///
+/// 此函数由 virtio-net 驱动的 poll_rx 调用，
+/// 将接收到的以太网帧传递给 lwIP 协议栈。
+#[no_mangle]
+pub unsafe extern "C" fn ethernet_input_from_virtio(
+    data: *mut core::ffi::c_void,
+    len: u16,
+) -> i32 {
+    extern "C" {
+        fn qx_rx_packet(netif: *mut core::ffi::c_void, data: *const core::ffi::c_void, len: u16) -> i32;
+    }
+    if G_NETIF_PTR.is_null() || data.is_null() || len == 0 {
+        return LwipErr::Val as i32;
+    }
+    qx_rx_packet(G_NETIF_PTR, data as *const core::ffi::c_void, len)
+}
+
 // ============================================================================
-// E1000 网络接口注册 (核心功能)
+// virtio-net 网络接口注册 (aarch64)
 // ============================================================================
 
-/// 注册 E1000 网卡为 lwIP 网络接口
-/// 
-/// 执行以下步骤:
-/// 1. 检查是否已注册 (防止重复)
-/// 2. 调用 netif_add 创建网络接口 (使用静态存储)
-/// 3. 配置接口属性 (MAC地址、MTU、标志位)
-/// 4. 启动 DHCP 客户端
-/// 5. (可选) 配置 IPv6
-/// 
-/// # 返回值
-/// 
-/// - `0`: 成功注册
-/// - `<0`: 注册失败 (LwipErr 错误码)
+/// 注册 virtio-net 网卡为 lwIP 网络接口
 #[no_mangle]
-pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
-    klog_net("Registering E1000 as lwIP netif (DHCP + IPv6)\0".as_ptr() as *const i8);
-    
-    // 检查是否已经注册过
+pub unsafe extern "C" fn qx_netif_register_virtio() -> i32 {
+    klog_net("Registering virtio-net as lwIP netif\0".as_ptr() as *const i8);
+
     if !G_NETIF_PTR.is_null() {
         klog_net("Netif already registered, skipping\0".as_ptr() as *const i8);
-        return LwipErr::Ok as i32; // 已注册, 返回成功
+        return LwipErr::Ok as i32;
     }
-    
-    // ✅ 使用静态存储的 buffer (整个程序生命周期有效)
+
     let netif_ptr = G_NETIF_BUFFER.as_mut_ptr() as *mut core::ffi::c_void;
-    
-    // 清零 buffer
     core::ptr::write_bytes(G_NETIF_BUFFER.as_mut_ptr(), 0, 2048);
-    
-    // 调用 lwIP netif_add
+
     let result = netif_add(
         netif_ptr,
-        core::ptr::null(), // IP 地址 (DHCP自动获取)
-        core::ptr::null(), // 子网掩码
-        core::ptr::null(), // 网关
-        core::ptr::null_mut(), // state (无额外状态)
-        e1000_init_wrapper, // 初始化函数 (safe包装器)
-        ethernet_input_wrapper, // 输入处理函数 (safe包装器)
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null_mut(),
+        virtio_net_init_wrapper,
+        ethernet_input_wrapper,
     );
-    
+
     if result.is_null() {
-        klog_net_err("netif_add failed\0".as_ptr() as *const i8);
-        return LwipErr::If as i32; // ERR_IF
+        klog_net_err("netif_add failed (virtio)\0".as_ptr() as *const i8);
+        return LwipErr::If as i32;
     }
-    
-    // 设置为默认接口
+
     netif_set_default(result);
-    
-    // 启动接口 (会在 lwIP 内部触发状态变更, 先不注册回调)
     netif_set_up(result);
     extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
     netif_set_link_up(result);
-    
-    // 注册状态回调 (在 set_up 之后, 避免初始 link-up 事件误触发 DHCP done)
     netif_set_status_callback(result, status_callback_wrapper);
-    
-    // ✅ 保存到全局变量 (静态存储, 安全)
     G_NETIF_PTR = result;
-    
-    // 标记网络已初始化
     G_NET_INITIALIZED.store(1, Ordering::Release);
-    
-    // IPv6 配置 (如果启用)
-    #[cfg(feature = "ipv6")]
-    {
-        netif_create_ip6_linklocal_address(result, 1);
-        netif_set_ip6_autoconfig_enabled(result, 0);
-        
-        klog_net("IPv6 link-local address configured\0".as_ptr() as *const i8);
-    }
-    
+
     // 启动 DHCP
-    klog_net("Starting DHCP on E1000...\0".as_ptr() as *const i8);
-    
+    klog_net("Starting DHCP on virtio-net...\0".as_ptr() as *const i8);
     let dhcp_result = dhcp_start(result);
-    
-    // 输出DHCP启动结果
     if dhcp_result == 0 {
-        klog_net("DHCP client started successfully\0".as_ptr() as *const i8);
+        klog_net("DHCP client started\0".as_ptr() as *const i8);
     } else {
-        // 打印具体的错误码
-        if dhcp_result == -1 {
-            klog_net_err("DHCP start failed: ERR_MEM (-1)\0".as_ptr() as *const i8);
-        } else if dhcp_result == -16 {
-            klog_net_err("DHCP start failed: ERR_ARG (-16)\0".as_ptr() as *const i8);
-        } else {
-            klog_net_err("DHCP start failed: unknown error\0".as_ptr() as *const i8);
-        }
+        klog_net_err("DHCP start failed\0".as_ptr() as *const i8);
     }
-    
-    // 输出接口注册成功日志
-    klog_net("E1000 netif registered successfully\0".as_ptr() as *const i8);
-    
+
+    klog_net("virtio-net netif registered\0".as_ptr() as *const i8);
     LwipErr::Ok as i32
 }
 

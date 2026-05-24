@@ -1,7 +1,12 @@
 /// AntX 用户态运行时 — 系统调用层
-/// 所有 syscall 通过 `int 0x80` 触发。
+/// x86_64: 通过 `int 0x80` 触发
+/// aarch64: 通过 `svc #0` 触发, 约定 x0=syscall_num, x1-x4=args, x0=返回
 
 use core::arch::asm;
+
+// ============================================================
+// 系统调用编号 — 与内核 syscall/mod.rs 对应
+// ============================================================
 
 pub const O_RDONLY: i32 = 0;
 pub const O_WRONLY: i32 = 1;
@@ -50,14 +55,43 @@ pub const SYS_FAT_FORMAT: u64 = 118;
 #[repr(C)] pub struct UserDirEntry { pub node: u32, pub file_type: u8, pub name: [u8; 256] }
 #[repr(C)] pub struct UserDiskInfo { pub disk_id: u32, pub present: u32, pub total_sectors: u32, pub sectors: u32, pub model: [u8; 64] }
 
+// ============================================================
+// 系统调用门 — 双架构
+// ============================================================
+
+#[cfg(target_arch = "x86_64")]
 unsafe fn sys0(num: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, lateout("rax") ret); ret }
+#[cfg(target_arch = "x86_64")]
 unsafe fn sys1(num: u64, a1: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, lateout("rax") ret); ret }
+#[cfg(target_arch = "x86_64")]
 unsafe fn sys2(num: u64, a1: u64, a2: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, lateout("rax") ret); ret }
+#[cfg(target_arch = "x86_64")]
 unsafe fn sys3(num: u64, a1: u64, a2: u64, a3: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, lateout("rax") ret); ret }
+#[cfg(target_arch = "x86_64")]
 unsafe fn sys4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, in("r10") a4, lateout("rax") ret); ret }
 
+#[cfg(target_arch = "aarch64")]
+unsafe fn sys0(num: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, lateout("x0") ret); ret }
+#[cfg(target_arch = "aarch64")]
+unsafe fn sys1(num: u64, a1: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, in("x1") a1, lateout("x0") ret); ret }
+#[cfg(target_arch = "aarch64")]
+unsafe fn sys2(num: u64, a1: u64, a2: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, in("x1") a1, in("x2") a2, lateout("x0") ret); ret }
+#[cfg(target_arch = "aarch64")]
+unsafe fn sys3(num: u64, a1: u64, a2: u64, a3: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, in("x1") a1, in("x2") a2, in("x3") a3, lateout("x0") ret); ret }
+#[cfg(target_arch = "aarch64")]
+unsafe fn sys4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, in("x1") a1, in("x2") a2, in("x3") a3, in("x4") a4, lateout("x0") ret); ret }
+
 pub fn proc_exec(path: &[u8], argv: &[*const u8]) -> i64   { unsafe { sys3(SYS_PROC_EXEC, path.as_ptr() as u64, argv.as_ptr() as u64, 0) } }
-pub fn proc_exit(code: i32) -> !                             { unsafe { sys1(SYS_PROC_EXIT, code as u64); } loop { unsafe { asm!("hlt", options(nomem, nostack)); } } }
+pub fn proc_exit(code: i32) -> ! {
+    unsafe { sys1(SYS_PROC_EXIT, code as u64); }
+    loop {
+        if cfg!(target_arch = "x86_64") {
+            unsafe { asm!("hlt", options(nomem, nostack)); }
+        } else {
+            unsafe { asm!("wfi", options(nomem, nostack)); }
+        }
+    }
+}
 pub fn proc_get_pwid() -> u64                                { unsafe { sys0(SYS_PROC_GETPWID) as u64 } }
 pub fn proc_yield()                                          { unsafe { sys0(SYS_PROC_YIELD); } }
 pub fn fs_open(path: &[u8], flags: i32, m: i32) -> i32      { unsafe { sys3(SYS_FS_OPEN, path.as_ptr() as u64, flags as u64, m as u64) as i32 } }

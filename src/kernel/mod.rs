@@ -58,9 +58,8 @@ pub mod proc;
 /// 文件系统 (VFS, ramfs, devfs, procfs, diskfs)
 pub mod fs;
 
-/// 网络协议栈 (lwIP, OS 抽象层, e1000 驱动)
-/// 全网模块依赖 lwIP C 第三方库, 仅 x86_64 编译
-#[cfg(target_arch = "x86_64")]
+/// 网络协议栈 (lwIP, OS 抽象层, 网卡驱动)
+/// x86_64: E1000 PCI  /  aarch64: virtio-net MMIO
 pub mod net;
 
 /// 中断描述符表 (IDT, ISR, 异常处理, 统计)
