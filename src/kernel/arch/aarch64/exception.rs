@@ -531,6 +531,16 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         return;
     }
 
+    // ── 栏栈恢复 SGI 7 (aarch64 等价于 x86_64 int 0x82) ─────────────────
+    if intid == super::barrier::BARRIER_RECOVERY_SGI as u32 {
+        let result = super::barrier::barrier_sgi_handler();
+        if result < 0 {
+            crate::klog_info!(Boot, "Barrier recovery SGI failed: {}", result);
+        }
+        super::gic::end_of_interrupt(intid);
+        return;
+    }
+
     // Timer interrupt (PPI 30 = non-secure physical timer)
     if intid == 30 {
         // 重新装载定时器 (ARM Generic Timer 是一次性的)

@@ -160,7 +160,25 @@ fn panic(info: &PanicInfo) -> ! {
     unsafe {
         core::arch::asm!("int 0x82", options(noreturn));
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(target_arch = "aarch64")]
+    {
+        // AArch64 栏栈恢复: 直接调用恢复逻辑进行域回滚
+        extern "C" {
+            fn recovery_try_recover_from_idt() -> i32;
+        }
+        let result = unsafe { recovery_try_recover_from_idt() };
+        if result >= 0 {
+            // 域状态已回滚到一致快照, 记录恢复事件
+            crate::kernel::klog::serial_write_bytes(b"\n[RECOVERY] Barrier-stack: domain rolled back\n");
+            crate::kernel::barrier::PANIC_FLAG.store(false, core::sync::atomic::Ordering::SeqCst);
+        } else {
+            crate::kernel::klog::serial_write_bytes(b"\n[RECOVERY] Barrier-stack: recovery failed, halting\n");
+        }
+        loop {
+            unsafe { core::arch::asm!("wfi"); }
+        }
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     loop {
         unsafe { core::arch::asm!("wfi"); }
     }
@@ -309,20 +327,18 @@ pub extern "C" fn kernel_init() {
         crate::klog_boot_info!("Storage subsystem initialized");
     }
 
-    // 11. Barrier-Stack recovery domains (x86_64 only; aarch64: skip for now)
+    // 11. Barrier-Stack recovery domains (双架构: x86_64 int 0x82, aarch64 SGI 7)
     crate::klog_boot_info!("Step 11: Barrier-stack domain init");
-    #[cfg(target_arch = "x86_64")]
-    {
-        crate::kernel::mm::pmm::pmm_register_barrier_domain();
-        crate::klog_boot_info!("Step 11: PMM domain registered");
-        crate::kernel::proc::process::proc_register_barrier_domain();
-        crate::klog_boot_info!("Step 11: PROC domain registered");
-        crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
-    }
+    crate::kernel::mm::pmm::pmm_register_barrier_domain();
+    crate::klog_boot_info!("Step 11: PMM domain registered");
+    crate::kernel::proc::process::proc_register_barrier_domain();
+    crate::klog_boot_info!("Step 11: PROC domain registered");
+
     #[cfg(target_arch = "aarch64")]
-    {
-        crate::klog_boot_info!("Barrier-stack recovery domains skipped (aarch64)");
+    unsafe {
+        crate::kernel::arch::aarch64::barrier::enable_barrier_sgi();
     }
+    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
     // HvFS + 磁盘挂载 — 通过 BlockDevice 注册表发现磁盘 (当前仅 x86_64 启用 HvFS 模块)
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]

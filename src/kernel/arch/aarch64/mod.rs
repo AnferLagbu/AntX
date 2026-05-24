@@ -15,7 +15,9 @@
 //! - [x] `impl MmuArch for Aarch64` — TTBR0/1 + context switch + eret
 //! - [x] `impl SystemArch for Aarch64` — PSCI + port IO stubs
 //! - [x] `impl Arch for Aarch64` — 超 trait (空)
+//! - [x] `barrier` — 栏栈恢复 (SGI 7 替代 int 0x82)
 
+pub mod barrier;
 pub mod context;
 pub mod exception;
 pub mod gic;

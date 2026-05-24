@@ -1,5 +1,4 @@
 use core::sync::atomic::AtomicU32;
-#[cfg(target_arch = "x86_64")]
 use core::sync::atomic::Ordering;
 
 pub mod test_barrier;
@@ -97,10 +96,6 @@ impl TestRunner {
     }
 
     pub fn run_all(&self) {
-        #[cfg(not(target_arch = "x86_64"))]
-        { let _ = self; return; }
-        #[cfg(target_arch = "x86_64")]
-        {
         let reg = self.registry.lock();
         let total = reg.count;
 
@@ -173,17 +168,38 @@ impl TestRunner {
             Self::serial_print(b" skipped)\n");
         }
         Self::serial_print(b"========================================\n");
-        } // end cfg(x86_64) block
     }
 
-    fn serial_print(_s: &[u8]) {
+    fn serial_print(s: &[u8]) {
         #[cfg(target_arch = "x86_64")]
-        serial_print(_s);
+        serial_print(s);
+        #[cfg(target_arch = "aarch64")]
+        for &b in s {
+            unsafe { crate::kernel::arch::aarch64::uart::putc(b); }
+        }
     }
 
-    fn serial_print_num(_n: u64) {
+    fn serial_print_num(n: u64) {
         #[cfg(target_arch = "x86_64")]
-        serial_print_num(_n);
+        serial_print_num(n);
+        #[cfg(target_arch = "aarch64")]
+        {
+            if n == 0 {
+                unsafe { crate::kernel::arch::aarch64::uart::putc(b'0'); }
+                return;
+            }
+            let mut buf = [0u8; 20];
+            let mut pos = 0usize;
+            let mut val = n;
+            while val > 0 {
+                buf[pos] = (val % 10) as u8 + b'0';
+                pos += 1;
+                val /= 10;
+            }
+            for i in (0..pos).rev() {
+                unsafe { crate::kernel::arch::aarch64::uart::putc(buf[i]); }
+            }
+        }
     }
 }
 
@@ -239,12 +255,6 @@ pub fn serial_print_num(mut n: u64) {
 
 static TEST_RUNNER: spin::Once<TestRunner> = spin::Once::new();
 
-#[cfg(target_arch = "x86_64")]
-pub fn runner() -> &'static TestRunner {
-    TEST_RUNNER.call_once(TestRunner::new)
-}
-
-#[cfg(not(target_arch = "x86_64"))]
 pub fn runner() -> &'static TestRunner {
     TEST_RUNNER.call_once(TestRunner::new)
 }
@@ -278,14 +288,16 @@ macro_rules! skip_test {
 
 pub use {check, assert_eq_test, skip_test};
 
-#[cfg(target_arch = "x86_64")]
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === QueenX Test Framework ===");
 
     test_barrier::register_barrier_tests();
     test_barrier_ext::register_barrier_ext_tests();
-    test_hvfs::register_hvfs_tests();
-    test_hvfs_ext::register_hvfs_ext_tests();
+    #[cfg(target_arch = "x86_64")]
+    {
+        test_hvfs::register_hvfs_tests();
+        test_hvfs_ext::register_hvfs_ext_tests();
+    }
     test_pwid::register_pwid_tests();
     test_mm::register_mm_tests();
     test_vfs::register_vfs_tests();
@@ -295,18 +307,25 @@ pub fn test_runner_init() {
 
     #[cfg(feature = "kernel_test")]
     {
-        arch::register_tests();
-        sys::register_tests();
+        #[cfg(target_arch = "x86_64")]
+        {
+            arch::register_tests();
+            sys::register_tests();
+            idt::register_tests();
+            driver::register_tests();
+        }
         string::register_tests();
         sched::register_tests();
-        idt::register_tests();
         sync::register_tests();
-        driver::register_tests();
         net::register_tests();
         reset::register_tests();
-        crate::kernel::timer::pit::register_pit_tests();
+        #[cfg(target_arch = "x86_64")]
+        {
+            crate::kernel::timer::pit::register_pit_tests();
+            crate::kernel::timer::calibration::register_timer_calibration_tests();
+        }
         crate::kernel::timer::tick::register_timer_tick_tests();
-        crate::kernel::timer::calibration::register_timer_calibration_tests();
+        #[cfg(target_arch = "x86_64")]
         crate::kernel::timer::irq::register_timer_irq_tests();
         crate::kernel::timer::sleep::register_timer_sleep_tests();
     }

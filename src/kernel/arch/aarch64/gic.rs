@@ -33,7 +33,7 @@ const GICD_ICFGR: u64 = 0x0C00;      // Interrupt Configuration (level/edge)
 const GICR_CTLR: u64 = 0x0000;      // Redistributor Control
 const GICR_WAKER: u64 = 0x0014;     // Wake
 const GICR_IGROUPR0: u64 = 0x0080;  // Group for SGIs/PPIs
-const GICR_ISENABLER0: u64 = 0x0100; // Enable for SGIs/PPIs
+pub const GICR_ISENABLER0: u64 = 0x0100; // Enable for SGIs/PPIs
 const GICR_IPRIORITYR: u64 = 0x0400; // Priority for SGIs/PPIs
 const GICR_ICFGR1: u64 = 0x0C04;    // Configuration for PPIs
 
@@ -82,7 +82,7 @@ unsafe fn gicr_write(offset: u64, val: u32) {
 }
 
 #[inline(always)]
-unsafe fn gicr_sgi_read(offset: u64) -> u32 {
+pub unsafe fn gicr_sgi_read(offset: u64) -> u32 {
     core::arch::asm!("dsb sy");
     let val = read_volatile((GICR_SGI_BASE + offset) as *const u32);
     core::arch::asm!("dsb sy");
@@ -90,7 +90,7 @@ unsafe fn gicr_sgi_read(offset: u64) -> u32 {
 }
 
 #[inline(always)]
-unsafe fn gicr_sgi_write(offset: u64, val: u32) {
+pub unsafe fn gicr_sgi_write(offset: u64, val: u32) {
     core::arch::asm!("dsb sy");
     write_volatile((GICR_SGI_BASE + offset) as *mut u32, val);
     core::arch::asm!("dsb sy");

@@ -347,13 +347,13 @@ pub extern "C" fn launch_first_user_process() -> ! {
         let bin_size = bin.len() as u64;
 
         if bin_size == 0 {
-            crate::klog_err!(Boot, "[USER] init ELF is empty");
+            crate::klog_boot_info!("[USER] init ELF is empty");
             loop { crate::arch!(halt()); }
         }
 
         let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
         if pid <= 0 {
-            crate::klog_err!(Boot, "[USER] Failed to load init ELF, pid={}", pid);
+            crate::klog_boot_info!("[USER] Failed to load init ELF");
             loop { crate::arch!(halt()); }
         }
 

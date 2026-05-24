@@ -169,47 +169,29 @@ impl UserProcManager {
     
     pub fn create(&self, info: &UserProcInfo, pwid: u64) -> Option<*mut UserProcess> {
         let pid = PROCESS_TABLE.allocate_pid()?;
-        #[cfg(target_arch = "aarch64")]
-        crate::kernel::arch::aarch64::uart::puts("[PROC] create");
-        
+
         let proc = unsafe {
             let ptr = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
-            if ptr.is_null() { 
-                #[cfg(target_arch = "aarch64")]
-                crate::kernel::arch::aarch64::uart::puts("[PROC] kmalloc UserProcess failed");
-                return None; 
-            }
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[PROC] kmalloc UserProcess OK");
+            if ptr.is_null() { return None; }
             memset(ptr as *mut u8, 0, core::mem::size_of::<UserProcess>() as u64);
             ptr
         };
-        
+
         unsafe {
             (*proc).pid = pid;
             let cr3_val = vmm_create_user_page_table();
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[PROC] vmm_create_user_page_table done");
             (*proc).cr3.store(cr3_val, Ordering::SeqCst);
-            if cr3_val == 0 { 
-                #[cfg(target_arch = "aarch64")]
-                crate::kernel::arch::aarch64::uart::puts("[PROC] vmm_create_user_page_table returned 0");
-                return None; 
-            }
-            
+            if cr3_val == 0 { return None; }
+
             let stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[PROC] pmm_alloc_pages stack done");
             if stack_pages.is_null() {
-                #[cfg(target_arch = "aarch64")]
-                crate::kernel::arch::aarch64::uart::puts("[PROC] pmm_alloc_pages stack failed");
                 pmm_free_page(cr3_val as *mut core::ffi::c_void);
                 return None;
             }
-            
+
             let stack_phys = stack_pages as u64;
             let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
-            
+
             for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
                 let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
                 let sphys = stack_phys + i * PAGE_SIZE;
@@ -221,24 +203,12 @@ impl UserProcManager {
                 vmm_map_page(svirt, sphys, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
                 vmm_ensure_path_user(svirt);
             }
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[PROC] stack mapped");
 
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'S');
             (*proc).user_stack.store(USER_STACK_TOP, Ordering::SeqCst);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b's');
             let initial_stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
             (*proc).stack_bottom.store(initial_stack_bottom, Ordering::SeqCst);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b't');
 
             let kstack = pmm_alloc_pages(USER_KSTACK_SIZE / PAGE_SIZE);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'K');
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[PROC] kstack allocated");
             if kstack.is_null() {
                 pmm_free_page(stack_pages);
                 pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut core::ffi::c_void);
@@ -247,105 +217,49 @@ impl UserProcManager {
             let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
             (*proc).kernel_stack.store(kstack_top, Ordering::SeqCst);
             crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[PROC] canary written");
-            
+
             (*proc).entry = info.entry;
             (*proc).pwid.store(pwid, Ordering::SeqCst);
             (*proc).state.store(1, Ordering::SeqCst);
             (*proc).create_time = crate::kernel::timer::get_ticks();
         }
-        
+
         self.processes.lock().insert(pid, proc);
-        #[cfg(target_arch = "aarch64")]
-        crate::kernel::arch::aarch64::uart::puts("[PROC] inserted into processes map");
-        
+
         // 使用 kmalloc 直接分配 Process, 避免 global allocator 问题
         let kproc_ptr = unsafe { kmalloc(core::mem::size_of::<Process>() as u64) as *mut Process };
         if kproc_ptr.is_null() {
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[PROC] kmalloc Process failed");
             return None;
         }
-        #[cfg(target_arch = "aarch64")]
-        crate::kernel::arch::aarch64::uart::puts("[PROC] kmalloc Process OK");
 
         // 手动构建 Process (避免 Box::new + String::from 的 alloc 调用)
-        #[cfg(target_arch = "aarch64")]
-        crate::kernel::arch::aarch64::uart::puts("[PROC] writing Process fields...");
         unsafe {
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'1');
             core::ptr::write(&mut (*kproc_ptr).pid, ProcessId(pid));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'2');
             core::ptr::write(&mut (*kproc_ptr).pwid, AtomicU64::new(pwid));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'3');
             core::ptr::write(&mut (*kproc_ptr).state, AtomicU32::new(ProcessState::Ready as u32));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'4');
             core::ptr::write(&mut (*kproc_ptr).priority, AtomicU32::new(ProcessPriority::Normal as u32));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'5');
             core::ptr::write(&mut (*kproc_ptr).flags, AtomicU32::new(0));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'6');
             // Bypass String::from allocation - use zeroed memory temporarily
             // core::ptr::write(&mut (*kproc_ptr).name, Mutex::new(String::from("user_proc")));
             // Leave name field as uninitialized - we'll fix later
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'7');
             core::ptr::write(&mut (*kproc_ptr).parent, None);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'8');
             // Bypass Vec::new allocation
             // core::ptr::write(&mut (*kproc_ptr).children, Mutex::new(Vec::new()));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'9');
             // Bypass ProcessContext::new allocation
             // core::ptr::write(&mut (*kproc_ptr).context, Mutex::new(ProcessContext::new()));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'A');
             core::ptr::write(&mut (*kproc_ptr).cr3, AtomicU64::new((*proc).cr3.load(Ordering::SeqCst)));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'B');
             let ks_val = (*proc).kernel_stack.load(Ordering::SeqCst);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'b');
             core::ptr::write(&mut (*kproc_ptr).kernel_stack, AtomicU64::new(ks_val));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'c');
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'C');
             core::ptr::write(&mut (*kproc_ptr).user_stack, AtomicU64::new((*proc).user_stack.load(Ordering::SeqCst)));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'D');
             core::ptr::write(&mut (*kproc_ptr).exit_code, AtomicU32::new(0));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'E');
             core::ptr::write(&mut (*kproc_ptr).cpu_time, AtomicU64::new(0));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'F');
             core::ptr::write(&mut (*kproc_ptr).block_reason, AtomicU32::new(0));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'G');
             core::ptr::write(&mut (*kproc_ptr).sched_policy, AtomicU32::new(super::scheduler::SchedPolicy::Normal as u32));
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'H');
             (*kproc_ptr).rt_priority.store(0, Ordering::SeqCst);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'I');
             (*kproc_ptr).session_id.store(0, Ordering::SeqCst);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'J');
             // Bypass FdTable::new allocation
             // core::ptr::write(&mut (*kproc_ptr).fd_table, FdTable::new());
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'K');
             (*kproc_ptr).sleep_until.store(0, Ordering::SeqCst);
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::putc(b'Z');
         }
         // zero out the fields we skipped to avoid undefined behavior
         unsafe {
@@ -354,13 +268,9 @@ impl UserProcManager {
             core::ptr::write_bytes(&mut (*kproc_ptr).context as *mut _ as *mut u8, 0, core::mem::size_of::<Mutex<ProcessContext>>());
             core::ptr::write_bytes(&mut (*kproc_ptr).fd_table as *mut _ as *mut u8, 0, core::mem::size_of::<FdTable>());
         }
-        #[cfg(target_arch = "aarch64")]
-        crate::kernel::arch::aarch64::uart::puts("[PROC] Process fields written");
-        
+
         PROCESS_TABLE.insert(kproc_ptr);
-        #[cfg(target_arch = "aarch64")]
-        crate::kernel::arch::aarch64::uart::puts("[PROC] inserted into PROCESS_TABLE");
-        
+
         Some(proc)
     }
     
@@ -515,62 +425,36 @@ impl UserProcManager {
     }
     
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwid: u64) -> i32 {
-        #[cfg(target_arch = "aarch64")]
-        crate::kernel::arch::aarch64::uart::puts("[USER] load_elf_from_memory");
-        
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
             return -1;
         }
-        
+
         unsafe {
             let header = elf_data as *const ElfHeader;
-            
+
             if (*header).magic[0] != 0x7F || (*header).magic[1] != b'E' ||
                (*header).magic[2] != b'L' || (*header).magic[3] != b'F' {
                 return -1;
             }
-            
-            // ELF header validated silently
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[USER] ELF header OK");
-            
+
+            // Accept ELF64 for both x86_64 (0x3E) and AArch64 (0xB7)
             if (*header).class != 2 || ((*header).machine != 0x3E && (*header).machine != 0xB7) {
                 return -1;
             }
-            
+
             let info = UserProcInfo {
                 entry: (*header).entry,
                 name: [0; 64],
                 code_size: 0,
                 code_data: core::ptr::null(),
             };
-            
+
             let proc = match self.create(&info, pwid) {
                 Some(p) => p,
                 None => return -1,
             };
-            
+
             let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            
-            // Direct UART output to bypass klog buffering
-            unsafe {
-                crate::kernel::arch::aarch64::uart::putc(b'[');
-                crate::kernel::arch::aarch64::uart::putc(b'L');
-                crate::kernel::arch::aarch64::uart::putc(b']');
-                crate::kernel::arch::aarch64::uart::putc(b'\r');
-                crate::kernel::arch::aarch64::uart::putc(b'\n');
-                // Diagnostic: test cr3 read
-                crate::kernel::arch::aarch64::uart::putc(b'C');
-                let test_cr3 = (*proc).cr3.load(Ordering::SeqCst);
-                crate::kernel::arch::aarch64::uart::putc(b'c');
-                // Diagnostic: test header read
-                crate::kernel::arch::aarch64::uart::putc(b'H');
-                let test_phnum = (*header).phnum;
-                crate::kernel::arch::aarch64::uart::putc(b'h');
-            }
-            
-            #[cfg(target_arch = "aarch64")]
-            crate::kernel::arch::aarch64::uart::puts("[USER] loading PHs");
 
             // Use static array to avoid 8KB stack allocation
             static mut ALLOCATED_PAGES: [u64; 1024] = [0; 1024];
@@ -585,24 +469,21 @@ impl UserProcManager {
                 let phdr_offset = (*header).phoff + (i as u64) * (*header).phentsize as u64;
                 if phdr_offset + phdr_size > elf_size { self.destroy(proc); return -1; }
                 let phdr = (elf_data.add(phdr_offset as usize)) as *const ElfPhdr;
-                
+
                 if (*phdr).p_type != PT_LOAD { continue; }
-                
-                #[cfg(target_arch = "aarch64")]
-                crate::kernel::arch::aarch64::uart::puts("[USER] ELF LOAD segment");
-                
+
                 let vaddr_start = (*phdr).p_vaddr & !0xFFF;
                 let vaddr_end = ((*phdr).p_vaddr + (*phdr).p_memsz + 0xFFF) & !0xFFF;
                 let num_pages = (vaddr_end - vaddr_start) / PAGE_SIZE;
-                
+
                 for j in 0..num_pages {
                     let vaddr = vaddr_start + j * PAGE_SIZE;
-                    
+
                     let mut flags = PAGE_PRESENT | PAGE_USER;
                     if (*phdr).p_flags & 0x02 != 0 {
                         flags |= PAGE_WRITABLE;
                     }
-                    
+
                     // On aarch64, the 2MB BLOCK descriptors in L2_DEVICE cause
                     // vmm_get_physical_in_table to return non-zero for unmapped
                     // user addresses. Skip the reuse check and always allocate.
@@ -610,21 +491,9 @@ impl UserProcManager {
                     let existing_phys: u64 = 0;
                     #[cfg(not(target_arch = "aarch64"))]
                     let existing_phys = vmm_get_physical_in_table(cr3, vaddr);
-                    
+
                     if existing_phys == 0 {
-                        #[cfg(target_arch = "aarch64")]
-                        crate::kernel::arch::aarch64::uart::putc(b'P');
-                        #[cfg(target_arch = "aarch64")]
-                        crate::kernel::arch::aarch64::uart::putc(b'0');
                         let page = pmm_alloc_page();
-                        #[cfg(target_arch = "aarch64")]
-                        crate::kernel::arch::aarch64::uart::putc(b'p');
-                        #[cfg(target_arch = "aarch64")]
-                        crate::kernel::arch::aarch64::uart::putc(b'0');
-                        #[cfg(target_arch = "aarch64")]
-                        crate::kernel::arch::aarch64::uart::putc(b'\r');
-                        #[cfg(target_arch = "aarch64")]
-                        crate::kernel::arch::aarch64::uart::putc(b'\n');
                         if page.is_null() {
                             for pi in 0..page_count {
                                 pmm_free_page(allocated_pages[pi] as *mut core::ffi::c_void);
@@ -648,18 +517,18 @@ impl UserProcManager {
                         }
                     }
                 }
-                
+
                 if (*phdr).p_filesz > 0 {
                     let file_offset_bytes = (*phdr).p_offset as usize;
                     let mut copied: u64 = 0;
                     let first_page_offset = (*phdr).p_vaddr & 0xFFF;
                     let start_idx = page_count.saturating_sub(num_pages as usize);
-                    
+
                     for j in 0..num_pages {
                         if copied >= (*phdr).p_filesz { break; }
                         let page_phys = allocated_pages[start_idx + j as usize];
                         if page_phys == 0 { continue; }
-                        
+
                         let off_in_page = if j == 0 { first_page_offset } else { 0 };
                         let dest = (page_phys + KERNEL_BASE + off_in_page) as *mut u8;
                         let src = elf_data.add(file_offset_bytes + (copied as usize));
@@ -671,9 +540,9 @@ impl UserProcManager {
                     }
                 }
             }
-            
+
             (*proc).entry = (*header).entry;
-            
+
             (*proc).pid as i32
         }
     }

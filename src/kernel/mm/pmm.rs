@@ -178,15 +178,7 @@ impl PhysicalMemoryManager {
     }
 
     pub fn alloc_page(&self) -> Option<PhysAddr> {
-        // --- DIAGNOSTIC: entry ---
-        #[cfg(target_arch = "aarch64")]
-        unsafe { crate::kernel::arch::aarch64::uart::putc(b'A'); }
-        
         self.acquire_lock();
-
-        // --- DIAGNOSTIC: lock acquired ---
-        #[cfg(target_arch = "aarch64")]
-        unsafe { crate::kernel::arch::aarch64::uart::putc(b'L'); }
 
         let result = if !self.initialized.load(Ordering::Acquire) {
             self.early_alloc_single()
@@ -194,25 +186,15 @@ impl PhysicalMemoryManager {
             self.alloc_from_bitmap(1)
         };
 
-        // --- DIAGNOSTIC: alloc done ---
-        #[cfg(target_arch = "aarch64")]
-        unsafe { crate::kernel::arch::aarch64::uart::putc(b'D'); }
-
         match result {
             Some(addr) => {
                 self.total_allocs.fetch_add(1, Ordering::Relaxed);
                 self.release_lock();
-                // --- DIAGNOSTIC: success ---
-                #[cfg(target_arch = "aarch64")]
-                unsafe { crate::kernel::arch::aarch64::uart::putc(b'+'); }
                 Some(addr)
             }
             None => {
                 self.failed_allocs.fetch_add(1, Ordering::Relaxed);
                 self.release_lock();
-                // --- DIAGNOSTIC: fail ---
-                #[cfg(target_arch = "aarch64")]
-                unsafe { crate::kernel::arch::aarch64::uart::putc(b'-'); }
                 None
             }
         }
@@ -409,7 +391,7 @@ impl PhysicalMemoryManager {
 
                 if word_index < self.bitmap_size.get() {
                     let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
-                    (*atomic_ptr).fetch_or(1u32 << bit_index, core::sync::atomic::Ordering::SeqCst);
+                    (*atomic_ptr).fetch_or(1u32 << bit_index, core::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
@@ -424,7 +406,7 @@ impl PhysicalMemoryManager {
 
                 if word_index < self.bitmap_size.get() {
                     let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
-                    (*atomic_ptr).fetch_and(!(1u32 << bit_index), core::sync::atomic::Ordering::SeqCst);
+                    (*atomic_ptr).fetch_and(!(1u32 << bit_index), core::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
@@ -439,7 +421,7 @@ impl PhysicalMemoryManager {
 
                 if word_index < self.bitmap_size.get() {
                     let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
-                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::SeqCst);
+                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::Relaxed);
                     (value & (1u32 << bit_index)) != 0
                 } else {
                     false
@@ -456,25 +438,18 @@ impl PhysicalMemoryManager {
                 let bitmap = bitmap_ptr.as_ptr();
                 let total_bits = self.bitmap_size.get() * 32;
 
-                #[cfg(target_arch = "aarch64")]
-                crate::kernel::arch::aarch64::uart::putc(b'f');
-
                 for i in start..total_bits {
                     let word_index = i / 32;
                     let bit_index = i % 32;
 
                     let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
-                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::SeqCst);
+                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::Relaxed);
                     if (value & (1u32 << bit_index)) == 0 {
-                        #[cfg(target_arch = "aarch64")]
-                        crate::kernel::arch::aarch64::uart::putc(b'F');
                         return Some(i);
                     }
                 }
             }
         }
-        #[cfg(target_arch = "aarch64")]
-        unsafe { crate::kernel::arch::aarch64::uart::putc(b'n'); }
         None
     }
 
@@ -500,7 +475,7 @@ impl PhysicalMemoryManager {
                     let word_index = i / 32;
                     let bit_index = i % 32;
                     let atomic_ptr = bitmap.add(word_index) as *const core::sync::atomic::AtomicU32;
-                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::SeqCst);
+                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::Relaxed);
 
                     if (value & (1u32 << bit_index)) == 0 {
                         if consecutive == 0 {
@@ -529,7 +504,7 @@ impl PhysicalMemoryManager {
             if let Some(bit) = self.find_first_free(0) {
                 self.set_bit(bit);
                 let addr = PhysAddr(page_to_phys(bit as u64));
-                self.update_stats();
+                // self.update_stats(); // Skip: expensive 4096-word scan on aarch64
                 return Some(addr);
             }
         } else {
@@ -539,7 +514,7 @@ impl PhysicalMemoryManager {
                 }
 
                 let addr = PhysAddr(page_to_phys(start_bit as u64));
-                self.update_stats();
+                // self.update_stats(); // Skip: expensive 4096-word scan on aarch64
                 return Some(addr);
             }
         }
@@ -644,7 +619,7 @@ impl PhysicalMemoryManager {
 
                 for i in 0..bitmap_size {
                     let atomic_ptr = bitmap.add(i) as *const core::sync::atomic::AtomicU32;
-                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::SeqCst);
+                    let value = (*atomic_ptr).load(core::sync::atomic::Ordering::Relaxed);
                     used_count += value.count_ones() as u64;
                 }
 
@@ -690,9 +665,9 @@ pub fn pmm_barrier_capture() {
     let pmm = get_pmm();
     let mut snap = PMM_SNAPSHOT.lock();
     *snap = Some(PmmSnapshot {
-        total_allocs: pmm.total_allocs.load(Ordering::SeqCst),
-        total_frees: pmm.total_frees.load(Ordering::SeqCst),
-        failed_allocs: pmm.failed_allocs.load(Ordering::SeqCst),
+        total_allocs: pmm.total_allocs.load(Ordering::Relaxed),
+        total_frees: pmm.total_frees.load(Ordering::Relaxed),
+        failed_allocs: pmm.failed_allocs.load(Ordering::Relaxed),
         info: pmm.info.get(),
     });
 }
@@ -701,9 +676,9 @@ pub fn pmm_barrier_rollback() -> bool {
     let pmm = get_pmm();
     let snap = PMM_SNAPSHOT.lock();
     if let Some(ref s) = *snap {
-        pmm.total_allocs.store(s.total_allocs, Ordering::SeqCst);
-        pmm.total_frees.store(s.total_frees, Ordering::SeqCst);
-        pmm.failed_allocs.store(s.failed_allocs, Ordering::SeqCst);
+        pmm.total_allocs.store(s.total_allocs, Ordering::Relaxed);
+        pmm.total_frees.store(s.total_frees, Ordering::Relaxed);
+        pmm.failed_allocs.store(s.failed_allocs, Ordering::Relaxed);
         pmm.info.set(s.info);
     }
     true

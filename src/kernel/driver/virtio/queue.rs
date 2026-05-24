@@ -182,8 +182,8 @@ impl VirtQueue {
     /// Notify device after submission (caller must set avail->idx and write QueueNotify).
     pub fn commit_and_kick(&mut self) {
         unsafe {
-            // DSB + memory barrier: ensure descriptor and ring writes are globally visible
-            core::arch::asm!("dsb sy");
+            // Full memory barrier: ensure descriptor and ring writes are globally visible
+            crate::kernel::sync::arch::fence();
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
             core::ptr::write_volatile(&mut (*self.avail).idx, self.next_avail_idx);
         }
