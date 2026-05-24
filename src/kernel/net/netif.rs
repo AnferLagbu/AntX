@@ -304,6 +304,59 @@ pub unsafe extern "C" fn qx_netif_register_virtio() -> i32 {
 }
 
 // ============================================================================
+// E1000 网络接口注册 (x86_64)
+// ============================================================================
+
+/// 注册 E1000 网卡为 lwIP 网络接口
+#[no_mangle]
+pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
+    klog_net("Registering e1000 as lwIP netif\0".as_ptr() as *const i8);
+
+    if !G_NETIF_PTR.is_null() {
+        klog_net("Netif already registered, skipping\0".as_ptr() as *const i8);
+        return LwipErr::Ok as i32;
+    }
+
+    let netif_ptr = G_NETIF_BUFFER.as_mut_ptr() as *mut core::ffi::c_void;
+    core::ptr::write_bytes(G_NETIF_BUFFER.as_mut_ptr(), 0, 2048);
+
+    let result = netif_add(
+        netif_ptr,
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null_mut(),
+        e1000_init_wrapper,
+        ethernet_input_wrapper,
+    );
+
+    if result.is_null() {
+        klog_net_err("netif_add failed (e1000)\0".as_ptr() as *const i8);
+        return LwipErr::If as i32;
+    }
+
+    netif_set_default(result);
+    netif_set_up(result);
+    extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
+    netif_set_link_up(result);
+    netif_set_status_callback(result, status_callback_wrapper);
+    G_NETIF_PTR = result;
+    G_NET_INITIALIZED.store(1, Ordering::Release);
+
+    // 启动 DHCP
+    klog_net("Starting DHCP on e1000...\0".as_ptr() as *const i8);
+    let dhcp_result = dhcp_start(result);
+    if dhcp_result == 0 {
+        klog_net("DHCP client started\0".as_ptr() as *const i8);
+    } else {
+        klog_net_err("DHCP start failed\0".as_ptr() as *const i8);
+    }
+
+    klog_net("e1000 netif registered\0".as_ptr() as *const i8);
+    LwipErr::Ok as i32
+}
+
+// ============================================================================
 // 公共 API (供 Rust 内部和其他模块使用)
 // ============================================================================
 
