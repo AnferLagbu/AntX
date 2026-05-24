@@ -269,6 +269,17 @@ pub extern "C" fn kernel_init() {
     crate::kernel::mm::pmm::pmm_init_bitmap(reserved_after_kernel);
     crate::klog_boot_info!("PMM bitmap initialized");
 
+    // --- Barrier-stack recovery domains (moved before interrupts to avoid race) ---
+    // Register PMM + PROC domains before interrupts are enabled so timer IRQ
+    // won't race with domain registration on the RECOVERY_MANAGER spinlock
+    crate::kernel::mm::pmm::pmm_register_barrier_domain();
+    crate::kernel::proc::process::proc_register_barrier_domain();
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        crate::kernel::arch::aarch64::barrier::enable_barrier_sgi();
+    }
+    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
+
     // 6. 中断/异常设置
     #[cfg(target_arch = "x86_64")]
     {
@@ -326,19 +337,6 @@ pub extern "C" fn kernel_init() {
         let _ = crate::kernel::driver::storage::storage_init();
         crate::klog_boot_info!("Storage subsystem initialized");
     }
-
-    // 11. Barrier-Stack recovery domains (双架构: x86_64 int 0x82, aarch64 SGI 7)
-    crate::klog_boot_info!("Step 11: Barrier-stack domain init");
-    crate::kernel::mm::pmm::pmm_register_barrier_domain();
-    crate::klog_boot_info!("Step 11: PMM domain registered");
-    crate::kernel::proc::process::proc_register_barrier_domain();
-    crate::klog_boot_info!("Step 11: PROC domain registered");
-
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        crate::kernel::arch::aarch64::barrier::enable_barrier_sgi();
-    }
-    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
     // HvFS + 磁盘挂载 — 通过 BlockDevice 注册表发现磁盘 (当前仅 x86_64 启用 HvFS 模块)
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]

@@ -164,13 +164,9 @@ $(RUST_LIB): build/user/init.bin
 	@cd src/rust && cargo build --release --target $(RUST_TARGET)
 else
 # x86_64: 用 Cargo 构建 Rust 用户程序 + 内核
-# NOTE: user 程序依赖 axsh 等，当前有预存编译问题 (print! 宏缺失)
-# 开发期间可仅构建内核: make ARCH=x86_64 build/kernel.bin
-# include_bytes! 编译时需要 init.bin 存在，创建占位文件 (双架构)
+# include_bytes! 编译时需要 init.bin 存在，确保用户程序先构建
 
-$(RUST_LIB): $(STAGE1_BIN)
-	@mkdir -p build/user
-	@touch build/user/init.bin
+$(RUST_LIB): $(STAGE1_BIN) build/user/init.bin
 	@echo "Building Rust kernel module..."
 	@cd src/rust && cargo build --release --target $(RUST_TARGET)
 endif
