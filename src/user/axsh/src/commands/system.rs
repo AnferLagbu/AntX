@@ -45,13 +45,13 @@ pub fn ps(_: &Cmd) {
         return;
     }
 
-    println("PID   STATE   PWID     PRI  NAME");
+    println("PID   STATE   PWM     PRI  NAME");
     println("----- ------- -------- ---- --------");
     for i in 0..count as usize {
         let entry = &buf[i * 64..(i + 1) * 64];
         let pid = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]);
         let state = entry[4];
-        let pwid = u64::from_le_bytes([entry[8], entry[9], entry[10], entry[11],
+        let pwm = u64::from_le_bytes([entry[8], entry[9], entry[10], entry[11],
             entry[12], entry[13], entry[14], entry[15]]);
         let pri = u32::from_le_bytes([entry[16], entry[17], entry[18], entry[19]]);
 
@@ -65,7 +65,7 @@ pub fn ps(_: &Cmd) {
         for j in 0..48 { name[j] = entry[name_start + j]; if entry[name_start + j] == 0 { break; } }
         let name_str = core::str::from_utf8(&name).unwrap_or("?").trim_end_matches('\0');
 
-        let _ = write!(FmtWriter, "{:<5} {:<6} {:08X}  {:>4}  ", pid, state_str, pwid, pri);
+        let _ = write!(FmtWriter, "{:<5} {:<6} {:08X}  {:>4}  ", pid, state_str, pwm, pri);
         println(name_str);
     }
 }

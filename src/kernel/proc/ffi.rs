@@ -23,7 +23,7 @@ struct CProcess {
     pid: u64,
     session_id: u64,
     parent_pid: u64,
-    pwid: u64,
+    pwm: u64,
     state: u32,
     exit_code: u64,
     priority: i32,
@@ -36,7 +36,7 @@ static mut C_CURRENT_PROCESS: CProcess = CProcess {
     pid: 0,
     session_id: 0,
     parent_pid: 0,
-    pwid: 0,
+    pwm: 0,
     state: 0,
     exit_code: 0,
     priority: 2,
@@ -83,7 +83,7 @@ pub extern "C" fn update_current_process_ptr(ptr: u64) {
         let proc_ptr = ptr as *const Process;
         unsafe {
             C_CURRENT_PROCESS.pid = (*proc_ptr).pid.0 as u64;
-            C_CURRENT_PROCESS.pwid = (*proc_ptr).get_pwid();
+            C_CURRENT_PROCESS.pwm = (*proc_ptr).get_pwm();
         }
     }
 }
@@ -106,8 +106,8 @@ pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
 }
 
 #[no_mangle]
-pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid, pwid: u64) -> Pid {
-    proc_create_internal(name, parent_pid, pwid)
+pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid, pwm: u64) -> Pid {
+    proc_create_internal(name, parent_pid, pwm)
 }
 
 #[no_mangle]
@@ -209,13 +209,13 @@ extern "C" {
 }
 
 #[no_mangle]
-pub extern "C" fn user_proc_load_elf(path: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn user_proc_load_elf(path: *const c_char, pwm: u64) -> i32 {
     if path.is_null() {
         return -1;
     }
 
     let mut st: crate::kernel::fs::vfs::types::VfsStat = unsafe { core::mem::zeroed() };
-    let stat_result = unsafe { crate::kernel::fs::vfs::ffi::vfs_stat(path, &mut st, pwid) };
+    let stat_result = unsafe { crate::kernel::fs::vfs::ffi::vfs_stat(path, &mut st, pwm) };
     if stat_result < 0 {
         return -1;
     }
@@ -225,7 +225,7 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwid: u64) -> i32 {
         return -1;
     }
 
-    let fd = unsafe { crate::kernel::fs::vfs::ffi::vfs_open(path, 0, pwid) };
+    let fd = unsafe { crate::kernel::fs::vfs::ffi::vfs_open(path, 0, pwm) };
     if fd < 0 {
         return -1;
     }
@@ -249,7 +249,7 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwid: u64) -> i32 {
         return -1;
     }
 
-    let result = USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwid);
+    let result = USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwm);
 
     extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
     unsafe { pmm_free_pages(buffer as *mut core::ffi::c_void, pages as u64) };
@@ -258,8 +258,8 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwid: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: u64, pwid: u64) -> i32 {
-    USER_PROC_MANAGER.load_elf_from_memory(elf_data, elf_size, pwid)
+pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: u64, pwm: u64) -> i32 {
+    USER_PROC_MANAGER.load_elf_from_memory(elf_data, elf_size, pwm)
 }
 
 /// Set up argv/envp on user stack after ELF loading (for exec syscall)
@@ -292,7 +292,7 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
         unsafe {
             C_CURRENT_PROCESS.pid = (*proc).pid as u64;
-            C_CURRENT_PROCESS.pwid = (*proc).pwid.load(Ordering::SeqCst);
+            C_CURRENT_PROCESS.pwm = (*proc).pwm.load(Ordering::SeqCst);
             C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
             C_CURRENT_PROCESS.parent_pid = 1;
         }
@@ -329,7 +329,7 @@ pub extern "C" fn launch_first_user_process() -> ! {
         let pid_u32 = pid as u32;
 
         C_CURRENT_PROCESS.pid = pid_u32 as u64;
-        C_CURRENT_PROCESS.pwid = 0;
+        C_CURRENT_PROCESS.pwm = 0;
         C_CURRENT_PROCESS.state = 2;
         C_CURRENT_PROCESS.parent_pid = 1;
 
@@ -360,7 +360,7 @@ pub extern "C" fn launch_first_user_process() -> ! {
         let pid_u32 = pid as u32;
 
         C_CURRENT_PROCESS.pid = pid_u32 as u64;
-        C_CURRENT_PROCESS.pwid = 0;
+        C_CURRENT_PROCESS.pwm = 0;
         C_CURRENT_PROCESS.state = 2;
         C_CURRENT_PROCESS.parent_pid = 1;
 
@@ -395,7 +395,7 @@ pub extern "C" fn thread_init() {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid, pwid: u64) -> Pid {
+pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid, pwm: u64) -> Pid {
     if name.is_null() {
         return 0;
     }
@@ -416,32 +416,32 @@ pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid, pwi
         Some(parent_pid)
     };
     
-    SCHEDULER.create_process(name_str, parent, pwid).unwrap_or(0)
+    SCHEDULER.create_process(name_str, parent, pwm).unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_get_current_pwid() -> u64 {
+pub extern "C" fn scheduler_get_current_pwm() -> u64 {
     if let Some(pid) = SCHEDULER.current() {
         if let Some(process) = PROCESS_TABLE.get(pid) {
-            return unsafe { (*process).get_pwid() };
+            return unsafe { (*process).get_pwm() };
         }
     }
     0
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_set_quota(pwid: u64, max_runtime: u64, period: u64) {
-    SCHEDULER.set_quota(pwid, max_runtime, period);
+pub extern "C" fn scheduler_set_quota(pwm: u64, max_runtime: u64, period: u64) {
+    SCHEDULER.set_quota(pwm, max_runtime, period);
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_remove_quota(pwid: u64) {
-    SCHEDULER.remove_quota(pwid);
+pub extern "C" fn scheduler_remove_quota(pwm: u64) {
+    SCHEDULER.remove_quota(pwm);
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_set_proc_limit(pwid: u64, max_procs: u32) {
-    SCHEDULER.set_limit(pwid, max_procs);
+pub extern "C" fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
+    SCHEDULER.set_limit(pwm, max_procs);
 }
 
 #[no_mangle]
@@ -592,7 +592,7 @@ pub extern "C" fn scheduler_get_rt_count() -> usize {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, argc: u32, pwid: u64) -> Pid {
+pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, argc: u32, pwm: u64) -> Pid {
     if path.is_null() { return 0; }
 
     let parent_pid = SCHEDULER.current().unwrap_or(0);
@@ -601,11 +601,11 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
         cstr.to_str().unwrap_or("user")
     };
 
-    let child_pid = SCHEDULER.create_process(name_str, if parent_pid != 0 { Some(parent_pid) } else { None }, pwid).unwrap_or(0);
+    let child_pid = SCHEDULER.create_process(name_str, if parent_pid != 0 { Some(parent_pid) } else { None }, pwm).unwrap_or(0);
     if child_pid == 0 { return 0; }
 
     // Create session for the new user process
-    if let Some(sid) = SESSION_MANAGER.create(pwid) {
+    if let Some(sid) = SESSION_MANAGER.create(pwm) {
         if let Some(proc) = PROCESS_TABLE.get(child_pid) {
             unsafe { (*proc).session_id.store(sid, Ordering::SeqCst); }
         }
@@ -616,7 +616,7 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
         unsafe { (*proc).fd_table.init(); }
     }
 
-    let load_result = user_proc_load_elf(path, pwid);
+    let load_result = user_proc_load_elf(path, pwm);
     if load_result < 0 {
         let pid = child_pid;
         // 保存 session_id 在释放之前
@@ -648,8 +648,8 @@ pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8,
     USER_PROC_MANAGER.destroy_by_pid(current_pid);
     PROCESS_TABLE.remove_and_free(current_pid);
 
-    let pwid = scheduler_get_current_pwid();
-    let new_pid = user_proc_load_elf(path, pwid);
+    let pwm = scheduler_get_current_pwm();
+    let new_pid = user_proc_load_elf(path, pwm);
     if new_pid < 0 { return -1; }
 
     let new_pid_u32 = new_pid as u32;
@@ -662,7 +662,7 @@ pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8,
     if let Some(proc) = USER_PROC_MANAGER.get(new_pid_u32) {
         unsafe {
             C_CURRENT_PROCESS.pid = (*proc).pid as u64;
-            C_CURRENT_PROCESS.pwid = (*proc).pwid.load(Ordering::SeqCst);
+            C_CURRENT_PROCESS.pwm = (*proc).pwm.load(Ordering::SeqCst);
             C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
         }
     }
@@ -774,7 +774,7 @@ pub extern "C" fn sys_fork() -> Pid {
     };
     
     // Copy remaining parent properties
-    child.pwid.store(parent.pwid.load(Ordering::SeqCst), Ordering::SeqCst);
+    child.pwm.store(parent.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
     child.cr3.store(child_cr3, Ordering::SeqCst);
     child.sched_policy.store(parent.sched_policy.load(Ordering::SeqCst), Ordering::SeqCst);
     child.rt_priority.store(parent.rt_priority.load(Ordering::SeqCst), Ordering::SeqCst);
@@ -845,10 +845,10 @@ pub extern "C" fn proc_get_ppid(pid: Pid) -> Pid {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_set_pwid(pid: Pid, pwid: u64) -> i32 {
+pub extern "C" fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
     let proc = PROCESS_TABLE.get(pid);
     if let Some(p) = proc {
-        unsafe { (*p).pwid.store(pwid, Ordering::SeqCst); }
+        unsafe { (*p).pwm.store(pwm, Ordering::SeqCst); }
         0
     } else {
         -1

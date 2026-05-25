@@ -1,25 +1,25 @@
-//! PWID v5 Type Definitions
+//! PWM v5 Type Definitions
 //!
-//! Core data structures for the PWID v5 privilege model.
+//! Core data structures for the PWM v5 privilege model.
 //! Design: zero-concept + numeric privilege level + kernel isolation + First Token.
-//! PWID初心: 密码决定身份 | 无预设特权 | 能力来自授予
+//! PWM初心: 密码决定身份 | 无预设特权 | 能力来自授予
 
 use core::sync::atomic::{AtomicU64, AtomicU32, AtomicU16, AtomicU8};
 
-pub const MAX_PWID_ENTRIES: usize = 256;
-pub const PWID_NOTE_LEN: usize = 64;
-pub const PWID_HASH_LEN: usize = 48;
-pub const PWID_SALT_LEN: usize = 16;
-pub const PWID_DIGEST_LEN: usize = 32;
+pub const MAX_PWM_ENTRIES: usize = 256;
+pub const PWM_NOTE_LEN: usize = 64;
+pub const PWM_HASH_LEN: usize = 48;
+pub const PWM_SALT_LEN: usize = 16;
+pub const PWM_DIGEST_LEN: usize = 32;
 pub const MAX_GRANT_RECORDS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct PwidId(pub u64);
+pub struct PwmId(pub u64);
 
-impl PwidId {
-    pub const ZERO: PwidId = PwidId(0);
-    pub const TEST: PwidId = PwidId(0x0020F45A8B978417);
+impl PwmId {
+    pub const ZERO: PwmId = PwmId(0);
+    pub const TEST: PwmId = PwmId(0x0020F45A8B978417);
 
     pub fn is_valid(&self) -> bool {
         self.0 != 0
@@ -30,7 +30,7 @@ impl PwidId {
     }
 }
 
-impl Default for PwidId {
+impl Default for PwmId {
     fn default() -> Self {
         Self::ZERO
     }
@@ -116,7 +116,7 @@ impl core::ops::Not for CapBits {
 bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug)]
-    pub struct PwidFlags: u16 {
+    pub struct PwmFlags: u16 {
         const NONE       = 0;
         const DISABLED   = 1 << 0;
         const MODIFIED   = 1 << 3;
@@ -124,21 +124,23 @@ bitflags::bitflags! {
     }
 }
 
-impl Default for PwidFlags {
+impl Default for PwmFlags {
     fn default() -> Self {
         Self::NONE
     }
 }
 
 #[repr(C)]
-pub struct PwidEntry {
-    pub pwid: AtomicU64,
-    pub creator_pwid: AtomicU64,
+pub struct PwmEntry {
+    pub pwm: AtomicU64,
+    pub posix_uid: AtomicU32,
+    pub posix_gid: AtomicU32,
+    pub creator_pwm: AtomicU64,
     pub privilege_level: AtomicU8,
     pub flags: AtomicU16,
     pub caps: [AtomicU64; 16],
-    pub note: [u8; PWID_NOTE_LEN],
-    pub password_hash: [u8; PWID_HASH_LEN],
+    pub note: [u8; PWM_NOTE_LEN],
+    pub password_hash: [u8; PWM_HASH_LEN],
     pub created_time: AtomicU64,
     pub expires_at: AtomicU64,
     pub lockout_until: AtomicU64,
@@ -146,16 +148,18 @@ pub struct PwidEntry {
     pub last_login_time: AtomicU64,
 }
 
-impl Default for PwidEntry {
+impl Default for PwmEntry {
     fn default() -> Self {
         Self {
-            pwid: AtomicU64::new(0),
-            creator_pwid: AtomicU64::new(0),
+            pwm: AtomicU64::new(0),
+            posix_uid: AtomicU32::new(0),
+            posix_gid: AtomicU32::new(0),
+            creator_pwm: AtomicU64::new(0),
             privilege_level: AtomicU8::new(0xFF),
             flags: AtomicU16::new(0),
             caps: [0; 16].map(AtomicU64::new),
-            note: [0u8; PWID_NOTE_LEN],
-            password_hash: [0u8; PWID_HASH_LEN],
+            note: [0u8; PWM_NOTE_LEN],
+            password_hash: [0u8; PWM_HASH_LEN],
             created_time: AtomicU64::new(0),
             expires_at: AtomicU64::new(0),
             lockout_until: AtomicU64::new(0),
@@ -165,44 +169,44 @@ impl Default for PwidEntry {
     }
 }
 
-impl PwidEntry {
+impl PwmEntry {
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn is_valid(&self) -> bool {
-        self.pwid.load(core::sync::atomic::Ordering::Acquire) != 0
+        self.pwm.load(core::sync::atomic::Ordering::Acquire) != 0
     }
 
-    pub fn get_pwid(&self) -> PwidId {
-        PwidId(self.pwid.load(core::sync::atomic::Ordering::Acquire))
+    pub fn get_pwm(&self) -> PwmId {
+        PwmId(self.pwm.load(core::sync::atomic::Ordering::Acquire))
     }
 
-    pub fn get_creator_pwid(&self) -> PwidId {
-        PwidId(self.creator_pwid.load(core::sync::atomic::Ordering::Acquire))
+    pub fn get_creator_pwm(&self) -> PwmId {
+        PwmId(self.creator_pwm.load(core::sync::atomic::Ordering::Acquire))
     }
 
-    pub fn get_flags(&self) -> PwidFlags {
-        PwidFlags::from_bits_truncate(
+    pub fn get_flags(&self) -> PwmFlags {
+        PwmFlags::from_bits_truncate(
             self.flags.load(core::sync::atomic::Ordering::Acquire)
         )
     }
 
-    pub fn set_flags(&self, flags: PwidFlags) {
+    pub fn set_flags(&self, flags: PwmFlags) {
         self.flags.store(flags.bits(), core::sync::atomic::Ordering::Release);
     }
 
-    pub fn add_flags(&self, flags: PwidFlags) {
+    pub fn add_flags(&self, flags: PwmFlags) {
         let current = self.get_flags();
         self.set_flags(current | flags);
     }
 
-    pub fn remove_flags(&self, flags: PwidFlags) {
+    pub fn remove_flags(&self, flags: PwmFlags) {
         let current = self.get_flags();
         self.set_flags(current & !flags);
     }
 
-    pub fn has_flag(&self, flag: PwidFlags) -> bool {
+    pub fn has_flag(&self, flag: PwmFlags) -> bool {
         self.get_flags().contains(flag)
     }
 
@@ -213,7 +217,7 @@ impl PwidEntry {
 
     pub fn set_note(&mut self, note: &str) {
         let bytes = note.as_bytes();
-        let len = bytes.len().min(PWID_NOTE_LEN - 1);
+        let len = bytes.len().min(PWM_NOTE_LEN - 1);
         self.note[..len].copy_from_slice(&bytes[..len]);
         self.note[len] = 0;
     }
@@ -242,20 +246,38 @@ impl PwidEntry {
         let current = self.load_caps(domain);
         current.contains(required)
     }
+
+    pub fn get_uid(&self) -> u32 {
+        self.posix_uid.load(core::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn get_gid(&self) -> u32 {
+        self.posix_gid.load(core::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set_uid(&self, uid: u32) {
+        self.posix_uid.store(uid, core::sync::atomic::Ordering::Release);
+    }
+
+    pub fn set_gid(&self, gid: u32) {
+        self.posix_gid.store(gid, core::sync::atomic::Ordering::Release);
+    }
 }
 
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
-pub struct PwidContext {
-    pub current_entry: *const PwidEntry,
-    pub session_pwid: PwidId,
+pub struct PwmContext {
+    pub current_entry: *const PwmEntry,
+    pub session_pwm: PwmId,
+    pub cached_uid: u32,
+    pub cached_gid: u32,
 }
 
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct GrantRecord {
-    pub grantor_pwid: PwidId,
-    pub grantee_pwid: PwidId,
+    pub grantor_pwm: PwmId,
+    pub grantee_pwm: PwmId,
     pub domain: CapDomain,
     pub caps: CapBits,
     pub granted_at: u64,
@@ -263,21 +285,21 @@ pub struct GrantRecord {
 
 impl GrantRecord {
     pub const EMPTY: Self = Self {
-        grantor_pwid: PwidId::ZERO,
-        grantee_pwid: PwidId::ZERO,
+        grantor_pwm: PwmId::ZERO,
+        grantee_pwm: PwmId::ZERO,
         domain: CapDomain(0),
         caps: CapBits::NONE,
         granted_at: 0,
     };
 
     pub fn is_empty(&self) -> bool {
-        self.grantor_pwid == PwidId::ZERO
+        self.grantor_pwm == PwmId::ZERO
     }
 }
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PwidError {
+pub enum PwmError {
     Ok = 0,
     NotFound = -1,
     Disabled = -2,
@@ -295,7 +317,7 @@ pub enum PwidError {
     InvalidPassword = -14,
 }
 
-impl PwidError {
+impl PwmError {
     pub fn as_i32(self) -> i32 {
         self as i32
     }
@@ -342,9 +364,9 @@ impl AuditResult {
 #[repr(C)]
 pub struct AuditEntry {
     pub timestamp: u64,
-    pub pwid: PwidId,
+    pub pwm: PwmId,
     pub action: AuditAction,
     pub result: AuditResult,
-    pub target_pwid: PwidId,
+    pub target_pwm: PwmId,
     pub details: u64,
 }

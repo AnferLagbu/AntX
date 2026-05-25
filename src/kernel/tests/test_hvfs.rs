@@ -73,7 +73,7 @@ fn test_spa_uberblock_checksum() -> TestResult {
         root_dataset_obj: 0,
         pool_guid: 0xABCD,
         checkpoint_txg: 0,
-        pwid_domain_id: 0,
+        pwm_domain_id: 0,
         _pad: [0; 6],
         checksum: [0; 4],
     };

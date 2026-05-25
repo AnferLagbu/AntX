@@ -27,9 +27,9 @@ fn cstr_to_str(ptr: *const c_char) -> &'static str {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_open(path: *const c_char, flags: u32, pwid: u64) -> i32 {
+pub extern "C" fn hvfs_open(path: *const c_char, flags: u32, pwm: u64) -> i32 {
     let path_str = cstr_to_str(path);
-    match crate::kernel::fs::hvfs::hvfs::get_hvfs().open(path_str, flags, pwid) {
+    match crate::kernel::fs::hvfs::hvfs::get_hvfs().open(path_str, flags, pwm) {
         Ok(fd) => fd,
         Err(e) => e.as_i32(),
     }
@@ -55,27 +55,27 @@ pub extern "C" fn hvfs_write(fd: i32, buf: *const u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_mkdir(path: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn hvfs_mkdir(path: *const c_char, pwm: u64) -> i32 {
     let path_str = cstr_to_str(path);
-    crate::kernel::fs::hvfs::hvfs::get_hvfs().mkdir(path_str, pwid)
+    crate::kernel::fs::hvfs::hvfs::get_hvfs().mkdir(path_str, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_unlink(path: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn hvfs_unlink(path: *const c_char, pwm: u64) -> i32 {
     let path_str = cstr_to_str(path);
-    crate::kernel::fs::hvfs::hvfs::get_hvfs().unlink(path_str, pwid)
+    crate::kernel::fs::hvfs::hvfs::get_hvfs().unlink(path_str, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_rmdir(path: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn hvfs_rmdir(path: *const c_char, pwm: u64) -> i32 {
     let path_str = cstr_to_str(path);
-    crate::kernel::fs::hvfs::hvfs::get_hvfs().unlink(path_str, pwid)
+    crate::kernel::fs::hvfs::hvfs::get_hvfs().unlink(path_str, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_stat(path: *const c_char, pwid: u64) -> i32 {
+pub extern "C" fn hvfs_stat(path: *const c_char, pwm: u64) -> i32 {
     let path_str = cstr_to_str(path);
-    match crate::kernel::fs::hvfs::hvfs::get_hvfs().stat(path_str, pwid) {
+    match crate::kernel::fs::hvfs::hvfs::get_hvfs().stat(path_str, pwm) {
         Some(_) => 0,
         None => -1,
     }
@@ -156,13 +156,13 @@ pub extern "C" fn hvfs_get_current_dir() -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_set_current_pwid(pwid: u64) {
+pub extern "C" fn hvfs_set_current_pwm(pwm: u64) {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    hvfs.current_pwid.store(pwid, core::sync::atomic::Ordering::Release);
+    hvfs.current_pwm.store(pwm, core::sync::atomic::Ordering::Release);
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_get_current_pwid() -> u64 {
+pub extern "C" fn hvfs_get_current_pwm() -> u64 {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    hvfs.current_pwid.load(core::sync::atomic::Ordering::Acquire)
+    hvfs.current_pwm.load(core::sync::atomic::Ordering::Acquire)
 }

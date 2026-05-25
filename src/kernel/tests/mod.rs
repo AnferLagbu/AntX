@@ -7,7 +7,7 @@ pub mod test_barrier_ext;
 pub mod test_hvfs;
 #[cfg(target_arch = "x86_64")]
 pub mod test_hvfs_ext;
-pub mod test_pwid;
+pub mod test_pwm;
 pub mod test_mm;
 pub mod test_vfs;
 pub mod test_ipc;
@@ -298,7 +298,7 @@ pub fn test_runner_init() {
         test_hvfs::register_hvfs_tests();
         test_hvfs_ext::register_hvfs_ext_tests();
     }
-    test_pwid::register_pwid_tests();
+    test_pwm::register_pwm_tests();
     test_mm::register_mm_tests();
     test_vfs::register_vfs_tests();
     test_ipc::register_ipc_tests();

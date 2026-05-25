@@ -17,8 +17,8 @@ use crate::kernel::fs::vfs::types::KernelError;
 
 extern "C" {
     fn klog_ffi_info(msg: *const u8);
-    fn pwid_get_privilege_level(pwid: u64) -> u8;
-    fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool;
+    fn pwm_get_privilege_level(pwm: u64) -> u8;
+    fn pwm_has_capability(pwm: u64, domain: u16, required: u64) -> bool;
     fn timer_get_ticks() -> u64;
 }
 
@@ -35,7 +35,7 @@ pub struct HvfsFd {
     pub ds_id: u64,
     pub offset: u64,
     pub flags: u32,
-    pub pwid: u64,
+    pub pwm: u64,
     pub used: bool,
 }
 
@@ -54,7 +54,7 @@ pub struct HvfsData {
     pub zil: HvZil,
     pub fds: Mutex<[HvfsFd; HVFS_MAX_FDS]>,
     pub next_fd: AtomicU32,
-    pub current_pwid: AtomicU64,
+    pub current_pwm: AtomicU64,
     pub current_dir: AtomicU64,
     pub mounted: AtomicBool,
     pub initialized: AtomicBool,
@@ -78,9 +78,9 @@ pub fn get_hvfs() -> &'static HvfsData {
             datasets: Mutex::new(Vec::new()),
             snap_mgr: HvSnapshotManager::new(),
             zil: HvZil::new(),
-            fds: Mutex::new([HvfsFd { fd: 0, obj_id: 0, ds_id: 0, offset: 0, flags: 0, pwid: 0, used: false }; HVFS_MAX_FDS]),
+            fds: Mutex::new([HvfsFd { fd: 0, obj_id: 0, ds_id: 0, offset: 0, flags: 0, pwm: 0, used: false }; HVFS_MAX_FDS]),
             next_fd: AtomicU32::new(0),
-            current_pwid: AtomicU64::new(0),
+            current_pwm: AtomicU64::new(0),
             current_dir: AtomicU64::new(HV_DMU_OBJ_ROOT),
             mounted: AtomicBool::new(false),
             initialized: AtomicBool::new(false),
@@ -320,16 +320,16 @@ impl HvfsData {
         }
     }
 
-    fn check_permission(&self, obj: &HvDmuObject, pwid: u64, cap: u64) -> bool {
-        if pwid == 0 { return false; }
-        let level = unsafe { pwid_get_privilege_level(pwid) };
+    fn check_permission(&self, obj: &HvDmuObject, pwm: u64, cap: u64) -> bool {
+        if pwm == 0 { return false; }
+        let level = unsafe { pwm_get_privilege_level(pwm) };
         if level == 0xFF { return false; }
         if level == 0 { return true; }
-        if obj.owner_pwid == pwid { return true; }
-        unsafe { pwid_has_capability(pwid, 3, cap) }
+        if obj.owner_pwm == pwm { return true; }
+        unsafe { pwm_has_capability(pwm, 3, cap) }
     }
 
-    pub fn open(&self, path: &str, flags: u32, pwid: u64) -> Result<i32, KernelError> {
+    pub fn open(&self, path: &str, flags: u32, pwm: u64) -> Result<i32, KernelError> {
         if !self.is_initialized() { return Err(KernelError::NotInitialized); }
         let name = path.trim_start_matches('/');
         let obj_id = {
@@ -338,7 +338,7 @@ impl HvfsData {
             match ds.lookup(name) {
                 Some(id) => Some(id),
                 None => {
-                    if flags & 0x0100 != 0 { ds.create_file(name, pwid) } else { None }
+                    if flags & 0x0100 != 0 { ds.create_file(name, pwm) } else { None }
                 }
             }
         };
@@ -348,7 +348,7 @@ impl HvfsData {
             datasets[0].objset.get_obj(obj_id)
         };
         let obj = match obj { Some(o) => o, None => return Err(KernelError::NotFound) };
-        if !self.check_permission(&obj, pwid, 0x01) { return Err(KernelError::PermissionDenied); }
+        if !self.check_permission(&obj, pwm, 0x01) { return Err(KernelError::PermissionDenied); }
         let fd_idx = match self.alloc_fd() { Some(i) => i, None => return Err(KernelError::NoSpace) };
         {
             let mut fds = self.fds.lock();
@@ -356,7 +356,7 @@ impl HvfsData {
             fds[fd_idx].ds_id = self.root_ds_id.load(Ordering::Acquire);
             fds[fd_idx].offset = if flags & 0x0400 != 0 { obj.size } else { 0 };
             fds[fd_idx].flags = flags;
-            fds[fd_idx].pwid = pwid;
+            fds[fd_idx].pwm = pwm;
         }
         self.zil.add_record(HvZilRecord::new_create(0, 0, name));
         Ok(fd_idx as i32)
@@ -374,17 +374,17 @@ impl HvfsData {
     }
 
     pub fn read(&self, fd: u32, buf: &mut [u8], count: u32) -> i32 {
-        let (obj_id, offset, pwid) = {
+        let (obj_id, offset, pwm) = {
             let fds = self.fds.lock();
             let idx = fd as usize;
             if idx >= HVFS_MAX_FDS || !fds[idx].used { return -1; }
-            (fds[idx].obj_id, fds[idx].offset, fds[idx].pwid)
+            (fds[idx].obj_id, fds[idx].offset, fds[idx].pwm)
         };
         let obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
         };
-        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
         let available = if offset < obj.size { (obj.size - offset) as usize } else { 0 };
         let to_read = (count as usize).min(available).min(buf.len());
         if to_read == 0 { return 0; }
@@ -414,18 +414,18 @@ impl HvfsData {
     }
 
     pub fn write(&self, fd: u32, buf: &[u8], count: u32) -> i32 {
-        let (obj_id, offset, pwid, flags) = {
+        let (obj_id, offset, pwm, flags) = {
             let fds = self.fds.lock();
             let idx = fd as usize;
             if idx >= HVFS_MAX_FDS || !fds[idx].used { return -1; }
-            (fds[idx].obj_id, fds[idx].offset, fds[idx].pwid, fds[idx].flags)
+            (fds[idx].obj_id, fds[idx].offset, fds[idx].pwm, fds[idx].flags)
         };
         if flags & 0x0001 != 0 && flags & 0x0002 == 0 { return -1; }
         let mut obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
         };
-        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
         let to_write = (count as usize).min(buf.len());
         if to_write == 0 { return 0; }
         let txg = self.spa.current_txg();
@@ -468,12 +468,12 @@ impl HvfsData {
         to_write as i32
     }
 
-    pub fn mkdir(&self, path: &str, pwid: u64) -> i32 {
+    pub fn mkdir(&self, path: &str, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let name = path.trim_start_matches('/');
         let datasets = self.datasets.lock();
         let ds = &datasets[0];
-        match ds.create_dir(name, pwid) {
+        match ds.create_dir(name, pwm) {
             Some(obj_id) => {
                 let txg = self.spa.current_txg();
                 self.zil.add_record(HvZilRecord::new_mkdir(txg, 0, name));
@@ -483,7 +483,7 @@ impl HvfsData {
         }
     }
 
-    pub fn unlink(&self, path: &str, pwid: u64) -> i32 {
+    pub fn unlink(&self, path: &str, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let name = path.trim_start_matches('/');
         let obj_id = {
@@ -495,7 +495,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
         };
-        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
         {
             let datasets = self.datasets.lock();
             if !datasets[0].unlink(name) { return -1; }
@@ -508,18 +508,18 @@ impl HvfsData {
         0
     }
 
-    pub fn stat(&self, path: &str, pwid: u64) -> Option<HvDmuObject> {
+    pub fn stat(&self, path: &str, pwm: u64) -> Option<HvDmuObject> {
         if !self.is_initialized() { return None; }
         let name = path.trim_start_matches('/');
         let datasets = self.datasets.lock();
         let ds = &datasets[0];
         let obj_id = ds.lookup(name)?;
         let obj = ds.objset.get_obj(obj_id)?;
-        if !self.check_permission(&obj, pwid, 0x01) { return None; }
+        if !self.check_permission(&obj, pwm, 0x01) { return None; }
         Some(obj)
     }
 
-    pub fn chmod(&self, path: &str, mode: u16, pwid: u64) -> i32 {
+    pub fn chmod(&self, path: &str, mode: u16, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let name = path.trim_start_matches('/');
         
@@ -536,14 +536,14 @@ impl HvfsData {
         };
         
         // Permission check: only owner or privileged user can change permissions
-        if obj.owner_pwid != pwid {
-            let level = unsafe { pwid_get_privilege_level(pwid) };
+        if obj.owner_pwm != pwm {
+            let level = unsafe { pwm_get_privilege_level(pwm) };
             if level != 0 {
                 return -1;
             }
         }
         
-        obj.pwid_perm = mode;
+        obj.pwm_perm = mode;
         obj.ctime = unsafe { timer_get_ticks() };
         obj.dirty = true;
         
@@ -554,12 +554,12 @@ impl HvfsData {
         -1
     }
 
-    pub fn chown(&self, path: &str, owner_pwid: u64, pwid: u64) -> i32 {
+    pub fn chown(&self, path: &str, owner_pwm: u64, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let name = path.trim_start_matches('/');
         
         // Permission check: only privileged user can change owner
-        let level = unsafe { pwid_get_privilege_level(pwid) };
+        let level = unsafe { pwm_get_privilege_level(pwm) };
         if level != 0 {
             return -1;
         }
@@ -576,7 +576,7 @@ impl HvfsData {
             None => return -1,
         };
         
-        obj.owner_pwid = owner_pwid;
+        obj.owner_pwm = owner_pwm;
         obj.ctime = unsafe { timer_get_ticks() };
         obj.dirty = true;
         
@@ -587,7 +587,7 @@ impl HvfsData {
         -1
     }
 
-    pub fn rename(&self, old_path: &str, new_path: &str, pwid: u64) -> i32 {
+    pub fn rename(&self, old_path: &str, new_path: &str, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let old_name = old_path.trim_start_matches('/');
         let new_name = new_path.trim_start_matches('/');
@@ -609,7 +609,7 @@ impl HvfsData {
                 None => return -1,
             }
         };
-        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
         
         // 检查目标是否已存在
         {
@@ -634,7 +634,7 @@ impl HvfsData {
         0
     }
 
-    pub fn symlink(&self, target: &str, linkpath: &str, pwid: u64) -> i32 {
+    pub fn symlink(&self, target: &str, linkpath: &str, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let link_name = linkpath.trim_start_matches('/');
         
@@ -652,7 +652,7 @@ impl HvfsData {
             let ds = &mut datasets[0];
             
             // 分配新对象
-            match ds.objset.alloc_obj(HvObjType::Symlink, pwid) {
+            match ds.objset.alloc_obj(HvObjType::Symlink, pwm) {
                 Some(id) => id,
                 None => return -1,
             }
@@ -696,7 +696,7 @@ impl HvfsData {
         0
     }
 
-    pub fn link(&self, old_path: &str, new_path: &str, pwid: u64) -> i32 {
+    pub fn link(&self, old_path: &str, new_path: &str, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let old_name = old_path.trim_start_matches('/');
         let new_name = new_path.trim_start_matches('/');
@@ -723,7 +723,7 @@ impl HvfsData {
         }
         
         // 检查权限
-        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
         
         // 检查目标是否已存在
         {
@@ -758,7 +758,7 @@ impl HvfsData {
         0
     }
 
-    pub fn readlink(&self, path: &str, buf: &mut [u8], pwid: u64) -> i32 {
+    pub fn readlink(&self, path: &str, buf: &mut [u8], pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let name = path.trim_start_matches('/');
         
@@ -785,7 +785,7 @@ impl HvfsData {
         }
         
         // 检查权限
-        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
         
         // 读取目标路径
         if obj.bp.is_null() {
@@ -806,7 +806,7 @@ impl HvfsData {
         -1
     }
 
-    pub fn setxattr(&self, path: &str, name: &str, value: &[u8], pwid: u64) -> i32 {
+    pub fn setxattr(&self, path: &str, name: &str, value: &[u8], pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let obj_name = path.trim_start_matches('/');
         
@@ -827,7 +827,7 @@ impl HvfsData {
                 None => return -1,
             }
         };
-        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
         
         // 设置扩展属性
         {
@@ -853,7 +853,7 @@ impl HvfsData {
         -1
     }
 
-    pub fn getxattr(&self, path: &str, name: &str, buf: &mut [u8], pwid: u64) -> i32 {
+    pub fn getxattr(&self, path: &str, name: &str, buf: &mut [u8], pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let obj_name = path.trim_start_matches('/');
         
@@ -875,7 +875,7 @@ impl HvfsData {
         };
         
         // 检查权限
-        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
         
         // 获取扩展属性
         let name_hash = Self::hash_xattr_name(name);
@@ -893,7 +893,7 @@ impl HvfsData {
         -1
     }
 
-    pub fn listxattr(&self, path: &str, buf: &mut [u8], pwid: u64) -> i32 {
+    pub fn listxattr(&self, path: &str, buf: &mut [u8], pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let obj_name = path.trim_start_matches('/');
         
@@ -915,7 +915,7 @@ impl HvfsData {
         };
         
         // 检查权限
-        if !self.check_permission(&obj, pwid, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
         
         // 列出扩展属性
         let mut offset = 0;
@@ -933,7 +933,7 @@ impl HvfsData {
         offset as i32
     }
 
-    pub fn removexattr(&self, path: &str, name: &str, pwid: u64) -> i32 {
+    pub fn removexattr(&self, path: &str, name: &str, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let obj_name = path.trim_start_matches('/');
         
@@ -954,7 +954,7 @@ impl HvfsData {
                 None => return -1,
             }
         };
-        if !self.check_permission(&obj, pwid, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
         
         // 删除扩展属性
         {
@@ -1061,10 +1061,10 @@ impl HvfsData {
             Self::write_le64(&mut buf, off, obj.atime); off += 8;
             Self::write_le64(&mut buf, off, obj.mtime); off += 8;
             Self::write_le64(&mut buf, off, obj.ctime); off += 8;
-            Self::write_le64(&mut buf, off, obj.owner_pwid); off += 8;
-            Self::write_le64(&mut buf, off, obj.group_pwid); off += 8;
+            Self::write_le64(&mut buf, off, obj.owner_pwm); off += 8;
+            Self::write_le64(&mut buf, off, obj.group_pwm); off += 8;
             buf[off] = obj.sensitivity; off += 1;
-            Self::write_le16(&mut buf, off, obj.pwid_perm); off += 2;
+            Self::write_le16(&mut buf, off, obj.pwm_perm); off += 2;
             Self::write_le32(&mut buf, off, obj.link_count); off += 4;
             Self::write_le32(&mut buf, off, obj.flags); off += 4;
             Self::write_le64(&mut buf, off, obj.birth_txg); off += 8;
@@ -1120,10 +1120,10 @@ impl HvfsData {
                 let atime = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
                 let mtime = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
                 let ctime = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let owner_pwid = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let group_pwid = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
+                let owner_pwm = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
+                let group_pwm = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
                 let sensitivity = buf[off]; off += 1;
-                let pwid_perm = u16::from_le_bytes([buf[off], buf[off+1]]); off += 2;
+                let pwm_perm = u16::from_le_bytes([buf[off], buf[off+1]]); off += 2;
                 let link_count = u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]]); off += 4;
                 let flags = u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]]); off += 4;
                 let birth_txg = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
@@ -1131,8 +1131,8 @@ impl HvfsData {
                 off += 1;
                 let obj = HvDmuObject {
                     obj_id, obj_type, block_size: 4096, nblocks, size, bp,
-                    atime, mtime, ctime, owner_pwid, group_pwid,
-                    sensitivity, pwid_perm, link_count, flags,
+                    atime, mtime, ctime, owner_pwm, group_pwm,
+                    sensitivity, pwm_perm, link_count, flags,
                     birth_txg, data_hash: [0; 4], fill: 0,
                     dirty: false, used,
                 };

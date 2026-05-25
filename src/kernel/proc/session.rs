@@ -21,7 +21,7 @@ pub enum SessionState {
 #[repr(C)]
 pub struct Session {
     pub session_id: AtomicU64,
-    pub pwid: AtomicU64,
+    pub pwm: AtomicU64,
     pub parent_sid: AtomicU64,
     pub terminal: AtomicU64,
     pub create_time: AtomicU64,
@@ -35,7 +35,7 @@ impl Session {
     pub const fn new() -> Self {
         Self {
             session_id: AtomicU64::new(0),
-            pwid: AtomicU64::new(0),
+            pwm: AtomicU64::new(0),
             parent_sid: AtomicU64::new(0),
             terminal: AtomicU64::new(0),
             create_time: AtomicU64::new(0),
@@ -77,7 +77,7 @@ impl SessionManager {
         None
     }
     
-    pub fn create(&self, pwid: u64) -> Option<u64> {
+    pub fn create(&self, pwm: u64) -> Option<u64> {
         let idx = self.alloc_session()?;
         let sid = self.next_session_id.fetch_add(1, Ordering::SeqCst);
         
@@ -85,7 +85,7 @@ impl SessionManager {
         let session = &mut table[idx];
         
         session.session_id.store(sid, Ordering::SeqCst);
-        session.pwid.store(pwid, Ordering::SeqCst);
+        session.pwm.store(pwm, Ordering::SeqCst);
         session.parent_sid.store(0, Ordering::SeqCst);
         session.terminal.store(0, Ordering::SeqCst);
         session.create_time.store(0, Ordering::SeqCst);

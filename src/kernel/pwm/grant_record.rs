@@ -19,7 +19,7 @@ fn unlock_grants() {
 
 static mut GRANT_RECORDS: [GrantRecord; MAX_GRANT_RECORDS] = [GrantRecord::EMPTY; MAX_GRANT_RECORDS];
 
-pub fn add_record(record: GrantRecord) -> Result<(), PwidError> {
+pub fn add_record(record: GrantRecord) -> Result<(), PwmError> {
     lock_grants();
     let records = unsafe { &mut GRANT_RECORDS };
     for i in 0..MAX_GRANT_RECORDS {
@@ -30,16 +30,16 @@ pub fn add_record(record: GrantRecord) -> Result<(), PwidError> {
         }
     }
     unlock_grants();
-    Err(PwidError::TableFull)
+    Err(PwmError::TableFull)
 }
 
-pub fn is_grantor(grantor_pwid: u64, grantee_pwid: u64, domain: CapDomain, caps: CapBits) -> bool {
+pub fn is_grantor(grantor_pwm: u64, grantee_pwm: u64, domain: CapDomain, caps: CapBits) -> bool {
     lock_grants();
     let records = unsafe { &GRANT_RECORDS };
     let mut found = false;
     for record in records.iter() {
-        if record.grantor_pwid.0 == grantor_pwid
-            && record.grantee_pwid.0 == grantee_pwid
+        if record.grantor_pwm.0 == grantor_pwm
+            && record.grantee_pwm.0 == grantee_pwm
             && record.domain == domain
             && (record.caps & caps) == caps
         {
@@ -51,12 +51,12 @@ pub fn is_grantor(grantor_pwid: u64, grantee_pwid: u64, domain: CapDomain, caps:
     found
 }
 
-pub fn clear_records(revoker_pwid: u64, target_pwid: u64, domain: CapDomain, caps: CapBits) {
+pub fn clear_records(revoker_pwm: u64, target_pwm: u64, domain: CapDomain, caps: CapBits) {
     lock_grants();
     let records = unsafe { &mut GRANT_RECORDS };
     for record in records.iter_mut() {
-        if record.grantor_pwid.0 == revoker_pwid
-            && record.grantee_pwid.0 == target_pwid
+        if record.grantor_pwm.0 == revoker_pwm
+            && record.grantee_pwm.0 == target_pwm
             && record.domain == domain
         {
             record.caps = CapBits(record.caps.0 & !caps.0);

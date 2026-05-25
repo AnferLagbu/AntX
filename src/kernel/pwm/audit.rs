@@ -13,27 +13,27 @@ impl AuditLog {
         Self {
             entries: [AuditEntry {
                 timestamp: 0,
-                pwid: PwidId::ZERO,
+                pwm: PwmId::ZERO,
                 action: AuditAction::Login,
                 result: AuditResult::Success,
-                target_pwid: PwidId::ZERO,
+                target_pwm: PwmId::ZERO,
                 details: 0,
             }; AUDIT_CAPACITY],
             count: AtomicUsize::new(0),
         }
     }
 
-    pub fn log(&self, pwid: u64, action: AuditAction, target_pwid: u64, domain: u64, caps: u64) {
-        let now = super::first_token::pwid_now();
+    pub fn log(&self, pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
+        let now = super::first_token::pwm_now();
         let idx = self.count.fetch_add(1, Ordering::AcqRel) % AUDIT_CAPACITY;
         let entry = &self.entries[idx];
         let ep = entry as *const AuditEntry as *mut AuditEntry;
         unsafe {
             (*ep).timestamp = now;
-            (*ep).pwid = PwidId(pwid);
+            (*ep).pwm = PwmId(pwm);
             (*ep).action = action;
             (*ep).result = AuditResult::Success;
-            (*ep).target_pwid = PwidId(target_pwid);
+            (*ep).target_pwm = PwmId(target_pwm);
             (*ep).details = (domain << 32) | (caps & 0xFFFFFFFF);
         }
     }
@@ -48,8 +48,8 @@ impl AuditLog {
                 i
             };
             let _e = &self.entries[idx];
-            crate::serial_println!("[AUDIT] t={} pwid={:#x} action={} target={:#x} details={:#x}",
-                e.timestamp, e.pwid.as_u64(), e.action.as_u32(), e.target_pwid.as_u64(), e.details);
+            crate::serial_println!("[AUDIT] t={} pwm={:#x} action={} target={:#x} details={:#x}",
+                e.timestamp, e.pwm.as_u64(), e.action.as_u32(), e.target_pwm.as_u64(), e.details);
         }
     }
 
@@ -60,8 +60,8 @@ impl AuditLog {
 
 static mut GLOBAL_AUDIT: AuditLog = AuditLog::new();
 
-pub fn log(pwid: u64, action: AuditAction, target_pwid: u64, domain: u64, caps: u64) {
-    unsafe { GLOBAL_AUDIT.log(pwid, action, target_pwid, domain, caps); }
+pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
+    unsafe { GLOBAL_AUDIT.log(pwm, action, target_pwm, domain, caps); }
 }
 
 pub fn dump() {

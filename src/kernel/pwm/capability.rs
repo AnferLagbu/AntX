@@ -1,4 +1,4 @@
-//! PWID v5 Capability Definitions
+//! PWM v5 Capability Definitions
 //!
 //! 16 domain × 64 bit capability matrix + viable floor.
 

@@ -4,7 +4,7 @@ use crate::kernel::mm::slab::{
     GENERAL_CACHE_SIZES, find_general_cache_index,
 };
 use crate::kernel::syscall::types::SyscallError;
-use crate::kernel::pwid::sha256::sha256;
+use crate::kernel::pwm::sha256::sha256;
 use crate::kernel::timer::pit::{
     PIT_BASE_FREQUENCY, DEFAULT_INTERRUPT_FREQ_HZ, PIT_MAX_COUNT, PIT_MIN_COUNT,
 };
@@ -137,8 +137,8 @@ pub fn register_syscall_ffi_tests() {
 
 pub fn register_sha256_tests() {
     let r = runner();
-    r.register("pwid::sha256", "empty", sha256_empty as TestFn);
-    r.register("pwid::sha256", "abc", sha256_abc as TestFn);
+    r.register("pwm::sha256", "empty", sha256_empty as TestFn);
+    r.register("pwm::sha256", "abc", sha256_abc as TestFn);
 }
 
 pub fn register_pit_tests() {

@@ -2,25 +2,25 @@ use super::types::*;
 use super::table;
 use core::sync::atomic::Ordering;
 
-pub fn check(pwid: u64, domain: CapDomain, required: CapBits) -> bool {
-    let entry = match table::find(pwid) {
+pub fn check(pwm: u64, domain: CapDomain, required: CapBits) -> bool {
+    let entry = match table::find(pwm) {
         Some(e) => e,
         None => return false,
     };
 
-    if entry.has_flag(PwidFlags::DISABLED) {
+    if entry.has_flag(PwmFlags::DISABLED) {
         return false;
     }
 
     entry.has_capability(domain, required)
 }
 
-pub fn check_privilege(operator_pwid: u64, target_pwid: u64) -> bool {
-    let operator = match table::find(operator_pwid) {
+pub fn check_privilege(operator_pwm: u64, target_pwm: u64) -> bool {
+    let operator = match table::find(operator_pwm) {
         Some(e) => e,
         None => return false,
     };
-    let target = match table::find(target_pwid) {
+    let target = match table::find(target_pwm) {
         Some(e) => e,
         None => return false,
     };
@@ -31,23 +31,23 @@ pub fn check_privilege(operator_pwid: u64, target_pwid: u64) -> bool {
     op_level < tgt_level
 }
 
-pub fn get_privilege_level(pwid: u64) -> u8 {
-    match table::find(pwid) {
+pub fn get_privilege_level(pwm: u64) -> u8 {
+    match table::find(pwm) {
         Some(e) => e.privilege_level.load(Ordering::Acquire),
         None => 0xFF,
     }
 }
 
-pub fn get_creator(pwid: u64) -> u64 {
-    match table::find(pwid) {
-        Some(e) => e.creator_pwid.load(Ordering::Acquire),
+pub fn get_creator(pwm: u64) -> u64 {
+    match table::find(pwm) {
+        Some(e) => e.creator_pwm.load(Ordering::Acquire),
         None => 0,
     }
 }
 
-pub fn get_caps(pwid: u64, domain: impl Into<CapDomain>) -> CapBits {
+pub fn get_caps(pwm: u64, domain: impl Into<CapDomain>) -> CapBits {
     let domain = domain.into();
-    match table::find(pwid) {
+    match table::find(pwm) {
         Some(e) => e.load_caps(domain),
         None => CapBits::NONE,
     }

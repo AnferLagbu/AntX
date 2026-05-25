@@ -97,7 +97,7 @@ pub struct UserProcInfo {
 #[repr(C)]
 pub struct UserProcess {
     pub pid: u32,
-    pub pwid: AtomicU64,
+    pub pwm: AtomicU64,
     pub cr3: AtomicU64,
     pub kernel_stack: AtomicU64,
     pub user_stack: AtomicU64,
@@ -167,7 +167,7 @@ impl UserProcManager {
         }
     }
     
-    pub fn create(&self, info: &UserProcInfo, pwid: u64) -> Option<*mut UserProcess> {
+    pub fn create(&self, info: &UserProcInfo, pwm: u64) -> Option<*mut UserProcess> {
         let pid = PROCESS_TABLE.allocate_pid()?;
 
         let proc = unsafe {
@@ -219,7 +219,7 @@ impl UserProcManager {
             crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
 
             (*proc).entry = info.entry;
-            (*proc).pwid.store(pwid, Ordering::SeqCst);
+            (*proc).pwm.store(pwm, Ordering::SeqCst);
             (*proc).state.store(1, Ordering::SeqCst);
             (*proc).create_time = crate::kernel::timer::get_ticks();
         }
@@ -235,7 +235,7 @@ impl UserProcManager {
         // 手动构建 Process (避免 Box::new + String::from 的 alloc 调用)
         unsafe {
             core::ptr::write(&mut (*kproc_ptr).pid, ProcessId(pid));
-            core::ptr::write(&mut (*kproc_ptr).pwid, AtomicU64::new(pwid));
+            core::ptr::write(&mut (*kproc_ptr).pwm, AtomicU64::new(pwm));
             core::ptr::write(&mut (*kproc_ptr).state, AtomicU32::new(ProcessState::Ready as u32));
             core::ptr::write(&mut (*kproc_ptr).priority, AtomicU32::new(ProcessPriority::Normal as u32));
             core::ptr::write(&mut (*kproc_ptr).flags, AtomicU32::new(0));
@@ -424,7 +424,7 @@ impl UserProcManager {
         new_sp
     }
     
-    pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwid: u64) -> i32 {
+    pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwm: u64) -> i32 {
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
             return -1;
         }
@@ -449,7 +449,7 @@ impl UserProcManager {
                 code_data: core::ptr::null(),
             };
 
-            let proc = match self.create(&info, pwid) {
+            let proc = match self.create(&info, pwm) {
                 Some(p) => p,
                 None => return -1,
             };
@@ -547,7 +547,7 @@ impl UserProcManager {
         }
     }
     
-    pub fn create_from_binary(&self, code: *const u8, code_size: u64, pwid: u64) -> i32 {
+    pub fn create_from_binary(&self, code: *const u8, code_size: u64, pwm: u64) -> i32 {
         let info = UserProcInfo {
             entry: USER_CODE_BASE,
             name: [0; 64],
@@ -555,7 +555,7 @@ impl UserProcManager {
             code_data: code,
         };
         
-        let proc = match self.create(&info, pwid) {
+        let proc = match self.create(&info, pwm) {
             Some(p) => p,
             None => return -1,
         };
@@ -644,7 +644,7 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         memset(child_up as *mut u8, 0, core::mem::size_of::<UserProcess>() as u64);
         
         (*child_up).pid = child_pid;
-        (*child_up).pwid.store((*parent_proc).pwid.load(Ordering::SeqCst), Ordering::SeqCst);
+        (*child_up).pwm.store((*parent_proc).pwm.load(Ordering::SeqCst), Ordering::SeqCst);
         (*child_up).cr3.store((*child_kernel_proc).cr3.load(Ordering::SeqCst), Ordering::SeqCst);
         (*child_up).kernel_stack.store((*child_kernel_proc).kernel_stack.load(Ordering::SeqCst), Ordering::SeqCst);
         (*child_up).user_stack.store((*parent_proc).user_stack.load(Ordering::SeqCst), Ordering::SeqCst);

@@ -93,7 +93,7 @@ pub fn kernel_stack_write_canary(stack_top: u64) {
 
 pub struct Process {
     pub pid: ProcessId,
-    pub pwid: AtomicU64,
+    pub pwm: AtomicU64,
     pub state: AtomicU32,
     pub priority: AtomicU32,
     pub flags: AtomicU32,
@@ -135,7 +135,7 @@ pub struct Process {
 // Process 可以安全地被多个线程共享引用 (&Process), 因为:
 // 1. name, children, context 等复合类型都被 Mutex 包装
 //    - 访问这些字段必须先获取锁, 保证互斥
-// 2. pid, pwid, state 等简单字段都是 Atomic 类型
+// 2. pid, pwm, state 等简单字段都是 Atomic 类型
 //    - 使用 Ordering::SeqCst 或 Acquire/Release 保证可见性
 // 3. 不存在内部可变性导致的未同步修改
 // 4. 调度器在切换进程时通过 scheduler_lock 保护整个 ProcessTable
@@ -150,7 +150,7 @@ impl Process {
     pub fn new(pid: Pid, name: &str, parent: Option<ProcessId>) -> Self {
         Self {
             pid: ProcessId(pid),
-            pwid: AtomicU64::new(0),
+            pwm: AtomicU64::new(0),
             state: AtomicU32::new(ProcessState::Created as u32),
             priority: AtomicU32::new(ProcessPriority::Normal as u32),
             flags: AtomicU32::new(0),
@@ -292,12 +292,12 @@ impl Process {
         self.rt_priority.store(priority as u32, Ordering::SeqCst);
     }
     
-    pub fn get_pwid(&self) -> u64 {
-        self.pwid.load(Ordering::SeqCst)
+    pub fn get_pwm(&self) -> u64 {
+        self.pwm.load(Ordering::SeqCst)
     }
     
-    pub fn set_pwid(&self, pwid: u64) {
-        self.pwid.store(pwid, Ordering::SeqCst);
+    pub fn set_pwm(&self, pwm: u64) {
+        self.pwm.store(pwm, Ordering::SeqCst);
     }
 }
 

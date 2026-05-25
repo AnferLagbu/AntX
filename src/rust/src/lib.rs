@@ -52,7 +52,7 @@ mod memory_allocator;
 /// ├── net/        # 网络协议栈
 /// ├── idt/        # 中断处理
 /// ├── sync/       # 同步原语
-/// ├── pwid/       # 安全框架
+/// ├── pwm/       # 安全框架
 /// ├── dma/        # DMA 引擎
 /// ├── barrier/    # 故障恢复
 /// ├── pci/        # PCI 管理

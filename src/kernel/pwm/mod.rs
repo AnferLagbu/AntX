@@ -1,7 +1,7 @@
-//! PWID v5 Management System
+//! PWM v5 Management System
 //!
 //! Zero-concept + numeric privilege level + First Token.
-//! PWID初心: 密码决定身份 | 无预设特权 | 能力来自授予
+//! PWM初心: 密码决定身份 | 无预设特权 | 能力来自授予
 
 #[macro_export]
 macro_rules! serial_println {
@@ -23,6 +23,6 @@ pub mod storage;
 pub mod ffi;
 
 pub use types::*;
-pub use table::PwidTable;
+pub use table::PwmTable;
 pub use session::SessionManager;
 pub use audit::AuditLog;

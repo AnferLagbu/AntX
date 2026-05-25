@@ -1,9 +1,9 @@
 //! SHA-256 Hash Implementation
 //!
 //! Pure Rust implementation of SHA-256 for password hashing.
-//! Matches the C implementation in pwid.c for compatibility.
+//! Matches the C implementation in pwm.c for compatibility.
 
-use super::PWID_HASH_LEN;
+use super::PWM_HASH_LEN;
 
 /// SHA-256 round constants (first 32 bits of fractional parts of cube roots of first 64 primes)
 const K: [u32; 64] = [
@@ -103,7 +103,7 @@ fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
 ///
 /// # Returns
 /// 32-byte hash array
-pub fn sha256(data: &[u8]) -> [u8; PWID_HASH_LEN] {
+pub fn sha256(data: &[u8]) -> [u8; PWM_HASH_LEN] {
     let mut state = INITIAL_STATE;
     let len = data.len();
     
@@ -142,7 +142,7 @@ pub fn sha256(data: &[u8]) -> [u8; PWID_HASH_LEN] {
     sha256_transform(&mut state, &block);
     
     // Produce final hash value (big-endian)
-    let mut hash = [0u8; PWID_HASH_LEN];
+    let mut hash = [0u8; PWM_HASH_LEN];
     for j in 0..8 {
         hash[j * 4]     = (state[j] >> 24) as u8;
         hash[j * 4 + 1] = (state[j] >> 16) as u8;

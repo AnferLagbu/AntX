@@ -28,29 +28,29 @@ pub fn generate_first_token() {
     };
     FIRST_TOKEN_ID.store(token_id, Ordering::Release);
     FIRST_TOKEN_USED.store(false, Ordering::Release);
-    FIRST_TOKEN_CREATED.store(pwid_now(), Ordering::Release);
+    FIRST_TOKEN_CREATED.store(pwm_now(), Ordering::Release);
 }
 
 pub fn grant_from_first_token(
-    target_pwid: u64,
+    target_pwm: u64,
     domain: CapDomain,
     caps: CapBits,
-) -> Result<(), PwidError> {
+) -> Result<(), PwmError> {
     if FIRST_TOKEN_USED.load(Ordering::Acquire) {
-        return Err(PwidError::TokenUsed);
+        return Err(PwmError::TokenUsed);
     }
 
-    let target = super::table::find(target_pwid).ok_or(PwidError::NotFound)?;
+    let target = super::table::find(target_pwm).ok_or(PwmError::NotFound)?;
     target.fetch_or_caps(domain, caps);
 
     FIRST_TOKEN_USED.store(true, Ordering::Release);
 
-    super::audit::log(0, AuditAction::FirstTokenGrant, target_pwid, domain.as_u16() as u64, caps.as_u64());
+    super::audit::log(0, AuditAction::FirstTokenGrant, target_pwm, domain.as_u16() as u64, caps.as_u64());
 
     Ok(())
 }
 
-pub fn pwid_now() -> u64 {
+pub fn pwm_now() -> u64 {
     let tsc = crate::arch!(timestamp());
     extern "C" {
         fn cpu_get_tsc_frequency() -> u64;

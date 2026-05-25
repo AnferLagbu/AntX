@@ -41,7 +41,7 @@ pub struct HvUberblock {
     pub root_dataset_obj: u64,
     pub pool_guid: u64,
     pub checkpoint_txg: u64,
-    pub pwid_domain_id: u16,
+    pub pwm_domain_id: u16,
     pub _pad: [u8; 6],
     pub checksum: [u64; 4],
 }
@@ -53,7 +53,7 @@ impl HvUberblock {
             root_bp: HvBlockPointer::null(),
             timestamp: 0, root_dataset_obj: 0,
             pool_guid: 0, checkpoint_txg: 0,
-            pwid_domain_id: 0, _pad: [0; 6],
+            pwm_domain_id: 0, _pad: [0; 6],
             checksum: [0; 4],
         }
     }

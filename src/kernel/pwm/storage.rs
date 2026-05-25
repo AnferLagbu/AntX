@@ -1,13 +1,13 @@
-//! PWID v5 Persistent Storage
+//! PWM v5 Persistent Storage
 //!
-//! Binary format v5: header + entries, stored at /pwid.db
+//! Binary format v5: header + entries, stored at /pwm.db
 //! Migration from v4 format supported.
 
 use super::types::*;
 use super::table;
 use core::sync::atomic::Ordering;
 
-const DB_PATH: &str = "/pwid.db";
+const DB_PATH: &str = "/pwm.db";
 const DB_MAGIC: [u8; 4] = [b'P', b'W', b'I', b'D'];
 const DB_VER_MAJOR: u16 = 5;
 const DB_VER_MINOR: u16 = 0;
@@ -18,15 +18,15 @@ use core::ffi::c_char;
 fn as_cstr(p: &[u8]) -> *const c_char {
     p.as_ptr() as *const c_char
 }
-const ENTRY_SZ: usize = 8 + 8 + 1 + 2 + 128 + PWID_NOTE_LEN + PWID_HASH_LEN + 8 + 8;
+const ENTRY_SZ: usize = 8 + 8 + 1 + 2 + 128 + PWM_NOTE_LEN + PWM_HASH_LEN + 8 + 8;
 const HDR_SZ: usize = 4 + 2 + 2 + 4;
 
 extern "C" {
-    fn vfs_open_internal(path: *const core::ffi::c_char, flags: u32, pwid: u64) -> i32;
+    fn vfs_open_internal(path: *const core::ffi::c_char, flags: u32, pwm: u64) -> i32;
     fn vfs_close_internal(fd_idx: u32) -> i32;
     fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32;
     fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32;
-    fn vfs_unlink_internal(path: *const core::ffi::c_char, pwid: u64) -> i32;
+    fn vfs_unlink_internal(path: *const core::ffi::c_char, pwm: u64) -> i32;
 }
 
 const O_RDONLY: u32 = 0x0001;
@@ -53,30 +53,30 @@ fn r64(buf: &[u8], p: &mut usize) -> u64 { let mut v=0u64;for i in 0..8{v|=(buf[
 fn r16(buf: &[u8], p: &mut usize) -> u16 { let v=buf[*p]as u16|(buf[*p+1]as u16)<<8;*p+=2;v }
 fn r8(buf: &[u8], p: &mut usize) -> u8 { let v=buf[*p];*p+=1;v }
 
-fn serialize(entry: &PwidEntry, buf: &mut [u8], p: &mut usize) {
-    w64(buf, p, entry.pwid.load(Ordering::Acquire));
-    w64(buf, p, entry.creator_pwid.load(Ordering::Acquire));
+fn serialize(entry: &PwmEntry, buf: &mut [u8], p: &mut usize) {
+    w64(buf, p, entry.pwm.load(Ordering::Acquire));
+    w64(buf, p, entry.creator_pwm.load(Ordering::Acquire));
     w8(buf, p, entry.privilege_level.load(Ordering::Acquire));
     w16(buf, p, entry.flags.load(Ordering::Acquire));
     for i in 0..16 { w64(buf, p, entry.caps[i].load(Ordering::Acquire)); }
-    buf[*p..*p+PWID_NOTE_LEN].copy_from_slice(&entry.note); *p+=PWID_NOTE_LEN;
-    buf[*p..*p+PWID_HASH_LEN].copy_from_slice(&entry.password_hash); *p+=PWID_HASH_LEN;
+    buf[*p..*p+PWM_NOTE_LEN].copy_from_slice(&entry.note); *p+=PWM_NOTE_LEN;
+    buf[*p..*p+PWM_HASH_LEN].copy_from_slice(&entry.password_hash); *p+=PWM_HASH_LEN;
     w64(buf, p, entry.created_time.load(Ordering::Acquire));
     w64(buf, p, entry.expires_at.load(Ordering::Acquire));
 }
 
-fn deserialize(buf: &[u8], p: &mut usize) -> Option<(u64, u64, u8, u16, [u64; 16], [u8; PWID_NOTE_LEN], [u8; PWID_HASH_LEN], u64, u64)> {
+fn deserialize(buf: &[u8], p: &mut usize) -> Option<(u64, u64, u8, u16, [u64; 16], [u8; PWM_NOTE_LEN], [u8; PWM_HASH_LEN], u64, u64)> {
     if *p + ENTRY_SZ > buf.len() { return None; }
-    let pwid = r64(buf, p);
-    let creator_pwid = r64(buf, p);
+    let pwm = r64(buf, p);
+    let creator_pwm = r64(buf, p);
     let privilege_level = r8(buf, p);
     let flags = r16(buf, p);
     let mut caps = [0u64; 16]; for i in 0..16 { caps[i] = r64(buf, p); }
-    let mut note = [0u8; PWID_NOTE_LEN]; note.copy_from_slice(&buf[*p..*p+PWID_NOTE_LEN]); *p+=PWID_NOTE_LEN;
-    let mut h = [0u8; PWID_HASH_LEN]; h.copy_from_slice(&buf[*p..*p+PWID_HASH_LEN]); *p+=PWID_HASH_LEN;
+    let mut note = [0u8; PWM_NOTE_LEN]; note.copy_from_slice(&buf[*p..*p+PWM_NOTE_LEN]); *p+=PWM_NOTE_LEN;
+    let mut h = [0u8; PWM_HASH_LEN]; h.copy_from_slice(&buf[*p..*p+PWM_HASH_LEN]); *p+=PWM_HASH_LEN;
     let created = r64(buf, p);
     let expires = r64(buf, p);
-    Some((pwid, creator_pwid, privilege_level, flags, caps, note, h, created, expires))
+    Some((pwm, creator_pwm, privilege_level, flags, caps, note, h, created, expires))
 }
 
 pub fn save_database() -> i32 {
@@ -84,7 +84,7 @@ pub fn save_database() -> i32 {
     if !t.is_modified() { return 0; }
 
     let mut n: usize = 0;
-    for i in 0..MAX_PWID_ENTRIES { if t.entries[i].is_valid() { n += 1; } }
+    for i in 0..MAX_PWM_ENTRIES { if t.entries[i].is_valid() { n += 1; } }
 
     let sz = HDR_SZ + n * ENTRY_SZ;
     let mut buf = [0u8; 80000];
@@ -96,7 +96,7 @@ pub fn save_database() -> i32 {
     w16(&mut buf, &mut p, DB_VER_MINOR);
     w32(&mut buf, &mut p, n as u32);
 
-    for i in 0..MAX_PWID_ENTRIES {
+    for i in 0..MAX_PWM_ENTRIES {
         if t.entries[i].is_valid() { serialize(&t.entries[i], &mut buf, &mut p); }
     }
 
@@ -131,7 +131,7 @@ pub fn load_database() -> i32 {
     let vmaj = r16(&hdr, &mut hp);
     let _vmin = r16(&hdr, &mut hp);
     let count = r32(&hdr, &mut hp) as usize;
-    if count == 0 || count > MAX_PWID_ENTRIES { unsafe { vfs_close_internal(fd as u32); } return -1; }
+    if count == 0 || count > MAX_PWM_ENTRIES { unsafe { vfs_close_internal(fd as u32); } return -1; }
 
     let ds = count * if vmaj < 5 { 8 + 1 + 2 + 128 + 128 + 48 + 8 + 8 } else { ENTRY_SZ };
     let mut data = [0u8; 80000];
@@ -146,31 +146,31 @@ pub fn load_database() -> i32 {
         let v4_entry_sz = 8 + 1 + 2 + 128 + 128 + 48 + 8 + 8;
         for _ in 0..count {
             if p + v4_entry_sz > data.len() { break; }
-            let pwid = r64(&data, &mut p);
+            let pwm = r64(&data, &mut p);
             let level = r8(&data, &mut p);
             let flags = r16(&data, &mut p);
             let mut caps = [0u64; 16]; for i in 0..16 { caps[i] = r64(&data, &mut p); }
             let mut note = [0u8; 128]; note.copy_from_slice(&data[p..p+128]); p += 128;
-            let mut h = [0u8; PWID_HASH_LEN]; h.copy_from_slice(&data[p..p+PWID_HASH_LEN]); p += PWID_HASH_LEN;
+            let mut h = [0u8; PWM_HASH_LEN]; h.copy_from_slice(&data[p..p+PWM_HASH_LEN]); p += PWM_HASH_LEN;
             let created = r64(&data, &mut p);
             let expires = r64(&data, &mut p);
 
-            for i in 0..MAX_PWID_ENTRIES {
+            for i in 0..MAX_PWM_ENTRIES {
                 if !t.entries[i].is_valid() {
                     let e = &t.entries[i];
-                    e.pwid.store(pwid, Ordering::Release);
-                    e.creator_pwid.store(0, Ordering::Release);
+                    e.pwm.store(pwm, Ordering::Release);
+                    e.creator_pwm.store(0, Ordering::Release);
                     e.privilege_level.store(level, Ordering::Release);
                     e.flags.store(flags, Ordering::Release);
                     for j in 0..16 { e.caps[j].store(caps[j], Ordering::Release); }
-                    let note_trunc = note.len().min(PWID_NOTE_LEN);
+                    let note_trunc = note.len().min(PWM_NOTE_LEN);
                     let np = e.note.as_ptr() as *mut u8;
                     unsafe {
                         core::ptr::copy_nonoverlapping(note.as_ptr(), np, note_trunc);
-                        *np.add(note_trunc.min(PWID_NOTE_LEN - 1)) = 0;
+                        *np.add(note_trunc.min(PWM_NOTE_LEN - 1)) = 0;
                     }
                     let hp = e.password_hash.as_ptr() as *mut u8;
-                    unsafe { core::ptr::copy_nonoverlapping(h.as_ptr(), hp, PWID_HASH_LEN); }
+                    unsafe { core::ptr::copy_nonoverlapping(h.as_ptr(), hp, PWM_HASH_LEN); }
                     e.created_time.store(created, Ordering::Release);
                     e.expires_at.store(expires, Ordering::Release);
                     t.count.fetch_add(1, Ordering::Relaxed);
@@ -180,21 +180,21 @@ pub fn load_database() -> i32 {
         }
     } else {
         for _ in 0..count {
-            if let Some((pwid, creator_pwid, privilege_level, flags, caps, note, h, created, expires)) = deserialize(&data, &mut p) {
-                for i in 0..MAX_PWID_ENTRIES {
+            if let Some((pwm, creator_pwm, privilege_level, flags, caps, note, h, created, expires)) = deserialize(&data, &mut p) {
+                for i in 0..MAX_PWM_ENTRIES {
                     if !t.entries[i].is_valid() {
                         let e = &t.entries[i];
-                        e.pwid.store(pwid, Ordering::Release);
-                        e.creator_pwid.store(creator_pwid, Ordering::Release);
+                        e.pwm.store(pwm, Ordering::Release);
+                        e.creator_pwm.store(creator_pwm, Ordering::Release);
                         e.privilege_level.store(privilege_level, Ordering::Release);
                         e.flags.store(flags, Ordering::Release);
                         for j in 0..16 { e.caps[j].store(caps[j], Ordering::Release); }
                         let np = e.note.as_ptr() as *mut u8;
                         unsafe {
-                            core::ptr::copy_nonoverlapping(note.as_ptr(), np, PWID_NOTE_LEN);
+                            core::ptr::copy_nonoverlapping(note.as_ptr(), np, PWM_NOTE_LEN);
                         }
                         let hp = e.password_hash.as_ptr() as *mut u8;
-                        unsafe { core::ptr::copy_nonoverlapping(h.as_ptr(), hp, PWID_HASH_LEN); }
+                        unsafe { core::ptr::copy_nonoverlapping(h.as_ptr(), hp, PWM_HASH_LEN); }
                         e.created_time.store(created, Ordering::Release);
                         e.expires_at.store(expires, Ordering::Release);
                         t.count.fetch_add(1, Ordering::Relaxed);

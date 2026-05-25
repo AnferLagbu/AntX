@@ -34,8 +34,8 @@ fn banner() {
 fn prompt() {
     let mut cwd = [0u8; 64]; let _ = env_getcwd(&mut cwd);
     let cwd_str = core::str::from_utf8(&cwd).unwrap_or("/").trim_end_matches('\0');
-    let pwid = proc_get_pwid();
-    if pwid != 0 { print("["); print_hex(pwid); print("]"); }
+    let pwm = proc_get_pwm();
+    if pwm != 0 { print("["); print_hex(pwm); print("]"); }
     print(if cwd_str.is_empty() { "/" } else { cwd_str }); print("> ");
 }
 

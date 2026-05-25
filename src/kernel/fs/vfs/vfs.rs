@@ -60,7 +60,7 @@ pub struct VfsFile {
     pub node_id: u32,
     pub offset: u64,
     pub flags: u32,
-    pub pwid: u64,
+    pub pwm: u64,
     pub used: bool,
     pub file_type: u8,
     pub path: [u8; VFS_MAX_PATH],
@@ -70,7 +70,7 @@ impl Clone for VfsFile {
     fn clone(&self) -> Self {
         Self {
             fd: self.fd, node_id: self.node_id, offset: self.offset,
-            flags: self.flags, pwid: self.pwid, used: self.used,
+            flags: self.flags, pwm: self.pwm, used: self.used,
             file_type: self.file_type, path: self.path,
         }
     }
@@ -83,7 +83,7 @@ impl VfsFile {
             node_id: 0,
             offset: 0,
             flags: 0,
-            pwid: 0,
+            pwm: 0,
             used: false,
             file_type: 0,
             path: [0; VFS_MAX_PATH],
@@ -168,7 +168,7 @@ impl VfsManager {
             fd.node_id = 0;
             fd.offset = 0;
             fd.flags = 0;
-            fd.pwid = 0;
+            fd.pwm = 0;
             fd.file_type = 0;
             fd.set_path("");
         }
@@ -274,13 +274,13 @@ impl VfsManager {
         }
     }
 
-    pub fn set_fd(&self, idx: usize, node_id: u32, offset: u64, flags: u32, pwid: u64, file_type: u8, path: &str) {
+    pub fn set_fd(&self, idx: usize, node_id: u32, offset: u64, flags: u32, pwm: u64, file_type: u8, path: &str) {
         let mut fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS {
             fd_table[idx].node_id = node_id;
             fd_table[idx].offset = offset;
             fd_table[idx].flags = flags;
-            fd_table[idx].pwid = pwid;
+            fd_table[idx].pwm = pwm;
             fd_table[idx].file_type = file_type;
             fd_table[idx].set_path(path);
         }
@@ -289,7 +289,7 @@ impl VfsManager {
     pub fn get_fd_info(&self, idx: usize) -> Option<(u32, u64, u64)> {
         let fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS && fd_table[idx].used {
-            Some((fd_table[idx].node_id, fd_table[idx].offset, fd_table[idx].pwid))
+            Some((fd_table[idx].node_id, fd_table[idx].offset, fd_table[idx].pwm))
         } else {
             None
         }

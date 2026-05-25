@@ -52,10 +52,10 @@ pub struct HvDmuObject {
     pub atime: u64,
     pub mtime: u64,
     pub ctime: u64,
-    pub owner_pwid: u64,
-    pub group_pwid: u64,
+    pub owner_pwm: u64,
+    pub group_pwm: u64,
     pub sensitivity: u8,
-    pub pwid_perm: u16,
+    pub pwm_perm: u16,
     pub link_count: u32,
     pub flags: u32,
     pub birth_txg: u64,
@@ -66,7 +66,7 @@ pub struct HvDmuObject {
 }
 
 impl HvDmuObject {
-    pub fn new_file(obj_id: u64, owner_pwid: u64) -> Self {
+    pub fn new_file(obj_id: u64, owner_pwm: u64) -> Self {
         Self {
             obj_id,
             obj_type: HvObjType::File,
@@ -75,10 +75,10 @@ impl HvDmuObject {
             size: 0,
             bp: HvBlockPointer::null(),
             atime: 0, mtime: 0, ctime: 0,
-            owner_pwid,
-            group_pwid: 0,
+            owner_pwm,
+            group_pwm: 0,
             sensitivity: 0,
-            pwid_perm: 0o644,
+            pwm_perm: 0o644,
             link_count: 1,
             flags: 0,
             birth_txg: 0,
@@ -89,7 +89,7 @@ impl HvDmuObject {
         }
     }
 
-    pub fn new_dir(obj_id: u64, owner_pwid: u64) -> Self {
+    pub fn new_dir(obj_id: u64, owner_pwm: u64) -> Self {
         Self {
             obj_id,
             obj_type: HvObjType::Dir,
@@ -98,10 +98,10 @@ impl HvDmuObject {
             size: 0,
             bp: HvBlockPointer::null(),
             atime: 0, mtime: 0, ctime: 0,
-            owner_pwid,
-            group_pwid: 0,
+            owner_pwm,
+            group_pwm: 0,
             sensitivity: 0,
-            pwid_perm: 0o755,
+            pwm_perm: 0o755,
             link_count: 2,
             flags: 0,
             birth_txg: 0,
@@ -121,10 +121,10 @@ impl HvDmuObject {
             size: 0,
             bp: HvBlockPointer::null(),
             atime: 0, mtime: 0, ctime: 0,
-            owner_pwid: 0,
-            group_pwid: 0,
+            owner_pwm: 0,
+            group_pwm: 0,
             sensitivity: 0,
-            pwid_perm: 0o644,
+            pwm_perm: 0o644,
             link_count: 1,
             flags: 0,
             birth_txg: 0,
@@ -172,10 +172,10 @@ impl HvObjSet {
         }
     }
 
-    pub fn init(&self, owner_pwid: u64) {
+    pub fn init(&self, owner_pwm: u64) {
         let mut objs = self.objects.lock();
         objs.clear();
-        let mut root = HvDmuObject::new_dir(HV_DMU_OBJ_ROOT, owner_pwid);
+        let mut root = HvDmuObject::new_dir(HV_DMU_OBJ_ROOT, owner_pwm);
         root.birth_txg = 1;
         objs.push(root);
         let zap = HvDmuObject::new_zap(HV_DMU_OBJ_META);
@@ -184,11 +184,11 @@ impl HvObjSet {
         self.initialized.store(true, Ordering::Release);
     }
 
-    pub fn alloc_obj(&self, obj_type: HvObjType, owner_pwid: u64) -> Option<u64> {
+    pub fn alloc_obj(&self, obj_type: HvObjType, owner_pwm: u64) -> Option<u64> {
         let obj_id = self.next_obj_id.fetch_add(1, Ordering::AcqRel);
         let obj = match obj_type {
-            HvObjType::File => HvDmuObject::new_file(obj_id, owner_pwid),
-            HvObjType::Dir => HvDmuObject::new_dir(obj_id, owner_pwid),
+            HvObjType::File => HvDmuObject::new_file(obj_id, owner_pwm),
+            HvObjType::Dir => HvDmuObject::new_dir(obj_id, owner_pwm),
             HvObjType::Zap | HvObjType::ZapMicro => HvDmuObject::new_zap(obj_id),
             _ => return None,
         };

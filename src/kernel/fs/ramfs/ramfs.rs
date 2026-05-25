@@ -6,9 +6,9 @@ use crate::kernel::fs::vfs::types::*;
 use crate::kernel::fs::vfs::types::KernelError;
 
 extern "C" {
-    fn pwid_get_privilege_level(pwid: u64) -> u8;
-    fn pwid_get_fs_capability(pwid: u64) -> u64;
-    fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool;
+    fn pwm_get_privilege_level(pwm: u64) -> u8;
+    fn pwm_get_fs_capability(pwm: u64) -> u64;
+    fn pwm_has_capability(pwm: u64, domain: u16, required: u64) -> bool;
 }
 
 const RAMFS_MAX_NODES: usize = 256;
@@ -22,7 +22,7 @@ const INDIRECT_BLOCKS_PER_BLOCK: usize = RAMFS_BLOCK_SIZE / 4;
 // Sensitivity label defaults
 const SENSITIVITY_PUBLIC: u8 = 0;
 
-// FS capability bits (mirrors pwid.h)
+// FS capability bits (mirrors pwm.h)
 const FS_CAP_READ: u64    = 1 << 0;
 const FS_CAP_WRITE: u64   = 1 << 1;
 const FS_CAP_CREATE: u64  = 1 << 3;
@@ -32,7 +32,7 @@ pub struct RamFsNode {
     pub node_id: u32,
     pub file_type: u8,
     pub sensitivity: u8,
-    pub owner_pwid: u64,
+    pub owner_pwm: u64,
     pub perm: u16,
     pub size: u32,
     pub atime: u64,
@@ -51,7 +51,7 @@ impl RamFsNode {
             node_id: 0,
             file_type: 0,
             sensitivity: 0,
-            owner_pwid: 0,
+            owner_pwm: 0,
             perm: 0,
             size: 0,
             atime: 0,
@@ -94,7 +94,7 @@ impl RamFsDirEntry {
 #[derive(Debug, Clone, Copy)]
 pub struct RamFsACE {
     pub node_id: u32,
-    pub pwid: u64,
+    pub pwm: u64,
     pub allow_mask: u64,
     pub deny_mask: u64,
     pub used: bool,
@@ -102,7 +102,7 @@ pub struct RamFsACE {
 
 impl RamFsACE {
     pub const fn new() -> Self {
-        Self { node_id: 0, pwid: 0, allow_mask: 0, deny_mask: 0, used: false }
+        Self { node_id: 0, pwm: 0, allow_mask: 0, deny_mask: 0, used: false }
     }
 }
 
@@ -493,16 +493,16 @@ impl RamFsData {
         self.block_set_free(double_indirect_block);
     }
 
-    fn ace_set(&mut self, node_id: u32, pwid: u64, allow: u64, deny: u64) {
+    fn ace_set(&mut self, node_id: u32, pwm: u64, allow: u64, deny: u64) {
         for ace in self.aces.iter_mut() {
-            if ace.used && ace.node_id == node_id && ace.pwid == pwid {
+            if ace.used && ace.node_id == node_id && ace.pwm == pwm {
                 ace.allow_mask = allow;
                 ace.deny_mask = deny;
                 return;
             }
             if !ace.used {
                 ace.node_id = node_id;
-                ace.pwid = pwid;
+                ace.pwm = pwm;
                 ace.allow_mask = allow;
                 ace.deny_mask = deny;
                 ace.used = true;
@@ -511,9 +511,9 @@ impl RamFsData {
         }
     }
 
-    fn ace_clear(&mut self, node_id: u32, pwid: u64) {
+    fn ace_clear(&mut self, node_id: u32, pwm: u64) {
         for ace in self.aces.iter_mut() {
-            if ace.used && ace.node_id == node_id && ace.pwid == pwid {
+            if ace.used && ace.node_id == node_id && ace.pwm == pwm {
                 ace.used = false;
                 return;
             }
@@ -522,8 +522,8 @@ impl RamFsData {
 
     /// Permission Model v3 — Five-layer check:
     /// L0: Root bypass, L1: Sensitivity, L2: ACE, L3: Capability, L4: Trust chain
-    fn check_permission(&self, node: &RamFsNode, pwid: u64, cap: u64) -> bool {
-        let level = unsafe { pwid_get_privilege_level(pwid) };
+    fn check_permission(&self, node: &RamFsNode, pwm: u64, cap: u64) -> bool {
+        let level = unsafe { pwm_get_privilege_level(pwm) };
 
         if level == 0xFF {
             return false;
@@ -541,11 +541,11 @@ impl RamFsData {
             }
         }
 
-        // Layer 2: ACE — per-file per-PWID override
+        // Layer 2: ACE — per-file per-PWM override
         let ino = node.node_id;
         for ace in self.aces.iter() {
             if ace.used && ace.node_id == ino {
-                if ace.pwid == 0 || ace.pwid == pwid {
+                if ace.pwm == 0 || ace.pwm == pwm {
                     if (ace.deny_mask & cap) != 0 {
                         return false;
                     }
@@ -556,14 +556,14 @@ impl RamFsData {
             }
         }
 
-        let caps = unsafe { pwid_get_fs_capability(pwid) };
+        let caps = unsafe { pwm_get_fs_capability(pwm) };
         if (caps & cap) == cap {
             return true;
         }
 
-        if node.owner_pwid != 0 && node.owner_pwid != pwid {
+        if node.owner_pwm != 0 && node.owner_pwm != pwm {
             let has_cap = unsafe {
-                pwid_has_capability(pwid, 1, cap)
+                pwm_has_capability(pwm, 1, cap)
             };
             if has_cap {
                 return true;
@@ -654,7 +654,7 @@ impl RamFsData {
             node_id: 1,
             file_type: VfsFileType::Dir as u8,
             sensitivity: SENSITIVITY_PUBLIC,
-            owner_pwid: 1,
+            owner_pwm: 1,
             perm: 0o777,
             size: (2 * core::mem::size_of::<RamFsDirEntry>()) as u32,
             atime: Self::get_time(),
@@ -688,7 +688,7 @@ impl RamFsData {
         0
     }
     
-    pub fn open(&mut self, path: &str, _flags: u32, pwid: u64) -> Option<(u32, u64, u8)> {
+    pub fn open(&mut self, path: &str, _flags: u32, pwm: u64) -> Option<(u32, u64, u8)> {
         if path.is_empty() {
             return None;
         }
@@ -702,7 +702,7 @@ impl RamFsData {
             return None;
         }
 
-        if !self.check_permission(&self.nodes[node_id as usize], pwid, FS_CAP_READ) {
+        if !self.check_permission(&self.nodes[node_id as usize], pwm, FS_CAP_READ) {
             return None;
         }
 
@@ -711,7 +711,7 @@ impl RamFsData {
         Some((node_id, 0, self.nodes[node_id as usize].file_type))
     }
 
-    fn alloc_node(&mut self, file_type: u8, pwid: u64) -> Option<u32> {
+    fn alloc_node(&mut self, file_type: u8, pwm: u64) -> Option<u32> {
         for i in 1..RAMFS_MAX_NODES {
             if !self.nodes[i].used {
                 let block = self.block_alloc();
@@ -719,7 +719,7 @@ impl RamFsData {
                     node_id: i as u32,
                     file_type,
                     sensitivity: SENSITIVITY_PUBLIC,
-                    owner_pwid: pwid,
+                    owner_pwm: pwm,
                     perm: 0o644,
                     size: if file_type == VfsFileType::Dir as u8 {
                         (2 * core::mem::size_of::<RamFsDirEntry>()) as u32
@@ -742,10 +742,10 @@ impl RamFsData {
         None
     }
     
-    pub fn read(&mut self, node_id: u32, offset: &mut u64, buf: &mut [u8], pwid: u64) -> i32 {
+    pub fn read(&mut self, node_id: u32, offset: &mut u64, buf: &mut [u8], pwm: u64) -> i32 {
         let node = &self.nodes[node_id as usize];
 
-        if !self.check_permission(node, pwid, FS_CAP_READ) {
+        if !self.check_permission(node, pwm, FS_CAP_READ) {
             return KernelError::PermissionDenied.as_i32();
         }
 
@@ -789,8 +789,8 @@ impl RamFsData {
         bytes_read as i32
     }
     
-    pub fn write(&mut self, node_id: u32, offset: &mut u64, buf: &[u8], pwid: u64) -> i32 {
-        if !self.check_permission(&self.nodes[node_id as usize], pwid, FS_CAP_CREATE) {
+    pub fn write(&mut self, node_id: u32, offset: &mut u64, buf: &[u8], pwm: u64) -> i32 {
+        if !self.check_permission(&self.nodes[node_id as usize], pwm, FS_CAP_CREATE) {
             return KernelError::PermissionDenied.as_i32();
         }
 
@@ -837,7 +837,7 @@ impl RamFsData {
         bytes_written as i32
     }
 
-    pub fn truncate(&mut self, node_id: u32, new_size: u64, pwid: u64) -> i32 {
+    pub fn truncate(&mut self, node_id: u32, new_size: u64, pwm: u64) -> i32 {
         if node_id as usize >= RAMFS_MAX_NODES {
             return -1;
         }
@@ -847,7 +847,7 @@ impl RamFsData {
             if !node.used {
                 return -1;
             }
-            if !self.check_permission(node, pwid, FS_CAP_WRITE) {
+            if !self.check_permission(node, pwm, FS_CAP_WRITE) {
                 return -1;
             }
         }let old_size = {
@@ -974,7 +974,7 @@ impl RamFsData {
         0
     }
 
-    pub fn unlink(&mut self, path: &str, pwid: u64) -> i32 {
+    pub fn unlink(&mut self, path: &str, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
             None => return -1,
@@ -984,7 +984,7 @@ impl RamFsData {
         {
             let node = &self.nodes[node_id as usize];
             if !node.used { return -1; }
-            if !self.check_permission(node, pwid, FS_CAP_WRITE) {
+            if !self.check_permission(node, pwm, FS_CAP_WRITE) {
                 return -1;
             }
         }
@@ -1024,19 +1024,19 @@ impl RamFsData {
         }
 
         // Free node blocks and mark as unused
-        self.truncate(node_id, 0, pwid);
+        self.truncate(node_id, 0, pwm);
         {
             let node = &mut self.nodes[node_id as usize];
             node.used = false;
             node.file_type = 0;
             node.link_count = 0;
-            node.owner_pwid = 0;
+            node.owner_pwm = 0;
         }
 
         0
     }
 
-    pub fn create_file(&mut self, parent_path: &str, name: &str, pwid: u64) -> Option<u32> {
+    pub fn create_file(&mut self, parent_path: &str, name: &str, pwm: u64) -> Option<u32> {
         if name.is_empty() || name.contains('/') {
             return None;
         }
@@ -1054,7 +1054,7 @@ impl RamFsData {
             return None;
         }
 
-        if !self.check_permission(&self.nodes[parent_num as usize], pwid, FS_CAP_CREATE) {
+        if !self.check_permission(&self.nodes[parent_num as usize], pwm, FS_CAP_CREATE) {
             return None;
         }
 
@@ -1079,7 +1079,7 @@ impl RamFsData {
             }
         }
 
-        let new_node_id = self.alloc_node(VfsFileType::File as u8, pwid)?;
+        let new_node_id = self.alloc_node(VfsFileType::File as u8, pwm)?;
 
         let parent_block = self.nodes[parent_num as usize].direct_blocks[0];
         let num_entries = self.nodes[parent_num as usize].size as usize / dirent_size;
@@ -1103,7 +1103,7 @@ impl RamFsData {
         Some(new_node_id)
     }
 
-    pub fn mkdir(&mut self, parent_path: &str, name: &str, pwid: u64) -> i32 {
+    pub fn mkdir(&mut self, parent_path: &str, name: &str, pwm: u64) -> i32 {
         if name.is_empty() || name.contains('/') {
             return -1;
         }
@@ -1127,7 +1127,7 @@ impl RamFsData {
             return -1;
         }
 
-        if !self.check_permission(&self.nodes[parent_num as usize], pwid, FS_CAP_CREATE) {
+        if !self.check_permission(&self.nodes[parent_num as usize], pwm, FS_CAP_CREATE) {
             return -1;
         }
 
@@ -1153,7 +1153,7 @@ impl RamFsData {
             }
         }
 
-        let new_node_id = match self.alloc_node(VfsFileType::Dir as u8, pwid) {
+        let new_node_id = match self.alloc_node(VfsFileType::Dir as u8, pwm) {
             Some(n) => n,
             None => return -1,
         };
@@ -1219,14 +1219,14 @@ impl RamFsData {
             atime: node.atime,
             mtime: node.mtime,
             ctime: node.ctime,
-            owner_pwid: node.owner_pwid,
+            owner_pwm: node.owner_pwm,
             perm: node.perm,
             file_type: node.file_type,
             reserved: 0,
         })
     }
 
-    pub fn chmod(&mut self, path: &str, mode: u16, pwid: u64) -> i32 {
+    pub fn chmod(&mut self, path: &str, mode: u16, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
             None => return -1,
@@ -1238,8 +1238,8 @@ impl RamFsData {
         }
 
         // Permission check: only owner or privileged user can change permissions
-        if node.owner_pwid != pwid {
-            let level = unsafe { pwid_get_privilege_level(pwid) };
+        if node.owner_pwm != pwm {
+            let level = unsafe { pwm_get_privilege_level(pwm) };
             if level != 0 {
                 return -1;
             }
@@ -1250,7 +1250,7 @@ impl RamFsData {
         0
     }
 
-    pub fn chown(&mut self, path: &str, owner_pwid: u64, pwid: u64) -> i32 {
+    pub fn chown(&mut self, path: &str, owner_pwm: u64, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
             None => return -1,
@@ -1262,12 +1262,12 @@ impl RamFsData {
         }
 
         // Permission check: only privileged user can change owner
-        let level = unsafe { pwid_get_privilege_level(pwid) };
+        let level = unsafe { pwm_get_privilege_level(pwm) };
         if level != 0 {
             return -1;
         }
 
-        node.owner_pwid = owner_pwid;
+        node.owner_pwm = owner_pwm;
         node.ctime = Self::get_time();
         0
     }
@@ -1313,7 +1313,7 @@ impl RamFsData {
         Some(node.size)
     }
 
-    pub fn link(&mut self, parent_node: u32, target_node: u32, name: &str, _pwid: u64) -> i32 {
+    pub fn link(&mut self, parent_node: u32, target_node: u32, name: &str, _pwm: u64) -> i32 {
         if name.is_empty() || name.contains('/') {
             return -1;
         }

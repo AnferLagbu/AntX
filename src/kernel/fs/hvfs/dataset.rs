@@ -28,7 +28,7 @@ pub struct HvDsProps {
     pub atime: bool,
     pub sync: u8,
     pub sensitivity: u8,
-    pub owner_pwid: u64,
+    pub owner_pwm: u64,
     pub quota: u64,
     pub reservation: u64,
     pub ref_quota: u64,
@@ -44,7 +44,7 @@ impl HvDsProps {
             atime: true,
             sync: 0,
             sensitivity: 0,
-            owner_pwid: 0,
+            owner_pwm: 0,
             quota: 0,
             reservation: 0,
             ref_quota: 0,
@@ -80,13 +80,13 @@ unsafe impl Send for HvDataset {}
 unsafe impl Sync for HvDataset {}
 
 impl HvDataset {
-    pub fn new(ds_id: u64, name: &str, owner_pwid: u64) -> Self {
+    pub fn new(ds_id: u64, name: &str, owner_pwm: u64) -> Self {
         let mut n = [0u8; HV_DS_MAX_NAME];
         let b = name.as_bytes();
         let len = b.len().min(HV_DS_MAX_NAME - 1);
         n[..len].copy_from_slice(&b[..len]);
         let mut props = HvDsProps::default();
-        props.owner_pwid = owner_pwid;
+        props.owner_pwm = owner_pwm;
         Self {
             ds_id,
             name: n,
@@ -116,8 +116,8 @@ impl HvDataset {
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
     }
 
-    pub fn init(&self, owner_pwid: u64) {
-        self.objset.init(owner_pwid);
+    pub fn init(&self, owner_pwm: u64) {
+        self.objset.init(owner_pwm);
         self.state.store(HvDsState::Active as u8, Ordering::Release);
         self.mounted.store(true, Ordering::Release);
     }
@@ -130,16 +130,16 @@ impl HvDataset {
         self.writeable && self.state.load(Ordering::Acquire) == HvDsState::Active as u8
     }
 
-    pub fn create_file(&self, name: &str, owner_pwid: u64) -> Option<u64> {
+    pub fn create_file(&self, name: &str, owner_pwm: u64) -> Option<u64> {
         if !self.is_writeable() { return None; }
-        let obj_id = self.objset.alloc_obj(HvObjType::File, owner_pwid)?;
+        let obj_id = self.objset.alloc_obj(HvObjType::File, owner_pwm)?;
         self.dir_zap.insert_u64(name, obj_id);
         Some(obj_id)
     }
 
-    pub fn create_dir(&self, name: &str, owner_pwid: u64) -> Option<u64> {
+    pub fn create_dir(&self, name: &str, owner_pwm: u64) -> Option<u64> {
         if !self.is_writeable() { return None; }
-        let obj_id = self.objset.alloc_obj(HvObjType::Dir, owner_pwid)?;
+        let obj_id = self.objset.alloc_obj(HvObjType::Dir, owner_pwm)?;
         self.dir_zap.insert_u64(name, obj_id);
         Some(obj_id)
     }
