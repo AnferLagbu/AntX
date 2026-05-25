@@ -42,12 +42,12 @@ pub use vga::{
 
 /// 初始化字符设备子系统
 pub fn char_init() -> framework::Result<()> {
-    // 初始化VGA
     vga::vga_init();
-    
-    // 初始化串口
     serial::serial_init(0);
-    
+    let _ = super::framework::driver_register(&vga::VgaDriver::new());
+    if let Some(com1) = serial::SerialPort::new(0) {
+        let _ = super::framework::driver_register(&com1);
+    }
     Ok(())
 }
 

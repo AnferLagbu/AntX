@@ -331,30 +331,48 @@ pub extern "C" fn kernel_init() {
         crate::klog_boot_info!("Network subsystem initialized");
     }
 
-    // 10.5. Storage driver init (PCI AHCI/NVMe on x86_64, virtio-blk on aarch64)
+    // 10-10.6. Driver subsystem init (VGA, serial, keyboard, PCI, storage, display, USB)
+    let _ = crate::kernel::driver::init_all();
+    crate::klog_boot_info!("Driver subsystem initialized");
     {
-        // storage_init is #[cfg] gated: PCI scan on x86_64, virtio probe on aarch64
-        let _ = crate::kernel::driver::storage::storage_init();
-        crate::klog_boot_info!("Storage subsystem initialized");
+        let chitin_count = crate::kernel::chitin::chitin_count() as u64;
+        let block_count = crate::kernel::chitin::chitin_count_by_proto(
+            crate::kernel::chitin::ChitinProto::Block) as u64;
+        let net_count = crate::kernel::chitin::chitin_count_by_proto(
+            crate::kernel::chitin::ChitinProto::Net) as u64;
+        let input_count = crate::kernel::chitin::chitin_count_by_proto(
+            crate::kernel::chitin::ChitinProto::Input) as u64;
+        let driver_count = crate::kernel::driver::driver_count() as u64;
+        crate::klog_boot_info!("Chitin: {} device(s) [blk={} net={} input={}] | DriverRegistry: {} driver(s)",
+            chitin_count, block_count, net_count, input_count, driver_count);
     }
 
-    // HvFS + 磁盘挂载 — 通过 BlockDevice 注册表发现磁盘 (当前仅 x86_64 启用 HvFS 模块)
+    // HvFS + 磁盘挂载 — BlockDevice 注册表自动发现多块磁盘 (支持 ATA/NVMe/virtio-blk)
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     {
-        let mut cfg = [0u8; 512];
-        if crate::kernel::driver::block::hdd_read_sector(0, 2046, &mut cfg) >= 0
-            && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X'
-        {
-            let hvfs_lba = u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]]);
-            crate::klog_boot_info!("Disk boot: HvFS at LBA {} → mounting root", hvfs_lba);
+        let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
+        // init() 会自动扫描所有块设备, 发现 ANTX 签名的磁盘并挂载
+        hvfs.init();
+
+        if hvfs.is_disk_mode() {
             crate::kernel::fs::hvfs::hvfs::get_hvfs().spa.disk_present.store(true, core::sync::atomic::Ordering::Release);
-            crate::kernel::fs::hvfs::hvfs::get_hvfs().init();
             let r = crate::kernel::fs::vfs::ffi::vfs_mount_internal(
                 b"/\0".as_ptr() as *const core::ffi::c_char,
                 b"hvfs\0".as_ptr() as *const core::ffi::c_char,
             );
-            if r == 0 { crate::klog_boot_info!("Root filesystem: HvFS (disk)"); }
-            else { crate::klog_boot_info!("HvFS mount failed"); }
+            if r == 0 {
+                let n_drives = crate::kernel::fs::hvfs::hvfs::get_hvfs()
+                    .drives_discovered.lock().len() as u64;
+                if n_drives > 1 {
+                    crate::klog_boot_info!("Root filesystem: HvFS ({} drives)", n_drives);
+                } else {
+                    crate::klog_boot_info!("Root filesystem: HvFS (disk)");
+                }
+            } else {
+                crate::klog_boot_info!("HvFS mount failed");
+            }
+        } else {
+            crate::klog_boot_info!("HvFS: running in memory mode (no disk)");
         }
     }
 

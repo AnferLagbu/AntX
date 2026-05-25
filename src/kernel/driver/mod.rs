@@ -92,6 +92,11 @@ pub use framework::{
     DeviceInfo,
     DriverError,
     Result as DriverResult,
+    DRIVER_REGISTRY,
+    driver_register,
+    driver_list,
+    driver_count,
+    driver_count_by_type,
 };
 
 // --- 总线驱动导出 ---
@@ -140,43 +145,28 @@ pub use storage::ata::{
 
 /// 初始化所有设备驱动
 ///
-/// 按照依赖顺序初始化各个子系统：
+/// 按照依赖顺序初始化各个子系统并注册到几丁质全局设备表：
 /// 1. 字符设备 (VGA、串口)
 /// 2. 总线驱动 (PCI)
 /// 3. 存储设备 (NVMe、AHCI、ATA)
 /// 4. 输入设备 (键盘)
 /// 5. 显示设备 (HDMI、DP)
 /// 6. USB设备
-///
-/// # Returns
-/// * `Ok(())` - 所有驱动初始化成功
-/// * `Err(DriverError)` - 某个驱动初始化失败
 pub fn init_all() -> framework::Result<()> {
-    // 1. 初始化字符设备 (显示和调试输出)
-    char::char_init()?;
-    
-    // 2. 初始化总线驱动 (设备发现)
-    #[cfg(feature = "pci")]
+    #[cfg(target_arch = "x86_64")]
     {
-        bus::bus_init()?;
+        char::char_init()?;
+        let _ = bus::bus_init();
+        storage::storage_init()?;
+        input::input_init()?;
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        storage::storage_init()?;
     }
 
-    // 2.5 初始化 DMA 引擎 (存储/USB驱动需要)
-    crate::kernel::dma::engine::get_dma().init();
-    
-    // 3. 初始化存储设备 (需要 DMA)
-    #[cfg(target_arch = "x86_64")]
-    storage::storage_init()?;
-    
-    // 4. 初始化输入设备
-    input::input_init()?;
-    
-    // 5. 初始化显示设备
     let _ = display::display_init();
-    
-    // 6. 初始化USB
     let _ = usb::usb_init();
-    
     Ok(())
 }
 
@@ -207,46 +197,61 @@ pub fn shutdown_all() -> framework::Result<()> {
     Ok(())
 }
 
-/// 获取系统已检测到的设备列表
+/// 获取系统已检测到的设备列表 (从几丁质 + DriverRegistry + BlockDevice 三表读取)
 ///
 /// 返回格式化的设备信息字符串。
 #[cfg(feature = "alloc")]
 pub fn list_devices() -> alloc::string::String {
     use alloc::format;
-    
-    let mut info = alloc::string::String::from("=== Detected Devices ===\n\n");
-    
-    // ATA 设备
-    info.push_str("Storage Devices:\n");
-    unsafe {
-        if let Some(ref controller) = crate::kernel::driver::storage::ata::ATA_CONTROLLER {
-            for i in 0..4 {
-                if controller.disk_present(i) {
-                    let channel = if i < 2 { "Primary" } else { "Secondary" };
-                    let role = if i % 2 == 0 { "Master" } else { "Slave" };
-                    info.push_str(&format!("  ATA [{}] {}-{}\n", i, channel, role));
-                }
+    let mut info = alloc::string::String::from("=== Chitin Device Registry ===\n\n");
+
+    // 从几丁质注册表读取
+    let chitin_devs = crate::kernel::chitin::chitin_list();
+    if chitin_devs.is_empty() {
+        info.push_str("  (no devices)\n");
+    } else {
+        let mut block = Vec::new();
+        let mut input = Vec::new();
+        let mut net = Vec::new();
+        let mut char_dev = Vec::new();
+        let mut other = Vec::new();
+
+        for (id, name, proto, state) in &chitin_devs {
+            let st = format!("{:?}", state);
+            let line = format!("  [id={}] {} proto={:?} state={}", id, name, proto, st);
+            match proto {
+                crate::kernel::chitin::ChitinProto::Block => block.push(line),
+                crate::kernel::chitin::ChitinProto::Input => input.push(line),
+                crate::kernel::chitin::ChitinProto::Net => net.push(line),
+                crate::kernel::chitin::ChitinProto::Char => char_dev.push(line),
+                _ => other.push(line),
             }
         }
-    }
-    
-    // NVMe 设备
-    info.push_str(&format!("  NVMe: {} controller(s)\n", storage::nvme_controller_count()));
 
-    // AHCI 设备
-    info.push_str(&format!("  AHCI: {} port(s)\n", storage::ahci_port_count()));
-    
-    info.push_str("\nInput Devices:\n");
-    info.push_str("  Keyboard: PS/2\n");
-    
-    info.push_str("\nDisplay Devices:\n");
-    info.push_str("  VGA: Text Mode (80x25)\n");
-    info.push_str("  HDMI: (detect via HPD)\n");
-    info.push_str("  DisplayPort: (detect via HPD)\n");
-    
-    info.push_str("\nUSB Devices:\n");
-    info.push_str("  Controllers: (scan PCI bus for xHCI/EHCI)\n");
-    
+        if !block.is_empty() { info.push_str("Block:\n"); for s in &block { info.push_str(s); info.push('\n'); } }
+        if !char_dev.is_empty() { info.push_str("Char:\n"); for s in &char_dev { info.push_str(s); info.push('\n'); } }
+        if !net.is_empty() { info.push_str("Net:\n"); for s in &net { info.push_str(s); info.push('\n'); } }
+        if !input.is_empty() { info.push_str("Input:\n"); for s in &input { info.push_str(s); info.push('\n'); } }
+        if !other.is_empty() { info.push_str("Other:\n"); for s in &other { info.push_str(s); info.push('\n'); } }
+    }
+
+    // 补充 DriverRegistry 信息
+    let driver_count = framework::driver_count();
+    if driver_count > 0 {
+        info.push_str(&format!("\nDriver Registry: {} driver(s)\n", driver_count));
+    }
+
+    // 补充 BlockDevice 信息
+    let blk_count = block::block_device_count();
+    if blk_count > 0 {
+        let bds = block::block_device_list();
+        info.push_str(&format!("\nBlock Device Registry: {} device(s)\n", blk_count));
+        for (id, name, sectors) in &bds {
+            info.push_str(&format!("  [id={}] {} sectors={} size={}MB\n",
+                id, name, sectors, *sectors as u64 * 512 / (1024 * 1024)));
+        }
+    }
+
     info.push('\n');
     info
 }

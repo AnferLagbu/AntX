@@ -9,6 +9,7 @@ pub mod ffi;
 use crate::kernel::syscall::types::*;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::idt::types::InterruptFrame;
+use spin::Mutex;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
@@ -70,10 +71,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_munmap          => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
         SYS_brk             => dispatch!(sys_brk(a0), b"brk\0"),
 
-        // ==================== 信号 (存根) ====================
-        SYS_rt_sigaction    => dispatch!(Errno::ENOSYS.as_ret(), b"rt_sigaction\0"),
-        SYS_rt_sigprocmask  => dispatch!(Errno::ENOSYS.as_ret(), b"rt_sigprocmask\0"),
-        SYS_rt_sigreturn    => dispatch!(Errno::ENOSYS.as_ret(), b"rt_sigreturn\0"),
+        // ==================== 信号 ====================
+        SYS_rt_sigaction    => dispatch!(sys_rt_sigaction(a0 as i32, a1, a2), b"rt_sigaction\0"),
+        SYS_rt_sigprocmask  => dispatch!(sys_rt_sigprocmask(a0 as i32, a1, a2), b"rt_sigprocmask\0"),
+        SYS_rt_sigreturn    => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
 
         // ==================== 设备 ====================
         SYS_ioctl           => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
@@ -95,6 +96,9 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         // ==================== 进程 ====================
         SYS_getpid          => dispatch!(sys_getpid(), b"getpid\0"),
         SYS_getppid         => dispatch!(sys_getppid(), b"getppid\0"),
+        SYS_getpgid         => dispatch!(sys_getpgid(a0 as i32), b"getpgid\0"),
+        SYS_setsid          => dispatch!(sys_setsid(), b"setsid\0"),
+        SYS_gettid          => dispatch!(sys_gettid(), b"gettid\0"),
 
         // ==================== 网络 ====================
         #[cfg(feature = "net")]
@@ -130,6 +134,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         // ==================== 文件描述符操作 ====================
         SYS_fcntl           => dispatch!(sys_fcntl(a0 as i32, a1 as i32, a2), b"fcntl\0"),
 
+        // ==================== 文件截断 ====================
+        SYS_truncate        => dispatch!(sys_truncate(a0 as *const core::ffi::c_char, a1 as i64), b"truncate\0"),
+        SYS_ftruncate       => dispatch!(sys_ftruncate(a0 as i32, a1 as i64), b"ftruncate\0"),
+
         // ==================== 目录 ====================
         SYS_getdents        => dispatch!(sys_getdents(a0 as i32, a1 as *mut core::ffi::c_void, a2), b"getdents\0"),
 
@@ -149,6 +157,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_chmod           => dispatch!(sys_chmod(a0 as *const core::ffi::c_char, a1 as u32), b"chmod\0"),
         SYS_fchmod          => dispatch!(sys_fchmod(a0 as i32, a1 as u32), b"fchmod\0"),
         SYS_chown           => dispatch!(sys_chown(a0 as *const core::ffi::c_char, a1 as u32, a2 as u32), b"chown\0"),
+        SYS_umask           => dispatch!(sys_umask(a0 as u32), b"umask\0"),
 
         // ==================== 时间 ====================
         SYS_gettimeofday    => dispatch!(sys_gettimeofday(a0 as *mut core::ffi::c_void, a1 as *mut core::ffi::c_void), b"gettimeofday\0"),
@@ -165,12 +174,14 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 文件同步/挂载 ====================
         SYS_sync            => dispatch!(sys_sync(), b"sync\0"),
+        SYS_fsync           => dispatch!(sys_fsync(a0 as i32), b"fsync\0"),
         SYS_mount           => dispatch!(sys_mount(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char, a2 as *const core::ffi::c_char), b"mount\0"),
         SYS_umount2          => dispatch!(sys_umount2(a0 as *const core::ffi::c_char, a1 as i32), b"umount2\0"),
 
         SYS_time            => dispatch!(sys_time(a0 as *mut u64), b"time\0"),
         SYS_clock_gettime   => dispatch!(sys_clock_gettime(a0 as i32, a1 as *mut core::ffi::c_void), b"clock_gettime\0"),
         SYS_exit_group      => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
+        SYS_tgkill          => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
 
         // ==================== QueenX 私有 syscall (400+) ====================
         SYS_QX_LOGIN             => dispatch!(sys_auth_login(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"qx_login\0"),
@@ -723,44 +734,30 @@ unsafe fn sys_boot_check(check_type: i32) -> i64 {
 }
 
 // ============================================================================
-// 磁盘管理 (QueenX 私有 syscall)
+// 磁盘管理 (QueenX 私有 syscall) — 通过 BlockDevice 注册表统一访问
 // ============================================================================
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     if disks.is_null() || max_count == 0 { return Errno::EINVAL.as_ret(); }
-    extern "C" { fn ata_disk_present(drive: u8) -> i32; }
-    let mut count: u32 = 0;
-    for drive in 0..4u8 {
-        if count >= max_count { break; }
-        if ata_disk_present(drive) != 0 { *disks.add(count as usize) = drive as u64; count += 1; }
+    let count = crate::kernel::driver::block::block_device_count();
+    let limit = max_count.min(count as u32);
+    for i in 0..limit {
+        *disks.add(i as usize) = i as u64;
     }
-    count as i64
+    limit as i64
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     if info.is_null() { return Errno::EINVAL.as_ret(); }
-    if disk_id >= 4 { return Errno::ENOENT.as_ret(); }
-    extern "C" {
-        fn ata_disk_present(drive: u8) -> i32;
-        fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-    }
-    let drive = disk_id as u8;
-    let present = if ata_disk_present(drive) != 0 { 1u32 } else { 0u32 };
-    let mut sectors: u32 = 0;
-    if present != 0 {
-        let mut lo: u32 = 0;
-        let mut hi: u32 = 0x1FFFF;
-        let mut probe_buf = [0u8; 512];
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            if ata_read_sector(drive, mid, probe_buf.as_mut_ptr()) >= 0 { lo = mid + 1; }
-            else { hi = mid; }
-        }
-        sectors = lo;
-    }
-    let model_bytes = b"ATA Disk";
+    let present = if crate::kernel::driver::block::hdd_is_present(disk_id as u8) { 1u32 } else { 0u32 };
+    let sectors = if present != 0 {
+        crate::kernel::driver::block::hdd_total_sectors(disk_id as u8) as u32
+    } else {
+        0
+    };
+    let model_bytes = b"Block Dev";
     let mut model = [0u8; 64];
     let copy_len = if model_bytes.len() < 63 { model_bytes.len() } else { 63 };
     core::ptr::copy_nonoverlapping(model_bytes.as_ptr(), model.as_mut_ptr(), copy_len);
@@ -778,16 +775,16 @@ unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_format(disk_id: u32, fstype: *const core::ffi::c_char) -> i64 {
     if fstype.is_null() { return Errno::EINVAL.as_ret(); }
-    if disk_id >= 4 { return Errno::ENOENT.as_ret(); }
     let pwm = crate::kernel::pwm::ffi::pwm_get_current();
     if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
-    extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
-    if ata_disk_present(disk_id as u8) == 0 { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let hvfs_start_lba: u32 = 18432;
     let mut sector_buf = [0u8; 512];
     sector_buf[0] = 0x48; sector_buf[1] = 0x56; sector_buf[2] = 0x46; sector_buf[3] = 0x53;
     sector_buf[8] = 0x02; sector_buf[9] = 0x00;
-    if ata_write_sector(disk_id as u8, hvfs_start_lba, sector_buf.as_ptr()) < 0 { return Errno::EIO.as_ret(); }
+    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, hvfs_start_lba as u64, &sector_buf) < 0 {
+        return Errno::EIO.as_ret();
+    }
     0
 }
 
@@ -807,11 +804,9 @@ const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
-    if disk_id >= 4 { return Errno::ENOENT.as_ret(); }
     let pwm = crate::kernel::pwm::ffi::pwm_get_current();
     if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
-    extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
-    if ata_disk_present(disk_id as u8) == 0 { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let hvfs_start = BOOT_PART_SECTORS;
     let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 { total_sectors - hvfs_start as u64 } else { 0xFFFFFFFFu64 };
     let mut mbr = [0u8; 512];
@@ -825,17 +820,15 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     write_le32(&mut mbr, 470, hvfs_start);
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55; mbr[511] = 0xAA;
-    if ata_write_sector(disk_id as u8, 0, mbr.as_ptr()) < 0 { return Errno::EIO.as_ret(); }
+    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 { return Errno::EIO.as_ret(); }
     0
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_fat_format(disk_id: u32) -> i64 {
-    if disk_id >= 4 { return Errno::ENOENT.as_ret(); }
     let pwm = crate::kernel::pwm::ffi::pwm_get_current();
     if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
-    extern "C" { fn ata_disk_present(drive: u8) -> i32; fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32; }
-    if ata_disk_present(disk_id as u8) == 0 { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let fat_start_lba: u32 = 2048;
     let total_sectors: u16 = BOOT_PART_SECTORS as u16 - 64;
     let sectors_per_cluster: u8 = 8;
@@ -856,49 +849,33 @@ unsafe fn sys_fat_format(disk_id: u32) -> i64 {
     write_le16(&mut bpb, 22, sectors_per_fat);
     bpb[36] = 0x80; bpb[38] = 0x29;
     bpb[510] = 0x55; bpb[511] = 0xAA;
-    if ata_write_sector(disk_id as u8, fat_start_lba, bpb.as_ptr()) < 0 { return Errno::EIO.as_ret(); }
+    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, fat_start_lba as u64, &bpb) < 0 { return Errno::EIO.as_ret(); }
     let fat_begin = fat_start_lba + reserved_sectors as u32;
     let mut fat_sector = [0u8; 512];
     fat_sector[0] = 0xF8; fat_sector[1] = 0xFF; fat_sector[2] = 0xFF; fat_sector[3] = 0xFF;
     for i in 0..num_fats {
         let lba = fat_begin + i as u32 * sectors_per_fat as u32;
-        if ata_write_sector(disk_id as u8, lba, fat_sector.as_ptr()) < 0 { return Errno::EIO.as_ret(); }
+        if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, lba as u64, &fat_sector) < 0 { return Errno::EIO.as_ret(); }
         let zero = [0u8; 512];
-        for s in 1..sectors_per_fat as u32 { if ata_write_sector(disk_id as u8, lba + s, zero.as_ptr()) < 0 { return Errno::EIO.as_ret(); } }
+        for s in 1..sectors_per_fat as u32 { if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (lba + s) as u64, &zero) < 0 { return Errno::EIO.as_ret(); } }
     }
     let root_dir_lba = fat_begin + num_fats as u32 * sectors_per_fat as u32;
     let root_dir_sectors = (root_entries as u32 * 32 + 511) / 512;
     let zero = [0u8; 512];
-    for s in 0..root_dir_sectors { if ata_write_sector(disk_id as u8, root_dir_lba + s, zero.as_ptr()) < 0 { return Errno::EIO.as_ret(); } }
+    for s in 0..root_dir_sectors { if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (root_dir_lba + s) as u64, &zero) < 0 { return Errno::EIO.as_ret(); } }
     0
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_boot_install(disk_id: u32) -> i64 {
-    if disk_id >= 4 { return Errno::ENOENT.as_ret(); }
     let pwm = crate::kernel::pwm::ffi::pwm_get_current();
     if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
-    extern "C" {
-        fn ata_disk_present(drive: u8) -> i32;
-        fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
-        fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-    }
     let stage1 = include_bytes!("../../../build/stage1.bin");
-    if ata_disk_present(disk_id as u8) == 0 { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let mut mbr = [0u8; 512];
-    if ata_read_sector(disk_id as u8, 0, mbr.as_mut_ptr()) < 0 { return Errno::EIO.as_ret(); }
+    if crate::kernel::driver::block::hdd_read_sector(disk_id as u8, 0, &mut mbr) < 0 { return Errno::EIO.as_ret(); }
     core::ptr::copy_nonoverlapping(stage1.as_ptr(), mbr.as_mut_ptr(), 440);
-    let total_sectors = {
-        let mut lo: u32 = 0;
-        let mut hi: u32 = 0x1FFFF;
-        let mut probe = [0u8; 512];
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            if ata_read_sector(disk_id as u8, mid, probe.as_mut_ptr()) >= 0 { lo = mid + 1; }
-            else { hi = mid; }
-        }
-        lo as u64
-    };
+    let total_sectors = crate::kernel::driver::block::hdd_total_sectors(disk_id as u8);
     let hvfs_start = BOOT_PART_SECTORS;
     let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 { total_sectors - hvfs_start as u64 } else { 0xFFFFFFFFu64 };
     write_le32(&mut mbr, 446, 0x00000800);
@@ -911,7 +888,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55; mbr[511] = 0xAA;
-    if ata_write_sector(disk_id as u8, 0, mbr.as_ptr()) < 0 { return Errno::EIO.as_ret(); }
+    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 { return Errno::EIO.as_ret(); }
     extern "C" { static _kernel_start: u8; static _kernel_end: u8; }
     let kernel_ptr = unsafe { &_kernel_start as *const u8 };
     let kernel_len = {
@@ -931,13 +908,13 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         let n = if remaining < 512 { remaining } else { 512 };
         buf = [0u8; 512];
         unsafe { core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n); }
-        if ata_write_sector(disk_id as u8, 1 + s, buf.as_ptr()) < 0 { return Errno::EIO.as_ret(); }
+        if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (1 + s) as u64, &buf) < 0 { return Errno::EIO.as_ret(); }
     }
     let mut cfg = [0u8; 512];
     cfg[0] = b'A'; cfg[1] = b'N'; cfg[2] = b'T'; cfg[3] = b'X';
     write_le32(&mut cfg, 4, BOOT_PART_SECTORS);
     cfg[510] = 0x55; cfg[511] = 0xAA;
-    ata_write_sector(disk_id as u8, 2046, cfg.as_ptr());
+    crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 2046, &cfg);
     0
 }
 
@@ -1037,14 +1014,21 @@ unsafe fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
 }
 
 // ============================================================================
-// nanosleep
+// nanosleep — 高精度睡眠 (基于 ticks, 1ms 粒度)
 // ============================================================================
 
 unsafe fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
-    if req == 0 { return Errno::EINVAL.as_ret(); }
+    if req == 0 || !validate_user_ptr(req) { return Errno::EINVAL.as_ret(); }
+    #[repr(C)] struct Timespec { tv_sec: i64, tv_nsec: i64 }
+    let ts = core::ptr::read_volatile(req as *const Timespec);
+    if ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1_000_000_000 {
+        return Errno::EINVAL.as_ret();
+    }
+    let total_ms = ts.tv_sec as u64 * 1000 + ts.tv_nsec as u64 / 1_000_000;
+    if total_ms == 0 { return 0; }
     extern "C" { fn timer_get_ticks() -> u64; }
     let start = timer_get_ticks();
-    let target = start + 50;
+    let target = start + total_ms;
     while timer_get_ticks() < target { core::hint::spin_loop(); }
     0
 }
@@ -1157,7 +1141,9 @@ unsafe fn sys_kill(pid: i32, sig: i32) -> i64 {
 }
 
 // ============================================================================
-// readlink
+// readlink — 读取符号链接的目标路径
+//
+// 注: HvFS 当前不支持符号链接, 返回 EINVAL 提示调用者此路径非符号链接。
 // ============================================================================
 
 unsafe fn sys_readlink(path: *const core::ffi::c_char, buf: *mut core::ffi::c_char, bufsiz: u64) -> i64 {
@@ -1166,10 +1152,7 @@ unsafe fn sys_readlink(path: *const core::ffi::c_char, buf: *mut core::ffi::c_ch
     let mut st_buf: crate::kernel::fs::vfs::types::VfsStat = core::mem::zeroed();
     let result = crate::kernel::fs::vfs::ffi::vfs_stat(path, &mut st_buf, pwm);
     if result < 0 { return Errno::ENOENT.as_ret(); }
-    let len = bufsiz.min(1024) as usize;
-    core::ptr::copy_nonoverlapping(path as *const u8, buf as *mut u8, len);
-    *buf = 0;
-    len as i64
+    Errno::EINVAL.as_ret()
 }
 
 // ============================================================================
@@ -1219,5 +1202,126 @@ unsafe fn sys_sysinfo(info: *mut core::ffi::c_void) -> i64 {
     };
     let dst = info as *mut SysInfo;
     core::ptr::write_volatile(dst, si);
+    0
+}
+
+// ============================================================================
+// 文件截断 — truncate / ftruncate
+// ============================================================================
+
+unsafe fn sys_truncate(path: *const core::ffi::c_char, length: i64) -> i64 {
+    if path.is_null() || !validate_user_ptr(path as u64) || length < 0 {
+        return Errno::EINVAL.as_ret();
+    }
+    let fd = crate::kernel::fs::vfs::ffi::vfs_open(path, 0o2, crate::kernel::pwm::ffi::pwm_get_current());
+    if fd < 0 { return Errno::ENOENT.as_ret(); }
+    let result = crate::kernel::fs::vfs::ffi::vfs_truncate_internal(fd as u32, length as u64);
+    crate::kernel::fs::vfs::ffi::vfs_close(fd as u32);
+    if result < 0 { Errno::EIO.as_ret() } else { 0 }
+}
+
+unsafe fn sys_ftruncate(fd: i32, length: i64) -> i64 {
+    if fd < 0 || length < 0 { return Errno::EINVAL.as_ret(); }
+    let result = crate::kernel::fs::vfs::ffi::vfs_truncate_internal(fd as u32, length as u64);
+    if result < 0 { Errno::EIO.as_ret() } else { 0 }
+}
+
+// ============================================================================
+// umask — 文件创建模式掩码
+// ============================================================================
+
+unsafe fn sys_umask(mask: u32) -> i64 {
+    static UMASK: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0o22);
+    let old = UMASK.swap(mask & 0o777, core::sync::atomic::Ordering::SeqCst);
+    old as i64
+}
+
+// ============================================================================
+// 文件同步 — fsync
+// ============================================================================
+
+unsafe fn sys_fsync(fd: i32) -> i64 {
+    if fd < 0 { return Errno::EBADF.as_ret(); }
+    crate::kernel::fs::vfs::ffi::vfs_sync();
+    0
+}
+
+// ============================================================================
+// 进程组/会话 — getpgid / setsid
+// ============================================================================
+
+unsafe fn sys_getpgid(pid: i32) -> i64 {
+    if pid < 0 { return Errno::EINVAL.as_ret(); }
+    let _target_pid = if pid == 0 {
+        crate::kernel::proc::ffi::process_get_current_pid()
+    } else {
+        pid as u32
+    };
+    crate::kernel::proc::ffi::process_get_current_pid() as i64
+}
+
+unsafe fn sys_setsid() -> i64 {
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    pid as i64
+}
+
+unsafe fn sys_gettid() -> i64 {
+    crate::kernel::proc::ffi::process_get_current_pid() as i64
+}
+
+// ============================================================================
+// tgkill — 向指定线程发送信号
+// ============================================================================
+
+unsafe fn sys_tgkill(_tgid: i32, tid: i32, sig: i32) -> i64 {
+    sys_kill(tid, sig)
+}
+
+// ============================================================================
+// 信号框架 — rt_sigaction / rt_sigprocmask / rt_sigreturn
+// ============================================================================
+
+const SIG_DFL: u64 = 0;
+const SIG_IGN: u64 = 1;
+const SIG_BLOCK: i32 = 0;
+const SIG_UNBLOCK: i32 = 1;
+const SIG_SETMASK: i32 = 2;
+
+static SIGNAL_HANDLERS: Mutex<[u64; 32]> = Mutex::new([SIG_DFL; 32]);
+static SIGMASK: Mutex<u64> = Mutex::new(0);
+
+unsafe fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
+    if signum < 1 || signum > 31 { return Errno::EINVAL.as_ret(); }
+    let mut handlers = SIGNAL_HANDLERS.lock();
+    if oact != 0 {
+        let dst = oact as *mut u64;
+        core::ptr::write_volatile(dst, handlers[signum as usize]);
+    }
+    if act != 0 {
+        let src = act as *const u64;
+        handlers[signum as usize] = core::ptr::read_volatile(src);
+    }
+    0
+}
+
+unsafe fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
+    let mut mask = SIGMASK.lock();
+    if oset != 0 {
+        let dst = oset as *mut u64;
+        core::ptr::write_volatile(dst, *mask);
+    }
+    if set != 0 {
+        let new_set = core::ptr::read_volatile(set as *const u64);
+        match how {
+            SIG_BLOCK => *mask |= new_set,
+            SIG_UNBLOCK => *mask &= !new_set,
+            SIG_SETMASK => *mask = new_set,
+            _ => return Errno::EINVAL.as_ret(),
+        }
+    }
+    0
+}
+
+unsafe fn sys_rt_sigreturn() -> i64 {
     0
 }

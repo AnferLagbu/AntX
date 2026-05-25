@@ -86,6 +86,9 @@ pub mod syscall;
 /// 设备驱动 (ATA 磁盘, 键盘, 串口)
 pub mod driver;
 
+/// 几丁质设备框架 (Chitin: 统一设备注册/发现/分类)
+pub mod chitin;
+
 /// IPC 子系统 (管道, 共享内存, 消息队列, 信号量, 信号)
 pub mod ipc;
 

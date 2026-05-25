@@ -15,6 +15,8 @@ use crate::kernel::mm::KERNEL_BASE;
 use crate::klog_info;
 use crate::klog_warn;
 use crate::klog_err;
+use alloc::boxed::Box;
+use spin::Mutex;
 
 // ── Feature bits ──
 
@@ -366,7 +368,7 @@ impl VirtioNet {
 // Global instance + FFI (for lwIP integration)
 // ============================================================================
 
-static mut VIRTIO_NET_INSTANCE: Option<VirtioNet> = None;
+static VIRTIO_NET_DEVICE: Mutex<Option<Box<VirtioNet>>> = Mutex::new(None);
 
 /// C FFI: probe for virtio-net device. Returns 0 on success, -1 on failure.
 #[no_mangle]
@@ -382,8 +384,19 @@ pub fn probe() -> i32 {
     for dev in devices {
         if dev.device_id == VIRTIO_ID_NET {
             match VirtioNet::new(dev) {
-                Some(net) => unsafe {
-                    VIRTIO_NET_INSTANCE = Some(net);
+                Some(net) => {
+                    let mut boxed = Box::new(net);
+
+                    // 注册到几丁质框架 (非所有权指针, 内存由 VIRTIO_NET_DEVICE 管理)
+                    let raw_ptr: *mut VirtioNet = &mut *boxed;
+                    let _id = crate::kernel::chitin::chitin_register(
+                        "virtio_net",
+                        crate::kernel::chitin::ChitinProto::Net,
+                        Some(boxed.device.mmio_base),
+                        None,
+                        raw_ptr as *mut core::ffi::c_void,
+                    );
+                    *VIRTIO_NET_DEVICE.lock() = Some(boxed);
                     klog_info!(Driver, "virtio-net: probed successfully");
                     return 0;
                 },
@@ -406,7 +419,7 @@ pub unsafe extern "C" fn virtio_net_init(netif: *mut core::ffi::c_void) -> i32 {
         fn qx_netif_init_virtio(netif: *mut core::ffi::c_void, mac: *const u8);
     }
 
-    match &mut VIRTIO_NET_INSTANCE {
+    match &*VIRTIO_NET_DEVICE.lock() {
         Some(ref dev) => {
             qx_netif_init_virtio(netif, dev.mac.as_ptr());
             klog_info!(Net, "virtio-net: lwIP netif initialized");
@@ -427,7 +440,7 @@ pub unsafe extern "C" fn virtio_net_send(_netif: *mut core::ffi::c_void, p: *mut
         return -1;
     }
 
-    match &mut VIRTIO_NET_INSTANCE {
+    match &mut *VIRTIO_NET_DEVICE.lock() {
         Some(ref mut dev) => {
             let pbuf_base = p as *mut u8;
             let total = *(pbuf_base.add(0x10) as *const u16) as usize;
@@ -463,7 +476,7 @@ pub unsafe extern "C" fn virtio_net_send(_netif: *mut core::ffi::c_void, p: *mut
 /// Poll for received packets.
 #[no_mangle]
 pub unsafe extern "C" fn virtio_net_poll_rx() {
-    match &mut VIRTIO_NET_INSTANCE {
+    match &mut *VIRTIO_NET_DEVICE.lock() {
         Some(ref mut dev) => {
             // Force VM exit to let QEMU process pending network bottom-half handlers
             let _ = dev.device.read32(super::INTERRUPT_STATUS);

@@ -20,6 +20,7 @@ pub use keyboard::KeyboardDriver;
 
 pub fn input_init() -> framework::Result<()> {
     keyboard::keyboard_init();
+    let _ = super::framework::driver_register(&keyboard::KeyboardDriver::new());
     Ok(())
 }
 

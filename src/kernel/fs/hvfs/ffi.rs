@@ -132,7 +132,12 @@ pub extern "C" fn hvfs_get_stats(allocs: *mut u64, frees: *mut u64, reads: *mut 
 #[no_mangle]
 pub extern "C" fn hvfs_format() -> i32 {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    hvfs.format_disk();
+    // 使用已发现的第一个驱动器, 回退到 drive 0
+    let (drive_id, part_start) = hvfs.drives_discovered.lock()
+        .first()
+        .copied()
+        .unwrap_or((hvfs.disk_drive.load(core::sync::atomic::Ordering::Acquire), hvfs.partition_start.load(core::sync::atomic::Ordering::Acquire)));
+    hvfs.format_drive(drive_id, part_start);
     0
 }
 

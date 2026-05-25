@@ -27,6 +27,8 @@ use super::framework::{DeviceType, DriverError, Result, DeviceInfo};
 use super::framework::{outb, inb};
 #[cfg(target_arch = "x86_64")]
 use super::framework::{outw, inw};
+use alloc::boxed::Box;
+use spin::Mutex;
 
 // ============================================================================
 // ATA 硬件常量定义
@@ -262,6 +264,10 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
 // ============================================================================
 // Driver Trait 实现
 // ============================================================================
+
+// SAFETY: 单核内核, ATA PIO 模式操作无并发
+unsafe impl Send for AtaController {}
+unsafe impl Sync for AtaController {}
 
 #[cfg(target_arch = "x86_64")]
 impl Driver for AtaController {
@@ -562,31 +568,38 @@ impl AtaController {
 // FFI 兼容接口 (C 函数签名)
 // ============================================================================
 
-/// 全局 ATA 控制器实例
-static mut ATA_CONTROLLER: Option<AtaController> = None;
+/// 全局 ATA 控制器实例 (无 unsafe, Mutex 保护)
+static ATA_DEVICE: Mutex<Option<Box<AtaController>>> = Mutex::new(None);
 
 /// 初始化 ATA 子系统 (C 兼容接口)
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_init() {
-    unsafe {
-        ATA_CONTROLLER = Some(AtaController::new());
-        if let Some(ref mut controller) = ATA_CONTROLLER {
-            let _ = controller.init();
-        }
-    }
+    let mut controller = Box::new(AtaController::new());
+    let _ = controller.init();
+
+    // 注册到几丁质框架 (非所有权指针)
+    let raw_ptr: *mut AtaController = &mut *controller;
+    let _id = crate::kernel::chitin::chitin_register(
+        "ata_controller",
+        crate::kernel::chitin::ChitinProto::Block,
+        Some(0x1F0), // Primary IO
+        Some(14),    // IRQ 14
+        raw_ptr as *mut core::ffi::c_void,
+    );
+
+    *ATA_DEVICE.lock() = Some(controller);
 }
 
 /// 检查磁盘是否存在 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
-    unsafe {
-        match &ATA_CONTROLLER {
-            Some(controller) => {
-                if controller.disk_present(drive) { 1 } else { 0 }
-            },
-            None => 0,
-        }
+    let guard = ATA_DEVICE.lock();
+    match &*guard {
+        Some(controller) => {
+            if controller.disk_present(drive) { 1 } else { 0 }
+        },
+        None => 0,
     }
 }
 
@@ -594,24 +607,22 @@ pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
-    unsafe {
-        if buffer.is_null() {
-            return ATA_ERR;
-        }
+    if buffer.is_null() {
+        return ATA_ERR;
+    }
 
-        match &ATA_CONTROLLER {
-            Some(controller) => {
-                let mut buf = [0u8; 512];
-                match controller.read_sector(drive, lba, &mut buf) {
-                    Ok(()) => {
-                        core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512);
-                        ATA_SUCCESS
-                    },
-                    Err(_) => ATA_ERR,
-                }
-            },
-            None => ATA_NO_DISK,
-        }
+    match &*ATA_DEVICE.lock() {
+        Some(controller) => {
+            let mut buf = [0u8; 512];
+            match controller.read_sector(drive, lba, &mut buf) {
+                Ok(()) => {
+                    unsafe { core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512); }
+                    ATA_SUCCESS
+                },
+                Err(_) => ATA_ERR,
+            }
+        },
+        None => ATA_NO_DISK,
     }
 }
 
@@ -619,23 +630,21 @@ pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_write_sector(drive: u8, lba: u32, buffer: *const u8) -> i32 {
-    unsafe {
-        if buffer.is_null() {
-            return ATA_ERR;
-        }
+    if buffer.is_null() {
+        return ATA_ERR;
+    }
 
-        match &ATA_CONTROLLER {
-            Some(controller) => {
-                let mut buf = [0u8; 512];
-                core::ptr::copy_nonoverlapping(buffer, buf.as_mut_ptr(), 512);
-                
-                match controller.write_sector(drive, lba, &buf) {
-                    Ok(()) => ATA_SUCCESS,
-                    Err(_) => ATA_ERR,
-                }
-            },
-            None => ATA_NO_DISK,
-        }
+    match &*ATA_DEVICE.lock() {
+        Some(controller) => {
+            let mut buf = [0u8; 512];
+            unsafe { core::ptr::copy_nonoverlapping(buffer, buf.as_mut_ptr(), 512); }
+            
+            match controller.write_sector(drive, lba, &buf) {
+                Ok(()) => ATA_SUCCESS,
+                Err(_) => ATA_ERR,
+            }
+        },
+        None => ATA_NO_DISK,
     }
 }
 

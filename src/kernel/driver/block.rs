@@ -36,19 +36,37 @@ pub trait BlockDevice: Send + Sync {
 // ── Global Registry ──
 
 static REGISTRY: Mutex<Vec<Mutex<Box<dyn BlockDevice>>>> = Mutex::new(Vec::new());
+static DEVICE_NAMES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
 
-/// Register a block device. Returns the device index.
-pub fn register(dev: Box<dyn BlockDevice>) -> usize {
+/// Register a block device with a human-readable name. Returns the device index.
+///
+/// The name must have a static lifetime (typically a string literal or leaked String).
+pub fn register_named(name: &'static str, dev: Box<dyn BlockDevice>) -> usize {
     let mut list = REGISTRY.lock();
     let idx = list.len();
     list.push(Mutex::new(dev));
+    drop(list);
+    DEVICE_NAMES.lock().push(name);
     idx
 }
 
-/// Get mutable access to a registered block device.
-/// Returns None if the index is out of range.
-pub fn get(_idx: usize) -> Option<&'static Mutex<Vec<Mutex<Box<dyn BlockDevice>>>>> {
-    None
+/// Register a block device without a name. Uses "unknown" as the name.
+/// Prefer `register_named` for production use.
+pub fn register(dev: Box<dyn BlockDevice>) -> usize {
+    register_named("unknown", dev)
+}
+
+/// Safely access a registered block device by index.
+///
+/// The closure `f` receives `&mut dyn BlockDevice` while the registry lock
+/// and device lock are held. Returns `None` if the index is out of range.
+pub fn with_device<R>(idx: usize, f: impl FnOnce(&mut dyn BlockDevice) -> R) -> Option<R> {
+    let reg = REGISTRY.lock();
+    if idx >= reg.len() {
+        return None;
+    }
+    let mut dev = reg[idx].lock();
+    Some(f(&mut **dev))
 }
 
 /// Get a reference to the global registry.
@@ -145,4 +163,44 @@ pub fn hdd_total_sectors(drive: u8) -> u64 {
     }
     let dev = reg[drive as usize].lock();
     dev.blk_total_sectors()
+}
+
+/// Get the human-readable name of a block device by drive index.
+/// Returns None if the index is out of range.
+pub fn block_device_name(drive: u8) -> Option<&'static str> {
+    let names = DEVICE_NAMES.lock();
+    if (drive as usize) >= names.len() {
+        return None;
+    }
+    Some(names[drive as usize])
+}
+
+/// Get both a block device's name and whether it has an ANTX signature.
+pub fn block_device_info(drive: u8) -> (&'static str, bool, u64) {
+    let mut cfg = [0u8; 512];
+    let is_present = hdd_is_present(drive);
+    let total_sectors = hdd_total_sectors(drive);
+    let has_antx = if is_present && hdd_read_sector(drive, 2046, &mut cfg) >= 0 {
+        cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X'
+    } else {
+        false
+    };
+    let name = block_device_name(drive).unwrap_or("unknown");
+    (name, has_antx, total_sectors)
+}
+
+/// 获取注册的块设备数量 (公开别名)
+pub fn block_device_count() -> usize {
+    count()
+}
+
+/// 列出所有块设备 (index, name, total_sectors)
+pub fn block_device_list() -> Vec<(usize, &'static str, u64)> {
+    let reg = REGISTRY.lock();
+    let names = DEVICE_NAMES.lock();
+    reg.iter().enumerate().map(|(i, dev_lock)| {
+        let dev = dev_lock.lock();
+        let name = names.get(i).copied().unwrap_or("unknown");
+        (i, name, dev.blk_total_sectors())
+    }).collect()
 }

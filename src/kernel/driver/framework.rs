@@ -22,6 +22,10 @@
 //! ```
 
 use core::sync::atomic::{AtomicU32, Ordering};
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use spin::Mutex;
 
 // ============================================================================
 // IO 端口操作安全封装
@@ -265,6 +269,38 @@ impl DeviceInfo {
         self.irq = Some(irq);
         self
     }
+}
+
+// ============================================================================
+// 全局驱动注册表 (DriverRegistry)
+// ============================================================================
+
+pub static DRIVER_REGISTRY: Mutex<BTreeMap<u32, DeviceInfo>> = Mutex::new(BTreeMap::new());
+
+pub fn driver_register(driver: &dyn Driver) -> core::result::Result<u32, DriverError> {
+    let id = allocate_device_id();
+    let name = driver.name();
+    let dtype = driver.device_type();
+
+    let mut reg = DRIVER_REGISTRY.lock();
+    reg.insert(id, DeviceInfo {
+        id, name, device_type: dtype, initialized: true,
+        io_base: None, irq: None,
+    });
+    Ok(id)
+}
+
+pub fn driver_list() -> Vec<(u32, &'static str, DeviceType)> {
+    let reg = DRIVER_REGISTRY.lock();
+    reg.iter().map(|(id, e)| (*id, e.name, e.device_type)).collect()
+}
+
+pub fn driver_count() -> usize {
+    DRIVER_REGISTRY.lock().len()
+}
+
+pub fn driver_count_by_type(dtype: DeviceType) -> usize {
+    DRIVER_REGISTRY.lock().values().filter(|e| e.device_type == dtype).count()
 }
 
 // ============================================================================

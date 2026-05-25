@@ -31,7 +31,8 @@ impl AtaBlockDevice {
         }
 
         // Check if disk is present
-        if unsafe { ata_disk_present(drive) } == 0 {
+        let present = unsafe { ata_disk_present(drive) };
+        if present == 0 {
             return None;
         }
 

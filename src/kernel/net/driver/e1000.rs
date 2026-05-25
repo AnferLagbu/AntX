@@ -12,6 +12,10 @@ use crate::klog_err;
 use crate::klog_warn;
 #[cfg(not(feature = "kernel_test"))]
 use crate::klog_debug;
+#[cfg(not(feature = "kernel_test"))]
+use alloc::boxed::Box;
+#[cfg(not(feature = "kernel_test"))]
+use spin::Mutex;
 
 #[cfg(not(feature = "kernel_test"))]
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -674,7 +678,7 @@ unsafe fn pic_inb(port: u16) -> u8 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-static mut E1000_INSTANCE: Option<E1000Device> = None;
+static E1000_DEVICE: Mutex<Option<Box<E1000Device>>> = Mutex::new(None);
 
 #[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
@@ -682,19 +686,19 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
     extern "C" {
         fn qx_netif_init(netif: *mut core::ffi::c_void, mac: *const u8);
     }
-    unsafe {
-        match &mut E1000_INSTANCE {
-            Some(ref mut dev) => {
-                if dev.mmio_base.is_null() { return -5; }
-                match dev.init() {
-                    Ok(()) => {
-                        qx_netif_init(netif, dev.mac.as_ptr());
-                        if dev.irq != 0 && dev.irq != 255 {
-                            extern "C" {
-                                fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u32) -> i32;
-                                fn idt_enable_irq(irq: u8);
-                            }
-                            klog_info!(Net, "e1000: registering IRQ {}", dev.irq);
+    match &mut *E1000_DEVICE.lock() {
+        Some(ref mut dev) => {
+            if dev.mmio_base.is_null() { return -5; }
+            match dev.init() {
+                Ok(()) => {
+                    unsafe { qx_netif_init(netif, dev.mac.as_ptr()); }
+                    if dev.irq != 0 && dev.irq != 255 {
+                        extern "C" {
+                            fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u32) -> i32;
+                            fn idt_enable_irq(irq: u8);
+                        }
+                        klog_info!(Net, "e1000: registering IRQ {}", dev.irq);
+                        unsafe {
                             idt_register_irq(dev.irq, e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void), b"e1000\0".as_ptr() as *const i8, 0);
                             idt_enable_irq(dev.irq);
                             if dev.irq < 8 {
@@ -707,33 +711,33 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
                                 pic_outb(0xA1, slave_mask & !(1u8 << (dev.irq - 8)));
                             }
                         }
-                        klog_info!(Net, "e1000: initialized, IRQ registered");
-                        0
-                    },
-                    Err(_e) => -5,
-                }
-            },
-            None => -5,
-        }
+                    }
+                    klog_info!(Net, "e1000: initialized, IRQ registered");
+                    0
+                },
+                Err(_e) => -5,
+            }
+        },
+        None => -5,
     }
 }
 
 #[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
 pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::c_void) -> i32 {
-    unsafe {
-        if E1000_INSTANCE.is_none() || p.is_null() {
-            return -1;
-        }
+    if p.is_null() {
+        return -1;
+    }
 
-        if let Some(ref mut dev) = E1000_INSTANCE {
-            let (total_len, data_ptr) = extract_pbuf_data(p);
+    match &mut *E1000_DEVICE.lock() {
+        Some(ref mut dev) => {
+            let (total_len, data_ptr) = unsafe { extract_pbuf_data(p) };
 
             if total_len == 0 || data_ptr.is_null() {
                 return -1;
             }
 
-            let packet = core::slice::from_raw_parts(data_ptr as *const u8, total_len);
+            let packet = unsafe { core::slice::from_raw_parts(data_ptr as *const u8, total_len) };
 
             match dev.send_packet(packet) {
                 Ok(n) => {
@@ -747,9 +751,143 @@ pub extern "C" fn e1000_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::
                     -1
                 }
             }
-        } else {
-            -1
         }
+        None => -1,
+    }
+}
+
+#[cfg(not(feature = "kernel_test"))]
+#[no_mangle]
+pub extern "C" fn e1000_irq_entry(_frame: *mut core::ffi::c_void) {
+    // IRQ 上下文使用 try_lock 避免与主代码路径死锁
+    if let Some(mut guard) = E1000_DEVICE.try_lock() {
+        if let Some(ref mut dev) = *guard {
+            dev.handle_interrupt();
+        }
+    }
+}
+
+#[cfg(not(feature = "kernel_test"))]
+#[no_mangle]
+pub extern "C" fn e1000_probe() -> i32 {
+    let mut need_probe = false;
+    {
+        let guard = E1000_DEVICE.lock();
+        if guard.is_none() {
+            need_probe = true;
+        }
+    }
+
+    if need_probe {
+        let mut dev = Box::new(E1000Device::new());
+        match dev.probe() {
+            Ok(()) => {
+                // 注册到几丁质框架 (非所有权指针)
+                let raw_ptr: *mut E1000Device = &mut *dev;
+                let _id = crate::kernel::chitin::chitin_register(
+                    "e1000",
+                    crate::kernel::chitin::ChitinProto::Net,
+                    Some(dev.mmio_phys),
+                    Some(dev.irq),
+                    raw_ptr as *mut core::ffi::c_void,
+                );
+                *E1000_DEVICE.lock() = Some(dev);
+                return 0;
+            },
+            Err(_) => return -1,
+        }
+    }
+
+    // 已存在
+    match &*E1000_DEVICE.lock() {
+        Some(_) => 0,
+        None => -1,
+    }
+}
+
+#[cfg(not(feature = "kernel_test"))]
+#[no_mangle]
+pub extern "C" fn get_e1000_instance() -> *mut core::ffi::c_void {
+    match &mut *E1000_DEVICE.lock() {
+        Some(ref mut dev) => dev as *mut _ as *mut core::ffi::c_void,
+        None => core::ptr::null_mut(),
+    }
+}
+
+#[cfg(not(feature = "kernel_test"))]
+#[no_mangle]
+pub extern "C" fn e1000_dump_regs() {
+    #[cfg(feature = "e1000-verbose")]
+    {
+        let guard = E1000_DEVICE.lock();
+        if let Some(ref dev) = *guard {
+            let base = dev.mmio_base;
+            if base.is_null() { return; }
+            unsafe {
+                let ctrl = mmio_read32(base, E1000_CTRL);
+                let status = mmio_read32(base, E1000_STATUS);
+                let tctl = mmio_read32(base, E1000_TCTL);
+                let rctl = mmio_read32(base, E1000_RCTL);
+                let icr = mmio_read32(base, E1000_ICR);
+                let ims = mmio_read32(base, E1000_IMS);
+                let tdh = mmio_read32(base, E1000_TDH);
+                let tdt = mmio_read32(base, E1000_TDT);
+                let rdh = mmio_read32(base, E1000_RDH);
+                let rdt = mmio_read32(base, E1000_RDT);
+                let rdbal = mmio_read32(base, E1000_RDBAL);
+                let rdbah = mmio_read32(base, E1000_RDBAH);
+                let rdlen = mmio_read32(base, E1000_RDLEN);
+                klog_info!(Net, "=== E1000 Register Dump ===");
+                klog_info!(Net, "CTRL=0x{:x} STATUS=0x{:x}", ctrl, status);
+                klog_info!(Net, "TCTL=0x{:x} RCTL=0x{:x}", tctl, rctl);
+                klog_info!(Net, "ICR=0x{:x} IMS=0x{:x}", icr, ims);
+                klog_info!(Net, "TDH={} TDT={}", tdh, tdt);
+                klog_info!(Net, "RDH={} RDT={} rx_tail={}", rdh, rdt, dev.rx_tail);
+                klog_info!(Net, "RDBAL=0x{:x} RDBAH=0x{:x} RDLEN={}", rdbal, rdbah, rdlen);
+                klog_info!(Net, "tx_count={} rx_count={} isr_count={}", dev.tx_count, dev.rx_count, dev.isr_count);
+            }
+        }
+    }
+    #[cfg(not(feature = "e1000-verbose"))]
+    let _ = &();
+}
+
+#[cfg(not(feature = "kernel_test"))]
+#[no_mangle]
+pub extern "C" fn e1000_dump_stats() {
+    #[cfg(feature = "e1000-verbose")]
+    {
+        let guard = E1000_DEVICE.lock();
+        if let Some(ref dev) = *guard {
+            klog_info!(Net, "e1000 stats: tx={} rx={} isr={} link_chg={}", 
+                dev.tx_count, dev.rx_count, dev.isr_count, dev.link_change_count);
+        }
+    }
+    let _ = &();
+}
+
+#[cfg(not(feature = "kernel_test"))]
+#[no_mangle]
+pub extern "C" fn e1000_poll_rx() {
+    match &mut *E1000_DEVICE.lock() {
+        Some(ref mut dev) => {
+            if dev.mmio_base.is_null() { return; }
+
+            let poll_n = POLL_COUNT.fetch_add(1, Ordering::Relaxed);
+
+            unsafe {
+                let icr = mmio_read32(dev.mmio_base, E1000_ICR);
+                let rdh = mmio_read32(dev.mmio_base, E1000_RDH);
+                let rdt = mmio_read32(dev.mmio_base, E1000_RDT);
+                if poll_n % 50000 == 0 {
+                    klog_debug!(Net, "e1000_poll[{}]: RDH={} RDT={} tail={} ICR=0x{:x} rx={}", 
+                        poll_n, rdh, rdt, dev.rx_tail, icr, dev.rx_count);
+                }
+            }
+
+            dev.process_rx_packets();
+        }
+        None => {}
     }
 }
 
@@ -766,122 +904,11 @@ unsafe fn extract_pbuf_data(p: *mut core::ffi::c_void) -> (usize, *mut u8) {
     (out_len as usize, TX_BUF.as_mut_ptr())
 }
 
+// SAFETY: 单核内核, E1000 操作序列化在 Mutex 后
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
-pub extern "C" fn e1000_irq_entry(_frame: *mut core::ffi::c_void) {
-    unsafe {
-        if let Some(ref mut dev) = E1000_INSTANCE {
-            dev.handle_interrupt();
-        }
-    }
-}
-
+unsafe impl Send for E1000Device {}
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
-pub extern "C" fn e1000_probe() -> i32 {
-    unsafe {
-        if E1000_INSTANCE.is_none() {
-            E1000_INSTANCE = Some(E1000Device::new());
-        }
-        match &mut E1000_INSTANCE {
-            Some(ref mut dev) => {
-                match dev.probe() {
-                    Ok(()) => 0,
-                    Err(_) => -1,
-                }
-            },
-            None => -1,
-        }
-    }
-}
-
-#[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
-pub extern "C" fn get_e1000_instance() -> *mut core::ffi::c_void {
-    unsafe {
-        match &mut E1000_INSTANCE {
-            Some(ref mut dev) => dev as *mut _ as *mut core::ffi::c_void,
-            None => core::ptr::null_mut(),
-        }
-    }
-}
-
-#[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
-pub extern "C" fn e1000_dump_regs() {
-    #[cfg(feature = "e1000-verbose")]
-    unsafe {
-        if let Some(ref dev) = E1000_INSTANCE {
-            let base = dev.mmio_base;
-            if base.is_null() { return; }
-            let ctrl = mmio_read32(base, E1000_CTRL);
-            let status = mmio_read32(base, E1000_STATUS);
-            let tctl = mmio_read32(base, E1000_TCTL);
-            let rctl = mmio_read32(base, E1000_RCTL);
-            let icr = mmio_read32(base, E1000_ICR);
-            let ims = mmio_read32(base, E1000_IMS);
-            let tdh = mmio_read32(base, E1000_TDH);
-            let tdt = mmio_read32(base, E1000_TDT);
-            let rdh = mmio_read32(base, E1000_RDH);
-            let rdt = mmio_read32(base, E1000_RDT);
-            let rdbal = mmio_read32(base, E1000_RDBAL);
-            let rdbah = mmio_read32(base, E1000_RDBAH);
-            let rdlen = mmio_read32(base, E1000_RDLEN);
-            klog_info!(Net, "=== E1000 Register Dump ===");
-            klog_info!(Net, "CTRL=0x{:x} STATUS=0x{:x}", ctrl, status);
-            klog_info!(Net, "TCTL=0x{:x} RCTL=0x{:x}", tctl, rctl);
-            klog_info!(Net, "ICR=0x{:x} IMS=0x{:x}", icr, ims);
-            klog_info!(Net, "TDH={} TDT={}", tdh, tdt);
-            klog_info!(Net, "RDH={} RDT={} rx_tail={}", rdh, rdt, dev.rx_tail);
-            klog_info!(Net, "RDBAL=0x{:x} RDBAH=0x{:x} RDLEN={}", rdbal, rdbah, rdlen);
-            klog_info!(Net, "tx_count={} rx_count={} isr_count={}", dev.tx_count, dev.rx_count, dev.isr_count);
-        }
-    }
-    #[cfg(not(feature = "e1000-verbose"))]
-    let _ = &();
-}
-
-#[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
-pub extern "C" fn e1000_dump_stats() {
-    #[cfg(feature = "e1000-verbose")]
-    unsafe {
-        if let Some(ref dev) = E1000_INSTANCE {
-            klog_info!(Net, "e1000 stats: tx={} rx={} isr={} link_chg={}", 
-                dev.tx_count, dev.rx_count, dev.isr_count, dev.link_change_count);
-        }
-    }
-    let _ = &();
-}
-
-#[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
-pub extern "C" fn e1000_poll_rx() {
-    unsafe {
-        if let Some(ref mut dev) = E1000_INSTANCE {
-            if dev.mmio_base.is_null() { return; }
-
-            let poll_n = POLL_COUNT.fetch_add(1, Ordering::Relaxed);
-
-            let icr = mmio_read32(dev.mmio_base, E1000_ICR);
-            let rdh = mmio_read32(dev.mmio_base, E1000_RDH);
-            let rdt = mmio_read32(dev.mmio_base, E1000_RDT);
-
-            if poll_n % 50000 == 0 {
-                klog_debug!(Net, "e1000_poll[{}]: RDH={} RDT={} tail={} ICR=0x{:x} rx={}", 
-                    poll_n, rdh, rdt, dev.rx_tail, icr, dev.rx_count);
-                #[cfg(feature = "e1000-verbose")]
-                e1000_dump_regs();
-            }
-
-            if icr & E1000_ICR_LSC != 0 {
-                klog_info!(Net, "e1000: link status change ICR=0x{:x}", icr);
-            }
-
-            dev.process_rx_packets();
-        }
-    }
-}
+unsafe impl Sync for E1000Device {}
 
 #[cfg(not(feature = "kernel_test"))]
 #[repr(C, align(4096))]

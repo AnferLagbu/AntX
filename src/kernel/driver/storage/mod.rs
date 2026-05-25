@@ -19,6 +19,8 @@ pub mod ata;
 pub mod ahci;
 pub mod nvme;
 pub mod ata_block;
+pub mod ahci_block;
+pub mod nvme_block;
 
 // Re-export key types for driver/mod.rs convenience
 pub use ahci::{AhciController, AhciPort, H2dFis, AtaCommand};
@@ -133,16 +135,113 @@ pub fn storage_init() -> framework::Result<()> {
         crate::kernel::driver::storage::ata::ata_init();
     }
 
-    // Step 3.5: 将 ATA 磁盘注册到 BlockDevice 全局表
+    // 注册 ATA 控制器到全局驱动表
+    let _ = super::framework::driver_register(&crate::kernel::driver::storage::ata::AtaController::new());
+
+    // Step 3.5: 将 ATA 磁盘注册到 BlockDevice 全局表 + 几丁质
     {
         use crate::kernel::driver::block::{self, BlockDevice};
         use crate::kernel::driver::storage::ata_block::AtaBlockDevice;
         for drive in 0..4u8 {
             if let Some(dev) = AtaBlockDevice::new(drive) {
                 let sectors = dev.blk_total_sectors();
-                block::register(alloc::boxed::Box::new(dev));
+                let dev_name = match drive {
+                    0 => "ata0", 1 => "ata1",
+                    2 => "ata2", _ => "ata3",
+                };
+                let boxed: alloc::boxed::Box<AtaBlockDevice> = alloc::boxed::Box::new(dev);
+                // 几丁质: 非所有权指针 (BlockDevice 注册表管理生命周期)
+                let raw = &*boxed as *const AtaBlockDevice as *mut core::ffi::c_void;
+                let _ = crate::kernel::chitin::chitin_register(
+                    dev_name,
+                    crate::kernel::chitin::ChitinProto::Block,
+                    None, None,
+                    raw,
+                );
+                block::register_named(dev_name, boxed);
                 klog_info!(Driver, "ATA: drive {} registered, {} sectors ({:.1} MB)",
                     drive, sectors, (sectors * 512) as f64 / (1024.0 * 1024.0));
+            }
+        }
+    }
+
+    // Step 3.6: 将 AHCI 端口注册到 BlockDevice 全局表
+    {
+        use crate::kernel::driver::block::{self, BlockDevice};
+        use crate::kernel::driver::storage::ahci_block::AhciBlockDevice;
+
+        // 先收集 AHCI 端口信息 (避免在持有锁时创建 BlockDevice)
+        let mut ahci_ports: Vec<(usize, usize)> = Vec::new();
+        {
+            let mut controllers = AHCI_CONTROLLERS.lock();
+            for (ci, controller) in controllers.iter_mut().enumerate() {
+                let port_count = controller.port_count();
+                for pi in 0..port_count {
+                    if let Some(port) = controller.get_port(pi) {
+                        if port.device_present {
+                            ahci_ports.push((ci, pi));
+                        }
+                    }
+                }
+            }
+        }
+
+        for (ci, pi) in ahci_ports {
+            if let Some(dev) = AhciBlockDevice::new(ci, pi) {
+                let sectors = dev.blk_total_sectors();
+                let dev_name = alloc::format!("ahci{}-p{}", ci, pi);
+                let boxed: alloc::boxed::Box<AhciBlockDevice> = alloc::boxed::Box::new(dev);
+                let raw = &*boxed as *const AhciBlockDevice as *mut core::ffi::c_void;
+                let name_leaked: &'static str = dev_name.leak();
+                let _ = crate::kernel::chitin::chitin_register(
+                    name_leaked,
+                    crate::kernel::chitin::ChitinProto::Block,
+                    None, None,
+                    raw,
+                );
+                block::register_named(name_leaked, boxed);
+                klog_info!(Driver, "AHCI: ctrl={} port={} registered, {} sectors ({:.1} MB)",
+                    ci, pi, sectors, (sectors * 512) as f64 / (1024.0 * 1024.0));
+            }
+        }
+    }
+
+    // Step 3.7: 将 NVMe 命名空间注册到 BlockDevice 全局表
+    {
+        use crate::kernel::driver::block::{self, BlockDevice};
+        use crate::kernel::driver::storage::nvme_block::NvmeBlockDevice;
+
+        // 先收集 NVMe 命名空间信息
+        let mut nvme_ns: Vec<(usize, u32)> = Vec::new();
+        {
+            let controllers = NVME_CONTROLLERS.lock();
+            for (ci, controller) in controllers.iter().enumerate() {
+                let ns_count = controller.namespace_count();
+                for nsid in 1..=ns_count {
+                    let size = controller.namespace_size();
+                    if size > 0 {
+                        nvme_ns.push((ci, nsid));
+                    }
+                }
+            }
+        }
+
+        for (ci, nsid) in nvme_ns {
+            if let Some(dev) = NvmeBlockDevice::new(ci, nsid) {
+                let sectors = dev.blk_total_sectors();
+                let dev_name = alloc::format!("nvme{}-ns{}", ci, nsid);
+                let boxed: alloc::boxed::Box<NvmeBlockDevice> = alloc::boxed::Box::new(dev);
+                let raw = &*boxed as *const NvmeBlockDevice as *mut core::ffi::c_void;
+                let name_leaked: &'static str = dev_name.leak();
+                let _ = crate::kernel::chitin::chitin_register(
+                    name_leaked,
+                    crate::kernel::chitin::ChitinProto::Block,
+                    None, None,
+                    raw,
+                );
+                block::register_named(name_leaked, boxed);
+                klog_info!(Driver, "NVMe: ctrl={} nsid={} registered, {} sectors ({:.1} MB)",
+                    ci, nsid, sectors, (sectors * 512) as f64 / (1024.0 * 1024.0));
             }
         }
     }
@@ -163,6 +262,7 @@ pub fn storage_init() -> framework::Result<()> {
 #[cfg(not(target_arch = "x86_64"))]
 pub fn storage_init() -> framework::Result<()> {
     use crate::kernel::driver::virtio::{self, VIRTIO_ID_BLOCK};
+    use alloc::string::ToString;
 
     // 扫描 virtio-mmio 区域，寻找块设备
     let devices = virtio::probe_all();
@@ -171,7 +271,19 @@ pub fn storage_init() -> framework::Result<()> {
     for dev in devices {
         if dev.device_id == VIRTIO_ID_BLOCK {
             if let Some(blk) = virtio::blk::VirtioBlk::new(dev) {
-                crate::kernel::driver::block::register(alloc::boxed::Box::new(blk));
+                let blk_name = alloc::format!("virtio-blk{}", blk_count);
+                let boxed: alloc::boxed::Box<virtio::blk::VirtioBlk> = alloc::boxed::Box::new(blk);
+                // 几丁质: 非所有权指针 (BlockDevice 注册表管理生命周期)
+                let raw = &*boxed as *const virtio::blk::VirtioBlk as *mut core::ffi::c_void;
+                let name_leaked: &'static str = blk_name.leak();
+                let _ = crate::kernel::chitin::chitin_register(
+                    name_leaked,
+                    crate::kernel::chitin::ChitinProto::Block,
+                    Some(boxed.device.mmio_base),
+                    None,
+                    raw,
+                );
+                crate::kernel::driver::block::register_named(name_leaked, boxed);
                 blk_count += 1;
                 klog_info!(Driver, "virtio-blk: registered device #{}", blk_count);
             }

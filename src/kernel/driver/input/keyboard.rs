@@ -20,6 +20,8 @@
 
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use super::framework::{outb, inb};
+use alloc::boxed::Box;
+use spin::Mutex;
 
 // ============================================================================
 // 硬件常量定义
@@ -377,6 +379,10 @@ fn update_leds(modifiers: &ModifierState) {
 // Driver Trait 实现
 // ============================================================================
 
+// SAFETY: 单核内核, 键盘操作无并发
+unsafe impl Send for KeyboardDriver {}
+unsafe impl Sync for KeyboardDriver {}
+
 impl Driver for KeyboardDriver {
     fn name(&self) -> &'static str {
         "PS/2 Keyboard"
@@ -602,25 +608,34 @@ impl KeyboardDriver {
 // FFI 兼容接口
 // ============================================================================
 
-/// 全局键盘驱动实例
-static mut KEYBOARD_DRIVER: Option<KeyboardDriver> = None;
+/// 全局键盘驱动实例 (无 unsafe, Mutex 保护)
+static KEYBOARD_DEVICE: Mutex<Option<Box<KeyboardDriver>>> = Mutex::new(None);
 
 /// 初始化键盘 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn keyboard_init() {
-    unsafe {
-        KEYBOARD_DRIVER = Some(KeyboardDriver::new());
-        if let Some(ref mut driver) = KEYBOARD_DRIVER {
-            let _ = driver.init();
-        }
-    }
+    let mut driver = Box::new(KeyboardDriver::new());
+    let _ = driver.init();
+
+    // 注册到几丁质框架 (非所有权指针, 内存由 KEYBOARD_DEVICE 管理)
+    let raw_ptr: *mut KeyboardDriver = &mut *driver;
+    let _id = crate::kernel::chitin::chitin_register(
+        "ps2_keyboard",
+        crate::kernel::chitin::ChitinProto::Input,
+        None,
+        Some(1), // IRQ 1
+        raw_ptr as *mut core::ffi::c_void,
+    );
+
+    *KEYBOARD_DEVICE.lock() = Some(driver);
 }
 
 /// 处理键盘中断 (C 兼容接口)
+/// IRQ 上下文使用 try_lock 避免与主代码路径死锁
 #[no_mangle]
 pub extern "C" fn keyboard_irq_handler() {
-    unsafe {
-        if let Some(ref mut driver) = KEYBOARD_DRIVER {
+    if let Some(mut guard) = KEYBOARD_DEVICE.try_lock() {
+        if let Some(ref mut driver) = *guard {
             driver.handle_interrupt();
         }
     }
@@ -629,29 +644,23 @@ pub extern "C" fn keyboard_irq_handler() {
 /// 读取字符 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn keyboard_read_char() -> i32 {
-    unsafe {
-        match &mut KEYBOARD_DRIVER {
-            Some(driver) => {
-                match driver.read_char() {
-                    Some(ch) => ch as i32,
-                    None => -1,
-                }
-            },
+    if let Some(ref mut guard) = *KEYBOARD_DEVICE.lock() {
+        match guard.read_char() {
+            Some(ch) => ch as i32,
             None => -1,
         }
+    } else {
+        -1
     }
 }
 
 /// 检查是否有可读字符 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn keyboard_has_char() -> i32 {
-    unsafe {
-        match &KEYBOARD_DRIVER {
-            Some(driver) => {
-                if !driver.is_buffer_empty() { 1 } else { 0 }
-            },
-            None => 0,
-        }
+    if let Some(ref guard) = *KEYBOARD_DEVICE.lock() {
+        if !guard.is_buffer_empty() { 1 } else { 0 }
+    } else {
+        0
     }
 }
 

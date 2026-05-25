@@ -60,7 +60,9 @@ pub struct HvfsData {
     pub initialized: AtomicBool,
     pub root_ds_id: AtomicU64,
     pub mode: AtomicU8,
-    pub disk_drive: u8,
+    /// 已发现的 ANTX/HvFS 磁盘驱动器列表 (drive_id, partition_start_lba)
+    pub drives_discovered: Mutex<Vec<(u8, u32)>>,
+    pub disk_drive: AtomicU8,
     pub partition_start: AtomicU32,
 }
 
@@ -86,7 +88,8 @@ pub fn get_hvfs() -> &'static HvfsData {
             initialized: AtomicBool::new(false),
             root_ds_id: AtomicU64::new(0),
             mode: AtomicU8::new(HvfsMode::Memory as u8),
-            disk_drive: 0,
+            drives_discovered: Mutex::new(Vec::new()),
+            disk_drive: AtomicU8::new(0),
             partition_start: AtomicU32::new(0),
         });
         *guard = Some(data);
@@ -98,39 +101,107 @@ pub fn get_hvfs() -> &'static HvfsData {
 
 impl HvfsData {
     fn check_disk(&self) -> bool {
-        block::hdd_is_present(self.disk_drive)
+        block::hdd_is_present(self.disk_drive.load(Ordering::Acquire))
     }
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 { return -1; }
         let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        block::hdd_read_sector(self.disk_drive, phys_sector as u64, buf)
+        block::hdd_read_sector(self.disk_drive.load(Ordering::Acquire), phys_sector as u64, buf)
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
         if buf.len() < 512 { return -1; }
         let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        block::hdd_write_sector(self.disk_drive, phys_sector as u64, buf)
+        block::hdd_write_sector(self.disk_drive.load(Ordering::Acquire), phys_sector as u64, buf)
+    }
+
+    /// 扫描所有已注册的块设备，返回检测到的驱动器列表 (drive_id, partition_start_lba)
+    /// 对于已格式化的磁盘读取 ANTX 签名，对于空白磁盘使用默认分区起始偏移
+    fn scan_all_drives(&self) -> Vec<(u8, u32)> {
+        let mut discovered = Vec::new();
+        // 扫描 0..8 号驱动器 (足够覆盖当前硬件)
+        for drive in 0..8u8 {
+            if !block::hdd_is_present(drive) { continue; }
+            let mut cfg = [0u8; 512];
+            let r = block::hdd_read_sector(drive, 2046, &mut cfg);
+            // 检查 ANTX/HvFS 签名扇区 (LBA 2046)
+            let part_start = if r >= 0
+                && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X'
+            {
+                u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]])
+            } else {
+                16384u32 // BOOT_PART_SECTORS default for blank disk
+            };
+            discovered.push((drive, part_start));
+        }
+        log(&alloc::format!("[HvFS] scan: {} block device(s) in registry, {} drive(s) available\n",
+            block::block_device_count(), discovered.len()));
+        discovered
     }
 
     pub fn init(&self) {
         log("[HvFS] Initializing...\n");
+
+        // Step 1: 扫描所有块设备, 发现 ANTX/HvFS 磁盘
+        let discovered = self.scan_all_drives();
+        let has_any_disk = !discovered.is_empty();
+
+        self.spa.disk_present.store(has_any_disk, Ordering::Release);
+        {
+            let mut list = self.drives_discovered.lock();
+            *list = discovered.clone();
+        }
+
+        // 初始化 SPA (根据是否有磁盘选择 disk / memory 模式)
         self.spa.init("antx-pool");
-        let has_disk = self.check_disk();
-        self.spa.disk_present.store(has_disk, Ordering::Release);
-        if has_disk {
-            log("[HvFS] Disk detected, mounting from disk...\n");
-            if self.mount_disk() {
-                log("[HvFS] Initialized: pool=antx-pool (disk)\n");
-                return;
+
+        if has_any_disk {
+            // Step 2: 尝试从已发现的磁盘挂载 HvFS (uberblock 验证)
+            let first = discovered[0];
+            self.disk_drive.store(first.0, Ordering::Release);
+            let mut mounted_any = false;
+
+            for (drive_id, part_start) in &discovered {
+                self.disk_drive.store(*drive_id, Ordering::Release);
+                self.partition_start.store(*part_start, Ordering::Release);
+                self.spa.partition_start.store(*part_start, Ordering::Release);
+
+                if self.mount_drive(*drive_id, *part_start) {
+                    mounted_any = true;
+                }
             }
-            log("[HvFS] Mount from disk failed, formatting and starting fresh...\n");
-            self.format_disk();
-            // format_disk 已设置 mode=Disk 并添加 vdev，初始化上层结构
+
+            if !mounted_any {
+                // Step 3: 格式化第一个磁盘 (全新 HvFS)
+                log("[HvFS] No valid uberblock found, formatting first drive...\n");
+                let (drive_id, part_start) = discovered[0];
+                self.disk_drive.store(drive_id, Ordering::Release);
+                self.format_drive(drive_id, part_start);
+
+                // 其余磁盘也添加为 vdev
+                for (drive_id, part_start) in &discovered[1..] {
+                    self.disk_drive.store(*drive_id, Ordering::Release);
+                    let mut vdev_cfg = crate::kernel::fs::hvfs::vdev::HvVdevConfig::new_disk(
+                        *drive_id as u16, "disk", 12);
+                    vdev_cfg.asize = self.probe_partition_size_for_drive(*drive_id, *part_start);
+                    vdev_cfg.partition_start = *part_start;
+                    self.spa.add_vdev(vdev_cfg);
+                }
+            }
+
+            // 恢复到 primary drive
+            self.disk_drive.store(discovered[0].0, Ordering::Release);
+            self.partition_start.store(discovered[0].1, Ordering::Release);
+            log("[HvFS] Initialized: pool=antx-pool (disk, ");
+            {
+                log(&alloc::format!("{} drive(s))\n", discovered.len()));
+            }
         } else {
             log("[HvFS] No disk, running in memory mode\n");
             self.spa.add_vdev(crate::kernel::fs::hvfs::vdev::HvVdevConfig::new_disk(0, "ata0", 12));
         }
+
         self.setup_zil_datasets();
         self.root_ds_id.store(0, Ordering::Release);
         self.current_dir.store(HV_DMU_OBJ_ROOT, Ordering::Release);
@@ -139,7 +210,9 @@ impl HvfsData {
         if !self.is_disk_mode() {
             self.mode.store(HvfsMode::Memory as u8, Ordering::Release);
         }
-        log("[HvFS] Initialized: pool=antx-pool (memory)\n");
+        if !has_any_disk {
+            log("[HvFS] Initialized: pool=antx-pool (memory)\n");
+        }
     }
 
     fn setup_zil_datasets(&self) {
@@ -170,22 +243,22 @@ impl HvfsData {
         }
     }
 
-    pub fn format_disk(&self) {
-        if !self.check_disk() {
+    pub fn format_drive(&self, drive_id: u8, part_start: u32) {
+        if !block::hdd_is_present(drive_id) {
             log("[HvFS] FORMAT: No disk present\n");
             self.spa.disk_present.store(false, Ordering::Release);
             self.spa.formatted.store(false, Ordering::Release);
             return;
         }
         // 读取 ANTX 配置扇区获取 HvFS 分区起始 LBA
-        let part_start = self.read_partition_start();
         self.partition_start.store(part_start, Ordering::Release);
         self.spa.partition_start.store(part_start, Ordering::Release);
         log("[HvFS] FORMAT: Writing fresh HvFS v2 to disk (partition @LBA ");
         log(")...\n");
         self.spa.disk_present.store(true, Ordering::Release);
-        let mut vdev_cfg = crate::kernel::fs::hvfs::vdev::HvVdevConfig::new_disk(0, "ata0", 12);
-        vdev_cfg.asize = self.probe_partition_size(part_start);
+        let mut vdev_cfg = crate::kernel::fs::hvfs::vdev::HvVdevConfig::new_disk(
+            drive_id as u16, "disk", 12);
+        vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
         self.spa.formatted.store(true, Ordering::Release);
@@ -196,7 +269,7 @@ impl HvfsData {
 
     fn read_partition_start(&self) -> u32 {
         let mut cfg = [0u8; 512];
-        let r = block::hdd_read_sector(self.disk_drive, 2046, &mut cfg);
+        let r = block::hdd_read_sector(self.disk_drive.load(Ordering::Acquire), 2046, &mut cfg);
         if r >= 0 && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X' {
             u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]])
         } else {
@@ -205,15 +278,15 @@ impl HvfsData {
         }
     }
 
-    fn probe_partition_size(&self, part_start: u32) -> u64 {
-        if !block::hdd_is_present(self.disk_drive) { return 0; }
+    fn probe_partition_size_for_drive(&self, drive_id: u8, part_start: u32) -> u64 {
+        if !block::hdd_is_present(drive_id) { return 0; }
         let mut lo: u32 = part_start;
         let mut hi: u32 = 0xFFFF;
         let mut buf = [0u8; 512];
         let mut last_ok = lo;
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            if block::hdd_read_sector(self.disk_drive, mid as u64, &mut buf) >= 0 {
+            if block::hdd_read_sector(drive_id, mid as u64, &mut buf) >= 0 {
                 last_ok = mid;
                 lo = mid + 1;
             } else {
@@ -223,14 +296,12 @@ impl HvfsData {
         if last_ok > part_start {
             (last_ok as u64 - part_start as u64) * 512
         } else {
-            crate::kernel::fs::hvfs::vdev::HvVdev::probe_disk_size(self.disk_drive)
+            crate::kernel::fs::hvfs::vdev::HvVdev::probe_disk_size(drive_id)
         }
     }
 
-    pub fn mount_disk(&self) -> bool {
-        if !self.check_disk() { return false; }
-        // 读取 ANTX 配置获取分区起始 LBA
-        let part_start = self.read_partition_start();
+    pub fn mount_drive(&self, drive_id: u8, part_start: u32) -> bool {
+        if !block::hdd_is_present(drive_id) { return false; }
         self.partition_start.store(part_start, Ordering::Release);
         self.spa.partition_start.store(part_start, Ordering::Release);
         log("[HvFS] MOUNT: Reading uberblock from disk (partition @LBA ");
@@ -251,8 +322,9 @@ impl HvfsData {
         self.spa.formatted.store(true, Ordering::Release);
         self.spa.disk_present.store(true, Ordering::Release);
         self.mode.store(HvfsMode::Disk as u8, Ordering::Release);
-        let mut vdev_cfg = crate::kernel::fs::hvfs::vdev::HvVdevConfig::new_disk(0, "ata0", 12);
-        vdev_cfg.asize = self.probe_partition_size(part_start);
+        let mut vdev_cfg = crate::kernel::fs::hvfs::vdev::HvVdevConfig::new_disk(
+            drive_id as u16, "disk", 12);
+        vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
         {

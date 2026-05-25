@@ -166,20 +166,31 @@ impl HvSpa {
         h | 1
     }
 
+    /// Get the drive ID of the first vdev (or 0 if no vdevs)
+    fn vdev_0_drive_id(&self) -> u8 {
+        self.vdevs.lock()
+            .first()
+            .map(|v| v.config.vdev_id as u8)
+            .unwrap_or(0)
+    }
+
     fn check_disk_present(&self) -> bool {
-        block::hdd_is_present(0)
+        let drive = self.vdev_0_drive_id();
+        block::hdd_is_present(drive)
     }
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 { return -1; }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
-        block::hdd_read_sector(0, phys as u64, buf)
+        let drive = self.vdev_0_drive_id();
+        block::hdd_read_sector(drive, phys as u64, buf)
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
         if buf.len() < 512 { return -1; }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
-        block::hdd_write_sector(0, phys as u64, buf)
+        let drive = self.vdev_0_drive_id();
+        block::hdd_write_sector(drive, phys as u64, buf)
     }
 
     pub fn init(&self, name: &str) {

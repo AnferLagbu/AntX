@@ -409,7 +409,11 @@ pub extern "C" fn hvfs_init_internal() {
 #[no_mangle]
 pub extern "C" fn hvfs_format_internal() -> i32 {
     let hvfs = get_hvfs();
-    hvfs.format_disk();
+    let (drive_id, part_start) = hvfs.drives_discovered.lock()
+        .first()
+        .copied()
+        .unwrap_or((hvfs.disk_drive.load(core::sync::atomic::Ordering::Acquire), hvfs.partition_start.load(core::sync::atomic::Ordering::Acquire)));
+    hvfs.format_drive(drive_id, part_start);
     0
 }
 
@@ -760,7 +764,11 @@ pub extern "C" fn vfs_format_internal(path: *const c_char, fs_type: *const c_cha
     // Parse filesystem type
     if fs_type_str == "hvfs" || fs_type_str == "HvFS" {
         let hvfs = get_hvfs();
-        hvfs.format_disk();
+        let (drive_id, part_start) = hvfs.drives_discovered.lock()
+            .first()
+            .copied()
+            .unwrap_or((hvfs.disk_drive.load(core::sync::atomic::Ordering::Acquire), hvfs.partition_start.load(core::sync::atomic::Ordering::Acquire)));
+        hvfs.format_drive(drive_id, part_start);
         if hvfs.is_disk_mode() {
             return 0;
         } else {
