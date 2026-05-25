@@ -1,0 +1,232 @@
+//! 设备热插拔管理器 (Device Hotplug Manager)
+//!
+//! 统一管理 PCIe/USB 等总线的设备插入/移除事件，
+//! 将底层硬件事件分发给已注册的监听器（文件系统、设备管理器等）。
+//!
+//! ## 设计理念
+//!
+//! ```text
+//! 硬件中断源 (PCIe MSI / USB Port Change)
+//!   → HotplugManager.poll()
+//!     → 扫描所有已知热插拔槽位
+//!     → 生成 HotplugEvent
+//!     → 分发给 HotplugListener 链表
+//!       → HvFS hotplug listener (磁盘插入/移除)
+//!       → Storage listener (重新注册 BlockDevice)
+//!       → 未来: 用户态通知 (/dev/hotplug)
+//! ```
+//!
+//! 不使用中断线程, 采用轮询模式 (在调度器 idle loop 中调用 poll)。
+
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use spin::Mutex;
+use crate::kernel::pci::hotplug::PcieHotplugSlot;
+
+// ── 事件类型 ──
+
+/// 总线类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusType {
+    Pcie,
+    Usb,
+    Virtio,
+}
+
+/// 设备位置标识
+#[derive(Debug, Clone, Copy)]
+pub struct DeviceLocation {
+    pub bus_type: BusType,
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
+    pub slot: u8,
+}
+
+/// 热插拔事件
+#[derive(Debug, Clone)]
+pub enum HotplugEvent {
+    /// 设备已插入，需重新扫描并注册
+    DeviceAdded { location: DeviceLocation },
+    /// 设备已移除 (正常流程)
+    DeviceRemoved { location: DeviceLocation },
+    /// 意外拔出 (未事先通知)
+    SurpriseRemoval { location: DeviceLocation },
+}
+
+// ── 监听器 ──
+
+/// 热插拔事件监听器 trait。
+///
+/// 各子系统（如 HvFS、存储管理器）实现此 trait 并注册到 HotplugManager。
+pub trait HotplugListener: Send + Sync {
+    /// 设备插入通知。
+    /// 在事件分发给所有监听器后, 由第一个返回 true 的监听器"认领"该设备。
+    fn on_device_added(&self, event: &HotplugEvent) -> bool;
+
+    /// 设备移除通知。
+    /// 监听器应在此清理与该设备相关的内部状态。
+    fn on_device_removed(&self, event: &HotplugEvent);
+}
+
+// ── 管理器 ──
+
+/// 全局热插拔事件管理器。
+pub struct HotplugManager {
+    slots: Mutex<Vec<PcieHotplugSlot>>,
+    listeners: Mutex<Vec<Box<dyn HotplugListener>>>,
+    initialized: Mutex<bool>,
+}
+
+impl HotplugManager {
+    pub const fn new() -> Self {
+        Self {
+            slots: Mutex::new(Vec::new()),
+            listeners: Mutex::new(Vec::new()),
+            initialized: Mutex::new(false),
+        }
+    }
+
+    /// 初始化: 扫描 PCIe 热插拔槽位。
+    pub fn init(&self) {
+        let mut init = self.initialized.lock();
+        if *init { return; }
+
+        let found = crate::kernel::pci::hotplug::scan_hotplug_slots();
+        if !found.is_empty() {
+            crate::klog_info!(Driver, "hotplug: {} PCIe slot(s) found", found.len());
+        }
+        *self.slots.lock() = found;
+        *init = true;
+    }
+
+    /// 注册热插拔事件监听器。
+    pub fn register_listener(&self, listener: Box<dyn HotplugListener>) {
+        self.listeners.lock().push(listener);
+    }
+
+    /// 轮询所有热插拔槽位, 检测事件变化并分发给监听器。
+    ///
+    /// 应在每个调度周期或 idle loop 中调用 (开销很低: 非热插拔场景下无任何 PCI 配置空间访问)。
+    pub fn poll(&self) {
+        let mut slots = self.slots.lock();
+        if slots.is_empty() { return; }
+
+        let listeners = self.listeners.lock();
+
+        for slot in slots.iter_mut() {
+            let events = slot.read_and_clear_events();
+            if events == 0 { continue; }
+
+            let location = DeviceLocation {
+                bus_type: BusType::Pcie,
+                bus: slot.bus,
+                device: slot.device,
+                function: slot.function,
+                slot: slot.slot_number,
+            };
+
+            if slot.has_surprise_removal(events) {
+                let evt = HotplugEvent::SurpriseRemoval { location };
+                for l in listeners.iter() {
+                    l.on_device_removed(&evt);
+                }
+                continue;
+            }
+
+            if slot.has_insertion_event(events) {
+                let evt = HotplugEvent::DeviceAdded { location };
+                for l in listeners.iter() {
+                    l.on_device_added(&evt);
+                }
+            } else if slot.has_removal_event(events) {
+                let evt = HotplugEvent::DeviceRemoved { location };
+                for l in listeners.iter() {
+                    l.on_device_removed(&evt);
+                }
+            }
+        }
+    }
+
+    /// 返回热插拔状态摘要 (供 syscall / 调试使用)。
+    ///
+    /// 返回 (slot_count, slot_summary, blk_device_count, blk_device_states) 的扁平化视图。
+    pub fn status(&self) -> HotplugStatus {
+        let init = self.initialized.lock();
+        let enabled = *init;
+
+        let slots = self.slots.lock();
+        let slot_infos: Vec<HotplugSlotInfo> = slots.iter().map(|s| HotplugSlotInfo {
+            bus: s.bus,
+            device: s.device,
+            function: s.function,
+            slot_number: s.slot_number,
+            presence: s.presence_state,
+            surprise_capable: s.surprise_removal,
+            hotplug_capable: s.hotplug_capable,
+        }).collect();
+        drop(slots);
+
+        let blk_count = crate::kernel::driver::block::block_device_count();
+        let mut blk_states: Vec<BlockDeviceState> = Vec::new();
+        for d in 0..blk_count as u8 {
+            let (present, removing, io_count) = crate::kernel::driver::block::block_device_state(d);
+            blk_states.push(BlockDeviceState { drive: d, present, removing, io_count });
+        }
+
+        HotplugStatus {
+            enabled,
+            slot_count: slot_infos.len() as u32,
+            slots: slot_infos,
+            blk_device_count: blk_count as u32,
+            blk_devices: blk_states,
+        }
+    }
+}
+
+// ── 状态数据结构 ──
+
+/// 单个热插拔槽位状态
+#[derive(Debug, Clone, Copy)]
+pub struct HotplugSlotInfo {
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
+    pub slot_number: u8,
+    pub presence: bool,
+    pub surprise_capable: bool,
+    pub hotplug_capable: bool,
+}
+
+/// 单个块设备状态
+#[derive(Debug, Clone, Copy)]
+pub struct BlockDeviceState {
+    pub drive: u8,
+    pub present: bool,
+    pub removing: bool,
+    pub io_count: u32,
+}
+
+/// 热插拔系统状态汇总
+#[derive(Debug, Clone)]
+pub struct HotplugStatus {
+    pub enabled: bool,
+    pub slot_count: u32,
+    pub slots: Vec<HotplugSlotInfo>,
+    pub blk_device_count: u32,
+    pub blk_devices: Vec<BlockDeviceState>,
+}
+
+// ── 全局单例 ──
+
+pub static HOTPLUG_MANAGER: HotplugManager = HotplugManager::new();
+
+/// 外部调用入口: 初始化热插拔管理器并注册核心监听器
+pub fn hotplug_init() {
+    HOTPLUG_MANAGER.init();
+}
+
+/// 外部调用入口: 轮询热插拔事件 (由调度器 idle loop 或定时器触发)
+pub fn hotplug_poll() {
+    HOTPLUG_MANAGER.poll();
+}

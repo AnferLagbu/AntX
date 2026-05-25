@@ -193,3 +193,11 @@ pub fn umask(mask: u32) -> u32                             { unsafe { sys1(SYS_u
 pub fn nanosleep(req: &Timespec) -> i32                    { unsafe { sys2(SYS_nanosleep, req as *const Timespec as u64, 0) as i32 } }
 pub fn kill(pid: i32, sig: i32) -> i32                     { unsafe { sys2(62, pid as u64, sig as u64) as i32 } }
 pub fn tgkill(tgid: i32, tid: i32, sig: i32) -> i32        { unsafe { sys3(SYS_tgkill, tgid as u64, tid as u64, sig as u64) as i32 } }
+
+// ============================================================
+// 热插拔状态查询
+// ============================================================
+
+pub const SYS_QX_HOTPLUG_STATUS: u64 = 437;
+
+pub fn hotplug_status(buf: &mut [u8]) -> i32               { unsafe { sys2(SYS_QX_HOTPLUG_STATUS, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }

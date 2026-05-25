@@ -451,6 +451,22 @@ impl PwmTable {
     pub fn any_identity_exists(&self) -> bool {
         self.any_identity_exists.load(Ordering::Acquire)
     }
+
+    /// uid → PwmEntry (POSIX chown/kill 等 syscall 用)
+    pub fn find_by_uid(&self, uid: u32) -> Option<&PwmEntry> {
+        if uid == 0xFFFF_FFFF { return None; }
+        self.entries.iter().find(|e| e.is_valid() && e.get_uid() == uid)
+    }
+
+    /// pwm → uid (stat 填充 st_uid 用)
+    pub fn uid_of(&self, pwm: u64) -> u32 {
+        self.find(pwm).map_or(0xFFFF_FFFF, |e| e.get_uid())
+    }
+
+    /// pwm → gid (stat 填充 st_gid 用)
+    pub fn gid_of(&self, pwm: u64) -> u32 {
+        self.find(pwm).map_or(0xFFFF_FFFF, |e| e.get_gid())
+    }
 }
 
 static mut GLOBAL_TABLE: PwmTable = PwmTable::new();

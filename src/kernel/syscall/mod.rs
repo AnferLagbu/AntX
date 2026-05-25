@@ -227,6 +227,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_QX_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const core::ffi::c_char, a1), b"qx_sethost\0"),
         SYS_QX_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"qx_bootchk\0"),
         SYS_QX_REBOOT        => dispatch!(sys_reboot(a0 as i32), b"qx_reboot\0"),
+        SYS_QX_HOTPLUG_STATUS => dispatch!(sys_hotplug_status(a0 as *mut u8, a1 as u32), b"qx_hotplug_status\0"),
 
         _ => Errno::ENOSYS.as_ret(),
     }
@@ -897,7 +898,6 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         let phys_end = vma_end.wrapping_sub(HHDM_OFFSET);
         phys_end - (kernel_ptr as usize)
     };
-    let mut buf = [0u8; 512];
     let total_kernel_sectors = ((kernel_len + 511) / 512) as u32;
     let max_sectors = 2047u32;
     let copy_sectors = if total_kernel_sectors > max_sectors { max_sectors } else { total_kernel_sectors };
@@ -906,7 +906,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         let remaining = kernel_len.saturating_sub(offset);
         if remaining == 0 { break; }
         let n = if remaining < 512 { remaining } else { 512 };
-        buf = [0u8; 512];
+        let mut buf = [0u8; 512];
         unsafe { core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n); }
         if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (1 + s) as u64, &buf) < 0 { return Errno::EIO.as_ret(); }
     }
@@ -1108,10 +1108,13 @@ unsafe fn sys_fchmod(fd: i32, mode: u32) -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_fchmod(fd as u32, mode as u16) as i64
 }
 
-unsafe fn sys_chown(path: *const core::ffi::c_char, owner: u32, _group: u32) -> i64 {
+unsafe fn sys_chown(path: *const core::ffi::c_char, uid: u32, gid: u32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    let tbl = crate::kernel::pwm::table::get_table();
+    let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
+    let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
     let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    crate::kernel::fs::vfs::ffi::vfs_chown(path, owner as u64, pwm) as i64
+    crate::kernel::fs::vfs::ffi::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
 }
 
 // ============================================================================
@@ -1324,4 +1327,66 @@ unsafe fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
 
 unsafe fn sys_rt_sigreturn() -> i64 {
     0
+}
+
+// ============================================================================
+// 热插拔状态查询 (QueenX 私有 syscall 437)
+// ============================================================================
+
+unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
+    if buf.is_null() || buf_size == 0 { return Errno::EINVAL.as_ret(); }
+    if !validate_user_buf(buf as u64, buf_size as u64) { return Errno::EFAULT.as_ret(); }
+
+    let status = crate::kernel::driver::hotplug::HOTPLUG_MANAGER.status();
+
+    let mut offset: u32 = 0;
+
+    // 写入头部: enabled(u8) + slot_count(u32) + blk_device_count(u32)
+    let header: [u8; 16] = [
+        status.enabled as u8, 0, 0, 0,
+        (status.slot_count & 0xFF) as u8,
+        ((status.slot_count >> 8) & 0xFF) as u8,
+        ((status.slot_count >> 16) & 0xFF) as u8,
+        ((status.slot_count >> 24) & 0xFF) as u8,
+        (status.blk_device_count & 0xFF) as u8,
+        ((status.blk_device_count >> 8) & 0xFF) as u8,
+        ((status.blk_device_count >> 16) & 0xFF) as u8,
+        ((status.blk_device_count >> 24) & 0xFF) as u8,
+        0, 0, 0, 0,
+    ];
+    if offset + 16 > buf_size { return offset as i64; }
+    core::ptr::copy_nonoverlapping(header.as_ptr(), buf.add(offset as usize), 16);
+    offset += 16;
+
+    // 写入槽位信息 (每槽 8 字节)
+    let slot_size: u32 = 8;
+    for slot in &status.slots {
+        if offset + slot_size > buf_size { break; }
+        let info: [u8; 8] = [
+            slot.bus, slot.device, slot.function, slot.slot_number,
+            slot.presence as u8,
+            ((slot.surprise_capable as u8) << 1) | (slot.hotplug_capable as u8),
+            0, 0,
+        ];
+        core::ptr::copy_nonoverlapping(info.as_ptr(), buf.add(offset as usize), slot_size as usize);
+        offset += slot_size;
+    }
+
+    // 写入块设备状态 (每设备 16 字节)
+    let dev_size: u32 = 16;
+    for dev in &status.blk_devices {
+        if offset + dev_size > buf_size { break; }
+        let info: [u8; 16] = [
+            dev.drive, dev.present as u8, dev.removing as u8, 0,
+            (dev.io_count & 0xFF) as u8,
+            ((dev.io_count >> 8) & 0xFF) as u8,
+            ((dev.io_count >> 16) & 0xFF) as u8,
+            ((dev.io_count >> 24) & 0xFF) as u8,
+            0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        core::ptr::copy_nonoverlapping(info.as_ptr(), buf.add(offset as usize), dev_size as usize);
+        offset += dev_size;
+    }
+
+    offset as i64
 }

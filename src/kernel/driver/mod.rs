@@ -81,6 +81,9 @@ pub mod virtio;
 /// 块设备抽象层 (BlockDevice trait + 全局注册表)
 pub mod block;
 
+/// 热插拔管理器 (设备插入/移除事件分发)
+pub mod hotplug;
+
 // ============================================================================
 // 公共 API 导出 (便捷访问)
 // ============================================================================
@@ -167,6 +170,10 @@ pub fn init_all() -> framework::Result<()> {
 
     let _ = display::display_init();
     let _ = usb::usb_init();
+
+    // 热插拔管理器初始化 (在 PCI 扫描完成后)
+    hotplug::hotplug_init();
+
     Ok(())
 }
 

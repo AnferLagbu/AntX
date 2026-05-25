@@ -1215,14 +1215,17 @@ impl RamFsData {
         Some(VfsStat {
             node_id: node.node_id,
             mode: node.perm,
+            uid: 0xFFFF_FFFF,
+            gid: 0xFFFF_FFFF,
             size: node.size,
             atime: node.atime,
             mtime: node.mtime,
             ctime: node.ctime,
             owner_pwm: node.owner_pwm,
+            group_pwm: 0,
             perm: node.perm,
             file_type: node.file_type,
-            reserved: 0,
+            sensitivity: node.sensitivity,
         })
     }
 

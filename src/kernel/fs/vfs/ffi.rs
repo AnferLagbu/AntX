@@ -300,7 +300,7 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwm: 
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    match fs_type {
+    let result = match fs_type {
         FsType::RamFs => {
             let ramfs = RAMFS_DATA.lock();
             match ramfs.resolve_path(rel_path) {
@@ -320,7 +320,9 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwm: 
                         (*st).mode = obj.pwm_perm;
                         (*st).size = obj.size as u32;
                         (*st).owner_pwm = obj.owner_pwm;
+                        (*st).group_pwm = obj.group_pwm;
                         (*st).perm = obj.pwm_perm;
+                        (*st).sensitivity = obj.sensitivity;
                         (*st).file_type = if obj.is_dir() { VfsFileType::Dir.as_u8() } else { VfsFileType::File.as_u8() };
                     }
                     0
@@ -330,7 +332,18 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwm: 
         }
         
         FsType::Unknown => -1,
+    };
+
+    if result == 0 {
+        let tbl = crate::kernel::pwm::table::get_table();
+        unsafe {
+            (*st).uid = tbl.uid_of((*st).owner_pwm);
+            (*st).gid = tbl.gid_of((*st).group_pwm);
+            if (*st).gid == 0xFFFF_FFFF { (*st).gid = (*st).uid; }
+        }
     }
+
+    result
 }
 
 #[no_mangle]
@@ -595,6 +608,11 @@ pub extern "C" fn vfs_chmod(path: *const c_char, mode: u16, pwm: u64) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn vfs_chown(path: *const c_char, owner_pwm: u64, pwm: u64) -> i32 {
+    vfs_chown_ext(path, owner_pwm, 0, pwm)
+}
+
+#[no_mangle]
+pub extern "C" fn vfs_chown_ext(path: *const c_char, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
     
@@ -607,11 +625,12 @@ pub extern "C" fn vfs_chown(path: *const c_char, owner_pwm: u64, pwm: u64) -> i3
     match fs_type {
         FsType::RamFs => { 
             let mut ramfs = RAMFS_DATA.lock(); 
-            ramfs.chown(rel_path, owner_pwm, pwm) 
+            ramfs.chown(rel_path, owner_pwm, pwm);
+            0
         }
         FsType::HvFs => { 
             let hvfs = get_hvfs(); 
-            hvfs.chown(rel_path, owner_pwm, pwm) 
+            hvfs.chown_ext(rel_path, owner_pwm, group_pwm, pwm)
         }
         
         FsType::Unknown => -1,
@@ -801,27 +820,47 @@ pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
     };
     let _pwm = resolve_pwm(pwm);
 
-    let ramfs = RAMFS_DATA.lock();
-    match ramfs.stat(node_id) {
-        Some(stat) => { unsafe { *st = stat; } 0 }
-        None => {
-            let hvfs = get_hvfs();
-            let fd_table = VFS_MANAGER.fd_table.lock();
-            let path = fd_table[fd_usize].path;
-            let path_str = core::str::from_utf8(
-                &path[..path.iter().position(|&b| b == 0).unwrap_or(256).min(256)]
-            ).unwrap_or("");
-            match hvfs.stat(path_str, pwm) {
-                Some(_obj) => {
-                    // HvFS stat returns HvDmuObject - need conversion
-                    // For now, return 0 (success) with a best-effort fill
-                    unsafe { core::ptr::write_bytes(st as *mut u8, 0, core::mem::size_of::<VfsStat>()); }
-                    0
+    let result = {
+        let ramfs = RAMFS_DATA.lock();
+        match ramfs.stat(node_id) {
+            Some(stat) => { unsafe { *st = stat; } 0 }
+            None => {
+                let hvfs = get_hvfs();
+                let fd_table = VFS_MANAGER.fd_table.lock();
+                let path = fd_table[fd_usize].path;
+                let path_str = core::str::from_utf8(
+                    &path[..path.iter().position(|&b| b == 0).unwrap_or(256).min(256)]
+                ).unwrap_or("");
+                match hvfs.stat(path_str, pwm) {
+                    Some(obj) => {
+                        unsafe {
+                            (*st).node_id = obj.obj_id as u32;
+                            (*st).mode = obj.pwm_perm;
+                            (*st).size = obj.size as u32;
+                            (*st).owner_pwm = obj.owner_pwm;
+                            (*st).group_pwm = obj.group_pwm;
+                            (*st).perm = obj.pwm_perm;
+                            (*st).sensitivity = obj.sensitivity;
+                            (*st).file_type = if obj.is_dir() { VfsFileType::Dir.as_u8() } else { VfsFileType::File.as_u8() };
+                        }
+                        0
+                    }
+                    None => -1,
                 }
-                None => -1,
             }
         }
+    };
+
+    if result == 0 {
+        let tbl = crate::kernel::pwm::table::get_table();
+        unsafe {
+            (*st).uid = tbl.uid_of((*st).owner_pwm);
+            (*st).gid = tbl.gid_of((*st).group_pwm);
+            if (*st).gid == 0xFFFF_FFFF { (*st).gid = (*st).uid; }
+        }
     }
+
+    result
 }
 
 // ============================================================================

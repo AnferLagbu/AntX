@@ -22,7 +22,6 @@
 //! ```
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -301,6 +300,12 @@ pub fn driver_count() -> usize {
 
 pub fn driver_count_by_type(dtype: DeviceType) -> usize {
     DRIVER_REGISTRY.lock().values().filter(|e| e.device_type == dtype).count()
+}
+
+/// 从 DriverRegistry 中移除驱动并返回其信息。
+/// 调用者负责释放驱动本身的内存。
+pub fn driver_unregister(id: u32) -> Option<DeviceInfo> {
+    DRIVER_REGISTRY.lock().remove(&id)
 }
 
 // ============================================================================

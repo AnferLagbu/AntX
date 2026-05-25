@@ -59,7 +59,7 @@ NET_QX_C   = src/kernel/net/arch/net_glue.c
 NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
 NET_OBJS   = $(patsubst src/kernel/net/%.c,build/net/%.o,$(NET_ALL_C))
 
-LDFLAGS = -T $(LDSCRIPT) -nostdlib -Map=build/kernel.map
+LDFLAGS = -T $(LDSCRIPT) -nostdlib -Map=build/kernel.map -z noexecstack --no-warn-rwx-segments
 
 # ── 架构条件 QEMU 标志 ────────────────────────────────────────────────
 ifeq ($(ARCH),aarch64)

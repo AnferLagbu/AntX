@@ -208,6 +208,28 @@ where F: FnOnce(&mut ChitinDevice) -> T
     devices.iter_mut().find(|d| d.id == id).map(f)
 }
 
+/// 从注册表中移除设备并返回其 driver_data 指针。
+///
+/// 调用者负责 `Box::from_raw(ptr as *mut T)` 释放驱动内存。
+/// 返回 `None` 如果设备不存在。
+///
+/// # Safety
+/// 调用者必须确保返回的 raw pointer 对应正确的类型 T。
+pub fn chitin_unregister(id: u32) -> Option<*mut core::ffi::c_void> {
+    let mut devices = CHITIN_DEVICES.lock();
+    let pos = devices.iter().position(|d| d.id == id)?;
+    let dev = devices.remove(pos);
+    Some(dev.driver_data)
+}
+
+/// 设置设备生命周期状态 (插入 → Ready, 拔出 → Removed)
+pub fn chitin_set_state(id: u32, state: DeviceState) {
+    let mut devices = CHITIN_DEVICES.lock();
+    if let Some(dev) = devices.iter_mut().find(|d| d.id == id) {
+        dev.state = state;
+    }
+}
+
 // ── 工具: from raw Box ──
 
 /// 将 `Box<T>` 转为 raw pointer 用于 chitin_register 的 driver_data

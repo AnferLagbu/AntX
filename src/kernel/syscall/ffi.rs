@@ -30,6 +30,7 @@ pub unsafe extern "C" fn rust_syscall_dispatch(num: u64, arg0: u64, arg1: u64, a
 
 /// 注册自定义系统调用 (用于动态扩展)
 #[no_mangle]
+#[allow(deprecated)]
 pub unsafe extern "C" fn rust_syscall_register(num: u64, handler: SyscallHandler) -> i64 {
     if num >= MAX_SYSCALLS {
         return SyscallError::E_INVAL.as_i64();

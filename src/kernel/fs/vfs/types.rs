@@ -150,14 +150,17 @@ impl FsType {
 pub struct VfsStat {
     pub node_id: u32,
     pub mode: u16,
+    pub uid: u32,
+    pub gid: u32,
     pub size: u32,
     pub atime: u64,
     pub mtime: u64,
     pub ctime: u64,
     pub owner_pwm: u64,
+    pub group_pwm: u64,
     pub perm: u16,
     pub file_type: u8,
-    pub reserved: u8,
+    pub sensitivity: u8,
 }
 
 impl Default for VfsStat {
@@ -165,14 +168,17 @@ impl Default for VfsStat {
         Self {
             node_id: 0,
             mode: 0,
+            uid: 0xFFFF_FFFF,
+            gid: 0xFFFF_FFFF,
             size: 0,
             atime: 0,
             mtime: 0,
             ctime: 0,
             owner_pwm: 0,
+            group_pwm: 0,
             perm: 0,
             file_type: 0,
-            reserved: 0,
+            sensitivity: 0,
         }
     }
 }

@@ -200,6 +200,7 @@ pub const SYS_QX_GETHOSTNAME: u64 = 433;
 pub const SYS_QX_SETHOSTNAME: u64 = 434;
 pub const SYS_QX_BOOT_CHECK: u64 = 435;
 pub const SYS_QX_REBOOT: u64 = 436;
+pub const SYS_QX_HOTPLUG_STATUS: u64 = 437;
 
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
@@ -297,6 +298,7 @@ impl Errno {
 #[deprecated(note = "use Errno::ENOENT.as_ret() instead")]
 pub type SyscallError = Errno;
 
+#[allow(deprecated)]
 impl SyscallError {
     #[allow(non_upper_case_globals)]
     pub const E_PERM: Self = Self::EPERM;

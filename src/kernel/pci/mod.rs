@@ -41,6 +41,8 @@ use spin::Mutex;
 
 use core::fmt;
 
+pub mod hotplug;
+
 // ── Port I/O primitives (x86_64 only) ──
 
 #[cfg(target_arch = "x86_64")]

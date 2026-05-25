@@ -31,7 +31,6 @@ pub fn register_block_device(
     io_base: Option<u64>,
 ) -> u32 {
     use crate::kernel::chitin::{chitin_register, ChitinProto, box_to_raw};
-    use crate::kernel::driver::block;
 
     // 先注册到 BlockDevice 表 (HvFS 直接使用)
     let bdev: alloc::boxed::Box<dyn BlockDevice> = alloc::boxed::Box::new(dev);

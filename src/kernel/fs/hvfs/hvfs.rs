@@ -267,6 +267,66 @@ impl HvfsData {
         log("[HvFS] FORMAT: Complete\n");
     }
 
+    /// 热插拔: 新磁盘插入后将其添加为 vdev。
+    ///
+    /// 自动探测 ANTX 签名以获取 partition_start。如果磁盘未格式化则使用默认值。
+    /// 返回 true 表示成功添加。
+    pub fn hotplug_add_disk(&self, drive: u8) -> bool {
+        if !block::hdd_is_present(drive) {
+            log("[HvFS] HOTPLUG: drive not present, skip\n");
+            return false;
+        }
+
+        // 检查是否已存在该驱动
+        {
+            let discovered = self.drives_discovered.lock();
+            if discovered.iter().any(|(d, _)| *d == drive) {
+                log("[HvFS] HOTPLUG: drive already known, skip\n");
+                return false;
+            }
+        }
+
+        let part_start = {
+            let mut cfg = [0u8; 512];
+            let r = block::hdd_read_sector(drive, 2046, &mut cfg);
+            if r >= 0 && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X' {
+                u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]])
+            } else {
+                16384u32
+            }
+        };
+
+        let mut vdev_cfg = crate::kernel::fs::hvfs::vdev::HvVdevConfig::new_disk(
+            drive as u16, "disk", 12);
+        vdev_cfg.asize = self.probe_partition_size_for_drive(drive, part_start);
+        vdev_cfg.partition_start = part_start;
+        self.spa.add_vdev(vdev_cfg);
+
+        {
+            let mut list = self.drives_discovered.lock();
+            list.push((drive, part_start));
+        }
+
+        log(&alloc::format!("[HvFS] HOTPLUG: disk added (drive={})\n", drive));
+        true
+    }
+
+    /// 热插拔: 磁盘移除后将对应 vdev 标记为离线。
+    ///
+    /// 不移除 vdev (保持 uberblock 一致性)，仅标记状态为 Removed，
+    /// 后续 I/O 将跳过该设备。
+    /// 返回 true 表示找到并标记成功。
+    pub fn hotplug_remove_disk(&self, drive: u8) -> bool {
+        let mut vdevs = self.spa.vdevs.lock();
+        if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == drive as u16) {
+            vdev.state = crate::kernel::fs::hvfs::vdev::HvVdevState::Removed;
+            log(&alloc::format!("[HvFS] HOTPLUG: disk removed (drive={})\n", drive));
+            return true;
+        }
+        log(&alloc::format!("[HvFS] HOTPLUG: disk not found in vdevs (drive={})\n", drive));
+        false
+    }
+
     fn read_partition_start(&self) -> u32 {
         let mut cfg = [0u8; 512];
         let r = block::hdd_read_sector(self.disk_drive.load(Ordering::Acquire), 2046, &mut cfg);
@@ -627,10 +687,13 @@ impl HvfsData {
     }
 
     pub fn chown(&self, path: &str, owner_pwm: u64, pwm: u64) -> i32 {
+        self.chown_ext(path, owner_pwm, 0, pwm)
+    }
+
+    pub fn chown_ext(&self, path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
         if !self.is_initialized() { return -1; }
         let name = path.trim_start_matches('/');
         
-        // Permission check: only privileged user can change owner
         let level = unsafe { pwm_get_privilege_level(pwm) };
         if level != 0 {
             return -1;
@@ -649,6 +712,7 @@ impl HvfsData {
         };
         
         obj.owner_pwm = owner_pwm;
+        if group_pwm != 0 { obj.group_pwm = group_pwm; }
         obj.ctime = unsafe { timer_get_ticks() };
         obj.dirty = true;
         
