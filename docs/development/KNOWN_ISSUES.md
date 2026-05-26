@@ -1,10 +1,31 @@
 # AntX 已知问题与待解决项
 
-> 最后更新: 2026-05-19 18:00
+> 最后更新: 2026-06-28
 
 ---
 
-## ⚠️ 未解决问题 (2项)
+## ⚠️ 未解决问题 (3项)
+
+### 4. HvFS get_obj_mut 返回拷贝致修改无声丢失 (P1) 🆕
+
+**状态**: 🟡 已定位，待修复
+
+**根因**: `dmu.rs:HvDmuObjSet::get_obj_mut()` → `get_obj()` → `.cloned()`
+返回的是 `HvDmuObject` 的**拥有副本**，而非可变引用。`hvfs.rs` 中 5 处调用点修改该副本后原对象不更新。
+
+**影响函数**: `symlink`, `link`, `setxattr`, `getxattr` (对象元数据修改不持久化)
+
+**正确用法**: 修改后须调用 `ds.objset.update_obj(&obj)` 将副本写回
+
+**涉及文件**:
+- `kernel/fs/hvfs/dmu.rs:L218` — get_obj_mut 定义 (别名, 不提供真正 mutable 访问)
+- `kernel/fs/hvfs/hvfs.rs:L804,819,881,977,1104` — 5 处调用点 (均有 FIXME 标注)
+
+**修复方案**:
+1. 将 `get_obj_mut` 改为返回 `Option<&mut HvDmuObject>` (需要改锁模型)
+2. 或在每个调用点添加 `ds.objset.update_obj(&obj)` 调用
+
+---
 
 ### 3. HvFS 磁盘挂载路径未经验证 (P1)
 

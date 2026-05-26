@@ -428,6 +428,3 @@ pub fn proc_register_barrier_domain() {
         *dom.rollback_cb.lock() = Some(proc_barrier_rollback_cb);
     }
 }
-
-pub fn init() {
-}

@@ -799,6 +799,8 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
+            // FIXME: get_obj_mut returns owned copy, modifications lost!
+            // Must use ds.objset.update_obj(&obj) to persist changes.
             #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.obj_type = HvObjType::Symlink;
@@ -813,6 +815,7 @@ impl HvfsData {
             let comp_type = HvCompType::Off;
             
             if let Some(new_bp) = self.spa.allocate(target_bytes.len() as u64, cksum_type, comp_type, txg) {
+                // FIXME: get_obj_mut returns copy — use update_obj to persist
                 #[allow(unused_assignments, unused_variables)]
                 if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                     obj.bp = new_bp;
@@ -874,7 +877,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            // 增加链接计数
+            // FIXME: get_obj_mut returns copy — use update_obj to persist
             #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.link_count += 1;
@@ -970,6 +973,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
+            // FIXME: get_obj_mut returns copy — use update_obj to persist
             #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 // 简单实现：将xattr存储在对象的data_hash字段中
@@ -1097,6 +1101,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
+            // FIXME: get_obj_mut returns copy — use update_obj to persist
             #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 let name_hash = Self::hash_xattr_name(name);

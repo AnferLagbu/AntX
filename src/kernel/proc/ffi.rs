@@ -387,7 +387,6 @@ pub extern "C" fn scheduler_init() {
 
 #[no_mangle]
 pub extern "C" fn process_init() {
-    super::process::init();
 }
 
 #[no_mangle]

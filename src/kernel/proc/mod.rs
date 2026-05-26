@@ -9,13 +9,17 @@ pub mod cpu_queue;
 pub mod elf;
 pub mod ffi;
 
+// LATER(polish): 用显式导入替代 glob re-export 消除歧义
+// USER_STACK_SIZE: types(usize) vs user_proc(u64)
+// init: scheduler vs user_proc
 #[allow(ambiguous_glob_reexports)]
 pub use types::*;
-#[allow(ambiguous_glob_reexports)]
 pub use process::*;
+#[allow(ambiguous_glob_reexports)]
 pub use scheduler::*;
 pub use thread::*;
 pub use session::*;
+#[allow(ambiguous_glob_reexports)]
 pub use scheduler_ex::*;
 pub use user_proc::*;
 pub use crate::kernel::barrier::*;
