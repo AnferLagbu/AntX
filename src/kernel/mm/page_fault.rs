@@ -21,12 +21,13 @@
 //! - 本模块在 #PF 中断上下文中运行。所有操作必须无阻塞。
 //! - PMM 分配的物理页通过 KERNEL_BASE 转为有效虚拟地址后清零，
 //!   确保用户态不会看到脏数据（信息泄漏防护）。
-//! - PAGE_FAULT_COUNT 是单核统计计数器，无竞争条件。
+//! - PAGE_FAULT_COUNT 使用 AtomicU64, 无竞争条件。
 
 use super::*;
 use super::vma::{Vma, VmaType, MmStruct};
 use super::vmm;
 use super::pmm;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PfResult {
@@ -98,8 +99,7 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
         let pml4 = vmm::get_kernel_pml4();
         return match super::cow::cow_handle_fault(pml4, info.fault_addr) {
             Some(_) => {
-                // SAFETY: 单核 #PF 上下文, 无竞争
-                unsafe { PAGE_FAULT_COUNT += 1; }
+                PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
                 PfResult::Fixed
             }
             None => PfResult::SignalSegv,
@@ -134,8 +134,7 @@ fn handle_simple_fault(addr: usize, _info: &PageFaultInfo) -> PfResult {
 
     vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), phys, flags);
 
-    // SAFETY: 单核统计
-    unsafe { PAGE_FAULT_COUNT += 1; }
+    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed
 }
 
@@ -169,8 +168,7 @@ fn handle_stack_expansion_simple(addr: usize) -> PfResult {
         flags,
     );
 
-    // SAFETY: 单核统计
-    unsafe { PAGE_FAULT_COUNT += 1; }
+    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed
 }
 
@@ -199,8 +197,7 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> P
 
     vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), phys, flags);
 
-    // SAFETY: 单核 #PF 上下文
-    unsafe { PAGE_FAULT_COUNT += 1; }
+    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed
 }
 
@@ -248,8 +245,7 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
     // 当前忽略返回值是权衡 (不会崩溃但 VMA 不完整)
     let _ = mm.insert_vma(stack_vma);
 
-    // SAFETY: 单核统计
-    unsafe { PAGE_FAULT_COUNT += 1; }
+    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed
 }
 
@@ -285,18 +281,16 @@ fn do_cow_copy_with_mm(_mm: &MmStruct, _vma: &Vma, addr: usize) -> PfResult {
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     vmm_inst.map_page_in_table(pml4, VirtAddr(addr as u64), new_phys, flags);
 
-    // SAFETY: 单核统计
-    unsafe { PAGE_FAULT_COUNT += 1; }
+    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed
 }
 
 // ── 统计 ──
 
-pub static mut PAGE_FAULT_COUNT: u64 = 0;
+pub static PAGE_FAULT_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn page_fault_count() -> u64 {
-    // SAFETY: volatile 读统计计数器
-    unsafe { PAGE_FAULT_COUNT }
+    PAGE_FAULT_COUNT.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]

@@ -37,10 +37,16 @@ const ZIL_TAIL_MAGIC: u32 = 0x454E4400u32; // "END\0"
 const ZIL_BLOCK_SIZE: usize = 4096;
 const ZIL_HEADER_SIZE: usize = 64;
 const ZIL_TRAILER_SIZE: usize = 8;
+const ZIL_RECORD_DISK_SIZE: usize = 256;
 const ZIL_MAX_RECORDS_PER_BLOCK: usize =
     (ZIL_BLOCK_SIZE - ZIL_HEADER_SIZE - ZIL_TRAILER_SIZE) / ZIL_RECORD_DISK_SIZE;
 
-const ZIL_RECORD_DISK_SIZE: usize = 192;
+/// Actual bytes written to disk per record:
+///    rec_type(1) + txg(8) + obj_id(8) + parent_obj(8) + offset(8) + size(4)
+///  + seq(8) + name(128) + data_hash(32) + record_crc(4) = 209
+const ZIL_RECORD_PAYLOAD: usize = 209;
+const _ASSERT_RECORD_FITS: () =
+    assert!(ZIL_RECORD_PAYLOAD <= ZIL_RECORD_DISK_SIZE);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -147,6 +153,8 @@ fn crc32_checksum(data: &[u8]) -> u32 {
 }
 
 fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
+    debug_assert!(buf.len() >= ZIL_RECORD_PAYLOAD,
+        "serialize_record buffer too small: {} < {}", buf.len(), ZIL_RECORD_PAYLOAD);
     let ptr = buf.as_mut_ptr();
     unsafe {
         (ptr as *mut u8).write(record.rec_type as u8);
@@ -202,6 +210,8 @@ fn deserialize_record(buf: &[u8]) -> Option<HvZilRecord> {
             9 => super::zil::HvZilRecordType::CreateAcl,
             10 => super::zil::HvZilRecordType::Mkdir,
             11 => super::zil::HvZilRecordType::Symlink,
+            12 => super::zil::HvZilRecordType::DedupRef,
+            13 => super::zil::HvZilRecordType::DedupUnref,
             _ => return None,
         };
 

@@ -549,7 +549,8 @@ impl IdtManager {
     }
 
     /// 尝试域级恢复
-    fn attempt_domain_recovery(&self, _frame: &InterruptFrame) {
+    fn attempt_domain_recovery(&self, frame: &InterruptFrame) {
+        crate::kernel::barrier::CRASH_RIP.store(frame.rip, core::sync::atomic::Ordering::SeqCst);
         extern "C" { fn recovery_try_recover_from_idt() -> i32; }
         
         unsafe {

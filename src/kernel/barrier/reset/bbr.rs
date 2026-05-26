@@ -40,26 +40,21 @@ pub fn locate_domain_from_panic(panic_location: &core::panic::PanicInfo<'_>) -> 
 
 pub fn try_rollback_single(domain_id: u64, tick: u64, fingerprint: u64) -> RecoveryResult {
     let manager = RECOVERY_MANAGER.lock();
-    
-    if let Some(domain) = manager.find(domain_id) {
-        if domain.try_rollback(tick, fingerprint) {
-            let mut undo = domain.undo.lock();
-            let current_gen = domain.barrier_generation.load(Ordering::SeqCst);
-            let target_gen = current_gen.saturating_sub(1);
-            let rolled = undo.rollback_to(target_gen);
-            
-            audit::audit_record_domain(
-                RecoveryLayer::Layer1,
-                RecoveryResult::Success,
-                0,
-                domain_id,
-                rolled,
-            );
-            
-            RecoveryResult::Success
-        } else {
-            RecoveryResult::Escalate
-        }
+
+    let domain = match manager.find(domain_id) {
+        Some(d) => d,
+        None => return RecoveryResult::Escalate,
+    };
+
+    if !domain.try_rollback(tick, fingerprint) {
+        return RecoveryResult::Escalate;
+    }
+
+    let (_entries, _from, _to, result_code) =
+        manager.rollback_domain(domain, tick, fingerprint, 1);
+
+    if result_code == 0 {
+        RecoveryResult::Success
     } else {
         RecoveryResult::Escalate
     }

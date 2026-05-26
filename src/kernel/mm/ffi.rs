@@ -8,6 +8,7 @@
 
 use super::*;
 use core::ffi::c_void;
+use core::sync::atomic::AtomicU64;
 
 // ============================================================
 // PMM FFI Functions
@@ -299,7 +300,7 @@ pub extern "C" fn vmm_destroy_page_table(pml4: u64) {
 /// 
 /// Note: This is an accessor for the global KERNEL_PML4 variable
 #[no_mangle]
-pub static mut kernel_pml4: u64 = 0;
+pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
 
 // ============================================================
 // Kmalloc FFI Functions

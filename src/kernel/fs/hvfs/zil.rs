@@ -20,6 +20,8 @@ pub enum HvZilRecordType {
     CreateAcl = 9,
     Mkdir = 10,
     Symlink = 11,
+    DedupRef = 12,
+    DedupUnref = 13,
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +176,34 @@ impl HvZilRecord {
             size: 0,
             name: n,
             data_hash: [0; 4],
+            seq: 0,
+        }
+    }
+
+    pub fn new_dedup_ref(txg: u64, hash: [u64; 4], obj_id: u64) -> Self {
+        Self {
+            rec_type: HvZilRecordType::DedupRef,
+            txg,
+            obj_id,
+            parent_obj: 0,
+            offset: 0,
+            size: 0,
+            name: [0; 128],
+            data_hash: hash,
+            seq: 0,
+        }
+    }
+
+    pub fn new_dedup_unref(txg: u64, hash: [u64; 4]) -> Self {
+        Self {
+            rec_type: HvZilRecordType::DedupUnref,
+            txg,
+            obj_id: 0,
+            parent_obj: 0,
+            offset: 0,
+            size: 0,
+            name: [0; 128],
+            data_hash: hash,
             seq: 0,
         }
     }

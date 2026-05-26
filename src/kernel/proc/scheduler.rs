@@ -573,7 +573,10 @@ impl Scheduler {
         
         // Barrier stack: advance barrier generations for all recovery domains
         crate::kernel::barrier::RECOVERY_MANAGER.lock().tick(tick);
-        
+
+        // OOMD: memory pressure monitoring
+        crate::kernel::proc::oomd::OOMD.tick();
+
         // ✅ 线程级时间记账 (不触发独立调度)
         crate::kernel::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
         

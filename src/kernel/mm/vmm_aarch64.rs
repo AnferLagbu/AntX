@@ -21,6 +21,10 @@ extern "C" {
     fn pmm_free_page(addr: *mut c_void);
 }
 
+fn phys_to_virt(phys: u64) -> u64 {
+    phys + super::KERNEL_BASE
+}
+
 // ─── ARM Descriptor Constants ────────────────────────────────────────
 
 /// Descriptor types
@@ -271,7 +275,7 @@ impl Aarch64Vmm {
                 let paddr = phys.as_u64();
                 let raw_flags = flags.bits();
 
-                let l0 = self.kernel_l0 as *mut u64;
+                let l0 = phys_to_virt(self.kernel_l0) as *mut u64;
                 let l0_idx = l0_index(vaddr);
                 let l1 = self.ensure_next_level(l0, l0_idx);
                 let l1_idx = l1_index(vaddr);
@@ -288,7 +292,7 @@ impl Aarch64Vmm {
                 let paddr = phys.as_u64();
                 let raw_flags = flags.bits();
 
-                let l0 = self.kernel_l0 as *mut u64;
+                let l0 = phys_to_virt(self.kernel_l0) as *mut u64;
                 let l0_idx = l0_index(vaddr);
                 let l1 = self.ensure_next_level(l0, l0_idx);
                 let l1_idx = l1_index(vaddr);
@@ -327,8 +331,8 @@ impl Aarch64Vmm {
         let paddr = phys.as_u64();
         let raw_flags = flags.bits();
 
-        // Walk/create L0 → L1 → L2 → L3
-        let l0 = root_paddr as *mut u64;
+        // SAFETY: phys_to_virt converts root_paddr (page table PA) to kernel VA
+        let l0 = phys_to_virt(root_paddr) as *mut u64;
         let l0_idx = l0_index(vaddr);
 
         let l1 = self.ensure_next_level(l0, l0_idx);
@@ -360,23 +364,17 @@ impl Aarch64Vmm {
             if entry & 0b11 == 0b11 {
                 // Already a table descriptor
                 let paddr = entry & 0x0000_FFFF_FFFF_F000;
-                // Convert to virtual address — tables are in kernel space
-                // Since we use identity mapping, physical == virtual for kernel
-                paddr as *mut u64
+                // SAFETY: phys_to_virt(paddr) yields valid kernel VA because
+                // KERNEL_BASE (=0 on aarch64 identity map) maps all physical memory.
+                phys_to_virt(paddr) as *mut u64
             } else {
                 // Allocate new table
                 let new_paddr = self.alloc_table().expect("[VMM] Out of physical memory for page table");
                 let desc = table_descriptor(new_paddr);
-                // ARM requires DSB after page table descriptor writes to ensure
-                // the MMU's page table walker sees the update. Without this,
-                // subsequent accesses through this table level may fault or
-                // read stale data from the TLB caching the old (invalid) entry.
                 ptr::write_volatile(table.add(idx), desc);
                 core::arch::asm!("dsb ishst");
-                // Physical == virtual for kernel (identity mapped)
-                // But user tables need phys_to_virt conversion
-                // For now, tables are allocated in low physical memory which is identity-mapped
-                new_paddr as *mut u64
+                // SAFETY: new_paddr from PMM allocator; phys_to_virt yields kernel VA.
+                phys_to_virt(new_paddr) as *mut u64
             }
         }
     }
@@ -395,8 +393,8 @@ impl Aarch64Vmm {
         //
         // Note: shared L1/L2 tables are safe because user mappings only
         // overlay unused address ranges (L2_DEVICE[0] → new L3 table).
-        let kernel_l0 = self.kernel_l0 as *const u64;
-        let user_l0_ptr = user_l0 as *mut u64;
+        let kernel_l0 = phys_to_virt(self.kernel_l0) as *const u64;
+        let user_l0_ptr = phys_to_virt(user_l0) as *mut u64;
         unsafe {
             for i in 0..TABLE_ENTRIES {
                 let entry = ptr::read_volatile(kernel_l0.add(i));
@@ -455,7 +453,8 @@ impl Aarch64Vmm {
             return None;
         }
 
-        let l1 = (l0_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+        // SAFETY: table descriptor frame bits contain valid PA → phys_to_virt → kernel VA
+        let l1 = phys_to_virt(l0_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
         let l1_idx = l1_index(vaddr);
         let l1_entry = unsafe { ptr::read_volatile(l1.add(l1_idx)) };
         if l1_entry & 0b11 == 0b01 {
@@ -466,7 +465,8 @@ impl Aarch64Vmm {
             return None;
         }
 
-        let l2 = (l1_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+        // SAFETY: L1 table descriptor frame → phys_to_virt → kernel VA
+        let l2 = phys_to_virt(l1_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
         let l2_idx = l2_index(vaddr);
         let l2_entry = unsafe { ptr::read_volatile(l2.add(l2_idx)) };
         if l2_entry & 0b11 == 0b01 {
@@ -477,7 +477,8 @@ impl Aarch64Vmm {
             return None;
         }
 
-        let l3 = (l2_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+        // SAFETY: L2 table descriptor frame → phys_to_virt → kernel VA
+        let l3 = phys_to_virt(l2_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
         let l3_idx = l3_index(vaddr);
         let l3_entry = unsafe { ptr::read_volatile(l3.add(l3_idx)) };
         if l3_entry & 0b11 != 0b11 {
@@ -492,10 +493,9 @@ impl Aarch64Vmm {
     pub fn clone_user_page_table(&self, parent_paddr: u64) -> Option<u64> {
         let child_paddr = self.alloc_table()?;
 
-        // Copy all valid entries from parent L0 table
-        // Only user-space entries (indices 0..256 for 48-bit VA with split at bit 47)
-        let parent = parent_paddr as *const u64;
-        let child = child_paddr as *mut u64;
+        // SAFETY: phys_to_virt converts page table physical addresses to kernel VAs
+        let parent = phys_to_virt(parent_paddr) as *const u64;
+        let child = phys_to_virt(child_paddr) as *mut u64;
 
         for i in 0..256 {
             unsafe {
@@ -512,8 +512,8 @@ impl Aarch64Vmm {
             return;
         }
 
-        // Walk L0 → L1 → L2 → L3, free all tables
-        let l0 = root_paddr as *mut u64;
+        // SAFETY: phys_to_virt converts root_paddr to kernel VA
+        let l0 = phys_to_virt(root_paddr) as *mut u64;
 
         for i in 0..256 {
             unsafe {
@@ -529,7 +529,7 @@ impl Aarch64Vmm {
     }
 
     fn destroy_l1_table(&self, paddr: u64) {
-        let l1 = paddr as *mut u64;
+        let l1 = phys_to_virt(paddr) as *mut u64;
         for i in 0..512 {
             unsafe {
                 let entry = ptr::read_volatile(l1.add(i));
@@ -537,14 +537,13 @@ impl Aarch64Vmm {
                     let l2_paddr = entry & 0x0000_FFFF_FFFF_F000;
                     self.destroy_l2_table(l2_paddr);
                 }
-                // Block entries don't need cleanup (they just point to physical memory)
             }
         }
         self.free_table(paddr);
     }
 
     fn destroy_l2_table(&self, paddr: u64) {
-        let l2 = paddr as *mut u64;
+        let l2 = phys_to_virt(paddr) as *mut u64;
         for i in 0..512 {
             unsafe {
                 let entry = ptr::read_volatile(l2.add(i));

@@ -44,13 +44,14 @@
 //! └── ffi.rs           C FFI 桥接层
 //! ```
 
-use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicBool, AtomicU64};
 
 pub mod types;
 pub mod undo_log;
 pub mod domain;
 pub mod manager;
 pub mod recoverable;
+pub mod recovery;
 pub mod fault_inject;
 pub mod snapshot;
 pub mod reset;
@@ -134,5 +135,6 @@ pub use ffi::{recovery_set_fault_rate, recovery_get_fault_rate};
 
 pub static PANIC_FLAG: AtomicBool = AtomicBool::new(false);
 pub static PANIC_MSG: spin::Mutex<[u8; 128]> = spin::Mutex::new([0u8; 128]);
+pub static CRASH_RIP: AtomicU64 = AtomicU64::new(0);
 
 pub static RECOVERY_MANAGER: spin::Mutex<RecoveryManager> = spin::Mutex::new(RecoveryManager::new());

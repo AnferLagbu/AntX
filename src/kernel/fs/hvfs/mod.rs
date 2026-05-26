@@ -9,6 +9,7 @@ pub mod txg;
 pub mod dmu;
 pub mod zap;
 pub mod dataset;
+pub mod dedup;
 pub mod snapshot;
 pub mod raidz;
 pub mod compress;

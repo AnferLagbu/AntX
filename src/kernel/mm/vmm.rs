@@ -25,6 +25,8 @@
 //!    a full 4KB page allocated by PMM, making all 512-entry traversals safe.
 //! 6. **Present bit guards**: Before dereferencing any table entry as a pointer to the
 //!    next level, we check `entry & 1 != 0`.
+//! 7. **Deadlock prevention**: `acquire_lock` panics on recursive acquisition in debug
+//!    builds via `VMM_LOCK_RECURSIVE`, preventing SMP deadlocks before they occur.
 
 use super::*;
 use core::cell::UnsafeCell;
@@ -33,6 +35,9 @@ use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering};
 static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 static VMM_LOCK: AtomicBool = AtomicBool::new(false);
+
+#[cfg(debug_assertions)]
+static VMM_LOCK_RECURSIVE: AtomicBool = AtomicBool::new(false);
 
 const MAX_USER_PAGE_TABLES: usize = 256;
 
@@ -71,8 +76,7 @@ impl VirtualMemoryManager {
 
         KERNEL_PML4.store(cr3, Ordering::Release);
 
-        // SAFETY: kernel_pml4 is a static u64 — single-writer during boot
-        unsafe { super::ffi::kernel_pml4 = cr3; }
+        super::ffi::kernel_pml4.store(cr3, Ordering::Release);
     }
 
     pub fn map_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<(), &'static str> {
@@ -269,10 +273,11 @@ impl VirtualMemoryManager {
             }
         }
 
+        self.acquire_lock();
+
         let idx = self.find_free_user_slot();
         if idx < MAX_USER_PAGE_TABLES {
-            // SAFETY: VMM_LOCK not held but find_free_user_slot returned a free slot
-            // and this is called during process creation (single-threaded boot path)
+            // SAFETY: VMM_LOCK held; exclusive access to user_tables via UnsafeCell
             unsafe {
                 let tables = &mut *self.user_tables.get();
                 tables[idx].pml4_phys = pml4_phys.as_u64();
@@ -280,6 +285,8 @@ impl VirtualMemoryManager {
             }
             self.user_table_count.fetch_add(1, Ordering::Relaxed);
         }
+
+        self.release_lock();
 
         Some(pml4_phys.as_u64())
     }
@@ -546,50 +553,57 @@ impl VirtualMemoryManager {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 { return Err("VMM not initialized"); }
 
-        let pml4_virt = PhysAddr(pml4_base).to_virt();
-        let v = VirtAddr(virt);
+        self.acquire_lock();
 
-        // SAFETY: Splitting a 2MB huge page into 512 4KB pages.
-        // No VMM_LOCK requirement — caller handles synchronization.
-        unsafe {
-            let pml4 = pml4_virt.0 as *mut PageTableEntry;
-            let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false, 0);
-            if pdpt.is_null() { return Err("PDPT not present"); }
+        let result: Result<(), &'static str> = (|| {
+            let pml4_virt = PhysAddr(pml4_base).to_virt();
+            let v = VirtAddr(virt);
 
-            let pd = self.get_or_create_table_entry(pdpt.add(v.pdpt_idx()), false, 0);
-            if pd.is_null() { return Err("PD not present"); }
+            // SAFETY: Splitting a 2MB huge page into 512 4KB pages.
+            // VMM_LOCK held; all page table modifications are serialized.
+            unsafe {
+                let pml4 = pml4_virt.0 as *mut PageTableEntry;
+                let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false, 0);
+                if pdpt.is_null() { return Err("PDPT not present"); }
 
-            let pd_entry = &mut *pd.add(v.pd_idx());
-            if !pd_entry.is_present() { return Err("PD entry not present"); }
-            if !pd_entry.is_huge() { return Ok(()); }
+                let pd = self.get_or_create_table_entry(pdpt.add(v.pdpt_idx()), false, 0);
+                if pd.is_null() { return Err("PD not present"); }
 
-            let huge_frame = pd_entry.frame();
-            let huge_flags = pd_entry.flags();
+                let pd_entry = &mut *pd.add(v.pd_idx());
+                if !pd_entry.is_present() { return Err("PD entry not present"); }
+                if !pd_entry.is_huge() { return Ok(()); }
 
-            let pmm = get_pmm();
-            let pt_page = match pmm.alloc_page() {
-                Some(p) => p,
-                None => return Err("Failed to allocate PT"),
-            };
-            let pt = pt_page.to_virt().0 as *mut PageTableEntry;
-            core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
+                let huge_frame = pd_entry.frame();
+                let huge_flags = pd_entry.flags();
 
-            for i in 0..512 {
-                // SAFETY: pt is a full 4KB PT page; add(i) stays in bounds
-                let pte = &mut *pt.add(i);
-                pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * 4096));
-                pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
-                pte.set_present(true);
+                let pmm = get_pmm();
+                let pt_page = match pmm.alloc_page() {
+                    Some(p) => p,
+                    None => return Err("Failed to allocate PT"),
+                };
+                let pt = pt_page.to_virt().0 as *mut PageTableEntry;
+                core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
+
+                for i in 0..512 {
+                    // SAFETY: pt is a full 4KB PT page; add(i) stays in bounds
+                    let pte = &mut *pt.add(i);
+                    pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * 4096));
+                    pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
+                    pte.set_present(true);
+                }
+
+                pd_entry.set_frame(pt_page);
+                let new_flags = (huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT;
+                pd_entry.set_flags(new_flags);
+
+                self.flush_tlb(virt);
             }
 
-            pd_entry.set_frame(pt_page);
-            let new_flags = (huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT;
-            pd_entry.set_flags(new_flags);
+            Ok(())
+        })();
 
-            self.flush_tlb(virt);
-        }
-
-        Ok(())
+        self.release_lock();
+        result
     }
 
     pub fn ensure_pml4_user(&self, virt: u64) {
@@ -772,8 +786,7 @@ impl VirtualMemoryManager {
     }
 
     fn find_free_user_slot(&self) -> usize {
-        // SAFETY: Read-only access to user_tables via UnsafeCell.
-        // No concurrent writer — called during process creation.
+        // SAFETY: Read-only access to user_tables via UnsafeCell under VMM_LOCK.
         let tables = unsafe { &*self.user_tables.get() };
         for i in 0..MAX_USER_PAGE_TABLES {
             if !tables[i].in_use {
@@ -792,10 +805,20 @@ impl VirtualMemoryManager {
         ).is_err() {
             core::hint::spin_loop();
         }
+        #[cfg(debug_assertions)]
+        {
+            if VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed) {
+                panic!("VMM_LOCK: recursive acquisition detected (deadlock)");
+            }
+        }
     }
 
     #[inline(always)]
     fn release_lock(&self) {
+        #[cfg(debug_assertions)]
+        {
+            VMM_LOCK_RECURSIVE.store(false, Ordering::Relaxed);
+        }
         VMM_LOCK.store(false, Ordering::Release);
     }
 

@@ -42,4 +42,8 @@ impl<T: Snapshot + 'static> RecoverableMutex<T> {
         maybe_inject_fault(self.domain_id);
         guard
     }
+
+    pub fn lock_fast(&self) -> spin::MutexGuard<'_, T> {
+        self.inner.lock()
+    }
 }

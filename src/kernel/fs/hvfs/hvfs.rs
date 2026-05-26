@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
@@ -24,6 +23,23 @@ extern "C" {
 
 fn log(s: &str) {
     unsafe { klog_ffi_info(s.as_ptr()); }
+}
+
+unsafe extern "C" fn hvfs_save() {}
+unsafe extern "C" fn hvfs_restore() {
+    let hvfs = get_hvfs();
+    hvfs.initialized.store(false, Ordering::Release);
+    hvfs.mounted.store(false, Ordering::Release);
+    hvfs.spa.init("antx-pool");
+    hvfs.setup_zil_datasets();
+    hvfs.root_ds_id.store(0, Ordering::Release);
+    hvfs.current_dir.store(HV_DMU_OBJ_ROOT, Ordering::Release);
+    hvfs.mounted.store(true, Ordering::Release);
+    hvfs.initialized.store(true, Ordering::Release);
+    log("[HvFS] Recovery: domain restored\n");
+}
+unsafe extern "C" fn hvfs_reset() {
+    log("[HvFS] Recovery: domain hard reset\n");
 }
 
 pub const HVFS_MAX_FDS: usize = 256;
@@ -69,34 +85,27 @@ pub struct HvfsData {
 unsafe impl Send for HvfsData {}
 unsafe impl Sync for HvfsData {}
 
-static HVFS_DATA: spin::Mutex<Option<Box<HvfsData>>> = spin::Mutex::new(None);
+static HVFS_DATA: spin::Once<HvfsData> = spin::Once::new();
 
 pub fn get_hvfs() -> &'static HvfsData {
-    let mut guard = HVFS_DATA.lock();
-    if guard.is_none() {
-        let data = Box::new(HvfsData {
-            spa: HvSpa::new(),
-            txg_group: Mutex::new(None),
-            datasets: Mutex::new(Vec::new()),
-            snap_mgr: HvSnapshotManager::new(),
-            zil: HvZil::new(),
-            fds: Mutex::new([HvfsFd { fd: 0, obj_id: 0, ds_id: 0, offset: 0, flags: 0, pwm: 0, used: false }; HVFS_MAX_FDS]),
-            next_fd: AtomicU32::new(0),
-            current_pwm: AtomicU64::new(0),
-            current_dir: AtomicU64::new(HV_DMU_OBJ_ROOT),
-            mounted: AtomicBool::new(false),
-            initialized: AtomicBool::new(false),
-            root_ds_id: AtomicU64::new(0),
-            mode: AtomicU8::new(HvfsMode::Memory as u8),
-            drives_discovered: Mutex::new(Vec::new()),
-            disk_drive: AtomicU8::new(0),
-            partition_start: AtomicU32::new(0),
-        });
-        *guard = Some(data);
-    }
-    let ptr: *const HvfsData = guard.as_ref().unwrap().as_ref() as *const HvfsData;
-    drop(guard);
-    unsafe { &*ptr }
+    HVFS_DATA.call_once(|| HvfsData {
+        spa: HvSpa::new(),
+        txg_group: Mutex::new(None),
+        datasets: Mutex::new(Vec::new()),
+        snap_mgr: HvSnapshotManager::new(),
+        zil: HvZil::new(),
+        fds: Mutex::new([HvfsFd { fd: 0, obj_id: 0, ds_id: 0, offset: 0, flags: 0, pwm: 0, used: false }; HVFS_MAX_FDS]),
+        next_fd: AtomicU32::new(0),
+        current_pwm: AtomicU64::new(0),
+        current_dir: AtomicU64::new(HV_DMU_OBJ_ROOT),
+        mounted: AtomicBool::new(false),
+        initialized: AtomicBool::new(false),
+        root_ds_id: AtomicU64::new(0),
+        mode: AtomicU8::new(HvfsMode::Memory as u8),
+        drives_discovered: Mutex::new(Vec::new()),
+        disk_drive: AtomicU8::new(0),
+        partition_start: AtomicU32::new(0),
+    })
 }
 
 impl HvfsData {
@@ -213,6 +222,9 @@ impl HvfsData {
         if !has_any_disk {
             log("[HvFS] Initialized: pool=antx-pool (memory)\n");
         }
+
+        crate::kernel::barrier::recovery::recovery_domain_register(
+            "hvfs", 2, &[], hvfs_save, hvfs_restore, hvfs_reset);
     }
 
     fn setup_zil_datasets(&self) {

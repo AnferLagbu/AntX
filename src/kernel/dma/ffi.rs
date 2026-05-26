@@ -5,7 +5,7 @@
 
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU64, Ordering};
 use super::engine::dma as engine;
 use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::kernel::dma::DmaPoolStats;
@@ -47,7 +47,7 @@ pub struct c_dma_mapping {
     _internal_id: u64,
 }
 
-static mut NEXT_MAPPING_ID: u64 = 0;
+static NEXT_MAPPING_ID: AtomicU64 = AtomicU64::new(0);
 
 unsafe fn alloc_mapping_struct() -> *mut c_dma_mapping {
     extern "C" {
@@ -62,8 +62,7 @@ unsafe fn alloc_mapping_struct() -> *mut c_dma_mapping {
     ptr::write_bytes(ptr, 0, core::mem::size_of::<c_dma_mapping>());
 
     let mapping = ptr as *mut c_dma_mapping;
-    let id = NEXT_MAPPING_ID;
-    NEXT_MAPPING_ID = NEXT_MAPPING_ID.wrapping_add(1);
+    let id = NEXT_MAPPING_ID.fetch_add(1, Ordering::Relaxed);
     (*mapping)._internal_id = id;
     mapping
 }

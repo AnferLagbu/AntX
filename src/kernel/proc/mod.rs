@@ -8,6 +8,7 @@ pub mod user_proc;
 pub mod cpu_queue;
 pub mod elf;
 pub mod ffi;
+pub mod oomd;
 
 // LATER(polish): 用显式导入替代 glob re-export 消除歧义
 // USER_STACK_SIZE: types(usize) vs user_proc(u64)

@@ -4,12 +4,19 @@ use super::types::*;
 use super::domain::RecoveryDomain;
 
 static RECOVERY_ATTEMPTED: AtomicBool = AtomicBool::new(false);
+static BOOT_FINGERPRINTS_CHECKED: AtomicBool = AtomicBool::new(false);
 
 #[no_mangle]
 pub extern "C" fn recovery_barrier_maintenance() {
     use crate::kernel::proc::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
-    super::RECOVERY_MANAGER.lock().tick(tick);
+
+    let mgr = super::RECOVERY_MANAGER.lock();
+    mgr.tick(tick);
+
+    if !BOOT_FINGERPRINTS_CHECKED.swap(true, Ordering::SeqCst) {
+        mgr.check_boot_fingerprints();
+    }
 }
 
 #[no_mangle]
@@ -92,12 +99,15 @@ pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
         h
     };
 
-    let fault_rip: u64 = 0;
+    let fault_rip: u64 = super::CRASH_RIP.load(Ordering::SeqCst);
     if let Some(target_id) = mgr.locate_domain_by_addr(fault_rip)
         .or_else(|| mgr.locate_domain_by_panic_msg())
     {
         let rollbacks = mgr.cascade_rollback(target_id, tick, fingerprint);
         if rollbacks > 0 {
+            if let Some(dom) = mgr.find(target_id) {
+                dom.persist_crash_fingerprint(fingerprint);
+            }
             recovery_panic_flag_clear();
             RECOVERY_ATTEMPTED.store(false, Ordering::SeqCst);
             return 0;
@@ -105,10 +115,11 @@ pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
     }
 
     for i in 0..count {
-        if let Some(_dom) = mgr.domains[i] {
-            let did = _dom.id;
+        if let Some(dom) = mgr.domains[i] {
+            let did = dom.id;
             let rollbacks = mgr.cascade_rollback(did, tick, fingerprint);
             if rollbacks > 0 {
+                dom.persist_crash_fingerprint(fingerprint);
                 recovery_panic_flag_clear();
                 RECOVERY_ATTEMPTED.store(false, Ordering::SeqCst);
                 return 0;

@@ -90,6 +90,23 @@ fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
     }
 }
 
+unsafe extern "C" fn net_save() {}
+unsafe extern "C" fn net_restore() {
+    crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
+    unsafe { extern "C" { fn lwip_init(); } lwip_init(); }
+    #[cfg(target_arch = "x86_64")]
+    { unsafe { extern "C" { fn qx_netif_register_e1000() -> i32; } qx_netif_register_e1000(); } }
+    #[cfg(target_arch = "aarch64")]
+    { unsafe { extern "C" { fn qx_netif_register_virtio() -> i32; } qx_netif_register_virtio(); } }
+    crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
+    crate::arch!(interrupt_enable());
+    unsafe { klog_init_msg("--- Network Recovered ---\0".as_ptr() as *const i8); }
+}
+unsafe extern "C" fn net_reset() {
+    crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
+    unsafe { klog_init_msg("--- Network Hard Reset ---\0".as_ptr() as *const i8); }
+}
+
 /// 设置失败状态
 fn set_failed() {
     G_INIT_STATE.store(InitState::Failed as u8, Ordering::Release);
@@ -212,6 +229,9 @@ pub extern "C" fn qx_net_init() {
                 klog_net_err("Failed to register virtio-net netif\0".as_ptr() as *const i8);
             }
         }
+
+        crate::kernel::barrier::recovery::recovery_domain_register(
+            "net", 5, &[], net_save, net_restore, net_reset);
     }
 }
 

@@ -65,7 +65,8 @@ impl RecoveryManager {
 
     pub fn tick(&self, current_tick: u64) {
         if self.count.load(Ordering::Relaxed) == 0 { return; }
-        for i in 0..self.count.load(Ordering::SeqCst) as usize {
+        let count = self.count.load(Ordering::SeqCst) as usize;
+        for i in 0..count {
             if let Some(dom) = self.domains[i] {
                 if dom.is_active() && current_tick >= dom.next_barrier_tick.load(Ordering::SeqCst) {
                     dom.barrier_generation.fetch_add(1, Ordering::SeqCst);
@@ -76,6 +77,28 @@ impl RecoveryManager {
                     if let Some(cb) = *dom.capture_cb.lock() {
                         unsafe { cb(); }
                     }
+                }
+                // Health monitoring: escalate to BSR if heartbeat lost
+                if !dom.check_health(current_tick) {
+                    let gap = current_tick.saturating_sub(
+                        dom.last_heartbeat.load(Ordering::SeqCst));
+                    crate::klog_ffi!(klog_ffi_warn,
+                        "[BARRIER] domain {} heartbeat lost ({gap} ticks), auto-resetting", dom.id);
+                    // Trigger soft recovery for unhealthy domain
+                    super::reset::config::set_reset_in_progress(true);
+                    super::reset::config::set_current_layer(super::reset::config::RecoveryLayer::Layer2);
+                    super::reset::bsr::freeze_all_domains();
+                    super::reset::bsr::rollback_to_init();
+                    super::reset::bsr::reset_devices();
+                    super::reset::bsr::unfreeze_all_domains();
+                    super::reset::bsr::clear_panic_state();
+                    return;
+                }
+                // Reset CPU quota per period
+                if dom.cpu_quota_period > 0
+                    && current_tick % dom.cpu_quota_period == 0
+                {
+                    dom.reset_quota();
                 }
             }
         }
@@ -88,6 +111,22 @@ impl RecoveryManager {
         } else {
             (0..self.count.load(Ordering::SeqCst) as usize)
                 .find_map(|i| self.domains[i].filter(|d| d.id == id))
+        }
+    }
+
+    pub fn check_boot_fingerprints(&self) {
+        let count = self.count.load(Ordering::SeqCst) as usize;
+        for i in 0..count {
+            if let Some(dom) = self.domains[i] {
+                let fp = dom.load_boot_fingerprint();
+                if fp != 0 && dom.consecutive_failures.load(Ordering::SeqCst) >= 3 {
+                    crate::klog_ffi!(klog_ffi_warn,
+                        "[BARRIER] domain {} has persistent crash fingerprint 0x{:X} ({} failures), starting in degraded mode",
+                        dom.id, fp, dom.consecutive_failures.load(Ordering::SeqCst));
+                    dom.set_state(super::types::DomainState::Degraded, Ordering::SeqCst);
+                    dom.clear_boot_fingerprint();
+                }
+            }
         }
     }
 
@@ -194,6 +233,12 @@ impl RecoveryManager {
                     let depended_by = dom.depended_by.lock();
                     for slot in depended_by.iter() {
                         if let Some(dep_id) = *slot {
+                            // BFS queue overflow guard
+                            if queue_tail >= MAX_RECOVERY_DOMAINS {
+                                crate::klog_ffi!(klog_ffi_warn,
+                                    "[BARRIER] cascade BFS queue overflow at dom={}", dep_id);
+                                break;
+                            }
                             let dep_idx = (0..count).find(|&i| {
                                 self.domains[i].map_or(false, |d| d.id == dep_id)
                             });

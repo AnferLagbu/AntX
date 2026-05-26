@@ -9,6 +9,10 @@ use crate::kernel::fs::hvfs::metaslab::*;
 use crate::kernel::fs::hvfs::arc::HvArc;
 use crate::kernel::fs::hvfs::checksum::HvChecksum;
 
+extern "C" {
+    fn timer_get_ticks() -> u64;
+}
+
 pub const HV_SPA_MAGIC: u32 = 0x48564653;
 pub const HV_UBERBLOCK_COUNT: usize = 128;
 pub const HV_UBERBLOCK_SECTOR: u32 = 0;
@@ -83,6 +87,10 @@ impl HvUberblock {
     }
 }
 
+const _UBERBLOCK_MAX_SIZE: usize = 512;
+const _ASSERT_UBERBLOCK_FITS: () =
+    assert!(core::mem::size_of::<HvUberblock>() <= _UBERBLOCK_MAX_SIZE);
+
 pub struct HvSpaConfig {
     pub name: [u8; HV_POOL_MAX_NAME],
     pub guid: u64,
@@ -156,7 +164,6 @@ impl HvSpa {
     }
 
     fn generate_guid() -> u64 {
-        extern "C" { fn timer_get_ticks() -> u64; }
         let t = unsafe { timer_get_ticks() };
         let mut h: u64 = 14695981039346656037;
         h ^= t;
@@ -333,7 +340,7 @@ impl HvSpa {
         sector_buf[..copy_len].copy_from_slice(&ub_bytes[..copy_len]);
         let _ = self.write_sector(sector, &sector_buf);
         self.last_sync_time.store(
-            unsafe { extern "C" { fn timer_get_ticks() -> u64; } timer_get_ticks() },
+            unsafe { timer_get_ticks() },
             Ordering::Relaxed
         );
     }
@@ -343,6 +350,9 @@ impl HvSpa {
             let sector = HV_UBERBLOCK_SECTOR + i;
             let mut sector_buf = [0u8; 512];
             if self.read_sector(sector, &mut sector_buf) != 0 { continue; }
+            // SAFETY: HvUberblock is repr(C) and _ASSERT_UBERBLOCK_FITS verifies
+            // it fits in the 512-byte sector buffer. read_unaligned is used because
+            // the buffer may not satisfy the struct's alignment requirements.
             let ub: HvUberblock = unsafe {
                 core::ptr::read_unaligned(sector_buf.as_ptr() as *const HvUberblock)
             };

@@ -11,10 +11,10 @@ const KERNEL_BASE: u64 = 0xFFFF800000000000;
 const KERNEL_BASE: u64 = 0;
 
 #[no_mangle]
-pub static mut user_entry_cr3: AtomicU64 = AtomicU64::new(0);
+pub static user_entry_cr3: AtomicU64 = AtomicU64::new(0);
 
 #[no_mangle]
-pub static mut user_entry_target: AtomicU64 = AtomicU64::new(0);
+pub static user_entry_target: AtomicU64 = AtomicU64::new(0);
 
 extern "C" {
     fn pmm_alloc_page() -> *mut core::ffi::c_void;

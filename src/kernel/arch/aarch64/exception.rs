@@ -435,11 +435,11 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
         // 重新装载定时器 (ARM Generic Timer 是一次性的)
         super::timer::reload(TIMER_INTERVAL_TICKS.load(Ordering::Relaxed));
 
-        static mut TIMER_COUNT_EL0: u64 = 0;
-        unsafe { TIMER_COUNT_EL0 += 1; }
-        if unsafe { TIMER_COUNT_EL0 } <= 5 {
+        static TIMER_COUNT_EL0: AtomicU64 = AtomicU64::new(0);
+        let el0count = TIMER_COUNT_EL0.fetch_add(1, Ordering::Relaxed) + 1;
+        if el0count <= 5 {
             crate::klog_info!(Boot, "TIMER IRQ (EL0) count={} ready={}", 
-                unsafe { TIMER_COUNT_EL0 },
+                el0count,
                 crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire));
         }
 
@@ -522,10 +522,10 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
 
     // 诊断: 记录所有 IRQ 以追踪崩溃点
     {
-        static mut IRQ_COUNT: u64 = 0;
-        unsafe { IRQ_COUNT += 1; }
-        if unsafe { IRQ_COUNT } <= 10 {
-            crate::klog_info!(Boot, "IRQ: intid={} count={}", intid, unsafe { IRQ_COUNT });
+        static IRQ_COUNT: AtomicU64 = AtomicU64::new(0);
+        let count = IRQ_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if count <= 10 {
+            crate::klog_info!(Boot, "IRQ: intid={} count={}", intid, count);
         }
     }
 
@@ -548,11 +548,11 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         // 重新装载定时器 (ARM Generic Timer 是一次性的)
         super::timer::reload(TIMER_INTERVAL_TICKS.load(Ordering::Relaxed));
 
-        static mut TIMER_COUNT: u64 = 0;
-        unsafe { TIMER_COUNT += 1; }
-        if unsafe { TIMER_COUNT } <= 5 {
+        static TIMER_COUNT: AtomicU64 = AtomicU64::new(0);
+        let tcount = TIMER_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if tcount <= 5 {
             crate::klog_info!(Boot, "TIMER IRQ count={} ready={}", 
-                unsafe { TIMER_COUNT },
+                tcount,
                 crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire));
         }
 

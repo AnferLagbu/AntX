@@ -102,15 +102,24 @@ impl UndoLog {
 
     fn emergency_compact(&mut self, keep_gen: u64) {
         let mut write = 0;
-        let mut seen_ptrs = [false; 64];
+        let mut seen_ptrs: [(usize, bool); 64] = [(0, false); 64];
+        let mut seen_count = 0;
+        // Scan from newest to oldest; retain latest entry per field_ptr
+        // below keep_gen (for gen < keep_gen), first-seen via pointer identity.
         for i in (0..self.count).rev() {
             if self.entries[i].generation < keep_gen {
-                let ptr_hash = (self.entries[i].field_ptr as usize) % 64;
-                if !seen_ptrs[ptr_hash] {
-                    seen_ptrs[ptr_hash] = true;
-                    self.entries[write] = self.entries[i];
-                    write += 1;
+                let ptr = self.entries[i].field_ptr as usize;
+                let mut found = false;
+                for j in 0..seen_count {
+                    if seen_ptrs[j].0 == ptr { found = true; break; }
                 }
+                if found { continue; }
+                if seen_count < 64 {
+                    seen_ptrs[seen_count] = (ptr, true);
+                    seen_count += 1;
+                }
+                self.entries[write] = self.entries[i];
+                write += 1;
             } else {
                 self.entries[write] = self.entries[i];
                 write += 1;
@@ -126,21 +135,26 @@ impl UndoLog {
     }
 
     fn compact(&mut self) {
+        self.compact_keeping(4);
+    }
+
+    pub fn compact_keeping(&mut self, keep_generations: usize) {
         if self.count == 0 { return; }
-        let mut gen_starts: [u64; 8] = [0; 8];
+        let mut gen_starts: [u64; 16] = [0; 16];
         let mut gen_count = 0;
         let mut prev_gen = u64::MAX;
         for i in 0..self.count {
             if self.entries[i].generation != prev_gen {
-                if gen_count < 8 {
+                if gen_count < 16 {
                     gen_starts[gen_count] = i as u64;
                     gen_count += 1;
                 }
                 prev_gen = self.entries[i].generation;
             }
         }
-        if gen_count > 4 {
-            let keep_from = gen_starts[gen_count - 4] as usize;
+        let keep = keep_generations.min(gen_count);
+        if gen_count > keep && keep > 0 {
+            let keep_from = gen_starts[gen_count - keep] as usize;
             let new_count = self.count - keep_from;
             for i in 0..new_count {
                 self.entries[i] = self.entries[keep_from + i];

@@ -21,8 +21,11 @@ pub struct RecoveryDomain {
     pub cpu_quota_max: u64,
     pub cpu_quota_period: u64,
     pub cpu_quota_consumed: AtomicU64,
+    pub cpu_quota_exceeded: AtomicU64,
     pub proc_limit_max: u32,
     pub proc_limit_current: AtomicU32,
+    pub last_heartbeat: AtomicU64,
+    pub heartbeat_max_gap: u64,
     pub undo: spin::Mutex<UndoLog>,
     pub capture_cb: spin::Mutex<Option<unsafe extern "C" fn()>>,
     pub rollback_cb: spin::Mutex<Option<unsafe extern "C" fn() -> bool>>,
@@ -55,8 +58,11 @@ impl RecoveryDomain {
             cpu_quota_max: 0,
             cpu_quota_period: 0,
             cpu_quota_consumed: AtomicU64::new(0),
+            cpu_quota_exceeded: AtomicU64::new(0),
             proc_limit_max: 0,
             proc_limit_current: AtomicU32::new(0),
+            last_heartbeat: AtomicU64::new(0),
+            heartbeat_max_gap: 0,
             undo: spin::Mutex::new(UndoLog::new()),
             capture_cb: spin::Mutex::new(None),
             rollback_cb: spin::Mutex::new(None),
@@ -228,5 +234,60 @@ impl RecoveryDomain {
             }
         }
         false
+    }
+
+    pub fn heartbeat(&self, tick: u64) {
+        self.last_heartbeat.store(tick, Ordering::SeqCst);
+    }
+
+    pub fn check_quota(&self) -> bool {
+        if self.cpu_quota_max == 0 || self.cpu_quota_period == 0 {
+            return true;
+        }
+        let consumed = self.cpu_quota_consumed.fetch_add(1, Ordering::Relaxed) + 1;
+        if consumed < self.cpu_quota_max {
+            return true;
+        }
+        self.cpu_quota_exceeded.fetch_add(1, Ordering::Relaxed);
+        false
+    }
+
+    pub fn reset_quota(&self) {
+        self.cpu_quota_consumed.store(0, Ordering::Relaxed);
+    }
+
+    pub fn check_health(&self, tick: u64) -> bool {
+        if self.heartbeat_max_gap == 0 {
+            return true;
+        }
+        let last = self.last_heartbeat.load(Ordering::SeqCst);
+        if last == 0 {
+            self.last_heartbeat.store(tick, Ordering::SeqCst);
+            return true;
+        }
+        let gap = tick.saturating_sub(last);
+        gap <= self.heartbeat_max_gap
+    }
+
+    pub fn is_quota_exceeded(&self) -> bool {
+        self.cpu_quota_exceeded.load(Ordering::Relaxed) > 0
+    }
+
+    pub fn check_proc_limit(&self) -> bool {
+        if self.proc_limit_max == 0 { return true; }
+        self.proc_limit_current.load(Ordering::SeqCst) < self.proc_limit_max
+    }
+
+    pub fn persist_crash_fingerprint(&self, fp: u64) {
+        if fp == 0 { return; }
+        self.last_crash_fingerprint.store(fp, Ordering::SeqCst);
+    }
+
+    pub fn load_boot_fingerprint(&self) -> u64 {
+        self.last_crash_fingerprint.load(Ordering::SeqCst)
+    }
+
+    pub fn clear_boot_fingerprint(&self) {
+        self.last_crash_fingerprint.store(0, Ordering::SeqCst);
     }
 }
