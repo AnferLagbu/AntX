@@ -125,7 +125,7 @@ impl HvChecksum {
             h3 = h3.wrapping_add(t2.rotate_left(31) ^ t3.rotate_left(7));
 
             i += 64;
-            if end - i == 0 && chunk.len() >= 56 { break; }
+            if i >= len { break; }
         }
 
         self.value[0] = h0;

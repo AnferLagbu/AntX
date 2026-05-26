@@ -373,9 +373,9 @@ fn probe_device(bus: u8, dev: u8, func: u8) -> Option<PciDevice> {
     let device_id    = read_config_word(bus, dev, func, REG_DEVICE_ID);
     let class_raw    = read_config_dword(bus, dev, func, REG_REVISION_ID);
     let revision_id  = (class_raw & 0xFF) as u8;
-    let class_code   = ((class_raw >> 16) & 0xFF) as u8;
-    let subclass_code = ((class_raw >> 8) & 0xFF) as u8;
-    let prog_if      = ((class_raw >> 24) & 0xFF) as u8;
+    let prog_if      = ((class_raw >> 8) & 0xFF) as u8;
+    let subclass_code = ((class_raw >> 16) & 0xFF) as u8;
+    let class_code   = ((class_raw >> 24) & 0xFF) as u8;
     let header_type  = read_config_byte(bus, dev, func, REG_HEADER_TYPE) & !HEADER_MULTIFUNC;
     let command      = read_config_word(bus, dev, func, REG_COMMAND);
     let status       = read_config_word(bus, dev, func, REG_STATUS);

@@ -73,12 +73,12 @@ impl OomDaemon {
                 let es = self.emergency_since.load(Ordering::Relaxed);
                 if es == 0 {
                     self.emergency_since.store(tick, Ordering::Relaxed);
-                    crate::klog_ffi!(klog_ffi_err,
+                    crate::klog_ffi!(klog_ffi_error,
                         "[OOMD] Memory pressure EMERGENCY: will terminate largest RSS process if not released");
                 } else if tick.saturating_sub(es) > OOMD_KILL_GRACE_TICKS {
                     self.terminated_count.fetch_add(1, Ordering::Relaxed);
                     self.emergency_since.store(0, Ordering::Relaxed);
-                    crate::klog_ffi!(klog_ffi_crit,
+                    crate::klog_ffi!(klog_ffi_error,
                         "[OOMD] Emergency timeout: killing largest RSS process (total killed: {})",
                         self.terminated_count.load(Ordering::Relaxed));
                 }

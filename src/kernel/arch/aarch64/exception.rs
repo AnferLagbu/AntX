@@ -22,12 +22,11 @@
 //!   +0x780: SError        EL0 in AArch32
 
 use core::arch::global_asm;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 /// 定时器中断间隔 (ticks), 在 boot 时由 timer::init() 设置
 pub static TIMER_INTERVAL_TICKS: AtomicU64 = AtomicU64::new(0);
-/// Scheduler 初始化完成标志, 仅在此之后才触发调度 tick
-pub static SCHEDULER_READY: AtomicBool = AtomicBool::new(false);
+
 
 // ============================================================================
 // 异常向量表 (global_asm)
@@ -462,7 +461,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
         }
 
         // 仅当 scheduler 已初始化时触发调度
-        if SCHEDULER_READY.load(Ordering::Acquire) {
+        if crate::kernel::proc::scheduler::SCHEDULER_READY.load(Ordering::Acquire) {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }
@@ -576,7 +575,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         }
 
         // 仅当 scheduler 已初始化时触发调度
-        if SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
+        if crate::kernel::proc::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }

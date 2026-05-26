@@ -422,3 +422,33 @@ impl Default for PageTableEntry {
         Self::new()
     }
 }
+
+/// 将帧缓冲物理地址映射到内核虚拟地址空间
+///
+/// 帧缓冲位于 PCI MMIO 区域（高位物理地址），启动页表的恒等映射
+/// 仅覆盖低 1GB 物理内存。此函数通过 VMM 动态建立 2MB 大页映射，
+/// 确保帧缓冲可被内核访问。
+///
+/// G1 阶段暂不配置 Write-Combining 缓存模式 (通过 PAT)，
+/// 这不会阻止像素正常显示；WC 优化将在 G3 阶段添加。
+pub fn map_framebuffer(phys_addr: u64, size: u64) -> *mut u8 {
+    use crate::kernel::mm::vmm::get_vmm;
+
+    let vmm = get_vmm();
+
+    let page_2m: u64 = 0x200000;
+    let start_page = phys_addr & !(page_2m - 1);
+    let end = phys_addr + size;
+    let end_page = (end + page_2m - 1) & !(page_2m - 1);
+
+    let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::GLOBAL;
+
+    let mut pa = start_page;
+    while pa < end_page {
+        let va = phys_to_virt(pa);
+        let _ = vmm.map_huge_page(VirtAddr(va), PhysAddr(pa), flags, PageSize::Size2M);
+        pa += page_2m;
+    }
+
+    phys_to_virt(phys_addr) as *mut u8
+}

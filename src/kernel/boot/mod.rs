@@ -10,6 +10,7 @@
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
+pub mod multiboot2_fb;
 
 pub const MULTIBOOT1_MAGIC: u32 = 0x2BADB002;
 pub const MULTIBOOT2_MAGIC: u32 = 0x36D76289;
@@ -200,6 +201,12 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
                 if max_addr > 0 {
                     mem_size = max_addr;
                 }
+            }
+            8 => {
+                multiboot2_fb::parse_framebuffer_tag(
+                    unsafe { tag_ptr.add(8) },
+                    tag_size,
+                );
             }
             _ => {}
         }

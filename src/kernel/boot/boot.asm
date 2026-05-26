@@ -37,7 +37,18 @@ multiboot2_header_start:
     dd MULTIBOOT2_ARCH_I386
     dd HEADER_LENGTH
     dd -(MULTIBOOT2_MAGIC + MULTIBOOT2_ARCH_I386 + HEADER_LENGTH)
-    
+
+    ; Tag: 请求帧缓冲 (type=5)
+    ; QEMU 的 Multiboot2 加载器会据此设置帧缓冲，
+    ; 并将信息写入 info 结构的 tag 8 (FRAMEBUFFER_INFO)
+    dw 5            ; type = 5 (FRAMEBUFFER)
+    dw 0            ; flags = 0 (不使用索引调色板)
+    dd 20           ; size = 20 (header: 8 + body: 12)
+    dd 0            ; 期望宽度 = 0 (由 QEMU 决定)
+    dd 0            ; 期望高度 = 0 (由 QEMU 决定)
+    dd 0            ; 期望位深 = 0 (由 QEMU 决定)
+
+    ; 结束标记 (type=0)
     dw 0
     dw 0
     dd 8
@@ -77,6 +88,8 @@ kernel_info:
 
 saved_multiboot_info:
     resd 1
+saved_multiboot_magic:
+    resd 1
 
 section .text
 global _start
@@ -87,6 +100,7 @@ _start:
     cli
 
     mov esi, ebx
+    mov edi, eax
 
     call .get_eip
 .get_eip:
@@ -94,6 +108,7 @@ _start:
     sub ebx, .get_eip - _start
 
     mov [ebx + (saved_multiboot_info - _start)], esi
+    mov [ebx + (saved_multiboot_magic - _start)], edi
 
     lea edi, [ebx + (pml4 - _start)]
     xor eax, eax
@@ -256,7 +271,8 @@ trampoline64_high:
     mov rsp, qword stack_top
 
     extern boot_set_multiboot_info
-    mov rdi, rsi
+    mov edi, dword [rbx + (saved_multiboot_magic - _start)]
+    mov esi, dword [rbx + (saved_multiboot_info - _start)]
     call boot_set_multiboot_info
 
     call kernel_init

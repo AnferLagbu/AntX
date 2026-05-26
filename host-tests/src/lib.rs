@@ -7,3 +7,4 @@ mod display;
 pub mod hvfs_mock;
 pub use hvfs_mock::kernel;
 pub mod hvfs;
+pub mod stress_test;

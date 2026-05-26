@@ -312,9 +312,8 @@ pub extern "C" fn kernel_init() {
 
     // 8. Scheduler
     crate::kernel::proc::scheduler::init();
+    crate::kernel::proc::scheduler_ex::init();
     crate::klog_boot_info!("Scheduler ready");
-    #[cfg(target_arch = "aarch64")]
-    crate::kernel::arch::aarch64::exception::SCHEDULER_READY.store(true, core::sync::atomic::Ordering::Release);
 
     // 9. VFS
     crate::kernel::fs::vfs::init();

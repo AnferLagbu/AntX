@@ -799,6 +799,9 @@ impl Scheduler {
 
 pub static SCHEDULER: Scheduler = Scheduler::new();
 
+pub static SCHEDULER_READY: AtomicBool = AtomicBool::new(false);
+
 pub fn init() {
     SCHEDULER.init();
+    SCHEDULER_READY.store(true, Ordering::Release);
 }
