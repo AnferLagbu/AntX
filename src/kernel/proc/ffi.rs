@@ -12,6 +12,7 @@ use super::process::{Process, PROCESS_TABLE};
 extern "C" {
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
     fn vmm_clone_user_page_table(parent_pml4: u64) -> u64;
+    fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64;
     fn vmm_destroy_page_table(pml4: u64);
 }
 
@@ -719,8 +720,8 @@ pub extern "C" fn proc_sleep_ms(ms: u64) {
     SCHEDULER.schedule();
 }
 
-/// ✅ fork 系统调用实现 (Fix 7)
-/// 深拷贝进程地址空间, 创建子进程并从同一位置继续执行
+/// ✅ fork 系统调用实现 (COW 共享物理页)
+/// 父进程物理页标记只读 + 2 引用，子进程共享
 /// 父进程返回 >0 (子进程 PID), 子进程返回 0
 /// 失败返回 0
 #[no_mangle]
@@ -741,13 +742,13 @@ pub extern "C" fn sys_fork() -> Pid {
     
     let parent = unsafe { &*parent_ptr };
     
-    // Clone page table
+    // COW: 共享物理页, 双方标记只读
     let parent_cr3 = parent.cr3.load(Ordering::SeqCst);
-    let child_cr3 = unsafe { vmm_clone_user_page_table(parent_cr3) };
+    let child_cr3 = unsafe { vmm_clone_user_page_table_cow(parent_cr3) };
     if child_cr3 == 0 {
         unsafe {
             extern "C" { fn klog_ffi_info(msg: *const u8); }
-            klog_ffi_info(b"[FORK] Page table clone failed\n\0".as_ptr());
+            klog_ffi_info(b"[FORK] COW page table clone failed\n\0".as_ptr());
         }
         return 0;
     }

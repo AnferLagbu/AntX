@@ -752,6 +752,7 @@ pub fn vmm_init() {
         vmm.init();
         vmm
     });
+    super::cow::cow_init();
 }
 
 pub fn get_vmm() -> &'static VirtualMemoryManager {

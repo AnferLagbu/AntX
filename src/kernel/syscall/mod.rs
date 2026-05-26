@@ -460,22 +460,39 @@ unsafe fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
 unsafe fn sys_brk(addr: u64) -> i64 {
     use core::sync::atomic::AtomicU64;
     static BRK: AtomicU64 = AtomicU64::new(0x400000 + 65536);
+
     if addr == 0 {
-        BRK.load(core::sync::atomic::Ordering::SeqCst) as i64
-    } else if addr > USER_ADDR_MAX {
-        Errno::ENOMEM.as_ret()
-    } else {
-        let current = BRK.load(core::sync::atomic::Ordering::SeqCst);
-        if addr > current {
-            let extra = addr - current;
-            let pages = (extra + 4095) / 4096;
-            extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
-            let ptr = pmm_alloc_pages(pages);
-            if ptr.is_null() { return Errno::ENOMEM.as_ret(); }
+        // 返回当前 brk (VMA 优先)
+        if let Some(mm) = crate::kernel::mm::vma::get_current_mm() {
+            return mm.brk as i64;
         }
-        BRK.store(addr, core::sync::atomic::Ordering::SeqCst);
-        addr as i64
+        return BRK.load(core::sync::atomic::Ordering::SeqCst) as i64;
     }
+
+    if addr > USER_ADDR_MAX {
+        return Errno::ENOMEM.as_ret();
+    }
+
+    // VMA 路径: 通过 MmStruct 扩展/收缩堆
+    if let Some(mm) = crate::kernel::mm::vma::get_current_mm() {
+        let mm_ptr = mm as *const crate::kernel::mm::vma::MmStruct as *mut crate::kernel::mm::vma::MmStruct;
+        match (*mm_ptr).set_brk(addr as usize) {
+            Ok(new_brk) => return new_brk as i64,
+            Err(_) => return Errno::ENOMEM.as_ret(),
+        }
+    }
+
+    // 回退: 全局静态 brk (无 MmStruct 时使用)
+    let current = BRK.load(core::sync::atomic::Ordering::SeqCst);
+    if addr > current {
+        let extra = addr - current;
+        let pages = (extra + 4095) / 4096;
+        extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+        let ptr = pmm_alloc_pages(pages);
+        if ptr.is_null() { return Errno::ENOMEM.as_ret(); }
+    }
+    BRK.store(addr, core::sync::atomic::Ordering::SeqCst);
+    addr as i64
 }
 
 unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {

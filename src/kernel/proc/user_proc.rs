@@ -284,7 +284,8 @@ impl UserProcManager {
             let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
             let rip_val = (*proc).entry;
             let rsp_val = (*proc).user_stack.load(Ordering::SeqCst);
-            let _cr3 = (*proc).cr3.load(Ordering::SeqCst);
+            #[cfg(target_arch = "aarch64")]
+            let cr3 = (*proc).cr3.load(Ordering::SeqCst);
             let _ss_val = GDT_USER_DATA | 0x03;
             let _cs_val = GDT_USER_CODE | 0x03;
             let _rflags_val: u64 = 0x3202;

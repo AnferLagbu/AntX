@@ -204,6 +204,9 @@ pub fn elf_load(
 
     result.brk_base = (max_vaddr + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
 
+    // 连接 MmStruct 到当前进程
+    crate::kernel::mm::vma::set_current_mm(mm as *const MmStruct);
+
     Ok(result)
 }
 

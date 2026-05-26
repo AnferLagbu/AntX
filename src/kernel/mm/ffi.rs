@@ -278,6 +278,15 @@ pub extern "C" fn vmm_clone_user_page_table(parent_pml4: u64) -> u64 {
     get_vmm().clone_user_page_table(parent_pml4).unwrap_or(0)
 }
 
+/// Clone a user page table using COW (Copy-on-Write)
+/// Shared pages are marked read-only in both parent and child.
+/// 
+/// C signature: uint64_t vmm_clone_user_page_table_cow(uint64_t parent_pml4)
+#[no_mangle]
+pub extern "C" fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64 {
+    super::cow::clone_user_page_table_cow(parent_pml4).unwrap_or(0)
+}
+
 /// Destroy a page table and free all associated memory
 /// 
 /// C signature: void vmm_destroy_page_table(uint64_t pml4)

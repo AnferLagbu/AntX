@@ -87,8 +87,6 @@ pub fn cow_mark_pte_readonly(pte: &mut u64) {
 
 /// COW 感知的页表克隆: 共享用户空间物理页, 双方标记只读
 /// 相比 deep copy 版本, 该版本不分配新物理页, 也不复制数据
-///
-/// 调用者负责在调用前后持有 VMM lock。
 pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
     if parent_pml4 == 0 {
         return None;
@@ -215,6 +213,14 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let count = cow_ref_count(old_frame);
 
     if count <= 1 {
+        if count == 1 {
+            // 独享此页: 清理 COW 条目，页面仍在用，不释放物理页
+            cow_lock();
+            let refs = unsafe { COW_REFS.as_mut().unwrap() };
+            refs.remove(&old_frame);
+            cow_unlock();
+        }
+
         let pte = unsafe {
             let pml4_v = PhysAddr(pml4).to_virt().0 as *const u64;
             let pml4e = pml4_v.add(virt_pml4_idx(page_aligned)).read_volatile();
@@ -251,8 +257,10 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
         );
     }
 
-    // 减少旧帧引用
-    cow_dec_ref(old_frame);
+    // 减少旧帧引用, 归零时释放物理页
+    if cow_dec_ref(old_frame) {
+        pmm_inst.free_page(PhysAddr(old_frame));
+    }
 
     // 映射新页 (可写)
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;

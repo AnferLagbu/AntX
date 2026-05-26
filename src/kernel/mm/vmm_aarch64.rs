@@ -573,3 +573,7 @@ pub fn vmm_init() {
 pub fn get_vmm() -> &'static Aarch64Vmm {
     GLOBAL_VMM.get().expect("[VMM] aarch64 VMM accessed before initialization")
 }
+
+pub fn get_kernel_pml4() -> u64 {
+    get_vmm().kernel_l0
+}
