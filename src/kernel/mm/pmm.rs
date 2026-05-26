@@ -360,6 +360,9 @@ impl PhysicalMemoryManager {
 
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
+            // SAFETY: bmp points to the bitmap (valid kernel VA from init).
+            // word index checked against bitmap_size.
+            // AtomicU32 operations are safe on properly aligned memory.
             unsafe {
                 let word = bit / 32;
                 if word < self.bitmap_size.get() {
@@ -372,6 +375,8 @@ impl PhysicalMemoryManager {
 
     fn clear_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
+            // SAFETY: bitmap pointer valid; word index bounds-checked;
+            // AtomicU32 aligned access.
             unsafe {
                 let word = bit / 32;
                 if word < self.bitmap_size.get() {
@@ -386,6 +391,7 @@ impl PhysicalMemoryManager {
         if let Some(bmp) = self.bitmap.get() {
             let word = bit / 32;
             if word < self.bitmap_size.get() {
+                // SAFETY: bitmap pointer valid; word index checked; AtomicU32 load
                 unsafe {
                     let p = bmp.as_ptr().add(word) as *const AtomicU32;
                     (*p).load(Ordering::Relaxed) & (1u32 << (bit % 32)) != 0
@@ -399,6 +405,7 @@ impl PhysicalMemoryManager {
         let mut free: u64 = 0;
         if let Some(bmp) = self.bitmap.get() {
             for w in 0..self.bitmap_size.get() {
+                // SAFETY: bmp points to valid bitmap; w < bitmap_size bounds-checked
                 unsafe {
                     let p = bmp.as_ptr().add(w) as *const AtomicU32;
                     free += (!(*p).load(Ordering::Relaxed)).count_ones() as u64;
@@ -430,6 +437,8 @@ impl PhysicalMemoryManager {
 
     #[inline]
     fn buddy_heads_ptr(&self) -> *mut *mut FreeNode {
+        // SAFETY: buddy_heads is UnsafeCell; accessed under bitmap lock;
+        // pointer to the array is stable after init_bitmap.
         unsafe { (*self.buddy_heads.get()).as_mut_ptr() }
     }
 
@@ -444,19 +453,20 @@ impl PhysicalMemoryManager {
             let buddy_pfn = pfn ^ (1u64 << order);
             if buddy_pfn >= total { break; }
 
-            // SAFETY: buddy_pfn is within bounds, meta array is valid
+            // SAFETY: buddy_pfn is within valid range; meta array entry is 1 byte
             let buddy_state = unsafe { *meta.add(buddy_pfn as usize) };
-            if buddy_state != order { break; } // buddy not free at same order
+            if buddy_state != order { break; }
 
             // Remove buddy from its free list
             self.buddy_list_remove(buddy_pfn, order);
+            // SAFETY: mark buddy as allocated in meta array
             unsafe { *meta.add(buddy_pfn as usize) = BUDDY_ALLOCATED; }
 
             pfn = core::cmp::min(pfn, buddy_pfn);
             order += 1;
         }
 
-        // Write final order metadata
+        // SAFETY: write final order into meta array
         unsafe { *meta.add(pfn as usize) = order; }
         (pfn, order)
     }
@@ -492,11 +502,13 @@ impl PhysicalMemoryManager {
     /// Pop a block from the free list head. Returns pfn.
     fn buddy_list_pop(&self, order: u8) -> Option<u64> {
         let heads = self.buddy_heads_ptr();
+        // SAFETY: heads points to stable array of FreeNode pointers
         let node = unsafe { *heads.add(order as usize) };
         if node.is_null() { return None; }
 
-        // SAFETY: node is a valid free page
+        // SAFETY: node is a valid free page; kernel identity-maps all phys memory
         let pfn = phys_to_page(unsafe { (node as u64) - KERNEL_BASE });
+        // SAFETY: updating doubly-linked list; node.next is valid or null
         unsafe {
             let next = (*node).next;
             *heads.add(order as usize) = next;
@@ -513,6 +525,7 @@ impl PhysicalMemoryManager {
         let mut avail_order: Option<u8> = None;
         for o in order..=MAX_BUDDY_ORDER {
             let heads = self.buddy_heads_ptr();
+            // SAFETY: heads array is valid; o in valid range
             if unsafe { !(*heads.add(o as usize)).is_null() } {
                 avail_order = Some(o);
                 break;
@@ -523,7 +536,7 @@ impl PhysicalMemoryManager {
         let pfn = self.buddy_list_pop(alloc_order)?;
         let meta = self.buddy_meta_ptr();
 
-        // Clear the freed order marker
+        // SAFETY: mark as allocated in meta array
         unsafe { *meta.add(pfn as usize) = BUDDY_ALLOCATED; }
 
         // Split downward until we reach the requested order
@@ -532,12 +545,11 @@ impl PhysicalMemoryManager {
         while cur_order > order {
             cur_order -= 1;
             let buddy_pfn = cur_pfn + (1u64 << cur_order);
-            // Push upper half as free
             self.buddy_list_push(buddy_pfn, cur_order);
+            // SAFETY: mark buddy as free at split order
             unsafe { *meta.add(buddy_pfn as usize) = cur_order; }
-            // Keep lower half
         }
-        // Mark allocated
+        // SAFETY: mark final allocation in meta
         unsafe { *meta.add(cur_pfn as usize) = BUDDY_ALLOCATED; }
 
         Some((cur_pfn, order))

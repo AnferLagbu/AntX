@@ -33,7 +33,9 @@ pub struct RwLock<T: ?Sized> {
     data: core::cell::UnsafeCell<T>,
 }
 
-// 安全保证: RwLock 提供同步访问
+// SAFETY: RwLock provides exclusive write access and shared read access
+// through its internal spinlock-protected state machine.
+// UnsafeCell provides interior mutability; access is gated by lock acquisition.
 unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
 unsafe impl<T: ?Sized + Send> Sync for RwLock<T> {}
 
@@ -58,6 +60,7 @@ impl<T> RwLock<T> {
         self.raw_read_lock();
         
         RwLockReadGuard {
+            // SAFETY: read lock acquired — shared access to T is safe
             data: unsafe { &*self.data.get() },
             _rwlock: &self.inner,
         }
@@ -67,6 +70,7 @@ impl<T> RwLock<T> {
     pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
         if self.raw_try_read() {
             Some(RwLockReadGuard {
+                // SAFETY: try_read succeeded — shared access to T is safe
                 data: unsafe { &*self.data.get() },
                 _rwlock: &self.inner,
             })
@@ -101,6 +105,7 @@ impl<T> RwLock<T> {
         self.raw_write_lock();
         
         RwLockWriteGuard {
+            // SAFETY: write lock acquired — exclusive mutable access to T
             data: unsafe { &mut *self.data.get() },
             _rwlock: &self.inner,
         }
@@ -110,6 +115,7 @@ impl<T> RwLock<T> {
     pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, T>> {
         if self.raw_try_write() {
             Some(RwLockWriteGuard {
+                // SAFETY: try_write succeeded — exclusive mutable access to T
                 data: unsafe { &mut *self.data.get() },
                 _rwlock: &self.inner,
             })
@@ -270,6 +276,7 @@ impl<T: Default> Default for RwLock<T> {
 /// 让出 CPU 给调度器
 fn scheduler_yield() {
     extern "C" { fn scheduler_yield(); }
+    // SAFETY: FFI call to scheduler; guaranteed to be a valid C-ABI function
     unsafe { scheduler_yield(); }
 }
 

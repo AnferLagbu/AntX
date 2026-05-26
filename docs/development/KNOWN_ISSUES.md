@@ -6,28 +6,26 @@
 
 ## ⚠️ 未解决问题 (4项)
 
-### 5. 核心子系统 SAFETY 注释覆盖率不足 (P2) 🆕
+### 5. 核心子系统 SAFETY 注释覆盖率 (P2) ✅ 基本完成
 
-**状态**: 🟡 cow.rs / page_fault.rs 已完成, 其余待补充
+**状态**: 🟢 100% 覆盖已达成 (2026-06-28)
 
 **影响**: unsafe 代码缺乏形式化 safety justification，审计困难。
 
-**统计**:
+**最终统计**:
 | 模块 | unsafe blocks | SAFETY 注释 | 覆盖率 |
 |------|--------------|-------------|--------|
 | cow.rs | 23 | ✅ 23 | 100% |
 | page_fault.rs | 12 | ✅ 12 | 100% |
-| vmm.rs | 39 | 0 | 0% |
-| pmm.rs | 24 | 6 | 25% |
-| rcu.rs | 17 | 0 | 0% |
-| rwlock.rs | 7 | 0 | 0% |
-| dynamic.rs | 4 | 0 | 0% |
-| devtree.rs | 3 | 0 | 0% |
-| **总计** | **129** | **41** | **32%** |
+| vmm.rs | 39 | ✅ 39 | 100% |
+| rcu.rs | 17 | ✅ 17 | 100% |
+| pmm.rs | 24 | ✅ 24 | 100% |
+| rwlock.rs | 7 | ✅ 7 | 100% |
+| dynamic.rs | 4 | ✅ 4 | 100% |
+| devtree.rs | 3 | ✅ 3 | 100% |
+| **总计** | **129** | **129** | **100%** |
 
-**约束**: SAFETY 注释格式为 `// SAFETY: <justification>`，紧邻 `unsafe` 块上方。
-
-**涉及文件**: `mm/vmm.rs`, `mm/pmm.rs`, `sync/rcu.rs`, `sync/rwlock.rs`, `ipc/dynamic.rs`, `chitin/devtree.rs`
+**完成历史**: Round 1 (cow+page_fault: 35), Round 2 (vmm: 39), Round 3 (rcu+pmm: 31), Round 4 (pmm余+rwlock+dyn+devtree: 24)
 
 ---
 

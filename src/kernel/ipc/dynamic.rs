@@ -205,10 +205,12 @@ impl DynIpcNamespace {
 static mut DYN_IPC: Option<DynIpcNamespace> = None;
 
 pub fn dyn_ipc_init() {
+    // SAFETY: single-threaded boot path; one-time initialization
     unsafe { DYN_IPC = Some(DynIpcNamespace::new()); }
 }
 
 pub fn get_dyn_ipc() -> &'static DynIpcNamespace {
+    // SAFETY: DYN_IPC is set by dyn_ipc_init before any concurrent access
     unsafe { DYN_IPC.as_ref().expect("DynIpcNamespace not initialized") }
 }
 

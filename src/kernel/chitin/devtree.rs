@@ -114,6 +114,8 @@ impl ChitinNode {
     }
 }
 
+// SAFETY: ChitinNode access is serialized by DEV_TREE lock (Mutex).
+// UnsafeCell is not needed because we use Mutex-protected collections.
 unsafe impl Send for ChitinNode {}
 unsafe impl Sync for ChitinNode {}
 
@@ -314,6 +316,8 @@ pub extern "C" fn devtree_create_node_c(
     let name_str = if name.is_null() {
         "unknown"
     } else {
+        // SAFETY: name is a C string from FFI; callers guarantee it's null-terminated
+        // and valid for the duration of this function.
         unsafe {
             let bytes = core::ffi::CStr::from_ptr(name);
             bytes.to_str().unwrap_or("unknown")
