@@ -90,6 +90,18 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
         return PfResult::SignalBus;
     }
 
+    // COW: 写已存在但只读的页
+    if info.write && info.present {
+        let pml4 = vmm::get_kernel_pml4();
+        return match super::cow::cow_handle_fault(pml4, info.fault_addr) {
+            Some(_) => {
+                unsafe { PAGE_FAULT_COUNT += 1; }
+                PfResult::Fixed
+            }
+            None => PfResult::SignalSegv,
+        };
+    }
+
     if info.user && is_stack_expansion_candidate(addr) {
         return handle_stack_expansion_simple(addr);
     }
