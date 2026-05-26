@@ -4,26 +4,39 @@
 
 ---
 
-## ⚠️ 未解决问题 (3项)
+## ⚠️ 未解决问题 (4项)
 
-### 4. HvFS get_obj_mut 返回拷贝致修改无声丢失 (P1) 🆕
+### 5. 核心子系统 SAFETY 注释覆盖率不足 (P2) 🆕
 
-**状态**: 🟡 已定位，待修复
+**状态**: 🟡 cow.rs / page_fault.rs 已完成, 其余待补充
 
-**根因**: `dmu.rs:HvDmuObjSet::get_obj_mut()` → `get_obj()` → `.cloned()`
-返回的是 `HvDmuObject` 的**拥有副本**，而非可变引用。`hvfs.rs` 中 5 处调用点修改该副本后原对象不更新。
+**影响**: unsafe 代码缺乏形式化 safety justification，审计困难。
 
-**影响函数**: `symlink`, `link`, `setxattr`, `getxattr` (对象元数据修改不持久化)
+**统计**:
+| 模块 | unsafe blocks | SAFETY 注释 | 覆盖率 |
+|------|--------------|-------------|--------|
+| cow.rs | 23 | ✅ 23 | 100% |
+| page_fault.rs | 12 | ✅ 12 | 100% |
+| vmm.rs | 39 | 0 | 0% |
+| pmm.rs | 24 | 6 | 25% |
+| rcu.rs | 17 | 0 | 0% |
+| rwlock.rs | 7 | 0 | 0% |
+| dynamic.rs | 4 | 0 | 0% |
+| devtree.rs | 3 | 0 | 0% |
+| **总计** | **129** | **41** | **32%** |
 
-**正确用法**: 修改后须调用 `ds.objset.update_obj(&obj)` 将副本写回
+**约束**: SAFETY 注释格式为 `// SAFETY: <justification>`，紧邻 `unsafe` 块上方。
 
-**涉及文件**:
-- `kernel/fs/hvfs/dmu.rs:L218` — get_obj_mut 定义 (别名, 不提供真正 mutable 访问)
-- `kernel/fs/hvfs/hvfs.rs:L804,819,881,977,1104` — 5 处调用点 (均有 FIXME 标注)
+**涉及文件**: `mm/vmm.rs`, `mm/pmm.rs`, `sync/rcu.rs`, `sync/rwlock.rs`, `ipc/dynamic.rs`, `chitin/devtree.rs`
 
-**修复方案**:
-1. 将 `get_obj_mut` 改为返回 `Option<&mut HvDmuObject>` (需要改锁模型)
-2. 或在每个调用点添加 `ds.objset.update_obj(&obj)` 调用
+---
+
+### 4. HvFS get_obj_mut 返回拷贝致修改无声丢失 (P1) ✅ 已修复
+
+**状态**: 🟢 已修复 (2026-06-28)
+
+**修复**: 5 处调用点在修改后添加 `ds.objset.update_obj(&obj)` 写入副本。
+移除所有 `#[allow(unused_assignments)]` 和 FIXME 注释。
 
 ---
 

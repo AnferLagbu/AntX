@@ -799,13 +799,11 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            // FIXME: get_obj_mut returns owned copy, modifications lost!
-            // Must use ds.objset.update_obj(&obj) to persist changes.
-            #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.obj_type = HvObjType::Symlink;
                 obj.size = target.len() as u64;
                 obj.dirty = true;
+                ds.objset.update_obj(&obj);
             }
             
             // 将目标路径写入对象数据
@@ -815,10 +813,9 @@ impl HvfsData {
             let comp_type = HvCompType::Off;
             
             if let Some(new_bp) = self.spa.allocate(target_bytes.len() as u64, cksum_type, comp_type, txg) {
-                // FIXME: get_obj_mut returns copy — use update_obj to persist
-                #[allow(unused_assignments, unused_variables)]
                 if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                     obj.bp = new_bp;
+                    ds.objset.update_obj(&obj);
                 }
             }
             
@@ -877,11 +874,10 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            // FIXME: get_obj_mut returns copy — use update_obj to persist
-            #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.link_count += 1;
                 obj.dirty = true;
+                ds.objset.update_obj(&obj);
             }
             
             // 添加到目录
@@ -973,8 +969,7 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            // FIXME: get_obj_mut returns copy — use update_obj to persist
-            #[allow(unused_assignments, unused_variables)]
+            // xattr 存储到对象的 data_hash 字段
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 // 简单实现：将xattr存储在对象的data_hash字段中
                 // 实际实现应该使用ZAP对象存储
@@ -985,6 +980,7 @@ impl HvfsData {
                     hash[name_hash] = Self::hash_xattr_value(value);
                     obj.data_hash = hash;
                     obj.dirty = true;
+                    ds.objset.update_obj(&obj);
                     return 0;
                 }
             }
@@ -1101,8 +1097,6 @@ impl HvfsData {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            // FIXME: get_obj_mut returns copy — use update_obj to persist
-            #[allow(unused_assignments, unused_variables)]
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 let name_hash = Self::hash_xattr_name(name);
                 if name_hash < 4 {
@@ -1111,6 +1105,7 @@ impl HvfsData {
                     hash[name_hash] = 0;
                     obj.data_hash = hash;
                     obj.dirty = true;
+                    ds.objset.update_obj(&obj);
                     return 0;
                 }
             }

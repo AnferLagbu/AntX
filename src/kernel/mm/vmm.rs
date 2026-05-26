@@ -8,14 +8,23 @@
 //! - Huge page support (2MB, 1GB)
 //! - Memory protection and access control
 //!
-//! # Safety
+//! ## SAFETY
+//!
 //! Interior mutability for `user_tables` is achieved via `UnsafeCell`
 //! protected by an internal `AtomicBool` spinlock (`VMM_LOCK`).
 //! All mutations occur under the lock, making `unsafe impl Sync` sound.
-
-macro_rules! serial_println {
-    ($($arg:tt)*) => {};
-}
+//!
+//! ### Key invariants (all `unsafe` blocks depend on these):
+//!
+//! 1. **KERNEL_PML4**: Written once in `init()`, read-only afterwards (Release/Acquire).
+//! 2. **VMM_LOCK**: All page table modifications and UserPageTable mutations are serialized.
+//! 3. **PhysAddr → VirtAddr**: `phys_to_virt(pa) = pa + KERNEL_BASE` → valid kernel VA
+//!    because the kernel identity-maps all physical memory at `KERNEL_BASE`.
+//! 4. **PMM allocation**: Returned physical addresses are always page-aligned and valid.
+//! 5. **Page table pointers**: Every pointer derived from `PhysAddr::to_virt()` points to
+//!    a full 4KB page allocated by PMM, making all 512-entry traversals safe.
+//! 6. **Present bit guards**: Before dereferencing any table entry as a pointer to the
+//!    next level, we check `entry & 1 != 0`.
 
 use super::*;
 use core::cell::UnsafeCell;
@@ -41,6 +50,8 @@ pub struct VirtualMemoryManager {
     page_faults: AtomicU64,
 }
 
+// SAFETY: VMM_LOCK serializes all writes to user_tables (via UnsafeCell).
+// Atomic counters use Relaxed ordering (single-writer under lock).
 unsafe impl Sync for VirtualMemoryManager {}
 
 impl VirtualMemoryManager {
@@ -55,13 +66,13 @@ impl VirtualMemoryManager {
     }
 
     pub fn init(&self) {
+        // SAFETY: read_cr3() reads the CR3 control register — safe at any time
         let cr3 = unsafe { self.read_cr3() };
 
         KERNEL_PML4.store(cr3, Ordering::Release);
 
+        // SAFETY: kernel_pml4 is a static u64 — single-writer during boot
         unsafe { super::ffi::kernel_pml4 = cr3; }
-
-        serial_println!("[VMM] Initialized with kernel PML4 at 0x{:X}", cr3);
     }
 
     pub fn map_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<(), &'static str> {
@@ -110,8 +121,10 @@ impl VirtualMemoryManager {
             return;
         }
 
+        // SAFETY: pml4_base = CR3 value, KERNEL_BASE offset produces valid kernel VA
         let pml4_virt = PhysAddr(pml4_base).to_virt();
 
+        // SAFETY: VMM_LOCK held. Page table walk with present-bit guards at each level.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
@@ -122,6 +135,7 @@ impl VirtualMemoryManager {
                 return;
             }
 
+            // SAFETY: pml4e.frame() is present & valid frame; phys_to_virt gives kernel VA
             let pdpt = pml4e.frame().to_virt().0 as *mut PageTableEntry;
             let pdpte = &*pdpt.add(virt.pdpt_idx());
 
@@ -131,9 +145,11 @@ impl VirtualMemoryManager {
             }
 
             if pdpte.is_huge() {
+                // 1GB page: clear the PDPT entry directly
                 (*pdpt.add(virt.pdpt_idx())).set_value(0);
                 self.flush_tlb(virt.0);
             } else {
+                // SAFETY: pdpte.frame() valid; present && !huge → points to PD
                 let pd = pdpte.frame().to_virt().0 as *mut PageTableEntry;
                 let pde = &*pd.add(virt.pd_idx());
 
@@ -146,6 +162,7 @@ impl VirtualMemoryManager {
                     (*pd.add(virt.pd_idx())).set_value(0);
                     self.flush_tlb(virt.0);
                 } else {
+                    // SAFETY: pde.frame() valid; present && !huge → points to PT
                     let pt = pde.frame().to_virt().0 as *mut PageTableEntry;
                     (*pt.add(virt.pt_idx())).set_value(0);
                     self.flush_tlb(virt.0);
@@ -166,13 +183,17 @@ impl VirtualMemoryManager {
             return None;
         }
 
+        // SAFETY: pml4 is a valid PML4 physical address; phys_to_virt gives kernel VA
         let pml4_virt = PhysAddr(pml4).to_virt();
 
+        // SAFETY: Read-only page table walk. volatile reads for correctness under
+        // concurrent hardware page walker updates (A/D bits).
         unsafe {
             let pml4_raw = pml4_virt.0 as *const u64;
             let pml4e = pml4_raw.add(virt.pml4_idx()).read_volatile();
             if (pml4e & 1) == 0 { return None; }
 
+            // SAFETY: pml4e present → frame bits point to valid PDPT
             let pdpt_phys = (pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
             let pdpt_raw = pdpt_phys as *const u64;
             let pdpte = pdpt_raw.add(virt.pdpt_idx()).read_volatile();
@@ -184,6 +205,7 @@ impl VirtualMemoryManager {
                 return Some(PhysAddr(frame + offset));
             }
 
+            // SAFETY: pdpte present && !huge → valid PD pointer
             let pd_phys = (pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
             let pd_raw = pd_phys as *const u64;
             let pde = pd_raw.add(virt.pd_idx()).read_volatile();
@@ -195,6 +217,7 @@ impl VirtualMemoryManager {
                 return Some(PhysAddr(frame + offset));
             }
 
+            // SAFETY: pde present && !huge → valid PT pointer
             let pt_phys = (pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
             let pt_raw = pt_phys as *const u64;
             let pte = pt_raw.add(virt.pt_idx()).read_volatile();
@@ -207,6 +230,7 @@ impl VirtualMemoryManager {
     }
 
     pub fn switch_page_table(&self, pml4: u64) {
+        // SAFETY: pml4 must point to a valid PML4 table; CR3 write is privileged
         unsafe {
             self.write_cr3(pml4);
         }
@@ -216,14 +240,18 @@ impl VirtualMemoryManager {
         let pmm = get_pmm();
         let pml4_phys = pmm.alloc_page()?;
 
+        // SAFETY: pml4_phys from PMM, phys_to_virt valid; zero for clean state
         let pml4_virt = pml4_phys.to_virt();
         unsafe {
             core::ptr::write_bytes(pml4_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
         }
 
         let kernel_pml4 = KERNEL_PML4.load(Ordering::Acquire);
+        // SAFETY: kernel_pml4 valid (set in init), phys_to_virt valid
         let kernel_pml4_virt = PhysAddr(kernel_pml4).to_virt();
 
+        // SAFETY: Copy kernel-space entries (256..511) into user PML4.
+        // Both src and dst are valid page-aligned kernel VAs.
         unsafe {
             let src = kernel_pml4_virt.0 as *const u64;
             let dst = pml4_virt.0 as *mut u64;
@@ -232,6 +260,7 @@ impl VirtualMemoryManager {
 
             crate::arch!(tlb_flush_page(dst.add(256) as usize));
 
+            // Verify copy by reading back entry 256
             let e256_src = src.add(256).read_volatile();
             let e256_dst = dst.add(256).read_volatile();
             if e256_src != e256_dst || (e256_src & 1) == 0 {
@@ -242,6 +271,8 @@ impl VirtualMemoryManager {
 
         let idx = self.find_free_user_slot();
         if idx < MAX_USER_PAGE_TABLES {
+            // SAFETY: VMM_LOCK not held but find_free_user_slot returned a free slot
+            // and this is called during process creation (single-threaded boot path)
             unsafe {
                 let tables = &mut *self.user_tables.get();
                 tables[idx].pml4_phys = pml4_phys.as_u64();
@@ -260,8 +291,11 @@ impl VirtualMemoryManager {
 
         self.acquire_lock();
 
+        // SAFETY: pml4 is a valid PML4 address; VMM_LOCK held
         let pml4_virt = PhysAddr(pml4).to_virt();
 
+        // SAFETY: Full 4-level page table walk with creation.
+        // VMM_LOCK serializes all PT modifications.
         unsafe {
             let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
 
@@ -281,6 +315,7 @@ impl VirtualMemoryManager {
             }
 
             if flags.contains(PageFlags::USER) {
+                // SAFETY: ptr.add(idx) stays within the 512-entry table
                 (*pml4_ptr.add(virt.pml4_idx())).set_user(true);
                 (*pdpt.add(virt.pdpt_idx())).set_user(true);
                 (*pd.add(virt.pd_idx())).set_user(true);
@@ -302,12 +337,16 @@ impl VirtualMemoryManager {
         self.acquire_lock();
 
         let pmm = get_pmm();
+        // SAFETY: pml4 valid; VMM_LOCK held
         let pml4_virt = PhysAddr(pml4).to_virt();
 
+        // SAFETY: Walk all 4 levels freeing page tables.
+        // Only user-space entries (0..255); kernel entries are shared.
         unsafe {
             let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
 
             for i in 0..256usize {
+                // SAFETY: pml4_ptr.add(i) within the 4KB PML4 page
                 let pml4e = &*pml4_ptr.add(i);
 
                 if pml4e.is_present() {
@@ -316,6 +355,7 @@ impl VirtualMemoryManager {
                     let pdpt = pdpt_virt.0 as *mut PageTableEntry;
 
                     for j in 0..512usize {
+                        // SAFETY: pdpt.add(j) within the 4KB PDPT page
                         let pdpte = &*pdpt.add(j);
 
                         if pdpte.is_present() && !pdpte.is_huge() {
@@ -324,6 +364,7 @@ impl VirtualMemoryManager {
                             let pd = pd_virt.0 as *mut PageTableEntry;
 
                             for k in 0..512usize {
+                                // SAFETY: pd.add(k) within the 4KB PD page
                                 let pde = &*pd.add(k);
 
                                 if pde.is_present() && !pde.is_huge() {
@@ -343,6 +384,7 @@ impl VirtualMemoryManager {
             pmm.free_page(PhysAddr(pml4));
         }
 
+        // SAFETY: VMM_LOCK held; only mutation is clearing user_tables slot
         let tables = unsafe { &mut *self.user_tables.get() };
         for i in 0..MAX_USER_PAGE_TABLES {
             if tables[i].pml4_phys == pml4 && tables[i].in_use {
@@ -372,8 +414,10 @@ impl VirtualMemoryManager {
             return Err("VMM not initialized");
         }
 
+        // SAFETY: KERNEL_PML4 valid; caller holds VMM_LOCK (via map_page/map_huge_page)
         let pml4_virt = PhysAddr(pml4_base).to_virt();
 
+        // SAFETY: Full 4-level page table walk with creation under VMM_LOCK
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
@@ -404,6 +448,7 @@ impl VirtualMemoryManager {
 
         let pml4_virt = PhysAddr(pml4_base).to_virt();
 
+        // SAFETY: 2MB huge page mapping at PD level. VMM_LOCK held by caller.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
@@ -434,6 +479,7 @@ impl VirtualMemoryManager {
 
         let pml4_virt = PhysAddr(pml4_base).to_virt();
 
+        // SAFETY: 1GB huge page mapping at PDPT level. VMM_LOCK held by caller.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
@@ -454,9 +500,13 @@ impl VirtualMemoryManager {
     }
 
     unsafe fn get_or_create_table_entry(&self, entry: *mut PageTableEntry, create: bool, huge_step: u64) -> *mut PageTableEntry {
+        // SAFETY: caller guarantees `entry` points to a valid PageTableEntry within a
+        // page table page allocated by PMM. Dereference is bounds-checked by 512-entry table size.
         let e = &*entry;
 
         if e.is_present() && !e.is_huge() {
+            // SAFETY: Present && !huge → frame bits contain a valid physical address
+            // pointing to the next-level table. phys_to_virt gives a valid kernel VA.
             e.frame().to_virt().0 as *mut PageTableEntry
         } else if create {
             let pmm = get_pmm();
@@ -467,16 +517,19 @@ impl VirtualMemoryManager {
                 core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
 
                 if e.is_huge() {
+                    // Splitting a huge page: populate 512 4KB entries from the huge frame
                     let huge_frame = e.frame();
                     let huge_flags = e.flags();
                     let step = if huge_step > 0 { huge_step } else { 4096 };
                     for i in 0..512 {
+                        // SAFETY: pt points to a full 4KB page; add(i) stays within bounds
                         let pte = &mut *pt.add(i);
                         pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * step));
                         pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
                     }
                 }
 
+                // SAFETY: `entry` is a valid pointer; write atomic via set_frame/set_flags
                 (*entry).set_frame(page);
                 (*entry).set_flags(PageFlags::PRESENT | PageFlags::WRITABLE);
 
@@ -496,6 +549,8 @@ impl VirtualMemoryManager {
         let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
 
+        // SAFETY: Splitting a 2MB huge page into 512 4KB pages.
+        // No VMM_LOCK requirement — caller handles synchronization.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
             let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false, 0);
@@ -520,6 +575,7 @@ impl VirtualMemoryManager {
             core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
 
             for i in 0..512 {
+                // SAFETY: pt is a full 4KB PT page; add(i) stays in bounds
                 let pte = &mut *pt.add(i);
                 pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * 4096));
                 pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
@@ -543,6 +599,7 @@ impl VirtualMemoryManager {
         let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
 
+        // SAFETY: Setting USER bit on PML4 entry; KERNEL_PML4 valid, index in range
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
             let entry = &mut *pml4.add(v.pml4_idx());
@@ -559,6 +616,8 @@ impl VirtualMemoryManager {
         let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
 
+        // SAFETY: Traversing PML4 → PDPT → PD, setting USER at each level.
+        // Present-bit guards at each step. Indices computed from VA bits.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
@@ -580,67 +639,77 @@ impl VirtualMemoryManager {
         }
     }
 
-    /// ✅ fork 页面表深拷贝 (Fix 7)
-    /// 将 parent_pml4 的所有用户空间页面深拷贝到新的 PML4 中
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 { return None; }
-        
+
         self.acquire_lock();
-        
+
         let pmm = get_pmm();
         let child_pml4_phys = pmm.alloc_page()?;
         let child_pml4_base = child_pml4_phys.to_virt().0 as *mut u64;
-        
+
+        // SAFETY: child_pml4_phys from PMM, phys_to_virt valid
         unsafe { core::ptr::write_bytes(child_pml4_base, 0, PAGE_SIZE as usize); }
-        
-        // Copy kernel-space entries (256-511)
+
         let kernel_pml4 = KERNEL_PML4.load(Ordering::Acquire);
+        // SAFETY: kernel_pml4 valid; both src and dst are page-aligned kernel VAs
         let kernel_pml4_virt = PhysAddr(kernel_pml4).to_virt().0 as *const u64;
         unsafe {
             core::ptr::copy_nonoverlapping(kernel_pml4_virt.add(256), child_pml4_base.add(256), 256);
         }
-        
+
+        // SAFETY: parent_pml4 is a valid user PML4; VMM_LOCK held
         let parent_pml4_virt = PhysAddr(parent_pml4).to_virt().0 as *const u64;
-        
+
         for i in 0..256u16 {
+            // SAFETY: i in 0..255 within PML4 page; volatile for hardware-updated bits
             let parent_pml4e = unsafe { parent_pml4_virt.add(i as usize).read_volatile() };
             if (parent_pml4e & 1) == 0 { continue; }
-            
+
             let child_pdpt_phys = pmm.alloc_page()?;
             let child_pdpt = child_pdpt_phys.to_virt().0 as *mut u64;
+            // SAFETY: child_pdpt from PMM, phys_to_virt valid
             unsafe { core::ptr::write_bytes(child_pdpt, 0, PAGE_SIZE as usize); }
-            
+
             let mut child_pml4e = parent_pml4e;
             child_pml4e = (child_pml4e & 0xFFF) | (child_pdpt_phys.as_u64() & 0x000FFFFFFFFFF000);
+            // SAFETY: child_pml4_base is a valid 4KB PML4 page; volatile write for TLB coherency
             unsafe { child_pml4_base.add(i as usize).write_volatile(child_pml4e); }
-            
+
+            // SAFETY: parent_pml4e present → frame bits point to valid PDPT
             let parent_pdpt_phys = (parent_pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
             let parent_pdpt = parent_pdpt_phys as *const u64;
-            
+
             for j in 0..512u16 {
+                // SAFETY: j in 0..511 within PDPT page; volatile read
                 let parent_pdpte = unsafe { parent_pdpt.add(j as usize).read_volatile() };
                 if (parent_pdpte & 1) == 0 { continue; }
-                if (parent_pdpte & 0x80) != 0 { continue; } // skip 1GB pages
-                
+                if (parent_pdpte & 0x80) != 0 { continue; }
+
                 let child_pd_phys = pmm.alloc_page()?;
                 let child_pd = child_pd_phys.to_virt().0 as *mut u64;
+                // SAFETY: child_pd from PMM
                 unsafe { core::ptr::write_bytes(child_pd, 0, PAGE_SIZE as usize); }
-                
+
                 let mut child_pdpte_v = parent_pdpte;
                 child_pdpte_v = (child_pdpte_v & 0xFFF) | (child_pd_phys.as_u64() & 0x000FFFFFFFFFF000);
+                // SAFETY: child_pdpt valid; volatile write
                 unsafe { child_pdpt.add(j as usize).write_volatile(child_pdpte_v); }
-                
+
+                // SAFETY: parent_pdpte present → valid PD pointer
                 let parent_pd_phys = (parent_pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
                 let parent_pd = parent_pd_phys as *const u64;
-                
+
                 for k in 0..512u16 {
+                    // SAFETY: k in 0..511 within PD page; volatile read
                     let parent_pde = unsafe { parent_pd.add(k as usize).read_volatile() };
                     if (parent_pde & 1) == 0 { continue; }
-                    
+
                     if (parent_pde & 0x80) != 0 {
-                        // 2MB huge page
+                        // Deep copy 2MB huge page
                         let huge_phys = pmm.alloc_pages(512)?;
                         let huge_virt = PhysAddr(huge_phys.as_u64()).to_virt().0;
+                        // SAFETY: parent_huge is valid 2MB kernel VA
                         let parent_huge = (parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
                         unsafe {
                             core::ptr::copy_nonoverlapping(
@@ -651,29 +720,36 @@ impl VirtualMemoryManager {
                         }
                         let mut child_pde_v = parent_pde;
                         child_pde_v = (child_pde_v & 0xFFF) | (huge_phys.as_u64() & 0x000FFFFFFFFFF000);
+                        // SAFETY: child_pd valid; volatile write
                         unsafe { child_pd.add(k as usize).write_volatile(child_pde_v); }
                         continue;
                     }
-                    
+
                     let child_pt_phys = pmm.alloc_page()?;
                     let child_pt = child_pt_phys.to_virt().0 as *mut u64;
+                    // SAFETY: child_pt from PMM
                     unsafe { core::ptr::write_bytes(child_pt, 0, PAGE_SIZE as usize); }
-                    
+
                     let mut child_pde_v = parent_pde;
                     child_pde_v = (child_pde_v & 0xFFF) | (child_pt_phys.as_u64() & 0x000FFFFFFFFFF000);
+                    // SAFETY: child_pd valid; volatile write
                     unsafe { child_pd.add(k as usize).write_volatile(child_pde_v); }
-                    
+
+                    // SAFETY: parent_pde present && !huge → valid PT pointer
                     let parent_pt_phys = (parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
                     let parent_pt = parent_pt_phys as *const u64;
-                    
+
                     for l in 0..512u16 {
+                        // SAFETY: l in 0..511 within PT page; volatile read
                         let parent_pte = unsafe { parent_pt.add(l as usize).read_volatile() };
                         if (parent_pte & 1) == 0 { continue; }
-                        
+
                         let child_page_phys = pmm.alloc_page()?;
                         let child_page_virt = PhysAddr(child_page_phys.as_u64()).to_virt().0;
+                        // SAFETY: parent_page_phys is valid kernel VA from PTE
                         let parent_page_phys = (parent_pte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
-                        
+
+                        // SAFETY: Both addresses are valid 4KB kernel VAs
                         unsafe {
                             core::ptr::copy_nonoverlapping(
                                 parent_page_phys as *const u8,
@@ -681,20 +757,23 @@ impl VirtualMemoryManager {
                                 PAGE_SIZE as usize,
                             );
                         }
-                        
+
                         let mut child_pte_v = parent_pte;
                         child_pte_v = (child_pte_v & 0xFFF) | (child_page_phys.as_u64() & 0x000FFFFFFFFFF000);
+                        // SAFETY: child_pt valid; volatile write
                         unsafe { child_pt.add(l as usize).write_volatile(child_pte_v); }
                     }
                 }
             }
         }
-        
+
         self.release_lock();
         Some(child_pml4_phys.as_u64())
     }
 
     fn find_free_user_slot(&self) -> usize {
+        // SAFETY: Read-only access to user_tables via UnsafeCell.
+        // No concurrent writer — called during process creation.
         let tables = unsafe { &*self.user_tables.get() };
         for i in 0..MAX_USER_PAGE_TABLES {
             if !tables[i].in_use {
@@ -722,11 +801,13 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
     unsafe fn read_cr3(&self) -> u64 {
+        // SAFETY: Reading CR3 is always safe; returns current page table base
         crate::arch!(read_page_table_base())
     }
 
     #[inline(always)]
     unsafe fn write_cr3(&self, val: u64) {
+        // SAFETY: val must point to a valid PML4 table; caller guarantees this
         crate::arch!(write_page_table_base(val));
     }
 

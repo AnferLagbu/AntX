@@ -47,6 +47,8 @@ struct PerCpuRcu {
     need_callback_process: AtomicBool,
 }
 
+// SAFETY: PerCpuRcu accessed only via interrupt-disabled paths;
+// UnsafeCell provides interior mutability for callback lists.
 unsafe impl Sync for PerCpuRcu {}
 
 const GP_IDLE: u32 = 0;
@@ -143,12 +145,16 @@ pub unsafe fn call_rcu(head: *mut RcuHead, func: unsafe fn(*mut RcuHead)) {
 
     let flags = crate::kernel::sync::spinlock::disable_interrupts();
 
+    // SAFETY: Interrupts disabled — callback list manipulation is atomic
     let tail = unsafe { *RCU_DATA.callback_tail.get() };
     if !tail.is_null() {
+        // SAFETY: tail != null → dereference safe; writing next ptr
         unsafe { (*tail).next = head; }
     } else {
+        // SAFETY: Callbacks list empty — write to head via UnsafeCell
         unsafe { *RCU_DATA.callbacks.get() = head; }
     }
+    // SAFETY: RCU_DATA.callback_tail is an UnsafeCell, interrupts disabled
     unsafe { *RCU_DATA.callback_tail.get() = head; }
 
     RCU_DATA.callback_count.fetch_add(1, Ordering::Relaxed);
@@ -173,7 +179,9 @@ pub fn process_callbacks() {
 
     let flags = crate::kernel::sync::spinlock::disable_interrupts();
 
+    // SAFETY: Interrupts disabled — exclusive access to callback list
     let head = unsafe { *RCU_DATA.callbacks.get() };
+    // SAFETY: Clearing callbacks under interrupt lock
     unsafe {
         *RCU_DATA.callbacks.get() = ptr::null_mut();
         *RCU_DATA.callback_tail.get() = ptr::null_mut();
@@ -185,10 +193,12 @@ pub fn process_callbacks() {
 
     let mut cur = head;
     while !cur.is_null() {
+        // SAFETY: cur was in the callback linked list, each node is valid
         let next = unsafe { (*cur).next };
         let func = unsafe { (*cur).func };
 
         if let Some(f) = func {
+            // SAFETY: f is the callback registered by call_rcu; cur is the RcuHead
             unsafe { f(cur); }
         }
 

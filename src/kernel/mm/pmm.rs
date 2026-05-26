@@ -172,6 +172,7 @@ impl PhysicalMemoryManager {
         let bitmap_aligned = (bitmap_phys + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let bitmap_virt = bitmap_aligned + KERNEL_BASE;
 
+// SAFETY: bitmap_virt is phys_to_virt(PM) + KERNEL_BASE — valid kernel VA
         unsafe {
             core::ptr::write_bytes(bitmap_virt as *mut u8, 0, bitmap_bytes);
         }
@@ -197,6 +198,7 @@ impl PhysicalMemoryManager {
             Ordering::Relaxed,
         );
 
+        // SAFETY: buddy_meta_virt = buddy_meta_phys + KERNEL_BASE — valid kernel VA
         unsafe {
             core::ptr::write_bytes(buddy_meta_virt as *mut u8, BUDDY_ALLOCATED, buddy_meta_bytes);
         }
