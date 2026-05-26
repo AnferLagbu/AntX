@@ -15,10 +15,7 @@
 // 1. 全局单例模式 - 内核中常见且必要
 #![allow(static_mut_refs)]           // 32个: TRUST_CHAIN, TOKEN_MANAGER 等全局可变静态
 
-// 2. 第三方库配置 - lwIP 的 feature flags
-#![allow(unexpected_cfgs)]           // ~35个: snmp, mdns, ipv6, sntp 等
-
-// 3. C 语言兼容性 - 与原有 C 代码保持一致的命名风格
+// 2. C 语言兼容性 - 与原有 C 代码保持一致的命名风格
 #![allow(non_upper_case_globals)]   // 函数名: kfree, kmalloc 等
 #![allow(non_camel_case_types)]     // 类型名: u8_t, u32_t 等
 #![allow(non_snake_case)]            // 变量名: io_port 等
@@ -342,9 +339,8 @@ pub extern "C" fn kernel_init() {
             crate::kernel::chitin::ChitinProto::Net) as u64;
         let input_count = crate::kernel::chitin::chitin_count_by_proto(
             crate::kernel::chitin::ChitinProto::Input) as u64;
-        let driver_count = crate::kernel::driver::driver_count() as u64;
-        crate::klog_boot_info!("Chitin: {} device(s) [blk={} net={} input={}] | DriverRegistry: {} driver(s)",
-            chitin_count, block_count, net_count, input_count, driver_count);
+        crate::klog_boot_info!("Chitin: {} device(s) [blk={} net={} input={}]",
+            chitin_count, block_count, net_count, input_count);
     }
 
     // HvFS + 磁盘挂载 — BlockDevice 注册表自动发现多块磁盘 (支持 ATA/NVMe/virtio-blk)

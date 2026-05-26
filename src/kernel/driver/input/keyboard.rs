@@ -18,8 +18,8 @@
 //! # Safety
 //! 此模块直接操作 PS/2 控制器硬件。
 
-use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use super::framework::{outb, inb};
+use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
+use crate::kernel::driver::framework::{outb, inb};
 use alloc::boxed::Box;
 use spin::Mutex;
 

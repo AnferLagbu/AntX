@@ -135,8 +135,13 @@ pub fn storage_init() -> framework::Result<()> {
         crate::kernel::driver::storage::ata::ata_init();
     }
 
-    // 注册 ATA 控制器到全局驱动表
-    let _ = super::framework::driver_register(&crate::kernel::driver::storage::ata::AtaController::new());
+    crate::kernel::chitin::chitin_register_driver(
+        "ata_controller",
+        crate::kernel::chitin::ChitinProto::Block,
+        None,
+        None,
+        alloc::boxed::Box::new(crate::kernel::driver::storage::ata::AtaController::new()),
+    );
 
     // Step 3.5: 将 ATA 磁盘注册到 BlockDevice 全局表 + 几丁质
     {

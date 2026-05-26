@@ -1,6 +1,6 @@
 use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
 use crate::kernel::driver::framework::{
-    DriverError, DeviceType, DeviceInfo, allocate_device_id, Result,
+    DriverError, DeviceType, DeviceInfo, Result,
 };
 use crate::kernel::driver::input::keyboard::{
     SCANCODE_TABLE, SHIFT_TABLE, get_special_key, SpecialKey,
@@ -46,17 +46,6 @@ fn driver_device_info_builder() -> TestResult {
         .with_irq(4);
     assert_eq_test!(info.io_base, Some(0x3F8), "io_base");
     assert_eq_test!(info.irq, Some(4), "irq");
-    TestResult::Pass
-}
-
-fn driver_id_allocation() -> TestResult {
-    let id1 = allocate_device_id();
-    let id2 = allocate_device_id();
-    let id3 = allocate_device_id();
-    check!(id2 > id1, "id2 > id1");
-    check!(id3 > id2, "id3 > id2");
-    assert_eq_test!(id2 - id1, 1, "consecutive ids");
-    assert_eq_test!(id3 - id2, 1, "consecutive ids");
     TestResult::Pass
 }
 
@@ -258,7 +247,6 @@ pub fn register_tests() {
     r.register("driver::framework", "device_types", driver_device_types as TestFn);
     r.register("driver::framework", "device_info_creation", driver_device_info_creation as TestFn);
     r.register("driver::framework", "device_info_builder", driver_device_info_builder as TestFn);
-    r.register("driver::framework", "id_allocation", driver_id_allocation as TestFn);
     r.register("driver::framework", "result_type", driver_result_type as TestFn);
     r.register("driver::keyboard", "scancode_table", keyboard_scancode_table as TestFn);
     r.register("driver::keyboard", "shift_table", keyboard_shift_table as TestFn);

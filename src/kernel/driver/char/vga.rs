@@ -24,7 +24,7 @@
 //! # Safety
 //! 此模块直接操作 VGA 显存和硬件端口。
 
-use super::framework::{Driver, DeviceType, Result, DeviceInfo};
+use crate::kernel::driver::framework::{Driver, DeviceType, Result, DeviceInfo};
 
 // ============================================================================
 // 硬件常量定义

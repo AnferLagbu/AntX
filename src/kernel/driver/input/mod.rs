@@ -18,10 +18,10 @@ pub mod keyboard;
 
 pub use keyboard::KeyboardDriver;
 
-pub fn input_init() -> framework::Result<()> {
+pub fn input_init() {
     keyboard::keyboard_init();
-    let _ = super::framework::driver_register(&keyboard::KeyboardDriver::new());
-    Ok(())
+    crate::kernel::chitin::chitin_register_driver(
+        "ps2_keyboard", crate::kernel::chitin::ChitinProto::Input, None, None,
+        alloc::boxed::Box::new(keyboard::KeyboardDriver::new()),
+    );
 }
-
-use super::framework;

@@ -41,14 +41,17 @@ pub use vga::{
 // ============================================================================
 
 /// 初始化字符设备子系统
-pub fn char_init() -> framework::Result<()> {
+pub fn char_init() {
     vga::vga_init();
     serial::serial_init(0);
-    let _ = super::framework::driver_register(&vga::VgaDriver::new());
+    crate::kernel::chitin::chitin_register_driver(
+        "vga", crate::kernel::chitin::ChitinProto::Char, None, None,
+        alloc::boxed::Box::new(vga::VgaDriver::new()),
+    );
     if let Some(com1) = serial::SerialPort::new(0) {
-        let _ = super::framework::driver_register(&com1);
+        crate::kernel::chitin::chitin_register_driver(
+            "serial0", crate::kernel::chitin::ChitinProto::Char, Some(0x3F8), Some(4),
+            alloc::boxed::Box::new(com1),
+        );
     }
-    Ok(())
 }
-
-use super::framework;

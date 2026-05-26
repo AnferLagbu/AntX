@@ -28,8 +28,8 @@
 //! # Safety
 //! 此模块直接操作串口硬件端口。
 
-use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use super::framework::{outb, inb};
+use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
+use crate::kernel::driver::framework::{outb, inb};
 
 // ============================================================================
 // 硬件常量定义

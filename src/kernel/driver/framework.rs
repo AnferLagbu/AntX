@@ -1,30 +1,25 @@
-//! 设备驱动框架 (Driver Framework)
+//! 设备驱动基础设施 (Driver Infrastructure)
 //!
-//! 提供统一的设备驱动接口和基础设施：
-//! - **Driver Trait**: 所有驱动的统一抽象
-//! - **Device Manager**: 设备注册和查找
-//! - **IO Port 抽象**: 安全的端口操作
+//! 提供统一的设备驱动接口和底层操作:
+//! - **Driver Trait**: 所有驱动的统一接口契约
+//! - **IO Port 抽象**: 安全的端口/MMIO操作
+//! - **DriverError**: 统一的错误码体系
 //!
-//! ## 设计理念
+//! 设备注册/发现/管理统一由 [Chitin 框架](super::chitin) 提供。
+//!
+//! ## 架构
 //!
 //! ```text
-//! Driver Trait (多态)
-//! ├── AtaDriver      (ATA/IDE 磁盘)
-//! ├── KeyboardDriver  (PS/2 键盘)
-//! ├── SerialDriver    (COM 串口)
-//! └── PciDriver      (PCI 总线)
+//! Driver Trait (接口契约, 本模块)
+//!   ├── init() / shutdown()  ── 运行时行为
+//!   ├── name() / device_type() ── 元信息
+//!   └── is_ready() / reset() ── 状态查询
 //!
-//! Device Manager
-//!   └── Registry: 驱动实例注册表
-//!       ├── by_name("ata")
-//!       ├── by_type(DeviceType::Block)
-//!       └── by_id(0x01)  // 设备编号
+//! Chitin 框架 (管理层, chitin 模块)
+//!   ├── chitin_register_driver() ── 注册驱动到全局表
+//!   ├── chitin_init_all() ── 批量初始化
+//!   └── chitin_find_by_*() ── 设备发现
 //! ```
-
-use core::sync::atomic::{AtomicU32, Ordering};
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
-use spin::Mutex;
 
 // ============================================================================
 // IO 端口操作安全封装
@@ -158,6 +153,48 @@ impl core::fmt::Display for DeviceType {
 }
 
 // ============================================================================
+// 设备描述信息 (纯数据结构, 注册管理由 Chitin 负责)
+// ============================================================================
+
+/// 设备描述信息 (元数据容器, 不含注册逻辑)
+///
+/// 注册/发现/管理统一由 Chitin 框架处理。
+/// 此结构体保留用于驱动内部的元数据存储和向后兼容。
+#[derive(Debug, Clone)]
+pub struct DeviceInfo {
+    pub id: u32,
+    pub name: &'static str,
+    pub device_type: DeviceType,
+    pub initialized: bool,
+    pub io_base: Option<u16>,
+    pub irq: Option<u8>,
+}
+
+impl DeviceInfo {
+    pub fn new(name: &'static str, device_type: DeviceType) -> Self {
+        static NEXT_INFO_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1);
+        Self {
+            id: NEXT_INFO_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed),
+            name,
+            device_type,
+            initialized: false,
+            io_base: None,
+            irq: None,
+        }
+    }
+
+    pub fn with_io_base(mut self, base: u16) -> Self {
+        self.io_base = Some(base);
+        self
+    }
+
+    pub fn with_irq(mut self, irq: u8) -> Self {
+        self.irq = Some(irq);
+        self
+    }
+}
+
+// ============================================================================
 // 统一驱动 Trait
 // ============================================================================
 
@@ -216,99 +253,6 @@ pub trait Driver {
 }
 
 // ============================================================================
-// 设备管理器 (Registry)
-// ============================================================================
-
-/// 全局设备 ID 分配器
-static NEXT_DEVICE_ID: AtomicU32 = AtomicU32::new(1);
-
-/// 分配新的设备 ID
-pub(crate) fn allocate_device_id() -> u32 {
-    NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed)
-}
-
-/// 设备描述信息
-#[derive(Debug, Clone)]
-pub struct DeviceInfo {
-    /// 唯一设备 ID
-    pub id: u32,
-    /// 设备名称
-    pub name: &'static str,
-    /// 设备类型
-    pub device_type: DeviceType,
-    /// 是否已初始化
-    pub initialized: bool,
-    /// I/O 基地址 (如果有)
-    pub io_base: Option<u16>,
-    /// IRQ 号 (如果有)
-    pub irq: Option<u8>,
-}
-
-impl DeviceInfo {
-    /// 创建新的设备信息
-    pub fn new(name: &'static str, device_type: DeviceType) -> Self {
-        Self {
-            id: allocate_device_id(),
-            name,
-            device_type,
-            initialized: false,
-            io_base: None,
-            irq: None,
-        }
-    }
-
-    /// 设置 I/O 基地址
-    pub fn with_io_base(mut self, base: u16) -> Self {
-        self.io_base = Some(base);
-        self
-    }
-
-    /// 设置 IRQ
-    pub fn with_irq(mut self, irq: u8) -> Self {
-        self.irq = Some(irq);
-        self
-    }
-}
-
-// ============================================================================
-// 全局驱动注册表 (DriverRegistry)
-// ============================================================================
-
-pub static DRIVER_REGISTRY: Mutex<BTreeMap<u32, DeviceInfo>> = Mutex::new(BTreeMap::new());
-
-pub fn driver_register(driver: &dyn Driver) -> core::result::Result<u32, DriverError> {
-    let id = allocate_device_id();
-    let name = driver.name();
-    let dtype = driver.device_type();
-
-    let mut reg = DRIVER_REGISTRY.lock();
-    reg.insert(id, DeviceInfo {
-        id, name, device_type: dtype, initialized: true,
-        io_base: None, irq: None,
-    });
-    Ok(id)
-}
-
-pub fn driver_list() -> Vec<(u32, &'static str, DeviceType)> {
-    let reg = DRIVER_REGISTRY.lock();
-    reg.iter().map(|(id, e)| (*id, e.name, e.device_type)).collect()
-}
-
-pub fn driver_count() -> usize {
-    DRIVER_REGISTRY.lock().len()
-}
-
-pub fn driver_count_by_type(dtype: DeviceType) -> usize {
-    DRIVER_REGISTRY.lock().values().filter(|e| e.device_type == dtype).count()
-}
-
-/// 从 DriverRegistry 中移除驱动并返回其信息。
-/// 调用者负责释放驱动本身的内存。
-pub fn driver_unregister(id: u32) -> Option<DeviceInfo> {
-    DRIVER_REGISTRY.lock().remove(&id)
-}
-
-// ============================================================================
 // 单元测试
 // ============================================================================
 
@@ -328,59 +272,21 @@ mod tests {
         assert_eq!(DeviceType::Block.to_string(), "Block");
         assert_eq!(DeviceType::Char.to_string(), "Char");
         assert_eq!(DeviceType::Network.to_string(), "Network");
-        
-        // 测试 Display trait
+
         let block_str = format!("{}", DeviceType::Block);
         assert_eq!(block_str, "Block");
     }
 
     #[test]
-    fn test_device_info_creation() {
-        let info = DeviceInfo::new("test_device", DeviceType::Other);
-        
-        assert!(info.id > 0);
-        assert_eq!(info.name, "test_device");
-        assert!(!info.initialized);
-        assert!(info.io_base.is_none());
-        assert!(info.irq.is_none());
-    }
-
-    #[test]
-    fn test_device_info_builder() {
-        let info = DeviceInfo::new("serial0", DeviceType::Char)
-            .with_io_base(0x3F8)
-            .with_irq(4);
-        
-        assert_eq!(info.io_base, Some(0x3F8));
-        assert_eq!(info.irq, Some(4));
-    }
-
-    #[test]
-    fn test_id_allocation() {
-        let id1 = allocate_device_id();
-        let id2 = allocate_device_id();
-        let id3 = allocate_device_id();
-        
-        // IDs 应该是单调递增的
-        assert!(id2 > id1);
-        assert!(id3 > id2);
-        
-        // 差值应该为 1
-        assert_eq!(id2 - id1, 1);
-        assert_eq!(id3 - id2, 1);
-    }
-
-    #[test]
     fn test_result_type_alias() {
-        // 验证 Result 类型别名工作正常
         fn returns_ok() -> Result<u32> {
             Ok(42)
         }
-        
+
         fn returns_err() -> Result<u32> {
             Err(DriverError::DeviceNotFound)
         }
-        
+
         assert!(returns_ok().is_ok());
         assert!(returns_err().is_err());
         assert_eq!(returns_ok().unwrap(), 42);

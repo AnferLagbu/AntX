@@ -95,11 +95,6 @@ pub use framework::{
     DeviceInfo,
     DriverError,
     Result as DriverResult,
-    DRIVER_REGISTRY,
-    driver_register,
-    driver_list,
-    driver_count,
-    driver_count_by_type,
 };
 
 // --- 总线驱动导出 ---
@@ -148,63 +143,40 @@ pub use storage::ata::{
 
 /// 初始化所有设备驱动
 ///
-/// 按照依赖顺序初始化各个子系统并注册到几丁质全局设备表：
+/// 按照依赖顺序初始化各个子系统并注册到 Chitin 全局设备表：
 /// 1. 字符设备 (VGA、串口)
 /// 2. 总线驱动 (PCI)
 /// 3. 存储设备 (NVMe、AHCI、ATA)
 /// 4. 输入设备 (键盘)
 /// 5. 显示设备 (HDMI、DP)
 /// 6. USB设备
-pub fn init_all() -> framework::Result<()> {
+pub fn init_all() {
     #[cfg(target_arch = "x86_64")]
     {
-        char::char_init()?;
+        char::char_init();
         let _ = bus::bus_init();
-        storage::storage_init()?;
-        input::input_init()?;
+        let _ = storage::storage_init();
+        input::input_init();
     }
     #[cfg(target_arch = "aarch64")]
     {
-        storage::storage_init()?;
+        let _ = storage::storage_init();
     }
 
     let _ = display::display_init();
     let _ = usb::usb_init();
 
-    // 热插拔管理器初始化 (在 PCI 扫描完成后)
     hotplug::hotplug_init();
-
-    Ok(())
 }
 
 /// 关闭所有设备驱动
 ///
-/// 按相反顺序关闭各驱动。
-pub fn shutdown_all() -> framework::Result<()> {
-    // 关闭顺序与初始化相反
-    
-    // 6. 关闭USB
-    // TODO: 实现 usb_shutdown()
-    
-    // 5. 关闭显示设备
-    // TODO: 实现 display_shutdown()
-    
-    // 4. 关闭输入设备
-    // TODO: 实现 input_shutdown()
-    
-    // 3. 关闭存储设备
-    let _ = storage::storage_shutdown();
-    
-    // 2. 关闭总线驱动
-    // TODO: 实现 bus_shutdown()
-    
-    // 1. 关闭字符设备
-    // TODO: 实现 char_shutdown()
-    
-    Ok(())
+/// 通过 Chitin 框架统一关闭所有注册的设备。
+pub fn shutdown_all() {
+    crate::kernel::chitin::chitin_shutdown_all();
 }
 
-/// 获取系统已检测到的设备列表 (从几丁质 + DriverRegistry + BlockDevice 三表读取)
+/// 获取系统已检测到的设备列表 (从 Chitin + BlockDevice 读取)
 ///
 /// 返回格式化的设备信息字符串。
 #[cfg(feature = "alloc")]
@@ -212,7 +184,6 @@ pub fn list_devices() -> alloc::string::String {
     use alloc::format;
     let mut info = alloc::string::String::from("=== Chitin Device Registry ===\n\n");
 
-    // 从几丁质注册表读取
     let chitin_devs = crate::kernel::chitin::chitin_list();
     if chitin_devs.is_empty() {
         info.push_str("  (no devices)\n");
@@ -242,13 +213,6 @@ pub fn list_devices() -> alloc::string::String {
         if !other.is_empty() { info.push_str("Other:\n"); for s in &other { info.push_str(s); info.push('\n'); } }
     }
 
-    // 补充 DriverRegistry 信息
-    let driver_count = framework::driver_count();
-    if driver_count > 0 {
-        info.push_str(&format!("\nDriver Registry: {} driver(s)\n", driver_count));
-    }
-
-    // 补充 BlockDevice 信息
     let blk_count = block::block_device_count();
     if blk_count > 0 {
         let bds = block::block_device_list();
@@ -289,33 +253,25 @@ mod tests {
 
     #[test]
     fn test_module_structure() {
-        // 验证所有模块都存在且可访问
-        
-        // Framework
         assert_eq!(DeviceType::Block.to_string(), "Block");
         assert_eq!(DeviceType::Char.to_string(), "Char");
-        
-        // Storage - ATA
+
         let _controller = AtaController::new();
-        
-        // Input - Keyboard
+
         let _driver = KeyboardDriver::new();
-        
-        // Char - Serial
+
         assert!(SerialPort::new(0).is_some());
         assert!(SerialPort::new(5).is_none());
     }
 
     #[test]
     fn test_driver_trait_polymorphism() {
-        // 测试多态性: 不同类型都可以作为 &dyn Driver 使用
-        
         let ata = AtaController::new();
         let kb = KeyboardDriver::new();
         let com = SerialPort::new(0).unwrap();
-        
+
         let drivers: Vec<&dyn Driver> = vec![&ata, &kb, &com];
-        
+
         for driver in &drivers {
             assert!(driver.name().len() > 0);
             assert!(matches!(
@@ -327,10 +283,9 @@ mod tests {
 
     #[test]
     fn test_error_handling() {
-        // 验证错误处理机制正常工作
         let err = DriverError::InvalidParameter;
         let result: DriverResult<u32> = Err(err);
-        
+
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Invalid parameter");
     }
@@ -338,7 +293,7 @@ mod tests {
     #[test]
     fn test_device_info_creation() {
         let info = DeviceInfo::new("test", DeviceType::Other);
-        
+
         assert!(info.id > 0);
         assert_eq!(info.name, "test");
         assert_eq!(info.device_type, DeviceType::Other);
