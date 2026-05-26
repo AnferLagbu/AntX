@@ -35,6 +35,7 @@ pub mod proto_block;
 pub mod proto_char;
 pub mod proto_net;
 pub mod proto_input;
+pub mod devtree;
 
 // ── 协议类型 ──
 

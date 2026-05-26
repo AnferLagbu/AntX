@@ -65,6 +65,9 @@ pub mod net;
 /// 中断描述符表 (IDT, ISR, 异常处理, 统计)
 pub mod idt;
 
+/// 中断底部半 (Softirq, 延迟处理)
+pub mod irq;
+
 /// 同步原语 (SpinLock, Mutex, RwLock, 原子操作)
 pub mod sync;
 

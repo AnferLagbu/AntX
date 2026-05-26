@@ -604,6 +604,8 @@ impl IdtManager {
             }
 
             self.send_eoi(irq);
+
+            crate::kernel::irq::do_softirq();
         }
     }
 

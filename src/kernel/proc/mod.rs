@@ -5,6 +5,7 @@ pub mod thread;
 pub mod session;
 pub mod scheduler_ex;
 pub mod user_proc;
+pub mod cpu_queue;
 pub mod ffi;
 
 #[allow(ambiguous_glob_reexports)]

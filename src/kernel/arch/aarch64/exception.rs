@@ -471,6 +471,8 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
     }
 
     super::gic::end_of_interrupt(intid);
+
+    crate::kernel::irq::do_softirq();
 }
 
 /// 默认同步异常处理 (EL1h)

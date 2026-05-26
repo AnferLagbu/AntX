@@ -13,5 +13,6 @@ pub mod snapshot;
 pub mod raidz;
 pub mod compress;
 pub mod zil;
+pub mod zil_persist;
 pub mod hvfs;
 pub mod ffi;

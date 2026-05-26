@@ -19,6 +19,8 @@ pub mod vmm;
 
 pub mod slab;
 pub mod kmalloc;
+pub mod kmalloc_slab;
+pub mod vma;
 pub mod ffi;
 pub mod arch;
 
