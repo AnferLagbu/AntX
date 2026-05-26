@@ -267,7 +267,6 @@ pub fn storage_init() -> framework::Result<()> {
 #[cfg(not(target_arch = "x86_64"))]
 pub fn storage_init() -> framework::Result<()> {
     use crate::kernel::driver::virtio::{self, VIRTIO_ID_BLOCK};
-    use alloc::string::ToString;
 
     // 扫描 virtio-mmio 区域，寻找块设备
     let devices = virtio::probe_all();
