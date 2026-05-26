@@ -230,6 +230,11 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_QX_REBOOT        => dispatch!(sys_reboot(a0 as i32), b"qx_reboot\0"),
         SYS_QX_HOTPLUG_STATUS => dispatch!(sys_hotplug_status(a0 as *mut u8, a1 as u32), b"qx_hotplug_status\0"),
 
+        // ==================== 帧缓冲设备 ====================
+        SYS_FB_OPEN         => dispatch!(sys_fb_open(a0, a1), b"fb_open\0"),
+        SYS_FB_MMAP         => dispatch!(sys_fb_mmap(a0, a1, a2), b"fb_mmap\0"),
+        SYS_FB_RELEASE      => dispatch!(sys_fb_release(a0), b"fb_release\0"),
+
         _ => Errno::ENOSYS.as_ret(),
     }
 }
@@ -1429,4 +1434,107 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     }
 
     offset as i64
+}
+
+// ============================================================================
+// 帧缓冲设备 — fb_open / fb_mmap / fb_release
+//
+// 设计原则：
+//   1. fb_open — 查询帧缓冲物理信息，返回 FbInfo 结构体
+//   2. fb_mmap — 将帧缓冲物理页映射到当前用户进程地址空间
+//   3. fb_release — 标记释放（页表在进程退出时由 destroy_page_table 统一清理）
+//
+// 安全要点：
+//   - 所有用户指针均通过 validate_user_ptr 校验
+//   - 物理地址映射前校验大小不越界
+//   - 使用 WRITE_THROUGH 缓存策略确保像素写入立即可见
+// ============================================================================
+
+#[repr(C)]
+struct FbInfo {
+    phys_addr: u64,
+    size: u64,
+    width: u32,
+    height: u32,
+    pitch: u32,
+    bpp: u8,
+    _pad: [u8; 3],
+}
+
+unsafe fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
+    if info_ptr == 0 || !validate_user_ptr(info_ptr) {
+        return Errno::EFAULT.as_ret();
+    }
+
+    let fb_addr = crate::kernel::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
+    if fb_addr == 0 {
+        return Errno::ENODEV.as_ret();
+    }
+
+    let fb_size = crate::kernel::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
+
+    let (width, height, pitch, bpp) = match crate::kernel::driver::display::get_framebuffer() {
+        Some(fb) => (fb.width(), fb.height(), fb.pitch(), fb.format().bits_per_pixel() as u8),
+        None => return Errno::ENODEV.as_ret(),
+    };
+
+    let info = FbInfo {
+        phys_addr: fb_addr,
+        size: fb_size,
+        width,
+        height,
+        pitch,
+        bpp,
+        _pad: [0; 3],
+    };
+
+    let dst = info_ptr as *mut FbInfo;
+    core::ptr::write_volatile(dst, info);
+    0
+}
+
+unsafe fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
+    if target_vaddr == 0 || target_vaddr & 0xFFF != 0 {
+        return Errno::EINVAL.as_ret();
+    }
+    if target_vaddr > USER_ADDR_MAX - size {
+        return Errno::EINVAL.as_ret();
+    }
+
+    let fb_phys = crate::kernel::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
+    if fb_phys == 0 {
+        return Errno::ENODEV.as_ret();
+    }
+
+    let fb_total = crate::kernel::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
+    if size > fb_total {
+        return Errno::EINVAL.as_ret();
+    }
+
+    let cr3 = crate::kernel::proc::user_proc::user_entry_cr3.load(core::sync::atomic::Ordering::SeqCst);
+    if cr3 == 0 {
+        return Errno::ENODEV.as_ret();
+    }
+
+    let vmm = crate::kernel::mm::vmm::get_vmm();
+    let flags = crate::kernel::mm::PageFlags::PRESENT
+        | crate::kernel::mm::PageFlags::WRITABLE
+        | crate::kernel::mm::PageFlags::USER
+        | crate::kernel::mm::PageFlags::WRITE_THROUGH;
+
+    let phys_page_aligned = fb_phys & !0xFFF;
+    let offset = fb_phys - phys_page_aligned;
+    let pages = ((size + offset + 0xFFF) / 0x1000) as u64;
+
+    for i in 0..pages {
+        let pa = crate::kernel::mm::PhysAddr(phys_page_aligned + i * 0x1000);
+        let va = crate::kernel::mm::VirtAddr(target_vaddr + i * 0x1000);
+        vmm.map_page_in_table(cr3, va, pa, flags);
+    }
+
+    target_vaddr as i64
+}
+
+unsafe fn sys_fb_release(_vaddr: u64) -> i64 {
+    0
 }

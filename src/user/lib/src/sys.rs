@@ -201,3 +201,26 @@ pub fn tgkill(tgid: i32, tid: i32, sig: i32) -> i32        { unsafe { sys3(SYS_t
 pub const SYS_QX_HOTPLUG_STATUS: u64 = 437;
 
 pub fn hotplug_status(buf: &mut [u8]) -> i32               { unsafe { sys2(SYS_QX_HOTPLUG_STATUS, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
+
+// ============================================================
+// 帧缓冲设备 (FB syscalls 450-452)
+// ============================================================
+
+pub const SYS_FB_OPEN: u64 = 450;
+pub const SYS_FB_MMAP: u64 = 451;
+pub const SYS_FB_RELEASE: u64 = 452;
+
+#[repr(C)]
+pub struct FbInfo {
+    pub phys_addr: u64,
+    pub size: u64,
+    pub width: u32,
+    pub height: u32,
+    pub pitch: u32,
+    pub bpp: u8,
+    pub _pad: [u8; 3],
+}
+
+pub fn fb_open(info: &mut FbInfo) -> i64                    { unsafe { sys1(SYS_FB_OPEN, info as *mut FbInfo as u64) } }
+pub fn fb_mmap(addr: u64, size: u64, prot: i32) -> i64      { unsafe { sys3(SYS_FB_MMAP, addr, size, prot as u64) } }
+pub fn fb_release(addr: u64) -> i64                          { unsafe { sys1(SYS_FB_RELEASE, addr) } }

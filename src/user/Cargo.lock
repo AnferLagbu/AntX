@@ -10,6 +10,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fbterm"
+version = "0.1.0"
+dependencies = [
+ "userlib",
+]
+
+[[package]]
 name = "init"
 version = "0.1.0"
 dependencies = [

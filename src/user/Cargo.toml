@@ -4,7 +4,7 @@ edition = "2021"
 
 [workspace]
 resolver = "2"
-members = ["lib", "init", "axsh", "install"]
+members = ["lib", "init", "axsh", "install", "fbterm"]
 
 [profile.release]
 panic = "abort"

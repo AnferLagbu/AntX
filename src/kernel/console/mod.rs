@@ -32,3 +32,34 @@ pub fn gfx_console_write(msg: &[u8]) {
         }
     }
 }
+
+/// Panic 发生时接管图形控制台 — 绘制崩溃横幅并输出消息
+///
+/// 此函数在 panic handler 中调用，无论 GFX_READY 是否为 true 都尝试接管。
+/// 优先使用已存在的 GfxConsole 实例，如果没有则什么也不做（至少串口已输出）。
+///
+/// # Safety
+///
+/// 仅在 panic 上下文中调用。不依赖锁或中断，直接操作帧缓冲。
+pub fn gfx_console_panic_reclaim(msg: &str) {
+    let ptr = GFX_CONSOLE_PTR.load(Ordering::Acquire);
+    if !ptr.is_null() {
+        unsafe {
+            let console = &mut *ptr;
+            console.panic_reclaim(msg);
+        }
+    }
+}
+
+/// Panic 模式下向图形控制台追加崩溃详情
+///
+/// 在 `gfx_console_panic_reclaim` 之后再调用此函数输出寄存器转储等信息。
+pub fn gfx_console_panic_write(msg: &str) {
+    let ptr = GFX_CONSOLE_PTR.load(Ordering::Acquire);
+    if !ptr.is_null() {
+        unsafe {
+            let console = &mut *ptr;
+            console.panic_write(msg);
+        }
+    }
+}

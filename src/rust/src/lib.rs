@@ -79,46 +79,55 @@ fn panic(info: &PanicInfo) -> ! {
         panic_msg[len] = 0;
     }
 
-    // Emit panic diagnostics to serial console before entering recovery
+    // 先捕获寄存器状态 — 在所有架构都需要
+    #[allow(unused_mut)]
+    let mut regs: [u64; 16] = [0; 16];
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!(
+            "mov {0}, rax", "mov {1}, rbx", "mov {2}, rcx",
+            "mov {3}, rdx", "mov {4}, rsi", "mov {5}, rdi",
+            out(reg) regs[0], out(reg) regs[1], out(reg) regs[2],
+            out(reg) regs[3], out(reg) regs[4], out(reg) regs[5],
+            options(nostack, preserves_flags)
+        );
+        core::arch::asm!(
+            "mov {0}, rbp", "mov {1}, rsp", "mov {2}, r8",
+            "mov {3}, r9",  "mov {4}, r10", "mov {5}, r11",
+            out(reg) regs[6], out(reg) regs[7], out(reg) regs[8],
+            out(reg) regs[9], out(reg) regs[10], out(reg) regs[11],
+            options(nostack, preserves_flags)
+        );
+        core::arch::asm!(
+            "mov {0}, r12", "mov {1}, r13", "mov {2}, r14", "mov {3}, r15",
+            out(reg) regs[12], out(reg) regs[13], out(reg) regs[14], out(reg) regs[15],
+            options(nostack, preserves_flags)
+        );
+    }
+    let reg_names: [[u8; 4]; 16] = [
+        [b'R', b'A', b'X', b' '], [b'R', b'B', b'X', b' '], [b'R', b'C', b'X', b' '], [b'R', b'D', b'X', b' '],
+        [b'R', b'S', b'I', b' '], [b'R', b'D', b'I', b' '], [b'R', b'B', b'P', b' '], [b'R', b'S', b'P', b' '],
+        [b'R', b'8', b' ', b' '], [b'R', b'9', b' ', b' '], [b'R', b'1', b'0', b' '], [b'R', b'1', b'1', b' '],
+        [b'R', b'1', b'2', b' '], [b'R', b'1', b'3', b' '], [b'R', b'1', b'4', b' '], [b'R', b'1', b'5', b' '],
+    ];
+    #[allow(unused_mut)]
+    let mut cr2: u64 = 0;
+    #[allow(unused_mut)]
+    let mut cr3_val: u64 = 0;
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!("mov {}, cr2", out(reg) cr2);
+        core::arch::asm!("mov {}, cr3", out(reg) cr3_val);
+    }
+
+    // 1. 串口输出崩溃信息
     if crate::kernel::klog::KLOG_INIT.load(Ordering::Acquire) {
         crate::kernel::klog::serial_write_bytes(b"\n========== KERNEL PANIC ==========\n");
         crate::kernel::klog::serial_write_bytes(msg.as_bytes());
-        crate::kernel::klog::serial_write_bytes(b"\n");
-
-        #[allow(unused_mut)]
-        let mut regs: [u64; 16] = [0; 16];
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            core::arch::asm!(
-                "mov {0}, rax", "mov {1}, rbx", "mov {2}, rcx",
-                "mov {3}, rdx", "mov {4}, rsi", "mov {5}, rdi",
-                out(reg) regs[0], out(reg) regs[1], out(reg) regs[2],
-                out(reg) regs[3], out(reg) regs[4], out(reg) regs[5],
-                options(nostack, preserves_flags)
-            );
-            core::arch::asm!(
-                "mov {0}, rbp", "mov {1}, rsp", "mov {2}, r8",
-                "mov {3}, r9",  "mov {4}, r10", "mov {5}, r11",
-                out(reg) regs[6], out(reg) regs[7], out(reg) regs[8],
-                out(reg) regs[9], out(reg) regs[10], out(reg) regs[11],
-                options(nostack, preserves_flags)
-            );
-            core::arch::asm!(
-                "mov {0}, r12", "mov {1}, r13", "mov {2}, r14", "mov {3}, r15",
-                out(reg) regs[12], out(reg) regs[13], out(reg) regs[14], out(reg) regs[15],
-                options(nostack, preserves_flags)
-            );
-        }
-        let reg_names = [
-            b"RAX", b"RBX", b"RCX", b"RDX",
-            b"RSI", b"RDI", b"RBP", b"RSP",
-            b"R8 ", b"R9 ", b"R10", b"R11",
-            b"R12", b"R13", b"R14", b"R15",
-        ];
-        crate::kernel::klog::serial_write_bytes(b"--- Register Dump ---\n");
+        crate::kernel::klog::serial_write_bytes(b"\n--- Register Dump ---\n");
         for i in 0..16 {
             crate::kernel::klog::serial_write_bytes(b"  ");
-            crate::kernel::klog::serial_write_bytes(reg_names[i]);
+            crate::kernel::klog::serial_write_bytes(&reg_names[i]);
             crate::kernel::klog::serial_write_bytes(b"= 0x");
             let mut hex_buf = [0u8; 16];
             let v = regs[i];
@@ -131,15 +140,6 @@ fn panic(info: &PanicInfo) -> ! {
                 crate::kernel::klog::serial_write_bytes(b"\n");
             }
         }
-        #[allow(unused_mut)]
-        let mut cr2: u64 = 0;
-        #[allow(unused_mut)]
-        let mut cr3_val: u64 = 0;
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            core::arch::asm!("mov {}, cr2", out(reg) cr2);
-            core::arch::asm!("mov {}, cr3", out(reg) cr3_val);
-        }
         crate::kernel::klog::serial_write_bytes(b"  CR2= 0x");
         for d in 0..16 {
             let nibble = ((cr2 >> (60 - d * 4)) & 0xF) as u8;
@@ -151,6 +151,33 @@ fn panic(info: &PanicInfo) -> ! {
             crate::kernel::klog::serial_write_bytes(&[if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 }]);
         }
         crate::kernel::klog::serial_write_bytes(b"\n===================================\n");
+    }
+
+    // 2. 图形控制台输出崩溃信息
+    crate::kernel::console::gfx_console_panic_reclaim(&msg);
+    crate::kernel::console::gfx_console_panic_write("\n--- Register Dump ---\n");
+    for i in 0..16 {
+        let mut buf = [0u8; 64];
+        let mut cursor: usize = 0;
+        write_hex_to_buf(&mut buf, &mut cursor, regs[i]);
+        let label = alloc::format!("  {} = {}\n",
+            core::str::from_utf8(&reg_names[i]).unwrap_or("?? "),
+            core::str::from_utf8(&buf[..cursor]).unwrap_or("?"));
+        crate::kernel::console::gfx_console_panic_write(&label);
+    }
+    {
+        let mut cr2_str = [0u8; 32];
+        let mut cur: usize = 0;
+        write_hex_to_buf(&mut cr2_str, &mut cur, cr2);
+        let cr2_line = alloc::format!("  CR2= {}\n",
+            core::str::from_utf8(&cr2_str[..cur]).unwrap_or("?"));
+        crate::kernel::console::gfx_console_panic_write(&cr2_line);
+        let mut cr3_str = [0u8; 32];
+        let mut c3: usize = 0;
+        write_hex_to_buf(&mut cr3_str, &mut c3, cr3_val);
+        let cr3_line = alloc::format!("  CR3= {}\n",
+            core::str::from_utf8(&cr3_str[..c3]).unwrap_or("?"));
+        crate::kernel::console::gfx_console_panic_write(&cr3_line);
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -178,6 +205,17 @@ fn panic(info: &PanicInfo) -> ! {
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     loop {
         unsafe { core::arch::asm!("wfi"); }
+    }
+}
+
+fn write_hex_to_buf(buf: &mut [u8], cursor: &mut usize, value: u64) {
+    for d in 0..16 {
+        if *cursor >= buf.len() {
+            break;
+        }
+        let nibble = ((value >> (60 - d * 4)) & 0xF) as u8;
+        buf[*cursor] = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
+        *cursor += 1;
     }
 }
 

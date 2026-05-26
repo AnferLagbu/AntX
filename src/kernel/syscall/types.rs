@@ -202,6 +202,11 @@ pub const SYS_QX_BOOT_CHECK: u64 = 435;
 pub const SYS_QX_REBOOT: u64 = 436;
 pub const SYS_QX_HOTPLUG_STATUS: u64 = 437;
 
+// ==================== 帧缓冲设备 ====================
+pub const SYS_FB_OPEN: u64 = 450;
+pub const SYS_FB_MMAP: u64 = 451;
+pub const SYS_FB_RELEASE: u64 = 452;
+
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

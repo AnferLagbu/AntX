@@ -71,6 +71,12 @@ use super::framework::Driver;
 /// 全局帧缓冲 — 在 display_init() 中初始化，之后只读访问
 static mut GLOBAL_FRAMEBUFFER: Option<Framebuffer> = None;
 
+/// 帧缓冲物理地址 — 供 sys_fb_mmap 映射到用户空间
+pub static FB_PHYS_ADDR: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// 帧缓冲物理大小 — 供 sys_fb_mmap 校验
+pub static FB_PHYS_SIZE: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// 获取全局帧缓冲的可变引用
 ///
 /// # Safety
@@ -259,6 +265,10 @@ pub fn display_init() -> framework::Result<()> {
     };
 
     let fb_size = pitch as u64 * height as u64;
+
+    FB_PHYS_ADDR.store(fb_addr, core::sync::atomic::Ordering::Release);
+    FB_PHYS_SIZE.store(fb_size, core::sync::atomic::Ordering::Release);
+
     let virt_addr = crate::kernel::mm::map_framebuffer(fb_addr, fb_size);
 
     let format = infer_pixel_format(bpp, 16, 8, 0);
