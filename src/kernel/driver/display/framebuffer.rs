@@ -275,7 +275,25 @@ impl Framebuffer {
     pub fn format(&self) -> PixelFormat {
         self.format
     }
-    
+
+    /// 获取每行字节数
+    #[inline]
+    pub fn pitch(&self) -> u32 {
+        self.pitch
+    }
+
+    /// 获取每像素字节数
+    #[inline]
+    pub fn bytes_per_pixel(&self) -> usize {
+        self.bpp
+    }
+
+    /// 获取帧缓冲基地址（仅 crate 内部）
+    #[inline]
+    pub(crate) fn buffer_ptr(&self) -> *mut u8 {
+        self.buffer
+    }
+
     /// 获取像素地址
     #[inline]
     unsafe fn pixel_address(&self, x: u32, y: u32) -> *mut u8 {
@@ -482,6 +500,121 @@ impl Framebuffer {
         }
     }
     
+    /// 绘制填充圆（水平线扫描法）
+    pub fn fill_circle(&mut self, cx: i32, cy: i32, radius: u32, color: Color) {
+        let r = radius as i32;
+        let mut x = r;
+        let mut y = 0;
+        let mut err = 0;
+
+        while x >= y {
+            self.draw_hline(cx - x, cy + y, (2 * x) as u32, color);
+            self.draw_hline(cx - x, cy - y, (2 * x) as u32, color);
+            self.draw_hline(cx - y, cy + x, (2 * y) as u32, color);
+            self.draw_hline(cx - y, cy - x, (2 * y) as u32, color);
+
+            y += 1;
+            err += 1 + 2 * y;
+            if 2 * (err - x) + 1 > 0 {
+                x -= 1;
+                err += 1 - 2 * x;
+            }
+        }
+    }
+
+    /// Alpha 混合设置像素（读-改-写）
+    ///
+    /// 若 `color.a == 0` 则不执行任何操作；若 `color.a == 255` 则退化为 `set_pixel`。
+    pub fn blend_pixel(&mut self, x: u32, y: u32, color: Color) {
+        if x >= self.width || y >= self.height || color.a == 0 {
+            return;
+        }
+        if color.a == 255 {
+            self.set_pixel(x, y, color);
+            return;
+        }
+        if let Some(existing) = self.get_pixel(x, y) {
+            let blended = color.blend(&existing);
+            self.set_pixel(x, y, blended);
+        }
+    }
+
+    /// Wu 反走样直线
+    pub fn draw_line_aa(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
+        let steep = (y1 - y0).abs() > (x1 - x0).abs();
+        let (mut x0, mut y0, mut x1, mut y1) = (x0, y0, x1, y1);
+
+        if steep {
+            core::mem::swap(&mut x0, &mut y0);
+            core::mem::swap(&mut x1, &mut y1);
+        }
+        if x0 > x1 {
+            core::mem::swap(&mut x0, &mut x1);
+            core::mem::swap(&mut y0, &mut y1);
+        }
+
+        let dx = (x1 - x0) as f32;
+        let dy = (y1 - y0) as f32;
+        let gradient = if dx == 0.0 { 1.0f32 } else { dy / dx };
+
+        fn fpart(x: f32) -> f32 { x - (x as i32 as f32) }
+        fn rfpart(x: f32) -> f32 { 1.0f32 - fpart(x) }
+
+        let xend_i = ((x0 as f32) + 0.5) as i32;
+        let xend_f = xend_i as f32;
+        let yend_f = y0 as f32 + gradient * (xend_f - x0 as f32);
+        let xgap = rfpart(x0 as f32 + 0.5);
+        let xpxl1 = xend_i;
+        let ypxl1 = yend_f as i32;
+
+        let a1 = (rfpart(yend_f) * xgap * 255.0) as u8;
+        let a2 = (fpart(yend_f) * xgap * 255.0) as u8;
+        if steep {
+            self.blend_pixel(ypxl1 as u32, xpxl1 as u32, Color::new_alpha(color.r, color.g, color.b, a1));
+            self.blend_pixel((ypxl1 + 1) as u32, xpxl1 as u32, Color::new_alpha(color.r, color.g, color.b, a2));
+        } else {
+            self.blend_pixel(xpxl1 as u32, ypxl1 as u32, Color::new_alpha(color.r, color.g, color.b, a1));
+            self.blend_pixel(xpxl1 as u32, (ypxl1 + 1) as u32, Color::new_alpha(color.r, color.g, color.b, a2));
+        }
+
+        let mut intery = yend_f + gradient;
+
+        let xend_i = ((x1 as f32) + 0.5) as i32;
+        let xend_f = xend_i as f32;
+        let yend_f = y1 as f32 + gradient * (xend_f - x1 as f32);
+        let xgap = fpart(x1 as f32 + 0.5);
+        let xpxl2 = xend_i;
+        let ypxl2 = yend_f as i32;
+
+        let a1 = (rfpart(yend_f) * xgap * 255.0) as u8;
+        let a2 = (fpart(yend_f) * xgap * 255.0) as u8;
+        if steep {
+            self.blend_pixel(ypxl2 as u32, xpxl2 as u32, Color::new_alpha(color.r, color.g, color.b, a1));
+            self.blend_pixel((ypxl2 + 1) as u32, xpxl2 as u32, Color::new_alpha(color.r, color.g, color.b, a2));
+        } else {
+            self.blend_pixel(xpxl2 as u32, ypxl2 as u32, Color::new_alpha(color.r, color.g, color.b, a1));
+            self.blend_pixel(xpxl2 as u32, (ypxl2 + 1) as u32, Color::new_alpha(color.r, color.g, color.b, a2));
+        }
+
+        if steep {
+            for x in (xpxl1 + 1)..xpxl2 {
+                let alpha = (rfpart(intery) * 255.0) as u8;
+                self.blend_pixel(intery as u32, x as u32, Color::new_alpha(color.r, color.g, color.b, alpha));
+                let alpha = (fpart(intery) * 255.0) as u8;
+                self.blend_pixel((intery + 1.0) as u32, x as u32, Color::new_alpha(color.r, color.g, color.b, alpha));
+                intery += gradient;
+            }
+        } else {
+            for x in (xpxl1 + 1)..xpxl2 {
+                let alpha = (rfpart(intery) * 255.0) as u8;
+                self.blend_pixel(x as u32, intery as u32, Color::new_alpha(color.r, color.g, color.b, alpha));
+                let alpha = (fpart(intery) * 255.0) as u8;
+                self.blend_pixel(x as u32, (intery + 1.0) as u32, Color::new_alpha(color.r, color.g, color.b, alpha));
+                intery += gradient;
+            }
+        }
+    }
+
     /// 清屏
     pub fn clear(&mut self) {
         self.fill(colors::BLACK);

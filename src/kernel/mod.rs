@@ -103,6 +103,7 @@ pub mod lib;
 
 /// 日志系统 (KLog, 多级别, 分类输出)
 pub mod klog;
+pub mod console;
 
 /// SMP 多核支持 (双架构桩实现, feature=smp 时启用真实 IPI)
 pub mod smp;

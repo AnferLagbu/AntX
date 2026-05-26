@@ -18,9 +18,11 @@
 //! ```
 
 pub mod framebuffer;
+pub mod font;
 pub mod hdmi;
 pub mod dp;
 pub mod controller;
+pub mod self_test;
 
 // 导出Framebuffer类型
 pub use framebuffer::{
@@ -59,24 +61,269 @@ pub use controller::{
     MonitorInfo,
 };
 
+use super::framework;
+use super::framework::Driver;
+
+// ============================================================================
+// 全局帧缓冲实例
+// ============================================================================
+
+/// 全局帧缓冲 — 在 display_init() 中初始化，之后只读访问
+static mut GLOBAL_FRAMEBUFFER: Option<Framebuffer> = None;
+
+/// 获取全局帧缓冲的可变引用
+///
+/// # Safety
+/// 调用者必须确保没有并发访问（内核启动后在单线程上下文中使用是安全的）
+pub fn get_framebuffer() -> Option<&'static mut Framebuffer> {
+    unsafe { GLOBAL_FRAMEBUFFER.as_mut() }
+}
+
+// ============================================================================
+// 像素格式推断
+// ============================================================================
+
+/// 根据 Multiboot2 FramebufferInfo 中的 bpp 和 RGB 字段位置推断像素格式
+fn infer_pixel_format(bpp: u8, red_pos: u8, green_pos: u8, blue_pos: u8) -> PixelFormat {
+    match bpp {
+        32 => {
+            if blue_pos == 0 && green_pos == 8 && red_pos == 16 {
+                PixelFormat::Bgra8888
+            } else if red_pos == 0 && green_pos == 8 && blue_pos == 16 {
+                PixelFormat::Bgra8888
+            } else {
+                PixelFormat::Bgra8888
+            }
+        }
+        24 => {
+            if blue_pos == 0 {
+                PixelFormat::Bgr888
+            } else {
+                PixelFormat::Rgb888
+            }
+        }
+        16 => PixelFormat::Rgb565,
+        _ => PixelFormat::Bgra8888,
+    }
+}
+
+// ============================================================================
+// PCI VGA 帧缓冲探测（QEMU -kernel 启动时的回退方案）
+// ============================================================================
+
+/// Bochs VBE DISPI MMIO 寄存器偏移（相对于 BAR0）
+const VBE_DISPI_MMIO_BASE: u64 = 0x500;
+
+/// Bochs VBE DISPI 端口 I/O 地址
+const VBE_DISPI_PORT_INDEX: u16 = 0x01CE;
+const VBE_DISPI_PORT_DATA:  u16 = 0x01CF;
+
+/// Bochs VBE DISPI 寄存器索引
+const VBE_DISPI_INDEX_ID:     u16 = 0;
+const VBE_DISPI_INDEX_XRES:   u16 = 1;
+const VBE_DISPI_INDEX_YRES:   u16 = 2;
+const VBE_DISPI_INDEX_BPP:    u16 = 3;
+const VBE_DISPI_INDEX_ENABLE: u16 = 4;
+
+/// Bochs VBE DISPI ID 值
+const VBE_DISPI_ID5: u16 = 0xB0C5;
+
+#[derive(Debug, Clone, Copy)]
+struct VgaFbInfo {
+    addr: u64,
+    pitch: u32,
+    width: u32,
+    height: u32,
+    bpp: u8,
+}
+
+/// 通过 Bochs DISPI 端口读取 VGA 帧缓冲分辨率
+fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
+    unsafe {
+        port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_ID);
+        let id = port_inw(VBE_DISPI_PORT_DATA);
+        if id < VBE_DISPI_ID5 {
+            // Bochs DISPI 不存在或版本太老 (< 0xB0C5)
+            return None;
+        }
+        port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_ENABLE);
+        let enabled = port_inw(VBE_DISPI_PORT_DATA);
+        if enabled == 0 {
+            return None;
+        }
+        port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_XRES);
+        let xres = port_inw(VBE_DISPI_PORT_DATA) as u32;
+        port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_YRES);
+        let yres = port_inw(VBE_DISPI_PORT_DATA) as u32;
+        port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_BPP);
+        let bpp = port_inw(VBE_DISPI_PORT_DATA) as u8;
+        if xres == 0 || yres == 0 || bpp == 0 {
+            return None;
+        }
+        Some((xres, yres, bpp))
+    }
+}
+
+/// 通过 PCI 探测 VGA 设备 BAR0 获取帧缓冲信息
+fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
+    let devices = crate::kernel::pci::find_by_class(crate::kernel::pci::CLASS_DISPLAY);
+    for dev in &devices {
+        if dev.subclass_code != 0x00 {
+            crate::klog_info!(Driver,
+                "[DISPLAY] skipping non-VGA display dev {:04X}:{:04X} subclass {:02X}",
+                dev.vendor_id, dev.device_id, dev.subclass_code
+            );
+            continue;
+        }
+        if dev.bar_count == 0 {
+            continue;
+        }
+        let bar0 = &dev.bars[0];
+        if bar0.base_addr == 0 {
+            continue;
+        }
+
+        // 通过 Bochs DISPI 读取当前显示模式
+        let (width, height, bpp) = match read_bochs_disp_mode() {
+            Some(mode) => mode,
+            None => {
+                // 回退到默认值 1024x768x32
+                (1024, 768, 32)
+            }
+        };
+
+        let pitch = width * (bpp as u32 / 8);
+
+        crate::klog_info!(Driver,
+            "VGA via PCI {:02X}:{:02X}.{} BAR0=0x{:X} size=0x{:X} {}x{}x{}",
+            dev.bus, dev.device, dev.function,
+            bar0.base_addr, bar0.size,
+            width, height, bpp
+        );
+
+        return Some(VgaFbInfo {
+            addr: bar0.base_addr,
+            pitch,
+            width,
+            height,
+            bpp,
+        });
+    }
+    None
+}
+
 // ============================================================================
 // 初始化函数
 // ============================================================================
 
 /// 初始化显示子系统
+///
+/// Phase G1: 连接真实 LFB，在 QEMU GTK 窗口显示蓝色像素。
+///
+/// 流程:
+/// 1. 首先尝试从 Multiboot2 获取帧缓冲信息（GRUB 启动时可用）
+/// 2. 若不可用，回退到 PCI + Bochs DISPI 探测（QEMU -kernel 启动）
+/// 3. 将物理地址映射到内核虚拟地址空间
+/// 4. 推断像素格式
+/// 5. 创建 Framebuffer 实例并自检
 pub fn display_init() -> framework::Result<()> {
-    // 1. 初始化显示管理器
+    crate::klog_boot_info!("[DISPLAY] display_init: probing framebuffer");
+
+    // ── 方案 A: Multiboot2 tag 8 (GRUB boot) ──
+    let fb_info = match crate::kernel::boot::multiboot2_fb::get_framebuffer_info() {
+        Some(info) if info.is_valid() => {
+            crate::klog_boot_info!(
+                "[DISPLAY] got framebuffer from Multiboot2: {}x{}x{} @ 0x{:X}",
+                info.width, info.height, info.bpp, info.addr
+            );
+            Some((info.addr, info.width, info.height, info.bpp, info.pitch))
+        }
+        _ => {
+            crate::klog_drv_warn!("[DISPLAY] no Multiboot2 framebuffer tag, falling back to PCI probe");
+            None
+        }
+    };
+
+    // ── 方案 B: PCI VGA BAR0 probing (QEMU -kernel boot) ──
+    let (fb_addr, width, height, bpp, pitch) = match fb_info {
+        Some(info) => info,
+        None => {
+            match probe_vga_fb_via_pci() {
+                Some(info) => (info.addr, info.width, info.height, info.bpp, info.pitch),
+                None => {
+                    crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    let fb_size = pitch as u64 * height as u64;
+    let virt_addr = crate::kernel::mm::map_framebuffer(fb_addr, fb_size);
+
+    let format = infer_pixel_format(bpp, 16, 8, 0);
+
+    unsafe {
+        GLOBAL_FRAMEBUFFER = Some(Framebuffer::new(
+            virt_addr,
+            width,
+            height,
+            pitch,
+            format,
+        ));
+
+        if let Some(ref mut fb) = GLOBAL_FRAMEBUFFER {
+            let _ = fb.init();
+
+            crate::klog_info!(Driver,
+                "[DISPLAY] OK: {}x{}x{} @ 0x{:X}",
+                width, height, bpp, fb_addr
+            );
+
+            let font = font::default_font();
+            let failures = self_test::framebuffer_self_test(fb, font);
+            if failures == 0 {
+                crate::klog_info!(Driver, "[DISPLAY] self-test: ALL PASSED");
+            } else {
+                crate::klog_drv_warn!("[DISPLAY] self-test: {} FAILURES", failures);
+            }
+
+            let console = alloc::boxed::Box::new(
+                crate::kernel::console::gfx_console::GfxConsole::new(
+                    fb as *mut _,
+                    font,
+                ),
+            );
+            crate::kernel::console::gfx_console_init(alloc::boxed::Box::leak(console));
+            crate::klog_info!(Driver, "[DISPLAY] GfxConsole initialized");
+        }
+    }
+
     let _manager = DisplayManager::new();
-    
-    // 2. 扫描显示控制器
-    // TODO: 扫描PCI总线查找GPU
-    // TODO: 检测HDMI/DP连接
-    
-    // 3. 配置显示输出
-    // TODO: 设置最佳分辨率
-    // TODO: 启用主显示器
-    
+
     Ok(())
 }
 
-use super::framework;
+// ============================================================================
+// 端口 I/O 辅助函数
+// ============================================================================
+
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn port_outw(port: u16, val: u16) {
+    core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn port_inw(port: u16) -> u16 {
+    let ret: u16;
+    core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
+    ret
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+unsafe fn port_outw(_port: u16, _val: u16) {}
+
+#[cfg(not(target_arch = "x86_64"))]
+unsafe fn port_inw(_port: u16) -> u16 { 0 }

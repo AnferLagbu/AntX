@@ -373,6 +373,8 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     ring.push(b' ');
     ring.push_str(msg);
     ring.push(b'\n');
+
+    crate::kernel::console::gfx_console_write(msg);
 }
 
 // ============================================================================
