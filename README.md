@@ -63,6 +63,7 @@ make test-host
 - [多架构解耦工程](docs/development/multiarch-decoupling-plan.md)
 - [架构移植指南](docs/development/arch-porting-guide.md)
 - [完整文档索引](docs/README.md)
+- [演进蓝图](docs/development/ROADMAP.md) — 内核功能路线图
 
 ---
 

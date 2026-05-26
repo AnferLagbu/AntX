@@ -30,6 +30,7 @@
 - [构建系统](./development/build-system.md) - Makefile与构建流程
 - [编码规范](./development/coding-style.md) - 代码风格指南
 - [调试指南](./development/debugging.md) - 调试技巧与工具
+- [演进蓝图](./development/ROADMAP.md) - 内核功能路线图与待开发特性
 
 ### 🧪 [测试文档](./testing/)
 - [测试框架](./testing/test-framework.md) - 单元/集成/压力/混沌测试
