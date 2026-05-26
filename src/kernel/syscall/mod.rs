@@ -5,6 +5,7 @@
 
 pub mod types;
 pub mod ffi;
+pub mod mmap;
 
 use crate::kernel::syscall::types::*;
 #[cfg(target_arch = "x86_64")]
@@ -477,24 +478,46 @@ unsafe fn sys_brk(addr: u64) -> i64 {
     }
 }
 
-unsafe fn sys_mmap(_addr: u64, size: u64, _prot: i32, _flags: i32) -> i64 {
+unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
     if size == 0 { return Errno::EINVAL.as_ret(); }
     let pwm = crate::kernel::pwm::ffi::pwm_get_current();
     if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 7, 0x01) {
         return Errno::EACCES.as_ret();
     }
-    extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
-    let pages = (size + 4095) / 4096;
-    let ptr = pmm_alloc_pages(pages);
-    if ptr.is_null() { Errno::ENOMEM.as_ret() } else { ptr as i64 }
+
+    let mm = match crate::kernel::mm::vma::get_current_mm() {
+        Some(m) => m,
+        None => {
+            extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+            let pages = (size + 4095) / 4096;
+            let ptr = pmm_alloc_pages(pages);
+            return if ptr.is_null() { Errno::ENOMEM.as_ret() } else { ptr as i64 };
+        }
+    };
+
+    match crate::kernel::syscall::mmap::mmap_syscall(mm, addr, size, prot, flags) {
+        Ok(a) => a as i64,
+        Err(e) => e.as_ret(),
+    }
 }
 
 unsafe fn sys_munmap(addr: u64, size: u64) -> i64 {
     if addr == 0 || size == 0 { return Errno::EINVAL.as_ret(); }
-    extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
-    let pages = (size + 4095) / 4096;
-    pmm_free_pages(addr as *mut core::ffi::c_void, pages);
-    0
+
+    let mm = match crate::kernel::mm::vma::get_current_mm() {
+        Some(m) => m,
+        None => {
+            extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+            let pages = (size + 4095) / 4096;
+            pmm_free_pages(addr as *mut core::ffi::c_void, pages);
+            return 0;
+        }
+    };
+
+    match crate::kernel::syscall::mmap::munmap_syscall(mm, addr, size) {
+        Ok(()) => 0,
+        Err(e) => e.as_ret(),
+    }
 }
 
 // ============================================================================

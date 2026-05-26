@@ -3,7 +3,7 @@ use crate::kernel::mm::slab::{
     KmemCache, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE,
     GENERAL_CACHE_SIZES, find_general_cache_index,
 };
-use crate::kernel::syscall::types::SyscallError;
+use crate::kernel::syscall::types::Errno;
 use crate::kernel::pwm::sha256::sha256;
 use crate::kernel::timer::pit::{
     PIT_BASE_FREQUENCY, DEFAULT_INTERRUPT_FREQ_HZ, PIT_MAX_COUNT, PIT_MIN_COUNT,
@@ -48,23 +48,23 @@ fn slab_find_general_cache_index() -> TestResult {
 }
 
 fn syscall_error_conversion() -> TestResult {
-    assert_eq_test!(SyscallError::E_PERM.as_i64(), -1, "E_PERM");
-    assert_eq_test!(SyscallError::E_NOMEM.as_i64(), -12, "E_NOMEM");
-    assert_eq_test!(SyscallError::E_INVAL.as_i64(), -22, "E_INVAL");
+    assert_eq_test!(Errno::E_PERM.as_i64(), -1, "E_PERM");
+    assert_eq_test!(Errno::E_NOMEM.as_i64(), -12, "E_NOMEM");
+    assert_eq_test!(Errno::E_INVAL.as_i64(), -22, "E_INVAL");
     TestResult::Pass
 }
 
 fn syscall_error_from_i64() -> TestResult {
-    assert_eq_test!(SyscallError::from_i64(-1), Some(SyscallError::E_PERM), "from -1");
-    assert_eq_test!(SyscallError::from_i64(-22), Some(SyscallError::E_INVAL), "from -22");
-    assert_eq_test!(SyscallError::from_i64(-999), None, "from -999");
+    assert_eq_test!(Errno::from_i64(-1), Some(Errno::E_PERM), "from -1");
+    assert_eq_test!(Errno::from_i64(-22), Some(Errno::E_INVAL), "from -22");
+    assert_eq_test!(Errno::from_i64(-999), None, "from -999");
     TestResult::Pass
 }
 
 fn syscall_error_display() -> TestResult {
-    let s = alloc::format!("{}", SyscallError::E_PERM);
+    let s = alloc::format!("{}", Errno::E_PERM);
     assert_eq_test!(s.as_str(), "Operation not permitted", "E_PERM display");
-    let s = alloc::format!("{}", SyscallError::E_NOSYS);
+    let s = alloc::format!("{}", Errno::E_NOSYS);
     assert_eq_test!(s.as_str(), "Function not implemented", "E_NOSYS display");
     TestResult::Pass
 }

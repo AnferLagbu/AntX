@@ -21,6 +21,7 @@ pub mod slab;
 pub mod kmalloc;
 pub mod kmalloc_slab;
 pub mod vma;
+pub mod page_fault;
 pub mod ffi;
 pub mod arch;
 

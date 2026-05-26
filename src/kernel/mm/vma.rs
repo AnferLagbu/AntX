@@ -234,6 +234,22 @@ impl MmStruct {
 unsafe impl Send for MmStruct {}
 unsafe impl Sync for MmStruct {}
 
+static mut CURRENT_MM: *const MmStruct = core::ptr::null();
+
+pub fn set_current_mm(mm: *const MmStruct) {
+    unsafe { CURRENT_MM = mm; }
+}
+
+pub fn get_current_mm() -> Option<&'static MmStruct> {
+    unsafe {
+        if CURRENT_MM.is_null() {
+            None
+        } else {
+            Some(&*CURRENT_MM)
+        }
+    }
+}
+
 pub fn mm_struct_new() -> MmStruct {
     MmStruct::new()
 }

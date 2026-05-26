@@ -1,6 +1,6 @@
 use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
 use crate::kernel::proc::scheduler_ex::{
-    ThreadState, ThreadPriority, SchedulerEx,
+    ThreadState, SchedulerEx,
 };
 use crate::kernel::proc::thread::Thread;
 use crate::kernel::proc::types::{

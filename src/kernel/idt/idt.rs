@@ -455,12 +455,37 @@ impl IdtManager {
         }
     }
 
-    /// Page Fault 处理
+    /// Page Fault 处理 (集成 Demand Paging)
     fn handle_page_fault(&self, frame: &InterruptFrame) {
         let fault_addr = unsafe { frame.fault_address() };
         let error_flags = frame.error_code_flags();
+        let error_code = frame.err_code;
 
         if frame.is_user_mode() {
+            // 尝试 Demand Paging
+            let pf_info = crate::kernel::mm::page_fault::PageFaultInfo::from_error_code(
+                fault_addr, error_code,
+            );
+
+            match crate::kernel::mm::page_fault::handle_user_page_fault(pf_info) {
+                crate::kernel::mm::page_fault::PfResult::Fixed => return,
+                crate::kernel::mm::page_fault::PfResult::SignalSegv => {
+                    self.terminate_user_process(frame, 11); // SIGSEGV
+                    return;
+                }
+                crate::kernel::mm::page_fault::PfResult::SignalBus => {
+                    self.terminate_user_process(frame, 7); // SIGBUS
+                    return;
+                }
+                crate::kernel::mm::page_fault::PfResult::Oom => {
+                    self.terminate_user_process(frame, 9); // SIGKILL (OOM)
+                    return;
+                }
+                crate::kernel::mm::page_fault::PfResult::Unhandled => {
+                    // 回退到原有逻辑
+                }
+            }
+
             if !error_flags.contains(super::types::ErrorFlags::PRESENT) {
                 if crate::kernel::proc::user_proc::try_expand_user_stack(fault_addr) {
                     return;
