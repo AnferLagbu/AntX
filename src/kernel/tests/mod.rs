@@ -13,6 +13,7 @@ pub mod test_vfs;
 pub mod test_ipc;
 pub mod test_devfs;
 pub mod test_proc;
+pub mod test_new_features;
 #[cfg(feature = "kernel_test")]
 pub mod arch;
 #[cfg(feature = "kernel_test")]
@@ -304,6 +305,7 @@ pub fn test_runner_init() {
     test_ipc::register_ipc_tests();
     test_devfs::register_devfs_tests();
     test_proc::register_proc_tests();
+    test_new_features::register_new_tests();
 
     #[cfg(feature = "kernel_test")]
     {

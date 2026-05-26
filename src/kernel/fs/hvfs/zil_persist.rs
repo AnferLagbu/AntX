@@ -341,6 +341,11 @@ impl HvZilPersist {
     }
 }
 
+/// Public CRC32 wrapper for testing
+pub fn crc32_test_wrapper(data: &[u8]) -> u32 {
+    crc32_checksum(data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
