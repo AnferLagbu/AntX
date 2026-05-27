@@ -84,6 +84,7 @@ ifeq ($(ARCH),aarch64)
 else
     KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
                   build/lib/string.o \
+                  build/arch/x86_64/trampoline.o \
                   $(NET_OBJS)
     KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
                   build/kernel_test.o build/test_main.o build/test_hvfs.o \
@@ -206,7 +207,7 @@ $(STAGE1_BIN): src/kernel/boot/stage1.asm
 	$(AS) -f bin $< -o $@
 
 build/%.o: src/kernel/%.asm
-	@mkdir -p build
+	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) $< -o $@
 
 build/%.o: src/kernel/boot/%.asm

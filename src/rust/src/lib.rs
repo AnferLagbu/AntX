@@ -321,6 +321,15 @@ pub extern "C" fn kernel_init() {
         crate::kernel::arch::x86_64::gdt::gdt_init();
         crate::kernel::idt::idt_init();
         crate::klog_boot_info!("IDT+GDT ready");
+
+        crate::kernel::arch::x86_64::apic::apic_init();
+        crate::klog_boot_info!("APIC ready");
+
+        crate::kernel::smp::init();
+        crate::klog_boot_info!("SMP BSP registered");
+
+        crate::kernel::arch::x86_64::smp_init::init();
+        crate::klog_boot_info!("SMP AP boot sequence complete");
     }
     #[cfg(target_arch = "aarch64")]
     {

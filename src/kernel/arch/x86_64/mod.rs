@@ -17,6 +17,8 @@ pub mod gdt;
 pub mod tss;
 pub mod apic;
 pub mod ioapic;
+pub mod acpi;
+pub mod smp_init;
 
 // ============================================================================
 // X8664 架构类型

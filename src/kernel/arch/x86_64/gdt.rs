@@ -412,6 +412,22 @@ pub unsafe fn get_gdt_table() -> &'static [GdtEntry; GDT_MAX_ENTRIES] {
     &GDT_TABLE
 }
 
+/// 获取 GDT 指针 (用于 AP trampoline 共享 GDT)
+pub fn get_gdt_ptr() -> &'static GdtPtr {
+    unsafe { &GDT_POINTER }
+}
+
+/// AP 加载共享 GDT (AP 启动时调用)
+///
+/// 加载 BSP 已初始化的 GDT/TSS，AP 共享同一个 GDT 表。
+/// TSS 栈指针将在进程调度时通过 write_tss_rsp0 设置。
+pub fn gdt_load_on_ap() {
+    unsafe {
+        gdt_flush(&GDT_POINTER);
+        tss_flush(SELECTOR_TSS);
+    }
+}
+
 /// 获取 TSS 的可变引用 (用于设置栈指针等)
 /// 
 /// # Safety

@@ -46,6 +46,7 @@ SECTIONS
         _kernel_text_start = .;
         *(.text)
         *(.text.*)
+        *(.trampoline)
         _kernel_text_end = .;
     } :kernel
     

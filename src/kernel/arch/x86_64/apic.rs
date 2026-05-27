@@ -68,12 +68,12 @@ fn wrmsr(msr: u32, value: u64) {
     }
 }
 
-fn apic_read(reg: u32) -> u32 {
+pub fn apic_read(reg: u32) -> u32 {
     let base = APIC_BASE.load(Ordering::Acquire);
     unsafe { core::ptr::read_volatile((base + reg as u64) as *const u32) }
 }
 
-fn apic_write(reg: u32, value: u32) {
+pub fn apic_write(reg: u32, value: u32) {
     let base = APIC_BASE.load(Ordering::Acquire);
     unsafe { core::ptr::write_volatile((base + reg as u64) as *mut u32, value); }
 }
