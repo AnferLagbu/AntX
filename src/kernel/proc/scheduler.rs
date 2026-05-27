@@ -1,5 +1,4 @@
 use alloc::collections::VecDeque;
-use alloc::vec::Vec;
 use spin::Mutex;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
@@ -81,19 +80,66 @@ pub struct RtTaskInfo {
     pub time_slice_remaining: u64,
 }
 
-pub struct Scheduler {
+// ============================================================================
+// SMP Per-CPU 调度器
+// ============================================================================
+
+const MAX_CPUS: usize = 256;
+
+struct PerCpuSched {
     queues: [Mutex<VecDeque<Pid>>; MLFQ_LEVELS],
     rt_queue: Mutex<VecDeque<RtTaskInfo>>,
     current: AtomicU32,
-    all_ready: Mutex<Vec<Pid>>,
     need_reschedule: AtomicBool,
-    initialized: AtomicBool,
     current_level: AtomicU32,
     time_remaining: AtomicU64,
     rt_running: AtomicBool,
-    fifo_watchdog: AtomicU64,                     // RT FIFO preempt countdown
-    quotas: Mutex<[PwidQuota; MAX_QUOTAS]>,        // per-PWM CPU quotas
-    limits: Mutex<[PwidLimit; MAX_LIMITS]>,         // per-PWM proc limits
+    fifo_watchdog: AtomicU64,
+}
+
+unsafe impl Send for PerCpuSched {}
+unsafe impl Sync for PerCpuSched {}
+
+static mut PER_CPU_SCHED: [core::mem::MaybeUninit<PerCpuSched>; MAX_CPUS] = [
+    const { core::mem::MaybeUninit::uninit() }; MAX_CPUS
+];
+
+pub fn init_per_cpu_sched(cpu_id: u32) {
+    unsafe {
+        PER_CPU_SCHED[(cpu_id as usize) % MAX_CPUS].write(PerCpuSched {
+            queues: [
+                Mutex::new(VecDeque::new()),
+                Mutex::new(VecDeque::new()),
+                Mutex::new(VecDeque::new()),
+                Mutex::new(VecDeque::new()),
+            ],
+            rt_queue: Mutex::new(VecDeque::new()),
+            current: AtomicU32::new(0),
+            need_reschedule: AtomicBool::new(false),
+            current_level: AtomicU32::new(0),
+            time_remaining: AtomicU64::new(TIME_SLICES[0]),
+            rt_running: AtomicBool::new(false),
+            fifo_watchdog: AtomicU64::new(0),
+        });
+    }
+}
+
+#[inline]
+fn per_cpu() -> &'static PerCpuSched {
+    let cpu = crate::kernel::smp::get_current_cpu();
+    unsafe { &*PER_CPU_SCHED[(cpu as usize) % MAX_CPUS].as_ptr() }
+}
+
+/// Per-CPU sched for a specific CPU (caller must ensure CPU is online)
+#[inline]
+fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
+    unsafe { &*PER_CPU_SCHED[(cpu_id as usize) % MAX_CPUS].as_ptr() }
+}
+
+pub struct Scheduler {
+    quotas: Mutex<[PwidQuota; MAX_QUOTAS]>,
+    limits: Mutex<[PwidLimit; MAX_LIMITS]>,
+    initialized: AtomicBool,
 }
 
 unsafe impl Send for Scheduler {}
@@ -104,34 +150,21 @@ impl Scheduler {
         const QUOTA_ZERO: PwidQuota = PwidQuota::new();
         const LIMIT_ZERO: PwidLimit = PwidLimit { pwm: 0, used: false, max_procs: 0, current: 0 };
         Self {
-            queues: [
-                Mutex::new(VecDeque::new()),
-                Mutex::new(VecDeque::new()),
-                Mutex::new(VecDeque::new()),
-                Mutex::new(VecDeque::new()),
-            ],
-            rt_queue: Mutex::new(VecDeque::new()),
-            current: AtomicU32::new(0),
-            all_ready: Mutex::new(Vec::new()),
-            need_reschedule: AtomicBool::new(false),
-            initialized: AtomicBool::new(false),
-            current_level: AtomicU32::new(0),
-            time_remaining: AtomicU64::new(TIME_SLICES[0]),
-            rt_running: AtomicBool::new(false),
-            fifo_watchdog: AtomicU64::new(0),
             quotas: Mutex::new([QUOTA_ZERO; MAX_QUOTAS]),
             limits: Mutex::new([LIMIT_ZERO; MAX_LIMITS]),
+            initialized: AtomicBool::new(false),
         }
     }
     
     pub fn init(&self) {
+        init_per_cpu_sched(0);
+
         self.initialized.store(true, Ordering::SeqCst);
 
         let init_pid = self.create_process("init", None, 0);
         if let Some(pid) = init_pid {
             if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
                 unsafe {
-                    // ✅ 修复: 使用安全的状态设置 (deprecated → set_state_safe)
                     let _ = (*process_ptr).set_state_safe(ProcessState::Running);
                     (*process_ptr).set_priority(ProcessPriority::Normal);
                 }
@@ -146,7 +179,7 @@ impl Scheduler {
             }
         }
 
-        if self.need_reschedule.swap(false, Ordering::SeqCst) {
+        if per_cpu().need_reschedule.swap(false, Ordering::SeqCst) {
             self.schedule();
         }
     }
@@ -183,21 +216,19 @@ impl Scheduler {
     }
     
     pub fn add(&self, pid: Pid) {
-        self.queues[0].lock().push_back(pid);
-        self.all_ready.lock().push(pid);
+        per_cpu().queues[0].lock().push_back(pid);
     }
 
     pub fn add_with_priority(&self, pid: Pid, level: usize) {
         if level < MLFQ_LEVELS {
-            self.queues[level].lock().push_back(pid);
-            self.all_ready.lock().push(pid);
+            per_cpu().queues[level].lock().push_back(pid);
         }
     }
 
     pub fn add_rt_task(&self, pid: Pid, rt_priority: u8, policy: SchedPolicy) {
         let priority = rt_priority.min(RT_PRIORITY_MAX);
         
-        let mut rt_queue = self.rt_queue.lock();
+        let mut rt_queue = per_cpu().rt_queue.lock();
         let mut inserted = false;
         
         for i in 0..rt_queue.len() {
@@ -224,16 +255,14 @@ impl Scheduler {
     }
     
     pub fn schedule(&self) -> Option<Pid> {
-        // ✅ 中断安全: 禁用中断保护整个调度临界区
-        // process_switch_asm 中的 iretq 会恢复中断标志
-        // 如果无实际切换(next==current)或无可运行进程, 则手动恢复
         let saved_flags = crate::arch!(interrupt_disable()) as u64;
         
-        let current_pid = self.current.load(Ordering::SeqCst);
+        let per_cpu = per_cpu();
+        let current_pid = per_cpu.current.load(Ordering::SeqCst);
         let mut next_pid: Option<Pid> = None;
 
         {
-            let mut rt_queue = self.rt_queue.lock();
+            let mut rt_queue = per_cpu.rt_queue.lock();
             
             while !rt_queue.is_empty() {
                 let rt_task = match rt_queue.pop_front() {
@@ -257,34 +286,34 @@ impl Scheduler {
                 match rt_task.policy {
                     SchedPolicy::Fifo => {
                         next_pid = Some(rt_pid);
-                        self.rt_running.store(true, Ordering::SeqCst);
-                        self.fifo_watchdog.store(RT_FIFO_WATCHDOG, Ordering::SeqCst);
+                        per_cpu.rt_running.store(true, Ordering::SeqCst);
+                        per_cpu.fifo_watchdog.store(RT_FIFO_WATCHDOG, Ordering::SeqCst);
                         break;
                     }
                     SchedPolicy::Rr => {
                         next_pid = Some(rt_pid);
-                        self.rt_running.store(true, Ordering::SeqCst);
+                        per_cpu.rt_running.store(true, Ordering::SeqCst);
                         let mut updated_rt = rt_task;
                         updated_rt.time_slice_remaining = RT_TIME_SLICE;
                         rt_queue.push_back(updated_rt);
                         break;
                     }
                     _ => {
-                        self.queues[0].lock().push_back(rt_pid);
-                        self.rt_running.store(false, Ordering::SeqCst);
+                        per_cpu.queues[0].lock().push_back(rt_pid);
+                        per_cpu.rt_running.store(false, Ordering::SeqCst);
                         break;
                     }
                 }
             }
             
             if next_pid.is_none() {
-                self.rt_running.store(false, Ordering::SeqCst);
+                per_cpu.rt_running.store(false, Ordering::SeqCst);
             }
         }
 
         if next_pid.is_none() {
             for level in 0..MLFQ_LEVELS {
-                let mut queue = self.queues[level].lock();
+                let mut queue = per_cpu.queues[level].lock();
 
                 while let Some(pid) = queue.pop_front() {
                     if let Some(process) = PROCESS_TABLE.get(pid) {
@@ -292,15 +321,15 @@ impl Scheduler {
                             let state = (*process).get_state();
                             if state != ProcessState::Blocked && state != ProcessState::Zombie {
                                 next_pid = Some(pid);
-                                self.current_level.store(level as u32, Ordering::SeqCst);
-                                self.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
+                                per_cpu.current_level.store(level as u32, Ordering::SeqCst);
+                                per_cpu.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
                                 break;
                             }
                         }
                     } else {
                         next_pid = Some(pid);
-                        self.current_level.store(level as u32, Ordering::SeqCst);
-                        self.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
+                        per_cpu.current_level.store(level as u32, Ordering::SeqCst);
+                        per_cpu.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
                         break;
                     }
                 }
@@ -311,10 +340,22 @@ impl Scheduler {
             }
         }
 
+        if next_pid.is_none() && crate::kernel::smp::is_enabled() {
+            self.load_balance();
+            for level in 0..MLFQ_LEVELS {
+                let mut queue = per_cpu.queues[level].lock();
+                if let Some(pid) = queue.pop_front() {
+                    next_pid = Some(pid);
+                    per_cpu.current_level.store(level as u32, Ordering::SeqCst);
+                    per_cpu.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
+                    break;
+                }
+            }
+        }
+
         let next = match next_pid {
             Some(pid) => pid,
             None => {
-                // ✅ 无进程可调度, 恢复中断
                 if saved_flags & 0x200 != 0 {
                     crate::arch!(interrupt_enable());
                 }
@@ -323,7 +364,6 @@ impl Scheduler {
         };
 
         if next == current_pid {
-            // ✅ 无需切换, 恢复中断
             if saved_flags & 0x200 != 0 {
                 crate::arch!(interrupt_enable());
             }
@@ -353,9 +393,8 @@ impl Scheduler {
             crate::kernel::cpu::arch::set_kernel_stack(next_kernel_stack);
         }
 
-        self.current.store(next, Ordering::SeqCst);
+        per_cpu.current.store(next, Ordering::SeqCst);
 
-        // ✅ 同步线程调度器 current 指针
         super::scheduler_ex::SCHEDULER_EX.current.store(next as u64, Ordering::SeqCst);
 
         unsafe { crate::kernel::proc::ffi::update_current_process_ptr(next_proc as *const Process as u64); }
@@ -365,13 +404,13 @@ impl Scheduler {
         }
 
         if let Some(ref prev_proc) = prev_ptr {
-            let was_rt = self.rt_running.load(Ordering::SeqCst);
+            let was_rt = per_cpu.rt_running.load(Ordering::SeqCst);
             let raw = *prev_proc;
             if was_rt {
                 let rt_priority = unsafe { (&*raw).get_rt_priority() };
                 let policy = unsafe { (&*raw).get_sched_policy() };
                 if policy != SchedPolicy::Fifo {
-                    let mut rt_queue = self.rt_queue.lock();
+                    let mut rt_queue = per_cpu.rt_queue.lock();
                     let mut inserted = false;
                     for i in 0..rt_queue.len() {
                         if rt_queue[i].rt_priority < rt_priority {
@@ -385,8 +424,8 @@ impl Scheduler {
                     }
                 }
             } else {
-                let level = (self.current_level.load(Ordering::SeqCst) as usize + 1).min(MLFQ_LEVELS - 1);
-                self.queues[level].lock().push_back(current_pid);
+                let level = (per_cpu.current_level.load(Ordering::SeqCst) as usize + 1).min(MLFQ_LEVELS - 1);
+                per_cpu.queues[level].lock().push_back(current_pid);
             }
             unsafe { let _ = (&*raw).set_state_safe(ProcessState::Ready); }
         }
@@ -402,7 +441,6 @@ impl Scheduler {
             unsafe {
                 let mut prev_ctx = (*prev_ctx_ptr).lock();
                 let next_ctx = (*next_ctx_ptr).lock();
-                // ✅ context_switch 由 arch!() 分发，适配 x86_64/aarch64 各自实现
                 crate::arch!(context_switch(
                     &mut *prev_ctx as *mut ProcessContext as *mut u8,
                     &*next_ctx as *const ProcessContext as *const u8
@@ -414,7 +452,7 @@ impl Scheduler {
     }
 
     pub fn current(&self) -> Option<Pid> {
-        let pid = self.current.load(Ordering::SeqCst);
+        let pid = per_cpu().current.load(Ordering::SeqCst);
         if pid == 0 {
             None
         } else {
@@ -423,7 +461,7 @@ impl Scheduler {
     }
     
     pub fn get_current_process(&self) -> Option<*mut Process> {
-        let pid = self.current.load(Ordering::SeqCst);
+        let pid = per_cpu().current.load(Ordering::SeqCst);
         if pid == 0 {
             None
         } else {
@@ -432,24 +470,24 @@ impl Scheduler {
     }
     
     pub fn block(&self, reason: BlockReason) {
+        let per_cpu = per_cpu();
         if let Some(pid) = self.current() {
             if let Some(process) = PROCESS_TABLE.get(pid) {
                 unsafe {
-                    // ✅ 修复: deprecated → set_state_safe
                     let _ = (*process).set_state_safe(ProcessState::Blocked);
                     (*process).block_reason.store(reason as u32, Ordering::SeqCst);
                 }
             }
-            self.need_reschedule.store(true, Ordering::SeqCst);
+            per_cpu.need_reschedule.store(true, Ordering::SeqCst);
         }
     }
     
     pub fn unblock(&self, pid: Pid) {
+        let per_cpu = per_cpu();
         if let Some(process) = PROCESS_TABLE.get(pid) {
             unsafe {
                 let state = (*process).get_state();
                 if state == ProcessState::Blocked {
-                    // ✅ 修复: deprecated → set_state_safe
                     let _ = (*process).set_state_safe(ProcessState::Ready);
                     
                     let is_rt = (*process).get_sched_policy() == SchedPolicy::Fifo || 
@@ -461,7 +499,7 @@ impl Scheduler {
                         self.add_rt_task(pid, rt_priority, policy);
                     } else {
                         let boost_level = 0usize;
-                        self.queues[boost_level].lock().push_back(pid);
+                        per_cpu.queues[boost_level].lock().push_back(pid);
                     }
                 }
             }
@@ -469,6 +507,7 @@ impl Scheduler {
     }
     
     pub fn exit(&self, exit_code: u32) {
+        let per_cpu = per_cpu();
         if let Some(pid) = self.current() {
             if let Some(process) = PROCESS_TABLE.get(pid) {
                 unsafe {
@@ -486,7 +525,6 @@ impl Scheduler {
                             let state = (*child).get_state();
                             if state == ProcessState::Zombie {
                                 let _ = (*child).set_state_safe(ProcessState::Terminated);
-                                // ✅ 修复内存泄漏: Box<Process> 正确释放
                                 PROCESS_TABLE.remove_and_free(child_pid.0);
                             } else {
                                 (*child).parent = Some(ProcessId(1));
@@ -498,7 +536,7 @@ impl Scheduler {
             }
         }
 
-        self.need_reschedule.store(true, Ordering::SeqCst);
+        per_cpu.need_reschedule.store(true, Ordering::SeqCst);
 
         if self.schedule().is_none() {
             crate::arch!(outb(0xf4, (exit_code as u8).wrapping_shl(1) | 1));
@@ -507,26 +545,24 @@ impl Scheduler {
     }
     
     pub fn yield_current(&self) {
-        self.need_reschedule.store(true, Ordering::SeqCst);
+        per_cpu().need_reschedule.store(true, Ordering::SeqCst);
         self.schedule();
     }
 
-    /// ✅ 设置需要重新调度标志 (替代直接访问 need_reschedule)
     pub fn set_need_reschedule(&self) {
-        self.need_reschedule.store(true, Ordering::SeqCst);
+        per_cpu().need_reschedule.store(true, Ordering::SeqCst);
     }
     
     pub fn should_reschedule(&self) -> bool {
-        self.need_reschedule.swap(false, Ordering::SeqCst)
+        per_cpu().need_reschedule.swap(false, Ordering::SeqCst)
     }
 
-    /// ✅ 将进程加入就绪队列 (MLFQ level 0)
     pub fn add_to_run_queue(&self, pid: Pid) {
-        self.queues[0].lock().push_back(pid);
+        per_cpu().queues[0].lock().push_back(pid);
     }
     
     pub fn set_current(&self, pid: Pid) {
-        self.current.store(pid, Ordering::SeqCst);
+        per_cpu().current.store(pid, Ordering::SeqCst);
 
         if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
             unsafe {
@@ -543,15 +579,16 @@ impl Scheduler {
     }
 
     pub fn has_runnable(&self) -> bool {
+        let per_cpu = per_cpu();
         {
-            let rt_queue = self.rt_queue.lock();
+            let rt_queue = per_cpu.rt_queue.lock();
             if !rt_queue.is_empty() {
                 return true;
             }
         }
         
         for level in 0..MLFQ_LEVELS {
-            let queue = self.queues[level].lock();
+            let queue = per_cpu.queues[level].lock();
             if !queue.is_empty() {
                 return true;
             }
@@ -560,36 +597,32 @@ impl Scheduler {
     }
 
     pub fn get_time_slice(&self) -> u64 {
-        self.time_remaining.load(Ordering::SeqCst)
+        per_cpu().time_remaining.load(Ordering::SeqCst)
     }
 
     pub fn get_current_level(&self) -> u32 {
-        self.current_level.load(Ordering::SeqCst)
+        per_cpu().current_level.load(Ordering::SeqCst)
     }
 
     pub fn tick(&self) {
-        let is_rt = self.rt_running.load(Ordering::SeqCst);
+        let per_cpu = per_cpu();
+        let is_rt = per_cpu.rt_running.load(Ordering::SeqCst);
         let tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
         
-        // Barrier stack: advance barrier generations for all recovery domains
         crate::kernel::barrier::RECOVERY_MANAGER.lock().tick(tick);
 
-        // OOMD: memory pressure monitoring
         crate::kernel::proc::oomd::OOMD.tick();
 
-        // ✅ 线程级时间记账 (不触发独立调度)
         crate::kernel::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
         
-        // RT FIFO watchdog: force preempt after RT_FIFO_WATCHDOG ticks
-        if is_rt && self.fifo_watchdog.load(Ordering::SeqCst) > 0 {
-            let remaining = self.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
+        if is_rt && per_cpu.fifo_watchdog.load(Ordering::SeqCst) > 0 {
+            let remaining = per_cpu.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
             if remaining <= 1 {
-                self.need_reschedule.store(true, Ordering::SeqCst);
-                self.rt_running.store(false, Ordering::SeqCst);
+                per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                per_cpu.rt_running.store(false, Ordering::SeqCst);
             }
         }
         
-        // Per-PWM quota check
         if let Some(pid) = self.current() {
             if let Some(process) = PROCESS_TABLE.get(pid) {
                 let pwm = unsafe { (*process).get_pwm() };
@@ -604,7 +637,7 @@ impl Scheduler {
                                 }
                                 q.consumed += 1;
                                 if q.consumed >= q.max_runtime {
-                                    self.need_reschedule.store(true, Ordering::SeqCst);
+                                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
                                 }
                             }
                             break;
@@ -614,11 +647,8 @@ impl Scheduler {
             }
         }
         
-        // ✅ 睡眠唤醒: 检查 Blocked+Sleeping 进程是否到期 (Fix 6)
         {
             let current_ticks = tick;
-            // 快速遍历进程表: 按 PID 扫描, 跳过 NULL 表项
-            // 为防止锁竞争, 先收集需要唤醒的 PID 列表
             let mut to_wake: [Pid; 8] = [0; 8];
             let mut wake_count = 0;
             for pid in 1..=255 {
@@ -640,14 +670,11 @@ impl Scheduler {
                     }
                 }
             }
-            // 唤醒收集到的睡眠进程
             for i in 0..wake_count {
                 self.unblock(to_wake[i]);
             }
         }
 
-        // ✅ 孤儿僵尸进程回收 (Fix 9): 每 SOCKS_CLEAN_INTERVAL tick 执行一次
-        // 回收父进程已退出且没有 wait 的僵尸子进程
         let socks_clean_interval: u64 = 1000;
         if tick % socks_clean_interval == 0 {
             let mut to_reap: [Pid; 16] = [0; 16];
@@ -681,31 +708,38 @@ impl Scheduler {
             }
         }
         
-        // Standard time-slice accounting
         if is_rt {
-            let remaining = self.time_remaining.fetch_sub(1, Ordering::SeqCst);
+            let remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
             if remaining <= 1 {
-                self.need_reschedule.store(true, Ordering::SeqCst);
-                self.time_remaining.store(RT_TIME_SLICE, Ordering::SeqCst);
+                per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                per_cpu.time_remaining.store(RT_TIME_SLICE, Ordering::SeqCst);
             }
         } else {
-            let remaining = self.time_remaining.fetch_sub(1, Ordering::SeqCst);
+            let remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
             if remaining <= 1 {
-                self.need_reschedule.store(true, Ordering::SeqCst);
-                self.time_remaining.store(TIME_SLICES[self.current_level.load(Ordering::SeqCst) as usize], Ordering::SeqCst);
+                per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                per_cpu.time_remaining.store(TIME_SLICES[per_cpu.current_level.load(Ordering::SeqCst) as usize], Ordering::SeqCst);
             }
         }
 
-        if self.need_reschedule.swap(false, Ordering::SeqCst) {
+        if tick % 64 == 0 {
+            let local_load = self.total_runnable_for(crate::kernel::smp::get_current_cpu());
+            if local_load < 2 {
+                self.load_balance();
+            }
+        }
+
+        if per_cpu.need_reschedule.swap(false, Ordering::SeqCst) {
             self.schedule();
         }
     }
 
     pub fn boost_priority(&self) {
+        let per_cpu = per_cpu();
         for level in 1..MLFQ_LEVELS {
-            let mut queue = self.queues[level].lock();
+            let mut queue = per_cpu.queues[level].lock();
             while let Some(pid) = queue.pop_front() {
-                self.queues[0].lock().push_back(pid);
+                per_cpu.queues[0].lock().push_back(pid);
             }
         }
     }
@@ -723,7 +757,71 @@ impl Scheduler {
     }
     
     pub fn get_rt_count(&self) -> usize {
-        self.rt_queue.lock().len()
+        per_cpu().rt_queue.lock().len()
+    }
+
+    fn total_runnable_for(&self, cpu_id: u32) -> usize {
+        let sched = per_cpu_for(cpu_id);
+        let mut count = sched.rt_queue.lock().len();
+        for level in 0..MLFQ_LEVELS {
+            count += sched.queues[level].lock().len();
+        }
+        count
+    }
+
+    pub fn load_balance(&self) {
+        let cpu = crate::kernel::smp::get_current_cpu();
+        let cpu_count = crate::kernel::smp::get_cpu_count();
+
+        let mut busiest_cpu = cpu;
+        let mut max_load = 0;
+
+        for target in 0..cpu_count {
+            if target == cpu || !crate::kernel::smp::is_cpu_online(target) {
+                continue;
+            }
+            let load = self.total_runnable_for(target);
+            if load > max_load {
+                max_load = load;
+                busiest_cpu = target;
+            }
+        }
+
+        if max_load < 2 {
+            return;
+        }
+
+        let target_sched = per_cpu_for(busiest_cpu);
+
+        let mut stolen: Option<Pid> = None;
+
+        for level in (0..MLFQ_LEVELS).rev() {
+            let mut queue = target_sched.queues[level].lock();
+            if let Some(pid) = queue.pop_front() {
+                stolen = Some(pid);
+                break;
+            }
+        }
+
+        if stolen.is_none() {
+            let mut rt_queue = target_sched.rt_queue.lock();
+            if !rt_queue.is_empty() {
+                let task = rt_queue.pop_front();
+                if let Some(ref rt) = task {
+                    // 只偷非 FIFO 的 RT 任务，FIFO 绑定核心
+                    if rt.policy != SchedPolicy::Fifo {
+                        stolen = task.map(|t| t.pid);
+                    } else {
+                        rt_queue.push_front(task.unwrap());
+                    }
+                }
+            }
+        }
+
+        if let Some(pid) = stolen {
+            let per_cpu = per_cpu();
+            per_cpu.queues[0].lock().push_back(pid);
+        }
     }
     
     /// Set CPU quota for a PWM. Caller must hold SYSTEM_CAP_QUOTA_ADMIN.

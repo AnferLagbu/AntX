@@ -36,6 +36,12 @@
 /// GDT 最大条目数 (x86-64 通常需要 7 个)
 pub const GDT_MAX_ENTRIES: usize = 7;
 
+/// Per-CPU GDT 最大 CPU 数
+const PER_CPU_MAX: usize = 256;
+
+/// Per-CPU IST 栈大小 (16KB)
+const PER_CPU_IST_SIZE: usize = 16384;
+
 /// 空选择子值 (必须为 0)
 pub const SELECTOR_NULL: u16 = 0x00;
 
@@ -273,168 +279,221 @@ pub struct GdtPtr {
 }
 
 // ============================================================================
-// 全局状态
+// Per-CPU GDT 数据结构
 // ============================================================================
 
-/// GDT 表实例 (静态存储期)
-static mut GDT_TABLE: [GdtEntry; GDT_MAX_ENTRIES] = [GdtEntry::null(); GDT_MAX_ENTRIES];
+/// 每个 CPU 独立的 GDT + TSS + IST 栈
+///
+/// 所有 CPU 共享相同的段描述符 (flat model)，
+/// 但 TSS 描述符必须指向各自的 TSS 实例。
+struct PerCpuGdt {
+    entries: [GdtEntry; GDT_MAX_ENTRIES],
+    ptr: GdtPtr,
+    tss: super::tss::TaskStateSegment,
+    ist0: [u8; PER_CPU_IST_SIZE],
+    ist1: [u8; PER_CPU_IST_SIZE],
+    ist2: [u8; PER_CPU_IST_SIZE],
+}
 
-/// GDTR 寄存器值
-static mut GDT_POINTER: GdtPtr = GdtPtr { limit: 0, base: 0 };
+impl PerCpuGdt {
+    const fn new() -> Self {
+        Self {
+            entries: [GdtEntry::null(); GDT_MAX_ENTRIES],
+            ptr: GdtPtr { limit: 0, base: 0 },
+            tss: super::tss::TaskStateSegment::zeroed(),
+            ist0: [0u8; PER_CPU_IST_SIZE],
+            ist1: [0u8; PER_CPU_IST_SIZE],
+            ist2: [0u8; PER_CPU_IST_SIZE],
+        }
+    }
+}
 
-/// TSS 实例 (静态存储期)
-static mut TSS_INSTANCE: super::tss::TaskStateSegment = super::tss::TaskStateSegment::zeroed();
+// ============================================================================
+// 全局状态 (Per-CPU)
+// ============================================================================
 
-/// IST0 栈 (Double Fault, 16KB)
-static mut IST0_STACK: [u8; 16384] = [0u8; 16384];
-/// IST1 栈 (NMI, 16KB)
-static mut IST1_STACK: [u8; 16384] = [0u8; 16384];
-/// IST2 栈 (Recovery int 0x82, 16KB)
-static mut IST2_STACK: [u8; 16384] = [0u8; 16384];
+static mut PER_CPU_GDT: [core::mem::MaybeUninit<PerCpuGdt>; PER_CPU_MAX] =
+    [const { core::mem::MaybeUninit::uninit() }; PER_CPU_MAX];
+
+// ============================================================================
+// 内部辅助函数
+// ============================================================================
+
+/// 获取指定 CPU 的 GDT 不可变引用
+#[inline]
+fn per_cpu_gdt(cpu: u32) -> &'static PerCpuGdt {
+    unsafe { &*PER_CPU_GDT[(cpu as usize) % PER_CPU_MAX].as_ptr() }
+}
+
+/// 获取指定 CPU 的 GDT 可变引用
+#[inline]
+fn per_cpu_gdt_mut(cpu: u32) -> &'static mut PerCpuGdt {
+    unsafe { &mut *PER_CPU_GDT[(cpu as usize) % PER_CPU_MAX].as_mut_ptr() }
+}
+
+/// 获取当前 CPU 的 GDT 不可变引用
+#[inline]
+fn current_per_cpu_gdt() -> &'static PerCpuGdt {
+    let cpu = crate::kernel::smp::get_current_cpu();
+    per_cpu_gdt(cpu)
+}
+
+/// 获取当前 CPU 的 GDT 可变引用
+#[inline]
+fn current_per_cpu_gdt_mut() -> &'static mut PerCpuGdt {
+    let cpu = crate::kernel::smp::get_current_cpu();
+    per_cpu_gdt_mut(cpu)
+}
+
+/// 初始化 per-CPU GDT 的段描述符 (所有 CPU 共享相同段描述符)
+unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
+    entries[0] = GdtEntry::null();
+
+    entries[1] = GdtEntry::new_segment(
+        0, 0xFFFF_FFFF,
+        AccessByte::kernel_code(),
+        Granularity::code_64bit(),
+    );
+
+    entries[2] = GdtEntry::new_segment(
+        0, 0xFFFF_FFFF,
+        AccessByte::kernel_data(),
+        Granularity::data_32bit(),
+    );
+
+    entries[3] = GdtEntry::new_segment(
+        0, 0xFFFF_FFFF,
+        AccessByte::user_code(),
+        Granularity::code_64bit(),
+    );
+
+    entries[4] = GdtEntry::new_segment(
+        0, 0xFFFF_FFFF,
+        AccessByte::user_data(),
+        Granularity::data_32bit(),
+    );
+}
 
 // ============================================================================
 // 公共 API
 // ============================================================================
 
-/// 初始化 GDT 和 TSS
-/// 
+/// 初始化 BSP 的 GDT 和 TSS
+///
 /// **必须在内核启动早期调用**, 在 IDT 初始化之前。
-/// 
+///
 /// # 功能
-/// 1. 清空 GDT 表
-/// 2. 设置标准段描述符 (Null, Kernel CS/DS, User CS/DS)
-/// 3. 初始化 TSS 结构体
-/// 4. 设置 TSS 描述符 (占用2个槽位)
-/// 5. 加载 GDTR (lgdt 指令)
-/// 6. 加载 TR (ltr 指令, 任务寄存器)
-/// 
-/// # Returns
-/// * Ok(()) - 成功
-/// * Err(&str) - 错误描述
+/// 1. 设置标准段描述符 (Null, Kernel CS/DS, User CS/DS)
+/// 2. 初始化 per-CPU TSS 结构体
+/// 3. 设置 TSS 描述符 (占用2个槽位)
+/// 4. 加载 GDTR (lgdt 指令)
+/// 5. 加载 TR (ltr 指令, 任务寄存器)
 /// FFI export function (C-callable)
 #[allow(dead_code)]
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn gdt_init() -> i32 {
     use crate::kernel::klog::{klog_write, LogLevel, LogCategory};
-    
-    static INIT_MSG: &[u8] = b"Initializing GDT and TSS...\0";
+
+    static INIT_MSG: &[u8] = b"Initializing GDT and TSS (BSP)...\0";
     unsafe {
         klog_write(LogLevel::Info as u8, LogCategory::Boot as u8,
                   core::ptr::null(), core::ptr::null(), 0,
                   INIT_MSG.as_ptr() as *const i8);
     }
-    
+
     unsafe {
-        // Step 1: 计算 GDT 大小并设置 GDTR
-        GDT_POINTER.limit = (core::mem::size_of::<[GdtEntry; GDT_MAX_ENTRIES]>() - 1) as u16;
-        GDT_POINTER.base = GDT_TABLE.as_ptr() as u64;
-        
-        // Step 2: 清空 GDT
-        GDT_TABLE.fill(GdtEntry::null());
-        
-        // Step 3: 设置标准段描述符
-        // [0] Null Descriptor (必须存在)
-        GDT_TABLE[0] = GdtEntry::null();
-        
-        // [1] Kernel Code Segment (64-bit, Ring 0)
-        GDT_TABLE[1] = GdtEntry::new_segment(
-            0,                          // Base = 0 (flat model)
-            0xFFFF_FFFF,                // Limit = 4GB (with page granularity)
-            AccessByte::kernel_code(),  // Access = 0x9A
-            Granularity::code_64bit(),  // Granularity = 0xAF
-        );
-        
-        // [2] Kernel Data Segment (Ring 0)
-        GDT_TABLE[2] = GdtEntry::new_segment(
-            0,
-            0xFFFF_FFFF,
-            AccessByte::kernel_data(),  // Access = 0x92
-            Granularity::data_32bit(),  // Granularity = 0xCF
-        );
-        
-        // [3] User Code Segment (64-bit, Ring 3)
-        GDT_TABLE[3] = GdtEntry::new_segment(
-            0,
-            0xFFFF_FFFF,
-            AccessByte::user_code(),    // Access = 0xFA
-            Granularity::code_64bit(),
-        );
-        
-        // [4] User Data Segment (Ring 3)
-        GDT_TABLE[4] = GdtEntry::new_segment(
-            0,
-            0xFFFF_FFFF,
-            AccessByte::user_data(),    // Access = 0xF2
-            Granularity::data_32bit(),
-        );
-        
-        // Step 4: 初始化 TSS
-        TSS_INSTANCE = super::tss::TaskStateSegment::zeroed();
-        
-        // 设置 IST0 (Double Fault) 和 IST1 (NMI) 和 IST2 (Recovery) 专用栈
-        TSS_INSTANCE.set_ist(0, IST0_STACK.as_ptr() as u64 + IST0_STACK.len() as u64);
-        TSS_INSTANCE.set_ist(1, IST1_STACK.as_ptr() as u64 + IST1_STACK.len() as u64);
-        TSS_INSTANCE.set_ist(2, IST2_STACK.as_ptr() as u64 + IST2_STACK.len() as u64);
-        
-        TSS_INSTANCE.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
-        
-        // Step 5: 设置 TSS 描述符 (占用索引 5 和 6)
-        let tss_addr = &TSS_INSTANCE as *const _ as u64;
+        let gdt = per_cpu_gdt_mut(0);
+
+        gdt.ptr.limit = (core::mem::size_of::<[GdtEntry; GDT_MAX_ENTRIES]>() - 1) as u16;
+        gdt.ptr.base = gdt.entries.as_ptr() as u64;
+
+        init_gdt_entries(&mut gdt.entries);
+
+        gdt.tss = super::tss::TaskStateSegment::zeroed();
+
+        gdt.tss.set_ist(0, gdt.ist0.as_ptr() as u64 + gdt.ist0.len() as u64);
+        gdt.tss.set_ist(1, gdt.ist1.as_ptr() as u64 + gdt.ist1.len() as u64);
+        gdt.tss.set_ist(2, gdt.ist2.as_ptr() as u64 + gdt.ist2.len() as u64);
+
+        gdt.tss.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
+
+        let tss_addr = &gdt.tss as *const _ as u64;
         let tss_size = (core::mem::size_of::<super::tss::TaskStateSegment>() - 1) as u16;
-        
-        GDT_TABLE[5] = GdtEntry::tss_low(tss_addr, tss_size);  // Low 64 bits
-        GDT_TABLE[6] = GdtEntry::tss_high(tss_addr);           // High 64 bits
-        
-        // Step 6: 加载 GDTR
-        gdt_flush(&GDT_POINTER);
-        
-        // Step 7: 加载任务寄存器 (LTR)
+
+        gdt.entries[5] = GdtEntry::tss_low(tss_addr, tss_size);
+        gdt.entries[6] = GdtEntry::tss_high(tss_addr);
+
+        gdt_flush(&gdt.ptr);
         tss_flush(SELECTOR_TSS);
     }
-    
-    static OK_MSG: &[u8] = b"GDT and TSS initialized successfully\0";
+
+    static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
     unsafe {
         klog_write(LogLevel::Info as u8, LogCategory::Boot as u8,
                   core::ptr::null(), core::ptr::null(), 0,
                   OK_MSG.as_ptr() as *const i8);
     }
-    
-    0 // 成功
+
+    0
+}
+
+/// 初始化 AP 的 per-CPU GDT 和独立 TSS
+///
+/// Trampoline 已通过 lgdt [SINFO_GDT_LIMIT] 加载了 BSP 的 GDT 作为过渡，
+/// 本函数在 AP 进入长模式后调用，为目标 CPU 初始化独立的 GDT + TSS。
+pub fn gdt_init_ap(cpu_index: u32) {
+    unsafe {
+        let ap = per_cpu_gdt_mut(cpu_index);
+
+        ap.ptr.limit = (core::mem::size_of::<[GdtEntry; GDT_MAX_ENTRIES]>() - 1) as u16;
+        ap.ptr.base = ap.entries.as_ptr() as u64;
+
+        init_gdt_entries(&mut ap.entries);
+
+        ap.tss = super::tss::TaskStateSegment::zeroed();
+
+        ap.tss.set_ist(0, ap.ist0.as_ptr() as u64 + ap.ist0.len() as u64);
+        ap.tss.set_ist(1, ap.ist1.as_ptr() as u64 + ap.ist1.len() as u64);
+        ap.tss.set_ist(2, ap.ist2.as_ptr() as u64 + ap.ist2.len() as u64);
+
+        ap.tss.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
+
+        let tss_addr = &ap.tss as *const _ as u64;
+        let tss_size = (core::mem::size_of::<super::tss::TaskStateSegment>() - 1) as u16;
+
+        ap.entries[5] = GdtEntry::tss_low(tss_addr, tss_size);
+        ap.entries[6] = GdtEntry::tss_high(tss_addr);
+
+        gdt_flush(&ap.ptr);
+        tss_flush(SELECTOR_TSS);
+    }
 }
 
 /// 获取 GDT 表的引用 (调试用途)
-/// 
+///
 /// # Safety
 /// 返回的引用在整个程序生命周期有效。
 #[inline]
 pub unsafe fn get_gdt_table() -> &'static [GdtEntry; GDT_MAX_ENTRIES] {
-    &GDT_TABLE
+    &current_per_cpu_gdt().entries
 }
 
-/// 获取 GDT 指针 (用于 AP trampoline 共享 GDT)
-pub fn get_gdt_ptr() -> &'static GdtPtr {
-    unsafe { &GDT_POINTER }
-}
-
-/// AP 加载 GDT (AP 启动时调用)
+/// 获取 BSP 的 GDT 指针 (用于 AP trampoline 过渡阶段)
 ///
-/// Trampoline 已通过 lgdt [SINFO_GDT_LIMIT] 加载了 BSP 的 GDT，
-/// 此处只需重新确认 GDTR 指向正确的 GDT 表。
-/// TSS 每个 CPU 独立，暂不在此处设置；后续实现 per-CPU TSS。
-pub fn gdt_load_on_ap() {
-    unsafe {
-        gdt_flush(&GDT_POINTER);
-    }
+/// Trampoline 在 16→64 过渡时使用此 GDT 加载段寄存器，
+/// 进入长模式后 AP 会切换到自己的 per-CPU GDT。
+pub fn get_gdt_ptr() -> &'static GdtPtr {
+    &per_cpu_gdt(0).ptr
 }
 
-/// 获取 TSS 的可变引用 (用于设置栈指针等)
-/// 
+/// 获取当前 CPU 的 TSS 可变引用 (用于设置栈指针等)
+///
 /// # Safety
 /// 应该在初始化后调用, 且注意并发安全。
 #[inline]
 pub unsafe fn get_tss_mut() -> &'static mut super::tss::TaskStateSegment {
-    &mut TSS_INSTANCE
+    &mut current_per_cpu_gdt_mut().tss
 }
 
 // ============================================================================

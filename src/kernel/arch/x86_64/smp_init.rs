@@ -174,9 +174,8 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
         // AP 已就绪，等待 ap_entry 完成 (最多 50ms)
         let mut wait = AP_ENTRY_TIMEOUT_LOOPS;
         while wait > 0 {
-            // ap_entry 最后写入 0xCAFE0006 到 gdt_load_on_ap 返回后的位置，
-            // 通过一个 AP 专用完成标志来确认。当前使用 ready 位表示
-            // trampoline 完成，额外的等待确保 ap_entry 初始化完成。
+            // ap_entry 最后调用 gdt_init_ap 完成 per-CPU GDT+TSS 初始化。
+            // 额外的等待确保 ap_entry 初始化完成。
             //
             // TODO: 替换为 per-CPU 完成标志 (如 ApStartupInfo.done)
             timer_udelay(READY_POLL_US);
@@ -219,11 +218,13 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     super::apic::init();
 
-    super::gdt::gdt_load_on_ap();
+    super::gdt::gdt_init_ap(cpu_index);
 
     crate::kernel::smp::register_cpu(lapic_id);
 
     crate::kernel::proc::cpu_queue::init_cpu_queue(cpu_index, 0);
+
+    crate::kernel::proc::scheduler::init_per_cpu_sched(cpu_index);
 
     unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
 
