@@ -417,14 +417,14 @@ pub fn get_gdt_ptr() -> &'static GdtPtr {
     unsafe { &GDT_POINTER }
 }
 
-/// AP 加载共享 GDT (AP 启动时调用)
+/// AP 加载 GDT (AP 启动时调用)
 ///
-/// 加载 BSP 已初始化的 GDT/TSS，AP 共享同一个 GDT 表。
-/// TSS 栈指针将在进程调度时通过 write_tss_rsp0 设置。
+/// Trampoline 已通过 lgdt [SINFO_GDT_LIMIT] 加载了 BSP 的 GDT，
+/// 此处只需重新确认 GDTR 指向正确的 GDT 表。
+/// TSS 每个 CPU 独立，暂不在此处设置；后续实现 per-CPU TSS。
 pub fn gdt_load_on_ap() {
     unsafe {
         gdt_flush(&GDT_POINTER);
-        tss_flush(SELECTOR_TSS);
     }
 }
 
@@ -453,7 +453,7 @@ unsafe fn gdt_flush(gdt_ptr: &GdtPtr) {
     core::arch::asm!(
         "lgdt [{0}]",
         in(reg) gdt_ptr,
-        options(nostack, nomem, preserves_flags),
+        options(nostack, preserves_flags),
     );
 }
 
@@ -467,9 +467,9 @@ unsafe fn gdt_flush(gdt_ptr: &GdtPtr) {
 #[inline(always)]
 unsafe fn tss_flush(selector: u16) {
     core::arch::asm!(
-        "ltr {0:x}",  // 使用 16 位子寄存器
+        "ltr {0:x}",
         in(reg) selector,
-        options(nostack, nomem, preserves_flags),
+        options(nostack, preserves_flags),
     );
 }
 

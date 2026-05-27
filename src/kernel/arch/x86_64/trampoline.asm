@@ -70,7 +70,7 @@ SINFO_STACK     equ SINFO_BASE + 26
 SINFO_LAPIC_ID  equ SINFO_BASE + 34
 SINFO_READY     equ SINFO_BASE + 38
 
-; ── 实际入口 ───────────────────────────────────────────────────────────
+; ── 实际入口 (16-bit Real Mode) ────────────────────────────────────────
 trampoline_entry:
     cli
     cld
@@ -91,12 +91,17 @@ trampoline_entry:
 
     jmp dword 0x08:(trampoline32 - ap_trampoline_16 + 0x8000)
 
-; ── 32-bit GDT ─────────────────────────────────────────────────────────
+; ── 32-bit GDT + 64-bit 描述符 ──────────────────────────────────────────
+; 注意: 32-bit lgdt 只能读取 4 字节基址，不能加载位于 >4GB 的内核 GDT。
+; 因此 trampoline 自带 64-bit 描述符用于 32→64 模式跳转，
+; 进入长模式后再用 64-bit lgdt 正确加载内核的完整 64-bit GDT。
 align 8
 trampoline_gdt32:
-    dq 0
-    dq 0x00CF9A000000FFFF
-    dq 0x00CF92000000FFFF
+    dq 0                                   ; 0x00: null
+    dq 0x00CF9A000000FFFF                  ; 0x08: 32-bit 代码段 (D=1, L=0)
+    dq 0x00CF92000000FFFF                  ; 0x10: 32-bit 数据段
+    dq 0x00209A0000000000                  ; 0x18: 64-bit 代码段 (D=0, L=1)
+    dq 0x0000920000000000                  ; 0x20: 64-bit 数据段
 trampoline_gdt32_end:
 
 trampoline_gdt32_ptr:
@@ -130,13 +135,13 @@ trampoline32:
     or eax, 1 << 31
     mov cr0, eax
 
-    lgdt [SINFO_GDT_LIMIT]
-
-    jmp dword 0x08:(trampoline64 - ap_trampoline_16 + 0x8000)
+    jmp dword 0x18:(trampoline64 - ap_trampoline_16 + 0x8000)
 
 ; ── 64-bit Long Mode ──────────────────────────────────────────────────
 BITS 64
 trampoline64:
+    lgdt [SINFO_GDT_LIMIT]
+
     mov ax, 0x10
     mov ds, ax
     mov es, ax

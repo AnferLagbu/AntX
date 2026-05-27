@@ -277,7 +277,7 @@ impl SystemArch for X8664 {
                 "out dx, al",
                 in("dx") port,
                 in("al") value,
-                options(nomem, nostack, preserves_flags)
+                options(nostack, preserves_flags)
             );
         }
     }
@@ -291,7 +291,7 @@ impl SystemArch for X8664 {
                 "in al, dx",
                 out("al") value,
                 in("dx") port,
-                options(nomem, nostack, preserves_flags)
+                options(nostack, preserves_flags)
             );
         }
         value
@@ -305,7 +305,7 @@ impl SystemArch for X8664 {
                 "out dx, eax",
                 in("dx") port,
                 in("eax") value,
-                options(nomem, nostack, preserves_flags)
+                options(nostack, preserves_flags)
             );
         }
     }
@@ -319,7 +319,7 @@ impl SystemArch for X8664 {
                 "in eax, dx",
                 out("eax") value,
                 in("dx") port,
-                options(nomem, nostack, preserves_flags)
+                options(nostack, preserves_flags)
             );
         }
         value
