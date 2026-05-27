@@ -126,7 +126,7 @@ impl UserProcManager {
     pub fn init(&self) {
     }
 
-    fn destroy(&self, proc: *mut UserProcess) {
+    fn destroy(&self, proc: *mut UserProcess, keep_kstack: bool) {
         if proc.is_null() { return; }
         unsafe {
             let cr3 = (*proc).cr3.load(Ordering::SeqCst);
@@ -134,13 +134,14 @@ impl UserProcManager {
                 extern "C" { fn vmm_destroy_page_table(cr3: u64); }
                 vmm_destroy_page_table(cr3);
             }
-            let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
-            if kstack != 0 {
-                // kstack is a higher-half virtual address; convert back to physical for PMM
-                let kstack_base_virt = kstack - USER_KSTACK_SIZE;
-                let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
-                for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
-                    pmm_free_page((kstack_base_phys + i * PAGE_SIZE) as *mut core::ffi::c_void);
+            if !keep_kstack {
+                let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
+                if kstack != 0 {
+                    let kstack_base_virt = kstack - USER_KSTACK_SIZE;
+                    let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
+                    for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
+                        pmm_free_page((kstack_base_phys + i * PAGE_SIZE) as *mut core::ffi::c_void);
+                    }
                 }
             }
             let ustack = (*proc).user_stack.load(Ordering::SeqCst);
@@ -163,7 +164,13 @@ impl UserProcManager {
 
     pub fn destroy_by_pid(&self, pid: u32) {
         if let Some(proc) = self.get(pid) {
-            self.destroy(proc);
+            self.destroy(proc, false);
+        }
+    }
+
+    pub fn destroy_by_pid_no_kstack(&self, pid: u32) {
+        if let Some(proc) = self.get(pid) {
+            self.destroy(proc, true);
         }
     }
     
@@ -463,12 +470,12 @@ impl UserProcManager {
             let mut page_count: usize = 0;
 
             let phnum = (*header).phnum as usize;
-            if phnum > 256 { self.destroy(proc); return -1; }
+            if phnum > 256 { self.destroy(proc, false); return -1; }
 
             for i in 0..phnum {
                 let phdr_size = core::mem::size_of::<ElfPhdr>() as u64;
                 let phdr_offset = (*header).phoff + (i as u64) * (*header).phentsize as u64;
-                if phdr_offset + phdr_size > elf_size { self.destroy(proc); return -1; }
+                if phdr_offset + phdr_size > elf_size { self.destroy(proc, false); return -1; }
                 let phdr = (elf_data.add(phdr_offset as usize)) as *const ElfPhdr;
 
                 if (*phdr).p_type != PT_LOAD { continue; }
@@ -499,7 +506,7 @@ impl UserProcManager {
                             for pi in 0..page_count {
                                 pmm_free_page(allocated_pages[pi] as *mut core::ffi::c_void);
                             }
-                            self.destroy(proc);
+                            self.destroy(proc, false);
                             return -1;
                         }
                         if page_count < 1024 {

@@ -14,6 +14,7 @@ extern "C" {
     fn vmm_clone_user_page_table(parent_pml4: u64) -> u64;
     fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64;
     fn vmm_destroy_page_table(pml4: u64);
+    fn vmm_switch_page_table(cr3: u64);
 }
 
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
@@ -115,7 +116,11 @@ pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid, pwm: u64)
 pub extern "C" fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid != 0 {
-        USER_PROC_MANAGER.destroy_by_pid(current_pid);
+        let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
+        if kernel_cr3 != 0 {
+            unsafe { vmm_switch_page_table(kernel_cr3); }
+        }
+        USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
     }
     SCHEDULER.exit(exit_code);
 }
@@ -645,7 +650,11 @@ pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8,
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid == 0 { return -1; }
 
-    USER_PROC_MANAGER.destroy_by_pid(current_pid);
+    let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
+    if kernel_cr3 != 0 {
+        unsafe { vmm_switch_page_table(kernel_cr3); }
+    }
+    USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
     PROCESS_TABLE.remove_and_free(current_pid);
 
     let pwm = scheduler_get_current_pwm();
