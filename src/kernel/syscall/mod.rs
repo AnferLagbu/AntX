@@ -118,9 +118,26 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_bind        => dispatch!(sys_bind(a0 as i32, a1, a2 as u32), b"bind\0"),
         #[cfg(feature = "net")]
         SYS_listen      => dispatch!(sys_listen(a0 as i32, a1 as i32), b"listen\0"),
+        #[cfg(feature = "net")]
+        SYS_sendmsg     => dispatch!(sys_sendmsg(a0 as i32, a1, a2 as i32), b"sendmsg\0"),
+        #[cfg(feature = "net")]
+        SYS_recvmsg     => dispatch!(sys_recvmsg(a0 as i32, a1, a2 as i32), b"recvmsg\0"),
+        #[cfg(feature = "net")]
+        SYS_setsockopt  => dispatch!(sys_setsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32), b"setsockopt\0"),
+        #[cfg(feature = "net")]
+        SYS_getsockopt  => dispatch!(sys_getsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4), b"getsockopt\0"),
+        #[cfg(feature = "net")]
+        SYS_getsockname => dispatch!(sys_getsockname(a0 as i32, a1, a2), b"getsockname\0"),
+        #[cfg(feature = "net")]
+        SYS_getpeername => dispatch!(sys_getpeername(a0 as i32, a1, a2), b"getpeername\0"),
+        #[cfg(feature = "net")]
+        SYS_getrusage   => dispatch!(sys_getrusage(a0 as i32, a1), b"getrusage\0"),
         #[cfg(not(feature = "net"))]
         SYS_socket | SYS_connect | SYS_accept | SYS_sendto | SYS_recvfrom |
-        SYS_shutdown | SYS_bind | SYS_listen => dispatch!(Errno::ENOSYS.as_ret(), b"net_nosys\0"),
+        SYS_shutdown | SYS_bind | SYS_listen |
+        SYS_sendmsg | SYS_recvmsg | SYS_setsockopt | SYS_getsockopt |
+        SYS_getsockname | SYS_getpeername | SYS_getrusage
+        => dispatch!(Errno::ENOSYS.as_ret(), b"net_nosys\0"),
 
         // ==================== 进程创建 ====================
         SYS_fork            => dispatch!(sys_fork(), b"fork\0"),
@@ -646,6 +663,47 @@ unsafe fn sys_recvfrom(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
 unsafe fn sys_shutdown(sockfd: i32, _how: i32) -> i64 {
     extern "C" { fn lwip_close(sockfd: i32) -> i32; }
     lwip_close(sockfd) as i64
+}
+
+#[cfg(feature = "net")]
+unsafe fn sys_sendmsg(sockfd: i32, msg: u64, flags: i32) -> i64 {
+    extern "C" { fn lwip_sendmsg(sockfd: i32, msg: *const core::ffi::c_void, flags: i32) -> i64; }
+    lwip_sendmsg(sockfd, msg as *const core::ffi::c_void, flags)
+}
+
+#[cfg(feature = "net")]
+unsafe fn sys_recvmsg(sockfd: i32, msg: u64, flags: i32) -> i64 {
+    extern "C" { fn lwip_recvmsg(sockfd: i32, msg: *mut core::ffi::c_void, flags: i32) -> i64; }
+    lwip_recvmsg(sockfd, msg as *mut core::ffi::c_void, flags)
+}
+
+#[cfg(feature = "net")]
+unsafe fn sys_setsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u32) -> i64 {
+    extern "C" { fn lwip_setsockopt(sockfd: i32, level: i32, optname: i32, optval: *const core::ffi::c_void, optlen: u32) -> i32; }
+    lwip_setsockopt(sockfd, level, optname, optval as *const core::ffi::c_void, optlen) as i64
+}
+
+#[cfg(feature = "net")]
+unsafe fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u64) -> i64 {
+    extern "C" { fn lwip_getsockopt(sockfd: i32, level: i32, optname: i32, optval: *mut core::ffi::c_void, optlen: *mut u32) -> i32; }
+    lwip_getsockopt(sockfd, level, optname, optval as *mut core::ffi::c_void, optlen as *mut u32) as i64
+}
+
+#[cfg(feature = "net")]
+unsafe fn sys_getsockname(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
+    extern "C" { fn lwip_getsockname(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32; }
+    lwip_getsockname(sockfd, addr as *mut core::ffi::c_void, addrlen as *mut u32) as i64
+}
+
+#[cfg(feature = "net")]
+unsafe fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
+    extern "C" { fn lwip_getpeername(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32; }
+    lwip_getpeername(sockfd, addr as *mut core::ffi::c_void, addrlen as *mut u32) as i64
+}
+
+#[cfg(feature = "net")]
+unsafe fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
+    Errno::ENOSYS.as_ret()
 }
 
 // ============================================================================

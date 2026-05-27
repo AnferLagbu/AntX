@@ -4,6 +4,9 @@ pub mod general;
 pub mod fileops;
 pub mod system;
 pub mod identity;
+pub mod pipeline;
+
+pub use pipeline::{is_pipeline, execute_pipeline};
 
 use core::str::from_utf8;
 
@@ -21,7 +24,6 @@ impl Cmd {
         let mut offsets = [0usize; 32];
         let mut args = [0u8; 1024];
         let mut n = 0usize;
-        let mut pos = 0usize;
         let len = input.len().min(1023);
 
         // 复制输入 (去除尾随换行)
@@ -128,7 +130,75 @@ pub fn dispatch(cmd: &Cmd) {
         }
     }
 
-    userlib::print("axsh: '");
-    userlib::print(name);
-    userlib::println("' unknown — try 'help'");
+    // 不是内置命令 — 尝试 fork+exec 启动外部程序
+    run_external(cmd);
+}
+
+fn run_external(cmd: &Cmd) {
+    use userlib::*;
+
+    // 构建路径: 尝试 /usr/bin/<name> 和 ./<name>
+    let name = cmd.get(0);
+    let mut path_buf = [0u8; 256];
+    let mut argv_ptrs: [*const u8; 16] = [core::ptr::null(); 16];
+
+    // 如果名称包含 / 则直接使用, 否则前缀 /usr/bin/
+    let path = if name.iter().any(|&b| b == b'/') {
+        let len = name.len().min(255);
+        path_buf[..len].copy_from_slice(name);
+        path_buf[len] = 0;
+        &path_buf[..len + 1]
+    } else {
+        let prefix = b"/usr/bin/\0";
+        let plen = 9;
+        let nlen = name.len().min(245);
+        path_buf[..plen].copy_from_slice(&prefix[..plen]);
+        path_buf[plen - 1] = b'/';
+        path_buf[plen..plen + nlen].copy_from_slice(&name[..nlen]);
+        path_buf[plen + nlen] = 0;
+        &path_buf[..plen + nlen + 1]
+    };
+
+    // 构建 argv
+    let mut arg_buf = [0u8; 1024];
+    let mut arg_offsets: [usize; 16] = [0; 16];
+    let mut argc = 0;
+    let mut pos = 0;
+
+    for i in 0..cmd.n {
+        let arg = cmd.get(i);
+        let alen = arg.len().min(1023 - pos);
+        arg_buf[pos..pos + alen].copy_from_slice(&arg[..alen]);
+        arg_buf[pos + alen] = 0;
+        arg_offsets[argc] = pos;
+        argc += 1;
+        pos += alen + 1;
+        if argc >= 16 || pos >= 1024 { break; }
+    }
+
+    for i in 0..argc {
+        argv_ptrs[i] = &arg_buf[arg_offsets[i]] as *const u8;
+    }
+    argv_ptrs[argc] = core::ptr::null();
+
+    let pid = userlib::fork() as i32;
+    if pid < 0 {
+        println("axsh: fork failed");
+        return;
+    }
+    if pid == 0 {
+        // 子进程
+        userlib::proc_exec(&path[..path.len() - 1], &argv_ptrs[..argc + 1]);
+        // exec 失败
+        userlib::print("axsh: ");
+        userlib::print(name_str(name));
+        userlib::println(": not found");
+        userlib::proc_exit(1);
+    } else {
+        userlib::wait_pid(pid);
+    }
+}
+
+fn name_str(name: &[u8]) -> &str {
+    core::str::from_utf8(name).unwrap_or("?")
 }

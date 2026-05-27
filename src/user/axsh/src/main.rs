@@ -48,8 +48,16 @@ fn shell_main() {
         let len = read_line(&mut line);
         if len == 0 { continue; }
 
-        // 构建 Cmd 并分发
-        let cmd = commands::Cmd::new(&line[..len]);
+        let input = &line[..len];
+
+        // 管道 / 重定向 — fork+exec 路径
+        if commands::is_pipeline(input) {
+            commands::execute_pipeline(input);
+            continue;
+        }
+
+        // 内置命令调度
+        let cmd = commands::Cmd::new(input);
         if cmd.n == 0 { continue; }
         commands::dispatch(&cmd);
     }

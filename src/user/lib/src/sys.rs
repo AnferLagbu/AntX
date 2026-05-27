@@ -13,6 +13,7 @@ pub const SYS_read: u64 = 0;
 pub const SYS_write: u64 = 1;
 pub const SYS_open: u64 = 2;
 pub const SYS_close: u64 = 3;
+pub const SYS_ioctl: u64 = 16;
 pub const SYS_stat: u64 = 4;
 pub const SYS_fstat: u64 = 5;
 pub const SYS_lseek: u64 = 8;
@@ -86,6 +87,8 @@ unsafe fn sys2(num: u64, a1: u64, a2: u64) -> i64 { let ret: i64; asm!("int 0x80
 unsafe fn sys3(num: u64, a1: u64, a2: u64, a3: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, lateout("rax") ret); ret }
 #[cfg(target_arch = "x86_64")]
 unsafe fn sys4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, in("r10") a4, lateout("rax") ret); ret }
+#[cfg(target_arch = "x86_64")]
+unsafe fn sys5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, in("r10") a4, in("r8") a5, lateout("rax") ret); ret }
 
 #[cfg(target_arch = "aarch64")]
 unsafe fn sys0(num: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, lateout("x0") ret); ret }
@@ -97,6 +100,8 @@ unsafe fn sys2(num: u64, a1: u64, a2: u64) -> i64 { let ret: i64; asm!("svc #0",
 unsafe fn sys3(num: u64, a1: u64, a2: u64, a3: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, in("x1") a1, in("x2") a2, in("x3") a3, lateout("x0") ret); ret }
 #[cfg(target_arch = "aarch64")]
 unsafe fn sys4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, in("x1") a1, in("x2") a2, in("x3") a3, in("x4") a4, lateout("x0") ret); ret }
+#[cfg(target_arch = "aarch64")]
+unsafe fn sys5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, in("x1") a1, in("x2") a2, in("x3") a3, in("x4") a4, in("x5") a5, lateout("x0") ret); ret }
 
 // ============================================================
 // POSIX 标准 syscall wrapper
@@ -127,6 +132,11 @@ pub fn proc_exit(code: i32) -> ! {
 }
 pub fn proc_get_pwm() -> u64                               { unsafe { sys0(415) as u64 } }
 pub fn proc_yield()                                        { unsafe { sys0(24); } }
+
+pub fn pipe_create(fds: &mut [i32; 2]) -> i32              { unsafe { sys1(SYS_pipe, fds.as_mut_ptr() as u64) as i32 } }
+pub fn dup_fd(oldfd: i32) -> i32                           { unsafe { sys1(SYS_dup, oldfd as u64) as i32 } }
+pub fn dup2_fd(oldfd: i32, newfd: i32) -> i32              { unsafe { sys2(SYS_dup2, oldfd as u64, newfd as u64) as i32 } }
+pub fn wait_pid(pid: i32) -> i64                           { unsafe { sys1(SYS_wait4, pid as u64) } }
 
 pub fn fs_open(path: &[u8], flags: i32, m: i32) -> i32    { unsafe { sys3(SYS_open, path.as_ptr() as u64, flags as u64, m as u64) as i32 } }
 pub fn fs_close(fd: i32) -> i32                            { unsafe { sys1(SYS_close, fd as u64) as i32 } }
@@ -224,3 +234,157 @@ pub struct FbInfo {
 pub fn fb_open(info: &mut FbInfo) -> i64                    { unsafe { sys1(SYS_FB_OPEN, info as *mut FbInfo as u64) } }
 pub fn fb_mmap(addr: u64, size: u64, prot: i32) -> i64      { unsafe { sys3(SYS_FB_MMAP, addr, size, prot as u64) } }
 pub fn fb_release(addr: u64) -> i64                          { unsafe { sys1(SYS_FB_RELEASE, addr) } }
+
+// ============================================================
+// 网络 socket syscall 常量 — 与内核 syscall/types.rs 对应
+// ============================================================
+
+pub const SYS_socket: u64 = 41;
+pub const SYS_connect: u64 = 42;
+pub const SYS_accept: u64 = 43;
+pub const SYS_sendto: u64 = 44;
+pub const SYS_recvfrom: u64 = 45;
+pub const SYS_sendmsg: u64 = 46;
+pub const SYS_recvmsg: u64 = 47;
+pub const SYS_shutdown: u64 = 48;
+pub const SYS_bind: u64 = 49;
+pub const SYS_listen: u64 = 50;
+pub const SYS_getsockname: u64 = 51;
+pub const SYS_getpeername: u64 = 52;
+pub const SYS_setsockopt: u64 = 54;
+pub const SYS_getsockopt: u64 = 55;
+pub const SYS_getrusage: u64 = 98;
+
+// 地址族
+pub const AF_INET: i32 = 2;
+
+// socket 类型
+pub const SOCK_STREAM: i32 = 1;
+pub const SOCK_DGRAM: i32 = 2;
+pub const SOCK_RAW: i32 = 3;
+
+// 协议
+pub const IPPROTO_TCP: i32 = 6;
+pub const IPPROTO_UDP: i32 = 17;
+pub const IPPROTO_RAW: i32 = 255;
+
+// socket 选项级别
+pub const SOL_SOCKET: i32 = 1;
+pub const IPPROTO_IP: i32 = 0;
+
+// socket 选项
+pub const SO_REUSEADDR: i32 = 2;
+pub const SO_KEEPALIVE: i32 = 8;
+pub const SO_BROADCAST: i32 = 32;
+
+// 标志
+pub const MSG_DONTWAIT: i32 = 0x80;
+pub const MSG_PEEK: i32 = 0x02;
+
+// shutdown 方式
+pub const SHUT_RD: i32 = 0;
+pub const SHUT_WR: i32 = 1;
+pub const SHUT_RDWR: i32 = 2;
+
+// ============================================================
+// 网络结构体 (与 lwIP C ABI 对齐)
+// ============================================================
+
+#[repr(C)]
+pub struct InAddr {
+    pub s_addr: u32,
+}
+
+#[repr(C)]
+pub struct SockaddrIn {
+    pub sin_len: u8,
+    pub sin_family: u8,
+    pub sin_port: u16,
+    pub sin_addr: InAddr,
+    pub sin_zero: [u8; 8],
+}
+
+#[repr(C)]
+pub struct Iovec {
+    pub iov_base: *mut u8,
+    pub iov_len: usize,
+}
+
+#[repr(C)]
+pub struct Msghdr {
+    pub msg_name: *mut u8,
+    pub msg_namelen: u32,
+    pub msg_iov: *mut Iovec,
+    pub msg_iovlen: usize,
+    pub msg_control: *mut u8,
+    pub msg_controllen: usize,
+    pub msg_flags: i32,
+}
+
+#[repr(C)]
+pub struct RUsage {
+    pub ru_utime_sec: i64,
+    pub ru_utime_usec: i64,
+    pub ru_stime_sec: i64,
+    pub ru_stime_usec: i64,
+}
+
+// ============================================================
+// 网络 syscall wrapper
+// ============================================================
+
+pub fn socket(domain: i32, sock_type: i32, protocol: i32) -> i32 {
+    unsafe { sys3(SYS_socket, domain as u64, sock_type as u64, protocol as u64) as i32 }
+}
+
+pub fn bind(sockfd: i32, addr: *const SockaddrIn, addrlen: u32) -> i32 {
+    unsafe { sys3(SYS_bind, sockfd as u64, addr as u64, addrlen as u64) as i32 }
+}
+
+pub fn listen(sockfd: i32, backlog: i32) -> i32 {
+    unsafe { sys2(SYS_listen, sockfd as u64, backlog as u64) as i32 }
+}
+
+pub fn accept(sockfd: i32, addr: *mut SockaddrIn, addrlen: *mut u32) -> i32 {
+    unsafe { sys3(SYS_accept, sockfd as u64, addr as u64, addrlen as u64) as i32 }
+}
+
+pub fn connect(sockfd: i32, addr: *const SockaddrIn, addrlen: u32) -> i32 {
+    unsafe { sys3(SYS_connect, sockfd as u64, addr as u64, addrlen as u64) as i32 }
+}
+
+pub fn send(sockfd: i32, buf: *const u8, len: usize, flags: i32) -> isize {
+    unsafe { sys4(SYS_sendto, sockfd as u64, buf as u64, len as u64, flags as u64) as isize }
+}
+
+pub fn recv(sockfd: i32, buf: *mut u8, len: usize, flags: i32) -> isize {
+    unsafe { sys4(SYS_recvfrom, sockfd as u64, buf as u64, len as u64, flags as u64) as isize }
+}
+
+pub fn sendmsg(sockfd: i32, msg: *const Msghdr, flags: i32) -> isize {
+    unsafe { sys3(SYS_sendmsg, sockfd as u64, msg as u64, flags as u64) as isize }
+}
+
+pub fn recvmsg(sockfd: i32, msg: *mut Msghdr, flags: i32) -> isize {
+    unsafe { sys3(SYS_recvmsg, sockfd as u64, msg as u64, flags as u64) as isize }
+}
+
+pub fn setsockopt(sockfd: i32, level: i32, optname: i32, optval: *const u8, optlen: u32) -> i32 {
+    unsafe { sys5(SYS_setsockopt, sockfd as u64, level as u64, optname as u64, optval as u64, optlen as u64) as i32 }
+}
+
+pub fn getsockopt(sockfd: i32, level: i32, optname: i32, optval: *mut u8, optlen: *mut u32) -> i32 {
+    unsafe { sys5(SYS_getsockopt, sockfd as u64, level as u64, optname as u64, optval as u64, optlen as u64) as i32 }
+}
+
+pub fn getsockname(sockfd: i32, addr: *mut SockaddrIn, addrlen: *mut u32) -> i32 {
+    unsafe { sys3(SYS_getsockname, sockfd as u64, addr as u64, addrlen as u64) as i32 }
+}
+
+pub fn close_socket(sockfd: i32) -> i32 {
+    unsafe { sys1(SYS_close, sockfd as u64) as i32 }
+}
+
+pub fn ioctl(fd: i32, request: u64, arg: u64) -> i32 {
+    unsafe { sys3(SYS_ioctl, fd as u64, request, arg) as i32 }
+}

@@ -101,6 +101,7 @@ USER_INIT_ELF = $(RUST_USER_TARGET)/init
 USER_SHELL_ELF = $(RUST_USER_TARGET)/axsh
 USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 USER_FBTERM_ELF = $(RUST_USER_TARGET)/fbterm
+USER_HTTPSRV_ELF = $(RUST_USER_TARGET)/httpsrv
 
 STAGE1_BIN = build/stage1.bin
 DISK_IMAGE = build/antx.img
@@ -112,15 +113,16 @@ all: build/kernel.bin
 
 # ====== x86_64 Rust user programs ======
 ifeq ($(ARCH),x86_64)
-user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF)
+user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF)
 	@mkdir -p build/user
 	@cp $(USER_INIT_ELF) build/user/init.bin
 	@cp $(USER_SHELL_ELF) build/user/axsh.bin
 	@cp $(USER_INSTALL_ELF) build/user/install.bin
 	@cp $(USER_FBTERM_ELF) build/user/fbterm.bin
+	@cp $(USER_HTTPSRV_ELF) build/user/httpsrv.bin
 	@echo "User programs built successfully (Rust)"
 
-$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF):
+$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF):
 	@echo "Building Rust user programs..."
 	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib" cargo build --release --target $(RUST_TARGET)
 
@@ -139,6 +141,10 @@ build/user/install.bin: $(USER_INSTALL_ELF)
 build/user/fbterm.bin: $(USER_FBTERM_ELF)
 	@mkdir -p build/user
 	@cp $< $@
+
+build/user/httpsrv.bin: $(USER_HTTPSRV_ELF)
+	@mkdir -p build/user
+	@cp $< $@
 endif
 
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
@@ -150,15 +156,16 @@ build/kernel.flat: build/kernel.bin
 
 # AArch64 用户程序: 使用 Cargo 编译 Rust 用户程序
 ifeq ($(ARCH),aarch64)
-user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF)
+user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF)
 	@mkdir -p build/user
 	@cp $(USER_INIT_ELF) build/user/init.bin
 	@cp $(USER_SHELL_ELF) build/user/axsh.bin
 	@cp $(USER_INSTALL_ELF) build/user/install.bin
 	@cp $(USER_FBTERM_ELF) build/user/fbterm.bin
+	@cp $(USER_HTTPSRV_ELF) build/user/httpsrv.bin
 	@echo "User programs built (Rust aarch64)"
 
-$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF):
+$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF):
 	@echo "Building Rust user programs (aarch64)..."
 	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link_aarch64.x -C link-arg=-nostdlib" cargo build --release --target $(RUST_TARGET)
 
@@ -255,6 +262,7 @@ iso: all user
 	cp build/user/axsh.bin isodir/bin/axsh
 	cp build/user/install.bin isodir/bin/install
 	cp build/user/fbterm.bin isodir/bin/fbterm
+	cp build/user/httpsrv.bin isodir/bin/httpsrv
 	echo 'set timeout=0' > isodir/boot/grub/grub.cfg
 	echo 'set default=0' >> isodir/boot/grub/grub.cfg
 	echo '' >> isodir/boot/grub/grub.cfg
@@ -433,6 +441,7 @@ test-unit: build/kernel_test.bin user
 	@cp build/user/axsh.bin isodir/bin/axsh
 	@cp build/user/install.bin isodir/bin/install
 	@cp build/user/fbterm.bin isodir/bin/fbterm
+	@cp build/user/httpsrv.bin isodir/bin/httpsrv
 	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
 	@echo 'set default=0' >> isodir/boot/grub/grub.cfg
 	@echo '' >> isodir/boot/grub/grub.cfg
@@ -509,6 +518,7 @@ test-chaos: build/kernel_chaos.bin user
 	@cp build/user/axsh.bin isodir/bin/axsh
 	@cp build/user/install.bin isodir/bin/install
 	@cp build/user/fbterm.bin isodir/bin/fbterm
+	@cp build/user/httpsrv.bin isodir/bin/httpsrv
 	@echo 'set timeout=0' > isodir/boot/grub/grub.cfg
 	@echo 'set default=0' >> isodir/boot/grub/grub.cfg
 	@echo '' >> isodir/boot/grub/grub.cfg
