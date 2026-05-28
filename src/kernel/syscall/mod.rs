@@ -91,6 +91,9 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_dup             => dispatch!(sys_dup(a0 as i32), b"dup\0"),
         SYS_dup2            => dispatch!(sys_dup2(a0 as i32, a1 as i32), b"dup2\0"),
 
+        // ==================== 进程优先级 ====================
+        SYS_nice            => dispatch!(sys_nice(a0 as i32), b"nice\0"),
+
         // ==================== 定时器 ====================
         SYS_nanosleep       => dispatch!(sys_nanosleep(a0, a1), b"nanosleep\0"),
         SYS_getitimer       => dispatch!(Errno::ENOSYS.as_ret(), b"getitimer_nosys\0"),
@@ -102,6 +105,8 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_getppid         => dispatch!(sys_getppid(), b"getppid\0"),
         SYS_getpgid         => dispatch!(sys_getpgid(a0 as i32), b"getpgid\0"),
         SYS_setsid          => dispatch!(sys_setsid(), b"setsid\0"),
+        SYS_getpriority     => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
+        SYS_setpriority     => dispatch!(sys_setpriority(a0 as i32, a1 as u32, a2 as i32), b"setpriority\0"),
         SYS_gettid          => dispatch!(sys_gettid(), b"gettid\0"),
 
         // ==================== 网络 ====================
@@ -255,6 +260,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_CREDO_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"credo_bootchk\0"),
         SYS_CREDO_REBOOT        => dispatch!(sys_reboot(a0 as i32), b"credo_reboot\0"),
         SYS_CREDO_HOTPLUG_STATUS => dispatch!(sys_hotplug_status(a0 as *mut u8, a1 as u32), b"credo_hotplug_status\0"),
+        SYS_CREDO_PROC_CPUTIME   => dispatch!(sys_credo_proc_cputime(a0 as u32), b"credo_cputime\0"),
 
         // ==================== 帧缓冲设备 ====================
         SYS_FB_OPEN         => dispatch!(sys_fb_open(a0, a1), b"fb_open\0"),
@@ -412,6 +418,69 @@ unsafe fn sys_getppid() -> i64 {
 
 unsafe fn sys_sched_yield() -> i64 {
     crate::kernel::proc::ffi::scheduler_yield();
+    0
+}
+
+const PRIO_PROCESS: i32 = 0;
+
+fn nice_to_priority(nice: i32) -> crate::kernel::proc::types::ProcessPriority {
+    let clamped = nice.clamp(-20, 19);
+    if clamped < -10 { crate::kernel::proc::types::ProcessPriority::RealTime }
+    else if clamped < 0 { crate::kernel::proc::types::ProcessPriority::High }
+    else if clamped < 10 { crate::kernel::proc::types::ProcessPriority::Normal }
+    else if clamped < 19 { crate::kernel::proc::types::ProcessPriority::Low }
+    else { crate::kernel::proc::types::ProcessPriority::Idle }
+}
+
+fn priority_to_nice(p: crate::kernel::proc::types::ProcessPriority) -> i32 {
+    match p {
+        crate::kernel::proc::types::ProcessPriority::RealTime => -20,
+        crate::kernel::proc::types::ProcessPriority::High => -10,
+        crate::kernel::proc::types::ProcessPriority::Normal => 0,
+        crate::kernel::proc::types::ProcessPriority::Low => 10,
+        crate::kernel::proc::types::ProcessPriority::Idle => 19,
+    }
+}
+
+unsafe fn sys_nice(inc: i32) -> i64 {
+    let pid = crate::kernel::proc::ffi::process_get_current_pid();
+    let current_nice = sys_getpriority(PRIO_PROCESS, pid) as i32;
+    let new_nice = (current_nice + inc).clamp(-20, 19);
+    sys_setpriority(PRIO_PROCESS, pid, new_nice);
+    new_nice as i64
+}
+
+unsafe fn sys_getpriority(which: i32, who: u32) -> i64 {
+    if which != PRIO_PROCESS { return Errno::EINVAL.as_ret(); }
+    let pid = if who == 0 {
+        crate::kernel::proc::ffi::process_get_current_pid()
+    } else {
+        who
+    };
+    use crate::kernel::proc::process::PROCESS_TABLE;
+    let proc = match PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return Errno::ESRCH.as_ret(),
+    };
+    let pri = (*proc).get_priority();
+    priority_to_nice(pri) as i64
+}
+
+unsafe fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
+    if which != PRIO_PROCESS { return Errno::EINVAL.as_ret(); }
+    let clamped = prio.clamp(-20, 19);
+    let pid = if who == 0 {
+        crate::kernel::proc::ffi::process_get_current_pid()
+    } else {
+        who
+    };
+    use crate::kernel::proc::process::PROCESS_TABLE;
+    let proc = match PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return Errno::ESRCH.as_ret(),
+    };
+    let new_pri = nice_to_priority(clamped);
+    (*proc).set_priority(new_pri);
     0
 }
 
@@ -1491,6 +1560,25 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     }
 
     offset as i64
+}
+
+unsafe fn sys_credo_proc_cputime(pid: u32) -> i64 {
+    let target_pid = if pid == 0 {
+        crate::kernel::proc::ffi::process_get_current_pid()
+    } else {
+        pid
+    };
+    use crate::kernel::proc::process::PROCESS_TABLE;
+    use crate::kernel::proc::scheduler_ex::SCHEDULER_EX;
+    match PROCESS_TABLE.get(target_pid) {
+        Some(_) => {
+            let current = SCHEDULER_EX.current.load(core::sync::atomic::Ordering::Acquire) as *mut crate::kernel::proc::thread::Thread;
+            if current.is_null() { return -1; }
+            let cputime = (*current).cpu_time.load(core::sync::atomic::Ordering::Acquire);
+            cputime as i64
+        }
+        None => Errno::ESRCH.as_ret(),
+    }
 }
 
 // ============================================================================

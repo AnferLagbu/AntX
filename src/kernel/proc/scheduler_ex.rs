@@ -208,7 +208,7 @@ impl SchedulerStats {
 
 // === 线程级调度器 (SchedulerEx) ===
 pub struct SchedulerEx {
-    pub run_queue: RunQueue,
+    pub run_queues: [RunQueue; 5],
     pub frozen_queue: RunQueue,
     pub current: AtomicU64,
     pub idle_thread: AtomicU64,
@@ -226,7 +226,10 @@ unsafe impl Sync for SchedulerEx {}
 impl SchedulerEx {
     pub const fn new() -> Self {
         Self {
-            run_queue: RunQueue::new(),
+            run_queues: [
+                RunQueue::new(), RunQueue::new(), RunQueue::new(),
+                RunQueue::new(), RunQueue::new(),
+            ],
             frozen_queue: RunQueue::new(),
             current: AtomicU64::new(0),
             idle_thread: AtomicU64::new(0),
@@ -239,8 +242,11 @@ impl SchedulerEx {
         }
     }
 
+    fn queue_idx(priority: ThreadPriority) -> usize {
+        priority as usize
+    }
+
     pub fn init(&self) {
-        // 初始化: 创建一个 idle 线程
         let idle = unsafe {
             alloc::alloc::alloc(alloc::alloc::Layout::new::<Thread>()) as *mut Thread
         };
@@ -253,7 +259,7 @@ impl SchedulerEx {
             }
             self.idle_thread.store(idle as u64, Ordering::SeqCst);
             self.current.store(idle as u64, Ordering::SeqCst);
-            self.run_queue.push_back(idle);
+            self.run_queues[ThreadPriority::Idle as usize].push_back(idle);
         }
     }
 
@@ -265,34 +271,21 @@ impl SchedulerEx {
             let state = (*thread).get_state();
             if state == ThreadState::Ready || state == ThreadState::Created {
                 (*thread).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
-                self.run_queue.push_back(thread);
+                let prio = ThreadPriority::from_u32((*thread).priority.load(Ordering::Acquire));
+                let idx = Self::queue_idx(prio);
+                self.run_queues[idx].push_back(thread);
             }
         }
     }
 
-    /// 从就绪队列中按优先级取出最高优先级线程
+    /// 从就绪队列中按优先级取出最高优先级线程 (O(1) per queue)
     fn pop_highest(&self) -> Option<*mut Thread> {
-        if self.run_queue.is_empty() { return None; }
-
-        let mut best: Option<*mut Thread> = None;
-        let mut best_prio = 0u32;
-
-        // 遍历就绪队列找最高优先级
-        for t in self.run_queue.iter() {
-            if t.is_null() { continue; }
-            let prio = unsafe { (*t).priority.load(Ordering::Acquire) };
-            if best.is_none() || prio > best_prio {
-                best = Some(t);
-                best_prio = prio;
+        for prio in (0..5).rev() {
+            if let Some(t) = self.run_queues[prio].pop_front() {
+                return Some(t);
             }
         }
-
-        if let Some(best_thread) = best {
-            self.run_queue.remove(best_thread);
-            Some(best_thread)
-        } else {
-            self.run_queue.pop_front()
-        }
+        None
     }
 
     /// ✅ 纯记账 tick (不做调度决策)
@@ -368,7 +361,8 @@ impl SchedulerEx {
                 let prev_state = (*prev).get_state();
                 if prev_state.is_alive() && prev_state != ThreadState::Zombie {
                     let _ = (*prev).set_state_safe(ThreadState::Ready);
-                    self.run_queue.push_back(prev);
+                    let prio = ThreadPriority::from_u32((*prev).priority.load(Ordering::Acquire));
+                    self.run_queues[Self::queue_idx(prio)].push_back(prev);
                 }
             }
         }
@@ -417,13 +411,17 @@ impl SchedulerEx {
         
         unsafe {
             if !(*thread).can_freeze() { return false; }
-            
-            self.run_queue.remove(thread);
-            let _ = (*thread).set_state_safe(ThreadState::Frozen);
-            self.frozen_queue.push_back(thread);
-            self.stats.frozen_count.fetch_add(1, Ordering::SeqCst);
-            true
         }
+        
+        for i in 0..5 {
+            if self.run_queues[i].remove(thread) {
+                unsafe { let _ = (*thread).set_state_safe(ThreadState::Frozen); }
+                self.frozen_queue.push_back(thread);
+                self.stats.frozen_count.fetch_add(1, Ordering::SeqCst);
+                return true;
+            }
+        }
+        false
     }
 
     /// 解冻线程
@@ -432,13 +430,17 @@ impl SchedulerEx {
         
         unsafe {
             if (*thread).get_state() != ThreadState::Frozen { return false; }
-            
-            self.frozen_queue.remove(thread);
-            let _ = (*thread).set_state_safe(ThreadState::Ready);
-            self.run_queue.push_back(thread);
-            self.stats.frozen_count.fetch_sub(1, Ordering::SeqCst);
-            true
         }
+        
+        if !self.frozen_queue.remove(thread) { return false; }
+        
+        unsafe {
+            let _ = (*thread).set_state_safe(ThreadState::Ready);
+            let prio = ThreadPriority::from_u32((*thread).priority.load(Ordering::Acquire));
+            self.run_queues[Self::queue_idx(prio)].push_back(thread);
+        }
+        self.stats.frozen_count.fetch_sub(1, Ordering::SeqCst);
+        true
     }
 
     /// 全局冻结所有非当前线程
@@ -446,14 +448,16 @@ impl SchedulerEx {
         self.is_frozen_global.store(true, Ordering::SeqCst);
         let current = self.current.load(Ordering::SeqCst);
         
-        let mut to_freeze: [u64; 128] = [0; 128];
+        let mut to_freeze: [u64; 640] = [0; 640];
         let mut count = 0;
         
-        for t in self.run_queue.iter() {
-            if t.is_null() || t as u64 == current { continue; }
-            if count < 128 {
-                to_freeze[count] = t as u64;
-                count += 1;
+        for i in 0..5 {
+            for t in self.run_queues[i].iter() {
+                if t.is_null() || t as u64 == current { continue; }
+                if count < 640 {
+                    to_freeze[count] = t as u64;
+                    count += 1;
+                }
             }
         }
         
@@ -503,21 +507,23 @@ impl SchedulerEx {
         let mut to_reap: [u64; 32] = [0; 32];
         let mut count = 0;
         
-        for t in self.run_queue.iter() {
-            if t.is_null() { continue; }
-            if count >= 32 { break; }
-            if unsafe { (*t).get_state() == ThreadState::Zombie } {
-                to_reap[count] = t as u64;
-                count += 1;
+        for i in 0..5 {
+            for t in self.run_queues[i].iter() {
+                if t.is_null() || count >= 32 { break; }
+                if unsafe { (*t).get_state() == ThreadState::Zombie } {
+                    to_reap[count] = t as u64;
+                    count += 1;
+                }
             }
         }
         
         for i in 0..count {
             let t = to_reap[i] as *mut Thread;
-            self.run_queue.remove(t);
+            for j in 0..5 {
+                if self.run_queues[j].remove(t) { break; }
+            }
             let tid = unsafe { (*t).tid };
             if tid != 0 {
-                // 标记为 Terminated, 稍后释放内存
                 unsafe {
                     let _ = (*t).set_state_safe(ThreadState::Terminated);
                 }
@@ -530,22 +536,13 @@ impl SchedulerEx {
     fn boost_all(&self) {
         self.stats.priority_boosts.fetch_add(1, Ordering::SeqCst);
         
-        let mut to_boost: [u64; 128] = [0; 128];
-        let mut count = 0;
-        
-        for t in self.run_queue.iter() {
-            if t.is_null() { continue; }
-            if count < 128 {
-                to_boost[count] = t as u64;
-                count += 1;
-            }
-        }
-        
-        for i in 0..count {
-            let t = to_boost[i] as *mut Thread;
-            unsafe {
-                (*t).priority.store(ThreadPriority::High as u32, Ordering::SeqCst);
-                (*t).time_slice.store(SCHED_LEVEL_0_QUANTUM, Ordering::SeqCst);
+        for src in 0..4 {
+            while let Some(t) = self.run_queues[src].pop_front() {
+                unsafe {
+                    (*t).priority.store(ThreadPriority::High as u32, Ordering::SeqCst);
+                    (*t).time_slice.store(SCHED_LEVEL_0_QUANTUM, Ordering::SeqCst);
+                }
+                self.run_queues[3].push_back(t);
             }
         }
     }
@@ -648,7 +645,9 @@ mod tests {
 
         let t = make_test_thread(10, 1, ThreadPriority::Normal);
         sched.add_thread(t);
-        assert_eq!(sched.run_queue.len(), 2); // idle + test thread
+        // idle(0) + test(2=Normal)
+        assert_eq!(sched.run_queues[ThreadPriority::Idle as usize].len(), 1);
+        assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 1);
 
         unsafe { free_test_thread(t); }
     }
@@ -664,9 +663,9 @@ mod tests {
         let t2 = make_test_thread(2, 1, ThreadPriority::High);
         let t3 = make_test_thread(3, 1, ThreadPriority::Normal);
 
-        sched.run_queue.push_back(t1);
-        sched.run_queue.push_back(t2);
-        sched.run_queue.push_back(t3);
+        sched.run_queues[ThreadPriority::Low as usize].push_back(t1);
+        sched.run_queues[ThreadPriority::High as usize].push_back(t2);
+        sched.run_queues[ThreadPriority::Normal as usize].push_back(t3);
 
         let best = sched.pop_highest();
         assert!(best.is_some());
@@ -706,13 +705,13 @@ mod tests {
             (*t).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
         }
 
-        sched.run_queue.push_back(t);
+        sched.run_queues[ThreadPriority::Normal as usize].push_back(t);
         assert!(sched.freeze_thread(t));
-        assert_eq!(sched.run_queue.len(), 0);
+        assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 0);
         assert_eq!(sched.frozen_queue.len(), 1);
 
         assert!(sched.thaw_thread(t));
-        assert_eq!(sched.run_queue.len(), 1);
+        assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 1);
         assert_eq!(sched.frozen_queue.len(), 0);
 
         unsafe { free_test_thread(t); }
@@ -727,7 +726,7 @@ mod tests {
             (*t).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
         }
 
-        sched.run_queue.push_back(t);
+        sched.run_queues[ThreadPriority::Normal as usize].push_back(t);
         sched.current.store(t as u64, Ordering::SeqCst);
 
         for _ in 0..5 {
@@ -750,7 +749,7 @@ mod tests {
             (*t).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
         }
 
-        sched.run_queue.push_back(t);
+        sched.run_queues[ThreadPriority::Normal as usize].push_back(t);
         sched.current.store(t as u64, Ordering::SeqCst);
 
         sched.tick_accounting();
@@ -795,10 +794,11 @@ mod tests {
         unsafe {
             (*zombie).state.store(ThreadState::Zombie as u32, Ordering::SeqCst);
         }
-        sched.run_queue.push_back(zombie);
+        sched.run_queues[ThreadPriority::Low as usize].push_back(zombie);
 
         sched.schedule();
-        assert!(sched.run_queue.is_empty());
+        // zombie was in queue[1=Low], should be empty after reap
+        assert!(sched.run_queues[ThreadPriority::Low as usize].is_empty());
 
         unsafe {
             free_test_thread(zombie);
@@ -812,8 +812,8 @@ mod tests {
         let t1 = make_test_thread(1, 1, ThreadPriority::Low);
         let t2 = make_test_thread(2, 1, ThreadPriority::Low);
 
-        sched.run_queue.push_back(t1);
-        sched.run_queue.push_back(t2);
+        sched.run_queues[ThreadPriority::Low as usize].push_back(t1);
+        sched.run_queues[ThreadPriority::Low as usize].push_back(t2);
 
         // Manually trigger boost
         sched.boost_all();

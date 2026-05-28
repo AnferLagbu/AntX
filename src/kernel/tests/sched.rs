@@ -7,6 +7,7 @@ use crate::kernel::proc::thread::Thread;
 use crate::kernel::proc::types::{
     SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM,
     SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
+    ThreadPriority,
 };
 use core::sync::atomic::Ordering;
 use alloc::boxed::Box;
@@ -155,14 +156,18 @@ fn scheduler_initialization() -> TestResult {
 
 fn scheduler_run_queue_empty() -> TestResult {
     let sched = SchedulerEx::new();
-    assert!(sched.run_queue.is_empty(), "empty run queue");
+    for i in 0..5 {
+        check!(sched.run_queues[i].is_empty(), "queue empty");
+    }
     TestResult::Pass
 }
 
 fn null_pointer_safety() -> TestResult {
     let sched = SchedulerEx::new();
     sched.add_thread(core::ptr::null_mut());
-    assert!(sched.run_queue.is_empty(), "null thread rejected");
+    let mut total = 0;
+    for i in 0..5 { total += sched.run_queues[i].len(); }
+    assert_eq_test!(total, 0, "null thread rejected");
     TestResult::Pass
 }
 
@@ -182,9 +187,8 @@ fn thread_type_safety() -> TestResult {
         (*t).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
     }
     sched.add_thread(t);
-    assert_eq!(sched.run_queue.len(), 1);
-    // Cleanup
-    let popped = sched.run_queue.pop_front();
+    assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 1);
+    let popped = sched.run_queues[ThreadPriority::Normal as usize].pop_front();
     assert!(popped.is_some());
     unsafe {
         if let Some(p) = popped { drop(Box::from_raw(p)); }

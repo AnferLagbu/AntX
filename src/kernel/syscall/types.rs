@@ -46,6 +46,9 @@ pub const SYS_mremap: u64 = 25;
 pub const SYS_dup: u64 = 32;
 pub const SYS_dup2: u64 = 33;
 
+// 进程优先级
+pub const SYS_nice: u64 = 34;
+
 // 暂停
 pub const SYS_nanosleep: u64 = 35;
 
@@ -152,6 +155,10 @@ pub const SYS_getppid: u64 = 110;
 pub const SYS_getpgid: u64 = 111;
 pub const SYS_setsid: u64 = 112;
 
+// 进程调度
+pub const SYS_getpriority: u64 = 140;
+pub const SYS_setpriority: u64 = 141;
+
 // 文件同步
 pub const SYS_sync: u64 = 162;
 pub const SYS_fsync: u64 = 170;
@@ -197,6 +204,7 @@ pub const SYS_CREDO_SETHOSTNAME: u64 = 434;
 pub const SYS_CREDO_BOOT_CHECK: u64 = 435;
 pub const SYS_CREDO_REBOOT: u64 = 436;
 pub const SYS_CREDO_HOTPLUG_STATUS: u64 = 437;
+pub const SYS_CREDO_PROC_CPUTIME: u64 = 438;
 
 // ==================== 帧缓冲设备 ====================
 pub const SYS_FB_OPEN: u64 = 450;
