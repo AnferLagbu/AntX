@@ -235,6 +235,7 @@ mod tests {
     fn test_dp_total_bandwidth() {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         #[repr(u8)]
+        #[allow(dead_code)]
         enum LinkRate {
             Rbr = 0x06,
             Hbr = 0x0A,
@@ -255,6 +256,7 @@ mod tests {
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         #[repr(u8)]
+        #[allow(dead_code)]
         enum LaneCount {
             One = 1,
             Two = 2,

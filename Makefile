@@ -22,7 +22,7 @@ else
     QEMU = qemu-system-x86_64
     QEMU_CPU ?= qemu64
     LDSCRIPT = src/kernel/link/x86_64.ld
-    ASFLAGS = -f elf64
+    ASFLAGS = -f elf64 -w-zeroing
     CFLAGS_BASE = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
                   -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
                   -Wno-builtin-declaration-mismatch
@@ -88,7 +88,7 @@ else
                   $(NET_OBJS)
     KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
                   build/kernel_test.o build/test_main.o build/test_hvfs.o \
-                  build/test_hw_stubs.o
+                  build/test_hw_stubs.o build/arch/x86_64/trampoline.o
 endif
 
 RUST_LIB = src/rust/target/$(RUST_TARGET)/release/libqueenx.a

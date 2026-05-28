@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub const PAGE_SIZE: u64 = 4096;
 pub const KERNEL_BASE: u64 = 0xFFFF800000000000u64;
 

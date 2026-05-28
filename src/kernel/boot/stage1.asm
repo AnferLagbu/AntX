@@ -8,7 +8,7 @@ ORG 0x7C00
 
 KERNEL_LOAD    equ 0x100000
 SECT_PER_READ  equ 64
-TOTAL_SECT     equ 2047
+TOTAL_SECT     equ 3200
 MB2_INFO       equ 0x9000
 E820_BUF       equ 0x8C00
 MAGIC          equ 0xE85250D6

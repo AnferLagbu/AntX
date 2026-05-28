@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub const SYS_CAP_ALL: u64 = 0xFFFFFFFFFFFFFFFF;
 
 pub const CAP_DOMAIN_SYSTEM: u16    = 0;
@@ -69,6 +71,7 @@ impl CapabilityMatrix {
         Self { caps: [0; 16] }
     }
 
+    #[allow(dead_code)]
     pub fn from_array(caps: [u64; 16]) -> Self {
         Self { caps }
     }
@@ -105,6 +108,7 @@ impl CapabilityMatrix {
         true
     }
 
+    #[allow(dead_code)]
     pub fn get_domain(&self, domain: u16) -> CapBits {
         if domain as usize >= 16 { return CapBits(0); }
         CapBits(self.caps[domain as usize])
@@ -177,7 +181,7 @@ mod tests {
 
     #[test]
     fn cap_matrix_superset() {
-        let mut parent = CapabilityMatrix::all();
+        let parent = CapabilityMatrix::all();
         let child = CapabilityMatrix::viable();
         assert!(parent.is_superset_of(&child));
         assert!(!child.is_superset_of(&parent));

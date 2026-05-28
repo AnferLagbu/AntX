@@ -167,6 +167,7 @@ impl HvSpa {
         h | 1
     }
 
+    #[allow(dead_code)]
     fn check_disk_present(&self) -> bool {
         extern "C" { fn ata_disk_present(disk: u8) -> i32; }
         unsafe { ata_disk_present(0) != 0 }

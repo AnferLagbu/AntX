@@ -1,7 +1,7 @@
 /* Hardware stubs for test kernel */
-int ata_write_sector(unsigned char disk, unsigned int sector, const unsigned char *buf) { return 0; }
-int ata_read_sector(unsigned char disk, unsigned int sector, unsigned char *buf) { return 0; }
-int ata_disk_present(unsigned char disk) { return 0; }
+int ata_write_sector(unsigned char disk, unsigned int sector, const unsigned char *buf) { (void)disk; (void)sector; (void)buf; return 0; }
+int ata_read_sector(unsigned char disk, unsigned int sector, unsigned char *buf) { (void)disk; (void)sector; (void)buf; return 0; }
+int ata_disk_present(unsigned char disk) { (void)disk; return 0; }
 
 /* ── Network glue stubs ── */
 struct netif;

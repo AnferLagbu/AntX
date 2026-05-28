@@ -91,13 +91,30 @@ saved_multiboot_info:
 saved_multiboot_magic:
     resd 1
 
+align 16
+trampoline_idt:
+    resb 48 * 16
+trampoline_idt_end:
+
+trampoline_idtr_limit:
+    resw 1
+trampoline_idtr_base:
+    resq 1
+
 section .text
 global _start
 extern kernel_init
+extern boot_set_multiboot_info
 extern stack_top
+extern __bss_start
+extern _kernel_end
 
 _start:
     cli
+
+    mov al, 0xFF
+    out 0x21, al
+    out 0xA1, al
 
     mov esi, ebx
     mov edi, eax
@@ -220,6 +237,13 @@ _start:
     dec ecx
     jnz .map_low4
 
+    lea edi, [ebx + (__bss_start - _start)]
+    mov ecx, _kernel_end
+    sub ecx, edi
+    shr ecx, 2
+    xor eax, eax
+    rep stosd
+
     lea edi, [ebx + (gdt64 - _start)]
     mov word [edi], 23
     lea eax, [ebx + (gdt64 - _start + 6)]
@@ -264,22 +288,86 @@ trampoline64:
     mov gs, ax
     mov ss, ax
 
+    lea rax, [rbx + (trampoline_idt - _start)]
+    mov [rbx + (trampoline_idtr_base - _start)], rax
+    mov word [rbx + (trampoline_idtr_limit - _start)], 48 * 16 - 1
+
+    mov rdi, rax
+
+    lea rsi, [rbx + (trampoline_exc_stub - _start)]
+    mov rdx, rsi
+    shr rdx, 32
+    mov ecx, 32
+.fill_exc:
+    mov word [rdi], si
+    mov word [rdi + 2], 0x08
+    mov byte [rdi + 4], 0
+    mov byte [rdi + 5], 0x8E
+    mov r8d, esi
+    shr r8d, 16
+    mov word [rdi + 6], r8w
+    mov dword [rdi + 8], edx
+    mov dword [rdi + 12], 0
+    add rdi, 16
+    dec ecx
+    jnz .fill_exc
+
+    lea rsi, [rbx + (trampoline_int_stub - _start)]
+    mov rdx, rsi
+    shr rdx, 32
+    mov ecx, 16
+.fill_int:
+    mov word [rdi], si
+    mov word [rdi + 2], 0x08
+    mov byte [rdi + 4], 0
+    mov byte [rdi + 5], 0x8E
+    mov r8d, esi
+    shr r8d, 16
+    mov word [rdi + 6], r8w
+    mov dword [rdi + 8], edx
+    mov dword [rdi + 12], 0
+    add rdi, 16
+    dec ecx
+    jnz .fill_int
+
+    lidt [rbx + (trampoline_idtr_limit - _start)]
+
     jmp trampoline64_high
 
 BITS 64
 trampoline64_high:
-    mov rsp, qword stack_top
+    lea rsp, [rbx + (stack_top - _start)]
 
-    extern boot_set_multiboot_info
     mov edi, dword [rbx + (saved_multiboot_magic - _start)]
     mov esi, dword [rbx + (saved_multiboot_info - _start)]
     call boot_set_multiboot_info
-
     call kernel_init
 
     cli
 .halt:
     hlt
     jmp .halt
+
+trampoline_exc_stub:
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 'X'
+    out dx, al
+    mov al, '!'
+    out dx, al
+.halt_exc:
+    hlt
+    jmp .halt_exc
+
+trampoline_int_stub:
+    push rax
+    push rdx
+    mov al, 0x20
+    out 0x20, al
+    out 0xA0, al
+    pop rdx
+    pop rax
+    iretq
 
 section .note.GNU-stack noalloc noexec nowrite progbits

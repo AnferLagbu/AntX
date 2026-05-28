@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 const PWID_HASH_LEN: usize = 32;
 
 const K: [u32; 64] = [

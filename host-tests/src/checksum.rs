@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CksumKind { Off, Fletcher2, Fletcher4, SHA256, EdonR }
 

@@ -29,6 +29,7 @@ SECTIONS
     . = ALIGN(4096);
     .boot.text : {
         build/boot.o(.text)
+        __boot_text_end = .;
     } :boot
     
     . = ALIGN(4096);

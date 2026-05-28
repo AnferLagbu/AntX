@@ -1,3 +1,5 @@
+#![allow(unused_variables, unused_assignments)]
+
 use std::boxed::Box;
 use std::vec::Vec;
 use std::vec;
@@ -97,10 +99,12 @@ pub fn get_hvfs() -> &'static HvfsData {
 }
 
 impl HvfsData {
+    #[allow(dead_code)]
     fn check_disk(&self) -> bool {
         unsafe { ata_disk_present(self.disk_drive) != 0 }
     }
 
+    #[allow(dead_code)]
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
@@ -110,6 +114,7 @@ impl HvfsData {
         unsafe { ata_read_sector(self.disk_drive, phys_sector, buf.as_mut_ptr()) }
     }
 
+    #[allow(dead_code)]
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
         extern "C" {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;

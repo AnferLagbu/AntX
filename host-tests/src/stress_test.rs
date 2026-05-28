@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod stress_tests {
-    use crate::hvfs::{bp, checksum, dedup, zap, zil};
+    use crate::hvfs::{bp, dedup, zap, zil};
 
     #[test]
     fn stress_cas_insert_lookup_100() {
