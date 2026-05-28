@@ -14,23 +14,47 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 32] {
+    const STRETCH_ROUNDS: usize = 4096;
     let mut input = [0u8; 256];
     let mut pos = 0usize;
     for byte in salt.iter() { input[pos] = *byte; pos += 1; }
     for byte in password.bytes().take(255 - pos) { input[pos] = byte; pos += 1; }
-    let hash = sha256::sha256(&input[..pos]);
-    let mut result = [0u8; 32];
-    result.copy_from_slice(&hash[..32.min(hash.len())]);
-    result
+    let full_hash = sha256::sha256(&input[..pos]);
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&full_hash[..32]);
+    for round in 1..STRETCH_ROUNDS {
+        let mut stretch_input = [0u8; 64];
+        stretch_input[..32].copy_from_slice(&hash);
+        let round_bytes = (round as u64).to_le_bytes();
+        stretch_input[32..40].copy_from_slice(&round_bytes);
+        for byte in salt.iter() { stretch_input[40 + (*byte & 0xF) as usize] ^= *byte; }
+        let full = sha256::sha256(&stretch_input[..48]);
+        hash.copy_from_slice(&full[..32]);
+    }
+    hash
 }
 
 pub(crate) fn generate_salt() -> [u8; PWM_SALT_LEN] {
+    static COUNTER: AtomicU64 = AtomicU64::new(0x5A3C_9E17_F2D8_4B61);
     let tsc = crate::arch!(timestamp());
+    let stack_addr = &tsc as *const _ as u64;
+    let counter = COUNTER.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::AcqRel);
+    let heap_addr = core::ptr::null::<u8>() as u64;
+    let mut v = tsc
+        .wrapping_mul(0x2545_F491_4F6C_DD1D)
+        .wrapping_add(stack_addr)
+        .wrapping_mul(0x1329_4A6B_3C7D_8E0F)
+        .wrapping_add(counter)
+        .wrapping_add(heap_addr);
     let mut salt = [0u8; PWM_SALT_LEN];
-    let mut v = tsc;
     for i in 0..PWM_SALT_LEN {
-        v = v.wrapping_mul(0x9e3779b97f4a7c15);
+        v = v.wrapping_mul(0x9e3779b97f4a7c15).wrapping_add(tsc.rotate_left(i as u32));
         salt[i] = (v >> 56) as u8;
+        salt[i] ^= (v >> 40) as u8;
+    }
+    let extra = sha256::sha256(&salt);
+    for i in 0..PWM_SALT_LEN.min(32) {
+        salt[i] ^= extra[i];
     }
     salt
 }

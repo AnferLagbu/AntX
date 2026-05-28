@@ -104,9 +104,17 @@ static mut PER_CPU_SCHED: [core::mem::MaybeUninit<PerCpuSched>; MAX_CPUS] = [
     const { core::mem::MaybeUninit::uninit() }; MAX_CPUS
 ];
 
+static PER_CPU_INITIALIZED: [AtomicBool; MAX_CPUS] = [
+    const { AtomicBool::new(false) }; MAX_CPUS
+];
+
 pub fn init_per_cpu_sched(cpu_id: u32) {
+    let idx = (cpu_id as usize) % MAX_CPUS;
+    if PER_CPU_INITIALIZED[idx].swap(true, Ordering::AcqRel) {
+        return;
+    }
     unsafe {
-        PER_CPU_SCHED[(cpu_id as usize) % MAX_CPUS].write(PerCpuSched {
+        PER_CPU_SCHED[idx].write(PerCpuSched {
             queues: [
                 Mutex::new(VecDeque::new()),
                 Mutex::new(VecDeque::new()),
@@ -127,13 +135,23 @@ pub fn init_per_cpu_sched(cpu_id: u32) {
 #[inline]
 fn per_cpu() -> &'static PerCpuSched {
     let cpu = crate::kernel::smp::get_current_cpu();
-    unsafe { &*PER_CPU_SCHED[(cpu as usize) % MAX_CPUS].as_ptr() }
+    let idx = (cpu as usize) % MAX_CPUS;
+    if !PER_CPU_INITIALIZED[idx].load(Ordering::Acquire) {
+        init_per_cpu_sched(cpu);
+    }
+    // SAFETY: PER_CPU_INITIALIZED[idx] is true, so PER_CPU_SCHED[idx] is initialized.
+    unsafe { &*PER_CPU_SCHED[idx].as_ptr() }
 }
 
 /// Per-CPU sched for a specific CPU (caller must ensure CPU is online)
 #[inline]
 fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
-    unsafe { &*PER_CPU_SCHED[(cpu_id as usize) % MAX_CPUS].as_ptr() }
+    let idx = (cpu_id as usize) % MAX_CPUS;
+    if !PER_CPU_INITIALIZED[idx].load(Ordering::Acquire) {
+        init_per_cpu_sched(cpu_id);
+    }
+    // SAFETY: PER_CPU_INITIALIZED[idx] is true, so PER_CPU_SCHED[idx] is initialized.
+    unsafe { &*PER_CPU_SCHED[idx].as_ptr() }
 }
 
 pub struct Scheduler {
@@ -163,13 +181,13 @@ impl Scheduler {
 
         let init_pid = self.create_process("init", None, 0);
         if let Some(pid) = init_pid {
-            if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
-                unsafe {
-                    let _ = (*process_ptr).set_state_safe(ProcessState::Running);
-                    (*process_ptr).set_priority(ProcessPriority::Normal);
-                }
-                self.set_current(pid);
+            PROCESS_TABLE.with_process(pid, |proc| {
+                let _ = proc.set_state_safe(ProcessState::Running);
+                proc.set_priority(ProcessPriority::Normal);
+            });
+            self.set_current(pid);
 
+            if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
                 unsafe {
                     extern "C" {
                         fn update_current_process_ptr(ptr: u64);
@@ -274,10 +292,9 @@ impl Scheduler {
                 };
                 let rt_pid = rt_task.pid;
                 
-                let alive = PROCESS_TABLE.get(rt_pid).map_or(false, |p| unsafe {
-                    let state = (*p).get_state();
-                    state != ProcessState::Zombie
-                });
+                let alive = PROCESS_TABLE.with_process(rt_pid, |p| {
+                    p.get_state() != ProcessState::Zombie
+                }).unwrap_or(false);
                 
                 if !alive {
                     continue;
@@ -316,17 +333,12 @@ impl Scheduler {
                 let mut queue = per_cpu.queues[level].lock();
 
                 while let Some(pid) = queue.pop_front() {
-                    if let Some(process) = PROCESS_TABLE.get(pid) {
-                        unsafe {
-                            let state = (*process).get_state();
-                            if state != ProcessState::Blocked && state != ProcessState::Zombie {
-                                next_pid = Some(pid);
-                                per_cpu.current_level.store(level as u32, Ordering::SeqCst);
-                                per_cpu.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
-                                break;
-                            }
-                        }
-                    } else {
+                    let schedulable = PROCESS_TABLE.with_process(pid, |p| {
+                        let state = p.get_state();
+                        state != ProcessState::Blocked && state != ProcessState::Zombie
+                    }).unwrap_or(true);
+
+                    if schedulable {
                         next_pid = Some(pid);
                         per_cpu.current_level.store(level as u32, Ordering::SeqCst);
                         per_cpu.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
@@ -385,59 +397,76 @@ impl Scheduler {
             return None;
         }
 
-        let next_proc = unsafe { &*next_ptr.unwrap() };
-        let _ = next_proc.set_state_safe(ProcessState::Running);
-
-        let next_kernel_stack = next_proc.kernel_stack.load(Ordering::SeqCst);
-        if next_kernel_stack != 0 {
-            crate::kernel::cpu::arch::set_kernel_stack(next_kernel_stack);
-        }
+        PROCESS_TABLE.with_process(next, |proc| {
+            let _ = proc.set_state_safe(ProcessState::Running);
+            let next_kernel_stack = proc.kernel_stack.load(Ordering::SeqCst);
+            if next_kernel_stack != 0 {
+                crate::kernel::cpu::arch::set_kernel_stack(next_kernel_stack);
+            }
+        });
 
         per_cpu.current.store(next, Ordering::SeqCst);
 
         super::scheduler_ex::SCHEDULER_EX.current.store(next as u64, Ordering::SeqCst);
 
-        unsafe { crate::kernel::proc::ffi::update_current_process_ptr(next_proc as *const Process as u64); }
+        if let Some(next_ptr_raw) = next_ptr {
+            unsafe { crate::kernel::proc::ffi::update_current_process_ptr(next_ptr_raw as u64); }
+        }
 
         if let Some(user_proc) = super::user_proc::USER_PROC_MANAGER.get(next) {
             super::user_proc::USER_PROC_MANAGER.set_current(Some(user_proc));
         }
 
-        if let Some(ref prev_proc) = prev_ptr {
+        if let Some(ref _prev_proc) = prev_ptr {
             let was_rt = per_cpu.rt_running.load(Ordering::SeqCst);
-            let raw = *prev_proc;
             if was_rt {
-                let rt_priority = unsafe { (&*raw).get_rt_priority() };
-                let policy = unsafe { (&*raw).get_sched_policy() };
-                if policy != SchedPolicy::Fifo {
-                    let mut rt_queue = per_cpu.rt_queue.lock();
-                    let mut inserted = false;
-                    for i in 0..rt_queue.len() {
-                        if rt_queue[i].rt_priority < rt_priority {
-                            rt_queue.insert(i, RtTaskInfo { pid: current_pid, rt_priority, policy, time_slice_remaining: RT_TIME_SLICE });
-                            inserted = true;
-                            break;
+                let rt_info = PROCESS_TABLE.with_process(current_pid, |p| {
+                    (p.get_rt_priority(), p.get_sched_policy())
+                });
+                if let Some((rt_priority, policy)) = rt_info {
+                    if policy != SchedPolicy::Fifo {
+                        let mut rt_queue = per_cpu.rt_queue.lock();
+                        let mut inserted = false;
+                        for i in 0..rt_queue.len() {
+                            if rt_queue[i].rt_priority < rt_priority {
+                                rt_queue.insert(i, RtTaskInfo { pid: current_pid, rt_priority, policy, time_slice_remaining: RT_TIME_SLICE });
+                                inserted = true;
+                                break;
+                            }
                         }
-                    }
-                    if !inserted {
-                        rt_queue.push_back(RtTaskInfo { pid: current_pid, rt_priority, policy, time_slice_remaining: RT_TIME_SLICE });
+                        if !inserted {
+                            rt_queue.push_back(RtTaskInfo { pid: current_pid, rt_priority, policy, time_slice_remaining: RT_TIME_SLICE });
+                        }
                     }
                 }
             } else {
                 let level = (per_cpu.current_level.load(Ordering::SeqCst) as usize + 1).min(MLFQ_LEVELS - 1);
                 per_cpu.queues[level].lock().push_back(current_pid);
             }
-            unsafe { let _ = (&*raw).set_state_safe(ProcessState::Ready); }
+            PROCESS_TABLE.with_process(current_pid, |p| {
+                let _ = p.set_state_safe(ProcessState::Ready);
+            });
         }
 
         let prev_ctx_ptr = prev_ptr.map_or(
             core::ptr::null_mut(),
-            |p| unsafe { &raw mut (*p).context } as *mut Mutex<ProcessContext>,
+            |p| {
+                unsafe { &mut (*p).context as *mut Mutex<ProcessContext> }
+            },
         );
 
-        let next_ctx_ptr = unsafe { &raw const (*next_proc).context as *const Mutex<ProcessContext> };
+        let next_ctx_ptr = next_ptr.map_or(
+            core::ptr::null(),
+            |p| {
+                // SAFETY: next_ptr comes from PROCESS_TABLE.get() which returns a valid
+                // pointer to a live Process. We only read the context field address.
+                unsafe { &raw const (*p).context as *const Mutex<ProcessContext> }
+            },
+        );
 
         if !prev_ctx_ptr.is_null() {
+            // SAFETY: Both pointers are valid and derived from live Process entries
+            // in the PROCESS_TABLE. context_switch saves/restores register state.
             unsafe {
                 let mut prev_ctx = (*prev_ctx_ptr).lock();
                 let next_ctx = (*next_ctx_ptr).lock();
@@ -472,68 +501,68 @@ impl Scheduler {
     pub fn block(&self, reason: BlockReason) {
         let per_cpu = per_cpu();
         if let Some(pid) = self.current() {
-            if let Some(process) = PROCESS_TABLE.get(pid) {
-                unsafe {
-                    let _ = (*process).set_state_safe(ProcessState::Blocked);
-                    (*process).block_reason.store(reason as u32, Ordering::SeqCst);
-                }
-            }
+            PROCESS_TABLE.with_process(pid, |proc| {
+                let _ = proc.set_state_safe(ProcessState::Blocked);
+                proc.block_reason.store(reason as u32, Ordering::SeqCst);
+            });
             per_cpu.need_reschedule.store(true, Ordering::SeqCst);
         }
     }
     
     pub fn unblock(&self, pid: Pid) {
         let per_cpu = per_cpu();
-        if let Some(process) = PROCESS_TABLE.get(pid) {
-            unsafe {
-                let state = (*process).get_state();
-                if state == ProcessState::Blocked {
-                    let _ = (*process).set_state_safe(ProcessState::Ready);
-                    
-                    let is_rt = (*process).get_sched_policy() == SchedPolicy::Fifo || 
-                                 (*process).get_sched_policy() == SchedPolicy::Rr;
-                    
-                    if is_rt {
-                        let rt_priority = (*process).get_rt_priority();
-                        let policy = (*process).get_sched_policy();
-                        self.add_rt_task(pid, rt_priority, policy);
-                    } else {
-                        let boost_level = 0usize;
-                        per_cpu.queues[boost_level].lock().push_back(pid);
-                    }
+        PROCESS_TABLE.with_process(pid, |proc| {
+            let state = proc.get_state();
+            if state == ProcessState::Blocked {
+                let _ = proc.set_state_safe(ProcessState::Ready);
+
+                let is_rt = proc.get_sched_policy() == SchedPolicy::Fifo ||
+                             proc.get_sched_policy() == SchedPolicy::Rr;
+
+                if is_rt {
+                    let rt_priority = proc.get_rt_priority();
+                    let policy = proc.get_sched_policy();
+                    self.add_rt_task(pid, rt_priority, policy);
+                } else {
+                    per_cpu.queues[0].lock().push_back(pid);
                 }
             }
-        }
+        });
     }
     
     pub fn exit(&self, exit_code: u32) {
         let per_cpu = per_cpu();
         if let Some(pid) = self.current() {
-            if let Some(process) = PROCESS_TABLE.get(pid) {
-                unsafe {
-                    let pwm = (*process).get_pwm();
-                    (*process).exit_code.store(exit_code, Ordering::SeqCst);
-                    let _ = (*process).set_state_safe(ProcessState::Zombie);
-                    self.dec_limit(pwm);
-                    
-                    if let Some(parent_pid) = (*process).parent {
-                        self.unblock(parent_pid.0);
-                    }
+            let parent_pid_opt = PROCESS_TABLE.with_process(pid, |proc| {
+                let pwm = proc.get_pwm();
+                proc.exit_code.store(exit_code, Ordering::SeqCst);
+                let _ = proc.set_state_safe(ProcessState::Zombie);
+                self.dec_limit(pwm);
+                proc.parent.map(|p| p.0)
+            });
 
-                    for child_pid in (*process).children.lock().iter() {
-                        if let Some(child) = PROCESS_TABLE.get(child_pid.0) {
-                            let state = (*child).get_state();
-                            if state == ProcessState::Zombie {
-                                let _ = (*child).set_state_safe(ProcessState::Terminated);
-                                PROCESS_TABLE.remove_and_free(child_pid.0);
-                            } else {
-                                (*child).parent = Some(ProcessId(1));
-                            }
-                        }
-                    }
-                    (*process).children.lock().clear();
-                }
+            if let Some(parent_pid) = parent_pid_opt.flatten() {
+                self.unblock(parent_pid);
             }
+
+            PROCESS_TABLE.with_process(pid, |proc| {
+                let children: alloc::vec::Vec<Pid> =
+                    proc.children.lock().iter().map(|c| c.0).collect();
+                for child_pid in children {
+                    PROCESS_TABLE.with_process_mut(child_pid, |child| {
+                        let state = child.get_state();
+                        if state == ProcessState::Zombie {
+                            let _ = child.set_state_safe(ProcessState::Terminated);
+                        } else {
+                            child.parent = Some(ProcessId(1));
+                        }
+                    });
+                    if PROCESS_TABLE.with_process(child_pid, |c| c.get_state() == ProcessState::Terminated).unwrap_or(false) {
+                        PROCESS_TABLE.remove_and_free(child_pid);
+                    }
+                }
+                proc.children.lock().clear();
+            });
         }
 
         per_cpu.need_reschedule.store(true, Ordering::SeqCst);

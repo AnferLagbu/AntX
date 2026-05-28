@@ -354,6 +354,40 @@ impl ProcessTable {
         }
         table[pid as usize].map(|addr| addr as *mut Process)
     }
+
+    pub fn with_process<F, R>(&self, pid: Pid, f: F) -> Option<R>
+    where
+        F: FnOnce(&Process) -> R,
+    {
+        let table = self.processes.lock();
+        if pid as usize >= MAX_PROCESSES {
+            return None;
+        }
+        match table[pid as usize] {
+            Some(addr) => {
+                let proc_ref = unsafe { &*(addr as *const Process) };
+                Some(f(proc_ref))
+            }
+            None => None,
+        }
+    }
+
+    pub fn with_process_mut<F, R>(&self, pid: Pid, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut Process) -> R,
+    {
+        let table = self.processes.lock();
+        if pid as usize >= MAX_PROCESSES {
+            return None;
+        }
+        match table[pid as usize] {
+            Some(addr) => {
+                let proc_ref = unsafe { &mut *(addr as *mut Process) };
+                Some(f(proc_ref))
+            }
+            None => None,
+        }
+    }
     
     pub fn remove(&self, pid: Pid) -> Option<*mut Process> {
         let mut table = self.processes.lock();

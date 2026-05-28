@@ -114,13 +114,13 @@ impl HvfsData {
     }
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
-        if buf.len() < 512 { return -1; }
+        if buf.len() < 512 { return KernelError::InvalidArgument.as_i32(); }
         let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
         block::hdd_read_sector(self.disk_drive.load(Ordering::Acquire), phys_sector as u64, buf)
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
-        if buf.len() < 512 { return -1; }
+        if buf.len() < 512 { return KernelError::InvalidArgument.as_i32(); }
         let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
         block::hdd_write_sector(self.disk_drive.load(Ordering::Acquire), phys_sector as u64, buf)
     }
@@ -508,10 +508,10 @@ impl HvfsData {
 
     pub fn close(&self, fd: u32) -> i32 {
         let idx = fd as usize;
-        if idx >= HVFS_MAX_FDS { return -1; }
+        if idx >= HVFS_MAX_FDS { return KernelError::InvalidArgument.as_i32(); }
         {
             let fds = self.fds.lock();
-            if !fds[idx].used { return -1; }
+            if !fds[idx].used { return KernelError::InvalidArgument.as_i32(); }
         }
         self.free_fd(idx);
         0
@@ -521,14 +521,14 @@ impl HvfsData {
         let (obj_id, offset, pwm) = {
             let fds = self.fds.lock();
             let idx = fd as usize;
-            if idx >= HVFS_MAX_FDS || !fds[idx].used { return -1; }
+            if idx >= HVFS_MAX_FDS || !fds[idx].used { return KernelError::InvalidArgument.as_i32(); }
             (fds[idx].obj_id, fds[idx].offset, fds[idx].pwm)
         };
         let obj = {
             let datasets = self.datasets.lock();
-            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
+            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return KernelError::NotFound.as_i32() }
         };
-        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return KernelError::PermissionDenied.as_i32(); }
         let available = if offset < obj.size { (obj.size - offset) as usize } else { 0 };
         let to_read = (count as usize).min(available).min(buf.len());
         if to_read == 0 { return 0; }
@@ -561,15 +561,15 @@ impl HvfsData {
         let (obj_id, offset, pwm, flags) = {
             let fds = self.fds.lock();
             let idx = fd as usize;
-            if idx >= HVFS_MAX_FDS || !fds[idx].used { return -1; }
+            if idx >= HVFS_MAX_FDS || !fds[idx].used { return KernelError::InvalidArgument.as_i32(); }
             (fds[idx].obj_id, fds[idx].offset, fds[idx].pwm, fds[idx].flags)
         };
-        if flags & 0x0001 != 0 && flags & 0x0002 == 0 { return -1; }
+        if flags & 0x0001 != 0 && flags & 0x0002 == 0 { return KernelError::PermissionDenied.as_i32(); }
         let mut obj = {
             let datasets = self.datasets.lock();
-            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
+            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return KernelError::NotFound.as_i32() }
         };
-        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return KernelError::PermissionDenied.as_i32(); }
         let to_write = (count as usize).min(buf.len());
         if to_write == 0 { return 0; }
         let txg = self.spa.current_txg();
@@ -578,12 +578,12 @@ impl HvfsData {
         let compressed = compress::compress(&buf[..to_write], comp_type);
         let write_data = compressed.as_deref().unwrap_or(&buf[..to_write]);
         let new_bp = match self.spa.allocate(write_data.len() as u64, cksum_type, comp_type, txg) {
-            Some(bp) => bp, None => return -1,
+            Some(bp) => bp, None => return KernelError::NoSpace.as_i32(),
         };
         if self.is_disk_mode() {
             if self.spa.write_bp(&new_bp, write_data) != 0 {
                 self.spa.free(&new_bp, txg);
-                return -1;
+                return KernelError::IoError.as_i32();
             }
         }
         obj.cow_bp(new_bp, txg);
@@ -613,7 +613,7 @@ impl HvfsData {
     }
 
     pub fn mkdir(&self, path: &str, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let name = path.trim_start_matches('/');
         let datasets = self.datasets.lock();
         let ds = &datasets[0];
@@ -623,26 +623,26 @@ impl HvfsData {
                 self.zil.add_record(HvZilRecord::new_mkdir(txg, 0, name));
                 obj_id as i32
             }
-            None => -1,
+            None => KernelError::IoError.as_i32(),
         }
     }
 
     pub fn unlink(&self, path: &str, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let name = path.trim_start_matches('/');
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(name) { Some(id) => Some(id), None => None }
         };
-        let obj_id = match obj_id { Some(id) => id, None => return -2 };
+        let obj_id = match obj_id { Some(id) => id, None => return KernelError::NotFound.as_i32() };
         let obj = {
             let datasets = self.datasets.lock();
-            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
+            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return KernelError::NotFound.as_i32() }
         };
-        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return KernelError::PermissionDenied.as_i32(); }
         {
             let datasets = self.datasets.lock();
-            if !datasets[0].unlink(name) { return -1; }
+            if !datasets[0].unlink(name) { return KernelError::IoError.as_i32(); }
         }
         let txg = self.spa.current_txg();
         if !obj.bp.is_null() {
@@ -664,26 +664,25 @@ impl HvfsData {
     }
 
     pub fn chmod(&self, path: &str, mode: u16, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let name = path.trim_start_matches('/');
         
         let mut datasets = self.datasets.lock();
         let ds = &mut datasets[0];
         let obj_id = match ds.lookup(name) {
             Some(id) => id,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
         
         let mut obj = match ds.objset.get_obj(obj_id) {
             Some(o) => o,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
         
-        // Permission check: only owner or privileged user can change permissions
         if obj.owner_pwm != pwm {
             let level = unsafe { pwm_get_privilege_level(pwm) };
             if level != 0 {
-                return -1;
+                return KernelError::PermissionDenied.as_i32();
             }
         }
         
@@ -695,7 +694,7 @@ impl HvfsData {
             return 0;
         }
         
-        -1
+        KernelError::IoError.as_i32()
     }
 
     pub fn chown(&self, path: &str, owner_pwm: u64, pwm: u64) -> i32 {
@@ -703,24 +702,24 @@ impl HvfsData {
     }
 
     pub fn chown_ext(&self, path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let name = path.trim_start_matches('/');
         
         let level = unsafe { pwm_get_privilege_level(pwm) };
         if level != 0 {
-            return -1;
+            return KernelError::PermissionDenied.as_i32();
         }
         
         let mut datasets = self.datasets.lock();
         let ds = &mut datasets[0];
         let obj_id = match ds.lookup(name) {
             Some(id) => id,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
         
         let mut obj = match ds.objset.get_obj(obj_id) {
             Some(o) => o,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
         
         obj.owner_pwm = owner_pwm;
@@ -732,42 +731,38 @@ impl HvfsData {
             return 0;
         }
         
-        -1
+        KernelError::IoError.as_i32()
     }
 
     pub fn rename(&self, old_path: &str, new_path: &str, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let old_name = old_path.trim_start_matches('/');
         let new_name = new_path.trim_start_matches('/');
         
-        // 查找源文件
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(old_name) {
                 Some(id) => id,
-                None => return -2,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
-        // 检查权限
         let obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return -1,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
-        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return KernelError::PermissionDenied.as_i32(); }
         
-        // 检查目标是否已存在
         {
             let datasets = self.datasets.lock();
             if datasets[0].lookup(new_name).is_some() {
-                return -4; // 目标已存在
+                return KernelError::AlreadyExists.as_i32();
             }
         }
         
-        // 执行重命名
         {
             let datasets = self.datasets.lock();
             let ds = &datasets[0];
@@ -775,7 +770,6 @@ impl HvfsData {
             ds.dir_zap.insert_u64(new_name, obj_id);
         }
         
-        // 记录到ZIL
         let txg = self.spa.current_txg();
         self.zil.add_record(HvZilRecord::new_rename(txg, 0, old_name, new_name));
         
@@ -783,30 +777,26 @@ impl HvfsData {
     }
 
     pub fn symlink(&self, target: &str, linkpath: &str, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let link_name = linkpath.trim_start_matches('/');
         
-        // 检查链接路径是否已存在
         {
             let datasets = self.datasets.lock();
             if datasets[0].lookup(link_name).is_some() {
-                return -2; // 已存在
+                return KernelError::AlreadyExists.as_i32();
             }
         }
         
-        // 创建符号链接对象
         let obj_id = {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            // 分配新对象
             match ds.objset.alloc_obj(HvObjType::Symlink, pwm) {
                 Some(id) => id,
-                None => return -1,
+                None => return KernelError::NoSpace.as_i32(),
             }
         };
         
-        // 设置目标路径
         {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
@@ -818,7 +808,6 @@ impl HvfsData {
                 ds.objset.update_obj(&obj);
             }
             
-            // 将目标路径写入对象数据
             let target_bytes = target.as_bytes();
             let txg = self.spa.current_txg();
             let cksum_type = HvCksumType::Fletcher4;
@@ -831,13 +820,11 @@ impl HvfsData {
                 }
             }
             
-            // 添加到目录
             if !ds.link(link_name, obj_id) {
-                return -1;
+                return KernelError::IoError.as_i32();
             }
         }
         
-        // 记录到ZIL
         let txg = self.spa.current_txg();
         self.zil.add_record(HvZilRecord::new_symlink(txg, 0, link_name, target));
         
@@ -845,43 +832,38 @@ impl HvfsData {
     }
 
     pub fn link(&self, old_path: &str, new_path: &str, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let old_name = old_path.trim_start_matches('/');
         let new_name = new_path.trim_start_matches('/');
         
-        // 查找源文件
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(old_name) {
                 Some(id) => id,
-                None => return -2,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
-        // 检查源文件类型（不能是目录）
         let obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return -1,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         if obj.obj_type == HvObjType::Dir {
-            return -3; // 不能创建目录的硬链接
+            return KernelError::IsDirectory.as_i32();
         }
         
-        // 检查权限
-        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return KernelError::PermissionDenied.as_i32(); }
         
-        // 检查目标是否已存在
         {
             let datasets = self.datasets.lock();
             if datasets[0].lookup(new_name).is_some() {
-                return -4; // 目标已存在
+                return KernelError::AlreadyExists.as_i32();
             }
         }
         
-        // 创建硬链接
         {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
@@ -892,13 +874,11 @@ impl HvfsData {
                 ds.objset.update_obj(&obj);
             }
             
-            // 添加到目录
             if !ds.link(new_name, obj_id) {
-                return -1;
+                return KernelError::IoError.as_i32();
             }
         }
         
-        // 记录到ZIL
         let txg = self.spa.current_txg();
         self.zil.add_record(HvZilRecord::new_link(txg, 0, new_name, obj_id));
         
@@ -906,15 +886,14 @@ impl HvfsData {
     }
 
     pub fn readlink(&self, path: &str, buf: &mut [u8], pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let name = path.trim_start_matches('/');
         
-        // 查找符号链接
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(name) {
                 Some(id) => id,
-                None => return -2,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
@@ -922,19 +901,16 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return -1,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
-        // 检查是否为符号链接
         if obj.obj_type != HvObjType::Symlink {
-            return -3; // 不是符号链接
+            return KernelError::InvalidArgument.as_i32();
         }
         
-        // 检查权限
-        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return KernelError::PermissionDenied.as_i32(); }
         
-        // 读取目标路径
         if obj.bp.is_null() {
             return 0;
         }
@@ -942,7 +918,6 @@ impl HvfsData {
         let target_len = obj.size as usize;
         let to_read = target_len.min(buf.len());
         
-        // 从ARC读取数据
         let block_key = HvArcKey::new(0, 0, obj.birth_txg);
         if let Some(data_ptr) = self.spa.arc.lookup(&block_key) {
             let data = unsafe { core::slice::from_raw_parts(data_ptr, target_len) };
@@ -950,41 +925,35 @@ impl HvfsData {
             return to_read as i32;
         }
         
-        -1
+        KernelError::IoError.as_i32()
     }
 
     pub fn setxattr(&self, path: &str, name: &str, value: &[u8], pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let obj_name = path.trim_start_matches('/');
         
-        // 查找对象
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return -2,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
-        // 检查权限
         let obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return -1,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
-        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return KernelError::PermissionDenied.as_i32(); }
         
-        // 设置扩展属性
         {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
             
-            // xattr 存储到对象的 data_hash 字段
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
-                // 简单实现：将xattr存储在对象的data_hash字段中
-                // 实际实现应该使用ZAP对象存储
                 let name_hash = Self::hash_xattr_name(name);
                 if name_hash < 4 {
                     let mut hash = [0u64; 4];
@@ -998,19 +967,18 @@ impl HvfsData {
             }
         }
         
-        -1
+        KernelError::NotSupported.as_i32()
     }
 
     pub fn getxattr(&self, path: &str, name: &str, buf: &mut [u8], pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let obj_name = path.trim_start_matches('/');
         
-        // 查找对象
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return -2,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
@@ -1018,19 +986,16 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return -1,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
-        // 检查权限
-        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return KernelError::PermissionDenied.as_i32(); }
         
-        // 获取扩展属性
         let name_hash = Self::hash_xattr_name(name);
         if name_hash < 4 {
             let value_hash = obj.data_hash[name_hash];
             if value_hash != 0 {
-                // 简单实现：返回哈希值作为数据
                 let hash_bytes = value_hash.to_le_bytes();
                 let to_copy = hash_bytes.len().min(buf.len());
                 buf[..to_copy].copy_from_slice(&hash_bytes[..to_copy]);
@@ -1038,19 +1003,18 @@ impl HvfsData {
             }
         }
         
-        -1
+        KernelError::NotFound.as_i32()
     }
 
     pub fn listxattr(&self, path: &str, buf: &mut [u8], pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let obj_name = path.trim_start_matches('/');
         
-        // 查找对象
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return -2,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
@@ -1058,14 +1022,12 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return -1,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
-        // 检查权限
-        if !self.check_permission(&obj, pwm, 0x01) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x01) { return KernelError::PermissionDenied.as_i32(); }
         
-        // 列出扩展属性
         let mut offset = 0;
         for i in 0..4 {
             if obj.data_hash[i] != 0 {
@@ -1082,29 +1044,26 @@ impl HvfsData {
     }
 
     pub fn removexattr(&self, path: &str, name: &str, pwm: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let obj_name = path.trim_start_matches('/');
         
-        // 查找对象
         let obj_id = {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return -2,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
         
-        // 检查权限
         let obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return -1,
+                None => return KernelError::NotFound.as_i32(),
             }
         };
-        if !self.check_permission(&obj, pwm, 0x02) { return -3; }
+        if !self.check_permission(&obj, pwm, 0x02) { return KernelError::PermissionDenied.as_i32(); }
         
-        // 删除扩展属性
         {
             let mut datasets = self.datasets.lock();
             let ds = &mut datasets[0];
@@ -1123,7 +1082,7 @@ impl HvfsData {
             }
         }
         
-        -1
+        KernelError::NotSupported.as_i32()
     }
 
     fn hash_xattr_name(name: &str) -> usize {
@@ -1143,7 +1102,7 @@ impl HvfsData {
     }
 
     pub fn sync(&self) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let txg = self.spa.advance_txg();
         let meta_bp = self.serialize_dataset_metadata(txg);
         {
@@ -1170,61 +1129,72 @@ impl HvfsData {
 
     fn serialize_dataset_metadata(&self, txg: u64) -> Option<HvBlockPointer> {
         const BP_BYTES: usize = 128;
+        const OBJ_RECORD_SIZE: usize = 222;
+        const MAX_SERIALIZE_OBJECTS: usize = 65536;
+        const MAX_SERIALIZE_ENTRIES: usize = 65536;
+
         let (objects, dir_entries, next_id) = {
             let datasets = self.datasets.lock();
             let ds = &datasets[0];
             let objs = ds.objset.objects.lock();
             let obj_clones: Vec<HvDmuObject> = objs.iter().filter(|o| o.used).cloned().collect();
-            let _obj_count = obj_clones.len();
             let dir_list = ds.dir_zap.entries();
             let next = ds.objset.next_obj_id.load(Ordering::Acquire);
             (obj_clones, dir_list, next)
         };
 
+        if objects.len() > MAX_SERIALIZE_OBJECTS || dir_entries.len() > MAX_SERIALIZE_ENTRIES {
+            log("[HvFS] serialize: object/entry count exceeds safety limit\n");
+            return None;
+        }
+
         let mut total = 32u32;
-        for _ in &objects { total += 222; }
+        for _ in &objects { total += OBJ_RECORD_SIZE as u32; }
         for (name, _) in &dir_entries {
             total += 2 + name.len() as u32 + 8;
         }
 
         let mut buf = vec![0u8; total as usize];
         buf[0] = b'H'; buf[1] = b'V'; buf[2] = b'M'; buf[3] = b'1';
-        Self::write_le32(&mut buf, 4, 1);
-        Self::write_le32(&mut buf, 8, objects.len() as u32);
-        Self::write_le32(&mut buf, 12, dir_entries.len() as u32);
-        Self::write_le64(&mut buf, 16, next_id);
-        Self::write_le32(&mut buf, 24, total);
+        if !Self::write_le32(&mut buf, 4, 1) { return None; }
+        if !Self::write_le32(&mut buf, 8, objects.len() as u32) { return None; }
+        if !Self::write_le32(&mut buf, 12, dir_entries.len() as u32) { return None; }
+        if !Self::write_le64(&mut buf, 16, next_id) { return None; }
+        if !Self::write_le32(&mut buf, 24, total) { return None; }
 
         let mut off = 32usize;
         for obj in &objects {
-            Self::write_le64(&mut buf, off, obj.obj_id); off += 8;
+            if off + OBJ_RECORD_SIZE > buf.len() { return None; }
+            if !Self::write_le64(&mut buf, off, obj.obj_id) { return None; } off += 8;
             buf[off] = obj.obj_type as u8; off += 1;
-            Self::write_le32(&mut buf, off, obj.block_size); off += 4;
-            Self::write_le64(&mut buf, off, obj.nblocks); off += 8;
-            Self::write_le64(&mut buf, off, obj.size); off += 8;
+            if !Self::write_le32(&mut buf, off, obj.block_size) { return None; } off += 4;
+            if !Self::write_le64(&mut buf, off, obj.nblocks) { return None; } off += 8;
+            if !Self::write_le64(&mut buf, off, obj.size) { return None; } off += 8;
+            if off + BP_BYTES > buf.len() { return None; }
             let bp_bytes = unsafe {
                 core::slice::from_raw_parts(&obj.bp as *const HvBlockPointer as *const u8, BP_BYTES)
             };
             buf[off..off+BP_BYTES].copy_from_slice(bp_bytes); off += BP_BYTES;
-            Self::write_le64(&mut buf, off, obj.atime); off += 8;
-            Self::write_le64(&mut buf, off, obj.mtime); off += 8;
-            Self::write_le64(&mut buf, off, obj.ctime); off += 8;
-            Self::write_le64(&mut buf, off, obj.owner_pwm); off += 8;
-            Self::write_le64(&mut buf, off, obj.group_pwm); off += 8;
+            if !Self::write_le64(&mut buf, off, obj.atime) { return None; } off += 8;
+            if !Self::write_le64(&mut buf, off, obj.mtime) { return None; } off += 8;
+            if !Self::write_le64(&mut buf, off, obj.ctime) { return None; } off += 8;
+            if !Self::write_le64(&mut buf, off, obj.owner_pwm) { return None; } off += 8;
+            if !Self::write_le64(&mut buf, off, obj.group_pwm) { return None; } off += 8;
             buf[off] = obj.sensitivity; off += 1;
-            Self::write_le16(&mut buf, off, obj.pwm_perm); off += 2;
-            Self::write_le32(&mut buf, off, obj.link_count); off += 4;
-            Self::write_le32(&mut buf, off, obj.flags); off += 4;
-            Self::write_le64(&mut buf, off, obj.birth_txg); off += 8;
+            if !Self::write_le16(&mut buf, off, obj.pwm_perm) { return None; } off += 2;
+            if !Self::write_le32(&mut buf, off, obj.link_count) { return None; } off += 4;
+            if !Self::write_le32(&mut buf, off, obj.flags) { return None; } off += 4;
+            if !Self::write_le64(&mut buf, off, obj.birth_txg) { return None; } off += 8;
             buf[off] = if obj.used { 1 } else { 0 }; off += 1;
             off += 1;
         }
 
         for (name, _value) in &dir_entries {
             let name_bytes = name.as_bytes();
-            Self::write_le16(&mut buf, off, name_bytes.len() as u16); off += 2;
+            if off + 2 + name_bytes.len() + 8 > buf.len() { return None; }
+            if !Self::write_le16(&mut buf, off, name_bytes.len() as u16) { return None; } off += 2;
             buf[off..off+name_bytes.len()].copy_from_slice(name_bytes); off += name_bytes.len();
-            Self::write_le64(&mut buf, off, 0);
+            if !Self::write_le64(&mut buf, off, 0) { return None; }
         }
 
         if !self.is_disk_mode() { return None; }
@@ -1238,14 +1208,42 @@ impl HvfsData {
 
     fn deserialize_dataset_metadata(&self, bp: &HvBlockPointer) -> bool {
         const BP_BYTES: usize = 128;
+        const OBJ_RECORD_SIZE: usize = 222;
+        const MAX_DESERIALIZE_OBJECTS: usize = 65536;
+        const MAX_DESERIALIZE_ENTRIES: usize = 65536;
+        const MAX_NAME_LEN: usize = 4096;
+
         if bp.is_null() || !self.is_disk_mode() { return false; }
         let mut buf = vec![0u8; bp.prop.physical_size as usize];
         if self.spa.read_bp(bp, &mut buf) != 0 { return false; }
         if buf.len() < 32 { return false; }
         if buf[0] != b'H' || buf[1] != b'V' || buf[2] != b'M' || buf[3] != b'1' { return false; }
-        let obj_count = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]) as usize;
-        let zap_count = u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]) as usize;
-        let next_obj_id = u64::from_le_bytes([buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23]]);
+
+        let obj_count = match Self::read_le32(&buf, 8) {
+            Some(v) => v as usize,
+            None => return false,
+        };
+        let zap_count = match Self::read_le32(&buf, 12) {
+            Some(v) => v as usize,
+            None => return false,
+        };
+        let next_obj_id = match Self::read_le64(&buf, 16) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        if obj_count > MAX_DESERIALIZE_OBJECTS || zap_count > MAX_DESERIALIZE_ENTRIES {
+            log("[HvFS] deserialize: count exceeds safety limit, possible corruption\n");
+            return false;
+        }
+
+        let expected_min = 32u64
+            + obj_count as u64 * OBJ_RECORD_SIZE as u64
+            + zap_count as u64 * (2 + 8);
+        if (buf.len() as u64) < expected_min {
+            log("[HvFS] deserialize: buffer too small for declared counts\n");
+            return false;
+        }
 
         let mut off = 32usize;
         {
@@ -1253,32 +1251,35 @@ impl HvfsData {
             let mut objs = ds.objset.objects.lock();
             objs.clear();
             for _ in 0..obj_count {
-                if off + 222 > buf.len() { return false; }
-                let obj_id = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]);
-                off += 8;
+                if off + OBJ_RECORD_SIZE > buf.len() { return false; }
+
+                let obj_id = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
                 let obj_type = HvObjType::from_u8(buf[off]); off += 1;
-                let _block_size = u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]]); off += 4;
-                let nblocks = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let size = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let mut bp = HvBlockPointer::null();
+                let _block_size = match Self::read_le32(&buf, off) { Some(v) => v, None => return false }; off += 4;
+                let nblocks = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
+                let size = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
+
+                if off + BP_BYTES > buf.len() { return false; }
+                let mut bp_val = HvBlockPointer::null();
                 let bp_slice = unsafe {
-                    core::slice::from_raw_parts_mut(&mut bp as *mut HvBlockPointer as *mut u8, BP_BYTES)
+                    core::slice::from_raw_parts_mut(&mut bp_val as *mut HvBlockPointer as *mut u8, BP_BYTES)
                 };
                 bp_slice.copy_from_slice(&buf[off..off+BP_BYTES]); off += BP_BYTES;
-                let atime = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let mtime = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let ctime = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let owner_pwm = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
-                let group_pwm = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
+
+                let atime = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
+                let mtime = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
+                let ctime = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
+                let owner_pwm = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
+                let group_pwm = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
                 let sensitivity = buf[off]; off += 1;
-                let pwm_perm = u16::from_le_bytes([buf[off], buf[off+1]]); off += 2;
-                let link_count = u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]]); off += 4;
-                let flags = u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]]); off += 4;
-                let birth_txg = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
+                let pwm_perm = match Self::read_le16(&buf, off) { Some(v) => v, None => return false }; off += 2;
+                let link_count = match Self::read_le32(&buf, off) { Some(v) => v, None => return false }; off += 4;
+                let flags = match Self::read_le32(&buf, off) { Some(v) => v, None => return false }; off += 4;
+                let birth_txg = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
                 let used = buf[off] != 0; off += 1;
                 off += 1;
                 let obj = HvDmuObject {
-                    obj_id, obj_type, block_size: 4096, nblocks, size, bp,
+                    obj_id, obj_type, block_size: 4096, nblocks, size, bp: bp_val,
                     atime, mtime, ctime, owner_pwm, group_pwm,
                     sensitivity, pwm_perm, link_count, flags,
                     birth_txg, data_hash: [0; 4], fill: 0,
@@ -1291,56 +1292,85 @@ impl HvfsData {
             ds.dir_zap.clear();
             for _ in 0..zap_count {
                 if off + 2 > buf.len() { return false; }
-                let name_len = u16::from_le_bytes([buf[off], buf[off+1]]) as usize; off += 2;
+                let name_len = match Self::read_le16(&buf, off) {
+                    Some(v) => v as usize,
+                    None => return false,
+                }; off += 2;
+                if name_len > MAX_NAME_LEN {
+                    log("[HvFS] deserialize: name length exceeds limit, possible corruption\n");
+                    return false;
+                }
                 if off + name_len + 8 > buf.len() { return false; }
                 let name = core::str::from_utf8(&buf[off..off+name_len]).unwrap_or("?");
                 off += name_len;
-                let obj_id = u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3], buf[off+4], buf[off+5], buf[off+6], buf[off+7]]); off += 8;
+                let obj_id = match Self::read_le64(&buf, off) { Some(v) => v, None => return false }; off += 8;
                 ds.dir_zap.insert_u64(name, obj_id);
             }
         }
         true
     }
 
-    fn write_le16(buf: &mut [u8], off: usize, v: u16) {
+    fn write_le16(buf: &mut [u8], off: usize, v: u16) -> bool {
+        if off + 2 > buf.len() { return false; }
         let b = v.to_le_bytes();
         buf[off] = b[0]; buf[off+1] = b[1];
+        true
     }
 
-    fn write_le32(buf: &mut [u8], off: usize, v: u32) {
+    fn write_le32(buf: &mut [u8], off: usize, v: u32) -> bool {
+        if off + 4 > buf.len() { return false; }
         let b = v.to_le_bytes();
         buf[off] = b[0]; buf[off+1] = b[1]; buf[off+2] = b[2]; buf[off+3] = b[3];
+        true
     }
 
-    fn write_le64(buf: &mut [u8], off: usize, v: u64) {
+    fn write_le64(buf: &mut [u8], off: usize, v: u64) -> bool {
+        if off + 8 > buf.len() { return false; }
         let b = v.to_le_bytes();
         buf[off] = b[0]; buf[off+1] = b[1]; buf[off+2] = b[2]; buf[off+3] = b[3];
         buf[off+4] = b[4]; buf[off+5] = b[5]; buf[off+6] = b[6]; buf[off+7] = b[7];
+        true
+    }
+
+    fn read_le16(buf: &[u8], off: usize) -> Option<u16> {
+        if off + 2 > buf.len() { return None; }
+        Some(u16::from_le_bytes([buf[off], buf[off+1]]))
+    }
+
+    fn read_le32(buf: &[u8], off: usize) -> Option<u32> {
+        if off + 4 > buf.len() { return None; }
+        Some(u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]]))
+    }
+
+    fn read_le64(buf: &[u8], off: usize) -> Option<u64> {
+        if off + 8 > buf.len() { return None; }
+        Some(u64::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3],
+                                  buf[off+4], buf[off+5], buf[off+6], buf[off+7]]))
     }
 
     pub fn snapshot_create(&self, name: &str) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let datasets = self.datasets.lock();
         let ds = &datasets[0];
         let txg = self.spa.current_txg();
         match self.snap_mgr.create_snapshot(ds, name, txg) {
-            Some(id) => id as i32, None => -1,
+            Some(id) => id as i32, None => KernelError::IoError.as_i32(),
         }
     }
 
     pub fn snapshot_destroy(&self, snap_id: u64) -> i32 {
-        if self.snap_mgr.destroy_snapshot(snap_id) { 0 } else { -1 }
+        if self.snap_mgr.destroy_snapshot(snap_id) { 0 } else { KernelError::NotFound.as_i32() }
     }
 
     pub fn snapshot_rollback(&self, snap_id: u64) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let datasets = self.datasets.lock();
         let ds = &datasets[0];
-        if self.snap_mgr.rollback(snap_id, ds) { 0 } else { -1 }
+        if self.snap_mgr.rollback(snap_id, ds) { 0 } else { KernelError::IoError.as_i32() }
     }
 
     pub fn clone_create(&self, snap_id: u64, name: &str) -> i32 {
-        if !self.is_initialized() { return -1; }
+        if !self.is_initialized() { return KernelError::NotInitialized.as_i32(); }
         let ds_id = { self.datasets.lock().len() as u64 };
         let txg = self.spa.current_txg();
         match self.snap_mgr.create_clone(snap_id, ds_id, name, txg) {
@@ -1349,7 +1379,7 @@ impl HvfsData {
                 self.datasets.lock().push(ds);
                 ds_id as i32
             }
-            None => -1,
+            None => KernelError::IoError.as_i32(),
         }
     }
 
@@ -1357,18 +1387,18 @@ impl HvfsData {
         let (obj_id, cur_offset) = {
             let fds = self.fds.lock();
             let idx = fd as usize;
-            if idx >= HVFS_MAX_FDS || !fds[idx].used { return -1; }
+            if idx >= HVFS_MAX_FDS || !fds[idx].used { return KernelError::InvalidArgument.as_i32() as i64; }
             (fds[idx].obj_id, fds[idx].offset)
         };
         let obj = {
             let datasets = self.datasets.lock();
-            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
+            match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return KernelError::NotFound.as_i32() as i64 }
         };
         let new_offset = match whence {
             0 => offset as u64,
             1 => (cur_offset as i64 + offset) as u64,
             2 => (obj.size as i64 + offset) as u64,
-            _ => return -1,
+            _ => return KernelError::InvalidArgument.as_i32() as i64,
         };
         {
             let mut fds = self.fds.lock();
