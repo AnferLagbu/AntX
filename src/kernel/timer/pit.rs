@@ -46,6 +46,7 @@ pub const PIT_MAX_COUNT: u16 = 0xFFFF;
 pub const PIT_MIN_COUNT: u16 = 0x0001;
 
 /// 控制字格式
+/// PIT 8254 控制字参考常量 (硬件文档)
 #[allow(dead_code)]
 mod control_word {
     /// 选择通道

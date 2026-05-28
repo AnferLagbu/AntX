@@ -167,12 +167,6 @@ impl HvSpa {
         h | 1
     }
 
-    #[allow(dead_code)]
-    fn check_disk_present(&self) -> bool {
-        extern "C" { fn ata_disk_present(disk: u8) -> i32; }
-        unsafe { ata_disk_present(0) != 0 }
-    }
-
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;

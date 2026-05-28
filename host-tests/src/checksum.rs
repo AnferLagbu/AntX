@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // 测试基础设施模块 (Checksum 由 #[cfg(test)] 测试使用)
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CksumKind { Off, Fletcher2, Fletcher4, SHA256, EdonR }

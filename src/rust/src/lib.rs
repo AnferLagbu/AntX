@@ -22,7 +22,7 @@
 
 // 4. FFI 边界 - C/Rust 互操作不可避免
 #![allow(improper_ctypes)]         // 3个: IrqSaveFlags, SysProt 等 FFI 类型
-#![allow(dead_code)]                 // 多个: 未使用的函数/字段 (API 导出预留)
+#![allow(dead_code)]                 // 硬件寄存器参考常量 (APIC/NVMe/USB/DP 等驱动寄存器定义文档)
 
 // 5. 安全相关 - 已通过代码审查确认安全
 #![allow(unused_unsafe)]           // 16个: 过度保守的 unsafe 块

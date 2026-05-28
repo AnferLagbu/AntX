@@ -388,11 +388,7 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 /// 3. 设置 TSS 描述符 (占用2个槽位)
 /// 4. 加载 GDTR (lgdt 指令)
 /// 5. 加载 TR (ltr 指令, 任务寄存器)
-/// FFI export function (C-callable)
-#[allow(dead_code)]
-#[no_mangle]
-/// FFI export function (C-callable)
-pub extern "C" fn gdt_init() -> i32 {
+pub fn gdt_init() -> i32 {
     use crate::kernel::klog::{klog_write, LogLevel, LogCategory};
 
     static INIT_MSG: &[u8] = b"Initializing GDT and TSS (BSP)...\0";

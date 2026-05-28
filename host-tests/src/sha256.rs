@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // 测试基础设施模块 (sha256 由 #[cfg(test)] 测试使用)
 
 const PWID_HASH_LEN: usize = 32;
 

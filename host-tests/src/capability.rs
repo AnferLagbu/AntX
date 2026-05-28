@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // 测试基础设施模块 (CapabilityMatrix 由 #[cfg(test)] 测试使用)
 
 pub const SYS_CAP_ALL: u64 = 0xFFFFFFFFFFFFFFFF;
 
@@ -71,11 +71,6 @@ impl CapabilityMatrix {
         Self { caps: [0; 16] }
     }
 
-    #[allow(dead_code)]
-    pub fn from_array(caps: [u64; 16]) -> Self {
-        Self { caps }
-    }
-
     pub fn all() -> Self {
         Self { caps: [SYS_CAP_ALL; 16] }
     }
@@ -106,12 +101,6 @@ impl CapabilityMatrix {
             }
         }
         true
-    }
-
-    #[allow(dead_code)]
-    pub fn get_domain(&self, domain: u16) -> CapBits {
-        if domain as usize >= 16 { return CapBits(0); }
-        CapBits(self.caps[domain as usize])
     }
 }
 

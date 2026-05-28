@@ -99,29 +99,8 @@ pub fn get_hvfs() -> &'static HvfsData {
 }
 
 impl HvfsData {
-    #[allow(dead_code)]
     fn check_disk(&self) -> bool {
         unsafe { ata_disk_present(self.disk_drive) != 0 }
-    }
-
-    #[allow(dead_code)]
-    fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
-        extern "C" {
-            fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
-        }
-        if buf.len() < 512 { return -1; }
-        let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        unsafe { ata_read_sector(self.disk_drive, phys_sector, buf.as_mut_ptr()) }
-    }
-
-    #[allow(dead_code)]
-    fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
-        extern "C" {
-            fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
-        }
-        if buf.len() < 512 { return -1; }
-        let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        unsafe { ata_write_sector(self.disk_drive, phys_sector, buf.as_ptr()) }
     }
 
     pub fn init(&self) {

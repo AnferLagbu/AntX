@@ -219,32 +219,10 @@ impl Default for TaskStateSegment {
     }
 }
 
-// ============================================================================
-// FFI 导出函数
-// ============================================================================
-
-/// 设置 TSS 的内核栈指针 (FFI兼容)
-/// 
-/// # Arguments
-/// * `rsp0` - 新的 RSP0 值
-/// FFI export function (C-callable)
-#[allow(dead_code)]
-#[no_mangle]
-pub extern "C" fn tss_set_kernel_stack(rsp0: u64) {
+pub fn tss_set_kernel_stack(rsp0: u64) {
     unsafe {
         let tss = super::gdt::get_tss_mut();
         tss.set_kernel_stack(rsp0);
-    }
-}
-
-/// 获取 TSS 的内核栈指针 (FFI兼容)
-/// FFI export function (C-callable)
-#[allow(dead_code)]
-#[no_mangle]
-pub extern "C" fn tss_get_kernel_stack() -> u64 {
-    unsafe {
-        let tss = super::gdt::get_tss_mut();
-        tss.get_kernel_stack()
     }
 }
 

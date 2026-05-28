@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // 测试基础设施模块 (BuddyAllocator 由 #[cfg(test)] 测试使用)
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -8,7 +8,6 @@ const BUDDY_ALLOCATED: u8 = 0x80;
 const BUDDY_ORDER_MASK: u8 = 0x7F;
 const BUDDY_INTERIOR_FREE: u8 = 0xFE;
 const BUDDY_INTERIOR_USED: u8 = 0xFF;
-const DMA_MAX_SCATTER_ENTRIES: usize = 16;
 
 #[repr(C)]
 struct FreeNode {
@@ -72,11 +71,6 @@ impl BuddyAllocator {
         }
     }
 
-    fn om_is_free(&self, page: u64, order: usize) -> bool {
-        let v = self.om_get(page);
-        v == order as u8 || v == BUDDY_INTERIOR_FREE
-    }
-
     fn list_push(&self, page: u64, order: usize) {
         let phys = page * PAGE_SIZE;
         let node = self.node_virt(phys);
@@ -135,47 +129,6 @@ impl BuddyAllocator {
             self.om_set(page + i, BUDDY_INTERIOR_USED);
         }
         Some(phys)
-    }
-
-    fn free_block(&mut self, addr: u64, order: usize) {
-        if !self.initialized.load(Ordering::Acquire) { return; }
-        let mut page = addr / PAGE_SIZE;
-        let mut cur = order;
-        while cur < BUDDY_MAX_ORDER {
-            let buddy = page ^ (1u64 << cur);
-            if buddy >= self.total_pages { break; }
-            if !self.om_is_free(buddy, cur) { break; }
-            self.list_remove(buddy * PAGE_SIZE, cur);
-            let bs = 1u64 << cur;
-            for i in 0..bs { self.om_set(buddy + i, BUDDY_INTERIOR_USED); }
-            page = page.min(buddy);
-            cur += 1;
-        }
-        self.list_push(page, cur);
-        self.om_set(page, cur as u8);
-        for i in 1..(1u64 << cur) { self.om_set(page + i, BUDDY_INTERIOR_FREE); }
-    }
-
-    fn free_page(&mut self, addr: u64) {
-        let page = addr / PAGE_SIZE;
-        let v = self.om_get(page);
-        if v & BUDDY_ALLOCATED == 0 { return; }
-        let order = (v & BUDDY_ORDER_MASK) as usize;
-        self.free_block(addr, order);
-    }
-
-    fn count_free_pages(&self) -> u64 {
-        let mut total = 0u64;
-        for order in 0..=BUDDY_MAX_ORDER {
-            let mut count = 0u64;
-            let mut cur = self.free_lists[order].load(Ordering::Acquire);
-            while cur != 0 {
-                count += 1;
-                cur = unsafe { (*self.node_virt(cur)).next };
-            }
-            total += count * (1u64 << order);
-        }
-        total
     }
 }
 

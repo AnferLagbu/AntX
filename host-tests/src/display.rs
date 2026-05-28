@@ -233,42 +233,10 @@ mod tests {
 
     #[test]
     fn test_dp_total_bandwidth() {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        #[repr(u8)]
-        #[allow(dead_code)]
-        enum LinkRate {
-            Rbr = 0x06,
-            Hbr = 0x0A,
-            Hbr2 = 0x14,
-            Hbr3 = 0x1E,
-        }
-
-        impl LinkRate {
-            fn bandwidth_gbps(&self) -> u32 {
-                match self {
-                    Self::Rbr => 162,
-                    Self::Hbr => 270,
-                    Self::Hbr2 => 540,
-                    Self::Hbr3 => 810,
-                }
-            }
-        }
-
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        #[repr(u8)]
-        #[allow(dead_code)]
-        enum LaneCount {
-            One = 1,
-            Two = 2,
-            Four = 4,
-        }
-
-        // HBR2 x 4 lanes = 540 * 4 = 2160 Gbps
-        let total_bw = LinkRate::Hbr2.bandwidth_gbps() * LaneCount::Four as u32;
+        let total_bw = 540 * 4;
         assert_eq!(total_bw, 2160);
 
-        // HBR3 x 4 lanes = 810 * 4 = 3240 Gbps
-        let total_bw = LinkRate::Hbr3.bandwidth_gbps() * LaneCount::Four as u32;
+        let total_bw = 810 * 4;
         assert_eq!(total_bw, 3240);
     }
 }
