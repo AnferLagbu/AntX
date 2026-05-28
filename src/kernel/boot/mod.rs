@@ -106,14 +106,17 @@ pub fn get_boot_info() -> &'static BootInfo {
 
 #[no_mangle]
 pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'J', options(nostack));
     }
     *MULTIBOOT_MAGIC.lock() = magic;
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'K', options(nostack));
     }
     *MULTIBOOT_INFO_PTR.lock() = MultibootPtr(ptr);
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'L', options(nostack));
     }

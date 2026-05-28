@@ -679,9 +679,9 @@ impl HvfsData {
                 obj.obj_type = HvObjType::Symlink;
                 obj.size = target.len() as u64;
                 obj.dirty = true;
+                ds.objset.update_obj(&obj);
             }
             
-            // 将目标路径写入对象数据
             let target_bytes = target.as_bytes();
             let txg = self.spa.current_txg();
             let cksum_type = HvCksumType::Fletcher4;
@@ -690,6 +690,7 @@ impl HvfsData {
             if let Some(new_bp) = self.spa.allocate(target_bytes.len() as u64, cksum_type, comp_type, txg) {
                 if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                     obj.bp = new_bp;
+                    ds.objset.update_obj(&obj);
                 }
             }
             
@@ -752,6 +753,7 @@ impl HvfsData {
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                 obj.link_count += 1;
                 obj.dirty = true;
+                ds.objset.update_obj(&obj);
             }
             
             // 添加到目录

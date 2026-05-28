@@ -52,6 +52,7 @@ mod port_io {
         crate::arch!(outb(port, val));
     }
 
+    #[cfg(target_arch = "x86_64")]
     #[inline(always)]
     pub unsafe fn outw(port: u16, val: u16) {
         core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
@@ -67,6 +68,7 @@ mod port_io {
         crate::arch!(inb(port))
     }
 
+    #[cfg(target_arch = "x86_64")]
     #[inline(always)]
     pub unsafe fn inw(port: u16) -> u16 {
         let ret: u16;

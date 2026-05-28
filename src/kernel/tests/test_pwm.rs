@@ -186,8 +186,8 @@ pub fn register_pwm_tests() {
         "pwm::capability": {
             "viable_floor": test_viable_floor,
         },
-        "pwm::dmu": {
-            "cow_bp": test_pwmentry_cow_bp,
-        },
     }
+
+    #[cfg(target_arch = "x86_64")]
+    r.register("pwm::dmu", "cow_bp", test_pwmentry_cow_bp);
 }

@@ -35,6 +35,7 @@ impl HvObjType {
             6 => Self::Volume,
             7 => Self::SpaceMap,
             8 => Self::ObjSet,
+            9 => Self::Symlink,
             _ => Self::None,
         }
     }
@@ -135,6 +136,29 @@ impl HvDmuObject {
         }
     }
 
+    pub fn new_symlink(obj_id: u64, owner_pwm: u64) -> Self {
+        Self {
+            obj_id,
+            obj_type: HvObjType::Symlink,
+            block_size: 4096,
+            nblocks: 0,
+            size: 0,
+            bp: HvBlockPointer::null(),
+            atime: 0, mtime: 0, ctime: 0,
+            owner_pwm,
+            group_pwm: 0,
+            sensitivity: 0,
+            pwm_perm: 0o777,
+            link_count: 1,
+            flags: 0,
+            birth_txg: 0,
+            data_hash: [0; 4],
+            fill: 0,
+            dirty: false,
+            used: true,
+        }
+    }
+
     pub fn is_file(&self) -> bool { self.obj_type == HvObjType::File }
     pub fn is_dir(&self) -> bool { self.obj_type == HvObjType::Dir }
     pub fn is_zap(&self) -> bool { self.obj_type == HvObjType::Zap || self.obj_type == HvObjType::ZapMicro }
@@ -190,6 +214,7 @@ impl HvObjSet {
             HvObjType::File => HvDmuObject::new_file(obj_id, owner_pwm),
             HvObjType::Dir => HvDmuObject::new_dir(obj_id, owner_pwm),
             HvObjType::Zap | HvObjType::ZapMicro => HvDmuObject::new_zap(obj_id),
+            HvObjType::Symlink => HvDmuObject::new_symlink(obj_id, owner_pwm),
             _ => return None,
         };
         self.objects.lock().push(obj);
