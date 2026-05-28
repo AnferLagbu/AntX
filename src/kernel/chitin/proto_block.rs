@@ -1,54 +1,79 @@
 //! 几丁质块设备协议 (Chitin Block Protocol)
 //!
-//! 定义块设备 I/O 函数指针表。每个块设备驱动提供自己的实现。
-//! 用于 HvFS 等子系统通过 Chitin 统一访问块设备。
+//! 块设备 I/O 函数指针表与便捷注册。
+//!
+//! Chitin 是唯一的设备驱动框架, 块设备通过 `BlockOps` 提供四个
+//! 函数指针 (read/write/is_present/total_sectors), HvFS 等子系统
+//! 通过 `chitin_blk_read/write` 直接 I/O, 无需中间注册表。
 
+use crate::kernel::chitin::{BlockOps, ChitinOps, chitin_register_block, chitin_register_with_ops, ChitinProto, box_to_raw};
 use crate::kernel::driver::block::BlockDevice;
+use alloc::boxed::Box;
 
-/// 块设备操作表 — 薄封装, 委托给 BlockDevice trait
-///
-/// ## 设计选择
-///
-/// QueenX 已有 `BlockDevice` trait (driver/block.rs) 及全局注册表。
-/// Chitin 块设备协议作为 **桥接层**:
-/// - 注册时: 同时注册到 BlockDevice 表和 Chitin 表
-/// - 运行时: HvFS 继续使用 BlockDevice 注册表 (零开销)
-/// - 发现时: `chitin_find_by_proto(Block)` 可枚举所有块设备
-///
-/// 因此 BlockProto 不需要函数指针表 — 直接复用 BlockDevice trait。
-/// 本模块提供便捷的桥接函数。
+unsafe fn blk_read_thunk(data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32 {
+    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
+    dev.blk_read(sector, buf)
+}
 
-/// 注册块设备到 Chitin + BlockDevice 双注册表
+unsafe fn blk_write_thunk(data: *mut core::ffi::c_void, sector: u64, buf: &[u8]) -> i32 {
+    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
+    dev.blk_write(sector, buf)
+}
+
+unsafe fn blk_is_present_thunk(data: *mut core::ffi::c_void) -> bool {
+    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
+    dev.blk_is_present()
+}
+
+unsafe fn blk_total_sectors_thunk(data: *mut core::ffi::c_void) -> u64 {
+    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
+    dev.blk_total_sectors()
+}
+
+static BLOCK_DEVICE_OPS: BlockOps = BlockOps {
+    read: blk_read_thunk,
+    write: blk_write_thunk,
+    is_present: blk_is_present_thunk,
+    total_sectors: blk_total_sectors_thunk,
+};
+
+/// 注册块设备到 Chitin (唯一注册入口)
 ///
-/// `name`: 设备名称 (如 "ata0", "virtio-blk0")
-/// `dev`: 实现 BlockDevice trait 的设备
-/// `io_base`: MMIO 基地址 (如果适用)
+/// 自动将 `BlockDevice` trait 方法桥接为 `BlockOps` 函数指针表,
+/// 使 HvFS 可通过 `chitin_blk_read/write` 直接 I/O。
 ///
-/// 返回 Chitin 设备 ID
+/// 返回设备在 CHITIN_DEVICES 中的索引 (用作 drive_id)。
 pub fn register_block_device(
     name: &'static str,
     dev: impl BlockDevice + 'static,
     io_base: Option<u64>,
 ) -> u32 {
-    use crate::kernel::chitin::{chitin_register, ChitinProto, box_to_raw};
-
-    // 先注册到 BlockDevice 表 (HvFS 直接使用)
     let bdev: alloc::boxed::Box<dyn BlockDevice> = alloc::boxed::Box::new(dev);
-    let raw = box_to_raw(bdev);
-
-    // 再注册到 Chitin
-    chitin_register(name, ChitinProto::Block, io_base, None, raw)
+    let boxed: alloc::boxed::Box<Box<dyn BlockDevice>> = alloc::boxed::Box::new(bdev);
+    let raw = box_to_raw(boxed);
+    chitin_register_block(name, io_base, None, &BLOCK_DEVICE_OPS, raw)
 }
 
-/// 通过 Chitin ID 获取 BlockDevice trait 引用
+/// 注册块设备 (使用自定义 BlockOps)
 ///
-/// # Safety
-/// 调用者确保 ID 对应的设备确实是块设备, 且 driver_data 是有效的 Box<dyn BlockDevice>
-pub unsafe fn get_block_device(id: u32) -> Option<&'static mut dyn BlockDevice> {
-    use crate::kernel::chitin::CHITIN_DEVICES;
-    let devices = CHITIN_DEVICES.lock();
-    // 不能返回引用 (Mutex 锁作用域), 所以这里返回 None
-    // 实际使用时应该用 chitin_with_device 模式
-    let _ = (id, devices);
-    None
+/// 适用于需要自定义 I/O 路径的块设备驱动。
+pub fn register_block_device_with_ops(
+    name: &'static str,
+    io_base: Option<u64>,
+    irq: Option<u8>,
+    ops: &'static BlockOps,
+    driver_data: *mut core::ffi::c_void,
+) -> u32 {
+    chitin_register_block(name, io_base, irq, ops, driver_data)
+}
+
+/// 注册块设备到 Chitin (使用 ChitinOps 枚举)
+pub fn register_block_raw(
+    name: &'static str,
+    io_base: Option<u64>,
+    irq: Option<u8>,
+    driver_data: *mut core::ffi::c_void,
+    ops: ChitinOps,
+) -> u32 {
+    chitin_register_with_ops(name, ChitinProto::Block, io_base, irq, driver_data, ops)
 }

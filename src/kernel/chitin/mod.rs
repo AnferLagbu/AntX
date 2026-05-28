@@ -1,9 +1,10 @@
 //! 几丁质设备驱动框架 (Chitin Driver Framework)
 //!
-//! QueenX 的统一设备驱动模型 — 唯一的注册/发现/初始化入口。
+//! QueenX 的统一设备驱动模型 — 唯一的注册/发现/初始化/I/O 入口。
 //!
 //! - **ChitinProto**: 设备协议分类 (Block/Char/Net/Input/Bus/Other)
-//! - **ChitinDevice**: 统一设备描述符 (值类型, 无 trait object)
+//! - **ChitinOps**: 协议级 I/O 操作表 (函数指针, 零开销)
+//! - **ChitinDevice**: 统一设备描述符 (含 I/O 能力)
 //! - **Driver trait**: 驱动运行时行为的接口契约 (init/shutdown/is_ready)
 //! - **全局注册表**: `CHITIN_DEVICES` 统一管理所有设备
 //!
@@ -15,11 +16,13 @@
 //!   ├── 调用 Driver::init() → 设置 state = Ready
 //!   └── 返回 device id
 //!
-//! chitin_init_all()
-//!   └── 遍历 CHITIN_DEVICES, 对 state=Uninit 的设备调用 Driver::init()
+//! chitin_register_block("ata0", None, None, blk_ops, driver_data)
+//!   ├── 创建 ChitinDevice + BlockOps
+//!   ├── HvFS 通过 chitin_blk_read/write 直接 I/O
+//!   └── 无需 block::REGISTRY 中间层
 //!
-//! chitin_shutdown_all()
-//!   └── 遍历 CHITIN_DEVICES, 对 state=Ready 的设备调用 Driver::shutdown()
+//! chitin_blk_read(drive_idx, sector, buf)
+//!   └── CHITIN_DEVICES[drive].ops::BlockOps.read(...)
 //! ```
 
 use alloc::vec::Vec;
@@ -39,7 +42,6 @@ pub mod devtree;
 
 // ── 协议类型 ──
 
-/// 设备协议类型 (不含虚表, 纯分类)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChitinProto {
     Block,
@@ -78,62 +80,93 @@ impl From<super::driver::framework::DeviceType> for ChitinProto {
 
 // ── 设备状态 ──
 
-/// 设备生命周期状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceState {
-    /// 未初始化
     Uninit,
-    /// 正在探测
     Probing,
-    /// 就绪
     Ready,
-    /// 初始化/运行失败
     Failed,
-    /// (预留) 已移除 — 热插拔
     Removed,
+}
+
+// ── I/O 操作表 ──
+
+/// 块设备 I/O 操作表
+///
+/// 每个块设备驱动提供这四个函数指针, Chitin 通过它们执行 I/O,
+/// 无需虚表分发或 trait object, 实现零开销抽象。
+pub struct BlockOps {
+    pub read:         unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32,
+    pub write:        unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &[u8]) -> i32,
+    pub is_present:   unsafe fn(driver_data: *mut core::ffi::c_void) -> bool,
+    pub total_sectors: unsafe fn(driver_data: *mut core::ffi::c_void) -> u64,
+}
+
+/// 协议级 I/O 操作表 (联合体, 按协议类型取对应变体)
+pub enum ChitinOps {
+    Block(&'static BlockOps),
+    Char(&'static proto_char::CharOps),
+    Net(&'static proto_net::NetOps),
+    Input(&'static proto_input::InputOps),
 }
 
 // ── ChitinDevice ──
 
-/// 几丁质设备描述符 (值类型, 无虚表, 无 trait object)
+/// 几丁质设备描述符
 ///
-/// 每个设备在注册表中占用一个条目, `driver_data` 指向内核堆上
-/// 的实际驱动结构体 (通过 Box::into_raw 分配)。
+/// 每个设备在注册表中占用一个条目。`driver_data` 指向内核堆上
+/// 的实际驱动结构体, `ops` 提供协议级 I/O 操作表。
 pub struct ChitinDevice {
-    /// 全局唯一设备 ID
     pub id: u32,
-    /// 设备名称
     pub name: &'static str,
-    /// 协议类型
     pub proto: ChitinProto,
-    /// 当前状态
     pub state: DeviceState,
-    /// I/O 基地址 (MMIO 物理地址 或 IO port)
     pub io_base: Option<u64>,
-    /// IRQ 号
     pub irq: Option<u8>,
-    /// 指向实际驱动结构体的不透明指针
     pub driver_data: *mut core::ffi::c_void,
+    pub ops: Option<ChitinOps>,
 }
 
-// SAFETY: 单核内核, 无抢占, 驱动数据在 PMM/内核堆上
 unsafe impl Send for ChitinDevice {}
 unsafe impl Sync for ChitinDevice {}
 
 impl ChitinDevice {
-    /// 从 driver_data 获取指定类型的可变引用
-    ///
-    /// # Safety
-    /// 调用者必须确保 T 与实际存储的类型匹配
     #[inline]
     pub unsafe fn driver_as_mut<T>(&self) -> &mut T {
         &mut *(self.driver_data as *mut T)
     }
 
-    /// 从 driver_data 获取指定类型的共享引用
     #[inline]
     pub unsafe fn driver_as_ref<T>(&self) -> &T {
         &*(self.driver_data as *const T)
+    }
+
+    pub fn block_ops(&self) -> Option<&'static BlockOps> {
+        match &self.ops {
+            Some(ChitinOps::Block(ops)) => Some(ops),
+            _ => None,
+        }
+    }
+
+    pub fn char_ops(&self) -> Option<&'static proto_char::CharOps> {
+        match &self.ops {
+            Some(ChitinOps::Char(ops)) => Some(ops),
+            _ => None,
+        }
+    }
+
+    pub fn net_ops(&self) -> Option<&'static proto_net::NetOps> {
+        match &self.ops {
+            Some(ChitinOps::Net(ops)) => Some(ops),
+            _ => None,
+        }
+    }
+
+    pub fn input_ops(&self) -> Option<&'static proto_input::InputOps> {
+        match &self.ops {
+            Some(ChitinOps::Input(ops)) => Some(ops),
+            _ => None,
+        }
     }
 }
 
@@ -141,13 +174,10 @@ impl ChitinDevice {
 
 static NEXT_DEVICE_ID: AtomicU32 = AtomicU32::new(1);
 
-/// 全局几丁质设备注册表
 pub static CHITIN_DEVICES: Mutex<Vec<ChitinDevice>> = Mutex::new(Vec::new());
 
-/// 注册一个设备到几丁质框架
-///
-/// `driver_data` 应为 `Box::into_raw(Box::new(driver_struct))` 的返回值。
-/// 当设备被移除时, 调用者负责从 raw pointer 重建 Box 以释放内存。
+// ── 注册函数 ──
+
 pub fn chitin_register(
     name: &'static str,
     proto: ChitinProto,
@@ -165,45 +195,92 @@ pub fn chitin_register(
         io_base,
         irq,
         driver_data,
+        ops: None,
     });
     id
 }
 
-/// 按 ID 查找设备
+/// 注册带 I/O 操作表的设备
+///
+/// 这是推荐的注册方式, 使设备同时具备发现和 I/O 能力。
+pub fn chitin_register_with_ops(
+    name: &'static str,
+    proto: ChitinProto,
+    io_base: Option<u64>,
+    irq: Option<u8>,
+    driver_data: *mut core::ffi::c_void,
+    ops: ChitinOps,
+) -> u32 {
+    let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut devices = CHITIN_DEVICES.lock();
+    devices.push(ChitinDevice {
+        id,
+        name,
+        proto,
+        state: DeviceState::Ready,
+        io_base,
+        irq,
+        driver_data,
+        ops: Some(ops),
+    });
+    id
+}
+
+/// 注册块设备 (便捷函数)
+///
+/// 同时提供 Driver trait 生命周期管理和 BlockOps I/O 能力。
+/// 返回设备在 CHITIN_DEVICES 中的索引 (用作 drive_id)。
+pub fn chitin_register_block(
+    name: &'static str,
+    io_base: Option<u64>,
+    irq: Option<u8>,
+    blk_ops: &'static BlockOps,
+    driver_data: *mut core::ffi::c_void,
+) -> u32 {
+    let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut devices = CHITIN_DEVICES.lock();
+    let idx = devices.len() as u32;
+    devices.push(ChitinDevice {
+        id,
+        name,
+        proto: ChitinProto::Block,
+        state: DeviceState::Ready,
+        io_base,
+        irq,
+        driver_data,
+        ops: Some(ChitinOps::Block(blk_ops)),
+    });
+    idx
+}
+
+// ── 查找函数 ──
+
 pub fn chitin_find_by_id(id: u32) -> Option<usize> {
     CHITIN_DEVICES.lock().iter().position(|d| d.id == id)
 }
 
-/// 按名称查找设备
 pub fn chitin_find_by_name(name: &str) -> Option<usize> {
     CHITIN_DEVICES.lock().iter().position(|d| d.name == name)
 }
 
-/// 按协议类型查找第一个匹配的设备索引
 pub fn chitin_find_by_proto(proto: ChitinProto) -> Option<usize> {
     CHITIN_DEVICES.lock().iter().position(|d| d.proto == proto)
 }
 
-/// 列出所有设备 (返回 Vec, 可用于遍历)
 pub fn chitin_list() -> Vec<(u32, &'static str, ChitinProto, DeviceState)> {
     CHITIN_DEVICES.lock().iter()
         .map(|d| (d.id, d.name, d.proto, d.state))
         .collect()
 }
 
-/// 设备总数
 pub fn chitin_count() -> usize {
     CHITIN_DEVICES.lock().len()
 }
 
-/// 按协议类型统计
 pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
     CHITIN_DEVICES.lock().iter().filter(|d| d.proto == proto).count()
 }
 
-/// 安全地访问设备: 锁定注册表, 找到设备, 执行闭包
-///
-/// 闭包接收 `&mut ChitinDevice` 引用。如果设备不存在则不做任何事。
 pub fn chitin_with_device<F>(id: u32, f: F)
 where F: FnOnce(&mut ChitinDevice)
 {
@@ -213,7 +290,6 @@ where F: FnOnce(&mut ChitinDevice)
     }
 }
 
-/// 安全地访问设备并返回值
 pub fn chitin_with_device_map<T, F>(id: u32, f: F) -> Option<T>
 where F: FnOnce(&mut ChitinDevice) -> T
 {
@@ -221,13 +297,6 @@ where F: FnOnce(&mut ChitinDevice) -> T
     devices.iter_mut().find(|d| d.id == id).map(f)
 }
 
-/// 从注册表中移除设备并返回其 driver_data 指针。
-///
-/// 调用者负责 `Box::from_raw(ptr as *mut T)` 释放驱动内存。
-/// 返回 `None` 如果设备不存在。
-///
-/// # Safety
-/// 调用者必须确保返回的 raw pointer 对应正确的类型 T。
 pub fn chitin_unregister(id: u32) -> Option<*mut core::ffi::c_void> {
     let mut devices = CHITIN_DEVICES.lock();
     let pos = devices.iter().position(|d| d.id == id)?;
@@ -235,7 +304,6 @@ pub fn chitin_unregister(id: u32) -> Option<*mut core::ffi::c_void> {
     Some(dev.driver_data)
 }
 
-/// 设置设备生命周期状态 (插入 → Ready, 拔出 → Removed)
 pub fn chitin_set_state(id: u32, state: DeviceState) {
     let mut devices = CHITIN_DEVICES.lock();
     if let Some(dev) = devices.iter_mut().find(|d| d.id == id) {
@@ -243,9 +311,92 @@ pub fn chitin_set_state(id: u32, state: DeviceState) {
     }
 }
 
-// ── 工具: from raw Box ──
+// ── 块设备 I/O (统一入口, 替代 block::hdd_*) ──
 
-/// 将 `Box<T>` 转为 raw pointer 用于 chitin_register 的 driver_data
+/// 通过 Chitin 读取块设备扇区
+///
+/// `drive` 是设备在 CHITIN_DEVICES 中的索引 (与旧 block::REGISTRY 索引兼容)。
+/// 仅对 `ChitinProto::Block` 且携带 `BlockOps` 的设备有效。
+pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
+    if buf.len() < 512 { return -1; }
+    let devices = CHITIN_DEVICES.lock();
+    let idx = drive as usize;
+    if idx >= devices.len() { return -1; }
+    let dev = &devices[idx];
+    if dev.proto != ChitinProto::Block { return -1; }
+    if dev.state != DeviceState::Ready { return -1; }
+    match dev.block_ops() {
+        Some(ops) => unsafe { (ops.read)(dev.driver_data, sector, buf) },
+        None => -1,
+    }
+}
+
+/// 通过 Chitin 写入块设备扇区
+pub fn chitin_blk_write(drive: u8, sector: u64, buf: &[u8]) -> i32 {
+    if buf.len() < 512 { return -1; }
+    let devices = CHITIN_DEVICES.lock();
+    let idx = drive as usize;
+    if idx >= devices.len() { return -1; }
+    let dev = &devices[idx];
+    if dev.proto != ChitinProto::Block { return -1; }
+    if dev.state != DeviceState::Ready { return -1; }
+    match dev.block_ops() {
+        Some(ops) => unsafe { (ops.write)(dev.driver_data, sector, buf) },
+        None => -1,
+    }
+}
+
+/// 通过 Chitin 检查块设备是否存在
+pub fn chitin_blk_is_present(drive: u8) -> bool {
+    let devices = CHITIN_DEVICES.lock();
+    let idx = drive as usize;
+    if idx >= devices.len() { return false; }
+    let dev = &devices[idx];
+    if dev.proto != ChitinProto::Block { return false; }
+    if dev.state != DeviceState::Ready { return false; }
+    match dev.block_ops() {
+        Some(ops) => unsafe { (ops.is_present)(dev.driver_data) },
+        None => false,
+    }
+}
+
+/// 通过 Chitin 获取块设备总扇区数
+pub fn chitin_blk_total_sectors(drive: u8) -> u64 {
+    let devices = CHITIN_DEVICES.lock();
+    let idx = drive as usize;
+    if idx >= devices.len() { return 0; }
+    let dev = &devices[idx];
+    if dev.proto != ChitinProto::Block { return 0; }
+    match dev.block_ops() {
+        Some(ops) => unsafe { (ops.total_sectors)(dev.driver_data) },
+        None => 0,
+    }
+}
+
+/// 获取块设备名称
+pub fn chitin_blk_name(drive: u8) -> Option<&'static str> {
+    let devices = CHITIN_DEVICES.lock();
+    let idx = drive as usize;
+    if idx >= devices.len() { return None; }
+    if devices[idx].proto != ChitinProto::Block { return None; }
+    Some(devices[idx].name)
+}
+
+/// 获取块设备综合信息 (name, is_present, total_sectors)
+pub fn chitin_blk_info(drive: u8) -> (&'static str, bool, u64) {
+    let name = chitin_blk_name(drive).unwrap_or("unknown");
+    let present = chitin_blk_is_present(drive);
+    let sectors = chitin_blk_total_sectors(drive);
+    (name, present, sectors)
+}
+
+/// 获取块设备数量
+pub fn chitin_blk_count() -> usize {
+    chitin_count_by_proto(ChitinProto::Block)
+}
+
+// ── 工具 ──
+
 pub fn box_to_raw<T: ?Sized>(b: Box<T>) -> *mut core::ffi::c_void {
     Box::into_raw(b) as *mut core::ffi::c_void
 }
@@ -262,23 +413,6 @@ impl Drop for DriverObject {
     }
 }
 
-/// 注册一个实现了 Driver trait 的设备。
-///
-/// 这是推荐的统一注册入口。传入一个已分配的 `Box<dyn Driver>`，
-/// Chitin 会自动调用 `driver.init()` 完成初始化。
-///
-/// # 参数
-/// - `name`: 设备名称 (静态字符串)
-/// - `proto`: 协议类型
-/// - `io_base`: I/O 基地址 (可选)
-/// - `irq`: 中断号 (可选)
-/// - `driver`: `Box<dyn Driver>` — 所有权转移至 Chitin
-///
-/// # 返回值
-/// - 成功: 分配的全局设备 ID
-///
-/// # 生命周期
-/// 设备在 `chitin_unregister(id)` 或 `chitin_shutdown_all()` 时释放。
 pub fn chitin_register_driver(
     name: &'static str,
     proto: ChitinProto,
@@ -300,6 +434,35 @@ pub fn chitin_register_driver(
         io_base,
         irq,
         driver_data: obj_ptr,
+        ops: None,
+    });
+    id
+}
+
+/// 注册带 Driver trait 和 I/O 操作表的设备
+pub fn chitin_register_driver_with_ops(
+    name: &'static str,
+    proto: ChitinProto,
+    io_base: Option<u64>,
+    irq: Option<u8>,
+    mut driver: Box<dyn Driver>,
+    ops: ChitinOps,
+) -> u32 {
+    let _ = driver.init();
+    let raw = Box::into_raw(driver);
+    let obj = Box::new(DriverObject { ptr: raw });
+    let obj_ptr = Box::into_raw(obj) as *mut core::ffi::c_void;
+    let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut devices = CHITIN_DEVICES.lock();
+    devices.push(ChitinDevice {
+        id,
+        name,
+        proto,
+        state: DeviceState::Ready,
+        io_base,
+        irq,
+        driver_data: obj_ptr,
+        ops: Some(ops),
     });
     id
 }
@@ -309,10 +472,6 @@ fn driver_from_obj<'a>(ptr: *mut core::ffi::c_void) -> &'a mut dyn Driver {
     unsafe { &mut *obj.ptr }
 }
 
-/// 遍历所有设备并调用 Driver::init()。
-///
-/// 仅初始化状态为 `DeviceState::Uninit` 的设备。
-/// 通常在内核启动时由 `driver::init_all()` 调用。
 pub fn chitin_init_all() {
     let mut devices = CHITIN_DEVICES.lock();
     for dev in devices.iter_mut() {
@@ -324,10 +483,6 @@ pub fn chitin_init_all() {
     }
 }
 
-/// 遍历所有设备并调用 Driver::shutdown()，然后释放 driver box。
-///
-/// 仅关闭状态为 `DeviceState::Ready` 的设备。
-/// 通常在系统关机时调用。
 pub fn chitin_shutdown_all() {
     let mut devices = CHITIN_DEVICES.lock();
     for dev in devices.iter_mut() {
@@ -343,7 +498,6 @@ pub fn chitin_shutdown_all() {
     }
 }
 
-/// 获取所有设备的基本信息列表 (与旧 DeviceInfo 兼容)
 pub fn chitin_device_list() -> Vec<(u32, &'static str, ChitinProto, DeviceState)> {
     chitin_list()
 }
@@ -423,5 +577,93 @@ mod tests {
     fn test_rust_ffi() {
         assert!(alloc::format!("{:?}", ChitinProto::Char).contains("Char"));
         assert_eq!(ChitinProto::Input.as_str(), "input");
+    }
+
+    static MOCK_BLOCK_OPS: BlockOps = BlockOps {
+        read: mock_blk_read,
+        write: mock_blk_write,
+        is_present: mock_blk_is_present,
+        total_sectors: mock_blk_total_sectors,
+    };
+
+    unsafe fn mock_blk_read(_data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32 {
+        if buf.len() < 512 { return -1; }
+        buf[0] = b'R';
+        buf[1] = (sector & 0xFF) as u8;
+        0
+    }
+
+    unsafe fn mock_blk_write(_data: *mut core::ffi::c_void, _sector: u64, _buf: &[u8]) -> i32 {
+        0
+    }
+
+    unsafe fn mock_blk_is_present(_data: *mut core::ffi::c_void) -> bool {
+        true
+    }
+
+    unsafe fn mock_blk_total_sectors(_data: *mut core::ffi::c_void) -> u64 {
+        1024
+    }
+
+    #[test]
+    fn test_register_block_with_ops() {
+        let dummy: Box<u8> = Box::new(0u8);
+        let raw = box_to_raw(dummy);
+        let idx = chitin_register_block(
+            "mock_blk", None, None, &MOCK_BLOCK_OPS, raw,
+        );
+        assert_eq!(chitin_count_by_proto(ChitinProto::Block), 1);
+
+        let present = chitin_blk_is_present(idx as u8);
+        assert!(present);
+
+        let sectors = chitin_blk_total_sectors(idx as u8);
+        assert_eq!(sectors, 1024);
+
+        let mut buf = [0u8; 512];
+        let r = chitin_blk_read(idx as u8, 42, &mut buf);
+        assert_eq!(r, 0);
+        assert_eq!(buf[0], b'R');
+        assert_eq!(buf[1], 42);
+
+        CHITIN_DEVICES.lock().clear();
+        unsafe { drop(Box::from_raw(raw as *mut u8)); }
+    }
+
+    #[test]
+    fn test_blk_read_invalid_drive() {
+        let mut buf = [0u8; 512];
+        assert_eq!(chitin_blk_read(255, 0, &mut buf), -1);
+    }
+
+    #[test]
+    fn test_blk_ops_accessor() {
+        let dummy: Box<u8> = Box::new(0u8);
+        let raw = box_to_raw(dummy);
+        let idx = chitin_register_block(
+            "mock_blk2", None, None, &MOCK_BLOCK_OPS, raw,
+        );
+        let devices = CHITIN_DEVICES.lock();
+        let dev = &devices[idx as usize];
+        assert!(dev.block_ops().is_some());
+        assert!(dev.char_ops().is_none());
+        assert!(dev.net_ops().is_none());
+        CHITIN_DEVICES.lock().clear();
+        unsafe { drop(Box::from_raw(raw as *mut u8)); }
+    }
+
+    #[test]
+    fn test_register_with_ops() {
+        let dummy: Box<u8> = Box::new(0u8);
+        let raw = box_to_raw(dummy);
+        let id = chitin_register_with_ops(
+            "mock_net", ChitinProto::Net, None, None, raw,
+            ChitinOps::Block(&MOCK_BLOCK_OPS),
+        );
+        assert!(id > 0);
+        let devices = CHITIN_DEVICES.lock();
+        assert!(devices.iter().any(|d| d.id == id && d.ops.is_some()));
+        CHITIN_DEVICES.lock().clear();
+        unsafe { drop(Box::from_raw(raw as *mut u8)); }
     }
 }

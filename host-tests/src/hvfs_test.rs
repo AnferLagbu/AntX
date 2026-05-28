@@ -199,7 +199,7 @@ fn hvfs_error_paths() {
 
     test!(open_with_create_flag_succeeds, {
         match hvfs.open("/new_file.txt", 0x0102, 1) {
-            Ok(fd) => hvfs.close(fd as u32),
+            Ok(fd) => { hvfs.close(fd as u32); }
             Err(e) => panic!("open with O_CREAT should succeed, got {:?}", e),
         }
     });
@@ -424,7 +424,7 @@ fn hvfs_advanced_features() {
     });
 
     test!(get_stats, {
-        let (allocs, frees, reads, writes) = hvfs.get_stats();
+        let (allocs, _frees, reads, writes) = hvfs.get_stats();
         assert!(allocs > 0 || reads > 0 || writes > 0, "stats should reflect activity");
     });
 
@@ -459,7 +459,8 @@ fn hvfs_snapshot_clone() {
         assert!(!snaps.is_empty(), "should list snapshots for ds_id=0");
         let snap = snap_mgr.get_snapshot(snaps[0].snap_id);
         assert!(snap.is_some(), "should get snapshot by id");
-        assert_eq_hvfs!(snap.unwrap().get_name(), "snap1", "snapshot name");
+        let snap = snap.unwrap();
+        assert_eq_hvfs!(snap.get_name(), "snap1", "snapshot name");
     });
 
     test!(snapshot_rollback, {

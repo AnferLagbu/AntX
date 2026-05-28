@@ -64,6 +64,16 @@ pub use controller::{
 use super::framework;
 use super::framework::Driver;
 
+struct DisplayDriver;
+
+impl Driver for DisplayDriver {
+    fn name(&self) -> &'static str { "display" }
+    fn device_type(&self) -> framework::DeviceType { framework::DeviceType::Other }
+    fn init(&mut self) -> framework::Result<()> { Ok(()) }
+    fn shutdown(&mut self) -> framework::Result<()> { Ok(()) }
+    fn is_ready(&self) -> bool { true }
+}
+
 // ============================================================================
 // 全局帧缓冲实例
 // ============================================================================
@@ -310,6 +320,14 @@ pub fn display_init() -> framework::Result<()> {
     }
 
     let _manager = DisplayManager::new();
+
+    crate::kernel::chitin::chitin_register_driver(
+        "vga-display",
+        crate::kernel::chitin::ChitinProto::Other,
+        Some(fb_addr),
+        None,
+        alloc::boxed::Box::new(DisplayDriver),
+    );
 
     Ok(())
 }
