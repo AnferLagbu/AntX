@@ -15,7 +15,7 @@
 //! ├── net/           # 网络协议栈 (lwIP, sys_arch, 驱动)
 //! ├── idt/           # 中断描述符表 (IDT, handlers, 统计)
 //! ├── sync/          # 同步原语 (spinlock, mutex, rwlock)
-//! ├── pwm/          # 安全框架 (能力矩阵, 令牌, 信任链)
+//! ├── credo/        # 身份与权限框架 (DID, 能力矩阵, 会话)
 //! ├── dma/           # DMA 引擎
 //! ├── barrier/       # 故障恢复系统
 //! ├── pci/           # PCI 设备管理
@@ -71,8 +71,8 @@ pub mod irq;
 /// 同步原语 (SpinLock, Mutex, RwLock, 原子操作)
 pub mod sync;
 
-/// PWM v4 安全框架 (能力矩阵, 令牌, 信任链, 审计)
-pub mod pwm;
+/// Credo v1 身份与权限框架 (DID, 能力矩阵, 会话管理, 审计)
+pub mod credo;
 
 /// DMA 引擎 (映射, 缓冲区管理, 一致性)
 pub mod dma;

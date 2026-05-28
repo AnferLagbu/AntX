@@ -40,7 +40,7 @@ pub fn grant_from_first_token(
         return Err(PwmError::TokenUsed);
     }
 
-    let target = super::table::find(target_pwm).ok_or(PwmError::NotFound)?;
+    let target = super::identity::find(target_pwm).ok_or(PwmError::NotFound)?;
     target.fetch_or_caps(domain, caps);
 
     FIRST_TOKEN_USED.store(true, Ordering::Release);

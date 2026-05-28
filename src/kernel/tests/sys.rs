@@ -5,7 +5,7 @@ use crate::kernel::mm::slab::{
     GENERAL_CACHE_SIZES, find_general_cache_index,
 };
 use crate::kernel::syscall::types::Errno;
-use crate::kernel::pwm::sha256::sha256;
+use crate::kernel::credo::sha256::sha256;
 use crate::kernel::timer::pit::{
     PIT_BASE_FREQUENCY, DEFAULT_INTERRUPT_FREQ_HZ, PIT_MAX_COUNT, PIT_MIN_COUNT,
 };

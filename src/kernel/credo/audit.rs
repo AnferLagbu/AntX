@@ -24,7 +24,7 @@ impl AuditLog {
     }
 
     pub fn log(&self, pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
-        let now = super::first_token::pwm_now();
+        let now = super::bootstrap::pwm_now();
         let idx = self.count.fetch_add(1, Ordering::AcqRel) % AUDIT_CAPACITY;
         let entry = &self.entries[idx];
         let ep = entry as *const AuditEntry as *mut AuditEntry;

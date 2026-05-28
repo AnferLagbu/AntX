@@ -1,6 +1,6 @@
 /// Syscall 类型定义和常量 — POSIX 原生接口
 ///
-/// syscall 编号采用 POSIX 标准约定，QueenX 私有 syscall 分配在 400+。
+/// syscall 编号采用 POSIX 标准约定，Credo 私有 syscall 分配在 400+。
 
 pub const SYSCALL_INT: u8 = 0x80;
 pub const MAX_SYSCALLS: u64 = 512;
@@ -32,9 +32,6 @@ pub const SYS_rt_sigreturn: u64 = 15;
 // 设备 I/O
 pub const SYS_ioctl: u64 = 16;
 
-// 文件系统预读
-pub const SYS_readahead: u64 = 18;
-
 // 文件访问
 pub const SYS_access: u64 = 21;
 pub const SYS_pipe: u64 = 22;
@@ -42,6 +39,7 @@ pub const SYS_select: u64 = 23;
 pub const SYS_sched_yield: u64 = 24;
 
 // 内存重映射
+// TODO: Phase N — implement mremap
 pub const SYS_mremap: u64 = 25;
 
 // 文件描述符
@@ -52,8 +50,10 @@ pub const SYS_dup2: u64 = 33;
 pub const SYS_nanosleep: u64 = 35;
 
 // ITIMER
+// TODO: Phase N — implement getitimer
 pub const SYS_getitimer: u64 = 36;
 pub const SYS_alarm: u64 = 37;
+// TODO: Phase N — implement setitimer
 pub const SYS_setitimer: u64 = 38;
 
 // 进程基础
@@ -72,14 +72,13 @@ pub const SYS_bind: u64 = 49;
 pub const SYS_listen: u64 = 50;
 pub const SYS_getsockname: u64 = 51;
 pub const SYS_getpeername: u64 = 52;
-pub const SYS_socketpair: u64 = 53;
 pub const SYS_setsockopt: u64 = 54;
 pub const SYS_getsockopt: u64 = 55;
 
 // 进程
+// TODO: Phase N — implement clone for thread creation
 pub const SYS_clone: u64 = 56;
 pub const SYS_fork: u64 = 57;
-pub const SYS_vfork: u64 = 58;
 pub const SYS_execve: u64 = 59;
 pub const SYS_exit: u64 = 60;
 pub const SYS_wait4: u64 = 61;
@@ -87,10 +86,6 @@ pub const SYS_kill: u64 = 62;
 
 // 系统信息
 pub const SYS_uname: u64 = 63;
-
-// IPC
-pub const SYS_semget: u64 = 64;
-pub const SYS_semop: u64 = 65;
 
 // 文件描述符操作
 pub const SYS_fcntl: u64 = 72;
@@ -117,8 +112,10 @@ pub const SYS_rmdir: u64 = 84;
 pub const SYS_creat: u64 = 85;
 
 // 文件链接
+// TODO: Phase N — implement hard links
 pub const SYS_link: u64 = 86;
 pub const SYS_unlink: u64 = 87;
+// TODO: Phase N — implement symlinks
 pub const SYS_symlink: u64 = 88;
 pub const SYS_readlink: u64 = 89;
 
@@ -126,6 +123,7 @@ pub const SYS_readlink: u64 = 89;
 pub const SYS_chmod: u64 = 90;
 pub const SYS_fchmod: u64 = 91;
 pub const SYS_chown: u64 = 92;
+// TODO: Phase N — implement fchown as chown(fd→path) alias
 pub const SYS_fchown: u64 = 93;
 
 // 文件属性
@@ -138,6 +136,7 @@ pub const SYS_getrusage: u64 = 98;
 pub const SYS_sysinfo: u64 = 99;
 
 // 系统
+// TODO: Phase N — implement times(2)
 pub const SYS_times: u64 = 100;
 
 // 用户/组
@@ -168,39 +167,36 @@ pub const SYS_clock_gettime: u64 = 228;
 pub const SYS_exit_group: u64 = 231;
 pub const SYS_tgkill: u64 = 234;
 
-// ==================== QueenX 私有 syscall (400+ 不与 POSIX 冲突) ====================
+// ==================== Credo 私有 syscall (400+ 不与 POSIX 冲突) ====================
 
-pub const SYS_QX_LOGIN: u64 = 400;
-pub const SYS_QX_LOGOUT: u64 = 401;
-pub const SYS_QX_CREATE_IDENTITY: u64 = 402;
-pub const SYS_QX_DELETE_IDENTITY: u64 = 403;
-pub const SYS_QX_IDENTITY_INFO: u64 = 404;
-pub const SYS_QX_CHANGE_PASSWORD: u64 = 405;
-pub const SYS_QX_VERIFY_PASSWORD: u64 = 406;
-pub const SYS_QX_CREATE_FIRST: u64 = 407;
-pub const SYS_QX_TOKEN_CREATE: u64 = 408;
-pub const SYS_QX_TOKEN_USE: u64 = 409;
-pub const SYS_QX_TOKEN_REVOKE: u64 = 410;
-pub const SYS_QX_GRANT: u64 = 411;
-pub const SYS_QX_REVOKE: u64 = 412;
-pub const SYS_QX_CHECK_CAP: u64 = 413;
-pub const SYS_QX_GET_CAPS: u64 = 414;
-pub const SYS_QX_GET_PWM: u64 = 415;
-pub const SYS_QX_SET_PWM: u64 = 416;
-pub const SYS_QX_DISK_LIST: u64 = 420;
-pub const SYS_QX_DISK_INFO: u64 = 421;
-pub const SYS_QX_DISK_FORMAT: u64 = 422;
-pub const SYS_QX_DISK_PARTITION: u64 = 423;
-pub const SYS_QX_DISK_INSTALL: u64 = 424;
-pub const SYS_QX_FAT_FORMAT: u64 = 425;
-pub const SYS_QX_PROC_LIST: u64 = 430;
-pub const SYS_QX_PROC_SETPRI: u64 = 431;
-pub const SYS_QX_PROC_SLEEP: u64 = 432;
-pub const SYS_QX_GETHOSTNAME: u64 = 433;
-pub const SYS_QX_SETHOSTNAME: u64 = 434;
-pub const SYS_QX_BOOT_CHECK: u64 = 435;
-pub const SYS_QX_REBOOT: u64 = 436;
-pub const SYS_QX_HOTPLUG_STATUS: u64 = 437;
+pub const SYS_CREDO_LOGIN: u64 = 400;
+pub const SYS_CREDO_LOGOUT: u64 = 401;
+pub const SYS_CREDO_CREATE_IDENTITY: u64 = 402;
+pub const SYS_CREDO_DELETE_IDENTITY: u64 = 403;
+pub const SYS_CREDO_IDENTITY_INFO: u64 = 404;
+pub const SYS_CREDO_CHANGE_PASSWORD: u64 = 405;
+pub const SYS_CREDO_VERIFY_PASSWORD: u64 = 406;
+pub const SYS_CREDO_CREATE_FIRST: u64 = 407;
+pub const SYS_CREDO_GRANT: u64 = 411;
+pub const SYS_CREDO_REVOKE: u64 = 412;
+pub const SYS_CREDO_CHECK_CAP: u64 = 413;
+pub const SYS_CREDO_GET_CAPS: u64 = 414;
+pub const SYS_CREDO_GET_PWM: u64 = 415;
+pub const SYS_CREDO_SET_PWM: u64 = 416;
+pub const SYS_CREDO_DISK_LIST: u64 = 420;
+pub const SYS_CREDO_DISK_INFO: u64 = 421;
+pub const SYS_CREDO_DISK_FORMAT: u64 = 422;
+pub const SYS_CREDO_DISK_PARTITION: u64 = 423;
+pub const SYS_CREDO_DISK_INSTALL: u64 = 424;
+pub const SYS_CREDO_FAT_FORMAT: u64 = 425;
+pub const SYS_CREDO_PROC_LIST: u64 = 430;
+pub const SYS_CREDO_PROC_SETPRI: u64 = 431;
+pub const SYS_CREDO_PROC_SLEEP: u64 = 432;
+pub const SYS_CREDO_GETHOSTNAME: u64 = 433;
+pub const SYS_CREDO_SETHOSTNAME: u64 = 434;
+pub const SYS_CREDO_BOOT_CHECK: u64 = 435;
+pub const SYS_CREDO_REBOOT: u64 = 436;
+pub const SYS_CREDO_HOTPLUG_STATUS: u64 = 437;
 
 // ==================== 帧缓冲设备 ====================
 pub const SYS_FB_OPEN: u64 = 450;

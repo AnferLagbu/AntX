@@ -43,21 +43,21 @@ pub const SYS_sync: u64 = 162;
 pub const SYS_mount: u64 = 165;
 
 // QueenX 私有 syscall (400+)
-pub const SYS_QX_LOGIN: u64 = 400;
-pub const SYS_QX_LOGOUT: u64 = 401;
-pub const SYS_QX_CREATE_IDENTITY: u64 = 402;
-pub const SYS_QX_CHANGE_PASSWORD: u64 = 405;
-pub const SYS_QX_CREATE_FIRST: u64 = 407;
-pub const SYS_QX_DISK_LIST: u64 = 420;
-pub const SYS_QX_DISK_INFO: u64 = 421;
-pub const SYS_QX_DISK_FORMAT: u64 = 422;
-pub const SYS_QX_DISK_PARTITION: u64 = 423;
-pub const SYS_QX_DISK_INSTALL: u64 = 424;
-pub const SYS_QX_FAT_FORMAT: u64 = 425;
-pub const SYS_QX_PROC_LIST: u64 = 430;
-pub const SYS_QX_GETHOSTNAME: u64 = 433;
-pub const SYS_QX_SETHOSTNAME: u64 = 434;
-pub const SYS_QX_REBOOT: u64 = 436;
+pub const SYS_CREDO_LOGIN: u64 = 400;
+pub const SYS_CREDO_LOGOUT: u64 = 401;
+pub const SYS_CREDO_CREATE_IDENTITY: u64 = 402;
+pub const SYS_CREDO_CHANGE_PASSWORD: u64 = 405;
+pub const SYS_CREDO_CREATE_FIRST: u64 = 407;
+pub const SYS_CREDO_DISK_LIST: u64 = 420;
+pub const SYS_CREDO_DISK_INFO: u64 = 421;
+pub const SYS_CREDO_DISK_FORMAT: u64 = 422;
+pub const SYS_CREDO_DISK_PARTITION: u64 = 423;
+pub const SYS_CREDO_DISK_INSTALL: u64 = 424;
+pub const SYS_CREDO_FAT_FORMAT: u64 = 425;
+pub const SYS_CREDO_PROC_LIST: u64 = 430;
+pub const SYS_CREDO_GETHOSTNAME: u64 = 433;
+pub const SYS_CREDO_SETHOSTNAME: u64 = 434;
+pub const SYS_CREDO_REBOOT: u64 = 436;
 
 // POSIX open flags
 pub const O_RDONLY: i32 = 0;
@@ -155,25 +155,25 @@ pub fn fs_mount(src: &[u8], tgt: &[u8], typ: &[u8], opt: &[u8]) -> i32 {
 }
 pub fn fs_unmount(t: &[u8]) -> i32 { unsafe { sys1(166, t.as_ptr() as u64) as i32 } }
 
-pub fn auth_login(n: &[u8], p: &[u8]) -> i64               { unsafe { sys2(SYS_QX_LOGIN, n.as_ptr() as u64, p.as_ptr() as u64) } }
-pub fn auth_logout()                                       { unsafe { sys0(SYS_QX_LOGOUT); } }
-pub fn auth_create_first(pw: &[u8]) -> i32                 { unsafe { sys1(SYS_QX_CREATE_FIRST, pw.as_ptr() as u64) as i32 } }
-pub fn auth_change_password(o: &[u8], n: &[u8]) -> i32     { unsafe { sys2(SYS_QX_CHANGE_PASSWORD, o.as_ptr() as u64, n.as_ptr() as u64) as i32 } }
+pub fn auth_login(n: &[u8], p: &[u8]) -> i64               { unsafe { sys2(SYS_CREDO_LOGIN, n.as_ptr() as u64, p.as_ptr() as u64) } }
+pub fn auth_logout()                                       { unsafe { sys0(SYS_CREDO_LOGOUT); } }
+pub fn auth_create_first(pw: &[u8]) -> i32                 { unsafe { sys1(SYS_CREDO_CREATE_FIRST, pw.as_ptr() as u64) as i32 } }
+pub fn auth_change_password(o: &[u8], n: &[u8]) -> i32     { unsafe { sys2(SYS_CREDO_CHANGE_PASSWORD, o.as_ptr() as u64, n.as_ptr() as u64) as i32 } }
 
 pub fn env_getcwd(buf: &mut [u8]) -> i32                   { unsafe { sys2(SYS_getcwd, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
 pub fn env_chdir(path: &[u8]) -> i32                       { unsafe { sys1(SYS_chdir, path.as_ptr() as u64) as i32 } }
 
-pub fn gethostname(buf: &mut [u8]) -> i32                  { unsafe { sys2(SYS_QX_GETHOSTNAME, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
-pub fn sethostname(name: &[u8]) -> i32                     { unsafe { sys2(SYS_QX_SETHOSTNAME, name.as_ptr() as u64, name.len() as u64) as i32 } }
-pub fn reboot(cmd: i32) -> i64                             { unsafe { sys1(SYS_QX_REBOOT, cmd as u64) } }
-pub fn proc_list(buf: &mut [u8], max_entries: u32) -> i32  { unsafe { sys2(SYS_QX_PROC_LIST, buf.as_mut_ptr() as u64, max_entries as u64) as i32 } }
+pub fn gethostname(buf: &mut [u8]) -> i32                  { unsafe { sys2(SYS_CREDO_GETHOSTNAME, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
+pub fn sethostname(name: &[u8]) -> i32                     { unsafe { sys2(SYS_CREDO_SETHOSTNAME, name.as_ptr() as u64, name.len() as u64) as i32 } }
+pub fn reboot(cmd: i32) -> i64                             { unsafe { sys1(SYS_CREDO_REBOOT, cmd as u64) } }
+pub fn proc_list(buf: &mut [u8], max_entries: u32) -> i32  { unsafe { sys2(SYS_CREDO_PROC_LIST, buf.as_mut_ptr() as u64, max_entries as u64) as i32 } }
 
-pub fn disk_list(disks: &mut [u64]) -> i32                 { unsafe { sys2(SYS_QX_DISK_LIST, disks.as_mut_ptr() as u64, disks.len() as u64) as i32 } }
-pub fn disk_info(id: u32, info: &mut UserDiskInfo) -> i32  { unsafe { sys2(SYS_QX_DISK_INFO, id as u64, info as *mut UserDiskInfo as u64) as i32 } }
-pub fn disk_format(id: u32) -> i32                         { unsafe { sys2(SYS_QX_DISK_FORMAT, id as u64, b"hvfs\0".as_ptr() as u64) as i32 } }
-pub fn disk_partition(id: u32, sectors: u64) -> i64        { unsafe { sys2(SYS_QX_DISK_PARTITION, id as u64, sectors) } }
-pub fn boot_install(id: u32) -> i64                        { unsafe { sys1(SYS_QX_DISK_INSTALL, id as u64) } }
-pub fn fat_format(id: u32) -> i64                          { unsafe { sys1(SYS_QX_FAT_FORMAT, id as u64) } }
+pub fn disk_list(disks: &mut [u64]) -> i32                 { unsafe { sys2(SYS_CREDO_DISK_LIST, disks.as_mut_ptr() as u64, disks.len() as u64) as i32 } }
+pub fn disk_info(id: u32, info: &mut UserDiskInfo) -> i32  { unsafe { sys2(SYS_CREDO_DISK_INFO, id as u64, info as *mut UserDiskInfo as u64) as i32 } }
+pub fn disk_format(id: u32) -> i32                         { unsafe { sys2(SYS_CREDO_DISK_FORMAT, id as u64, b"hvfs\0".as_ptr() as u64) as i32 } }
+pub fn disk_partition(id: u32, sectors: u64) -> i64        { unsafe { sys2(SYS_CREDO_DISK_PARTITION, id as u64, sectors) } }
+pub fn boot_install(id: u32) -> i64                        { unsafe { sys1(SYS_CREDO_DISK_INSTALL, id as u64) } }
+pub fn fat_format(id: u32) -> i64                          { unsafe { sys1(SYS_CREDO_FAT_FORMAT, id as u64) } }
 
 // ============================================================
 // 新增 POSIX syscall wrapper
@@ -208,9 +208,9 @@ pub fn tgkill(tgid: i32, tid: i32, sig: i32) -> i32        { unsafe { sys3(SYS_t
 // 热插拔状态查询
 // ============================================================
 
-pub const SYS_QX_HOTPLUG_STATUS: u64 = 437;
+pub const SYS_CREDO_HOTPLUG_STATUS: u64 = 437;
 
-pub fn hotplug_status(buf: &mut [u8]) -> i32               { unsafe { sys2(SYS_QX_HOTPLUG_STATUS, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
+pub fn hotplug_status(buf: &mut [u8]) -> i32               { unsafe { sys2(SYS_CREDO_HOTPLUG_STATUS, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
 
 // ============================================================
 // 帧缓冲设备 (FB syscalls 450-452)

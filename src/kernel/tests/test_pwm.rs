@@ -1,8 +1,8 @@
 use crate::register_tests_inner;
-use crate::kernel::pwm::sha256;
-use crate::kernel::pwm::types::*;
-use crate::kernel::pwm::engine;
-use crate::kernel::pwm::capability;
+use crate::kernel::credo::sha256;
+use crate::kernel::credo::types::*;
+use crate::kernel::credo::engine;
+use crate::kernel::credo::capability;
 use crate::kernel::tests::{runner, TestResult};
 use super::check;
 

@@ -1,9 +1,9 @@
 use super::types::*;
-use super::table;
+use super::identity;
 use core::sync::atomic::Ordering;
 
 pub fn check(pwm: u64, domain: CapDomain, required: CapBits) -> bool {
-    let entry = match table::find(pwm) {
+    let entry = match identity::find(pwm) {
         Some(e) => e,
         None => return false,
     };
@@ -16,11 +16,11 @@ pub fn check(pwm: u64, domain: CapDomain, required: CapBits) -> bool {
 }
 
 pub fn check_privilege(operator_pwm: u64, target_pwm: u64) -> bool {
-    let operator = match table::find(operator_pwm) {
+    let operator = match identity::find(operator_pwm) {
         Some(e) => e,
         None => return false,
     };
-    let target = match table::find(target_pwm) {
+    let target = match identity::find(target_pwm) {
         Some(e) => e,
         None => return false,
     };
@@ -32,14 +32,14 @@ pub fn check_privilege(operator_pwm: u64, target_pwm: u64) -> bool {
 }
 
 pub fn get_privilege_level(pwm: u64) -> u8 {
-    match table::find(pwm) {
+    match identity::find(pwm) {
         Some(e) => e.privilege_level.load(Ordering::Acquire),
         None => 0xFF,
     }
 }
 
 pub fn get_creator(pwm: u64) -> u64 {
-    match table::find(pwm) {
+    match identity::find(pwm) {
         Some(e) => e.creator_pwm.load(Ordering::Acquire),
         None => 0,
     }
@@ -47,7 +47,7 @@ pub fn get_creator(pwm: u64) -> u64 {
 
 pub fn get_caps(pwm: u64, domain: impl Into<CapDomain>) -> CapBits {
     let domain = domain.into();
-    match table::find(pwm) {
+    match identity::find(pwm) {
         Some(e) => e.load_caps(domain),
         None => CapBits::NONE,
     }

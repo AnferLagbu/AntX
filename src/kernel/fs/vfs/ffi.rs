@@ -335,7 +335,7 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwm: 
     };
 
     if result == 0 {
-        let tbl = crate::kernel::pwm::table::get_table();
+        let tbl = crate::kernel::credo::identity::get_table();
         unsafe {
             (*st).uid = tbl.uid_of((*st).owner_pwm);
             (*st).gid = tbl.gid_of((*st).group_pwm);
@@ -852,7 +852,7 @@ pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
     };
 
     if result == 0 {
-        let tbl = crate::kernel::pwm::table::get_table();
+        let tbl = crate::kernel::credo::identity::get_table();
         unsafe {
             (*st).uid = tbl.uid_of((*st).owner_pwm);
             (*st).gid = tbl.gid_of((*st).group_pwm);

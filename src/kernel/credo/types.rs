@@ -1,8 +1,8 @@
-//! PWM v5 Type Definitions
+//! Credo v1 Type Definitions
 //!
-//! Core data structures for the PWM v5 privilege model.
-//! Design: zero-concept + numeric privilege level + kernel isolation + First Token.
-//! PWM初心: 密码决定身份 | 无预设特权 | 能力来自授予
+//! Core data structures for the Credo privilege model.
+//! Domain Identity (DID) + capability matrix + identity entry + audit types.
+//! Credo: 密码决定身份 | 无预设特权 | 能力来自授予
 
 use core::sync::atomic::{AtomicU64, AtomicU32, AtomicU16, AtomicU8};
 
@@ -33,6 +33,54 @@ impl PwmId {
 impl Default for PwmId {
     fn default() -> Self {
         Self::ZERO
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct DomainId(pub u64);
+
+impl DomainId {
+    pub const ZERO: DomainId = DomainId(0);
+    pub const KERNEL: DomainId = DomainId(1);
+    pub const ROOT: DomainId = DomainId(1000);
+    pub const NOBODY: DomainId = DomainId(65534);
+
+    pub fn is_valid(&self) -> bool {
+        self.0 != 0
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+
+    pub fn from_uid(uid: u32) -> Self {
+        DomainId(uid as u64)
+    }
+
+    pub fn to_uid(&self) -> u32 {
+        self.0 as u32
+    }
+}
+
+impl Default for DomainId {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct DomainFlags: u32 {
+        const NONE       = 0;
+        const NO_FORK    = 1 << 0;
+        const NO_EXEC    = 1 << 1;
+        const NO_NET     = 1 << 2;
+        const NO_DEVICE  = 1 << 3;
+        const SANDBOX    = 1 << 4;
+        const READONLY   = 1 << 5;
+        const TEMP       = 1 << 6;
+        const SYSTEM     = 1 << 7;
     }
 }
 

@@ -1,5 +1,5 @@
 use super::types::*;
-use super::table;
+use super::identity;
 use core::sync::atomic::{AtomicIsize, AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 
@@ -41,14 +41,14 @@ impl SessionManager {
     }
 
     pub fn login(&self, note: &str, password: &str) -> Result<u64, PwmError> {
-        let t = table::get_table();
+        let t = identity::get_table();
         let entry = t.find_by_note(note).ok_or(PwmError::NotFound)?;
 
         if entry.has_flag(PwmFlags::DISABLED) {
             return Err(PwmError::Disabled);
         }
 
-        let now = super::first_token::pwm_now();
+        let now = super::bootstrap::pwm_now();
         let lockout = entry.lockout_until.load(Ordering::Acquire);
         if lockout > 0 && now < lockout {
             return Err(PwmError::Disabled);
@@ -119,7 +119,7 @@ impl SessionManager {
     }
 
     pub fn clear_lockout(&self, pwm: u64) -> Result<(), PwmError> {
-        let entry = table::find(pwm).ok_or(PwmError::NotFound)?;
+        let entry = identity::find(pwm).ok_or(PwmError::NotFound)?;
         entry.lockout_until.store(0, Ordering::Release);
         entry.failed_attempts.store(0, Ordering::Release);
         entry.remove_flags(PwmFlags::LOCKED);

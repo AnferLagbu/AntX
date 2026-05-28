@@ -1,6 +1,6 @@
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
-/// POSIX 标准 syscall 编号 (0-399) + QueenX 私有 syscall (400+).
+/// POSIX 标准 syscall 编号 (0-399) + Credo 私有 syscall (400+).
 /// 内核能力层 (VFS/PWM/PROC/NET/MM) 不变，仅 syscall ABI 层替换。
 
 pub mod types;
@@ -71,6 +71,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_mprotect        => dispatch!(Errno::ENOSYS.as_ret(), b"mprotect\0"),
         SYS_munmap          => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
         SYS_brk             => dispatch!(sys_brk(a0), b"brk\0"),
+        SYS_mremap          => dispatch!(Errno::ENOSYS.as_ret(), b"mremap_nosys\0"),
 
         // ==================== 信号 ====================
         SYS_rt_sigaction    => dispatch!(sys_rt_sigaction(a0 as i32, a1, a2), b"rt_sigaction\0"),
@@ -92,7 +93,9 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 定时器 ====================
         SYS_nanosleep       => dispatch!(sys_nanosleep(a0, a1), b"nanosleep\0"),
+        SYS_getitimer       => dispatch!(Errno::ENOSYS.as_ret(), b"getitimer_nosys\0"),
         SYS_alarm           => dispatch!(Errno::ENOSYS.as_ret(), b"alarm\0"),
+        SYS_setitimer       => dispatch!(Errno::ENOSYS.as_ret(), b"setitimer_nosys\0"),
 
         // ==================== 进程 ====================
         SYS_getpid          => dispatch!(sys_getpid(), b"getpid\0"),
@@ -141,6 +144,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 进程创建 ====================
         SYS_fork            => dispatch!(sys_fork(), b"fork\0"),
+        SYS_clone           => dispatch!(Errno::ENOSYS.as_ret(), b"clone_nosys\0"),
         SYS_execve          => dispatch!(sys_execve(a0 as *const core::ffi::c_char, a1 as *const *const u8, a2 as *const *const u8), b"execve\0"),
         SYS_exit            => dispatch!(sys_exit(a0 as i32), b"exit\0"),
         SYS_wait4            => dispatch!(sys_wait4(a0 as i32), b"wait4\0"),
@@ -168,19 +172,23 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_mkdir           => dispatch!(sys_mkdir(a0 as *const core::ffi::c_char, a1 as i32), b"mkdir\0"),
         SYS_rmdir           => dispatch!(sys_rmdir(a0 as *const core::ffi::c_char), b"rmdir\0"),
         SYS_creat           => dispatch!(sys_open(a0 as *const core::ffi::c_char, 0o101, 0o666), b"creat\0"),
+        SYS_link            => dispatch!(Errno::ENOSYS.as_ret(), b"link_nosys\0"),
         SYS_unlink          => dispatch!(sys_unlink(a0 as *const core::ffi::c_char), b"unlink\0"),
+        SYS_symlink         => dispatch!(Errno::ENOSYS.as_ret(), b"symlink_nosys\0"),
         SYS_readlink        => dispatch!(sys_readlink(a0 as *const core::ffi::c_char, a1 as *mut core::ffi::c_char, a2), b"readlink\0"),
 
         // ==================== 文件权限 ====================
         SYS_chmod           => dispatch!(sys_chmod(a0 as *const core::ffi::c_char, a1 as u32), b"chmod\0"),
         SYS_fchmod          => dispatch!(sys_fchmod(a0 as i32, a1 as u32), b"fchmod\0"),
         SYS_chown           => dispatch!(sys_chown(a0 as *const core::ffi::c_char, a1 as u32, a2 as u32), b"chown\0"),
+        SYS_fchown          => dispatch!(Errno::ENOSYS.as_ret(), b"fchown_nosys\0"),
         SYS_umask           => dispatch!(sys_umask(a0 as u32), b"umask\0"),
 
         // ==================== 时间 ====================
         SYS_gettimeofday    => dispatch!(sys_gettimeofday(a0 as *mut core::ffi::c_void, a1 as *mut core::ffi::c_void), b"gettimeofday\0"),
         SYS_getrlimit       => dispatch!(sys_getrlimit(a0 as i32, a1 as *mut core::ffi::c_void), b"getrlimit\0"),
         SYS_sysinfo         => dispatch!(sys_sysinfo(a0 as *mut core::ffi::c_void), b"sysinfo\0"),
+        SYS_times           => dispatch!(Errno::ENOSYS.as_ret(), b"times_nosys\0"),
 
         // ==================== 用户/组 ====================
         SYS_getuid          => dispatch!(sys_getuid(), b"getuid\0"),
@@ -201,51 +209,52 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_exit_group      => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
         SYS_tgkill          => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
 
-        // ==================== QueenX 私有 syscall (400+) ====================
-        SYS_QX_LOGIN             => dispatch!(sys_auth_login(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"qx_login\0"),
-        SYS_QX_LOGOUT            => dispatch!(sys_auth_logout(), b"qx_logout\0"),
-        SYS_QX_CREATE_IDENTITY   => dispatch!(sys_auth_create(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char, a2 as u8), b"qx_create\0"),
-        SYS_QX_DELETE_IDENTITY   => dispatch!(sys_auth_delete(a0), b"qx_delete\0"),
-        SYS_QX_IDENTITY_INFO     => dispatch!(sys_auth_info(a0), b"qx_info\0"),
-        SYS_QX_CHANGE_PASSWORD   => dispatch!(sys_auth_changepw(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"qx_chpw\0"),
-        SYS_QX_VERIFY_PASSWORD   => dispatch!(sys_auth_verify(a0 as *const core::ffi::c_char), b"qx_verify\0"),
-        SYS_QX_CREATE_FIRST      => dispatch!(sys_auth_create_first(a0 as *const core::ffi::c_char), b"qx_first\0"),
-        SYS_QX_TOKEN_CREATE      => dispatch!(sys_auth_token_create(a0, a1 as u16, a2, a3, 1), b"qx_tcreate\0"),
-        SYS_QX_TOKEN_USE         => dispatch!(0, b"qx_tuse\0"),
-        SYS_QX_TOKEN_REVOKE      => dispatch!(0, b"qx_trevoke\0"),
-        SYS_QX_GRANT             => dispatch!(sys_auth_grant(a0, a1, a2 as u16, a3), b"qx_grant\0"),
-        SYS_QX_REVOKE            => dispatch!(sys_auth_revoke(a0, a1, a2 as u16, a3), b"qx_revoke\0"),
-        SYS_QX_CHECK_CAP         => dispatch!(sys_auth_check_cap(a0, a1 as u16, a2), b"qx_checkcap\0"),
-        SYS_QX_GET_CAPS          => dispatch!(sys_auth_get_caps(a0, a1 as u16), b"qx_getcaps\0"),
-        SYS_QX_GET_PWM           => dispatch!(sys_pwm_get(), b"qx_getpwm\0"),
-        SYS_QX_SET_PWM           => dispatch!(sys_pwm_set(a0), b"qx_setpwm\0"),
+        // ==================== Credo 私有 syscall (400+) ====================
+        SYS_CREDO_LOGIN             => dispatch!(sys_auth_login(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"credo_login\0"),
+        SYS_CREDO_LOGOUT            => dispatch!(sys_auth_logout(), b"credo_logout\0"),
+        SYS_CREDO_CREATE_IDENTITY   => dispatch!(sys_auth_create(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char, a2 as u8), b"credo_create\0"),
+        SYS_CREDO_DELETE_IDENTITY   => dispatch!(sys_auth_delete(a0), b"credo_delete\0"),
+        SYS_CREDO_IDENTITY_INFO     => dispatch!(sys_auth_info(a0), b"credo_info\0"),
+        SYS_CREDO_CHANGE_PASSWORD   => dispatch!(sys_auth_changepw(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"credo_chpw\0"),
+        SYS_CREDO_VERIFY_PASSWORD   => dispatch!(sys_auth_verify(a0 as *const core::ffi::c_char), b"credo_verify\0"),
+        SYS_CREDO_CREATE_FIRST      => dispatch!(sys_auth_create_first(a0 as *const core::ffi::c_char), b"credo_first\0"),
+        SYS_CREDO_GRANT             => dispatch!(sys_auth_grant(a0, a1, a2 as u16, a3), b"credo_grant\0"),
+        SYS_CREDO_REVOKE            => dispatch!(sys_auth_revoke(a0, a1, a2 as u16, a3), b"credo_revoke\0"),
+        SYS_CREDO_CHECK_CAP         => dispatch!(sys_auth_check_cap(a0, a1 as u16, a2), b"credo_checkcap\0"),
+        SYS_CREDO_GET_CAPS          => dispatch!(sys_auth_get_caps(a0, a1 as u16), b"credo_getcaps\0"),
+        SYS_CREDO_GET_PWM           => dispatch!(sys_pwm_get(), b"credo_getpwm\0"),
+        SYS_CREDO_SET_PWM           => dispatch!(sys_pwm_set(a0), b"credo_setpwm\0"),
 
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_QX_DISK_LIST      => dispatch!(sys_disk_list(a0 as *mut u64, a1 as u32), b"qx_disklist\0"),
+        SYS_CREDO_DISK_LIST      => dispatch!(sys_disk_list(a0 as *mut u64, a1 as u32), b"credo_disklist\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_QX_DISK_INFO      => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"qx_diskinfo\0"),
+        SYS_CREDO_DISK_INFO      => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"credo_diskinfo\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_QX_DISK_FORMAT    => dispatch!(sys_disk_format(a0 as u32, a1 as *const core::ffi::c_char), b"qx_diskfmt\0"),
+        SYS_CREDO_DISK_FORMAT    => dispatch!(sys_disk_format(a0 as u32, a1 as *const core::ffi::c_char), b"credo_diskfmt\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_QX_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32, a1), b"qx_diskpart\0"),
+        SYS_CREDO_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32, a1), b"credo_diskpart\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_QX_DISK_INSTALL   => dispatch!(sys_boot_install(a0 as u32), b"qx_diskinst\0"),
+        SYS_CREDO_DISK_INSTALL   => dispatch!(sys_boot_install(a0 as u32), b"credo_diskinst\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_QX_FAT_FORMAT     => dispatch!(sys_fat_format(a0 as u32), b"qx_fatfmt\0"),
+        SYS_CREDO_FAT_FORMAT     => dispatch!(sys_fat_format(a0 as u32), b"credo_fatfmt\0"),
 
         #[cfg(feature = "kernel_test")]
-        SYS_QX_DISK_LIST | SYS_QX_DISK_INFO | SYS_QX_DISK_FORMAT |
-        SYS_QX_DISK_PARTITION | SYS_QX_DISK_INSTALL | SYS_QX_FAT_FORMAT =>
-            dispatch!(Errno::ENOSYS.as_ret(), b"qx_disk_nosys\0"),
+        SYS_CREDO_DISK_LIST | SYS_CREDO_DISK_INFO | SYS_CREDO_DISK_FORMAT |
+        SYS_CREDO_DISK_PARTITION | SYS_CREDO_DISK_INSTALL | SYS_CREDO_FAT_FORMAT =>
+            dispatch!(Errno::ENOSYS.as_ret(), b"credo_disk_nosys\0"),
 
-        SYS_QX_PROC_LIST     => dispatch!(sys_proc_list(a0 as *mut u8, a1 as u32), b"qx_proclist\0"),
-        SYS_QX_PROC_SETPRI   => dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"qx_procpri\0"),
-        SYS_QX_PROC_SLEEP    => dispatch!(sys_proc_sleep(a0), b"qx_procsleep\0"),
-        SYS_QX_GETHOSTNAME   => dispatch!(sys_gethostname(a0 as *mut core::ffi::c_char, a1), b"qx_gethost\0"),
-        SYS_QX_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const core::ffi::c_char, a1), b"qx_sethost\0"),
-        SYS_QX_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"qx_bootchk\0"),
-        SYS_QX_REBOOT        => dispatch!(sys_reboot(a0 as i32), b"qx_reboot\0"),
-        SYS_QX_HOTPLUG_STATUS => dispatch!(sys_hotplug_status(a0 as *mut u8, a1 as u32), b"qx_hotplug_status\0"),
+        SYS_CREDO_PROC_LIST     => dispatch!(sys_proc_list(a0 as *mut u8, a1 as u32), b"credo_proclist\0"),
+        SYS_CREDO_PROC_SETPRI   => dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"credo_procpri\0"),
+        SYS_CREDO_PROC_SLEEP    => {
+            let ms = a0;
+            let ns = ms * 1_000_000;
+            dispatch!(sys_nanosleep(ns, a1), b"credo_procsleep\0")
+        },
+        SYS_CREDO_GETHOSTNAME   => dispatch!(sys_gethostname(a0 as *mut core::ffi::c_char, a1), b"credo_gethost\0"),
+        SYS_CREDO_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const core::ffi::c_char, a1), b"credo_sethost\0"),
+        SYS_CREDO_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"credo_bootchk\0"),
+        SYS_CREDO_REBOOT        => dispatch!(sys_reboot(a0 as i32), b"credo_reboot\0"),
+        SYS_CREDO_HOTPLUG_STATUS => dispatch!(sys_hotplug_status(a0 as *mut u8, a1 as u32), b"credo_hotplug_status\0"),
 
         // ==================== 帧缓冲设备 ====================
         SYS_FB_OPEN         => dispatch!(sys_fb_open(a0, a1), b"fb_open\0"),
@@ -298,7 +307,7 @@ unsafe fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
 
 unsafe fn sys_open(path: *const core::ffi::c_char, flags: i32, _mode: i32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_open(path, flags as u32, pwm) as i64
 }
 
@@ -309,12 +318,12 @@ unsafe fn sys_close(fd: i32) -> i64 {
 
 unsafe fn sys_stat(path: *const core::ffi::c_char, st_buf: *mut core::ffi::c_void) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_stat(path, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwm) as i64
 }
 
 unsafe fn sys_fstat(fd: i32, st_buf: *mut core::ffi::c_void) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_fstat(fd as u32, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwm) as i64
 }
 
@@ -344,20 +353,20 @@ unsafe fn sys_chdir(path: *const core::ffi::c_char) -> i64 {
 
 unsafe fn sys_mkdir(path: *const core::ffi::c_char, _mode: i32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     let pwm = if pwm == 0 { 0x0020F45A8B978417 } else { pwm };
     crate::kernel::fs::vfs::ffi::vfs_mkdir(path, pwm) as i64
 }
 
 unsafe fn sys_rmdir(path: *const core::ffi::c_char) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_rmdir(path, pwm) as i64
 }
 
 unsafe fn sys_unlink(path: *const core::ffi::c_char) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_unlink(path, pwm) as i64
 }
 
@@ -365,13 +374,13 @@ unsafe fn sys_rename(old: *const core::ffi::c_char, new: *const core::ffi::c_cha
     if old.is_null() || new.is_null() || !validate_user_ptr(old as u64) || !validate_user_ptr(new as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_rename(old, new, pwm) as i64
 }
 
 unsafe fn sys_access(path: *const core::ffi::c_char, _mode: i32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     let stat_ptr: *mut crate::kernel::fs::vfs::types::VfsStat = &mut core::mem::zeroed();
     let result = crate::kernel::fs::vfs::ffi::vfs_stat(path, stat_ptr, pwm);
     if result < 0 { return result as i64; }
@@ -436,11 +445,11 @@ unsafe fn sys_wait4(_pid: i32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_getuid() -> i64 {
-    crate::kernel::pwm::session::get_current_uid() as i64
+    crate::kernel::credo::session::get_current_uid() as i64
 }
 
 unsafe fn sys_getgid() -> i64 {
-    crate::kernel::pwm::session::get_current_gid() as i64
+    crate::kernel::credo::session::get_current_gid() as i64
 }
 
 // ============================================================================
@@ -449,8 +458,8 @@ unsafe fn sys_getgid() -> i64 {
 
 unsafe fn sys_pipe(fds: *mut i32) -> i64 {
     if fds.is_null() { return Errno::EINVAL.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 6, 0x01) {
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 6, 0x01) {
         return Errno::EACCES.as_ret();
     }
     let mut pipefd: [i32; 2] = [0; 2];
@@ -519,8 +528,8 @@ unsafe fn sys_brk(addr: u64) -> i64 {
 
 unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
     if size == 0 { return Errno::EINVAL.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 7, 0x01) {
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 7, 0x01) {
         return Errno::EACCES.as_ret();
     }
 
@@ -581,10 +590,10 @@ unsafe fn sys_uname(buf: *mut core::ffi::c_void) -> i64 {
         buf
     }
     let un = Utsname {
-        sysname: str65(b"QueenX"),
+        sysname: str65(b"Credo"),
         nodename: str65(b"localhost"),
         release: str65(b"0.1.0"),
-        version: str65(b"QueenX POSIX Kernel"),
+        version: str65(b"Credo POSIX Kernel"),
         machine: {
             #[cfg(target_arch = "x86_64")] { str65(b"x86_64") }
             #[cfg(target_arch = "aarch64")] { str65(b"aarch64") }
@@ -615,8 +624,8 @@ unsafe fn sys_time(buf: *mut u64) -> i64 {
 
 #[cfg(feature = "net")]
 unsafe fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 2, 0x01) {
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 2, 0x01) {
         return Errno::EACCES.as_ret();
     }
     extern "C" { fn lwip_socket(domain: i32, sock_type: i32, protocol: i32) -> i32; }
@@ -707,69 +716,64 @@ unsafe fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
 }
 
 // ============================================================================
-// PWM 认证/权限 (QueenX 私有 syscall)
+// PWM 认证/权限 (Credo 私有 syscall)
 // ============================================================================
 
 unsafe fn sys_auth_login(password: *const core::ffi::c_char, note: *const core::ffi::c_char) -> i64 {
-    crate::kernel::pwm::ffi::pwm_login(note, password) as i64
+    crate::kernel::credo::ffi::pwm_login(note, password) as i64
 }
 
 unsafe fn sys_auth_logout() -> i64 {
-    crate::kernel::pwm::ffi::pwm_logout();
+    crate::kernel::credo::ffi::pwm_logout();
     0
 }
 
 unsafe fn sys_auth_create(password: *const core::ffi::c_char, note: *const core::ffi::c_char, _level: u8) -> i64 {
-    let creator = crate::kernel::pwm::ffi::pwm_get_current();
-    crate::kernel::pwm::ffi::pwm_create(password, note, creator) as i64
+    let creator = crate::kernel::credo::ffi::pwm_get_current();
+    crate::kernel::credo::ffi::pwm_create(password, note, creator) as i64
 }
 
 unsafe fn sys_auth_delete(target: u64) -> i64 {
-    crate::kernel::pwm::ffi::pwm_delete(target) as i64
+    crate::kernel::credo::ffi::pwm_delete(target) as i64
 }
 
 unsafe fn sys_auth_info(target: u64) -> i64 {
-    crate::kernel::pwm::ffi::pwm_get_privilege_level(target) as i64
+    crate::kernel::credo::ffi::pwm_get_privilege_level(target) as i64
 }
 
 unsafe fn sys_auth_changepw(old_pw: *const core::ffi::c_char, new_pw: *const core::ffi::c_char) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    crate::kernel::pwm::ffi::pwm_change_password(pwm, old_pw, new_pw) as i64
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    crate::kernel::credo::ffi::pwm_change_password(pwm, old_pw, new_pw) as i64
 }
 
 unsafe fn sys_auth_verify(password: *const core::ffi::c_char) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    crate::kernel::pwm::ffi::pwm_verify_password(pwm, password) as i64
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    crate::kernel::credo::ffi::pwm_verify_password(pwm, password) as i64
 }
 
 unsafe fn sys_auth_create_first(password: *const core::ffi::c_char) -> i64 {
     if password.is_null() { return Errno::EINVAL.as_ret(); }
-    crate::kernel::pwm::ffi::pwm_create_first_identity(password) as i64
-}
-
-unsafe fn sys_auth_token_create(holder: u64, domain: u16, caps: u64, _duration: u64, _max_uses: u32) -> i64 {
-    let creator = crate::kernel::pwm::ffi::pwm_get_current();
-    crate::kernel::pwm::ffi::pwm_grant(creator, holder, domain, caps) as i64
+    crate::kernel::credo::ffi::pwm_create_first_identity(password) as i64
 }
 
 unsafe fn sys_auth_grant(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::pwm::ffi::pwm_grant(grantor, grantee, domain, caps) as i64
+    crate::kernel::credo::ffi::pwm_grant(grantor, grantee, domain, caps) as i64
 }
 
 unsafe fn sys_auth_revoke(revoker: u64, target: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::pwm::ffi::pwm_revoke(revoker, target, domain, caps) as i64
+    crate::kernel::credo::ffi::pwm_revoke(revoker, target, domain, caps) as i64
 }
 
 unsafe fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
-    if crate::kernel::pwm::ffi::pwm_has_capability(pwm, domain, required) { 1 } else { 0 }
+    if crate::kernel::credo::ffi::pwm_has_capability(pwm, domain, required) { 1 } else { 0 }
 }
 
 unsafe fn sys_auth_get_caps(pwm: u64, domain: u16) -> i64 {
-    crate::kernel::pwm::ffi::pwm_get_capability_raw(pwm, domain) as i64
+    crate::kernel::credo::ffi::pwm_get_capability_raw(pwm, domain) as i64
 }
 
 unsafe fn sys_pwm_get() -> i64 {
-    crate::kernel::pwm::ffi::pwm_get_current() as i64
+    crate::kernel::credo::ffi::pwm_get_current() as i64
 }
 
 unsafe fn sys_pwm_set(pwm: u64) -> i64 {
@@ -778,7 +782,7 @@ unsafe fn sys_pwm_set(pwm: u64) -> i64 {
 }
 
 // ============================================================================
-// 系统信息 / 环境 (QueenX 私有 syscall)
+// 系统信息 / 环境 (Credo 私有 syscall)
 // ============================================================================
 
 unsafe fn sys_gethostname(buf: *mut core::ffi::c_char, size: u64) -> i64 {
@@ -792,16 +796,16 @@ unsafe fn sys_gethostname(buf: *mut core::ffi::c_char, size: u64) -> i64 {
 
 unsafe fn sys_sethostname(name: *const core::ffi::c_char, len: u64) -> i64 {
     if name.is_null() || len == 0 || len > 63 { return Errno::EINVAL.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 0, 9) {
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 0, 9) {
         return Errno::EACCES.as_ret();
     }
     0
 }
 
 unsafe fn sys_reboot(cmd: i32) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 0, 0x01) {
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 0, 0x01) {
         return Errno::EACCES.as_ret();
     }
     match cmd {
@@ -831,14 +835,14 @@ unsafe fn sys_reboot(cmd: i32) -> i64 {
 unsafe fn sys_boot_check(check_type: i32) -> i64 {
     match check_type {
         0 => {
-            if crate::kernel::pwm::ffi::pwm_any_identity_exists() { 1 } else { 0 }
+            if crate::kernel::credo::ffi::pwm_any_identity_exists() { 1 } else { 0 }
         }
         _ => -1,
     }
 }
 
 // ============================================================================
-// 磁盘管理 (QueenX 私有 syscall) — 通过 BlockDevice 注册表统一访问
+// 磁盘管理 (Credo 私有 syscall) — 通过 BlockDevice 注册表统一访问
 // ============================================================================
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
@@ -879,8 +883,8 @@ unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_format(disk_id: u32, fstype: *const core::ffi::c_char) -> i64 {
     if fstype.is_null() { return Errno::EINVAL.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
     if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let hvfs_start_lba: u32 = 18432;
     let mut sector_buf = [0u8; 512];
@@ -908,8 +912,8 @@ const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
     if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let hvfs_start = BOOT_PART_SECTORS;
     let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 { total_sectors - hvfs_start as u64 } else { 0xFFFFFFFFu64 };
@@ -930,8 +934,8 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_fat_format(disk_id: u32) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
     if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let fat_start_lba: u32 = 2048;
     let total_sectors: u16 = BOOT_PART_SECTORS as u16 - 64;
@@ -972,8 +976,8 @@ unsafe fn sys_fat_format(disk_id: u32) -> i64 {
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_boot_install(disk_id: u32) -> i64 {
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
     let stage1 = include_bytes!("../../../build/stage1.bin");
     if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
     let mut mbr = [0u8; 512];
@@ -1022,7 +1026,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
 }
 
 // ============================================================================
-// 进程列表 (QueenX 私有 syscall)
+// 进程列表 (Credo 私有 syscall)
 // ============================================================================
 
 #[repr(C)]
@@ -1058,11 +1062,6 @@ unsafe fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
 
 unsafe fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
     crate::kernel::proc::ffi::proc_set_priority(pid, priority) as i64
-}
-
-unsafe fn sys_proc_sleep(ms: u64) -> i64 {
-    crate::kernel::proc::ffi::proc_sleep_ms(ms);
-    0
 }
 
 // ============================================================================
@@ -1203,7 +1202,7 @@ unsafe fn sys_poll(fds: *mut core::ffi::c_void, nfds: u32, _timeout: i32) -> i64
 
 unsafe fn sys_chmod(path: *const core::ffi::c_char, mode: u32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_chmod(path, mode as u16, pwm) as i64
 }
 
@@ -1213,10 +1212,10 @@ unsafe fn sys_fchmod(fd: i32, mode: u32) -> i64 {
 
 unsafe fn sys_chown(path: *const core::ffi::c_char, uid: u32, gid: u32) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    let tbl = crate::kernel::pwm::table::get_table();
+    let tbl = crate::kernel::credo::identity::get_table();
     let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
     let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
 }
 
@@ -1254,7 +1253,7 @@ unsafe fn sys_kill(pid: i32, sig: i32) -> i64 {
 
 unsafe fn sys_readlink(path: *const core::ffi::c_char, buf: *mut core::ffi::c_char, bufsiz: u64) -> i64 {
     if path.is_null() || buf.is_null() || bufsiz == 0 { return Errno::EINVAL.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
     let mut st_buf: crate::kernel::fs::vfs::types::VfsStat = core::mem::zeroed();
     let result = crate::kernel::fs::vfs::ffi::vfs_stat(path, &mut st_buf, pwm);
     if result < 0 { return Errno::ENOENT.as_ret(); }
@@ -1267,8 +1266,8 @@ unsafe fn sys_readlink(path: *const core::ffi::c_char, buf: *mut core::ffi::c_ch
 
 unsafe fn sys_umount2(target: *const core::ffi::c_char, _flags: i32) -> i64 {
     if target.is_null() || !validate_user_ptr(target as u64) { return Errno::EFAULT.as_ret(); }
-    let pwm = crate::kernel::pwm::ffi::pwm_get_current();
-    if !crate::kernel::pwm::ffi::pwm_has_capability(pwm, 0, 0x01) {
+    let pwm = crate::kernel::credo::ffi::pwm_get_current();
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 0, 0x01) {
         return Errno::EACCES.as_ret();
     }
     0
@@ -1319,7 +1318,7 @@ unsafe fn sys_truncate(path: *const core::ffi::c_char, length: i64) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) || length < 0 {
         return Errno::EINVAL.as_ret();
     }
-    let fd = crate::kernel::fs::vfs::ffi::vfs_open(path, 0o2, crate::kernel::pwm::ffi::pwm_get_current());
+    let fd = crate::kernel::fs::vfs::ffi::vfs_open(path, 0o2, crate::kernel::credo::ffi::pwm_get_current());
     if fd < 0 { return Errno::ENOENT.as_ret(); }
     let result = crate::kernel::fs::vfs::ffi::vfs_truncate_internal(fd as u32, length as u64);
     crate::kernel::fs::vfs::ffi::vfs_close(fd as u32);
@@ -1433,7 +1432,7 @@ unsafe fn sys_rt_sigreturn() -> i64 {
 }
 
 // ============================================================================
-// 热插拔状态查询 (QueenX 私有 syscall 437)
+// 热插拔状态查询 (Credo 私有 syscall 437)
 // ============================================================================
 
 unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {

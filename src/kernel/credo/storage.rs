@@ -1,10 +1,10 @@
-//! PWM v5 Persistent Storage
+//! Credo v1 Persistent Storage
 //!
 //! Binary format v5: header + entries, stored at /pwm.db
 //! Migration from v4 format supported.
 
 use super::types::*;
-use super::table;
+use super::identity;
 use core::sync::atomic::Ordering;
 
 const DB_PATH: &str = "/pwm.db";
@@ -80,7 +80,7 @@ fn deserialize(buf: &[u8], p: &mut usize) -> Option<(u64, u64, u8, u16, [u64; 16
 }
 
 pub fn save_database() -> i32 {
-    let t = table::get_table();
+    let t = identity::get_table();
     if !t.is_modified() { return 0; }
 
     let mut n: usize = 0;
@@ -139,7 +139,7 @@ pub fn load_database() -> i32 {
     unsafe { vfs_close_internal(fd as u32); }
     if dr < ds as i32 { return -1; }
 
-    let t = unsafe { table::get_table_mut() };
+    let t = unsafe { identity::get_table_mut() };
     let mut p: usize = 0;
 
     if vmaj < 5 {

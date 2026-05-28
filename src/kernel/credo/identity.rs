@@ -2,8 +2,8 @@ use super::types::*;
 use super::sha256;
 use super::audit;
 use super::capability::VIABLE_FLOOR;
-use super::first_token;
-use super::grant_record;
+use super::bootstrap;
+use super::grant;
 use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, AtomicU8, AtomicU16, AtomicU32, Ordering};
 
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -35,7 +35,7 @@ pub(crate) fn generate_salt() -> [u8; PWM_SALT_LEN] {
     salt
 }
 
-pub struct PwmTable {
+pub struct IdentityTable {
     pub entries: [PwmEntry; MAX_PWM_ENTRIES],
     pub count: AtomicUsize,
     pub any_identity_exists: AtomicBool,
@@ -44,7 +44,7 @@ pub struct PwmTable {
     lock: AtomicBool,
 }
 
-impl PwmTable {
+impl IdentityTable {
     pub const fn new() -> Self {
         const DEFAULT_ENTRY: PwmEntry = PwmEntry {
             pwm: AtomicU64::new(0),
@@ -235,7 +235,7 @@ impl PwmTable {
         entry.set_uid(uid);
         entry.set_gid(uid);
 
-        entry.created_time.store(first_token::pwm_now(), Ordering::Release);
+        entry.created_time.store(bootstrap::pwm_now(), Ordering::Release);
         entry.expires_at.store(0, Ordering::Release);
         entry.lockout_until.store(0, Ordering::Release);
         entry.failed_attempts.store(0, Ordering::Release);
@@ -281,12 +281,12 @@ impl PwmTable {
 
         grantee.fetch_or_caps(domain, caps);
 
-        grant_record::add_record(GrantRecord {
+        grant::add_record(GrantRecord {
             grantor_pwm: PwmId(grantor_pwm),
             grantee_pwm: PwmId(grantee_pwm),
             domain,
             caps,
-            granted_at: first_token::pwm_now(),
+            granted_at: bootstrap::pwm_now(),
         })?;
 
         audit::log(grantor_pwm, AuditAction::Grant, grantee_pwm, domain.as_u16() as u64, caps.as_u64());
@@ -316,7 +316,7 @@ impl PwmTable {
         let creator_pwm = target.creator_pwm.load(Ordering::Acquire);
         let is_creator = revoker_pwm == creator_pwm;
 
-        let is_grantor = grant_record::is_grantor(revoker_pwm, target_pwm, domain, caps);
+        let is_grantor = grant::is_grantor(revoker_pwm, target_pwm, domain, caps);
 
         if !is_creator && !is_grantor {
             return Err(PwmError::NotAuthorized);
@@ -330,7 +330,7 @@ impl PwmTable {
 
         target.fetch_and_caps(domain, !caps);
 
-        grant_record::clear_records(revoker_pwm, target_pwm, domain, caps);
+        grant::clear_records(revoker_pwm, target_pwm, domain, caps);
 
         self.set_modified();
 
@@ -375,12 +375,12 @@ impl PwmTable {
     }
 
     pub fn bootstrap(&self, password: &str, note: &str) -> Result<u64, PwmError> {
-        first_token::generate_first_token();
+        bootstrap::generate_first_token();
 
         let pwm = self.create(password, note, 0)?;
 
         for i in 0..16u16 {
-            first_token::grant_from_first_token(pwm, CapDomain(i), CapBits::ALL)?;
+            bootstrap::grant_from_first_token(pwm, CapDomain(i), CapBits::ALL)?;
         }
 
         Ok(pwm)
@@ -394,10 +394,9 @@ impl PwmTable {
             return Err(PwmError::InvalidPassword);
         }
 
-        first_token::generate_first_token();
-
-        for i in 0..16u16 {
-            first_token::grant_from_first_token(pwm, CapDomain(i), CapBits::ALL)?;
+        bootstrap::generate_first_token();
+        for i in 0..16 {
+            bootstrap::grant_from_first_token(pwm, CapDomain(i), CapBits::ALL)?;
         }
 
         Ok(pwm)
@@ -469,13 +468,13 @@ impl PwmTable {
     }
 }
 
-static mut GLOBAL_TABLE: PwmTable = PwmTable::new();
+static mut GLOBAL_TABLE: IdentityTable = IdentityTable::new();
 
-pub fn get_table() -> &'static PwmTable {
+pub fn get_table() -> &'static IdentityTable {
     unsafe { &GLOBAL_TABLE }
 }
 
-pub unsafe fn get_table_mut() -> &'static mut PwmTable {
+pub unsafe fn get_table_mut() -> &'static mut IdentityTable {
     &mut GLOBAL_TABLE
 }
 
