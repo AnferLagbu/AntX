@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 
 // ============================================================
@@ -335,49 +336,51 @@ fn test_vma_stack_guard() -> TestResult {
 
 pub fn register_new_tests() {
     let r = runner();
-
-    // Page Fault
-    r.register("page_fault", "pf_info_from_error_code", test_pf_info_from_error_code);
-    r.register("page_fault", "pf_info_not_present", test_pf_info_not_present);
-    r.register("page_fault", "pf_result_values", test_pf_result_values);
-
-    // COW
-    r.register("cow", "frame_key_alignment", test_cow_frame_key_alignment);
-    r.register("cow", "ref_init", test_cow_ref_init);
-    r.register("cow", "ref_inc_dec", test_cow_ref_inc_dec);
-
-    // ELF
-    r.register("elf", "header_sizes", test_elf64_header_sizes);
-    r.register("elf", "validation_null", test_elf_validation_null);
-    r.register("elf", "validation_small", test_elf_validation_small);
-    r.register("elf", "magic_rejected", test_elf_magic_rejected);
-    r.register("elf", "valid_minimal", test_elf_valid_minimal);
-
-    // RCU
-    r.register("rcu", "read_lock_unlock", test_rcu_read_lock_unlock);
-    r.register("rcu", "nested_locks", test_rcu_nested_locks);
-
-    // Device Tree
-    r.register("devtree", "create_node", test_devtree_create_node);
-    r.register("devtree", "set_compatible", test_devtree_set_compatible);
-
-    // Slab Kmalloc
-    r.register("kmalloc_slab", "cache_index_selection", test_slab_cache_index_selection);
-
-    // ZIL Persist
-    r.register("zil_persist", "crc32_deterministic", test_zil_crc32_deterministic);
-
-    // mmap flags
-    r.register("mmap", "prot_to_vma_flags", test_prot_to_vma_flags);
-
-    // IPC Dynamic
-    r.register("ipc_dynamic", "pipe_no_limit", test_dyn_ipc_pipe_no_limit);
-    r.register("ipc_dynamic", "msgq_growth", test_dyn_ipc_msgq_growth);
-    r.register("ipc_dynamic", "shm_create", test_dyn_ipc_shm_create);
-    r.register("ipc_dynamic", "sem_create", test_dyn_ipc_sem_create);
-
-    // VMA
-    r.register("vma", "creation", test_vma_creation);
-    r.register("vma", "mm_struct_ops", test_mm_struct_operations);
-    r.register("vma", "stack_guard", test_vma_stack_guard);
+    register_tests_inner!{ r:
+        "page_fault": {
+            "pf_info_from_error_code": test_pf_info_from_error_code,
+            "pf_info_not_present": test_pf_info_not_present,
+            "pf_result_values": test_pf_result_values,
+        },
+        "cow": {
+            "frame_key_alignment": test_cow_frame_key_alignment,
+            "ref_init": test_cow_ref_init,
+            "ref_inc_dec": test_cow_ref_inc_dec,
+        },
+        "elf": {
+            "header_sizes": test_elf64_header_sizes,
+            "validation_null": test_elf_validation_null,
+            "validation_small": test_elf_validation_small,
+            "magic_rejected": test_elf_magic_rejected,
+            "valid_minimal": test_elf_valid_minimal,
+        },
+        "rcu": {
+            "read_lock_unlock": test_rcu_read_lock_unlock,
+            "nested_locks": test_rcu_nested_locks,
+        },
+        "devtree": {
+            "create_node": test_devtree_create_node,
+            "set_compatible": test_devtree_set_compatible,
+        },
+        "kmalloc_slab": {
+            "cache_index_selection": test_slab_cache_index_selection,
+        },
+        "zil_persist": {
+            "crc32_deterministic": test_zil_crc32_deterministic,
+        },
+        "mmap": {
+            "prot_to_vma_flags": test_prot_to_vma_flags,
+        },
+        "ipc_dynamic": {
+            "pipe_no_limit": test_dyn_ipc_pipe_no_limit,
+            "msgq_growth": test_dyn_ipc_msgq_growth,
+            "shm_create": test_dyn_ipc_shm_create,
+            "sem_create": test_dyn_ipc_sem_create,
+        },
+        "vma": {
+            "creation": test_vma_creation,
+            "mm_struct_ops": test_mm_struct_operations,
+            "stack_guard": test_vma_stack_guard,
+        },
+    }
 }

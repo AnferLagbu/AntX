@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::fs::vfs::vfs::VfsManager;
 use crate::kernel::fs::vfs::types::*;
 use crate::kernel::tests::{runner, TestResult};
@@ -127,14 +128,20 @@ fn test_vfs_snapshot_restore() -> TestResult {
 
 pub fn register_vfs_tests() {
     let r = runner();
-    r.register("vfs::types", "fstype_from_name", test_fstype_from_name);
-    r.register("vfs::types", "fstype_as_str", test_fstype_as_str);
-    r.register("vfs::types", "file_type", test_vfs_file_type);
-    r.register("vfs::types", "seek_whence", test_vfs_seek_whence);
-    r.register("vfs::mgr", "mount_unmount", test_vfs_mount_unmount);
-    r.register("vfs::mgr", "resolve_mount", test_vfs_resolve_mount);
-    r.register("vfs::mgr", "fd_alloc_free", test_vfs_fd_alloc_free);
-    r.register("vfs::types", "dirent", test_vfs_dirent);
-    r.register("vfs::mgr", "cwd", test_vfs_cwd);
-    r.register("vfs::mgr", "snapshot_restore", test_vfs_snapshot_restore);
+    register_tests_inner!{ r:
+        "vfs::types": {
+            "fstype_from_name": test_fstype_from_name,
+            "fstype_as_str": test_fstype_as_str,
+            "file_type": test_vfs_file_type,
+            "seek_whence": test_vfs_seek_whence,
+            "dirent": test_vfs_dirent,
+        },
+        "vfs::mgr": {
+            "mount_unmount": test_vfs_mount_unmount,
+            "resolve_mount": test_vfs_resolve_mount,
+            "fd_alloc_free": test_vfs_fd_alloc_free,
+            "cwd": test_vfs_cwd,
+            "snapshot_restore": test_vfs_snapshot_restore,
+        },
+    }
 }

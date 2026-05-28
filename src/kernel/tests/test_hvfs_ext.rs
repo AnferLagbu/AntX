@@ -1,4 +1,5 @@
 #![cfg(target_arch = "x86_64")]
+use crate::register_tests_inner;
 
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::dmu::*;
@@ -213,20 +214,36 @@ fn test_dataset_init() -> TestResult {
 
 pub fn register_hvfs_ext_tests() {
     let r = runner();
-    r.register("hvfs::dmu", "objset_alloc", test_dmu_objset_alloc);
-    r.register("hvfs::dmu", "objset_dir", test_dmu_objset_dir);
-    r.register("hvfs::dmu", "objset_free", test_dmu_objset_free);
-    r.register("hvfs::dmu", "cow_preserves_old", test_dmu_cow_preserves_old);
-    r.register("hvfs::zap", "large_namespace", test_zap_large_namespace);
-    r.register("hvfs::zap", "contains_clear", test_zap_contains_clear);
-    r.register("hvfs::txg", "states", test_txg_states);
-    r.register("hvfs::txg", "dirty_drain", test_txg_dirty_drain);
-    r.register("hvfs::arc", "eviction", test_arc_eviction);
-    r.register("hvfs::arc", "dirty_tracking", test_arc_dirty_tracking);
-    r.register("hvfs::compress", "lz4_roundtrip", test_compress_lz4_roundtrip);
-    r.register("hvfs::compress", "off", test_compress_off);
-    r.register("hvfs::snapshot", "create", test_snapshot_create);
-    r.register("hvfs::snapshot", "manager", test_snapshot_manager);
-    r.register("hvfs::dataset", "create", test_dataset_create);
-    r.register("hvfs::dataset", "init", test_dataset_init);
+    register_tests_inner!{ r:
+        "hvfs::dmu": {
+            "objset_alloc": test_dmu_objset_alloc,
+            "objset_dir": test_dmu_objset_dir,
+            "objset_free": test_dmu_objset_free,
+            "cow_preserves_old": test_dmu_cow_preserves_old,
+        },
+        "hvfs::zap": {
+            "large_namespace": test_zap_large_namespace,
+            "contains_clear": test_zap_contains_clear,
+        },
+        "hvfs::txg": {
+            "states": test_txg_states,
+            "dirty_drain": test_txg_dirty_drain,
+        },
+        "hvfs::arc": {
+            "eviction": test_arc_eviction,
+            "dirty_tracking": test_arc_dirty_tracking,
+        },
+        "hvfs::compress": {
+            "lz4_roundtrip": test_compress_lz4_roundtrip,
+            "off": test_compress_off,
+        },
+        "hvfs::snapshot": {
+            "create": test_snapshot_create,
+            "manager": test_snapshot_manager,
+        },
+        "hvfs::dataset": {
+            "create": test_dataset_create,
+            "init": test_dataset_init,
+        },
+    }
 }

@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::net::utils::{
     atoi, strtol, inet_checksum, htons, ntohs, htonl, ntohl, format_mac,
 };
@@ -119,16 +120,24 @@ fn net_netapp_error_codes() -> TestResult {
 
 pub fn register_tests() {
     let r = runner();
-    r.register("net::utils", "atoi", net_atoi as TestFn);
-    r.register("net::utils", "strtol", net_strtol as TestFn);
-    r.register("net::utils", "inet_checksum", net_inet_checksum as TestFn);
-    r.register("net::utils", "byteorder", net_byteorder as TestFn);
-    r.register("net::utils", "mac_formatting", net_mac_formatting as TestFn);
-    r.register("net::e1000", "device_creation", net_e1000_device_creation as TestFn);
-    r.register("net::e1000", "constants", net_e1000_constants as TestFn);
-    r.register("net::e1000", "descriptor_sizes", net_e1000_descriptor_sizes as TestFn);
-    r.register("net::e1000", "virt_to_phys", net_virt_to_phys as TestFn);
-    r.register("net::apps", "ping_stats", net_ping_stats as TestFn);
-    r.register("net::apps", "internet_checksum", net_internet_checksum as TestFn);
-    r.register("net::apps", "error_codes", net_netapp_error_codes as TestFn);
+    register_tests_inner!{ r:
+        "net::utils": {
+            "atoi": net_atoi,
+            "strtol": net_strtol,
+            "inet_checksum": net_inet_checksum,
+            "byteorder": net_byteorder,
+            "mac_formatting": net_mac_formatting,
+        },
+        "net::e1000": {
+            "device_creation": net_e1000_device_creation,
+            "constants": net_e1000_constants,
+            "descriptor_sizes": net_e1000_descriptor_sizes,
+            "virt_to_phys": net_virt_to_phys,
+        },
+        "net::apps": {
+            "ping_stats": net_ping_stats,
+            "internet_checksum": net_internet_checksum,
+            "error_codes": net_netapp_error_codes,
+        },
+    }
 }

@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::mm::slab::{
     KmemCache, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE,
     GENERAL_CACHE_SIZES, find_general_cache_index,
@@ -121,31 +122,47 @@ fn pit_frequency_bounds() -> TestResult {
 
 pub fn register_slab_tests() {
     let r = runner();
-    r.register("mm::slab", "cache_creation", slab_cache_creation as TestFn);
-    r.register("mm::slab", "cache_invalid_size", slab_cache_invalid_size as TestFn);
-    r.register("mm::slab", "cache_min_size", slab_cache_min_size as TestFn);
-    r.register("mm::slab", "general_cache_sizes", slab_general_cache_sizes as TestFn);
-    r.register("mm::slab", "find_general_cache_index", slab_find_general_cache_index as TestFn);
+    register_tests_inner!{ r:
+        "mm::slab": {
+            "cache_creation": slab_cache_creation,
+            "cache_invalid_size": slab_cache_invalid_size,
+            "cache_min_size": slab_cache_min_size,
+            "general_cache_sizes": slab_general_cache_sizes,
+            "find_general_cache_index": slab_find_general_cache_index,
+        },
+    }
 }
 
 pub fn register_syscall_ffi_tests() {
     let r = runner();
-    r.register("syscall::ffi", "error_conversion", syscall_error_conversion as TestFn);
-    r.register("syscall::ffi", "error_from_i64", syscall_error_from_i64 as TestFn);
-    r.register("syscall::ffi", "error_display", syscall_error_display as TestFn);
+    register_tests_inner!{ r:
+        "syscall::ffi": {
+            "error_conversion": syscall_error_conversion,
+            "error_from_i64": syscall_error_from_i64,
+            "error_display": syscall_error_display,
+        },
+    }
 }
 
 pub fn register_sha256_tests() {
     let r = runner();
-    r.register("pwm::sha256", "empty", sha256_empty as TestFn);
-    r.register("pwm::sha256", "abc", sha256_abc as TestFn);
+    register_tests_inner!{ r:
+        "pwm::sha256": {
+            "empty": sha256_empty,
+            "abc": sha256_abc,
+        },
+    }
 }
 
 pub fn register_pit_tests() {
     let r = runner();
-    r.register("timer::pit", "constants", pit_constants as TestFn);
-    r.register("timer::pit", "divisor_calculation", pit_divisor_calculation as TestFn);
-    r.register("timer::pit", "frequency_bounds", pit_frequency_bounds as TestFn);
+    register_tests_inner!{ r:
+        "timer::pit": {
+            "constants": pit_constants,
+            "divisor_calculation": pit_divisor_calculation,
+            "frequency_bounds": pit_frequency_bounds,
+        },
+    }
 }
 
 pub fn register_tests() {

@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::sync::mutex::{Mutex, CondVar};
 use crate::kernel::sync::seqlock::SeqLock;
 use crate::kernel::sync::spinlock::SpinLock;
@@ -238,48 +239,72 @@ fn atomic_operations() -> TestResult {
 
 pub fn register_mutex_tests() {
     let r = runner();
-    r.register("sync::mutex", "basic", mutex_basic as TestFn);
-    r.register("sync::mutex", "trylock", mutex_trylock as TestFn);
-    r.register("sync::mutex", "condvar_creation", condvar_creation as TestFn);
+    register_tests_inner!{ r:
+        "sync::mutex": {
+            "basic": mutex_basic,
+            "trylock": mutex_trylock,
+            "condvar_creation": condvar_creation,
+        },
+    }
 }
 
 pub fn register_seqlock_tests() {
     let r = runner();
-    r.register("sync::seqlock", "basic", seqlock_basic as TestFn);
-    r.register("sync::seqlock", "write", seqlock_write as TestFn);
-    r.register("sync::seqlock", "sequence_increments", seqlock_sequence_increments as TestFn);
+    register_tests_inner!{ r:
+        "sync::seqlock": {
+            "basic": seqlock_basic,
+            "write": seqlock_write,
+            "sequence_increments": seqlock_sequence_increments,
+        },
+    }
 }
 
 pub fn register_spinlock_tests() {
     let r = runner();
-    r.register("sync::spinlock", "basic", spinlock_basic as TestFn);
-    r.register("sync::spinlock", "trylock", spinlock_trylock as TestFn);
-    r.register("sync::spinlock", "irqsave", spinlock_irqsave as TestFn);
+    register_tests_inner!{ r:
+        "sync::spinlock": {
+            "basic": spinlock_basic,
+            "trylock": spinlock_trylock,
+            "irqsave": spinlock_irqsave,
+        },
+    }
 }
 
 pub fn register_rwlock_tests() {
     let r = runner();
-    r.register("sync::rwlock", "basic_read", rwlock_basic_read as TestFn);
-    r.register("sync::rwlock", "basic_write", rwlock_basic_write as TestFn);
-    r.register("sync::rwlock", "try_operations", rwlock_try_operations as TestFn);
-    r.register("sync::rwlock", "multiple_readers", rwlock_multiple_readers as TestFn);
-    r.register("sync::rwlock", "write_blocks_read", rwlock_write_blocks_read as TestFn);
-    r.register("sync::rwlock", "read_blocks_write", rwlock_read_blocks_write as TestFn);
+    register_tests_inner!{ r:
+        "sync::rwlock": {
+            "basic_read": rwlock_basic_read,
+            "basic_write": rwlock_basic_write,
+            "try_operations": rwlock_try_operations,
+            "multiple_readers": rwlock_multiple_readers,
+            "write_blocks_read": rwlock_write_blocks_read,
+            "read_blocks_write": rwlock_read_blocks_write,
+        },
+    }
 }
 
 pub fn register_sync_types_tests() {
     let r = runner();
-    r.register("sync::types", "spinlock_inner_default", spinlock_inner_default as TestFn);
-    r.register("sync::types", "mutex_inner_default", mutex_inner_default as TestFn);
-    r.register("sync::types", "rwlock_inner_default", rwlock_inner_default as TestFn);
-    r.register("sync::types", "irq_save_flags", irq_save_flags as TestFn);
-    r.register("sync::types", "try_lock_result_variants", try_lock_result_variants as TestFn);
+    register_tests_inner!{ r:
+        "sync::types": {
+            "spinlock_inner_default": spinlock_inner_default,
+            "mutex_inner_default": mutex_inner_default,
+            "rwlock_inner_default": rwlock_inner_default,
+            "irq_save_flags": irq_save_flags,
+            "try_lock_result_variants": try_lock_result_variants,
+        },
+    }
 }
 
 pub fn register_atomic_tests() {
     let r = runner();
-    r.register("sync::atomic", "bool_basic", atomic_bool_basic as TestFn);
-    r.register("sync::atomic", "operations", atomic_operations as TestFn);
+    register_tests_inner!{ r:
+        "sync::atomic": {
+            "bool_basic": atomic_bool_basic,
+            "operations": atomic_operations,
+        },
+    }
 }
 
 pub fn register_tests() {

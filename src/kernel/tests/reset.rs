@@ -1,8 +1,9 @@
 //! # BBR/BSR/BHR 单元测试
 //!
 //! 测试 Barrier Base/Soft/Hard Recovery 功能
+use crate::register_tests_inner;
 
-use crate::kernel::tests::{TestResult, check, assert_eq_test};
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 
 fn config_recovery_result() -> TestResult {
     use crate::kernel::barrier::reset::config::tests;
@@ -156,22 +157,38 @@ fn recovery_status_api() -> TestResult {
 }
 
 pub fn register_tests() {
-    let runner = unsafe { crate::kernel::tests::TEST_RUNNER.get().unwrap() };
-    runner.register("barrier::config", "recovery_result", config_recovery_result);
-    runner.register("barrier::config", "default", config_default);
-    runner.register("barrier::config", "stats", config_stats);
-    runner.register("barrier::audit", "basic", audit_log_basic);
-    runner.register("barrier::audit", "count", audit_log_count);
-    runner.register("barrier::bbr", "fingerprint", bbr_fingerprint);
-    runner.register("barrier::bbr", "should_attempt", bbr_should_attempt);
-    runner.register("barrier::bsr", "freeze_unfreeze", bsr_freeze_unfreeze);
-    runner.register("barrier::parallel", "dependency_layer", parallel_dependency_layer);
-    runner.register("barrier::parallel", "compute_layers", parallel_compute_layers);
-    runner.register("barrier::snapshot", "device_type", device_type_enum);
-    runner.register("barrier::reset", "layer_order", recovery_layer_order);
-    runner.register("barrier::reset", "result_checks", recovery_result_checks);
-    runner.register("barrier::reset", "rollback_mode", rollback_mode_enum);
-    runner.register("barrier::snapshot", "register_api", snapshot_register_api);
-    runner.register("barrier::reset", "stats_api", recovery_stats_api);
-    runner.register("barrier::reset", "status_api", recovery_status_api);
+    let r = runner();
+    register_tests_inner!{ r:
+        "barrier::config": {
+            "recovery_result": config_recovery_result,
+            "default": config_default,
+            "stats": config_stats,
+        },
+        "barrier::audit": {
+            "basic": audit_log_basic,
+            "count": audit_log_count,
+        },
+        "barrier::bbr": {
+            "fingerprint": bbr_fingerprint,
+            "should_attempt": bbr_should_attempt,
+        },
+        "barrier::bsr": {
+            "freeze_unfreeze": bsr_freeze_unfreeze,
+        },
+        "barrier::parallel": {
+            "dependency_layer": parallel_dependency_layer,
+            "compute_layers": parallel_compute_layers,
+        },
+        "barrier::snapshot": {
+            "device_type": device_type_enum,
+            "register_api": snapshot_register_api,
+        },
+        "barrier::reset": {
+            "layer_order": recovery_layer_order,
+            "result_checks": recovery_result_checks,
+            "rollback_mode": rollback_mode_enum,
+            "stats_api": recovery_stats_api,
+            "status_api": recovery_status_api,
+        },
+    }
 }

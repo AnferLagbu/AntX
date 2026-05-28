@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::pwm::sha256;
 use crate::kernel::pwm::types::*;
 use crate::kernel::pwm::engine;
@@ -162,16 +163,31 @@ fn test_pwmentry_cow_bp() -> TestResult {
 
 pub fn register_pwm_tests() {
     let r = runner();
-    r.register("pwm::sha256", "known_vectors", test_sha256_vectors);
-    r.register("pwm::types", "pwm_id_newtype", test_pwm_id_newtype);
-    r.register("pwm::types", "cap_domain_newtype", test_cap_domain_newtype);
-    r.register("pwm::types", "cap_bits_newtype", test_cap_bits_newtype);
-    r.register("pwm::entry", "caps", test_pwmentry_caps);
-    r.register("pwm::entry", "flags", test_pwmentry_flags);
-    r.register("pwm::grant_record", "basic", test_grant_record);
-    r.register("pwm::audit", "entry", test_audit_entry);
-    r.register("pwm::entry", "note", test_pwmentry_note);
-    r.register("pwm::capability", "viable_floor", test_viable_floor);
-    #[cfg(target_arch = "x86_64")]
-    r.register("pwm::dmu", "cow_bp", test_pwmentry_cow_bp);
+    register_tests_inner!{ r:
+        "pwm::sha256": {
+            "known_vectors": test_sha256_vectors,
+        },
+        "pwm::types": {
+            "pwm_id_newtype": test_pwm_id_newtype,
+            "cap_domain_newtype": test_cap_domain_newtype,
+            "cap_bits_newtype": test_cap_bits_newtype,
+        },
+        "pwm::entry": {
+            "caps": test_pwmentry_caps,
+            "flags": test_pwmentry_flags,
+            "note": test_pwmentry_note,
+        },
+        "pwm::grant_record": {
+            "basic": test_grant_record,
+        },
+        "pwm::audit": {
+            "entry": test_audit_entry,
+        },
+        "pwm::capability": {
+            "viable_floor": test_viable_floor,
+        },
+        "pwm::dmu": {
+            "cow_bp": test_pwmentry_cow_bp,
+        },
+    }
 }

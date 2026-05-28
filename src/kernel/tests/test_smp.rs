@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use core::sync::atomic::Ordering;
 
@@ -250,37 +251,51 @@ fn test_softirq_mask_raise() -> TestResult {
 
 pub fn register_smp_tests() {
     let r = runner();
-
-    r.register("smp", "cpu_count_positive", test_smp_cpu_count_positive);
-    r.register("smp", "current_cpu_valid", test_smp_current_cpu_valid);
-    r.register("smp", "cpu_online", test_smp_cpu_online);
-
-    r.register("per_cpu_sched", "init", test_per_cpu_sched_init);
-    r.register("per_cpu_sched", "current_valid", test_per_cpu_current_valid);
-    r.register("per_cpu_sched", "has_runnable", test_per_cpu_has_runnable);
-    r.register("per_cpu_sched", "time_slice_positive", test_per_cpu_time_slice_positive);
-    r.register("per_cpu_sched", "rt_count_init", test_per_cpu_rt_count);
-
-    r.register("sched_policy", "from_u32", test_sched_policy_from_u32);
-    r.register("sched_policy", "discriminant", test_sched_policy_discriminant);
-
-    r.register("sched_quota", "set_operations", test_sched_quota_operations);
-    r.register("sched_limit", "set_init", test_sched_limit_init);
-
-    r.register("rt_sched", "policy_switching_self", test_rt_policy_switching_self);
-    r.register("rt_sched", "invalid_pid", test_rt_invalid_pid);
-
-    r.register("load_balance", "no_panic", test_load_balance_no_panic);
-    r.register("priority_boost", "no_panic", test_boost_priority_no_panic);
-
-    r.register("proc_exit", "kernel_pml4_exists", test_kernel_pml4_exists);
-    r.register("proc_exit", "kernel_pml4_stable", test_kernel_pml4_stable);
-    r.register("proc_exit", "destroy_no_kstack", test_user_proc_manager_destroy_no_kstack);
-
-    r.register("softirq", "vec_enum_values", test_softirq_vec_enum_values);
-    r.register("softirq", "from_u8", test_softirq_from_u8);
-    r.register("softirq", "not_initially_in", test_softirq_not_initially_in);
-    r.register("softirq", "pending_initially_zero", test_softirq_pending_initially_zero);
-    r.register("softirq", "raise_then_check", test_softirq_raise_then_check);
-    r.register("softirq", "mask_raise", test_softirq_mask_raise);
+    register_tests_inner!{ r:
+        "smp": {
+            "cpu_count_positive": test_smp_cpu_count_positive,
+            "current_cpu_valid": test_smp_current_cpu_valid,
+            "cpu_online": test_smp_cpu_online,
+        },
+        "per_cpu_sched": {
+            "init": test_per_cpu_sched_init,
+            "current_valid": test_per_cpu_current_valid,
+            "has_runnable": test_per_cpu_has_runnable,
+            "time_slice_positive": test_per_cpu_time_slice_positive,
+            "rt_count_init": test_per_cpu_rt_count,
+        },
+        "sched_policy": {
+            "from_u32": test_sched_policy_from_u32,
+            "discriminant": test_sched_policy_discriminant,
+        },
+        "sched_quota": {
+            "set_operations": test_sched_quota_operations,
+        },
+        "sched_limit": {
+            "set_init": test_sched_limit_init,
+        },
+        "rt_sched": {
+            "policy_switching_self": test_rt_policy_switching_self,
+            "invalid_pid": test_rt_invalid_pid,
+        },
+        "load_balance": {
+            "no_panic": test_load_balance_no_panic,
+        },
+        "priority_boost": {
+            "no_panic": test_boost_priority_no_panic,
+        },
+        "proc_exit": {
+            "kernel_pml4_exists": test_kernel_pml4_exists,
+            "kernel_pml4_stable": test_kernel_pml4_stable,
+            "destroy_no_kstack": test_user_proc_manager_destroy_no_kstack,
+        },
+        "softirq": {
+            "vec_enum_values": test_softirq_vec_enum_values,
+            "from_u8": test_softirq_from_u8,
+            "not_initially_in": test_softirq_not_initially_in,
+            "pending_initially_zero": test_softirq_pending_initially_zero,
+            "raise_then_check": test_softirq_raise_then_check,
+            "mask_raise": test_softirq_mask_raise,
+        },
+    }
 }

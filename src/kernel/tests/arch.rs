@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::arch::x86_64::gdt::{
     GdtEntry, AccessByte, Granularity,
     SELECTOR_NULL, SELECTOR_KERNEL_CODE, SELECTOR_KERNEL_DATA,
@@ -174,27 +175,39 @@ fn cpu_topology_threads_per_core() -> TestResult {
 
 pub fn register_gdt_tests() {
     let r = runner();
-    r.register("arch::gdt", "null_descriptor", gdt_entry_null as TestFn);
-    r.register("arch::gdt", "access_byte_constants", gdt_access_byte_constants as TestFn);
-    r.register("arch::gdt", "granularity_constants", gdt_granularity_constants as TestFn);
-    r.register("arch::gdt", "selector_values", gdt_selector_values as TestFn);
+    register_tests_inner!{ r:
+        "arch::gdt": {
+            "null_descriptor": gdt_entry_null,
+            "access_byte_constants": gdt_access_byte_constants,
+            "granularity_constants": gdt_granularity_constants,
+            "selector_values": gdt_selector_values,
+        },
+    }
 }
 
 pub fn register_tss_tests() {
     let r = runner();
-    r.register("arch::tss", "zeroed", tss_zeroed as TestFn);
-    r.register("arch::tss", "set_kernel_stack", tss_set_kernel_stack as TestFn);
-    r.register("arch::tss", "ist_operations", tss_ist_operations as TestFn);
-    r.register("arch::tss", "iomap", tss_iomap as TestFn);
-    r.register("arch::tss", "size", tss_size as TestFn);
+    register_tests_inner!{ r:
+        "arch::tss": {
+            "zeroed": tss_zeroed,
+            "set_kernel_stack": tss_set_kernel_stack,
+            "ist_operations": tss_ist_operations,
+            "iomap": tss_iomap,
+            "size": tss_size,
+        },
+    }
 }
 
 pub fn register_cpu_tests() {
     let r = runner();
-    r.register("cpu", "vendor_recognition", cpu_vendor_recognition as TestFn);
-    r.register("cpu", "signature_effective_values", cpu_signature_effective_values as TestFn);
-    r.register("cpu", "cache_info_total", cpu_cache_info_total as TestFn);
-    r.register("cpu", "topology_threads_per_core", cpu_topology_threads_per_core as TestFn);
+    register_tests_inner!{ r:
+        "cpu": {
+            "vendor_recognition": cpu_vendor_recognition,
+            "signature_effective_values": cpu_signature_effective_values,
+            "cache_info_total": cpu_cache_info_total,
+            "topology_threads_per_core": cpu_topology_threads_per_core,
+        },
+    }
 }
 
 pub fn register_cpuid_tests() {

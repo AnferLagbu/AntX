@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::tests::{runner, TestResult};
 use super::check;
 use crate::kernel::fs::devfs::devfs::{DEVFS_DATA, DEVFS_MAX_DEVICES};
@@ -74,13 +75,17 @@ fn test_devfs_readdir() -> TestResult {
 
 pub fn register_devfs_tests() {
     let r = runner();
-    r.register("DevFS", "mount", test_devfs_mount);
-    r.register("DevFS", "open_default_devices", test_devfs_open_default_devices);
-    r.register("DevFS", "read_null", test_devfs_read_null);
-    r.register("DevFS", "read_zero", test_devfs_read_zero);
-    r.register("DevFS", "register_device", test_devfs_register_device);
-    r.register("DevFS", "unregister_device", test_devfs_unregister_device);
-    r.register("DevFS", "register_duplicate", test_devfs_register_duplicate);
-    r.register("DevFS", "unregister_nonexistent", test_devfs_unregister_nonexistent);
-    r.register("DevFS", "readdir", test_devfs_readdir);
+    register_tests_inner!{ r:
+        "DevFS": {
+            "mount": test_devfs_mount,
+            "open_default_devices": test_devfs_open_default_devices,
+            "read_null": test_devfs_read_null,
+            "read_zero": test_devfs_read_zero,
+            "register_device": test_devfs_register_device,
+            "unregister_device": test_devfs_unregister_device,
+            "register_duplicate": test_devfs_register_duplicate,
+            "unregister_nonexistent": test_devfs_unregister_nonexistent,
+            "readdir": test_devfs_readdir,
+        },
+    }
 }

@@ -417,7 +417,7 @@ build/test_hw_stubs.o: src/kernel/tests/test_hw_stubs.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
-test: test-unit
+test: test-host test-unit
 
 build/kernel_test.bin: $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)
 	$(LD) -T $(LDSCRIPT) -nostdlib -Map=build/kernel_test.map --allow-multiple-definition -o build/kernel_test.bin $(KERNEL_TEST_OBJS) $(RUST_LIB_TEST)

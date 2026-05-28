@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::proc::scheduler_ex::{
     ThreadState, SchedulerEx,
 };
@@ -193,21 +194,29 @@ fn thread_type_safety() -> TestResult {
 
 pub fn register_sched_ex_tests() {
     let r = runner();
-    r.register("sched::thread_state", "from_u32_valid", thread_state_from_u32_valid as TestFn);
-    r.register("sched::thread_state", "from_u32_invalid", thread_state_from_u32_invalid as TestFn);
-    r.register("sched::thread_state", "is_runnable", thread_state_is_runnable as TestFn);
-    r.register("sched::thread_state", "is_alive", thread_state_is_alive as TestFn);
-    r.register("sched::thread_state", "can_freeze", thread_state_can_freeze as TestFn);
-    r.register("sched::thread", "normal_lifecycle", thread_normal_lifecycle as TestFn);
-    r.register("sched::thread", "freeze_thaw", thread_freeze_thaw as TestFn);
-    r.register("sched::thread", "illegal_transitions", thread_illegal_transitions as TestFn);
-    r.register("sched::thread", "state_change_count", thread_state_change_count as TestFn);
-    r.register("sched::thread", "exit_code_preserved", thread_exit_code_preserved as TestFn);
-    r.register("sched::ex", "initialization", scheduler_initialization as TestFn);
-    r.register("sched::ex", "run_queue_empty", scheduler_run_queue_empty as TestFn);
-    r.register("sched::ex", "null_pointer_safety", null_pointer_safety as TestFn);
-    r.register("sched::ex", "quantum_constants", quantum_constants as TestFn);
-    r.register("sched::ex", "thread_type_safety", thread_type_safety as TestFn);
+    register_tests_inner!{ r:
+        "sched::thread_state": {
+            "from_u32_valid": thread_state_from_u32_valid,
+            "from_u32_invalid": thread_state_from_u32_invalid,
+            "is_runnable": thread_state_is_runnable,
+            "is_alive": thread_state_is_alive,
+            "can_freeze": thread_state_can_freeze,
+        },
+        "sched::thread": {
+            "normal_lifecycle": thread_normal_lifecycle,
+            "freeze_thaw": thread_freeze_thaw,
+            "illegal_transitions": thread_illegal_transitions,
+            "state_change_count": thread_state_change_count,
+            "exit_code_preserved": thread_exit_code_preserved,
+        },
+        "sched::ex": {
+            "initialization": scheduler_initialization,
+            "run_queue_empty": scheduler_run_queue_empty,
+            "null_pointer_safety": null_pointer_safety,
+            "quantum_constants": quantum_constants,
+            "thread_type_safety": thread_type_safety,
+        },
+    }
 }
 
 pub fn register_tests() {

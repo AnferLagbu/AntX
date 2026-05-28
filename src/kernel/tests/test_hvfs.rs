@@ -1,4 +1,5 @@
 #![cfg(target_arch = "x86_64")]
+use crate::register_tests_inner;
 
 use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::checksum::HvChecksum;
@@ -210,28 +211,46 @@ fn test_arc_insert_lookup() -> TestResult {
 
 pub fn register_hvfs_tests() {
     let r = runner();
-    r.register("hvfs::bp", "null", test_bp_null);
-    r.register("hvfs::bp", "dva_set_get", test_bp_dva_set_get);
-    r.register("hvfs::bp", "birth_txg", test_bp_birth_txg);
-    r.register("hvfs::checksum", "fletcher4_basic", test_checksum_fletcher4_basic);
-    r.register("hvfs::checksum", "different_data", test_checksum_different_data);
-    r.register("hvfs::spa", "config_name", test_spa_config_name);
-    r.register("hvfs::spa", "uberblock_null", test_spa_uberblock_null);
-    r.register("hvfs::spa", "uberblock_checksum", test_spa_uberblock_checksum);
-    r.register("hvfs::spa", "uberblock_invalid", test_spa_uberblock_invalid_magic);
-    r.register("hvfs::dmu", "default", test_dmu_object_default);
-    r.register("hvfs::dmu", "cow", test_dmu_object_cow);
-    r.register("hvfs::dmu", "dir_type", test_dmu_object_dir_type);
-    r.register("hvfs::zap", "insert_lookup", test_zap_insert_lookup);
-    r.register("hvfs::zap", "overwrite", test_zap_overwrite);
-    r.register("hvfs::zap", "nonexistent", test_zap_nonexistent);
-    r.register("hvfs::zap", "remove", test_zap_remove);
-    r.register("hvfs::txg", "group_init", test_txg_group_init);
-    r.register("hvfs::txg", "transition", test_txg_group_transition);
-    r.register("hvfs::zil", "record_create", test_zil_record_create);
-    r.register("hvfs::zil", "record_write", test_zil_record_write);
-    r.register("hvfs::zil", "add_and_sync", test_zil_add_and_sync);
-    r.register("hvfs::arc", "init", test_arc_init);
-    r.register("hvfs::arc", "lookup_miss", test_arc_lookup_miss);
-    r.register("hvfs::arc", "insert_lookup", test_arc_insert_lookup);
+    register_tests_inner!{ r:
+        "hvfs::bp": {
+            "null": test_bp_null,
+            "dva_set_get": test_bp_dva_set_get,
+            "birth_txg": test_bp_birth_txg,
+        },
+        "hvfs::checksum": {
+            "fletcher4_basic": test_checksum_fletcher4_basic,
+            "different_data": test_checksum_different_data,
+        },
+        "hvfs::spa": {
+            "config_name": test_spa_config_name,
+            "uberblock_null": test_spa_uberblock_null,
+            "uberblock_checksum": test_spa_uberblock_checksum,
+            "uberblock_invalid": test_spa_uberblock_invalid_magic,
+        },
+        "hvfs::dmu": {
+            "default": test_dmu_object_default,
+            "cow": test_dmu_object_cow,
+            "dir_type": test_dmu_object_dir_type,
+        },
+        "hvfs::zap": {
+            "insert_lookup": test_zap_insert_lookup,
+            "overwrite": test_zap_overwrite,
+            "nonexistent": test_zap_nonexistent,
+            "remove": test_zap_remove,
+        },
+        "hvfs::txg": {
+            "group_init": test_txg_group_init,
+            "transition": test_txg_group_transition,
+        },
+        "hvfs::zil": {
+            "record_create": test_zil_record_create,
+            "record_write": test_zil_record_write,
+            "add_and_sync": test_zil_add_and_sync,
+        },
+        "hvfs::arc": {
+            "init": test_arc_init,
+            "lookup_miss": test_arc_lookup_miss,
+            "insert_lookup": test_arc_insert_lookup,
+        },
+    }
 }

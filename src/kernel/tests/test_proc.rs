@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::tests::{runner, TestResult};
 use super::check;
 use super::assert_eq_test;
@@ -81,12 +82,16 @@ fn test_stack_canary() -> TestResult {
 
 pub fn register_proc_tests() {
     let r = runner();
-    r.register("Proc", "state_from_u8", test_process_state_from_u8);
-    r.register("Proc", "state_from_u32", test_process_state_from_u32);
-    r.register("Proc", "state_name", test_process_state_name);
-    r.register("Proc", "state_equality", test_process_state_equality);
-    r.register("Proc", "process_id", test_process_id);
-    r.register("Proc", "thread_id", test_thread_id);
-    r.register("Proc", "state_lifecycle", test_process_state_lifecycle);
-    r.register("Proc", "stack_canary", test_stack_canary);
+    register_tests_inner!{ r:
+        "Proc": {
+            "state_from_u8": test_process_state_from_u8,
+            "state_from_u32": test_process_state_from_u32,
+            "state_name": test_process_state_name,
+            "state_equality": test_process_state_equality,
+            "process_id": test_process_id,
+            "thread_id": test_thread_id,
+            "state_lifecycle": test_process_state_lifecycle,
+            "stack_canary": test_stack_canary,
+        },
+    }
 }

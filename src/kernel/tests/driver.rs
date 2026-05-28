@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::driver::framework::{
     DriverError, DeviceType, DeviceInfo, Result,
 };
@@ -243,28 +244,38 @@ fn ata_disk_present_bounds() -> TestResult {
 
 pub fn register_tests() {
     let r = runner();
-    r.register("driver::framework", "error_codes", driver_error_codes as TestFn);
-    r.register("driver::framework", "device_types", driver_device_types as TestFn);
-    r.register("driver::framework", "device_info_creation", driver_device_info_creation as TestFn);
-    r.register("driver::framework", "device_info_builder", driver_device_info_builder as TestFn);
-    r.register("driver::framework", "result_type", driver_result_type as TestFn);
-    r.register("driver::keyboard", "scancode_table", keyboard_scancode_table as TestFn);
-    r.register("driver::keyboard", "shift_table", keyboard_shift_table as TestFn);
-    r.register("driver::keyboard", "special_keys", keyboard_special_keys as TestFn);
-    r.register("driver::keyboard", "modifier_default", keyboard_modifier_default as TestFn);
-    r.register("driver::keyboard", "modifier_operations", keyboard_modifier_operations as TestFn);
-    r.register("driver::keyboard", "buffer", keyboard_buffer as TestFn);
-    r.register("driver::keyboard", "driver_trait", keyboard_driver_trait as TestFn);
-    r.register("driver::serial", "constants", serial_constants as TestFn);
-    r.register("driver::serial", "config_default", serial_config_default as TestFn);
-    r.register("driver::serial", "baud_rate", serial_baud_rate as TestFn);
-    r.register("driver::serial", "data_bits", serial_data_bits as TestFn);
-    r.register("driver::serial", "parity", serial_parity as TestFn);
-    r.register("driver::serial", "port_creation", serial_port_creation as TestFn);
-    r.register("driver::serial", "ring_buffer", serial_ring_buffer as TestFn);
-    r.register("driver::ata", "constants", ata_constants as TestFn);
-    r.register("driver::ata", "device_default", ata_device_default as TestFn);
-    r.register("driver::ata", "controller_creation", ata_controller_creation as TestFn);
-    r.register("driver::ata", "io_base_calculation", ata_io_base_calculation as TestFn);
-    r.register("driver::ata", "disk_present_bounds", ata_disk_present_bounds as TestFn);
+    register_tests_inner!{ r:
+        "driver::framework": {
+            "error_codes": driver_error_codes,
+            "device_types": driver_device_types,
+            "device_info_creation": driver_device_info_creation,
+            "device_info_builder": driver_device_info_builder,
+            "result_type": driver_result_type,
+        },
+        "driver::keyboard": {
+            "scancode_table": keyboard_scancode_table,
+            "shift_table": keyboard_shift_table,
+            "special_keys": keyboard_special_keys,
+            "modifier_default": keyboard_modifier_default,
+            "modifier_operations": keyboard_modifier_operations,
+            "buffer": keyboard_buffer,
+            "driver_trait": keyboard_driver_trait,
+        },
+        "driver::serial": {
+            "constants": serial_constants,
+            "config_default": serial_config_default,
+            "baud_rate": serial_baud_rate,
+            "data_bits": serial_data_bits,
+            "parity": serial_parity,
+            "port_creation": serial_port_creation,
+            "ring_buffer": serial_ring_buffer,
+        },
+        "driver::ata": {
+            "constants": ata_constants,
+            "device_default": ata_device_default,
+            "controller_creation": ata_controller_creation,
+            "io_base_calculation": ata_io_base_calculation,
+            "disk_present_bounds": ata_disk_present_bounds,
+        },
+    }
 }

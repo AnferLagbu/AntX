@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::tests::{runner, TestResult};
 use super::check;
 use crate::kernel::ipc::types::*;
@@ -125,9 +126,13 @@ fn test_duplicate_close() -> TestResult {
 
 pub fn register_ipc_tests() {
     let r = runner();
-    r.register("IPC", "pipe_basic", test_pipe_basic);
-    r.register("IPC", "shm_rapid_attach_detach", test_shm_rapid_attach_detach);
-    r.register("IPC", "semaphore_high_concurrency", test_semaphore_high_concurrency);
-    r.register("IPC", "invalid_ids", test_invalid_ids);
-    r.register("IPC", "duplicate_close", test_duplicate_close);
+    register_tests_inner!{ r:
+        "IPC": {
+            "pipe_basic": test_pipe_basic,
+            "shm_rapid_attach_detach": test_shm_rapid_attach_detach,
+            "semaphore_high_concurrency": test_semaphore_high_concurrency,
+            "invalid_ids": test_invalid_ids,
+            "duplicate_close": test_duplicate_close,
+        },
+    }
 }

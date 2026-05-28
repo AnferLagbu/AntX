@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::idt::types::{
     InterruptFrame, IdtEntry, IdtPtr, InterruptStatistics,
     ErrorFlags, GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, IDT_ENTRIES, IRQ_BASE,
@@ -240,43 +241,59 @@ fn cpu_features_no_panic() -> TestResult {
 
 pub fn register_idt_types_tests() {
     let r = runner();
-    r.register("idt::types", "frame_size", interrupt_frame_size as TestFn);
-    r.register("idt::types", "user_mode_detection", user_mode_detection as TestFn);
-    r.register("idt::types", "entry_creation", idt_entry_creation as TestFn);
-    r.register("idt::types", "ptr_creation", idt_ptr_creation as TestFn);
-    r.register("idt::types", "statistics_recording", statistics_recording as TestFn);
-    r.register("idt::types", "error_flags", error_flags as TestFn);
-    r.register("idt::types", "exception_names", exception_names as TestFn);
-    r.register("idt::types", "irq_names", irq_names as TestFn);
+    register_tests_inner!{ r:
+        "idt::types": {
+            "frame_size": interrupt_frame_size,
+            "user_mode_detection": user_mode_detection,
+            "entry_creation": idt_entry_creation,
+            "ptr_creation": idt_ptr_creation,
+            "statistics_recording": statistics_recording,
+            "error_flags": error_flags,
+            "exception_names": exception_names,
+            "irq_names": irq_names,
+        },
+    }
 }
 
 pub fn register_idt_handlers_tests() {
     let r = runner();
-    r.register("idt::handlers", "recovery_action_variants", recovery_action_variants as TestFn);
-    r.register("idt::handlers", "severity_ordering", severity_ordering as TestFn);
-    r.register("idt::handlers", "exception_categories", exception_categories as TestFn);
-    r.register("idt::handlers", "page_fault_analysis", page_fault_analysis as TestFn);
-    r.register("idt::handlers", "default_handler", default_handler as TestFn);
-    r.register("idt::handlers", "factory_pattern", factory_pattern as TestFn);
-    r.register("idt::handlers", "statistics_collector", statistics_collector as TestFn);
-    r.register("idt::handlers", "panic_info_creation", panic_info_creation as TestFn);
+    register_tests_inner!{ r:
+        "idt::handlers": {
+            "recovery_action_variants": recovery_action_variants,
+            "severity_ordering": severity_ordering,
+            "exception_categories": exception_categories,
+            "page_fault_analysis": page_fault_analysis,
+            "default_handler": default_handler,
+            "factory_pattern": factory_pattern,
+            "statistics_collector": statistics_collector,
+            "panic_info_creation": panic_info_creation,
+        },
+    }
 }
 
 pub fn register_idt_statistics_tests() {
     let r = runner();
-    r.register("idt::statistics", "init", detailed_stats_init as TestFn);
-    r.register("idt::statistics", "record_exception", detailed_stats_record_exception as TestFn);
-    r.register("idt::statistics", "record_irq", detailed_stats_record_irq as TestFn);
-    r.register("idt::statistics", "nested", detailed_stats_nested as TestFn);
-    r.register("idt::statistics", "recovery_action_tracking", detailed_stats_recovery_action_tracking as TestFn);
-    r.register("idt::statistics", "reset", detailed_stats_reset as TestFn);
-    r.register("idt::statistics", "invalid_vector_count", detailed_stats_invalid_vector_count as TestFn);
+    register_tests_inner!{ r:
+        "idt::statistics": {
+            "init": detailed_stats_init,
+            "record_exception": detailed_stats_record_exception,
+            "record_irq": detailed_stats_record_irq,
+            "nested": detailed_stats_nested,
+            "recovery_action_tracking": detailed_stats_recovery_action_tracking,
+            "reset": detailed_stats_reset,
+            "invalid_vector_count": detailed_stats_invalid_vector_count,
+        },
+    }
 }
 
 pub fn register_idt_safety_tests() {
     let r = runner();
-    r.register("idt::safety", "address_validation", address_validation as TestFn);
-    r.register("idt::safety", "cpu_features_no_panic", cpu_features_no_panic as TestFn);
+    register_tests_inner!{ r:
+        "idt::safety": {
+            "address_validation": address_validation,
+            "cpu_features_no_panic": cpu_features_no_panic,
+        },
+    }
 }
 
 pub fn register_tests() {

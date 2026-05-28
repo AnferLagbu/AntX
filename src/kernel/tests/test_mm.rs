@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::mm::{PhysAddr, VirtAddr, PageSize, PageFlags, PageTableEntry, MemoryInfo};
 use crate::kernel::mm::KERNEL_BASE;
 use crate::kernel::mm::{pml4_index, pdpt_index, pd_index, pt_index, phys_to_virt, virt_to_phys};
@@ -109,12 +110,28 @@ fn test_page_index_helpers() -> TestResult {
 
 pub fn register_mm_tests() {
     let r = runner();
-    r.register("mm::phys_addr", "basic", test_phys_addr);
-    r.register("mm::virt_addr", "basic", test_virt_addr);
-    r.register("mm::page_size", "basic", test_page_size);
-    r.register("mm::pte", "basic", test_page_table_entry);
-    r.register("mm::page_flags", "basic", test_page_flags);
-    r.register("mm::memory_info", "default", test_memory_info);
-    r.register("mm::addr", "translation", test_address_translation);
-    r.register("mm::addr", "page_index", test_page_index_helpers);
+    register_tests_inner!{ r:
+        "mm::phys_addr": {
+            "basic": test_phys_addr,
+        },
+        "mm::virt_addr": {
+            "basic": test_virt_addr,
+        },
+        "mm::page_size": {
+            "basic": test_page_size,
+        },
+        "mm::pte": {
+            "basic": test_page_table_entry,
+        },
+        "mm::page_flags": {
+            "basic": test_page_flags,
+        },
+        "mm::memory_info": {
+            "default": test_memory_info,
+        },
+        "mm::addr": {
+            "translation": test_address_translation,
+            "page_index": test_page_index_helpers,
+        },
+    }
 }

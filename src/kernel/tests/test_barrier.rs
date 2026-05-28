@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use alloc::boxed::Box;
 use crate::kernel::barrier::undo_log::UndoLog;
 use crate::kernel::barrier::domain::RecoveryDomain;
@@ -82,11 +83,17 @@ fn test_domain_dependency() -> TestResult {
 
 pub fn register_barrier_tests() {
     let r = runner();
-    r.register("barrier::undo_log", "basic", test_undo_log_basic);
-    r.register("barrier::undo_log", "record", test_undo_log_record);
-    r.register("barrier::undo_log", "dedup", test_undo_log_dedup);
-    r.register("barrier::undo_log", "rollback", test_undo_log_rollback);
-    r.register("barrier::domain", "create", test_domain_create);
-    r.register("barrier::domain", "barrier_push", test_domain_barrier_push);
-    r.register("barrier::domain", "dependency", test_domain_dependency);
+    register_tests_inner!{ r:
+        "barrier::undo_log": {
+            "basic": test_undo_log_basic,
+            "record": test_undo_log_record,
+            "dedup": test_undo_log_dedup,
+            "rollback": test_undo_log_rollback,
+        },
+        "barrier::domain": {
+            "create": test_domain_create,
+            "barrier_push": test_domain_barrier_push,
+            "dependency": test_domain_dependency,
+        },
+    }
 }

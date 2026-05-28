@@ -1,4 +1,5 @@
-use crate::kernel::tests::{TestResult, TestFn, runner, check, assert_eq_test};
+use crate::register_tests_inner;
+use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::lib::string::{
     strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr,
     memcpy, memmove, memset, memchr, secure_zero,
@@ -155,19 +156,23 @@ fn safe_interfaces() -> TestResult {
 
 pub fn register_string_tests() {
     let r = runner();
-    r.register("lib::string", "strlen", strlen_basic as TestFn);
-    r.register("lib::string", "strcmp", strcmp_operations as TestFn);
-    r.register("lib::string", "strncmp", strncmp_limit as TestFn);
-    r.register("lib::string", "strcpy_strncpy", strcpy_and_strncpy as TestFn);
-    r.register("lib::string", "strcat", strcat_basic as TestFn);
-    r.register("lib::string", "strchr_strrchr", strchr_and_strrchr as TestFn);
-    r.register("lib::string", "strstr", strstr_basic as TestFn);
-    r.register("lib::string", "memcpy_memmove", memcpy_and_memmove as TestFn);
-    r.register("lib::string", "memset", memset_operations as TestFn);
-    r.register("lib::string", "memcmp", memcmp_basic as TestFn);
-    r.register("lib::string", "memchr", memchr_basic as TestFn);
-    r.register("lib::string", "secure_zero", secure_zero_basic as TestFn);
-    r.register("lib::string", "safe_interfaces", safe_interfaces as TestFn);
+    register_tests_inner!{ r:
+        "lib::string": {
+            "strlen": strlen_basic,
+            "strcmp": strcmp_operations,
+            "strncmp": strncmp_limit,
+            "strcpy_strncpy": strcpy_and_strncpy,
+            "strcat": strcat_basic,
+            "strchr_strrchr": strchr_and_strrchr,
+            "strstr": strstr_basic,
+            "memcpy_memmove": memcpy_and_memmove,
+            "memset": memset_operations,
+            "memcmp": memcmp_basic,
+            "memchr": memchr_basic,
+            "secure_zero": secure_zero_basic,
+            "safe_interfaces": safe_interfaces,
+        },
+    }
 }
 
 pub fn register_tests() {

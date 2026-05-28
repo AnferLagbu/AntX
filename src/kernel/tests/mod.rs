@@ -288,6 +288,17 @@ macro_rules! skip_test {
     };
 }
 
+#[macro_export]
+macro_rules! register_tests_inner {
+    ($r:ident: $($mod:literal: { $($name:literal: $func:ident),* $(,)? }),* $(,)?) => {
+        $(
+            $(
+                $r.register($mod, $name, $func);
+            )*
+        )*
+    };
+}
+
 pub use {check, assert_eq_test, skip_test};
 
 pub fn test_runner_init() {

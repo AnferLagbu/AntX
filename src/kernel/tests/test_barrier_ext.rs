@@ -1,3 +1,4 @@
+use crate::register_tests_inner;
 use crate::kernel::barrier::types::*;
 use crate::kernel::barrier::domain::RecoveryDomain;
 use crate::kernel::barrier::manager::RecoveryManager;
@@ -144,13 +145,19 @@ fn test_domain_mark_recovered() -> TestResult {
 
 pub fn register_barrier_ext_tests() {
     let r = runner();
-    r.register("barrier::domain", "state_semantic", test_domain_state_semantic);
-    r.register("barrier::domain", "from_u32_safe", test_domain_from_u32_safe);
-    r.register("barrier::domain", "degradation", test_domain_degradation);
-    r.register("barrier::domain", "quarantine", test_domain_quarantine);
-    r.register("barrier::domain", "backoff", test_domain_backoff);
-    r.register("barrier::domain", "addr_range", test_domain_addr_range);
-    r.register("barrier::manager", "register_find", test_manager_register_find);
-    r.register("barrier::manager", "panic_msg_locate", test_manager_panic_msg_locate);
-    r.register("barrier::domain", "mark_recovered", test_domain_mark_recovered);
+    register_tests_inner!{ r:
+        "barrier::domain": {
+            "state_semantic": test_domain_state_semantic,
+            "from_u32_safe": test_domain_from_u32_safe,
+            "degradation": test_domain_degradation,
+            "quarantine": test_domain_quarantine,
+            "backoff": test_domain_backoff,
+            "addr_range": test_domain_addr_range,
+            "mark_recovered": test_domain_mark_recovered,
+        },
+        "barrier::manager": {
+            "register_find": test_manager_register_find,
+            "panic_msg_locate": test_manager_panic_msg_locate,
+        },
+    }
 }
