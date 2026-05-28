@@ -249,6 +249,11 @@ pub extern "C" fn kernel_init() {
         crate::kernel::idt::idt_init();
         crate::klog_boot_info!("Test mode: IDT initialized");
 
+        crate::kernel::smp::init();
+        crate::klog_boot_info!("Test mode: SMP BSP registered");
+        crate::kernel::proc::scheduler::init();
+        crate::klog_boot_info!("Test mode: Scheduler ready");
+
         #[cfg(feature = "fault_injection")]
         {
             let rate = option_env!("FAULT_RATE").and_then(|s| s.parse::<u32>().ok()).unwrap_or(50);
