@@ -104,6 +104,9 @@ impl HvfsData {
     }
 
     pub fn init(&self) {
+        if self.initialized.load(Ordering::Acquire) {
+            return;
+        }
         log("[HvFS] Initializing...\n");
         self.spa.init("antx-pool");
         let has_disk = self.check_disk();
@@ -351,7 +354,7 @@ impl HvfsData {
             let mut fds = self.fds.lock();
             fds[fd_idx].obj_id = obj_id;
             fds[fd_idx].ds_id = self.root_ds_id.load(Ordering::Acquire);
-            fds[fd_idx].offset = if flags & 0x0400 != 0 { obj.size } else { 0 };
+            fds[fd_idx].offset = 0;
             fds[fd_idx].flags = flags;
             fds[fd_idx].pwid = pwid;
         }
@@ -387,12 +390,14 @@ impl HvfsData {
         if to_read == 0 { return 0; }
         let block_offset = (offset / 4096) * 4096;
         let block_key = HvArcKey::new(0, (obj_id << 40) | block_offset, obj.birth_txg);
+        let mut bytes_read: usize = 0;
         if let Some(data_ptr) = self.spa.arc.lookup(&block_key) {
             let data = unsafe { core::slice::from_raw_parts(data_ptr, 4096) };
             let start = (offset - block_offset) as usize;
             let end = (start + to_read).min(4096);
             buf[..end - start].copy_from_slice(&data[start..end]);
             self.spa.arc.release(&block_key);
+            bytes_read = end - start;
         } else if self.is_disk_mode() && !obj.bp.is_null() {
             let mut disk_buf = vec![0u8; obj.bp.prop.physical_size as usize];
             if self.spa.read_bp(&obj.bp, &mut disk_buf) == 0 {
@@ -401,30 +406,36 @@ impl HvfsData {
                 buf[..end - start].copy_from_slice(&disk_buf[start..end]);
                 let arc_key = HvArcKey::new(0, (obj_id << 40) | block_offset, obj.birth_txg);
                 self.spa.arc.insert(arc_key, &disk_buf, HvArcBufType::Data);
+                bytes_read = end - start;
             }
         }
         {
             let mut fds = self.fds.lock();
-            fds[fd as usize].offset += to_read as u64;
+            fds[fd as usize].offset += bytes_read as u64;
         }
-        to_read as i32
+        bytes_read as i32
     }
 
     pub fn write(&self, fd: u32, buf: &[u8], count: u32) -> i32 {
-        let (obj_id, offset, pwid, flags) = {
+        let (obj_id, mut offset, pwid, flags) = {
             let fds = self.fds.lock();
             let idx = fd as usize;
             if idx >= HVFS_MAX_FDS || !fds[idx].used { return -1; }
             (fds[idx].obj_id, fds[idx].offset, fds[idx].pwid, fds[idx].flags)
         };
+        let to_write = (count as usize).min(buf.len());
+        if to_write == 0 { return 0; }
         if flags & 0x0001 != 0 && flags & 0x0002 == 0 { return -1; }
         let mut obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) { Some(o) => o, None => return -1 }
         };
         if !self.check_permission(&obj, pwid, 0x02) { return -3; }
-        let to_write = (count as usize).min(buf.len());
-        if to_write == 0 { return 0; }
+        if flags & 0x0400 != 0 {
+            offset = obj.size;
+            let mut fds = self.fds.lock();
+            fds[fd as usize].offset = offset;
+        }
         let txg = self.spa.current_txg();
         let cksum_type = HvCksumType::Fletcher4;
         let comp_type = HvCompType::Off;
@@ -445,7 +456,12 @@ impl HvfsData {
         if !self.is_disk_mode() {
             let block_offset = (offset / 4096) * 4096;
             let arc_key = HvArcKey::new(0, (obj_id << 40) | block_offset, txg);
-            self.spa.arc.insert(arc_key, &buf[..to_write], HvArcBufType::Data);
+            let mut block_buf = [0u8; 4096];
+            let start = (offset - block_offset) as usize;
+            if start + to_write <= 4096 {
+                block_buf[start..start + to_write].copy_from_slice(&buf[..to_write]);
+            }
+            self.spa.arc.insert(arc_key, &block_buf, HvArcBufType::Data);
         }
         {
             let datasets = self.datasets.lock();
@@ -555,12 +571,6 @@ impl HvfsData {
         if !self.is_initialized() { return -1; }
         let name = path.trim_start_matches('/');
         
-        // Permission check: only privileged user can change owner
-        let level = unsafe { pwid_get_privilege_level(pwid) };
-        if level != 0 {
-            return -1;
-        }
-        
         let mut datasets = self.datasets.lock();
         let ds = &mut datasets[0];
         let obj_id = match ds.lookup(name) {
@@ -572,6 +582,11 @@ impl HvfsData {
             Some(o) => o,
             None => return -1,
         };
+        
+        let level = unsafe { pwid_get_privilege_level(pwid) };
+        if level != 0 && obj.owner_pwid != pwid {
+            return -1;
+        }
         
         obj.owner_pwid = owner_pwid;
         obj.ctime = unsafe { timer_get_ticks() };
@@ -829,8 +844,6 @@ impl HvfsData {
             let ds = &mut datasets[0];
             
             if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
-                // 简单实现：将xattr存储在对象的data_hash字段中
-                // 实际实现应该使用ZAP对象存储
                 let name_hash = Self::hash_xattr_name(name);
                 if name_hash < 4 {
                     let mut hash = [0u64; 4];
@@ -838,6 +851,7 @@ impl HvfsData {
                     hash[name_hash] = Self::hash_xattr_value(value);
                     obj.data_hash = hash;
                     obj.dirty = true;
+                    ds.objset.update_obj(&obj);
                     return 0;
                 }
             }
@@ -962,6 +976,7 @@ impl HvfsData {
                     hash[name_hash] = 0;
                     obj.data_hash = hash;
                     obj.dirty = true;
+                    ds.objset.update_obj(&obj);
                     return 0;
                 }
             }

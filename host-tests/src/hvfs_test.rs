@@ -1,5 +1,14 @@
 use antx_host_tests::hvfs::hvfs::get_hvfs;
 use antx_host_tests::hvfs_mock::KernelError;
+use std::sync::Once;
+
+static HVFS_TEST_INIT: Once = Once::new();
+
+fn ensure_hvfs_init() {
+    HVFS_TEST_INIT.call_once(|| {
+        get_hvfs().init();
+    });
+}
 
 macro_rules! test {
     ($name:ident, $body:block) => {
@@ -26,7 +35,7 @@ fn hvfs_comprehensive() {
     let hvfs = get_hvfs();
 
     test!(init, {
-        hvfs.init();
+        ensure_hvfs_init();
         assert!(hvfs.is_initialized(), "HvFS should be initialized");
     });
 
@@ -187,7 +196,7 @@ fn hvfs_error_paths() {
     println!("\n=== HvFS Error Path Tests ===\n");
 
     let hvfs = get_hvfs();
-    hvfs.init();
+    ensure_hvfs_init();
 
     test!(open_without_create_flag_returns_not_found, {
         match hvfs.open("/no_such_file.txt", 0x0001, 1) {
@@ -307,7 +316,7 @@ fn hvfs_advanced_features() {
     println!("\n=== HvFS Advanced Feature Tests ===\n");
 
     let hvfs = get_hvfs();
-    hvfs.init();
+    ensure_hvfs_init();
 
     test!(symlink_create_and_readlink, {
         let fd = hvfs.open("/link_target.txt", 0x0102, 1).unwrap();
@@ -436,7 +445,7 @@ fn hvfs_snapshot_clone() {
     println!("\n=== HvFS Snapshot & Clone Tests ===\n");
 
     let hvfs = get_hvfs();
-    hvfs.init();
+    ensure_hvfs_init();
 
     test!(snapshot_create, {
         let fd = hvfs.open("/snap_file.txt", 0x0102, 1).unwrap();
@@ -528,7 +537,7 @@ fn hvfs_fd_management() {
     println!("\n=== HvFS FD Management Tests ===\n");
 
     let hvfs = get_hvfs();
-    hvfs.init();
+    ensure_hvfs_init();
 
     test!(open_append_flag, {
         let fd = hvfs.open("/append_test.txt", 0x0102, 1).unwrap();
@@ -538,7 +547,7 @@ fn hvfs_fd_management() {
         let fd = hvfs.open("/append_test.txt", 0x0100 | 0x0400, 1).unwrap();
         let mut buf = [0u8; 32];
         let r = hvfs.read(fd as u32, &mut buf, 32);
-        assert!(r >= 5, "append mode should start at end, read got {}", r);
+        assert!(r >= 5, "append mode read should return file content, read got {}", r);
         hvfs.close(fd as u32);
     });
 
