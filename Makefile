@@ -87,7 +87,7 @@ else
                   build/arch/x86_64/trampoline.o \
                   $(NET_OBJS)
     KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-                  build/kernel_test.o build/test_main.o build/test_hvfs.o \
+                  build/kernel_test.o build/test_main.o \
                   build/test_hw_stubs.o build/arch/x86_64/trampoline.o
 endif
 
@@ -397,19 +397,11 @@ build/main.o: src/kernel/main.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/main_test.o: src/kernel/main.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
-
 build/kernel_test.o: src/kernel/tests/kernel_test.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
 build/test_main.o: src/kernel/tests/test_main.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
-
-build/test_hvfs.o: src/kernel/tests/test_hvfs.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
