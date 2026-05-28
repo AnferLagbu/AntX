@@ -125,3 +125,99 @@ pub extern "C" fn pwid_get_privilege_level(_pwid: u64) -> u8 {
 pub extern "C" fn pwid_has_capability(_pwid: u64, _domain: u16, _required: u64) -> bool {
     true
 }
+
+#[cfg(test)]
+mod kernel_error_tests {
+    use super::KernelError;
+
+    #[test]
+    fn kernel_error_codes_unique() {
+        let codes: Vec<i32> = vec![
+            KernelError::NotFound.as_i32(),
+            KernelError::AlreadyExists.as_i32(),
+            KernelError::NoSpace.as_i32(),
+            KernelError::PermissionDenied.as_i32(),
+            KernelError::InvalidArgument.as_i32(),
+            KernelError::NotDirectory.as_i32(),
+            KernelError::IsDirectory.as_i32(),
+            KernelError::NotEmpty.as_i32(),
+            KernelError::ReadOnly.as_i32(),
+            KernelError::IoError.as_i32(),
+            KernelError::NotSupported.as_i32(),
+            KernelError::Overflow.as_i32(),
+            KernelError::NotMounted.as_i32(),
+            KernelError::NotInitialized.as_i32(),
+            KernelError::IsReadOnly.as_i32(),
+            KernelError::NameTooLong.as_i32(),
+            KernelError::InvalidObject.as_i32(),
+        ];
+        let mut sorted = codes.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), codes.len(), "all error codes must be unique");
+    }
+
+    #[test]
+    fn kernel_error_codes_negative() {
+        let variants: Vec<KernelError> = vec![
+            KernelError::NotFound,
+            KernelError::AlreadyExists,
+            KernelError::NoSpace,
+            KernelError::PermissionDenied,
+            KernelError::InvalidArgument,
+            KernelError::NotDirectory,
+            KernelError::IsDirectory,
+            KernelError::NotEmpty,
+            KernelError::ReadOnly,
+            KernelError::IoError,
+            KernelError::NotSupported,
+            KernelError::Overflow,
+            KernelError::NotMounted,
+            KernelError::NotInitialized,
+            KernelError::IsReadOnly,
+            KernelError::NameTooLong,
+            KernelError::InvalidObject,
+        ];
+        for v in &variants {
+            assert!(v.as_i32() < 0, "{:?}.as_i32() should be negative, got {}", v, v.as_i32());
+        }
+    }
+
+    #[test]
+    fn kernel_error_not_found_code() {
+        assert_eq!(KernelError::NotFound.as_i32(), -2);
+    }
+
+    #[test]
+    fn kernel_error_permission_denied_code() {
+        assert_eq!(KernelError::PermissionDenied.as_i32(), -5);
+    }
+
+    #[test]
+    fn kernel_error_not_initialized_code() {
+        assert_eq!(KernelError::NotInitialized.as_i32(), -15);
+    }
+
+    #[test]
+    fn kernel_error_no_space_code() {
+        assert_eq!(KernelError::NoSpace.as_i32(), -4);
+    }
+
+    #[test]
+    fn kernel_error_equality() {
+        assert_eq!(KernelError::NotFound, KernelError::NotFound);
+        assert_ne!(KernelError::NotFound, KernelError::PermissionDenied);
+    }
+
+    #[test]
+    fn kernel_result_ok() {
+        let r: super::KernelResult<i32> = Ok(42);
+        assert_eq!(r.unwrap(), 42);
+    }
+
+    #[test]
+    fn kernel_result_err() {
+        let r: super::KernelResult<i32> = Err(KernelError::NotFound);
+        assert_eq!(r.unwrap_err(), KernelError::NotFound);
+    }
+}

@@ -172,4 +172,93 @@ mod tests {
         assert!(buddy.om_get(0) & BUDDY_ALLOCATED != 0);
         assert_eq!(buddy.om_get(0) & BUDDY_ORDER_MASK, 3);
     }
+
+    #[test]
+    fn buddy_alloc_order_0() {
+        let mut buddy = BuddyAllocator::new(1024);
+        buddy.list_push(1, BUDDY_MAX_ORDER);
+        buddy.om_set(1, BUDDY_MAX_ORDER as u8);
+        let result = buddy.alloc_order(0);
+        assert!(result.is_some(), "alloc_order(0) should succeed");
+        let page = result.unwrap() / PAGE_SIZE;
+        assert_eq!(buddy.om_get(page) & BUDDY_ORDER_MASK, 0);
+        assert!(buddy.om_get(page) & BUDDY_ALLOCATED != 0);
+    }
+
+    #[test]
+    fn buddy_alloc_split_verification() {
+        let mut buddy = BuddyAllocator::new(1024);
+        buddy.list_push(1, BUDDY_MAX_ORDER);
+        buddy.om_set(1, BUDDY_MAX_ORDER as u8);
+        let result = buddy.alloc_order(0);
+        assert!(result.is_some());
+        for order in 0..BUDDY_MAX_ORDER {
+            let buddy_page = 1 + (1u64 << order);
+            assert_eq!(buddy.om_get(buddy_page) & BUDDY_ORDER_MASK, order as u8,
+                "buddy page at order {} should be in free list", order);
+        }
+    }
+
+    #[test]
+    fn buddy_alloc_exhaustion() {
+        let mut buddy = BuddyAllocator::new(4);
+        buddy.list_push(1, 1);
+        buddy.om_set(1, 1);
+        buddy.om_set(2, 1);
+        let first = buddy.alloc_order(0);
+        assert!(first.is_some(), "first alloc should succeed");
+        let second = buddy.alloc_order(0);
+        assert!(second.is_some(), "second alloc from buddy should succeed");
+        let third = buddy.alloc_order(0);
+        assert!(third.is_none(), "third alloc should fail (exhausted)");
+    }
+
+    #[test]
+    fn buddy_alloc_all_orders() {
+        for order in 0..=BUDDY_MAX_ORDER {
+            let mut buddy = BuddyAllocator::new(1024);
+            buddy.list_push(1, BUDDY_MAX_ORDER);
+            buddy.om_set(1, BUDDY_MAX_ORDER as u8);
+            let result = buddy.alloc_order(order);
+            assert!(result.is_some(), "alloc_order({}) should succeed", order);
+        }
+    }
+
+    #[test]
+    fn buddy_alloc_uninitialized() {
+        let mut buddy = BuddyAllocator::new(1024);
+        buddy.initialized.store(false, Ordering::Release);
+        let result = buddy.alloc_order(0);
+        assert!(result.is_none(), "alloc on uninitialized should fail");
+    }
+
+    #[test]
+    fn buddy_om_set_get_boundary() {
+        let mut buddy = BuddyAllocator::new(16);
+        buddy.om_set(15, 0xAB);
+        assert_eq!(buddy.om_get(15), 0xAB);
+        assert_eq!(buddy.om_get(16), 0xFF);
+    }
+
+    #[test]
+    fn buddy_interior_pages_marked() {
+        let mut buddy = BuddyAllocator::new(1024);
+        buddy.list_push(1, BUDDY_MAX_ORDER);
+        buddy.om_set(1, BUDDY_MAX_ORDER as u8);
+        let _ = buddy.alloc_order(2);
+        let page0 = 1u64;
+        assert!(buddy.om_get(page0) & BUDDY_ALLOCATED != 0, "page 1 should be allocated");
+        for i in 1..4u64 {
+            assert_eq!(buddy.om_get(page0 + i), BUDDY_INTERIOR_USED,
+                "interior page {} should be INTERIOR_USED", i);
+        }
+    }
+
+    #[test]
+    fn buddy_free_list_operations() {
+        let buddy = BuddyAllocator::new(1024);
+        buddy.list_push(1, 5);
+        buddy.list_push(33, 5);
+        assert_ne!(buddy.free_lists[5].load(Ordering::Acquire), 0);
+    }
 }

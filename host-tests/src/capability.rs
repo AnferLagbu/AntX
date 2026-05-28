@@ -190,4 +190,117 @@ mod tests {
         assert!(full.is_superset_of(&partial));
         assert!(!partial.is_superset_of(&full));
     }
+
+    #[test]
+    fn cap_bits_empty_has_nothing() {
+        let cb = CapBits(0);
+        assert!(!cb.has(FS_CAP_READ));
+        assert!(!cb.has(FS_CAP_WRITE));
+        assert!(!cb.has(SYS_CAP_ALL));
+    }
+
+    #[test]
+    fn cap_bits_grant_all_then_revoke_one() {
+        let mut cb = CapBits(0);
+        cb.grant(SYS_CAP_ALL);
+        assert!(cb.has(FS_CAP_READ));
+        assert!(cb.has(SYS_CAP_ALL));
+        cb.revoke(FS_CAP_READ);
+        assert!(!cb.has(FS_CAP_READ));
+        assert!(cb.has(FS_CAP_WRITE));
+    }
+
+    #[test]
+    fn cap_bits_revoke_nonexistent_is_noop() {
+        let mut cb = CapBits(FS_CAP_READ);
+        cb.revoke(FS_CAP_WRITE);
+        assert!(cb.has(FS_CAP_READ));
+        assert!(!cb.has(FS_CAP_WRITE));
+    }
+
+    #[test]
+    fn cap_bits_grant_idempotent() {
+        let mut cb = CapBits(FS_CAP_READ);
+        cb.grant(FS_CAP_READ);
+        assert!(cb.has(FS_CAP_READ));
+        assert_eq!(cb.0, FS_CAP_READ);
+    }
+
+    #[test]
+    fn cap_matrix_delegation_chain() {
+        let root = CapabilityMatrix::all();
+        let mut admin = CapabilityMatrix::new();
+        admin.grant(CAP_DOMAIN_FS, FS_CAP_READ | FS_CAP_WRITE | FS_CAP_EXECUTE | FS_CAP_CREATE | FS_CAP_DELETE);
+        admin.grant(CAP_DOMAIN_PROC, PROC_CAP_FORK | PROC_CAP_EXEC | PROC_CAP_KILL);
+        let mut user = CapabilityMatrix::new();
+        user.grant(CAP_DOMAIN_FS, FS_CAP_READ | FS_CAP_EXECUTE);
+        user.grant(CAP_DOMAIN_PROC, PROC_CAP_FORK | PROC_CAP_EXEC);
+        assert!(root.is_superset_of(&admin));
+        assert!(admin.is_superset_of(&user));
+        assert!(!user.is_superset_of(&admin));
+    }
+
+    #[test]
+    fn cap_matrix_revocation_partial() {
+        let mut cm = CapabilityMatrix::all();
+        cm.revoke(CAP_DOMAIN_FS, FS_CAP_DELETE | FS_CAP_CHOWN);
+        assert!(cm.has(CAP_DOMAIN_FS, FS_CAP_READ));
+        assert!(cm.has(CAP_DOMAIN_FS, FS_CAP_WRITE));
+        assert!(!cm.has(CAP_DOMAIN_FS, FS_CAP_DELETE));
+        assert!(!cm.has(CAP_DOMAIN_FS, FS_CAP_CHOWN));
+    }
+
+    #[test]
+    fn cap_matrix_viable_is_not_all() {
+        let viable = CapabilityMatrix::viable();
+        let all = CapabilityMatrix::all();
+        assert!(all.is_superset_of(&viable));
+        assert!(!viable.is_superset_of(&all));
+    }
+
+    #[test]
+    fn cap_matrix_grant_out_of_range_silent() {
+        let mut cm = CapabilityMatrix::new();
+        cm.grant(16, 0xFF);
+        cm.grant(255, 0xFF);
+        assert!(!cm.has(16, 0xFF));
+        assert!(!cm.has(255, 0xFF));
+    }
+
+    #[test]
+    fn cap_matrix_revoke_out_of_range_silent() {
+        let mut cm = CapabilityMatrix::all();
+        cm.revoke(16, SYS_CAP_ALL);
+        cm.revoke(255, SYS_CAP_ALL);
+        for d in 0..16u16 {
+            assert!(cm.has(d, SYS_CAP_ALL));
+        }
+    }
+
+    #[test]
+    fn cap_matrix_cross_domain_isolation() {
+        let mut cm = CapabilityMatrix::new();
+        cm.grant(CAP_DOMAIN_FS, FS_CAP_READ);
+        assert!(!cm.has(CAP_DOMAIN_PROC, FS_CAP_READ));
+        assert!(!cm.has(CAP_DOMAIN_NET, FS_CAP_READ));
+    }
+
+    #[test]
+    fn cap_matrix_empty_not_superset_of_viable() {
+        let empty = CapabilityMatrix::new();
+        let viable = CapabilityMatrix::viable();
+        assert!(!empty.is_superset_of(&viable));
+    }
+
+    #[test]
+    fn cap_bits_superset_reflexive() {
+        let cb = CapBits(FS_CAP_READ | FS_CAP_WRITE);
+        assert!(cb.is_superset_of(&cb));
+    }
+
+    #[test]
+    fn cap_matrix_superset_reflexive() {
+        let cm = CapabilityMatrix::viable();
+        assert!(cm.is_superset_of(&cm));
+    }
 }

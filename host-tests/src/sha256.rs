@@ -143,4 +143,77 @@ mod tests {
         let h2 = sha256(b"world");
         assert_ne!(h1, h2);
     }
+
+    #[test]
+    fn sha256_single_byte() {
+        let h = sha256(b"a");
+        assert_ne!(h, [0u8; 32], "single byte should produce non-zero hash");
+    }
+
+    #[test]
+    fn sha256_exactly_55_bytes() {
+        let data: Vec<u8> = (0..55).map(|i| i as u8).collect();
+        let h = sha256(&data);
+        assert_ne!(h, [0u8; 32]);
+    }
+
+    #[test]
+    fn sha256_exactly_56_bytes() {
+        let data: Vec<u8> = (0..56).map(|i| i as u8).collect();
+        let h = sha256(&data);
+        assert_ne!(h, [0u8; 32]);
+    }
+
+    #[test]
+    fn sha256_exactly_64_bytes() {
+        let data: Vec<u8> = (0..64).map(|i| i as u8).collect();
+        let h = sha256(&data);
+        assert_ne!(h, [0u8; 32]);
+    }
+
+    #[test]
+    fn sha256_exactly_63_bytes() {
+        let data: Vec<u8> = (0..63).map(|i| i as u8).collect();
+        let h = sha256(&data);
+        assert_ne!(h, [0u8; 32]);
+    }
+
+    #[test]
+    fn sha256_multi_block() {
+        let data: Vec<u8> = (0..200).map(|i| (i % 256) as u8).collect();
+        let h1 = sha256(&data);
+        let h2 = sha256(&data);
+        assert_eq!(h1, h2, "multi-block hash should be deterministic");
+    }
+
+    #[test]
+    fn sha256_all_zeros() {
+        let data = [0u8; 64];
+        let h = sha256(&data);
+        assert_ne!(h, [0u8; 32]);
+    }
+
+    #[test]
+    fn sha256_all_ones() {
+        let data = [0xFFu8; 64];
+        let h = sha256(&data);
+        assert_ne!(h, [0u8; 32]);
+    }
+
+    #[test]
+    fn sha256_avalanche_effect() {
+        let h1 = sha256(b"hello");
+        let h2 = sha256(b"hellp");
+        let diff_bits: u32 = h1.iter().zip(h2.iter())
+            .map(|(a, b)| (a ^ b).count_ones())
+            .sum();
+        assert!(diff_bits > 32, "single char change should flip many bits, got {} bits", diff_bits);
+    }
+
+    #[test]
+    fn sha256_large_input() {
+        let data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
+        let h = sha256(&data);
+        assert_ne!(h, [0u8; 32]);
+    }
 }
