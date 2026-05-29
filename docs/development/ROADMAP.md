@@ -161,7 +161,7 @@ PMM.free_pages < THRESHOLD_EMERGENCY (16 页 / <1%)
 
 ---
 
-### Phase 9: Chitin 可组合虚拟设备
+### Phase 9: ✅ Chitin 可组合虚拟设备 **[已完成 - 2026-05-29]**
 
 **优先级**: 🥉 | **投入**: 中 | **创新度**: ⭐⭐⭐⭐ | **实用价值**: 中
 
@@ -188,7 +188,7 @@ ChitinNode("virt-raid0")
 
 ---
 
-### Phase 10: 用户态驱动框架 (User-Space Driver)
+### Phase 10: ✅ 用户态驱动框架 (User-Space Driver) **[已完成 - 2026-05-29]**
 
 **优先级**: 🥉 | **投入**: 大 | **创新度**: ⭐⭐⭐ | **实用价值**: 高
 
@@ -206,6 +206,19 @@ Chitin 设备树节点可直接映射到用户态进程，实现安全用户态�
 2. `devtree_bind_device` 支持用户态绑定
 3. 中断转发: IDT → `chitin_forward_irq(node_id)` → 信号给进程
 4. PWM 新增 `CAP_DRIVER_*` 能力系列
+
+#### ✅ 完成总结 (2026-05-29)
+
+- `kernel/credo/capability.rs`: 新增 `DEVICE_CAP_MMIO` / `DEVICE_CAP_IRQ` / `DEVICE_CAP_DMA` / `DEVICE_CAP_BIND` 四项设备域能力位
+- `kernel/chitin/devtree.rs`: `ChitinNode` 新增 `user_mapped: Option<u32>` 字段 + `devtree_set_user_mapped()` / `devtree_clear_user_mapped()` / `devtree_get_user_mapped()` 三项访问器
+- `kernel/chitin/user_driver.rs` (新建 293 行): 核心用户态驱动模块
+  - `devtree_bind_user_device(node_id, pid, pwm)` — 能力检查 + 绑定
+  - `devtree_unbind_user_device(node_id, pid, pwm)` — 解绑
+  - `devtree_map_user_device(node_id, pid, pwm, mm)` — MMIO 映射到用户地址空间 (UC 标记 + VMA 管理 + 回滚)
+  - `devtree_unmap_user_device(node_id, pid, pwm, mm, va, size)` — 撤销映射
+  - `chitin_forward_irq(node_id)` — 中断→SIGUSR1 转发 (stub 就绪, 待信号框架集成后激活)
+  - C FFI: `user_driver_bind_c()` / `user_driver_unbind_c()` / `process_signal_pending_set()`
+- `kernel/chitin/mod.rs`: 注册 `pub mod user_driver`
 
 ---
 
@@ -330,14 +343,14 @@ const NICE_TO_WEIGHT: [u64; 40] = [
 | **2** | 5 | 微重启崩溃恢复 | ✅ 已完成 | 中 (7天) | ⭐⭐⭐⭐⭐ |
 | **3** | 6 | 内容寻址存储 | ✅ 已完成 | 中 (10天) | ⭐⭐⭐⭐⭐ |
 | **4** | 11 | CFS 公平调度器 | ⏳ 规划中 | 中 (11天) | ⭐⭐⭐⭐ |
-| **5** | 9 | 可组合虚拟设备 | ⏳ 未开始 | 中 (7天) | ⭐⭐⭐⭐ |
-| **6** | 10 | 用户态驱动 | ⏳ 未开始 | 大 (14天) | ⭐⭐⭐ |
+| **5** | 9 | 可组合虚拟设备 | ✅ 已完成 | 中 (7天) | ⭐⭐⭐⭐ |
+| **6** | 10 | 用户态驱动 | ✅ 已完成 | 大 (14天) | ⭐⭐⭐ |
 | **7** | 7 | WASM 内核沙箱 | ⏳ 未开始 | 大 (21天) | ⭐⭐⭐⭐⭐ |
 
 ### 推荐执行顺序
 
 ```
-Phase 8 (✅) → Phase 5 (✅) → Phase 6 (✅) → Phase 9 → Phase 10 → Phase 11 → Phase 7
+Phase 8 (✅) → Phase 5 (✅) → Phase 6 (✅) → Phase 9 (✅) → Phase 10 (✅) → Phase 11 → Phase 7
 ```
 
 > **关于 Phase 11 的调度说明**：CFS 调度器与用户态驱动 (Phase 10) 高度互补——用户态驱动对 CPU 时间精确定额分配有强需求（这正是 CFS weight 的强项），但 Phase 10 的 Chitin 设备树映射/中断转发逻辑与调度器核心独立。因此 Phase 11 可在 Phase 10 完成设备驱动框架稳定后并行推进，无须阻塞。WASM 沙箱 (Phase 7) 依赖细粒度 CPU 配额控制（CFS weight + PWID quota 双重保障），故 Phase 11 应在此之前完成。
@@ -357,4 +370,6 @@ Phase 8 (✅) → Phase 5 (✅) → Phase 6 (✅) → Phase 9 → Phase 10 → P
 | 5 | 崩溃可恢复微重启 (Micro-Reboot) | ✅ |
 | 6 | 内容寻址存储 (CAS Dedup) | ✅ |
 | 8 | 内存压力感知调度 (Pressure-Aware) | ✅ |
+| 9 | Chitin 可组合虚拟设备 (Composite Devices) | ✅ |
+| 10 | 用户态驱动框架 (User-Space Driver) | ✅ |
 | — | 稳健性修复 (P0/P1) + 栏栈深化 (4 防御 + 5 深化) | ✅ |

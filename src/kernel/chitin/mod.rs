@@ -40,6 +40,7 @@ pub mod proto_net;
 pub mod proto_input;
 pub mod devtree;
 pub mod composite;
+pub mod user_driver;
 
 // ── 协议类型 ──
 

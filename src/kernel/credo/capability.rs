@@ -46,6 +46,11 @@ pub const USER_MGMT_CAP_CREATE: u64 = 1 << 1;
 pub const USER_MGMT_CAP_DELETE: u64 = 1 << 2;
 pub const USER_MGMT_CAP_MODIFY: u64 = 1 << 3;
 
+pub const DEVICE_CAP_MMIO:      u64 = 1 << 0;
+pub const DEVICE_CAP_IRQ:       u64 = 1 << 1;
+pub const DEVICE_CAP_DMA:       u64 = 1 << 2;
+pub const DEVICE_CAP_BIND:      u64 = 1 << 3;
+
 pub const VIABLE_FLOOR: [u64; 16] = {
     let mut f = [0u64; 16];
     f[CAP_DOMAIN_FS as usize]   = FS_CAP_READ | FS_CAP_EXECUTE;

@@ -80,6 +80,7 @@ pub struct ChitinNode {
     pub children: Vec<NodeId>,
     pub device_id: Option<u32>,
     pub state: DeviceState,
+    pub user_mapped: Option<u32>,
 }
 
 impl ChitinNode {
@@ -94,6 +95,7 @@ impl ChitinNode {
             children: Vec::new(),
             device_id: None,
             state: DeviceState::Uninit,
+            user_mapped: None,
         }
     }
 
@@ -193,6 +195,26 @@ pub fn devtree_set_state(node_id: NodeId, state: DeviceState) {
     if let Some(node) = tree.nodes.iter_mut().find(|n| n.id == node_id) {
         node.state = state;
     }
+}
+
+pub fn devtree_set_user_mapped(node_id: NodeId, pid: u32) {
+    let mut tree = DEV_TREE.lock();
+    if let Some(node) = tree.nodes.iter_mut().find(|n| n.id == node_id) {
+        node.user_mapped = Some(pid);
+    }
+}
+
+pub fn devtree_clear_user_mapped(node_id: NodeId) {
+    let mut tree = DEV_TREE.lock();
+    if let Some(node) = tree.nodes.iter_mut().find(|n| n.id == node_id) {
+        node.user_mapped = None;
+    }
+}
+
+pub fn devtree_get_user_mapped(node_id: NodeId) -> Option<u32> {
+    let tree = DEV_TREE.lock();
+    tree.nodes.iter().find(|n| n.id == node_id)
+        .and_then(|n| n.user_mapped)
 }
 
 /// 按 compatible 字符串查找节点
