@@ -127,6 +127,10 @@ pub struct ChitinDevice {
     pub ops: Option<ChitinOps>,
 }
 
+// SAFETY: ChitinDevice contains a raw pointer (driver_data) that does not
+// own memory — it is managed externally by the driver. All other fields are
+// Copy types or Option wrappers. Mutation is protected by the device tree
+// lock. The pointer is only dereferenced under the driver's own lock.
 unsafe impl Send for ChitinDevice {}
 unsafe impl Sync for ChitinDevice {}
 

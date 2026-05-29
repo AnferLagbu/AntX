@@ -30,6 +30,8 @@ pub struct HvMetaslab {
     pub condensing: bool,
 }
 
+// SAFETY: HvMetaslab uses Mutex for bitmap and plain Copy types for other fields.
+// Mutation of bitmap is serialized through the Mutex.
 unsafe impl Send for HvMetaslab {}
 unsafe impl Sync for HvMetaslab {}
 

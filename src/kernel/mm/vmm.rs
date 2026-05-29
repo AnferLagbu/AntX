@@ -866,3 +866,12 @@ pub fn get_vmm() -> &'static VirtualMemoryManager {
 pub fn get_kernel_pml4() -> u64 {
     KERNEL_PML4.load(Ordering::Acquire)
 }
+
+pub fn get_current_pml4() -> u64 {
+    let cr3 = crate::arch!(read_page_table_base());
+    if cr3 != 0 {
+        cr3
+    } else {
+        KERNEL_PML4.load(Ordering::Acquire)
+    }
+}

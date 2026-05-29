@@ -140,9 +140,10 @@ pub struct Process {
 // 3. 不存在内部可变性导致的未同步修改
 // 4. 调度器在切换进程时通过 scheduler_lock 保护整个 ProcessTable
 //
-// ⚠️ 注意事项:
-// - 如果未来添加新的非线程安全字段, 必须更新此处的 safety 注释
-// - 建议定期审查 Process 的所有公共方法确保锁语义正确
+// SAFETY: Process uses Mutex for mutable state; all fields are either
+// Copy/primitive types or protected by locks. No UnsafeCell or interior
+// mutability without synchronization. Cross-thread access is safe because
+// mutation always goes through the scheduler lock or per-field Mutex.
 unsafe impl Send for Process {}
 unsafe impl Sync for Process {}
 
@@ -317,6 +318,8 @@ pub struct ProcessTable {
     next_pid: AtomicU32,
 }
 
+// SAFETY: ProcessTable uses Mutex for the process array and AtomicU32
+// for next_pid. All mutations are serialized through the Mutex.
 unsafe impl Send for ProcessTable {}
 unsafe impl Sync for ProcessTable {}
 

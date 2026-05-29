@@ -35,6 +35,7 @@ pub struct DevfsData {
     device_count: AtomicU32,
 }
 
+// SAFETY: DevfsData uses Mutex for devices and AtomicU32 for device_count.
 unsafe impl Send for DevfsData {}
 unsafe impl Sync for DevfsData {}
 

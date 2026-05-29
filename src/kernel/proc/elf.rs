@@ -162,7 +162,7 @@ pub fn elf_load(
 
         // 复制段数据到物理页
         let vmm_inst = crate::kernel::mm::vmm::get_vmm();
-        let pml4 = crate::kernel::mm::vmm::get_kernel_pml4();
+        let pml4 = crate::kernel::mm::vmm::get_current_pml4();
 
         let file_end = file_offset + filesz;
         let mut cur = vaddr_start;

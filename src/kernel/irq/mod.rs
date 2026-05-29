@@ -71,6 +71,9 @@ struct SoftirqState {
     running: AtomicBool,
 }
 
+// SAFETY: SoftirqState uses AtomicU64/AtomicBool for pending/running.
+// handlers (UnsafeCell) is only modified during registration (boot time)
+// and read during softirq processing (interrupt context, single-threaded).
 unsafe impl Sync for SoftirqState {}
 
 static SOFTIRQ: SoftirqState = SoftirqState {

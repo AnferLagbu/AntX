@@ -220,6 +220,7 @@ pub struct HvZil {
     pub enabled: AtomicBool,
 }
 
+// SAFETY: HvZil uses Mutex for records/itxgs and Atomic types for state flags.
 unsafe impl Send for HvZil {}
 unsafe impl Sync for HvZil {}
 

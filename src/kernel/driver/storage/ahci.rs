@@ -615,6 +615,8 @@ impl Drop for AhciPort {
     }
 }
 
+// SAFETY: AhciController uses MMIO registers via volatile access;
+// single-core access, no concurrent mutation without external lock.
 unsafe impl Send for AhciController {}
 unsafe impl Sync for AhciController {}
 

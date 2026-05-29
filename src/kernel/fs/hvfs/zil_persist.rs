@@ -233,6 +233,7 @@ pub struct HvZilPersist {
     pub zil_blocks_written: AtomicBool,
 }
 
+// SAFETY: HvZilPersist only contains AtomicBool; all operations are lock-free.
 unsafe impl Send for HvZilPersist {}
 unsafe impl Sync for HvZilPersist {}
 

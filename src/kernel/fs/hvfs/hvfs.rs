@@ -82,6 +82,8 @@ pub struct HvfsData {
     pub partition_start: AtomicU32,
 }
 
+// SAFETY: HvfsData uses Mutex for drives_discovered and Atomic types
+// for all other mutable state. No UnsafeCell without synchronization.
 unsafe impl Send for HvfsData {}
 unsafe impl Sync for HvfsData {}
 

@@ -70,6 +70,7 @@ pub enum HvZapType {
     Leaf = 2,
 }
 
+// SAFETY: HvZap uses Mutex for entries and AtomicU64 for size. No UnsafeCell.
 unsafe impl Send for HvZap {}
 unsafe impl Sync for HvZap {}
 

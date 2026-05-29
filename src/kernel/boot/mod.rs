@@ -89,6 +89,9 @@ impl BootInfo {
 }
 
 struct MultibootPtr(*const u8);
+// SAFETY: MultibootPtr wraps a raw pointer to boot info data that is
+// set once during early boot and read-only afterwards. Access is
+// protected by MULTIBOOT_INFO_PTR Mutex.
 unsafe impl Send for MultibootPtr {}
 unsafe impl Sync for MultibootPtr {}
 

@@ -47,6 +47,7 @@ pub struct HvTxg {
     pub synced: AtomicBool,
 }
 
+// SAFETY: HvTxg uses Mutex for dirty_bps/free_bps/io_list and AtomicBool for synced.
 unsafe impl Send for HvTxg {}
 unsafe impl Sync for HvTxg {}
 
@@ -140,6 +141,7 @@ pub struct HvTxgGroup {
     pub total_dirty: AtomicU64,
 }
 
+// SAFETY: HvTxgGroup uses Mutex for txgs and Atomic types for sync state/counters.
 unsafe impl Send for HvTxgGroup {}
 unsafe impl Sync for HvTxgGroup {}
 

@@ -33,6 +33,7 @@ pub struct ProcfsData {
     entry_count: AtomicU32,
 }
 
+// SAFETY: ProcfsData uses Mutex for entries and AtomicU32 for entry_count.
 unsafe impl Send for ProcfsData {}
 unsafe impl Sync for ProcfsData {}
 

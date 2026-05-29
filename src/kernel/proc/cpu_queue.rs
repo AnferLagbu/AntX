@@ -31,6 +31,8 @@ pub struct CpuQueue {
     pub online: AtomicBool,
 }
 
+// SAFETY: CpuQueue only contains AtomicU32/AtomicBool fields.
+// All operations are lock-free atomic, safe for concurrent access.
 unsafe impl Sync for CpuQueue {}
 
 impl CpuQueue {
@@ -69,6 +71,9 @@ struct CpuQueues {
     queues: UnsafeCell<[CpuQueue; MAX_CPUS]>,
 }
 
+// SAFETY: CpuQueues wraps UnsafeCell<[CpuQueue; MAX_CPUS]>.
+// Each CpuQueue[i] is only accessed by CPU i (per-CPU data).
+// The caller must ensure CPU affinity when accessing queue entries.
 unsafe impl Sync for CpuQueues {}
 
 static CPU_QUEUES: CpuQueues = CpuQueues {

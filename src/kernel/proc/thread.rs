@@ -53,6 +53,9 @@ pub struct Thread {
     pub frozen_since: AtomicU64,
 }
 
+// SAFETY: Thread uses AtomicU64 for linked-list pointers and state tracking.
+// Primitive fields (tid, pid, etc.) are written only during creation or
+// under scheduler lock. No UnsafeCell without synchronization.
 unsafe impl Send for Thread {}
 unsafe impl Sync for Thread {}
 
@@ -138,6 +141,8 @@ pub struct ThreadTable {
 
 use spin::Mutex;
 
+// SAFETY: ThreadTable uses Mutex for the thread array and AtomicU32
+// for next_tid. All mutations are serialized through the Mutex.
 unsafe impl Send for ThreadTable {}
 unsafe impl Sync for ThreadTable {}
 
@@ -189,6 +194,8 @@ pub struct ThreadManager {
     thread_count: AtomicU32,
 }
 
+// SAFETY: ThreadManager uses only AtomicU64/AtomicU32 fields.
+// All operations are lock-free atomic, safe for concurrent access.
 unsafe impl Send for ThreadManager {}
 unsafe impl Sync for ThreadManager {}
 

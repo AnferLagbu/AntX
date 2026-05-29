@@ -129,6 +129,7 @@ impl SessionManager {
 
 use spin::Mutex;
 
+// SAFETY: SessionManager uses Mutex for sessions and AtomicU64 for next_id.
 unsafe impl Send for SessionManager {}
 unsafe impl Sync for SessionManager {}
 

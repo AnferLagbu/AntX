@@ -48,6 +48,10 @@ pub struct UndoEntry {
     pub checksum: u32,
 }
 
+// SAFETY: UndoEntry contains a raw pointer (field_ptr) that does not own
+// memory — it merely records an address for rollback. old_value/value_size/
+// checksum are plain Copy types. No interior mutability; safe to send/share
+// as the pointer is only dereferenced under UndoLog's lock.
 unsafe impl Send for UndoEntry {}
 unsafe impl Sync for UndoEntry {}
 

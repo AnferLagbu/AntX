@@ -20,6 +20,10 @@ pub struct RecoverableMutex<T: Snapshot + 'static> {
     domain_id: u64,
 }
 
+// SAFETY: RecoverableMutex wraps spin::Mutex<T>, which provides mutual
+// exclusion. T: Send is required for cross-thread transfer; T: Sync is
+// required because &T can be shared after lock acquisition. The domain_id
+// is a plain u64 (Copy). No additional unsafety beyond what Mutex provides.
 unsafe impl<T: Snapshot + Send> Send for RecoverableMutex<T> {}
 unsafe impl<T: Snapshot + Sync> Sync for RecoverableMutex<T> {}
 

@@ -108,6 +108,12 @@ pub struct PhysicalMemoryManager {
     buddy_heads: UnsafeCell<[*mut FreeNode; MAX_BUDDY_ORDER as usize + 1]>,
 }
 
+// SAFETY: PhysicalMemoryManager uses Cell/UnsafeCell for interior mutability.
+// All public mutations go through pmm_alloc_pages/pmm_free_pages which
+// acquire the internal lock (AtomicBool spinlock). The lock ensures
+// mutual exclusion, so concurrent access from multiple threads is safe.
+// buddy_heads is only accessed under the lock; bitmap/buddy_meta are
+// set once during init and read-only afterwards.
 unsafe impl Sync for PhysicalMemoryManager {}
 unsafe impl Send for PhysicalMemoryManager {}
 

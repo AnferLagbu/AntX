@@ -76,6 +76,8 @@ pub struct HvVdev {
     pub total_writes: u64,
 }
 
+// SAFETY: HvVdev contains only Copy/primitive types and Mutex-protected fields.
+// No UnsafeCell; mutation is serialized through the Mutex.
 unsafe impl Send for HvVdev {}
 unsafe impl Sync for HvVdev {}
 

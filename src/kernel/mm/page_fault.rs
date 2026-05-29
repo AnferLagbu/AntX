@@ -96,7 +96,7 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
 
     // COW: 写已存在但只读的页
     if info.write && info.present {
-        let pml4 = vmm::get_kernel_pml4();
+        let pml4 = vmm::get_current_pml4();
         return match super::cow::cow_handle_fault(pml4, info.fault_addr) {
             Some(_) => {
                 PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -130,7 +130,7 @@ fn handle_simple_fault(addr: usize, _info: &PageFaultInfo) -> PfResult {
 
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vmm_inst = vmm::get_vmm();
-    let pml4 = vmm::get_kernel_pml4();
+    let pml4 = vmm::get_current_pml4();
 
     vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), phys, flags);
 
@@ -162,7 +162,7 @@ fn handle_stack_expansion_simple(addr: usize) -> PfResult {
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vmm_inst = vmm::get_vmm();
     vmm_inst.map_page_in_table(
-        vmm::get_kernel_pml4(),
+        vmm::get_current_pml4(),
         VirtAddr(page_aligned as u64),
         phys,
         flags,
@@ -193,7 +193,7 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> P
 
     let flags = vma.flags | PageFlags::PRESENT;
     let vmm_inst = vmm::get_vmm();
-    let pml4 = vmm::get_kernel_pml4();
+    let pml4 = vmm::get_current_pml4();
 
     vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), phys, flags);
 
@@ -234,7 +234,7 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vmm_inst = vmm::get_vmm();
     vmm_inst.map_page_in_table(
-        vmm::get_kernel_pml4(),
+        vmm::get_current_pml4(),
         VirtAddr(page_aligned as u64),
         phys,
         flags,
@@ -253,7 +253,7 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
 
 fn do_cow_copy_with_mm(_mm: &MmStruct, _vma: &Vma, addr: usize) -> PfResult {
     let vmm_inst = vmm::get_vmm();
-    let pml4 = vmm::get_kernel_pml4();
+    let pml4 = vmm::get_current_pml4();
 
     let old_phys = match vmm_inst.get_physical_in_pml4(pml4, VirtAddr(addr as u64)) {
         Some(p) => p,

@@ -576,3 +576,13 @@ pub fn get_vmm() -> &'static Aarch64Vmm {
 pub fn get_kernel_pml4() -> u64 {
     get_vmm().kernel_l0
 }
+
+pub fn get_current_pml4() -> u64 {
+    let ttbr0: u64;
+    unsafe { core::arch::asm!("mrs {}, TTBR0_EL1", out(reg) ttbr0); }
+    if ttbr0 != 0 {
+        ttbr0
+    } else {
+        get_vmm().kernel_l0
+    }
+}

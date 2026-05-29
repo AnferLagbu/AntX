@@ -126,6 +126,8 @@ struct VfsSnapshot {
     next_fd: u32,
 }
 
+// SAFETY: VfsManager uses Mutex for mounts/fd_table/cwd; next_fd is accessed
+// under the same lock. No UnsafeCell without synchronization.
 unsafe impl Send for VfsManager {}
 unsafe impl Sync for VfsManager {}
 

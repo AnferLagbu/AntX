@@ -17,6 +17,8 @@ pub struct DmaEngine {
     mmio_regions: Mutex<Vec<(VirtAddr, PhysAddr, usize)>>,
 }
 
+// SAFETY: DmaEngine uses Mutex for mappings/mmio_regions and AtomicBool
+// for initialized. DmaStats is plain Copy. No UnsafeCell without synchronization.
 unsafe impl Send for DmaEngine {}
 unsafe impl Sync for DmaEngine {}
 

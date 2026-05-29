@@ -152,5 +152,7 @@ impl BlockDevice for AhciBlockDevice {
     }
 }
 
+// SAFETY: AhciBlockDevice is a thin wrapper around AHCI FFI calls;
+// single-core access, no interior mutability without synchronization.
 unsafe impl Send for AhciBlockDevice {}
 unsafe impl Sync for AhciBlockDevice {}

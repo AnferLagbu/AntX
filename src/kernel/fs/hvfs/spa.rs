@@ -135,6 +135,8 @@ pub struct HvSpa {
     pub partition_start: AtomicU32,
 }
 
+// SAFETY: HvSpa uses Mutex for config/vdevs/metaslabs and Atomic types
+// for all other mutable state. No UnsafeCell without synchronization.
 unsafe impl Send for HvSpa {}
 unsafe impl Sync for HvSpa {}
 

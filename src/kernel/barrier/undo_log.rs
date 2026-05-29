@@ -15,6 +15,10 @@ pub struct UndoLog {
     pub current_generation: u64,
 }
 
+// SAFETY: UndoLog 包含固定大小数组和基本类型字段。
+// field_ptr 是裸指针但不拥有内存（仅记录地址用于回滚），
+// 不涉及引用计数或内部可变性。所有修改操作通过 &mut self
+// 或外部锁保护，跨线程共享只读引用安全。
 unsafe impl Send for UndoLog {}
 unsafe impl Sync for UndoLog {}
 
@@ -101,35 +105,49 @@ impl UndoLog {
     }
 
     fn emergency_compact(&mut self, keep_gen: u64) {
-        let mut write = 0;
+        let mut temp: [Option<UndoEntry>; MAX_UNDO_ENTRIES] = [None; MAX_UNDO_ENTRIES];
+        let mut temp_count = 0usize;
+
         let mut seen_ptrs: [(usize, bool); 64] = [(0, false); 64];
         let mut seen_count = 0;
-        // Scan from newest to oldest; retain latest entry per field_ptr
-        // below keep_gen (for gen < keep_gen), first-seen via pointer identity.
+
         for i in (0..self.count).rev() {
-            if self.entries[i].generation < keep_gen {
-                let ptr = self.entries[i].field_ptr as usize;
-                let mut found = false;
+            let entry = &self.entries[i];
+            let ptr = entry.field_ptr as usize;
+
+            if entry.generation >= keep_gen {
+                let mut already_seen = false;
                 for j in 0..seen_count {
-                    if seen_ptrs[j].0 == ptr { found = true; break; }
+                    if seen_ptrs[j].0 == ptr {
+                        already_seen = true;
+                        break;
+                    }
                 }
-                if found { continue; }
+                if already_seen {
+                    continue;
+                }
                 if seen_count < 64 {
                     seen_ptrs[seen_count] = (ptr, true);
                     seen_count += 1;
                 }
-                self.entries[write] = self.entries[i];
-                write += 1;
+                if temp_count < MAX_UNDO_ENTRIES {
+                    temp[temp_count] = Some(*entry);
+                    temp_count += 1;
+                }
             } else {
-                self.entries[write] = self.entries[i];
-                write += 1;
+                if temp_count < MAX_UNDO_ENTRIES {
+                    temp[temp_count] = Some(*entry);
+                    temp_count += 1;
+                }
             }
         }
 
         let mut w = 0;
-        for i in (0..write).rev() {
-            self.entries[w] = self.entries[i];
-            w += 1;
+        for i in (0..temp_count).rev() {
+            if let Some(e) = temp[i] {
+                self.entries[w] = e;
+                w += 1;
+            }
         }
         self.count = w;
     }

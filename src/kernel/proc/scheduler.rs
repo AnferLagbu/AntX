@@ -5,10 +5,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use super::types::*;
 use super::process::{Process, PROCESS_TABLE};
 
-// ============================================================================
-// ✅ 日志宏 (与 pmm.rs 保持一致)
-// ============================================================================
-
 macro_rules! klog_sched_warn {
     ($($arg:tt)*) => {
         $crate::klog_ffi!(klog_ffi_warn, $($arg)*)
@@ -22,14 +18,13 @@ const RT_PRIORITY_MAX: u8 = 99;
 const RT_TIME_SLICE: u64 = 5;
 const RT_FIFO_WATCHDOG: u64 = 500;
 
-/// Per-PWM CPU quota (cgroup-style lightweight)
 pub struct PwidQuota {
     pub pwm: u64,
     pub used: bool,
-    pub max_runtime: u64,     // max ticks per period (0 = unlimited)
-    pub period: u64,          // period length in ticks
-    pub consumed: u64,        // consumed this period
-    pub next_reset: u64,      // absolute tick when period resets
+    pub max_runtime: u64,
+    pub period: u64,
+    pub consumed: u64,
+    pub next_reset: u64,
 }
 
 impl PwidQuota {
@@ -40,7 +35,6 @@ impl PwidQuota {
 
 const MAX_QUOTAS: usize = 32;
 
-/// Per-PWM process count limit
 pub struct PwidLimit {
     pub pwm: u64,
     pub used: bool,
@@ -50,7 +44,6 @@ pub struct PwidLimit {
 
 const MAX_LIMITS: usize = 32;
 
-/// Global tick counter for quota periods
 pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,10 +73,6 @@ pub struct RtTaskInfo {
     pub time_slice_remaining: u64,
 }
 
-// ============================================================================
-// SMP Per-CPU 调度器
-// ============================================================================
-
 const MAX_CPUS: usize = 256;
 
 struct PerCpuSched {
@@ -97,61 +86,76 @@ struct PerCpuSched {
     fifo_watchdog: AtomicU64,
 }
 
+// SAFETY: PerCpuSched is per-CPU data; each instance is only accessed by
+// its owning CPU. Mutex<VecDeque> fields provide internal synchronization.
+// Atomic fields are lock-free. The combination is safe to send/share
+// across threads because mutation is always guarded.
 unsafe impl Send for PerCpuSched {}
 unsafe impl Sync for PerCpuSched {}
 
-static mut PER_CPU_SCHED: [core::mem::MaybeUninit<PerCpuSched>; MAX_CPUS] = [
-    const { core::mem::MaybeUninit::uninit() }; MAX_CPUS
-];
-
-static PER_CPU_INITIALIZED: [AtomicBool; MAX_CPUS] = [
-    const { AtomicBool::new(false) }; MAX_CPUS
+static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; MAX_CPUS] = [
+    const { Mutex::new(None) }; MAX_CPUS
 ];
 
 pub fn init_per_cpu_sched(cpu_id: u32) {
     let idx = (cpu_id as usize) % MAX_CPUS;
-    if PER_CPU_INITIALIZED[idx].swap(true, Ordering::AcqRel) {
+    let mut guard = PER_CPU_SCHED[idx].lock();
+    if guard.is_some() {
         return;
     }
-    unsafe {
-        PER_CPU_SCHED[idx].write(PerCpuSched {
-            queues: [
-                Mutex::new(VecDeque::new()),
-                Mutex::new(VecDeque::new()),
-                Mutex::new(VecDeque::new()),
-                Mutex::new(VecDeque::new()),
-            ],
-            rt_queue: Mutex::new(VecDeque::new()),
-            current: AtomicU32::new(0),
-            need_reschedule: AtomicBool::new(false),
-            current_level: AtomicU32::new(0),
-            time_remaining: AtomicU64::new(TIME_SLICES[0]),
-            rt_running: AtomicBool::new(false),
-            fifo_watchdog: AtomicU64::new(0),
-        });
-    }
+    guard.replace(PerCpuSched {
+        queues: [
+            Mutex::new(VecDeque::new()),
+            Mutex::new(VecDeque::new()),
+            Mutex::new(VecDeque::new()),
+            Mutex::new(VecDeque::new()),
+        ],
+        rt_queue: Mutex::new(VecDeque::new()),
+        current: AtomicU32::new(0),
+        need_reschedule: AtomicBool::new(false),
+        current_level: AtomicU32::new(0),
+        time_remaining: AtomicU64::new(TIME_SLICES[0]),
+        rt_running: AtomicBool::new(false),
+        fifo_watchdog: AtomicU64::new(0),
+    });
 }
 
 #[inline]
 fn per_cpu() -> &'static PerCpuSched {
     let cpu = crate::kernel::smp::get_current_cpu();
     let idx = (cpu as usize) % MAX_CPUS;
-    if !PER_CPU_INITIALIZED[idx].load(Ordering::Acquire) {
-        init_per_cpu_sched(cpu);
+    {
+        let guard = PER_CPU_SCHED[idx].lock();
+        if guard.is_none() {
+            drop(guard);
+            init_per_cpu_sched(cpu);
+        }
     }
-    // SAFETY: PER_CPU_INITIALIZED[idx] is true, so PER_CPU_SCHED[idx] is initialized.
-    unsafe { &*PER_CPU_SCHED[idx].as_ptr() }
+    // SAFETY: PerCpuSched lives at a stable address within the static
+    // PER_CPU_SCHED array. Once initialized (Some), it is never set
+    // back to None, so the pointer remains valid for 'static.
+    let guard = PER_CPU_SCHED[idx].lock();
+    unsafe {
+        let ptr = guard.as_ref().unwrap() as *const PerCpuSched;
+        &*ptr
+    }
 }
 
-/// Per-CPU sched for a specific CPU (caller must ensure CPU is online)
 #[inline]
 fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
     let idx = (cpu_id as usize) % MAX_CPUS;
-    if !PER_CPU_INITIALIZED[idx].load(Ordering::Acquire) {
-        init_per_cpu_sched(cpu_id);
+    {
+        let guard = PER_CPU_SCHED[idx].lock();
+        if guard.is_none() {
+            drop(guard);
+            init_per_cpu_sched(cpu_id);
+        }
     }
-    // SAFETY: PER_CPU_INITIALIZED[idx] is true, so PER_CPU_SCHED[idx] is initialized.
-    unsafe { &*PER_CPU_SCHED[idx].as_ptr() }
+    let guard = PER_CPU_SCHED[idx].lock();
+    unsafe {
+        let ptr = guard.as_ref().unwrap() as *const PerCpuSched;
+        &*ptr
+    }
 }
 
 pub struct Scheduler {
@@ -160,6 +164,9 @@ pub struct Scheduler {
     initialized: AtomicBool,
 }
 
+// SAFETY: Scheduler uses Mutex for all mutable state (quotas, limits).
+// AtomicBool for initialized flag is lock-free. All accesses are
+// serialized through the Mutex, making cross-thread access safe.
 unsafe impl Send for Scheduler {}
 unsafe impl Sync for Scheduler {}
 

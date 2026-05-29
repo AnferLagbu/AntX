@@ -117,6 +117,8 @@ pub struct RamFsData {
     pub free_blocks: AtomicU32,
 }
 
+// SAFETY: RamFsData uses AtomicU32 for free_nodes/free_blocks; nodes array
+// is accessed under external lock. No UnsafeCell without synchronization.
 unsafe impl Send for RamFsData {}
 unsafe impl Sync for RamFsData {}
 

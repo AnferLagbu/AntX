@@ -13,6 +13,8 @@ pub struct RunQueue {
     count: AtomicU32,
 }
 
+// SAFETY: RunQueue only contains AtomicU64/AtomicU32 fields; all
+// operations are lock-free atomic, safe for concurrent access.
 unsafe impl Send for RunQueue {}
 unsafe impl Sync for RunQueue {}
 
@@ -220,6 +222,9 @@ pub struct SchedulerEx {
     pub is_frozen_global: AtomicBool,
 }
 
+// SAFETY: SchedulerEx uses only Atomic types for mutable state.
+// All fields are atomic (AtomicU32/AtomicU64/AtomicBool) or plain
+// Copy data (SchedulerStats). No interior mutability without atomics.
 unsafe impl Send for SchedulerEx {}
 unsafe impl Sync for SchedulerEx {}
 

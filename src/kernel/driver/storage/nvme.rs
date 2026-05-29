@@ -782,6 +782,8 @@ impl NvmeController {
     pub fn namespace_size(&self) -> u64 { self.namespace_size_lba }
 }
 
+// SAFETY: NvmeController uses MMIO registers via volatile access;
+// single-core access, no concurrent mutation without external lock.
 unsafe impl Send for NvmeController {}
 unsafe impl Sync for NvmeController {}
 

@@ -114,20 +114,36 @@ impl MmStruct {
     pub fn insert_vma(&self, vma: Vma) -> Result<(), &'static str> {
         let mut vmas = self.vmas.lock();
 
-        // 检查与现有 VMA 重叠
         for existing in vmas.iter() {
             if vma.start < existing.end && vma.end > existing.start {
-                if existing.vma_type == vma.vma_type && existing.flags == vma.flags {
-                    // 合并相邻 VMA
-                    continue;
+                if existing.vma_type != vma.vma_type || existing.flags != vma.flags {
+                    return Err("VMA overlap with incompatible mapping");
                 }
-                return Err("VMA overlap with incompatible mapping");
             }
         }
 
-        // 找到插入位置 (保持按 start 排序)
-        let pos = vmas.iter().position(|v| v.start > vma.start).unwrap_or(vmas.len());
-        vmas.insert(pos, vma);
+        let mut merged = vma;
+        let mut i = 0;
+        while i < vmas.len() {
+            let existing = &vmas[i];
+            if existing.vma_type != merged.vma_type || existing.flags != merged.flags {
+                i += 1;
+                continue;
+            }
+            let adjacent_or_overlap = merged.start <= existing.end && merged.end >= existing.start;
+            if adjacent_or_overlap {
+                let new_start = merged.start.min(existing.start);
+                let new_end = merged.end.max(existing.end);
+                merged.start = new_start;
+                merged.end = new_end;
+                vmas.remove(i);
+                continue;
+            }
+            i += 1;
+        }
+
+        let pos = vmas.iter().position(|v| v.start > merged.start).unwrap_or(vmas.len());
+        vmas.insert(pos, merged);
 
         Ok(())
     }
@@ -231,16 +247,26 @@ impl MmStruct {
     }
 }
 
+// SAFETY: MmStruct 包含 Vec<Vma> 和 u64 字段，均线程安全。
+// 所有修改操作通过 &mut self 独占访问或外部锁保护。
+// MmStruct 不含内部可变性（无 UnsafeCell/RefCell），因此
+// 跨线程共享只读引用不会导致数据竞争。
 unsafe impl Send for MmStruct {}
 unsafe impl Sync for MmStruct {}
 
 static mut CURRENT_MM: *const MmStruct = core::ptr::null();
 
 pub fn set_current_mm(mm: *const MmStruct) {
+    // SAFETY: CURRENT_MM 是当前 CPU 的 per-CPU 状态指针，
+    // 仅在进程切换时由调度器写入，调用者保证无并发写入。
     unsafe { CURRENT_MM = mm; }
 }
 
 pub fn get_current_mm() -> Option<&'static MmStruct> {
+    // SAFETY: CURRENT_MM 在 set_current_mm 中设置，
+    // 要么为 null，要么指向有效的 MmStruct。
+    // 返回 &'static 引用是安全的，因为 MmStruct 生命周期
+    // 与进程一致，进程存在期间指针有效。
     unsafe {
         if CURRENT_MM.is_null() {
             None

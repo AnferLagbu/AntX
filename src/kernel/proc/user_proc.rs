@@ -112,6 +112,8 @@ pub struct UserProcManager {
     processes: Mutex<alloc::collections::BTreeMap<u32, *mut UserProcess>>,
 }
 
+// SAFETY: UserProcManager uses AtomicU64 for current and Mutex<BTreeMap>
+// for processes. All mutations are serialized through the Mutex.
 unsafe impl Send for UserProcManager {}
 unsafe impl Sync for UserProcManager {}
 

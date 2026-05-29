@@ -19,6 +19,8 @@ pub struct FsFileEntry {
     pub flags: u8,
 }
 
+// SAFETY: FsFileEntry contains raw pointers to static data (embedded in
+// the binary). No ownership or mutation; pointers are read-only after init.
 unsafe impl Sync for FsFileEntry {}
 
 // ============================================================================

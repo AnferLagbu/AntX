@@ -52,6 +52,8 @@ pub struct SessionManager {
     next_session_id: AtomicU64,
 }
 
+// SAFETY: SessionManager uses Mutex for session_table and AtomicU64
+// for next_session_id. All mutations are serialized through the Mutex.
 unsafe impl Send for SessionManager {}
 unsafe impl Sync for SessionManager {}
 

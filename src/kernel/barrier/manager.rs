@@ -83,16 +83,38 @@ impl RecoveryManager {
                     let gap = current_tick.saturating_sub(
                         dom.last_heartbeat.load(Ordering::SeqCst));
                     crate::klog_ffi!(klog_ffi_warn,
-                        "[BARRIER] domain {} heartbeat lost ({gap} ticks), auto-resetting", dom.id);
-                    // Trigger soft recovery for unhealthy domain
-                    super::reset::config::set_reset_in_progress(true);
-                    super::reset::config::set_current_layer(super::reset::config::RecoveryLayer::Layer2);
-                    super::reset::bsr::freeze_all_domains();
-                    super::reset::bsr::rollback_to_init();
-                    super::reset::bsr::reset_devices();
-                    super::reset::bsr::unfreeze_all_domains();
-                    super::reset::bsr::clear_panic_state();
-                    return;
+                        "[BARRIER] domain {} heartbeat lost ({gap} ticks)", dom.id);
+
+                    dom.consecutive_failures.fetch_add(1, Ordering::SeqCst);
+                    let failures = dom.consecutive_failures.load(Ordering::SeqCst);
+
+                    if failures <= 2 {
+                        crate::klog_ffi!(klog_ffi_info,
+                            "[BARRIER] domain {} attempt domain-level rollback (failures={})", dom.id, failures);
+                        if dom.try_rollback(current_tick, 0) {
+                            let (entries, _, _, _) = self.rollback_domain(
+                                dom, current_tick, 0, 0,
+                            );
+                            crate::klog_ffi!(klog_ffi_info,
+                                "[BARRIER] domain {} rollback recovered (entries={})", dom.id, entries);
+                            dom.mark_recovered();
+                            dom.consecutive_failures.store(0, Ordering::SeqCst);
+                            continue;
+                        }
+                    }
+
+                    if failures >= 3 {
+                        crate::klog_ffi!(klog_ffi_warn,
+                            "[BARRIER] domain {} persistent failures ({failures}), escalating to BSR", dom.id);
+                        super::reset::config::set_reset_in_progress(true);
+                        super::reset::config::set_current_layer(super::reset::config::RecoveryLayer::Layer2);
+                        super::reset::bsr::freeze_all_domains();
+                        super::reset::bsr::rollback_to_init();
+                        super::reset::bsr::reset_devices();
+                        super::reset::bsr::unfreeze_all_domains();
+                        super::reset::bsr::clear_panic_state();
+                        return;
+                    }
                 }
                 // Reset CPU quota per period
                 if dom.cpu_quota_period > 0

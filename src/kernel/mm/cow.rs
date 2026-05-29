@@ -20,28 +20,14 @@
 //! - volatile 读写确保编译器不重排 MMIO 相关的页表操作。
 
 use alloc::collections::BTreeMap;
-use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
 use super::vmm;
 
-static COW_LOCK: AtomicBool = AtomicBool::new(false);
-
-static mut COW_REFS: Option<BTreeMap<u64, u32>> = None;
+static COW_REFS: spin::Mutex<Option<BTreeMap<u64, u32>>> = spin::Mutex::new(None);
 
 pub fn cow_init() {
-    // SAFETY: 单次初始化, 启动早期调用, 无并发访问
-    unsafe { COW_REFS = Some(BTreeMap::new()); }
-}
-
-fn cow_lock() {
-    while COW_LOCK.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-        core::hint::spin_loop();
-    }
-}
-
-fn cow_unlock() {
-    COW_LOCK.store(false, Ordering::Release);
+    *COW_REFS.lock() = Some(BTreeMap::new());
 }
 
 fn frame_key(phys: u64) -> u64 {
@@ -50,38 +36,38 @@ fn frame_key(phys: u64) -> u64 {
 
 pub fn cow_inc_ref(phys: u64) {
     let key = frame_key(phys);
-    cow_lock();
-    // SAFETY: COW_LOCK 持有中, 独占访问 COW_REFS
-    let refs = unsafe { COW_REFS.as_mut().unwrap() };
+    let mut guard = COW_REFS.lock();
+    let refs = match guard.as_mut() {
+        Some(r) => r,
+        None => return,
+    };
     *refs.entry(key).or_insert(0) += 1;
-    cow_unlock();
 }
 
 pub fn cow_dec_ref(phys: u64) -> bool {
     let key = frame_key(phys);
-    cow_lock();
-    // SAFETY: COW_LOCK 持有中, 独占访问 COW_REFS
-    let refs = unsafe { COW_REFS.as_mut().unwrap() };
+    let mut guard = COW_REFS.lock();
+    let refs = match guard.as_mut() {
+        Some(r) => r,
+        None => return false,
+    };
     if let Some(count) = refs.get_mut(&key) {
         *count -= 1;
         if *count == 0 {
             refs.remove(&key);
-            cow_unlock();
             return true;
         }
     }
-    cow_unlock();
     false
 }
 
 pub fn cow_ref_count(phys: u64) -> u32 {
     let key = frame_key(phys);
-    cow_lock();
-    // SAFETY: COW_LOCK 持有中, 只读访问 COW_REFS
-    let refs = unsafe { COW_REFS.as_ref().unwrap() };
-    let count = refs.get(&key).copied().unwrap_or(0);
-    cow_unlock();
-    count
+    let guard = COW_REFS.lock();
+    match guard.as_ref() {
+        Some(refs) => refs.get(&key).copied().unwrap_or(0),
+        None => 0,
+    }
 }
 
 /// COW 感知的页表克隆: 共享用户空间物理页, 双方标记只读
@@ -222,19 +208,20 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let old_phys = vmm_inst.get_physical_in_pml4(pml4, VirtAddr(page_aligned))?;
     let old_frame = old_phys.as_u64() & 0x000FFFFFFFFFF000;
 
-    let count = cow_ref_count(old_frame);
-
-    if count <= 1 {
-        if count == 1 {
-            cow_lock();
-            // SAFETY: COW_LOCK 持有中
-            let refs = unsafe { COW_REFS.as_mut().unwrap() };
-            refs.remove(&old_frame);
-            cow_unlock();
+    let should_reuse = {
+        let mut guard = COW_REFS.lock();
+        let refs = guard.as_mut()?;
+        match refs.get_mut(&old_frame) {
+            Some(count) if *count <= 1 => {
+                refs.remove(&old_frame);
+                true
+            }
+            Some(_) => false,
+            None => true,
         }
+    };
 
-        // SAFETY: 通过页表遍历找到 PTE 物理地址;
-        // 每级 entry 都经过 present 校验, KERNEL_BASE 偏移有效
+    if should_reuse {
         let pte = unsafe {
             let pml4_v = PhysAddr(pml4).to_virt().0 as *const u64;
             let pml4e = pml4_v.add(virt_pml4_idx(page_aligned)).read_volatile();
@@ -248,12 +235,11 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
             let pde = pd_p.add(virt_pd_idx(page_aligned)).read_volatile();
             if (pde & 1) == 0 { return None; }
 
-            // SAFETY: pt 物理地址有效, PTE 偏移在页范围内
             let pt_p = PhysAddr((pde & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *mut u64;
             &mut *pt_p.add(virt_pt_idx(page_aligned))
         };
 
-        *pte |= 2; // WRITABLE
+        *pte |= 2;
         crate::arch!(tlb_flush_page(page_aligned as usize));
         return Some(old_phys.as_u64());
     }
@@ -262,8 +248,6 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let new_phys = pmm_inst.alloc_page()?;
     let new_virt = new_phys.to_virt();
 
-    // SAFETY: old_frame 来自有效页表项, KERNEL_BASE 映射可用;
-    // new_virt 来自刚分配的 PMM 页, 两个 4KB 区域均有效
     let old_virt = PhysAddr(old_frame + KERNEL_BASE).to_virt();
     unsafe {
         core::ptr::copy_nonoverlapping(

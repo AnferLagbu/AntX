@@ -183,6 +183,7 @@ pub struct HvObjSet {
     pub initialized: AtomicBool,
 }
 
+// SAFETY: HvObjSet uses Mutex for objects and Atomic types for next_obj_id/initialized.
 unsafe impl Send for HvObjSet {}
 unsafe impl Sync for HvObjSet {}
 

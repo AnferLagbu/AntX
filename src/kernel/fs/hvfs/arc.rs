@@ -64,6 +64,8 @@ pub struct HvArcBuf {
     pub compressed: bool,
 }
 
+// SAFETY: HvArcBuf contains only Copy/primitive types and Vec<u8>.
+// No interior mutability without synchronization; mutation is external-lock-protected.
 unsafe impl Send for HvArcBuf {}
 unsafe impl Sync for HvArcBuf {}
 
@@ -147,6 +149,8 @@ pub struct HvArc {
     initialized: AtomicBool,
 }
 
+// SAFETY: HvArc uses Mutex for inner state and AtomicBool for initialized.
+// HvArcStats is plain Copy. No UnsafeCell without synchronization.
 unsafe impl Send for HvArc {}
 unsafe impl Sync for HvArc {}
 

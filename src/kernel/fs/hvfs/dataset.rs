@@ -76,6 +76,8 @@ pub struct HvDataset {
     pub mounted: AtomicBool,
 }
 
+// SAFETY: HvDataset uses AtomicBool for mounted; other fields are plain
+// types written only during creation or under external lock.
 unsafe impl Send for HvDataset {}
 unsafe impl Sync for HvDataset {}
 
