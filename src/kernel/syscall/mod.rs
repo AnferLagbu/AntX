@@ -328,11 +328,13 @@ unsafe fn sys_close(fd: i32) -> i64 {
 
 unsafe fn sys_stat(path: *const core::ffi::c_char, st_buf: *mut core::ffi::c_void) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if st_buf.is_null() || !validate_user_buf(st_buf as u64, core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64) { return Errno::EFAULT.as_ret(); }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_stat(path, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwm) as i64
 }
 
 unsafe fn sys_fstat(fd: i32, st_buf: *mut core::ffi::c_void) -> i64 {
+    if st_buf.is_null() || !validate_user_buf(st_buf as u64, core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64) { return Errno::EFAULT.as_ret(); }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_fstat(fd as u32, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwm) as i64
 }
@@ -496,8 +498,16 @@ unsafe fn sys_execve(path: *const core::ffi::c_char, argv: *const *const u8, _en
     if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
     let mut argc: u32 = 0;
     if !argv.is_null() {
+        if !validate_user_ptr(argv as u64) { return Errno::EFAULT.as_ret(); }
         let mut p = argv;
-        while !(*p).is_null() { argc += 1; p = p.add(1); }
+        loop {
+            if !validate_user_ptr(p as u64) { return Errno::EFAULT.as_ret(); }
+            let entry = core::ptr::read_volatile(p);
+            if entry.is_null() { break; }
+            if !validate_user_ptr(entry as u64) { return Errno::EFAULT.as_ret(); }
+            argc += 1;
+            p = p.add(1);
+        }
     }
 
     let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::fs::vfs::types::VfsStat>::uninit();
@@ -619,7 +629,7 @@ unsafe fn sys_setregid(rgid: u32, egid: u32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_pipe(fds: *mut i32) -> i64 {
-    if fds.is_null() { return Errno::EINVAL.as_ret(); }
+    if fds.is_null() || !validate_user_buf(fds as u64, 8) { return Errno::EFAULT.as_ret(); }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 6, 0x01) {
         return Errno::EACCES.as_ret();
@@ -657,7 +667,7 @@ unsafe fn sys_brk(addr: u64) -> i64 {
     if addr == 0 {
         // 返回当前 brk (VMA 优先)
         if let Some(mm) = crate::kernel::mm::vma::get_current_mm() {
-            return mm.brk as i64;
+            return mm.brk.load(core::sync::atomic::Ordering::Acquire) as i64;
         }
         return BRK.load(core::sync::atomic::Ordering::SeqCst) as i64;
     }
@@ -668,8 +678,7 @@ unsafe fn sys_brk(addr: u64) -> i64 {
 
     // VMA 路径: 通过 MmStruct 扩展/收缩堆
     if let Some(mm) = crate::kernel::mm::vma::get_current_mm() {
-        let mm_ptr = mm as *const crate::kernel::mm::vma::MmStruct as *mut crate::kernel::mm::vma::MmStruct;
-        match (*mm_ptr).set_brk(addr as usize) {
+        match mm.set_brk(addr as usize) {
             Ok(new_brk) => return new_brk as i64,
             Err(_) => return Errno::ENOMEM.as_ret(),
         }

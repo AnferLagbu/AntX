@@ -17,6 +17,7 @@
 
 use alloc::vec::Vec;
 use spin::Mutex;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use super::*;
 
@@ -87,8 +88,8 @@ impl Vma {
 
 pub struct MmStruct {
     pub vmas: Mutex<Vec<Vma>>,
-    pub start_brk: usize,
-    pub brk: usize,
+    pub start_brk: AtomicUsize,
+    pub brk: AtomicUsize,
     pub start_stack: usize,
     pub mmap_base: usize,
 }
@@ -97,8 +98,8 @@ impl MmStruct {
     pub fn new() -> Self {
         Self {
             vmas: Mutex::new(Vec::new()),
-            start_brk: 0,
-            brk: 0,
+            start_brk: AtomicUsize::new(0),
+            brk: AtomicUsize::new(0),
             start_stack: 0,
             mmap_base: 0,
         }
@@ -230,27 +231,35 @@ impl MmStruct {
     }
 
     /// 设置堆边界
-    pub fn set_brk(&mut self, new_brk: usize) -> Result<usize, &'static str> {
+    ///
+    /// Uses AtomicUsize for brk/start_brk for lock-free thread-safe access.
+    pub fn set_brk(&self, new_brk: usize) -> Result<usize, &'static str> {
         let page_aligned = (new_brk + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
 
-        if page_aligned > self.start_brk {
+        let start_brk = self.start_brk.load(Ordering::Acquire);
+        let current_brk = self.brk.load(Ordering::Acquire);
+
+        if page_aligned > start_brk {
             let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
-            let vma = Vma::new(self.brk, page_aligned, flags, VmaType::Heap);
+            let vma = Vma::new(current_brk, page_aligned, flags, VmaType::Heap);
             self.insert_vma(vma)?;
-            self.brk = page_aligned;
-        } else if page_aligned < self.brk {
-            self.remove_range(page_aligned, self.brk)?;
-            self.brk = page_aligned;
+            self.brk.store(page_aligned, Ordering::Release);
+        } else if page_aligned < current_brk {
+            // 先更新 brk，防止其他 CPU 在 remove_range 后读到旧值
+            // 去访问已被 unmap 的堆区域
+            self.brk.store(page_aligned, Ordering::Release);
+            self.remove_range(page_aligned, current_brk)?;
         }
 
-        Ok(self.brk)
+        Ok(self.brk.load(Ordering::Acquire))
     }
 }
 
-// SAFETY: MmStruct 包含 Vec<Vma> 和 u64 字段，均线程安全。
-// 所有修改操作通过 &mut self 独占访问或外部锁保护。
-// MmStruct 不含内部可变性（无 UnsafeCell/RefCell），因此
-// 跨线程共享只读引用不会导致数据竞争。
+// SAFETY: MmStruct uses Mutex for Vec<Vma> and AtomicUsize for brk/start_brk.
+// All mutable fields go through proper synchronization primitives.
+// start_stack/mmap_base are read-only after init.
+// Cross-thread shared access is safe because all mutations are internally
+// synchronized via atomic operations and locks.
 unsafe impl Send for MmStruct {}
 unsafe impl Sync for MmStruct {}
 
