@@ -11,11 +11,12 @@ use crate::kernel::driver::char::serial::{
     COM1_BASE, COM2_BASE, MAX_COM_PORTS, SerialConfig, BaudRate, DataBits,
     StopBits, ParityMode, SerialPort, RingBuffer, SERIAL_BUFFER_SIZE,
 };
+#[cfg(target_arch = "x86_64")]
 use crate::kernel::driver::storage::ata::{
     ATA_PRIMARY_IO, ATA_SECONDARY_IO, WORDS_PER_SECTOR, MAX_ATA_DEVICES,
     AtaDevice, AtaController, get_io_base, get_ctrl_base, ATA_PRIMARY_CTRL, ATA_SECONDARY_CTRL,
 };
-use crate::kernel::driver::Driver;
+use crate::kernel::driver::framework::Driver;
 
 fn driver_error_codes() -> TestResult {
     assert_eq_test!(alloc::format!("{}", DriverError::InvalidParameter), "Invalid parameter", "InvalidParameter");
@@ -198,6 +199,7 @@ fn serial_ring_buffer() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn ata_constants() -> TestResult {
     assert_eq_test!(ATA_PRIMARY_IO, 0x1F0, "primary IO");
     assert_eq_test!(ATA_SECONDARY_IO, 0x170, "secondary IO");
@@ -206,6 +208,7 @@ fn ata_constants() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn ata_device_default() -> TestResult {
     let device = AtaDevice::default();
     check!(!device.present, "not present");
@@ -214,6 +217,7 @@ fn ata_device_default() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn ata_controller_creation() -> TestResult {
     let controller = AtaController::new();
     check!(!controller.primary_present, "no primary");
@@ -223,6 +227,7 @@ fn ata_controller_creation() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn ata_io_base_calculation() -> TestResult {
     assert_eq_test!(get_io_base(0), ATA_PRIMARY_IO, "ch0 IO");
     assert_eq_test!(get_io_base(1), ATA_PRIMARY_IO, "ch1 IO");
@@ -233,6 +238,7 @@ fn ata_io_base_calculation() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn ata_disk_present_bounds() -> TestResult {
     let controller = AtaController::new();
     check!(!controller.disk_present(0), "disk 0 not present");
@@ -241,6 +247,23 @@ fn ata_disk_present_bounds() -> TestResult {
     check!(!controller.disk_present(255), "disk 255 out of range");
     TestResult::Pass
 }
+
+#[cfg(target_arch = "x86_64")]
+pub fn register_ata_tests() {
+    let r = runner();
+    register_tests_inner!{ r:
+        "driver::ata": {
+            "constants": ata_constants,
+            "device_default": ata_device_default,
+            "controller_creation": ata_controller_creation,
+            "io_base_calculation": ata_io_base_calculation,
+            "disk_present_bounds": ata_disk_present_bounds,
+        },
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+pub fn register_ata_tests() {}
 
 pub fn register_tests() {
     let r = runner();
@@ -270,12 +293,6 @@ pub fn register_tests() {
             "port_creation": serial_port_creation,
             "ring_buffer": serial_ring_buffer,
         },
-        "driver::ata": {
-            "constants": ata_constants,
-            "device_default": ata_device_default,
-            "controller_creation": ata_controller_creation,
-            "io_base_calculation": ata_io_base_calculation,
-            "disk_present_bounds": ata_disk_present_bounds,
-        },
     }
+    register_ata_tests();
 }

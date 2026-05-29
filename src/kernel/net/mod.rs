@@ -44,8 +44,9 @@
 // 核心模块
 // ============================================================================
 
+pub mod types;      // 基础类型、常量 (始终编译)
 #[cfg(not(feature = "kernel_test"))]
-pub mod types;      // 基础类型、常量、FFI声明
+pub mod types_ffi;  // FFI 声明、lwIP 绑定 (需要 C 链接)
 #[cfg(not(feature = "kernel_test"))]
 pub mod sys_arch;   // lwIP OS 抽象层
 #[cfg(not(feature = "kernel_test"))]
@@ -72,7 +73,8 @@ pub mod utils;      // 网络工具函数 (atoi/checksum/字节序等)
 // 公共 API 导出 (方便其他模块使用)
 // ============================================================================
 
-#[cfg(not(feature = "kernel_test"))]
 pub use types::*;
+#[cfg(not(feature = "kernel_test"))]
+pub use types_ffi::*;
 #[cfg(not(feature = "kernel_test"))]
 pub use utils::*;

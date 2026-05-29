@@ -33,6 +33,7 @@ pub struct RamFsNode {
     pub file_type: u8,
     pub sensitivity: u8,
     pub owner_pwm: u64,
+    pub group_pwm: u64,
     pub perm: u16,
     pub size: u32,
     pub atime: u64,
@@ -52,6 +53,7 @@ impl RamFsNode {
             file_type: 0,
             sensitivity: 0,
             owner_pwm: 0,
+            group_pwm: 0,
             perm: 0,
             size: 0,
             atime: 0,
@@ -657,6 +659,7 @@ impl RamFsData {
             file_type: VfsFileType::Dir as u8,
             sensitivity: SENSITIVITY_PUBLIC,
             owner_pwm: 1,
+            group_pwm: 1,
             perm: 0o777,
             size: (2 * core::mem::size_of::<RamFsDirEntry>()) as u32,
             atime: Self::get_time(),
@@ -722,6 +725,7 @@ impl RamFsData {
                     file_type,
                     sensitivity: SENSITIVITY_PUBLIC,
                     owner_pwm: pwm,
+                    group_pwm: pwm,
                     perm: 0o644,
                     size: if file_type == VfsFileType::Dir as u8 {
                         (2 * core::mem::size_of::<RamFsDirEntry>()) as u32
@@ -1224,7 +1228,7 @@ impl RamFsData {
             mtime: node.mtime,
             ctime: node.ctime,
             owner_pwm: node.owner_pwm,
-            group_pwm: 0,
+            group_pwm: node.group_pwm,
             perm: node.perm,
             file_type: node.file_type,
             sensitivity: node.sensitivity,
@@ -1256,6 +1260,10 @@ impl RamFsData {
     }
 
     pub fn chown(&mut self, path: &str, owner_pwm: u64, pwm: u64) -> i32 {
+        self.chown_ext(path, owner_pwm, 0, pwm)
+    }
+
+    pub fn chown_ext(&mut self, path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
             None => return -1,
@@ -1266,13 +1274,17 @@ impl RamFsData {
             return -1;
         }
 
-        // Permission check: only privileged user can change owner
         let level = unsafe { pwm_get_privilege_level(pwm) };
         if level != 0 {
             return -1;
         }
 
         node.owner_pwm = owner_pwm;
+        if group_pwm != 0 {
+            node.group_pwm = group_pwm;
+        } else if owner_pwm != 0 {
+            node.group_pwm = owner_pwm;
+        }
         node.ctime = Self::get_time();
         0
     }

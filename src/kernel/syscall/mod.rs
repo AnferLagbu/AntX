@@ -198,10 +198,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         // ==================== 用户/组 ====================
         SYS_getuid          => dispatch!(sys_getuid(), b"getuid\0"),
         SYS_getgid          => dispatch!(sys_getgid(), b"getgid\0"),
-        SYS_setuid          => dispatch!(Errno::EPERM.as_ret(), b"setuid\0"),
-        SYS_setgid          => dispatch!(Errno::EPERM.as_ret(), b"setgid\0"),
-        SYS_geteuid         => dispatch!(sys_getuid(), b"geteuid\0"),
-        SYS_getegid         => dispatch!(sys_getgid(), b"getegid\0"),
+        SYS_setuid          => dispatch!(sys_setuid(a0 as u32), b"setuid\0"),
+        SYS_setgid          => dispatch!(sys_setgid(a0 as u32), b"setgid\0"),
+        SYS_geteuid         => dispatch!(sys_geteuid(), b"geteuid\0"),
+        SYS_getegid         => dispatch!(sys_getegid(), b"getegid\0"),
 
         // ==================== 文件同步/挂载 ====================
         SYS_sync            => dispatch!(sys_sync(), b"sync\0"),
@@ -495,6 +495,21 @@ unsafe fn sys_execve(path: *const core::ffi::c_char, argv: *const *const u8, _en
         let mut p = argv;
         while !(*p).is_null() { argc += 1; p = p.add(1); }
     }
+
+    let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::fs::vfs::types::VfsStat>::uninit();
+    let current_pwm = crate::kernel::credo::session::get_current_pwm();
+    let stat_result = crate::kernel::fs::vfs::ffi::vfs_stat_internal(
+        path,
+        stat_buf.as_mut_ptr(),
+        current_pwm,
+    );
+    if stat_result == 0 {
+        let st = stat_buf.assume_init();
+        if (st.perm & 0o4000) != 0 && st.owner_pwm != 0 {
+            crate::kernel::credo::session::elevate_for_suid(st.owner_pwm);
+        }
+    }
+
     let result = crate::kernel::proc::ffi::proc_exec_replace(path, argv, argc);
     if result < 0 { Errno::ENOENT.as_ret() } else { 0 }
 }
@@ -519,6 +534,38 @@ unsafe fn sys_getuid() -> i64 {
 
 unsafe fn sys_getgid() -> i64 {
     crate::kernel::credo::session::get_current_gid() as i64
+}
+
+unsafe fn sys_geteuid() -> i64 {
+    crate::kernel::credo::session::get_euid() as i64
+}
+
+unsafe fn sys_getegid() -> i64 {
+    crate::kernel::credo::session::get_egid() as i64
+}
+
+unsafe fn sys_setuid(uid: u32) -> i64 {
+    if uid == crate::kernel::credo::session::get_current_uid()
+        || uid == crate::kernel::credo::session::get_euid()
+    {
+        return 0;
+    }
+    if crate::kernel::credo::session::try_setuid(uid) {
+        return 0;
+    }
+    Errno::EPERM.as_ret()
+}
+
+unsafe fn sys_setgid(gid: u32) -> i64 {
+    if gid == crate::kernel::credo::session::get_current_gid()
+        || gid == crate::kernel::credo::session::get_egid()
+    {
+        return 0;
+    }
+    if crate::kernel::credo::session::try_setgid(gid) {
+        return 0;
+    }
+    Errno::EPERM.as_ret()
 }
 
 // ============================================================================

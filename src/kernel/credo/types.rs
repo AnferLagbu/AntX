@@ -319,6 +319,9 @@ pub struct PwmContext {
     pub session_pwm: PwmId,
     pub cached_uid: u32,
     pub cached_gid: u32,
+    pub euid: u32,
+    pub egid: u32,
+    pub elevation_granted_pwm: PwmId,
 }
 
 #[derive(Clone, Copy)]

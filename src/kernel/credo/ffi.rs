@@ -225,6 +225,36 @@ pub extern "C" fn pwm_get_current_gid() -> u32 {
 }
 
 #[no_mangle]
+pub extern "C" fn pwm_get_euid() -> u32 {
+    session::get_euid()
+}
+
+#[no_mangle]
+pub extern "C" fn pwm_get_egid() -> u32 {
+    session::get_egid()
+}
+
+#[no_mangle]
+pub extern "C" fn pwm_elevate_for_suid(target_pwm: u64) -> bool {
+    session::elevate_for_suid(target_pwm)
+}
+
+#[no_mangle]
+pub extern "C" fn pwm_drop_elevation() -> bool {
+    session::drop_elevation()
+}
+
+#[no_mangle]
+pub extern "C" fn pwm_has_elevation_authority(target_pwm: u64) -> bool {
+    session::has_elevation_authority(target_pwm)
+}
+
+#[no_mangle]
+pub extern "C" fn pwm_try_setuid(target_uid: u32) -> bool {
+    session::try_setuid(target_uid)
+}
+
+#[no_mangle]
 pub extern "C" fn pwm_get_uid(pwm: u64) -> u32 {
     match identity::find(pwm) {
         Some(e) => e.get_uid(),

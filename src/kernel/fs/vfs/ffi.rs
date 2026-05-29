@@ -625,8 +625,7 @@ pub extern "C" fn vfs_chown_ext(path: *const c_char, owner_pwm: u64, group_pwm: 
     match fs_type {
         FsType::RamFs => { 
             let mut ramfs = RAMFS_DATA.lock(); 
-            ramfs.chown(rel_path, owner_pwm, pwm);
-            0
+            ramfs.chown_ext(rel_path, owner_pwm, group_pwm, pwm)
         }
         FsType::HvFs => { 
             let hvfs = get_hvfs(); 

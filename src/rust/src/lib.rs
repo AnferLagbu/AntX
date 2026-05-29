@@ -233,7 +233,7 @@ pub extern "C" fn kernel_init() {
     // Test mode: skip normal init, run unit tests
     #[cfg(feature = "kernel_test")]
     {
-        unsafe { core::arch::asm!("cli", options(nomem, nostack)); }
+        <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_disable();
 
         let boot_info = crate::kernel::boot::init();
         crate::kernel::mm::pmm::pmm_init(boot_info.mem_size, boot_info.kernel_end);
@@ -246,8 +246,8 @@ pub extern "C" fn kernel_init() {
             crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
         }
         crate::kernel::mm::pmm::pmm_init_bitmap(KMALLOC_HEAP_SIZE);
-        crate::kernel::idt::idt_init();
-        crate::klog_boot_info!("Test mode: IDT initialized");
+        <crate::kernel::arch::CurrentArch as crate::kernel::arch::Arch>::interrupt_early_init();
+        crate::klog_boot_info!("Test mode: interrupt early init done");
 
         crate::kernel::smp::init();
         crate::klog_boot_info!("Test mode: SMP BSP registered");
@@ -321,42 +321,16 @@ pub extern "C" fn kernel_init() {
     crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
     // 6. 中断/异常设置
-    #[cfg(target_arch = "x86_64")]
-    {
-        crate::kernel::arch::x86_64::gdt::gdt_init();
-        crate::kernel::idt::idt_init();
-        crate::klog_boot_info!("IDT+GDT ready");
-
-        crate::kernel::arch::x86_64::apic::apic_init();
-        crate::klog_boot_info!("APIC ready");
-
-        crate::kernel::smp::init();
-        crate::klog_boot_info!("SMP BSP registered");
-
-        crate::kernel::arch::x86_64::smp_init::init();
-        crate::klog_boot_info!("SMP AP boot sequence complete");
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        // Exception vectors, GICv3, timer already configured by entry.rs
-        crate::klog_boot_info!("AArch64 GICv3+Exception vectors ready");
-    }
+    <crate::kernel::arch::CurrentArch as crate::kernel::arch::Arch>::interrupt_late_init();
+    crate::klog_boot_info!("Interrupt subsystem ready");
 
     // 7. Timer + 中断使能
     match crate::kernel::timer::timer_init(1000) {
         Ok(_freq) => {
             crate::klog_boot_info!("Timer configured");
             #[cfg(target_arch = "x86_64")]
-            {
-                let _ = crate::kernel::timer::irq::register_timer_irq();
-                crate::klog_boot_info!("IRQ0 handler registered");
-                unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
-            }
-            #[cfg(target_arch = "aarch64")]
-            {
-                crate::klog_boot_info!("AArch64 timer IRQ ready");
-                crate::arch!(interrupt_enable());
-            }
+            let _ = crate::kernel::timer::irq::register_timer_irq();
+            <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_enable();
             crate::klog_boot_info!("Interrupts enabled");
         },
         Err(_msg) => { let _ = _msg; }

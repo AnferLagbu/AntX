@@ -153,6 +153,18 @@ impl InterruptArch for X8664 {
         use crate::kernel::arch::x86_64::apic;
         apic::broadcast_ipi(vector);
     }
+
+    fn interrupt_early_init() {
+        crate::kernel::idt::idt_init();
+    }
+
+    fn interrupt_late_init() {
+        crate::kernel::arch::x86_64::gdt::gdt_init();
+        crate::kernel::idt::idt_init();
+        crate::kernel::arch::x86_64::apic::apic_init();
+        crate::kernel::smp::init();
+        crate::kernel::arch::x86_64::smp_init::init();
+    }
 }
 
 // ── MmuArch: MMU + 上下文 + 用户态 ───────────────────────────────────

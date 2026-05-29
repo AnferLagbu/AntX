@@ -481,6 +481,11 @@ impl IdentityTable {
         self.entries.iter().find(|e| e.is_valid() && e.get_uid() == uid)
     }
 
+    pub fn find_by_gid(&self, gid: u32) -> Option<&PwmEntry> {
+        if gid == 0xFFFF_FFFF { return None; }
+        self.entries.iter().find(|e| e.is_valid() && e.get_gid() == gid)
+    }
+
     /// pwm → uid (stat 填充 st_uid 用)
     pub fn uid_of(&self, pwm: u64) -> u32 {
         self.find(pwm).map_or(0xFFFF_FFFF, |e| e.get_uid())

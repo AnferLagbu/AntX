@@ -132,6 +132,14 @@ impl InterruptArch for Aarch64 {
             asm!("msr icc_sgi1r_el1, {}", in(reg) sgi);
         }
     }
+
+    fn interrupt_early_init() {
+        // GICv3 + VBAR_EL1 already configured by entry.rs / bootloader
+    }
+
+    fn interrupt_late_init() {
+        // GICv3 + Exception vectors + timer already configured by entry.rs
+    }
 }
 
 // ── MmuArch: MMU + 上下文 + 用户态 ───────────────────────────────────

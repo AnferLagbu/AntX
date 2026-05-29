@@ -85,6 +85,7 @@ pub trait CoreArch {
 ///
 /// 方法:
 /// - `interrupt_disable/enable/restore/is_enabled` — 中断屏蔽
+/// - `interrupt_early_init` / `interrupt_late_init` — 中断子系统初始化
 /// - `send_ipi` / `broadcast_ipi` — 核间中断
 pub trait InterruptArch {
     /// 禁用中断并返回之前的中断状态标志 (cli / msr daifset)。
@@ -95,6 +96,16 @@ pub trait InterruptArch {
     fn interrupt_enable();
     /// 检查中断是否已启用。
     fn is_interrupt_enabled() -> bool;
+    /// 最小中断初始化 — 仅设置中断向量表/描述符表。
+    ///
+    /// x86_64: IDT 初始化 (idt_init)
+    /// aarch64: GICv3 + VBAR_EL1 已由 bootloader 配置, 此处为空操作
+    fn interrupt_early_init();
+    /// 完整中断初始化 — 包括中断控制器、IPI、定时器等。
+    ///
+    /// x86_64: GDT + IDT + APIC + SMP AP boot
+    /// aarch64: GICv3 + Exception vectors + timer (已由 entry.rs 完成, 此处为空操作)
+    fn interrupt_late_init();
     /// 向目标 CPU 发送核间中断。
     fn send_ipi(target_cpu: u32, vector: u8);
     /// 向所有 CPU (不含自身) 广播 IPI。
@@ -181,6 +192,8 @@ pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
     fn interrupt_restore(flags: usize)    { <Self as InterruptArch>::interrupt_restore(flags); }
     fn interrupt_enable()                 { <Self as InterruptArch>::interrupt_enable(); }
     fn is_interrupt_enabled() -> bool     { <Self as InterruptArch>::is_interrupt_enabled() }
+    fn interrupt_early_init()             { <Self as InterruptArch>::interrupt_early_init(); }
+    fn interrupt_late_init()              { <Self as InterruptArch>::interrupt_late_init(); }
     fn send_ipi(target_cpu: u32, vector: u8) { <Self as InterruptArch>::send_ipi(target_cpu, vector); }
     fn broadcast_ipi(vector: u8)          { <Self as InterruptArch>::broadcast_ipi(vector); }
 

@@ -1,17 +1,21 @@
 use crate::register_tests_inner;
 use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
+use crate::kernel::cpu::{
+    CpuVendor, CpuSignature, CacheInfo, TopologyInfo,
+};
+
+#[cfg(target_arch = "x86_64")]
 use crate::kernel::arch::x86_64::gdt::{
     GdtEntry, AccessByte, Granularity,
     SELECTOR_NULL, SELECTOR_KERNEL_CODE, SELECTOR_KERNEL_DATA,
     SELECTOR_USER_CODE, SELECTOR_USER_DATA, SELECTOR_TSS,
 };
+#[cfg(target_arch = "x86_64")]
 use crate::kernel::arch::x86_64::tss::{
     TaskStateSegment, DEFAULT_IOMAP_BASE, TSS_SIZE,
 };
-use crate::kernel::cpu::{
-    CpuVendor, CpuSignature, CacheInfo, TopologyInfo,
-};
 
+#[cfg(target_arch = "x86_64")]
 fn gdt_entry_null() -> TestResult {
     let null_desc = GdtEntry::null();
     let bytes = unsafe { core::ptr::read_volatile(&null_desc as *const _ as *const u64) };
@@ -19,6 +23,7 @@ fn gdt_entry_null() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn gdt_access_byte_constants() -> TestResult {
     assert_eq_test!(AccessByte::kernel_code().0, 0x9A, "kernel_code access byte");
     assert_eq_test!(AccessByte::kernel_data().0, 0x92, "kernel_data access byte");
@@ -28,6 +33,7 @@ fn gdt_access_byte_constants() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn gdt_granularity_constants() -> TestResult {
     let code_gran = Granularity::code_64bit();
     check!(code_gran.0 & Granularity::PAGE_GRANULARITY != 0, "code gran should have page granularity");
@@ -39,6 +45,7 @@ fn gdt_granularity_constants() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn gdt_selector_values() -> TestResult {
     assert_eq_test!(SELECTOR_NULL, 0x00, "NULL selector");
     assert_eq_test!(SELECTOR_KERNEL_CODE, 0x08, "kernel code selector");
@@ -49,6 +56,7 @@ fn gdt_selector_values() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn tss_zeroed() -> TestResult {
     let tss = TaskStateSegment::zeroed();
     assert_eq_test!(tss.rsp0, 0, "rsp0 should be 0");
@@ -61,6 +69,7 @@ fn tss_zeroed() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn tss_set_kernel_stack() -> TestResult {
     let mut tss = TaskStateSegment::zeroed();
     tss.set_kernel_stack(0xDEAD_BEEF_CAFE_BABE);
@@ -68,6 +77,7 @@ fn tss_set_kernel_stack() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn tss_ist_operations() -> TestResult {
     let mut tss = TaskStateSegment::zeroed();
     tss.set_ist(0, 0x1111_2222_3333_4444);
@@ -79,6 +89,7 @@ fn tss_ist_operations() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn tss_iomap() -> TestResult {
     let mut tss = TaskStateSegment::zeroed();
     check!(!tss.has_iomap(), "should not have iomap by default");
@@ -92,6 +103,7 @@ fn tss_iomap() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn tss_size() -> TestResult {
     check!(TSS_SIZE >= 92, "TSS too small");
     assert_eq_test!(TSS_SIZE % 2, 0, "TSS not 2-byte aligned");
@@ -173,6 +185,7 @@ fn cpu_topology_threads_per_core() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 pub fn register_gdt_tests() {
     let r = runner();
     register_tests_inner!{ r:
@@ -185,6 +198,10 @@ pub fn register_gdt_tests() {
     }
 }
 
+#[cfg(not(target_arch = "x86_64"))]
+pub fn register_gdt_tests() {}
+
+#[cfg(target_arch = "x86_64")]
 pub fn register_tss_tests() {
     let r = runner();
     register_tests_inner!{ r:
@@ -197,6 +214,9 @@ pub fn register_tss_tests() {
         },
     }
 }
+
+#[cfg(not(target_arch = "x86_64"))]
+pub fn register_tss_tests() {}
 
 pub fn register_cpu_tests() {
     let r = runner();
