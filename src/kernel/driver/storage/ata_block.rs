@@ -60,7 +60,9 @@ impl AtaBlockDevice {
     }
 }
 
-// SAFETY: AtaBlockDevice is a thin wrapper around C FFI calls; single-core.
+// SAFETY: AtaBlockDevice wraps C FFI calls; ATA controller access is
+// mediated by the global ATA_DEVICE Mutex in ata.rs. BlockDevice trait
+// methods use internal locks or atomic operations for cross-CPU safety.
 unsafe impl Send for AtaBlockDevice {}
 unsafe impl Sync for AtaBlockDevice {}
 

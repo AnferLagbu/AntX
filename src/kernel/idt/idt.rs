@@ -334,33 +334,24 @@ impl IdtManager {
         if frame.is_null() { return; }
 
         unsafe {
-            let frame_ref = &*frame;
-            let vector = frame_ref.int_no as u8;
+            let vector = (*frame).int_no as u8;
 
-            // 更新嵌套计数
             let nesting = self.nested_count.fetch_add(1, Ordering::SeqCst);
             self.current_vector.store(vector as u64, Ordering::SeqCst);
 
-            // 记录统计 (Phase 1 + Phase 3)
             self.stats.record_exception(vector);
-            self.detailed_stats.record_exception(vector, frame_ref);
+            self.detailed_stats.record_exception(vector, &*frame);
             self.detailed_stats.record_nested(nesting + 1);
 
-            // 分发到对应的 handler (使用 Phase 3 的 trait 系统)
             if vector < 32 {
-                // 创建对应的异常处理器 (工厂模式)
                 let exception_handler = create_handler(vector);
-                
-                // 执行处理并获取恢复动作
-                let action = exception_handler.handle(frame_ref);
-                
-                // 记录恢复动作到详细统计
+
+                let action = exception_handler.handle(frame);
+
                 self.detailed_stats.record_recovery_action(&action);
-                
-                // 执行恢复动作
-                self.execute_recovery_action(&action, frame_ref);
-                
-                // 如果有 C 兼容的 handler，也调用它（向后兼容）
+
+                self.execute_recovery_action(&action, &*frame);
+
                 if let Some(c_handler) = self.state.lock().handlers[vector as usize] {
                     c_handler(frame);  // C handler 可能会执行额外的副作用
                 }

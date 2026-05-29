@@ -83,7 +83,7 @@ pub fn kernel_stack_check_canary(stack_top: u64) -> bool {
 }
 
 pub fn kernel_stack_write_canary(stack_top: u64) {
-    if stack_top < 8 { return; }
+    if stack_top <= 8 { return; }
     unsafe {
         let canary_ptr = (stack_top - 8) as *mut u64;
         if (canary_ptr as u64) < 0x1000 { return; }

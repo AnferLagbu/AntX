@@ -157,8 +157,9 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
                 child_pde = (child_pde & 0xFFF) | (child_pt_phys.as_u64() & 0x000FFFFFFFFFF000);
                 unsafe { child_pd_virt.add(k).write_volatile(child_pde); }
 
-                // SAFETY: parent_pt 物理地址来自有效 PDE
-                let parent_pt_virt = PhysAddr((parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *const u64;
+                // SAFETY: parent_pt 物理地址来自有效 PDE;
+                // 声明为 *mut 因为 COW 会写回清除 WRITABLE 位
+                let parent_pt_virt = PhysAddr((parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *mut u64;
 
                 for l in 0..512usize {
                     // SAFETY: pt 索引在页范围内
@@ -171,14 +172,11 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
                     let parent_flags = parent_pte & 0xFFF;
 
                     if (parent_flags & 2) != 0 {
-                        // SAFETY: parent_pt_virt 是只读指针 (immutable ref),
-                        // 但 COW 需要写回标记只读位; 这里转为 *mut 是安全的,
-                        // 因为该 PTE 由本函数独占访问 (调用方持有 VMM lock)
-                        let parent_pte_ptr = parent_pt_virt as *mut u64;
+                        // SAFETY: 该 PTE 由本函数独占访问 (调用方持有 VMM lock)
                         unsafe {
-                            let mut pte = parent_pte_ptr.add(l).read_volatile();
+                            let mut pte = parent_pt_virt.add(l).read_volatile();
                             pte &= !2u64; // clear WRITABLE
-                            parent_pte_ptr.add(l).write_volatile(pte);
+                            parent_pt_virt.add(l).write_volatile(pte);
                         }
 
                         let mut child_pte = parent_pte;

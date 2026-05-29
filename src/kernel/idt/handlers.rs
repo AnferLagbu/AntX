@@ -89,7 +89,7 @@ pub enum ExceptionCategory {
 /// 异常处理器 trait (对象安全)
 pub trait ExceptionHandler: Send + Sync {
     /// 处理异常并返回恢复动作
-    fn handle(&self, frame: &InterruptFrame) -> RecoveryAction;
+    fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction;
     
     /// 获取异常严重性
     fn severity(&self) -> Severity;
@@ -109,8 +109,8 @@ pub trait ExceptionHandler: Send + Sync {
 pub struct DivisionByZeroHandler;
 
 impl ExceptionHandler for DivisionByZeroHandler {
-    fn handle(&self, frame: &InterruptFrame) -> RecoveryAction {
-        if frame.is_user_mode() {
+    fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
+        if unsafe { (*frame).is_user_mode() } {
             // User-mode #DE: 安全终止进程
             RecoveryAction::TerminateProcess(1)
         } else {
@@ -157,52 +157,38 @@ impl PageFaultHandler {
 }
 
 impl ExceptionHandler for PageFaultHandler {
-    fn handle(&self, frame: &InterruptFrame) -> RecoveryAction {
-        let fault_addr = unsafe { frame.fault_address() };
-        let analysis = Self::analyze_error_code(frame.err_code);
+    fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
+        let fault_addr = unsafe { (*frame).fault_address() };
+        let analysis = Self::analyze_error_code(unsafe { (*frame).err_code });
 
-        // User-mode PF: 先尝试栈自动扩展，再尝试 barrier 恢复
-        if frame.is_user_mode() {
+        if unsafe { (*frame).is_user_mode() } {
             if crate::kernel::proc::user_proc::try_expand_user_stack(fault_addr) {
                 return RecoveryAction::Recovered;
             }
             let pid = crate::kernel::proc::ffi::process_get_current_pid();
             return RecoveryAction::TerminateProcess(pid);
         }
-        
-        // Kernel-mode PF: 根据原因尝试恢复
+
         match analysis.cause {
             FaultCause::PageNotPresent => {
-                // Null 指针或无效地址
                 if fault_addr == 0 || fault_addr < 0x1000 {
-                    // 跳过导致 PF 的指令 (假设是 mov/call 指令)
-                    unsafe {
-                        let frame_mut = frame as *const _ as *mut InterruptFrame;
-                        (*frame_mut).rip += 2; // 跳过典型指令长度
-                    }
+                    unsafe { (*frame).rip += 2; }
                     return RecoveryAction::Recovered;
                 }
-                
-                // User 地址空间访问 (可能是无效函数指针)
+
                 if fault_addr > 0xFFFF && fault_addr < 0xFFFFFFFF80000000 {
-                    // 模拟返回 (清理栈帧)
-                    unsafe {
-                        let frame_mut = frame as *const _ as *mut InterruptFrame;
-                        (*frame_mut).rsp += 8; // 弹出返回地址
-                    }
+                    unsafe { (*frame).rsp += 8; }
                     return RecoveryAction::Recovered;
                 }
-                
-                // 其他情况: 尝试域级恢复
+
                 RecoveryAction::DomainRecovery
             },
-            
+
             FaultCause::ProtectionViolation | FaultCause::ReservedBitSet => {
-                // 权限问题或硬件错误: 无法恢复
                 RecoveryAction::Panic(PanicInfo::new(
                     "Page Fault: Protection violation or hardware error",
                     14,
-                    frame.rip,
+                    unsafe { (*frame).rip },
                 ))
             }
         }
@@ -247,13 +233,13 @@ pub enum FaultCause {
 pub struct GeneralProtectionFaultHandler;
 
 impl ExceptionHandler for GeneralProtectionFaultHandler {
-    fn handle(&self, frame: &InterruptFrame) -> RecoveryAction {
-        if frame.is_user_mode() {
+    fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
+        if unsafe { (*frame).is_user_mode() } {
             // User GPF: 终止进程
             RecoveryAction::TerminateProcess(1)
         } else {
             // Kernel GPF: 打印栈回溯后尝试恢复
-            self.print_detailed_gpf_info(frame);
+            self.print_detailed_gpf_info(unsafe { &*frame });
             RecoveryAction::DomainRecovery
         }
     }
@@ -299,10 +285,10 @@ pub struct DoubleFaultHandler;
 static DOUBLE_FAULT_COUNT: AtomicU64 = AtomicU64::new(0);
 
 impl ExceptionHandler for DoubleFaultHandler {
-    fn handle(&self, frame: &InterruptFrame) -> RecoveryAction {
+    fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
         let count = DOUBLE_FAULT_COUNT.fetch_add(1, Ordering::SeqCst);
         
-        self.print_double_fault_context(frame);
+        self.print_double_fault_context(unsafe { &*frame });
         
         if count <= 3 {
             // 前 3 次 DF: 尝试调度切换恢复
@@ -312,7 +298,7 @@ impl ExceptionHandler for DoubleFaultHandler {
             RecoveryAction::Panic(PanicInfo::new(
                 "Multiple Double Faults - system unstable",
                 8,
-                frame.rip,
+                unsafe { (*frame).rip },
             ))
         }
     }
@@ -346,7 +332,7 @@ impl DefaultHandler {
 }
 
 impl ExceptionHandler for DefaultHandler {
-    fn handle(&self, _frame: &InterruptFrame) -> RecoveryAction {
+    fn handle(&self, _frame: *mut InterruptFrame) -> RecoveryAction {
         // 默认行为: 尝试域级恢复
         RecoveryAction::DomainRecovery
     }

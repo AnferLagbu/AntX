@@ -264,23 +264,66 @@ impl KernelHeap {
             self.deallocate(ptr);
             return None;
         }
-        
+
         if ptr.is_null() { return self.allocate(size); }
-        
+
+        self.acquire_lock();
+
         let header = unsafe { HeapHeader::from_data_ptr(ptr) };
-        let old_size = unsafe { (*header).size - core::mem::size_of::<HeapHeader>() as u64 };
-        
-        let new_aligned = align_up(size as u64, ALIGNMENT);
-        if new_aligned <= old_size { return Some(ptr); }
-        
-        let new_ptr = self.allocate(size)?;
-        
-        unsafe {
-            core::ptr::copy_nonoverlapping(ptr, new_ptr, old_size as usize);
+        let h = unsafe { &*header };
+        if h.magic != HEAP_MAGIC || h.free {
+            self.release_lock();
+            return None;
         }
-        
-        self.deallocate(ptr);
-        
+
+        let old_data_size = (h.size - core::mem::size_of::<HeapHeader>() as u64) as usize;
+        let new_aligned = align_up(size as u64, ALIGNMENT) as usize;
+
+        if new_aligned <= old_data_size {
+            self.release_lock();
+            return Some(ptr);
+        }
+
+        // Allocate new block while holding the lock to prevent
+        // ptr from being invalidated before copy completes
+        let actual_size = (new_aligned as u64 + core::mem::size_of::<HeapHeader>() as u64)
+            .max(MIN_BLOCK_SIZE);
+        let new_ptr = match self.allocate_first_fit(actual_size) {
+            Some(p) => {
+                self.alloc_count.fetch_add(1, Ordering::Relaxed);
+                self.total_allocated.fetch_add(actual_size, Ordering::Relaxed);
+                let usage = self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
+                let mut peak = self.peak_usage.load(Ordering::Relaxed);
+                while usage > peak {
+                    match self.peak_usage.compare_exchange_weak(peak, usage, Ordering::Relaxed, Ordering::Relaxed) {
+                        Ok(_) => break,
+                        Err(p) => peak = p,
+                    }
+                }
+                p
+            }
+            None => {
+                self.release_lock();
+                return None;
+            }
+        };
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(ptr, new_ptr, old_data_size);
+        }
+
+        // Deallocate old block inline while holding the lock
+        unsafe {
+            (*header).free = true;
+        }
+        let freed_size = unsafe { (*header).size };
+        self.free_count.fetch_add(1, Ordering::Relaxed);
+        self.total_freed.fetch_add(freed_size, Ordering::Relaxed);
+        self.current_usage.fetch_sub(freed_size, Ordering::Relaxed);
+        let effective = self.coalesce(header);
+        self.add_to_free_list(effective);
+
+        self.release_lock();
         Some(new_ptr)
     }
 

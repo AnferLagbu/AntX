@@ -88,7 +88,8 @@ impl BlockDevice for NvmeBlockDevice {
     }
 }
 
-// SAFETY: NvmeBlockDevice is a thin wrapper around NvmeController FFI calls;
-// single-core access, no interior mutability without synchronization.
+// SAFETY: NvmeBlockDevice accesses controllers through the global
+// NVME_CONTROLLERS Mutex. All mutable state is protected by lock
+// acquisition. Safe for SMP cross-CPU access.
 unsafe impl Send for NvmeBlockDevice {}
 unsafe impl Sync for NvmeBlockDevice {}
