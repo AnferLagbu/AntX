@@ -211,6 +211,17 @@ pub fn devtree_clear_user_mapped(node_id: NodeId) {
     }
 }
 
+/// 清除指定 PID 在所有设备节点上的绑定标记
+/// 在进程退出时调用, 防止 user_mapped 残留导致设备节点无法重新绑定
+pub fn devtree_clear_user_mapped_by_pid(pid: u32) {
+    let mut tree = DEV_TREE.lock();
+    for node in tree.nodes.iter_mut() {
+        if node.user_mapped == Some(pid) {
+            node.user_mapped = None;
+        }
+    }
+}
+
 pub fn devtree_get_user_mapped(node_id: NodeId) -> Option<u32> {
     let tree = DEV_TREE.lock();
     tree.nodes.iter().find(|n| n.id == node_id)

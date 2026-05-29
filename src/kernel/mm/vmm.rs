@@ -27,6 +27,18 @@
 //!    next level, we check `entry & 1 != 0`.
 //! 7. **Deadlock prevention**: `acquire_lock` panics on recursive acquisition in debug
 //!    builds via `VMM_LOCK_RECURSIVE`, preventing SMP deadlocks before they occur.
+//!
+//! ## Lock ordering
+//!
+//! **VMM_LOCK must never be held while acquiring VMA_LOCK (MmStruct::vmas).**
+//! This prevents the ABBA deadlock:
+//!   Thread A: VMM_LOCK → VMA_LOCK
+//!   Thread B: VMA_LOCK → VMM_LOCK (happens in MmStruct::remove_range)
+//!
+//! All callers obey this rule:
+//! - `user_driver.rs`: VMM ops (map/unmap) → release VMM_LOCK → VMA ops (insert/remove)
+//! - `page_fault.rs`: VMA lookup (find_vma) → release VMA_LOCK → VMM ops (map_page)
+//! - `MmStruct::remove_range`: VMA_LOCK held → VMM_LOCK acquired (reverse order safe)
 
 use super::*;
 use core::cell::UnsafeCell;
@@ -335,6 +347,69 @@ impl VirtualMemoryManager {
             self.flush_tlb(virt.0);
         }
 
+        self.release_lock();
+    }
+
+    pub fn unmap_page_in_table(&self, pml4: u64, virt: VirtAddr) {
+        if pml4 == 0 {
+            return;
+        }
+
+        self.acquire_lock();
+
+        // SAFETY: pml4 = process CR3 value. phys_to_virt gives valid kernel VA.
+        let pml4_virt = PhysAddr(pml4).to_virt();
+
+        // SAFETY: Read-only page table walk with present-bit guards at each level.
+        // VMM_LOCK serializes all PT modifications.
+        unsafe {
+            let pml4_tbl = pml4_virt.0 as *mut PageTableEntry;
+
+            // SAFETY: pml4_tbl.add(idx) stays within the 4KB PML4 page
+            let pml4e = &*pml4_tbl.add(virt.pml4_idx());
+
+            if !pml4e.is_present() {
+                self.release_lock();
+                return;
+            }
+
+            // SAFETY: pml4e.frame() is present & valid frame; phys_to_virt gives kernel VA
+            let pdpt = pml4e.frame().to_virt().0 as *mut PageTableEntry;
+            let pdpte = &*pdpt.add(virt.pdpt_idx());
+
+            if !pdpte.is_present() {
+                self.release_lock();
+                return;
+            }
+
+            if pdpte.is_huge() {
+                // 1GB page: clear the PDPT entry directly
+                (*pdpt.add(virt.pdpt_idx())).set_value(0);
+                self.flush_tlb(virt.0);
+            } else {
+                // SAFETY: pdpte.frame() valid; present && !huge → points to PD
+                let pd = pdpte.frame().to_virt().0 as *mut PageTableEntry;
+                let pde = &*pd.add(virt.pd_idx());
+
+                if !pde.is_present() {
+                    self.release_lock();
+                    return;
+                }
+
+                if pde.is_huge() {
+                    // 2MB page: clear the PDE entry directly
+                    (*pd.add(virt.pd_idx())).set_value(0);
+                    self.flush_tlb(virt.0);
+                } else {
+                    // SAFETY: pde.frame() valid; present && !huge → points to PT
+                    let pt = pde.frame().to_virt().0 as *mut PageTableEntry;
+                    (*pt.add(virt.pt_idx())).set_value(0);
+                    self.flush_tlb(virt.0);
+                }
+            }
+        }
+
+        self.total_unmaps.fetch_add(1, Ordering::Relaxed);
         self.release_lock();
     }
 

@@ -31,6 +31,7 @@ pub enum VmaType {
     Vdso = 4,        // vDSO
     Vsvar = 5,       // vsyscall / vvar
     Guard = 6,       // 保护页 (不可访问)
+    Device = 7,      // 设备MMIO映射
 }
 
 impl VmaType {
@@ -42,6 +43,8 @@ impl VmaType {
             3 => Self::Heap,
             4 => Self::Vdso,
             5 => Self::Vsvar,
+            6 => Self::Guard,
+            7 => Self::Device,
             _ => Self::Guard,
         }
     }
@@ -150,7 +153,7 @@ impl MmStruct {
     }
 
     /// 删除 [start, end) 范围内的 VMA 映射
-    pub fn remove_range(&self, start: usize, end: usize) -> Result<(), &'static str> {
+    pub fn remove_range(&self, start: usize, end: usize) {
         let mut vmas = self.vmas.lock();
 
         let mut i = 0;
@@ -195,11 +198,12 @@ impl MmStruct {
                 i += 2;
             }
         }
-
-        Ok(())
     }
 
     fn unmap_vma_pages(&self, vma: &Vma) {
+        // 锁序: 调用者持有 VMA_LOCK, 此处获取 VMM_LOCK
+        // 这是唯一合法的嵌套方向 (VMA → VMM).
+        // 禁止在持有 VMM_LOCK 时获取 VMA_LOCK 以避免 ABBA 死锁.
         let vmm = super::vmm::get_vmm();
         let mut addr = vma.start;
         while addr < vma.end {
@@ -248,7 +252,7 @@ impl MmStruct {
             // 先更新 brk，防止其他 CPU 在 remove_range 后读到旧值
             // 去访问已被 unmap 的堆区域
             self.brk.store(page_aligned, Ordering::Release);
-            self.remove_range(page_aligned, current_brk)?;
+            self.remove_range(page_aligned, current_brk);
         }
 
         Ok(self.brk.load(Ordering::Acquire))

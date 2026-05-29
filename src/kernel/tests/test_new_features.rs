@@ -314,7 +314,7 @@ fn test_mm_struct_operations() -> TestResult {
         assert_eq_test!(v.start, 0x400000usize, "found start");
     }
 
-    mm.remove_range(0x400000, 0x401000).unwrap();
+    mm.remove_range(0x400000, 0x401000);
     let not_found = mm.find_vma(0x400500);
     check!(not_found.is_none(), "removed");
 

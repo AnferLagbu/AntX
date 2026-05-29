@@ -2,10 +2,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::boxed::Box;
 use spin::Mutex;
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicBool, Ordering};
 
 use super::types::*;
 use super::scheduler::{SchedPolicy};
+use crate::kernel::chitin::user_driver::chitin_process_cleanup;
 
 const MAX_FDS_PER_PROCESS: usize = 64;
 
@@ -118,8 +119,12 @@ pub struct Process {
     pub session_id: AtomicU64,
     pub fd_table: FdTable,
     
-    /// ✅ 阻塞睡眠到期时间 (ticks), 用于 proc_sleep_ms
+    /// 阻塞睡眠到期时间 (ticks), 用于 proc_sleep_ms
     pub sleep_until: AtomicU64,
+
+    pub ref_count: AtomicU32,
+    pub pending_free: AtomicBool,
+    pub pending_signals: AtomicU64,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -170,6 +175,9 @@ impl Process {
             session_id: AtomicU64::new(0),
             fd_table: FdTable::new(),
             sleep_until: AtomicU64::new(0),
+            ref_count: AtomicU32::new(1),
+            pending_free: AtomicBool::new(false),
+            pending_signals: AtomicU64::new(0),
         }
     }
     
@@ -300,6 +308,28 @@ impl Process {
     pub fn set_pwm(&self, pwm: u64) {
         self.pwm.store(pwm, Ordering::SeqCst);
     }
+
+    pub fn try_inc_ref(&self) -> bool {
+        self.ref_count.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+            if v > 0 { Some(v + 1) } else { None }
+        }).is_ok()
+    }
+
+    pub fn dec_ref(&self) -> u32 {
+        self.ref_count.fetch_sub(1, Ordering::AcqRel) - 1
+    }
+
+    pub fn signal_pending_set(&self, sig: u32) {
+        self.pending_signals.fetch_or(1u64 << sig, Ordering::Release);
+    }
+
+    pub fn signal_pending_get(&self) -> u64 {
+        self.pending_signals.load(Ordering::Acquire)
+    }
+
+    pub fn signal_pending_clear(&self, mask: u64) {
+        self.pending_signals.fetch_and(!mask, Ordering::Release);
+    }
 }
 
 impl Drop for Process {
@@ -400,14 +430,67 @@ impl ProcessTable {
         table[pid as usize].take().map(|addr| addr as *mut Process)
     }
 
-    /// ✅ 移除进程并释放 Box<Process> 内存 (Fix 4: 内存泄漏修复)
+    /// 移除进程并释放 Box<Process> 内存
+    /// 如果其他线程持有引用 (ref_count > 1), 则仅设置 pending_free 标志,
+    /// 由最后的 dec_ref_and_maybe_free 调用完成实际释放。
+    /// 全程持有 table lock 以防止与 dec_ref_and_maybe_free 竞争。
     pub fn remove_and_free(&self, pid: Pid) {
-        if let Some(ptr) = self.remove(pid) {
-            unsafe {
-                let boxed = Box::from_raw(ptr);
-                // Process::Drop 会自动销毁页表 (vmm_destroy_page_table)
-                drop(boxed);
+        chitin_process_cleanup(pid);
+        let mut table = self.processes.lock();
+        if pid as usize >= MAX_PROCESSES {
+            return;
+        }
+        match table[pid as usize] {
+            Some(addr) => {
+                let proc = unsafe { &mut *(addr as *mut Process) };
+                proc.pending_free.store(true, Ordering::Release);
+                let prev = proc.dec_ref();
+                if prev == 0 {
+                    table[pid as usize] = None;
+                    drop(table);
+                    unsafe {
+                        let boxed = Box::from_raw(addr as *mut Process);
+                        drop(boxed);
+                    }
+                }
             }
+            None => {}
+        }
+    }
+
+    pub fn try_inc_ref(&self, pid: Pid) -> bool {
+        let table = self.processes.lock();
+        if pid as usize >= MAX_PROCESSES {
+            return false;
+        }
+        match table[pid as usize] {
+            Some(addr) => {
+                let proc_ref = unsafe { &*(addr as *const Process) };
+                proc_ref.try_inc_ref()
+            }
+            None => false,
+        }
+    }
+
+    pub fn dec_ref_and_maybe_free(&self, pid: Pid) {
+        let mut table = self.processes.lock();
+        if pid as usize >= MAX_PROCESSES {
+            return;
+        }
+        match table[pid as usize] {
+            Some(addr) => {
+                let proc = unsafe { &mut *(addr as *mut Process) };
+                let prev = proc.dec_ref();
+                if prev == 0 && proc.pending_free.load(Ordering::Acquire) {
+                    table[pid as usize] = None;
+                    drop(table);
+                    unsafe {
+                        let boxed = Box::from_raw(addr as *mut Process);
+                        drop(boxed);
+                    }
+                }
+            }
+            None => {}
         }
     }
 

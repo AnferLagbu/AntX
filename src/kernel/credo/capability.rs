@@ -55,5 +55,6 @@ pub const VIABLE_FLOOR: [u64; 16] = {
     let mut f = [0u64; 16];
     f[CAP_DOMAIN_FS as usize]   = FS_CAP_READ | FS_CAP_EXECUTE;
     f[CAP_DOMAIN_PROC as usize] = PROC_CAP_FORK | PROC_CAP_EXEC;
+    f[CAP_DOMAIN_DEVICE as usize] = 0;
     f
 };

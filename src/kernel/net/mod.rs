@@ -75,6 +75,4 @@ pub mod utils;      // 网络工具函数 (atoi/checksum/字节序等)
 
 pub use types::*;
 #[cfg(not(feature = "kernel_test"))]
-pub use types_ffi::*;
-#[cfg(not(feature = "kernel_test"))]
 pub use utils::*;

@@ -1,6 +1,7 @@
 use crate::kernel::chitin::devtree::{
     devtree_get_node,
     devtree_set_user_mapped, devtree_clear_user_mapped, devtree_get_user_mapped,
+    devtree_clear_user_mapped_by_pid,
     PropertyValue, NodeId,
 };
 use crate::kernel::chitin::{ChitinProto, DeviceState};
@@ -82,6 +83,7 @@ pub fn devtree_unbind_user_device(
     node_id: NodeId,
     pid: u32,
     pwm: u64,
+    mm: &MmStruct,
 ) -> Result<(), UserDriverError> {
     if !has_device_cap(pwm, DEVICE_CAP_BIND) {
         return Err(UserDriverError::new(ERR_NOT_AUTHORIZED));
@@ -93,13 +95,53 @@ pub fn devtree_unbind_user_device(
     };
 
     match node.user_mapped {
-        Some(mapped_pid) if mapped_pid == pid => {
-            devtree_clear_user_mapped(node_id);
-            Ok(())
-        }
-        Some(_) => Err(UserDriverError::new(ERR_PID_MISMATCH)),
-        None => Err(UserDriverError::new(ERR_INVALID_STATE)),
+        Some(mapped_pid) if mapped_pid == pid => {}
+        Some(_) => return Err(UserDriverError::new(ERR_PID_MISMATCH)),
+        None => return Err(UserDriverError::new(ERR_INVALID_STATE)),
     }
+
+    let device_ranges: alloc::vec::Vec<(usize, usize)> = {
+        let vmas = mm.vmas.lock();
+        vmas.iter()
+            .filter(|v| v.vma_type == VmaType::Device)
+            .map(|v| (v.start, v.end))
+            .collect()
+    };
+
+    if !device_ranges.is_empty() {
+        let cr3 = {
+            if !PROCESS_TABLE.try_inc_ref(pid) {
+                devtree_clear_user_mapped(node_id);
+                return Err(UserDriverError::new(ERR_NOT_FOUND));
+            }
+            match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
+                Some(c) if c != 0 => c,
+                _ => {
+                    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+                    devtree_clear_user_mapped(node_id);
+                    return Err(UserDriverError::new(ERR_NOT_FOUND));
+                }
+            }
+        };
+
+        let vmm = get_vmm();
+        for (start, end) in &device_ranges {
+            let mut addr = *start;
+            while addr < *end {
+                vmm.unmap_page_in_table(cr3, VirtAddr(addr as u64));
+                addr += PAGE_SIZE as usize;
+            }
+        }
+
+        PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+
+        for (start, end) in &device_ranges {
+            mm.remove_range(*start, *end);
+        }
+    }
+
+    devtree_clear_user_mapped(node_id);
+    Ok(())
 }
 
 pub fn devtree_map_user_device(
@@ -140,6 +182,9 @@ pub fn devtree_map_user_device(
     }
 
     let clamped_size = (size as usize).min(MAX_MMIO_SIZE);
+    if phys_addr.checked_add(clamped_size as u64).is_none() {
+        return Err(UserDriverError::new(ERR_NO_MMIO));
+    }
     let pages = (clamped_size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
 
     let map_base = match mm.find_free_range(pages * PAGE_SIZE as usize) {
@@ -152,9 +197,17 @@ pub fn devtree_map_user_device(
         | PageFlags::USER
         | PageFlags::CACHE_DISABLE;
 
-    let cr3 = match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
-        Some(c) => c,
-        None => return Err(UserDriverError::new(ERR_NOT_FOUND)),
+    let cr3 = {
+        if !PROCESS_TABLE.try_inc_ref(pid) {
+            return Err(UserDriverError::new(ERR_NOT_FOUND));
+        }
+        match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
+            Some(c) if c != 0 => c,
+            _ => {
+                PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+                return Err(UserDriverError::new(ERR_NOT_FOUND));
+            }
+        }
     };
 
     let vmm = get_vmm();
@@ -168,15 +221,18 @@ pub fn devtree_map_user_device(
         map_base,
         map_base + pages * PAGE_SIZE as usize,
         page_flags,
-        VmaType::Anonymous,
+        VmaType::Device,
     );
     if mm.insert_vma(vma).is_err() {
         for i in 0..pages {
             let unmap_virt = VirtAddr((map_base + i * PAGE_SIZE as usize) as u64);
-            vmm.map_page_in_table(cr3, unmap_virt, PhysAddr(0), PageFlags::empty());
+            vmm.unmap_page_in_table(cr3, unmap_virt);
         }
+        PROCESS_TABLE.dec_ref_and_maybe_free(pid);
         return Err(UserDriverError::new(ERR_OOM));
     }
+
+    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
 
     klog_info!(Driver, "Chitin: mapped MMIO for node {} (phys=0x{:X} size={}) → user VA=0x{:X}",
         node_id, phys_addr, clamped_size, map_base);
@@ -206,21 +262,39 @@ pub fn devtree_unmap_user_device(
         None => return Err(UserDriverError::new(ERR_INVALID_STATE)),
     }
 
-    let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+    if size == 0 {
+        return Ok(());
+    }
 
-    let cr3 = match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
-        Some(c) => c,
-        None => return Err(UserDriverError::new(ERR_NOT_FOUND)),
+    let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+    if virt_addr.checked_add(size).is_none() {
+        return Err(UserDriverError::new(ERR_NO_MMIO));
+    }
+
+    let cr3 = {
+        if !PROCESS_TABLE.try_inc_ref(pid) {
+            return Err(UserDriverError::new(ERR_NOT_FOUND));
+        }
+        match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
+            Some(c) if c != 0 => c,
+            _ => {
+                PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+                return Err(UserDriverError::new(ERR_NOT_FOUND));
+            }
+        }
     };
 
     let vmm = get_vmm();
     for i in 0..pages {
         let page_virt = VirtAddr((virt_addr + i * PAGE_SIZE as usize) as u64);
-        vmm.map_page_in_table(cr3, page_virt, PhysAddr(0), PageFlags::empty());
+        vmm.unmap_page_in_table(cr3, page_virt);
     }
 
-    mm.remove_range(virt_addr, virt_addr + pages * PAGE_SIZE as usize)
-        .map_err(|_| UserDriverError::new(ERR_OOM))?;
+    mm.remove_range(virt_addr, virt_addr + pages * PAGE_SIZE as usize);
+
+    devtree_clear_user_mapped(node_id);
+
+    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
 
     Ok(())
 }
@@ -254,22 +328,37 @@ pub extern "C" fn user_driver_bind_c(node_id: u32, pid: u32, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn user_driver_unbind_c(node_id: u32, pid: u32, pwm: u64) -> i32 {
-    match devtree_unbind_user_device(node_id, pid, pwm) {
+pub extern "C" fn user_driver_unbind_c(node_id: u32, pid: u32, pwm: u64, mm: *const MmStruct) -> i32 {
+    if mm.is_null() {
+        return ERR_NOT_FOUND;
+    }
+    let mm_ref = unsafe { &*mm };
+    match devtree_unbind_user_device(node_id, pid, pwm, mm_ref) {
         Ok(()) => 0,
         Err(e) => e.code(),
     }
 }
 
-/// Stub for user-driver interrupt signal delivery.
-/// Sets SIGUSR1 pending on the target process. Full signal dispatch
-/// integration will deliver it on return to userspace.
+/// 向目标进程设置待处理信号 (SIGUSR1=10 for IRQ delivery).
+/// 通过进程引用计数保护, 确保目标进程在信号设置期间不会被销毁。
+/// 信号将在返回用户空间时由信号分发框架处理。
 #[no_mangle]
 pub extern "C" fn process_signal_pending_set(pid: u32, sig: u32) {
-    let _ = (pid, sig);
-    // TODO: integrate with signal dispatch framework in kernel/ipc/signal.rs
-    // For now, this is a no-op — the user driver IRQ forwarding path
-    // is ready and will activate when signal delivery is implemented.
+    if !PROCESS_TABLE.try_inc_ref(pid) {
+        return;
+    }
+    PROCESS_TABLE.with_process_mut(pid, |proc| {
+        proc.signal_pending_set(sig);
+    });
+    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+}
+
+/// 进程退出时清理所有 Chitin 设备绑定
+/// 遍历设备树, 清除该进程在所有节点上的 user_mapped 标记,
+/// 防止残留标记导致设备节点永远无法被其他进程重新绑定
+#[no_mangle]
+pub extern "C" fn chitin_process_cleanup(pid: u32) {
+    devtree_clear_user_mapped_by_pid(pid);
 }
 
 #[cfg(test)]

@@ -77,10 +77,8 @@ pub fn munmap_syscall(mm: &MmStruct, addr: u64, length: u64) -> Result<(), Errno
     let start = addr as usize;
     let end = start + length as usize;
 
-    match mm.remove_range(start, end) {
-        Ok(()) => Ok(()),
-        Err(_) => Err(Errno::EINVAL),
-    }
+    mm.remove_range(start, end);
+    Ok(())
 }
 
 #[inline]
