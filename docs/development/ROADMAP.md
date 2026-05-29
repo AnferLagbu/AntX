@@ -1,7 +1,7 @@
 # QX 内核演进蓝图
 
 > 基于现有基础设施，规划创新功能与差异化能力。
-> 最后更新: 2026-07-16
+> 最后更新: 2026-05-29
 
 ---
 
@@ -13,7 +13,7 @@ QX 已完成 4 个 Phase 的架构演进，核心子系统已就绪：
 |--------|--------|----------|
 | 内存管理 | ⭐⭐⭐⭐ | 伙伴分配器 / Slab 缓存 / VMA / Demand Paging / COW / 内存压力感知调度 |
 | 中断异常 | ⭐⭐⭐⭐ | IDT / Softirq / PageFault / DomainRecovery |
-| 进程调度 | ⭐⭐⭐⭐ | per-CPU RunQueue / SMP IPI / COW fork |
+| 进程调度 | ⭐⭐⭐⭐ | MLFQ 4级调度 / RT (FIFO/RR) / per-CPU RunQueue / COW fork / PWM 配额 |
 | 同步原语 | ⭐⭐⭐⭐ | SpinLock / Mutex / RwLock / RCU |
 | 文件系统 | ⭐⭐⭐⭐ | HvFS (SPA/DMU/ZAP/TXG) / ZIL / ARC / RAIDZ / Snapshot / CAS 内容寻址去重 |
 | 能力系统 | ⭐⭐⭐⭐ | PWM 令牌委托 / 信任链 / 域隔离 |
@@ -209,6 +209,119 @@ Chitin 设备树节点可直接映射到用户态进程，实现安全用户态�
 
 ---
 
+### Phase 11: CFS 公平调度器 (Fair Scheduler)
+
+**优先级**: 🥇 | **投入**: 中 | **创新度**: ⭐⭐⭐⭐ | **实用价值**: 极高
+
+#### 背景
+
+QX 当前使用 MLFQ (Multi-Level Feedback Queue) 调度器：4 级固定时间片 `[10, 20, 40, 80]` tick + RT (FIFO/RR) 独立队列 + per-CPU RunQueue + SMP 负载均衡。MLFQ 对 I/O 密集型任务友好，但对 CPU 密集型任务存在公平性问题——固定时间片无法精确反映任务的计算需求差异，同一 level 内进程获得的 CPU 时间可能严重不成比例。
+
+当前负载均衡仅通过 `total_runnable_for()` 比较队列长度，不区分任务的权重/计算密度差异。一个满载 CPU 的 compute 任务和一个接近空闲的 I/O 任务被同等对待。
+
+#### 目标
+
+从 MLFQ 演进到 CFS (Completely Fair Scheduler) 风格的 `vruntime` 公平模型，使调度器成为"比例公平"而非"固定时间片降级"的系统。
+
+**核心公式**：
+
+```
+vruntime_delta = exec_delta_ns × NICE0_WEIGHT(1024) / entity.weight
+min_vruntime   = max(min_vruntime, min{rb_tree中的vruntime})
+time_slice     = TARGET_LATENCY × weight / total_weight
+time_slice     = max(time_slice, MIN_GRANULARITY)
+```
+
+**调度流程**：
+
+```
+schedule()
+  ├── 1. pick_earliest_deadline()   ← Deadline 任务（新增）
+  ├── 2. pick_rt_task()             ← FIFO/RR 实时任务（保留）
+  └── 3. cfs.pick_next()            ← vruntime 最小者（替代 MLFQ 4级遍历）
+```
+
+#### 实现路径（5 个子阶段）
+
+##### 11.1 vruntime 核心 + 红黑树结构
+
+**文件**: `kernel/proc/cfs.rs`
+
+引入 `CfsEntity`（调度实体）、`CfsRunQueue`（per-CPU CFS 就绪队列）和 NICE-to-weight 映射表。
+
+- `CfsEntity`: `vruntime` / `weight` / `sum_exec_runtime` / `on_rq`
+- `CfsRunQueue`: 红黑树 `BTreeMap<u64, Pid>` (key=vruntime) / `min_vruntime` / `total_weight` / `nr_running`
+- 先用 `BTreeMap` 快速验证，后续替换为 intrusive RBTree（PCB 嵌入 `rb_node`，零额外分配）
+
+```rust
+const TARGET_LATENCY_NS: u64 = 6_000_000;   // 6ms 桌面级目标延迟
+const MIN_GRANULARITY_NS: u64 = 750_000;     // 0.75ms 最小粒度
+
+const NICE_TO_WEIGHT: [u64; 40] = [
+    88761, 71755, 56483, 46273, 36291, // nice -20 ~ -16
+    29154, 23254, 18705, 14949, 11916, // nice -15 ~ -11
+     9548,  7620,  6100,  4904,  3906, // nice -10 ~  -6
+     3121,  2501,  1991,  1586,  1277, // nice  -5 ~  -1
+     1024,   820,   655,   526,   423, // nice   0 ~   4
+      335,   272,   215,   172,   137, // nice   5 ~   9
+      110,    87,    70,    56,    45, // nice  10 ~  14
+       36,    29,    23,    18,    15, // nice  15 ~  19
+];
+```
+
+##### 11.2 调度队列操作 (enqueue / dequeue / pick_next)
+
+**改造 `schedule()` 选择逻辑**：
+
+- `enqueue()`: 新进程 vruntime 从 `min_vruntime` 起步（避免饿死老进程），插入红黑树 O(log n)
+- `dequeue()`: 进程阻塞/退出时从树中移除 O(log n)
+- `pick_next()`: 取最左叶子（vruntime 最小者）O(log n)，替代当前 4 级 MLFQ 遍历 O(4n)
+
+##### 11.3 动态时间片 tick
+
+**改造 `tick()` 时间片递减逻辑**：
+
+- 当前：固定 `TIME_SLICES[level]` 递减到 0 → `need_reschedule`
+- 目标：每 tick 更新当前进程 `vruntime`，当 `curr.vruntime > next.vruntime + threshold` 时触发重调度
+- `threshold = MIN_GRANULARITY × NICE0_WEIGHT / curr.weight`
+
+##### 11.4 加权负载均衡
+
+**改造 `load_balance()`**：
+
+- 当前：`total_runnable_for()` 数队列长度 → 偷一个任务
+- 目标：用 `Σ weight` 计算 per-CPU 负载，迁移负载差值一半的进程
+- 选择 vruntime 最大的进程（最不可能被源 CPU 优先调度）
+- 引入 `LOAD_BALANCE_THRESHOLD = 1024`（≈1×NICE0 weight）防止抖动
+
+##### 11.5 Deadline 调度类
+
+在 RT FIFO/RR 之上增加 Deadline 调度（最高优先级）：
+
+- `DeadlineParams`: `runtime_ns` / `deadline_ns` / `period_ns` / CBS 带宽控制
+- 选择逻辑：最早绝对截止时间 `deadline_abs` 的 EDF 策略
+- 配额耗尽时 throttling，下个周期自动 replenish
+
+#### 设计决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 目标延迟 | 6ms (桌面级) | QX 偏桌面/工作站定位 |
+| 红黑树 | BTreeMap → 手写 intrusive RBTree | 先验证、后优化，避免过早引入复杂度 |
+| 向后兼容 | 保留 MLFQ API，`add_with_priority` → `set_nice` | 现有代码零改动 |
+| RT 调度 | 完全保留 | CFS 只替代普通进程 MLFQ |
+| EAS (能耗感知) | 暂不实现 | QX 不跑移动设备 |
+| 实时调度类 | 保留 FIFO/RR，新增 Deadline | Deadline 为 RT 增添硬实时能力 |
+
+#### 验证
+
+1. `fork_bomb` 压力测试 — 100 个 CPU 密集型进程，验证 vruntime 单调递增、各进程执行时间比例与 weight 一致
+2. `io_race` 交互式测试 — I/O 密集型进程延时间隔 < 10ms
+3. SMP 负载均衡 — 4 核各跑计算任务，验证 60s 内迁移次数 > 0 且各核心负载偏差 < 15%
+4. 调度延迟回归 — 空系统调用 + 上下文切换 < 5μs（不劣于当前值）
+
+---
+
 ## 实施优先级矩阵
 
 | 优先级 | Phase | 功能 | 状态 | 投入 | 创新度 |
@@ -216,15 +329,18 @@ Chitin 设备树节点可直接映射到用户态进程，实现安全用户态�
 | **1** | 8 | 内存压力感知调度 | ✅ 已完成 | 小 (3天) | ⭐⭐⭐⭐ |
 | **2** | 5 | 微重启崩溃恢复 | ✅ 已完成 | 中 (7天) | ⭐⭐⭐⭐⭐ |
 | **3** | 6 | 内容寻址存储 | ✅ 已完成 | 中 (10天) | ⭐⭐⭐⭐⭐ |
-| **4** | 9 | 可组合虚拟设备 | ⏳ 未开始 | 中 (7天) | ⭐⭐⭐⭐ |
-| **5** | 10 | 用户态驱动 | ⏳ 未开始 | 大 (14天) | ⭐⭐⭐ |
-| **6** | 7 | WASM 内核沙箱 | ⏳ 未开始 | 大 (21天) | ⭐⭐⭐⭐⭐ |
+| **4** | 11 | CFS 公平调度器 | ⏳ 规划中 | 中 (11天) | ⭐⭐⭐⭐ |
+| **5** | 9 | 可组合虚拟设备 | ⏳ 未开始 | 中 (7天) | ⭐⭐⭐⭐ |
+| **6** | 10 | 用户态驱动 | ⏳ 未开始 | 大 (14天) | ⭐⭐⭐ |
+| **7** | 7 | WASM 内核沙箱 | ⏳ 未开始 | 大 (21天) | ⭐⭐⭐⭐⭐ |
 
 ### 推荐执行顺序
 
 ```
-Phase 8 (✅) → Phase 5 (✅) → Phase 6 (✅) → Phase 9 → Phase 10 → Phase 7
+Phase 8 (✅) → Phase 5 (✅) → Phase 6 (✅) → Phase 9 → Phase 10 → Phase 11 → Phase 7
 ```
+
+> **关于 Phase 11 的调度说明**：CFS 调度器与用户态驱动 (Phase 10) 高度互补——用户态驱动对 CPU 时间精确定额分配有强需求（这正是 CFS weight 的强项），但 Phase 10 的 Chitin 设备树映射/中断转发逻辑与调度器核心独立。因此 Phase 11 可在 Phase 10 完成设备驱动框架稳定后并行推进，无须阻塞。WASM 沙箱 (Phase 7) 依赖细粒度 CPU 配额控制（CFS weight + PWID quota 双重保障），故 Phase 11 应在此之前完成。
 
 ---
 

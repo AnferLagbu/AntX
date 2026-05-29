@@ -150,6 +150,7 @@ pub use storage::ata::{
 /// 4. 输入设备 (键盘)
 /// 5. 显示设备 (HDMI、DP)
 /// 6. USB设备
+/// 7. 组合虚拟设备 (RAID0/RAID1)
 pub fn init_all() {
     #[cfg(target_arch = "x86_64")]
     {
@@ -167,6 +168,8 @@ pub fn init_all() {
     let _ = usb::usb_init();
 
     hotplug::hotplug_init();
+
+    let _ = crate::kernel::chitin::composite::devtree_probe_composites();
 }
 
 /// 关闭所有设备驱动

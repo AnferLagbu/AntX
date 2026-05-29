@@ -39,6 +39,7 @@ pub mod proto_char;
 pub mod proto_net;
 pub mod proto_input;
 pub mod devtree;
+pub mod composite;
 
 // ── 协议类型 ──
 
