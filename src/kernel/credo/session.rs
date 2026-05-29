@@ -14,6 +14,9 @@ const SUID_CTX: PwmContext = PwmContext {
     cached_gid: 0,
     euid: 0,
     egid: 0,
+    saved_euid: 0,
+    saved_egid: 0,
+    active_domain_id: DomainId::ZERO,
     elevation_granted_pwm: PwmId::ZERO,
 };
 
@@ -85,6 +88,9 @@ impl SessionManager {
             ctx.cached_gid = gid;
             ctx.euid = uid;
             ctx.egid = gid;
+            ctx.saved_euid = uid;
+            ctx.saved_egid = gid;
+            ctx.active_domain_id = DomainId::from_uid(uid);
             ctx.elevation_granted_pwm = PwmId::ZERO;
         }
         self.release();
@@ -105,6 +111,9 @@ impl SessionManager {
             ctx.cached_gid = 0;
             ctx.euid = 0;
             ctx.egid = 0;
+            ctx.saved_euid = 0;
+            ctx.saved_egid = 0;
+            ctx.active_domain_id = DomainId::ZERO;
             ctx.elevation_granted_pwm = PwmId::ZERO;
             self.elevation_depth.store(0, Ordering::Release);
             super::audit::log(pwm, AuditAction::Logout, pwm, 0, 0);
@@ -134,6 +143,18 @@ impl SessionManager {
 
     pub fn get_egid(&self) -> u32 {
         unsafe { (*self.current.get()).egid }
+    }
+
+    pub fn get_saved_euid(&self) -> u32 {
+        unsafe { (*self.current.get()).saved_euid }
+    }
+
+    pub fn get_saved_egid(&self) -> u32 {
+        unsafe { (*self.current.get()).saved_egid }
+    }
+
+    pub fn get_domain_id(&self) -> DomainId {
+        unsafe { (*self.current.get()).active_domain_id }
     }
 
     pub fn is_logged_in(&self) -> bool {
@@ -172,6 +193,9 @@ impl SessionManager {
             let elevated = &mut *self.current.get();
             elevated.euid = target_uid;
             elevated.egid = target_gid;
+            elevated.saved_euid = target_uid;
+            elevated.saved_egid = target_gid;
+            elevated.active_domain_id = DomainId::from_uid(target_uid);
             elevated.elevation_granted_pwm = PwmId(target_pwm);
         }
         self.elevation_depth.store(depth + 1, Ordering::Release);
@@ -235,6 +259,11 @@ impl SessionManager {
     }
 
     pub fn try_setgid(&self, target_gid: u32) -> bool {
+        let egid = unsafe { (*self.current.get()).egid };
+        if target_gid == egid {
+            return true;
+        }
+
         let table = identity::get_table();
         let target_entry = match table.find_by_gid(target_gid) {
             Some(e) => e,
@@ -244,6 +273,8 @@ impl SessionManager {
 
         self.acquire();
         let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
+        let cached_gid = unsafe { (*self.current.get()).cached_gid };
+        let saved_egid = unsafe { (*self.current.get()).saved_egid };
         self.release();
 
         if super::engine::check_privilege(target_pwm, current_pwm) {
@@ -251,12 +282,216 @@ impl SessionManager {
             unsafe {
                 let ctx = &mut *self.current.get();
                 ctx.egid = target_gid;
+                ctx.saved_egid = target_gid;
             }
             self.release();
-            true
-        } else {
-            false
+            return true;
         }
+
+        if target_gid == cached_gid || target_gid == saved_egid {
+            self.acquire();
+            unsafe { (*self.current.get()).egid = target_gid; }
+            self.release();
+            return true;
+        }
+
+        false
+    }
+
+    pub fn try_seteuid(&self, target_euid: u32) -> bool {
+        let euid = unsafe { (*self.current.get()).euid };
+        if target_euid == euid {
+            return true;
+        }
+
+        let table = identity::get_table();
+        let target_entry = match table.find_by_uid(target_euid) {
+            Some(e) => e,
+            None => return false,
+        };
+        let target_pwm = target_entry.get_pwm().0;
+
+        self.acquire();
+        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
+        let cached_uid = unsafe { (*self.current.get()).cached_uid };
+        let saved_euid = unsafe { (*self.current.get()).saved_euid };
+        self.release();
+
+        if super::engine::check_privilege(target_pwm, current_pwm) {
+            self.acquire();
+            unsafe {
+                let ctx = &mut *self.current.get();
+                ctx.euid = target_euid;
+                ctx.saved_euid = target_euid;
+            }
+            self.release();
+            return true;
+        }
+
+        if target_euid == cached_uid || target_euid == saved_euid {
+            self.acquire();
+            unsafe { (*self.current.get()).euid = target_euid; }
+            self.release();
+            return true;
+        }
+
+        false
+    }
+
+    pub fn try_setegid(&self, target_egid: u32) -> bool {
+        let egid = unsafe { (*self.current.get()).egid };
+        if target_egid == egid {
+            return true;
+        }
+
+        let table = identity::get_table();
+        let target_entry = match table.find_by_gid(target_egid) {
+            Some(e) => e,
+            None => return false,
+        };
+        let target_pwm = target_entry.get_pwm().0;
+
+        self.acquire();
+        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
+        let cached_gid = unsafe { (*self.current.get()).cached_gid };
+        let saved_egid = unsafe { (*self.current.get()).saved_egid };
+        self.release();
+
+        if super::engine::check_privilege(target_pwm, current_pwm) {
+            self.acquire();
+            unsafe {
+                let ctx = &mut *self.current.get();
+                ctx.egid = target_egid;
+                ctx.saved_egid = target_egid;
+            }
+            self.release();
+            return true;
+        }
+
+        if target_egid == cached_gid || target_egid == saved_egid {
+            self.acquire();
+            unsafe { (*self.current.get()).egid = target_egid; }
+            self.release();
+            return true;
+        }
+
+        false
+    }
+
+    pub fn try_setreuid(&self, target_ruid: u32, target_euid: u32) -> bool {
+        #[inline]
+        fn has_uid_privilege(table: &identity::IdentityTable, uid: u32, current_pwm: u64) -> bool {
+            if let Some(entry) = table.find_by_uid(uid) {
+                super::engine::check_privilege(entry.get_pwm().0, current_pwm)
+            } else {
+                false
+            }
+        }
+
+        self.acquire();
+        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
+        let old_cached_uid = unsafe { (*self.current.get()).cached_uid };
+        let old_euid = unsafe { (*self.current.get()).euid };
+        let old_saved_euid = unsafe { (*self.current.get()).saved_euid };
+        self.release();
+
+        let ruid_is_set = target_ruid != u32::MAX;
+        let euid_is_set = target_euid != u32::MAX;
+
+        let new_ruid = if ruid_is_set { target_ruid } else { old_cached_uid };
+        let new_euid = if euid_is_set { target_euid } else { old_euid };
+
+        if new_ruid == old_cached_uid && new_euid == old_euid {
+            return true;
+        }
+
+        let table = identity::get_table();
+
+        if ruid_is_set && new_ruid != old_cached_uid {
+            let ok = has_uid_privilege(table, new_ruid, current_pwm)
+                || new_ruid == old_euid;
+            if !ok { return false; }
+        }
+
+        if euid_is_set && new_euid != old_euid {
+            let ok = has_uid_privilege(table, new_euid, current_pwm)
+                || new_euid == old_cached_uid
+                || new_euid == old_saved_euid;
+            if !ok { return false; }
+        }
+
+        self.acquire();
+        let saved_euid_should_update = ruid_is_set
+            || (euid_is_set && new_euid != old_cached_uid);
+        unsafe {
+            let ctx = &mut *self.current.get();
+            ctx.cached_uid = new_ruid;
+            ctx.euid = new_euid;
+            if saved_euid_should_update {
+                ctx.saved_euid = new_euid;
+            }
+        }
+        self.release();
+
+        true
+    }
+
+    pub fn try_setregid(&self, target_rgid: u32, target_egid: u32) -> bool {
+        #[inline]
+        fn has_gid_privilege(table: &identity::IdentityTable, gid: u32, current_pwm: u64) -> bool {
+            if let Some(entry) = table.find_by_gid(gid) {
+                super::engine::check_privilege(entry.get_pwm().0, current_pwm)
+            } else {
+                false
+            }
+        }
+
+        self.acquire();
+        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
+        let old_cached_gid = unsafe { (*self.current.get()).cached_gid };
+        let old_egid = unsafe { (*self.current.get()).egid };
+        let old_saved_egid = unsafe { (*self.current.get()).saved_egid };
+        self.release();
+
+        let rgid_is_set = target_rgid != u32::MAX;
+        let egid_is_set = target_egid != u32::MAX;
+
+        let new_rgid = if rgid_is_set { target_rgid } else { old_cached_gid };
+        let new_egid = if egid_is_set { target_egid } else { old_egid };
+
+        if new_rgid == old_cached_gid && new_egid == old_egid {
+            return true;
+        }
+
+        let table = identity::get_table();
+
+        if rgid_is_set && new_rgid != old_cached_gid {
+            let ok = has_gid_privilege(table, new_rgid, current_pwm)
+                || new_rgid == old_egid;
+            if !ok { return false; }
+        }
+
+        if egid_is_set && new_egid != old_egid {
+            let ok = has_gid_privilege(table, new_egid, current_pwm)
+                || new_egid == old_cached_gid
+                || new_egid == old_saved_egid;
+            if !ok { return false; }
+        }
+
+        self.acquire();
+        let saved_egid_should_update = rgid_is_set
+            || (egid_is_set && new_egid != old_cached_gid);
+        unsafe {
+            let ctx = &mut *self.current.get();
+            ctx.cached_gid = new_rgid;
+            ctx.egid = new_egid;
+            if saved_egid_should_update {
+                ctx.saved_egid = new_egid;
+            }
+        }
+        self.release();
+
+        true
     }
 }
 
@@ -302,6 +537,18 @@ pub fn get_egid() -> u32 {
     GLOBAL_SESSION.lock().get_egid()
 }
 
+pub fn get_saved_euid() -> u32 {
+    GLOBAL_SESSION.lock().get_saved_euid()
+}
+
+pub fn get_saved_egid() -> u32 {
+    GLOBAL_SESSION.lock().get_saved_egid()
+}
+
+pub fn get_current_domain_id() -> u64 {
+    GLOBAL_SESSION.lock().get_domain_id().as_u64()
+}
+
 pub fn is_logged_in() -> bool {
     GLOBAL_SESSION.lock().is_logged_in()
 }
@@ -328,4 +575,20 @@ pub fn try_setuid(target_uid: u32) -> bool {
 
 pub fn try_setgid(target_gid: u32) -> bool {
     GLOBAL_SESSION.lock().try_setgid(target_gid)
+}
+
+pub fn try_seteuid(target_euid: u32) -> bool {
+    GLOBAL_SESSION.lock().try_seteuid(target_euid)
+}
+
+pub fn try_setegid(target_egid: u32) -> bool {
+    GLOBAL_SESSION.lock().try_setegid(target_egid)
+}
+
+pub fn try_setreuid(ruid: u32, euid: u32) -> bool {
+    GLOBAL_SESSION.lock().try_setreuid(ruid, euid)
+}
+
+pub fn try_setregid(rgid: u32, egid: u32) -> bool {
+    GLOBAL_SESSION.lock().try_setregid(rgid, egid)
 }

@@ -150,6 +150,11 @@ pub const SYS_setgid: u64 = 106;
 pub const SYS_geteuid: u64 = 107;
 pub const SYS_getegid: u64 = 108;
 
+pub const SYS_seteuid: u64 = 113;
+pub const SYS_setegid: u64 = 114;
+pub const SYS_setreuid: u64 = 115;
+pub const SYS_setregid: u64 = 116;
+
 // 进程组
 pub const SYS_getppid: u64 = 110;
 pub const SYS_getpgid: u64 = 111;

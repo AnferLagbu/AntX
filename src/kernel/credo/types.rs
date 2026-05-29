@@ -321,6 +321,9 @@ pub struct PwmContext {
     pub cached_gid: u32,
     pub euid: u32,
     pub egid: u32,
+    pub saved_euid: u32,
+    pub saved_egid: u32,
+    pub active_domain_id: DomainId,
     pub elevation_granted_pwm: PwmId,
 }
 
