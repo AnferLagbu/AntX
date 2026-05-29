@@ -82,7 +82,9 @@ pub struct VirtioNet {
     pub rx_count: u64,
 }
 
-// SAFETY: Single-core, DMA buffers from PMM.
+// SAFETY: VirtioNet uses DMA buffers from PMM; single-owner &mut self
+// access ensures no concurrent I/O on the same device. MMIO writes
+// use volatile + fence for cross-CPU visibility.
 unsafe impl Send for VirtioNet {}
 unsafe impl Sync for VirtioNet {}
 

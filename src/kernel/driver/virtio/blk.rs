@@ -51,7 +51,9 @@ pub struct VirtioBlk {
     status_byte: u8,
 }
 
-// SAFETY: Single-core, DMA buffers from PMM.
+// SAFETY: VirtioBlk uses DMA buffers from PMM; single-owner &mut self
+// access ensures no concurrent I/O on the same device. MMIO writes
+// use volatile + fence for cross-CPU visibility.
 unsafe impl Send for VirtioBlk {}
 unsafe impl Sync for VirtioBlk {}
 

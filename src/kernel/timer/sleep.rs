@@ -45,11 +45,15 @@ pub fn busy_wait_ns(ns: u64) {
     if ns == 0 { return; }
 
     let start = read_tsc();
-    
-    // 近似: 假设 2GHz CPU (保守估计)
-    // 实际应该使用校准后的频率，这里使用近似值
-    let approx_freq_mhz: u64 = 2000;  // 2 GHz
-    let target_cycles = (ns * approx_freq_mhz) / 1000;
+
+    extern "C" { fn cpu_get_tsc_frequency() -> u64; }
+    let freq_hz = unsafe { cpu_get_tsc_frequency() };
+
+    let target_cycles = if freq_hz > 0 {
+        (ns * freq_hz) / 1_000_000_000
+    } else {
+        ns * 2
+    };
 
     loop {
         let elapsed = read_tsc().saturating_sub(start);

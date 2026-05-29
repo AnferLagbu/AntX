@@ -11,7 +11,7 @@ static RAMFS_MOUNTED: core::sync::atomic::AtomicBool = core::sync::atomic::Atomi
 fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
     if ptr.is_null() { return ""; }
     unsafe {
-        let len = (0..).find(|&i| *ptr.add(i) == 0).unwrap_or(0);
+        let len = (0..VFS_MAX_PATH).find(|&i| *ptr.add(i) == 0).unwrap_or(VFS_MAX_PATH);
         let slice = core::slice::from_raw_parts(ptr as *const u8, len);
         core::str::from_utf8_unchecked(slice)
     }

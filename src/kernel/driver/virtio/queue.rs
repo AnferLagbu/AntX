@@ -75,8 +75,10 @@ pub struct VirtQueue {
     pub used_phys:  u64,
 }
 
-// SAFETY: VirtQueue is only accessed from a single CPU (no SMP yet).
-// Raw pointers point to PMM-allocated DMA memory.
+// SAFETY: VirtQueue raw pointers point to PMM-allocated DMA pages.
+// Each device instance has its own virtqueues. Descriptor manipulation
+// uses volatile accesses with memory fences. Cross-CPU safety comes
+// from single-owner &mut self access or external lock.
 unsafe impl Send for VirtQueue {}
 unsafe impl Sync for VirtQueue {}
 

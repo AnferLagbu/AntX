@@ -458,7 +458,7 @@ impl Scheduler {
         let prev_ctx_ptr = prev_ptr.map_or(
             core::ptr::null_mut(),
             |p| {
-                unsafe { &mut (*p).context as *mut Mutex<ProcessContext> }
+                unsafe { &raw mut (*p).context as *mut Mutex<ProcessContext> }
             },
         );
 
