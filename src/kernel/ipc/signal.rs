@@ -20,7 +20,12 @@ pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
     }
 
     unsafe {
-        extern "C" { fn process_get_by_pid(pid: u32) -> u64; fn process_get_current_pwm() -> u64; }
+        extern "C" {
+            fn process_get_by_pid(pid: u32) -> u64;
+            fn process_get_current_pwm() -> u64;
+            fn process_get_pwm_by_pid(pid: u32) -> u64;
+        }
+
         let proc_addr = process_get_by_pid(target_pid);
         if proc_addr == 0 {
             return Err(-2);
@@ -30,7 +35,6 @@ pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
         if sender_pwm != 0 {
             let sender_level = crate::kernel::credo::engine::get_privilege_level(sender_pwm);
             if sender_level != 0 {
-                extern "C" { fn process_get_pwm_by_pid(pid: u32) -> u64; }
                 let target_pwm = process_get_pwm_by_pid(target_pid);
                 if target_pwm != sender_pwm {
                     return Err(-3);
