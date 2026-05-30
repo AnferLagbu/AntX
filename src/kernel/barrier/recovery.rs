@@ -120,7 +120,7 @@ fn has_dependency(sub_id: DomainId, on_id: DomainId) -> bool {
     let reg = RECOVERY_REGISTRY.lock();
     for r in reg.registered.iter() {
         if r.id == sub_id {
-            return r.deps.iter().any(|&d| d == on_id);
+            return r.deps.contains(&on_id);
         }
     }
     false

@@ -112,7 +112,7 @@ impl ChitinNode {
     }
 
     pub fn matches_compatible(&self, needle: &str) -> bool {
-        self.compatible.iter().any(|c| *c == needle)
+        self.compatible.contains(&needle)
     }
 }
 

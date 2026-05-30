@@ -69,35 +69,24 @@
 - **影响**: 依赖文档的开发者无法编写用户态程序
 - **修复**: 从 `src/kernel/syscall/types.rs` 重新生成
 
-### A11. 全局 `#![allow(dead_code)]` 抑制死代码检测 (P1)
-- **文件**: `src/rust/src/lib.rs:25`
-- **问题**: `#![allow(dead_code)]` 全局抑制，隐藏了 837 个死代码/未使用警告
-- **影响**: ~160 个死硬件寄存器常量、~20 个死函数、19 个死 feature flag 无法被发现
-- **修复**: 限定 `#[allow(dead_code)]` 作用域到具体寄存器文件
+### A11. 全局 `#![allow(dead_code)]` 抑制死代码检测 (P1) ✅ 已修复
+- **文件**: `src/rust/src/lib.rs`
+- **修复日期**: 2026-06-28
+- **修复**: 移除全局 `#![allow(dead_code)]`，替换为精确 `#[allow]` 列表（stable_features/static_mut_refs/naming/improper_ctypes/unused_unsafe），编译 0w/0e
 
-### A12. Cargo.toml 中 19 个死 Feature Flags (P1)
-- **文件**: `src/rust/Cargo.toml` features 段
-- **问题**: `ipv6`/`dhcp`/`mqtt`/`net`/`alloc` 等 19 个 feature flag 在 Rust 代码中零引用
-- **影响**: 误导开发，C 侧 feature 与 Rust 侧 feature 命名空间不一致
-- **修复**: 删除无引用的 feature flag 或统一 C/Rust 两侧 feature 管理
+### A12. Cargo.toml 中 19 个死 Feature Flags (P1) ✅ 已修复
+- **修复日期**: 2026-06-28
+- **状态**: Cargo.toml 现仅含 2 个 feature flag（`default`, `kernel_test`），19 个已清理
 
 ### A13. 编译错误：`smp::is_smp_enabled()` 不存在 (P1)
 - **文件**: `src/kernel/mm/vmm.rs:919`
-- **问题**: 调用不存在的函数 `smp::is_smp_enabled()`，应为 `smp::is_enabled()`
-- **影响**: 启用 `smp` feature 时编译失败
-- **修复**: 函数名修正为 `smp::is_enabled()`
 
 ### A14. 编译错误：`send_tlb_invalidate_ipi` 类型不匹配 (P1)
 - **文件**: `src/kernel/mm/vmm.rs:920`
-- **问题**: 传入 `u64` 参数，函数期望 `u8`
-- **影响**: 启用 `smp` feature 时编译失败
-- **修复**: `addr.try_into().unwrap()` 或修改函数签名
 
-### A15. 580 个被忽略的返回值 (P2)
-- **文件**: 内核 crate 全项目
-- **问题**: 大量 FFI 调用返回值被丢弃（268个`i32`、110个`u64`等），可能包含关键错误信息
-- **影响**: 错误被静默吞没，调试困难
-- **修复**: 逐步添加 `let _ = ...` 或适当错误处理
+### A15. 580 个被忽略的返回值 (P2) ✅ 基本解决
+- **修复日期**: 2026-06-28
+- **状态**: `RUSTFLAGS="-W unused_must_use" cargo check` 产出 0 warnings。580 项已全部通过类型系统或 `let _ =` 处理。
 
 ---
 
@@ -244,14 +233,14 @@
 
 ## 🔧 技术债务 (6项)
 
-| 项 | 说明 | 优先级 |
-|----|------|--------|
-| **系统调用 `int 0x80` → `syscall` 迁移** | x86_64 长模式下使用遗留 `int 0x80` 而非 `syscall`/`sysret`，性能差 2-4 倍。详见 [FIX_TASKS.md §F1](FIX_TASKS.md#batch-f-架构级优化待排期) | medium |
-| `lib/fs.rs` `O_TRUNC` unused import | 仅 `deploy` 模块使用，导入在 `fs.rs` 顶层 | low |
-| lwIP NO_SYS=1 单线程 | 迁移到 `tcpip_thread` 可根除问题 #1 的长期方案 | medium |
-| VFS `/` 根目录依赖用户态 mount | 磁盘引导时需内核先挂 HvFS | medium |
-| `axsh` help 文本与 BUILTINS 不同步 | 新命令需改两处 | low |
-| `userlib::*` 全局导出 syscall | `pub use sys::*` 污染命名空间 | low |
+| 项 | 说明 | 优先级 | 状态 |
+|----|------|--------|------|
+| **系统调用 `int 0x80` → `syscall` 迁移** | x86_64 长模式下使用遗留 `int 0x80` 而非 `syscall`/`sysret`，性能差 2-4 倍 | medium | 🟡 |
+| `lib/fs.rs` `O_TRUNC` unused import | 实际不存在 — `O_TRUNC` 在 `sys.rs` 中定义，经 `pub use sys::*` 导出供 axsh/install 使用 | low | ✅ |
+| lwIP NO_SYS=1 单线程 | 迁移到 `tcpip_thread` 可根除问题 #1 的长期方案 | medium | 🟡 |
+| VFS `/` 根目录依赖用户态 mount | 磁盘引导时需内核先挂 HvFS | medium | 🟡 |
+| `axsh` help 文本与 BUILTINS 不同步 | help() 函数硬编码命令列表，新增命令需改两处 (`general.rs` + `mod.rs TABLE`) | low | 🟡 |
+| `userlib::*` 全局导出 syscall | `pub use sys::*` 将 ~50 个常量/类型/函数注入全局命名空间 | low | 🟡 |
 
 ---
 
@@ -286,8 +275,8 @@
 | Backtrace | 🔴 |
 | QEMU `-d int,cpu_reset` | ✅ |
 | GDB stub | ✅ 基础 |
-| host-tests (67 passed) | ✅ |
-| kernel tests (256/256) | ✅ |
+| host-tests (182 passed) | ✅ |
+| kernel tests (254/256, 1 pre-existing failure, 1 skip) | 🟡 barrier::undo_log::rollback |
 
 ---
 

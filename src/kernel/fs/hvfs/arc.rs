@@ -305,8 +305,7 @@ impl HvArc {
     }
 
     fn evict_if_needed(&self, inner: &mut HvArcInner, _incoming_size: usize) {
-        let current: usize = inner.mru.len() + inner.mfu.len();
-        while current + 1 > inner.max_size {
+        while inner.mru.len() + inner.mfu.len() + 1 > inner.max_size {
             if inner.mru.len() > inner.p {
                 if let Some(idx) = inner.mru.pop_front() {
                     if let Some(buf) = inner.buffers[idx].take() {
@@ -336,7 +335,6 @@ impl HvArc {
             if inner.ghost_mfu.len() > inner.max_size {
                 inner.ghost_mfu.pop_front();
             }
-            break;
         }
     }
 

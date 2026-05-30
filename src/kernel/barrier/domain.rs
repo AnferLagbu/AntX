@@ -187,7 +187,7 @@ impl RecoveryDomain {
     }
 
     pub fn depends_on_id(&self, dep_id: u64) -> bool {
-        self.depends_on.lock().iter().any(|s| *s == Some(dep_id))
+        self.depends_on.lock().contains(&Some(dep_id))
     }
 
     pub fn consume_quota_tick(&self) -> bool {

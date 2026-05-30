@@ -1110,10 +1110,10 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
     write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
-    write_le32(&mut mbr, 462, hvfs_start);
+    write_le32(&mut mbr, 462, hvfs_start as u32);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
     let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
-    write_le32(&mut mbr, 470, hvfs_start);
+    write_le32(&mut mbr, 470, hvfs_start as u32);
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55; mbr[511] = 0xAA;
     if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 { return Errno::EIO.as_ret(); }
@@ -1178,9 +1178,9 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
     write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
-    write_le32(&mut mbr, 462, hvfs_start & 0xFFFFFFFF);
+    write_le32(&mut mbr, 462, hvfs_start as u32);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
-    write_le32(&mut mbr, 470, hvfs_start);
+    write_le32(&mut mbr, 470, hvfs_start as u32);
     let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55; mbr[511] = 0xAA;
@@ -1788,7 +1788,7 @@ unsafe fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
 
     let phys_page_aligned = fb_phys & !0xFFF;
     let offset = fb_phys - phys_page_aligned;
-    let pages = (size + offset + 0xFFF) / 0x1000;
+    let pages = (size + offset).div_ceil(0x1000);
 
     for i in 0..pages {
         let pa = crate::kernel::mm::PhysAddr(phys_page_aligned + i * 0x1000);
