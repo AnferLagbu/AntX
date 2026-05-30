@@ -4,6 +4,9 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use super::types::*;
 use super::process::{Process, PROCESS_TABLE};
+use super::cfs::{CfsRunQueue, DlRunQueue, DeadlineParams, nice_to_weight, mlfq_level_to_nice,
+    calc_vruntime_delta, cfs_should_preempt, NICE0_WEIGHT, MIN_GRANULARITY_TICKS, DL_MAX_UTILIZATION_PCT,
+    TARGET_LATENCY_TICKS, CFS_BOOST_INTERVAL_TICKS, LOAD_BALANCE_THRESHOLD};
 
 macro_rules! klog_sched_warn {
     ($($arg:tt)*) => {
@@ -52,6 +55,7 @@ pub enum SchedPolicy {
     Fifo = 1,
     Rr = 2,
     Idle = 3,
+    Deadline = 4,
 }
 
 impl SchedPolicy {
@@ -61,6 +65,7 @@ impl SchedPolicy {
             1 => SchedPolicy::Fifo,
             2 => SchedPolicy::Rr,
             3 => SchedPolicy::Idle,
+            4 => SchedPolicy::Deadline,
             _ => SchedPolicy::Normal,
         }
     }
@@ -78,11 +83,14 @@ const MAX_CPUS: usize = 256;
 struct PerCpuSched {
     queues: [Mutex<VecDeque<Pid>>; MLFQ_LEVELS],
     rt_queue: Mutex<VecDeque<RtTaskInfo>>,
+    cfs_rq: Mutex<CfsRunQueue>,
+    dl_rq: Mutex<DlRunQueue>,
     current: AtomicU32,
     need_reschedule: AtomicBool,
     current_level: AtomicU32,
     time_remaining: AtomicU64,
     rt_running: AtomicBool,
+    dl_running: AtomicBool,
     fifo_watchdog: AtomicU64,
 }
 
@@ -111,11 +119,14 @@ pub fn init_per_cpu_sched(cpu_id: u32) {
             Mutex::new(VecDeque::new()),
         ],
         rt_queue: Mutex::new(VecDeque::new()),
+        cfs_rq: Mutex::new(CfsRunQueue::new()),
+        dl_rq: Mutex::new(DlRunQueue::new()),
         current: AtomicU32::new(0),
         need_reschedule: AtomicBool::new(false),
         current_level: AtomicU32::new(0),
         time_remaining: AtomicU64::new(TIME_SLICES[0]),
         rt_running: AtomicBool::new(false),
+        dl_running: AtomicBool::new(false),
         fifo_watchdog: AtomicU64::new(0),
     });
 }
@@ -241,13 +252,60 @@ impl Scheduler {
     }
     
     pub fn add(&self, pid: Pid) {
-        per_cpu().queues[0].lock().push_back(pid);
+        self.cfs_enqueue(pid, 0);
     }
 
     pub fn add_with_priority(&self, pid: Pid, level: usize) {
-        if level < MLFQ_LEVELS {
-            per_cpu().queues[level].lock().push_back(pid);
+        let nice = mlfq_level_to_nice(level);
+        self.set_nice(pid, nice);
+        self.cfs_enqueue(pid, nice);
+    }
+
+    /// Set nice value and update the process's CFS weight.
+    pub fn set_nice(&self, pid: Pid, nice: i8) {
+        PROCESS_TABLE.with_process(pid, |proc| {
+            let clamped = nice.clamp(-20, 19);
+            let w = nice_to_weight(clamped);
+            proc.nice.store(clamped as u32, Ordering::Release);
+            proc.cfs_weight.store(w, Ordering::Release);
+        });
+    }
+
+    /// Enqueue a process into the CFS run queue.
+    fn cfs_enqueue(&self, pid: Pid, nice: i8) {
+        let per_cpu = per_cpu();
+        let vr = PROCESS_TABLE.with_process(pid, |p| {
+            let _ = p.set_state_safe(ProcessState::Ready);
+            let v = p.cfs_vruntime.load(Ordering::Acquire);
+            let w = p.cfs_weight.load(Ordering::Acquire);
+            p.cfs_on_rq.store(true, Ordering::Release);
+            (v, w)
+        });
+
+        if let Some((vruntime, weight)) = vr {
+            per_cpu.cfs_rq.lock().enqueue(pid, vruntime, weight);
         }
+    }
+
+    /// Set SCHED_DEADLINE parameters for a process.
+    pub fn set_deadline_params(&self, pid: Pid, params: DeadlineParams) -> bool {
+        if !params.is_valid() {
+            return false;
+        }
+        let util = params.utilization_pct();
+        if util > DL_MAX_UTILIZATION_PCT {
+            return false;
+        }
+        PROCESS_TABLE.with_process(pid, |proc| {
+            proc.set_sched_policy(SchedPolicy::Deadline);
+            proc.dl_runtime.store(params.runtime, Ordering::Release);
+            proc.dl_deadline.store(params.deadline, Ordering::Release);
+            proc.dl_period.store(params.period, Ordering::Release);
+            let now = TICK_COUNT.load(Ordering::Acquire);
+            proc.dl_abs.store(now + params.deadline, Ordering::Release);
+            proc.dl_remaining.store(params.runtime, Ordering::Release);
+        });
+        true
     }
 
     pub fn add_rt_task(&self, pid: Pid, rt_priority: u8, policy: SchedPolicy) {
@@ -278,6 +336,65 @@ impl Scheduler {
             });
         }
     }
+
+    /// Pick a deadline task (EDF — earliest absolute deadline first).
+    fn pick_deadline_task(&self) -> Option<Pid> {
+        let per_cpu = per_cpu();
+        let mut dl_rq = per_cpu.dl_rq.lock();
+        if dl_rq.is_empty() {
+            per_cpu.dl_running.store(false, Ordering::SeqCst);
+            return None;
+        }
+        let now = TICK_COUNT.load(Ordering::Acquire);
+        match dl_rq.pick_next() {
+            Some((pid, _dl_abs)) => {
+                let alive = PROCESS_TABLE.with_process(pid, |p| {
+                    p.get_state() != ProcessState::Zombie
+                        && p.get_sched_policy() == SchedPolicy::Deadline
+                }).unwrap_or(false);
+                if alive {
+                    per_cpu.dl_running.store(true, Ordering::SeqCst);
+                    Some(pid)
+                } else {
+                    per_cpu.dl_running.store(false, Ordering::SeqCst);
+                    None
+                }
+            }
+            None => {
+                per_cpu.dl_running.store(false, Ordering::SeqCst);
+                None
+            }
+        }
+    }
+
+    /// Pick a CFS task (minimum vruntime).
+    fn pick_cfs_task(&self) -> Option<Pid> {
+        let per_cpu = per_cpu();
+        let mut cfs_rq = per_cpu.cfs_rq.lock();
+        if cfs_rq.is_empty() {
+            return None;
+        }
+        match cfs_rq.pick_next() {
+            Some((pid, _vr, _w)) => {
+                let schedulable = PROCESS_TABLE.with_process(pid, |p| {
+                    let state = p.get_state();
+                    let policy = p.get_sched_policy();
+                    state != ProcessState::Blocked
+                        && state != ProcessState::Zombie
+                        && policy == SchedPolicy::Normal
+                }).unwrap_or(false);
+                if schedulable {
+                    PROCESS_TABLE.with_process(pid, |p| {
+                        p.cfs_on_rq.store(false, Ordering::Release);
+                    });
+                    Some(pid)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
     
     pub fn schedule(&self) -> Option<Pid> {
         let saved_flags = crate::arch!(interrupt_disable()) as u64;
@@ -286,7 +403,13 @@ impl Scheduler {
         let current_pid = per_cpu.current.load(Ordering::SeqCst);
         let mut next_pid: Option<Pid> = None;
 
-        {
+        // 1. Deadline (EDF) — highest priority
+        next_pid = self.pick_deadline_task();
+
+        // 2. RT (FIFO/RR) — preserved from MLFQ
+        if next_pid.is_none() {
+            per_cpu.dl_running.store(false, Ordering::SeqCst);
+
             let mut rt_queue = per_cpu.rt_queue.lock();
             
             while !rt_queue.is_empty() {
@@ -323,7 +446,8 @@ impl Scheduler {
                         break;
                     }
                     _ => {
-                        per_cpu.queues[0].lock().push_back(rt_pid);
+                        let nice = mlfq_level_to_nice(0);
+                        self.cfs_enqueue(rt_pid, nice);
                         per_cpu.rt_running.store(false, Ordering::SeqCst);
                         break;
                     }
@@ -335,41 +459,15 @@ impl Scheduler {
             }
         }
 
+        // 3. CFS (vruntime minimum) — replaces MLFQ for SCHED_NORMAL
         if next_pid.is_none() {
-            for level in 0..MLFQ_LEVELS {
-                let mut queue = per_cpu.queues[level].lock();
-
-                while let Some(pid) = queue.pop_front() {
-                    let schedulable = PROCESS_TABLE.with_process(pid, |p| {
-                        let state = p.get_state();
-                        state != ProcessState::Blocked && state != ProcessState::Zombie
-                    }).unwrap_or(true);
-
-                    if schedulable {
-                        next_pid = Some(pid);
-                        per_cpu.current_level.store(level as u32, Ordering::SeqCst);
-                        per_cpu.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
-                        break;
-                    }
-                }
-
-                if next_pid.is_some() {
-                    break;
-                }
-            }
+            next_pid = self.pick_cfs_task();
         }
 
+        // 4. Load balance if nothing found locally
         if next_pid.is_none() && crate::kernel::smp::is_enabled() {
             self.load_balance();
-            for level in 0..MLFQ_LEVELS {
-                let mut queue = per_cpu.queues[level].lock();
-                if let Some(pid) = queue.pop_front() {
-                    next_pid = Some(pid);
-                    per_cpu.current_level.store(level as u32, Ordering::SeqCst);
-                    per_cpu.time_remaining.store(TIME_SLICES[level], Ordering::SeqCst);
-                    break;
-                }
-            }
+            next_pid = self.pick_cfs_task();
         }
 
         let next = match next_pid {
@@ -424,9 +522,23 @@ impl Scheduler {
             super::user_proc::USER_PROC_MANAGER.set_current(Some(user_proc));
         }
 
+        // Re-enqueue the previous task
         if let Some(ref _prev_proc) = prev_ptr {
+            let was_dl = per_cpu.dl_running.load(Ordering::SeqCst);
             let was_rt = per_cpu.rt_running.load(Ordering::SeqCst);
-            if was_rt {
+
+            if was_dl {
+                let dl_info = PROCESS_TABLE.with_process(current_pid, |p| {
+                    (p.dl_abs.load(Ordering::Acquire),
+                     p.dl_runtime.load(Ordering::Acquire),
+                     p.dl_deadline.load(Ordering::Acquire),
+                     p.dl_period.load(Ordering::Acquire))
+                });
+                if let Some((dl_abs, runtime, _deadline, period)) = dl_info {
+                    let util = if period > 0 { (runtime * 100) / period } else { 0 };
+                    per_cpu.dl_rq.lock().enqueue(current_pid, dl_abs, util);
+                }
+            } else if was_rt {
                 let rt_info = PROCESS_TABLE.with_process(current_pid, |p| {
                     (p.get_rt_priority(), p.get_sched_policy())
                 });
@@ -447,8 +559,15 @@ impl Scheduler {
                     }
                 }
             } else {
-                let level = (per_cpu.current_level.load(Ordering::SeqCst) as usize + 1).min(MLFQ_LEVELS - 1);
-                per_cpu.queues[level].lock().push_back(current_pid);
+                let (vr, wt, nice) = PROCESS_TABLE.with_process(current_pid, |p| {
+                    (p.cfs_vruntime.load(Ordering::Acquire),
+                     p.cfs_weight.load(Ordering::Acquire),
+                     p.nice.load(Ordering::Acquire) as i8)
+                }).unwrap_or((0, NICE0_WEIGHT, 0i8));
+                per_cpu.cfs_rq.lock().update_curr(current_pid, vr, wt);
+                PROCESS_TABLE.with_process(current_pid, |p| {
+                    p.cfs_on_rq.store(true, Ordering::Release);
+                });
             }
             PROCESS_TABLE.with_process(current_pid, |p| {
                 let _ = p.set_state_safe(ProcessState::Ready);
@@ -517,24 +636,55 @@ impl Scheduler {
     }
     
     pub fn unblock(&self, pid: Pid) {
-        let per_cpu = per_cpu();
-        PROCESS_TABLE.with_process(pid, |proc| {
+        let sched_policy = PROCESS_TABLE.with_process(pid, |proc| {
             let state = proc.get_state();
-            if state == ProcessState::Blocked {
-                let _ = proc.set_state_safe(ProcessState::Ready);
+            if state != ProcessState::Blocked && state != ProcessState::Frozen {
+                return None;
+            }
+            let _ = proc.set_state_safe(ProcessState::Ready);
+            let policy = proc.get_sched_policy();
+            if policy == SchedPolicy::Normal {
+                proc.cfs_on_rq.store(true, Ordering::Release);
+                let vr = proc.cfs_vruntime.load(Ordering::Acquire);
+                let w = proc.cfs_weight.load(Ordering::Acquire);
+                Some((policy, vr, w))
+            } else if policy == SchedPolicy::Deadline {
+                let dl_abs = proc.dl_abs.load(Ordering::Acquire);
+                let runtime = proc.dl_runtime.load(Ordering::Acquire);
+                let period = proc.dl_period.load(Ordering::Acquire);
+                Some((policy, dl_abs, if period > 0 { (runtime * 100) / period } else { 0 }))
+            } else {
+                Some((policy, 0, 0))
+            }
+        }).flatten();
 
-                let is_rt = proc.get_sched_policy() == SchedPolicy::Fifo ||
-                             proc.get_sched_policy() == SchedPolicy::Rr;
+        match sched_policy {
+            Some((SchedPolicy::Normal, vr, weight)) => {
+                per_cpu().cfs_rq.lock().enqueue(pid, vr, weight);
+            }
+            Some((SchedPolicy::Fifo | SchedPolicy::Rr, _, _)) => {
+                let (prio, pol) = PROCESS_TABLE.with_process(pid, |p| {
+                    (p.get_rt_priority(), p.get_sched_policy())
+                }).unwrap_or((0, SchedPolicy::Normal));
 
-                if is_rt {
-                    let rt_priority = proc.get_rt_priority();
-                    let policy = proc.get_sched_policy();
-                    self.add_rt_task(pid, rt_priority, policy);
-                } else {
-                    per_cpu.queues[0].lock().push_back(pid);
+                let mut rt_q = per_cpu().rt_queue.lock();
+                let mut inserted = false;
+                for i in 0..rt_q.len() {
+                    if rt_q[i].rt_priority < prio {
+                        rt_q.insert(i, RtTaskInfo { pid, rt_priority: prio, policy: pol, time_slice_remaining: RT_TIME_SLICE });
+                        inserted = true;
+                        break;
+                    }
+                }
+                if !inserted {
+                    rt_q.push_back(RtTaskInfo { pid, rt_priority: prio, policy: pol, time_slice_remaining: RT_TIME_SLICE });
                 }
             }
-        });
+            Some((SchedPolicy::Deadline, dl_abs, util)) => {
+                per_cpu().dl_rq.lock().enqueue(pid, dl_abs, util);
+            }
+            _ => {}
+        }
     }
     
     pub fn exit(&self, exit_code: u32) {
@@ -614,22 +764,27 @@ impl Scheduler {
         self.initialized.load(Ordering::SeqCst)
     }
 
-    pub fn has_runnable(&self) -> bool {
+    pub fn has_runnable(&self, level: usize) -> bool {
         let per_cpu = per_cpu();
-        {
-            let rt_queue = per_cpu.rt_queue.lock();
-            if !rt_queue.is_empty() {
-                return true;
-            }
+        if !per_cpu.dl_rq.lock().is_empty() {
+            return true;
         }
-        
-        for level in 0..MLFQ_LEVELS {
-            let queue = per_cpu.queues[level].lock();
-            if !queue.is_empty() {
-                return true;
-            }
+        if !per_cpu.rt_queue.lock().is_empty() {
+            return true;
         }
-        false
+        if !per_cpu.cfs_rq.lock().is_empty() {
+            return true;
+        }
+        if level < MLFQ_LEVELS {
+            !per_cpu.queues[level].lock().is_empty()
+        } else {
+            false
+        }
+    }
+
+    /// Convenience: check if any runnable task exists (level 0 queues).
+    pub fn has_any_runnable(&self) -> bool {
+        self.has_runnable(0)
     }
 
     pub fn get_time_slice(&self) -> u64 {
@@ -640,51 +795,126 @@ impl Scheduler {
         per_cpu().current_level.load(Ordering::SeqCst)
     }
 
-    pub fn tick(&self) {
-        let per_cpu = per_cpu();
-        let is_rt = per_cpu.rt_running.load(Ordering::SeqCst);
-        let tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-        
-        crate::kernel::barrier::RECOVERY_MANAGER.lock().tick(tick);
+    pub fn tick(&self, cpu_id: usize) {
+        let new_tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+        let per_cpu = per_cpu_for(cpu_id as u32);
 
+        crate::kernel::barrier::RECOVERY_MANAGER.lock().tick(new_tick);
         crate::kernel::proc::oomd::OOMD.tick();
-
         crate::kernel::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
-        
-        if is_rt && per_cpu.fifo_watchdog.load(Ordering::SeqCst) > 0 {
-            let remaining = per_cpu.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
-            if remaining <= 1 {
-                per_cpu.need_reschedule.store(true, Ordering::SeqCst);
-                per_cpu.rt_running.store(false, Ordering::SeqCst);
-            }
+
+        // Periodic CFS boost — prevent vruntime starvation
+        if new_tick % CFS_BOOST_INTERVAL_TICKS == 0 {
+            let mut cfs_rq = per_cpu.cfs_rq.lock();
+            cfs_rq.boost_all_vruntime();
         }
-        
-        if let Some(pid) = self.current() {
-            if let Some(process) = PROCESS_TABLE.get(pid) {
-                let pwm = unsafe { (*process).get_pwm() };
-                if pwm != 0 {
-                    let mut quotas = self.quotas.lock();
-                    for q in quotas.iter_mut() {
-                        if q.used && q.pwm == pwm {
-                            if q.max_runtime > 0 {
-                                if tick >= q.next_reset {
-                                    q.consumed = 0;
-                                    q.next_reset = tick + q.period;
-                                }
-                                q.consumed += 1;
-                                if q.consumed >= q.max_runtime {
-                                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
-                                }
-                            }
-                            break;
+
+        // Periodic MLFQ boost — migrate long-wait tasks to level 0
+        if new_tick % SCHED_BOOST_INTERVAL == 0 {
+            self.boost_priority();
+        }
+
+        let current_pid = per_cpu.current.load(Ordering::SeqCst);
+        if current_pid != 0 {
+            // RT FIFO watchdog
+            let is_rt = per_cpu.rt_running.load(Ordering::SeqCst);
+            if is_rt && per_cpu.fifo_watchdog.load(Ordering::SeqCst) > 0 {
+                let remaining = per_cpu.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
+                if remaining <= 1 {
+                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                    per_cpu.rt_running.store(false, Ordering::SeqCst);
+                }
+            }
+
+            // Tick accounting: per-policy time tracking
+            let is_dl = per_cpu.dl_running.load(Ordering::SeqCst);
+
+            if is_dl {
+                let (expired, should_replenish) = PROCESS_TABLE.with_process(current_pid, |p| {
+                    let old_rem = p.dl_remaining.fetch_sub(1, Ordering::SeqCst);
+                    let rem = old_rem - 1;
+                    let expired = rem == 0;
+                    let deadline = p.dl_deadline.load(Ordering::Acquire);
+                    let dl_abs = p.dl_abs.load(Ordering::Acquire);
+                    let now = TICK_COUNT.load(Ordering::Acquire);
+                    let should_replenish = now >= dl_abs || (expired && now + deadline > dl_abs);
+                    (expired, should_replenish)
+                }).unwrap_or((true, false));
+
+                if should_replenish {
+                    PROCESS_TABLE.with_process(current_pid, |p| {
+                        let runtime = p.dl_runtime.load(Ordering::Acquire);
+                        let deadline = p.dl_deadline.load(Ordering::Acquire);
+                        let now = TICK_COUNT.load(Ordering::Acquire);
+                        p.dl_remaining.store(runtime, Ordering::Release);
+                        p.dl_abs.store(now + deadline, Ordering::Release);
+                    });
+                }
+
+                if expired || should_replenish {
+                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                }
+            } else if is_rt {
+                let old_remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
+                let new_remaining = old_remaining - 1;
+
+                if new_remaining == 0 {
+                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                    let policy = PROCESS_TABLE.with_process(current_pid, |proc| {
+                        proc.get_sched_policy()
+                    }).unwrap_or(SchedPolicy::Normal);
+
+                    if policy == SchedPolicy::Fifo {
+                        let old_watchdog = per_cpu.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
+                        if old_watchdog - 1 == 0 {
+                            per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                            crate::klog_crit!(Kernel, "[SCHEDULER] RT-FIFO watchdog triggered for pid={}", current_pid);
                         }
+                    } else {
+                        per_cpu.time_remaining.store(RT_TIME_SLICE, Ordering::SeqCst);
                     }
+                }
+            } else if current_pid != 0 {
+                // CFS — update vruntime and check preemption
+                let (should_preempt, should_yield) = {
+                    let mut cfs_rq = per_cpu.cfs_rq.lock();
+                    let vr = PROCESS_TABLE.with_process(current_pid, |p| {
+                        let old_vr = p.cfs_vruntime.load(Ordering::Acquire);
+                        let weight = p.cfs_weight.load(Ordering::Acquire);
+                        let delta = calc_vruntime_delta(weight);
+                        let new_vr = old_vr + delta;
+                        p.cfs_vruntime.store(new_vr, Ordering::Release);
+                        let sum = p.cfs_sum_exec_runtime.load(Ordering::Acquire);
+                        p.cfs_sum_exec_runtime.store(sum + 1, Ordering::Release);
+                        new_vr
+                    }).unwrap_or(0);
+
+                    cfs_rq.update_curr(current_pid, vr, PROCESS_TABLE.with_process(current_pid, |p| {
+                        p.cfs_weight.load(Ordering::Acquire)
+                    }).unwrap_or(NICE0_WEIGHT));
+
+                    let should_preempt = cfs_rq.nr_running > 0 && cfs_should_preempt(
+                        vr,
+                        cfs_rq.min_vruntime.load(Ordering::Acquire),
+                        PROCESS_TABLE.with_process(current_pid, |p| {
+                            p.cfs_weight.load(Ordering::Acquire)
+                        }).unwrap_or(NICE0_WEIGHT),
+                    );
+
+                    let should_yield = vr > cfs_rq.min_vruntime.load(Ordering::Acquire) + TARGET_LATENCY_TICKS;
+
+                    (should_preempt, should_yield)
+                };
+
+                if should_preempt || should_yield {
+                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
                 }
             }
         }
-        
+
+        // Sleep wakeup scan
         {
-            let current_ticks = tick;
+            let current_ticks = new_tick;
             let mut to_wake: [Pid; 8] = [0; 8];
             let mut wake_count = 0;
             for pid in 1..=255 {
@@ -711,8 +941,9 @@ impl Scheduler {
             }
         }
 
+        // Zombie cleanup
         let socks_clean_interval: u64 = 1000;
-        if tick % socks_clean_interval == 0 {
+        if new_tick % socks_clean_interval == 0 {
             let mut to_reap: [Pid; 16] = [0; 16];
             let mut reap_count = 0;
             for pid in 1..=255 {
@@ -743,22 +974,9 @@ impl Scheduler {
                 PROCESS_TABLE.remove_and_free(to_reap[i]);
             }
         }
-        
-        if is_rt {
-            let remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
-            if remaining <= 1 {
-                per_cpu.need_reschedule.store(true, Ordering::SeqCst);
-                per_cpu.time_remaining.store(RT_TIME_SLICE, Ordering::SeqCst);
-            }
-        } else {
-            let remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
-            if remaining <= 1 {
-                per_cpu.need_reschedule.store(true, Ordering::SeqCst);
-                per_cpu.time_remaining.store(TIME_SLICES[per_cpu.current_level.load(Ordering::SeqCst) as usize], Ordering::SeqCst);
-            }
-        }
 
-        if tick % 64 == 0 {
+        // Periodic load balance
+        if new_tick % 64 == 0 {
             let local_load = self.total_runnable_for(crate::kernel::smp::get_current_cpu());
             if local_load < 2 {
                 self.load_balance();
@@ -798,65 +1016,78 @@ impl Scheduler {
 
     fn total_runnable_for(&self, cpu_id: u32) -> usize {
         let sched = per_cpu_for(cpu_id);
-        let mut count = sched.rt_queue.lock().len();
+        let mut count = sched.cfs_rq.lock().nr_running as usize;
+        count += sched.dl_rq.lock().nr_running as usize;
+        count += sched.rt_queue.lock().len();
         for level in 0..MLFQ_LEVELS {
             count += sched.queues[level].lock().len();
+        }
+        // Count running task
+        if sched.current.load(Ordering::SeqCst) != 0 {
+            count += 1;
         }
         count
     }
 
     pub fn load_balance(&self) {
-        let cpu = crate::kernel::smp::get_current_cpu();
         let cpu_count = crate::kernel::smp::get_cpu_count();
-
-        let mut busiest_cpu = cpu;
-        let mut max_load = 0;
-
-        for target in 0..cpu_count {
-            if target == cpu || !crate::kernel::smp::is_cpu_online(target) {
-                continue;
-            }
-            let load = self.total_runnable_for(target);
-            if load > max_load {
-                max_load = load;
-                busiest_cpu = target;
-            }
-        }
-
-        if max_load < 2 {
+        if cpu_count <= 1 {
             return;
         }
 
-        let target_sched = per_cpu_for(busiest_cpu);
+        let this_cpu = crate::kernel::smp::get_current_cpu();
+        let local_weight = {
+            let sched = per_cpu_for(this_cpu);
+            sched.cfs_rq.lock().total_weight.load(Ordering::Acquire)
+        };
 
-        let mut stolen: Option<Pid> = None;
+        let mut max_weight: u64 = 0;
+        let mut busiest_cpu: u32 = this_cpu;
 
-        for level in (0..MLFQ_LEVELS).rev() {
-            let mut queue = target_sched.queues[level].lock();
-            if let Some(pid) = queue.pop_front() {
-                stolen = Some(pid);
-                break;
+        for cpu in 0..cpu_count {
+            if cpu == this_cpu {
+                continue;
+            }
+            let w = {
+                let sched = per_cpu_for(cpu);
+                sched.cfs_rq.lock().total_weight.load(Ordering::Acquire)
+            };
+            if w > max_weight {
+                max_weight = w;
+                busiest_cpu = cpu;
             }
         }
 
-        if stolen.is_none() {
-            let mut rt_queue = target_sched.rt_queue.lock();
-            if !rt_queue.is_empty() {
-                let task = rt_queue.pop_front();
-                if let Some(ref rt) = task {
-                    // 只偷非 FIFO 的 RT 任务，FIFO 绑定核心
-                    if rt.policy != SchedPolicy::Fifo {
-                        stolen = task.map(|t| t.pid);
-                    } else {
-                        rt_queue.push_front(task.unwrap());
+        // Check if the busiest CPU has significantly more load (weight-based)
+        if max_weight < local_weight.saturating_add(LOAD_BALANCE_THRESHOLD) {
+            return;
+        }
+
+        // Steal tasks from busiest CPU
+        let mut tasks_to_migrate: [Pid; 4] = [0; 4];
+        let mut count = 0;
+        {
+            let mut src_rq = per_cpu_for(busiest_cpu).cfs_rq.lock();
+            for _ in 0..4 {
+                match src_rq.pick_next() {
+                    Some((pid, vr, weight)) => {
+                        src_rq.dequeue(pid, vr, weight);
+                        tasks_to_migrate[count] = pid;
+                        count += 1;
                     }
+                    None => break,
                 }
             }
         }
 
-        if let Some(pid) = stolen {
-            let per_cpu = per_cpu();
-            per_cpu.queues[0].lock().push_back(pid);
+        let mut dst_rq = per_cpu_for(this_cpu).cfs_rq.lock();
+        for i in 0..count {
+            let pid = tasks_to_migrate[i];
+            let (vr, weight) = PROCESS_TABLE.with_process(pid, |p| {
+                (p.cfs_vruntime.load(Ordering::Acquire),
+                 p.cfs_weight.load(Ordering::Acquire))
+            }).unwrap_or((0, NICE0_WEIGHT));
+            dst_rq.enqueue(pid, vr, weight);
         }
     }
     

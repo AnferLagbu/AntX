@@ -4,6 +4,7 @@ pub mod scheduler;
 pub mod thread;
 pub mod session;
 pub mod scheduler_ex;
+pub mod cfs;
 pub mod user_proc;
 pub mod cpu_queue;
 pub mod elf;

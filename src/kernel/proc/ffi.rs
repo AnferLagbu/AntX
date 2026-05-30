@@ -154,7 +154,7 @@ pub extern "C" fn process_find_by_pid(pid: Pid) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn proc_has_runnable() -> i32 {
-    if SCHEDULER.has_runnable() { 1 } else { 0 }
+    if SCHEDULER.has_any_runnable() { 1 } else { 0 }
 }
 
 #[no_mangle]
@@ -562,7 +562,8 @@ pub extern "C" fn scheduler_get_current_level() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn scheduler_tick_mlfq() {
-    SCHEDULER.tick()
+    let cpu = crate::kernel::smp::get_current_cpu() as usize;
+    SCHEDULER.tick(cpu)
 }
 
 #[no_mangle]

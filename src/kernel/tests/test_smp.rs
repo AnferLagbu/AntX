@@ -45,7 +45,7 @@ fn test_per_cpu_current_valid() -> TestResult {
 
 fn test_per_cpu_has_runnable() -> TestResult {
     use crate::kernel::proc::scheduler::SCHEDULER;
-    let _runnable = SCHEDULER.has_runnable();
+    let _runnable = SCHEDULER.has_any_runnable();
     TestResult::Pass
 }
 
