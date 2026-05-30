@@ -1,6 +1,6 @@
 # AntX 已知问题与待解决项
 
-> 最后更新: 2026-05-30
+> 最后更新: 2026-05-31
 > 全面代码审计完成 — 详见 [审计报告](../changelog/AUDIT_REPORT_2026-05-30.md)
 
 ---
@@ -239,7 +239,7 @@
 | `lib/fs.rs` `O_TRUNC` unused import | 实际不存在 — `O_TRUNC` 在 `sys.rs` 中定义，经 `pub use sys::*` 导出供 axsh/install 使用 | low | ✅ |
 | lwIP NO_SYS=1 单线程 | 迁移到 `tcpip_thread` 可根除问题 #1 的长期方案 | medium | 🟡 |
 | VFS `/` 根目录依赖用户态 mount | 磁盘引导时需内核先挂 HvFS | medium | 🟡 |
-| `axsh` help 文本与 BUILTINS 不同步 | help() 函数硬编码命令列表，新增命令需改两处 (`general.rs` + `mod.rs TABLE`) | low | 🟡 |
+| `axsh` help 文本与 BUILTINS 不同步 | help() 函数已改为从 TABLE 动态生成，`general.rs` 不再硬编码命令列表。新增命令只需修改 `mod.rs` TABLE 一处 | low | ✅ |
 | `userlib::*` 全局导出 syscall | `pub use sys::*` 将 ~50 个常量/类型/函数注入全局命名空间 | low | 🟡 |
 
 ---

@@ -83,39 +83,41 @@ pub fn path_arg(cmd: &Cmd) -> Option<[u8; 256]> {
 
 type CmdFn = fn(&Cmd);
 
-struct Entry {
-    name: &'static str,
-    func: CmdFn,
+pub(crate) struct Entry {
+    pub name: &'static str,
+    pub category: &'static str,
+    pub help_line: &'static str,
+    pub func: CmdFn,
 }
 
-static TABLE: &[Entry] = &[
+pub(crate) static TABLE: &[Entry] = &[
     // Shell 内置
-    Entry { name: "help",   func: general::help  },
-    Entry { name: "clear",  func: general::clear },
-    Entry { name: "echo",   func: general::echo  },
-    Entry { name: "exit",   func: general::exit  },
+    Entry { name: "help",   category: "shell", help_line: "  help     显示帮助            help [file|sys|id|shell]", func: general::help  },
+    Entry { name: "clear",  category: "shell", help_line: "  clear    清屏                clear",                   func: general::clear },
+    Entry { name: "echo",   category: "shell", help_line: "  echo     回显文本            echo [text...]",          func: general::echo  },
+    Entry { name: "exit",   category: "shell", help_line: "  exit     退出 Shell          exit",                    func: general::exit  },
     // 文件操作
-    Entry { name: "dir",    func: fileops::dir   },
-    Entry { name: "cd",     func: fileops::cd    },
-    Entry { name: "pwd",    func: fileops::pwd   },
-    Entry { name: "cat",    func: fileops::cat   },
-    Entry { name: "mkdir",  func: fileops::mkdir },
-    Entry { name: "touch",  func: fileops::touch },
-    Entry { name: "del",    func: fileops::del   },
-    Entry { name: "cp",     func: fileops::cp    },
-    Entry { name: "mv",     func: fileops::mv    },
-    Entry { name: "save",   func: fileops::save  },
+    Entry { name: "dir",    category: "file",  help_line: "  dir      列出目录内容        dir [/path]",             func: fileops::dir   },
+    Entry { name: "cd",     category: "file",  help_line: "  cd       切换工作目录        cd <dir>",                func: fileops::cd    },
+    Entry { name: "pwd",    category: "file",  help_line: "  pwd      显示当前路径        pwd",                     func: fileops::pwd   },
+    Entry { name: "cat",    category: "file",  help_line: "  cat      显示文件内容        cat <file>",              func: fileops::cat   },
+    Entry { name: "mkdir",  category: "file",  help_line: "  mkdir    创建目录            mkdir <dir>",             func: fileops::mkdir },
+    Entry { name: "touch",  category: "file",  help_line: "  touch    创建空文件          touch <file>",            func: fileops::touch },
+    Entry { name: "del",    category: "file",  help_line: "  del      删除文件/目录       del <path>",              func: fileops::del   },
+    Entry { name: "cp",     category: "file",  help_line: "  cp       复制文件            cp <src> <dst>",          func: fileops::cp    },
+    Entry { name: "mv",     category: "file",  help_line: "  mv       移动/重命名         mv <src> <dst>",          func: fileops::mv    },
+    Entry { name: "save",   category: "file",  help_line: "  save     写入文本到文件      save <file> <text>",      func: fileops::save  },
     // 身份
-    Entry { name: "login",  func: identity::login  },
-    Entry { name: "logout", func: identity::logout },
-    Entry { name: "who",    func: identity::who    },
-    Entry { name: "passwd", func: identity::passwd },
+    Entry { name: "login",  category: "id",    help_line: "  login    登录                login <note> <pw>",       func: identity::login  },
+    Entry { name: "logout", category: "id",    help_line: "  logout   登出                logout",                  func: identity::logout },
+    Entry { name: "who",    category: "id",    help_line: "  who      当前身份            who",                     func: identity::who    },
+    Entry { name: "passwd", category: "id",    help_line: "  passwd   修改口令            passwd",                  func: identity::passwd },
     // 系统
-    Entry { name: "osinfo", func: system::osinfo },
-    Entry { name: "host",   func: system::host   },
-    Entry { name: "ps",     func: system::ps     },
-    Entry { name: "reboot", func: system::reboot },
-    Entry { name: "halt",   func: system::halt   },
+    Entry { name: "osinfo", category: "sys",   help_line: "  osinfo   系统版本/架构       osinfo",                  func: system::osinfo },
+    Entry { name: "host",   category: "sys",   help_line: "  host     显示/设置主机名     host [name]",             func: system::host   },
+    Entry { name: "ps",     category: "sys",   help_line: "  ps       进程列表            ps",                      func: system::ps     },
+    Entry { name: "reboot", category: "sys",   help_line: "  reboot   重启系统            reboot",                  func: system::reboot },
+    Entry { name: "halt",   category: "sys",   help_line: "  halt     关机                halt",                    func: system::halt   },
 ];
 
 pub fn dispatch(cmd: &Cmd) {
