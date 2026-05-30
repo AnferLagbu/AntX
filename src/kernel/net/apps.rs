@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// 网络应用模块
 /// 
 /// 提供完整的网络应用功能集，包括：
@@ -27,6 +28,7 @@
 /// - **状态机**: 应用初始化有明确的状态转换
 /// - **错误传播**: Result<T, NetAppError>替代int错误码
 /// - **内存安全**: 编译时保证无缓冲区溢出
+
 
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 #[cfg(not(feature = "kernel_test"))]

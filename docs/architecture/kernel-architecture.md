@@ -44,90 +44,125 @@ AntX采用**分层宏内核架构**，在保持宏内核高性能的同时，通
 
 ---
 
-## 📂 目录结构
+## 📂 目录结构（Rust 实现）
 
 ```
 src/
-├── kernel/                 # 内核核心代码
-│   ├── boot/              # 启动相关
-│   │   ├── boot.asm       # 多引导头、实模式初始化
-│   │   ├── entry.asm      # 长模式设置
-│   │   └── isr.asm        # 中断服务例程
-│   │
-│   ├── proc/              # 进程管理
-│   │   ├── process.c      # 进程控制块
-│   │   ├── scheduler.c    # 调度器
-│   │   └── switch.asm     # 上下文切换
-│   │
-│   ├── mem/               # 内存管理
-│   │   ├── pmm.c          # 物理内存管理器
-│   │   ├── vmm.c          # 虚拟内存管理器
-│   │   └── heap.c         # 堆管理器
-│   │
-│   ├── fs/                # 文件系统
-│   │   ├── vfs/           # 虚拟文件系统
-│   │   ├── ramfs/         # 内存文件系统
-│   │   ├── hvfs/          # 混合文件系统
-│   │   ├── devfs/         # 设备文件系统
-│   │   └── procfs/        # 进程文件系统
-│   │
-│   ├── security/          # 安全子系统
-│   │   ├── pwid/          # PWID身份管理
-│   │   ├── session/       # 会话管理
-│   │   └── audit/         # 审计日志
-│   │
-│   ├── barrier/           # 栏栈恢复
-│   │   ├── snapshot.rs    # 设备快照
-│   │   ├── domain.rs      # 恢复域
-│   │   └── reset/         # 恢复策略
-│   │       ├── bbr.rs     # 基础恢复
-│   │       ├── bsr.rs     # 软重启
-│   │       └── bhr.rs     # 硬重启
-│   │
-│   ├── driver/            # 驱动框架
-│   │   ├── keyboard.c     # 键盘驱动
-│   │   ├── serial.c       # 串口驱动
-│   │   └── ata.c          # ATA磁盘驱动
-│   │
-│   ├── net/               # 网络栈
-│   │   ├── lwip/          # LWIP协议栈
-│   │   ├── driver/        # 网络驱动
-│   │   └── apps/          # 网络应用
-│   │
-│   ├── ipc/               # 进程间通信
-│   │   ├── shm.c          # 共享内存
-│   │   └── msgqueue.c     # 消息队列
-│   │
-│   ├── tests/             # 内核测试
-│   │   ├── kernel_test.c  # 测试框架
-│   │   └── test_*.c       # 测试用例
-│   │
-│   └── main.c             # 内核主函数
+├── kernel/                    # 内核主模块树 (Rust)
+│   ├── mod.rs                 # 模块入口: pub mod 声明 + 子系统导出
+│   ├── arch/                  # 架构相关
+│   │   ├── x86_64/           # GDT, TSS, APIC, IOAPIC, ACPI, SMP, trampoline
+│   │   └── aarch64/          # MMU, GIC, PSCI, Timer, UART, Exception
+│   ├── boot/                  # 启动信息
+│   │   ├── boot.asm          # Multiboot1/2 Header, 实→保护→长模式
+│   │   ├── entry.asm         # 64位 entry, GDT 加载
+│   │   ├── isr.asm           # ISR 入口存根
+│   │   ├── stage1.asm        # Stage1 磁盘引导
+│   │   ├── mod.rs            # Multiboot 信息解析 + BootInfo
+│   │   └── aarch64/          # AArch64 start.S + entry.rs
+│   ├── mm/                    # 内存管理
+│   │   ├── pmm.rs            # 物理页分配器 (Buddy Allocator)
+│   │   ├── vmm.rs            # 虚拟内存管理 (四级页表)
+│   │   ├── vmm_aarch64.rs    # AArch64 页表操作
+│   │   ├── vma.rs            # 虚拟内存区域管理
+│   │   ├── kmalloc.rs        # 内核堆分配器 (First-Fit)
+│   │   ├── kmalloc_slab.rs   # Slab 分配器
+│   │   ├── slab.rs           # Slab 缓存
+│   │   ├── cow.rs            # COW 引用计数
+│   │   ├── page_fault.rs     # 缺页处理
+│   │   ├── pressure.rs       # 内存压力感知
+│   │   └── ffi.rs            # C FFI 桥接
+│   ├── proc/                  # 进程/线程管理
+│   │   ├── scheduler.rs      # 主调度器 (per-CPU RunQueue)
+│   │   ├── cfs.rs            # CFS 公平调度类
+│   │   ├── scheduler_ex.rs   # 实时调度 + OOMD
+│   │   ├── elf.rs            # ELF64 加载器
+│   │   ├── process.rs        # 进程控制块 + fork/exec/exit
+│   │   ├── thread.rs         # 内核线程
+│   │   ├── user_proc.rs      # 用户态进程管理
+│   │   └── cpu_queue.rs      # Per-CPU 运行队列
+│   ├── fs/                    # 文件系统
+│   │   ├── vfs/              # 虚拟文件系统 (trait + 统一接口)
+│   │   ├── ramfs/            # 内存文件系统
+│   │   ├── hvfs/             # HvFS v2 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAIDZ/Snap/Dedup)
+│   │   ├── devfs/            # 设备文件系统
+│   │   └── procfs/           # 进程文件系统
+│   ├── credo/                 # CREDO 身份与权限框架
+│   │   ├── identity.rs       # PWID 身份表
+│   │   ├── capability.rs     # 16×64 能力矩阵
+│   │   ├── session.rs        # 会话管理
+│   │   ├── engine.rs         # 权限检查引擎
+│   │   ├── grant.rs          # 能力委托
+│   │   ├── bootstrap.rs      # 信任根初始化
+│   │   ├── audit.rs          # 审计日志
+│   │   └── storage.rs        # 持久化存储
+│   ├── barrier/               # Barrier 栏栈恢复
+│   │   ├── domain.rs         # RecoveryDomain
+│   │   ├── manager.rs        # RecoveryManager + 心跳监控
+│   │   ├── undo_log.rs       # UndoLog 回滚
+│   │   ├── snapshot.rs       # 设备快照
+│   │   ├── recoverable.rs    # RecoverableMutex
+│   │   ├── recovery.rs       # RecoveryDomain trait + 级联恢复
+│   │   └── reset/            # BBR/BSR/BHR 分层恢复
+│   ├── driver/                # 设备驱动
+│   │   ├── bus/pci.rs        # PCI 枚举
+│   │   ├── char/vga.rs       # VGA 文本模式
+│   │   ├── char/serial.rs    # 串口
+│   │   ├── display/          # 显示驱动 (framebuffer/HDMI/DP/font)
+│   │   ├── input/keyboard.rs # PS/2 键盘
+│   │   ├── storage/          # ATA/AHCI/NVMe 存储
+│   │   ├── virtio/           # virtio-blk/virtio-net/virtqueue
+│   │   └── usb/              # xHCI USB
+│   ├── net/                   # 网络栈
+│   │   ├── lwip/             # lwIP 2.2.1 协议栈 (C)
+│   │   ├── driver/e1000.rs   # Intel e1000 网卡
+│   │   ├── sys_arch.rs       # lwIP OSAL (Rust)
+│   │   ├── netif.rs          # 网络接口管理
+│   │   └── apps.rs           # HTTP/mDNS/SNTP 等服务
+│   ├── ipc/                   # 进程间通信
+│   │   ├── pipe.rs           # 管道
+│   │   ├── shm.rs            # 共享内存
+│   │   ├── msgq.rs           # 消息队列
+│   │   ├── sem.rs            # 信号量
+│   │   ├── signal.rs         # 信号
+│   │   └── dynamic.rs        # 动态 IPC 命名空间
+│   ├── sync/                  # 同步原语
+│   │   ├── spinlock.rs       # 自旋锁
+│   │   ├── mutex.rs          # 互斥锁
+│   │   ├── rwlock.rs         # 读写锁
+│   │   ├── seqlock.rs        # 序列锁
+│   │   ├── rcu.rs            # RCU
+│   │   └── atomic.rs         # 原子操作统计
+│   ├── syscall/               # 系统调用接口
+│   │   ├── mod.rs            # syscall 分发
+│   │   └── types.rs          # 系统调用号 + errno 定义
+│   ├── chitin/                # Chitin 设备框架
+│   ├── idt/                   # 中断描述符表
+│   ├── irq/                   # 中断底部半 (Softirq)
+│   ├── timer/                 # 定时器 (PIT + Tick)
+│   ├── cpu/                   # CPU 管理 (CPUID/MSR/TSC/拓扑)
+│   ├── dma/                   # DMA 引擎
+│   ├── console/               # 图形控制台
+│   ├── klog/                  # 内核日志
+│   ├── smp/                   # SMP 多核
+│   ├── wasm/                  # WASM 解释器沙箱
+│   ├── link/                  # 链接脚本
+│   │   ├── x86_64.ld         # x86_64 链接脚本
+│   │   └── aarch64.ld        # aarch64 链接脚本
+│   └── tests/                 # 内核内嵌测试
 │
-├── rust/                  # Rust内核模块
+├── rust/                      # Rust 内核库 crate
 │   └── src/
-│       └── kernel/        # Rust核心实现
-│           ├── mem/       # 内存管理
-│           ├── proc/      # 进程管理
-│           ├── fs/        # 文件系统
-│           ├── security/  # 安全子系统
-│           ├── barrier/   # 栏栈恢复
-│           ├── driver/    # 驱动框架
-│           ├── net/       # 网络栈
-│           └── tests/     # Rust测试
+│       ├── lib.rs             # #![no_std] + #![no_main] + 全局配置
+│       └── memory_allocator.rs # 全局分配器 (GlobalAlloc trait)
 │
-├── user/                  # 用户态程序
-│   ├── init/              # init进程
-│   ├── axsh/              # Shell
-│   └── install/           # 安装向导
-│
-├── include/               # 头文件
-│   ├── kernel.h           # 内核主头文件
-│   ├── types.h            # 类型定义
-│   └── syscall.h          # 系统调用号
-│
-└── scripts/               # 构建脚本
-    └── generate_version.sh
+└── user/                      # 用户态程序 workspace
+    ├── lib/                   # userlib (syscall 封装)
+    ├── init/                  # init 进程
+    ├── axsh/                  # Shell
+    ├── install/               # 安装向导
+    ├── fbterm/                # 帧缓冲终端
+    └── httpsrv/               # HTTP 服务器
 ```
 
 ---

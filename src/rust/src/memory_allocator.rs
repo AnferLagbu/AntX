@@ -19,24 +19,49 @@ pub struct KernelAllocator;
 
 const PAGE_THRESHOLD: usize = 2048;
 
+const TAG_KMALLOC: u64 = 0xA115_4B4D_414C4C_01;
+const TAG_PMM_PAGE: u64 = 0xA115_504D_4D5047_02;
+const TAG_PMM_PAGES: u64 = 0xA115_504D_4D5047_03;
+const TAG_SIZE: usize = core::mem::size_of::<u64>();
+
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
+        let tag_offset = if size <= PAGE_THRESHOLD { TAG_SIZE } else { 0 };
 
         if size <= PAGE_THRESHOLD {
-            let ptr = kmalloc(size as u64);
-            if !ptr.is_null() {
-                return ptr as *mut u8;
+            let kmalloc_ptr = kmalloc((size + tag_offset) as u64);
+            if !kmalloc_ptr.is_null() {
+                let raw = kmalloc_ptr as *mut u8;
+                let tag_ptr = raw as *mut u64;
+                *tag_ptr = TAG_KMALLOC;
+                return raw.add(TAG_SIZE);
             }
         }
 
-        let pages_needed = (size + 4095) / 4096;
+        let pages_needed = (size + tag_offset + 4095) / 4096;
+        let tag: u64 = if pages_needed == 1 { TAG_PMM_PAGE } else { TAG_PMM_PAGES };
+
         if pages_needed == 1 {
             let phys = pmm_alloc_page() as u64;
-            (phys + KERNEL_BASE) as *mut u8
+            let virt = (phys + KERNEL_BASE) as *mut u8;
+            if tag_offset > 0 {
+                let tag_ptr = virt as *mut u64;
+                *tag_ptr = tag;
+                virt.add(TAG_SIZE)
+            } else {
+                virt
+            }
         } else {
             let phys = pmm_alloc_pages(pages_needed as u64) as u64;
-            (phys + KERNEL_BASE) as *mut u8
+            let virt = (phys + KERNEL_BASE) as *mut u8;
+            if tag_offset > 0 {
+                let tag_ptr = virt as *mut u64;
+                *tag_ptr = tag;
+                virt.add(TAG_SIZE)
+            } else {
+                virt
+            }
         }
     }
 
@@ -45,7 +70,25 @@ unsafe impl GlobalAlloc for KernelAllocator {
 
         let size = layout.size();
         if size <= PAGE_THRESHOLD {
-            kfree(ptr as *mut core::ffi::c_void);
+            let raw = ptr.sub(TAG_SIZE);
+            let tag = *(raw as *const u64);
+            match tag {
+                TAG_KMALLOC => {
+                    kfree(raw as *mut core::ffi::c_void);
+                }
+                TAG_PMM_PAGE => {
+                    let phys_addr = (raw as u64) - KERNEL_BASE;
+                    pmm_free_page(phys_addr as *mut core::ffi::c_void);
+                }
+                TAG_PMM_PAGES => {
+                    let phys_addr = (raw as u64) - KERNEL_BASE;
+                    let pages_needed = ((size + TAG_SIZE + 4095) / 4096) as u64;
+                    pmm_free_pages(phys_addr as *mut core::ffi::c_void, pages_needed);
+                }
+                _ => {
+                    kfree(raw as *mut core::ffi::c_void);
+                }
+            }
         } else {
             let pages = ((size + 4095) / 4096) as u64;
             let phys_addr = (ptr as u64) - KERNEL_BASE;

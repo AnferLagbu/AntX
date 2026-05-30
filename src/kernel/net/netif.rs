@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// 网络接口管理
 ///
 /// 提供网络接口（netif）的配置和管理功能，
@@ -17,6 +18,7 @@
 /// - `E1000Device` 结构体管理硬件状态
 /// - 通过 FFI 与 lwIP 协议栈对接
 /// - 类型安全的 MMIO 操作
+
 
 use core::sync::atomic::{AtomicU8, Ordering};
 use crate::kernel::net::types::*;

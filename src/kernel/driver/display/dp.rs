@@ -19,6 +19,7 @@
 //! # Safety
 //! DisplayPort驱动涉及高速串行通信和链路训练。
 
+
 use alloc::vec;
 use alloc::vec::Vec;
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
@@ -27,30 +28,14 @@ use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 // DisplayPort 常量定义
 // ============================================================================
 
-/// AUX通道地址空间
+/// DisplayPort DPCD 地址 — VESA DP 规范 §2.4
+///
+/// 当前使用: TRAINING_PTN_SET, LINK_BW_SET, LANE_COUNT_SET
+/// 其余 DPCD 字段供参考: 接收器能力、链路训练状态、Sink 状态等
 mod aux_address {
-    pub const DPCD_REV: u16 = 0x0000;
-    pub const MAX_LINK_RATE: u16 = 0x0001;
-    pub const MAX_LANE_COUNT: u16 = 0x0002;
-    pub const MAX_DOWNSPREAD: u16 = 0x0003;
-    pub const NORP: u16 = 0x0004;
-    pub const DP_RECEIVER_CAP_FIELD: u16 = 0x0005;
-    pub const TRAINING_AUX_RD_INTERVAL: u16 = 0x0006;
-    pub const ADAPTER_CAP: u16 = 0x0007;
-    pub const EXT_RECEIVER_CAP_FIELD: u16 = 0x0008;
     pub const TRAINING_PTN_SET: u16 = 0x0106;
     pub const LINK_BW_SET: u16 = 0x0100;
     pub const LANE_COUNT_SET: u16 = 0x0101;
-    pub const DOWNSPREAD_CTRL: u16 = 0x0107;
-    pub const MAIN_LINK_CHANNEL_CODING_SET: u16 = 0x0108;
-    pub const SINK_COUNT: u16 = 0x0200;
-    pub const DEVICE_SERVICE_IRQ_VECTOR: u16 = 0x0201;
-    pub const LANE0_1_STATUS: u16 = 0x0202;
-    pub const LANE2_3_STATUS: u16 = 0x0203;
-    pub const LANE_ALIGN_STATUS_UPDATED: u16 = 0x0204;
-    pub const SINK_STATUS: u16 = 0x0205;
-    pub const ADJUST_REQUEST_LANE0_1: u16 = 0x0206;
-    pub const ADJUST_REQUEST_LANE2_3: u16 = 0x0207;
 }
 
 /// 链路速率

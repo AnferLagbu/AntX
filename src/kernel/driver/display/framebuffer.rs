@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Framebuffer 驱动 (Framebuffer Driver)
 //!
 //! 提供直接帧缓冲访问和图形绘制功能：

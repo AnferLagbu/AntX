@@ -44,7 +44,7 @@
 //! └── ffi.rs           C FFI 桥接层
 //! ```
 
-use core::sync::atomic::{AtomicBool, AtomicU64};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub mod types;
 pub mod undo_log;
@@ -138,3 +138,8 @@ pub static PANIC_MSG: spin::Mutex<[u8; 128]> = spin::Mutex::new([0u8; 128]);
 pub static CRASH_RIP: AtomicU64 = AtomicU64::new(0);
 
 pub static RECOVERY_MANAGER: spin::Mutex<RecoveryManager> = spin::Mutex::new(RecoveryManager::new());
+pub static NEED_BSR_ESCALATION: AtomicBool = AtomicBool::new(false);
+
+pub fn check_and_clear_bsr_escalation() -> bool {
+    NEED_BSR_ESCALATION.swap(false, Ordering::SeqCst)
+}

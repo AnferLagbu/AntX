@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 串口驱动 (Rust 安全重写)
 //!
 //! 提供对 PC 标准 COM 端口的完整支持：
@@ -27,6 +28,7 @@
 //!
 //! # Safety
 //! 此模块直接操作串口硬件端口。
+
 
 use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use crate::kernel::driver::framework::{outb, inb};

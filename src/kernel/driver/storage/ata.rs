@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! ATA/IDE 磁盘驱动 (Rust 安全重写)
 //!
 //! 提供对 ATA (Advanced Technology Attachment) 硬盘的底层控制：
@@ -22,6 +23,7 @@
 //! 此模块直接操作硬件端口，必须在特权级执行。
 
 #[cfg(target_arch = "x86_64")]
+
 use super::framework::Driver;
 use super::framework::{DeviceType, DriverError, Result, DeviceInfo};
 use super::framework::{outb, inb};

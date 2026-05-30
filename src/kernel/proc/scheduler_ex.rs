@@ -406,7 +406,9 @@ impl SchedulerEx {
                 }
             }
         }
-        
+
+        crate::kernel::sync::rcu::rcu_note_quiescent_state();
+
         self.need_reschedule.store(0, Ordering::SeqCst);
     }
 

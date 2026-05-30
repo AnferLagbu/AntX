@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// 网络子系统初始化
 /// 
 /// 提供 AntX 网络子系统的初始化入口点，
@@ -20,6 +21,7 @@
 /// - **状态机**: 跟踪初始化状态, 防止重复初始化
 /// - **日志增强**: 详细的初始化过程日志
 /// - **资源清理**: 失败时自动回滚
+
 
 use core::sync::atomic::{AtomicU8, Ordering};
 use crate::kernel::net::types::*;

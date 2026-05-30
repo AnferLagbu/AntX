@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! PCI Bus Subsystem (Rust rewrite)
 //!
 //! Replaces the C implementation at src/driver/pci.c.
@@ -35,6 +36,7 @@
 //! and does NOT use this module's device list. This is intentional: e1000
 //! requires special MMIO page table setup that is tightly coupled to its probe.
 //! See src/net/driver/e1000.c → e1000_probe().
+
 
 use alloc::vec::Vec;
 use spin::Mutex;

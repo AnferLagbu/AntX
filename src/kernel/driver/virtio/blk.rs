@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! VirtIO Block Device Driver
 //!
 //! Implements the VirtIO Block Device specification (device ID 2).
@@ -6,6 +7,7 @@
 //! Reads/writes a single 512-byte sector per request.
 //! For performance, this can be extended to use multi-sector requests
 //! and multiple outstanding I/Os.
+
 
 use super::queue::VirtQueue;
 use super::{VirtioMmioDevice, VIRTIO_ID_BLOCK};

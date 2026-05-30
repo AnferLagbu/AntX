@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// lwIP 操作系统抽象层 (OSAL) - Rust 实现
 /// 
 /// 提供 lwIP 所需的操作系统服务：
@@ -12,6 +13,7 @@
 /// 2. **RAII 自动清理**: Drop trait 确保锁的释放
 /// 3. **FFI 兼容**: 与 C 版本 lwIP 完全兼容
 /// 4. **零成本抽象**: 关键路径无额外开销
+
 
 use crate::kernel::sync::types::*;
 use crate::kernel::net::types::*;

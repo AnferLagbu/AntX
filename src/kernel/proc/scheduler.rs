@@ -612,6 +612,8 @@ impl Scheduler {
             }
         }
 
+        crate::kernel::sync::rcu::rcu_note_quiescent_state();
+
         Some(next)
     }
 
@@ -810,6 +812,18 @@ impl Scheduler {
         let per_cpu = per_cpu_for(cpu_id as u32);
 
         crate::kernel::barrier::RECOVERY_MANAGER.lock().tick(new_tick);
+
+        if crate::kernel::barrier::check_and_clear_bsr_escalation() {
+            crate::kernel::barrier::reset::config::set_reset_in_progress(true);
+            crate::kernel::barrier::reset::config::set_current_layer(
+                crate::kernel::barrier::reset::config::RecoveryLayer::Layer2);
+            crate::kernel::barrier::reset::bsr::freeze_all_domains();
+            crate::kernel::barrier::reset::bsr::rollback_to_init();
+            crate::kernel::barrier::reset::bsr::reset_devices();
+            crate::kernel::barrier::reset::bsr::unfreeze_all_domains();
+            crate::kernel::barrier::reset::bsr::clear_panic_state();
+        }
+
         crate::kernel::proc::oomd::OOMD.tick();
         crate::kernel::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
 

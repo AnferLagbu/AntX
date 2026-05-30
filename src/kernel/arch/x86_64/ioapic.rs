@@ -1,6 +1,8 @@
+#![allow(dead_code)]
 //! IOAPIC (I/O Advanced Programmable Interrupt Controller) Driver
 //!
 //! Routes external hardware interrupts to specific CPU cores.
+
 
 use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! QX (QueenX) AMD64 CPU 驱动核心 - Rust 完整实现
 //!
 //! ## 功能概览

@@ -106,13 +106,7 @@ impl RecoveryManager {
                     if failures >= 3 {
                         crate::klog_ffi!(klog_ffi_warn,
                             "[BARRIER] domain {} persistent failures ({failures}), escalating to BSR", dom.id);
-                        super::reset::config::set_reset_in_progress(true);
-                        super::reset::config::set_current_layer(super::reset::config::RecoveryLayer::Layer2);
-                        super::reset::bsr::freeze_all_domains();
-                        super::reset::bsr::rollback_to_init();
-                        super::reset::bsr::reset_devices();
-                        super::reset::bsr::unfreeze_all_domains();
-                        super::reset::bsr::clear_panic_state();
+                        crate::kernel::barrier::NEED_BSR_ESCALATION.store(true, Ordering::SeqCst);
                         return;
                     }
                 }

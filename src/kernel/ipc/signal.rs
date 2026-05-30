@@ -15,20 +15,27 @@ use super::types::*;
 /// * Ok(()) - 成功发送
 /// * Err(i32) - 错误码 (-1: 无效信号编号, -2: 进程不存在)
 pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
-    // 参数校验
     if sig < 1 || sig > IPC_MAX_SIGNALS as u8 {
         return Err(-1);
     }
 
-    // TODO: 查找目标进程并设置待处理信号标志
-    // 当前简化实现仅验证参数有效性
-    
     unsafe {
-        extern "C" { fn process_get_by_pid(pid: u32) -> u64; }
+        extern "C" { fn process_get_by_pid(pid: u32) -> u64; fn process_get_current_pwm() -> u64; }
         let proc_addr = process_get_by_pid(target_pid);
-
         if proc_addr == 0 {
             return Err(-2);
+        }
+
+        let sender_pwm = process_get_current_pwm();
+        if sender_pwm != 0 {
+            let sender_level = crate::kernel::credo::engine::get_privilege_level(sender_pwm);
+            if sender_level != 0 {
+                extern "C" { fn process_get_pwm_by_pid(pid: u32) -> u64; }
+                let target_pwm = process_get_pwm_by_pid(target_pid);
+                if target_pwm != sender_pwm {
+                    return Err(-3);
+                }
+            }
         }
     }
 

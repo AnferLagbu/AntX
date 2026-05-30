@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! VGA 文本模式驱动 (VGA Text Mode Driver)
 //!
 //! 提供对 VGA 文本模式显示的完整支持：

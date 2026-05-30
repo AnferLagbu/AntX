@@ -52,18 +52,22 @@ make test-host
 
 技术细节、开发日志和设计文档在 `docs/` 目录下：
 
-- [内核架构设计](docs/development/kernel-architecture.md)
-- [HvFS v2 文件系统](docs/development/hivefs.md)
-- [PWID 权限模型](docs/development/pwid-model.md)
-- [KLog 日志系统](docs/development/klog-system.md)
-- [内存管理](docs/development/memory-management.md)
-- [调度器设计](docs/development/thread-scheduler.md)
-- [系统调用接口](docs/development/syscall.md)
-- [测试框架](docs/development/test-framework.md)
+- [内核架构设计](docs/architecture/kernel-architecture.md)
+- [系统概述](docs/architecture/overview.md)
+- [CREDO DID 设计](docs/architecture/credo-did-design.md)
+- [系统调用接口](docs/api/syscall.md)
+- [测试框架](docs/testing/test-framework.md)
+- [启动流程](docs/architecture/boot-process.md)
+- [编码规范](docs/development/coding-style.md)
+- [构建系统](docs/development/build-system.md)
 - [多架构解耦工程](docs/development/multiarch-decoupling-plan.md)
 - [架构移植指南](docs/development/arch-porting-guide.md)
-- [完整文档索引](docs/README.md)
-- [演进蓝图](docs/development/ROADMAP.md) — 内核功能路线图
+- [子系统文档](docs/subsystems/)
+- [驱动文档](docs/drivers/README.md)
+- [演进蓝图](docs/development/ROADMAP.md)
+- [已知问题](docs/development/KNOWN_ISSUES.md)
+- [变更日志](docs/changelog/CHANGELOG.md)
+- [审计报告](docs/changelog/AUDIT_REPORT_2026-05-30.md)
 
 ---
 

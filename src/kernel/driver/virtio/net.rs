@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! VirtIO Network Device Driver (设备 ID 1)
 //!
 //! Implements the VirtIO Network Device specification.
@@ -8,6 +9,7 @@
 //! Config space (offset 0x100):
 //!   - 0x00: mac[6] (MAC address, if VIRTIO_NET_F_MAC is set)
 //!   - 0x06: status (u16, if VIRTIO_NET_F_STATUS is set)
+
 
 use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};

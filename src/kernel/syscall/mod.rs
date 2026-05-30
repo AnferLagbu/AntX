@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
 /// POSIX 标准 syscall 编号 (0-399) + Credo 私有 syscall (400+).

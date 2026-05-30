@@ -89,6 +89,7 @@ impl Terminal {
         self.fill_rect(0, 0, self.width, self.height, 20, 20, 28);
     }
 
+    #[allow(dead_code)]
     fn clear_line(&mut self, row: u32) {
         if row >= self.rows { return; }
         for col in 0..self.cols {

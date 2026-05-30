@@ -17,7 +17,7 @@ boot.asm (实模式 → 保护模式)
     ↓
 entry.asm (长模式设置)
     ↓
-kernel_main() (C初始化)
+kernel_init() (Rust初始化)
     ↓
 Rust初始化 (核心子系统)
     ↓
@@ -169,16 +169,16 @@ jmp 0x08:long_mode_start
 
 ---
 
-### 5. kernel_main()阶段
+### 5. kernel_init() 阶段
 
-**文件**: `src/kernel/main.c`
+**文件**: `src/rust/src/lib.rs` → `kernel_init()`, `src/kernel/boot/mod.rs`
 
-**职责**: C环境初始化、调用Rust初始化
+**职责**: Rust 内核初始化、调用核心子系统
 
-**初始化顺序**:
+**初始化顺序** (实际 Rust 实现):
 
-```c
-void kernel_main(multiboot_info_t *mbi) {
+```rust
+pub extern "C" fn kernel_init(mbi: *const MultibootInfo) {
     // 1. 清屏
     vga_clear();
     
@@ -222,7 +222,7 @@ void kernel_main(multiboot_info_t *mbi) {
 
 ```rust
 #[no_mangle]
-pub extern "C" fn antx_init(mbi: *const MultibootInfo) {
+pub extern "C" fn kernel_init(mbi: *const MultibootInfo) {
     // 1. 解析多引导信息
     let boot_info = parse_multiboot_info(mbi);
     
@@ -395,7 +395,7 @@ int main(int argc, char **argv) {
 | GRUB2 | ~50ms | 加载内核 |
 | boot.asm | < 1ms | 模式切换 |
 | entry.asm | < 1ms | 长模式设置 |
-| kernel_main() | ~10ms | C初始化 |
+| kernel_init() | ~10ms | Rust内核初始化 |
 | Rust初始化 | ~100ms | 子系统初始化 |
 | 用户态启动 | ~50ms | init + Shell |
 | **总计** | **~300ms** | QEMU虚拟环境 |

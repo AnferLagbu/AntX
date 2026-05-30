@@ -83,6 +83,8 @@ SECTIONS
         *(LARGE_COMMON)
     } :kernel
     
+    __bss_end = .;
+    
     .rela.dyn : {
         *(.rela.init)
         *(.rela.text .rela.text.*)
@@ -91,15 +93,15 @@ SECTIONS
         *(.rela.got)
         *(.rela.bss .rela.bss.*)
         *(.rela.ifunc)
-    }
+    } :kernel
     
     .dynsym : {
         *(.dynsym)
-    }
+    } :kernel
     
     .dynstr : {
         *(.dynstr)
-    }
+    } :kernel
     
     /DISCARD/ : {
         *(.comment)

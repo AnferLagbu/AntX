@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[cfg(not(feature = "kernel_test"))]
 use core::sync::atomic::{AtomicU32, Ordering};
 

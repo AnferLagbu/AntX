@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 显示控制器抽象层 (Display Controller Abstraction)
 //!
 //! 提供统一的显示控制器接口：

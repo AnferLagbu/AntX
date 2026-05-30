@@ -108,10 +108,27 @@ pub struct AhciPortRegs {
     pub vs: [u32; 4],
 }
 
-// 寄存器位域
-mod cap { pub const S64A: u32 = 1 << 0; pub const SNCQ: u32 = 1 << 1; }
-mod ghc { pub const HR: u32 = 1 << 0; pub const IE: u32 = 1 << 1; pub const AE: u32 = 1 << 31; }
-mod pxcmd { pub const ST: u32 = 1 << 0; pub const FRE: u32 = 1 << 4; pub const FR: u32 = 1 << 14; pub const CR: u32 = 1 << 15; pub const ICC: u32 = 0xF << 28; }
+/// AHCI 寄存器位域
+///
+/// AHCI 能力寄存器 (CAP) — AHCI 规范 §3.1.7
+/// 当前未使用，直接通过 memread 访问。
+/// 位定义供参考: S64A (bit 31: 64位寻址), SNCQ (bit 30: NCQ)
+mod cap {}
+
+mod ghc {
+    pub const HR: u32 = 1 << 0;
+    pub const IE: u32 = 1 << 1;
+    pub const AE: u32 = 1 << 31;
+}
+
+/// AHCI 端口命令寄存器 (PxCMD) — AHCI 规范 §3.3.2
+/// 未实现位: ICC [28:31] (接口通信控制)
+mod pxcmd {
+    pub const ST: u32 = 1 << 0;
+    pub const FRE: u32 = 1 << 4;
+    pub const FR: u32 = 1 << 14;
+    pub const CR: u32 = 1 << 15;
+}
 mod pxssts { pub const DET: u32 = 0xF; }
 mod pxtfd { pub const ERR: u32 = 1 << 0; pub const DRQ: u32 = 1 << 3; pub const BSY: u32 = 1 << 7; }
 mod pxis { pub const DPS: u32 = 1 << 5; pub const PCS: u32 = 1 << 9; pub const DHRS: u32 = 1 << 0; pub const TFE: u32 = 1 << 30; }
@@ -629,6 +646,7 @@ pub struct AhciController {
     hba: *mut AhciHbaGhc,
     ports: Vec<AhciPort>,
     port_bitmap: u32,
+    #[allow(dead_code)]
     info: DeviceInfo,
     initialized: bool,
 }

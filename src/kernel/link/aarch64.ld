@@ -46,6 +46,8 @@ SECTIONS
         *(COMMON)
     } :kernel
 
+    __bss_end = .;
+
     . = ALIGN(4096);
     _kernel_end = .;
     _kernel_size = _kernel_end - _kernel_start;

@@ -1,7 +1,7 @@
 /// 文件操作辅助
 
 use crate::sys;
-use crate::sys::{O_CREAT, O_RDONLY, O_TRUNC, O_WRONLY};
+use crate::sys::{O_CREAT, O_RDONLY, O_WRONLY};
 
 pub fn file_open(path: &[u8], flags: i32) -> i32 {
     let mut p = [0u8; 256]; let len = core::cmp::min(path.len(), 255);

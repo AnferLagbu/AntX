@@ -125,4 +125,5 @@ pub fn save(cmd: &Cmd) {
     print("Wrote "); print_dec(n as i64); println(" bytes");
 }
 
+#[allow(dead_code)]
 pub fn sync(_: &Cmd) { userlib::fs_sync(); println("Synced"); }

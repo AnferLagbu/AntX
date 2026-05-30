@@ -121,7 +121,7 @@ impl VirtQueue {
             for i in 0..VQ_SIZE {
                 let desc = &mut *desc_ptr.add(i as usize);
                 desc.flags = 0;
-                desc.next = if i + 1 < VQ_SIZE { i + 1 } else { 0 };
+                desc.next = if i + 1 < VQ_SIZE { i + 1 } else { 0xFFFF };
             }
 
             // Zero avail and used rings (critical: device sees these)
@@ -151,8 +151,12 @@ impl VirtQueue {
     pub fn used_paddr(&self) -> u64 { self.used_phys }
 
     /// Prepare a descriptor chain and return the head index.
+    /// Returns `0xFFFF` if no free descriptors are available.
     /// For a simple read/write operation, this creates a single-descriptor chain.
     pub fn prepare_desc(&mut self, buf_paddr: u64, buf_len: u32, write: bool) -> u16 {
+        if self.free_head == 0xFFFF {
+            return 0xFFFF;
+        }
         let head = self.free_head;
         unsafe {
             let desc = &mut *self.desc.add(head as usize);

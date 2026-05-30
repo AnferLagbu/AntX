@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::framebuffer::{Color, Framebuffer};
 
 /// 内嵌的 8x16 位图字体 (256 字形, 每字形 16 字节)

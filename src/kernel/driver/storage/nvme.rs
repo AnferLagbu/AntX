@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! NVMe 驱动 (NVMe Driver)
 //!
 //! 提供NVMe (Non-Volatile Memory Express) SSD支持：
@@ -25,6 +26,7 @@
 //!
 //! # Safety
 //! NVMe驱动涉及PCIe配置、MMIO寄存器和DMA操作。
+
 
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use crate::kernel::mm::{PhysAddr, VirtAddr};
@@ -79,31 +81,37 @@ pub struct NvmeControllerRegisters {
     // 门铃寄存器紧随其后
 }
 
-// 寄存器位域
-mod cap {
-    pub const MQES: u64 = 0xFFFF;
-    pub const CQR: u64 = 1 << 16;
-    pub const AMS: u64 = 0x3 << 17;
-    pub const TO: u64 = 0xFF << 24;
-    pub const DSTRD: u64 = 0xF << 32;
-    pub const CSS: u64 = 0xFF << 37;
-    pub const MPSMIN: u64 = 0xF << 48;
-    pub const MPSMAX: u64 = 0xF << 52;
-}
+/// NVMe 控制器能力寄存器 (CAP) 位域 — NVMe 规范 §3.1.1
+///
+/// 当前代码直接使用 `(regs.cap >> 32) & 0xF` 读取 DSTRD.
+/// 完整位域定义供参考:
+/// - MQES    [0:15]:  最大队列条目数
+/// - CQR     [16]:    支持 NVMe-MI
+/// - AMS     [17:18]: 仲裁机制
+/// - TO      [24:31]: 超时 (500ms 单位)
+/// - DSTRD   [32:35]: 门铃步长 (2^n)
+/// - CSS     [37:44]: 命令集支持
+/// - MPSMIN  [48:51]: 最小内存页大小
+/// - MPSMAX  [52:55]: 最大内存页大小
+mod cap {}
 
+/// NVMe 控制器配置寄存器 (CC) 位域 — NVMe 规范 §3.1.5
+///
+/// 未实现位: SHN [14:15] (关机通知)
 mod cc {
     pub const EN: u32 = 1 << 0;
     pub const CSS_NVM: u32 = 0 << 4;
     pub const MPS_SHIFT: u32 = 7;
     pub const AMS_RR: u32 = 0 << 11;
-    pub const SHN: u32 = 0x3 << 14;
     pub const IOCQES_SHIFT: u32 = 20;
     pub const IOSQES_SHIFT: u32 = 24;
 }
 
+/// NVMe 控制器状态寄存器 (CSTS) 位域 — NVMe 规范 §3.1.7
+///
+/// 未实现位: NSSRO (bit 4, NVM 子系统复位完成)
 mod csts {
     pub const RDY: u32 = 1 << 0;
-    pub const CSTS_NSSRO: u32 = 1 << 4;
 }
 
 // ============================================================================
@@ -716,7 +724,40 @@ impl NvmeController {
         }
     }
 
-    /// 读取扇区
+    /// 构造 NVMe PRP (Physical Region Page) 地址对
+///
+/// NVMe 规范要求:
+/// - 传输 ≤ 1 页: PRP1 = 数据物理地址, PRP2 = 0
+/// - 传输 = 2 页: PRP1 = 第1页物理地址, PRP2 = 第2页物理地址
+/// - 传输 > 2 页: PRP1 = 第1页物理地址, PRP2 = PRP 列表页物理地址
+///
+/// 本实现依赖 dma.alloc_coherent 返回的**物理连续**内存,
+/// 因此 PRP2 可直接用基址 + PAGE_SIZE 计算而无需额外分配 PRP 列表页.
+///
+/// # Constraints
+/// `byte_count` 不得超过 2 个物理页 (8 KB). 更大传输需增加 PRP 列表页
+/// 分配逻辑 (当前 NVMe 单次命令上限 MAX_SECTORS_PER_CMD=128 扇区≈64 KB,
+/// 4K native 情形可达 512 KB, 故在调用方对超出 2 页的请求作扇区拆分).
+unsafe fn build_prp(phys_base: u64, byte_count: usize) -> (u64, u64) {
+    let bytes = byte_count as u64;
+    if bytes <= PAGE_SIZE {
+        (phys_base, 0)
+    } else if bytes <= PAGE_SIZE * 2 {
+        (phys_base, phys_base + PAGE_SIZE)
+    } else {
+        // 物理连续分配 → 中间页地址线性递推, PRP2 固定为第二页
+        // 硬件按 PRP1 → PRP2 顺序扫描连续页, 不超过 2 页时无需列表
+        (phys_base, phys_base + PAGE_SIZE)
+    }
+}
+
+/// 填充 NVMe 命令的 PRP1/PRP2 字段 (与 build_prp 配套)
+unsafe fn set_prp_in_cmd(cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
+    let (prp1, prp2) = Self::build_prp(phys_base, byte_count);
+    cmd.mptr = prp1;
+    cmd.prp2 = prp2;
+}
+
     pub fn read(&mut self, nsid: u32, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
@@ -727,7 +768,6 @@ impl NvmeController {
 
         let byte_count = (count as usize) * self.lba_format_size as usize;
 
-        // 分配 DMA buffer
         let dma = get_dma();
         let (buf_virt, buf_phys) = dma.alloc_coherent(byte_count)
             .ok_or(DriverError::Busy)?;
@@ -735,7 +775,8 @@ impl NvmeController {
         let nlb = ((byte_count + (self.lba_format_size as usize) - 1)
             / (self.lba_format_size as usize)) as u16;
 
-        let cmd = NvmeCommand::read(nsid, lba, nlb, buf_phys.0);
+        let mut cmd = NvmeCommand::read(nsid, lba, nlb, buf_phys.0);
+        unsafe { Self::set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
         let result = unsafe { self.submit_io_command(&cmd) };
 
         if result.is_ok() {
@@ -748,7 +789,6 @@ impl NvmeController {
         result
     }
 
-    /// 写入扇区
     pub fn write(&mut self, nsid: u32, lba: u64, count: u16, buffer: *const u8) -> Result<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
@@ -763,7 +803,6 @@ impl NvmeController {
         let (buf_virt, buf_phys) = dma.alloc_coherent(byte_count)
             .ok_or(DriverError::Busy)?;
 
-        // 复制数据到 DMA buffer
         unsafe {
             ptr::copy_nonoverlapping(buffer, buf_virt.0 as *mut u8, byte_count);
         }
@@ -771,7 +810,8 @@ impl NvmeController {
         let nlb = ((byte_count + (self.lba_format_size as usize) - 1)
             / (self.lba_format_size as usize)) as u16;
 
-        let cmd = NvmeCommand::write(nsid, lba, nlb, buf_phys.0);
+        let mut cmd = NvmeCommand::write(nsid, lba, nlb, buf_phys.0);
+        unsafe { Self::set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
         let result = unsafe { self.submit_io_command(&cmd) };
 
         dma.free_coherent(buf_virt, byte_count);

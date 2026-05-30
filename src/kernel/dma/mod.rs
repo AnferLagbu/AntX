@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! DMA Engine Subsystem (Rust rewrite)
 //!
 //! Provides coherent DMA memory management, ioremap for MMIO,
@@ -7,6 +8,7 @@
 //! with type-safe PhysAddr/VirtAddr and lock-free statistics.
 
 extern crate alloc;
+
 
 use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::kernel::mm::pmm::get_pmm;

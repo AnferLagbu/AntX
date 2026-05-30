@@ -29,7 +29,9 @@ use core::sync::atomic::{AtomicU32, AtomicU16, Ordering, AtomicBool};
 
 /// PIT I/O 端口地址
 const PIT_CHANNEL_0_DATA: u16 = 0x40;   // 通道 0 数据端口
+#[allow(dead_code)]
 const PIT_CHANNEL_1_DATA: u16 = 0x41;   // 通道 1 数据端口
+#[allow(dead_code)]
 const PIT_CHANNEL_2_DATA: u16 = 0x42;   // 通道 2 数据端口
 const PIT_COMMAND_PORT: u16 = 0x43;     // 命令/控制寄存器
 
@@ -45,33 +47,18 @@ pub const PIT_MAX_COUNT: u16 = 0xFFFF;
 /// 最小分频值
 pub const PIT_MIN_COUNT: u16 = 0x0001;
 
-/// 控制字格式
-/// PIT 8254 控制字参考常量 (硬件文档)
-#[allow(dead_code)]
+/// PIT 8254 控制字 — Intel 8253/8254 规范
+///
+/// 当前使用: SELECT_CHANNEL_0, LATCH_COUNT, LO_HI, MODE_2_RATE_GENERATOR
+/// 规范定义的其余模式供参考:
+///   SELECT_CHANNEL_{1,2}, READ_BACK_COMMAND, LOW/HIGH_BYTE_ONLY,
+///   MODE_{0,1,3,4,5}, BCD_MODE
 mod control_word {
-    /// 选择通道
     pub const SELECT_CHANNEL_0: u8 = 0x00;
-    pub const SELECT_CHANNEL_1: u8 = 0x40;
-    pub const SELECT_CHANNEL_2: u8 = 0x80;
-    pub const READ_BACK_COMMAND: u8 = 0xC0;
-
-    /// 访问模式 (低字节/高字节)
-    pub const LATCH_COUNT: u8 = 0x00;           // 锁存计数值
-    pub const LOW_BYTE_ONLY: u8 = 0x10;          // 只读写低字节
-    pub const HIGH_BYTE_ONLY: u8 = 0x20;         // 只读写高字节
-    pub const LOW_HIGH_BYTE: u8 = 0x30;          // 先低字节后高字节
-
-    /// 工作模式
-    pub const MODE_0_INTERRUPT: u8 = 0x00;       // 中断终止计数
-    pub const MODE_1_ONE_SHOT: u8 = 0x02;        // 可编程单稳态
-    pub const MODE_2_RATE_GEN: u8 = 0x04;        // 速率发生器 ⭐
-    pub const MODE_3_SQUARE_WAVE: u8 = 0x06;     // 方波发生器
-    pub const MODE_4_SW_STROBE: u8 = 0x08;       // 软件触发选通
-    pub const MODE_5_HW_STROBE: u8 = 0x0A;       // 硬件触发选通
-
-    /// BCD/Binary 模式
-    pub const BINARY_MODE: u8 = 0x00;            // 16位二进制
-    pub const BCD_MODE: u8 = 0x01;               // 4位BCD码
+    pub const LATCH_COUNT: u8 = 0x00;
+    pub const LOW_HIGH_BYTE: u8 = 0x30;
+    pub const MODE_2_RATE_GEN: u8 = 0x04;
+    pub const BINARY_MODE: u8 = 0x00;
 }
 
 // ============================================================================

@@ -845,6 +845,9 @@ impl Interpreter {
         if b == 0 {
             return Err(WasmError::DivisionByZero);
         }
+        if a == i32::MIN && b == -1 {
+            return Err(WasmError::IntegerOverflow);
+        }
         self.stack.push(Value::I32(a.wrapping_div(b)))?;
         Ok(())
     }
@@ -866,6 +869,9 @@ impl Interpreter {
         let a = self.stack.pop_i32()?;
         if b == 0 {
             return Err(WasmError::DivisionByZero);
+        }
+        if a == i32::MIN && b == -1 {
+            return Err(WasmError::IntegerOverflow);
         }
         self.stack.push(Value::I32(a.wrapping_rem(b)))?;
         Ok(())
@@ -899,6 +905,9 @@ impl Interpreter {
         if b == 0 {
             return Err(WasmError::DivisionByZero);
         }
+        if a == i64::MIN && b == -1 {
+            return Err(WasmError::IntegerOverflow);
+        }
         self.stack.push(Value::I64(a.wrapping_div(b)))?;
         Ok(())
     }
@@ -913,7 +922,7 @@ impl Interpreter {
         let _ = frame;
 
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.wrapping_add(mem_offset);
+        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
         let _ = align;
 
         let mem = self.memory.as_ref().ok_or(WasmError::MemoryOutOfBounds)?;
@@ -935,7 +944,7 @@ impl Interpreter {
         let _ = frame;
 
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.wrapping_add(mem_offset);
+        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_ref().ok_or(WasmError::MemoryOutOfBounds)?;
         let val = mem.read_u64(addr)?;
@@ -951,7 +960,7 @@ impl Interpreter {
         let _ = frame;
 
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.wrapping_add(mem_offset);
+        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_ref().ok_or(WasmError::MemoryOutOfBounds)?;
         match size {
@@ -985,7 +994,7 @@ impl Interpreter {
 
         let value = self.stack.pop_i32()?;
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.wrapping_add(mem_offset);
+        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_mut().ok_or(WasmError::MemoryOutOfBounds)?;
         match size {
@@ -1004,7 +1013,7 @@ impl Interpreter {
 
         let value = self.stack.pop_i64()?;
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.wrapping_add(mem_offset);
+        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_mut().ok_or(WasmError::MemoryOutOfBounds)?;
         mem.write_u64(addr, value as u64)?;
@@ -1020,7 +1029,7 @@ impl Interpreter {
 
         let value = self.stack.pop_i32()?;
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.wrapping_add(mem_offset);
+        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_mut().ok_or(WasmError::MemoryOutOfBounds)?;
         match size {

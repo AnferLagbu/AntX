@@ -19,6 +19,7 @@
 //! # Safety
 //! HDMI驱动涉及MMIO寄存器和I2C通信。
 
+
 use alloc::vec::Vec;
 use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 

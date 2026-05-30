@@ -297,11 +297,8 @@ impl<'a, T> core::ops::DerefMut for SpinLockGuard<'a, T> {
 
 impl<'a, T> Drop for SpinLockGuard<'a, T> {
     fn drop(&mut self) {
-        // 自动释放锁
-        self._lock.locked.store(0, Ordering::Release);
-        
-        // 内存屏障 (确保所有写操作对其他 CPU 可见)
         core::sync::atomic::fence(Ordering::SeqCst);
+        self._lock.locked.store(0, Ordering::Release);
     }
 }
 
@@ -330,17 +327,16 @@ impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
 
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
+        self._mutex.inner_spinlock.raw_lock();
+
         let depth = self._mutex.depth.fetch_sub(1, Ordering::AcqRel);
-        
         if depth <= 1 {
-            // 最后一次 unlock: 释放锁
             self._mutex.locked.store(0, Ordering::Release);
             self._mutex.owner.store(-1, Ordering::Release);
             self._mutex.acquire_time.store(0, Ordering::Release);
-            
-            // 释放内部自旋锁
-            self._mutex.inner_spinlock.locked.store(0, Ordering::Release);
         }
+
+        self._mutex.inner_spinlock.raw_unlock();
     }
 }
 
@@ -389,7 +385,7 @@ impl<'a, T> core::ops::DerefMut for RwLockWriteGuard<'a, T> {
 
 impl<'a, T> Drop for RwLockWriteGuard<'a, T> {
     fn drop(&mut self) {
-        // 释放写锁
+        core::sync::atomic::fence(Ordering::SeqCst);
         self._rwlock.writer.store(0, Ordering::Release);
         self._rwlock.lock.locked.store(0, Ordering::Release);
     }

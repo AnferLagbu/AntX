@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Slab 分配器 (Slab Allocator) - Rust 完整实现
 //!
 //! ## 功能概览

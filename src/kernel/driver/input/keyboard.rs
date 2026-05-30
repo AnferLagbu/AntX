@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! PS/2 键盘驱动 (Rust 安全重写)
 //!
 //! 提供对 PS/2 兼容键盘的完整支持：
@@ -17,6 +18,7 @@
 //!
 //! # Safety
 //! 此模块直接操作 PS/2 控制器硬件。
+
 
 use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use crate::kernel::driver::framework::{outb, inb};

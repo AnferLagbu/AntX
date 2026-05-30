@@ -73,7 +73,7 @@ BHR (Barrier Hard Reset)     → 硬重启：硬件级重置
 - 运行时切换：无需重启
 - ZFS风格：写时复制、快照、校验和
 
-详见 [HvFS文件系统](../subsystems/filesystem/hvfs.md)
+详见 [HvFS文件系统](../changelog/CHANGELOG.md)
 
 ---
 
@@ -277,7 +277,7 @@ AntX采用四级测试策略：
 - [ ] 虚拟化支持（KVM风格）
 - [ ] 安全增强（ASLR、MAC）
 
-详见 [里程碑](../changelog/milestones.md)
+详见 [变更日志](../changelog/CHANGELOG.md)
 
 ---
 

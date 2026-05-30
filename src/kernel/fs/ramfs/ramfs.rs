@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use spin::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
 use alloc::vec::Vec;

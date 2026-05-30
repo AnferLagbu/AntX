@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! RecoveryDomain Trait — 子系统级崩溃恢复接口
 //!
 //! 将"域"的概念推广到子系统级: 文件系统、网络栈、驱动各为一个 recovery domain。

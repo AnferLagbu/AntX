@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! xHCI 主机控制器驱动 (xHCI Host Controller Driver)
 //!
 //! 实现USB 3.0 xHCI (eXtensible Host Controller Interface) 规范：
@@ -26,6 +27,7 @@
 //!
 //! # Safety
 //! xHCI驱动涉及复杂的DMA操作和MMIO寄存器访问。
+
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -105,60 +107,69 @@ pub struct XhciPortRegister {
 // xHCI 命令和状态位
 // ============================================================================
 
-/// USB命令寄存器位
+/// xHCI USB 命令寄存器 (USBCMD) 位定义 — xHCI 规范 §5.4.1
+///
+/// 当前使用的位:
+/// - RUN_STOP    (bit 0): 运行/停止
+/// - HC_RESET    (bit 1): 控制器复位
+/// - INTR_ENABLE (bit 2): 中断使能
+///
+/// 规范定义的全部位 (未实现部分供参考):
+/// - HOST_SYSTEM_ERROR_ENABLE (bit 3)
+/// - DRIVER_DEBUG (bit 4)
+/// - LIGHT_HC_RESET (bit 5)
+/// - CONTROLLER_SAVE_STATE (bit 6)
+/// - CONTROLLER_RESTORE_STATE (bit 7)
+/// - ENABLE_U3 (bit 8)
+/// - ENABLE_S0IX (bit 9)
+/// - WRAP_EVENT_CHECKING (bit 10)
+/// - STROBE_DEBUG (bit 11)
+/// - PARK_MODE_{ENABLE,SELECT} (bits 12-14)
+/// - EVENT_RING_SEGMENT_TABLE_SIZE_MODE (bit 15)
+/// - CONFIGURE_ENDPOINT_MAX_EXIT_LATENCY_TOO_LARGE (bit 16)
 mod usb_cmd {
     pub const RUN_STOP: u32 = 1 << 0;
     pub const HC_RESET: u32 = 1 << 1;
     pub const INTR_ENABLE: u32 = 1 << 2;
-    pub const HOST_SYSTEM_ERROR_ENABLE: u32 = 1 << 3;
-    pub const DRIVER_DEBUG: u32 = 1 << 4;
-    pub const LIGHT_HC_RESET: u32 = 1 << 5;
-    pub const CONTROLLER_SAVE_STATE: u32 = 1 << 6;
-    pub const CONTROLLER_RESTORE_STATE: u32 = 1 << 7;
-    pub const ENABLE_U3: u32 = 1 << 8;
-    pub const ENABLE_S0IX: u32 = 1 << 9;
-    pub const WRAP_EVENT_CHECKING: u32 = 1 << 10;
-    pub const STROBE_DEBUG: u32 = 1 << 11;
-    pub const PARK_MODE_ENABLE: u32 = 1 << 12;
-    pub const PARK_MODE_SELECT: u32 = 0b11 << 13;
-    pub const EVENT_RING_SEGMENT_TABLE_SIZE_MODE: u32 = 1 << 15;
-    pub const CONFIGURE_ENDPOINT_MAX_EXIT_LATENCY_TOO_LARGE: u32 = 1 << 16;
 }
 
-/// USB状态寄存器位
+/// xHCI USB 状态寄存器 (USBSTS) 位定义 — xHCI 规范 §5.4.2
+///
+/// 当前使用的位:
+/// - HC_HALTED        (bit 0): 控制器已停止
+/// - HC_RESET_COMPLETE (bit 1): 复位完成
+///
+/// 规范定义的全部位 (未实现部分供参考):
+/// - EVENT_RING_NOT_EMPTY (bit 2), INTR_PENDING (bit 3),
+/// - HOST_SYSTEM_ERROR (bit 4), EVENT_COUNTER_OVERFLOW (bit 5),
+/// - PORT_CHANGE_DETECT (bit 6), SAVE_RESTORE_COMPLETE (bit 7),
+/// - RESTORE_ERROR (bit 8), CONTROLLER_NOT_READY (bit 11),
+/// - HOST_CONTROLLER_ERROR (bit 12)
 mod usb_sts {
     pub const HC_HALTED: u32 = 1 << 0;
     pub const HC_RESET_COMPLETE: u32 = 1 << 1;
-    pub const EVENT_RING_NOT_EMPTY: u32 = 1 << 2;
-    pub const INTR_PENDING: u32 = 1 << 3;
-    pub const HOST_SYSTEM_ERROR: u32 = 1 << 4;
-    pub const EVENT_COUNTER_OVERFLOW: u32 = 1 << 5;
-    pub const PORT_CHANGE_DETECT: u32 = 1 << 6;
-    pub const SAVE_RESTORE_COMPLETE: u32 = 1 << 7;
-    pub const RESTORE_ERROR: u32 = 1 << 8;
-    pub const CONTROLLER_NOT_READY: u32 = 1 << 11;
-    pub const HOST_CONTROLLER_ERROR: u32 = 1 << 12;
 }
 
-/// 端口状态和控制寄存器位
+/// xHCI 端口状态与控制寄存器 (PORTSC) 位定义 — xHCI 规范 §5.4.8
+///
+/// 当前使用的位:
+/// - CURRENT_CONNECT_STATUS (bit 0): 设备已连接
+/// - PORT_ENABLED           (bit 1): 端口已使能
+/// - PORT_RESET             (bit 4): 端口复位
+/// - PORT_POWER             (bit 9): 端口供电
+///
+/// 规范定义的其余位 (未实现部分供参考):
+/// - PORT_LINK_STATE [5:8], PORT_SPEED [10:13], PORT_INDICATOR [14:15],
+/// - CONNECT_STATUS_CHANGE (bit 16), PORT_ENABLED_DISABLED_CHANGE (bit 17),
+/// - OVER_CURRENT_CHANGE (bit 19), RESET_CHANGE (bit 21),
+/// - WAKE_ON_{CONNECT,DISCONNECT,OVER_CURRENT} (bits 20-22),
+/// - DEVICE_REMOVABLE (bit 23), PORT_LINK_STATE_STROBE (bit 26),
+/// - PORT_TEST [28:31]
 mod portsc {
     pub const CURRENT_CONNECT_STATUS: u32 = 1 << 0;
     pub const PORT_ENABLED: u32 = 1 << 1;
-    pub const PORT_POWER: u32 = 1 << 9;
     pub const PORT_RESET: u32 = 1 << 4;
-    pub const PORT_LINK_STATE: u32 = 0b1111 << 5;
-    pub const PORT_SPEED: u32 = 0b1111 << 10;
-    pub const PORT_INDICATOR: u32 = 0b11 << 14;
-    pub const PORT_TEST: u32 = 0b1111 << 28;
-    pub const WAKE_ON_CONNECT: u32 = 1 << 20;
-    pub const WAKE_ON_DISCONNECT: u32 = 1 << 21;
-    pub const WAKE_ON_OVER_CURRENT: u32 = 1 << 22;
-    pub const DEVICE_REMOVABLE: u32 = 1 << 23;
-    pub const PORT_LINK_STATE_STROBE: u32 = 1 << 26;
-    pub const CONNECT_STATUS_CHANGE: u32 = 1 << 16;
-    pub const PORT_ENABLED_DISABLED_CHANGE: u32 = 1 << 17;
-    pub const OVER_CURRENT_CHANGE: u32 = 1 << 19;
-    pub const RESET_CHANGE: u32 = 1 << 21;
+    pub const PORT_POWER: u32 = 1 << 9;
 }
 
 // ============================================================================
@@ -397,6 +408,12 @@ impl XhciController {
         
         unsafe { Some(&mut *self.port_regs.add(port)) }
     }
+
+    fn recover_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
+        let _ = (slot_id, ep_id);
+        self.reset_controller()?;
+        self.start_controller()
+    }
 }
 
 // ============================================================================
@@ -515,7 +532,6 @@ impl HostController for XhciController {
     }
     
     fn cancel_urb(&mut self, _urb_id: u32) -> Result<()> {
-        // TODO: 实现URB取消
         Err(DriverError::UnsupportedOperation)
     }
     

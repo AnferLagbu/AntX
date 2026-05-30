@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 显示子系统 (Display Subsystem)
 //!
 //! 提供完整的显示支持：
@@ -60,6 +61,7 @@ pub use controller::{
     DisplayOutput,
     MonitorInfo,
 };
+
 
 use super::framework;
 use super::framework::Driver;

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! # 自旋锁 (SpinLock) 实现
 //!
 //! 高效的忙等待锁，基于原子交换指令 (xchg)。

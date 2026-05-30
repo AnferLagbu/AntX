@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! C FFI Interface for DMA Engine
 //!
 //! Matches the declarations in src/include/dma.h exactly.

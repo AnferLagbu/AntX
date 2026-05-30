@@ -87,50 +87,10 @@ impl HvChecksum {
     }
 
     fn sha256(&mut self, data: &[u8]) {
-        let mut h0: u64 = 0x6a09e667f3bcc908;
-        let mut h1: u64 = 0xbb67ae8584caa73b;
-        let mut h2: u64 = 0x3c6ef372fe94f82b;
-        let mut h3: u64 = 0xa54ff53a5f1d36f1;
-
-        let mut i = 0;
-        let len = data.len();
-        while i < len {
-            let end = (i + 64).min(len);
-            let chunk = &data[i..end];
-            let mut block = [0u8; 128];
-            block[..chunk.len()].copy_from_slice(chunk);
-            if chunk.len() < 64 {
-                block[chunk.len()] = 0x80;
-                let bit_len = (len as u64) * 8;
-                block[112..120].copy_from_slice(&bit_len.to_le_bytes());
-            }
-            let w0 = u64::from_le_bytes(block[0..8].try_into().unwrap_or([0; 8]));
-            let w1 = u64::from_le_bytes(block[8..16].try_into().unwrap_or([0; 8]));
-            let w2 = u64::from_le_bytes(block[16..24].try_into().unwrap_or([0; 8]));
-            let w3 = u64::from_le_bytes(block[24..32].try_into().unwrap_or([0; 8]));
-
-            let k0: u64 = 0x428a2f9871374491;
-            let k1: u64 = 0xb5c0fbcfec4d3b2f;
-            let k2: u64 = 0xe9b5dba58189dbbc;
-            let k3: u64 = 0x3956c25bf348b538;
-
-            let t0 = h0.wrapping_add(w0).wrapping_add(k0);
-            let t1 = h1.wrapping_add(w1).wrapping_add(k1);
-            let t2 = h2.wrapping_add(w2).wrapping_add(k2);
-            let t3 = h3.wrapping_add(w3).wrapping_add(k3);
-
-            h0 = h0.wrapping_add(t0 ^ t2);
-            h1 = h1.wrapping_add(t1 ^ t3);
-            h2 = h2.wrapping_add(t0.rotate_left(17) ^ t1.rotate_left(23));
-            h3 = h3.wrapping_add(t2.rotate_left(31) ^ t3.rotate_left(7));
-
-            i += 64;
-            if i >= len { break; }
-        }
-
-        self.value[0] = h0;
-        self.value[1] = h1;
-        self.value[2] = h2;
-        self.value[3] = h3;
+        let hash = crate::kernel::credo::sha256::sha256(data);
+        self.value[0] = u64::from_be_bytes(hash[0..8].try_into().unwrap());
+        self.value[1] = u64::from_be_bytes(hash[8..16].try_into().unwrap());
+        self.value[2] = u64::from_be_bytes(hash[16..24].try_into().unwrap());
+        self.value[3] = u64::from_be_bytes(hash[24..32].try_into().unwrap());
     }
 }

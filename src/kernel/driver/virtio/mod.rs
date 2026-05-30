@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! VirtIO MMIO Transport Layer
 //!
 //! Implements VirtIO 1.0 MMIO transport for device discovery and setup.
@@ -38,6 +39,7 @@
 pub mod queue;
 pub mod blk;
 pub mod net;
+
 
 use crate::kernel::mm::KERNEL_BASE;
 use crate::klog_info;

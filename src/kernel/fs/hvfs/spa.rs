@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use crate::kernel::sync::mutex::Mutex;

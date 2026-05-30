@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 全局描述符表 (Global Descriptor Table, GDT) - x86_64 实现
 //!
 //! ## 功能概览
@@ -34,6 +35,7 @@
 // ============================================================================
 
 /// GDT 最大条目数 (x86-64 通常需要 7 个)
+
 pub const GDT_MAX_ENTRIES: usize = 7;
 
 /// Per-CPU GDT 最大 CPU 数

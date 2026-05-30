@@ -916,8 +916,8 @@ impl VirtualMemoryManager {
         #[cfg(feature = "smp")]
         {
             use crate::kernel::smp;
-            if smp::is_smp_enabled() && smp::get_cpu_count() > 1 {
-                smp::send_tlb_invalidate_ipi(addr);
+            if smp::is_enabled() && smp::get_cpu_count() > 1 {
+                smp::broadcast_tlb_invalidate();
             }
         }
     }

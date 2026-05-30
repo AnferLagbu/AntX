@@ -409,6 +409,7 @@ pub enum WasmError {
     StackUnderflow,
     StackOverflow,
     DivisionByZero,
+    IntegerOverflow,
     MemoryOutOfBounds,
     MemoryGrowFailed,
     CallDepthExceeded,

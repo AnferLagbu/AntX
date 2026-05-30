@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use core::ffi::c_char;
 use core::sync::atomic::{AtomicU64, AtomicU32, Ordering};
 
@@ -97,13 +98,33 @@ pub extern "C" fn process_get_current_pid() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
-    // Return current C process pointer if pid matches, otherwise 0
     unsafe {
         if _pid as u64 == C_CURRENT_PROCESS.pid {
             &C_CURRENT_PROCESS as *const CProcess as u64
         } else {
             PROCESS_TABLE.get(_pid).map(|p| p as u64).unwrap_or(0)
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn process_get_current_pwm() -> u64 {
+    let pid = SCHEDULER.current().unwrap_or(0);
+    if pid == 0 { return 0; }
+    if let Some(proc) = PROCESS_TABLE.get(pid) {
+        unsafe { (*proc).get_pwm() }
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn process_get_pwm_by_pid(pid: u32) -> u64 {
+    if pid == 0 { return 0; }
+    if let Some(proc) = PROCESS_TABLE.get(pid) {
+        unsafe { (*proc).get_pwm() }
+    } else {
+        0
     }
 }
 

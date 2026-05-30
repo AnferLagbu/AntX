@@ -15,6 +15,7 @@ enum RedirKind {
     None,
     StdoutNew,     // >
     StdoutAppend,  // >>
+    #[allow(dead_code)]
     StdinFile,     // <
 }
 

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! ELF64 程序加载器
 //!
 //! 解析 ELF64 可执行文件, 创建 VMA 映射, 为 exec/load 提供统一入口。
@@ -61,6 +62,7 @@ const PT_GNU_STACK: u32 = 0x6474E551;
 const PF_X: u32 = 1;
 const PF_W: u32 = 2;
 const PF_R: u32 = 4;
+const MAX_PHDR_COUNT: usize = 128;
 
 pub struct ElfLoadResult {
     pub entry: u64,
@@ -101,6 +103,16 @@ pub fn elf_validate(elf_data: *const u8, elf_size: u64) -> Option<&'static Elf64
     if header.e_phentsize as usize != core::mem::size_of::<Elf64Phdr>() {
         return None;
     }
+    if header.e_phnum as usize > MAX_PHDR_COUNT {
+        return None;
+    }
+
+    let phdr_table_size = (header.e_phnum as u64)
+        .checked_mul(header.e_phentsize as u64)?;
+    let phdr_end = header.e_phoff.checked_add(phdr_table_size)?;
+    if phdr_end > elf_size {
+        return None;
+    }
 
     Some(header)
 }
@@ -135,6 +147,10 @@ pub fn elf_load(
             &*(phdr_base.add(i as usize * core::mem::size_of::<Elf64Phdr>()) as *const Elf64Phdr)
         };
 
+        if phdr.p_filesz > phdr.p_memsz {
+            continue;
+        }
+
         if phdr.p_type != PT_LOAD {
             continue;
         }
@@ -144,9 +160,17 @@ pub fn elf_load(
         }
 
         let vaddr_start = phdr.p_vaddr & !(PAGE_SIZE - 1);
-        let vaddr_end = ((phdr.p_vaddr + phdr.p_memsz + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)) as usize;
+        let vaddr_end_raw = phdr.p_vaddr.checked_add(phdr.p_memsz)
+            .ok_or("ELF: vaddr + memsz overflow")?;
+        let vaddr_end = ((vaddr_end_raw + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)) as usize;
         let filesz = phdr.p_filesz as usize;
         let file_offset = phdr.p_offset as usize;
+
+        let file_data_end = phdr.p_offset.checked_add(phdr.p_filesz)
+            .ok_or("ELF: p_offset + p_filesz overflow")?;
+        if file_data_end > elf_size {
+            continue;
+        }
 
         if vaddr_end as u64 > max_vaddr {
             max_vaddr = vaddr_end as u64;
