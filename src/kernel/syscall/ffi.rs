@@ -24,6 +24,10 @@ pub extern "C" fn rust_syscall_init() {
 
 /// 执行系统调用 (C 入口点)
 #[no_mangle]
+///
+/// # Safety
+///
+/// Caller is in kernel context. `buf` and `count` describe a valid user-space buffer range.
 pub unsafe extern "C" fn rust_syscall_dispatch(num: u64, arg0: u64, arg1: u64, arg2: u64, arg3: u64) -> i64 {
     super::syscall_dispatch(num, arg0, arg1, arg2, arg3)
 }
@@ -31,6 +35,10 @@ pub unsafe extern "C" fn rust_syscall_dispatch(num: u64, arg0: u64, arg1: u64, a
 /// 注册自定义系统调用 (用于动态扩展)
 #[no_mangle]
 #[allow(deprecated)]
+///
+/// # Safety
+///
+/// Caller is in kernel context. `path` is a valid null-terminated string in user-space.
 pub unsafe extern "C" fn rust_syscall_register(num: u64, handler: SyscallHandler) -> i64 {
     if num >= MAX_SYSCALLS {
         return SyscallError::E_INVAL.as_i64();
@@ -104,6 +112,11 @@ pub extern "C" fn rust_syscall_is_valid(num: u64) -> bool {
 
 /// 获取已注册的系统调用数量
 #[no_mangle]
+///
+/// # Safety
+///
+/// This function is reentrant and has no side effects. It may be called
+/// from any context (interrupt, user syscall, or kernel init).
 pub unsafe extern "C" fn rust_syscall_count() -> u64 {
     MAX_SYSCALLS as u64
 }

@@ -69,9 +69,8 @@ impl Interpreter {
             }
         }
         if memory.is_none() {
-            for mem in &module.memories {
+            if let Some(mem) = module.memories.first() {
                 memory = LinearMemory::new(mem.limits.min, mem.limits.max).ok();
-                break;
             }
         }
 

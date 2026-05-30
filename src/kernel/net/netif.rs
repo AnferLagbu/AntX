@@ -153,6 +153,10 @@ unsafe fn log_ipv4_address(netif_ptr: *mut core::ffi::c_void, prefix: &str) {
 /// 2. 输出网络配置信息
 /// 3. 触发网络应用初始化
 #[no_mangle]
+///
+/// # Safety
+///
+/// `netif` is a valid lwIP `netif` pointer initialized by `netif_add()` and must not be freed during the call.
 pub unsafe extern "C" fn qx_netif_status_callback(netif: *mut core::ffi::c_void) {
     if netif.is_null() {
         return;
@@ -213,6 +217,10 @@ extern "C" fn status_callback_wrapper(netif: *mut core::ffi::c_void) {
 /// * `0` - 成功处理
 /// * `<0` - 处理失败
 #[no_mangle]
+///
+/// # Safety
+///
+/// `netif` is a valid lwIP `netif` pointer.
 pub unsafe extern "C" fn ethernet_input_from_e1000(
     data: *mut core::ffi::c_void,
     len: u16,
@@ -239,6 +247,10 @@ extern "C" fn virtio_net_init_wrapper(netif: *mut core::ffi::c_void) -> i32 {
 /// 此函数由 virtio-net 驱动的 poll_rx 调用，
 /// 将接收到的以太网帧传递给 lwIP 协议栈。
 #[no_mangle]
+///
+/// # Safety
+///
+/// `netif` is a valid lwIP `netif` pointer.
 pub unsafe extern "C" fn ethernet_input_from_virtio(
     data: *mut core::ffi::c_void,
     len: u16,
@@ -258,6 +270,10 @@ pub unsafe extern "C" fn ethernet_input_from_virtio(
 
 /// 注册 virtio-net 网卡为 lwIP 网络接口
 #[no_mangle]
+///
+/// # Safety
+///
+/// `netif` is a valid lwIP `netif` pointer.
 pub unsafe extern "C" fn qx_netif_register_virtio() -> i32 {
     klog_net("Registering virtio-net as lwIP netif\0".as_ptr() as *const i8);
 
@@ -311,6 +327,10 @@ pub unsafe extern "C" fn qx_netif_register_virtio() -> i32 {
 
 /// 注册 E1000 网卡为 lwIP 网络接口
 #[no_mangle]
+///
+/// # Safety
+///
+/// `netif` is a valid lwIP `netif` pointer.
 pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
     klog_net("Registering e1000 as lwIP netif\0".as_ptr() as *const i8);
 

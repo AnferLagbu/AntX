@@ -239,10 +239,23 @@
 | 大分配释放时 tag 偏移未处理 | `memory_allocator.rs:72-91` | 🔴 误报 — `tag_offset=0` 时大分配路径不写 tag 不增偏移 |
 | dealloc 路径 TAG_SIZE 遗漏 | `memory_allocator.rs:93-94` | 🔴 误报 — 与上同源，`size > 2048` 时 `tag_offset` 恒为 0 |
 | `i32_rem_s` + `i64_div_s` MIN/-1 溢出 | `interpreter.rs:870-877,898-908` | ✅ **确认并修复** — 添加 `IntegerOverflow` trap |
+| `process_get_pwm_by_pid` 未定义 | `signal.rs:33`, `proc/ffi.rs` | ✅ **确认并修复** — 新增两个 `#[no_mangle]` 实现 |
+| 重复声明外部函数 | `signal.rs:23+33` 双 `extern "C"` | ✅ **确认并修复** — 合并为单一声明块 |
 
 ---
 
-## 五、验证结果
+## 五、后续修复 (2026-06-09 续)
+
+在报告生成后继续推进的修复：
+
+| Issue | 位置 | 结果 |
+|-------|------|------|
+| ramfs `saturating_sub().max(0)` 冗余 | `ramfs.rs:920,931` | ✅ 修复 — 移除冗余 `.max(0)`（`saturating_sub` 自身保证 ≥ 0） |
+| `process_get_current_pwm`/`process_get_pwm_by_pid` 缺 SAFETY 注释 | `proc/ffi.rs:116,129` | ✅ 修复 — 添加注释说明 `Process::get_pwm()` 是 AtomicU64 load |
+
+---
+
+## 六、验证结果
 
 | 验证项 | 命令 | 结果 |
 |--------|------|------|
@@ -253,7 +266,7 @@
 
 ---
 
-## 六、安全影响评估
+## 七、安全影响评估
 
 | 修复前 | 修复后 |
 |--------|--------|
@@ -268,7 +281,7 @@
 
 ---
 
-## 七、版本基线
+## 八、版本基线
 
 | 组件 | 修复前 | 修复后 |
 |------|--------|--------|

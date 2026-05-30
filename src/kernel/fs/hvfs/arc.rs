@@ -342,31 +342,27 @@ impl HvArc {
 
     pub fn release(&self, key: &HvArcKey) {
         let mut inner = self.inner.lock();
-        for slot in inner.buffers.iter_mut() {
-            if let Some(ref mut buf) = slot {
-                if buf.key.vdev_id == key.vdev_id
+        if let Some(buf) = inner.buffers.iter_mut().find_map(|slot| {
+            slot.as_mut().filter(|buf| {
+                buf.key.vdev_id == key.vdev_id
                     && buf.key.offset == key.offset
                     && buf.key.birth_txg == key.birth_txg
-                {
-                    buf.release();
-                    break;
-                }
-            }
+            })
+        }) {
+            buf.release();
         }
     }
 
     pub fn mark_dirty(&self, key: &HvArcKey) {
         let mut inner = self.inner.lock();
-        for slot in inner.buffers.iter_mut() {
-            if let Some(ref mut buf) = slot {
-                if buf.key.vdev_id == key.vdev_id
+        if let Some(buf) = inner.buffers.iter_mut().find_map(|slot| {
+            slot.as_mut().filter(|buf| {
+                buf.key.vdev_id == key.vdev_id
                     && buf.key.offset == key.offset
                     && buf.key.birth_txg == key.birth_txg
-                {
-                    buf.dirty = true;
-                    break;
-                }
-            }
+            })
+        }) {
+            buf.dirty = true;
         }
     }
 

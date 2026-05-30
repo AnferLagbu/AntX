@@ -53,12 +53,22 @@ pub unsafe fn read_cr2() -> u64 {
 
 /// 禁用中断 (cli)
 #[inline(always)]
+///
+/// # Safety
+///
+/// Only valid during early boot before interrupt subsystem is live.
 pub unsafe fn disable_interrupts() {
     let _ = crate::arch!(interrupt_disable());
 }
 
 /// 启用中断 (sti)
 #[inline(always)]
+///
+/// # Safety
+///
+/// Enables interrupts via the `sti` instruction. Caller must ensure the IDT
+/// has been fully initialized and no interrupt handler can observe partially-
+/// constructed kernel state.
 pub unsafe fn enable_interrupts() {
     crate::arch!(interrupt_enable());
 }
@@ -85,12 +95,23 @@ pub fn interrupts_enabled() -> bool {
 
 /// 全局内存屏障 (mfence → Arch trait)
 #[inline(always)]
+///
+/// # Safety
+///
+/// This is a full memory barrier. Caller must ensure that no pending stores
+/// or loads can be reordered across this fence in a way that violates the
+/// intended synchronization protocol.
 pub unsafe fn memory_fence() {
     crate::arch!(fence());
 }
 
 /// 写内存屏障 (sfence → Arch trait)
 #[inline(always)]
+///
+/// # Safety
+///
+/// This is a store fence. Caller must ensure that store ordering guarantees
+/// provided by this fence match the intended synchronization protocol.
 pub unsafe fn store_fence() {
     crate::arch!(fence_w());
 }
@@ -150,6 +171,11 @@ pub fn io_wait() {
 
 /// HALT 指令 (暂停 CPU 直到下一个中断)
 #[inline(always)]
+///
+/// # Safety
+///
+/// Caller has disabled interrupts before halting. Without interrupts enabled,
+/// the CPU will never wake up, causing a permanent hang.
 pub unsafe fn halt() {
     crate::arch!(halt());
 }

@@ -242,10 +242,11 @@
 
 ---
 
-## 🔧 技术债务 (5项)
+## 🔧 技术债务 (6项)
 
 | 项 | 说明 | 优先级 |
 |----|------|--------|
+| **系统调用 `int 0x80` → `syscall` 迁移** | x86_64 长模式下使用遗留 `int 0x80` 而非 `syscall`/`sysret`，性能差 2-4 倍。详见 [FIX_TASKS.md §F1](FIX_TASKS.md#batch-f-架构级优化待排期) | medium |
 | `lib/fs.rs` `O_TRUNC` unused import | 仅 `deploy` 模块使用，导入在 `fs.rs` 顶层 | low |
 | lwIP NO_SYS=1 单线程 | 迁移到 `tcpip_thread` 可根除问题 #1 的长期方案 | medium |
 | VFS `/` 根目录依赖用户态 mount | 磁盘引导时需内核先挂 HvFS | medium |

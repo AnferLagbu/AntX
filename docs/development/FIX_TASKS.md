@@ -758,6 +758,104 @@ if smp::is_smp_enabled() && smp::get_cpu_count() > 1 {  // ← 函数名错误
 
 ---
 
+---
+
+## Batch F: 架构级优化（待排期）
+
+---
+
+### Task F1: 系统调用机制从 `int 0x80` 迁移到 `syscall`/`sysret`
+
+- **来源**: 修复审阅反馈 (2026-06-09)
+- **严重程度**: 🟡 P2 Medium（功能正确，性能优化）
+- **委派标签**: `syscall` `x86_64` `performance`
+
+**文件**:
+- `src/kernel/syscall/types.rs` — `SYSCALL_INT` 常量定义
+- `src/user/lib/src/sys.rs` — 用户态 `int 0x80` 内联汇编
+- `src/kernel/idt/handlers.rs` — 中断门 handler
+- `src/kernel/boot/` — 启动阶段 MSR 初始化
+
+**当前问题**:
+
+AntX 在 x86_64 长模式下使用 `int 0x80` 软中断作为系统调用机制。`int 0x80` 是 i386 时代的遗留路径，在 64-bit 长模式下存在以下问题：
+
+1. **性能**: `int 0x80` 走完整中断门流程（IDT 查表 → 权限检查 → 栈切换 → 压栈 → `iret` 返回），每次约 150-250 cycles。`syscall`/`sysret` 走硬件加速路径（MSR 直接加载目标 RIP/CS），仅 60-80 cycles，快 **2-4 倍**
+2. **业界惯例**: 无现代 x86_64 操作系统将 `int 0x80` 作为原生 64-bit 系统调用路径。Linux/macOS/Windows/FreeBSD 全部使用 `syscall`
+3. **寄存器语义**: `int 0x80` 遵循 32-bit 时代的寄存器约定（`eax`/`ebx`/`ecx`/`edx`），在 64-bit 代码中语义混乱
+
+**修复步骤**:
+
+1. **内核侧 MSR 初始化**（在启动早期执行，约 `kernel_init()` 阶段）:
+   ```rust
+   // IA32_STAR: 高 32 位 = 内核 CS, 低 48:32 位 = 兼容模式用户 CS
+   wrmsr(IA32_STAR, (KERNEL_CS as u64) << 32 | ((USER_CS32 - 16) as u64) << 48);
+   // IA32_LSTAR: syscall 入口点 RIP
+   wrmsr(IA32_LSTAR, syscall_entry as u64);
+   // IA32_FMASK: 进入内核时自动清零的标志位（至少关 IF = bit 9）
+   wrmsr(IA32_FMASK, 1 << 9);
+   // IA32_EFER.SCE (bit 0): 启用 syscall 指令
+   wrmsr(IA32_EFER, rdmsr(IA32_EFER) | 1);
+   ```
+
+2. **内核侧 syscall handler**（新建或改造现有 `int 0x80` handler）:
+   ```nasm
+   syscall_entry:
+       swapgs              ; 切换 GS base 到内核
+       mov [gs:0xNN], rsp  ; 保存用户栈指针
+       mov rsp, [gs:0xMM]  ; 加载内核栈
+       push rcx            ; 保存用户 RIP (syscall 存入 RCX)
+       push r11            ; 保存用户 RFLAGS (syscall 存入 R11)
+       ; ... 调用 Rust syscall dispatcher ...
+       pop r11
+       pop rcx
+       mov rsp, [gs:0xNN]  ; 恢复用户栈
+       swapgs
+       sysretq
+   ```
+   注意：`syscall` **不自动切换栈**，需 per-CPU 内核栈（可用 GS 段或 TSS IST 实现）
+
+3. **用户态侧**（`src/user/lib/src/sys.rs`）:
+   ```rust
+   // 将 int 0x80 替换为 syscall
+   // 注意 syscall 破坏 RCX 和 R11（用于保存 RIP/RFLAGS）
+   asm!("syscall",
+       inout("rax") num => ret,  // rax = syscall number → return value
+       in("rdi") a1, in("rsi") a2, in("rdx") a3,
+       in("r10") a4, in("r8") a5, in("r9") a6,
+       out("rcx") _, out("r11") _,
+       options(nostack)
+   );
+   ```
+
+4. **AArch64 兼容**: AArch64 已使用 `svc #0`（符合 ARM 惯例），无需改动
+
+5. **向后兼容**: 可先保留 `int 0x80` handler 作为兼容路径，新增 `syscall` 作为主路径，待验证稳定后移除旧路径
+
+**验证**:
+```bash
+# 编译验证
+make clean && make ARCH=x86_64
+# QEMU 启动验证：init 进程进入 Ring 3 后 axsh 正常交互
+make run
+# 性能对比：用 RDTSC 测量 syscall 往返延迟
+```
+
+**预估工时**: 4h
+
+**与业界对比**:
+
+| 操作系统 | 32-bit 机制 | 64-bit 机制 |
+|----------|------------|------------|
+| Linux | `int 0x80` → `sysenter` | `syscall` |
+| macOS / XNU | — | `syscall` |
+| Windows NT | `int 0x2E` → `sysenter` | `syscall` |
+| FreeBSD | `int 0x80` | `syscall` |
+| **AntX 当前** | — | `int 0x80` ⚠️ |
+| **AntX 目标** | — | `syscall` ✅ |
+
+---
+
 ## 附录: 委派建议
 
 ### 按技能领域分组
@@ -771,4 +869,5 @@ if smp::is_smp_enabled() && smp::get_cpu_count() > 1 {  // ← 函数名错误
 | 安全 | B7, B8, C5 | 熟悉密码学/沙箱 |
 | 文档 | B5, B6, D1-D4 | 熟悉项目全局 |
 | 构建/CI | A6, E2, E3 | 熟悉构建系统 |
+| x86_64 底层 | **F1** | 熟悉 x86 MSR/GDT/TSS/syscall |
 | 快速胜利 | E1, E3, E4 | 新人入门 |

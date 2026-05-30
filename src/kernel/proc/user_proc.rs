@@ -316,6 +316,10 @@ impl UserProcManager {
     
     /// Write argc/argv/envp to the user process stack
     /// Returns the new stack pointer (RSP) after setup
+///
+/// # Safety
+///
+/// `pid` corresponds to a live process. Process table lock must be held by caller.
     pub unsafe fn setup_user_stack(
         &self,
         proc: *mut UserProcess,

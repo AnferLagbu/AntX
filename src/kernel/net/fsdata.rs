@@ -77,6 +77,10 @@ pub static mut FS_ROOT: *const FsFileEntry = &FILE_INDEX_HTML;
 /// 必须在第一次使用前调用此函数填充数据。
 /// 通常在 qx_net_apps_init() 中自动调用。
 #[no_mangle]
+///
+/// # Safety
+///
+/// `name` is a valid null-terminated C string. File data embedded at compile time; no runtime allocation.
 pub unsafe extern "C" fn fsdata_init() {
     // 填充 index.html 数据
     let html = b"/index.html\0<!DOCTYPE html>\n<html>\n<head><title>AntX Web Server</title></head>\n<body style='font-family:sans-serif'>\n  <h1>QueenX</h1>\n  <p>lwIP TCP/IP stack is running.</p>\n  <p>E1000 NIC 1000Mbps Full-Duplex.</p>\n</body>\n</html>\n";

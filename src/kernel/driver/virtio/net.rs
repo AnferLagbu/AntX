@@ -376,6 +376,10 @@ static VIRTIO_NET_DEVICE: Mutex<Option<Box<VirtioNet>>> = Mutex::new(None);
 
 /// C FFI: probe for virtio-net device. Returns 0 on success, -1 on failure.
 #[no_mangle]
+///
+/// # Safety
+///
+/// Device has been initialized and `DESC_POOL` contains valid descriptors.
 pub unsafe extern "C" fn virtio_net_probe() -> i32 {
     probe()
 }
@@ -418,6 +422,10 @@ pub fn probe() -> i32 {
 ///
 /// The device must already be probed via `probe()`.
 #[no_mangle]
+///
+/// # Safety
+///
+/// `DESC_POOL` has been allocated and caller ensures no concurrent TX/RX on same queue.
 pub unsafe extern "C" fn virtio_net_init(netif: *mut core::ffi::c_void) -> i32 {
     extern "C" {
         fn qx_netif_init_virtio(netif: *mut core::ffi::c_void, mac: *const u8);
@@ -435,6 +443,10 @@ pub unsafe extern "C" fn virtio_net_init(netif: *mut core::ffi::c_void) -> i32 {
 
 /// Send a packet via virtio-net. Called by lwIP's linkoutput callback.
 #[no_mangle]
+///
+/// # Safety
+///
+/// Caller holds the transmit lock. Buffer data must remain valid until the device completes the TX.
 pub unsafe extern "C" fn virtio_net_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::c_void) -> i32 {
     extern "C" {
         fn qx_pbuf_copyout(p: *mut core::ffi::c_void, buf: *mut u8, out_len: *mut u16);
@@ -479,6 +491,10 @@ pub unsafe extern "C" fn virtio_net_send(_netif: *mut core::ffi::c_void, p: *mut
 
 /// Poll for received packets.
 #[no_mangle]
+///
+/// # Safety
+///
+/// `head` corresponds to a descriptor previously submitted via `submit()`. Caller has first called `pop_used()` to confirm completion.
 pub unsafe extern "C" fn virtio_net_poll_rx() {
     match &mut *VIRTIO_NET_DEVICE.lock() {
         Some(ref mut dev) => {
@@ -495,6 +511,10 @@ pub unsafe extern "C" fn virtio_net_poll_rx() {
 
 /// Forward received packet to lwIP.
 #[no_mangle]
+///
+/// # Safety
+///
+/// `queue` has been initialized. Caller ensures no concurrent access.
 pub unsafe extern "C" fn virtio_net_input(
     data: *mut core::ffi::c_void,
     len: u16,

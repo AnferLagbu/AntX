@@ -142,7 +142,7 @@ mod serial_impl {
         unsafe {
             port_outb(COM1 + 1, 0x00); // 禁用中断
             port_outb(COM1 + 3, 0x80); // 启用 DLAB
-            port_outb(COM1 + 0, 0x03); // 除数低字节 (38400 baud)
+            port_outb(COM1, 0x03); // 除数低字节 (38400 baud)
             port_outb(COM1 + 1, 0x00); // 除数高字节
             port_outb(COM1 + 3, 0x03); // 8N1
             port_outb(COM1 + 2, 0xC7); // 启用 FIFO
@@ -398,6 +398,10 @@ pub fn klog_get_level() -> LogLevel {
 // ============================================================================
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// Must be called exactly once before any logging. Caller ensures serial hardware is present.
 pub unsafe extern "C" fn klog_init() {
     serial_impl::serial_init();
     KLOG_INIT.store(true, Ordering::Release);
@@ -405,6 +409,10 @@ pub unsafe extern "C" fn klog_init() {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_write(
     level: u8, cat: u8,
     _file: *const core::ffi::c_char, _func: *const core::ffi::c_char, _line: u32,
@@ -434,6 +442,10 @@ pub unsafe extern "C" fn klog_write(
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
     if msg.is_null() { return; }
     let s = cstr_slice(msg);
@@ -441,6 +453,10 @@ pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
     if msg.is_null() { return; }
     let s = cstr_slice(msg);
@@ -448,6 +464,10 @@ pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
     if msg.is_null() { return; }
     let s = cstr_slice(msg);
@@ -455,6 +475,10 @@ pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_net(fmt: *const core::ffi::c_char) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);
@@ -462,6 +486,10 @@ pub unsafe extern "C" fn klog_net(fmt: *const core::ffi::c_char) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_net_err(fmt: *const core::ffi::c_char) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);
@@ -469,6 +497,10 @@ pub unsafe extern "C" fn klog_net_err(fmt: *const core::ffi::c_char) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);
@@ -476,6 +508,10 @@ pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);
@@ -483,6 +519,10 @@ pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);
@@ -490,6 +530,10 @@ pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_info(fmt: *const i8) {
     if fmt.is_null() { return; }
     let s = cstr_slice(fmt as *const u8);

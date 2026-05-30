@@ -138,11 +138,21 @@ unsafe impl Sync for ChitinDevice {}
 
 impl ChitinDevice {
     #[inline]
+    ///
+    /// # Safety
+    ///
+    /// `self.driver_data` was set by the driver during probe. Caller must ensure
+    /// that `T` matches the concrete type originally stored via `set_driver_data`.
     pub unsafe fn driver_as_mut<T>(&self) -> &mut T {
         &mut *(self.driver_data as *mut T)
     }
 
     #[inline]
+    ///
+    /// # Safety
+    ///
+    /// `self.driver_data` was set by the driver during probe. Caller must ensure
+    /// that `T` matches the concrete type originally stored via `set_driver_data`.
     pub unsafe fn driver_as_ref<T>(&self) -> &T {
         &*(self.driver_data as *const T)
     }

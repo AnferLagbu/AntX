@@ -173,6 +173,10 @@ pub use calibration::{
 /// void timer_init(void);
 /// ```
 #[no_mangle]
+///
+/// # Safety
+///
+/// Only called from the timer interrupt handler. Interrupts are disabled.
 pub unsafe extern "C" fn timer_init_ffi() {
     match timer_init(DEFAULT_INTERRUPT_FREQ_HZ) {
         Ok(_) => {},

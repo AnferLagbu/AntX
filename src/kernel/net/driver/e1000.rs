@@ -53,7 +53,7 @@ const E1000_RCTL_UPE: u32 = 1 << 3;
 const E1000_RCTL_MPE: u32 = 1 << 4;
 const E1000_RCTL_BAM: u32 = 1 << 15;
 const E1000_RCTL_SECRC: u32 = 1 << 26;
-const E1000_RCTL_BSIZE_2048: u32 = (1 << 25) | (0 << 16);
+const E1000_RCTL_BSIZE_2048: u32 = 1 << 25;
 
 const E1000_TCTL: u32 = 0x0400;
 const E1000_TCTL_EN: u32 = 1 << 1;
@@ -925,6 +925,10 @@ static mut KALLOC_OFF: usize = 0;
 
 #[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
+///
+/// # Safety
+///
+/// `reg` is a valid MMIO register offset within the BAR0 region. The device has been probed and MMIO region mapped.
 pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi::c_void {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };

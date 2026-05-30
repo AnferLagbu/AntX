@@ -287,7 +287,7 @@ fn set_baud_rate(base: u16, divisor: u16) {
         outb(base + UART_LCR, LCR_DLAB);
         
         // 设置低字节和高字节
-        outb(base + 0, (divisor & 0xFF) as u8);
+        outb(base, (divisor & 0xFF) as u8);
         outb(base + 1, ((divisor >> 8) & 0xFF) as u8);
         
         // 关闭 DLAB，设置数据格式
@@ -654,6 +654,10 @@ pub extern "C" fn serial_has_data(com: i32) -> bool {
 
 /// C 兼容别名: serial_write(buf, count 参数交换以匹配旧 C API)
 #[no_mangle]
+///
+/// # Safety
+///
+/// Serial port has been initialized via `serial_init()`. Only valid in kernel context.
 pub unsafe extern "C" fn serial_write(com: i32, buf: *const core::ffi::c_void, count: u64) {
     let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
     for &b in bytes {

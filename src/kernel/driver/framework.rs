@@ -27,12 +27,20 @@
 
 /// 向指定端口写入字节 (架构无关: x86_64 → out, AArch64 → MMIO)
 #[inline(always)]
+///
+/// # Safety
+///
+/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
 pub unsafe fn outb(port: u16, value: u8) {
     crate::arch!(outb(port, value));
 }
 
 /// 从指定端口读入字节 (架构无关: x86_64 → in, AArch64 → MMIO)
 #[inline(always)]
+///
+/// # Safety
+///
+/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
 pub unsafe fn inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
@@ -40,6 +48,10 @@ pub unsafe fn inb(port: u16) -> u8 {
 /// 向指定端口写入字 (x86_64 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
+///
+/// # Safety
+///
+/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
 pub unsafe fn outw(port: u16, value: u16) {
     core::arch::asm!(
         "out dx, ax",
@@ -52,6 +64,10 @@ pub unsafe fn outw(port: u16, value: u16) {
 /// 从指定端口读入字 (x86_64 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
+///
+/// # Safety
+///
+/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
 pub unsafe fn inw(port: u16) -> u16 {
     let value: u16;
     core::arch::asm!(
@@ -65,12 +81,20 @@ pub unsafe fn inw(port: u16) -> u16 {
 
 /// 向指定端口写入双字 (架构无关: x86_64 → out, AArch64 → MMIO)
 #[inline(always)]
+///
+/// # Safety
+///
+/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
 pub unsafe fn outl(port: u16, value: u32) {
     crate::arch!(outl(port, value));
 }
 
 /// 从指定端口读入双字 (架构无关: x86_64 → in, AArch64 → MMIO)
 #[inline(always)]
+///
+/// # Safety
+///
+/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
 pub unsafe fn inl(port: u16) -> u32 {
     crate::arch!(inl(port))
 }

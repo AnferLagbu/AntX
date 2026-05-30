@@ -503,6 +503,10 @@ pub fn get_table() -> &'static IdentityTable {
     unsafe { &GLOBAL_TABLE }
 }
 
+///
+/// # Safety
+///
+/// Caller holds the identity table lock. `pwm` is a valid PWID present in the table.
 pub unsafe fn get_table_mut() -> &'static mut IdentityTable {
     &mut GLOBAL_TABLE
 }

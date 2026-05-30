@@ -93,6 +93,10 @@ pub fn strlen_safe(s: &[i8]) -> usize {
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
 #[no_mangle]
+///
+/// # Safety
+///
+/// `src` is a valid pointer to a null-terminated C string. `dst` has at least `max_len` bytes of writable memory.
 pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
     if s1.is_null() || s2.is_null() {
         if s1.is_null() && s2.is_null() {
@@ -129,6 +133,10 @@ pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
 #[no_mangle]
+///
+/// # Safety
+///
+/// Both `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions may not overlap.
 pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 {
     if n == 0 {
         return 0;
@@ -297,6 +305,10 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
 #[no_mangle]
+///
+/// # Safety
+///
+/// `ptr` is a valid pointer. If `n` is nonzero, at least `n` bytes starting from `ptr` are readable.
 pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -329,6 +341,10 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
 #[no_mangle]
+///
+/// # Safety
+///
+/// `a` and `b` are valid pointers. At least `n` bytes from each are readable.
 pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -370,6 +386,10 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
 /// # Returns
 /// 找到的子串指针，或 NULL 如果未找到
 #[no_mangle]
+///
+/// # Safety
+///
+/// `ptr` is a valid pointer. `value` will be written to `n` consecutive bytes starting from `ptr`.
 pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8 {
     if haystack.is_null() {
         return core::ptr::null_mut();
@@ -459,6 +479,10 @@ pub unsafe extern "C" fn memcpy(dest: *mut core::ffi::c_void, src: *const core::
 /// # Returns
 /// 目标地址
 #[no_mangle]
+///
+/// # Safety
+///
+/// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions may overlap.
 pub unsafe extern "C" fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
@@ -495,6 +519,10 @@ pub unsafe extern "C" fn memmove(dest: *mut core::ffi::c_void, src: *const core:
 /// # Returns
 /// 目标地址
 #[no_mangle]
+///
+/// # Safety
+///
+/// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions must not overlap.
 pub unsafe extern "C" fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
     if s.is_null() || n == 0 {
         return s;
@@ -523,6 +551,10 @@ pub unsafe extern "C" fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> 
 /// 目标地址
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
+///
+/// # Safety
+///
+/// `src` is a valid pointer to at least `n` bytes of readable memory.
 pub unsafe extern "C" fn memset_optimized(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
     if s.is_null() || n == 0 {
         return s;
@@ -555,6 +587,10 @@ pub unsafe extern "C" fn memset_optimized(s: *mut core::ffi::c_void, c: i32, n: 
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
 #[no_mangle]
+///
+/// # Safety
+///
+/// `dst` is a valid pointer to at least `n` bytes of writable memory. `value` fits in `u8`.
 pub unsafe extern "C" fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32 {
     if n == 0 {
         return 0;
@@ -592,6 +628,10 @@ pub unsafe extern "C" fn memcmp(s1: *const core::ffi::c_void, s2: *const core::f
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
 #[no_mangle]
+///
+/// # Safety
+///
+/// `src` is a valid pointer to a null-terminated C string.
 pub unsafe extern "C" fn memchr(s: *const core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
     if s.is_null() || n == 0 {
         return core::ptr::null_mut();
@@ -622,6 +662,10 @@ pub unsafe extern "C" fn memchr(s: *const core::ffi::c_void, c: i32, n: usize) -
 /// * `ptr` - 要清零的内存区域
 /// * `len` - 清零的字节数
 #[no_mangle]
+///
+/// # Safety
+///
+/// `src` is a valid pointer to at least `max_len` bytes of readable memory.
 pub unsafe extern "C" fn secure_zero(ptr: *mut core::ffi::c_void, len: usize) {
     if ptr.is_null() || len == 0 {
         return;

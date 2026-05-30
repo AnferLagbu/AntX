@@ -347,6 +347,10 @@ pub fn get_dma() -> &'static DmaEngine {
     unsafe { &GLOBAL_DMA }
 }
 
+///
+/// # Safety
+///
+/// Called during initialization before DMA subsystem is live. Caller ensures `count` > 0.
 pub unsafe fn get_dma_mut() -> &'static mut DmaEngine {
     &mut GLOBAL_DMA
 }

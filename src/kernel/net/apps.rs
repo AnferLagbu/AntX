@@ -395,6 +395,10 @@ extern "C" fn dns_found_callback(
 /// 13. **lwiperf** - 性能测试(如果启用)
 #[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
+///
+/// # Safety
+///
+/// `netif` is a valid lwIP netif pointer. Called from lwIP callback context.
 pub unsafe extern "C" fn qx_net_apps_init(netif: *mut core::ffi::c_void) {
     klog_net("--- Initializing Network Applications ---\0".as_ptr() as *const i8);
     

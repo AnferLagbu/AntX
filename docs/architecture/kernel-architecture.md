@@ -16,7 +16,7 @@ AntX采用**分层宏内核架构**，在保持宏内核高性能的同时，通
                           ↕
 ┌─────────────────────────────────────────────────────────┐
 │                    系统调用层                           │
-│         syscall.c - 系统调用分发与参数验证             │
+│         syscall/ - 系统调用分发与参数验证             │
 └─────────────────────────────────────────────────────────┘
                           ↕
 ┌─────────────────────────────────────────────────────────┐
@@ -191,30 +191,30 @@ BIOS → GRUB → boot.asm → entry.asm → kernel_main()
 
 **关键数据结构**:
 
-```c
+```rust
 // 进程控制块
-typedef struct {
-    uint32_t pid;              // 进程ID
-    uint64_t pwid;             // 特权工作负载ID
-    process_state_t state;     // 进程状态
-    uint8_t priority;          // 优先级
-    uint64_t time_slice;       // 时间片
+struct Process {
+    pid: u32,              // 进程ID
+    pwid: u64,             // 特权工作负载ID
+    state: ProcessState,   // 进程状态
+    priority: u8,          // 优先级
+    time_slice: u64,       // 时间片
     
     // 内存管理
-    uint64_t cr3;              // 页表基址
-    uint64_t kernel_stack;     // 内核栈
-    uint64_t user_stack;       // 用户栈
+    cr3: u64,              // 页表基址
+    kernel_stack: u64,     // 内核栈
+    user_stack: u64,       // 用户栈
     
     // 上下文
-    cpu_context_t context;     // CPU上下文
+    context: CpuContext,   // CPU上下文
     
     // 文件描述符
-    file_descriptor_t fds[MAX_FDS];
+    fds: [FileDescriptor; MAX_FDS],
     
     // 统计信息
-    uint64_t cpu_time;         // CPU时间
-    uint64_t start_time;       // 启动时间
-} process_t;
+    cpu_time: u64,         // CPU时间
+    start_time: u64,       // 启动时间
+}
 ```
 
 **调度策略**:
@@ -224,7 +224,7 @@ typedef struct {
 
 ---
 
-### 3. 内存管理模块 (mem/)
+### 3. 内存管理模块 (mm/)
 
 **职责**: 物理内存、虚拟内存、堆管理
 
@@ -263,19 +263,19 @@ typedef struct {
 
 **VFS抽象层**:
 
-```c
+```rust
 // 文件系统操作
-struct file_system_ops {
-    int (*mount)(const char *path);
-    int (*unmount)(const char *path);
-    int (*open)(const char *path, int flags);
-    int (*close)(int fd);
-    ssize_t (*read)(int fd, void *buf, size_t count);
-    ssize_t (*write)(int fd, const void *buf, size_t count);
-    int (*stat)(const char *path, struct stat *st);
-    int (*mkdir)(const char *path);
-    int (*unlink)(const char *path);
-};
+trait FileSystemOps {
+    fn mount(path: &str) -> Result<(), i32>;
+    fn unmount(path: &str) -> Result<(), i32>;
+    fn open(path: &str, flags: i32) -> Result<i32, i32>;
+    fn close(fd: i32) -> Result<(), i32>;
+    fn read(fd: i32, buf: &mut [u8]) -> Result<isize, i32>;
+    fn write(fd: i32, buf: &[u8]) -> Result<isize, i32>;
+    fn stat(path: &str, st: &mut Stat) -> Result<(), i32>;
+    fn mkdir(path: &str) -> Result<(), i32>;
+    fn unlink(path: &str) -> Result<(), i32>;
+}
 ```
 
 **支持的文件系统**:
@@ -289,7 +289,7 @@ struct file_system_ops {
 
 ---
 
-### 5. 安全子系统 (security/)
+### 5. 安全子系统 (credo/)
 
 **职责**: 身份认证、权限检查、审计
 
@@ -403,13 +403,13 @@ pub trait Driver: Send + Sync {
 
 ```
 用户程序
-    ↓ int 0x80
+    ↓ int 0x80 (SYSCALL_INT = 0x80)
 syscall_handler()
     ↓ 参数验证
     ├─ 进程系统调用 → proc模块
     ├─ 文件系统调用 → vfs模块
-    ├─ 内存系统调用 → mem模块
-    ├─ 安全系统调用 → security模块
+    ├─ 内存系统调用 → mm模块
+    ├─ 安全系统调用 → credo模块
     └─ 网络系统调用 → net模块
     ↓ 返回结果
 用户程序
@@ -423,7 +423,7 @@ syscall_handler()
 vfs_read(fd, buf, count)
     ↓ 查找文件描述符
     ↓ 获取inode
-    ↓ 检查权限 (security模块)
+    ↓ 检查权限 (credo模块)
     ↓ 调用具体文件系统
     ├─ RamFS → ramfs_read()
     ├─ HvFS → hvfs_read()

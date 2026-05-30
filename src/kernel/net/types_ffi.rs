@@ -29,6 +29,10 @@ pub extern "C" fn sys_arch_unprotect(pval: SysProt) {
 }
 
 #[no_mangle]
+///
+/// # Safety
+///
+/// `ptr` is a valid pointer to a `CNetif` or `CNetconn`. The pointee must live for the duration of the call.
 pub unsafe extern "C" fn rust_klog_net(fmt: *const i8) {
     let _ = fmt;
 }

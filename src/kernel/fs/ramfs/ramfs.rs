@@ -917,7 +917,7 @@ impl RamFsData {
 
                 let indirect_block = self.nodes[node_id as usize].indirect_block;
                 if first_block_to_free < DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK && indirect_block != 0 {
-                    let indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS).max(0);
+                    let indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS);
                     let indirect_end = last_block.saturating_sub(DIRECT_BLOCKS).min(INDIRECT_BLOCKS_PER_BLOCK);
                     self.free_indirect_chain(indirect_block, indirect_start, indirect_end);
 
@@ -928,7 +928,7 @@ impl RamFsData {
 
                 let double_indirect_block = self.nodes[node_id as usize].double_indirect_block;
                 if first_block_to_free >= DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK && double_indirect_block != 0 {
-                    let double_indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK).max(0);
+                    let double_indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK);
                     let double_indirect_end = last_block.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK);
                     self.free_double_indirect_chain(double_indirect_block, double_indirect_start, double_indirect_end);
 

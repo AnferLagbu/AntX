@@ -323,7 +323,7 @@ impl XhciController {
             self.op_regs = op_base as *mut XhciOperationalRegisters;
             
             // 解析结构参数
-            self.num_slots = ((cap.hcs_params1 >> 0) & 0xFF) as usize;
+            self.num_slots = (cap.hcs_params1 & 0xFF) as usize;
             self.num_ports = ((cap.hcs_params1 >> 24) & 0xFF) as usize;
             
             // 计算端口寄存器地址

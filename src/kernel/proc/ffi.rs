@@ -112,6 +112,9 @@ pub extern "C" fn process_get_current_pwm() -> u64 {
     let pid = SCHEDULER.current().unwrap_or(0);
     if pid == 0 { return 0; }
     if let Some(proc) = PROCESS_TABLE.get(pid) {
+        // SAFETY: proc is a valid pointer obtained from PROCESS_TABLE.get()
+        // which returns pointers to live Process entries. get_pwm() is an
+        // AtomicU64 load — no mutable aliasing issue.
         unsafe { (*proc).get_pwm() }
     } else {
         0
@@ -122,6 +125,9 @@ pub extern "C" fn process_get_current_pwm() -> u64 {
 pub extern "C" fn process_get_pwm_by_pid(pid: u32) -> u64 {
     if pid == 0 { return 0; }
     if let Some(proc) = PROCESS_TABLE.get(pid) {
+        // SAFETY: proc is a valid pointer from PROCESS_TABLE. Each Process
+        // lives for the entire lifetime of the table entry. get_pwm() reads
+        // an AtomicU64, which is safe to dereference concurrently.
         unsafe { (*proc).get_pwm() }
     } else {
         0
@@ -291,6 +297,10 @@ pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: 
 
 /// Set up argv/envp on user stack after ELF loading (for exec syscall)
 #[no_mangle]
+///
+/// # Safety
+///
+/// `name` is a valid null-terminated C string. Process table has been initialized.
 pub unsafe extern "C" fn user_proc_setup_argv(
     pid: u32,
     argv: *const *const u8,
