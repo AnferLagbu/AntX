@@ -387,6 +387,11 @@ impl Scheduler {
                         && policy == SchedPolicy::Normal
                 }).unwrap_or(false);
                 if schedulable {
+                    let weight = PROCESS_TABLE.with_process(pid, |p| {
+                        p.cfs_weight.load(Ordering::Acquire)
+                    }).unwrap_or(NICE0_WEIGHT);
+                    let time_slice = cfs_rq.calc_time_slice(weight);
+                    per_cpu.time_remaining.store(time_slice, Ordering::SeqCst);
                     PROCESS_TABLE.with_process(pid, |p| {
                         p.cfs_on_rq.store(false, Ordering::Release);
                     });
@@ -880,7 +885,12 @@ impl Scheduler {
                     }
                 }
             } else if current_pid != 0 {
-                // CFS — update vruntime and check preemption.
+                // CFS — time slice and vruntime-based preemption.
+                let old_remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
+                if old_remaining <= 1 {
+                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                }
+
                 // IMPORTANT: Do NOT re-insert the running task into the tree here.
                 // The running task stays out of the tree; it will be re-enqueued
                 // only when it stops running (in schedule's re-enqueue path).
