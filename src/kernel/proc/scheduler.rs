@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use super::types::*;
 use super::process::{Process, PROCESS_TABLE};
 use super::cfs::{CfsRunQueue, DlRunQueue, DeadlineParams, nice_to_weight, mlfq_level_to_nice,
-    calc_vruntime_delta, cfs_should_preempt, NICE0_WEIGHT, MIN_GRANULARITY_TICKS, DL_MAX_UTILIZATION_PCT,
+    calc_vruntime_delta, cfs_should_preempt, NICE0_WEIGHT, DL_MAX_UTILIZATION_PCT,
     TARGET_LATENCY_TICKS, CFS_BOOST_INTERVAL_TICKS, LOAD_BALANCE_THRESHOLD};
 
 macro_rules! klog_sched_warn {
@@ -252,13 +252,13 @@ impl Scheduler {
     }
     
     pub fn add(&self, pid: Pid) {
-        self.cfs_enqueue(pid, 0);
+        self.cfs_enqueue(pid);
     }
 
     pub fn add_with_priority(&self, pid: Pid, level: usize) {
         let nice = mlfq_level_to_nice(level);
         self.set_nice(pid, nice);
-        self.cfs_enqueue(pid, nice);
+        self.cfs_enqueue(pid);
     }
 
     /// Set nice value and update the process's CFS weight.
@@ -272,7 +272,7 @@ impl Scheduler {
     }
 
     /// Enqueue a process into the CFS run queue.
-    fn cfs_enqueue(&self, pid: Pid, nice: i8) {
+    fn cfs_enqueue(&self, pid: Pid) {
         let per_cpu = per_cpu();
         let vr = PROCESS_TABLE.with_process(pid, |p| {
             let _ = p.set_state_safe(ProcessState::Ready);
@@ -345,9 +345,8 @@ impl Scheduler {
             per_cpu.dl_running.store(false, Ordering::SeqCst);
             return None;
         }
-        let now = TICK_COUNT.load(Ordering::Acquire);
         match dl_rq.pick_next() {
-            Some((pid, _dl_abs)) => {
+            Some((pid, dl_abs)) => {
                 let alive = PROCESS_TABLE.with_process(pid, |p| {
                     p.get_state() != ProcessState::Zombie
                         && p.get_sched_policy() == SchedPolicy::Deadline
@@ -356,6 +355,10 @@ impl Scheduler {
                     per_cpu.dl_running.store(true, Ordering::SeqCst);
                     Some(pid)
                 } else {
+                    // pick_next() removed the task from the tree but
+                    // preserved nr_running (same as CfsRunQueue).
+                    // reinsert() puts it back without touching counters.
+                    dl_rq.reinsert(pid, dl_abs);
                     per_cpu.dl_running.store(false, Ordering::SeqCst);
                     None
                 }
@@ -375,7 +378,7 @@ impl Scheduler {
             return None;
         }
         match cfs_rq.pick_next() {
-            Some((pid, _vr, _w)) => {
+            Some((pid, vr)) => {
                 let schedulable = PROCESS_TABLE.with_process(pid, |p| {
                     let state = p.get_state();
                     let policy = p.get_sched_policy();
@@ -389,6 +392,10 @@ impl Scheduler {
                     });
                     Some(pid)
                 } else {
+                    // Task was removed from tree by pick_next() but is not
+                    // schedulable (blocked/zombie/wrong policy). Re-insert
+                    // it to avoid silently losing the task.
+                    cfs_rq.update_curr(pid, vr);
                     None
                 }
             }
@@ -401,10 +408,8 @@ impl Scheduler {
         
         let per_cpu = per_cpu();
         let current_pid = per_cpu.current.load(Ordering::SeqCst);
-        let mut next_pid: Option<Pid> = None;
 
-        // 1. Deadline (EDF) — highest priority
-        next_pid = self.pick_deadline_task();
+        let mut next_pid = self.pick_deadline_task();
 
         // 2. RT (FIFO/RR) — preserved from MLFQ
         if next_pid.is_none() {
@@ -446,8 +451,7 @@ impl Scheduler {
                         break;
                     }
                     _ => {
-                        let nice = mlfq_level_to_nice(0);
-                        self.cfs_enqueue(rt_pid, nice);
+                        self.cfs_enqueue(rt_pid);
                         per_cpu.rt_running.store(false, Ordering::SeqCst);
                         break;
                     }
@@ -529,14 +533,14 @@ impl Scheduler {
 
             if was_dl {
                 let dl_info = PROCESS_TABLE.with_process(current_pid, |p| {
-                    (p.dl_abs.load(Ordering::Acquire),
-                     p.dl_runtime.load(Ordering::Acquire),
-                     p.dl_deadline.load(Ordering::Acquire),
-                     p.dl_period.load(Ordering::Acquire))
+                    p.dl_abs.load(Ordering::Acquire)
                 });
-                if let Some((dl_abs, runtime, _deadline, period)) = dl_info {
-                    let util = if period > 0 { (runtime * 100) / period } else { 0 };
-                    per_cpu.dl_rq.lock().enqueue(current_pid, dl_abs, util);
+                if let Some(dl_abs) = dl_info {
+                    // pick_next() preserved nr_running (same as CFS).
+                    // reinsert() puts the task back into the tree
+                    // without touching counters — the task was already
+                    // counted at initial enqueue.
+                    per_cpu.dl_rq.lock().reinsert(current_pid, dl_abs);
                 }
             } else if was_rt {
                 let rt_info = PROCESS_TABLE.with_process(current_pid, |p| {
@@ -559,12 +563,12 @@ impl Scheduler {
                     }
                 }
             } else {
-                let (vr, wt, nice) = PROCESS_TABLE.with_process(current_pid, |p| {
+                let (vr, _wt, _nice) = PROCESS_TABLE.with_process(current_pid, |p| {
                     (p.cfs_vruntime.load(Ordering::Acquire),
                      p.cfs_weight.load(Ordering::Acquire),
                      p.nice.load(Ordering::Acquire) as i8)
                 }).unwrap_or((0, NICE0_WEIGHT, 0i8));
-                per_cpu.cfs_rq.lock().update_curr(current_pid, vr, wt);
+                per_cpu.cfs_rq.lock().update_curr(current_pid, vr);
                 PROCESS_TABLE.with_process(current_pid, |p| {
                     p.cfs_on_rq.store(true, Ordering::Release);
                 });
@@ -764,7 +768,7 @@ impl Scheduler {
         self.initialized.load(Ordering::SeqCst)
     }
 
-    pub fn has_runnable(&self, level: usize) -> bool {
+    pub fn has_runnable(&self) -> bool {
         let per_cpu = per_cpu();
         if !per_cpu.dl_rq.lock().is_empty() {
             return true;
@@ -775,16 +779,17 @@ impl Scheduler {
         if !per_cpu.cfs_rq.lock().is_empty() {
             return true;
         }
-        if level < MLFQ_LEVELS {
-            !per_cpu.queues[level].lock().is_empty()
-        } else {
-            false
+        for l in 0..MLFQ_LEVELS {
+            if !per_cpu.queues[l].lock().is_empty() {
+                return true;
+            }
         }
+        false
     }
 
     /// Convenience: check if any runnable task exists (level 0 queues).
     pub fn has_any_runnable(&self) -> bool {
-        self.has_runnable(0)
+        self.has_runnable()
     }
 
     pub fn get_time_slice(&self) -> u64 {
@@ -875,9 +880,12 @@ impl Scheduler {
                     }
                 }
             } else if current_pid != 0 {
-                // CFS — update vruntime and check preemption
+                // CFS — update vruntime and check preemption.
+                // IMPORTANT: Do NOT re-insert the running task into the tree here.
+                // The running task stays out of the tree; it will be re-enqueued
+                // only when it stops running (in schedule's re-enqueue path).
                 let (should_preempt, should_yield) = {
-                    let mut cfs_rq = per_cpu.cfs_rq.lock();
+                    let cfs_rq = per_cpu.cfs_rq.lock();
                     let vr = PROCESS_TABLE.with_process(current_pid, |p| {
                         let old_vr = p.cfs_vruntime.load(Ordering::Acquire);
                         let weight = p.cfs_weight.load(Ordering::Acquire);
@@ -888,10 +896,6 @@ impl Scheduler {
                         p.cfs_sum_exec_runtime.store(sum + 1, Ordering::Release);
                         new_vr
                     }).unwrap_or(0);
-
-                    cfs_rq.update_curr(current_pid, vr, PROCESS_TABLE.with_process(current_pid, |p| {
-                        p.cfs_weight.load(Ordering::Acquire)
-                    }).unwrap_or(NICE0_WEIGHT));
 
                     let should_preempt = cfs_rq.nr_running > 0 && cfs_should_preempt(
                         vr,
@@ -1070,7 +1074,10 @@ impl Scheduler {
             let mut src_rq = per_cpu_for(busiest_cpu).cfs_rq.lock();
             for _ in 0..4 {
                 match src_rq.pick_next() {
-                    Some((pid, vr, weight)) => {
+                    Some((pid, vr)) => {
+                        let weight = PROCESS_TABLE.with_process(pid, |p| {
+                            p.cfs_weight.load(Ordering::Acquire)
+                        }).unwrap_or(NICE0_WEIGHT);
                         src_rq.dequeue(pid, vr, weight);
                         tasks_to_migrate[count] = pid;
                         count += 1;

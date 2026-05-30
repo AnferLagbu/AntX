@@ -379,6 +379,108 @@ impl Aarch64Vmm {
         }
     }
 
+    pub fn unmap_page_in_table(&self, root_paddr: u64, virt: VirtAddr) {
+        if root_paddr == 0 {
+            return;
+        }
+
+        let vaddr = virt.as_u64();
+
+        // SAFETY: phys_to_virt(root_paddr) gives kernel VA for page table walk.
+        let l0 = phys_to_virt(root_paddr) as *mut u64;
+        let l0_idx = l0_index(vaddr);
+
+        let l1 = self.get_next_level(l0, l0_idx);
+        if l1.is_null() {
+            return;
+        }
+        let l1_idx = l1_index(vaddr);
+
+        let l2 = self.get_next_level(l1, l1_idx);
+        if l2.is_null() {
+            return;
+        }
+        let l2_idx = l2_index(vaddr);
+
+        let l3 = self.get_next_level(l2, l2_idx);
+        if l3.is_null() {
+            return;
+        }
+        let l3_idx = l3_index(vaddr);
+
+        // Clear the L3 page descriptor
+        unsafe {
+            ptr::write_volatile(l3.add(l3_idx), 0);
+        }
+
+        // TLB invalidate — must precede any page-table-page free so that
+        // speculative walks cannot land on freed physical memory.
+        unsafe {
+            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+        }
+
+        // Recursively free empty intermediate page-table pages to avoid
+        // leaking memory between unmap operations (destroy_page_table only
+        // runs at process teardown).
+        if self.is_table_empty(l3) {
+            let l3_paddr = unsafe {
+                let l2_entry = ptr::read_volatile(l2.add(l2_idx));
+                ptr::write_volatile(l2.add(l2_idx), 0);
+                l2_entry & 0x0000_FFFF_FFFF_F000
+            };
+            unsafe { core::arch::asm!("dsb ishst"); }
+            self.free_table(l3_paddr);
+
+            // Check L2 recursively
+            if self.is_table_empty(l2) {
+                let l2_paddr = unsafe {
+                    let l1_entry = ptr::read_volatile(l1.add(l1_idx));
+                    ptr::write_volatile(l1.add(l1_idx), 0);
+                    l1_entry & 0x0000_FFFF_FFFF_F000
+                };
+                unsafe { core::arch::asm!("dsb ishst"); }
+                self.free_table(l2_paddr);
+
+                // Check L1 recursively
+                if self.is_table_empty(l1) {
+                    let l1_paddr = unsafe {
+                        let l0_entry = ptr::read_volatile(l0.add(l0_idx));
+                        ptr::write_volatile(l0.add(l0_idx), 0);
+                        l0_entry & 0x0000_FFFF_FFFF_F000
+                    };
+                    unsafe { core::arch::asm!("dsb ishst"); }
+                    self.free_table(l1_paddr);
+                }
+            }
+        }
+    }
+
+    /// Returns true when all 512 entries of a page-table page are zero.
+    fn is_table_empty(&self, table: *mut u64) -> bool {
+        unsafe {
+            for i in 0..TABLE_ENTRIES {
+                if ptr::read_volatile(table.add(i)) != 0 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Walk a table entry to the next level (read-only, no allocation).
+    /// Returns null if the entry is not a valid table descriptor.
+    fn get_next_level(&self, table: *mut u64, idx: usize) -> *mut u64 {
+        unsafe {
+            let entry = ptr::read_volatile(table.add(idx));
+            if entry & 0b11 == 0b11 {
+                let paddr = entry & 0x0000_FFFF_FFFF_F000;
+                phys_to_virt(paddr) as *mut u64
+            } else {
+                core::ptr::null_mut()
+            }
+        }
+    }
+
     // ─── User Page Table Operations ──────────────────────────────────
 
     pub fn create_user_page_table(&self) -> Option<u64> {

@@ -98,6 +98,9 @@ pub mod ipc;
 /// Timer 子系统 (PIT 驱动, Tick 计数器, Sleep 机制)
 pub mod timer;
 
+/// WASM 虚拟机子系统 (WebAssembly 解释器引擎)
+pub mod wasm;
+
 /// 基础库 (字符串/内存操作, C 标准库函数的 Rust 实现)
 pub mod lib;
 

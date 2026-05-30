@@ -28,7 +28,7 @@
 //! NICE0_WEIGHT = 1024 is the reference.
 
 use alloc::collections::BTreeMap;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::types::Pid;
 
@@ -196,12 +196,29 @@ impl CfsRunQueue {
         self.nr_running += 1;
     }
 
-    /// Dequeue a task by its current (vruntime, pid) key.
-    /// Returns true if the task was found and removed.
+    /// Dequeue a task from the CFS runqueue.
+    ///
+    /// Always adjusts total_weight and nr_running — even when the task is not
+    /// in the tree (e.g. currently running).  This is intentional:
+    /// `pick_next() → dequeue()` together form the complete removal sequence
+    /// (tree removal + accounting finalisation), used by load_balance.
+    ///
+    /// total_weight is decremented via a CAS loop that saturates at zero,
+    /// preventing underflow to u64::MAX that would corrupt time-slice
+    /// calculations.
     pub fn dequeue(&mut self, pid: Pid, vruntime: u64, weight: u64) -> bool {
+        let mut prev = self.total_weight.load(Ordering::Acquire);
+        loop {
+            let new = prev.saturating_sub(weight);
+            match self.total_weight.compare_exchange_weak(
+                prev, new, Ordering::Release, Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => prev = actual,
+            }
+        }
+        self.nr_running = self.nr_running.saturating_sub(1);
         if self.tree.remove(&(vruntime, pid)).is_some() {
-            self.total_weight.fetch_sub(weight, Ordering::Release);
-            self.nr_running = self.nr_running.saturating_sub(1);
             self.sync_min_vruntime();
             true
         } else {
@@ -210,22 +227,23 @@ impl CfsRunQueue {
     }
 
     /// Pick the task with minimum vruntime (leftmost in tree).
-    /// Returns (pid, vruntime) on success. Caller is responsible for
-    /// subtracting weight from total_weight and decrementing nr_running
-    /// after the task is confirmed runnable.
-    pub fn pick_next(&mut self) -> Option<(Pid, u64, u64)> {
+    /// Returns (pid, vruntime) on success. Does NOT adjust total_weight
+    /// or nr_running — the task transitions from "waiting" to "running"
+    /// and is still part of the runqueue load.
+    pub fn pick_next(&mut self) -> Option<(Pid, u64)> {
         let (&(vruntime, pid), _) = self.tree.first_key_value()?;
         self.tree.remove(&(vruntime, pid));
-        self.nr_running = self.nr_running.saturating_sub(1);
         self.sync_min_vruntime();
-        Some((pid, vruntime, 0))
+        Some((pid, vruntime))
     }
 
     /// Update the currently-running task's vruntime after execution
-    /// and re-enqueue it.
-    pub fn update_curr(&mut self, pid: Pid, new_vruntime: u64, weight: u64) {
-        self.total_weight.fetch_add(weight, Ordering::Release);
-        self.enqueue(pid, new_vruntime, weight);
+    /// and re-enqueue it. Does NOT change total_weight or nr_running
+    /// because the task was already counted (pick_next preserves both).
+    pub fn update_curr(&mut self, pid: Pid, new_vruntime: u64) {
+        let min_vr = self.min_vruntime.load(Ordering::Acquire);
+        let start_vr = new_vruntime.max(min_vr);
+        self.tree.insert((start_vr, pid), ());
     }
 
     /// Calculate the dynamic time slice for a task based on its weight
@@ -244,8 +262,10 @@ impl CfsRunQueue {
         self.total_weight.load(Ordering::Acquire)
     }
 
+    /// Returns true when no tasks are runnable in this queue
+    /// (nr_running counts all tasks, both waiting in tree and currently running).
     pub fn is_empty(&self) -> bool {
-        self.nr_running == 0 && self.tree.is_empty()
+        self.nr_running == 0
     }
 
     /// Boost all tasks to min_vruntime to prevent indefinite starvation
@@ -311,12 +331,13 @@ impl CfsRunQueue {
     }
 
     /// Find and return the pid with the maximum vruntime for load-balance stealing.
-    pub fn steal_highest_vruntime(&mut self) -> Option<(Pid, u64, u64)> {
+    /// Does NOT adjust total_weight or nr_running — the caller will dequeue
+    /// the task on the source CPU and enqueue on the destination.
+    pub fn steal_highest_vruntime(&mut self) -> Option<(Pid, u64)> {
         let (&(vruntime, pid), _) = self.tree.last_key_value()?;
         self.tree.remove(&(vruntime, pid));
-        self.nr_running = self.nr_running.saturating_sub(1);
         self.sync_min_vruntime();
-        Some((pid, vruntime, 0))
+        Some((pid, vruntime))
     }
 }
 
@@ -369,15 +390,24 @@ impl DlRunQueue {
     }
 
     /// Pick the task with earliest absolute deadline.
+    /// Does NOT change nr_running or total_utilization — the task was
+    /// already counted at initial enqueue and is still part of the
+    /// runqueue load（in flight）.
     pub fn pick_next(&mut self) -> Option<(Pid, u64)> {
         let (&(dl_abs, pid), _) = self.tree.first_key_value()?;
         self.tree.remove(&(dl_abs, pid));
-        self.nr_running = self.nr_running.saturating_sub(1);
         Some((pid, dl_abs))
     }
 
+    /// Re-insert a task into the tree after it was picked or after a
+    /// cancelled pick. Does NOT change nr_running or total_utilization
+    /// — the task was already counted at initial enqueue.
+    pub fn reinsert(&mut self, pid: Pid, dl_abs: u64) {
+        self.tree.insert((dl_abs, pid), ());
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.nr_running == 0 && self.tree.is_empty()
+        self.nr_running == 0
     }
 
     pub fn get_load(&self) -> u32 {
@@ -394,12 +424,14 @@ impl DlRunQueue {
 /// vruntime_delta = 1 tick × NICE0_WEIGHT / weight
 ///
 /// Lower-nice (higher-weight) tasks accumulate vruntime slower → get more CPU.
+/// For weight > NICE0_WEIGHT (nice < 0), integer division yields 0, which
+/// would stall vruntime.  `max(1)` guarantees at least 1 unit per tick.
 #[inline]
 pub fn calc_vruntime_delta(weight: u64) -> u64 {
     if weight == 0 {
         return NICE0_WEIGHT;
     }
-    NICE0_WEIGHT / weight
+    (NICE0_WEIGHT / weight).max(1)
 }
 
 /// Check if the current task should be preempted by a CFS task.
