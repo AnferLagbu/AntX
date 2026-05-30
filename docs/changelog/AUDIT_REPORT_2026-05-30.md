@@ -876,7 +876,180 @@
 
 ---
 
-> **审计工具**: 静态代码分析 + 文档交叉验证
+> **审计工具**: 静态代码分析 + 文档交叉验证 + Clippy 死代码检测
 > **审计员**: AI Code Assistant
 > **审计覆盖率**: 约 95% 源码文件
-> **报告版本**: v1.0
+> **报告版本**: v1.1 (附录 A 追加)
+
+---
+
+## 附录 A: Clippy 死代码检测报告
+
+> **检测工具**: `cargo clippy` (clippy 0.1.97, nightly-2026-05-15)
+> **检测日期**: 2026-05-30
+> **检测范围**: 全部 3 个 Rust 组件（内核 crate、用户态 workspace、宿主机测试）
+
+---
+
+### A.1 内核 crate (`src/rust/`) — 死代码检测
+
+#### 🔴 关键发现: 全局 `#![allow(dead_code)]` 抑制了所有死代码警告
+
+**文件**: [lib.rs:L25](file:///home/anfer/Code/AntX/src/rust/src/lib.rs#L25)
+
+```rust
+#![allow(dead_code)]  // 硬件寄存器参考常量 (APIC/NVMe/USB/DP 等驱动寄存器定义文档)
+```
+
+此行全局抑制了内核 crate 中**所有** dead_code 警告。使用 `--force-warn dead_code` 强制启用后，暴露出 **837 个死代码/未使用警告**。
+
+| 类别 | 数量 | 详情 |
+|------|------|------|
+| 被忽略的返回值 (`unused_results`) | **580** | 268个`i32`、110个`u64`、67个`u32`、51个`bool`、21个`Option<()>`等 |
+| 从未被引用的硬件寄存器常量 | **~160** | APIC、IOAPIC、e1000、xHCI、NVMe、DP/HDMI、ATA、键盘、PCI 等 |
+| 从未被调用的函数 | **~20** | `vmm_split_2mb_page`、`vmm_switch_page_table`、`vmm_clone_user_page_table`、`outb`、`inb`、`outw`、`inw`、`is_valid_user_address`、`is_valid_kernel_address`、`kfree`、`process_exit`、`recovery_try_recover_from_idt`、`eeprom_read` 等 |
+| 从未被读取的结构体字段 | **~12** | `name`、`info`、`mmio_base`、`is_cq`、`status_byte`、`tx_descs`/`rx_descs` 等 |
+| 从未被使用的静态变量 | **1** | `WARN_MSG` |
+| 从未被使用的关联函数 | **1** | `new()` |
+| 其他 `unused` | **~63** | unused_mut、unused_assignments 等 |
+
+#### A.1.1 从未被使用的硬件寄存器常量（完整列表）
+
+**APIC/IOAPIC 寄存器** (17 个):
+`APIC_ISR_BASE`, `APIC_TMR_BASE`, `APIC_IRR_BASE`, `LVT_DELIVERY_FIXED`, `LVT_DELIVERY_SMI`, `LVT_DELIVERY_NMI`, `LVT_DELIVERY_EXTINT`, `ICR_LEVEL`, `ICR_BROADCAST`, `IOAPIC_ID`, `IOAPIC_ARB`, `REDTBL_LOW_PRIORITY`, `REDTBL_LOGICAL`, `DELIVERY_SMI`, `DELIVERY_NMI`, `DELIVERY_EXTINT`
+
+**e1000 网卡寄存器** (40 个):
+`E1000_TIMEOUT`, `E1000_CTRL_RST`, `E1000_CTRL_ASDE`, `E1000_CTRL_SPEED_1000`, `E1000_CTRL_FRCDPX`, `E1000_CTRL_FRCSPD`, `E1000_STATUS`, `E1000_STATUS_LU`, `E1000_STATUS_FD`, `E1000_STATUS_SPEED_1000`, `E1000_STATUS_SPEED_100`, `E1000_EERD`, `E1000_EERD_START`, `E1000_EERD_DONE`, `E1000_RCTL_EN`, `E1000_RCTL_SBP`, `E1000_RCTL_UPE`, `E1000_RCTL_MPE`, `E1000_RCTL_BAM`, `E1000_RCTL_SECRC`, `E1000_RCTL_BSIZE_2048`, `E1000_TCTL_EN`, `E1000_TCTL_PSP`, `E1000_TCTL_COLD_FD`, `E1000_TCTL_CT_FD`, `E1000_TDBAL`, `E1000_TDBAH`, `E1000_TDLEN`, `E1000_TDH`, `E1000_TDT`, `E1000_RDBAL`, `E1000_RDBAH`, `E1000_RDLEN`, `E1000_RDH`, `E1000_RDT`, `E1000_RXD_STAT_DD`, `E1000_RXD_ERR_SEQ`, `E1000_RXD_ERR_SE`, `E1000_RXD_ERR_RXE`, `E1000_RXD_ERR_CE`
+
+**xHCI USB 控制器寄存器** (25 个):
+`CONTROLLER_NOT_READY`, `CONTROLLER_SAVE_STATE`, `CONTROLLER_RESTORE_STATE`, `SAVE_RESTORE_COMPLETE`, `RESTORE_ERROR`, `HOST_CONTROLLER_ERROR`, `HOST_SYSTEM_ERROR`, `HOST_SYSTEM_ERROR_ENABLE`, `EVENT_RING_SEGMENT_TABLE_SIZE_MODE`, `EVENT_RING_NOT_EMPTY`, `EVENT_COUNTER_OVERFLOW`, `PORT_ENABLED`, `PORT_ENABLED_DISABLED_CHANGE`, `CONNECT_STATUS_CHANGE`, `OVER_CURRENT_CHANGE`, `RESET_CHANGE`, `PORT_LINK_STATE`, `PORT_LINK_STATE_STROBE`, `PORT_POWER`, `PORT_SPEED`, `PORT_INDICATOR`, `PORT_TEST`, `PORT_CHANGE_DETECT`, `WAKE_ON_CONNECT`, `WAKE_ON_DISCONNECT`, `WAKE_ON_OVER_CURRENT`
+
+**NVMe 寄存器** (8 个):
+`CSTS_NSSRO`, `CSS`, `CQR`, `AMS`, `MPSMAX`, `MPSMIN`, `DSTRD`, `MQES`
+
+**DP/HDMI 显示寄存器** (20+ 个):
+`DPCD_REV`, `MAX_LINK_RATE`, `MAX_LANE_COUNT`, `MAX_DOWNSPREAD`, `TRAINING_AUX_RD_INTERVAL`, `ADAPTER_CAP`, `DOWNSPREAD_CTRL`, `MAIN_LINK_CHANNEL_CODING_SET`, `LANE0_1_STATUS`, `LANE2_3_STATUS`, `LANE_ALIGN_STATUS_UPDATED`, `SINK_STATUS`, `SINK_COUNT`, `DP_RECEIVER_CAP_FIELD`, `EXT_RECEIVER_CAP_FIELD`, `ADJUST_REQUEST_LANE0_1`, `ADJUST_REQUEST_LANE2_3`, `EDID_I2C_ADDR`, `ENABLE_U3`, `ENABLE_S0IX`
+
+**ATA/IDE 寄存器** (7 个):
+`ATA_ERROR`, `ATA_STATUS_IDX`, `ATA_STATUS_DF`, `ATA_STATUS_CORR`, `ATA_STATUS_DRDY`, `ATA_STATUS_DSC`, `ATA_TIMEOUT_ERR`, `ATA_CTRL_ALT_STATUS`
+
+**PCI 寄存器** (3 个):
+`REG_CLASS_CODE`, `DEVICE_REMOVABLE`, `DEVICE_SERVICE_IRQ_VECTOR`
+
+**VirtIO 寄存器** (4 个):
+`VIRTIO_NET_MMIO_BASE_HINT`, `VIRTIO_NET_F_STATUS`, `VIRTIO_BLK_S_IOERR`, `VIRTIO_BLK_S_UNSUPP`
+
+**其他杂项** (20+ 个):
+`PIT_CHANNEL_1_DATA`, `PIT_CHANNEL_2_DATA`, `SELECT_CHANNEL_1`, `SELECT_CHANNEL_2`, `READ_BACK_COMMAND`, `MODE_0_INTERRUPT` ~ `MODE_5_HW_STROBE`, `BCD_MODE`, `PS2_STATUS_SYSTEM`, `KB_CMD_SCANCODE`, `KB_CMD_IDENTIFY`, `KB_CMD_ECHO`, `LSR_TRANSMIT_IDLE`, `SIG_IGN`, `PT_GNU_STACK`, `MAX_CPUID_LEAF_STANDARD`, `PAGE_SIZE`, `PING_ID`, `GLYPH_BYTES`, `VBE_DISPI_MMIO_BASE`, `BOOT_PART_SECTORS`
+
+> **评估**: 这些常量为硬件参考文档目的保留，但通过 `#![allow(dead_code)]` 全局抑制并非最佳实践。建议使用 `cfg(debug_assertions)` 或将其移到单独的 `registers.rs` 文件并加 `#[allow(dead_code)]` 限定作用域。
+
+#### A.1.2 从未被调用的函数（部分列表）
+
+| 函数 | 文件 | 风险 |
+|------|------|------|
+| `vmm_split_2mb_page` | mm/vmm.rs | 2MB 大页拆分功能未使用 |
+| `vmm_switch_page_table` | mm/vmm.rs | 页表切换未使用 |
+| `vmm_clone_user_page_table` | mm/vmm.rs | 用户页表克隆未使用（fork 时是否需要？） |
+| `vmm_get_physical_in_table` | mm/vmm.rs | 物理地址查询未使用 |
+| `virt_to_phys` | (net 相关) | 关键转换函数未用？（审计发现实为假恒等） |
+| `outb` / `inb` / `outw` / `inw` | idt/safety.rs | I/O 端口操作未使用 |
+| `is_valid_user_address` / `is_valid_kernel_address` | mm/ | 地址验证未使用（安全风险） |
+| `kfree` | mm/ | 内存释放未用（双路径不一致根源） |
+| `process_exit` | proc/ | 进程退出未使用 |
+| `scheduler_yield` | proc/scheduler.rs | 调度器 yield 未使用 |
+| `recovery_try_recover_from_idt` | barrier/ | 故障恢复未使用 |
+| `eeprom_read` | net/driver/e1000.rs | EEPROM 读取未使用 |
+| `read_mac_address` | net/ | MAC 地址读取未使用 |
+| `serial_read_ready` | driver/char/serial.rs | 串口读取就绪检查未使用 |
+
+#### A.1.3 编译错误（Clippy 检测到的实际Bug）
+
+| 错误 | 文件 | 描述 | 修复 |
+|------|------|------|------|
+| `E0425` | [mm/vmm.rs:L919](file:///home/anfer/Code/AntX/src/kernel/mm/vmm.rs#L919) | `smp::is_smp_enabled()` 不存在，应为 `smp::is_enabled()` | 函数名修正 |
+| `E0308` | [mm/vmm.rs:L920](file:///home/anfer/Code/AntX/src/kernel/mm/vmm.rs#L920) | `send_tlb_invalidate_ipi(addr: u64)` 期望 `u8` | 参数类型修正 |
+
+---
+
+### A.2 用户态 workspace (`src/user/`) — 死代码检测
+
+| 组件 | 死代码/未使用警告数 | 关键发现 |
+|------|--------------------|----------|
+| `userlib` (lib) | **59 警告** | 58 个 syscall 常量名应大写（`SYS_read` → `SYS_READ`），1 个未使用导入 `O_TRUNC`，1 个 `manual_c_str_literals` |
+| `axsh` | **6 警告**（不含 userlib 重复） | 死函数 `sync`、死变体 `StdinFile`、死导入 `print_dec`/`print_hex`、死代码相关 lint |
+| `init` | 0（仅 userlib 重复） | — |
+| `install` | 0（仅 userlib 重复） | — |
+| `fbterm` | **1 警告**（不含 userlib 重复） | 死方法 `clear_line` |
+| `httpsrv` | 0（仅 userlib 重复） | — |
+
+#### A.2.1 用户态具体死代码项
+
+| 文件 | 发现 | 严重程度 |
+|------|------|----------|
+| [lib/fs.rs:L4](file:///home/anfer/Code/AntX/src/user/lib/src/fs.rs#L4) | `O_TRUNC` 导入但从未被使用 | Low |
+| [axsh/commands/system.rs](file:///home/anfer/Code/AntX/src/user/axsh/src/commands/system.rs) | 函数 `sync` 定义但从未被调用 | Low |
+| [axsh/commands/pipeline.rs](file:///home/anfer/Code/AntX/src/user/axsh/src/commands/pipeline.rs) | 枚举变体 `StdinFile` 从未被构造 | Low |
+| [axsh/commands/general.rs](file:///home/anfer/Code/AntX/src/user/axsh/src/commands/general.rs) | `print_dec` / `print_hex` 导入但未使用 | Low |
+| [fbterm/main.rs](file:///home/anfer/Code/AntX/src/user/fbterm/src/main.rs) | 方法 `clear_line` 定义但从未被调用 | Low |
+
+---
+
+### A.3 宿主机测试 (`host-tests/`) — 死代码检测
+
+死代码/未使用特定警告数量: **0**（无 dead_code 或 unused 警告）
+
+> 宿主测试代码质量较好，无死代码问题。但有以下 Clippy 风格建议（40 个警告）:
+> - 9 个 `not_unsafe_ptr_arg_deref` 错误（公开函数解引用裸指针但未标记为 `unsafe`）
+> - 7 个 `new_without_default`（HvTxgGroup、HvObjSet、HvZap、CasIndex、HvSnapshotManager、HvZil）
+> - 7 个 `manual_div_ceil`
+> - 其他风格建议
+
+---
+
+### A.4 Cargo Feature Flag 死代码
+
+**文件**: [Cargo.toml:L25-L51](file:///home/anfer/Code/AntX/src/rust/Cargo.toml#L25-L51)
+
+| Feature Flag | 代码中 `cfg(feature = "...")` 引用 | 状态 |
+|-------------|-----------------------------------|------|
+| `kernel_test` | ✅ 多处引用 | 活跃 |
+| `smp` | ✅ 1 处引用 | 活跃 |
+| `fault_injection` | ✅ 1 处引用 | 活跃 |
+| `e1000-verbose` | ✅ 2 处引用 | 活跃 |
+| `ipv6`, `dhcp`, `http_client`, `mdns`, `mqtt`, `sntp`, `smtp`, `tftp`, `snmp`, `netbios`, `lwiperf` | ❌ **0 处引用** | 🔴 **死代码** |
+| `net`, `alloc`, `async`, `lock_stats`, `debug_mutex`, `atomic_stats`, `log`, `json_export` | ❌ **0 处引用** | 🔴 **死代码** |
+
+> **19 个 feature flag 在 Rust 代码中完全没有 `#[cfg(feature = "...")]` 引用**。其中 lwIP 相关 (ipv6~lwiperf) 可能在 C 侧通过 Makefile 宏控制编译，但 Cargo 侧的 feature flag 声明完全冗余。剩余 8 个 (net/alloc/async 等) 似乎是预留设计但从未实现。
+
+---
+
+### A.5 Clippy 检测总结
+
+| 维度 | 内核 crate | 用户 workspace | 宿主测试 | 合计 |
+|------|-----------|---------------|---------|------|
+| **死函数/方法** | ~20 | 2 | 0 | **22** |
+| **死常量** | ~160 | 0 | 0 | **160** |
+| **死字段** | ~12 | 0 | 0 | **12** |
+| **死 feature flags** | 19 | 0 | 0 | **19** |
+| **死导入** | ~10 | 3 | 0 | **13** |
+| **死变体/静态** | 2 | 1 | 0 | **3** |
+| **忽略返回值** | 580 | 0 | 0 | **580** |
+| **编译错误** | 2 | 0 | 0 | **2** |
+| **命名规范** | ~40 | 58 | 0 | **98** |
+
+### A.6 修复建议
+
+#### 立即修复
+
+1. **移除 `#![allow(dead_code)]`**（[lib.rs:L25](file:///home/anfer/Code/AntX/src/rust/src/lib.rs#L25)）—— 改为在具体的硬件寄存器文件上加 `#[allow(dead_code)]` 限定作用域
+2. **删除 19 个死 feature flags** —— 清理 `Cargo.toml`，减少混淆
+3. **修复编译错误** —— `is_smp_enabled` → `is_enabled`，`send_tlb_invalidate_ipi` 参数类型
+4. **删除用户态死代码** —— `O_TRUNC` 导入、`sync` 函数、`clear_line` 方法等
+
+#### 建议改进
+
+5. 为 580 个被丢弃的返回值添加显式处理（`let _ = ...` 或适当错误处理）
+6. 评估 ~160 个硬件寄存器常量是否需要保留；保留的移到独立文件并加限定作用域的 `#[allow(dead_code)]`
+7. 评估 ~20 个未使用的函数：尚未实现的功能（如 `vmm_split_2mb_page`）— 标记 TODO；已废弃的— 删除
+8. 将 58 个 syscall 常量名改为大写（`SYS_read` → `SYS_READ`）符合 Rust 命名惯例
