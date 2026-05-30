@@ -887,7 +887,7 @@ impl Scheduler {
             } else if current_pid != 0 {
                 // CFS — time slice and vruntime-based preemption.
                 let old_remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
-                if old_remaining <= 1 {
+                if old_remaining == 1 {
                     per_cpu.need_reschedule.store(true, Ordering::SeqCst);
                 }
 
