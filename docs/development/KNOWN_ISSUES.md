@@ -1,6 +1,73 @@
 # AntX 已知问题与待解决项
 
-> 最后更新: 2026-06-28
+> 最后更新: 2026-05-30
+> 全面代码审计完成 — 详见 [审计报告](../changelog/AUDIT_REPORT_2026-05-30.md)
+
+---
+
+## 🔴 审计新发现 - Critical 问题 (首要修复)
+
+> 以下为 2026-05-30 全面代码审计中发现的最严重问题，按优先级排列。
+
+### A1. HvFS 假 SHA256 校验和 (P0)
+- **文件**: `src/kernel/fs/hvfs/checksum.rs`
+- **问题**: HvFS 声称使用 SHA256 进行数据完整性校验，实际使用简化的/非标准哈希函数
+- **影响**: 静默数据损坏无法检测、恶意篡改无法识别
+- **修复**: 复用 `credo/sha256.rs` 的标准 SHA256 实现
+
+### A2. NVMe PRP2 始终为零 (P0)
+- **文件**: `src/kernel/driver/storage/nvme.rs`
+- **问题**: 多页 DMA 传输的第二页 PRP2 始终为 0，数据写入物理地址 0
+- **影响**: 覆盖 IVT/中断向量表等关键低地址内存
+- **修复**: 正确填充 PRP2 为第二页的物理地址
+
+### A3. lwIP virt_to_phys 假恒等映射 (P0)
+- **文件**: `src/kernel/net/sys_arch.rs`
+- **问题**: `virt_to_phys()` 返回 `addr as u32`（恒等），在高半内核中完全错误
+- **影响**: DMA 写入错误的物理地址 → 内核内存损坏
+- **修复**: 实现真正的 virt_to_phys 转换
+
+### A4. Barrier tick() 递归死锁 (P0)
+- **文件**: `src/kernel/barrier/recovery.rs`
+- **问题**: `tick()` 获取 RECOVERY_LOCK 后调用 `bsr_try_recover()` 再次获取同一锁
+- **影响**: 任何心跳丢失触发 100% 死锁
+- **修复**: tick() 中设置标志后释放锁，由独立内核线程执行恢复
+
+### A5. 内存分配器 alloc/dealloc 路径不一致 (P0)
+- **文件**: `src/rust/src/memory_allocator.rs`
+- **问题**: alloc 在 kmalloc 失败时回退到 pmm_alloc_page，但 dealloc 无法区分来源
+- **影响**: slab 元数据损坏
+- **修复**: 保存来源标记，dealloc 时据此选择释放路径
+
+### A6. 链接脚本 .rela.dyn 缺失 PHDR (P0)
+- **文件**: `src/kernel/link/x86_64.ld`, `src/link.ld`
+- **问题**: 动态重定位段无 PHDR 声明，运行时不被加载
+- **影响**: 内核 -fPIC 重定位失败
+- **修复**: 为 .rela.dyn/.dynsym/.dynstr 添加 `:kernel` PHDR
+
+### A7. SpinLock/Mutex Guard Drop 缺少内存屏障 (P1)
+- **文件**: `src/kernel/sync/spinlock.rs`, `src/kernel/sync/mutex.rs`
+- **问题**: 锁释放时不包含 Release 语义，CPU 可能延迟临界区写操作
+- **影响**: 竞态条件、多核数据不一致
+- **修复**: Drop 中添加 `atomic::fence(Ordering::Release)`
+
+### A8. COW 引用计数竞态 (P1)
+- **文件**: `src/kernel/mm/cow.rs`
+- **问题**: 非原子 refcount 递减，多核并发可致下溢
+- **影响**: 物理内存泄漏或 UAF
+- **修复**: 使用 `fetch_sub` 原子操作
+
+### A9. PMM 伙伴分配器无锁 (P1)
+- **文件**: `src/kernel/mm/pmm.rs`
+- **问题**: 全局 buddy bitmap 无锁，SMP 并发可致双分配
+- **影响**: 两个 CPU 分到同一物理页
+- **修复**: 使用 SpinLock 或原子操作保护
+
+### A10. syscall.md 完全过时 (P1)
+- **文件**: `docs/api/syscall.md`
+- **问题**: 文档 syscall 编号与实际 POSIX 实现完全不同
+- **影响**: 依赖文档的开发者无法编写用户态程序
+- **修复**: 从 `src/kernel/syscall/types.rs` 重新生成
 
 ---
 
