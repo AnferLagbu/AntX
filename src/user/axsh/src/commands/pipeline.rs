@@ -3,6 +3,7 @@
 //! 解析用户输入中的 | < > >> 并执行多段管道命令。
 
 use userlib::*;
+use userlib::sys::*;
 use core::str::from_utf8;
 use core::ffi::CStr;
 

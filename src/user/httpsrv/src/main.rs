@@ -2,6 +2,7 @@
 #![no_main]
 
 use userlib::*;
+use userlib::sys::*;
 
 const BUF_SIZE: usize = 2048;
 

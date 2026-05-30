@@ -183,21 +183,21 @@ fn run_external(cmd: &Cmd) {
     }
     argv_ptrs[argc] = core::ptr::null();
 
-    let pid = userlib::fork() as i32;
+    let pid = userlib::sys::fork() as i32;
     if pid < 0 {
         println("axsh: fork failed");
         return;
     }
     if pid == 0 {
         // 子进程
-        userlib::proc_exec(&path[..path.len() - 1], &argv_ptrs[..argc + 1]);
+        userlib::sys::proc_exec(&path[..path.len() - 1], &argv_ptrs[..argc + 1]);
         // exec 失败
         userlib::print("axsh: ");
         userlib::print(name_str(name));
         userlib::println(": not found");
-        userlib::proc_exit(1);
+        userlib::sys::proc_exit(1);
     } else {
-        userlib::wait_pid(pid);
+        userlib::sys::wait_pid(pid);
     }
 }
 

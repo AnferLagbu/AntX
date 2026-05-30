@@ -240,7 +240,7 @@
 | lwIP NO_SYS=1 单线程 | 迁移到 `tcpip_thread` 可根除问题 #1 的长期方案 | medium | 🟡 |
 | VFS `/` 根目录依赖用户态 mount | 磁盘引导时需内核先挂 HvFS | medium | 🟡 |
 | `axsh` help 文本与 BUILTINS 不同步 | help() 函数已改为从 TABLE 动态生成，`general.rs` 不再硬编码命令列表。新增命令只需修改 `mod.rs` TABLE 一处 | low | ✅ |
-| `userlib::*` 全局导出 syscall | `pub use sys::*` 将 ~50 个常量/类型/函数注入全局命名空间 | low | 🟡 |
+| `userlib::*` 全局导出 syscall | 已移除 `pub use sys::*`，~80 项不再注入 `userlib::` 命名空间。消费者通过 `use userlib::sys::*` 显式导入 | low | ✅ |
 
 ---
 

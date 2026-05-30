@@ -2,6 +2,7 @@
 #![no_main]
 
 use userlib::*;
+use userlib::sys::*;
 
 const FB_USER_VADDR: u64 = 0x100000000;
 const FONT_DATA: &[u8] = include_bytes!("font8x16.raw");

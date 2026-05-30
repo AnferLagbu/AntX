@@ -7,7 +7,8 @@ mod auth;
 mod config;
 mod finish;
 
-use userlib::{println, read_line, fs_mount, fs_unmount};
+use userlib::{println, read_line};
+use userlib::sys::{fs_mount, fs_unmount};
 
 const MOUNT_POINT: &[u8] = b"/mnt\0";
 

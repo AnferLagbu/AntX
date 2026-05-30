@@ -5,6 +5,7 @@
 #![no_main]
 
 use userlib::*;
+use userlib::sys::*;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

@@ -8,6 +8,7 @@
 mod commands;
 
 use userlib::*;
+use userlib::sys::*;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// 全局退出标记 (由 `exit` 命令设置)

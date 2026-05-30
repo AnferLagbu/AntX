@@ -6,6 +6,7 @@
 #![no_main]
 
 use userlib::*;
+use userlib::sys::*;
 
 const FSTAB_PATH: &[u8] = b"/cfg/system/fstab\0";
 const SHELL_PATH: &[u8] = b"/app/sys/axsh\0";
