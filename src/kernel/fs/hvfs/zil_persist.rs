@@ -157,7 +157,7 @@ fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
         "serialize_record buffer too small: {} < {}", buf.len(), ZIL_RECORD_PAYLOAD);
     let ptr = buf.as_mut_ptr();
     unsafe {
-        (ptr as *mut u8).write(record.rec_type as u8);
+        ptr.write(record.rec_type as u8);
         (ptr.add(1) as *mut u64).write_unaligned(record.txg);
         (ptr.add(9) as *mut u64).write_unaligned(record.obj_id);
         (ptr.add(17) as *mut u64).write_unaligned(record.parent_obj);

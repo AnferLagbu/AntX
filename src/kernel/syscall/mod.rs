@@ -316,7 +316,7 @@ unsafe fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
         }
         return 0;
     }
-    crate::kernel::fs::vfs::ffi::vfs_read(fd as u32, buf as *mut u8, count as u32) as i64
+    crate::kernel::fs::vfs::ffi::vfs_read(fd as u32, buf, count as u32) as i64
 }
 
 unsafe fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
@@ -329,7 +329,7 @@ unsafe fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
         }
         return count as i64;
     }
-    crate::kernel::fs::vfs::ffi::vfs_write(fd as u32, buf as *const u8, count as u32) as i64
+    crate::kernel::fs::vfs::ffi::vfs_write(fd as u32, buf, count as u32) as i64
 }
 
 unsafe fn sys_open(path: *const core::ffi::c_char, flags: i32, _mode: i32) -> i64 {
@@ -705,7 +705,7 @@ unsafe fn sys_brk(addr: u64) -> i64 {
     let current = BRK.load(core::sync::atomic::Ordering::SeqCst);
     if addr > current {
         let extra = addr - current;
-        let pages = (extra + 4095) / 4096;
+        let pages = extra.div_ceil(4096);
         extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
         let ptr = pmm_alloc_pages(pages);
         if ptr.is_null() { return Errno::ENOMEM.as_ret(); }
@@ -725,7 +725,7 @@ unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
         Some(m) => m,
         None => {
             extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
-            let pages = (size + 4095) / 4096;
+            let pages = size.div_ceil(4096);
             let ptr = pmm_alloc_pages(pages);
             return if ptr.is_null() { Errno::ENOMEM.as_ret() } else { ptr as i64 };
         }
@@ -744,7 +744,7 @@ unsafe fn sys_munmap(addr: u64, size: u64) -> i64 {
         Some(m) => m,
         None => {
             extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
-            let pages = (size + 4095) / 4096;
+            let pages = size.div_ceil(4096);
             pmm_free_pages(addr as *mut core::ffi::c_void, pages);
             return 0;
         }
@@ -908,7 +908,7 @@ unsafe fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
 // ============================================================================
 
 unsafe fn sys_auth_login(password: *const core::ffi::c_char, note: *const core::ffi::c_char) -> i64 {
-    crate::kernel::credo::ffi::pwm_login(note, password) as i64
+    crate::kernel::credo::ffi::pwm_login(note, password)
 }
 
 unsafe fn sys_auth_logout() -> i64 {
@@ -918,7 +918,7 @@ unsafe fn sys_auth_logout() -> i64 {
 
 unsafe fn sys_auth_create(password: *const core::ffi::c_char, note: *const core::ffi::c_char, _level: u8) -> i64 {
     let creator = crate::kernel::credo::ffi::pwm_get_current();
-    crate::kernel::credo::ffi::pwm_create(password, note, creator) as i64
+    crate::kernel::credo::ffi::pwm_create(password, note, creator)
 }
 
 unsafe fn sys_auth_delete(target: u64) -> i64 {
@@ -941,7 +941,7 @@ unsafe fn sys_auth_verify(password: *const core::ffi::c_char) -> i64 {
 
 unsafe fn sys_auth_create_first(password: *const core::ffi::c_char) -> i64 {
     if password.is_null() { return Errno::EINVAL.as_ret(); }
-    crate::kernel::credo::ffi::pwm_create_first_identity(password) as i64
+    crate::kernel::credo::ffi::pwm_create_first_identity(password)
 }
 
 unsafe fn sys_auth_grant(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
@@ -1110,7 +1110,7 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
     write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
-    write_le32(&mut mbr, 462, hvfs_start as u32);
+    write_le32(&mut mbr, 462, hvfs_start);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
     let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
     write_le32(&mut mbr, 470, hvfs_start);
@@ -1156,7 +1156,7 @@ unsafe fn sys_fat_format(disk_id: u32) -> i64 {
         for s in 1..sectors_per_fat as u32 { if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (lba + s) as u64, &zero) < 0 { return Errno::EIO.as_ret(); } }
     }
     let root_dir_lba = fat_begin + num_fats as u32 * sectors_per_fat as u32;
-    let root_dir_sectors = (root_entries as u32 * 32 + 511) / 512;
+    let root_dir_sectors = (root_entries as u32 * 32).div_ceil(512);
     let zero = [0u8; 512];
     for s in 0..root_dir_sectors { if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (root_dir_lba + s) as u64, &zero) < 0 { return Errno::EIO.as_ret(); } }
     0
@@ -1178,7 +1178,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
     write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
-    write_le32(&mut mbr, 462, (hvfs_start & 0xFFFFFFFF) as u32);
+    write_le32(&mut mbr, 462, hvfs_start & 0xFFFFFFFF);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
     write_le32(&mut mbr, 470, hvfs_start);
     let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
@@ -1193,7 +1193,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
         let phys_end = vma_end.wrapping_sub(HHDM_OFFSET);
         phys_end - (kernel_ptr as usize)
     };
-    let total_kernel_sectors = ((kernel_len + 511) / 512) as u32;
+    let total_kernel_sectors = kernel_len.div_ceil(512) as u32;
     let max_sectors = 2047u32;
     let copy_sectors = if total_kernel_sectors > max_sectors { max_sectors } else { total_kernel_sectors };
     for s in 0..copy_sectors {
@@ -1230,7 +1230,7 @@ unsafe fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
     table.for_each(|proc| {
         if (count as u32) < max_entries {
             let entry = &mut *(buf.add(count as usize * entry_size as usize) as *mut ProcListEntry);
-            entry.pid = proc.pid.0 as u32;
+            entry.pid = proc.pid.0;
             entry.state = proc.get_state() as u8;
             entry._pad = [0u8; 3];
             entry.pwm = proc.get_pwm();
@@ -1584,7 +1584,7 @@ static SIGNAL_HANDLERS: Mutex<[u64; 32]> = Mutex::new([SIG_DFL; 32]);
 static SIGMASK: Mutex<u64> = Mutex::new(0);
 
 unsafe fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
-    if signum < 1 || signum > 31 { return Errno::EINVAL.as_ret(); }
+    if !(1..=31).contains(&signum) { return Errno::EINVAL.as_ret(); }
     let mut handlers = SIGNAL_HANDLERS.lock();
     if oact != 0 {
         let dst = oact as *mut u64;
@@ -1788,7 +1788,7 @@ unsafe fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
 
     let phys_page_aligned = fb_phys & !0xFFF;
     let offset = fb_phys - phys_page_aligned;
-    let pages = ((size + offset + 0xFFF) / 0x1000) as u64;
+    let pages = (size + offset + 0xFFF) / 0x1000;
 
     for i in 0..pages {
         let pa = crate::kernel::mm::PhysAddr(phys_page_aligned + i * 0x1000);

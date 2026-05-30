@@ -223,7 +223,7 @@ pub fn ticks_to_ns(ticks: u64) -> u64 {
 pub fn ms_to_ticks(ms: u64) -> u64 {
     let freq = get_frequency() as u64;
     if freq == 0 { return ms; }
-    (ms * freq + 999) / 1000  // 向上取整
+    (ms * freq).div_ceil(1000)  // 向上取整
 }
 
 /// 将微秒转换为 ticks (向上取整)
@@ -231,7 +231,7 @@ pub fn ms_to_ticks(ms: u64) -> u64 {
 pub fn us_to_ticks(us: u64) -> u64 {
     let freq = get_frequency() as u64;
     if freq == 0 { return us; }
-    (us * freq + 999_999) / 1_000_000
+    (us * freq).div_ceil(1_000_000)
 }
 
 /// 使用预计算的常量进行快速转换 (性能关键路径)

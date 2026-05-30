@@ -160,7 +160,7 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
         }
         FsType::HvFs => {
             let hvfs = get_hvfs();
-            hvfs.read(node_id as u32, buf_slice, count)
+            hvfs.read(node_id, buf_slice, count)
         }
         
         FsType::Unknown => -1,
@@ -231,7 +231,7 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
         }
         FsType::HvFs => {
             let hvfs = get_hvfs();
-            hvfs.write(node_id as u32, buf_slice, count)
+            hvfs.write(node_id, buf_slice, count)
         }
         
         FsType::Unknown => -1,

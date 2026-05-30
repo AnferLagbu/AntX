@@ -395,7 +395,7 @@ impl UserProcManager {
         // Write argv strings + pointers
         let mut str_off = strings_off;
         for i in 0..argc {
-            w64(argv_start_off + i * 8, new_sp.wrapping_add(str_off as u64 - new_sp as u64 + strings_off as u64 - strings_off as u64));
+            w64(argv_start_off + i * 8, new_sp.wrapping_add(str_off as u64 - new_sp + strings_off as u64 - strings_off as u64));
             // Actually compute absolute user-space address:
             let abs_addr = str_off as u64;
             // Write pointer: user-space address
@@ -548,7 +548,7 @@ impl UserProcManager {
                         let dest = (page_phys + KERNEL_BASE + off_in_page) as *mut u8;
                         let src = elf_data.add(file_offset_bytes + (copied as usize));
                         let max_in_page = PAGE_SIZE - off_in_page;
-                        let remaining = (*phdr).p_filesz as u64 - copied;
+                        let remaining = (*phdr).p_filesz - copied;
                         let chunk = if max_in_page < remaining { max_in_page } else { remaining };
                         memcpy(dest, src, chunk);
                         copied += chunk;
@@ -577,7 +577,7 @@ impl UserProcManager {
         
         unsafe {
             let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            let num_code_pages = (code_size + PAGE_SIZE - 1) / PAGE_SIZE;
+            let num_code_pages = code_size.div_ceil(PAGE_SIZE);
             
             for i in 0..num_code_pages {
                 let page = pmm_alloc_page();
@@ -691,7 +691,7 @@ pub fn try_expand_user_stack(fault_addr: u64) -> bool {
         if cr3 == 0 { return false; }
 
         let page_addr = fault_addr & !(PAGE_SIZE - 1);
-        let pages_needed = ((stack_bottom - page_addr) / PAGE_SIZE) as u64;
+        let pages_needed = (stack_bottom - page_addr) / PAGE_SIZE;
 
         for i in 0..pages_needed {
             let vaddr = page_addr + i * PAGE_SIZE;

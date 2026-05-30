@@ -192,7 +192,7 @@ impl KmemCache {
         
         // 为位图预留空间 (每个对象 1 bit)
         let estimated_objects = usable_space / object_size;
-        let bitmap_bytes = (estimated_objects + 7) / 8;
+        let bitmap_bytes = estimated_objects.div_ceil(8);
         let actual_usable = usable_space - bitmap_bytes;
         
         (actual_usable / object_size) as u32
@@ -396,7 +396,7 @@ impl KmemCache {
     /// 创建新的 Slab (分配一页物理内存)
     fn new_slab(&self) -> Option<*mut SlabHeader> {
         extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
-        let pages_needed = (SLAB_DEFAULT_SIZE + 4095) / 4096;
+        let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
         // SAFETY: pmm_alloc_pages returns either null (failure) or a valid
         // page-aligned physical address mapped via KERNEL_BASE.
         let page = unsafe { pmm_alloc_pages(pages_needed as u64) };
@@ -420,7 +420,7 @@ impl KmemCache {
                 next: core::ptr::null_mut(),
             };
 
-            let bitmap_bytes = (self.objects_per_slab + 7) / 8;
+            let bitmap_bytes = self.objects_per_slab.div_ceil(8);
             let bitmap_start = (*slab).start_addr.add(
                 self.objects_per_slab as usize * self.object_size
             );
@@ -432,7 +432,7 @@ impl KmemCache {
                 extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
                 // SAFETY: page was just allocated by pmm_alloc_pages above;
                 // we are freeing it on layout overflow before any use.
-                unsafe { pmm_free_pages(page as *mut core::ffi::c_void, pages_needed as u64); }
+                unsafe { pmm_free_pages(page, pages_needed as u64); }
                 klog_slab!("[SLAB] new_slab: layout overflow (obj_size={}, obj_count={}, bitmap={}B), page={:?}",
                     self.object_size, self.objects_per_slab, bitmap_bytes, page);
                 return None;
@@ -454,7 +454,7 @@ impl KmemCache {
         // we free the same number of pages. Caller guarantees slab
         // is no longer in any list and contains no active objects.
         unsafe {
-            let pages_needed = (SLAB_DEFAULT_SIZE + 4095) / 4096;
+            let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
             extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
             pmm_free_pages(slab as *mut core::ffi::c_void, pages_needed as u64);
         }
@@ -465,7 +465,7 @@ impl KmemCache {
         // was verified to be within page bounds during initialization.
         unsafe {
             let header = &*slab;
-            let bitmap_bytes = ((header.obj_count + 7) / 8) as usize;
+            let bitmap_bytes = header.obj_count.div_ceil(8) as usize;
             let bitmap_start = header.start_addr.add(
                 header.obj_count as usize * self.object_size
             );
@@ -475,7 +475,7 @@ impl KmemCache {
                 if byte == 0xFF {
                     continue;
                 }
-                let bit_idx = byte.trailing_ones() as u32;
+                let bit_idx = byte.trailing_ones();
                 let global_bit = byte_idx as u32 * 8 + bit_idx;
                 if global_bit < header.obj_count {
                     return Some(global_bit);
@@ -736,7 +736,7 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
             unsafe {
                 if let Some(ref mut cache) = GENERAL_CACHES[idx] {
                     match cache.allocate() {
-                        Some(ptr) => ptr as *mut u8,
+                        Some(ptr) => ptr,
                         None => core::ptr::null_mut(),
                     }
                 } else {

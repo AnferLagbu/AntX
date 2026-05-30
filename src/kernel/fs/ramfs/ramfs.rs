@@ -467,7 +467,7 @@ impl RamFsData {
         }
 
         let start_indirect_idx = start_global_idx / INDIRECT_BLOCKS_PER_BLOCK;
-        let end_indirect_idx = (end_global_idx + INDIRECT_BLOCKS_PER_BLOCK - 1) / INDIRECT_BLOCKS_PER_BLOCK;
+        let end_indirect_idx = end_global_idx.div_ceil(INDIRECT_BLOCKS_PER_BLOCK);
 
         for indirect_idx in start_indirect_idx..end_indirect_idx.min(INDIRECT_BLOCKS_PER_BLOCK) {
             let indirect_ptr_addr = double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_idx * 4;

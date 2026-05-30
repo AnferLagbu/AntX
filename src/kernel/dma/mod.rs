@@ -191,7 +191,7 @@ fn virt_to_phys(virt: *const c_void) -> u64 {
 static MMIO_NEXT: AtomicU64 = AtomicU64::new(MMIO_VIRT_BASE);
 
 fn alloc_mmio_virt(size: usize) -> VirtAddr {
-    let pages = (size as u64 + PAGE_SIZE - 1) / PAGE_SIZE;
+    let pages = (size as u64).div_ceil(PAGE_SIZE);
     let aligned_pages = pages.max(1);
     let addr = MMIO_NEXT.fetch_add(aligned_pages * PAGE_SIZE, Ordering::Relaxed);
     VirtAddr(addr)

@@ -84,7 +84,7 @@ impl CompositeBlockDevice {
         drives[..child_drives.len()].copy_from_slice(child_drives);
 
         let stripe_size = stripe_size.max(MIN_STRIPE_SIZE);
-        let stripe_sectors = (stripe_size + 511) / 512;
+        let stripe_sectors = stripe_size.div_ceil(512);
 
         let total: u64;
         let count = child_drives.len() as u64;

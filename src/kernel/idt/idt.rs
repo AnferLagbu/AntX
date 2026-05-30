@@ -603,7 +603,7 @@ impl IdtManager {
 
     /// 处理 IRQ
     pub fn handle_irq(&self, frame: *mut InterruptFrame, vector: u8) {
-        let irq = (vector - IRQ_BASE) as u8;
+        let irq = vector - IRQ_BASE;
 
         if irq < 16 {
             self.stats.record_irq(irq);

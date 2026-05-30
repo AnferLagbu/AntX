@@ -118,7 +118,7 @@ pub extern "C" fn rust_syscall_is_valid(num: u64) -> bool {
 /// This function is reentrant and has no side effects. It may be called
 /// from any context (interrupt, user syscall, or kernel init).
 pub unsafe extern "C" fn rust_syscall_count() -> u64 {
-    MAX_SYSCALLS as u64
+    MAX_SYSCALLS
 }
 
 // ==================== 测试辅助函数 ====================

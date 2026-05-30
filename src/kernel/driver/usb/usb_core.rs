@@ -434,7 +434,7 @@ impl UsbCore {
     
     /// 枚举所有设备
     pub fn enumerate_devices(&mut self) -> Result<()> {
-        let controllers: Vec<*mut dyn HostController> = self.controllers.iter().copied().collect();
+        let controllers: Vec<*mut dyn HostController> = self.controllers.to_vec();
         for &controller_ptr in &controllers {
             let controller = unsafe { &mut *controller_ptr };
             

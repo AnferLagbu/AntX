@@ -77,7 +77,7 @@ pub const NICE_TO_WEIGHT: [u64; 40] = [
 /// Convert nice value to scheduling weight.
 #[inline]
 pub fn nice_to_weight(nice: i8) -> u64 {
-    let clamped = if nice < -20 { -20 } else if nice > 19 { 19 } else { nice };
+    let clamped = nice.clamp(-20, 19);
     let idx = (clamped + 20) as usize;
     NICE_TO_WEIGHT[idx]
 }
@@ -95,7 +95,7 @@ pub fn weight_to_nice(weight: u64) -> i8 {
     let mut best = 0i8;
     let mut best_diff = u64::MAX;
     for (i, &w) in NICE_TO_WEIGHT.iter().enumerate() {
-        let diff = if w >= weight { w - weight } else { weight - w };
+        let diff = w.abs_diff(weight);
         if diff < best_diff {
             best_diff = diff;
             best = (i as i32 - 20) as i8;

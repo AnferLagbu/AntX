@@ -57,7 +57,7 @@ pub fn shm_create_safe(
         };
 
         // 计算需要的页数并分配物理内存
-        let pages = (size + 4095) / 4096;
+        let pages = size.div_ceil(4096);
         
         let phys = crate::kernel::mm::ffi::pmm_alloc_pages(pages as usize);
         
@@ -183,7 +183,7 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
         }
 
         // 释放物理页
-        let pages = (shm.size + 4095) / 4096;
+        let pages = shm.size.div_ceil(4096);
         crate::kernel::mm::ffi::pmm_free_pages(shm.phys_addr as *mut core::ffi::c_void, pages as usize);
 
         // 清理结构体

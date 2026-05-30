@@ -129,9 +129,9 @@ impl ProcfsData {
                     write_str(buf, &mut pos, "\nCores: ");
                     let cores = info.topology.physical_cores;
                     if cores >= 10 {
-                        buf[pos] = (cores / 10) as u8 + b'0'; pos += 1;
+                        buf[pos] = (cores / 10) + b'0'; pos += 1;
                     }
-                    buf[pos] = (cores % 10) as u8 + b'0'; pos += 1;
+                    buf[pos] = (cores % 10) + b'0'; pos += 1;
                     write_str(buf, &mut pos, "\n");
                 }
                 None => {

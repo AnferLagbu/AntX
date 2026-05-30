@@ -170,7 +170,7 @@ impl PhysicalMemoryManager {
         let info = self.info.get();
         let total_pages = info.total_pages as usize;
         let total_bits = total_pages;
-        let bitmap_words = (total_bits + 31) / 32;
+        let bitmap_words = total_bits.div_ceil(32);
         let bitmap_bytes = bitmap_words * 4;
 
         // ---- Bitmap placement ----
@@ -196,7 +196,7 @@ impl PhysicalMemoryManager {
         let buddy_meta_bytes = total_pages;
         let buddy_meta_phys = (bitmap_aligned + bitmap_bytes as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let buddy_meta_virt = buddy_meta_phys + KERNEL_BASE;
-        let buddy_meta_pages = ((buddy_meta_bytes + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize) as u64;
+        let buddy_meta_pages = buddy_meta_bytes.div_ceil(PAGE_SIZE as usize) as u64;
 
         // Update early_current past the buddy metadata
         self.early_current.store(
@@ -226,7 +226,7 @@ impl PhysicalMemoryManager {
 
         // Mark bitmap pages as used
         let bmp_start_page = phys_to_page(bitmap_aligned) as usize;
-        let bmp_pages = ((bitmap_bytes as u64 + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
+        let bmp_pages = (bitmap_bytes as u64).div_ceil(PAGE_SIZE) as usize;
         for i in bmp_start_page..(bmp_start_page + bmp_pages).min(total_pages) {
             self.set_bit(i);
         }
@@ -302,7 +302,7 @@ impl PhysicalMemoryManager {
                 let np = (size_type.size() / PAGE_SIZE) as usize;
                 self.acquire_lock();
                 let result = self.buddy_direct_alloc_aligned(np, size_type.size());
-                if let Some(_) = &result { self.total_allocs.fetch_add(np as u64, Ordering::Relaxed); }
+                if result.is_some() { self.total_allocs.fetch_add(np as u64, Ordering::Relaxed); }
                 else { self.failed_allocs.fetch_add(1, Ordering::Relaxed); }
                 self.release_lock();
                 result
@@ -438,7 +438,7 @@ impl PhysicalMemoryManager {
 
     #[inline]
     fn buddy_meta_ptr(&self) -> *mut u8 {
-        self.buddy_meta.get().map(|n| n.as_ptr()).unwrap_or(core::ptr::null_mut())
+        self.buddy_meta.get().map(|n| n.as_ptr()).unwrap_or_default()
     }
 
     #[inline]
@@ -645,7 +645,7 @@ impl PhysicalMemoryManager {
                 let mut order = max_order;
                 while order > 0 {
                     let size = 1usize << order as usize;
-                    if (cur as usize) % size == 0 && size <= remaining {
+                    if (cur as usize).is_multiple_of(size) && size <= remaining {
                         break;
                     }
                     order -= 1;
@@ -668,7 +668,7 @@ impl PhysicalMemoryManager {
         let align_pages = (alignment / PAGE_SIZE) as usize;
         let mut i = align_pages; // skip page 0
         while i + count <= total {
-            if i % align_pages == 0 {
+            if i.is_multiple_of(align_pages) {
                 let mut ok = true;
                 for j in 0..count {
                     if self.test_bit(i + j) { ok = false; break; }

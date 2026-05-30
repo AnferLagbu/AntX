@@ -300,7 +300,7 @@ impl Driver for E1000Device {
 
     #[cfg(not(feature = "kernel_test"))]
     fn init(&mut self) -> Result<()> {
-        if self.mmio_base.is_null() || self.mmio_base == core::ptr::null_mut() {
+        if self.mmio_base.is_null() || self.mmio_base.is_null() {
             return Err(DriverError::NotInitialized);
         }
 
@@ -881,7 +881,7 @@ pub extern "C" fn e1000_poll_rx() {
                 let icr = mmio_read32(dev.mmio_base, E1000_ICR);
                 let rdh = mmio_read32(dev.mmio_base, E1000_RDH);
                 let rdt = mmio_read32(dev.mmio_base, E1000_RDT);
-                if poll_n % 50000 == 0 {
+                if poll_n.is_multiple_of(50000) {
                     klog_debug!(Net, "e1000_poll[{}]: RDH={} RDT={} tail={} ICR=0x{:x} rx={}", 
                         poll_n, rdh, rdt, dev.rx_tail, icr, dev.rx_count);
                 }

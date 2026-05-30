@@ -131,7 +131,7 @@ pub fn pit_init(frequency_hz: u32) -> Result<u32, &'static str> {
     // 计算分频值
     let divisor = (PIT_BASE_FREQUENCY / frequency_hz as u64) as u16;
 
-    if divisor < PIT_MIN_COUNT || divisor > PIT_MAX_COUNT {
+    if !(PIT_MIN_COUNT..=PIT_MAX_COUNT).contains(&divisor) {
         return Err("Divisor out of range");
     }
 

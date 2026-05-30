@@ -203,7 +203,7 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> P
 
 fn is_stack_expansion_candidate(addr: usize) -> bool {
     let a = addr as u64;
-    a >= USER_STACK_TOP - USER_STACK_DEFAULT_SIZE && a < USER_STACK_TOP
+    (USER_STACK_TOP - USER_STACK_DEFAULT_SIZE..USER_STACK_TOP).contains(&a)
 }
 
 fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {

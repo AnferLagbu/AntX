@@ -635,7 +635,7 @@ impl HvfsData {
         let name = path.trim_start_matches('/');
         let obj_id = {
             let datasets = self.datasets.lock();
-            match datasets[0].lookup(name) { Some(id) => Some(id), None => None }
+            datasets[0].lookup(name)
         };
         let obj_id = match obj_id { Some(id) => id, None => return KernelError::NotFound.as_i32() };
         let obj = {

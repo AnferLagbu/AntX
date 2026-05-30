@@ -215,7 +215,7 @@ impl DevfsData {
             }
             DEV_TYPE_CREDO => {
                 let input = core::str::from_utf8(buf).unwrap_or("");
-                let input = input.trim_end_matches(|c| c == '\n' || c == '\r' || c == '\0');
+                let input = input.trim_end_matches(['\n', '\r', '\0']);
                 let mut parts = input.splitn(2, '\n');
                 let note = parts.next().unwrap_or("").trim();
                 let password = parts.next().unwrap_or("").trim();

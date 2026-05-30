@@ -142,7 +142,7 @@ pub fn rollback_layer_parallel(layer: &DependencyLayer, worker_id: usize) -> usi
     }
     
     let max_workers = config::RECOVERY_CONFIG.parallel_max_workers as usize;
-    let chunk_size = (count + max_workers - 1) / max_workers;
+    let chunk_size = count.div_ceil(max_workers);
     let start = worker_id * chunk_size;
     let end = (start + chunk_size).min(count);
     

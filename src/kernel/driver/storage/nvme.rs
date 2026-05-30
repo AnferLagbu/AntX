@@ -268,7 +268,7 @@ pub struct NvmeCompletion {
 impl NvmeCompletion {
     /// 阶段标记匹配 = 完成
     pub fn is_completed(&self, phase: u16) -> bool {
-        (self.status & 0x01) as u16 == phase
+        (self.status & 0x01) == phase
     }
 
     pub fn status_code(&self) -> u16 {

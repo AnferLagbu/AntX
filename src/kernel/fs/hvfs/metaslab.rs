@@ -38,7 +38,7 @@ unsafe impl Sync for HvMetaslab {}
 impl HvMetaslab {
     pub fn new(id: u32, vdev_id: u16, start: u64, size: u64) -> Self {
         let nblocks = (size / HV_MS_BLOCK_SIZE) as u32;
-        let bitmap_len = ((nblocks as usize) + 63) / 64;
+        let bitmap_len = (nblocks as usize).div_ceil(64);
         let mut bitmap = Vec::with_capacity(bitmap_len);
         bitmap.resize(bitmap_len, !0u64);
         let free = size;
@@ -62,7 +62,7 @@ impl HvMetaslab {
 
     pub fn alloc(&mut self, size: u64) -> Option<u64> {
         if size == 0 || size > self.size { return None; }
-        let nblocks = ((size + HV_MS_BLOCK_SIZE - 1) / HV_MS_BLOCK_SIZE) as u32;
+        let nblocks = size.div_ceil(HV_MS_BLOCK_SIZE) as u32;
         if nblocks > self.max_block { return None; }
         let start = self.find_contiguous(nblocks)?;
         for b in start..start + nblocks {
@@ -78,7 +78,7 @@ impl HvMetaslab {
     pub fn free(&mut self, offset: u64, size: u64) {
         let rel = offset.saturating_sub(self.start);
         let start_block = (rel / HV_MS_BLOCK_SIZE) as u32;
-        let nblocks = ((size + HV_MS_BLOCK_SIZE - 1) / HV_MS_BLOCK_SIZE) as u32;
+        let nblocks = size.div_ceil(HV_MS_BLOCK_SIZE) as u32;
         for b in start_block..start_block + nblocks {
             if (b as usize) < self.max_block as usize {
                 self.set_bit(b);

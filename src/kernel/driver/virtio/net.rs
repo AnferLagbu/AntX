@@ -243,7 +243,7 @@ impl VirtioNet {
             }
 
             // Allocate a buffer for this RX slot
-            let pages = (RX_BUFFER_SIZE + 4095) / 4096;
+            let pages = RX_BUFFER_SIZE.div_ceil(4096);
             extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
             let buf = unsafe { pmm_alloc_pages(pages as u64) };
             if buf.is_null() {

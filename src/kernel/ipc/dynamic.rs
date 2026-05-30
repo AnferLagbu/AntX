@@ -86,7 +86,7 @@ impl DynIpcNamespace {
             return Err(-1);
         }
 
-        let pages = (size as usize + 4095) / 4096;
+        let pages = (size as usize).div_ceil(4096);
         let phys = crate::kernel::mm::ffi::pmm_alloc_pages(pages);
         if phys.is_null() {
             return Err(-3);
@@ -112,7 +112,7 @@ impl DynIpcNamespace {
         let mut segs = self.shm_segs.lock();
         let pos = segs.iter().position(|s| s.id == id).ok_or(-1)?;
         let seg = segs.remove(pos);
-        let pages = (seg.size as usize + 4095) / 4096;
+        let pages = (seg.size as usize).div_ceil(4096);
         crate::kernel::mm::ffi::pmm_free_pages(seg.phys_addr as *mut core::ffi::c_void, pages);
         Ok(())
     }

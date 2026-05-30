@@ -263,7 +263,7 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwm: u64) -> i32 {
         return -1;
     }
 
-    let pages = (file_size + 4096u64 - 1) / 4096u64;
+    let pages = file_size.div_ceil(4096u64);
     let buffer = unsafe { pmm_alloc_pages(pages) };
     if buffer.is_null() {
         unsafe { crate::kernel::fs::vfs::ffi::vfs_close(fd as u32) };
@@ -278,14 +278,14 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwm: u64) -> i32 {
 
     if bytes_read <= 0 {
         extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
-        unsafe { pmm_free_pages(buffer as *mut core::ffi::c_void, pages as u64) };
+        unsafe { pmm_free_pages(buffer, pages as u64) };
         return -1;
     }
 
     let result = USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwm);
 
     extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
-    unsafe { pmm_free_pages(buffer as *mut core::ffi::c_void, pages as u64) };
+    unsafe { pmm_free_pages(buffer, pages as u64) };
 
     result
 }
@@ -660,10 +660,10 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
         let sid = PROCESS_TABLE.get(pid)
             .map(|p| unsafe { (*p).session_id.load(Ordering::SeqCst) });
         PROCESS_TABLE.remove_and_free(pid);
-        if let Some(sid) = sid.and_then(|s| if s != 0 { Some(s) } else { None }) {
+        if let Some(sid) = sid.filter(|&s| s != 0) {
             SESSION_MANAGER.destroy(sid);
         }
-        USER_PROC_MANAGER.destroy_by_pid(pid as u32);
+        USER_PROC_MANAGER.destroy_by_pid(pid);
         return 0;
     }
 
@@ -744,7 +744,7 @@ pub extern "C" fn proc_sleep_ms(ms: u64) {
     extern "C" { fn timer_get_ticks() -> u64; }
     let current_ticks = unsafe { timer_get_ticks() };
     // 假设每 tick = 10ms (100Hz), 转换 ms → ticks (最少 1 tick)
-    let ticks_to_sleep = (ms + 9) / 10;
+    let ticks_to_sleep = ms.div_ceil(10);
     if ticks_to_sleep == 0 { return; }
     
     let wakeup_at = current_ticks + ticks_to_sleep;

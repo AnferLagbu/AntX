@@ -19,7 +19,7 @@ impl HvZapEntry {
     pub fn new(name: &str, value: &[u8]) -> Self {
         let mut n = [0u8; HV_ZAP_MAX_NAME];
         let mut v = [0u8; HV_ZAP_MAX_VALUE];
-        let nlen = name.as_bytes().len().min(HV_ZAP_MAX_NAME);
+        let nlen = name.len().min(HV_ZAP_MAX_NAME);
         let vlen = value.len().min(HV_ZAP_MAX_VALUE);
         n[..nlen].copy_from_slice(&name.as_bytes()[..nlen]);
         v[..vlen].copy_from_slice(&value[..vlen]);

@@ -202,7 +202,7 @@ impl SysMbox {
         
         let idx = self.head.load(Ordering::Acquire) as usize;
         let msg = self.messages[idx];
-        self.head.store((idx as i32 + 1) as i32 % SYS_MBOX_SIZE as i32, Ordering::Release);
+        self.head.store(((idx as i32 + 1)) % SYS_MBOX_SIZE as i32, Ordering::Release);
         self.count.fetch_sub(1, Ordering::AcqRel);
         
         self.sem_full.signal();

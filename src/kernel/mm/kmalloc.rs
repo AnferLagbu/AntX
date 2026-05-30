@@ -535,7 +535,7 @@ impl KernelHeap {
 
     /// Expand the heap by requesting more pages from VMM/PMM
     fn expand_heap(&self, size: u64) -> Option<*mut u8> {
-        let pages_needed = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+        let pages_needed = size.div_ceil(PAGE_SIZE);
         let expand_by = pages_needed * PAGE_SIZE;
         
         let vmm = get_vmm();
@@ -578,7 +578,7 @@ impl KernelHeap {
             return None;
         }
         
-        let ptr = unsafe { self.early_buffer.as_ptr().offset(current as isize) as *mut u8 };
+        let ptr = unsafe { self.early_buffer.as_ptr().add(current) as *mut u8 };
         
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {

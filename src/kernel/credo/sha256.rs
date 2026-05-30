@@ -34,7 +34,7 @@ const INITIAL_STATE: [u32; 8] = [
 /// Right rotate operation
 #[inline(always)]
 fn rotr(x: u32, n: u32) -> u32 {
-    (x >> n) | (x << (32 - n))
+    x.rotate_right(n)
 }
 
 /// Process a single 512-bit block

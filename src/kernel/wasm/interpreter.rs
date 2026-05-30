@@ -327,7 +327,7 @@ impl Interpreter {
             }
         }
 
-        while let Some(_) = self.call_stack.last() {
+        while self.call_stack.last().is_some() {
             let opcode = {
                 let frame = self.call_stack.last().unwrap();
                 if frame.pc >= frame.code.len() {

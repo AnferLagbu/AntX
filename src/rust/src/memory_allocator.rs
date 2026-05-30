@@ -39,7 +39,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             }
         }
 
-        let pages_needed = (size + tag_offset + 4095) / 4096;
+        let pages_needed = (size + tag_offset).div_ceil(4096);
         let tag: u64 = if pages_needed == 1 { TAG_PMM_PAGE } else { TAG_PMM_PAGES };
 
         if pages_needed == 1 {
@@ -82,7 +82,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 }
                 TAG_PMM_PAGES => {
                     let phys_addr = (raw as u64) - KERNEL_BASE;
-                    let pages_needed = ((size + TAG_SIZE + 4095) / 4096) as u64;
+                    let pages_needed = (size + TAG_SIZE).div_ceil(4096) as u64;
                     pmm_free_pages(phys_addr as *mut core::ffi::c_void, pages_needed);
                 }
                 _ => {
@@ -90,7 +90,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 }
             }
         } else {
-            let pages = ((size + 4095) / 4096) as u64;
+            let pages = size.div_ceil(4096) as u64;
             let phys_addr = (ptr as u64) - KERNEL_BASE;
             if pages <= 1 {
                 pmm_free_page(phys_addr as *mut core::ffi::c_void);

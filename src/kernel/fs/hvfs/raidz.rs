@@ -58,7 +58,7 @@ impl HvRaidzMap {
         let nparity = level.parity_cols();
         Self {
             level,
-            ncols: ncols.max(HV_RAIDZ_MIN_COLS).min(HV_RAIDZ_MAX_COLS),
+            ncols: ncols.clamp(HV_RAIDZ_MIN_COLS, HV_RAIDZ_MAX_COLS),
             nparity,
             ashift,
             cols: Vec::new(),
@@ -73,7 +73,7 @@ impl HvRaidzMap {
         let unit_size = 4096;
         let data_cols = self.data_cols();
         if data_cols == 0 { return Vec::new(); }
-        let total_units = (data.len() + unit_size * data_cols - 1) / (unit_size * data_cols);
+        let total_units = data.len().div_ceil(unit_size * data_cols);
         let mut result: Vec<Vec<u8>> = (0..self.ncols).map(|_| Vec::new()).collect();
         for unit_idx in 0..total_units {
             for col in 0..data_cols {

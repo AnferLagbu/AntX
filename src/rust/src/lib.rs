@@ -104,10 +104,10 @@ fn panic(info: &PanicInfo) -> ! {
         );
     }
     let reg_names: [[u8; 4]; 16] = [
-        [b'R', b'A', b'X', b' '], [b'R', b'B', b'X', b' '], [b'R', b'C', b'X', b' '], [b'R', b'D', b'X', b' '],
-        [b'R', b'S', b'I', b' '], [b'R', b'D', b'I', b' '], [b'R', b'B', b'P', b' '], [b'R', b'S', b'P', b' '],
-        [b'R', b'8', b' ', b' '], [b'R', b'9', b' ', b' '], [b'R', b'1', b'0', b' '], [b'R', b'1', b'1', b' '],
-        [b'R', b'1', b'2', b' '], [b'R', b'1', b'3', b' '], [b'R', b'1', b'4', b' '], [b'R', b'1', b'5', b' '],
+        *b"RAX ", *b"RBX ", *b"RCX ", *b"RDX ",
+        *b"RSI ", *b"RDI ", *b"RBP ", *b"RSP ",
+        *b"R8  ", *b"R9  ", *b"R10 ", *b"R11 ",
+        *b"R12 ", *b"R13 ", *b"R14 ", *b"R15 ",
     ];
     #[allow(unused_mut)]
     let mut cr2: u64 = 0;

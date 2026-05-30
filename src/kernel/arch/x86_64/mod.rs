@@ -48,7 +48,7 @@ impl CoreArch for X8664 {
             return id;
         }
         let (_, ebx, _, _) = crate::kernel::cpu::cpuid::cpuid(1, 0);
-        (ebx >> 24) as u32
+        ebx >> 24
     }
 
     /// 获取高精度时间戳 (rdtsc)。

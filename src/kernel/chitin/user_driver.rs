@@ -185,7 +185,7 @@ pub fn devtree_map_user_device(
     if phys_addr.checked_add(clamped_size as u64).is_none() {
         return Err(UserDriverError::new(ERR_NO_MMIO));
     }
-    let pages = (clamped_size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+    let pages = clamped_size.div_ceil(PAGE_SIZE as usize);
 
     let map_base = match mm.find_free_range(pages * PAGE_SIZE as usize) {
         Some(addr) => addr,
@@ -266,7 +266,7 @@ pub fn devtree_unmap_user_device(
         return Ok(());
     }
 
-    let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+    let pages = size.div_ceil(PAGE_SIZE as usize);
     if virt_addr.checked_add(size).is_none() {
         return Err(UserDriverError::new(ERR_NO_MMIO));
     }

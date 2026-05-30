@@ -112,7 +112,7 @@ impl RecoveryManager {
                 }
                 // Reset CPU quota per period
                 if dom.cpu_quota_period > 0
-                    && current_tick % dom.cpu_quota_period == 0
+                    && current_tick.is_multiple_of(dom.cpu_quota_period)
                 {
                     dom.reset_quota();
                 }

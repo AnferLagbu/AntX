@@ -828,13 +828,13 @@ impl Scheduler {
         crate::kernel::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
 
         // Periodic CFS boost — prevent vruntime starvation
-        if new_tick % CFS_BOOST_INTERVAL_TICKS == 0 {
+        if new_tick.is_multiple_of(CFS_BOOST_INTERVAL_TICKS) {
             let mut cfs_rq = per_cpu.cfs_rq.lock();
             cfs_rq.boost_all_vruntime();
         }
 
         // Periodic MLFQ boost — migrate long-wait tasks to level 0
-        if new_tick % SCHED_BOOST_INTERVAL == 0 {
+        if new_tick.is_multiple_of(SCHED_BOOST_INTERVAL) {
             self.boost_priority();
         }
 
@@ -971,7 +971,7 @@ impl Scheduler {
 
         // Zombie cleanup
         let socks_clean_interval: u64 = 1000;
-        if new_tick % socks_clean_interval == 0 {
+        if new_tick.is_multiple_of(socks_clean_interval) {
             let mut to_reap: [Pid; 16] = [0; 16];
             let mut reap_count = 0;
             for pid in 1..=255 {
@@ -1004,7 +1004,7 @@ impl Scheduler {
         }
 
         // Periodic load balance
-        if new_tick % 64 == 0 {
+        if new_tick.is_multiple_of(64) {
             let local_load = self.total_runnable_for(crate::kernel::smp::get_current_cpu());
             if local_load < 2 {
                 self.load_balance();

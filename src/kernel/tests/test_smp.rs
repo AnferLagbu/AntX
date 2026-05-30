@@ -176,7 +176,7 @@ fn test_user_proc_manager_destroy_no_kstack() -> TestResult {
     if pid == 0 {
         return TestResult::Skip("no user process to test destroy_no_kstack");
     }
-    if USER_PROC_MANAGER.get(pid as u32).is_none() {
+    if USER_PROC_MANAGER.get(pid ).is_none() {
         return TestResult::Skip("current PID not tracked in USER_PROC_MANAGER");
     }
     TestResult::Pass

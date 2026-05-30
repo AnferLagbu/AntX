@@ -474,7 +474,7 @@ pub extern "C" fn mutex_owner(m: *const MutexInner) -> i32 {
         return -1;
     }
     
-    unsafe { (*m).owner.load(Ordering::Acquire) as i32}
+    unsafe { (*m).owner.load(Ordering::Acquire)}
 }
 
 /// 带超时的互斥锁获取 (简化版，暂不支持超时)

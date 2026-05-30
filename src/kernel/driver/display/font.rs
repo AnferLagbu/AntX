@@ -130,5 +130,5 @@ use spin::Once;
 static DEFAULT_FONT: Once<Font> = Once::new();
 
 pub fn default_font() -> &'static Font {
-    DEFAULT_FONT.call_once(|| Font::builtin_8x16())
+    DEFAULT_FONT.call_once(Font::builtin_8x16)
 }

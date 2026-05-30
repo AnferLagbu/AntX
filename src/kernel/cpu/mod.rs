@@ -355,20 +355,20 @@ impl CpuSignature {
         let mut i = 0usize;
         
         // Family
-        if fam >= 100 { buf[i] = (fam / 100) as u8 + b'0'; i += 1; }
-        if fam >= 10 { buf[i] = ((fam / 10) % 10) as u8 + b'0'; i += 1; }
-        buf[i] = (fam % 10) as u8 + b'0'; i += 1;
+        if fam >= 100 { buf[i] = (fam / 100) + b'0'; i += 1; }
+        if fam >= 10 { buf[i] = ((fam / 10) % 10) + b'0'; i += 1; }
+        buf[i] = (fam % 10) + b'0'; i += 1;
         buf[i] = b'-'; i += 1;
         
         // Model
-        if mod_ >= 100 { buf[i] = (mod_ / 100) as u8 + b'0'; i += 1; }
-        if mod_ >= 10 { buf[i] = ((mod_ / 10) % 10) as u8 + b'0'; i += 1; }
-        buf[i] = (mod_ % 10) as u8 + b'0'; i += 1;
+        if mod_ >= 100 { buf[i] = (mod_ / 100) + b'0'; i += 1; }
+        if mod_ >= 10 { buf[i] = ((mod_ / 10) % 10) + b'0'; i += 1; }
+        buf[i] = (mod_ % 10) + b'0'; i += 1;
         buf[i] = b'-'; i += 1;
         
         // Stepping
-        buf[i] = (step / 10) as u8 + b'0'; i += 1;
-        buf[i] = (step % 10) as u8 + b'0';
+        buf[i] = (step / 10) + b'0'; i += 1;
+        buf[i] = (step % 10) + b'0';
         
         buf
     }
@@ -1020,17 +1020,17 @@ fn detect_cache(cache_out: &mut CacheInfo,
     else if vendor == CpuVendor::Amd && max_ext >= 0x8000_0006 {
         // L1 Data/Instruction (Leaf 80000005)
         let (_, _, ecx_l1, edx_l1) = cpuid::cpuid(0x8000_0005, 0);
-        cache_out.l1d_size = ((ecx_l1 >> 24) as u32) * 1024;  // KB → Bytes
-        cache_out.l1i_size = ((edx_l1 >> 24) as u32) * 1024;
+        cache_out.l1d_size = ((ecx_l1 >> 24)) * 1024;  // KB → Bytes
+        cache_out.l1i_size = ((edx_l1 >> 24)) * 1024;
         
         // L2 Unified (Leaf 80000006)
         let (_, _, ecx_l2, _) = cpuid::cpuid(0x8000_0006, 0);
-        cache_out.l2_size = ((ecx_l2 >> 16) as u32) * 1024;
+        cache_out.l2_size = ((ecx_l2 >> 16)) * 1024;
         
         // L3 (Leaf 80000008, 可选)
         if max_ext >= 0x8000_0008 {
             let (_, _, ecx_l3, _) = cpuid::cpuid(0x8000_0008, 0);
-            let l3_size_kb = ((ecx_l3 >> 18) as u32) * 512; // 单位: 512KB
+            let l3_size_kb = ((ecx_l3 >> 18)) * 512; // 单位: 512KB
             if l3_size_kb > 0 {
                 cache_out.l3_size = l3_size_kb * 1024; // KB → Bytes
             }

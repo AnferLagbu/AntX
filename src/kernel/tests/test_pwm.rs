@@ -96,7 +96,7 @@ fn test_pwmentry_flags() -> TestResult {
     entry.add_flags(PwmFlags::DISABLED);
     check!(entry.has_flag(PwmFlags::DISABLED), "should be disabled after add");
 
-    check!(engine::check(entry.pwm.load(core::sync::atomic::Ordering::Acquire), CapDomain::FS, CapBits::ALL) == false, "disabled entry should fail check");
+    check!(!engine::check(entry.pwm.load(core::sync::atomic::Ordering::Acquire), CapDomain::FS, CapBits::ALL), "disabled entry should fail check");
 
     entry.remove_flags(PwmFlags::DISABLED);
     check!(!entry.has_flag(PwmFlags::DISABLED), "should not be disabled after remove");

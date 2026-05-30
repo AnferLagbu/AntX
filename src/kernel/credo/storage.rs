@@ -8,7 +8,7 @@ use super::identity;
 use core::sync::atomic::Ordering;
 
 const DB_PATH: &str = "/pwm.db";
-const DB_MAGIC: [u8; 4] = [b'P', b'W', b'I', b'D'];
+const DB_MAGIC: [u8; 4] = *b"PWID";
 const DB_VER_MAJOR: u16 = 5;
 const DB_VER_MINOR: u16 = 0;
 

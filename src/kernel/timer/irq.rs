@@ -45,7 +45,7 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
                 unsafe { sys_check_timeouts(); }
 
                 let t = crate::kernel::timer::get_ticks();
-                if t % 10 == 0 {
+                if t.is_multiple_of(10) {
                     unsafe { e1000_poll_rx(); }
                 }
             }

@@ -362,7 +362,7 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     serial_write_bytes(msg);
     serial_impl::serial_putc(b'\n');
 
-    crate::arch!(interrupt_restore(saved_if as usize));
+    crate::arch!(interrupt_restore(saved_if));
 
     let ring = unsafe { &mut *RING.inner.get() };
     ring.push_str(ts);

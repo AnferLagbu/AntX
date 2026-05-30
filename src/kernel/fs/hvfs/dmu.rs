@@ -248,7 +248,7 @@ impl HvObjSet {
     pub fn update_obj(&self, obj: &HvDmuObject) -> bool {
         let mut objs = self.objects.lock();
         if let Some(existing) = objs.iter_mut().find(|o| o.obj_id == obj.obj_id) {
-            *existing = obj.clone();
+            *existing = *obj;
             true
         } else {
             false

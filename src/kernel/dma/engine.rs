@@ -51,7 +51,7 @@ impl DmaEngine {
         // Drop all coherent mappings which release their pages
         for m in mappings.drain(..) {
             if m.is_coherent {
-                let pages = (m.size as u64 + PAGE_SIZE - 1) / PAGE_SIZE;
+                let pages = (m.size as u64).div_ceil(PAGE_SIZE);
                 get_pmm().free_pages(m.dma_addr, pages as usize);
             }
         }
@@ -59,7 +59,7 @@ impl DmaEngine {
         // Clear mmio regions
         let mut regions = self.mmio_regions.lock();
         for (virt, _phys, size) in regions.drain(..) {
-            let pages = (size as u64 + PAGE_SIZE - 1) / PAGE_SIZE;
+            let pages = (size as u64).div_ceil(PAGE_SIZE);
             for i in 0..pages {
                 get_vmm().unmap_page(VirtAddr(virt.0 + i * PAGE_SIZE));
             }
@@ -82,7 +82,7 @@ impl DmaEngine {
             return None;
         }
 
-        let pages = (size as u64 + PAGE_SIZE - 1) / PAGE_SIZE;
+        let pages = (size as u64).div_ceil(PAGE_SIZE);
 
         let phys = match get_pmm().alloc_pages(pages as usize) {
             Some(p) => p,
@@ -125,7 +125,7 @@ impl DmaEngine {
         }
 
         let phys_addr = get_vmm().get_physical(cpu_addr);
-        let pages = (size as u64 + PAGE_SIZE - 1) / PAGE_SIZE;
+        let pages = (size as u64).div_ceil(PAGE_SIZE);
 
         if let Some(phys) = phys_addr {
             get_pmm().free_pages(phys, pages as usize);
@@ -158,7 +158,7 @@ impl DmaEngine {
             return None;
         }
 
-        let pages = (size as u64 + PAGE_SIZE - 1) / PAGE_SIZE;
+        let pages = (size as u64).div_ceil(PAGE_SIZE);
         let virt = alloc_mmio_virt(size);
 
         let flags = PageFlags::PRESENT
@@ -190,7 +190,7 @@ impl DmaEngine {
             return;
         }
 
-        let pages = (size as u64 + PAGE_SIZE - 1) / PAGE_SIZE;
+        let pages = (size as u64).div_ceil(PAGE_SIZE);
         for i in 0..pages {
             get_vmm().unmap_page(VirtAddr(virt_addr.0 + i * PAGE_SIZE));
         }

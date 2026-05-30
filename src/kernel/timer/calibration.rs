@@ -131,7 +131,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     let tsc_freq_mhz = tsc_freq_hz / 1_000_000;
 
     // 验证合理性 (应该在合理范围内: 100 MHz - 10 GHz)
-    if tsc_freq_mhz < 100 || tsc_freq_mhz > 10_000 {
+    if !(100..=10_000).contains(&tsc_freq_mhz) {
         return Err("Calibrated frequency out of reasonable range");
     }
 
