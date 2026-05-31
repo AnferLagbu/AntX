@@ -20,6 +20,7 @@ macro_rules! klog_pmm {
 }
 
 use super::*;
+use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 use core::cell::{Cell, UnsafeCell};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
@@ -59,7 +60,9 @@ fn count_to_order(count: usize) -> u8 {
     if count <= 1 {
         return 0;
     }
-    let order = (usize::BITS - 1 - (count - 1).leading_zeros()) as u8;
+    // ceil(log2(count)) = floor(log2(count - 1)) + 1
+    // = BITS - (count - 1).leading_zeros()
+    let order = (usize::BITS - (count - 1).leading_zeros()) as u8;
     if order > MAX_BUDDY_ORDER {
         MAX_BUDDY_ORDER
     } else {
@@ -280,7 +283,7 @@ impl PhysicalMemoryManager {
     }
 
     pub fn alloc_page(&self) -> Option<PhysAddr> {
-        self.acquire_lock();
+        let flags = self.acquire_lock();
         let result = self.do_alloc(0);
         match result {
             Some(_) => {
@@ -290,7 +293,7 @@ impl PhysicalMemoryManager {
                 self.failed_allocs.fetch_add(1, Ordering::Relaxed);
             }
         }
-        self.release_lock();
+        self.release_lock(&flags);
         result
     }
 
@@ -298,10 +301,10 @@ impl PhysicalMemoryManager {
         if addr.0 == 0 {
             return;
         }
-        self.acquire_lock();
+        let flags = self.acquire_lock();
         self.do_free(addr, 0);
         self.total_frees.fetch_add(1, Ordering::Relaxed);
-        self.release_lock();
+        self.release_lock(&flags);
     }
 
     pub fn alloc_pages(&self, count: usize) -> Option<PhysAddr> {
@@ -311,7 +314,7 @@ impl PhysicalMemoryManager {
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
 
-        self.acquire_lock();
+        let flags = self.acquire_lock();
         let result = self.do_alloc(order);
         match result {
             Some(_) => {
@@ -322,7 +325,7 @@ impl PhysicalMemoryManager {
                 self.failed_allocs.fetch_add(1, Ordering::Relaxed);
             }
         }
-        self.release_lock();
+        self.release_lock(&flags);
         result
     }
 
@@ -332,10 +335,10 @@ impl PhysicalMemoryManager {
         }
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
-        self.acquire_lock();
+        let flags = self.acquire_lock();
         self.do_free(addr, order);
         self.total_frees.fetch_add(npages as u64, Ordering::Relaxed);
-        self.release_lock();
+        self.release_lock(&flags);
     }
 
     pub fn alloc_huge_page(&self, size_type: PageSize) -> Option<PhysAddr> {
@@ -344,14 +347,14 @@ impl PhysicalMemoryManager {
             PageSize::Size2M => self.alloc_pages(512),
             PageSize::Size1G => {
                 let np = (size_type.size() / PAGE_SIZE) as usize;
-                self.acquire_lock();
+                let flags = self.acquire_lock();
                 let result = self.buddy_direct_alloc_aligned(np, size_type.size());
                 if result.is_some() {
                     self.total_allocs.fetch_add(np as u64, Ordering::Relaxed);
                 } else {
                     self.failed_allocs.fetch_add(1, Ordering::Relaxed);
                 }
-                self.release_lock();
+                self.release_lock(&flags);
                 result
             }
         }
@@ -363,13 +366,13 @@ impl PhysicalMemoryManager {
             PageSize::Size2M => self.free_pages(addr, 512),
             PageSize::Size1G => {
                 let np = (size_type.size() / PAGE_SIZE) as usize;
-                self.acquire_lock();
+                let flags = self.acquire_lock();
                 let start = phys_to_page(addr.0) as usize;
                 for i in 0..np {
                     self.clear_bit(start + i);
                 }
                 self.total_frees.fetch_add(np as u64, Ordering::Relaxed);
-                self.release_lock();
+                self.release_lock(&flags);
             }
         }
     }
@@ -413,8 +416,13 @@ impl PhysicalMemoryManager {
 
     // ==================== Lock helpers ====================
 
+    /// Acquire the PMM lock with interrupt disabling (SMP-safe).
+    ///
+    /// Disables interrupts to prevent deadlock when an interrupt handler
+    /// running on the same CPU attempts to allocate memory.
     #[inline(always)]
-    fn acquire_lock(&self) {
+    fn acquire_lock(&self) -> IrqSaveFlags {
+        let flags = disable_interrupts();
         while self
             .lock
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -422,11 +430,13 @@ impl PhysicalMemoryManager {
         {
             core::hint::spin_loop();
         }
+        flags
     }
 
     #[inline(always)]
-    fn release_lock(&self) {
+    fn release_lock(&self, flags: &IrqSaveFlags) {
         self.lock.store(false, Ordering::Release);
+        restore_interrupts(flags);
     }
 
     // ==================== Bitmap helpers (stats + reserved) ====================
@@ -565,6 +575,18 @@ impl PhysicalMemoryManager {
     fn buddy_list_remove(&self, pfn: u64, order: u8) {
         let heads = self.buddy_heads_ptr();
         let node = pfn_to_virt(pfn) as *mut FreeNode;
+        // Defensive: validate node is within physical RAM range
+        let node_phys = unsafe { (node as u64).wrapping_sub(KERNEL_BASE) };
+        let mem_size = self.mem_size.get();
+        if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
+            klog_pmm!(
+                "[PMM] Corrupt remove node at order {}: pfn=0x{:X} virt=0x{:X}",
+                order,
+                pfn,
+                node as u64
+            );
+            return;
+        }
         // SAFETY: node is inside a valid free page
         unsafe {
             let prev = (*node).prev;
@@ -605,8 +627,20 @@ impl PhysicalMemoryManager {
             return None;
         }
 
-        // SAFETY: node is a valid free page; kernel identity-maps all phys memory
-        let pfn = phys_to_page(unsafe { (node as u64) - KERNEL_BASE });
+        // Defensive: validate node is within physical RAM range
+        let node_phys = unsafe { (node as u64).wrapping_sub(KERNEL_BASE) };
+        let mem_size = self.mem_size.get();
+        if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
+            klog_pmm!(
+                "[PMM] Corrupt free list node at order {}: 0x{:X}",
+                order,
+                node as u64
+            );
+            return None;
+        }
+
+        // SAFETY: node is a valid free page within physical RAM
+        let pfn = phys_to_page(node_phys);
         // SAFETY: updating doubly-linked list; node.next is valid or null
         unsafe {
             let next = (*node).next;

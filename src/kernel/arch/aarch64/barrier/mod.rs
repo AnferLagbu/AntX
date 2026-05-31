@@ -90,6 +90,10 @@ pub fn barrier_sgi_handler() -> i32 {
 /// 在 GICv3 初始化完成后调用, 确保 SGI 7 可以触发 IRQ 中断.
 /// SGI 默认使能 (GICR_ISENABLER0 bit 7 = 1 需要通过 write_volatile 设置),
 /// 但为了安全性, 显式使能.
+///
+/// # Safety
+///
+/// 调用前需确保 GICv3 已初始化，Redistributor 寄存器 (GICR_SGI_BASE) 可访问。
 pub unsafe fn enable_barrier_sgi() {
     // SGI 7 在 GICR_ISENABLER0 的第 7 位
     // GICv3 规范: SGI 始终使能, 但显式设置确保万无一失

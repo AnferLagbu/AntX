@@ -556,7 +556,7 @@ test-stress: iso
 	@echo "╚══════════════════════════════════════════════════════════╝"
 	@python3 tests/stress/run_stress_tests.py
 
-test-smp: all user build/kernel.flat
+test-smp: all user $(KERNEL_IMAGE)
 	@echo "╔══════════════════════════════════════════════════════════╗"
 	@echo "║     SMP Tests (2 cores)                                 ║"
 	@echo "╚══════════════════════════════════════════════════════════╝"
@@ -564,7 +564,7 @@ test-smp: all user build/kernel.flat
 	@timestamp=$$(date +%Y%m%d_%H%M%S); \
 	timeout 60 $(QEMU) $(QEMU_FLAGS) \
 		-m 512 -smp 2 \
-		-kernel build/kernel.flat \
+		$(QEMU_KERNEL_FLAG) $(KERNEL_IMAGE) \
 		-serial file:tests/reports/smp_test_$${timestamp}.log \
 		-display none \
 		-d cpu_reset 2>tests/reports/qemu_smp_stderr_$${timestamp}.log || true

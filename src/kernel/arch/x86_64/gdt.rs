@@ -315,6 +315,7 @@ struct PerCpuGdt {
     ist0: [u8; PER_CPU_IST_SIZE],
     ist1: [u8; PER_CPU_IST_SIZE],
     ist2: [u8; PER_CPU_IST_SIZE],
+    ist3: [u8; PER_CPU_IST_SIZE],
 }
 
 impl PerCpuGdt {
@@ -328,6 +329,7 @@ impl PerCpuGdt {
             ist0: [0u8; PER_CPU_IST_SIZE],
             ist1: [0u8; PER_CPU_IST_SIZE],
             ist2: [0u8; PER_CPU_IST_SIZE],
+            ist3: [0u8; PER_CPU_IST_SIZE],
         }
     }
 }
@@ -447,6 +449,8 @@ pub fn gdt_init() -> i32 {
             .set_ist(1, gdt.ist1.as_ptr() as u64 + gdt.ist1.len() as u64);
         gdt.tss
             .set_ist(2, gdt.ist2.as_ptr() as u64 + gdt.ist2.len() as u64);
+        gdt.tss
+            .set_ist(3, gdt.ist3.as_ptr() as u64 + gdt.ist3.len() as u64);
 
         gdt.tss.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
 
@@ -502,6 +506,8 @@ pub fn gdt_init_ap(cpu_index: u32) {
             .set_ist(1, ap.ist1.as_ptr() as u64 + ap.ist1.len() as u64);
         ap.tss
             .set_ist(2, ap.ist2.as_ptr() as u64 + ap.ist2.len() as u64);
+        ap.tss
+            .set_ist(3, ap.ist3.as_ptr() as u64 + ap.ist3.len() as u64);
 
         ap.tss.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
 

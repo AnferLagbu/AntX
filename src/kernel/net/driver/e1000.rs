@@ -824,7 +824,7 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
                             idt_register_irq(
                                 dev.irq,
                                 e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void),
-                                c"e1000".as_ptr(),
+                                c"e1000".as_ptr() as *const i8,
                                 0,
                             );
                             idt_enable_irq(dev.irq);

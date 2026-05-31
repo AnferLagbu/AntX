@@ -94,11 +94,21 @@ impl HotplugManager {
             return;
         }
 
-        let found = crate::kernel::pci::hotplug::scan_hotplug_slots();
-        if !found.is_empty() {
-            crate::klog_info!(Driver, "hotplug: {} PCIe slot(s) found", found.len());
+        #[cfg(target_arch = "x86_64")]
+        {
+            let found = crate::kernel::pci::hotplug::scan_hotplug_slots();
+            if !found.is_empty() {
+                crate::klog_info!(Driver, "hotplug: {} PCIe slot(s) found", found.len());
+            }
+            *self.slots.lock() = found;
         }
-        *self.slots.lock() = found;
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            crate::klog_info!(
+                Driver,
+                "hotplug: PCIe hotplug not supported on this architecture"
+            );
+        }
         *init = true;
     }
 

@@ -88,7 +88,7 @@ impl BootInfo {
     }
 }
 
-struct MultibootPtr(*const u8);
+struct MultibootPtr(#[allow(dead_code)] *const u8);
 // SAFETY: MultibootPtr wraps a raw pointer to boot info data that is
 // set once during early boot and read-only afterwards. Access is
 // protected by MULTIBOOT_INFO_PTR Mutex.
@@ -128,6 +128,7 @@ pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
     let mbi = unsafe { &*(ptr as *const Multiboot1Info) };
     let mut mem_size: u64 = 128 * 1024 * 1024;
@@ -163,6 +164,7 @@ fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
     (mem_size, mmap_entries)
 }
 
+#[cfg(target_arch = "x86_64")]
 fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
     let total_size = unsafe { *(ptr as *const u32) };
     let mut mem_size: u64 = 128 * 1024 * 1024;

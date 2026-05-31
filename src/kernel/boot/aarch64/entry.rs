@@ -16,6 +16,14 @@ use crate::kernel::arch::aarch64::uart;
 // ============================================================================
 
 #[no_mangle]
+/// AArch64 启动入口。
+///
+/// # Safety
+///
+/// 仅由汇编 `start.S` 在 EL1 启动阶段调用，调用前需确保：
+/// - 栈指针 (SP) 已设置
+/// - BSS 段可写
+/// - 运行在 EL1（内核特权级）
 pub unsafe extern "C" fn entry() -> ! {
     // 0. 启用 FP/SIMD (编译器会生成 NEON 指令如 movi v0.2d)
     //    CPACR_EL1.FPEN[21:20] = 0b11 → 不 trap FP/SIMD

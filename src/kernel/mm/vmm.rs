@@ -44,6 +44,8 @@ use super::*;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
+use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+
 static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 static VMM_LOCK: AtomicBool = AtomicBool::new(false);
@@ -102,7 +104,7 @@ impl VirtualMemoryManager {
         phys: PhysAddr,
         flags: PageFlags,
     ) -> Result<(), &'static str> {
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         let result = self.map_page_internal(virt, phys, flags);
 
@@ -110,7 +112,7 @@ impl VirtualMemoryManager {
             self.total_maps.fetch_add(1, Ordering::Relaxed);
         }
 
-        self.release_lock();
+        self.release_lock(&_flags);
         result
     }
 
@@ -125,7 +127,7 @@ impl VirtualMemoryManager {
             return Err("Address not aligned for huge page");
         }
 
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         let mut flags = flags;
         flags.insert(PageFlags::HUGE_PAGE);
@@ -140,16 +142,16 @@ impl VirtualMemoryManager {
             self.total_maps.fetch_add(1, Ordering::Relaxed);
         }
 
-        self.release_lock();
+        self.release_lock(&_flags);
         result
     }
 
     pub fn unmap_page(&self, virt: VirtAddr) {
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
-            self.release_lock();
+            self.release_lock(&_flags);
             return;
         }
 
@@ -163,7 +165,7 @@ impl VirtualMemoryManager {
             let pml4e = &*pml4.add(virt.pml4_idx());
 
             if !pml4e.is_present() {
-                self.release_lock();
+                self.release_lock(&_flags);
                 return;
             }
 
@@ -172,7 +174,7 @@ impl VirtualMemoryManager {
             let pdpte = &*pdpt.add(virt.pdpt_idx());
 
             if !pdpte.is_present() {
-                self.release_lock();
+                self.release_lock(&_flags);
                 return;
             }
 
@@ -186,7 +188,7 @@ impl VirtualMemoryManager {
                 let pde = &*pd.add(virt.pd_idx());
 
                 if !pde.is_present() {
-                    self.release_lock();
+                    self.release_lock(&_flags);
                     return;
                 }
 
@@ -203,7 +205,7 @@ impl VirtualMemoryManager {
         }
 
         self.total_unmaps.fetch_add(1, Ordering::Relaxed);
-        self.release_lock();
+        self.release_lock(&_flags);
     }
 
     pub fn get_physical(&self, virt: VirtAddr) -> Option<PhysAddr> {
@@ -309,7 +311,7 @@ impl VirtualMemoryManager {
             }
         }
 
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         let idx = self.find_free_user_slot();
         if idx < MAX_USER_PAGE_TABLES {
@@ -322,7 +324,7 @@ impl VirtualMemoryManager {
             self.user_table_count.fetch_add(1, Ordering::Relaxed);
         }
 
-        self.release_lock();
+        self.release_lock(&_flags);
 
         Some(pml4_phys.as_u64())
     }
@@ -332,7 +334,7 @@ impl VirtualMemoryManager {
             return;
         }
 
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         // SAFETY: pml4 is a valid PML4 address; VMM_LOCK held
         let pml4_virt = PhysAddr(pml4).to_virt();
@@ -344,19 +346,19 @@ impl VirtualMemoryManager {
 
             let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() {
-                self.release_lock();
+                self.release_lock(&_flags);
                 return;
             }
 
             let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
             if pd.is_null() {
-                self.release_lock();
+                self.release_lock(&_flags);
                 return;
             }
 
             let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, 0x1000);
             if pt.is_null() {
-                self.release_lock();
+                self.release_lock(&_flags);
                 return;
             }
 
@@ -374,7 +376,7 @@ impl VirtualMemoryManager {
             self.flush_tlb(virt.0);
         }
 
-        self.release_lock();
+        self.release_lock(&_flags);
     }
 
     pub fn unmap_page_in_table(&self, pml4: u64, virt: VirtAddr) {
@@ -382,7 +384,7 @@ impl VirtualMemoryManager {
             return;
         }
 
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         // SAFETY: pml4 = process CR3 value. phys_to_virt gives valid kernel VA.
         let pml4_virt = PhysAddr(pml4).to_virt();
@@ -396,7 +398,7 @@ impl VirtualMemoryManager {
             let pml4e = &*pml4_tbl.add(virt.pml4_idx());
 
             if !pml4e.is_present() {
-                self.release_lock();
+                self.release_lock(&_flags);
                 return;
             }
 
@@ -405,7 +407,7 @@ impl VirtualMemoryManager {
             let pdpte = &*pdpt.add(virt.pdpt_idx());
 
             if !pdpte.is_present() {
-                self.release_lock();
+                self.release_lock(&_flags);
                 return;
             }
 
@@ -419,7 +421,7 @@ impl VirtualMemoryManager {
                 let pde = &*pd.add(virt.pd_idx());
 
                 if !pde.is_present() {
-                    self.release_lock();
+                    self.release_lock(&_flags);
                     return;
                 }
 
@@ -437,7 +439,7 @@ impl VirtualMemoryManager {
         }
 
         self.total_unmaps.fetch_add(1, Ordering::Relaxed);
-        self.release_lock();
+        self.release_lock(&_flags);
     }
 
     pub fn destroy_page_table(&self, pml4: u64) {
@@ -445,7 +447,7 @@ impl VirtualMemoryManager {
             return;
         }
 
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         let pmm = get_pmm();
         // SAFETY: pml4 valid; VMM_LOCK held
@@ -506,7 +508,7 @@ impl VirtualMemoryManager {
             }
         }
 
-        self.release_lock();
+        self.release_lock(&_flags);
     }
 
     pub fn get_stats(&self) -> (u64, u64, u64) {
@@ -691,7 +693,7 @@ impl VirtualMemoryManager {
             return Err("VMM not initialized");
         }
 
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         let result: Result<(), &'static str> = (|| {
             let pml4_virt = PhysAddr(pml4_base).to_virt();
@@ -748,7 +750,7 @@ impl VirtualMemoryManager {
             Ok(())
         })();
 
-        self.release_lock();
+        self.release_lock(&_flags);
         result
     }
 
@@ -820,7 +822,7 @@ impl VirtualMemoryManager {
             return None;
         }
 
-        self.acquire_lock();
+        let _flags = self.acquire_lock();
 
         let pmm = get_pmm();
         let child_pml4_phys = pmm.alloc_page()?;
@@ -981,7 +983,7 @@ impl VirtualMemoryManager {
             }
         }
 
-        self.release_lock();
+        self.release_lock(&_flags);
         Some(child_pml4_phys.as_u64())
     }
 
@@ -997,7 +999,8 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
-    fn acquire_lock(&self) {
+    pub fn acquire_lock(&self) -> IrqSaveFlags {
+        let flags = disable_interrupts();
         while VMM_LOCK
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
@@ -1010,15 +1013,17 @@ impl VirtualMemoryManager {
                 panic!("VMM_LOCK: recursive acquisition detected (deadlock)");
             }
         }
+        flags
     }
 
     #[inline(always)]
-    fn release_lock(&self) {
+    pub fn release_lock(&self, flags: &IrqSaveFlags) {
         #[cfg(debug_assertions)]
         {
             VMM_LOCK_RECURSIVE.store(false, Ordering::Relaxed);
         }
         VMM_LOCK.store(false, Ordering::Release);
+        restore_interrupts(flags);
     }
 
     #[inline(always)]

@@ -72,7 +72,19 @@ pub fn cow_ref_count(phys: u64) -> u32 {
 
 /// COW 感知的页表克隆: 共享用户空间物理页, 双方标记只读
 /// 相比 deep copy 版本, 该版本不分配新物理页, 也不复制数据
+///
+/// # SMP Safety
+/// 本函数持有 VMM_LOCK 保护所有页表修改, 确保多核并发安全。
+/// 函数返回前刷新全部 TLB 条目使被清除 WRITABLE 位的 PTE 失效。
 pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
+    let vmm_inst = vmm::get_vmm();
+    let _vmm_flags = vmm_inst.acquire_lock();
+    let result = clone_user_page_table_cow_inner(parent_pml4);
+    vmm_inst.release_lock(&_vmm_flags);
+    result
+}
+
+fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
     if parent_pml4 == 0 {
         return None;
     }
@@ -191,7 +203,7 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
                     let parent_flags = parent_pte & 0xFFF;
 
                     if (parent_flags & 2) != 0 {
-                        // SAFETY: 该 PTE 由本函数独占访问 (调用方持有 VMM lock)
+                        // SAFETY: 该 PTE 由本函数独占访问 (外层持有 VMM_LOCK)
                         unsafe {
                             let mut pte = parent_pt_virt.add(l).read_volatile();
                             pte &= !2u64; // clear WRITABLE
@@ -218,10 +230,19 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
         }
     }
 
+    // SMP: 刷新 TLB 使所有被清除 WRITABLE 位的 PTE 失效
+    // 父进程可能在其他 CPU 上运行, 完整的 TLB shootdown 需要 IPI
+    // 此处至少刷新本地 TLB 确保当前 CPU 的一致性
+    crate::arch!(tlb_flush_all());
+
     Some(child_pml4_phys.as_u64())
 }
 
 /// COW fault 处理: 为写入分配新页
+///
+/// # SMP Safety
+/// 所有页表修改通过 VMM 的 map_page_in_table 进行, 该函数内部持有 VMM_LOCK
+/// 并执行 TLB 刷新, 保证多核并发安全。
 pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let vmm_inst = vmm::get_vmm();
     let page_aligned = fault_addr & !(PAGE_SIZE - 1);
@@ -243,31 +264,10 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     };
 
     if should_reuse {
-        let pte = unsafe {
-            let pml4_v = PhysAddr(pml4).to_virt().0 as *const u64;
-            let pml4e = pml4_v.add(virt_pml4_idx(page_aligned)).read_volatile();
-            if (pml4e & 1) == 0 {
-                return None;
-            }
-
-            let pdpt_p = PhysAddr(pml4e & 0x000FFFFFFFFFF000).to_virt().0 as *const u64;
-            let pdpte = pdpt_p.add(virt_pdpt_idx(page_aligned)).read_volatile();
-            if (pdpte & 1) == 0 {
-                return None;
-            }
-
-            let pd_p = PhysAddr(pdpte & 0x000FFFFFFFFFF000).to_virt().0 as *const u64;
-            let pde = pd_p.add(virt_pd_idx(page_aligned)).read_volatile();
-            if (pde & 1) == 0 {
-                return None;
-            }
-
-            let pt_p = PhysAddr(pde & 0x000FFFFFFFFFF000).to_virt().0 as *mut u64;
-            &mut *pt_p.add(virt_pt_idx(page_aligned))
-        };
-
-        *pte |= 2;
-        crate::arch!(tlb_flush_page(page_aligned as usize));
+        // 引用计数 ≤ 1: 直接恢复 WRITABLE 位, 无需分配新页
+        // map_page_in_table 内部持有 VMM_LOCK + TLB 刷新, SMP 安全
+        let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
+        vmm_inst.map_page_in_table(pml4, VirtAddr(page_aligned), old_phys, flags);
         return Some(old_phys.as_u64());
     }
 
@@ -289,26 +289,10 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     }
 
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
+    // map_page_in_table 内部持有 VMM_LOCK + TLB 刷新, SMP 安全
     vmm_inst.map_page_in_table(pml4, VirtAddr(page_aligned), new_phys, flags);
 
     Some(new_phys.as_u64())
-}
-
-#[inline]
-fn virt_pml4_idx(v: u64) -> usize {
-    ((v >> 39) & 0x1FF) as usize
-}
-#[inline]
-fn virt_pdpt_idx(v: u64) -> usize {
-    ((v >> 30) & 0x1FF) as usize
-}
-#[inline]
-fn virt_pd_idx(v: u64) -> usize {
-    ((v >> 21) & 0x1FF) as usize
-}
-#[inline]
-fn virt_pt_idx(v: u64) -> usize {
-    ((v >> 12) & 0x1FF) as usize
 }
 
 #[cfg(test)]

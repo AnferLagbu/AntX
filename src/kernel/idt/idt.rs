@@ -213,6 +213,14 @@ impl IdtManager {
             IDT_TYPE_INTERRUPT,
             2, // IST2 (TSS ist[1])
         );
+        // Page Fault (#PF, vector 14) → IST3
+        // 独立 IST 栈防止 COW/page fault 处理中的递归嵌套导致三重故障
+        state.entries[14] = IdtEntry::new_with_ist(
+            isr_table[14],
+            GDT_KERNEL_CODE,
+            IDT_TYPE_INTERRUPT,
+            4, // IST4 (TSS ist[3])
+        );
 
         // 3. 设置 IRQ 门描述符 (向量 32-47)
         for i in 0..16u8 {

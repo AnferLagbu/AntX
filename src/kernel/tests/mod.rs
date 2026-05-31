@@ -217,11 +217,13 @@ impl TestRunner {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn port_inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn port_outb(port: u16, value: u8) {
     crate::arch!(outb(port, value));

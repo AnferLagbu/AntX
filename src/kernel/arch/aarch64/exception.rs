@@ -455,7 +455,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
             }
 
             let t = crate::kernel::timer::get_ticks();
-            if t % 10 == 0 {
+            if t.is_multiple_of(10) {
                 unsafe {
                     virtio_net_poll_rx();
                 }
@@ -601,7 +601,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
             }
 
             let t = crate::kernel::timer::get_ticks();
-            if t % 10 == 0 {
+            if t.is_multiple_of(10) {
                 unsafe {
                     virtio_net_poll_rx();
                 }
@@ -642,6 +642,10 @@ pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
 }
 
 /// 初始化异常: 设置 VBAR_EL1 指向向量表, 清除 DAIF
+///
+/// # Safety
+///
+/// 仅在启动阶段调用，调用前需确保向量表已链接到内核镜像中。
 pub unsafe fn init() {
     let vbar = &exception_vector_table as *const u8 as u64;
     core::arch::asm!("msr vbar_el1, {}", in(reg) vbar);

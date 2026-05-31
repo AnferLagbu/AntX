@@ -20,6 +20,7 @@
 
 use core::sync::atomic::{fence, Ordering};
 
+pub use super::types::IrqSaveFlags;
 use super::types::*;
 
 /// 自旋锁 (SpinLock)

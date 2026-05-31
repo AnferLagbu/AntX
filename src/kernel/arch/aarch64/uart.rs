@@ -27,7 +27,7 @@ const UARTCR_TXE: u32 = 1 << 8; // Transmit Enable
 const UARTCR_RXE: u32 = 1 << 9; // Receive Enable
 
 /// LCR 配置: 8N1 (8 data bits, no parity, 1 stop bit)
-const UARTLCR_8N1: u32 = (0b11 << 5) | (0 << 4) | (0 << 1);
+const UARTLCR_8N1: u32 = 0b11 << 5;
 
 // ============================================================================
 // 寄存器 I/O
@@ -48,6 +48,10 @@ unsafe fn write(offset: u64, val: u32) {
 // ============================================================================
 
 /// 初始化 PL011 UART (115200-8N1)
+///
+/// # Safety
+///
+/// 调用者必须确保在初始化 MMU 之后调用，且 PL011_BASE (0x09000000) 已映射。
 pub unsafe fn init() {
     // 1. 禁用 UART
     write(UARTCR, 0);
@@ -74,6 +78,10 @@ pub unsafe fn init() {
 // ============================================================================
 
 /// 发送单字节 (阻塞)
+///
+/// # Safety
+///
+/// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
 pub unsafe fn putc(c: u8) {
     // Wait for TX FIFO not full
@@ -84,6 +92,10 @@ pub unsafe fn putc(c: u8) {
 }
 
 /// 接收单字节 (阻塞)
+///
+/// # Safety
+///
+/// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
 pub unsafe fn getc() -> u8 {
     // Wait for RX FIFO not empty

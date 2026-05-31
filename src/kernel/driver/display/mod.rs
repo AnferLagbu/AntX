@@ -258,16 +258,26 @@ pub fn display_init() -> framework::Result<()> {
         }
     };
 
-    // ── 方案 B: PCI VGA BAR0 probing (QEMU -kernel boot) ──
+    // ── 方案 B: PCI VGA BAR0 probing (QEMU -kernel boot, x86 only) ──
     let (fb_addr, width, height, bpp, pitch) = match fb_info {
         Some(info) => info,
-        None => match probe_vga_fb_via_pci() {
-            Some(info) => (info.addr, info.width, info.height, info.bpp, info.pitch),
-            None => {
-                crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
+        None => {
+            #[cfg(target_arch = "x86_64")]
+            {
+                match probe_vga_fb_via_pci() {
+                    Some(info) => (info.addr, info.width, info.height, info.bpp, info.pitch),
+                    None => {
+                        crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
+                        return Ok(());
+                    }
+                }
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                crate::klog_drv_warn!("[DISPLAY] no framebuffer info on non-x86 platform");
                 return Ok(());
             }
-        },
+        }
     };
 
     let fb_size = pitch as u64 * height as u64;

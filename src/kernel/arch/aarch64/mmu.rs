@@ -22,11 +22,13 @@ const PT_TYPE_TABLE: u64 = 0x3; // valid + table descriptor
 const PT_TYPE_BLOCK: u64 = 0x1; // valid + block descriptor
 const PT_AF: u64 = 1 << 10; // Access Flag
 const PT_ATTR_NORMAL: u64 = (0b0100 << 2) | (0b0100 << 8); // Normal memory, Inner/Outer WBWA
-const PT_ATTR_DEVICE: u64 = (0b0000 << 2) | (0b0000 << 8); // Device-nGnRnE memory
+const PT_ATTR_DEVICE: u64 = 0; // Device-nGnRnE memory (AttrIndx=0, MAIR[0]=0x44)
 const PT_AP_EL1_RW: u64 = 0 << 6; // EL1 read/write
+#[allow(dead_code)]
 const PT_AP_ALL_RW: u64 = 1 << 6; // EL1+EL0 read/write
 
 /// 页粒度
+#[allow(dead_code)]
 const PAGE_SIZE: u64 = 4096;
 const L2_BLOCK_SIZE: u64 = 0x200000; // 2MB (L2 block at 4KB granule)
 
@@ -69,6 +71,13 @@ static mut TTBR1_L1: AlignedPageTable = AlignedPageTable([0; 512]);
 /// L1[1] → 1GB block: PA 0x40000000 (DRAM, kernel @ 0x40080000, Normal memory)
 ///
 /// 所有映射均为 EL1 RW。
+///
+/// # Safety
+///
+/// 调用前需确保：
+/// - 运行在 EL1 或更高特权级
+/// - 页表所在物理内存 (BSS) 可访问
+/// - 在设置 TTBR0/TTBR1 前已确保旧映射一致性
 pub unsafe fn init() {
     // 清零页表
     ptr::write_bytes(L0_TABLE.0.as_mut_ptr(), 0, 512);
@@ -98,7 +107,8 @@ pub unsafe fn init() {
     // 设置 TCR_EL1 (Translation Control Register)
     // T0SZ=16 (48-bit IPA for TTBR0), T1SZ=16 (48-bit IPA for TTBR1)
     // 4KB granule (TG0=00, TG1=10), Inner Shareable, Normal cacheable
-    let tcr: u64 = (16u64 << 0)    // T0SZ: 64 - 48 = 16
+    #[allow(clippy::identity_op)]
+    let tcr: u64 = 16u64 // T0SZ: 64 - 48 = 16
                   | (16u64 << 16)   // T1SZ: 64 - 48 = 16
                   | (0b00 << 14)    // TG0: 4KB
                   | (0b10 << 30)    // TG1: 4KB
@@ -143,6 +153,7 @@ pub unsafe fn init() {
 /// TTBR1 页表层级:
 ///   TTBR1_L0[511] → TTBR1_L1
 ///   TTBR1_L1[i]  → 2MB block mapping (i * 2MB → i * 2MB physical)
+#[allow(clippy::identity_op)]
 unsafe fn init_kernel_ttbr1() {
     ptr::write_bytes(TTBR1_L0.0.as_mut_ptr(), 0, 512);
     ptr::write_bytes(TTBR1_L1.0.as_mut_ptr(), 0, 512);

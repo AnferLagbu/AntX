@@ -247,7 +247,7 @@ pub fn execute_pipeline(input: &[u8]) {
             if path.is_null() { proc_exit(1); }
 
             // null 终止路径方便 exec
-            let path_slice = unsafe { CStr::from_ptr(path as *const i8) }.to_bytes();
+            let path_slice = unsafe { CStr::from_ptr(path as *const core::ffi::c_char) }.to_bytes();
             proc_exec(path_slice, argv);
             // exec 失败
             print("axsh: "); print(from_utf8(path_slice).unwrap_or("?"));

@@ -14,6 +14,9 @@
 use super::*;
 use core::ffi::c_void;
 use core::ptr;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
 // FFI imports from PMM
 extern "C" {
@@ -28,14 +31,17 @@ fn phys_to_virt(phys: u64) -> u64 {
 // ─── ARM Descriptor Constants ────────────────────────────────────────
 
 /// Descriptor types
+#[allow(dead_code)]
 const DESC_VALID: u64 = 1 << 0;
 const DESC_TYPE_TABLE: u64 = 0b11; // Table descriptor (L0/L1/L2)
 const DESC_TYPE_BLOCK: u64 = 0b01; // Block descriptor (L1/L2)
 const DESC_TYPE_PAGE: u64 = 0b11; // Page descriptor (L3, same bits as TABLE)
 
 /// Memory attribute indices (matching MAIR_EL1 setup in mmu.rs)
+#[allow(dead_code)]
 const MAIR_DEVICE_nGnRnE: u64 = 0; // Device memory
 const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
+#[allow(dead_code)]
 const MAIR_NORMAL_NC: u64 = 2; // Normal non-cacheable
 const MAIR_USER_NORMAL: u64 = 4; // Normal WBWA for user pages
 
@@ -170,12 +176,15 @@ fn table_descriptor(next_table_paddr: u64) -> u64 {
     (next_table_paddr & 0x0000_FFFF_FFFF_F000) | DESC_TYPE_TABLE
 }
 
+static VMM_LOCK: AtomicBool = AtomicBool::new(false);
+
 // ─── AArch64 Virtual Memory Manager ──────────────────────────────────
 
 pub struct Aarch64Vmm {
     /// Physical address of kernel L0 table (for TTBR1_EL1)
     kernel_l0: u64,
     /// User page table counter
+    #[allow(dead_code)]
     next_table_id: core::sync::atomic::AtomicU64,
 }
 
@@ -185,6 +194,24 @@ impl Aarch64Vmm {
             kernel_l0: 0,
             next_table_id: core::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    #[inline(always)]
+    pub fn acquire_lock(&self) -> IrqSaveFlags {
+        let flags = disable_interrupts();
+        while VMM_LOCK
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            core::hint::spin_loop();
+        }
+        flags
+    }
+
+    #[inline(always)]
+    pub fn release_lock(&self, flags: &IrqSaveFlags) {
+        VMM_LOCK.store(false, Ordering::Release);
+        restore_interrupts(flags);
     }
 
     // ─── Initialization ──────────────────────────────────────────────
@@ -543,7 +570,6 @@ impl Aarch64Vmm {
         // descriptors are present (which map_page_in_table already does).
         if is_kernel_addr(virt) {
             // No need for USER flag on kernel pages
-            return;
         }
         // For user-space addresses in user tables, ensure entries are valid
         // (already done by map_page_in_table)

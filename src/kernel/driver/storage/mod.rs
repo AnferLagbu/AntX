@@ -35,8 +35,11 @@ use crate::klog_info;
 use crate::klog_warn;
 
 /// PCI 存储控制器类码
+#[cfg(target_arch = "x86_64")]
 const PCI_CLASS_STORAGE: u8 = 0x01;
+#[cfg(target_arch = "x86_64")]
 const PCI_SUBCLASS_AHCI: u8 = 0x06;
+#[cfg(target_arch = "x86_64")]
 const PCI_SUBCLASS_NVME: u8 = 0x08;
 
 /// 全局存储控制器注册表

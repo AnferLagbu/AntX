@@ -1,9 +1,14 @@
 use super::types::PWM_SALT_LEN;
-use core::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_arch = "x86_64")]
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
 
+#[cfg(target_arch = "x86_64")]
 static RDRAND_AVAILABLE: AtomicBool = AtomicBool::new(false);
+#[cfg(target_arch = "x86_64")]
 static RDRAND_CHECKED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(target_arch = "x86_64")]
 fn check_rdrand() -> bool {
     if RDRAND_CHECKED.load(Ordering::Relaxed) {
         return RDRAND_AVAILABLE.load(Ordering::Relaxed);
@@ -15,6 +20,13 @@ fn check_rdrand() -> bool {
     available
 }
 
+#[cfg(not(target_arch = "x86_64"))]
+fn check_rdrand() -> bool {
+    // AArch64 等架构暂不使用硬件 RNG，统一走 fallback
+    false
+}
+
+#[cfg(target_arch = "x86_64")]
 fn rdrand_u64() -> Option<u64> {
     let mut ret: u64;
     let mut ok: u8;
@@ -32,6 +44,11 @@ fn rdrand_u64() -> Option<u64> {
     } else {
         None
     }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn rdrand_u64() -> Option<u64> {
+    None
 }
 
 fn fallback_entropy_byte(idx: usize) -> u8 {

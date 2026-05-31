@@ -20,28 +20,37 @@ const GICR_SGI_BASE: u64 = 0x080B_0000;
 
 /// GICD 寄存器偏移
 const GICD_CTLR: u64 = 0x0000; // Distributor Control
+#[allow(dead_code)]
 const GICD_TYPER: u64 = 0x0008; // Type
+#[allow(dead_code)]
 const GICD_IIDR: u64 = 0x000C; // Implementer ID
 const GICD_IGROUPR: u64 = 0x0080; // Interrupt Group (0-31)
+#[allow(dead_code)]
 const GICD_ISENABLER: u64 = 0x0100; // Interrupt Set-Enable (0-31)
+#[allow(dead_code)]
 const GICD_ISPENDR: u64 = 0x0200; // Interrupt Set-Pending
 const GICD_IPRIORITYR: u64 = 0x0400; // Interrupt Priority (8-bit each)
 const GICD_ITARGETSR: u64 = 0x0800; // Interrupt Target
+#[allow(dead_code)]
 const GICD_ICFGR: u64 = 0x0C00; // Interrupt Configuration (level/edge)
 
 /// GICR 寄存器偏移 (SGI + PPI)
 const GICR_CTLR: u64 = 0x0000; // Redistributor Control
 const GICR_WAKER: u64 = 0x0014; // Wake
+#[allow(dead_code)]
 const GICR_IGROUPR0: u64 = 0x0080; // Group for SGIs/PPIs
 pub const GICR_ISENABLER0: u64 = 0x0100; // Enable for SGIs/PPIs
 const GICR_IPRIORITYR: u64 = 0x0400; // Priority for SGIs/PPIs
+#[allow(dead_code)]
 const GICR_ICFGR1: u64 = 0x0C04; // Configuration for PPIs
 
 /// CPU Interface 寄存器 (系统寄存器, ICC_*)
 /// 通过 MRS/MSR 访问
 
 // SPIs 范围
+#[allow(dead_code)]
 const PPI_BASE: u32 = 16;
+#[allow(dead_code)]
 const SPI_BASE: u32 = 32;
 
 /// ARM 架构定时器 PPI (Non-secure Physical Timer)
@@ -51,6 +60,7 @@ const TIMER_PPI: u32 = 30; // CNTPNSIRQ
 // 寄存器读写辅助
 // ============================================================================
 
+#[allow(dead_code)]
 #[inline(always)]
 unsafe fn gicd_read(offset: u64) -> u32 {
     core::arch::asm!("dsb sy");
@@ -82,6 +92,11 @@ unsafe fn gicr_write(offset: u64, val: u32) {
 }
 
 #[inline(always)]
+/// 读取 GICv3 Redistributor SGI 帧寄存器。
+///
+/// # Safety
+///
+/// 调用者需确保 GICR_SGI_BASE (0x080B_0000) 已映射且 Redistributor 已唤醒。
 pub unsafe fn gicr_sgi_read(offset: u64) -> u32 {
     core::arch::asm!("dsb sy");
     let val = read_volatile((GICR_SGI_BASE + offset) as *const u32);
@@ -90,6 +105,11 @@ pub unsafe fn gicr_sgi_read(offset: u64) -> u32 {
 }
 
 #[inline(always)]
+/// 写入 GICv3 Redistributor SGI 帧寄存器。
+///
+/// # Safety
+///
+/// 调用者需确保 GICR_SGI_BASE (0x080B_0000) 已映射且 Redistributor 已唤醒。
 pub unsafe fn gicr_sgi_write(offset: u64, val: u32) {
     core::arch::asm!("dsb sy");
     write_volatile((GICR_SGI_BASE + offset) as *mut u32, val);
@@ -105,6 +125,10 @@ pub unsafe fn gicr_sgi_write(offset: u64, val: u32) {
 /// 2. 配置中断优先级 (全默认 0xA0)
 /// 3. 使能 Distributor
 /// 4. 使能 CPU Interface
+///
+/// # Safety
+///
+/// 调用前需确保 GICD_BASE (0x08000000) 已正确映射，MMU 已启用。
 pub unsafe fn init_distributor() {
     // 1. 禁用 Distributor
     gicd_write(GICD_CTLR, 0);
@@ -130,6 +154,10 @@ pub unsafe fn init_distributor() {
 /// 初始化 GICv3 Redistributor (当前 CPU):
 /// 1. Wake redistributor
 /// 2. Enable SGIs/PPIs for current core
+///
+/// # Safety
+///
+/// 调用前需确保 Distributor 已初始化，GICR_BASE 已映射。
 pub unsafe fn init_redistributor() {
     // 1. Wake redistributor
     let waker = gicr_read(GICR_WAKER);
@@ -155,6 +183,10 @@ pub unsafe fn init_redistributor() {
 }
 
 /// 使能 CPU Interface (ICC_* 系统寄存器)
+///
+/// # Safety
+///
+/// 仅在 EL1 或更高特权级调用，需确保 Redistributor 已初始化。
 pub unsafe fn init_cpu_interface() {
     // 设置中断优先级掩码 (PMR): 允许所有优先级
     core::arch::asm!("msr icc_pmr_el1, {}", in(reg) 0xFFu64);
@@ -173,6 +205,10 @@ pub unsafe fn init_cpu_interface() {
 }
 
 /// 使能 Timer PPI 中断
+///
+/// # Safety
+///
+/// 调用前需确保 CPU Interface 已初始化。
 pub unsafe fn enable_timer_ppi() {
     let enable_offset = GICR_ISENABLER0;
     let bit = 1u32 << (TIMER_PPI % 32);
@@ -203,6 +239,10 @@ pub fn deactivate(intid: u32) {
 }
 
 /// 完整 GIC 初始化流程
+///
+/// # Safety
+///
+/// 仅在启动阶段调用，需确保 MMU 已启用且 GIC MMIO 区域已映射。
 pub unsafe fn init() {
     init_distributor();
     init_redistributor();
