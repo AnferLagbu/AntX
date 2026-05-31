@@ -188,12 +188,12 @@ impl ProcessContext {
     }
     
     pub fn set_user_mode(&mut self) {
-        self.cs = 0x1B;
-        self.ds = 0x23;
-        self.es = 0x23;
-        self.fs = 0x23;
-        self.gs = 0x23;
-        self.ss = 0x23;
+        self.cs = 0x23;
+        self.ds = 0x1B;
+        self.es = 0x1B;
+        self.fs = 0x1B;
+        self.gs = 0x1B;
+        self.ss = 0x1B;
         self.rflags = 0x202;
     }
 }

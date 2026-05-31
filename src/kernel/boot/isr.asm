@@ -80,6 +80,83 @@ isr_common:
     add rsp, 16
     iretq
 
+; ── SYSCALL 指令入口 (替代 int 0x80) ─────────────────────────────────────
+; 控制流：
+;   1. 用户态执行 syscall 指令
+;   2. CPU 保存 RIP→RCX, RFLAGS→R11, 加载 CS=STAR[47:32], SS=STAR[47:32]+8
+;   3. swapgs → GS 指向 per-CPU SyscallPerCpu 数据
+;   4. xchg rsp, [gs:0] → 切换到该 CPU 独占的内核栈, 用户 RSP 存入 per-CPU
+;   5. 构建 InterruptFrame, 调用 syscall_dispatch_from_frame
+;   6. sysretq 返回用户态
+;
+; SMP 安全: 每个 CPU 有独立的 SyscallPerCpu 和内核栈,
+; IA32_KERNEL_GS_BASE 在 gdt_init/gdt_init_ap 中分别设置。
+
+; SyscallPerCpu.kernel_rsp 在结构体中的偏移 (字段顺序保证)
+KERNEL_RSP_OFF equ 0
+
+global syscall_entry
+syscall_entry:
+    swapgs
+    xchg rsp, [gs:KERNEL_RSP_OFF]
+
+    ; 构建 InterruptFrame (与 int 0x80 中断帧布局一致)
+    push 0x1B                         ; SS = 用户数据段 (0x18|3)
+    push qword [gs:KERNEL_RSP_OFF]    ; 用户 RSP (xchg 时已存入 per-CPU)
+    push r11                          ; RFLAGS
+    push 0x23                         ; CS = 用户代码段 (0x20|3)
+    push rcx                          ; RIP
+
+    push 0                            ; err_code
+    push 0x80                         ; int_no
+
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rbp
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov rdi, rsp
+    cld
+    call syscall_dispatch_from_frame
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+
+    add rsp, 16                       ; 跳过 int_no + err_code
+
+    pop rcx                           ; 用户 RIP
+    add rsp, 8                        ; 跳过 CS
+    pop r11                           ; 用户 RFLAGS
+    add rsp, 16                       ; 跳过 RSP + SS
+
+    xchg rsp, [gs:KERNEL_RSP_OFF]     ; 恢复用户栈, 保存内核栈指针
+    swapgs                            ; 恢复用户 GS 段
+    sysretq
+
 ; ── 通用入口: 保存寄存器 → irq_handler ──────────────────────────────────
 irq_common:
     push rax

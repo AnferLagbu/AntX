@@ -15,8 +15,8 @@
 //! 0     | 0x00     | Null Descriptor (必须)
 //! 1     | 0x08     | Kernel Code Segment (64-bit)
 //! 2     | 0x10     | Kernel Data Segment
-//! 3     | 0x18     | User Code Segment (Ring 3)
-//! 4     | 0x20     | User Data Segment (Ring 3)
+//! 3     | 0x18     | User Data Segment (Ring 3) — 与 User Code 互换以适配 SYSRET 规则
+//! 4     | 0x20     | User Code Segment (Ring 3)
 //! 5     | 0x28     | TSS Descriptor (64-bit, 占用2个槽位)
 //! 6     | 0x30     | TSS High (自动生成)
 //! ```
@@ -53,11 +53,12 @@ pub const SELECTOR_KERNEL_CODE: u16 = 0x08;
 /// 内核数据段选择子
 pub const SELECTOR_KERNEL_DATA: u16 = 0x10;
 
-/// 用户代码段选择子 (Ring 3)
-pub const SELECTOR_USER_CODE: u16 = 0x18;
-
 /// 用户数据段选择子 (Ring 3)
-pub const SELECTOR_USER_DATA: u16 = 0x20;
+/// 注: 与用户代码段互换位置以适配 SYSRET 指令的段选择规则
+pub const SELECTOR_USER_DATA: u16 = 0x18;
+
+/// 用户代码段选择子 (Ring 3)
+pub const SELECTOR_USER_CODE: u16 = 0x20;
 
 /// TSS 选择子 (低32位)
 pub const SELECTOR_TSS: u16 = 0x28;
@@ -284,7 +285,19 @@ pub struct GdtPtr {
 // Per-CPU GDT 数据结构
 // ============================================================================
 
-/// 每个 CPU 独立的 GDT + TSS + IST 栈
+/// Syscall 入口 per-CPU 数据 (通过 swapgs + GS 段访问)
+///
+/// 布局: 汇编代码通过 `[gs:0]` 访问 `kernel_rsp`,
+/// 因此该字段必须位于结构体偏移 0 处。
+#[repr(C)]
+pub struct SyscallPerCpu {
+    pub kernel_rsp: u64,
+}
+
+/// 每个 CPU 独立的 syscall 内核栈大小 (8KB)
+const PER_CPU_SYSCALL_STACK_SIZE: usize = 8192;
+
+/// 每个 CPU 独立的 GDT + TSS + IST 栈 + syscall 数据
 ///
 /// 所有 CPU 共享相同的段描述符 (flat model)，
 /// 但 TSS 描述符必须指向各自的 TSS 实例。
@@ -292,6 +305,8 @@ struct PerCpuGdt {
     entries: [GdtEntry; GDT_MAX_ENTRIES],
     ptr: GdtPtr,
     tss: super::tss::TaskStateSegment,
+    syscall: SyscallPerCpu,
+    syscall_stack: [u8; PER_CPU_SYSCALL_STACK_SIZE],
     ist0: [u8; PER_CPU_IST_SIZE],
     ist1: [u8; PER_CPU_IST_SIZE],
     ist2: [u8; PER_CPU_IST_SIZE],
@@ -303,6 +318,8 @@ impl PerCpuGdt {
             entries: [GdtEntry::null(); GDT_MAX_ENTRIES],
             ptr: GdtPtr { limit: 0, base: 0 },
             tss: super::tss::TaskStateSegment::zeroed(),
+            syscall: SyscallPerCpu { kernel_rsp: 0 },
+            syscall_stack: [0u8; PER_CPU_SYSCALL_STACK_SIZE],
             ist0: [0u8; PER_CPU_IST_SIZE],
             ist1: [0u8; PER_CPU_IST_SIZE],
             ist2: [0u8; PER_CPU_IST_SIZE],
@@ -365,14 +382,14 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 
     entries[3] = GdtEntry::new_segment(
         0, 0xFFFF_FFFF,
-        AccessByte::user_code(),
-        Granularity::code_64bit(),
+        AccessByte::user_data(),
+        Granularity::data_32bit(),
     );
 
     entries[4] = GdtEntry::new_segment(
         0, 0xFFFF_FFFF,
-        AccessByte::user_data(),
-        Granularity::data_32bit(),
+        AccessByte::user_code(),
+        Granularity::code_64bit(),
     );
 }
 
@@ -424,6 +441,12 @@ pub fn gdt_init() -> i32 {
 
         gdt_flush(&gdt.ptr);
         tss_flush(SELECTOR_TSS);
+
+        gdt.syscall.kernel_rsp = gdt.syscall_stack.as_ptr() as u64 + gdt.syscall_stack.len() as u64;
+
+        // IA32_KERNEL_GS_BASE — swapgs 时切换到该地址
+        const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
+        crate::kernel::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &gdt.syscall as *const _ as u64);
     }
 
     static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
@@ -465,6 +488,11 @@ pub fn gdt_init_ap(cpu_index: u32) {
 
         gdt_flush(&ap.ptr);
         tss_flush(SELECTOR_TSS);
+
+        ap.syscall.kernel_rsp = ap.syscall_stack.as_ptr() as u64 + ap.syscall_stack.len() as u64;
+
+        const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
+        crate::kernel::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
     }
 }
 
@@ -570,8 +598,8 @@ mod tests {
         assert_eq!(SELECTOR_NULL, 0x00);
         assert_eq!(SELECTOR_KERNEL_CODE, 0x08);
         assert_eq!(SELECTOR_KERNEL_DATA, 0x10);
-        assert_eq!(SELECTOR_USER_CODE, 0x18);
-        assert_eq!(SELECTOR_USER_DATA, 0x20);
+        assert_eq!(SELECTOR_USER_DATA, 0x18);
+        assert_eq!(SELECTOR_USER_CODE, 0x20);
         assert_eq!(SELECTOR_TSS, 0x28);
     }
 }

@@ -127,4 +127,4 @@ pub fn save(cmd: &Cmd) {
 }
 
 #[allow(dead_code)]
-pub fn sync(_: &Cmd) { userlib::fs_sync(); println("Synced"); }
+pub fn sync(_: &Cmd) { fs_sync(); println("Synced"); }

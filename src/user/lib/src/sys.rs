@@ -1,5 +1,5 @@
 /// AntX 用户态运行时 — POSIX 原生系统调用层
-/// x86_64: int 0x80, rax=num, rdi=a1, rsi=a2, rdx=a3, r10=a4
+/// x86_64: syscall, rax=num, rdi=a1, rsi=a2, rdx=a3, r10=a4, r8=a5, rax=ret
 /// aarch64: svc #0, x0=num, x1-x4=args, x0=返回
 
 use core::arch::asm;
@@ -78,17 +78,41 @@ pub const FT_DEV: u8 = 2;
 // ============================================================
 
 #[cfg(target_arch = "x86_64")]
-unsafe fn sys0(num: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, lateout("rax") ret); ret }
+unsafe fn sys0(num: u64) -> i64 {
+    let ret: i64;
+    asm!("syscall", in("rax") num, lateout("rax") ret, out("rcx") _, out("r11") _);
+    ret
+}
 #[cfg(target_arch = "x86_64")]
-unsafe fn sys1(num: u64, a1: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, lateout("rax") ret); ret }
+unsafe fn sys1(num: u64, a1: u64) -> i64 {
+    let ret: i64;
+    asm!("syscall", in("rax") num, in("rdi") a1, lateout("rax") ret, out("rcx") _, out("r11") _);
+    ret
+}
 #[cfg(target_arch = "x86_64")]
-unsafe fn sys2(num: u64, a1: u64, a2: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, lateout("rax") ret); ret }
+unsafe fn sys2(num: u64, a1: u64, a2: u64) -> i64 {
+    let ret: i64;
+    asm!("syscall", in("rax") num, in("rdi") a1, in("rsi") a2, lateout("rax") ret, out("rcx") _, out("r11") _);
+    ret
+}
 #[cfg(target_arch = "x86_64")]
-unsafe fn sys3(num: u64, a1: u64, a2: u64, a3: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, lateout("rax") ret); ret }
+unsafe fn sys3(num: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+    let ret: i64;
+    asm!("syscall", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, lateout("rax") ret, out("rcx") _, out("r11") _);
+    ret
+}
 #[cfg(target_arch = "x86_64")]
-unsafe fn sys4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, in("r10") a4, lateout("rax") ret); ret }
+unsafe fn sys4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 {
+    let ret: i64;
+    asm!("syscall", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, in("r10") a4, lateout("rax") ret, out("rcx") _, out("r11") _);
+    ret
+}
 #[cfg(target_arch = "x86_64")]
-unsafe fn sys5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 { let ret: i64; asm!("int 0x80", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, in("r10") a4, in("r8") a5, lateout("rax") ret); ret }
+unsafe fn sys5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
+    let ret: i64;
+    asm!("syscall", in("rax") num, in("rdi") a1, in("rsi") a2, in("rdx") a3, in("r10") a4, in("r8") a5, lateout("rax") ret, out("rcx") _, out("r11") _);
+    ret
+}
 
 #[cfg(target_arch = "aarch64")]
 unsafe fn sys0(num: u64) -> i64 { let ret: i64; asm!("svc #0", in("x0") num, lateout("x0") ret); ret }

@@ -247,8 +247,8 @@ impl MmuArch for X8664 {
     /// 进入用户态 (iretq)。
     #[inline(always)]
     fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
-        const USER_DS: u64 = 0x23;
-        const USER_CS: u64 = 0x1B;
+        const USER_DS: u64 = 0x1B;
+        const USER_CS: u64 = 0x23;
         const RFLAGS_IF: u64 = 0x202;
 
         unsafe {

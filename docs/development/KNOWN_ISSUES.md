@@ -235,12 +235,12 @@
 
 | 项 | 说明 | 优先级 | 状态 |
 |----|------|--------|------|
-| **系统调用 `int 0x80` → `syscall` 迁移** | x86_64 长模式下使用遗留 `int 0x80` 而非 `syscall`/`sysret`，性能差 2-4 倍 | medium | 🟡 |
-| `lib/fs.rs` `O_TRUNC` unused import | 实际不存在 — `O_TRUNC` 在 `sys.rs` 中定义，经 `pub use sys::*` 导出供 axsh/install 使用 | low | ✅ |
+| **系统调用 `int 0x80` → `syscall` 迁移** | x86_64 长模式下使用遗留 `int 0x80` 而非 `syscall`/`sysret`，性能差 2-4 倍 | medium | ✅ |
 | lwIP NO_SYS=1 单线程 | 迁移到 `tcpip_thread` 可根除问题 #1 的长期方案 | medium | 🟡 |
 | VFS `/` 根目录依赖用户态 mount | 磁盘引导时需内核先挂 HvFS | medium | 🟡 |
 | `axsh` help 文本与 BUILTINS 不同步 | help() 函数已改为从 TABLE 动态生成，`general.rs` 不再硬编码命令列表。新增命令只需修改 `mod.rs` TABLE 一处 | low | ✅ |
 | `userlib::*` 全局导出 syscall | 已移除 `pub use sys::*`，~80 项不再注入 `userlib::` 命名空间。消费者通过 `use userlib::sys::*` 显式导入 | low | ✅ |
+| `syscall_entry` SMP 内核栈竞态 | 已修复：使用 `swapgs` + `[gs:0]` per-CPU 数据访问，每个 CPU 独立 `SyscallPerCpu` + `syscall_stack`。`IA32_KERNEL_GS_BASE` 在 `gdt_init`/`gdt_init_ap` 中分别设置 | high | ✅ |
 
 ---
 

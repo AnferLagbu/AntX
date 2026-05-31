@@ -46,8 +46,8 @@ pub const PAGE_PRESENT: u64 = 1;
 pub const PAGE_WRITABLE: u64 = 2;
 pub const PAGE_USER: u64 = 4;
 
-pub const GDT_USER_CODE: u64 = 0x18;
-pub const GDT_USER_DATA: u64 = 0x20;
+pub const GDT_USER_DATA: u64 = 0x18;
+pub const GDT_USER_CODE: u64 = 0x20;
 
 pub const PT_LOAD: u32 = 1;
 

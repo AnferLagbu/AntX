@@ -1108,6 +1108,21 @@ fn detect_topology(topo_out: &mut TopologyInfo,
     }
 }
 
+/// IA32_EFER MSR 地址
+const IA32_EFER: u32 = 0xC0000080;
+/// IA32_EFER.SCE — 启用 SYSCALL/SYSRET 指令
+const EFER_SCE: u64 = 1 << 0;
+/// IA32_STAR — SYSCALL 目标 CS/SS 和 SYSRET 基址
+const IA32_STAR: u32 = 0xC0000081;
+/// IA32_LSTAR — SYSCALL 入口点 (64-bit 模式)
+const IA32_LSTAR: u32 = 0xC0000082;
+/// IA32_SFMASK — SYSCALL 期间清零的标志位
+const IA32_SFMASK: u32 = 0xC0000084;
+
+extern "C" {
+    fn syscall_entry();
+}
+
 /// 初始化关键 MSR 寄存器
 #[cfg(target_arch = "x86_64")]
 fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
@@ -1135,6 +1150,28 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
         
         // 初始化 FPU 状态
         core::arch::asm!("fninit", options(nostack, nomem, preserves_flags));
+    }
+    
+    // 配置 SYSCALL/SYSRET 指令
+    if features.contains(CpuFeatures::SYSCALL) {
+        unsafe {
+            // 启用 SYSCALL 指令 (设置 EFER.SCE)
+            let efer = self::msr::read_msr(IA32_EFER);
+            self::msr::write_msr(IA32_EFER, efer | EFER_SCE);
+            
+            // STAR: [63:48] = SYSRET user base (0x10), [47:32] = SYSCALL kernel CS (0x08)
+            // SYSCALL: CS = 0x08 (kernel code), SS = 0x10 (kernel data)
+            // SYSRET:  CS = (0x10+16)|3 = 0x23 (user code), SS = 0x10+8 = 0x18 (user data)
+            let star = (0x10u64 << 48) | (0x08u64 << 32);
+            self::msr::write_msr(IA32_STAR, star);
+            
+            // LSTAR: 64-bit syscall entry point
+            self::msr::write_msr(IA32_LSTAR, syscall_entry as *const () as u64);
+            
+            // SFMASK: 进入内核时清除 IF (bit 9) 以禁用中断
+            const SFMASK_IF: u64 = 1 << 9;
+            self::msr::write_msr(IA32_SFMASK, SFMASK_IF);
+        }
     }
     
     Ok(())
