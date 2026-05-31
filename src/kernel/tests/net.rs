@@ -12,10 +12,10 @@ use crate::kernel::driver::{DeviceType, Driver};
 
 fn net_atoi() -> TestResult {
     unsafe {
-        assert_eq_test!(atoi(b"123\0".as_ptr() as *const i8), 123, "atoi 123");
-        assert_eq_test!(atoi(b"-456\0".as_ptr() as *const i8), -456, "atoi -456");
-        assert_eq_test!(atoi(b"0\0".as_ptr() as *const i8), 0, "atoi 0");
-        assert_eq_test!(atoi(b"  789  \0".as_ptr() as *const i8), 789, "atoi spaces");
+        assert_eq_test!(atoi(c"123".as_ptr()), 123, "atoi 123");
+        assert_eq_test!(atoi(c"-456".as_ptr()), -456, "atoi -456");
+        assert_eq_test!(atoi(c"0".as_ptr()), 0, "atoi 0");
+        assert_eq_test!(atoi(c"  789  ".as_ptr()), 789, "atoi spaces");
     }
     TestResult::Pass
 }
@@ -23,13 +23,13 @@ fn net_atoi() -> TestResult {
 fn net_strtol() -> TestResult {
     unsafe {
         let mut endptr: *mut i8 = core::ptr::null_mut();
-        let val = strtol(b"12345\0".as_ptr() as *const i8, &mut endptr, 0);
+        let val = strtol(c"12345".as_ptr(), &mut endptr, 0);
         assert_eq_test!(val, 12345, "strtol decimal");
-        let val = strtol(b"0xFF\0".as_ptr() as *const i8, &mut endptr, 0);
+        let val = strtol(c"0xFF".as_ptr(), &mut endptr, 0);
         assert_eq_test!(val, 255, "strtol hex");
-        let val = strtol(b"0777\0".as_ptr() as *const i8, &mut endptr, 0);
+        let val = strtol(c"0777".as_ptr(), &mut endptr, 0);
         assert_eq_test!(val, 511, "strtol octal");
-        let val = strtol(b"-100\0".as_ptr() as *const i8, &mut endptr, 0);
+        let val = strtol(c"-100".as_ptr(), &mut endptr, 0);
         assert_eq_test!(val, -100, "strtol negative");
     }
     TestResult::Pass

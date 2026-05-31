@@ -131,6 +131,12 @@ pub struct HvSpa {
 unsafe impl Send for HvSpa {}
 unsafe impl Sync for HvSpa {}
 
+impl Default for HvSpa {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HvSpa {
     pub fn new() -> Self {
         Self {
@@ -218,7 +224,7 @@ impl HvSpa {
         drop(vdevs);
         if asize > 0 {
             let mut ms_list = self.metaslabs.lock();
-            let n_ms = ((asize + HV_POOL_METASLAB_SIZE - 1) / HV_POOL_METASLAB_SIZE) as u32;
+            let n_ms = asize.div_ceil(HV_POOL_METASLAB_SIZE) as u32;
             for i in 0..n_ms {
                 let ms_start = (i as u64) * HV_POOL_METASLAB_SIZE + HV_VDEV_LABEL_SIZE;
                 let ms_size = if i < n_ms - 1 { HV_POOL_METASLAB_SIZE } else { asize - ms_start + HV_VDEV_LABEL_SIZE };
@@ -230,7 +236,7 @@ impl HvSpa {
     }
 
     pub fn allocate(&self, size: u64, kind: HvCksumType, comp: HvCompType, txg: u64) -> Option<HvBlockPointer> {
-        let rounded = ((size + HV_POOL_BLOCK_SIZE - 1) / HV_POOL_BLOCK_SIZE) * HV_POOL_BLOCK_SIZE;
+        let rounded = size.div_ceil(HV_POOL_BLOCK_SIZE) * HV_POOL_BLOCK_SIZE;
         let mut ms_list = self.metaslabs.lock();
         let mut best_vdev_id: u16 = 0;
         let mut best_weight: u64 = 0;
@@ -283,7 +289,7 @@ impl HvSpa {
                 let mut vdevs = self.vdevs.lock();
                 if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == dva.vdev_id) {
                     let sector = dva.offset / 512;
-                    let count = (dva.asize + 511) / 512;
+                    let count = dva.asize.div_ceil(512);
                     let result = vdev.read_sectors(sector, count, buf);
                     if result == 0 {
                         self.read_count.fetch_add(1, Ordering::Relaxed);
@@ -301,7 +307,7 @@ impl HvSpa {
                 let mut vdevs = self.vdevs.lock();
                 if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == dva.vdev_id) {
                     let sector = dva.offset / 512;
-                    let count = (dva.asize + 511) / 512;
+                    let count = dva.asize.div_ceil(512);
                     let result = vdev.write_sectors(sector, count, buf);
                     if result != 0 { return result; }
                 }

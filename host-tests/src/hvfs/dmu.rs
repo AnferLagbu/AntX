@@ -186,6 +186,12 @@ pub struct HvObjSet {
 unsafe impl Send for HvObjSet {}
 unsafe impl Sync for HvObjSet {}
 
+impl Default for HvObjSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HvObjSet {
     pub fn new() -> Self {
         Self {
@@ -247,7 +253,7 @@ impl HvObjSet {
     pub fn update_obj(&self, obj: &HvDmuObject) -> bool {
         let mut objs = self.objects.lock();
         if let Some(existing) = objs.iter_mut().find(|o| o.obj_id == obj.obj_id) {
-            *existing = obj.clone();
+            *existing = *obj;
             true
         } else {
             false

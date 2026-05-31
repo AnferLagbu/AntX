@@ -36,6 +36,7 @@ pub struct HvDsProps {
 }
 
 impl HvDsProps {
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self {
             record_size: 131072,

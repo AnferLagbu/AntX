@@ -11,7 +11,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 ///   2. copy_trampoline() — 拷贝 trampoline 到 0x8000
 ///   3. start_ap() — 对每个 AP 发送 INIT-SIPI 序列
 ///   4. ap_entry() — AP 进入 64-bit 后调用的 Rust 入口
-
 const TRAMPOLINE_BASE: u64 = 0x8000;
 const AP_INFO_OFFSET: u64 = 8;
 const AP_STACK_SIZE: usize = 65536;
@@ -75,7 +74,7 @@ pub fn init() {
     if ap_count <= 1 {
         unsafe {
             crate::kernel::klog::klog_info(
-                b"[KERN] [SMP] Single-core system, skipping AP startup\0".as_ptr() as *const i8);
+                c"[KERN] [SMP] Single-core system, skipping AP startup".as_ptr());
         }
         SMP_FULLY_INITIALIZED.store(true, Ordering::Release);
         return;

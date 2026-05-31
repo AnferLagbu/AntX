@@ -39,7 +39,7 @@ fn compress_lz4(data: &[u8]) -> Option<Vec<u8>> {
         let mut ref_pos = 0;
         if ip + 4 <= src_len {
             let _hash = lz4_hash(data, ip);
-            let search_start = if ip > 65536 { ip - 65536 } else { 0 };
+            let search_start = ip.saturating_sub(65536);
             for s in (search_start..ip).step_by(4) {
                 if s + 4 <= src_len && data[s..s + 4] == data[ip..ip + 4] {
                     ref_pos = s;
@@ -219,7 +219,7 @@ fn decompress_zle(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
     while ip < compressed.len() && output.len() < src_len {
         if compressed[ip] == 0 && ip + 1 < compressed.len() {
             let count = compressed[ip + 1] as usize;
-            for _ in 0..count { output.push(0); }
+            output.resize(output.len() + count, 0);
             ip += 2;
         } else {
             output.push(compressed[ip]);

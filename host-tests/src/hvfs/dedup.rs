@@ -17,6 +17,12 @@ pub struct CasIndex {
     pub synced: AtomicU64,
 }
 
+impl Default for CasIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CasIndex {
     pub fn new() -> Self {
         Self {
@@ -42,7 +48,7 @@ impl CasIndex {
 
     pub fn insert(&self, hash: CasHash, bp: HvBlockPointer) {
         let mut index = self.hash_to_dva.lock().unwrap();
-        index.entry(hash).or_insert_with(Vec::new).push(bp);
+        index.entry(hash).or_default().push(bp);
         let mut refs = self.ref_counts.lock().unwrap();
         *refs.entry(hash).or_insert(0) += 1;
         self.synced.fetch_add(1, Ordering::Relaxed);

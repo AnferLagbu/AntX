@@ -71,6 +71,7 @@ unsafe impl Sync for HvArcBuf {}
 
 impl HvArcBuf {
     pub fn new(key: HvArcKey, size: usize, buf_type: HvArcBufType) -> Self {
+        #[allow(clippy::slow_vector_initialization)]
         let mut data = Vec::with_capacity(size);
         data.resize(size, 0);
         Self {

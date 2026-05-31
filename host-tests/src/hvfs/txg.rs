@@ -143,6 +143,12 @@ pub struct HvTxgGroup {
 unsafe impl Send for HvTxgGroup {}
 unsafe impl Sync for HvTxgGroup {}
 
+impl Default for HvTxgGroup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HvTxgGroup {
     pub fn new() -> Self {
         Self {

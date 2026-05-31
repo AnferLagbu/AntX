@@ -37,7 +37,7 @@
 ///
 /// // FFI 风格 (供 C 代码调用或需要指针操作时)
 /// unsafe {
-///     let len = strlen(b"Hello\0".as_ptr() as *const i8);
+///     let len = strlen(c"Hello".as_ptr());
 ///     memcpy(dest_ptr, src_ptr, size);
 /// }
 ///

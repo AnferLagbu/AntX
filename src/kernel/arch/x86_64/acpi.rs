@@ -87,7 +87,7 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
             if is_valid_rsdp(rsdp_ptr) {
                 unsafe {
                     crate::kernel::klog::klog_info(
-                        b"[ACPI] RSDP found via Multiboot2\0".as_ptr() as *const i8);
+                        c"[ACPI] RSDP found via Multiboot2".as_ptr());
                 }
                 return Some(rsdp_ptr);
             }
@@ -123,7 +123,7 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
         if is_valid_rsdp(addr) {
             unsafe {
                 crate::kernel::klog::klog_info(
-                    b"[ACPI] RSDP found via BIOS scan\0".as_ptr() as *const i8);
+                    c"[ACPI] RSDP found via BIOS scan".as_ptr());
             }
             return Some(addr);
         }
@@ -236,7 +236,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         None => {
             unsafe {
                 crate::kernel::klog::klog_info(
-                    b"[ACPI] RSDP not found\0".as_ptr() as *const i8);
+                    c"[ACPI] RSDP not found".as_ptr());
             }
             return false;
         }
@@ -247,7 +247,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         None => {
             unsafe {
                 crate::kernel::klog::klog_info(
-                    b"[ACPI] RSDT/XSDT not found\0".as_ptr() as *const i8);
+                    c"[ACPI] RSDT/XSDT not found".as_ptr());
             }
             return false;
         }
@@ -288,7 +288,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
 
     unsafe {
         crate::kernel::klog::klog_info(
-            b"[ACPI] MADT not found in RSDT/XSDT\0".as_ptr() as *const i8);
+            c"[ACPI] MADT not found in RSDT/XSDT".as_ptr());
     }
     false
 }
@@ -335,7 +335,7 @@ fn parse_madt_entries(madt_ptr: u64) {
     unsafe {
         let _count = AP_COUNT.load(Ordering::Acquire);
         crate::kernel::klog::klog_info(
-            b"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N\0".as_ptr() as *const i8
+            c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr()
         );
     }
 }

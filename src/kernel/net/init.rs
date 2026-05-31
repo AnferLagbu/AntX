@@ -83,6 +83,7 @@ fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
     ) {
         Ok(_) => Ok(()),
         Err(current) => {
+            #[allow(clippy::if_same_then_else)]
             if current == InitState::Failed as u8 || current >= to as u8 {
                 Err(()) // 已经处于目标状态或失败状态
             } else {

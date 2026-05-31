@@ -550,7 +550,6 @@ impl IdtManager {
             match result {
                 0 => {
                     // Recovery 成功
-                    return;
                 }
                 -2 => {
                     // 已尝试过，拒绝循环

@@ -45,6 +45,7 @@ pub struct IdentityTable {
 }
 
 impl IdentityTable {
+    #[allow(clippy::declare_interior_mutable_const)]
     pub const fn new() -> Self {
         const DEFAULT_ENTRY: PwmEntry = PwmEntry {
             pwm: AtomicU64::new(0),

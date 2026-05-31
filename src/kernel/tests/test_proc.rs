@@ -34,6 +34,7 @@ fn test_process_state_name() -> TestResult {
     TestResult::Pass
 }
 
+#[allow(clippy::eq_op)]
 fn test_process_state_equality() -> TestResult {
     check!(ProcessState::Ready == ProcessState::Ready, "same states should be equal");
     check!(ProcessState::Ready != ProcessState::Running, "different states should not be equal");

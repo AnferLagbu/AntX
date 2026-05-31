@@ -249,9 +249,9 @@ impl SessionManager {
         let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
         self.release();
 
-        if super::engine::check_privilege(target_pwm, current_pwm) {
-            self.elevate_for_suid(target_pwm)
-        } else if self.has_elevation_authority(target_pwm) {
+        if super::engine::check_privilege(target_pwm, current_pwm)
+            || self.has_elevation_authority(target_pwm)
+        {
             self.elevate_for_suid(target_pwm)
         } else {
             false

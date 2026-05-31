@@ -152,11 +152,10 @@ impl HvfsData {
         {
             let datasets = self.datasets.lock();
             let ub_copy = *self.spa.uberblock.lock();
-            if !ub_copy.root_bp.is_null() {
-                if self.deserialize_dataset_metadata(&ub_copy.root_bp) {
+            if !ub_copy.root_bp.is_null()
+                && self.deserialize_dataset_metadata(&ub_copy.root_bp) {
                     has_persisted = true;
                 }
-            }
             if !has_persisted {
                 datasets[0].init(0);
             }
@@ -444,12 +443,11 @@ impl HvfsData {
         let new_bp = match self.spa.allocate(write_data.len() as u64, cksum_type, comp_type, txg) {
             Some(bp) => bp, None => return -1,
         };
-        if self.is_disk_mode() {
-            if self.spa.write_bp(&new_bp, write_data) != 0 {
+        if self.is_disk_mode()
+            && self.spa.write_bp(&new_bp, write_data) != 0 {
                 self.spa.free(&new_bp, txg);
                 return -1;
             }
-        }
         obj.cow_bp(new_bp, txg);
         obj.size = (offset + to_write as u64).max(obj.size);
         obj.mtime = unsafe { timer_get_ticks() };
@@ -501,7 +499,7 @@ impl HvfsData {
         let name = path.trim_start_matches('/');
         let obj_id = {
             let datasets = self.datasets.lock();
-            match datasets[0].lookup(name) { Some(id) => Some(id), None => None }
+            datasets[0].lookup(name)
         };
         let obj_id = match obj_id { Some(id) => id, None => return -2 };
         let obj = {

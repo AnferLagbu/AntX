@@ -740,9 +740,9 @@ mod tests {
     #[test]
     fn test_strlen_basic() {
         unsafe {
-            assert_eq!(strlen(b"Hello\0".as_ptr() as *const i8), 5);
-            assert_eq!(strlen(b"\0".as_ptr() as *const i8), 0);
-            assert_eq!(strlen(b"A longer test string\0".as_ptr() as *const i8), 19);
+            assert_eq!(strlen(c"Hello".as_ptr()), 5);
+            assert_eq!(strlen(c"".as_ptr()), 0);
+            assert_eq!(strlen(c"A longer test string".as_ptr()), 19);
         }
     }
 
@@ -750,16 +750,16 @@ mod tests {
     fn test_strcmp_operations() {
         unsafe {
             // 相等
-            assert_eq!(strcmp(b"test\0".as_ptr() as *const i8, 
-                            b"test\0".as_ptr() as *const i8), 0);
+            assert_eq!(strcmp(c"test".as_ptr(), 
+                            c"test".as_ptr()), 0);
             
             // 小于
-            assert!(strcmp(b"abc\0".as_ptr() as *const i8, 
-                         b"abd\0".as_ptr() as *const i8) < 0);
+            assert!(strcmp(c"abc".as_ptr(), 
+                         c"abd".as_ptr()) < 0);
             
             // 大于
-            assert!(strcmp(b"xyz\0".as_ptr() as *const i8, 
-                         b"xya\0".as_ptr() as *const i8) > 0);
+            assert!(strcmp(c"xyz".as_ptr(), 
+                         c"xya".as_ptr()) > 0);
         }
     }
 
@@ -767,12 +767,12 @@ mod tests {
     fn test_strncmp_limit() {
         unsafe {
             // 前3个字符相等
-            assert_eq!(strncmp(b"abcdef\0".as_ptr() as *const i8, 
-                             b"abcxyz\0".as_ptr() as *const i8, 3), 0);
+            assert_eq!(strncmp(c"abcdef".as_ptr(), 
+                             c"abcxyz".as_ptr(), 3), 0);
             
             // 前4个字符不等
-            assert!(strncmp(b"abcdef\0".as_ptr() as *const i8, 
-                           b"abcxyz\0".as_ptr() as *const i8, 4) < 0);
+            assert!(strncmp(c"abcdef".as_ptr(), 
+                           c"abcxyz".as_ptr(), 4) < 0);
         }
     }
 
@@ -782,16 +782,16 @@ mod tests {
             let mut buffer = [0i8; 20];
             
             // 测试 strcpy
-            strcpy(buffer.as_mut_ptr(), b"Hello World\0".as_ptr() as *const i8);
+            strcpy(buffer.as_mut_ptr(), c"Hello World".as_ptr());
             assert_eq!(strlen(buffer.as_ptr()), 11);
             
             // 测试 strncpy
             let mut buffer2 = [0i8; 10];
-            strncpy(buffer2.as_mut_ptr(), b"Testing\0".as_ptr() as *const i8, 5);
+            strncpy(buffer2.as_mut_ptr(), c"Testing".as_ptr(), 5);
             assert_eq!(strlen(buffer2.as_ptr()), 5);  // 只拷贝了5个字符
             
             // 测试 strncpy 的填充行为
-            strncpy(buffer2.as_mut_ptr(), b"Hi\0".as_ptr() as *const i8, 5);
+            strncpy(buffer2.as_mut_ptr(), c"Hi".as_ptr(), 5);
             assert_eq!(buffer2[2], 0);  // 第3个位置应该是 '\0'
         }
     }
@@ -800,8 +800,8 @@ mod tests {
     fn test_strcat() {
         unsafe {
             let mut buffer = [0i8; 30];
-            strcpy(buffer.as_mut_ptr(), b"Hello \0".as_ptr() as *const i8);
-            strcat(buffer.as_mut_ptr(), b"World!\0".as_ptr() as *const i8);
+            strcpy(buffer.as_mut_ptr(), c"Hello ".as_ptr());
+            strcat(buffer.as_mut_ptr(), c"World!".as_ptr());
             
             assert_eq!(strlen(buffer.as_ptr()), 12);  // "Hello World!"
         }
@@ -831,17 +831,17 @@ mod tests {
             
             // 找到子串
             let result = strstr(haystack.as_ptr() as *const i8, 
-                               b"brown fox\0".as_ptr() as *const i8);
+                               c"brown fox".as_ptr());
             assert!(!result.is_null());
             
             // 未找到子串
             let result = strstr(haystack.as_ptr() as *const i8, 
-                               b"cat\0".as_ptr() as *const i8);
+                               c"cat".as_ptr());
             assert!(result.is_null());
             
             // 空子串
             let result = strstr(haystack.as_ptr() as *const i8, 
-                               b"\0".as_ptr() as *const i8);
+                               c"".as_ptr());
             assert!(!result.is_null());  // 应该返回原字符串
         }
     }

@@ -69,8 +69,7 @@ unsafe impl Sync for HvArcBuf {}
 
 impl HvArcBuf {
     pub fn new(key: HvArcKey, size: usize, buf_type: HvArcBufType) -> Self {
-        let mut data = Vec::with_capacity(size);
-        data.resize(size, 0);
+        let data = vec![0; size];
         Self {
             key,
             data: data.into_boxed_slice(),
@@ -114,6 +113,12 @@ pub struct HvArcStats {
     pub meta_size: AtomicU64,
 }
 
+impl Default for HvArcStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HvArcStats {
     pub fn new() -> Self {
         Self {
@@ -149,6 +154,12 @@ pub struct HvArc {
 
 unsafe impl Send for HvArc {}
 unsafe impl Sync for HvArc {}
+
+impl Default for HvArc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl HvArc {
     pub fn new() -> Self {
@@ -302,7 +313,7 @@ impl HvArc {
 
     fn evict_if_needed(&self, inner: &mut HvArcInner, _incoming_size: usize) {
         let current: usize = inner.mru.len() + inner.mfu.len();
-        while current + 1 > inner.max_size {
+        if current + 1 > inner.max_size {
             if inner.mru.len() > inner.p {
                 if let Some(idx) = inner.mru.pop_front() {
                     if let Some(buf) = inner.buffers[idx].take() {
@@ -332,36 +343,31 @@ impl HvArc {
             if inner.ghost_mfu.len() > inner.max_size {
                 inner.ghost_mfu.pop_front();
             }
-            break;
         }
     }
 
     pub fn release(&self, key: &HvArcKey) {
         let mut inner = self.inner.lock();
-        for slot in inner.buffers.iter_mut() {
-            if let Some(ref mut buf) = slot {
-                if buf.key.vdev_id == key.vdev_id
-                    && buf.key.offset == key.offset
-                    && buf.key.birth_txg == key.birth_txg
-                {
-                    buf.release();
-                    break;
-                }
+        for ref mut buf in inner.buffers.iter_mut().flatten() {
+            if buf.key.vdev_id == key.vdev_id
+                && buf.key.offset == key.offset
+                && buf.key.birth_txg == key.birth_txg
+            {
+                buf.release();
+                break;
             }
         }
     }
 
     pub fn mark_dirty(&self, key: &HvArcKey) {
         let mut inner = self.inner.lock();
-        for slot in inner.buffers.iter_mut() {
-            if let Some(ref mut buf) = slot {
-                if buf.key.vdev_id == key.vdev_id
-                    && buf.key.offset == key.offset
-                    && buf.key.birth_txg == key.birth_txg
-                {
-                    buf.dirty = true;
-                    break;
-                }
+        for ref mut buf in inner.buffers.iter_mut().flatten() {
+            if buf.key.vdev_id == key.vdev_id
+                && buf.key.offset == key.offset
+                && buf.key.birth_txg == key.birth_txg
+            {
+                buf.dirty = true;
+                break;
             }
         }
     }
@@ -369,11 +375,9 @@ impl HvArc {
     pub fn flush_dirty(&self) -> usize {
         let inner = self.inner.lock();
         let mut count = 0;
-        for slot in inner.buffers.iter() {
-            if let Some(ref buf) = slot {
-                if buf.dirty {
-                    count += 1;
-                }
+        for buf in inner.buffers.iter().flatten() {
+            if buf.dirty {
+                count += 1;
             }
         }
         count

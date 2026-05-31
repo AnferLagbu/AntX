@@ -308,9 +308,6 @@ impl Interpreter {
                 let result = self.stack.pop()?;
                 self.stack.drain_to(stack_base);
                 Ok(Some(result))
-            } else if func_type.results.is_empty() {
-                self.stack.drain_to(stack_base);
-                Ok(None)
             } else {
                 self.stack.drain_to(stack_base);
                 Ok(None)
@@ -646,9 +643,7 @@ impl Interpreter {
             }
 
             let result_count = func_type.results.len();
-            if result_count == 0 {
-                return Ok(());
-            } else if result_count == 1 {
+            if result_count <= 1 {
                 return Ok(());
             }
         }

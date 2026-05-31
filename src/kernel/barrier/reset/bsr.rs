@@ -54,9 +54,7 @@ pub fn reset_devices() -> RecoveryResult {
 
     let (success, failed) = snapshot::snapshot_restore_all(dummy_write);
 
-    if failed == 0 {
-        RecoveryResult::Success
-    } else if success > 0 {
+    if failed == 0 || success > 0 {
         RecoveryResult::Success
     } else {
         RecoveryResult::Escalate

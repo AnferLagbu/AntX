@@ -1023,12 +1023,12 @@ fn detect_cache(cache_out: &mut CacheInfo,
     else if vendor == CpuVendor::Amd && max_ext >= 0x8000_0006 {
         // L1 Data/Instruction (Leaf 80000005)
         let (_, _, ecx_l1, edx_l1) = cpuid::cpuid(0x8000_0005, 0);
-        cache_out.l1d_size = ((ecx_l1 >> 24)) * 1024;  // KB → Bytes
-        cache_out.l1i_size = ((edx_l1 >> 24)) * 1024;
+        cache_out.l1d_size = (ecx_l1 >> 24) * 1024;  // KB → Bytes
+        cache_out.l1i_size = (edx_l1 >> 24) * 1024;
         
         // L2 Unified (Leaf 80000006)
         let (_, _, ecx_l2, _) = cpuid::cpuid(0x8000_0006, 0);
-        cache_out.l2_size = ((ecx_l2 >> 16)) * 1024;
+        cache_out.l2_size = (ecx_l2 >> 16) * 1024;
         
         // L3 (Leaf 80000008, 可选)
         if max_ext >= 0x8000_0008 {

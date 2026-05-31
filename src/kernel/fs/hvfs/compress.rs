@@ -219,7 +219,7 @@ fn decompress_zle(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
     while ip < compressed.len() && output.len() < src_len {
         if compressed[ip] == 0 && ip + 1 < compressed.len() {
             let count = compressed[ip + 1] as usize;
-            for _ in 0..count { output.push(0); }
+            output.resize(output.len() + count, 0);
             ip += 2;
         } else {
             output.push(compressed[ip]);

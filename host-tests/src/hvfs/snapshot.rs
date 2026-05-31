@@ -52,6 +52,12 @@ impl HvSnapshot {
     }
 }
 
+impl Default for HvSnapshotManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HvSnapshotManager {
     pub fn new() -> Self {
         Self {

@@ -701,7 +701,7 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
                         }
                         klog_info!(Net, "e1000: registering IRQ {}", dev.irq);
                         unsafe {
-                            idt_register_irq(dev.irq, e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void), b"e1000\0".as_ptr() as *const i8, 0);
+                            idt_register_irq(dev.irq, e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void), c"e1000".as_ptr(), 0);
                             idt_enable_irq(dev.irq);
                             if dev.irq < 8 {
                                 let mask = pic_inb(0x21);

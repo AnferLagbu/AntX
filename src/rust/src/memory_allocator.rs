@@ -19,9 +19,9 @@ pub struct KernelAllocator;
 
 const PAGE_THRESHOLD: usize = 2048;
 
-const TAG_KMALLOC: u64 = 0xA115_4B4D_414C4C_01;
-const TAG_PMM_PAGE: u64 = 0xA115_504D_4D5047_02;
-const TAG_PMM_PAGES: u64 = 0xA115_504D_4D5047_03;
+const TAG_KMALLOC: u64 = 0xA115_4B4D_414C_4C01;
+const TAG_PMM_PAGE: u64 = 0xA115_504D_4D50_4702;
+const TAG_PMM_PAGES: u64 = 0xA115_504D_4D50_4703;
 const TAG_SIZE: usize = core::mem::size_of::<u64>();
 
 unsafe impl GlobalAlloc for KernelAllocator {

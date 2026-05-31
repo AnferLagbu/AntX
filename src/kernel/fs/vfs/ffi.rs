@@ -736,7 +736,7 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let current_offset = fd_info.map(|(_, off, _)| off).unwrap_or(0);
 
     let (_mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(
-        &VFS_MANAGER.fd_table.lock()[fd as usize].get_path()
+        VFS_MANAGER.fd_table.lock()[fd as usize].get_path()
     ) {
         Some(r) => r,
         None => {

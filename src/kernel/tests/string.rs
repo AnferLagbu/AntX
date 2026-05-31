@@ -8,26 +8,26 @@ use crate::kernel::lib::string::{
 
 fn strlen_basic() -> TestResult {
     unsafe {
-        assert_eq_test!(strlen(b"Hello\0".as_ptr() as *const i8), 5, "strlen Hello");
-        assert_eq_test!(strlen(b"\0".as_ptr() as *const i8), 0, "strlen empty");
-        assert_eq_test!(strlen(b"A longer test string\0".as_ptr() as *const i8), 20, "strlen long");
+        assert_eq_test!(strlen(c"Hello".as_ptr()), 5, "strlen Hello");
+        assert_eq_test!(strlen(c"".as_ptr()), 0, "strlen empty");
+        assert_eq_test!(strlen(c"A longer test string".as_ptr()), 20, "strlen long");
     }
     TestResult::Pass
 }
 
 fn strcmp_operations() -> TestResult {
     unsafe {
-        assert_eq_test!(strcmp(b"test\0".as_ptr() as *const i8, b"test\0".as_ptr() as *const i8), 0, "equal");
-        check!(strcmp(b"abc\0".as_ptr() as *const i8, b"abd\0".as_ptr() as *const i8) < 0, "less than");
-        check!(strcmp(b"xyz\0".as_ptr() as *const i8, b"xya\0".as_ptr() as *const i8) > 0, "greater than");
+        assert_eq_test!(strcmp(c"test".as_ptr(), c"test".as_ptr()), 0, "equal");
+        check!(strcmp(c"abc".as_ptr(), c"abd".as_ptr()) < 0, "less than");
+        check!(strcmp(c"xyz".as_ptr(), c"xya".as_ptr()) > 0, "greater than");
     }
     TestResult::Pass
 }
 
 fn strncmp_limit() -> TestResult {
     unsafe {
-        assert_eq_test!(strncmp(b"abcdef\0".as_ptr() as *const i8, b"abcxyz\0".as_ptr() as *const i8, 3), 0, "first 3 equal");
-        check!(strncmp(b"abcdef\0".as_ptr() as *const i8, b"abcxyz\0".as_ptr() as *const i8, 4) < 0, "first 4 differ");
+        assert_eq_test!(strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 3), 0, "first 3 equal");
+        check!(strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 4) < 0, "first 4 differ");
     }
     TestResult::Pass
 }
@@ -35,12 +35,12 @@ fn strncmp_limit() -> TestResult {
 fn strcpy_and_strncpy() -> TestResult {
     unsafe {
         let mut buffer = [0i8; 20];
-        strcpy(buffer.as_mut_ptr(), b"Hello World\0".as_ptr() as *const i8);
+        strcpy(buffer.as_mut_ptr(), c"Hello World".as_ptr());
         assert_eq_test!(strlen(buffer.as_ptr()), 11, "strcpy len");
         let mut buffer2 = [0i8; 10];
-        strncpy(buffer2.as_mut_ptr(), b"Testing\0".as_ptr() as *const i8, 5);
+        strncpy(buffer2.as_mut_ptr(), c"Testing".as_ptr(), 5);
         assert_eq_test!(strlen(buffer2.as_ptr()), 5, "strncpy len");
-        strncpy(buffer2.as_mut_ptr(), b"Hi\0".as_ptr() as *const i8, 5);
+        strncpy(buffer2.as_mut_ptr(), c"Hi".as_ptr(), 5);
         assert_eq_test!(buffer2[2], 0, "strncpy padding");
     }
     TestResult::Pass
@@ -49,8 +49,8 @@ fn strcpy_and_strncpy() -> TestResult {
 fn strcat_basic() -> TestResult {
     unsafe {
         let mut buffer = [0i8; 30];
-        strcpy(buffer.as_mut_ptr(), b"Hello \0".as_ptr() as *const i8);
-        strcat(buffer.as_mut_ptr(), b"World!\0".as_ptr() as *const i8);
+        strcpy(buffer.as_mut_ptr(), c"Hello ".as_ptr());
+        strcat(buffer.as_mut_ptr(), c"World!".as_ptr());
         assert_eq_test!(strlen(buffer.as_ptr()), 12, "strcat len");
     }
     TestResult::Pass
@@ -71,11 +71,11 @@ fn strchr_and_strrchr() -> TestResult {
 fn strstr_basic() -> TestResult {
     unsafe {
         let haystack = b"The quick brown fox jumps over the lazy dog\0";
-        let result = strstr(haystack.as_ptr() as *const i8, b"brown fox\0".as_ptr() as *const i8);
+        let result = strstr(haystack.as_ptr() as *const i8, c"brown fox".as_ptr());
         check!(!result.is_null(), "strstr found");
-        let result = strstr(haystack.as_ptr() as *const i8, b"cat\0".as_ptr() as *const i8);
+        let result = strstr(haystack.as_ptr() as *const i8, c"cat".as_ptr());
         check!(result.is_null(), "strstr not found");
-        let result = strstr(haystack.as_ptr() as *const i8, b"\0".as_ptr() as *const i8);
+        let result = strstr(haystack.as_ptr() as *const i8, c"".as_ptr());
         check!(!result.is_null(), "strstr empty returns haystack");
     }
     TestResult::Pass

@@ -146,7 +146,7 @@ pub fn synchronize_rcu() {
     let current_cpu = crate::kernel::smp::get_current_cpu();
 
     // 标记所有在线 CPU 进入宽限期等待
-    for i in 0..cpu_count as u32 {
+    for i in 0..cpu_count {
         if i == current_cpu {
             continue;
         }
@@ -168,7 +168,7 @@ pub fn synchronize_rcu() {
     }
 
     // 等待所有在线 CPU 报告静止状态
-    for i in 0..cpu_count as u32 {
+    for i in 0..cpu_count {
         if i == current_cpu {
             continue;
         }
@@ -187,7 +187,7 @@ pub fn synchronize_rcu() {
     }
 
     // 重置所有 CPU 的 gp_state
-    for i in 0..cpu_count as u32 {
+    for i in 0..cpu_count {
         let data = rcu_data(i);
         data.gp_state.store(GP_IDLE, Ordering::Release);
     }
@@ -299,7 +299,7 @@ pub fn rcu_note_quiescent_state() {
 /// 通知所有 CPU 的 RCU 回调 (由同步宽限期调用)
 pub fn rcu_process_all_callbacks() {
     let cpu_count = crate::kernel::smp::get_cpu_count();
-    for i in 0..cpu_count as u32 {
+    for i in 0..cpu_count {
         let data = rcu_data(i);
         if data.need_callback_process.load(Ordering::Acquire) {
             // 使用 IPI 或直接处理 — 简化实现: 直接处理

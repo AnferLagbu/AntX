@@ -60,22 +60,22 @@ const KEYBOARD_BUFFER_SIZE: usize = 128;
 /// 标准 US QWERTY 键盘 Scancode Set 1 映射表
 /// [scancode] -> ASCII 字符 (无修饰键)
 pub(crate) const SCANCODE_TABLE: &[u8; 87] = &[
-    0x00, 0x1B, '1' as u8, '2' as u8, '3' as u8, '4' as u8,
-    '5' as u8, '6' as u8, '7' as u8, '8' as u8, '9' as u8,
-    '0' as u8, '-' as u8, '=' as u8, 0x08, 0x09,
+    0x00, 0x1B, b'1', b'2', b'3', b'4',
+    b'5', b'6', b'7', b'8', b'9',
+    b'0', b'-', b'=', 0x08, 0x09,
 
-    'q' as u8, 'w' as u8, 'e' as u8, 'r' as u8, 't' as u8,
-    'y' as u8, 'u' as u8, 'i' as u8, 'o' as u8, 'p' as u8,
-    '[' as u8, ']' as u8, 0x0D, 0x00, 'a' as u8,
+    b'q', b'w', b'e', b'r', b't',
+    b'y', b'u', b'i', b'o', b'p',
+    b'[', b']', 0x0D, 0x00, b'a',
 
-    's' as u8, 'd' as u8, 'f' as u8, 'g' as u8, 'h' as u8,
-    'j' as u8, 'k' as u8, 'l' as u8, ';' as u8, '\'' as u8,
-    '`' as u8, 0x00, '\\' as u8, 'z' as u8, 'x' as u8,
+    b's', b'd', b'f', b'g', b'h',
+    b'j', b'k', b'l', b';', b'\'',
+    b'`', 0x00, b'\\', b'z', b'x',
 
-    'c' as u8, 'v' as u8, 'b' as u8, 'n' as u8, 'm' as u8,
-    ',' as u8, '.' as u8, '/' as u8, 0x00, b'*',
+    b'c', b'v', b'b', b'n', b'm',
+    b',', b'.', b'/', 0x00, b'*',
 
-    0x00, ' ' as u8, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, b' ', 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00,
@@ -84,22 +84,22 @@ pub(crate) const SCANCODE_TABLE: &[u8; 87] = &[
 
 /// Shift 修饰键下的字符映射表
 pub(crate) const SHIFT_TABLE: &[u8; 87] = &[
-    0x00, 0x1B, '!' as u8, '@' as u8, '#' as u8, '$' as u8,
-    '%' as u8, '^' as u8, '&' as u8, '*' as u8, '(' as u8,
-    ')' as u8, '_' as u8, '+' as u8, 0x08, 0x09,
+    0x00, 0x1B, b'!', b'@', b'#', b'$',
+    b'%', b'^', b'&', b'*', b'(',
+    b')', b'_', b'+', 0x08, 0x09,
 
-    'Q' as u8, 'W' as u8, 'E' as u8, 'R' as u8, 'T' as u8,
-    'Y' as u8, 'U' as u8, 'I' as u8, 'O' as u8, 'P' as u8,
-    '{' as u8, '}' as u8, 0x0D, 0x00, 'A' as u8,
+    b'Q', b'W', b'E', b'R', b'T',
+    b'Y', b'U', b'I', b'O', b'P',
+    b'{', b'}', 0x0D, 0x00, b'A',
 
-    'S' as u8, 'D' as u8, 'F' as u8, 'G' as u8, 'H' as u8,
-    'J' as u8, 'K' as u8, 'L' as u8, ':' as u8, '"' as u8,
-    '~' as u8, 0x00, '|' as u8, 'Z' as u8, 'X' as u8,
+    b'S', b'D', b'F', b'G', b'H',
+    b'J', b'K', b'L', b':', b'"',
+    b'~', 0x00, b'|', b'Z', b'X',
 
-    'C' as u8, 'V' as u8, 'B' as u8, 'N' as u8, 'M' as u8,
-    '<' as u8, '>' as u8, '?' as u8, 0x00, b'*',
+    b'C', b'V', b'B', b'N', b'M',
+    b'<', b'>', b'?', 0x00, b'*',
 
-    0x00, ' ' as u8, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, b' ', 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00,
@@ -557,9 +557,7 @@ impl KeyboardDriver {
                         break;
                     },
                     0x08 => {  // Backspace
-                        if count > 0 {
-                            count -= 1;
-                        }
+                        count = count.saturating_sub(1);
                     },
                     _ if count < max_len => {
                         buffer[count] = ch;

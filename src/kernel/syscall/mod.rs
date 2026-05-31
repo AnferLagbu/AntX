@@ -30,7 +30,7 @@ fn validate_user_buf(ptr: u64, len: u64) -> bool {
 ///
 /// Caller is in kernel context. `ptr` is a validated user-space pointer.
 pub unsafe extern "C" fn syscall_init() {
-    unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, b"POSIX syscall subsystem ready\0".as_ptr() as *const core::ffi::c_char); }
+    unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, c"POSIX syscall subsystem ready".as_ptr()); }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -1110,10 +1110,10 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
     write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
-    write_le32(&mut mbr, 462, hvfs_start as u32);
+    write_le32(&mut mbr, 462, hvfs_start);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
     let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
-    write_le32(&mut mbr, 470, hvfs_start as u32);
+    write_le32(&mut mbr, 470, hvfs_start);
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55; mbr[511] = 0xAA;
     if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 { return Errno::EIO.as_ret(); }
@@ -1178,9 +1178,9 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
     write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
-    write_le32(&mut mbr, 462, hvfs_start as u32);
+    write_le32(&mut mbr, 462, hvfs_start);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
-    write_le32(&mut mbr, 470, hvfs_start as u32);
+    write_le32(&mut mbr, 470, hvfs_start);
     let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55; mbr[511] = 0xAA;

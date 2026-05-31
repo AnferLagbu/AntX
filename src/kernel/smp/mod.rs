@@ -23,7 +23,7 @@ pub fn init() {
     CPU_COUNT.store(1, Ordering::Release);
 
     unsafe {
-        crate::kernel::klog::klog_info(b"[SMP] BSP initialized\0".as_ptr() as *const i8);
+        crate::kernel::klog::klog_info(c"[SMP] BSP initialized".as_ptr());
     }
 }
 

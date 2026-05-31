@@ -193,6 +193,12 @@ pub struct HvZil {
 unsafe impl Send for HvZil {}
 unsafe impl Sync for HvZil {}
 
+impl Default for HvZil {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HvZil {
     pub fn new() -> Self {
         Self {
