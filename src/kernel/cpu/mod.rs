@@ -1033,7 +1033,7 @@ fn detect_cache(cache_out: &mut CacheInfo,
         // L3 (Leaf 80000008, 可选)
         if max_ext >= 0x8000_0008 {
             let (_, _, ecx_l3, _) = cpuid::cpuid(0x8000_0008, 0);
-            let l3_size_kb = ((ecx_l3 >> 18)) * 512; // 单位: 512KB
+            let l3_size_kb = (ecx_l3 >> 18) * 512; // 单位: 512KB
             if l3_size_kb > 0 {
                 cache_out.l3_size = l3_size_kb * 1024; // KB → Bytes
             }
