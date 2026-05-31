@@ -100,6 +100,8 @@ pub use char::{
     BaudRate, Color, DataBits, ParityMode, SerialConfig, SerialPort, StopBits, TextAttribute,
     VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH,
 };
+#[cfg(target_arch = "aarch64")]
+pub use char::pl011::Pl011Driver;
 
 // --- 输入设备导出 ---
 pub use input::keyboard;
@@ -136,6 +138,7 @@ pub fn init_all() {
     }
     #[cfg(target_arch = "aarch64")]
     {
+        char::char_init();
         let _ = storage::storage_init();
     }
 

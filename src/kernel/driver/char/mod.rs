@@ -17,6 +17,9 @@
 pub mod serial;
 pub mod vga;
 
+#[cfg(target_arch = "aarch64")]
+pub mod pl011;
+
 // 导出常用类型
 pub use serial::{BaudRate, DataBits, ParityMode, SerialConfig, SerialPort, StopBits};
 
@@ -26,7 +29,8 @@ pub use vga::{Color, TextAttribute, VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WI
 // 初始化函数
 // ============================================================================
 
-/// 初始化字符设备子系统
+/// 初始化字符设备子系统 (x86_64: VGA + 串口)
+#[cfg(target_arch = "x86_64")]
 pub fn char_init() {
     vga::vga_init();
     serial::serial_init(0);
@@ -46,4 +50,19 @@ pub fn char_init() {
             alloc::boxed::Box::new(com1),
         );
     }
+}
+
+/// 初始化字符设备子系统 (AArch64: PL011 UART)
+#[cfg(target_arch = "aarch64")]
+pub fn char_init() {
+    use crate::kernel::chitin::ChitinOps;
+
+    crate::kernel::chitin::chitin_register_driver_with_ops(
+        "pl011",
+        crate::kernel::chitin::ChitinProto::Char,
+        Some(crate::kernel::arch::aarch64::uart::PL011_BASE),
+        None,
+        alloc::boxed::Box::new(pl011::Pl011Driver::new()),
+        ChitinOps::Char(&pl011::PL011_CHAR_OPS),
+    );
 }

@@ -14,7 +14,7 @@ const UARTFR: u64 = 0x018; // Flag Register
 const UARTIBRD: u64 = 0x024; // Integer Baud Rate Divisor
 const UARTFBRD: u64 = 0x028; // Fractional Baud Rate Divisor
 const UARTLCR_H: u64 = 0x02C; // Line Control Register
-const UARTCR: u64 = 0x030; // Control Register
+pub const UARTCR: u64 = 0x030; // Control Register
 const UARTIMSC: u64 = 0x038; // Interrupt Mask Set/Clear
 
 /// 标志位
@@ -22,7 +22,7 @@ const UARTFR_TXFF: u32 = 1 << 5; // Transmit FIFO Full
 const UARTFR_RXFE: u32 = 1 << 4; // Receive FIFO Empty
 
 /// 控制位
-const UARTCR_UARTEN: u32 = 1 << 0; // UART Enable
+pub const UARTCR_UARTEN: u32 = 1 << 0; // UART Enable
 const UARTCR_TXE: u32 = 1 << 8; // Transmit Enable
 const UARTCR_RXE: u32 = 1 << 9; // Receive Enable
 
