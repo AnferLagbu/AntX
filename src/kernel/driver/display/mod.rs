@@ -105,8 +105,11 @@ pub fn get_framebuffer() -> Option<&'static mut Framebuffer> {
 fn infer_pixel_format(bpp: u8, red_pos: u8, green_pos: u8, blue_pos: u8) -> PixelFormat {
     match bpp {
         32 => {
-            let _ = (red_pos, green_pos, blue_pos);
-            PixelFormat::Bgra8888
+            if red_pos == 0 && green_pos == 8 && blue_pos == 16 {
+                PixelFormat::Argb8888
+            } else {
+                PixelFormat::Bgra8888
+            }
         }
         24 => {
             if blue_pos == 0 {
