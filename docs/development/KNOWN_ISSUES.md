@@ -9,17 +9,28 @@
 
 > 以下为 2026-05-30 全面代码审计中发现的最严重问题，按优先级排列。
 
-### A1. HvFS 假 SHA256 校验和 (P0)
-- **文件**: `src/kernel/fs/hvfs/checksum.rs`
+### A1. HvFS 假 SHA256 校验和 (P0) ✅ 已修复
+- **文件**: `src/kernel/fs/hvfs/checksum.rs`, `src/kernel/fs/hvfs/dedup.rs`
+- **修复日期**: 2026-05-31
 - **问题**: HvFS 声称使用 SHA256 进行数据完整性校验，实际使用简化的/非标准哈希函数
-- **影响**: 静默数据损坏无法检测、恶意篡改无法识别
-- **修复**: 复用 `credo/sha256.rs` 的标准 SHA256 实现
+- **根因**: `checksum.rs::sha256()` 已正确委托给 `credo::sha256::sha256()` 标准实现（含正确的初始哈希值、轮常量、压缩函数和填充），但 `dedup.rs` 中 CAS 哈希的字节序转换存在二重错误：
+  1. `dedup::sha256()` 将 `HvChecksum` 的 u64 值还原为字节时使用 `to_le_bytes()`，但原值由 `from_be_bytes()` 创建，导致每8字节组内字节反转
+  2. `cas_aware_write()` 配合上述错误使用 `from_le_bytes()`，双错部分抵消但产生的 `CasHash`（`[u8; 32]`）字节序列非标准 SHA256 输出
+- **影响**: CAS 去重索引中存储的哈希值不是标准 SHA256，无法与外部工具互操作
+- **修复**: 
+  1. `dedup::sha256()`: `to_le_bytes()` → `to_be_bytes()`（4处）
+  2. `cas_aware_write()`: `from_le_bytes()` → `from_be_bytes()`（4处）
+  3. 验证: `cargo check` 通过，host-tests 15 个 SHA256 测试全通过
 
-### A2. NVMe PRP2 始终为零 (P0)
+### A2. NVMe PRP2 始终为零 (P0) ✅ 已修复
 - **文件**: `src/kernel/driver/storage/nvme.rs`
+- **修复日期**: 2026-05-31
 - **问题**: 多页 DMA 传输的第二页 PRP2 始终为 0，数据写入物理地址 0
 - **影响**: 覆盖 IVT/中断向量表等关键低地址内存
-- **修复**: 正确填充 PRP2 为第二页的物理地址
+- **修复**: 
+  1. 为 `NvmeController` 添加 `prp_list_virt`/`prp_list_phys` 字段管理 PRP 列表页
+  2. `create_io_queue` 中分配 PRP 列表页，`free_queues` 中释放
+  3. `build_prp` 处理 >2 页传输时正确填充 PRP 列表条目，循环边界 `0..(num_pages - 1)`
 
 ### A3. lwIP virt_to_phys 假恒等映射 (P0)
 - **文件**: `src/kernel/net/sys_arch.rs`
@@ -39,11 +50,12 @@
 - **影响**: slab 元数据损坏
 - **修复**: 保存来源标记，dealloc 时据此选择释放路径
 
-### A6. 链接脚本 .rela.dyn 缺失 PHDR (P0)
+### A6. 链接脚本 .rela.dyn 缺失 PHDR (P0) ✅ 已修复
 - **文件**: `src/kernel/link/x86_64.ld`, `src/link.ld`
+- **修复日期**: 2026-05-31
 - **问题**: 动态重定位段无 PHDR 声明，运行时不被加载
 - **影响**: 内核 -fPIC 重定位失败
-- **修复**: 为 .rela.dyn/.dynsym/.dynstr 添加 `:kernel` PHDR
+- **修复**: 审计确认 `.rela.dyn`、`.dynsym`、`.dynstr` 段已正确声明 `:kernel` PHDR，`readelf` 验证通过
 
 ### A7. SpinLock/Mutex Guard Drop 缺少内存屏障 (P1)
 - **文件**: `src/kernel/sync/spinlock.rs`, `src/kernel/sync/mutex.rs`
@@ -51,17 +63,19 @@
 - **影响**: 竞态条件、多核数据不一致
 - **修复**: Drop 中添加 `atomic::fence(Ordering::Release)`
 
-### A8. COW 引用计数竞态 (P1)
+### A8. COW 引用计数竞态 (P1) ✅ 已修复
 - **文件**: `src/kernel/mm/cow.rs`
+- **修复日期**: 2026-05-31
 - **问题**: 非原子 refcount 递减，多核并发可致下溢
 - **影响**: 物理内存泄漏或 UAF
-- **修复**: 使用 `fetch_sub` 原子操作
+- **修复**: 使用 `fetch_sub` 原子操作保护 refcount 递减
 
-### A9. PMM 伙伴分配器无锁 (P1)
+### A9. PMM 伙伴分配器无锁 (P1) ✅ 已修复
 - **文件**: `src/kernel/mm/pmm.rs`
+- **修复日期**: 2026-05-31
 - **问题**: 全局 buddy bitmap 无锁，SMP 并发可致双分配
 - **影响**: 两个 CPU 分到同一物理页
-- **修复**: 使用 SpinLock 或原子操作保护
+- **修复**: 使用 SpinLock 保护 buddy allocator 操作
 
 ### A10. syscall.md 完全过时 (P1)
 - **文件**: `docs/api/syscall.md`

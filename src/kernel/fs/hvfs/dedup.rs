@@ -161,10 +161,10 @@ pub fn sha256(data: &[u8]) -> CasHash {
     let ck = super::checksum::HvChecksum::compute(
         super::bp::HvCksumType::SHA256, data);
     let mut hash = [0u8; 32];
-    hash[0..8].copy_from_slice(&ck.value[0].to_le_bytes());
-    hash[8..16].copy_from_slice(&ck.value[1].to_le_bytes());
-    hash[16..24].copy_from_slice(&ck.value[2].to_le_bytes());
-    hash[24..32].copy_from_slice(&ck.value[3].to_le_bytes());
+    hash[0..8].copy_from_slice(&ck.value[0].to_be_bytes());
+    hash[8..16].copy_from_slice(&ck.value[1].to_be_bytes());
+    hash[16..24].copy_from_slice(&ck.value[2].to_be_bytes());
+    hash[24..32].copy_from_slice(&ck.value[3].to_be_bytes());
     hash
 }
 
@@ -180,10 +180,10 @@ pub fn cas_aware_write(data: &[u8], txg: u64, obj_id: u64) -> Option<super::bp::
     if let Some(existing) = cas.lookup(&hash) {
         cas.ref_inc(&hash);
         crate::kernel::fs::hvfs::zil::HvZilRecord::new_dedup_ref(txg,
-            [u64::from_le_bytes(hash[0..8].try_into().unwrap()),
-             u64::from_le_bytes(hash[8..16].try_into().unwrap()),
-             u64::from_le_bytes(hash[16..24].try_into().unwrap()),
-             u64::from_le_bytes(hash[24..32].try_into().unwrap())],
+            [u64::from_be_bytes(hash[0..8].try_into().unwrap()),
+             u64::from_be_bytes(hash[8..16].try_into().unwrap()),
+             u64::from_be_bytes(hash[16..24].try_into().unwrap()),
+             u64::from_be_bytes(hash[24..32].try_into().unwrap())],
             obj_id);
         return Some(existing);
     }
