@@ -574,18 +574,36 @@ impl Aarch64Vmm {
         // Allocate a clean L0 table for user space (TTBR0_EL1)
         let user_l0 = self.alloc_table()?;
 
-        // Copy kernel identity-mapped TTBR0 entries into the user page table.
-        // The kernel on aarch64 uses identity mapping (VA==PA), so all kernel
-        // code and devices are accessed via TTBR0_EL1. After switching TTBR0_EL1
-        // to the user page table, kernel code must remain reachable —
-        // otherwise the code following the TTBR0 switch cannot execute.
-        //
-        // Note: shared L1/L2 tables are safe because user mappings only
-        // overlay unused address ranges (L2_DEVICE[0] → new L3 table).
+        // Allocate a new L1 table for user-space entries.
+        // Do NOT share L1_IDMAP/L2_DEVICE with the kernel — those tables
+        // use Device memory attributes for MMIO regions and are not suitable
+        // for user code execution.  Sharing them would also cause the user
+        // page table modifications (e.g. replacing a 2MB BLOCK with a TABLE
+        // descriptor) to corrupt the kernel's identity mapping.
+        let user_l1 = match self.alloc_table() {
+            Some(t) => t,
+            None => {
+                self.free_table(user_l0);
+                return None;
+            }
+        };
+
         let kernel_l0 = phys_to_virt(self.kernel_l0) as *const u64;
         let user_l0_ptr = phys_to_virt(user_l0) as *mut u64;
+        let user_l1_desc = table_descriptor(user_l1);
+
         unsafe {
-            for i in 0..TABLE_ENTRIES {
+            // L0[0] → new user L1 table (clean, no shared tables)
+            ptr::write_volatile(user_l0_ptr.add(0), user_l1_desc);
+
+            // Copy TTBR1 entries from kernel L0 (indices 256..511).
+            // These cover the high-half kernel address space
+            // (0xFFFF_0000_0000_0000 .. 0xFFFF_FFFF_FFFF_FFFF).
+            // After switching TTBR0_EL1 to the user page table, kernel code
+            // must remain reachable via TTBR1_EL1 — the TTBR1 entries ensure
+            // the kernel's own page tables are still accessible for exception
+            // handling and other kernel-mode operations.
+            for i in 256..TABLE_ENTRIES {
                 let entry = ptr::read_volatile(kernel_l0.add(i));
                 ptr::write_volatile(user_l0_ptr.add(i), entry);
             }
