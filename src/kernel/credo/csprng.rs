@@ -1,5 +1,5 @@
-use core::sync::atomic::{AtomicBool, Ordering};
 use super::types::PWM_SALT_LEN;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 static RDRAND_AVAILABLE: AtomicBool = AtomicBool::new(false);
 static RDRAND_CHECKED: AtomicBool = AtomicBool::new(false);
@@ -27,7 +27,11 @@ fn rdrand_u64() -> Option<u64> {
             options(nomem, nostack),
         );
     }
-    if ok != 0 { Some(ret) } else { None }
+    if ok != 0 {
+        Some(ret)
+    } else {
+        None
+    }
 }
 
 fn fallback_entropy_byte(idx: usize) -> u8 {
@@ -42,7 +46,9 @@ fn fallback_entropy_byte(idx: usize) -> u8 {
         .wrapping_mul(0x1329_4A6B_3C7D_8E0F)
         .wrapping_add(counter)
         .wrapping_add(idx as u64 * 0x517CC1B727220A95);
-    v = v.wrapping_mul(0x9e3779b97f4a7c15).wrapping_add(tsc.rotate_left(idx as u32));
+    v = v
+        .wrapping_mul(0x9e3779b97f4a7c15)
+        .wrapping_add(tsc.rotate_left(idx as u32));
     ((v >> 56) as u8) ^ ((v >> 40) as u8)
 }
 

@@ -23,12 +23,11 @@
 //! 此模块直接操作硬件端口，必须在特权级执行。
 
 #[cfg(target_arch = "x86_64")]
-
 use super::framework::Driver;
-use super::framework::{DeviceType, DriverError, Result, DeviceInfo};
-use super::framework::{outb, inb};
+use super::framework::{inb, outb};
 #[cfg(target_arch = "x86_64")]
-use super::framework::{outw, inw};
+use super::framework::{inw, outw};
+use super::framework::{DeviceInfo, DeviceType, DriverError, Result};
 use alloc::boxed::Box;
 use spin::Mutex;
 
@@ -46,34 +45,34 @@ pub(crate) const ATA_SECONDARY_IO: u16 = 0x170;
 pub(crate) const ATA_SECONDARY_CTRL: u16 = 0x376;
 
 /// I/O 寄存器偏移量
-const ATA_DATA: u16 = 0;           // 数据寄存器 (16位)
-const ATA_ERROR: u16 = 1;          // 错误寄存器
-const ATA_SECTOR_COUNT: u16 = 2;   // 扇区计数
-const ATA_SECTOR_NUM: u16 = 3;      // 扇区号 (LBA 0-7)
-const ATA_CYLINDER_LOW: u16 = 4;    // 柱面低字节 (LBA 8-15)
-const ATA_CYLINDER_HIGH: u16 = 5;   // 柱面高字节 (LBA 16-23)
-const ATA_DRIVE_HEAD: u16 = 6;      // 驱动器/磁头选择
-const ATA_STATUS: u16 = 7;         // 状态寄存器
-const ATA_COMMAND: u16 = 7;        // 命令寄存器
+const ATA_DATA: u16 = 0; // 数据寄存器 (16位)
+const ATA_ERROR: u16 = 1; // 错误寄存器
+const ATA_SECTOR_COUNT: u16 = 2; // 扇区计数
+const ATA_SECTOR_NUM: u16 = 3; // 扇区号 (LBA 0-7)
+const ATA_CYLINDER_LOW: u16 = 4; // 柱面低字节 (LBA 8-15)
+const ATA_CYLINDER_HIGH: u16 = 5; // 柱面高字节 (LBA 16-23)
+const ATA_DRIVE_HEAD: u16 = 6; // 驱动器/磁头选择
+const ATA_STATUS: u16 = 7; // 状态寄存器
+const ATA_COMMAND: u16 = 7; // 命令寄存器
 
 /// 控制寄存器偏移量
 const ATA_CTRL_ALT_STATUS: u8 = 0; // 替代状态
 
 /// 状态寄存器标志位
-const ATA_STATUS_BSY: u8 = 0x80;   // Busy
-const ATA_STATUS_DRDY: u8 = 0x40;  // Drive Ready
-const ATA_STATUS_DF: u8 = 0x20;    // Device Fault
-const ATA_STATUS_DSC: u8 = 0x10;   // Seek Complete
-const ATA_STATUS_DRQ: u8 = 0x08;   // Data Request
-const ATA_STATUS_CORR: u8 = 0x04;  // Corrected Data
-const ATA_STATUS_IDX: u8 = 0x02;   // Index
-const ATA_STATUS_ERR: u8 = 0x01;   // Error
+const ATA_STATUS_BSY: u8 = 0x80; // Busy
+const ATA_STATUS_DRDY: u8 = 0x40; // Drive Ready
+const ATA_STATUS_DF: u8 = 0x20; // Device Fault
+const ATA_STATUS_DSC: u8 = 0x10; // Seek Complete
+const ATA_STATUS_DRQ: u8 = 0x08; // Data Request
+const ATA_STATUS_CORR: u8 = 0x04; // Corrected Data
+const ATA_STATUS_IDX: u8 = 0x02; // Index
+const ATA_STATUS_ERR: u8 = 0x01; // Error
 
 /// ATA 命令集
-const ATA_CMD_IDENTIFY: u8 = 0xEC;       // IDENTIFY DEVICE
-const ATA_CMD_READ_SECTORS: u8 = 0x20;   // READ SECTORS
-const ATA_CMD_WRITE_SECTORS: u8 = 0x30;  // WRITE SECTORS
-const ATA_CMD_FLUSH_CACHE: u8 = 0xE7;    // FLUSH CACHE
+const ATA_CMD_IDENTIFY: u8 = 0xEC; // IDENTIFY DEVICE
+const ATA_CMD_READ_SECTORS: u8 = 0x20; // READ SECTORS
+const ATA_CMD_WRITE_SECTORS: u8 = 0x30; // WRITE SECTORS
+const ATA_CMD_FLUSH_CACHE: u8 = 0xE7; // FLUSH CACHE
 
 /// 超时值 (循环次数)
 const ATA_TIMEOUT: u32 = 100000;
@@ -135,12 +134,20 @@ pub struct AtaController {
 
 /// 获取指定设备的 I/O 基地址
 pub(crate) fn get_io_base(drive: u8) -> u16 {
-    if drive < 2 { ATA_PRIMARY_IO } else { ATA_SECONDARY_IO }
+    if drive < 2 {
+        ATA_PRIMARY_IO
+    } else {
+        ATA_SECONDARY_IO
+    }
 }
 
 /// 获取指定设备的控制寄存器基地址
 pub(crate) fn get_ctrl_base(drive: u8) -> u16 {
-    if drive < 2 { ATA_PRIMARY_CTRL } else { ATA_SECONDARY_CTRL }
+    if drive < 2 {
+        ATA_PRIMARY_CTRL
+    } else {
+        ATA_SECONDARY_CTRL
+    }
 }
 
 /// ATA 延时函数 (读取状态寄存器 4 次)
@@ -159,7 +166,7 @@ fn ata_delay(ctrl: u16) {
 /// * `Err(DriverError::Timeout)` - 超时
 fn wait_bsy(io: u16, ctrl: u16) -> Result<()> {
     let mut timeout = ATA_TIMEOUT;
-    
+
     while timeout > 0 {
         unsafe {
             let status = inb(io + ATA_STATUS);
@@ -170,22 +177,22 @@ fn wait_bsy(io: u16, ctrl: u16) -> Result<()> {
         ata_delay(ctrl);
         timeout -= 1;
     }
-    
+
     Err(DriverError::Timeout)
 }
 
 /// 等待 DRQ 位设置且 BSY 清除
 fn wait_drq(io: u16, ctrl: u16) -> Result<()> {
     let mut timeout = ATA_TIMEOUT;
-    
+
     while timeout > 0 {
         unsafe {
             let status = inb(io + ATA_STATUS);
-            
+
             if status & ATA_STATUS_ERR != 0 {
                 return Err(DriverError::HardwareError);
             }
-            
+
             if status & (ATA_STATUS_DRQ | ATA_STATUS_BSY) == ATA_STATUS_DRQ {
                 return Ok(());
             }
@@ -193,7 +200,7 @@ fn wait_drq(io: u16, ctrl: u16) -> Result<()> {
         ata_delay(ctrl);
         timeout -= 1;
     }
-    
+
     Err(DriverError::Timeout)
 }
 
@@ -203,7 +210,7 @@ fn select_drive(io: u16, ctrl: u16, slave: bool) -> Result<()> {
         outb(io + ATA_DRIVE_HEAD, 0xA0 | ((slave as u8) << 4));
     }
     ata_delay(ctrl);
-    
+
     wait_bsy(io, ctrl)
 }
 
@@ -230,7 +237,7 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
     // 检查状态
     unsafe {
         let status = inb(io + ATA_STATUS);
-        
+
         // 如果状态为 0，说明没有设备
         if status == 0 {
             return false;
@@ -257,7 +264,9 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
 
     // 读取 IDENTIFY 数据 (丢弃)
     for _ in 0..WORDS_PER_SECTOR {
-        unsafe { let _ = inw(io + ATA_DATA); }
+        unsafe {
+            let _ = inw(io + ATA_DATA);
+        }
     }
 
     true
@@ -435,11 +444,14 @@ impl AtaController {
 
         unsafe {
             // 设置 LBA 地址
-            outb(io + ATA_SECTOR_COUNT, 1);                          // 1 个扇区
-            outb(io + ATA_SECTOR_NUM, (lba & 0xFF) as u8);             // LBA 0-7
-            outb(io + ATA_CYLINDER_LOW, ((lba >> 8) & 0xFF) as u8);   // LBA 8-15
+            outb(io + ATA_SECTOR_COUNT, 1); // 1 个扇区
+            outb(io + ATA_SECTOR_NUM, (lba & 0xFF) as u8); // LBA 0-7
+            outb(io + ATA_CYLINDER_LOW, ((lba >> 8) & 0xFF) as u8); // LBA 8-15
             outb(io + ATA_CYLINDER_HIGH, ((lba >> 16) & 0xFF) as u8); // LBA 16-23
-            outb(io + ATA_DRIVE_HEAD, 0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8));
+            outb(
+                io + ATA_DRIVE_HEAD,
+                0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
+            );
             ata_delay(ctrl);
 
             // 发送读命令
@@ -486,7 +498,10 @@ impl AtaController {
             outb(io + ATA_SECTOR_NUM, (lba & 0xFF) as u8);
             outb(io + ATA_CYLINDER_LOW, ((lba >> 8) & 0xFF) as u8);
             outb(io + ATA_CYLINDER_HIGH, ((lba >> 16) & 0xFF) as u8);
-            outb(io + ATA_DRIVE_HEAD, 0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8));
+            outb(
+                io + ATA_DRIVE_HEAD,
+                0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
+            );
             ata_delay(ctrl);
 
             // 发送写命令
@@ -518,7 +533,13 @@ impl AtaController {
 
     /// 读取多个扇区
     #[cfg(target_arch = "x86_64")]
-    pub fn read_sectors(&self, drive: u8, lba: u32, count: u32, buffer: &mut [u8]) -> Result<usize> {
+    pub fn read_sectors(
+        &self,
+        drive: u8,
+        lba: u32,
+        count: u32,
+        buffer: &mut [u8],
+    ) -> Result<usize> {
         let required_size = (count as usize) * 512;
         if buffer.len() < required_size {
             return Err(DriverError::BufferTooSmall);
@@ -527,9 +548,9 @@ impl AtaController {
         for i in 0..count {
             let offset = (i as usize) * 512;
             let mut sector_buf = [0u8; 512];
-            
+
             self.read_sector(drive, lba + i, &mut sector_buf)?;
-            
+
             buffer[offset..offset + 512].copy_from_slice(&sector_buf);
         }
 
@@ -548,7 +569,7 @@ impl AtaController {
             let offset = (i as usize) * 512;
             let mut sector_buf = [0u8; 512];
             sector_buf.copy_from_slice(&buffer[offset..offset + 512]);
-            
+
             self.write_sector(drive, lba + i, &sector_buf)?;
         }
 
@@ -599,8 +620,12 @@ pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
     let guard = ATA_DEVICE.lock();
     match &*guard {
         Some(controller) => {
-            if controller.disk_present(drive) { 1 } else { 0 }
-        },
+            if controller.disk_present(drive) {
+                1
+            } else {
+                0
+            }
+        }
         None => 0,
     }
 }
@@ -618,12 +643,14 @@ pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
             let mut buf = [0u8; 512];
             match controller.read_sector(drive, lba, &mut buf) {
                 Ok(()) => {
-                    unsafe { core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512); }
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512);
+                    }
                     ATA_SUCCESS
-                },
+                }
                 Err(_) => ATA_ERR,
             }
-        },
+        }
         None => ATA_NO_DISK,
     }
 }
@@ -639,13 +666,15 @@ pub extern "C" fn ata_write_sector(drive: u8, lba: u32, buffer: *const u8) -> i3
     match &*ATA_DEVICE.lock() {
         Some(controller) => {
             let mut buf = [0u8; 512];
-            unsafe { core::ptr::copy_nonoverlapping(buffer, buf.as_mut_ptr(), 512); }
-            
+            unsafe {
+                core::ptr::copy_nonoverlapping(buffer, buf.as_mut_ptr(), 512);
+            }
+
             match controller.write_sector(drive, lba, &buf) {
                 Ok(()) => ATA_SUCCESS,
                 Err(_) => ATA_ERR,
             }
-        },
+        }
         None => ATA_NO_DISK,
     }
 }
@@ -686,17 +715,17 @@ mod tests {
     #[test]
     fn test_driver_trait_impl() {
         let mut controller = AtaController::new();
-        
+
         // 测试 trait 方法
         assert_eq!(controller.name(), "ATA/IDE Controller");
         assert_eq!(controller.device_type(), DeviceType::Block);
         assert!(!controller.is_ready());
-        
+
         // init 应该在真实硬件上工作，这里只验证不会 panic
         // 注意: 在测试环境中可能无法访问硬件
         let result = controller.init();
-        let _ = result;  // 可能成功或失败
-        
+        let _ = result; // 可能成功或失败
+
         assert!(controller.status().len() > 0);
     }
 
@@ -706,7 +735,7 @@ mod tests {
         assert_eq!(get_io_base(1), ATA_PRIMARY_IO);
         assert_eq!(get_io_base(2), ATA_SECONDARY_IO);
         assert_eq!(get_io_base(3), ATA_SECONDARY_IO);
-        
+
         assert_eq!(get_ctrl_base(0), ATA_PRIMARY_CTRL);
         assert_eq!(get_ctrl_base(3), ATA_SECONDARY_CTRL);
     }
@@ -714,11 +743,11 @@ mod tests {
     #[test]
     fn test_disk_present_bounds() {
         let controller = AtaController::new();
-        
+
         // 未初始化时所有设备都不存在
         assert!(!controller.disk_present(0));
         assert!(!controller.disk_present(3));
-        
+
         // 超出范围应该返回 false
         assert!(!controller.disk_present(4));
         assert!(!controller.disk_present(255));

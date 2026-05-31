@@ -29,9 +29,8 @@
 //! # Safety
 //! 此模块直接操作串口硬件端口。
 
-
-use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use crate::kernel::driver::framework::{outb, inb};
+use crate::kernel::driver::framework::{inb, outb};
+use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 
 // ============================================================================
 // 硬件常量定义
@@ -47,30 +46,30 @@ const COM4_BASE: u16 = 0x2E8;
 pub(crate) const MAX_COM_PORTS: usize = 4;
 
 /// UART 寄存器偏移量
-const UART_RBR: u16 = 0;   // 接收缓冲寄存器 (只读)
-const UART_THR: u16 = 0;   // 发送保持寄存器 (只写)
-const UART_IER: u16 = 1;   // 中断使能寄存器
-const UART_IIR: u16 = 2;   // 中断识别寄存器 (只读)
-const UART_FCR: u16 = 2;   // FIFO 控制寄存器 (只写)
-const UART_LCR: u16 = 3;   // 线路控制寄存器
-const UART_MCR: u16 = 4;   // 调制解调器控制寄存器
-const UART_LSR: u16 = 5;   // 线路状态寄存器
+const UART_RBR: u16 = 0; // 接收缓冲寄存器 (只读)
+const UART_THR: u16 = 0; // 发送保持寄存器 (只写)
+const UART_IER: u16 = 1; // 中断使能寄存器
+const UART_IIR: u16 = 2; // 中断识别寄存器 (只读)
+const UART_FCR: u16 = 2; // FIFO 控制寄存器 (只写)
+const UART_LCR: u16 = 3; // 线路控制寄存器
+const UART_MCR: u16 = 4; // 调制解调器控制寄存器
+const UART_LSR: u16 = 5; // 线路状态寄存器
 
 /// LSR 标志位
-const LSR_DATA_READY: u8 = 0x01;     // 数据可读
+const LSR_DATA_READY: u8 = 0x01; // 数据可读
 const LSR_TRANSMIT_EMPTY: u8 = 0x20; // 发送保持寄存器空
-const LSR_TRANSMIT_IDLE: u8 = 0x40;  // 发送器空闲
+const LSR_TRANSMIT_IDLE: u8 = 0x40; // 发送器空闲
 
 /// FCR 命令
-const FCR_ENABLE_FIFO: u8 = 0xC1;    // 启用 FIFO，清除缓冲区
+const FCR_ENABLE_FIFO: u8 = 0xC1; // 启用 FIFO，清除缓冲区
 
 /// MCR 命令
-const MCR_DTR: u8 = 0x01;            // Data Terminal Ready
-const MCR_RTS: u8 = 0x02;            // Request To Send
-const MCR_OUT2: u8 = 0x08;           // OUT2 (中断使能)
+const MCR_DTR: u8 = 0x01; // Data Terminal Ready
+const MCR_RTS: u8 = 0x02; // Request To Send
+const MCR_OUT2: u8 = 0x08; // OUT2 (中断使能)
 
 /// LCR 命令
-const LCR_DLAB: u8 = 0x80;          // Divisor Latch Access Bit
+const LCR_DLAB: u8 = 0x80; // Divisor Latch Access Bit
 
 /// 波特率分频值
 const BAUD_9600: u16 = 12;
@@ -285,13 +284,13 @@ fn set_baud_rate(base: u16, divisor: u16) {
     unsafe {
         // 启用 DLAB 以访问分频寄存器
         outb(base + UART_LCR, LCR_DLAB);
-        
+
         // 设置低字节和高字节
         outb(base, (divisor & 0xFF) as u8);
         outb(base + 1, ((divisor >> 8) & 0xFF) as u8);
-        
+
         // 关闭 DLAB，设置数据格式
-        outb(base + UART_LCR, 0x03);  // 8N1
+        outb(base + UART_LCR, 0x03); // 8N1
     }
 }
 
@@ -312,7 +311,9 @@ fn read_byte(base: u16) -> u8 {
 
 /// 向 UART 写入一个字节
 fn write_byte(base: u16, byte: u8) {
-    unsafe { outb(base + UART_THR, byte); }
+    unsafe {
+        outb(base + UART_THR, byte);
+    }
 }
 
 // ============================================================================
@@ -345,10 +346,11 @@ impl Driver for SerialPort {
             set_baud_rate(base, self.config.baud_rate.to_divisor());
 
             // 3. 设置数据格式 (8N1)
-            outb(base + UART_LCR, 
-                self.config.data_bits.to_lcr_value() |
-                self.config.stop_bits.to_lcr_value() |
-                self.config.parity.to_lcr_value()
+            outb(
+                base + UART_LCR,
+                self.config.data_bits.to_lcr_value()
+                    | self.config.stop_bits.to_lcr_value()
+                    | self.config.parity.to_lcr_value(),
             );
 
             // 4. 启用 FIFO，清除缓冲区
@@ -368,8 +370,10 @@ impl Driver for SerialPort {
 
     fn shutdown(&mut self) -> Result<()> {
         // 禁用所有中断
-        unsafe { outb(self.base + UART_IER, 0x00); }
-        
+        unsafe {
+            outb(self.base + UART_IER, 0x00);
+        }
+
         self.initialized = false;
         Ok(())
     }
@@ -484,7 +488,7 @@ impl SerialPort {
     pub fn handle_interrupt(&mut self) {
         // 读取 IIR 判断中断类型
         let iir = unsafe { inb(self.base + UART_IIR) };
-        
+
         // bit 0 = 0 表示有挂起的中断
         if iir & 0x01 != 0 {
             return;
@@ -500,15 +504,15 @@ impl SerialPort {
                     let byte = read_byte(self.base);
                     let _ = self.rx_buffer.push(byte);
                 }
-            },
+            }
             0x01 => {
                 // 发送保持寄存器空
                 // 可以从 tx_buffer 取出数据发送
                 if let Some(byte) = self.tx_buffer.pop() {
                     write_byte(self.base, byte);
                 }
-            },
-            _ => {},  // 其他中断类型暂不处理
+            }
+            _ => {} // 其他中断类型暂不处理
         }
     }
 
@@ -603,11 +607,9 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
         unsafe {
             match &mut SERIAL_PORTS[com as usize] {
-                Some(port) => {
-                    match port.receive_byte() {
-                        Some(ch) => ch as i32,
-                        None => -1,
-                    }
+                Some(port) => match port.receive_byte() {
+                    Some(ch) => ch as i32,
+                    None => -1,
                 },
                 None => -1,
             }
@@ -624,8 +626,12 @@ pub extern "C" fn serial_has_char(com: u32) -> i32 {
         unsafe {
             match &SERIAL_PORTS[com as usize] {
                 Some(port) => {
-                    if port.has_data() { 1 } else { 0 }
-                },
+                    if port.has_data() {
+                        1
+                    } else {
+                        0
+                    }
+                }
                 None => 0,
             }
         }
@@ -683,7 +689,7 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config = SerialConfig::default();
-        
+
         assert_eq!(config.baud_rate, BaudRate::Baud115200);
         assert_eq!(config.data_bits, DataBits::Bits8);
         assert_eq!(config.stop_bits, StopBits::One);
@@ -713,22 +719,22 @@ mod tests {
     fn test_serial_port_creation() {
         let port = SerialPort::new(0);
         assert!(port.is_some());
-        
+
         let port = SerialPort::new(3);
         assert!(port.is_some());
-        
+
         let port = SerialPort::new(4);
-        assert!(port.is_none());  // 超出范围
+        assert!(port.is_none()); // 超出范围
     }
 
     #[test]
     fn test_driver_trait_impl() {
         let mut port = SerialPort::new(0).unwrap();
-        
+
         assert_eq!(port.name(), "COM1");
         assert_eq!(port.device_type(), DeviceType::Char);
         assert!(!port.is_ready());
-        
+
         let result = port.init();
         let _ = result;
         assert!(port.status().len() > 0);
@@ -737,27 +743,27 @@ mod tests {
     #[test]
     fn test_ring_buffer_operations() {
         let mut buf: RingBuffer<u8> = RingBuffer::default();
-        
+
         assert!(buf.is_empty());
         assert!(!buf.is_full());
         assert_eq!(buf.len(), 0);
-        
+
         // 填充缓冲区
         for i in 0..SERIAL_BUFFER_SIZE {
             assert!(buf.push(i as u8).is_ok());
         }
-        
+
         assert!(buf.is_full());
         assert_eq!(buf.len(), SERIAL_BUFFER_SIZE);
-        
+
         // 尝试写入满缓冲区应该失败
         assert!(buf.push(0xFF).is_err());
-        
+
         // 读取所有数据
         for i in 0..SERIAL_BUFFER_SIZE {
             assert_eq!(buf.pop(), Some(i as u8));
         }
-        
+
         assert!(buf.is_empty());
         assert_eq!(buf.pop(), None);
     }

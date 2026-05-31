@@ -17,7 +17,10 @@ unsafe fn msgq_find_free(namespace: &mut IpcNamespace) -> Option<&'static mut Ms
 }
 
 /// 根据 ID 查找消息队列
-unsafe fn msgq_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&'static mut MsgQueue> {
+unsafe fn msgq_find_by_id(
+    namespace: &mut IpcNamespace,
+    id: IpcId,
+) -> Option<&'static mut MsgQueue> {
     for i in 0..IPC_MAX_MSG_QUEUES {
         if namespace.msg_queues[i].id == id {
             return Some(&mut *(&mut namespace.msg_queues[i] as *mut MsgQueue));
@@ -278,7 +281,9 @@ pub extern "C" fn ipc_msgq_create(perm: i32) -> IpcId {
     unsafe {
         use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
-        extern "C" { fn process_get_current_pid() -> u32; }
+        extern "C" {
+            fn process_get_current_pid() -> u32;
+        }
         let pid = process_get_current_pid();
 
         match msgq_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, perm, pid) {
@@ -294,7 +299,9 @@ pub extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u6
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
-        extern "C" { fn process_get_current_pid() -> u32; }
+        extern "C" {
+            fn process_get_current_pid() -> u32;
+        }
         let pid = process_get_current_pid();
 
         let slice = if data.is_null() || size == 0 {
@@ -321,7 +328,11 @@ pub extern "C" fn ipc_msgq_recv(
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
-        let type_opt = if type_out.is_null() { None } else { Some(&mut *type_out) };
+        let type_opt = if type_out.is_null() {
+            None
+        } else {
+            Some(&mut *type_out)
+        };
 
         let data_opt = if data.is_null() {
             None
@@ -329,7 +340,11 @@ pub extern "C" fn ipc_msgq_recv(
             Some(core::slice::from_raw_parts_mut(data, MSG_MAX_SIZE))
         };
 
-        let size_opt = if size_out.is_null() { None } else { Some(&mut *size_out) };
+        let size_opt = if size_out.is_null() {
+            None
+        } else {
+            Some(&mut *size_out)
+        };
 
         match msgq_recv_safe(&mut IPC_NAMESPACE, id, type_opt, data_opt, size_opt) {
             Ok(n) => n as i64,

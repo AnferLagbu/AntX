@@ -1,28 +1,24 @@
 #![allow(dead_code)]
+use crate::kernel::net::types::*;
 /// lwIP 操作系统抽象层 (OSAL) - Rust 实现
-/// 
+///
 /// 提供 lwIP 所需的操作系统服务：
 /// - 信号量 (Semaphore) - 基于 Rust Mutex
 /// - 互斥锁 (Mutex) - 完全类型安全
 /// - 邮箱 (Mailbox) - 环形缓冲 + 信号量
 /// - 线程管理 (Thread) - 桩函数
-/// 
+///
 /// ## 设计特点
-/// 
+///
 /// 1. **类型安全**: 使用 Rust 的所有权系统防止资源泄漏
 /// 2. **RAII 自动清理**: Drop trait 确保锁的释放
 /// 3. **FFI 兼容**: 与 C 版本 lwIP 完全兼容
 /// 4. **零成本抽象**: 关键路径无额外开销
-
-
 use crate::kernel::sync::types::*;
-use crate::kernel::net::types::*;
 use core::sync::atomic::Ordering;
 
 // 从 sync 模块导入 FFI 函数
-use crate::kernel::sync::{
-    mutex_lock, mutex_unlock, mutex_trylock
-};
+use crate::kernel::sync::{mutex_lock, mutex_trylock, mutex_unlock};
 
 // 类型别名 (与 lwIP C 头文件兼容)
 type u8_t = u8;
@@ -45,42 +41,42 @@ impl SysSem {
             inner: MutexInner::new(),
         })
     }
-    
+
     /// 发送信号 (释放)
-    /// 
+    ///
     /// 在 lwIP 中，信号量的语义是：
     /// - sys_sem_signal: 释放一个等待者
     /// - sys_sem_wait: 等待信号
-    /// 
+    ///
     /// 我们使用 Mutex 来模拟：
     /// - signal = unlock (允许一个等待者继续)
     /// - wait = lock (阻塞直到被释放)
     pub fn signal(&self) {
         mutex_unlock(&self.inner as *const _ as *mut _);
     }
-    
+
     /// 等待信号 (带超时)
     pub fn wait(&self, timeout_ms: u32) -> u32 {
         let start = sys_now();
-        
+
         if timeout_ms == 0 {
             // 无限等待
             unsafe { mutex_lock(&self.inner as *const _ as *mut _) };
             return 0;
         }
-        
+
         // 带超时等待
         loop {
             let acquired = unsafe { mutex_trylock(&self.inner as *const _ as *mut _) };
-            
+
             if acquired != 0 {
                 return sys_now() - start;
             }
-            
+
             if sys_now() - start >= timeout_ms {
                 return !0; // SYS_ARCH_TIMEOUT
             }
-            
+
             core::hint::spin_loop();
         }
     }
@@ -103,12 +99,12 @@ impl SysMutex {
             inner: MutexInner::new(),
         })
     }
-    
+
     /// 获取锁
     pub fn lock(&self) {
         unsafe { mutex_lock(&self.inner as *const _ as *mut _) };
     }
-    
+
     /// 释放锁
     pub fn unlock(&self) {
         unsafe { mutex_unlock(&self.inner as *const _ as *mut _) };
@@ -146,76 +142,78 @@ impl SysMbox {
             sem_full: SysSem::new(0).unwrap(),
             sem_empty: SysSem::new(0).unwrap(),
         };
-        
+
         // 初始时 sem_empty 被锁定 (表示空)
-    // self.sem_empty.lock();  // 改用 signal 代替
-    
-    Ok(mbox)
+        // self.sem_empty.lock();  // 改用 signal 代替
+
+        Ok(mbox)
     }
-    
+
     /// 发送消息到邮箱
     pub fn post(&self, msg: *mut core::ffi::c_void) -> Result<(), LwipErr> {
         self.lock.lock(); // 使用 Mutex 锁
-        
+
         if self.count.load(Ordering::Acquire) as usize >= SYS_MBOX_SIZE {
             self.lock.unlock();
             return Err(LwipErr::Mem); // 邮箱已满
         }
-        
+
         let idx = self.tail.load(Ordering::Acquire) as usize;
-        
+
         unsafe {
             // 使用可变指针写入
             let ptr = self.messages.as_ptr() as *mut *mut core::ffi::c_void;
             *ptr.add(idx) = msg;
         }
-        
-        self.tail.store(((idx + 1) % SYS_MBOX_SIZE) as i32, Ordering::Release);
+
+        self.tail
+            .store(((idx + 1) % SYS_MBOX_SIZE) as i32, Ordering::Release);
         self.count.fetch_add(1, Ordering::AcqRel);
-        
+
         self.sem_empty.signal();
         self.lock.unlock();
-        
+
         Ok(())
     }
-    
+
     /// 尝试发送消息 (非阻塞)
     pub fn try_post(&self, msg: *mut core::ffi::c_void) -> Result<(), LwipErr> {
         self.post(msg)
     }
-    
+
     /// 从邮箱接收消息
     pub fn fetch(&self, timeout_ms: u32) -> (*mut core::ffi::c_void, u32) {
         // 等待消息到达
         let elapsed = self.sem_empty.wait(timeout_ms);
-        
+
         if elapsed == !0 && self.count.load(Ordering::Acquire) == 0 {
             return (core::ptr::null_mut(), !0); // 超时
         }
-        
+
         self.lock.lock();
-        
+
         if self.count.load(Ordering::Acquire) == 0 {
             self.lock.unlock();
             return (core::ptr::null_mut(), elapsed);
         }
-        
+
         let idx = self.head.load(Ordering::Acquire) as usize;
         let msg = self.messages[idx];
-        self.head.store(((idx as i32 + 1)) % SYS_MBOX_SIZE as i32, Ordering::Release);
+        self.head
+            .store((idx as i32 + 1) % SYS_MBOX_SIZE as i32, Ordering::Release);
         self.count.fetch_sub(1, Ordering::AcqRel);
-        
+
         self.sem_full.signal();
         self.lock.unlock();
-        
+
         (msg, elapsed)
     }
-    
+
     /// 尝试接收消息 (非阻塞)
     pub fn try_fetch(&self) -> (*mut core::ffi::c_void, u32) {
         self.fetch(0)
     }
-    
+
     /// 检查邮箱是否有效
     pub fn is_valid(&self) -> bool {
         true // 总是有效 (非空指针检查在调用方)
@@ -232,12 +230,14 @@ pub extern "C" fn sys_sem_new(sem: *mut SysSem, count: u8_t) -> i32 {
     if sem.is_null() {
         return LwipErr::Val as i32;
     }
-    
+
     match SysSem::new(count) {
         Ok(s) => {
-            unsafe { *sem = s; }
+            unsafe {
+                *sem = s;
+            }
             LwipErr::Ok as i32
-        },
+        }
         Err(e) => e as i32,
     }
 }
@@ -263,7 +263,7 @@ pub extern "C" fn sys_arch_sem_wait(sem: *mut SysSem, timeout_ms: u32) -> u32 {
     if sem.is_null() {
         return !0; // 超时错误码
     }
-    
+
     unsafe { (*sem).wait(timeout_ms) }
 }
 
@@ -289,12 +289,14 @@ pub extern "C" fn sys_mutex_new(mutex: *mut SysMutex) -> i32 {
     if mutex.is_null() {
         return LwipErr::Val as i32;
     }
-    
+
     match SysMutex::new() {
         Ok(m) => {
-            unsafe { *mutex = m; }
+            unsafe {
+                *mutex = m;
+            }
             LwipErr::Ok as i32
-        },
+        }
         Err(e) => e as i32,
     }
 }
@@ -331,12 +333,14 @@ pub extern "C" fn sys_mbox_new(mbox: *mut SysMbox, size: i32) -> i32 {
     if mbox.is_null() {
         return LwipErr::Val as i32;
     }
-    
+
     match SysMbox::new(size) {
         Ok(m) => {
-            unsafe { *mbox = m; }
+            unsafe {
+                *mbox = m;
+            }
             LwipErr::Ok as i32
-        },
+        }
         Err(e) => e as i32,
     }
 }
@@ -361,7 +365,7 @@ pub extern "C" fn sys_mbox_trypost(mbox: *mut SysMbox, msg: *mut core::ffi::c_vo
     if mbox.is_null() {
         return LwipErr::Val as i32;
     }
-    
+
     match unsafe { (*mbox).try_post(msg) } {
         Ok(()) => LwipErr::Ok as i32,
         Err(e) => e as i32,
@@ -371,39 +375,43 @@ pub extern "C" fn sys_mbox_trypost(mbox: *mut SysMbox, msg: *mut core::ffi::c_vo
 /// 从邮箱接收消息
 #[no_mangle]
 pub extern "C" fn sys_arch_mbox_fetch(
-    mbox: *mut SysMbox, 
-    msg: *mut *mut core::ffi::c_void, 
-    timeout_ms: u32
+    mbox: *mut SysMbox,
+    msg: *mut *mut core::ffi::c_void,
+    timeout_ms: u32,
 ) -> u32 {
     if mbox.is_null() || msg.is_null() {
         return !0;
     }
-    
+
     let (result, elapsed) = unsafe { (*mbox).fetch(timeout_ms) };
-    
+
     if !result.is_null() {
-        unsafe { *msg = result; }
+        unsafe {
+            *msg = result;
+        }
     }
-    
+
     elapsed
 }
 
 /// 尝试从邮箱接收消息 (非阻塞)
 #[no_mangle]
 pub extern "C" fn sys_arch_mbox_tryfetch(
-    mbox: *mut SysMbox, 
-    msg: *mut *mut core::ffi::c_void
+    mbox: *mut SysMbox,
+    msg: *mut *mut core::ffi::c_void,
 ) -> u32 {
     if mbox.is_null() || msg.is_null() {
         return !0;
     }
-    
+
     let (result, _) = unsafe { (*mbox).try_fetch() };
-    
+
     if !result.is_null() {
-        unsafe { *msg = result; }
+        unsafe {
+            *msg = result;
+        }
     }
-    
+
     0
 }
 
@@ -426,12 +434,14 @@ pub extern "C" fn sys_mbox_set_invalid(mbox: *mut SysMbox) {
 /// 创建新线程 (未实现)
 #[no_mangle]
 pub extern "C" fn sys_thread_new(
-    _name: *const i8, 
-    _thread: extern "C" fn(*mut core::ffi::c_void), 
-    _arg: *mut core::ffi::c_void, 
-    _stacksize: i32, 
-    _prio: i32
+    _name: *const i8,
+    _thread: extern "C" fn(*mut core::ffi::c_void),
+    _arg: *mut core::ffi::c_void,
+    _stacksize: i32,
+    _prio: i32,
 ) -> u32 {
-    unsafe { klog_net("sys_thread_new: not implemented in single-thread mode\0".as_ptr() as *const i8); }
+    unsafe {
+        klog_net("sys_thread_new: not implemented in single-thread mode\0".as_ptr() as *const i8);
+    }
     0 // 返回无效线程 ID
 }

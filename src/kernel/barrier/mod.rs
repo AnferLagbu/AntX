@@ -46,98 +46,58 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-pub mod types;
-pub mod undo_log;
 pub mod domain;
+pub mod fault_inject;
+pub mod ffi;
 pub mod manager;
 pub mod recoverable;
 pub mod recovery;
-pub mod fault_inject;
-pub mod snapshot;
 pub mod reset;
-pub mod ffi;
+pub mod snapshot;
+pub mod types;
+pub mod undo_log;
 
+pub use domain::RecoveryDomain;
+pub use fault_inject::maybe_inject_fault;
+pub use manager::{RecoveryManager, ROLLBACK_LOG};
+pub use recoverable::{Recoverable, RecoverableMutex, Snapshot};
+pub use reset::{
+    bbr_execute, bhr_execute, bhr_execute_fallback, bsr_execute, compute_dependency_layers,
+    execute_from_panic, get_current_layer, get_parallel_stats, get_recovery_status, get_stats,
+    recovery_execute_layered, reset_stats, rollback_all, rollback_all_parallel, DependencyLayer,
+    DependencyLayers, RecoveryConfig, RecoveryLayer, RecoveryResult, RecoveryStatus,
+    ResetAuditEntry, ResetAuditLog, RollbackMode, BBR_ATTEMPT_COUNT, BHR_ATTEMPT_COUNT,
+    BSR_ATTEMPT_COUNT, CURRENT_LAYER, RECOVERY_CONFIG, RESET_AUDIT_LOG, RESET_IN_PROGRESS,
+};
+pub use snapshot::{
+    snapshot_capture_init, snapshot_is_init_captured, snapshot_register_device,
+    snapshot_restore_all, snapshot_unregister_device, DeviceSnapshot, DeviceSnapshotRegistry,
+    DeviceType, DEVICE_SNAPSHOTS,
+};
 pub use types::*;
 pub use undo_log::UndoLog;
-pub use domain::RecoveryDomain;
-pub use manager::{RecoveryManager, ROLLBACK_LOG};
-pub use recoverable::{Snapshot, Recoverable, RecoverableMutex};
-pub use fault_inject::maybe_inject_fault;
-pub use snapshot::{
-    DeviceSnapshot,
-    DeviceSnapshotRegistry,
-    DeviceType,
-    DEVICE_SNAPSHOTS,
-    snapshot_register_device,
-    snapshot_unregister_device,
-    snapshot_capture_init,
-    snapshot_restore_all,
-    snapshot_is_init_captured,
-};
-pub use reset::{
-    RecoveryLayer,
-    RecoveryResult,
-    RecoveryConfig,
-    RollbackMode,
-    RECOVERY_CONFIG,
-    CURRENT_LAYER,
-    RESET_IN_PROGRESS,
-    BBR_ATTEMPT_COUNT,
-    BSR_ATTEMPT_COUNT,
-    BHR_ATTEMPT_COUNT,
-    ResetAuditLog,
-    ResetAuditEntry,
-    RESET_AUDIT_LOG,
-    DependencyLayer,
-    DependencyLayers,
-    RecoveryStatus,
-    bbr_execute,
-    bsr_execute,
-    bhr_execute,
-    bhr_execute_fallback,
-    recovery_execute_layered,
-    execute_from_panic,
-    get_current_layer,
-    get_stats,
-    reset_stats,
-    compute_dependency_layers,
-    rollback_all,
-    rollback_all_parallel,
-    get_parallel_stats,
-    get_recovery_status,
-};
 
 pub use ffi::{
-    recovery_barrier_maintenance,
-    recovery_domain_register,
-    recovery_domain_unregister,
-    recovery_panic_flag_is_set,
-    recovery_panic_flag_clear,
-    recovery_try_recover_from_idt,
-    recovery_trigger_panic,
-    recovery_was_attempted,
-    recovery_domain_set_cbs,
-    recovery_undo_record,
-    recovery_undo_count,
-    recovery_domain_add_dep,
-    recovery_domain_dep_count,
-    recovery_domain_add_addr_range,
-    recovery_rollback_log_count,
-    recovery_domain_get_state,
-    recovery_domain_get_failures,
+    recovery_barrier_maintenance, recovery_domain_add_addr_range, recovery_domain_add_dep,
+    recovery_domain_dep_count, recovery_domain_get_failures, recovery_domain_get_state,
+    recovery_domain_register, recovery_domain_set_cbs, recovery_domain_unregister,
+    recovery_panic_flag_clear, recovery_panic_flag_is_set, recovery_rollback_log_count,
+    recovery_trigger_panic, recovery_try_recover_from_idt, recovery_undo_count,
+    recovery_undo_record, recovery_was_attempted,
 };
 
 #[cfg(feature = "kernel_test")]
 pub use ffi::recovery_test_rollback;
 
 #[cfg(feature = "fault_injection")]
-pub use ffi::{recovery_set_fault_rate, recovery_get_fault_rate};
+pub use ffi::{recovery_get_fault_rate, recovery_set_fault_rate};
 
 pub static PANIC_FLAG: AtomicBool = AtomicBool::new(false);
 pub static PANIC_MSG: spin::Mutex<[u8; 128]> = spin::Mutex::new([0u8; 128]);
 pub static CRASH_RIP: AtomicU64 = AtomicU64::new(0);
 
-pub static RECOVERY_MANAGER: spin::Mutex<RecoveryManager> = spin::Mutex::new(RecoveryManager::new());
+pub static RECOVERY_MANAGER: spin::Mutex<RecoveryManager> =
+    spin::Mutex::new(RecoveryManager::new());
 pub static NEED_BSR_ESCALATION: AtomicBool = AtomicBool::new(false);
 
 pub fn check_and_clear_bsr_escalation() -> bool {

@@ -1,7 +1,7 @@
+use crate::kernel::fs::hvfs::bp::*;
+use crate::kernel::sync::mutex::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::hvfs::bp::*;
 
 pub const HV_DMU_OBJ_NUM: u64 = 0;
 pub const HV_DMU_OBJ_META: u64 = 1;
@@ -75,7 +75,9 @@ impl HvDmuObject {
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),
-            atime: 0, mtime: 0, ctime: 0,
+            atime: 0,
+            mtime: 0,
+            ctime: 0,
             owner_pwm,
             group_pwm: 0,
             sensitivity: 0,
@@ -98,7 +100,9 @@ impl HvDmuObject {
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),
-            atime: 0, mtime: 0, ctime: 0,
+            atime: 0,
+            mtime: 0,
+            ctime: 0,
             owner_pwm,
             group_pwm: 0,
             sensitivity: 0,
@@ -121,7 +125,9 @@ impl HvDmuObject {
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),
-            atime: 0, mtime: 0, ctime: 0,
+            atime: 0,
+            mtime: 0,
+            ctime: 0,
             owner_pwm: 0,
             group_pwm: 0,
             sensitivity: 0,
@@ -144,7 +150,9 @@ impl HvDmuObject {
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),
-            atime: 0, mtime: 0, ctime: 0,
+            atime: 0,
+            mtime: 0,
+            ctime: 0,
             owner_pwm,
             group_pwm: 0,
             sensitivity: 0,
@@ -159,10 +167,18 @@ impl HvDmuObject {
         }
     }
 
-    pub fn is_file(&self) -> bool { self.obj_type == HvObjType::File }
-    pub fn is_dir(&self) -> bool { self.obj_type == HvObjType::Dir }
-    pub fn is_zap(&self) -> bool { self.obj_type == HvObjType::Zap || self.obj_type == HvObjType::ZapMicro }
-    pub fn is_snapshot(&self) -> bool { self.obj_type == HvObjType::Snapshot }
+    pub fn is_file(&self) -> bool {
+        self.obj_type == HvObjType::File
+    }
+    pub fn is_dir(&self) -> bool {
+        self.obj_type == HvObjType::Dir
+    }
+    pub fn is_zap(&self) -> bool {
+        self.obj_type == HvObjType::Zap || self.obj_type == HvObjType::ZapMicro
+    }
+    pub fn is_snapshot(&self) -> bool {
+        self.obj_type == HvObjType::Snapshot
+    }
 
     pub fn mark_dirty(&mut self, txg: u64) {
         self.dirty = true;
@@ -205,7 +221,8 @@ impl HvObjSet {
         objs.push(root);
         let zap = HvDmuObject::new_zap(HV_DMU_OBJ_META);
         objs.push(zap);
-        self.next_obj_id.store(HV_DMU_OBJ_ROOT + 2, Ordering::Release);
+        self.next_obj_id
+            .store(HV_DMU_OBJ_ROOT + 2, Ordering::Release);
         self.initialized.store(true, Ordering::Release);
     }
 

@@ -17,8 +17,8 @@
 //! 旧版 `IpcNamespace` 保持不变（向后兼容）。
 //! 新代码使用 `DynIpcNamespace`，通过 FFI 桥接暴露给 C。
 
-use alloc::vec::Vec;
 use alloc::alloc::dealloc;
+use alloc::vec::Vec;
 use core::alloc::Layout;
 use spin::Mutex;
 
@@ -206,7 +206,9 @@ static mut DYN_IPC: Option<DynIpcNamespace> = None;
 
 pub fn dyn_ipc_init() {
     // SAFETY: single-threaded boot path; one-time initialization
-    unsafe { DYN_IPC = Some(DynIpcNamespace::new()); }
+    unsafe {
+        DYN_IPC = Some(DynIpcNamespace::new());
+    }
 }
 
 pub fn get_dyn_ipc() -> &'static DynIpcNamespace {

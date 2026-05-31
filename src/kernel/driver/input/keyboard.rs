@@ -19,9 +19,8 @@
 //! # Safety
 //! 此模块直接操作 PS/2 控制器硬件。
 
-
-use crate::kernel::driver::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use crate::kernel::driver::framework::{outb, inb};
+use crate::kernel::driver::framework::{inb, outb};
+use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use alloc::boxed::Box;
 use spin::Mutex;
 
@@ -35,15 +34,15 @@ const PS2_DATA_PORT: u16 = 0x60;
 const PS2_CMD_PORT: u16 = 0x64;
 
 /// 状态寄存器标志位
-const PS2_STATUS_OUTPUT_FULL: u8 = 0x01;  // 输出缓冲区满
-const PS2_STATUS_INPUT_FULL: u8 = 0x02;   // 输入缓冲区满
-const PS2_STATUS_SYSTEM: u8 = 0x04;       // 系统标志
+const PS2_STATUS_OUTPUT_FULL: u8 = 0x01; // 输出缓冲区满
+const PS2_STATUS_INPUT_FULL: u8 = 0x02; // 输入缓冲区满
+const PS2_STATUS_SYSTEM: u8 = 0x04; // 系统标志
 
 /// 键盘命令
-const KB_CMD_SET_LED: u8 = 0xED;          // 设置 LED
-const KB_CMD_ECHO: u8 = 0xEE;             // Echo
-const KB_CMD_SCANCODE: u8 = 0xF0;         // 获取/设置扫描码集
-const KB_CMD_IDENTIFY: u8 = 0xF2;         // Identify Keyboard
+const KB_CMD_SET_LED: u8 = 0xED; // 设置 LED
+const KB_CMD_ECHO: u8 = 0xEE; // Echo
+const KB_CMD_SCANCODE: u8 = 0xF0; // 获取/设置扫描码集
+const KB_CMD_IDENTIFY: u8 = 0xF2; // Identify Keyboard
 
 /// LED 标志位
 const KB_LED_SCROLL_LOCK: u8 = 0x01;
@@ -60,50 +59,22 @@ const KEYBOARD_BUFFER_SIZE: usize = 128;
 /// 标准 US QWERTY 键盘 Scancode Set 1 映射表
 /// [scancode] -> ASCII 字符 (无修饰键)
 pub(crate) const SCANCODE_TABLE: &[u8; 87] = &[
-    0x00, 0x1B, b'1', b'2', b'3', b'4',
-    b'5', b'6', b'7', b'8', b'9',
-    b'0', b'-', b'=', 0x08, 0x09,
-
-    b'q', b'w', b'e', b'r', b't',
-    b'y', b'u', b'i', b'o', b'p',
-    b'[', b']', 0x0D, 0x00, b'a',
-
-    b's', b'd', b'f', b'g', b'h',
-    b'j', b'k', b'l', b';', b'\'',
-    b'`', 0x00, b'\\', b'z', b'x',
-
-    b'c', b'v', b'b', b'n', b'm',
-    b',', b'.', b'/', 0x00, b'*',
-
-    0x00, b' ', 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00,
+    0x00, 0x1B, b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'-', b'=', 0x08, 0x09,
+    b'q', b'w', b'e', b'r', b't', b'y', b'u', b'i', b'o', b'p', b'[', b']', 0x0D, 0x00, b'a', b's',
+    b'd', b'f', b'g', b'h', b'j', b'k', b'l', b';', b'\'', b'`', 0x00, b'\\', b'z', b'x', b'c',
+    b'v', b'b', b'n', b'm', b',', b'.', b'/', 0x00, b'*', 0x00, b' ', 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
 /// Shift 修饰键下的字符映射表
 pub(crate) const SHIFT_TABLE: &[u8; 87] = &[
-    0x00, 0x1B, b'!', b'@', b'#', b'$',
-    b'%', b'^', b'&', b'*', b'(',
-    b')', b'_', b'+', 0x08, 0x09,
-
-    b'Q', b'W', b'E', b'R', b'T',
-    b'Y', b'U', b'I', b'O', b'P',
-    b'{', b'}', 0x0D, 0x00, b'A',
-
-    b'S', b'D', b'F', b'G', b'H',
-    b'J', b'K', b'L', b':', b'"',
-    b'~', 0x00, b'|', b'Z', b'X',
-
-    b'C', b'V', b'B', b'N', b'M',
-    b'<', b'>', b'?', 0x00, b'*',
-
-    0x00, b' ', 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x1B, b'!', b'@', b'#', b'$', b'%', b'^', b'&', b'*', b'(', b')', b'_', b'+', 0x08, 0x09,
+    b'Q', b'W', b'E', b'R', b'T', b'Y', b'U', b'I', b'O', b'P', b'{', b'}', 0x0D, 0x00, b'A', b'S',
+    b'D', b'F', b'G', b'H', b'J', b'K', b'L', b':', b'"', b'~', 0x00, b'|', b'Z', b'X', b'C', b'V',
+    b'B', b'N', b'M', b'<', b'>', b'?', 0x00, b'*', 0x00, b' ', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
 // ============================================================================
@@ -146,7 +117,18 @@ pub enum SpecialKey {
     /// 右箭头
     ArrowRight,
     /// F1-F12 功能键
-    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
 }
 
 /// 特殊按键 scancode 映射
@@ -211,7 +193,7 @@ impl Default for ModifierState {
             left_alt: false,
             right_alt: false,
             caps_lock: false,
-            num_lock: true,      // 默认开启数字锁定
+            num_lock: true, // 默认开启数字锁定
             scroll_lock: false,
         }
     }
@@ -239,9 +221,15 @@ impl ModifierState {
     /// 计算 LED 状态字节
     pub fn to_led_byte(&self) -> u8 {
         let mut led: u8 = 0;
-        if self.scroll_lock { led |= KB_LED_SCROLL_LOCK; }
-        if self.num_lock { led |= KB_LED_NUM_LOCK; }
-        if self.caps_lock { led |= KB_LED_CAPS_LOCK; }
+        if self.scroll_lock {
+            led |= KB_LED_SCROLL_LOCK;
+        }
+        if self.num_lock {
+            led |= KB_LED_NUM_LOCK;
+        }
+        if self.caps_lock {
+            led |= KB_LED_CAPS_LOCK;
+        }
         led
     }
 }
@@ -331,7 +319,7 @@ fn wait_input_buffer_empty() {
 /// 等待输出缓冲区满
 fn wait_output_buffer_full() -> bool {
     let mut timeout: u32 = 100000;
-    
+
     while timeout > 0 {
         unsafe {
             if inb(PS2_CMD_PORT) & PS2_STATUS_OUTPUT_FULL != 0 {
@@ -341,21 +329,25 @@ fn wait_output_buffer_full() -> bool {
         timeout -= 1;
         core::hint::spin_loop();
     }
-    
+
     false
 }
 
 /// 向 PS/2 控制器发送命令
 fn ps2_send_command(cmd: u8) -> Result<()> {
     wait_input_buffer_empty();
-    unsafe { outb(PS2_CMD_PORT, cmd); }
+    unsafe {
+        outb(PS2_CMD_PORT, cmd);
+    }
     Ok(())
 }
 
 /// 向键盘发送数据
 fn keyboard_send_data(data: u8) -> Result<()> {
     wait_input_buffer_empty();
-    unsafe { outb(PS2_DATA_PORT, data); }
+    unsafe {
+        outb(PS2_DATA_PORT, data);
+    }
     Ok(())
 }
 
@@ -457,7 +449,7 @@ impl KeyboardDriver {
 
         // 检测释放码 (0xE0 或 0xE1 前缀)
         if scancode == 0xE0 || scancode == 0xE1 {
-            return None;  // 忽略扩展 scancode 前缀
+            return None; // 忽略扩展 scancode 前缀
         }
 
         // 检测按键释放 (bit 7 = 1 表示释放)
@@ -466,46 +458,58 @@ impl KeyboardDriver {
 
         // 处理修饰键
         match key_code {
-            0x2A | 0x36 => {  // Left/Right Shift
+            0x2A | 0x36 => {
+                // Left/Right Shift
                 if pressed {
-                    if key_code == 0x2A { self.modifiers.left_shift = true; }
-                    else { self.modifiers.right_shift = true; }
+                    if key_code == 0x2A {
+                        self.modifiers.left_shift = true;
+                    } else {
+                        self.modifiers.right_shift = true;
+                    }
                 } else {
-                    if key_code == 0x2A { self.modifiers.left_shift = false; }
-                    else { self.modifiers.right_shift = false; }
+                    if key_code == 0x2A {
+                        self.modifiers.left_shift = false;
+                    } else {
+                        self.modifiers.right_shift = false;
+                    }
                 }
                 return None;
-            },
-            0x1D => {  // Left Ctrl
+            }
+            0x1D => {
+                // Left Ctrl
                 self.modifiers.left_ctrl = pressed;
                 return None;
-            },
-            0x38 => {  // Left Alt
+            }
+            0x38 => {
+                // Left Alt
                 self.modifiers.left_alt = pressed;
                 return None;
-            },
-            0x3A => {  // Caps Lock
+            }
+            0x3A => {
+                // Caps Lock
                 if pressed {
                     self.modifiers.caps_lock = !self.modifiers.caps_lock;
                     update_leds(&self.modifiers);
                 }
                 return None;
-            },
-            0x45 => {  // Num Lock
+            }
+            0x45 => {
+                // Num Lock
                 if pressed {
                     self.modifiers.num_lock = !self.modifiers.num_lock;
                     update_leds(&self.modifiers);
                 }
                 return None;
-            },
-            0x46 => {  // Scroll Lock
+            }
+            0x46 => {
+                // Scroll Lock
                 if pressed {
                     self.modifiers.scroll_lock = !self.modifiers.scroll_lock;
                     update_leds(&self.modifiers);
                 }
                 return None;
-            },
-            _ => {},
+            }
+            _ => {}
         }
 
         // 只处理按键按下事件
@@ -555,22 +559,25 @@ impl KeyboardDriver {
                 match ch {
                     b'\n' | b'\r' => {
                         break;
-                    },
-                    0x08 => {  // Backspace
+                    }
+                    0x08 => {
+                        // Backspace
                         count = count.saturating_sub(1);
-                    },
+                    }
                     _ if count < max_len => {
                         buffer[count] = ch;
                         count += 1;
-                    },
-                    _ => {},  // 缓冲区满，忽略
+                    }
+                    _ => {} // 缓冲区满，忽略
                 }
             }
 
             // 让出 CPU (避免忙等待)
             #[cfg(not(feature = "kernel_test"))]
             unsafe {
-                extern "C" { fn scheduler_yield_ex(); }
+                extern "C" {
+                    fn scheduler_yield_ex();
+                }
                 scheduler_yield_ex();
             }
         }
@@ -658,7 +665,11 @@ pub extern "C" fn keyboard_read_char() -> i32 {
 #[no_mangle]
 pub extern "C" fn keyboard_has_char() -> i32 {
     if let Some(ref guard) = *KEYBOARD_DEVICE.lock() {
-        if !guard.is_buffer_empty() { 1 } else { 0 }
+        if !guard.is_buffer_empty() {
+            1
+        } else {
+            0
+        }
     } else {
         0
     }
@@ -708,7 +719,7 @@ mod tests {
         assert_eq!(get_special_key(0x48), SpecialKey::ArrowUp);
         assert_eq!(get_special_key(0x4B), SpecialKey::ArrowLeft);
         assert_eq!(get_special_key(0x57), SpecialKey::F11);
-        
+
         // 无效 scancode
         assert_eq!(get_special_key(0xFF), SpecialKey::None);
     }
@@ -716,30 +727,30 @@ mod tests {
     #[test]
     fn test_modifier_state_default() {
         let mods = ModifierState::default();
-        
+
         assert!(!mods.shift_pressed());
         assert!(!mods.ctrl_pressed());
         assert!(!mods.alt_pressed());
         assert!(!mods.caps_lock);
-        assert!(mods.num_lock);  // 默认开启
+        assert!(mods.num_lock); // 默认开启
     }
 
     #[test]
     fn test_modifier_state_operations() {
         let mut mods = ModifierState::default();
-        
+
         // 测试 Shift
         mods.left_shift = true;
         assert!(mods.shift_pressed());
         mods.right_shift = true;
         assert!(mods.shift_pressed());
         mods.left_shift = false;
-        assert!(mods.shift_pressed());  // 右 Shift 仍按下
-        
+        assert!(mods.shift_pressed()); // 右 Shift 仍按下
+
         // 测试 Caps Lock
         mods.caps_lock = true;
         assert!(mods.caps_lock);
-        
+
         // LED 字节计算
         let led = mods.to_led_byte();
         assert!(led & KB_LED_CAPS_LOCK != 0);
@@ -749,16 +760,16 @@ mod tests {
     #[test]
     fn test_keyboard_buffer() {
         let mut buf = KeyboardBuffer::default();
-        
+
         assert!(buf.is_empty());
         assert_eq!(buf.len(), 0);
-        
+
         // 写入数据
         assert!(buf.push(b'A').is_ok());
         assert!(buf.push(b'B').is_ok());
         assert!(!buf.is_empty());
         assert_eq!(buf.len(), 2);
-        
+
         // 读取数据
         assert_eq!(buf.pop(), Some(b'A'));
         assert_eq!(buf.pop(), Some(b'B'));
@@ -769,11 +780,11 @@ mod tests {
     #[test]
     fn test_driver_trait_impl() {
         let mut driver = KeyboardDriver::new();
-        
+
         assert_eq!(driver.name(), "PS/2 Keyboard");
         assert_eq!(driver.device_type(), DeviceType::Input);
         assert!(!driver.is_ready());
-        
+
         let result = driver.init();
         let _ = result;
         assert!(driver.status().len() > 0);

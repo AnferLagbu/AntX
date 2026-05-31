@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+use crate::kernel::driver::framework::{Driver, DriverError};
+use crate::kernel::net::driver::e1000::E1000Device;
+use crate::kernel::net::types::*;
 /// 网络接口管理
 ///
 /// 提供网络接口（netif）的配置和管理功能，
@@ -18,12 +21,7 @@
 /// - `E1000Device` 结构体管理硬件状态
 /// - 通过 FFI 与 lwIP 协议栈对接
 /// - 类型安全的 MMIO 操作
-
-
 use core::sync::atomic::{AtomicU8, Ordering};
-use crate::kernel::net::types::*;
-use crate::kernel::net::driver::e1000::E1000Device;
-use crate::kernel::driver::framework::{Driver, DriverError};
 
 // ============================================================================
 // FFI 声明 - lwIP C 库函数
@@ -31,7 +29,7 @@ use crate::kernel::driver::framework::{Driver, DriverError};
 
 extern "C" {
     /// 日志输出函数 (已在 types.rs 中声明)
-    
+
     /// 添加网络接口到 lwIP
     fn netif_add(
         netif: *mut core::ffi::c_void,
@@ -42,62 +40,59 @@ extern "C" {
         init: extern "C" fn(*mut core::ffi::c_void) -> i32,
         input: extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void) -> i32,
     ) -> *mut core::ffi::c_void;
-    
+
     /// 设置默认网络接口
     fn netif_set_default(netif: *mut core::ffi::c_void);
-    
+
     /// 设置网络接口状态回调
     fn netif_set_status_callback(
         netif: *mut core::ffi::c_void,
         callback: extern "C" fn(*mut core::ffi::c_void),
     );
-    
+
     /// 启动网络接口
     fn netif_set_up(netif: *mut core::ffi::c_void);
-    
+
     /// 启动 DHCP 客户端
     fn dhcp_start(netif: *mut core::ffi::c_void) -> i32;
-    
+
     /// 创建 IPv6 链路本地地址
     #[cfg(feature = "ipv6")]
     fn netif_create_ip6_linklocal_address(netif: *mut core::ffi::c_void, from_mac: u8);
-    
+
     /// 设置 IPv6 自动配置
     #[cfg(feature = "ipv6")]
     fn netif_set_ip6_autoconfig_enabled(netif: *mut core::ffi::c_void, enabled: u8);
-    
+
     /// 初始化网络应用
     fn qx_net_apps_init(netif: *mut core::ffi::c_void);
-    
+
     /// E1000 初始化 (网卡驱动)
     fn e1000_init(netif: *mut core::ffi::c_void) -> i32;
-    
+
     /// Ethernet 输入处理
-    fn ethernet_input(
-        p: *mut core::ffi::c_void,
-        netif: *mut core::ffi::c_void,
-    ) -> i32;
-    
+    fn ethernet_input(p: *mut core::ffi::c_void, netif: *mut core::ffi::c_void) -> i32;
+
     /// 获取 IP 地址各字节
     fn ip4_addr1(addr: *const core::ffi::c_void) -> u8;
     fn ip4_addr2(addr: *const core::ffi::c_void) -> u8;
     fn ip4_addr3(addr: *const core::ffi::c_void) -> u8;
     fn ip4_addr4(addr: *const core::ffi::c_void) -> u8;
-    
+
     /// 获取 IPv4 地址指针
     fn ip_2_ip4(addr: *const core::ffi::c_void) -> *const core::ffi::c_void;
-    
+
     /// 获取 IP 地址 (u32格式)
     fn ip4_addr_get_u32(addr: *const core::ffi::c_void) -> u32;
-    
+
     /// 检查 IPv6 地址是否有效
     #[cfg(feature = "ipv6")]
     fn ip6_addr_isvalid(state: u8) -> u8;
-    
+
     /// 获取 IPv6 地址
     #[cfg(feature = "ipv6")]
     fn netif_ip6_addr(netif: *const core::ffi::c_void, idx: u8) -> *const core::ffi::c_void;
-    
+
     /// 获取 IPv6 地址状态
     #[cfg(feature = "ipv6")]
     fn netif_ip6_addr_state(netif: *const core::ffi::c_void, idx: u8) -> u8;
@@ -115,7 +110,7 @@ static G_NET_INITIALIZED: AtomicU8 = AtomicU8::new(0);
 
 /// 全局网络接口实例 (✅ 静态存储, 整个程序生命周期有效)
 /// 大小需匹配 lwIP netif 结构体 (通常 256-512 字节)
-static mut G_NETIF_BUFFER: [u8; 2048] = [0u8; 2048];  // ✅ 静态分配
+static mut G_NETIF_BUFFER: [u8; 2048] = [0u8; 2048]; // ✅ 静态分配
 
 /// 保存全局网络接口指针
 static mut G_NETIF_PTR: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -129,13 +124,13 @@ unsafe fn log_ipv4_address(netif_ptr: *mut core::ffi::c_void, prefix: &str) {
     if netif_ptr.is_null() {
         return;
     }
-    
+
     // 注意: 这里需要访问 netif 结构体的 ip_addr 字段
     // 由于 FFI 的复杂性, 我们简化处理
     // 实际实现需要根据 lwIP netif 结构体定义调整偏移量
-    
+
     let _ = (netif_ptr, prefix);
-    
+
     // TODO: 实现 IP 地址解析和格式化输出
     // 类似 C 版本的:
     // klog_net("Interface up: %d.%d.%d.%d/%d.%d.%d.%d gw=%d.%d.%d.%d", ...)
@@ -146,7 +141,7 @@ unsafe fn log_ipv4_address(netif_ptr: *mut core::ffi::c_void, prefix: &str) {
 // ============================================================================
 
 /// 网络接口状态变化回调
-/// 
+///
 /// 当 IP 地址发生变化时被 lwIP 调用。
 /// 主要用于:
 /// 1. 检测 DHCP 绑定完成事件
@@ -161,23 +156,26 @@ pub unsafe extern "C" fn qx_netif_status_callback(netif: *mut core::ffi::c_void)
     if netif.is_null() {
         return;
     }
-    
+
     extern "C" {
         fn qx_netif_ip4_addr_u32(netif: *const core::ffi::c_void) -> u32;
     }
-    
+
     let ip = qx_netif_ip4_addr_u32(netif);
     if ip == 0 {
         return;
     }
-    
+
     klog_net("Network interface status changed\0".as_ptr() as *const i8);
-    
-    if G_DHCP_DONE.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
+
+    if G_DHCP_DONE
+        .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed)
+        .is_ok()
+    {
         klog_net("DHCP bound or IP address assigned\0".as_ptr() as *const i8);
-        
+
         qx_net_apps_init(netif);
-        
+
         klog_net("Network applications initialized\0".as_ptr() as *const i8);
     }
 }
@@ -221,12 +219,13 @@ extern "C" fn status_callback_wrapper(netif: *mut core::ffi::c_void) {
 /// # Safety
 ///
 /// `netif` is a valid lwIP `netif` pointer.
-pub unsafe extern "C" fn ethernet_input_from_e1000(
-    data: *mut core::ffi::c_void,
-    len: u16,
-) -> i32 {
+pub unsafe extern "C" fn ethernet_input_from_e1000(data: *mut core::ffi::c_void, len: u16) -> i32 {
     extern "C" {
-        fn qx_rx_packet(netif: *mut core::ffi::c_void, data: *const core::ffi::c_void, len: u16) -> i32;
+        fn qx_rx_packet(
+            netif: *mut core::ffi::c_void,
+            data: *const core::ffi::c_void,
+            len: u16,
+        ) -> i32;
     }
     if G_NETIF_PTR.is_null() || data.is_null() || len == 0 {
         return LwipErr::Val as i32;
@@ -251,12 +250,13 @@ extern "C" fn virtio_net_init_wrapper(netif: *mut core::ffi::c_void) -> i32 {
 /// # Safety
 ///
 /// `netif` is a valid lwIP `netif` pointer.
-pub unsafe extern "C" fn ethernet_input_from_virtio(
-    data: *mut core::ffi::c_void,
-    len: u16,
-) -> i32 {
+pub unsafe extern "C" fn ethernet_input_from_virtio(data: *mut core::ffi::c_void, len: u16) -> i32 {
     extern "C" {
-        fn qx_rx_packet(netif: *mut core::ffi::c_void, data: *const core::ffi::c_void, len: u16) -> i32;
+        fn qx_rx_packet(
+            netif: *mut core::ffi::c_void,
+            data: *const core::ffi::c_void,
+            len: u16,
+        ) -> i32;
     }
     if G_NETIF_PTR.is_null() || data.is_null() || len == 0 {
         return LwipErr::Val as i32;
@@ -302,7 +302,9 @@ pub unsafe extern "C" fn qx_netif_register_virtio() -> i32 {
 
     netif_set_default(result);
     netif_set_up(result);
-    extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
+    extern "C" {
+        fn netif_set_link_up(netif: *mut core::ffi::c_void);
+    }
     netif_set_link_up(result);
     netif_set_status_callback(result, status_callback_wrapper);
     G_NETIF_PTR = result;
@@ -359,7 +361,9 @@ pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
 
     netif_set_default(result);
     netif_set_up(result);
-    extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
+    extern "C" {
+        fn netif_set_link_up(netif: *mut core::ffi::c_void);
+    }
     netif_set_link_up(result);
     netif_set_status_callback(result, status_callback_wrapper);
     G_NETIF_PTR = result;
@@ -383,9 +387,9 @@ pub unsafe extern "C" fn qx_netif_register_e1000() -> i32 {
 // ============================================================================
 
 /// 获取全局网络接口指针
-/// 
+///
 /// # Safety
-/// 
+///
 /// 返回的指针指向静态存储区域，始终有效
 pub unsafe fn get_netif() -> Option<*mut core::ffi::c_void> {
     if G_NETIF_PTR.is_null() {
@@ -418,10 +422,10 @@ pub fn get_ipv4_address() -> Option<[u8; 4]> {
         if G_NETIF_PTR.is_null() {
             return None;
         }
-        
+
         // TODO: 访问 netif->ip_addr 字段并返回字节
         // 这需要知道具体的结构体布局
-        
+
         None // 暂时返回None, 待完善
     }
 }
@@ -445,15 +449,15 @@ pub fn init_network_with_rust_e1000() -> Result<(), &'static str> {
     unsafe {
         // 1. 创建并探测 E1000 设备
         let mut e1000 = E1000Device::new();
-        
+
         match e1000.probe() {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(_) => return Err("E1000 probe failed"),
         }
 
         // 2. 初始化硬件
         match e1000.init() {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(_) => return Err("E1000 hardware init failed"),
         }
 
@@ -477,8 +481,10 @@ pub fn init_network_with_rust_e1000() -> Result<(), &'static str> {
 
         netif_set_default(result);
         netif_set_up(result);
-    extern "C" { fn netif_set_link_up(netif: *mut core::ffi::c_void); }
-    netif_set_link_up(result);
+        extern "C" {
+            fn netif_set_link_up(netif: *mut core::ffi::c_void);
+        }
+        netif_set_link_up(result);
         netif_set_status_callback(result, status_callback_wrapper);
         G_NETIF_PTR = result;
         G_NET_INITIALIZED.store(1, Ordering::Release);
@@ -487,7 +493,7 @@ pub fn init_network_with_rust_e1000() -> Result<(), &'static str> {
         #[cfg(feature = "dhcp")]
         {
             let dhcp_result = dhcp_start(result);
-            
+
             if dhcp_result == 0 {
                 klog_net("DHCP client started (Rust E1000)\0".as_ptr() as *const i8);
             } else {
@@ -505,8 +511,10 @@ pub fn init_network_with_rust_e1000() -> Result<(), &'static str> {
 /// * `Some(E1000Device&)` - 设备引用 (如果已初始化)
 /// * `None` - 未初始化
 pub fn get_e1000_device() -> Option<&'static E1000Device> {
-    extern "C" { fn get_e1000_instance() -> *mut core::ffi::c_void; }
-    
+    extern "C" {
+        fn get_e1000_instance() -> *mut core::ffi::c_void;
+    }
+
     unsafe {
         let ptr = get_e1000_instance();
         if ptr.is_null() {
@@ -531,7 +539,7 @@ pub fn send_packet(_data: &[u8]) -> Result<usize, DriverError> {
             // 注意: 这里需要可变引用，但全局实例是静态的
             // 实际实现可能需要使用内部可变性或 Mutex
             Err(DriverError::NotInitialized)
-        },
+        }
         None => Err(DriverError::NotInitialized),
     }
 }
@@ -543,41 +551,41 @@ pub fn send_packet(_data: &[u8]) -> Result<usize, DriverError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_dhcp_state_atomic_operations() {
         // 测试原子操作的线程安全性
         assert!(!is_dhcp_done());
         assert!(!is_network_initialized());
-        
+
         // 模拟DHCP完成
         G_DHCP_DONE.store(1, Ordering::Release);
         assert!(is_dhcp_done());
-        
+
         // 重置状态
         reset_dhcp_state();
         assert!(!is_dhcp_done());
     }
-    
+
     #[test]
     fn test_dhap_compare_exchange() {
         // 测试 CAS 操作的正确性
         reset_dhcp_state();
-        
+
         assert_eq!(
             G_DHCP_DONE.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed),
             Ok(0) // 成功从 0 -> 1
         );
-        
+
         assert_eq!(
             G_DHCP_DONE.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed),
             Err(1) // 失败, 当前值为 1
         );
-        
+
         // 清理
         reset_dhcp_state();
     }
-    
+
     #[test]
     fn test_static_storage_safety() {
         unsafe {
@@ -605,7 +613,9 @@ pub fn net_barrier_capture() {
 
 pub fn net_barrier_rollback() -> bool {
     if let Some(ref snap) = *NET_SNAPSHOT.lock() {
-        unsafe { G_NETIF_BUFFER = snap.netif_buffer; }
+        unsafe {
+            G_NETIF_BUFFER = snap.netif_buffer;
+        }
         G_NET_INITIALIZED.store(snap.initialized, Ordering::SeqCst);
         G_DHCP_DONE.store(snap.dhcp_done, Ordering::SeqCst);
     }

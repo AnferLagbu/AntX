@@ -25,7 +25,7 @@
 //! # Safety
 //! 此模块直接操作 VGA 显存和硬件端口。
 
-use crate::kernel::driver::framework::{Driver, DeviceType, Result, DeviceInfo};
+use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, Result};
 
 // ============================================================================
 // 硬件常量定义
@@ -244,13 +244,13 @@ impl VgaDriver {
     /// 清屏
     pub fn clear_screen(&mut self) {
         let blank = VgaChar::new(b' ', self.attribute);
-        
+
         unsafe {
             for i in 0..(SCREEN_WIDTH * SCREEN_HEIGHT) {
                 *self.buffer.add(i) = blank;
             }
         }
-        
+
         self.cursor_x = 0;
         self.cursor_y = 0;
         #[cfg(target_arch = "x86_64")]
@@ -298,14 +298,14 @@ impl VgaDriver {
                 if self.cursor_y >= SCREEN_HEIGHT {
                     self.scroll_up();
                 }
-                
+
                 let idx = self.cursor_y * SCREEN_WIDTH + self.cursor_x;
                 let vga_char = VgaChar::new(ch, self.attribute);
-                
+
                 unsafe {
                     *self.buffer.add(idx) = vga_char;
                 }
-                
+
                 self.cursor_x += 1;
                 if self.cursor_x >= SCREEN_WIDTH {
                     self.cursor_x = 0;
@@ -313,7 +313,7 @@ impl VgaDriver {
                 }
             }
         }
-        
+
         #[cfg(target_arch = "x86_64")]
         self.update_hardware_cursor();
     }
@@ -336,15 +336,15 @@ impl VgaDriver {
             let src = self.buffer.add(SCREEN_WIDTH);
             let dst = self.buffer;
             let count = SCREEN_WIDTH * (SCREEN_HEIGHT - 1);
-            
+
             core::ptr::copy(src, dst, count);
-            
+
             let blank = VgaChar::new(b' ', self.attribute);
             for i in 0..SCREEN_WIDTH {
                 *self.buffer.add(count + i) = blank;
             }
         }
-        
+
         if self.cursor_y > 0 {
             self.cursor_y -= 1;
         }
@@ -367,11 +367,11 @@ impl VgaDriver {
     #[cfg(target_arch = "x86_64")]
     fn update_hardware_cursor(&mut self) {
         let pos = (self.cursor_y * SCREEN_WIDTH + self.cursor_x) as u16;
-        
+
         unsafe {
             outb(VGA_CTRL_REGISTER, VGA_CURSOR_LOW);
             outb(VGA_DATA_REGISTER, (pos & 0xFF) as u8);
-            
+
             outb(VGA_CTRL_REGISTER, VGA_CURSOR_HIGH);
             outb(VGA_DATA_REGISTER, ((pos >> 8) & 0xFF) as u8);
         }
@@ -383,7 +383,7 @@ impl VgaDriver {
         unsafe {
             outb(VGA_CTRL_REGISTER, 0x0A);
             let cursor_start = inb(VGA_DATA_REGISTER);
-            
+
             if enable {
                 outb(VGA_DATA_REGISTER, cursor_start & 0xC0);
             } else {
@@ -397,10 +397,10 @@ impl VgaDriver {
         if x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT {
             return;
         }
-        
+
         let idx = y * SCREEN_WIDTH + x;
         let vga_char = VgaChar::new(ch, self.attribute);
-        
+
         unsafe {
             *self.buffer.add(idx) = vga_char;
         }
@@ -421,7 +421,7 @@ impl VgaDriver {
         if x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT {
             return None;
         }
-        
+
         let idx = y * SCREEN_WIDTH + x;
         unsafe { Some(*self.buffer.add(idx)) }
     }
@@ -439,22 +439,22 @@ impl VgaDriver {
     pub fn draw_border(&mut self, x: usize, y: usize, width: usize, height: usize) {
         let old_attr = self.attribute;
         self.attribute = TextAttribute::new(Color::White, Color::Blue);
-        
+
         for col in x..x + width {
             self.write_at(col, y, 0xC4);
             self.write_at(col, y + height - 1, 0xC4);
         }
-        
+
         for row in y..y + height {
             self.write_at(x, row, 0xB3);
             self.write_at(x + width - 1, row, 0xB3);
         }
-        
+
         self.write_at(x, y, 0xDA);
         self.write_at(x + width - 1, y, 0xBF);
         self.write_at(x, y + height - 1, 0xC0);
         self.write_at(x + width - 1, y + height - 1, 0xD9);
-        
+
         self.attribute = old_attr;
     }
 }
@@ -499,7 +499,7 @@ pub extern "C" fn vga_puts(s: *const core::ffi::c_char) {
     if s.is_null() {
         return;
     }
-    
+
     unsafe {
         if let Some(ref mut vga) = VGA_DRIVER {
             let mut ptr = s;
@@ -560,7 +560,7 @@ mod tests {
         assert_eq!(attr.foreground, Color::White);
         assert_eq!(attr.background, Color::Blue);
         assert!(!attr.blink);
-        
+
         let byte = attr.as_u8();
         assert_eq!(byte & 0x0F, Color::White as u8);
         assert_eq!((byte >> 4) & 0x0F, Color::Blue as u8);

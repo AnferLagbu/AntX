@@ -20,8 +20,8 @@
 //! # Safety
 //! USB驱动涉及DMA和硬件寄存器操作，需要特别小心。
 
+use super::framework::{DeviceInfo, DeviceType, Driver, Result};
 use alloc::vec::Vec;
-use super::framework::{Driver, DeviceType, Result, DeviceInfo};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 // ============================================================================
@@ -67,10 +67,10 @@ pub enum Direction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsbSpeed {
     Unknown,
-    Low,      // 1.5 Mbps (USB 1.0)
-    Full,     // 12 Mbps (USB 1.1)
-    High,     // 480 Mbps (USB 2.0)
-    Super,    // 5 Gbps (USB 3.0)
+    Low,       // 1.5 Mbps (USB 1.0)
+    Full,      // 12 Mbps (USB 1.1)
+    High,      // 480 Mbps (USB 2.0)
+    Super,     // 5 Gbps (USB 3.0)
     SuperPlus, // 10 Gbps (USB 3.1)
 }
 
@@ -193,11 +193,11 @@ impl EndpointDescriptor {
             Direction::Out
         }
     }
-    
+
     pub fn number(&self) -> u8 {
         self.endpoint_address & 0x0F
     }
-    
+
     pub fn transfer_type(&self) -> TransferType {
         match self.attributes & 0x03 {
             0 => TransferType::Control,
@@ -353,15 +353,15 @@ impl UsbDevice {
             info: DeviceInfo::new("usb_device", DeviceType::Other),
         }
     }
-    
+
     pub fn device_class(&self) -> DeviceClass {
         DeviceClass::from(self.descriptor.device_class)
     }
-    
+
     pub fn vendor_id(&self) -> u16 {
         self.descriptor.vendor_id
     }
-    
+
     pub fn product_id(&self) -> u16 {
         self.descriptor.product_id
     }
@@ -375,28 +375,28 @@ impl UsbDevice {
 pub trait HostController: Driver {
     /// 获取控制器支持的USB速度
     fn supported_speeds(&self) -> Vec<UsbSpeed>;
-    
+
     /// 获取根集线器端口数量
     fn num_ports(&self) -> usize;
-    
+
     /// 检测端口是否有设备连接
     fn port_has_device(&self, port: usize) -> bool;
-    
+
     /// 复位端口
     fn reset_port(&mut self, port: usize) -> Result<()>;
-    
+
     /// 获取端口设备速度
     fn get_port_speed(&self, port: usize) -> UsbSpeed;
-    
+
     /// 提交URB
     fn submit_urb(&mut self, urb: &Urb) -> Result<()>;
-    
+
     /// 取消URB
     fn cancel_urb(&mut self, urb_id: u32) -> Result<()>;
-    
+
     /// 分配设备地址
     fn allocate_address(&mut self) -> Result<u8>;
-    
+
     /// 释放设备地址
     fn free_address(&mut self, address: u8);
 }
@@ -426,59 +426,59 @@ impl UsbCore {
             initialized: false,
         }
     }
-    
+
     /// 注册主机控制器
     pub fn register_controller(&mut self, controller: *mut dyn HostController) {
         self.controllers.push(controller);
     }
-    
+
     /// 枚举所有设备
     pub fn enumerate_devices(&mut self) -> Result<()> {
         let controllers: Vec<*mut dyn HostController> = self.controllers.to_vec();
         for &controller_ptr in &controllers {
             let controller = unsafe { &mut *controller_ptr };
-            
+
             for port in 0..controller.num_ports() {
                 if controller.port_has_device(port) {
                     self.enumerate_port(controller, port)?;
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 枚举单个端口
     fn enumerate_port(&mut self, controller: &mut dyn HostController, port: usize) -> Result<()> {
         // 复位端口
         controller.reset_port(port)?;
-        
+
         // 获取设备速度
         let speed = controller.get_port_speed(port);
-        
+
         // 创建新设备
         let device_id = NEXT_USB_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
         let mut device = UsbDevice::new(device_id);
         device.speed = speed;
         device.state = DeviceState::Powered;
-        
+
         // 分配地址
         let address = controller.allocate_address()?;
         device.address = address;
         device.state = DeviceState::Addressed;
-        
+
         // 获取设备描述符
         self.get_device_descriptor(controller, &mut device)?;
-        
+
         // 配置设备
         self.configure_device(controller, &mut device)?;
-        
+
         // 添加到设备列表
         self.devices.push(device);
-        
+
         Ok(())
     }
-    
+
     /// 获取设备描述符
     fn get_device_descriptor(
         &self,
@@ -492,7 +492,7 @@ impl UsbCore {
             index: 0,
             length: 18,
         };
-        
+
         let mut descriptor = DeviceDescriptor::default();
         let urb = Urb {
             id: 0,
@@ -505,14 +505,14 @@ impl UsbCore {
             status: UrbStatus::Idle,
             callback: None,
         };
-        
+
         controller.submit_urb(&urb)?;
-        
+
         device.descriptor = descriptor;
-        
+
         Ok(())
     }
-    
+
     /// 配置设备
     fn configure_device(
         &self,
@@ -526,7 +526,7 @@ impl UsbCore {
             index: 0,
             length: 0,
         };
-        
+
         let urb = Urb {
             id: 0,
             device: device.address,
@@ -538,27 +538,27 @@ impl UsbCore {
             status: UrbStatus::Idle,
             callback: None,
         };
-        
+
         controller.submit_urb(&urb)?;
-        
+
         device.configuration = Some(1);
         device.state = DeviceState::Configured;
-        
+
         Ok(())
     }
-    
+
     /// 根据类查找设备
     pub fn find_device_by_class(&self, class: DeviceClass) -> Option<&UsbDevice> {
         self.devices.iter().find(|d| d.device_class() == class)
     }
-    
+
     /// 根据VID/PID查找设备
     pub fn find_device_by_vid_pid(&self, vid: u16, pid: u16) -> Option<&UsbDevice> {
-        self.devices.iter().find(|d| {
-            d.vendor_id() == vid && d.product_id() == pid
-        })
+        self.devices
+            .iter()
+            .find(|d| d.vendor_id() == vid && d.product_id() == pid)
     }
-    
+
     /// 获取设备数量
     pub fn device_count(&self) -> usize {
         self.devices.len()
@@ -569,27 +569,27 @@ impl Driver for UsbCore {
     fn name(&self) -> &'static str {
         "USB Core"
     }
-    
+
     fn device_type(&self) -> DeviceType {
         DeviceType::Bus
     }
-    
+
     fn init(&mut self) -> Result<()> {
         self.enumerate_devices()?;
         self.initialized = true;
         Ok(())
     }
-    
+
     fn shutdown(&mut self) -> Result<()> {
         self.devices.clear();
         self.initialized = false;
         Ok(())
     }
-    
+
     fn is_ready(&self) -> bool {
         self.initialized
     }
-    
+
     fn status(&self) -> &'static str {
         if self.initialized {
             "USB Core ready"
@@ -612,7 +612,7 @@ impl Default for UsbCore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_usb_speed_bandwidth() {
         assert_eq!(UsbSpeed::Low.bandwidth_mbps(), 1);
@@ -620,7 +620,7 @@ mod tests {
         assert_eq!(UsbSpeed::High.bandwidth_mbps(), 480);
         assert_eq!(UsbSpeed::Super.bandwidth_mbps(), 5000);
     }
-    
+
     #[test]
     fn test_device_descriptor_default() {
         let desc = DeviceDescriptor::default();
@@ -628,7 +628,7 @@ mod tests {
         assert_eq!(desc.descriptor_type, 1);
         assert_eq!(desc.max_packet_size0, 64);
     }
-    
+
     #[test]
     fn test_device_class_from_u8() {
         assert_eq!(DeviceClass::from(0x03), DeviceClass::Hid);
@@ -636,7 +636,7 @@ mod tests {
         assert_eq!(DeviceClass::from(0x09), DeviceClass::Hub);
         assert_eq!(DeviceClass::from(0xFF), DeviceClass::VendorSpecific);
     }
-    
+
     #[test]
     fn test_usb_device_creation() {
         let device = UsbDevice::new(1);
@@ -644,7 +644,7 @@ mod tests {
         assert_eq!(device.address, 0);
         assert_eq!(device.state, DeviceState::NotAttached);
     }
-    
+
     #[test]
     fn test_usb_core_creation() {
         let core = UsbCore::new();

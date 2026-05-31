@@ -72,7 +72,9 @@ impl HvRaidzMap {
     pub fn generate_parity(&mut self, data: &[u8]) -> Vec<Vec<u8>> {
         let unit_size = 4096;
         let data_cols = self.data_cols();
-        if data_cols == 0 { return Vec::new(); }
+        if data_cols == 0 {
+            return Vec::new();
+        }
         let total_units = data.len().div_ceil(unit_size * data_cols);
         let mut result: Vec<Vec<u8>> = (0..self.ncols).map(|_| Vec::new()).collect();
         for unit_idx in 0..total_units {
@@ -89,9 +91,11 @@ impl HvRaidzMap {
             for p in 0..self.nparity {
                 let mut parity = vec![0u8; unit_size];
                 for col in 0..data_cols {
-                    let off = (unit_idx * unit_size) + (self.nparity + col) * unit_size * total_units;
+                    let off =
+                        (unit_idx * unit_size) + (self.nparity + col) * unit_size * total_units;
                     let _ = off;
-                    let src = &result[self.nparity + col][unit_idx * unit_size..(unit_idx + 1) * unit_size];
+                    let src = &result[self.nparity + col]
+                        [unit_idx * unit_size..(unit_idx + 1) * unit_size];
                     for (i, byte) in src.iter().enumerate() {
                         parity[i] ^= byte;
                     }
@@ -102,9 +106,15 @@ impl HvRaidzMap {
         result
     }
 
-    pub fn reconstruct_data(&self, parity_data: &[Vec<u8>], failed_cols: &[usize]) -> Option<Vec<u8>> {
+    pub fn reconstruct_data(
+        &self,
+        parity_data: &[Vec<u8>],
+        failed_cols: &[usize],
+    ) -> Option<Vec<u8>> {
         let _data_cols = self.data_cols();
-        if failed_cols.len() > self.level.max_failures() { return None; }
+        if failed_cols.len() > self.level.max_failures() {
+            return None;
+        }
 
         if self.level != HvRaidzLevel::Single && !failed_cols.is_empty() {
             return None;
@@ -114,12 +124,17 @@ impl HvRaidzMap {
             let failed = failed_cols[0];
             if failed >= self.nparity && failed < self.ncols {
                 let unit_size = 4096;
-                let total_units = parity_data.get(self.nparity).map(|d| d.len() / unit_size).unwrap_or(0);
+                let total_units = parity_data
+                    .get(self.nparity)
+                    .map(|d| d.len() / unit_size)
+                    .unwrap_or(0);
                 let mut reconstructed = vec![0u8; total_units * unit_size];
                 for unit_idx in 0..total_units {
                     let mut block = vec![0u8; unit_size];
                     for col in 0..self.ncols {
-                        if col == failed { continue; }
+                        if col == failed {
+                            continue;
+                        }
                         let src = &parity_data[col];
                         let src_start = unit_idx * unit_size;
                         let src_end = (src_start + unit_size).min(src.len());
@@ -131,7 +146,8 @@ impl HvRaidzMap {
                     }
                     let dst_start = unit_idx * unit_size;
                     let dst_end = (dst_start + unit_size).min(reconstructed.len());
-                    reconstructed[dst_start..dst_end].copy_from_slice(&block[..dst_end - dst_start]);
+                    reconstructed[dst_start..dst_end]
+                        .copy_from_slice(&block[..dst_end - dst_start]);
                 }
                 let mut result = Vec::new();
                 for col in self.nparity..self.ncols {
@@ -156,7 +172,9 @@ impl HvRaidzMap {
     pub fn verify_parity(&self, parity_data: &[Vec<u8>]) -> bool {
         let unit_size = 4096;
         let data_cols = self.data_cols();
-        if parity_data.len() < self.ncols { return false; }
+        if parity_data.len() < self.ncols {
+            return false;
+        }
         for p in 0..self.nparity {
             let mut computed = vec![0u8; unit_size];
             for col in 0..data_cols {
@@ -187,7 +205,9 @@ impl HvRaidzEngine {
         if map.verify_parity(parity_data) {
             HvScrubResult::Clean
         } else {
-            HvScrubResult::Corrupted { failed_cols: vec![0] }
+            HvScrubResult::Corrupted {
+                failed_cols: vec![0],
+            }
         }
     }
 }

@@ -1,12 +1,13 @@
 #![allow(dead_code)]
+use crate::kernel::net::types::*;
 /// 网络子系统初始化
-/// 
+///
 /// 提供 AntX 网络子系统的初始化入口点，
 /// 包括 lwIP 协议栈初始化、OS抽象层设置、
 /// E1000 驱动探测和网络接口注册。
-/// 
+///
 /// ## 初始化流程
-/// 
+///
 /// ```text
 /// qx_net_init()
 /// ├── 1. lwip_init()           # lwIP 核心协议栈
@@ -14,17 +15,14 @@
 /// ├── 3. e1000_probe()         # PCI 探测 E1000 硬件
 /// └── 4. qx_netif_register_e1000()  # 注册到 lwIP 并启动 DHCP
 /// ```
-/// 
+///
 /// ## 安全性改进 (相比 C 版本)
-/// 
+///
 /// - **错误传播**: 使用 Result 替代隐式错误码
 /// - **状态机**: 跟踪初始化状态, 防止重复初始化
 /// - **日志增强**: 详细的初始化过程日志
 /// - **资源清理**: 失败时自动回滚
-
-
 use core::sync::atomic::{AtomicU8, Ordering};
-use crate::kernel::net::types::*;
 
 // ============================================================================
 // FFI 声明 - 从 C 代码导入的函数
@@ -33,10 +31,10 @@ use crate::kernel::net::types::*;
 extern "C" {
     /// lwIP 协议栈初始化
     fn lwip_init();
-    
+
     /// E1000 网卡探测 (x86_64)
     fn e1000_probe() -> i32;
-    
+
     /// virtio-net 网卡探测 (aarch64)
     fn virtio_net_probe() -> i32;
 
@@ -75,12 +73,7 @@ static G_INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
 
 /// 检查并更新初始化状态
 fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
-    match G_INIT_STATE.compare_exchange(
-        from as u8,
-        to as u8,
-        Ordering::AcqRel,
-        Ordering::Relaxed,
-    ) {
+    match G_INIT_STATE.compare_exchange(from as u8, to as u8, Ordering::AcqRel, Ordering::Relaxed) {
         Ok(_) => Ok(()),
         Err(current) => {
             #[allow(clippy::if_same_then_else)]
@@ -96,18 +89,41 @@ fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
 unsafe extern "C" fn net_save() {}
 unsafe extern "C" fn net_restore() {
     crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
-    unsafe { extern "C" { fn lwip_init(); } lwip_init(); }
+    unsafe {
+        extern "C" {
+            fn lwip_init();
+        }
+        lwip_init();
+    }
     #[cfg(target_arch = "x86_64")]
-    { unsafe { extern "C" { fn qx_netif_register_e1000() -> i32; } qx_netif_register_e1000(); } }
+    {
+        unsafe {
+            extern "C" {
+                fn qx_netif_register_e1000() -> i32;
+            }
+            qx_netif_register_e1000();
+        }
+    }
     #[cfg(target_arch = "aarch64")]
-    { unsafe { extern "C" { fn qx_netif_register_virtio() -> i32; } qx_netif_register_virtio(); } }
+    {
+        unsafe {
+            extern "C" {
+                fn qx_netif_register_virtio() -> i32;
+            }
+            qx_netif_register_virtio();
+        }
+    }
     crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
     crate::arch!(interrupt_enable());
-    unsafe { klog_init_msg("--- Network Recovered ---\0".as_ptr() as *const i8); }
+    unsafe {
+        klog_init_msg("--- Network Recovered ---\0".as_ptr() as *const i8);
+    }
 }
 unsafe extern "C" fn net_reset() {
     crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
-    unsafe { klog_init_msg("--- Network Hard Reset ---\0".as_ptr() as *const i8); }
+    unsafe {
+        klog_init_msg("--- Network Hard Reset ---\0".as_ptr() as *const i8);
+    }
 }
 
 /// 设置失败状态
@@ -120,20 +136,20 @@ fn set_failed() {
 // ============================================================================
 
 /// 初始化网络子系统
-/// 
+///
 /// 执行以下步骤:
 /// 1. 初始化 lwIP 核心协议栈
 /// 2. 初始化 OS 抽象层 (sys_arch)
 /// 3. 探测 E1000 网卡硬件
 /// 4. 注册网络接口并启动 DHCP
-/// 
+///
 /// # 线程安全
-/// 
+///
 /// 此函数使用原子操作确保线程安全。
 /// 多次调用只会执行一次真正的初始化。
-/// 
+///
 /// # 错误处理
-/// 
+///
 /// 如果任何步骤失败，函数会:
 /// - 记录详细错误日志
 /// - 设置失败状态
@@ -170,7 +186,9 @@ pub extern "C" fn qx_net_init() {
 
         if probe_result != 0 {
             let _ = transition_state(InitState::LwipReady, InitState::FullyInitialized);
-            klog_net("No NIC found, running without network (expected in VMs)\0".as_ptr() as *const i8);
+            klog_net(
+                "No NIC found, running without network (expected in VMs)\0".as_ptr() as *const i8,
+            );
             klog_init_msg("--- Network Subsystem Ready (No Network) ---\0".as_ptr() as *const i8);
             return;
         }
@@ -192,7 +210,9 @@ pub extern "C" fn qx_net_init() {
         }
 
         // lwIP 在所有架构均可编译 (C 第三方库交叉编译)
-        extern "C" { fn lwip_init(); }
+        extern "C" {
+            fn lwip_init();
+        }
         lwip_init();
         klog_net("lwIP core initialized\0".as_ptr() as *const i8);
 
@@ -200,7 +220,9 @@ pub extern "C" fn qx_net_init() {
         #[cfg(target_arch = "x86_64")]
         {
             klog_net("E1000 detected, registering netif\0".as_ptr() as *const i8);
-            extern "C" { fn qx_netif_register_e1000() -> i32; }
+            extern "C" {
+                fn qx_netif_register_e1000() -> i32;
+            }
             let register_result = qx_netif_register_e1000();
             // Re-enable interrupts only after lwIP is fully initialized
             crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
@@ -210,7 +232,8 @@ pub extern "C" fn qx_net_init() {
                 let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
                 klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
             } else {
-                crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
+                crate::kernel::net::types::NET_READY
+                    .store(false, core::sync::atomic::Ordering::Release);
                 set_failed();
                 klog_net_err("Failed to register E1000 netif\0".as_ptr() as *const i8);
             }
@@ -218,37 +241,49 @@ pub extern "C" fn qx_net_init() {
         #[cfg(target_arch = "aarch64")]
         {
             klog_net("virtio-net detected, registering netif\0".as_ptr() as *const i8);
-            extern "C" { fn qx_netif_register_virtio() -> i32; }
+            extern "C" {
+                fn qx_netif_register_virtio() -> i32;
+            }
             let register_result = qx_netif_register_virtio();
             crate::arch!(interrupt_enable());
 
             if register_result == 0 {
-                crate::kernel::net::types::NET_READY.store(true, core::sync::atomic::Ordering::Release);
+                crate::kernel::net::types::NET_READY
+                    .store(true, core::sync::atomic::Ordering::Release);
                 let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
                 klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
             } else {
-                crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Release);
+                crate::kernel::net::types::NET_READY
+                    .store(false, core::sync::atomic::Ordering::Release);
                 set_failed();
                 klog_net_err("Failed to register virtio-net netif\0".as_ptr() as *const i8);
             }
         }
 
         crate::kernel::barrier::recovery::recovery_domain_register(
-            "net", 5, &[], net_save, net_restore, net_reset);
+            "net",
+            5,
+            &[],
+            net_save,
+            net_restore,
+            net_reset,
+        );
     }
 }
 
 /// 注册 Socket 系统调用
-/// 
+///
 /// 当前为桩函数, 未来实现完整的 Socket API。
-/// 
+///
 /// # 返回值
-/// 
+///
 /// - `0`: 成功 (目前总是成功)
 /// - `<0`: 失败 (未来可能返回错误码)
 #[no_mangle]
 pub extern "C" fn qx_socket_register_syscalls() -> i32 {
-    unsafe { klog_net("Socket syscalls not yet registered\0".as_ptr() as *const i8); }
+    unsafe {
+        klog_net("Socket syscalls not yet registered\0".as_ptr() as *const i8);
+    }
     0
 }
 
@@ -274,20 +309,20 @@ pub fn get_init_state() -> InitState {
 }
 
 /// 重置网络子系统的状态 (用于重新初始化)
-/// 
+///
 /// # Safety
-/// 
+///
 /// ⚠️ **危险操作** ⚠️
-/// 
+///
 /// 仅应在以下场景使用:
 /// - 测试环境中的 teardown
 /// - 热插拔网卡后的重新初始化
 /// - 系统恢复模式
-/// 
+///
 /// 正常情况下不应调用此函数。
 pub unsafe fn reset_network_state() {
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
-    
+
     // 同时重置 DHCP 状态
     crate::kernel::net::netif::reset_dhcp_state();
 }
@@ -299,55 +334,56 @@ pub unsafe fn reset_network_state() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_initialization_state_machine() {
         // 测试状态机的正确转换
         assert_eq!(get_init_state(), InitState::Uninitialized);
         assert!(!is_network_initialized());
-        
+
         // 模拟状态转换 (实际测试需要调用 qx_net_init)
         // 这里仅验证 API 的正确性
-        
+
         // 重置状态
-        unsafe { reset_network_state(); }
-        
+        unsafe {
+            reset_network_state();
+        }
+
         assert_eq!(get_init_state(), InitState::Uninitialized);
     }
-    
+
     #[test]
     fn test_transition_state_valid_sequence() {
         // 测试有效的状态转换序列
-        unsafe { reset_network_state(); }
-        
+        unsafe {
+            reset_network_state();
+        }
+
         // Uninitialized -> LwipReady
-        assert!(transition_state(
-            InitState::Uninitialized,
-            InitState::LwipReady,
-        ).is_ok());
-        
+        assert!(transition_state(InitState::Uninitialized, InitState::LwipReady,).is_ok());
+
         // LwipReady -> SysArchReady
-        assert!(transition_state(
-            InitState::LwipReady,
-            InitState::SysArchReady,
-        ).is_ok());
-        
+        assert!(transition_state(InitState::LwipReady, InitState::SysArchReady,).is_ok());
+
         // 清理
-        unsafe { reset_network_state(); }
+        unsafe {
+            reset_network_state();
+        }
     }
-    
+
     #[test]
     fn test_transition_state_invalid_sequence() {
         // 测试无效的状态转换
-        unsafe { reset_network_state(); }
-        
+        unsafe {
+            reset_network_state();
+        }
+
         // 尝试跳过 LwipReady 直接到 SysArchReady (应该失败)
-        assert!(transition_state(
-            InitState::Uninitialized,
-            InitState::SysArchReady,
-        ).is_err());
-        
+        assert!(transition_state(InitState::Uninitialized, InitState::SysArchReady,).is_err());
+
         // 清理
-        unsafe { reset_network_state(); }
+        unsafe {
+            reset_network_state();
+        }
     }
 }

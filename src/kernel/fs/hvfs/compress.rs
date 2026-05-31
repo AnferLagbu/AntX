@@ -1,10 +1,12 @@
-use alloc::vec::Vec;
 use crate::kernel::fs::hvfs::bp::HvCompType;
+use alloc::vec::Vec;
 
 pub const HV_COMP_MIN_SIZE: usize = 64;
 
 pub fn compress(data: &[u8], comp_type: HvCompType) -> Option<Vec<u8>> {
-    if data.len() < HV_COMP_MIN_SIZE { return None; }
+    if data.len() < HV_COMP_MIN_SIZE {
+        return None;
+    }
     match comp_type {
         HvCompType::Off => None,
         HvCompType::LZ4 => compress_lz4(data),
@@ -15,7 +17,11 @@ pub fn compress(data: &[u8], comp_type: HvCompType) -> Option<Vec<u8>> {
     }
 }
 
-pub fn decompress(compressed: &[u8], expected_size: usize, comp_type: HvCompType) -> Option<Vec<u8>> {
+pub fn decompress(
+    compressed: &[u8],
+    expected_size: usize,
+    comp_type: HvCompType,
+) -> Option<Vec<u8>> {
     match comp_type {
         HvCompType::Off => None,
         HvCompType::LZ4 => decompress_lz4(compressed, expected_size),
@@ -44,7 +50,10 @@ fn compress_lz4(data: &[u8]) -> Option<Vec<u8>> {
                 if s + 4 <= src_len && data[s..s + 4] == data[ip..ip + 4] {
                     ref_pos = s;
                     let mut len = 4;
-                    while ip + len < src_len && ref_pos + len < ip && data[ref_pos + len] == data[ip + len] {
+                    while ip + len < src_len
+                        && ref_pos + len < ip
+                        && data[ref_pos + len] == data[ip + len]
+                    {
                         len += 1;
                     }
                     match_len = len;
@@ -54,7 +63,11 @@ fn compress_lz4(data: &[u8]) -> Option<Vec<u8>> {
         }
         if match_len >= 4 {
             let literal_len = ip - anchor;
-            let mut tok = if literal_len >= 15 { 15 } else { literal_len as u8 };
+            let mut tok = if literal_len >= 15 {
+                15
+            } else {
+                literal_len as u8
+            };
             let ml = match_len - 4;
             tok |= (if ml >= 15 { 15 } else { ml as u8 }) << 4;
             output.push(tok);
@@ -86,7 +99,11 @@ fn compress_lz4(data: &[u8]) -> Option<Vec<u8>> {
     }
     if anchor < src_len {
         let literal_len = src_len - anchor;
-        let tok = if literal_len >= 15 { 15u8 } else { literal_len as u8 };
+        let tok = if literal_len >= 15 {
+            15u8
+        } else {
+            literal_len as u8
+        };
         output.push(tok);
         if literal_len >= 15 {
             let mut remaining = literal_len - 15;
@@ -98,7 +115,11 @@ fn compress_lz4(data: &[u8]) -> Option<Vec<u8>> {
         }
         output.extend_from_slice(&data[anchor..src_len]);
     }
-    if output.len() >= src_len { None } else { Some(output) }
+    if output.len() >= src_len {
+        None
+    } else {
+        Some(output)
+    }
 }
 
 fn lz4_hash(data: &[u8], pos: usize) -> u32 {
@@ -107,8 +128,13 @@ fn lz4_hash(data: &[u8], pos: usize) -> u32 {
 }
 
 fn decompress_lz4(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
-    if compressed.len() < 4 { return None; }
-    let src_len = compressed[0] as usize | ((compressed[1] as usize) << 8) | ((compressed[2] as usize) << 16) | ((compressed[3] as usize) << 24);
+    if compressed.len() < 4 {
+        return None;
+    }
+    let src_len = compressed[0] as usize
+        | ((compressed[1] as usize) << 8)
+        | ((compressed[2] as usize) << 16)
+        | ((compressed[3] as usize) << 24);
     let mut output = Vec::with_capacity(src_len);
     let mut ip = 4;
     while ip < compressed.len() && output.len() < src_len {
@@ -120,24 +146,36 @@ fn decompress_lz4(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
                 let byte = compressed[ip] as usize;
                 ip += 1;
                 literal_len += byte;
-                if byte != 255 { break; }
+                if byte != 255 {
+                    break;
+                }
             }
         }
-        if ip + literal_len > compressed.len() { break; }
+        if ip + literal_len > compressed.len() {
+            break;
+        }
         output.extend_from_slice(&compressed[ip..ip + literal_len]);
         ip += literal_len;
-        if ip >= compressed.len() { break; }
-        if ip + 2 > compressed.len() { break; }
+        if ip >= compressed.len() {
+            break;
+        }
+        if ip + 2 > compressed.len() {
+            break;
+        }
         let offset = compressed[ip] as usize | ((compressed[ip + 1] as usize) << 8);
         ip += 2;
-        if offset == 0 { break; }
+        if offset == 0 {
+            break;
+        }
         let mut match_len = ((tok >> 4) & 0x0F) as usize + 4;
         if (tok >> 4) & 0x0F == 15 {
             while ip < compressed.len() {
                 let byte = compressed[ip] as usize;
                 ip += 1;
                 match_len += byte;
-                if byte != 255 { break; }
+                if byte != 255 {
+                    break;
+                }
             }
         }
         let start = output.len().saturating_sub(offset);
@@ -151,7 +189,9 @@ fn decompress_lz4(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
 }
 
 fn compress_rle(data: &[u8]) -> Option<Vec<u8>> {
-    if data.is_empty() { return None; }
+    if data.is_empty() {
+        return None;
+    }
     let mut output = Vec::with_capacity(data.len() + 4);
     output.push((data.len() & 0xFF) as u8);
     output.push(((data.len() >> 8) & 0xFF) as u8);
@@ -168,12 +208,21 @@ fn compress_rle(data: &[u8]) -> Option<Vec<u8>> {
         output.push(count as u8);
         i += count;
     }
-    if output.len() >= data.len() { None } else { Some(output) }
+    if output.len() >= data.len() {
+        None
+    } else {
+        Some(output)
+    }
 }
 
 fn decompress_rle(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
-    if compressed.len() < 4 { return None; }
-    let src_len = compressed[0] as usize | ((compressed[1] as usize) << 8) | ((compressed[2] as usize) << 16) | ((compressed[3] as usize) << 24);
+    if compressed.len() < 4 {
+        return None;
+    }
+    let src_len = compressed[0] as usize
+        | ((compressed[1] as usize) << 8)
+        | ((compressed[2] as usize) << 16)
+        | ((compressed[3] as usize) << 24);
     let mut output = Vec::with_capacity(src_len);
     let mut ip = 4;
     while ip + 1 < compressed.len() && output.len() < src_len {
@@ -208,12 +257,21 @@ fn compress_zle(data: &[u8]) -> Option<Vec<u8>> {
             i += 1;
         }
     }
-    if output.len() >= data.len() { None } else { Some(output) }
+    if output.len() >= data.len() {
+        None
+    } else {
+        Some(output)
+    }
 }
 
 fn decompress_zle(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
-    if compressed.len() < 4 { return None; }
-    let src_len = compressed[0] as usize | ((compressed[1] as usize) << 8) | ((compressed[2] as usize) << 16) | ((compressed[3] as usize) << 24);
+    if compressed.len() < 4 {
+        return None;
+    }
+    let src_len = compressed[0] as usize
+        | ((compressed[1] as usize) << 8)
+        | ((compressed[2] as usize) << 16)
+        | ((compressed[3] as usize) << 24);
     let mut output = Vec::with_capacity(src_len);
     let mut ip = 4;
     while ip < compressed.len() && output.len() < src_len {
@@ -229,5 +287,9 @@ fn decompress_zle(compressed: &[u8], _expected_size: usize) -> Option<Vec<u8>> {
     Some(output)
 }
 
-fn compress_zstd_fallback(data: &[u8]) -> Option<Vec<u8>> { compress_rle(data) }
-fn decompress_zstd_fallback(compressed: &[u8], expected: usize) -> Option<Vec<u8>> { decompress_rle(compressed, expected) }
+fn compress_zstd_fallback(data: &[u8]) -> Option<Vec<u8>> {
+    compress_rle(data)
+}
+fn decompress_zstd_fallback(compressed: &[u8], expected: usize) -> Option<Vec<u8>> {
+    decompress_rle(compressed, expected)
+}

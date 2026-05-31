@@ -1,4 +1,3 @@
-
 pub const HV_DVA_MAX: usize = 2;
 pub const HV_BP_CHECKSUM_SIZE: usize = 32;
 
@@ -14,7 +13,13 @@ pub struct HvDva {
 
 impl HvDva {
     pub const fn null() -> Self {
-        Self { vdev_id: 0, offset: 0, asize: 0, gang: false, _pad: [0; 3] }
+        Self {
+            vdev_id: 0,
+            offset: 0,
+            asize: 0,
+            gang: false,
+            _pad: [0; 3],
+        }
     }
 
     pub fn is_null(&self) -> bool {
@@ -22,7 +27,13 @@ impl HvDva {
     }
 
     pub fn new(vdev_id: u16, offset: u64, asize: u32) -> Self {
-        Self { vdev_id, offset, asize, gang: false, _pad: [0; 3] }
+        Self {
+            vdev_id,
+            offset,
+            asize,
+            gang: false,
+            _pad: [0; 3],
+        }
     }
 
     pub fn with_gang(mut self) -> Self {

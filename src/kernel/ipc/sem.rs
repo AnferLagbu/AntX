@@ -16,7 +16,10 @@ unsafe fn sem_find_free(namespace: &mut IpcNamespace) -> Option<&'static mut Sem
 }
 
 /// 根据 ID 查找信号量
-unsafe fn sem_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&'static mut Semaphore> {
+unsafe fn sem_find_by_id(
+    namespace: &mut IpcNamespace,
+    id: IpcId,
+) -> Option<&'static mut Semaphore> {
     for i in 0..IPC_MAX_SEMAPHORES {
         if namespace.semaphores[i].id == id {
             return Some(&mut *(&mut namespace.semaphores[i] as *mut Semaphore));
@@ -58,7 +61,7 @@ pub fn sem_create_safe(
         sem.count = count as i32;
         sem.max_count = max_count;
         sem.flags = 0;
-        sem.perm = 0o666;  // 默认权限
+        sem.perm = 0o666; // 默认权限
 
         sem.wait.init();
 
@@ -168,7 +171,9 @@ pub extern "C" fn ipc_sem_create(count: u32, max_count: u32) -> IpcId {
     use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
     unsafe {
-        extern "C" { fn process_get_current_pid() -> u32; }
+        extern "C" {
+            fn process_get_current_pid() -> u32;
+        }
         let pid = process_get_current_pid();
 
         match sem_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, count, max_count, pid) {

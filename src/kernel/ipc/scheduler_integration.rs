@@ -22,24 +22,28 @@ use super::types::{WaitQueue, WaitQueueItem};
 #[inline]
 pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Result<(), i32> {
     unsafe {
-        extern "C" { fn thread_get_current() -> u64; }
+        extern "C" {
+            fn thread_get_current() -> u64;
+        }
         let thread_addr = thread_get_current();
 
         if thread_addr != 0 {
             let tid = *(thread_addr as *const u32);
-            
+
             // 创建等待项并加入队列
             let item = WaitQueueItem { tid };
             wait_queue.add(item);
 
             // 让出 CPU (调用扩展调度器)
-            extern "C" { fn scheduler_yield_ex(); }
+            extern "C" {
+                fn scheduler_yield_ex();
+            }
             scheduler_yield_ex();
 
             // 被唤醒后返回
             Ok(())
         } else {
-            Err(-2)  // 无效线程
+            Err(-2) // 无效线程
         }
     }
 }
@@ -101,12 +105,14 @@ pub fn block_with_timeout(wait_queue: &mut WaitQueue, timeout_ms: u64) -> Result
         // 检查是否超时
         let elapsed = rdtsc() - start_time;
         if elapsed >= timeout_ticks {
-            return Err(-1);  // 超时
+            return Err(-1); // 超时
         }
 
         // 短暂让出 CPU (避免忙等待占用过多资源)
         unsafe {
-            extern "C" { fn scheduler_yield_ex(); }
+            extern "C" {
+                fn scheduler_yield_ex();
+            }
             scheduler_yield_ex();
         }
     }
@@ -123,6 +129,6 @@ fn rdtsc() -> u64 {
 ///
 /// 假设 CPU 主频为 1GHz (需要实际校准)
 fn ms_to_ticks(ms: u64) -> u64 {
-    const APPROX_CPU_FREQ_MHZ: u64 = 1000;  // 1 GHz
+    const APPROX_CPU_FREQ_MHZ: u64 = 1000; // 1 GHz
     ms * APPROX_CPU_FREQ_MHZ * 1000
 }

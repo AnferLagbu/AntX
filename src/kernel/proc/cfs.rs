@@ -66,12 +66,12 @@ pub const CFS_BOOST_INTERVAL_TICKS: u64 = 1000;
 pub const NICE_TO_WEIGHT: [u64; 40] = [
     88761, 71755, 56483, 46273, 36291, // nice -20 .. -16
     29154, 23254, 18705, 14949, 11916, // nice -15 .. -11
-     9548,  7620,  6100,  4904,  3906, // nice -10 ..  -6
-     3121,  2501,  1991,  1586,  1277, // nice  -5 ..  -1
-     1024,   820,   655,   526,   423, // nice   0 ..   4
-      335,   272,   215,   172,   137, // nice   5 ..   9
-      110,    87,    70,    56,    45, // nice  10 ..  14
-       36,    29,    23,    18,    15, // nice  15 ..  19
+    9548, 7620, 6100, 4904, 3906, // nice -10 ..  -6
+    3121, 2501, 1991, 1586, 1277, // nice  -5 ..  -1
+    1024, 820, 655, 526, 423, // nice   0 ..   4
+    335, 272, 215, 172, 137, // nice   5 ..   9
+    110, 87, 70, 56, 45, // nice  10 ..  14
+    36, 29, 23, 18, 15, // nice  15 ..  19
 ];
 
 /// Convert nice value to scheduling weight.
@@ -135,7 +135,11 @@ pub struct DeadlineParams {
 
 impl DeadlineParams {
     pub const fn new() -> Self {
-        Self { runtime: 0, deadline: 0, period: 0 }
+        Self {
+            runtime: 0,
+            deadline: 0,
+            period: 0,
+        }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -146,7 +150,9 @@ impl DeadlineParams {
     }
 
     pub fn utilization_pct(&self) -> u64 {
-        if self.period == 0 { return 0; }
+        if self.period == 0 {
+            return 0;
+        }
         (self.runtime * 100) / self.period
     }
 }
@@ -211,7 +217,10 @@ impl CfsRunQueue {
         loop {
             let new = prev.saturating_sub(weight);
             match self.total_weight.compare_exchange_weak(
-                prev, new, Ordering::Release, Ordering::Relaxed,
+                prev,
+                new,
+                Ordering::Release,
+                Ordering::Relaxed,
             ) {
                 Ok(_) => break,
                 Err(actual) => prev = actual,
@@ -282,11 +291,8 @@ impl CfsRunQueue {
             .map(|(&(vr, _), _)| vr)
             .unwrap_or(0);
 
-        let entries: alloc::vec::Vec<(Pid, u64)> = self
-            .tree
-            .keys()
-            .map(|&(vr, pid)| (pid, vr))
-            .collect();
+        let entries: alloc::vec::Vec<(Pid, u64)> =
+            self.tree.keys().map(|&(vr, pid)| (pid, vr)).collect();
 
         self.tree.clear();
         for (pid, _old_vr) in entries {
@@ -309,11 +315,8 @@ impl CfsRunQueue {
             .map(|(&(vr, _), _)| vr)
             .unwrap_or(0);
 
-        let entries: alloc::vec::Vec<(Pid, u64)> = self
-            .tree
-            .keys()
-            .map(|&(vr, pid)| (pid, vr))
-            .collect();
+        let entries: alloc::vec::Vec<(Pid, u64)> =
+            self.tree.keys().map(|&(vr, pid)| (pid, vr)).collect();
 
         self.tree.clear();
         for (pid, _old_vr) in entries {

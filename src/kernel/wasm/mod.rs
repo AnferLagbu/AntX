@@ -14,8 +14,8 @@
 //! └── interpreter.rs  # 栈式虚拟机核心解释器
 //! ```
 
-pub mod types;
+pub mod interpreter;
 pub mod leb128;
 pub mod module;
 pub mod runtime;
-pub mod interpreter;
+pub mod types;

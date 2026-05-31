@@ -1,6 +1,6 @@
-use crate::kernel::driver::display::framebuffer::{Color, Framebuffer, Rect};
-use crate::kernel::driver::display::framebuffer::colors;
 use crate::kernel::driver::display::font::Font;
+use crate::kernel::driver::display::framebuffer::colors;
+use crate::kernel::driver::display::framebuffer::{Color, Framebuffer, Rect};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// 全局紧急/panic 标记 — 当为 true 时，GfxConsole 输出使用 panic 专用配色
@@ -68,10 +68,7 @@ impl GfxConsole {
 
     pub fn clear(&mut self) {
         let fb = unsafe { self.fb_mut() };
-        fb.fill_rect(
-            Rect::new(0, 0, fb.width(), fb.height()),
-            self.bg_color,
-        );
+        fb.fill_rect(Rect::new(0, 0, fb.width(), fb.height()), self.bg_color);
         self.cursor_x = 0;
         self.cursor_y = self.top_margin;
     }
@@ -105,12 +102,23 @@ impl GfxConsole {
         // 3. 横幅文字 "[ KERNEL PANIC ]" — 居中放置
         let banner_text = b"[ KERNEL PANIC ]";
         let text_px_w = banner_text.len() as u32 * glyph_w;
-        let text_x = if fb_w > text_px_w { (fb_w - text_px_w) / 2 } else { 0 };
+        let text_x = if fb_w > text_px_w {
+            (fb_w - text_px_w) / 2
+        } else {
+            0
+        };
         let text_y = glyph_h / 2; // 垂直居中在条内
         let fb_ref = unsafe { &mut *self.fb };
         for (i, &ch) in banner_text.iter().enumerate() {
             let px = text_x + i as u32 * glyph_w;
-            self.font.render_char(fb_ref, ch as char, px, text_y, colors::WHITE, Color::new(180, 0, 0));
+            self.font.render_char(
+                fb_ref,
+                ch as char,
+                px,
+                text_y,
+                colors::WHITE,
+                Color::new(180, 0, 0),
+            );
         }
 
         // 4. 横幅下方显示崩溃消息
@@ -242,11 +250,7 @@ impl GfxConsole {
 
             let clear_start = (scroll_end - scroll_h) * pitch;
             let clear_size = (scroll_h * pitch) as usize;
-            core::ptr::write_bytes(
-                fb.buffer_ptr().add(clear_start as usize),
-                0u8,
-                clear_size,
-            );
+            core::ptr::write_bytes(fb.buffer_ptr().add(clear_start as usize), 0u8, clear_size);
         }
 
         self.cursor_y -= lines;

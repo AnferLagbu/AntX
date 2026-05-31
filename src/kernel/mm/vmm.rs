@@ -42,7 +42,7 @@
 
 use super::*;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
@@ -74,7 +74,12 @@ unsafe impl Sync for VirtualMemoryManager {}
 impl VirtualMemoryManager {
     pub const fn new() -> Self {
         Self {
-            user_tables: UnsafeCell::new([UserPageTable { pml4_phys: 0, in_use: false }; MAX_USER_PAGE_TABLES]),
+            user_tables: UnsafeCell::new(
+                [UserPageTable {
+                    pml4_phys: 0,
+                    in_use: false,
+                }; MAX_USER_PAGE_TABLES],
+            ),
             user_table_count: AtomicUsize::new(0),
             total_maps: AtomicU64::new(0),
             total_unmaps: AtomicU64::new(0),
@@ -91,7 +96,12 @@ impl VirtualMemoryManager {
         super::ffi::kernel_pml4.store(cr3, Ordering::Release);
     }
 
-    pub fn map_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<(), &'static str> {
+    pub fn map_page(
+        &self,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+    ) -> Result<(), &'static str> {
         self.acquire_lock();
 
         let result = self.map_page_internal(virt, phys, flags);
@@ -104,7 +114,13 @@ impl VirtualMemoryManager {
         result
     }
 
-    pub fn map_huge_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags, size_type: PageSize) -> Result<(), &'static str> {
+    pub fn map_huge_page(
+        &self,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+        size_type: PageSize,
+    ) -> Result<(), &'static str> {
         if !size_type.is_aligned(virt.0) || !size_type.is_aligned(phys.0) {
             return Err("Address not aligned for huge page");
         }
@@ -207,13 +223,17 @@ impl VirtualMemoryManager {
         unsafe {
             let pml4_raw = pml4_virt.0 as *const u64;
             let pml4e = pml4_raw.add(virt.pml4_idx()).read_volatile();
-            if (pml4e & 1) == 0 { return None; }
+            if (pml4e & 1) == 0 {
+                return None;
+            }
 
             // SAFETY: pml4e present → frame bits point to valid PDPT
             let pdpt_virt = (pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
             let pdpt_raw = pdpt_virt as *const u64;
             let pdpte = pdpt_raw.add(virt.pdpt_idx()).read_volatile();
-            if (pdpte & 1) == 0 { return None; }
+            if (pdpte & 1) == 0 {
+                return None;
+            }
 
             if (pdpte & 0x80) != 0 {
                 let frame = pdpte & 0x000FFFFFFFFFF000;
@@ -225,7 +245,9 @@ impl VirtualMemoryManager {
             let pd_virt = (pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
             let pd_raw = pd_virt as *const u64;
             let pde = pd_raw.add(virt.pd_idx()).read_volatile();
-            if (pde & 1) == 0 { return None; }
+            if (pde & 1) == 0 {
+                return None;
+            }
 
             if (pde & 0x80) != 0 {
                 let frame = pde & 0x000FFFFFFFFFF000;
@@ -237,7 +259,9 @@ impl VirtualMemoryManager {
             let pt_virt = (pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
             let pt_raw = pt_virt as *const u64;
             let pte = pt_raw.add(virt.pt_idx()).read_volatile();
-            if (pte & 1) == 0 { return None; }
+            if (pte & 1) == 0 {
+                return None;
+            }
 
             let frame = pte & 0x000FFFFFFFFFF000;
             let offset = virt.0 & (PAGE_SIZE - 1);
@@ -320,17 +344,20 @@ impl VirtualMemoryManager {
 
             let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() {
-                self.release_lock(); return;
+                self.release_lock();
+                return;
             }
 
             let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
             if pd.is_null() {
-                self.release_lock(); return;
+                self.release_lock();
+                return;
             }
 
             let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, 0x1000);
             if pt.is_null() {
-                self.release_lock(); return;
+                self.release_lock();
+                return;
             }
 
             if flags.contains(PageFlags::USER) {
@@ -414,7 +441,9 @@ impl VirtualMemoryManager {
     }
 
     pub fn destroy_page_table(&self, pml4: u64) {
-        if pml4 == 0 { return; }
+        if pml4 == 0 {
+            return;
+        }
 
         self.acquire_lock();
 
@@ -490,7 +519,12 @@ impl VirtualMemoryManager {
 
     // ==================== Private Methods ====================
 
-    fn map_page_internal(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<(), &'static str> {
+    fn map_page_internal(
+        &self,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+    ) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -504,13 +538,19 @@ impl VirtualMemoryManager {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
             let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
-            if pdpt.is_null() { return Err("Failed to allocate PDPT"); }
+            if pdpt.is_null() {
+                return Err("Failed to allocate PDPT");
+            }
 
             let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
-            if pd.is_null() { return Err("Failed to allocate PD"); }
+            if pd.is_null() {
+                return Err("Failed to allocate PD");
+            }
 
             let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, 0x1000);
-            if pt.is_null() { return Err("Failed to allocate PT"); }
+            if pt.is_null() {
+                return Err("Failed to allocate PT");
+            }
 
             let pte = &mut *pt.add(virt.pt_idx());
             pte.set_frame(phys);
@@ -522,7 +562,12 @@ impl VirtualMemoryManager {
         Ok(())
     }
 
-    fn map_2mb_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<(), &'static str> {
+    fn map_2mb_page(
+        &self,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+    ) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -535,10 +580,14 @@ impl VirtualMemoryManager {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
             let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
-            if pdpt.is_null() { return Err("Failed to allocate PDPT"); }
+            if pdpt.is_null() {
+                return Err("Failed to allocate PDPT");
+            }
 
             let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
-            if pd.is_null() { return Err("Failed to allocate PD"); }
+            if pd.is_null() {
+                return Err("Failed to allocate PD");
+            }
 
             let pde = &mut *pd.add(virt.pd_idx());
             if pde.is_present() && !pde.is_huge() {
@@ -553,7 +602,12 @@ impl VirtualMemoryManager {
         Ok(())
     }
 
-    fn map_1gb_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<(), &'static str> {
+    fn map_1gb_page(
+        &self,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+    ) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -566,7 +620,9 @@ impl VirtualMemoryManager {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
             let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
-            if pdpt.is_null() { return Err("Failed to allocate PDPT"); }
+            if pdpt.is_null() {
+                return Err("Failed to allocate PDPT");
+            }
 
             let pdpte = &mut *pdpt.add(virt.pdpt_idx());
             if pdpte.is_present() && !pdpte.is_huge() {
@@ -581,7 +637,12 @@ impl VirtualMemoryManager {
         Ok(())
     }
 
-    unsafe fn get_or_create_table_entry(&self, entry: *mut PageTableEntry, create: bool, huge_step: u64) -> *mut PageTableEntry {
+    unsafe fn get_or_create_table_entry(
+        &self,
+        entry: *mut PageTableEntry,
+        create: bool,
+        huge_step: u64,
+    ) -> *mut PageTableEntry {
         // SAFETY: caller guarantees `entry` points to a valid PageTableEntry within a
         // page table page allocated by PMM. Dereference is bounds-checked by 512-entry table size.
         let e = &*entry;
@@ -626,7 +687,9 @@ impl VirtualMemoryManager {
 
     pub fn split_2mb_page(&self, virt: u64) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
-        if pml4_base == 0 { return Err("VMM not initialized"); }
+        if pml4_base == 0 {
+            return Err("VMM not initialized");
+        }
 
         self.acquire_lock();
 
@@ -639,14 +702,22 @@ impl VirtualMemoryManager {
             unsafe {
                 let pml4 = pml4_virt.0 as *mut PageTableEntry;
                 let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false, 0);
-                if pdpt.is_null() { return Err("PDPT not present"); }
+                if pdpt.is_null() {
+                    return Err("PDPT not present");
+                }
 
                 let pd = self.get_or_create_table_entry(pdpt.add(v.pdpt_idx()), false, 0);
-                if pd.is_null() { return Err("PD not present"); }
+                if pd.is_null() {
+                    return Err("PD not present");
+                }
 
                 let pd_entry = &mut *pd.add(v.pd_idx());
-                if !pd_entry.is_present() { return Err("PD entry not present"); }
-                if !pd_entry.is_huge() { return Ok(()); }
+                if !pd_entry.is_present() {
+                    return Err("PD entry not present");
+                }
+                if !pd_entry.is_huge() {
+                    return Ok(());
+                }
 
                 let huge_frame = pd_entry.frame();
                 let huge_flags = pd_entry.flags();
@@ -683,7 +754,9 @@ impl VirtualMemoryManager {
 
     pub fn ensure_pml4_user(&self, virt: u64) {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
-        if pml4_base == 0 { return; }
+        if pml4_base == 0 {
+            return;
+        }
 
         let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
@@ -701,7 +774,9 @@ impl VirtualMemoryManager {
 
     pub fn ensure_path_user(&self, virt: u64) {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
-        if pml4_base == 0 { return; }
+        if pml4_base == 0 {
+            return;
+        }
 
         let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
@@ -712,19 +787,28 @@ impl VirtualMemoryManager {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
             let pml4e = &mut *pml4.add(v.pml4_idx());
-            if !pml4e.is_present() { return; }
+            if !pml4e.is_present() {
+                return;
+            }
             pml4e.set_user(true);
 
             let pdpt = pml4e.frame().to_virt().0 as *mut PageTableEntry;
             let pdpte = &mut *pdpt.add(v.pdpt_idx());
-            if !pdpte.is_present() { return; }
+            if !pdpte.is_present() {
+                return;
+            }
             pdpte.set_user(true);
 
-            if pdpte.is_huge() { self.flush_tlb(virt); return; }
+            if pdpte.is_huge() {
+                self.flush_tlb(virt);
+                return;
+            }
 
             let pd = pdpte.frame().to_virt().0 as *mut PageTableEntry;
             let pde = &mut *pd.add(v.pd_idx());
-            if !pde.is_present() { return; }
+            if !pde.is_present() {
+                return;
+            }
             pde.set_user(true);
         }
 
@@ -732,7 +816,9 @@ impl VirtualMemoryManager {
     }
 
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
-        if parent_pml4 == 0 { return None; }
+        if parent_pml4 == 0 {
+            return None;
+        }
 
         self.acquire_lock();
 
@@ -741,13 +827,19 @@ impl VirtualMemoryManager {
         let child_pml4_base = child_pml4_phys.to_virt().0 as *mut u64;
 
         // SAFETY: child_pml4_phys from PMM, phys_to_virt valid
-        unsafe { core::ptr::write_bytes(child_pml4_base, 0, PAGE_SIZE as usize); }
+        unsafe {
+            core::ptr::write_bytes(child_pml4_base, 0, PAGE_SIZE as usize);
+        }
 
         let kernel_pml4 = KERNEL_PML4.load(Ordering::Acquire);
         // SAFETY: kernel_pml4 valid; both src and dst are page-aligned kernel VAs
         let kernel_pml4_virt = PhysAddr(kernel_pml4).to_virt().0 as *const u64;
         unsafe {
-            core::ptr::copy_nonoverlapping(kernel_pml4_virt.add(256), child_pml4_base.add(256), 256);
+            core::ptr::copy_nonoverlapping(
+                kernel_pml4_virt.add(256),
+                child_pml4_base.add(256),
+                256,
+            );
         }
 
         // SAFETY: parent_pml4 is a valid user PML4; VMM_LOCK held
@@ -756,17 +848,23 @@ impl VirtualMemoryManager {
         for i in 0..256u16 {
             // SAFETY: i in 0..255 within PML4 page; volatile for hardware-updated bits
             let parent_pml4e = unsafe { parent_pml4_virt.add(i as usize).read_volatile() };
-            if (parent_pml4e & 1) == 0 { continue; }
+            if (parent_pml4e & 1) == 0 {
+                continue;
+            }
 
             let child_pdpt_phys = pmm.alloc_page()?;
             let child_pdpt = child_pdpt_phys.to_virt().0 as *mut u64;
             // SAFETY: child_pdpt from PMM, phys_to_virt valid
-            unsafe { core::ptr::write_bytes(child_pdpt, 0, PAGE_SIZE as usize); }
+            unsafe {
+                core::ptr::write_bytes(child_pdpt, 0, PAGE_SIZE as usize);
+            }
 
             let mut child_pml4e = parent_pml4e;
             child_pml4e = (child_pml4e & 0xFFF) | (child_pdpt_phys.as_u64() & 0x000FFFFFFFFFF000);
             // SAFETY: child_pml4_base is a valid 4KB PML4 page; volatile write for TLB coherency
-            unsafe { child_pml4_base.add(i as usize).write_volatile(child_pml4e); }
+            unsafe {
+                child_pml4_base.add(i as usize).write_volatile(child_pml4e);
+            }
 
             // SAFETY: parent_pml4e present → frame bits point to valid PDPT
             let parent_pdpt_virt = (parent_pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
@@ -775,18 +873,27 @@ impl VirtualMemoryManager {
             for j in 0..512u16 {
                 // SAFETY: j in 0..511 within PDPT page; volatile read
                 let parent_pdpte = unsafe { parent_pdpt.add(j as usize).read_volatile() };
-                if (parent_pdpte & 1) == 0 { continue; }
-                if (parent_pdpte & 0x80) != 0 { continue; }
+                if (parent_pdpte & 1) == 0 {
+                    continue;
+                }
+                if (parent_pdpte & 0x80) != 0 {
+                    continue;
+                }
 
                 let child_pd_phys = pmm.alloc_page()?;
                 let child_pd = child_pd_phys.to_virt().0 as *mut u64;
                 // SAFETY: child_pd from PMM
-                unsafe { core::ptr::write_bytes(child_pd, 0, PAGE_SIZE as usize); }
+                unsafe {
+                    core::ptr::write_bytes(child_pd, 0, PAGE_SIZE as usize);
+                }
 
                 let mut child_pdpte_v = parent_pdpte;
-                child_pdpte_v = (child_pdpte_v & 0xFFF) | (child_pd_phys.as_u64() & 0x000FFFFFFFFFF000);
+                child_pdpte_v =
+                    (child_pdpte_v & 0xFFF) | (child_pd_phys.as_u64() & 0x000FFFFFFFFFF000);
                 // SAFETY: child_pdpt valid; volatile write
-                unsafe { child_pdpt.add(j as usize).write_volatile(child_pdpte_v); }
+                unsafe {
+                    child_pdpt.add(j as usize).write_volatile(child_pdpte_v);
+                }
 
                 // SAFETY: parent_pdpte present → valid PD pointer
                 let parent_pd_virt = (parent_pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
@@ -795,7 +902,9 @@ impl VirtualMemoryManager {
                 for k in 0..512u16 {
                     // SAFETY: k in 0..511 within PD page; volatile read
                     let parent_pde = unsafe { parent_pd.add(k as usize).read_volatile() };
-                    if (parent_pde & 1) == 0 { continue; }
+                    if (parent_pde & 1) == 0 {
+                        continue;
+                    }
 
                     if (parent_pde & 0x80) != 0 {
                         // Deep copy 2MB huge page
@@ -811,21 +920,29 @@ impl VirtualMemoryManager {
                             );
                         }
                         let mut child_pde_v = parent_pde;
-                        child_pde_v = (child_pde_v & 0xFFF) | (huge_phys.as_u64() & 0x000FFFFFFFFFF000);
+                        child_pde_v =
+                            (child_pde_v & 0xFFF) | (huge_phys.as_u64() & 0x000FFFFFFFFFF000);
                         // SAFETY: child_pd valid; volatile write
-                        unsafe { child_pd.add(k as usize).write_volatile(child_pde_v); }
+                        unsafe {
+                            child_pd.add(k as usize).write_volatile(child_pde_v);
+                        }
                         continue;
                     }
 
                     let child_pt_phys = pmm.alloc_page()?;
                     let child_pt = child_pt_phys.to_virt().0 as *mut u64;
                     // SAFETY: child_pt from PMM
-                    unsafe { core::ptr::write_bytes(child_pt, 0, PAGE_SIZE as usize); }
+                    unsafe {
+                        core::ptr::write_bytes(child_pt, 0, PAGE_SIZE as usize);
+                    }
 
                     let mut child_pde_v = parent_pde;
-                    child_pde_v = (child_pde_v & 0xFFF) | (child_pt_phys.as_u64() & 0x000FFFFFFFFFF000);
+                    child_pde_v =
+                        (child_pde_v & 0xFFF) | (child_pt_phys.as_u64() & 0x000FFFFFFFFFF000);
                     // SAFETY: child_pd valid; volatile write
-                    unsafe { child_pd.add(k as usize).write_volatile(child_pde_v); }
+                    unsafe {
+                        child_pd.add(k as usize).write_volatile(child_pde_v);
+                    }
 
                     // SAFETY: parent_pde present && !huge → valid PT pointer
                     let parent_pt_virt = (parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
@@ -834,7 +951,9 @@ impl VirtualMemoryManager {
                     for l in 0..512u16 {
                         // SAFETY: l in 0..511 within PT page; volatile read
                         let parent_pte = unsafe { parent_pt.add(l as usize).read_volatile() };
-                        if (parent_pte & 1) == 0 { continue; }
+                        if (parent_pte & 1) == 0 {
+                            continue;
+                        }
 
                         let child_page_phys = pmm.alloc_page()?;
                         let child_page_virt = PhysAddr(child_page_phys.as_u64()).to_virt().0;
@@ -851,9 +970,12 @@ impl VirtualMemoryManager {
                         }
 
                         let mut child_pte_v = parent_pte;
-                        child_pte_v = (child_pte_v & 0xFFF) | (child_page_phys.as_u64() & 0x000FFFFFFFFFF000);
+                        child_pte_v =
+                            (child_pte_v & 0xFFF) | (child_page_phys.as_u64() & 0x000FFFFFFFFFF000);
                         // SAFETY: child_pt valid; volatile write
-                        unsafe { child_pt.add(l as usize).write_volatile(child_pte_v); }
+                        unsafe {
+                            child_pt.add(l as usize).write_volatile(child_pte_v);
+                        }
                     }
                 }
             }
@@ -876,11 +998,10 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
     fn acquire_lock(&self) {
-        while VMM_LOCK.compare_exchange_weak(
-            false, true,
-            Ordering::Acquire,
-            Ordering::Relaxed
-        ).is_err() {
+        while VMM_LOCK
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             core::hint::spin_loop();
         }
         #[cfg(debug_assertions)]
@@ -938,7 +1059,9 @@ pub fn vmm_init() {
 }
 
 pub fn get_vmm() -> &'static VirtualMemoryManager {
-    GLOBAL_VMM.get().expect("[VMM] accessed before initialization")
+    GLOBAL_VMM
+        .get()
+        .expect("[VMM] accessed before initialization")
 }
 
 pub fn get_kernel_pml4() -> u64 {

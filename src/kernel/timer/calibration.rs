@@ -17,7 +17,7 @@
 //! # Performance
 //! 校准通常在启动时执行一次，结果缓存供后续使用。
 
-use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::kernel::cpu::tsc::{read_tsc, read_tsc_serialized};
 
@@ -80,7 +80,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     // 多次采样取平均 (提高精度)
     const SAMPLE_COUNT: usize = 3;
     let mut measurements: [u64; SAMPLE_COUNT] = [0; 3];
-    
+
     for sample in 0..SAMPLE_COUNT {
         // 1. 记录起始状态
         let start_tick = super::tick::get_ticks();
@@ -90,7 +90,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
         loop {
             let current_tick = super::tick::get_ticks();
             let elapsed = current_tick.saturating_sub(start_tick);
-            
+
             if elapsed >= target_ticks {
                 break;
             }
@@ -104,7 +104,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
 
         // 4. 计算 TSC 周期数
         let tsc_cycles = end_tsc.saturating_sub(start_tsc);
-        
+
         // 5. 存储测量值
         measurements[sample] = tsc_cycles;
 
@@ -121,7 +121,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     // 计算 TSC 频率
     // TSC_Hz = cycles / seconds = cycles / (ticks / PIT_FREQ)
     // TSC_MHz = TSC_Hz / 1_000_000
-    
+
     let total_ns = (target_ticks * 1_000_000_000u64) / pit_freq;
     if total_ns == 0 {
         return Err("Calculation overflow");
@@ -167,7 +167,7 @@ pub fn get_tsc_frequency_mhz() -> Option<u64> {
     if !CALIBRATION_DONE.load(Ordering::Acquire) {
         return None;
     }
-    
+
     let freq = CALIBRATED_TSC_FREQ_MHZ.load(Ordering::Acquire);
     if freq == 0 {
         None
@@ -185,7 +185,7 @@ pub fn get_tsc_frequency_hz() -> Option<u64> {
     if !CALIBRATION_DONE.load(Ordering::Acquire) {
         return None;
     }
-    
+
     let freq = CALIBRATED_TSC_FREQ_HZ.load(Ordering::Acquire);
     if freq == 0 {
         None
@@ -208,7 +208,11 @@ pub fn get_calibration_info() -> (Option<u64>, Option<u64>, Option<u64>) {
     let freq_hz = get_tsc_frequency_hz();
     let range = {
         let r = LAST_CALIBRATION_RANGE.load(Ordering::Acquire);
-        if r == 0 { None } else { Some(r) }
+        if r == 0 {
+            None
+        } else {
+            Some(r)
+        }
     };
 
     (freq_mhz, freq_hz, range)
@@ -230,7 +234,7 @@ pub fn get_calibration_info() -> (Option<u64>, Option<u64>, Option<u64>) {
 /// * `None` - 尚未校准
 pub fn tsc_to_nanoseconds(cycles: u64) -> Option<u64> {
     let freq_hz = get_tsc_frequency_hz()?;
-    
+
     if freq_hz == 0 {
         return None;
     }
@@ -252,7 +256,7 @@ pub fn tsc_to_milliseconds(cycles: u64) -> Option<u64> {
 /// 将纳秒转换为 TSC 周期数
 pub fn nanoseconds_to_tsc(ns: u64) -> Option<u64> {
     let freq_hz = get_tsc_frequency_hz()?;
-    
+
     if freq_hz == 0 {
         return None;
     }
@@ -274,14 +278,14 @@ pub fn get_time_ns() -> Option<u64> {
     if !is_calibrated() {
         return None;
     }
-    
+
     let current_tsc = read_tsc();
-    
+
     // 使用 timer 初始化时的 TSC 作为基准
     // (通过 uptime 间接获取)
     let uptime_ticks = super::tick::get_ticks();
     let uptime_ns = super::tick::ticks_to_ns(uptime_ticks);
-    
+
     // 添加基于 TSC 的亚 tick 精度
     if let Some(base_ns) = tsc_to_nanoseconds(current_tsc) {
         Some(base_ns)
@@ -322,10 +326,10 @@ mod tests {
     fn test_calibration_interface() {
         // 测试校准函数存在且签名正确
         // 实际校准需要 PIT 初始化
-        
+
         // 验证函数可调用 (可能返回错误)
         let result = calibrate_tsc(10);
-        
+
         // 可能成功或失败，但不应该 panic
         let _ = result;
     }
@@ -341,7 +345,7 @@ mod tests {
     fn test_conversion_functions_exist() {
         // 验证所有转换函数存在
         // 这些函数在未校准时返回 None
-        
+
         assert!(tsc_to_nanoseconds(0).is_none());
         assert!(tsc_to_microseconds(0).is_none());
         assert!(tsc_to_milliseconds(0).is_none());
@@ -351,7 +355,7 @@ mod tests {
     #[test]
     fn test_calibration_info() {
         let (mhz, hz, range) = get_calibration_info();
-        
+
         // 未校准时都应该是 None
         assert!(mhz.is_none());
         assert!(hz.is_none());
@@ -402,8 +406,24 @@ pub fn register_timer_calibration_tests() {
         TestResult::Pass
     }
 
-    r.register("timer::calibration", "initial_state", initial_state as TestFn);
-    r.register("timer::calibration", "conversion_unavailable", conversion_functions_unavailable as TestFn);
-    r.register("timer::calibration", "calibration_info_unavailable", calibration_info_unavailable as TestFn);
-    r.register("timer::calibration", "zero_duration_rejected", zero_duration_rejected as TestFn);
+    r.register(
+        "timer::calibration",
+        "initial_state",
+        initial_state as TestFn,
+    );
+    r.register(
+        "timer::calibration",
+        "conversion_unavailable",
+        conversion_functions_unavailable as TestFn,
+    );
+    r.register(
+        "timer::calibration",
+        "calibration_info_unavailable",
+        calibration_info_unavailable as TestFn,
+    );
+    r.register(
+        "timer::calibration",
+        "zero_duration_rejected",
+        zero_duration_rejected as TestFn,
+    );
 }

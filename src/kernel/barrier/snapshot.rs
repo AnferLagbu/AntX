@@ -41,7 +41,10 @@ pub struct RegisterState {
 
 impl Default for RegisterState {
     fn default() -> Self {
-        RegisterState { offset: 0, value: 0 }
+        RegisterState {
+            offset: 0,
+            value: 0,
+        }
     }
 }
 
@@ -65,7 +68,10 @@ impl DeviceSnapshot {
         mmio_base: u64,
         priority: u32,
     ) -> Self {
-        const DEFAULT_REG: RegisterState = RegisterState { offset: 0, value: 0 };
+        const DEFAULT_REG: RegisterState = RegisterState {
+            offset: 0,
+            value: 0,
+        };
         DeviceSnapshot {
             device_id,
             device_type,
@@ -281,7 +287,13 @@ pub fn snapshot_register_device(
     priority: u32,
 ) -> bool {
     let mut registry = DEVICE_SNAPSHOTS.lock();
-    registry.register(DeviceSnapshot::new(device_id, device_type, name, mmio_base, priority))
+    registry.register(DeviceSnapshot::new(
+        device_id,
+        device_type,
+        name,
+        mmio_base,
+        priority,
+    ))
 }
 
 pub fn snapshot_unregister_device(device_id: u64) -> bool {
@@ -323,9 +335,21 @@ pub mod tests {
 
     pub fn test_registry_priority_order() -> bool {
         let mut registry = DeviceSnapshotRegistry::new();
-        registry.register(DeviceSnapshot::new(1, DeviceType::Timer, "timer", 0xF000, 10));
+        registry.register(DeviceSnapshot::new(
+            1,
+            DeviceType::Timer,
+            "timer",
+            0xF000,
+            10,
+        ));
         registry.register(DeviceSnapshot::new(2, DeviceType::Keyboard, "kbd", 0x60, 5));
-        registry.register(DeviceSnapshot::new(3, DeviceType::Serial, "serial", 0x3F8, 8));
+        registry.register(DeviceSnapshot::new(
+            3,
+            DeviceType::Serial,
+            "serial",
+            0x3F8,
+            8,
+        ));
 
         fn dummy_write(_base: u64, _offset: u32, _value: u32) {}
         let (success, failed) = registry.restore_all(dummy_write);

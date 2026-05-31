@@ -1,7 +1,7 @@
+use crate::kernel::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::sync::mutex::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::hvfs::bp::HvBlockPointer;
 
 pub const HV_ZIL_MAX_RECORDS: usize = 1024;
 pub const HV_ZIL_BLOCK_SIZE: usize = 4096;
@@ -145,7 +145,7 @@ impl HvZilRecord {
         n[..len].copy_from_slice(&b[..len]);
         let b2 = new_name.as_bytes();
         let len2 = b2.len().min(63);
-        n[64..64+len2].copy_from_slice(&b2[..len2]);
+        n[64..64 + len2].copy_from_slice(&b2[..len2]);
         Self {
             rec_type: HvZilRecordType::Rename,
             txg,
@@ -166,7 +166,7 @@ impl HvZilRecord {
         n[..len].copy_from_slice(&b[..len]);
         let b2 = target.as_bytes();
         let len2 = b2.len().min(63);
-        n[64..64+len2].copy_from_slice(&b2[..len2]);
+        n[64..64 + len2].copy_from_slice(&b2[..len2]);
         Self {
             rec_type: HvZilRecordType::Symlink,
             txg,
@@ -246,7 +246,9 @@ impl HvZil {
     }
 
     pub fn add_record(&self, record: HvZilRecord) {
-        if !self.enabled.load(Ordering::Acquire) { return; }
+        if !self.enabled.load(Ordering::Acquire) {
+            return;
+        }
         let seq = self.current_seq.fetch_add(1, Ordering::AcqRel) + 1;
         let mut rec = record;
         rec.seq = seq;
@@ -268,7 +270,11 @@ impl HvZil {
     }
 
     pub fn sync(&self, txg: u64) {
-        if self.syncing.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err() {
+        if self
+            .syncing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
             return;
         }
         self.commit(txg);
@@ -276,7 +282,11 @@ impl HvZil {
     }
 
     pub fn replay(&self) -> Vec<HvZilRecord> {
-        if self.replaying.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err() {
+        if self
+            .replaying
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
             return Vec::new();
         }
         let records = self.records.lock().clone();

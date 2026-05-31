@@ -21,7 +21,7 @@
 //!   0x09 — x2APIC
 //! ```
 
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// MADT 条目类型
 const MADT_TYPE_LAPIC: u8 = 0x00;
@@ -45,8 +45,7 @@ pub struct ApInfo {
     pub enabled: bool,
 }
 
-static AP_LIST: spin::Mutex<[Option<ApInfo>; MAX_CPUS]> =
-    spin::Mutex::new([None; MAX_CPUS]);
+static AP_LIST: spin::Mutex<[Option<ApInfo>; MAX_CPUS]> = spin::Mutex::new([None; MAX_CPUS]);
 static AP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // ============================================================================
@@ -79,15 +78,16 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
         let tag_type = unsafe { *((ptr as *const u32).add(offset / 4)) };
         let tag_size = unsafe { *((ptr as *const u32).add(offset / 4 + 1)) };
 
-        if tag_type == 0 || tag_size == 0 { break; }
+        if tag_type == 0 || tag_size == 0 {
+            break;
+        }
 
         // Multiboot2 tag 14 = ACPI old RSDP, tag 15 = ACPI new RSDP
         if tag_type == 14 || tag_type == 15 {
             let rsdp_ptr = unsafe { *((ptr as *const u64).add(offset / 8 + 1)) };
             if is_valid_rsdp(rsdp_ptr) {
                 unsafe {
-                    crate::kernel::klog::klog_info(
-                        c"[ACPI] RSDP found via Multiboot2".as_ptr());
+                    crate::kernel::klog::klog_info(c"[ACPI] RSDP found via Multiboot2".as_ptr());
                 }
                 return Some(rsdp_ptr);
             }
@@ -106,7 +106,9 @@ fn scan_ebda() -> Option<u64> {
     let bda_ptr = 0x400 as *const u16;
     unsafe {
         let ebda_seg = bda_ptr.add(0x40E / 2).read_volatile();
-        if ebda_seg == 0 { return None; }
+        if ebda_seg == 0 {
+            return None;
+        }
         let ebda_base = (ebda_seg as u64) << 4;
         scan_memory_range(ebda_base, 0x1000)
     }
@@ -122,8 +124,7 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
     while addr + 36 <= end {
         if is_valid_rsdp(addr) {
             unsafe {
-                crate::kernel::klog::klog_info(
-                    c"[ACPI] RSDP found via BIOS scan".as_ptr());
+                crate::kernel::klog::klog_info(c"[ACPI] RSDP found via BIOS scan".as_ptr());
             }
             return Some(addr);
         }
@@ -137,14 +138,18 @@ fn is_valid_rsdp(addr: u64) -> bool {
     unsafe {
         // "RSD PTR " 签名字符串
         let sig: &[u8; 8] = &*(ptr as *const [u8; 8]);
-        if sig != b"RSD PTR " { return false; }
+        if sig != b"RSD PTR " {
+            return false;
+        }
 
         // 校验和: 前 20 个字节的校验和必须为 0
         let mut sum: u8 = 0;
         for i in 0..20 {
             sum = sum.wrapping_add(ptr.add(i).read_volatile());
         }
-        if sum != 0 { return false; }
+        if sum != 0 {
+            return false;
+        }
 
         true
     }
@@ -235,8 +240,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         Some(addr) => addr,
         None => {
             unsafe {
-                crate::kernel::klog::klog_info(
-                    c"[ACPI] RSDP not found".as_ptr());
+                crate::kernel::klog::klog_info(c"[ACPI] RSDP not found".as_ptr());
             }
             return false;
         }
@@ -246,8 +250,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         Some(sdt) => sdt,
         None => {
             unsafe {
-                crate::kernel::klog::klog_info(
-                    c"[ACPI] RSDT/XSDT not found".as_ptr());
+                crate::kernel::klog::klog_info(c"[ACPI] RSDT/XSDT not found".as_ptr());
             }
             return false;
         }
@@ -255,8 +258,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
 
     let rsdp_ptr = rsdp as *const u8;
     let revision = unsafe { rsdp_ptr.add(15).read_volatile() };
-    let uses_xsdt = revision >= 2 &&
-        unsafe { *(rsdp_ptr.add(24) as *const u64) } != 0;
+    let uses_xsdt = revision >= 2 && unsafe { *(rsdp_ptr.add(24) as *const u64) } != 0;
 
     let table_count = if uses_xsdt {
         (rsdt_or_xsdt.length - 12) / 8
@@ -274,7 +276,9 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
                 *(entries_ptr.add(i * 4) as *const u32) as u64
             };
 
-            if madt_ptr == 0 { continue; }
+            if madt_ptr == 0 {
+                continue;
+            }
 
             let header = &*(madt_ptr as *const SdtHeader);
             if header.signature == *b"APIC" {
@@ -287,8 +291,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     }
 
     unsafe {
-        crate::kernel::klog::klog_info(
-            c"[ACPI] MADT not found in RSDT/XSDT".as_ptr());
+        crate::kernel::klog::klog_info(c"[ACPI] MADT not found in RSDT/XSDT".as_ptr());
     }
     false
 }
@@ -306,7 +309,9 @@ fn parse_madt_entries(madt_ptr: u64) {
 
         match entry.entry_type {
             MADT_TYPE_LAPIC => {
-                if offset + core::mem::size_of::<MadtLapic>() > entries_end { break; }
+                if offset + core::mem::size_of::<MadtLapic>() > entries_end {
+                    break;
+                }
                 let lapic = unsafe { &*(offset as *const MadtLapic) };
                 let idx = AP_COUNT.load(Ordering::Acquire) as usize;
                 if idx < MAX_CPUS {
@@ -320,7 +325,9 @@ fn parse_madt_entries(madt_ptr: u64) {
                 }
             }
             MADT_TYPE_IOAPIC => {
-                if offset + core::mem::size_of::<MadtIoApic>() > entries_end { break; }
+                if offset + core::mem::size_of::<MadtIoApic>() > entries_end {
+                    break;
+                }
                 let ioapic = unsafe { &*(offset as *const MadtIoApic) };
                 IOAPIC_ADDR.store(ioapic.io_apic_addr as u64, Ordering::Release);
                 IOAPIC_GSIB.store(ioapic.global_sys_int_base, Ordering::Release);
@@ -328,15 +335,15 @@ fn parse_madt_entries(madt_ptr: u64) {
             _ => {}
         }
 
-        if entry.length == 0 { break; }
+        if entry.length == 0 {
+            break;
+        }
         offset += entry.length as usize;
     }
 
     unsafe {
         let _count = AP_COUNT.load(Ordering::Acquire);
-        crate::kernel::klog::klog_info(
-            c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr()
-        );
+        crate::kernel::klog::klog_info(c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr());
     }
 }
 
@@ -369,7 +376,9 @@ pub fn get_ioapic_gsib() -> u32 {
 }
 
 pub fn get_lapic_base() -> u64 {
-    if !MADT_FOUND.load(Ordering::Acquire) { return 0; }
+    if !MADT_FOUND.load(Ordering::Acquire) {
+        return 0;
+    }
     let madt = unsafe { &*(MADT_BASE.load(Ordering::Acquire) as *const MadtHeader) };
     madt.local_apic_addr as u64
 }

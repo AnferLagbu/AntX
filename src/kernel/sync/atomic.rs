@@ -26,30 +26,37 @@ impl AtomicBool {
     pub const fn new(v: bool) -> Self {
         Self(AtomicU32::new(if v { 1 } else { 0 }))
     }
-    
+
     /// 读取当前值
     pub fn load(&self, order: Ordering) -> bool {
         self.0.load(order) != 0
     }
-    
+
     /// 设置新值，返回旧值
     pub fn swap(&self, val: bool, order: Ordering) -> bool {
         self.0.swap(if val { 1 } else { 0 }, order) != 0
     }
-    
+
     /// 如果当前值为 expected，则设置为 val
     ///
     /// # Returns
     /// - `true`: 成功交换
     /// - `false`: 当前值不是 expected
-    pub fn compare_exchange(&self, expected: bool, val: bool, 
-                           success: Ordering, failure: Ordering) -> bool {
-        self.0.compare_exchange(
-            if expected { 1 } else { 0 },
-            if val { 1 } else { 0 },
-            success,
-            failure,
-        ).is_ok()
+    pub fn compare_exchange(
+        &self,
+        expected: bool,
+        val: bool,
+        success: Ordering,
+        failure: Ordering,
+    ) -> bool {
+        self.0
+            .compare_exchange(
+                if expected { 1 } else { 0 },
+                if val { 1 } else { 0 },
+                success,
+                failure,
+            )
+            .is_ok()
     }
 }
 
@@ -99,7 +106,9 @@ pub unsafe extern "C" fn atomic_dec(ptr: *mut i32) -> i32 {
 /// `ptr` is a valid, properly-aligned pointer to an `i32` that lives for the duration of the call.
 pub unsafe extern "C" fn atomic_cmpxchg(ptr: *mut i32, oldval: i32, newval: i32) -> bool {
     let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic.compare_exchange(oldval, newval, Ordering::SeqCst, Ordering::SeqCst).is_ok()
+    atomic
+        .compare_exchange(oldval, newval, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
 }
 
 /// 原子加法 (Atomic add)
@@ -153,22 +162,33 @@ pub unsafe extern "C" fn atomic_read(ptr: *const i32) -> i32 {
 #[cfg(feature = "atomic_stats")]
 mod stats {
     use super::*;
-    
+
     static TOTAL_INC: AtomicU64 = AtomicU64::new(0);
     static TOTAL_DEC: AtomicU64 = AtomicU64::new(0);
     static CMPXCHG_SUCCESS: AtomicU64 = AtomicU64::new(0);
     static CMPXCHG_FAIL: AtomicU64 = AtomicU64::new(0);
-    
-    pub fn record_inc() { TOTAL_INC.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_dec() { TOTAL_DEC.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_cmpxchg_success() { CMPXCHG_SUCCESS.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_cmpxchg_fail() { CMPXCHG_FAIL.fetch_add(1, Ordering::Relaxed); }
-    
+
+    pub fn record_inc() {
+        TOTAL_INC.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_dec() {
+        TOTAL_DEC.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_cmpxchg_success() {
+        CMPXCHG_SUCCESS.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_cmpxchg_fail() {
+        CMPXCHG_FAIL.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn dump_stats() {
         println!("=== Atomic Operation Statistics ===");
         println!("  inc operations: {}", TOTAL_INC.load(Ordering::Relaxed));
         println!("  dec operations: {}", TOTAL_DEC.load(Ordering::Relaxed));
-        println!("  cmpxchg success: {}", CMPXCHG_SUCCESS.load(Ordering::Relaxed));
+        println!(
+            "  cmpxchg success: {}",
+            CMPXCHG_SUCCESS.load(Ordering::Relaxed)
+        );
         println!("  cmpxchg fail: {}", CMPXCHG_FAIL.load(Ordering::Relaxed));
     }
 }
@@ -176,60 +196,60 @@ mod stats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_atomic_bool_basic() {
         let b = AtomicBool::new(false);
-        
+
         assert!(!b.load(Ordering::Relaxed));
-        
+
         b.swap(true, Ordering::Relaxed);
         assert!(b.load(Ordering::Relaxed));
-        
+
         // compare_exchange
         assert!(b.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst));
         assert!(!b.load(Ordering::Relaxed));
-        
+
         // 失败的 compare_exchange
         assert!(!b.compare_exchange(true, true, Ordering::SeqCst, Ordering::SeqCst));
     }
-    
+
     #[test]
     fn test_atomic_operations() {
         let mut val: i32 = 10;
         let ptr = &mut val as *mut i32;
-        
+
         unsafe {
             // inc
             assert_eq!(atomic_inc(ptr), 10);
             assert_eq!(*ptr, 11);
-            
+
             // dec
             assert_eq!(atomic_dec(ptr), 11);
             assert_eq!(*ptr, 10);
-            
+
             // add
             assert_eq!(atomic_add(ptr, 5), 10);
             assert_eq!(*ptr, 15);
-            
+
             // sub
             assert_eq!(atomic_sub(ptr, 3), 15);
             assert_eq!(*ptr, 12);
-            
+
             // set
             atomic_set(ptr, 42);
             assert_eq!(*ptr, 42);
-            
+
             // read
             assert_eq!(atomic_read(ptr), 42);
-            
+
             // cmpxchg success
             assert!(atomic_cmpxchg(ptr, 42, 100));
             assert_eq!(*ptr, 100);
-            
+
             // cmpxchg fail
             assert!(!atomic_cmpxchg(ptr, 99, 200));
-            assert_eq!(*ptr, 100);  // 值不变
+            assert_eq!(*ptr, 100); // 值不变
         }
     }
 }

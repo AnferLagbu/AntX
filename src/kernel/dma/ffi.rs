@@ -4,12 +4,12 @@
 //! Matches the declarations in src/include/dma.h exactly.
 //! All functions use `#[no_mangle]` and `extern "C"` for ABI compatibility.
 
+use super::engine::dma as engine;
+use crate::kernel::dma::DmaPoolStats;
+use crate::kernel::mm::{PhysAddr, VirtAddr};
 use core::ffi::c_void;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
-use super::engine::dma as engine;
-use crate::kernel::mm::{PhysAddr, VirtAddr};
-use crate::kernel::dma::DmaPoolStats;
 
 // ============================================================
 // Internal helper: serial output for debug
@@ -26,7 +26,9 @@ macro_rules! klog_dma_info {
 }
 
 fn print(s: &str) {
-    unsafe { klog_ffi_info(s.as_ptr()); }
+    unsafe {
+        klog_ffi_info(s.as_ptr());
+    }
 }
 
 // ============================================================
@@ -100,14 +102,19 @@ pub extern "C" fn dma_alloc_coherent(size: usize, _align: usize) -> *mut c_void 
 
 #[no_mangle]
 pub extern "C" fn dma_free_coherent(addr: *mut c_void, size: usize) {
-    if addr.is_null() { return; }
+    if addr.is_null() {
+        return;
+    }
     engine().free_coherent(VirtAddr(addr as u64), size);
 }
 
 #[no_mangle]
 pub extern "C" fn dma_get_device_address(cpu_addr: *mut c_void) -> u64 {
-    if cpu_addr.is_null() { return 0; }
-    engine().device_address(VirtAddr(cpu_addr as u64))
+    if cpu_addr.is_null() {
+        return 0;
+    }
+    engine()
+        .device_address(VirtAddr(cpu_addr as u64))
         .map(|p| p.0)
         .unwrap_or(0)
 }
@@ -126,7 +133,9 @@ pub extern "C" fn ioremap(phys_addr: u64, size: usize) -> *mut c_void {
 
 #[no_mangle]
 pub extern "C" fn iounmap(virt_addr: *mut c_void, size: usize) {
-    if virt_addr.is_null() { return; }
+    if virt_addr.is_null() {
+        return;
+    }
     engine().iounmap(VirtAddr(virt_addr as u64), size);
 }
 
@@ -155,7 +164,9 @@ pub extern "C" fn dma_map_single(
     match engine().map_single(cpu_addr, size, dma_dir) {
         Some(_internal_mapping) => {
             let m = unsafe { alloc_mapping_struct() };
-            if m.is_null() { return ptr::null_mut(); }
+            if m.is_null() {
+                return ptr::null_mut();
+            }
 
             let dma_addr = engine().device_address(cpu_addr).map(|p| p.0).unwrap_or(0);
 
@@ -176,10 +187,14 @@ pub extern "C" fn dma_map_single(
 
 #[no_mangle]
 pub extern "C" fn dma_unmap_single(mapping: *mut c_dma_mapping) {
-    if mapping.is_null() { return; }
+    if mapping.is_null() {
+        return;
+    }
 
     unsafe {
-        if (*mapping).is_mapped == 0 { return; }
+        if (*mapping).is_mapped == 0 {
+            return;
+        }
 
         let cpu_addr = VirtAddr((*mapping).cpu_addr as u64);
         let dma_addr = PhysAddr((*mapping).dma_addr);
@@ -196,7 +211,9 @@ pub extern "C" fn dma_unmap_single(mapping: *mut c_dma_mapping) {
         engine().unmap_single(&mapping_inner);
         (*mapping).is_mapped = 0;
 
-        extern "C" { fn kfree(ptr: *mut c_void); }
+        extern "C" {
+            fn kfree(ptr: *mut c_void);
+        }
         kfree(mapping as *mut c_void);
     }
 }
@@ -206,13 +223,19 @@ pub extern "C" fn dma_map_sg(
     sglist: *mut super::DmaScatterList,
     direction: u32,
 ) -> *mut c_dma_mapping {
-    if sglist.is_null() { return ptr::null_mut(); }
+    if sglist.is_null() {
+        return ptr::null_mut();
+    }
 
     let sg = unsafe { &*sglist };
-    if sg.entry_count == 0 { return ptr::null_mut(); }
+    if sg.entry_count == 0 {
+        return ptr::null_mut();
+    }
 
     let m = unsafe { alloc_mapping_struct() };
-    if m.is_null() { return ptr::null_mut(); }
+    if m.is_null() {
+        return ptr::null_mut();
+    }
 
     unsafe {
         (*m).cpu_addr = sg.entries[0].page_addr as *mut c_void;
@@ -240,33 +263,21 @@ pub extern "C" fn dma_unmap_sg(mapping: *mut c_dma_mapping) {
 // ============================================================
 
 #[no_mangle]
-pub extern "C" fn dma_sync_for_device(
-    _mapping: *mut c_dma_mapping,
-    _offset: usize,
-    _size: usize,
-) {
+pub extern "C" fn dma_sync_for_device(_mapping: *mut c_dma_mapping, _offset: usize, _size: usize) {
     // sfence + compiler barrier
     crate::arch!(fence_w());
     core::sync::atomic::fence(Ordering::SeqCst);
 }
 
 #[no_mangle]
-pub extern "C" fn dma_sync_for_cpu(
-    _mapping: *mut c_dma_mapping,
-    _offset: usize,
-    _size: usize,
-) {
+pub extern "C" fn dma_sync_for_cpu(_mapping: *mut c_dma_mapping, _offset: usize, _size: usize) {
     // lfence + compiler barrier
     crate::arch!(fence_r());
     core::sync::atomic::fence(Ordering::SeqCst);
 }
 
 #[no_mangle]
-pub extern "C" fn dma_sync_both(
-    mapping: *mut c_dma_mapping,
-    offset: usize,
-    size: usize,
-) {
+pub extern "C" fn dma_sync_both(mapping: *mut c_dma_mapping, offset: usize, size: usize) {
     dma_sync_for_device(mapping, offset, size);
     dma_sync_for_cpu(mapping, offset, size);
 }
@@ -290,7 +301,9 @@ pub struct c_dma_transfer {
 
 #[no_mangle]
 pub extern "C" fn dma_memcpy(dest: u64, source: u64, length: usize, _direction: u32) -> i32 {
-    if length == 0 { return 0; }
+    if length == 0 {
+        return 0;
+    }
 
     let src_virt = if source != 0 {
         (source + 0xFFFF800000000000u64) as *const u8
@@ -313,7 +326,9 @@ pub extern "C" fn dma_memcpy(dest: u64, source: u64, length: usize, _direction: 
 
 #[no_mangle]
 pub extern "C" fn dma_async_memcpy(transfer: *mut c_dma_transfer) -> i32 {
-    if transfer.is_null() { return -1; }
+    if transfer.is_null() {
+        return -1;
+    }
 
     unsafe {
         (*transfer).completed = 0;
@@ -338,11 +353,10 @@ pub extern "C" fn dma_async_memcpy(transfer: *mut c_dma_transfer) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn dma_wait_for_completion(
-    transfer: *mut c_dma_transfer,
-    timeout_ms: u32,
-) -> i32 {
-    if transfer.is_null() { return -1; }
+pub extern "C" fn dma_wait_for_completion(transfer: *mut c_dma_transfer, timeout_ms: u32) -> i32 {
+    if transfer.is_null() {
+        return -1;
+    }
 
     let start = crate::arch!(timestamp());
 
@@ -365,10 +379,14 @@ pub extern "C" fn dma_wait_for_completion(
 
 #[no_mangle]
 pub extern "C" fn dma_cancel_transfer(transfer: *mut c_dma_transfer) -> i32 {
-    if transfer.is_null() { return -1; }
+    if transfer.is_null() {
+        return -1;
+    }
 
     unsafe {
-        if (*transfer).completed != 0 { return -1; }
+        if (*transfer).completed != 0 {
+            return -1;
+        }
         (*transfer).completed = 1;
         (*transfer).result = -1;
     }
@@ -384,12 +402,18 @@ pub extern "C" fn dma_create_transfer(
     callback: Option<extern "C" fn(*mut c_void, i32)>,
     private_data: *mut c_void,
 ) -> *mut c_dma_transfer {
-    if length == 0 { return ptr::null_mut(); }
+    if length == 0 {
+        return ptr::null_mut();
+    }
 
-    extern "C" { fn kmalloc(size: u64) -> *mut c_void; }
+    extern "C" {
+        fn kmalloc(size: u64) -> *mut c_void;
+    }
 
     let ptr = unsafe { kmalloc(core::mem::size_of::<c_dma_transfer>() as u64) };
-    if ptr.is_null() { return ptr::null_mut(); }
+    if ptr.is_null() {
+        return ptr::null_mut();
+    }
 
     let t = ptr as *mut c_dma_transfer;
     unsafe {
@@ -408,7 +432,9 @@ pub extern "C" fn dma_create_transfer(
 
 #[no_mangle]
 pub extern "C" fn dma_destroy_transfer(transfer: *mut c_dma_transfer) {
-    if transfer.is_null() { return; }
+    if transfer.is_null() {
+        return;
+    }
 
     unsafe {
         if (*transfer).completed == 0 {
@@ -416,8 +442,12 @@ pub extern "C" fn dma_destroy_transfer(transfer: *mut c_dma_transfer) {
         }
     }
 
-    extern "C" { fn kfree(ptr: *mut c_void); }
-    unsafe { kfree(transfer as *mut c_void); }
+    extern "C" {
+        fn kfree(ptr: *mut c_void);
+    }
+    unsafe {
+        kfree(transfer as *mut c_void);
+    }
 }
 
 // ============================================================
@@ -426,7 +456,9 @@ pub extern "C" fn dma_destroy_transfer(transfer: *mut c_dma_transfer) {
 
 #[no_mangle]
 pub extern "C" fn dma_sg_init(sglist: *mut super::DmaScatterList) {
-    if sglist.is_null() { return; }
+    if sglist.is_null() {
+        return;
+    }
     unsafe {
         (*sglist).entry_count = 0;
         (*sglist).total_length = 0;
@@ -467,7 +499,9 @@ pub extern "C" fn dma_sg_add_entry(
 
 #[no_mangle]
 pub extern "C" fn dma_sg_total_length(sglist: *mut super::DmaScatterList) -> usize {
-    if sglist.is_null() { return 0; }
+    if sglist.is_null() {
+        return 0;
+    }
     unsafe { (*sglist).total_length }
 }
 
@@ -477,7 +511,9 @@ pub extern "C" fn dma_sg_total_length(sglist: *mut super::DmaScatterList) -> usi
 
 #[no_mangle]
 pub extern "C" fn dma_get_stats(stats_out: *mut DmaPoolStats) {
-    if stats_out.is_null() { return; }
+    if stats_out.is_null() {
+        return;
+    }
     unsafe {
         *stats_out = engine().get_stats();
     }
@@ -494,7 +530,10 @@ pub extern "C" fn dma_dump_stats() {
     klog_dma_info!("  Current Active: {}", s.current_in_use);
     klog_dma_info!("  Max Concurrent: {}", s.max_concurrent);
     klog_dma_info!("  Coherence Fails: {}", s.coherence_fails);
-    klog_dma_info!("  Total Bytes Allocated: {} KB", s.total_bytes_allocated / 1024);
+    klog_dma_info!(
+        "  Total Bytes Allocated: {} KB",
+        s.total_bytes_allocated / 1024
+    );
     klog_dma_info!("  Current Bytes Used: {} KB", s.current_bytes_used / 1024);
 }
 

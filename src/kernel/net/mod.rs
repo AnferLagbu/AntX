@@ -1,3 +1,10 @@
+pub mod driver;
+#[cfg(not(feature = "kernel_test"))]
+pub mod init; // 网络初始化 (状态机)
+#[cfg(not(feature = "kernel_test"))]
+pub mod netif; // 网络接口管理 (DHCP)
+#[cfg(not(feature = "kernel_test"))]
+pub mod sys_arch; // lwIP OS 抽象层
 /// 网络子系统 Rust 模块 (完整版)
 ///
 /// 提供 lwIP 协议栈的完整 Rust 实现，包括：
@@ -39,35 +46,26 @@
 /// - **RAII**: 资源自动清理，防止内存泄漏
 /// - **边界检查**: 数组访问和指针操作都有安全保证
 /// - **错误处理**: Result<T, E> 替代 int 错误码
-
 // ============================================================================
 // 核心模块
 // ============================================================================
-
-pub mod types;      // 基础类型、常量 (始终编译)
+pub mod types; // 基础类型、常量 (始终编译)
 #[cfg(not(feature = "kernel_test"))]
-pub mod types_ffi;  // FFI 声明、lwIP 绑定 (需要 C 链接)
-#[cfg(not(feature = "kernel_test"))]
-pub mod sys_arch;   // lwIP OS 抽象层
-#[cfg(not(feature = "kernel_test"))]
-pub mod init;       // 网络初始化 (状态机)
-#[cfg(not(feature = "kernel_test"))]
-pub mod netif;      // 网络接口管理 (DHCP)
-pub mod driver;     // 网卡驱动 (E1000 等)
+pub mod types_ffi; // FFI 声明、lwIP 绑定 (需要 C 链接) // 网卡驱动 (E1000 等)
 
 // ============================================================================
 // 应用模块 (新增)
 // ============================================================================
 
-pub mod apps;       // 网络应用集 (Ping/DNS/HTTP等)
+pub mod apps; // 网络应用集 (Ping/DNS/HTTP等)
 #[cfg(not(feature = "kernel_test"))]
-pub mod fsdata;     // HTTP 静态文件数据
+pub mod fsdata; // HTTP 静态文件数据
 
 // ============================================================================
 // 工具模块 (新增) - 替代 lib_compat.c
 // ============================================================================
 
-pub mod utils;      // 网络工具函数 (atoi/checksum/字节序等)
+pub mod utils; // 网络工具函数 (atoi/checksum/字节序等)
 
 // ============================================================================
 // 公共 API 导出 (方便其他模块使用)

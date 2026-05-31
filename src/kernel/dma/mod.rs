@@ -9,13 +9,12 @@
 
 extern crate alloc;
 
-
-use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::kernel::mm::pmm::get_pmm;
 use crate::kernel::mm::vmm::get_vmm;
-use core::sync::atomic::{AtomicU64, Ordering};
-use core::ptr::{self};
+use crate::kernel::mm::{PhysAddr, VirtAddr};
 use core::ffi::c_void;
+use core::ptr::{self};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub mod engine;
 pub mod ffi;
@@ -82,7 +81,11 @@ impl DmaScatterList {
     pub const fn new() -> Self {
         Self {
             entry_count: 0,
-            entries: [DmaScatterEntry { phys_addr: 0, length: 0, page_addr: 0 }; DMA_MAX_SCATTER_ENTRIES],
+            entries: [DmaScatterEntry {
+                phys_addr: 0,
+                length: 0,
+                page_addr: 0,
+            }; DMA_MAX_SCATTER_ENTRIES],
             total_length: 0,
             direction: 0,
         }
@@ -182,7 +185,8 @@ fn virt_to_phys(virt: *const c_void) -> u64 {
     if virt.is_null() {
         return 0;
     }
-    get_vmm().get_physical(VirtAddr(virt as u64))
+    get_vmm()
+        .get_physical(VirtAddr(virt as u64))
         .map(|p| p.0)
         .unwrap_or(0)
 }

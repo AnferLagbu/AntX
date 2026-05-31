@@ -17,8 +17,8 @@
 //! # Safety
 //! 所有公共接口都是线程安全的，使用原子操作。
 
-use core::sync::atomic::{AtomicU64, AtomicU32, Ordering, AtomicBool};
 use super::pit::DEFAULT_INTERRUPT_FREQ_HZ;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 // ============================================================================
 // 全局状态
@@ -93,7 +93,7 @@ pub fn timer_init(frequency_hz: u32) -> Result<u32, &'static str> {
 
     // 3. 更新频率和时间转换常量
     TIMER_FREQ_HZ.store(actual_freq, Ordering::Relaxed);
-    
+
     let ns_per_tick = 1_000_000_000u64 / actual_freq as u64;
     let us_per_tick = 1_000_000u64 / actual_freq as u64;
     let ms_per_tick = 1_000u64 / actual_freq as u64;
@@ -198,7 +198,9 @@ pub fn reset_ticks() {
 #[inline]
 pub fn ticks_to_ms(ticks: u64) -> u64 {
     let freq = get_frequency() as u64;
-    if freq == 0 { return 0; }
+    if freq == 0 {
+        return 0;
+    }
     (ticks * 1000) / freq
 }
 
@@ -206,7 +208,9 @@ pub fn ticks_to_ms(ticks: u64) -> u64 {
 #[inline]
 pub fn ticks_to_us(ticks: u64) -> u64 {
     let freq = get_frequency() as u64;
-    if freq == 0 { return 0; }
+    if freq == 0 {
+        return 0;
+    }
     (ticks * 1_000_000) / freq
 }
 
@@ -214,7 +218,9 @@ pub fn ticks_to_us(ticks: u64) -> u64 {
 #[inline]
 pub fn ticks_to_ns(ticks: u64) -> u64 {
     let freq = get_frequency() as u64;
-    if freq == 0 { return 0; }
+    if freq == 0 {
+        return 0;
+    }
     (ticks * 1_000_000_000) / freq
 }
 
@@ -222,15 +228,19 @@ pub fn ticks_to_ns(ticks: u64) -> u64 {
 #[inline]
 pub fn ms_to_ticks(ms: u64) -> u64 {
     let freq = get_frequency() as u64;
-    if freq == 0 { return ms; }
-    (ms * freq).div_ceil(1000)  // 向上取整
+    if freq == 0 {
+        return ms;
+    }
+    (ms * freq).div_ceil(1000) // 向上取整
 }
 
 /// 将微秒转换为 ticks (向上取整)
 #[inline]
 pub fn us_to_ticks(us: u64) -> u64 {
     let freq = get_frequency() as u64;
-    if freq == 0 { return us; }
+    if freq == 0 {
+        return us;
+    }
     (us * freq).div_ceil(1_000_000)
 }
 
@@ -342,11 +352,11 @@ pub fn format_duration(ms: u64) -> alloc::string::String {
 /// 包含各种时间指标的元组
 pub fn get_time_info() -> (u64, u32, u64, u64, u64) {
     (
-        get_ticks(),                    // 总 tick 数
-        get_frequency(),                // 定时器频率
-        get_uptime_ms(),                // 运行时间 (ms)
-        NS_PER_TICK.load(Ordering::Relaxed),  // 每 tick 纳秒数
-        US_PER_TICK.load(Ordering::Relaxed),  // 每 tick 微秒数
+        get_ticks(),                         // 总 tick 数
+        get_frequency(),                     // 定时器频率
+        get_uptime_ms(),                     // 运行时间 (ms)
+        NS_PER_TICK.load(Ordering::Relaxed), // 每 tick 纳秒数
+        US_PER_TICK.load(Ordering::Relaxed), // 每 tick 微秒数
     )
 }
 
@@ -370,23 +380,23 @@ mod tests {
     fn test_time_conversions_at_1khz() {
         // 假设 1000 Hz (1ms per tick)
         let freq: u32 = 1000;
-        
+
         // 测试 tick → time
-        assert_eq!((1000 * 1000) / freq as u64, 1000);  // 1000 ticks = 1000ms @ 1kHz
-        assert_eq!((1 * 1_000_000) / freq as u64, 1000);  // 1 tick = 1000μs @ 1kHz
-        
+        assert_eq!((1000 * 1000) / freq as u64, 1000); // 1000 ticks = 1000ms @ 1kHz
+        assert_eq!((1 * 1_000_000) / freq as u64, 1000); // 1 tick = 1000μs @ 1kHz
+
         // 测试 time → tick
-        assert_eq!((1000 * freq as u64 + 999) / 1000, 1000);  // 1000ms ≈ 1000 ticks
-        assert_eq!((1 * freq as u64 + 999_999) / 1_000_000, 1);  // 1ms ≈ 1 tick
+        assert_eq!((1000 * freq as u64 + 999) / 1000, 1000); // 1000ms ≈ 1000 ticks
+        assert_eq!((1 * freq as u64 + 999_999) / 1_000_000, 1); // 1ms ≈ 1 tick
     }
 
     #[test]
     fn test_time_conversions_at_100hz() {
         let freq: u32 = 100;
-        
+
         // 100 Hz = 10ms per tick
-        assert_eq!((100 * 1000) / freq as u64, 1000);   // 100 ticks = 1000ms
-        assert_eq!((10 * 1_000_000) / freq as u64, 100000);  // 10 ticks = 100000μs
+        assert_eq!((100 * 1000) / freq as u64, 1000); // 100 ticks = 1000ms
+        assert_eq!((10 * 1_000_000) / freq as u64, 100000); // 10 ticks = 100000μs
     }
 
     #[test]
@@ -394,7 +404,7 @@ mod tests {
         // 频率为 0 时应该返回 0 或原值（避免除零）
         assert_eq!(ticks_to_ms(1000), 0);
         assert_eq!(ticks_to_us(1000), 0);
-        assert_eq!(ms_to_ticks(1000), 1000);  // 无法转换时返回原值
+        assert_eq!(ms_to_ticks(1000), 1000); // 无法转换时返回原值
     }
 
     #[test]
@@ -415,11 +425,11 @@ mod tests {
     #[test]
     fn test_get_time_info() {
         let (ticks, freq, uptime, ns_per_tick, us_per_tick) = get_time_info();
-        
+
         assert!(ticks >= 0);
         assert!(freq > 0);
         assert!(uptime >= 0);
-        
+
         // 如果已初始化，ns_per_tick 应该 > 0
         if is_initialized() {
             assert!(ns_per_tick > 0);
@@ -455,6 +465,10 @@ pub fn register_timer_tick_tests() {
     }
 
     r.register("timer::tick", "initial_state", initial_state as TestFn);
-    r.register("timer::tick", "zero_frequency_handling", zero_frequency_handling as TestFn);
+    r.register(
+        "timer::tick",
+        "zero_frequency_handling",
+        zero_frequency_handling as TestFn,
+    );
     r.register("timer::tick", "monotonicity", monotonicity as TestFn);
 }

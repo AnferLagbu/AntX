@@ -6,9 +6,13 @@ use crate::kernel::fs::vfs::types::*;
 const MAX_PATH_LEN: usize = 1024;
 
 fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
-    if ptr.is_null() { return ""; }
+    if ptr.is_null() {
+        return "";
+    }
     unsafe {
-        let len = (0..MAX_PATH_LEN).find(|&i| *ptr.add(i) == 0).unwrap_or(MAX_PATH_LEN);
+        let len = (0..MAX_PATH_LEN)
+            .find(|&i| *ptr.add(i) == 0)
+            .unwrap_or(MAX_PATH_LEN);
         let slice = core::slice::from_raw_parts(ptr as *const u8, len);
         core::str::from_utf8_unchecked(slice)
     }
@@ -34,16 +38,22 @@ pub extern "C" fn ramfs_open(path: *const c_char, flags: u32, pwm: u64) -> i32 {
         Some((node_id, offset, _file_type)) => {
             ((node_id as i32) & 0xFFFF) | ((offset as i32) << 16)
         }
-        None => -1
+        None => -1,
     }
 }
 
 #[no_mangle]
-pub extern "C" fn ramfs_read(node_id: u32, offset: *mut u64, buf: *mut u8, count: u32, pwm: u64) -> i32 {
+pub extern "C" fn ramfs_read(
+    node_id: u32,
+    offset: *mut u64,
+    buf: *mut u8,
+    count: u32,
+    pwm: u64,
+) -> i32 {
     if buf.is_null() || offset.is_null() {
         return -1;
     }
-    
+
     let mut ramfs = RAMFS_DATA.lock();
     unsafe {
         let buffer = core::slice::from_raw_parts_mut(buf, count as usize);
@@ -53,11 +63,17 @@ pub extern "C" fn ramfs_read(node_id: u32, offset: *mut u64, buf: *mut u8, count
 }
 
 #[no_mangle]
-pub extern "C" fn ramfs_write(node_id: u32, offset: *mut u64, buf: *const u8, count: u32, pwm: u64) -> i32 {
+pub extern "C" fn ramfs_write(
+    node_id: u32,
+    offset: *mut u64,
+    buf: *const u8,
+    count: u32,
+    pwm: u64,
+) -> i32 {
     if buf.is_null() || offset.is_null() {
         return -1;
     }
-    
+
     let mut ramfs = RAMFS_DATA.lock();
     unsafe {
         let buffer = core::slice::from_raw_parts(buf, count as usize);
@@ -79,14 +95,16 @@ pub extern "C" fn ramfs_stat(node_id: u32, st: *mut VfsStat) -> i32 {
     if st.is_null() {
         return -1;
     }
-    
+
     let ramfs = RAMFS_DATA.lock();
     match ramfs.stat(node_id) {
         Some(stat) => {
-            unsafe { *st = stat; }
+            unsafe {
+                *st = stat;
+            }
             0
         }
-        None => -1
+        None => -1,
     }
 }
 
@@ -96,6 +114,6 @@ pub extern "C" fn ramfs_resolve_path(path: *const c_char) -> u32 {
     let ramfs = RAMFS_DATA.lock();
     match ramfs.resolve_path(path) {
         Some(num) => num,
-        None => 0
+        None => 0,
     }
 }

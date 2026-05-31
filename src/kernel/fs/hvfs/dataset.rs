@@ -1,10 +1,10 @@
-use alloc::string::String;
-use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
-use crate::kernel::sync::mutex::Mutex;
 use crate::kernel::fs::hvfs::bp::HvBlockPointer;
 use crate::kernel::fs::hvfs::dmu::{HvObjSet, HvObjType};
 use crate::kernel::fs::hvfs::zap::HvZap;
+use crate::kernel::sync::mutex::Mutex;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 pub const HV_DS_MAX_NAME: usize = 128;
 pub const HV_DS_MAX_DATASETS: usize = 16;
@@ -115,7 +115,11 @@ impl HvDataset {
     }
 
     pub fn get_name(&self) -> &str {
-        let end = self.name.iter().position(|&b| b == 0).unwrap_or(HV_DS_MAX_NAME);
+        let end = self
+            .name
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(HV_DS_MAX_NAME);
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
     }
 
@@ -134,14 +138,18 @@ impl HvDataset {
     }
 
     pub fn create_file(&self, name: &str, owner_pwm: u64) -> Option<u64> {
-        if !self.is_writeable() { return None; }
+        if !self.is_writeable() {
+            return None;
+        }
         let obj_id = self.objset.alloc_obj(HvObjType::File, owner_pwm)?;
         self.dir_zap.insert_u64(name, obj_id);
         Some(obj_id)
     }
 
     pub fn create_dir(&self, name: &str, owner_pwm: u64) -> Option<u64> {
-        if !self.is_writeable() { return None; }
+        if !self.is_writeable() {
+            return None;
+        }
         let obj_id = self.objset.alloc_obj(HvObjType::Dir, owner_pwm)?;
         self.dir_zap.insert_u64(name, obj_id);
         Some(obj_id)
@@ -152,7 +160,9 @@ impl HvDataset {
     }
 
     pub fn unlink(&self, name: &str) -> bool {
-        if !self.is_writeable() { return false; }
+        if !self.is_writeable() {
+            return false;
+        }
         if let Some(obj_id) = self.dir_zap.lookup_u64(name) {
             self.objset.free_obj(obj_id);
             self.dir_zap.remove(name);
@@ -163,7 +173,9 @@ impl HvDataset {
     }
 
     pub fn link(&self, name: &str, obj_id: u64) -> bool {
-        if !self.is_writeable() { return false; }
+        if !self.is_writeable() {
+            return false;
+        }
         self.dir_zap.insert_u64(name, obj_id);
         true
     }

@@ -59,9 +59,8 @@ pub const SLAB_GENERAL_CACHE_NUM: usize = 8;
 
 /// 预定义的通用缓存大小 (bytes)
 /// 覆盖常见的小对象分配需求
-pub const GENERAL_CACHE_SIZES: [usize; SLAB_GENERAL_CACHE_NUM] = [
-    16, 32, 64, 128, 256, 512, 1024, 2048
-];
+pub const GENERAL_CACHE_SIZES: [usize; SLAB_GENERAL_CACHE_NUM] =
+    [16, 32, 64, 128, 256, 512, 1024, 2048];
 
 // ============================================================================
 // 数据结构定义
@@ -78,16 +77,16 @@ pub const GENERAL_CACHE_SIZES: [usize; SLAB_GENERAL_CACHE_NUM] = [
 struct SlabHeader {
     /// 对象区域起始地址 (相对于页面起始)
     start_addr: *mut u8,
-    
+
     /// 该 Slab 可容纳的对象总数
     obj_count: u32,
-    
+
     /// 当前已分配的对象数
     active_count: u32,
-    
+
     /// 是否已满 (所有对象都已分配)
     is_full: bool,
-    
+
     /// 双向链表指针 (用于挂在 KmemCache 的链表中)
     prev: *mut SlabHeader,
     next: *mut SlabHeader,
@@ -117,45 +116,45 @@ impl Default for SlabHeader {
 pub struct KmemCache {
     /// 缓存名称 (用于调试)
     name: &'static str,
-    
+
     /// 单个对象的大小 (bytes)
     pub(crate) object_size: usize,
-    
+
     /// 每个 Slab 可容纳的对象数
     pub(crate) objects_per_slab: u32,
-    
+
     /// 完全使用的 Slab 链表头
     slabs_full: *mut SlabHeader,
-    
+
     /// 部分使用的 Slab 链表头
     slabs_partial: *mut SlabHeader,
-    
+
     /// 完全空闲的 Slab 链表头
     slabs_free: *mut SlabHeader,
-    
+
     /// 总 Slab 数量
     pub(crate) slab_count: u32,
-    
+
     /// 统计: 总分配次数
     total_allocs: u64,
-    
+
     /// 统计: 总释放次数
     total_frees: u64,
-    
+
     /// 统计: 缓存命中次数 (从已有 Slab 分配)
     cache_hits: u64,
-    
+
     /// 统计: 缓存未命中次数 (需要新建 Slab)
     cache_misses: u64,
 }
 
 impl KmemCache {
     /// 创建新的缓存
-    /// 
+    ///
     /// # Arguments
     /// * `name` - 缓存名称 (静态字符串, 用于调试)
     /// * `object_size` - 单个对象的大小 (bytes)
-    /// 
+    ///
     /// # Returns
     /// * Ok(KmemCache) - 成功创建
     /// * Err(&str) - 错误描述 (大小无效等)
@@ -163,14 +162,14 @@ impl KmemCache {
         if object_size == 0 {
             return Err("Object size cannot be zero");
         }
-        
+
         if object_size > SLAB_MAX_OBJECT_SIZE {
             return Err("Object size exceeds maximum");
         }
-        
+
         let effective_size = object_size.max(SLAB_MIN_OBJECT_SIZE);
         let objects_per_slab = Self::calculate_objects_per_slab(effective_size);
-        
+
         Ok(Self {
             name,
             object_size: effective_size,
@@ -185,44 +184,44 @@ impl KmemCache {
             cache_misses: 0,
         })
     }
-    
+
     /// 计算每个 Slab 可容纳的对象数
     fn calculate_objects_per_slab(object_size: usize) -> u32 {
         let usable_space = SLAB_DEFAULT_SIZE - core::mem::size_of::<SlabHeader>();
-        
+
         // 为位图预留空间 (每个对象 1 bit)
         let estimated_objects = usable_space / object_size;
         let bitmap_bytes = estimated_objects.div_ceil(8);
         let actual_usable = usable_space - bitmap_bytes;
-        
+
         (actual_usable / object_size) as u32
     }
-    
+
     /// 从缓存中分配一个对象
-    /// 
+    ///
     /// # Returns
     /// * Some(*mut u8) - 成功分配的对象指针
     /// * None - 分配失败 (内存不足)
     pub fn allocate(&mut self) -> Option<*mut u8> {
         self.total_allocs += 1;
-        
+
         // 优先从 partial 链表分配
         if !self.slabs_partial.is_null() {
             self.cache_hits += 1;
             return self.alloc_from_slab(self.slabs_partial);
         }
-        
+
         // 其次从 free 链表分配
         if !self.slabs_free.is_null() {
             self.cache_hits += 1;
-            let slab_ptr = self.slabs_free;  // 复制指针值, 避免借用冲突
+            let slab_ptr = self.slabs_free; // 复制指针值, 避免借用冲突
             return self.alloc_from_slab(slab_ptr);
         }
-        
+
         // 最后: 新建一个 Slab
         self.cache_misses += 1;
         let new_slab = self.new_slab()?;
-        
+
         // 将新 Slab 加入 free 链表 (单独的 unsafe 块)
         unsafe {
             (*new_slab).next = self.slabs_free;
@@ -232,10 +231,10 @@ impl KmemCache {
             self.slabs_free = new_slab;
             self.slab_count += 1;
         }
-        
+
         self.alloc_from_slab(new_slab)
     }
-    
+
     /// 从指定 Slab 中分配对象 (内部辅助函数)
     fn alloc_from_slab(&mut self, slab: *mut SlabHeader) -> Option<*mut u8> {
         let free_idx = self.find_free_bit(slab)?;
@@ -264,48 +263,48 @@ impl KmemCache {
             Some(obj_ptr)
         }
     }
-    
+
     /// 释放对象回缓存
-    /// 
+    ///
     /// # Arguments
     /// * `obj` - 要释放的对象指针 (必须是从此缓存分配的)
     pub fn deallocate(&mut self, obj: *mut u8) {
         if obj.is_null() {
             return;
         }
-        
+
         self.total_frees += 1;
-        
+
         // 查找对象所属的 Slab
         let slab = self.find_object_slab(obj);
         if slab.is_null() {
             return; // 对象不属于此缓存
         }
-        
+
         unsafe {
             let header = &*slab;
-            
+
             // 计算对象索引
             let obj_addr = obj as usize;
             let start_addr = header.start_addr as usize;
             let obj_idx = (obj_addr - start_addr) / self.object_size;
-            
+
             if obj_idx >= header.obj_count as usize {
                 return; // 索引越界 (可能是无效指针)
             }
-            
+
             // 清除位图中的标志位
             self.clear_bit(slab, obj_idx as u32);
-            
+
             // 更新计数
             let header_mut = &mut *slab;
             header_mut.active_count -= 1;
-            
+
             // 移动 Slab 到正确的链表
             if header_mut.is_full {
                 // 从 full 移动到 partial
                 header_mut.is_full = false;
-                
+
                 Self::list_remove(&mut self.slabs_full, slab);
                 Self::list_push_front(&mut self.slabs_partial, slab);
             } else if header_mut.active_count == 0 {
@@ -315,7 +314,7 @@ impl KmemCache {
             }
         }
     }
-    
+
     /// 销毁缓存 (释放所有 Slab)
     pub fn destroy(&mut self) {
         // 释放 full 链表中的所有 Slab
@@ -327,7 +326,7 @@ impl KmemCache {
                 slab = next;
             }
         }
-        
+
         // 释放 partial 链表中的所有 Slab
         slab = self.slabs_partial;
         while !slab.is_null() {
@@ -337,7 +336,7 @@ impl KmemCache {
                 slab = next;
             }
         }
-        
+
         // 释放 free 链表中的所有 Slab
         slab = self.slabs_free;
         while !slab.is_null() {
@@ -347,19 +346,19 @@ impl KmemCache {
                 slab = next;
             }
         }
-        
+
         // 重置状态
         self.slabs_full = core::ptr::null_mut();
         self.slabs_partial = core::ptr::null_mut();
         self.slabs_free = core::ptr::null_mut();
         self.slab_count = 0;
     }
-    
+
     /// 获取缓存统计信息
     pub fn get_stats(&self) -> CacheStats {
         let mut total_objects = 0u32;
         let mut active_objects = 0u32;
-        
+
         unsafe {
             // 遍历 full 链表
             let mut slab = self.slabs_full;
@@ -368,7 +367,7 @@ impl KmemCache {
                 active_objects += (*slab).active_count;
                 slab = (*slab).next;
             }
-            
+
             // 遍历 partial 链表
             slab = self.slabs_partial;
             while !slab.is_null() {
@@ -377,7 +376,7 @@ impl KmemCache {
                 slab = (*slab).next;
             }
         }
-        
+
         CacheStats {
             total_objects,
             active_objects,
@@ -388,14 +387,16 @@ impl KmemCache {
             cache_misses: self.cache_misses,
         }
     }
-    
+
     // ========================================================================
     // 内部辅助方法 (private)
     // ========================================================================
-    
+
     /// 创建新的 Slab (分配一页物理内存)
     fn new_slab(&self) -> Option<*mut SlabHeader> {
-        extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+        extern "C" {
+            fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+        }
         let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
         // SAFETY: pmm_alloc_pages returns either null (failure) or a valid
         // page-aligned physical address mapped via KERNEL_BASE.
@@ -421,18 +422,22 @@ impl KmemCache {
             };
 
             let bitmap_bytes = self.objects_per_slab.div_ceil(8);
-            let bitmap_start = (*slab).start_addr.add(
-                self.objects_per_slab as usize * self.object_size
-            );
+            let bitmap_start = (*slab)
+                .start_addr
+                .add(self.objects_per_slab as usize * self.object_size);
 
             let bitmap_end = bitmap_start.add(bitmap_bytes as usize);
             let page_end = page.add(SLAB_DEFAULT_SIZE) as *mut u8;
 
             if bitmap_end > page_end {
-                extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+                extern "C" {
+                    fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
+                }
                 // SAFETY: page was just allocated by pmm_alloc_pages above;
                 // we are freeing it on layout overflow before any use.
-                unsafe { pmm_free_pages(page, pages_needed as u64); }
+                unsafe {
+                    pmm_free_pages(page, pages_needed as u64);
+                }
                 klog_slab!("[SLAB] new_slab: layout overflow (obj_size={}, obj_count={}, bitmap={}B), page={:?}",
                     self.object_size, self.objects_per_slab, bitmap_bytes, page);
                 return None;
@@ -444,7 +449,7 @@ impl KmemCache {
 
         Some(slab)
     }
-    
+
     /// 销毁单个 Slab (释放物理页)
     fn destroy_slab(&self, slab: *mut SlabHeader) {
         if slab.is_null() {
@@ -455,7 +460,9 @@ impl KmemCache {
         // is no longer in any list and contains no active objects.
         unsafe {
             let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
-            extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+            extern "C" {
+                fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
+            }
             pmm_free_pages(slab as *mut core::ffi::c_void, pages_needed as u64);
         }
     }
@@ -466,9 +473,9 @@ impl KmemCache {
         unsafe {
             let header = &*slab;
             let bitmap_bytes = header.obj_count.div_ceil(8) as usize;
-            let bitmap_start = header.start_addr.add(
-                header.obj_count as usize * self.object_size
-            );
+            let bitmap_start = header
+                .start_addr
+                .add(header.obj_count as usize * self.object_size);
 
             for byte_idx in 0..bitmap_bytes {
                 let byte = *bitmap_start.add(byte_idx);
@@ -491,9 +498,9 @@ impl KmemCache {
         // bitmap_start + byte_idx is within page bounds.
         unsafe {
             let header = &*slab;
-            let bitmap_start = header.start_addr.add(
-                header.obj_count as usize * self.object_size
-            );
+            let bitmap_start = header
+                .start_addr
+                .add(header.obj_count as usize * self.object_size);
 
             let byte_idx = (bit / 8) as usize;
             let bit_idx = bit % 8;
@@ -508,9 +515,9 @@ impl KmemCache {
         // bitmap_start + byte_idx is within page bounds.
         unsafe {
             let header = &*slab;
-            let bitmap_start = header.start_addr.add(
-                header.obj_count as usize * self.object_size
-            );
+            let bitmap_start = header
+                .start_addr
+                .add(header.obj_count as usize * self.object_size);
 
             let byte_idx = (bit / 8) as usize;
             let bit_idx = bit % 8;
@@ -519,7 +526,7 @@ impl KmemCache {
             *byte_ptr &= !(1 << bit_idx);
         }
     }
-    
+
     /// 查找对象所属的 Slab
     fn find_object_slab(&self, obj: *mut u8) -> *mut SlabHeader {
         let obj_addr = obj as usize;
@@ -565,9 +572,9 @@ impl KmemCache {
 
         core::ptr::null_mut()
     }
-    
+
     /// ✅ 从双向链表中移除节点 (静态方法, 避免借用冲突)
-    /// 
+    ///
     /// # Arguments
     /// * `head` - 链表头指针的可变引用 (如 &mut self.slabs_partial)
     /// * `slab` - 要移除的节点
@@ -576,7 +583,7 @@ impl KmemCache {
         if head.is_null() || slab.is_null() {
             return;
         }
-        
+
         unsafe {
             if *head == slab {
                 // 移除的是头节点
@@ -593,14 +600,14 @@ impl KmemCache {
                     (*(*slab).prev).next = (*slab).next;
                 }
             }
-            
+
             (*slab).prev = core::ptr::null_mut();
             (*slab).next = core::ptr::null_mut();
         }
     }
-    
+
     /// ✅ 将节点插入到双向链表头部 (静态方法, 避免借用冲突)
-    /// 
+    ///
     /// # Arguments
     /// * `head` - 链表头指针的可变引用
     /// * `slab` - 要插入的节点
@@ -609,15 +616,15 @@ impl KmemCache {
         if slab.is_null() {
             return;
         }
-        
+
         unsafe {
             (*slab).next = *head;
             (*slab).prev = core::ptr::null_mut();
-            
+
             if !(*head).is_null() {
                 (**head).prev = slab;
             }
-            
+
             *head = slab;
         }
     }
@@ -628,22 +635,22 @@ impl KmemCache {
 pub struct CacheStats {
     /// 总对象数 (所有 Slab 之和)
     pub total_objects: u32,
-    
+
     /// 已分配对象数
     pub active_objects: u32,
-    
+
     /// 总 Slab 数
     pub total_slabs: u32,
-    
+
     /// 总分配次数
     pub total_allocs: u64,
-    
+
     /// 总释放次数
     pub total_frees: u64,
-    
+
     /// 缓存命中次数
     pub cache_hits: u64,
-    
+
     /// 缓存未命中次数
     pub cache_misses: u64,
 }
@@ -658,7 +665,7 @@ impl CacheStats {
             (self.cache_hits as f64 / self.total_allocs as f64) * 100.0
         }
     }
-    
+
     /// 计算利用率 (%)
     #[inline]
     pub fn utilization(&self) -> f64 {
@@ -675,19 +682,19 @@ impl CacheStats {
 // ============================================================================
 
 /// 通用缓存数组 (预定义 8 个大小的缓存)
-static mut GENERAL_CACHES: [Option<KmemCache>; SLAB_GENERAL_CACHE_NUM] = 
+static mut GENERAL_CACHES: [Option<KmemCache>; SLAB_GENERAL_CACHE_NUM] =
     [const { None }; SLAB_GENERAL_CACHE_NUM];
 
 /// 系统是否已初始化
 static mut SLAB_INITIALIZED: bool = false;
 
 /// 初始化 Slab 系统 (创建通用缓存池)
-/// 
+///
 /// **必须在内核启动早期调用一次**, 在任何 slab_alloc/slab_free 之前。
 #[no_mangle]
 pub extern "C" fn slab_system_init() -> i32 {
     klog_slab!("[SLAB] Initializing Slab allocator...");
-    
+
     unsafe {
         for (i, &cache_size) in GENERAL_CACHE_SIZES.iter().enumerate() {
             if let Ok(cache) = KmemCache::create("", cache_size) {
@@ -696,7 +703,7 @@ pub extern "C" fn slab_system_init() -> i32 {
         }
         SLAB_INITIALIZED = true;
     }
-    
+
     klog_slab!("[SLAB] System initialized with 8 general caches");
     0
 }
@@ -712,12 +719,12 @@ pub(crate) fn find_general_cache_index(size: usize) -> Option<usize> {
 }
 
 /// 通用分配接口 (FFI 兼容)
-/// 
+///
 /// 自动选择合适大小的缓存进行分配。
-/// 
+///
 /// # Arguments
 /// * `size` - 请求的字节数
-/// 
+///
 /// # Returns
 /// 成功: 分配的内存指针
 /// 失败: NULL
@@ -726,22 +733,20 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
     if size == 0 || size > SLAB_MAX_OBJECT_SIZE {
         return core::ptr::null_mut();
     }
-    
+
     if !unsafe { SLAB_INITIALIZED } {
         return core::ptr::null_mut();
     }
-    
+
     match find_general_cache_index(size) {
-        Some(idx) => {
-            unsafe {
-                if let Some(ref mut cache) = GENERAL_CACHES[idx] {
-                    match cache.allocate() {
-                        Some(ptr) => ptr,
-                        None => core::ptr::null_mut(),
-                    }
-                } else {
-                    core::ptr::null_mut()
+        Some(idx) => unsafe {
+            if let Some(ref mut cache) = GENERAL_CACHES[idx] {
+                match cache.allocate() {
+                    Some(ptr) => ptr,
+                    None => core::ptr::null_mut(),
                 }
+            } else {
+                core::ptr::null_mut()
             }
         },
         None => core::ptr::null_mut(),
@@ -750,8 +755,12 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
 
 #[no_mangle]
 pub extern "C" fn slab_free(ptr: *mut u8) {
-    if ptr.is_null() { return; }
-    if !unsafe { SLAB_INITIALIZED } { return; }
+    if ptr.is_null() {
+        return;
+    }
+    if !unsafe { SLAB_INITIALIZED } {
+        return;
+    }
 
     unsafe {
         for i in 0..GENERAL_CACHE_SIZES.len() {
@@ -776,12 +785,12 @@ pub extern "C" fn slab_get_system_stats(
     if total_memory.is_null() || used_memory.is_null() || total_caches.is_null() {
         return;
     }
-    
+
     unsafe {
         *total_memory = 0;
         *used_memory = 0;
         *total_caches = SLAB_GENERAL_CACHE_NUM as u32;
-        
+
         // TODO: 遍历所有通用缓存累加统计
     }
 }
@@ -790,7 +799,7 @@ pub extern "C" fn slab_get_system_stats(
 #[no_mangle]
 pub extern "C" fn slab_dump_all_caches() {
     klog_slab!("[SLAB] === Slab Allocator Status ===");
-    
+
     // TODO: 遍历并打印每个缓存的信息
 }
 
@@ -801,41 +810,41 @@ pub extern "C" fn slab_dump_all_caches() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_cache_creation() {
         let cache = KmemCache::create("test_cache", 64);
         assert!(cache.is_ok());
-        
+
         let cache = cache.unwrap();
         assert_eq!(cache.object_size, 64);
         assert!(cache.objects_per_slab > 0);
         assert!(cache.slab_count == 0);
     }
-    
+
     #[test]
     fn test_cache_invalid_size() {
         // 大小为 0
         assert!(KmemCache::create("zero", 0).is_err());
-        
+
         // 超过最大值
         assert!(KmemCache::create("huge", SLAB_MAX_OBJECT_SIZE + 1).is_err());
     }
-    
+
     #[test]
     fn test_cache_min_size_enforcement() {
         // 小于最小值应被提升到最小值
         let cache = KmemCache::create("tiny", 8).unwrap();
         assert_eq!(cache.object_size, SLAB_MIN_OBJECT_SIZE); // 应被提升到 16
     }
-    
+
     #[test]
     fn test_general_cache_sizes() {
         assert_eq!(GENERAL_CACHE_SIZES[0], 16);
         assert_eq!(GENERAL_CACHE_SIZES[3], 128);
         assert_eq!(GENERAL_CACHE_SIZES[7], 2048);
     }
-    
+
     #[test]
     fn test_find_general_cache_index() {
         assert_eq!(find_general_cache_index(16), Some(0));

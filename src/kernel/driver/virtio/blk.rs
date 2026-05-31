@@ -8,7 +8,6 @@
 //! For performance, this can be extended to use multi-sector requests
 //! and multiple outstanding I/Os.
 
-
 use super::queue::VirtQueue;
 use super::{VirtioMmioDevice, VIRTIO_ID_BLOCK};
 use crate::kernel::driver::block::BlockDevice;
@@ -20,19 +19,19 @@ use crate::klog_warn;
 #[repr(C)]
 #[derive(Debug)]
 struct BlkRequest {
-    req_type:  u32,  // 0=read, 1=write
-    reserved:  u32,
-    sector:    u64,  // LBA (little-endian)
+    req_type: u32, // 0=read, 1=write
+    reserved: u32,
+    sector: u64, // LBA (little-endian)
 }
 
 /// VirtIO block request status byte (written by device after completion).
-const VIRTIO_BLK_S_OK:      u8 = 0;
-const VIRTIO_BLK_S_IOERR:   u8 = 1;
-const VIRTIO_BLK_S_UNSUPP:  u8 = 2;
+const VIRTIO_BLK_S_OK: u8 = 0;
+const VIRTIO_BLK_S_IOERR: u8 = 1;
+const VIRTIO_BLK_S_UNSUPP: u8 = 2;
 
 // Request types
-const VIRTIO_BLK_T_IN:   u32 = 0; // read
-const VIRTIO_BLK_T_OUT:  u32 = 1; // write
+const VIRTIO_BLK_T_IN: u32 = 0; // read
+const VIRTIO_BLK_T_OUT: u32 = 1; // write
 
 // Config space offsets (relative to 0x100)
 const BLK_CONFIG_CAPACITY_LO: usize = 0x00;
@@ -71,7 +70,11 @@ impl VirtioBlk {
 
         // Initialize the transport layer
         if device.init().is_err() {
-            klog_warn!(Driver, "virtio-blk: device init failed at {:#x}", device.mmio_base);
+            klog_warn!(
+                Driver,
+                "virtio-blk: device init failed at {:#x}",
+                device.mmio_base
+            );
             return None;
         }
 
@@ -92,7 +95,9 @@ impl VirtioBlk {
         // Allocate IO buffer: 512 bytes for sector data + request header + status byte
         let buf_size = 512 + core::mem::size_of::<BlkRequest>() + 1;
         let buf_pages = buf_size.div_ceil(4096);
-        extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+        extern "C" {
+            fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+        }
         let buf = unsafe { pmm_alloc_pages(buf_pages as u64) };
         if buf.is_null() {
             return None;
@@ -100,10 +105,16 @@ impl VirtioBlk {
 
         let buf_phys = buf as u64;
         let buf_virt = (buf_phys + KERNEL_BASE) as *mut u8;
-        unsafe { core::ptr::write_bytes(buf_virt, 0, buf_size); }
+        unsafe {
+            core::ptr::write_bytes(buf_virt, 0, buf_size);
+        }
 
-        klog_info!(Driver, "virtio-blk: initialized, capacity={} sectors ({:.1} MB)",
-            capacity, (capacity * 512) as f64 / (1024.0 * 1024.0));
+        klog_info!(
+            Driver,
+            "virtio-blk: initialized, capacity={} sectors ({:.1} MB)",
+            capacity,
+            (capacity * 512) as f64 / (1024.0 * 1024.0)
+        );
 
         Some(VirtioBlk {
             device,
@@ -117,13 +128,17 @@ impl VirtioBlk {
 
     /// Read a single sector (512 bytes) into `buf`.
     pub fn read_sector(&mut self, lba: u64, buf: &mut [u8]) -> Result<(), ()> {
-        if buf.len() < 512 { return Err(()); }
+        if buf.len() < 512 {
+            return Err(());
+        }
         self.do_io(lba, VIRTIO_BLK_T_IN, buf)
     }
 
     /// Write a single sector (512 bytes) from `buf`.
     pub fn write_sector(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
-        if buf.len() < 512 { return Err(()); }
+        if buf.len() < 512 {
+            return Err(());
+        }
         self.do_io(lba, VIRTIO_BLK_T_OUT, buf)
     }
 
@@ -154,9 +169,17 @@ impl VirtioBlk {
         }
 
         // ── Prepare descriptor chain ──
-        let desc_req = self.vq.prepare_desc(self.io_buffer_phys, req_size as u32, false); // device reads header
-        let desc_data = self.vq.prepare_desc(self.io_buffer_phys + data_offset as u64, 512, req_type == VIRTIO_BLK_T_IN); // IN=device writes
-        let desc_status = self.vq.prepare_desc(self.io_buffer_phys + status_offset as u64, 1, true); // device writes status
+        let desc_req = self
+            .vq
+            .prepare_desc(self.io_buffer_phys, req_size as u32, false); // device reads header
+        let desc_data = self.vq.prepare_desc(
+            self.io_buffer_phys + data_offset as u64,
+            512,
+            req_type == VIRTIO_BLK_T_IN,
+        ); // IN=device writes
+        let desc_status = self
+            .vq
+            .prepare_desc(self.io_buffer_phys + status_offset as u64, 1, true); // device writes status
 
         // Link the chain: req → data → status
         unsafe {

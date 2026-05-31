@@ -3,8 +3,7 @@
 //!
 //! Routes external hardware interrupts to specific CPU cores.
 
-
-use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 const IOAPIC_BASE_DEFAULT: u64 = 0xFEC00000;
 
@@ -60,7 +59,11 @@ fn ioapic_write_redirection(irq: u8, value: u64) {
 }
 
 pub fn init(base_addr: u64) {
-    let base = if base_addr == 0 { IOAPIC_BASE_DEFAULT } else { base_addr };
+    let base = if base_addr == 0 {
+        IOAPIC_BASE_DEFAULT
+    } else {
+        base_addr
+    };
     IOAPIC_BASE.store(base, Ordering::Release);
 
     let ver = ioapic_read(IOAPIC_VER);
@@ -83,26 +86,36 @@ pub fn get_max_irq() -> u8 {
 }
 
 pub fn set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
     let mut entry: u64 = vector as u64 | ((apic_id as u64) << 56);
-    if masked { entry |= REDTBL_MASK; }
+    if masked {
+        entry |= REDTBL_MASK;
+    }
     ioapic_write_redirection(irq, entry);
 }
 
 pub fn mask_irq(irq: u8) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
     let entry = ioapic_read_redirection(irq);
     ioapic_write_redirection(irq, entry | REDTBL_MASK);
 }
 
 pub fn unmask_irq(irq: u8) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
     let entry = ioapic_read_redirection(irq);
     ioapic_write_redirection(irq, entry & !REDTBL_MASK);
 }
 
 pub fn set_irq_level(irq: u8, level_triggered: bool) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
     let entry = ioapic_read_redirection(irq);
     if level_triggered {
         ioapic_write_redirection(irq, entry | REDTBL_LEVEL);
@@ -112,19 +125,31 @@ pub fn set_irq_level(irq: u8, level_triggered: bool) {
 }
 
 pub fn route_irq_to_cpu(irq: u8, apic_id: u8) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
     let entry = ioapic_read_redirection(irq);
     let new_entry = (entry & !(0xFFu64 << 56)) | ((apic_id as u64) << 56);
     ioapic_write_redirection(irq, new_entry);
 }
 
 #[no_mangle]
-pub extern "C" fn ioapic_init(base_addr: u64) { init(base_addr); }
+pub extern "C" fn ioapic_init(base_addr: u64) {
+    init(base_addr);
+}
 #[no_mangle]
-pub extern "C" fn ioapic_mask_irq(irq: u8) { mask_irq(irq); }
+pub extern "C" fn ioapic_mask_irq(irq: u8) {
+    mask_irq(irq);
+}
 #[no_mangle]
-pub extern "C" fn ioapic_unmask_irq(irq: u8) { unmask_irq(irq); }
+pub extern "C" fn ioapic_unmask_irq(irq: u8) {
+    unmask_irq(irq);
+}
 #[no_mangle]
-pub extern "C" fn ioapic_set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) { set_irq(irq, vector, apic_id, masked); }
+pub extern "C" fn ioapic_set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
+    set_irq(irq, vector, apic_id, masked);
+}
 #[no_mangle]
-pub extern "C" fn ioapic_route_irq_to_cpu(irq: u8, apic_id: u8) { route_irq_to_cpu(irq, apic_id); }
+pub extern "C" fn ioapic_route_irq_to_cpu(irq: u8, apic_id: u8) {
+    route_irq_to_cpu(irq, apic_id);
+}

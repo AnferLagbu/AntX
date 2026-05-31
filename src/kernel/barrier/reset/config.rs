@@ -1,6 +1,6 @@
 //! # 恢复配置与类型定义
 
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 pub const RESET_SUCCESS: u32 = 0;
 pub const RESET_FAILED: u32 = 1;
@@ -146,9 +146,12 @@ pub mod tests {
         let failed = RecoveryResult::Failed;
         let escalate = RecoveryResult::Escalate;
 
-        success.is_success() && !success.should_escalate()
-            && !failed.is_success() && !failed.should_escalate()
-            && !escalate.is_success() && escalate.should_escalate()
+        success.is_success()
+            && !success.should_escalate()
+            && !failed.is_success()
+            && !failed.should_escalate()
+            && !escalate.is_success()
+            && escalate.should_escalate()
     }
 
     pub fn test_recovery_layer() -> bool {
@@ -161,7 +164,9 @@ pub mod tests {
 
     pub fn test_config_default() -> bool {
         let config = RecoveryConfig::default();
-        config.enable_layer1 && config.enable_layer2 && config.enable_layer3
+        config.enable_layer1
+            && config.enable_layer2
+            && config.enable_layer3
             && config.layer1_failure_threshold == 5
     }
 

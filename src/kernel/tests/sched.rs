@@ -1,16 +1,13 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
-use crate::kernel::proc::scheduler_ex::{
-    ThreadState, SchedulerEx,
-};
+use crate::kernel::proc::scheduler_ex::{SchedulerEx, ThreadState};
 use crate::kernel::proc::thread::Thread;
 use crate::kernel::proc::types::{
-    SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM,
-    SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
-    ThreadPriority,
+    ThreadPriority, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM,
+    SCHED_LEVEL_3_QUANTUM,
 };
-use core::sync::atomic::Ordering;
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::register_tests_inner;
 use alloc::boxed::Box;
+use core::sync::atomic::Ordering;
 
 fn thread_state_from_u32_valid() -> TestResult {
     assert_eq_test!(ThreadState::from_u32(0), ThreadState::Created, "state 0");
@@ -24,8 +21,16 @@ fn thread_state_from_u32_valid() -> TestResult {
 }
 
 fn thread_state_from_u32_invalid() -> TestResult {
-    assert_eq_test!(ThreadState::from_u32(255), ThreadState::Created, "invalid 255");
-    assert_eq_test!(ThreadState::from_u32(99), ThreadState::Created, "invalid 99");
+    assert_eq_test!(
+        ThreadState::from_u32(255),
+        ThreadState::Created,
+        "invalid 255"
+    );
+    assert_eq_test!(
+        ThreadState::from_u32(99),
+        ThreadState::Created,
+        "invalid 99"
+    );
     TestResult::Pass
 }
 
@@ -35,7 +40,10 @@ fn thread_state_is_runnable() -> TestResult {
     check!(!ThreadState::Created.is_runnable(), "Created not runnable");
     check!(!ThreadState::Blocked.is_runnable(), "Blocked not runnable");
     check!(!ThreadState::Zombie.is_runnable(), "Zombie not runnable");
-    check!(!ThreadState::Terminated.is_runnable(), "Terminated not runnable");
+    check!(
+        !ThreadState::Terminated.is_runnable(),
+        "Terminated not runnable"
+    );
     check!(!ThreadState::Frozen.is_runnable(), "Frozen not runnable");
     TestResult::Pass
 }
@@ -57,7 +65,10 @@ fn thread_state_can_freeze() -> TestResult {
     check!(ThreadState::Blocked.can_freeze(), "Blocked can freeze");
     check!(!ThreadState::Created.can_freeze(), "Created cannot freeze");
     check!(!ThreadState::Zombie.can_freeze(), "Zombie cannot freeze");
-    check!(!ThreadState::Terminated.can_freeze(), "Terminated cannot freeze");
+    check!(
+        !ThreadState::Terminated.can_freeze(),
+        "Terminated cannot freeze"
+    );
     check!(!ThreadState::Frozen.can_freeze(), "Frozen cannot freeze");
     TestResult::Pass
 }
@@ -66,20 +77,47 @@ fn thread_state_can_freeze() -> TestResult {
 fn thread_normal_lifecycle() -> TestResult {
     let t = Box::new(Thread::new(1, 1));
     assert_eq_test!(t.get_state(), ThreadState::Created, "initial state");
-    assert!(t.set_state_safe(ThreadState::Ready).is_ok(), "Created->Ready");
+    assert!(
+        t.set_state_safe(ThreadState::Ready).is_ok(),
+        "Created->Ready"
+    );
     assert_eq_test!(t.get_state(), ThreadState::Ready, "after Ready");
-    assert!(t.set_state_safe(ThreadState::Running).is_ok(), "Ready->Running");
+    assert!(
+        t.set_state_safe(ThreadState::Running).is_ok(),
+        "Ready->Running"
+    );
     assert_eq_test!(t.get_state(), ThreadState::Running, "after Running");
-    assert!(t.set_state_safe(ThreadState::Ready).is_ok(), "Running->Ready");
+    assert!(
+        t.set_state_safe(ThreadState::Ready).is_ok(),
+        "Running->Ready"
+    );
     assert_eq_test!(t.get_state(), ThreadState::Ready, "back to Ready");
-    assert!(t.set_state_safe(ThreadState::Running).is_ok(), "Ready->Running");
-    assert!(t.set_state_safe(ThreadState::Blocked).is_ok(), "Running->Blocked");
+    assert!(
+        t.set_state_safe(ThreadState::Running).is_ok(),
+        "Ready->Running"
+    );
+    assert!(
+        t.set_state_safe(ThreadState::Blocked).is_ok(),
+        "Running->Blocked"
+    );
     assert_eq_test!(t.get_state(), ThreadState::Blocked, "after Blocked");
-    assert!(t.set_state_safe(ThreadState::Ready).is_ok(), "Blocked->Ready");
-    assert!(t.set_state_safe(ThreadState::Running).is_ok(), "Ready->Running");
-    assert!(t.set_state_safe(ThreadState::Zombie).is_ok(), "Running->Zombie");
+    assert!(
+        t.set_state_safe(ThreadState::Ready).is_ok(),
+        "Blocked->Ready"
+    );
+    assert!(
+        t.set_state_safe(ThreadState::Running).is_ok(),
+        "Ready->Running"
+    );
+    assert!(
+        t.set_state_safe(ThreadState::Zombie).is_ok(),
+        "Running->Zombie"
+    );
     assert_eq_test!(t.get_state(), ThreadState::Zombie, "after Zombie");
-    assert!(t.set_state_safe(ThreadState::Terminated).is_ok(), "Zombie->Terminated");
+    assert!(
+        t.set_state_safe(ThreadState::Terminated).is_ok(),
+        "Zombie->Terminated"
+    );
     assert_eq_test!(t.get_state(), ThreadState::Terminated, "after Terminated");
     TestResult::Pass
 }
@@ -107,7 +145,8 @@ fn thread_illegal_transitions() -> TestResult {
     check!(result.is_err(), "Created->Running should fail");
     assert_eq_test!(t.get_state(), ThreadState::Created, "state unchanged");
 
-    t.state.store(ThreadState::Terminated as u32, Ordering::SeqCst);
+    t.state
+        .store(ThreadState::Terminated as u32, Ordering::SeqCst);
     let result = t.set_state_safe(ThreadState::Running);
     check!(result.is_err(), "Terminated->Running should fail");
     assert_eq_test!(t.get_state(), ThreadState::Terminated, "state unchanged");
@@ -121,14 +160,30 @@ fn thread_illegal_transitions() -> TestResult {
 
 fn thread_state_change_count() -> TestResult {
     let t = Box::new(Thread::new(4, 1));
-    assert_eq_test!(t.state_change_count.load(Ordering::Relaxed), 0, "initial count");
+    assert_eq_test!(
+        t.state_change_count.load(Ordering::Relaxed),
+        0,
+        "initial count"
+    );
     let _ = t.set_state_safe(ThreadState::Ready);
-    assert_eq_test!(t.state_change_count.load(Ordering::Relaxed), 1, "after 1 transition");
+    assert_eq_test!(
+        t.state_change_count.load(Ordering::Relaxed),
+        1,
+        "after 1 transition"
+    );
     let _ = t.set_state_safe(ThreadState::Running);
-    assert_eq_test!(t.state_change_count.load(Ordering::Relaxed), 2, "after 2 transitions");
-    let _ = t.set_state_safe(ThreadState::Created);  // illegal, still Running→Created
-    let _ = t.set_state_safe(ThreadState::Created);  // still illegal
-    assert_eq_test!(t.state_change_count.load(Ordering::Relaxed), 2, "failed transition no count");
+    assert_eq_test!(
+        t.state_change_count.load(Ordering::Relaxed),
+        2,
+        "after 2 transitions"
+    );
+    let _ = t.set_state_safe(ThreadState::Created); // illegal, still Running→Created
+    let _ = t.set_state_safe(ThreadState::Created); // still illegal
+    assert_eq_test!(
+        t.state_change_count.load(Ordering::Relaxed),
+        2,
+        "failed transition no count"
+    );
     TestResult::Pass
 }
 
@@ -138,9 +193,17 @@ fn thread_exit_code_preserved() -> TestResult {
     assert!(t.set_state_safe(ThreadState::Ready).is_ok());
     assert!(t.set_state_safe(ThreadState::Running).is_ok());
     assert!(t.set_state_safe(ThreadState::Zombie).is_ok());
-    assert_eq_test!(t.exit_code.load(Ordering::Relaxed), 42, "exit code after Zombie");
+    assert_eq_test!(
+        t.exit_code.load(Ordering::Relaxed),
+        42,
+        "exit code after Zombie"
+    );
     assert!(t.set_state_safe(ThreadState::Terminated).is_ok());
-    assert_eq_test!(t.exit_code.load(Ordering::Relaxed), 42, "exit code after Terminated");
+    assert_eq_test!(
+        t.exit_code.load(Ordering::Relaxed),
+        42,
+        "exit code after Terminated"
+    );
     TestResult::Pass
 }
 
@@ -149,8 +212,16 @@ fn scheduler_initialization() -> TestResult {
     assert_eq_test!(sched.current.load(Ordering::SeqCst), 0, "current init");
     assert_eq_test!(sched.idle_thread.load(Ordering::SeqCst), 0, "idle init");
     assert_eq_test!(sched.tick_count.load(Ordering::SeqCst), 0, "tick init");
-    assert_eq_test!(sched.need_reschedule.load(Ordering::SeqCst), 0, "reschedule init");
-    assert_eq_test!(sched.stats.total_switches.load(Ordering::SeqCst), 0, "switches init");
+    assert_eq_test!(
+        sched.need_reschedule.load(Ordering::SeqCst),
+        0,
+        "reschedule init"
+    );
+    assert_eq_test!(
+        sched.stats.total_switches.load(Ordering::SeqCst),
+        0,
+        "switches init"
+    );
     TestResult::Pass
 }
 
@@ -166,7 +237,9 @@ fn null_pointer_safety() -> TestResult {
     let sched = SchedulerEx::new();
     sched.add_thread(core::ptr::null_mut());
     let mut total = 0;
-    for i in 0..5 { total += sched.run_queues[i].len(); }
+    for i in 0..5 {
+        total += sched.run_queues[i].len();
+    }
     assert_eq_test!(total, 0, "null thread rejected");
     TestResult::Pass
 }
@@ -184,21 +257,24 @@ fn thread_type_safety() -> TestResult {
     let sched = SchedulerEx::new();
     let t = Box::into_raw(Box::new(Thread::new(10, 1)));
     unsafe {
-        (*t).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
+        (*t).state
+            .store(ThreadState::Ready as u32, Ordering::SeqCst);
     }
     sched.add_thread(t);
     assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 1);
     let popped = sched.run_queues[ThreadPriority::Normal as usize].pop_front();
     assert!(popped.is_some());
     unsafe {
-        if let Some(p) = popped { drop(Box::from_raw(p)); }
+        if let Some(p) = popped {
+            drop(Box::from_raw(p));
+        }
     }
     TestResult::Pass
 }
 
 pub fn register_sched_ex_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "sched::thread_state": {
             "from_u32_valid": thread_state_from_u32_valid,
             "from_u32_invalid": thread_state_from_u32_invalid,

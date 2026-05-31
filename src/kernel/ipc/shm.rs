@@ -16,7 +16,10 @@ unsafe fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&'static mut Shm
 }
 
 /// 根据 ID 查找共享内存段
-unsafe fn shm_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&'static mut ShmSegment> {
+unsafe fn shm_find_by_id(
+    namespace: &mut IpcNamespace,
+    id: IpcId,
+) -> Option<&'static mut ShmSegment> {
     for i in 0..IPC_MAX_SHM_SEGS {
         if namespace.shm_segs[i].id == id {
             return Some(&mut *(&mut namespace.shm_segs[i] as *mut ShmSegment));
@@ -58,9 +61,9 @@ pub fn shm_create_safe(
 
         // 计算需要的页数并分配物理内存
         let pages = size.div_ceil(4096);
-        
+
         let phys = crate::kernel::mm::ffi::pmm_alloc_pages(pages as usize);
-        
+
         if phys.is_null() {
             return Err(-3);
         }
@@ -101,19 +104,19 @@ pub fn shm_attach_safe(
     unsafe {
         let shm = match shm_find_by_id(namespace, id) {
             Some(s) => s,
-            None => return Err(-1),  // 无效 ID
+            None => return Err(-1), // 无效 ID
         };
 
         // 检查是否已经附加过
         for i in 0..shm.attach_count as usize {
             if shm.attached_pids[i] == current_pid {
-                return Ok(shm.phys_addr);  // 已附加，直接返回地址
+                return Ok(shm.phys_addr); // 已附加，直接返回地址
             }
         }
 
         // 检查是否超过最大附加进程数
         if shm.attach_count >= 16 {
-            return Err(-2);  // 超出限制
+            return Err(-2); // 超出限制
         }
 
         // 记录附加信息
@@ -157,7 +160,7 @@ pub fn shm_detach_safe(
             }
         }
 
-        Err(-2)  // 进程未附加此段
+        Err(-2) // 进程未附加此段
     }
 }
 
@@ -184,7 +187,10 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
 
         // 释放物理页
         let pages = shm.size.div_ceil(4096);
-        crate::kernel::mm::ffi::pmm_free_pages(shm.phys_addr as *mut core::ffi::c_void, pages as usize);
+        crate::kernel::mm::ffi::pmm_free_pages(
+            shm.phys_addr as *mut core::ffi::c_void,
+            pages as usize,
+        );
 
         // 清理结构体
         shm.id = 0;
@@ -205,7 +211,9 @@ pub extern "C" fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
     unsafe {
         use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
-        extern "C" { fn process_get_current_pid() -> u32; }
+        extern "C" {
+            fn process_get_current_pid() -> u32;
+        }
         let pid = process_get_current_pid();
 
         match shm_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, size, perm, pid) {
@@ -221,7 +229,9 @@ pub extern "C" fn ipc_shm_attach(id: IpcId, addr: *mut *mut core::ffi::c_void) -
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
-        extern "C" { fn process_get_current_pid() -> u32; }
+        extern "C" {
+            fn process_get_current_pid() -> u32;
+        }
         let pid = process_get_current_pid();
 
         match shm_attach_safe(&mut IPC_NAMESPACE, id, pid) {
@@ -230,7 +240,7 @@ pub extern "C" fn ipc_shm_attach(id: IpcId, addr: *mut *mut core::ffi::c_void) -
                     *addr = phys_addr as *mut core::ffi::c_void;
                 }
                 0
-            },
+            }
             Err(_) => -1,
         }
     }
@@ -242,7 +252,9 @@ pub extern "C" fn ipc_shm_detach(id: IpcId) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
-        extern "C" { fn process_get_current_pid() -> u32; }
+        extern "C" {
+            fn process_get_current_pid() -> u32;
+        }
         let pid = process_get_current_pid();
 
         match shm_detach_safe(&mut IPC_NAMESPACE, id, pid) {

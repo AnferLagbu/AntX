@@ -1,16 +1,15 @@
 #![allow(dead_code)]
+pub mod ffi;
+pub mod mmap;
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
 /// POSIX 标准 syscall 编号 (0-399) + Credo 私有 syscall (400+).
 /// 内核能力层 (VFS/PWM/PROC/NET/MM) 不变，仅 syscall ABI 层替换。
-
 pub mod types;
-pub mod ffi;
-pub mod mmap;
 
-use crate::kernel::syscall::types::*;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::idt::types::InterruptFrame;
+use crate::kernel::syscall::types::*;
 use spin::Mutex;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
@@ -20,7 +19,9 @@ fn validate_user_ptr(ptr: u64) -> bool {
 }
 
 fn validate_user_buf(ptr: u64, len: u64) -> bool {
-    if len == 0 { return true; }
+    if len == 0 {
+        return true;
+    }
     validate_user_ptr(ptr) && ptr + len <= USER_ADDR_MAX
 }
 
@@ -30,7 +31,16 @@ fn validate_user_buf(ptr: u64, len: u64) -> bool {
 ///
 /// Caller is in kernel context. `ptr` is a validated user-space pointer.
 pub unsafe extern "C" fn syscall_init() {
-    unsafe { crate::kernel::klog::klog_write(1, 7, core::ptr::null(), core::ptr::null(), 0, c"POSIX syscall subsystem ready".as_ptr()); }
+    unsafe {
+        crate::kernel::klog::klog_write(
+            1,
+            7,
+            core::ptr::null(),
+            core::ptr::null(),
+            0,
+            c"POSIX syscall subsystem ready".as_ptr(),
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -40,7 +50,9 @@ pub unsafe extern "C" fn syscall_init() {
 ///
 /// Caller is in kernel context. `ptr` is a validated user-space string pointer.
 pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) {
-    if frame.is_null() { return; }
+    if frame.is_null() {
+        return;
+    }
     let f = &mut *frame;
     let syscall_num = f.rax;
     let a0 = f.rdi;
@@ -52,13 +64,20 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
 }
 
 macro_rules! dispatch {
-    ($num:expr, $name:expr) => {
-        {
-            let ret = $num;
-            unsafe { crate::kernel::klog::klog_write(0, 7, core::ptr::null(), core::ptr::null(), 0, $name.as_ptr() as *const core::ffi::c_char); }
-            ret
+    ($num:expr, $name:expr) => {{
+        let ret = $num;
+        unsafe {
+            crate::kernel::klog::klog_write(
+                0,
+                7,
+                core::ptr::null(),
+                core::ptr::null(),
+                0,
+                $name.as_ptr() as *const core::ffi::c_char,
+            );
         }
-    };
+        ret
+    }};
 }
 
 #[no_mangle]
@@ -69,220 +88,363 @@ macro_rules! dispatch {
 pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     match num {
         // ==================== 文件 I/O ====================
-        SYS_read            => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
-        SYS_write           => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
-        SYS_open            => dispatch!(sys_open(a0 as *const core::ffi::c_char, a1 as i32, a2 as i32), b"open\0"),
-        SYS_close           => dispatch!(sys_close(a0 as i32), b"close\0"),
-        SYS_stat            => dispatch!(sys_stat(a0 as *const core::ffi::c_char, a1 as *mut core::ffi::c_void), b"stat\0"),
-        SYS_fstat           => dispatch!(sys_fstat(a0 as i32, a1 as *mut core::ffi::c_void), b"fstat\0"),
-        SYS_lstat           => dispatch!(sys_stat(a0 as *const core::ffi::c_char, a1 as *mut core::ffi::c_void), b"lstat\0"),
-        SYS_poll            => dispatch!(sys_poll(a0 as *mut core::ffi::c_void, a1 as u32, a2 as i32), b"poll\0"),
-        SYS_lseek           => dispatch!(sys_lseek(a0 as i32, a1 as i64, a2 as i32), b"lseek\0"),
+        SYS_read => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
+        SYS_write => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
+        SYS_open => dispatch!(
+            sys_open(a0 as *const core::ffi::c_char, a1 as i32, a2 as i32),
+            b"open\0"
+        ),
+        SYS_close => dispatch!(sys_close(a0 as i32), b"close\0"),
+        SYS_stat => dispatch!(
+            sys_stat(a0 as *const core::ffi::c_char, a1 as *mut core::ffi::c_void),
+            b"stat\0"
+        ),
+        SYS_fstat => dispatch!(
+            sys_fstat(a0 as i32, a1 as *mut core::ffi::c_void),
+            b"fstat\0"
+        ),
+        SYS_lstat => dispatch!(
+            sys_stat(a0 as *const core::ffi::c_char, a1 as *mut core::ffi::c_void),
+            b"lstat\0"
+        ),
+        SYS_poll => dispatch!(
+            sys_poll(a0 as *mut core::ffi::c_void, a1 as u32, a2 as i32),
+            b"poll\0"
+        ),
+        SYS_lseek => dispatch!(sys_lseek(a0 as i32, a1 as i64, a2 as i32), b"lseek\0"),
 
         // ==================== 内存管理 ====================
-        SYS_mmap            => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32), b"mmap\0"),
-        SYS_mprotect        => dispatch!(Errno::ENOSYS.as_ret(), b"mprotect\0"),
-        SYS_munmap          => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
-        SYS_brk             => dispatch!(sys_brk(a0), b"brk\0"),
-        SYS_mremap          => dispatch!(Errno::ENOSYS.as_ret(), b"mremap_nosys\0"),
+        SYS_mmap => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32), b"mmap\0"),
+        SYS_mprotect => dispatch!(Errno::ENOSYS.as_ret(), b"mprotect\0"),
+        SYS_munmap => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
+        SYS_brk => dispatch!(sys_brk(a0), b"brk\0"),
+        SYS_mremap => dispatch!(Errno::ENOSYS.as_ret(), b"mremap_nosys\0"),
 
         // ==================== 信号 ====================
-        SYS_rt_sigaction    => dispatch!(sys_rt_sigaction(a0 as i32, a1, a2), b"rt_sigaction\0"),
-        SYS_rt_sigprocmask  => dispatch!(sys_rt_sigprocmask(a0 as i32, a1, a2), b"rt_sigprocmask\0"),
-        SYS_rt_sigreturn    => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
+        SYS_rt_sigaction => dispatch!(sys_rt_sigaction(a0 as i32, a1, a2), b"rt_sigaction\0"),
+        SYS_rt_sigprocmask => dispatch!(sys_rt_sigprocmask(a0 as i32, a1, a2), b"rt_sigprocmask\0"),
+        SYS_rt_sigreturn => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
 
         // ==================== 设备 ====================
-        SYS_ioctl           => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
+        SYS_ioctl => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
 
         // ==================== 文件访问 ====================
-        SYS_access          => dispatch!(sys_access(a0 as *const core::ffi::c_char, a1 as i32), b"access\0"),
-        SYS_pipe            => dispatch!(sys_pipe(a0 as *mut i32), b"pipe\0"),
-        SYS_select          => dispatch!(sys_poll(a0 as *mut core::ffi::c_void, a1 as u32, a2 as i32), b"select\0"),
-        SYS_sched_yield     => dispatch!(sys_sched_yield(), b"sched_yield\0"),
+        SYS_access => dispatch!(
+            sys_access(a0 as *const core::ffi::c_char, a1 as i32),
+            b"access\0"
+        ),
+        SYS_pipe => dispatch!(sys_pipe(a0 as *mut i32), b"pipe\0"),
+        SYS_select => dispatch!(
+            sys_poll(a0 as *mut core::ffi::c_void, a1 as u32, a2 as i32),
+            b"select\0"
+        ),
+        SYS_sched_yield => dispatch!(sys_sched_yield(), b"sched_yield\0"),
 
         // ==================== 文件描述符 ====================
-        SYS_dup             => dispatch!(sys_dup(a0 as i32), b"dup\0"),
-        SYS_dup2            => dispatch!(sys_dup2(a0 as i32, a1 as i32), b"dup2\0"),
+        SYS_dup => dispatch!(sys_dup(a0 as i32), b"dup\0"),
+        SYS_dup2 => dispatch!(sys_dup2(a0 as i32, a1 as i32), b"dup2\0"),
 
         // ==================== 进程优先级 ====================
-        SYS_nice            => dispatch!(sys_nice(a0 as i32), b"nice\0"),
+        SYS_nice => dispatch!(sys_nice(a0 as i32), b"nice\0"),
 
         // ==================== 定时器 ====================
-        SYS_nanosleep       => dispatch!(sys_nanosleep(a0, a1), b"nanosleep\0"),
-        SYS_getitimer       => dispatch!(Errno::ENOSYS.as_ret(), b"getitimer_nosys\0"),
-        SYS_alarm           => dispatch!(Errno::ENOSYS.as_ret(), b"alarm\0"),
-        SYS_setitimer       => dispatch!(Errno::ENOSYS.as_ret(), b"setitimer_nosys\0"),
+        SYS_nanosleep => dispatch!(sys_nanosleep(a0, a1), b"nanosleep\0"),
+        SYS_getitimer => dispatch!(Errno::ENOSYS.as_ret(), b"getitimer_nosys\0"),
+        SYS_alarm => dispatch!(Errno::ENOSYS.as_ret(), b"alarm\0"),
+        SYS_setitimer => dispatch!(Errno::ENOSYS.as_ret(), b"setitimer_nosys\0"),
 
         // ==================== 进程 ====================
-        SYS_getpid          => dispatch!(sys_getpid(), b"getpid\0"),
-        SYS_getppid         => dispatch!(sys_getppid(), b"getppid\0"),
-        SYS_getpgid         => dispatch!(sys_getpgid(a0 as i32), b"getpgid\0"),
-        SYS_setsid          => dispatch!(sys_setsid(), b"setsid\0"),
-        SYS_getpriority     => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
-        SYS_setpriority     => dispatch!(sys_setpriority(a0 as i32, a1 as u32, a2 as i32), b"setpriority\0"),
-        SYS_gettid          => dispatch!(sys_gettid(), b"gettid\0"),
+        SYS_getpid => dispatch!(sys_getpid(), b"getpid\0"),
+        SYS_getppid => dispatch!(sys_getppid(), b"getppid\0"),
+        SYS_getpgid => dispatch!(sys_getpgid(a0 as i32), b"getpgid\0"),
+        SYS_setsid => dispatch!(sys_setsid(), b"setsid\0"),
+        SYS_getpriority => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
+        SYS_setpriority => dispatch!(
+            sys_setpriority(a0 as i32, a1 as u32, a2 as i32),
+            b"setpriority\0"
+        ),
+        SYS_gettid => dispatch!(sys_gettid(), b"gettid\0"),
 
         // ==================== 网络 ====================
         #[cfg(feature = "net")]
-        SYS_socket      => dispatch!(sys_socket(a0 as i32, a1 as i32, a2 as i32), b"socket\0"),
+        SYS_socket => dispatch!(sys_socket(a0 as i32, a1 as i32, a2 as i32), b"socket\0"),
         #[cfg(feature = "net")]
-        SYS_connect     => dispatch!(sys_connect(a0 as i32, a1, a2 as u32), b"connect\0"),
+        SYS_connect => dispatch!(sys_connect(a0 as i32, a1, a2 as u32), b"connect\0"),
         #[cfg(feature = "net")]
-        SYS_accept      => dispatch!(sys_accept(a0 as i32, a1, a2), b"accept\0"),
+        SYS_accept => dispatch!(sys_accept(a0 as i32, a1, a2), b"accept\0"),
         #[cfg(feature = "net")]
-        SYS_sendto      => dispatch!(sys_sendto(a0 as i32, a1, a2 as u32, a3 as i32), b"sendto\0"),
+        SYS_sendto => dispatch!(sys_sendto(a0 as i32, a1, a2 as u32, a3 as i32), b"sendto\0"),
         #[cfg(feature = "net")]
-        SYS_recvfrom    => dispatch!(sys_recvfrom(a0 as i32, a1, a2 as u32, a3 as i32), b"recvfrom\0"),
+        SYS_recvfrom => dispatch!(
+            sys_recvfrom(a0 as i32, a1, a2 as u32, a3 as i32),
+            b"recvfrom\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_shutdown    => dispatch!(sys_shutdown(a0 as i32, a1 as i32), b"shutdown\0"),
+        SYS_shutdown => dispatch!(sys_shutdown(a0 as i32, a1 as i32), b"shutdown\0"),
         #[cfg(feature = "net")]
-        SYS_bind        => dispatch!(sys_bind(a0 as i32, a1, a2 as u32), b"bind\0"),
+        SYS_bind => dispatch!(sys_bind(a0 as i32, a1, a2 as u32), b"bind\0"),
         #[cfg(feature = "net")]
-        SYS_listen      => dispatch!(sys_listen(a0 as i32, a1 as i32), b"listen\0"),
+        SYS_listen => dispatch!(sys_listen(a0 as i32, a1 as i32), b"listen\0"),
         #[cfg(feature = "net")]
-        SYS_sendmsg     => dispatch!(sys_sendmsg(a0 as i32, a1, a2 as i32), b"sendmsg\0"),
+        SYS_sendmsg => dispatch!(sys_sendmsg(a0 as i32, a1, a2 as i32), b"sendmsg\0"),
         #[cfg(feature = "net")]
-        SYS_recvmsg     => dispatch!(sys_recvmsg(a0 as i32, a1, a2 as i32), b"recvmsg\0"),
+        SYS_recvmsg => dispatch!(sys_recvmsg(a0 as i32, a1, a2 as i32), b"recvmsg\0"),
         #[cfg(feature = "net")]
-        SYS_setsockopt  => dispatch!(sys_setsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32), b"setsockopt\0"),
+        SYS_setsockopt => dispatch!(
+            sys_setsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32),
+            b"setsockopt\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_getsockopt  => dispatch!(sys_getsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4), b"getsockopt\0"),
+        SYS_getsockopt => dispatch!(
+            sys_getsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4),
+            b"getsockopt\0"
+        ),
         #[cfg(feature = "net")]
         SYS_getsockname => dispatch!(sys_getsockname(a0 as i32, a1, a2), b"getsockname\0"),
         #[cfg(feature = "net")]
         SYS_getpeername => dispatch!(sys_getpeername(a0 as i32, a1, a2), b"getpeername\0"),
         #[cfg(feature = "net")]
-        SYS_getrusage   => dispatch!(sys_getrusage(a0 as i32, a1), b"getrusage\0"),
+        SYS_getrusage => dispatch!(sys_getrusage(a0 as i32, a1), b"getrusage\0"),
         #[cfg(not(feature = "net"))]
-        SYS_socket | SYS_connect | SYS_accept | SYS_sendto | SYS_recvfrom |
-        SYS_shutdown | SYS_bind | SYS_listen |
-        SYS_sendmsg | SYS_recvmsg | SYS_setsockopt | SYS_getsockopt |
-        SYS_getsockname | SYS_getpeername | SYS_getrusage
-        => dispatch!(Errno::ENOSYS.as_ret(), b"net_nosys\0"),
+        SYS_socket | SYS_connect | SYS_accept | SYS_sendto | SYS_recvfrom | SYS_shutdown
+        | SYS_bind | SYS_listen | SYS_sendmsg | SYS_recvmsg | SYS_setsockopt | SYS_getsockopt
+        | SYS_getsockname | SYS_getpeername | SYS_getrusage => {
+            dispatch!(Errno::ENOSYS.as_ret(), b"net_nosys\0")
+        }
 
         // ==================== 进程创建 ====================
-        SYS_fork            => dispatch!(sys_fork(), b"fork\0"),
-        SYS_clone           => dispatch!(Errno::ENOSYS.as_ret(), b"clone_nosys\0"),
-        SYS_execve          => dispatch!(sys_execve(a0 as *const core::ffi::c_char, a1 as *const *const u8, a2 as *const *const u8), b"execve\0"),
-        SYS_exit            => dispatch!(sys_exit(a0 as i32), b"exit\0"),
-        SYS_wait4            => dispatch!(sys_wait4(a0 as i32), b"wait4\0"),
-        SYS_kill            => dispatch!(sys_kill(a0 as i32, a1 as i32), b"kill\0"),
+        SYS_fork => dispatch!(sys_fork(), b"fork\0"),
+        SYS_clone => dispatch!(Errno::ENOSYS.as_ret(), b"clone_nosys\0"),
+        SYS_execve => dispatch!(
+            sys_execve(
+                a0 as *const core::ffi::c_char,
+                a1 as *const *const u8,
+                a2 as *const *const u8
+            ),
+            b"execve\0"
+        ),
+        SYS_exit => dispatch!(sys_exit(a0 as i32), b"exit\0"),
+        SYS_wait4 => dispatch!(sys_wait4(a0 as i32), b"wait4\0"),
+        SYS_kill => dispatch!(sys_kill(a0 as i32, a1 as i32), b"kill\0"),
 
         // ==================== 系统信息 ====================
-        SYS_uname           => dispatch!(sys_uname(a0 as *mut core::ffi::c_void), b"uname\0"),
+        SYS_uname => dispatch!(sys_uname(a0 as *mut core::ffi::c_void), b"uname\0"),
 
         // ==================== 文件描述符操作 ====================
-        SYS_fcntl           => dispatch!(sys_fcntl(a0 as i32, a1 as i32, a2), b"fcntl\0"),
+        SYS_fcntl => dispatch!(sys_fcntl(a0 as i32, a1 as i32, a2), b"fcntl\0"),
 
         // ==================== 文件截断 ====================
-        SYS_truncate        => dispatch!(sys_truncate(a0 as *const core::ffi::c_char, a1 as i64), b"truncate\0"),
-        SYS_ftruncate       => dispatch!(sys_ftruncate(a0 as i32, a1 as i64), b"ftruncate\0"),
+        SYS_truncate => dispatch!(
+            sys_truncate(a0 as *const core::ffi::c_char, a1 as i64),
+            b"truncate\0"
+        ),
+        SYS_ftruncate => dispatch!(sys_ftruncate(a0 as i32, a1 as i64), b"ftruncate\0"),
 
         // ==================== 目录 ====================
-        SYS_getdents        => dispatch!(sys_getdents(a0 as i32, a1 as *mut core::ffi::c_void, a2), b"getdents\0"),
+        SYS_getdents => dispatch!(
+            sys_getdents(a0 as i32, a1 as *mut core::ffi::c_void, a2),
+            b"getdents\0"
+        ),
 
         // ==================== 路径 ====================
-        SYS_getcwd          => dispatch!(sys_getcwd(a0 as *mut core::ffi::c_char, a1), b"getcwd\0"),
-        SYS_chdir           => dispatch!(sys_chdir(a0 as *const core::ffi::c_char), b"chdir\0"),
+        SYS_getcwd => dispatch!(sys_getcwd(a0 as *mut core::ffi::c_char, a1), b"getcwd\0"),
+        SYS_chdir => dispatch!(sys_chdir(a0 as *const core::ffi::c_char), b"chdir\0"),
 
         // ==================== 文件操作 ====================
-        SYS_rename          => dispatch!(sys_rename(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"rename\0"),
-        SYS_mkdir           => dispatch!(sys_mkdir(a0 as *const core::ffi::c_char, a1 as i32), b"mkdir\0"),
-        SYS_rmdir           => dispatch!(sys_rmdir(a0 as *const core::ffi::c_char), b"rmdir\0"),
-        SYS_creat           => dispatch!(sys_open(a0 as *const core::ffi::c_char, 0o101, 0o666), b"creat\0"),
-        SYS_link            => dispatch!(Errno::ENOSYS.as_ret(), b"link_nosys\0"),
-        SYS_unlink          => dispatch!(sys_unlink(a0 as *const core::ffi::c_char), b"unlink\0"),
-        SYS_symlink         => dispatch!(Errno::ENOSYS.as_ret(), b"symlink_nosys\0"),
-        SYS_readlink        => dispatch!(sys_readlink(a0 as *const core::ffi::c_char, a1 as *mut core::ffi::c_char, a2), b"readlink\0"),
+        SYS_rename => dispatch!(
+            sys_rename(
+                a0 as *const core::ffi::c_char,
+                a1 as *const core::ffi::c_char
+            ),
+            b"rename\0"
+        ),
+        SYS_mkdir => dispatch!(
+            sys_mkdir(a0 as *const core::ffi::c_char, a1 as i32),
+            b"mkdir\0"
+        ),
+        SYS_rmdir => dispatch!(sys_rmdir(a0 as *const core::ffi::c_char), b"rmdir\0"),
+        SYS_creat => dispatch!(
+            sys_open(a0 as *const core::ffi::c_char, 0o101, 0o666),
+            b"creat\0"
+        ),
+        SYS_link => dispatch!(Errno::ENOSYS.as_ret(), b"link_nosys\0"),
+        SYS_unlink => dispatch!(sys_unlink(a0 as *const core::ffi::c_char), b"unlink\0"),
+        SYS_symlink => dispatch!(Errno::ENOSYS.as_ret(), b"symlink_nosys\0"),
+        SYS_readlink => dispatch!(
+            sys_readlink(
+                a0 as *const core::ffi::c_char,
+                a1 as *mut core::ffi::c_char,
+                a2
+            ),
+            b"readlink\0"
+        ),
 
         // ==================== 文件权限 ====================
-        SYS_chmod           => dispatch!(sys_chmod(a0 as *const core::ffi::c_char, a1 as u32), b"chmod\0"),
-        SYS_fchmod          => dispatch!(sys_fchmod(a0 as i32, a1 as u32), b"fchmod\0"),
-        SYS_chown           => dispatch!(sys_chown(a0 as *const core::ffi::c_char, a1 as u32, a2 as u32), b"chown\0"),
-        SYS_fchown          => dispatch!(Errno::ENOSYS.as_ret(), b"fchown_nosys\0"),
-        SYS_umask           => dispatch!(sys_umask(a0 as u32), b"umask\0"),
+        SYS_chmod => dispatch!(
+            sys_chmod(a0 as *const core::ffi::c_char, a1 as u32),
+            b"chmod\0"
+        ),
+        SYS_fchmod => dispatch!(sys_fchmod(a0 as i32, a1 as u32), b"fchmod\0"),
+        SYS_chown => dispatch!(
+            sys_chown(a0 as *const core::ffi::c_char, a1 as u32, a2 as u32),
+            b"chown\0"
+        ),
+        SYS_fchown => dispatch!(Errno::ENOSYS.as_ret(), b"fchown_nosys\0"),
+        SYS_umask => dispatch!(sys_umask(a0 as u32), b"umask\0"),
 
         // ==================== 时间 ====================
-        SYS_gettimeofday    => dispatch!(sys_gettimeofday(a0 as *mut core::ffi::c_void, a1 as *mut core::ffi::c_void), b"gettimeofday\0"),
-        SYS_getrlimit       => dispatch!(sys_getrlimit(a0 as i32, a1 as *mut core::ffi::c_void), b"getrlimit\0"),
-        SYS_sysinfo         => dispatch!(sys_sysinfo(a0 as *mut core::ffi::c_void), b"sysinfo\0"),
-        SYS_times           => dispatch!(Errno::ENOSYS.as_ret(), b"times_nosys\0"),
+        SYS_gettimeofday => dispatch!(
+            sys_gettimeofday(a0 as *mut core::ffi::c_void, a1 as *mut core::ffi::c_void),
+            b"gettimeofday\0"
+        ),
+        SYS_getrlimit => dispatch!(
+            sys_getrlimit(a0 as i32, a1 as *mut core::ffi::c_void),
+            b"getrlimit\0"
+        ),
+        SYS_sysinfo => dispatch!(sys_sysinfo(a0 as *mut core::ffi::c_void), b"sysinfo\0"),
+        SYS_times => dispatch!(Errno::ENOSYS.as_ret(), b"times_nosys\0"),
 
         // ==================== 用户/组 ====================
-        SYS_getuid          => dispatch!(sys_getuid(), b"getuid\0"),
-        SYS_getgid          => dispatch!(sys_getgid(), b"getgid\0"),
-        SYS_setuid          => dispatch!(sys_setuid(a0 as u32), b"setuid\0"),
-        SYS_setgid          => dispatch!(sys_setgid(a0 as u32), b"setgid\0"),
-        SYS_geteuid         => dispatch!(sys_geteuid(), b"geteuid\0"),
-        SYS_getegid         => dispatch!(sys_getegid(), b"getegid\0"),
-        SYS_seteuid         => dispatch!(sys_seteuid(a0 as u32), b"seteuid\0"),
-        SYS_setegid         => dispatch!(sys_setegid(a0 as u32), b"setegid\0"),
-        SYS_setreuid        => dispatch!(sys_setreuid(a0 as u32, a1 as u32), b"setreuid\0"),
-        SYS_setregid        => dispatch!(sys_setregid(a0 as u32, a1 as u32), b"setregid\0"),
+        SYS_getuid => dispatch!(sys_getuid(), b"getuid\0"),
+        SYS_getgid => dispatch!(sys_getgid(), b"getgid\0"),
+        SYS_setuid => dispatch!(sys_setuid(a0 as u32), b"setuid\0"),
+        SYS_setgid => dispatch!(sys_setgid(a0 as u32), b"setgid\0"),
+        SYS_geteuid => dispatch!(sys_geteuid(), b"geteuid\0"),
+        SYS_getegid => dispatch!(sys_getegid(), b"getegid\0"),
+        SYS_seteuid => dispatch!(sys_seteuid(a0 as u32), b"seteuid\0"),
+        SYS_setegid => dispatch!(sys_setegid(a0 as u32), b"setegid\0"),
+        SYS_setreuid => dispatch!(sys_setreuid(a0 as u32, a1 as u32), b"setreuid\0"),
+        SYS_setregid => dispatch!(sys_setregid(a0 as u32, a1 as u32), b"setregid\0"),
 
         // ==================== 文件同步/挂载 ====================
-        SYS_sync            => dispatch!(sys_sync(), b"sync\0"),
-        SYS_fsync           => dispatch!(sys_fsync(a0 as i32), b"fsync\0"),
-        SYS_mount           => dispatch!(sys_mount(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char, a2 as *const core::ffi::c_char), b"mount\0"),
-        SYS_umount2          => dispatch!(sys_umount2(a0 as *const core::ffi::c_char, a1 as i32), b"umount2\0"),
+        SYS_sync => dispatch!(sys_sync(), b"sync\0"),
+        SYS_fsync => dispatch!(sys_fsync(a0 as i32), b"fsync\0"),
+        SYS_mount => dispatch!(
+            sys_mount(
+                a0 as *const core::ffi::c_char,
+                a1 as *const core::ffi::c_char,
+                a2 as *const core::ffi::c_char
+            ),
+            b"mount\0"
+        ),
+        SYS_umount2 => dispatch!(
+            sys_umount2(a0 as *const core::ffi::c_char, a1 as i32),
+            b"umount2\0"
+        ),
 
-        SYS_time            => dispatch!(sys_time(a0 as *mut u64), b"time\0"),
-        SYS_clock_gettime   => dispatch!(sys_clock_gettime(a0 as i32, a1 as *mut core::ffi::c_void), b"clock_gettime\0"),
-        SYS_exit_group      => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
-        SYS_tgkill          => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
+        SYS_time => dispatch!(sys_time(a0 as *mut u64), b"time\0"),
+        SYS_clock_gettime => dispatch!(
+            sys_clock_gettime(a0 as i32, a1 as *mut core::ffi::c_void),
+            b"clock_gettime\0"
+        ),
+        SYS_exit_group => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
+        SYS_tgkill => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
 
         // ==================== Credo 私有 syscall (400+) ====================
-        SYS_CREDO_LOGIN             => dispatch!(sys_auth_login(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"credo_login\0"),
-        SYS_CREDO_LOGOUT            => dispatch!(sys_auth_logout(), b"credo_logout\0"),
-        SYS_CREDO_CREATE_IDENTITY   => dispatch!(sys_auth_create(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char, a2 as u8), b"credo_create\0"),
-        SYS_CREDO_DELETE_IDENTITY   => dispatch!(sys_auth_delete(a0), b"credo_delete\0"),
-        SYS_CREDO_IDENTITY_INFO     => dispatch!(sys_auth_info(a0), b"credo_info\0"),
-        SYS_CREDO_CHANGE_PASSWORD   => dispatch!(sys_auth_changepw(a0 as *const core::ffi::c_char, a1 as *const core::ffi::c_char), b"credo_chpw\0"),
-        SYS_CREDO_VERIFY_PASSWORD   => dispatch!(sys_auth_verify(a0 as *const core::ffi::c_char), b"credo_verify\0"),
-        SYS_CREDO_CREATE_FIRST      => dispatch!(sys_auth_create_first(a0 as *const core::ffi::c_char), b"credo_first\0"),
-        SYS_CREDO_GRANT             => dispatch!(sys_auth_grant(a0, a1, a2 as u16, a3), b"credo_grant\0"),
-        SYS_CREDO_REVOKE            => dispatch!(sys_auth_revoke(a0, a1, a2 as u16, a3), b"credo_revoke\0"),
-        SYS_CREDO_CHECK_CAP         => dispatch!(sys_auth_check_cap(a0, a1 as u16, a2), b"credo_checkcap\0"),
-        SYS_CREDO_GET_CAPS          => dispatch!(sys_auth_get_caps(a0, a1 as u16), b"credo_getcaps\0"),
-        SYS_CREDO_GET_PWM           => dispatch!(sys_pwm_get(), b"credo_getpwm\0"),
-        SYS_CREDO_SET_PWM           => dispatch!(sys_pwm_set(a0), b"credo_setpwm\0"),
+        SYS_CREDO_LOGIN => dispatch!(
+            sys_auth_login(
+                a0 as *const core::ffi::c_char,
+                a1 as *const core::ffi::c_char
+            ),
+            b"credo_login\0"
+        ),
+        SYS_CREDO_LOGOUT => dispatch!(sys_auth_logout(), b"credo_logout\0"),
+        SYS_CREDO_CREATE_IDENTITY => dispatch!(
+            sys_auth_create(
+                a0 as *const core::ffi::c_char,
+                a1 as *const core::ffi::c_char,
+                a2 as u8
+            ),
+            b"credo_create\0"
+        ),
+        SYS_CREDO_DELETE_IDENTITY => dispatch!(sys_auth_delete(a0), b"credo_delete\0"),
+        SYS_CREDO_IDENTITY_INFO => dispatch!(sys_auth_info(a0), b"credo_info\0"),
+        SYS_CREDO_CHANGE_PASSWORD => dispatch!(
+            sys_auth_changepw(
+                a0 as *const core::ffi::c_char,
+                a1 as *const core::ffi::c_char
+            ),
+            b"credo_chpw\0"
+        ),
+        SYS_CREDO_VERIFY_PASSWORD => dispatch!(
+            sys_auth_verify(a0 as *const core::ffi::c_char),
+            b"credo_verify\0"
+        ),
+        SYS_CREDO_CREATE_FIRST => dispatch!(
+            sys_auth_create_first(a0 as *const core::ffi::c_char),
+            b"credo_first\0"
+        ),
+        SYS_CREDO_GRANT => dispatch!(sys_auth_grant(a0, a1, a2 as u16, a3), b"credo_grant\0"),
+        SYS_CREDO_REVOKE => dispatch!(sys_auth_revoke(a0, a1, a2 as u16, a3), b"credo_revoke\0"),
+        SYS_CREDO_CHECK_CAP => {
+            dispatch!(sys_auth_check_cap(a0, a1 as u16, a2), b"credo_checkcap\0")
+        }
+        SYS_CREDO_GET_CAPS => dispatch!(sys_auth_get_caps(a0, a1 as u16), b"credo_getcaps\0"),
+        SYS_CREDO_GET_PWM => dispatch!(sys_pwm_get(), b"credo_getpwm\0"),
+        SYS_CREDO_SET_PWM => dispatch!(sys_pwm_set(a0), b"credo_setpwm\0"),
 
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_LIST      => dispatch!(sys_disk_list(a0 as *mut u64, a1 as u32), b"credo_disklist\0"),
+        SYS_CREDO_DISK_LIST => dispatch!(
+            sys_disk_list(a0 as *mut u64, a1 as u32),
+            b"credo_disklist\0"
+        ),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_INFO      => dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"credo_diskinfo\0"),
+        SYS_CREDO_DISK_INFO => {
+            dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"credo_diskinfo\0")
+        }
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_FORMAT    => dispatch!(sys_disk_format(a0 as u32, a1 as *const core::ffi::c_char), b"credo_diskfmt\0"),
+        SYS_CREDO_DISK_FORMAT => dispatch!(
+            sys_disk_format(a0 as u32, a1 as *const core::ffi::c_char),
+            b"credo_diskfmt\0"
+        ),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_PARTITION => dispatch!(sys_disk_partition(a0 as u32, a1), b"credo_diskpart\0"),
+        SYS_CREDO_DISK_PARTITION => {
+            dispatch!(sys_disk_partition(a0 as u32, a1), b"credo_diskpart\0")
+        }
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_INSTALL   => dispatch!(sys_boot_install(a0 as u32), b"credo_diskinst\0"),
+        SYS_CREDO_DISK_INSTALL => dispatch!(sys_boot_install(a0 as u32), b"credo_diskinst\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_FAT_FORMAT     => dispatch!(sys_fat_format(a0 as u32), b"credo_fatfmt\0"),
+        SYS_CREDO_FAT_FORMAT => dispatch!(sys_fat_format(a0 as u32), b"credo_fatfmt\0"),
 
         #[cfg(feature = "kernel_test")]
-        SYS_CREDO_DISK_LIST | SYS_CREDO_DISK_INFO | SYS_CREDO_DISK_FORMAT |
-        SYS_CREDO_DISK_PARTITION | SYS_CREDO_DISK_INSTALL | SYS_CREDO_FAT_FORMAT =>
-            dispatch!(Errno::ENOSYS.as_ret(), b"credo_disk_nosys\0"),
+        SYS_CREDO_DISK_LIST
+        | SYS_CREDO_DISK_INFO
+        | SYS_CREDO_DISK_FORMAT
+        | SYS_CREDO_DISK_PARTITION
+        | SYS_CREDO_DISK_INSTALL
+        | SYS_CREDO_FAT_FORMAT => dispatch!(Errno::ENOSYS.as_ret(), b"credo_disk_nosys\0"),
 
-        SYS_CREDO_PROC_LIST     => dispatch!(sys_proc_list(a0 as *mut u8, a1 as u32), b"credo_proclist\0"),
-        SYS_CREDO_PROC_SETPRI   => dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"credo_procpri\0"),
-        SYS_CREDO_PROC_SLEEP    => {
+        SYS_CREDO_PROC_LIST => {
+            dispatch!(sys_proc_list(a0 as *mut u8, a1 as u32), b"credo_proclist\0")
+        }
+        SYS_CREDO_PROC_SETPRI => {
+            dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"credo_procpri\0")
+        }
+        SYS_CREDO_PROC_SLEEP => {
             let ms = a0;
             let ns = ms * 1_000_000;
             dispatch!(sys_nanosleep(ns, a1), b"credo_procsleep\0")
-        },
-        SYS_CREDO_GETHOSTNAME   => dispatch!(sys_gethostname(a0 as *mut core::ffi::c_char, a1), b"credo_gethost\0"),
-        SYS_CREDO_SETHOSTNAME   => dispatch!(sys_sethostname(a0 as *const core::ffi::c_char, a1), b"credo_sethost\0"),
-        SYS_CREDO_BOOT_CHECK    => dispatch!(sys_boot_check(a0 as i32), b"credo_bootchk\0"),
-        SYS_CREDO_REBOOT        => dispatch!(sys_reboot(a0 as i32), b"credo_reboot\0"),
-        SYS_CREDO_HOTPLUG_STATUS => dispatch!(sys_hotplug_status(a0 as *mut u8, a1 as u32), b"credo_hotplug_status\0"),
-        SYS_CREDO_PROC_CPUTIME   => dispatch!(sys_credo_proc_cputime(a0 as u32), b"credo_cputime\0"),
+        }
+        SYS_CREDO_GETHOSTNAME => dispatch!(
+            sys_gethostname(a0 as *mut core::ffi::c_char, a1),
+            b"credo_gethost\0"
+        ),
+        SYS_CREDO_SETHOSTNAME => dispatch!(
+            sys_sethostname(a0 as *const core::ffi::c_char, a1),
+            b"credo_sethost\0"
+        ),
+        SYS_CREDO_BOOT_CHECK => dispatch!(sys_boot_check(a0 as i32), b"credo_bootchk\0"),
+        SYS_CREDO_REBOOT => dispatch!(sys_reboot(a0 as i32), b"credo_reboot\0"),
+        SYS_CREDO_HOTPLUG_STATUS => dispatch!(
+            sys_hotplug_status(a0 as *mut u8, a1 as u32),
+            b"credo_hotplug_status\0"
+        ),
+        SYS_CREDO_PROC_CPUTIME => dispatch!(sys_credo_proc_cputime(a0 as u32), b"credo_cputime\0"),
 
         // ==================== 帧缓冲设备 ====================
-        SYS_FB_OPEN         => dispatch!(sys_fb_open(a0, a1), b"fb_open\0"),
-        SYS_FB_MMAP         => dispatch!(sys_fb_mmap(a0, a1, a2), b"fb_mmap\0"),
-        SYS_FB_RELEASE      => dispatch!(sys_fb_release(a0), b"fb_release\0"),
+        SYS_FB_OPEN => dispatch!(sys_fb_open(a0, a1), b"fb_open\0"),
+        SYS_FB_MMAP => dispatch!(sys_fb_mmap(a0, a1, a2), b"fb_mmap\0"),
+        SYS_FB_RELEASE => dispatch!(sys_fb_release(a0), b"fb_release\0"),
 
         _ => Errno::ENOSYS.as_ret(),
     }
@@ -300,19 +462,43 @@ pub unsafe extern "C" fn syscall_register(_num: u64, _handler: SyscallHandler) {
 // ============================================================================
 
 unsafe fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
-    if buf.is_null() || count == 0 { return Errno::EINVAL.as_ret(); }
-    if !validate_user_buf(buf as u64, count) { return Errno::EFAULT.as_ret(); }
-    if fd == 1 || fd == 2 { return Errno::EBADF.as_ret(); }
+    if buf.is_null() || count == 0 {
+        return Errno::EINVAL.as_ret();
+    }
+    if !validate_user_buf(buf as u64, count) {
+        return Errno::EFAULT.as_ret();
+    }
+    if fd == 1 || fd == 2 {
+        return Errno::EBADF.as_ret();
+    }
     if fd == 0 {
         #[cfg(not(feature = "kernel_test"))]
         {
-            extern "C" { fn serial_has_data(com: i32) -> bool; fn serial_getc(com: i32) -> i32; }
+            extern "C" {
+                fn serial_has_data(com: i32) -> bool;
+                fn serial_getc(com: i32) -> i32;
+            }
             #[cfg(target_arch = "x86_64")]
             {
-                extern "C" { fn keyboard_has_data() -> bool; fn keyboard_get_char() -> i32; }
-                if keyboard_has_data() { let c = keyboard_get_char(); if c > 0 { *buf = c as u8; return 1; } }
+                extern "C" {
+                    fn keyboard_has_data() -> bool;
+                    fn keyboard_get_char() -> i32;
+                }
+                if keyboard_has_data() {
+                    let c = keyboard_get_char();
+                    if c > 0 {
+                        *buf = c as u8;
+                        return 1;
+                    }
+                }
             }
-            if serial_has_data(0) { let c = serial_getc(0); if c > 0 { *buf = c as u8; return 1; } }
+            if serial_has_data(0) {
+                let c = serial_getc(0);
+                if c > 0 {
+                    *buf = c as u8;
+                    return 1;
+                }
+            }
         }
         return 0;
     }
@@ -320,8 +506,12 @@ unsafe fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
 }
 
 unsafe fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
-    if buf.is_null() || count == 0 { return Errno::EINVAL.as_ret(); }
-    if !validate_user_buf(buf as u64, count) { return Errno::EFAULT.as_ret(); }
+    if buf.is_null() || count == 0 {
+        return Errno::EINVAL.as_ret();
+    }
+    if !validate_user_buf(buf as u64, count) {
+        return Errno::EFAULT.as_ret();
+    }
     if fd == 1 || fd == 2 {
         if count > 0 {
             let data = unsafe { core::slice::from_raw_parts(buf, count as usize) };
@@ -333,27 +523,55 @@ unsafe fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
 }
 
 unsafe fn sys_open(path: *const core::ffi::c_char, flags: i32, _mode: i32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_open(path, flags as u32, pwm) as i64
 }
 
 unsafe fn sys_close(fd: i32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     crate::kernel::fs::vfs::ffi::vfs_close(fd as u32) as i64
 }
 
 unsafe fn sys_stat(path: *const core::ffi::c_char, st_buf: *mut core::ffi::c_void) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
-    if st_buf.is_null() || !validate_user_buf(st_buf as u64, core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
+    if st_buf.is_null()
+        || !validate_user_buf(
+            st_buf as u64,
+            core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64,
+        )
+    {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
-    crate::kernel::fs::vfs::ffi::vfs_stat(path, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwm) as i64
+    crate::kernel::fs::vfs::ffi::vfs_stat(
+        path,
+        st_buf as *mut crate::kernel::fs::vfs::types::VfsStat,
+        pwm,
+    ) as i64
 }
 
 unsafe fn sys_fstat(fd: i32, st_buf: *mut core::ffi::c_void) -> i64 {
-    if st_buf.is_null() || !validate_user_buf(st_buf as u64, core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64) { return Errno::EFAULT.as_ret(); }
+    if st_buf.is_null()
+        || !validate_user_buf(
+            st_buf as u64,
+            core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64,
+        )
+    {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
-    crate::kernel::fs::vfs::ffi::vfs_fstat(fd as u32, st_buf as *mut crate::kernel::fs::vfs::types::VfsStat, pwm) as i64
+    crate::kernel::fs::vfs::ffi::vfs_fstat(
+        fd as u32,
+        st_buf as *mut crate::kernel::fs::vfs::types::VfsStat,
+        pwm,
+    ) as i64
 }
 
 unsafe fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
@@ -361,7 +579,10 @@ unsafe fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
 }
 
 unsafe fn sys_getdents(fd: i32, buf: *mut core::ffi::c_void, _count: u64) -> i64 {
-    crate::kernel::fs::vfs::ffi::vfs_readdir(fd as u32, buf as *mut crate::kernel::fs::vfs::types::VfsDirEntry) as i64
+    crate::kernel::fs::vfs::ffi::vfs_readdir(
+        fd as u32,
+        buf as *mut crate::kernel::fs::vfs::types::VfsDirEntry,
+    ) as i64
 }
 
 // ============================================================================
@@ -369,38 +590,54 @@ unsafe fn sys_getdents(fd: i32, buf: *mut core::ffi::c_void, _count: u64) -> i64
 // ============================================================================
 
 unsafe fn sys_getcwd(buf: *mut core::ffi::c_char, size: u64) -> i64 {
-    if buf.is_null() || size == 0 { return Errno::EINVAL.as_ret(); }
-    if !validate_user_buf(buf as u64, size) { return Errno::EFAULT.as_ret(); }
+    if buf.is_null() || size == 0 {
+        return Errno::EINVAL.as_ret();
+    }
+    if !validate_user_buf(buf as u64, size) {
+        return Errno::EFAULT.as_ret();
+    }
     crate::kernel::fs::vfs::ffi::vfs_get_cwd(buf, size as u32) as i64
 }
 
 unsafe fn sys_chdir(path: *const core::ffi::c_char) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     crate::kernel::fs::vfs::ffi::vfs_set_cwd(path);
     0
 }
 
 unsafe fn sys_mkdir(path: *const core::ffi::c_char, _mode: i32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     let pwm = if pwm == 0 { 0x0020F45A8B978417 } else { pwm };
     crate::kernel::fs::vfs::ffi::vfs_mkdir(path, pwm) as i64
 }
 
 unsafe fn sys_rmdir(path: *const core::ffi::c_char) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_rmdir(path, pwm) as i64
 }
 
 unsafe fn sys_unlink(path: *const core::ffi::c_char) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_unlink(path, pwm) as i64
 }
 
 unsafe fn sys_rename(old: *const core::ffi::c_char, new: *const core::ffi::c_char) -> i64 {
-    if old.is_null() || new.is_null() || !validate_user_ptr(old as u64) || !validate_user_ptr(new as u64) {
+    if old.is_null()
+        || new.is_null()
+        || !validate_user_ptr(old as u64)
+        || !validate_user_ptr(new as u64)
+    {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
@@ -408,11 +645,15 @@ unsafe fn sys_rename(old: *const core::ffi::c_char, new: *const core::ffi::c_cha
 }
 
 unsafe fn sys_access(path: *const core::ffi::c_char, _mode: i32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     let stat_ptr: *mut crate::kernel::fs::vfs::types::VfsStat = &mut core::mem::zeroed();
     let result = crate::kernel::fs::vfs::ffi::vfs_stat(path, stat_ptr, pwm);
-    if result < 0 { return result as i64; }
+    if result < 0 {
+        return result as i64;
+    }
     0
 }
 
@@ -420,9 +661,17 @@ unsafe fn sys_sync() -> i64 {
     crate::kernel::fs::vfs::ffi::vfs_sync() as i64
 }
 
-unsafe fn sys_mount(_source: *const core::ffi::c_char, target: *const core::ffi::c_char, fstype: *const core::ffi::c_char) -> i64 {
-    if target.is_null() || !validate_user_ptr(target as u64) { return Errno::EFAULT.as_ret(); }
-    if fstype.is_null() { return Errno::EINVAL.as_ret(); }
+unsafe fn sys_mount(
+    _source: *const core::ffi::c_char,
+    target: *const core::ffi::c_char,
+    fstype: *const core::ffi::c_char,
+) -> i64 {
+    if target.is_null() || !validate_user_ptr(target as u64) {
+        return Errno::EFAULT.as_ret();
+    }
+    if fstype.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
     crate::kernel::fs::vfs::ffi::vfs_mount(target, fstype) as i64
 }
 
@@ -448,11 +697,17 @@ const PRIO_PROCESS: i32 = 0;
 
 fn nice_to_priority(nice: i32) -> crate::kernel::proc::types::ProcessPriority {
     let clamped = nice.clamp(-20, 19);
-    if clamped < -10 { crate::kernel::proc::types::ProcessPriority::RealTime }
-    else if clamped < 0 { crate::kernel::proc::types::ProcessPriority::High }
-    else if clamped < 10 { crate::kernel::proc::types::ProcessPriority::Normal }
-    else if clamped < 19 { crate::kernel::proc::types::ProcessPriority::Low }
-    else { crate::kernel::proc::types::ProcessPriority::Idle }
+    if clamped < -10 {
+        crate::kernel::proc::types::ProcessPriority::RealTime
+    } else if clamped < 0 {
+        crate::kernel::proc::types::ProcessPriority::High
+    } else if clamped < 10 {
+        crate::kernel::proc::types::ProcessPriority::Normal
+    } else if clamped < 19 {
+        crate::kernel::proc::types::ProcessPriority::Low
+    } else {
+        crate::kernel::proc::types::ProcessPriority::Idle
+    }
 }
 
 fn priority_to_nice(p: crate::kernel::proc::types::ProcessPriority) -> i32 {
@@ -474,7 +729,9 @@ unsafe fn sys_nice(inc: i32) -> i64 {
 }
 
 unsafe fn sys_getpriority(which: i32, who: u32) -> i64 {
-    if which != PRIO_PROCESS { return Errno::EINVAL.as_ret(); }
+    if which != PRIO_PROCESS {
+        return Errno::EINVAL.as_ret();
+    }
     let pid = if who == 0 {
         crate::kernel::proc::ffi::process_get_current_pid()
     } else {
@@ -490,7 +747,9 @@ unsafe fn sys_getpriority(which: i32, who: u32) -> i64 {
 }
 
 unsafe fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
-    if which != PRIO_PROCESS { return Errno::EINVAL.as_ret(); }
+    if which != PRIO_PROCESS {
+        return Errno::EINVAL.as_ret();
+    }
     let clamped = prio.clamp(-20, 19);
     let pid = if who == 0 {
         crate::kernel::proc::ffi::process_get_current_pid()
@@ -511,17 +770,31 @@ unsafe fn sys_fork() -> i64 {
     crate::kernel::proc::ffi::sys_fork() as i64
 }
 
-unsafe fn sys_execve(path: *const core::ffi::c_char, argv: *const *const u8, _envp: *const *const u8) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+unsafe fn sys_execve(
+    path: *const core::ffi::c_char,
+    argv: *const *const u8,
+    _envp: *const *const u8,
+) -> i64 {
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let mut argc: u32 = 0;
     if !argv.is_null() {
-        if !validate_user_ptr(argv as u64) { return Errno::EFAULT.as_ret(); }
+        if !validate_user_ptr(argv as u64) {
+            return Errno::EFAULT.as_ret();
+        }
         let mut p = argv;
         loop {
-            if !validate_user_ptr(p as u64) { return Errno::EFAULT.as_ret(); }
+            if !validate_user_ptr(p as u64) {
+                return Errno::EFAULT.as_ret();
+            }
             let entry = core::ptr::read_volatile(p);
-            if entry.is_null() { break; }
-            if !validate_user_ptr(entry as u64) { return Errno::EFAULT.as_ret(); }
+            if entry.is_null() {
+                break;
+            }
+            if !validate_user_ptr(entry as u64) {
+                return Errno::EFAULT.as_ret();
+            }
             argc += 1;
             p = p.add(1);
         }
@@ -529,11 +802,8 @@ unsafe fn sys_execve(path: *const core::ffi::c_char, argv: *const *const u8, _en
 
     let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::fs::vfs::types::VfsStat>::uninit();
     let current_pwm = crate::kernel::credo::session::get_current_pwm();
-    let stat_result = crate::kernel::fs::vfs::ffi::vfs_stat_internal(
-        path,
-        stat_buf.as_mut_ptr(),
-        current_pwm,
-    );
+    let stat_result =
+        crate::kernel::fs::vfs::ffi::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
     if stat_result == 0 {
         let st = stat_buf.assume_init();
         if (st.perm & 0o4000) != 0 && st.owner_pwm != 0 {
@@ -542,7 +812,11 @@ unsafe fn sys_execve(path: *const core::ffi::c_char, argv: *const *const u8, _en
     }
 
     let result = crate::kernel::proc::ffi::proc_exec_replace(path, argv, argc);
-    if result < 0 { Errno::ENOENT.as_ret() } else { 0 }
+    if result < 0 {
+        Errno::ENOENT.as_ret()
+    } else {
+        0
+    }
 }
 
 unsafe fn sys_exit(status: i32) -> i64 {
@@ -646,30 +920,44 @@ unsafe fn sys_setregid(rgid: u32, egid: u32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_pipe(fds: *mut i32) -> i64 {
-    if fds.is_null() || !validate_user_buf(fds as u64, 8) { return Errno::EFAULT.as_ret(); }
+    if fds.is_null() || !validate_user_buf(fds as u64, 8) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 6, 0x01) {
         return Errno::EACCES.as_ret();
     }
     let mut pipefd: [i32; 2] = [0; 2];
     let result = crate::kernel::ipc::pipe::ipc_pipe_create(pipefd.as_mut_ptr());
-    if result < 0 { return Errno::EBUSY.as_ret(); }
-    if pipefd[0] < 0 || pipefd[1] < 0 { return Errno::EBUSY.as_ret(); }
+    if result < 0 {
+        return Errno::EBUSY.as_ret();
+    }
+    if pipefd[0] < 0 || pipefd[1] < 0 {
+        return Errno::EBUSY.as_ret();
+    }
     *fds = pipefd[0];
     *fds.offset(1) = pipefd[1];
     0
 }
 
 unsafe fn sys_dup(oldfd: i32) -> i64 {
-    if oldfd < 0 { return Errno::EBADF.as_ret(); }
+    if oldfd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     crate::kernel::fs::vfs::ffi::vfs_dup(oldfd as u32) as i64
 }
 
 unsafe fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
-    if oldfd < 0 || newfd < 0 { return Errno::EBADF.as_ret(); }
-    if oldfd == newfd { return newfd as i64; }
+    if oldfd < 0 || newfd < 0 {
+        return Errno::EBADF.as_ret();
+    }
+    if oldfd == newfd {
+        return newfd as i64;
+    }
     let result = crate::kernel::fs::vfs::ffi::vfs_dup2(oldfd as u32, newfd as u32);
-    if result < 0 { return Errno::EBADF.as_ret(); }
+    if result < 0 {
+        return Errno::EBADF.as_ret();
+    }
     result as i64
 }
 
@@ -706,16 +994,22 @@ unsafe fn sys_brk(addr: u64) -> i64 {
     if addr > current {
         let extra = addr - current;
         let pages = extra.div_ceil(4096);
-        extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+        extern "C" {
+            fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+        }
         let ptr = pmm_alloc_pages(pages);
-        if ptr.is_null() { return Errno::ENOMEM.as_ret(); }
+        if ptr.is_null() {
+            return Errno::ENOMEM.as_ret();
+        }
     }
     BRK.store(addr, core::sync::atomic::Ordering::SeqCst);
     addr as i64
 }
 
 unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
-    if size == 0 { return Errno::EINVAL.as_ret(); }
+    if size == 0 {
+        return Errno::EINVAL.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 7, 0x01) {
         return Errno::EACCES.as_ret();
@@ -724,10 +1018,16 @@ unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
     let mm = match crate::kernel::mm::vma::get_current_mm() {
         Some(m) => m,
         None => {
-            extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+            extern "C" {
+                fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+            }
             let pages = size.div_ceil(4096);
             let ptr = pmm_alloc_pages(pages);
-            return if ptr.is_null() { Errno::ENOMEM.as_ret() } else { ptr as i64 };
+            return if ptr.is_null() {
+                Errno::ENOMEM.as_ret()
+            } else {
+                ptr as i64
+            };
         }
     };
 
@@ -738,12 +1038,16 @@ unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
 }
 
 unsafe fn sys_munmap(addr: u64, size: u64) -> i64 {
-    if addr == 0 || size == 0 { return Errno::EINVAL.as_ret(); }
+    if addr == 0 || size == 0 {
+        return Errno::EINVAL.as_ret();
+    }
 
     let mm = match crate::kernel::mm::vma::get_current_mm() {
         Some(m) => m,
         None => {
-            extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+            extern "C" {
+                fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
+            }
             let pages = size.div_ceil(4096);
             pmm_free_pages(addr as *mut core::ffi::c_void, pages);
             return 0;
@@ -761,7 +1065,9 @@ unsafe fn sys_munmap(addr: u64, size: u64) -> i64 {
 // ============================================================================
 
 unsafe fn sys_uname(buf: *mut core::ffi::c_void) -> i64 {
-    if buf.is_null() || !validate_user_buf(buf as u64, 390) { return Errno::EFAULT.as_ret(); }
+    if buf.is_null() || !validate_user_buf(buf as u64, 390) {
+        return Errno::EFAULT.as_ret();
+    }
     #[repr(C)]
     struct Utsname {
         sysname: [u8; 65],
@@ -783,8 +1089,14 @@ unsafe fn sys_uname(buf: *mut core::ffi::c_void) -> i64 {
         release: str65(b"0.1.0"),
         version: str65(b"Credo POSIX Kernel"),
         machine: {
-            #[cfg(target_arch = "x86_64")] { str65(b"x86_64") }
-            #[cfg(target_arch = "aarch64")] { str65(b"aarch64") }
+            #[cfg(target_arch = "x86_64")]
+            {
+                str65(b"x86_64")
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                str65(b"aarch64")
+            }
         },
         domainname: [0u8; 65],
     };
@@ -799,8 +1111,12 @@ unsafe fn sys_uname(buf: *mut core::ffi::c_void) -> i64 {
 // ============================================================================
 
 unsafe fn sys_time(buf: *mut u64) -> i64 {
-    if buf.is_null() { return Errno::EINVAL.as_ret(); }
-    extern "C" { fn timer_get_ticks() -> u64; }
+    if buf.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
+    extern "C" {
+        fn timer_get_ticks() -> u64;
+    }
     let ticks = timer_get_ticks();
     *buf = ticks;
     ticks as i64
@@ -816,85 +1132,137 @@ unsafe fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
     if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 2, 0x01) {
         return Errno::EACCES.as_ret();
     }
-    extern "C" { fn lwip_socket(domain: i32, sock_type: i32, protocol: i32) -> i32; }
+    extern "C" {
+        fn lwip_socket(domain: i32, sock_type: i32, protocol: i32) -> i32;
+    }
     lwip_socket(domain, sock_type, protocol) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
-    extern "C" { fn lwip_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
+    extern "C" {
+        fn lwip_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
+    }
     lwip_bind(sockfd, addr as *const u8, addrlen) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_listen(sockfd: i32, backlog: i32) -> i64 {
-    extern "C" { fn lwip_listen(sockfd: i32, backlog: i32) -> i32; }
+    extern "C" {
+        fn lwip_listen(sockfd: i32, backlog: i32) -> i32;
+    }
     lwip_listen(sockfd, backlog) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    extern "C" { fn lwip_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32; }
+    extern "C" {
+        fn lwip_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
+    }
     lwip_accept(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
-    extern "C" { fn lwip_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32; }
+    extern "C" {
+        fn lwip_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
+    }
     lwip_connect(sockfd, addr as *const u8, addrlen) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_sendto(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
-    extern "C" { fn lwip_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32; }
+    extern "C" {
+        fn lwip_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32;
+    }
     lwip_send(sockfd, buf as *const u8, len, flags) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_recvfrom(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
-    extern "C" { fn lwip_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32; }
+    extern "C" {
+        fn lwip_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32;
+    }
     lwip_recv(sockfd, buf as *mut u8, len, flags) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_shutdown(sockfd: i32, _how: i32) -> i64 {
-    extern "C" { fn lwip_close(sockfd: i32) -> i32; }
+    extern "C" {
+        fn lwip_close(sockfd: i32) -> i32;
+    }
     lwip_close(sockfd) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_sendmsg(sockfd: i32, msg: u64, flags: i32) -> i64 {
-    extern "C" { fn lwip_sendmsg(sockfd: i32, msg: *const core::ffi::c_void, flags: i32) -> i64; }
+    extern "C" {
+        fn lwip_sendmsg(sockfd: i32, msg: *const core::ffi::c_void, flags: i32) -> i64;
+    }
     lwip_sendmsg(sockfd, msg as *const core::ffi::c_void, flags)
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_recvmsg(sockfd: i32, msg: u64, flags: i32) -> i64 {
-    extern "C" { fn lwip_recvmsg(sockfd: i32, msg: *mut core::ffi::c_void, flags: i32) -> i64; }
+    extern "C" {
+        fn lwip_recvmsg(sockfd: i32, msg: *mut core::ffi::c_void, flags: i32) -> i64;
+    }
     lwip_recvmsg(sockfd, msg as *mut core::ffi::c_void, flags)
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_setsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u32) -> i64 {
-    extern "C" { fn lwip_setsockopt(sockfd: i32, level: i32, optname: i32, optval: *const core::ffi::c_void, optlen: u32) -> i32; }
-    lwip_setsockopt(sockfd, level, optname, optval as *const core::ffi::c_void, optlen) as i64
+    extern "C" {
+        fn lwip_setsockopt(
+            sockfd: i32,
+            level: i32,
+            optname: i32,
+            optval: *const core::ffi::c_void,
+            optlen: u32,
+        ) -> i32;
+    }
+    lwip_setsockopt(
+        sockfd,
+        level,
+        optname,
+        optval as *const core::ffi::c_void,
+        optlen,
+    ) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u64) -> i64 {
-    extern "C" { fn lwip_getsockopt(sockfd: i32, level: i32, optname: i32, optval: *mut core::ffi::c_void, optlen: *mut u32) -> i32; }
-    lwip_getsockopt(sockfd, level, optname, optval as *mut core::ffi::c_void, optlen as *mut u32) as i64
+    extern "C" {
+        fn lwip_getsockopt(
+            sockfd: i32,
+            level: i32,
+            optname: i32,
+            optval: *mut core::ffi::c_void,
+            optlen: *mut u32,
+        ) -> i32;
+    }
+    lwip_getsockopt(
+        sockfd,
+        level,
+        optname,
+        optval as *mut core::ffi::c_void,
+        optlen as *mut u32,
+    ) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_getsockname(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    extern "C" { fn lwip_getsockname(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32; }
+    extern "C" {
+        fn lwip_getsockname(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32;
+    }
     lwip_getsockname(sockfd, addr as *mut core::ffi::c_void, addrlen as *mut u32) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    extern "C" { fn lwip_getpeername(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32; }
+    extern "C" {
+        fn lwip_getpeername(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32;
+    }
     lwip_getpeername(sockfd, addr as *mut core::ffi::c_void, addrlen as *mut u32) as i64
 }
 
@@ -907,7 +1275,10 @@ unsafe fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
 // PWM 认证/权限 (Credo 私有 syscall)
 // ============================================================================
 
-unsafe fn sys_auth_login(password: *const core::ffi::c_char, note: *const core::ffi::c_char) -> i64 {
+unsafe fn sys_auth_login(
+    password: *const core::ffi::c_char,
+    note: *const core::ffi::c_char,
+) -> i64 {
     crate::kernel::credo::ffi::pwm_login(note, password)
 }
 
@@ -916,7 +1287,11 @@ unsafe fn sys_auth_logout() -> i64 {
     0
 }
 
-unsafe fn sys_auth_create(password: *const core::ffi::c_char, note: *const core::ffi::c_char, _level: u8) -> i64 {
+unsafe fn sys_auth_create(
+    password: *const core::ffi::c_char,
+    note: *const core::ffi::c_char,
+    _level: u8,
+) -> i64 {
     let creator = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::credo::ffi::pwm_create(password, note, creator)
 }
@@ -929,7 +1304,10 @@ unsafe fn sys_auth_info(target: u64) -> i64 {
     crate::kernel::credo::ffi::pwm_get_privilege_level(target) as i64
 }
 
-unsafe fn sys_auth_changepw(old_pw: *const core::ffi::c_char, new_pw: *const core::ffi::c_char) -> i64 {
+unsafe fn sys_auth_changepw(
+    old_pw: *const core::ffi::c_char,
+    new_pw: *const core::ffi::c_char,
+) -> i64 {
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::credo::ffi::pwm_change_password(pwm, old_pw, new_pw) as i64
 }
@@ -940,7 +1318,9 @@ unsafe fn sys_auth_verify(password: *const core::ffi::c_char) -> i64 {
 }
 
 unsafe fn sys_auth_create_first(password: *const core::ffi::c_char) -> i64 {
-    if password.is_null() { return Errno::EINVAL.as_ret(); }
+    if password.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
     crate::kernel::credo::ffi::pwm_create_first_identity(password)
 }
 
@@ -953,7 +1333,11 @@ unsafe fn sys_auth_revoke(revoker: u64, target: u64, domain: u16, caps: u64) -> 
 }
 
 unsafe fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
-    if crate::kernel::credo::ffi::pwm_has_capability(pwm, domain, required) { 1 } else { 0 }
+    if crate::kernel::credo::ffi::pwm_has_capability(pwm, domain, required) {
+        1
+    } else {
+        0
+    }
 }
 
 unsafe fn sys_auth_get_caps(pwm: u64, domain: u16) -> i64 {
@@ -974,7 +1358,9 @@ unsafe fn sys_pwm_set(pwm: u64) -> i64 {
 // ============================================================================
 
 unsafe fn sys_gethostname(buf: *mut core::ffi::c_char, size: u64) -> i64 {
-    if buf.is_null() || size == 0 || !validate_user_buf(buf as u64, size) { return Errno::EFAULT.as_ret(); }
+    if buf.is_null() || size == 0 || !validate_user_buf(buf as u64, size) {
+        return Errno::EFAULT.as_ret();
+    }
     let hostname = b"localhost\0";
     let copy_len = hostname.len().min(size as usize - 1);
     core::ptr::copy_nonoverlapping(hostname.as_ptr(), buf as *mut u8, copy_len);
@@ -983,7 +1369,9 @@ unsafe fn sys_gethostname(buf: *mut core::ffi::c_char, size: u64) -> i64 {
 }
 
 unsafe fn sys_sethostname(name: *const core::ffi::c_char, len: u64) -> i64 {
-    if name.is_null() || len == 0 || len > 63 { return Errno::EINVAL.as_ret(); }
+    if name.is_null() || len == 0 || len > 63 {
+        return Errno::EINVAL.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 0, 9) {
         return Errno::EACCES.as_ret();
@@ -997,7 +1385,7 @@ unsafe fn sys_reboot(cmd: i32) -> i64 {
         return Errno::EACCES.as_ret();
     }
     match cmd {
-        0 => { loop {} }
+        0 => loop {},
         1 => {
             #[cfg(target_arch = "x86_64")]
             unsafe {
@@ -1023,7 +1411,11 @@ unsafe fn sys_reboot(cmd: i32) -> i64 {
 unsafe fn sys_boot_check(check_type: i32) -> i64 {
     match check_type {
         0 => {
-            if crate::kernel::credo::ffi::pwm_any_identity_exists() { 1 } else { 0 }
+            if crate::kernel::credo::ffi::pwm_any_identity_exists() {
+                1
+            } else {
+                0
+            }
         }
         _ => -1,
     }
@@ -1035,7 +1427,9 @@ unsafe fn sys_boot_check(check_type: i32) -> i64 {
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
-    if disks.is_null() || max_count == 0 { return Errno::EINVAL.as_ret(); }
+    if disks.is_null() || max_count == 0 {
+        return Errno::EINVAL.as_ret();
+    }
     let count = crate::kernel::driver::block::block_device_count();
     let limit = max_count.min(count as u32);
     for i in 0..limit {
@@ -1046,8 +1440,14 @@ unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
-    if info.is_null() { return Errno::EINVAL.as_ret(); }
-    let present = if crate::kernel::driver::block::hdd_is_present(disk_id as u8) { 1u32 } else { 0u32 };
+    if info.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
+    let present = if crate::kernel::driver::block::hdd_is_present(disk_id as u8) {
+        1u32
+    } else {
+        0u32
+    };
     let sectors = if present != 0 {
         crate::kernel::driver::block::hdd_total_sectors(disk_id as u8) as u32
     } else {
@@ -1055,30 +1455,61 @@ unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     };
     let model_bytes = b"Block Dev";
     let mut model = [0u8; 64];
-    let copy_len = if model_bytes.len() < 63 { model_bytes.len() } else { 63 };
+    let copy_len = if model_bytes.len() < 63 {
+        model_bytes.len()
+    } else {
+        63
+    };
     core::ptr::copy_nonoverlapping(model_bytes.as_ptr(), model.as_mut_ptr(), copy_len);
     #[repr(C)]
     struct UserDiskInfo {
-        disk_id: u32, present: u32, total_sectors: u32, sectors: u32, model: [u8; 64],
+        disk_id: u32,
+        present: u32,
+        total_sectors: u32,
+        sectors: u32,
+        model: [u8; 64],
     }
-    let disk_info = UserDiskInfo { disk_id, present, total_sectors: sectors, sectors, model };
+    let disk_info = UserDiskInfo {
+        disk_id,
+        present,
+        total_sectors: sectors,
+        sectors,
+        model,
+    };
     core::ptr::copy_nonoverlapping(
-        &disk_info as *const UserDiskInfo as *const u8, info, core::mem::size_of::<UserDiskInfo>(),
+        &disk_info as *const UserDiskInfo as *const u8,
+        info,
+        core::mem::size_of::<UserDiskInfo>(),
     );
     0
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_format(disk_id: u32, fstype: *const core::ffi::c_char) -> i64 {
-    if fstype.is_null() { return Errno::EINVAL.as_ret(); }
+    if fstype.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
-    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
-    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) {
+        return Errno::EACCES.as_ret();
+    }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) {
+        return Errno::ENOENT.as_ret();
+    }
     let hvfs_start_lba: u32 = 18432;
     let mut sector_buf = [0u8; 512];
-    sector_buf[0] = 0x48; sector_buf[1] = 0x56; sector_buf[2] = 0x46; sector_buf[3] = 0x53;
-    sector_buf[8] = 0x02; sector_buf[9] = 0x00;
-    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, hvfs_start_lba as u64, &sector_buf) < 0 {
+    sector_buf[0] = 0x48;
+    sector_buf[1] = 0x56;
+    sector_buf[2] = 0x46;
+    sector_buf[3] = 0x53;
+    sector_buf[8] = 0x02;
+    sector_buf[9] = 0x00;
+    if crate::kernel::driver::block::hdd_write_sector(
+        disk_id as u8,
+        hvfs_start_lba as u64,
+        &sector_buf,
+    ) < 0
+    {
         return Errno::EIO.as_ret();
     }
     0
@@ -1086,14 +1517,14 @@ unsafe fn sys_disk_format(disk_id: u32, fstype: *const core::ffi::c_char) -> i64
 
 fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
     buf[offset] = val as u8;
-    buf[offset+1] = (val >> 8) as u8;
-    buf[offset+2] = (val >> 16) as u8;
-    buf[offset+3] = (val >> 24) as u8;
+    buf[offset + 1] = (val >> 8) as u8;
+    buf[offset + 2] = (val >> 16) as u8;
+    buf[offset + 3] = (val >> 24) as u8;
 }
 
 fn write_le16(buf: &mut [u8], offset: usize, val: u16) {
     buf[offset] = val as u8;
-    buf[offset+1] = (val >> 8) as u8;
+    buf[offset + 1] = (val >> 8) as u8;
 }
 
 const BOOT_PART_SECTORS: u32 = 16384;
@@ -1101,10 +1532,18 @@ const BOOT_PART_SECTORS: u32 = 16384;
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
-    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
-    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) {
+        return Errno::EACCES.as_ret();
+    }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) {
+        return Errno::ENOENT.as_ret();
+    }
     let hvfs_start = BOOT_PART_SECTORS;
-    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 { total_sectors - hvfs_start as u64 } else { 0xFFFFFFFFu64 };
+    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
+        total_sectors - hvfs_start as u64
+    } else {
+        0xFFFFFFFFu64
+    };
     let mut mbr = [0u8; 512];
     write_le32(&mut mbr, 446, 0x00000800);
     write_le32(&mut mbr, 450, 0x06FEFFFF);
@@ -1112,29 +1551,50 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
     write_le32(&mut mbr, 462, hvfs_start);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
-    let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
+    let hvfs_len = if hvfs_sectors > 0xFFFFFFFF {
+        0xFFFFFFFFu32
+    } else {
+        hvfs_sectors as u32
+    };
     write_le32(&mut mbr, 470, hvfs_start);
     write_le32(&mut mbr, 474, hvfs_len);
-    mbr[510] = 0x55; mbr[511] = 0xAA;
-    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 { return Errno::EIO.as_ret(); }
+    mbr[510] = 0x55;
+    mbr[511] = 0xAA;
+    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
+        return Errno::EIO.as_ret();
+    }
     0
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_fat_format(disk_id: u32) -> i64 {
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
-    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
-    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) {
+        return Errno::EACCES.as_ret();
+    }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) {
+        return Errno::ENOENT.as_ret();
+    }
     let fat_start_lba: u32 = 2048;
     let total_sectors: u16 = BOOT_PART_SECTORS as u16 - 64;
     let sectors_per_cluster: u8 = 8;
     let reserved_sectors: u16 = 1;
     let num_fats: u8 = 2;
     let root_entries: u16 = 512;
-    let sectors_per_fat: u16 = ((total_sectors as u32 - 1 - 32) / (sectors_per_cluster as u32 * 256 + 2) + 1) as u16;
+    let sectors_per_fat: u16 =
+        ((total_sectors as u32 - 1 - 32) / (sectors_per_cluster as u32 * 256 + 2) + 1) as u16;
     let mut bpb = [0u8; 512];
-    bpb[0] = 0xEB; bpb[1] = 0x3C; bpb[2] = 0x90;
-    bpb[3] = b'A'; bpb[4] = b'N'; bpb[5] = b'T'; bpb[6] = b'X'; bpb[7] = b'B'; bpb[8] = b'O'; bpb[9] = b'O'; bpb[10] = b'T';
+    bpb[0] = 0xEB;
+    bpb[1] = 0x3C;
+    bpb[2] = 0x90;
+    bpb[3] = b'A';
+    bpb[4] = b'N';
+    bpb[5] = b'T';
+    bpb[6] = b'X';
+    bpb[7] = b'B';
+    bpb[8] = b'O';
+    bpb[9] = b'O';
+    bpb[10] = b'T';
     write_le16(&mut bpb, 11, 512);
     bpb[13] = sectors_per_cluster;
     write_le16(&mut bpb, 14, reserved_sectors);
@@ -1143,37 +1603,77 @@ unsafe fn sys_fat_format(disk_id: u32) -> i64 {
     write_le16(&mut bpb, 19, total_sectors);
     bpb[21] = 0xF8;
     write_le16(&mut bpb, 22, sectors_per_fat);
-    bpb[36] = 0x80; bpb[38] = 0x29;
-    bpb[510] = 0x55; bpb[511] = 0xAA;
-    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, fat_start_lba as u64, &bpb) < 0 { return Errno::EIO.as_ret(); }
+    bpb[36] = 0x80;
+    bpb[38] = 0x29;
+    bpb[510] = 0x55;
+    bpb[511] = 0xAA;
+    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, fat_start_lba as u64, &bpb) < 0
+    {
+        return Errno::EIO.as_ret();
+    }
     let fat_begin = fat_start_lba + reserved_sectors as u32;
     let mut fat_sector = [0u8; 512];
-    fat_sector[0] = 0xF8; fat_sector[1] = 0xFF; fat_sector[2] = 0xFF; fat_sector[3] = 0xFF;
+    fat_sector[0] = 0xF8;
+    fat_sector[1] = 0xFF;
+    fat_sector[2] = 0xFF;
+    fat_sector[3] = 0xFF;
     for i in 0..num_fats {
         let lba = fat_begin + i as u32 * sectors_per_fat as u32;
-        if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, lba as u64, &fat_sector) < 0 { return Errno::EIO.as_ret(); }
+        if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, lba as u64, &fat_sector)
+            < 0
+        {
+            return Errno::EIO.as_ret();
+        }
         let zero = [0u8; 512];
-        for s in 1..sectors_per_fat as u32 { if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (lba + s) as u64, &zero) < 0 { return Errno::EIO.as_ret(); } }
+        for s in 1..sectors_per_fat as u32 {
+            if crate::kernel::driver::block::hdd_write_sector(
+                disk_id as u8,
+                (lba + s) as u64,
+                &zero,
+            ) < 0
+            {
+                return Errno::EIO.as_ret();
+            }
+        }
     }
     let root_dir_lba = fat_begin + num_fats as u32 * sectors_per_fat as u32;
     let root_dir_sectors = (root_entries as u32 * 32).div_ceil(512);
     let zero = [0u8; 512];
-    for s in 0..root_dir_sectors { if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (root_dir_lba + s) as u64, &zero) < 0 { return Errno::EIO.as_ret(); } }
+    for s in 0..root_dir_sectors {
+        if crate::kernel::driver::block::hdd_write_sector(
+            disk_id as u8,
+            (root_dir_lba + s) as u64,
+            &zero,
+        ) < 0
+        {
+            return Errno::EIO.as_ret();
+        }
+    }
     0
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
-    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) { return Errno::EACCES.as_ret(); }
+    if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 4, 0) {
+        return Errno::EACCES.as_ret();
+    }
     let stage1 = include_bytes!("../../../build/stage1.bin");
-    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) { return Errno::ENOENT.as_ret(); }
+    if !crate::kernel::driver::block::hdd_is_present(disk_id as u8) {
+        return Errno::ENOENT.as_ret();
+    }
     let mut mbr = [0u8; 512];
-    if crate::kernel::driver::block::hdd_read_sector(disk_id as u8, 0, &mut mbr) < 0 { return Errno::EIO.as_ret(); }
+    if crate::kernel::driver::block::hdd_read_sector(disk_id as u8, 0, &mut mbr) < 0 {
+        return Errno::EIO.as_ret();
+    }
     core::ptr::copy_nonoverlapping(stage1.as_ptr(), mbr.as_mut_ptr(), 440);
     let total_sectors = crate::kernel::driver::block::hdd_total_sectors(disk_id as u8);
     let hvfs_start = BOOT_PART_SECTORS;
-    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 { total_sectors - hvfs_start as u64 } else { 0xFFFFFFFFu64 };
+    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
+        total_sectors - hvfs_start as u64
+    } else {
+        0xFFFFFFFFu64
+    };
     write_le32(&mut mbr, 446, 0x00000800);
     write_le32(&mut mbr, 450, 0x06FEFFFF);
     write_le32(&mut mbr, 454, 64u32);
@@ -1181,11 +1681,21 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     write_le32(&mut mbr, 462, hvfs_start);
     write_le32(&mut mbr, 466, 0x83FEFFFF);
     write_le32(&mut mbr, 470, hvfs_start);
-    let hvfs_len = if hvfs_sectors > 0xFFFFFFFF { 0xFFFFFFFFu32 } else { hvfs_sectors as u32 };
+    let hvfs_len = if hvfs_sectors > 0xFFFFFFFF {
+        0xFFFFFFFFu32
+    } else {
+        hvfs_sectors as u32
+    };
     write_le32(&mut mbr, 474, hvfs_len);
-    mbr[510] = 0x55; mbr[511] = 0xAA;
-    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 { return Errno::EIO.as_ret(); }
-    extern "C" { static _kernel_start: u8; static _kernel_end: u8; }
+    mbr[510] = 0x55;
+    mbr[511] = 0xAA;
+    if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
+        return Errno::EIO.as_ret();
+    }
+    extern "C" {
+        static _kernel_start: u8;
+        static _kernel_end: u8;
+    }
     let kernel_ptr = unsafe { &_kernel_start as *const u8 };
     let kernel_len = {
         let vma_end = unsafe { &_kernel_end as *const u8 as usize };
@@ -1195,20 +1705,34 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     };
     let total_kernel_sectors = kernel_len.div_ceil(512) as u32;
     let max_sectors = 2047u32;
-    let copy_sectors = if total_kernel_sectors > max_sectors { max_sectors } else { total_kernel_sectors };
+    let copy_sectors = if total_kernel_sectors > max_sectors {
+        max_sectors
+    } else {
+        total_kernel_sectors
+    };
     for s in 0..copy_sectors {
         let offset = s as usize * 512;
         let remaining = kernel_len.saturating_sub(offset);
-        if remaining == 0 { break; }
+        if remaining == 0 {
+            break;
+        }
         let n = if remaining < 512 { remaining } else { 512 };
         let mut buf = [0u8; 512];
-        unsafe { core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n); }
-        if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (1 + s) as u64, &buf) < 0 { return Errno::EIO.as_ret(); }
+        unsafe {
+            core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n);
+        }
+        if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, (1 + s) as u64, &buf) < 0 {
+            return Errno::EIO.as_ret();
+        }
     }
     let mut cfg = [0u8; 512];
-    cfg[0] = b'A'; cfg[1] = b'N'; cfg[2] = b'T'; cfg[3] = b'X';
+    cfg[0] = b'A';
+    cfg[1] = b'N';
+    cfg[2] = b'T';
+    cfg[3] = b'X';
     write_le32(&mut cfg, 4, BOOT_PART_SECTORS);
-    cfg[510] = 0x55; cfg[511] = 0xAA;
+    cfg[510] = 0x55;
+    cfg[511] = 0xAA;
     crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 2046, &cfg);
     0
 }
@@ -1219,11 +1743,19 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
 
 #[repr(C)]
 struct ProcListEntry {
-    pid: u32, state: u8, _pad: [u8; 3], pwm: u64, priority: u32, _pad2: u32, name: [u8; 48],
+    pid: u32,
+    state: u8,
+    _pad: [u8; 3],
+    pwm: u64,
+    priority: u32,
+    _pad2: u32,
+    name: [u8; 48],
 }
 
 unsafe fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
-    if buf.is_null() || !validate_user_ptr(buf as u64) { return Errno::EFAULT.as_ret(); }
+    if buf.is_null() || !validate_user_ptr(buf as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let entry_size = core::mem::size_of::<ProcListEntry>() as u32;
     let mut count: i32 = 0;
     let table = &crate::kernel::proc::process::PROCESS_TABLE;
@@ -1288,12 +1820,24 @@ const TIOCGWINSZ: u64 = 0x5413;
 const TCGETS: u64 = 0x5401;
 
 unsafe fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
-    if arg == 0 { return Errno::EINVAL.as_ret(); }
+    if arg == 0 {
+        return Errno::EINVAL.as_ret();
+    }
     match request {
         TIOCGWINSZ => {
             #[repr(C)]
-            struct Winsize { ws_row: u16, ws_col: u16, ws_xpixel: u16, ws_ypixel: u16 }
-            let ws = Winsize { ws_row: 25, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0 };
+            struct Winsize {
+                ws_row: u16,
+                ws_col: u16,
+                ws_xpixel: u16,
+                ws_ypixel: u16,
+            }
+            let ws = Winsize {
+                ws_row: 25,
+                ws_col: 80,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
             let dst = arg as *mut Winsize;
             core::ptr::write_volatile(dst, ws);
             0
@@ -1308,18 +1852,30 @@ unsafe fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
 // ============================================================================
 
 unsafe fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
-    if req == 0 || !validate_user_ptr(req) { return Errno::EINVAL.as_ret(); }
-    #[repr(C)] struct Timespec { tv_sec: i64, tv_nsec: i64 }
+    if req == 0 || !validate_user_ptr(req) {
+        return Errno::EINVAL.as_ret();
+    }
+    #[repr(C)]
+    struct Timespec {
+        tv_sec: i64,
+        tv_nsec: i64,
+    }
     let ts = core::ptr::read_volatile(req as *const Timespec);
     if ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1_000_000_000 {
         return Errno::EINVAL.as_ret();
     }
     let total_ms = ts.tv_sec as u64 * 1000 + ts.tv_nsec as u64 / 1_000_000;
-    if total_ms == 0 { return 0; }
-    extern "C" { fn timer_get_ticks() -> u64; }
+    if total_ms == 0 {
+        return 0;
+    }
+    extern "C" {
+        fn timer_get_ticks() -> u64;
+    }
     let start = timer_get_ticks();
     let target = start + total_ms;
-    while timer_get_ticks() < target { core::hint::spin_loop(); }
+    while timer_get_ticks() < target {
+        core::hint::spin_loop();
+    }
     0
 }
 
@@ -1331,23 +1887,47 @@ const CLOCK_REALTIME: i32 = 0;
 const CLOCK_MONOTONIC: i32 = 1;
 
 unsafe fn sys_gettimeofday(tv: *mut core::ffi::c_void, _tz: *mut core::ffi::c_void) -> i64 {
-    if tv.is_null() { return Errno::EINVAL.as_ret(); }
-    extern "C" { fn timer_get_ticks() -> u64; }
-    #[repr(C)] struct Timeval { tv_sec: i64, tv_usec: i64 }
+    if tv.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
+    extern "C" {
+        fn timer_get_ticks() -> u64;
+    }
+    #[repr(C)]
+    struct Timeval {
+        tv_sec: i64,
+        tv_usec: i64,
+    }
     let ticks = timer_get_ticks();
-    let t = Timeval { tv_sec: (ticks / 1000) as i64, tv_usec: ((ticks % 1000) * 1000) as i64 };
+    let t = Timeval {
+        tv_sec: (ticks / 1000) as i64,
+        tv_usec: ((ticks % 1000) * 1000) as i64,
+    };
     let dst = tv as *mut Timeval;
     core::ptr::write_volatile(dst, t);
     0
 }
 
 unsafe fn sys_clock_gettime(clk_id: i32, tp: *mut core::ffi::c_void) -> i64 {
-    if tp.is_null() { return Errno::EINVAL.as_ret(); }
-    if clk_id != CLOCK_REALTIME && clk_id != CLOCK_MONOTONIC { return Errno::EINVAL.as_ret(); }
-    extern "C" { fn timer_get_ticks() -> u64; }
-    #[repr(C)] struct Timespec { tv_sec: i64, tv_nsec: i64 }
+    if tp.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
+    if clk_id != CLOCK_REALTIME && clk_id != CLOCK_MONOTONIC {
+        return Errno::EINVAL.as_ret();
+    }
+    extern "C" {
+        fn timer_get_ticks() -> u64;
+    }
+    #[repr(C)]
+    struct Timespec {
+        tv_sec: i64,
+        tv_nsec: i64,
+    }
     let ticks = timer_get_ticks();
-    let t = Timespec { tv_sec: (ticks / 1000) as i64, tv_nsec: ((ticks % 1000) * 1000000) as i64 };
+    let t = Timespec {
+        tv_sec: (ticks / 1000) as i64,
+        tv_nsec: ((ticks % 1000) * 1000000) as i64,
+    };
     let dst = tp as *mut Timespec;
     core::ptr::write_volatile(dst, t);
     0
@@ -1361,14 +1941,22 @@ const POLLIN: i16 = 1;
 const POLLOUT: i16 = 4;
 
 unsafe fn sys_poll(fds: *mut core::ffi::c_void, nfds: u32, _timeout: i32) -> i64 {
-    if fds.is_null() || nfds == 0 { return 0; }
+    if fds.is_null() || nfds == 0 {
+        return 0;
+    }
     #[repr(C)]
-    struct PollFd { fd: i32, events: i16, revents: i16 }
+    struct PollFd {
+        fd: i32,
+        events: i16,
+        revents: i16,
+    }
     let mut ready: i32 = 0;
     for i in 0..nfds as usize {
         let pfd = &mut *(fds as *mut PollFd).add(i);
         pfd.revents = 0;
-        if pfd.fd < 0 { continue; }
+        if pfd.fd < 0 {
+            continue;
+        }
         if pfd.events & POLLIN != 0 {
             let fd_table = crate::kernel::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
             if (pfd.fd as usize) < 256 && fd_table[pfd.fd as usize].used {
@@ -1389,7 +1977,9 @@ unsafe fn sys_poll(fds: *mut core::ffi::c_void, nfds: u32, _timeout: i32) -> i64
 // ============================================================================
 
 unsafe fn sys_chmod(path: *const core::ffi::c_char, mode: u32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     crate::kernel::fs::vfs::ffi::vfs_chmod(path, mode as u16, pwm) as i64
 }
@@ -1399,7 +1989,9 @@ unsafe fn sys_fchmod(fd: i32, mode: u32) -> i64 {
 }
 
 unsafe fn sys_chown(path: *const core::ffi::c_char, uid: u32, gid: u32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) { return Errno::EFAULT.as_ret(); }
+    if path.is_null() || !validate_user_ptr(path as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let tbl = crate::kernel::credo::identity::get_table();
     let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
     let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
@@ -1415,15 +2007,23 @@ const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
 
 unsafe fn sys_kill(pid: i32, sig: i32) -> i64 {
-    if pid <= 0 && pid != -1 { return Errno::ESRCH.as_ret(); }
+    if pid <= 0 && pid != -1 {
+        return Errno::ESRCH.as_ret();
+    }
     if sig == 0 {
         let target = crate::kernel::proc::process::PROCESS_TABLE.get(pid as u32);
-        if target.is_some() { 0 } else { Errno::ESRCH.as_ret() }
+        if target.is_some() {
+            0
+        } else {
+            Errno::ESRCH.as_ret()
+        }
     } else if sig == SIGTERM || sig == SIGKILL {
         let target = crate::kernel::proc::process::PROCESS_TABLE.get(pid as u32);
         match target {
             Some(_proc) => {
-                unsafe { crate::kernel::proc::process::PROCESS_TABLE.remove_and_free(pid as u32); }
+                unsafe {
+                    crate::kernel::proc::process::PROCESS_TABLE.remove_and_free(pid as u32);
+                }
                 0
             }
             None => Errno::ESRCH.as_ret(),
@@ -1439,12 +2039,20 @@ unsafe fn sys_kill(pid: i32, sig: i32) -> i64 {
 // 注: HvFS 当前不支持符号链接, 返回 EINVAL 提示调用者此路径非符号链接。
 // ============================================================================
 
-unsafe fn sys_readlink(path: *const core::ffi::c_char, buf: *mut core::ffi::c_char, bufsiz: u64) -> i64 {
-    if path.is_null() || buf.is_null() || bufsiz == 0 { return Errno::EINVAL.as_ret(); }
+unsafe fn sys_readlink(
+    path: *const core::ffi::c_char,
+    buf: *mut core::ffi::c_char,
+    bufsiz: u64,
+) -> i64 {
+    if path.is_null() || buf.is_null() || bufsiz == 0 {
+        return Errno::EINVAL.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     let mut st_buf: crate::kernel::fs::vfs::types::VfsStat = core::mem::zeroed();
     let result = crate::kernel::fs::vfs::ffi::vfs_stat(path, &mut st_buf, pwm);
-    if result < 0 { return Errno::ENOENT.as_ret(); }
+    if result < 0 {
+        return Errno::ENOENT.as_ret();
+    }
     Errno::EINVAL.as_ret()
 }
 
@@ -1453,7 +2061,9 @@ unsafe fn sys_readlink(path: *const core::ffi::c_char, buf: *mut core::ffi::c_ch
 // ============================================================================
 
 unsafe fn sys_umount2(target: *const core::ffi::c_char, _flags: i32) -> i64 {
-    if target.is_null() || !validate_user_ptr(target as u64) { return Errno::EFAULT.as_ret(); }
+    if target.is_null() || !validate_user_ptr(target as u64) {
+        return Errno::EFAULT.as_ret();
+    }
     let pwm = crate::kernel::credo::ffi::pwm_get_current();
     if !crate::kernel::credo::ffi::pwm_has_capability(pwm, 0, 0x01) {
         return Errno::EACCES.as_ret();
@@ -1466,32 +2076,62 @@ unsafe fn sys_umount2(target: *const core::ffi::c_char, _flags: i32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_getrlimit(_resource: i32, rlim: *mut core::ffi::c_void) -> i64 {
-    if rlim.is_null() { return Errno::EINVAL.as_ret(); }
-    #[repr(C)] struct Rlimit { rlim_cur: u64, rlim_max: u64 }
-    let r = Rlimit { rlim_cur: u64::MAX, rlim_max: u64::MAX };
+    if rlim.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
+    #[repr(C)]
+    struct Rlimit {
+        rlim_cur: u64,
+        rlim_max: u64,
+    }
+    let r = Rlimit {
+        rlim_cur: u64::MAX,
+        rlim_max: u64::MAX,
+    };
     let dst = rlim as *mut Rlimit;
     core::ptr::write_volatile(dst, r);
     0
 }
 
 unsafe fn sys_sysinfo(info: *mut core::ffi::c_void) -> i64 {
-    if info.is_null() { return Errno::EINVAL.as_ret(); }
+    if info.is_null() {
+        return Errno::EINVAL.as_ret();
+    }
     #[repr(C)]
     struct SysInfo {
-        uptime: i64, loads: [u64; 3], totalram: u64, freeram: u64,
-        sharedram: u64, bufferram: u64, totalswap: u64, freeswap: u64,
-        procs: u16, _pad: [u8; 6], totalhigh: u64, freehigh: u64, mem_unit: u32,
+        uptime: i64,
+        loads: [u64; 3],
+        totalram: u64,
+        freeram: u64,
+        sharedram: u64,
+        bufferram: u64,
+        totalswap: u64,
+        freeswap: u64,
+        procs: u16,
+        _pad: [u8; 6],
+        totalhigh: u64,
+        freehigh: u64,
+        mem_unit: u32,
     }
     let si = SysInfo {
         uptime: {
-            extern "C" { fn timer_get_ticks() -> u64; }
+            extern "C" {
+                fn timer_get_ticks() -> u64;
+            }
             (timer_get_ticks() / 1000) as i64
         },
         loads: [0, 0, 0],
         totalram: 128 * 1024 * 1024,
         freeram: 97 * 1024 * 1024,
-        sharedram: 0, bufferram: 0, totalswap: 0, freeswap: 0,
-        procs: 1, _pad: [0u8; 6], totalhigh: 0, freehigh: 0, mem_unit: 1,
+        sharedram: 0,
+        bufferram: 0,
+        totalswap: 0,
+        freeswap: 0,
+        procs: 1,
+        _pad: [0u8; 6],
+        totalhigh: 0,
+        freehigh: 0,
+        mem_unit: 1,
     };
     let dst = info as *mut SysInfo;
     core::ptr::write_volatile(dst, si);
@@ -1506,17 +2146,33 @@ unsafe fn sys_truncate(path: *const core::ffi::c_char, length: i64) -> i64 {
     if path.is_null() || !validate_user_ptr(path as u64) || length < 0 {
         return Errno::EINVAL.as_ret();
     }
-    let fd = crate::kernel::fs::vfs::ffi::vfs_open(path, 0o2, crate::kernel::credo::ffi::pwm_get_current());
-    if fd < 0 { return Errno::ENOENT.as_ret(); }
+    let fd = crate::kernel::fs::vfs::ffi::vfs_open(
+        path,
+        0o2,
+        crate::kernel::credo::ffi::pwm_get_current(),
+    );
+    if fd < 0 {
+        return Errno::ENOENT.as_ret();
+    }
     let result = crate::kernel::fs::vfs::ffi::vfs_truncate_internal(fd as u32, length as u64);
     crate::kernel::fs::vfs::ffi::vfs_close(fd as u32);
-    if result < 0 { Errno::EIO.as_ret() } else { 0 }
+    if result < 0 {
+        Errno::EIO.as_ret()
+    } else {
+        0
+    }
 }
 
 unsafe fn sys_ftruncate(fd: i32, length: i64) -> i64 {
-    if fd < 0 || length < 0 { return Errno::EINVAL.as_ret(); }
+    if fd < 0 || length < 0 {
+        return Errno::EINVAL.as_ret();
+    }
     let result = crate::kernel::fs::vfs::ffi::vfs_truncate_internal(fd as u32, length as u64);
-    if result < 0 { Errno::EIO.as_ret() } else { 0 }
+    if result < 0 {
+        Errno::EIO.as_ret()
+    } else {
+        0
+    }
 }
 
 // ============================================================================
@@ -1534,7 +2190,9 @@ unsafe fn sys_umask(mask: u32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_fsync(fd: i32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     crate::kernel::fs::vfs::ffi::vfs_sync();
     0
 }
@@ -1544,7 +2202,9 @@ unsafe fn sys_fsync(fd: i32) -> i64 {
 // ============================================================================
 
 unsafe fn sys_getpgid(pid: i32) -> i64 {
-    if pid < 0 { return Errno::EINVAL.as_ret(); }
+    if pid < 0 {
+        return Errno::EINVAL.as_ret();
+    }
     let _target_pid = if pid == 0 {
         crate::kernel::proc::ffi::process_get_current_pid()
     } else {
@@ -1584,7 +2244,9 @@ static SIGNAL_HANDLERS: Mutex<[u64; 32]> = Mutex::new([SIG_DFL; 32]);
 static SIGMASK: Mutex<u64> = Mutex::new(0);
 
 unsafe fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
-    if !(1..=31).contains(&signum) { return Errno::EINVAL.as_ret(); }
+    if !(1..=31).contains(&signum) {
+        return Errno::EINVAL.as_ret();
+    }
     let mut handlers = SIGNAL_HANDLERS.lock();
     if oact != 0 {
         let dst = oact as *mut u64;
@@ -1624,8 +2286,12 @@ unsafe fn sys_rt_sigreturn() -> i64 {
 // ============================================================================
 
 unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
-    if buf.is_null() || buf_size == 0 { return Errno::EINVAL.as_ret(); }
-    if !validate_user_buf(buf as u64, buf_size as u64) { return Errno::EFAULT.as_ret(); }
+    if buf.is_null() || buf_size == 0 {
+        return Errno::EINVAL.as_ret();
+    }
+    if !validate_user_buf(buf as u64, buf_size as u64) {
+        return Errno::EFAULT.as_ret();
+    }
 
     let status = crate::kernel::driver::hotplug::HOTPLUG_MANAGER.status();
 
@@ -1633,7 +2299,10 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
 
     // 写入头部: enabled(u8) + slot_count(u32) + blk_device_count(u32)
     let header: [u8; 16] = [
-        status.enabled as u8, 0, 0, 0,
+        status.enabled as u8,
+        0,
+        0,
+        0,
         (status.slot_count & 0xFF) as u8,
         ((status.slot_count >> 8) & 0xFF) as u8,
         ((status.slot_count >> 16) & 0xFF) as u8,
@@ -1642,21 +2311,32 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
         ((status.blk_device_count >> 8) & 0xFF) as u8,
         ((status.blk_device_count >> 16) & 0xFF) as u8,
         ((status.blk_device_count >> 24) & 0xFF) as u8,
-        0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
     ];
-    if offset + 16 > buf_size { return offset as i64; }
+    if offset + 16 > buf_size {
+        return offset as i64;
+    }
     core::ptr::copy_nonoverlapping(header.as_ptr(), buf.add(offset as usize), 16);
     offset += 16;
 
     // 写入槽位信息 (每槽 8 字节)
     let slot_size: u32 = 8;
     for slot in &status.slots {
-        if offset + slot_size > buf_size { break; }
+        if offset + slot_size > buf_size {
+            break;
+        }
         let info: [u8; 8] = [
-            slot.bus, slot.device, slot.function, slot.slot_number,
+            slot.bus,
+            slot.device,
+            slot.function,
+            slot.slot_number,
             slot.presence as u8,
             ((slot.surprise_capable as u8) << 1) | (slot.hotplug_capable as u8),
-            0, 0,
+            0,
+            0,
         ];
         core::ptr::copy_nonoverlapping(info.as_ptr(), buf.add(offset as usize), slot_size as usize);
         offset += slot_size;
@@ -1665,14 +2345,26 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     // 写入块设备状态 (每设备 16 字节)
     let dev_size: u32 = 16;
     for dev in &status.blk_devices {
-        if offset + dev_size > buf_size { break; }
+        if offset + dev_size > buf_size {
+            break;
+        }
         let info: [u8; 16] = [
-            dev.drive, dev.present as u8, dev.removing as u8, 0,
+            dev.drive,
+            dev.present as u8,
+            dev.removing as u8,
+            0,
             (dev.io_count & 0xFF) as u8,
             ((dev.io_count >> 8) & 0xFF) as u8,
             ((dev.io_count >> 16) & 0xFF) as u8,
             ((dev.io_count >> 24) & 0xFF) as u8,
-            0, 0, 0, 0, 0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
         ];
         core::ptr::copy_nonoverlapping(info.as_ptr(), buf.add(offset as usize), dev_size as usize);
         offset += dev_size;
@@ -1691,9 +2383,16 @@ unsafe fn sys_credo_proc_cputime(pid: u32) -> i64 {
     use crate::kernel::proc::scheduler_ex::SCHEDULER_EX;
     match PROCESS_TABLE.get(target_pid) {
         Some(_) => {
-            let current = SCHEDULER_EX.current.load(core::sync::atomic::Ordering::Acquire) as *mut crate::kernel::proc::thread::Thread;
-            if current.is_null() { return -1; }
-            let cputime = (*current).cpu_time.load(core::sync::atomic::Ordering::Acquire);
+            let current = SCHEDULER_EX
+                .current
+                .load(core::sync::atomic::Ordering::Acquire)
+                as *mut crate::kernel::proc::thread::Thread;
+            if current.is_null() {
+                return -1;
+            }
+            let cputime = (*current)
+                .cpu_time
+                .load(core::sync::atomic::Ordering::Acquire);
             cputime as i64
         }
         None => Errno::ESRCH.as_ret(),
@@ -1730,15 +2429,22 @@ unsafe fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
         return Errno::EFAULT.as_ret();
     }
 
-    let fb_addr = crate::kernel::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
+    let fb_addr =
+        crate::kernel::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
     if fb_addr == 0 {
         return Errno::ENODEV.as_ret();
     }
 
-    let fb_size = crate::kernel::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
+    let fb_size =
+        crate::kernel::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
 
     let (width, height, pitch, bpp) = match crate::kernel::driver::display::get_framebuffer() {
-        Some(fb) => (fb.width(), fb.height(), fb.pitch(), fb.format().bits_per_pixel() as u8),
+        Some(fb) => (
+            fb.width(),
+            fb.height(),
+            fb.pitch(),
+            fb.format().bits_per_pixel() as u8,
+        ),
         None => return Errno::ENODEV.as_ret(),
     };
 
@@ -1765,17 +2471,20 @@ unsafe fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    let fb_phys = crate::kernel::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
+    let fb_phys =
+        crate::kernel::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
     if fb_phys == 0 {
         return Errno::ENODEV.as_ret();
     }
 
-    let fb_total = crate::kernel::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
+    let fb_total =
+        crate::kernel::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
     if size > fb_total {
         return Errno::EINVAL.as_ret();
     }
 
-    let cr3 = crate::kernel::proc::user_proc::user_entry_cr3.load(core::sync::atomic::Ordering::SeqCst);
+    let cr3 =
+        crate::kernel::proc::user_proc::user_entry_cr3.load(core::sync::atomic::Ordering::SeqCst);
     if cr3 == 0 {
         return Errno::ENODEV.as_ret();
     }

@@ -193,11 +193,11 @@ pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 {
     loop {
         let ch = *s;
         *d = ch;
-        
+
         if ch == 0 {
             break;
         }
-        
+
         d = d.add(1);
         s = s.add(1);
     }
@@ -232,11 +232,11 @@ pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mu
     while remaining > 0 {
         let ch = *s;
         *d = ch;
-        
+
         if ch == 0 {
-            break;  // 遇到终止符停止
+            break; // 遇到终止符停止
         }
-        
+
         d = d.add(1);
         s = s.add(1);
         remaining -= 1;
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
     }
 
     let ret = dest;
-    
+
     // 找到 dest 的末尾
     let mut d = dest;
     while *d != 0 {
@@ -284,11 +284,11 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
     loop {
         let ch = *s;
         *d = ch;
-        
+
         if ch == 0 {
             break;
         }
-        
+
         d = d.add(1);
         s = s.add(1);
     }
@@ -319,15 +319,15 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
 
     loop {
         let ch = *p;
-        
+
         if ch == target {
             return p as *mut i8;
         }
-        
+
         if ch == 0 {
-            return core::ptr::null_mut();  // 未找到
+            return core::ptr::null_mut(); // 未找到
         }
-        
+
         p = p.add(1);
     }
 }
@@ -356,15 +356,15 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
 
     loop {
         let ch = *p;
-        
+
         if ch == target {
             last = p;
         }
-        
+
         if ch == 0 {
             break;
         }
-        
+
         p = p.add(1);
     }
 
@@ -404,9 +404,9 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 
     loop {
         let h_ch = *h;
-        
+
         if h_ch == 0 {
-            return core::ptr::null_mut();  // 到达 haystack 末尾
+            return core::ptr::null_mut(); // 到达 haystack 末尾
         }
 
         // 尝试从当前位置匹配 needle
@@ -415,15 +415,15 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 
         loop {
             let n_ch = *n;
-            
+
             if n_ch == 0 {
-                return h as *mut i8;  // 匹配成功
+                return h as *mut i8; // 匹配成功
             }
-            
+
             if *h_temp != n_ch {
-                break;  // 不匹配，继续下一个位置
+                break; // 不匹配，继续下一个位置
             }
-            
+
             h_temp = h_temp.add(1);
             n = n.add(1);
         }
@@ -452,7 +452,11 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 /// - 区域不能重叠（否则应使用 memmove）
 /// - dest 有足够空间
 #[no_mangle]
-pub unsafe extern "C" fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void {
+pub unsafe extern "C" fn memcpy(
+    dest: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    n: usize,
+) -> *mut core::ffi::c_void {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
     }
@@ -483,7 +487,11 @@ pub unsafe extern "C" fn memcpy(dest: *mut core::ffi::c_void, src: *const core::
 /// # Safety
 ///
 /// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions may overlap.
-pub unsafe extern "C" fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void {
+pub unsafe extern "C" fn memmove(
+    dest: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    n: usize,
+) -> *mut core::ffi::c_void {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
     }
@@ -523,7 +531,11 @@ pub unsafe extern "C" fn memmove(dest: *mut core::ffi::c_void, src: *const core:
 /// # Safety
 ///
 /// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions must not overlap.
-pub unsafe extern "C" fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
+pub unsafe extern "C" fn memset(
+    s: *mut core::ffi::c_void,
+    c: i32,
+    n: usize,
+) -> *mut core::ffi::c_void {
     if s.is_null() || n == 0 {
         return s;
     }
@@ -555,12 +567,16 @@ pub unsafe extern "C" fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> 
 /// # Safety
 ///
 /// `src` is a valid pointer to at least `n` bytes of readable memory.
-pub unsafe extern "C" fn memset_optimized(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
+pub unsafe extern "C" fn memset_optimized(
+    s: *mut core::ffi::c_void,
+    c: i32,
+    n: usize,
+) -> *mut core::ffi::c_void {
     if s.is_null() || n == 0 {
         return s;
     }
 
-    let val = (c & 0xFF) as u64;  // 转换为 u64 以适配 rax 寄存器
+    let val = (c & 0xFF) as u64; // 转换为 u64 以适配 rax 寄存器
     let dest = s as *mut u8;
 
     // 使用内联汇编调用 REP STOSB
@@ -591,7 +607,11 @@ pub unsafe extern "C" fn memset_optimized(s: *mut core::ffi::c_void, c: i32, n: 
 /// # Safety
 ///
 /// `dst` is a valid pointer to at least `n` bytes of writable memory. `value` fits in `u8`.
-pub unsafe extern "C" fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32 {
+pub unsafe extern "C" fn memcmp(
+    s1: *const core::ffi::c_void,
+    s2: *const core::ffi::c_void,
+    n: usize,
+) -> i32 {
     if n == 0 {
         return 0;
     }
@@ -632,7 +652,11 @@ pub unsafe extern "C" fn memcmp(s1: *const core::ffi::c_void, s2: *const core::f
 /// # Safety
 ///
 /// `src` is a valid pointer to a null-terminated C string.
-pub unsafe extern "C" fn memchr(s: *const core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
+pub unsafe extern "C" fn memchr(
+    s: *const core::ffi::c_void,
+    c: i32,
+    n: usize,
+) -> *mut core::ffi::c_void {
     if s.is_null() || n == 0 {
         return core::ptr::null_mut();
     }
@@ -750,16 +774,13 @@ mod tests {
     fn test_strcmp_operations() {
         unsafe {
             // 相等
-            assert_eq!(strcmp(c"test".as_ptr(), 
-                            c"test".as_ptr()), 0);
-            
+            assert_eq!(strcmp(c"test".as_ptr(), c"test".as_ptr()), 0);
+
             // 小于
-            assert!(strcmp(c"abc".as_ptr(), 
-                         c"abd".as_ptr()) < 0);
-            
+            assert!(strcmp(c"abc".as_ptr(), c"abd".as_ptr()) < 0);
+
             // 大于
-            assert!(strcmp(c"xyz".as_ptr(), 
-                         c"xya".as_ptr()) > 0);
+            assert!(strcmp(c"xyz".as_ptr(), c"xya".as_ptr()) > 0);
         }
     }
 
@@ -767,12 +788,10 @@ mod tests {
     fn test_strncmp_limit() {
         unsafe {
             // 前3个字符相等
-            assert_eq!(strncmp(c"abcdef".as_ptr(), 
-                             c"abcxyz".as_ptr(), 3), 0);
-            
+            assert_eq!(strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 3), 0);
+
             // 前4个字符不等
-            assert!(strncmp(c"abcdef".as_ptr(), 
-                           c"abcxyz".as_ptr(), 4) < 0);
+            assert!(strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 4) < 0);
         }
     }
 
@@ -780,19 +799,19 @@ mod tests {
     fn test_strcpy_and_strncpy() {
         unsafe {
             let mut buffer = [0i8; 20];
-            
+
             // 测试 strcpy
             strcpy(buffer.as_mut_ptr(), c"Hello World".as_ptr());
             assert_eq!(strlen(buffer.as_ptr()), 11);
-            
+
             // 测试 strncpy
             let mut buffer2 = [0i8; 10];
             strncpy(buffer2.as_mut_ptr(), c"Testing".as_ptr(), 5);
-            assert_eq!(strlen(buffer2.as_ptr()), 5);  // 只拷贝了5个字符
-            
+            assert_eq!(strlen(buffer2.as_ptr()), 5); // 只拷贝了5个字符
+
             // 测试 strncpy 的填充行为
             strncpy(buffer2.as_mut_ptr(), c"Hi".as_ptr(), 5);
-            assert_eq!(buffer2[2], 0);  // 第3个位置应该是 '\0'
+            assert_eq!(buffer2[2], 0); // 第3个位置应该是 '\0'
         }
     }
 
@@ -802,8 +821,8 @@ mod tests {
             let mut buffer = [0i8; 30];
             strcpy(buffer.as_mut_ptr(), c"Hello ".as_ptr());
             strcat(buffer.as_mut_ptr(), c"World!".as_ptr());
-            
-            assert_eq!(strlen(buffer.as_ptr()), 12);  // "Hello World!"
+
+            assert_eq!(strlen(buffer.as_ptr()), 12); // "Hello World!"
         }
     }
 
@@ -811,12 +830,12 @@ mod tests {
     fn test_strchr_and_strrchr() {
         unsafe {
             let s = b"Hello World\0";
-            
+
             // strchr - 查找 'o' 的第一次出现
             let result = strchr(s.as_ptr() as *const i8, 'o' as i32);
             assert!(!result.is_null());
             assert_eq!(*result, 'o' as i8);
-            
+
             // strrchr - 查找 'o' 的最后一次出现
             let result = strrchr(s.as_ptr() as *const i8, 'o' as i32);
             assert!(!result.is_null());
@@ -828,21 +847,18 @@ mod tests {
     fn test_strstr() {
         unsafe {
             let haystack = b"The quick brown fox jumps over the lazy dog\0";
-            
+
             // 找到子串
-            let result = strstr(haystack.as_ptr() as *const i8, 
-                               c"brown fox".as_ptr());
+            let result = strstr(haystack.as_ptr() as *const i8, c"brown fox".as_ptr());
             assert!(!result.is_null());
-            
+
             // 未找到子串
-            let result = strstr(haystack.as_ptr() as *const i8, 
-                               c"cat".as_ptr());
+            let result = strstr(haystack.as_ptr() as *const i8, c"cat".as_ptr());
             assert!(result.is_null());
-            
+
             // 空子串
-            let result = strstr(haystack.as_ptr() as *const i8, 
-                               c"".as_ptr());
-            assert!(!result.is_null());  // 应该返回原字符串
+            let result = strstr(haystack.as_ptr() as *const i8, c"".as_ptr());
+            assert!(!result.is_null()); // 应该返回原字符串
         }
     }
 
@@ -851,17 +867,23 @@ mod tests {
         unsafe {
             let mut dest = [0u8; 10];
             let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-            
+
             // 测试 memcpy
-            memcpy(dest.as_mut_ptr() as *mut core::ffi::c_void, 
-                  src.as_ptr() as *const core::ffi::c_void, 10);
+            memcpy(
+                dest.as_mut_ptr() as *mut core::ffi::c_void,
+                src.as_ptr() as *const core::ffi::c_void,
+                10,
+            );
             assert_eq!(dest, src);
-            
+
             // 测试 memmove（重叠区域）
             let mut overlap = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
             // 将 overlap[2..] 移动到 overlap[0..]
-            memmove(overlap.as_mut_ptr() as *mut core::ffi::c_void,
-                   overlap.as_ptr().add(2) as *const core::ffi::c_void, 8);
+            memmove(
+                overlap.as_mut_ptr() as *mut core::ffi::c_void,
+                overlap.as_ptr().add(2) as *const core::ffi::c_void,
+                8,
+            );
             assert_eq!(overlap, [3, 4, 5, 6, 7, 8, 9, 10, 9, 10]);
         }
     }
@@ -870,11 +892,11 @@ mod tests {
     fn test_memset_operations() {
         unsafe {
             let mut buffer = [0xABu8; 20];
-            
+
             // 测试 memset
             memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0x00, 20);
             assert_eq!(buffer, [0u8; 20]);
-            
+
             // 测试 memset with specific value
             memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0xFF, 10);
             for i in 0..10 {
@@ -892,14 +914,25 @@ mod tests {
             let a = [1, 2, 3, 4, 5];
             let b = [1, 2, 3, 4, 5];
             let c = [1, 2, 3, 4, 6];
-            
+
             // 相等
-            assert_eq!(memcmp(a.as_ptr() as *const core::ffi::c_void, 
-                            b.as_ptr() as *const core::ffi::c_void, 5), 0);
-            
+            assert_eq!(
+                memcmp(
+                    a.as_ptr() as *const core::ffi::c_void,
+                    b.as_ptr() as *const core::ffi::c_void,
+                    5
+                ),
+                0
+            );
+
             // 小于
-            assert!(memcmp(a.as_ptr() as *const core::ffi::c_void, 
-                          c.as_ptr() as *const core::ffi::c_void, 5) < 0);
+            assert!(
+                memcmp(
+                    a.as_ptr() as *const core::ffi::c_void,
+                    c.as_ptr() as *const core::ffi::c_void,
+                    5
+                ) < 0
+            );
         }
     }
 
@@ -907,13 +940,13 @@ mod tests {
     fn test_memchr() {
         unsafe {
             let data = [1, 2, 3, 4, 5, 3, 7, 8];
-            
+
             // 找到第一个出现的 3
             let result = memchr(data.as_ptr() as *const core::ffi::c_void, 3, 8);
             assert!(!result.is_null());
             let offset = (result as *const u8).offset_from(data.as_ptr()) as usize;
-            assert_eq!(offset, 2);  // 第一个 3 在索引 2
-            
+            assert_eq!(offset, 2); // 第一个 3 在索引 2
+
             // 未找到
             let result = memchr(data.as_ptr() as *const core::ffi::c_void, 9, 8);
             assert!(result.is_null());
@@ -925,7 +958,7 @@ mod tests {
         unsafe {
             let mut secret = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
             secure_zero(secret.as_mut_ptr() as *mut core::ffi::c_void, 6);
-            
+
             for byte in secret.iter() {
                 assert_eq!(*byte, 0);
             }
@@ -940,14 +973,20 @@ mod tests {
         let copied = safe_memcpy(&mut dest, &src);
         assert_eq!(copied, 5);
         assert_eq!(&dest[..5], &src[..]);
-        
+
         // 测试 safe_memset
         safe_memset(&mut dest, 0xFF, None);
         assert_eq!(dest, [0xFF; 10]);
-        
+
         // 测试 safe_memcmp
-        assert_eq!(safe_memcmp(&[1, 2, 3], &[1, 2, 3]), core::cmp::Ordering::Equal);
-        assert_eq!(safe_memcmp(&[1, 2, 3], &[1, 2, 4]), core::cmp::Ordering::Less);
+        assert_eq!(
+            safe_memcmp(&[1, 2, 3], &[1, 2, 3]),
+            core::cmp::Ordering::Equal
+        );
+        assert_eq!(
+            safe_memcmp(&[1, 2, 3], &[1, 2, 4]),
+            core::cmp::Ordering::Less
+        );
     }
 }
 

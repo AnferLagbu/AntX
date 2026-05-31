@@ -17,9 +17,9 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 
-use super::types::*;
-use super::pipe;
 use super::msgq;
+use super::pipe;
+use super::types::*;
 
 // ============================================================================
 // 异步管道实现
@@ -65,23 +65,23 @@ impl Future for AsyncPipeWriter {
         // 获取数据引用
         let data = match &self.data {
             Some(d) => d,
-            None => return Poll::Ready(Err(-1)),  // 未设置数据
+            None => return Poll::Ready(Err(-1)), // 未设置数据
         };
 
         if self.written >= data.len() {
-            return Poll::Ready(Ok(self.written));  // 已写完
+            return Poll::Ready(Ok(self.written)); // 已写完
         }
 
         unsafe {
             // 尝试写入剩余数据
             let remaining = &data[self.written..];
-            
+
             // 调用同步写入接口 (非阻塞模式)
             match pipe::pipe_write_safe(
                 &mut *core::ptr::addr_of_mut!(IPC_NAMESPACE),
                 self.pipe_id,
                 remaining.as_ptr(),
-                remaining.len()
+                remaining.len(),
             ) {
                 Ok(n) if n > 0 => {
                     self.written += n;
@@ -92,12 +92,12 @@ impl Future for AsyncPipeWriter {
                         cx.waker().wake_by_ref();
                         Poll::Pending
                     }
-                },
+                }
                 Ok(0) => {
                     // 管道满或无写端，挂起等待
-                    cx.waker().clone();  // 保存 waker 以便唤醒
+                    cx.waker().clone(); // 保存 waker 以便唤醒
                     Poll::Pending
-                },
+                }
                 Err(e) => Poll::Ready(Err(e)),
             }
         }
@@ -137,30 +137,30 @@ impl Future for AsyncPipeReader {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let buffer = match &mut self.buffer {
             Some(b) => b,
-            None => return Poll::Ready(Err(-1)),  // 未设置缓冲区
+            None => return Poll::Ready(Err(-1)), // 未设置缓冲区
         };
 
         unsafe {
             // 尝试读取数据
             let mut bytes_read: u64 = 0;
-            
+
             match pipe::pipe_read_safe(
                 &mut *core::ptr::addr_of_mut!(IPC_NAMESPACE),
                 self.pipe_id,
                 buffer.as_mut_ptr(),
                 buffer.len(),
-                Some(&mut bytes_read)
+                Some(&mut bytes_read),
             ) {
                 Ok(_) if bytes_read > 0 => {
                     buffer.truncate(bytes_read as usize);
                     let result = buffer.clone();
                     Poll::Ready(Ok(result))
-                },
+                }
                 Ok(_) => {
                     // 管道空或无读端，挂起等待
                     cx.waker().clone();
                     Poll::Pending
-                },
+                }
                 Err(e) => Poll::Ready(Err(e)),
             }
         }
@@ -192,12 +192,12 @@ impl AsyncMsgSender {
     pub fn send(&mut self, msg_type: u64, data: &[u8], sender_pid: u32) -> &mut Self {
         let mut msg = Message::new();
         msg.msg_type = msg_type;
-        
+
         if !data.is_empty() && data.len() <= MSG_MAX_SIZE {
             msg.data[..data.len()].copy_from_slice(data);
             msg.size = data.len() as u64;
         }
-        
+
         msg.sender_pid = sender_pid;
         self.message = Some(msg);
         self
@@ -209,10 +209,10 @@ impl Future for AsyncMsgSender {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        
+
         let msg = match &this.message {
             Some(m) => m,
-            None => return Poll::Ready(Err(-1)),  // 未设置消息
+            None => return Poll::Ready(Err(-1)), // 未设置消息
         };
 
         unsafe {
@@ -223,13 +223,14 @@ impl Future for AsyncMsgSender {
                 msg.msg_type,
                 Some(&msg.data),
                 msg.size as usize,
-                msg.sender_pid
+                msg.sender_pid,
             ) {
                 Ok(_) => Poll::Ready(Ok(())),
-                Err(e) if e == -3 => {  // 队列满
+                Err(e) if e == -3 => {
+                    // 队列满
                     cx.waker().clone();
                     Poll::Pending
-                },
+                }
                 Err(e) => Poll::Ready(Err(e)),
             }
         }
@@ -268,23 +269,24 @@ impl Future for AsyncMsgReceiver {
 
         unsafe {
             let mut recv_msg = Message::new();
-            
+
             match msgq::msgq_recv_safe(
                 &mut *core::ptr::addr_of_mut!(IPC_NAMESPACE),
                 this.msgq_id,
                 this.filter_type.as_mut(),
                 Some(&mut recv_msg.data),
-                Some(&mut recv_msg.size)
+                Some(&mut recv_msg.size),
             ) {
                 Ok(_) => {
                     // 填充消息元信息
                     recv_msg.msg_type = this.filter_type.unwrap_or(0);
                     Poll::Ready(Ok(recv_msg))
-                },
-                Err(e) if e == -4 => {  // 队列空
+                }
+                Err(e) if e == -4 => {
+                    // 队列空
                     cx.waker().clone();
                     Poll::Pending
-                },
+                }
                 Err(e) => Poll::Ready(Err(e)),
             }
         }
@@ -341,7 +343,7 @@ where
         if self.timeout_ms > 0 {
             let elapsed = rdtsc() - self.start_time.unwrap();
             if elapsed >= ms_to_ticks(self.timeout_ms) {
-                return Poll::Ready(Err(-1));  // 超时
+                return Poll::Ready(Err(-1)); // 超时
             }
         }
 
@@ -358,7 +360,7 @@ fn rdtsc() -> u64 {
 
 /// 将毫秒转换为 TSC ticks (近似值)
 fn ms_to_ticks(ms: u64) -> u64 {
-    const APPROX_CPU_FREQ_MHZ: u64 = 1000;  // 1 GHz
+    const APPROX_CPU_FREQ_MHZ: u64 = 1000; // 1 GHz
     ms * APPROX_CPU_FREQ_MHZ * 1000
 }
 
@@ -399,7 +401,7 @@ mod tests {
     fn test_wait_for_condition_immediate() {
         // 测试条件立即满足的情况
         let future = wait_for_condition(|| true, 1000);
-        
+
         // 在同步上下文中无法直接 .await，这里只测试构造
         // 实际测试需要在 async runtime 中进行
         let _ = future;
@@ -409,14 +411,14 @@ mod tests {
     fn test_rdtsc_monotonic() {
         let t1 = rdtsc();
         let t2 = rdtsc();
-        
+
         // TSC 应该是单调递增的
         assert!(t2 >= t1);
     }
 
     #[test]
     fn test_ms_to_ticks_conversion() {
-        assert_eq!(ms_to_ticks(1), 1_000_000);  // 1ms = 1M ticks @ 1GHz
-        assert_eq!(ms_to_ticks(100), 100_000_000);  // 100ms = 100M ticks
+        assert_eq!(ms_to_ticks(1), 1_000_000); // 1ms = 1M ticks @ 1GHz
+        assert_eq!(ms_to_ticks(100), 100_000_000); // 100ms = 100M ticks
     }
 }

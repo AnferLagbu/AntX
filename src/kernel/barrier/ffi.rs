@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use super::types::*;
 use super::domain::RecoveryDomain;
+use super::types::*;
 
 static RECOVERY_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 static BOOT_FINGERPRINTS_CHECKED: AtomicBool = AtomicBool::new(false);
@@ -57,7 +57,11 @@ pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64)
     let tick = TICK_COUNT.load(Ordering::SeqCst);
     let mgr = super::RECOVERY_MANAGER.lock();
     let rollbacks = mgr.cascade_rollback(domain_id, tick, crash_fingerprint);
-    if rollbacks > 0 { 0 } else { -1 }
+    if rollbacks > 0 {
+        0
+    } else {
+        -1
+    }
 }
 
 #[no_mangle]
@@ -93,14 +97,17 @@ pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
         let mut h: u64 = 5381;
         let msg = super::PANIC_MSG.lock();
         for &b in msg.iter() {
-            if b == 0 { break; }
+            if b == 0 {
+                break;
+            }
             h = h.wrapping_mul(33).wrapping_add(b as u64);
         }
         h
     };
 
     let fault_rip: u64 = super::CRASH_RIP.load(Ordering::SeqCst);
-    if let Some(target_id) = mgr.locate_domain_by_addr(fault_rip)
+    if let Some(target_id) = mgr
+        .locate_domain_by_addr(fault_rip)
         .or_else(|| mgr.locate_domain_by_panic_msg())
     {
         let rollbacks = mgr.cascade_rollback(target_id, tick, fingerprint);
@@ -137,11 +144,19 @@ pub extern "C" fn recovery_trigger_panic() -> ! {
 
 #[no_mangle]
 pub extern "C" fn recovery_was_attempted() -> i32 {
-    if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) { 1 } else { 0 }
+    if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) {
+        1
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn recovery_domain_set_cbs(domain_id: u64, capture_fn: Option<unsafe extern "C" fn()>, rollback_fn: Option<unsafe extern "C" fn() -> bool>) -> i32 {
+pub extern "C" fn recovery_domain_set_cbs(
+    domain_id: u64,
+    capture_fn: Option<unsafe extern "C" fn()>,
+    rollback_fn: Option<unsafe extern "C" fn() -> bool>,
+) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         *dom.capture_cb.lock() = capture_fn;
@@ -205,7 +220,11 @@ pub extern "C" fn recovery_domain_dep_count(domain_id: u64) -> i32 {
 pub extern "C" fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
-        if dom.add_addr_range(start, end) { 0 } else { -1 }
+        if dom.add_addr_range(start, end) {
+            0
+        } else {
+            -1
+        }
     } else {
         -1
     }

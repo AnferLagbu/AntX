@@ -1,38 +1,38 @@
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
-pub mod test_barrier;
-pub mod test_barrier_ext;
-#[cfg(target_arch = "x86_64")]
-pub mod test_hvfs;
-#[cfg(target_arch = "x86_64")]
-pub mod test_hvfs_ext;
-pub mod test_pwm;
-pub mod test_mm;
-pub mod test_vfs;
-pub mod test_ipc;
-pub mod test_devfs;
-pub mod test_proc;
-pub mod test_new_features;
-pub mod test_smp;
 #[cfg(feature = "kernel_test")]
 pub mod arch;
 #[cfg(feature = "kernel_test")]
-pub mod sys;
-#[cfg(feature = "kernel_test")]
-pub mod string;
-#[cfg(feature = "kernel_test")]
-pub mod sched;
+pub mod driver;
 #[cfg(feature = "kernel_test")]
 pub mod idt;
-#[cfg(feature = "kernel_test")]
-pub mod sync;
-#[cfg(feature = "kernel_test")]
-pub mod driver;
 #[cfg(feature = "kernel_test")]
 pub mod net;
 #[cfg(feature = "kernel_test")]
 pub mod reset;
+#[cfg(feature = "kernel_test")]
+pub mod sched;
+#[cfg(feature = "kernel_test")]
+pub mod string;
+#[cfg(feature = "kernel_test")]
+pub mod sync;
+#[cfg(feature = "kernel_test")]
+pub mod sys;
+pub mod test_barrier;
+pub mod test_barrier_ext;
+pub mod test_devfs;
+#[cfg(target_arch = "x86_64")]
+pub mod test_hvfs;
+#[cfg(target_arch = "x86_64")]
+pub mod test_hvfs_ext;
+pub mod test_ipc;
+pub mod test_mm;
+pub mod test_new_features;
+pub mod test_proc;
+pub mod test_pwm;
+pub mod test_smp;
+pub mod test_vfs;
 
 pub type TestFn = fn() -> TestResult;
 
@@ -51,9 +51,15 @@ pub struct TestCase {
 
 const MAX_TESTS: usize = 256;
 
-fn noop_test() -> TestResult { TestResult::Pass }
+fn noop_test() -> TestResult {
+    TestResult::Pass
+}
 
-const NOOP_CASE: TestCase = TestCase { module: "", name: "", func: noop_test };
+const NOOP_CASE: TestCase = TestCase {
+    module: "",
+    name: "",
+    func: noop_test,
+};
 
 struct TestRegistry {
     count: usize,
@@ -177,7 +183,9 @@ impl TestRunner {
         serial_print(s);
         #[cfg(target_arch = "aarch64")]
         for &b in s {
-            unsafe { crate::kernel::arch::aarch64::uart::putc(b); }
+            unsafe {
+                crate::kernel::arch::aarch64::uart::putc(b);
+            }
         }
     }
 
@@ -187,7 +195,9 @@ impl TestRunner {
         #[cfg(target_arch = "aarch64")]
         {
             if n == 0 {
-                unsafe { crate::kernel::arch::aarch64::uart::putc(b'0'); }
+                unsafe {
+                    crate::kernel::arch::aarch64::uart::putc(b'0');
+                }
                 return;
             }
             let mut buf = [0u8; 20];
@@ -199,7 +209,9 @@ impl TestRunner {
                 val /= 10;
             }
             for i in (0..pos).rev() {
-                unsafe { crate::kernel::arch::aarch64::uart::putc(buf[i]); }
+                unsafe {
+                    crate::kernel::arch::aarch64::uart::putc(buf[i]);
+                }
             }
         }
     }
@@ -226,7 +238,9 @@ pub fn serial_print(s: &[u8]) {
             port_outb(COM1, b);
         }
         if b == b'\n' {
-            unsafe { port_outb(COM1, b'\r'); }
+            unsafe {
+                port_outb(COM1, b'\r');
+            }
         }
     }
 }
@@ -299,7 +313,7 @@ macro_rules! register_tests_inner {
     };
 }
 
-pub use {check, assert_eq_test, skip_test};
+pub use {assert_eq_test, check, skip_test};
 
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === QueenX Test Framework ===");
@@ -354,7 +368,11 @@ pub fn test_runner_init() {
     let p = r.passed.load(Ordering::Relaxed);
     let f = r.failed.load(Ordering::Relaxed);
     if f == 0 {
-        crate::klog_boot_info!("[TEST] ALL TESTS PASSED ({}/{})", p, p + r.skipped.load(Ordering::Relaxed));
+        crate::klog_boot_info!(
+            "[TEST] ALL TESTS PASSED ({}/{})",
+            p,
+            p + r.skipped.load(Ordering::Relaxed)
+        );
     } else {
         crate::klog_boot_info!("[TEST] COMPLETE: {} passed, {} FAILED", p, f);
     }
@@ -363,16 +381,16 @@ pub fn test_runner_init() {
 pub fn qemu_exit(success: bool) -> ! {
     #[cfg(target_arch = "x86_64")]
     {
-    let exit_code = if success { 0x10 } else { 0x11 };
-    unsafe {
-        use core::arch::asm;
-        asm!(
-            "out dx, al",
-            in("dx") 0xf4u16,
-            in("al") exit_code as u8,
-            options(nomem, nostack)
-        );
-    }
+        let exit_code = if success { 0x10 } else { 0x11 };
+        unsafe {
+            use core::arch::asm;
+            asm!(
+                "out dx, al",
+                in("dx") 0xf4u16,
+                in("al") exit_code as u8,
+                options(nomem, nostack)
+            );
+        }
     }
     #[cfg(not(target_arch = "x86_64"))]
     {

@@ -10,10 +10,10 @@
 
 use core::sync::atomic::Ordering;
 
-use super::config::{self, RecoveryLayer, RecoveryResult};
 use super::bbr;
-use super::bsr;
 use super::bhr;
+use super::bsr;
+use super::config::{self, RecoveryLayer, RecoveryResult};
 
 pub fn execute_layered() -> ! {
     if !config::is_reset_in_progress() {
@@ -31,10 +31,15 @@ pub fn execute_layered() -> ! {
                     core::hint::unreachable_unchecked();
                 }
                 #[cfg(feature = "kernel_test")]
-                loop { core::hint::spin_loop(); }
+                loop {
+                    core::hint::spin_loop();
+                }
             }
             RecoveryResult::Escalate => {
-                crate::klog_warn!(Kernel, "[RECOVERY] Layer 2 (BSR) failed, escalating to Layer 3");
+                crate::klog_warn!(
+                    Kernel,
+                    "[RECOVERY] Layer 2 (BSR) failed, escalating to Layer 3"
+                );
             }
             RecoveryResult::Failed => {
                 crate::klog_err!(Kernel, "[RECOVERY] Layer 2 (BSR) failed");
@@ -51,11 +56,14 @@ pub fn execute_layered() -> ! {
 }
 
 pub fn execute_from_panic(panic_info: &core::panic::PanicInfo<'_>) -> ! {
-    crate::klog_crit!(Kernel, "[RECOVERY] Panic detected, initiating layered recovery");
-    
+    crate::klog_crit!(
+        Kernel,
+        "[RECOVERY] Panic detected, initiating layered recovery"
+    );
+
     if config::RECOVERY_CONFIG.enable_layer1 {
         config::set_current_layer(RecoveryLayer::Layer1);
-        
+
         match bbr::execute(panic_info) {
             RecoveryResult::Success => {
                 crate::klog_crit!(Kernel, "[RECOVERY] Layer 1 (BBR) succeeded");
@@ -65,17 +73,22 @@ pub fn execute_from_panic(panic_info: &core::panic::PanicInfo<'_>) -> ! {
                     core::hint::unreachable_unchecked();
                 }
                 #[cfg(feature = "kernel_test")]
-                loop { core::hint::spin_loop(); }
+                loop {
+                    core::hint::spin_loop();
+                }
             }
             RecoveryResult::Escalate => {
-                crate::klog_warn!(Kernel, "[RECOVERY] Layer 1 (BBR) failed, escalating to Layer 2");
+                crate::klog_warn!(
+                    Kernel,
+                    "[RECOVERY] Layer 1 (BBR) failed, escalating to Layer 2"
+                );
             }
             RecoveryResult::Failed => {
                 crate::klog_err!(Kernel, "[RECOVERY] Layer 1 (BBR) failed");
             }
         }
     }
-    
+
     execute_layered()
 }
 

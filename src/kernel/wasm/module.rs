@@ -92,7 +92,11 @@ pub fn parse_wasm(bytes: &[u8]) -> Result<WasmModule, WasmError> {
     Ok(module)
 }
 
-fn parse_type_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<FuncType>, WasmError> {
+fn parse_type_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<FuncType>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut types = Vec::with_capacity(count);
     for _ in 0..count {
@@ -122,7 +126,11 @@ fn parse_type_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<F
     Ok(types)
 }
 
-fn parse_import_section(bytes: &[u8], pos: &mut usize, _end: usize) -> Result<Vec<ImportDesc>, WasmError> {
+fn parse_import_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    _end: usize,
+) -> Result<Vec<ImportDesc>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut imports = Vec::with_capacity(count);
     for _ in 0..count {
@@ -136,23 +144,27 @@ fn parse_import_section(bytes: &[u8], pos: &mut usize, _end: usize) -> Result<Ve
                 ImportKind::Function(type_idx)
             }
             0x01 => {
-                let element_type = ValueType::from_byte(bytes[*pos])
-                    .ok_or(WasmError::BadImport)?;
+                let element_type = ValueType::from_byte(bytes[*pos]).ok_or(WasmError::BadImport)?;
                 *pos += 1;
                 let limits = parse_limits(bytes, pos)?;
-                ImportKind::Table(TableType { element_type, limits })
+                ImportKind::Table(TableType {
+                    element_type,
+                    limits,
+                })
             }
             0x02 => {
                 let limits = parse_limits(bytes, pos)?;
                 ImportKind::Memory(MemoryType { limits })
             }
             0x03 => {
-                let content_type = ValueType::from_byte(bytes[*pos])
-                    .ok_or(WasmError::BadImport)?;
+                let content_type = ValueType::from_byte(bytes[*pos]).ok_or(WasmError::BadImport)?;
                 *pos += 1;
                 let mutable = bytes[*pos] != 0;
                 *pos += 1;
-                ImportKind::Global(GlobalType { content_type, mutable })
+                ImportKind::Global(GlobalType {
+                    content_type,
+                    mutable,
+                })
             }
             _ => return Err(WasmError::BadImport),
         };
@@ -173,7 +185,11 @@ fn parse_limits(bytes: &[u8], pos: &mut usize) -> Result<Limits, WasmError> {
     Ok(Limits { min, max })
 }
 
-fn parse_function_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<u32>, WasmError> {
+fn parse_function_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<u32>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut funcs = Vec::with_capacity(count);
     for _ in 0..count {
@@ -183,20 +199,31 @@ fn parse_function_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<V
     Ok(funcs)
 }
 
-fn parse_table_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<TableType>, WasmError> {
+fn parse_table_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<TableType>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut tables = Vec::with_capacity(count);
     for _ in 0..count {
         let element_type = ValueType::from_byte(bytes[*pos]).ok_or(WasmError::InvalidVersion)?;
         *pos += 1;
         let limits = parse_limits(bytes, pos)?;
-        tables.push(TableType { element_type, limits });
+        tables.push(TableType {
+            element_type,
+            limits,
+        });
     }
     let _ = end;
     Ok(tables)
 }
 
-fn parse_memory_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<MemoryType>, WasmError> {
+fn parse_memory_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<MemoryType>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut memories = Vec::with_capacity(count);
     for _ in 0..count {
@@ -207,7 +234,11 @@ fn parse_memory_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec
     Ok(memories)
 }
 
-fn parse_global_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<(GlobalType, Vec<u8>)>, WasmError> {
+fn parse_global_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<(GlobalType, Vec<u8>)>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut globals = Vec::with_capacity(count);
     for _ in 0..count {
@@ -219,7 +250,13 @@ fn parse_global_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec
         let expr_end = read_init_expr(bytes, pos)?;
         let init_expr = bytes[expr_start..expr_end].to_vec();
         *pos = expr_end;
-        globals.push((GlobalType { content_type, mutable }, init_expr));
+        globals.push((
+            GlobalType {
+                content_type,
+                mutable,
+            },
+            init_expr,
+        ));
     }
     let _ = end;
     Ok(globals)
@@ -234,16 +271,26 @@ fn read_init_expr(bytes: &[u8], pos: &mut usize) -> Result<usize, WasmError> {
         *pos += 1;
         match byte {
             0x0B => break,
-            0x41 => { read_leb128_i32(bytes, pos)?; }
-            0x42 => { read_leb128_i64(bytes, pos)?; }
-            0x23 => { read_leb128_u32(bytes, pos)?; }
+            0x41 => {
+                read_leb128_i32(bytes, pos)?;
+            }
+            0x42 => {
+                read_leb128_i64(bytes, pos)?;
+            }
+            0x23 => {
+                read_leb128_u32(bytes, pos)?;
+            }
             _ => return Err(WasmError::UnknownOpcode(byte)),
         }
     }
     Ok(*pos)
 }
 
-fn parse_export_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<ExportDesc>, WasmError> {
+fn parse_export_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<ExportDesc>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut exports = Vec::with_capacity(count);
     for _ in 0..count {
@@ -264,7 +311,11 @@ fn parse_export_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec
     Ok(exports)
 }
 
-fn parse_code_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<FunctionBody>, WasmError> {
+fn parse_code_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<FunctionBody>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut bodies = Vec::with_capacity(count);
     for _ in 0..count {
@@ -288,7 +339,11 @@ fn parse_code_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<F
     Ok(bodies)
 }
 
-fn parse_data_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<DataSegment>, WasmError> {
+fn parse_data_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<DataSegment>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut data = Vec::with_capacity(count);
     for _ in 0..count {
@@ -300,7 +355,11 @@ fn parse_data_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<D
         }
         let segment_data = bytes[*pos..*pos + data_len].to_vec();
         *pos += data_len;
-        data.push(DataSegment { memory_index, offset, data: segment_data });
+        data.push(DataSegment {
+            memory_index,
+            offset,
+            data: segment_data,
+        });
     }
     let _ = end;
     Ok(data)
@@ -316,16 +375,26 @@ fn read_init_expr_bytes(bytes: &[u8], pos: &mut usize) -> Result<Vec<u8>, WasmEr
         *pos += 1;
         match byte {
             0x0B => break,
-            0x41 => { read_leb128_i32(bytes, pos)?; }
-            0x42 => { read_leb128_i64(bytes, pos)?; }
-            0x23 => { read_leb128_u32(bytes, pos)?; }
+            0x41 => {
+                read_leb128_i32(bytes, pos)?;
+            }
+            0x42 => {
+                read_leb128_i64(bytes, pos)?;
+            }
+            0x23 => {
+                read_leb128_u32(bytes, pos)?;
+            }
             _ => return Err(WasmError::UnknownOpcode(byte)),
         }
     }
     Ok(bytes[start..*pos].to_vec())
 }
 
-fn parse_element_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Vec<ElementSegment>, WasmError> {
+fn parse_element_section(
+    bytes: &[u8],
+    pos: &mut usize,
+    end: usize,
+) -> Result<Vec<ElementSegment>, WasmError> {
     let count = read_leb128_u32(bytes, pos)? as usize;
     let mut elements = Vec::with_capacity(count);
     for _ in 0..count {
@@ -336,7 +405,11 @@ fn parse_element_section(bytes: &[u8], pos: &mut usize, end: usize) -> Result<Ve
         for _ in 0..num_elems {
             func_indices.push(read_leb128_u32(bytes, pos)?);
         }
-        elements.push(ElementSegment { table_index, offset, func_indices });
+        elements.push(ElementSegment {
+            table_index,
+            offset,
+            func_indices,
+        });
     }
     let _ = end;
     Ok(elements)

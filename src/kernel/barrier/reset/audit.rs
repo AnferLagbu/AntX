@@ -68,7 +68,13 @@ impl ResetAuditLog {
         self.count += 1;
     }
 
-    pub fn record_simple(&mut self, tick: u64, layer: RecoveryLayer, result: RecoveryResult, reason: u32) {
+    pub fn record_simple(
+        &mut self,
+        tick: u64,
+        layer: RecoveryLayer,
+        result: RecoveryResult,
+        reason: u32,
+    ) {
         self.record(tick, layer, result, reason, 0, 0);
     }
 
@@ -103,7 +109,7 @@ pub static RESET_AUDIT_LOG: spin::Mutex<ResetAuditLog> = spin::Mutex::new(ResetA
 
 pub fn audit_record(layer: RecoveryLayer, result: RecoveryResult, reason: u32) {
     use super::config::RECOVERY_CONFIG;
-    
+
     if !RECOVERY_CONFIG.audit_enabled {
         return;
     }
@@ -120,7 +126,7 @@ pub fn audit_record_domain(
     entries_rolled: usize,
 ) {
     use super::config::RECOVERY_CONFIG;
-    
+
     if !RECOVERY_CONFIG.audit_enabled {
         return;
     }
@@ -155,7 +161,7 @@ pub mod tests {
         log.record_simple(100, RecoveryLayer::Layer1, RecoveryResult::Success, 0);
         log.record_simple(200, RecoveryLayer::Layer2, RecoveryResult::Success, 0);
         log.record_simple(300, RecoveryLayer::Layer1, RecoveryResult::Failed, 1);
-        
+
         log.count_by_layer(RecoveryLayer::Layer1) == 2
             && log.count_by_layer(RecoveryLayer::Layer2) == 1
     }

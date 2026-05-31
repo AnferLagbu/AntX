@@ -27,7 +27,6 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// 定时器中断间隔 (ticks), 在 boot 时由 timer::init() 设置
 pub static TIMER_INTERVAL_TICKS: AtomicU64 = AtomicU64::new(0);
 
-
 // ============================================================================
 // 异常向量表 (global_asm)
 // ============================================================================
@@ -411,9 +410,8 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     let arg3 = frame.x4;
 
     // 调用通用 syscall 分发器 (syscall 模块已全局化)
-    let result = unsafe {
-        crate::kernel::syscall::syscall_dispatch(syscall_num, arg0, arg1, arg2, arg3)
-    };
+    let result =
+        unsafe { crate::kernel::syscall::syscall_dispatch(syscall_num, arg0, arg1, arg2, arg3) };
 
     // 返回值写入 x0
     result as u64
@@ -437,9 +435,12 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
         static TIMER_COUNT_EL0: AtomicU64 = AtomicU64::new(0);
         let el0count = TIMER_COUNT_EL0.fetch_add(1, Ordering::Relaxed) + 1;
         if el0count <= 5 {
-            crate::klog_info!(Boot, "TIMER IRQ (EL0) count={} ready={}", 
+            crate::klog_info!(
+                Boot,
+                "TIMER IRQ (EL0) count={} ready={}",
                 el0count,
-                crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire));
+                crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+            );
         }
 
         crate::kernel::timer::on_timer_interrupt();
@@ -449,11 +450,15 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
                 fn sys_check_timeouts();
                 fn virtio_net_poll_rx();
             }
-            unsafe { sys_check_timeouts(); }
+            unsafe {
+                sys_check_timeouts();
+            }
 
             let t = crate::kernel::timer::get_ticks();
             if t % 10 == 0 {
-                unsafe { virtio_net_poll_rx(); }
+                unsafe {
+                    virtio_net_poll_rx();
+                }
                 if t < 200 {
                     crate::klog_info!(Driver, "RX poll (EL0) tick={}", t);
                 }
@@ -465,7 +470,9 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }
-            unsafe { scheduler_tick_mlfq(); }
+            unsafe {
+                scheduler_tick_mlfq();
+            }
         }
     }
 
@@ -486,21 +493,40 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
         core::arch::asm!("mrs {}, elr_el1", out(reg) elr);
     }
     let _ec = (esr >> 26) & 0x3F;
-    
+
     // Direct UART output to ensure we see sync exceptions
     unsafe {
-        super::uart::putc(b'S'); super::uart::putc(b'Y'); super::uart::putc(b'N'); super::uart::putc(b'C'); super::uart::putc(b'!');
-        super::uart::putc(b' '); super::uart::putc(b'E'); super::uart::putc(b'S'); super::uart::putc(b'R'); super::uart::putc(b'=');
+        super::uart::putc(b'S');
+        super::uart::putc(b'Y');
+        super::uart::putc(b'N');
+        super::uart::putc(b'C');
+        super::uart::putc(b'!');
+        super::uart::putc(b' ');
+        super::uart::putc(b'E');
+        super::uart::putc(b'S');
+        super::uart::putc(b'R');
+        super::uart::putc(b'=');
         exc_puthex(esr);
-        super::uart::putc(b' '); super::uart::putc(b'F'); super::uart::putc(b'A'); super::uart::putc(b'R'); super::uart::putc(b'=');
+        super::uart::putc(b' ');
+        super::uart::putc(b'F');
+        super::uart::putc(b'A');
+        super::uart::putc(b'R');
+        super::uart::putc(b'=');
         exc_puthex(far);
-        super::uart::putc(b' '); super::uart::putc(b'E'); super::uart::putc(b'L'); super::uart::putc(b'R'); super::uart::putc(b'=');
+        super::uart::putc(b' ');
+        super::uart::putc(b'E');
+        super::uart::putc(b'L');
+        super::uart::putc(b'R');
+        super::uart::putc(b'=');
         exc_puthex(elr);
-        super::uart::putc(b'\r'); super::uart::putc(b'\n');
+        super::uart::putc(b'\r');
+        super::uart::putc(b'\n');
     }
-    
+
     loop {
-        unsafe { core::arch::asm!("wfi", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("wfi", options(nomem, nostack));
+        }
     }
 }
 
@@ -508,7 +534,11 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
 unsafe fn exc_puthex(val: u64) {
     for shift in (0..16).rev() {
         let nibble = ((val >> (shift * 4)) & 0xF) as u8;
-        let c = if nibble < 10 { b'0' + nibble } else { b'A' + nibble - 10 };
+        let c = if nibble < 10 {
+            b'0' + nibble
+        } else {
+            b'A' + nibble - 10
+        };
         super::uart::putc(c);
     }
 }
@@ -550,9 +580,12 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         static TIMER_COUNT: AtomicU64 = AtomicU64::new(0);
         let tcount = TIMER_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
         if tcount <= 5 {
-            crate::klog_info!(Boot, "TIMER IRQ count={} ready={}", 
+            crate::klog_info!(
+                Boot,
+                "TIMER IRQ count={} ready={}",
                 tcount,
-                crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire));
+                crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+            );
         }
 
         crate::kernel::timer::on_timer_interrupt();
@@ -563,11 +596,15 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
                 fn sys_check_timeouts();
                 fn virtio_net_poll_rx();
             }
-            unsafe { sys_check_timeouts(); }
+            unsafe {
+                sys_check_timeouts();
+            }
 
             let t = crate::kernel::timer::get_ticks();
             if t % 10 == 0 {
-                unsafe { virtio_net_poll_rx(); }
+                unsafe {
+                    virtio_net_poll_rx();
+                }
                 if t < 200 {
                     crate::klog_info!(Driver, "RX poll tick={}", t);
                 }
@@ -575,11 +612,15 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         }
 
         // 仅当 scheduler 已初始化时触发调度
-        if crate::kernel::proc::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
+        if crate::kernel::proc::scheduler::SCHEDULER_READY
+            .load(core::sync::atomic::Ordering::Acquire)
+        {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }
-            unsafe { scheduler_tick_mlfq(); }
+            unsafe {
+                scheduler_tick_mlfq();
+            }
         }
     }
 
@@ -594,7 +635,9 @@ pub extern "C" fn fiq_handler(_frame: &ExceptionFrame) {}
 #[no_mangle]
 pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
     loop {
-        unsafe { core::arch::asm!("wfi", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("wfi", options(nomem, nostack));
+        }
     }
 }
 

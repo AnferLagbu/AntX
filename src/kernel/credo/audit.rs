@@ -40,7 +40,11 @@ impl AuditLog {
 
     pub fn dump(&self) {
         let count = self.count.load(Ordering::Acquire);
-        let len = if count > AUDIT_CAPACITY { AUDIT_CAPACITY } else { count };
+        let len = if count > AUDIT_CAPACITY {
+            AUDIT_CAPACITY
+        } else {
+            count
+        };
         for i in 0..len {
             let idx = if count > AUDIT_CAPACITY {
                 (count - AUDIT_CAPACITY + i) % AUDIT_CAPACITY
@@ -48,8 +52,14 @@ impl AuditLog {
                 i
             };
             let _e = &self.entries[idx];
-            crate::serial_println!("[AUDIT] t={} pwm={:#x} action={} target={:#x} details={:#x}",
-                e.timestamp, e.pwm.as_u64(), e.action.as_u32(), e.target_pwm.as_u64(), e.details);
+            crate::serial_println!(
+                "[AUDIT] t={} pwm={:#x} action={} target={:#x} details={:#x}",
+                e.timestamp,
+                e.pwm.as_u64(),
+                e.action.as_u32(),
+                e.target_pwm.as_u64(),
+                e.details
+            );
         }
     }
 
@@ -61,9 +71,13 @@ impl AuditLog {
 static mut GLOBAL_AUDIT: AuditLog = AuditLog::new();
 
 pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
-    unsafe { GLOBAL_AUDIT.log(pwm, action, target_pwm, domain, caps); }
+    unsafe {
+        GLOBAL_AUDIT.log(pwm, action, target_pwm, domain, caps);
+    }
 }
 
 pub fn dump() {
-    unsafe { GLOBAL_AUDIT.dump(); }
+    unsafe {
+        GLOBAL_AUDIT.dump();
+    }
 }

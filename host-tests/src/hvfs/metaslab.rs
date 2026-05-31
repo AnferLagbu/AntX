@@ -1,5 +1,5 @@
-use std::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
+use std::vec::Vec;
 
 pub const HV_MS_BLOCK_SIZE: u64 = 4096;
 pub const HV_MS_MAX_BLOCKS: u32 = 16384;
@@ -59,16 +59,22 @@ impl HvMetaslab {
     }
 
     pub fn alloc(&mut self, size: u64) -> Option<u64> {
-        if size == 0 || size > self.size { return None; }
+        if size == 0 || size > self.size {
+            return None;
+        }
         let nblocks = size.div_ceil(HV_MS_BLOCK_SIZE) as u32;
-        if nblocks > self.max_block { return None; }
+        if nblocks > self.max_block {
+            return None;
+        }
         let start = self.find_contiguous(nblocks)?;
         for b in start..start + nblocks {
             self.clear_bit(b);
         }
         let offset = self.start + (start as u64) * HV_MS_BLOCK_SIZE;
-        self.allocated.fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
-        self.free_space.fetch_sub(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        self.allocated
+            .fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        self.free_space
+            .fetch_sub(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.update_weight();
         Some(offset)
     }
@@ -82,8 +88,10 @@ impl HvMetaslab {
                 self.set_bit(b);
             }
         }
-        self.freed.fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
-        self.free_space.fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        self.freed
+            .fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+        self.free_space
+            .fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.update_weight();
     }
 
@@ -92,9 +100,13 @@ impl HvMetaslab {
         let mut start = 0u32;
         for i in 0..self.max_block {
             if self.get_bit(i) {
-                if found == 0 { start = i; }
+                if found == 0 {
+                    start = i;
+                }
                 found += 1;
-                if found >= nblocks { return Some(start); }
+                if found >= nblocks {
+                    return Some(start);
+                }
             } else {
                 found = 0;
             }
@@ -105,7 +117,9 @@ impl HvMetaslab {
     fn get_bit(&self, block: u32) -> bool {
         let idx = (block as usize) / 64;
         let bit = (block as usize) % 64;
-        if idx >= self.bitmap.len() { return false; }
+        if idx >= self.bitmap.len() {
+            return false;
+        }
         (self.bitmap[idx] >> bit) & 1 == 1
     }
 
@@ -136,7 +150,9 @@ impl HvMetaslab {
 
     pub fn fragmentation(&self) -> u8 {
         let free = self.free_space.load(Ordering::Relaxed);
-        if self.size == 0 { return 0; }
+        if self.size == 0 {
+            return 0;
+        }
         ((free * 100) / self.size) as u8
     }
 

@@ -20,8 +20,8 @@
 //! # Performance
 //! 关键路径函数已标记 `#[inline(always)]` 以优化性能。
 
-use super::tick::{get_ticks, ms_to_ticks, is_initialized};
-use crate::kernel::cpu::tsc::{read_tsc, cycles_to_nanoseconds};
+use super::tick::{get_ticks, is_initialized, ms_to_ticks};
+use crate::kernel::cpu::tsc::{cycles_to_nanoseconds, read_tsc};
 
 // ============================================================================
 // 忙等待实现 (Busy-wait)
@@ -42,11 +42,15 @@ use crate::kernel::cpu::tsc::{read_tsc, cycles_to_nanoseconds};
 /// ```
 #[inline(always)]
 pub fn busy_wait_ns(ns: u64) {
-    if ns == 0 { return; }
+    if ns == 0 {
+        return;
+    }
 
     let start = read_tsc();
 
-    extern "C" { fn cpu_get_tsc_frequency() -> u64; }
+    extern "C" {
+        fn cpu_get_tsc_frequency() -> u64;
+    }
     let freq_hz = unsafe { cpu_get_tsc_frequency() };
 
     let target_cycles = if freq_hz > 0 {
@@ -60,7 +64,7 @@ pub fn busy_wait_ns(ns: u64) {
         if elapsed >= target_cycles {
             break;
         }
-        
+
         // 提示 CPU 我们在自旋循环
         core::hint::spin_loop();
     }
@@ -72,8 +76,10 @@ pub fn busy_wait_ns(ns: u64) {
 /// * `us` - 等待时间 (微秒)
 #[inline(always)]
 pub fn busy_wait_us(us: u64) {
-    if us == 0 { return; }
-    
+    if us == 0 {
+        return;
+    }
+
     // 转换为纳秒后调用
     busy_wait_ns(us * 1000);
 }
@@ -84,8 +90,10 @@ pub fn busy_wait_us(us: u64) {
 /// * `ms` - 等待时间 (毫秒)
 #[inline(always)]
 pub fn busy_wait_ms(ms: u64) {
-    if ms == 0 { return; }
-    
+    if ms == 0 {
+        return;
+    }
+
     // 转换为微秒后调用
     busy_wait_us(ms * 1000);
 }
@@ -102,23 +110,23 @@ pub fn busy_wait_ms(ms: u64) {
 /// * `Ok(())` - 成功完成
 /// * `Err(&str)` - PIT 未初始化或其他错误
 pub fn pit_busy_wait_us(us: u64) -> Result<(), &'static str> {
-    if us == 0 { return Ok(()); }
-    
+    if us == 0 {
+        return Ok(());
+    }
+
     if !super::pit::pit_is_initialized() {
         return Err("PIT not initialized");
     }
 
     // 读取当前 PIT 计数值作为起始点
-    let start_count = super::pit::pit_read_count()
-        .ok_or("Failed to read PIT count")?;
+    let start_count = super::pit::pit_read_count().ok_or("Failed to read PIT count")?;
 
     // 计算目标计数值变化量
     // PIT 频率 = 1.193182 MHz → 每微秒 ≈ 1.193 个周期
     let cycles_needed = (us * super::pit::PIT_BASE_FREQUENCY) / 1_000_000;
-    
+
     loop {
-        let current_count = super::pit::pit_read_count()
-            .ok_or("Failed to read PIT count")?;
+        let current_count = super::pit::pit_read_count().ok_or("Failed to read PIT count")?;
 
         // 计算已过去的周期数 (考虑倒计数特性)
         let elapsed = if current_count <= start_count {
@@ -182,9 +190,9 @@ pub fn timer_sleep(ms: u64) -> Result<(), i32> {
         loop {
             // 检查是否达到目标时间
             let elapsed = get_ticks().saturating_sub(start_tick);
-            
+
             if elapsed >= target_ticks {
-                return Ok(());  // 时间到，返回
+                return Ok(()); // 时间到，返回
             }
 
             // 尚未到期，让出 CPU
@@ -219,14 +227,16 @@ where
     F: Fn() -> bool,
 {
     if condition() {
-        return Ok(());  // 条件立即满足
+        return Ok(()); // 条件立即满足
     }
 
     if timeout_ms == 0 {
         // 无限等待
         while !condition() {
             unsafe {
-                extern "C" { fn scheduler_yield_ex(); }
+                extern "C" {
+                    fn scheduler_yield_ex();
+                }
                 scheduler_yield_ex();
             }
         }
@@ -239,16 +249,18 @@ where
 
     loop {
         if condition() {
-            return Ok(());  // 条件满足
+            return Ok(()); // 条件满足
         }
 
         let elapsed = get_ticks().saturating_sub(start_tick);
         if elapsed >= target_ticks {
-            return Err(-1);  // 超时
+            return Err(-1); // 超时
         }
 
         unsafe {
-            extern "C" { fn scheduler_yield_ex(); }
+            extern "C" {
+                fn scheduler_yield_ex();
+            }
             scheduler_yield_ex();
         }
     }
@@ -335,9 +347,9 @@ where
     let start = read_tsc();
     let result = func();
     let end = read_tsc();
-    
+
     let cycles = end.saturating_sub(start);
-    let ns = cycles_to_nanoseconds(cycles, 2000);  // 假设 2GHz
+    let ns = cycles_to_nanoseconds(cycles, 2000); // 假设 2GHz
 
     (result, ns)
 }
@@ -378,7 +390,7 @@ mod tests {
         busy_wait_us(0);
         busy_wait_ms(0);
         let end = read_tsc();
-        
+
         // 应该几乎不消耗时间 (< 1000 cycles)
         assert!(end.saturating_sub(start) < 1000);
     }
@@ -387,14 +399,14 @@ mod tests {
     fn test_busy_wait_positive_duration() {
         // 正延时应该消耗合理的时间
         let start = read_tsc();
-        busy_wait_us(100);  // 100 微秒
+        busy_wait_us(100); // 100 微秒
         let end = read_tsc();
-        
+
         let elapsed_cycles = end.saturating_sub(start);
         // 在 2GHz CPU 上, 100μs ≈ 200,000 cycles
         // 给予 50% 的误差范围
-        assert!(elapsed_cycles > 100_000);   // 至少 50μs
-        assert!(elapsed_cycles < 500_000);   // 不超过 250μs
+        assert!(elapsed_cycles > 100_000); // 至少 50μs
+        assert!(elapsed_cycles < 500_000); // 不超过 250μs
     }
 
     #[test]
@@ -407,26 +419,26 @@ mod tests {
     fn test_adaptive_sleep_behavior() {
         // 测试自适应策略选择
         // 注意: 这些测试只验证不会 panic
-        
-        adaptive_sleep(0);     // 应该立即返回
-        adaptive_sleep(1);     // 忙等待
-        adaptive_sleep(100);   // 调度器阻塞
+
+        adaptive_sleep(0); // 应该立即返回
+        adaptive_sleep(1); // 忙等待
+        adaptive_sleep(100); // 调度器阻塞
     }
 
     #[test]
     fn test_measure_time_basic() {
         let (result, duration_ns) = measure_time(|| {
-            42  // 简单计算
+            42 // 简单计算
         });
 
         assert_eq!(result, 42);
-        assert!(duration_ns >= 0);  // 时间应该是非负的
+        assert!(duration_ns >= 0); // 时间应该是非负的
     }
 
     #[test]
     fn test_measure_time_ticks_basic() {
         let (result, duration_ticks) = measure_time_ticks(|| {
-            "hello".to_string()  // 分配操作
+            "hello".to_string() // 分配操作
         });
 
         assert_eq!(result, "hello");
@@ -494,10 +506,30 @@ pub fn register_timer_sleep_tests() {
         TestResult::Pass
     }
 
-    r.register("timer::sleep", "busy_wait_zero", busy_wait_zero_duration as TestFn);
-    r.register("timer::sleep", "timer_sleep_zero", timer_sleep_zero as TestFn);
+    r.register(
+        "timer::sleep",
+        "busy_wait_zero",
+        busy_wait_zero_duration as TestFn,
+    );
+    r.register(
+        "timer::sleep",
+        "timer_sleep_zero",
+        timer_sleep_zero as TestFn,
+    );
     r.register("timer::sleep", "measure_time", measure_time_basic as TestFn);
-    r.register("timer::sleep", "measure_time_ticks", measure_time_ticks_basic as TestFn);
-    r.register("timer::sleep", "wait_with_timeout_immediate", wait_with_timeout_immediate as TestFn);
-    r.register("timer::sleep", "pit_uninitialized", pit_busy_wait_uninitialized as TestFn);
+    r.register(
+        "timer::sleep",
+        "measure_time_ticks",
+        measure_time_ticks_basic as TestFn,
+    );
+    r.register(
+        "timer::sleep",
+        "wait_with_timeout_immediate",
+        wait_with_timeout_immediate as TestFn,
+    );
+    r.register(
+        "timer::sleep",
+        "pit_uninitialized",
+        pit_busy_wait_uninitialized as TestFn,
+    );
 }

@@ -5,9 +5,9 @@
 //! Uses PhysAddr/VirtAddr type safety and lock-free atomics.
 
 use super::*;
-use crate::kernel::mm::{PhysAddr, VirtAddr, PageFlags};
-use core::sync::atomic::{AtomicBool, Ordering};
+use crate::kernel::mm::{PageFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Mutex;
 
 pub struct DmaEngine {
@@ -101,8 +101,12 @@ impl DmaEngine {
         }
 
         self.stats.total_allocations.fetch_add(1, Ordering::Relaxed);
-        self.stats.total_bytes_allocated.fetch_add(size as u64, Ordering::Relaxed);
-        self.stats.current_bytes_used.fetch_add(size as u64, Ordering::Relaxed);
+        self.stats
+            .total_bytes_allocated
+            .fetch_add(size as u64, Ordering::Relaxed);
+        self.stats
+            .current_bytes_used
+            .fetch_add(size as u64, Ordering::Relaxed);
 
         // Track this allocation
         self.mappings.lock().push(DmaMapping {
@@ -133,7 +137,9 @@ impl DmaEngine {
 
         self.stats.total_frees.fetch_add(1, Ordering::Relaxed);
         if self.stats.current_bytes_used.load(Ordering::Relaxed) >= size as u64 {
-            self.stats.current_bytes_used.fetch_sub(size as u64, Ordering::Relaxed);
+            self.stats
+                .current_bytes_used
+                .fetch_sub(size as u64, Ordering::Relaxed);
         }
 
         // Remove from tracking
@@ -164,7 +170,7 @@ impl DmaEngine {
         let flags = PageFlags::PRESENT
             | PageFlags::WRITABLE
             | PageFlags::from_bits_truncate(1 << 4)   // PCD: cache disable
-            | PageFlags::from_bits_truncate(1 << 3);   // PWT: write-through
+            | PageFlags::from_bits_truncate(1 << 3); // PWT: write-through
 
         for i in 0..pages {
             let page_phys = PhysAddr(phys_addr.0 + i * PAGE_SIZE);
@@ -202,7 +208,12 @@ impl DmaEngine {
     // =============== Streaming DMA Mappings ===============
 
     /// Map an existing kernel buffer for DMA
-    pub fn map_single(&self, buffer: VirtAddr, size: usize, direction: DmaDirection) -> Option<*const DmaMapping> {
+    pub fn map_single(
+        &self,
+        buffer: VirtAddr,
+        size: usize,
+        direction: DmaDirection,
+    ) -> Option<*const DmaMapping> {
         if buffer.0 == 0 || size == 0 || !self.initialized.load(Ordering::Acquire) {
             return None;
         }
@@ -231,13 +242,18 @@ impl DmaEngine {
 
         let mapping_count = mappings.len() as u64;
         self.stats.total_mappings.fetch_add(1, Ordering::Relaxed);
-        self.stats.current_in_use.store(mapping_count, Ordering::Relaxed);
+        self.stats
+            .current_in_use
+            .store(mapping_count, Ordering::Relaxed);
 
         // Update max concurrent
         let mut max = self.stats.max_concurrent.load(Ordering::Relaxed);
         while mapping_count > max {
             match self.stats.max_concurrent.compare_exchange_weak(
-                max, mapping_count, Ordering::Relaxed, Ordering::Relaxed
+                max,
+                mapping_count,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
             ) {
                 Ok(_) => break,
                 Err(m) => max = m,
@@ -399,12 +415,19 @@ impl DmaTransfer {
 
 const MAX_DMA_TRANSFERS: usize = 32;
 
-static DMA_TRANSFERS: [core::sync::atomic::AtomicU8; MAX_DMA_TRANSFERS] = 
+static DMA_TRANSFERS: [core::sync::atomic::AtomicU8; MAX_DMA_TRANSFERS] =
     [const { core::sync::atomic::AtomicU8::new(0) }; MAX_DMA_TRANSFERS];
 
-pub fn submit_transfer(src: PhysAddr, dst: PhysAddr, size: usize, _dir: DmaDirection) -> Option<usize> {
+pub fn submit_transfer(
+    src: PhysAddr,
+    dst: PhysAddr,
+    size: usize,
+    _dir: DmaDirection,
+) -> Option<usize> {
     let _slot = (0..MAX_DMA_TRANSFERS).find(|i| {
-        DMA_TRANSFERS[*i].compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed).is_ok()
+        DMA_TRANSFERS[*i]
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
     })?;
 
     unsafe {
@@ -419,7 +442,13 @@ pub fn submit_transfer(src: PhysAddr, dst: PhysAddr, size: usize, _dir: DmaDirec
     Some(0)
 }
 
-pub fn submit_transfer_async(src: PhysAddr, dst: PhysAddr, size: usize, dir: DmaDirection, callback: DmaCallback) -> Option<usize> {
+pub fn submit_transfer_async(
+    src: PhysAddr,
+    dst: PhysAddr,
+    size: usize,
+    dir: DmaDirection,
+    callback: DmaCallback,
+) -> Option<usize> {
     let id = submit_transfer(src, dst, size, dir)?;
     let transfer = DmaTransfer {
         src_addr: src,

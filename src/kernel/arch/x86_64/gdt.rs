@@ -72,7 +72,7 @@ pub struct AccessByte(pub(crate) u8);
 
 impl AccessByte {
     /// 已访问 (Accessed) - CPU 设置此位
-    pub const ACCESSED: u8       = 1 << 0;
+    pub const ACCESSED: u8 = 1 << 0;
     /// 可读/写 (对于代码段=可读, 数据段=可写)
     pub const READABLE_WRITABLE: u8 = 1 << 1;
     /// 方向/符合 (Direction/Conforming)
@@ -80,45 +80,51 @@ impl AccessByte {
     /// 可执行 (Executable)
     /// - 0: 数据段 (Data Segment)
     /// - 1: 代码段 (Code Segment)
-    pub const EXECUTABLE: u8      = 1 << 3;
+    pub const EXECUTABLE: u8 = 1 << 3;
     /// 描述符类型 (Descriptor Type)
     /// 必须为 1 (System=0 在 LDT 中使用)
-    pub const TYPE_SYSTEM: u8     = 1 << 4;
+    pub const TYPE_SYSTEM: u8 = 1 << 4;
     /// 特权级 (DPL, Descriptor Privilege Level) - bits 6:5
     /// - 00: Ring 0 (内核)
     /// - 11: Ring 3 (用户)
-    pub const DPL_MASK: u8        = 0b0110_0000;
+    pub const DPL_MASK: u8 = 0b0110_0000;
     /// 存在位 (Present) - 必须为 1 才有效
-    pub const PRESENT: u8         = 1 << 7;
-    
+    pub const PRESENT: u8 = 1 << 7;
+
     /// 创建内核代码段访问字节
     #[inline]
     pub const fn kernel_code() -> Self {
         // P=1, DPL=00, S=1, E=1, RW=1, A=0 => 0x9A
         Self(Self::PRESENT | Self::TYPE_SYSTEM | Self::EXECUTABLE | Self::READABLE_WRITABLE)
     }
-    
+
     /// 创建内核数据段访问字节
     #[inline]
     pub const fn kernel_data() -> Self {
         // P=1, DPL=00, S=1, E=0, RW=1, A=0 => 0x92
         Self(Self::PRESENT | Self::TYPE_SYSTEM | Self::READABLE_WRITABLE)
     }
-    
+
     /// 创建用户代码段访问字节 (Ring 3)
     #[inline]
     pub const fn user_code() -> Self {
         // P=1, DPL=11, S=1, E=1, RW=1, A=0 => 0xFA
-        Self(Self::PRESENT | Self::DPL_MASK | Self::TYPE_SYSTEM | Self::EXECUTABLE | Self::READABLE_WRITABLE)
+        Self(
+            Self::PRESENT
+                | Self::DPL_MASK
+                | Self::TYPE_SYSTEM
+                | Self::EXECUTABLE
+                | Self::READABLE_WRITABLE,
+        )
     }
-    
+
     /// 创建用户数据段访问字节 (Ring 3)
     #[inline]
     pub const fn user_data() -> Self {
         // P=1, DPL=11, S=1, E=0, RW=1, A=0 => 0xF2
         Self(Self::PRESENT | Self::DPL_MASK | Self::TYPE_SYSTEM | Self::READABLE_WRITABLE)
     }
-    
+
     /// 创建 TSS 访问字节
     #[inline]
     pub const fn tss() -> Self {
@@ -139,23 +145,23 @@ impl Granularity {
     /// 默认操作数大小 (Default Operation Size)
     /// - 0: 16-bit 保护模式
     /// - 1: 32-bit 保护模式 (在 64-bit 长模式下忽略)
-    pub const SIZE_32BIT: u8       = 1 << 6;
+    pub const SIZE_32BIT: u8 = 1 << 6;
     /// 64-bit 代码段标志 (Long Mode)
     /// 仅对代码段有效, 设置后启用 64-bit 模式
-    pub const LONG_MODE: u8        = 1 << 5;
-    
+    pub const LONG_MODE: u8 = 1 << 5;
+
     /// 创建 64-bit 代码段粒度 (4KB 粒度, Long Mode)
     #[inline]
     pub const fn code_64bit() -> Self {
         Self(Self::PAGE_GRANULARITY | Self::LONG_MODE)
     }
-    
+
     /// 创建数据段粒度 (4KB 粒度, 32-bit)
     #[inline]
     pub const fn data_32bit() -> Self {
         Self(Self::PAGE_GRANULARITY | Self::SIZE_32BIT)
     }
-    
+
     /// 创建 TSS 粒度 (字节粒度, 64-bit)
     #[inline]
     pub const fn tss_64bit() -> Self {
@@ -168,7 +174,7 @@ impl Granularity {
 // ============================================================================
 
 /// GDT 条目 (64位, 8字节)
-/// 
+///
 /// 内存布局:
 /// ```text
 /// Bits   Field
@@ -211,9 +217,9 @@ impl GdtEntry {
             base_high: 0,
         }
     }
-    
+
     /// 创建标准段描述符 (代码或数据)
-    /// 
+    ///
     /// # Arguments
     /// * `base` - 段基地址 (在长模式下通常为 0)
     /// * `limit` - 段限制 (最大 4GB 如果使用页粒度)
@@ -230,20 +236,20 @@ impl GdtEntry {
             base_high: ((base >> 24) & 0xFF) as u8,
         }
     }
-    
+
     /// 创建 TSS 描述符 (低64位)
-    /// 
+    ///
     /// TSS 描述符占用两个 GDT 槽位:
     /// - 第一个槽位: bits 63:0 of base + limit
     /// - 第二个槽位: bits 127:64 of base
-    /// 
+    ///
     /// # Arguments
     /// * `tss_addr` - TSS 结构体的 64 位地址
     /// * `tss_size` - TSS 结构体大小 (bytes)
     #[inline]
     pub const fn tss_low(tss_addr: u64, tss_size: u16) -> Self {
         let base_low = tss_addr as u32;
-        
+
         Self {
             limit_low: tss_size,
             base_low: (base_low & 0xFFFF) as u16,
@@ -253,12 +259,12 @@ impl GdtEntry {
             base_high: ((base_low >> 24) & 0xFF) as u8,
         }
     }
-    
+
     /// 创建 TSS 描述符的高64位 (base[63:32])
     #[inline]
     pub const fn tss_high(tss_addr: u64) -> Self {
         let base_high32 = (tss_addr >> 32) as u32;
-        
+
         Self {
             limit_low: (base_high32 & 0xFFFF) as u16,
             base_low: ((base_high32 >> 16) & 0xFFFF) as u16,
@@ -368,25 +374,29 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
     entries[0] = GdtEntry::null();
 
     entries[1] = GdtEntry::new_segment(
-        0, 0xFFFF_FFFF,
+        0,
+        0xFFFF_FFFF,
         AccessByte::kernel_code(),
         Granularity::code_64bit(),
     );
 
     entries[2] = GdtEntry::new_segment(
-        0, 0xFFFF_FFFF,
+        0,
+        0xFFFF_FFFF,
         AccessByte::kernel_data(),
         Granularity::data_32bit(),
     );
 
     entries[3] = GdtEntry::new_segment(
-        0, 0xFFFF_FFFF,
+        0,
+        0xFFFF_FFFF,
         AccessByte::user_data(),
         Granularity::data_32bit(),
     );
 
     entries[4] = GdtEntry::new_segment(
-        0, 0xFFFF_FFFF,
+        0,
+        0xFFFF_FFFF,
         AccessByte::user_code(),
         Granularity::code_64bit(),
     );
@@ -407,13 +417,18 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 /// 4. 加载 GDTR (lgdt 指令)
 /// 5. 加载 TR (ltr 指令, 任务寄存器)
 pub fn gdt_init() -> i32 {
-    use crate::kernel::klog::{klog_write, LogLevel, LogCategory};
+    use crate::kernel::klog::{klog_write, LogCategory, LogLevel};
 
     static INIT_MSG: &[u8] = b"Initializing GDT and TSS (BSP)...\0";
     unsafe {
-        klog_write(LogLevel::Info as u8, LogCategory::Boot as u8,
-                  core::ptr::null(), core::ptr::null(), 0,
-                  INIT_MSG.as_ptr() as *const i8);
+        klog_write(
+            LogLevel::Info as u8,
+            LogCategory::Boot as u8,
+            core::ptr::null(),
+            core::ptr::null(),
+            0,
+            INIT_MSG.as_ptr() as *const i8,
+        );
     }
 
     unsafe {
@@ -426,9 +441,12 @@ pub fn gdt_init() -> i32 {
 
         gdt.tss = super::tss::TaskStateSegment::zeroed();
 
-        gdt.tss.set_ist(0, gdt.ist0.as_ptr() as u64 + gdt.ist0.len() as u64);
-        gdt.tss.set_ist(1, gdt.ist1.as_ptr() as u64 + gdt.ist1.len() as u64);
-        gdt.tss.set_ist(2, gdt.ist2.as_ptr() as u64 + gdt.ist2.len() as u64);
+        gdt.tss
+            .set_ist(0, gdt.ist0.as_ptr() as u64 + gdt.ist0.len() as u64);
+        gdt.tss
+            .set_ist(1, gdt.ist1.as_ptr() as u64 + gdt.ist1.len() as u64);
+        gdt.tss
+            .set_ist(2, gdt.ist2.as_ptr() as u64 + gdt.ist2.len() as u64);
 
         gdt.tss.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
 
@@ -450,9 +468,14 @@ pub fn gdt_init() -> i32 {
 
     static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
     unsafe {
-        klog_write(LogLevel::Info as u8, LogCategory::Boot as u8,
-                  core::ptr::null(), core::ptr::null(), 0,
-                  OK_MSG.as_ptr() as *const i8);
+        klog_write(
+            LogLevel::Info as u8,
+            LogCategory::Boot as u8,
+            core::ptr::null(),
+            core::ptr::null(),
+            0,
+            OK_MSG.as_ptr() as *const i8,
+        );
     }
 
     0
@@ -473,9 +496,12 @@ pub fn gdt_init_ap(cpu_index: u32) {
 
         ap.tss = super::tss::TaskStateSegment::zeroed();
 
-        ap.tss.set_ist(0, ap.ist0.as_ptr() as u64 + ap.ist0.len() as u64);
-        ap.tss.set_ist(1, ap.ist1.as_ptr() as u64 + ap.ist1.len() as u64);
-        ap.tss.set_ist(2, ap.ist2.as_ptr() as u64 + ap.ist2.len() as u64);
+        ap.tss
+            .set_ist(0, ap.ist0.as_ptr() as u64 + ap.ist0.len() as u64);
+        ap.tss
+            .set_ist(1, ap.ist1.as_ptr() as u64 + ap.ist1.len() as u64);
+        ap.tss
+            .set_ist(2, ap.ist2.as_ptr() as u64 + ap.ist2.len() as u64);
 
         ap.tss.iomap_base = core::mem::size_of::<super::tss::TaskStateSegment>() as u16;
 
@@ -526,10 +552,10 @@ pub unsafe fn get_tss_mut() -> &'static mut super::tss::TaskStateSegment {
 // ============================================================================
 
 /// 执行 LGDT 指令 (Load Global Descriptor Table Register)
-/// 
+///
 /// # Arguments
 /// * `gdt_ptr` - 指向 GdtPtr 结构体的引用
-/// 
+///
 /// # Safety
 /// 此函数修改 GDTR 寄存器, 会立即影响内存分段行为。
 #[inline(always)]
@@ -542,10 +568,10 @@ unsafe fn gdt_flush(gdt_ptr: &GdtPtr) {
 }
 
 /// 执行 LTR 指令 (Load Task Register)
-/// 
+///
 /// # Arguments
 /// * `selector` - TSS 选择子 (如 0x28)
-/// 
+///
 /// # Safety
 /// 此函数加载新的 TSS 到任务寄存器, 会标记 TSS 为 busy。
 #[inline(always)]
@@ -564,14 +590,14 @@ unsafe fn tss_flush(selector: u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_gdt_entry_null() {
         let null_desc = GdtEntry::null();
         let bytes = unsafe { core::ptr::read_volatile(&null_desc as *const _ as *const u64) };
         assert_eq!(bytes, 0, "Null descriptor should be all zeros");
     }
-    
+
     #[test]
     fn test_access_byte_constants() {
         assert_eq!(AccessByte::kernel_code().0, 0x9A);
@@ -580,18 +606,18 @@ mod tests {
         assert_eq!(AccessByte::user_data().0, 0xF2);
         assert_eq!(AccessByte::tss().0, 0x89);
     }
-    
+
     #[test]
     fn test_granularity_constants() {
         let code_gran = Granularity::code_64bit();
         assert!(code_gran.0 & Granularity::PAGE_GRANULARITY != 0);
         assert!(code_gran.0 & Granularity::LONG_MODE != 0);
-        
+
         let data_gran = Granularity::data_32bit();
         assert!(data_gran.0 & Granularity::PAGE_GRANULARITY != 0);
         assert!(data_gran.0 & Granularity::SIZE_32BIT != 0);
     }
-    
+
     #[test]
     fn test_selector_values() {
         assert_eq!(SELECTOR_NULL, 0x00);

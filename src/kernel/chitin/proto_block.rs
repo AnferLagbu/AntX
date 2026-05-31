@@ -6,7 +6,9 @@
 //! 函数指针 (read/write/is_present/total_sectors), HvFS 等子系统
 //! 通过 `chitin_blk_read/write` 直接 I/O, 无需中间注册表。
 
-use crate::kernel::chitin::{BlockOps, ChitinOps, chitin_register_block, chitin_register_with_ops, ChitinProto, box_to_raw};
+use crate::kernel::chitin::{
+    box_to_raw, chitin_register_block, chitin_register_with_ops, BlockOps, ChitinOps, ChitinProto,
+};
 use crate::kernel::driver::block::BlockDevice;
 use alloc::boxed::Box;
 

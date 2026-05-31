@@ -21,7 +21,7 @@ macro_rules! klog_pmm {
 
 use super::*;
 use core::cell::{Cell, UnsafeCell};
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 const MAX_EARLY_ALLOCS: usize = 256;
 
@@ -56,9 +56,15 @@ fn pfn_to_virt(pfn: u64) -> *mut u8 {
 /// Round count up to the next power of two → buddy order
 #[inline]
 fn count_to_order(count: usize) -> u8 {
-    if count <= 1 { return 0; }
+    if count <= 1 {
+        return 0;
+    }
     let order = (usize::BITS - 1 - (count - 1).leading_zeros()) as u8;
-    if order > MAX_BUDDY_ORDER { MAX_BUDDY_ORDER } else { order }
+    if order > MAX_BUDDY_ORDER {
+        MAX_BUDDY_ORDER
+    } else {
+        order
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -155,8 +161,12 @@ impl PhysicalMemoryManager {
         info.kernel_end = kernel_end;
         self.info.set(info);
 
-        klog_pmm!("[PMM] Init: {} MB, {} pages, kernel ends at 0x{:X}",
-                  mem_size / (1024 * 1024), total_pages, kernel_end);
+        klog_pmm!(
+            "[PMM] Init: {} MB, {} pages, kernel ends at 0x{:X}",
+            mem_size / (1024 * 1024),
+            total_pages,
+            kernel_end
+        );
     }
 
     pub fn init_bitmap(&self, reserved_after_kernel: u64) {
@@ -165,7 +175,8 @@ impl PhysicalMemoryManager {
         }
 
         let reserved_aligned = (reserved_after_kernel + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        self.early_current.fetch_add(reserved_aligned, Ordering::Relaxed);
+        self.early_current
+            .fetch_add(reserved_aligned, Ordering::Relaxed);
 
         let info = self.info.get();
         let total_pages = info.total_pages as usize;
@@ -174,27 +185,31 @@ impl PhysicalMemoryManager {
         let bitmap_bytes = bitmap_words * 4;
 
         // ---- Bitmap placement ----
-        let bitmap_phys = self.early_current.fetch_add(bitmap_bytes as u64, Ordering::Relaxed);
+        let bitmap_phys = self
+            .early_current
+            .fetch_add(bitmap_bytes as u64, Ordering::Relaxed);
         let bitmap_aligned = (bitmap_phys + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let bitmap_virt = bitmap_aligned + KERNEL_BASE;
 
-// SAFETY: bitmap_virt is phys_to_virt(PM) + KERNEL_BASE — valid kernel VA
+        // SAFETY: bitmap_virt is phys_to_virt(PM) + KERNEL_BASE — valid kernel VA
         unsafe {
             core::ptr::write_bytes(bitmap_virt as *mut u8, 0, bitmap_bytes);
         }
 
-        self.bitmap.set(match NonNull::new(bitmap_virt as *mut u32) {
-            Some(ptr) => { Some(ptr) }
-            None => {
-                klog_pmm!("[PMM] FATAL: bitmap null (0x{:X})", bitmap_virt);
-                return;
-            }
-        });
+        self.bitmap
+            .set(match NonNull::new(bitmap_virt as *mut u32) {
+                Some(ptr) => Some(ptr),
+                None => {
+                    klog_pmm!("[PMM] FATAL: bitmap null (0x{:X})", bitmap_virt);
+                    return;
+                }
+            });
         self.bitmap_size.set(bitmap_words);
 
         // ---- Buddy metadata placement (right after bitmap, page-aligned) ----
         let buddy_meta_bytes = total_pages;
-        let buddy_meta_phys = (bitmap_aligned + bitmap_bytes as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        let buddy_meta_phys =
+            (bitmap_aligned + bitmap_bytes as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let buddy_meta_virt = buddy_meta_phys + KERNEL_BASE;
         let buddy_meta_pages = buddy_meta_bytes.div_ceil(PAGE_SIZE as usize) as u64;
 
@@ -206,11 +221,20 @@ impl PhysicalMemoryManager {
 
         // SAFETY: buddy_meta_virt = buddy_meta_phys + KERNEL_BASE — valid kernel VA
         unsafe {
-            core::ptr::write_bytes(buddy_meta_virt as *mut u8, BUDDY_ALLOCATED, buddy_meta_bytes);
+            core::ptr::write_bytes(
+                buddy_meta_virt as *mut u8,
+                BUDDY_ALLOCATED,
+                buddy_meta_bytes,
+            );
         }
 
-        self.buddy_meta.set(NonNull::new(buddy_meta_virt as *mut u8));
-        klog_pmm!("[PMM] Buddy meta: {} B at 0x{:X}", buddy_meta_bytes, buddy_meta_virt);
+        self.buddy_meta
+            .set(NonNull::new(buddy_meta_virt as *mut u8));
+        klog_pmm!(
+            "[PMM] Buddy meta: {} B at 0x{:X}",
+            buddy_meta_bytes,
+            buddy_meta_virt
+        );
 
         // ---- Mark reserved regions in bitmap ----
         let kernel_end_val = self.kernel_end.get();
@@ -244,8 +268,13 @@ impl PhysicalMemoryManager {
         self.initialized.store(true, Ordering::Release);
 
         let free = self.count_free_pages();
-        klog_pmm!("[PMM] Buddy ready: {} total, {} free ({} MB), reserved {} pages",
-                  total_pages, free, free * 4 / 1024, total_reserved);
+        klog_pmm!(
+            "[PMM] Buddy ready: {} total, {} free ({} MB), reserved {} pages",
+            total_pages,
+            free,
+            free * 4 / 1024,
+            total_reserved
+        );
 
         self.update_stats();
     }
@@ -254,15 +283,21 @@ impl PhysicalMemoryManager {
         self.acquire_lock();
         let result = self.do_alloc(0);
         match result {
-            Some(_) => { self.total_allocs.fetch_add(1, Ordering::Relaxed); }
-            None => { self.failed_allocs.fetch_add(1, Ordering::Relaxed); }
+            Some(_) => {
+                self.total_allocs.fetch_add(1, Ordering::Relaxed);
+            }
+            None => {
+                self.failed_allocs.fetch_add(1, Ordering::Relaxed);
+            }
         }
         self.release_lock();
         result
     }
 
     pub fn free_page(&self, addr: PhysAddr) {
-        if addr.0 == 0 { return; }
+        if addr.0 == 0 {
+            return;
+        }
         self.acquire_lock();
         self.do_free(addr, 0);
         self.total_frees.fetch_add(1, Ordering::Relaxed);
@@ -270,22 +305,31 @@ impl PhysicalMemoryManager {
     }
 
     pub fn alloc_pages(&self, count: usize) -> Option<PhysAddr> {
-        if count == 0 { return None; }
+        if count == 0 {
+            return None;
+        }
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
 
         self.acquire_lock();
         let result = self.do_alloc(order);
         match result {
-            Some(_) => { self.total_allocs.fetch_add(npages as u64, Ordering::Relaxed); }
-            None => { self.failed_allocs.fetch_add(1, Ordering::Relaxed); }
+            Some(_) => {
+                self.total_allocs
+                    .fetch_add(npages as u64, Ordering::Relaxed);
+            }
+            None => {
+                self.failed_allocs.fetch_add(1, Ordering::Relaxed);
+            }
         }
         self.release_lock();
         result
     }
 
     pub fn free_pages(&self, addr: PhysAddr, count: usize) {
-        if addr.0 == 0 || count == 0 { return; }
+        if addr.0 == 0 || count == 0 {
+            return;
+        }
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
         self.acquire_lock();
@@ -302,8 +346,11 @@ impl PhysicalMemoryManager {
                 let np = (size_type.size() / PAGE_SIZE) as usize;
                 self.acquire_lock();
                 let result = self.buddy_direct_alloc_aligned(np, size_type.size());
-                if result.is_some() { self.total_allocs.fetch_add(np as u64, Ordering::Relaxed); }
-                else { self.failed_allocs.fetch_add(1, Ordering::Relaxed); }
+                if result.is_some() {
+                    self.total_allocs.fetch_add(np as u64, Ordering::Relaxed);
+                } else {
+                    self.failed_allocs.fetch_add(1, Ordering::Relaxed);
+                }
                 self.release_lock();
                 result
             }
@@ -318,7 +365,9 @@ impl PhysicalMemoryManager {
                 let np = (size_type.size() / PAGE_SIZE) as usize;
                 self.acquire_lock();
                 let start = phys_to_page(addr.0) as usize;
-                for i in 0..np { self.clear_bit(start + i); }
+                for i in 0..np {
+                    self.clear_bit(start + i);
+                }
                 self.total_frees.fetch_add(np as u64, Ordering::Relaxed);
                 self.release_lock();
             }
@@ -329,22 +378,36 @@ impl PhysicalMemoryManager {
         size_type.is_aligned(addr.0)
     }
 
-    pub fn get_free_pages(&self)  -> u64 { self.info.get().free_pages }
-    pub fn get_total_pages(&self) -> u64 { self.info.get().total_pages }
-    pub fn get_used_pages(&self)  -> u64 { self.info.get().used_pages }
-    pub fn get_info(&self) -> MemoryInfo { self.info.get() }
+    pub fn get_free_pages(&self) -> u64 {
+        self.info.get().free_pages
+    }
+    pub fn get_total_pages(&self) -> u64 {
+        self.info.get().total_pages
+    }
+    pub fn get_used_pages(&self) -> u64 {
+        self.info.get().used_pages
+    }
+    pub fn get_info(&self) -> MemoryInfo {
+        self.info.get()
+    }
 
     pub fn dump_stats(&self) {
         let info = self.info.get();
         klog_pmm!("=== PMM (Buddy) ===");
-        klog_pmm!("Total: {} MB  Pages: {} total / {} free / {} used",
-                  self.mem_size.get() / (1024 * 1024), info.total_pages,
-                  info.free_pages, info.used_pages);
+        klog_pmm!(
+            "Total: {} MB  Pages: {} total / {} free / {} used",
+            self.mem_size.get() / (1024 * 1024),
+            info.total_pages,
+            info.free_pages,
+            info.used_pages
+        );
         klog_pmm!("Kernel End: 0x{:X}", info.kernel_end);
-        klog_pmm!("Allocs: {}  Frees: {}  Failed: {}",
-                  self.total_allocs.load(Ordering::Relaxed),
-                  self.total_frees.load(Ordering::Relaxed),
-                  self.failed_allocs.load(Ordering::Relaxed));
+        klog_pmm!(
+            "Allocs: {}  Frees: {}  Failed: {}",
+            self.total_allocs.load(Ordering::Relaxed),
+            self.total_frees.load(Ordering::Relaxed),
+            self.failed_allocs.load(Ordering::Relaxed)
+        );
         klog_pmm!("===================");
     }
 
@@ -352,7 +415,11 @@ impl PhysicalMemoryManager {
 
     #[inline(always)]
     fn acquire_lock(&self) {
-        while self.lock.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        while self
+            .lock
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             core::hint::spin_loop();
         }
     }
@@ -402,8 +469,12 @@ impl PhysicalMemoryManager {
                     let p = bmp.as_ptr().add(word) as *const AtomicU32;
                     (*p).load(Ordering::Relaxed) & (1u32 << (bit % 32)) != 0
                 }
-            } else { false }
-        } else { false }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
     }
 
     fn count_free_pages(&self) -> u64 {
@@ -438,7 +509,10 @@ impl PhysicalMemoryManager {
 
     #[inline]
     fn buddy_meta_ptr(&self) -> *mut u8 {
-        self.buddy_meta.get().map(|n| n.as_ptr()).unwrap_or_default()
+        self.buddy_meta
+            .get()
+            .map(|n| n.as_ptr())
+            .unwrap_or_default()
     }
 
     #[inline]
@@ -452,28 +526,38 @@ impl PhysicalMemoryManager {
     /// Returns (merged_pfn, final_order).
     fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
         let meta = self.buddy_meta_ptr();
-        if meta.is_null() { return (pfn, order); }
+        if meta.is_null() {
+            return (pfn, order);
+        }
         let total = self.info.get().total_pages;
 
         while order < MAX_BUDDY_ORDER {
             let buddy_pfn = pfn ^ (1u64 << order);
-            if buddy_pfn >= total { break; }
+            if buddy_pfn >= total {
+                break;
+            }
 
             // SAFETY: buddy_pfn is within valid range; meta array entry is 1 byte
             let buddy_state = unsafe { *meta.add(buddy_pfn as usize) };
-            if buddy_state != order { break; }
+            if buddy_state != order {
+                break;
+            }
 
             // Remove buddy from its free list
             self.buddy_list_remove(buddy_pfn, order);
             // SAFETY: mark buddy as allocated in meta array
-            unsafe { *meta.add(buddy_pfn as usize) = BUDDY_ALLOCATED; }
+            unsafe {
+                *meta.add(buddy_pfn as usize) = BUDDY_ALLOCATED;
+            }
 
             pfn = core::cmp::min(pfn, buddy_pfn);
             order += 1;
         }
 
         // SAFETY: write final order into meta array
-        unsafe { *meta.add(pfn as usize) = order; }
+        unsafe {
+            *meta.add(pfn as usize) = order;
+        }
         (pfn, order)
     }
 
@@ -485,9 +569,14 @@ impl PhysicalMemoryManager {
         unsafe {
             let prev = (*node).prev;
             let next = (*node).next;
-            if !prev.is_null() { (*prev).next = next; }
-            else { *heads.add(order as usize) = next; }
-            if !next.is_null() { (*next).prev = prev; }
+            if !prev.is_null() {
+                (*prev).next = next;
+            } else {
+                *heads.add(order as usize) = next;
+            }
+            if !next.is_null() {
+                (*next).prev = prev;
+            }
         }
     }
 
@@ -500,7 +589,9 @@ impl PhysicalMemoryManager {
             let old_head = *heads.add(order as usize);
             (*node).prev = core::ptr::null_mut();
             (*node).next = old_head;
-            if !old_head.is_null() { (*old_head).prev = node; }
+            if !old_head.is_null() {
+                (*old_head).prev = node;
+            }
             *heads.add(order as usize) = node;
         }
     }
@@ -510,7 +601,9 @@ impl PhysicalMemoryManager {
         let heads = self.buddy_heads_ptr();
         // SAFETY: heads points to stable array of FreeNode pointers
         let node = unsafe { *heads.add(order as usize) };
-        if node.is_null() { return None; }
+        if node.is_null() {
+            return None;
+        }
 
         // SAFETY: node is a valid free page; kernel identity-maps all phys memory
         let pfn = phys_to_page(unsafe { (node as u64) - KERNEL_BASE });
@@ -518,14 +611,18 @@ impl PhysicalMemoryManager {
         unsafe {
             let next = (*node).next;
             *heads.add(order as usize) = next;
-            if !next.is_null() { (*next).prev = core::ptr::null_mut(); }
+            if !next.is_null() {
+                (*next).prev = core::ptr::null_mut();
+            }
         }
         Some(pfn)
     }
 
     /// Core allocation at the given order.
     fn buddy_alloc(&self, order: u8) -> Option<(u64, u8)> {
-        if order > MAX_BUDDY_ORDER { return None; }
+        if order > MAX_BUDDY_ORDER {
+            return None;
+        }
 
         // Find smallest available order >= requested
         let mut avail_order: Option<u8> = None;
@@ -543,7 +640,9 @@ impl PhysicalMemoryManager {
         let meta = self.buddy_meta_ptr();
 
         // SAFETY: mark as allocated in meta array
-        unsafe { *meta.add(pfn as usize) = BUDDY_ALLOCATED; }
+        unsafe {
+            *meta.add(pfn as usize) = BUDDY_ALLOCATED;
+        }
 
         // Split downward until we reach the requested order
         let cur_pfn = pfn;
@@ -553,10 +652,14 @@ impl PhysicalMemoryManager {
             let buddy_pfn = cur_pfn + (1u64 << cur_order);
             self.buddy_list_push(buddy_pfn, cur_order);
             // SAFETY: mark buddy as free at split order
-            unsafe { *meta.add(buddy_pfn as usize) = cur_order; }
+            unsafe {
+                *meta.add(buddy_pfn as usize) = cur_order;
+            }
         }
         // SAFETY: mark final allocation in meta
-        unsafe { *meta.add(cur_pfn as usize) = BUDDY_ALLOCATED; }
+        unsafe {
+            *meta.add(cur_pfn as usize) = BUDDY_ALLOCATED;
+        }
 
         Some((cur_pfn, order))
     }
@@ -624,15 +727,22 @@ impl PhysicalMemoryManager {
     /// Scan all free pages (bits not set), coalesce into max-order buddy blocks.
     fn buddy_init_free_lists(&self, total_pages: usize) {
         let meta = self.buddy_meta_ptr();
-        if meta.is_null() { return; }
+        if meta.is_null() {
+            return;
+        }
 
         let mut pfn = 0usize;
         while pfn < total_pages {
-            if self.test_bit(pfn) { pfn += 1; continue; }
+            if self.test_bit(pfn) {
+                pfn += 1;
+                continue;
+            }
 
             // Find contiguous free run
             let run_start = pfn;
-            while pfn < total_pages && !self.test_bit(pfn) { pfn += 1; }
+            while pfn < total_pages && !self.test_bit(pfn) {
+                pfn += 1;
+            }
             let run_len = pfn - run_start;
 
             // Coalesce into max-order buddy blocks
@@ -640,7 +750,8 @@ impl PhysicalMemoryManager {
             let mut remaining = run_len;
             while remaining > 0 {
                 // Largest power-of-two ≤ remaining, aligned to its own size
-                let max_order = (usize::BITS - 1 - (remaining - 1).leading_zeros()).min(MAX_BUDDY_ORDER as u32) as u8;
+                let max_order = (usize::BITS - 1 - (remaining - 1).leading_zeros())
+                    .min(MAX_BUDDY_ORDER as u32) as u8;
                 // Find largest order where cur is naturally aligned AND 2^order ≤ remaining
                 let mut order = max_order;
                 while order > 0 {
@@ -653,7 +764,9 @@ impl PhysicalMemoryManager {
                 let block_size = 1usize << order as usize;
 
                 // SAFETY: block is within free run and meta array bounds
-                unsafe { *meta.add(cur as usize) = order; }
+                unsafe {
+                    *meta.add(cur as usize) = order;
+                }
                 self.buddy_list_push(cur, order);
 
                 cur += block_size as u64;
@@ -671,10 +784,15 @@ impl PhysicalMemoryManager {
             if i.is_multiple_of(align_pages) {
                 let mut ok = true;
                 for j in 0..count {
-                    if self.test_bit(i + j) { ok = false; break; }
+                    if self.test_bit(i + j) {
+                        ok = false;
+                        break;
+                    }
                 }
                 if ok {
-                    for j in 0..count { self.set_bit(i + j); }
+                    for j in 0..count {
+                        self.set_bit(i + j);
+                    }
                     return Some(PhysAddr(page_to_phys(i as u64)));
                 }
             }
@@ -687,14 +805,23 @@ impl PhysicalMemoryManager {
     fn alloc_from_bitmap_fallback(&self, count: usize) -> Option<PhysAddr> {
         let total = self.info.get().total_pages as usize;
         for i in 0..total {
-            if self.test_bit(i) { continue; }
-            if i + count > total { return None; }
+            if self.test_bit(i) {
+                continue;
+            }
+            if i + count > total {
+                return None;
+            }
             let mut ok = true;
             for j in 1..count {
-                if self.test_bit(i + j) { ok = false; break; }
+                if self.test_bit(i + j) {
+                    ok = false;
+                    break;
+                }
             }
             if ok {
-                for j in 0..count { self.set_bit(i + j); }
+                for j in 0..count {
+                    self.set_bit(i + j);
+                }
                 return Some(PhysAddr(page_to_phys(i as u64)));
             }
         }
@@ -706,7 +833,8 @@ impl PhysicalMemoryManager {
     fn early_alloc_single(&self) -> Option<PhysAddr> {
         let current = self.early_current.fetch_add(PAGE_SIZE, Ordering::Relaxed);
         let aligned = (current + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        self.early_current.store(aligned + PAGE_SIZE, Ordering::Relaxed);
+        self.early_current
+            .store(aligned + PAGE_SIZE, Ordering::Relaxed);
 
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
@@ -758,7 +886,9 @@ pub fn pmm_init(mem_size: u64, kernel_end: u64) -> &'static PhysicalMemoryManage
 }
 
 pub fn pmm_init_bitmap(reserved_after_kernel: u64) {
-    let pmm = GLOBAL_PMM.get().expect("[PMM] pmm_init_bitmap before pmm_init");
+    let pmm = GLOBAL_PMM
+        .get()
+        .expect("[PMM] pmm_init_bitmap before pmm_init");
     pmm.init_bitmap(reserved_after_kernel);
 }
 
@@ -801,8 +931,12 @@ pub fn pmm_barrier_rollback() -> bool {
     true
 }
 
-extern "C" fn pmm_barrier_capture_cb() { pmm_barrier_capture(); }
-extern "C" fn pmm_barrier_rollback_cb() -> bool { pmm_barrier_rollback() }
+extern "C" fn pmm_barrier_capture_cb() {
+    pmm_barrier_capture();
+}
+extern "C" fn pmm_barrier_rollback_cb() -> bool {
+    pmm_barrier_rollback()
+}
 
 pub fn pmm_register_barrier_domain() {
     crate::kernel::barrier::recovery_domain_register(3);

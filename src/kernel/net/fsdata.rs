@@ -5,7 +5,6 @@
 // 常量定义
 // ============================================================================
 
-
 pub const FS_NUM_FILES: usize = 2;
 
 // ============================================================================
@@ -73,7 +72,7 @@ pub static mut FS_ROOT: *const FsFileEntry = &FILE_INDEX_HTML;
 // ============================================================================
 
 /// 初始化 HTTP 静态文件数据
-/// 
+///
 /// 必须在第一次使用前调用此函数填充数据。
 /// 通常在 qx_net_apps_init() 中自动调用。
 #[no_mangle]
@@ -84,7 +83,7 @@ pub static mut FS_ROOT: *const FsFileEntry = &FILE_INDEX_HTML;
 pub unsafe extern "C" fn fsdata_init() {
     // 填充 index.html 数据
     let html = b"/index.html\0<!DOCTYPE html>\n<html>\n<head><title>AntX Web Server</title></head>\n<body style='font-family:sans-serif'>\n  <h1>QueenX</h1>\n  <p>lwIP TCP/IP stack is running.</p>\n  <p>E1000 NIC 1000Mbps Full-Duplex.</p>\n</body>\n</html>\n";
-    
+
     for (i, &byte) in html.iter().enumerate() {
         if i < DATA_INDEX_HTML.len() {
             DATA_INDEX_HTML[i] = byte;
@@ -92,10 +91,10 @@ pub unsafe extern "C" fn fsdata_init() {
             break;
         }
     }
-    
+
     // 填充 404.html 数据
     let html_404 = b"/404.html\0<html><body><h1>404</h1></body></html>";
-    
+
     for (i, &byte) in html_404.iter().enumerate() {
         if i < DATA_404_HTML.len() {
             DATA_404_HTML[i] = byte;
@@ -117,19 +116,21 @@ pub fn get_file(index: usize) -> Option<&'static FsFileEntry> {
     }
 }
 
-pub fn get_file_count() -> usize { FS_NUM_FILES }
+pub fn get_file_count() -> usize {
+    FS_NUM_FILES
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_fsdata() {
         assert_eq!(get_file_count(), 2);
         assert!(get_file(0).is_some());
         assert!(get_file(1).is_some());
         assert!(get_file(2).is_none());
-        
+
         let idx = get_file(0).unwrap();
         assert_eq!(idx.len, DATA_INDEX_HTML_LEN - INDEX_HTML_DATA_OFFSET);
     }

@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use super::types::*;
 use super::domain::RecoveryDomain;
+use super::types::*;
 
 pub static ROLLBACK_LOG: spin::Mutex<[Option<RollbackEvent>; MAX_ROLLBACK_LOG]> =
     spin::Mutex::new([None; MAX_ROLLBACK_LOG]);
@@ -12,11 +12,16 @@ fn log_rollback_event(event: RollbackEvent) {
     let idx = ROLLBACK_LOG_IDX.fetch_add(1, Ordering::SeqCst) as usize;
     log[idx % MAX_ROLLBACK_LOG] = Some(event);
 
-    crate::klog_ffi!(klog_ffi_error,
+    crate::klog_ffi!(
+        klog_ffi_error,
         "[BARRIER] Rollback: dom={} gen={}->{} entries={} fp=0x{:X} depth={} result={}",
-        event.domain_id, event.generation_from, event.generation_to,
-        event.entries_rolled_back, event.crash_fingerprint,
-        event.cascade_depth, event.result
+        event.domain_id,
+        event.generation_from,
+        event.generation_to,
+        event.entries_rolled_back,
+        event.crash_fingerprint,
+        event.cascade_depth,
+        event.result
     );
 }
 
@@ -27,12 +32,30 @@ pub struct PanicDomainMapping {
 }
 
 const PANIC_DOMAIN_MAP: [PanicDomainMapping; 6] = [
-    PanicDomainMapping { prefix: b"PMM",   domain_id: 3 },
-    PanicDomainMapping { prefix: b"PROC",  domain_id: 4 },
-    PanicDomainMapping { prefix: b"NET",   domain_id: 5 },
-    PanicDomainMapping { prefix: b"VFS",   domain_id: 2 },
-    PanicDomainMapping { prefix: b"HvFS",  domain_id: 2 },
-    PanicDomainMapping { prefix: b"RAMFS", domain_id: 2 },
+    PanicDomainMapping {
+        prefix: b"PMM",
+        domain_id: 3,
+    },
+    PanicDomainMapping {
+        prefix: b"PROC",
+        domain_id: 4,
+    },
+    PanicDomainMapping {
+        prefix: b"NET",
+        domain_id: 5,
+    },
+    PanicDomainMapping {
+        prefix: b"VFS",
+        domain_id: 2,
+    },
+    PanicDomainMapping {
+        prefix: b"HvFS",
+        domain_id: 2,
+    },
+    PanicDomainMapping {
+        prefix: b"RAMFS",
+        domain_id: 2,
+    },
 ];
 
 pub struct RecoveryManager {
@@ -53,7 +76,9 @@ impl RecoveryManager {
 
     pub fn register(&mut self, domain: &'static RecoveryDomain) -> Option<u64> {
         let idx = self.count.load(Ordering::SeqCst) as usize;
-        if idx >= MAX_RECOVERY_DOMAINS { return None; }
+        if idx >= MAX_RECOVERY_DOMAINS {
+            return None;
+        }
         let id = domain.id as usize;
         if id < DIRECT_MAP_SIZE {
             self.direct_map[id] = Some(domain);
@@ -64,39 +89,51 @@ impl RecoveryManager {
     }
 
     pub fn tick(&self, current_tick: u64) {
-        if self.count.load(Ordering::Relaxed) == 0 { return; }
+        if self.count.load(Ordering::Relaxed) == 0 {
+            return;
+        }
         let count = self.count.load(Ordering::SeqCst) as usize;
         for i in 0..count {
             if let Some(dom) = self.domains[i] {
                 if dom.is_active() && current_tick >= dom.next_barrier_tick.load(Ordering::SeqCst) {
                     dom.barrier_generation.fetch_add(1, Ordering::SeqCst);
-                    dom.next_barrier_tick.store(
-                        current_tick + dom.barrier_interval_ticks, Ordering::SeqCst,
-                    );
+                    dom.next_barrier_tick
+                        .store(current_tick + dom.barrier_interval_ticks, Ordering::SeqCst);
                     dom.push_barrier_snapshot(current_tick);
                     if let Some(cb) = *dom.capture_cb.lock() {
-                        unsafe { cb(); }
+                        unsafe {
+                            cb();
+                        }
                     }
                 }
                 // Health monitoring: escalate to BSR if heartbeat lost
                 if !dom.check_health(current_tick) {
-                    let gap = current_tick.saturating_sub(
-                        dom.last_heartbeat.load(Ordering::SeqCst));
-                    crate::klog_ffi!(klog_ffi_warn,
-                        "[BARRIER] domain {} heartbeat lost ({gap} ticks)", dom.id);
+                    let gap =
+                        current_tick.saturating_sub(dom.last_heartbeat.load(Ordering::SeqCst));
+                    crate::klog_ffi!(
+                        klog_ffi_warn,
+                        "[BARRIER] domain {} heartbeat lost ({gap} ticks)",
+                        dom.id
+                    );
 
                     dom.consecutive_failures.fetch_add(1, Ordering::SeqCst);
                     let failures = dom.consecutive_failures.load(Ordering::SeqCst);
 
                     if failures <= 2 {
-                        crate::klog_ffi!(klog_ffi_info,
-                            "[BARRIER] domain {} attempt domain-level rollback (failures={})", dom.id, failures);
+                        crate::klog_ffi!(
+                            klog_ffi_info,
+                            "[BARRIER] domain {} attempt domain-level rollback (failures={})",
+                            dom.id,
+                            failures
+                        );
                         if dom.try_rollback(current_tick, 0) {
-                            let (entries, _, _, _) = self.rollback_domain(
-                                dom, current_tick, 0, 0,
+                            let (entries, _, _, _) = self.rollback_domain(dom, current_tick, 0, 0);
+                            crate::klog_ffi!(
+                                klog_ffi_info,
+                                "[BARRIER] domain {} rollback recovered (entries={})",
+                                dom.id,
+                                entries
                             );
-                            crate::klog_ffi!(klog_ffi_info,
-                                "[BARRIER] domain {} rollback recovered (entries={})", dom.id, entries);
                             dom.mark_recovered();
                             dom.consecutive_failures.store(0, Ordering::SeqCst);
                             continue;
@@ -111,9 +148,7 @@ impl RecoveryManager {
                     }
                 }
                 // Reset CPU quota per period
-                if dom.cpu_quota_period > 0
-                    && current_tick.is_multiple_of(dom.cpu_quota_period)
-                {
+                if dom.cpu_quota_period > 0 && current_tick.is_multiple_of(dom.cpu_quota_period) {
                     dom.reset_quota();
                 }
             }
@@ -176,7 +211,13 @@ impl RecoveryManager {
         None
     }
 
-    pub fn rollback_domain(&self, dom: &RecoveryDomain, tick: u64, fingerprint: u64, depth: usize) -> (usize, u64, u64, i32) {
+    pub fn rollback_domain(
+        &self,
+        dom: &RecoveryDomain,
+        tick: u64,
+        fingerprint: u64,
+        depth: usize,
+    ) -> (usize, u64, u64, i32) {
         let gen_from = dom.barrier_generation.load(Ordering::SeqCst);
         let target_gen = if depth > 0 {
             dom.get_rollback_generation(depth as u32)
@@ -194,7 +235,9 @@ impl RecoveryManager {
         }
 
         if let Some(cb) = *dom.rollback_cb.lock() {
-            unsafe { cb(); }
+            unsafe {
+                cb();
+            }
         }
 
         let result = if entries_rolled_back > 0 { 0 } else { -1 };
@@ -223,9 +266,7 @@ impl RecoveryManager {
         let mut visited = [false; MAX_RECOVERY_DOMAINS];
         let mut rolled_back = 0usize;
 
-        let target_idx = (0..count).find(|&i| {
-            self.domains[i].map_or(false, |d| d.id == domain_id)
-        });
+        let target_idx = (0..count).find(|&i| self.domains[i].map_or(false, |d| d.id == domain_id));
 
         if let Some(idx) = target_idx {
             visited[idx] = true;
@@ -239,9 +280,8 @@ impl RecoveryManager {
 
             if let Some(dom) = self.find(current_id) {
                 if dom.try_rollback(tick, fingerprint) {
-                    let (entries, _, _, _) = self.rollback_domain(
-                        dom, tick, fingerprint, rolled_back,
-                    );
+                    let (entries, _, _, _) =
+                        self.rollback_domain(dom, tick, fingerprint, rolled_back);
                     if entries > 0 {
                         rolled_back += 1;
                     }
@@ -251,13 +291,15 @@ impl RecoveryManager {
                         if let Some(dep_id) = *slot {
                             // BFS queue overflow guard
                             if queue_tail >= MAX_RECOVERY_DOMAINS {
-                                crate::klog_ffi!(klog_ffi_warn,
-                                    "[BARRIER] cascade BFS queue overflow at dom={}", dep_id);
+                                crate::klog_ffi!(
+                                    klog_ffi_warn,
+                                    "[BARRIER] cascade BFS queue overflow at dom={}",
+                                    dep_id
+                                );
                                 break;
                             }
-                            let dep_idx = (0..count).find(|&i| {
-                                self.domains[i].map_or(false, |d| d.id == dep_id)
-                            });
+                            let dep_idx = (0..count)
+                                .find(|&i| self.domains[i].map_or(false, |d| d.id == dep_id));
                             if let Some(di) = dep_idx {
                                 if !visited[di] {
                                     visited[di] = true;

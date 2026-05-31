@@ -13,12 +13,12 @@
 // 保留现有模块 (不动任何实现代码)
 // ============================================================================
 
-pub mod gdt;
-pub mod tss;
-pub mod apic;
-pub mod ioapic;
 pub mod acpi;
+pub mod apic;
+pub mod gdt;
+pub mod ioapic;
 pub mod smp_init;
+pub mod tss;
 
 // ============================================================================
 // X8664 架构类型
@@ -34,7 +34,7 @@ pub struct X8664;
 // 每个 trait 互不依赖，可独立单元测试。
 // ============================================================================
 
-use crate::kernel::arch::{CoreArch, InterruptArch, MmuArch, SystemArch, Arch};
+use crate::kernel::arch::{Arch, CoreArch, InterruptArch, MmuArch, SystemArch};
 
 // ── CoreArch: 基础核心 ──────────────────────────────────────────────────
 
@@ -70,25 +70,33 @@ impl CoreArch for X8664 {
     /// CPU 暂停等待中断 (hlt)。
     #[inline(always)]
     fn halt() {
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
     }
 
     /// 全内存屏障 (mfence)。
     #[inline(always)]
     fn fence() {
-        unsafe { core::arch::asm!("mfence", options(nostack, preserves_flags)); }
+        unsafe {
+            core::arch::asm!("mfence", options(nostack, preserves_flags));
+        }
     }
 
     /// 写内存屏障 (sfence)。
     #[inline(always)]
     fn fence_w() {
-        unsafe { core::arch::asm!("sfence", options(nostack, preserves_flags)); }
+        unsafe {
+            core::arch::asm!("sfence", options(nostack, preserves_flags));
+        }
     }
 
     /// 读内存屏障 (lfence)。
     #[inline(always)]
     fn fence_r() {
-        unsafe { core::arch::asm!("lfence", options(nostack, preserves_flags)); }
+        unsafe {
+            core::arch::asm!("lfence", options(nostack, preserves_flags));
+        }
     }
 }
 
@@ -115,14 +123,18 @@ impl InterruptArch for X8664 {
     #[inline(always)]
     fn interrupt_restore(flags: usize) {
         if (flags as u64) & (1 << 9) != 0 {
-            unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+            unsafe {
+                core::arch::asm!("sti", options(nomem, nostack));
+            }
         }
     }
 
     /// 启用中断 (sti)。
     #[inline(always)]
     fn interrupt_enable() {
-        unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("sti", options(nomem, nostack));
+        }
     }
 
     /// 检查 IF 位 (RFLAGS bit 9)。
@@ -241,7 +253,9 @@ impl MmuArch for X8664 {
         extern "C" {
             fn process_switch_asm(prev: *mut u8, next: *const u8);
         }
-        unsafe { process_switch_asm(from, to); }
+        unsafe {
+            process_switch_asm(from, to);
+        }
     }
 
     /// 进入用户态 (iretq)。
@@ -274,7 +288,9 @@ impl MmuArch for X8664 {
     /// 返回用户态 (iretq)。
     #[inline(always)]
     fn return_to_user() {
-        unsafe { core::arch::asm!("iretq", options(noreturn)); }
+        unsafe {
+            core::arch::asm!("iretq", options(noreturn));
+        }
     }
 }
 
@@ -345,7 +361,9 @@ impl SystemArch for X8664 {
         unsafe {
             core::arch::asm!("lidt [0]", "int 3", options(nomem, nostack));
         }
-        loop { core::hint::spin_loop(); }
+        loop {
+            core::hint::spin_loop();
+        }
     }
 
     /// 重启 (键盘控制器 8042 → CPU reset)。
@@ -354,7 +372,9 @@ impl SystemArch for X8664 {
             core::hint::spin_loop();
         }
         <Self as SystemArch>::outb(0x64, 0xFE);
-        loop { <Self as CoreArch>::halt(); }
+        loop {
+            <Self as CoreArch>::halt();
+        }
     }
 }
 

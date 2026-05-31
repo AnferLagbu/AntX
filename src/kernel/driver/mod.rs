@@ -89,13 +89,7 @@ pub mod hotplug;
 // ============================================================================
 
 // --- 框架导出 ---
-pub use framework::{
-    Driver,
-    DeviceType,
-    DeviceInfo,
-    DriverError,
-    Result as DriverResult,
-};
+pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as DriverResult};
 
 // --- 总线驱动导出 ---
 #[cfg(target_arch = "x86_64")]
@@ -103,18 +97,8 @@ pub use bus::pci;
 
 // --- 字符设备导出 ---
 pub use char::{
-    SerialPort,
-    SerialConfig,
-    BaudRate,
-    DataBits,
-    StopBits,
-    ParityMode,
-    VgaDriver,
-    Color,
-    TextAttribute,
-    VgaChar,
-    SCREEN_WIDTH,
-    SCREEN_HEIGHT,
+    BaudRate, Color, DataBits, ParityMode, SerialConfig, SerialPort, StopBits, TextAttribute,
+    VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH,
 };
 
 // --- 输入设备导出 ---
@@ -122,20 +106,11 @@ pub use input::keyboard;
 
 // --- 存储设备导出 ---
 pub use storage::{
-    NvmeController,
-    NvmeCommand,
-    NvmeCompletion,
-    AhciController,
-    AhciPort,
-    H2dFis,
-    AtaCommand,
+    AhciController, AhciPort, AtaCommand, H2dFis, NvmeCommand, NvmeCompletion, NvmeController,
 };
 
 // 为了向后兼容，保留一些直接导入
-pub use storage::ata::{
-    AtaController,
-    AtaDevice,
-};
+pub use storage::ata::{AtaController, AtaDevice};
 
 // ============================================================================
 // 初始化函数
@@ -209,20 +184,58 @@ pub fn list_devices() -> alloc::string::String {
             }
         }
 
-        if !block.is_empty() { info.push_str("Block:\n"); for s in &block { info.push_str(s); info.push('\n'); } }
-        if !char_dev.is_empty() { info.push_str("Char:\n"); for s in &char_dev { info.push_str(s); info.push('\n'); } }
-        if !net.is_empty() { info.push_str("Net:\n"); for s in &net { info.push_str(s); info.push('\n'); } }
-        if !input.is_empty() { info.push_str("Input:\n"); for s in &input { info.push_str(s); info.push('\n'); } }
-        if !other.is_empty() { info.push_str("Other:\n"); for s in &other { info.push_str(s); info.push('\n'); } }
+        if !block.is_empty() {
+            info.push_str("Block:\n");
+            for s in &block {
+                info.push_str(s);
+                info.push('\n');
+            }
+        }
+        if !char_dev.is_empty() {
+            info.push_str("Char:\n");
+            for s in &char_dev {
+                info.push_str(s);
+                info.push('\n');
+            }
+        }
+        if !net.is_empty() {
+            info.push_str("Net:\n");
+            for s in &net {
+                info.push_str(s);
+                info.push('\n');
+            }
+        }
+        if !input.is_empty() {
+            info.push_str("Input:\n");
+            for s in &input {
+                info.push_str(s);
+                info.push('\n');
+            }
+        }
+        if !other.is_empty() {
+            info.push_str("Other:\n");
+            for s in &other {
+                info.push_str(s);
+                info.push('\n');
+            }
+        }
     }
 
     let blk_count = block::block_device_count();
     if blk_count > 0 {
         let bds = block::block_device_list();
-        info.push_str(&format!("\nBlock Device Registry: {} device(s)\n", blk_count));
+        info.push_str(&format!(
+            "\nBlock Device Registry: {} device(s)\n",
+            blk_count
+        ));
         for (id, name, sectors) in &bds {
-            info.push_str(&format!("  [id={}] {} sectors={} size={}MB\n",
-                id, name, sectors, *sectors as u64 * 512 / (1024 * 1024)));
+            info.push_str(&format!(
+                "  [id={}] {} sectors={} size={}MB\n",
+                id,
+                name,
+                sectors,
+                *sectors as u64 * 512 / (1024 * 1024)
+            ));
         }
     }
 

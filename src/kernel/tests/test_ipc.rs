@@ -1,8 +1,8 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{runner, TestResult};
 use super::check;
 use crate::kernel::ipc::types::*;
-use crate::kernel::ipc::{pipe, shm, sem};
+use crate::kernel::ipc::{pipe, sem, shm};
+use crate::kernel::tests::{runner, TestResult};
+use crate::register_tests_inner;
 
 fn create_test_namespace() -> IpcNamespace {
     IpcNamespace {
@@ -99,10 +99,22 @@ fn test_invalid_ids() -> TestResult {
     let invalid_id: IpcId = 99999;
     let pid: u32 = 1200;
 
-    check!(pipe::pipe_write_safe(&mut ns, invalid_fd, &[0u8; 1], 1).is_err(), "pipe_write should fail with invalid fd");
-    check!(pipe::pipe_read_safe(&mut ns, invalid_fd, &mut [0u8; 1], 1).is_err(), "pipe_read should fail with invalid fd");
-    check!(shm::shm_attach_safe(&mut ns, invalid_id, pid).is_err(), "shm_attach should fail with invalid id");
-    check!(sem::sem_wait_safe(&mut ns, invalid_id).is_err(), "sem_wait should fail with invalid id");
+    check!(
+        pipe::pipe_write_safe(&mut ns, invalid_fd, &[0u8; 1], 1).is_err(),
+        "pipe_write should fail with invalid fd"
+    );
+    check!(
+        pipe::pipe_read_safe(&mut ns, invalid_fd, &mut [0u8; 1], 1).is_err(),
+        "pipe_read should fail with invalid fd"
+    );
+    check!(
+        shm::shm_attach_safe(&mut ns, invalid_id, pid).is_err(),
+        "shm_attach should fail with invalid id"
+    );
+    check!(
+        sem::sem_wait_safe(&mut ns, invalid_id).is_err(),
+        "sem_wait should fail with invalid id"
+    );
 
     TestResult::Pass
 }
@@ -117,8 +129,14 @@ fn test_duplicate_close() -> TestResult {
         Err(_) => return TestResult::Fail("pipe_create failed"),
     };
 
-    check!(pipe::pipe_close_safe(&mut ns, rfd).is_ok(), "first close should succeed");
-    check!(pipe::pipe_close_safe(&mut ns, rfd).is_err(), "second close should fail");
+    check!(
+        pipe::pipe_close_safe(&mut ns, rfd).is_ok(),
+        "first close should succeed"
+    );
+    check!(
+        pipe::pipe_close_safe(&mut ns, rfd).is_err(),
+        "second close should fail"
+    );
 
     let _ = pipe::pipe_close_safe(&mut ns, wfd);
     TestResult::Pass
@@ -126,7 +144,7 @@ fn test_duplicate_close() -> TestResult {
 
 pub fn register_ipc_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "IPC": {
             "pipe_basic": test_pipe_basic,
             "shm_rapid_attach_detach": test_shm_rapid_attach_detach,

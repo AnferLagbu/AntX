@@ -21,21 +21,21 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::types::*;
 use super::idt::IdtManager;
+use super::types::*;
 
 /// 异常处理结果 (结构化错误处理)
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecoveryAction {
     /// 成功恢复，可以继续执行
     Recovered,
-    
+
     /// 需要终止 user-mode 进程
     TerminateProcess(u32),
-    
+
     /// 需要域级恢复 (barrier-stack)
     DomainRecovery,
-    
+
     /// 无法恢复，触发 kernel panic
     Panic(PanicInfo),
 }
@@ -50,7 +50,11 @@ pub struct PanicInfo {
 
 impl PanicInfo {
     pub fn new(reason: &'static str, vector: u8, rip: u64) -> Self {
-        Self { reason, vector, rip }
+        Self {
+            reason,
+            vector,
+            rip,
+        }
     }
 }
 
@@ -90,13 +94,13 @@ pub enum ExceptionCategory {
 pub trait ExceptionHandler: Send + Sync {
     /// 处理异常并返回恢复动作
     fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction;
-    
+
     /// 获取异常严重性
     fn severity(&self) -> Severity;
-    
+
     /// 获取异常分类
     fn category(&self) -> ExceptionCategory;
-    
+
     /// 获取异常名称
     fn name(&self) -> &'static str;
 }
@@ -118,17 +122,27 @@ impl ExceptionHandler for DivisionByZeroHandler {
             RecoveryAction::DomainRecovery
         }
     }
-    
+
     fn severity(&self) -> Severity {
         #[cfg(target_arch = "x86_64")]
-        if is_currently_user_mode() { Severity::Error } else { Severity::Fatal }
+        if is_currently_user_mode() {
+            Severity::Error
+        } else {
+            Severity::Fatal
+        }
         #[cfg(not(target_arch = "x86_64"))]
-        { Severity::Error }
+        {
+            Severity::Error
+        }
     }
-    
-    fn category(&self) -> ExceptionCategory { ExceptionCategory::Arithmetic }
-    
-    fn name(&self) -> &'static str { "Division By Zero" }
+
+    fn category(&self) -> ExceptionCategory {
+        ExceptionCategory::Arithmetic
+    }
+
+    fn name(&self) -> &'static str {
+        "Division By Zero"
+    }
 }
 
 /// Page Fault 处理器 (#PF, Vector 14)
@@ -142,17 +156,27 @@ impl PageFaultHandler {
         let user = error_code & 0x04 != 0;
         let reserved = error_code & 0x08 != 0;
         let instruction = error_code & 0x10 != 0;
-        
-        let access_type = if write { AccessType::Write } else { AccessType::Read };
+
+        let access_type = if write {
+            AccessType::Write
+        } else {
+            AccessType::Read
+        };
         let mode = if user { Mode::User } else { Mode::Kernel };
-        
+
         let cause = match (!present, reserved) {
             (true, true) => FaultCause::ReservedBitSet,
             (true, false) => FaultCause::PageNotPresent,
             (false, _) => FaultCause::ProtectionViolation,
         };
-        
-        PageFaultAnalysis { present, access_type, mode, cause, instruction_fetch: instruction }
+
+        PageFaultAnalysis {
+            present,
+            access_type,
+            mode,
+            cause,
+            instruction_fetch: instruction,
+        }
     }
 }
 
@@ -172,17 +196,21 @@ impl ExceptionHandler for PageFaultHandler {
         match analysis.cause {
             FaultCause::PageNotPresent => {
                 if fault_addr == 0 || fault_addr < 0x1000 {
-                    unsafe { (*frame).rip += 2; }
+                    unsafe {
+                        (*frame).rip += 2;
+                    }
                     return RecoveryAction::Recovered;
                 }
 
                 if fault_addr > 0xFFFF && fault_addr < 0xFFFFFFFF80000000 {
-                    unsafe { (*frame).rsp += 8; }
+                    unsafe {
+                        (*frame).rsp += 8;
+                    }
                     return RecoveryAction::Recovered;
                 }
 
                 RecoveryAction::DomainRecovery
-            },
+            }
 
             FaultCause::ProtectionViolation | FaultCause::ReservedBitSet => {
                 RecoveryAction::Panic(PanicInfo::new(
@@ -193,17 +221,27 @@ impl ExceptionHandler for PageFaultHandler {
             }
         }
     }
-    
+
     fn severity(&self) -> Severity {
         #[cfg(target_arch = "x86_64")]
-        if is_currently_user_mode() { Severity::Error } else { Severity::Fatal }
+        if is_currently_user_mode() {
+            Severity::Error
+        } else {
+            Severity::Fatal
+        }
         #[cfg(not(target_arch = "x86_64"))]
-        { Severity::Error }
+        {
+            Severity::Error
+        }
     }
-    
-    fn category(&self) -> ExceptionCategory { ExceptionCategory::MemoryAccess }
-    
-    fn name(&self) -> &'static str { "Page Fault" }
+
+    fn category(&self) -> ExceptionCategory {
+        ExceptionCategory::MemoryAccess
+    }
+
+    fn name(&self) -> &'static str {
+        "Page Fault"
+    }
 }
 
 /// Page Fault 分析结果
@@ -217,10 +255,16 @@ pub struct PageFaultAnalysis {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AccessType { Read, Write }
+pub enum AccessType {
+    Read,
+    Write,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode { Kernel, User }
+pub enum Mode {
+    Kernel,
+    User,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaultCause {
@@ -243,29 +287,39 @@ impl ExceptionHandler for GeneralProtectionFaultHandler {
             RecoveryAction::DomainRecovery
         }
     }
-    
+
     fn severity(&self) -> Severity {
         #[cfg(target_arch = "x86_64")]
-        if is_currently_user_mode() { Severity::Error } else { Severity::Fatal }
+        if is_currently_user_mode() {
+            Severity::Error
+        } else {
+            Severity::Fatal
+        }
         #[cfg(not(target_arch = "x86_64"))]
-        { Severity::Error }
+        {
+            Severity::Error
+        }
     }
-    
-    fn category(&self) -> ExceptionCategory { ExceptionCategory::Protection }
-    
-    fn name(&self) -> &'static str { "General Protection Fault" }
+
+    fn category(&self) -> ExceptionCategory {
+        ExceptionCategory::Protection
+    }
+
+    fn name(&self) -> &'static str {
+        "General Protection Fault"
+    }
 }
 
 impl GeneralProtectionFaultHandler {
     fn print_detailed_gpf_info(&self, frame: &InterruptFrame) {
         let selector = frame.err_code as u16;
-        
+
         // 解析错误码位域
         let external = selector & 0x01 != 0;
         let idt_flag = selector & 0x02 != 0;
         let table = (selector >> 1) & 0x03;
         let index = (selector >> 3) & 0x1FFF;
-        
+
         let table_name = match table {
             0 => "IDT",
             1 => "GDT",
@@ -273,7 +327,7 @@ impl GeneralProtectionFaultHandler {
             3 => "IDT",
             _ => "Unknown",
         };
-        
+
         // TODO: 使用 klog 输出详细信息 (当前为简化版)
         let _ = (external, idt_flag, table_name, index);
     }
@@ -287,9 +341,9 @@ static DOUBLE_FAULT_COUNT: AtomicU64 = AtomicU64::new(0);
 impl ExceptionHandler for DoubleFaultHandler {
     fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
         let count = DOUBLE_FAULT_COUNT.fetch_add(1, Ordering::SeqCst);
-        
+
         self.print_double_fault_context(unsafe { &*frame });
-        
+
         if count <= 3 {
             // 前 3 次 DF: 尝试调度切换恢复
             RecoveryAction::DomainRecovery
@@ -302,19 +356,25 @@ impl ExceptionHandler for DoubleFaultHandler {
             ))
         }
     }
-    
-    fn severity(&self) -> Severity { Severity::Catastrophic }
-    
-    fn category(&self) -> ExceptionCategory { ExceptionCategory::SystemInternal }
-    
-    fn name(&self) -> &'static str { "Double Fault" }
+
+    fn severity(&self) -> Severity {
+        Severity::Catastrophic
+    }
+
+    fn category(&self) -> ExceptionCategory {
+        ExceptionCategory::SystemInternal
+    }
+
+    fn name(&self) -> &'static str {
+        "Double Fault"
+    }
 }
 
 impl DoubleFaultHandler {
     fn print_double_fault_context(&self, _frame: &InterruptFrame) {
         let count = DOUBLE_FAULT_COUNT.load(Ordering::Relaxed);
         let nesting = IdtManager::instance().nested_count.load(Ordering::Relaxed);
-        
+
         // TODO: 使用 klog 输出上下文信息
         let _ = (count, nesting);
     }
@@ -336,12 +396,16 @@ impl ExceptionHandler for DefaultHandler {
         // 默认行为: 尝试域级恢复
         RecoveryAction::DomainRecovery
     }
-    
-    fn severity(&self) -> Severity { Severity::Warning }
-    
-    fn category(&self) -> ExceptionCategory { ExceptionCategory::Unknown }
-    
-    fn name(&self) -> &'static str { 
+
+    fn severity(&self) -> Severity {
+        Severity::Warning
+    }
+
+    fn category(&self) -> ExceptionCategory {
+        ExceptionCategory::Unknown
+    }
+
+    fn name(&self) -> &'static str {
         get_exception_name(self.vector)
     }
 }
@@ -364,7 +428,7 @@ pub fn create_handler(vector: u8) -> &'static dyn ExceptionHandler {
     static PAGE_FAULT: PageFaultHandler = PageFaultHandler;
     static GPF: GeneralProtectionFaultHandler = GeneralProtectionFaultHandler;
     static DOUBLE_FAULT: DoubleFaultHandler = DoubleFaultHandler;
-    
+
     match vector {
         0 => &DIV_ZERO,
         14 => &PAGE_FAULT,
@@ -417,38 +481,42 @@ impl ExceptionStatisticsCollector {
             0
         }
     }
-    
+
     /// 记录一次异常处理
     pub fn record(&self, handler: &dyn ExceptionHandler, action: &RecoveryAction) {
         self.total_exceptions.fetch_add(1, Ordering::Relaxed);
-        
+
         // 更新分类统计
         let cat_idx = handler.category() as usize;
         if cat_idx < 6 {
             self.by_category[cat_idx].fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // 更新严重性统计
         let sev_idx = handler.severity() as usize;
         if sev_idx < 5 {
             self.by_severity[sev_idx].fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // 更新动作统计
         let _ = match action {
             RecoveryAction::Recovered => self.recoveries.fetch_add(1, Ordering::Relaxed),
-            RecoveryAction::TerminateProcess(_) => self.process_terminations.fetch_add(1, Ordering::Relaxed),
-            RecoveryAction::DomainRecovery => { return; },  // 不单独计数，提前返回
+            RecoveryAction::TerminateProcess(_) => {
+                self.process_terminations.fetch_add(1, Ordering::Relaxed)
+            }
+            RecoveryAction::DomainRecovery => {
+                return;
+            } // 不单独计数，提前返回
             RecoveryAction::Panic(_) => self.panics.fetch_add(1, Ordering::Relaxed),
         };
         // 使用 _ 抑制 unused warning
     }
-    
+
     /// 导出为 JSON 格式 (用于测试框架)
     #[cfg(feature = "json_export")]
     pub fn export_json(&self) -> alloc::string::String {
         use alloc::format;
-        
+
         format!(
             r#"{{
   "total_exceptions": {},
@@ -474,17 +542,17 @@ impl ExceptionStatisticsCollector {
   }}
 }}"#,
             self.total_exceptions.load(Ordering::Relaxed),
-            self.by_category[0].load(Ordering::Relaxed),  // Arithmetic
-            self.by_category[1].load(Ordering::Relaxed),  // MemoryAccess
-            self.by_category[2].load(Ordering::Relaxed),  // Protection
-            self.by_category[3].load(Ordering::Relaxed),  // Debug
-            self.by_category[4].load(Ordering::Relaxed),  // SystemInternal
-            self.by_category[5].load(Ordering::Relaxed),  // Unknown
-            self.by_severity[0].load(Ordering::Relaxed),   // Info
-            self.by_severity[1].load(Ordering::Relaxed),   // Warning
-            self.by_severity[2].load(Ordering::Relaxed),   // Error
-            self.by_severity[3].load(Ordering::Relaxed),   // Fatal
-            self.by_severity[4].load(Ordering::Relaxed),   // Catastrophic
+            self.by_category[0].load(Ordering::Relaxed), // Arithmetic
+            self.by_category[1].load(Ordering::Relaxed), // MemoryAccess
+            self.by_category[2].load(Ordering::Relaxed), // Protection
+            self.by_category[3].load(Ordering::Relaxed), // Debug
+            self.by_category[4].load(Ordering::Relaxed), // SystemInternal
+            self.by_category[5].load(Ordering::Relaxed), // Unknown
+            self.by_severity[0].load(Ordering::Relaxed), // Info
+            self.by_severity[1].load(Ordering::Relaxed), // Warning
+            self.by_severity[2].load(Ordering::Relaxed), // Error
+            self.by_severity[3].load(Ordering::Relaxed), // Fatal
+            self.by_severity[4].load(Ordering::Relaxed), // Catastrophic
             self.recoveries.load(Ordering::Relaxed),
             self.process_terminations.load(Ordering::Relaxed),
             self.panics.load(Ordering::Relaxed),
@@ -507,7 +575,10 @@ mod tests {
     #[test]
     fn test_recovery_action_variants() {
         assert_eq!(RecoveryAction::Recovered, RecoveryAction::Recovered);
-        assert_ne!(RecoveryAction::TerminateProcess(1), RecoveryAction::Recovered);
+        assert_ne!(
+            RecoveryAction::TerminateProcess(1),
+            RecoveryAction::Recovered
+        );
     }
 
     #[test]
@@ -543,10 +614,10 @@ mod tests {
 
     #[test]
     fn test_factory_pattern() {
-        let handler0 = create_handler(0);   // Division By Zero
+        let handler0 = create_handler(0); // Division By Zero
         let handler13 = create_handler(13); // GPF
         let handler99 = create_handler(99); // Unknown
-        
+
         assert_eq!(handler0.name(), "Division By Zero");
         assert_eq!(handler13.name(), "General Protection Fault");
         assert_eq!(handler99.name(), "Unknown");
@@ -555,12 +626,12 @@ mod tests {
     #[test]
     fn test_statistics_collector() {
         let collector = ExceptionStatisticsCollector::new();
-        
+
         let handler = DivisionByZeroHandler;
         let action = RecoveryAction::TerminateProcess(42);
-        
+
         collector.record(&handler, &action);
-        
+
         assert_eq!(collector.total_exceptions.load(Ordering::Relaxed), 1);
         assert_eq!(collector.process_terminations.load(Ordering::Relaxed), 1);
         assert_eq!(collector.by_category[0].load(Ordering::Relaxed), 1); // Arithmetic

@@ -18,23 +18,9 @@ pub mod serial;
 pub mod vga;
 
 // 导出常用类型
-pub use serial::{
-    SerialPort,
-    SerialConfig,
-    BaudRate,
-    DataBits,
-    StopBits,
-    ParityMode,
-};
+pub use serial::{BaudRate, DataBits, ParityMode, SerialConfig, SerialPort, StopBits};
 
-pub use vga::{
-    VgaDriver,
-    Color,
-    TextAttribute,
-    VgaChar,
-    SCREEN_WIDTH,
-    SCREEN_HEIGHT,
-};
+pub use vga::{Color, TextAttribute, VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH};
 
 // ============================================================================
 // 初始化函数
@@ -45,12 +31,18 @@ pub fn char_init() {
     vga::vga_init();
     serial::serial_init(0);
     crate::kernel::chitin::chitin_register_driver(
-        "vga", crate::kernel::chitin::ChitinProto::Char, None, None,
+        "vga",
+        crate::kernel::chitin::ChitinProto::Char,
+        None,
+        None,
         alloc::boxed::Box::new(vga::VgaDriver::new()),
     );
     if let Some(com1) = serial::SerialPort::new(0) {
         crate::kernel::chitin::chitin_register_driver(
-            "serial0", crate::kernel::chitin::ChitinProto::Char, Some(0x3F8), Some(4),
+            "serial0",
+            crate::kernel::chitin::ChitinProto::Char,
+            Some(0x3F8),
+            Some(4),
             alloc::boxed::Box::new(com1),
         );
     }

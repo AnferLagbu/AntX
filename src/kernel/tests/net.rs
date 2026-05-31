@@ -1,14 +1,14 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
-use crate::kernel::net::utils::{
-    atoi, strtol, inet_checksum, htons, ntohs, htonl, ntohl, format_mac,
-};
-use crate::kernel::net::driver::e1000::{
-    E1000Device, E1000_TX_RING_SIZE, E1000_RX_RING_SIZE, E1000_RX_BUFFER_SIZE,
-    E1000TxDesc, E1000RxDesc, virt_to_phys,
-};
-use crate::kernel::net::apps::{PingStats, NetAppError, internet_checksum as apps_checksum};
 use crate::kernel::driver::{DeviceType, Driver};
+use crate::kernel::net::apps::{internet_checksum as apps_checksum, NetAppError, PingStats};
+use crate::kernel::net::driver::e1000::{
+    virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE,
+    E1000_TX_RING_SIZE,
+};
+use crate::kernel::net::utils::{
+    atoi, format_mac, htonl, htons, inet_checksum, ntohl, ntohs, strtol,
+};
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::register_tests_inner;
 
 fn net_atoi() -> TestResult {
     unsafe {
@@ -40,7 +40,10 @@ fn net_inet_checksum() -> TestResult {
     let cksum = inet_checksum(data);
     assert_eq_test!(cksum, inet_checksum(data), "checksum idempotent");
     let data2 = b"Hello World!";
-    check!(cksum != inet_checksum(data2), "different data different checksum");
+    check!(
+        cksum != inet_checksum(data2),
+        "different data different checksum"
+    );
     TestResult::Pass
 }
 
@@ -94,7 +97,9 @@ fn net_virt_to_phys() -> TestResult {
 fn net_ping_stats() -> TestResult {
     let stats = PingStats::new();
     assert_eq_test!(stats.get_stats(), (0, 0, false), "initial stats");
-    for _ in 0..3 { stats.increment_sent(); }
+    for _ in 0..3 {
+        stats.increment_sent();
+    }
     assert_eq_test!(stats.get_stats().0, 3, "sent count");
     stats.increment_received();
     let (_, received, has_reply) = stats.get_stats();
@@ -120,7 +125,7 @@ fn net_netapp_error_codes() -> TestResult {
 
 pub fn register_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "net::utils": {
             "atoi": net_atoi,
             "strtol": net_strtol,

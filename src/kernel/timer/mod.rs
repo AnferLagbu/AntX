@@ -85,81 +85,44 @@ pub mod calibration;
 // --- 初始化和状态 ---
 
 /// 使用 `tick` 模块的初始化函数
-pub use tick::{
-    timer_init,
-    is_initialized,
-    on_timer_interrupt,
-};
+pub use tick::{is_initialized, on_timer_interrupt, timer_init};
 
 // --- 时间查询 ---
 
 /// 使用 `tick` 模块的时间函数
-pub use tick::{
-    get_ticks,
-    get_frequency,
-    get_uptime_ms,
-    get_uptime_s,
-    get_time_info,
-};
+pub use tick::{get_frequency, get_ticks, get_time_info, get_uptime_ms, get_uptime_s};
 
 // --- 时间转换 ---
 
 /// 使用 `tick` 模块的转换函数
 pub use tick::{
-    ticks_to_ms,
-    ticks_to_us,
-    ticks_to_ns,
-    ms_to_ticks,
+    ms_to_ticks, ticks_to_ms, ticks_to_ms_fast, ticks_to_ns, ticks_to_us, ticks_to_us_fast,
     us_to_ticks,
-    ticks_to_ms_fast,
-    ticks_to_us_fast,
 };
 
 // --- Sleep 函数 ---
 
 /// 使用 `sleep` 模块的所有睡眠函数
 pub use sleep::{
-    busy_wait_ns,
-    busy_wait_us,
-    busy_wait_ms,
-    pit_busy_wait_us,
-    timer_sleep as timer_sleep_safe,
-    wait_with_timeout,
-    adaptive_sleep,
-    measure_time,
-    measure_time_ticks,
+    adaptive_sleep, busy_wait_ms, busy_wait_ns, busy_wait_us, measure_time, measure_time_ticks,
+    pit_busy_wait_us, timer_sleep as timer_sleep_safe, wait_with_timeout,
 };
 
 // --- PIT 底层控制 ---
 
 /// 使用 `pit` 模块的底层功能 (高级用户)
 pub use pit::{
-    pit_init as raw_pit_init,
-    pit_read_count,
-    pit_elapsed_since_tick_us,
-    pit_get_frequency,
-    pit_is_initialized,
-    pit_shutdown,
-    PIT_BASE_FREQUENCY,
-    DEFAULT_INTERRUPT_FREQ_HZ,
+    pit_elapsed_since_tick_us, pit_get_frequency, pit_init as raw_pit_init, pit_is_initialized,
+    pit_read_count, pit_shutdown, DEFAULT_INTERRUPT_FREQ_HZ, PIT_BASE_FREQUENCY,
 };
 
 // --- TSC 校准 ---
 
 /// 使用 `calibration` 模块的校准功能
 pub use calibration::{
-    calibrate_tsc,
-    quick_calibrate,
-    get_tsc_frequency_mhz,
-    get_tsc_frequency_hz,
-    is_calibrated,
-    tsc_to_nanoseconds,
-    tsc_to_microseconds,
-    tsc_to_milliseconds,
-    nanoseconds_to_tsc,
-    get_time_ns,
-    get_time_us,
-    get_time_ms,
+    calibrate_tsc, get_time_ms, get_time_ns, get_time_us, get_tsc_frequency_hz,
+    get_tsc_frequency_mhz, is_calibrated, nanoseconds_to_tsc, quick_calibrate, tsc_to_microseconds,
+    tsc_to_milliseconds, tsc_to_nanoseconds,
 };
 
 // ============================================================================
@@ -179,7 +142,7 @@ pub use calibration::{
 /// Only called from the timer interrupt handler. Interrupts are disabled.
 pub unsafe extern "C" fn timer_init_ffi() {
     match timer_init(DEFAULT_INTERRUPT_FREQ_HZ) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(msg) => {
             // TODO: 使用 klog 记录错误
             let _ = msg;
@@ -231,7 +194,7 @@ mod integration_tests {
     #[test]
     fn test_full_api_surface() {
         // 验证所有公共 API 都可访问
-        
+
         // 基本状态查询
         let _ticks = get_ticks();
         let _freq = get_frequency();
@@ -274,11 +237,11 @@ mod integration_tests {
     fn test_conversion_roundtrip() {
         // 转换应该是合理的 (允许一定误差)
         let original_ms: u64 = 1234;
-        
+
         // ms → ticks → ms
         let ticks = ms_to_ticks(original_ms);
         let back_to_ms = ticks_to_ms(ticks);
-        
+
         // 允许 ±1ms 误差
         let diff = if back_to_ms > original_ms {
             back_to_ms - original_ms
@@ -307,7 +270,7 @@ mod integration_tests {
     #[test]
     fn test_error_handling() {
         // 边界条件测试
-        
+
         // 零值处理
         assert_eq!(ticks_to_ms(0), 0);
         assert_eq!(ticks_to_us(0), 0);

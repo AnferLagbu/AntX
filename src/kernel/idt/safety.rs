@@ -20,7 +20,7 @@ impl CpuFeatures {
         // 简化版 CPU 特性检测 (Phase 1)
         // TODO Phase 3: 完整实现 CPUID 解析
         Self {
-            has_apic: true,   // 假设现代 CPU 都有 APIC
+            has_apic: true,    // 假设现代 CPU 都有 APIC
             has_x2apic: false, // Phase 3 再检测
             max_cpuid_leaf: 0,
         }
@@ -166,7 +166,9 @@ pub unsafe fn outb(port: u16, value: u8) {
 /// I/O 延时 (用于 PIC 初始化序列)
 #[inline(always)]
 pub fn io_wait() {
-    unsafe { outb(0x80, 0); }
+    unsafe {
+        outb(0x80, 0);
+    }
 }
 
 /// HALT 指令 (暂停 CPU 直到下一个中断)
@@ -184,7 +186,9 @@ pub unsafe fn halt() {
 #[inline(never)]
 pub fn halt_loop() -> ! {
     loop {
-        unsafe { halt(); }
+        unsafe {
+            halt();
+        }
     }
 }
 
@@ -243,7 +247,7 @@ mod tests {
     fn test_cpu_features_detection() {
         let features = CpuFeatures::detect();
         // 现代 CPU 应该支持 APIC
-        assert!(features.has_apic || !features.has_apic);  // 至少不会 panic
+        assert!(features.has_apic || !features.has_apic); // 至少不会 panic
     }
 
     #[test]
@@ -268,10 +272,10 @@ mod tests {
         assert!(is_null_or_invalid(0));
         assert!(is_null_or_invalid(0xFFF));
         assert!(!is_null_or_invalid(0x1000));
-        
-        assert!(is_valid_user_address(0x400000));   // 典型 user 地址
+
+        assert!(is_valid_user_address(0x400000)); // 典型 user 地址
         assert!(!is_valid_user_address(0xFFFF800000000000)); // kernel 地址
-        
+
         assert!(is_valid_kernel_address(0xFFFFFFFF80000000));
         assert!(!is_valid_kernel_address(0x400000));
     }

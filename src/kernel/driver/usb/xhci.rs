@@ -28,11 +28,10 @@
 //! # Safety
 //! xHCI驱动涉及复杂的DMA操作和MMIO寄存器访问。
 
-
+use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use super::usb_core::{HostController, Urb, UsbSpeed};
 use alloc::vec;
 use alloc::vec::Vec;
-use super::usb_core::{HostController, UsbSpeed, Urb};
-use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
 use core::ptr;
 
 // ============================================================================
@@ -224,9 +223,13 @@ pub struct Trb {
 
 impl Trb {
     pub fn new(parameter: u64, status: u32, control: u32) -> Self {
-        Self { parameter, status, control }
+        Self {
+            parameter,
+            status,
+            control,
+        }
     }
-    
+
     pub fn trb_type(&self) -> TrbType {
         let ty = (self.control >> 10) & 0x3F;
         match ty {
@@ -264,7 +267,7 @@ impl Trb {
             _ => TrbType::Normal,
         }
     }
-    
+
     pub fn cycle_bit(&self) -> bool {
         self.control & 1 != 0
     }
@@ -308,45 +311,45 @@ impl XhciController {
             initialized: false,
         }
     }
-    
+
     /// 初始化控制器
     fn init_hardware(&mut self) -> Result<()> {
         unsafe {
             // 设置能力寄存器指针
             self.cap_regs = self.mmio_base as *const XhciCapabilityRegisters;
-            
+
             // 读取能力寄存器
             let cap = &*self.cap_regs;
-            
+
             // 计算操作寄存器地址
             let op_base = self.mmio_base + cap.cap_length as usize;
             self.op_regs = op_base as *mut XhciOperationalRegisters;
-            
+
             // 解析结构参数
             self.num_slots = (cap.hcs_params1 & 0xFF) as usize;
             self.num_ports = ((cap.hcs_params1 >> 24) & 0xFF) as usize;
-            
+
             // 计算端口寄存器地址
             self.port_regs = (op_base + 0x400) as *mut XhciPortRegister;
-            
+
             // 复位控制器
             self.reset_controller()?;
-            
+
             // 启动控制器
             self.start_controller()?;
         }
-        
+
         Ok(())
     }
-    
+
     /// 复位控制器
     fn reset_controller(&mut self) -> Result<()> {
         unsafe {
             let op = &mut *self.op_regs;
-            
+
             // 设置复位位
             op.usb_cmd |= usb_cmd::HC_RESET;
-            
+
             // 等待复位完成 (最多等待1秒)
             let mut timeout = 1_000_000;
             while timeout > 0 {
@@ -356,23 +359,23 @@ impl XhciController {
                 timeout -= 1;
                 core::hint::spin_loop();
             }
-            
+
             if timeout == 0 {
                 return Err(DriverError::Timeout);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 启动控制器
     fn start_controller(&mut self) -> Result<()> {
         unsafe {
             let op = &mut *self.op_regs;
-            
+
             // 设置运行位和中断使能
             op.usb_cmd |= usb_cmd::RUN_STOP | usb_cmd::INTR_ENABLE;
-            
+
             // 等待控制器就绪
             let mut timeout = 1_000_000;
             while timeout > 0 {
@@ -382,30 +385,30 @@ impl XhciController {
                 timeout -= 1;
                 core::hint::spin_loop();
             }
-            
+
             if timeout == 0 {
                 return Err(DriverError::Timeout);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 获取端口寄存器
     fn get_port_reg(&self, port: usize) -> Option<&XhciPortRegister> {
         if port >= self.num_ports {
             return None;
         }
-        
+
         unsafe { Some(&*self.port_regs.add(port)) }
     }
-    
+
     /// 获取端口寄存器 (可变)
     fn get_port_reg_mut(&mut self, port: usize) -> Option<&mut XhciPortRegister> {
         if port >= self.num_ports {
             return None;
         }
-        
+
         unsafe { Some(&mut *self.port_regs.add(port)) }
     }
 
@@ -424,31 +427,31 @@ impl Driver for XhciController {
     fn name(&self) -> &'static str {
         "xHCI Controller"
     }
-    
+
     fn device_type(&self) -> DeviceType {
         DeviceType::Bus
     }
-    
+
     fn init(&mut self) -> Result<()> {
         self.init_hardware()?;
         self.initialized = true;
         Ok(())
     }
-    
+
     fn shutdown(&mut self) -> Result<()> {
         unsafe {
             let op = &mut *self.op_regs;
             op.usb_cmd &= !usb_cmd::RUN_STOP;
         }
-        
+
         self.initialized = false;
         Ok(())
     }
-    
+
     fn is_ready(&self) -> bool {
         self.initialized
     }
-    
+
     fn status(&self) -> &'static str {
         if self.initialized {
             "xHCI running"
@@ -471,11 +474,11 @@ impl HostController for XhciController {
             UsbSpeed::Low,
         ]
     }
-    
+
     fn num_ports(&self) -> usize {
         self.num_ports
     }
-    
+
     fn port_has_device(&self, port: usize) -> bool {
         if let Some(port_reg) = self.get_port_reg(port) {
             port_reg.portsc & portsc::CURRENT_CONNECT_STATUS != 0
@@ -483,15 +486,16 @@ impl HostController for XhciController {
             false
         }
     }
-    
+
     fn reset_port(&mut self, port: usize) -> Result<()> {
-        let port_reg = self.get_port_reg_mut(port)
+        let port_reg = self
+            .get_port_reg_mut(port)
             .ok_or(DriverError::InvalidParameter)?;
-        
+
         unsafe {
             // 设置复位位
             port_reg.portsc |= portsc::PORT_RESET;
-            
+
             // 等待复位完成
             let mut timeout = 1_000_000;
             while timeout > 0 {
@@ -501,19 +505,19 @@ impl HostController for XhciController {
                 timeout -= 1;
                 core::hint::spin_loop();
             }
-            
+
             if timeout == 0 {
                 return Err(DriverError::Timeout);
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn get_port_speed(&self, port: usize) -> UsbSpeed {
         if let Some(port_reg) = self.get_port_reg(port) {
             let speed = (port_reg.portsc >> 10) & 0xF;
-            
+
             match speed {
                 1 => UsbSpeed::Full,
                 2 => UsbSpeed::Low,
@@ -525,21 +529,21 @@ impl HostController for XhciController {
             UsbSpeed::Unknown
         }
     }
-    
+
     fn submit_urb(&mut self, _urb: &Urb) -> Result<()> {
         // TODO: 实现URB提交
         Err(DriverError::UnsupportedOperation)
     }
-    
+
     fn cancel_urb(&mut self, _urb_id: u32) -> Result<()> {
         Err(DriverError::UnsupportedOperation)
     }
-    
+
     fn allocate_address(&mut self) -> Result<u8> {
         // TODO: 实现地址分配
         Ok(1)
     }
-    
+
     fn free_address(&mut self, _address: u8) {
         // TODO: 实现地址释放
     }
@@ -552,7 +556,7 @@ impl HostController for XhciController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_xhci_controller_creation() {
         let ctrl = XhciController::new(0xFE000000);
@@ -560,7 +564,7 @@ mod tests {
         assert_eq!(ctrl.device_type(), DeviceType::Bus);
         assert!(!ctrl.is_ready());
     }
-    
+
     #[test]
     fn test_trb_creation() {
         let trb = Trb::new(0x12345678, 0, 0x12345678);
@@ -568,7 +572,7 @@ mod tests {
         assert_eq!(trb.status, 0);
         assert_eq!(trb.control, 0x12345678);
     }
-    
+
     #[test]
     fn test_portsc_bits() {
         assert_eq!(portsc::CURRENT_CONNECT_STATUS, 1);

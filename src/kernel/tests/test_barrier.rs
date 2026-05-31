@@ -1,9 +1,9 @@
+use super::check;
+use crate::kernel::barrier::domain::RecoveryDomain;
+use crate::kernel::barrier::undo_log::UndoLog;
+use crate::kernel::tests::{runner, TestResult};
 use crate::register_tests_inner;
 use alloc::boxed::Box;
-use crate::kernel::barrier::undo_log::UndoLog;
-use crate::kernel::barrier::domain::RecoveryDomain;
-use crate::kernel::tests::{runner, TestResult};
-use super::check;
 
 fn test_undo_log_basic() -> TestResult {
     let undo = Box::new(UndoLog::new());
@@ -46,13 +46,18 @@ fn test_undo_log_rollback() -> TestResult {
 
     let mut v: u64 = 42;
     undo.record(&mut v as *mut u64, v);
-    unsafe { core::ptr::write_volatile(&mut v, 99); }
+    unsafe {
+        core::ptr::write_volatile(&mut v, 99);
+    }
 
     check!(undo.count == 1, "should have 1 entry");
 
     let rolled = undo.rollback_to(0);
     check!(rolled == 1, "should have rolled back 1 entry");
-    check!(undo.count == 0, "undo log should be empty after full rollback");
+    check!(
+        undo.count == 0,
+        "undo log should be empty after full rollback"
+    );
     TestResult::Pass
 }
 
@@ -64,10 +69,13 @@ fn test_domain_create() -> TestResult {
 
 fn test_domain_barrier_push() -> TestResult {
     let dom = RecoveryDomain::new(7);
-    dom.barrier_generation.store(3, core::sync::atomic::Ordering::SeqCst);
+    dom.barrier_generation
+        .store(3, core::sync::atomic::Ordering::SeqCst);
     dom.push_barrier_snapshot(100);
 
-    let top = dom.barrier_stack_top.load(core::sync::atomic::Ordering::SeqCst) as usize;
+    let top = dom
+        .barrier_stack_top
+        .load(core::sync::atomic::Ordering::SeqCst) as usize;
     check!(top == 1, "barrier stack top should be 1");
     TestResult::Pass
 }
@@ -83,7 +91,7 @@ fn test_domain_dependency() -> TestResult {
 
 pub fn register_barrier_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "barrier::undo_log": {
             "basic": test_undo_log_basic,
             "record": test_undo_log_record,

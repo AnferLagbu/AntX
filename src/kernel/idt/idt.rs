@@ -18,9 +18,9 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::types::*;
 use super::handlers::*;
 use super::statistics::*;
+use super::types::*;
 
 // 内联硬件操作函数 (避免跨模块导入问题)
 /// 从端口读字节
@@ -37,20 +37,30 @@ unsafe fn port_outb(port: u16, value: u8) {
 
 /// I/O 等待
 #[inline(always)]
-unsafe fn io_wait() { port_outb(0x80, 0); }
+unsafe fn io_wait() {
+    port_outb(0x80, 0);
+}
 
 /// 重映射 8259A PIC: IRQ0-7→vec32-39, IRQ8-15→vec40-47
 unsafe fn remap_pic() {
     let m = port_inb(0x21);
     let s = port_inb(0xA1);
-    port_outb(0x20, 0x11); io_wait();
-    port_outb(0xA0, 0x11); io_wait();
-    port_outb(0x21, 0x20); io_wait();
-    port_outb(0xA1, 0x28); io_wait();
-    port_outb(0x21, 0x04); io_wait();
-    port_outb(0xA1, 0x02); io_wait();
-    port_outb(0x21, 0x01); io_wait();
-    port_outb(0xA1, 0x01); io_wait();
+    port_outb(0x20, 0x11);
+    io_wait();
+    port_outb(0xA0, 0x11);
+    io_wait();
+    port_outb(0x21, 0x20);
+    io_wait();
+    port_outb(0xA1, 0x28);
+    io_wait();
+    port_outb(0x21, 0x04);
+    io_wait();
+    port_outb(0xA1, 0x02);
+    io_wait();
+    port_outb(0x21, 0x01);
+    io_wait();
+    port_outb(0xA1, 0x01);
+    io_wait();
     port_outb(0x21, 0xFF);
     port_outb(0xA1, 0xFF);
     let _ = (m, s);
@@ -64,17 +74,25 @@ unsafe fn cli() {
 
 /// Halt 循环 (永不返回)
 fn halt_loop() -> ! {
-    loop { crate::arch!(halt()); }
+    loop {
+        crate::arch!(halt());
+    }
 }
 
 /// 检查指针是否为 null 或无效
-fn is_null_or_invalid(ptr: u64) -> bool { ptr == 0 || ptr < 0x1000 }
+fn is_null_or_invalid(ptr: u64) -> bool {
+    ptr == 0 || ptr < 0x1000
+}
 
 /// 验证 user 地址
-fn is_valid_user_address(addr: u64) -> bool { addr > 0xFFFF && addr < 0xFFFFFFFF80000000 }
+fn is_valid_user_address(addr: u64) -> bool {
+    addr > 0xFFFF && addr < 0xFFFFFFFF80000000
+}
 
 /// 验证 kernel 地址
-fn is_valid_kernel_address(addr: u64) -> bool { addr >= 0xFFFFFFFF80000000 }
+fn is_valid_kernel_address(addr: u64) -> bool {
+    addr >= 0xFFFFFFFF80000000
+}
 
 /// IDT 状态 (受 Mutex 保护)
 pub(crate) struct IdtState {
@@ -89,15 +107,17 @@ pub(crate) struct IdtState {
 impl Default for IdtState {
     fn default() -> Self {
         // 手动初始化 irq_descriptors 数组 (IrqDescriptor 不是 Copy)
-        let irq_descs = [const { IrqDescriptor {
-            handler: None,
-            name: "",
-            description: "",
-            flags: 0,
-            call_count: core::sync::atomic::AtomicU64::new(0),
-            error_count: core::sync::atomic::AtomicU64::new(0),
-        }}; 16];
-        
+        let irq_descs = [const {
+            IrqDescriptor {
+                handler: None,
+                name: "",
+                description: "",
+                flags: 0,
+                call_count: core::sync::atomic::AtomicU64::new(0),
+                error_count: core::sync::atomic::AtomicU64::new(0),
+            }
+        }; 16];
+
         Self {
             entries: [IdtEntry::default(); IDT_ENTRIES],
             handlers: [None; IDT_ENTRIES],
@@ -130,7 +150,7 @@ impl IdtManager {
             IdtManager {
                 state: spin::Mutex::new(IdtState::default()),
                 stats: InterruptStatistics::new(),
-                detailed_stats: DetailedStatistics::new(),  // Phase 3
+                detailed_stats: DetailedStatistics::new(), // Phase 3
                 nested_count: AtomicU64::new(0),
                 current_vector: AtomicU64::new(0xFFFFFFFFFFFFFFFF),
             }
@@ -155,7 +175,9 @@ impl IdtManager {
         syscall_handler: u64,
         isr0x82: u64,
     ) -> Result<(), &'static str> {
-        unsafe { remap_pic(); }
+        unsafe {
+            remap_pic();
+        }
 
         let mut state = self.state.lock();
 
@@ -167,44 +189,80 @@ impl IdtManager {
 
         // 2. 设置异常门描述符 (向量 0-31)
         for i in 0..32u8 {
-            self.set_gate_internal(&mut state, i, isr_table[i as usize], GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT);
+            self.set_gate_internal(
+                &mut state,
+                i,
+                isr_table[i as usize],
+                GDT_KERNEL_CODE,
+                IDT_TYPE_INTERRUPT,
+            );
         }
 
         // 2a. 为关键异常设置 IST 专用栈
         // Double Fault (#DF, vector 8) → IST0
         state.entries[8] = IdtEntry::new_with_ist(
-            isr_table[8], GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, 1  // IST1 (TSS ist[0])
+            isr_table[8],
+            GDT_KERNEL_CODE,
+            IDT_TYPE_INTERRUPT,
+            1, // IST1 (TSS ist[0])
         );
         // NMI (vector 2) → IST1
         state.entries[2] = IdtEntry::new_with_ist(
-            isr_table[2], GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, 2  // IST2 (TSS ist[1])
+            isr_table[2],
+            GDT_KERNEL_CODE,
+            IDT_TYPE_INTERRUPT,
+            2, // IST2 (TSS ist[1])
         );
 
         // 3. 设置 IRQ 门描述符 (向量 32-47)
         for i in 0..16u8 {
             let vector = IRQ_BASE + i;
-            self.set_gate_internal(&mut state, vector, irq_table[i as usize], GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT);
+            self.set_gate_internal(
+                &mut state,
+                vector,
+                irq_table[i as usize],
+                GDT_KERNEL_CODE,
+                IDT_TYPE_INTERRUPT,
+            );
         }
 
         // 4. 设置系统调用门 (int 0x80, DPL=3 允许 user 调用)
-        self.set_gate_internal(&mut state, 0x80, syscall_handler, GDT_KERNEL_CODE, IDT_TYPE_TRAP | IDT_DPL_USER);
+        self.set_gate_internal(
+            &mut state,
+            0x80,
+            syscall_handler,
+            GDT_KERNEL_CODE,
+            IDT_TYPE_TRAP | IDT_DPL_USER,
+        );
 
         // 5. 设置恢复中断 (int 0x82, barrier-stack) — 使用 IST2 专用栈
         state.entries[0x82] = IdtEntry::new_with_ist(
-            isr0x82, GDT_KERNEL_CODE, IDT_TYPE_TRAP, 3  // IST3 (TSS ist[2])
+            isr0x82,
+            GDT_KERNEL_CODE,
+            IDT_TYPE_TRAP,
+            3, // IST3 (TSS ist[2])
         );
 
         drop(state); // 释放锁，准备加载 IDT
 
         // 6. 加载 IDT 到 CPU
         #[cfg(target_arch = "x86_64")]
-        unsafe { self.load_idt(); }
+        unsafe {
+            self.load_idt();
+        }
 
         Ok(())
     }
 
     /// 内部函数: 设置门描述符 (需要 &mut state)
-    fn set_gate_internal(&self, state: &mut IdtState, num: u8, handler: u64, selector: u16, type_attr: u8) {
+    fn set_gate_internal(
+        &self,
+        state: &mut IdtState,
+        num: u8,
+        handler: u64,
+        selector: u16,
+        type_attr: u8,
+    ) {
         let entry = &mut state.entries[num as usize];
         *entry = IdtEntry::new(handler, selector, type_attr);
     }
@@ -217,9 +275,9 @@ impl IdtManager {
     unsafe fn load_idt(&self) {
         let state = self.state.lock();
         let base_addr = state.entries.as_ptr() as u64;
-        
+
         let idt_ptr = IdtPtr::new(base_addr);
-        
+
         core::arch::asm!(
             "lidt [{0}]",
             in(reg) &idt_ptr,
@@ -272,7 +330,11 @@ impl IdtManager {
     }
 
     /// 注销 IRQ 处理函数
-    pub fn unregister_irq(&self, irq: u8, handler: extern "C" fn(*mut InterruptFrame)) -> Result<(), &'static str> {
+    pub fn unregister_irq(
+        &self,
+        irq: u8,
+        handler: extern "C" fn(*mut InterruptFrame),
+    ) -> Result<(), &'static str> {
         if irq >= 16 {
             return Err("Invalid IRQ number");
         }
@@ -284,7 +346,7 @@ impl IdtManager {
         if let Some(registered) = state.handlers[vector] {
             let registered_ptr = registered as *const ();
             let input_ptr = handler as *const ();
-            
+
             if registered_ptr == input_ptr {
                 state.handlers[vector] = None;
                 state.irq_descriptors[irq as usize] = IrqDescriptor::empty();
@@ -297,7 +359,9 @@ impl IdtManager {
 
     /// 启用指定 IRQ
     pub fn enable_irq(&self, irq: u8) {
-        if irq >= 16 { return; }
+        if irq >= 16 {
+            return;
+        }
 
         // TODO: 通过 IOAPIC 或 PIC 启用
         // 当前简化实现: 直接操作 PIC
@@ -308,7 +372,7 @@ impl IdtManager {
             } else {
                 let slave_mask = port_inb(0xA1) & !(1 << (irq - 8));
                 port_outb(0xA1, slave_mask);
-                
+
                 let master_mask = port_inb(0x21) & !(1 << 2);
                 port_outb(0x21, master_mask);
             }
@@ -317,7 +381,9 @@ impl IdtManager {
 
     /// 禁用指定 IRQ
     pub fn disable_irq(&self, irq: u8) {
-        if irq >= 16 { return; }
+        if irq >= 16 {
+            return;
+        }
 
         unsafe {
             if irq < 8 {
@@ -332,7 +398,9 @@ impl IdtManager {
 
     /// 处理异常 (从 exception_handler FFI 调用)
     pub fn handle_exception(&self, frame: *mut InterruptFrame) {
-        if frame.is_null() { return; }
+        if frame.is_null() {
+            return;
+        }
 
         unsafe {
             let vector = (*frame).int_no as u8;
@@ -354,9 +422,11 @@ impl IdtManager {
                 self.execute_recovery_action(&action, &*frame);
 
                 if let Some(c_handler) = self.state.lock().handlers[vector as usize] {
-                    c_handler(frame);  // C handler 可能会执行额外的副作用
+                    c_handler(frame); // C handler 可能会执行额外的副作用
                 }
-            } else if (vector as usize) >= IRQ_BASE as usize && (vector as usize) < IRQ_BASE as usize + 16 {
+            } else if (vector as usize) >= IRQ_BASE as usize
+                && (vector as usize) < IRQ_BASE as usize + 16
+            {
                 // IRQ 处理
                 self.handle_irq(frame, vector);
             } else {
@@ -364,13 +434,14 @@ impl IdtManager {
                 match vector {
                     0x80 => { /* System call - handled by syscall handler */ }
                     0x82 => { /* Recovery interrupt - handled by barrier-stack */ }
-                    _ => {}  // 忽略未知向量
+                    _ => {} // 忽略未知向量
                 }
             }
 
             // 恢复嵌套计数
             self.nested_count.fetch_sub(1, Ordering::SeqCst);
-            self.current_vector.store(0xFFFFFFFFFFFFFFFF, Ordering::SeqCst);
+            self.current_vector
+                .store(0xFFFFFFFFFFFFFFFF, Ordering::SeqCst);
         }
     }
 
@@ -379,27 +450,33 @@ impl IdtManager {
         match action {
             RecoveryAction::Recovered => {
                 // 成功恢复，无需额外操作
-            },
-            
+            }
+
             RecoveryAction::TerminateProcess(exit_code) => {
                 // User-mode 异常：终止进程
-                extern "C" { fn process_exit(code: u32); }
-                extern "C" { fn scheduler_yield(); }
-                
+                extern "C" {
+                    fn process_exit(code: u32);
+                }
+                extern "C" {
+                    fn scheduler_yield();
+                }
+
                 unsafe {
                     process_exit(*exit_code);
                     scheduler_yield();
                 }
-            },
-            
+            }
+
             RecoveryAction::DomainRecovery => {
                 // 尝试域级恢复 (barrier-stack)
-                extern "C" { fn recovery_try_recover_from_idt() -> i32; }
-                
+                extern "C" {
+                    fn recovery_try_recover_from_idt() -> i32;
+                }
+
                 unsafe {
                     let result = recovery_try_recover_from_idt();
                     match result {
-                        0 => {},  // Recovery 成功
+                        0 => {} // Recovery 成功
                         -2 => {
                             // 已尝试过，拒绝循环 → panic
                             self.kernel_panic("Recovery already attempted");
@@ -410,29 +487,29 @@ impl IdtManager {
                         }
                     }
                 }
-            },
-            
+            }
+
             RecoveryAction::Panic(info) => {
                 // 无法恢复 → kernel panic
                 self.kernel_panic(info.reason);
-            },
+            }
         }
     }
 
     /// 默认异常处理 (临时实现，Phase 2.2 完善)
     fn default_exception_handler(&self, frame: &InterruptFrame) {
         let vector = frame.int_no as u8;
-        
+
         // 打印基本信息 (Phase 3 使用结构化日志)
         let _ = (vector, frame);
-        
+
         // TODO: 根据 vector 类型分发到专门的 handler
         match vector {
             0 => self.handle_division_by_zero(frame),
             13 => self.handle_gpf(frame),
             14 => self.handle_page_fault(frame),
             8 => self.handle_double_fault(frame),
-            _ => {}  // 其他异常暂不处理
+            _ => {} // 其他异常暂不处理
         }
     }
 
@@ -521,8 +598,12 @@ impl IdtManager {
 
         if count <= 3 {
             // 尝试调度切换恢复
-            extern "C" { fn scheduler_yield(); }
-            unsafe { scheduler_yield(); }
+            extern "C" {
+                fn scheduler_yield();
+            }
+            unsafe {
+                scheduler_yield();
+            }
         } else {
             // 多次 double fault: 系统不稳定
             self.kernel_panic("Multiple double faults - system unstable");
@@ -531,9 +612,13 @@ impl IdtManager {
 
     /// 终止 user 进程
     fn terminate_user_process(&self, _frame: &InterruptFrame, exit_code: u32) {
-        extern "C" { fn process_exit(code: u32); }
-        extern "C" { fn scheduler_yield(); }
-        
+        extern "C" {
+            fn process_exit(code: u32);
+        }
+        extern "C" {
+            fn scheduler_yield();
+        }
+
         unsafe {
             process_exit(exit_code);
             scheduler_yield();
@@ -543,8 +628,10 @@ impl IdtManager {
     /// 尝试域级恢复
     fn attempt_domain_recovery(&self, frame: &InterruptFrame) {
         crate::kernel::barrier::CRASH_RIP.store(frame.rip, core::sync::atomic::Ordering::SeqCst);
-        extern "C" { fn recovery_try_recover_from_idt() -> i32; }
-        
+        extern "C" {
+            fn recovery_try_recover_from_idt() -> i32;
+        }
+
         unsafe {
             let result = recovery_try_recover_from_idt();
             match result {
@@ -566,7 +653,7 @@ impl IdtManager {
     /// Kernel panic (停止系统)
     fn kernel_panic(&self, message: &str) {
         let _ = message;
-        
+
         unsafe {
             cli();
             halt_loop();
@@ -583,7 +670,9 @@ impl IdtManager {
         while !rbp_ptr.is_null() && frame_count < MAX_FRAMES {
             unsafe {
                 let rip_val = *rbp_ptr.offset(1);
-                if rip_val == 0 { break; }
+                if rip_val == 0 {
+                    break;
+                }
 
                 let mode = if rip_val < 0xFFFFFFFF80000000 && rip_val > 0xFFFF {
                     "user"
@@ -617,7 +706,9 @@ impl IdtManager {
             };
 
             if let Some(handler) = handler_opt {
-                unsafe { handler(frame); }
+                unsafe {
+                    handler(frame);
+                }
             }
 
             self.send_eoi(irq);

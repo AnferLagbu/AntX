@@ -8,23 +8,23 @@
 
 use core::sync::atomic::Ordering;
 
-use crate::kernel::barrier::RECOVERY_MANAGER;
-use crate::kernel::barrier::types::DomainState;
-use super::config::{self, RecoveryResult, RecoveryLayer};
 use super::audit;
+use super::config::{self, RecoveryLayer, RecoveryResult};
+use crate::kernel::barrier::types::DomainState;
+use crate::kernel::barrier::RECOVERY_MANAGER;
 
 pub fn locate_domain_from_panic(panic_location: &core::panic::PanicInfo<'_>) -> Option<u64> {
     let manager = RECOVERY_MANAGER.lock();
-    
+
     if let Some(loc) = panic_location.location() {
         let addr = loc as *const _ as u64;
         let count = manager.count.load(Ordering::SeqCst) as usize;
-        
+
         for i in 0..count {
             if let Some(domain) = &manager.domains[i] {
                 let ranges = domain.addr_ranges.lock();
                 let range_count = ranges.len().min(8);
-                
+
                 for j in 0..range_count {
                     let (start, end) = ranges[j];
                     if addr >= start && addr < end {
@@ -34,7 +34,7 @@ pub fn locate_domain_from_panic(panic_location: &core::panic::PanicInfo<'_>) -> 
             }
         }
     }
-    
+
     None
 }
 
@@ -50,8 +50,7 @@ pub fn try_rollback_single(domain_id: u64, tick: u64, fingerprint: u64) -> Recov
         return RecoveryResult::Escalate;
     }
 
-    let (_entries, _from, _to, result_code) =
-        manager.rollback_domain(domain, tick, fingerprint, 1);
+    let (_entries, _from, _to, result_code) = manager.rollback_domain(domain, tick, fingerprint, 1);
 
     if result_code == 0 {
         RecoveryResult::Success
@@ -68,18 +67,18 @@ pub fn cascade_rollback(domain_id: u64, tick: u64, fingerprint: u64) -> usize {
 pub fn execute(panic_info: &core::panic::PanicInfo<'_>) -> RecoveryResult {
     config::set_current_layer(RecoveryLayer::Layer1);
     config::increment_bbr_count();
-    
+
     crate::klog_crit!(Kernel, "[BBR] Barrier Base Recovery initiated");
-    
+
     let tick = unsafe { crate::kernel::timer::tick::get_ticks() };
     let fingerprint = compute_fingerprint(panic_info);
-    
+
     if let Some(domain_id) = locate_domain_from_panic(panic_info) {
         crate::klog_info!(Kernel, "[BBR] Located domain {} from panic", domain_id);
-        
+
         let rolled = cascade_rollback(domain_id, tick, fingerprint);
         crate::klog_info!(Kernel, "[BBR] Cascade rolled {} domains", rolled);
-        
+
         if rolled > 0 {
             audit::audit_record(RecoveryLayer::Layer1, RecoveryResult::Success, 0);
             RecoveryResult::Success
@@ -96,20 +95,20 @@ pub fn execute(panic_info: &core::panic::PanicInfo<'_>) -> RecoveryResult {
 
 pub fn compute_fingerprint(panic_info: &core::panic::PanicInfo<'_>) -> u64 {
     let mut hash = 0u64;
-    
+
     if let Some(loc) = panic_info.location() {
         hash = hash.wrapping_add(loc.file().as_ptr() as u64);
         hash = hash.wrapping_mul(0x5851F42D4C957F2D);
         hash = hash.wrapping_add(loc.line() as u64);
     }
-    
+
     if let Some(msg) = panic_info.message().as_str() {
         for byte in msg.bytes() {
             hash = hash.wrapping_mul(0x5851F42D4C957F2D);
             hash = hash.wrapping_add(byte as u64);
         }
     }
-    
+
     hash
 }
 

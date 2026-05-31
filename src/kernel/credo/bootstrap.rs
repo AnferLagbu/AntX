@@ -45,7 +45,13 @@ pub fn grant_from_first_token(
 
     FIRST_TOKEN_USED.store(true, Ordering::Release);
 
-    super::audit::log(0, AuditAction::FirstTokenGrant, target_pwm, domain.as_u16() as u64, caps.as_u64());
+    super::audit::log(
+        0,
+        AuditAction::FirstTokenGrant,
+        target_pwm,
+        domain.as_u16() as u64,
+        caps.as_u64(),
+    );
 
     Ok(())
 }

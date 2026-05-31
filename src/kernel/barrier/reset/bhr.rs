@@ -2,8 +2,8 @@
 //!
 //! Layer 3 恢复：完全从硬件层面重置
 
-use super::config::{self, RecoveryLayer};
 use super::audit;
+use super::config::{self, RecoveryLayer};
 
 pub fn disable_interrupts() {
     #[cfg(not(feature = "kernel_test"))]
@@ -55,11 +55,7 @@ pub fn keyboard_reset() -> ! {
 pub fn triple_fault() -> ! {
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     unsafe {
-        core::arch::asm!(
-            "lidt [0]",
-            "int 3",
-            options(nomem, nostack)
-        );
+        core::arch::asm!("lidt [0]", "int 3", options(nomem, nostack));
     }
 
     loop {
@@ -86,7 +82,10 @@ pub fn execute() -> ! {
 }
 
 pub fn execute_fallback() -> ! {
-    crate::klog_crit!(Kernel, "[BHR] Keyboard reset failed, attempting triple fault");
+    crate::klog_crit!(
+        Kernel,
+        "[BHR] Keyboard reset failed, attempting triple fault"
+    );
     triple_fault()
 }
 

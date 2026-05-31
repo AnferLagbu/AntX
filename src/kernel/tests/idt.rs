@@ -1,30 +1,35 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
-use crate::kernel::idt::types::{
-    InterruptFrame, IdtEntry, IdtPtr, InterruptStatistics,
-    ErrorFlags, GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, IDT_ENTRIES, IRQ_BASE,
-    get_exception_name, get_irq_name,
-};
 use crate::kernel::idt::handlers::{
-    RecoveryAction, Severity, ExceptionCategory, AccessType, Mode, FaultCause,
-    DivisionByZeroHandler, PageFaultHandler, DefaultHandler, create_handler,
-    ExceptionStatisticsCollector, PanicInfo, ExceptionHandler,
+    create_handler, AccessType, DefaultHandler, DivisionByZeroHandler, ExceptionCategory,
+    ExceptionHandler, ExceptionStatisticsCollector, FaultCause, Mode, PageFaultHandler, PanicInfo,
+    RecoveryAction, Severity,
+};
+use crate::kernel::idt::safety::{
+    is_null_or_invalid, is_valid_kernel_address, is_valid_user_address, CpuFeatures,
 };
 use crate::kernel::idt::statistics::DetailedStatistics;
-use crate::kernel::idt::safety::{
-    is_null_or_invalid, is_valid_user_address, is_valid_kernel_address,
-    CpuFeatures,
+use crate::kernel::idt::types::{
+    get_exception_name, get_irq_name, ErrorFlags, IdtEntry, IdtPtr, InterruptFrame,
+    InterruptStatistics, GDT_KERNEL_CODE, IDT_ENTRIES, IDT_TYPE_INTERRUPT, IRQ_BASE,
 };
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::register_tests_inner;
 use core::sync::atomic::Ordering;
 
 fn interrupt_frame_size() -> TestResult {
-    assert_eq_test!(core::mem::size_of::<InterruptFrame>(), 176, "InterruptFrame size");
+    assert_eq_test!(
+        core::mem::size_of::<InterruptFrame>(),
+        176,
+        "InterruptFrame size"
+    );
     TestResult::Pass
 }
 
 fn user_mode_detection() -> TestResult {
     let kernel_frame = InterruptFrame::new_test_frame(14, 0xFFFFFFFF80000000, 0x08);
-    check!(!kernel_frame.is_user_mode(), "kernel CS should be kernel mode");
+    check!(
+        !kernel_frame.is_user_mode(),
+        "kernel CS should be kernel mode"
+    );
     let user_frame = InterruptFrame::new_test_frame(14, 0x400000, 0x23);
     check!(user_frame.is_user_mode(), "user CS should be user mode");
     TestResult::Pass
@@ -35,7 +40,11 @@ fn idt_entry_creation() -> TestResult {
     assert_eq_test!(entry.offset_low, 0xBABE, "offset_low");
     assert_eq_test!(entry.selector, GDT_KERNEL_CODE, "selector");
     check!(entry.is_present(), "should be present");
-    assert_eq_test!(entry.handler_address(), 0xDEADBEEFCAFEBABE, "handler address");
+    assert_eq_test!(
+        entry.handler_address(),
+        0xDEADBEEFCAFEBABE,
+        "handler address"
+    );
     TestResult::Pass
 }
 
@@ -64,7 +73,10 @@ fn error_flags() -> TestResult {
     check!(flags.contains(ErrorFlags::PRESENT), "PRESENT flag");
     check!(flags.contains(ErrorFlags::WRITE), "WRITE flag");
     check!(flags.contains(ErrorFlags::USER), "USER flag");
-    check!(!flags.contains(ErrorFlags::RESERVED), "RESERVED flag absent");
+    check!(
+        !flags.contains(ErrorFlags::RESERVED),
+        "RESERVED flag absent"
+    );
     TestResult::Pass
 }
 
@@ -83,8 +95,15 @@ fn irq_names() -> TestResult {
 }
 
 fn recovery_action_variants() -> TestResult {
-    assert_eq_test!(RecoveryAction::Recovered, RecoveryAction::Recovered, "Recovered eq");
-    check!(RecoveryAction::TerminateProcess(1) != RecoveryAction::Recovered, "TerminateProcess neq");
+    assert_eq_test!(
+        RecoveryAction::Recovered,
+        RecoveryAction::Recovered,
+        "Recovered eq"
+    );
+    check!(
+        RecoveryAction::TerminateProcess(1) != RecoveryAction::Recovered,
+        "TerminateProcess neq"
+    );
     TestResult::Pass
 }
 
@@ -92,13 +111,20 @@ fn severity_ordering() -> TestResult {
     check!(Severity::Info < Severity::Warning, "Info < Warning");
     check!(Severity::Warning < Severity::Error, "Warning < Error");
     check!(Severity::Error < Severity::Fatal, "Error < Fatal");
-    check!(Severity::Fatal < Severity::Catastrophic, "Fatal < Catastrophic");
+    check!(
+        Severity::Fatal < Severity::Catastrophic,
+        "Fatal < Catastrophic"
+    );
     TestResult::Pass
 }
 
 fn exception_categories() -> TestResult {
     let handler = DivisionByZeroHandler;
-    assert_eq_test!(handler.category(), ExceptionCategory::Arithmetic, "category");
+    assert_eq_test!(
+        handler.category(),
+        ExceptionCategory::Arithmetic,
+        "category"
+    );
     assert_eq_test!(handler.name(), "Division By Zero", "name");
     TestResult::Pass
 }
@@ -125,7 +151,10 @@ fn factory_pattern() -> TestResult {
     let handler99 = create_handler(99);
     assert_eq_test!(handler0.name(), "Division By Zero", "handler 0");
     assert_eq_test!(handler13.name(), "General Protection Fault", "handler 13");
-    check!(handler99.category() == ExceptionCategory::Unknown, "handler 99 should be unknown category");
+    check!(
+        handler99.category() == ExceptionCategory::Unknown,
+        "handler 99 should be unknown category"
+    );
     TestResult::Pass
 }
 
@@ -134,9 +163,21 @@ fn statistics_collector() -> TestResult {
     let handler = DivisionByZeroHandler;
     let action = RecoveryAction::TerminateProcess(42);
     collector.record(&handler, &action);
-    assert_eq_test!(collector.total_exceptions.load(Ordering::Relaxed), 1, "total exceptions");
-    assert_eq_test!(collector.process_terminations.load(Ordering::Relaxed), 1, "terminations");
-    assert_eq_test!(collector.by_category[0].load(Ordering::Relaxed), 1, "arithmetic category");
+    assert_eq_test!(
+        collector.total_exceptions.load(Ordering::Relaxed),
+        1,
+        "total exceptions"
+    );
+    assert_eq_test!(
+        collector.process_terminations.load(Ordering::Relaxed),
+        1,
+        "terminations"
+    );
+    assert_eq_test!(
+        collector.by_category[0].load(Ordering::Relaxed),
+        1,
+        "arithmetic category"
+    );
     TestResult::Pass
 }
 
@@ -151,7 +192,11 @@ fn panic_info_creation() -> TestResult {
 fn detailed_stats_init() -> TestResult {
     let stats = DetailedStatistics::new();
     assert_eq_test!(stats.total_count.load(Ordering::Relaxed), 0, "total init");
-    assert_eq_test!(stats.nested_interrupts.load(Ordering::Relaxed), 0, "nested init");
+    assert_eq_test!(
+        stats.nested_interrupts.load(Ordering::Relaxed),
+        0,
+        "nested init"
+    );
     TestResult::Pass
 }
 
@@ -159,10 +204,22 @@ fn detailed_stats_record_exception() -> TestResult {
     let stats = DetailedStatistics::new();
     let frame = InterruptFrame::new_test_frame(14, 0x400000, 0x23);
     stats.record_exception(14, &frame);
-    assert_eq_test!(stats.total_count.load(Ordering::Relaxed), 1, "total after exception");
+    assert_eq_test!(
+        stats.total_count.load(Ordering::Relaxed),
+        1,
+        "total after exception"
+    );
     assert_eq_test!(stats.get_vector_count(14), 1, "vector 14 count");
-    assert_eq_test!(stats.user_mode_interrupts.load(Ordering::Relaxed), 1, "user mode count");
-    assert_eq_test!(stats.kernel_mode_interrupts.load(Ordering::Relaxed), 0, "kernel mode count");
+    assert_eq_test!(
+        stats.user_mode_interrupts.load(Ordering::Relaxed),
+        1,
+        "user mode count"
+    );
+    assert_eq_test!(
+        stats.kernel_mode_interrupts.load(Ordering::Relaxed),
+        0,
+        "kernel mode count"
+    );
     TestResult::Pass
 }
 
@@ -171,9 +228,21 @@ fn detailed_stats_record_irq() -> TestResult {
     stats.record_irq(1);
     stats.record_irq(0);
     stats.record_irq(1);
-    assert_eq_test!(stats.total_count.load(Ordering::Relaxed), 3, "total after IRQs");
-    assert_eq_test!(stats.irq_counts[1].load(Ordering::Relaxed), 2, "IRQ 1 count");
-    assert_eq_test!(stats.irq_counts[0].load(Ordering::Relaxed), 1, "IRQ 0 count");
+    assert_eq_test!(
+        stats.total_count.load(Ordering::Relaxed),
+        3,
+        "total after IRQs"
+    );
+    assert_eq_test!(
+        stats.irq_counts[1].load(Ordering::Relaxed),
+        2,
+        "IRQ 1 count"
+    );
+    assert_eq_test!(
+        stats.irq_counts[0].load(Ordering::Relaxed),
+        1,
+        "IRQ 0 count"
+    );
     TestResult::Pass
 }
 
@@ -183,8 +252,16 @@ fn detailed_stats_nested() -> TestResult {
     stats.record_nested(2);
     stats.record_nested(3);
     stats.record_nested(2);
-    assert_eq_test!(stats.nested_interrupts.load(Ordering::Relaxed), 4, "nested count");
-    assert_eq_test!(stats.max_nesting_depth.load(Ordering::Relaxed), 3, "max depth");
+    assert_eq_test!(
+        stats.nested_interrupts.load(Ordering::Relaxed),
+        4,
+        "nested count"
+    );
+    assert_eq_test!(
+        stats.max_nesting_depth.load(Ordering::Relaxed),
+        3,
+        "max depth"
+    );
     TestResult::Pass
 }
 
@@ -194,9 +271,17 @@ fn detailed_stats_reset() -> TestResult {
     stats.record_irq(5);
     stats.record_nested(1);
     stats.reset();
-    assert_eq_test!(stats.total_count.load(Ordering::Relaxed), 0, "total after reset");
+    assert_eq_test!(
+        stats.total_count.load(Ordering::Relaxed),
+        0,
+        "total after reset"
+    );
     assert_eq_test!(stats.get_vector_count(0), 0, "vector 0 after reset");
-    assert_eq_test!(stats.irq_counts[5].load(Ordering::Relaxed), 0, "IRQ 5 after reset");
+    assert_eq_test!(
+        stats.irq_counts[5].load(Ordering::Relaxed),
+        0,
+        "IRQ 5 after reset"
+    );
     TestResult::Pass
 }
 
@@ -207,7 +292,11 @@ fn detailed_stats_recovery_action_tracking() -> TestResult {
     stats.record_recovery_action(&RecoveryAction::DomainRecovery);
     stats.record_recovery_action(&RecoveryAction::Panic(PanicInfo::new("test", 0, 0)));
     assert_eq_test!(stats.recoveries.load(Ordering::Relaxed), 1, "recoveries");
-    assert_eq_test!(stats.process_terminations.load(Ordering::Relaxed), 1, "terminations");
+    assert_eq_test!(
+        stats.process_terminations.load(Ordering::Relaxed),
+        1,
+        "terminations"
+    );
     assert_eq_test!(stats.domain_recoveries.load(Ordering::Relaxed), 1, "domain");
     assert_eq_test!(stats.panics.load(Ordering::Relaxed), 1, "panics");
     TestResult::Pass
@@ -225,8 +314,14 @@ fn address_validation() -> TestResult {
     check!(is_null_or_invalid(0xFFF), "0xFFF is invalid");
     check!(!is_null_or_invalid(0x1000), "0x1000 is valid");
     check!(is_valid_user_address(0x400000), "0x400000 is user");
-    check!(!is_valid_user_address(0xFFFF800000000000), "kernel is not user");
-    check!(is_valid_kernel_address(0xFFFFFFFF80000000), "kernel addr is valid");
+    check!(
+        !is_valid_user_address(0xFFFF800000000000),
+        "kernel is not user"
+    );
+    check!(
+        is_valid_kernel_address(0xFFFFFFFF80000000),
+        "kernel addr is valid"
+    );
     check!(!is_valid_kernel_address(0x400000), "user is not kernel");
     TestResult::Pass
 }
@@ -241,7 +336,7 @@ fn cpu_features_no_panic() -> TestResult {
 
 pub fn register_idt_types_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "idt::types": {
             "frame_size": interrupt_frame_size,
             "user_mode_detection": user_mode_detection,
@@ -257,7 +352,7 @@ pub fn register_idt_types_tests() {
 
 pub fn register_idt_handlers_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "idt::handlers": {
             "recovery_action_variants": recovery_action_variants,
             "severity_ordering": severity_ordering,
@@ -273,7 +368,7 @@ pub fn register_idt_handlers_tests() {
 
 pub fn register_idt_statistics_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "idt::statistics": {
             "init": detailed_stats_init,
             "record_exception": detailed_stats_record_exception,
@@ -288,7 +383,7 @@ pub fn register_idt_statistics_tests() {
 
 pub fn register_idt_safety_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "idt::safety": {
             "address_validation": address_validation,
             "cpu_features_no_panic": cpu_features_no_panic,

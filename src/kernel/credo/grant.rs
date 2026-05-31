@@ -4,11 +4,10 @@ use core::sync::atomic::Ordering;
 static GRANT_LOCK: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 fn lock_grants() {
-    while GRANT_LOCK.compare_exchange_weak(
-        false, true,
-        Ordering::Acquire,
-        Ordering::Relaxed,
-    ).is_err() {
+    while GRANT_LOCK
+        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
         core::hint::spin_loop();
     }
 }
@@ -19,7 +18,8 @@ fn unlock_grants() {
 
 // SAFETY: Only accessed under GRANT_LOCK. Raw pointer access avoids
 // the UB of multiple &mut references from static mut.
-static mut GRANT_RECORDS: [GrantRecord; MAX_GRANT_RECORDS] = [GrantRecord::EMPTY; MAX_GRANT_RECORDS];
+static mut GRANT_RECORDS: [GrantRecord; MAX_GRANT_RECORDS] =
+    [GrantRecord::EMPTY; MAX_GRANT_RECORDS];
 
 pub fn add_record(record: GrantRecord) -> Result<(), PwmError> {
     lock_grants();

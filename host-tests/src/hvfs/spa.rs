@@ -1,12 +1,12 @@
-use std::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use crate::kernel::sync::mutex::Mutex;
-use crate::kernel::fs::hvfs::bp::*;
-use crate::kernel::fs::hvfs::dva::HvDva;
-use crate::kernel::fs::hvfs::vdev::*;
-use crate::kernel::fs::hvfs::metaslab::*;
 use crate::kernel::fs::hvfs::arc::HvArc;
+use crate::kernel::fs::hvfs::bp::*;
 use crate::kernel::fs::hvfs::checksum::HvChecksum;
+use crate::kernel::fs::hvfs::dva::HvDva;
+use crate::kernel::fs::hvfs::metaslab::*;
+use crate::kernel::fs::hvfs::vdev::*;
+use crate::kernel::sync::mutex::Mutex;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::vec::Vec;
 
 pub const HV_SPA_MAGIC: u32 = 0x48564653;
 pub const HV_SPA_VERSION: u32 = 2;
@@ -50,11 +50,16 @@ pub struct HvUberblock {
 impl HvUberblock {
     pub const fn null() -> Self {
         Self {
-            magic: 0, version: 0, txg: 0,
+            magic: 0,
+            version: 0,
+            txg: 0,
             root_bp: HvBlockPointer::null(),
-            timestamp: 0, root_dataset_obj: 0,
-            pool_guid: 0, checkpoint_txg: 0,
-            pwid_domain_id: 0, _pad: [0; 6],
+            timestamp: 0,
+            root_dataset_obj: 0,
+            pool_guid: 0,
+            checkpoint_txg: 0,
+            pwid_domain_id: 0,
+            _pad: [0; 6],
             checksum: [0; 4],
         }
     }
@@ -66,7 +71,10 @@ impl HvUberblock {
     pub fn compute_checksum(&mut self) {
         self.checksum = [0; 4];
         let bytes = unsafe {
-            core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>())
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                core::mem::size_of::<Self>(),
+            )
         };
         let ck = HvChecksum::compute(HvCksumType::Fletcher4, bytes);
         self.checksum = ck.value;
@@ -77,7 +85,10 @@ impl HvUberblock {
         let saved = copy.checksum;
         copy.checksum = [0; 4];
         let bytes = unsafe {
-            core::slice::from_raw_parts(&copy as *const Self as *const u8, core::mem::size_of::<Self>())
+            core::slice::from_raw_parts(
+                &copy as *const Self as *const u8,
+                core::mem::size_of::<Self>(),
+            )
         };
         let ck = HvChecksum::compute(HvCksumType::Fletcher4, bytes);
         ck.value == saved
@@ -100,8 +111,12 @@ impl HvSpaConfig {
         let len = b.len().min(HV_POOL_MAX_NAME - 1);
         n[..len].copy_from_slice(&b[..len]);
         Self {
-            name: n, guid: 0, ashift: 12, block_size: 4096,
-            max_vdevs: 8, readonly: false,
+            name: n,
+            guid: 0,
+            ashift: 12,
+            block_size: 4096,
+            max_vdevs: 8,
+            readonly: false,
         }
     }
 }
@@ -163,7 +178,9 @@ impl HvSpa {
     }
 
     fn generate_guid() -> u64 {
-        extern "C" { fn timer_get_ticks() -> u64; }
+        extern "C" {
+            fn timer_get_ticks() -> u64;
+        }
         let t = unsafe { timer_get_ticks() };
         let mut h: u64 = 14695981039346656037;
         h ^= t;
@@ -177,7 +194,9 @@ impl HvSpa {
         extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
-        if buf.len() < 512 { return -1; }
+        if buf.len() < 512 {
+            return -1;
+        }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
         unsafe { ata_read_sector(0, phys, buf.as_mut_ptr()) }
     }
@@ -186,7 +205,9 @@ impl HvSpa {
         extern "C" {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         }
-        if buf.len() < 512 { return -1; }
+        if buf.len() < 512 {
+            return -1;
+        }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
         unsafe { ata_write_sector(0, phys, buf.as_ptr()) }
     }
@@ -200,7 +221,8 @@ impl HvSpa {
         }
         self.arc.init(256);
         self.txg_current.store(1, Ordering::Release);
-        self.state.store(HvPoolState::Active as u8, Ordering::Release);
+        self.state
+            .store(HvPoolState::Active as u8, Ordering::Release);
         self.initialized.store(true, Ordering::Release);
         {
             let mut ub = self.uberblock.lock();
@@ -215,7 +237,9 @@ impl HvSpa {
     pub fn add_vdev(&self, config: HvVdevConfig) -> bool {
         let mut vdevs = self.vdevs.lock();
         let max_vdevs = self.config.lock().max_vdevs;
-        if vdevs.len() >= max_vdevs as usize { return false; }
+        if vdevs.len() >= max_vdevs as usize {
+            return false;
+        }
         let mut vdev = HvVdev::new(config);
         vdev.state = HvVdevState::Healthy;
         let vdev_id = vdev.config.vdev_id;
@@ -227,7 +251,11 @@ impl HvSpa {
             let n_ms = asize.div_ceil(HV_POOL_METASLAB_SIZE) as u32;
             for i in 0..n_ms {
                 let ms_start = (i as u64) * HV_POOL_METASLAB_SIZE + HV_VDEV_LABEL_SIZE;
-                let ms_size = if i < n_ms - 1 { HV_POOL_METASLAB_SIZE } else { asize - ms_start + HV_VDEV_LABEL_SIZE };
+                let ms_size = if i < n_ms - 1 {
+                    HV_POOL_METASLAB_SIZE
+                } else {
+                    asize - ms_start + HV_VDEV_LABEL_SIZE
+                };
                 let ms = HvMetaslab::new(ms_list.len() as u32, vdev_id, ms_start, ms_size);
                 ms_list.push(ms);
             }
@@ -235,15 +263,25 @@ impl HvSpa {
         true
     }
 
-    pub fn allocate(&self, size: u64, kind: HvCksumType, comp: HvCompType, txg: u64) -> Option<HvBlockPointer> {
+    pub fn allocate(
+        &self,
+        size: u64,
+        kind: HvCksumType,
+        comp: HvCompType,
+        txg: u64,
+    ) -> Option<HvBlockPointer> {
         let rounded = size.div_ceil(HV_POOL_BLOCK_SIZE) * HV_POOL_BLOCK_SIZE;
         let mut ms_list = self.metaslabs.lock();
         let mut best_vdev_id: u16 = 0;
         let mut best_weight: u64 = 0;
         let mut best_ms_idx: Option<usize> = None;
         for (i, ms) in ms_list.iter().enumerate() {
-            if !ms.is_available() { continue; }
-            if ms.free_space.load(Ordering::Relaxed) < rounded { continue; }
+            if !ms.is_available() {
+                continue;
+            }
+            if ms.free_space.load(Ordering::Relaxed) < rounded {
+                continue;
+            }
             if ms.weight > best_weight {
                 best_weight = ms.weight;
                 best_vdev_id = ms.vdev_id;
@@ -309,7 +347,9 @@ impl HvSpa {
                     let sector = dva.offset / 512;
                     let count = dva.asize.div_ceil(512);
                     let result = vdev.write_sectors(sector, count, buf);
-                    if result != 0 { return result; }
+                    if result != 0 {
+                        return result;
+                    }
                 }
             }
         }
@@ -319,21 +359,32 @@ impl HvSpa {
 
     pub fn write_uberblock_to_disk(&self) {
         let ub = self.uberblock.lock();
-        if !ub.is_valid() { return; }
+        if !ub.is_valid() {
+            return;
+        }
         let mut copy = *ub;
         copy.compute_checksum();
         let ub_bytes = unsafe {
-            core::slice::from_raw_parts(&copy as *const HvUberblock as *const u8, core::mem::size_of::<HvUberblock>())
+            core::slice::from_raw_parts(
+                &copy as *const HvUberblock as *const u8,
+                core::mem::size_of::<HvUberblock>(),
+            )
         };
-        let ub_sector = (self.txg_current.load(Ordering::Relaxed) as u32) % HV_UBERBLOCK_COUNT as u32;
+        let ub_sector =
+            (self.txg_current.load(Ordering::Relaxed) as u32) % HV_UBERBLOCK_COUNT as u32;
         let sector = HV_UBERBLOCK_SECTOR + ub_sector;
         let mut sector_buf = [0u8; 512];
         let copy_len = ub_bytes.len().min(512);
         sector_buf[..copy_len].copy_from_slice(&ub_bytes[..copy_len]);
         let _ = self.write_sector(sector, &sector_buf);
         self.last_sync_time.store(
-            unsafe { extern "C" { fn timer_get_ticks() -> u64; } timer_get_ticks() },
-            Ordering::Relaxed
+            unsafe {
+                extern "C" {
+                    fn timer_get_ticks() -> u64;
+                }
+                timer_get_ticks()
+            },
+            Ordering::Relaxed,
         );
     }
 
@@ -341,10 +392,11 @@ impl HvSpa {
         for i in (0..HV_UBERBLOCK_COUNT as u32).rev() {
             let sector = HV_UBERBLOCK_SECTOR + i;
             let mut sector_buf = [0u8; 512];
-            if self.read_sector(sector, &mut sector_buf) != 0 { continue; }
-            let ub: HvUberblock = unsafe {
-                core::ptr::read_unaligned(sector_buf.as_ptr() as *const HvUberblock)
-            };
+            if self.read_sector(sector, &mut sector_buf) != 0 {
+                continue;
+            }
+            let ub: HvUberblock =
+                unsafe { core::ptr::read_unaligned(sector_buf.as_ptr() as *const HvUberblock) };
             if ub.is_valid() && ub.verify_checksum() {
                 return Some(ub);
             }

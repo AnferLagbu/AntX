@@ -89,7 +89,9 @@ pub fn open_softirq(nr: SoftirqVec, handler: SoftirqHandler) {
 
 #[inline]
 pub fn raise_softirq(nr: SoftirqVec) {
-    SOFTIRQ.pending.fetch_or(1u64 << nr.to_idx(), Ordering::Release);
+    SOFTIRQ
+        .pending
+        .fetch_or(1u64 << nr.to_idx(), Ordering::Release);
 }
 
 #[inline]

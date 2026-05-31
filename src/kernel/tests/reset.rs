@@ -3,7 +3,7 @@
 //! 测试 Barrier Base/Soft/Hard Recovery 功能
 use crate::register_tests_inner;
 
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
 
 fn config_recovery_result() -> TestResult {
     use crate::kernel::barrier::reset::config::tests;
@@ -69,96 +69,106 @@ fn parallel_compute_layers() -> TestResult {
 
 fn device_type_enum() -> TestResult {
     use crate::kernel::barrier::DeviceType;
-    
+
     assert_eq_test!(DeviceType::Keyboard as u32, 1, "keyboard type");
     assert_eq_test!(DeviceType::Serial as u32, 2, "serial type");
     assert_eq_test!(DeviceType::Timer as u32, 3, "timer type");
     assert_eq_test!(DeviceType::Network as u32, 4, "network type");
     assert_eq_test!(DeviceType::Storage as u32, 5, "storage type");
-    
-    assert_eq_test!(DeviceType::from_u32(1), DeviceType::Keyboard, "from_u32 keyboard");
-    assert_eq_test!(DeviceType::from_u32(99), DeviceType::Unknown, "from_u32 unknown");
-    
+
+    assert_eq_test!(
+        DeviceType::from_u32(1),
+        DeviceType::Keyboard,
+        "from_u32 keyboard"
+    );
+    assert_eq_test!(
+        DeviceType::from_u32(99),
+        DeviceType::Unknown,
+        "from_u32 unknown"
+    );
+
     TestResult::Pass
 }
 
 fn recovery_layer_order() -> TestResult {
     use crate::kernel::barrier::RecoveryLayer;
-    
+
     assert_eq_test!(RecoveryLayer::Layer1 as u32, 1, "layer1 value");
     assert_eq_test!(RecoveryLayer::Layer2 as u32, 2, "layer2 value");
     assert_eq_test!(RecoveryLayer::Layer3 as u32, 3, "layer3 value");
-    
+
     TestResult::Pass
 }
 
 fn recovery_result_checks() -> TestResult {
     use crate::kernel::barrier::RecoveryResult;
-    
+
     let success = RecoveryResult::Success;
     let failed = RecoveryResult::Failed;
     let escalate = RecoveryResult::Escalate;
-    
+
     check!(success.is_success(), "success is_success");
     check!(!success.should_escalate(), "success not escalate");
-    
+
     check!(!failed.is_success(), "failed not success");
     check!(!failed.should_escalate(), "failed not escalate");
-    
+
     check!(!escalate.is_success(), "escalate not success");
     check!(escalate.should_escalate(), "escalate should_escalate");
-    
+
     TestResult::Pass
 }
 
 fn rollback_mode_enum() -> TestResult {
     use crate::kernel::barrier::RollbackMode;
-    
+
     assert_eq_test!(RollbackMode::Serial as u32, 0, "serial mode");
     assert_eq_test!(RollbackMode::Parallel as u32, 1, "parallel mode");
-    
+
     TestResult::Pass
 }
 
 fn snapshot_register_api() -> TestResult {
-    use crate::kernel::barrier::{snapshot_register_device, snapshot_unregister_device, DeviceType};
-    
+    use crate::kernel::barrier::{
+        snapshot_register_device, snapshot_unregister_device, DeviceType,
+    };
+
     let registered = snapshot_register_device(999, DeviceType::Timer, "test_dev", 0xF000, 10);
     check!(registered, "register device");
-    
+
     let unregistered = snapshot_unregister_device(999);
     check!(unregistered, "unregister device");
-    
+
     TestResult::Pass
 }
 
 fn recovery_stats_api() -> TestResult {
     use crate::kernel::barrier::{get_stats, reset_stats};
-    
+
     reset_stats();
     let (bsr, bhr, tick) = get_stats();
     assert_eq_test!(bsr, 0, "bsr count");
     assert_eq_test!(bhr, 0, "bhr count");
     assert_eq_test!(tick, 0, "last tick");
-    
+
     TestResult::Pass
 }
 
 fn recovery_status_api() -> TestResult {
     use crate::kernel::barrier::{get_recovery_status, reset_stats};
-    
+
     reset_stats();
     let status = get_recovery_status();
     assert_eq_test!(status.bbr_count, 0, "bbr count");
     assert_eq_test!(status.bsr_count, 0, "bsr count");
     assert_eq_test!(status.bhr_count, 0, "bhr count");
-    
+
     TestResult::Pass
 }
 
 pub fn register_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "barrier::config": {
             "recovery_result": config_recovery_result,
             "default": config_default,

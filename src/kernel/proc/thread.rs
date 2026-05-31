@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use super::types::{ThreadState, ThreadPriority, SCHED_LEVEL_2_QUANTUM};
+use super::types::{ThreadPriority, ThreadState, SCHED_LEVEL_2_QUANTUM};
 
 pub const MAX_THREADS: usize = 128;
 pub const MAX_THREADS_PER_PROCESS: usize = 16;
@@ -89,31 +89,32 @@ impl Thread {
     /// ✅ 安全的状态设置 (带合法性检查)
     pub fn set_state_safe(&self, new_state: ThreadState) -> Result<(), &'static str> {
         let current = ThreadState::from_u32(self.state.load(Ordering::Acquire));
-        
+
         match (current, new_state) {
-            (ThreadState::Created, ThreadState::Ready) => {},
-            (ThreadState::Ready, ThreadState::Running) => {},
-            (ThreadState::Running, ThreadState::Ready) => {},
-            (ThreadState::Running, ThreadState::Blocked) => {},
-            (ThreadState::Running, ThreadState::Zombie) => {},
-            (ThreadState::Running, ThreadState::Frozen) => {},
-            (ThreadState::Ready, ThreadState::Frozen) => {},
-            (ThreadState::Blocked, ThreadState::Frozen) => {},
-            (ThreadState::Blocked, ThreadState::Ready) => {},
-            (ThreadState::Blocked, ThreadState::Zombie) => {},
-            (ThreadState::Zombie, ThreadState::Terminated) => {},
-            (ThreadState::Frozen, ThreadState::Ready) => {},
-            (ThreadState::Frozen, ThreadState::Blocked) => {},
+            (ThreadState::Created, ThreadState::Ready) => {}
+            (ThreadState::Ready, ThreadState::Running) => {}
+            (ThreadState::Running, ThreadState::Ready) => {}
+            (ThreadState::Running, ThreadState::Blocked) => {}
+            (ThreadState::Running, ThreadState::Zombie) => {}
+            (ThreadState::Running, ThreadState::Frozen) => {}
+            (ThreadState::Ready, ThreadState::Frozen) => {}
+            (ThreadState::Blocked, ThreadState::Frozen) => {}
+            (ThreadState::Blocked, ThreadState::Ready) => {}
+            (ThreadState::Blocked, ThreadState::Zombie) => {}
+            (ThreadState::Zombie, ThreadState::Terminated) => {}
+            (ThreadState::Frozen, ThreadState::Ready) => {}
+            (ThreadState::Frozen, ThreadState::Blocked) => {}
             _ => return Err("Illegal state transition"),
         }
-        
+
         self.state.store(new_state as u32, Ordering::Release);
         self.state_change_count.fetch_add(1, Ordering::Relaxed);
-        
+
         if new_state == ThreadState::Frozen {
-            self.frozen_since.store(crate::kernel::timer::get_ticks(), Ordering::Relaxed);
+            self.frozen_since
+                .store(crate::kernel::timer::get_ticks(), Ordering::Relaxed);
         }
-        
+
         Ok(())
     }
 
@@ -164,7 +165,9 @@ impl ThreadTable {
     }
 
     pub fn insert(&self, thread: *mut Thread) -> bool {
-        if thread.is_null() { return false; }
+        if thread.is_null() {
+            return false;
+        }
         let tid = unsafe { (*thread).tid };
         let mut table = self.threads.lock();
         if (tid as usize) < MAX_THREADS {
@@ -176,7 +179,9 @@ impl ThreadTable {
     }
 
     pub fn get(&self, tid: u32) -> Option<*mut Thread> {
-        if (tid as usize) >= MAX_THREADS { return None; }
+        if (tid as usize) >= MAX_THREADS {
+            return None;
+        }
         self.threads.lock()[tid as usize]
     }
 
@@ -219,9 +224,8 @@ impl ThreadManager {
     ) -> Option<u32> {
         let tid = THREAD_TABLE.allocate()?;
 
-        let thread = unsafe { alloc::alloc::alloc(
-            alloc::alloc::Layout::new::<Thread>()
-        ) as *mut Thread };
+        let thread =
+            unsafe { alloc::alloc::alloc(alloc::alloc::Layout::new::<Thread>()) as *mut Thread };
 
         if thread.is_null() {
             return None;
@@ -233,14 +237,15 @@ impl ThreadManager {
             (*thread).user_stack.store(user_stack, Ordering::SeqCst);
             (*thread).kernel_stack.store(kernel_stack, Ordering::SeqCst);
             (*thread).cr3.store(cr3, Ordering::SeqCst);
-            (*thread).state.store(ThreadState::Ready as u32, Ordering::SeqCst);
+            (*thread)
+                .state
+                .store(ThreadState::Ready as u32, Ordering::SeqCst);
         }
 
         if !THREAD_TABLE.insert(thread) {
-            unsafe { alloc::alloc::dealloc(
-                thread as *mut u8,
-                alloc::alloc::Layout::new::<Thread>()
-            )};
+            unsafe {
+                alloc::alloc::dealloc(thread as *mut u8, alloc::alloc::Layout::new::<Thread>())
+            };
             return None;
         }
 
@@ -254,7 +259,11 @@ impl ThreadManager {
 
     pub fn get_current_thread(&self) -> Option<u64> {
         let id = self.current_thread.load(Ordering::SeqCst);
-        if id == 0 { None } else { Some(id) }
+        if id == 0 {
+            None
+        } else {
+            Some(id)
+        }
     }
 
     pub fn set_current(&self, tid: u32) {
@@ -270,7 +279,9 @@ impl ThreadManager {
             if let Some(thread) = THREAD_TABLE.get(tid as u32) {
                 unsafe {
                     (*thread).exit_code.store(exit_code, Ordering::SeqCst);
-                    (*thread).state.store(ThreadState::Zombie as u32, Ordering::SeqCst);
+                    (*thread)
+                        .state
+                        .store(ThreadState::Zombie as u32, Ordering::SeqCst);
                 }
             }
         }

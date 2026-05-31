@@ -194,8 +194,12 @@ mod tests {
         assert!(result.is_some());
         for order in 0..BUDDY_MAX_ORDER {
             let buddy_page = 1 + (1u64 << order);
-            assert_eq!(buddy.om_get(buddy_page) & BUDDY_ORDER_MASK, order as u8,
-                "buddy page at order {} should be in free list", order);
+            assert_eq!(
+                buddy.om_get(buddy_page) & BUDDY_ORDER_MASK,
+                order as u8,
+                "buddy page at order {} should be in free list",
+                order
+            );
         }
     }
 
@@ -247,10 +251,17 @@ mod tests {
         buddy.om_set(1, BUDDY_MAX_ORDER as u8);
         let _ = buddy.alloc_order(2);
         let page0 = 1u64;
-        assert!(buddy.om_get(page0) & BUDDY_ALLOCATED != 0, "page 1 should be allocated");
+        assert!(
+            buddy.om_get(page0) & BUDDY_ALLOCATED != 0,
+            "page 1 should be allocated"
+        );
         for i in 1..4u64 {
-            assert_eq!(buddy.om_get(page0 + i), BUDDY_INTERIOR_USED,
-                "interior page {} should be INTERIOR_USED", i);
+            assert_eq!(
+                buddy.om_get(page0 + i),
+                BUDDY_INTERIOR_USED,
+                "interior page {} should be INTERIOR_USED",
+                i
+            );
         }
     }
 

@@ -26,8 +26,11 @@ impl UndoLog {
     pub fn new() -> Self {
         Self {
             entries: [UndoEntry {
-                generation: 0, field_ptr: core::ptr::null_mut(),
-                old_value: [0u8; 8], value_size: 0, checksum: 0,
+                generation: 0,
+                field_ptr: core::ptr::null_mut(),
+                old_value: [0u8; 8],
+                value_size: 0,
+                checksum: 0,
             }; MAX_UNDO_ENTRIES],
             count: 0,
             current_generation: 0,
@@ -58,11 +61,7 @@ impl UndoLog {
             self.emergency_compact(self.current_generation.saturating_sub(1));
         }
 
-        let raw = unsafe {
-            core::slice::from_raw_parts(
-                &old_value as *const T as *const u8, size,
-            )
-        };
+        let raw = unsafe { core::slice::from_raw_parts(&old_value as *const T as *const u8, size) };
         let mut old_bytes = [0u8; 8];
         old_bytes[..size].copy_from_slice(&raw[..size]);
 
@@ -82,25 +81,26 @@ impl UndoLog {
         let mut rolled_back = 0;
         while self.count > 0 {
             let entry = &self.entries[self.count - 1];
-            if entry.generation < target_generation { break; }
+            if entry.generation < target_generation {
+                break;
+            }
 
             let size = entry.value_size as usize;
-            let current_checksum = unsafe {
-                fnv1a_32(core::slice::from_raw_parts(entry.field_ptr, size))
-            };
+            let current_checksum =
+                unsafe { fnv1a_32(core::slice::from_raw_parts(entry.field_ptr, size)) };
 
             if current_checksum == entry.checksum {
                 unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        entry.old_value.as_ptr(), entry.field_ptr, size,
-                    );
+                    core::ptr::copy_nonoverlapping(entry.old_value.as_ptr(), entry.field_ptr, size);
                 }
             }
 
             self.count -= 1;
             rolled_back += 1;
         }
-        if self.count > MAX_UNDO_ENTRIES / 2 { self.compact(); }
+        if self.count > MAX_UNDO_ENTRIES / 2 {
+            self.compact();
+        }
         rolled_back
     }
 
@@ -157,7 +157,9 @@ impl UndoLog {
     }
 
     pub fn compact_keeping(&mut self, keep_generations: usize) {
-        if self.count == 0 { return; }
+        if self.count == 0 {
+            return;
+        }
         let mut gen_starts: [u64; 16] = [0; 16];
         let mut gen_count = 0;
         let mut prev_gen = u64::MAX;

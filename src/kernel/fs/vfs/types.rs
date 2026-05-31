@@ -208,7 +208,11 @@ impl VfsDirEntry {
     }
 
     pub fn get_name(&self) -> &str {
-        let end = self.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+        let end = self
+            .name
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(VFS_MAX_NAME);
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
     }
 }

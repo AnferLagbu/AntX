@@ -43,7 +43,8 @@ pub unsafe extern "C" fn entry() -> ! {
     // 6. 初始化定时器 (仅配置, 不启用 — 稍后在 kernel_init 中启用)
     uart::puts("[BOOT] Initializing timer...");
     let (_freq, interval) = crate::kernel::arch::aarch64::timer::init_deferred();
-    crate::kernel::arch::aarch64::exception::TIMER_INTERVAL_TICKS.store(interval, core::sync::atomic::Ordering::Relaxed);
+    crate::kernel::arch::aarch64::exception::TIMER_INTERVAL_TICKS
+        .store(interval, core::sync::atomic::Ordering::Relaxed);
 
     // 7. 跳转统一内核入口
     uart::puts("[BOOT] Booting kernel...");

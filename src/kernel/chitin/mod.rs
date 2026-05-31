@@ -25,21 +25,21 @@
 //!   └── CHITIN_DEVICES[drive].ops::BlockOps.read(...)
 //! ```
 
-use alloc::vec::Vec;
 use alloc::boxed::Box;
-use spin::Mutex;
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
+use spin::Mutex;
 
 use super::driver::framework::Driver;
 pub use super::driver::framework::DriverError as ChitinError;
 
 // ── 协议模块 ──
+pub mod composite;
+pub mod devtree;
 pub mod proto_block;
 pub mod proto_char;
-pub mod proto_net;
 pub mod proto_input;
-pub mod devtree;
-pub mod composite;
+pub mod proto_net;
 pub mod user_driver;
 
 // ── 协议类型 ──
@@ -58,10 +58,10 @@ impl ChitinProto {
     pub fn as_str(&self) -> &'static str {
         match self {
             ChitinProto::Block => "block",
-            ChitinProto::Char  => "char",
-            ChitinProto::Net   => "net",
+            ChitinProto::Char => "char",
+            ChitinProto::Net => "net",
             ChitinProto::Input => "input",
-            ChitinProto::Bus   => "bus",
+            ChitinProto::Bus => "bus",
             ChitinProto::Other => "other",
         }
     }
@@ -70,12 +70,12 @@ impl ChitinProto {
 impl From<super::driver::framework::DeviceType> for ChitinProto {
     fn from(dt: super::driver::framework::DeviceType) -> Self {
         match dt {
-            super::driver::framework::DeviceType::Block   => ChitinProto::Block,
-            super::driver::framework::DeviceType::Char    => ChitinProto::Char,
+            super::driver::framework::DeviceType::Block => ChitinProto::Block,
+            super::driver::framework::DeviceType::Char => ChitinProto::Char,
             super::driver::framework::DeviceType::Network => ChitinProto::Net,
-            super::driver::framework::DeviceType::Input   => ChitinProto::Input,
-            super::driver::framework::DeviceType::Bus     => ChitinProto::Bus,
-            super::driver::framework::DeviceType::Other   => ChitinProto::Other,
+            super::driver::framework::DeviceType::Input => ChitinProto::Input,
+            super::driver::framework::DeviceType::Bus => ChitinProto::Bus,
+            super::driver::framework::DeviceType::Other => ChitinProto::Other,
         }
     }
 }
@@ -98,9 +98,9 @@ pub enum DeviceState {
 /// 每个块设备驱动提供这四个函数指针, Chitin 通过它们执行 I/O,
 /// 无需虚表分发或 trait object, 实现零开销抽象。
 pub struct BlockOps {
-    pub read:         unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32,
-    pub write:        unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &[u8]) -> i32,
-    pub is_present:   unsafe fn(driver_data: *mut core::ffi::c_void) -> bool,
+    pub read: unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32,
+    pub write: unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &[u8]) -> i32,
+    pub is_present: unsafe fn(driver_data: *mut core::ffi::c_void) -> bool,
     pub total_sectors: unsafe fn(driver_data: *mut core::ffi::c_void) -> u64,
 }
 
@@ -284,7 +284,9 @@ pub fn chitin_find_by_proto(proto: ChitinProto) -> Option<usize> {
 }
 
 pub fn chitin_list() -> Vec<(u32, &'static str, ChitinProto, DeviceState)> {
-    CHITIN_DEVICES.lock().iter()
+    CHITIN_DEVICES
+        .lock()
+        .iter()
         .map(|d| (d.id, d.name, d.proto, d.state))
         .collect()
 }
@@ -294,11 +296,16 @@ pub fn chitin_count() -> usize {
 }
 
 pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
-    CHITIN_DEVICES.lock().iter().filter(|d| d.proto == proto).count()
+    CHITIN_DEVICES
+        .lock()
+        .iter()
+        .filter(|d| d.proto == proto)
+        .count()
 }
 
 pub fn chitin_with_device<F>(id: u32, f: F)
-where F: FnOnce(&mut ChitinDevice)
+where
+    F: FnOnce(&mut ChitinDevice),
 {
     let mut devices = CHITIN_DEVICES.lock();
     if let Some(dev) = devices.iter_mut().find(|d| d.id == id) {
@@ -307,7 +314,8 @@ where F: FnOnce(&mut ChitinDevice)
 }
 
 pub fn chitin_with_device_map<T, F>(id: u32, f: F) -> Option<T>
-where F: FnOnce(&mut ChitinDevice) -> T
+where
+    F: FnOnce(&mut ChitinDevice) -> T,
 {
     let mut devices = CHITIN_DEVICES.lock();
     devices.iter_mut().find(|d| d.id == id).map(f)
@@ -334,13 +342,21 @@ pub fn chitin_set_state(id: u32, state: DeviceState) {
 /// `drive` 是设备在 CHITIN_DEVICES 中的索引 (与旧 block::REGISTRY 索引兼容)。
 /// 仅对 `ChitinProto::Block` 且携带 `BlockOps` 的设备有效。
 pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
-    if buf.len() < 512 { return -1; }
+    if buf.len() < 512 {
+        return -1;
+    }
     let devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
-    if idx >= devices.len() { return -1; }
+    if idx >= devices.len() {
+        return -1;
+    }
     let dev = &devices[idx];
-    if dev.proto != ChitinProto::Block { return -1; }
-    if dev.state != DeviceState::Ready { return -1; }
+    if dev.proto != ChitinProto::Block {
+        return -1;
+    }
+    if dev.state != DeviceState::Ready {
+        return -1;
+    }
     match dev.block_ops() {
         Some(ops) => unsafe { (ops.read)(dev.driver_data, sector, buf) },
         None => -1,
@@ -349,13 +365,21 @@ pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
 
 /// 通过 Chitin 写入块设备扇区
 pub fn chitin_blk_write(drive: u8, sector: u64, buf: &[u8]) -> i32 {
-    if buf.len() < 512 { return -1; }
+    if buf.len() < 512 {
+        return -1;
+    }
     let devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
-    if idx >= devices.len() { return -1; }
+    if idx >= devices.len() {
+        return -1;
+    }
     let dev = &devices[idx];
-    if dev.proto != ChitinProto::Block { return -1; }
-    if dev.state != DeviceState::Ready { return -1; }
+    if dev.proto != ChitinProto::Block {
+        return -1;
+    }
+    if dev.state != DeviceState::Ready {
+        return -1;
+    }
     match dev.block_ops() {
         Some(ops) => unsafe { (ops.write)(dev.driver_data, sector, buf) },
         None => -1,
@@ -366,10 +390,16 @@ pub fn chitin_blk_write(drive: u8, sector: u64, buf: &[u8]) -> i32 {
 pub fn chitin_blk_is_present(drive: u8) -> bool {
     let devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
-    if idx >= devices.len() { return false; }
+    if idx >= devices.len() {
+        return false;
+    }
     let dev = &devices[idx];
-    if dev.proto != ChitinProto::Block { return false; }
-    if dev.state != DeviceState::Ready { return false; }
+    if dev.proto != ChitinProto::Block {
+        return false;
+    }
+    if dev.state != DeviceState::Ready {
+        return false;
+    }
     match dev.block_ops() {
         Some(ops) => unsafe { (ops.is_present)(dev.driver_data) },
         None => false,
@@ -380,9 +410,13 @@ pub fn chitin_blk_is_present(drive: u8) -> bool {
 pub fn chitin_blk_total_sectors(drive: u8) -> u64 {
     let devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
-    if idx >= devices.len() { return 0; }
+    if idx >= devices.len() {
+        return 0;
+    }
     let dev = &devices[idx];
-    if dev.proto != ChitinProto::Block { return 0; }
+    if dev.proto != ChitinProto::Block {
+        return 0;
+    }
     match dev.block_ops() {
         Some(ops) => unsafe { (ops.total_sectors)(dev.driver_data) },
         None => 0,
@@ -393,8 +427,12 @@ pub fn chitin_blk_total_sectors(drive: u8) -> u64 {
 pub fn chitin_blk_name(drive: u8) -> Option<&'static str> {
     let devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
-    if idx >= devices.len() { return None; }
-    if devices[idx].proto != ChitinProto::Block { return None; }
+    if idx >= devices.len() {
+        return None;
+    }
+    if devices[idx].proto != ChitinProto::Block {
+        return None;
+    }
     Some(devices[idx].name)
 }
 
@@ -425,7 +463,9 @@ struct DriverObject {
 
 impl Drop for DriverObject {
     fn drop(&mut self) {
-        unsafe { drop(Box::from_raw(self.ptr)); }
+        unsafe {
+            drop(Box::from_raw(self.ptr));
+        }
     }
 }
 
@@ -508,7 +548,9 @@ pub fn chitin_shutdown_all() {
                 let _ = driver.shutdown();
             }
             dev.state = DeviceState::Failed;
-            unsafe { drop(Box::from_raw(dev.driver_data as *mut DriverObject)); }
+            unsafe {
+                drop(Box::from_raw(dev.driver_data as *mut DriverObject));
+            }
             dev.driver_data = core::ptr::null_mut();
         }
     }
@@ -522,8 +564,8 @@ pub fn chitin_device_list() -> Vec<(u32, &'static str, ChitinProto, DeviceState)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::driver::framework::DriverError;
+    use super::*;
 
     struct TestDriver {
         name: &'static str,
@@ -531,7 +573,9 @@ mod tests {
     }
 
     impl Driver for TestDriver {
-        fn name(&self) -> &'static str { self.name }
+        fn name(&self) -> &'static str {
+            self.name
+        }
         fn device_type(&self) -> super::super::driver::framework::DeviceType {
             super::super::driver::framework::DeviceType::Other
         }
@@ -570,12 +614,17 @@ mod tests {
         assert_eq!(chitin_count(), 1);
 
         CHITIN_DEVICES.lock().clear();
-        unsafe { drop(Box::from_raw(raw as *mut u32)); }
+        unsafe {
+            drop(Box::from_raw(raw as *mut u32));
+        }
     }
 
     #[test]
     fn test_register_driver_auto_init() {
-        let driver = Box::new(TestDriver { name: "test", init_called: false });
+        let driver = Box::new(TestDriver {
+            name: "test",
+            init_called: false,
+        });
         let id = chitin_register_driver("test_drv", ChitinProto::Other, None, None, driver);
         assert!(id > 0);
 
@@ -586,7 +635,9 @@ mod tests {
         });
 
         let ptr = chitin_unregister(id).unwrap();
-        unsafe { drop(Box::from_raw(ptr as *mut TestDriver)); }
+        unsafe {
+            drop(Box::from_raw(ptr as *mut TestDriver));
+        }
     }
 
     #[test]
@@ -603,7 +654,9 @@ mod tests {
     };
 
     unsafe fn mock_blk_read(_data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32 {
-        if buf.len() < 512 { return -1; }
+        if buf.len() < 512 {
+            return -1;
+        }
         buf[0] = b'R';
         buf[1] = (sector & 0xFF) as u8;
         0
@@ -625,9 +678,7 @@ mod tests {
     fn test_register_block_with_ops() {
         let dummy: Box<u8> = Box::new(0u8);
         let raw = box_to_raw(dummy);
-        let idx = chitin_register_block(
-            "mock_blk", None, None, &MOCK_BLOCK_OPS, raw,
-        );
+        let idx = chitin_register_block("mock_blk", None, None, &MOCK_BLOCK_OPS, raw);
         assert_eq!(chitin_count_by_proto(ChitinProto::Block), 1);
 
         let present = chitin_blk_is_present(idx as u8);
@@ -643,7 +694,9 @@ mod tests {
         assert_eq!(buf[1], 42);
 
         CHITIN_DEVICES.lock().clear();
-        unsafe { drop(Box::from_raw(raw as *mut u8)); }
+        unsafe {
+            drop(Box::from_raw(raw as *mut u8));
+        }
     }
 
     #[test]
@@ -656,16 +709,16 @@ mod tests {
     fn test_blk_ops_accessor() {
         let dummy: Box<u8> = Box::new(0u8);
         let raw = box_to_raw(dummy);
-        let idx = chitin_register_block(
-            "mock_blk2", None, None, &MOCK_BLOCK_OPS, raw,
-        );
+        let idx = chitin_register_block("mock_blk2", None, None, &MOCK_BLOCK_OPS, raw);
         let devices = CHITIN_DEVICES.lock();
         let dev = &devices[idx as usize];
         assert!(dev.block_ops().is_some());
         assert!(dev.char_ops().is_none());
         assert!(dev.net_ops().is_none());
         CHITIN_DEVICES.lock().clear();
-        unsafe { drop(Box::from_raw(raw as *mut u8)); }
+        unsafe {
+            drop(Box::from_raw(raw as *mut u8));
+        }
     }
 
     #[test]
@@ -673,13 +726,19 @@ mod tests {
         let dummy: Box<u8> = Box::new(0u8);
         let raw = box_to_raw(dummy);
         let id = chitin_register_with_ops(
-            "mock_net", ChitinProto::Net, None, None, raw,
+            "mock_net",
+            ChitinProto::Net,
+            None,
+            None,
+            raw,
             ChitinOps::Block(&MOCK_BLOCK_OPS),
         );
         assert!(id > 0);
         let devices = CHITIN_DEVICES.lock();
         assert!(devices.iter().any(|d| d.id == id && d.ops.is_some()));
         CHITIN_DEVICES.lock().clear();
-        unsafe { drop(Box::from_raw(raw as *mut u8)); }
+        unsafe {
+            drop(Box::from_raw(raw as *mut u8));
+        }
     }
 }

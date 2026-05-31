@@ -11,9 +11,9 @@ pub const IDT_ENTRIES: usize = 256;
 pub const IRQ_BASE: u8 = 32;
 
 /// IDT 门描述符类型标志
-pub const IDT_TYPE_INTERRUPT: u8 = 0x8E;  // 中断门 (DPL=0)
-pub const IDT_TYPE_TRAP: u8 = 0x8F;         // 陷阱门 (DPL=0)
-pub const IDT_DPL_USER: u8 = 0x60;          // 用户态权限位
+pub const IDT_TYPE_INTERRUPT: u8 = 0x8E; // 中断门 (DPL=0)
+pub const IDT_TYPE_TRAP: u8 = 0x8F; // 陷阱门 (DPL=0)
+pub const IDT_DPL_USER: u8 = 0x60; // 用户态权限位
 
 /// GDT 内核代码段选择子
 pub const GDT_KERNEL_CODE: u16 = 0x08;
@@ -53,17 +53,17 @@ pub struct InterruptFrame {
     pub rcx: u64,
     pub rbx: u64,
     pub rax: u64,
-    
+
     /// 中断元数据
-    pub int_no: u64,      // 中断向量号
-    pub err_code: u64,    // 错误码 (部分异常有)
-    
+    pub int_no: u64, // 中断向量号
+    pub err_code: u64, // 错误码 (部分异常有)
+
     /// 返回地址信息
-    pub rip: u64,         // 指令指针
-    pub cs: u64,          // 代码段选择子
-    pub rflags: u64,      // RFLAGS 寄存器
-    pub rsp: u64,         // 栈指针
-    pub ss: u64,          // 栈段选择子
+    pub rip: u64, // 指令指针
+    pub cs: u64,     // 代码段选择子
+    pub rflags: u64, // RFLAGS 寄存器
+    pub rsp: u64,    // 栈指针
+    pub ss: u64,     // 栈段选择子
 }
 
 // 编译时静态断言：确保结构体大小正确
@@ -78,11 +78,28 @@ impl InterruptFrame {
     #[cfg(any(test, feature = "kernel_test"))]
     pub fn new_test_frame(int_no: u64, rip: u64, cs: u64) -> Self {
         Self {
-            r15: 0, r14: 0, r13: 0, r12: 0, r11: 0, r10: 0,
-            r9: 0, r8: 0, rdi: 0, rsi: 0, rbp: 0, rdx: 0,
-            rcx: 0, rbx: 0, rax: 0,
-            int_no, err_code: 0,
-            rip, cs, rflags: 0x202, rsp: 0, ss: 0x10,
+            r15: 0,
+            r14: 0,
+            r13: 0,
+            r12: 0,
+            r11: 0,
+            r10: 0,
+            r9: 0,
+            r8: 0,
+            rdi: 0,
+            rsi: 0,
+            rbp: 0,
+            rdx: 0,
+            rcx: 0,
+            rbx: 0,
+            rax: 0,
+            int_no,
+            err_code: 0,
+            rip,
+            cs,
+            rflags: 0x202,
+            rsp: 0,
+            ss: 0x10,
         }
     }
 
@@ -120,17 +137,30 @@ impl InterruptFrame {
     #[cfg(feature = "log")]
     pub fn dump_registers(&self) {
         use log::{info, warn};
-        
+
         warn!("=== Interrupt Frame ===");
         info!("  Vector: {} ({:#x})", self.int_no, self.int_no);
-        info!("  RIP={:#016x} CS={:#04x} RFLAGS={:#08x}", 
-              self.rip, self.cs as u16, self.rflags);
+        info!(
+            "  RIP={:#016x} CS={:#04x} RFLAGS={:#08x}",
+            self.rip, self.cs as u16, self.rflags
+        );
         info!("  RSP={:#016x} SS={:#04x}", self.rsp, self.ss as u16);
-        info!("  RAX={:#016x} RBX={:#016x} RCX={:#016x}", 
-              self.rax, self.rcx, self.rcx);
-        info!("  RDX={:#016x} RSI={:#016x} RDI={:#016x}", 
-              self.rdx, self.rsi, self.rdi);
-        info!("  Mode: {}", if self.is_user_mode() { "USER" } else { "KERNEL" });
+        info!(
+            "  RAX={:#016x} RBX={:#016x} RCX={:#016x}",
+            self.rax, self.rcx, self.rcx
+        );
+        info!(
+            "  RDX={:#016x} RSI={:#016x} RDI={:#016x}",
+            self.rdx, self.rsi, self.rdi
+        );
+        info!(
+            "  Mode: {}",
+            if self.is_user_mode() {
+                "USER"
+            } else {
+                "KERNEL"
+            }
+        );
     }
 }
 
@@ -214,9 +244,7 @@ impl IdtEntry {
 
     /// 获取完整的 handler 地址
     pub fn handler_address(&self) -> u64 {
-        (self.offset_high as u64) << 32 
-        | (self.offset_mid as u64) << 16 
-        | (self.offset_low as u64)
+        (self.offset_high as u64) << 32 | (self.offset_mid as u64) << 16 | (self.offset_low as u64)
     }
 }
 
@@ -270,8 +298,12 @@ impl Clone for IrqDescriptor {
             name: self.name,
             description: self.description,
             flags: self.flags,
-            call_count: core::sync::atomic::AtomicU64::new(self.call_count.load(core::sync::atomic::Ordering::Relaxed)),
-            error_count: core::sync::atomic::AtomicU64::new(self.error_count.load(core::sync::atomic::Ordering::Relaxed)),
+            call_count: core::sync::atomic::AtomicU64::new(
+                self.call_count.load(core::sync::atomic::Ordering::Relaxed),
+            ),
+            error_count: core::sync::atomic::AtomicU64::new(
+                self.error_count.load(core::sync::atomic::Ordering::Relaxed),
+            ),
         }
     }
 }
@@ -332,7 +364,8 @@ impl InterruptStatistics {
         }
         // 更新时间戳 (使用 rdtsc)
         unsafe {
-            self.last_exception_tsc.store(crate::arch!(timestamp()), Ordering::Relaxed);
+            self.last_exception_tsc
+                .store(crate::arch!(timestamp()), Ordering::Relaxed);
         }
     }
 
@@ -347,7 +380,9 @@ impl InterruptStatistics {
     pub fn get_count(&self, vector: u8) -> u64 {
         if vector < 32 {
             self.exception_counts[vector as usize].load(Ordering::Relaxed)
-        } else if (vector as usize) >= IRQ_BASE as usize && (vector as usize) < IRQ_BASE as usize + 16 {
+        } else if (vector as usize) >= IRQ_BASE as usize
+            && (vector as usize) < IRQ_BASE as usize + 16
+        {
             self.irq_counts[(vector - IRQ_BASE) as usize].load(Ordering::Relaxed)
         } else {
             0
@@ -360,12 +395,16 @@ impl InterruptStatistics {
         use alloc::format;
         let mut json = String::from("{\"exceptions\":{");
         for i in 0..32u8 {
-            if i > 0 { json.push_str(","); }
+            if i > 0 {
+                json.push_str(",");
+            }
             json.push_str(&format!("\"{}\":{}", i, self.get_count(i)));
         }
         json.push_str("},\"irqs\":{");
         for i in 0..16u8 {
-            if i > 0 { json.push_str(","); }
+            if i > 0 {
+                json.push_str(",");
+            }
             json.push_str(&format!("\"{}\":{}", i, self.get_count(IRQ_BASE + i)));
         }
         json.push_str("}}");
@@ -375,58 +414,58 @@ impl InterruptStatistics {
 
 /// 异常名称映射表
 pub static EXCEPTION_NAMES: [&str; 32] = [
-    "Division By Zero",           // #0
-    "Debug",                      // #1
-    "Non Maskable Interrupt",     // #2
-    "Breakpoint",                 // #3
-    "Into Detected Overflow",     // #4
-    "Out of Bounds",              // #5
-    "Invalid Opcode",             // #6
-    "No Coprocessor",             // #7
-    "Double Fault",               // #8
-    "Coprocessor Segment Overrun",// #9
-    "Bad TSS",                    // #10
-    "Segment Not Present",        // #11
-    "Stack Fault",                // #12
-    "General Protection Fault",   // #13
-    "Page Fault",                 // #14
-    "Unknown Interrupt",          // #15
-    "Coprocessor Fault",          // #16
-    "Alignment Check",            // #17
-    "Machine Check",              // #18
+    "Division By Zero",              // #0
+    "Debug",                         // #1
+    "Non Maskable Interrupt",        // #2
+    "Breakpoint",                    // #3
+    "Into Detected Overflow",        // #4
+    "Out of Bounds",                 // #5
+    "Invalid Opcode",                // #6
+    "No Coprocessor",                // #7
+    "Double Fault",                  // #8
+    "Coprocessor Segment Overrun",   // #9
+    "Bad TSS",                       // #10
+    "Segment Not Present",           // #11
+    "Stack Fault",                   // #12
+    "General Protection Fault",      // #13
+    "Page Fault",                    // #14
+    "Unknown Interrupt",             // #15
+    "Coprocessor Fault",             // #16
+    "Alignment Check",               // #17
+    "Machine Check",                 // #18
     "SIMD Floating-Point Exception", // #19
-    "Virtualization Exception",   // #20
-    "Control Protection Exception", // #21
-    "Reserved",                   // #22-27
+    "Virtualization Exception",      // #20
+    "Control Protection Exception",  // #21
+    "Reserved",                      // #22-27
     "Reserved",
     "Reserved",
     "Reserved",
     "Reserved",
     "Reserved",
     "Hypervisor Injection Exception", // #28
-    "VMM Communication Exception",   // #29
-    "Security Exception",            // #30
+    "VMM Communication Exception",    // #29
+    "Security Exception",             // #30
     "Reserved",                       // #31
 ];
 
 /// IRQ 名称映射表
 pub static IRQ_NAMES: [&str; 16] = [
-    "Timer",       // IRQ 0
-    "Keyboard",    // IRQ 1
-    "Cascade",     // IRQ 2
-    "COM2",        // IRQ 3
-    "COM1",        // IRQ 4
-    "LPT2",        // IRQ 5
-    "Floppy",      // IRQ 6
+    "Timer",         // IRQ 0
+    "Keyboard",      // IRQ 1
+    "Cascade",       // IRQ 2
+    "COM2",          // IRQ 3
+    "COM1",          // IRQ 4
+    "LPT2",          // IRQ 5
+    "Floppy",        // IRQ 6
     "LPT1/Spurious", // IRQ 7
-    "CMOS",        // IRQ 8
-    "ACPI",        // IRQ 9
-    "PCI",         // IRQ 10
-    "NIC",         // IRQ 11
-    "CoProcessor", // IRQ 12
-    "Primary ATA", // IRQ 13
+    "CMOS",          // IRQ 8
+    "ACPI",          // IRQ 9
+    "PCI",           // IRQ 10
+    "NIC",           // IRQ 11
+    "CoProcessor",   // IRQ 12
+    "Primary ATA",   // IRQ 13
     "Secondary ATA", // IRQ 14
-    "Spurious",    // IRQ 15
+    "Spurious",      // IRQ 15
 ];
 
 /// 获取异常名称
@@ -465,10 +504,10 @@ mod tests {
         // User mode frame (CS = 0x23)
         let user_frame = InterruptFrame::new_test_frame(14, 0x400000, 0x23);
         assert!(user_frame.is_user_mode());
-        
+
         // Anomalous case: kernel CS but user RIP
         let anomalous_frame = InterruptFrame::new_test_frame(0, 0x1221d7, 0x08);
-        assert!(anomalous_frame.is_user_mode());  // RIP-based detection kicks in
+        assert!(anomalous_frame.is_user_mode()); // RIP-based detection kicks in
     }
 
     #[test]
@@ -491,15 +530,15 @@ mod tests {
     #[test]
     fn test_statistics_recording() {
         let stats = InterruptStatistics::new();
-        
-        stats.record_exception(0);  // Division By Zero
+
+        stats.record_exception(0); // Division By Zero
         stats.record_exception(14); // Page Fault
-        stats.record_irq(0);        // Timer
-        
+        stats.record_irq(0); // Timer
+
         assert_eq!(stats.get_count(0), 1);
         assert_eq!(stats.get_count(14), 1);
         assert_eq!(stats.get_count(IRQ_BASE), 1);
-        assert_eq!(stats.get_count(100), 0);  // Invalid vector
+        assert_eq!(stats.get_count(100), 0); // Invalid vector
     }
 
     #[test]

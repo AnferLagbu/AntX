@@ -134,23 +134,18 @@ pub unsafe extern "C" fn ipc_init() {
 // ============================================================================
 
 pub use types::{
-    IpcId, IpcType,
-    SignalNum, SignalAction,
-    Pipe, Message, MsgQueue,
-    ShmSegment, Semaphore,
+    IpcId, IpcType, Message, MsgQueue, Pipe, Semaphore, ShmSegment, SignalAction, SignalNum,
 };
 
 // 调度器集成功能导出
 pub use scheduler_integration::{
-    block_current_thread, wake_one_thread, wake_all_threads, block_with_timeout
+    block_current_thread, block_with_timeout, wake_all_threads, wake_one_thread,
 };
 
 // 异步 IPC 功能导出 (需要 async feature)
 #[cfg(feature = "async")]
 pub use async_ipc::{
-    AsyncPipeWriter, AsyncPipeReader,
-    AsyncMsgSender, AsyncMsgReceiver,
-    wait_for_condition
+    wait_for_condition, AsyncMsgReceiver, AsyncMsgSender, AsyncPipeReader, AsyncPipeWriter,
 };
 
 // ============================================================================
@@ -176,7 +171,7 @@ mod tests {
             msg_queues: [const { MsgQueue::new() }; IPC_MAX_MSG_QUEUES],
             semaphores: [const { Semaphore::new() }; IPC_MAX_SEMAPHORES],
         };
-        
+
         let mut next_id: IpcId = 1;
         let pid: u32 = 100;
 
@@ -186,13 +181,13 @@ mod tests {
                 assert!(rfd > 0);
                 assert!(wfd > 0);
                 assert_eq!(wfd, rfd + 1);
-                
+
                 // 测试关闭读端
                 assert!(pipe::pipe_close_safe(&mut ns, rfd).is_ok());
-                
+
                 // 测试关闭写端
                 assert!(pipe::pipe_close_safe(&mut ns, wfd).is_ok());
-            },
+            }
             Err(e) => panic!("Failed to create pipe: {}", e),
         }
     }
@@ -205,7 +200,7 @@ mod tests {
             msg_queues: [const { MsgQueue::new() }; IPC_MAX_MSG_QUEUES],
             semaphores: [const { Semaphore::new() }; IPC_MAX_SEMAPHORES],
         };
-        
+
         let mut next_id: IpcId = 1;
         let pid: u32 = 200;
 
@@ -237,7 +232,7 @@ mod tests {
             msg_queues: [const { MsgQueue::new() }; IPC_MAX_MSG_QUEUES],
             semaphores: [const { Semaphore::new() }; IPC_MAX_SEMAPHORES],
         };
-        
+
         let mut next_id: IpcId = 1;
         let pid: u32 = 300;
 
@@ -249,9 +244,7 @@ mod tests {
 
         // 发送消息
         let data = b"Hello, IPC!";
-        assert!(msgq::msgq_send_safe(
-            &mut ns, id, 42, Some(data), data.len(), pid
-        ).is_ok());
+        assert!(msgq::msgq_send_safe(&mut ns, id, 42, Some(data), data.len(), pid).is_ok());
 
         // 接收消息
         let mut type_out: u64 = 0;
@@ -259,7 +252,11 @@ mod tests {
         let mut size_out: u64 = 0;
 
         let read_size = match msgq::msgq_recv_safe(
-            &mut ns, id, Some(&mut type_out), Some(&mut buf), Some(&mut size_out)
+            &mut ns,
+            id,
+            Some(&mut type_out),
+            Some(&mut buf),
+            Some(&mut size_out),
         ) {
             Ok(n) => n,
             Err(e) => panic!("Failed to receive message: {}", e),
@@ -281,7 +278,7 @@ mod tests {
             msg_queues: [const { MsgQueue::new() }; IPC_MAX_MSG_QUEUES],
             semaphores: [const { Semaphore::new() }; IPC_MAX_SEMAPHORES],
         };
-        
+
         let mut next_id: IpcId = 1;
         let pid: u32 = 400;
 
@@ -304,14 +301,14 @@ mod tests {
     #[test]
     fn test_signal_validation() {
         // 测试有效信号
-        assert!(signal::signal_send_safe(1, 100).is_ok());      // SIGINT
+        assert!(signal::signal_send_safe(1, 100).is_ok()); // SIGINT
         assert!(signal::signal_register_safe(1, None, 0).is_ok());
         assert!(signal::signal_block_safe(1).is_ok());
         assert!(signal::signal_unblock_safe(1).is_ok());
 
         // 测试无效信号 (超出范围)
-        assert!(signal::signal_send_safe(0, 100).is_err());     // 信号 0 无效
-        assert!(signal::signal_send_safe(33, 100).is_err());    // 超出最大值
+        assert!(signal::signal_send_safe(0, 100).is_err()); // 信号 0 无效
+        assert!(signal::signal_send_safe(33, 100).is_err()); // 超出最大值
         assert!(signal::signal_register_safe(0, None, 0).is_err());
         assert!(signal::signal_block_safe(0).is_err());
         assert!(signal::signal_unblock_safe(34).is_err());

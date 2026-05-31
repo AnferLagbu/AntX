@@ -44,13 +44,22 @@ pub enum Value {
 
 impl Value {
     pub fn as_i32(&self) -> Option<i32> {
-        match self { Value::I32(v) => Some(*v), _ => None }
+        match self {
+            Value::I32(v) => Some(*v),
+            _ => None,
+        }
     }
     pub fn as_u32(&self) -> Option<u32> {
-        match self { Value::I32(v) => Some(*v as u32), _ => None }
+        match self {
+            Value::I32(v) => Some(*v as u32),
+            _ => None,
+        }
     }
     pub fn as_i64(&self) -> Option<i64> {
-        match self { Value::I64(v) => Some(*v), _ => None }
+        match self {
+            Value::I64(v) => Some(*v),
+            _ => None,
+        }
     }
 
     pub fn default_for(ty: ValueType) -> Self {

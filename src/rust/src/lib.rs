@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 #![feature(asm)]
-
 // ============================================================================
 // ✅ 全局警告抑制配置 (内核开发环境特有)
 // ============================================================================
@@ -10,21 +9,24 @@
 //! 允许的警告类别 (符合 OS 内核开发最佳实践)
 
 // 0. 稳定特性使用 - asm 特性在 nightly 中稳定但标记为需要 feature
-#![allow(stable_features)]            // 1个: asm 特性声明
+#![allow(stable_features)] // 1个: asm 特性声明
 
 // 1. 全局单例模式 - 内核中常见且必要
-#![allow(static_mut_refs)]           // 32个: TRUST_CHAIN, TOKEN_MANAGER 等全局可变静态
+#![allow(static_mut_refs)]
+// 32个: TRUST_CHAIN, TOKEN_MANAGER 等全局可变静态
 
 // 2. C 语言兼容性 - 与原有 C 代码保持一致的命名风格
-#![allow(non_upper_case_globals)]   // 函数名: kfree, kmalloc 等
-#![allow(non_camel_case_types)]     // 类型名: u8_t, u32_t 等
-#![allow(non_snake_case)]            // 变量名: io_port 等
+#![allow(non_upper_case_globals)] // 函数名: kfree, kmalloc 等
+#![allow(non_camel_case_types)] // 类型名: u8_t, u32_t 等
+#![allow(non_snake_case)] // 变量名: io_port 等
 
 // 4. FFI 边界 - C/Rust 互操作不可避免
-#![allow(improper_ctypes)]         // 3个: IrqSaveFlags, SysProt 等 FFI 类型
+#![allow(improper_ctypes)]
+// 3个: IrqSaveFlags, SysProt 等 FFI 类型
 
 // 5. 安全相关 - 已通过代码审查确认安全
-#![allow(unused_unsafe)]           // 16个: 过度保守的 unsafe 块
+#![allow(unused_unsafe)]
+// 16个: 过度保守的 unsafe 块
 
 // 6. Clippy: 内核代码中原始指针解引用是固有操作，由调用者保证安全性
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -179,10 +181,8 @@ fn panic(info: &PanicInfo) -> ! {
         );
     }
     let reg_names: [[u8; 4]; 16] = [
-        *b"RAX ", *b"RBX ", *b"RCX ", *b"RDX ",
-        *b"RSI ", *b"RDI ", *b"RBP ", *b"RSP ",
-        *b"R8  ", *b"R9  ", *b"R10 ", *b"R11 ",
-        *b"R12 ", *b"R13 ", *b"R14 ", *b"R15 ",
+        *b"RAX ", *b"RBX ", *b"RCX ", *b"RDX ", *b"RSI ", *b"RDI ", *b"RBP ", *b"RSP ", *b"R8  ",
+        *b"R9  ", *b"R10 ", *b"R11 ", *b"R12 ", *b"R13 ", *b"R14 ", *b"R15 ",
     ];
     #[allow(unused_mut)]
     let mut cr2: u64 = 0;
@@ -207,7 +207,11 @@ fn panic(info: &PanicInfo) -> ! {
             let v = regs[i];
             for (d, item) in hex_buf.iter_mut().enumerate() {
                 let nibble = ((v >> (60 - d * 4)) & 0xF) as u8;
-                *item = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
+                *item = if nibble < 10 {
+                    b'0' + nibble
+                } else {
+                    b'a' + nibble - 10
+                };
             }
             crate::kernel::klog::serial_write_bytes(&hex_buf);
             if i % 4 == 3 {
@@ -217,12 +221,20 @@ fn panic(info: &PanicInfo) -> ! {
         crate::kernel::klog::serial_write_bytes(b"  CR2= 0x");
         for d in 0..16 {
             let nibble = ((cr2 >> (60 - d * 4)) & 0xF) as u8;
-            crate::kernel::klog::serial_write_bytes(&[if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 }]);
+            crate::kernel::klog::serial_write_bytes(&[if nibble < 10 {
+                b'0' + nibble
+            } else {
+                b'a' + nibble - 10
+            }]);
         }
         crate::kernel::klog::serial_write_bytes(b"  CR3= 0x");
         for d in 0..16 {
             let nibble = ((cr3_val >> (60 - d * 4)) & 0xF) as u8;
-            crate::kernel::klog::serial_write_bytes(&[if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 }]);
+            crate::kernel::klog::serial_write_bytes(&[if nibble < 10 {
+                b'0' + nibble
+            } else {
+                b'a' + nibble - 10
+            }]);
         }
         crate::kernel::klog::serial_write_bytes(b"\n===================================\n");
     }
@@ -234,23 +246,29 @@ fn panic(info: &PanicInfo) -> ! {
         let mut buf = [0u8; 64];
         let mut cursor: usize = 0;
         write_hex_to_buf(&mut buf, &mut cursor, regs[i]);
-        let label = alloc::format!("  {} = {}\n",
+        let label = alloc::format!(
+            "  {} = {}\n",
             core::str::from_utf8(&reg_names[i]).unwrap_or("?? "),
-            core::str::from_utf8(&buf[..cursor]).unwrap_or("?"));
+            core::str::from_utf8(&buf[..cursor]).unwrap_or("?")
+        );
         crate::kernel::console::gfx_console_panic_write(&label);
     }
     {
         let mut cr2_str = [0u8; 32];
         let mut cur: usize = 0;
         write_hex_to_buf(&mut cr2_str, &mut cur, cr2);
-        let cr2_line = alloc::format!("  CR2= {}\n",
-            core::str::from_utf8(&cr2_str[..cur]).unwrap_or("?"));
+        let cr2_line = alloc::format!(
+            "  CR2= {}\n",
+            core::str::from_utf8(&cr2_str[..cur]).unwrap_or("?")
+        );
         crate::kernel::console::gfx_console_panic_write(&cr2_line);
         let mut cr3_str = [0u8; 32];
         let mut c3: usize = 0;
         write_hex_to_buf(&mut cr3_str, &mut c3, cr3_val);
-        let cr3_line = alloc::format!("  CR3= {}\n",
-            core::str::from_utf8(&cr3_str[..c3]).unwrap_or("?"));
+        let cr3_line = alloc::format!(
+            "  CR3= {}\n",
+            core::str::from_utf8(&cr3_str[..c3]).unwrap_or("?")
+        );
         crate::kernel::console::gfx_console_panic_write(&cr3_line);
     }
 
@@ -267,18 +285,26 @@ fn panic(info: &PanicInfo) -> ! {
         let result = unsafe { recovery_try_recover_from_idt() };
         if result >= 0 {
             // 域状态已回滚到一致快照, 记录恢复事件
-            crate::kernel::klog::serial_write_bytes(b"\n[RECOVERY] Barrier-stack: domain rolled back\n");
+            crate::kernel::klog::serial_write_bytes(
+                b"\n[RECOVERY] Barrier-stack: domain rolled back\n",
+            );
             crate::kernel::barrier::PANIC_FLAG.store(false, core::sync::atomic::Ordering::SeqCst);
         } else {
-            crate::kernel::klog::serial_write_bytes(b"\n[RECOVERY] Barrier-stack: recovery failed, halting\n");
+            crate::kernel::klog::serial_write_bytes(
+                b"\n[RECOVERY] Barrier-stack: recovery failed, halting\n",
+            );
         }
         loop {
-            unsafe { core::arch::asm!("wfi"); }
+            unsafe {
+                core::arch::asm!("wfi");
+            }
         }
     }
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     loop {
-        unsafe { core::arch::asm!("wfi"); }
+        unsafe {
+            core::arch::asm!("wfi");
+        }
     }
 }
 
@@ -288,7 +314,11 @@ fn write_hex_to_buf(buf: &mut [u8], cursor: &mut usize, value: u64) {
             break;
         }
         let nibble = ((value >> (60 - d * 4)) & 0xF) as u8;
-        buf[*cursor] = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
+        buf[*cursor] = if nibble < 10 {
+            b'0' + nibble
+        } else {
+            b'a' + nibble - 10
+        };
         *cursor += 1;
     }
 }
@@ -301,20 +331,23 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 #[no_mangle]
 pub extern "C" fn kernel_init() {
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
-    unsafe { crate::kernel::klog::klog_init(); }
+    unsafe {
+        crate::kernel::klog::klog_init();
+    }
     crate::klog_boot_info!("QueenX starting");
 
     // Test mode: skip normal init, run unit tests
     #[cfg(feature = "kernel_test")]
     {
-        <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_disable();
+        <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_disable(
+        );
 
         let boot_info = crate::kernel::boot::init();
         crate::kernel::mm::pmm::pmm_init(boot_info.mem_size, boot_info.kernel_end);
         crate::kernel::mm::vmm::vmm_init();
         const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024;
         let heap_start = crate::kernel::mm::VirtAddr(
-            crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000
+            crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000,
         );
         unsafe {
             crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
@@ -330,8 +363,11 @@ pub extern "C" fn kernel_init() {
 
         #[cfg(feature = "fault_injection")]
         {
-            let rate = option_env!("FAULT_RATE").and_then(|s| s.parse::<u32>().ok()).unwrap_or(50);
-            crate::kernel::barrier::fault_inject::FAULT_INJECTION_RATE.store(rate, core::sync::atomic::Ordering::Relaxed);
+            let rate = option_env!("FAULT_RATE")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(50);
+            crate::kernel::barrier::fault_inject::FAULT_INJECTION_RATE
+                .store(rate, core::sync::atomic::Ordering::Relaxed);
             crate::klog_boot_info!("[CHAOS] Fault injection enabled, rate={}/1000", rate);
         }
 
@@ -346,144 +382,166 @@ pub extern "C" fn kernel_init() {
     // 1. Boot Info — 获取内存布局
     #[cfg(not(feature = "kernel_test"))]
     {
-    let boot_info = crate::kernel::boot::init();
-    crate::klog_boot_info!("Boot info: mem={} MB, kernel_end=0x{:X}", 
-        boot_info.mem_size / (1024 * 1024), boot_info.kernel_end);
+        let boot_info = crate::kernel::boot::init();
+        crate::klog_boot_info!(
+            "Boot info: mem={} MB, kernel_end=0x{:X}",
+            boot_info.mem_size / (1024 * 1024),
+            boot_info.kernel_end
+        );
 
-    // 2. PMM — 物理内存管理器初始化
-    crate::kernel::mm::pmm::pmm_init(boot_info.mem_size, boot_info.kernel_end);
-    crate::klog_boot_info!("PMM initialized");
+        // 2. PMM — 物理内存管理器初始化
+        crate::kernel::mm::pmm::pmm_init(boot_info.mem_size, boot_info.kernel_end);
+        crate::klog_boot_info!("PMM initialized");
 
-    // 3. VMM — 虚拟内存管理器初始化 (必须在PMM之后)
-    crate::kernel::mm::vmm::vmm_init();
-    crate::klog_boot_info!("VMM initialized");
+        // 3. VMM — 虚拟内存管理器初始化 (必须在PMM之后)
+        crate::kernel::mm::vmm::vmm_init();
+        crate::klog_boot_info!("VMM initialized");
 
-    // 4. kmalloc — 内核堆初始化
-    const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
-    #[cfg(target_arch = "x86_64")]
-    let heap_start = crate::kernel::mm::VirtAddr(
-        crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000
-    );
-    #[cfg(target_arch = "aarch64")]
-    let heap_start = crate::kernel::mm::VirtAddr(boot_info.kernel_end + 0x200000);
-    unsafe {
-        crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
-    }
-    crate::klog_boot_info!("kmalloc initialized at 0x{:X}, size={} MB", 
-        heap_start.0, KMALLOC_HEAP_SIZE / (1024 * 1024));
+        // 4. kmalloc — 内核堆初始化
+        const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
+        #[cfg(target_arch = "x86_64")]
+        let heap_start = crate::kernel::mm::VirtAddr(
+            crate::kernel::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000,
+        );
+        #[cfg(target_arch = "aarch64")]
+        let heap_start = crate::kernel::mm::VirtAddr(boot_info.kernel_end + 0x200000);
+        unsafe {
+            crate::kernel::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
+        }
+        crate::klog_boot_info!(
+            "kmalloc initialized at 0x{:X}, size={} MB",
+            heap_start.0,
+            KMALLOC_HEAP_SIZE / (1024 * 1024)
+        );
 
-    // 5. PMM Bitmap — 初始化位图分配器
-    // Must include the 2MB gap between kernel_end and heap_start,
-    // otherwise PMM bitmap will allocate from within the kmalloc heap
-    // (pages 7165+), causing heap corruption when alloc_table() zeros
-    // newly allocated page table pages.
-    // GAP_SIZE + KMALLOC_HEAP_SIZE = 0x200000 + 16MB = 18MB total reserved after kernel.
-    const GAP_SIZE: u64 = 0x200000;
-    let reserved_after_kernel = GAP_SIZE + KMALLOC_HEAP_SIZE;
-    crate::kernel::mm::pmm::pmm_init_bitmap(reserved_after_kernel);
-    crate::klog_boot_info!("PMM bitmap initialized");
+        // 5. PMM Bitmap — 初始化位图分配器
+        // Must include the 2MB gap between kernel_end and heap_start,
+        // otherwise PMM bitmap will allocate from within the kmalloc heap
+        // (pages 7165+), causing heap corruption when alloc_table() zeros
+        // newly allocated page table pages.
+        // GAP_SIZE + KMALLOC_HEAP_SIZE = 0x200000 + 16MB = 18MB total reserved after kernel.
+        const GAP_SIZE: u64 = 0x200000;
+        let reserved_after_kernel = GAP_SIZE + KMALLOC_HEAP_SIZE;
+        crate::kernel::mm::pmm::pmm_init_bitmap(reserved_after_kernel);
+        crate::klog_boot_info!("PMM bitmap initialized");
 
-    // --- Barrier-stack recovery domains (moved before interrupts to avoid race) ---
-    // Register PMM + PROC domains before interrupts are enabled so timer IRQ
-    // won't race with domain registration on the RECOVERY_MANAGER spinlock
-    crate::kernel::mm::pmm::pmm_register_barrier_domain();
-    crate::kernel::proc::process::proc_register_barrier_domain();
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        crate::kernel::arch::aarch64::barrier::enable_barrier_sgi();
-    }
-    crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
+        // --- Barrier-stack recovery domains (moved before interrupts to avoid race) ---
+        // Register PMM + PROC domains before interrupts are enabled so timer IRQ
+        // won't race with domain registration on the RECOVERY_MANAGER spinlock
+        crate::kernel::mm::pmm::pmm_register_barrier_domain();
+        crate::kernel::proc::process::proc_register_barrier_domain();
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            crate::kernel::arch::aarch64::barrier::enable_barrier_sgi();
+        }
+        crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
-    // 6. 中断/异常设置
-    <crate::kernel::arch::CurrentArch as crate::kernel::arch::Arch>::interrupt_late_init();
-    crate::klog_boot_info!("Interrupt subsystem ready");
+        // 6. 中断/异常设置
+        <crate::kernel::arch::CurrentArch as crate::kernel::arch::Arch>::interrupt_late_init();
+        crate::klog_boot_info!("Interrupt subsystem ready");
 
-    // 7. Timer + 中断使能
-    match crate::kernel::timer::timer_init(1000) {
-        Ok(_freq) => {
-            crate::klog_boot_info!("Timer configured");
-            #[cfg(target_arch = "x86_64")]
-            let _ = crate::kernel::timer::irq::register_timer_irq();
-            <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_enable();
-            crate::klog_boot_info!("Interrupts enabled");
-        },
-        Err(_msg) => { let _ = _msg; }
-    }
+        // 7. Timer + 中断使能
+        match crate::kernel::timer::timer_init(1000) {
+            Ok(_freq) => {
+                crate::klog_boot_info!("Timer configured");
+                #[cfg(target_arch = "x86_64")]
+                let _ = crate::kernel::timer::irq::register_timer_irq();
+                <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_enable();
+                crate::klog_boot_info!("Interrupts enabled");
+            }
+            Err(_msg) => {
+                let _ = _msg;
+            }
+        }
 
-    // 8. Scheduler
-    crate::kernel::proc::scheduler::init();
-    crate::kernel::proc::scheduler_ex::init();
-    crate::klog_boot_info!("Scheduler ready");
+        // 8. Scheduler
+        crate::kernel::proc::scheduler::init();
+        crate::kernel::proc::scheduler_ex::init();
+        crate::klog_boot_info!("Scheduler ready");
 
-    // 9. VFS
-    crate::kernel::fs::vfs::init();
-    crate::klog_boot_info!("VFS ready");
+        // 9. VFS
+        crate::kernel::fs::vfs::init();
+        crate::klog_boot_info!("VFS ready");
 
-    // 10. Network (lwIP + 网卡驱动)
-    // x86_64: E1000 PCI 网卡驱动
-    // aarch64: virtio-net MMIO 网卡驱动
-    {
-        crate::kernel::net::init::qx_net_init();
-        crate::klog_boot_info!("Network subsystem initialized");
-    }
+        // 10. Network (lwIP + 网卡驱动)
+        // x86_64: E1000 PCI 网卡驱动
+        // aarch64: virtio-net MMIO 网卡驱动
+        {
+            crate::kernel::net::init::qx_net_init();
+            crate::klog_boot_info!("Network subsystem initialized");
+        }
 
-    // 10-10.6. Driver subsystem init (VGA, serial, keyboard, PCI, storage, display, USB)
-    crate::kernel::driver::init_all();
-    crate::klog_boot_info!("Driver subsystem initialized");
-    {
-        let chitin_count = crate::kernel::chitin::chitin_count() as u64;
-        let block_count = crate::kernel::chitin::chitin_count_by_proto(
-            crate::kernel::chitin::ChitinProto::Block) as u64;
-        let net_count = crate::kernel::chitin::chitin_count_by_proto(
-            crate::kernel::chitin::ChitinProto::Net) as u64;
-        let input_count = crate::kernel::chitin::chitin_count_by_proto(
-            crate::kernel::chitin::ChitinProto::Input) as u64;
-        crate::klog_boot_info!("Chitin: {} device(s) [blk={} net={} input={}]",
-            chitin_count, block_count, net_count, input_count);
-    }
-
-    // HvFS + 磁盘挂载 — BlockDevice 注册表自动发现多块磁盘 (支持 ATA/NVMe/virtio-blk)
-    #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-    {
-        let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-        // init() 会自动扫描所有块设备, 发现 ANTX 签名的磁盘并挂载
-        hvfs.init();
-
-        if hvfs.is_disk_mode() {
-            crate::kernel::fs::hvfs::hvfs::get_hvfs().spa.disk_present.store(true, core::sync::atomic::Ordering::Release);
-            let r = crate::kernel::fs::vfs::ffi::vfs_mount_internal(
-                c"/".as_ptr(),
-                c"hvfs".as_ptr(),
+        // 10-10.6. Driver subsystem init (VGA, serial, keyboard, PCI, storage, display, USB)
+        crate::kernel::driver::init_all();
+        crate::klog_boot_info!("Driver subsystem initialized");
+        {
+            let chitin_count = crate::kernel::chitin::chitin_count() as u64;
+            let block_count = crate::kernel::chitin::chitin_count_by_proto(
+                crate::kernel::chitin::ChitinProto::Block,
+            ) as u64;
+            let net_count = crate::kernel::chitin::chitin_count_by_proto(
+                crate::kernel::chitin::ChitinProto::Net,
+            ) as u64;
+            let input_count = crate::kernel::chitin::chitin_count_by_proto(
+                crate::kernel::chitin::ChitinProto::Input,
+            ) as u64;
+            crate::klog_boot_info!(
+                "Chitin: {} device(s) [blk={} net={} input={}]",
+                chitin_count,
+                block_count,
+                net_count,
+                input_count
             );
-            if r == 0 {
-                let n_drives = crate::kernel::fs::hvfs::hvfs::get_hvfs()
-                    .drives_discovered.lock().len() as u64;
-                if n_drives > 1 {
-                    crate::klog_boot_info!("Root filesystem: HvFS ({} drives)", n_drives);
+        }
+
+        // HvFS + 磁盘挂载 — BlockDevice 注册表自动发现多块磁盘 (支持 ATA/NVMe/virtio-blk)
+        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
+        {
+            let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
+            // init() 会自动扫描所有块设备, 发现 ANTX 签名的磁盘并挂载
+            hvfs.init();
+
+            if hvfs.is_disk_mode() {
+                crate::kernel::fs::hvfs::hvfs::get_hvfs()
+                    .spa
+                    .disk_present
+                    .store(true, core::sync::atomic::Ordering::Release);
+                let r = crate::kernel::fs::vfs::ffi::vfs_mount_internal(
+                    c"/".as_ptr(),
+                    c"hvfs".as_ptr(),
+                );
+                if r == 0 {
+                    let n_drives = crate::kernel::fs::hvfs::hvfs::get_hvfs()
+                        .drives_discovered
+                        .lock()
+                        .len() as u64;
+                    if n_drives > 1 {
+                        crate::klog_boot_info!("Root filesystem: HvFS ({} drives)", n_drives);
+                    } else {
+                        crate::klog_boot_info!("Root filesystem: HvFS (disk)");
+                    }
                 } else {
-                    crate::klog_boot_info!("Root filesystem: HvFS (disk)");
+                    crate::klog_boot_info!("HvFS mount failed");
                 }
             } else {
-                crate::klog_boot_info!("HvFS mount failed");
+                crate::klog_boot_info!("HvFS: running in memory mode (no disk)");
             }
-        } else {
-            crate::klog_boot_info!("HvFS: running in memory mode (no disk)");
         }
-    }
 
-    // 启动定时器 (延迟到所有子系统初始化完成后)
-    #[cfg(target_arch = "aarch64")]
-    {
-        let interval = crate::kernel::arch::aarch64::exception::TIMER_INTERVAL_TICKS.load(core::sync::atomic::Ordering::Relaxed);
-        crate::kernel::arch::aarch64::timer::start_interval(interval);
-    }
+        // 启动定时器 (延迟到所有子系统初始化完成后)
+        #[cfg(target_arch = "aarch64")]
+        {
+            let interval = crate::kernel::arch::aarch64::exception::TIMER_INTERVAL_TICKS
+                .load(core::sync::atomic::Ordering::Relaxed);
+            crate::kernel::arch::aarch64::timer::start_interval(interval);
+        }
 
-    crate::klog_boot_info!("QueenX initialized, entering user mode...");
+        crate::klog_boot_info!("QueenX initialized, entering user mode...");
 
-    // 12. Launch first user process
-    unsafe {
-        crate::kernel::proc::ffi::launch_first_user_process();
-    }
-    // unreachable: launch_first_user_process is noreturn
+        // 12. Launch first user process
+        unsafe {
+            crate::kernel::proc::ffi::launch_first_user_process();
+        }
+        // unreachable: launch_first_user_process is noreturn
     } // end #[cfg(not(feature = "kernel_test"))]
 }

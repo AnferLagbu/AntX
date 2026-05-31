@@ -24,21 +24,33 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 pub const KLOG_BUF: usize = 256;
 
-pub struct KlogWriter { buf: [u8; KLOG_BUF], pos: usize }
-impl KlogWriter { pub const fn new() -> Self { Self { buf: [0; KLOG_BUF], pos: 0 } } }
+pub struct KlogWriter {
+    buf: [u8; KLOG_BUF],
+    pos: usize,
+}
+impl KlogWriter {
+    pub const fn new() -> Self {
+        Self {
+            buf: [0; KLOG_BUF],
+            pos: 0,
+        }
+    }
+}
 
 impl core::fmt::Write for KlogWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         let bytes = s.as_bytes();
         let len = bytes.len().min(self.buf.len() - self.pos);
-        self.buf[self.pos..self.pos+len].copy_from_slice(&bytes[..len]);
+        self.buf[self.pos..self.pos + len].copy_from_slice(&bytes[..len]);
         self.pos += len;
         Ok(())
     }
 }
 
 impl KlogWriter {
-    pub fn as_slice(&self) -> &[u8] { &self.buf[..self.pos] }
+    pub fn as_slice(&self) -> &[u8] {
+        &self.buf[..self.pos]
+    }
 }
 
 pub struct CursorWriter<'a> {
@@ -173,7 +185,9 @@ mod serial_impl {
     }
 
     pub fn serial_putc(c: u8) {
-        unsafe { uart::putc(c); }
+        unsafe {
+            uart::putc(c);
+        }
     }
 
     pub fn serial_read_ready() -> bool {
@@ -205,7 +219,12 @@ struct RingBuf {
 
 impl RingBuf {
     const fn new() -> Self {
-        Self { data: [0; RING_SIZE], head: 0, tail: 0, total: 0 }
+        Self {
+            data: [0; RING_SIZE],
+            head: 0,
+            tail: 0,
+            total: 0,
+        }
     }
 
     fn push(&mut self, b: u8) {
@@ -218,14 +237,20 @@ impl RingBuf {
     }
 
     fn push_str(&mut self, s: &[u8]) {
-        for &b in s { self.push(b); }
+        for &b in s {
+            self.push(b);
+        }
     }
 }
 
-struct RingLock { inner: core::cell::UnsafeCell<RingBuf> }
+struct RingLock {
+    inner: core::cell::UnsafeCell<RingBuf>,
+}
 unsafe impl Sync for RingLock {}
 
-static RING: RingLock = RingLock { inner: core::cell::UnsafeCell::new(RingBuf::new()) };
+static RING: RingLock = RingLock {
+    inner: core::cell::UnsafeCell::new(RingBuf::new()),
+};
 
 // ============================================================================
 // 全局状态
@@ -242,38 +267,38 @@ pub static KLOG_INIT: core::sync::atomic::AtomicBool = core::sync::atomic::Atomi
 #[repr(u8)]
 pub enum LogLevel {
     Debug = 0,
-    Info  = 1,
-    Note  = 2,
-    Warn  = 3,
+    Info = 1,
+    Note = 2,
+    Warn = 3,
     Error = 4,
-    Crit  = 5,
+    Crit = 5,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum LogCategory {
-    Boot     = 0,
-    Kernel   = 1,
-    Memory   = 2,
-    Process  = 3,
-    FS       = 4,
-    Net      = 5,
-    Driver   = 6,
-    Syscall  = 7,
-    IPC      = 8,
+    Boot = 0,
+    Kernel = 1,
+    Memory = 2,
+    Process = 3,
+    FS = 4,
+    Net = 5,
+    Driver = 6,
+    Syscall = 7,
+    IPC = 8,
     Security = 9,
-    Test     = 10,
+    Test = 10,
 }
 
 impl LogLevel {
     fn prefix(&self) -> &[u8] {
         match self {
             LogLevel::Debug => b"[DBG] ",
-            LogLevel::Info  => b"[INFO]",
-            LogLevel::Note  => b"[NOTE]",
-            LogLevel::Warn  => b"[WARN]",
+            LogLevel::Info => b"[INFO]",
+            LogLevel::Note => b"[NOTE]",
+            LogLevel::Warn => b"[WARN]",
             LogLevel::Error => b"[ERR] ",
-            LogLevel::Crit  => b"[CRIT]",
+            LogLevel::Crit => b"[CRIT]",
         }
     }
 }
@@ -281,17 +306,17 @@ impl LogLevel {
 impl LogCategory {
     fn name(&self) -> &[u8] {
         match self {
-            LogCategory::Boot     => b"BOOT",
-            LogCategory::Kernel   => b"KERN",
-            LogCategory::Memory   => b"MEM",
-            LogCategory::Process  => b"PROC",
-            LogCategory::FS       => b"FS",
-            LogCategory::Net      => b"NET",
-            LogCategory::Driver   => b"DRV",
-            LogCategory::Syscall  => b"SYSCALL",
-            LogCategory::IPC      => b"IPC",
+            LogCategory::Boot => b"BOOT",
+            LogCategory::Kernel => b"KERN",
+            LogCategory::Memory => b"MEM",
+            LogCategory::Process => b"PROC",
+            LogCategory::FS => b"FS",
+            LogCategory::Net => b"NET",
+            LogCategory::Driver => b"DRV",
+            LogCategory::Syscall => b"SYSCALL",
+            LogCategory::IPC => b"IPC",
             LogCategory::Security => b"SEC",
-            LogCategory::Test     => b"TEST",
+            LogCategory::Test => b"TEST",
         }
     }
 }
@@ -301,11 +326,15 @@ impl LogCategory {
 // ============================================================================
 
 unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] {
-    if ptr.is_null() { return b"(null)"; }
+    if ptr.is_null() {
+        return b"(null)";
+    }
     let mut len = 0usize;
     while *ptr.add(len) != 0 {
         len += 1;
-        if len > 1024 { return b"(truncated)"; }
+        if len > 1024 {
+            return b"(truncated)";
+        }
     }
     core::slice::from_raw_parts(ptr, len)
 }
@@ -324,21 +353,33 @@ fn format_ts(buf: &mut [u8; 32], tsc: u64) -> &[u8] {
     // 写 sec
     let s = sec;
     if s == 0 {
-        buf[pos] = b'0'; pos += 1;
+        buf[pos] = b'0';
+        pos += 1;
     } else {
-        let mut tmp = [0u8; 20]; let mut n = 0;
+        let mut tmp = [0u8; 20];
+        let mut n = 0;
         let mut v = s;
-        while v > 0 { tmp[n] = (v % 10) as u8 + b'0'; n += 1; v /= 10; }
-        while n > 0 { n -= 1; buf[pos] = tmp[n]; pos += 1; }
+        while v > 0 {
+            tmp[n] = (v % 10) as u8 + b'0';
+            n += 1;
+            v /= 10;
+        }
+        while n > 0 {
+            n -= 1;
+            buf[pos] = tmp[n];
+            pos += 1;
+        }
     }
-    buf[pos] = b'.'; pos += 1;
+    buf[pos] = b'.';
+    pos += 1;
     // 写 us (6 位补零)
     for i in (0..6).rev() {
         let digit = (us / 10u64.pow(i)) % 10;
         buf[pos] = digit as u8 + b'0';
         pos += 1;
     }
-    buf[pos] = b' '; pos += 1;
+    buf[pos] = b' ';
+    pos += 1;
     &buf[..pos]
 }
 
@@ -388,8 +429,12 @@ pub fn klog_set_level(level: LogLevel) {
 
 pub fn klog_get_level() -> LogLevel {
     match MIN_LEVEL.load(Ordering::Relaxed) {
-        0 => LogLevel::Debug, 1 => LogLevel::Info, 2 => LogLevel::Note,
-        3 => LogLevel::Warn, 4 => LogLevel::Error, _ => LogLevel::Crit,
+        0 => LogLevel::Debug,
+        1 => LogLevel::Info,
+        2 => LogLevel::Note,
+        3 => LogLevel::Warn,
+        4 => LogLevel::Error,
+        _ => LogLevel::Crit,
     }
 }
 
@@ -414,27 +459,46 @@ pub unsafe extern "C" fn klog_init() {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_write(
-    level: u8, cat: u8,
-    _file: *const core::ffi::c_char, _func: *const core::ffi::c_char, _line: u32,
+    level: u8,
+    cat: u8,
+    _file: *const core::ffi::c_char,
+    _func: *const core::ffi::c_char,
+    _line: u32,
     fmt: *const core::ffi::c_char,
 ) -> i32 {
-    if fmt.is_null() { return -1; }
+    if fmt.is_null() {
+        return -1;
+    }
 
     let lvl = match level {
-        0 => LogLevel::Debug, 1 => LogLevel::Info, 2 => LogLevel::Note,
-        3 => LogLevel::Warn, 4 => LogLevel::Error, 5 => LogLevel::Crit,
+        0 => LogLevel::Debug,
+        1 => LogLevel::Info,
+        2 => LogLevel::Note,
+        3 => LogLevel::Warn,
+        4 => LogLevel::Error,
+        5 => LogLevel::Crit,
         _ => return -1,
     };
 
     let category = match cat {
-        0 => LogCategory::Boot, 1 => LogCategory::Kernel, 2 => LogCategory::Memory,
-        3 => LogCategory::Process, 4 => LogCategory::FS, 5 => LogCategory::Net,
-        6 => LogCategory::Driver, 7 => LogCategory::Syscall, 8 => LogCategory::IPC,
-        9 => LogCategory::Security, 10 => LogCategory::Test, _ => LogCategory::Kernel,
+        0 => LogCategory::Boot,
+        1 => LogCategory::Kernel,
+        2 => LogCategory::Memory,
+        3 => LogCategory::Process,
+        4 => LogCategory::FS,
+        5 => LogCategory::Net,
+        6 => LogCategory::Driver,
+        7 => LogCategory::Syscall,
+        8 => LogCategory::IPC,
+        9 => LogCategory::Security,
+        10 => LogCategory::Test,
+        _ => LogCategory::Kernel,
     };
 
     let min = MIN_LEVEL.load(Ordering::Relaxed);
-    if (level as i32) < (min as i32) { return 0; }
+    if (level as i32) < (min as i32) {
+        return 0;
+    }
 
     let msg = cstr_slice(fmt as *const u8);
     klog_output(lvl, category, msg);
@@ -447,7 +511,9 @@ pub unsafe extern "C" fn klog_write(
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
-    if msg.is_null() { return; }
+    if msg.is_null() {
+        return;
+    }
     let s = cstr_slice(msg);
     klog_output(LogLevel::Info, LogCategory::Kernel, s);
 }
@@ -458,7 +524,9 @@ pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
-    if msg.is_null() { return; }
+    if msg.is_null() {
+        return;
+    }
     let s = cstr_slice(msg);
     klog_output(LogLevel::Warn, LogCategory::Kernel, s);
 }
@@ -469,7 +537,9 @@ pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
-    if msg.is_null() { return; }
+    if msg.is_null() {
+        return;
+    }
     let s = cstr_slice(msg);
     klog_output(LogLevel::Error, LogCategory::Kernel, s);
 }
@@ -480,7 +550,9 @@ pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_net(fmt: *const core::ffi::c_char) {
-    if fmt.is_null() { return; }
+    if fmt.is_null() {
+        return;
+    }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Net, s);
 }
@@ -491,7 +563,9 @@ pub unsafe extern "C" fn klog_net(fmt: *const core::ffi::c_char) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_net_err(fmt: *const core::ffi::c_char) {
-    if fmt.is_null() { return; }
+    if fmt.is_null() {
+        return;
+    }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Error, LogCategory::Net, s);
 }
@@ -502,7 +576,9 @@ pub unsafe extern "C" fn klog_net_err(fmt: *const core::ffi::c_char) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
-    if fmt.is_null() { return; }
+    if fmt.is_null() {
+        return;
+    }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Boot, s);
 }
@@ -513,7 +589,9 @@ pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
-    if fmt.is_null() { return; }
+    if fmt.is_null() {
+        return;
+    }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Kernel, s);
 }
@@ -524,7 +602,9 @@ pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
-    if fmt.is_null() { return; }
+    if fmt.is_null() {
+        return;
+    }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Syscall, s);
 }
@@ -535,7 +615,9 @@ pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
 pub unsafe extern "C" fn klog_info(fmt: *const i8) {
-    if fmt.is_null() { return; }
+    if fmt.is_null() {
+        return;
+    }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Kernel, s);
 }

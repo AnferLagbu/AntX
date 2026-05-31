@@ -242,32 +242,32 @@ impl DeviceInfo {
 pub trait Driver {
     /// 获取驱动名称
     fn name(&self) -> &'static str;
-    
+
     /// 获取设备类型
     fn device_type(&self) -> DeviceType;
-    
+
     /// 初始化驱动和硬件
     ///
     /// # Returns
     /// - `Ok(())` - 初始化成功
     /// - `Err(DriverError)` - 初始化失败
     fn init(&mut self) -> Result<()>;
-    
+
     /// 关闭驱动并释放资源
     fn shutdown(&mut self) -> Result<()>;
-    
+
     /// 检查设备是否就绪
     #[inline]
     fn is_ready(&self) -> bool {
         true
     }
-    
+
     /// 重置设备
     #[inline]
     fn reset(&mut self) -> Result<()> {
         Err(DriverError::UnsupportedOperation)
     }
-    
+
     /// 获取设备状态信息
     ///
     /// 返回人类可读的状态字符串
@@ -286,7 +286,10 @@ mod tests {
 
     #[test]
     fn test_error_codes() {
-        assert_eq!(DriverError::InvalidParameter.to_string(), "Invalid parameter");
+        assert_eq!(
+            DriverError::InvalidParameter.to_string(),
+            "Invalid parameter"
+        );
         assert_eq!(DriverError::Timeout.to_string(), "Operation timeout");
         assert_ne!(DriverError::Busy, DriverError::NotInitialized);
     }

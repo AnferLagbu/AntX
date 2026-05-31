@@ -127,19 +127,19 @@ context_switch_asm:
 /// AArch64 上下文布局 (对应 ProcessContext 偏移)
 #[repr(C)]
 pub struct Aarch64Context {
-    pub x19: u64,  // offset 0 → r15
-    pub x20: u64,  // offset 8 → r14
-    pub x21: u64,  // offset 16 → r13
-    pub x22: u64,  // offset 24 → r12
-    pub x23: u64,  // offset 32 → rbx
-    pub x24: u64,  // offset 40 → rbp
-    pub x25: u64,  // offset 48 → rax
-    pub x26: u64,  // offset 56 → rip
-    pub x27: u64,  // offset 64 → rsp
-    pub x28: u64,  // offset 72 → rflags
-    pub x29: u64,  // offset 80 → cr3  (FP)
-    pub lr: u64,   // offset 88 → cs   (x30)
-    pub sp: u64,   // offset 96 → ds
+    pub x19: u64,   // offset 0 → r15
+    pub x20: u64,   // offset 8 → r14
+    pub x21: u64,   // offset 16 → r13
+    pub x22: u64,   // offset 24 → r12
+    pub x23: u64,   // offset 32 → rbx
+    pub x24: u64,   // offset 40 → rbp
+    pub x25: u64,   // offset 48 → rax
+    pub x26: u64,   // offset 56 → rip
+    pub x27: u64,   // offset 64 → rsp
+    pub x28: u64,   // offset 72 → rflags
+    pub x29: u64,   // offset 80 → cr3  (FP)
+    pub lr: u64,    // offset 88 → cs   (x30)
+    pub sp: u64,    // offset 96 → ds
     pub ttbr0: u64, // offset 104 → es
     pub spsr: u64,  // offset 112 → fs
     pub elr: u64,   // offset 120 → gs

@@ -1,4 +1,4 @@
-pub mod procfs;
 pub mod ffi;
+pub mod procfs;
 
 pub use procfs::*;

@@ -11,9 +11,9 @@
 //! | Critical | Top-3 RSS 进程降优先级, 阻塞新 mmap |
 //! | Emergency | SIGTERM → 最大 RSS 进程, 5s 后 SIGKILL |
 
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use super::scheduler::TICK_COUNT;
 use crate::kernel::mm::pressure;
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 const OOMD_CHECK_INTERVAL: u64 = 100;
 const OOMD_KILL_GRACE_TICKS: u64 = 500;
@@ -38,7 +38,9 @@ impl OomDaemon {
     }
 
     pub fn tick(&self) {
-        if !self.enabled.load(Ordering::Relaxed) { return; }
+        if !self.enabled.load(Ordering::Relaxed) {
+            return;
+        }
 
         let tick = TICK_COUNT.load(Ordering::Relaxed);
         let last = self.last_check.load(Ordering::Relaxed);
@@ -61,13 +63,17 @@ impl OomDaemon {
             pressure::MemoryPressure::Warning => {
                 self.warned_count.fetch_add(1, Ordering::Relaxed);
                 self.emergency_since.store(0, Ordering::Relaxed);
-                crate::klog_ffi!(klog_ffi_info,
-                    "[OOMD] Memory pressure WARNING: notify processes to release cache");
+                crate::klog_ffi!(
+                    klog_ffi_info,
+                    "[OOMD] Memory pressure WARNING: notify processes to release cache"
+                );
             }
             pressure::MemoryPressure::Critical => {
                 self.warned_count.fetch_add(1, Ordering::Relaxed);
-                crate::klog_ffi!(klog_ffi_warn,
-                    "[OOMD] Memory pressure CRITICAL: lowering priority for top-RSS processes");
+                crate::klog_ffi!(
+                    klog_ffi_warn,
+                    "[OOMD] Memory pressure CRITICAL: lowering priority for top-RSS processes"
+                );
             }
             pressure::MemoryPressure::Emergency => {
                 let es = self.emergency_since.load(Ordering::Relaxed);
@@ -78,9 +84,11 @@ impl OomDaemon {
                 } else if tick.saturating_sub(es) > OOMD_KILL_GRACE_TICKS {
                     self.terminated_count.fetch_add(1, Ordering::Relaxed);
                     self.emergency_since.store(0, Ordering::Relaxed);
-                    crate::klog_ffi!(klog_ffi_error,
+                    crate::klog_ffi!(
+                        klog_ffi_error,
                         "[OOMD] Emergency timeout: killing largest RSS process (total killed: {})",
-                        self.terminated_count.load(Ordering::Relaxed));
+                        self.terminated_count.load(Ordering::Relaxed)
+                    );
                 }
             }
         }

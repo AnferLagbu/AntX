@@ -1,9 +1,9 @@
-use super::types::*;
+use super::audit;
+use super::engine;
 use super::identity;
 use super::session;
-use super::engine;
-use super::audit;
 use super::storage;
+use super::types::*;
 
 macro_rules! klog_pwm {
     ($($arg:tt)*) => {
@@ -15,11 +15,15 @@ static INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicB
 
 #[no_mangle]
 pub extern "C" fn pwm_init() {
-    if INITIALIZED.compare_exchange(
-        false, true,
-        core::sync::atomic::Ordering::AcqRel,
-        core::sync::atomic::Ordering::Relaxed,
-    ).is_err() {
+    if INITIALIZED
+        .compare_exchange(
+            false,
+            true,
+            core::sync::atomic::Ordering::AcqRel,
+            core::sync::atomic::Ordering::Relaxed,
+        )
+        .is_err()
+    {
         return;
     }
     let t = unsafe { identity::get_table_mut() };
@@ -39,7 +43,9 @@ pub extern "C" fn pwm_any_identity_exists() -> bool {
 
 #[no_mangle]
 pub extern "C" fn pwm_try_genesis(password: *const core::ffi::c_char) -> i64 {
-    if password.is_null() { return PwmError::InvalidPassword.as_i32() as i64; }
+    if password.is_null() {
+        return PwmError::InvalidPassword.as_i32() as i64;
+    }
     let pwd = unsafe { core::ffi::CStr::from_ptr(password) };
     let pwd_str = pwd.to_str().unwrap_or("");
     match identity::get_table().bootstrap(pwd_str, "root") {
@@ -49,10 +55,20 @@ pub extern "C" fn pwm_try_genesis(password: *const core::ffi::c_char) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn pwm_create(password: *const core::ffi::c_char, note: *const core::ffi::c_char, creator_pwm: u64) -> i64 {
-    if password.is_null() || note.is_null() { return PwmError::InvalidPassword.as_i32() as i64; }
-    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
-    let nte = unsafe { core::ffi::CStr::from_ptr(note) }.to_str().unwrap_or("");
+pub extern "C" fn pwm_create(
+    password: *const core::ffi::c_char,
+    note: *const core::ffi::c_char,
+    creator_pwm: u64,
+) -> i64 {
+    if password.is_null() || note.is_null() {
+        return PwmError::InvalidPassword.as_i32() as i64;
+    }
+    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }
+        .to_str()
+        .unwrap_or("");
+    let nte = unsafe { core::ffi::CStr::from_ptr(note) }
+        .to_str()
+        .unwrap_or("");
     match identity::get_table().create(pwd, nte, creator_pwm) {
         Ok(pwm) => pwm as i64,
         Err(e) => e.as_i32() as i64,
@@ -85,16 +101,30 @@ pub extern "C" fn pwm_enable(pwm: u64) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn pwm_verify_password(pwm: u64, password: *const core::ffi::c_char) -> bool {
-    if password.is_null() { return false; }
-    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+    if password.is_null() {
+        return false;
+    }
+    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }
+        .to_str()
+        .unwrap_or("");
     identity::get_table().verify_password(pwm, pwd)
 }
 
 #[no_mangle]
-pub extern "C" fn pwm_change_password(pwm: u64, old: *const core::ffi::c_char, new: *const core::ffi::c_char) -> i32 {
-    if old.is_null() || new.is_null() { return PwmError::InvalidPassword.as_i32(); }
-    let o = unsafe { core::ffi::CStr::from_ptr(old) }.to_str().unwrap_or("");
-    let n = unsafe { core::ffi::CStr::from_ptr(new) }.to_str().unwrap_or("");
+pub extern "C" fn pwm_change_password(
+    pwm: u64,
+    old: *const core::ffi::c_char,
+    new: *const core::ffi::c_char,
+) -> i32 {
+    if old.is_null() || new.is_null() {
+        return PwmError::InvalidPassword.as_i32();
+    }
+    let o = unsafe { core::ffi::CStr::from_ptr(old) }
+        .to_str()
+        .unwrap_or("");
+    let n = unsafe { core::ffi::CStr::from_ptr(new) }
+        .to_str()
+        .unwrap_or("");
     match identity::get_table().change_password(pwm, o, n) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
@@ -121,8 +151,12 @@ pub extern "C" fn pwm_has_cap_raw(pwm: u64, domain: u16, _cap_bit: u8) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn pwm_create_first_identity(password: *const core::ffi::c_char) -> i64 {
-    if password.is_null() { return PwmError::InvalidPassword.as_i32() as i64; }
-    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+    if password.is_null() {
+        return PwmError::InvalidPassword.as_i32() as i64;
+    }
+    let pwd = unsafe { core::ffi::CStr::from_ptr(password) }
+        .to_str()
+        .unwrap_or("");
     match identity::get_table().bootstrap(pwd, "root") {
         Ok(pwm) => pwm as i64,
         Err(e) => e.as_i32() as i64,
@@ -184,10 +218,19 @@ pub extern "C" fn pwm_check_privilege(operator: u64, target: u64) -> bool {
 }
 
 #[no_mangle]
-pub extern "C" fn pwm_login(note: *const core::ffi::c_char, password: *const core::ffi::c_char) -> i64 {
-    if note.is_null() || password.is_null() { return PwmError::InvalidPassword.as_i32() as i64; }
-    let n = unsafe { core::ffi::CStr::from_ptr(note) }.to_str().unwrap_or("");
-    let p = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
+pub extern "C" fn pwm_login(
+    note: *const core::ffi::c_char,
+    password: *const core::ffi::c_char,
+) -> i64 {
+    if note.is_null() || password.is_null() {
+        return PwmError::InvalidPassword.as_i32() as i64;
+    }
+    let n = unsafe { core::ffi::CStr::from_ptr(note) }
+        .to_str()
+        .unwrap_or("");
+    let p = unsafe { core::ffi::CStr::from_ptr(password) }
+        .to_str()
+        .unwrap_or("");
     match session::login(n, p) {
         Ok(pwm) => pwm as i64,
         Err(e) => e.as_i32() as i64,
@@ -322,10 +365,19 @@ pub extern "C" fn pwm_audit_dump() {
 }
 
 #[no_mangle]
-pub extern "C" fn pwm_recover_first(password: *const core::ffi::c_char, note: *const core::ffi::c_char) -> i64 {
-    if password.is_null() || note.is_null() { return PwmError::InvalidPassword.as_i32() as i64; }
-    let p = unsafe { core::ffi::CStr::from_ptr(password) }.to_str().unwrap_or("");
-    let n = unsafe { core::ffi::CStr::from_ptr(note) }.to_str().unwrap_or("");
+pub extern "C" fn pwm_recover_first(
+    password: *const core::ffi::c_char,
+    note: *const core::ffi::c_char,
+) -> i64 {
+    if password.is_null() || note.is_null() {
+        return PwmError::InvalidPassword.as_i32() as i64;
+    }
+    let p = unsafe { core::ffi::CStr::from_ptr(password) }
+        .to_str()
+        .unwrap_or("");
+    let n = unsafe { core::ffi::CStr::from_ptr(note) }
+        .to_str()
+        .unwrap_or("");
     match identity::get_table().recover_with_first(p, n) {
         Ok(pwm) => pwm as i64,
         Err(e) => e.as_i32() as i64,

@@ -1,10 +1,10 @@
 #![allow(dead_code)]
-use spin::Mutex;
-use core::sync::atomic::{AtomicU32, Ordering};
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
+use spin::Mutex;
 
-use crate::kernel::fs::vfs::types::*;
 use crate::kernel::fs::vfs::types::KernelError;
+use crate::kernel::fs::vfs::types::*;
 
 extern "C" {
     fn pwm_get_privilege_level(pwm: u64) -> u8;
@@ -24,9 +24,9 @@ const INDIRECT_BLOCKS_PER_BLOCK: usize = RAMFS_BLOCK_SIZE / 4;
 const SENSITIVITY_PUBLIC: u8 = 0;
 
 // FS capability bits (mirrors pwm.h)
-const FS_CAP_READ: u64    = 1 << 0;
-const FS_CAP_WRITE: u64   = 1 << 1;
-const FS_CAP_CREATE: u64  = 1 << 3;
+const FS_CAP_READ: u64 = 1 << 0;
+const FS_CAP_WRITE: u64 = 1 << 1;
+const FS_CAP_CREATE: u64 = 1 << 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RamFsNode {
@@ -85,7 +85,7 @@ impl RamFsDirEntry {
             name: [0; VFS_MAX_NAME],
         }
     }
-    
+
     pub fn set_name(&mut self, name: &str) {
         let bytes = name.as_bytes();
         let len = bytes.len().min(VFS_MAX_NAME - 1);
@@ -105,7 +105,13 @@ pub struct RamFsACE {
 
 impl RamFsACE {
     pub const fn new() -> Self {
-        Self { node_id: 0, pwm: 0, allow_mask: 0, deny_mask: 0, used: false }
+        Self {
+            node_id: 0,
+            pwm: 0,
+            allow_mask: 0,
+            deny_mask: 0,
+            used: false,
+        }
     }
 }
 
@@ -138,11 +144,11 @@ impl RamFsData {
             free_blocks: AtomicU32::new(0),
         }
     }
-    
+
     fn get_time() -> u64 {
         crate::arch!(timestamp())
     }
-    
+
     fn block_is_free(&self, block_num: u32) -> bool {
         if block_num as usize >= RAMFS_MAX_BLOCKS {
             return false;
@@ -151,7 +157,7 @@ impl RamFsData {
         let bit_idx = (block_num % 8) as usize;
         (self.block_bitmap[byte_idx] & (1 << bit_idx)) == 0
     }
-    
+
     fn block_set_used(&mut self, block_num: u32) {
         if block_num as usize >= RAMFS_MAX_BLOCKS {
             return;
@@ -177,11 +183,12 @@ impl RamFsData {
         data_area: &mut [u8],
         block_bitmap: &mut [u8],
         free_blocks: &AtomicU32,
-        block_idx: usize
+        block_idx: usize,
     ) -> Option<u32> {
         let direct_limit = DIRECT_BLOCKS;
         let indirect_limit = direct_limit + INDIRECT_BLOCKS_PER_BLOCK;
-        let double_indirect_limit = indirect_limit + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
+        let double_indirect_limit =
+            indirect_limit + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
 
         if block_idx < direct_limit {
             if node.direct_blocks[block_idx] == 0 {
@@ -203,14 +210,15 @@ impl RamFsData {
 
             let indirect_offset = block_idx - direct_limit;
             let data_ptr = data_area.as_mut_ptr();
-            let indirect_ptr_addr = node.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
+            let indirect_ptr_addr =
+                node.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
 
-            let existing_block: u32 = unsafe {
-                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
-            };
+            let existing_block: u32 =
+                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
 
             if existing_block == 0 {
-                let new_data_block = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                let new_data_block =
+                    Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
                 if new_data_block == u32::MAX {
                     return None;
                 }
@@ -226,7 +234,8 @@ impl RamFsData {
             }
         } else if block_idx < double_indirect_limit {
             if node.double_indirect_block == 0 {
-                let new_double_indirect = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                let new_double_indirect =
+                    Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
                 if new_double_indirect == u32::MAX {
                     return None;
                 }
@@ -238,11 +247,11 @@ impl RamFsData {
             let block_index_in_indirect = double_indirect_offset % INDIRECT_BLOCKS_PER_BLOCK;
 
             let data_ptr = data_area.as_mut_ptr();
-            let indirect_ptr_addr = node.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
+            let indirect_ptr_addr =
+                node.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
 
-            let existing_indirect: u32 = unsafe {
-                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
-            };
+            let existing_indirect: u32 =
+                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
 
             let indirect_block_num = if existing_indirect == 0 {
                 let new_indirect = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
@@ -260,14 +269,15 @@ impl RamFsData {
                 existing_indirect
             };
 
-            let data_ptr_addr = indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
+            let data_ptr_addr =
+                indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
 
-            let existing_data: u32 = unsafe {
-                core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32)
-            };
+            let existing_data: u32 =
+                unsafe { core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32) };
 
             if existing_data == 0 {
-                let new_data_block = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
+                let new_data_block =
+                    Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
                 if new_data_block == u32::MAX {
                     return None;
                 }
@@ -289,7 +299,7 @@ impl RamFsData {
     fn alloc_block_internal(
         data_area: &mut [u8],
         block_bitmap: &mut [u8],
-        free_blocks: &AtomicU32
+        free_blocks: &AtomicU32,
     ) -> u32 {
         for i in 0..RAMFS_MAX_BLOCKS {
             let byte_idx = i / 8;
@@ -307,7 +317,7 @@ impl RamFsData {
         }
         u32::MAX
     }
-    
+
     fn block_alloc(&mut self) -> u32 {
         for i in 0..RAMFS_MAX_BLOCKS {
             if self.block_is_free(i as u32) {
@@ -321,7 +331,7 @@ impl RamFsData {
         }
         u32::MAX
     }
-    
+
     fn node_set_used(&mut self, node_id: u32) {
         if node_id as usize >= RAMFS_MAX_NODES {
             return;
@@ -335,7 +345,8 @@ impl RamFsData {
     fn get_data_block(&mut self, node: &mut RamFsNode, block_idx: usize) -> Option<u32> {
         let direct_limit = DIRECT_BLOCKS;
         let indirect_limit = direct_limit + INDIRECT_BLOCKS_PER_BLOCK;
-        let double_indirect_limit = indirect_limit + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
+        let double_indirect_limit =
+            indirect_limit + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
 
         if block_idx < direct_limit {
             if node.direct_blocks[block_idx] == 0 {
@@ -357,11 +368,11 @@ impl RamFsData {
 
             let indirect_offset = block_idx - direct_limit;
             let data_ptr = self.data_area.as_mut_ptr();
-            let indirect_ptr_addr = node.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
+            let indirect_ptr_addr =
+                node.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
 
-            let existing_block: u32 = unsafe {
-                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
-            };
+            let existing_block: u32 =
+                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
 
             if existing_block == 0 {
                 let new_data_block = self.block_alloc();
@@ -392,11 +403,11 @@ impl RamFsData {
             let block_index_in_indirect = double_indirect_offset % INDIRECT_BLOCKS_PER_BLOCK;
 
             let data_ptr = self.data_area.as_mut_ptr();
-            let indirect_ptr_addr = node.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
+            let indirect_ptr_addr =
+                node.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
 
-            let existing_indirect: u32 = unsafe {
-                core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32)
-            };
+            let existing_indirect: u32 =
+                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
 
             let indirect_block_num = if existing_indirect == 0 {
                 let new_indirect = self.block_alloc();
@@ -414,11 +425,11 @@ impl RamFsData {
                 existing_indirect
             };
 
-            let data_ptr_addr = indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
+            let data_ptr_addr =
+                indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
 
-            let existing_data: u32 = unsafe {
-                core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32)
-            };
+            let existing_data: u32 =
+                unsafe { core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32) };
 
             if existing_data == 0 {
                 let new_data_block = self.block_alloc();
@@ -460,8 +471,12 @@ impl RamFsData {
         self.block_set_free(indirect_block);
     }
 
-    fn free_double_indirect_chain(&mut self, double_indirect_block: u32,
-                                   start_global_idx: usize, end_global_idx: usize) {
+    fn free_double_indirect_chain(
+        &mut self,
+        double_indirect_block: u32,
+        start_global_idx: usize,
+        end_global_idx: usize,
+    ) {
         if double_indirect_block == 0 {
             return;
         }
@@ -470,10 +485,13 @@ impl RamFsData {
         let end_indirect_idx = end_global_idx.div_ceil(INDIRECT_BLOCKS_PER_BLOCK);
 
         for indirect_idx in start_indirect_idx..end_indirect_idx.min(INDIRECT_BLOCKS_PER_BLOCK) {
-            let indirect_ptr_addr = double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_idx * 4;
+            let indirect_ptr_addr =
+                double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_idx * 4;
 
             let indirect_block_num: u32 = unsafe {
-                core::ptr::read_volatile(self.data_area.as_ptr().add(indirect_ptr_addr) as *const u32)
+                core::ptr::read_volatile(
+                    self.data_area.as_ptr().add(indirect_ptr_addr) as *const u32
+                )
             };
 
             if indirect_block_num != 0 {
@@ -567,9 +585,7 @@ impl RamFsData {
         }
 
         if node.owner_pwm != 0 && node.owner_pwm != pwm {
-            let has_cap = unsafe {
-                pwm_has_capability(pwm, 1, cap)
-            };
+            let has_cap = unsafe { pwm_has_capability(pwm, 1, cap) };
             if has_cap {
                 return true;
             }
@@ -577,44 +593,47 @@ impl RamFsData {
 
         false
     }
-    
+
     pub fn resolve_path(&self, path: &str) -> Option<u32> {
         let mut current = self.root_node;
         let p = path.trim_start_matches('/');
-        
+
         if p.is_empty() {
             return Some(current);
         }
-        
+
         for component in p.split('/') {
             if component.is_empty() {
                 continue;
             }
-            
+
             let node = &self.nodes[current as usize];
-            
+
             if node.file_type != VfsFileType::Dir as u8 {
                 return None;
             }
-            
+
             let block_num = node.direct_blocks[0];
             if block_num == u32::MAX {
                 return None;
             }
-            
+
             let dirent_size = core::mem::size_of::<RamFsDirEntry>();
             let num_entries = node.size as usize / dirent_size;
-            
+
             let mut found = false;
-            
+
             for i in 0..num_entries {
                 let offset = (block_num as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-                let entry: &RamFsDirEntry = unsafe {
-                    &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry)
-                };
-                
+                let entry: &RamFsDirEntry =
+                    unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
+
                 if entry.node != 0 {
-                    let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                    let end = entry
+                        .name
+                        .iter()
+                        .position(|&b| b == 0)
+                        .unwrap_or(VFS_MAX_NAME);
                     let name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
                     if name == component {
                         current = entry.node;
@@ -623,15 +642,15 @@ impl RamFsData {
                     }
                 }
             }
-            
+
             if !found {
                 return None;
             }
         }
-        
+
         Some(current)
     }
-    
+
     pub fn mount(&mut self, _path: &str) -> i32 {
         for node in self.nodes.iter_mut() {
             *node = RamFsNode::new();
@@ -648,13 +667,15 @@ impl RamFsData {
         for ace in self.aces.iter_mut() {
             *ace = RamFsACE::new();
         }
-        
-        self.free_nodes.store((RAMFS_MAX_NODES - 1) as u32, Ordering::SeqCst);
-        self.free_blocks.store(RAMFS_MAX_BLOCKS as u32, Ordering::SeqCst);
+
+        self.free_nodes
+            .store((RAMFS_MAX_NODES - 1) as u32, Ordering::SeqCst);
+        self.free_blocks
+            .store(RAMFS_MAX_BLOCKS as u32, Ordering::SeqCst);
         self.root_node = 1;
-        
+
         let block = self.block_alloc();
-        
+
         self.nodes[1] = RamFsNode {
             node_id: 1,
             file_type: VfsFileType::Dir as u8,
@@ -673,27 +694,26 @@ impl RamFsData {
             used: true,
         };
         self.node_set_used(1);
-        
+
         let dirent_size = core::mem::size_of::<RamFsDirEntry>();
         let offset = (block as usize) * RAMFS_BLOCK_SIZE;
-        
-        let dot: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry)
-        };
+
+        let dot: &mut RamFsDirEntry =
+            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
         dot.node = 1;
         dot.file_type = VfsFileType::Dir as u8;
         dot.set_name(".");
-        
+
         let dotdot: &mut RamFsDirEntry = unsafe {
             &mut *(&mut self.data_area[offset + dirent_size] as *mut u8 as *mut RamFsDirEntry)
         };
         dotdot.node = 1;
         dotdot.file_type = VfsFileType::Dir as u8;
         dotdot.set_name("..");
-        
+
         0
     }
-    
+
     pub fn open(&mut self, path: &str, _flags: u32, pwm: u64) -> Option<(u32, u64, u8)> {
         if path.is_empty() {
             return None;
@@ -748,7 +768,7 @@ impl RamFsData {
         }
         None
     }
-    
+
     pub fn read(&mut self, node_id: u32, offset: &mut u64, buf: &mut [u8], pwm: u64) -> i32 {
         let node = &self.nodes[node_id as usize];
 
@@ -776,7 +796,7 @@ impl RamFsData {
                 &mut self.data_area,
                 &mut self.block_bitmap,
                 &self.free_blocks,
-                block_idx
+                block_idx,
             );
 
             if let Some(block_num) = block_num {
@@ -795,7 +815,7 @@ impl RamFsData {
 
         bytes_read as i32
     }
-    
+
     pub fn write(&mut self, node_id: u32, offset: &mut u64, buf: &[u8], pwm: u64) -> i32 {
         if !self.check_permission(&self.nodes[node_id as usize], pwm, FS_CAP_CREATE) {
             return KernelError::PermissionDenied.as_i32();
@@ -817,7 +837,7 @@ impl RamFsData {
                 &mut self.data_area,
                 &mut self.block_bitmap,
                 &self.free_blocks,
-                block_idx
+                block_idx,
             );
 
             match block_num {
@@ -838,9 +858,9 @@ impl RamFsData {
                 self.nodes[node_id as usize].size = *offset as u32;
             }
         }
-        
+
         self.nodes[node_id as usize].mtime = Self::get_time();
-        
+
         bytes_written as i32
     }
 
@@ -857,7 +877,8 @@ impl RamFsData {
             if !self.check_permission(node, pwm, FS_CAP_WRITE) {
                 return -1;
             }
-        }let old_size = {
+        }
+        let old_size = {
             let node = &self.nodes[node_id as usize];
             node.size as u64
         };
@@ -876,7 +897,7 @@ impl RamFsData {
                     &mut self.data_area,
                     &mut self.block_bitmap,
                     &self.free_blocks,
-                    last_block_idx
+                    last_block_idx,
                 );
 
                 if let Some(block_num) = block_num {
@@ -891,7 +912,8 @@ impl RamFsData {
                 }
             }
 
-            let first_block_to_free = (new_size + RAMFS_BLOCK_SIZE as u64 - 1) as usize / RAMFS_BLOCK_SIZE + 1;
+            let first_block_to_free =
+                (new_size + RAMFS_BLOCK_SIZE as u64 - 1) as usize / RAMFS_BLOCK_SIZE + 1;
             let last_block = (old_size + RAMFS_BLOCK_SIZE as u64 - 1) as usize / RAMFS_BLOCK_SIZE;
 
             {
@@ -916,9 +938,13 @@ impl RamFsData {
                 }
 
                 let indirect_block = self.nodes[node_id as usize].indirect_block;
-                if first_block_to_free < DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK && indirect_block != 0 {
+                if first_block_to_free < DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK
+                    && indirect_block != 0
+                {
                     let indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS);
-                    let indirect_end = last_block.saturating_sub(DIRECT_BLOCKS).min(INDIRECT_BLOCKS_PER_BLOCK);
+                    let indirect_end = last_block
+                        .saturating_sub(DIRECT_BLOCKS)
+                        .min(INDIRECT_BLOCKS_PER_BLOCK);
                     self.free_indirect_chain(indirect_block, indirect_start, indirect_end);
 
                     if indirect_start == 0 {
@@ -927,10 +953,18 @@ impl RamFsData {
                 }
 
                 let double_indirect_block = self.nodes[node_id as usize].double_indirect_block;
-                if first_block_to_free >= DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK && double_indirect_block != 0 {
-                    let double_indirect_start = first_block_to_free.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK);
-                    let double_indirect_end = last_block.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK);
-                    self.free_double_indirect_chain(double_indirect_block, double_indirect_start, double_indirect_end);
+                if first_block_to_free >= DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK
+                    && double_indirect_block != 0
+                {
+                    let double_indirect_start = first_block_to_free
+                        .saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK);
+                    let double_indirect_end =
+                        last_block.saturating_sub(DIRECT_BLOCKS + INDIRECT_BLOCKS_PER_BLOCK);
+                    self.free_double_indirect_chain(
+                        double_indirect_block,
+                        double_indirect_start,
+                        double_indirect_end,
+                    );
 
                     if double_indirect_start == 0 {
                         self.nodes[node_id as usize].double_indirect_block = 0;
@@ -968,8 +1002,11 @@ impl RamFsData {
             }
 
             if double_indirect_blk != 0 {
-                self.free_double_indirect_chain(double_indirect_blk, 0,
-                                                  INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK);
+                self.free_double_indirect_chain(
+                    double_indirect_blk,
+                    0,
+                    INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK,
+                );
                 self.nodes[node_id as usize].double_indirect_block = 0;
             }
         }
@@ -990,7 +1027,9 @@ impl RamFsData {
         // Permission check
         {
             let node = &self.nodes[node_id as usize];
-            if !node.used { return -1; }
+            if !node.used {
+                return -1;
+            }
             if !self.check_permission(node, pwm, FS_CAP_WRITE) {
                 return -1;
             }
@@ -998,8 +1037,11 @@ impl RamFsData {
 
         // Split path into parent and name
         let (parent_path, _name) = if let Some(pos) = path.rfind('/') {
-            if pos == 0 { ("/", &path[1..]) }
-            else { (&path[..pos], &path[pos + 1..]) }
+            if pos == 0 {
+                ("/", &path[1..])
+            } else {
+                (&path[..pos], &path[pos + 1..])
+            }
         } else {
             ("/", path)
         };
@@ -1015,13 +1057,12 @@ impl RamFsData {
         if parent_block != u32::MAX {
             let dirent_size = core::mem::size_of::<RamFsDirEntry>();
             let num_entries = self.nodes[parent_num as usize].size as usize / dirent_size;
-            
+
             for i in 0..num_entries {
                 let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-                let entry: &mut RamFsDirEntry = unsafe {
-                    &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry)
-                };
-                
+                let entry: &mut RamFsDirEntry =
+                    unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
+
                 if entry.node == node_id {
                     // Mark entry as deleted
                     entry.node = 0;
@@ -1075,11 +1116,14 @@ impl RamFsData {
 
         for i in 0..num_entries {
             let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-            let entry: &RamFsDirEntry = unsafe {
-                &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry)
-            };
+            let entry: &RamFsDirEntry =
+                unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
             if entry.node != 0 {
-                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let end = entry
+                    .name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(VFS_MAX_NAME);
                 if core::str::from_utf8(&entry.name[..end]).unwrap_or("") == name {
                     return None;
                 }
@@ -1096,9 +1140,8 @@ impl RamFsData {
             return None;
         }
 
-        let entry: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry)
-        };
+        let entry: &mut RamFsDirEntry =
+            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
         entry.node = new_node_id;
         entry.file_type = VfsFileType::File as u8;
         entry.set_name(name);
@@ -1116,10 +1159,10 @@ impl RamFsData {
         }
 
         let parent_num = match self.resolve_path(parent_path) {
-            Some(n) => {n
-            },
-            None => {return -1;
-            },
+            Some(n) => n,
+            None => {
+                return -1;
+            }
         };
 
         if parent_num as usize >= RAMFS_MAX_NODES {
@@ -1148,14 +1191,18 @@ impl RamFsData {
 
         for i in 0..num_entries {
             let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-            let entry: &RamFsDirEntry = unsafe {
-                &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry)
-            };
+            let entry: &RamFsDirEntry =
+                unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
 
             if entry.node != 0 {
-                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let end = entry
+                    .name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(VFS_MAX_NAME);
                 let existing_name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
-                if existing_name == name {return -1;
+                if existing_name == name {
+                    return -1;
                 }
             }
         }
@@ -1164,54 +1211,55 @@ impl RamFsData {
             Some(n) => n,
             None => return -1,
         };
-        
+
         let block = self.nodes[new_node_id as usize].direct_blocks[0];
         if block == u32::MAX {
             return -1;
         }
 
         let dot: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[(block as usize) * RAMFS_BLOCK_SIZE] as *mut u8 as *mut RamFsDirEntry)
+            &mut *(&mut self.data_area[(block as usize) * RAMFS_BLOCK_SIZE] as *mut u8
+                as *mut RamFsDirEntry)
         };
         dot.node = new_node_id;
         dot.file_type = VfsFileType::Dir as u8;
         dot.set_name(".");
-        
+
         let dotdot: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[(block as usize) * RAMFS_BLOCK_SIZE + dirent_size] as *mut u8 as *mut RamFsDirEntry)
+            &mut *(&mut self.data_area[(block as usize) * RAMFS_BLOCK_SIZE + dirent_size] as *mut u8
+                as *mut RamFsDirEntry)
         };
         dotdot.node = parent_num;
         dotdot.file_type = VfsFileType::Dir as u8;
         dotdot.set_name("..");
-        
+
         self.nodes[new_node_id as usize].link_count = 2;
-        
+
         let parent_block = self.nodes[parent_num as usize].direct_blocks[0];
         if parent_block == u32::MAX {
             return -1;
         }
-        
+
         let num_entries = self.nodes[parent_num as usize].size as usize / dirent_size;
         let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
-        
+
         if offset + dirent_size > self.data_area.len() {
             return -1;
         }
-        
-        let entry: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry)
-        };
+
+        let entry: &mut RamFsDirEntry =
+            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
         entry.node = new_node_id;
         entry.file_type = VfsFileType::Dir as u8;
         entry.set_name(name);
-        
+
         self.nodes[parent_num as usize].size += dirent_size as u32;
         self.nodes[parent_num as usize].link_count += 1;
         self.nodes[parent_num as usize].mtime = Self::get_time();
-        
+
         0
     }
-    
+
     pub fn stat(&self, node_id: u32) -> Option<VfsStat> {
         let node = &self.nodes[node_id as usize];
 
@@ -1290,7 +1338,13 @@ impl RamFsData {
         0
     }
 
-    pub fn seek(&self, node_id: u32, current_offset: u64, offset: i64, whence: VfsSeekWhence) -> Option<u64> {
+    pub fn seek(
+        &self,
+        node_id: u32,
+        current_offset: u64,
+        offset: i64,
+        whence: VfsSeekWhence,
+    ) -> Option<u64> {
         if node_id as usize >= RAMFS_MAX_NODES {
             return None;
         }
@@ -1356,11 +1410,14 @@ impl RamFsData {
 
         for i in 0..num_entries {
             let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-            let entry: &RamFsDirEntry = unsafe {
-                &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry)
-            };
+            let entry: &RamFsDirEntry =
+                unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
             if entry.node != 0 {
-                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let end = entry
+                    .name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(VFS_MAX_NAME);
                 let existing = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
                 if existing == name {
                     return -1;
@@ -1373,9 +1430,8 @@ impl RamFsData {
             return -1;
         }
 
-        let entry: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry)
-        };
+        let entry: &mut RamFsDirEntry =
+            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
         entry.node = target_node;
         entry.file_type = self.nodes[target_node as usize].file_type;
         entry.set_name(name);

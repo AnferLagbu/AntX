@@ -19,8 +19,8 @@
 //!
 //! 子系统的 save/restore/reset 回调在中断上下文中执行, 必须无阻塞、无锁竞争。
 
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 pub type DomainId = u64;
@@ -34,7 +34,9 @@ pub trait RecoverableDomain: Send + Sync {
     fn restore_checkpoint(&self);
     fn reset(&self);
     fn dependencies(&self) -> &'static [DomainId];
-    fn is_healthy(&self) -> bool { true }
+    fn is_healthy(&self) -> bool {
+        true
+    }
 }
 
 pub(crate) struct RegisteredDomain {
@@ -72,7 +74,9 @@ static RECOVERY_REGISTRY: spin::Mutex<RecoveryRegistry> = spin::Mutex::new(Recov
 
 pub fn recovery_registry_init() {
     let mut reg = RECOVERY_REGISTRY.lock();
-    if reg.initialized { return; }
+    if reg.initialized {
+        return;
+    }
     reg.registered = Vec::new();
     reg.initialized = true;
 }
@@ -88,7 +92,9 @@ pub fn recovery_domain_register(
     let mut reg = RECOVERY_REGISTRY.lock();
     let id = if prefer_id != 0 {
         for r in reg.registered.iter() {
-            if r.id == prefer_id { return prefer_id; }
+            if r.id == prefer_id {
+                return prefer_id;
+            }
         }
         prefer_id
     } else {
@@ -110,7 +116,9 @@ pub fn recovery_subdomain_save_checkpoint(domain_id: DomainId) {
     let reg = RECOVERY_REGISTRY.lock();
     for r in reg.registered.iter() {
         if r.id == domain_id {
-            unsafe { (r.save_fn)(); }
+            unsafe {
+                (r.save_fn)();
+            }
             return;
         }
     }
@@ -138,8 +146,12 @@ pub fn compute_recovery_order(root_id: DomainId) -> Vec<DomainId> {
 
     while let Some(id) = stack.pop() {
         let idx = all_ids.iter().position(|&x| x == id);
-        if idx.is_none() { continue; }
-        if visited[idx.unwrap()] { continue; }
+        if idx.is_none() {
+            continue;
+        }
+        if visited[idx.unwrap()] {
+            continue;
+        }
         visited[idx.unwrap()] = true;
 
         for r in reg.registered.iter() {
@@ -178,7 +190,9 @@ pub fn cascade_recover(domain_id: DomainId) -> usize {
     for &id in order.iter() {
         for r in reg.registered.iter() {
             if r.id == id {
-                unsafe { (r.restore_fn)(); }
+                unsafe {
+                    (r.restore_fn)();
+                }
                 recovered += 1;
                 break;
             }
@@ -191,7 +205,9 @@ pub fn hard_reset_domain(domain_id: DomainId) {
     let reg = RECOVERY_REGISTRY.lock();
     for r in reg.registered.iter() {
         if r.id == domain_id {
-            unsafe { (r.reset_fn)(); }
+            unsafe {
+                (r.reset_fn)();
+            }
             return;
         }
     }

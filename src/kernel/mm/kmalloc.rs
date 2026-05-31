@@ -14,8 +14,8 @@ macro_rules! serial_println {
 }
 
 use super::*;
-use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 /// Magic number for heap header validation
 const HEAP_MAGIC: u32 = 0xDEADBEEF;
@@ -38,7 +38,10 @@ struct EarlyHeapAlloc {
 
 impl EarlyHeapAlloc {
     pub const fn const_default() -> Self {
-        Self { ptr: core::ptr::null_mut(), size: 0 }
+        Self {
+            ptr: core::ptr::null_mut(),
+            size: 0,
+        }
     }
 }
 
@@ -50,16 +53,16 @@ impl EarlyHeapAlloc {
 pub struct HeapHeader {
     /// Size of this block (including header)
     size: u64,
-    
+
     /// Is this block free? (1 = free, 0 = allocated)
     free: bool,
-    
+
     /// Magic number for validation
     magic: u32,
-    
+
     /// Pointer to next free block (only valid if free)
     next: *mut HeapHeader,
-    
+
     /// Pointer to previous free block (only valid if free)
     prev: *mut HeapHeader,
 }
@@ -93,31 +96,31 @@ impl HeapHeader {
 pub struct KernelHeap {
     /// Start of heap region (virtual address)
     heap_start: VirtAddr,
-    
+
     /// Current end of heap (virtual address)
     heap_end: VirtAddr,
-    
+
     /// Head of free list
     free_list_head: UnsafeCell<*mut HeapHeader>,
-    
+
     /// Lock for thread safety
     lock: AtomicBool,
-    
+
     /// Is the heap initialized?
     initialized: AtomicBool,
-    
+
     /// Early allocations before proper initialization
     early_allocs: [EarlyHeapAlloc; MAX_EARLY_ALLOCS],
-    
+
     /// Number of early allocations
     early_count: AtomicUsize,
-    
+
     /// Early heap buffer (static buffer for pre-init allocations)
     early_buffer: [u8; EARLY_BUFFER_SIZE],
-    
+
     /// Current position in early buffer
     early_pos: AtomicUsize,
-    
+
     /// Statistics
     total_allocated: AtomicU64,
     total_freed: AtomicU64,
@@ -156,54 +159,64 @@ impl KernelHeap {
     pub fn init(&mut self, start: VirtAddr, initial_size: u64) {
         self.heap_start = start;
         self.heap_end = VirtAddr(start.0 + initial_size);
-        
+
         let header = unsafe { &mut *(start.0 as *mut HeapHeader) };
         *header = HeapHeader::new(initial_size, true);
-        
-        unsafe { *self.free_list_head.get() = header; }
-        
+
+        unsafe {
+            *self.free_list_head.get() = header;
+        }
+
         self.initialized.store(true, Ordering::Release);
-        
-        serial_println!("[Kmalloc] Initialized: start=0x{:X}, size={} KB",
-                       start.0, initial_size / 1024);
-        
+
+        serial_println!(
+            "[Kmalloc] Initialized: start=0x{:X}, size={} KB",
+            start.0,
+            initial_size / 1024
+        );
+
         self.process_early_allocations();
     }
 
     /// Allocate memory from kernel heap
     pub fn allocate(&self, size: usize) -> Option<*mut u8> {
-        if size == 0 { return None; }
-        
+        if size == 0 {
+            return None;
+        }
+
         let aligned_size = align_up(size as u64, ALIGNMENT);
         let total_size = aligned_size + core::mem::size_of::<HeapHeader>() as u64;
         let actual_size = total_size.max(MIN_BLOCK_SIZE);
-        
+
         self.acquire_lock();
-        
+
         let result = if !self.initialized.load(Ordering::Acquire) {
             self.early_allocate(actual_size as usize)
         } else {
             self.allocate_first_fit(actual_size)
         };
-        
+
         match result {
             Some(ptr) => {
                 self.alloc_count.fetch_add(1, Ordering::Relaxed);
-                self.total_allocated.fetch_add(actual_size, Ordering::Relaxed);
-                let usage = self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
-                
+                self.total_allocated
+                    .fetch_add(actual_size, Ordering::Relaxed);
+                let usage =
+                    self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
+
                 let mut peak = self.peak_usage.load(Ordering::Relaxed);
                 while usage > peak {
                     match self.peak_usage.compare_exchange_weak(
-                        peak, usage,
+                        peak,
+                        usage,
                         Ordering::Relaxed,
-                        Ordering::Relaxed
+                        Ordering::Relaxed,
                     ) {
                         Ok(_) => break,
                         Err(p) => peak = p,
                     }
                 }
-                
+
                 self.release_lock();
                 Some(ptr)
             }
@@ -217,44 +230,49 @@ impl KernelHeap {
 
     /// Free memory previously allocated by k_malloc
     pub fn deallocate(&self, ptr: *mut u8) {
-        if ptr.is_null() { return; }
-        
+        if ptr.is_null() {
+            return;
+        }
+
         self.acquire_lock();
-        
+
         if !self.initialized.load(Ordering::Acquire) {
             serial_println!("[Kmalloc] Warning: Cannot free before initialization");
             self.release_lock();
             return;
         }
-        
+
         let header = unsafe { HeapHeader::from_data_ptr(ptr) };
-        
+
         unsafe {
             let h = &*header;
             if h.magic != HEAP_MAGIC {
-                serial_println!("[Kmalloc] Error: Invalid magic (got 0x{:X}, expected 0x{:X})",
-                               h.magic, HEAP_MAGIC);
+                serial_println!(
+                    "[Kmalloc] Error: Invalid magic (got 0x{:X}, expected 0x{:X})",
+                    h.magic,
+                    HEAP_MAGIC
+                );
                 self.release_lock();
                 return;
             }
-            
+
             if h.free {
                 serial_println!("[Kmalloc] Warning: Double free detected");
                 self.release_lock();
                 return;
             }
-            
+
             (*header).free = true;
         }
-        
+
         let freed_size = unsafe { (*header).size };
         self.free_count.fetch_add(1, Ordering::Relaxed);
         self.total_freed.fetch_add(freed_size, Ordering::Relaxed);
         self.current_usage.fetch_sub(freed_size, Ordering::Relaxed);
-        
+
         let effective = self.coalesce(header);
         self.add_to_free_list(effective);
-        
+
         self.release_lock();
     }
 
@@ -265,7 +283,9 @@ impl KernelHeap {
             return None;
         }
 
-        if ptr.is_null() { return self.allocate(size); }
+        if ptr.is_null() {
+            return self.allocate(size);
+        }
 
         self.acquire_lock();
 
@@ -286,16 +306,23 @@ impl KernelHeap {
 
         // Allocate new block while holding the lock to prevent
         // ptr from being invalidated before copy completes
-        let actual_size = (new_aligned as u64 + core::mem::size_of::<HeapHeader>() as u64)
-            .max(MIN_BLOCK_SIZE);
+        let actual_size =
+            (new_aligned as u64 + core::mem::size_of::<HeapHeader>() as u64).max(MIN_BLOCK_SIZE);
         let new_ptr = match self.allocate_first_fit(actual_size) {
             Some(p) => {
                 self.alloc_count.fetch_add(1, Ordering::Relaxed);
-                self.total_allocated.fetch_add(actual_size, Ordering::Relaxed);
-                let usage = self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
+                self.total_allocated
+                    .fetch_add(actual_size, Ordering::Relaxed);
+                let usage =
+                    self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
                 let mut peak = self.peak_usage.load(Ordering::Relaxed);
                 while usage > peak {
-                    match self.peak_usage.compare_exchange_weak(peak, usage, Ordering::Relaxed, Ordering::Relaxed) {
+                    match self.peak_usage.compare_exchange_weak(
+                        peak,
+                        usage,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
                         Ok(_) => break,
                         Err(p) => peak = p,
                     }
@@ -346,7 +373,11 @@ impl KernelHeap {
     pub fn dump_stats(&self) {
         let _stats = self.get_stats();
         serial_println!("=== Kmalloc Statistics ===");
-        serial_println!("Heap Range:     0x{:X} - 0x{:X}", stats.heap_start.0, stats.heap_end.0);
+        serial_println!(
+            "Heap Range:     0x{:X} - 0x{:X}",
+            stats.heap_start.0,
+            stats.heap_end.0
+        );
         serial_println!("Total Allocated: {} KB", stats.total_allocated / 1024);
         serial_println!("Total Freed:    {} KB", stats.total_freed / 1024);
         serial_println!("Current Usage:   {} KB", stats.current_usage / 1024);
@@ -359,29 +390,31 @@ impl KernelHeap {
 
     /// Validate heap integrity (for debugging)
     pub fn validate(&self) -> bool {
-        if !self.initialized.load(Ordering::Acquire) { return true; }
-        
+        if !self.initialized.load(Ordering::Acquire) {
+            return true;
+        }
+
         self.acquire_lock();
-        
+
         let mut count = 0usize;
         let mut current = unsafe { *self.free_list_head.get() };
-        
+
         while !current.is_null() {
             unsafe {
                 let header = &*current;
-                
+
                 if header.magic != HEAP_MAGIC {
                     serial_println!("[Kmalloc] Validate: Bad magic at {:p}", header);
                     self.release_lock();
                     return false;
                 }
-                
+
                 if !header.free {
                     serial_println!("[Kmalloc] Validate: Non-free block in free list");
                     self.release_lock();
                     return false;
                 }
-                
+
                 if !header.next.is_null() {
                     let next_header = &*header.next;
                     if !next_header.prev.is_null() && next_header.prev != current {
@@ -390,10 +423,10 @@ impl KernelHeap {
                         return false;
                     }
                 }
-                
+
                 count += 1;
                 current = header.next;
-                
+
                 if count > 10000 {
                     serial_println!("[Kmalloc] Validate: Too many nodes (possible cycle)");
                     self.release_lock();
@@ -401,7 +434,7 @@ impl KernelHeap {
                 }
             }
         }
-        
+
         self.release_lock();
         true
     }
@@ -411,27 +444,29 @@ impl KernelHeap {
     /// First-fit allocation algorithm
     fn allocate_first_fit(&self, size: u64) -> Option<*mut u8> {
         let mut current = unsafe { *self.free_list_head.get() };
-        
+
         while !current.is_null() {
             unsafe {
                 let header = current;
                 let block_size = (*header).size;
-                
+
                 if block_size >= size {
-                    if block_size >= size + MIN_BLOCK_SIZE + core::mem::size_of::<HeapHeader>() as u64 {
+                    if block_size
+                        >= size + MIN_BLOCK_SIZE + core::mem::size_of::<HeapHeader>() as u64
+                    {
                         self.split_block(header, size);
                     }
-                    
+
                     (*header).free = false;
                     self.remove_from_free_list(header);
-                    
+
                     return Some((*header).data_ptr());
                 }
-                
+
                 current = (*header).next;
             }
         }
-        
+
         self.expand_heap(size)
     }
 
@@ -439,12 +474,12 @@ impl KernelHeap {
     unsafe fn split_block(&self, header: *mut HeapHeader, size: u64) {
         let original_size = (*header).size;
         let remaining = original_size - size;
-        
+
         let second_part = (header as *mut u8).add(size as usize) as *mut HeapHeader;
         *second_part = HeapHeader::new(remaining, true);
-        
+
         (*header).size = size;
-        
+
         if !(*header).next.is_null() {
             (*second_part).next = (*header).next;
             (*(*header).next).prev = second_part;
@@ -464,10 +499,10 @@ impl KernelHeap {
     unsafe fn coalesce_forward(&self, header: *mut HeapHeader) {
         let next_addr = (header as *mut u8).add((*header).size as usize) as *mut HeapHeader;
         let heap_end = self.heap_end.0 as *mut u8;
-        
+
         if (next_addr as *mut u8) < heap_end {
             let next_header = &*next_addr;
-            
+
             if next_header.magic == HEAP_MAGIC && next_header.free {
                 self.remove_from_free_list(next_addr);
                 (*header).size += next_header.size;
@@ -477,21 +512,21 @@ impl KernelHeap {
 
     unsafe fn coalesce_backward(&self, header: *mut HeapHeader) -> *mut HeapHeader {
         let mut current = *self.free_list_head.get();
-        
+
         while !current.is_null() {
             let candidate = current;
             let candidate_end = (candidate as *mut u8).add((*candidate).size as usize);
-            
+
             if candidate_end == (header as *mut u8) {
                 self.remove_from_free_list(candidate);
                 (*candidate).size += (*header).size;
                 (*candidate).free = true;
                 return candidate;
             }
-            
+
             current = (*candidate).next;
         }
-        
+
         header
     }
 
@@ -499,7 +534,7 @@ impl KernelHeap {
     fn add_to_free_list(&self, header: *mut HeapHeader) {
         unsafe {
             let head_ptr = self.free_list_head.get();
-            
+
             if !(*head_ptr).is_null() {
                 (*header).next = *head_ptr;
                 (*(*head_ptr)).prev = header;
@@ -517,17 +552,17 @@ impl KernelHeap {
             let prev = (*header).prev;
             let next = (*header).next;
             let head_ptr = self.free_list_head.get();
-            
+
             if !prev.is_null() {
                 (*prev).next = next;
             } else {
                 *head_ptr = next;
             }
-            
+
             if !next.is_null() {
                 (*next).prev = prev;
             }
-            
+
             (*header).next = core::ptr::null_mut();
             (*header).prev = core::ptr::null_mut();
         }
@@ -537,20 +572,27 @@ impl KernelHeap {
     fn expand_heap(&self, size: u64) -> Option<*mut u8> {
         let pages_needed = size.div_ceil(PAGE_SIZE);
         let expand_by = pages_needed * PAGE_SIZE;
-        
+
         let vmm = get_vmm();
         let pmm = get_pmm();
-        
+
         let phys = pmm.alloc_pages(pages_needed as usize)?;
-        
+
         let new_start = self.heap_end;
         let _new_end = VirtAddr(self.heap_end.0 + expand_by);
-        
+
         for i in 0..pages_needed {
             let page_phys = PhysAddr(phys.as_u64() + i * PAGE_SIZE);
             let page_virt = VirtAddr(new_start.0 + i * PAGE_SIZE);
-            
-            if vmm.map_page(page_virt, page_phys, PageFlags::PRESENT | PageFlags::WRITABLE).is_err() {
+
+            if vmm
+                .map_page(
+                    page_virt,
+                    page_phys,
+                    PageFlags::PRESENT | PageFlags::WRITABLE,
+                )
+                .is_err()
+            {
                 for j in 0..i {
                     let unmap_virt = VirtAddr(new_start.0 + j * PAGE_SIZE);
                     vmm.unmap_page(unmap_virt);
@@ -559,27 +601,27 @@ impl KernelHeap {
                 return None;
             }
         }
-        
+
         let new_block = unsafe { &mut *(new_start.0 as *mut HeapHeader) };
         *new_block = HeapHeader::new(expand_by, true);
-        
+
         self.add_to_free_list(new_block as *mut HeapHeader);
-        
+
         self.allocate_first_fit(size)
     }
 
     /// Early allocation (before heap initialization)
     fn early_allocate(&self, size: usize) -> Option<*mut u8> {
         let current = self.early_pos.fetch_add(size, Ordering::Relaxed);
-        
+
         if current + size > self.early_buffer.len() {
             serial_println!("[Kmalloc] Error: Early allocation out of space!");
             self.early_pos.fetch_sub(size, Ordering::Relaxed);
             return None;
         }
-        
+
         let ptr = unsafe { self.early_buffer.as_ptr().add(current) as *mut u8 };
-        
+
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
             unsafe {
@@ -588,17 +630,17 @@ impl KernelHeap {
                 (*alloc_ptr).size = size;
             }
         }
-        
+
         Some(ptr)
     }
 
     /// Process early allocations after proper initialization
     fn process_early_allocations(&self) {
         let count = self.early_count.load(Ordering::Acquire);
-        
+
         for i in 0..count.min(MAX_EARLY_ALLOCS) {
             let alloc = self.early_allocs[i];
-            
+
             if let Some(new_ptr) = self.allocate_first_fit(alloc.size as u64) {
                 unsafe {
                     core::ptr::copy_nonoverlapping(alloc.ptr, new_ptr, alloc.size);
@@ -609,11 +651,11 @@ impl KernelHeap {
 
     #[inline(always)]
     fn acquire_lock(&self) {
-        while self.lock.compare_exchange_weak(
-            false, true,
-            Ordering::Acquire,
-            Ordering::Relaxed
-        ).is_err() {
+        while self
+            .lock
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             core::hint::spin_loop();
         }
     }

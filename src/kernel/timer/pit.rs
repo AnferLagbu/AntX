@@ -21,19 +21,19 @@
 //! # Safety
 //! 此模块直接操作硬件端口，必须在内核初始化早期调用。
 
-use core::sync::atomic::{AtomicU32, AtomicU16, Ordering, AtomicBool};
+use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
 // ============================================================================
 // 硬件常量定义
 // ============================================================================
 
 /// PIT I/O 端口地址
-const PIT_CHANNEL_0_DATA: u16 = 0x40;   // 通道 0 数据端口
+const PIT_CHANNEL_0_DATA: u16 = 0x40; // 通道 0 数据端口
 #[allow(dead_code)]
-const PIT_CHANNEL_1_DATA: u16 = 0x41;   // 通道 1 数据端口
+const PIT_CHANNEL_1_DATA: u16 = 0x41; // 通道 1 数据端口
 #[allow(dead_code)]
-const PIT_CHANNEL_2_DATA: u16 = 0x42;   // 通道 2 数据端口
-const PIT_COMMAND_PORT: u16 = 0x43;     // 命令/控制寄存器
+const PIT_CHANNEL_2_DATA: u16 = 0x42; // 通道 2 数据端口
+const PIT_COMMAND_PORT: u16 = 0x43; // 命令/控制寄存器
 
 /// PIT 基础时钟频率 (1.193182 MHz)
 pub const PIT_BASE_FREQUENCY: u64 = 1_193_182;
@@ -142,9 +142,9 @@ pub fn pit_init(frequency_hz: u32) -> Result<u32, &'static str> {
         //    - Mode 2: 速率发生器
         //    - 16位二进制模式
         let command: u8 = control_word::SELECT_CHANNEL_0
-                        | control_word::LOW_HIGH_BYTE
-                        | control_word::MODE_2_RATE_GEN
-                        | control_word::BINARY_MODE;
+            | control_word::LOW_HIGH_BYTE
+            | control_word::MODE_2_RATE_GEN
+            | control_word::BINARY_MODE;
 
         outb(PIT_COMMAND_PORT, command);
 
@@ -182,8 +182,7 @@ pub fn pit_read_count() -> Option<u16> {
 
     unsafe {
         // 发送锁存命令 (读取当前计数值而不影响计数)
-        let latch_cmd: u8 = control_word::SELECT_CHANNEL_0
-                         | control_word::LATCH_COUNT;
+        let latch_cmd: u8 = control_word::SELECT_CHANNEL_0 | control_word::LATCH_COUNT;
         outb(PIT_COMMAND_PORT, latch_cmd);
 
         // 读取低字节
@@ -264,13 +263,13 @@ pub fn pit_shutdown() {
     unsafe {
         // 设置为最大分频 (最低频率 ~18.2 Hz)
         let command: u8 = control_word::SELECT_CHANNEL_0
-                        | control_word::LOW_HIGH_BYTE
-                        | control_word::MODE_2_RATE_GEN
-                        | control_word::BINARY_MODE;
+            | control_word::LOW_HIGH_BYTE
+            | control_word::MODE_2_RATE_GEN
+            | control_word::BINARY_MODE;
 
         outb(PIT_COMMAND_PORT, command);
-        outb(PIT_CHANNEL_0_DATA, 0xFF);  // 低字节
-        outb(PIT_CHANNEL_0_DATA, 0xFF);  // 高字节
+        outb(PIT_CHANNEL_0_DATA, 0xFF); // 低字节
+        outb(PIT_CHANNEL_0_DATA, 0xFF); // 高字节
     }
 
     PIT_INITIALIZED.store(false, Ordering::Release);
@@ -311,11 +310,11 @@ mod tests {
 
         // 最大频率 (最小分频)
         let max_freq = PIT_BASE_FREQUENCY / PIT_MIN_COUNT as u64;
-        assert!(max_freq > 1_000_000);  // > 1 MHz
+        assert!(max_freq > 1_000_000); // > 1 MHz
 
         // 最小频率 (最大分频)
         let min_freq = PIT_BASE_FREQUENCY / PIT_MAX_COUNT as u64;
-        assert!(min_freq < 20);  // ~18.2 Hz
+        assert!(min_freq < 20); // ~18.2 Hz
     }
 
     #[test]
@@ -362,6 +361,10 @@ pub fn register_pit_tests() {
     }
 
     r.register("timer::pit", "constants", constants as TestFn);
-    r.register("timer::pit", "divisor_calculation", divisor_calculation as TestFn);
+    r.register(
+        "timer::pit",
+        "divisor_calculation",
+        divisor_calculation as TestFn,
+    );
     r.register("timer::pit", "frequency_bounds", frequency_bounds as TestFn);
 }

@@ -66,7 +66,9 @@ pub unsafe extern "C" fn atoi(str: *const i8) -> i32 {
     loop {
         let ch = *ptr;
         if ch >= b'0' as i8 && ch <= b'9' as i8 {
-            result = result.wrapping_mul(10).wrapping_add((ch - b'0' as i8) as i32);
+            result = result
+                .wrapping_mul(10)
+                .wrapping_add((ch - b'0' as i8) as i32);
             ptr = ptr.add(1);
         } else {
             break;
@@ -89,11 +91,7 @@ pub unsafe extern "C" fn atoi(str: *const i8) -> i32 {
 /// # Safety
 /// 此函数通过 FFI 暴露给 C 代码使用
 #[no_mangle]
-pub unsafe extern "C" fn strtol(
-    str: *const i8,
-    endptr: *mut *mut i8,
-    base: i32,
-) -> i64 {
+pub unsafe extern "C" fn strtol(str: *const i8, endptr: *mut *mut i8, base: i32) -> i64 {
     if str.is_null() {
         if !endptr.is_null() {
             *endptr = str as *mut i8;
@@ -251,16 +249,24 @@ pub const fn ntohl(net: u32) -> u32 {
 
 /// 通过 FFI 暴露的字节序转换函数
 #[no_mangle]
-pub extern "C" fn rust_htons(host: u16) -> u16 { htons(host) }
+pub extern "C" fn rust_htons(host: u16) -> u16 {
+    htons(host)
+}
 
 #[no_mangle]
-pub extern "C" fn rust_ntohs(net: u16) -> u16 { ntohs(net) }
+pub extern "C" fn rust_ntohs(net: u16) -> u16 {
+    ntohs(net)
+}
 
 #[no_mangle]
-pub extern "C" fn rust_htonl(host: u32) -> u32 { htonl(host) }
+pub extern "C" fn rust_htonl(host: u32) -> u32 {
+    htonl(host)
+}
 
 #[no_mangle]
-pub extern "C" fn rust_ntohl(net: u32) -> u32 { ntohl(net) }
+pub extern "C" fn rust_ntohl(net: u32) -> u32 {
+    ntohl(net)
+}
 
 // ============================================================================
 // MAC/IP 地址工具
@@ -357,7 +363,9 @@ pub fn parse_ipv4(str: &[u8]) -> Option<[u8; 4]> {
     for &ch in str {
         match ch {
             b'0'..=b'9' => {
-                current_val = current_val.wrapping_mul(10).wrapping_add((ch - b'0') as u16);
+                current_val = current_val
+                    .wrapping_mul(10)
+                    .wrapping_add((ch - b'0') as u16);
                 if current_val > 255 {
                     return None;
                 }
@@ -456,19 +464,19 @@ mod tests {
     fn test_strtol_basic() {
         unsafe {
             let mut endptr: *mut i8 = core::ptr::null_mut();
-            
+
             // 十进制
             let val = strtol(c"12345".as_ptr(), &mut endptr, 0);
             assert_eq!(val, 12345);
-            
+
             // 十六进制
             let val = strtol(c"0xFF".as_ptr(), &mut endptr, 0);
             assert_eq!(val, 255);
-            
+
             // 八进制
             let val = strtol(c"0777".as_ptr(), &mut endptr, 0);
             assert_eq!(val, 511);
-            
+
             // 负数
             let val = strtol(c"-100".as_ptr(), &mut endptr, 0);
             assert_eq!(val, -100);
@@ -480,10 +488,10 @@ mod tests {
         // 测试数据: "Hello World" 的 ASCII
         let data = b"Hello World";
         let cksum = inet_checksum(data);
-        
+
         // 验证: 对相同数据多次计算应该得到相同结果
         assert_eq!(cksum, inet_checksum(data));
-        
+
         // 验证: 改变数据后校验和应该不同
         let data2 = b"Hello World!";
         assert_ne!(cksum, inet_checksum(data2));
@@ -503,7 +511,7 @@ mod tests {
         let mac = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
         let mut buf = [0u8; 18];
         let len = format_mac(&mac, &mut buf);
-        
+
         assert_eq!(len, 17);
         assert_eq!(&buf[..17], b"00:11:22:33:44:55");
     }
@@ -513,32 +521,32 @@ mod tests {
         let ip = [192, 168, 1, 1];
         let mut buf = [0u8; 16];
         let len = format_ipv4(ip, &mut buf);
-        
+
         assert_eq!(len, 11);
         assert_eq!(&buf[..11], b"192.168.1.1");
-        
+
         // 测试解析
         let parsed = parse_ipv4(b"192.168.1.1");
         assert_eq!(parsed, Some([192, 168, 1, 1]));
-        
+
         // 测试无效地址
         assert_eq!(parse_ipv4(b"256.1.1.1"), None); // 超范围
-        assert_eq!(parse_ipv4(b"1.2.3"), None);      // 缺少八位组
+        assert_eq!(parse_ipv4(b"1.2.3"), None); // 缺少八位组
     }
 
     #[test]
     fn test_memory_operations() {
         let mut dst = [0u8; 10];
         let src = [1, 2, 3, 4, 5];
-        
+
         let copied = safe_memcpy(&mut dst, &src);
         assert_eq!(copied, 5);
         assert_eq!(&dst[..5], &src[..5]);
-        
+
         // 测试 memcmp
         assert_eq!(memcmp(&dst[..5], &src), 0);
         assert_eq!(memcmp(&[1, 2, 3], &[1, 2, 4]), -1);
-        
+
         // 测试 memset
         memset(&mut dst, 0xFF, 10);
         assert_eq!(dst, [0xFF; 10]);

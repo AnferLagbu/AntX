@@ -10,20 +10,20 @@ macro_rules! serial_println {
 
 pub use serial_println;
 
-pub mod types;
-pub mod sha256;
-pub mod csprng;
-pub mod capability;
-pub mod identity;
-pub mod grant;
-pub mod bootstrap;
-pub mod engine;
-pub mod session;
 pub mod audit;
-pub mod storage;
+pub mod bootstrap;
+pub mod capability;
+pub mod csprng;
+pub mod engine;
 pub mod ffi;
+pub mod grant;
+pub mod identity;
+pub mod session;
+pub mod sha256;
+pub mod storage;
+pub mod types;
 
-pub use types::*;
+pub use audit::AuditLog;
 pub use identity::IdentityTable;
 pub use session::SessionManager;
-pub use audit::AuditLog;
+pub use types::*;

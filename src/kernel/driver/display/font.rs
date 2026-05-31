@@ -44,7 +44,8 @@ impl Font {
         }
 
         let glyph_offset = idx * self.glyph_height;
-        let glyph_data = &self.data[glyph_offset as usize..(glyph_offset + self.glyph_height) as usize];
+        let glyph_data =
+            &self.data[glyph_offset as usize..(glyph_offset + self.glyph_height) as usize];
 
         for row in 0..self.glyph_height {
             let byte = glyph_data[row as usize];

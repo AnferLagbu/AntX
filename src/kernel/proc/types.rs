@@ -78,7 +78,10 @@ impl ProcessState {
 
     /// ✅ 检查进程是否可以被冻结
     pub fn can_freeze(&self) -> bool {
-        matches!(self, ProcessState::Running | ProcessState::Ready | ProcessState::Blocked)
+        matches!(
+            self,
+            ProcessState::Running | ProcessState::Ready | ProcessState::Blocked
+        )
     }
 
     /// ✅ 检查进程是否可以被唤醒 (从 Frozen 解冻后应转到的状态)
@@ -151,7 +154,7 @@ pub struct ProcessContext {
     pub r12: u64,
     pub rbx: u64,
     pub rbp: u64,
-    pub rax: u64,    // ✅ fork 返回值控制
+    pub rax: u64, // ✅ fork 返回值控制
     pub rip: u64,
     pub rsp: u64,
     pub rflags: u64,
@@ -186,7 +189,7 @@ impl ProcessContext {
             ss: 0,
         }
     }
-    
+
     pub fn set_user_mode(&mut self) {
         self.cs = 0x23;
         self.ds = 0x1B;
@@ -275,6 +278,9 @@ impl ThreadState {
     }
 
     pub fn can_freeze(&self) -> bool {
-        matches!(self, ThreadState::Running | ThreadState::Ready | ThreadState::Blocked)
+        matches!(
+            self,
+            ThreadState::Running | ThreadState::Ready | ThreadState::Blocked
+        )
     }
 }

@@ -216,7 +216,9 @@ pub extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
     unsafe {
         use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
-        extern "C" { fn process_get_current_pid() -> u32; }
+        extern "C" {
+            fn process_get_current_pid() -> u32;
+        }
         let current_pid = process_get_current_pid();
 
         match pipe_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, current_pid) {
@@ -224,7 +226,7 @@ pub extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
                 *pipefd.add(0) = rfd;
                 *pipefd.add(1) = wfd;
                 0
-            },
+            }
             Err(_) => -1,
         }
     }

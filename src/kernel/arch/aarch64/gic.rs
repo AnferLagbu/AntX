@@ -19,23 +19,23 @@ const GICR_BASE: u64 = 0x080A_0000;
 const GICR_SGI_BASE: u64 = 0x080B_0000;
 
 /// GICD 寄存器偏移
-const GICD_CTLR: u64 = 0x0000;      // Distributor Control
-const GICD_TYPER: u64 = 0x0008;     // Type
-const GICD_IIDR: u64 = 0x000C;      // Implementer ID
-const GICD_IGROUPR: u64 = 0x0080;   // Interrupt Group (0-31)
+const GICD_CTLR: u64 = 0x0000; // Distributor Control
+const GICD_TYPER: u64 = 0x0008; // Type
+const GICD_IIDR: u64 = 0x000C; // Implementer ID
+const GICD_IGROUPR: u64 = 0x0080; // Interrupt Group (0-31)
 const GICD_ISENABLER: u64 = 0x0100; // Interrupt Set-Enable (0-31)
-const GICD_ISPENDR: u64 = 0x0200;   // Interrupt Set-Pending
+const GICD_ISPENDR: u64 = 0x0200; // Interrupt Set-Pending
 const GICD_IPRIORITYR: u64 = 0x0400; // Interrupt Priority (8-bit each)
-const GICD_ITARGETSR: u64 = 0x0800;  // Interrupt Target
-const GICD_ICFGR: u64 = 0x0C00;      // Interrupt Configuration (level/edge)
+const GICD_ITARGETSR: u64 = 0x0800; // Interrupt Target
+const GICD_ICFGR: u64 = 0x0C00; // Interrupt Configuration (level/edge)
 
 /// GICR 寄存器偏移 (SGI + PPI)
-const GICR_CTLR: u64 = 0x0000;      // Redistributor Control
-const GICR_WAKER: u64 = 0x0014;     // Wake
-const GICR_IGROUPR0: u64 = 0x0080;  // Group for SGIs/PPIs
+const GICR_CTLR: u64 = 0x0000; // Redistributor Control
+const GICR_WAKER: u64 = 0x0014; // Wake
+const GICR_IGROUPR0: u64 = 0x0080; // Group for SGIs/PPIs
 pub const GICR_ISENABLER0: u64 = 0x0100; // Enable for SGIs/PPIs
 const GICR_IPRIORITYR: u64 = 0x0400; // Priority for SGIs/PPIs
-const GICR_ICFGR1: u64 = 0x0C04;    // Configuration for PPIs
+const GICR_ICFGR1: u64 = 0x0C04; // Configuration for PPIs
 
 /// CPU Interface 寄存器 (系统寄存器, ICC_*)
 /// 通过 MRS/MSR 访问
@@ -45,7 +45,7 @@ const PPI_BASE: u32 = 16;
 const SPI_BASE: u32 = 32;
 
 /// ARM 架构定时器 PPI (Non-secure Physical Timer)
-const TIMER_PPI: u32 = 30;  // CNTPNSIRQ
+const TIMER_PPI: u32 = 30; // CNTPNSIRQ
 
 // ============================================================================
 // 寄存器读写辅助
@@ -134,7 +134,7 @@ pub unsafe fn init_redistributor() {
     // 1. Wake redistributor
     let waker = gicr_read(GICR_WAKER);
     gicr_write(GICR_WAKER, waker & !(1 << 1)); // Clear ProcessorSleep (bit 1)
-    // Wait for ChildrenAsleep == 0
+                                               // Wait for ChildrenAsleep == 0
     while gicr_read(GICR_WAKER) & (1 << 2) != 0 {
         core::hint::spin_loop();
     }
@@ -182,7 +182,9 @@ pub unsafe fn enable_timer_ppi() {
 /// 获取中断 ID (IAR) — 用于 IRQ handler
 pub fn acknowledge() -> u32 {
     let iar: u64;
-    unsafe { core::arch::asm!("mrs {}, icc_iar1_el1", out(reg) iar); }
+    unsafe {
+        core::arch::asm!("mrs {}, icc_iar1_el1", out(reg) iar);
+    }
     iar as u32
 }
 

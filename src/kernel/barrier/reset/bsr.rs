@@ -4,11 +4,11 @@
 
 use core::sync::atomic::Ordering;
 
+use super::audit;
+use super::config::{self, RecoveryLayer, RecoveryResult};
+use crate::kernel::barrier::types::DomainState;
 use crate::kernel::barrier::PANIC_FLAG;
 use crate::kernel::barrier::RECOVERY_MANAGER;
-use crate::kernel::barrier::types::DomainState;
-use super::config::{self, RecoveryResult, RecoveryLayer};
-use super::audit;
 
 pub fn freeze_all_domains() {
     let manager = RECOVERY_MANAGER.lock();

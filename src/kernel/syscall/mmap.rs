@@ -17,7 +17,7 @@
 //! | COW | 不支持 | 支持 |
 
 use super::types::*;
-use crate::kernel::mm::vma::{Vma, VmaType, MmStruct};
+use crate::kernel::mm::vma::{MmStruct, Vma, VmaType};
 use crate::kernel::mm::{PageFlags as VmaFlags, PAGE_SIZE};
 
 pub const SYS_MMAP_FLAGS: u64 = 0;
@@ -38,7 +38,7 @@ pub fn mmap_syscall(
 
     let page_flags = prot_to_vma_flags(prot);
 
-    let map_private = (flags & 0x02) != 0;  // MAP_PRIVATE
+    let map_private = (flags & 0x02) != 0; // MAP_PRIVATE
     let map_anonymous = (flags & 0x20) != 0; // MAP_ANONYMOUS
 
     if !map_anonymous {
@@ -58,7 +58,12 @@ pub fn mmap_syscall(
 
     if map_private {
         let final_flags = page_flags | VmaFlags::PRESENT;
-        let vma = Vma::new(aligned_addr, aligned_addr + len_aligned, final_flags, VmaType::Anonymous);
+        let vma = Vma::new(
+            aligned_addr,
+            aligned_addr + len_aligned,
+            final_flags,
+            VmaType::Anonymous,
+        );
         match mm.insert_vma(vma) {
             Ok(()) => {}
             Err(_) => return Err(Errno::ENOMEM),
@@ -82,12 +87,7 @@ pub fn munmap_syscall(mm: &MmStruct, addr: u64, length: u64) -> Result<(), Errno
 }
 
 #[inline]
-pub fn mprotect_syscall(
-    mm: &MmStruct,
-    addr: u64,
-    length: u64,
-    prot: i32,
-) -> Result<(), Errno> {
+pub fn mprotect_syscall(mm: &MmStruct, addr: u64, length: u64, prot: i32) -> Result<(), Errno> {
     if addr == 0 || length == 0 {
         return Err(Errno::EINVAL);
     }
@@ -109,9 +109,15 @@ pub fn mprotect_syscall(
 fn prot_to_vma_flags(prot: i32) -> VmaFlags {
     let mut flags = VmaFlags::USER;
 
-    if prot & 0x01 != 0 { flags |= VmaFlags::PRESENT; }
-    if prot & 0x02 != 0 { flags |= VmaFlags::WRITABLE; }
-    if prot & 0x04 == 0 { flags |= VmaFlags::NX; }
+    if prot & 0x01 != 0 {
+        flags |= VmaFlags::PRESENT;
+    }
+    if prot & 0x02 != 0 {
+        flags |= VmaFlags::WRITABLE;
+    }
+    if prot & 0x04 == 0 {
+        flags |= VmaFlags::NX;
+    }
 
     flags
 }

@@ -9,7 +9,11 @@ pub extern "C" fn hvfs_init() -> i32 {
 #[no_mangle]
 pub extern "C" fn hvfs_mount(_path: *const c_char) -> i32 {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    if hvfs.is_initialized() { 0 } else { -1 }
+    if hvfs.is_initialized() {
+        0
+    } else {
+        -1
+    }
 }
 
 #[no_mangle]
@@ -18,10 +22,14 @@ pub extern "C" fn hvfs_unmount() -> i32 {
 }
 
 fn cstr_to_str(ptr: *const c_char) -> &'static str {
-    if ptr.is_null() { return ""; }
+    if ptr.is_null() {
+        return "";
+    }
     unsafe {
         let mut len = 0;
-        while *ptr.add(len) != 0 && len < 4096 { len += 1; }
+        while *ptr.add(len) != 0 && len < 4096 {
+            len += 1;
+        }
         core::str::from_utf8(core::slice::from_raw_parts(ptr as *const u8, len)).unwrap_or("")
     }
 }
@@ -42,14 +50,18 @@ pub extern "C" fn hvfs_close(fd: i32) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn hvfs_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
-    if buf.is_null() { return -1; }
+    if buf.is_null() {
+        return -1;
+    }
     let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
     crate::kernel::fs::hvfs::hvfs::get_hvfs().read(fd as u32, buf_slice, count)
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_write(fd: i32, buf: *const u8, count: u32) -> i32 {
-    if buf.is_null() { return -1; }
+    if buf.is_null() {
+        return -1;
+    }
     let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
     crate::kernel::fs::hvfs::hvfs::get_hvfs().write(fd as u32, buf_slice, count)
 }
@@ -115,17 +127,34 @@ pub extern "C" fn hvfs_clone_create(snap_id: u64, name: *const c_char) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn hvfs_is_initialized() -> i32 {
-    if crate::kernel::fs::hvfs::hvfs::get_hvfs().is_initialized() { 1 } else { 0 }
+    if crate::kernel::fs::hvfs::hvfs::get_hvfs().is_initialized() {
+        1
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_get_stats(allocs: *mut u64, frees: *mut u64, reads: *mut u64, writes: *mut u64) {
+pub extern "C" fn hvfs_get_stats(
+    allocs: *mut u64,
+    frees: *mut u64,
+    reads: *mut u64,
+    writes: *mut u64,
+) {
     let (a, f, r, w) = crate::kernel::fs::hvfs::hvfs::get_hvfs().get_stats();
     unsafe {
-        if !allocs.is_null() { *allocs = a; }
-        if !frees.is_null() { *frees = f; }
-        if !reads.is_null() { *reads = r; }
-        if !writes.is_null() { *writes = w; }
+        if !allocs.is_null() {
+            *allocs = a;
+        }
+        if !frees.is_null() {
+            *frees = f;
+        }
+        if !reads.is_null() {
+            *reads = r;
+        }
+        if !writes.is_null() {
+            *writes = w;
+        }
     }
 }
 
@@ -139,14 +168,17 @@ pub extern "C" fn hvfs_format() -> i32 {
 #[no_mangle]
 pub extern "C" fn hvfs_disk_init() -> i32 {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    if !hvfs.is_initialized() { hvfs.init(); }
+    if !hvfs.is_initialized() {
+        hvfs.init();
+    }
     0
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_set_current_dir(node_id: u32) {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    hvfs.current_dir.store(node_id as u64, core::sync::atomic::Ordering::Release);
+    hvfs.current_dir
+        .store(node_id as u64, core::sync::atomic::Ordering::Release);
 }
 
 #[no_mangle]
@@ -158,11 +190,13 @@ pub extern "C" fn hvfs_get_current_dir() -> u32 {
 #[no_mangle]
 pub extern "C" fn hvfs_set_current_pwid(pwid: u64) {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    hvfs.current_pwid.store(pwid, core::sync::atomic::Ordering::Release);
+    hvfs.current_pwid
+        .store(pwid, core::sync::atomic::Ordering::Release);
 }
 
 #[no_mangle]
 pub extern "C" fn hvfs_get_current_pwid() -> u64 {
     let hvfs = crate::kernel::fs::hvfs::hvfs::get_hvfs();
-    hvfs.current_pwid.load(core::sync::atomic::Ordering::Acquire)
+    hvfs.current_pwid
+        .load(core::sync::atomic::Ordering::Acquire)
 }

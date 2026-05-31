@@ -27,12 +27,11 @@
 //! # Safety
 //! NVMe驱动涉及PCIe配置、MMIO寄存器和DMA操作。
 
-
-use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use crate::kernel::mm::{PhysAddr, VirtAddr};
+use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::dma::engine::get_dma;
-use core::ptr;
+use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::klog_info;
+use core::ptr;
 
 // ============================================================================
 // NVMe 常量定义
@@ -41,9 +40,9 @@ use crate::klog_info;
 const ADMIN_QUEUE_ID: u16 = 0;
 const IO_QUEUE_ID: u16 = 1;
 
-const QUEUE_DEPTH: usize = 64;      // Admin + I/O 队列深度
-const SQ_ENTRY_SIZE: usize = 64;    // 提交队列条目大小
-const CQ_ENTRY_SIZE: usize = 16;    // 完成队列条目大小
+const QUEUE_DEPTH: usize = 64; // Admin + I/O 队列深度
+const SQ_ENTRY_SIZE: usize = 64; // 提交队列条目大小
+const CQ_ENTRY_SIZE: usize = 16; // 完成队列条目大小
 const SQ_SIZE: usize = QUEUE_DEPTH * SQ_ENTRY_SIZE;
 const CQ_SIZE: usize = QUEUE_DEPTH * CQ_ENTRY_SIZE;
 
@@ -60,23 +59,23 @@ const MAX_SECTORS_PER_CMD: u16 = 128;
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeControllerRegisters {
-    pub cap: u64,       // 控制器能力
-    pub vs: u32,        // 版本
-    pub intms: u32,     // 中断掩码设置
-    pub intmc: u32,     // 中断掩码清除
-    pub cc: u32,        // 控制器配置
+    pub cap: u64,   // 控制器能力
+    pub vs: u32,    // 版本
+    pub intms: u32, // 中断掩码设置
+    pub intmc: u32, // 中断掩码清除
+    pub cc: u32,    // 控制器配置
     pub rsvd1: u32,
-    pub csts: u32,      // 控制器状态
-    pub nssr: u32,      // NVM 子系统复位
-    pub aqa: u32,       // Admin 队列属性
-    pub asq: u64,       // Admin 提交队列基地址
-    pub acq: u64,       // Admin 完成队列基地址
-    pub cmbloc: u32,    // 控制器内存缓冲区位置
-    pub cmbsz: u32,     // 控制器内存缓冲区大小
+    pub csts: u32,   // 控制器状态
+    pub nssr: u32,   // NVM 子系统复位
+    pub aqa: u32,    // Admin 队列属性
+    pub asq: u64,    // Admin 提交队列基地址
+    pub acq: u64,    // Admin 完成队列基地址
+    pub cmbloc: u32, // 控制器内存缓冲区位置
+    pub cmbsz: u32,  // 控制器内存缓冲区大小
     pub rsvd2: [u32; 8],
-    pub bpinfo: u32,    // 启动分区信息
-    pub bprsel: u32,    // 启动分区读选择
-    pub bpmbl: u64,     // 启动分区内存缓冲位置
+    pub bpinfo: u32, // 启动分区信息
+    pub bprsel: u32, // 启动分区读选择
+    pub bpmbl: u64,  // 启动分区内存缓冲位置
     pub rsvd3: [u64; 38],
     // 门铃寄存器紧随其后
 }
@@ -152,8 +151,8 @@ pub struct NvmeCommand {
     pub nsid: u32,
     pub cdw2: u32,
     pub cdw3: u32,
-    pub mptr: u64,        // PRP1 / SGL entry 1
-    pub prp2: u64,        // PRP2 / SGL entry 2
+    pub mptr: u64, // PRP1 / SGL entry 1
+    pub prp2: u64, // PRP2 / SGL entry 2
     pub cdw10: u32,
     pub cdw11: u32,
     pub cdw12: u32,
@@ -165,9 +164,20 @@ pub struct NvmeCommand {
 impl NvmeCommand {
     pub fn new() -> Self {
         Self {
-            opcode: 0, flags: 0, cid: 0, nsid: 0,
-            cdw2: 0, cdw3: 0, mptr: 0, prp2: 0,
-            cdw10: 0, cdw11: 0, cdw12: 0, cdw13: 0, cdw14: 0, cdw15: 0,
+            opcode: 0,
+            flags: 0,
+            cid: 0,
+            nsid: 0,
+            cdw2: 0,
+            cdw3: 0,
+            mptr: 0,
+            prp2: 0,
+            cdw10: 0,
+            cdw11: 0,
+            cdw12: 0,
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
         }
     }
 
@@ -178,13 +188,16 @@ impl NvmeCommand {
             flags: 0,
             cid: 0,
             nsid,
-            cdw2: 0, cdw3: 0,
+            cdw2: 0,
+            cdw3: 0,
             mptr: prp1,
             prp2: 0,
             cdw10: (slba & 0xFFFFFFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFFFFFF) as u32,
-            cdw12: (nlb as u32 - 1) & 0xFFFF,    // NLB = #blocks - 1
-            cdw13: 0, cdw14: 0, cdw15: 0,
+            cdw12: (nlb as u32 - 1) & 0xFFFF, // NLB = #blocks - 1
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
         }
     }
 
@@ -195,13 +208,16 @@ impl NvmeCommand {
             flags: 0,
             cid: 0,
             nsid,
-            cdw2: 0, cdw3: 0,
+            cdw2: 0,
+            cdw3: 0,
             mptr: prp1,
             prp2: 0,
             cdw10: (slba & 0xFFFFFFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFFFFFF) as u32,
             cdw12: (nlb as u32 - 1) & 0xFFFF,
-            cdw13: 0, cdw14: 0, cdw15: 0,
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
         }
     }
 
@@ -212,11 +228,16 @@ impl NvmeCommand {
             flags: 0,
             cid: 0,
             nsid,
-            cdw2: 0, cdw3: 0,
+            cdw2: 0,
+            cdw3: 0,
             mptr: prp1,
             prp2: 0,
-            cdw10: cns as u32,    // CNS (Controller/Namespace)
-            cdw11: 0, cdw12: 0, cdw13: 0, cdw14: 0, cdw15: 0,
+            cdw10: cns as u32, // CNS (Controller/Namespace)
+            cdw11: 0,
+            cdw12: 0,
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
         }
     }
 
@@ -227,12 +248,16 @@ impl NvmeCommand {
             flags: 0,
             cid: 0,
             nsid: 0,
-            cdw2: 0, cdw3: 0,
+            cdw2: 0,
+            cdw3: 0,
             mptr: cq_phys,
             prp2: 0,
             cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | (qid as u32),
-            cdw11: 1,    // PC: physically contiguous, IEN: enable
-            cdw12: 0, cdw13: 0, cdw14: 0, cdw15: 0,
+            cdw11: 1, // PC: physically contiguous, IEN: enable
+            cdw12: 0,
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
         }
     }
 
@@ -243,12 +268,16 @@ impl NvmeCommand {
             flags: 0,
             cid: 0,
             nsid: 0,
-            cdw2: 0, cdw3: 0,
+            cdw2: 0,
+            cdw3: 0,
             mptr: sq_phys,
             prp2: 0,
             cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | (qid as u32),
-            cdw11: (cqid as u32) << 16 | 1,   // CQID | PC
-            cdw12: 0, cdw13: 0, cdw14: 0, cdw15: 0,
+            cdw11: (cqid as u32) << 16 | 1, // CQID | PC
+            cdw12: 0,
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
         }
     }
 }
@@ -292,8 +321,8 @@ pub struct NvmeIdentifyController {
     pub sn: [u8; 20],
     pub mn: [u8; 40],
     pub fr: [u8; 8],
-    pub rsvd1: [u8; 444],    // 跳过大部分字段
-    pub nn: u32,              // offset 516: 命名空间数量
+    pub rsvd1: [u8; 444], // 跳过大部分字段
+    pub nn: u32,          // offset 516: 命名空间数量
     pub rsvd2: [u8; 3756],
 }
 
@@ -350,15 +379,15 @@ struct QueueDma {
     virt: VirtAddr,
     phys: PhysAddr,
     is_cq: bool,
-    phase: u16,  // CQ 阶段标记
+    phase: u16, // CQ 阶段标记
 }
 
 /// NVMe 控制器驱动
 pub struct NvmeController {
     mmio_base: usize,
     regs: *mut NvmeControllerRegisters,
-    doorbell_base: usize,            // 门铃寄存器基地址
-    db_stride: u32,                  // 门铃步长
+    doorbell_base: usize, // 门铃寄存器基地址
+    db_stride: u32,       // 门铃步长
 
     // Admin 队列 (DMA 分配的 SQ/CQ)
     admin_sq_dma: QueueDma,
@@ -380,8 +409,8 @@ pub struct NvmeController {
 
     // Device info
     namespace_count: u32,
-    namespace_size_lba: u64,         // 命名空间大小 (LBA)
-    lba_format_size: u16,            // LBA 格式字节数
+    namespace_size_lba: u64, // 命名空间大小 (LBA)
+    lba_format_size: u16,    // LBA 格式字节数
     info: DeviceInfo,
     initialized: bool,
 }
@@ -393,13 +422,33 @@ impl NvmeController {
             regs: ptr::null_mut(),
             doorbell_base: 0,
             db_stride: 0,
-            admin_sq_dma: QueueDma { virt: VirtAddr(0), phys: PhysAddr(0), is_cq: false, phase: 0 },
-            admin_cq_dma: QueueDma { virt: VirtAddr(0), phys: PhysAddr(0), is_cq: true, phase: 1 },
+            admin_sq_dma: QueueDma {
+                virt: VirtAddr(0),
+                phys: PhysAddr(0),
+                is_cq: false,
+                phase: 0,
+            },
+            admin_cq_dma: QueueDma {
+                virt: VirtAddr(0),
+                phys: PhysAddr(0),
+                is_cq: true,
+                phase: 1,
+            },
             admin_sq_tail: 0,
             admin_cq_head: 0,
             admin_cid: 0,
-            io_sq_dma: QueueDma { virt: VirtAddr(0), phys: PhysAddr(0), is_cq: false, phase: 0 },
-            io_cq_dma: QueueDma { virt: VirtAddr(0), phys: PhysAddr(0), is_cq: true, phase: 1 },
+            io_sq_dma: QueueDma {
+                virt: VirtAddr(0),
+                phys: PhysAddr(0),
+                is_cq: false,
+                phase: 0,
+            },
+            io_cq_dma: QueueDma {
+                virt: VirtAddr(0),
+                phys: PhysAddr(0),
+                is_cq: true,
+                phase: 1,
+            },
             io_sq_tail: 0,
             io_cq_head: 0,
             io_cid: 0,
@@ -433,7 +482,12 @@ impl NvmeController {
             self.admin_cq_dma.phys = p;
         } else {
             dma.free_coherent(self.admin_sq_dma.virt, SQ_SIZE);
-            self.admin_sq_dma = QueueDma { virt: VirtAddr(0), phys: PhysAddr(0), is_cq: false, phase: 0 };
+            self.admin_sq_dma = QueueDma {
+                virt: VirtAddr(0),
+                phys: PhysAddr(0),
+                is_cq: false,
+                phase: 0,
+            };
             return Err(DriverError::HardwareError);
         }
 
@@ -459,7 +513,12 @@ impl NvmeController {
             self.io_cq_dma.phys = p;
         } else {
             dma.free_coherent(self.io_sq_dma.virt, SQ_SIZE);
-            self.io_sq_dma = QueueDma { virt: VirtAddr(0), phys: PhysAddr(0), is_cq: false, phase: 0 };
+            self.io_sq_dma = QueueDma {
+                virt: VirtAddr(0),
+                phys: PhysAddr(0),
+                is_cq: false,
+                phase: 0,
+            };
             return Err(DriverError::HardwareError);
         }
 
@@ -507,7 +566,8 @@ impl NvmeController {
         let sq = self.admin_sq_dma.virt.0 as *mut NvmeCommand;
         let mut entry_cmd = *cmd;
         entry_cmd.cid = cid;
-        sq.add(self.admin_sq_tail as usize).write_volatile(entry_cmd);
+        sq.add(self.admin_sq_tail as usize)
+            .write_volatile(entry_cmd);
 
         // 更新尾指针并敲门铃
         self.admin_sq_tail = (self.admin_sq_tail + 1) % (QUEUE_DEPTH as u32);
@@ -583,8 +643,12 @@ impl NvmeController {
             // ── 启用控制器 ──
             let iocqes: u32 = 4; // log2(16) = 4
             let iosqes: u32 = 6; // log2(64) = 6
-            regs.cc = cc::EN | cc::CSS_NVM | (mps << cc::MPS_SHIFT) | cc::AMS_RR
-                | (iocqes << cc::IOCQES_SHIFT) | (iosqes << cc::IOSQES_SHIFT);
+            regs.cc = cc::EN
+                | cc::CSS_NVM
+                | (mps << cc::MPS_SHIFT)
+                | cc::AMS_RR
+                | (iocqes << cc::IOCQES_SHIFT)
+                | (iosqes << cc::IOSQES_SHIFT);
 
             let mut timeout = 1_000_000u64;
             while regs.csts & csts::RDY == 0 && timeout > 0 {
@@ -602,8 +666,7 @@ impl NvmeController {
     /// 识别控制器
     pub fn identify_controller(&mut self) -> Result<()> {
         let dma = get_dma();
-        let (ident_virt, ident_phys) = dma.alloc_coherent(4096)
-            .ok_or(DriverError::Busy)?;
+        let (ident_virt, ident_phys) = dma.alloc_coherent(4096).ok_or(DriverError::Busy)?;
 
         // 清零
         unsafe {
@@ -623,9 +686,11 @@ impl NvmeController {
             model[..len].copy_from_slice(&ctrl.mn[..len]);
             let model_str = core::str::from_utf8(&model[..len]).unwrap_or("unknown");
 
-            klog_info!(Driver,
+            klog_info!(
+                Driver,
                 "NVMe: controller identified - model={}, ns_count={}",
-                model_str, self.namespace_count
+                model_str,
+                self.namespace_count
             );
         }
 
@@ -636,8 +701,7 @@ impl NvmeController {
     /// 识别命名空间
     pub fn identify_namespace(&mut self, nsid: u32) -> Result<()> {
         let dma = get_dma();
-        let (ident_virt, ident_phys) = dma.alloc_coherent(4096)
-            .ok_or(DriverError::Busy)?;
+        let (ident_virt, ident_phys) = dma.alloc_coherent(4096).ok_or(DriverError::Busy)?;
 
         unsafe {
             ptr::write_bytes(ident_virt.0 as *mut u8, 0, 4096);
@@ -658,12 +722,19 @@ impl NvmeController {
                 let lbaf_ptr = unsafe { (ident_virt.0 as *const u8).add(128 + lbaf_idx * 4) };
                 let lbaf_data = unsafe { *(lbaf_ptr as *const u32) };
                 let lbads = (lbaf_data >> 16) & 0xFF;
-                self.lba_format_size = if lbads > 0 { 1u16 << lbads as u16 } else { SECTOR_SIZE as u16 };
+                self.lba_format_size = if lbads > 0 {
+                    1u16 << lbads as u16
+                } else {
+                    SECTOR_SIZE as u16
+                };
             }
 
-            klog_info!(Driver,
+            klog_info!(
+                Driver,
                 "NVMe: namespace {} - size={} LBA, block={}B",
-                nsid, self.namespace_size_lba, self.lba_format_size
+                nsid,
+                self.namespace_size_lba,
+                self.lba_format_size
             );
         }
 
@@ -687,11 +758,15 @@ impl NvmeController {
 
         // 创建 I/O Completion Queue
         let cmd_cq = NvmeCommand::create_cq(IO_QUEUE_ID, self.io_cq_dma.phys.0);
-        unsafe { self.submit_admin_command(&cmd_cq)?; }
+        unsafe {
+            self.submit_admin_command(&cmd_cq)?;
+        }
 
         // 创建 I/O Submission Queue
         let cmd_sq = NvmeCommand::create_sq(IO_QUEUE_ID, IO_QUEUE_ID, self.io_sq_dma.phys.0);
-        unsafe { self.submit_admin_command(&cmd_sq)?; }
+        unsafe {
+            self.submit_admin_command(&cmd_sq)?;
+        }
 
         self.io_sq_tail = 0;
         self.io_cq_head = 0;
@@ -745,38 +820,41 @@ impl NvmeController {
     }
 
     /// 构造 NVMe PRP 地址对, 使用 per-controller PRP 列表页
-///
-/// NVMe 规范要求:
-/// - 传输 ≤ 1 页: PRP1 = 数据物理地址, PRP2 = 0
-/// - 传输 = 2 页: PRP1 = 第1页物理地址, PRP2 = 第2页物理地址
-/// - 传输 > 2 页: PRP1 = 第1页物理地址, PRP2 = PRP 列表页物理地址
-///
-/// PRP 列表页在 create_io_queue 时预分配，供所有 I/O 命令复用。
-/// 依赖 dma.alloc_coherent 返回物理连续内存，因此条目地址线性递推即可。
-unsafe fn build_prp(&self, phys_base: u64, byte_count: usize) -> (u64, u64) {
-    let bytes = byte_count as u64;
-    let num_pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    ///
+    /// NVMe 规范要求:
+    /// - 传输 ≤ 1 页: PRP1 = 数据物理地址, PRP2 = 0
+    /// - 传输 = 2 页: PRP1 = 第1页物理地址, PRP2 = 第2页物理地址
+    /// - 传输 > 2 页: PRP1 = 第1页物理地址, PRP2 = PRP 列表页物理地址
+    ///
+    /// PRP 列表页在 create_io_queue 时预分配，供所有 I/O 命令复用。
+    /// 依赖 dma.alloc_coherent 返回物理连续内存，因此条目地址线性递推即可。
+    unsafe fn build_prp(&self, phys_base: u64, byte_count: usize) -> (u64, u64) {
+        let bytes = byte_count as u64;
+        let num_pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    if num_pages <= 1 {
-        (phys_base, 0)
-    } else if num_pages == 2 {
-        (phys_base, phys_base + PAGE_SIZE)
-    } else {
-        // 填充 PRP 列表页: 条目 0 = 第2页, 条目 1 = 第3页, ...
-        let list = self.prp_list_virt.0 as *mut u64;
-        for i in 0..(num_pages - 1) as usize {
-            unsafe { list.add(i).write_volatile(phys_base + (i as u64 + 1) * PAGE_SIZE); }
+        if num_pages <= 1 {
+            (phys_base, 0)
+        } else if num_pages == 2 {
+            (phys_base, phys_base + PAGE_SIZE)
+        } else {
+            // 填充 PRP 列表页: 条目 0 = 第2页, 条目 1 = 第3页, ...
+            let list = self.prp_list_virt.0 as *mut u64;
+            for i in 0..(num_pages - 1) as usize {
+                unsafe {
+                    list.add(i)
+                        .write_volatile(phys_base + (i as u64 + 1) * PAGE_SIZE);
+                }
+            }
+            (phys_base, self.prp_list_phys.0)
         }
-        (phys_base, self.prp_list_phys.0)
     }
-}
 
-/// 填充 NVMe 命令的 PRP1/PRP2 字段 (与 build_prp 配套)
-unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
-    let (prp1, prp2) = self.build_prp(phys_base, byte_count);
-    cmd.mptr = prp1;
-    cmd.prp2 = prp2;
-}
+    /// 填充 NVMe 命令的 PRP1/PRP2 字段 (与 build_prp 配套)
+    unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
+        let (prp1, prp2) = self.build_prp(phys_base, byte_count);
+        cmd.mptr = prp1;
+        cmd.prp2 = prp2;
+    }
 
     pub fn read(&mut self, nsid: u32, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {
         if !self.initialized {
@@ -789,14 +867,15 @@ unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_coun
         let byte_count = (count as usize) * self.lba_format_size as usize;
 
         let dma = get_dma();
-        let (buf_virt, buf_phys) = dma.alloc_coherent(byte_count)
-            .ok_or(DriverError::Busy)?;
+        let (buf_virt, buf_phys) = dma.alloc_coherent(byte_count).ok_or(DriverError::Busy)?;
 
         let nlb = ((byte_count + (self.lba_format_size as usize) - 1)
             / (self.lba_format_size as usize)) as u16;
 
         let mut cmd = NvmeCommand::read(nsid, lba, nlb, buf_phys.0);
-        unsafe { self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
+        unsafe {
+            self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count);
+        }
         let result = unsafe { self.submit_io_command(&cmd) };
 
         if result.is_ok() {
@@ -820,8 +899,7 @@ unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_coun
         let byte_count = (count as usize) * self.lba_format_size as usize;
 
         let dma = get_dma();
-        let (buf_virt, buf_phys) = dma.alloc_coherent(byte_count)
-            .ok_or(DriverError::Busy)?;
+        let (buf_virt, buf_phys) = dma.alloc_coherent(byte_count).ok_or(DriverError::Busy)?;
 
         unsafe {
             ptr::copy_nonoverlapping(buffer, buf_virt.0 as *mut u8, byte_count);
@@ -831,15 +909,21 @@ unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_coun
             / (self.lba_format_size as usize)) as u16;
 
         let mut cmd = NvmeCommand::write(nsid, lba, nlb, buf_phys.0);
-        unsafe { self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
+        unsafe {
+            self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count);
+        }
         let result = unsafe { self.submit_io_command(&cmd) };
 
         dma.free_coherent(buf_virt, byte_count);
         result
     }
 
-    pub fn namespace_count(&self) -> u32 { self.namespace_count }
-    pub fn namespace_size(&self) -> u64 { self.namespace_size_lba }
+    pub fn namespace_count(&self) -> u32 {
+        self.namespace_count
+    }
+    pub fn namespace_size(&self) -> u64 {
+        self.namespace_size_lba
+    }
 }
 
 // SAFETY: NvmeController uses MMIO registers via volatile access.
@@ -852,8 +936,12 @@ unsafe impl Sync for NvmeController {}
 // ============================================================================
 
 impl Driver for NvmeController {
-    fn name(&self) -> &'static str { "NVMe Controller" }
-    fn device_type(&self) -> DeviceType { DeviceType::Block }
+    fn name(&self) -> &'static str {
+        "NVMe Controller"
+    }
+    fn device_type(&self) -> DeviceType {
+        DeviceType::Block
+    }
 
     fn init(&mut self) -> Result<()> {
         // Ensure init_controller is separate from the full init flow
@@ -869,7 +957,11 @@ impl Driver for NvmeController {
         self.create_io_queue()?;
 
         self.initialized = true;
-        klog_info!(Driver, "NVMe: controller fully initialized, {} ns", self.namespace_count);
+        klog_info!(
+            Driver,
+            "NVMe: controller fully initialized, {} ns",
+            self.namespace_count
+        );
         Ok(())
     }
 
@@ -896,9 +988,15 @@ impl Driver for NvmeController {
         Ok(())
     }
 
-    fn is_ready(&self) -> bool { self.initialized }
+    fn is_ready(&self) -> bool {
+        self.initialized
+    }
     fn status(&self) -> &'static str {
-        if self.initialized { "NVMe ready" } else { "NVMe not initialized" }
+        if self.initialized {
+            "NVMe ready"
+        } else {
+            "NVMe not initialized"
+        }
     }
 }
 
@@ -929,7 +1027,11 @@ mod tests {
     #[test]
     fn test_nvme_completion() {
         let mut cq = NvmeCompletion {
-            cdw0: 0, rsvd1: 0, sqhd: 0, sqid: 0, cid: 0,
+            cdw0: 0,
+            rsvd1: 0,
+            sqhd: 0,
+            sqid: 0,
+            cid: 0,
             status: 0x0001, // Phase=1, Status=0
         };
         assert!(cq.is_completed(1));

@@ -16,22 +16,22 @@
 //! `Vma` 中的物理页映射感知与 PMM 协作。
 
 use alloc::vec::Vec;
-use spin::Mutex;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use spin::Mutex;
 
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum VmaType {
-    Anonymous = 0,   // malloc / mmap(MAP_ANONYMOUS)
-    FileBacked = 1,  // mmap file
-    Stack = 2,       // 用户栈 (向下增长)
-    Heap = 3,        // 堆 (brk/sbrk)
-    Vdso = 4,        // vDSO
-    Vsvar = 5,       // vsyscall / vvar
-    Guard = 6,       // 保护页 (不可访问)
-    Device = 7,      // 设备MMIO映射
+    Anonymous = 0,  // malloc / mmap(MAP_ANONYMOUS)
+    FileBacked = 1, // mmap file
+    Stack = 2,      // 用户栈 (向下增长)
+    Heap = 3,       // 堆 (brk/sbrk)
+    Vdso = 4,       // vDSO
+    Vsvar = 5,      // vsyscall / vvar
+    Guard = 6,      // 保护页 (不可访问)
+    Device = 7,     // 设备MMIO映射
 }
 
 impl VmaType {
@@ -61,11 +61,23 @@ pub struct Vma {
 
 impl Vma {
     pub fn new(start: usize, end: usize, flags: PageFlags, vma_type: VmaType) -> Self {
-        Self { start, end, flags, vma_type, offset: 0 }
+        Self {
+            start,
+            end,
+            flags,
+            vma_type,
+            offset: 0,
+        }
     }
 
     pub fn with_offset(start: usize, end: usize, flags: PageFlags, offset: u64) -> Self {
-        Self { start, end, flags, vma_type: VmaType::FileBacked, offset }
+        Self {
+            start,
+            end,
+            flags,
+            vma_type: VmaType::FileBacked,
+            offset,
+        }
     }
 
     #[inline]
@@ -146,7 +158,10 @@ impl MmStruct {
             i += 1;
         }
 
-        let pos = vmas.iter().position(|v| v.start > merged.start).unwrap_or(vmas.len());
+        let pos = vmas
+            .iter()
+            .position(|v| v.start > merged.start)
+            .unwrap_or(vmas.len());
         vmas.insert(pos, merged);
 
         Ok(())
@@ -272,7 +287,9 @@ static mut CURRENT_MM: *const MmStruct = core::ptr::null();
 pub fn set_current_mm(mm: *const MmStruct) {
     // SAFETY: CURRENT_MM 是当前 CPU 的 per-CPU 状态指针，
     // 仅在进程切换时由调度器写入，调用者保证无并发写入。
-    unsafe { CURRENT_MM = mm; }
+    unsafe {
+        CURRENT_MM = mm;
+    }
 }
 
 pub fn get_current_mm() -> Option<&'static MmStruct> {

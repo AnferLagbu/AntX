@@ -56,8 +56,10 @@ mod tests {
             }
 
             fn to_argb8888(&self) -> u32 {
-                ((self.a as u32) << 24) | ((self.r as u32) << 16)
-                    | ((self.g as u32) << 8) | (self.b as u32)
+                ((self.a as u32) << 24)
+                    | ((self.r as u32) << 16)
+                    | ((self.g as u32) << 8)
+                    | (self.b as u32)
             }
 
             fn from_rgb565(rgb565: u16) -> Self {
@@ -107,7 +109,11 @@ mod tests {
 
         impl DisplayMode {
             fn new(width: u32, height: u32, refresh_rate: u32) -> Self {
-                Self { width, height, refresh_rate }
+                Self {
+                    width,
+                    height,
+                    refresh_rate,
+                }
             }
 
             fn pixel_clock_khz(&self) -> u64 {
@@ -133,7 +139,10 @@ mod tests {
     #[test]
     fn test_hdmi_modes() {
         const EDID_HEADER: [u8; 8] = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
-        assert_eq!(EDID_HEADER, [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00]);
+        assert_eq!(
+            EDID_HEADER,
+            [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00]
+        );
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         struct VideoMode {
@@ -143,11 +152,31 @@ mod tests {
         }
 
         const STANDARD_VIDEO_MODES: &[VideoMode] = &[
-            VideoMode { width: 640, height: 480, refresh_rate: 60 },
-            VideoMode { width: 800, height: 600, refresh_rate: 60 },
-            VideoMode { width: 1024, height: 768, refresh_rate: 60 },
-            VideoMode { width: 1280, height: 720, refresh_rate: 60 },
-            VideoMode { width: 1920, height: 1080, refresh_rate: 60 },
+            VideoMode {
+                width: 640,
+                height: 480,
+                refresh_rate: 60,
+            },
+            VideoMode {
+                width: 800,
+                height: 600,
+                refresh_rate: 60,
+            },
+            VideoMode {
+                width: 1024,
+                height: 768,
+                refresh_rate: 60,
+            },
+            VideoMode {
+                width: 1280,
+                height: 720,
+                refresh_rate: 60,
+            },
+            VideoMode {
+                width: 1920,
+                height: 1080,
+                refresh_rate: 60,
+            },
         ];
 
         assert!(!STANDARD_VIDEO_MODES.is_empty());

@@ -104,9 +104,9 @@ pub mod wasm;
 /// 基础库 (字符串/内存操作, C 标准库函数的 Rust 实现)
 pub mod lib;
 
+pub mod console;
 /// 日志系统 (KLog, 多级别, 分类输出)
 pub mod klog;
-pub mod console;
 
 /// SMP 多核支持 (双架构桩实现, feature=smp 时启用真实 IPI)
 pub mod smp;

@@ -2,40 +2,40 @@
 
 pub const SYS_CAP_ALL: u64 = 0xFFFFFFFFFFFFFFFF;
 
-pub const CAP_DOMAIN_SYSTEM: u16    = 0;
-pub const CAP_DOMAIN_FS: u16        = 1;
-pub const CAP_DOMAIN_NET: u16       = 2;
-pub const CAP_DOMAIN_PROC: u16      = 3;
-pub const CAP_DOMAIN_DEVICE: u16    = 4;
+pub const CAP_DOMAIN_SYSTEM: u16 = 0;
+pub const CAP_DOMAIN_FS: u16 = 1;
+pub const CAP_DOMAIN_NET: u16 = 2;
+pub const CAP_DOMAIN_PROC: u16 = 3;
+pub const CAP_DOMAIN_DEVICE: u16 = 4;
 pub const CAP_DOMAIN_USER_MGMT: u16 = 5;
-pub const CAP_DOMAIN_IPC: u16       = 6;
-pub const CAP_DOMAIN_MEM: u16       = 7;
-pub const CAP_DOMAIN_TIME: u16      = 8;
-pub const CAP_DOMAIN_BARRIER: u16   = 9;
-pub const CAP_DOMAIN_SIGNAL: u16    = 10;
-pub const CAP_DOMAIN_SHM: u16       = 11;
-pub const CAP_DOMAIN_SEM: u16       = 12;
-pub const CAP_DOMAIN_MSGQ: u16      = 13;
-pub const CAP_DOMAIN_DMA: u16       = 14;
-pub const CAP_DOMAIN_RESERVED: u16  = 15;
+pub const CAP_DOMAIN_IPC: u16 = 6;
+pub const CAP_DOMAIN_MEM: u16 = 7;
+pub const CAP_DOMAIN_TIME: u16 = 8;
+pub const CAP_DOMAIN_BARRIER: u16 = 9;
+pub const CAP_DOMAIN_SIGNAL: u16 = 10;
+pub const CAP_DOMAIN_SHM: u16 = 11;
+pub const CAP_DOMAIN_SEM: u16 = 12;
+pub const CAP_DOMAIN_MSGQ: u16 = 13;
+pub const CAP_DOMAIN_DMA: u16 = 14;
+pub const CAP_DOMAIN_RESERVED: u16 = 15;
 
-pub const FS_CAP_READ:    u64 = 1 << 0;
-pub const FS_CAP_WRITE:   u64 = 1 << 1;
+pub const FS_CAP_READ: u64 = 1 << 0;
+pub const FS_CAP_WRITE: u64 = 1 << 1;
 pub const FS_CAP_EXECUTE: u64 = 1 << 2;
-pub const FS_CAP_CREATE:  u64 = 1 << 3;
-pub const FS_CAP_DELETE:  u64 = 1 << 4;
-pub const FS_CAP_CHOWN:   u64 = 1 << 5;
-pub const FS_CAP_CHMOD:   u64 = 1 << 6;
+pub const FS_CAP_CREATE: u64 = 1 << 3;
+pub const FS_CAP_DELETE: u64 = 1 << 4;
+pub const FS_CAP_CHOWN: u64 = 1 << 5;
+pub const FS_CAP_CHMOD: u64 = 1 << 6;
 
-pub const PROC_CAP_FORK:   u64 = 1 << 0;
-pub const PROC_CAP_EXEC:   u64 = 1 << 1;
-pub const PROC_CAP_KILL:   u64 = 1 << 2;
-pub const PROC_CAP_WAIT:   u64 = 1 << 3;
+pub const PROC_CAP_FORK: u64 = 1 << 0;
+pub const PROC_CAP_EXEC: u64 = 1 << 1;
+pub const PROC_CAP_KILL: u64 = 1 << 2;
+pub const PROC_CAP_WAIT: u64 = 1 << 3;
 pub const PROC_CAP_CREATE: u64 = 1 << 4;
 
 pub const VIABLE_FLOOR: [u64; 16] = {
     let mut f = [0u64; 16];
-    f[CAP_DOMAIN_FS as usize]   = FS_CAP_READ | FS_CAP_EXECUTE;
+    f[CAP_DOMAIN_FS as usize] = FS_CAP_READ | FS_CAP_EXECUTE;
     f[CAP_DOMAIN_PROC as usize] = PROC_CAP_FORK | PROC_CAP_EXEC;
     f
 };
@@ -72,7 +72,9 @@ impl CapabilityMatrix {
     }
 
     pub fn all() -> Self {
-        Self { caps: [SYS_CAP_ALL; 16] }
+        Self {
+            caps: [SYS_CAP_ALL; 16],
+        }
     }
 
     pub fn viable() -> Self {
@@ -80,17 +82,23 @@ impl CapabilityMatrix {
     }
 
     pub fn has(&self, domain: u16, bit: u64) -> bool {
-        if domain as usize >= 16 { return false; }
+        if domain as usize >= 16 {
+            return false;
+        }
         (self.caps[domain as usize] & bit) != 0
     }
 
     pub fn grant(&mut self, domain: u16, bits: u64) {
-        if domain as usize >= 16 { return; }
+        if domain as usize >= 16 {
+            return;
+        }
         self.caps[domain as usize] |= bits;
     }
 
     pub fn revoke(&mut self, domain: u16, bits: u64) {
-        if domain as usize >= 16 { return; }
+        if domain as usize >= 16 {
+            return;
+        }
         self.caps[domain as usize] &= !bits;
     }
 
@@ -230,8 +238,14 @@ mod tests {
     fn cap_matrix_delegation_chain() {
         let root = CapabilityMatrix::all();
         let mut admin = CapabilityMatrix::new();
-        admin.grant(CAP_DOMAIN_FS, FS_CAP_READ | FS_CAP_WRITE | FS_CAP_EXECUTE | FS_CAP_CREATE | FS_CAP_DELETE);
-        admin.grant(CAP_DOMAIN_PROC, PROC_CAP_FORK | PROC_CAP_EXEC | PROC_CAP_KILL);
+        admin.grant(
+            CAP_DOMAIN_FS,
+            FS_CAP_READ | FS_CAP_WRITE | FS_CAP_EXECUTE | FS_CAP_CREATE | FS_CAP_DELETE,
+        );
+        admin.grant(
+            CAP_DOMAIN_PROC,
+            PROC_CAP_FORK | PROC_CAP_EXEC | PROC_CAP_KILL,
+        );
         let mut user = CapabilityMatrix::new();
         user.grant(CAP_DOMAIN_FS, FS_CAP_READ | FS_CAP_EXECUTE);
         user.grant(CAP_DOMAIN_PROC, PROC_CAP_FORK | PROC_CAP_EXEC);

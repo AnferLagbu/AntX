@@ -7,9 +7,9 @@
 //! - **热插拔支持**: 显示器动态连接
 //! - **显示输出路由**: 控制输出到哪个显示器
 
-use alloc::vec::Vec;
-use super::super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
+use super::super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use super::framebuffer::{Framebuffer, PixelFormat};
+use alloc::vec::Vec;
 
 // ============================================================================
 // 显示输出类型
@@ -61,14 +61,14 @@ impl DisplayMode {
             preferred: false,
         }
     }
-    
+
     /// 计算像素时钟 (kHz)
     pub fn pixel_clock_khz(&self) -> u64 {
         // 简化计算，实际需要考虑消隐时间
         let total_pixels = self.width as u64 * self.height as u64;
         total_pixels * self.refresh_rate as u64 / 1000
     }
-    
+
     /// 计算带宽 (MB/s)
     pub fn bandwidth_mbps(&self) -> u64 {
         self.pixel_clock_khz() * self.pixel_format.bytes_per_pixel() as u64 / 1000
@@ -122,7 +122,7 @@ impl MonitorInfo {
             index: 0,
         }
     }
-    
+
     /// 设置名称
     pub fn set_name(&mut self, name: &str) {
         let bytes = name.as_bytes();
@@ -130,7 +130,7 @@ impl MonitorInfo {
         self.name[..len].copy_from_slice(&bytes[..len]);
         self.name[len] = 0;
     }
-    
+
     /// 获取名称
     pub fn get_name(&self) -> &str {
         let end = self.name.iter().position(|&b| b == 0).unwrap_or(32);
@@ -146,28 +146,28 @@ impl MonitorInfo {
 pub trait DisplayController: Driver {
     /// 获取输出类型
     fn output_type(&self) -> DisplayOutput;
-    
+
     /// 检测显示器连接
     fn detect(&mut self) -> Result<bool>;
-    
+
     /// 获取显示器信息
     fn get_monitor_info(&self) -> Option<&MonitorInfo>;
-    
+
     /// 获取支持的显示模式
     fn get_supported_modes(&self) -> Vec<DisplayMode>;
-    
+
     /// 设置显示模式
     fn set_mode(&mut self, mode: DisplayMode) -> Result<()>;
-    
+
     /// 获取当前显示模式
     fn get_current_mode(&self) -> Option<DisplayMode>;
-    
+
     /// 获取Framebuffer
     fn get_framebuffer(&mut self) -> Option<&mut Framebuffer>;
-    
+
     /// 刷新显示
     fn flush(&mut self) -> Result<()>;
-    
+
     /// 获取显示器索引
     fn monitor_index(&self) -> usize;
 }
@@ -201,35 +201,35 @@ impl DisplayManager {
             initialized: false,
         }
     }
-    
+
     /// 注册显示器
     pub fn register_monitor(&mut self, mut monitor: MonitorInfo) -> usize {
         let index = self.monitors.len();
         monitor.index = index;
         self.monitors.push(monitor);
-        
+
         // 如果是第一个显示器，设为主显示器
         if index == 0 {
             self.primary_monitor = Some(0);
             self.active_monitor = Some(0);
         }
-        
+
         index
     }
-    
+
     /// 移除显示器
     pub fn remove_monitor(&mut self, index: usize) -> Result<()> {
         if index >= self.monitors.len() {
             return Err(DriverError::InvalidParameter);
         }
-        
+
         self.monitors.remove(index);
-        
+
         // 更新索引
         for (i, monitor) in self.monitors.iter_mut().enumerate() {
             monitor.index = i;
         }
-        
+
         // 更新活动显示器
         if self.active_monitor == Some(index) {
             self.active_monitor = if self.monitors.is_empty() {
@@ -238,55 +238,55 @@ impl DisplayManager {
                 Some(0)
             };
         }
-        
+
         Ok(())
     }
-    
+
     /// 获取显示器数量
     pub fn monitor_count(&self) -> usize {
         self.monitors.len()
     }
-    
+
     /// 获取显示器信息
     pub fn get_monitor(&self, index: usize) -> Option<&MonitorInfo> {
         self.monitors.get(index)
     }
-    
+
     /// 获取显示器信息 (可变)
     pub fn get_monitor_mut(&mut self, index: usize) -> Option<&mut MonitorInfo> {
         self.monitors.get_mut(index)
     }
-    
+
     /// 设置活动显示器
     pub fn set_active_monitor(&mut self, index: usize) -> Result<()> {
         if index >= self.monitors.len() {
             return Err(DriverError::InvalidParameter);
         }
-        
+
         self.active_monitor = Some(index);
         Ok(())
     }
-    
+
     /// 获取活动显示器
     pub fn get_active_monitor(&self) -> Option<&MonitorInfo> {
         self.active_monitor.and_then(|i| self.monitors.get(i))
     }
-    
+
     /// 设置主显示器
     pub fn set_primary_monitor(&mut self, index: usize) -> Result<()> {
         if index >= self.monitors.len() {
             return Err(DriverError::InvalidParameter);
         }
-        
+
         self.primary_monitor = Some(index);
         Ok(())
     }
-    
+
     /// 获取主显示器
     pub fn get_primary_monitor(&self) -> Option<&MonitorInfo> {
         self.primary_monitor.and_then(|i| self.monitors.get(i))
     }
-    
+
     /// 检测所有显示器
     pub fn detect_all(&mut self) {
         for monitor in &mut self.monitors {
@@ -295,72 +295,80 @@ impl DisplayManager {
             monitor.connected = true;
         }
     }
-    
+
     /// 获取连接的显示器数量
     pub fn connected_count(&self) -> usize {
         self.monitors.iter().filter(|m| m.connected).count()
     }
-    
+
     /// 获取启用的显示器数量
     pub fn enabled_count(&self) -> usize {
         self.monitors.iter().filter(|m| m.enabled).count()
     }
-    
+
     /// 启用显示器
     pub fn enable_monitor(&mut self, index: usize) -> Result<()> {
-        let monitor = self.monitors.get_mut(index)
+        let monitor = self
+            .monitors
+            .get_mut(index)
             .ok_or(DriverError::InvalidParameter)?;
-        
+
         if !monitor.connected {
             return Err(DriverError::DeviceNotFound);
         }
-        
+
         monitor.enabled = true;
         Ok(())
     }
-    
+
     /// 禁用显示器
     pub fn disable_monitor(&mut self, index: usize) -> Result<()> {
-        let monitor = self.monitors.get_mut(index)
+        let monitor = self
+            .monitors
+            .get_mut(index)
             .ok_or(DriverError::InvalidParameter)?;
-        
+
         monitor.enabled = false;
         Ok(())
     }
-    
+
     /// 设置显示模式
     pub fn set_display_mode(&mut self, index: usize, mode: DisplayMode) -> Result<()> {
-        let monitor = self.monitors.get_mut(index)
+        let monitor = self
+            .monitors
+            .get_mut(index)
             .ok_or(DriverError::InvalidParameter)?;
-        
+
         if !monitor.connected {
             return Err(DriverError::DeviceNotFound);
         }
-        
+
         // 检查模式是否支持
-        let supported = monitor.supported_modes.iter()
-            .any(|m| m.width == mode.width && m.height == mode.height 
-                && m.refresh_rate == mode.refresh_rate);
-        
+        let supported = monitor.supported_modes.iter().any(|m| {
+            m.width == mode.width && m.height == mode.height && m.refresh_rate == mode.refresh_rate
+        });
+
         if !supported {
             return Err(DriverError::UnsupportedOperation);
         }
-        
+
         monitor.current_mode = Some(mode);
         Ok(())
     }
-    
+
     /// 获取最佳显示模式
     pub fn get_best_mode(&self, index: usize) -> Option<DisplayMode> {
         let monitor = self.monitors.get(index)?;
-        
+
         // 优先使用首选模式
         if let Some(ref mode) = monitor.preferred_mode {
             return Some(*mode);
         }
-        
+
         // 否则选择最高分辨率
-        monitor.supported_modes.iter()
+        monitor
+            .supported_modes
+            .iter()
             .max_by_key(|m| m.width * m.height)
             .copied()
     }
@@ -370,17 +378,17 @@ impl Driver for DisplayManager {
     fn name(&self) -> &'static str {
         "Display Manager"
     }
-    
+
     fn device_type(&self) -> DeviceType {
         DeviceType::Other
     }
-    
+
     fn init(&mut self) -> Result<()> {
         self.detect_all();
         self.initialized = true;
         Ok(())
     }
-    
+
     fn shutdown(&mut self) -> Result<()> {
         self.monitors.clear();
         self.active_monitor = None;
@@ -388,11 +396,11 @@ impl Driver for DisplayManager {
         self.initialized = false;
         Ok(())
     }
-    
+
     fn is_ready(&self) -> bool {
         self.initialized
     }
-    
+
     fn status(&self) -> &'static str {
         if self.initialized {
             "Display Manager ready"
@@ -415,7 +423,7 @@ impl Default for DisplayManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_display_mode_creation() {
         let mode = DisplayMode::new(1920, 1080, 60, PixelFormat::Argb8888);
@@ -423,47 +431,47 @@ mod tests {
         assert_eq!(mode.height, 1080);
         assert_eq!(mode.refresh_rate, 60);
     }
-    
+
     #[test]
     fn test_display_mode_bandwidth() {
         let mode = DisplayMode::new(1920, 1080, 60, PixelFormat::Argb8888);
         let bw = mode.bandwidth_mbps();
         assert!(bw > 0);
     }
-    
+
     #[test]
     fn test_monitor_info() {
         let mut monitor = MonitorInfo::new(1, DisplayOutput::Hdmi);
         monitor.set_name("Test Monitor");
-        
+
         assert_eq!(monitor.get_name(), "Test Monitor");
         assert_eq!(monitor.output, DisplayOutput::Hdmi);
         assert!(!monitor.connected);
     }
-    
+
     #[test]
     fn test_display_manager() {
         let mut manager = DisplayManager::new();
-        
+
         let monitor = MonitorInfo::new(1, DisplayOutput::Hdmi);
         let index = manager.register_monitor(monitor);
-        
+
         assert_eq!(index, 0);
         assert_eq!(manager.monitor_count(), 1);
         assert_eq!(manager.primary_monitor, Some(0));
     }
-    
+
     #[test]
     fn test_display_manager_enable() {
         let mut manager = DisplayManager::new();
-        
+
         let mut monitor = MonitorInfo::new(1, DisplayOutput::Hdmi);
         monitor.connected = true;
         manager.register_monitor(monitor);
-        
+
         let result = manager.enable_monitor(0);
         assert!(result.is_ok());
-        
+
         let monitor = manager.get_monitor(0).unwrap();
         assert!(monitor.enabled);
     }

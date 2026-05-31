@@ -38,11 +38,15 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new(module: WasmModule, config: InterpreterConfig) -> Self {
-        let import_func_count = module.imports.iter()
+        let import_func_count = module
+            .imports
+            .iter()
             .filter(|i| matches!(i.desc, ImportKind::Function(_)))
             .count() as u32;
 
-        let import_global_count = module.imports.iter()
+        let import_global_count = module
+            .imports
+            .iter()
             .filter(|i| matches!(i.desc, ImportKind::Global(_)))
             .count();
 
@@ -61,10 +65,7 @@ impl Interpreter {
         let mut memory = None;
         for imp in &module.imports {
             if let ImportKind::Memory(mem_type) = &imp.desc {
-                memory = LinearMemory::new(
-                    mem_type.limits.min,
-                    mem_type.limits.max,
-                ).ok();
+                memory = LinearMemory::new(mem_type.limits.min, mem_type.limits.max).ok();
                 break;
             }
         }
@@ -74,11 +75,14 @@ impl Interpreter {
             }
         }
 
-        let import_table_count = module.imports.iter()
+        let import_table_count = module
+            .imports
+            .iter()
             .filter(|i| matches!(i.desc, ImportKind::Table(_)))
             .count();
 
-        let mut tables: Vec<Vec<u32>> = Vec::with_capacity(import_table_count + module.tables.len());
+        let mut tables: Vec<Vec<u32>> =
+            Vec::with_capacity(import_table_count + module.tables.len());
         for imp in module.imports.iter() {
             if let ImportKind::Table(ref tt) = imp.desc {
                 tables.push(vec![0u32; tt.limits.min as usize]);
@@ -151,8 +155,7 @@ impl Interpreter {
                     if let Some(ref mut mem) = self.memory {
                         let addr = offset as usize;
                         if addr + seg.data.len() <= mem.data.len() {
-                            mem.data[addr..addr + seg.data.len()]
-                                .copy_from_slice(&seg.data);
+                            mem.data[addr..addr + seg.data.len()].copy_from_slice(&seg.data);
                         }
                     }
                 }
@@ -190,9 +193,11 @@ impl Interpreter {
     }
 
     fn find_export(&self, name: &str) -> Option<u32> {
-        self.module.exports.iter().find(|e| {
-            e.name == name.as_bytes() && e.kind == ExportKind::Function
-        }).map(|e| e.index)
+        self.module
+            .exports
+            .iter()
+            .find(|e| e.name == name.as_bytes() && e.kind == ExportKind::Function)
+            .map(|e| e.index)
     }
 
     fn get_func_type(&self, func_idx: u32) -> Result<&FuncType, WasmError> {
@@ -201,7 +206,10 @@ impl Interpreter {
             for imp in &self.module.imports {
                 if let ImportKind::Function(type_idx) = imp.desc {
                     if func_import_idx == func_idx {
-                        return self.module.types.get(type_idx as usize)
+                        return self
+                            .module
+                            .types
+                            .get(type_idx as usize)
                             .ok_or(WasmError::BadTypeIndex(type_idx as usize));
                     }
                     func_import_idx += 1;
@@ -210,9 +218,14 @@ impl Interpreter {
             Err(WasmError::BadFuncIndex(func_idx as usize))
         } else {
             let local_idx = func_idx - self.import_func_count;
-            let type_idx = self.module.functions.get(local_idx as usize)
+            let type_idx = self
+                .module
+                .functions
+                .get(local_idx as usize)
                 .ok_or(WasmError::BadFuncIndex(func_idx as usize))?;
-            self.module.types.get(*type_idx as usize)
+            self.module
+                .types
+                .get(*type_idx as usize)
                 .ok_or(WasmError::BadTypeIndex(*type_idx as usize))
         }
     }
@@ -222,7 +235,9 @@ impl Interpreter {
             return Err(WasmError::FunctionNotFound);
         }
         let local_idx = func_idx - self.import_func_count;
-        self.module.code.get(local_idx as usize)
+        self.module
+            .code
+            .get(local_idx as usize)
             .ok_or(WasmError::BadFuncIndex(func_idx as usize))
     }
 
@@ -243,10 +258,8 @@ impl Interpreter {
 
             let host_idx = func_idx as usize;
             if host_idx < self.host_functions.len() {
-                let f = core::mem::replace(
-                    &mut self.host_functions[host_idx],
-                    Box::new(|_| Ok(())),
-                );
+                let f =
+                    core::mem::replace(&mut self.host_functions[host_idx], Box::new(|_| Ok(())));
                 let result = f(self);
                 self.host_functions[host_idx] = f;
                 result?;
@@ -447,13 +460,21 @@ impl Interpreter {
                 Ok(Opcode::I32Eq) => self.execute_i32_binop(|a, b| (a == b) as i32)?,
                 Ok(Opcode::I32Ne) => self.execute_i32_binop(|a, b| (a != b) as i32)?,
                 Ok(Opcode::I32LtS) => self.execute_i32_binop(|a, b| (a < b) as i32)?,
-                Ok(Opcode::I32LtU) => self.execute_i32_binop(|a, b| ((a as u32) < (b as u32)) as i32)?,
+                Ok(Opcode::I32LtU) => {
+                    self.execute_i32_binop(|a, b| ((a as u32) < (b as u32)) as i32)?
+                }
                 Ok(Opcode::I32GtS) => self.execute_i32_binop(|a, b| (a > b) as i32)?,
-                Ok(Opcode::I32GtU) => self.execute_i32_binop(|a, b| ((a as u32) > (b as u32)) as i32)?,
+                Ok(Opcode::I32GtU) => {
+                    self.execute_i32_binop(|a, b| ((a as u32) > (b as u32)) as i32)?
+                }
                 Ok(Opcode::I32LeS) => self.execute_i32_binop(|a, b| (a <= b) as i32)?,
-                Ok(Opcode::I32LeU) => self.execute_i32_binop(|a, b| ((a as u32) <= (b as u32)) as i32)?,
+                Ok(Opcode::I32LeU) => {
+                    self.execute_i32_binop(|a, b| ((a as u32) <= (b as u32)) as i32)?
+                }
                 Ok(Opcode::I32GeS) => self.execute_i32_binop(|a, b| (a >= b) as i32)?,
-                Ok(Opcode::I32GeU) => self.execute_i32_binop(|a, b| ((a as u32) >= (b as u32)) as i32)?,
+                Ok(Opcode::I32GeU) => {
+                    self.execute_i32_binop(|a, b| ((a as u32) >= (b as u32)) as i32)?
+                }
 
                 Ok(Opcode::I32Add) => self.execute_i32_binop(|a, b| a.wrapping_add(b))?,
                 Ok(Opcode::I32Sub) => self.execute_i32_binop(|a, b| a.wrapping_sub(b))?,
@@ -467,7 +488,9 @@ impl Interpreter {
                 Ok(Opcode::I32Xor) => self.execute_i32_binop(|a, b| a ^ b)?,
                 Ok(Opcode::I32Shl) => self.execute_i32_binop(|a, b| a.wrapping_shl(b as u32))?,
                 Ok(Opcode::I32ShrS) => self.execute_i32_binop(|a, b| a.wrapping_shr(b as u32))?,
-                Ok(Opcode::I32ShrU) => self.execute_i32_binop(|a, b| (a as u32).wrapping_shr(b as u32) as i32)?,
+                Ok(Opcode::I32ShrU) => {
+                    self.execute_i32_binop(|a, b| (a as u32).wrapping_shr(b as u32) as i32)?
+                }
 
                 Ok(Opcode::I64Add) => self.execute_i64_binop(|a, b| a.wrapping_add(b))?,
                 Ok(Opcode::I64Sub) => self.execute_i64_binop(|a, b| a.wrapping_sub(b))?,
@@ -538,8 +561,7 @@ impl Interpreter {
         } else {
             let byte = frame.code[frame.pc];
             frame.pc += 1;
-            if byte == 0x40 {
-            }
+            if byte == 0x40 {}
         }
         Ok(())
     }
@@ -615,14 +637,16 @@ impl Interpreter {
             }
         }
 
-        let args: Vec<Value> = (0..param_count).map(|i| {
-            let idx = stack_len - param_count + i;
-            if idx < self.stack.len() {
-                self.stack.data[idx]
-            } else {
-                Value::I32(0)
-            }
-        }).collect();
+        let args: Vec<Value> = (0..param_count)
+            .map(|i| {
+                let idx = stack_len - param_count + i;
+                if idx < self.stack.len() {
+                    self.stack.data[idx]
+                } else {
+                    Value::I32(0)
+                }
+            })
+            .collect();
 
         self.stack.drain_to(stack_len - param_count);
 
@@ -633,10 +657,8 @@ impl Interpreter {
 
             let host_idx = func_idx as usize;
             if host_idx < self.host_functions.len() {
-                let f = core::mem::replace(
-                    &mut self.host_functions[host_idx],
-                    Box::new(|_| Ok(())),
-                );
+                let f =
+                    core::mem::replace(&mut self.host_functions[host_idx], Box::new(|_| Ok(())));
                 let result = f(self);
                 self.host_functions[host_idx] = f;
                 result?;
@@ -691,8 +713,12 @@ impl Interpreter {
             match b {
                 0x02 | 0x03 | 0x04 => depth += 1,
                 0x0B => depth -= 1,
-                0x10 => { pc += 1; }
-                0x11 => { pc += 2; }
+                0x10 => {
+                    pc += 1;
+                }
+                0x11 => {
+                    pc += 2;
+                }
                 _ => {}
             }
         }
@@ -708,13 +734,21 @@ impl Interpreter {
                 0x02 | 0x03 | 0x04 => depth += 1,
                 0x0B => {
                     depth -= 1;
-                    if depth == 0 { return pc; }
+                    if depth == 0 {
+                        return pc;
+                    }
                 }
                 0x05 => {
-                    if depth == 1 { return pc; }
+                    if depth == 1 {
+                        return pc;
+                    }
                 }
-                0x10 => { pc += 1; }
-                0x11 => { pc += 2; }
+                0x10 => {
+                    pc += 1;
+                }
+                0x11 => {
+                    pc += 2;
+                }
                 _ => {}
             }
         }
@@ -729,8 +763,12 @@ impl Interpreter {
             match b {
                 0x02 | 0x03 | 0x04 => depth += 1,
                 0x0B => depth -= 1,
-                0x10 => { pc += 1; }
-                0x11 => { pc += 2; }
+                0x10 => {
+                    pc += 1;
+                }
+                0x11 => {
+                    pc += 2;
+                }
                 _ => {}
             }
         }
@@ -853,7 +891,8 @@ impl Interpreter {
         if b == 0 {
             return Err(WasmError::DivisionByZero);
         }
-        self.stack.push(Value::I32(((a as u32).wrapping_div(b as u32)) as i32))?;
+        self.stack
+            .push(Value::I32(((a as u32).wrapping_div(b as u32)) as i32))?;
         Ok(())
     }
 
@@ -878,7 +917,8 @@ impl Interpreter {
         if b == 0 {
             return Err(WasmError::DivisionByZero);
         }
-        self.stack.push(Value::I32(((a as u32).wrapping_rem(b as u32)) as i32))?;
+        self.stack
+            .push(Value::I32(((a as u32).wrapping_rem(b as u32)) as i32))?;
         Ok(())
     }
 
@@ -916,7 +956,9 @@ impl Interpreter {
         let _ = frame;
 
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
+        let addr = base
+            .checked_add(mem_offset)
+            .ok_or(WasmError::MemoryOutOfBounds)?;
         let _ = align;
 
         let mem = self.memory.as_ref().ok_or(WasmError::MemoryOutOfBounds)?;
@@ -938,7 +980,9 @@ impl Interpreter {
         let _ = frame;
 
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
+        let addr = base
+            .checked_add(mem_offset)
+            .ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_ref().ok_or(WasmError::MemoryOutOfBounds)?;
         let val = mem.read_u64(addr)?;
@@ -954,7 +998,9 @@ impl Interpreter {
         let _ = frame;
 
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
+        let addr = base
+            .checked_add(mem_offset)
+            .ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_ref().ok_or(WasmError::MemoryOutOfBounds)?;
         match size {
@@ -988,11 +1034,15 @@ impl Interpreter {
 
         let value = self.stack.pop_i32()?;
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
+        let addr = base
+            .checked_add(mem_offset)
+            .ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_mut().ok_or(WasmError::MemoryOutOfBounds)?;
         match size {
-            4 => { mem.write_u32(addr, value as u32)?; }
+            4 => {
+                mem.write_u32(addr, value as u32)?;
+            }
             _ => return Err(WasmError::InternalError),
         }
         Ok(())
@@ -1007,7 +1057,9 @@ impl Interpreter {
 
         let value = self.stack.pop_i64()?;
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
+        let addr = base
+            .checked_add(mem_offset)
+            .ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_mut().ok_or(WasmError::MemoryOutOfBounds)?;
         mem.write_u64(addr, value as u64)?;
@@ -1023,12 +1075,18 @@ impl Interpreter {
 
         let value = self.stack.pop_i32()?;
         let base = self.stack.pop_i32()? as u32;
-        let addr = base.checked_add(mem_offset).ok_or(WasmError::MemoryOutOfBounds)?;
+        let addr = base
+            .checked_add(mem_offset)
+            .ok_or(WasmError::MemoryOutOfBounds)?;
 
         let mem = self.memory.as_mut().ok_or(WasmError::MemoryOutOfBounds)?;
         match size {
-            1 => { mem.write_u8(addr, value as u8)?; }
-            2 => { mem.write_u16(addr, value as u16)?; }
+            1 => {
+                mem.write_u8(addr, value as u8)?;
+            }
+            2 => {
+                mem.write_u16(addr, value as u16)?;
+            }
             _ => return Err(WasmError::InternalError),
         }
         Ok(())

@@ -7,17 +7,27 @@
 
 #![cfg(target_arch = "x86_64")]
 
+use crate::kernel::driver::framework::{DeviceType, Driver, DriverError};
 use crate::klog_info;
-use crate::kernel::driver::framework::{Driver, DriverError, DeviceType};
 
 struct PciBusDriver;
 
 impl Driver for PciBusDriver {
-    fn name(&self) -> &'static str { "pci-bus" }
-    fn device_type(&self) -> DeviceType { DeviceType::Bus }
-    fn init(&mut self) -> core::result::Result<(), DriverError> { Ok(()) }
-    fn shutdown(&mut self) -> core::result::Result<(), DriverError> { Ok(()) }
-    fn is_ready(&self) -> bool { true }
+    fn name(&self) -> &'static str {
+        "pci-bus"
+    }
+    fn device_type(&self) -> DeviceType {
+        DeviceType::Bus
+    }
+    fn init(&mut self) -> core::result::Result<(), DriverError> {
+        Ok(())
+    }
+    fn shutdown(&mut self) -> core::result::Result<(), DriverError> {
+        Ok(())
+    }
+    fn is_ready(&self) -> bool {
+        true
+    }
 }
 
 /// 初始化 PCI 子系统并注册到 Chitin
@@ -43,11 +53,16 @@ pub fn pci_init() -> i32 {
 pub fn pci_scan() {
     let devices = crate::kernel::pci::scan_all_buses();
     for dev in &devices {
-        klog_info!(Driver,
+        klog_info!(
+            Driver,
             "PCI {:02X}:{:02X}.{} {:04X}:{:04X} class {:02X}.{:02X}",
-            dev.bus, dev.device, dev.function,
-            dev.vendor_id, dev.device_id,
-            dev.class_code, dev.subclass_code
+            dev.bus,
+            dev.device,
+            dev.function,
+            dev.vendor_id,
+            dev.device_id,
+            dev.class_code,
+            dev.subclass_code
         );
     }
 }

@@ -1,18 +1,28 @@
 use core::sync::atomic::Ordering;
 
-use super::undo_log::UndoLog;
 use super::fault_inject::maybe_inject_fault;
+use super::undo_log::UndoLog;
 
 pub trait Snapshot: Copy + Sized {
-    fn snapshot(&self) -> Self { *self }
-    fn restore(&mut self, snapshot: &Self) { *self = *snapshot; }
+    fn snapshot(&self) -> Self {
+        *self
+    }
+    fn restore(&mut self, snapshot: &Self) {
+        *self = *snapshot;
+    }
 }
 
 pub trait Recoverable {
-    fn domain_id(&self) -> u64 { 0 }
+    fn domain_id(&self) -> u64 {
+        0
+    }
     fn capture_barrier(&self, _undo: &mut UndoLog) {}
-    fn rollback(&self) -> bool { true }
-    fn reset(&self) -> bool { true }
+    fn rollback(&self) -> bool {
+        true
+    }
+    fn reset(&self) -> bool {
+        true
+    }
 }
 
 pub struct RecoverableMutex<T: Snapshot + 'static> {
@@ -29,7 +39,10 @@ unsafe impl<T: Snapshot + Sync> Sync for RecoverableMutex<T> {}
 
 impl<T: Snapshot + 'static> RecoverableMutex<T> {
     pub const fn new(val: T, domain_id: u64) -> Self {
-        Self { inner: spin::Mutex::new(val), domain_id }
+        Self {
+            inner: spin::Mutex::new(val),
+            domain_id,
+        }
     }
 
     pub fn lock(&self) -> spin::MutexGuard<'_, T> {

@@ -1,18 +1,16 @@
 use crate::kernel::chitin::devtree::{
-    devtree_get_node,
-    devtree_set_user_mapped, devtree_clear_user_mapped, devtree_get_user_mapped,
-    devtree_clear_user_mapped_by_pid,
-    PropertyValue, NodeId,
+    devtree_clear_user_mapped, devtree_clear_user_mapped_by_pid, devtree_get_node,
+    devtree_get_user_mapped, devtree_set_user_mapped, NodeId, PropertyValue,
 };
 use crate::kernel::chitin::{ChitinProto, DeviceState};
 use crate::kernel::credo::capability::{
-    CAP_DOMAIN_DEVICE, DEVICE_CAP_MMIO, DEVICE_CAP_IRQ, DEVICE_CAP_BIND,
+    CAP_DOMAIN_DEVICE, DEVICE_CAP_BIND, DEVICE_CAP_IRQ, DEVICE_CAP_MMIO,
 };
-use crate::kernel::credo::types::{CapDomain, CapBits};
 use crate::kernel::credo::engine;
-use crate::kernel::mm::{VirtAddr, PhysAddr, PageFlags, PAGE_SIZE};
-use crate::kernel::mm::vmm::get_vmm;
+use crate::kernel::credo::types::{CapBits, CapDomain};
 use crate::kernel::mm::vma::{MmStruct, Vma, VmaType};
+use crate::kernel::mm::vmm::get_vmm;
+use crate::kernel::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::kernel::proc::process::PROCESS_TABLE;
 use crate::klog_info;
 use crate::klog_warn;
@@ -25,8 +23,12 @@ pub struct UserDriverError {
 }
 
 impl UserDriverError {
-    pub const fn new(code: i32) -> Self { Self { code } }
-    pub const fn code(&self) -> i32 { self.code }
+    pub const fn new(code: i32) -> Self {
+        Self { code }
+    }
+    pub const fn code(&self) -> i32 {
+        self.code
+    }
 }
 
 pub const ERR_OK: i32 = 0;
@@ -47,7 +49,12 @@ pub fn devtree_bind_user_device(
     pwm: u64,
 ) -> Result<(), UserDriverError> {
     if !has_device_cap(pwm, DEVICE_CAP_BIND) {
-        klog_warn!(Driver, "Chitin: PWM {} lacks DEVICE_CAP_BIND for node {}", pwm, node_id);
+        klog_warn!(
+            Driver,
+            "Chitin: PWM {} lacks DEVICE_CAP_BIND for node {}",
+            pwm,
+            node_id
+        );
         return Err(UserDriverError::new(ERR_NOT_AUTHORIZED));
     }
 
@@ -74,8 +81,13 @@ pub fn devtree_bind_user_device(
 
     devtree_set_user_mapped(node_id, pid);
 
-    klog_info!(Driver, "Chitin: device node {} bound to user pid={} pwm={}",
-        node_id, pid, pwm);
+    klog_info!(
+        Driver,
+        "Chitin: device node {} bound to user pid={} pwm={}",
+        node_id,
+        pid,
+        pwm
+    );
     Ok(())
 }
 
@@ -192,10 +204,8 @@ pub fn devtree_map_user_device(
         None => return Err(UserDriverError::new(ERR_OOM)),
     };
 
-    let page_flags = PageFlags::PRESENT
-        | PageFlags::WRITABLE
-        | PageFlags::USER
-        | PageFlags::CACHE_DISABLE;
+    let page_flags =
+        PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER | PageFlags::CACHE_DISABLE;
 
     let cr3 = {
         if !PROCESS_TABLE.try_inc_ref(pid) {
@@ -234,8 +244,14 @@ pub fn devtree_map_user_device(
 
     PROCESS_TABLE.dec_ref_and_maybe_free(pid);
 
-    klog_info!(Driver, "Chitin: mapped MMIO for node {} (phys=0x{:X} size={}) → user VA=0x{:X}",
-        node_id, phys_addr, clamped_size, map_base);
+    klog_info!(
+        Driver,
+        "Chitin: mapped MMIO for node {} (phys=0x{:X} size={}) → user VA=0x{:X}",
+        node_id,
+        phys_addr,
+        clamped_size,
+        map_base
+    );
     Ok(map_base)
 }
 
@@ -328,7 +344,12 @@ pub extern "C" fn user_driver_bind_c(node_id: u32, pid: u32, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn user_driver_unbind_c(node_id: u32, pid: u32, pwm: u64, mm: *const MmStruct) -> i32 {
+pub extern "C" fn user_driver_unbind_c(
+    node_id: u32,
+    pid: u32,
+    pwm: u64,
+    mm: *const MmStruct,
+) -> i32 {
     if mm.is_null() {
         return ERR_NOT_FOUND;
     }

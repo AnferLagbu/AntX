@@ -21,17 +21,8 @@ pub mod xhci;
 
 // 导出常用类型
 pub use usb_core::{
-    UsbCore,
-    UsbDevice,
-    UsbSpeed,
-    DeviceState,
-    DeviceClass,
-    DeviceDescriptor,
-    ConfigurationDescriptor,
-    InterfaceDescriptor,
-    EndpointDescriptor,
-    Urb,
-    HostController,
+    ConfigurationDescriptor, DeviceClass, DeviceDescriptor, DeviceState, EndpointDescriptor,
+    HostController, InterfaceDescriptor, Urb, UsbCore, UsbDevice, UsbSpeed,
 };
 
 pub use xhci::XhciController;
@@ -45,7 +36,7 @@ pub fn usb_init() -> framework::Result<()> {
     // TODO: 扫描PCI总线查找xHCI控制器
     // TODO: 初始化找到的控制器
     // TODO: 枚举USB设备
-    
+
     Ok(())
 }
 

@@ -40,7 +40,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
         }
 
         let pages_needed = (size + tag_offset).div_ceil(4096);
-        let tag: u64 = if pages_needed == 1 { TAG_PMM_PAGE } else { TAG_PMM_PAGES };
+        let tag: u64 = if pages_needed == 1 {
+            TAG_PMM_PAGE
+        } else {
+            TAG_PMM_PAGES
+        };
 
         if pages_needed == 1 {
             let phys = pmm_alloc_page() as u64;
@@ -66,7 +70,9 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if ptr.is_null() { return; }
+        if ptr.is_null() {
+            return;
+        }
 
         let size = layout.size();
         if size <= PAGE_THRESHOLD {

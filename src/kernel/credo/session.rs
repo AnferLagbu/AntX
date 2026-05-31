@@ -1,7 +1,7 @@
-use super::types::*;
 use super::identity;
-use core::sync::atomic::{AtomicIsize, AtomicBool, Ordering};
+use super::types::*;
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 const MAX_ELEVATION_DEPTH: isize = 8;
 const MAX_LOGIN_ATTEMPTS: u32 = 5;
@@ -38,7 +38,11 @@ impl SessionManager {
     }
 
     fn acquire(&self) {
-        while self.lock.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        while self
+            .lock
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             core::hint::spin_loop();
         }
     }
@@ -66,7 +70,9 @@ impl SessionManager {
         if !t.verify_password(pwm, password) {
             let attempts = entry.failed_attempts.fetch_add(1, Ordering::AcqRel) + 1;
             if attempts >= MAX_LOGIN_ATTEMPTS {
-                entry.lockout_until.store(now + LOCKOUT_DURATION_SECS * 1_000_000, Ordering::Release);
+                entry
+                    .lockout_until
+                    .store(now + LOCKOUT_DURATION_SECS * 1_000_000, Ordering::Release);
                 entry.add_flags(PwmFlags::LOCKED);
             }
             return Err(PwmError::PasswordIncorrect);
@@ -232,9 +238,7 @@ impl SessionManager {
     }
 
     pub fn has_elevation_authority(&self, target_pwm: u64) -> bool {
-        unsafe {
-            (*self.current.get()).elevation_granted_pwm == PwmId(target_pwm)
-        }
+        unsafe { (*self.current.get()).elevation_granted_pwm == PwmId(target_pwm) }
     }
 
     pub fn try_setuid(&self, target_uid: u32) -> bool {
@@ -290,7 +294,9 @@ impl SessionManager {
 
         if target_gid == cached_gid || target_gid == saved_egid {
             self.acquire();
-            unsafe { (*self.current.get()).egid = target_gid; }
+            unsafe {
+                (*self.current.get()).egid = target_gid;
+            }
             self.release();
             return true;
         }
@@ -330,7 +336,9 @@ impl SessionManager {
 
         if target_euid == cached_uid || target_euid == saved_euid {
             self.acquire();
-            unsafe { (*self.current.get()).euid = target_euid; }
+            unsafe {
+                (*self.current.get()).euid = target_euid;
+            }
             self.release();
             return true;
         }
@@ -370,7 +378,9 @@ impl SessionManager {
 
         if target_egid == cached_gid || target_egid == saved_egid {
             self.acquire();
-            unsafe { (*self.current.get()).egid = target_egid; }
+            unsafe {
+                (*self.current.get()).egid = target_egid;
+            }
             self.release();
             return true;
         }
@@ -398,7 +408,11 @@ impl SessionManager {
         let ruid_is_set = target_ruid != u32::MAX;
         let euid_is_set = target_euid != u32::MAX;
 
-        let new_ruid = if ruid_is_set { target_ruid } else { old_cached_uid };
+        let new_ruid = if ruid_is_set {
+            target_ruid
+        } else {
+            old_cached_uid
+        };
         let new_euid = if euid_is_set { target_euid } else { old_euid };
 
         if new_ruid == old_cached_uid && new_euid == old_euid {
@@ -408,21 +422,23 @@ impl SessionManager {
         let table = identity::get_table();
 
         if ruid_is_set && new_ruid != old_cached_uid {
-            let ok = has_uid_privilege(table, new_ruid, current_pwm)
-                || new_ruid == old_euid;
-            if !ok { return false; }
+            let ok = has_uid_privilege(table, new_ruid, current_pwm) || new_ruid == old_euid;
+            if !ok {
+                return false;
+            }
         }
 
         if euid_is_set && new_euid != old_euid {
             let ok = has_uid_privilege(table, new_euid, current_pwm)
                 || new_euid == old_cached_uid
                 || new_euid == old_saved_euid;
-            if !ok { return false; }
+            if !ok {
+                return false;
+            }
         }
 
         self.acquire();
-        let saved_euid_should_update = ruid_is_set
-            || (euid_is_set && new_euid != old_cached_uid);
+        let saved_euid_should_update = ruid_is_set || (euid_is_set && new_euid != old_cached_uid);
         unsafe {
             let ctx = &mut *self.current.get();
             ctx.cached_uid = new_ruid;
@@ -456,7 +472,11 @@ impl SessionManager {
         let rgid_is_set = target_rgid != u32::MAX;
         let egid_is_set = target_egid != u32::MAX;
 
-        let new_rgid = if rgid_is_set { target_rgid } else { old_cached_gid };
+        let new_rgid = if rgid_is_set {
+            target_rgid
+        } else {
+            old_cached_gid
+        };
         let new_egid = if egid_is_set { target_egid } else { old_egid };
 
         if new_rgid == old_cached_gid && new_egid == old_egid {
@@ -466,21 +486,23 @@ impl SessionManager {
         let table = identity::get_table();
 
         if rgid_is_set && new_rgid != old_cached_gid {
-            let ok = has_gid_privilege(table, new_rgid, current_pwm)
-                || new_rgid == old_egid;
-            if !ok { return false; }
+            let ok = has_gid_privilege(table, new_rgid, current_pwm) || new_rgid == old_egid;
+            if !ok {
+                return false;
+            }
         }
 
         if egid_is_set && new_egid != old_egid {
             let ok = has_gid_privilege(table, new_egid, current_pwm)
                 || new_egid == old_cached_gid
                 || new_egid == old_saved_egid;
-            if !ok { return false; }
+            if !ok {
+                return false;
+            }
         }
 
         self.acquire();
-        let saved_egid_should_update = rgid_is_set
-            || (egid_is_set && new_egid != old_cached_gid);
+        let saved_egid_should_update = rgid_is_set || (egid_is_set && new_egid != old_cached_gid);
         unsafe {
             let ctx = &mut *self.current.get();
             ctx.cached_gid = new_rgid;

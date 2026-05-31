@@ -9,7 +9,8 @@
 //! 用于 E1000、virtio-net 等网卡驱动。
 
 /// 网络设备发送函数
-pub type NetSendFn = unsafe fn(driver_data: *mut core::ffi::c_void, data: *const u8, len: u32) -> i32;
+pub type NetSendFn =
+    unsafe fn(driver_data: *mut core::ffi::c_void, data: *const u8, len: u32) -> i32;
 
 /// 网络设备轮询函数
 pub type NetPollFn = unsafe fn(driver_data: *mut core::ffi::c_void);

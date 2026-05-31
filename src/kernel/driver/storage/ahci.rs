@@ -27,13 +27,13 @@
 //! # Safety
 //! AHCI驱动涉及MMIO寄存器和DMA操作。
 
-use super::framework::{Driver, DeviceType, DriverError, Result, DeviceInfo};
-use crate::kernel::mm::{PhysAddr, VirtAddr};
+use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::dma::engine::get_dma;
-use core::ptr;
-use alloc::vec::Vec;
+use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::klog_info;
 use crate::klog_warn;
+use alloc::vec::Vec;
+use core::ptr;
 
 // ============================================================================
 // AHCI 常量定义
@@ -129,9 +129,20 @@ mod pxcmd {
     pub const FR: u32 = 1 << 14;
     pub const CR: u32 = 1 << 15;
 }
-mod pxssts { pub const DET: u32 = 0xF; }
-mod pxtfd { pub const ERR: u32 = 1 << 0; pub const DRQ: u32 = 1 << 3; pub const BSY: u32 = 1 << 7; }
-mod pxis { pub const DPS: u32 = 1 << 5; pub const PCS: u32 = 1 << 9; pub const DHRS: u32 = 1 << 0; pub const TFE: u32 = 1 << 30; }
+mod pxssts {
+    pub const DET: u32 = 0xF;
+}
+mod pxtfd {
+    pub const ERR: u32 = 1 << 0;
+    pub const DRQ: u32 = 1 << 3;
+    pub const BSY: u32 = 1 << 7;
+}
+mod pxis {
+    pub const DPS: u32 = 1 << 5;
+    pub const PCS: u32 = 1 << 9;
+    pub const DHRS: u32 = 1 << 0;
+    pub const TFE: u32 = 1 << 30;
+}
 
 // ============================================================================
 // SATA 命令定义
@@ -140,8 +151,8 @@ mod pxis { pub const DPS: u32 = 1 << 5; pub const PCS: u32 = 1 << 9; pub const D
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AtaCommand {
-    ReadDma = 0x25,      // READ DMA (LBA28) — also used as READ DMA EXT (LBA48)
-    WriteDma = 0x35,     // WRITE DMA (LBA28) — also used as WRITE DMA EXT (LBA48)
+    ReadDma = 0x25,  // READ DMA (LBA28) — also used as READ DMA EXT (LBA48)
+    WriteDma = 0x35, // WRITE DMA (LBA28) — also used as WRITE DMA EXT (LBA48)
     Identify = 0xEC,
     ReadFpdmaQueued = 0x60,
     WriteFpdmaQueued = 0x61,
@@ -155,17 +166,24 @@ pub enum AtaCommand {
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct AhciCommandHeader {
-    pub dw0: u32,           // CFL(5) | A(1) | W(1) | P(1) | R(1) | B(1) | C(1) | PMP(4) | PRDTL(16)
-    pub prdtl: u32,          // PRDT 字节计数 (高16位) | PRDT 长度 (低16位)
-    pub prdbc: u32,          // PRDT 已传输字节
-    pub ctba: u32,           // 命令表基址低32位
-    pub ctbau: u32,          // 命令表基址高32位
+    pub dw0: u32,   // CFL(5) | A(1) | W(1) | P(1) | R(1) | B(1) | C(1) | PMP(4) | PRDTL(16)
+    pub prdtl: u32, // PRDT 字节计数 (高16位) | PRDT 长度 (低16位)
+    pub prdbc: u32, // PRDT 已传输字节
+    pub ctba: u32,  // 命令表基址低32位
+    pub ctbau: u32, // 命令表基址高32位
     pub rsvd: [u32; 4],
 }
 
 impl AhciCommandHeader {
     pub fn new() -> Self {
-        Self { dw0: 0, prdtl: 0, prdbc: 0, ctba: 0, ctbau: 0, rsvd: [0; 4] }
+        Self {
+            dw0: 0,
+            prdtl: 0,
+            prdbc: 0,
+            ctba: 0,
+            ctbau: 0,
+            rsvd: [0; 4],
+        }
     }
 }
 
@@ -173,18 +191,18 @@ impl AhciCommandHeader {
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct PhysicalRegionDescriptor {
-    pub dba: u32,      // 数据基址低32位
-    pub dbau: u32,      // 数据基址高32位
+    pub dba: u32,  // 数据基址低32位
+    pub dbau: u32, // 数据基址高32位
     pub rsvd: u32,
-    pub dbc: u32,       // 字节计数 (高1位 = 中断完成标记)
+    pub dbc: u32, // 字节计数 (高1位 = 中断完成标记)
 }
 
 /// AHCI 命令表
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct AhciCommandTable {
-    pub cfis: [u8; 64],   // 命令FIS
-    pub acmd: [u8; 16],   // ATAPI命令
+    pub cfis: [u8; 64], // 命令FIS
+    pub acmd: [u8; 16], // ATAPI命令
     pub rsvd: [u8; 48],
     pub prdt: [PhysicalRegionDescriptor; 8],
 }
@@ -219,19 +237,33 @@ pub struct H2dFis {
 impl H2dFis {
     pub fn new() -> Self {
         Self {
-            fis_type: 0, flags: 0, command: 0, feature0: 0, feature1: 0,
-            lba0: 0, lba1: 0, lba2: 0, lba3: 0, lba4: 0, lba5: 0,
-            device: 0, count0: 0, count1: 0, icc: 0, control: 0, rsvd: [0; 4],
+            fis_type: 0,
+            flags: 0,
+            command: 0,
+            feature0: 0,
+            feature1: 0,
+            lba0: 0,
+            lba1: 0,
+            lba2: 0,
+            lba3: 0,
+            lba4: 0,
+            lba5: 0,
+            device: 0,
+            count0: 0,
+            count1: 0,
+            icc: 0,
+            control: 0,
+            rsvd: [0; 4],
         }
     }
 
     /// 创建读DMA FIS (LBA48)
     pub fn read_dma(lba: u64, count: u16) -> Self {
         let mut fis = Self::new();
-        fis.fis_type = 0x27;  // H2D
-        fis.flags = 0x80;     // 写命令
-        fis.command = 0x25;   // READ DMA EXT
-        fis.device = 0x40;    // LBA 模式
+        fis.fis_type = 0x27; // H2D
+        fis.flags = 0x80; // 写命令
+        fis.command = 0x25; // READ DMA EXT
+        fis.device = 0x40; // LBA 模式
         fis.lba0 = (lba & 0xFF) as u8;
         fis.lba1 = ((lba >> 8) & 0xFF) as u8;
         fis.lba2 = ((lba >> 16) & 0xFF) as u8;
@@ -248,7 +280,7 @@ impl H2dFis {
         let mut fis = Self::new();
         fis.fis_type = 0x27;
         fis.flags = 0x80;
-        fis.command = 0x35;   // WRITE DMA EXT
+        fis.command = 0x35; // WRITE DMA EXT
         fis.device = 0x40;
         fis.lba0 = (lba & 0xFF) as u8;
         fis.lba1 = ((lba >> 8) & 0xFF) as u8;
@@ -290,9 +322,12 @@ struct AhciPortDma {
 impl AhciPortDma {
     fn new() -> Self {
         Self {
-            cmd_list_virt: VirtAddr(0), cmd_list_phys: PhysAddr(0),
-            fis_virt: VirtAddr(0), fis_phys: PhysAddr(0),
-            cmd_table_virt: VirtAddr(0), cmd_table_phys: PhysAddr(0),
+            cmd_list_virt: VirtAddr(0),
+            cmd_list_phys: PhysAddr(0),
+            fis_virt: VirtAddr(0),
+            fis_phys: PhysAddr(0),
+            cmd_table_virt: VirtAddr(0),
+            cmd_table_phys: PhysAddr(0),
         }
     }
 }
@@ -487,7 +522,10 @@ impl AhciPort {
 
         // ── 设置命令表 ──
         let cmd_table = self.dma.cmd_table_virt.0 as *mut AhciCommandTable;
-        let fis_bytes = core::slice::from_raw_parts(fis as *const _ as *const u8, core::mem::size_of::<H2dFis>());
+        let fis_bytes = core::slice::from_raw_parts(
+            fis as *const _ as *const u8,
+            core::mem::size_of::<H2dFis>(),
+        );
 
         // Copy FIS to command table (CFIS is at offset 0)
         ptr::copy_nonoverlapping(fis_bytes.as_ptr(), cmd_table as *mut u8, fis_bytes.len());
@@ -501,7 +539,12 @@ impl AhciPort {
         };
         // 清零其余 PRDT
         for i in 1..8 {
-            (*cmd_table).prdt[i] = PhysicalRegionDescriptor { dba: 0, dbau: 0, rsvd: 0, dbc: 0 };
+            (*cmd_table).prdt[i] = PhysicalRegionDescriptor {
+                dba: 0,
+                dbau: 0,
+                rsvd: 0,
+                dbc: 0,
+            };
         }
 
         // ── 设置命令头 ──
@@ -575,14 +618,13 @@ impl AhciPort {
 
         // 分配 DMA buffer
         let dma_engine = get_dma();
-        let (buf_virt, buf_phys) = dma_engine.alloc_coherent(byte_count as usize)
+        let (buf_virt, buf_phys) = dma_engine
+            .alloc_coherent(byte_count as usize)
             .ok_or(DriverError::Busy)?;
 
         let fis = H2dFis::read_dma(lba, count);
 
-        let result = unsafe {
-            self.submit_dma_command(&fis, buf_phys, byte_count, false)
-        };
+        let result = unsafe { self.submit_dma_command(&fis, buf_phys, byte_count, false) };
 
         // 复制数据到用户 buffer
         if result.is_ok() {
@@ -608,7 +650,8 @@ impl AhciPort {
 
         // 分配 DMA buffer
         let dma_engine = get_dma();
-        let (buf_virt, buf_phys) = dma_engine.alloc_coherent(byte_count as usize)
+        let (buf_virt, buf_phys) = dma_engine
+            .alloc_coherent(byte_count as usize)
             .ok_or(DriverError::Busy)?;
 
         // 复制数据到 DMA buffer
@@ -617,9 +660,7 @@ impl AhciPort {
         }
 
         let fis = H2dFis::write_dma(lba, count);
-        let result = unsafe {
-            self.submit_dma_command(&fis, buf_phys, byte_count, true)
-        };
+        let result = unsafe { self.submit_dma_command(&fis, buf_phys, byte_count, true) };
 
         dma_engine.free_coherent(buf_virt, byte_count as usize);
         result
@@ -703,16 +744,16 @@ impl AhciController {
                 if port.detect_device() {
                     match port.enable() {
                         Ok(()) => {
-                            klog_info!(Driver,
+                            klog_info!(
+                                Driver,
                                 "AHCI: port {} enabled (sig={:08X})",
-                                i, port.signature
+                                i,
+                                port.signature
                             );
                             self.ports.push(port);
                         }
                         Err(e) => {
-                            klog_warn!(Driver,
-                                "AHCI: port {} enable failed: {:?}", i, e
-                            );
+                            klog_warn!(Driver, "AHCI: port {} enable failed: {:?}", i, e);
                         }
                     }
                 }
@@ -722,7 +763,9 @@ impl AhciController {
         Ok(())
     }
 
-    pub fn port_count(&self) -> usize { self.ports.len() }
+    pub fn port_count(&self) -> usize {
+        self.ports.len()
+    }
 
     /// 获取端口 (用于读写)
     pub fn get_port(&mut self, index: usize) -> Option<&mut AhciPort> {
@@ -735,13 +778,18 @@ impl AhciController {
 // ============================================================================
 
 impl Driver for AhciController {
-    fn name(&self) -> &'static str { "AHCI Controller" }
-    fn device_type(&self) -> DeviceType { DeviceType::Block }
+    fn name(&self) -> &'static str {
+        "AHCI Controller"
+    }
+    fn device_type(&self) -> DeviceType {
+        DeviceType::Block
+    }
 
     fn init(&mut self) -> Result<()> {
         self.init_controller()?;
         self.initialized = true;
-        klog_info!(Driver,
+        klog_info!(
+            Driver,
             "AHCI: controller initialized, {} port(s) active",
             self.ports.len()
         );
@@ -761,9 +809,15 @@ impl Driver for AhciController {
         Ok(())
     }
 
-    fn is_ready(&self) -> bool { self.initialized }
+    fn is_ready(&self) -> bool {
+        self.initialized
+    }
     fn status(&self) -> &'static str {
-        if self.initialized { "AHCI ready" } else { "AHCI not initialized" }
+        if self.initialized {
+            "AHCI ready"
+        } else {
+            "AHCI not initialized"
+        }
     }
 }
 
@@ -795,7 +849,10 @@ mod tests {
     fn test_cmd_header_structure() {
         assert_eq!(core::mem::size_of::<AhciCommandHeader>(), 32);
         assert_eq!(core::mem::size_of::<PhysicalRegionDescriptor>(), 16);
-        assert_eq!(core::mem::size_of::<AhciCommandTable>(), 64 + 16 + 48 + 8 * 16);
+        assert_eq!(
+            core::mem::size_of::<AhciCommandTable>(),
+            64 + 16 + 48 + 8 * 16
+        );
     }
 
     #[test]

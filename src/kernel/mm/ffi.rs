@@ -15,7 +15,7 @@ use core::sync::atomic::AtomicU64;
 // ============================================================
 
 /// Initialize physical memory manager
-/// 
+///
 /// C signature: void pmm_init(uint64_t mem_size, uint64_t kernel_end)
 #[no_mangle]
 pub extern "C" fn pmm_init(mem_size: u64, kernel_end: u64) {
@@ -23,7 +23,7 @@ pub extern "C" fn pmm_init(mem_size: u64, kernel_end: u64) {
 }
 
 /// Initialize bitmap for normal operation
-/// 
+///
 /// C signature: void pmm_init_bitmap(uint64_t reserved_after_kernel)
 #[no_mangle]
 pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
@@ -31,7 +31,7 @@ pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
 }
 
 /// Allocate a single 4KB page
-/// 
+///
 /// C signature: void* pmm_alloc_page(void)
 #[no_mangle]
 pub extern "C" fn pmm_alloc_page() -> *mut c_void {
@@ -43,7 +43,7 @@ pub extern "C" fn pmm_alloc_page() -> *mut c_void {
 }
 
 /// Free a single page
-/// 
+///
 /// C signature: void pmm_free_page(void* addr)
 #[no_mangle]
 pub extern "C" fn pmm_free_page(addr: *mut c_void) {
@@ -53,7 +53,7 @@ pub extern "C" fn pmm_free_page(addr: *mut c_void) {
 }
 
 /// Get number of free pages
-/// 
+///
 /// C signature: uint64_t pmm_get_free_pages(void)
 #[no_mangle]
 pub extern "C" fn pmm_get_free_pages() -> u64 {
@@ -61,7 +61,7 @@ pub extern "C" fn pmm_get_free_pages() -> u64 {
 }
 
 /// Get total number of pages
-/// 
+///
 /// C signature: uint64_t pmm_get_total_pages(void)
 #[no_mangle]
 pub extern "C" fn pmm_get_total_pages() -> u64 {
@@ -69,7 +69,7 @@ pub extern "C" fn pmm_get_total_pages() -> u64 {
 }
 
 /// Get number of used pages
-/// 
+///
 /// C signature: uint64_t pmm_get_used_pages(void)
 #[no_mangle]
 pub extern "C" fn pmm_get_used_pages() -> u64 {
@@ -77,7 +77,7 @@ pub extern "C" fn pmm_get_used_pages() -> u64 {
 }
 
 /// Allocate multiple contiguous pages
-/// 
+///
 /// C signature: void* pmm_alloc_pages(size_t count)
 #[no_mangle]
 pub extern "C" fn pmm_alloc_pages(count: usize) -> *mut c_void {
@@ -89,7 +89,7 @@ pub extern "C" fn pmm_alloc_pages(count: usize) -> *mut c_void {
 }
 
 /// Free multiple contiguous pages
-/// 
+///
 /// C signature: void pmm_free_pages(void* addr, size_t count)
 #[no_mangle]
 pub extern "C" fn pmm_free_pages(addr: *mut c_void, count: usize) {
@@ -99,7 +99,7 @@ pub extern "C" fn pmm_free_pages(addr: *mut c_void, count: usize) {
 }
 
 /// Print PMM statistics
-/// 
+///
 /// C signature: void pmm_dump_stats(void)
 #[no_mangle]
 pub extern "C" fn pmm_dump_stats() {
@@ -107,7 +107,7 @@ pub extern "C" fn pmm_dump_stats() {
 }
 
 /// Allocate a huge page (2MB or 1GB)
-/// 
+///
 /// C signature: void* pmm_alloc_huge_page(page_size_t size_type)
 #[no_mangle]
 pub extern "C" fn pmm_alloc_huge_page(size_type: PageSize) -> *mut c_void {
@@ -118,7 +118,7 @@ pub extern "C" fn pmm_alloc_huge_page(size_type: PageSize) -> *mut c_void {
 }
 
 /// Free a huge page
-/// 
+///
 /// C signature: void pmm_free_huge_page(void* addr, page_size_t size_type)
 #[no_mangle]
 pub extern "C" fn pmm_free_huge_page(addr: *mut c_void, size_type: PageSize) {
@@ -128,12 +128,14 @@ pub extern "C" fn pmm_free_huge_page(addr: *mut c_void, size_type: PageSize) {
 }
 
 /// Check alignment for huge page
-/// 
+///
 /// C signature: int pmm_is_aligned_for_huge(void* addr, page_size_t size_type)
 #[no_mangle]
 pub extern "C" fn pmm_is_aligned_for_huge(addr: *const c_void, size_type: PageSize) -> i32 {
-    if addr.is_null() { return 0; }
-    
+    if addr.is_null() {
+        return 0;
+    }
+
     if get_pmm().is_aligned_for_huge(PhysAddr(addr as u64), size_type) {
         1
     } else {
@@ -146,7 +148,7 @@ pub extern "C" fn pmm_is_aligned_for_huge(addr: *const c_void, size_type: PageSi
 // ============================================================
 
 /// Initialize virtual memory manager
-/// 
+///
 /// C signature: void vmm_init(void)
 #[no_mangle]
 pub extern "C" fn vmm_init() {
@@ -154,14 +156,14 @@ pub extern "C" fn vmm_init() {
 }
 
 /// Map a virtual page to physical page
-/// 
+///
 /// C signature: int vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags)
 #[no_mangle]
 pub extern "C" fn vmm_map_page(virt: u64, phys: u64, flags: u64) -> i32 {
     let virt_addr = VirtAddr(virt);
     let phys_addr = PhysAddr(phys);
     let page_flags = PageFlags::from_bits_truncate(flags);
-    
+
     match get_vmm().map_page(virt_addr, phys_addr, page_flags) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -169,14 +171,14 @@ pub extern "C" fn vmm_map_page(virt: u64, phys: u64, flags: u64) -> i32 {
 }
 
 /// Map a huge page
-/// 
+///
 /// C signature: int vmm_map_huge_page(uint64_t virt, uint64_t phys, uint64_t flags, page_size_t size_type)
 #[no_mangle]
 pub extern "C" fn vmm_map_huge_page(virt: u64, phys: u64, flags: u64, size_type: PageSize) -> i32 {
     let virt_addr = VirtAddr(virt);
     let phys_addr = PhysAddr(phys);
     let page_flags = PageFlags::from_bits_truncate(flags);
-    
+
     match get_vmm().map_huge_page(virt_addr, phys_addr, page_flags, size_type) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -184,7 +186,7 @@ pub extern "C" fn vmm_map_huge_page(virt: u64, phys: u64, flags: u64, size_type:
 }
 
 /// Unmap a virtual page
-/// 
+///
 /// C signature: void vmm_unmap_page(uint64_t virt)
 #[no_mangle]
 pub extern "C" fn vmm_unmap_page(virt: u64) {
@@ -192,7 +194,7 @@ pub extern "C" fn vmm_unmap_page(virt: u64) {
 }
 
 /// Split a 2MB huge page into 512 4KB pages
-/// 
+///
 /// C signature: int vmm_split_2mb_page(uint64_t virt)
 #[no_mangle]
 pub extern "C" fn vmm_split_2mb_page(virt: u64) -> i32 {
@@ -203,7 +205,7 @@ pub extern "C" fn vmm_split_2mb_page(virt: u64) -> i32 {
 }
 
 /// Set USER flag on PML4 entry for a virtual address
-/// 
+///
 /// C signature: void vmm_ensure_pml4_user(uint64_t virt)
 #[no_mangle]
 pub extern "C" fn vmm_ensure_pml4_user(virt: u64) {
@@ -211,7 +213,7 @@ pub extern "C" fn vmm_ensure_pml4_user(virt: u64) {
 }
 
 /// Set USER flag on all page table entries in path for user access
-/// 
+///
 /// C signature: void vmm_ensure_path_user(uint64_t virt)
 #[no_mangle]
 pub extern "C" fn vmm_ensure_path_user(virt: u64) {
@@ -219,7 +221,7 @@ pub extern "C" fn vmm_ensure_path_user(virt: u64) {
 }
 
 /// Get physical address for virtual address
-/// 
+///
 /// C signature: uint64_t vmm_get_physical(uint64_t virt)
 #[no_mangle]
 pub extern "C" fn vmm_get_physical(virt: u64) -> u64 {
@@ -230,7 +232,7 @@ pub extern "C" fn vmm_get_physical(virt: u64) -> u64 {
 }
 
 /// Get physical address in specific page table context
-/// 
+///
 /// C signature: uint64_t vmm_get_physical_in_table(uint64_t pml4, uint64_t virt)
 #[no_mangle]
 pub extern "C" fn vmm_get_physical_in_table(pml4: u64, virt: u64) -> u64 {
@@ -241,7 +243,7 @@ pub extern "C" fn vmm_get_physical_in_table(pml4: u64, virt: u64) -> u64 {
 }
 
 /// Switch to different page table (load CR3)
-/// 
+///
 /// C signature: void vmm_switch_page_table(uint64_t cr3)
 #[no_mangle]
 pub extern "C" fn vmm_switch_page_table(cr3: u64) {
@@ -249,7 +251,7 @@ pub extern "C" fn vmm_switch_page_table(cr3: u64) {
 }
 
 /// Create user space page table
-/// 
+///
 /// C signature: uint64_t vmm_create_user_page_table(void)
 #[no_mangle]
 pub extern "C" fn vmm_create_user_page_table() -> u64 {
@@ -260,19 +262,19 @@ pub extern "C" fn vmm_create_user_page_table() -> u64 {
 }
 
 /// Map page in specific table (for user space)
-/// 
+///
 /// C signature: void vmm_map_page_in_table(uint64_t pml4, uint64_t virt, uint64_t phys, uint64_t flags)
 #[no_mangle]
 pub extern "C" fn vmm_map_page_in_table(pml4: u64, virt: u64, phys: u64, flags: u64) {
     let virt_addr = VirtAddr(virt);
     let phys_addr = PhysAddr(phys);
     let page_flags = PageFlags::from_bits_truncate(flags);
-    
+
     get_vmm().map_page_in_table(pml4, virt_addr, phys_addr, page_flags);
 }
 
 /// Clone a user page table (deep copy of all user-space mappings)
-/// 
+///
 /// C signature: uint64_t vmm_clone_user_page_table(uint64_t parent_pml4)
 #[no_mangle]
 pub extern "C" fn vmm_clone_user_page_table(parent_pml4: u64) -> u64 {
@@ -281,7 +283,7 @@ pub extern "C" fn vmm_clone_user_page_table(parent_pml4: u64) -> u64 {
 
 /// Clone a user page table using COW (Copy-on-Write)
 /// Shared pages are marked read-only in both parent and child.
-/// 
+///
 /// C signature: uint64_t vmm_clone_user_page_table_cow(uint64_t parent_pml4)
 #[no_mangle]
 pub extern "C" fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64 {
@@ -289,7 +291,7 @@ pub extern "C" fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64 {
 }
 
 /// Destroy a page table and free all associated memory
-/// 
+///
 /// C signature: void vmm_destroy_page_table(uint64_t pml4)
 #[no_mangle]
 pub extern "C" fn vmm_destroy_page_table(pml4: u64) {
@@ -297,7 +299,7 @@ pub extern "C" fn vmm_destroy_page_table(pml4: u64) {
 }
 
 /// Get kernel PML4 address (global variable access)
-/// 
+///
 /// Note: This is an accessor for the global KERNEL_PML4 variable
 #[no_mangle]
 pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
@@ -307,7 +309,7 @@ pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
 // ============================================================
 
 /// Allocate memory from kernel heap
-/// 
+///
 /// C signature: void* k_malloc(size_t size)
 #[no_mangle]
 pub extern "C" fn k_malloc(size: usize) -> *mut c_void {
@@ -318,7 +320,7 @@ pub extern "C" fn k_malloc(size: usize) -> *mut c_void {
 }
 
 /// Free memory allocated by k_malloc
-/// 
+///
 /// C signature: void k_free(void* ptr)
 #[no_mangle]
 pub extern "C" fn k_free(ptr: *mut c_void) {
@@ -328,7 +330,7 @@ pub extern "C" fn k_free(ptr: *mut c_void) {
 }
 
 /// Reallocate memory block
-/// 
+///
 /// C signature: void* k_realloc(void* ptr, size_t size)
 #[no_mangle]
 pub extern "C" fn k_realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
@@ -339,7 +341,7 @@ pub extern "C" fn k_realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
 }
 
 /// Initialize kernel heap
-/// 
+///
 /// C signature: void kmalloc_init(uint64_t start, uint64_t initial_size)
 #[no_mangle]
 pub extern "C" fn kmalloc_init(start: u64, initial_size: u64) {
@@ -349,7 +351,7 @@ pub extern "C" fn kmalloc_init(start: u64, initial_size: u64) {
 }
 
 /// Print kmalloc statistics
-/// 
+///
 /// C signature: void kmalloc_dump_stats(void)
 #[no_mangle]
 pub extern "C" fn kmalloc_dump_stats() {
@@ -357,7 +359,7 @@ pub extern "C" fn kmalloc_dump_stats() {
 }
 
 /// Validate heap integrity (for debugging)
-/// 
+///
 /// C signature: int kmalloc_validate(void)
 #[no_mangle]
 pub extern "C" fn kmalloc_validate() -> i32 {
@@ -392,7 +394,7 @@ pub extern "C" fn krealloc(ptr: *mut c_void, size: u64) -> *mut c_void {
 }
 
 /// Get kernel heap statistics - matches original C API: void kmalloc_stats(struct kmalloc_stats* stats)
-/// 
+///
 /// Note: This is a simplified version that doesn't fill the struct yet
 #[no_mangle]
 pub extern "C" fn kmalloc_stats(_stats: *mut c_void) {

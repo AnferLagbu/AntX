@@ -6,8 +6,8 @@
 //! - **竞态条件**: 多线程同时访问
 //! - **资源泄漏**: 频繁创建/销毁
 
-use super::*;
 use super::types::*;
+use super::*;
 
 // ============================================================================
 // 压力测试
@@ -33,7 +33,7 @@ mod stress_tests {
         // 高频写入读取循环
         for i in 0..1000 {
             let data = format!("Message {}", i);
-            
+
             // 写入
             assert!(
                 pipe::pipe_write_safe(&mut ns, wfd, data.as_ptr(), data.len()).is_ok(),
@@ -44,13 +44,20 @@ mod stress_tests {
             // 读取
             let mut buf = [0u8; 64];
             let mut bytes_read: u64 = 0;
-            
+
             assert!(
-                pipe::pipe_read_safe(&mut ns, rfd, buf.as_mut_ptr(), buf.len(), Some(&mut bytes_read)).is_ok(),
+                pipe::pipe_read_safe(
+                    &mut ns,
+                    rfd,
+                    buf.as_mut_ptr(),
+                    buf.len(),
+                    Some(&mut bytes_read)
+                )
+                .is_ok(),
                 "Read failed at iteration {}",
                 i
             );
-            
+
             assert_eq!(bytes_read, data.len());
             assert_eq!(&buf[..data.len()], data.as_bytes());
         }
@@ -73,18 +80,19 @@ mod stress_tests {
         // 发送大量消息直到失败 (队列满)
         let mut success_count = 0;
         for i in 0..1000 {
-            let data = vec![i as u8; 100];  // 100 字节消息
-            
-            if msgq::msgq_send_safe(
-                &mut ns, id, i as u64, Some(&data), data.len(), pid
-            ).is_ok() {
+            let data = vec![i as u8; 100]; // 100 字节消息
+
+            if msgq::msgq_send_safe(&mut ns, id, i as u64, Some(&data), data.len(), pid).is_ok() {
                 success_count += 1;
             } else {
-                break;  // 队列已满
+                break; // 队列已满
             }
         }
 
-        println!("Successfully sent {} messages before queue full", success_count);
+        println!(
+            "Successfully sent {} messages before queue full",
+            success_count
+        );
         assert!(success_count > 0, "Should send at least some messages");
 
         // 接收所有消息
@@ -95,18 +103,22 @@ mod stress_tests {
             let mut size_out: u64 = 0;
 
             match msgq::msgq_recv_safe(
-                &mut ns, id,
+                &mut ns,
+                id,
                 Some(&mut type_out),
                 Some(&mut buf),
-                Some(&mut size_out)
+                Some(&mut size_out),
             ) {
                 Ok(_) => recv_count += 1,
                 Err(_) => break,
             }
         }
 
-        assert_eq!(recv_count, success_count, "All sent messages should be received");
-        
+        assert_eq!(
+            recv_count, success_count,
+            "All sent messages should be received"
+        );
+
         // 清理
         msgq::msgq_destroy_safe(&mut ns, id).unwrap();
     }
@@ -125,7 +137,7 @@ mod stress_tests {
         for _ in 0..100 {
             let addr = shm::shm_attach_safe(&mut ns, id, pid).unwrap();
             assert_ne!(addr, 0);
-            
+
             shm::shm_detach_safe(&mut ns, id, pid).unwrap();
         }
 
@@ -151,7 +163,7 @@ mod stress_tests {
 
         // 最终值应该仍然是初始值
         // (假设没有其他线程干扰)
-        
+
         // 清理
         sem::sem_destroy_safe(&mut ns, id).unwrap();
     }
@@ -169,14 +181,22 @@ mod stress_tests {
         let large_data = vec![0xABu8; PIPE_BUF_SIZE - 1];
 
         // 写入大块数据
-        let written = pipe::pipe_write_safe(&mut ns, wfd, large_data.as_ptr(), large_data.len()).unwrap();
+        let written =
+            pipe::pipe_write_safe(&mut ns, wfd, large_data.as_ptr(), large_data.len()).unwrap();
         assert_eq!(written, large_data.len());
 
         // 读取并验证
         let mut buf = [0u8; PIPE_BUF_SIZE];
         let mut bytes_read: u64 = 0;
-        pipe::pipe_read_safe(&mut ns, rfd, buf.as_mut_ptr(), buf.len(), Some(&mut bytes_read)).unwrap();
-        
+        pipe::pipe_read_safe(
+            &mut ns,
+            rfd,
+            buf.as_mut_ptr(),
+            buf.len(),
+            Some(&mut bytes_read),
+        )
+        .unwrap();
+
         assert_eq!(bytes_read, large_data.len() as u64);
         assert_eq!(&buf[..large_data.len()], large_data.as_slice());
 
@@ -203,10 +223,10 @@ mod boundary_tests {
 
         // 管道空数据
         let (rfd, wfd) = pipe::pipe_create_safe(&mut ns, &mut next_id, pid).unwrap();
-        
+
         // 写入 0 字节
         let result = pipe::pipe_write_safe(&mut ns, wfd, core::ptr::null(), 0);
-        assert!(result.is_ok() || result.unwrap_err() == -1);  // 允许成功或错误
+        assert!(result.is_ok() || result.unwrap_err() == -1); // 允许成功或错误
 
         // 清理
         pipe::pipe_close_safe(&mut ns, rfd).unwrap();
@@ -214,15 +234,15 @@ mod boundary_tests {
 
         // 消息队列空消息
         let id = msgq::msgq_create_safe(&mut ns, &mut next_id, 0o666, pid).unwrap();
-        
+
         let result = msgq::msgq_send_safe(&mut ns, id, 0, None, 0, pid);
-        assert!(result.is_ok());  // 空消息应该允许
+        assert!(result.is_ok()); // 空消息应该允许
 
         // 接收空消息
         let mut buf = [0u8; 1];
         let mut size: u64 = 999;
         msgq::msgq_recv_safe(&mut ns, id, None, Some(&mut buf), Some(&mut size)).unwrap();
-        assert_eq!(size, 0);  // 应该是 0 字节
+        assert_eq!(size, 0); // 应该是 0 字节
 
         msgq::msgq_destroy_safe(&mut ns, id).unwrap();
     }
@@ -236,18 +256,18 @@ mod boundary_tests {
 
         // 消息队列最大消息
         let id = msgq::msgq_create_safe(&mut ns, &mut next_id, 0o666, pid).unwrap();
-        
+
         let max_data = vec![0xFFu8; MSG_MAX_SIZE];
         let result = msgq::msgq_send_safe(&mut ns, id, 999, Some(&max_data), max_data.len(), pid);
-        
+
         if result.is_ok() {
             // 成功发送，验证接收
-            let mut buf = [0u8; MSG_MAX_SIZE + 1];  // 多分配一个字节检测溢出
+            let mut buf = [0u8; MSG_MAX_SIZE + 1]; // 多分配一个字节检测溢出
             let mut size: u64 = 0;
             msgq::msgq_recv_safe(&mut ns, id, None, Some(&mut buf), Some(&mut size)).unwrap();
             assert_eq!(size, MSG_MAX_SIZE as u64);
             assert_eq!(&buf[..MSG_MAX_SIZE], max_data.as_slice());
-            assert_eq!(buf[MSG_MAX_SIZE], 0);  // 无溢出
+            assert_eq!(buf[MSG_MAX_SIZE], 0); // 无溢出
         }
         // 如果失败，说明实现限制了大小，也是可接受的
 
@@ -297,7 +317,7 @@ mod boundary_tests {
 
         // 第二次关闭 - 应该失败或幂等
         let result = pipe::pipe_close_safe(&mut ns, rfd);
-        assert!(result.is_err() || result.is_ok());  // 两种行为都可接受
+        assert!(result.is_err() || result.is_ok()); // 两种行为都可接受
 
         // 创建消息队列
         let id = msgq::msgq_create_safe(&mut ns, &mut next_id, 0o666, pid).unwrap();
@@ -319,7 +339,7 @@ mod boundary_tests {
 
         // 创建零权限的共享内存
         let result = shm::shm_create_safe(&mut ns, &mut next_id, 4096, 0o000, pid);
-        assert!(result.is_ok());  // 允许零权限 (内核可能忽略权限检查)
+        assert!(result.is_ok()); // 允许零权限 (内核可能忽略权限检查)
 
         // 创建零权限的消息队列
         let result = msgq::msgq_create_safe(&mut ns, &mut next_id, 0o000, pid);

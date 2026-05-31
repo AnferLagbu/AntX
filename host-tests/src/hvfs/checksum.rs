@@ -12,13 +12,16 @@ pub struct HvChecksum {
 
 impl HvChecksum {
     pub fn new(kind: HvCksumType) -> Self {
-        Self { kind, value: [0; 4] }
+        Self {
+            kind,
+            value: [0; 4],
+        }
     }
 
     pub fn compute(kind: HvCksumType, data: &[u8]) -> Self {
         let mut ck = Self::new(kind);
         match kind {
-            HvCksumType::Off => {},
+            HvCksumType::Off => {}
             HvCksumType::Fletcher2 => ck.fletcher2(data),
             HvCksumType::Fletcher4 => ck.fletcher4(data),
             HvCksumType::SHA256 => ck.sha256(data),
@@ -37,7 +40,9 @@ impl HvChecksum {
         let mut a: u64 = 0;
         let mut b: u64 = 0;
         for chunk in words {
-            let w = u64::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7]]);
+            let w = u64::from_le_bytes([
+                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+            ]);
             a = a.wrapping_add(w);
             b = b.wrapping_add(a);
         }
@@ -63,7 +68,9 @@ impl HvChecksum {
         let mut c: u64 = 0;
         let mut d: u64 = 0;
         for chunk in words {
-            let w = u64::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7]]);
+            let w = u64::from_le_bytes([
+                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+            ]);
             a = a.wrapping_add(w);
             b = b.wrapping_add(a);
             c = c.wrapping_add(b);
@@ -125,7 +132,9 @@ impl HvChecksum {
             h3 = h3.wrapping_add(t2.rotate_left(31) ^ t3.rotate_left(7));
 
             i += 64;
-            if i >= len { break; }
+            if i >= len {
+                break;
+            }
         }
 
         self.value[0] = h0;

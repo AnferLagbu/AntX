@@ -101,7 +101,7 @@ fn hvfs_comprehensive() {
         hvfs.close(fd as u32);
 
         match hvfs.open("/test.txt", 0x0001, 1) {
-            Err(_) => {},
+            Err(_) => {}
             Ok(fd) => {
                 hvfs.close(fd as u32);
                 panic!("old name should not exist after rename");
@@ -113,7 +113,7 @@ fn hvfs_comprehensive() {
         let r = hvfs.unlink("/renamed.txt", 1);
         assert_eq_hvfs!(r, 0, "unlink should succeed");
         match hvfs.open("/renamed.txt", 0x0001, 1) {
-            Err(_) => {},
+            Err(_) => {}
             Ok(fd) => {
                 hvfs.close(fd as u32);
                 panic!("deleted file should not be openable");
@@ -175,7 +175,7 @@ fn hvfs_comprehensive() {
 
     test!(open_nonexistent, {
         match hvfs.open("/nonexistent", 0x0001, 1) {
-            Err(_) => {},
+            Err(_) => {}
             Ok(fd) => {
                 hvfs.close(fd as u32);
                 panic!("open nonexistent should fail");
@@ -200,15 +200,20 @@ fn hvfs_error_paths() {
 
     test!(open_without_create_flag_returns_not_found, {
         match hvfs.open("/no_such_file.txt", 0x0001, 1) {
-            Err(KernelError::NotFound) => {},
+            Err(KernelError::NotFound) => {}
             Err(e) => panic!("expected NotFound, got {:?}", e),
-            Ok(fd) => { hvfs.close(fd as u32); panic!("should fail with NotFound"); }
+            Ok(fd) => {
+                hvfs.close(fd as u32);
+                panic!("should fail with NotFound");
+            }
         }
     });
 
     test!(open_with_create_flag_succeeds, {
         match hvfs.open("/new_file.txt", 0x0102, 1) {
-            Ok(fd) => { hvfs.close(fd as u32); }
+            Ok(fd) => {
+                hvfs.close(fd as u32);
+            }
             Err(e) => panic!("open with O_CREAT should succeed, got {:?}", e),
         }
     });
@@ -434,7 +439,10 @@ fn hvfs_advanced_features() {
 
     test!(get_stats, {
         let (allocs, _frees, reads, writes) = hvfs.get_stats();
-        assert!(allocs > 0 || reads > 0 || writes > 0, "stats should reflect activity");
+        assert!(
+            allocs > 0 || reads > 0 || writes > 0,
+            "stats should reflect activity"
+        );
     });
 
     println!("\n=== HvFS Advanced Feature Tests Passed ===\n");
@@ -547,7 +555,11 @@ fn hvfs_fd_management() {
         let fd = hvfs.open("/append_test.txt", 0x0100 | 0x0400, 1).unwrap();
         let mut buf = [0u8; 32];
         let r = hvfs.read(fd as u32, &mut buf, 32);
-        assert!(r >= 5, "append mode read should return file content, read got {}", r);
+        assert!(
+            r >= 5,
+            "append mode read should return file content, read got {}",
+            r
+        );
         hvfs.close(fd as u32);
     });
 

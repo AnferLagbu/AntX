@@ -10,19 +10,18 @@
 //!   - 0x00: mac[6] (MAC address, if VIRTIO_NET_F_MAC is set)
 //!   - 0x06: status (u16, if VIRTIO_NET_F_STATUS is set)
 
-
 use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
 use crate::kernel::mm::KERNEL_BASE;
+use crate::klog_err;
 use crate::klog_info;
 use crate::klog_warn;
-use crate::klog_err;
 use alloc::boxed::Box;
 use spin::Mutex;
 
 // ── Feature bits ──
 
-const VIRTIO_NET_F_MAC:    u64 = 1 << 5;
+const VIRTIO_NET_F_MAC: u64 = 1 << 5;
 const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
 
 // ── VirtIO Net Header (always 12 bytes) ──
@@ -34,13 +33,13 @@ const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
 /// `num_buffers` is only meaningful when VIRTIO_NET_F_MRG_RXBUF is negotiated.
 #[repr(C)]
 struct VirtioNetHdr {
-    flags:         u8,
-    gso_type:      u8,
-    hdr_len:       u16,
-    gso_size:      u16,
-    csum_start:    u16,
-    csum_offset:   u16,
-    num_buffers:   u16,
+    flags: u8,
+    gso_type: u8,
+    hdr_len: u16,
+    gso_size: u16,
+    csum_start: u16,
+    csum_offset: u16,
+    num_buffers: u16,
 }
 
 /// Size of virtio_net_hdr (12 bytes).
@@ -48,7 +47,7 @@ const NET_HDR_SIZE: usize = core::mem::size_of::<VirtioNetHdr>();
 
 // ── Config space offsets (relative to 0x100) ──
 
-const NET_CONFIG_MAC:    usize = 0x00; // 6 bytes
+const NET_CONFIG_MAC: usize = 0x00; // 6 bytes
 const NET_CONFIG_STATUS: usize = 0x06; // 2 bytes
 
 // ── RX buffer constants ──
@@ -99,13 +98,21 @@ impl VirtioNet {
             return None;
         }
 
-        klog_info!(Driver, "virtio-net: initializing at {:#x}", device.mmio_base);
+        klog_info!(
+            Driver,
+            "virtio-net: initializing at {:#x}",
+            device.mmio_base
+        );
 
         // Read device version to determine legacy vs modern
         let version = unsafe { device.read32(super::VERSION) };
         let is_legacy = version == 1; // 1=transitional, 2=modern-only
-        klog_info!(Driver, "virtio-net: version={}, {} mode",
-            version, if is_legacy { "legacy" } else { "modern" });
+        klog_info!(
+            Driver,
+            "virtio-net: version={}, {} mode",
+            version,
+            if is_legacy { "legacy" } else { "modern" }
+        );
 
         // Feature negotiation
         let negotiated_v1: bool;
@@ -141,7 +148,10 @@ impl VirtioNet {
                 device.write32(super::DRIVER_FEATURES, (feat >> 32) as u32);
                 device.write32(super::DRIVER_FEATURES_SEL, 0);
                 device.write32(super::DRIVER_FEATURES, (feat & 0xFFFF_FFFF) as u32);
-                klog_info!(Driver, "virtio-net: negotiating modern features (VERSION_1)");
+                klog_info!(
+                    Driver,
+                    "virtio-net: negotiating modern features (VERSION_1)"
+                );
             } else {
                 // Legacy mode: only VIRTIO_NET_F_MAC
                 negotiated_v1 = false;
@@ -154,7 +164,10 @@ impl VirtioNet {
             }
 
             // FEATURES_OK
-            device.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK);
+            device.write32(
+                STATUS,
+                STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK,
+            );
             let status = device.read32(STATUS);
             if status & STATUS_FEATURES_OK == 0 {
                 klog_warn!(Driver, "virtio-net: FEATURES_OK rejected");
@@ -168,18 +181,34 @@ impl VirtioNet {
             mac[i] = (device.read_config32(NET_CONFIG_MAC + (i & !3)) >> ((i & 3) * 8)) as u8;
         }
 
-        klog_info!(Driver, "virtio-net: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        klog_info!(
+            Driver,
+            "virtio-net: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
+        );
 
         // Read link status
         let link_status = device.read_config32(NET_CONFIG_STATUS) as u16;
         let link_up = (link_status & 1) != 0;
-        klog_info!(Driver, "virtio-net: link {}", if link_up { "up" } else { "down" });
+        klog_info!(
+            Driver,
+            "virtio-net: link {}",
+            if link_up { "up" } else { "down" }
+        );
 
         // Queue layout: modern=sequential, legacy=page-aligned used ring
         let vq_legacy = !negotiated_v1;
 
-        klog_info!(Driver, "virtio-net: allocating RX vq (legacy={})", vq_legacy);
+        klog_info!(
+            Driver,
+            "virtio-net: allocating RX vq (legacy={})",
+            vq_legacy
+        );
 
         // Allocate RX virtqueue (queue 0)
         let rx_vq = VirtQueue::new(vq_legacy)?;
@@ -244,7 +273,9 @@ impl VirtioNet {
 
             // Allocate a buffer for this RX slot
             let pages = RX_BUFFER_SIZE.div_ceil(4096);
-            extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+            extern "C" {
+                fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+            }
             let buf = unsafe { pmm_alloc_pages(pages as u64) };
             if buf.is_null() {
                 klog_warn!(Driver, "virtio-net: failed to alloc RX buffer {}", i);
@@ -257,7 +288,9 @@ impl VirtioNet {
             self.rx_buffers_phys[i] = buf_phys;
 
             // Prepare descriptor: device writes to this buffer
-            let desc_idx = self.rx_vq.prepare_desc(buf_phys, RX_BUFFER_SIZE as u32, true);
+            let desc_idx = self
+                .rx_vq
+                .prepare_desc(buf_phys, RX_BUFFER_SIZE as u32, true);
             self.rx_vq.submit(desc_idx);
         }
 
@@ -293,12 +326,21 @@ impl VirtioNet {
                 self.tx_count += 1;
                 return Ok(());
             }
-            unsafe { self.device.read32(super::INTERRUPT_STATUS); }
-            for _ in 0..100 { core::hint::spin_loop(); }
+            unsafe {
+                self.device.read32(super::INTERRUPT_STATUS);
+            }
+            for _ in 0..100 {
+                core::hint::spin_loop();
+            }
         }
 
-        klog_warn!(Driver, "virtio-net: TX timeout (desc_idx={}, data={:#x}, len={})",
-            desc_idx, data_phys, len);
+        klog_warn!(
+            Driver,
+            "virtio-net: TX timeout (desc_idx={}, data={:#x}, len={})",
+            desc_idx,
+            data_phys,
+            len
+        );
         Err(())
     }
 
@@ -407,7 +449,7 @@ pub fn probe() -> i32 {
                     *VIRTIO_NET_DEVICE.lock() = Some(boxed);
                     klog_info!(Driver, "virtio-net: probed successfully");
                     return 0;
-                },
+                }
                 None => {
                     klog_warn!(Driver, "virtio-net: found device but init failed");
                 }
@@ -447,7 +489,10 @@ pub unsafe extern "C" fn virtio_net_init(netif: *mut core::ffi::c_void) -> i32 {
 /// # Safety
 ///
 /// Caller holds the transmit lock. Buffer data must remain valid until the device completes the TX.
-pub unsafe extern "C" fn virtio_net_send(_netif: *mut core::ffi::c_void, p: *mut core::ffi::c_void) -> i32 {
+pub unsafe extern "C" fn virtio_net_send(
+    _netif: *mut core::ffi::c_void,
+    p: *mut core::ffi::c_void,
+) -> i32 {
     extern "C" {
         fn qx_pbuf_copyout(p: *mut core::ffi::c_void, buf: *mut u8, out_len: *mut u16);
     }
@@ -515,10 +560,7 @@ pub unsafe extern "C" fn virtio_net_poll_rx() {
 /// # Safety
 ///
 /// `queue` has been initialized. Caller ensures no concurrent access.
-pub unsafe extern "C" fn virtio_net_input(
-    data: *mut core::ffi::c_void,
-    len: u16,
-) -> i32 {
+pub unsafe extern "C" fn virtio_net_input(data: *mut core::ffi::c_void, len: u16) -> i32 {
     // External declaration (defined in netif.rs)
     extern "C" {
         fn ethernet_input_from_virtio(data: *mut core::ffi::c_void, len: u16) -> i32;

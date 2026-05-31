@@ -1,12 +1,14 @@
-use spin::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use spin::Mutex;
 
 extern "C" {
     fn klog_ffi_info(msg: *const u8);
 }
 
 fn log(s: &str) {
-    unsafe { klog_ffi_info(s.as_ptr()); }
+    unsafe {
+        klog_ffi_info(s.as_ptr());
+    }
 }
 
 pub const MAX_SESSIONS: usize = 16;
@@ -64,11 +66,11 @@ impl SessionManager {
             next_session_id: AtomicU64::new(1),
         }
     }
-    
+
     pub fn init(&self) {
         log("Session manager initialized\n");
     }
-    
+
     fn alloc_session(&self) -> Option<usize> {
         let table = self.session_table.lock();
         for i in 0..MAX_SESSIONS {
@@ -78,47 +80,51 @@ impl SessionManager {
         }
         None
     }
-    
+
     pub fn create(&self, pwm: u64) -> Option<u64> {
         let idx = self.alloc_session()?;
         let sid = self.next_session_id.fetch_add(1, Ordering::SeqCst);
-        
+
         let mut table = self.session_table.lock();
         let session = &mut table[idx];
-        
+
         session.session_id.store(sid, Ordering::SeqCst);
         session.pwm.store(pwm, Ordering::SeqCst);
         session.parent_sid.store(0, Ordering::SeqCst);
         session.terminal.store(0, Ordering::SeqCst);
         session.create_time.store(0, Ordering::SeqCst);
-        session.state.store(SessionState::Active as u32, Ordering::SeqCst);
+        session
+            .state
+            .store(SessionState::Active as u32, Ordering::SeqCst);
         session.process_list.store(0, Ordering::SeqCst);
         session.process_count.store(0, Ordering::SeqCst);
         session.next.store(0, Ordering::SeqCst);
-        
+
         log("Session created: SID=");
         log_num(sid);
         log("\n");
-        
+
         Some(sid)
     }
-    
+
     pub fn destroy(&self, session_id: u64) {
         if let Some(idx) = self.find_session(session_id) {
             let mut table = self.session_table.lock();
             let session = &mut table[idx];
-            
+
             session.session_id.store(0, Ordering::SeqCst);
-            session.state.store(SessionState::Zombie as u32, Ordering::SeqCst);
+            session
+                .state
+                .store(SessionState::Zombie as u32, Ordering::SeqCst);
             session.process_list.store(0, Ordering::SeqCst);
             session.process_count.store(0, Ordering::SeqCst);
-            
+
             log("Session destroyed: SID=");
             log_num(session_id);
             log("\n");
         }
     }
-    
+
     fn find_session(&self, session_id: u64) -> Option<usize> {
         let table = self.session_table.lock();
         for i in 0..MAX_SESSIONS {
@@ -128,7 +134,7 @@ impl SessionManager {
         }
         None
     }
-    
+
     pub fn get_session(&self, session_id: u64) -> Option<usize> {
         self.find_session(session_id)
     }

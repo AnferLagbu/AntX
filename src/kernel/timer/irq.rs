@@ -42,11 +42,15 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
                     fn sys_check_timeouts();
                     fn e1000_poll_rx();
                 }
-                unsafe { sys_check_timeouts(); }
+                unsafe {
+                    sys_check_timeouts();
+                }
 
                 let t = crate::kernel::timer::get_ticks();
                 if t.is_multiple_of(10) {
-                    unsafe { e1000_poll_rx(); }
+                    unsafe {
+                        e1000_poll_rx();
+                    }
                 }
             }
         }
@@ -68,15 +72,15 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
 #[cfg(target_arch = "x86_64")]
 pub fn register_timer_irq() -> Result<(), &'static str> {
     use crate::kernel::idt::IdtManager;
-    
+
     let manager = IdtManager::instance();
-    
+
     // 注册 IRQ0 handler
     manager.register_irq(
-        0,  // IRQ0 = PIT Timer
+        0, // IRQ0 = PIT Timer
         timer_irq0_handler,
         "PIT Timer",
-        0,  // flags
+        0, // flags
     )?;
 
     // 启用 IRQ0
@@ -97,10 +101,10 @@ mod tests {
     fn test_timer_irq0_handler_exists() {
         // 验证函数存在且可调用 (不会 panic)
         // 注意: 实际调用需要有效的 InterruptFrame
-        
+
         // 函数指针类型检查
         let _handler: extern "C" fn(*mut InterruptFrame) = timer_irq0_handler;
-        
+
         // 如果编译通过，说明函数签名正确
     }
 
@@ -108,10 +112,10 @@ mod tests {
     fn test_register_timer_irq_interface() {
         // 测试注册接口存在
         // 实际注册需要在 IDT 初始化后进行
-        
+
         // 函数签名验证
         let result = register_timer_irq();
-        
+
         // 可能成功或失败（取决于 IDT 状态），但不应该 panic
         let _ = result;
     }
@@ -128,5 +132,9 @@ pub fn register_timer_irq_tests() {
     }
 
     let r = runner();
-    r.register("timer::irq", "handler_signature", timer_irq0_handler_signature as TestFn);
+    r.register(
+        "timer::irq",
+        "handler_signature",
+        timer_irq0_handler_signature as TestFn,
+    );
 }

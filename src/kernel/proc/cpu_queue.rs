@@ -48,7 +48,11 @@ impl CpuQueue {
     #[inline]
     pub fn get_current(&self) -> Option<Pid> {
         let pid = self.current.load(Ordering::Acquire);
-        if pid == 0 { None } else { Some(pid) }
+        if pid == 0 {
+            None
+        } else {
+            Some(pid)
+        }
     }
 
     #[inline]
@@ -122,10 +126,7 @@ pub extern "C" fn resched_ipi_handler() {
 
 /// 注册 softirq Sched handler (在 scheduler init 时调用)
 pub fn register_sched_softirq() {
-    crate::kernel::irq::open_softirq(
-        crate::kernel::irq::SoftirqVec::Sched,
-        sched_softirq_handler,
-    );
+    crate::kernel::irq::open_softirq(crate::kernel::irq::SoftirqVec::Sched, sched_softirq_handler);
 }
 
 fn sched_softirq_handler() {

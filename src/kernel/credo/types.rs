@@ -4,7 +4,7 @@
 //! Domain Identity (DID) + capability matrix + identity entry + audit types.
 //! Credo: 密码决定身份 | 无预设特权 | 能力来自授予
 
-use core::sync::atomic::{AtomicU64, AtomicU32, AtomicU16, AtomicU8};
+use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
 
 pub const MAX_PWM_ENTRIES: usize = 256;
 pub const PWM_NOTE_LEN: usize = 64;
@@ -140,25 +140,35 @@ impl CapBits {
 
 impl core::ops::BitOr for CapBits {
     type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { CapBits(self.0 | rhs.0) }
+    fn bitor(self, rhs: Self) -> Self {
+        CapBits(self.0 | rhs.0)
+    }
 }
 
 impl core::ops::BitAnd for CapBits {
     type Output = Self;
-    fn bitand(self, rhs: Self) -> Self { CapBits(self.0 & rhs.0) }
+    fn bitand(self, rhs: Self) -> Self {
+        CapBits(self.0 & rhs.0)
+    }
 }
 
 impl core::ops::BitOrAssign for CapBits {
-    fn bitor_assign(&mut self, rhs: Self) { self.0 |= rhs.0; }
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
 }
 
 impl core::ops::BitAndAssign for CapBits {
-    fn bitand_assign(&mut self, rhs: Self) { self.0 &= rhs.0; }
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
+    }
 }
 
 impl core::ops::Not for CapBits {
     type Output = Self;
-    fn not(self) -> Self { CapBits(!self.0) }
+    fn not(self) -> Self {
+        CapBits(!self.0)
+    }
 }
 
 bitflags::bitflags! {
@@ -235,13 +245,12 @@ impl PwmEntry {
     }
 
     pub fn get_flags(&self) -> PwmFlags {
-        PwmFlags::from_bits_truncate(
-            self.flags.load(core::sync::atomic::Ordering::Acquire)
-        )
+        PwmFlags::from_bits_truncate(self.flags.load(core::sync::atomic::Ordering::Acquire))
     }
 
     pub fn set_flags(&self, flags: PwmFlags) {
-        self.flags.store(flags.bits(), core::sync::atomic::Ordering::Release);
+        self.flags
+            .store(flags.bits(), core::sync::atomic::Ordering::Release);
     }
 
     pub fn add_flags(&self, flags: PwmFlags) {
@@ -259,7 +268,11 @@ impl PwmEntry {
     }
 
     pub fn get_note_str(&self) -> &str {
-        let len = self.note.iter().position(|&b| b == 0).unwrap_or(self.note.len());
+        let len = self
+            .note
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(self.note.len());
         unsafe { core::str::from_utf8_unchecked(&self.note[..len]) }
     }
 
@@ -304,11 +317,13 @@ impl PwmEntry {
     }
 
     pub fn set_uid(&self, uid: u32) {
-        self.posix_uid.store(uid, core::sync::atomic::Ordering::Release);
+        self.posix_uid
+            .store(uid, core::sync::atomic::Ordering::Release);
     }
 
     pub fn set_gid(&self, gid: u32) {
-        self.posix_gid.store(gid, core::sync::atomic::Ordering::Release);
+        self.posix_gid
+            .store(gid, core::sync::atomic::Ordering::Release);
     }
 }
 

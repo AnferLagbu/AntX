@@ -29,21 +29,21 @@ fn phys_to_virt(phys: u64) -> u64 {
 
 /// Descriptor types
 const DESC_VALID: u64 = 1 << 0;
-const DESC_TYPE_TABLE: u64 = 0b11;      // Table descriptor (L0/L1/L2)
-const DESC_TYPE_BLOCK: u64 = 0b01;      // Block descriptor (L1/L2)
-const DESC_TYPE_PAGE: u64 = 0b11;       // Page descriptor (L3, same bits as TABLE)
+const DESC_TYPE_TABLE: u64 = 0b11; // Table descriptor (L0/L1/L2)
+const DESC_TYPE_BLOCK: u64 = 0b01; // Block descriptor (L1/L2)
+const DESC_TYPE_PAGE: u64 = 0b11; // Page descriptor (L3, same bits as TABLE)
 
 /// Memory attribute indices (matching MAIR_EL1 setup in mmu.rs)
-const MAIR_DEVICE_nGnRnE: u64 = 0;      // Device memory
-const MAIR_NORMAL_WBWA: u64 = 1;        // Normal cacheable (kernel)
-const MAIR_NORMAL_NC: u64 = 2;          // Normal non-cacheable
-const MAIR_USER_NORMAL: u64 = 4;        // Normal WBWA for user pages
+const MAIR_DEVICE_nGnRnE: u64 = 0; // Device memory
+const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
+const MAIR_NORMAL_NC: u64 = 2; // Normal non-cacheable
+const MAIR_USER_NORMAL: u64 = 4; // Normal WBWA for user pages
 
 /// Access Permission bits [7:6] in descriptor
-const AP_EL1_RW: u64 = 0 << 6;          // EL1 read/write, EL0 no access
-const AP_BOTH_RW: u64 = 1 << 6;         // EL1 read/write, EL0 read/write
-const AP_EL1_RO: u64 = 2 << 6;          // EL1 read-only, EL0 no access
-const AP_BOTH_RO: u64 = 3 << 6;         // EL1 read-only, EL0 read-only
+const AP_EL1_RW: u64 = 0 << 6; // EL1 read/write, EL0 no access
+const AP_BOTH_RW: u64 = 1 << 6; // EL1 read/write, EL0 read/write
+const AP_EL1_RO: u64 = 2 << 6; // EL1 read-only, EL0 no access
+const AP_BOTH_RO: u64 = 3 << 6; // EL1 read-only, EL0 read-only
 
 /// Attribute index shift (bits [4:2])
 const ATTR_SHIFT: u64 = 2;
@@ -93,7 +93,7 @@ fn is_kernel_addr(vaddr: u64) -> bool {
 fn page_flags_to_descriptor(flags: u64, paddr: u64) -> u64 {
     let mut desc = paddr & 0x0000_FFFF_FFFF_F000; // Output address [47:12]
     desc |= DESC_TYPE_PAGE; // bits [1:0] = 0b11
-    desc |= AF;             // Access flag
+    desc |= AF; // Access flag
 
     // Access permission
     let user = (flags & PAGE_USER) != 0;
@@ -206,7 +206,9 @@ impl Aarch64Vmm {
         // We reuse the existing page tables for now.
         // In a more complete implementation, we'd create separate kernel tables.
         let kernel_l0_ptr = &raw const self.kernel_l0 as *mut u64;
-        unsafe { ptr::write_volatile(kernel_l0_ptr, current_l0); }
+        unsafe {
+            ptr::write_volatile(kernel_l0_ptr, current_l0);
+        }
 
         // Ensure TTBR1_EL1 points to the same tables (for high-half access)
         unsafe {
@@ -235,7 +237,9 @@ impl Aarch64Vmm {
 
     fn free_table(&self, paddr: u64) {
         if paddr != 0 {
-            unsafe { pmm_free_page(paddr as *mut c_void); }
+            unsafe {
+                pmm_free_page(paddr as *mut c_void);
+            }
         }
     }
 
@@ -262,7 +266,13 @@ impl Aarch64Vmm {
         Ok(())
     }
 
-    pub fn map_huge_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags, size_type: PageSize) -> Result<(), ()> {
+    pub fn map_huge_page(
+        &self,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+        size_type: PageSize,
+    ) -> Result<(), ()> {
         // Skip user-space VA mappings (same rationale as map_page above)
         if virt.as_u64() >> 48 == 0 {
             return Ok(());
@@ -283,7 +293,9 @@ impl Aarch64Vmm {
                 let l2_idx = l2_index(vaddr);
 
                 let desc = block_flags_to_descriptor(raw_flags, paddr, 2, 0x0000_FFFF_FFE0_0000);
-                unsafe { ptr::write_volatile(l2.add(l2_idx), desc); }
+                unsafe {
+                    ptr::write_volatile(l2.add(l2_idx), desc);
+                }
                 Ok(())
             }
             PageSize::Size1G => {
@@ -298,7 +310,9 @@ impl Aarch64Vmm {
                 let l1_idx = l1_index(vaddr);
 
                 let desc = block_flags_to_descriptor(raw_flags, paddr, 1, 0x0000_FFFF_C000_0000);
-                unsafe { ptr::write_volatile(l1.add(l1_idx), desc); }
+                unsafe {
+                    ptr::write_volatile(l1.add(l1_idx), desc);
+                }
                 Ok(())
             }
         }
@@ -369,7 +383,9 @@ impl Aarch64Vmm {
                 phys_to_virt(paddr) as *mut u64
             } else {
                 // Allocate new table
-                let new_paddr = self.alloc_table().expect("[VMM] Out of physical memory for page table");
+                let new_paddr = self
+                    .alloc_table()
+                    .expect("[VMM] Out of physical memory for page table");
                 let desc = table_descriptor(new_paddr);
                 ptr::write_volatile(table.add(idx), desc);
                 core::arch::asm!("dsb ishst");
@@ -428,7 +444,9 @@ impl Aarch64Vmm {
                 ptr::write_volatile(l2.add(l2_idx), 0);
                 l2_entry & 0x0000_FFFF_FFFF_F000
             };
-            unsafe { core::arch::asm!("dsb ishst"); }
+            unsafe {
+                core::arch::asm!("dsb ishst");
+            }
             self.free_table(l3_paddr);
 
             // Check L2 recursively
@@ -438,7 +456,9 @@ impl Aarch64Vmm {
                     ptr::write_volatile(l1.add(l1_idx), 0);
                     l1_entry & 0x0000_FFFF_FFFF_F000
                 };
-                unsafe { core::arch::asm!("dsb ishst"); }
+                unsafe {
+                    core::arch::asm!("dsb ishst");
+                }
                 self.free_table(l2_paddr);
 
                 // Check L1 recursively
@@ -448,7 +468,9 @@ impl Aarch64Vmm {
                         ptr::write_volatile(l0.add(l0_idx), 0);
                         l0_entry & 0x0000_FFFF_FFFF_F000
                     };
-                    unsafe { core::arch::asm!("dsb ishst"); }
+                    unsafe {
+                        core::arch::asm!("dsb ishst");
+                    }
                     self.free_table(l1_paddr);
                 }
             }
@@ -561,7 +583,9 @@ impl Aarch64Vmm {
         let l1_entry = unsafe { ptr::read_volatile(l1.add(l1_idx)) };
         if l1_entry & 0b11 == 0b01 {
             // L1 block (1GB)
-            return Some(PhysAddr((l1_entry & 0x0000_FFFF_C000_0000) | (vaddr & 0x3FFF_FFFF)));
+            return Some(PhysAddr(
+                (l1_entry & 0x0000_FFFF_C000_0000) | (vaddr & 0x3FFF_FFFF),
+            ));
         }
         if l1_entry & 0b11 != 0b11 {
             return None;
@@ -573,7 +597,9 @@ impl Aarch64Vmm {
         let l2_entry = unsafe { ptr::read_volatile(l2.add(l2_idx)) };
         if l2_entry & 0b11 == 0b01 {
             // L2 block (2MB)
-            return Some(PhysAddr((l2_entry & 0x0000_FFFF_FFE0_0000) | (vaddr & 0x1F_FFFF)));
+            return Some(PhysAddr(
+                (l2_entry & 0x0000_FFFF_FFE0_0000) | (vaddr & 0x1F_FFFF),
+            ));
         }
         if l2_entry & 0b11 != 0b11 {
             return None;
@@ -587,7 +613,9 @@ impl Aarch64Vmm {
             return None;
         }
 
-        Some(PhysAddr((l3_entry & 0x0000_FFFF_FFFF_F000) | (vaddr & 0xFFF)))
+        Some(PhysAddr(
+            (l3_entry & 0x0000_FFFF_FFFF_F000) | (vaddr & 0xFFF),
+        ))
     }
 
     // ─── Clone / Destroy User Page Table ────────────────────────────
@@ -672,7 +700,9 @@ pub fn vmm_init() {
 }
 
 pub fn get_vmm() -> &'static Aarch64Vmm {
-    GLOBAL_VMM.get().expect("[VMM] aarch64 VMM accessed before initialization")
+    GLOBAL_VMM
+        .get()
+        .expect("[VMM] aarch64 VMM accessed before initialization")
 }
 
 pub fn get_kernel_pml4() -> u64 {
@@ -681,7 +711,9 @@ pub fn get_kernel_pml4() -> u64 {
 
 pub fn get_current_pml4() -> u64 {
     let ttbr0: u64;
-    unsafe { core::arch::asm!("mrs {}, TTBR0_EL1", out(reg) ttbr0); }
+    unsafe {
+        core::arch::asm!("mrs {}, TTBR0_EL1", out(reg) ttbr0);
+    }
     if ttbr0 != 0 {
         ttbr0
     } else {

@@ -1,14 +1,14 @@
 #![allow(dead_code)]
 use core::ffi::c_char;
-use core::sync::atomic::{AtomicU64, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use super::types::*;
+use super::process::{Process, PROCESS_TABLE};
 use super::scheduler::SCHEDULER;
-use super::thread::THREAD_MANAGER;
 use super::scheduler_ex::SCHEDULER_EX;
 use super::session::SESSION_MANAGER;
-use super::user_proc::{USER_PROC_MANAGER, proc_alloc_pid, user_proc_clone};
-use super::process::{Process, PROCESS_TABLE};
+use super::thread::THREAD_MANAGER;
+use super::types::*;
+use super::user_proc::{proc_alloc_pid, user_proc_clone, USER_PROC_MANAGER};
 
 extern "C" {
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
@@ -74,9 +74,14 @@ fn create_init_process() {
         }
 
         let msg = b"[PROC] Init process created (pid=1)";
-        unsafe { klog_ffi_info(msg.as_ptr()); }
+        unsafe {
+            klog_ffi_info(msg.as_ptr());
+        }
     }
-    CURRENT_PROCESS_PTR.store(unsafe { &C_CURRENT_PROCESS as *const CProcess as u64 }, Ordering::SeqCst);
+    CURRENT_PROCESS_PTR.store(
+        unsafe { &C_CURRENT_PROCESS as *const CProcess as u64 },
+        Ordering::SeqCst,
+    );
 }
 
 #[no_mangle]
@@ -110,7 +115,9 @@ pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
 #[no_mangle]
 pub extern "C" fn process_get_current_pwm() -> u64 {
     let pid = SCHEDULER.current().unwrap_or(0);
-    if pid == 0 { return 0; }
+    if pid == 0 {
+        return 0;
+    }
     if let Some(proc) = PROCESS_TABLE.get(pid) {
         // SAFETY: proc is a valid pointer obtained from PROCESS_TABLE.get()
         // which returns pointers to live Process entries. get_pwm() is an
@@ -123,7 +130,9 @@ pub extern "C" fn process_get_current_pwm() -> u64 {
 
 #[no_mangle]
 pub extern "C" fn process_get_pwm_by_pid(pid: u32) -> u64 {
-    if pid == 0 { return 0; }
+    if pid == 0 {
+        return 0;
+    }
     if let Some(proc) = PROCESS_TABLE.get(pid) {
         // SAFETY: proc is a valid pointer from PROCESS_TABLE. Each Process
         // lives for the entire lifetime of the table entry. get_pwm() reads
@@ -145,7 +154,9 @@ pub extern "C" fn process_exit(exit_code: u32) {
     if current_pid != 0 {
         let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
         if kernel_cr3 != 0 {
-            unsafe { vmm_switch_page_table(kernel_cr3); }
+            unsafe {
+                vmm_switch_page_table(kernel_cr3);
+            }
         }
         USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
     }
@@ -155,8 +166,10 @@ pub extern "C" fn process_exit(exit_code: u32) {
 #[no_mangle]
 pub extern "C" fn process_kill(pid: u32, exit_code: u32) {
     // ✅ 修复: 杀指定 PID, 而非当前进程
-    if pid == 0 { return; }
-    
+    if pid == 0 {
+        return;
+    }
+
     if let Some(proc) = PROCESS_TABLE.get(pid) {
         unsafe {
             let state = (*proc).get_state();
@@ -166,7 +179,7 @@ pub extern "C" fn process_kill(pid: u32, exit_code: u32) {
             (*proc).exit_code.store(exit_code, Ordering::SeqCst);
             let _ = (*proc).set_state_safe(ProcessState::Zombie);
         }
-        
+
         // 如果目标正在阻塞, 唤醒它使其能立即调度到并退出
         SCHEDULER.unblock(pid);
         // 触发重新调度
@@ -181,7 +194,11 @@ pub extern "C" fn process_find_by_pid(pid: Pid) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn proc_has_runnable() -> i32 {
-    if SCHEDULER.has_any_runnable() { 1 } else { 0 }
+    if SCHEDULER.has_any_runnable() {
+        1
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
@@ -210,20 +227,16 @@ pub extern "C" fn scheduler_add(pid: Pid) {
 }
 
 #[no_mangle]
-pub extern "C" fn wait_queue_init(_wq: *mut u8) {
-}
+pub extern "C" fn wait_queue_init(_wq: *mut u8) {}
 
 #[no_mangle]
-pub extern "C" fn wait_queue_add(_wq: *mut u8, _thread: u64) {
-}
+pub extern "C" fn wait_queue_add(_wq: *mut u8, _thread: u64) {}
 
 #[no_mangle]
-pub extern "C" fn wait_queue_wake_one(_wq: *mut u8) {
-}
+pub extern "C" fn wait_queue_wake_one(_wq: *mut u8) {}
 
 #[no_mangle]
-pub extern "C" fn wait_queue_wake_all(_wq: *mut u8) {
-}
+pub extern "C" fn wait_queue_wake_all(_wq: *mut u8) {}
 
 #[no_mangle]
 pub extern "C" fn session_init() {
@@ -277,21 +290,30 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwm: u64) -> i32 {
     unsafe { crate::kernel::fs::vfs::ffi::vfs_close(fd as u32) };
 
     if bytes_read <= 0 {
-        extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+        extern "C" {
+            fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
+        }
         unsafe { pmm_free_pages(buffer, pages as u64) };
         return -1;
     }
 
-    let result = USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwm);
+    let result =
+        USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwm);
 
-    extern "C" { fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64); }
+    extern "C" {
+        fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
+    }
     unsafe { pmm_free_pages(buffer, pages as u64) };
 
     result
 }
 
 #[no_mangle]
-pub extern "C" fn user_proc_load_elf_from_memory(elf_data: *const u8, elf_size: u64, pwm: u64) -> i32 {
+pub extern "C" fn user_proc_load_elf_from_memory(
+    elf_data: *const u8,
+    elf_size: u64,
+    pwm: u64,
+) -> i32 {
     USER_PROC_MANAGER.load_elf_from_memory(elf_data, elf_size, pwm)
 }
 
@@ -312,16 +334,14 @@ pub unsafe extern "C" fn user_proc_setup_argv(
         Some(p) => p,
         None => return -1,
     };
-    
-    let sp = USER_PROC_MANAGER.setup_user_stack(
-        proc,
-        argv,
-        argc as usize,
-        envp,
-        envc as usize,
-    );
-    
-    if sp == 0 { -1 } else { 0 }
+
+    let sp = USER_PROC_MANAGER.setup_user_stack(proc, argv, argc as usize, envp, envc as usize);
+
+    if sp == 0 {
+        -1
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
@@ -385,13 +405,17 @@ pub extern "C" fn launch_first_user_process() -> ! {
 
         if bin_size == 0 {
             crate::klog_boot_info!("[USER] init ELF is empty");
-            loop { crate::arch!(halt()); }
+            loop {
+                crate::arch!(halt());
+            }
         }
 
         let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
         if pid <= 0 {
             crate::klog_boot_info!("[USER] Failed to load init ELF");
-            loop { crate::arch!(halt()); }
+            loop {
+                crate::arch!(halt());
+            }
         }
 
         let pid_u32 = pid as u32;
@@ -407,7 +431,9 @@ pub extern "C" fn launch_first_user_process() -> ! {
         user_proc_enter_by_pid(pid_u32);
     }
 
-    loop { crate::arch!(halt()); }
+    loop {
+        crate::arch!(halt());
+    }
 }
 
 #[no_mangle]
@@ -422,8 +448,7 @@ pub extern "C" fn scheduler_init() {
 }
 
 #[no_mangle]
-pub extern "C" fn process_init() {
-}
+pub extern "C" fn process_init() {}
 
 #[no_mangle]
 pub extern "C" fn thread_init() {
@@ -435,23 +460,25 @@ pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid, pwm
     if name.is_null() {
         return 0;
     }
-    
+
     let name_str = unsafe {
         const MAX_NAME_LEN: usize = 256;
-        let len = (0..MAX_NAME_LEN).find(|&i| *name.add(i) == 0).unwrap_or(MAX_NAME_LEN);
+        let len = (0..MAX_NAME_LEN)
+            .find(|&i| *name.add(i) == 0)
+            .unwrap_or(MAX_NAME_LEN);
         let slice = core::slice::from_raw_parts(name as *const u8, len);
         match core::str::from_utf8(slice) {
             Ok(s) => s,
             Err(_) => return 0,
         }
     };
-    
+
     let parent = if parent_pid == 0 {
         None
     } else {
         Some(parent_pid)
     };
-    
+
     SCHEDULER.create_process(name_str, parent, pwm).unwrap_or(0)
 }
 
@@ -509,7 +536,7 @@ pub extern "C" fn proc_unblock(pid: Pid) {
 #[no_mangle]
 pub extern "C" fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
     use super::process::PROCESS_TABLE;
-    
+
     if let Some(process) = PROCESS_TABLE.get(pid) {
         unsafe {
             (*process).set_priority(ProcessPriority::from_u32(priority));
@@ -523,11 +550,9 @@ pub extern "C" fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
 #[no_mangle]
 pub extern "C" fn proc_get_state(pid: Pid) -> u32 {
     use super::process::PROCESS_TABLE;
-    
+
     if let Some(process) = PROCESS_TABLE.get(pid) {
-        unsafe {
-            (*process).get_state() as u32
-        }
+        unsafe { (*process).get_state() as u32 }
     } else {
         ProcessState::Terminated as u32
     }
@@ -550,7 +575,11 @@ pub extern "C" fn sched_schedule_internal() -> Pid {
 
 #[no_mangle]
 pub extern "C" fn sched_should_reschedule() -> i32 {
-    if SCHEDULER.should_reschedule() { 1 } else { 0 }
+    if SCHEDULER.should_reschedule() {
+        1
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
@@ -566,10 +595,12 @@ pub extern "C" fn sched_get_current() -> Pid {
 #[no_mangle]
 pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
     use super::process::PROCESS_TABLE;
-    
+
     if let Some(process) = PROCESS_TABLE.get(pid) {
         unsafe {
-            (*process).exit_code.load(core::sync::atomic::Ordering::SeqCst) as i32
+            (*process)
+                .exit_code
+                .load(core::sync::atomic::Ordering::SeqCst) as i32
         }
     } else {
         -1
@@ -578,7 +609,11 @@ pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn proc_is_initialized() -> i32 {
-    if SCHEDULER.is_initialized() { 1 } else { 0 }
+    if SCHEDULER.is_initialized() {
+        1
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
@@ -629,8 +664,15 @@ pub extern "C" fn scheduler_get_rt_count() -> usize {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, argc: u32, pwm: u64) -> Pid {
-    if path.is_null() { return 0; }
+pub extern "C" fn proc_create_user(
+    path: *const c_char,
+    argv: *const *const u8,
+    argc: u32,
+    pwm: u64,
+) -> Pid {
+    if path.is_null() {
+        return 0;
+    }
 
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     let name_str = unsafe {
@@ -638,26 +680,43 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
         cstr.to_str().unwrap_or("user")
     };
 
-    let child_pid = SCHEDULER.create_process(name_str, if parent_pid != 0 { Some(parent_pid) } else { None }, pwm).unwrap_or(0);
-    if child_pid == 0 { return 0; }
+    let child_pid = SCHEDULER
+        .create_process(
+            name_str,
+            if parent_pid != 0 {
+                Some(parent_pid)
+            } else {
+                None
+            },
+            pwm,
+        )
+        .unwrap_or(0);
+    if child_pid == 0 {
+        return 0;
+    }
 
     // Create session for the new user process
     if let Some(sid) = SESSION_MANAGER.create(pwm) {
         if let Some(proc) = PROCESS_TABLE.get(child_pid) {
-            unsafe { (*proc).session_id.store(sid, Ordering::SeqCst); }
+            unsafe {
+                (*proc).session_id.store(sid, Ordering::SeqCst);
+            }
         }
     }
 
     // Initialize per-process fd_table
     if let Some(proc) = PROCESS_TABLE.get(child_pid) {
-        unsafe { (*proc).fd_table.init(); }
+        unsafe {
+            (*proc).fd_table.init();
+        }
     }
 
     let load_result = user_proc_load_elf(path, pwm);
     if load_result < 0 {
         let pid = child_pid;
         // 保存 session_id 在释放之前
-        let sid = PROCESS_TABLE.get(pid)
+        let sid = PROCESS_TABLE
+            .get(pid)
             .map(|p| unsafe { (*p).session_id.load(Ordering::SeqCst) });
         PROCESS_TABLE.remove_and_free(pid);
         if let Some(sid) = sid.filter(|&s| s != 0) {
@@ -669,7 +728,9 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
 
     if !argv.is_null() && argc > 0 {
         let envp: *const *const u8 = core::ptr::null();
-        unsafe { user_proc_setup_argv(child_pid, argv, argc, envp, 0); }
+        unsafe {
+            user_proc_setup_argv(child_pid, argv, argc, envp, 0);
+        }
     }
 
     child_pid
@@ -677,27 +738,37 @@ pub extern "C" fn proc_create_user(path: *const c_char, argv: *const *const u8, 
 
 #[no_mangle]
 pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8, argc: u32) -> i32 {
-    if path.is_null() { return -1; }
+    if path.is_null() {
+        return -1;
+    }
 
     let current_pid = SCHEDULER.current().unwrap_or(0);
-    if current_pid == 0 { return -1; }
+    if current_pid == 0 {
+        return -1;
+    }
 
     let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
     if kernel_cr3 != 0 {
-        unsafe { vmm_switch_page_table(kernel_cr3); }
+        unsafe {
+            vmm_switch_page_table(kernel_cr3);
+        }
     }
     USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
     PROCESS_TABLE.remove_and_free(current_pid);
 
     let pwm = scheduler_get_current_pwm();
     let new_pid = user_proc_load_elf(path, pwm);
-    if new_pid < 0 { return -1; }
+    if new_pid < 0 {
+        return -1;
+    }
 
     let new_pid_u32 = new_pid as u32;
 
     if !argv.is_null() && argc > 0 {
         let envp: *const *const u8 = core::ptr::null();
-        unsafe { user_proc_setup_argv(new_pid_u32, argv, argc, envp, 0); }
+        unsafe {
+            user_proc_setup_argv(new_pid_u32, argv, argc, envp, 0);
+        }
     }
 
     if let Some(proc) = USER_PROC_MANAGER.get(new_pid_u32) {
@@ -714,10 +785,14 @@ pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8,
 
 #[no_mangle]
 pub extern "C" fn proc_wait_child(pid: Pid) -> i32 {
-    if pid == 0 { return -1; }
+    if pid == 0 {
+        return -1;
+    }
 
     let proc = PROCESS_TABLE.get(pid);
-    if proc.is_none() { return -1; }
+    if proc.is_none() {
+        return -1;
+    }
 
     let process = unsafe { &*proc.unwrap() };
     let state = process.get_state();
@@ -735,27 +810,35 @@ pub extern "C" fn proc_wait_child(pid: Pid) -> i32 {
 #[no_mangle]
 pub extern "C" fn proc_sleep_ms(ms: u64) {
     // ✅ 修复: 阻塞式睡眠, 不再忙等 (Fix 6)
-    if ms == 0 { return; }
-    
+    if ms == 0 {
+        return;
+    }
+
     let pid = SCHEDULER.current().unwrap_or(0);
-    if pid == 0 { return; }
-    
+    if pid == 0 {
+        return;
+    }
+
     // 获取当前 tick 并计算到期时间
-    extern "C" { fn timer_get_ticks() -> u64; }
+    extern "C" {
+        fn timer_get_ticks() -> u64;
+    }
     let current_ticks = unsafe { timer_get_ticks() };
     // 假设每 tick = 10ms (100Hz), 转换 ms → ticks (最少 1 tick)
     let ticks_to_sleep = ms.div_ceil(10);
-    if ticks_to_sleep == 0 { return; }
-    
+    if ticks_to_sleep == 0 {
+        return;
+    }
+
     let wakeup_at = current_ticks + ticks_to_sleep;
-    
+
     // 设置 sleep_until 并阻塞进程
     if let Some(proc) = PROCESS_TABLE.get(pid) {
         unsafe {
             (*proc).sleep_until.store(wakeup_at, Ordering::SeqCst);
         }
     }
-    
+
     SCHEDULER.block(BlockReason::Sleeping);
     SCHEDULER.schedule();
 }
@@ -769,60 +852,77 @@ pub extern "C" fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     if parent_pid == 0 {
         unsafe {
-            extern "C" { fn klog_ffi_info(msg: *const u8); }
+            extern "C" {
+                fn klog_ffi_info(msg: *const u8);
+            }
             klog_ffi_info(b"[FORK] No current process\n\0".as_ptr());
         }
         return 0;
     }
-    
+
     let parent_ptr = match PROCESS_TABLE.get(parent_pid) {
         Some(p) => p,
-        None => { return 0; }
+        None => {
+            return 0;
+        }
     };
-    
+
     let parent = unsafe { &*parent_ptr };
-    
+
     // COW: 共享物理页, 双方标记只读
     let parent_cr3 = parent.cr3.load(Ordering::SeqCst);
     let child_cr3 = unsafe { vmm_clone_user_page_table_cow(parent_cr3) };
     if child_cr3 == 0 {
         unsafe {
-            extern "C" { fn klog_ffi_info(msg: *const u8); }
+            extern "C" {
+                fn klog_ffi_info(msg: *const u8);
+            }
             klog_ffi_info(b"[FORK] COW page table clone failed\n\0".as_ptr());
         }
         return 0;
     }
-    
+
     // Allocate child PID
     let child_pid = proc_alloc_pid();
     if child_pid == 0 {
-        unsafe { vmm_destroy_page_table(child_cr3); }
+        unsafe {
+            vmm_destroy_page_table(child_cr3);
+        }
         return 0;
     }
-    
+
     // Clone parent name
     let parent_name = unsafe { parent.name.lock() };
     let name_str = alloc::string::String::clone(&*parent_name);
     drop(parent_name);
     let name_ref = name_str.as_str();
-    
+
     // Create child Process
     let child = unsafe {
         let layout = alloc::alloc::Layout::new::<Process>();
         let ptr = alloc::alloc::alloc(layout) as *mut Process;
-        core::ptr::write(ptr, Process::new(child_pid, name_ref, Some(ProcessId(parent_pid))));
+        core::ptr::write(
+            ptr,
+            Process::new(child_pid, name_ref, Some(ProcessId(parent_pid))),
+        );
         &mut *ptr
     };
-    
+
     // Copy remaining parent properties
-    child.pwm.store(parent.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
+    child
+        .pwm
+        .store(parent.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
     child.cr3.store(child_cr3, Ordering::SeqCst);
-    child.sched_policy.store(parent.sched_policy.load(Ordering::SeqCst), Ordering::SeqCst);
-    child.rt_priority.store(parent.rt_priority.load(Ordering::SeqCst), Ordering::SeqCst);
-    
+    child
+        .sched_policy
+        .store(parent.sched_policy.load(Ordering::SeqCst), Ordering::SeqCst);
+    child
+        .rt_priority
+        .store(parent.rt_priority.load(Ordering::SeqCst), Ordering::SeqCst);
+
     // Add child to parent's children list
     parent.children.lock().push(ProcessId(child_pid));
-    
+
     // Allocate kernel stack for child
     if !child.allocate_kernel_stack() {
         unsafe {
@@ -831,7 +931,7 @@ pub extern "C" fn sys_fork() -> Pid {
         }
         return 0;
     }
-    
+
     // Copy parent's kernel stack contents to child's kernel stack
     {
         let parent_kstack = parent.kernel_stack.load(Ordering::SeqCst);
@@ -846,7 +946,7 @@ pub extern "C" fn sys_fork() -> Pid {
         }
         crate::kernel::proc::process::kernel_stack_write_canary(child_kstack);
     }
-    
+
     // Copy parent's ProcessContext to child's, but set RAX=0 for child
     {
         let parent_ctx = parent.context.lock();
@@ -855,10 +955,10 @@ pub extern "C" fn sys_fork() -> Pid {
         child_ctx.cr3 = child_cr3;
         child_ctx.rax = 0;
     }
-    
+
     // Register child in process table
     PROCESS_TABLE.insert(child as *const Process as *mut Process);
-    
+
     // Create UserProc for child
     if USER_PROC_MANAGER.get(parent_pid).is_some() {
         let clone_result = user_proc_clone(parent_pid, child_pid);
@@ -867,11 +967,11 @@ pub extern "C" fn sys_fork() -> Pid {
             return 0;
         }
     }
-    
+
     // Add child to scheduler
     let _ = unsafe { (*child).set_state_safe(ProcessState::Ready) };
     SCHEDULER.add_to_run_queue(child_pid);
-    
+
     child_pid
 }
 
@@ -889,7 +989,9 @@ pub extern "C" fn proc_get_ppid(pid: Pid) -> Pid {
 pub extern "C" fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
     let proc = PROCESS_TABLE.get(pid);
     if let Some(p) = proc {
-        unsafe { (*p).pwm.store(pwm, Ordering::SeqCst); }
+        unsafe {
+            (*p).pwm.store(pwm, Ordering::SeqCst);
+        }
         0
     } else {
         -1

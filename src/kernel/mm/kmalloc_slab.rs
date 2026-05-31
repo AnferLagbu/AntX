@@ -10,8 +10,8 @@
 //! `SLAB_CACHES` 使用 `static mut` 存储，访问由 `SLAB_LOCK` 自旋锁保护。
 //! `slab_init()` 在内核早期初始化阶段（单核）调用，因此初始化路径无竞态。
 
-use core::sync::atomic::{AtomicBool, Ordering};
 use super::slab::KmemCache;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 const CACHE_SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
 
@@ -34,11 +34,12 @@ pub fn slab_init() {
             _ => "kmalloc-2048",
         };
         arr[i] = MaybeUninit::new(
-            KmemCache::create(name, CACHE_SIZES[i])
-                .expect("Failed to create slab cache")
+            KmemCache::create(name, CACHE_SIZES[i]).expect("Failed to create slab cache"),
         );
     }
-    unsafe { SLAB_CACHES = Some(core::mem::transmute(arr)); }
+    unsafe {
+        SLAB_CACHES = Some(core::mem::transmute(arr));
+    }
     SLAB_READY.store(true, Ordering::Release);
 }
 
@@ -53,7 +54,10 @@ fn cache_index(size: usize) -> Option<usize> {
 
 #[inline(always)]
 fn slab_lock() {
-    while SLAB_LOCK.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+    while SLAB_LOCK
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
         core::hint::spin_loop();
     }
 }
@@ -70,9 +74,7 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
 
     if let Some(idx) = cache_index(size) {
         slab_lock();
-        let result = unsafe {
-            SLAB_CACHES.as_mut().unwrap()[idx].allocate()
-        };
+        let result = unsafe { SLAB_CACHES.as_mut().unwrap()[idx].allocate() };
         slab_unlock();
         result
     } else {

@@ -13,7 +13,10 @@ fn hvfs_persistence_roundtrip() {
         let name = format!("/file_{}", i);
         let fd = hvfs.open(&name, 0x0102, 1).unwrap();
         let data = format!("data for file {}", i);
-        assert_eq!(hvfs.write(fd as u32, data.as_bytes(), data.len() as u32), data.len() as i32);
+        assert_eq!(
+            hvfs.write(fd as u32, data.as_bytes(), data.len() as u32),
+            data.len() as i32
+        );
         hvfs.close(fd as u32);
     }
     hvfs.mkdir("/docs", 1);
@@ -50,7 +53,9 @@ fn hvfs_persistence_roundtrip() {
     assert!(hvfs2.is_initialized(), "re-init should succeed");
 
     match hvfs2.open("/file_0", 0x0001, 1) {
-        Ok(fd) => { hvfs2.close(fd as u32); }
+        Ok(fd) => {
+            hvfs2.close(fd as u32);
+        }
         Err(_) => {}
     }
 

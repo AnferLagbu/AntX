@@ -12,7 +12,7 @@
 //! 1. **保存 Ring 切换时的栈指针** (RSP0/RSP1/RSP2)
 //! 2. **记录中断栈表 (IST) 地址**
 //! 3. **I/O 位图** (可选, 用于 I/O 权限检查)
-//! 
+//!
 //! **不再使用** (与 32-bit 不同):
 //! - 不再保存所有寄存器 (由软件完成)
 //! - 不支持硬件任务切换
@@ -50,51 +50,51 @@ pub struct TaskStateSegment {
     /// 保留字段 (Offset 0x00, 4 bytes)
     /// 必须为 0, 供未来扩展使用
     reserved_0: u32,
-    
+
     /// 特权级 0 栈指针 (Offset 0x04, 8 bytes)
-    /// 
+    ///
     /// 当从 Ring 3 (用户态) 发生中断/异常/调用进入 Ring 0 (内核态) 时,
     /// CPU 自动将 RSP 设置为此值。
     /// **这是最重要的字段!** 必须指向有效的内核栈。
     pub rsp0: u64,
-    
+
     /// 特权级 1 栈指针 (Offset 0x0C, 8 bytes)
     /// 在 x86-64 中未使用 (仅 0 和 3 有效), 但必须存在。
     pub(crate) rsp1: u64,
-    
+
     /// 特权级 2 栈指针 (Offset 0x14, 8 bytes)
     /// 同上, 未使用但必须存在。
     pub(crate) rsp2: u64,
-    
+
     /// 保留字段 (Offset 0x1C, 8 bytes)
     /// 必须为 0
     reserved_1: u64,
-    
+
     /// 中断栈表 (Interrupt Stack Table, Offset 0x24)
-    /// 
+    ///
     /// 7 个条目, 每个 8 字节, 用于特定中断向量的独立栈。
     /// IDT 中的 Gate Descriptor 可以指定使用哪个 IST 条目 (0-6)。
-    /// 
+    ///
     /// 典型用法:
     /// - IST0: 双重故障 (#DF) 处理程序专用栈 (防止栈溢出死循环)
     /// - IST1-NMI: NMI (不可屏蔽中断) 专用栈
     /// - 其他: 可选, 用于关键中断
     pub ist: [u64; 7],
-    
+
     /// 保留字段 (Offset 0x5C, 8 bytes)
     /// 必须为 0
     reserved_2: u64,
-    
+
     /// 保留字段 (Offset 0x64, 2 bytes)
     /// 必须为 0
     reserved_3: u16,
-    
+
     /// I/O 权限位图基址 (Offset 0x66, 2 bytes)
-    /// 
+    ///
     /// 指向 I/O 位图的偏移量 (相对于 TSS 起始位置)。
     /// - 如果等于 TSS 大小, 表示没有 I/O 位图
     /// - 如果小于 TSS 大小, 则从 TSS + 此偏移处开始是 I/O 位图
-    /// 
+    ///
     /// I/O 位图用于 Ring 3 进程的 I/O 端口权限检查。
     /// 通常设置为 TSS_SIZE (禁用 I/O 位图) 以简化实现。
     pub iomap_base: u16,
@@ -122,7 +122,7 @@ pub const DEFAULT_IOMAP_BASE: u16 = TSS_SIZE as u16;
 
 impl TaskStateSegment {
     /// 创建全零 TSS (默认状态)
-    /// 
+    ///
     /// 所有栈指针和 IST 都为 0, I/O 位图指向 TSS 末尾。
     #[inline]
     pub const fn zeroed() -> Self {
@@ -138,14 +138,14 @@ impl TaskStateSegment {
             iomap_base: DEFAULT_IOMAP_BASE,
         }
     }
-    
+
     /// 设置内核态栈指针 (RSP0)
-    /// 
+    ///
     /// **必须在 gdt_init() 之后、任何用户进程运行之前调用!**
-    /// 
+    ///
     /// # Arguments
     /// * `stack_top` - 内核栈顶地址 (高地址, 因为 x86 栈向下增长)
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// let tss = get_tss_mut();
@@ -155,19 +155,19 @@ impl TaskStateSegment {
     pub fn set_kernel_stack(&mut self, stack_top: u64) {
         self.rsp0 = stack_top;
     }
-    
+
     /// 获取内核态栈指针
     #[inline]
     pub fn get_kernel_stack(&self) -> u64 {
         self.rsp0
     }
-    
+
     /// 设置 IST 条目
-    /// 
+    ///
     /// # Arguments
     /// * `index` - IST 条目号 (0-6)
     /// * `stack_top` - 该 IST 的栈顶地址
-    /// 
+    ///
     /// # Panics
     /// 如果 index >= 7
     #[inline]
@@ -177,7 +177,7 @@ impl TaskStateSegment {
         }
         // else: 静默忽略越界 (生产环境应 panic 或返回 Result)
     }
-    
+
     /// 获取 IST 条目
     #[inline]
     pub fn get_ist(&self, index: usize) -> Option<u64> {
@@ -187,25 +187,25 @@ impl TaskStateSegment {
             None
         }
     }
-    
+
     /// 启用 I/O 权限位图
-    /// 
+    ///
     /// 设置 I/O 位图基址到 TSS 内部某处。
     /// 调用者需自行填充位图内容。
-    /// 
+    ///
     /// # Arguments
     /// * `offset` - 相对于 TSS 起始的字节偏移
     #[inline]
     pub fn enable_iomap(&mut self, offset: u16) {
         self.iomap_base = offset;
     }
-    
+
     /// 禁用 I/O 权限位图
     #[inline]
     pub fn disable_iomap(&mut self) {
         self.iomap_base = DEFAULT_IOMAP_BASE;
     }
-    
+
     /// 检查是否启用了 I/O 位图
     #[inline]
     pub fn has_iomap(&self) -> bool {
@@ -233,7 +233,7 @@ pub fn tss_set_kernel_stack(rsp0: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_tss_zeroed() {
         let tss = TaskStateSegment::zeroed();
@@ -241,64 +241,64 @@ mod tests {
         assert_eq!(tss.rsp1, 0);
         assert_eq!(tss.rsp2, 0);
         assert_eq!(tss.iomap_base, DEFAULT_IOMAP_BASE);
-        
+
         for ist in tss.ist.iter() {
             assert_eq!(*ist, 0);
         }
     }
-    
+
     #[test]
     fn test_tss_set_kernel_stack() {
         let mut tss = TaskStateSegment::zeroed();
         tss.set_kernel_stack(0xDEAD_BEEF_CAFE_BABE);
         assert_eq!(tss.get_kernel_stack(), 0xDEAD_BEEF_CAFE_BABE);
     }
-    
+
     #[test]
     fn test_tss_ist_operations() {
         let mut tss = TaskStateSegment::zeroed();
-        
+
         // 设置 IST
         tss.set_ist(0, 0x1111_2222_3333_4444);
         tss.set_ist(6, 0xAAAA_BBBB_CCCC_DDDD);
-        
+
         // 读取验证
         assert_eq!(tss.get_ist(0), Some(0x1111_2222_3333_4444));
         assert_eq!(tss.get_ist(6), Some(0xAAAA_BBBB_CCCC_DDDD));
-        
+
         // 未设置的 IST 应为 0
         assert_eq!(tss.get_ist(3), Some(0));
-        
+
         // 越界访问返回 None
         assert_eq!(tss.get_ist(7), None);
     }
-    
+
     #[test]
     fn test_tss_iomap() {
         let mut tss = TaskStateSegment::zeroed();
-        
+
         // 默认禁用
         assert!(!tss.has_iomap());
-        
+
         // 启用
         tss.enable_iomap(104); // TSS 最小大小之后
         assert!(tss.has_iomap());
         assert_eq!(tss.iomap_base, 104);
-        
+
         // 禁用
         tss.disable_iomap();
         assert!(!tss.has_iomap());
         assert_eq!(tss.iomap_base, DEFAULT_IOMAP_BASE);
     }
-    
+
     #[test]
     fn test_tss_size() {
         // TSS 必须 >= 104 字节
         assert!(TSS_SIZE >= TSS_MINIMUM_SIZE);
-        
+
         // TSS 必须 16-byte 对齐
         assert_eq!(TSS_SIZE % 16, 0);
-        
+
         println!("TSS size: {} bytes", TSS_SIZE);
     }
 }

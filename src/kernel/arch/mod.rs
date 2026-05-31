@@ -180,40 +180,96 @@ pub trait SystemArch {
 /// 新架构移植时，实现子 trait 后加 `impl Arch for MyArch {}` 即可获得完整接口。
 pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
     // ── 委托到 CoreArch ─────────────────────────────────
-    fn cpu_id() -> u32                    { <Self as CoreArch>::cpu_id() }
-    fn timestamp() -> u64                 { <Self as CoreArch>::timestamp() }
-    fn halt()                             { <Self as CoreArch>::halt(); }
-    fn fence()                            { <Self as CoreArch>::fence(); }
-    fn fence_w()                          { <Self as CoreArch>::fence_w(); }
-    fn fence_r()                          { <Self as CoreArch>::fence_r(); }
+    fn cpu_id() -> u32 {
+        <Self as CoreArch>::cpu_id()
+    }
+    fn timestamp() -> u64 {
+        <Self as CoreArch>::timestamp()
+    }
+    fn halt() {
+        <Self as CoreArch>::halt();
+    }
+    fn fence() {
+        <Self as CoreArch>::fence();
+    }
+    fn fence_w() {
+        <Self as CoreArch>::fence_w();
+    }
+    fn fence_r() {
+        <Self as CoreArch>::fence_r();
+    }
 
     // ── 委托到 InterruptArch ────────────────────────────
-    fn interrupt_disable() -> usize       { <Self as InterruptArch>::interrupt_disable() }
-    fn interrupt_restore(flags: usize)    { <Self as InterruptArch>::interrupt_restore(flags); }
-    fn interrupt_enable()                 { <Self as InterruptArch>::interrupt_enable(); }
-    fn is_interrupt_enabled() -> bool     { <Self as InterruptArch>::is_interrupt_enabled() }
-    fn interrupt_early_init()             { <Self as InterruptArch>::interrupt_early_init(); }
-    fn interrupt_late_init()              { <Self as InterruptArch>::interrupt_late_init(); }
-    fn send_ipi(target_cpu: u32, vector: u8) { <Self as InterruptArch>::send_ipi(target_cpu, vector); }
-    fn broadcast_ipi(vector: u8)          { <Self as InterruptArch>::broadcast_ipi(vector); }
+    fn interrupt_disable() -> usize {
+        <Self as InterruptArch>::interrupt_disable()
+    }
+    fn interrupt_restore(flags: usize) {
+        <Self as InterruptArch>::interrupt_restore(flags);
+    }
+    fn interrupt_enable() {
+        <Self as InterruptArch>::interrupt_enable();
+    }
+    fn is_interrupt_enabled() -> bool {
+        <Self as InterruptArch>::is_interrupt_enabled()
+    }
+    fn interrupt_early_init() {
+        <Self as InterruptArch>::interrupt_early_init();
+    }
+    fn interrupt_late_init() {
+        <Self as InterruptArch>::interrupt_late_init();
+    }
+    fn send_ipi(target_cpu: u32, vector: u8) {
+        <Self as InterruptArch>::send_ipi(target_cpu, vector);
+    }
+    fn broadcast_ipi(vector: u8) {
+        <Self as InterruptArch>::broadcast_ipi(vector);
+    }
 
     // ── 委托到 MmuArch ─────────────────────────────────
-    fn tlb_flush_page(vaddr: usize)       { <Self as MmuArch>::tlb_flush_page(vaddr); }
-    fn tlb_flush_all()                    { <Self as MmuArch>::tlb_flush_all(); }
-    fn read_page_table_base() -> u64      { <Self as MmuArch>::read_page_table_base() }
-    fn write_page_table_base(paddr: u64)  { <Self as MmuArch>::write_page_table_base(paddr); }
-    fn read_fault_address() -> usize      { <Self as MmuArch>::read_fault_address() }
-    fn context_switch(from: *mut u8, to: *const u8) { <Self as MmuArch>::context_switch(from, to); }
-    fn enter_user(entry: usize, stack: usize, arg: usize) -> ! { <Self as MmuArch>::enter_user(entry, stack, arg) }
-    fn return_to_user()                   { <Self as MmuArch>::return_to_user(); }
+    fn tlb_flush_page(vaddr: usize) {
+        <Self as MmuArch>::tlb_flush_page(vaddr);
+    }
+    fn tlb_flush_all() {
+        <Self as MmuArch>::tlb_flush_all();
+    }
+    fn read_page_table_base() -> u64 {
+        <Self as MmuArch>::read_page_table_base()
+    }
+    fn write_page_table_base(paddr: u64) {
+        <Self as MmuArch>::write_page_table_base(paddr);
+    }
+    fn read_fault_address() -> usize {
+        <Self as MmuArch>::read_fault_address()
+    }
+    fn context_switch(from: *mut u8, to: *const u8) {
+        <Self as MmuArch>::context_switch(from, to);
+    }
+    fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
+        <Self as MmuArch>::enter_user(entry, stack, arg)
+    }
+    fn return_to_user() {
+        <Self as MmuArch>::return_to_user();
+    }
 
     // ── 委托到 SystemArch ──────────────────────────────
-    fn outb(port: u16, value: u8)         { <Self as SystemArch>::outb(port, value); }
-    fn inb(port: u16) -> u8               { <Self as SystemArch>::inb(port) }
-    fn outl(port: u16, value: u32)        { <Self as SystemArch>::outl(port, value); }
-    fn inl(port: u16) -> u32              { <Self as SystemArch>::inl(port) }
-    fn shutdown() -> !                    { <Self as SystemArch>::shutdown() }
-    fn reboot() -> !                      { <Self as SystemArch>::reboot() }
+    fn outb(port: u16, value: u8) {
+        <Self as SystemArch>::outb(port, value);
+    }
+    fn inb(port: u16) -> u8 {
+        <Self as SystemArch>::inb(port)
+    }
+    fn outl(port: u16, value: u32) {
+        <Self as SystemArch>::outl(port, value);
+    }
+    fn inl(port: u16) -> u32 {
+        <Self as SystemArch>::inl(port)
+    }
+    fn shutdown() -> ! {
+        <Self as SystemArch>::shutdown()
+    }
+    fn reboot() -> ! {
+        <Self as SystemArch>::reboot()
+    }
 }
 
 // ============================================================================

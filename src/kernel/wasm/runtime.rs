@@ -20,7 +20,9 @@ pub struct ValueStack {
 
 impl ValueStack {
     pub fn new() -> Self {
-        Self { data: Vec::with_capacity(256) }
+        Self {
+            data: Vec::with_capacity(256),
+        }
     }
 
     pub fn push(&mut self, v: Value) -> Result<(), WasmError> {
@@ -120,7 +122,8 @@ impl LinearMemory {
                 return Ok(u32::MAX);
             }
         }
-        self.data.resize(new_pages as usize * WASM_PAGE_SIZE as usize, 0);
+        self.data
+            .resize(new_pages as usize * WASM_PAGE_SIZE as usize, 0);
         Ok(current_pages)
     }
 
@@ -149,18 +152,24 @@ impl LinearMemory {
     pub fn read_u32(&self, offset: u32) -> Result<u32, WasmError> {
         let addr = self.check_access(offset, 4)?;
         Ok(u32::from_le_bytes([
-            self.data[addr], self.data[addr + 1],
-            self.data[addr + 2], self.data[addr + 3],
+            self.data[addr],
+            self.data[addr + 1],
+            self.data[addr + 2],
+            self.data[addr + 3],
         ]))
     }
 
     pub fn read_u64(&self, offset: u32) -> Result<u64, WasmError> {
         let addr = self.check_access(offset, 8)?;
         Ok(u64::from_le_bytes([
-            self.data[addr], self.data[addr + 1],
-            self.data[addr + 2], self.data[addr + 3],
-            self.data[addr + 4], self.data[addr + 5],
-            self.data[addr + 6], self.data[addr + 7],
+            self.data[addr],
+            self.data[addr + 1],
+            self.data[addr + 2],
+            self.data[addr + 3],
+            self.data[addr + 4],
+            self.data[addr + 5],
+            self.data[addr + 6],
+            self.data[addr + 7],
         ]))
     }
 

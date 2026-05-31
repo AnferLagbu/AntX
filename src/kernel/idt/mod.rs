@@ -47,69 +47,50 @@
 //! ```
 
 // 子模块声明
-pub mod types;
+pub mod handlers; // Phase 3: 异常处理器实现
+pub mod idt; // Phase 2: 核心管理器
 pub mod safety;
-pub mod idt;         // Phase 2: 核心管理器
-pub mod handlers;     // Phase 3: 异常处理器实现
-pub mod statistics;   // Phase 3: 统计与 JSON 导出
+pub mod statistics;
+pub mod types; // Phase 3: 统计与 JSON 导出
 
 // 重新导出核心类型 (方便外部使用)
 pub use types::{
-    IdtEntry,
-    IdtPtr,
-    InterruptFrame,
-    IrqDescriptor,
-    InterruptStatistics,
-    ErrorFlags,
-    // 常量
-    IDT_ENTRIES,
-    IRQ_BASE,
-    IDT_TYPE_INTERRUPT,
-    IDT_TYPE_TRAP,
-    IDT_DPL_USER,
-    GDT_KERNEL_CODE,
-    MODULE_INIT_SUCCESS,
-    MODULE_INIT_FAILURE,
     // 辅助函数
     get_exception_name,
     get_irq_name,
+    ErrorFlags,
+    IdtEntry,
+    IdtPtr,
+    InterruptFrame,
+    InterruptStatistics,
+    IrqDescriptor,
+    GDT_KERNEL_CODE,
+    IDT_DPL_USER,
+    // 常量
+    IDT_ENTRIES,
+    IDT_TYPE_INTERRUPT,
+    IDT_TYPE_TRAP,
+    IRQ_BASE,
+    MODULE_INIT_FAILURE,
+    MODULE_INIT_SUCCESS,
 };
 
 pub use safety::{
-    CpuFeatures,
-    read_cr2,
-    disable_interrupts,
-    enable_interrupts,
-    rdtsc,
-    halt_loop,
-    is_valid_user_address,
-    is_valid_kernel_address,
+    disable_interrupts, enable_interrupts, halt_loop, is_valid_kernel_address,
+    is_valid_user_address, rdtsc, read_cr2, CpuFeatures,
 };
 
 pub use idt::IdtManager;
 
 // Phase 3: 异常处理器导出
 pub use handlers::{
-    ExceptionHandler,
-    RecoveryAction,
-    PanicInfo,
-    Severity,
-    ExceptionCategory,
-    DivisionByZeroHandler,
-    PageFaultHandler,
-    GeneralProtectionFaultHandler,
-    DoubleFaultHandler,
-    DefaultHandler,
-    create_handler,
-    get_collector,
+    create_handler, get_collector, DefaultHandler, DivisionByZeroHandler, DoubleFaultHandler,
+    ExceptionCategory, ExceptionHandler, GeneralProtectionFaultHandler, PageFaultHandler,
+    PanicInfo, RecoveryAction, Severity,
 };
 
 // Phase 3: 统计模块导出
-pub use statistics::{
-    DetailedStatistics,
-    InterruptEvent,
-    get_detailed_statistics,
-};
+pub use statistics::{get_detailed_statistics, DetailedStatistics, InterruptEvent};
 
 /// 全局 IDT 管理器实例 (Phase 2 已实现)
 pub static IDT_MANAGER: () = ();
@@ -136,46 +117,127 @@ pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn idt_init() -> i32 {
     let manager = IdtManager::instance();
-    
+
     // 获取 ISR 地址表 (从 isr.asm 导出的符号, 使用 fn 指针)
     extern "C" {
-        fn isr0();  fn isr1();  fn isr2();  fn isr3();
-        fn isr4();  fn isr5();  fn isr6();  fn isr7();
-        fn isr8();  fn isr9();  fn isr10(); fn isr11();
-        fn isr12(); fn isr13(); fn isr14(); fn isr15();
-        fn isr16(); fn isr17(); fn isr18(); fn isr19();
-        fn isr20(); fn isr21(); fn isr22(); fn isr23();
-        fn isr24(); fn isr25(); fn isr26(); fn isr27();
-        fn isr28(); fn isr29(); fn isr30(); fn isr31();
-        fn irq0();  fn irq1();  fn irq2();  fn irq3();
-        fn irq4();  fn irq5();  fn irq6();  fn irq7();
-        fn irq8();  fn irq9();  fn irq10(); fn irq11();
-        fn irq12(); fn irq13(); fn irq14(); fn irq15();
+        fn isr0();
+        fn isr1();
+        fn isr2();
+        fn isr3();
+        fn isr4();
+        fn isr5();
+        fn isr6();
+        fn isr7();
+        fn isr8();
+        fn isr9();
+        fn isr10();
+        fn isr11();
+        fn isr12();
+        fn isr13();
+        fn isr14();
+        fn isr15();
+        fn isr16();
+        fn isr17();
+        fn isr18();
+        fn isr19();
+        fn isr20();
+        fn isr21();
+        fn isr22();
+        fn isr23();
+        fn isr24();
+        fn isr25();
+        fn isr26();
+        fn isr27();
+        fn isr28();
+        fn isr29();
+        fn isr30();
+        fn isr31();
+        fn irq0();
+        fn irq1();
+        fn irq2();
+        fn irq3();
+        fn irq4();
+        fn irq5();
+        fn irq6();
+        fn irq7();
+        fn irq8();
+        fn irq9();
+        fn irq10();
+        fn irq11();
+        fn irq12();
+        fn irq13();
+        fn irq14();
+        fn irq15();
         fn syscall_handler();
         fn isr0x82();
     }
-    
+
     unsafe {
-        macro_rules! addr { ($f:ident) => { ($f as *const ()) as usize as u64 }; }
+        macro_rules! addr {
+            ($f:ident) => {
+                ($f as *const ()) as usize as u64
+            };
+        }
         let isr_table: [u64; 32] = [
-            addr!(isr0), addr!(isr1), addr!(isr2), addr!(isr3),
-            addr!(isr4), addr!(isr5), addr!(isr6), addr!(isr7),
-            addr!(isr8), addr!(isr9), addr!(isr10), addr!(isr11),
-            addr!(isr12), addr!(isr13), addr!(isr14), addr!(isr15),
-            addr!(isr16), addr!(isr17), addr!(isr18), addr!(isr19),
-            addr!(isr20), addr!(isr21), addr!(isr22), addr!(isr23),
-            addr!(isr24), addr!(isr25), addr!(isr26), addr!(isr27),
-            addr!(isr28), addr!(isr29), addr!(isr30), addr!(isr31),
+            addr!(isr0),
+            addr!(isr1),
+            addr!(isr2),
+            addr!(isr3),
+            addr!(isr4),
+            addr!(isr5),
+            addr!(isr6),
+            addr!(isr7),
+            addr!(isr8),
+            addr!(isr9),
+            addr!(isr10),
+            addr!(isr11),
+            addr!(isr12),
+            addr!(isr13),
+            addr!(isr14),
+            addr!(isr15),
+            addr!(isr16),
+            addr!(isr17),
+            addr!(isr18),
+            addr!(isr19),
+            addr!(isr20),
+            addr!(isr21),
+            addr!(isr22),
+            addr!(isr23),
+            addr!(isr24),
+            addr!(isr25),
+            addr!(isr26),
+            addr!(isr27),
+            addr!(isr28),
+            addr!(isr29),
+            addr!(isr30),
+            addr!(isr31),
         ];
-        
+
         let irq_table: [u64; 16] = [
-            addr!(irq0), addr!(irq1), addr!(irq2), addr!(irq3),
-            addr!(irq4), addr!(irq5), addr!(irq6), addr!(irq7),
-            addr!(irq8), addr!(irq9), addr!(irq10), addr!(irq11),
-            addr!(irq12), addr!(irq13), addr!(irq14), addr!(irq15),
+            addr!(irq0),
+            addr!(irq1),
+            addr!(irq2),
+            addr!(irq3),
+            addr!(irq4),
+            addr!(irq5),
+            addr!(irq6),
+            addr!(irq7),
+            addr!(irq8),
+            addr!(irq9),
+            addr!(irq10),
+            addr!(irq11),
+            addr!(irq12),
+            addr!(irq13),
+            addr!(irq14),
+            addr!(irq15),
         ];
-        
-        match manager.init(&isr_table, &irq_table, addr!(syscall_handler), addr!(isr0x82)) {
+
+        match manager.init(
+            &isr_table,
+            &irq_table,
+            addr!(syscall_handler),
+            addr!(isr0x82),
+        ) {
             Ok(()) => MODULE_INIT_SUCCESS,
             Err(msg) => {
                 // TODO: 使用 klog 记录错误 (Phase 3)
@@ -209,12 +271,14 @@ pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) {
-    if frame.is_null() { return; }
-    
+    if frame.is_null() {
+        return;
+    }
+
     let manager = IdtManager::instance();
     let frame_ref = &*frame;
     let vector = frame_ref.int_no as u8;
-    
+
     manager.handle_irq(frame, vector);
 }
 
@@ -228,7 +292,7 @@ pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) {
 #[no_mangle]
 pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: u8) {
     let manager = IdtManager::instance();
-    
+
     // 直接修改 entries 数组 (需要 Mutex 保护)
     let mut state = manager.state.lock();
     if num < IDT_ENTRIES as u8 {
@@ -249,13 +313,13 @@ pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: 
 /// - `-1`: 参数无效
 #[no_mangle]
 pub extern "C" fn idt_register_irq(
-    irq: u8, 
-    handler: CIrqHandler, 
-    name: *const core::ffi::c_char, 
-    flags: u32
+    irq: u8,
+    handler: CIrqHandler,
+    name: *const core::ffi::c_char,
+    flags: u32,
 ) -> i32 {
     let manager = IdtManager::instance();
-    
+
     // 将 C 字符串转换为 Rust &str
     let name_str = if name.is_null() {
         ""
@@ -263,7 +327,7 @@ pub extern "C" fn idt_register_irq(
         // 简单处理：假设 name 指向静态字符串
         unsafe { core::ffi::CStr::from_ptr(name).to_str().unwrap_or("") }
     };
-    
+
     match manager.register_irq(irq, handler, name_str, flags) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -274,7 +338,7 @@ pub extern "C" fn idt_register_irq(
 #[no_mangle]
 pub extern "C" fn idt_unregister_irq(irq: u8, handler: CIrqHandler) -> i32 {
     let manager = IdtManager::instance();
-    
+
     match manager.unregister_irq(irq, handler) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -328,7 +392,7 @@ mod integration_tests {
     fn test_ffi_interface_compiles() {
         // 验证所有 FFI 函数可以正常编译链接
         assert_eq!(idt_init(), MODULE_INIT_SUCCESS);
-        
+
         // 测试 dump 函数不会 panic
         idt_dump_state();
         idt_print_interrupt_stats();

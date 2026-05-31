@@ -27,9 +27,13 @@ mod stress_tests {
         let hash = dedup::sha256(data);
         let bp = bp::HvBlockPointer::null();
         cas.insert(hash, bp);
-        for _ in 0..50 { cas.ref_inc(&hash); }
+        for _ in 0..50 {
+            cas.ref_inc(&hash);
+        }
         assert_eq!(cas.ref_count(&hash), 51);
-        for _ in 0..50 { cas.ref_dec(&hash); }
+        for _ in 0..50 {
+            cas.ref_dec(&hash);
+        }
         assert_eq!(cas.ref_count(&hash), 1);
         cas.ref_dec(&hash);
         assert_eq!(cas.ref_count(&hash), 0);
@@ -48,7 +52,12 @@ mod stress_tests {
         for i in 0..256 {
             let name = format!("entry_{:04}", i);
             let expected = (i * 9973) ^ 0xDEADBEEF;
-            assert_eq!(z.lookup_u64(&name), Some(expected), "ZAP lookup mismatch at {}", i);
+            assert_eq!(
+                z.lookup_u64(&name),
+                Some(expected),
+                "ZAP lookup mismatch at {}",
+                i
+            );
         }
         z.remove("entry_0000");
         assert_eq!(z.len(), 255);
@@ -93,7 +102,9 @@ mod stress_tests {
         }
         assert_eq!(zil.records.lock().len(), 100);
         zil.sync(101);
-        let seq = zil.committed_seq.load(core::sync::atomic::Ordering::Relaxed);
+        let seq = zil
+            .committed_seq
+            .load(core::sync::atomic::Ordering::Relaxed);
         assert!(seq > 0, "committed_seq should advance");
     }
 }

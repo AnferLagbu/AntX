@@ -14,7 +14,9 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn sys_init() {
     crate::kernel::net::types::NET_READY.store(false, core::sync::atomic::Ordering::Relaxed);
-    unsafe { klog_net("sys_arch ready\0".as_ptr() as *const i8); }
+    unsafe {
+        klog_net("sys_arch ready\0".as_ptr() as *const i8);
+    }
 }
 
 #[no_mangle]
@@ -46,25 +48,51 @@ pub extern "C" fn sys_mbox_trypost_fromisr(
 }
 
 #[no_mangle]
-pub extern "C" fn lwip_socket(_domain: i32, _type: i32, _protocol: i32) -> i32 { -1 }
+pub extern "C" fn lwip_socket(_domain: i32, _type: i32, _protocol: i32) -> i32 {
+    -1
+}
 
 #[no_mangle]
-pub extern "C" fn lwip_bind(_s: i32, _name: *const core::ffi::c_void, _namelen: u32) -> i32 { -1 }
+pub extern "C" fn lwip_bind(_s: i32, _name: *const core::ffi::c_void, _namelen: u32) -> i32 {
+    -1
+}
 
 #[no_mangle]
-pub extern "C" fn lwip_listen(_s: i32, _backlog: i32) -> i32 { -1 }
+pub extern "C" fn lwip_listen(_s: i32, _backlog: i32) -> i32 {
+    -1
+}
 
 #[no_mangle]
-pub extern "C" fn lwip_accept(_s: i32, _addr: *mut core::ffi::c_void, _addrlen: *mut u32) -> i32 { -1 }
+pub extern "C" fn lwip_accept(_s: i32, _addr: *mut core::ffi::c_void, _addrlen: *mut u32) -> i32 {
+    -1
+}
 
 #[no_mangle]
-pub extern "C" fn lwip_connect(_s: i32, _name: *const core::ffi::c_void, _namelen: u32) -> i32 { -1 }
+pub extern "C" fn lwip_connect(_s: i32, _name: *const core::ffi::c_void, _namelen: u32) -> i32 {
+    -1
+}
 
 #[no_mangle]
-pub extern "C" fn lwip_send(_s: i32, _data: *const core::ffi::c_void, _size: usize, _flags: i32) -> isize { -1 }
+pub extern "C" fn lwip_send(
+    _s: i32,
+    _data: *const core::ffi::c_void,
+    _size: usize,
+    _flags: i32,
+) -> isize {
+    -1
+}
 
 #[no_mangle]
-pub extern "C" fn lwip_recv(_s: i32, _mem: *mut core::ffi::c_void, _len: usize, _flags: i32) -> isize { -1 }
+pub extern "C" fn lwip_recv(
+    _s: i32,
+    _mem: *mut core::ffi::c_void,
+    _len: usize,
+    _flags: i32,
+) -> isize {
+    -1
+}
 
 #[no_mangle]
-pub extern "C" fn lwip_close(_s: i32) -> i32 { -1 }
+pub extern "C" fn lwip_close(_s: i32) -> i32 {
+    -1
+}

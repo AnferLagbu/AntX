@@ -1,11 +1,11 @@
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::boxed::Box;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicBool, Ordering};
 
+use super::scheduler::SchedPolicy;
 use super::types::*;
-use super::scheduler::{SchedPolicy};
 use crate::kernel::chitin::user_driver::chitin_process_cleanup;
 
 const MAX_FDS_PER_PROCESS: usize = 64;
@@ -46,7 +46,11 @@ impl FdTable {
         let entries = self.entries.lock();
         if local_fd < MAX_FDS_PER_PROCESS {
             let gfd = entries[local_fd];
-            if gfd != -1 { Some(gfd) } else { None }
+            if gfd != -1 {
+                Some(gfd)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -54,7 +58,9 @@ impl FdTable {
 
     /// ✅ 关闭本地 fd
     pub fn close_fd(&self, local_fd: usize) -> bool {
-        if local_fd >= MAX_FDS_PER_PROCESS { return false; }
+        if local_fd >= MAX_FDS_PER_PROCESS {
+            return false;
+        }
         let mut entries = self.entries.lock();
         if entries[local_fd] != -1 {
             entries[local_fd] = -1;
@@ -74,20 +80,28 @@ extern "C" {
 pub const KERNEL_STACK_CANARY: u64 = 0xDEADBEEF_CAFEBABE;
 
 pub fn kernel_stack_check_canary(stack_top: u64) -> bool {
-    if stack_top < 8 { return true; }
+    if stack_top < 8 {
+        return true;
+    }
     unsafe {
         let canary_ptr = (stack_top - 8) as *const u64;
-        if (canary_ptr as u64) < 0x1000 { return true; }
+        if (canary_ptr as u64) < 0x1000 {
+            return true;
+        }
         let value = core::ptr::read_volatile(canary_ptr);
         value == KERNEL_STACK_CANARY
     }
 }
 
 pub fn kernel_stack_write_canary(stack_top: u64) {
-    if stack_top <= 8 { return; }
+    if stack_top <= 8 {
+        return;
+    }
     unsafe {
         let canary_ptr = (stack_top - 8) as *mut u64;
-        if (canary_ptr as u64) < 0x1000 { return; }
+        if (canary_ptr as u64) < 0x1000 {
+            return;
+        }
         core::ptr::write_volatile(canary_ptr, KERNEL_STACK_CANARY);
     }
 }
@@ -98,21 +112,21 @@ pub struct Process {
     pub state: AtomicU32,
     pub priority: AtomicU32,
     pub flags: AtomicU32,
-    
+
     pub name: Mutex<String>,
     pub parent: Option<ProcessId>,
     pub children: Mutex<Vec<ProcessId>>,
-    
+
     pub context: Mutex<ProcessContext>,
     pub cr3: AtomicU64,
     pub kernel_stack: AtomicU64,
     pub user_stack: AtomicU64,
-    
+
     pub exit_code: AtomicU32,
     pub cpu_time: AtomicU64,
-    
+
     pub block_reason: AtomicU32,
-    
+
     pub sched_policy: AtomicU32,
     pub rt_priority: AtomicU32,
 
@@ -130,7 +144,7 @@ pub struct Process {
 
     pub session_id: AtomicU64,
     pub fd_table: FdTable,
-    
+
     /// 阻塞睡眠到期时间 (ticks), 用于 proc_sleep_ms
     pub sleep_until: AtomicU64,
 
@@ -148,7 +162,7 @@ pub struct Process {
 // 3. 原始指针字段 (cr3, kernel_stack, user_stack) 只通过原子操作访问
 // 4. 不存在悬垂指针或数据竞争的风险
 //
-// # Safety (Sync)  
+// # Safety (Sync)
 // Process 可以安全地被多个线程共享引用 (&Process), 因为:
 // 1. name, children, context 等复合类型都被 Mutex 包装
 //    - 访问这些字段必须先获取锁, 保证互斥
@@ -202,7 +216,7 @@ impl Process {
             pending_signals: AtomicU64::new(0),
         }
     }
-    
+
     pub fn allocate_kernel_stack(&self) -> bool {
         const KERNEL_BASE: u64 = 0xFFFF800000000000;
         unsafe {
@@ -218,7 +232,7 @@ impl Process {
             true
         }
     }
-    
+
     pub fn allocate_user_space(&self) -> bool {
         unsafe {
             let cr3 = vmm_create_user_page_table();
@@ -229,74 +243,74 @@ impl Process {
             true
         }
     }
-    
+
     pub fn get_state(&self) -> ProcessState {
         ProcessState::from_u8(self.state.load(Ordering::SeqCst) as u8)
     }
-    
+
     /// ✅ 安全的状态设置 (带合法性检查和审计日志)
-    /// 
+    ///
     /// # Arguments
     /// * `new_state` - 目标新状态
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - 状态转换成功
     /// * `Err(&str)` - 非法状态转换
     pub fn set_state_safe(&self, new_state: ProcessState) -> Result<(), &'static str> {
         let current = self.get_state();
-        
+
         // ✅ 状态机合法性检查 (防止非法转换)
         match (current, new_state) {
             // 允许的正常转换
-            (ProcessState::Created, ProcessState::Ready) => {},
-            (ProcessState::Ready, ProcessState::Running) => {},
-            (ProcessState::Running, ProcessState::Ready) => {},      // 时间片耗尽/抢占
-            (ProcessState::Running, ProcessState::Blocked) => {},   // 阻塞系统调用
-            (ProcessState::Running, ProcessState::Zombie) => {},     // exit()
-            (ProcessState::Running, ProcessState::Frozen) => {},     // freeze
-            (ProcessState::Ready, ProcessState::Frozen) => {},       // freeze
-            (ProcessState::Blocked, ProcessState::Frozen) => {},     // freeze
-            (ProcessState::Blocked, ProcessState::Ready) => {},      // 事件完成唤醒
-            (ProcessState::Blocked, ProcessState::Zombie) => {},     // 被 kill
-            (ProcessState::Zombie, ProcessState::Terminated) => {},  // wait() 回收
-            (ProcessState::Frozen, ProcessState::Ready) => {},       // thaw 唤醒
-            (ProcessState::Frozen, ProcessState::Blocked) => {},     // thaw 后仍需等待
-            
+            (ProcessState::Created, ProcessState::Ready) => {}
+            (ProcessState::Ready, ProcessState::Running) => {}
+            (ProcessState::Running, ProcessState::Ready) => {} // 时间片耗尽/抢占
+            (ProcessState::Running, ProcessState::Blocked) => {} // 阻塞系统调用
+            (ProcessState::Running, ProcessState::Zombie) => {} // exit()
+            (ProcessState::Running, ProcessState::Frozen) => {} // freeze
+            (ProcessState::Ready, ProcessState::Frozen) => {}  // freeze
+            (ProcessState::Blocked, ProcessState::Frozen) => {} // freeze
+            (ProcessState::Blocked, ProcessState::Ready) => {} // 事件完成唤醒
+            (ProcessState::Blocked, ProcessState::Zombie) => {} // 被 kill
+            (ProcessState::Zombie, ProcessState::Terminated) => {} // wait() 回收
+            (ProcessState::Frozen, ProcessState::Ready) => {}  // thaw 唤醒
+            (ProcessState::Frozen, ProcessState::Blocked) => {} // thaw 后仍需等待
+
             // ❌ 禁止的非法转换
             _ => return Err("Illegal process state transition"),
         }
-        
+
         // 执行状态转换
         self.state.store(new_state as u32, Ordering::Release);
-        
+
         // ✅ 审计日志 (调试模式) - 已禁用: no_std 环境
         // #[cfg(debug_assertions)]
         // eprintln!("[PROCESS] PID={} {}→{}",
         //           self.pid.0, current.name(), new_state.name());
-        
+
         Ok(())
     }
-    
+
     /// 旧版兼容接口 (内部使用, 不建议新代码使用)
     #[deprecated(note = "Use set_state_safe() for state transitions with validation")]
     pub fn set_state(&self, state: ProcessState) {
         // 兼容旧代码, 但记录警告
         let _ = self.set_state_safe(state);
     }
-    
+
     pub fn get_priority(&self) -> ProcessPriority {
         ProcessPriority::from_u32(self.priority.load(Ordering::SeqCst))
     }
-    
+
     pub fn set_priority(&self, priority: ProcessPriority) {
         self.priority.store(priority as u32, Ordering::SeqCst);
     }
-    
+
     pub fn is_kernel(&self) -> bool {
         let flags = self.flags.load(Ordering::SeqCst);
         (flags & ProcessFlags::IS_KERNEL.bits()) != 0
     }
-    
+
     pub fn set_kernel(&self, is_kernel: bool) {
         let mut flags = self.flags.load(Ordering::SeqCst);
         if is_kernel {
@@ -306,35 +320,41 @@ impl Process {
         }
         self.flags.store(flags, Ordering::SeqCst);
     }
-    
+
     pub fn get_sched_policy(&self) -> SchedPolicy {
         SchedPolicy::from_u32(self.sched_policy.load(Ordering::SeqCst))
     }
-    
+
     pub fn set_sched_policy(&self, policy: SchedPolicy) {
         self.sched_policy.store(policy as u32, Ordering::SeqCst);
     }
-    
+
     pub fn get_rt_priority(&self) -> u8 {
         self.rt_priority.load(Ordering::SeqCst) as u8
     }
-    
+
     pub fn set_rt_priority(&self, priority: u8) {
         self.rt_priority.store(priority as u32, Ordering::SeqCst);
     }
-    
+
     pub fn get_pwm(&self) -> u64 {
         self.pwm.load(Ordering::SeqCst)
     }
-    
+
     pub fn set_pwm(&self, pwm: u64) {
         self.pwm.store(pwm, Ordering::SeqCst);
     }
 
     pub fn try_inc_ref(&self) -> bool {
-        self.ref_count.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
-            if v > 0 { Some(v + 1) } else { None }
-        }).is_ok()
+        self.ref_count
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+                if v > 0 {
+                    Some(v + 1)
+                } else {
+                    None
+                }
+            })
+            .is_ok()
     }
 
     pub fn dec_ref(&self) -> u32 {
@@ -342,7 +362,8 @@ impl Process {
     }
 
     pub fn signal_pending_set(&self, sig: u32) {
-        self.pending_signals.fetch_or(1u64 << sig, Ordering::Release);
+        self.pending_signals
+            .fetch_or(1u64 << sig, Ordering::Release);
     }
 
     pub fn signal_pending_get(&self) -> u64 {
@@ -382,7 +403,7 @@ impl ProcessTable {
             next_pid: AtomicU32::new(1),
         }
     }
-    
+
     pub fn allocate_pid(&self) -> Option<Pid> {
         let pid = self.next_pid.fetch_add(1, Ordering::SeqCst);
         if pid as usize >= MAX_PROCESSES {
@@ -391,7 +412,7 @@ impl ProcessTable {
             Some(pid)
         }
     }
-    
+
     pub fn insert(&self, process: *mut Process) -> bool {
         let mut table = self.processes.lock();
         let pid = unsafe { (*process).pid.0 as usize };
@@ -401,7 +422,7 @@ impl ProcessTable {
         table[pid] = Some(process as usize);
         true
     }
-    
+
     pub fn get(&self, pid: Pid) -> Option<*mut Process> {
         let table = self.processes.lock();
         if pid as usize >= MAX_PROCESSES {
@@ -443,7 +464,7 @@ impl ProcessTable {
             None => None,
         }
     }
-    
+
     pub fn remove(&self, pid: Pid) -> Option<*mut Process> {
         let mut table = self.processes.lock();
         if pid as usize >= MAX_PROCESSES {
@@ -522,7 +543,9 @@ impl ProcessTable {
         for entry in table.iter() {
             if let &Some(addr) = entry {
                 let proc = unsafe { &*(addr as *const Process) };
-                if !f(proc) { break; }
+                if !f(proc) {
+                    break;
+                }
             }
         }
     }

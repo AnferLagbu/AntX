@@ -1,6 +1,6 @@
-use super::framebuffer::{Color, Framebuffer, Rect};
-use super::framebuffer::colors;
 use super::font::Font;
+use super::framebuffer::colors;
+use super::framebuffer::{Color, Framebuffer, Rect};
 
 /// 帧缓冲自检——绘制完整测试图案并验证功能正确性
 ///
@@ -34,9 +34,18 @@ pub fn framebuffer_self_test(fb: &mut Framebuffer, font: &Font) -> usize {
     let stripe_w: u32 = fw / 4;
 
     fb.fill_rect(Rect::new(0, 0, stripe_w, stripe_h), colors::RED);
-    fb.fill_rect(Rect::new(stripe_w as i32, 0, stripe_w, stripe_h), colors::GREEN);
-    fb.fill_rect(Rect::new(2 * stripe_w as i32, 0, stripe_w, stripe_h), colors::BLUE);
-    fb.fill_rect(Rect::new(3 * stripe_w as i32, 0, stripe_w, stripe_h), colors::WHITE);
+    fb.fill_rect(
+        Rect::new(stripe_w as i32, 0, stripe_w, stripe_h),
+        colors::GREEN,
+    );
+    fb.fill_rect(
+        Rect::new(2 * stripe_w as i32, 0, stripe_w, stripe_h),
+        colors::BLUE,
+    );
+    fb.fill_rect(
+        Rect::new(3 * stripe_w as i32, 0, stripe_w, stripe_h),
+        colors::WHITE,
+    );
 
     if let Some(r) = fb.get_pixel(stripe_w / 2, stripe_h / 2) {
         if r.r < 220 || r.g > 20 || r.b > 20 {
@@ -174,17 +183,27 @@ pub fn framebuffer_self_test(fb: &mut Framebuffer, font: &Font) -> usize {
     // ========================================================================
     let text_y: u32 = fh.saturating_sub(40);
     font.render_text(
-        fb, "AntX Framebuffer Self-Test v2.0",
-        10, text_y,
-        colors::WHITE, colors::BLACK,
+        fb,
+        "AntX Framebuffer Self-Test v2.0",
+        10,
+        text_y,
+        colors::WHITE,
+        colors::BLACK,
     );
     font.render_text_wrapped(
         fb,
-        &alloc::format!("Resolution: {}x{}x{}  Failures: {}",
-            fw, fh, fb.format().bits_per_pixel(), failures),
-        10, text_y + font.glyph_height,
+        &alloc::format!(
+            "Resolution: {}x{}x{}  Failures: {}",
+            fw,
+            fh,
+            fb.format().bits_per_pixel(),
+            failures
+        ),
+        10,
+        text_y + font.glyph_height,
         fw,
-        colors::LIGHT_GRAY, colors::BLACK,
+        colors::LIGHT_GRAY,
+        colors::BLACK,
     );
 
     failures

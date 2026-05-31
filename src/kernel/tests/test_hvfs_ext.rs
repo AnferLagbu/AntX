@@ -1,16 +1,16 @@
 #![cfg(target_arch = "x86_64")]
 use crate::register_tests_inner;
 
-use crate::kernel::fs::hvfs::bp::*;
-use crate::kernel::fs::hvfs::dmu::*;
-use crate::kernel::fs::hvfs::arc::*;
-use crate::kernel::fs::hvfs::zap::*;
-use crate::kernel::fs::hvfs::txg::*;
-use crate::kernel::fs::hvfs::compress;
-use crate::kernel::fs::hvfs::snapshot::*;
-use crate::kernel::fs::hvfs::dataset::*;
-use crate::kernel::tests::{runner, TestResult};
 use super::check;
+use crate::kernel::fs::hvfs::arc::*;
+use crate::kernel::fs::hvfs::bp::*;
+use crate::kernel::fs::hvfs::compress;
+use crate::kernel::fs::hvfs::dataset::*;
+use crate::kernel::fs::hvfs::dmu::*;
+use crate::kernel::fs::hvfs::snapshot::*;
+use crate::kernel::fs::hvfs::txg::*;
+use crate::kernel::fs::hvfs::zap::*;
+use crate::kernel::tests::{runner, TestResult};
 
 fn test_dmu_objset_alloc() -> TestResult {
     let os = HvObjSet::new();
@@ -46,7 +46,10 @@ fn test_dmu_objset_free() -> TestResult {
     let freed = os.free_obj(obj_id);
     check!(freed, "free_obj should succeed");
     let obj_after = os.get_obj(obj_id);
-    check!(obj_after.is_none() || !obj_after.unwrap().is_file(), "freed obj should not be File");
+    check!(
+        obj_after.is_none() || !obj_after.unwrap().is_file(),
+        "freed obj should not be File"
+    );
     TestResult::Pass
 }
 
@@ -72,7 +75,10 @@ fn test_zap_large_namespace() -> TestResult {
 
     for i in 0..30u64 {
         let key = alloc::format!("key_{}", i);
-        let val = match zap.lookup_u64(&key) { Some(v) => v, None => return TestResult::Fail("key not found") };
+        let val = match zap.lookup_u64(&key) {
+            Some(v) => v,
+            None => return TestResult::Fail("key not found"),
+        };
         check!(val == i * 100, "value mismatch");
     }
     TestResult::Pass
@@ -128,7 +134,10 @@ fn test_arc_eviction() -> TestResult {
         arc.insert(key, &data, HvArcBufType::Data);
     }
     let (hits, misses, size, _evicts) = arc.get_stats();
-    check!(size > 0 || hits > 0 || misses > 0, "arc should have activity after inserts");
+    check!(
+        size > 0 || hits > 0 || misses > 0,
+        "arc should have activity after inserts"
+    );
     TestResult::Pass
 }
 
@@ -141,13 +150,18 @@ fn test_arc_dirty_tracking() -> TestResult {
 
     arc.mark_dirty(&key);
     let dirty_count = arc.flush_dirty();
-    check!(dirty_count > 0, "should have dirty entries after mark_dirty");
+    check!(
+        dirty_count > 0,
+        "should have dirty entries after mark_dirty"
+    );
     TestResult::Pass
 }
 
 fn test_compress_lz4_roundtrip() -> TestResult {
     let mut data = [0u8; 256];
-    for i in 0..256 { data[i] = (i % 4) as u8; }
+    for i in 0..256 {
+        data[i] = (i % 4) as u8;
+    }
     let compressed = compress::compress(&data, HvCompType::LZ4);
     match compressed {
         Some(c) => {
@@ -157,20 +171,30 @@ fn test_compress_lz4_roundtrip() -> TestResult {
                     check!(d.len() == data.len(), "decompressed length mismatch");
                     check!(d.as_slice() == data, "roundtrip data mismatch");
                 }
-                None => { check!(false, "decompress returned None"); }
+                None => {
+                    check!(false, "decompress returned None");
+                }
             }
         }
         None => {
-            check!(true, "LZ4 compression returned None (data not compressible)");
+            check!(
+                true,
+                "LZ4 compression returned None (data not compressible)"
+            );
         }
     }
     TestResult::Pass
 }
 
 fn test_compress_off() -> TestResult {
-    check!(true, "HvCompType::Off means no compression, compress() returns None by design");
+    check!(
+        true,
+        "HvCompType::Off means no compression, compress() returns None by design"
+    );
     let mut data = [0u8; 256];
-    for i in 0..256 { data[i] = (i % 4) as u8; }
+    for i in 0..256 {
+        data[i] = (i % 4) as u8;
+    }
     let rle = compress::compress(&data, HvCompType::Gzip1);
     if let Some(c) = rle {
         let decompressed = compress::decompress(&c, data.len(), HvCompType::Gzip1);
@@ -190,14 +214,20 @@ fn test_snapshot_create() -> TestResult {
 
 fn test_snapshot_manager() -> TestResult {
     let mgr = HvSnapshotManager::new();
-    check!(mgr.snapshot_count() == 0, "new manager should have 0 snapshots");
+    check!(
+        mgr.snapshot_count() == 0,
+        "new manager should have 0 snapshots"
+    );
     TestResult::Pass
 }
 
 fn test_dataset_create() -> TestResult {
     let ds = HvDataset::new(1, "test-ds", 0);
     check!(ds.get_name() == "test-ds", "dataset name mismatch");
-    check!(!ds.is_active(), "new dataset should be Creating (not active)");
+    check!(
+        !ds.is_active(),
+        "new dataset should be Creating (not active)"
+    );
 
     ds.init(0);
     check!(ds.is_active(), "dataset should be active after init");
@@ -214,7 +244,7 @@ fn test_dataset_init() -> TestResult {
 
 pub fn register_hvfs_ext_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "hvfs::dmu": {
             "objset_alloc": test_dmu_objset_alloc,
             "objset_dir": test_dmu_objset_dir,

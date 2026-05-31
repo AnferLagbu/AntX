@@ -54,7 +54,7 @@ pub fn barrier_trigger_recovery() {
     unsafe {
         // SGI 7, 目标: 当前 CPU (Aff0), IRM=0 (不广播)
         let sgi: u64 = (BARRIER_RECOVERY_SGI << 24)   // INTID = 7
-                      | (1u64 << 16);                   // TargetList: Aff0=0
+                      | (1u64 << 16); // TargetList: Aff0=0
         core::arch::asm!(
             "msr icc_sgi1r_el1, {sgi}",
             "isb",

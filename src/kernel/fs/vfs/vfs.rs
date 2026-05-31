@@ -1,9 +1,9 @@
 use alloc::string::String;
-use spin::Mutex;
 use core::sync::atomic::{AtomicU32, Ordering};
+use spin::Mutex;
 
-use super::types::*;
 use super::types::KernelError;
+use super::types::*;
 
 pub struct VfsMount {
     pub path: [u8; VFS_MAX_PATH],
@@ -38,7 +38,11 @@ impl VfsMount {
     }
 
     pub fn get_path(&self) -> &str {
-        let end = self.path.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_PATH);
+        let end = self
+            .path
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(VFS_MAX_PATH);
         core::str::from_utf8(&self.path[..end]).unwrap_or("")
     }
 
@@ -69,9 +73,14 @@ pub struct VfsFile {
 impl Clone for VfsFile {
     fn clone(&self) -> Self {
         Self {
-            fd: self.fd, node_id: self.node_id, offset: self.offset,
-            flags: self.flags, pwm: self.pwm, used: self.used,
-            file_type: self.file_type, path: self.path,
+            fd: self.fd,
+            node_id: self.node_id,
+            offset: self.offset,
+            flags: self.flags,
+            pwm: self.pwm,
+            used: self.used,
+            file_type: self.file_type,
+            path: self.path,
         }
     }
 }
@@ -98,7 +107,11 @@ impl VfsFile {
     }
 
     pub fn get_path(&self) -> &str {
-        let end = self.path.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_PATH);
+        let end = self
+            .path
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(VFS_MAX_PATH);
         core::str::from_utf8(&self.path[..end]).unwrap_or("")
     }
 }
@@ -135,18 +148,48 @@ impl VfsManager {
     pub const fn new() -> Self {
         Self {
             mounts: Mutex::new([
-                VfsMount::new(), VfsMount::new(), VfsMount::new(), VfsMount::new(),
-                VfsMount::new(), VfsMount::new(), VfsMount::new(), VfsMount::new(),
+                VfsMount::new(),
+                VfsMount::new(),
+                VfsMount::new(),
+                VfsMount::new(),
+                VfsMount::new(),
+                VfsMount::new(),
+                VfsMount::new(),
+                VfsMount::new(),
             ]),
             fd_table: Mutex::new([
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
-                VfsFile::new(), VfsFile::new(), VfsFile::new(), VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
+                VfsFile::new(),
             ]),
             next_fd: AtomicU32::new(3),
             cwd: Mutex::new([0; VFS_MAX_PATH]),
@@ -276,7 +319,16 @@ impl VfsManager {
         }
     }
 
-    pub fn set_fd(&self, idx: usize, node_id: u32, offset: u64, flags: u32, pwm: u64, file_type: u8, path: &str) {
+    pub fn set_fd(
+        &self,
+        idx: usize,
+        node_id: u32,
+        offset: u64,
+        flags: u32,
+        pwm: u64,
+        file_type: u8,
+        path: &str,
+    ) {
         let mut fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS {
             fd_table[idx].node_id = node_id;
@@ -291,7 +343,11 @@ impl VfsManager {
     pub fn get_fd_info(&self, idx: usize) -> Option<(u32, u64, u64)> {
         let fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS && fd_table[idx].used {
-            Some((fd_table[idx].node_id, fd_table[idx].offset, fd_table[idx].pwm))
+            Some((
+                fd_table[idx].node_id,
+                fd_table[idx].offset,
+                fd_table[idx].pwm,
+            ))
         } else {
             None
         }

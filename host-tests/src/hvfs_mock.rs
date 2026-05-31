@@ -9,7 +9,9 @@ pub mod kernel {
 
             impl<T> Mutex<T> {
                 pub const fn new(val: T) -> Self {
-                    Mutex { inner: StdMutex::new(val) }
+                    Mutex {
+                        inner: StdMutex::new(val),
+                    }
                 }
             }
 
@@ -107,7 +109,9 @@ pub extern "C" fn klog_ffi_info(msg: *const u8) {
     let mut len = 0usize;
     while len < 256 {
         let b = unsafe { *msg.add(len) };
-        if b == 0 { break; }
+        if b == 0 {
+            break;
+        }
         len += 1;
     }
     if len > 0 {
@@ -179,7 +183,12 @@ mod kernel_error_tests {
             KernelError::InvalidObject,
         ];
         for v in &variants {
-            assert!(v.as_i32() < 0, "{:?}.as_i32() should be negative, got {}", v, v.as_i32());
+            assert!(
+                v.as_i32() < 0,
+                "{:?}.as_i32() should be negative, got {}",
+                v,
+                v.as_i32()
+            );
         }
     }
 

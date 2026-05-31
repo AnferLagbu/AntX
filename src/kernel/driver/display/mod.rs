@@ -18,50 +18,24 @@
 //! └── controller.rs   # 显示控制器抽象
 //! ```
 
-pub mod framebuffer;
-pub mod font;
-pub mod hdmi;
-pub mod dp;
 pub mod controller;
+pub mod dp;
+pub mod font;
+pub mod framebuffer;
+pub mod hdmi;
 pub mod self_test;
 
 // 导出Framebuffer类型
-pub use framebuffer::{
-    Framebuffer,
-    PixelFormat,
-    Color,
-    Point,
-    Rect,
-    colors,
-};
+pub use framebuffer::{colors, Color, Framebuffer, PixelFormat, Point, Rect};
 
 // 导出HDMI类型
-pub use hdmi::{
-    HdmiController,
-    Edid,
-    VideoMode,
-    VideoModeFlags,
-    STANDARD_VIDEO_MODES,
-};
+pub use hdmi::{Edid, HdmiController, VideoMode, VideoModeFlags, STANDARD_VIDEO_MODES};
 
 // 导出DisplayPort类型
-pub use dp::{
-    DpController,
-    Dpcd,
-    LinkRate,
-    LaneCount,
-    TrainingState,
-};
+pub use dp::{DpController, Dpcd, LaneCount, LinkRate, TrainingState};
 
 // 导出控制器类型
-pub use controller::{
-    DisplayController,
-    DisplayManager,
-    DisplayMode,
-    DisplayOutput,
-    MonitorInfo,
-};
-
+pub use controller::{DisplayController, DisplayManager, DisplayMode, DisplayOutput, MonitorInfo};
 
 use super::framework;
 use super::framework::Driver;
@@ -69,11 +43,21 @@ use super::framework::Driver;
 struct DisplayDriver;
 
 impl Driver for DisplayDriver {
-    fn name(&self) -> &'static str { "display" }
-    fn device_type(&self) -> framework::DeviceType { framework::DeviceType::Other }
-    fn init(&mut self) -> framework::Result<()> { Ok(()) }
-    fn shutdown(&mut self) -> framework::Result<()> { Ok(()) }
-    fn is_ready(&self) -> bool { true }
+    fn name(&self) -> &'static str {
+        "display"
+    }
+    fn device_type(&self) -> framework::DeviceType {
+        framework::DeviceType::Other
+    }
+    fn init(&mut self) -> framework::Result<()> {
+        Ok(())
+    }
+    fn shutdown(&mut self) -> framework::Result<()> {
+        Ok(())
+    }
+    fn is_ready(&self) -> bool {
+        true
+    }
 }
 
 // ============================================================================
@@ -132,13 +116,13 @@ const VBE_DISPI_MMIO_BASE: u64 = 0x500;
 
 /// Bochs VBE DISPI 端口 I/O 地址
 const VBE_DISPI_PORT_INDEX: u16 = 0x01CE;
-const VBE_DISPI_PORT_DATA:  u16 = 0x01CF;
+const VBE_DISPI_PORT_DATA: u16 = 0x01CF;
 
 /// Bochs VBE DISPI 寄存器索引
-const VBE_DISPI_INDEX_ID:     u16 = 0;
-const VBE_DISPI_INDEX_XRES:   u16 = 1;
-const VBE_DISPI_INDEX_YRES:   u16 = 2;
-const VBE_DISPI_INDEX_BPP:    u16 = 3;
+const VBE_DISPI_INDEX_ID: u16 = 0;
+const VBE_DISPI_INDEX_XRES: u16 = 1;
+const VBE_DISPI_INDEX_YRES: u16 = 2;
+const VBE_DISPI_INDEX_BPP: u16 = 3;
 const VBE_DISPI_INDEX_ENABLE: u16 = 4;
 
 /// Bochs VBE DISPI ID 值
@@ -185,9 +169,12 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
     let devices = crate::kernel::pci::find_by_class(crate::kernel::pci::CLASS_DISPLAY);
     for dev in &devices {
         if dev.subclass_code != 0x00 {
-            crate::klog_info!(Driver,
+            crate::klog_info!(
+                Driver,
                 "[DISPLAY] skipping non-VGA display dev {:04X}:{:04X} subclass {:02X}",
-                dev.vendor_id, dev.device_id, dev.subclass_code
+                dev.vendor_id,
+                dev.device_id,
+                dev.subclass_code
             );
             continue;
         }
@@ -210,11 +197,17 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
 
         let pitch = width * (bpp as u32 / 8);
 
-        crate::klog_info!(Driver,
+        crate::klog_info!(
+            Driver,
             "VGA via PCI {:02X}:{:02X}.{} BAR0=0x{:X} size=0x{:X} {}x{}x{}",
-            dev.bus, dev.device, dev.function,
-            bar0.base_addr, bar0.size,
-            width, height, bpp
+            dev.bus,
+            dev.device,
+            dev.function,
+            bar0.base_addr,
+            bar0.size,
+            width,
+            height,
+            bpp
         );
 
         return Some(VgaFbInfo {
@@ -250,12 +243,17 @@ pub fn display_init() -> framework::Result<()> {
         Some(info) if info.is_valid() => {
             crate::klog_boot_info!(
                 "[DISPLAY] got framebuffer from Multiboot2: {}x{}x{} @ 0x{:X}",
-                info.width, info.height, info.bpp, info.addr
+                info.width,
+                info.height,
+                info.bpp,
+                info.addr
             );
             Some((info.addr, info.width, info.height, info.bpp, info.pitch))
         }
         _ => {
-            crate::klog_drv_warn!("[DISPLAY] no Multiboot2 framebuffer tag, falling back to PCI probe");
+            crate::klog_drv_warn!(
+                "[DISPLAY] no Multiboot2 framebuffer tag, falling back to PCI probe"
+            );
             None
         }
     };
@@ -263,15 +261,13 @@ pub fn display_init() -> framework::Result<()> {
     // ── 方案 B: PCI VGA BAR0 probing (QEMU -kernel boot) ──
     let (fb_addr, width, height, bpp, pitch) = match fb_info {
         Some(info) => info,
-        None => {
-            match probe_vga_fb_via_pci() {
-                Some(info) => (info.addr, info.width, info.height, info.bpp, info.pitch),
-                None => {
-                    crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
-                    return Ok(());
-                }
+        None => match probe_vga_fb_via_pci() {
+            Some(info) => (info.addr, info.width, info.height, info.bpp, info.pitch),
+            None => {
+                crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
+                return Ok(());
             }
-        }
+        },
     };
 
     let fb_size = pitch as u64 * height as u64;
@@ -284,20 +280,18 @@ pub fn display_init() -> framework::Result<()> {
     let format = infer_pixel_format(bpp, 16, 8, 0);
 
     unsafe {
-        GLOBAL_FRAMEBUFFER = Some(Framebuffer::new(
-            virt_addr,
-            width,
-            height,
-            pitch,
-            format,
-        ));
+        GLOBAL_FRAMEBUFFER = Some(Framebuffer::new(virt_addr, width, height, pitch, format));
 
         if let Some(ref mut fb) = GLOBAL_FRAMEBUFFER {
             let _ = fb.init();
 
-            crate::klog_info!(Driver,
+            crate::klog_info!(
+                Driver,
                 "[DISPLAY] OK: {}x{}x{} @ 0x{:X}",
-                width, height, bpp, fb_addr
+                width,
+                height,
+                bpp,
+                fb_addr
             );
 
             let font = font::default_font();
@@ -309,10 +303,7 @@ pub fn display_init() -> framework::Result<()> {
             }
 
             let console = alloc::boxed::Box::new(
-                crate::kernel::console::gfx_console::GfxConsole::new(
-                    fb as *mut _,
-                    font,
-                ),
+                crate::kernel::console::gfx_console::GfxConsole::new(fb as *mut _, font),
             );
             crate::kernel::console::gfx_console_init(alloc::boxed::Box::leak(console));
             crate::klog_info!(Driver, "[DISPLAY] GfxConsole initialized");
@@ -354,4 +345,6 @@ unsafe fn port_inw(port: u16) -> u16 {
 unsafe fn port_outw(_port: u16, _val: u16) {}
 
 #[cfg(not(target_arch = "x86_64"))]
-unsafe fn port_inw(_port: u16) -> u16 { 0 }
+unsafe fn port_inw(_port: u16) -> u16 {
+    0
+}

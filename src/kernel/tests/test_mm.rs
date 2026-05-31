@@ -1,9 +1,9 @@
-use crate::register_tests_inner;
-use crate::kernel::mm::{PhysAddr, VirtAddr, PageSize, PageFlags, PageTableEntry, MemoryInfo};
-use crate::kernel::mm::KERNEL_BASE;
-use crate::kernel::mm::{pml4_index, pdpt_index, pd_index, pt_index, phys_to_virt, virt_to_phys};
-use crate::kernel::tests::{runner, TestResult};
 use super::check;
+use crate::kernel::mm::KERNEL_BASE;
+use crate::kernel::mm::{pd_index, pdpt_index, phys_to_virt, pml4_index, pt_index, virt_to_phys};
+use crate::kernel::mm::{MemoryInfo, PageFlags, PageSize, PageTableEntry, PhysAddr, VirtAddr};
+use crate::kernel::tests::{runner, TestResult};
+use crate::register_tests_inner;
 
 fn test_phys_addr() -> TestResult {
     let pa = PhysAddr::new(0x1000);
@@ -60,8 +60,14 @@ fn test_page_table_entry() -> TestResult {
     check!(pte.frame().as_u64() == 0x1000, "frame mismatch");
 
     let flags = pte.flags();
-    check!(flags.contains(PageFlags::PRESENT), "flags should have PRESENT");
-    check!(flags.contains(PageFlags::WRITABLE), "flags should have WRITABLE");
+    check!(
+        flags.contains(PageFlags::PRESENT),
+        "flags should have PRESENT"
+    );
+    check!(
+        flags.contains(PageFlags::WRITABLE),
+        "flags should have WRITABLE"
+    );
     TestResult::Pass
 }
 
@@ -73,7 +79,10 @@ fn test_page_flags() -> TestResult {
     check!(!flags.contains(PageFlags::NX), "should not have NX");
 
     let no_user = flags & !PageFlags::USER;
-    check!(!no_user.contains(PageFlags::USER), "should not have USER after removal");
+    check!(
+        !no_user.contains(PageFlags::USER),
+        "should not have USER after removal"
+    );
     TestResult::Pass
 }
 
@@ -110,7 +119,7 @@ fn test_page_index_helpers() -> TestResult {
 
 pub fn register_mm_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "mm::phys_addr": {
             "basic": test_phys_addr,
         },

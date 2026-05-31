@@ -74,7 +74,8 @@ pub fn init() {
     if ap_count <= 1 {
         unsafe {
             crate::kernel::klog::klog_info(
-                c"[KERN] [SMP] Single-core system, skipping AP startup".as_ptr());
+                c"[KERN] [SMP] Single-core system, skipping AP startup".as_ptr(),
+            );
         }
         SMP_FULLY_INITIALIZED.store(true, Ordering::Release);
         return;
@@ -82,7 +83,9 @@ pub fn init() {
 
     let bsp_lapic_id = super::apic::get_id();
 
-    unsafe { copy_trampoline(); }
+    unsafe {
+        copy_trampoline();
+    }
 
     let ap_list = super::acpi::get_ap_list();
     let mut cpu_index: u32 = 1;
@@ -91,7 +94,9 @@ pub fn init() {
         if ap.lapic_id == bsp_lapic_id || !ap.enabled {
             continue;
         }
-        unsafe { start_ap(ap.lapic_id, cpu_index); }
+        unsafe {
+            start_ap(ap.lapic_id, cpu_index);
+        }
         cpu_index += 1;
     }
 
@@ -207,7 +212,9 @@ unsafe fn timer_udelay(us: u32) {
 }
 
 extern "C" fn ap_entry(lapic_id: u32) -> ! {
-    unsafe { core::arch::asm!("cli", options(nomem, nostack)); }
+    unsafe {
+        core::arch::asm!("cli", options(nomem, nostack));
+    }
 
     let cpu_index = unsafe {
         ((TRAMPOLINE_BASE + AP_INFO_OFFSET) as *const ApStartupInfo)
@@ -225,7 +232,9 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     crate::kernel::proc::scheduler::init_per_cpu_sched(cpu_index);
 
-    unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
+    unsafe {
+        core::arch::asm!("sti", options(nomem, nostack));
+    }
 
     loop {
         crate::arch!(halt());

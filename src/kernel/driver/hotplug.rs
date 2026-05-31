@@ -18,10 +18,10 @@
 //!
 //! 不使用中断线程, 采用轮询模式 (在调度器 idle loop 中调用 poll)。
 
+use crate::kernel::pci::hotplug::PcieHotplugSlot;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use spin::Mutex;
-use crate::kernel::pci::hotplug::PcieHotplugSlot;
 
 // ── 事件类型 ──
 
@@ -90,7 +90,9 @@ impl HotplugManager {
     /// 初始化: 扫描 PCIe 热插拔槽位。
     pub fn init(&self) {
         let mut init = self.initialized.lock();
-        if *init { return; }
+        if *init {
+            return;
+        }
 
         let found = crate::kernel::pci::hotplug::scan_hotplug_slots();
         if !found.is_empty() {
@@ -110,13 +112,17 @@ impl HotplugManager {
     /// 应在每个调度周期或 idle loop 中调用 (开销很低: 非热插拔场景下无任何 PCI 配置空间访问)。
     pub fn poll(&self) {
         let mut slots = self.slots.lock();
-        if slots.is_empty() { return; }
+        if slots.is_empty() {
+            return;
+        }
 
         let listeners = self.listeners.lock();
 
         for slot in slots.iter_mut() {
             let events = slot.read_and_clear_events();
-            if events == 0 { continue; }
+            if events == 0 {
+                continue;
+            }
 
             let location = DeviceLocation {
                 bus_type: BusType::Pcie,
@@ -156,22 +162,30 @@ impl HotplugManager {
         let enabled = *init;
 
         let slots = self.slots.lock();
-        let slot_infos: Vec<HotplugSlotInfo> = slots.iter().map(|s| HotplugSlotInfo {
-            bus: s.bus,
-            device: s.device,
-            function: s.function,
-            slot_number: s.slot_number,
-            presence: s.presence_state,
-            surprise_capable: s.surprise_removal,
-            hotplug_capable: s.hotplug_capable,
-        }).collect();
+        let slot_infos: Vec<HotplugSlotInfo> = slots
+            .iter()
+            .map(|s| HotplugSlotInfo {
+                bus: s.bus,
+                device: s.device,
+                function: s.function,
+                slot_number: s.slot_number,
+                presence: s.presence_state,
+                surprise_capable: s.surprise_removal,
+                hotplug_capable: s.hotplug_capable,
+            })
+            .collect();
         drop(slots);
 
         let blk_count = crate::kernel::driver::block::block_device_count();
         let mut blk_states: Vec<BlockDeviceState> = Vec::new();
         for d in 0..blk_count as u8 {
             let (present, removing, io_count) = crate::kernel::driver::block::block_device_state(d);
-            blk_states.push(BlockDeviceState { drive: d, present, removing, io_count });
+            blk_states.push(BlockDeviceState {
+                drive: d,
+                present,
+                removing,
+                io_count,
+            });
         }
 
         HotplugStatus {

@@ -1,8 +1,8 @@
+use crate::kernel::sync::mutex::Mutex;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
-use crate::kernel::sync::mutex::Mutex;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 pub const HV_ARC_DEFAULT_SIZE: usize = 256;
 pub const HV_ARC_MAX_SIZE: usize = 4096;
@@ -36,7 +36,11 @@ pub struct HvArcKey {
 
 impl HvArcKey {
     pub fn new(vdev_id: u16, offset: u64, birth_txg: u64) -> Self {
-        Self { vdev_id, offset, birth_txg }
+        Self {
+            vdev_id,
+            offset,
+            birth_txg,
+        }
     }
 
     pub fn hash(&self) -> u64 {
@@ -97,7 +101,9 @@ impl HvArcBuf {
     }
 
     pub fn release(&self) -> u32 {
-        self.ref_count.fetch_sub(1, Ordering::AcqRel).saturating_sub(1)
+        self.ref_count
+            .fetch_sub(1, Ordering::AcqRel)
+            .saturating_sub(1)
     }
 }
 
@@ -120,12 +126,18 @@ pub struct HvArcStats {
 impl HvArcStats {
     pub fn new() -> Self {
         Self {
-            hits: AtomicU64::new(0), misses: AtomicU64::new(0),
-            mru_hits: AtomicU64::new(0), mfu_hits: AtomicU64::new(0),
-            ghost_hits: AtomicU64::new(0), evicts: AtomicU64::new(0),
-            size: AtomicU64::new(0), mru_size: AtomicU64::new(0),
-            mfu_size: AtomicU64::new(0), ghost_mru_size: AtomicU64::new(0),
-            ghost_mfu_size: AtomicU64::new(0), data_size: AtomicU64::new(0),
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+            mru_hits: AtomicU64::new(0),
+            mfu_hits: AtomicU64::new(0),
+            ghost_hits: AtomicU64::new(0),
+            evicts: AtomicU64::new(0),
+            size: AtomicU64::new(0),
+            mru_size: AtomicU64::new(0),
+            mfu_size: AtomicU64::new(0),
+            ghost_mru_size: AtomicU64::new(0),
+            ghost_mfu_size: AtomicU64::new(0),
+            data_size: AtomicU64::new(0),
             meta_size: AtomicU64::new(0),
         }
     }
@@ -174,7 +186,11 @@ impl HvArc {
     }
 
     pub fn init(&self, max_size: usize) {
-        let max = if max_size == 0 { HV_ARC_DEFAULT_SIZE } else { max_size.min(HV_ARC_MAX_SIZE) };
+        let max = if max_size == 0 {
+            HV_ARC_DEFAULT_SIZE
+        } else {
+            max_size.min(HV_ARC_MAX_SIZE)
+        };
         let mut inner = self.inner.lock();
         inner.max_size = max;
         inner.buffers.clear();
@@ -231,18 +247,26 @@ impl HvArc {
             }
             return found_ptr;
         }
-        if let Some(pos) = inner.ghost_mru.iter().position(|k| k.vdev_id == key.vdev_id && k.offset == key.offset && k.birth_txg == key.birth_txg) {
+        if let Some(pos) = inner.ghost_mru.iter().position(|k| {
+            k.vdev_id == key.vdev_id && k.offset == key.offset && k.birth_txg == key.birth_txg
+        }) {
             inner.ghost_mru.remove(pos);
             let delta = if inner.mru.len() + inner.ghost_mru.len() > 0 {
                 (inner.max_size * inner.ghost_mru.len()) / (inner.mru.len() + inner.ghost_mru.len())
-            } else { 1 };
+            } else {
+                1
+            };
             inner.p = (inner.p + delta).min(inner.max_size);
             self.stats.ghost_hits.fetch_add(1, Ordering::Relaxed);
-        } else if let Some(pos) = inner.ghost_mfu.iter().position(|k| k.vdev_id == key.vdev_id && k.offset == key.offset && k.birth_txg == key.birth_txg) {
+        } else if let Some(pos) = inner.ghost_mfu.iter().position(|k| {
+            k.vdev_id == key.vdev_id && k.offset == key.offset && k.birth_txg == key.birth_txg
+        }) {
             inner.ghost_mfu.remove(pos);
             let delta = if inner.mfu.len() + inner.ghost_mfu.len() > 0 {
                 (inner.max_size * inner.ghost_mfu.len()) / (inner.mfu.len() + inner.ghost_mfu.len())
-            } else { 1 };
+            } else {
+                1
+            };
             inner.p = inner.p.saturating_sub(delta);
             self.stats.ghost_hits.fetch_add(1, Ordering::Relaxed);
         }
@@ -271,13 +295,21 @@ impl HvArc {
         let bucket_idx = (key.hash() as usize) % HV_ARC_HASH_BUCKETS;
         inner.hash_table[bucket_idx].push(idx);
         inner.mru.push_back(idx);
-        self.stats.size.fetch_add(data.len() as u64, Ordering::Relaxed);
+        self.stats
+            .size
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
         if buf_type == HvArcBufType::Data {
-            self.stats.data_size.fetch_add(data.len() as u64, Ordering::Relaxed);
+            self.stats
+                .data_size
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
         } else {
-            self.stats.meta_size.fetch_add(data.len() as u64, Ordering::Relaxed);
+            self.stats
+                .meta_size
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
         }
-        self.stats.mru_size.fetch_add(data.len() as u64, Ordering::Relaxed);
+        self.stats
+            .mru_size
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
         inner.buffers[idx].as_ref().map(|b| {
             b.add_ref();
             b.data.as_ptr()
@@ -289,7 +321,10 @@ impl HvArc {
         let mut found: Option<usize> = None;
         for (pos, &idx) in inner.hash_table[bucket_idx].iter().enumerate() {
             if let Some(ref buf) = inner.buffers[idx] {
-                if buf.key.vdev_id == key.vdev_id && buf.key.offset == key.offset && buf.key.birth_txg == key.birth_txg {
+                if buf.key.vdev_id == key.vdev_id
+                    && buf.key.offset == key.offset
+                    && buf.key.birth_txg == key.birth_txg
+                {
                     found = Some(pos);
                     break;
                 }
@@ -297,7 +332,10 @@ impl HvArc {
         }
         if let Some(pos) = found {
             let idx = inner.hash_table[bucket_idx].remove(pos);
-            let size = inner.buffers[idx].as_ref().map(|b| b.data.len()).unwrap_or(0);
+            let size = inner.buffers[idx]
+                .as_ref()
+                .map(|b| b.data.len())
+                .unwrap_or(0);
             self.stats.size.fetch_sub(size as u64, Ordering::Relaxed);
             inner.buffers[idx] = None;
             inner.mru.retain(|&i| i != idx);
@@ -313,8 +351,12 @@ impl HvArc {
                         let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
                         inner.hash_table[bucket_idx].retain(|&i| i != idx);
                         inner.ghost_mru.push_back(buf.key);
-                        self.stats.mru_size.fetch_sub(buf.size as u64, Ordering::Relaxed);
-                        self.stats.size.fetch_sub(buf.size as u64, Ordering::Relaxed);
+                        self.stats
+                            .mru_size
+                            .fetch_sub(buf.size as u64, Ordering::Relaxed);
+                        self.stats
+                            .size
+                            .fetch_sub(buf.size as u64, Ordering::Relaxed);
                         self.stats.evicts.fetch_add(1, Ordering::Relaxed);
                     }
                 }
@@ -324,8 +366,12 @@ impl HvArc {
                         let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
                         inner.hash_table[bucket_idx].retain(|&i| i != idx);
                         inner.ghost_mfu.push_back(buf.key);
-                        self.stats.mfu_size.fetch_sub(buf.size as u64, Ordering::Relaxed);
-                        self.stats.size.fetch_sub(buf.size as u64, Ordering::Relaxed);
+                        self.stats
+                            .mfu_size
+                            .fetch_sub(buf.size as u64, Ordering::Relaxed);
+                        self.stats
+                            .size
+                            .fetch_sub(buf.size as u64, Ordering::Relaxed);
                         self.stats.evicts.fetch_add(1, Ordering::Relaxed);
                     }
                 }

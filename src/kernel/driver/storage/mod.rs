@@ -15,16 +15,16 @@
 //!   └── ata::detect_drives()   → 检测PATA磁盘
 //! ```
 
-pub mod ata;
 pub mod ahci;
-pub mod nvme;
-pub mod ata_block;
 pub mod ahci_block;
+pub mod ata;
+pub mod ata_block;
+pub mod nvme;
 pub mod nvme_block;
 
 // Re-export key types for driver/mod.rs convenience
-pub use ahci::{AhciController, AhciPort, H2dFis, AtaCommand};
-pub use nvme::{NvmeController, NvmeCommand, NvmeCompletion};
+pub use ahci::{AhciController, AhciPort, AtaCommand, H2dFis};
+pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -51,7 +51,10 @@ pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
     let pci_count = crate::kernel::pci::init();
     if pci_count == 0 {
-        klog_warn!(Driver, "storage_init: no PCI devices found, falling back to ATA");
+        klog_warn!(
+            Driver,
+            "storage_init: no PCI devices found, falling back to ATA"
+        );
     }
 
     // Step 2: 扫描 PCI 总线寻找存储控制器
@@ -70,27 +73,49 @@ pub fn storage_init() -> framework::Result<()> {
                 // AHCI 控制器 - 使用 BAR5 (偏移 0x24)
                 let bar = dev.bars[5].base_addr;
                 if bar == 0 || bar == 0xFFFFFFFF {
-                    klog_warn!(Driver, "AHCI: device {:02X}:{:02X}.{} has no valid BAR5",
-                        dev.bus, dev.device, dev.function);
+                    klog_warn!(
+                        Driver,
+                        "AHCI: device {:02X}:{:02X}.{} has no valid BAR5",
+                        dev.bus,
+                        dev.device,
+                        dev.function
+                    );
                     continue;
                 }
 
                 let mmio_base = (bar as usize) & !0xFFF; // 掩码低12位 (BAR类型/可预取位)
-                klog_info!(Driver, "AHCI: found at {:02X}:{:02X}.{}, BAR5=0x{:X}",
-                    dev.bus, dev.device, dev.function, mmio_base);
+                klog_info!(
+                    Driver,
+                    "AHCI: found at {:02X}:{:02X}.{}, BAR5=0x{:X}",
+                    dev.bus,
+                    dev.device,
+                    dev.function,
+                    mmio_base
+                );
 
                 let mut controller = AhciController::new(mmio_base);
                 match controller.init_controller() {
                     Ok(()) => {
-                        klog_info!(Driver, "AHCI: {:02X}:{:02X}.{} initialized ({} ports)",
-                            dev.bus, dev.device, dev.function,
-                            controller.port_count());
+                        klog_info!(
+                            Driver,
+                            "AHCI: {:02X}:{:02X}.{} initialized ({} ports)",
+                            dev.bus,
+                            dev.device,
+                            dev.function,
+                            controller.port_count()
+                        );
                         AHCI_CONTROLLERS.lock().push(controller);
                         ahci_found += 1;
                     }
                     Err(e) => {
-                        klog_warn!(Driver, "AHCI: {:02X}:{:02X}.{} init failed: {:?}",
-                            dev.bus, dev.device, dev.function, e);
+                        klog_warn!(
+                            Driver,
+                            "AHCI: {:02X}:{:02X}.{} init failed: {:?}",
+                            dev.bus,
+                            dev.device,
+                            dev.function,
+                            e
+                        );
                     }
                 }
             }
@@ -99,26 +124,48 @@ pub fn storage_init() -> framework::Result<()> {
                 // NVMe 控制器 - 使用 BAR0
                 let bar = dev.bars[0].base_addr;
                 if bar == 0 || bar == 0xFFFFFFFF {
-                    klog_warn!(Driver, "NVMe: device {:02X}:{:02X}.{} has no valid BAR0",
-                        dev.bus, dev.device, dev.function);
+                    klog_warn!(
+                        Driver,
+                        "NVMe: device {:02X}:{:02X}.{} has no valid BAR0",
+                        dev.bus,
+                        dev.device,
+                        dev.function
+                    );
                     continue;
                 }
 
                 let mmio_base = (bar as usize) & !0xFFF;
-                klog_info!(Driver, "NVMe: found at {:02X}:{:02X}.{}, BAR0=0x{:X}",
-                    dev.bus, dev.device, dev.function, mmio_base);
+                klog_info!(
+                    Driver,
+                    "NVMe: found at {:02X}:{:02X}.{}, BAR0=0x{:X}",
+                    dev.bus,
+                    dev.device,
+                    dev.function,
+                    mmio_base
+                );
 
                 let mut controller = NvmeController::new(mmio_base);
                 match controller.init() {
                     Ok(()) => {
-                        klog_info!(Driver, "NVMe: {:02X}:{:02X}.{} initialized",
-                            dev.bus, dev.device, dev.function);
+                        klog_info!(
+                            Driver,
+                            "NVMe: {:02X}:{:02X}.{} initialized",
+                            dev.bus,
+                            dev.device,
+                            dev.function
+                        );
                         NVME_CONTROLLERS.lock().push(controller);
                         nvme_found += 1;
                     }
                     Err(e) => {
-                        klog_warn!(Driver, "NVMe: {:02X}:{:02X}.{} init failed: {:?}",
-                            dev.bus, dev.device, dev.function, e);
+                        klog_warn!(
+                            Driver,
+                            "NVMe: {:02X}:{:02X}.{} init failed: {:?}",
+                            dev.bus,
+                            dev.device,
+                            dev.function,
+                            e
+                        );
                     }
                 }
             }
@@ -145,28 +192,35 @@ pub fn storage_init() -> framework::Result<()> {
 
     // Step 3.5: 将 ATA 磁盘注册到 Chitin (唯一注册入口)
     {
+        use crate::kernel::chitin::proto_block;
         use crate::kernel::driver::block::BlockDevice;
         use crate::kernel::driver::storage::ata_block::AtaBlockDevice;
-        use crate::kernel::chitin::proto_block;
         for drive in 0..4u8 {
             if let Some(dev) = AtaBlockDevice::new(drive) {
                 let sectors = dev.blk_total_sectors();
                 let dev_name = match drive {
-                    0 => "ata0", 1 => "ata1",
-                    2 => "ata2", _ => "ata3",
+                    0 => "ata0",
+                    1 => "ata1",
+                    2 => "ata2",
+                    _ => "ata3",
                 };
                 proto_block::register_block_device(dev_name, dev, None);
-                klog_info!(Driver, "ATA: drive {} registered, {} sectors ({:.1} MB)",
-                    drive, sectors, (sectors * 512) as f64 / (1024.0 * 1024.0));
+                klog_info!(
+                    Driver,
+                    "ATA: drive {} registered, {} sectors ({:.1} MB)",
+                    drive,
+                    sectors,
+                    (sectors * 512) as f64 / (1024.0 * 1024.0)
+                );
             }
         }
     }
 
     // Step 3.6: 将 AHCI 端口注册到 Chitin (唯一注册入口)
     {
+        use crate::kernel::chitin::proto_block;
         use crate::kernel::driver::block::BlockDevice;
         use crate::kernel::driver::storage::ahci_block::AhciBlockDevice;
-        use crate::kernel::chitin::proto_block;
 
         let mut ahci_ports: Vec<(usize, usize)> = Vec::new();
         {
@@ -189,17 +243,23 @@ pub fn storage_init() -> framework::Result<()> {
                 let dev_name = alloc::format!("ahci{}-p{}", ci, pi);
                 let name_leaked: &'static str = dev_name.leak();
                 proto_block::register_block_device(name_leaked, dev, None);
-                klog_info!(Driver, "AHCI: ctrl={} port={} registered, {} sectors ({:.1} MB)",
-                    ci, pi, sectors, (sectors * 512) as f64 / (1024.0 * 1024.0));
+                klog_info!(
+                    Driver,
+                    "AHCI: ctrl={} port={} registered, {} sectors ({:.1} MB)",
+                    ci,
+                    pi,
+                    sectors,
+                    (sectors * 512) as f64 / (1024.0 * 1024.0)
+                );
             }
         }
     }
 
     // Step 3.7: 将 NVMe 命名空间注册到 Chitin (唯一注册入口)
     {
+        use crate::kernel::chitin::proto_block;
         use crate::kernel::driver::block::BlockDevice;
         use crate::kernel::driver::storage::nvme_block::NvmeBlockDevice;
-        use crate::kernel::chitin::proto_block;
 
         let mut nvme_ns: Vec<(usize, u32)> = Vec::new();
         {
@@ -221,14 +281,24 @@ pub fn storage_init() -> framework::Result<()> {
                 let dev_name = alloc::format!("nvme{}-ns{}", ci, nsid);
                 let name_leaked: &'static str = dev_name.leak();
                 proto_block::register_block_device(name_leaked, dev, None);
-                klog_info!(Driver, "NVMe: ctrl={} nsid={} registered, {} sectors ({:.1} MB)",
-                    ci, nsid, sectors, (sectors * 512) as f64 / (1024.0 * 1024.0));
+                klog_info!(
+                    Driver,
+                    "NVMe: ctrl={} nsid={} registered, {} sectors ({:.1} MB)",
+                    ci,
+                    nsid,
+                    sectors,
+                    (sectors * 512) as f64 / (1024.0 * 1024.0)
+                );
             }
         }
     }
 
-    klog_info!(Driver, "storage: {} AHCI, {} NVMe, ATA detected",
-        ahci_found, nvme_found);
+    klog_info!(
+        Driver,
+        "storage: {} AHCI, {} NVMe, ATA detected",
+        ahci_found,
+        nvme_found
+    );
 
     if ahci_found > 0 || nvme_found > 0 {
         Ok(())
@@ -254,7 +324,11 @@ pub fn storage_init() -> framework::Result<()> {
                 let blk_name = alloc::format!("virtio-blk{}", blk_count);
                 let name_leaked: &'static str = blk_name.leak();
                 let mmio_base = blk.device.mmio_base;
-                crate::kernel::chitin::proto_block::register_block_device(name_leaked, blk, Some(mmio_base as u64));
+                crate::kernel::chitin::proto_block::register_block_device(
+                    name_leaked,
+                    blk,
+                    Some(mmio_base as u64),
+                );
                 blk_count += 1;
                 klog_info!(Driver, "virtio-blk: registered device #{}", blk_count);
             }

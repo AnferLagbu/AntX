@@ -1,14 +1,14 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
+use crate::kernel::credo::sha256::sha256;
 use crate::kernel::mm::slab::{
-    KmemCache, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE,
-    GENERAL_CACHE_SIZES, find_general_cache_index,
+    find_general_cache_index, KmemCache, GENERAL_CACHE_SIZES, SLAB_MAX_OBJECT_SIZE,
+    SLAB_MIN_OBJECT_SIZE,
 };
 use crate::kernel::syscall::types::Errno;
-use crate::kernel::credo::sha256::sha256;
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
 use crate::kernel::timer::pit::{
-    PIT_BASE_FREQUENCY, DEFAULT_INTERRUPT_FREQ_HZ, PIT_MAX_COUNT, PIT_MIN_COUNT,
+    DEFAULT_INTERRUPT_FREQ_HZ, PIT_BASE_FREQUENCY, PIT_MAX_COUNT, PIT_MIN_COUNT,
 };
+use crate::register_tests_inner;
 
 fn slab_cache_creation() -> TestResult {
     let cache = KmemCache::create("test_cache", 64);
@@ -22,7 +22,10 @@ fn slab_cache_creation() -> TestResult {
 
 fn slab_cache_invalid_size() -> TestResult {
     check!(KmemCache::create("zero", 0).is_err(), "size 0 rejected");
-    check!(KmemCache::create("huge", SLAB_MAX_OBJECT_SIZE + 1).is_err(), "oversize rejected");
+    check!(
+        KmemCache::create("huge", SLAB_MAX_OBJECT_SIZE + 1).is_err(),
+        "oversize rejected"
+    );
     TestResult::Pass
 }
 
@@ -72,11 +75,9 @@ fn syscall_error_display() -> TestResult {
 
 fn sha256_empty() -> TestResult {
     let expected: [u8; 48] = [
-        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
-        0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
-        0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9,
+        0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52,
+        0xb8, 0x55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq_test!(sha256(b""), expected, "SHA256 empty");
     TestResult::Pass
@@ -84,11 +85,9 @@ fn sha256_empty() -> TestResult {
 
 fn sha256_abc() -> TestResult {
     let expected: [u8; 48] = [
-        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea,
-        0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
-        0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c,
-        0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22,
+        0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
+        0x15, 0xad, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq_test!(sha256(b"abc"), expected, "SHA256 abc");
     TestResult::Pass
@@ -106,7 +105,10 @@ fn pit_divisor_calculation() -> TestResult {
     let divisor = PIT_BASE_FREQUENCY / 1000;
     assert_eq_test!(divisor, 1193, "1000Hz divisor");
     let actual_freq = PIT_BASE_FREQUENCY / divisor;
-    check!((actual_freq as i64 - 1000).abs() < 5, "actual freq close to 1000");
+    check!(
+        (actual_freq as i64 - 1000).abs() < 5,
+        "actual freq close to 1000"
+    );
     TestResult::Pass
 }
 
@@ -122,7 +124,7 @@ fn pit_frequency_bounds() -> TestResult {
 
 pub fn register_slab_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "mm::slab": {
             "cache_creation": slab_cache_creation,
             "cache_invalid_size": slab_cache_invalid_size,
@@ -135,7 +137,7 @@ pub fn register_slab_tests() {
 
 pub fn register_syscall_ffi_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "syscall::ffi": {
             "error_conversion": syscall_error_conversion,
             "error_from_i64": syscall_error_from_i64,
@@ -146,7 +148,7 @@ pub fn register_syscall_ffi_tests() {
 
 pub fn register_sha256_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "pwm::sha256": {
             "empty": sha256_empty,
             "abc": sha256_abc,
@@ -156,7 +158,7 @@ pub fn register_sha256_tests() {
 
 pub fn register_pit_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "timer::pit": {
             "constants": pit_constants,
             "divisor_calculation": pit_divisor_calculation,

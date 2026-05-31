@@ -1,5 +1,5 @@
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 
 // ============================================================
 // Page Fault / Demand Paging
@@ -57,18 +57,34 @@ fn test_cow_ref_inc_dec() -> TestResult {
     let phys = 0x5000u64;
 
     crate::kernel::mm::cow::cow_inc_ref(phys);
-    assert_eq_test!(crate::kernel::mm::cow::cow_ref_count(phys), 1, "after inc=1");
+    assert_eq_test!(
+        crate::kernel::mm::cow::cow_ref_count(phys),
+        1,
+        "after inc=1"
+    );
 
     crate::kernel::mm::cow::cow_inc_ref(phys);
-    assert_eq_test!(crate::kernel::mm::cow::cow_ref_count(phys), 2, "after inc=2");
+    assert_eq_test!(
+        crate::kernel::mm::cow::cow_ref_count(phys),
+        2,
+        "after inc=2"
+    );
 
     let should_free = crate::kernel::mm::cow::cow_dec_ref(phys);
     check!(!should_free, "dec to 1 should not free");
-    assert_eq_test!(crate::kernel::mm::cow::cow_ref_count(phys), 1, "after dec=1");
+    assert_eq_test!(
+        crate::kernel::mm::cow::cow_ref_count(phys),
+        1,
+        "after dec=1"
+    );
 
     let should_free = crate::kernel::mm::cow::cow_dec_ref(phys);
     check!(should_free, "dec to 0 should free");
-    assert_eq_test!(crate::kernel::mm::cow::cow_ref_count(phys), 0, "after dec=0");
+    assert_eq_test!(
+        crate::kernel::mm::cow::cow_ref_count(phys),
+        0,
+        "after dec=0"
+    );
     TestResult::Pass
 }
 
@@ -191,9 +207,15 @@ fn test_slab_cache_index_selection() -> TestResult {
     let p2 = kmalloc_slab::slab_kmalloc(32);
     let p3 = kmalloc_slab::slab_kmalloc(4096);
     // Large alloc goes to heap
-    if let Some(p) = p1 { kmalloc_slab::slab_kfree(p, 8); }
-    if let Some(p) = p2 { kmalloc_slab::slab_kfree(p, 32); }
-    if let Some(p) = p3 { kmalloc_slab::slab_kfree(p, 4096); }
+    if let Some(p) = p1 {
+        kmalloc_slab::slab_kfree(p, 8);
+    }
+    if let Some(p) = p2 {
+        kmalloc_slab::slab_kfree(p, 32);
+    }
+    if let Some(p) = p3 {
+        kmalloc_slab::slab_kfree(p, 4096);
+    }
     TestResult::Pass
 }
 
@@ -300,7 +322,7 @@ fn test_vma_creation() -> TestResult {
 }
 
 fn test_mm_struct_operations() -> TestResult {
-    use crate::kernel::mm::vma::{Vma, VmaType, MmStruct};
+    use crate::kernel::mm::vma::{MmStruct, Vma, VmaType};
     use crate::kernel::mm::PageFlags;
     let mm = MmStruct::new();
     let flags = PageFlags::PRESENT | PageFlags::USER;
@@ -336,7 +358,7 @@ fn test_vma_stack_guard() -> TestResult {
 
 pub fn register_new_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "page_fault": {
             "pf_info_from_error_code": test_pf_info_from_error_code,
             "pf_info_not_present": test_pf_info_not_present,

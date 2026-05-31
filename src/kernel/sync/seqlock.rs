@@ -25,7 +25,7 @@
 //! is sound because all writes occur under the sequence lock.
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicUsize, Ordering, compiler_fence};
+use core::sync::atomic::{compiler_fence, AtomicUsize, Ordering};
 
 pub struct SeqLock<T> {
     pub(crate) sequence: AtomicUsize,
@@ -57,10 +57,7 @@ impl<T> SeqLock<T> {
 
             compiler_fence(Ordering::Acquire);
 
-            return SeqLockReadGuard {
-                lock: self,
-                seq1,
-            };
+            return SeqLockReadGuard { lock: self, seq1 };
         }
     }
 
@@ -71,12 +68,11 @@ impl<T> SeqLock<T> {
                 core::hint::spin_loop();
                 continue;
             }
-            if self.sequence.compare_exchange_weak(
-                current,
-                current + 1,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .sequence
+                .compare_exchange_weak(current, current + 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 compiler_fence(Ordering::Acquire);
                 return SeqLockWriteGuard { lock: self };
             }
@@ -89,12 +85,11 @@ impl<T> SeqLock<T> {
             return None;
         }
 
-        if self.sequence.compare_exchange(
-            current,
-            current | 1,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ).is_ok() {
+        if self
+            .sequence
+            .compare_exchange(current, current | 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
             compiler_fence(Ordering::Acquire);
             Some(SeqLockWriteGuard { lock: self })
         } else {

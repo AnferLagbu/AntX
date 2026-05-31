@@ -1,19 +1,14 @@
+use crate::kernel::cpu::{CacheInfo, CpuSignature, CpuVendor, TopologyInfo};
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
-use crate::kernel::cpu::{
-    CpuVendor, CpuSignature, CacheInfo, TopologyInfo,
-};
 
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::arch::x86_64::gdt::{
-    GdtEntry, AccessByte, Granularity,
-    SELECTOR_NULL, SELECTOR_KERNEL_CODE, SELECTOR_KERNEL_DATA,
-    SELECTOR_USER_CODE, SELECTOR_USER_DATA, SELECTOR_TSS,
+    AccessByte, GdtEntry, Granularity, SELECTOR_KERNEL_CODE, SELECTOR_KERNEL_DATA, SELECTOR_NULL,
+    SELECTOR_TSS, SELECTOR_USER_CODE, SELECTOR_USER_DATA,
 };
 #[cfg(target_arch = "x86_64")]
-use crate::kernel::arch::x86_64::tss::{
-    TaskStateSegment, DEFAULT_IOMAP_BASE, TSS_SIZE,
-};
+use crate::kernel::arch::x86_64::tss::{TaskStateSegment, DEFAULT_IOMAP_BASE, TSS_SIZE};
 
 #[cfg(target_arch = "x86_64")]
 fn gdt_entry_null() -> TestResult {
@@ -36,12 +31,24 @@ fn gdt_access_byte_constants() -> TestResult {
 #[cfg(target_arch = "x86_64")]
 fn gdt_granularity_constants() -> TestResult {
     let code_gran = Granularity::code_64bit();
-    check!(code_gran.0 & Granularity::PAGE_GRANULARITY != 0, "code gran should have page granularity");
-    check!(code_gran.0 & Granularity::LONG_MODE != 0, "code gran should have long mode");
+    check!(
+        code_gran.0 & Granularity::PAGE_GRANULARITY != 0,
+        "code gran should have page granularity"
+    );
+    check!(
+        code_gran.0 & Granularity::LONG_MODE != 0,
+        "code gran should have long mode"
+    );
 
     let data_gran = Granularity::data_32bit();
-    check!(data_gran.0 & Granularity::PAGE_GRANULARITY != 0, "data gran should have page granularity");
-    check!(data_gran.0 & Granularity::SIZE_32BIT != 0, "data gran should have size 32bit");
+    check!(
+        data_gran.0 & Granularity::PAGE_GRANULARITY != 0,
+        "data gran should have page granularity"
+    );
+    check!(
+        data_gran.0 & Granularity::SIZE_32BIT != 0,
+        "data gran should have size 32bit"
+    );
     TestResult::Pass
 }
 
@@ -73,7 +80,11 @@ fn tss_zeroed() -> TestResult {
 fn tss_set_kernel_stack() -> TestResult {
     let mut tss = TaskStateSegment::zeroed();
     tss.set_kernel_stack(0xDEAD_BEEF_CAFE_BABE);
-    assert_eq_test!(tss.get_kernel_stack(), 0xDEAD_BEEF_CAFE_BABE, "kernel stack mismatch");
+    assert_eq_test!(
+        tss.get_kernel_stack(),
+        0xDEAD_BEEF_CAFE_BABE,
+        "kernel stack mismatch"
+    );
     TestResult::Pass
 }
 
@@ -99,7 +110,11 @@ fn tss_iomap() -> TestResult {
     assert_eq_test!(tss.iomap_base, offset, "iomap_base mismatch");
     tss.disable_iomap();
     check!(!tss.has_iomap(), "should not have iomap after disable");
-    assert_eq_test!(tss.iomap_base, DEFAULT_IOMAP_BASE, "iomap_base should reset");
+    assert_eq_test!(
+        tss.iomap_base,
+        DEFAULT_IOMAP_BASE,
+        "iomap_base should reset"
+    );
     TestResult::Pass
 }
 
@@ -111,11 +126,31 @@ fn tss_size() -> TestResult {
 }
 
 fn cpu_vendor_recognition() -> TestResult {
-    assert_eq_test!(CpuVendor::from_vendor_string(b"GenuineIntel"), CpuVendor::Intel, "Intel vendor");
-    assert_eq_test!(CpuVendor::from_vendor_string(b"AuthenticAMD"), CpuVendor::Amd, "AMD vendor");
-    assert_eq_test!(CpuVendor::from_vendor_string(b"CentaurHauls"), CpuVendor::Via, "VIA vendor");
-    assert_eq_test!(CpuVendor::from_vendor_string(b"TCGTCGTCG??\0"), CpuVendor::Qemu, "QEMU vendor");
-    assert_eq_test!(CpuVendor::from_vendor_string(b"UnknownVend\0"), CpuVendor::Unknown, "Unknown vendor");
+    assert_eq_test!(
+        CpuVendor::from_vendor_string(b"GenuineIntel"),
+        CpuVendor::Intel,
+        "Intel vendor"
+    );
+    assert_eq_test!(
+        CpuVendor::from_vendor_string(b"AuthenticAMD"),
+        CpuVendor::Amd,
+        "AMD vendor"
+    );
+    assert_eq_test!(
+        CpuVendor::from_vendor_string(b"CentaurHauls"),
+        CpuVendor::Via,
+        "VIA vendor"
+    );
+    assert_eq_test!(
+        CpuVendor::from_vendor_string(b"TCGTCGTCG??\0"),
+        CpuVendor::Qemu,
+        "QEMU vendor"
+    );
+    assert_eq_test!(
+        CpuVendor::from_vendor_string(b"UnknownVend\0"),
+        CpuVendor::Unknown,
+        "Unknown vendor"
+    );
     TestResult::Pass
 }
 
@@ -150,10 +185,17 @@ fn cpu_cache_info_total() -> TestResult {
         l3_size: 8 * 1024 * 1024,
         ..Default::default()
     };
-    assert_eq_test!(cache.total_size(), (32 + 32 + 256 + 8192) * 1024, "cache total size");
+    assert_eq_test!(
+        cache.total_size(),
+        (32 + 32 + 256 + 8192) * 1024,
+        "cache total size"
+    );
     check!(cache.has_l3(), "should have L3");
 
-    let no_l3 = CacheInfo { l3_size: 0, ..Default::default() };
+    let no_l3 = CacheInfo {
+        l3_size: 0,
+        ..Default::default()
+    };
     check!(!no_l3.has_l3(), "should not have L3");
     TestResult::Pass
 }
@@ -188,7 +230,7 @@ fn cpu_topology_threads_per_core() -> TestResult {
 #[cfg(target_arch = "x86_64")]
 pub fn register_gdt_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "arch::gdt": {
             "null_descriptor": gdt_entry_null,
             "access_byte_constants": gdt_access_byte_constants,
@@ -204,7 +246,7 @@ pub fn register_gdt_tests() {}
 #[cfg(target_arch = "x86_64")]
 pub fn register_tss_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "arch::tss": {
             "zeroed": tss_zeroed,
             "set_kernel_stack": tss_set_kernel_stack,
@@ -220,7 +262,7 @@ pub fn register_tss_tests() {}
 
 pub fn register_cpu_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "cpu": {
             "vendor_recognition": cpu_vendor_recognition,
             "signature_effective_values": cpu_signature_effective_values,
@@ -230,8 +272,7 @@ pub fn register_cpu_tests() {
     }
 }
 
-pub fn register_cpuid_tests() {
-}
+pub fn register_cpuid_tests() {}
 
 pub fn register_tests() {
     register_gdt_tests();

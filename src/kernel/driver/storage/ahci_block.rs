@@ -29,7 +29,9 @@ impl AhciBlockDevice {
         let present = {
             let mut controllers = AHCI_CONTROLLERS.lock();
             if let Some(controller) = controllers.get_mut(controller_index) {
-                controller.get_port(port_index).map_or(false, |p| p.device_present)
+                controller
+                    .get_port(port_index)
+                    .map_or(false, |p| p.device_present)
             } else {
                 false
             }
@@ -101,7 +103,11 @@ impl AhciBlockDevice {
             }
         }
 
-        if lo > 0 { lo } else { 0 }
+        if lo > 0 {
+            lo
+        } else {
+            0
+        }
     }
 }
 
@@ -141,7 +147,9 @@ impl BlockDevice for AhciBlockDevice {
     fn blk_is_present(&self) -> bool {
         let mut controllers = AHCI_CONTROLLERS.lock();
         if let Some(controller) = controllers.get_mut(self.controller_index) {
-            controller.get_port(self.port_index).map_or(false, |p| p.device_present)
+            controller
+                .get_port(self.port_index)
+                .map_or(false, |p| p.device_present)
         } else {
             false
         }

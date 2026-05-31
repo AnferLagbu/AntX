@@ -23,10 +23,10 @@
 //!   确保用户态不会看到脏数据（信息泄漏防护）。
 //! - PAGE_FAULT_COUNT 使用 AtomicU64, 无竞争条件。
 
-use super::*;
-use super::vma::{Vma, VmaType, MmStruct};
-use super::vmm;
 use super::pmm;
+use super::vma::{MmStruct, Vma, VmaType};
+use super::vmm;
+use super::*;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,7 +240,12 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
         flags,
     );
 
-    let stack_vma = Vma::new(page_aligned, page_aligned + PAGE_SIZE as usize, flags, VmaType::Stack);
+    let stack_vma = Vma::new(
+        page_aligned,
+        page_aligned + PAGE_SIZE as usize,
+        flags,
+        VmaType::Stack,
+    );
     // LATER: 栈扩展 VMA 插入失败时页面已映射但无 VMA 跟踪,
     // 当前忽略返回值是权衡 (不会崩溃但 VMA 不完整)
     let _ = mm.insert_vma(stack_vma);

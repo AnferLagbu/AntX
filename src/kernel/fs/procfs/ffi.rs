@@ -5,9 +5,13 @@ use super::procfs::PROCFS_DATA;
 const MAX_PATH_LEN: usize = 1024;
 
 fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
-    if ptr.is_null() { return ""; }
+    if ptr.is_null() {
+        return "";
+    }
     unsafe {
-        let len = (0..MAX_PATH_LEN).find(|&i| *ptr.add(i) == 0).unwrap_or(MAX_PATH_LEN);
+        let len = (0..MAX_PATH_LEN)
+            .find(|&i| *ptr.add(i) == 0)
+            .unwrap_or(MAX_PATH_LEN);
         let slice = core::slice::from_raw_parts(ptr as *const u8, len);
         core::str::from_utf8_unchecked(slice)
     }
@@ -40,7 +44,7 @@ pub extern "C" fn procfs_read(name: *const c_char, buf: *mut u8, count: u32) -> 
     if buf.is_null() {
         return -1;
     }
-    
+
     let name = ptr_to_str(name);
     unsafe {
         let buffer = core::slice::from_raw_parts_mut(buf, count as usize);

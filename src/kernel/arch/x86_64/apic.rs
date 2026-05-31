@@ -3,7 +3,6 @@
 //!
 //! x86_64 Local APIC for per-CPU interrupt control, timer, and IPI.
 
-
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 const APIC_BASE_MSR: u32 = 0x1B;
@@ -60,7 +59,9 @@ static APIC_TIMER_HZ: AtomicU64 = AtomicU64::new(0);
 
 fn rdmsr(msr: u32) -> u64 {
     let (high, low): (u32, u32);
-    unsafe { core::arch::asm!("rdmsr", out("eax") low, out("edx") high, in("ecx") msr, options(nomem, nostack)); }
+    unsafe {
+        core::arch::asm!("rdmsr", out("eax") low, out("edx") high, in("ecx") msr, options(nomem, nostack));
+    }
     ((high as u64) << 32) | (low as u64)
 }
 
@@ -77,7 +78,9 @@ pub fn apic_read(reg: u32) -> u32 {
 
 pub fn apic_write(reg: u32, value: u32) {
     let base = APIC_BASE.load(Ordering::Acquire);
-    unsafe { core::ptr::write_volatile((base + reg as u64) as *mut u32, value); }
+    unsafe {
+        core::ptr::write_volatile((base + reg as u64) as *mut u32, value);
+    }
 }
 
 pub fn init() {
@@ -114,12 +117,16 @@ pub fn is_initialized() -> bool {
 }
 
 pub fn get_id() -> u32 {
-    if !is_initialized() { return 0; }
+    if !is_initialized() {
+        return 0;
+    }
     apic_read(APIC_ID) >> 24
 }
 
 pub fn get_version() -> u32 {
-    if !is_initialized() { return 0; }
+    if !is_initialized() {
+        return 0;
+    }
     apic_read(APIC_VERSION) & 0xFF
 }
 
@@ -130,21 +137,30 @@ pub fn eoi() {
 }
 
 pub fn send_ipi(apic_id: u8, vector: u8) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
     apic_write(APIC_ICR_HIGH, (apic_id as u32) << 24);
     apic_write(APIC_ICR_LOW, vector as u32 | ICR_ASSERT as u32);
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
 pub fn broadcast_ipi(vector: u8) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
     apic_write(APIC_ICR_HIGH, 0);
-    apic_write(APIC_ICR_LOW, vector as u32 | ICR_ALL_EXCLUDE_SELF as u32 | ICR_ASSERT as u32);
+    apic_write(
+        APIC_ICR_LOW,
+        vector as u32 | ICR_ALL_EXCLUDE_SELF as u32 | ICR_ASSERT as u32,
+    );
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
 pub fn init_timer(vector: u8, periodic: bool, divisor: u32) {
-    if !is_initialized() { return; }
+    if !is_initialized() {
+        return;
+    }
 
     let div_val = match divisor {
         1 => TIMER_DIV_1,
@@ -171,19 +187,27 @@ pub fn set_timer_count(count: u32) {
 }
 
 pub fn get_timer_count() -> u32 {
-    if !is_initialized() { return 0; }
+    if !is_initialized() {
+        return 0;
+    }
     apic_read(APIC_TIMER_CCR)
 }
 
 pub fn calibrate_timer(_pit_hz: u64, target_ms: u64) -> u64 {
-    if !is_initialized() { return 0; }
+    if !is_initialized() {
+        return 0;
+    }
 
     apic_write(APIC_TIMER_DCR, TIMER_DIV_16);
     apic_write(APIC_LVT_TIMER, LVT_MASK);
     apic_write(APIC_TIMER_ICR, 0xFFFFFFFF);
 
-    extern "C" { fn timer_sleep_busy(ms: u64); }
-    unsafe { timer_sleep_busy(target_ms); }
+    extern "C" {
+        fn timer_sleep_busy(ms: u64);
+    }
+    unsafe {
+        timer_sleep_busy(target_ms);
+    }
 
     let remaining = apic_read(APIC_TIMER_CCR);
     let elapsed = 0xFFFFFFFFu32 - remaining;
@@ -230,20 +254,38 @@ pub fn unmask_lint1(mode: u32) {
 }
 
 #[no_mangle]
-pub extern "C" fn apic_init() { init(); }
+pub extern "C" fn apic_init() {
+    init();
+}
 #[no_mangle]
-pub extern "C" fn apic_eoi() { eoi(); }
+pub extern "C" fn apic_eoi() {
+    eoi();
+}
 #[no_mangle]
-pub extern "C" fn apic_is_ready() -> bool { is_initialized() }
+pub extern "C" fn apic_is_ready() -> bool {
+    is_initialized()
+}
 #[no_mangle]
-pub extern "C" fn apic_get_id() -> u32 { get_id() }
+pub extern "C" fn apic_get_id() -> u32 {
+    get_id()
+}
 #[no_mangle]
-pub extern "C" fn apic_send_ipi(apic_id: u8, vector: u8) { send_ipi(apic_id, vector); }
+pub extern "C" fn apic_send_ipi(apic_id: u8, vector: u8) {
+    send_ipi(apic_id, vector);
+}
 #[no_mangle]
-pub extern "C" fn apic_broadcast_ipi(vector: u8) { broadcast_ipi(vector); }
+pub extern "C" fn apic_broadcast_ipi(vector: u8) {
+    broadcast_ipi(vector);
+}
 #[no_mangle]
-pub extern "C" fn apic_init_timer(vector: u8, periodic: bool, divisor: u32) { init_timer(vector, periodic, divisor); }
+pub extern "C" fn apic_init_timer(vector: u8, periodic: bool, divisor: u32) {
+    init_timer(vector, periodic, divisor);
+}
 #[no_mangle]
-pub extern "C" fn apic_set_timer_count(count: u32) { set_timer_count(count); }
+pub extern "C" fn apic_set_timer_count(count: u32) {
+    set_timer_count(count);
+}
 #[no_mangle]
-pub extern "C" fn apic_calibrate_timer(pit_hz: u64, target_ms: u64) -> u64 { calibrate_timer(pit_hz, target_ms) }
+pub extern "C" fn apic_calibrate_timer(pit_hz: u64, target_ms: u64) -> u64 {
+    calibrate_timer(pit_hz, target_ms)
+}

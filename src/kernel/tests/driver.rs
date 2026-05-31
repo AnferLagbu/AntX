@@ -1,34 +1,47 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
-use crate::kernel::driver::framework::{
-    DriverError, DeviceType, DeviceInfo, Result,
-};
-use crate::kernel::driver::input::keyboard::{
-    SCANCODE_TABLE, SHIFT_TABLE, get_special_key, SpecialKey,
-    ModifierState, KeyboardBuffer, KeyboardDriver, KB_LED_CAPS_LOCK, KB_LED_NUM_LOCK,
-};
 use crate::kernel::driver::char::serial::{
-    COM1_BASE, COM2_BASE, MAX_COM_PORTS, SerialConfig, BaudRate, DataBits,
-    StopBits, ParityMode, SerialPort, RingBuffer, SERIAL_BUFFER_SIZE,
+    BaudRate, DataBits, ParityMode, RingBuffer, SerialConfig, SerialPort, StopBits, COM1_BASE,
+    COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE,
+};
+use crate::kernel::driver::framework::Driver;
+use crate::kernel::driver::framework::{DeviceInfo, DeviceType, DriverError, Result};
+use crate::kernel::driver::input::keyboard::{
+    get_special_key, KeyboardBuffer, KeyboardDriver, ModifierState, SpecialKey, KB_LED_CAPS_LOCK,
+    KB_LED_NUM_LOCK, SCANCODE_TABLE, SHIFT_TABLE,
 };
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::driver::storage::ata::{
-    ATA_PRIMARY_IO, ATA_SECONDARY_IO, WORDS_PER_SECTOR, MAX_ATA_DEVICES,
-    AtaDevice, AtaController, get_io_base, get_ctrl_base, ATA_PRIMARY_CTRL, ATA_SECONDARY_CTRL,
+    get_ctrl_base, get_io_base, AtaController, AtaDevice, ATA_PRIMARY_CTRL, ATA_PRIMARY_IO,
+    ATA_SECONDARY_CTRL, ATA_SECONDARY_IO, MAX_ATA_DEVICES, WORDS_PER_SECTOR,
 };
-use crate::kernel::driver::framework::Driver;
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::register_tests_inner;
 
 fn driver_error_codes() -> TestResult {
-    assert_eq_test!(alloc::format!("{}", DriverError::InvalidParameter), "Invalid parameter", "InvalidParameter");
-    assert_eq_test!(alloc::format!("{}", DriverError::Timeout), "Operation timeout", "Timeout");
-    check!(DriverError::Busy != DriverError::NotInitialized, "Busy != NotInitialized");
+    assert_eq_test!(
+        alloc::format!("{}", DriverError::InvalidParameter),
+        "Invalid parameter",
+        "InvalidParameter"
+    );
+    assert_eq_test!(
+        alloc::format!("{}", DriverError::Timeout),
+        "Operation timeout",
+        "Timeout"
+    );
+    check!(
+        DriverError::Busy != DriverError::NotInitialized,
+        "Busy != NotInitialized"
+    );
     TestResult::Pass
 }
 
 fn driver_device_types() -> TestResult {
     assert_eq_test!(alloc::format!("{}", DeviceType::Block), "Block", "Block");
     assert_eq_test!(alloc::format!("{}", DeviceType::Char), "Char", "Char");
-    assert_eq_test!(alloc::format!("{}", DeviceType::Network), "Network", "Network");
+    assert_eq_test!(
+        alloc::format!("{}", DeviceType::Network),
+        "Network",
+        "Network"
+    );
     TestResult::Pass
 }
 
@@ -52,8 +65,12 @@ fn driver_device_info_builder() -> TestResult {
 }
 
 fn driver_result_type() -> TestResult {
-    fn returns_ok() -> Result<u32> { Ok(42) }
-    fn returns_err() -> Result<u32> { Err(DriverError::DeviceNotFound) }
+    fn returns_ok() -> Result<u32> {
+        Ok(42)
+    }
+    fn returns_err() -> Result<u32> {
+        Err(DriverError::DeviceNotFound)
+    }
     check!(returns_ok().is_ok(), "ok is ok");
     check!(returns_err().is_err(), "err is err");
     assert_eq_test!(returns_ok().unwrap(), 42, "ok value");
@@ -251,7 +268,7 @@ fn ata_disk_present_bounds() -> TestResult {
 #[cfg(target_arch = "x86_64")]
 pub fn register_ata_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "driver::ata": {
             "constants": ata_constants,
             "device_default": ata_device_default,
@@ -267,7 +284,7 @@ pub fn register_ata_tests() {}
 
 pub fn register_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "driver::framework": {
             "error_codes": driver_error_codes,
             "device_types": driver_device_types,

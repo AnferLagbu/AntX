@@ -1,8 +1,8 @@
-use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU64, Ordering};
-use crate::kernel::sync::mutex::Mutex;
 use crate::kernel::fs::hvfs::bp::HvBlockPointer;
 use crate::kernel::fs::hvfs::dataset::HvDataset;
+use crate::kernel::sync::mutex::Mutex;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub const HV_SNAP_MAX: usize = 64;
 
@@ -76,15 +76,23 @@ impl HvSnapshotManager {
         match idx {
             Some(i) => {
                 let snap = &snaps[i];
-                if snap.ref_count > 1 { return false; }
+                if snap.ref_count > 1 {
+                    return false;
+                }
                 snaps.remove(i);
                 true
             }
-            None => false
+            None => false,
         }
     }
 
-    pub fn create_clone(&self, snap_id: u64, ds_id: u64, name: &str, txg: u64) -> Option<HvDataset> {
+    pub fn create_clone(
+        &self,
+        snap_id: u64,
+        ds_id: u64,
+        name: &str,
+        txg: u64,
+    ) -> Option<HvDataset> {
         let mut snaps = self.snapshots.lock();
         let snap = snaps.iter_mut().find(|s| s.snap_id == snap_id)?;
         let root_bp = snap.root_bp;
@@ -99,11 +107,20 @@ impl HvSnapshotManager {
     }
 
     pub fn get_snapshot(&self, snap_id: u64) -> Option<HvSnapshot> {
-        self.snapshots.lock().iter().find(|s| s.snap_id == snap_id).cloned()
+        self.snapshots
+            .lock()
+            .iter()
+            .find(|s| s.snap_id == snap_id)
+            .cloned()
     }
 
     pub fn list_snapshots(&self, ds_id: u64) -> Vec<HvSnapshot> {
-        self.snapshots.lock().iter().filter(|s| s.ds_id == ds_id).cloned().collect()
+        self.snapshots
+            .lock()
+            .iter()
+            .filter(|s| s.ds_id == ds_id)
+            .cloned()
+            .collect()
     }
 
     pub fn rollback(&self, snap_id: u64, ds: &HvDataset) -> bool {
@@ -112,7 +129,9 @@ impl HvSnapshotManager {
             Some(s) => s,
             None => return false,
         };
-        if snap.ds_id != ds.ds_id { return false; }
+        if snap.ds_id != ds.ds_id {
+            return false;
+        }
         *ds.root_bp.lock() = snap.root_bp;
         ds.used_space.store(snap.used_space, Ordering::Release);
         true

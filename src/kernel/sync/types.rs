@@ -16,7 +16,7 @@
 //!   ✅ 类型安全的锁操作 (泛型 T)
 //! ```
 
-use core::sync::atomic::{AtomicU32, Ordering, AtomicU64};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// 锁状态枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,13 +44,13 @@ pub enum TryLockResult {
 pub struct SpinLockInner {
     /// 锁定状态 (0=unlocked, 1=locked)
     pub locked: AtomicU32,
-    
+
     #[cfg(debug_assertions)]
-    pub owner: *const (),      // 调试: 持有者 RSP
+    pub owner: *const (), // 调试: 持有者 RSP
     #[cfg(debug_assertions)]
-    pub acquire_time: u64,     // debug: 获取时间戳 (TSC)
+    pub acquire_time: u64, // debug: 获取时间戳 (TSC)
     #[cfg(debug_assertions)]
-    pub name: &'static str,   // debug: 锁名称
+    pub name: &'static str, // debug: 锁名称
 }
 
 impl Default for SpinLockInner {
@@ -72,50 +72,48 @@ impl SpinLockInner {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// 原始锁获取 (用于内部实现)
     pub fn raw_lock(&self) {
         // Fast path: 尝试立即获取
-        if self.locked.compare_exchange(
-            0, 1,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ).is_ok() {
+        if self
+            .locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
             return;
         }
-        
+
         // Slow path: 自旋等待
         loop {
-            if self.locked.compare_exchange(
-                0, 1,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .locked
+                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 break;
             }
-            
+
             // pause 指令提示 CPU 我们在自旋等待
             core::hint::spin_loop();
         }
     }
-    
+
     /// 原始锁释放 (用于内部实现)
     pub fn raw_unlock(&self) {
         core::sync::atomic::fence(Ordering::SeqCst);
         self.locked.store(0, Ordering::Release);
     }
-    
+
     /// 尝试获取锁 (非阻塞)
     ///
     /// # Returns
     /// - `true`: 成功获取
     /// - `false`: 锁已被持有
     pub fn try_lock(&self) -> bool {
-        self.locked.compare_exchange(
-            0, 1,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ).is_ok()
+        self.locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
     }
 }
 
@@ -170,7 +168,7 @@ impl MutexInner {
 /// # 状态机
 /// ```text
 /// Initial: readers=0, writer=0, pending_writers=0
-/// 
+///
 /// read_lock():   readers++ (if !writer && !pending_writers)
 /// read_unlock(): readers--
 /// write_lock():  pending_writers++ → wait → writer=1 (if readers==0)
@@ -283,7 +281,7 @@ pub struct SpinLockGuard<'a, T> {
 
 impl<'a, T> core::ops::Deref for SpinLockGuard<'a, T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
         self.data
     }
@@ -313,7 +311,7 @@ pub struct MutexGuard<'a, T> {
 
 impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
         self.data
     }
@@ -348,7 +346,7 @@ pub struct RwLockReadGuard<'a, T> {
 
 impl<'a, T> core::ops::Deref for RwLockReadGuard<'a, T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
         self.data
     }
@@ -357,7 +355,7 @@ impl<'a, T> core::ops::Deref for RwLockReadGuard<'a, T> {
 impl<'a, T> Drop for RwLockReadGuard<'a, T> {
     fn drop(&mut self) {
         let prev_readers = self._rwlock.readers.fetch_sub(1, Ordering::AcqRel);
-        
+
         // 边界检查 (debug 模式)
         debug_assert!(prev_readers > 0, "RwLock: read_unlock without read_lock");
     }
@@ -371,7 +369,7 @@ pub struct RwLockWriteGuard<'a, T> {
 
 impl<'a, T> core::ops::Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
         self.data
     }
@@ -402,13 +400,13 @@ const _: () = assert!(core::mem::size_of::<SpinLockInner>() <= 64);
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_spin_lock_inner_default() {
         let lock = SpinLockInner::default();
         assert_eq!(lock.locked.load(Ordering::Relaxed), 0);
     }
-    
+
     #[test]
     fn test_mutex_inner_default() {
         let m = MutexInner::default();
@@ -416,7 +414,7 @@ mod tests {
         assert_eq!(m.owner.load(Ordering::Relaxed), -1);
         assert_eq!(m.depth.load(Ordering::Relaxed), 0);
     }
-    
+
     #[test]
     fn test_rwlock_inner_default() {
         let rw = RwLockInner::default();
@@ -424,21 +422,21 @@ mod tests {
         assert_eq!(rw.writer.load(Ordering::Relaxed), 0);
         assert_eq!(rw.pending_writers.load(Ordering::Relaxed), 0);
     }
-    
+
     #[test]
     fn test_irq_save_flags() {
         let flags = IrqSaveFlags(0x202); // IF=1 (interrupts enabled)
         assert!(flags.interrupts_enabled());
-        
+
         let flags_disabled = IrqSaveFlags(0x200); // IF=0 (disabled)
         assert!(!flags_disabled.interrupts_enabled());
     }
-    
+
     #[test]
     fn test_try_lock_result_variants() {
         let acquired = TryLockResult::Acquired;
         let would_block = TryLockResult::WouldBlock;
-        
+
         assert_eq!(acquired, TryLockResult::Acquired);
         assert_ne!(acquired, would_block);
     }

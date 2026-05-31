@@ -27,10 +27,10 @@
 //! └──────────────────────┘
 //! ```
 
+use super::zil::{HvZil, HvZilRecord};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use super::zil::{HvZil, HvZilRecord};
 
 const ZIL_MAGIC: u32 = 0x5A494C31u32; // "ZIL1"
 const ZIL_TAIL_MAGIC: u32 = 0x454E4400u32; // "END\0"
@@ -45,8 +45,7 @@ const ZIL_MAX_RECORDS_PER_BLOCK: usize =
 ///    rec_type(1) + txg(8) + obj_id(8) + parent_obj(8) + offset(8) + size(4)
 ///  + seq(8) + name(128) + data_hash(32) + record_crc(4) = 209
 const ZIL_RECORD_PAYLOAD: usize = 209;
-const _ASSERT_RECORD_FITS: () =
-    assert!(ZIL_RECORD_PAYLOAD <= ZIL_RECORD_DISK_SIZE);
+const _ASSERT_RECORD_FITS: () = assert!(ZIL_RECORD_PAYLOAD <= ZIL_RECORD_DISK_SIZE);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -153,8 +152,12 @@ fn crc32_checksum(data: &[u8]) -> u32 {
 }
 
 fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
-    debug_assert!(buf.len() >= ZIL_RECORD_PAYLOAD,
-        "serialize_record buffer too small: {} < {}", buf.len(), ZIL_RECORD_PAYLOAD);
+    debug_assert!(
+        buf.len() >= ZIL_RECORD_PAYLOAD,
+        "serialize_record buffer too small: {} < {}",
+        buf.len(),
+        ZIL_RECORD_PAYLOAD
+    );
     let ptr = buf.as_mut_ptr();
     unsafe {
         ptr.write(record.rec_type as u8);
@@ -196,7 +199,11 @@ fn deserialize_record(buf: &[u8]) -> Option<HvZilRecord> {
         core::ptr::copy_nonoverlapping(buf.as_ptr().add(45), name.as_mut_ptr(), 128);
 
         let mut data_hash = [0u64; 4];
-        core::ptr::copy_nonoverlapping(buf.as_ptr().add(173), data_hash.as_mut_ptr() as *mut u8, 32);
+        core::ptr::copy_nonoverlapping(
+            buf.as_ptr().add(173),
+            data_hash.as_mut_ptr() as *mut u8,
+            32,
+        );
 
         let rec_type_enum = match rec_type {
             1 => super::zil::HvZilRecordType::Create,
@@ -268,7 +275,10 @@ impl HvZilPersist {
         let record_area = ZIL_HEADER_SIZE;
         for i in 0..count {
             let offset = record_area + i * ZIL_RECORD_DISK_SIZE;
-            serialize_record(&records[i], &mut block[offset..offset + ZIL_RECORD_DISK_SIZE]);
+            serialize_record(
+                &records[i],
+                &mut block[offset..offset + ZIL_RECORD_DISK_SIZE],
+            );
         }
 
         let data_end = record_area + count * ZIL_RECORD_DISK_SIZE;
@@ -308,9 +318,7 @@ impl HvZilPersist {
             return records;
         }
 
-        let header = unsafe {
-            &*(block.as_ptr() as *const ZilBlockHeader)
-        };
+        let header = unsafe { &*(block.as_ptr() as *const ZilBlockHeader) };
 
         if !header.is_valid() || !header.verify_header() {
             return records;
@@ -338,7 +346,8 @@ impl HvZilPersist {
         let record_area = ZIL_HEADER_SIZE;
         for i in 0..header.record_count as usize {
             let offset = record_area + i * ZIL_RECORD_DISK_SIZE;
-            if let Some(record) = deserialize_record(&block[offset..offset + ZIL_RECORD_DISK_SIZE]) {
+            if let Some(record) = deserialize_record(&block[offset..offset + ZIL_RECORD_DISK_SIZE])
+            {
                 records.push(record);
             }
         }
@@ -413,7 +422,7 @@ mod tests {
         let mut buf = [0u8; ZIL_RECORD_DISK_SIZE];
         serialize_record(&rec, &mut buf);
 
-        buf[10] ^= 0xFF;  // corrupt
+        buf[10] ^= 0xFF; // corrupt
         assert!(deserialize_record(&buf).is_none());
     }
 }

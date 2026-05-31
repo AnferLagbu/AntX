@@ -36,10 +36,9 @@
 //! QEMU virt aarch64 places virtio-mmio devices starting at 0x0a000000,
 //! with each device at a 0x200-byte stride.
 
-pub mod queue;
 pub mod blk;
 pub mod net;
-
+pub mod queue;
 
 use crate::kernel::mm::KERNEL_BASE;
 use crate::klog_info;
@@ -47,29 +46,29 @@ use crate::klog_warn;
 
 // ── MMIO register offsets ──
 
-const MAGIC_VALUE:        usize = 0x000;
-const VERSION:            usize = 0x004;
-const DEVICE_ID:          usize = 0x008;
-const VENDOR_ID:          usize = 0x00c;
-const DEVICE_FEATURES:    usize = 0x010;
+const MAGIC_VALUE: usize = 0x000;
+const VERSION: usize = 0x004;
+const DEVICE_ID: usize = 0x008;
+const VENDOR_ID: usize = 0x00c;
+const DEVICE_FEATURES: usize = 0x010;
 const DEVICE_FEATURES_SEL: usize = 0x014;
-const DRIVER_FEATURES:    usize = 0x020;
+const DRIVER_FEATURES: usize = 0x020;
 const DRIVER_FEATURES_SEL: usize = 0x024;
-const QUEUE_SEL:          usize = 0x030;
-const QUEUE_NUM_MAX:      usize = 0x034;
-const QUEUE_NUM:          usize = 0x038;
-const QUEUE_READY:        usize = 0x044;
-const QUEUE_PFN:          usize = 0x040; // Legacy: QueuePFN (page number)
-const QUEUE_NOTIFY:       usize = 0x050;
-const INTERRUPT_STATUS:   usize = 0x060;
-const INTERRUPT_ACK:      usize = 0x064;
-const STATUS:             usize = 0x070;
-const QUEUE_DESC_LOW:     usize = 0x080;
-const QUEUE_DESC_HIGH:    usize = 0x084;
-const QUEUE_DRIVER_LOW:   usize = 0x090;
-const QUEUE_DRIVER_HIGH:  usize = 0x094;
-const QUEUE_DEVICE_LOW:   usize = 0x0a0;
-const QUEUE_DEVICE_HIGH:  usize = 0x0a4;
+const QUEUE_SEL: usize = 0x030;
+const QUEUE_NUM_MAX: usize = 0x034;
+const QUEUE_NUM: usize = 0x038;
+const QUEUE_READY: usize = 0x044;
+const QUEUE_PFN: usize = 0x040; // Legacy: QueuePFN (page number)
+const QUEUE_NOTIFY: usize = 0x050;
+const INTERRUPT_STATUS: usize = 0x060;
+const INTERRUPT_ACK: usize = 0x064;
+const STATUS: usize = 0x070;
+const QUEUE_DESC_LOW: usize = 0x080;
+const QUEUE_DESC_HIGH: usize = 0x084;
+const QUEUE_DRIVER_LOW: usize = 0x090;
+const QUEUE_DRIVER_HIGH: usize = 0x094;
+const QUEUE_DEVICE_LOW: usize = 0x0a0;
+const QUEUE_DEVICE_HIGH: usize = 0x0a4;
 
 // ── Register magic ──
 
@@ -78,17 +77,17 @@ const VIRTIO_MAGIC: u32 = 0x74726976;
 // ── Device status bits ──
 
 const STATUS_ACKNOWLEDGE: u32 = 1;
-const STATUS_DRIVER:      u32 = 2;
-const STATUS_DRIVER_OK:   u32 = 4;
+const STATUS_DRIVER: u32 = 2;
+const STATUS_DRIVER_OK: u32 = 4;
 const STATUS_FEATURES_OK: u32 = 8;
 const STATUS_NEEDS_RESET: u32 = 0x40;
-const STATUS_FAILED:      u32 = 0x80;
+const STATUS_FAILED: u32 = 0x80;
 
 // ── Device IDs ──
 
-pub const VIRTIO_ID_BLOCK:   u32 = 2;
-pub const VIRTIO_ID_NET:     u32 = 1;
-pub const VIRTIO_ID_GPU:     u32 = 16;
+pub const VIRTIO_ID_BLOCK: u32 = 2;
+pub const VIRTIO_ID_NET: u32 = 1;
+pub const VIRTIO_ID_GPU: u32 = 16;
 
 // ── MMIO region ──
 
@@ -148,7 +147,11 @@ impl VirtioMmioDevice {
     /// Probe whether the device at the given MMIO base is a valid virtio device.
     pub fn probe(mmio_base: u64) -> Option<Self> {
         // Create a temporary device for register access
-        let dev = VirtioMmioDevice { mmio_base, device_id: 0, queue_count: 0 };
+        let dev = VirtioMmioDevice {
+            mmio_base,
+            device_id: 0,
+            queue_count: 0,
+        };
 
         let magic = unsafe { dev.read32(MAGIC_VALUE) };
         if magic != VIRTIO_MAGIC {
@@ -168,11 +171,21 @@ impl VirtioMmioDevice {
 
         let vendor_id = unsafe { dev.read32(VENDOR_ID) };
 
-        klog_info!(Driver, "virtio: found device id={} vendor={:#x} at {:#x}", device_id, vendor_id, mmio_base);
+        klog_info!(
+            Driver,
+            "virtio: found device id={} vendor={:#x} at {:#x}",
+            device_id,
+            vendor_id,
+            mmio_base
+        );
 
         let queue_count = if device_id == VIRTIO_ID_BLOCK { 1 } else { 2 };
 
-        Some(VirtioMmioDevice { mmio_base, device_id, queue_count })
+        Some(VirtioMmioDevice {
+            mmio_base,
+            device_id,
+            queue_count,
+        })
     }
 
     /// Initialize the device:
@@ -207,12 +220,19 @@ impl VirtioMmioDevice {
             self.write32(DRIVER_FEATURES, 0);
 
             // Step 5: FEATURES_OK
-            self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK);
+            self.write32(
+                STATUS,
+                STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK,
+            );
 
             // Verify FEATURES_OK was accepted
             let status = self.read32(STATUS);
             if status & STATUS_FEATURES_OK == 0 {
-                klog_warn!(Driver, "virtio: FEATURES_OK rejected at {:#x}", self.mmio_base);
+                klog_warn!(
+                    Driver,
+                    "virtio: FEATURES_OK rejected at {:#x}",
+                    self.mmio_base
+                );
                 return Err(());
             }
 
@@ -225,7 +245,10 @@ impl VirtioMmioDevice {
     /// Set DRIVER_OK (device goes live). Must be called after all virtqueues are configured.
     pub fn set_driver_ok(&self) {
         unsafe {
-            self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK);
+            self.write32(
+                STATUS,
+                STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK,
+            );
         }
     }
 
@@ -238,13 +261,23 @@ impl VirtioMmioDevice {
             // Check max queue size
             let max_size = self.read32(QUEUE_NUM_MAX);
             if vq.queue_size as u32 > max_size {
-                klog_warn!(Driver, "virtio: queue size {} exceeds max {}", vq.queue_size, max_size);
+                klog_warn!(
+                    Driver,
+                    "virtio: queue size {} exceeds max {}",
+                    vq.queue_size,
+                    max_size
+                );
             }
             klog_info!(Driver, "virtio: vq{} max_size={}", vq_index, max_size);
 
             // Set queue size
             self.write32(QUEUE_NUM, vq.queue_size as u32);
-            klog_info!(Driver, "virtio: vq{} QUEUE_NUM set, writing desc={:#x}", vq_index, vq.desc_paddr());
+            klog_info!(
+                Driver,
+                "virtio: vq{} QUEUE_NUM set, writing desc={:#x}",
+                vq_index,
+                vq.desc_paddr()
+            );
 
             // Set physical addresses of the three ring parts
             self.write64(QUEUE_DESC_LOW, QUEUE_DESC_HIGH, vq.desc_paddr());
@@ -270,7 +303,12 @@ impl VirtioMmioDevice {
 
             let max_size = self.read32(QUEUE_NUM_MAX);
             if vq.queue_size as u32 > max_size {
-                klog_warn!(Driver, "virtio: legacy queue size {} exceeds max {}", vq.queue_size, max_size);
+                klog_warn!(
+                    Driver,
+                    "virtio: legacy queue size {} exceeds max {}",
+                    vq.queue_size,
+                    max_size
+                );
             }
 
             self.write32(QUEUE_NUM, vq.queue_size as u32);
@@ -280,7 +318,13 @@ impl VirtioMmioDevice {
             let pfn = (vq.desc_paddr() >> 12) as u32;
             self.write32(QUEUE_PFN, pfn);
 
-            klog_info!(Driver, "virtio: legacy vq{} pfn={:#x} (desc={:#x})", vq_index, pfn, vq.desc_paddr());
+            klog_info!(
+                Driver,
+                "virtio: legacy vq{} pfn={:#x} (desc={:#x})",
+                vq_index,
+                pfn,
+                vq.desc_paddr()
+            );
             Ok(())
         }
     }

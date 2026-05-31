@@ -31,46 +31,53 @@ pub struct InterruptEvent {
 pub struct DetailedStatistics {
     /// 总中断次数
     pub total_count: AtomicU64,
-    
+
     // 异常统计 (32 个标准异常)
     pub exception_counts: [AtomicU64; 32],
-    
+
     // IRQ 统计 (16 个 IRQ)
     pub irq_counts: [AtomicU64; 16],
-    
+
     // 特殊向量统计
-    pub syscall_count: AtomicU64,      // int 0x80
-    pub recovery_count: AtomicU64,     // int 0x82
-    
+    pub syscall_count: AtomicU64,  // int 0x80
+    pub recovery_count: AtomicU64, // int 0x82
+
     // 嵌套中断统计
     pub nested_interrupts: AtomicU64,
     pub max_nesting_depth: AtomicU64,
-    
+
     // User/Kernel 模式分布
     pub user_mode_interrupts: AtomicU64,
     pub kernel_mode_interrupts: AtomicU64,
-    
+
     // 恢复动作统计
     pub recoveries: AtomicU64,
     pub process_terminations: AtomicU64,
     pub domain_recoveries: AtomicU64,
     pub panics: AtomicU64,
-    
+
     // 历史记录 (环形缓冲区)
     history: spin::Mutex<InterruptHistory>,
 }
 
 /// 历史记录缓冲区
 struct InterruptHistory {
-    events: [InterruptEvent; 64],  // 最近 64 次中断
-    index: u64,                    // 当前写入位置
-    count: u64,                    // 已记录的事件总数
+    events: [InterruptEvent; 64], // 最近 64 次中断
+    index: u64,                   // 当前写入位置
+    count: u64,                   // 已记录的事件总数
 }
 
 impl Default for InterruptHistory {
     fn default() -> Self {
         Self {
-            events: [const { InterruptEvent { timestamp: 0, vector: 0, rip: 0, is_user: false } }; 64],
+            events: [const {
+                InterruptEvent {
+                    timestamp: 0,
+                    vector: 0,
+                    rip: 0,
+                    is_user: false,
+                }
+            }; 64],
             index: 0,
             count: 0,
         }
@@ -82,11 +89,18 @@ impl DetailedStatistics {
     pub fn new() -> Self {
         // 手动创建 InterruptHistory (因为 const fn 不能调用 Default)
         let history = InterruptHistory {
-            events: [const { InterruptEvent { timestamp: 0, vector: 0, rip: 0, is_user: false } }; 64],
+            events: [const {
+                InterruptEvent {
+                    timestamp: 0,
+                    vector: 0,
+                    rip: 0,
+                    is_user: false,
+                }
+            }; 64],
             index: 0,
             count: 0,
         };
-        
+
         Self {
             total_count: AtomicU64::new(0),
             exception_counts: [const { AtomicU64::new(0) }; 32],
@@ -108,21 +122,21 @@ impl DetailedStatistics {
     /// 记录一次异常
     pub fn record_exception(&self, vector: u8, frame: &InterruptFrame) {
         self.total_count.fetch_add(1, Ordering::Relaxed);
-        
+
         if vector < 32 {
             self.exception_counts[vector as usize].fetch_add(1, Ordering::Relaxed);
         }
-        
+
         let is_user = frame.is_user_mode();
         if is_user {
             self.user_mode_interrupts.fetch_add(1, Ordering::Relaxed);
         } else {
             self.kernel_mode_interrupts.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // 记录到历史缓冲区
         self.record_history(vector, frame.rip, is_user);
-        
+
         // 更新时间戳
         unsafe {
             let _ = crate::arch!(timestamp());
@@ -132,7 +146,7 @@ impl DetailedStatistics {
     /// 记录一次 IRQ
     pub fn record_irq(&self, irq: u8) {
         self.total_count.fetch_add(1, Ordering::Relaxed);
-        
+
         if irq < 16 {
             self.irq_counts[irq as usize].fetch_add(1, Ordering::Relaxed);
         }
@@ -141,7 +155,7 @@ impl DetailedStatistics {
     /// 记录嵌套中断
     pub fn record_nested(&self, depth: u64) {
         self.nested_interrupts.fetch_add(1, Ordering::Relaxed);
-        
+
         // 更新最大嵌套深度
         let mut current_max = self.max_nesting_depth.load(Ordering::Relaxed);
         while depth > current_max {
@@ -160,11 +174,15 @@ impl DetailedStatistics {
     /// 记录恢复动作
     pub fn record_recovery_action(&self, action: &super::handlers::RecoveryAction) {
         use super::handlers::RecoveryAction;
-        
+
         match action {
             RecoveryAction::Recovered => self.recoveries.fetch_add(1, Ordering::Relaxed),
-            RecoveryAction::TerminateProcess(_) => self.process_terminations.fetch_add(1, Ordering::Relaxed),
-            RecoveryAction::DomainRecovery => self.domain_recoveries.fetch_add(1, Ordering::Relaxed),
+            RecoveryAction::TerminateProcess(_) => {
+                self.process_terminations.fetch_add(1, Ordering::Relaxed)
+            }
+            RecoveryAction::DomainRecovery => {
+                self.domain_recoveries.fetch_add(1, Ordering::Relaxed)
+            }
             RecoveryAction::Panic(_) => self.panics.fetch_add(1, Ordering::Relaxed),
         };
     }
@@ -172,7 +190,7 @@ impl DetailedStatistics {
     /// 记录到历史缓冲区
     fn record_history(&self, vector: u8, rip: u64, is_user: bool) {
         let mut history = self.history.lock();
-        
+
         unsafe {
             let event = InterruptEvent {
                 timestamp: crate::arch!(timestamp()),
@@ -180,11 +198,11 @@ impl DetailedStatistics {
                 rip,
                 is_user,
             };
-            
+
             let idx = (history.index % 64) as usize;
             history.events[idx] = event;
             history.index += 1;
-            
+
             if history.count < 64 {
                 history.count += 1;
             }
@@ -195,7 +213,9 @@ impl DetailedStatistics {
     pub fn get_vector_count(&self, vector: u8) -> u64 {
         if vector < 32 {
             self.exception_counts[vector as usize].load(Ordering::Relaxed)
-        } else if (vector as usize) >= IRQ_BASE as usize && (vector as usize) < IRQ_BASE as usize + 16 {
+        } else if (vector as usize) >= IRQ_BASE as usize
+            && (vector as usize) < IRQ_BASE as usize + 16
+        {
             self.irq_counts[(vector - IRQ_BASE) as usize].load(Ordering::Relaxed)
         } else if vector == 0x80 {
             self.syscall_count.load(Ordering::Relaxed)
@@ -213,7 +233,7 @@ impl DetailedStatistics {
     #[cfg(feature = "json_export")]
     pub fn export_json(&self) -> alloc::string::String {
         use alloc::format;
-        
+
         format!(
             r#"{{
   "summary": {{
@@ -254,10 +274,12 @@ impl DetailedStatistics {
     #[cfg(feature = "json_export")]
     fn export_exceptions_json(&self) -> alloc::string::String {
         use alloc::{format, string::String};
-        
+
         let mut json = String::new();
         for i in 0..32u8 {
-            if i > 0 { json.push_str(","); }
+            if i > 0 {
+                json.push_str(",");
+            }
             let name = get_exception_name(i);
             let count = self.exception_counts[i as usize].load(Ordering::Relaxed);
             json.push_str(&format!("\n    \"#{} ({})\": {}", i, name, count));
@@ -268,10 +290,12 @@ impl DetailedStatistics {
     #[cfg(feature = "json_export")]
     fn export_irqs_json(&self) -> alloc::string::String {
         use alloc::{format, string::String};
-        
+
         let mut json = String::new();
         for i in 0..16u8 {
-            if i > 0 { json.push_str(","); }
+            if i > 0 {
+                json.push_str(",");
+            }
             let name = get_irq_name(i);
             let count = self.irq_counts[i as usize].load(Ordering::Relaxed);
             json.push_str(&format!("\n    \"IRQ {} ({})\": {}", i, name, count));
@@ -289,7 +313,7 @@ impl DetailedStatistics {
         } else {
             0
         };
-        
+
         let mut events = Vec::with_capacity(actual_count);
         for i in 0..actual_count {
             let idx = (start_idx + i) % 64;
@@ -302,15 +326,15 @@ impl DetailedStatistics {
     #[cfg(any(test, feature = "kernel_test"))]
     pub fn reset(&self) {
         self.total_count.store(0, Ordering::Relaxed);
-        
+
         for i in 0..32u8 {
             self.exception_counts[i as usize].store(0, Ordering::Relaxed);
         }
-        
+
         for i in 0..16u8 {
             self.irq_counts[i as usize].store(0, Ordering::Relaxed);
         }
-        
+
         self.syscall_count.store(0, Ordering::Relaxed);
         self.recovery_count.store(0, Ordering::Relaxed);
         self.nested_interrupts.store(0, Ordering::Relaxed);
@@ -321,7 +345,7 @@ impl DetailedStatistics {
         self.process_terminations.store(0, Ordering::Relaxed);
         self.domain_recoveries.store(0, Ordering::Relaxed);
         self.panics.store(0, Ordering::Relaxed);
-        
+
         let mut history = self.history.lock();
         history.index = 0;
         history.count = 0;
@@ -342,7 +366,7 @@ impl<T> Vec<T> {
             len: 0,
         }
     }
-    
+
     fn push(&mut self, item: T) {
         if self.len < 64 {
             self.data[self.len] = Some(item);
@@ -354,9 +378,12 @@ impl<T> Vec<T> {
 impl<T: Copy> IntoIterator for Vec<T> {
     type Item = T;
     type IntoIter = VecIntoIter<T>;
-    
+
     fn into_iter(self) -> Self::IntoIter {
-        VecIntoIter { vec: self, index: 0 }
+        VecIntoIter {
+            vec: self,
+            index: 0,
+        }
     }
 }
 
@@ -367,7 +394,7 @@ pub struct VecIntoIter<T> {
 
 impl<T: Copy> Iterator for VecIntoIter<T> {
     type Item = T;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.vec.len {
             let item = self.vec.data[self.index];
@@ -387,11 +414,18 @@ pub fn get_detailed_statistics() -> &'static DetailedStatistics {
     DETAILED_STATS.call_once(|| {
         // 手动创建 InterruptHistory
         let history = InterruptHistory {
-            events: [const { InterruptEvent { timestamp: 0, vector: 0, rip: 0, is_user: false } }; 64],
+            events: [const {
+                InterruptEvent {
+                    timestamp: 0,
+                    vector: 0,
+                    rip: 0,
+                    is_user: false,
+                }
+            }; 64],
             index: 0,
             count: 0,
         };
-        
+
         DetailedStatistics {
             total_count: AtomicU64::new(0),
             exception_counts: [const { AtomicU64::new(0) }; 32],
@@ -414,91 +448,91 @@ pub fn get_detailed_statistics() -> &'static DetailedStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_statistics_initialization() {
         let stats = DetailedStatistics::new();
         assert_eq!(stats.total_count.load(Ordering::Relaxed), 0);
         assert_eq!(stats.nested_interrupts.load(Ordering::Relaxed), 0);
     }
-    
+
     #[test]
     fn test_record_exception() {
         let stats = DetailedStatistics::new();
         let frame = InterruptFrame::new_test_frame(14, 0x400000, 0x23); // PF, user mode
-        
+
         stats.record_exception(14, &frame);
-        
+
         assert_eq!(stats.total_count.load(Ordering::Relaxed), 1);
         assert_eq!(stats.get_vector_count(14), 1);
         assert_eq!(stats.user_mode_interrupts.load(Ordering::Relaxed), 1);
         assert_eq!(stats.kernel_mode_interrupts.load(Ordering::Relaxed), 0);
     }
-    
+
     #[test]
     fn test_record_irq() {
         let stats = DetailedStatistics::new();
-        
+
         stats.record_irq(1); // Keyboard
         stats.record_irq(0); // Timer
         stats.record_irq(1); // Keyboard again
-        
+
         assert_eq!(stats.total_count.load(Ordering::Relaxed), 3);
         assert_eq!(stats.irq_counts[1].load(Ordering::Relaxed), 2);
         assert_eq!(stats.irq_counts[0].load(Ordering::Relaxed), 1);
     }
-    
+
     #[test]
     fn test_nested_tracking() {
         let stats = DetailedStatistics::new();
-        
+
         stats.record_nested(1);
         stats.record_nested(2);
         stats.record_nested(3);
         stats.record_nested(2);
-        
+
         assert_eq!(stats.nested_interrupts.load(Ordering::Relaxed), 4);
         assert_eq!(stats.max_nesting_depth.load(Ordering::Relaxed), 3);
     }
-    
+
     #[test]
     fn test_recovery_action_tracking() {
         use super::super::handlers::RecoveryAction;
-        
+
         let stats = DetailedStatistics::new();
-        
+
         stats.record_recovery_action(&RecoveryAction::Recovered);
         stats.record_recovery_action(&RecoveryAction::TerminateProcess(42));
         stats.record_recovery_action(&RecoveryAction::DomainRecovery);
         stats.record_recovery_action(&RecoveryAction::Panic(PanicInfo::new("test", 0, 0)));
-        
+
         assert_eq!(stats.recoveries.load(Ordering::Relaxed), 1);
         assert_eq!(stats.process_terminations.load(Ordering::Relaxed), 1);
         assert_eq!(stats.domain_recoveries.load(Ordering::Relaxed), 1);
         assert_eq!(stats.panics.load(Ordering::Relaxed), 1);
     }
-    
+
     #[test]
     fn test_reset() {
         let stats = DetailedStatistics::new();
-        
+
         stats.record_exception(0, &InterruptFrame::new_test_frame(0, 0x1000, 0x08));
         stats.record_irq(5);
         stats.record_nested(1);
-        
+
         stats.reset();
-        
+
         assert_eq!(stats.total_count.load(Ordering::Relaxed), 0);
         assert_eq!(stats.get_vector_count(0), 0);
         assert_eq!(stats.irq_counts[5].load(Ordering::Relaxed), 0);
     }
-    
+
     #[test]
     fn test_invalid_vector_count() {
         let stats = DetailedStatistics::new();
-        
-        assert_eq!(stats.get_vector_count(255), 0);  // Invalid vector
-        assert_eq!(stats.get_vector_count(100), 0);   // Not exception or IRQ
+
+        assert_eq!(stats.get_vector_count(255), 0); // Invalid vector
+        assert_eq!(stats.get_vector_count(100), 0); // Not exception or IRQ
     }
 }
 

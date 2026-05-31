@@ -107,7 +107,7 @@ pub unsafe fn init() {
                   | (0b01 << 10)    // ORGN0: Normal, WB, RA, WA
                   | (0b01 << 26)    // ORGN1: Normal, WB, RA, WA
                   | (0b01 << 8)     // IRGN0: Normal, WB, RA, WA
-                  | (0b01 << 24);   // IRGN1: Normal, WB, RA, WA
+                  | (0b01 << 24); // IRGN1: Normal, WB, RA, WA
     set_tcr(tcr);
 
     // 设置 MAIR_EL1 (Memory Attribute Indirection Register)
@@ -116,7 +116,7 @@ pub unsafe fn init() {
     // MAIR[0] = 0x44 (Device-nGnRnE, for PT_ATTR_DEVICE)
     // MAIR[4] = 0xFF (Normal IWBWA OWBWA, for PT_ATTR_NORMAL)
     let mair: u64 = 0x44                     // Attr0: Device
-                   | (0xFFu64 << 32);        // Attr4: Normal
+                   | (0xFFu64 << 32); // Attr4: Normal
     set_mair(mair);
 
     // 使之前的所有页表写入和系统寄存器设置可见
@@ -222,14 +222,20 @@ unsafe fn enable_mmu() {
 #[inline(always)]
 pub fn read_ttbr0() -> u64 {
     let val: u64;
-    unsafe { core::arch::asm!("mrs {}, ttbr0_el1", out(reg) val); }
+    unsafe {
+        core::arch::asm!("mrs {}, ttbr0_el1", out(reg) val);
+    }
     val
 }
 
 #[inline(always)]
 pub fn write_ttbr0(val: u64) {
-    unsafe { core::arch::asm!("msr ttbr0_el1, {}", in(reg) val); }
-    unsafe { core::arch::asm!("isb", options(nomem, nostack)); }
+    unsafe {
+        core::arch::asm!("msr ttbr0_el1, {}", in(reg) val);
+    }
+    unsafe {
+        core::arch::asm!("isb", options(nomem, nostack));
+    }
 }
 
 #[inline(always)]
@@ -255,6 +261,8 @@ pub fn tlbi_vmalle1() {
 #[inline(always)]
 pub fn read_far() -> u64 {
     let val: u64;
-    unsafe { core::arch::asm!("mrs {}, far_el1", out(reg) val); }
+    unsafe {
+        core::arch::asm!("mrs {}, far_el1", out(reg) val);
+    }
     val
 }

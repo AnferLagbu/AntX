@@ -10,7 +10,10 @@ pub fn maybe_inject_fault(domain_id: u64) {
     if rate > 0 {
         let r = crate::arch!(timestamp()) as u32;
         if r % 1000 < rate {
-            panic!("[FAULT-INJECT] Domain {} forced panic (rate={}/1000)", domain_id, rate);
+            panic!(
+                "[FAULT-INJECT] Domain {} forced panic (rate={}/1000)",
+                domain_id, rate
+            );
         }
     }
 }

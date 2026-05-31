@@ -6,8 +6,8 @@
 
 extern crate alloc;
 
-use core::sync::atomic::{AtomicU64, Ordering};
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub mod pmm;
 
@@ -17,27 +17,27 @@ pub mod vmm;
 #[path = "vmm_aarch64.rs"]
 pub mod vmm;
 
-pub mod slab;
+pub mod arch;
+pub mod cow;
+pub mod ffi;
 pub mod kmalloc;
 pub mod kmalloc_slab;
-pub mod vma;
 pub mod page_fault;
-pub mod cow;
 pub mod pressure;
-pub mod ffi;
-pub mod arch;
+pub mod slab;
+pub mod vma;
 
 // Re-export commonly used types
+pub use kmalloc::*;
 pub use pmm::*;
 pub use vmm::*;
-pub use kmalloc::*;
 
 /// Page size constants (matching C implementation)
 pub const PAGE_SIZE: u64 = 4096;
 pub const PAGE_SHIFT: u64 = 12;
 
 /// Huge page sizes
-pub const HUGE_PAGE_2M_SIZE: u64 = 2 * 1024 * 1024;    // 2 MB
+pub const HUGE_PAGE_2M_SIZE: u64 = 2 * 1024 * 1024; // 2 MB
 pub const HUGE_PAGE_1G_SIZE: u64 = 1024 * 1024 * 1024; // 1 GB
 pub const HUGE_PAGE_2M_SHIFT: u64 = 21;
 pub const HUGE_PAGE_1G_SHIFT: u64 = 30;
@@ -55,7 +55,7 @@ pub const PHYSICAL_BASE: u64 = 0x0000000000000000u64;
 pub const PAGE_PRESENT: u64 = 1 << 0;
 pub const PAGE_WRITABLE: u64 = 1 << 1;
 pub const PAGE_USER: u64 = 1 << 2;
-pub const PAGE_HUGE: u64 = 1 << 7;               // Huge page flag
+pub const PAGE_HUGE: u64 = 1 << 7; // Huge page flag
 pub const PAGE_NX: u64 = 1u64 << 63;
 
 /// Helper macros for page table indexing
@@ -95,9 +95,9 @@ pub const fn virt_to_phys(virt: u64) -> u64 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PageSize {
-    Size4K = 0,   // Standard 4KB page
-    Size2M = 1,   // 2MB huge page
-    Size1G = 2,   // 1GB giant page
+    Size4K = 0, // Standard 4KB page
+    Size2M = 1, // 2MB huge page
+    Size1G = 2, // 1GB giant page
 }
 
 impl PageSize {

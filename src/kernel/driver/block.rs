@@ -17,8 +17,8 @@
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 use spin::Mutex;
-use core::sync::atomic::{AtomicU32, AtomicBool, Ordering, fence};
 
 // ── BlockDevice Trait ──
 
@@ -56,7 +56,9 @@ pub fn register(dev: Box<dyn BlockDevice>) -> usize {
 
 pub fn with_device<R>(idx: usize, f: impl FnOnce(&mut dyn BlockDevice) -> R) -> Option<R> {
     let reg = REGISTRY.lock();
-    if idx >= reg.len() { return None; }
+    if idx >= reg.len() {
+        return None;
+    }
     let mut dev = reg[idx].lock();
     Some(f(&mut **dev))
 }
@@ -64,7 +66,9 @@ pub fn with_device<R>(idx: usize, f: impl FnOnce(&mut dyn BlockDevice) -> R) -> 
 pub fn safe_unregister(idx: usize) -> Option<Box<dyn BlockDevice>> {
     {
         let reg = REGISTRY.lock();
-        if idx >= reg.len() { return None; }
+        if idx >= reg.len() {
+            return None;
+        }
         let removing = REMOVING.lock();
         if idx < removing.len() {
             removing[idx].store(true, Ordering::Release);
@@ -74,29 +78,43 @@ pub fn safe_unregister(idx: usize) -> Option<Box<dyn BlockDevice>> {
 
     loop {
         let refs = IO_REFS.lock();
-        let current = if idx < refs.len() { refs[idx].load(Ordering::Acquire) } else { 0 };
+        let current = if idx < refs.len() {
+            refs[idx].load(Ordering::Acquire)
+        } else {
+            0
+        };
         drop(refs);
-        if current == 0 { break; }
+        if current == 0 {
+            break;
+        }
         core::hint::spin_loop();
     }
 
     let removed = {
         let mut reg = REGISTRY.lock();
-        if idx >= reg.len() { return None; }
+        if idx >= reg.len() {
+            return None;
+        }
         reg.remove(idx).into_inner()
     };
 
     {
         let mut names = DEVICE_NAMES.lock();
-        if idx < names.len() { names.remove(idx); }
+        if idx < names.len() {
+            names.remove(idx);
+        }
     }
     {
         let mut refs = IO_REFS.lock();
-        if idx < refs.len() { refs.remove(idx); }
+        if idx < refs.len() {
+            refs.remove(idx);
+        }
     }
     {
         let mut removing = REMOVING.lock();
-        if idx < removing.len() { removing.remove(idx); }
+        if idx < removing.len() {
+            removing.remove(idx);
+        }
     }
 
     Some(removed)
@@ -104,13 +122,17 @@ pub fn safe_unregister(idx: usize) -> Option<Box<dyn BlockDevice>> {
 
 pub fn is_removing(idx: usize) -> bool {
     let removing = REMOVING.lock();
-    if idx >= removing.len() { return true; }
+    if idx >= removing.len() {
+        return true;
+    }
     removing[idx].load(Ordering::Acquire)
 }
 
 pub fn io_refcount(idx: usize) -> u32 {
     let refs = IO_REFS.lock();
-    if idx >= refs.len() { return 0; }
+    if idx >= refs.len() {
+        return 0;
+    }
     refs[idx].load(Ordering::Acquire)
 }
 
@@ -120,7 +142,9 @@ pub fn unregister(idx: usize) -> Option<Box<dyn BlockDevice>> {
 
 pub fn mark_removed(idx: usize) {
     let reg = REGISTRY.lock();
-    if idx >= reg.len() { return; }
+    if idx >= reg.len() {
+        return;
+    }
     let removing = REMOVING.lock();
     if idx < removing.len() {
         removing[idx].store(true, Ordering::Release);
@@ -140,7 +164,9 @@ pub fn count() -> usize {
 
 pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut [u8]) -> i32 {
     let need = (count as u64) * 512;
-    if (buf.len() as u64) < need { return -1; }
+    if (buf.len() as u64) < need {
+        return -1;
+    }
     let mut offset = 0usize;
     for i in 0..count {
         if dev.blk_read(start + i as u64, &mut buf[offset..offset + 512]) < 0 {
@@ -153,7 +179,9 @@ pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut
 
 pub fn write_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &[u8]) -> i32 {
     let need = (count as u64) * 512;
-    if (buf.len() as u64) < need { return -1; }
+    if (buf.len() as u64) < need {
+        return -1;
+    }
     let mut offset = 0usize;
     for i in 0..count {
         if dev.blk_write(start + i as u64, &buf[offset..offset + 512]) < 0 {
@@ -199,7 +227,8 @@ pub fn block_device_count() -> usize {
 
 pub fn block_device_list() -> Vec<(usize, &'static str, u64)> {
     let devices = crate::kernel::chitin::CHITIN_DEVICES.lock();
-    devices.iter()
+    devices
+        .iter()
         .filter(|d| d.proto == crate::kernel::chitin::ChitinProto::Block)
         .enumerate()
         .map(|(i, d)| {

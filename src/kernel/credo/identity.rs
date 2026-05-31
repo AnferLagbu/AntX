@@ -1,16 +1,22 @@
-use super::types::*;
-use super::sha256;
 use super::audit;
+use super::bootstrap;
 use super::capability::VIABLE_FLOOR;
 use super::csprng;
-use super::bootstrap;
 use super::grant;
-use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, AtomicU8, AtomicU16, AtomicU32, Ordering};
+use super::sha256;
+use super::types::*;
+use core::sync::atomic::{
+    AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
+};
 
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() { return false; }
+    if a.len() != b.len() {
+        return false;
+    }
     let mut diff: u8 = 0;
-    for i in 0..a.len() { diff |= a[i] ^ b[i]; }
+    for i in 0..a.len() {
+        diff |= a[i] ^ b[i];
+    }
     diff == 0
 }
 
@@ -18,8 +24,14 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 
     const STRETCH_ROUNDS: usize = 4096;
     let mut input = [0u8; 256];
     let mut pos = 0usize;
-    for byte in salt.iter() { input[pos] = *byte; pos += 1; }
-    for byte in password.bytes().take(255 - pos) { input[pos] = byte; pos += 1; }
+    for byte in salt.iter() {
+        input[pos] = *byte;
+        pos += 1;
+    }
+    for byte in password.bytes().take(255 - pos) {
+        input[pos] = byte;
+        pos += 1;
+    }
     let full_hash = sha256::sha256(&input[..pos]);
     let mut hash = [0u8; 32];
     hash.copy_from_slice(&full_hash[..32]);
@@ -28,7 +40,9 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 
         stretch_input[..32].copy_from_slice(&hash);
         let round_bytes = (round as u64).to_le_bytes();
         stretch_input[32..40].copy_from_slice(&round_bytes);
-        for byte in salt.iter() { stretch_input[40 + (*byte & 0xF) as usize] ^= *byte; }
+        for byte in salt.iter() {
+            stretch_input[40 + (*byte & 0xF) as usize] ^= *byte;
+        }
         let full = sha256::sha256(&stretch_input[..48]);
         hash.copy_from_slice(&full[..32]);
     }
@@ -55,10 +69,22 @@ impl IdentityTable {
             privilege_level: AtomicU8::new(0xFF),
             flags: AtomicU16::new(0),
             caps: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
             note: [0u8; PWM_NOTE_LEN],
             password_hash: [0u8; PWM_HASH_LEN],
@@ -79,7 +105,11 @@ impl IdentityTable {
     }
 
     fn acquire(&self) {
-        while self.lock.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        while self
+            .lock
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             core::hint::spin_loop();
         }
     }
@@ -114,20 +144,31 @@ impl IdentityTable {
     pub fn generate_pwm(&self, password: &str, note: &str) -> u64 {
         let mut input = [0u8; 256];
         let mut pos = 0;
-        for b in password.bytes().take(128) { input[pos] = b; pos += 1; }
-        input[pos] = b':'; pos += 1;
-        for b in note.bytes().take(127) { input[pos] = b; pos += 1; }
+        for b in password.bytes().take(128) {
+            input[pos] = b;
+            pos += 1;
+        }
+        input[pos] = b':';
+        pos += 1;
+        for b in note.bytes().take(127) {
+            input[pos] = b;
+            pos += 1;
+        }
         let hash = sha256::sha256(&input[..pos]);
         let mut pwm: u64 = 0;
         for i in 0..8 {
             pwm = (pwm << 8) | (hash[i] as u64);
         }
-        if pwm == 0 { pwm = 1; }
+        if pwm == 0 {
+            pwm = 1;
+        }
         pwm
     }
 
     pub fn find(&self, pwm: u64) -> Option<&PwmEntry> {
-        if pwm == 0 { return None; }
+        if pwm == 0 {
+            return None;
+        }
         for entry in self.entries.iter() {
             if entry.pwm.load(Ordering::Acquire) == pwm {
                 return Some(entry);
@@ -138,7 +179,9 @@ impl IdentityTable {
 
     pub fn find_by_note(&self, note: &str) -> Option<&PwmEntry> {
         for entry in self.entries.iter() {
-            if !entry.is_valid() { continue; }
+            if !entry.is_valid() {
+                continue;
+            }
             if entry.get_note_str() == note {
                 return Some(entry);
             }
@@ -152,17 +195,14 @@ impl IdentityTable {
             None => return false,
         };
         let stored = &entry.password_hash;
-        let salt: [u8; PWM_SALT_LEN] = stored[PWM_DIGEST_LEN..PWM_HASH_LEN].try_into().unwrap_or([0u8; PWM_SALT_LEN]);
+        let salt: [u8; PWM_SALT_LEN] = stored[PWM_DIGEST_LEN..PWM_HASH_LEN]
+            .try_into()
+            .unwrap_or([0u8; PWM_SALT_LEN]);
         let computed = hash_with_salt(password, &salt);
         constant_time_eq(&computed, &stored[..PWM_DIGEST_LEN])
     }
 
-    pub fn create(
-        &self,
-        password: &str,
-        note: &str,
-        creator_pwm: u64,
-    ) -> Result<u64, PwmError> {
+    pub fn create(&self, password: &str, note: &str, creator_pwm: u64) -> Result<u64, PwmError> {
         let privilege_level = if creator_pwm == 0 {
             0u8
         } else {
@@ -197,13 +237,18 @@ impl IdentityTable {
 
         let slot = match slot {
             Some(s) => s,
-            None => { self.release(); return Err(PwmError::TableFull); }
+            None => {
+                self.release();
+                return Err(PwmError::TableFull);
+            }
         };
 
         let entry = &self.entries[slot];
         entry.pwm.store(pwm, Ordering::Release);
         entry.creator_pwm.store(creator_pwm, Ordering::Release);
-        entry.privilege_level.store(privilege_level, Ordering::Release);
+        entry
+            .privilege_level
+            .store(privilege_level, Ordering::Release);
         entry.flags.store(0, Ordering::Release);
 
         let salt = csprng::generate_salt();
@@ -211,7 +256,11 @@ impl IdentityTable {
         let hash_ptr = entry.password_hash.as_ptr() as *mut u8;
         unsafe {
             core::ptr::copy_nonoverlapping(digest.as_ptr(), hash_ptr, PWM_DIGEST_LEN);
-            core::ptr::copy_nonoverlapping(salt.as_ptr(), hash_ptr.add(PWM_DIGEST_LEN), PWM_SALT_LEN);
+            core::ptr::copy_nonoverlapping(
+                salt.as_ptr(),
+                hash_ptr.add(PWM_DIGEST_LEN),
+                PWM_SALT_LEN,
+            );
         }
 
         {
@@ -236,7 +285,9 @@ impl IdentityTable {
         entry.set_uid(uid);
         entry.set_gid(uid);
 
-        entry.created_time.store(bootstrap::pwm_now(), Ordering::Release);
+        entry
+            .created_time
+            .store(bootstrap::pwm_now(), Ordering::Release);
         entry.expires_at.store(0, Ordering::Release);
         entry.lockout_until.store(0, Ordering::Release);
         entry.failed_attempts.store(0, Ordering::Release);
@@ -247,7 +298,13 @@ impl IdentityTable {
         self.set_modified();
         self.release();
 
-        audit::log(creator_pwm, AuditAction::Create, pwm, 0, privilege_level as u64);
+        audit::log(
+            creator_pwm,
+            AuditAction::Create,
+            pwm,
+            0,
+            privilege_level as u64,
+        );
 
         Ok(pwm)
     }
@@ -290,7 +347,13 @@ impl IdentityTable {
             granted_at: bootstrap::pwm_now(),
         })?;
 
-        audit::log(grantor_pwm, AuditAction::Grant, grantee_pwm, domain.as_u16() as u64, caps.as_u64());
+        audit::log(
+            grantor_pwm,
+            AuditAction::Grant,
+            grantee_pwm,
+            domain.as_u16() as u64,
+            caps.as_u64(),
+        );
 
         Ok(())
     }
@@ -325,7 +388,9 @@ impl IdentityTable {
 
         let current = target.load_caps(domain);
         let after_revoke = current & !caps;
-        if (after_revoke & CapBits(VIABLE_FLOOR[domain.as_usize()])) != CapBits(VIABLE_FLOOR[domain.as_usize()]) {
+        if (after_revoke & CapBits(VIABLE_FLOOR[domain.as_usize()]))
+            != CapBits(VIABLE_FLOOR[domain.as_usize()])
+        {
             return Err(PwmError::WouldBreakFloor);
         }
 
@@ -335,7 +400,13 @@ impl IdentityTable {
 
         self.set_modified();
 
-        audit::log(revoker_pwm, AuditAction::Revoke, target_pwm, domain.as_u16() as u64, caps.as_u64());
+        audit::log(
+            revoker_pwm,
+            AuditAction::Revoke,
+            target_pwm,
+            domain.as_u16() as u64,
+            caps.as_u64(),
+        );
 
         Ok(())
     }
@@ -370,7 +441,13 @@ impl IdentityTable {
 
         self.set_modified();
 
-        audit::log(current_creator_pwm, AuditAction::TransferCreator, target_pwm, 0, new_creator_pwm);
+        audit::log(
+            current_creator_pwm,
+            AuditAction::TransferCreator,
+            target_pwm,
+            0,
+            new_creator_pwm,
+        );
 
         Ok(())
     }
@@ -442,7 +519,11 @@ impl IdentityTable {
         let hash_ptr = entry.password_hash.as_ptr() as *mut u8;
         unsafe {
             core::ptr::copy_nonoverlapping(digest.as_ptr(), hash_ptr, PWM_DIGEST_LEN);
-            core::ptr::copy_nonoverlapping(salt.as_ptr(), hash_ptr.add(PWM_DIGEST_LEN), PWM_SALT_LEN);
+            core::ptr::copy_nonoverlapping(
+                salt.as_ptr(),
+                hash_ptr.add(PWM_DIGEST_LEN),
+                PWM_SALT_LEN,
+            );
         }
         self.set_modified();
         Ok(())
@@ -454,13 +535,21 @@ impl IdentityTable {
 
     /// uid → PwmEntry (POSIX chown/kill 等 syscall 用)
     pub fn find_by_uid(&self, uid: u32) -> Option<&PwmEntry> {
-        if uid == 0xFFFF_FFFF { return None; }
-        self.entries.iter().find(|e| e.is_valid() && e.get_uid() == uid)
+        if uid == 0xFFFF_FFFF {
+            return None;
+        }
+        self.entries
+            .iter()
+            .find(|e| e.is_valid() && e.get_uid() == uid)
     }
 
     pub fn find_by_gid(&self, gid: u32) -> Option<&PwmEntry> {
-        if gid == 0xFFFF_FFFF { return None; }
-        self.entries.iter().find(|e| e.is_valid() && e.get_gid() == gid)
+        if gid == 0xFFFF_FFFF {
+            return None;
+        }
+        self.entries
+            .iter()
+            .find(|e| e.is_valid() && e.get_gid() == gid)
     }
 
     /// pwm → uid (stat 填充 st_uid 用)

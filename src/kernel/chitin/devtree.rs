@@ -24,14 +24,14 @@
 //! └── timer                       compatible: "arm,armv8-timer"
 //! ```
 
+use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
-use spin::Mutex;
-use core::sync::atomic::{AtomicU32, Ordering};
 use core::ffi::c_void;
+use core::sync::atomic::{AtomicU32, Ordering};
+use spin::Mutex;
 
-use super::{ChitinProto, DeviceState, chitin_register};
+use super::{chitin_register, ChitinProto, DeviceState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyValue {
@@ -45,19 +45,31 @@ pub enum PropertyValue {
 
 impl PropertyValue {
     pub fn as_u32(&self) -> Option<u32> {
-        match self { Self::U32(v) => Some(*v), _ => None }
+        match self {
+            Self::U32(v) => Some(*v),
+            _ => None,
+        }
     }
 
     pub fn as_u64(&self) -> Option<u64> {
-        match self { Self::U64(v) => Some(*v), _ => None }
+        match self {
+            Self::U64(v) => Some(*v),
+            _ => None,
+        }
     }
 
     pub fn as_bool(&self) -> Option<bool> {
-        match self { Self::Bool(v) => Some(*v), _ => None }
+        match self {
+            Self::Bool(v) => Some(*v),
+            _ => None,
+        }
     }
 
     pub fn as_str(&self) -> Option<&'static str> {
-        match self { Self::String(s) => Some(s), _ => None }
+        match self {
+            Self::String(s) => Some(s),
+            _ => None,
+        }
     }
 }
 
@@ -224,14 +236,19 @@ pub fn devtree_clear_user_mapped_by_pid(pid: u32) {
 
 pub fn devtree_get_user_mapped(node_id: NodeId) -> Option<u32> {
     let tree = DEV_TREE.lock();
-    tree.nodes.iter().find(|n| n.id == node_id)
+    tree.nodes
+        .iter()
+        .find(|n| n.id == node_id)
         .and_then(|n| n.user_mapped)
 }
 
 /// 按 compatible 字符串查找节点
 pub fn devtree_find_compatible(compat: &str) -> Option<NodeId> {
     let tree = DEV_TREE.lock();
-    tree.nodes.iter().find(|n| n.matches_compatible(compat)).map(|n| n.id)
+    tree.nodes
+        .iter()
+        .find(|n| n.matches_compatible(compat))
+        .map(|n| n.id)
 }
 
 /// 按名称查找节点
@@ -243,7 +260,8 @@ pub fn devtree_find_by_name(name: &str) -> Option<NodeId> {
 /// 获取节点的所有直接子节点
 pub fn devtree_children(node_id: NodeId) -> Vec<NodeId> {
     let tree = DEV_TREE.lock();
-    tree.nodes.iter()
+    tree.nodes
+        .iter()
         .find(|n| n.id == node_id)
         .map(|n| n.children.clone())
         .unwrap_or_default()
@@ -274,11 +292,14 @@ pub fn devtree_bind_device(
 
 /// 遍历设备树 (DFS)，对每个节点调用回调
 pub fn devtree_walk<F>(mut f: F)
-where F: FnMut(&ChitinNode)
+where
+    F: FnMut(&ChitinNode),
 {
     let tree = DEV_TREE.lock();
     let root_id = ROOT_NODE_ID.load(Ordering::Acquire);
-    if root_id == 0 { return; }
+    if root_id == 0 {
+        return;
+    }
 
     fn walk_children<F: FnMut(&ChitinNode)>(nodes: &[ChitinNode], id: NodeId, f: &mut F) {
         if let Some(node) = nodes.iter().find(|n| n.id == id) {
@@ -369,7 +390,11 @@ pub extern "C" fn devtree_create_node_c(
         _ => ChitinProto::Other,
     };
 
-    let parent = if parent_id == 0 { None } else { Some(parent_id) };
+    let parent = if parent_id == 0 {
+        None
+    } else {
+        Some(parent_id)
+    };
 
     devtree_create_node(static_name, proto, parent).unwrap_or(0)
 }

@@ -31,7 +31,7 @@ use core::arch::asm;
 /// AArch64 CPU 架构实现 (Aarch64 结构体)
 pub struct Aarch64;
 
-use crate::kernel::arch::{CoreArch, InterruptArch, MmuArch, SystemArch, Arch};
+use crate::kernel::arch::{Arch, CoreArch, InterruptArch, MmuArch, SystemArch};
 
 // ── CoreArch: 基础核心 ──────────────────────────────────────────────────
 
@@ -40,7 +40,9 @@ impl CoreArch for Aarch64 {
     #[inline(always)]
     fn cpu_id() -> u32 {
         let mpidr: u64;
-        unsafe { asm!("mrs {}, mpidr_el1", out(reg) mpidr); }
+        unsafe {
+            asm!("mrs {}, mpidr_el1", out(reg) mpidr);
+        }
         (mpidr & 0xFF) as u32
     }
 
@@ -48,32 +50,42 @@ impl CoreArch for Aarch64 {
     #[inline(always)]
     fn timestamp() -> u64 {
         let cnt: u64;
-        unsafe { asm!("mrs {}, cntpct_el0", out(reg) cnt, options(nomem, nostack)); }
+        unsafe {
+            asm!("mrs {}, cntpct_el0", out(reg) cnt, options(nomem, nostack));
+        }
         cnt
     }
 
     /// CPU 暂停等待中断 (wfi)。
     #[inline(always)]
     fn halt() {
-        unsafe { asm!("wfi", options(nomem, nostack)); }
+        unsafe {
+            asm!("wfi", options(nomem, nostack));
+        }
     }
 
     /// 全内存屏障 (dsb sy)。
     #[inline(always)]
     fn fence() {
-        unsafe { asm!("dmb sy", options(nomem, nostack)); }
+        unsafe {
+            asm!("dmb sy", options(nomem, nostack));
+        }
     }
 
     /// 写内存屏障 (dmb st)。
     #[inline(always)]
     fn fence_w() {
-        unsafe { asm!("dmb st", options(nomem, nostack)); }
+        unsafe {
+            asm!("dmb st", options(nomem, nostack));
+        }
     }
 
     /// 读内存屏障 (dmb ld)。
     #[inline(always)]
     fn fence_r() {
-        unsafe { asm!("dmb ld", options(nomem, nostack)); }
+        unsafe {
+            asm!("dmb ld", options(nomem, nostack));
+        }
     }
 }
 
@@ -111,14 +123,15 @@ impl InterruptArch for Aarch64 {
     #[inline(always)]
     fn is_interrupt_enabled() -> bool {
         let daif: u64;
-        unsafe { asm!("mrs {}, daif", out(reg) daif); }
+        unsafe {
+            asm!("mrs {}, daif", out(reg) daif);
+        }
         (daif & (1 << 7)) == 0
     }
 
     /// GICv3 SGI 单播 (ICC_SGI1R_EL1)。
     fn send_ipi(target_cpu: u32, vector: u8) {
-        let sgi: u64 = ((vector & 0xF) as u64) << 24
-                      | (1u64 << (16 + (target_cpu & 0xF)));
+        let sgi: u64 = ((vector & 0xF) as u64) << 24 | (1u64 << (16 + (target_cpu & 0xF)));
         unsafe {
             asm!("msr icc_sgi1r_el1, {}", in(reg) sgi);
         }
@@ -126,8 +139,7 @@ impl InterruptArch for Aarch64 {
 
     /// GICv3 SGI 广播 (IRM=1)。
     fn broadcast_ipi(vector: u8) {
-        let sgi: u64 = (1u64 << 40)
-                      | ((vector & 0xF) as u64) << 24;
+        let sgi: u64 = (1u64 << 40) | ((vector & 0xF) as u64) << 24;
         unsafe {
             asm!("msr icc_sgi1r_el1, {}", in(reg) sgi);
         }
@@ -190,7 +202,9 @@ impl MmuArch for Aarch64 {
 
     /// AArch64 上下文切换 (x19-x30 + SP + TTBR0 + SPSR + ELR)。
     fn context_switch(from: *mut u8, to: *const u8) {
-        unsafe { context::switch(from, to); }
+        unsafe {
+            context::switch(from, to);
+        }
     }
 
     /// 进入 EL0 (eret)。
@@ -224,9 +238,13 @@ impl MmuArch for Aarch64 {
 
 impl SystemArch for Aarch64 {
     fn outb(_port: u16, _value: u8) {}
-    fn inb(_port: u16) -> u8 { 0xFF }
+    fn inb(_port: u16) -> u8 {
+        0xFF
+    }
     fn outl(_port: u16, _value: u32) {}
-    fn inl(_port: u16) -> u32 { 0xFFFF_FFFF }
+    fn inl(_port: u16) -> u32 {
+        0xFFFF_FFFF
+    }
 
     /// PSCI SYSTEM_OFF (SMC)。
     fn shutdown() -> ! {
@@ -234,7 +252,11 @@ impl SystemArch for Aarch64 {
             let func: u64 = 0x84000008;
             asm!("smc #0", in("x0") func, options(nostack));
         }
-        loop { unsafe { asm!("wfi", options(nomem, nostack)); } }
+        loop {
+            unsafe {
+                asm!("wfi", options(nomem, nostack));
+            }
+        }
     }
 
     /// PSCI SYSTEM_RESET (SMC)。
@@ -243,7 +265,11 @@ impl SystemArch for Aarch64 {
             let func: u64 = 0x84000009;
             asm!("smc #0", in("x0") func, options(nostack));
         }
-        loop { unsafe { asm!("wfi", options(nomem, nostack)); } }
+        loop {
+            unsafe {
+                asm!("wfi", options(nomem, nostack));
+            }
+        }
     }
 }
 

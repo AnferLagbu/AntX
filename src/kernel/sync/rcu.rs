@@ -20,9 +20,9 @@
 //! `synchronize_rcu()` 等待所有在线 CPU 报告静止状态后
 //! 才认为宽限期结束。
 
-use core::ptr;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU32, AtomicBool, Ordering, fence};
+use core::ptr;
+use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 
 const MAX_CPUS: usize = 256;
 
@@ -33,7 +33,10 @@ pub struct RcuHead {
 
 impl RcuHead {
     pub const fn new() -> Self {
-        Self { next: ptr::null_mut(), func: None }
+        Self {
+            next: ptr::null_mut(),
+            func: None,
+        }
     }
 }
 
@@ -218,13 +221,19 @@ pub unsafe fn call_rcu(head: *mut RcuHead, func: unsafe fn(*mut RcuHead)) {
     let tail = unsafe { *data.callback_tail.get() };
     if !tail.is_null() {
         // SAFETY: tail != null → dereference safe; writing next ptr
-        unsafe { (*tail).next = head; }
+        unsafe {
+            (*tail).next = head;
+        }
     } else {
         // SAFETY: Callbacks list empty — write to head via UnsafeCell
-        unsafe { *data.callbacks.get() = head; }
+        unsafe {
+            *data.callbacks.get() = head;
+        }
     }
     // SAFETY: data.callback_tail is an UnsafeCell, interrupts disabled
-    unsafe { *data.callback_tail.get() = head; }
+    unsafe {
+        *data.callback_tail.get() = head;
+    }
 
     data.callback_count.fetch_add(1, Ordering::Relaxed);
     data.need_callback_process.store(true, Ordering::Release);
@@ -269,7 +278,9 @@ pub fn process_callbacks() {
 
         if let Some(f) = func {
             // SAFETY: f is the callback registered by call_rcu; cur is the RcuHead
-            unsafe { f(cur); }
+            unsafe {
+                f(cur);
+            }
         }
 
         cur = next;
@@ -319,7 +330,9 @@ pub fn rcu_process_all_callbacks() {
                 let next = unsafe { (*cur).next };
                 let func = unsafe { (*cur).func };
                 if let Some(f) = func {
-                    unsafe { f(cur); }
+                    unsafe {
+                        f(cur);
+                    }
                 }
                 cur = next;
             }

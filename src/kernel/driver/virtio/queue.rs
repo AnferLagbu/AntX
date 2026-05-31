@@ -15,41 +15,41 @@ pub const VQ_SIZE: u16 = 32;
 /// Split virtqueue descriptor.
 #[repr(C)]
 pub struct VqDesc {
-    pub addr:  u64,   // Guest-physical address of buffer
-    pub len:   u32,   // Length of buffer
-    pub flags: u16,   // VRING_DESC_F_*
-    pub next:  u16,   // Index of next descriptor (for chained descriptors)
+    pub addr: u64,  // Guest-physical address of buffer
+    pub len: u32,   // Length of buffer
+    pub flags: u16, // VRING_DESC_F_*
+    pub next: u16,  // Index of next descriptor (for chained descriptors)
 }
 
 /// Available ring header + ring array.
 #[repr(C)]
 pub struct VqAvail {
-    pub flags:     u16,  // VRING_AVAIL_F_NO_INTERRUPT
-    pub idx:       u16,  // Next available ring index (driver increments)
-    pub ring:      [u16; VQ_SIZE as usize],
+    pub flags: u16, // VRING_AVAIL_F_NO_INTERRUPT
+    pub idx: u16,   // Next available ring index (driver increments)
+    pub ring: [u16; VQ_SIZE as usize],
     // used_event follows ring if VIRTIO_F_EVENT_IDX is negotiated
 }
 
 /// Used ring header + ring array.
 #[repr(C)]
 pub struct VqUsedElem {
-    pub id:   u32,  // Descriptor chain head index
-    pub len:  u32,  // Total bytes written by device
+    pub id: u32,  // Descriptor chain head index
+    pub len: u32, // Total bytes written by device
 }
 
 #[repr(C)]
 pub struct VqUsed {
-    pub flags:     u16,  // VRING_USED_F_NO_NOTIFY
-    pub idx:       u16,  // Next used ring index (device increments)
-    pub ring:      [VqUsedElem; VQ_SIZE as usize],
+    pub flags: u16, // VRING_USED_F_NO_NOTIFY
+    pub idx: u16,   // Next used ring index (device increments)
+    pub ring: [VqUsedElem; VQ_SIZE as usize],
     // avail_event follows ring if VIRTIO_F_EVENT_IDX is negotiated
 }
 
 // ── Descriptor flags ──
 
-pub const VQ_DESC_F_NEXT:    u16 = 1;  // Chain continues with this.next
-pub const VQ_DESC_F_WRITE:   u16 = 2;  // Device writes to this buffer
-pub const VQ_DESC_F_INDIRECT: u16 = 4;  // Indirect descriptor table
+pub const VQ_DESC_F_NEXT: u16 = 1; // Chain continues with this.next
+pub const VQ_DESC_F_WRITE: u16 = 2; // Device writes to this buffer
+pub const VQ_DESC_F_INDIRECT: u16 = 4; // Indirect descriptor table
 
 // ── Available ring flags ──
 
@@ -61,18 +61,18 @@ pub const VQ_USED_F_NO_NOTIFY: u16 = 1;
 
 /// A single virtqueue.
 pub struct VirtQueue {
-    pub desc:   *mut VqDesc,
-    pub avail:  *mut VqAvail,
-    pub used:   *mut VqUsed,
+    pub desc: *mut VqDesc,
+    pub avail: *mut VqAvail,
+    pub used: *mut VqUsed,
     pub queue_size: u16,
-    pub free_head:  u16,       // Head of free descriptor chain
-    pub last_used_idx: u16,    // Last seen used ring index
-    pub next_avail_idx: u16,   // Next index for driver to use in avail ring
+    pub free_head: u16,      // Head of free descriptor chain
+    pub last_used_idx: u16,  // Last seen used ring index
+    pub next_avail_idx: u16, // Next index for driver to use in avail ring
     // --- Ownership tracking (for DMA safety) ---
     /// Physical addresses of allocated pages (for phys-virt conversion on x86_64).
-    pub desc_phys:  u64,
+    pub desc_phys: u64,
     pub avail_phys: u64,
-    pub used_phys:  u64,
+    pub used_phys: u64,
 }
 
 // SAFETY: VirtQueue raw pointers point to PMM-allocated DMA pages.
@@ -89,24 +89,28 @@ impl VirtQueue {
     /// (as required by QEMU's legacy VirtIO transport — VIRTIO_PCI_VRING_ALIGN).
     /// This requires 2 pages instead of 1.
     pub fn new(legacy: bool) -> Option<Self> {
-        let desc_size  = VQ_SIZE as usize * core::mem::size_of::<VqDesc>();
+        let desc_size = VQ_SIZE as usize * core::mem::size_of::<VqDesc>();
         let avail_size = core::mem::size_of::<VqAvail>() + 2 /* event index padding */;
         let used_size  = core::mem::size_of::<VqUsed>() + 2 /* event index padding */;
 
         // Compute offsets: desc | avail (4-aligned) | used
-        let desc_off  = 0usize;
+        let desc_off = 0usize;
         let avail_off = desc_off + desc_size;
-        let used_off  = if legacy {
-            4096  // Legacy: used ring must be page-aligned (QEMU uses VIRTIO_PCI_VRING_ALIGN)
+        let used_off = if legacy {
+            4096 // Legacy: used ring must be page-aligned (QEMU uses VIRTIO_PCI_VRING_ALIGN)
         } else {
             align_up(avail_off + avail_size, 4)
         };
         let total_size = align_up(used_off + used_size, 4096);
 
         let pages = total_size.div_ceil(4096);
-        extern "C" { fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void; }
+        extern "C" {
+            fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+        }
         let mem = unsafe { pmm_alloc_pages(pages as u64) };
-        if mem.is_null() { return None; }
+        if mem.is_null() {
+            return None;
+        }
 
         let mem_phys = mem as u64;
         let mem_virt = (mem_phys + KERNEL_BASE) as *mut u8;
@@ -114,9 +118,9 @@ impl VirtQueue {
         unsafe {
             core::ptr::write_bytes(mem_virt, 0, total_size);
 
-            let desc_ptr  = mem_virt as *mut VqDesc;
+            let desc_ptr = mem_virt as *mut VqDesc;
             let avail_ptr = mem_virt.add(avail_off as usize) as *mut VqAvail;
-            let used_ptr  = mem_virt.add(used_off as usize) as *mut VqUsed;
+            let used_ptr = mem_virt.add(used_off as usize) as *mut VqUsed;
 
             for i in 0..VQ_SIZE {
                 let desc = &mut *desc_ptr.add(i as usize);
@@ -129,26 +133,32 @@ impl VirtQueue {
             core::ptr::write_bytes(used_ptr as *mut u8, 0, used_size);
 
             Some(VirtQueue {
-                desc:         desc_ptr,
-                avail:        avail_ptr,
-                used:         used_ptr,
-                queue_size:   VQ_SIZE,
-                free_head:    0,
+                desc: desc_ptr,
+                avail: avail_ptr,
+                used: used_ptr,
+                queue_size: VQ_SIZE,
+                free_head: 0,
                 last_used_idx: 0,
                 next_avail_idx: 0,
-                desc_phys:    mem_phys + desc_off as u64,
-                avail_phys:   mem_phys + avail_off as u64,
-                used_phys:    mem_phys + used_off as u64,
+                desc_phys: mem_phys + desc_off as u64,
+                avail_phys: mem_phys + avail_off as u64,
+                used_phys: mem_phys + used_off as u64,
             })
         }
     }
 
     /// Get the physical address of the descriptor table.
-    pub fn desc_paddr(&self) -> u64 { self.desc_phys }
+    pub fn desc_paddr(&self) -> u64 {
+        self.desc_phys
+    }
     /// Get the physical address of the available ring.
-    pub fn avail_paddr(&self) -> u64 { self.avail_phys }
+    pub fn avail_paddr(&self) -> u64 {
+        self.avail_phys
+    }
     /// Get the physical address of the used ring.
-    pub fn used_paddr(&self) -> u64 { self.used_phys }
+    pub fn used_paddr(&self) -> u64 {
+        self.used_phys
+    }
 
     /// Prepare a descriptor chain and return the head index.
     /// Returns `0xFFFF` if no free descriptors are available.
@@ -160,9 +170,9 @@ impl VirtQueue {
         let head = self.free_head;
         unsafe {
             let desc = &mut *self.desc.add(head as usize);
-            let next_free = desc.next;  // Save before overwriting
+            let next_free = desc.next; // Save before overwriting
             desc.addr = buf_paddr;
-            desc.len  = buf_len;
+            desc.len = buf_len;
             desc.flags = if write { VQ_DESC_F_WRITE } else { 0 };
             desc.next = 0;
             // Move free_head to next free descriptor
@@ -203,7 +213,7 @@ impl VirtQueue {
                 return None;
             }
             let elem = &(*self.used).ring[self.last_used_idx as usize % VQ_SIZE as usize];
-            let id  = elem.id as u16;
+            let id = elem.id as u16;
             let len = elem.len;
             self.last_used_idx = self.last_used_idx.wrapping_add(1);
             Some((id, len))

@@ -27,9 +27,12 @@ pub enum DomainState {
 impl DomainState {
     pub fn from_u32(v: u32) -> Option<Self> {
         match v {
-            0 => Some(Self::Active), 1 => Some(Self::Freezing),
-            2 => Some(Self::RollingBack), 3 => Some(Self::Recovering),
-            4 => Some(Self::Degraded), 5 => Some(Self::Quarantined),
+            0 => Some(Self::Active),
+            1 => Some(Self::Freezing),
+            2 => Some(Self::RollingBack),
+            3 => Some(Self::Recovering),
+            4 => Some(Self::Degraded),
+            5 => Some(Self::Quarantined),
             _ => None,
         }
     }

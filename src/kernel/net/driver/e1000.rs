@@ -3,17 +3,17 @@
 #[cfg(not(feature = "kernel_test"))]
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::kernel::driver::framework::{Driver, DeviceType, Result};
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::driver::framework::DriverError;
+use crate::kernel::driver::framework::{DeviceType, Driver, Result};
 #[cfg(not(feature = "kernel_test"))]
-use crate::klog_info;
+use crate::klog_debug;
 #[cfg(not(feature = "kernel_test"))]
 use crate::klog_err;
 #[cfg(not(feature = "kernel_test"))]
-use crate::klog_warn;
+use crate::klog_info;
 #[cfg(not(feature = "kernel_test"))]
-use crate::klog_debug;
+use crate::klog_warn;
 #[cfg(not(feature = "kernel_test"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "kernel_test"))]
@@ -160,7 +160,10 @@ impl Default for E1000Device {
             rx_count: 0,
             isr_count: 0,
             link_change_count: 0,
-            info: crate::kernel::driver::framework::DeviceInfo::new("Intel E1000", DeviceType::Network),
+            info: crate::kernel::driver::framework::DeviceInfo::new(
+                "Intel E1000",
+                DeviceType::Network,
+            ),
             initialized: false,
         }
     }
@@ -180,7 +183,11 @@ unsafe fn mmio_write32(base: *mut u8, reg: u32, val: u32) {
 
 fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
     unsafe {
-        mmio_write32(dev.mmio_base, E1000_EERD, ((addr as u32) << 2) | E1000_EERD_START);
+        mmio_write32(
+            dev.mmio_base,
+            E1000_EERD,
+            ((addr as u32) << 2) | E1000_EERD_START,
+        );
         let mut timeout: u32 = 0;
         while timeout < E1000_TIMEOUT {
             let val = mmio_read32(dev.mmio_base, E1000_EERD);
@@ -208,7 +215,9 @@ fn read_mac_address(dev: &mut E1000Device) {
 
 #[cfg(not(feature = "kernel_test"))]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
-    extern "C" { fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi::c_void; }
+    extern "C" {
+        fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi::c_void;
+    }
 
     let tx_size = core::mem::size_of::<E1000TxDesc>() * E1000_TX_RING_SIZE;
     let tx_ptr = unsafe { kmalloc_align(tx_size as u64, 16) };
@@ -230,7 +239,13 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
 
     unsafe {
         let tx_phys = virt_to_phys(tx_ptr as u64);
-        klog_debug!(Net, "e1000: TX ring virt=0x{:x} phys=0x{:x} len={}", tx_ptr as u64, tx_phys, tx_size);
+        klog_debug!(
+            Net,
+            "e1000: TX ring virt=0x{:x} phys=0x{:x} len={}",
+            tx_ptr as u64,
+            tx_phys,
+            tx_size
+        );
         mmio_write32(dev.mmio_base, E1000_TDBAL, (tx_phys & 0xFFFFFFFF) as u32);
         mmio_write32(dev.mmio_base, E1000_TDBAH, (tx_phys >> 32) as u32);
         mmio_write32(dev.mmio_base, E1000_TDLEN, tx_size as u32);
@@ -260,7 +275,12 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
             (*rx_descs.add(i)).status = 0;
         }
         if i == 0 {
-            klog_debug!(Net, "e1000: RX buf[0] virt=0x{:x} phys=0x{:x}", buf_ptr as u64, buf_phys);
+            klog_debug!(
+                Net,
+                "e1000: RX buf[0] virt=0x{:x} phys=0x{:x}",
+                buf_ptr as u64,
+                buf_phys
+            );
         }
     }
     dev.rx_tail = 0;
@@ -268,7 +288,13 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
 
     unsafe {
         let rx_phys = virt_to_phys(rx_ptr as u64);
-        klog_debug!(Net, "e1000: RX ring virt=0x{:x} phys=0x{:x} len={}", rx_ptr as u64, rx_phys, rx_size);
+        klog_debug!(
+            Net,
+            "e1000: RX ring virt=0x{:x} phys=0x{:x} len={}",
+            rx_ptr as u64,
+            rx_phys,
+            rx_size
+        );
         mmio_write32(dev.mmio_base, E1000_RDBAL, (rx_phys & 0xFFFFFFFF) as u32);
         mmio_write32(dev.mmio_base, E1000_RDBAH, (rx_phys >> 32) as u32);
         mmio_write32(dev.mmio_base, E1000_RDLEN, rx_size as u32);
@@ -317,15 +343,22 @@ impl Driver for E1000Device {
             core::hint::spin_loop();
         }
 
-        unsafe { mmio_write32(base, E1000_IMC, 0xFFFFFFFF); }
+        unsafe {
+            mmio_write32(base, E1000_IMC, 0xFFFFFFFF);
+        }
 
         {
             let ctrl = unsafe { mmio_read32(base, E1000_CTRL) };
             let new_ctrl = (ctrl & !(E1000_CTRL_RST))
-                         | E1000_CTRL_SLU | E1000_CTRL_ASDE
-                         | E1000_CTRL_FRCSPD | E1000_CTRL_SPEED_1000
-                         | E1000_CTRL_FRCDPX | E1000_CTRL_FD;
-            unsafe { mmio_write32(base, E1000_CTRL, new_ctrl); }
+                | E1000_CTRL_SLU
+                | E1000_CTRL_ASDE
+                | E1000_CTRL_FRCSPD
+                | E1000_CTRL_SPEED_1000
+                | E1000_CTRL_FRCDPX
+                | E1000_CTRL_FD;
+            unsafe {
+                mmio_write32(base, E1000_CTRL, new_ctrl);
+            }
         }
 
         let mut link_ready = false;
@@ -342,10 +375,18 @@ impl Driver for E1000Device {
             klog_warn!(Net, "e1000: link not ready, continuing anyway");
         } else {
             let status = unsafe { mmio_read32(base, E1000_STATUS) };
-            let speed = if status & E1000_STATUS_SPEED_1000 != 0 { "1000" } 
-                        else if status & E1000_STATUS_SPEED_100 != 0 { "100" } 
-                        else { "10" };
-            let duplex = if status & E1000_STATUS_FD != 0 { "FD" } else { "HD" };
+            let speed = if status & E1000_STATUS_SPEED_1000 != 0 {
+                "1000"
+            } else if status & E1000_STATUS_SPEED_100 != 0 {
+                "100"
+            } else {
+                "10"
+            };
+            let duplex = if status & E1000_STATUS_FD != 0 {
+                "FD"
+            } else {
+                "HD"
+            };
             klog_info!(Net, "e1000: NIC Link is Up {} Mbps Full Duplex", speed);
             let _ = duplex;
         }
@@ -353,28 +394,41 @@ impl Driver for E1000Device {
         setup_descriptor_rings(self)?;
 
         let tctl = E1000_TCTL_EN | E1000_TCTL_PSP | E1000_TCTL_COLD_FD | E1000_TCTL_CT_FD;
-        unsafe { mmio_write32(base, E1000_TCTL, tctl); }
+        unsafe {
+            mmio_write32(base, E1000_TCTL, tctl);
+        }
 
-        let rctl = E1000_RCTL_EN | E1000_RCTL_SBP | E1000_RCTL_UPE
-                 | E1000_RCTL_MPE | E1000_RCTL_BAM
-                 | E1000_RCTL_SECRC | E1000_RCTL_BSIZE_2048;
-        unsafe { mmio_write32(base, E1000_RCTL, rctl); }
+        let rctl = E1000_RCTL_EN
+            | E1000_RCTL_SBP
+            | E1000_RCTL_UPE
+            | E1000_RCTL_MPE
+            | E1000_RCTL_BAM
+            | E1000_RCTL_SECRC
+            | E1000_RCTL_BSIZE_2048;
+        unsafe {
+            mmio_write32(base, E1000_RCTL, rctl);
+        }
 
         {
             let ral = (self.mac[0] as u32)
                 | ((self.mac[1] as u32) << 8)
                 | ((self.mac[2] as u32) << 16)
                 | ((self.mac[3] as u32) << 24);
-            let rah = (self.mac[4] as u32)
-                | ((self.mac[5] as u32) << 8)
-                | E1000_RAH_AV;
+            let rah = (self.mac[4] as u32) | ((self.mac[5] as u32) << 8) | E1000_RAH_AV;
             unsafe {
                 mmio_write32(base, E1000_RAL0, ral);
                 mmio_write32(base, E1000_RAH0, rah);
             }
-            klog_info!(Net, "e1000: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                self.mac[0], self.mac[1], self.mac[2],
-                self.mac[3], self.mac[4], self.mac[5]);
+            klog_info!(
+                Net,
+                "e1000: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                self.mac[0],
+                self.mac[1],
+                self.mac[2],
+                self.mac[3],
+                self.mac[4],
+                self.mac[5]
+            );
         }
 
         unsafe {
@@ -382,17 +436,26 @@ impl Driver for E1000Device {
         }
         self.rx_tail = 0;
 
-        unsafe { mmio_write32(base, E1000_IPG, 0x0060200A); }
+        unsafe {
+            mmio_write32(base, E1000_IPG, 0x0060200A);
+        }
 
         unsafe {
-            mmio_write32(base, E1000_IMS, E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC);
+            mmio_write32(
+                base,
+                E1000_IMS,
+                E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC,
+            );
         }
 
         unsafe {
             let ctrl = mmio_read32(base, E1000_CTRL);
-            klog_info!(Net, "e1000: initialized (CTRL=0x{:x} RDLEN=0x{:x})",
+            klog_info!(
+                Net,
+                "e1000: initialized (CTRL=0x{:x} RDLEN=0x{:x})",
                 ctrl,
-                mmio_read32(base, E1000_RDLEN));
+                mmio_read32(base, E1000_RDLEN)
+            );
         }
 
         self.initialized = true;
@@ -453,14 +516,18 @@ impl E1000Device {
         for bus in 0..255u8 {
             let vendor_id = unsafe { pci_read_config_word(bus, 0, 0, 0x00) };
             if vendor_id == 0xFFFF || vendor_id == 0x0000 {
-                if bus > 0 { continue; }
+                if bus > 0 {
+                    continue;
+                }
             }
 
             for dev_idx in 0..32u8 {
                 for func in 0..8u8 {
                     let vid = unsafe { pci_read_config_word(bus, dev_idx, func, 0x00) };
                     if vid == 0xFFFF || vid == 0x0000 {
-                        if func == 0 { break; }
+                        if func == 0 {
+                            break;
+                        }
                         continue;
                     }
 
@@ -475,7 +542,8 @@ impl E1000Device {
 
                         let bar0_lo = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x10, 0xFFFFFFFF) };
-                        let _bar_size_mask = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
+                        let _bar_size_mask =
+                            unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x10, bar0_lo) };
 
                         let is_io = (bar0_lo & 0x01) != 0;
@@ -494,19 +562,39 @@ impl E1000Device {
 
                         unsafe {
                             extern "C" {
-                                fn vmm_map_huge_page(virt: u64, phys: u64, flags: u64, size_type: u8) -> i32;
+                                fn vmm_map_huge_page(
+                                    virt: u64,
+                                    phys: u64,
+                                    flags: u64,
+                                    size_type: u8,
+                                ) -> i32;
                             }
                             let mmio_aligned = self.mmio_phys & !0x1FFFFF;
                             let flags: u64 = 0x13;
                             let ret1 = vmm_map_huge_page(mmio_aligned, mmio_aligned, flags, 1);
-                            let ret2 = vmm_map_huge_page(mmio_aligned + 0x200000, mmio_aligned + 0x200000, flags, 1);
+                            let ret2 = vmm_map_huge_page(
+                                mmio_aligned + 0x200000,
+                                mmio_aligned + 0x200000,
+                                flags,
+                                1,
+                            );
                             if ret1 != 0 || ret2 != 0 {
-                                klog_err!(Net, "e1000: MMIO mapping failed ret1={} ret2={}", ret1, ret2);
+                                klog_err!(
+                                    Net,
+                                    "e1000: MMIO mapping failed ret1={} ret2={}",
+                                    ret1,
+                                    ret2
+                                );
                                 return Err(DriverError::HardwareError);
                             }
                             self.mmio_base = self.mmio_phys as *mut u8;
-                            klog_info!(Net, "e1000: MMIO phys=0x{:x} base={:p} IRQ={}", 
-                                self.mmio_phys, self.mmio_base, self.irq);
+                            klog_info!(
+                                Net,
+                                "e1000: MMIO phys=0x{:x} base={:p} IRQ={}",
+                                self.mmio_phys,
+                                self.mmio_base,
+                                self.irq
+                            );
                         }
 
                         read_mac_address(self);
@@ -550,7 +638,7 @@ impl E1000Device {
 
         let total_len = data.len().min(2048);
         let phys = virt_to_phys(data.as_ptr() as u64);
-        
+
         desc.addr = phys;
         desc.length = total_len as u16;
         desc.cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS;
@@ -588,26 +676,39 @@ impl E1000Device {
 
             let desc = unsafe { &mut *rx_descs.add(self.rx_tail) };
             if desc.status & E1000_RXD_STAT_DD == 0 {
-                klog_warn!(Net, "e1000: rx_tail={} != rdh={} but DD=0, errors=0x{:x}", 
-                    self.rx_tail, rdh, desc.errors);
+                klog_warn!(
+                    Net,
+                    "e1000: rx_tail={} != rdh={} but DD=0, errors=0x{:x}",
+                    self.rx_tail,
+                    rdh,
+                    desc.errors
+                );
                 break;
             }
 
             let len = desc.length as usize;
 
-            if desc.errors & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE |
-                          E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE) == 0 {
+            if desc.errors
+                & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE | E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE)
+                == 0
+            {
                 processed += 1;
                 if !self.rx_buffers[self.rx_tail].is_null() {
                     unsafe {
                         ethernet_input_from_e1000(
                             self.rx_buffers[self.rx_tail] as *mut core::ffi::c_void,
-                            len as u16
+                            len as u16,
                         );
                     }
                 }
             } else {
-                klog_warn!(Net, "e1000: RX desc[{}] errors=0x{:x} len={}", self.rx_tail, desc.errors, len);
+                klog_warn!(
+                    Net,
+                    "e1000: RX desc[{}] errors=0x{:x} len={}",
+                    self.rx_tail,
+                    desc.errors,
+                    len
+                );
             }
 
             desc.status = 0;
@@ -622,7 +723,12 @@ impl E1000Device {
         }
 
         if processed > 0 {
-            klog_debug!(Net, "e1000: RX processed {} packets (total={})", processed, self.rx_count);
+            klog_debug!(
+                Net,
+                "e1000: RX processed {} packets (total={})",
+                processed,
+                self.rx_count
+            );
         }
     }
 
@@ -638,7 +744,7 @@ impl E1000Device {
         }
 
         self.isr_count += 1;
-        
+
         if self.isr_count <= 5 {
             klog_debug!(Net, "e1000: ISR icr=0x{:x}", icr);
         }
@@ -657,7 +763,12 @@ impl E1000Device {
     }
 
     pub fn get_stats(&self) -> (u64, u64, u64, u64) {
-        (self.isr_count, self.rx_count, self.tx_count, self.link_change_count)
+        (
+            self.isr_count,
+            self.rx_count,
+            self.tx_count,
+            self.link_change_count,
+        )
     }
 
     pub fn get_info(&self) -> &crate::kernel::driver::framework::DeviceInfo {
@@ -690,18 +801,32 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
     }
     match &mut *E1000_DEVICE.lock() {
         Some(ref mut dev) => {
-            if dev.mmio_base.is_null() { return -5; }
+            if dev.mmio_base.is_null() {
+                return -5;
+            }
             match dev.init() {
                 Ok(()) => {
-                    unsafe { qx_netif_init(netif, dev.mac.as_ptr()); }
+                    unsafe {
+                        qx_netif_init(netif, dev.mac.as_ptr());
+                    }
                     if dev.irq != 0 && dev.irq != 255 {
                         extern "C" {
-                            fn idt_register_irq(irq: u8, handler: extern "C" fn(*mut core::ffi::c_void), name: *const i8, flags: u32) -> i32;
+                            fn idt_register_irq(
+                                irq: u8,
+                                handler: extern "C" fn(*mut core::ffi::c_void),
+                                name: *const i8,
+                                flags: u32,
+                            ) -> i32;
                             fn idt_enable_irq(irq: u8);
                         }
                         klog_info!(Net, "e1000: registering IRQ {}", dev.irq);
                         unsafe {
-                            idt_register_irq(dev.irq, e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void), c"e1000".as_ptr(), 0);
+                            idt_register_irq(
+                                dev.irq,
+                                e1000_irq_entry as extern "C" fn(*mut core::ffi::c_void),
+                                c"e1000".as_ptr(),
+                                0,
+                            );
                             idt_enable_irq(dev.irq);
                             if dev.irq < 8 {
                                 let mask = pic_inb(0x21);
@@ -716,10 +841,10 @@ pub extern "C" fn e1000_init(netif: *mut core::ffi::c_void) -> i32 {
                     }
                     klog_info!(Net, "e1000: initialized, IRQ registered");
                     0
-                },
+                }
                 Err(_e) => -5,
             }
-        },
+        }
         None => -5,
     }
 }
@@ -795,7 +920,7 @@ pub extern "C" fn e1000_probe() -> i32 {
                 );
                 *E1000_DEVICE.lock() = Some(dev);
                 return 0;
-            },
+            }
             Err(_) => return -1,
         }
     }
@@ -824,7 +949,9 @@ pub extern "C" fn e1000_dump_regs() {
         let guard = E1000_DEVICE.lock();
         if let Some(ref dev) = *guard {
             let base = dev.mmio_base;
-            if base.is_null() { return; }
+            if base.is_null() {
+                return;
+            }
             unsafe {
                 let ctrl = mmio_read32(base, E1000_CTRL);
                 let status = mmio_read32(base, E1000_STATUS);
@@ -845,8 +972,20 @@ pub extern "C" fn e1000_dump_regs() {
                 klog_info!(Net, "ICR=0x{:x} IMS=0x{:x}", icr, ims);
                 klog_info!(Net, "TDH={} TDT={}", tdh, tdt);
                 klog_info!(Net, "RDH={} RDT={} rx_tail={}", rdh, rdt, dev.rx_tail);
-                klog_info!(Net, "RDBAL=0x{:x} RDBAH=0x{:x} RDLEN={}", rdbal, rdbah, rdlen);
-                klog_info!(Net, "tx_count={} rx_count={} isr_count={}", dev.tx_count, dev.rx_count, dev.isr_count);
+                klog_info!(
+                    Net,
+                    "RDBAL=0x{:x} RDBAH=0x{:x} RDLEN={}",
+                    rdbal,
+                    rdbah,
+                    rdlen
+                );
+                klog_info!(
+                    Net,
+                    "tx_count={} rx_count={} isr_count={}",
+                    dev.tx_count,
+                    dev.rx_count,
+                    dev.isr_count
+                );
             }
         }
     }
@@ -861,8 +1000,14 @@ pub extern "C" fn e1000_dump_stats() {
     {
         let guard = E1000_DEVICE.lock();
         if let Some(ref dev) = *guard {
-            klog_info!(Net, "e1000 stats: tx={} rx={} isr={} link_chg={}", 
-                dev.tx_count, dev.rx_count, dev.isr_count, dev.link_change_count);
+            klog_info!(
+                Net,
+                "e1000 stats: tx={} rx={} isr={} link_chg={}",
+                dev.tx_count,
+                dev.rx_count,
+                dev.isr_count,
+                dev.link_change_count
+            );
         }
     }
     let _ = &();
@@ -873,7 +1018,9 @@ pub extern "C" fn e1000_dump_stats() {
 pub extern "C" fn e1000_poll_rx() {
     match &mut *E1000_DEVICE.lock() {
         Some(ref mut dev) => {
-            if dev.mmio_base.is_null() { return; }
+            if dev.mmio_base.is_null() {
+                return;
+            }
 
             let poll_n = POLL_COUNT.fetch_add(1, Ordering::Relaxed);
 
@@ -882,8 +1029,16 @@ pub extern "C" fn e1000_poll_rx() {
                 let rdh = mmio_read32(dev.mmio_base, E1000_RDH);
                 let rdt = mmio_read32(dev.mmio_base, E1000_RDT);
                 if poll_n.is_multiple_of(50000) {
-                    klog_debug!(Net, "e1000_poll[{}]: RDH={} RDT={} tail={} ICR=0x{:x} rx={}", 
-                        poll_n, rdh, rdt, dev.rx_tail, icr, dev.rx_count);
+                    klog_debug!(
+                        Net,
+                        "e1000_poll[{}]: RDH={} RDT={} tail={} ICR=0x{:x} rx={}",
+                        poll_n,
+                        rdh,
+                        rdt,
+                        dev.rx_tail,
+                        icr,
+                        dev.rx_count
+                    );
                 }
             }
 
@@ -936,7 +1091,9 @@ pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi:
     let current = base + KALLOC_OFF;
     let aligned = (current + a - 1) & !(a - 1);
     let padding = aligned - current;
-    if KALLOC_OFF + padding + s > KALLOC_BUF.data.len() { return core::ptr::null_mut(); }
+    if KALLOC_OFF + padding + s > KALLOC_BUF.data.len() {
+        return core::ptr::null_mut();
+    }
     KALLOC_OFF += padding;
     let ptr = KALLOC_BUF.data.as_mut_ptr().add(KALLOC_OFF) as *mut core::ffi::c_void;
     KALLOC_OFF += s;

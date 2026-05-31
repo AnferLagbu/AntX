@@ -21,8 +21,8 @@
 //! `elf_data` 必须是有效的内核虚拟地址，指向完整 ELF 文件。
 //! 调用者负责保证 ELF 数据在加载期间不被修改。
 
-use crate::kernel::mm::vma::{Vma, VmaType, MmStruct};
-use crate::kernel::mm::{PageFlags, PAGE_SIZE, VirtAddr};
+use crate::kernel::mm::vma::{MmStruct, Vma, VmaType};
+use crate::kernel::mm::{PageFlags, VirtAddr, PAGE_SIZE};
 
 const ELF_MAGIC: &[u8; 4] = b"\x7FELF";
 const ELF_CLASS_64: u8 = 2;
@@ -107,8 +107,7 @@ pub fn elf_validate(elf_data: *const u8, elf_size: u64) -> Option<&'static Elf64
         return None;
     }
 
-    let phdr_table_size = (header.e_phnum as u64)
-        .checked_mul(header.e_phentsize as u64)?;
+    let phdr_table_size = (header.e_phnum as u64).checked_mul(header.e_phentsize as u64)?;
     let phdr_end = header.e_phoff.checked_add(phdr_table_size)?;
     if phdr_end > elf_size {
         return None;
@@ -160,13 +159,17 @@ pub fn elf_load(
         }
 
         let vaddr_start = phdr.p_vaddr & !(PAGE_SIZE - 1);
-        let vaddr_end_raw = phdr.p_vaddr.checked_add(phdr.p_memsz)
+        let vaddr_end_raw = phdr
+            .p_vaddr
+            .checked_add(phdr.p_memsz)
             .ok_or("ELF: vaddr + memsz overflow")?;
         let vaddr_end = ((vaddr_end_raw + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)) as usize;
         let filesz = phdr.p_filesz as usize;
         let file_offset = phdr.p_offset as usize;
 
-        let file_data_end = phdr.p_offset.checked_add(phdr.p_filesz)
+        let file_data_end = phdr
+            .p_offset
+            .checked_add(phdr.p_filesz)
             .ok_or("ELF: p_offset + p_filesz overflow")?;
         if file_data_end > elf_size {
             continue;
@@ -177,11 +180,22 @@ pub fn elf_load(
         }
 
         let mut page_flags = PageFlags::USER;
-        if phdr.p_flags & PF_R != 0 { page_flags |= PageFlags::PRESENT; }
-        if phdr.p_flags & PF_W != 0 { page_flags |= PageFlags::WRITABLE; }
-        if phdr.p_flags & PF_X == 0 { page_flags |= PageFlags::NX; }
+        if phdr.p_flags & PF_R != 0 {
+            page_flags |= PageFlags::PRESENT;
+        }
+        if phdr.p_flags & PF_W != 0 {
+            page_flags |= PageFlags::WRITABLE;
+        }
+        if phdr.p_flags & PF_X == 0 {
+            page_flags |= PageFlags::NX;
+        }
 
-        let vma = Vma::new(vaddr_start as usize, vaddr_end, page_flags, VmaType::Anonymous);
+        let vma = Vma::new(
+            vaddr_start as usize,
+            vaddr_end,
+            page_flags,
+            VmaType::Anonymous,
+        );
         mm.insert_vma(vma).map_err(|_| "VMA insertion failed")?;
 
         // 复制段数据到物理页
@@ -249,7 +263,7 @@ mod tests {
         data[1] = b'E';
         data[2] = b'L';
         data[3] = b'F';
-        data[4] = 2;   // ELFCLASS64
+        data[4] = 2; // ELFCLASS64
         assert!(elf_validate(data.as_ptr(), 64).is_none()); // machine=0 not valid
 
         // Set valid machine

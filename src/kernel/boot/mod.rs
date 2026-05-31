@@ -96,7 +96,8 @@ unsafe impl Send for MultibootPtr {}
 unsafe impl Sync for MultibootPtr {}
 
 static BOOT_INFO: spin::Once<BootInfo> = spin::Once::new();
-static MULTIBOOT_INFO_PTR: spin::Mutex<MultibootPtr> = spin::Mutex::new(MultibootPtr(core::ptr::null()));
+static MULTIBOOT_INFO_PTR: spin::Mutex<MultibootPtr> =
+    spin::Mutex::new(MultibootPtr(core::ptr::null()));
 static MULTIBOOT_MAGIC: spin::Mutex<u32> = spin::Mutex::new(0);
 
 extern "C" {
@@ -104,7 +105,9 @@ extern "C" {
 }
 
 pub fn get_boot_info() -> &'static BootInfo {
-    BOOT_INFO.get().expect("[BOOT] accessed before initialization")
+    BOOT_INFO
+        .get()
+        .expect("[BOOT] accessed before initialization")
 }
 
 #[no_mangle]
@@ -147,7 +150,9 @@ fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
                 max_addr = end;
             }
             mmap_entries += 1;
-            current = unsafe { (current as *const u8).add(entry.size as usize + 4) as *const MemoryMapEntry };
+            current = unsafe {
+                (current as *const u8).add(entry.size as usize + 4) as *const MemoryMapEntry
+            };
         }
 
         if max_addr > 0 {
@@ -218,10 +223,7 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
                 }
             }
             8 => {
-                multiboot2_fb::parse_framebuffer_tag(
-                    unsafe { tag_ptr.add(8) },
-                    tag_size,
-                );
+                multiboot2_fb::parse_framebuffer_tag(unsafe { tag_ptr.add(8) }, tag_size);
             }
             _ => {}
         }

@@ -37,7 +37,6 @@
 //! requires special MMIO page table setup that is tightly coupled to its probe.
 //! See src/net/driver/e1000.c → e1000_probe().
 
-
 use alloc::vec::Vec;
 use spin::Mutex;
 
@@ -97,43 +96,43 @@ const PCI_CONFIG_DATA: u16 = 0xCFC;
 #[cfg(target_arch = "aarch64")]
 const ECAM_BASE: u64 = 0x3F00_0000;
 
-const PCI_MAX_BUS:   u8 = 255;
-const PCI_MAX_DEV:   u8 = 32;
-const PCI_MAX_FUNC:  u8 = 8;
+const PCI_MAX_BUS: u8 = 255;
+const PCI_MAX_DEV: u8 = 32;
+const PCI_MAX_FUNC: u8 = 8;
 
 // Vendor/Device location
-const REG_VENDOR_ID:     u8 = 0x00;
-const REG_DEVICE_ID:     u8 = 0x02;
-const REG_COMMAND:       u8 = 0x04;
-const REG_STATUS:        u8 = 0x06;
-const REG_REVISION_ID:   u8 = 0x08;
-const REG_CLASS_CODE:    u8 = 0x0B;
-const REG_HEADER_TYPE:   u8 = 0x0E;
-const REG_BAR0:          u8 = 0x10;
-const REG_CAP_PTR:       u8 = 0x34;
-const REG_INT_LINE:      u8 = 0x3C;
-const REG_INT_PIN:       u8 = 0x3D;
+const REG_VENDOR_ID: u8 = 0x00;
+const REG_DEVICE_ID: u8 = 0x02;
+const REG_COMMAND: u8 = 0x04;
+const REG_STATUS: u8 = 0x06;
+const REG_REVISION_ID: u8 = 0x08;
+const REG_CLASS_CODE: u8 = 0x0B;
+const REG_HEADER_TYPE: u8 = 0x0E;
+const REG_BAR0: u8 = 0x10;
+const REG_CAP_PTR: u8 = 0x34;
+const REG_INT_LINE: u8 = 0x3C;
+const REG_INT_PIN: u8 = 0x3D;
 
 // Command bits
-pub const PCI_CMD_IO_SPACE:      u16 = 1 << 0;
-pub const PCI_CMD_MEMORY_SPACE:  u16 = 1 << 1;
-pub const PCI_CMD_BUS_MASTER:    u16 = 1 << 2;
+pub const PCI_CMD_IO_SPACE: u16 = 1 << 0;
+pub const PCI_CMD_MEMORY_SPACE: u16 = 1 << 1;
+pub const PCI_CMD_BUS_MASTER: u16 = 1 << 2;
 
 // Header type
 const HEADER_MULTIFUNC: u8 = 0x80;
 
 // Class codes
-pub const CLASS_STORAGE:          u8 = 0x01;
-pub const CLASS_NETWORK:          u8 = 0x02;
-pub const CLASS_DISPLAY:          u8 = 0x03;
-pub const CLASS_BRIDGE:           u8 = 0x06;
+pub const CLASS_STORAGE: u8 = 0x01;
+pub const CLASS_NETWORK: u8 = 0x02;
+pub const CLASS_DISPLAY: u8 = 0x03;
+pub const CLASS_BRIDGE: u8 = 0x06;
 
 // ── Data types ──
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarType {
-    None    = 0,
-    Io      = 1,
+    None = 0,
+    Io = 1,
     Memory32 = 2,
     Memory64 = 3,
 }
@@ -141,34 +140,40 @@ pub enum BarType {
 #[derive(Debug, Clone, Copy)]
 pub struct PciBar {
     pub base_addr: u64,
-    pub size:      u64,
-    pub bar_type:  BarType,
+    pub size: u64,
+    pub bar_type: BarType,
     pub prefetchable: bool,
-    pub is_64bit:  bool,
+    pub is_64bit: bool,
 }
 
 impl PciBar {
     const fn empty() -> Self {
-        Self { base_addr: 0, size: 0, bar_type: BarType::None, prefetchable: false, is_64bit: false }
+        Self {
+            base_addr: 0,
+            size: 0,
+            bar_type: BarType::None,
+            prefetchable: false,
+            is_64bit: false,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct PciDevice {
-    pub bus:       u8,
-    pub device:    u8,
-    pub function:  u8,
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
     pub vendor_id: u16,
     pub device_id: u16,
-    pub class_code:    u8,
+    pub class_code: u8,
     pub subclass_code: u8,
-    pub prog_if:       u8,
-    pub revision_id:   u8,
-    pub header_type:   u8,
-    pub command:       u16,
-    pub status:        u16,
+    pub prog_if: u8,
+    pub revision_id: u8,
+    pub header_type: u8,
+    pub command: u16,
+    pub status: u16,
     pub interrupt_line: u8,
-    pub interrupt_pin:  u8,
+    pub interrupt_pin: u8,
     pub bars: [PciBar; 6],
     pub bar_count: usize,
     pub capabilities_ptr: u8,
@@ -269,7 +274,9 @@ pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *mut u8;
-        unsafe { core::ptr::write_volatile(addr, val); }
+        unsafe {
+            core::ptr::write_volatile(addr, val);
+        }
     }
 }
 
@@ -290,7 +297,9 @@ pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *mut u16;
-        unsafe { core::ptr::write_volatile(addr, val); }
+        unsafe {
+            core::ptr::write_volatile(addr, val);
+        }
     }
 }
 
@@ -306,7 +315,9 @@ pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *mut u32;
-        unsafe { core::ptr::write_volatile(addr, val); }
+        unsafe {
+            core::ptr::write_volatile(addr, val);
+        }
     }
 }
 
@@ -350,7 +361,8 @@ fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
                 write_config_dword(bus, dev, func, offset + 4, 0xFFFF_FFFF);
                 let hi_mask = read_config_dword(bus, dev, func, offset + 4);
                 write_config_dword(bus, dev, func, offset + 4, bar_hi);
-                let size = (!(((size_mask & !0x0Fu32) as u64) | ((hi_mask as u64) << 32))).wrapping_add(1);
+                let size =
+                    (!(((size_mask & !0x0Fu32) as u64) | ((hi_mask as u64) << 32))).wrapping_add(1);
                 bars[count].size = size;
                 bars[count].bar_type = BarType::Memory64;
                 i += 1; // skip next slot
@@ -374,29 +386,38 @@ fn probe_device(bus: u8, dev: u8, func: u8) -> Option<PciDevice> {
         return None;
     }
 
-    let device_id    = read_config_word(bus, dev, func, REG_DEVICE_ID);
-    let class_raw    = read_config_dword(bus, dev, func, REG_REVISION_ID);
-    let revision_id  = (class_raw & 0xFF) as u8;
-    let prog_if      = ((class_raw >> 8) & 0xFF) as u8;
+    let device_id = read_config_word(bus, dev, func, REG_DEVICE_ID);
+    let class_raw = read_config_dword(bus, dev, func, REG_REVISION_ID);
+    let revision_id = (class_raw & 0xFF) as u8;
+    let prog_if = ((class_raw >> 8) & 0xFF) as u8;
     let subclass_code = ((class_raw >> 16) & 0xFF) as u8;
-    let class_code   = ((class_raw >> 24) & 0xFF) as u8;
-    let header_type  = read_config_byte(bus, dev, func, REG_HEADER_TYPE) & !HEADER_MULTIFUNC;
-    let command      = read_config_word(bus, dev, func, REG_COMMAND);
-    let status       = read_config_word(bus, dev, func, REG_STATUS);
-    let int_line     = read_config_byte(bus, dev, func, REG_INT_LINE);
-    let int_pin      = read_config_byte(bus, dev, func, REG_INT_PIN);
-    let cap_ptr      = read_config_byte(bus, dev, func, REG_CAP_PTR);
+    let class_code = ((class_raw >> 24) & 0xFF) as u8;
+    let header_type = read_config_byte(bus, dev, func, REG_HEADER_TYPE) & !HEADER_MULTIFUNC;
+    let command = read_config_word(bus, dev, func, REG_COMMAND);
+    let status = read_config_word(bus, dev, func, REG_STATUS);
+    let int_line = read_config_byte(bus, dev, func, REG_INT_LINE);
+    let int_pin = read_config_byte(bus, dev, func, REG_INT_PIN);
+    let cap_ptr = read_config_byte(bus, dev, func, REG_CAP_PTR);
 
     let (bars, bar_count) = parse_bars(bus, dev, func);
 
     Some(PciDevice {
-        bus, device: dev, function: func,
-        vendor_id: vendor, device_id,
-        class_code, subclass_code, prog_if,
-        revision_id, header_type,
-        command, status,
-        interrupt_line: int_line, interrupt_pin: int_pin,
-        bars, bar_count,
+        bus,
+        device: dev,
+        function: func,
+        vendor_id: vendor,
+        device_id,
+        class_code,
+        subclass_code,
+        prog_if,
+        revision_id,
+        header_type,
+        command,
+        status,
+        interrupt_line: int_line,
+        interrupt_pin: int_pin,
+        bars,
+        bar_count,
         capabilities_ptr: cap_ptr,
     })
 }
@@ -456,14 +477,18 @@ pub fn get_device_list() -> Vec<PciDevice> {
 }
 
 pub fn find_by_vendor(vendor_id: u16) -> Vec<PciDevice> {
-    DEVICE_LIST.lock().iter()
+    DEVICE_LIST
+        .lock()
+        .iter()
         .filter(|d| d.vendor_id == vendor_id)
         .cloned()
         .collect()
 }
 
 pub fn find_by_class(class_code: u8) -> Vec<PciDevice> {
-    DEVICE_LIST.lock().iter()
+    DEVICE_LIST
+        .lock()
+        .iter()
         .filter(|d| d.class_code == class_code)
         .cloned()
         .collect()
@@ -475,8 +500,10 @@ pub fn find_device(vendor_id: u16, device_id: u16) -> Option<PciDevice> {
         list.first().cloned()
     } else {
         list.iter()
-            .find(|d| (vendor_id == 0xFFFF || d.vendor_id == vendor_id)
-                   && (device_id == 0xFFFF || d.device_id == device_id))
+            .find(|d| {
+                (vendor_id == 0xFFFF || d.vendor_id == vendor_id)
+                    && (device_id == 0xFFFF || d.device_id == device_id)
+            })
             .cloned()
     }
 }
@@ -487,10 +514,17 @@ pub fn device_count() -> usize {
 
 impl fmt::Display for PciDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PCI {:02X}:{:02X}.{} [{:04X}:{:04X}] class={:02X}.{:02X}",
-            self.bus, self.device, self.function,
-            self.vendor_id, self.device_id,
-            self.class_code, self.subclass_code)
+        write!(
+            f,
+            "PCI {:02X}:{:02X}.{} [{:04X}:{:04X}] class={:02X}.{:02X}",
+            self.bus,
+            self.device,
+            self.function,
+            self.vendor_id,
+            self.device_id,
+            self.class_code,
+            self.subclass_code
+        )
     }
 }
 
@@ -502,9 +536,13 @@ impl fmt::Display for PciDevice {
 #[no_mangle]
 pub extern "C" fn pci_rust_init() -> i32 {
     let count = init();
-    extern "C" { fn klog_ffi_info(msg: *const u8); }
+    extern "C" {
+        fn klog_ffi_info(msg: *const u8);
+    }
     let msg = alloc::format!("PCI: Rust subsystem initialised — {} device(s)", count);
-    unsafe { klog_ffi_info(msg.as_ptr()); }
+    unsafe {
+        klog_ffi_info(msg.as_ptr());
+    }
     0
 }
 

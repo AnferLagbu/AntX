@@ -1,11 +1,16 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
-use crate::kernel::sync::mutex::{Mutex, CondVar};
+use crate::kernel::sync::atomic::{
+    atomic_add, atomic_cmpxchg, atomic_dec, atomic_inc, atomic_read, atomic_set, atomic_sub,
+    AtomicBool,
+};
+use crate::kernel::sync::mutex::{CondVar, Mutex};
+use crate::kernel::sync::rwlock::RwLock;
 use crate::kernel::sync::seqlock::SeqLock;
 use crate::kernel::sync::spinlock::SpinLock;
-use crate::kernel::sync::rwlock::RwLock;
-use crate::kernel::sync::types::{SpinLockInner, MutexInner, RwLockInner, IrqSaveFlags, TryLockResult};
-use crate::kernel::sync::atomic::{AtomicBool, atomic_inc, atomic_dec, atomic_add, atomic_sub, atomic_set, atomic_read, atomic_cmpxchg};
+use crate::kernel::sync::types::{
+    IrqSaveFlags, MutexInner, RwLockInner, SpinLockInner, TryLockResult,
+};
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::register_tests_inner;
 use core::sync::atomic::Ordering;
 
 fn mutex_basic() -> TestResult {
@@ -167,7 +172,11 @@ fn rwlock_read_blocks_write() -> TestResult {
 
 fn spinlock_inner_default() -> TestResult {
     let lock = SpinLockInner::default();
-    assert_eq_test!(lock.locked.load(Ordering::Relaxed), 0, "spinlock inner default");
+    assert_eq_test!(
+        lock.locked.load(Ordering::Relaxed),
+        0,
+        "spinlock inner default"
+    );
     TestResult::Pass
 }
 
@@ -181,9 +190,17 @@ fn mutex_inner_default() -> TestResult {
 
 fn rwlock_inner_default() -> TestResult {
     let rw = RwLockInner::default();
-    assert_eq_test!(rw.readers.load(Ordering::Relaxed), 0, "rwlock inner readers");
+    assert_eq_test!(
+        rw.readers.load(Ordering::Relaxed),
+        0,
+        "rwlock inner readers"
+    );
     assert_eq_test!(rw.writer.load(Ordering::Relaxed), 0, "rwlock inner writer");
-    assert_eq_test!(rw.pending_writers.load(Ordering::Relaxed), 0, "rwlock inner pending");
+    assert_eq_test!(
+        rw.pending_writers.load(Ordering::Relaxed),
+        0,
+        "rwlock inner pending"
+    );
     TestResult::Pass
 }
 
@@ -191,7 +208,10 @@ fn irq_save_flags() -> TestResult {
     let flags = IrqSaveFlags(0x202);
     check!(flags.interrupts_enabled(), "IF=1 should be enabled");
     let flags_disabled = IrqSaveFlags(0x002);
-    check!(!flags_disabled.interrupts_enabled(), "IF=0 should be disabled");
+    check!(
+        !flags_disabled.interrupts_enabled(),
+        "IF=0 should be disabled"
+    );
     TestResult::Pass
 }
 
@@ -208,9 +228,15 @@ fn atomic_bool_basic() -> TestResult {
     check!(!b.load(Ordering::Relaxed), "initial false");
     b.swap(true, Ordering::Relaxed);
     check!(b.load(Ordering::Relaxed), "after swap true");
-    check!(b.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst), "cas success");
+    check!(
+        b.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst),
+        "cas success"
+    );
     check!(!b.load(Ordering::Relaxed), "after cas false");
-    check!(!b.compare_exchange(true, true, Ordering::SeqCst, Ordering::SeqCst), "cas fail");
+    check!(
+        !b.compare_exchange(true, true, Ordering::SeqCst, Ordering::SeqCst),
+        "cas fail"
+    );
     TestResult::Pass
 }
 
@@ -239,7 +265,7 @@ fn atomic_operations() -> TestResult {
 
 pub fn register_mutex_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "sync::mutex": {
             "basic": mutex_basic,
             "trylock": mutex_trylock,
@@ -250,7 +276,7 @@ pub fn register_mutex_tests() {
 
 pub fn register_seqlock_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "sync::seqlock": {
             "basic": seqlock_basic,
             "write": seqlock_write,
@@ -261,7 +287,7 @@ pub fn register_seqlock_tests() {
 
 pub fn register_spinlock_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "sync::spinlock": {
             "basic": spinlock_basic,
             "trylock": spinlock_trylock,
@@ -272,7 +298,7 @@ pub fn register_spinlock_tests() {
 
 pub fn register_rwlock_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "sync::rwlock": {
             "basic_read": rwlock_basic_read,
             "basic_write": rwlock_basic_write,
@@ -286,7 +312,7 @@ pub fn register_rwlock_tests() {
 
 pub fn register_sync_types_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "sync::types": {
             "spinlock_inner_default": spinlock_inner_default,
             "mutex_inner_default": mutex_inner_default,
@@ -299,7 +325,7 @@ pub fn register_sync_types_tests() {
 
 pub fn register_atomic_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "sync::atomic": {
             "bool_basic": atomic_bool_basic,
             "operations": atomic_operations,

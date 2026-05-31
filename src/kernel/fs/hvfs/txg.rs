@@ -1,7 +1,7 @@
-use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
-use crate::kernel::sync::mutex::Mutex;
 use crate::kernel::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::sync::mutex::Mutex;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -167,24 +167,42 @@ impl HvTxgGroup {
         self.open_txg.store(0, Ordering::Release);
         self.quiescing_txg.store(1, Ordering::Release);
         self.syncing_txg.store(2, Ordering::Release);
-        if let Some(ref mut txg) = self.txgs[0] { txg.open(); }
-        if let Some(ref mut txg) = self.txgs[1] { txg.quiesce(); }
-        if let Some(ref mut txg) = self.txgs[2] { txg.sync_start(); }
+        if let Some(ref mut txg) = self.txgs[0] {
+            txg.open();
+        }
+        if let Some(ref mut txg) = self.txgs[1] {
+            txg.quiesce();
+        }
+        if let Some(ref mut txg) = self.txgs[2] {
+            txg.sync_start();
+        }
     }
 
     pub fn get_open_txg(&self) -> Option<&HvTxg> {
         let idx = self.open_txg.load(Ordering::Acquire) as usize;
-        if idx < HV_TXG_SIZE { self.txgs[idx].as_ref() } else { None }
+        if idx < HV_TXG_SIZE {
+            self.txgs[idx].as_ref()
+        } else {
+            None
+        }
     }
 
     pub fn get_open_txg_mut(&mut self) -> Option<&mut HvTxg> {
         let idx = self.open_txg.load(Ordering::Acquire) as usize;
-        if idx < HV_TXG_SIZE { self.txgs[idx].as_mut() } else { None }
+        if idx < HV_TXG_SIZE {
+            self.txgs[idx].as_mut()
+        } else {
+            None
+        }
     }
 
     pub fn get_syncing_txg(&self) -> Option<&HvTxg> {
         let idx = self.syncing_txg.load(Ordering::Acquire) as usize;
-        if idx < HV_TXG_SIZE { self.txgs[idx].as_ref() } else { None }
+        if idx < HV_TXG_SIZE {
+            self.txgs[idx].as_ref()
+        } else {
+            None
+        }
     }
 
     pub fn transition(&mut self) -> u64 {
@@ -208,7 +226,8 @@ impl HvTxgGroup {
         }
         self.open_txg.store(new_open as u32, Ordering::Release);
         self.quiescing_txg.store(old_open as u32, Ordering::Release);
-        self.syncing_txg.store(old_quiescing as u32, Ordering::Release);
+        self.syncing_txg
+            .store(old_quiescing as u32, Ordering::Release);
         self.total_syncs.fetch_add(1, Ordering::Relaxed);
         new_txg_id
     }

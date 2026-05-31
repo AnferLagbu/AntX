@@ -1,6 +1,6 @@
+use crate::kernel::sync::mutex::Mutex;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::kernel::sync::mutex::Mutex;
 
 pub const HV_ZAP_MAX_NAME: usize = 64;
 pub const HV_ZAP_MAX_VALUE: usize = 128;
@@ -24,11 +24,21 @@ impl HvZapEntry {
         n[..nlen].copy_from_slice(&name.as_bytes()[..nlen]);
         v[..vlen].copy_from_slice(&value[..vlen]);
         let hash = Self::hash_name(name);
-        Self { name: n, value: v, value_len: vlen as u16, hash, used: true }
+        Self {
+            name: n,
+            value: v,
+            value_len: vlen as u16,
+            hash,
+            used: true,
+        }
     }
 
     pub fn get_name(&self) -> &str {
-        let end = self.name.iter().position(|&b| b == 0).unwrap_or(HV_ZAP_MAX_NAME);
+        let end = self
+            .name
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(HV_ZAP_MAX_NAME);
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
     }
 
@@ -87,15 +97,24 @@ impl HvZap {
         Self {
             entries: Mutex::new(Vec::new()),
             capacity,
-            zap_type: if capacity <= 64 { HvZapType::Micro } else { HvZapType::Normal },
+            zap_type: if capacity <= 64 {
+                HvZapType::Micro
+            } else {
+                HvZapType::Normal
+            },
         }
     }
 
     pub fn insert(&self, name: &str, value: &[u8]) -> bool {
         let mut entries = self.entries.lock();
-        if entries.len() >= self.capacity { return false; }
+        if entries.len() >= self.capacity {
+            return false;
+        }
         let hash = HvZapEntry::hash_name(name);
-        if let Some(existing) = entries.iter_mut().find(|e| e.used && e.hash == hash && e.get_name() == name) {
+        if let Some(existing) = entries
+            .iter_mut()
+            .find(|e| e.used && e.hash == hash && e.get_name() == name)
+        {
             let vlen = value.len().min(HV_ZAP_MAX_VALUE);
             existing.value[..vlen].copy_from_slice(&value[..vlen]);
             existing.value_len = vlen as u16;
@@ -134,17 +153,24 @@ impl HvZap {
     pub fn remove(&self, name: &str) -> bool {
         let mut entries = self.entries.lock();
         let hash = HvZapEntry::hash_name(name);
-        let idx = entries.iter().position(|e| e.used && e.hash == hash && e.get_name() == name);
+        let idx = entries
+            .iter()
+            .position(|e| e.used && e.hash == hash && e.get_name() == name);
         match idx {
-            Some(i) => { entries.remove(i); true }
-            None => false
+            Some(i) => {
+                entries.remove(i);
+                true
+            }
+            None => false,
         }
     }
 
     pub fn contains(&self, name: &str) -> bool {
         let entries = self.entries.lock();
         let hash = HvZapEntry::hash_name(name);
-        entries.iter().any(|e| e.used && e.hash == hash && e.get_name() == name)
+        entries
+            .iter()
+            .any(|e| e.used && e.hash == hash && e.get_name() == name)
     }
 
     pub fn len(&self) -> usize {
@@ -157,7 +183,8 @@ impl HvZap {
 
     pub fn keys(&self) -> Vec<String> {
         let entries = self.entries.lock();
-        entries.iter()
+        entries
+            .iter()
             .filter(|e| e.used)
             .map(|e| String::from(e.get_name()))
             .collect()
@@ -165,7 +192,8 @@ impl HvZap {
 
     pub fn entries(&self) -> Vec<(String, Vec<u8>)> {
         let entries = self.entries.lock();
-        entries.iter()
+        entries
+            .iter()
             .filter(|e| e.used)
             .map(|e| (String::from(e.get_name()), e.get_value().to_vec()))
             .collect()

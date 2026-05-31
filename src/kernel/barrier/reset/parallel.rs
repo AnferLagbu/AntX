@@ -4,9 +4,9 @@
 
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
-use crate::kernel::barrier::RECOVERY_MANAGER;
-use crate::kernel::barrier::types::DomainState;
 use super::config;
+use crate::kernel::barrier::types::DomainState;
+use crate::kernel::barrier::RECOVERY_MANAGER;
 
 pub const MAX_DEPENDENCY_LAYERS: usize = 8;
 pub const MAX_DOMAINS_PER_LAYER: usize = 16;
@@ -68,22 +68,22 @@ impl DependencyLayers {
 pub fn compute_dependency_layers() -> DependencyLayers {
     let manager = RECOVERY_MANAGER.lock();
     let domain_count = manager.count.load(Ordering::SeqCst) as usize;
-    
+
     let mut layers = DependencyLayers::new();
     let mut visited = [false; 32];
     let mut domain_levels = [0u32; 32];
-    
+
     for _ in 0..domain_count {
         for i in 0..domain_count {
             if visited[i] {
                 continue;
             }
-            
+
             if let Some(domain) = &manager.domains[i] {
                 let deps = domain.depends_on.lock();
                 let mut all_deps_visited = true;
                 let mut max_dep_level = 0u32;
-                
+
                 for slot in deps.iter() {
                     if let Some(dep_id) = *slot {
                         for j in 0..domain_count {
@@ -100,7 +100,7 @@ pub fn compute_dependency_layers() -> DependencyLayers {
                         }
                     }
                 }
-                
+
                 if all_deps_visited {
                     visited[i] = true;
                     domain_levels[i] = max_dep_level;
@@ -110,14 +110,14 @@ pub fn compute_dependency_layers() -> DependencyLayers {
             }
         }
     }
-    
+
     layers
 }
 
 pub fn rollback_layer_serial(layer: &DependencyLayer) -> usize {
     let mut total_rolled = 0usize;
     let manager = RECOVERY_MANAGER.lock();
-    
+
     for i in 0..layer.count {
         let domain_id = layer.domains[i];
         if let Some(domain) = manager.find(domain_id) {
@@ -129,29 +129,29 @@ pub fn rollback_layer_serial(layer: &DependencyLayer) -> usize {
             domain.set_state(DomainState::Active, Ordering::SeqCst);
         }
     }
-    
+
     total_rolled
 }
 
 pub fn rollback_layer_parallel(layer: &DependencyLayer, worker_id: usize) -> usize {
     let manager = RECOVERY_MANAGER.lock();
     let count = layer.count;
-    
+
     if count == 0 {
         return 0;
     }
-    
+
     let max_workers = config::RECOVERY_CONFIG.parallel_max_workers as usize;
     let chunk_size = count.div_ceil(max_workers);
     let start = worker_id * chunk_size;
     let end = (start + chunk_size).min(count);
-    
+
     if start >= count {
         return 0;
     }
-    
+
     let mut total_rolled = 0usize;
-    
+
     for i in start..end {
         let domain_id = layer.domains[i];
         if let Some(domain) = manager.find(domain_id) {
@@ -163,33 +163,33 @@ pub fn rollback_layer_parallel(layer: &DependencyLayer, worker_id: usize) -> usi
             domain.set_state(DomainState::Active, Ordering::SeqCst);
         }
     }
-    
+
     total_rolled
 }
 
 pub fn rollback_all_parallel() -> usize {
     config::PARALLEL_ROLLBACK_ACTIVE.store(true, Ordering::SeqCst);
-    
+
     let layers = compute_dependency_layers();
     let mut total_rolled = 0usize;
-    
+
     for layer_idx in 0..layers.count {
         let layer = &layers.layers[layer_idx];
-        
+
         if layer.count <= 1 {
             total_rolled += rollback_layer_serial(layer);
         } else {
             let max_workers = config::RECOVERY_CONFIG.parallel_max_workers as usize;
             let mut worker_results = [0usize; 4];
-            
+
             for worker_id in 0..max_workers.min(4) {
                 worker_results[worker_id] = rollback_layer_parallel(layer, worker_id);
             }
-            
+
             total_rolled += worker_results.iter().sum::<usize>();
         }
     }
-    
+
     config::PARALLEL_ROLLBACK_ACTIVE.store(false, Ordering::SeqCst);
     total_rolled
 }

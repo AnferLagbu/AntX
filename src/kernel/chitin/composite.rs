@@ -1,13 +1,10 @@
-use crate::kernel::driver::block::BlockDevice;
-use crate::kernel::chitin::{
-    chitin_blk_read, chitin_blk_write, chitin_blk_total_sectors, chitin_blk_is_present,
-    chitin_find_by_name, chitin_find_by_id,
-    ChitinProto,
-};
-use crate::kernel::chitin::devtree::{
-    devtree_walk, devtree_get_node, devtree_children,
-};
+use crate::kernel::chitin::devtree::{devtree_children, devtree_get_node, devtree_walk};
 use crate::kernel::chitin::proto_block;
+use crate::kernel::chitin::{
+    chitin_blk_is_present, chitin_blk_read, chitin_blk_total_sectors, chitin_blk_write,
+    chitin_find_by_id, chitin_find_by_name, ChitinProto,
+};
+use crate::kernel::driver::block::BlockDevice;
 use crate::klog_info;
 use crate::klog_warn;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -71,11 +68,7 @@ impl Clone for CompositeBlockDevice {
 }
 
 impl CompositeBlockDevice {
-    pub fn new(
-        device_type: CompositeType,
-        child_drives: &[u8],
-        stripe_size: u64,
-    ) -> Option<Self> {
+    pub fn new(device_type: CompositeType, child_drives: &[u8], stripe_size: u64) -> Option<Self> {
         if child_drives.is_empty() || child_drives.len() > MAX_COMPOSITE_CHILDREN {
             return None;
         }
@@ -170,8 +163,8 @@ impl BlockDevice for CompositeBlockDevice {
                     let chunk = &mut buf[(s * 512) as usize..((s + 1) * 512) as usize];
                     let sector_off = sector + s;
 
-                    let start = self.read_round_robin.fetch_add(1, Ordering::Relaxed)
-                        as usize % self.child_count as usize;
+                    let start = self.read_round_robin.fetch_add(1, Ordering::Relaxed) as usize
+                        % self.child_count as usize;
 
                     let mut ok = false;
                     for offset in 0..self.child_count as usize {
@@ -325,7 +318,8 @@ pub fn devtree_probe_composites() -> usize {
                             klog_warn!(
                                 Driver,
                                 "Chitin: child '{}' device_id={} not in registry",
-                                child_node.name, dev_id
+                                child_node.name,
+                                dev_id
                             );
                             continue;
                         }
@@ -349,7 +343,8 @@ pub fn devtree_probe_composites() -> usize {
                 klog_warn!(
                     Driver,
                     "Chitin: child '{}' index {} exceeds u8 range, skipping",
-                    child_node.name, idx
+                    child_node.name,
+                    idx
                 );
                 continue;
             }
@@ -382,7 +377,8 @@ pub fn devtree_probe_composites() -> usize {
             klog_info!(
                 Driver,
                 "Chitin: stripe_size {} < 512, clamped to {}",
-                orig, stripe_size
+                orig,
+                stripe_size
             );
         }
 
@@ -395,11 +391,8 @@ pub fn devtree_probe_composites() -> usize {
         // This is a bounded allocation — one per composite device at init time.
         let name_leaked: &'static str = dev_name.leak();
 
-        let composite = match CompositeBlockDevice::new(
-            composite_type,
-            &child_drives,
-            stripe_size,
-        ) {
+        let composite = match CompositeBlockDevice::new(composite_type, &child_drives, stripe_size)
+        {
             Some(c) => c,
             None => {
                 klog_warn!(

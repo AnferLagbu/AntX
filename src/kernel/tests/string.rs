@@ -1,10 +1,9 @@
-use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use crate::kernel::lib::string::{
-    strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr,
-    memcpy, memmove, memset, memchr, secure_zero,
-    safe_memcpy, safe_memset, safe_memcmp,
+    memchr, memcpy, memmove, memset, safe_memcmp, safe_memcpy, safe_memset, secure_zero, strcat,
+    strchr, strcmp, strcpy, strlen, strncmp, strncpy, strrchr, strstr,
 };
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::register_tests_inner;
 
 fn strlen_basic() -> TestResult {
     unsafe {
@@ -26,8 +25,15 @@ fn strcmp_operations() -> TestResult {
 
 fn strncmp_limit() -> TestResult {
     unsafe {
-        assert_eq_test!(strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 3), 0, "first 3 equal");
-        check!(strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 4) < 0, "first 4 differ");
+        assert_eq_test!(
+            strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 3),
+            0,
+            "first 3 equal"
+        );
+        check!(
+            strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 4) < 0,
+            "first 4 differ"
+        );
     }
     TestResult::Pass
 }
@@ -85,11 +91,23 @@ fn memcpy_and_memmove() -> TestResult {
     unsafe {
         let mut dest = [0u8; 10];
         let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        memcpy(dest.as_mut_ptr() as *mut core::ffi::c_void, src.as_ptr() as *const core::ffi::c_void, 10);
+        memcpy(
+            dest.as_mut_ptr() as *mut core::ffi::c_void,
+            src.as_ptr() as *const core::ffi::c_void,
+            10,
+        );
         assert_eq_test!(dest, src, "memcpy result");
         let mut overlap = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        memmove(overlap.as_mut_ptr() as *mut core::ffi::c_void, overlap.as_ptr().add(2) as *const core::ffi::c_void, 8);
-        assert_eq_test!(overlap, [3u8, 4, 5, 6, 7, 8, 9, 10, 9, 10], "memmove overlap");
+        memmove(
+            overlap.as_mut_ptr() as *mut core::ffi::c_void,
+            overlap.as_ptr().add(2) as *const core::ffi::c_void,
+            8,
+        );
+        assert_eq_test!(
+            overlap,
+            [3u8, 4, 5, 6, 7, 8, 9, 10, 9, 10],
+            "memmove overlap"
+        );
     }
     TestResult::Pass
 }
@@ -100,8 +118,12 @@ fn memset_operations() -> TestResult {
         memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0x00, 20);
         assert_eq_test!(buffer, [0u8; 20], "memset zero");
         memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0xFF, 10);
-        for i in 0..10 { assert_eq_test!(buffer[i], 0xFF, "memset FF"); }
-        for i in 10..20 { assert_eq_test!(buffer[i], 0x00, "memset untouched"); }
+        for i in 0..10 {
+            assert_eq_test!(buffer[i], 0xFF, "memset FF");
+        }
+        for i in 10..20 {
+            assert_eq_test!(buffer[i], 0x00, "memset untouched");
+        }
     }
     TestResult::Pass
 }
@@ -112,7 +134,10 @@ fn memcmp_basic() -> TestResult {
         let b = [1u8, 2, 3, 4, 5];
         let c = [1u8, 2, 3, 4, 6];
         assert_eq_test!(safe_memcmp(&a, &b), core::cmp::Ordering::Equal, "equal");
-        check!(safe_memcmp(&a, &c) == core::cmp::Ordering::Less, "less than");
+        check!(
+            safe_memcmp(&a, &c) == core::cmp::Ordering::Less,
+            "less than"
+        );
     }
     TestResult::Pass
 }
@@ -149,14 +174,22 @@ fn safe_interfaces() -> TestResult {
     assert_eq_test!(&dest[..5], &src[..], "safe_memcpy data");
     safe_memset(&mut dest, 0xFF, None);
     assert_eq_test!(dest, [0xFF; 10], "safe_memset");
-    assert_eq_test!(safe_memcmp(&[1, 2, 3], &[1, 2, 3]), core::cmp::Ordering::Equal, "safe_memcmp equal");
-    assert_eq_test!(safe_memcmp(&[1, 2, 3], &[1, 2, 4]), core::cmp::Ordering::Less, "safe_memcmp less");
+    assert_eq_test!(
+        safe_memcmp(&[1, 2, 3], &[1, 2, 3]),
+        core::cmp::Ordering::Equal,
+        "safe_memcmp equal"
+    );
+    assert_eq_test!(
+        safe_memcmp(&[1, 2, 3], &[1, 2, 4]),
+        core::cmp::Ordering::Less,
+        "safe_memcmp less"
+    );
     TestResult::Pass
 }
 
 pub fn register_string_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "lib::string": {
             "strlen": strlen_basic,
             "strcmp": strcmp_operations,

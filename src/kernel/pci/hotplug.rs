@@ -3,8 +3,8 @@
 //! 基于 PCI Express 规范的 Slot Capability / Slot Status 寄存器
 //! 检测设备插入/移除事件，不依赖操作系统特定的 ACPI SHPC。
 
+use super::{read_config_byte, read_config_dword, read_config_word};
 use alloc::vec::Vec;
-use super::{read_config_byte, read_config_word, read_config_dword};
 
 // ── PCI Capability IDs ──
 
@@ -92,7 +92,9 @@ impl PcieHotplugSlot {
     /// 查询指定 PCI 设备的 PCI Express Capability 偏移。
     pub fn find_pcie_cap(bus: u8, dev: u8, func: u8) -> Option<u8> {
         let cap_ptr = read_config_byte(bus, dev, func, 0x34);
-        if cap_ptr == 0 { return None; }
+        if cap_ptr == 0 {
+            return None;
+        }
 
         let mut ptr = cap_ptr;
         for _ in 0..48 {
@@ -101,7 +103,9 @@ impl PcieHotplugSlot {
                 return Some(ptr);
             }
             let next = read_config_byte(bus, dev, func, ptr + 1);
-            if next == 0 || next < 0x40 { break; }
+            if next == 0 || next < 0x40 {
+                break;
+            }
             ptr = next;
         }
         None
@@ -114,7 +118,9 @@ impl PcieHotplugSlot {
 
         let cap_reg = read_config_word(bus, dev, func, cap_off + PCIE_CAP_REG);
         let port_type = PciePortType::from_cap_reg(cap_reg)?;
-        if !port_type.is_hotplug_capable() { return None; }
+        if !port_type.is_hotplug_capable() {
+            return None;
+        }
 
         let slotcap = read_config_dword(bus, dev, func, cap_off + PCIE_SLOTCAP);
         let slotsts = read_config_word(bus, dev, func, cap_off + PCIE_SLOTSTS);
@@ -122,7 +128,9 @@ impl PcieHotplugSlot {
         let slot_number = ((slotcap & SLOTCAP_SLOT_NUM_MASK) >> SLOTCAP_SLOT_NUM_SHIFT) as u8;
 
         Some(Self {
-            bus, device: dev, function: func,
+            bus,
+            device: dev,
+            function: func,
             slot_number,
             port_type,
             attn_button: slotcap & SLOTCAP_ATTN_BTN != 0,
@@ -143,7 +151,8 @@ impl PcieHotplugSlot {
             None => return 0,
         };
 
-        let slotsts = read_config_word(self.bus, self.device, self.function, cap_off + PCIE_SLOTSTS);
+        let slotsts =
+            read_config_word(self.bus, self.device, self.function, cap_off + PCIE_SLOTSTS);
 
         let changed = slotsts & !self.pready_events;
         self.pready_events = slotsts & 0x3F;

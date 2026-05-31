@@ -56,14 +56,18 @@ pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
 /// # Returns
 /// * Ok(()) - 成功注册
 /// * Err(i32) - 错误码 (-1: 无效信号)
-pub fn signal_register_safe(sig: u8, _handler: Option<SignalHandlerFn>, _flags: u32) -> Result<(), i32> {
+pub fn signal_register_safe(
+    sig: u8,
+    _handler: Option<SignalHandlerFn>,
+    _flags: u32,
+) -> Result<(), i32> {
     if sig < 1 || sig > IPC_MAX_SIGNALS as u8 {
         return Err(-1);
     }
 
     // TODO: 将处理函数注册到当前进程的 SignalPending 结构中
     // 当前简化实现仅验证参数有效性
-    
+
     Ok(())
 }
 

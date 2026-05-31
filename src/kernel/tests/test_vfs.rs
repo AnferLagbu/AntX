@@ -1,8 +1,8 @@
-use crate::register_tests_inner;
-use crate::kernel::fs::vfs::vfs::VfsManager;
-use crate::kernel::fs::vfs::types::*;
-use crate::kernel::tests::{runner, TestResult};
 use super::check;
+use crate::kernel::fs::vfs::types::*;
+use crate::kernel::fs::vfs::vfs::VfsManager;
+use crate::kernel::tests::{runner, TestResult};
+use crate::register_tests_inner;
 
 fn test_fstype_from_name() -> TestResult {
     let ramfs = FsType::from_name("ramfs");
@@ -19,26 +19,56 @@ fn test_fstype_from_name() -> TestResult {
 fn test_fstype_as_str() -> TestResult {
     check!(FsType::RamFs.as_str() == "ramfs", "RamFs as_str mismatch");
     check!(FsType::HvFs.as_str() == "hvfs", "HvFs as_str mismatch");
-    check!(FsType::Unknown.as_str() == "unknown", "Unknown as_str mismatch");
+    check!(
+        FsType::Unknown.as_str() == "unknown",
+        "Unknown as_str mismatch"
+    );
     TestResult::Pass
 }
 
 fn test_vfs_file_type() -> TestResult {
-    check!(VfsFileType::from_u8(0) == VfsFileType::File, "0 should be File");
-    check!(VfsFileType::from_u8(1) == VfsFileType::Dir, "1 should be Dir");
-    check!(VfsFileType::from_u8(2) == VfsFileType::Dev, "2 should be Dev");
-    check!(VfsFileType::from_u8(3) == VfsFileType::Symlink, "3 should be Symlink");
-    check!(VfsFileType::from_u8(99) == VfsFileType::File, "invalid should fallback to File");
+    check!(
+        VfsFileType::from_u8(0) == VfsFileType::File,
+        "0 should be File"
+    );
+    check!(
+        VfsFileType::from_u8(1) == VfsFileType::Dir,
+        "1 should be Dir"
+    );
+    check!(
+        VfsFileType::from_u8(2) == VfsFileType::Dev,
+        "2 should be Dev"
+    );
+    check!(
+        VfsFileType::from_u8(3) == VfsFileType::Symlink,
+        "3 should be Symlink"
+    );
+    check!(
+        VfsFileType::from_u8(99) == VfsFileType::File,
+        "invalid should fallback to File"
+    );
 
     check!(VfsFileType::Dir.as_u8() == 1, "Dir as_u8 should be 1");
     TestResult::Pass
 }
 
 fn test_vfs_seek_whence() -> TestResult {
-    check!(VfsSeekWhence::from_u32(0) == VfsSeekWhence::Set, "0 should be Set");
-    check!(VfsSeekWhence::from_u32(1) == VfsSeekWhence::Cur, "1 should be Cur");
-    check!(VfsSeekWhence::from_u32(2) == VfsSeekWhence::End, "2 should be End");
-    check!(VfsSeekWhence::from_u32(99) == VfsSeekWhence::Set, "invalid should fallback to Set");
+    check!(
+        VfsSeekWhence::from_u32(0) == VfsSeekWhence::Set,
+        "0 should be Set"
+    );
+    check!(
+        VfsSeekWhence::from_u32(1) == VfsSeekWhence::Cur,
+        "1 should be Cur"
+    );
+    check!(
+        VfsSeekWhence::from_u32(2) == VfsSeekWhence::End,
+        "2 should be End"
+    );
+    check!(
+        VfsSeekWhence::from_u32(99) == VfsSeekWhence::Set,
+        "invalid should fallback to Set"
+    );
     TestResult::Pass
 }
 
@@ -118,17 +148,23 @@ fn test_vfs_snapshot_restore() -> TestResult {
     mgr.capture_snapshot();
 
     let _ = mgr.unmount("/");
-    check!(mgr.find_mount("/").is_none(), "mount should be gone after unmount");
+    check!(
+        mgr.find_mount("/").is_none(),
+        "mount should be gone after unmount"
+    );
 
     mgr.restore_from_snapshot();
     let found = mgr.find_mount("/");
-    check!(found.is_some(), "mount should be restored after snapshot restore");
+    check!(
+        found.is_some(),
+        "mount should be restored after snapshot restore"
+    );
     TestResult::Pass
 }
 
 pub fn register_vfs_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "vfs::types": {
             "fstype_from_name": test_fstype_from_name,
             "fstype_as_str": test_fstype_as_str,

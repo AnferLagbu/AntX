@@ -1,10 +1,10 @@
-use crate::register_tests_inner;
+use super::check;
+use crate::kernel::credo::capability;
+use crate::kernel::credo::engine;
 use crate::kernel::credo::sha256;
 use crate::kernel::credo::types::*;
-use crate::kernel::credo::engine;
-use crate::kernel::credo::capability;
 use crate::kernel::tests::{runner, TestResult};
-use super::check;
+use crate::register_tests_inner;
 
 fn test_sha256_vectors() -> TestResult {
     let hash = sha256::sha256(b"");
@@ -78,28 +78,62 @@ fn test_pwmentry_caps() -> TestResult {
     let fs_caps = entry.load_caps(CapDomain::FS);
     check!(fs_caps == CapBits::NONE, "new entry fs caps should be NONE");
 
-    entry.fetch_or_caps(CapDomain::FS, CapBits(capability::FS_CAP_READ | capability::FS_CAP_WRITE));
+    entry.fetch_or_caps(
+        CapDomain::FS,
+        CapBits(capability::FS_CAP_READ | capability::FS_CAP_WRITE),
+    );
     let after = entry.load_caps(CapDomain::FS);
-    check!(after.contains(CapBits(capability::FS_CAP_READ)), "should have FS_READ");
-    check!(after.contains(CapBits(capability::FS_CAP_WRITE)), "should have FS_WRITE");
-    check!(!after.contains(CapBits(capability::FS_CAP_EXECUTE)), "should not have FS_EXEC");
+    check!(
+        after.contains(CapBits(capability::FS_CAP_READ)),
+        "should have FS_READ"
+    );
+    check!(
+        after.contains(CapBits(capability::FS_CAP_WRITE)),
+        "should have FS_WRITE"
+    );
+    check!(
+        !after.contains(CapBits(capability::FS_CAP_EXECUTE)),
+        "should not have FS_EXEC"
+    );
 
-    check!(entry.has_capability(CapDomain::FS, CapBits(capability::FS_CAP_READ)), "has_capability should be true");
-    check!(!entry.has_capability(CapDomain::FS, CapBits(capability::FS_CAP_DELETE)), "has_capability DELETE should be false");
+    check!(
+        entry.has_capability(CapDomain::FS, CapBits(capability::FS_CAP_READ)),
+        "has_capability should be true"
+    );
+    check!(
+        !entry.has_capability(CapDomain::FS, CapBits(capability::FS_CAP_DELETE)),
+        "has_capability DELETE should be false"
+    );
     TestResult::Pass
 }
 
 fn test_pwmentry_flags() -> TestResult {
     let entry = PwmEntry::new();
-    check!(!entry.has_flag(PwmFlags::DISABLED), "new entry should not be disabled");
+    check!(
+        !entry.has_flag(PwmFlags::DISABLED),
+        "new entry should not be disabled"
+    );
 
     entry.add_flags(PwmFlags::DISABLED);
-    check!(entry.has_flag(PwmFlags::DISABLED), "should be disabled after add");
+    check!(
+        entry.has_flag(PwmFlags::DISABLED),
+        "should be disabled after add"
+    );
 
-    check!(!engine::check(entry.pwm.load(core::sync::atomic::Ordering::Acquire), CapDomain::FS, CapBits::ALL), "disabled entry should fail check");
+    check!(
+        !engine::check(
+            entry.pwm.load(core::sync::atomic::Ordering::Acquire),
+            CapDomain::FS,
+            CapBits::ALL
+        ),
+        "disabled entry should fail check"
+    );
 
     entry.remove_flags(PwmFlags::DISABLED);
-    check!(!entry.has_flag(PwmFlags::DISABLED), "should not be disabled after remove");
+    check!(
+        !entry.has_flag(PwmFlags::DISABLED),
+        "should not be disabled after remove"
+    );
     TestResult::Pass
 }
 
@@ -115,7 +149,10 @@ fn test_grant_record() -> TestResult {
 
     let empty = GrantRecord::EMPTY;
     check!(empty.is_empty(), "EMPTY record should be empty");
-    check!(empty.grantor_pwm == PwmId::ZERO, "EMPTY grantor should be ZERO");
+    check!(
+        empty.grantor_pwm == PwmId::ZERO,
+        "EMPTY grantor should be ZERO"
+    );
     TestResult::Pass
 }
 
@@ -143,9 +180,18 @@ fn test_pwmentry_note() -> TestResult {
 }
 
 fn test_viable_floor() -> TestResult {
-    check!(capability::VIABLE_FLOOR[CapDomain::FS.as_usize()] != 0, "FS viable floor should be non-zero");
-    check!(capability::VIABLE_FLOOR[CapDomain::PROC.as_usize()] != 0, "PROC viable floor should be non-zero");
-    check!(capability::VIABLE_FLOOR[CapDomain::SYSTEM.as_usize()] == 0, "SYSTEM viable floor should be zero");
+    check!(
+        capability::VIABLE_FLOOR[CapDomain::FS.as_usize()] != 0,
+        "FS viable floor should be non-zero"
+    );
+    check!(
+        capability::VIABLE_FLOOR[CapDomain::PROC.as_usize()] != 0,
+        "PROC viable floor should be non-zero"
+    );
+    check!(
+        capability::VIABLE_FLOOR[CapDomain::SYSTEM.as_usize()] == 0,
+        "SYSTEM viable floor should be zero"
+    );
     TestResult::Pass
 }
 
@@ -163,7 +209,7 @@ fn test_pwmentry_cow_bp() -> TestResult {
 
 pub fn register_pwm_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "pwm::sha256": {
             "known_vectors": test_sha256_vectors,
         },

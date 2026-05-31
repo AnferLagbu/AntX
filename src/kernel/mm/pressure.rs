@@ -94,10 +94,15 @@ pub fn update_pressure(free_pages: u64, total_pages: u64) -> MemoryPressure {
     let prev_pressure = MemoryPressure::from_u8(prev);
 
     if prev_pressure != new_pressure {
-        crate::klog_ffi!(klog_ffi_warn,
+        crate::klog_ffi!(
+            klog_ffi_warn,
             "[PRESSURE] {} → {} (free={}, total={}, {}%)",
-            prev_pressure.description(), new_pressure.description(),
-            free_pages, total_pages, ratio);
+            prev_pressure.description(),
+            new_pressure.description(),
+            free_pages,
+            total_pages,
+            ratio
+        );
     }
 
     new_pressure

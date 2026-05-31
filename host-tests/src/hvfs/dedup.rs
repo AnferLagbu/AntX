@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-use std::vec::Vec;
-use std::sync::Mutex;
-use core::sync::atomic::{AtomicU64, Ordering};
 use crate::kernel::fs::hvfs::bp::HvBlockPointer;
-use crate::kernel::fs::hvfs::checksum::HvChecksum;
 use crate::kernel::fs::hvfs::bp::HvCksumType;
+use crate::kernel::fs::hvfs::checksum::HvChecksum;
+use core::sync::atomic::{AtomicU64, Ordering};
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+use std::vec::Vec;
 
 pub const CAS_HASH_SIZE: usize = 32;
 pub type CasHash = [u8; CAS_HASH_SIZE];
@@ -109,7 +109,9 @@ pub fn get_cas() -> &'static CasIndex {
     CAS_INDEX.get_or_init(CasIndex::new)
 }
 
-pub fn cas_init() { get_cas(); }
+pub fn cas_init() {
+    get_cas();
+}
 
 pub fn sha256(data: &[u8]) -> CasHash {
     let ck = HvChecksum::compute(HvCksumType::SHA256, data);

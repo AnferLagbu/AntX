@@ -14,14 +14,14 @@
 //! └── mod.rs       # 模块导出 + FFI 接口层
 //! ```
 
-pub mod types;
-pub mod spinlock;
-pub mod mutex;
-pub mod rwlock;
-pub mod atomic;
-pub mod seqlock;
-pub mod rcu;
 pub mod arch;
+pub mod atomic;
+pub mod mutex;
+pub mod rcu;
+pub mod rwlock;
+pub mod seqlock;
+pub mod spinlock;
+pub mod types;
 
 use core::sync::atomic::Ordering;
 
@@ -31,7 +31,7 @@ use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts};
 use crate::kernel::sync::types::IrqSaveFlags;
 
 /// 重新导出类型
-pub use types::{SpinLockInner, MutexInner, RwLockInner, SpinLockGuard};
+pub use types::{MutexInner, RwLockInner, SpinLockGuard, SpinLockInner};
 
 // ============================================================================
 // FFI 接口层 (C ↔ Rust 桥接)
@@ -41,7 +41,9 @@ pub use types::{SpinLockInner, MutexInner, RwLockInner, SpinLockGuard};
 #[no_mangle]
 pub extern "C" fn spin_init(lock: *mut SpinLockInner) {
     if !lock.is_null() {
-        unsafe { (*lock).locked.store(0, Ordering::Relaxed); }
+        unsafe {
+            (*lock).locked.store(0, Ordering::Relaxed);
+        }
     }
 }
 
@@ -50,32 +52,29 @@ pub extern "C" fn spin_init(lock: *mut SpinLockInner) {
 pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
     if !lock.is_null() {
         // Fast path: 尝试立即获取
-        let acquired = unsafe { 
-            (*lock).locked.compare_exchange(
-                0, 1,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ).is_ok() 
+        let acquired = unsafe {
+            (*lock)
+                .locked
+                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
         };
-        
+
         if acquired {
             return;
         }
-        
+
         // Slow path: 自旋等待
         loop {
             let result = unsafe {
-                (*lock).locked.compare_exchange(
-                    0, 1,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
+                (*lock)
+                    .locked
+                    .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
             };
-            
+
             if result.is_ok() {
                 break;
             }
-            
+
             core::hint::spin_loop();
         }
     }
@@ -86,7 +85,9 @@ pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
 pub extern "C" fn spin_unlock(lock: *const SpinLockInner) {
     if !lock.is_null() {
         core::sync::atomic::fence(Ordering::SeqCst);
-        unsafe { (*lock).locked.store(0, Ordering::Release); }
+        unsafe {
+            (*lock).locked.store(0, Ordering::Release);
+        }
     }
 }
 
@@ -96,15 +97,13 @@ pub extern "C" fn spin_trylock(lock: *const SpinLockInner) -> i32 {
     if lock.is_null() {
         return 0; // 失败
     }
-    
-    match unsafe { 
-        (*lock).locked.compare_exchange(
-            0, 1,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ) 
+
+    match unsafe {
+        (*lock)
+            .locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
     } {
-        Ok(_) => 1, // 成功
+        Ok(_) => 1,  // 成功
         Err(_) => 0, // 已被锁定
     }
 }
@@ -115,7 +114,7 @@ pub extern "C" fn spin_is_locked(lock: *const SpinLockInner) -> i32 {
     if lock.is_null() {
         return 0;
     }
-    
+
     unsafe { (*lock).locked.load(Ordering::Acquire) as i32 }
 }
 
@@ -128,7 +127,7 @@ pub extern "C" fn mutex_init(m: *mut MutexInner) {
             (*m).owner.store(-1i32, Ordering::Relaxed); // -1 表示无主
             (*m).depth.store(0, Ordering::Relaxed);
             (*m).acquire_time.store(0, Ordering::Relaxed);
-            
+
             // 初始化内部自旋锁
             spin_init(&mut (*m).inner_spinlock);
         }
@@ -141,13 +140,13 @@ pub extern "C" fn mutex_lock(m: *const MutexInner) {
     if m.is_null() {
         return;
     }
-    
+
     // Fast path: 尝试立即获取
     {
         unsafe { spin_lock_raw(&(*m).inner_spinlock) };
-        
+
         let is_locked = unsafe { (*m).locked.load(Ordering::Acquire) != 0 };
-        
+
         if !is_locked {
             // 成功获取
             unsafe {
@@ -159,16 +158,16 @@ pub extern "C" fn mutex_lock(m: *const MutexInner) {
             unsafe { spin_unlock(&(*m).inner_spinlock) };
             return;
         }
-        
+
         unsafe { spin_unlock(&(*m).inner_spinlock) };
     }
-    
+
     // Slow path: 自旋 + yield (简化版)
     loop {
         unsafe { spin_lock_raw(&(*m).inner_spinlock) };
-        
+
         let is_locked = unsafe { (*m).locked.load(Ordering::Acquire) != 0 };
-        
+
         if !is_locked {
             unsafe {
                 (*m).locked.store(1, Ordering::Release);
@@ -179,9 +178,9 @@ pub extern "C" fn mutex_lock(m: *const MutexInner) {
             unsafe { spin_unlock(&(*m).inner_spinlock) };
             return;
         }
-        
+
         unsafe { spin_unlock(&(*m).inner_spinlock) };
-        
+
         // 让出 CPU (unsafe 调用)
         unsafe { scheduler_yield() };
     }
@@ -193,11 +192,11 @@ pub extern "C" fn mutex_unlock(m: *const MutexInner) {
     if m.is_null() {
         return;
     }
-    
+
     unsafe { spin_lock_raw(&(*m).inner_spinlock) };
-    
+
     let depth = unsafe { (*m).depth.load(Ordering::Acquire) };
-    
+
     if depth > 1 {
         // 嵌套锁，减少深度
         unsafe { (*m).depth.store(depth - 1, Ordering::Release) };
@@ -210,7 +209,7 @@ pub extern "C" fn mutex_unlock(m: *const MutexInner) {
             (*m).acquire_time.store(0, Ordering::Release);
         }
     }
-    
+
     unsafe { spin_unlock(&(*m).inner_spinlock) };
 }
 
@@ -220,9 +219,9 @@ pub extern "C" fn mutex_trylock(m: *const MutexInner) -> i32 {
     if m.is_null() {
         return 0;
     }
-    
+
     unsafe { spin_lock_raw(&(*m).inner_spinlock) };
-    
+
     let result = if unsafe { (*m).locked.load(Ordering::Acquire) == 0 } {
         unsafe {
             (*m).locked.store(1, Ordering::Release);
@@ -234,9 +233,9 @@ pub extern "C" fn mutex_trylock(m: *const MutexInner) -> i32 {
     } else {
         0 // 已被锁定
     };
-    
+
     unsafe { spin_unlock(&(*m).inner_spinlock) };
-    
+
     result
 }
 
@@ -246,7 +245,7 @@ pub extern "C" fn mutex_is_locked(m: *const MutexInner) -> i32 {
     if m.is_null() {
         return 0;
     }
-    
+
     unsafe { (*m).locked.load(Ordering::Acquire) as i32 }
 }
 
@@ -269,29 +268,30 @@ pub extern "C" fn read_lock(rw: *const RwLockInner) {
     if rw.is_null() {
         return;
     }
-    
+
     loop {
         unsafe { spin_lock_raw(&(*rw).lock) };
-        
+
         // 检查是否有写者或等待中的写者
         let has_writer = unsafe { (*rw).writer.load(Ordering::Relaxed) != 0 };
         let pending_writers = unsafe { (*rw).pending_writers.load(Ordering::Relaxed) > 0 };
-        
+
         if !has_writer && !pending_writers {
             // 可以读取: 增加读者计数
             let readers = unsafe { (*rw).readers.fetch_add(1, Ordering::AcqRel) };
             unsafe { spin_unlock(&(*rw).lock) };
-            
-            if readers == 0xFFFF { // 溢出保护
+
+            if readers == 0xFFFF {
+                // 溢出保护
                 unsafe { (*rw).readers.fetch_sub(1, Ordering::AcqRel) };
                 continue;
             }
-            
+
             return;
         }
-        
+
         unsafe { spin_unlock(&(*rw).lock) };
-        
+
         // 让出 CPU
         unsafe { scheduler_yield() };
     }
@@ -311,21 +311,21 @@ pub extern "C" fn write_lock(rw: *const RwLockInner) {
     if rw.is_null() {
         return;
     }
-    
+
     // 先标记自己为等待中的写者
     unsafe {
         spin_lock_raw(&(*rw).lock);
         (*rw).pending_writers.fetch_add(1, Ordering::Release);
         spin_unlock(&(*rw).lock);
     };
-    
+
     loop {
         unsafe { spin_lock_raw(&(*rw).lock) };
-        
+
         // 检查是否可以获取写锁
         let readers = unsafe { (*rw).readers.load(Ordering::Relaxed) };
         let writer = unsafe { (*rw).writer.load(Ordering::Relaxed) };
-        
+
         if readers == 0 && writer == 0 {
             // 可以写入: 设置写者标志
             unsafe {
@@ -335,9 +335,9 @@ pub extern "C" fn write_lock(rw: *const RwLockInner) {
             unsafe { spin_unlock(&(*rw).lock) };
             return;
         }
-        
+
         unsafe { spin_unlock(&(*rw).lock) };
-        
+
         // 让出 CPU
         unsafe { scheduler_yield() };
     }
@@ -394,18 +394,18 @@ pub extern "C" fn read_trylock(rw: *const RwLockInner) -> i32 {
     if rw.is_null() {
         return 0; // 失败
     }
-    
+
     unsafe { spin_lock_raw(&(*rw).lock) };
-    
+
     let has_writer = unsafe { (*rw).writer.load(Ordering::Relaxed) != 0 };
     let pending_writers = unsafe { (*rw).pending_writers.load(Ordering::Relaxed) > 0 };
-    
+
     if !has_writer && !pending_writers {
         unsafe { (*rw).readers.fetch_add(1, Ordering::AcqRel) };
         unsafe { spin_unlock(&(*rw).lock) };
         return 1; // 成功
     }
-    
+
     unsafe { spin_unlock(&(*rw).lock) };
     0 // 失败
 }
@@ -446,19 +446,19 @@ pub extern "C" fn write_trylock(rw: *const RwLockInner) -> i32 {
     if rw.is_null() {
         return 0; // 失败
     }
-    
+
     unsafe { spin_lock_raw(&(*rw).lock) };
-    
+
     let readers = unsafe { (*rw).readers.load(Ordering::Relaxed) };
     let writer = unsafe { (*rw).writer.load(Ordering::Relaxed) };
-    
+
     if readers == 0 && writer == 0 {
         unsafe { (*rw).pending_writers.fetch_sub(1, Ordering::Release) };
         unsafe { (*rw).writer.store(1, Ordering::Release) };
         unsafe { spin_unlock(&(*rw).lock) };
         return 1; // 成功
     }
-    
+
     unsafe { spin_unlock(&(*rw).lock) };
     0 // 失败
 }
@@ -473,8 +473,8 @@ pub extern "C" fn mutex_owner(m: *const MutexInner) -> i32 {
     if m.is_null() {
         return -1;
     }
-    
-    unsafe { (*m).owner.load(Ordering::Acquire)}
+
+    unsafe { (*m).owner.load(Ordering::Acquire) }
 }
 
 /// 带超时的互斥锁获取 (简化版，暂不支持超时)
@@ -483,7 +483,7 @@ pub extern "C" fn mutex_lock_timeout(m: *const MutexInner, _timeout_ms: u64) -> 
     if m.is_null() {
         return -1;
     }
-    
+
     mutex_lock(m);
     0 // 成功
 }

@@ -69,9 +69,13 @@ impl RecoveryDomain {
             undo: spin::Mutex::new(UndoLog::new()),
             capture_cb: spin::Mutex::new(None),
             rollback_cb: spin::Mutex::new(None),
-            barrier_stack: spin::Mutex::new([BarrierSnapshot {
-                generation: 0, tick: 0, undo_offset: 0,
-            }; MAX_BARRIER_SNAPSHOTS]),
+            barrier_stack: spin::Mutex::new(
+                [BarrierSnapshot {
+                    generation: 0,
+                    tick: 0,
+                    undo_offset: 0,
+                }; MAX_BARRIER_SNAPSHOTS],
+            ),
             barrier_stack_top: AtomicU32::new(0),
             addr_ranges: spin::Mutex::new([(0, 0); MAX_ADDR_RANGES]),
             addr_range_count: AtomicU32::new(0),
@@ -99,20 +103,27 @@ impl RecoveryDomain {
             return false;
         }
 
-        let prev_fp = self.last_crash_fingerprint.swap(crash_fingerprint, Ordering::SeqCst);
+        let prev_fp = self
+            .last_crash_fingerprint
+            .swap(crash_fingerprint, Ordering::SeqCst);
         if crash_fingerprint != 0 && prev_fp == crash_fingerprint {
-            self.consecutive_failures.store(MAX_CONSECUTIVE_FAILURES, Ordering::SeqCst);
+            self.consecutive_failures
+                .store(MAX_CONSECUTIVE_FAILURES, Ordering::SeqCst);
             self.set_state(DomainState::Quarantined, Ordering::SeqCst);
             return false;
         }
 
         let backoff = (1u64 << failures.min(8)) * BACKOFF_BASE_TICKS;
         let bu = self.backoff_until.load(Ordering::SeqCst);
-        if current_tick < bu { return false; }
-        self.backoff_until.store(current_tick + backoff, Ordering::SeqCst);
+        if current_tick < bu {
+            return false;
+        }
+        self.backoff_until
+            .store(current_tick + backoff, Ordering::SeqCst);
         self.consecutive_failures.fetch_add(1, Ordering::SeqCst);
         self.rollback_count.fetch_add(1, Ordering::SeqCst);
-        self.last_rollback_time.store(current_tick, Ordering::SeqCst);
+        self.last_rollback_time
+            .store(current_tick, Ordering::SeqCst);
 
         self.apply_degradation();
 
@@ -153,7 +164,9 @@ impl RecoveryDomain {
             let mut deps = self.depends_on.lock();
             for slot in deps.iter() {
                 if let Some(existing) = *slot {
-                    if existing == dependency_id { return true; }
+                    if existing == dependency_id {
+                        return true;
+                    }
                 }
             }
             for slot in deps.iter_mut() {
@@ -170,7 +183,9 @@ impl RecoveryDomain {
         let mut deps = self.depended_by.lock();
         for slot in deps.iter() {
             if let Some(existing) = *slot {
-                if existing == dependent_id { return true; }
+                if existing == dependent_id {
+                    return true;
+                }
             }
         }
         for slot in deps.iter_mut() {
@@ -183,7 +198,11 @@ impl RecoveryDomain {
     }
 
     pub fn dependency_count(&self) -> usize {
-        self.depends_on.lock().iter().filter(|s| s.is_some()).count()
+        self.depends_on
+            .lock()
+            .iter()
+            .filter(|s| s.is_some())
+            .count()
     }
 
     pub fn depends_on_id(&self, dep_id: u64) -> bool {
@@ -191,7 +210,9 @@ impl RecoveryDomain {
     }
 
     pub fn consume_quota_tick(&self) -> bool {
-        if self.cpu_quota_max == 0 { return false; }
+        if self.cpu_quota_max == 0 {
+            return false;
+        }
         let c = self.cpu_quota_consumed.fetch_add(1, Ordering::SeqCst) + 1;
         c >= self.cpu_quota_max
     }
@@ -207,13 +228,16 @@ impl RecoveryDomain {
             tick,
             undo_offset: undo_count,
         };
-        self.barrier_stack_top.store(top as u32 + 1, Ordering::SeqCst);
+        self.barrier_stack_top
+            .store(top as u32 + 1, Ordering::SeqCst);
     }
 
     pub fn get_rollback_generation(&self, levels_back: u32) -> u64 {
         let stack = self.barrier_stack.lock();
         let top = self.barrier_stack_top.load(Ordering::SeqCst) as usize;
-        if top == 0 { return 0; }
+        if top == 0 {
+            return 0;
+        }
         let target = top.saturating_sub(levels_back as usize);
         let idx = target.saturating_sub(1) % MAX_BARRIER_SNAPSHOTS;
         stack[idx].generation
@@ -221,10 +245,13 @@ impl RecoveryDomain {
 
     pub fn add_addr_range(&self, start: u64, end: u64) -> bool {
         let count = self.addr_range_count.load(Ordering::SeqCst) as usize;
-        if count >= MAX_ADDR_RANGES { return false; }
+        if count >= MAX_ADDR_RANGES {
+            return false;
+        }
         let mut ranges = self.addr_ranges.lock();
         ranges[count] = (start, end);
-        self.addr_range_count.store(count as u32 + 1, Ordering::SeqCst);
+        self.addr_range_count
+            .store(count as u32 + 1, Ordering::SeqCst);
         true
     }
 
@@ -277,12 +304,16 @@ impl RecoveryDomain {
     }
 
     pub fn check_proc_limit(&self) -> bool {
-        if self.proc_limit_max == 0 { return true; }
+        if self.proc_limit_max == 0 {
+            return true;
+        }
         self.proc_limit_current.load(Ordering::SeqCst) < self.proc_limit_max
     }
 
     pub fn persist_crash_fingerprint(&self, fp: u64) {
-        if fp == 0 { return; }
+        if fp == 0 {
+            return;
+        }
         self.last_crash_fingerprint.store(fp, Ordering::SeqCst);
     }
 

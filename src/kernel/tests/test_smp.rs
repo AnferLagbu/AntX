@@ -1,5 +1,5 @@
+use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
-use crate::kernel::tests::{TestResult, runner, check, assert_eq_test};
 use core::sync::atomic::Ordering;
 
 // ============================================================
@@ -33,7 +33,10 @@ fn test_smp_cpu_online() -> TestResult {
 
 fn test_per_cpu_sched_init() -> TestResult {
     use crate::kernel::proc::scheduler::SCHEDULER_READY;
-    check!(SCHEDULER_READY.load(Ordering::Acquire), "scheduler initialized");
+    check!(
+        SCHEDULER_READY.load(Ordering::Acquire),
+        "scheduler initialized"
+    );
     TestResult::Pass
 }
 
@@ -75,7 +78,11 @@ fn test_sched_policy_from_u32() -> TestResult {
     assert_eq_test!(SchedPolicy::from_u32(1), SchedPolicy::Fifo, "1 → Fifo");
     assert_eq_test!(SchedPolicy::from_u32(2), SchedPolicy::Rr, "2 → Rr");
     assert_eq_test!(SchedPolicy::from_u32(3), SchedPolicy::Idle, "3 → Idle");
-    assert_eq_test!(SchedPolicy::from_u32(255), SchedPolicy::Normal, "255 → Normal fallback");
+    assert_eq_test!(
+        SchedPolicy::from_u32(255),
+        SchedPolicy::Normal,
+        "255 → Normal fallback"
+    );
     TestResult::Pass
 }
 
@@ -108,8 +115,8 @@ fn test_sched_limit_init() -> TestResult {
 // ============================================================
 
 fn test_rt_policy_switching_self() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
     use crate::kernel::proc::scheduler::SchedPolicy;
+    use crate::kernel::proc::scheduler::SCHEDULER;
 
     let pid = SCHEDULER.current().unwrap_or(0);
     if pid == 0 {
@@ -128,8 +135,8 @@ fn test_rt_policy_switching_self() -> TestResult {
 }
 
 fn test_rt_invalid_pid() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
     use crate::kernel::proc::scheduler::SchedPolicy;
+    use crate::kernel::proc::scheduler::SCHEDULER;
 
     let result = SCHEDULER.set_sched_policy(0xFFFFFFFF, SchedPolicy::Fifo, 50);
     check!(!result, "invalid PID must fail");
@@ -172,11 +179,13 @@ fn test_kernel_pml4_stable() -> TestResult {
 fn test_user_proc_manager_destroy_no_kstack() -> TestResult {
     use crate::kernel::proc::user_proc::USER_PROC_MANAGER;
 
-    let pid = crate::kernel::proc::scheduler::SCHEDULER.current().unwrap_or(0);
+    let pid = crate::kernel::proc::scheduler::SCHEDULER
+        .current()
+        .unwrap_or(0);
     if pid == 0 {
         return TestResult::Skip("no user process to test destroy_no_kstack");
     }
-    if USER_PROC_MANAGER.get(pid ).is_none() {
+    if USER_PROC_MANAGER.get(pid).is_none() {
         return TestResult::Skip("current PID not tracked in USER_PROC_MANAGER");
     }
     TestResult::Pass
@@ -202,7 +211,10 @@ fn test_softirq_from_u8() -> TestResult {
     use crate::kernel::irq::SoftirqVec;
     check!(SoftirqVec::from_u8(0) == Some(SoftirqVec::High), "0→High");
     check!(SoftirqVec::from_u8(1) == Some(SoftirqVec::Timer), "1→Timer");
-    check!(SoftirqVec::from_u8(5) == Some(SoftirqVec::Tasklet), "5→Tasklet");
+    check!(
+        SoftirqVec::from_u8(5) == Some(SoftirqVec::Tasklet),
+        "5→Tasklet"
+    );
     check!(SoftirqVec::from_u8(255).is_none(), "255→None");
     TestResult::Pass
 }
@@ -234,7 +246,7 @@ fn test_softirq_raise_then_check() -> TestResult {
 
 fn test_softirq_mask_raise() -> TestResult {
     let mask: u64 = (1u64 << crate::kernel::irq::SoftirqVec::Timer.to_idx())
-                  | (1u64 << crate::kernel::irq::SoftirqVec::NetRx.to_idx());
+        | (1u64 << crate::kernel::irq::SoftirqVec::NetRx.to_idx());
 
     crate::kernel::irq::raise_softirq_mask(mask);
 
@@ -251,7 +263,7 @@ fn test_softirq_mask_raise() -> TestResult {
 
 pub fn register_smp_tests() {
     let r = runner();
-    register_tests_inner!{ r:
+    register_tests_inner! { r:
         "smp": {
             "cpu_count_positive": test_smp_cpu_count_positive,
             "current_cpu_valid": test_smp_current_cpu_valid,

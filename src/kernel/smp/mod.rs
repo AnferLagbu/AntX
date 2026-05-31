@@ -53,12 +53,16 @@ pub fn register_cpu(apic_id: u32) -> bool {
 }
 
 pub fn is_cpu_online(cpu_index: u32) -> bool {
-    if cpu_index as usize >= MAX_CPUS { return false; }
+    if cpu_index as usize >= MAX_CPUS {
+        return false;
+    }
     CPU_ONLINE[cpu_index as usize].load(Ordering::Acquire)
 }
 
 pub fn get_apic_id(cpu_index: u32) -> u32 {
-    if cpu_index as usize >= MAX_CPUS { return 0xFFFF; }
+    if cpu_index as usize >= MAX_CPUS {
+        return 0xFFFF;
+    }
     CPU_APIC_IDS[cpu_index as usize].load(Ordering::Acquire)
 }
 
@@ -87,18 +91,34 @@ pub fn broadcast_reschedule() {
 }
 
 #[no_mangle]
-pub extern "C" fn smp_init() { init(); }
+pub extern "C" fn smp_init() {
+    init();
+}
 #[no_mangle]
-pub extern "C" fn smp_is_enabled() -> bool { is_enabled() }
+pub extern "C" fn smp_is_enabled() -> bool {
+    is_enabled()
+}
 #[no_mangle]
-pub extern "C" fn smp_get_cpu_count() -> u32 { get_cpu_count() }
+pub extern "C" fn smp_get_cpu_count() -> u32 {
+    get_cpu_count()
+}
 #[no_mangle]
-pub extern "C" fn smp_get_current_cpu() -> u32 { get_current_cpu() }
+pub extern "C" fn smp_get_current_cpu() -> u32 {
+    get_current_cpu()
+}
 #[no_mangle]
-pub extern "C" fn smp_register_cpu(apic_id: u32) -> bool { register_cpu(apic_id) }
+pub extern "C" fn smp_register_cpu(apic_id: u32) -> bool {
+    register_cpu(apic_id)
+}
 #[no_mangle]
-pub extern "C" fn smp_send_tlb_invalidate_ipi(target_apic_id: u8) { send_tlb_invalidate_ipi(target_apic_id); }
+pub extern "C" fn smp_send_tlb_invalidate_ipi(target_apic_id: u8) {
+    send_tlb_invalidate_ipi(target_apic_id);
+}
 #[no_mangle]
-pub extern "C" fn smp_broadcast_tlb_invalidate() { broadcast_tlb_invalidate(); }
+pub extern "C" fn smp_broadcast_tlb_invalidate() {
+    broadcast_tlb_invalidate();
+}
 #[no_mangle]
-pub extern "C" fn smp_send_reschedule_ipi(target_apic_id: u8) { send_reschedule_ipi(target_apic_id); }
+pub extern "C" fn smp_send_reschedule_ipi(target_apic_id: u8) {
+    send_reschedule_ipi(target_apic_id);
+}
