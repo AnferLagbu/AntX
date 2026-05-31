@@ -375,6 +375,9 @@ pub struct NvmeController {
     io_cid: u16,
     io_phase: u16,
 
+    prp_list_virt: VirtAddr,
+    prp_list_phys: PhysAddr,
+
     // Device info
     namespace_count: u32,
     namespace_size_lba: u64,         // 命名空间大小 (LBA)
@@ -401,6 +404,8 @@ impl NvmeController {
             io_cq_head: 0,
             io_cid: 0,
             io_phase: 1,
+            prp_list_virt: VirtAddr(0),
+            prp_list_phys: PhysAddr(0),
             namespace_count: 0,
             namespace_size_lba: 0,
             lba_format_size: SECTOR_SIZE as u16,
@@ -474,6 +479,11 @@ impl NvmeController {
         }
         if self.io_cq_dma.virt.0 != 0 {
             dma.free_coherent(self.io_cq_dma.virt, CQ_SIZE);
+        }
+        if self.prp_list_virt.0 != 0 {
+            dma.free_coherent(self.prp_list_virt, PAGE_SIZE as usize);
+            self.prp_list_virt = VirtAddr(0);
+            self.prp_list_phys = PhysAddr(0);
         }
     }
 
@@ -665,6 +675,16 @@ impl NvmeController {
     pub fn create_io_queue(&mut self) -> Result<()> {
         self.alloc_io_queues()?;
 
+        // 分配 PRP 列表页 (单次命令最大 128 扇区, 所有页表条目可放入一页)
+        let dma = get_dma();
+        match dma.alloc_coherent(PAGE_SIZE as usize) {
+            Some((v, p)) => {
+                self.prp_list_virt = v;
+                self.prp_list_phys = p;
+            }
+            None => return Err(DriverError::HardwareError),
+        }
+
         // 创建 I/O Completion Queue
         let cmd_cq = NvmeCommand::create_cq(IO_QUEUE_ID, self.io_cq_dma.phys.0);
         unsafe { self.submit_admin_command(&cmd_cq)?; }
@@ -724,36 +744,36 @@ impl NvmeController {
         }
     }
 
-    /// 构造 NVMe PRP (Physical Region Page) 地址对
+    /// 构造 NVMe PRP 地址对, 使用 per-controller PRP 列表页
 ///
 /// NVMe 规范要求:
 /// - 传输 ≤ 1 页: PRP1 = 数据物理地址, PRP2 = 0
 /// - 传输 = 2 页: PRP1 = 第1页物理地址, PRP2 = 第2页物理地址
 /// - 传输 > 2 页: PRP1 = 第1页物理地址, PRP2 = PRP 列表页物理地址
 ///
-/// 本实现依赖 dma.alloc_coherent 返回的**物理连续**内存,
-/// 因此 PRP2 可直接用基址 + PAGE_SIZE 计算而无需额外分配 PRP 列表页.
-///
-/// # Constraints
-/// `byte_count` 不得超过 2 个物理页 (8 KB). 更大传输需增加 PRP 列表页
-/// 分配逻辑 (当前 NVMe 单次命令上限 MAX_SECTORS_PER_CMD=128 扇区≈64 KB,
-/// 4K native 情形可达 512 KB, 故在调用方对超出 2 页的请求作扇区拆分).
-unsafe fn build_prp(phys_base: u64, byte_count: usize) -> (u64, u64) {
+/// PRP 列表页在 create_io_queue 时预分配，供所有 I/O 命令复用。
+/// 依赖 dma.alloc_coherent 返回物理连续内存，因此条目地址线性递推即可。
+unsafe fn build_prp(&self, phys_base: u64, byte_count: usize) -> (u64, u64) {
     let bytes = byte_count as u64;
-    if bytes <= PAGE_SIZE {
+    let num_pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    if num_pages <= 1 {
         (phys_base, 0)
-    } else if bytes <= PAGE_SIZE * 2 {
+    } else if num_pages == 2 {
         (phys_base, phys_base + PAGE_SIZE)
     } else {
-        // 物理连续分配 → 中间页地址线性递推, PRP2 固定为第二页
-        // 硬件按 PRP1 → PRP2 顺序扫描连续页, 不超过 2 页时无需列表
-        (phys_base, phys_base + PAGE_SIZE)
+        // 填充 PRP 列表页: 条目 0 = 第2页, 条目 1 = 第3页, ...
+        let list = self.prp_list_virt.0 as *mut u64;
+        for i in 0..(num_pages - 1) as usize {
+            unsafe { list.add(i).write_volatile(phys_base + (i as u64 + 1) * PAGE_SIZE); }
+        }
+        (phys_base, self.prp_list_phys.0)
     }
 }
 
 /// 填充 NVMe 命令的 PRP1/PRP2 字段 (与 build_prp 配套)
-unsafe fn set_prp_in_cmd(cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
-    let (prp1, prp2) = Self::build_prp(phys_base, byte_count);
+unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
+    let (prp1, prp2) = self.build_prp(phys_base, byte_count);
     cmd.mptr = prp1;
     cmd.prp2 = prp2;
 }
@@ -776,7 +796,7 @@ unsafe fn set_prp_in_cmd(cmd: &mut NvmeCommand, phys_base: u64, byte_count: usiz
             / (self.lba_format_size as usize)) as u16;
 
         let mut cmd = NvmeCommand::read(nsid, lba, nlb, buf_phys.0);
-        unsafe { Self::set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
+        unsafe { self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
         let result = unsafe { self.submit_io_command(&cmd) };
 
         if result.is_ok() {
@@ -811,7 +831,7 @@ unsafe fn set_prp_in_cmd(cmd: &mut NvmeCommand, phys_base: u64, byte_count: usiz
             / (self.lba_format_size as usize)) as u16;
 
         let mut cmd = NvmeCommand::write(nsid, lba, nlb, buf_phys.0);
-        unsafe { Self::set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
+        unsafe { self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count); }
         let result = unsafe { self.submit_io_command(&cmd) };
 
         dma.free_coherent(buf_virt, byte_count);
