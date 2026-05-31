@@ -52,14 +52,26 @@ src/
 │   ├── mod.rs                 # 模块入口: pub mod 声明 + 子系统导出
 │   ├── arch/                  # 架构相关
 │   │   ├── x86_64/           # GDT, TSS, APIC, IOAPIC, ACPI, SMP, trampoline
-│   │   └── aarch64/          # MMU, GIC, PSCI, Timer, UART, Exception
+│   │   └── aarch64/          # MMU, GIC, PSCI, Timer, UART, Exception, Barrier
 │   ├── boot/                  # 启动信息
 │   │   ├── boot.asm          # Multiboot1/2 Header, 实→保护→长模式
 │   │   ├── entry.asm         # 64位 entry, GDT 加载
 │   │   ├── isr.asm           # ISR 入口存根
 │   │   ├── stage1.asm        # Stage1 磁盘引导
 │   │   ├── mod.rs            # Multiboot 信息解析 + BootInfo
+│   │   ├── multiboot2_fb.rs  # Multiboot2 帧缓冲信息
 │   │   └── aarch64/          # AArch64 start.S + entry.rs
+│   ├── cpu/                   # CPU 管理
+│   │   ├── cpuid.rs          # CPUID 指令封装
+│   │   ├── msr.rs            # MSR 寄存器操作
+│   │   ├── tsc.rs            # 时间戳计数器
+│   │   ├── cache.rs          # 缓存检测与控制
+│   │   ├── topology.rs       # 多核拓扑发现
+│   │   └── arch.rs           # 架构特性检测
+│   ├── lib/                   # 基础库 (C 兼容层)
+│   │   ├── string.rs         # Rust 字符串操作
+│   │   ├── string.c          # C 字符串函数 (memcpy/memset/strlen)
+│   │   └── types.h           # C 类型定义
 │   ├── mm/                    # 内存管理
 │   │   ├── pmm.rs            # 物理页分配器 (Buddy Allocator)
 │   │   ├── vmm.rs            # 虚拟内存管理 (四级页表)
@@ -134,15 +146,29 @@ src/
 │   │   ├── rcu.rs            # RCU
 │   │   └── atomic.rs         # 原子操作统计
 │   ├── syscall/               # 系统调用接口
-│   │   ├── mod.rs            # syscall 分发
+│   │   ├── mod.rs            # syscall 分发 (POSIX + Credo)
 │   │   └── types.rs          # 系统调用号 + errno 定义
 │   ├── chitin/                # Chitin 设备框架
+│   │   ├── devtree.rs        # 设备树管理
+│   │   ├── composite.rs      # 复合设备
+│   │   ├── proto_block.rs    # 块设备协议
+│   │   ├── proto_char.rs     # 字符设备协议
+│   │   ├── proto_input.rs    # 输入设备协议
+│   │   ├── proto_net.rs      # 网络设备协议
+│   │   └── user_driver.rs    # 用户态驱动支持
 │   ├── idt/                   # 中断描述符表
+│   │   ├── idt.rs            # IDT 初始化与条目管理
+│   │   ├── handlers.rs       # 中断/异常处理函数
+│   │   ├── safety.rs         # 安全相关中断处理
+│   │   ├── statistics.rs     # 中断统计
+│   │   └── types.rs          # 门描述符类型
 │   ├── irq/                   # 中断底部半 (Softirq)
 │   ├── timer/                 # 定时器 (PIT + Tick)
-│   ├── cpu/                   # CPU 管理 (CPUID/MSR/TSC/拓扑)
 │   ├── dma/                   # DMA 引擎
+│   │   ├── engine.rs         # DMA 传输引擎
+│   │   └── ffi.rs            # C FFI 桥接
 │   ├── console/               # 图形控制台
+│   │   └── gfx_console.rs    # 帧缓冲控制台渲染
 │   ├── klog/                  # 内核日志
 │   ├── smp/                   # SMP 多核
 │   ├── wasm/                  # WASM 解释器沙箱
@@ -403,8 +429,8 @@ pub trait Driver: Send + Sync {
 
 ```
 用户程序
-    ↓ int 0x80 (SYSCALL_INT = 0x80)
-syscall_handler()
+    ↓ syscall (优先) / int 0x80 (兼容)
+syscall_handler() / enhanced_syscall_handler()
     ↓ 参数验证
     ├─ 进程系统调用 → proc模块
     ├─ 文件系统调用 → vfs模块
@@ -492,16 +518,21 @@ vfs_read(fd, buf, count)
 
 2. **安全增强模块**
    - ASLR实现
-   - MAC策略
+   - MAC策略 (SELinux/AppArmor风格)
 
 3. **性能监控模块**
-   - 性能计数器
-   - 追踪框架
+   - 性能计数器 (perf events)
+   - 追踪框架 (ftrace/eBPF风格)
 
 4. **电源管理模块**
-   - ACPI支持
-   - 省电模式
+   - ACPI S3/S4 睡眠状态
+   - CPU 频率调节 (cpufreq)
+
+5. **网络增强**
+   - IPv6 完整支持
+   - WireGuard VPN
+   - TLS 内核卸载
 
 ---
 
-**最后更新**: 2026-05-18
+**最后更新**: 2026-05-31

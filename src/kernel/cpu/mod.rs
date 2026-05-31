@@ -208,6 +208,8 @@ bitflags::bitflags! {
         const OSXSAVE     = 1 << 59;
         /// AVX (高级向量扩展) 支持
         const AVX         = 1 << 60;
+        /// RDRAND (硬件随机数生成器)
+        const RDRAND      = 1 << 62;
         
         // ====== 扩展特性 (Leaf 80000001 EDX, 映射到 +64) ======
         
@@ -907,6 +909,7 @@ fn collect_features(features_out: &mut CpuFeatures,
         if ecx & (1 << 26) != 0 { feat.insert(CpuFeatures::XSAVE); }
         if ecx & (1 << 27) != 0 { feat.insert(CpuFeatures::OSXSAVE); }
         if ecx & (1 << 28) != 0 { feat.insert(CpuFeatures::AVX); }
+        if ecx & (1 << 30) != 0 { feat.insert(CpuFeatures::RDRAND); }
         
         features_out.insert(feat);
     }

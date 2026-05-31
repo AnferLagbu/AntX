@@ -210,8 +210,8 @@ impl VirtualMemoryManager {
             if (pml4e & 1) == 0 { return None; }
 
             // SAFETY: pml4e present → frame bits point to valid PDPT
-            let pdpt_phys = (pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
-            let pdpt_raw = pdpt_phys as *const u64;
+            let pdpt_virt = (pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pdpt_raw = pdpt_virt as *const u64;
             let pdpte = pdpt_raw.add(virt.pdpt_idx()).read_volatile();
             if (pdpte & 1) == 0 { return None; }
 
@@ -222,8 +222,8 @@ impl VirtualMemoryManager {
             }
 
             // SAFETY: pdpte present && !huge → valid PD pointer
-            let pd_phys = (pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
-            let pd_raw = pd_phys as *const u64;
+            let pd_virt = (pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pd_raw = pd_virt as *const u64;
             let pde = pd_raw.add(virt.pd_idx()).read_volatile();
             if (pde & 1) == 0 { return None; }
 
@@ -234,8 +234,8 @@ impl VirtualMemoryManager {
             }
 
             // SAFETY: pde present && !huge → valid PT pointer
-            let pt_phys = (pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
-            let pt_raw = pt_phys as *const u64;
+            let pt_virt = (pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pt_raw = pt_virt as *const u64;
             let pte = pt_raw.add(virt.pt_idx()).read_volatile();
             if (pte & 1) == 0 { return None; }
 
@@ -694,6 +694,7 @@ impl VirtualMemoryManager {
             let entry = &mut *pml4.add(v.pml4_idx());
             if entry.is_present() && !entry.is_user() {
                 entry.set_user(true);
+                self.flush_tlb(virt);
             }
         }
     }
@@ -719,13 +720,15 @@ impl VirtualMemoryManager {
             if !pdpte.is_present() { return; }
             pdpte.set_user(true);
 
-            if pdpte.is_huge() { return; }
+            if pdpte.is_huge() { self.flush_tlb(virt); return; }
 
             let pd = pdpte.frame().to_virt().0 as *mut PageTableEntry;
             let pde = &mut *pd.add(v.pd_idx());
             if !pde.is_present() { return; }
             pde.set_user(true);
         }
+
+        self.flush_tlb(virt);
     }
 
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
@@ -766,8 +769,8 @@ impl VirtualMemoryManager {
             unsafe { child_pml4_base.add(i as usize).write_volatile(child_pml4e); }
 
             // SAFETY: parent_pml4e present → frame bits point to valid PDPT
-            let parent_pdpt_phys = (parent_pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
-            let parent_pdpt = parent_pdpt_phys as *const u64;
+            let parent_pdpt_virt = (parent_pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let parent_pdpt = parent_pdpt_virt as *const u64;
 
             for j in 0..512u16 {
                 // SAFETY: j in 0..511 within PDPT page; volatile read
@@ -786,8 +789,8 @@ impl VirtualMemoryManager {
                 unsafe { child_pdpt.add(j as usize).write_volatile(child_pdpte_v); }
 
                 // SAFETY: parent_pdpte present → valid PD pointer
-                let parent_pd_phys = (parent_pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
-                let parent_pd = parent_pd_phys as *const u64;
+                let parent_pd_virt = (parent_pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+                let parent_pd = parent_pd_virt as *const u64;
 
                 for k in 0..512u16 {
                     // SAFETY: k in 0..511 within PD page; volatile read
@@ -825,8 +828,8 @@ impl VirtualMemoryManager {
                     unsafe { child_pd.add(k as usize).write_volatile(child_pde_v); }
 
                     // SAFETY: parent_pde present && !huge → valid PT pointer
-                    let parent_pt_phys = (parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
-                    let parent_pt = parent_pt_phys as *const u64;
+                    let parent_pt_virt = (parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+                    let parent_pt = parent_pt_virt as *const u64;
 
                     for l in 0..512u16 {
                         // SAFETY: l in 0..511 within PT page; volatile read
@@ -835,13 +838,13 @@ impl VirtualMemoryManager {
 
                         let child_page_phys = pmm.alloc_page()?;
                         let child_page_virt = PhysAddr(child_page_phys.as_u64()).to_virt().0;
-                        // SAFETY: parent_page_phys is valid kernel VA from PTE
-                        let parent_page_phys = (parent_pte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+                        // SAFETY: parent_page_virt is valid kernel VA from PTE
+                        let parent_page_virt = (parent_pte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
 
                         // SAFETY: Both addresses are valid 4KB kernel VAs
                         unsafe {
                             core::ptr::copy_nonoverlapping(
-                                parent_page_phys as *const u8,
+                                parent_page_virt as *const u8,
                                 child_page_virt as *mut u8,
                                 PAGE_SIZE as usize,
                             );

@@ -114,7 +114,7 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
         unsafe { child_pml4_virt.add(i).write_volatile(child_pml4e); }
 
         // SAFETY: parent_pml4e 已检验 present, phys_to_virt 映射有效
-        let parent_pdpt_virt = PhysAddr((parent_pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *const u64;
+        let parent_pdpt_virt = PhysAddr(parent_pml4e & 0x000FFFFFFFFFF000).to_virt().0 as *const u64;
 
         for j in 0..512usize {
             // SAFETY: pdpt 索引在页范围内
@@ -132,7 +132,7 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
             child_pdpte = (child_pdpte & 0xFFF) | (child_pd_phys.as_u64() & 0x000FFFFFFFFFF000);
             unsafe { child_pdpt_virt.add(j).write_volatile(child_pdpte); }
 
-            let parent_pd_virt = PhysAddr((parent_pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *const u64;
+            let parent_pd_virt = PhysAddr(parent_pdpte & 0x000FFFFFFFFFF000).to_virt().0 as *const u64;
 
             for k in 0..512usize {
                 // SAFETY: pd 索引在页范围内
@@ -159,7 +159,7 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
 
                 // SAFETY: parent_pt 物理地址来自有效 PDE;
                 // 声明为 *mut 因为 COW 会写回清除 WRITABLE 位
-                let parent_pt_virt = PhysAddr((parent_pde & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *mut u64;
+                let parent_pt_virt = PhysAddr(parent_pde & 0x000FFFFFFFFFF000).to_virt().0 as *mut u64;
 
                 for l in 0..512usize {
                     // SAFETY: pt 索引在页范围内
@@ -225,15 +225,15 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
             let pml4e = pml4_v.add(virt_pml4_idx(page_aligned)).read_volatile();
             if (pml4e & 1) == 0 { return None; }
 
-            let pdpt_p = PhysAddr((pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *const u64;
+            let pdpt_p = PhysAddr(pml4e & 0x000FFFFFFFFFF000).to_virt().0 as *const u64;
             let pdpte = pdpt_p.add(virt_pdpt_idx(page_aligned)).read_volatile();
             if (pdpte & 1) == 0 { return None; }
 
-            let pd_p = PhysAddr((pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *const u64;
+            let pd_p = PhysAddr(pdpte & 0x000FFFFFFFFFF000).to_virt().0 as *const u64;
             let pde = pd_p.add(virt_pd_idx(page_aligned)).read_volatile();
             if (pde & 1) == 0 { return None; }
 
-            let pt_p = PhysAddr((pde & 0x000FFFFFFFFFF000) + KERNEL_BASE).to_virt().0 as *mut u64;
+            let pt_p = PhysAddr(pde & 0x000FFFFFFFFFF000).to_virt().0 as *mut u64;
             &mut *pt_p.add(virt_pt_idx(page_aligned))
         };
 
@@ -246,7 +246,7 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let new_phys = pmm_inst.alloc_page()?;
     let new_virt = new_phys.to_virt();
 
-    let old_virt = PhysAddr(old_frame + KERNEL_BASE).to_virt();
+    let old_virt = PhysAddr(old_frame).to_virt();
     unsafe {
         core::ptr::copy_nonoverlapping(
             old_virt.0 as *const u8,

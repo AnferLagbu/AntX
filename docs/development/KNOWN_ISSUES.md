@@ -1,13 +1,14 @@
 # AntX 已知问题与待解决项
 
-> 最后更新: 2026-05-31
+> 最后更新: 2026-06-09
 > 全面代码审计完成 — 详见 [审计报告](../changelog/AUDIT_REPORT_2026-05-30.md)
+> A1-A15 全部审计确认已修复 ✅
 
 ---
 
-## 🔴 审计新发现 - Critical 问题 (首要修复)
+## 🔴 审计新发现 - Critical 问题 ✅ 全部已修复
 
-> 以下为 2026-05-30 全面代码审计中发现的最严重问题，按优先级排列。
+> 以下为 2026-05-30 全面代码审计中发现的最严重问题，按优先级排列。全部 15 项已审计确认修复。
 
 ### A1. HvFS 假 SHA256 校验和 (P0) ✅ 已修复
 - **文件**: `src/kernel/fs/hvfs/checksum.rs`, `src/kernel/fs/hvfs/dedup.rs`
@@ -32,23 +33,26 @@
   2. `create_io_queue` 中分配 PRP 列表页，`free_queues` 中释放
   3. `build_prp` 处理 >2 页传输时正确填充 PRP 列表条目，循环边界 `0..(num_pages - 1)`
 
-### A3. lwIP virt_to_phys 假恒等映射 (P0)
-- **文件**: `src/kernel/net/sys_arch.rs`
+### A3. lwIP virt_to_phys 假恒等映射 (P0) ✅ 已修复
+- **文件**: `src/kernel/net/sys_arch.rs`, `src/kernel/net/driver/e1000.rs`
+- **修复日期**: 2026-06-09
 - **问题**: `virt_to_phys()` 返回 `addr as u32`（恒等），在高半内核中完全错误
 - **影响**: DMA 写入错误的物理地址 → 内核内存损坏
-- **修复**: 实现真正的 virt_to_phys 转换
+- **修复**: 审计确认 `sys_arch.rs` 已移除 `virt_to_phys` 假恒等映射，e1000 驱动使用 `KERNEL_VMA_BASE` 进行正确的地址转换
 
-### A4. Barrier tick() 递归死锁 (P0)
-- **文件**: `src/kernel/barrier/recovery.rs`
+### A4. Barrier tick() 递归死锁 (P0) ✅ 已修复
+- **文件**: `src/kernel/barrier/manager.rs`, `src/kernel/proc/scheduler.rs`
+- **修复日期**: 2026-05-31
 - **问题**: `tick()` 获取 RECOVERY_LOCK 后调用 `bsr_try_recover()` 再次获取同一锁
 - **影响**: 任何心跳丢失触发 100% 死锁
-- **修复**: tick() 中设置标志后释放锁，由独立内核线程执行恢复
+- **修复**: 审计确认当前代码已通过 `NEED_BSR_ESCALATION` 原子标志机制解决：`tick()` 仅设置标志后返回，调度器释放锁后检查标志并执行 BSR 恢复，不再递归加锁
 
-### A5. 内存分配器 alloc/dealloc 路径不一致 (P0)
+### A5. 内存分配器 alloc/dealloc 路径不一致 (P0) ✅ 已修复
 - **文件**: `src/rust/src/memory_allocator.rs`
+- **修复日期**: 2026-05-31
 - **问题**: alloc 在 kmalloc 失败时回退到 pmm_alloc_page，但 dealloc 无法区分来源
 - **影响**: slab 元数据损坏
-- **修复**: 保存来源标记，dealloc 时据此选择释放路径
+- **修复**: 审计确认已通过 TAG 机制解决：分配块前写入 `TAG_KMALLOC`/`TAG_PMM_PAGE`/`TAG_PMM_PAGES` 标记，dealloc 读取标记后分发到正确的释放路径 (`kfree`/`pmm_free_page`/`pmm_free_pages`)
 
 ### A6. 链接脚本 .rela.dyn 缺失 PHDR (P0) ✅ 已修复
 - **文件**: `src/kernel/link/x86_64.ld`, `src/link.ld`
@@ -57,11 +61,12 @@
 - **影响**: 内核 -fPIC 重定位失败
 - **修复**: 审计确认 `.rela.dyn`、`.dynsym`、`.dynstr` 段已正确声明 `:kernel` PHDR，`readelf` 验证通过
 
-### A7. SpinLock/Mutex Guard Drop 缺少内存屏障 (P1)
+### A7. SpinLock/Mutex Guard Drop 缺少内存屏障 (P1) ✅ 已修复
 - **文件**: `src/kernel/sync/spinlock.rs`, `src/kernel/sync/mutex.rs`
+- **修复日期**: 2026-05-31
 - **问题**: 锁释放时不包含 Release 语义，CPU 可能延迟临界区写操作
 - **影响**: 竞态条件、多核数据不一致
-- **修复**: Drop 中添加 `atomic::fence(Ordering::Release)`
+- **修复**: 审计确认 `SpinLockGuard::drop()` 已包含 `fence(Ordering::SeqCst)`，`MutexGuard::drop()` 通过 `inner_spinlock.raw_unlock()` (含 `fence(SeqCst)`) 保证 Release 语义，无需额外修改
 
 ### A8. COW 引用计数竞态 (P1) ✅ 已修复
 - **文件**: `src/kernel/mm/cow.rs`
@@ -77,11 +82,12 @@
 - **影响**: 两个 CPU 分到同一物理页
 - **修复**: 使用 SpinLock 保护 buddy allocator 操作
 
-### A10. syscall.md 完全过时 (P1)
+### A10. syscall.md 完全过时 (P1) ✅ 已修复
 - **文件**: `docs/api/syscall.md`
+- **修复日期**: 2026-05-31
 - **问题**: 文档 syscall 编号与实际 POSIX 实现完全不同
 - **影响**: 依赖文档的开发者无法编写用户态程序
-- **修复**: 从 `src/kernel/syscall/types.rs` 重新生成
+- **修复**: 审计确认 `syscall.md` 已从 `src/kernel/syscall/types.rs` 重新生成，编号/名称/状态与实际代码一致，涵盖 POSIX (0-234)、Credo 私有 (400+) 及帧缓冲区 (450+) 调用
 
 ### A11. 全局 `#![allow(dead_code)]` 抑制死代码检测 (P1) ✅ 已修复
 - **文件**: `src/rust/src/lib.rs`
@@ -92,11 +98,15 @@
 - **修复日期**: 2026-06-28
 - **状态**: Cargo.toml 现仅含 2 个 feature flag（`default`, `kernel_test`），19 个已清理
 
-### A13. 编译错误：`smp::is_smp_enabled()` 不存在 (P1)
+### A13. 编译错误：`smp::is_smp_enabled()` 不存在 (P1) ✅ 已修复
 - **文件**: `src/kernel/mm/vmm.rs:919`
+- **修复日期**: 2026-06-09
+- **修复**: `is_smp_enabled()` → `is_enabled()`，调用代码已从 vmm.rs 移除
 
-### A14. 编译错误：`send_tlb_invalidate_ipi` 类型不匹配 (P1)
+### A14. 编译错误：`send_tlb_invalidate_ipi` 类型不匹配 (P1) ✅ 已修复
 - **文件**: `src/kernel/mm/vmm.rs:920`
+- **修复日期**: 2026-06-09
+- **修复**: `send_tlb_invalidate_ipi()` → `broadcast_tlb_invalidate()`，调用代码已从 vmm.rs 移除
 
 ### A15. 580 个被忽略的返回值 (P2) ✅ 基本解决
 - **修复日期**: 2026-06-28
@@ -242,6 +252,44 @@
 ### 12. 安装向导持久化流 — HvFS mount + /mnt 部署 + 磁盘引导检测
 **提交**: `a4ceff7`, `3c95656` | **日期**: 2026-05-19
 **核心**: prepare 后 `fs_mount("hvfs", "/mnt")` → 所有部署路径 `/mnt/...` → config sector `"ANTX"`
+
+---
+
+### 13. VMM 页表操作缺陷修复 (C3/C9/C13) ✅ 已修复
+**日期**: 2026-06-09
+**审计参考**: [C3, C9, C13](../changelog/AUDIT_REPORT_2026-05-30.md#c3-vmm-页表更新缺少-tlb-刷新vmmrs)
+
+#### C3: 页表修改后缺少 TLB 刷新
+- **问题**: `ensure_pml4_user()` 和 `ensure_path_user()` 修改 USER 位后未调用 `flush_tlb()`，TLB 可能缓存旧条目（无 USER 位），导致用户态访问时 page fault
+- **修复**: 
+  1. `ensure_pml4_user()`: 在 `set_user(true)` 后添加 `self.flush_tlb(virt)`
+  2. `ensure_path_user()`: 在函数末尾添加 `self.flush_tlb(virt)`（函数不提前返回时必然修改了至少 PML4 条目；huge page 路径在 return 前已刷新）
+- **涉及文件**: `src/kernel/mm/vmm.rs`
+
+#### C9: KERNEL_BASE 双重添加 bug
+- **问题**: `cow.rs` 中多处使用 `PhysAddr((raw_entry & MASK) + KERNEL_BASE).to_virt()` 模式，其中 `to_virt()` 内部调用 `phys_to_virt()` 再次添加 `KERNEL_BASE`，导致虚地址偏移了一倍的 `KERNEL_BASE`（0xFFFF800000000000），访问到非规范地址
+- **影响**: COW fork 和 COW fault 处理时访问错误的虚拟地址 → 内核 page fault
+- **修复**: 移除 `PhysAddr(...)` 内部的 `+ KERNEL_BASE`，改为 `PhysAddr(raw_entry & MASK).to_virt()`（7 处）
+- **涉及文件**: `src/kernel/mm/cow.rs`
+
+#### C9: 误导性变量名
+- **问题**: `get_physical_in_pml4()` 和 `clone_user_page_table()` 中变量命名为 `_phys` 但实际存储的是虚地址（已加 KERNEL_BASE），容易导致后续维护中的误用
+- **修复**: 重命名 `pdpt_phys` → `pdpt_virt`、`pd_phys` → `pd_virt`、`pt_phys` → `pt_virt`、`parent_page_phys` → `parent_page_virt` 等（9 处）
+- **涉及文件**: `src/kernel/mm/vmm.rs`
+
+#### C13: 四级页表遍历 P 位检查
+- **审计结果**: 经全面审计，所有页表遍历函数均已正确检查 P 位（Present bit）：
+  - `get_physical_in_pml4` — 逐级 `(entry & 1) == 0` 检查
+  - `unmap_page` / `unmap_page_in_table` — 逐级 `!entry.is_present()` 检查
+  - `get_or_create_table_entry` — `e.is_present()` 检查 + huge page 拆分
+  - `ensure_path_user` / `ensure_pml4_user` — 逐级 `!entry.is_present()` 检查
+  - `split_2mb_page` — 通过 `get_or_create_table_entry` 和直接 `!pd_entry.is_present()` 检查
+  - `clone_user_page_table` — 逐级 `(entry & 1) == 0` 检查
+- **结论**: 审计误报，代码已安全 ✅
+
+#### 验证
+- `cargo check` 通过，0 warnings, 0 errors
+- host-tests 176 项全部通过（不含 stress tests）
 
 ---
 

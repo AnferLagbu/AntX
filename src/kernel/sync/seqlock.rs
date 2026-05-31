@@ -65,18 +65,22 @@ impl<T> SeqLock<T> {
     }
 
     pub fn write(&self) -> SeqLockWriteGuard<'_, T> {
-        while self.sequence.compare_exchange_weak(
-            self.sequence.load(Ordering::Relaxed) & !1,
-            self.sequence.load(Ordering::Relaxed) | 1,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ).is_err() {
-            core::hint::spin_loop();
+        loop {
+            let current = self.sequence.load(Ordering::Relaxed);
+            if current & 1 == 1 {
+                core::hint::spin_loop();
+                continue;
+            }
+            if self.sequence.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ).is_ok() {
+                compiler_fence(Ordering::Acquire);
+                return SeqLockWriteGuard { lock: self };
+            }
         }
-
-        compiler_fence(Ordering::Acquire);
-
-        SeqLockWriteGuard { lock: self }
     }
 
     pub fn try_write(&self) -> Option<SeqLockWriteGuard<'_, T>> {

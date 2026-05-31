@@ -12,6 +12,7 @@ pub use serial_println;
 
 pub mod types;
 pub mod sha256;
+pub mod csprng;
 pub mod capability;
 pub mod identity;
 pub mod grant;

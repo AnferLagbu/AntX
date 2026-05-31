@@ -2,6 +2,7 @@ use super::types::*;
 use super::sha256;
 use super::audit;
 use super::capability::VIABLE_FLOOR;
+use super::csprng;
 use super::bootstrap;
 use super::grant;
 use core::sync::atomic::{AtomicU64, AtomicBool, AtomicUsize, AtomicU8, AtomicU16, AtomicU32, Ordering};
@@ -32,31 +33,6 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 
         hash.copy_from_slice(&full[..32]);
     }
     hash
-}
-
-pub(crate) fn generate_salt() -> [u8; PWM_SALT_LEN] {
-    static COUNTER: AtomicU64 = AtomicU64::new(0x5A3C_9E17_F2D8_4B61);
-    let tsc = crate::arch!(timestamp());
-    let stack_addr = &tsc as *const _ as u64;
-    let counter = COUNTER.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::AcqRel);
-    let heap_addr = core::ptr::null::<u8>() as u64;
-    let mut v = tsc
-        .wrapping_mul(0x2545_F491_4F6C_DD1D)
-        .wrapping_add(stack_addr)
-        .wrapping_mul(0x1329_4A6B_3C7D_8E0F)
-        .wrapping_add(counter)
-        .wrapping_add(heap_addr);
-    let mut salt = [0u8; PWM_SALT_LEN];
-    for i in 0..PWM_SALT_LEN {
-        v = v.wrapping_mul(0x9e3779b97f4a7c15).wrapping_add(tsc.rotate_left(i as u32));
-        salt[i] = (v >> 56) as u8;
-        salt[i] ^= (v >> 40) as u8;
-    }
-    let extra = sha256::sha256(&salt);
-    for i in 0..PWM_SALT_LEN.min(32) {
-        salt[i] ^= extra[i];
-    }
-    salt
 }
 
 pub struct IdentityTable {
@@ -229,7 +205,7 @@ impl IdentityTable {
         entry.privilege_level.store(privilege_level, Ordering::Release);
         entry.flags.store(0, Ordering::Release);
 
-        let salt = generate_salt();
+        let salt = csprng::generate_salt();
         let digest = hash_with_salt(password, &salt);
         let hash_ptr = entry.password_hash.as_ptr() as *mut u8;
         unsafe {
@@ -460,7 +436,7 @@ impl IdentityTable {
             return Err(PwmError::PasswordIncorrect);
         }
         let entry = self.find(pwm).ok_or(PwmError::NotFound)?;
-        let salt = generate_salt();
+        let salt = csprng::generate_salt();
         let digest = hash_with_salt(new, &salt);
         let hash_ptr = entry.password_hash.as_ptr() as *mut u8;
         unsafe {
