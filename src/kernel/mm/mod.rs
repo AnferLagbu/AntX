@@ -12,6 +12,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 pub mod pmm;
 
 #[cfg(target_arch = "x86_64")]
+#[path = "vmm_x86_64.rs"]
 pub mod vmm;
 #[cfg(target_arch = "aarch64")]
 #[path = "vmm_aarch64.rs"]

@@ -432,8 +432,28 @@ impl VirtualMemoryManager {
                 } else {
                     // SAFETY: pde.frame() valid; present && !huge → points to PT
                     let pt = pde.frame().to_virt().0 as *mut PageTableEntry;
-                    (*pt.add(virt.pt_idx())).set_value(0);
+                    let pt_idx = virt.pt_idx();
+                    (*pt.add(pt_idx)).set_value(0);
                     self.flush_tlb(virt.0);
+
+                    // Recursively free empty intermediate page tables
+                    if self.is_table_empty(pt) {
+                        let pt_phys = pde.frame().as_u64();
+                        (*pd.add(virt.pd_idx())).set_value(0);
+                        get_pmm().free_page(PhysAddr(pt_phys));
+
+                        if self.is_table_empty(pd) {
+                            let pd_phys = pdpte.frame().as_u64();
+                            (*pdpt.add(virt.pdpt_idx())).set_value(0);
+                            get_pmm().free_page(PhysAddr(pd_phys));
+
+                            if self.is_table_empty(pdpt) {
+                                let pdpt_phys = pml4e.frame().as_u64();
+                                (*pml4_tbl.add(virt.pml4_idx())).set_value(0);
+                                get_pmm().free_page(PhysAddr(pdpt_phys));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1049,6 +1069,17 @@ impl VirtualMemoryManager {
                 smp::broadcast_tlb_invalidate();
             }
         }
+    }
+
+    fn is_table_empty(&self, table: *mut PageTableEntry) -> bool {
+        for i in 0..512usize {
+            unsafe {
+                if (*table.add(i)).is_present() {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }
 

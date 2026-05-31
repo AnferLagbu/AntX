@@ -578,7 +578,17 @@ impl PhysicalMemoryManager {
         // Defensive: validate node is within physical RAM range
         let node_phys = unsafe { (node as u64).wrapping_sub(KERNEL_BASE) };
         let mem_size = self.mem_size.get();
-        if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
+        #[cfg(not(target_arch = "x86_64"))]
+        if node_phys < RAM_BASE {
+            klog_pmm!(
+                "[PMM] Corrupt remove node at order {}: pfn=0x{:X} virt=0x{:X}",
+                order,
+                pfn,
+                node as u64
+            );
+            return;
+        }
+        if node_phys >= RAM_BASE + mem_size {
             klog_pmm!(
                 "[PMM] Corrupt remove node at order {}: pfn=0x{:X} virt=0x{:X}",
                 order,
@@ -630,7 +640,16 @@ impl PhysicalMemoryManager {
         // Defensive: validate node is within physical RAM range
         let node_phys = unsafe { (node as u64).wrapping_sub(KERNEL_BASE) };
         let mem_size = self.mem_size.get();
-        if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
+        #[cfg(not(target_arch = "x86_64"))]
+        if node_phys < RAM_BASE {
+            klog_pmm!(
+                "[PMM] Corrupt free list node at order {}: 0x{:X}",
+                order,
+                node as u64
+            );
+            return None;
+        }
+        if node_phys >= RAM_BASE + mem_size {
             klog_pmm!(
                 "[PMM] Corrupt free list node at order {}: 0x{:X}",
                 order,

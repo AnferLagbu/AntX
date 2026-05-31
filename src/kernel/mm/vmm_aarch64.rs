@@ -12,17 +12,10 @@
 //! Page table levels: L0 (512GB) → L1 (1GB) → L2 (2MB) → L3 (4KB)
 
 use super::*;
-use core::ffi::c_void;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
-
-// FFI imports from PMM
-extern "C" {
-    fn pmm_alloc_page() -> *mut c_void;
-    fn pmm_free_page(addr: *mut c_void);
-}
 
 fn phys_to_virt(phys: u64) -> u64 {
     phys + super::KERNEL_BASE
@@ -178,6 +171,9 @@ fn table_descriptor(next_table_paddr: u64) -> u64 {
 
 static VMM_LOCK: AtomicBool = AtomicBool::new(false);
 
+#[cfg(debug_assertions)]
+static VMM_LOCK_RECURSIVE: AtomicBool = AtomicBool::new(false);
+
 // ─── AArch64 Virtual Memory Manager ──────────────────────────────────
 
 pub struct Aarch64Vmm {
@@ -205,11 +201,21 @@ impl Aarch64Vmm {
         {
             core::hint::spin_loop();
         }
+        #[cfg(debug_assertions)]
+        {
+            if VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed) {
+                panic!("VMM_LOCK: recursive acquisition detected (deadlock)");
+            }
+        }
         flags
     }
 
     #[inline(always)]
     pub fn release_lock(&self, flags: &IrqSaveFlags) {
+        #[cfg(debug_assertions)]
+        {
+            VMM_LOCK_RECURSIVE.store(false, Ordering::Relaxed);
+        }
         VMM_LOCK.store(false, Ordering::Release);
         restore_interrupts(flags);
     }
@@ -250,42 +256,32 @@ impl Aarch64Vmm {
     // ─── Allocate a Page Table ───────────────────────────────────────
 
     fn alloc_table(&self) -> Option<u64> {
-        let page = unsafe { pmm_alloc_page() };
-        if page.is_null() {
-            return None;
-        }
-        let paddr = page as u64;
+        let paddr = get_pmm().alloc_page()?;
         // Zero the table
         unsafe {
-            ptr::write_bytes(page as *mut u8, 0, PAGE_SIZE as usize);
+            ptr::write_bytes(
+                phys_to_virt(paddr.as_u64()) as *mut u8,
+                0,
+                PAGE_SIZE as usize,
+            );
         }
-        Some(paddr)
+        Some(paddr.as_u64())
     }
 
     fn free_table(&self, paddr: u64) {
         if paddr != 0 {
-            unsafe {
-                pmm_free_page(paddr as *mut c_void);
-            }
+            get_pmm().free_page(PhysAddr(paddr));
         }
     }
 
     // ─── Kernel Page Map ─────────────────────────────────────────────
 
-    pub fn map_page(&self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<(), ()> {
-        // On aarch64, TTBR0 (user) and TTBR1 (kernel) use separate page tables.
-        // User-space addresses (bit 47 = 0) are accessed via TTBR0_EL1 and are
-        // never used from kernel mode. The kernel accesses user memory via
-        // identity-mapped physical addresses instead.
-        //
-        // Attempting to map user-space VAs into the kernel page table is not
-        // only unnecessary but DANGEROUS: the kernel L0 table (shared with the
-        // identity mapping) contains BLOCK descriptors in L1_IDMAP. Walking into
-        // them with ensure_next_level() overwrites the block descriptor without
-        // ARM's required Break-Before-Make (BBM) sequence, corrupting the page
-        // walk cache for adjacent entries in the same cache line.
-        //
-        // Skip user-space VA mappings entirely.
+    pub fn map_page(
+        &self,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+    ) -> Result<(), &'static str> {
         if virt.as_u64() >> 48 == 0 {
             return Ok(());
         }
@@ -299,57 +295,78 @@ impl Aarch64Vmm {
         phys: PhysAddr,
         flags: PageFlags,
         size_type: PageSize,
-    ) -> Result<(), ()> {
-        // Skip user-space VA mappings (same rationale as map_page above)
+    ) -> Result<(), &'static str> {
         if virt.as_u64() >> 48 == 0 {
             return Ok(());
         }
         match size_type {
             PageSize::Size4K => self.map_page(virt, phys, flags),
             PageSize::Size2M => {
-                // Use L2 block descriptor for 2MB huge page
+                let _lock_flags = self.acquire_lock();
+
                 let vaddr = virt.as_u64();
                 let paddr = phys.as_u64();
                 let raw_flags = flags.bits();
 
                 let l0 = phys_to_virt(self.kernel_l0) as *mut u64;
                 let l0_idx = l0_index(vaddr);
-                let l1 = self.ensure_next_level(l0, l0_idx);
+                let l1 = match self.ensure_next_level(l0, l0_idx) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        self.release_lock(&_lock_flags);
+                        return Err(e);
+                    }
+                };
                 let l1_idx = l1_index(vaddr);
-                let l2 = self.ensure_next_level(l1, l1_idx);
+                let l2 = match self.ensure_next_level(l1, l1_idx) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        self.release_lock(&_lock_flags);
+                        return Err(e);
+                    }
+                };
                 let l2_idx = l2_index(vaddr);
 
                 let desc = block_flags_to_descriptor(raw_flags, paddr, 2, 0x0000_FFFF_FFE0_0000);
                 unsafe {
                     ptr::write_volatile(l2.add(l2_idx), desc);
                 }
+
+                self.release_lock(&_lock_flags);
                 Ok(())
             }
             PageSize::Size1G => {
-                // Use L1 block descriptor for 1GB huge page
+                let _lock_flags = self.acquire_lock();
+
                 let vaddr = virt.as_u64();
                 let paddr = phys.as_u64();
                 let raw_flags = flags.bits();
 
                 let l0 = phys_to_virt(self.kernel_l0) as *mut u64;
                 let l0_idx = l0_index(vaddr);
-                let l1 = self.ensure_next_level(l0, l0_idx);
+                let l1 = match self.ensure_next_level(l0, l0_idx) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        self.release_lock(&_lock_flags);
+                        return Err(e);
+                    }
+                };
                 let l1_idx = l1_index(vaddr);
 
                 let desc = block_flags_to_descriptor(raw_flags, paddr, 1, 0x0000_FFFF_C000_0000);
                 unsafe {
                     ptr::write_volatile(l1.add(l1_idx), desc);
                 }
+
+                self.release_lock(&_lock_flags);
                 Ok(())
             }
         }
     }
 
-    pub fn unmap_page(&self, _virt: VirtAddr) {
-        // TODO: Implement TLB-aware unmap
-    }
+    pub fn unmap_page(&self, _virt: VirtAddr) {}
 
-    pub fn split_2mb_page(&self, _virt: u64) -> Result<(), ()> {
+    pub fn split_2mb_page(&self, _virt: u64) -> Result<(), &'static str> {
         // On aarch64, L2 blocks (2MB) are the default for block mappings.
         // We don't need to split them — we can always allocate L3 tables
         // and use 4KB pages directly.
@@ -368,56 +385,70 @@ impl Aarch64Vmm {
         phys: PhysAddr,
         flags: PageFlags,
     ) {
+        let _lock_flags = self.acquire_lock();
+
         let vaddr = virt.as_u64();
         let paddr = phys.as_u64();
         let raw_flags = flags.bits();
 
-        // SAFETY: phys_to_virt converts root_paddr (page table PA) to kernel VA
         let l0 = phys_to_virt(root_paddr) as *mut u64;
         let l0_idx = l0_index(vaddr);
 
-        let l1 = self.ensure_next_level(l0, l0_idx);
+        let l1 = match self.ensure_next_level(l0, l0_idx) {
+            Ok(t) => t,
+            Err(_) => {
+                self.release_lock(&_lock_flags);
+                return;
+            }
+        };
         let l1_idx = l1_index(vaddr);
 
-        let l2 = self.ensure_next_level(l1, l1_idx);
+        let l2 = match self.ensure_next_level(l1, l1_idx) {
+            Ok(t) => t,
+            Err(_) => {
+                self.release_lock(&_lock_flags);
+                return;
+            }
+        };
         let l2_idx = l2_index(vaddr);
 
-        let l3 = self.ensure_next_level(l2, l2_idx);
+        let l3 = match self.ensure_next_level(l2, l2_idx) {
+            Ok(t) => t,
+            Err(_) => {
+                self.release_lock(&_lock_flags);
+                return;
+            }
+        };
         let l3_idx = l3_index(vaddr);
 
-        // Set the L3 page descriptor
         let desc = page_flags_to_descriptor(raw_flags, paddr);
         unsafe {
             ptr::write_volatile(l3.add(l3_idx), desc);
         }
 
-        // TLB invalidate
         unsafe {
             core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
         }
+
+        self.release_lock(&_lock_flags);
     }
 
     /// Ensure the next-level page table exists at `table[idx]`.
     /// Returns a pointer to the next-level table.
-    fn ensure_next_level(&self, table: *mut u64, idx: usize) -> *mut u64 {
+    fn ensure_next_level(&self, table: *mut u64, idx: usize) -> Result<*mut u64, &'static str> {
         unsafe {
             let entry = ptr::read_volatile(table.add(idx));
             if entry & 0b11 == 0b11 {
-                // Already a table descriptor
                 let paddr = entry & 0x0000_FFFF_FFFF_F000;
-                // SAFETY: phys_to_virt(paddr) yields valid kernel VA because
-                // KERNEL_BASE (=0 on aarch64 identity map) maps all physical memory.
-                phys_to_virt(paddr) as *mut u64
+                Ok(phys_to_virt(paddr) as *mut u64)
             } else {
-                // Allocate new table
                 let new_paddr = self
                     .alloc_table()
-                    .expect("[VMM] Out of physical memory for page table");
+                    .ok_or("[VMM] Out of physical memory for page table")?;
                 let desc = table_descriptor(new_paddr);
                 ptr::write_volatile(table.add(idx), desc);
                 core::arch::asm!("dsb ishst");
-                // SAFETY: new_paddr from PMM allocator; phys_to_virt yields kernel VA.
-                phys_to_virt(new_paddr) as *mut u64
+                Ok(phys_to_virt(new_paddr) as *mut u64)
             }
         }
     }
@@ -427,6 +458,8 @@ impl Aarch64Vmm {
             return;
         }
 
+        let _lock_flags = self.acquire_lock();
+
         let vaddr = virt.as_u64();
 
         // SAFETY: phys_to_virt(root_paddr) gives kernel VA for page table walk.
@@ -435,18 +468,21 @@ impl Aarch64Vmm {
 
         let l1 = self.get_next_level(l0, l0_idx);
         if l1.is_null() {
+            self.release_lock(&_lock_flags);
             return;
         }
         let l1_idx = l1_index(vaddr);
 
         let l2 = self.get_next_level(l1, l1_idx);
         if l2.is_null() {
+            self.release_lock(&_lock_flags);
             return;
         }
         let l2_idx = l2_index(vaddr);
 
         let l3 = self.get_next_level(l2, l2_idx);
         if l3.is_null() {
+            self.release_lock(&_lock_flags);
             return;
         }
         let l3_idx = l3_index(vaddr);
@@ -502,6 +538,8 @@ impl Aarch64Vmm {
                 }
             }
         }
+
+        self.release_lock(&_lock_flags);
     }
 
     /// Returns true when all 512 entries of a page-table page are zero.
