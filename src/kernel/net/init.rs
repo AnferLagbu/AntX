@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::kernel::klog::{klog_net, klog_net_err, klog_init_msg};
 use crate::kernel::net::types::*;
 
-use crate::kernel::net::smoltcp_impl::{self, NetNic, NetworkStack};
+use crate::kernel::net::smoltcp_impl::{self, ChitinNetDevice, NetworkStack};
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
 use smoltcp::socket::dhcpv4;
 use smoltcp::socket::{tcp, udp};
@@ -31,7 +31,7 @@ static G_INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
 // 全局网络状态
 // ============================================================================
 
-static mut NET_DEVICE: Option<NetNic> = None;
+static mut NET_DEVICE: Option<ChitinNetDevice> = None;
 static mut NET_STACK: Option<NetworkStack> = None;
 
 const MAX_SOCKETS: usize = 8;
@@ -107,7 +107,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
             }
             crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
             unsafe {
-                klog_net("DHCP deconfigured\0".as_ptr() as *const i8);
+                klog_net("DHCP deconfigured\0".as_ptr().cast());
             }
         }
         Some(dhcpv4::Event::Configured(config)) => {
@@ -124,7 +124,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
             }
             crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
             unsafe {
-                klog_net("DHCP configured\0".as_ptr() as *const i8);
+                klog_net("DHCP configured\0".as_ptr().cast());
             }
         }
     }
@@ -166,21 +166,21 @@ pub unsafe fn poll_network() {
 // 多网卡探测 (按优先级依次尝试)
 // ============================================================================
 
-unsafe fn nic_probe_all() -> Option<NetNic> {
+unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
     #[cfg(target_arch = "x86_64")]
     {
         let probe_result = crate::kernel::driver::net::e1000::e1000_probe();
         if probe_result == 0 {
-            let dev = crate::kernel::driver::net::e1000::take_device()?;
-            use crate::kernel::driver::framework::Driver;
-            let mut antx = smoltcp_impl::AntxE1000Device::new(*dev);
-            if antx.inner.init().is_err() {
-                klog_net_err("e1000: hardware init failed\0".as_ptr() as *const i8);
+            let mut dev = crate::kernel::driver::net::e1000::take_device()?;
+            if crate::kernel::driver::framework::Driver::init(&mut *dev).is_err() {
+                klog_net_err("e1000: hardware init failed\0".as_ptr().cast());
                 return None;
             }
-            let _mac = antx.inner.mac;
-            klog_net("e1000: probed successfully\0".as_ptr() as *const i8);
-            return Some(NetNic::E1000(antx));
+            let mac = dev.mac;
+            let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
+            let nic = ChitinNetDevice::new(&E1000_NET_OPS_STATIC, raw_ptr, mac);
+            klog_net("e1000: probed successfully\0".as_ptr().cast());
+            return Some(nic);
         }
     }
 
@@ -189,13 +189,32 @@ unsafe fn nic_probe_all() -> Option<NetNic> {
         let probe_result = crate::kernel::driver::virtio::net::virtio_net_probe();
         if probe_result == 0 {
             let dev = crate::kernel::driver::virtio::net::take_device()?;
-            let antx = smoltcp_impl::AntxVirtioDevice::new(*dev);
-            return Some(NetNic::Virtio(antx));
+            let mac = dev.mac;
+            let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
+            let nic = ChitinNetDevice::new(&VIRTIO_NET_OPS_STATIC, raw_ptr, mac);
+            klog_net("virtio-net: probed successfully\0".as_ptr().cast());
+            return Some(nic);
         }
     }
 
     None
 }
+
+static E1000_NET_OPS_STATIC: crate::kernel::chitin::proto_net::NetOps =
+    crate::kernel::chitin::proto_net::NetOps {
+        send: crate::kernel::driver::net::e1000::e1000_net_send,
+        try_receive: crate::kernel::driver::net::e1000::e1000_net_recv,
+        get_mac: crate::kernel::driver::net::e1000::e1000_net_get_mac,
+        handle_irq: Some(crate::kernel::driver::net::e1000::e1000_net_irq),
+    };
+
+static VIRTIO_NET_OPS_STATIC: crate::kernel::chitin::proto_net::NetOps =
+    crate::kernel::chitin::proto_net::NetOps {
+        send: crate::kernel::driver::virtio::net::virtio_net_send,
+        try_receive: crate::kernel::driver::virtio::net::virtio_net_recv,
+        get_mac: crate::kernel::driver::virtio::net::virtio_net_get_mac,
+        handle_irq: Some(crate::kernel::driver::virtio::net::virtio_net_irq),
+    };
 
 // ============================================================================
 // 恢复机制
@@ -220,7 +239,7 @@ unsafe extern "C" fn net_restore() {
 
     crate::arch!(interrupt_enable());
     unsafe {
-        klog_init_msg("--- Network Recovered ---\0".as_ptr() as *const i8);
+        klog_init_msg("--- Network Recovered ---\0".as_ptr().cast());
     }
 }
 
@@ -238,7 +257,7 @@ unsafe extern "C" fn net_reset() {
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
 
     unsafe {
-        klog_init_msg("--- Network Hard Reset ---\0".as_ptr() as *const i8);
+        klog_init_msg("--- Network Hard Reset ---\0".as_ptr().cast());
     }
 }
 
@@ -252,20 +271,20 @@ unsafe extern "C" fn net_reset() {
 #[no_mangle]
 pub extern "C" fn qx_net_init() {
     unsafe {
-        klog_init_msg("--- Network Subsystem Init ---\0".as_ptr() as *const i8);
+        klog_init_msg("--- Network Subsystem Init ---\0".as_ptr().cast());
 
         if transition_state(InitState::Uninitialized, InitState::HardwareProbed).is_err() {
             let current = G_INIT_STATE.load(Ordering::Acquire);
             if current == InitState::FullyInitialized as u8 {
-                klog_net("Network already initialized\0".as_ptr() as *const i8);
+                klog_net("Network already initialized\0".as_ptr().cast());
                 return;
             } else if current == InitState::Failed as u8 {
                 klog_net_err(
-                    "Previous initialization failed, retrying...\0".as_ptr() as *const i8,
+                    "Previous initialization failed, retrying...\0".as_ptr().cast(),
                 );
                 G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
             } else {
-                klog_net_err("Invalid init state, aborting\0".as_ptr() as *const i8);
+                klog_net_err("Invalid init state, aborting\0".as_ptr().cast());
                 return;
             }
             if transition_state(InitState::Uninitialized, InitState::HardwareProbed).is_err() {
@@ -273,15 +292,14 @@ pub extern "C" fn qx_net_init() {
             }
         }
 
-        klog_net("Step1: hardware probe\0".as_ptr() as *const i8);
+        klog_net("Step1: hardware probe\0".as_ptr().cast());
 
         let mut nic = match nic_probe_all() {
             Some(n) => n,
             None => {
                 let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
                 klog_net(
-                    "No NIC found, running without network\0".as_ptr()
-                        as *const i8,
+                    "No NIC found, running without network\0".as_ptr().cast(),
                 );
                 klog_init_msg(
                     "--- Network Subsystem Ready (No Network) ---\0".as_ptr() as *const i8,
@@ -290,9 +308,9 @@ pub extern "C" fn qx_net_init() {
             }
         };
 
-        klog_net("Step2: init device hardware\0".as_ptr() as *const i8);
+        klog_net("Step2: init device hardware\0".as_ptr().cast());
 
-        let mac = nic.mac();
+        let mac = nic.mac;
         let stack = smoltcp_impl::init_stack(&mut nic, mac);
 
         unsafe {
@@ -302,11 +320,11 @@ pub extern "C" fn qx_net_init() {
 
         if transition_state(InitState::HardwareProbed, InitState::InterfaceReady).is_err() {
             set_failed();
-            klog_net_err("Failed to transition to InterfaceReady\0".as_ptr() as *const i8);
+            klog_net_err("Failed to transition to InterfaceReady\0".as_ptr().cast());
             return;
         }
 
-        klog_net("Step3: init network interface\0".as_ptr() as *const i8);
+        klog_net("Step3: init network interface\0".as_ptr().cast());
 
         init_sockets();
 
@@ -322,19 +340,19 @@ pub extern "C" fn qx_net_init() {
 
         if transition_state(InitState::InterfaceReady, InitState::FullyInitialized).is_err() {
             set_failed();
-            klog_net_err("Failed to transition to FullyInitialized\0".as_ptr() as *const i8);
+            klog_net_err("Failed to transition to FullyInitialized\0".as_ptr().cast());
             return;
         }
 
         // 同步 DHCP 轮询 (中断尚未启用，不会与 ISR 竞争)
-        klog_net("DHCP: boot poll...\0".as_ptr() as *const i8);
+        klog_net("DHCP: boot poll...\0".as_ptr().cast());
         for _attempt in 0u32..500 {
             poll_network();
             for _ in 0..50000 {
                 core::hint::spin_loop();
             }
             if crate::kernel::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
-                klog_net("DHCP: lease acquired\0".as_ptr() as *const i8);
+                klog_net("DHCP: lease acquired\0".as_ptr().cast());
                 break;
             }
         }
@@ -352,14 +370,14 @@ pub extern "C" fn qx_net_init() {
                 let gw = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
                 let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
                 crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
-                klog_net("Static IP 10.0.2.15/24 (fallback)\0".as_ptr() as *const i8);
+                klog_net("Static IP 10.0.2.15/24 (fallback)\0".as_ptr().cast());
             }
         }
 
         // 最后启用中断: 进入用户态后 timer ISR 负责持续轮询
         crate::arch!(interrupt_enable());
 
-        klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr() as *const i8);
+        klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr().cast());
 
         crate::kernel::barrier::recovery::recovery_domain_register(
             "net",
@@ -475,7 +493,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
     crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
 
     unsafe {
-        klog_net("Static IP configured\0".as_ptr() as *const i8);
+        klog_net("Static IP configured\0".as_ptr().cast());
     }
     0
 }

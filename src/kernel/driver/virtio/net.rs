@@ -81,6 +81,8 @@ pub struct VirtioNet {
     /// Statistics.
     pub tx_count: u64,
     pub rx_count: u64,
+    /// TX DMA 缓冲区 (12-byte header + 2048-byte frame)
+    tx_dma_buf: [u8; NET_HDR_SIZE + 2048],
 }
 
 // SAFETY: VirtioNet uses DMA buffers from PMM; single-owner &mut self
@@ -256,6 +258,7 @@ impl VirtioNet {
             hdr_size,
             tx_count: 0,
             rx_count: 0,
+            tx_dma_buf: [0u8; NET_HDR_SIZE + 2048],
         };
 
         // Pre-fill RX queue with empty buffers
@@ -499,4 +502,44 @@ pub fn probe() -> i32 {
     }
     klog_info!(Driver, "virtio-net: no device found");
     -1
+}
+
+// ============================================================================
+// NetOps 桥接 — 供 ChitinNetDevice 使用
+// ============================================================================
+
+pub unsafe fn virtio_net_send(driver_data: *mut core::ffi::c_void, data: *const u8, len: u32) -> i32 {
+    if driver_data.is_null() || data.is_null() || len == 0 { return -1; }
+    let dev = &mut *(driver_data as *mut VirtioNet);
+    let hdr = dev.hdr_size;
+    let total = (hdr + len as usize).min(dev.tx_dma_buf.len());
+    dev.tx_dma_buf[..hdr].fill(0);
+    dev.tx_dma_buf[hdr..total].copy_from_slice(core::slice::from_raw_parts(data, total - hdr));
+    let phys = dev.tx_dma_buf.as_ptr() as u64;
+    match dev.send_packet(phys, total as u32) {
+        Ok(()) => 0,
+        Err(()) => -1,
+    }
+}
+
+pub unsafe fn virtio_net_recv(driver_data: *mut core::ffi::c_void, buf: *mut u8, buf_len: u32) -> i32 {
+    if driver_data.is_null() || buf.is_null() { return -1; }
+    let dev = &mut *(driver_data as *mut VirtioNet);
+    let buf_slice = core::slice::from_raw_parts_mut(buf, buf_len as usize);
+    match dev.try_receive(buf_slice) {
+        Some(n) => n as i32,
+        None => 0,
+    }
+}
+
+pub unsafe fn virtio_net_get_mac(driver_data: *mut core::ffi::c_void, mac: &mut [u8; 6]) {
+    if driver_data.is_null() { return; }
+    let dev = &*(driver_data as *const VirtioNet);
+    *mac = dev.mac;
+}
+
+pub unsafe fn virtio_net_irq(driver_data: *mut core::ffi::c_void) {
+    if driver_data.is_null() { return; }
+    let dev = &*(driver_data as *const VirtioNet);
+    dev.handle_interrupt();
 }

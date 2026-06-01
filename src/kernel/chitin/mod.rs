@@ -303,6 +303,35 @@ pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
         .count()
 }
 
+/// 查找第一个网络设备, 返回其 NetOps + driver_data + MAC 地址
+///
+/// 供 smoltcp_impl 使用——协议栈不关心具体驱动类型, 只需要
+/// 四个函数指针 (send/recv/get_mac/irq) 和 driver_data。
+pub fn chitin_find_net_device() -> Option<(
+    &'static crate::kernel::chitin::proto_net::NetOps,
+    *mut core::ffi::c_void,
+    [u8; 6],
+)> {
+    let devices = CHITIN_DEVICES.lock();
+    for dev in devices.iter() {
+        if dev.proto != ChitinProto::Net {
+            continue;
+        }
+        if dev.state != DeviceState::Ready {
+            continue;
+        }
+        match &dev.ops {
+            Some(ChitinOps::Net(net_ops)) => {
+                let mut mac = [0u8; 6];
+                unsafe { (net_ops.get_mac)(dev.driver_data, &mut mac) };
+                return Some((net_ops, dev.driver_data, mac));
+            }
+            _ => continue,
+        }
+    }
+    None
+}
+
 pub fn chitin_with_device<F>(id: u32, f: F)
 where
     F: FnOnce(&mut ChitinDevice),

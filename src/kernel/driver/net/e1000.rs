@@ -841,7 +841,7 @@ pub fn take_device() -> Option<Box<E1000Device>> {
     E1000_DEVICE.lock().take()
 }
 
-unsafe fn e1000_net_send(driver_data: *mut core::ffi::c_void, data: *const u8, len: u32) -> i32 {
+pub unsafe fn e1000_net_send(driver_data: *mut core::ffi::c_void, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() { return -1; }
     let dev = &mut *(driver_data as *mut E1000Device);
     match dev.send_packet(core::slice::from_raw_parts(data, len as usize)) {
@@ -850,7 +850,7 @@ unsafe fn e1000_net_send(driver_data: *mut core::ffi::c_void, data: *const u8, l
     }
 }
 
-unsafe fn e1000_net_recv(driver_data: *mut core::ffi::c_void, buf: *mut u8, buf_len: u32) -> i32 {
+pub unsafe fn e1000_net_recv(driver_data: *mut core::ffi::c_void, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return -1; }
     let dev = &mut *(driver_data as *mut E1000Device);
     let buf_slice = core::slice::from_raw_parts_mut(buf, buf_len as usize);
@@ -860,13 +860,13 @@ unsafe fn e1000_net_recv(driver_data: *mut core::ffi::c_void, buf: *mut u8, buf_
     }
 }
 
-unsafe fn e1000_net_get_mac(driver_data: *mut core::ffi::c_void, mac: &mut [u8; 6]) {
+pub unsafe fn e1000_net_get_mac(driver_data: *mut core::ffi::c_void, mac: &mut [u8; 6]) {
     if driver_data.is_null() { return; }
     let dev = &*(driver_data as *const E1000Device);
     *mac = dev.mac;
 }
 
-unsafe fn e1000_net_irq(driver_data: *mut core::ffi::c_void) {
+pub unsafe fn e1000_net_irq(driver_data: *mut core::ffi::c_void) {
     if driver_data.is_null() { return; }
     let dev = &mut *(driver_data as *mut E1000Device);
     dev.handle_interrupt();
