@@ -111,6 +111,9 @@ pub mod klog;
 /// SMP 多核支持 (双架构桩实现, feature=smp 时启用真实 IPI)
 pub mod smp;
 
+/// System configuration validation
+pub mod config;
+
 /// 内核测试框架
 pub mod tests;
 

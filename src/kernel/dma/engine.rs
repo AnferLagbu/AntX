@@ -99,6 +99,9 @@ impl DmaEngine {
         unsafe {
             ptr::write_bytes(virt.0 as *mut u8, 0, (pages * PAGE_SIZE) as usize);
         }
+        
+        // Ensure zeroing is visible to device
+        self.cache_flush(virt, size);
 
         self.stats.total_allocations.fetch_add(1, Ordering::Relaxed);
         self.stats
@@ -114,7 +117,7 @@ impl DmaEngine {
             dma_addr: phys,
             size,
             direction: DmaDirection::Bidirectional,
-            cache: DmaCachePolicy::None,
+            cache: DmaCachePolicy::Writeback,
             is_coherent: true,
             is_mapped: true,
         });
@@ -340,6 +343,103 @@ impl DmaEngine {
     }
 
     // =============== Private Helpers ===============
+
+    /// Flush CPU cache to ensure DMA coherency
+    /// This is architecture-specific and critical for non-coherent DMA
+    #[inline(always)]
+    fn cache_flush(&self, addr: VirtAddr, size: usize) {
+        // Architecture-specific cache flush
+        #[cfg(target_arch = "x86_64")]
+        {
+            // x86_64: Use CLFLUSH instruction if available
+            // For now, use memory fence as x86_64 is mostly coherent
+            core::sync::atomic::fence(Ordering::SeqCst);
+            
+            // TODO: Use CLFLUSHOPT for better performance on newer CPUs
+            // if cpu_has_clflushopt() {
+            //     flush_cache_clflushopt(addr, size);
+            // }
+        }
+        
+        #[cfg(target_arch = "aarch64")]
+        {
+            // aarch64: Use cache maintenance instructions
+            // DCCMVAC - Clean data cache to point of coherency
+            // This ensures CPU writes are visible to DMA devices
+            unsafe {
+                let start = addr.0 as usize;
+                let end = start + size;
+                let cache_line_size = 64; // Typical cache line size
+                
+                // Align start address down to cache line boundary
+                let aligned_start = start & !(cache_line_size - 1);
+                
+                for offset in (aligned_start..end).step_by(cache_line_size) {
+                    // Data Cache Clean by Virtual Address to Point of Coherency
+                    // dc cvac: Writes dirty cache lines to memory
+                    core::arch::asm!(
+                        "dc cvac, {addr}",
+                        addr = in(reg) offset,
+                        options(nostack, nomem),
+                    );
+                }
+                
+                // Data Synchronization Barrier
+                // Ensures all cache maintenance completes before continuing
+                core::arch::asm!("dsb sy", options(nostack, nomem));
+            }
+        }
+        
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            // Other architectures: assume coherent or use fence
+            core::sync::atomic::fence(Ordering::SeqCst);
+        }
+    }
+
+    /// Invalidate CPU cache before DMA read
+    /// This ensures CPU will see device's writes
+    #[inline(always)]
+    fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            // x86_64: Cache is typically coherent, just need fence
+            core::sync::atomic::fence(Ordering::SeqCst);
+        }
+        
+        #[cfg(target_arch = "aarch64")]
+        {
+            // aarch64: Use DC IVAC instruction
+            // This invalidates cache lines so CPU will read fresh data from memory
+            unsafe {
+                let start = addr.0 as usize;
+                let end = start + size;
+                let cache_line_size = 64;
+                
+                // Align start address down to cache line boundary
+                let aligned_start = start & !(cache_line_size - 1);
+                
+                for offset in (aligned_start..end).step_by(cache_line_size) {
+                    // Data Cache Invalidate by Virtual Address to Point of Coherency
+                    // dc ivac: Invalidates cache lines, forcing next read from memory
+                    core::arch::asm!(
+                        "dc ivac, {addr}",
+                        addr = in(reg) offset,
+                        options(nostack, nomem),
+                    );
+                }
+                
+                // Data Synchronization Barrier
+                // Ensures all cache invalidation completes before continuing
+                core::arch::asm!("dsb sy", options(nostack, nomem));
+            }
+        }
+        
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            core::sync::atomic::fence(Ordering::SeqCst);
+        }
+    }
 
     #[inline(always)]
     fn barrier_device() {

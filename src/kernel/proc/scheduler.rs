@@ -87,8 +87,6 @@ pub struct RtTaskInfo {
     pub time_slice_remaining: u64,
 }
 
-const MAX_CPUS: usize = 256;
-
 struct PerCpuSched {
     queues: [Mutex<VecDeque<Pid>>; MLFQ_LEVELS],
     rt_queue: Mutex<VecDeque<RtTaskInfo>>,
@@ -110,11 +108,11 @@ struct PerCpuSched {
 unsafe impl Send for PerCpuSched {}
 unsafe impl Sync for PerCpuSched {}
 
-static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; MAX_CPUS] =
-    [const { Mutex::new(None) }; MAX_CPUS];
+static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; crate::kernel::config::MAX_CPUS] =
+    [const { Mutex::new(None) }; crate::kernel::config::MAX_CPUS];
 
 pub fn init_per_cpu_sched(cpu_id: u32) {
-    let idx = (cpu_id as usize) % MAX_CPUS;
+    let idx = (cpu_id as usize) % crate::kernel::config::MAX_CPUS;
     let mut guard = PER_CPU_SCHED[idx].lock();
     if guard.is_some() {
         return;
@@ -142,7 +140,7 @@ pub fn init_per_cpu_sched(cpu_id: u32) {
 #[inline]
 fn per_cpu() -> &'static PerCpuSched {
     let cpu = crate::kernel::smp::get_current_cpu();
-    let idx = (cpu as usize) % MAX_CPUS;
+    let idx = (cpu as usize) % crate::kernel::config::MAX_CPUS;
     {
         let guard = PER_CPU_SCHED[idx].lock();
         if guard.is_none() {
@@ -167,7 +165,7 @@ fn per_cpu() -> &'static PerCpuSched {
 
 #[inline]
 fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
-    let idx = (cpu_id as usize) % MAX_CPUS;
+    let idx = (cpu_id as usize) % crate::kernel::config::MAX_CPUS;
     {
         let guard = PER_CPU_SCHED[idx].lock();
         if guard.is_none() {

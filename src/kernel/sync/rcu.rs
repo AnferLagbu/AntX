@@ -24,8 +24,6 @@ use core::cell::UnsafeCell;
 use core::ptr;
 use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 
-const MAX_CPUS: usize = 256;
-
 pub struct RcuHead {
     pub next: *mut RcuHead,
     pub func: Option<unsafe fn(*mut RcuHead)>,
@@ -71,7 +69,7 @@ const GP_WAIT: u32 = 1;
 const GP_DONE: u32 = 2;
 
 struct RcuGlobal {
-    data: UnsafeCell<[PerCpuRcu; MAX_CPUS]>,
+    data: UnsafeCell<[PerCpuRcu; crate::kernel::config::MAX_CPUS]>,
 }
 
 // SAFETY: Each PerCpuRcu[i] is normally accessed only by CPU i.
@@ -80,7 +78,7 @@ struct RcuGlobal {
 unsafe impl Sync for RcuGlobal {}
 
 static RCU_GLOBAL: RcuGlobal = RcuGlobal {
-    data: UnsafeCell::new([const { PerCpuRcu::new() }; MAX_CPUS]),
+    data: UnsafeCell::new([const { PerCpuRcu::new() }; crate::kernel::config::MAX_CPUS]),
 };
 
 static RCU_GP_COUNTER: AtomicU32 = AtomicU32::new(0);

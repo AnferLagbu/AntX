@@ -22,8 +22,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::types::Pid;
 
-const MAX_CPUS: usize = 256;
-
 pub struct CpuQueue {
     pub current: AtomicU32,
     pub need_reschedule: AtomicBool,
@@ -72,7 +70,7 @@ impl CpuQueue {
 }
 
 struct CpuQueues {
-    queues: UnsafeCell<[CpuQueue; MAX_CPUS]>,
+    queues: UnsafeCell<[CpuQueue; crate::kernel::config::MAX_CPUS]>,
 }
 
 // SAFETY: CpuQueues wraps UnsafeCell<[CpuQueue; MAX_CPUS]>.
@@ -81,11 +79,11 @@ struct CpuQueues {
 unsafe impl Sync for CpuQueues {}
 
 static CPU_QUEUES: CpuQueues = CpuQueues {
-    queues: UnsafeCell::new([const { CpuQueue::new() }; MAX_CPUS]),
+    queues: UnsafeCell::new([const { CpuQueue::new() }; crate::kernel::config::MAX_CPUS]),
 };
 
 pub fn cpu_queue(cpu_id: u32) -> &'static CpuQueue {
-    let idx = cpu_id as usize % MAX_CPUS;
+    let idx = cpu_id as usize % crate::kernel::config::MAX_CPUS;
     unsafe { &(&*CPU_QUEUES.queues.get())[idx] }
 }
 

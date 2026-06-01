@@ -371,18 +371,22 @@ impl IdtManager {
             return;
         }
 
-        // TODO: 通过 IOAPIC 或 PIC 启用
-        // 当前简化实现: 直接操作 PIC
-        unsafe {
-            if irq < 8 {
-                let mask = port_inb(0x21) & !(1 << irq);
-                port_outb(0x21, mask);
-            } else {
-                let slave_mask = port_inb(0xA1) & !(1 << (irq - 8));
-                port_outb(0xA1, slave_mask);
+        // Use IOAPIC if available (modern systems)
+        if crate::kernel::arch::x86_64::ioapic::is_initialized() {
+            crate::kernel::arch::x86_64::ioapic::unmask_irq(irq);
+        } else {
+            // Fallback to legacy PIC (8259A) for older systems
+            unsafe {
+                if irq < 8 {
+                    let mask = port_inb(0x21) & !(1 << irq);
+                    port_outb(0x21, mask);
+                } else {
+                    let slave_mask = port_inb(0xA1) & !(1 << (irq - 8));
+                    port_outb(0xA1, slave_mask);
 
-                let master_mask = port_inb(0x21) & !(1 << 2);
-                port_outb(0x21, master_mask);
+                    let master_mask = port_inb(0x21) & !(1 << 2);
+                    port_outb(0x21, master_mask);
+                }
             }
         }
     }
@@ -727,13 +731,17 @@ impl IdtManager {
 
     /// 发送 EOI (End of Interrupt)
     fn send_eoi(&self, irq: u8) {
-        // TODO: 通过 IOAPIC 发送 EOI
-        // 当前简化: PIC EOI
-        unsafe {
-            if irq >= 8 {
-                port_outb(0xA0, 0x20);
+        // Use Local APIC EOI if available (modern systems)
+        if crate::kernel::arch::x86_64::apic::is_initialized() {
+            crate::kernel::arch::x86_64::apic::eoi();
+        } else {
+            // Fallback to legacy PIC EOI for older systems
+            unsafe {
+                if irq >= 8 {
+                    port_outb(0xA0, 0x20);
+                }
+                port_outb(0x20, 0x20);
             }
-            port_outb(0x20, 0x20);
         }
     }
 

@@ -29,9 +29,6 @@ const MADT_TYPE_IOAPIC: u8 = 0x01;
 const _MADT_TYPE_ISO: u8 = 0x02;
 const _MADT_TYPE_NMI: u8 = 0x04;
 
-/// 最大 CPU 数
-pub const MAX_CPUS: usize = 256;
-
 static MADT_BASE: AtomicU64 = AtomicU64::new(0);
 static MADT_FOUND: AtomicBool = AtomicBool::new(false);
 static IOAPIC_ADDR: AtomicU64 = AtomicU64::new(0);
@@ -45,7 +42,8 @@ pub struct ApInfo {
     pub enabled: bool,
 }
 
-static AP_LIST: spin::Mutex<[Option<ApInfo>; MAX_CPUS]> = spin::Mutex::new([None; MAX_CPUS]);
+static AP_LIST: spin::Mutex<[Option<ApInfo>; crate::kernel::config::MAX_CPUS]> = 
+    spin::Mutex::new([None; crate::kernel::config::MAX_CPUS]);
 static AP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // ============================================================================

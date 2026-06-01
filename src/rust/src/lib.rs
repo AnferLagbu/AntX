@@ -336,9 +336,17 @@ pub extern "C" fn kernel_init() {
     }
     crate::klog_boot_info!("QueenX starting");
 
+    // 0.1. Config validation — 验证系统配置一致性
+    // Must be called after klog_init for error reporting
+    crate::kernel::config::init();
+    crate::klog_boot_info!("Configuration validated");
+
     // Test mode: skip normal init, run unit tests
     #[cfg(feature = "kernel_test")]
     {
+        // Validate configuration even in test mode
+        crate::kernel::config::init();
+        
         <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_disable(
         );
 

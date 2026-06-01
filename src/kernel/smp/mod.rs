@@ -8,11 +8,11 @@ static SMP_ENABLED: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU32 = AtomicU32::new(1);
 static BSP_ID: AtomicU32 = AtomicU32::new(0);
 
-const MAX_CPUS: usize = 256;
+static CPU_APIC_IDS: [AtomicU32; crate::kernel::config::MAX_CPUS] = 
+    [const { AtomicU32::new(0xFFFF) }; crate::kernel::config::MAX_CPUS];
 
-static CPU_APIC_IDS: [AtomicU32; MAX_CPUS] = [const { AtomicU32::new(0xFFFF) }; MAX_CPUS];
-
-static CPU_ONLINE: [AtomicBool; MAX_CPUS] = [const { AtomicBool::new(false) }; MAX_CPUS];
+static CPU_ONLINE: [AtomicBool; crate::kernel::config::MAX_CPUS] = 
+    [const { AtomicBool::new(false) }; crate::kernel::config::MAX_CPUS];
 
 pub fn init() {
     let bsp_apic_id = crate::arch!(cpu_id());
@@ -41,7 +41,7 @@ pub fn get_current_cpu() -> u32 {
 
 pub fn register_cpu(apic_id: u32) -> bool {
     let count = CPU_COUNT.fetch_add(1, Ordering::AcqRel);
-    if count as usize >= MAX_CPUS {
+    if count as usize >= crate::kernel::config::MAX_CPUS {
         CPU_COUNT.fetch_sub(1, Ordering::AcqRel);
         return false;
     }
@@ -53,14 +53,14 @@ pub fn register_cpu(apic_id: u32) -> bool {
 }
 
 pub fn is_cpu_online(cpu_index: u32) -> bool {
-    if cpu_index as usize >= MAX_CPUS {
+    if cpu_index as usize >= crate::kernel::config::MAX_CPUS {
         return false;
     }
     CPU_ONLINE[cpu_index as usize].load(Ordering::Acquire)
 }
 
 pub fn get_apic_id(cpu_index: u32) -> u32 {
-    if cpu_index as usize >= MAX_CPUS {
+    if cpu_index as usize >= crate::kernel::config::MAX_CPUS {
         return 0xFFFF;
     }
     CPU_APIC_IDS[cpu_index as usize].load(Ordering::Acquire)
