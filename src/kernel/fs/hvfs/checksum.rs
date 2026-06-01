@@ -95,9 +95,17 @@ impl HvChecksum {
 
     fn sha256(&mut self, data: &[u8]) {
         let hash = crate::kernel::credo::sha256::sha256(data);
-        self.value[0] = u64::from_be_bytes(hash[0..8].try_into().unwrap());
-        self.value[1] = u64::from_be_bytes(hash[8..16].try_into().unwrap());
-        self.value[2] = u64::from_be_bytes(hash[16..24].try_into().unwrap());
-        self.value[3] = u64::from_be_bytes(hash[24..32].try_into().unwrap());
+        self.value[0] = u64::from_be_bytes(
+            hash[0..8].try_into().unwrap_or_else(|_| [0u8; 8])
+        );
+        self.value[1] = u64::from_be_bytes(
+            hash[8..16].try_into().unwrap_or_else(|_| [0u8; 8])
+        );
+        self.value[2] = u64::from_be_bytes(
+            hash[16..24].try_into().unwrap_or_else(|_| [0u8; 8])
+        );
+        self.value[3] = u64::from_be_bytes(
+            hash[24..32].try_into().unwrap_or_else(|_| [0u8; 8])
+        );
     }
 }

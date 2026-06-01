@@ -19,6 +19,7 @@ pub mod vmm;
 pub mod vmm;
 
 pub mod arch;
+pub mod copy_user;
 pub mod cow;
 pub mod ffi;
 pub mod kmalloc;

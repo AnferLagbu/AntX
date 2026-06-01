@@ -149,32 +149,35 @@ pub fn compute_recovery_order(root_id: DomainId) -> Vec<DomainId> {
         if idx.is_none() {
             continue;
         }
-        if visited[idx.unwrap()] {
-            continue;
-        }
-        visited[idx.unwrap()] = true;
+        if let Some(i) = idx {
+            if visited[i] {
+                continue;
+            }
+            visited[i] = true;
 
-        for r in reg.registered.iter() {
-            if r.id == id {
-                for &dep in r.deps.iter() {
-                    let dep_idx = all_ids.iter().position(|&x| x == dep);
-                    if let Some(di) = dep_idx {
-                        if !visited[di] {
-                            stack.push(dep);
+            for r in reg.registered.iter() {
+                if r.id == id {
+                    for &dep in r.deps.iter() {
+                        let dep_idx = all_ids.iter().position(|&x| x == dep);
+                        if let Some(di) = dep_idx {
+                            if !visited[di] {
+                                stack.push(dep);
+                            }
                         }
                     }
+                    break;
                 }
-                break;
             }
         }
         order.push(id);
     }
 
     for &id in &all_ids {
-        let idx = all_ids.iter().position(|&x| x == id).unwrap();
-        if !visited[idx] && id != root_id {
-            if has_dependency(id, root_id) {
-                order.push(id);
+        if let Some(idx) = all_ids.iter().position(|&x| x == id) {
+            if !visited[idx] && id != root_id {
+                if has_dependency(id, root_id) {
+                    order.push(id);
+                }
             }
         }
     }

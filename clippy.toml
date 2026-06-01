@@ -1,0 +1,44 @@
+# Clippy configuration for AntX kernel
+# Enforce strict safety and code quality standards
+
+# Deny all warnings - treat them as errors
+deny = ["all", "warnings"]
+
+# Allow some common patterns that are acceptable in kernel code
+allow = [
+    "unsafe_code",           # We use unsafe deliberately with SAFETY comments
+    "dead_code",             # Some FFI functions may not be used yet
+    "unused_variables",      # Common in FFI stubs
+    "unused_imports",        # May be needed for future features
+]
+
+# Warn about potential issues
+warn = [
+    "unsafe_derive_deserialize",  # Unsafe impl of Deserialize
+    "unsafe_removed_from_name",   # Functions renamed from unsafe
+    "unused_unsafe",              # Unnecessary unsafe blocks
+    "redundant_unsafe",           # Redundant unsafe blocks
+    "multiple_unsafe_implicit",   # Multiple implicit unsafe ops
+]
+
+# Cognitive complexity limit - keep functions understandable
+cognitive-complexity-threshold = 25
+
+# Type complexity limit
+type-complexity-threshold = 250
+
+# Function body length limit
+too-many-lines-threshold = 100
+
+# Avoid large types passed by value
+trivially-copy-pass-by-ref-threshold = 16
+
+# Documentation requirements
+missing-docs-in-crate-items = true
+
+# Standard macros
+standard-macro-braces = [
+    { name = "klog_pmm", brace = "Paren" },
+    { name = "klog_slab", brace = "Paren" },
+    { name = "klog_error", brace = "Paren" },
+]

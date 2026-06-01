@@ -10,6 +10,15 @@ use super::*;
 use core::ffi::c_void;
 use core::sync::atomic::AtomicU64;
 
+/// Kernel malloc statistics structure (C-compatible)
+#[repr(C)]
+pub struct KmallocStats {
+    pub total_allocs: u64,
+    pub total_frees: u64,
+    pub current_usage: u64,
+    pub peak_usage: u64,
+}
+
 // ============================================================
 // PMM FFI Functions
 // ============================================================
@@ -397,9 +406,20 @@ pub extern "C" fn krealloc(ptr: *mut c_void, size: u64) -> *mut c_void {
 ///
 /// Note: This is a simplified version that doesn't fill the struct yet
 #[no_mangle]
-pub extern "C" fn kmalloc_stats(_stats: *mut c_void) {
-    // TODO: Fill stats struct with actual data from Rust implementation
-    // For now, this is a placeholder to satisfy the linker
+pub extern "C" fn kmalloc_stats(stats: *mut c_void) {
+    if stats.is_null() {
+        return;
+    }
+
+    let kmalloc = get_kmalloc();
+    
+    unsafe {
+        let stats_ptr = stats as *mut KmallocStats;
+        (*stats_ptr).total_allocs = kmalloc.alloc_count.load(Ordering::Relaxed);
+        (*stats_ptr).total_frees = kmalloc.free_count.load(Ordering::Relaxed);
+        (*stats_ptr).current_usage = kmalloc.current_usage.load(Ordering::Relaxed);
+        (*stats_ptr).peak_usage = kmalloc.peak_usage.load(Ordering::Relaxed);
+    }
 }
 
 /// Dump kernel heap information - matches original C API: void kmalloc_dump(void)

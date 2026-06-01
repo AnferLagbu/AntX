@@ -150,13 +150,18 @@ fn per_cpu() -> &'static PerCpuSched {
             init_per_cpu_sched(cpu);
         }
     }
-    // SAFETY: PerCpuSched lives at a stable address within the static
-    // PER_CPU_SCHED array. Once initialized (Some), it is never set
-    // back to None, so the pointer remains valid for 'static.
     let guard = PER_CPU_SCHED[idx].lock();
     unsafe {
-        let ptr = guard.as_ref().unwrap() as *const PerCpuSched;
-        &*ptr
+        match guard.as_ref() {
+            Some(per_cpu) => {
+                let ptr = per_cpu as *const PerCpuSched;
+                &*ptr
+            }
+            None => {
+                klog_error!("[SCHED] Failed to get per-CPU scheduler for CPU {}", idx);
+                core::hint::unreachable_unchecked()
+            }
+        }
     }
 }
 

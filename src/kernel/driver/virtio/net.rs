@@ -358,25 +358,30 @@ impl VirtioNet {
                 break;
             }
 
-            let (desc_idx, len) = result.unwrap();
-            let buf_idx = desc_idx as usize;
+            if let Some((desc_idx, len)) = result {
+                let buf_idx = desc_idx as usize;
 
-            if buf_idx < VQ_SIZE as usize && !self.rx_buffers[buf_idx].is_null() {
-                // Process the received packet
-                // Device writes virtio_net_hdr before the ethernet frame
-                if len > self.hdr_size as u32 && len <= RX_BUFFER_SIZE as u32 {
-                    self.rx_count += 1;
-                    processed += 1;
+                if buf_idx < VQ_SIZE as usize && !self.rx_buffers[buf_idx].is_null() {
+                    if len > self.hdr_size as u32 && len <= RX_BUFFER_SIZE as u32 {
+                        self.rx_count += 1;
+                        processed += 1;
+
+                        self.rx_vq.reclaim_desc(desc_idx);
+                        let new_desc = self.rx_vq.prepare_desc(
+                            self.rx_buffers_phys[buf_idx],
+                            RX_BUFFER_SIZE as u32,
+                            true,
+                        );
+                        self.rx_vq.submit(new_desc);
+                    } else {
+                        klog_error!(
+                            "[VirtIO-Net] RX invalid packet length: len={}, hdr_size={}, buf_size={}",
+                            len,
+                            self.hdr_size,
+                            RX_BUFFER_SIZE
+                        );
+                    }
                 }
-
-                // Recycle: re-prepare the buffer for device writing
-                self.rx_vq.reclaim_desc(desc_idx);
-                let new_desc = self.rx_vq.prepare_desc(
-                    self.rx_buffers_phys[buf_idx],
-                    RX_BUFFER_SIZE as u32,
-                    true,
-                );
-                self.rx_vq.submit(new_desc);
             }
         }
 

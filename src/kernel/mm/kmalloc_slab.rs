@@ -7,7 +7,11 @@
 //!
 //! ## SAFETY
 //!
-//! `SLAB_CACHES` 使用 `static mut` 存储，访问由 `SLAB_LOCK` 自旋锁保护。
+//! `SLAB_CACHES` 使用 `[Option<KmemCache>; 8]` 数组存储，每个缓存独立初始化。
+//! 如果某个缓存创建失败，对应的数组元素为 `None`，分配时会自动回退到堆分配器。
+//! 这种设计避免了未初始化内存访问，确保内存安全。
+//!
+//! `SLAB_CACHES` 访问由 `SLAB_LOCK` 自旋锁保护。
 //! `slab_init()` 在内核早期初始化阶段（单核）调用，因此初始化路径无竞态。
 
 use super::slab::KmemCache;
@@ -15,13 +19,15 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 const CACHE_SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
 
-static mut SLAB_CACHES: Option<[KmemCache; 8]> = None;
+/// Slab caches array - using Option to safely handle initialization failures
+/// None indicates that cache creation failed and should not be used
+static mut SLAB_CACHES: [Option<KmemCache>; 8] = [None, None, None, None, None, None, None, None];
 static SLAB_LOCK: AtomicBool = AtomicBool::new(false);
 static SLAB_READY: AtomicBool = AtomicBool::new(false);
 
 pub fn slab_init() {
-    use core::mem::MaybeUninit;
-    let mut arr: [MaybeUninit<KmemCache>; 8] = unsafe { MaybeUninit::zeroed().assume_init() };
+    let mut success_count = 0;
+    
     for i in 0..8 {
         let name = match i {
             0 => "kmalloc-16",
@@ -33,13 +39,33 @@ pub fn slab_init() {
             6 => "kmalloc-1024",
             _ => "kmalloc-2048",
         };
-        arr[i] = MaybeUninit::new(
-            KmemCache::create(name, CACHE_SIZES[i]).expect("Failed to create slab cache"),
+        
+        match KmemCache::create(name, CACHE_SIZES[i]) {
+            Some(cache) => {
+                unsafe { SLAB_CACHES[i] = Some(cache); }
+                success_count += 1;
+            }
+            None => {
+                klog_error!(
+                    "[SLAB] CRITICAL: Failed to create cache {} (size {}). \
+                     This size class will fall back to heap allocator.",
+                    name,
+                    CACHE_SIZES[i]
+                );
+                unsafe { SLAB_CACHES[i] = None; }
+            }
+        }
+    }
+    
+    if success_count == 0 {
+        klog_error!("[SLAB] CRITICAL: All slab caches failed to initialize!");
+    } else {
+        klog_info!(
+            "[SLAB] Initialized {}/8 caches successfully",
+            success_count
         );
     }
-    unsafe {
-        SLAB_CACHES = Some(core::mem::transmute(arr));
-    }
+    
     SLAB_READY.store(true, Ordering::Release);
 }
 
@@ -74,7 +100,15 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
 
     if let Some(idx) = cache_index(size) {
         slab_lock();
-        let result = unsafe { SLAB_CACHES.as_mut().unwrap()[idx].allocate() };
+        let result = unsafe {
+            match &mut SLAB_CACHES[idx] {
+                Some(cache) => cache.allocate(),
+                None => {
+                    // Cache creation failed, fall back to heap allocator
+                    super::kmalloc::get_kmalloc().allocate(size)
+                }
+            }
+        };
         slab_unlock();
         result
     } else {
@@ -95,7 +129,13 @@ pub fn slab_kfree(ptr: *mut u8, size: usize) {
     if let Some(idx) = cache_index(size) {
         slab_lock();
         unsafe {
-            SLAB_CACHES.as_mut().unwrap()[idx].deallocate(ptr);
+            match &mut SLAB_CACHES[idx] {
+                Some(cache) => cache.deallocate(ptr),
+                None => {
+                    // Cache creation failed, use heap deallocator
+                    super::kmalloc::get_kmalloc().deallocate(ptr);
+                }
+            }
         }
         slab_unlock();
     } else {

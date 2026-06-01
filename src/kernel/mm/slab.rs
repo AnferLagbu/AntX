@@ -787,11 +787,21 @@ pub extern "C" fn slab_get_system_stats(
     }
 
     unsafe {
-        *total_memory = 0;
-        *used_memory = 0;
-        *total_caches = SLAB_GENERAL_CACHE_NUM as u32;
+        let mut total = 0u64;
+        let mut used = 0u64;
+        let mut count = 0u32;
 
-        // TODO: 遍历所有通用缓存累加统计
+        for i in 0..GENERAL_CACHE_SIZES.len() {
+            if let Some(ref cache) = GENERAL_CACHES[i] {
+                count += 1;
+                total += cache.slab_count as u64 * SLAB_SIZE;
+                used += cache.active_objects as u64 * cache.object_size as u64;
+            }
+        }
+
+        *total_memory = total;
+        *used_memory = used;
+        *total_caches = count;
     }
 }
 
@@ -800,7 +810,20 @@ pub extern "C" fn slab_get_system_stats(
 pub extern "C" fn slab_dump_all_caches() {
     klog_slab!("[SLAB] === Slab Allocator Status ===");
 
-    // TODO: 遍历并打印每个缓存的信息
+    unsafe {
+        for i in 0..GENERAL_CACHE_SIZES.len() {
+            if let Some(ref cache) = GENERAL_CACHES[i] {
+                klog_slab!(
+                    "[SLAB] Cache '{}': obj_size={} objs_per_slab={} slabs={} active={}",
+                    cache.name,
+                    cache.object_size,
+                    cache.objects_per_slab,
+                    cache.slab_count,
+                    cache.active_objects
+                );
+            }
+        }
+    }
 }
 
 // ============================================================================

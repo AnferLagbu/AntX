@@ -181,10 +181,10 @@ pub fn cas_aware_write(data: &[u8], txg: u64, obj_id: u64) -> Option<super::bp::
         crate::kernel::fs::hvfs::zil::HvZilRecord::new_dedup_ref(
             txg,
             [
-                u64::from_be_bytes(hash[0..8].try_into().unwrap()),
-                u64::from_be_bytes(hash[8..16].try_into().unwrap()),
-                u64::from_be_bytes(hash[16..24].try_into().unwrap()),
-                u64::from_be_bytes(hash[24..32].try_into().unwrap()),
+                u64::from_be_bytes(hash[0..8].try_into().unwrap_or_else(|_| [0u8; 8])),
+                u64::from_be_bytes(hash[8..16].try_into().unwrap_or_else(|_| [0u8; 8])),
+                u64::from_be_bytes(hash[16..24].try_into().unwrap_or_else(|_| [0u8; 8])),
+                u64::from_be_bytes(hash[24..32].try_into().unwrap_or_else(|_| [0u8; 8])),
             ],
             obj_id,
         );
