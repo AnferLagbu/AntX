@@ -1,0 +1,225 @@
+//! System Configuration Center
+//!
+//! AntX 内核的 **统一配置中心 + 启动自检中心**。
+//!
+//! ## 职责
+//!
+//! 1. **集中定义全内核容量/规模常量** — 消除分散与重复
+//! 2. **集中定义内存布局常量** — `PAGE_SIZE`、栈/堆尺寸、用户态地址空间
+//! 3. **集中定义调度常量** — CFS/调度级别量子、提升间隔
+//! 4. **集中定义 slab 配置** — 大小/对象尺寸
+//! 5. **启动自检** — 验证常量自洽性、内存布局合法性、中断控制器可用性
+//! 6. **跨模块一致性校验** — 防止下游模块因重复定义产生 OOB
+//! 7. **特性能力查询** — 编译期 `cfg` 与运行时 `KernelCapabilities`
+//! 8. **procfs 接口** — 用户态通过 `/proc/sys/config` 读取
+//! 9. **启动期 ASCII 表格输出** — 通过 `print_config_table()`
+//!
+//! ## 架构
+//!
+//! 本模块由子模块组成, 每个子模块负责一个领域:
+//!
+//! ```text
+//! config/
+//!   capacity.rs   进程/线程/IRQ/文件/会话容量
+//!   memory.rs     内存布局常量
+//!   sched.rs      调度常量
+//!   slab.rs       slab 配置
+//!   error.rs      ConfigError
+//!   validate.rs   validate_* 函数
+//!   caps.rs       ConfigSummary, KernelCapabilities
+//!   procfs.rs     /proc/sys/config 接口
+//!   mod.rs        入口 + re-exports + init
+//! ```
+//!
+//! ## 调用方式
+//!
+//! ```text
+//! kernel::config::init();   // 极早期调用, 仅依赖 klog + smp::get_cpu_count
+//! ```
+//!
+//! ## 安全要点
+//!
+//! - 所有数组分配以本模块常量为 **唯一权威**; 其他模块必须 `pub use` 而非重复 `pub const`
+//! - 启动期 `validate_cross_module_consistency` 二次校验, 防止未来回归
+//! - debug 构建中, 关键错误会 panic; release 构建降级为日志
+
+// ============================================================================
+// 子模块声明
+// ============================================================================
+
+mod capacity;
+mod caps;
+mod error;
+mod memory;
+pub mod procfs;
+mod sched;
+mod slab;
+mod validate;
+
+// ============================================================================
+// 重新导出: 子模块 (便于测试与外部使用)
+// ============================================================================
+
+pub use caps::{get_config_summary, ConfigSummary, KernelCapabilities};
+pub use error::ConfigError;
+
+// ============================================================================
+// 重新导出: 常量 (保持外部 `use crate::kernel::config::XXX` 路径完全不变)
+// ============================================================================
+
+pub use capacity::{
+    MAX_CPUS, MAX_IRQS, MAX_OPEN_FILES, MAX_PROCESSES, MAX_SESSIONS, MAX_THREADS,
+    MAX_THREADS_PER_PROCESS,
+};
+pub use memory::{
+    HUGE_PAGE_1G_SHIFT, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT, HUGE_PAGE_2M_SIZE, KERNEL_STACK_SIZE,
+    PAGE_SHIFT, PAGE_SIZE, USER_CODE_BASE, USER_KSTACK_SIZE, USER_STACK_GUARD, USER_STACK_MAX_SIZE,
+    USER_STACK_SIZE, USER_STACK_TOP,
+};
+pub use sched::{
+    CFS_BOOST_INTERVAL, CFS_DL_MAX_UTILIZATION_PCT, CFS_DL_MIN_PERIOD, CFS_DL_MIN_RUNTIME,
+    CFS_MIN_GRANULARITY, CFS_NICE0_WEIGHT, CFS_TARGET_LATENCY, SCHED_BOOST_INTERVAL,
+    SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
+    SCHED_RT_WATCHDOG_TICKS,
+};
+pub use slab::{SLAB_DEFAULT_SIZE, SLAB_GENERAL_CACHE_NUM, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE};
+
+// ============================================================================
+// 重新导出: 验证函数
+// ============================================================================
+
+pub use validate::{
+    validate_cpu_config, validate_cross_module_consistency, validate_interrupt_config,
+    validate_memory_config, validate_system_config,
+};
+
+// ============================================================================
+// ASCII 表格打印 (演进 3)
+// ============================================================================
+
+/// 以 ASCII 表格形式输出当前内核配置, 适用于串口启动日志
+/// 与 dmesg 抓取。
+///
+/// 输出宽度固定 56 列, 与内核其他启动表对齐。
+pub fn print_config_table() {
+    use crate::klog_info;
+
+    let s = get_config_summary();
+    let caps = s.capabilities;
+
+    klog_info!(Boot, "+----------------------------------------------------+");
+    klog_info!(Boot, "|          AntX Kernel Configuration                 |");
+    klog_info!(Boot, "+-------------------------+--------------------------+");
+    klog_info!(
+        Boot,
+        "| max_cpus / actual       | {:>8} / {:<8}    |",
+        s.max_cpus,
+        s.actual_cpus
+    );
+    klog_info!(
+        Boot,
+        "| max_irqs                | {:>22}    |",
+        s.max_irqs
+    );
+    klog_info!(
+        Boot,
+        "| max_processes           | {:>22}    |",
+        s.max_processes
+    );
+    klog_info!(
+        Boot,
+        "| max_threads             | {:>22}    |",
+        s.max_threads
+    );
+    klog_info!(
+        Boot,
+        "| page_size (bytes)       | {:>22}    |",
+        s.page_size
+    );
+    klog_info!(Boot, "+-------------------------+--------------------------+");
+    klog_info!(
+        Boot,
+        "| APIC / IOAPIC           | {:>10} / {:<10}|",
+        if s.apic_enabled { "on" } else { "off" },
+        if s.ioapic_enabled { "on" } else { "off" }
+    );
+    klog_info!(Boot, "+-------------------------+--------------------------+");
+    klog_info!(Boot, "| capabilities                                     |");
+    klog_info!(
+        Boot,
+        "|   smp={} preempt={} kaslr={} kpti={} barrier={}      |",
+        on_off(caps.smp),
+        on_off(caps.preempt),
+        on_off(caps.kaslr),
+        on_off(caps.kpti),
+        on_off(caps.barrier)
+    );
+    klog_info!(Boot, "+----------------------------------------------------+");
+}
+
+#[inline]
+fn on_off(b: bool) -> &'static str {
+    if b {
+        "on"
+    } else {
+        "off"
+    }
+}
+
+// ============================================================================
+// 入口
+// ============================================================================
+
+/// Initialize configuration validation and emit boot summary.
+///
+/// Should be called as the first action in `kernel_main`, before
+/// any subsystem that depends on `MAX_CPUS`/`MAX_PROCESSES`/etc.
+pub fn init() {
+    use crate::klog_info;
+
+    let summary = get_config_summary();
+    let caps = summary.capabilities;
+
+    klog_info!(Boot, "==== AntX Kernel Configuration ====");
+    klog_info!(
+        Boot,
+        "  CPUs:    {} / {}",
+        summary.actual_cpus,
+        summary.max_cpus
+    );
+    klog_info!(Boot, "  IRQs:    {}", summary.max_irqs);
+    klog_info!(Boot, "  Procs:   {}", summary.max_processes);
+    klog_info!(
+        Boot,
+        "  Threads: {} (max {} per proc)",
+        summary.max_threads,
+        MAX_THREADS_PER_PROCESS
+    );
+    klog_info!(Boot, "  Page:    {} bytes", summary.page_size);
+    klog_info!(
+        Boot,
+        "  APIC:    {}   IOAPIC: {}",
+        on_off(summary.apic_enabled),
+        on_off(summary.ioapic_enabled)
+    );
+    klog_info!(
+        Boot,
+        "  Caps:    smp={} preempt={} kaslr={} kpti={} barrier={}",
+        on_off(caps.smp),
+        on_off(caps.preempt),
+        on_off(caps.kaslr),
+        on_off(caps.kpti),
+        on_off(caps.barrier)
+    );
+
+    let errors = validate_system_config();
+
+    if errors == 0 {
+        klog_info!(Boot, "==== Configuration OK ====");
+    } else {
+        klog_info!(Boot, "==== Configuration: {} error(s) (see above) ====", errors);
+    }
+
+    // 演进 3: 启动期同步打印 ASCII 表格 (便于截图与 dmesg 抓取)
+    print_config_table();
+}

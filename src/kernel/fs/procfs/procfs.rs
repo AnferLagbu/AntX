@@ -70,7 +70,12 @@ impl ProcfsData {
         entries[2].entry_type = 1;
         entries[2].used = true;
 
-        self.entry_count.store(3, Ordering::SeqCst);
+        Self::set_name(&mut entries[3], "sys/config");
+        entries[3].pid = 0;
+        entries[3].entry_type = 1;
+        entries[3].used = true;
+
+        self.entry_count.store(4, Ordering::SeqCst);
 
         0
     }
@@ -198,6 +203,10 @@ impl ProcfsData {
             let len = info.len().min(buf.len());
             buf[..len].copy_from_slice(&info[..len]);
             return len as i32;
+        }
+
+        if name == "sys/config" {
+            return crate::kernel::config::procfs::read_sys_config(buf) as i32;
         }
 
         -1

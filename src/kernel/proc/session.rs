@@ -11,7 +11,7 @@ fn log(s: &str) {
     }
 }
 
-pub const MAX_SESSIONS: usize = 16;
+pub use crate::kernel::config::MAX_SESSIONS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

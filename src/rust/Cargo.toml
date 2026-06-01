@@ -59,4 +59,7 @@ smtp = []
 tftp = []
 snmp = []
 netbios = []
+preempt = []
+kaslr = []
+barrier = []
 

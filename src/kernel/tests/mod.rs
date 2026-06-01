@@ -21,6 +21,7 @@ pub mod sync;
 pub mod sys;
 pub mod test_barrier;
 pub mod test_barrier_ext;
+pub mod test_config;
 pub mod test_devfs;
 #[cfg(target_arch = "x86_64")]
 pub mod test_hvfs;
@@ -322,6 +323,7 @@ pub fn test_runner_init() {
 
     test_barrier::register_barrier_tests();
     test_barrier_ext::register_barrier_ext_tests();
+    test_config::register_config_tests();
     #[cfg(target_arch = "x86_64")]
     {
         test_hvfs::register_hvfs_tests();

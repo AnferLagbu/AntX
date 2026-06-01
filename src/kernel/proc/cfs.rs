@@ -33,27 +33,22 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use super::types::Pid;
 
 // ============================================================================
-// CFS Constants
+// CFS Constants (统一从 config.rs 引用)
 // ============================================================================
 
-pub const NICE0_WEIGHT: u64 = 1024;
-
-/// Target scheduling latency in ticks.
-/// 60 ticks ≈ 6ms at 100Hz — desktop-class responsiveness.
-pub const TARGET_LATENCY_TICKS: u64 = 60;
-
-/// Minimum time slice granularity in ticks.
-/// Prevents excessive context switches under high load.
-/// 8 ticks ≈ 0.75ms at 100Hz.
-pub const MIN_GRANULARITY_TICKS: u64 = 8;
+pub use crate::kernel::config::{
+    CFS_NICE0_WEIGHT as NICE0_WEIGHT,
+    CFS_TARGET_LATENCY as TARGET_LATENCY_TICKS,
+    CFS_MIN_GRANULARITY as MIN_GRANULARITY_TICKS,
+    CFS_BOOST_INTERVAL as CFS_BOOST_INTERVAL_TICKS,
+    CFS_DL_MIN_RUNTIME as DL_MIN_RUNTIME_TICKS,
+    CFS_DL_MIN_PERIOD as DL_MIN_PERIOD_TICKS,
+    CFS_DL_MAX_UTILIZATION_PCT as DL_MAX_UTILIZATION_PCT,
+};
 
 /// Load-balance threshold: minimum weight difference to trigger migration.
 /// ≈1× NICE0 weight — prevents thrashing.
 pub const LOAD_BALANCE_THRESHOLD: u64 = 1024;
-
-/// Priority boost interval: every 1000 ticks, all tasks move to min_vruntime
-/// to prevent indefinite starvation of low-nice (CPU-bound) tasks.
-pub const CFS_BOOST_INTERVAL_TICKS: u64 = 1000;
 
 // ============================================================================
 // NICE → Weight Mapping
@@ -118,12 +113,9 @@ pub fn mlfq_level_to_nice(level: usize) -> i8 {
 
 // ============================================================================
 // Deadline Scheduling (EDF + CBS)
+//   DL_MIN_RUNTIME_TICKS / DL_MIN_PERIOD_TICKS / DL_MAX_UTILIZATION_PCT
+//   已在文件顶部 pub use config::* 引入, 此处仅保留文档说明。
 // ============================================================================
-
-pub const DL_MIN_RUNTIME_TICKS: u64 = 1;
-pub const DL_MIN_PERIOD_TICKS: u64 = 10;
-/// Maximum accepted deadline task utilization: 95%.
-pub const DL_MAX_UTILIZATION_PCT: u64 = 95;
 
 /// CBS (Constant Bandwidth Server) parameters for a SCHED_DEADLINE task.
 #[derive(Debug, Clone, Copy)]

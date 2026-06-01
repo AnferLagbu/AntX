@@ -2,8 +2,7 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::types::{ThreadPriority, ThreadState, SCHED_LEVEL_2_QUANTUM};
 
-pub const MAX_THREADS: usize = 128;
-pub const MAX_THREADS_PER_PROCESS: usize = 16;
+pub use crate::kernel::config::{MAX_THREADS, MAX_THREADS_PER_PROCESS};
 
 /// ✅ 统一线程结构体 — 合并了 Thread 和 ThreadNode, 消除类型强转 UB
 ///

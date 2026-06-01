@@ -45,17 +45,10 @@ macro_rules! klog_slab {
 // 常量定义
 // ============================================================================
 
-/// 默认 Slab 大小 (4KB, 一个物理页)
-pub const SLAB_DEFAULT_SIZE: usize = 4096;
-
-/// 最小对象大小 (16 bytes)
-pub const SLAB_MIN_OBJECT_SIZE: usize = 16;
-
-/// 最大对象大小 (2048 bytes)
-pub const SLAB_MAX_OBJECT_SIZE: usize = 2048;
-
-/// 通用缓存数量 (8个预定义大小)
-pub const SLAB_GENERAL_CACHE_NUM: usize = 8;
+/// Slab 配置常量 (统一从 config.rs 引用)
+pub use crate::kernel::config::{
+    SLAB_DEFAULT_SIZE, SLAB_MIN_OBJECT_SIZE, SLAB_MAX_OBJECT_SIZE, SLAB_GENERAL_CACHE_NUM,
+};
 
 /// 预定义的通用缓存大小 (bytes)
 /// 覆盖常见的小对象分配需求

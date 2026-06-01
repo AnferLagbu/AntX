@@ -33,14 +33,16 @@ extern "C" {
     fn kmalloc(size: u64) -> *mut core::ffi::c_void;
 }
 
-pub const PAGE_SIZE: u64 = 4096;
-pub const USER_STACK_SIZE: u64 = 65536;
-pub const USER_STACK_GUARD: u64 = 4096;
-pub const USER_STACK_TOP: u64 = 0x7FFFFFFFE000;
-pub const USER_KSTACK_SIZE: u64 = 16384;
-pub const USER_STACK_MAX_SIZE: u64 = 8 * 1024 * 1024;
+/// Page size in bytes.
+///
+/// 统一从 `config.rs` 引用以避免分散定义。
+pub use crate::kernel::config::{
+    PAGE_SIZE, USER_STACK_SIZE, USER_STACK_GUARD, USER_STACK_TOP, USER_KSTACK_SIZE,
+    USER_STACK_MAX_SIZE, USER_CODE_BASE,
+};
+
+/// 派生常量: 用户栈自动扩展的下界 (USER_STACK_TOP - USER_STACK_MAX_SIZE)
 pub const USER_STACK_EXPAND_LIMIT: u64 = USER_STACK_TOP - USER_STACK_MAX_SIZE;
-pub const USER_CODE_BASE: u64 = 0x400000;
 
 pub const PAGE_PRESENT: u64 = 1;
 pub const PAGE_WRITABLE: u64 = 2;

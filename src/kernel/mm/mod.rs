@@ -34,15 +34,11 @@ pub use kmalloc::*;
 pub use pmm::*;
 pub use vmm::*;
 
-/// Page size constants (matching C implementation)
-pub const PAGE_SIZE: u64 = 4096;
-pub const PAGE_SHIFT: u64 = 12;
-
-/// Huge page sizes
-pub const HUGE_PAGE_2M_SIZE: u64 = 2 * 1024 * 1024; // 2 MB
-pub const HUGE_PAGE_1G_SIZE: u64 = 1024 * 1024 * 1024; // 1 GB
-pub const HUGE_PAGE_2M_SHIFT: u64 = 21;
-pub const HUGE_PAGE_1G_SHIFT: u64 = 30;
+/// Page size and huge-page constants (统一从 config.rs 引用)
+pub use crate::kernel::config::{
+    PAGE_SIZE, PAGE_SHIFT, HUGE_PAGE_2M_SIZE, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT,
+    HUGE_PAGE_1G_SHIFT,
+};
 
 /// Memory layout constants
 /// x86_64: high-half mapping (0xFFFF_8000_0000_0000)

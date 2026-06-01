@@ -207,18 +207,12 @@ impl Default for ProcessContext {
     }
 }
 
-pub const MAX_PROCESSES: usize = 256;
-pub const MAX_OPEN_FILES: usize = 32;
-pub const KERNEL_STACK_SIZE: usize = 65536;
-pub const USER_STACK_SIZE: usize = 65536;
-
-// === 线程调度常量 ===
-pub const SCHED_LEVEL_0_QUANTUM: u32 = 80;
-pub const SCHED_LEVEL_1_QUANTUM: u32 = 60;
-pub const SCHED_LEVEL_2_QUANTUM: u32 = 40;
-pub const SCHED_LEVEL_3_QUANTUM: u32 = 20;
-pub const SCHED_BOOST_INTERVAL: u64 = 1000;
-pub const SCHED_RT_WATCHDOG_TICKS: u64 = 500;
+// === 进程规模常量 (统一从 config.rs 引用) ===
+pub use crate::kernel::config::{
+    MAX_PROCESSES, MAX_OPEN_FILES, KERNEL_STACK_SIZE, USER_STACK_SIZE, SCHED_BOOST_INTERVAL,
+    SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
+    SCHED_RT_WATCHDOG_TICKS,
+};
 
 /// 线程调度优先级
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
