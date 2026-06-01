@@ -516,7 +516,8 @@ pub unsafe fn virtio_net_send(driver_data: *mut core::ffi::c_void, data: *const 
     dev.tx_dma_buf[..hdr].fill(0);
     dev.tx_dma_buf[hdr..total].copy_from_slice(core::slice::from_raw_parts(data, total - hdr));
     let phys = dev.tx_dma_buf.as_ptr() as u64;
-    match dev.send_packet(phys, total as u32) {
+    let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
+    match dev.send_packet(dma_phys, total as u32) {
         Ok(()) => 0,
         Err(()) => -1,
     }
