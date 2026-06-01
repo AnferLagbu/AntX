@@ -774,3 +774,45 @@ mod tests {
         assert_eq!(err.to_string(), "Not initialized");
     }
 }
+
+// ============================================================================
+// CharOps 桥接 — 供 Chitin 统一字符设备 I/O
+// ============================================================================
+
+use crate::kernel::chitin::proto_char::CharOps;
+
+unsafe fn serial_char_write(driver_data: *mut core::ffi::c_void, buf: &[u8]) -> usize {
+    if driver_data.is_null() { return 0; }
+    let port = &*(driver_data as *const SerialPort);
+    for &byte in buf {
+        if byte == b'\n' {
+            write_byte(port.base, b'\r');
+        }
+        while !is_transmit_empty(port.base) {
+            core::hint::spin_loop();
+        }
+        write_byte(port.base, byte);
+    }
+    buf.len()
+}
+
+unsafe fn serial_char_read(driver_data: *mut core::ffi::c_void, buf: &mut [u8]) -> usize {
+    if driver_data.is_null() { return 0; }
+    let port = &*(driver_data as *const SerialPort);
+    let mut count = 0;
+    for byte in buf.iter_mut() {
+        if is_data_ready(port.base) {
+            *byte = read_byte(port.base);
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    count
+}
+
+pub static NS16550_CHAR_OPS: CharOps = CharOps {
+    read: serial_char_read,
+    write: serial_char_write,
+    ioctl: None,
+};

@@ -624,14 +624,14 @@ pub extern "C" fn keyboard_init() {
     let mut driver = Box::new(KeyboardDriver::new());
     let _ = driver.init();
 
-    // 注册到几丁质框架 (非所有权指针, 内存由 KEYBOARD_DEVICE 管理)
     let raw_ptr: *mut KeyboardDriver = &mut *driver;
-    let _id = crate::kernel::chitin::chitin_register(
+    let _id = crate::kernel::chitin::chitin_register_with_ops(
         "ps2_keyboard",
         crate::kernel::chitin::ChitinProto::Input,
         None,
-        Some(1), // IRQ 1
+        Some(1),
         raw_ptr as *mut core::ffi::c_void,
+        crate::kernel::chitin::ChitinOps::Input(&PS2_KEYBOARD_INPUT_OPS),
     );
 
     *KEYBOARD_DEVICE.lock() = Some(driver);
@@ -648,28 +648,20 @@ pub extern "C" fn keyboard_irq_handler() {
     }
 }
 
-/// 读取字符 (C 兼容接口)
+/// 读取字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
 #[no_mangle]
 pub extern "C" fn keyboard_read_char() -> i32 {
-    if let Some(ref mut guard) = *KEYBOARD_DEVICE.lock() {
-        match guard.read_char() {
-            Some(ch) => ch as i32,
-            None => -1,
-        }
-    } else {
-        -1
+    match crate::kernel::chitin::chitin_input_read() {
+        Some(ch) => ch as i32,
+        None => -1,
     }
 }
 
-/// 检查是否有可读字符 (C 兼容接口)
+/// 检查是否有可读字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
 #[no_mangle]
 pub extern "C" fn keyboard_has_char() -> i32 {
-    if let Some(ref guard) = *KEYBOARD_DEVICE.lock() {
-        if !guard.is_buffer_empty() {
-            1
-        } else {
-            0
-        }
+    if crate::kernel::chitin::chitin_input_has_data() {
+        1
     } else {
         0
     }
@@ -796,3 +788,33 @@ mod tests {
         assert_eq!(err.to_string(), "Device busy");
     }
 }
+
+// ============================================================================
+// InputOps 桥接 — 供 Chitin 统一输入设备 I/O
+// ============================================================================
+
+use crate::kernel::chitin::proto_input::InputOps;
+
+unsafe fn kb_input_read(driver_data: *mut core::ffi::c_void) -> Option<u8> {
+    if driver_data.is_null() { return None; }
+    let kb = &mut *(driver_data as *mut KeyboardDriver);
+    kb.read_char()
+}
+
+unsafe fn kb_input_has(driver_data: *mut core::ffi::c_void) -> bool {
+    if driver_data.is_null() { return false; }
+    let kb = &*(driver_data as *const KeyboardDriver);
+    !kb.is_buffer_empty()
+}
+
+unsafe fn kb_input_irq(driver_data: *mut core::ffi::c_void) {
+    if driver_data.is_null() { return; }
+    let kb = &mut *(driver_data as *mut KeyboardDriver);
+    kb.handle_interrupt();
+}
+
+pub static PS2_KEYBOARD_INPUT_OPS: InputOps = InputOps {
+    read_char: kb_input_read,
+    has_char: kb_input_has,
+    handle_irq: kb_input_irq,
+};

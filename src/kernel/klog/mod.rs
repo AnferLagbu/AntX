@@ -152,13 +152,13 @@ mod serial_impl {
 
     pub fn serial_init() {
         unsafe {
-            port_outb(COM1 + 1, 0x00); // 禁用中断
-            port_outb(COM1 + 3, 0x80); // 启用 DLAB
-            port_outb(COM1, 0x03); // 除数低字节 (38400 baud)
-            port_outb(COM1 + 1, 0x00); // 除数高字节
-            port_outb(COM1 + 3, 0x03); // 8N1
-            port_outb(COM1 + 2, 0xC7); // 启用 FIFO
-            port_outb(COM1 + 4, 0x0B); // 启用 IRQ
+            port_outb(COM1 + 1, 0x00);
+            port_outb(COM1 + 3, 0x80);
+            port_outb(COM1, 0x03);
+            port_outb(COM1 + 1, 0x00);
+            port_outb(COM1 + 3, 0x03);
+            port_outb(COM1 + 2, 0xC7);
+            port_outb(COM1 + 4, 0x0B);
         }
     }
 
@@ -169,10 +169,6 @@ mod serial_impl {
             }
             port_outb(COM1, c);
         }
-    }
-
-    pub fn serial_read_ready() -> bool {
-        unsafe { (port_inb(COM1 + 5) & 0x01) != 0 }
     }
 }
 
@@ -189,18 +185,24 @@ mod serial_impl {
             uart::putc(c);
         }
     }
+}
 
-    pub fn serial_read_ready() -> bool {
-        false // PL011 read not implemented yet
-    }
+fn serial_putc_chained(c: u8) {
+    serial_impl::serial_putc(c);
+}
+
+fn serial_newline() {
+    serial_impl::serial_putc(b'\r');
+    serial_impl::serial_putc(b'\n');
 }
 
 pub fn serial_write_bytes(data: &[u8]) {
     for &byte in data {
         if byte == b'\n' {
-            serial_impl::serial_putc(b'\r');
+            serial_newline();
+        } else {
+            serial_putc_chained(byte);
         }
-        serial_impl::serial_putc(byte);
     }
 }
 
@@ -401,7 +403,7 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     serial_write_bytes(cat.name());
     serial_write_bytes(b"] ");
     serial_write_bytes(msg);
-    serial_impl::serial_putc(b'\n');
+    serial_newline();
 
     crate::arch!(interrupt_restore(saved_if));
 

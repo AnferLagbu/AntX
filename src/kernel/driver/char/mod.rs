@@ -42,12 +42,13 @@ pub fn char_init() {
         alloc::boxed::Box::new(vga::VgaDriver::new()),
     );
     if let Some(com1) = serial::SerialPort::new(0) {
-        crate::kernel::chitin::chitin_register_driver(
+        crate::kernel::chitin::chitin_register_driver_with_ops(
             "serial0",
             crate::kernel::chitin::ChitinProto::Char,
             Some(0x3F8),
             Some(4),
             alloc::boxed::Box::new(com1),
+            crate::kernel::chitin::ChitinOps::Char(&serial::NS16550_CHAR_OPS),
         );
     }
 }

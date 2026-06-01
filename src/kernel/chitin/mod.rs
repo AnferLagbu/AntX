@@ -478,6 +478,87 @@ pub fn chitin_blk_count() -> usize {
     chitin_count_by_proto(ChitinProto::Block)
 }
 
+// ── 字符设备 I/O (统一入口) ──
+
+/// 通过 Chitin 向第一个就绪字符设备写入字节
+///
+/// 遍历 CHITIN_DEVICES 查找第一个 proto=Char+Ready 且携带 CharOps 的设备,
+/// 通过其 write 函数指针输出数据。用于内核日志串口输出等。
+pub fn chitin_char_write(data: &[u8]) {
+    let devices = CHITIN_DEVICES.lock();
+    for dev in devices.iter() {
+        if dev.proto != ChitinProto::Char {
+            continue;
+        }
+        if dev.state != DeviceState::Ready {
+            continue;
+        }
+        match dev.char_ops() {
+            Some(ops) => {
+                unsafe { (ops.write)(dev.driver_data, data) };
+                return;
+            }
+            None => continue,
+        }
+    }
+}
+
+/// 通过 Chitin 从第一个就绪字符设备读取字节
+pub fn chitin_char_read(buf: &mut [u8]) -> usize {
+    let devices = CHITIN_DEVICES.lock();
+    for dev in devices.iter() {
+        if dev.proto != ChitinProto::Char {
+            continue;
+        }
+        if dev.state != DeviceState::Ready {
+            continue;
+        }
+        match dev.char_ops() {
+            Some(ops) => return unsafe { (ops.read)(dev.driver_data, buf) },
+            None => continue,
+        }
+    }
+    0
+}
+
+// ── 输入设备 I/O (统一入口) ──
+
+/// 通过 Chitin 从第一个就绪输入设备读取一个字符
+pub fn chitin_input_read() -> Option<u8> {
+    let devices = CHITIN_DEVICES.lock();
+    for dev in devices.iter() {
+        if dev.proto != ChitinProto::Input {
+            continue;
+        }
+        if dev.state != DeviceState::Ready {
+            continue;
+        }
+        match dev.input_ops() {
+            Some(ops) => return unsafe { (ops.read_char)(dev.driver_data) },
+            None => continue,
+        }
+    }
+    None
+}
+
+/// 通过 Chitin 检查第一个就绪输入设备是否有数据
+pub fn chitin_input_has_data() -> bool {
+    let devices = CHITIN_DEVICES.lock();
+    for dev in devices.iter() {
+        if dev.proto != ChitinProto::Input {
+            continue;
+        }
+        if dev.state != DeviceState::Ready {
+            continue;
+        }
+        match dev.input_ops() {
+            Some(ops) => return unsafe { (ops.has_char)(dev.driver_data) },
+            None => continue,
+        }
+    }
+    false
+}
+
 // ── 工具 ──
 
 pub fn box_to_raw<T: ?Sized>(b: Box<T>) -> *mut core::ffi::c_void {
