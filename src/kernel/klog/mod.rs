@@ -132,6 +132,13 @@ macro_rules! klog_drv_warn  { ($($arg:tt)*) => { $crate::klog_warn!(Driver, $($a
 #[macro_export]
 macro_rules! klog_drv_err   { ($($arg:tt)*) => { $crate::klog_err!(Driver, $($arg)*) }; }
 
+#[macro_export]
+macro_rules! klog_error { ($($arg:tt)*) => { $crate::klog_err!(Kernel, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_slab  { ($($arg:tt)*) => { $crate::klog_info!(Memory, $($arg)*) }; }
+#[macro_export]
+macro_rules! klog_info_simple { ($($arg:tt)*) => { $crate::klog_info!(Kernel, $($arg)*) }; }
+
 // ============================================================================
 // 端口 I/O 原语 (无需 driver 框架)
 // ============================================================================

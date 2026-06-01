@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
+use spin::Mutex;
+
 use crate::kernel::klog::{klog_net, klog_net_err, klog_init_msg};
 use crate::kernel::net::types::*;
 
@@ -29,7 +31,14 @@ static G_INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
 
 // ============================================================================
 // 全局网络状态
+//
+// 所有 static mut 变量必须在 NET_LOCK 保护下访问。
+// NET_LOCK 是全局网络互斥锁，确保 SMP 环境下不会发生数据竞争。
+// poll_network() 使用 try_lock() 避免在 ISR 上下文中阻塞；
+// 其他函数使用 lock() 获取互斥访问。
 // ============================================================================
+
+static NET_LOCK: Mutex<()> = Mutex::new(());
 
 static mut NET_DEVICE: Option<ChitinNetDevice> = None;
 static mut NET_STACK: Option<NetworkStack> = None;
@@ -39,7 +48,7 @@ static mut SOCKET_STORAGE: core::mem::MaybeUninit<[SocketStorage<'static>; MAX_S
     core::mem::MaybeUninit::uninit();
 static mut SOCKET_SET: core::mem::MaybeUninit<SocketSet<'static>> =
     core::mem::MaybeUninit::uninit();
-static mut SOCKETS_INITIALIZED: bool = false;
+static SOCKETS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static mut DHCP_HANDLE: Option<SocketHandle> = None;
 
 // ============================================================================
@@ -66,7 +75,7 @@ fn set_failed() {
 }
 
 unsafe fn init_sockets() {
-    if SOCKETS_INITIALIZED {
+    if SOCKETS_INITIALIZED.load(Ordering::Acquire) {
         return;
     }
     let ptr = SOCKET_STORAGE.as_mut_ptr() as *mut SocketStorage<'static>;
@@ -75,7 +84,7 @@ unsafe fn init_sockets() {
     }
     let storage = SOCKET_STORAGE.assume_init_mut();
     SOCKET_SET.write(SocketSet::new(&mut storage[..]));
-    SOCKETS_INITIALIZED = true;
+    SOCKETS_INITIALIZED.store(true, Ordering::Release);
 }
 
 unsafe fn socket_set() -> *mut SocketSet<'static> {
@@ -83,7 +92,7 @@ unsafe fn socket_set() -> *mut SocketSet<'static> {
 }
 
 unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
-    static mut FIRST_DECONFIG: bool = true;
+    static FIRST_DECONFIG: AtomicBool = AtomicBool::new(true);
 
     let dhcp_handle = match unsafe { DHCP_HANDLE } {
         Some(h) => h,
@@ -95,8 +104,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
     match event {
         None => {}
         Some(dhcpv4::Event::Deconfigured) => {
-            if FIRST_DECONFIG {
-                FIRST_DECONFIG = false;
+            if FIRST_DECONFIG.swap(false, Ordering::AcqRel) {
                 return;
             }
             if let Some(stack) = unsafe { NET_STACK.as_mut() } {
@@ -111,7 +119,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
             }
         }
         Some(dhcpv4::Event::Configured(config)) => {
-            FIRST_DECONFIG = false;
+            FIRST_DECONFIG.store(false, Ordering::Release);
             if let Some(stack) = unsafe { NET_STACK.as_mut() } {
                 let cidr = config.address;
                 stack.iface.update_ip_addrs(|addrs| {
@@ -132,34 +140,28 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
 
 // ============================================================================
 // 网络轮询 (统一入口，与具体网卡无关)
+//
+// 使用 NET_LOCK.try_lock() 确保互斥访问。
+// try_lock() 在 ISR 上下文中不会阻塞：若锁已被持有则直接返回。
 // ============================================================================
 
-static POLL_LOCK: AtomicBool = AtomicBool::new(false);
-
 pub unsafe fn poll_network() {
-    if POLL_LOCK.swap(true, Ordering::Acquire) {
-        return;
-    }
+    let _guard = match NET_LOCK.try_lock() {
+        Some(g) => g,
+        None => return,
+    };
 
     let nic = match unsafe { NET_DEVICE.as_mut() } {
         Some(d) => d,
-        None => {
-            POLL_LOCK.store(false, Ordering::Release);
-            return;
-        }
+        None => return,
     };
     let stack = match unsafe { NET_STACK.as_mut() } {
         Some(s) => s,
-        None => {
-            POLL_LOCK.store(false, Ordering::Release);
-            return;
-        }
+        None => return,
     };
     let sockets = &mut *unsafe { socket_set() };
     smoltcp_impl::poll_stack(nic, stack, sockets);
     unsafe { process_dhcp_events(sockets) };
-
-    POLL_LOCK.store(false, Ordering::Release);
 }
 
 // ============================================================================
@@ -223,6 +225,8 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::chitin::proto_net::NetOps =
 unsafe extern "C" fn net_save() {}
 
 unsafe extern "C" fn net_restore() {
+    let _guard = NET_LOCK.lock();
+
     crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
     crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
 
@@ -230,10 +234,12 @@ unsafe extern "C" fn net_restore() {
         NET_DEVICE = None;
         NET_STACK = None;
         DHCP_HANDLE = None;
-        SOCKETS_INITIALIZED = false;
     }
+    SOCKETS_INITIALIZED.store(false, Ordering::Release);
 
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
+
+    drop(_guard);
 
     qx_net_init();
 
@@ -244,6 +250,8 @@ unsafe extern "C" fn net_restore() {
 }
 
 unsafe extern "C" fn net_reset() {
+    let _guard = NET_LOCK.lock();
+
     crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
     crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
 
@@ -251,8 +259,8 @@ unsafe extern "C" fn net_reset() {
         NET_DEVICE = None;
         NET_STACK = None;
         DHCP_HANDLE = None;
-        SOCKETS_INITIALIZED = false;
     }
+    SOCKETS_INITIALIZED.store(false, Ordering::Release);
 
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
 
@@ -313,7 +321,8 @@ pub extern "C" fn qx_net_init() {
         let mac = nic.mac;
         let stack = smoltcp_impl::init_stack(&mut nic, mac);
 
-        unsafe {
+        {
+            let _guard = NET_LOCK.lock();
             NET_DEVICE = Some(nic);
             NET_STACK = Some(stack);
         }
@@ -326,16 +335,15 @@ pub extern "C" fn qx_net_init() {
 
         klog_net("Step3: init network interface\0".as_ptr().cast());
 
-        init_sockets();
-
         {
-            let mut sockets = &mut *unsafe { socket_set() };
+            let _guard = NET_LOCK.lock();
+            init_sockets();
+            let mut sockets = &mut *socket_set();
             let dhcp_socket = dhcpv4::Socket::new();
             let handle = sockets.add(dhcp_socket);
             DHCP_HANDLE = Some(handle);
         }
 
-        // 标记硬件就绪 (协议栈可用, 但尚未配置 IP)
         crate::kernel::net::types::NET_READY.store(true, Ordering::Release);
 
         if transition_state(InitState::InterfaceReady, InitState::FullyInitialized).is_err() {
@@ -344,7 +352,6 @@ pub extern "C" fn qx_net_init() {
             return;
         }
 
-        // 同步 DHCP 轮询 (中断尚未启用，不会与 ISR 竞争)
         klog_net("DHCP: boot poll...\0".as_ptr().cast());
         for _attempt in 0u32..500 {
             poll_network();
@@ -357,12 +364,12 @@ pub extern "C" fn qx_net_init() {
             }
         }
 
-        // 后备: 若 DHCP 失败则用静态 IP (QEMU user-mode 默认子网)
         if !crate::kernel::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
             let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
                 smoltcp::wire::Ipv4Address::new(10, 0, 2, 15),
                 24,
             ));
+            let _guard = NET_LOCK.lock();
             if let Some(stack) = NET_STACK.as_mut() {
                 stack.iface.update_ip_addrs(|addrs| {
                     let _ = addrs.push(cidr);
@@ -374,7 +381,6 @@ pub extern "C" fn qx_net_init() {
             }
         }
 
-        // 最后启用中断: 进入用户态后 timer ISR 负责持续轮询
         crate::arch!(interrupt_enable());
 
         klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr().cast());
@@ -416,6 +422,9 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
     if !crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
         return -1;
     }
+
+    let _guard = NET_LOCK.lock();
+
     let stack = match unsafe { NET_STACK.as_mut() } {
         Some(s) => s,
         None => return -1,
@@ -537,6 +546,8 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
         return -E_NODEV;
     }
 
+    let _guard = NET_LOCK.lock();
+
     let fd = sm_alloc_fd();
     if fd < 0 {
         return -E_NFILE;
@@ -548,7 +559,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
             tcp::SocketBuffer::new(&mut TCP_RX_BUFS[fd_idx][..]),
             tcp::SocketBuffer::new(&mut TCP_TX_BUFS[fd_idx][..]),
         );
-        let mut sockets = &mut *unsafe { sm_get_sockets() };
+        let mut sockets = &mut *socket_set();
         let handle = sockets.add(tcp_sock);
         SOCKET_TABLE[fd_idx] = Some(handle);
         FD_TYPES[fd_idx] = 1;
@@ -564,7 +575,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
                 &mut UDP_TX_BUFS[fd_idx][..],
             ),
         );
-        let mut sockets = &mut *unsafe { sm_get_sockets() };
+        let mut sockets = &mut *socket_set();
         let handle = sockets.add(udp_sock);
         SOCKET_TABLE[fd_idx] = Some(handle);
         FD_TYPES[fd_idx] = 2;
@@ -605,6 +616,8 @@ unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -613,7 +626,7 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
         None => return -E_BADF,
     };
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
 
     match FD_TYPES[fd as usize] {
         2 => {
@@ -636,6 +649,8 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -648,7 +663,7 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
         return -E_NOTSUPP;
     }
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
     let sock = sockets.get_mut::<tcp::Socket>(handle);
 
     let local = IpListenEndpoint {
@@ -663,6 +678,8 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -675,7 +692,7 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
         return -E_NOTSUPP;
     }
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
     let sock = sockets.get_mut::<tcp::Socket>(handle);
 
     if sock.is_active() {
@@ -687,6 +704,8 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -713,7 +732,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         None => return -E_NODEV,
     };
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
     let sock = sockets.get_mut::<tcp::Socket>(handle);
 
     let local = IpListenEndpoint {
@@ -728,6 +747,8 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -739,7 +760,7 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
         return -E_INVAL;
     }
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -761,6 +782,8 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -772,7 +795,7 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
         return -E_INVAL;
     }
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -809,6 +832,8 @@ pub unsafe extern "C" fn sm_sendto(
     addr: *const u8,
     _addrlen: u32,
 ) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -825,7 +850,7 @@ pub unsafe extern "C" fn sm_sendto(
         None => return -E_INVAL,
     };
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -856,6 +881,8 @@ pub unsafe extern "C" fn sm_recvfrom(
     _addr: *mut u8,
     _addrlen: *mut u32,
 ) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -867,7 +894,7 @@ pub unsafe extern "C" fn sm_recvfrom(
         return -E_INVAL;
     }
 
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -897,6 +924,8 @@ pub unsafe extern "C" fn sm_recvfrom(
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
         return -E_BADF;
     }
@@ -906,7 +935,7 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     };
 
     let stype = FD_TYPES[fd as usize];
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let mut sockets = &mut *socket_set();
 
     match stype {
         1 => {
@@ -950,7 +979,9 @@ pub unsafe extern "C" fn sm_getsockopt(
 
 #[no_mangle]
 pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
-    let mut sockets = &mut *unsafe { sm_get_sockets() };
+    let _guard = NET_LOCK.lock();
+
+    let mut sockets = &mut *socket_set();
     process_dhcp_events(&mut sockets);
 
     for i in 0..MAX_SM_FD {
@@ -999,10 +1030,6 @@ unsafe fn sm_alloc_fd() -> i32 {
     -1
 }
 
-unsafe fn sm_get_sockets() -> *mut SocketSet<'static> {
-    socket_set()
-}
-
 pub fn is_network_initialized() -> bool {
     crate::kernel::net::types::NET_READY.load(Ordering::Acquire)
 }
@@ -1022,15 +1049,16 @@ pub fn get_init_state() -> InitState {
 }
 
 pub unsafe fn reset_network_state() {
+    let _guard = NET_LOCK.lock();
+
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
 
     unsafe {
         NET_DEVICE = None;
         NET_STACK = None;
         DHCP_HANDLE = None;
-        SOCKETS_INITIALIZED = false;
     }
-
+    SOCKETS_INITIALIZED.store(false, Ordering::Release);
 }
 
 // ============================================================================

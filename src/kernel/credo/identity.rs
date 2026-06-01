@@ -21,7 +21,7 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 32] {
-    const STRETCH_ROUNDS: usize = 4096;
+    const STRETCH_ROUNDS: usize = 32768;
     let mut input = [0u8; 256];
     let mut pos = 0usize;
     for byte in salt.iter() {
@@ -40,10 +40,8 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 
         stretch_input[..32].copy_from_slice(&hash);
         let round_bytes = (round as u64).to_le_bytes();
         stretch_input[32..40].copy_from_slice(&round_bytes);
-        for byte in salt.iter() {
-            stretch_input[40 + (*byte & 0xF) as usize] ^= *byte;
-        }
-        let full = sha256::sha256(&stretch_input[..48]);
+        stretch_input[40..40 + PWM_SALT_LEN].copy_from_slice(salt);
+        let full = sha256::sha256(&stretch_input[..40 + PWM_SALT_LEN]);
         hash.copy_from_slice(&full[..32]);
     }
     hash

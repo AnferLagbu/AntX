@@ -146,21 +146,23 @@ pub fn synchronize_rcu() {
     let cpu_count = crate::kernel::smp::get_cpu_count();
     let current_cpu = crate::kernel::smp::get_current_cpu();
 
-    // 标记所有在线 CPU 进入宽限期等待
     for i in 0..cpu_count {
         if i == current_cpu {
             continue;
         }
+        if !crate::kernel::smp::is_cpu_online(i) {
+            let data = rcu_data(i);
+            data.gp_state.store(GP_DONE, Ordering::Release);
+            continue;
+        }
         let data = rcu_data(i);
         data.gp_state.store(GP_WAIT, Ordering::Release);
-        // 发送 IPI 唤醒目标 CPU 使其报告静止状态
         let apic_id = crate::kernel::smp::get_apic_id(i);
         if apic_id != 0xFFFF {
             crate::kernel::smp::send_reschedule_ipi(apic_id as u8);
         }
     }
 
-    // 本地 CPU 先报告静止状态
     {
         let data = current_rcu();
         if data.nesting.load(Ordering::Acquire) == 0 {
@@ -168,26 +170,35 @@ pub fn synchronize_rcu() {
         }
     }
 
-    // 等待所有在线 CPU 报告静止状态
+    const SYNC_TIMEOUT_SPINS: u32 = 50_000_000;
     for i in 0..cpu_count {
         if i == current_cpu {
             continue;
         }
         let data = rcu_data(i);
+        let mut spins = 0u32;
         while data.gp_state.load(Ordering::Acquire) != GP_DONE {
             core::hint::spin_loop();
+            spins += 1;
+            if spins >= SYNC_TIMEOUT_SPINS {
+                data.gp_state.store(GP_DONE, Ordering::Release);
+                break;
+            }
         }
     }
 
-    // 本地 CPU 确保自身 nesting == 0
     {
         let data = current_rcu();
+        let mut spins = 0u32;
         while data.nesting.load(Ordering::Acquire) > 0 {
             core::hint::spin_loop();
+            spins += 1;
+            if spins >= SYNC_TIMEOUT_SPINS {
+                break;
+            }
         }
     }
 
-    // 重置所有 CPU 的 gp_state
     for i in 0..cpu_count {
         let data = rcu_data(i);
         data.gp_state.store(GP_IDLE, Ordering::Release);

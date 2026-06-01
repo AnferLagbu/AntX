@@ -101,9 +101,21 @@ impl HvArcBuf {
     }
 
     pub fn release(&self) -> u32 {
-        self.ref_count
-            .fetch_sub(1, Ordering::AcqRel)
-            .saturating_sub(1)
+        let mut current = self.ref_count.load(Ordering::Acquire);
+        loop {
+            if current == 0 {
+                return 0;
+            }
+            match self.ref_count.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return current - 1,
+                Err(actual) => current = actual,
+            }
+        }
     }
 }
 

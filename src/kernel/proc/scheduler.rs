@@ -1,6 +1,7 @@
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
+use crate::klog_error;
 
 use super::cfs::{
     calc_vruntime_delta, cfs_should_preempt, mlfq_level_to_nice, nice_to_weight, CfsRunQueue,

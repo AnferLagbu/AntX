@@ -228,10 +228,10 @@ pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Resul
 
         let recovery_label: u64;
         core::arch::asm!(
-            "1:",
-            "mov {tmp}, 2f",
+            "9:",
+            "mov {tmp}, 8f",
             "mov {recovery}, {tmp}",
-            "2:",
+            "8:",
             recovery = out(reg) recovery_label,
             tmp = out(reg) _,
             options(nostack, pure, readonly),
@@ -299,10 +299,10 @@ pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usiz
 
         let recovery_label: u64;
         core::arch::asm!(
-            "1:",
-            "mov {tmp}, 2f",
+            "9:",
+            "mov {tmp}, 8f",
             "mov {recovery}, {tmp}",
-            "2:",
+            "8:",
             recovery = out(reg) recovery_label,
             tmp = out(reg) _,
             options(nostack, pure, readonly),
@@ -348,10 +348,10 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
 
         let recovery_label: u64;
         core::arch::asm!(
-            "1:",
-            "mov {tmp}, 2f",
+            "9:",
+            "mov {tmp}, 8f",
             "mov {recovery}, {tmp}",
-            "2:",
+            "8:",
             recovery = out(reg) recovery_label,
             tmp = out(reg) _,
             options(nostack, pure, readonly),
@@ -407,10 +407,10 @@ pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
 
         let recovery_label: u64;
         core::arch::asm!(
-            "1:",
-            "mov {tmp}, 2f",
+            "9:",
+            "mov {tmp}, 8f",
             "mov {recovery}, {tmp}",
-            "2:",
+            "8:",
             recovery = out(reg) recovery_label,
             tmp = out(reg) _,
             options(nostack, pure, readonly),
@@ -454,10 +454,10 @@ pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
 
         let recovery_label: u64;
         core::arch::asm!(
-            "1:",
-            "mov {tmp}, 2f",
+            "9:",
+            "mov {tmp}, 8f",
             "mov {recovery}, {tmp}",
-            "2:",
+            "8:",
             recovery = out(reg) recovery_label,
             tmp = out(reg) _,
             options(nostack, pure, readonly),

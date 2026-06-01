@@ -23,6 +23,8 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
+pub use crate::kernel::config::MAX_CPUS;
+
 /// MADT 条目类型
 const MADT_TYPE_LAPIC: u8 = 0x00;
 const MADT_TYPE_IOAPIC: u8 = 0x01;
@@ -42,8 +44,8 @@ pub struct ApInfo {
     pub enabled: bool,
 }
 
-static AP_LIST: spin::Mutex<[Option<ApInfo>; crate::kernel::config::MAX_CPUS]> = 
-    spin::Mutex::new([None; crate::kernel::config::MAX_CPUS]);
+static AP_LIST: spin::Mutex<[Option<ApInfo>; MAX_CPUS]> = 
+    spin::Mutex::new([None; MAX_CPUS]);
 static AP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // ============================================================================

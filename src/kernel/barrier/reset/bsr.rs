@@ -50,9 +50,13 @@ pub fn rollback_to_init() -> usize {
 pub fn reset_devices() -> RecoveryResult {
     use crate::kernel::barrier::snapshot;
 
-    fn dummy_write(_base: u64, _offset: u32, _value: u32) {}
+    fn mmio_write32(base: u64, offset: u32, value: u32) {
+        unsafe {
+            core::ptr::write_volatile((base + offset as u64) as *mut u32, value);
+        }
+    }
 
-    let (success, failed) = snapshot::snapshot_restore_all(dummy_write);
+    let (success, failed) = snapshot::snapshot_restore_all(mmio_write32);
 
     if failed == 0 || success > 0 {
         RecoveryResult::Success

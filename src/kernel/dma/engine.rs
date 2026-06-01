@@ -131,12 +131,22 @@ impl DmaEngine {
             return;
         }
 
-        let phys_addr = get_vmm().get_physical(cpu_addr);
+        let mut mappings = self.mappings.lock();
+
+        let phys_addr = mappings
+            .iter()
+            .find(|m| m.cpu_addr == cpu_addr && m.is_coherent)
+            .map(|m| m.dma_addr);
+
         let pages = (size as u64).div_ceil(PAGE_SIZE);
 
         if let Some(phys) = phys_addr {
             get_pmm().free_pages(phys, pages as usize);
         }
+
+        mappings.retain(|m| m.cpu_addr != cpu_addr);
+
+        drop(mappings);
 
         self.stats.total_frees.fetch_add(1, Ordering::Relaxed);
         if self.stats.current_bytes_used.load(Ordering::Relaxed) >= size as u64 {
@@ -144,10 +154,6 @@ impl DmaEngine {
                 .current_bytes_used
                 .fetch_sub(size as u64, Ordering::Relaxed);
         }
-
-        // Remove from tracking
-        let mut mappings = self.mappings.lock();
-        mappings.retain(|m| m.cpu_addr != cpu_addr);
     }
 
     /// Get the device (physical) DMA address for a CPU virtual address

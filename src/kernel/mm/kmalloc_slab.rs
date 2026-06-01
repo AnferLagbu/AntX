@@ -16,6 +16,8 @@
 
 use super::slab::KmemCache;
 use core::sync::atomic::{AtomicBool, Ordering};
+use crate::klog_error;
+use crate::klog_info_simple;
 
 const CACHE_SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
 
@@ -41,11 +43,11 @@ pub fn slab_init() {
         };
         
         match KmemCache::create(name, CACHE_SIZES[i]) {
-            Some(cache) => {
+            Ok(cache) => {
                 unsafe { SLAB_CACHES[i] = Some(cache); }
                 success_count += 1;
             }
-            None => {
+            Err(_) => {
                 klog_error!(
                     "[SLAB] CRITICAL: Failed to create cache {} (size {}). \
                      This size class will fall back to heap allocator.",
@@ -60,7 +62,7 @@ pub fn slab_init() {
     if success_count == 0 {
         klog_error!("[SLAB] CRITICAL: All slab caches failed to initialize!");
     } else {
-        klog_info!(
+        klog_info_simple!(
             "[SLAB] Initialized {}/8 caches successfully",
             success_count
         );

@@ -411,14 +411,14 @@ pub extern "C" fn kmalloc_stats(stats: *mut c_void) {
         return;
     }
 
-    let kmalloc = get_kmalloc();
+    let heap_stats = get_kmalloc().get_stats();
     
     unsafe {
         let stats_ptr = stats as *mut KmallocStats;
-        (*stats_ptr).total_allocs = kmalloc.alloc_count.load(Ordering::Relaxed);
-        (*stats_ptr).total_frees = kmalloc.free_count.load(Ordering::Relaxed);
-        (*stats_ptr).current_usage = kmalloc.current_usage.load(Ordering::Relaxed);
-        (*stats_ptr).peak_usage = kmalloc.peak_usage.load(Ordering::Relaxed);
+        (*stats_ptr).total_allocs = heap_stats.alloc_count;
+        (*stats_ptr).total_frees = heap_stats.free_count;
+        (*stats_ptr).current_usage = heap_stats.current_usage;
+        (*stats_ptr).peak_usage = heap_stats.peak_usage;
     }
 }
 

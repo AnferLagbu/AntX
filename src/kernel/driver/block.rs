@@ -34,17 +34,17 @@ pub trait BlockDevice: Send + Sync {
 // 保留 REGISTRY 用于 safe_unregister 的设备移除协议。
 // I/O 主路径已迁移至 Chitin (chitin_blk_read/write)。
 
-static REGISTRY: Mutex<Vec<Mutex<Box<dyn BlockDevice>>>> = Mutex::new(Vec::new());
-static DEVICE_NAMES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+static REGISTRY: Mutex<Vec<Option<Mutex<Box<dyn BlockDevice>>>>> = Mutex::new(Vec::new());
+static DEVICE_NAMES: Mutex<Vec<Option<&'static str>>> = Mutex::new(Vec::new());
 static IO_REFS: Mutex<Vec<AtomicU32>> = Mutex::new(Vec::new());
 static REMOVING: Mutex<Vec<AtomicBool>> = Mutex::new(Vec::new());
 
 pub fn register_named(name: &'static str, dev: Box<dyn BlockDevice>) -> usize {
     let mut list = REGISTRY.lock();
     let idx = list.len();
-    list.push(Mutex::new(dev));
+    list.push(Some(Mutex::new(dev)));
     drop(list);
-    DEVICE_NAMES.lock().push(name);
+    DEVICE_NAMES.lock().push(Some(name));
     IO_REFS.lock().push(AtomicU32::new(0));
     REMOVING.lock().push(AtomicBool::new(false));
     idx
@@ -59,7 +59,8 @@ pub fn with_device<R>(idx: usize, f: impl FnOnce(&mut dyn BlockDevice) -> R) -> 
     if idx >= reg.len() {
         return None;
     }
-    let mut dev = reg[idx].lock();
+    let slot = reg[idx].as_ref()?;
+    let mut dev = slot.lock();
     Some(f(&mut **dev))
 }
 
@@ -67,6 +68,9 @@ pub fn safe_unregister(idx: usize) -> Option<Box<dyn BlockDevice>> {
     {
         let reg = REGISTRY.lock();
         if idx >= reg.len() {
+            return None;
+        }
+        if reg[idx].is_none() {
             return None;
         }
         let removing = REMOVING.lock();
@@ -95,25 +99,16 @@ pub fn safe_unregister(idx: usize) -> Option<Box<dyn BlockDevice>> {
         if idx >= reg.len() {
             return None;
         }
-        reg.remove(idx).into_inner()
+        match reg[idx].take() {
+            Some(m) => m.into_inner(),
+            None => return None,
+        }
     };
 
     {
         let mut names = DEVICE_NAMES.lock();
         if idx < names.len() {
-            names.remove(idx);
-        }
-    }
-    {
-        let mut refs = IO_REFS.lock();
-        if idx < refs.len() {
-            refs.remove(idx);
-        }
-    }
-    {
-        let mut removing = REMOVING.lock();
-        if idx < removing.len() {
-            removing.remove(idx);
+            names[idx] = None;
         }
     }
 
@@ -152,7 +147,7 @@ pub fn mark_removed(idx: usize) {
     fence(Ordering::SeqCst);
 }
 
-pub fn registry() -> &'static Mutex<Vec<Mutex<Box<dyn BlockDevice>>>> {
+pub fn registry() -> &'static Mutex<Vec<Option<Mutex<Box<dyn BlockDevice>>>>> {
     &REGISTRY
 }
 

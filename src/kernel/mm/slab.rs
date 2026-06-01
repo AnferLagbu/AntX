@@ -189,12 +189,15 @@ impl KmemCache {
     fn calculate_objects_per_slab(object_size: usize) -> u32 {
         let usable_space = SLAB_DEFAULT_SIZE - core::mem::size_of::<SlabHeader>();
 
-        // 为位图预留空间 (每个对象 1 bit)
         let estimated_objects = usable_space / object_size;
         let bitmap_bytes = estimated_objects.div_ceil(8);
         let actual_usable = usable_space - bitmap_bytes;
 
         (actual_usable / object_size) as u32
+    }
+
+    pub fn active_objects(&self) -> u64 {
+        self.total_allocs.saturating_sub(self.total_frees)
     }
 
     /// 从缓存中分配一个对象
@@ -794,8 +797,8 @@ pub extern "C" fn slab_get_system_stats(
         for i in 0..GENERAL_CACHE_SIZES.len() {
             if let Some(ref cache) = GENERAL_CACHES[i] {
                 count += 1;
-                total += cache.slab_count as u64 * SLAB_SIZE;
-                used += cache.active_objects as u64 * cache.object_size as u64;
+                total += cache.slab_count as u64 * SLAB_DEFAULT_SIZE as u64;
+                used += cache.active_objects() * cache.object_size as u64;
             }
         }
 
@@ -819,7 +822,7 @@ pub extern "C" fn slab_dump_all_caches() {
                     cache.object_size,
                     cache.objects_per_slab,
                     cache.slab_count,
-                    cache.active_objects
+                    cache.active_objects()
                 );
             }
         }
