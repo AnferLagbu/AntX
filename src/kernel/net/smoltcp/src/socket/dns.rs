@@ -246,6 +246,7 @@ impl<'a> Socket<'a> {
 
         let mut raw_name: Vec<u8, DNS_MAX_NAME_SIZE> = Vec::new();
 
+        #[allow(unused_mut)]
         let mut mdns = MulticastDns::Disabled;
         #[cfg(feature = "socket-mdns")]
         if name.split(|&c| c == b'.').next_back().unwrap() == b"local" {

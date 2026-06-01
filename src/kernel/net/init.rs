@@ -5,8 +5,6 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use spin::Mutex;
 
 use crate::kernel::klog::{klog_net, klog_net_err, klog_init_msg};
-use crate::kernel::net::types::*;
-
 use crate::kernel::net::smoltcp_impl::{self, ChitinNetDevice, NetworkStack};
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
 use smoltcp::socket::dhcpv4;
@@ -338,7 +336,7 @@ pub extern "C" fn qx_net_init() {
         {
             let _guard = NET_LOCK.lock();
             init_sockets();
-            let mut sockets = &mut *socket_set();
+            let sockets = &mut *socket_set();
             let dhcp_socket = dhcpv4::Socket::new();
             let handle = sockets.add(dhcp_socket);
             DHCP_HANDLE = Some(handle);
@@ -559,7 +557,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
             tcp::SocketBuffer::new(&mut TCP_RX_BUFS[fd_idx][..]),
             tcp::SocketBuffer::new(&mut TCP_TX_BUFS[fd_idx][..]),
         );
-        let mut sockets = &mut *socket_set();
+        let sockets = &mut *socket_set();
         let handle = sockets.add(tcp_sock);
         SOCKET_TABLE[fd_idx] = Some(handle);
         FD_TYPES[fd_idx] = 1;
@@ -575,7 +573,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
                 &mut UDP_TX_BUFS[fd_idx][..],
             ),
         );
-        let mut sockets = &mut *socket_set();
+        let sockets = &mut *socket_set();
         let handle = sockets.add(udp_sock);
         SOCKET_TABLE[fd_idx] = Some(handle);
         FD_TYPES[fd_idx] = 2;
@@ -626,7 +624,7 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
         None => return -E_BADF,
     };
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
 
     match FD_TYPES[fd as usize] {
         2 => {
@@ -663,7 +661,7 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
         return -E_NOTSUPP;
     }
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
     let sock = sockets.get_mut::<tcp::Socket>(handle);
 
     let local = IpListenEndpoint {
@@ -692,7 +690,7 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
         return -E_NOTSUPP;
     }
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
     let sock = sockets.get_mut::<tcp::Socket>(handle);
 
     if sock.is_active() {
@@ -732,7 +730,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         None => return -E_NODEV,
     };
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
     let sock = sockets.get_mut::<tcp::Socket>(handle);
 
     let local = IpListenEndpoint {
@@ -760,7 +758,7 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
         return -E_INVAL;
     }
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -795,7 +793,7 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
         return -E_INVAL;
     }
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -850,7 +848,7 @@ pub unsafe extern "C" fn sm_sendto(
         None => return -E_INVAL,
     };
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -894,7 +892,7 @@ pub unsafe extern "C" fn sm_recvfrom(
         return -E_INVAL;
     }
 
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
     match FD_TYPES[fd as usize] {
@@ -935,7 +933,7 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     };
 
     let stype = FD_TYPES[fd as usize];
-    let mut sockets = &mut *socket_set();
+    let sockets = &mut *socket_set();
 
     match stype {
         1 => {
@@ -981,8 +979,8 @@ pub unsafe extern "C" fn sm_getsockopt(
 pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
     let _guard = NET_LOCK.lock();
 
-    let mut sockets = &mut *socket_set();
-    process_dhcp_events(&mut sockets);
+    let sockets = &mut *socket_set();
+    process_dhcp_events(sockets);
 
     for i in 0..MAX_SM_FD {
         if FD_TYPES[i] != 1 {

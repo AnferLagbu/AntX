@@ -98,9 +98,11 @@ impl InterfaceInner {
         meta: PacketMeta,
         source_hardware_addr: HardwareAddress,
         ipv4_packet: &Ipv4Packet<&'a [u8]>,
+        #[allow(unused_variables)]
         frag: &'a mut FragmentsBuffer,
     ) -> Option<Packet<'a>> {
-        let mut ipv4_repr = check!(Ipv4Repr::parse(ipv4_packet, &self.caps.checksum));
+        #[allow(unused_mut)]
+        let ipv4_repr = check!(Ipv4Repr::parse(ipv4_packet, &self.caps.checksum));
         if !self.is_unicast_v4(ipv4_repr.src_addr) && !ipv4_repr.src_addr.is_unspecified() {
             // Discard packets with non-unicast source addresses but allow unspecified
             net_debug!("non-unicast or unspecified source address");

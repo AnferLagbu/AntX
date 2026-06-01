@@ -7,8 +7,6 @@
 //! - Architecture-specific constraints
 //! - Driver configuration
 
-use core::sync::atomic::Ordering;
-
 /// Maximum number of CPUs supported by the kernel
 /// This value must be consistent across all modules
 pub const MAX_CPUS: usize = 1024;
@@ -102,7 +100,7 @@ pub fn validate_system_config() {
     // Memory configuration
     match validate_memory_config() {
         Ok(()) => {}
-        Err(e) => {
+        Err(_) => {
             errors += 1;
             // Log error but don't panic - memory config issues are usually recoverable
         }
@@ -111,7 +109,7 @@ pub fn validate_system_config() {
     // Interrupt configuration
     match validate_interrupt_config() {
         Ok(()) => {}
-        Err(e) => {
+        Err(_) => {
             errors += 1;
         }
     }

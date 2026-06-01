@@ -215,6 +215,7 @@ pub(crate) enum IpPayload<'p> {
     #[cfg(feature = "proto-ipv6")]
     Icmpv6(Icmpv6Repr<'p>),
     #[cfg(feature = "proto-ipv6")]
+    #[allow(dead_code)]
     HopByHopIcmpv6(Ipv6HopByHopRepr<'p>, Icmpv6Repr<'p>),
     #[cfg(feature = "socket-raw")]
     Raw(&'p [u8]),

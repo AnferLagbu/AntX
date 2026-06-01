@@ -353,7 +353,7 @@ impl DmaEngine {
     /// Flush CPU cache to ensure DMA coherency
     /// This is architecture-specific and critical for non-coherent DMA
     #[inline(always)]
-    fn cache_flush(&self, addr: VirtAddr, size: usize) {
+    fn cache_flush(&self, _addr: VirtAddr, _size: usize) {
         // Architecture-specific cache flush
         #[cfg(target_arch = "x86_64")]
         {
@@ -406,7 +406,7 @@ impl DmaEngine {
     /// Invalidate CPU cache before DMA read
     /// This ensures CPU will see device's writes
     #[inline(always)]
-    fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
+    fn cache_invalidate(&self, _addr: VirtAddr, _size: usize) {
         #[cfg(target_arch = "x86_64")]
         {
             // x86_64: Cache is typically coherent, just need fence

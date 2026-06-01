@@ -22,7 +22,7 @@
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::idt::types::InterruptFrame;
 #[cfg(all(target_arch = "x86_64", not(feature = "kernel_test")))]
-use core::sync::atomic::Ordering;
+
 
 /// Timer IRQ0 中断处理程序 (仅 x86_64)
 /// aarch64 定时器中断由 exception.rs 的 irq_handler_el1 处理

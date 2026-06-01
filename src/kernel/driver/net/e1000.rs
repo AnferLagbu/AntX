@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 #[cfg(not(feature = "kernel_test"))]
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::AtomicU32;
 
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::driver::framework::DriverError;
