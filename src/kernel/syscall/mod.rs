@@ -1133,137 +1133,119 @@ unsafe fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
         return Errno::EACCES.as_ret();
     }
     extern "C" {
-        fn lwip_socket(domain: i32, sock_type: i32, protocol: i32) -> i32;
+        fn sm_socket(domain: i32, sock_type: i32, protocol: i32) -> i32;
     }
-    lwip_socket(domain, sock_type, protocol) as i64
+    sm_socket(domain, sock_type, protocol) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
     extern "C" {
-        fn lwip_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
+        fn sm_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
     }
-    lwip_bind(sockfd, addr as *const u8, addrlen) as i64
+    sm_bind(sockfd, addr as *const u8, addrlen) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_listen(sockfd: i32, backlog: i32) -> i64 {
     extern "C" {
-        fn lwip_listen(sockfd: i32, backlog: i32) -> i32;
+        fn sm_listen(sockfd: i32, backlog: i32) -> i32;
     }
-    lwip_listen(sockfd, backlog) as i64
+    sm_listen(sockfd, backlog) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     extern "C" {
-        fn lwip_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
+        fn sm_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
     }
-    lwip_accept(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
+    sm_accept(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
     extern "C" {
-        fn lwip_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
+        fn sm_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
     }
-    lwip_connect(sockfd, addr as *const u8, addrlen) as i64
+    sm_connect(sockfd, addr as *const u8, addrlen) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_sendto(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
     extern "C" {
-        fn lwip_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32;
+        fn sm_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32;
     }
-    lwip_send(sockfd, buf as *const u8, len, flags) as i64
+    sm_send(sockfd, buf as *const u8, len, flags) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_recvfrom(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
     extern "C" {
-        fn lwip_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32;
+        fn sm_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32;
     }
-    lwip_recv(sockfd, buf as *mut u8, len, flags) as i64
+    sm_recv(sockfd, buf as *mut u8, len, flags) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_shutdown(sockfd: i32, _how: i32) -> i64 {
     extern "C" {
-        fn lwip_close(sockfd: i32) -> i32;
+        fn sm_close(sockfd: i32) -> i32;
     }
-    lwip_close(sockfd) as i64
+    sm_close(sockfd) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_sendmsg(sockfd: i32, msg: u64, flags: i32) -> i64 {
-    extern "C" {
-        fn lwip_sendmsg(sockfd: i32, msg: *const core::ffi::c_void, flags: i32) -> i64;
-    }
-    lwip_sendmsg(sockfd, msg as *const core::ffi::c_void, flags)
+unsafe fn sys_sendmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
+    Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_recvmsg(sockfd: i32, msg: u64, flags: i32) -> i64 {
-    extern "C" {
-        fn lwip_recvmsg(sockfd: i32, msg: *mut core::ffi::c_void, flags: i32) -> i64;
-    }
-    lwip_recvmsg(sockfd, msg as *mut core::ffi::c_void, flags)
+unsafe fn sys_recvmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
+    Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_setsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u32) -> i64 {
     extern "C" {
-        fn lwip_setsockopt(
+        fn sm_setsockopt(
             sockfd: i32,
             level: i32,
             optname: i32,
-            optval: *const core::ffi::c_void,
+            optval: *const u8,
             optlen: u32,
         ) -> i32;
     }
-    lwip_setsockopt(
-        sockfd,
-        level,
-        optname,
-        optval as *const core::ffi::c_void,
-        optlen,
-    ) as i64
+    sm_setsockopt(sockfd, level, optname, optval as *const u8, optlen) as i64
 }
 
 #[cfg(feature = "net")]
 unsafe fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u64) -> i64 {
     extern "C" {
-        fn lwip_getsockopt(
+        fn sm_getsockopt(
             sockfd: i32,
             level: i32,
             optname: i32,
-            optval: *mut core::ffi::c_void,
+            optval: *mut u8,
             optlen: *mut u32,
         ) -> i32;
     }
-    lwip_getsockopt(
+    sm_getsockopt(
         sockfd,
         level,
         optname,
-        optval as *mut core::ffi::c_void,
+        optval as *mut u8,
         optlen as *mut u32,
     ) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_getsockname(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    extern "C" {
-        fn lwip_getsockname(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32;
-    }
-    lwip_getsockname(sockfd, addr as *mut core::ffi::c_void, addrlen as *mut u32) as i64
+unsafe fn sys_getsockname(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
+    Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    extern "C" {
-        fn lwip_getpeername(sockfd: i32, addr: *mut core::ffi::c_void, addrlen: *mut u32) -> i32;
-    }
-    lwip_getpeername(sockfd, addr as *mut core::ffi::c_void, addrlen as *mut u32) as i64
+unsafe fn sys_getpeername(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
+    Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]

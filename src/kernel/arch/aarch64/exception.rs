@@ -445,24 +445,9 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
         crate::kernel::timer::on_timer_interrupt();
 
-        if crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire) {
-            extern "C" {
-                fn sys_check_timeouts();
-                fn virtio_net_poll_rx();
-            }
-            unsafe {
-                sys_check_timeouts();
-            }
-
-            let t = crate::kernel::timer::get_ticks();
-            if t.is_multiple_of(10) {
-                unsafe {
-                    virtio_net_poll_rx();
-                }
-                if t < 200 {
-                    crate::klog_info!(Driver, "RX poll (EL0) tick={}", t);
-                }
-            }
+        // smoltcp: 始终轮询（DHCP 需要在 poll 中完成握手）
+        unsafe {
+            crate::kernel::net::init::poll_network();
         }
 
         // 仅当 scheduler 已初始化时触发调度
@@ -590,25 +575,9 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
 
         crate::kernel::timer::on_timer_interrupt();
 
-        // lwIP timer + network RX polling
-        if crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire) {
-            extern "C" {
-                fn sys_check_timeouts();
-                fn virtio_net_poll_rx();
-            }
-            unsafe {
-                sys_check_timeouts();
-            }
-
-            let t = crate::kernel::timer::get_ticks();
-            if t.is_multiple_of(10) {
-                unsafe {
-                    virtio_net_poll_rx();
-                }
-                if t < 200 {
-                    crate::klog_info!(Driver, "RX poll tick={}", t);
-                }
-            }
+        // 网络轮询
+        unsafe {
+            crate::kernel::net::init::poll_network();
         }
 
         // 仅当 scheduler 已初始化时触发调度

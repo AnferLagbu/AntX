@@ -1,6 +1,5 @@
 use crate::kernel::driver::{DeviceType, Driver};
-use crate::kernel::net::apps::{internet_checksum as apps_checksum, NetAppError, PingStats};
-use crate::kernel::net::driver::e1000::{
+use crate::kernel::driver::net::e1000::{
     virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE,
     E1000_TX_RING_SIZE,
 };
@@ -94,32 +93,26 @@ fn net_virt_to_phys() -> TestResult {
     TestResult::Pass
 }
 
-fn net_ping_stats() -> TestResult {
-    let stats = PingStats::new();
-    assert_eq_test!(stats.get_stats(), (0, 0, false), "initial stats");
-    for _ in 0..3 {
-        stats.increment_sent();
+fn net_hton_ntoh() -> TestResult {
+    unsafe {
+        assert_eq_test!(htons(0x1234), 0x3412, "htons");
+        assert_eq_test!(ntohs(0x3412), 0x1234, "ntohs");
+        assert_eq_test!(htonl(0x12345678), 0x78563412, "htonl");
+        assert_eq_test!(ntohl(0x78563412), 0x12345678, "ntohl");
     }
-    assert_eq_test!(stats.get_stats().0, 3, "sent count");
-    stats.increment_received();
-    let (_, received, has_reply) = stats.get_stats();
-    assert_eq_test!(received, 1, "received count");
-    check!(has_reply, "has reply");
     TestResult::Pass
 }
 
-fn net_internet_checksum() -> TestResult {
-    let data = [0x45, 0x00];
-    let checksum = apps_checksum(&data);
-    check!(checksum != 0, "checksum non-zero");
+fn net_byteorder() -> TestResult {
+    let val: u16 = 0x1234;
+    assert_eq_test!(val.to_be(), val.to_le().swap_bytes(), "swap");
     TestResult::Pass
 }
 
-fn net_netapp_error_codes() -> TestResult {
-    assert_eq_test!(NetAppError::Ok.as_i32(), 0, "Ok");
-    assert_eq_test!(NetAppError::OutOfMemory.as_i32(), -1, "OOM");
-    assert_eq_test!(NetAppError::InvalidArg.as_i32(), -2, "InvalidArg");
-    assert_eq_test!(NetAppError::Timeout.as_i32(), -3, "Timeout");
+fn net_mac_formatting() -> TestResult {
+    let mac: [u8; 6] = [0x52, 0x54, 0x52, 0x54, 0x52, 0x54];
+    let fmt = unsafe { format_mac(&mac as *const u8) };
+    check!(!fmt.is_null(), "format_mac non-null");
     TestResult::Pass
 }
 
@@ -138,11 +131,6 @@ pub fn register_tests() {
             "constants": net_e1000_constants,
             "descriptor_sizes": net_e1000_descriptor_sizes,
             "virt_to_phys": net_virt_to_phys,
-        },
-        "net::apps": {
-            "ping_stats": net_ping_stats,
-            "internet_checksum": net_internet_checksum,
-            "error_codes": net_netapp_error_codes,
         },
     }
 }

@@ -450,7 +450,7 @@ pub fn klog_get_level() -> LogLevel {
 pub unsafe extern "C" fn klog_init() {
     serial_impl::serial_init();
     KLOG_INIT.store(true, Ordering::Release);
-    klog_output(LogLevel::Info, LogCategory::Boot, b"KLog v2.0 initialized");
+    klog_output(LogLevel::Info, LogCategory::Boot, b"KLog initialized");
 }
 
 #[no_mangle]

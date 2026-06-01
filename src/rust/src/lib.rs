@@ -440,14 +440,12 @@ pub extern "C" fn kernel_init() {
         <crate::kernel::arch::CurrentArch as crate::kernel::arch::Arch>::interrupt_late_init();
         crate::klog_boot_info!("Interrupt subsystem ready");
 
-        // 7. Timer + 中断使能
+        // 7. Timer 初始化 (中断延后到网络就绪后启用)
         match crate::kernel::timer::timer_init(1000) {
             Ok(_freq) => {
                 crate::klog_boot_info!("Timer configured");
                 #[cfg(target_arch = "x86_64")]
                 let _ = crate::kernel::timer::irq::register_timer_irq();
-                <crate::kernel::arch::CurrentArch as crate::kernel::arch::InterruptArch>::interrupt_enable();
-                crate::klog_boot_info!("Interrupts enabled");
             }
             Err(_msg) => {
                 let _ = _msg;

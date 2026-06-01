@@ -30,34 +30,12 @@ endif
 
 CFLAGS = $(CFLAGS_BASE) \
          -Isrc/kernel/lib \
-         -Isrc/kernel/net -Isrc/kernel/net/lwip -Isrc/kernel/net/lwip/src/include -Isrc/kernel/net/arch -Isrc/kernel/net/driver
+         -Isrc/kernel/net -Isrc/kernel/net/arch -Isrc/kernel/net/driver
 
-NET_CORE_C = $(wildcard src/kernel/net/lwip/src/core/*.c) \
-             $(wildcard src/kernel/net/lwip/src/core/ipv4/*.c) \
-             $(wildcard src/kernel/net/lwip/src/core/ipv6/*.c)
-NET_NETIF_C = src/kernel/net/lwip/src/netif/ethernet.c
-NET_APPS_C = src/kernel/net/lwip/src/apps/http/httpd.c \
-             src/kernel/net/lwip/src/apps/http/fs.c \
-             src/kernel/net/lwip/src/apps/http/http_client.c \
-             $(wildcard src/kernel/net/lwip/src/apps/mdns/*.c) \
-             $(wildcard src/kernel/net/lwip/src/apps/mqtt/*.c) \
-             $(wildcard src/kernel/net/lwip/src/apps/netbiosns/*.c) \
-             $(wildcard src/kernel/net/lwip/src/apps/smtp/*.c) \
-             $(wildcard src/kernel/net/lwip/src/apps/sntp/*.c) \
-             $(wildcard src/kernel/net/lwip/src/apps/tftp/*.c) \
-             $(wildcard src/kernel/net/lwip/src/apps/lwiperf/*.c) \
-             $(wildcard src/kernel/net/lwip/src/apps/snmp/*.c)
-# C 桥接文件已被 Rust 重写 (sys_arch.rs / init.rs / netif.rs / apps.rs / e1000.rs)
-NET_QX_C   = src/kernel/net/arch/net_glue.c
-# 注意: 以下文件已用 Rust 重写:
-#   - src/kernel/net/arch/sys_arch.c → sys_arch.rs
-#   - src/kernel/net/qx_net_init.c → init.rs
-#   - src/kernel/net/qx_netif.c    → netif.rs
-#   - src/kernel/net/qx_net_apps.c → apps.rs
-#   - src/kernel/net/qx_fsdata.c   → fsdata.rs
-
-NET_ALL_C  = $(NET_CORE_C) $(NET_NETIF_C) $(NET_APPS_C) $(NET_QX_C)
-NET_OBJS   = $(patsubst src/kernel/net/%.c,build/net/%.o,$(NET_ALL_C))
+# ============================================================================
+# 网络子系统已迁移至 smoltcp (纯 Rust)
+# Network stack: smoltcp (Rust)
+# ============================================================================
 
 LDFLAGS = -T $(LDSCRIPT) -nostdlib -Map=build/kernel.map -z noexecstack --no-warn-rwx-segments
 
@@ -78,14 +56,12 @@ endif
 
 # ── 架构条件构建对象 ─────────────────────────────────────────────────
 ifeq ($(ARCH),aarch64)
-    # AArch64: start.S (GNU as) 替代 boot.asm/entry.asm/isr.asm
-    KERNEL_OBJS = build/boot.o build/lib/string.o $(NET_OBJS)
+    KERNEL_OBJS = build/boot.o build/lib/string.o
     KERNEL_TEST_OBJS = build/boot.o
 else
     KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
                   build/lib/string.o \
-                  build/arch/x86_64/trampoline.o \
-                  $(NET_OBJS)
+                  build/arch/x86_64/trampoline.o
     KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
                   build/kernel_test.o build/test_main.o \
                   build/test_hw_stubs.o build/arch/x86_64/trampoline.o
@@ -228,17 +204,6 @@ build/gdt_asm.o: src/kernel/gdt.asm
 build/switch.o: src/kernel/proc/switch.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
-
-build/net/%.o: src/kernel/net/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# ============================================================
-# 网络子系统 (lwIP 2.2.1)
-# ============================================================
-build/net/%.o: src/kernel/net/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
 
 # 磁盘镜像 — 仅 x86_64
 ifeq ($(ARCH),x86_64)

@@ -4,7 +4,7 @@
 ///
 /// ## 功能清单
 ///
-/// 1. **标准库兼容** - atoi, strtol 等（供 lwIP 使用）
+/// 1. **标准库兼容** - atoi, strtol 等
 /// 2. **校验和计算** - Internet Checksum（IP/TCP/UDP）
 /// 3. **字节序转换** - hton/ntoh 系列
 /// 4. **MAC/IP 地址工具** - 地址格式化、解析

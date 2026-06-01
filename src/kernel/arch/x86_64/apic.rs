@@ -100,7 +100,7 @@ pub fn init() {
     apic_write(APIC_LVT_TIMER, LVT_MASK);
     apic_write(APIC_LVT_THERMAL, LVT_MASK);
     apic_write(APIC_LVT_PERF, LVT_MASK);
-    apic_write(APIC_LVT_LINT0, LVT_MASK);
+    apic_write(APIC_LVT_LINT0, LVT_DELIVERY_EXTINT);
     apic_write(APIC_LVT_LINT1, LVT_MASK);
     apic_write(APIC_LVT_ERROR, LVT_MASK);
 

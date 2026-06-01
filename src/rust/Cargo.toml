@@ -19,6 +19,19 @@ opt-level = "z"
 [dependencies]
 spin = "0.9"
 bitflags = "2.4"
+smoltcp = { path = "../kernel/net/smoltcp", default-features = false, features = [
+    "medium-ethernet",
+    "proto-ipv4",
+    "proto-ipv6",
+    "proto-dhcpv4",
+    "proto-dns",
+    "socket-raw",
+    "socket-icmp",
+    "socket-udp",
+    "socket-tcp",
+    "socket-dhcpv4",
+    "socket-dns",
+] }
 
 [build-dependencies]
 
@@ -46,4 +59,4 @@ smtp = []
 tftp = []
 snmp = []
 netbios = []
-lwiperf = []
+

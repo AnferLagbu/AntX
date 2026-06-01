@@ -1,47 +1,28 @@
 pub mod driver;
 #[cfg(not(feature = "kernel_test"))]
-pub mod init; // 网络初始化 (状态机)
+pub mod init;
 #[cfg(not(feature = "kernel_test"))]
-pub mod netif; // 网络接口管理 (DHCP)
-#[cfg(not(feature = "kernel_test"))]
-pub mod sys_arch; // lwIP OS 抽象层
-/// 网络子系统 Rust 模块 (完整版)
+pub mod smoltcp_impl;
+
+/// 网络子系统 Rust 模块
 ///
-/// 提供 lwIP 协议栈的完整 Rust 实现，包括：
-/// - OS 抽象层 (sys_arch)
-/// - 网络初始化 (init)
-/// - 网络接口管理 (netif)
-/// - 网络应用集 (apps)
-/// - HTTP 静态数据 (fsdata)
-/// - **网卡驱动** (driver) ✨新
+/// 基于 smoltcp 协议栈的完整网络实现：
+/// - 网络初始化状态机 (init)
+/// - 网卡驱动抽象 (NetNic enum)
+/// - smoltcp 网络栈集成 (smoltcp_impl)
 ///
 /// ## 架构概览
 ///
 /// ```text
 /// src/net/
-/// |-- mod.rs          # 模块导出和整合
-/// |-- types.rs        # 类型定义、常量、FFI声明
-/// |-- sys_arch.rs     # lwIP OS 抽象层 (信号量/互斥锁/邮箱)
-/// |-- init.rs         # 网络子系统初始化 (状态机)
-/// |-- netif.rs        # 网络接口管理 (DHCP/IPv6/静态存储)
-/// |-- apps.rs         # 网络应用 (Ping/DNS/HTTP/mDNS/MQTT等) ✨新
-/// |-- fsdata.rs       # HTTP 静态文件数据 ✨新
-/// +-- driver/         # 网卡驱动模块 ✨新
-///     |-- mod.rs         # 驱动模块入口
-///     +-- e1000.rs       # Intel E1000 Rust 驱动
+/// |-- mod.rs          # 模块导出
+/// |-- types.rs        # 类型定义、常量
+/// |-- smoltcp_impl.rs # Device trait 实现 + NetNic 枚举
+/// |-- init.rs         # 初始化状态机 + DHCP + Socket API
+/// |-- utils.rs        # 工具函数 (校验和/atoi/字节序)
+/// +-- driver/         # 网卡驱动重新导出 → kernel::driver::net
+/// +-- smoltcp/        # smoltcp 协议栈源码
 /// ```
-///
-/// ## 设计原则
-///
-/// 1. **功能复刻** - 不逐行翻译C，而是用Rust惯用方式重新设计
-/// 2. **不修改 lwIP 源码** - 保持第三方协议栈原样
-/// 3. **FFI 兼容层** - 提供与 C 版本相同的 ABI 接口
-/// 4. **类型安全** - 使用 Rust 的所有权系统增强安全性
-/// 5. **零成本抽象** - 关键路径无额外开销
-///
-/// ## 安全性改进 (相比 C 版本)
-///
-/// - **原子操作**: 所有全局状态使用 Atomic 类型，消除 data race
 /// - **状态机**: 初始化过程使用有限状态机，防止重复初始化
 /// - **RAII**: 资源自动清理，防止内存泄漏
 /// - **边界检查**: 数组访问和指针操作都有安全保证
@@ -50,27 +31,15 @@ pub mod sys_arch; // lwIP OS 抽象层
 // 核心模块
 // ============================================================================
 pub mod types; // 基础类型、常量 (始终编译)
-#[cfg(not(feature = "kernel_test"))]
-pub mod types_ffi; // FFI 声明、lwIP 绑定 (需要 C 链接) // 网卡驱动 (E1000 等)
 
 // ============================================================================
-// 应用模块 (新增)
-// ============================================================================
-
-pub mod apps; // 网络应用集 (Ping/DNS/HTTP等)
-#[cfg(not(feature = "kernel_test"))]
-pub mod fsdata; // HTTP 静态文件数据
-
-// ============================================================================
-// 工具模块 (新增) - 替代 lib_compat.c
+// 工具模块
 // ============================================================================
 
 pub mod utils; // 网络工具函数 (atoi/checksum/字节序等)
 
 // ============================================================================
-// 公共 API 导出 (方便其他模块使用)
+// 公共 API 导出
 // ============================================================================
 
 pub use types::*;
-#[cfg(not(feature = "kernel_test"))]
-pub use utils::*;

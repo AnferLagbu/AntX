@@ -12,7 +12,7 @@
 //! ├── mm/            # 内存管理 (PMM, VMM, Slab, Kmalloc)
 //! ├── proc/          # 进程/线程管理 (PCB, 调度器, 用户进程)
 //! ├── fs/            # 文件系统 (VFS, ramfs, HvFS v2, devfs, procfs)
-//! ├── net/           # 网络协议栈 (lwIP, sys_arch, 驱动)
+//! ├── net/           # 网络协议栈 (smoltcp, 驱动)
 //! ├── idt/           # 中断描述符表 (IDT, handlers, 统计)
 //! ├── sync/          # 同步原语 (spinlock, mutex, rwlock)
 //! ├── credo/        # 身份与权限框架 (DID, 能力矩阵, 会话)
@@ -58,7 +58,7 @@ pub mod proc;
 /// 文件系统 (VFS, ramfs, devfs, procfs, diskfs)
 pub mod fs;
 
-/// 网络协议栈 (lwIP, OS 抽象层, 网卡驱动)
+/// 网络协议栈 (smoltcp, 网卡驱动)
 /// x86_64: E1000 PCI  /  aarch64: virtio-net MMIO
 pub mod net;
 

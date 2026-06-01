@@ -37,21 +37,9 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
         {
             crate::kernel::net::types::sys_tick_inc();
 
-            if crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
-                extern "C" {
-                    fn sys_check_timeouts();
-                    fn e1000_poll_rx();
-                }
-                unsafe {
-                    sys_check_timeouts();
-                }
-
-                let t = crate::kernel::timer::get_ticks();
-                if t.is_multiple_of(10) {
-                    unsafe {
-                        e1000_poll_rx();
-                    }
-                }
+            // smoltcp: 始终轮询
+            unsafe {
+                crate::kernel::net::init::poll_network();
             }
         }
     }

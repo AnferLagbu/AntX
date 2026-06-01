@@ -46,6 +46,9 @@ static SYS_TICKS: AtomicU32 = AtomicU32::new(0);
 
 pub static NET_READY: AtomicBool = AtomicBool::new(false);
 
+/// 网络已配置 IP (DHCP 完成或静态 IP 设置)
+pub static NET_CONFIGURED: AtomicBool = AtomicBool::new(false);
+
 #[no_mangle]
 pub extern "C" fn sys_now() -> u32 {
     SYS_TICKS.load(Ordering::Relaxed) * 10
@@ -63,5 +66,3 @@ pub struct SysProt(pub u64);
 #[no_mangle]
 pub static mut errno: i32 = 0;
 
-#[cfg(not(feature = "kernel_test"))]
-pub use super::types_ffi::*;

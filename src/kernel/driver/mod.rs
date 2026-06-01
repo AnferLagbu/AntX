@@ -75,6 +75,9 @@ pub mod display;
 /// USB 子系统
 pub mod usb;
 
+/// 网络设备驱动
+pub mod net;
+
 /// VirtIO 驱动框架 (跨架构，MMIO transport)
 pub mod virtio;
 

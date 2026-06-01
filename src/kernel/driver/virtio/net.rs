@@ -362,19 +362,6 @@ impl VirtioNet {
                 // Process the received packet
                 // Device writes virtio_net_hdr before the ethernet frame
                 if len > self.hdr_size as u32 && len <= RX_BUFFER_SIZE as u32 {
-                    let data_len = (len - self.hdr_size as u32) as u16;
-                    extern "C" {
-                        fn ethernet_input_from_virtio(
-                            data: *mut core::ffi::c_void,
-                            len: u16,
-                        ) -> i32;
-                    }
-                    unsafe {
-                        ethernet_input_from_virtio(
-                            self.rx_buffers[buf_idx].add(self.hdr_size) as *mut core::ffi::c_void,
-                            data_len,
-                        );
-                    }
                     self.rx_count += 1;
                     processed += 1;
                 }
@@ -400,6 +387,56 @@ impl VirtioNet {
         processed
     }
 
+    /// Try to receive a single packet into the provided buffer.
+    /// Returns Some(len) on success, None if no packet available.
+    pub fn try_receive(&mut self, buffer: &mut [u8]) -> Option<usize> {
+        let result = self.rx_vq.pop_used()?;
+        let (desc_idx, len) = result;
+        let buf_idx = desc_idx as usize;
+
+        if buf_idx >= VQ_SIZE as usize || self.rx_buffers[buf_idx].is_null() {
+            self.rx_vq.reclaim_desc(desc_idx);
+            return None;
+        }
+
+        if len <= self.hdr_size as u32 || len > RX_BUFFER_SIZE as u32 {
+            self.rx_vq.reclaim_desc(desc_idx);
+            let new_desc = self.rx_vq.prepare_desc(
+                self.rx_buffers_phys[buf_idx],
+                RX_BUFFER_SIZE as u32,
+                true,
+            );
+            self.rx_vq.submit(new_desc);
+            self.rx_vq.commit_and_kick();
+            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+            self.device.notify(0);
+            return None;
+        }
+
+        let data_len = (len - self.hdr_size as u32) as usize;
+        let copy_len = data_len.min(buffer.len());
+
+        unsafe {
+            let src = self.rx_buffers[buf_idx].add(self.hdr_size);
+            core::ptr::copy_nonoverlapping(src, buffer.as_mut_ptr(), copy_len);
+        }
+
+        self.rx_count += 1;
+
+        self.rx_vq.reclaim_desc(desc_idx);
+        let new_desc = self.rx_vq.prepare_desc(
+            self.rx_buffers_phys[buf_idx],
+            RX_BUFFER_SIZE as u32,
+            true,
+        );
+        self.rx_vq.submit(new_desc);
+        self.rx_vq.commit_and_kick();
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+        self.device.notify(0);
+
+        Some(copy_len)
+    }
+
     /// Process any used descriptors for RX reclamation without processing data.
     /// Used for interrupt-driven polling.
     pub fn handle_interrupt(&self) {
@@ -411,10 +448,14 @@ impl VirtioNet {
 }
 
 // ============================================================================
-// Global instance + FFI (for lwIP integration)
+// Global instance + FFI
 // ============================================================================
 
 static VIRTIO_NET_DEVICE: Mutex<Option<Box<VirtioNet>>> = Mutex::new(None);
+
+pub(crate) fn take_device() -> Option<Box<VirtioNet>> {
+    VIRTIO_NET_DEVICE.lock().take()
+}
 
 /// C FFI: probe for virtio-net device. Returns 0 on success, -1 on failure.
 #[no_mangle]
@@ -458,112 +499,4 @@ pub fn probe() -> i32 {
     }
     klog_info!(Driver, "virtio-net: no device found");
     -1
-}
-
-/// Initialize virtio-net for lwIP. Called by netif_add's init callback.
-///
-/// The device must already be probed via `probe()`.
-#[no_mangle]
-///
-/// # Safety
-///
-/// `DESC_POOL` has been allocated and caller ensures no concurrent TX/RX on same queue.
-pub unsafe extern "C" fn virtio_net_init(netif: *mut core::ffi::c_void) -> i32 {
-    extern "C" {
-        fn qx_netif_init_virtio(netif: *mut core::ffi::c_void, mac: *const u8);
-    }
-
-    match &*VIRTIO_NET_DEVICE.lock() {
-        Some(ref dev) => {
-            qx_netif_init_virtio(netif, dev.mac.as_ptr());
-            klog_info!(Net, "virtio-net: lwIP netif initialized");
-            0
-        }
-        None => -5,
-    }
-}
-
-/// Send a packet via virtio-net. Called by lwIP's linkoutput callback.
-#[no_mangle]
-///
-/// # Safety
-///
-/// Caller holds the transmit lock. Buffer data must remain valid until the device completes the TX.
-pub unsafe extern "C" fn virtio_net_send(
-    _netif: *mut core::ffi::c_void,
-    p: *mut core::ffi::c_void,
-) -> i32 {
-    extern "C" {
-        fn qx_pbuf_copyout(p: *mut core::ffi::c_void, buf: *mut u8, out_len: *mut u16);
-    }
-
-    if p.is_null() {
-        return -1;
-    }
-
-    match &mut *VIRTIO_NET_DEVICE.lock() {
-        Some(ref mut dev) => {
-            let pbuf_base = p as *mut u8;
-            let total = *(pbuf_base.add(0x10) as *const u16) as usize;
-
-            // Use static TX buffer with space for virtio_net_hdr
-            static mut TX_BUF: [u8; 2000] = [0u8; 2000];
-            let hdr_off = dev.hdr_size;
-
-            // Zero the virtio header before each send (no offloads)
-            for i in 0..hdr_off {
-                TX_BUF[i] = 0;
-            }
-
-            let max_payload = TX_BUF.len() - hdr_off;
-            let mut out_len: u16 = total.min(max_payload) as u16;
-            qx_pbuf_copyout(p, TX_BUF[hdr_off..].as_mut_ptr(), &mut out_len);
-
-            // Convert to physical address (identity-mapped on aarch64)
-            let phys = TX_BUF.as_ptr() as u64;
-
-            match dev.send_packet(phys, (hdr_off + out_len as usize) as u32) {
-                Ok(()) => 0,
-                Err(()) => {
-                    klog_err!(Net, "virtio-net: send failed");
-                    -1
-                }
-            }
-        }
-        None => -1,
-    }
-}
-
-/// Poll for received packets.
-#[no_mangle]
-///
-/// # Safety
-///
-/// `head` corresponds to a descriptor previously submitted via `submit()`. Caller has first called `pop_used()` to confirm completion.
-pub unsafe extern "C" fn virtio_net_poll_rx() {
-    match &mut *VIRTIO_NET_DEVICE.lock() {
-        Some(ref mut dev) => {
-            // Force VM exit to let QEMU process pending network bottom-half handlers
-            let _ = dev.device.read32(super::INTERRUPT_STATUS);
-            let n = dev.poll_rx();
-            if n > 0 {
-                klog_info!(Driver, "virtio-net: poll_rx processed {} packets", n);
-            }
-        }
-        None => {}
-    }
-}
-
-/// Forward received packet to lwIP.
-#[no_mangle]
-///
-/// # Safety
-///
-/// `queue` has been initialized. Caller ensures no concurrent access.
-pub unsafe extern "C" fn virtio_net_input(data: *mut core::ffi::c_void, len: u16) -> i32 {
-    // External declaration (defined in netif.rs)
-    extern "C" {
-        fn ethernet_input_from_virtio(data: *mut core::ffi::c_void, len: u16) -> i32;
-    }
-    ethernet_input_from_virtio(data, len)
 }
