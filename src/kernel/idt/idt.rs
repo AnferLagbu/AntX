@@ -371,10 +371,23 @@ impl IdtManager {
             return;
         }
 
-        // Use IOAPIC if available (modern systems)
-        if crate::kernel::arch::x86_64::ioapic::is_initialized() {
-            crate::kernel::arch::x86_64::ioapic::unmask_irq(irq);
-        } else {
+        // Use IOAPIC if available (modern systems); 仅 x86_64 支持 IOAPIC.
+        let ioapic_handled = {
+            #[cfg(target_arch = "x86_64")]
+            {
+                if crate::kernel::arch::x86_64::ioapic::is_initialized() {
+                    crate::kernel::arch::x86_64::ioapic::unmask_irq(irq);
+                    true
+                } else {
+                    false
+                }
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                false
+            }
+        };
+        if !ioapic_handled {
             // Fallback to legacy PIC (8259A) for older systems
             unsafe {
                 if irq < 8 {
@@ -731,10 +744,23 @@ impl IdtManager {
 
     /// 发送 EOI (End of Interrupt)
     fn send_eoi(&self, irq: u8) {
-        // Use Local APIC EOI if available (modern systems)
-        if crate::kernel::arch::x86_64::apic::is_initialized() {
-            crate::kernel::arch::x86_64::apic::eoi();
-        } else {
+        // Use Local APIC EOI if available (modern systems); 仅 x86_64 支持 APIC.
+        let apic_handled = {
+            #[cfg(target_arch = "x86_64")]
+            {
+                if crate::kernel::arch::x86_64::apic::is_initialized() {
+                    crate::kernel::arch::x86_64::apic::eoi();
+                    true
+                } else {
+                    false
+                }
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                false
+            }
+        };
+        if !apic_handled {
             // Fallback to legacy PIC EOI for older systems
             unsafe {
                 if irq >= 8 {

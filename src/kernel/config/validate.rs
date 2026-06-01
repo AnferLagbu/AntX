@@ -199,6 +199,13 @@ pub fn validate_system_config() -> u32 {
         }
     }
 
+    // 演进 9: KASLR 偏移自检
+    if let Err(msg) = crate::kernel::config::validate_kaslr_offset() {
+        errors += 1;
+        use crate::klog_err;
+        klog_err!(Boot, "CONFIG: KASLR: {}", msg);
+    }
+
     errors
 }
 

@@ -50,10 +50,12 @@
 mod capacity;
 mod caps;
 mod error;
+mod kaslr;
 mod memory;
 pub mod procfs;
 mod sched;
 mod slab;
+pub mod boot_image;
 mod validate;
 
 // ============================================================================
@@ -92,6 +94,13 @@ pub use validate::{
     validate_cpu_config, validate_cross_module_consistency, validate_drivers,
     validate_interrupt_config, validate_memory_config, validate_network_subsystem,
     validate_pci_subsystem, validate_system_config,
+};
+
+// 演进 9: KASLR 配置接入
+pub use kaslr::{
+    get_kaslr_offset, is_aligned as is_kaslr_aligned, set_kaslr_offset,
+    validate_kaslr_offset, KASLR_ALIGN, KASLR_BASE_OFFSET, KASLR_DEFAULT_OFFSET, KASLR_ENABLED,
+    KASLR_MAX_OFFSET,
 };
 
 // ============================================================================
@@ -143,6 +152,13 @@ pub fn print_config_table() {
         "| APIC / IOAPIC           | {:>10} / {:<10}|",
         if s.apic_enabled { "on" } else { "off" },
         if s.ioapic_enabled { "on" } else { "off" }
+    );
+    klog_info!(Boot, "+-------------------------+--------------------------+");
+    // 演进 9: 运行时 KASLR 偏移
+    klog_info!(
+        Boot,
+        "| KASLR offset (hex)      |                  0x{:>8X} |",
+        s.kaslr_offset
     );
     klog_info!(Boot, "+-------------------------+--------------------------+");
     klog_info!(Boot, "| capabilities                                     |");
@@ -235,4 +251,12 @@ pub fn init() {
 
     // 演进 3: 启动期同步打印 ASCII 表格 (便于截图与 dmesg 抓取)
     print_config_table();
+
+    // 演进 10: 编码 ConfigSummary → boot_image (崩溃后取证用)
+    boot_image::encode_boot_image();
+    klog_info!(
+        Boot,
+        "boot_image: encoded {} bytes for crash dump",
+        boot_image::encoded_len()
+    );
 }

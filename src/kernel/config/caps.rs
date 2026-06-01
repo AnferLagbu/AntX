@@ -6,6 +6,7 @@
 //! - 调试器命令 (若启用)
 
 use super::capacity::{MAX_CPUS, MAX_IRQS, MAX_PROCESSES, MAX_THREADS};
+use super::kaslr::get_kaslr_offset;
 use super::memory::PAGE_SIZE;
 
 /// Configuration summary structure.
@@ -19,6 +20,8 @@ pub struct ConfigSummary {
     pub apic_enabled: bool,
     pub ioapic_enabled: bool,
     pub page_size: u64,
+    /// 演进 9: 运行时 KASLR 偏移 (由 bootloader/entry 设置).
+    pub kaslr_offset: u64,
     pub capabilities: KernelCapabilities,
 }
 
@@ -61,6 +64,7 @@ pub fn get_config_summary() -> ConfigSummary {
         apic_enabled: apic_initialized(),
         ioapic_enabled: ioapic_initialized(),
         page_size: PAGE_SIZE,
+        kaslr_offset: get_kaslr_offset(),
         capabilities: KernelCapabilities::detect(),
     }
 }

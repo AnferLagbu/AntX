@@ -75,7 +75,13 @@ impl ProcfsData {
         entries[3].entry_type = 1;
         entries[3].used = true;
 
-        self.entry_count.store(4, Ordering::SeqCst);
+        // 演进 8: JSON 格式 (机器可读, 监控用)
+        Self::set_name(&mut entries[4], "sys/config.json");
+        entries[4].pid = 0;
+        entries[4].entry_type = 1;
+        entries[4].used = true;
+
+        self.entry_count.store(5, Ordering::SeqCst);
 
         0
     }
@@ -207,6 +213,11 @@ impl ProcfsData {
 
         if name == "sys/config" {
             return crate::kernel::config::procfs::read_sys_config(buf) as i32;
+        }
+
+        // 演进 8: JSON 格式 (与 text 模式字段一一对应)
+        if name == "sys/config.json" {
+            return crate::kernel::config::procfs::read_sys_config_json(buf) as i32;
         }
 
         -1
