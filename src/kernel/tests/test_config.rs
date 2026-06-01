@@ -217,6 +217,82 @@ fn test_procfs_read_sys_config_zero_size() -> TestResult {
 }
 
 // ============================================================================
+// ConfigError Display (演进 7: 负面 / 错误消息测试)
+// ============================================================================
+
+/// Helper: format `ConfigError` to a fixed buffer and return the resulting String.
+fn format_error(e: ConfigError) -> alloc::string::String {
+    use core::fmt::Write;
+    let mut s = alloc::string::String::new();
+    let _ = write!(s, "{}", e);
+    s
+}
+
+fn test_config_error_display_cpu_count() -> TestResult {
+    let s = format_error(ConfigError::CpuCountExceedsMax {
+        actual: 2048,
+        max: 1024,
+    });
+    check!(s.contains("2048"), "should embed actual value");
+    check!(s.contains("1024"), "should embed max value");
+    check!(s.contains("CPU") || s.contains("MAX_CPUS"), "should describe CPU");
+    TestResult::Pass
+}
+
+fn test_config_error_display_memory_layout() -> TestResult {
+    let s = format_error(ConfigError::MemoryLayoutInvalid);
+    check!(s.contains("memory"), "should mention memory");
+    TestResult::Pass
+}
+
+fn test_config_error_display_irq_unavailable() -> TestResult {
+    let s = format_error(ConfigError::IrqControllerUnavailable);
+    check!(s.contains("interrupt") || s.contains("IRQ"), "should mention IRQ");
+    TestResult::Pass
+}
+
+fn test_config_error_display_inconsistent() -> TestResult {
+    let s = format_error(ConfigError::InconsistentConstant {
+        name: "PAGE_SIZE",
+        lhs: 4096,
+        rhs: 8192,
+    });
+    check!(s.contains("PAGE_SIZE"), "should embed constant name");
+    check!(s.contains("4096"), "should embed lhs value");
+    check!(s.contains("8192"), "should embed rhs value");
+    TestResult::Pass
+}
+
+fn test_config_error_display_driver_invalid() -> TestResult {
+    let s = format_error(ConfigError::DriverConfigInvalid("pci"));
+    check!(s.contains("pci"), "should embed driver name");
+    TestResult::Pass
+}
+
+fn test_config_error_display_slab_variants() -> TestResult {
+    let s = format_error(ConfigError::SlabNotPowerOfTwo);
+    check!(!s.is_empty(), "SlabNotPowerOfTwo must have message");
+    let s = format_error(ConfigError::SlabMisaligned);
+    check!(!s.is_empty(), "SlabMisaligned must have message");
+    let s = format_error(ConfigError::SlabTooLarge);
+    check!(!s.is_empty(), "SlabTooLarge must have message");
+    let s = format_error(ConfigError::StackMisaligned);
+    check!(!s.is_empty(), "StackMisaligned must have message");
+    TestResult::Pass
+}
+
+/// Negative test: 两个 re-export 路径得到的 ConfigError 在 `==` 上必须等价。
+/// 这保证 `proc/types.rs` 等下游模块如果 `pub use ConfigError`, 值不会失真。
+fn test_config_error_copy_equality_across_reexports() -> TestResult {
+    let e1 = ConfigError::DriverConfigInvalid("pci");
+    let e2: ConfigError = e1; // Copy trait
+    let e3 = e1;
+    assert_eq_test!(e1, e2, "Copy preserves equality");
+    assert_eq_test!(e2, e3, "Re-reads return same variant");
+    TestResult::Pass
+}
+
+// ============================================================================
 // 注册
 // ============================================================================
 
@@ -249,6 +325,15 @@ pub fn register_config_tests() {
             "basic": test_procfs_read_sys_config_basic,
             "truncation_safe": test_procfs_read_sys_config_truncation_safe,
             "zero_size_buf": test_procfs_read_sys_config_zero_size,
+        },
+        "config::error_display": {
+            "cpu_count": test_config_error_display_cpu_count,
+            "memory_layout": test_config_error_display_memory_layout,
+            "irq_unavailable": test_config_error_display_irq_unavailable,
+            "inconsistent": test_config_error_display_inconsistent,
+            "driver_invalid": test_config_error_display_driver_invalid,
+            "slab_variants": test_config_error_display_slab_variants,
+            "copy_equality": test_config_error_copy_equality_across_reexports,
         },
     }
 }

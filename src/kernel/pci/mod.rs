@@ -472,6 +472,11 @@ pub fn init() -> usize {
     count
 }
 
+/// Returns true if `pci::init()` has been called at least once.
+pub fn is_initialized() -> bool {
+    PCI_INITIALIZED.load(core::sync::atomic::Ordering::SeqCst)
+}
+
 pub fn get_device_list() -> Vec<PciDevice> {
     DEVICE_LIST.lock().clone()
 }

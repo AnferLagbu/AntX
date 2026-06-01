@@ -46,6 +46,11 @@ pub fn pci_init() -> i32 {
         alloc::boxed::Box::new(PciBusDriver),
     );
 
+    // 演进 6: PCI init 完成后做 driver 维度自检
+    if let Err(e) = crate::kernel::config::validate_pci_subsystem() {
+        crate::klog_drv_warn!("PCI validation: {}", e);
+    }
+
     count
 }
 

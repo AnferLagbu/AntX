@@ -89,8 +89,9 @@ pub use slab::{SLAB_DEFAULT_SIZE, SLAB_GENERAL_CACHE_NUM, SLAB_MAX_OBJECT_SIZE, 
 // ============================================================================
 
 pub use validate::{
-    validate_cpu_config, validate_cross_module_consistency, validate_interrupt_config,
-    validate_memory_config, validate_system_config,
+    validate_cpu_config, validate_cross_module_consistency, validate_drivers,
+    validate_interrupt_config, validate_memory_config, validate_network_subsystem,
+    validate_pci_subsystem, validate_system_config,
 };
 
 // ============================================================================
@@ -218,6 +219,18 @@ pub fn init() {
         klog_info!(Boot, "==== Configuration OK ====");
     } else {
         klog_info!(Boot, "==== Configuration: {} error(s) (see above) ====", errors);
+    }
+
+    // 演进 6: 软校验子系统初始化状态 (PCI/网络/...)
+    // 注意: 此校验点位于 kernel_init 极早期, 此时 PCI/网络/驱动尚未初始化。
+    // 这里记录为 0 错误是预期行为 — 真正的 driver 配置检查在它们各自的 init() 末尾调用。
+    let driver_errors = validate_drivers();
+    if driver_errors > 0 {
+        klog_info!(
+            Boot,
+            "==== Drivers: {} subsystem(s) uninitialized (deferred to late init) ====",
+            driver_errors
+        );
     }
 
     // 演进 3: 启动期同步打印 ASCII 表格 (便于截图与 dmesg 抓取)

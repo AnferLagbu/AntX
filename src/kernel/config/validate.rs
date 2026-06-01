@@ -97,6 +97,61 @@ pub fn validate_cross_module_consistency() -> Result<(), ConfigError> {
     Ok(())
 }
 
+// ============================================================================
+// Driver-specific 验证 (演进 6)
+// ============================================================================
+
+/// 验证 PCI 子系统已初始化。
+///
+/// **契约**: 当 `net = "e1000"` / `ahci` / `nvme` 等使用 PCI 总线的驱动
+/// 已配置为启用时, PCI 必须在它们之前完成初始化。
+/// 本函数为软检查 — 报告但不 panic, 因为某些嵌入式环境可能不包含 PCI 总线。
+pub fn validate_pci_subsystem() -> Result<(), ConfigError> {
+    if !crate::kernel::pci::is_initialized() {
+        return Err(ConfigError::DriverConfigInvalid("pci"));
+    }
+    Ok(())
+}
+
+/// 验证网络子系统配置一致性。
+///
+/// 当前仅做存在性检查; 未来可扩展:
+/// - IP 地址不冲突
+/// - MTU 落在合法范围 (576..=65535)
+/// - 网卡数量 ≤ MAX_CPUS
+pub fn validate_network_subsystem() -> Result<(), ConfigError> {
+    // 当前: 软检查; init 失败在 net::init() 内已 panic, 此处不重复。
+    // 未来: 当 net config 抽离为常量时, 此处做 IP/MTU 等静态检查。
+    Ok(())
+}
+
+/// Validate all driver configurations.
+///
+/// 软检查 (不 panic): 报告所有未初始化子系统, 但不阻断启动。
+/// 设计动机: 嵌入式环境可能故意不启用某些子系统 (例如无 PCI 总线),
+/// 严格校验会误报。
+pub fn validate_drivers() -> u32 {
+    let mut errors = 0u32;
+
+    match validate_pci_subsystem() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+        }
+    }
+
+    match validate_network_subsystem() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+        }
+    }
+
+    errors
+}
+
 /// Validate all system configuration.
 ///
 /// Called early in the boot process. In `debug_assertions` builds,
@@ -150,27 +205,6 @@ pub fn validate_system_config() -> u32 {
 #[inline]
 fn log_config_error(e: &ConfigError) {
     use crate::klog_err;
-    match e {
-        ConfigError::CpuCountExceedsMax { actual, max } => {
-            klog_err!(Boot, "CONFIG: CPU count {} > MAX_CPUS {}", actual, max);
-        }
-        ConfigError::MemoryLayoutInvalid => {
-            klog_err!(Boot, "CONFIG: memory layout invalid");
-        }
-        ConfigError::IrqControllerUnavailable => {
-            klog_err!(Boot, "CONFIG: no interrupt controller initialized");
-        }
-        ConfigError::InconsistentConstant { name, lhs, rhs } => {
-            klog_err!(
-                Boot,
-                "CONFIG: constant {} mismatch: config.rs={} vs submodule={}",
-                name,
-                lhs,
-                rhs
-            );
-        }
-        ConfigError::DriverConfigInvalid(name) => {
-            klog_err!(Boot, "CONFIG: driver {} misconfigured", name);
-        }
-    }
+    // 演进 6 后续: 依赖 ConfigError::Display (error.rs), 避免每加一个变体就要更新此处。
+    klog_err!(Boot, "CONFIG: {}", e);
 }

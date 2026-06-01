@@ -383,6 +383,11 @@ pub extern "C" fn qx_net_init() {
 
         klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr().cast());
 
+        // 演进 6: 网络 init 完成后做 driver 维度自检
+        if let Err(e) = crate::kernel::config::validate_network_subsystem() {
+            crate::klog_drv_warn!("Network validation: {}", e);
+        }
+
         crate::kernel::barrier::recovery::recovery_domain_register(
             "net",
             5,

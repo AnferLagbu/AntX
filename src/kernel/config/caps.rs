@@ -58,11 +58,30 @@ pub fn get_config_summary() -> ConfigSummary {
         max_irqs: MAX_IRQS,
         max_processes: MAX_PROCESSES,
         max_threads: MAX_THREADS,
-        apic_enabled: cfg!(target_arch = "x86_64")
-            && crate::kernel::arch::x86_64::apic::is_initialized(),
-        ioapic_enabled: cfg!(target_arch = "x86_64")
-            && crate::kernel::arch::x86_64::ioapic::is_initialized(),
+        apic_enabled: apic_initialized(),
+        ioapic_enabled: ioapic_initialized(),
         page_size: PAGE_SIZE,
         capabilities: KernelCapabilities::detect(),
     }
+}
+
+/// 跨架构安全: 在 x86_64 上查 APIC 状态, 其他架构默认 false。
+#[cfg(target_arch = "x86_64")]
+fn apic_initialized() -> bool {
+    crate::kernel::arch::x86_64::apic::is_initialized()
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn apic_initialized() -> bool {
+    false
+}
+
+#[cfg(target_arch = "x86_64")]
+fn ioapic_initialized() -> bool {
+    crate::kernel::arch::x86_64::ioapic::is_initialized()
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn ioapic_initialized() -> bool {
+    false
 }
