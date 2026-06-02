@@ -88,10 +88,16 @@ pub trait PciScanner: Send + Sync {
 // 契约: 注册机制
 // ============================================================================
 
+static REGISTERED_SCANNER: spin::Mutex<Option<&'static dyn PciScanner>> = spin::Mutex::new(None);
+
 /// 注册 PCI 扫描器 (启动时由平台代码调用)
-pub fn register_scanner(_scanner: &'static dyn PciScanner) {}
+///
+/// 必须先注册再调用 `scanner()`。若已有注册则覆盖 (启动期单线程,无竞争)。
+pub fn register_scanner(scanner: &'static dyn PciScanner) {
+    *REGISTERED_SCANNER.lock() = Some(scanner);
+}
 
 /// 获取已注册的 PCI 扫描器
 pub fn scanner() -> Option<&'static dyn PciScanner> {
-    None
+    *REGISTERED_SCANNER.lock()
 }

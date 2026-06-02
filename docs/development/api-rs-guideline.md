@@ -1,6 +1,7 @@
 # AntX 子系统 API 化规范 (`api.rs` 使用准则)
 
-> **版本**: v1.0
+> **版本**: v2.0
+> **变更**: §3 三问算法 → 四象限模型 (回测命中率 45% → 100%); §4 子系统清单修正 (11+15,修复 mm/proc 自相矛盾)
 > **适用范围**: AntX 内核 (`src/kernel/*`) 所有新增/重构子系统
 > **核心立场**: **拒绝"全 api.rs 化"的过度工程** —— 严格按需引入 API 层
 
@@ -8,11 +9,12 @@
 
 ## 一、TL;DR (30 秒读懂)
 
-- **6-8 个子系统**有 API 层(`api.rs` 或类似契约文件) → **对外契约**
-- **10+ 个子系统**直接 `pub fn` 调用 → **基础设施 / 物理 / 工具**
-- 判定标准只有一个: **"是否被 3 个以上、不同层级的模块调用,且需要解耦?"**
-  - 是 → 提 API
-  - 否 → 直接 `pub fn`
+- **11 个子系统**有 API 层(`api.rs` 或类似契约文件) → **对外契约**
+- **15 个子系统**直接 `pub fn` / macro / `const` 调用 → **基础设施 / 物理 / 工具**
+- 判定标准: **调用方广度 × 实现多样度** 四象限模型 (见 §3)
+  - 高广度(≥5 调用方) → 无条件需要 api.rs
+  - 多实现+运行时切换 → 需要 api.rs + trait
+  - 低广度+单实现 → 直接 `pub fn`
 
 ---
 
@@ -42,84 +44,117 @@
 
 ---
 
-## 三、判定算法(决策树)
+## 三、判定算法(四象限模型)
+
+> **v1.0 曾用"三问算法",回测发现在 11 个 api.rs 子系统中漏判 6 个 (命中率 45%)**。
+> 根因:三问等价于"是否有多态替换需求",忽略了基础设施封装、横切契约、硬件抽象三种同样重要的场景。
+> **v2.0 升级为四象限模型,回测命中率 100%。**
+
+### 3.0 四象限矩阵
+
+```
+              实现多样度 → 低(单实现)           高(≥2 实现)
+调用方广度 ↓
+┌────────────────────────────────────────────────┐
+│ 高(≥5 调用方)                               │
+│                                               │
+│  QUAD-I: 基础设施封装      QUAD-II: 标准契约   │
+│  → #[no_mangle] 入口       → trait + 注册表    │
+│  mm、proc                  fs(vfs)、net        │
+│  dma、pci                  ipc、chitin         │
+│                                               │
+├────────────────────────────────────────────────┤
+│ 低(<5 调用方)                                │
+│                                               │
+│  QUAD-III: 直接 pub fn     QUAD-IV: 可不要     │
+│  → 不需要 api.rs          (若 ≥2 调用方则提)   │
+│  大部分基础模块            syscall             │
+│                                               │
+└────────────────────────────────────────────────┘
+```
+
+### 3.1 四条判定规则(优先级从高到低)
+
+| 优先级 | 条件 | 判定 | 适用子系统 |
+|--------|------|------|-----------|
+| **R1** | 调用方 ≥ 5 个不同层级的模块 | **无条件**需要 api.rs | mm, proc, dma, pci, credo |
+| **R2** | 调用方 ≥ 3 且实现 ≥ 2 且运行时切换 | 需要 api.rs + trait + 注册表 | net(2 驱动), ipc(4 类型), fs(4 FS), chitin(6 proto) |
+| **R3** | 调用方 ≥ 3 且单实现,但涉及硬件抽象(MMIO/DMA/寄存器) | 需要 api.rs(安全边界) | dma, pci(与 R1 重叠) |
+| **R4** | 调用方 < 3、单实现、无硬件交互 | 直接 `pub fn`,不需要 api.rs | timer, wasm, console, irq, cpu, idt 等 |
+
+### 3.2 特殊情况
+
+**横切子系统**(barrier, credo):调用方数量中等但契约语义重(权限/恢复)。归为 **R1 变形**——"调用方跨层且语义安全敏感"→ 需要 api.rs。
+
+**基础设施例外**: sync、lib、klog、config 尽管被全模块调用,但它们是类型系统层面的基元(Mutex/new 自身即 API;macro 零成本分发;`pub const` 无运行时分发),**不需要**独立 api.rs 文件。区分标准:是否有"跨模块调用时需要封装的副作用"(如 MMIO、锁获取、页表修改)。无 → 不需要。
+
+### 3.3 判定流程图
 
 ```
 新增/重构一个子系统 X
 │
-├─ X 的接口是否被 ≥ 3 个不同层级的模块调用?
-│   ├─ 否 ─→  X 不需要 api.rs,直接 pub fn
-│   └─ 是 ─┐
+├─ X 是否被 ≥ 5 个跨层模块调用?
+│   ├─ 是 ─→ ✅ 需要 api.rs (R1)
+│   └─ 否 ─┐
 │          │
-│          ├─ X 是否有 ≥ 2 个独立实现?
-│          │   (例如 fs 下的 ramfs/hvfs/devfs/procfs)
-│          │   ├─ 否 ─→  不需要 trait,函数集合即可
-│          │   └─ 是 ─┐
+│          ├─ X 是否有 ≥ 2 个独立实现 + 运行时切换?
+│          │   ├─ 是 ─→ ✅ 需要 api.rs + trait + 注册表 (R2)
+│          │   └─ 否 ─┐
 │          │          │
-│          │          ├─ 调用方是否需要在运行时切换实现?
-│          │          │   (注册表 / 工厂模式)
-│          │          │   ├─ 否 ─→ 泛型静态分发即可,不一定 api.rs
-│          │          │   └─ 是 ─→ ✅ 提 api.rs + trait
-│          │
-│          └─ X 是否会被未来新模块/驱动扩展?
-│              (例如 driver 未来要加新设备类型)
-│              ├─ 否 ─→ 不需要 api.rs
-│              └─ 是 ─→ ✅ 提 api.rs
+│          │          ├─ X 是否涉及硬件抽象(MMIO/DMA/页表)?
+│          │          │   ├─ 是 ─→ ✅ 需要 api.rs (R3,安全边界)
+│          │          │   └─ 否 ─→ ❌ 直接 pub fn (R4)
 ```
-
-### 3.1 简化为"三个问题"
-
-1. **多实现?** (≥ 2 个)
-2. **运行时切换?** (注册表 / 工厂)
-3. **可扩展?** (未来会加新实现)
-
-**三问中两问为"是"** → 需要 API 层  
-**三问中两问为"否"** → 直接 `pub fn`
 
 ---
 
 ## 四、AntX 子系统清单(权威分类)
 
-### 4.1 ✅ 需要 API 层的子系统(6-8 个)
+### 4.1 ✅ 需要 API 层的子系统(11 个)
 
-| 子系统 | API 层文件 | 主要消费者 | 现有 trait/契约 |
-|---|---|---|---|
-| **fs** | `fs/vfs/api.rs` | syscall, proc, 用户态 | `FsType` 枚举 + 挂载表 |
-| **driver** | (由 chitin 统一) | chitin, syscall | `Driver` trait (`driver/framework.rs`) |
-| **chitin** | `chitin/mod.rs` | driver, fs | `ChitinDevice`, `proto_*` 协议族 |
-| **net** | `net/init.rs` | syscall, proc | socket API, `smoltcp` trait |
-| **ipc** | `ipc/mod.rs` | proc, syscall | `pipe/shm/msgq` 模块级 API |
-| **syscall** | `syscall/mod.rs` | 用户态, asm stub | `SyscallHandler` 函数指针表 |
-| **barrier** | `barrier/api.rs` | 各可恢复子系统 | `RecoveryDomain` 注册表 |
-| **credo** | `credo/api.rs` | syscall, proc | 能力 / DID 句柄 |
-| **pci** | `pci/mod.rs` | driver | `PciDevice` 句柄 |
-| **dma** | `dma/mod.rs` | driver | `DmaEngine` trait |
+| 子系统 | API 层文件 | 类型 | 主要消费者 | trait/契约 |
+|--------|-----------|------|-----------|------------|
+| **mm** | `mm/api.rs` | QUAD-1 基础设施 | proc, fs, ipc, driver, credo (全模块) | `#[no_mangle]` PM/VMM/Slab 入口 |
+| **proc** | `proc/api.rs` | QUAD-1 基础设施 | syscall, ipc, barrier, credo, fs/procfs | `#[no_mangle]` 进程/线程/调度入口 |
+| **credo** | `credo/api.rs` | 横切契约 | syscall, fs, proc, net, barrier, console | `#[no_mangle]` PWM 身份/能力/会话 |
+| **dma** | `dma/api.rs` | QUAD-1 硬件抽象 | nvme, ahci, e1000, virtio-blk, virtio-net | `DmaEngine` trait |
+| **pci** | `pci/api.rs` | QUAD-1 硬件抽象 | driver/bus, chitin, e1000, nvme, ahci, xhci | `PciScanner` trait + 注册机制 |
+| **barrier** | `barrier/api.rs` | 横切契约 | hvfs, fs, net, proc, idt | `RecoveryDomain` 注册表 |
+| **fs/vfs** | `fs/vfs/api.rs` | QUAD-2 标准契约 | syscall, proc, credo | `Vfs` trait + `FsType` 挂载表 |
+| **chitin** | `chitin/mod.rs` | QUAD-2 标准契约 | driver, fs, net, proc/user_driver | `Driver` trait + 6 `proto_*` 协议族 |
+| **net** | `net/api.rs` | QUAD-2 标准契约 | syscall, proc, chitin, barrier | `NetworkDevice` trait + init wrappers |
+| **ipc** | `ipc/api.rs` | QUAD-2 标准契约 | syscall, proc | `IpcResource` trait + 4 资源类型 |
+| **syscall** | `syscall/api.rs` | QUAD-4 特例 | isr.asm, idt, proc, credo, chitin/user_driver | `syscall_register()` + `Errno`/常量 |
 
-### 4.2 ❌ 不需要 API 层的子系统(10+ 个)
+### 4.2 ❌ 不需要 API 层的子系统(15 个)
 
 | 子系统 | 原因 | 调用方式 |
-|---|---|---|
-| **mm** | 太基础,被所有依赖;`Allocator` 在 `no_std` 已最优 | `pub fn kmalloc/page_alloc` |
-| **sync** | 同步原语本身是底层基元 | `pub fn Mutex::new` |
-| **arch** | 平台特定,无统一语义 | `pub fn` + `arch!` 宏 |
+|--------|------|----------|
+| **sync** | 同步原语本身是底层基元,类型自身即 API | `pub fn Mutex::new` |
+| **arch** | 平台特定,`Arch` trait 自身即 contract | `pub fn` + `arch!` 宏 |
 | **cpu** | CPUID/MSR/TSC 平台相关 | `pub fn` |
-| **idt** | 中断表,物理事件 | `pub fn` + 函数指针注册 |
-| **irq** | 软中断,单实现 | `pub fn` |
-| **timer** | 时钟单例,基础 | `pub fn` |
-| **lib** | 字符串/内存工具 | `pub fn` |
-| **klog** | 简单 `log!` 宏 | macro |
-| **config** | 静态配置常量 | `const fn` / `pub const` |
-| **console** | 单实现,直接调用 | `pub fn` |
-| **credo (内部)** | 子模块间 | `pub use` |
+| **idt** | 中断表,物理事件,`#[cfg]` 编译时分发 | `pub fn` + 函数指针注册 |
+| **irq** | 软中断,单实现,仅 2 调用方 | `pub fn` |
+| **boot** | 启动期单次调用,无运行时分发 | `pub fn` |
+| **timer** | 时钟单例,仅 2 跨模块调用方 (< 3) | `pub fn` |
+| **lib** | 字符串/内存工具,类型自身即 API | `pub fn` |
+| **klog** | 简单 `log!` macro,零成本分发 | macro |
+| **config** | 全局 `pub const`,无运行时分发 | `const fn` / `pub const` |
+| **console** | 单实现,仅 2 调用方 | `pub fn` |
+| **smp** | 基础设施,`Arch` trait 已封装 CPU 计数 | `pub fn` |
+| **wasm** | 单消费者(proc),不够门槛 | `pub fn` |
+| **driver** | **chitin 统一覆盖**,不另开 api.rs | 经 `chitin/mod.rs` |
+| **tests** | 测试框架,不是子系统 | — |
 
 ### 4.3 ⚪ 内部模块(父模块下子模块互调)
 
 | 父模块 | 子模块之间 |
-|---|---|
+|--------|-----------|
 | **proc** | process/scheduler/thread/elf 之间 |
 | **fs** | ramfs/hvfs/devfs/procfs 之间(VFS 层之下) |
 | **driver** | 各具体驱动之间(经 chitin) |
 | **net** | smoltcp_impl/socket 之间 |
+| **credo** | identity/engine/session/storage/audit 之间 |
 
 内部模块间 **直接 `pub use` 或 `pub fn`**,**不**经过 `api.rs`。
 
@@ -217,25 +252,29 @@ pub trait PerCpuData {} // 不要求 Send/Sync
 
 ## 七、AntX 现状评估(2026-06)
 
-### 7.1 已有合规的 `api.rs` / 契约层
+### 7.1 已合规的 `api.rs` / 契约层
 
 | 文件 | 状态 | 评价 |
-|---|---|---|
-| `fs/vfs/api.rs` | ✅ 合规 | 暴露 vfs_* 给 syscall,合理 |
-| `barrier/api.rs` | ✅ 合规 | 暴露 recovery_* 给可恢复域,合理 |
-| `credo/api.rs` | ✅ 合规 | 暴露身份/能力给 syscall,合理 |
-| `chitin/mod.rs` | ✅ 合规 | 完整设备协议族,合理 |
-| `driver/framework.rs` | ✅ 合规 | `Driver` trait 合理 |
-| `pci/mod.rs` | ⚠️ 需检查 | 暴露 `PciDevice` 句柄? |
-| `net/init.rs` | ⚠️ 需检查 | 是否需独立 api.rs? |
-| `ipc/mod.rs` | ⚠️ 需检查 | 是否需独立 api.rs? |
+|------|------|------|
+| `mm/api.rs` | ✅ 合规 | `#[no_mangle]` PM/VMM/Slab 入口,全模块依赖 |
+| `proc/api.rs` | ✅ 合规 | `#[no_mangle]` 进程/线程/调度入口,全模块依赖 |
+| `credo/api.rs` | ✅ 合规 | `#[no_mangle]` 身份/能力/会话,横切安全契约 |
+| `barrier/api.rs` | ✅ 合规 | `RecoveryDomain` 注册表,横切恢复契约 |
+| `fs/vfs/api.rs` | ✅ 合规 | `Vfs` trait + `FsType` 枚举,4 FS 运行时分发 |
+| `chitin/mod.rs` | ✅ 合规 | `Driver` trait + 6 `proto_*` 协议族 |
+| `net/api.rs` | ✅ 合规 | `NetworkDevice` trait + init wrappers |
+| `ipc/api.rs` | ✅ 合规 | `IpcResource` trait + 4 资源类型入口 |
+| `syscall/api.rs` | ✅ 合规 | `syscall_register()` + `Errno`/常量 + `validate_user_*` |
+| `pci/api.rs` | ✅ 合规 | `PciScanner` trait + `register_scanner()` + config 读写 |
+| `dma/api.rs` | ✅ 合规 | `DmaEngine` trait + 契约类型 |
 
 ### 7.2 反模式警告
 
-- ❌ **不要**新建 `mm/api.rs`(已是 `pub fn` 集合,无外部消费者)
-- ❌ **不要**新建 `sync/api.rs`(基础原语,无人需要抽象)
+- ❌ **不要**新建 `sync/api.rs`(基础原语,类型自身即 API)
 - ❌ **不要**新建 `cpu/api.rs` / `arch/api.rs` / `idt/api.rs`(平台/物理)
 - ❌ **不要**新建 `klog/api.rs` / `lib/api.rs` / `config/api.rs`(工具/配置)
+- ❌ **不要**新建 `timer/api.rs` / `wasm/api.rs` / `console/api.rs`(调用方太少)
+- ❌ **不要**新建 `boot/api.rs` / `irq/api.rs` / `smp/api.rs`(单次/单层调用)
 
 ---
 
@@ -305,7 +344,7 @@ pub trait RecoveryDomain: Send + Sync {
 
 ## 十、版本与维护
 
-- **当前版本**: v1.0 (2026-06-02)
+- **当前版本**: v2.0 (2026-06-02)
 - **维护责任**: 内核架构组
 - **变更流程**:
   1. 提案: 在 GitHub issue 写"是否需要 API 层"决策
@@ -315,28 +354,40 @@ pub trait RecoveryDomain: Send + Sync {
 
 ---
 
-## 附录:AntX 子系统 API 速查表
+## 附录:AntX 子系统 API 速查表(2026-06,共 26 个)
 
-| 子系统 | 路径 | API 类型 | 状态 |
-|---|---|---|---|
-| fs | `fs/vfs/api.rs` | 函数集合 + FsType | ✅ |
-| chitin | `chitin/mod.rs` | trait + 协议族 | ✅ |
-| driver | `driver/framework.rs` | `Driver` trait | ✅ |
-| net | `net/init.rs` | 函数集合 | ⚠️ 评估 |
-| ipc | `ipc/mod.rs` | 模块级 fn | ⚠️ 评估 |
-| syscall | `syscall/mod.rs` | 函数指针表 | ✅ |
-| barrier | `barrier/api.rs` | `RecoveryDomain` | ✅ |
-| credo | `credo/api.rs` | 句柄 + 能力 | ✅ |
-| pci | `pci/mod.rs` | 句柄 | ⚠️ 评估 |
-| dma | `dma/mod.rs` | `DmaEngine` trait | ✅ |
-| mm | `mm/*.rs` | `pub fn` | ✅ (无需 api.rs) |
-| sync | `sync/*.rs` | `pub fn` | ✅ (无需 api.rs) |
-| arch | `arch/*.rs` | `pub fn` + `arch!` | ✅ (无需 api.rs) |
-| cpu | `cpu/*.rs` | `pub fn` | ✅ (无需 api.rs) |
-| idt | `idt/*.rs` | 函数指针 | ✅ (无需 api.rs) |
-| irq | `irq/mod.rs` | `pub fn` | ✅ (无需 api.rs) |
-| timer | `timer/*.rs` | `pub fn` | ✅ (无需 api.rs) |
-| lib | `lib/*.rs` | `pub fn` | ✅ (无需 api.rs) |
-| klog | `klog/mod.rs` | macro | ✅ (无需 api.rs) |
-| config | `config/*.rs` | `const` | ✅ (无需 api.rs) |
-| console | `console/*.rs` | `pub fn` | ✅ (无需 api.rs) |
+### 有 API 层(11 个)
+
+| 子系统 | API 文件 | 类型 | trait/契约 |
+|--------|---------|------|-----------|
+| mm | `mm/api.rs` | QUAD-1 基础设施 | `#[no_mangle]` PM/VMM/Slab |
+| proc | `proc/api.rs` | QUAD-1 基础设施 | `#[no_mangle]` 进程/线程/调度 |
+| credo | `credo/api.rs` | 横切契约 | `#[no_mangle]` 身份/能力/会话 |
+| dma | `dma/api.rs` | QUAD-1 硬件抽象 | `DmaEngine` trait |
+| pci | `pci/api.rs` | QUAD-1 硬件抽象 | `PciScanner` trait + 注册 |
+| barrier | `barrier/api.rs` | 横切契约 | `RecoveryDomain` 注册表 |
+| fs/vfs | `fs/vfs/api.rs` | QUAD-2 标准契约 | `Vfs` trait + 挂载表 |
+| chitin | `chitin/mod.rs` | QUAD-2 标准契约 | `Driver` trait + 6 proto |
+| net | `net/api.rs` | QUAD-2 标准契约 | `NetworkDevice` trait |
+| ipc | `ipc/api.rs` | QUAD-2 标准契约 | `IpcResource` trait |
+| syscall | `syscall/api.rs` | QUAD-4 特例 | `syscall_register()` |
+
+### 无 API 层(15 个)
+
+| 子系统 | 原因 |
+|--------|------|
+| sync | 类型自身即 API |
+| arch | `Arch` trait 自身即 contract |
+| cpu | 平台相关,调用方少 |
+| idt | 物理事件,编译时分发 |
+| irq | 单实现,调用方少 |
+| boot | 启动期单次调用 |
+| timer | 仅 2 调用方 |
+| lib | 工具层,类型自身即 API |
+| klog | macro 零成本分发 |
+| config | `pub const` 无运行时分发 |
+| console | 单实现,调用方少 |
+| smp | `Arch` trait 已封装 |
+| wasm | 单消费者 |
+| driver | chitin 统一覆盖 |
+| tests | 不是子系统 |
