@@ -72,7 +72,7 @@ impl FdTable {
 }
 
 extern "C" {
-    fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+    fn pmm_alloc_pages(count: u64) -> *mut u8;
     fn vmm_create_user_page_table() -> u64;
     fn vmm_destroy_page_table(cr3: u64);
 }
@@ -578,11 +578,11 @@ pub fn proc_barrier_rollback() -> bool {
     true
 }
 
-extern "C" fn proc_barrier_capture_cb() {
+fn proc_barrier_capture_cb() {
     proc_barrier_capture();
 }
 
-extern "C" fn proc_barrier_rollback_cb() -> bool {
+fn proc_barrier_rollback_cb() -> bool {
     proc_barrier_rollback()
 }
 

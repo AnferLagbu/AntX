@@ -6,7 +6,6 @@ pub mod dataset;
 pub mod dedup;
 pub mod dmu;
 pub mod dva;
-pub mod ffi;
 pub mod hvfs;
 pub mod metaslab;
 pub mod raidz;

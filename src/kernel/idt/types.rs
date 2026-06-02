@@ -277,7 +277,7 @@ impl IdtPtr {
 /// IRQ 描述符 (扩展信息)
 #[derive(Debug)]
 pub struct IrqDescriptor {
-    /// 处理函数 (C 兼容接口)
+    /// 处理函数 (x86_64 上 wrapper 用 C ABI / sysv64,aarch64 上 AAPCS64)
     pub handler: Option<extern "C" fn(*mut InterruptFrame)>,
     /// 名称 (用于日志和诊断)
     pub name: &'static str,

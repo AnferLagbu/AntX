@@ -234,8 +234,8 @@ extern "C" {
 fn panic(_info: &PanicInfo) -> ! {
     unsafe {
         vga_set_color(Color::LightRed as u8, Color::Black as u8);
-        vga_puts(b"\n!!! KERNEL PANIC !!!\n".as_ptr() as *const i8);
-        vga_puts(b"System halted.\n".as_ptr() as *const i8);
+        vga_puts(b"\n!!! KERNEL PANIC !!!\n".as_ptr() as *const u8);
+        vga_puts(b"System halted.\n".as_ptr() as *const u8);
     }
     
     loop {

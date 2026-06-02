@@ -423,7 +423,7 @@ pub fn devtree_probe_composites() -> usize {
 }
 
 #[no_mangle]
-pub extern "C" fn composite_probe_c() -> u32 {
+pub fn composite_probe() -> u32 {
     devtree_probe_composites() as u32
 }
 

@@ -4,6 +4,9 @@
 //! 功能等价于 POSIX signals
 
 use super::types::*;
+use crate::kernel::proc::api::{
+    process_get_by_pid, process_get_current_pwm, process_get_pwm_by_pid,
+};
 
 /// 发送信号到指定进程 (Rust 安全接口)
 ///
@@ -20,12 +23,6 @@ pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
     }
 
     unsafe {
-        extern "C" {
-            fn process_get_by_pid(pid: u32) -> u64;
-            fn process_get_current_pwm() -> u64;
-            fn process_get_pwm_by_pid(pid: u32) -> u64;
-        }
-
         let proc_addr = process_get_by_pid(target_pid);
         if proc_addr == 0 {
             return Err(-2);
@@ -127,7 +124,7 @@ pub fn signal_dispatch_safe() {
 
 /// FFI: 发送信号
 #[no_mangle]
-pub extern "C" fn ipc_signal_send(pid: i32, sig: i32) -> i32 {
+pub fn ipc_signal_send(pid: i32, sig: i32) -> i32 {
     match signal_send_safe(sig as u8, pid as u32) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -136,7 +133,7 @@ pub extern "C" fn ipc_signal_send(pid: i32, sig: i32) -> i32 {
 
 /// FFI: 注册信号处理函数
 #[no_mangle]
-pub extern "C" fn ipc_signal_register(
+pub fn ipc_signal_register(
     sig: i32,
     handler: Option<extern "C" fn(i32)>,
     flags: u32,
@@ -149,7 +146,7 @@ pub extern "C" fn ipc_signal_register(
 
 /// FFI: 屏蔽信号
 #[no_mangle]
-pub extern "C" fn ipc_signal_block(sig: i32) -> i32 {
+pub fn ipc_signal_block(sig: i32) -> i32 {
     match signal_block_safe(sig as u8) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -158,7 +155,7 @@ pub extern "C" fn ipc_signal_block(sig: i32) -> i32 {
 
 /// FFI: 解除屏蔽信号
 #[no_mangle]
-pub extern "C" fn ipc_signal_unblock(sig: i32) -> i32 {
+pub fn ipc_signal_unblock(sig: i32) -> i32 {
     match signal_unblock_safe(sig as u8) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -167,6 +164,6 @@ pub extern "C" fn ipc_signal_unblock(sig: i32) -> i32 {
 
 /// FFI: 分发信号
 #[no_mangle]
-pub extern "C" fn ipc_signal_dispatch() {
+pub fn ipc_signal_dispatch() {
     signal_dispatch_safe();
 }

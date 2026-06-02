@@ -1,12 +1,12 @@
 use core::alloc::{GlobalAlloc, Layout};
 
 extern "C" {
-    fn pmm_alloc_page() -> *mut core::ffi::c_void;
-    fn pmm_free_page(addr: *mut core::ffi::c_void);
-    fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
-    fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
-    fn kmalloc(size: u64) -> *mut core::ffi::c_void;
-    fn kfree(ptr: *mut core::ffi::c_void);
+    fn pmm_alloc_page() -> *mut u8;
+    fn pmm_free_page(addr: *mut u8);
+    fn pmm_alloc_pages(count: u64) -> *mut u8;
+    fn pmm_free_pages(addr: *mut u8, count: u64);
+    fn kmalloc(size: u64) -> *mut u8;
+    fn kfree(ptr: *mut u8);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -80,28 +80,28 @@ unsafe impl GlobalAlloc for KernelAllocator {
             let tag = *(raw as *const u64);
             match tag {
                 TAG_KMALLOC => {
-                    kfree(raw as *mut core::ffi::c_void);
+                    kfree(raw as *mut u8);
                 }
                 TAG_PMM_PAGE => {
                     let phys_addr = (raw as u64) - KERNEL_BASE;
-                    pmm_free_page(phys_addr as *mut core::ffi::c_void);
+                    pmm_free_page(phys_addr as *mut u8);
                 }
                 TAG_PMM_PAGES => {
                     let phys_addr = (raw as u64) - KERNEL_BASE;
                     let pages_needed = (size + TAG_SIZE).div_ceil(4096) as u64;
-                    pmm_free_pages(phys_addr as *mut core::ffi::c_void, pages_needed);
+                    pmm_free_pages(phys_addr as *mut u8, pages_needed);
                 }
                 _ => {
-                    kfree(raw as *mut core::ffi::c_void);
+                    kfree(raw as *mut u8);
                 }
             }
         } else {
             let pages = size.div_ceil(4096) as u64;
             let phys_addr = (ptr as u64) - KERNEL_BASE;
             if pages <= 1 {
-                pmm_free_page(phys_addr as *mut core::ffi::c_void);
+                pmm_free_page(phys_addr as *mut u8);
             } else {
-                pmm_free_pages(phys_addr as *mut core::ffi::c_void, pages);
+                pmm_free_pages(phys_addr as *mut u8, pages);
             }
         }
     }

@@ -46,9 +46,9 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+pub mod api;
 pub mod domain;
 pub mod fault_inject;
-pub mod ffi;
 pub mod manager;
 pub mod recoverable;
 pub mod recovery;
@@ -77,7 +77,7 @@ pub use snapshot::{
 pub use types::*;
 pub use undo_log::UndoLog;
 
-pub use ffi::{
+pub use api::{
     recovery_barrier_maintenance, recovery_domain_add_addr_range, recovery_domain_add_dep,
     recovery_domain_dep_count, recovery_domain_get_failures, recovery_domain_get_state,
     recovery_domain_register, recovery_domain_set_cbs, recovery_domain_unregister,
@@ -87,10 +87,10 @@ pub use ffi::{
 };
 
 #[cfg(feature = "kernel_test")]
-pub use ffi::recovery_test_rollback;
+pub use api::recovery_test_rollback;
 
 #[cfg(feature = "fault_injection")]
-pub use ffi::{recovery_get_fault_rate, recovery_set_fault_rate};
+pub use api::{recovery_get_fault_rate, recovery_set_fault_rate};
 
 pub static PANIC_FLAG: AtomicBool = AtomicBool::new(false);
 pub static PANIC_MSG: spin::Mutex<[u8; 128]> = spin::Mutex::new([0u8; 128]);

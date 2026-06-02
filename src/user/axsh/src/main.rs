@@ -65,4 +65,4 @@ fn shell_main() {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! { shell_main(); proc_exit(0); }
+pub fn _start() -> ! { shell_main(); proc_exit(0); }

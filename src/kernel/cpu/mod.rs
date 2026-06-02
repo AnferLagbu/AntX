@@ -610,7 +610,7 @@ pub extern "C" fn cpu_init() -> i32 {
             core::ptr::null(),
             core::ptr::null(),
             0,
-            INIT_MSG.as_ptr() as *const i8,
+            INIT_MSG.as_ptr() as *const u8,
         );
     }
 
@@ -669,7 +669,7 @@ pub extern "C" fn cpu_init() -> i32 {
                 core::ptr::null(),
                 core::ptr::null(),
                 0,
-                msg_buf.as_ptr() as *const i8,
+                msg_buf.as_ptr() as *const u8,
             );
         }
     }
@@ -690,7 +690,7 @@ pub extern "C" fn cpu_init() -> i32 {
                 core::ptr::null(),
                 core::ptr::null(),
                 0,
-                ERR_MSG.as_ptr() as *const i8,
+                ERR_MSG.as_ptr() as *const u8,
             );
         }
         return -1;
@@ -708,7 +708,7 @@ pub extern "C" fn cpu_init() -> i32 {
             core::ptr::null(),
             core::ptr::null(),
             0,
-            OK_MSG.as_ptr() as *const i8,
+            OK_MSG.as_ptr() as *const u8,
         );
     }
 

@@ -35,6 +35,7 @@ impl Driver for PciBusDriver {
 /// 调用内核 PCI 模块执行总线扫描和设备枚举,
 /// 然后将 PCI 总线注册到 Chitin 框架。
 /// 返回发现的设备数量。
+#[no_mangle]
 pub fn pci_init() -> i32 {
     let count = crate::kernel::pci::init() as i32;
 
@@ -78,16 +79,11 @@ pub fn pci_device_count() -> usize {
 }
 
 #[no_mangle]
-pub extern "C" fn pci_init_c() -> i32 {
-    pci_init()
-}
-
-#[no_mangle]
-pub extern "C" fn pci_read_config_word_c(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
+pub fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
     crate::kernel::pci::read_config_word(bus, dev, func, offset)
 }
 
 #[no_mangle]
-pub extern "C" fn pci_write_config_word_c(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
+pub fn pci_write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
     crate::kernel::pci::write_config_word(bus, dev, func, offset, val);
 }

@@ -13,6 +13,7 @@
 //!   从 C 指针构造切片。
 
 use super::types::*;
+use crate::kernel::proc::api::process_get_current_pid;
 
 static PIPE_LOCK: spin::Mutex<()> = spin::Mutex::new(());
 
@@ -205,7 +206,7 @@ pub fn pipe_close_safe(namespace: &mut IpcNamespace, fd: i32) -> Result<(), i32>
 }
 
 #[no_mangle]
-pub extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
+pub fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
     if pipefd.is_null() {
         return -1;
     }
@@ -216,9 +217,6 @@ pub extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
     unsafe {
         use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
-        extern "C" {
-            fn process_get_current_pid() -> u32;
-        }
         let current_pid = process_get_current_pid();
 
         match pipe_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, current_pid) {
@@ -233,7 +231,7 @@ pub extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
+pub fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -252,7 +250,7 @@ pub extern "C" fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
+pub fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -271,7 +269,7 @@ pub extern "C" fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn ipc_pipe_close(fd: i32) -> i32 {
+pub fn ipc_pipe_close(fd: i32) -> i32 {
     // SAFETY: IPC_NAMESPACE access is serialized by PIPE_LOCK internally.
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;

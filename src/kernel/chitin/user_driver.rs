@@ -336,7 +336,7 @@ pub fn chitin_forward_irq(node_id: NodeId) -> bool {
 }
 
 #[no_mangle]
-pub extern "C" fn user_driver_bind_c(node_id: u32, pid: u32, pwm: u64) -> i32 {
+pub fn user_driver_bind(node_id: u32, pid: u32, pwm: u64) -> i32 {
     match devtree_bind_user_device(node_id, pid, pwm) {
         Ok(()) => 0,
         Err(e) => e.code(),
@@ -344,7 +344,7 @@ pub extern "C" fn user_driver_bind_c(node_id: u32, pid: u32, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn user_driver_unbind_c(
+pub fn user_driver_unbind(
     node_id: u32,
     pid: u32,
     pwm: u64,

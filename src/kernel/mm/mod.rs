@@ -18,10 +18,10 @@ pub mod vmm;
 #[path = "vmm_aarch64.rs"]
 pub mod vmm;
 
+pub mod api;
 pub mod arch;
 pub mod copy_user;
 pub mod cow;
-pub mod ffi;
 pub mod kmalloc;
 pub mod kmalloc_slab;
 pub mod page_fault;

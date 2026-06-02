@@ -99,6 +99,7 @@ pub(crate) struct IdtState {
     /// IDT 条目表
     pub entries: [IdtEntry; IDT_ENTRIES],
     /// 异常处理函数指针表
+    /// x86_64 上 wrapper 函数(asm stub 跳转)用 `extern "C"`,等价于平台 sysv64 ABI
     pub handlers: [Option<extern "C" fn(*mut InterruptFrame)>; IDT_ENTRIES],
     /// IRQ 描述符扩展信息
     pub irq_descriptors: [IrqDescriptor; 16],

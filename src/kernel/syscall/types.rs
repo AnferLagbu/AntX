@@ -433,5 +433,5 @@ pub struct SyscallRegs {
     pub r15: u64,
 }
 
-pub type SyscallHandler = extern "C" fn(u64, u64, u64, u64) -> i64;
+pub type SyscallHandler = fn(u64, u64, u64, u64) -> i64;
 pub type SyscallResult<T> = Result<T, Errno>;

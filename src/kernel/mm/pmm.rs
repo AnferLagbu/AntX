@@ -967,10 +967,10 @@ pub fn pmm_barrier_rollback() -> bool {
     true
 }
 
-extern "C" fn pmm_barrier_capture_cb() {
+fn pmm_barrier_capture_cb() {
     pmm_barrier_capture();
 }
-extern "C" fn pmm_barrier_rollback_cb() -> bool {
+fn pmm_barrier_rollback_cb() -> bool {
     pmm_barrier_rollback()
 }
 

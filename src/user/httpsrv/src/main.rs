@@ -151,7 +151,7 @@ fn handle_client(fd: i32, resp: &mut [u8]) {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub fn _start() -> ! {
     print("[httpsrv] Starting HTTP server on port 80...\n");
 
     let sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);

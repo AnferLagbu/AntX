@@ -12,21 +12,18 @@ const DB_MAGIC: [u8; 4] = *b"PWID";
 const DB_VER_MAJOR: u16 = 5;
 const DB_VER_MINOR: u16 = 0;
 
-use core::ffi::c_char;
-
-// Helper: cast byte slice pointer to c_char pointer (i8 on x86_64, u8 on aarch64)
-fn as_cstr(p: &[u8]) -> *const c_char {
-    p.as_ptr() as *const c_char
+fn as_cstr(p: &[u8]) -> *const u8 {
+    p.as_ptr()
 }
 const ENTRY_SZ: usize = 8 + 8 + 1 + 2 + 128 + PWM_NOTE_LEN + PWM_HASH_LEN + 8 + 8;
 const HDR_SZ: usize = 4 + 2 + 2 + 4;
 
 extern "C" {
-    fn vfs_open_internal(path: *const core::ffi::c_char, flags: u32, pwm: u64) -> i32;
+    fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32;
     fn vfs_close_internal(fd_idx: u32) -> i32;
     fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32;
     fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32;
-    fn vfs_unlink_internal(path: *const core::ffi::c_char, pwm: u64) -> i32;
+    fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32;
 }
 
 const O_RDONLY: u32 = 0x0001;

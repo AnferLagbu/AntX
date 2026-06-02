@@ -391,7 +391,7 @@ impl KmemCache {
     /// 创建新的 Slab (分配一页物理内存)
     fn new_slab(&self) -> Option<*mut SlabHeader> {
         extern "C" {
-            fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+            fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
         let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
         // SAFETY: pmm_alloc_pages returns either null (failure) or a valid
@@ -427,7 +427,7 @@ impl KmemCache {
 
             if bitmap_end > page_end {
                 extern "C" {
-                    fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
+                    fn pmm_free_pages(addr: *mut u8, count: u64);
                 }
                 // SAFETY: page was just allocated by pmm_alloc_pages above;
                 // we are freeing it on layout overflow before any use.
@@ -457,9 +457,9 @@ impl KmemCache {
         unsafe {
             let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
             extern "C" {
-                fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
+                fn pmm_free_pages(addr: *mut u8, count: u64);
             }
-            pmm_free_pages(slab as *mut core::ffi::c_void, pages_needed as u64);
+            pmm_free_pages(slab as *mut u8, pages_needed as u64);
         }
     }
 

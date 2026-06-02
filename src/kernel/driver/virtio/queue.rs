@@ -105,7 +105,7 @@ impl VirtQueue {
 
         let pages = total_size.div_ceil(4096);
         extern "C" {
-            fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
+            fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
         let mem = unsafe { pmm_alloc_pages(pages as u64) };
         if mem.is_null() {

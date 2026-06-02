@@ -444,11 +444,11 @@ pub fn init() {
     VFS_MANAGER.init();
 }
 
-extern "C" fn vfs_barrier_capture_cb() {
+fn vfs_barrier_capture_cb() {
     VFS_MANAGER.capture_snapshot();
 }
 
-extern "C" fn vfs_barrier_rollback_cb() -> bool {
+fn vfs_barrier_rollback_cb() -> bool {
     VFS_MANAGER.restore_from_snapshot();
     true
 }

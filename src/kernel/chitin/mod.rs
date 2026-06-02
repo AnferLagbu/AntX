@@ -98,10 +98,10 @@ pub enum DeviceState {
 /// 每个块设备驱动提供这四个函数指针, Chitin 通过它们执行 I/O,
 /// 无需虚表分发或 trait object, 实现零开销抽象。
 pub struct BlockOps {
-    pub read: unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32,
-    pub write: unsafe fn(driver_data: *mut core::ffi::c_void, sector: u64, buf: &[u8]) -> i32,
-    pub is_present: unsafe fn(driver_data: *mut core::ffi::c_void) -> bool,
-    pub total_sectors: unsafe fn(driver_data: *mut core::ffi::c_void) -> u64,
+    pub read: unsafe fn(driver_data: *mut u8, sector: u64, buf: &mut [u8]) -> i32,
+    pub write: unsafe fn(driver_data: *mut u8, sector: u64, buf: &[u8]) -> i32,
+    pub is_present: unsafe fn(driver_data: *mut u8) -> bool,
+    pub total_sectors: unsafe fn(driver_data: *mut u8) -> u64,
 }
 
 /// 协议级 I/O 操作表 (联合体, 按协议类型取对应变体)
@@ -125,7 +125,7 @@ pub struct ChitinDevice {
     pub state: DeviceState,
     pub io_base: Option<u64>,
     pub irq: Option<u8>,
-    pub driver_data: *mut core::ffi::c_void,
+    pub driver_data: *mut u8,
     pub ops: Option<ChitinOps>,
 }
 
@@ -199,7 +199,7 @@ pub fn chitin_register(
     proto: ChitinProto,
     io_base: Option<u64>,
     irq: Option<u8>,
-    driver_data: *mut core::ffi::c_void,
+    driver_data: *mut u8,
 ) -> u32 {
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
     let mut devices = CHITIN_DEVICES.lock();
@@ -224,7 +224,7 @@ pub fn chitin_register_with_ops(
     proto: ChitinProto,
     io_base: Option<u64>,
     irq: Option<u8>,
-    driver_data: *mut core::ffi::c_void,
+    driver_data: *mut u8,
     ops: ChitinOps,
 ) -> u32 {
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
@@ -251,7 +251,7 @@ pub fn chitin_register_block(
     io_base: Option<u64>,
     irq: Option<u8>,
     blk_ops: &'static BlockOps,
-    driver_data: *mut core::ffi::c_void,
+    driver_data: *mut u8,
 ) -> u32 {
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
     let mut devices = CHITIN_DEVICES.lock();
@@ -309,7 +309,7 @@ pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
 /// 四个函数指针 (send/recv/get_mac/irq) 和 driver_data。
 pub fn chitin_find_net_device() -> Option<(
     &'static crate::kernel::chitin::proto_net::NetOps,
-    *mut core::ffi::c_void,
+    *mut u8,
     [u8; 6],
 )> {
     let devices = CHITIN_DEVICES.lock();
@@ -350,7 +350,7 @@ where
     devices.iter_mut().find(|d| d.id == id).map(f)
 }
 
-pub fn chitin_unregister(id: u32) -> Option<*mut core::ffi::c_void> {
+pub fn chitin_unregister(id: u32) -> Option<*mut u8> {
     let mut devices = CHITIN_DEVICES.lock();
     let pos = devices.iter().position(|d| d.id == id)?;
     let dev = devices.remove(pos);
@@ -561,8 +561,8 @@ pub fn chitin_input_has_data() -> bool {
 
 // ── 工具 ──
 
-pub fn box_to_raw<T: ?Sized>(b: Box<T>) -> *mut core::ffi::c_void {
-    Box::into_raw(b) as *mut core::ffi::c_void
+pub fn box_to_raw<T: ?Sized>(b: Box<T>) -> *mut u8 {
+    Box::into_raw(b) as *mut u8
 }
 
 // ── Driver trait 集成 ──
@@ -589,7 +589,7 @@ pub fn chitin_register_driver(
     let _ = driver.init();
     let raw = Box::into_raw(driver);
     let obj = Box::new(DriverObject { ptr: raw });
-    let obj_ptr = Box::into_raw(obj) as *mut core::ffi::c_void;
+    let obj_ptr = Box::into_raw(obj) as *mut u8;
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
     let mut devices = CHITIN_DEVICES.lock();
     devices.push(ChitinDevice {
@@ -617,7 +617,7 @@ pub fn chitin_register_driver_with_ops(
     let _ = driver.init();
     let raw = Box::into_raw(driver);
     let obj = Box::new(DriverObject { ptr: raw });
-    let obj_ptr = Box::into_raw(obj) as *mut core::ffi::c_void;
+    let obj_ptr = Box::into_raw(obj) as *mut u8;
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
     let mut devices = CHITIN_DEVICES.lock();
     devices.push(ChitinDevice {
@@ -633,7 +633,7 @@ pub fn chitin_register_driver_with_ops(
     id
 }
 
-fn driver_from_obj<'a>(ptr: *mut core::ffi::c_void) -> &'a mut dyn Driver {
+fn driver_from_obj<'a>(ptr: *mut u8) -> &'a mut dyn Driver {
     let obj: &mut DriverObject = unsafe { &mut *(ptr as *mut DriverObject) };
     unsafe { &mut *obj.ptr }
 }
@@ -763,7 +763,7 @@ mod tests {
         total_sectors: mock_blk_total_sectors,
     };
 
-    unsafe fn mock_blk_read(_data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32 {
+    unsafe fn mock_blk_read(_data: *mut u8, sector: u64, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 {
             return -1;
         }
@@ -772,15 +772,15 @@ mod tests {
         0
     }
 
-    unsafe fn mock_blk_write(_data: *mut core::ffi::c_void, _sector: u64, _buf: &[u8]) -> i32 {
+    unsafe fn mock_blk_write(_data: *mut u8, _sector: u64, _buf: &[u8]) -> i32 {
         0
     }
 
-    unsafe fn mock_blk_is_present(_data: *mut core::ffi::c_void) -> bool {
+    unsafe fn mock_blk_is_present(_data: *mut u8) -> bool {
         true
     }
 
-    unsafe fn mock_blk_total_sectors(_data: *mut core::ffi::c_void) -> u64 {
+    unsafe fn mock_blk_total_sectors(_data: *mut u8) -> u64 {
         1024
     }
 

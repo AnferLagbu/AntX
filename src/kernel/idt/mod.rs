@@ -99,10 +99,13 @@ pub static IDT_MANAGER: () = ();
 // FFI 接口层 (C ↔ Rust 桥接) - Phase 2 完整实现
 // ============================================================================
 
-/// C 兼容的异常处理函数指针类型
+/// x86_64 中断 wrapper 函数指针类型
+/// 入口 stub (asm) → wrapper (本函数) → 业务 handler (Rust 普通调用)
+/// 使用 `extern "C"` (x86_64 Linux 上等同 `sysv64`),因为 wrapper 内部需
+/// 正常调用业务 handler,不能用 `x86-interrupt` (后者禁止普通函数调用)
 pub type CExceptionHandler = extern "C" fn(*mut InterruptFrame);
 
-/// C 兼容的 IRQ 处理函数指针类型
+/// x86_64 IRQ wrapper 函数指针类型
 pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 
 /// 初始化 IDT 子系统 (FFI 导出函数)
@@ -315,7 +318,7 @@ pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: 
 pub extern "C" fn idt_register_irq(
     irq: u8,
     handler: CIrqHandler,
-    name: *const core::ffi::c_char,
+    name: *const u8,
     flags: u32,
 ) -> i32 {
     let manager = IdtManager::instance();
@@ -325,7 +328,7 @@ pub extern "C" fn idt_register_irq(
         ""
     } else {
         // 简单处理：假设 name 指向静态字符串
-        unsafe { core::ffi::CStr::from_ptr(name).to_str().unwrap_or("") }
+        unsafe { core::ffi::CStr::from_ptr(name as *const core::ffi::c_char).to_str().unwrap_or("") }
     };
 
     match manager.register_irq(irq, handler, name_str, flags) {

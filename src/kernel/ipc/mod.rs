@@ -104,7 +104,7 @@ static mut NEXT_IPC_ID: IpcId = 1;
 /// # Safety
 /// 此函数只能调用一次，且必须在多核启动前完成。
 #[no_mangle]
-pub unsafe extern "C" fn ipc_init() {
+pub unsafe fn ipc_init() {
     // 重置 ID 分配器
     NEXT_IPC_ID = 1;
 

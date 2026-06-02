@@ -446,6 +446,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
         crate::kernel::timer::on_timer_interrupt();
 
         // smoltcp: 始终轮询（DHCP 需要在 poll 中完成握手）
+        #[cfg(not(feature = "kernel_test"))]
         unsafe {
             crate::kernel::net::init::poll_network();
         }
@@ -576,6 +577,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         crate::kernel::timer::on_timer_interrupt();
 
         // 网络轮询
+        #[cfg(not(feature = "kernel_test"))]
         unsafe {
             crate::kernel::net::init::poll_network();
         }

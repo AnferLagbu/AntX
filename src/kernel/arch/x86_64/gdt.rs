@@ -429,7 +429,7 @@ pub fn gdt_init() -> i32 {
             core::ptr::null(),
             core::ptr::null(),
             0,
-            INIT_MSG.as_ptr() as *const i8,
+            INIT_MSG.as_ptr() as *const u8,
         );
     }
 
@@ -478,7 +478,7 @@ pub fn gdt_init() -> i32 {
             core::ptr::null(),
             core::ptr::null(),
             0,
-            OK_MSG.as_ptr() as *const i8,
+            OK_MSG.as_ptr() as *const u8,
         );
     }
 

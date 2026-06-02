@@ -95,7 +95,7 @@ fn current_rcu() -> &'static PerCpuRcu {
 }
 
 #[inline(always)]
-pub fn rcu_read_lock() {
+fn rcu_read_lock_impl() {
     let data = current_rcu();
     let nesting = data.nesting.fetch_add(1, Ordering::Acquire);
     if nesting == 0 {
@@ -104,7 +104,7 @@ pub fn rcu_read_lock() {
 }
 
 #[inline(always)]
-pub fn rcu_read_unlock() {
+fn rcu_read_unlock_impl() {
     let data = current_rcu();
     fence(Ordering::Release);
     let nesting = data.nesting.fetch_sub(1, Ordering::Release);
@@ -139,7 +139,7 @@ pub unsafe fn rcu_assign_pointer<T>(slot: *mut *const T, new_val: *const T) {
 /// 1. 标记所有在线 CPU 的 gp_state = GP_WAIT
 /// 2. 等待每个 CPU 报告 GP_DONE (通过 rcu_note_quiescent_state)
 /// 3. 处理回调
-pub fn synchronize_rcu() {
+fn synchronize_rcu_impl() {
     let start_gp = RCU_GP_COUNTER.load(Ordering::Relaxed);
     RCU_GP_COUNTER.store(start_gp.wrapping_add(1), Ordering::Release);
 
@@ -359,18 +359,18 @@ pub fn rcu_callback_count() -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn rcu_read_lock_c() {
-    rcu_read_lock();
+pub fn rcu_read_lock() {
+    rcu_read_lock_impl();
 }
 
 #[no_mangle]
-pub extern "C" fn rcu_read_unlock_c() {
-    rcu_read_unlock();
+pub fn rcu_read_unlock() {
+    rcu_read_unlock_impl();
 }
 
 #[no_mangle]
-pub extern "C" fn synchronize_rcu_c() {
-    synchronize_rcu();
+pub fn synchronize_rcu() {
+    synchronize_rcu_impl();
 }
 
 #[no_mangle]

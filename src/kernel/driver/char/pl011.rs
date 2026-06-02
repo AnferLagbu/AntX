@@ -128,7 +128,7 @@ impl Driver for Pl011Driver {
 // CharOps 回调 (C ABI 兼容)
 // ============================================================================
 
-unsafe fn pl011_read(driver_data: *mut core::ffi::c_void, buf: &mut [u8]) -> usize {
+unsafe fn pl011_read(driver_data: *mut u8, buf: &mut [u8]) -> usize {
     let drv = &mut *(driver_data as *mut Pl011Driver);
     let mut count = 0;
     for byte in buf.iter_mut() {
@@ -138,7 +138,7 @@ unsafe fn pl011_read(driver_data: *mut core::ffi::c_void, buf: &mut [u8]) -> usi
     count
 }
 
-unsafe fn pl011_write(driver_data: *mut core::ffi::c_void, buf: &[u8]) -> usize {
+unsafe fn pl011_write(driver_data: *mut u8, buf: &[u8]) -> usize {
     let drv = &*(driver_data as *const Pl011Driver);
     for &byte in buf {
         drv.write_byte(byte);

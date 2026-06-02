@@ -102,7 +102,7 @@ macro_rules! klog_fmt {
                 $crate::kernel::klog::LogLevel::$lvl as u8,
                 $crate::kernel::klog::LogCategory::$cat as u8,
                 core::ptr::null(), core::ptr::null(), 0,
-                w.as_slice().as_ptr() as *const core::ffi::c_char,
+                w.as_slice().as_ptr() as *const u8,
             );
         }
     }};
@@ -470,10 +470,10 @@ pub unsafe extern "C" fn klog_init() {
 pub unsafe extern "C" fn klog_write(
     level: u8,
     cat: u8,
-    _file: *const core::ffi::c_char,
-    _func: *const core::ffi::c_char,
+    _file: *const u8,
+    _func: *const u8,
     _line: u32,
-    fmt: *const core::ffi::c_char,
+    fmt: *const u8,
 ) -> i32 {
     if fmt.is_null() {
         return -1;
@@ -558,7 +558,7 @@ pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
 /// # Safety
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
-pub unsafe extern "C" fn klog_net(fmt: *const core::ffi::c_char) {
+pub unsafe extern "C" fn klog_net(fmt: *const u8) {
     if fmt.is_null() {
         return;
     }
@@ -571,7 +571,7 @@ pub unsafe extern "C" fn klog_net(fmt: *const core::ffi::c_char) {
 /// # Safety
 ///
 /// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
-pub unsafe extern "C" fn klog_net_err(fmt: *const core::ffi::c_char) {
+pub unsafe extern "C" fn klog_net_err(fmt: *const u8) {
     if fmt.is_null() {
         return;
     }

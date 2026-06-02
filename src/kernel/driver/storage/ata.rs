@@ -608,7 +608,7 @@ pub extern "C" fn ata_init() {
         crate::kernel::chitin::ChitinProto::Block,
         Some(0x1F0), // Primary IO
         Some(14),    // IRQ 14
-        raw_ptr as *mut core::ffi::c_void,
+        raw_ptr as *mut u8,
     );
 
     *ATA_DEVICE.lock() = Some(controller);

@@ -189,7 +189,7 @@ impl ExceptionHandler for PageFaultHandler {
             if crate::kernel::proc::user_proc::try_expand_user_stack(fault_addr) {
                 return RecoveryAction::Recovered;
             }
-            let pid = crate::kernel::proc::ffi::process_get_current_pid();
+            let pid = crate::kernel::proc::api::process_get_current_pid();
             return RecoveryAction::TerminateProcess(pid);
         }
 

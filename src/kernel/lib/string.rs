@@ -453,10 +453,10 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 /// - dest 有足够空间
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(
-    dest: *mut core::ffi::c_void,
-    src: *const core::ffi::c_void,
+    dest: *mut u8,
+    src: *const u8,
     n: usize,
-) -> *mut core::ffi::c_void {
+) -> *mut u8 {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
     }
@@ -488,10 +488,10 @@ pub unsafe extern "C" fn memcpy(
 ///
 /// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions may overlap.
 pub unsafe extern "C" fn memmove(
-    dest: *mut core::ffi::c_void,
-    src: *const core::ffi::c_void,
+    dest: *mut u8,
+    src: *const u8,
     n: usize,
-) -> *mut core::ffi::c_void {
+) -> *mut u8 {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
     }
@@ -532,10 +532,10 @@ pub unsafe extern "C" fn memmove(
 ///
 /// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions must not overlap.
 pub unsafe extern "C" fn memset(
-    s: *mut core::ffi::c_void,
+    s: *mut u8,
     c: i32,
     n: usize,
-) -> *mut core::ffi::c_void {
+) -> *mut u8 {
     if s.is_null() || n == 0 {
         return s;
     }
@@ -568,10 +568,10 @@ pub unsafe extern "C" fn memset(
 ///
 /// `src` is a valid pointer to at least `n` bytes of readable memory.
 pub unsafe extern "C" fn memset_optimized(
-    s: *mut core::ffi::c_void,
+    s: *mut u8,
     c: i32,
     n: usize,
-) -> *mut core::ffi::c_void {
+) -> *mut u8 {
     if s.is_null() || n == 0 {
         return s;
     }
@@ -608,8 +608,8 @@ pub unsafe extern "C" fn memset_optimized(
 ///
 /// `dst` is a valid pointer to at least `n` bytes of writable memory. `value` fits in `u8`.
 pub unsafe extern "C" fn memcmp(
-    s1: *const core::ffi::c_void,
-    s2: *const core::ffi::c_void,
+    s1: *const u8,
+    s2: *const u8,
     n: usize,
 ) -> i32 {
     if n == 0 {
@@ -653,10 +653,10 @@ pub unsafe extern "C" fn memcmp(
 ///
 /// `src` is a valid pointer to a null-terminated C string.
 pub unsafe extern "C" fn memchr(
-    s: *const core::ffi::c_void,
+    s: *const u8,
     c: i32,
     n: usize,
-) -> *mut core::ffi::c_void {
+) -> *mut u8 {
     if s.is_null() || n == 0 {
         return core::ptr::null_mut();
     }
@@ -666,7 +666,7 @@ pub unsafe extern "C" fn memchr(
 
     for i in 0..n {
         if *p.add(i) == target {
-            return p.add(i) as *mut core::ffi::c_void;
+            return p.add(i) as *mut u8;
         }
     }
 
@@ -690,7 +690,7 @@ pub unsafe extern "C" fn memchr(
 /// # Safety
 ///
 /// `src` is a valid pointer to at least `max_len` bytes of readable memory.
-pub unsafe extern "C" fn secure_zero(ptr: *mut core::ffi::c_void, len: usize) {
+pub unsafe extern "C" fn secure_zero(ptr: *mut u8, len: usize) {
     if ptr.is_null() || len == 0 {
         return;
     }
@@ -832,12 +832,12 @@ mod tests {
             let s = b"Hello World\0";
 
             // strchr - 查找 'o' 的第一次出现
-            let result = strchr(s.as_ptr() as *const i8, 'o' as i32);
+            let result = strchr(s.as_ptr() as *const u8, 'o' as i32);
             assert!(!result.is_null());
             assert_eq!(*result, 'o' as i8);
 
             // strrchr - 查找 'o' 的最后一次出现
-            let result = strrchr(s.as_ptr() as *const i8, 'o' as i32);
+            let result = strrchr(s.as_ptr() as *const u8, 'o' as i32);
             assert!(!result.is_null());
             // 应该指向 "World" 中的 'o'
         }
@@ -849,15 +849,15 @@ mod tests {
             let haystack = b"The quick brown fox jumps over the lazy dog\0";
 
             // 找到子串
-            let result = strstr(haystack.as_ptr() as *const i8, c"brown fox".as_ptr());
+            let result = strstr(haystack.as_ptr() as *const u8, c"brown fox".as_ptr());
             assert!(!result.is_null());
 
             // 未找到子串
-            let result = strstr(haystack.as_ptr() as *const i8, c"cat".as_ptr());
+            let result = strstr(haystack.as_ptr() as *const u8, c"cat".as_ptr());
             assert!(result.is_null());
 
             // 空子串
-            let result = strstr(haystack.as_ptr() as *const i8, c"".as_ptr());
+            let result = strstr(haystack.as_ptr() as *const u8, c"".as_ptr());
             assert!(!result.is_null()); // 应该返回原字符串
         }
     }
@@ -870,8 +870,8 @@ mod tests {
 
             // 测试 memcpy
             memcpy(
-                dest.as_mut_ptr() as *mut core::ffi::c_void,
-                src.as_ptr() as *const core::ffi::c_void,
+                dest.as_mut_ptr() as *mut u8,
+                src.as_ptr() as *const u8,
                 10,
             );
             assert_eq!(dest, src);
@@ -880,8 +880,8 @@ mod tests {
             let mut overlap = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
             // 将 overlap[2..] 移动到 overlap[0..]
             memmove(
-                overlap.as_mut_ptr() as *mut core::ffi::c_void,
-                overlap.as_ptr().add(2) as *const core::ffi::c_void,
+                overlap.as_mut_ptr() as *mut u8,
+                overlap.as_ptr().add(2) as *const u8,
                 8,
             );
             assert_eq!(overlap, [3, 4, 5, 6, 7, 8, 9, 10, 9, 10]);
@@ -894,11 +894,11 @@ mod tests {
             let mut buffer = [0xABu8; 20];
 
             // 测试 memset
-            memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0x00, 20);
+            memset(buffer.as_mut_ptr() as *mut u8, 0x00, 20);
             assert_eq!(buffer, [0u8; 20]);
 
             // 测试 memset with specific value
-            memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0xFF, 10);
+            memset(buffer.as_mut_ptr() as *mut u8, 0xFF, 10);
             for i in 0..10 {
                 assert_eq!(buffer[i], 0xFF);
             }
@@ -918,8 +918,8 @@ mod tests {
             // 相等
             assert_eq!(
                 memcmp(
-                    a.as_ptr() as *const core::ffi::c_void,
-                    b.as_ptr() as *const core::ffi::c_void,
+                    a.as_ptr() as *const u8,
+                    b.as_ptr() as *const u8,
                     5
                 ),
                 0
@@ -928,8 +928,8 @@ mod tests {
             // 小于
             assert!(
                 memcmp(
-                    a.as_ptr() as *const core::ffi::c_void,
-                    c.as_ptr() as *const core::ffi::c_void,
+                    a.as_ptr() as *const u8,
+                    c.as_ptr() as *const u8,
                     5
                 ) < 0
             );
@@ -942,13 +942,13 @@ mod tests {
             let data = [1, 2, 3, 4, 5, 3, 7, 8];
 
             // 找到第一个出现的 3
-            let result = memchr(data.as_ptr() as *const core::ffi::c_void, 3, 8);
+            let result = memchr(data.as_ptr() as *const u8, 3, 8);
             assert!(!result.is_null());
             let offset = (result as *const u8).offset_from(data.as_ptr()) as usize;
             assert_eq!(offset, 2); // 第一个 3 在索引 2
 
             // 未找到
-            let result = memchr(data.as_ptr() as *const core::ffi::c_void, 9, 8);
+            let result = memchr(data.as_ptr() as *const u8, 9, 8);
             assert!(result.is_null());
         }
     }
@@ -957,7 +957,7 @@ mod tests {
     fn test_secure_zero() {
         unsafe {
             let mut secret = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
-            secure_zero(secret.as_mut_ptr() as *mut core::ffi::c_void, 6);
+            secure_zero(secret.as_mut_ptr() as *mut u8, 6);
 
             for byte in secret.iter() {
                 assert_eq!(*byte, 0);

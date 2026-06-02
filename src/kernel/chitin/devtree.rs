@@ -27,7 +27,6 @@
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::ffi::c_void;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 
@@ -142,7 +141,7 @@ struct DevTree {
 
 static DEV_TREE: Mutex<DevTree> = Mutex::new(DevTree { nodes: Vec::new() });
 
-pub fn devtree_init() {
+fn devtree_init_impl() {
     let mut tree = DEV_TREE.lock();
     let root_id = NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed);
     let mut root = ChitinNode::new(root_id, "platform", ChitinProto::Bus);
@@ -157,7 +156,7 @@ pub fn devtree_root_id() -> NodeId {
 }
 
 /// 创建新的设备树节点
-pub fn devtree_create_node(
+pub(crate) fn devtree_create_node_impl(
     name: &'static str,
     proto: ChitinProto,
     parent_id: Option<NodeId>,
@@ -278,7 +277,7 @@ pub fn devtree_bind_device(
     node_id: NodeId,
     io_base: Option<u64>,
     irq: Option<u8>,
-    driver_data: *mut c_void,
+    driver_data: *mut u8,
 ) -> Option<u32> {
     let mut tree = DEV_TREE.lock();
     let node = tree.nodes.iter_mut().find(|n| n.id == node_id)?;
@@ -332,7 +331,7 @@ pub fn devtree_count() -> usize {
     DEV_TREE.lock().nodes.len()
 }
 
-pub fn devtree_print() {
+fn devtree_print_impl() {
     let tree = DEV_TREE.lock();
     let root_id = ROOT_NODE_ID.load(Ordering::Acquire);
 
@@ -352,18 +351,18 @@ pub fn devtree_print() {
 }
 
 #[no_mangle]
-pub extern "C" fn devtree_print_c() {
-    devtree_print();
+pub fn devtree_print() {
+    devtree_print_impl();
 }
 
 #[no_mangle]
-pub extern "C" fn devtree_init_c() {
-    devtree_init();
+pub fn devtree_init() {
+    devtree_init_impl();
 }
 
 #[no_mangle]
-pub extern "C" fn devtree_create_node_c(
-    name: *const core::ffi::c_char,
+pub fn devtree_create_node(
+    name: *const u8,
     proto: u32,
     parent_id: u32,
 ) -> u32 {
@@ -373,7 +372,7 @@ pub extern "C" fn devtree_create_node_c(
         // SAFETY: name is a C string from FFI; callers guarantee it's null-terminated
         // and valid for the duration of this function.
         unsafe {
-            let bytes = core::ffi::CStr::from_ptr(name);
+            let bytes = core::ffi::CStr::from_ptr(name as *const core::ffi::c_char);
             bytes.to_str().unwrap_or("unknown")
         }
     };
@@ -396,7 +395,7 @@ pub extern "C" fn devtree_create_node_c(
         Some(parent_id)
     };
 
-    devtree_create_node(static_name, proto, parent).unwrap_or(0)
+    devtree_create_node_impl(static_name, proto, parent).unwrap_or(0)
 }
 
 #[cfg(test)]

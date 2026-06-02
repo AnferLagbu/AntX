@@ -15,7 +15,7 @@ pub mod bootstrap;
 pub mod capability;
 pub mod csprng;
 pub mod engine;
-pub mod ffi;
+pub mod api;
 pub mod grant;
 pub mod identity;
 pub mod session;

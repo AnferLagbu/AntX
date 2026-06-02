@@ -18,9 +18,9 @@ pub static user_entry_cr3: AtomicU64 = AtomicU64::new(0);
 pub static user_entry_target: AtomicU64 = AtomicU64::new(0);
 
 extern "C" {
-    fn pmm_alloc_page() -> *mut core::ffi::c_void;
-    fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
-    fn pmm_free_page(page: *mut core::ffi::c_void);
+    fn pmm_alloc_page() -> *mut u8;
+    fn pmm_alloc_pages(count: u64) -> *mut u8;
+    fn pmm_free_page(page: *mut u8);
     fn vmm_create_user_page_table() -> u64;
     fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
     fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
@@ -30,7 +30,7 @@ extern "C" {
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
     fn memset(s: *mut u8, c: i32, n: u64);
     fn memcpy(dest: *mut u8, src: *const u8, n: u64);
-    fn kmalloc(size: u64) -> *mut core::ffi::c_void;
+    fn kmalloc(size: u64) -> *mut u8;
 }
 
 /// Page size in bytes.
@@ -148,7 +148,7 @@ impl UserProcManager {
                     let kstack_base_virt = kstack - USER_KSTACK_SIZE;
                     let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
                     for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
-                        pmm_free_page((kstack_base_phys + i * PAGE_SIZE) as *mut core::ffi::c_void);
+                        pmm_free_page((kstack_base_phys + i * PAGE_SIZE) as *mut u8);
                     }
                 }
             }
@@ -159,7 +159,7 @@ impl UserProcManager {
                     let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
                     let phys = vmm_get_physical_in_table(cr3, svirt);
                     if phys != 0 {
-                        pmm_free_page(phys as *mut core::ffi::c_void);
+                        pmm_free_page(phys as *mut u8);
                     }
                 }
             }
@@ -210,7 +210,7 @@ impl UserProcManager {
 
             let stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
             if stack_pages.is_null() {
-                pmm_free_page(cr3_val as *mut core::ffi::c_void);
+                pmm_free_page(cr3_val as *mut u8);
                 return None;
             }
 
@@ -239,7 +239,7 @@ impl UserProcManager {
             let kstack = pmm_alloc_pages(USER_KSTACK_SIZE / PAGE_SIZE);
             if kstack.is_null() {
                 pmm_free_page(stack_pages);
-                pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+                pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut u8);
                 return None;
             }
             let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
@@ -589,7 +589,7 @@ impl UserProcManager {
                         let page = pmm_alloc_page();
                         if page.is_null() {
                             for pi in 0..page_count {
-                                pmm_free_page(allocated_pages[pi] as *mut core::ffi::c_void);
+                                pmm_free_page(allocated_pages[pi] as *mut u8);
                             }
                             self.destroy(proc, false);
                             return -1;

@@ -159,7 +159,7 @@ fn test_rcu_nested_locks() -> TestResult {
 // ============================================================
 
 fn test_devtree_create_node() -> TestResult {
-    let node_id = crate::kernel::chitin::devtree::devtree_create_node(
+    let node_id = crate::kernel::chitin::devtree::devtree_create_node_impl(
         "test_device",
         crate::kernel::chitin::ChitinProto::Other,
         None,
@@ -179,7 +179,7 @@ fn test_devtree_create_node() -> TestResult {
 
 fn test_devtree_set_compatible() -> TestResult {
     use alloc::vec;
-    let node_id = crate::kernel::chitin::devtree::devtree_create_node(
+    let node_id = crate::kernel::chitin::devtree::devtree_create_node_impl(
         "compat_device",
         crate::kernel::chitin::ChitinProto::Other,
         None,

@@ -12,22 +12,22 @@ use crate::kernel::chitin::{
 use crate::kernel::driver::block::BlockDevice;
 use alloc::boxed::Box;
 
-unsafe fn blk_read_thunk(data: *mut core::ffi::c_void, sector: u64, buf: &mut [u8]) -> i32 {
+unsafe fn blk_read_thunk(data: *mut u8, sector: u64, buf: &mut [u8]) -> i32 {
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
     dev.blk_read(sector, buf)
 }
 
-unsafe fn blk_write_thunk(data: *mut core::ffi::c_void, sector: u64, buf: &[u8]) -> i32 {
+unsafe fn blk_write_thunk(data: *mut u8, sector: u64, buf: &[u8]) -> i32 {
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
     dev.blk_write(sector, buf)
 }
 
-unsafe fn blk_is_present_thunk(data: *mut core::ffi::c_void) -> bool {
+unsafe fn blk_is_present_thunk(data: *mut u8) -> bool {
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
     dev.blk_is_present()
 }
 
-unsafe fn blk_total_sectors_thunk(data: *mut core::ffi::c_void) -> u64 {
+unsafe fn blk_total_sectors_thunk(data: *mut u8) -> u64 {
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
     dev.blk_total_sectors()
 }
@@ -64,7 +64,7 @@ pub fn register_block_device_with_ops(
     io_base: Option<u64>,
     irq: Option<u8>,
     ops: &'static BlockOps,
-    driver_data: *mut core::ffi::c_void,
+    driver_data: *mut u8,
 ) -> u32 {
     chitin_register_block(name, io_base, irq, ops, driver_data)
 }
@@ -74,7 +74,7 @@ pub fn register_block_raw(
     name: &'static str,
     io_base: Option<u64>,
     irq: Option<u8>,
-    driver_data: *mut core::ffi::c_void,
+    driver_data: *mut u8,
     ops: ChitinOps,
 ) -> u32 {
     chitin_register_with_ops(name, ChitinProto::Block, io_base, irq, driver_data, ops)

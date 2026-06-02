@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use core::ffi::c_char;
+use u8;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::process::{Process, PROCESS_TABLE};
@@ -9,14 +9,12 @@ use super::session::SESSION_MANAGER;
 use super::thread::THREAD_MANAGER;
 use super::types::*;
 use super::user_proc::{proc_alloc_pid, user_proc_clone, USER_PROC_MANAGER};
-
-extern "C" {
-    fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
-    fn vmm_clone_user_page_table(parent_pml4: u64) -> u64;
-    fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64;
-    fn vmm_destroy_page_table(pml4: u64);
-    fn vmm_switch_page_table(cr3: u64);
-}
+use crate::kernel::klog::klog_ffi_info;
+use crate::kernel::mm::api::{
+    pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
+    vmm_switch_page_table,
+};
+use crate::kernel::timer::timer_get_ticks;
 
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
 static INIT_PROCESS_CREATED: AtomicU32 = AtomicU32::new(0);
@@ -49,7 +47,7 @@ static mut C_CURRENT_PROCESS: CProcess = CProcess {
 };
 
 #[no_mangle]
-pub extern "C" fn process_get_current() -> u64 {
+pub fn process_get_current() -> u64 {
     let ptr = CURRENT_PROCESS_PTR.load(Ordering::SeqCst);
     if ptr == 0 {
         if INIT_PROCESS_CREATED.load(Ordering::SeqCst) == 0 {
@@ -69,10 +67,6 @@ fn create_init_process() {
         C_CURRENT_PROCESS.priority = 2;
         C_CURRENT_PROCESS.time_slice = 10;
 
-        extern "C" {
-            fn klog_ffi_info(msg: *const u8);
-        }
-
         let msg = b"[PROC] Init process created (pid=1)";
         unsafe {
             klog_ffi_info(msg.as_ptr());
@@ -85,7 +79,7 @@ fn create_init_process() {
 }
 
 #[no_mangle]
-pub extern "C" fn update_current_process_ptr(ptr: u64) {
+pub fn update_current_process_ptr(ptr: u64) {
     CURRENT_PROCESS_PTR.store(ptr, Ordering::SeqCst);
     if ptr != 0 {
         let proc_ptr = ptr as *const Process;
@@ -97,12 +91,12 @@ pub extern "C" fn update_current_process_ptr(ptr: u64) {
 }
 
 #[no_mangle]
-pub extern "C" fn process_get_current_pid() -> u32 {
+pub fn process_get_current_pid() -> u32 {
     SCHEDULER.current().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
+pub fn process_get_by_pid(_pid: u32) -> u64 {
     unsafe {
         if _pid as u64 == C_CURRENT_PROCESS.pid {
             &C_CURRENT_PROCESS as *const CProcess as u64
@@ -113,7 +107,7 @@ pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
 }
 
 #[no_mangle]
-pub extern "C" fn process_get_current_pwm() -> u64 {
+pub fn process_get_current_pwm() -> u64 {
     let pid = SCHEDULER.current().unwrap_or(0);
     if pid == 0 {
         return 0;
@@ -129,7 +123,7 @@ pub extern "C" fn process_get_current_pwm() -> u64 {
 }
 
 #[no_mangle]
-pub extern "C" fn process_get_pwm_by_pid(pid: u32) -> u64 {
+pub fn process_get_pwm_by_pid(pid: u32) -> u64 {
     if pid == 0 {
         return 0;
     }
@@ -144,12 +138,12 @@ pub extern "C" fn process_get_pwm_by_pid(pid: u32) -> u64 {
 }
 
 #[no_mangle]
-pub extern "C" fn process_create(name: *const c_char, parent_pid: Pid, pwm: u64) -> Pid {
+pub fn process_create(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     proc_create_internal(name, parent_pid, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn process_exit(exit_code: u32) {
+pub fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid != 0 {
         let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
@@ -164,7 +158,7 @@ pub extern "C" fn process_exit(exit_code: u32) {
 }
 
 #[no_mangle]
-pub extern "C" fn process_kill(pid: u32, exit_code: u32) {
+pub fn process_kill(pid: u32, exit_code: u32) {
     // ✅ 修复: 杀指定 PID, 而非当前进程
     if pid == 0 {
         return;
@@ -188,12 +182,12 @@ pub extern "C" fn process_kill(pid: u32, exit_code: u32) {
 }
 
 #[no_mangle]
-pub extern "C" fn process_find_by_pid(pid: Pid) -> u64 {
+pub fn process_find_by_pid(pid: Pid) -> u64 {
     PROCESS_TABLE.get(pid).map(|p| p as u64).unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn proc_has_runnable() -> i32 {
+pub fn proc_has_runnable() -> i32 {
     if SCHEDULER.has_any_runnable() {
         1
     } else {
@@ -202,66 +196,62 @@ pub extern "C" fn proc_has_runnable() -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn thread_get_current() -> u64 {
+pub fn thread_get_current() -> u64 {
     THREAD_MANAGER.get_current_thread().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_yield_ex() {
+pub fn scheduler_yield_ex() {
     SCHEDULER_EX.yield_current();
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_yield() {
+pub fn scheduler_yield() {
     SCHEDULER.yield_current();
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_schedule() -> Pid {
+pub fn scheduler_schedule() -> Pid {
     SCHEDULER.schedule().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_add(pid: Pid) {
+pub fn scheduler_add(pid: Pid) {
     SCHEDULER.add(pid);
 }
 
 #[no_mangle]
-pub extern "C" fn wait_queue_init(_wq: *mut u8) {}
+pub fn wait_queue_init(_wq: *mut u8) {}
 
 #[no_mangle]
-pub extern "C" fn wait_queue_add(_wq: *mut u8, _thread: u64) {}
+pub fn wait_queue_add(_wq: *mut u8, _thread: u64) {}
 
 #[no_mangle]
-pub extern "C" fn wait_queue_wake_one(_wq: *mut u8) {}
+pub fn wait_queue_wake_one(_wq: *mut u8) {}
 
 #[no_mangle]
-pub extern "C" fn wait_queue_wake_all(_wq: *mut u8) {}
+pub fn wait_queue_wake_all(_wq: *mut u8) {}
 
 #[no_mangle]
-pub extern "C" fn session_init() {
+pub fn session_init() {
     SESSION_MANAGER.init();
 }
 
 #[no_mangle]
-pub extern "C" fn user_proc_init() {
+pub fn user_proc_init() {
     USER_PROC_MANAGER.init();
 }
 
 const ELF_MAX_SIZE: usize = 1024 * 1024;
 
-extern "C" {
-    fn pmm_alloc_pages(count: u64) -> *mut core::ffi::c_void;
-}
-
 #[no_mangle]
-pub extern "C" fn user_proc_load_elf(path: *const c_char, pwm: u64) -> i32 {
+pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     if path.is_null() {
         return -1;
     }
 
     let mut st: crate::kernel::fs::vfs::types::VfsStat = unsafe { core::mem::zeroed() };
-    let stat_result = unsafe { crate::kernel::fs::vfs::ffi::vfs_stat(path, &mut st, pwm) };
+    let stat_result = unsafe { crate::kernel::fs::vfs::api::vfs_stat(path, &mut st, pwm) };
     if stat_result < 0 {
         return -1;
     }
@@ -271,45 +261,39 @@ pub extern "C" fn user_proc_load_elf(path: *const c_char, pwm: u64) -> i32 {
         return -1;
     }
 
-    let fd = unsafe { crate::kernel::fs::vfs::ffi::vfs_open(path, 0, pwm) };
+    let fd = unsafe { crate::kernel::fs::vfs::api::vfs_open(path, 0, pwm) };
     if fd < 0 {
         return -1;
     }
 
-    let pages = file_size.div_ceil(4096u64);
+    let pages = file_size.div_ceil(4096u64) as usize;
     let buffer = unsafe { pmm_alloc_pages(pages) };
     if buffer.is_null() {
-        unsafe { crate::kernel::fs::vfs::ffi::vfs_close(fd as u32) };
+        unsafe { crate::kernel::fs::vfs::api::vfs_close(fd as u32) };
         return -1;
     }
 
     let bytes_read = unsafe {
-        crate::kernel::fs::vfs::ffi::vfs_read(fd as u32, buffer as *mut u8, file_size as u32)
+        crate::kernel::fs::vfs::api::vfs_read(fd as u32, buffer as *mut u8, file_size as u32)
     };
 
-    unsafe { crate::kernel::fs::vfs::ffi::vfs_close(fd as u32) };
+    unsafe { crate::kernel::fs::vfs::api::vfs_close(fd as u32) };
 
     if bytes_read <= 0 {
-        extern "C" {
-            fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
-        }
-        unsafe { pmm_free_pages(buffer, pages as u64) };
+        pmm_free_pages(buffer, pages);
         return -1;
     }
 
     let result =
         USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwm);
 
-    extern "C" {
-        fn pmm_free_pages(addr: *mut core::ffi::c_void, count: u64);
-    }
-    unsafe { pmm_free_pages(buffer, pages as u64) };
+    pmm_free_pages(buffer, pages);
 
     result
 }
 
 #[no_mangle]
-pub extern "C" fn user_proc_load_elf_from_memory(
+pub fn user_proc_load_elf_from_memory(
     elf_data: *const u8,
     elf_size: u64,
     pwm: u64,
@@ -323,7 +307,7 @@ pub extern "C" fn user_proc_load_elf_from_memory(
 /// # Safety
 ///
 /// `name` is a valid null-terminated C string. Process table has been initialized.
-pub unsafe extern "C" fn user_proc_setup_argv(
+pub unsafe fn user_proc_setup_argv(
     pid: u32,
     argv: *const *const u8,
     argc: u32,
@@ -345,7 +329,7 @@ pub unsafe extern "C" fn user_proc_setup_argv(
 }
 
 #[no_mangle]
-pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
+pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
         unsafe {
             C_CURRENT_PROCESS.pid = (*proc).pid as u64;
@@ -361,7 +345,7 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn launch_first_user_process() -> ! {
+pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
     #[cfg(target_arch = "x86_64")]
@@ -437,26 +421,26 @@ pub extern "C" fn launch_first_user_process() -> ! {
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_tick() {
+pub fn scheduler_tick() {
     SCHEDULER_EX.tick();
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_init() {
+pub fn scheduler_init() {
     super::scheduler::init();
     SCHEDULER_EX.init();
 }
 
 #[no_mangle]
-pub extern "C" fn process_init() {}
+pub fn process_init() {}
 
 #[no_mangle]
-pub extern "C" fn thread_init() {
+pub fn thread_init() {
     super::thread::init();
 }
 
 #[no_mangle]
-pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid, pwm: u64) -> Pid {
+pub fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     if name.is_null() {
         return 0;
     }
@@ -483,7 +467,7 @@ pub extern "C" fn proc_create_internal(name: *const c_char, parent_pid: Pid, pwm
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_get_current_pwm() -> u64 {
+pub fn scheduler_get_current_pwm() -> u64 {
     if let Some(pid) = SCHEDULER.current() {
         if let Some(process) = PROCESS_TABLE.get(pid) {
             return unsafe { (*process).get_pwm() };
@@ -493,48 +477,48 @@ pub extern "C" fn scheduler_get_current_pwm() -> u64 {
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_set_quota(pwm: u64, max_runtime: u64, period: u64) {
+pub fn scheduler_set_quota(pwm: u64, max_runtime: u64, period: u64) {
     SCHEDULER.set_quota(pwm, max_runtime, period);
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_remove_quota(pwm: u64) {
+pub fn scheduler_remove_quota(pwm: u64) {
     SCHEDULER.remove_quota(pwm);
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
+pub fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
     SCHEDULER.set_limit(pwm, max_procs);
 }
 
 #[no_mangle]
-pub extern "C" fn proc_exit_internal(exit_code: u32) {
+pub fn proc_exit_internal(exit_code: u32) {
     SCHEDULER.exit(exit_code);
 }
 
 #[no_mangle]
-pub extern "C" fn proc_get_current_pid_internal() -> Pid {
+pub fn proc_get_current_pid_internal() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn proc_yield_internal() {
+pub fn proc_yield_internal() {
     SCHEDULER.yield_current();
 }
 
 #[no_mangle]
-pub extern "C" fn proc_block(reason: u32) {
+pub fn proc_block(reason: u32) {
     let block_reason = BlockReason::from_u8(reason as u8);
     SCHEDULER.block(block_reason);
 }
 
 #[no_mangle]
-pub extern "C" fn proc_unblock(pid: Pid) {
+pub fn proc_unblock(pid: Pid) {
     SCHEDULER.unblock(pid);
 }
 
 #[no_mangle]
-pub extern "C" fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
+pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
     use super::process::PROCESS_TABLE;
 
     if let Some(process) = PROCESS_TABLE.get(pid) {
@@ -548,7 +532,7 @@ pub extern "C" fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_get_state(pid: Pid) -> u32 {
+pub fn proc_get_state(pid: Pid) -> u32 {
     use super::process::PROCESS_TABLE;
 
     if let Some(process) = PROCESS_TABLE.get(pid) {
@@ -559,22 +543,22 @@ pub extern "C" fn proc_get_state(pid: Pid) -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn sched_init_internal() {
+pub fn sched_init_internal() {
     SCHEDULER.init();
 }
 
 #[no_mangle]
-pub extern "C" fn sched_add_internal(pid: Pid) {
+pub fn sched_add_internal(pid: Pid) {
     SCHEDULER.add(pid);
 }
 
 #[no_mangle]
-pub extern "C" fn sched_schedule_internal() -> Pid {
+pub fn sched_schedule_internal() -> Pid {
     SCHEDULER.schedule().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn sched_should_reschedule() -> i32 {
+pub fn sched_should_reschedule() -> i32 {
     if SCHEDULER.should_reschedule() {
         1
     } else {
@@ -583,17 +567,17 @@ pub extern "C" fn sched_should_reschedule() -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn sched_set_current(pid: Pid) {
+pub fn sched_set_current(pid: Pid) {
     SCHEDULER.set_current(pid);
 }
 
 #[no_mangle]
-pub extern "C" fn sched_get_current() -> Pid {
+pub fn sched_get_current() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
 #[no_mangle]
-pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
+pub fn proc_get_exit_code(pid: Pid) -> i32 {
     use super::process::PROCESS_TABLE;
 
     if let Some(process) = PROCESS_TABLE.get(pid) {
@@ -608,7 +592,7 @@ pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_is_initialized() -> i32 {
+pub fn proc_is_initialized() -> i32 {
     if SCHEDULER.is_initialized() {
         1
     } else {
@@ -617,39 +601,39 @@ pub extern "C" fn proc_is_initialized() -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_get_time_slice() -> u64 {
+pub fn scheduler_get_time_slice() -> u64 {
     SCHEDULER.get_time_slice()
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_get_current_level() -> u32 {
+pub fn scheduler_get_current_level() -> u32 {
     SCHEDULER.get_current_level()
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_tick_mlfq() {
+pub fn scheduler_tick_mlfq() {
     let cpu = crate::kernel::smp::get_current_cpu() as usize;
     SCHEDULER.tick(cpu)
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_boost_priority() {
+pub fn scheduler_boost_priority() {
     SCHEDULER.boost_priority()
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_add_with_priority(pid: Pid, level: usize) {
+pub fn scheduler_add_with_priority(pid: Pid, level: usize) {
     SCHEDULER.add_with_priority(pid, level)
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
+pub fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
     use super::scheduler::SchedPolicy;
     SCHEDULER.add_rt_task(pid, rt_priority, SchedPolicy::from_u32(policy))
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32 {
+pub fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32 {
     use super::scheduler::SchedPolicy;
     if SCHEDULER.set_sched_policy(pid, SchedPolicy::from_u32(policy), rt_priority) {
         0
@@ -659,13 +643,13 @@ pub extern "C" fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority:
 }
 
 #[no_mangle]
-pub extern "C" fn scheduler_get_rt_count() -> usize {
+pub fn scheduler_get_rt_count() -> usize {
     SCHEDULER.get_rt_count()
 }
 
 #[no_mangle]
-pub extern "C" fn proc_create_user(
-    path: *const c_char,
+pub fn proc_create_user(
+    path: *const u8,
     argv: *const *const u8,
     argc: u32,
     pwm: u64,
@@ -676,7 +660,7 @@ pub extern "C" fn proc_create_user(
 
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     let name_str = unsafe {
-        let cstr = core::ffi::CStr::from_ptr(path);
+        let cstr = core::ffi::CStr::from_ptr(path as *const core::ffi::c_char);
         cstr.to_str().unwrap_or("user")
     };
 
@@ -737,7 +721,7 @@ pub extern "C" fn proc_create_user(
 }
 
 #[no_mangle]
-pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8, argc: u32) -> i32 {
+pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> i32 {
     if path.is_null() {
         return -1;
     }
@@ -784,7 +768,7 @@ pub extern "C" fn proc_exec_replace(path: *const c_char, argv: *const *const u8,
 }
 
 #[no_mangle]
-pub extern "C" fn proc_wait_child(pid: Pid) -> i32 {
+pub fn proc_wait_child(pid: Pid) -> i32 {
     if pid == 0 {
         return -1;
     }
@@ -808,7 +792,7 @@ pub extern "C" fn proc_wait_child(pid: Pid) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_sleep_ms(ms: u64) {
+pub fn proc_sleep_ms(ms: u64) {
     // ✅ 修复: 阻塞式睡眠, 不再忙等 (Fix 6)
     if ms == 0 {
         return;
@@ -820,10 +804,7 @@ pub extern "C" fn proc_sleep_ms(ms: u64) {
     }
 
     // 获取当前 tick 并计算到期时间
-    extern "C" {
-        fn timer_get_ticks() -> u64;
-    }
-    let current_ticks = unsafe { timer_get_ticks() };
+    let current_ticks = timer_get_ticks();
     // 假设每 tick = 10ms (100Hz), 转换 ms → ticks (最少 1 tick)
     let ticks_to_sleep = ms.div_ceil(10);
     if ticks_to_sleep == 0 {
@@ -848,13 +829,10 @@ pub extern "C" fn proc_sleep_ms(ms: u64) {
 /// 父进程返回 >0 (子进程 PID), 子进程返回 0
 /// 失败返回 0
 #[no_mangle]
-pub extern "C" fn sys_fork() -> Pid {
+pub fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     if parent_pid == 0 {
         unsafe {
-            extern "C" {
-                fn klog_ffi_info(msg: *const u8);
-            }
             klog_ffi_info(b"[FORK] No current process\n\0".as_ptr());
         }
         return 0;
@@ -874,9 +852,6 @@ pub extern "C" fn sys_fork() -> Pid {
     let child_cr3 = unsafe { vmm_clone_user_page_table_cow(parent_cr3) };
     if child_cr3 == 0 {
         unsafe {
-            extern "C" {
-                fn klog_ffi_info(msg: *const u8);
-            }
             klog_ffi_info(b"[FORK] COW page table clone failed\n\0".as_ptr());
         }
         return 0;
@@ -976,7 +951,7 @@ pub extern "C" fn sys_fork() -> Pid {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_get_ppid(pid: Pid) -> Pid {
+pub fn proc_get_ppid(pid: Pid) -> Pid {
     let proc = PROCESS_TABLE.get(pid);
     if let Some(p) = proc {
         unsafe { (*p).parent.map(|p| p.0).unwrap_or(0) }
@@ -986,7 +961,7 @@ pub extern "C" fn proc_get_ppid(pid: Pid) -> Pid {
 }
 
 #[no_mangle]
-pub extern "C" fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
+pub fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
     let proc = PROCESS_TABLE.get(pid);
     if let Some(p) = proc {
         unsafe {

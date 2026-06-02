@@ -21,7 +21,6 @@
 
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::idt::types::InterruptFrame;
-#[cfg(all(target_arch = "x86_64", not(feature = "kernel_test")))]
 
 
 /// Timer IRQ0 中断处理程序 (仅 x86_64)

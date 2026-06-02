@@ -12,12 +12,10 @@ extern crate alloc;
 use crate::kernel::mm::pmm::get_pmm;
 use crate::kernel::mm::vmm::get_vmm;
 use crate::kernel::mm::{PhysAddr, VirtAddr};
-use core::ffi::c_void;
 use core::ptr::{self};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 pub mod engine;
-pub mod ffi;
 
 // Constants
 pub const DMA_MAX_MAPPINGS: usize = 256;
@@ -93,7 +91,7 @@ impl DmaScatterList {
 }
 
 /// Transfer completion callback type
-pub type DmaCallback = extern "C" fn(*mut c_void, i32);
+pub type DmaCallback = fn(*mut u8, i32);
 
 /// DMA transfer request (opaque — C side uses pointer)
 #[derive(Debug)]
@@ -106,7 +104,7 @@ pub struct DmaTransfer {
     pub completed: bool,
     pub result: i32,
     pub callback: Option<DmaCallback>,
-    pub private_data: *mut c_void,
+    pub private_data: *mut u8,
 }
 
 /// DMA pool statistics
@@ -181,7 +179,7 @@ impl DmaStats {
 
 /// Calculate physical address from virtual (via page table walk)
 #[inline]
-fn virt_to_phys(virt: *const c_void) -> u64 {
+fn virt_to_phys(virt: *const u8) -> u64 {
     if virt.is_null() {
         return 0;
     }

@@ -1,7 +1,7 @@
 pub mod cfs;
 pub mod cpu_queue;
 pub mod elf;
-pub mod ffi;
+pub mod api;
 pub mod oomd;
 pub mod process;
 pub mod scheduler;

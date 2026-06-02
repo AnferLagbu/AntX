@@ -166,6 +166,7 @@ pub unsafe fn poll_network() {
 // 多网卡探测 (按优先级依次尝试)
 // ============================================================================
 
+#[cfg(not(feature = "kernel_test"))]
 unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
     #[cfg(target_arch = "x86_64")]
     {
@@ -200,6 +201,7 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
     None
 }
 
+#[cfg(not(feature = "kernel_test"))]
 static E1000_NET_OPS_STATIC: crate::kernel::chitin::proto_net::NetOps =
     crate::kernel::chitin::proto_net::NetOps {
         send: crate::kernel::driver::net::e1000::e1000_net_send,
@@ -220,9 +222,9 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::chitin::proto_net::NetOps =
 // 恢复机制
 // ============================================================================
 
-unsafe extern "C" fn net_save() {}
+unsafe fn net_save() {}
 
-unsafe extern "C" fn net_restore() {
+unsafe fn net_restore() {
     let _guard = NET_LOCK.lock();
 
     crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
@@ -247,7 +249,7 @@ unsafe extern "C" fn net_restore() {
     }
 }
 
-unsafe extern "C" fn net_reset() {
+unsafe fn net_reset() {
     let _guard = NET_LOCK.lock();
 
     crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
@@ -308,7 +310,7 @@ pub extern "C" fn qx_net_init() {
                     "No NIC found, running without network\0".as_ptr().cast(),
                 );
                 klog_init_msg(
-                    "--- Network Subsystem Ready (No Network) ---\0".as_ptr() as *const i8,
+                    "--- Network Subsystem Ready (No Network) ---\0".as_ptr().cast(),
                 );
                 return;
             }

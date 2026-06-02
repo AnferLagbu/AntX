@@ -558,7 +558,7 @@ impl Scheduler {
 
         if let Some(next_ptr_raw) = next_ptr {
             unsafe {
-                crate::kernel::proc::ffi::update_current_process_ptr(next_ptr_raw as u64);
+                crate::kernel::proc::api::update_current_process_ptr(next_ptr_raw as u64);
             }
         }
 

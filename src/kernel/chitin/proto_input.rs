@@ -8,13 +8,13 @@
 //! 用于键盘、鼠标等输入设备。
 
 /// 输入设备读字符
-pub type InputReadFn = unsafe fn(driver_data: *mut core::ffi::c_void) -> Option<u8>;
+pub type InputReadFn = unsafe fn(driver_data: *mut u8) -> Option<u8>;
 
 /// 输入设备检查可读
-pub type InputHasDataFn = unsafe fn(driver_data: *mut core::ffi::c_void) -> bool;
+pub type InputHasDataFn = unsafe fn(driver_data: *mut u8) -> bool;
 
 /// 输入设备中断处理
-pub type InputIrqFn = unsafe fn(driver_data: *mut core::ffi::c_void);
+pub type InputIrqFn = unsafe fn(driver_data: *mut u8);
 
 /// 输入设备操作表
 pub struct InputOps {

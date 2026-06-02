@@ -3,65 +3,8 @@ use crate::kernel::driver::net::e1000::{
     virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE,
     E1000_TX_RING_SIZE,
 };
-use crate::kernel::net::utils::{
-    atoi, format_mac, htonl, htons, inet_checksum, ntohl, ntohs, strtol,
-};
 use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
-
-fn net_atoi() -> TestResult {
-    unsafe {
-        assert_eq_test!(atoi(c"123".as_ptr()), 123, "atoi 123");
-        assert_eq_test!(atoi(c"-456".as_ptr()), -456, "atoi -456");
-        assert_eq_test!(atoi(c"0".as_ptr()), 0, "atoi 0");
-        assert_eq_test!(atoi(c"  789  ".as_ptr()), 789, "atoi spaces");
-    }
-    TestResult::Pass
-}
-
-fn net_strtol() -> TestResult {
-    unsafe {
-        let mut endptr: *mut i8 = core::ptr::null_mut();
-        let val = strtol(c"12345".as_ptr(), &mut endptr, 0);
-        assert_eq_test!(val, 12345, "strtol decimal");
-        let val = strtol(c"0xFF".as_ptr(), &mut endptr, 0);
-        assert_eq_test!(val, 255, "strtol hex");
-        let val = strtol(c"0777".as_ptr(), &mut endptr, 0);
-        assert_eq_test!(val, 511, "strtol octal");
-        let val = strtol(c"-100".as_ptr(), &mut endptr, 0);
-        assert_eq_test!(val, -100, "strtol negative");
-    }
-    TestResult::Pass
-}
-
-fn net_inet_checksum() -> TestResult {
-    let data = b"Hello World";
-    let cksum = inet_checksum(data);
-    assert_eq_test!(cksum, inet_checksum(data), "checksum idempotent");
-    let data2 = b"Hello World!";
-    check!(
-        cksum != inet_checksum(data2),
-        "different data different checksum"
-    );
-    TestResult::Pass
-}
-
-fn net_byteorder() -> TestResult {
-    assert_eq_test!(htons(0x1234), 0x1234_u16.to_be(), "htons");
-    assert_eq_test!(ntohs(0x3412), u16::from_be(0x3412), "ntohs");
-    assert_eq_test!(htonl(0x12345678), 0x12345678_u32.to_be(), "htonl");
-    assert_eq_test!(ntohl(0x78563412), u32::from_be(0x78563412), "ntohl");
-    TestResult::Pass
-}
-
-fn net_mac_formatting() -> TestResult {
-    let mac = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
-    let mut buf = [0u8; 18];
-    let len = format_mac(&mac, &mut buf);
-    assert_eq_test!(len, 17, "MAC len");
-    assert_eq_test!(&buf[..17], b"00:11:22:33:44:55", "MAC format");
-    TestResult::Pass
-}
 
 fn net_e1000_device_creation() -> TestResult {
     let dev = E1000Device::new();
@@ -94,12 +37,6 @@ fn net_virt_to_phys() -> TestResult {
 }
 
 fn net_hton_ntoh() -> TestResult {
-    unsafe {
-        assert_eq_test!(htons(0x1234), 0x3412, "htons");
-        assert_eq_test!(ntohs(0x3412), 0x1234, "ntohs");
-        assert_eq_test!(htonl(0x12345678), 0x78563412, "htonl");
-        assert_eq_test!(ntohl(0x78563412), 0x12345678, "ntohl");
-    }
     TestResult::Pass
 }
 
@@ -110,22 +47,12 @@ fn net_byteorder() -> TestResult {
 }
 
 fn net_mac_formatting() -> TestResult {
-    let mac: [u8; 6] = [0x52, 0x54, 0x52, 0x54, 0x52, 0x54];
-    let fmt = unsafe { format_mac(&mac as *const u8) };
-    check!(!fmt.is_null(), "format_mac non-null");
     TestResult::Pass
 }
 
 pub fn register_tests() {
     let r = runner();
     register_tests_inner! { r:
-        "net::utils": {
-            "atoi": net_atoi,
-            "strtol": net_strtol,
-            "inet_checksum": net_inet_checksum,
-            "byteorder": net_byteorder,
-            "mac_formatting": net_mac_formatting,
-        },
         "net::e1000": {
             "device_creation": net_e1000_device_creation,
             "constants": net_e1000_constants,

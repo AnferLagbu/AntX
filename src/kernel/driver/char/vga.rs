@@ -495,7 +495,7 @@ pub extern "C" fn vga_putchar(ch: i32) {
 
 /// 向 VGA 输出字符串 (C 兼容接口)
 #[no_mangle]
-pub extern "C" fn vga_puts(s: *const core::ffi::c_char) {
+pub extern "C" fn vga_puts(s: *const u8) {
     if s.is_null() {
         return;
     }

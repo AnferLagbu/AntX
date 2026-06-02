@@ -512,9 +512,9 @@ pub extern "C" fn kernel_init() {
                     .spa
                     .disk_present
                     .store(true, core::sync::atomic::Ordering::Release);
-                let r = crate::kernel::fs::vfs::ffi::vfs_mount_internal(
-                    c"/".as_ptr(),
-                    c"hvfs".as_ptr(),
+                let r = crate::kernel::fs::vfs::api::vfs_mount_internal(
+                    b"/".as_ptr(),
+                    b"hvfs".as_ptr(),
                 );
                 if r == 0 {
                     let n_drives = crate::kernel::fs::hvfs::hvfs::get_hvfs()
@@ -546,7 +546,7 @@ pub extern "C" fn kernel_init() {
 
         // 12. Launch first user process
         unsafe {
-            crate::kernel::proc::ffi::launch_first_user_process();
+            crate::kernel::proc::api::launch_first_user_process();
         }
         // unreachable: launch_first_user_process is noreturn
     } // end #[cfg(not(feature = "kernel_test"))]

@@ -7,18 +7,18 @@ use crate::register_tests_inner;
 
 fn strlen_basic() -> TestResult {
     unsafe {
-        assert_eq_test!(strlen(c"Hello".as_ptr()), 5, "strlen Hello");
-        assert_eq_test!(strlen(c"".as_ptr()), 0, "strlen empty");
-        assert_eq_test!(strlen(c"A longer test string".as_ptr()), 20, "strlen long");
+        assert_eq_test!(strlen(c"Hello".as_ptr() as *const i8), 5, "strlen Hello");
+        assert_eq_test!(strlen(c"".as_ptr() as *const i8), 0, "strlen empty");
+        assert_eq_test!(strlen(c"A longer test string".as_ptr() as *const i8), 20, "strlen long");
     }
     TestResult::Pass
 }
 
 fn strcmp_operations() -> TestResult {
     unsafe {
-        assert_eq_test!(strcmp(c"test".as_ptr(), c"test".as_ptr()), 0, "equal");
-        check!(strcmp(c"abc".as_ptr(), c"abd".as_ptr()) < 0, "less than");
-        check!(strcmp(c"xyz".as_ptr(), c"xya".as_ptr()) > 0, "greater than");
+        assert_eq_test!(strcmp(c"test".as_ptr() as *const i8, c"test".as_ptr() as *const i8), 0, "equal");
+        check!(strcmp(c"abc".as_ptr() as *const i8, c"abd".as_ptr() as *const i8) < 0, "less than");
+        check!(strcmp(c"xyz".as_ptr() as *const i8, c"xya".as_ptr() as *const i8) > 0, "greater than");
     }
     TestResult::Pass
 }
@@ -26,12 +26,12 @@ fn strcmp_operations() -> TestResult {
 fn strncmp_limit() -> TestResult {
     unsafe {
         assert_eq_test!(
-            strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 3),
+            strncmp(c"abcdef".as_ptr() as *const i8, c"abcxyz".as_ptr() as *const i8, 3),
             0,
             "first 3 equal"
         );
         check!(
-            strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 4) < 0,
+            strncmp(c"abcdef".as_ptr() as *const i8, c"abcxyz".as_ptr() as *const i8, 4) < 0,
             "first 4 differ"
         );
     }
@@ -41,12 +41,12 @@ fn strncmp_limit() -> TestResult {
 fn strcpy_and_strncpy() -> TestResult {
     unsafe {
         let mut buffer = [0i8; 20];
-        strcpy(buffer.as_mut_ptr(), c"Hello World".as_ptr());
+        strcpy(buffer.as_mut_ptr(), c"Hello World".as_ptr() as *const i8);
         assert_eq_test!(strlen(buffer.as_ptr()), 11, "strcpy len");
         let mut buffer2 = [0i8; 10];
-        strncpy(buffer2.as_mut_ptr(), c"Testing".as_ptr(), 5);
+        strncpy(buffer2.as_mut_ptr(), c"Testing".as_ptr() as *const i8, 5);
         assert_eq_test!(strlen(buffer2.as_ptr()), 5, "strncpy len");
-        strncpy(buffer2.as_mut_ptr(), c"Hi".as_ptr(), 5);
+        strncpy(buffer2.as_mut_ptr(), c"Hi".as_ptr() as *const i8, 5);
         assert_eq_test!(buffer2[2], 0, "strncpy padding");
     }
     TestResult::Pass
@@ -55,8 +55,8 @@ fn strcpy_and_strncpy() -> TestResult {
 fn strcat_basic() -> TestResult {
     unsafe {
         let mut buffer = [0i8; 30];
-        strcpy(buffer.as_mut_ptr(), c"Hello ".as_ptr());
-        strcat(buffer.as_mut_ptr(), c"World!".as_ptr());
+        strcpy(buffer.as_mut_ptr(), c"Hello ".as_ptr() as *const i8);
+        strcat(buffer.as_mut_ptr(), c"World!".as_ptr() as *const i8);
         assert_eq_test!(strlen(buffer.as_ptr()), 12, "strcat len");
     }
     TestResult::Pass
@@ -77,11 +77,11 @@ fn strchr_and_strrchr() -> TestResult {
 fn strstr_basic() -> TestResult {
     unsafe {
         let haystack = b"The quick brown fox jumps over the lazy dog\0";
-        let result = strstr(haystack.as_ptr() as *const i8, c"brown fox".as_ptr());
+        let result = strstr(haystack.as_ptr() as *const i8, c"brown fox".as_ptr() as *const i8);
         check!(!result.is_null(), "strstr found");
-        let result = strstr(haystack.as_ptr() as *const i8, c"cat".as_ptr());
+        let result = strstr(haystack.as_ptr() as *const i8, c"cat".as_ptr() as *const i8);
         check!(result.is_null(), "strstr not found");
-        let result = strstr(haystack.as_ptr() as *const i8, c"".as_ptr());
+        let result = strstr(haystack.as_ptr() as *const i8, c"".as_ptr() as *const i8);
         check!(!result.is_null(), "strstr empty returns haystack");
     }
     TestResult::Pass
@@ -92,15 +92,15 @@ fn memcpy_and_memmove() -> TestResult {
         let mut dest = [0u8; 10];
         let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         memcpy(
-            dest.as_mut_ptr() as *mut core::ffi::c_void,
-            src.as_ptr() as *const core::ffi::c_void,
+            dest.as_mut_ptr(),
+            src.as_ptr(),
             10,
         );
         assert_eq_test!(dest, src, "memcpy result");
         let mut overlap = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         memmove(
-            overlap.as_mut_ptr() as *mut core::ffi::c_void,
-            overlap.as_ptr().add(2) as *const core::ffi::c_void,
+            overlap.as_mut_ptr(),
+            overlap.as_ptr().add(2),
             8,
         );
         assert_eq_test!(
@@ -115,9 +115,9 @@ fn memcpy_and_memmove() -> TestResult {
 fn memset_operations() -> TestResult {
     unsafe {
         let mut buffer = [0xABu8; 20];
-        memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0x00, 20);
+        memset(buffer.as_mut_ptr(), 0x00, 20);
         assert_eq_test!(buffer, [0u8; 20], "memset zero");
-        memset(buffer.as_mut_ptr() as *mut core::ffi::c_void, 0xFF, 10);
+        memset(buffer.as_mut_ptr(), 0xFF, 10);
         for i in 0..10 {
             assert_eq_test!(buffer[i], 0xFF, "memset FF");
         }
@@ -145,11 +145,11 @@ fn memcmp_basic() -> TestResult {
 fn memchr_basic() -> TestResult {
     unsafe {
         let data = [1, 2, 3, 4, 5, 3, 7, 8];
-        let result = memchr(data.as_ptr() as *const core::ffi::c_void, 3, 8);
+        let result = memchr(data.as_ptr(), 3, 8);
         check!(!result.is_null(), "memchr found");
         let offset = (result as *const u8).offset_from(data.as_ptr()) as usize;
         assert_eq_test!(offset, 2, "memchr offset");
-        let result = memchr(data.as_ptr() as *const core::ffi::c_void, 9, 8);
+        let result = memchr(data.as_ptr(), 9, 8);
         check!(result.is_null(), "memchr not found");
     }
     TestResult::Pass
@@ -158,7 +158,7 @@ fn memchr_basic() -> TestResult {
 fn secure_zero_basic() -> TestResult {
     unsafe {
         let mut secret = [0xDEu8, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
-        secure_zero(secret.as_mut_ptr() as *mut core::ffi::c_void, 6);
+        secure_zero(secret.as_mut_ptr(), 6);
         for byte in secret.iter() {
             assert_eq_test!(*byte, 0, "secure zero");
         }

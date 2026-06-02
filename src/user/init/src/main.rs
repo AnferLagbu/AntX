@@ -120,7 +120,7 @@ fn init_main() {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub fn _start() -> ! {
     init_main();
     proc_exit(0);
 }

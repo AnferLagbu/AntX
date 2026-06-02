@@ -28,8 +28,8 @@ fn log(s: &str) {
     }
 }
 
-unsafe extern "C" fn hvfs_save() {}
-unsafe extern "C" fn hvfs_restore() {
+unsafe fn hvfs_save() {}
+unsafe fn hvfs_restore() {
     let hvfs = get_hvfs();
     hvfs.initialized.store(false, Ordering::Release);
     hvfs.mounted.store(false, Ordering::Release);
@@ -41,7 +41,7 @@ unsafe extern "C" fn hvfs_restore() {
     hvfs.initialized.store(true, Ordering::Release);
     log("[HvFS] Recovery: domain restored\n");
 }
-unsafe extern "C" fn hvfs_reset() {
+unsafe fn hvfs_reset() {
     log("[HvFS] Recovery: domain hard reset\n");
 }
 

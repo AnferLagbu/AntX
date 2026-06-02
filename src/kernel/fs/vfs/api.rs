@@ -1,24 +1,22 @@
-use core::ffi::c_char;
+use u8;
 
 use super::types::*;
 use super::vfs::VFS_MANAGER;
 use crate::kernel::fs::hvfs::hvfs::get_hvfs;
 use crate::kernel::fs::ramfs::ramfs::RAMFS_DATA;
+use crate::kernel::lib::cstr::CStrExt;
 
 const TEST_PWM: u64 = 0x0020F45A8B978417;
 static RAMFS_MOUNTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
-fn ptr_to_str<'a>(ptr: *const c_char) -> &'a str {
-    if ptr.is_null() {
-        return "";
-    }
-    unsafe {
-        let len = (0..VFS_MAX_PATH)
-            .find(|&i| *ptr.add(i) == 0)
-            .unwrap_or(VFS_MAX_PATH);
-        let slice = core::slice::from_raw_parts(ptr as *const u8, len);
-        core::str::from_utf8_unchecked(slice)
-    }
+/// 兼容旧 `ptr_to_str(ptr)` 调用语义:
+/// - 空指针 → `""`
+/// - 非 UTF-8 → `""`(降级)
+/// - 超过 `VFS_MAX_PATH` 长度 → 截断到该上限
+///
+/// 委托给统一抽象 [`CStrExt::as_kstr`],行为完全一致。
+fn ptr_to_str<'a>(ptr: *const u8) -> &'a str {
+    ptr.as_kstr()
 }
 
 fn resolve_pwm(pwm: u64) -> u64 {
@@ -65,12 +63,12 @@ fn split_parent_name(rel_path: &str) -> (&str, &str) {
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn vfs_init_internal() {
+pub fn vfs_init_internal() {
     super::vfs::init();
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char) -> i32 {
+pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     let path = ptr_to_str(path);
     let fs_name = ptr_to_str(fs_name);
     let fs_type = FsType::from_name(fs_name);
@@ -98,13 +96,13 @@ pub extern "C" fn vfs_mount_internal(path: *const c_char, fs_name: *const c_char
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_unmount_internal(path: *const c_char) -> i32 {
+pub fn vfs_unmount_internal(path: *const u8) -> i32 {
     let path = ptr_to_str(path);
     VFS_MANAGER.unmount(path).as_i32()
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwm: u64) -> i32 {
+pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
@@ -167,7 +165,7 @@ pub extern "C" fn vfs_open_internal(path: *const c_char, flags: u32, pwm: u64) -
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_close_internal(fd_idx: u32) -> i32 {
+pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     let fd_idx = fd_idx as usize;
     if fd_idx >= VFS_MAX_FDS {
         return -1;
@@ -177,7 +175,7 @@ pub extern "C" fn vfs_close_internal(fd_idx: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
+pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -212,7 +210,7 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_unlink_internal(path: *const c_char, pwm: u64) -> i32 {
+pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
@@ -237,7 +235,7 @@ pub extern "C" fn vfs_unlink_internal(path: *const c_char, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
+pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     let fd_idx = fd as usize;
     if fd_idx >= VFS_MAX_FDS {
         return -1;
@@ -263,7 +261,7 @@ pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
+pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -298,7 +296,7 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwm: u64) -> i32 {
+pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
@@ -328,7 +326,7 @@ pub extern "C" fn vfs_mkdir_internal(path: *const c_char, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_rmdir_internal(path: *const c_char, pwm: u64) -> i32 {
+pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
@@ -364,7 +362,7 @@ pub extern "C" fn vfs_rmdir_internal(path: *const c_char, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwm: u64) -> i32 {
+pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let _pwm = resolve_pwm(pwm);
     if st.is_null() {
@@ -435,7 +433,7 @@ pub extern "C" fn vfs_stat_internal(path: *const c_char, st: *mut VfsStat, pwm: 
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
+pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     if entry.is_null() {
         return -1;
     }
@@ -496,13 +494,13 @@ pub extern "C" fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_set_cwd_internal(path: *const c_char) {
+pub fn vfs_set_cwd_internal(path: *const u8) {
     let path = ptr_to_str(path);
     VFS_MANAGER.set_cwd(path);
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_get_cwd_internal(buf: *mut c_char, size: u32) -> i32 {
+pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
         return -1;
     }
@@ -521,7 +519,7 @@ pub extern "C" fn vfs_get_cwd_internal(buf: *mut c_char, size: u32) -> i32 {
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn hvfs_init_internal() {
+pub fn hvfs_init_internal() {
     let hvfs = get_hvfs();
     if !hvfs.is_initialized() {
         hvfs.init();
@@ -529,7 +527,7 @@ pub extern "C" fn hvfs_init_internal() {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_format_internal() -> i32 {
+pub fn hvfs_format_internal() -> i32 {
     let hvfs = get_hvfs();
     let (drive_id, part_start) = hvfs.drives_discovered.lock().first().copied().unwrap_or((
         hvfs.disk_drive.load(core::sync::atomic::Ordering::Acquire),
@@ -541,13 +539,13 @@ pub extern "C" fn hvfs_format_internal() -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_check_disk_internal() -> i32 {
+pub fn hvfs_check_disk_internal() -> i32 {
     let hvfs = get_hvfs();
     hvfs.is_disk_mode() as i32
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_set_disk_present_internal(present: bool) {
+pub fn hvfs_set_disk_present_internal(present: bool) {
     let hvfs = get_hvfs();
     if present {
         hvfs.spa
@@ -557,7 +555,7 @@ pub extern "C" fn hvfs_set_disk_present_internal(present: bool) {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwm: u64) -> i32 {
+pub fn hvfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
     let hvfs = get_hvfs();
@@ -568,13 +566,13 @@ pub extern "C" fn hvfs_open_internal(path: *const c_char, flags: u32, pwm: u64) 
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_close_internal(fd: u32) -> i32 {
+pub fn hvfs_close_internal(fd: u32) -> i32 {
     let hvfs = get_hvfs();
     hvfs.close(fd)
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
+pub fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -584,7 +582,7 @@ pub extern "C" fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i32 {
+pub fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -594,7 +592,7 @@ pub extern "C" fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i3
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_mkdir_internal(path: *const c_char, pwm: u64) -> i32 {
+pub fn hvfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
     let hvfs = get_hvfs();
@@ -602,13 +600,13 @@ pub extern "C" fn hvfs_mkdir_internal(path: *const c_char, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_sync_internal() -> i32 {
+pub fn hvfs_sync_internal() -> i32 {
     let hvfs = get_hvfs();
     hvfs.sync()
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_get_stats_internal(
+pub fn hvfs_get_stats_internal(
     total_blocks: *mut u32,
     free_blocks: *mut u32,
     total_nodes: *mut u32,
@@ -633,27 +631,27 @@ pub extern "C" fn hvfs_get_stats_internal(
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_set_current_dir_internal(_node_id: u32) {
+pub fn hvfs_set_current_dir_internal(_node_id: u32) {
     let hvfs = get_hvfs();
     hvfs.current_dir
         .store(_node_id as u64, core::sync::atomic::Ordering::Release);
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_get_current_dir_internal() -> u32 {
+pub fn hvfs_get_current_dir_internal() -> u32 {
     let hvfs = get_hvfs();
     hvfs.current_dir.load(core::sync::atomic::Ordering::Acquire) as u32
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_set_current_pwm_internal(pwm: u64) {
+pub fn hvfs_set_current_pwm_internal(pwm: u64) {
     let hvfs = get_hvfs();
     hvfs.current_pwm
         .store(pwm, core::sync::atomic::Ordering::Release);
 }
 
 #[no_mangle]
-pub extern "C" fn hvfs_get_current_pwm_internal() -> u64 {
+pub fn hvfs_get_current_pwm_internal() -> u64 {
     let hvfs = get_hvfs();
     hvfs.current_pwm.load(core::sync::atomic::Ordering::Acquire)
 }
@@ -663,12 +661,12 @@ pub extern "C" fn hvfs_get_current_pwm_internal() -> u64 {
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn vfs_barrier_capture() {
+pub fn vfs_barrier_capture() {
     VFS_MANAGER.capture_snapshot();
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_barrier_restore() -> i32 {
+pub fn vfs_barrier_restore() -> i32 {
     VFS_MANAGER.restore_from_snapshot();
     1
 }
@@ -678,47 +676,47 @@ pub extern "C" fn vfs_barrier_restore() -> i32 {
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn vfs_init() {
+pub fn vfs_init() {
     vfs_init_internal();
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_mount(path: *const c_char, fs_name: *const c_char) -> i32 {
+pub fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
     vfs_mount_internal(path, fs_name)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_open(path: *const c_char, flags: u32, pwm: u64) -> i32 {
+pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {
     vfs_open_internal(path, flags, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_close(fd: u32) -> i32 {
+pub fn vfs_close(fd: u32) -> i32 {
     vfs_close_internal(fd)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
+pub fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
     vfs_read_internal(fd, buf, count)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
+pub fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
     vfs_write_internal(fd, buf, count)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_stat(path: *const c_char, st: *mut VfsStat, pwm: u64) -> i32 {
+pub fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     vfs_stat_internal(path, st, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_mkdir(path: *const c_char, pwm: u64) -> i32 {
+pub fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
     vfs_mkdir_internal(path, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_chmod(path: *const c_char, mode: u16, pwm: u64) -> i32 {
+pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
@@ -743,13 +741,13 @@ pub extern "C" fn vfs_chmod(path: *const c_char, mode: u16, pwm: u64) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_chown(path: *const c_char, owner_pwm: u64, pwm: u64) -> i32 {
+pub fn vfs_chown(path: *const u8, owner_pwm: u64, pwm: u64) -> i32 {
     vfs_chown_ext(path, owner_pwm, 0, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_chown_ext(
-    path: *const c_char,
+pub fn vfs_chown_ext(
+    path: *const u8,
     owner_pwm: u64,
     group_pwm: u64,
     pwm: u64,
@@ -782,7 +780,7 @@ pub extern "C" fn vfs_chown_ext(
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
+pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
     let fd_usize = fd as usize;
     if fd_usize >= 256 {
         return -9;
@@ -806,12 +804,12 @@ pub extern "C" fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_unlink(path: *const c_char, pwm: u64) -> i32 {
+pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
     vfs_unlink_internal(path, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_rename(old: *const c_char, new: *const c_char, pwm: u64) -> i32 {
+pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(old);
     let new_path = ptr_to_str(new);
     let pwm = resolve_pwm(pwm);
@@ -852,32 +850,32 @@ pub extern "C" fn vfs_rename(old: *const c_char, new: *const c_char, pwm: u64) -
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_rmdir(path: *const c_char, pwm: u64) -> i32 {
+pub fn vfs_rmdir(path: *const u8, pwm: u64) -> i32 {
     vfs_rmdir_internal(path, pwm)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
+pub fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     vfs_readdir_internal(fd, entry)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_sync() -> i32 {
+pub fn vfs_sync() -> i32 {
     hvfs_sync_internal()
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_get_cwd(buf: *mut c_char, size: u32) -> i32 {
+pub fn vfs_get_cwd(buf: *mut u8, size: u32) -> i32 {
     vfs_get_cwd_internal(buf, size)
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_set_cwd(path: *const c_char) {
+pub fn vfs_set_cwd(path: *const u8) {
     vfs_set_cwd_internal(path);
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
+pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let whence = VfsSeekWhence::from_u32(whence);
     let fd_info = VFS_MANAGER.get_fd_info(fd as usize);
     let current_offset = fd_info.map(|(_, off, _)| off).unwrap_or(0);
@@ -911,12 +909,12 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_fd_table() -> *const core::ffi::c_void {
-    VFS_MANAGER.fd_table.lock().as_ptr() as *const core::ffi::c_void
+pub fn vfs_fd_table() -> *const u8 {
+    VFS_MANAGER.fd_table.lock().as_ptr() as *const u8
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_format_internal(path: *const c_char, fs_type: *const c_char) -> i32 {
+pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
     let fs_type_str = ptr_to_str(fs_type);
     let _path = ptr_to_str(path);
 
@@ -951,7 +949,7 @@ pub extern "C" fn vfs_format_internal(path: *const c_char, fs_type: *const c_cha
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
+pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
     let fd_usize = fd as usize;
     if fd_usize >= 256 {
         return -9;
@@ -1029,7 +1027,7 @@ pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn vfs_dup(oldfd: u32) -> i32 {
+pub fn vfs_dup(oldfd: u32) -> i32 {
     let old_usize = oldfd as usize;
     if old_usize >= 256 {
         return -9;
@@ -1048,7 +1046,7 @@ pub extern "C" fn vfs_dup(oldfd: u32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
+pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
     let old_usize = oldfd as usize;
     let new_usize = newfd as usize;
     if old_usize >= 256 || new_usize >= 256 {

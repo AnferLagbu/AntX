@@ -630,7 +630,7 @@ pub extern "C" fn keyboard_init() {
         crate::kernel::chitin::ChitinProto::Input,
         None,
         Some(1),
-        raw_ptr as *mut core::ffi::c_void,
+        raw_ptr as *mut u8,
         crate::kernel::chitin::ChitinOps::Input(&PS2_KEYBOARD_INPUT_OPS),
     );
 
@@ -795,19 +795,19 @@ mod tests {
 
 use crate::kernel::chitin::proto_input::InputOps;
 
-unsafe fn kb_input_read(driver_data: *mut core::ffi::c_void) -> Option<u8> {
+unsafe fn kb_input_read(driver_data: *mut u8) -> Option<u8> {
     if driver_data.is_null() { return None; }
     let kb = &mut *(driver_data as *mut KeyboardDriver);
     kb.read_char()
 }
 
-unsafe fn kb_input_has(driver_data: *mut core::ffi::c_void) -> bool {
+unsafe fn kb_input_has(driver_data: *mut u8) -> bool {
     if driver_data.is_null() { return false; }
     let kb = &*(driver_data as *const KeyboardDriver);
     !kb.is_buffer_empty()
 }
 
-unsafe fn kb_input_irq(driver_data: *mut core::ffi::c_void) {
+unsafe fn kb_input_irq(driver_data: *mut u8) {
     if driver_data.is_null() { return; }
     let kb = &mut *(driver_data as *mut KeyboardDriver);
     kb.handle_interrupt();

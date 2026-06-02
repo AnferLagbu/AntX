@@ -4,6 +4,7 @@
 //! 功能等价于 POSIX semaphores
 
 use super::types::*;
+use crate::kernel::proc::api::process_get_current_pid;
 
 /// 查找空闲信号量槽位
 unsafe fn sem_find_free(namespace: &mut IpcNamespace) -> Option<&'static mut Semaphore> {
@@ -167,13 +168,10 @@ pub fn sem_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
 
 /// FFI: 创建信号量
 #[no_mangle]
-pub extern "C" fn ipc_sem_create(count: u32, max_count: u32) -> IpcId {
+pub fn ipc_sem_create(count: u32, max_count: u32) -> IpcId {
     use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
     unsafe {
-        extern "C" {
-            fn process_get_current_pid() -> u32;
-        }
         let pid = process_get_current_pid();
 
         match sem_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, count, max_count, pid) {
@@ -185,7 +183,7 @@ pub extern "C" fn ipc_sem_create(count: u32, max_count: u32) -> IpcId {
 
 /// FFI: 等待信号量 (P 操作)
 #[no_mangle]
-pub extern "C" fn ipc_sem_wait(id: IpcId) -> i32 {
+pub fn ipc_sem_wait(id: IpcId) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
@@ -198,7 +196,7 @@ pub extern "C" fn ipc_sem_wait(id: IpcId) -> i32 {
 
 /// FFI: 释放信号量 (V 操作)
 #[no_mangle]
-pub extern "C" fn ipc_sem_post(id: IpcId) -> i32 {
+pub fn ipc_sem_post(id: IpcId) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
@@ -211,7 +209,7 @@ pub extern "C" fn ipc_sem_post(id: IpcId) -> i32 {
 
 /// FFI: 销毁信号量
 #[no_mangle]
-pub extern "C" fn ipc_sem_destroy(id: IpcId) -> i32 {
+pub fn ipc_sem_destroy(id: IpcId) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 

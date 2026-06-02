@@ -176,7 +176,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub fn _start() -> ! {
     println("[fbterm] Starting user-space terminal...");
 
     let mut info = FbInfo { phys_addr: 0, size: 0, width: 0, height: 0, pitch: 0, bpp: 0, _pad: [0; 3] };

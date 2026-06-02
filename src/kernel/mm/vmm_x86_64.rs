@@ -95,7 +95,7 @@ impl VirtualMemoryManager {
 
         KERNEL_PML4.store(cr3, Ordering::Release);
 
-        super::ffi::kernel_pml4.store(cr3, Ordering::Release);
+        super::api::kernel_pml4.store(cr3, Ordering::Release);
     }
 
     pub fn map_page(

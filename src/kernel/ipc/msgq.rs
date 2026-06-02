@@ -4,6 +4,7 @@
 //! 功能等价于 System V 消息队列
 
 use super::types::*;
+use crate::kernel::proc::api::process_get_current_pid;
 use alloc::alloc::{alloc, dealloc, Layout};
 
 /// 查找空闲消息队列槽位
@@ -277,13 +278,10 @@ pub fn msgq_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), 
 
 /// FFI: 创建消息队列
 #[no_mangle]
-pub extern "C" fn ipc_msgq_create(perm: i32) -> IpcId {
+pub fn ipc_msgq_create(perm: i32) -> IpcId {
     unsafe {
         use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
-        extern "C" {
-            fn process_get_current_pid() -> u32;
-        }
         let pid = process_get_current_pid();
 
         match msgq_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, perm, pid) {
@@ -295,13 +293,10 @@ pub extern "C" fn ipc_msgq_create(perm: i32) -> IpcId {
 
 /// FFI: 发送消息
 #[no_mangle]
-pub extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
+pub fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
-        extern "C" {
-            fn process_get_current_pid() -> u32;
-        }
         let pid = process_get_current_pid();
 
         let slice = if data.is_null() || size == 0 {
@@ -319,7 +314,7 @@ pub extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u6
 
 /// FFI: 接收消息
 #[no_mangle]
-pub extern "C" fn ipc_msgq_recv(
+pub fn ipc_msgq_recv(
     id: IpcId,
     type_out: *mut u64,
     data: *mut u8,
@@ -355,7 +350,7 @@ pub extern "C" fn ipc_msgq_recv(
 
 /// FFI: 销毁消息队列
 #[no_mangle]
-pub extern "C" fn ipc_msgq_destroy(id: IpcId) -> i32 {
+pub fn ipc_msgq_destroy(id: IpcId) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 

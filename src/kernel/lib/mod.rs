@@ -58,7 +58,9 @@
 /// ├── driver/           # 使用 lib 的设备驱动
 /// └── net/              # 使用 lib 的网络子系统
 /// ```
+pub mod cstr;
 pub mod string;
 
 // 导出常用函数，方便通过 crate::kernel::lib::* 直接使用
+pub use cstr::*;
 pub use string::*;

@@ -43,16 +43,16 @@ pub(crate) struct RegisteredDomain {
     id: DomainId,
     name: String,
     deps: &'static [DomainId],
-    save_fn: unsafe extern "C" fn(),
-    restore_fn: unsafe extern "C" fn(),
-    reset_fn: unsafe extern "C" fn(),
+    save_fn: unsafe fn(),
+    restore_fn: unsafe fn(),
+    reset_fn: unsafe fn(),
 }
 
 impl RegisteredDomain {}
 
-extern "C" fn save_stub() {}
-extern "C" fn restore_stub() {}
-extern "C" fn reset_stub() {}
+fn save_stub() {}
+fn restore_stub() {}
+fn reset_stub() {}
 
 pub struct RecoveryRegistry {
     pub(crate) registered: Vec<RegisteredDomain>,
@@ -85,9 +85,9 @@ pub fn recovery_domain_register(
     name: &'static str,
     prefer_id: DomainId,
     deps: &'static [DomainId],
-    save_fn: unsafe extern "C" fn(),
-    restore_fn: unsafe extern "C" fn(),
-    reset_fn: unsafe extern "C" fn(),
+    save_fn: unsafe fn(),
+    restore_fn: unsafe fn(),
+    reset_fn: unsafe fn(),
 ) -> DomainId {
     let mut reg = RECOVERY_REGISTRY.lock();
     let id = if prefer_id != 0 {

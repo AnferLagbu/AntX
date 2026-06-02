@@ -587,7 +587,7 @@ pub extern "C" fn serial_putc(com: u32, ch: i32) {
 
 /// 发送字符串到串口 (C 兼容接口)
 #[no_mangle]
-pub extern "C" fn serial_puts(com: u32, s: *const core::ffi::c_char) {
+pub extern "C" fn serial_puts(com: u32, s: *const u8) {
     if (com as usize) < MAX_COM_PORTS && !s.is_null() {
         unsafe {
             if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
@@ -664,7 +664,7 @@ pub extern "C" fn serial_has_data(com: i32) -> bool {
 /// # Safety
 ///
 /// Serial port has been initialized via `serial_init()`. Only valid in kernel context.
-pub unsafe extern "C" fn serial_write(com: i32, buf: *const core::ffi::c_void, count: u64) {
+pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) {
     let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
     for &b in bytes {
         serial_putc(com as u32, b as i32);
@@ -781,7 +781,7 @@ mod tests {
 
 use crate::kernel::chitin::proto_char::CharOps;
 
-unsafe fn serial_char_write(driver_data: *mut core::ffi::c_void, buf: &[u8]) -> usize {
+unsafe fn serial_char_write(driver_data: *mut u8, buf: &[u8]) -> usize {
     if driver_data.is_null() { return 0; }
     let port = &*(driver_data as *const SerialPort);
     for &byte in buf {
@@ -796,7 +796,7 @@ unsafe fn serial_char_write(driver_data: *mut core::ffi::c_void, buf: &[u8]) -> 
     buf.len()
 }
 
-unsafe fn serial_char_read(driver_data: *mut core::ffi::c_void, buf: &mut [u8]) -> usize {
+unsafe fn serial_char_read(driver_data: *mut u8, buf: &mut [u8]) -> usize {
     if driver_data.is_null() { return 0; }
     let port = &*(driver_data as *const SerialPort);
     let mut count = 0;

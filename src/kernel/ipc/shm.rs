@@ -4,6 +4,7 @@
 //! 功能等价于 POSIX shmget/shmat/shmdt
 
 use super::types::*;
+use crate::kernel::proc::api::process_get_current_pid;
 
 /// 查找空闲共享内存段槽位
 unsafe fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&'static mut ShmSegment> {
@@ -62,7 +63,7 @@ pub fn shm_create_safe(
         // 计算需要的页数并分配物理内存
         let pages = size.div_ceil(4096);
 
-        let phys = crate::kernel::mm::ffi::pmm_alloc_pages(pages as usize);
+        let phys = crate::kernel::mm::api::pmm_alloc_pages(pages as usize);
 
         if phys.is_null() {
             return Err(-3);
@@ -187,8 +188,8 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
 
         // 释放物理页
         let pages = shm.size.div_ceil(4096);
-        crate::kernel::mm::ffi::pmm_free_pages(
-            shm.phys_addr as *mut core::ffi::c_void,
+        crate::kernel::mm::api::pmm_free_pages(
+            shm.phys_addr as *mut u8,
             pages as usize,
         );
 
@@ -207,13 +208,10 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
 
 /// FFI: 创建共享内存段
 #[no_mangle]
-pub extern "C" fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
+pub fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
     unsafe {
         use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
 
-        extern "C" {
-            fn process_get_current_pid() -> u32;
-        }
         let pid = process_get_current_pid();
 
         match shm_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, size, perm, pid) {
@@ -225,19 +223,16 @@ pub extern "C" fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
 
 /// FFI: 附加共享内存段
 #[no_mangle]
-pub extern "C" fn ipc_shm_attach(id: IpcId, addr: *mut *mut core::ffi::c_void) -> i32 {
+pub fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
-        extern "C" {
-            fn process_get_current_pid() -> u32;
-        }
         let pid = process_get_current_pid();
 
         match shm_attach_safe(&mut IPC_NAMESPACE, id, pid) {
             Ok(phys_addr) => {
                 if !addr.is_null() {
-                    *addr = phys_addr as *mut core::ffi::c_void;
+                    *addr = phys_addr as *mut u8;
                 }
                 0
             }
@@ -248,13 +243,10 @@ pub extern "C" fn ipc_shm_attach(id: IpcId, addr: *mut *mut core::ffi::c_void) -
 
 /// FFI: 分离共享内存段
 #[no_mangle]
-pub extern "C" fn ipc_shm_detach(id: IpcId) -> i32 {
+pub fn ipc_shm_detach(id: IpcId) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 
-        extern "C" {
-            fn process_get_current_pid() -> u32;
-        }
         let pid = process_get_current_pid();
 
         match shm_detach_safe(&mut IPC_NAMESPACE, id, pid) {
@@ -266,7 +258,7 @@ pub extern "C" fn ipc_shm_detach(id: IpcId) -> i32 {
 
 /// FFI: 销毁共享内存段
 #[no_mangle]
-pub extern "C" fn ipc_shm_destroy(id: IpcId) -> i32 {
+pub fn ipc_shm_destroy(id: IpcId) -> i32 {
     unsafe {
         use crate::kernel::ipc::IPC_NAMESPACE;
 

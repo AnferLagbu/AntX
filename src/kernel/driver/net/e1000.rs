@@ -216,7 +216,7 @@ fn read_mac_address(dev: &mut E1000Device) {
 #[cfg(not(feature = "kernel_test"))]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     extern "C" {
-        fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi::c_void;
+        fn kmalloc_align(size: u64, align: u64) -> *mut u8;
     }
 
     let tx_size = core::mem::size_of::<E1000TxDesc>() * E1000_TX_RING_SIZE;
@@ -837,11 +837,13 @@ impl E1000Device {
 #[cfg(not(feature = "kernel_test"))]
 static E1000_DEVICE: Mutex<Option<Box<E1000Device>>> = Mutex::new(None);
 
+#[cfg(not(feature = "kernel_test"))]
 pub fn take_device() -> Option<Box<E1000Device>> {
     E1000_DEVICE.lock().take()
 }
 
-pub unsafe fn e1000_net_send(driver_data: *mut core::ffi::c_void, data: *const u8, len: u32) -> i32 {
+#[cfg(not(feature = "kernel_test"))]
+pub unsafe fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() { return -1; }
     let dev = &mut *(driver_data as *mut E1000Device);
     match dev.send_packet(core::slice::from_raw_parts(data, len as usize)) {
@@ -850,7 +852,8 @@ pub unsafe fn e1000_net_send(driver_data: *mut core::ffi::c_void, data: *const u
     }
 }
 
-pub unsafe fn e1000_net_recv(driver_data: *mut core::ffi::c_void, buf: *mut u8, buf_len: u32) -> i32 {
+#[cfg(not(feature = "kernel_test"))]
+pub unsafe fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return -1; }
     let dev = &mut *(driver_data as *mut E1000Device);
     let buf_slice = core::slice::from_raw_parts_mut(buf, buf_len as usize);
@@ -860,13 +863,15 @@ pub unsafe fn e1000_net_recv(driver_data: *mut core::ffi::c_void, buf: *mut u8, 
     }
 }
 
-pub unsafe fn e1000_net_get_mac(driver_data: *mut core::ffi::c_void, mac: &mut [u8; 6]) {
+#[cfg(not(feature = "kernel_test"))]
+pub unsafe fn e1000_net_get_mac(driver_data: *mut u8, mac: &mut [u8; 6]) {
     if driver_data.is_null() { return; }
     let dev = &*(driver_data as *const E1000Device);
     *mac = dev.mac;
 }
 
-pub unsafe fn e1000_net_irq(driver_data: *mut core::ffi::c_void) {
+#[cfg(not(feature = "kernel_test"))]
+pub unsafe fn e1000_net_irq(driver_data: *mut u8) {
     if driver_data.is_null() { return; }
     let dev = &mut *(driver_data as *mut E1000Device);
     dev.handle_interrupt();
@@ -874,7 +879,7 @@ pub unsafe fn e1000_net_irq(driver_data: *mut core::ffi::c_void) {
 
 #[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
-pub extern "C" fn e1000_irq_entry(_frame: *mut core::ffi::c_void) {
+pub extern "C" fn e1000_irq_entry(_frame: *mut u8) {
     // IRQ 上下文使用 try_lock 避免与主代码路径死锁
     if let Some(mut guard) = E1000_DEVICE.try_lock() {
         if let Some(ref mut dev) = *guard {
@@ -911,7 +916,7 @@ pub extern "C" fn e1000_probe() -> i32 {
                     crate::kernel::chitin::ChitinProto::Net,
                     Some(dev.mmio_phys),
                     Some(dev.irq),
-                    raw_ptr as *mut core::ffi::c_void,
+                    raw_ptr as *mut u8,
                     crate::kernel::chitin::ChitinOps::Net(&E1000_NET_OPS),
                 );
                 *E1000_DEVICE.lock() = Some(dev);
@@ -930,9 +935,9 @@ pub extern "C" fn e1000_probe() -> i32 {
 
 #[cfg(not(feature = "kernel_test"))]
 #[no_mangle]
-pub extern "C" fn get_e1000_instance() -> *mut core::ffi::c_void {
+pub extern "C" fn get_e1000_instance() -> *mut u8 {
     match &mut *E1000_DEVICE.lock() {
-        Some(ref mut dev) => dev as *mut _ as *mut core::ffi::c_void,
+        Some(ref mut dev) => dev as *mut _ as *mut u8,
         None => core::ptr::null_mut(),
     }
 }
@@ -1032,7 +1037,7 @@ static mut KALLOC_OFF: usize = 0;
 /// # Safety
 ///
 /// `reg` is a valid MMIO register offset within the BAR0 region. The device has been probed and MMIO region mapped.
-pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi::c_void {
+pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };
     let base = KALLOC_BUF.data.as_mut_ptr() as usize;
@@ -1043,7 +1048,7 @@ pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut core::ffi:
         return core::ptr::null_mut();
     }
     KALLOC_OFF += padding;
-    let ptr = KALLOC_BUF.data.as_mut_ptr().add(KALLOC_OFF) as *mut core::ffi::c_void;
+    let ptr = KALLOC_BUF.data.as_mut_ptr().add(KALLOC_OFF) as *mut u8;
     KALLOC_OFF += s;
     ptr
 }

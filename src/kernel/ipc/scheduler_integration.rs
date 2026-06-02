@@ -6,6 +6,7 @@
 //! - 支持超时等待
 
 use super::types::{WaitQueue, WaitQueueItem};
+use crate::kernel::proc::api::{scheduler_yield_ex, thread_get_current};
 
 /// 阻塞当前线程到指定等待队列
 ///
@@ -22,9 +23,6 @@ use super::types::{WaitQueue, WaitQueueItem};
 #[inline]
 pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Result<(), i32> {
     unsafe {
-        extern "C" {
-            fn thread_get_current() -> u64;
-        }
         let thread_addr = thread_get_current();
 
         if thread_addr != 0 {
@@ -35,9 +33,6 @@ pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Res
             wait_queue.add(item);
 
             // 让出 CPU (调用扩展调度器)
-            extern "C" {
-                fn scheduler_yield_ex();
-            }
             scheduler_yield_ex();
 
             // 被唤醒后返回
@@ -110,9 +105,6 @@ pub fn block_with_timeout(wait_queue: &mut WaitQueue, timeout_ms: u64) -> Result
 
         // 短暂让出 CPU (避免忙等待占用过多资源)
         unsafe {
-            extern "C" {
-                fn scheduler_yield_ex();
-            }
             scheduler_yield_ex();
         }
     }
