@@ -39,7 +39,9 @@ use super::caps::get_config_summary;
 
 const ENCODED_LEN: usize = 64;
 const HEADER_MAGIC: u32 = 0xC0FFEE01;
-const TAIL_MAGIC: [u8; 4] = [0xEE, 0xFF, 0xC0, 0x01];
+/// 8 字节尾部 magic: 前 4 字节为可识别签名, 后 4 字节保留 0 (用于 8 字节对齐)
+/// 与文件头注释中的 `0xEE_FF_C0_01_00_00_00_00` 完全对应, 即便没有 `fill(0)` 也安全。
+const TAIL_MAGIC: [u8; 8] = [0xEE, 0xFF, 0xC0, 0x01, 0x00, 0x00, 0x00, 0x00];
 
 /// Global "boot image" — populated once by `init()`.
 pub static BOOT_IMAGE: spin::Mutex<[u8; ENCODED_LEN]> =

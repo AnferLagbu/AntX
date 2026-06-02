@@ -16,10 +16,9 @@ pub mod smoltcp_impl;
 /// ```text
 /// src/net/
 /// |-- mod.rs          # 模块导出
-/// |-- types.rs        # 类型定义、常量
-/// |-- smoltcp_impl.rs # Device trait 实现 + NetNic 枚举
+/// |-- types.rs        # 公共状态 (NET_READY / NET_CONFIGURED)
+/// |-- smoltcp_impl.rs # Device trait 实现 + ChitinNetDevice
 /// |-- init.rs         # 初始化状态机 + DHCP + Socket API
-/// |-- utils.rs        # 工具函数 (校验和/atoi/字节序)
 /// +-- driver/         # 网卡驱动重新导出 → kernel::driver::net
 /// +-- smoltcp/        # smoltcp 协议栈源码
 /// ```
@@ -30,13 +29,7 @@ pub mod smoltcp_impl;
 // ============================================================================
 // 核心模块
 // ============================================================================
-pub mod types; // 基础类型、常量 (始终编译)
-
-// ============================================================================
-// 工具模块
-// ============================================================================
-
-pub mod utils; // 网络工具函数 (atoi/checksum/字节序等)
+pub mod types; // 公共状态 (NET_READY / NET_CONFIGURED)
 
 // ============================================================================
 // 公共 API 导出

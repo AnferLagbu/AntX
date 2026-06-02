@@ -132,7 +132,7 @@ fn handle_client(fd: i32, resp: &mut [u8]) {
 <body>
 <h1>About AntX</h1>
 <p>AntX is a microkernel operating system written in Rust and C.</p>
-<p>This HTTP server is a demonstration of the networking stack built on lwIP.</p>
+<p>This HTTP server is a demonstration of the networking stack built on smoltcp.</p>
 <p><a href=\"/\">Back</a></p>
 </body></html>");
     } else {

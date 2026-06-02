@@ -22,7 +22,7 @@
 
 // 4. FFI 边界 - C/Rust 互操作不可避免
 #![allow(improper_ctypes)]
-// 3个: IrqSaveFlags, SysProt 等 FFI 类型
+// 3个: IrqSaveFlags, FFI 类型
 
 // 5. 安全相关 - 已通过代码审查确认安全
 #![allow(unused_unsafe)]
@@ -469,7 +469,7 @@ pub extern "C" fn kernel_init() {
         crate::kernel::fs::vfs::init();
         crate::klog_boot_info!("VFS ready");
 
-        // 10. Network (lwIP + 网卡驱动)
+        // 10. Network (smoltcp + 网卡驱动)
         // x86_64: E1000 PCI 网卡驱动
         // aarch64: virtio-net MMIO 网卡驱动
         {

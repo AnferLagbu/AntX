@@ -35,8 +35,6 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     {
         #[cfg(target_arch = "x86_64")]
         {
-            crate::kernel::net::types::sys_tick_inc();
-
             // smoltcp: 始终轮询
             unsafe {
                 crate::kernel::net::init::poll_network();
