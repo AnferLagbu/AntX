@@ -59,5 +59,10 @@ pub fn register_tests() {
             "descriptor_sizes": net_e1000_descriptor_sizes,
             "virt_to_phys": net_virt_to_phys,
         },
+        "net::utils": {
+            "hton_ntoh": net_hton_ntoh,
+            "byteorder": net_byteorder,
+            "mac_formatting": net_mac_formatting,
+        },
     }
 }

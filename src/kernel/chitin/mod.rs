@@ -1,6 +1,28 @@
-//! 几丁质设备驱动框架 (Chitin Driver Framework)
+//! 几丁质设备驱动框架 (Chitin Driver Framework) — **API 层**
 //!
 //! QueenX 的统一设备驱动模型 — 唯一的注册/发现/初始化/I/O 入口。
+//! 本文件是 AntX 的 **API 层**(见 `docs/development/api-rs-guideline.md`)。
+//!
+//! ## 调用方契约
+//! - `driver::framework::Driver` —— 驱动实现者
+//! - `fs::hvfs` —— 通过 `proto_block` 读块设备
+//! - `fs::ramfs/devfs` —— 通过 `chitin_register_driver` 暴露设备节点
+//! - `net::e1000/virtio` —— 通过 `proto_net` 注册网卡
+//! - `proc::session` —— 通过 `user_driver` 暴露用户态驱动接口
+//! - `host-tests` —— host 端设备测试桩
+//!
+//! ## 内部接口
+//! - `proto_block/char/input/net` —— 协议族,函数指针表(类 Linux `struct ops`)
+//! - `CHITIN_DEVICES` —— 全局注册表,spinlock 保护
+//!
+//! ## 安全约束
+//! - `chitin_register_*` 必须在启动早期单线程上下文调用
+//! - `chitin_blk_read/write` 等 IO 路径可在中断上下文调用,但调用方负责
+//!   buffer 生命周期
+//!
+//! ## 性能特征
+//! - 注册表: `Vec<ChitinDevice>` + spinlock,O(N) 查找(N ≤ 64)
+//! - 协议调用: 静态分发,无 vtable 开销
 //!
 //! - **ChitinProto**: 设备协议分类 (Block/Char/Net/Input/Bus/Other)
 //! - **ChitinOps**: 协议级 I/O 操作表 (函数指针, 零开销)

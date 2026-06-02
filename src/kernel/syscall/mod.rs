@@ -453,8 +453,11 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 ///
 /// # Safety
 ///
-/// Caller is in kernel context. `addr` is a validated user-space address.
-pub unsafe extern "C" fn syscall_register(_num: u64, _handler: SyscallHandler) {}
+/// 动态注册 syscall 处理器的入口,被 asm stub 间接调用。`_handler` 是
+/// Rust 函数指针 (`fn(u64, u64, u64, u64) -> i64`),**不是** C ABI 类型,
+/// 因此函数本身必须用 `extern "Rust"` 标记,否则编译器会报
+/// `improper_ctypes_definitions`。
+pub unsafe extern "Rust" fn syscall_register(_num: u64, _handler: SyscallHandler) {}
 
 // ============================================================================
 // 文件 I/O — read / write / open / close

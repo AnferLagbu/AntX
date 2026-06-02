@@ -1,3 +1,23 @@
+//! 故障恢复 API (Recovery Barrier 对外接口)
+//!
+//! ## 调用方契约
+//! - 各可恢复子系统注册: `hvfs`、`fs`、`net`、`proc` 等
+//! - `proc::scheduler::tick` —— 周期 tick 推进恢复
+//! - `idt::on_panic` —— panic 路径触发 IDT 级别恢复
+//! - 启动流程: `boot` 阶段调用 `recovery_barrier_maintenance` 启动后台 tick
+//!
+//! ## 内部接口
+//! - `RecoveryDomain` trait/struct 在 `barrier::domain`,本文件是 C ABI
+//!   友好的入口层。`#[no_mangle]` 函数供 asm stub / FFI 边界调用。
+//!
+//! ## 安全约束
+//! - `recovery_*` 函数内部使用 `RECOVERY_MANAGER.lock()`,**不**可在
+//!   中断上下文调用除 `recovery_panic_flag_*` 外的函数。
+//! - `recovery_panic_flag_*` 是无锁 atomic,可在任何上下文使用。
+//!
+//! ## 性能特征
+//! - `recovery_*` 路径: spinlock + 数组线性扫描 O(N),N ≤ 16 域,常数时间
+//! - `recovery_panic_flag_*`: atomic load/store,无锁
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::domain::RecoveryDomain;

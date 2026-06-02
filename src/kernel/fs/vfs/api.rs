@@ -1,8 +1,41 @@
+//! VFS 对外 API (syscall 边界)
+//!
+//! ## 调用方契约
+//! - `syscall::sys_read/write/open/close` —— 用户态文件操作
+//! - `proc::exec::load_elf` —— 加载 ELF 时通过 VFS 读文件
+//! - `credo::storage` —— 持久化身份数据
+//! - `host-tests` —— host 端单元测试
+//!
+//! ## 内部接口
+//! - `vfs_*_internal` 是核心实现,**不对外**;`#[no_mangle]` 的 `vfs_*`
+//!   函数将指针参数 (来自用户态/asm) 转为 `&str` 后委托给内部实现。
+//!
+//! ## 安全约束
+//! - 所有 `*_internal` 函数在调用前已验证指针非空与字符串 UTF-8
+//!   (委托给 [`CStrExt::as_kstr`])。
+//! - `&[u8]` buffer 长度由调用方提供,实现按需截断,不会越界写。
+//!
+//! ## 性能特征
+//! - 静态分发,无 vtable 开销
+//! - 字符串路径解析纯栈上,无堆分配 (除路径 split 时 alloc::string)
 use super::types::*;
 use super::vfs::VFS_MANAGER;
 use crate::kernel::fs::hvfs::hvfs::get_hvfs;
 use crate::kernel::fs::ramfs::ramfs::RAMFS_DATA;
 use crate::kernel::lib::cstr::CStrExt;
+
+// ============================================================================
+// 对外契约: Vfs trait (用于 trait-object 注册 / host 端测试)
+// ============================================================================
+//
+// 注: 此 trait 是 **声明性契约**,不替换现有 #[no_mangle] 函数。内部
+// `vfs_*_internal` 仍是真实入口;`Vfs` trait 为未来 hot-swap / mock 测试
+// 预留接口边界,impl 见 fs::ramfs/ramfs::RamFs 等。
+pub trait Vfs: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn mount(&self, path: &str) -> KernelResult<()>;
+    fn unmount(&self) -> KernelResult<()>;
+}
 
 const TEST_PWM: u64 = 0x0020F45A8B978417;
 static RAMFS_MOUNTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
