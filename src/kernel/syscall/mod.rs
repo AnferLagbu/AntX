@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+pub mod api;
 pub mod mmap;
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
@@ -13,11 +14,11 @@ use spin::Mutex;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
-fn validate_user_ptr(ptr: u64) -> bool {
+pub fn validate_user_ptr(ptr: u64) -> bool {
     ptr > 0 && ptr < USER_ADDR_MAX
 }
 
-fn validate_user_buf(ptr: u64, len: u64) -> bool {
+pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
     if len == 0 {
         return true;
     }

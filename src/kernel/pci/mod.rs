@@ -42,6 +42,7 @@ use spin::Mutex;
 
 use core::fmt;
 
+pub mod api;
 pub mod hotplug;
 
 // ── Port I/O primitives (x86_64 only) ──

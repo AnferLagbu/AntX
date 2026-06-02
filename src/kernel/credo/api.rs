@@ -1,3 +1,42 @@
+//! Credo 身份与权限框架 API 层
+//!
+//! 统一的身份管理 (PWM) / 能力矩阵 / 会话管理 / 审计入口,
+//! 是 QueenX 安全子系统的对外契约面。
+//!
+//! ## 调用方契约
+//! - `syscall::mod` —— `SYS_CREDO_LOGIN/LOGOUT/CREATE/DELETE/GRANT/REVOKE/CHECK_CAP` 等
+//! - `fs::vfs` —— `vfs_open/write` 等文件操作前调用 `pwm_get_current()` 获取权限上下文
+//! - `proc::api` —— 进程创建时分配 PWM, 销毁时回收
+//! - `net::init` —— socket 操作前的权限校验
+//! - `barrier::recovery` —— 会话状态纳入恢复域
+//! - `console::gfx_console` —— 登录交互
+//!
+//! ## 内部接口
+//! - `identity.rs` —— `IdentityTable`, PWM 生命周期管理
+//! - `engine.rs` —— 能力检查引擎 (`check`/`get_caps`/`grant`/`revoke`)
+//! - `session.rs` —— 会话管理器
+//! - `storage.rs` —— 持久化 (sha256 + 序列化)
+//! - `audit.rs` —— 审计日志
+//! - `capability.rs` —— CapDomain / CapBits 能力矩阵
+//!
+//! ## 安全约束
+//! - `pwm_init()` 必须单线程调用且只能调用一次 (AtomicBool 保护)
+//! - 所有 `pwm_*` 函数内部使用 `identity::get_table()` 获取全局单例
+//! - 密码传递走 `*const u8` C 风格字符串, 在入口处做 null 检查
+//! - 能力检查在 engine 层用位运算, 无锁 (AtomicU64 矩阵)
+//!
+//! ## 性能特征
+//! - 能力检查: O(1) 位运算, ≤ 5ns
+//! - 身份查找: O(1) 哈希表
+//! - 密码验证: SHA-256 计算, ~1μs
+//!
+//! ## 设计理念
+//! - 无 Root 概念, 细粒度 CapDomain 矩阵
+//! - 支持委托 (grant) 与撤销 (revoke)
+//! - 完整审计追踪
+//!
+//! 所有公开函数使用 `#[no_mangle]` 以保证跨模块符号名稳定。
+
 use super::audit;
 use super::engine;
 use super::identity;

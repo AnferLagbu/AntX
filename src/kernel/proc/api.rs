@@ -1,5 +1,30 @@
-#![allow(dead_code)]
-use u8;
+//! 进程管理子系统 API 层
+//!
+//! 为内核其它模块提供进程/线程/调度的统一入口。
+//!
+//! ## 调用方契约
+//! - `syscall::mod` —— fork/execve/exit/wait4/kill/getpid 等系统调用
+//! - `syscall::mmap` —— mmap 通过 `process_get_current_pid` 获取当前进程
+//! - `ipc::pipe/shm/signal` —— IPC 操作需关联当前进程 PID 和 PWM
+//! - `barrier::recovery` —— 进程域纳入栏栈恢复
+//! - `credo::session` —— 会话管理器注册/注销进程
+//! - `fs::procfs` —— `/proc` 文件系统读取进程列表
+//!
+//! ## 安全约束
+//! - `CURRENT_PROCESS_PTR` 用 AtomicU64 无锁读写,但 `C_CURRENT_PROCESS` 是 unsafe static mut
+//! - `process_get_current()` 懒初始化 init 进程 (pid=1)
+//! - `process_exit()` 必须在内核态调用,退出前切换到内核 CR3
+//! - `PROCESS_TABLE` / `SCHEDULER` 均为全局单例,内部有锁保护
+//!
+//! ## 性能特征
+//! - 进程查找: O(1) 哈希表
+//! - 进程创建: O(N) PID 扫描 (N ≤ 65536)
+//! - 上下文切换: asm stub, ~200 CPU cycles
+//!
+//! 设计目标:
+//! - 隐藏内部实现细节(scheduler/scheduler_ex/process/thread)
+//! - `#[no_mangle]` 提供稳定的跨模块符号名
+//! - 错误路径返回 -1 / null,调用方按需检查
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::process::{Process, PROCESS_TABLE};

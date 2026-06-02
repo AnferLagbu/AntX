@@ -3,6 +3,26 @@
 //! 为内核其它模块提供统一的内存分配/释放/映射接口。
 //! 所有公开函数都使用 `#[no_mangle]` 以保证符号名稳定,方便跨模块直接调用。
 //!
+//! ## 调用方契约
+//! - `proc::api` —— 进程创建/销毁时的页表操作 (vmm_map_page / vmm_unmap_page)
+//! - `proc::elf` —— ELF 加载时的 COW 页表克隆 (vmm_clone_user_page_table_cow)
+//! - `fs::ramfs` / `fs::hvfs` —— 文件系统页缓存分配 (pmm_alloc_page / pmm_free_page)
+//! - `ipc::shm` —— 共享内存段的物理页映射
+//! - `driver::*` —— 各驱动的 DMA 缓冲区分配
+//! - `credo::storage` —— 持久化数据写入时的内存申请
+//!
+//! ## 安全约束
+//! - 所有指针参数在函数入口处做 is_null 检查
+//! - `pmm_alloc_*` 返回 null 时调用方必须处理 OOM
+//! - `vmm_map_page` 不检查地址冲突,调用方负责确保不重复映射
+//! - 物理页分配器 (PM) 由 spinlock 保护,可在中断上下文调用
+//! - 页表操作 (VMM) 不可在中断上下文调用 (需要锁)
+//!
+//! ## 性能特征
+//! - PM 分配: 位图扫描 O(N), Buddy 优化后 O(log N)
+//! - Slab 分配: O(1) 缓存命中, 无锁 per-CPU 缓存
+//! - VMM 映射: 四级页表遍历 O(4), 常数时间
+//!
 //! 设计目标:
 //! - 隐藏内部实现细节(pmm/vmm/slab)
 //! - 提供纯 Rust 抽象,无 C ABI 依赖

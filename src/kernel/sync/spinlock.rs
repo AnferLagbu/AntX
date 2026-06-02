@@ -235,13 +235,20 @@ impl SpinLock {
     // ========================================================================
 
     #[cfg(debug_assertions)]
+    #[cfg(target_arch = "x86_64")]
     fn debug_acquire(&mut self) {
-        // 记录持有者栈指针
         let rsp: u64;
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nostack, nomem)) };
         self.inner.owner = rsp as *const ();
+        self.inner.acquire_time = crate::arch!(timestamp());
+    }
 
-        // 记录获取时间 (TSC)
+    #[cfg(debug_assertions)]
+    #[cfg(target_arch = "aarch64")]
+    fn debug_acquire(&mut self) {
+        let sp: u64;
+        unsafe { core::arch::asm!("mov {}, sp", out(reg) sp, options(nostack, nomem)) };
+        self.inner.owner = sp as *const ();
         self.inner.acquire_time = crate::arch!(timestamp());
     }
 

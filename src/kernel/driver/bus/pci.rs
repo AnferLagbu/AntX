@@ -78,12 +78,6 @@ pub fn pci_device_count() -> usize {
     crate::kernel::pci::device_count()
 }
 
-#[no_mangle]
-pub fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
-    crate::kernel::pci::read_config_word(bus, dev, func, offset)
-}
-
-#[no_mangle]
-pub fn pci_write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
-    crate::kernel::pci::write_config_word(bus, dev, func, offset, val);
-}
+// Note: pci_read_config_word / pci_write_config_word C FFI symbols
+// are provided by `kernel::pci::mod` (`#[no_mangle] pub extern "C"`).
+// Re-exporting them here would cause duplicate symbols.

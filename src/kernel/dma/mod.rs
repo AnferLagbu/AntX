@@ -15,6 +15,7 @@ use crate::kernel::mm::{PhysAddr, VirtAddr};
 use core::ptr::{self};
 use core::sync::atomic::{AtomicU64, Ordering};
 
+pub mod api;
 pub mod engine;
 
 // Constants
