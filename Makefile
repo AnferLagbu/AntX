@@ -158,7 +158,7 @@ else
 # x86_64: 用 Cargo 构建 Rust 用户程序 + 内核
 # include_bytes! 编译时需要 init.bin 存在，确保用户程序先构建
 
-$(RUST_LIB): $(STAGE1_BIN) build/user/init.bin
+$(RUST_LIB): $(STAGE1_BIN) build/user/init.bin $(shell find src/rust/src -name '*.rs' 2>/dev/null)
 	@echo "Building Rust kernel module..."
 	@cd src/rust && cargo build --release --target $(RUST_TARGET)
 endif
@@ -537,7 +537,7 @@ test-smp: all user $(KERNEL_IMAGE)
 # QEMU 调试脚本支持 (QEMU Debug Script Support)
 # ============================================================================
 
-.PHONY: qemu-debug qemu-debug-gdb qemu-headless qemu-network driver-test
+.PHONY: qemu-debug qemu-debug-gdb qemu-headless qemu-network driver-test qemu-boot-test
 
 # 使用 QEMU 调试脚本启动 (正常模式)
 qemu-debug:
@@ -565,6 +565,12 @@ qemu-headless:
 qemu-network:
 	@chmod +x scripts/qemu_debug.sh
 	@./scripts/qemu_debug.sh -k build/kernel.flat -n
+
+# QEMU 真实启动测试 (双架构 Phase 3.5/3.6 门禁)
+# 用法: make qemu-boot-test [ARCH=x86_64|aarch64|all]
+qemu-boot-test:
+	@chmod +x scripts/qemu_boot_test.sh
+	@./scripts/qemu_boot_test.sh $(ARCH)
 
 # ============================================================================
 # 驱动测试 (Driver Tests)

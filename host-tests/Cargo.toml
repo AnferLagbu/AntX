@@ -28,3 +28,11 @@ path = "src/hvfs_test.rs"
 [[test]]
 name = "hvfs_persist"
 path = "src/persist_test.rs"
+
+[[test]]
+name = "iomem_alias"
+path = "src/iomem_alias.rs"
+
+[[test]]
+name = "dma_stream"
+path = "src/dma_stream.rs"

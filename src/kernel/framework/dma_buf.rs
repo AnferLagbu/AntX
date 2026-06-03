@@ -3,6 +3,7 @@
 //! 封装 DMA 缓冲区的分配/映射/释放, 确保:
 //! - 物理地址和虚拟地址的一致性 (x86 自动, aarch64 显式 cache flush)
 //! - DMA 缓冲区生命周期管理 (解除映射前无 CPU 写入)
+//! - 状态机: CPU 端写入 → 设备可见; 设备写入 → CPU 端可见
 //!
 //! ## 与 Asterinas OSTD `DmaStream` / `DmaCoherent` 的关系
 //!
@@ -10,9 +11,11 @@
 //!
 //! ## SAFETY 不变量
 //!
-//! - `DmaStream::sync()` 必须在 CPU 写入后、设备读取前调用 (非一致性架构)。
+//! - `DmaStream::sync_for_device()` 必须在 CPU 写入后、设备读取前调用 (非一致性架构)。
 //! - `DmaCoherent` 内存在整个生命周期内对设备和 CPU 都可见。
 //! - DMA 缓冲区持有的 Frame 引用计数防止物理页被重用。
+//! - 大小算术全部使用 `checked_add` 防溢出。
+//! - 同步方向与 DmaDirection 不匹配时返回错误, 防止状态机污染。
 
 use core::fmt;
 use core::ptr::NonNull;
@@ -24,10 +27,46 @@ use super::frame::Frame;
 /// DMA 传输方向
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DmaDirection {
+    /// CPU 写入 → 设备读取 (典型: 网卡发送, 磁盘写)
     ToDevice,
+    /// 设备写入 → CPU 读取 (典型: 网卡接收, 磁盘读)
     FromDevice,
+    /// 双向 (典型: 部分设备 scatter-gather)
     Bidirectional,
 }
+
+/// DMA 同步状态机
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncState {
+    /// 初始状态, CPU 可访问: ToDevice 表示 CPU 写完, FromDevice 表示 CPU 可读
+    CpuReady,
+    /// 已 sync_for_device, 设备可访问
+    DeviceReady,
+    /// 双向 DMA 中间态 (一次传输尚未结束)
+    BidirInProgress,
+}
+
+/// DMA 错误类型
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DmaError {
+    /// 物理地址或大小未页对齐
+    NotAligned,
+    /// 物理地址 + 大小溢出
+    SizeOverflow,
+    /// size = 0
+    ZeroSize,
+    /// size > DMA_MAX_SIZE (256 MiB)
+    SizeTooLarge,
+    /// 状态机转换非法 (例如 ToDevice 调 sync_for_cpu)
+    InvalidStateTransition,
+    /// Frame 内部无效 (size == 0 等)
+    InvalidFrame,
+}
+
+/// 典型设备 DMA 对齐要求 (4 KiB 页对齐)
+pub const DMA_ALIGNMENT: u64 = 4096;
+/// 最大单次 DMA 大小 (256 MiB, 防止物理内存耗尽)
+pub const DMA_MAX_SIZE: u64 = 256 * 1024 * 1024;
 
 /// 流式 DMA 缓冲区 (非一致性)。
 ///
@@ -37,24 +76,57 @@ pub struct DmaStream {
     cpu_addr: NonNull<u8>,
     dma_addr: PhysAddr,
     size: usize,
+    direction: DmaDirection,
+    sync_state: SyncState,
     _frame: Frame, // 持有 Frame 引用, 防物理页重用
 }
 
 impl DmaStream {
-    /// 创建流式 DMA 映射。
+    /// 从 Frame 创建流式 DMA 映射。
     ///
-    /// 从 Frame 分配并 map 到 DMA 可访问的内存。
-    /// x86_64: 直接使用 Frame 的物理地址 (硬件一致性)。
-    /// aarch64: 可能需要 iommu map 或 cache flush (Phase 2 实现)。
-    pub fn from_frame(frame: Frame, dir: DmaDirection) -> Option<Self> {
+    /// 验证 Frame 物理地址 + 大小满足:
+    /// - 4 KiB 页对齐
+    /// - size > 0 且 <= DMA_MAX_SIZE
+    /// - paddr + size 不溢出
+    pub fn from_frame(frame: Frame, dir: DmaDirection) -> Result<Self, DmaError> {
         let size = frame.size();
         let phys = frame.phys();
-        let cpu_ptr = NonNull::new(frame.as_virt_ptr())?;
-        let _ = dir; // 用于 sync 方向判定
-        Some(Self {
+        let cpu_ptr = match NonNull::new(frame.as_virt_ptr()) {
+            Some(p) => p,
+            None => return Err(DmaError::InvalidFrame),
+        };
+
+        if size == 0 {
+            return Err(DmaError::ZeroSize);
+        }
+        if !phys.as_u64().is_multiple_of(DMA_ALIGNMENT) {
+            return Err(DmaError::NotAligned);
+        }
+        if !((size as u64).is_multiple_of(DMA_ALIGNMENT)) {
+            return Err(DmaError::NotAligned);
+        }
+        if (size as u64) > DMA_MAX_SIZE {
+            return Err(DmaError::SizeTooLarge);
+        }
+        // 验证 paddr + size 不溢出
+        if phys.as_u64().checked_add(size as u64).is_none() {
+            return Err(DmaError::SizeOverflow);
+        }
+
+        let initial_state = match dir {
+            // ToDevice: CPU 端刚分配完, 准备写, 状态为 CpuReady
+            DmaDirection::ToDevice => SyncState::CpuReady,
+            // FromDevice: 设备已写入过, 状态为 DeviceReady
+            DmaDirection::FromDevice => SyncState::DeviceReady,
+            DmaDirection::Bidirectional => SyncState::CpuReady,
+        };
+
+        Ok(Self {
             cpu_addr: cpu_ptr,
             dma_addr: phys,
             size,
+            direction: dir,
+            sync_state: initial_state,
             _frame: frame,
         })
     }
@@ -77,16 +149,43 @@ impl DmaStream {
         self.size
     }
 
+    /// 同步方向
+    #[inline(always)]
+    pub fn direction(&self) -> DmaDirection {
+        self.direction
+    }
+
+    /// 当前同步状态
+    #[inline(always)]
+    pub fn sync_state(&self) -> SyncState {
+        self.sync_state
+    }
+
     /// CPU→设备: flush CPU cache, 确保设备看到最新数据。
     ///
     /// x86_64: 空操作 (硬件保证一致性)。
     /// aarch64: 需要 DC CVAU (Data Cache Clean to Point of Unification)。
-    pub fn sync_for_device(&self) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            // SAFETY: ARCH-specific cache maintenance for DMA.
-            // This requires aarch64 inline asm: DC CVAU on the buffer range.
-            // TODO: Phase 2 — integrate with aarch64 cache ops.
+    pub fn sync_for_device(&mut self) -> Result<(), DmaError> {
+        match self.direction {
+            DmaDirection::ToDevice | DmaDirection::Bidirectional => {
+                if self.sync_state == SyncState::CpuReady
+                    || self.sync_state == SyncState::BidirInProgress
+                {
+                    self.sync_state = SyncState::DeviceReady;
+                    // 实际 aarch64: DC CVAU on cpu_addr..cpu_addr+size
+                    #[cfg(target_arch = "aarch64")]
+                    {
+                        // SAFETY: ARCH-specific cache maintenance for DMA.
+                        // 对 cpu_addr..cpu_addr+size 范围执行 DC CVAU
+                        // 防止 CPU cache 与设备 DMA 视图不一致
+                        // TODO: Phase 2 — integrate with aarch64 cache ops
+                    }
+                    Ok(())
+                } else {
+                    Err(DmaError::InvalidStateTransition)
+                }
+            }
+            DmaDirection::FromDevice => Err(DmaError::InvalidStateTransition),
         }
     }
 
@@ -94,25 +193,41 @@ impl DmaStream {
     ///
     /// x86_64: 空操作。
     /// aarch64: 需要 DC IVAU (Data Cache Invalidate to Point of Unification)。
-    pub fn sync_for_cpu(&self) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            // SAFETY: ARCH-specific cache maintenance.
-            // TODO: Phase 2 — integrate with aarch64 cache ops.
+    pub fn sync_for_cpu(&mut self) -> Result<(), DmaError> {
+        match self.direction {
+            DmaDirection::FromDevice | DmaDirection::Bidirectional => {
+                if self.sync_state == SyncState::DeviceReady
+                    || self.sync_state == SyncState::BidirInProgress
+                {
+                    self.sync_state = SyncState::CpuReady;
+                    #[cfg(target_arch = "aarch64")]
+                    {
+                        // SAFETY: ARCH-specific cache maintenance.
+                        // TODO: Phase 2 — integrate with aarch64 cache ops
+                    }
+                    Ok(())
+                } else {
+                    Err(DmaError::InvalidStateTransition)
+                }
+            }
+            DmaDirection::ToDevice => Err(DmaError::InvalidStateTransition),
         }
     }
 }
 
 impl fmt::Display for DmaStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DmaStream(cpu=0x{:x}, dma=0x{:x}, size={})",
+        write!(f, "DmaStream(cpu=0x{:x}, dma=0x{:x}, size={}, dir={:?}, state={:?})",
             self.cpu_addr.as_ptr() as usize,
             self.dma_addr.as_u64(),
             self.size,
+            self.direction,
+            self.sync_state,
         )
     }
 }
 
-// SAFETY: DmaStream 持有独立的 Frame 和 DMA 映射, Send 安全。
+// SAFETY: DmaStream 持有独立的 Frame 和 DMA 映射, Send/Sync 安全。
+// 状态机通过 &mut self 排他访问, 避免数据竞争。
 unsafe impl Send for DmaStream {}
 unsafe impl Sync for DmaStream {}

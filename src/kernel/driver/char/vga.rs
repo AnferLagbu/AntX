@@ -416,8 +416,11 @@ impl VgaDriver {
         let pos = (self.cursor_y * SCREEN_WIDTH + self.cursor_x) as u16;
         let port = self.vga_port.as_ref().unwrap();
 
-        port.write_u8(VGA_CURSOR_LOW as u16, (pos & 0xFF) as u8);
-        port.write_u8(VGA_CURSOR_HIGH as u16, ((pos >> 8) & 0xFF) as u8);
+        // 正确访问模式: 先写索引到 address port (offset 0), 再写到 data port (offset 1)
+        port.write_u8(0, VGA_CURSOR_LOW);
+        port.write_u8(1, (pos & 0xFF) as u8);
+        port.write_u8(0, VGA_CURSOR_HIGH);
+        port.write_u8(1, ((pos >> 8) & 0xFF) as u8);
     }
 
     /// 启用/禁用光标
@@ -425,13 +428,17 @@ impl VgaDriver {
     pub fn enable_cursor(&mut self, enable: bool) {
         let port = self.vga_port.as_ref().unwrap();
 
-        port.write_u8(0x0A, 0x0A); // 选择光标起始寄存器
-        let cursor_start = port.read_u8(0x0A);
+        // 选择光标起始寄存器 (寄存器索引 0x0A)
+        // 正确访问模式: 先写索引到 address port (offset 0), 再读/写到 data port (offset 1)
+        port.write_u8(0, 0x0A);
+        let cursor_start = port.read_u8(1);
 
         if enable {
-            port.write_u8(0x0A, cursor_start & 0xC0);
+            port.write_u8(0, 0x0A);
+            port.write_u8(1, cursor_start & 0xC0);
         } else {
-            port.write_u8(0x0A, 0x20);
+            port.write_u8(0, 0x0A);
+            port.write_u8(1, 0x20);
         }
     }
 

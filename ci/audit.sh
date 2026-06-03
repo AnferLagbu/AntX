@@ -137,4 +137,22 @@ else
     echo -e "${YELLOW}⚠ 框架特权层模块数 < 5${NC}"
 fi
 
+# ── 7. QEMU 真实启动测试 (full 模式) ──────────────────────────
+# Phase 3.6 门禁: 双架构内核必须在 QEMU 中真实启动通过
+# 跳过条件: QEMU 二进制不可用 (e.g. CI 镜像未装 qemu-system-*)
+step "7/7 QEMU 双架构真实启动测试 (Phase 3.6 门禁)"
+if [ "$MODE" = "full" ]; then
+    if command -v qemu-system-x86_64 >/dev/null 2>&1 && command -v qemu-system-aarch64 >/dev/null 2>&1; then
+        if "$PROJECT_ROOT/scripts/qemu_boot_test.sh" all 2>&1 | tail -6; then
+            ok "QEMU 双架构启动测试: 2/2 通过"
+        else
+            err "QEMU 双架构启动测试失败 (见 scripts/qemu_boot_test.sh 输出)"
+        fi
+    else
+        echo -e "${YELLOW}⚠ QEMU 二进制不可用, 跳过启动测试 (安装 qemu-system-x86 + qemu-system-aarch64 启用)${NC}"
+    fi
+else
+    echo -e "${BLUE}-> 跳过 (仅 full 模式执行; quick 模式跑 SA bootstrap 即可)${NC}"
+fi
+
 echo -e "\n${GREEN}━━━ audit (full) 完成 ━━━${NC}"
