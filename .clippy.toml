@@ -1,0 +1,11 @@
+# AntX Framekernel - 内核严格 lint 配置
+# 适用: 自研 Rust 内核, 裸机 no_std
+
+# 允许的 unsafe 块必须紧邻 SAFETY 注释
+# (与 #![warn(clippy::undocumented_unsafe_blocks)] 等价)
+
+# 内核风格: 文档化所有公开 API
+missing-docs-in-crate-items = true
+
+# 抑制部分对 no_std 内核不适用的 lint
+avoid-breaking-exported-api = false

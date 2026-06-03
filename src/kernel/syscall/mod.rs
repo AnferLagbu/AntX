@@ -31,6 +31,8 @@ pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
 ///
 /// Caller is in kernel context. `ptr` is a validated user-space pointer.
 pub unsafe extern "C" fn syscall_init() {
+    // SAFETY: klog_write 是 C-ABI 日志函数；byte string literal 是 'static
+    // 字节切片，传递给 C 时按指针 + 长度使用。
     unsafe {
         crate::kernel::klog::klog_write(
             1,
@@ -66,6 +68,8 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
 macro_rules! dispatch {
     ($num:expr, $name:expr) => {{
         let ret = $num;
+        // SAFETY: klog_write 是 C-ABI 日志函数，$name 是 Rust 静态字符串
+        // (字节切片)，传给 C 时按指针 + 长度传递。
         unsafe {
             crate::kernel::klog::klog_write(
                 0,
@@ -711,8 +715,11 @@ fn priority_to_nice(p: crate::kernel::proc::types::ProcessPriority) -> i32 {
 
 fn sys_nice(inc: i32) -> i64 {
     let pid = crate::kernel::proc::api::process_get_current_pid();
+    // SAFETY: sys_getpriority 是 libc 兼容的 FFI；传入有效 PRIO_PROCESS
+    // 常量与进程 pid (由 process_get_current_pid 返回)。
     let current_nice = unsafe { sys_getpriority(PRIO_PROCESS, pid) as i32 };
     let new_nice = (current_nice + inc).clamp(-20, 19);
+    // SAFETY: sys_setpriority 是 libc 兼容的 FFI；new_nice 在合法范围 [-20, 19]。
     unsafe { sys_setpriority(PRIO_PROCESS, pid, new_nice) };
     new_nice as i64
 }
@@ -731,6 +738,7 @@ fn sys_getpriority(which: i32, who: u32) -> i64 {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),
     };
+    // SAFETY: proc 是 NonNull<Process>，get() 已检查 pid 范围与有效性。
     let pri = unsafe { (*proc).get_priority() };
     priority_to_nice(pri) as i64
 }
@@ -751,6 +759,7 @@ fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
         None => return Errno::ESRCH.as_ret(),
     };
     let new_pri = nice_to_priority(clamped);
+    // SAFETY: proc 是 NonNull<Process>，set_priority 修改 Process 内部状态。
     unsafe { (*proc).set_priority(new_pri) };
     0
 }
@@ -777,6 +786,8 @@ fn sys_execve(
             if !raw::check_user_ptr(p as u64) {
                 return Errno::EFAULT.as_ret();
             }
+            // SAFETY: p 是经过 check_user_ptr 验证的用户空间指针，指向
+            // *mut *const u8 (8 字节)，read_volatile 读取指针值。
             let entry = unsafe { core::ptr::read_volatile(p) };
             if entry.is_null() {
                 break;
@@ -785,6 +796,8 @@ fn sys_execve(
                 return Errno::EFAULT.as_ret();
             }
             argc += 1;
+            // SAFETY: p 指向用户空间数组元素；p.add(1) 前进到下一个元素，
+            // 由 argc 计数 + NULL 终止保证不越界。
             p = unsafe { p.add(1) };
         }
     }
@@ -2501,59 +2514,83 @@ pub(crate) mod raw {
     // ============= 用户态读写助手（unsafe 集中点） =============
 
     /// 写一个 u8 到用户指针。
-    /// # SAFETY: 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证指针合法。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证指针合法。
     pub unsafe fn write_u8(ptr: *mut u8, val: u8) {
+        // SAFETY: 调用方已通过 `check_user_ptr` 验证 ptr 指向有效且对齐的
+        // 用户空间地址 (1 字节自然对齐)；write_volatile 防止编译器优化掉
+        // 设备/共享内存访问。
         unsafe { core::ptr::write_volatile(ptr, val) }
     }
 
     /// 写一个 u32 到用户指针。
-    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, 4)` 验证。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_buf(ptr as u64, 4)` 验证。
     pub unsafe fn write_u32(ptr: *mut u32, val: u32) {
+        // SAFETY: 调用方已验证 ptr 对齐到 4 字节且指向 4 字节可写用户空间。
         unsafe { core::ptr::write_volatile(ptr, val) }
     }
 
     /// 写一个 u64 到用户指针。
-    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, 8)` 验证。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_buf(ptr as u64, 8)` 验证。
     pub unsafe fn write_u64(ptr: *mut u64, val: u64) {
+        // SAFETY: 调用方已验证 ptr 对齐到 8 字节且指向 8 字节可写用户空间。
         unsafe { core::ptr::write_volatile(ptr, val) }
     }
 
     /// 读一个 u8。
-    /// # SAFETY: 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证。
     pub unsafe fn read_u8(ptr: *const u8) -> u8 {
+        // SAFETY: 调用方已验证 ptr 指向有效可读用户地址。
         unsafe { core::ptr::read_volatile(ptr) }
     }
 
     /// 读一个 u64。
-    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, 8)` 验证。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_buf(ptr as u64, 8)` 验证。
     pub unsafe fn read_u64(ptr: *const u64) -> u64 {
+        // SAFETY: 调用方已验证 ptr 对齐到 8 字节且指向 8 字节可读用户空间。
         unsafe { core::ptr::read_volatile(ptr) }
     }
 
     /// 从 src 复制 len 字节到用户指针 dst。
-    /// # SAFETY: 调用方必须先调用 `check_user_buf(dst as u64, len)` 验证。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_buf(dst as u64, len)` 验证。
     pub unsafe fn write_bytes(dst: *mut u8, src: &[u8]) {
+        // SAFETY: 调用方已验证 dst 指向 len 字节可写用户空间；src 是有效
+        // Rust 切片不会越界；copy_nonoverlapping 要求两区域不重叠，
+        // src 来自内核栈/数据段，与用户空间地址不会重叠。
         unsafe { core::ptr::copy_nonoverlapping(src.as_ptr(), dst, src.len()) }
     }
 
     /// 从用户指针读取 len 字节构造 slice。
-    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, len)` 验证。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_buf(ptr as u64, len)` 验证。
     pub unsafe fn read_slice<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
+        // SAFETY: 调用方已验证 [ptr, ptr+len) 完全在合法可读用户空间。
         unsafe { core::slice::from_raw_parts(ptr, len) }
     }
 
     /// 复制结构体到用户指针（repr(C) 类型）。
-    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, size_of::<T>())` 验证。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_buf(ptr as u64, size_of::<T>())` 验证。
     pub unsafe fn write_struct<T: Copy>(dst: *mut T, src: &T) {
+        // SAFETY: 调用方已验证 dst 对齐到 align_of::<T>() 且 size_of::<T>()
+        // 字节可写；src 是有效 T 引用。write_volatile 保留顺序语义。
         unsafe { core::ptr::write_volatile(dst, *src) }
     }
 
     // ============= 设备输入抽象 =============
 
     /// 从键盘读取一个字节（x86_64 专属）。None 表示无数据。
-    /// # SAFETY: FFI 调用，需在中断上下文。
+    /// # Safety
+    /// FFI 调用，需在中断上下文。
     #[cfg(target_arch = "x86_64")]
     pub fn read_keyboard_byte() -> Option<u8> {
+        // SAFETY: keyboard_has_data 与 keyboard_get_char 是 C-ABI 函数，
+        // 调用方保证在中断上下文 (disable_interrupts 已持有)。
         unsafe {
             if keyboard_has_data() {
                 let c = keyboard_get_char();
@@ -2569,8 +2606,11 @@ pub(crate) mod raw {
     }
 
     /// 从串口读取一个字节。None 表示无数据。
-    /// # SAFETY: FFI 调用，需在中断上下文。
+    /// # Safety
+    /// FFI 调用，需在中断上下文。
     pub fn read_serial_byte(com: i32) -> Option<u8> {
+        // SAFETY: serial_has_data 与 serial_getc 是 C-ABI 函数，调用方
+        // 保证 com 端口已通过 ioport_register 注册。
         unsafe {
             if serial_has_data(com) {
                 let c = serial_getc(com);
@@ -2588,68 +2628,94 @@ pub(crate) mod raw {
     // ============= 物理内存分配 =============
 
     /// 分配 count 个连续物理页。
-    /// # SAFETY: FFI 调用，返回的指针是物理地址（需 HHDM 转换）。
+    /// # Safety
+    /// FFI 调用，返回的指针是物理地址（需 HHDM 转换）。
     pub fn alloc_pages(count: u64) -> *mut u8 {
+        // SAFETY: pmm_alloc_pages 是 C-ABI 物理页分配器，count 个连续
+        // 4KiB 页的分配请求；若失败返回 null。
         unsafe { pmm_alloc_pages(count) }
     }
 
     /// 释放 count 个连续物理页。
-    /// # SAFETY: FFI 调用，addr 必须是 alloc_pages 返回的同一基址。
+    /// # Safety
+    /// FFI 调用，addr 必须是 alloc_pages 返回的同一基址。
     pub fn free_pages(addr: *mut u8, count: u64) {
+        // SAFETY: 调用方已验证 addr 是先前 alloc_pages 的返回值且未释放。
         unsafe { pmm_free_pages(addr, count) }
     }
 
     // ============= 时间 =============
 
     /// 读取 tick 计数（1ms 粒度）。
-    /// # SAFETY: FFI 调用，硬件定时器寄存器读取。
+    /// # Safety
+    /// FFI 调用，硬件定时器寄存器读取。
     pub fn get_ticks() -> u64 {
+        // SAFETY: timer_get_ticks 是 C-ABI 函数，读取 PIT/HPET 计数器，
+        // 无副作用。
         unsafe { timer_get_ticks() }
     }
 
     // ============= smoltcp 网络栈 FFI 包装 =============
 
-    /// # SAFETY: FFI 调用，需在中断上下文。
+    /// # Safety
+    /// FFI 调用，需在中断上下文。
     pub fn sm_socket_call(domain: i32, sock_type: i32, protocol: i32) -> i32 {
+        // SAFETY: sm_socket 是 C-ABI 套接字创建函数，无指针参数。
         unsafe { sm_socket(domain, sock_type, protocol) }
     }
 
-    /// # SAFETY: FFI 调用，addr/addrlen 由调用方负责用户态校验。
+    /// # Safety
+    /// FFI 调用，addr/addrlen 由调用方负责用户态校验。
     pub fn sm_bind_call(sockfd: i32, addr: *const u8, addrlen: u32) -> i32 {
+        // SAFETY: 调用方已通过 check_user_buf 验证 addr 指向 addrlen 字节
+        // 可读用户空间。
         unsafe { sm_bind(sockfd, addr, addrlen) }
     }
 
-    /// # SAFETY: FFI 调用。
+    /// # Safety
+    /// FFI 调用。
     pub fn sm_listen_call(sockfd: i32, backlog: i32) -> i32 {
+        // SAFETY: sm_listen 是 C-ABI 函数，无指针参数。
         unsafe { sm_listen(sockfd, backlog) }
     }
 
-    /// # SAFETY: FFI 调用，addr/addrlen 由调用方负责用户态校验。
+    /// # Safety
+    /// FFI 调用，addr/addrlen 由调用方负责用户态校验。
     pub fn sm_accept_call(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+        // SAFETY: 调用方已验证 addr/addrlen 是合法可写用户指针。
         unsafe { sm_accept(sockfd, addr, addrlen) }
     }
 
-    /// # SAFETY: FFI 调用，addr/addrlen 由调用方负责用户态校验。
+    /// # Safety
+    /// FFI 调用，addr/addrlen 由调用方负责用户态校验。
     pub fn sm_connect_call(sockfd: i32, addr: *const u8, addrlen: u32) -> i32 {
+        // SAFETY: 调用方已验证 addr 指向合法可读用户空间。
         unsafe { sm_connect(sockfd, addr, addrlen) }
     }
 
-    /// # SAFETY: FFI 调用，buf 由调用方负责用户态校验。
+    /// # Safety
+    /// FFI 调用，buf 由调用方负责用户态校验。
     pub fn sm_send_call(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32 {
+        // SAFETY: 调用方已验证 buf 指向 len 字节可读用户空间。
         unsafe { sm_send(sockfd, buf, len, flags) }
     }
 
-    /// # SAFETY: FFI 调用，buf 由调用方负责用户态校验。
+    /// # Safety
+    /// FFI 调用，buf 由调用方负责用户态校验。
     pub fn sm_recv_call(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32 {
+        // SAFETY: 调用方已验证 buf 指向 len 字节可写用户空间。
         unsafe { sm_recv(sockfd, buf, len, flags) }
     }
 
-    /// # SAFETY: FFI 调用。
+    /// # Safety
+    /// FFI 调用。
     pub fn sm_close_call(sockfd: i32) -> i32 {
+        // SAFETY: sm_close 是 C-ABI 函数，无指针参数。
         unsafe { sm_close(sockfd) }
     }
 
-    /// # SAFETY: FFI 调用，optval 由调用方负责用户态校验。
+    /// # Safety
+    /// FFI 调用，optval 由调用方负责用户态校验。
     pub fn sm_setsockopt_call(
         sockfd: i32,
         level: i32,
@@ -2657,10 +2723,12 @@ pub(crate) mod raw {
         optval: *const u8,
         optlen: u32,
     ) -> i32 {
+        // SAFETY: 调用方已验证 optval 指向 optlen 字节可读用户空间。
         unsafe { sm_setsockopt(sockfd, level, optname, optval, optlen) }
     }
 
-    /// # SAFETY: FFI 调用，optval/optlen 由调用方负责用户态校验。
+    /// # Safety
+    /// FFI 调用，optval/optlen 由调用方负责用户态校验。
     pub fn sm_getsockopt_call(
         sockfd: i32,
         level: i32,
@@ -2668,14 +2736,18 @@ pub(crate) mod raw {
         optval: *mut u8,
         optlen: *mut u32,
     ) -> i32 {
+        // SAFETY: 调用方已验证 optval/optlen 是合法可写用户指针。
         unsafe { sm_getsockopt(sockfd, level, optname, optval, optlen) }
     }
 
     // ============= 链接器符号访问 =============
 
     /// 内核映像起始虚拟地址。
-    /// # SAFETY: 链接器符号，仅在 boot 后有效。
+    /// # Safety
+    /// 链接器符号，仅在 boot 后有效。
     pub fn kernel_start_ptr() -> *const u8 {
+        // SAFETY: _kernel_start 是链接器符号 (extern "C")，是静态地址，
+        // boot 后由 VMM 建立映射可读。
         unsafe { &_kernel_start as *const u8 }
     }
 

@@ -231,6 +231,8 @@ impl Aarch64Vmm {
 
         // Read current TTBR0_EL1 (which points to our L0 table from mmu.rs)
         let current_l0: u64;
+        // SAFETY: mrs ttbr0_el1 是系统寄存器读取指令，无副作用；
+        // 声明 options(nomem, preserves_flags) 防止编译器重排。
         unsafe {
             core::arch::asm!("mrs {}, ttbr0_el1", out(reg) current_l0);
         }
@@ -239,6 +241,8 @@ impl Aarch64Vmm {
         // We reuse the existing page tables for now.
         // In a more complete implementation, we'd create separate kernel tables.
         let kernel_l0_ptr = &raw const self.kernel_l0 as *mut u64;
+        // SAFETY: kernel_l0_ptr 指向 self.kernel_l0 (类型对齐的 u64)；
+        // write_volatile 防止编译器优化掉对页表硬件的写。
         unsafe {
             ptr::write_volatile(kernel_l0_ptr, current_l0);
         }
@@ -328,6 +332,9 @@ impl Aarch64Vmm {
                 let l2_idx = l2_index(vaddr);
 
                 let desc = block_flags_to_descriptor(raw_flags, paddr, 2, 0x0000_FFFF_FFE0_0000);
+                // SAFETY: l2 是 ensure_next_level 返回的 L2 页表物理基地址
+                // (转换后虚拟地址)；l2_idx < 512 落在表项数内；write_volatile
+                // 写硬件页表，禁用编译器优化。
                 unsafe {
                     ptr::write_volatile(l2.add(l2_idx), desc);
                 }
@@ -354,6 +361,8 @@ impl Aarch64Vmm {
                 let l1_idx = l1_index(vaddr);
 
                 let desc = block_flags_to_descriptor(raw_flags, paddr, 1, 0x0000_FFFF_C000_0000);
+                // SAFETY: l1 是 ensure_next_level 返回的 L1 页表基地址；
+                // l1_idx < 512；write_volatile 写硬件页表。
                 unsafe {
                     ptr::write_volatile(l1.add(l1_idx), desc);
                 }
@@ -422,10 +431,14 @@ impl Aarch64Vmm {
         let l3_idx = l3_index(vaddr);
 
         let desc = page_flags_to_descriptor(raw_flags, paddr);
+        // SAFETY: l3 是 ensure_next_level 返回的 L3 页表基地址；
+        // l3_idx < 512；write_volatile 写硬件页表。
         unsafe {
             ptr::write_volatile(l3.add(l3_idx), desc);
         }
 
+        // SAFETY: dsb ishst / tlbi vaae1is / dsb ish / isb 是 aarch64 标准
+        // TLB 失效序列；输入 vaddr 是合法内核虚拟地址，无副作用。
         unsafe {
             core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
         }
@@ -488,12 +501,14 @@ impl Aarch64Vmm {
         let l3_idx = l3_index(vaddr);
 
         // Clear the L3 page descriptor
+        // SAFETY: l3 是已验证的 L3 页表基地址；l3_idx < 512。
         unsafe {
             ptr::write_volatile(l3.add(l3_idx), 0);
         }
 
         // TLB invalidate — must precede any page-table-page free so that
         // speculative walks cannot land on freed physical memory.
+        // SAFETY: 标准 TLB 失效序列；vaddr 是有效内核虚拟地址。
         unsafe {
             core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
         }
@@ -502,11 +517,13 @@ impl Aarch64Vmm {
         // leaking memory between unmap operations (destroy_page_table only
         // runs at process teardown).
         if self.is_table_empty(l3) {
+            // SAFETY: 读取/清除 L2 中指向 L3 的表项；l2_idx < 512。
             let l3_paddr = unsafe {
                 let l2_entry = ptr::read_volatile(l2.add(l2_idx));
                 ptr::write_volatile(l2.add(l2_idx), 0);
                 l2_entry & 0x0000_FFFF_FFFF_F000
             };
+            // SAFETY: dsb ishst 是数据同步屏障，确保前面的页表写完成。
             unsafe {
                 core::arch::asm!("dsb ishst");
             }
@@ -514,6 +531,7 @@ impl Aarch64Vmm {
 
             // Check L2 recursively
             if self.is_table_empty(l2) {
+                // SAFETY: 读取/清除 L1 中指向 L2 的表项；l1_idx < 512。
                 let l2_paddr = unsafe {
                     let l1_entry = ptr::read_volatile(l1.add(l1_idx));
                     ptr::write_volatile(l1.add(l1_idx), 0);
@@ -526,6 +544,7 @@ impl Aarch64Vmm {
 
                 // Check L1 recursively
                 if self.is_table_empty(l1) {
+                    // SAFETY: 读取/清除 L0 中指向 L1 的表项；l0_idx < 512。
                     let l1_paddr = unsafe {
                         let l0_entry = ptr::read_volatile(l0.add(l0_idx));
                         ptr::write_volatile(l0.add(l0_idx), 0);

@@ -48,14 +48,14 @@ mod tests {
                 Self { r, g, b, a: 255 }
             }
 
-            fn to_rgb565(&self) -> u16 {
+            fn to_rgb565(self) -> u16 {
                 let r = (self.r as u16 >> 3) & 0x1F;
                 let g = (self.g as u16 >> 2) & 0x3F;
                 let b = (self.b as u16 >> 3) & 0x1F;
                 (r << 11) | (g << 5) | b
             }
 
-            fn to_argb8888(&self) -> u32 {
+            fn to_argb8888(self) -> u32 {
                 ((self.a as u32) << 24)
                     | ((self.r as u32) << 16)
                     | ((self.g as u32) << 8)

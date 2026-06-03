@@ -140,7 +140,7 @@ mod tests {
     fn buddy_constants() {
         assert_eq!(PAGE_SIZE, 4096);
         assert_eq!(BUDDY_MAX_ORDER, 10);
-        assert!(BUDDY_ALLOCATED & BUDDY_ORDER_MASK == 0);
+        const { assert!(BUDDY_ALLOCATED & BUDDY_ORDER_MASK == 0); }
     }
 
     #[test]

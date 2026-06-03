@@ -66,6 +66,10 @@ pub struct CapabilityMatrix {
     caps: [u64; 16],
 }
 
+impl Default for CapabilityMatrix {
+    fn default() -> Self { Self::new() }
+}
+
 impl CapabilityMatrix {
     pub fn new() -> Self {
         Self { caps: [0; 16] }

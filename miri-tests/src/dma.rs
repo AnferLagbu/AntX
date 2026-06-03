@@ -66,6 +66,7 @@ impl Drop for FrameRef {
 }
 
 /// DmaStream 模拟 (无 unsafe, 纯算法)
+#[derive(Debug)]
 pub struct DmaStream {
     cpu_addr: u64,
     dma_addr: u64,
@@ -334,11 +335,11 @@ mod tests {
                 _ => DmaDirection::Bidirectional,
             };
             let d = DmaStream::from_page(p, dir);
-            if d.is_ok() {
-                streams.push(d.unwrap());
+            if let Ok(stream) = d {
+                streams.push(stream);
             }
         }
-        assert!(streams.len() > 0);
+        assert!(!streams.is_empty());
         // 全部不溢出
         for d in &streams {
             assert!(d.range_valid());

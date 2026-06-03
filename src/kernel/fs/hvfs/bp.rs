@@ -44,6 +44,7 @@ impl HvDva {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[allow(clippy::upper_case_acronyms)]  // ZSTD/ZLE/LZ4 压缩算法名
 pub enum HvCompType {
     Off = 0,
     LZ4 = 1,

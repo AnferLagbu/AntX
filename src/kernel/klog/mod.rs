@@ -285,6 +285,7 @@ pub enum LogLevel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[allow(clippy::upper_case_acronyms)]  // IPC 子系统名
 pub enum LogCategory {
     Boot = 0,
     Kernel = 1,

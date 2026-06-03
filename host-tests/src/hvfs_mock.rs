@@ -221,12 +221,12 @@ mod kernel_error_tests {
     #[test]
     fn kernel_result_ok() {
         let r: super::KernelResult<i32> = Ok(42);
-        assert_eq!(r.unwrap(), 42);
+        assert_eq!(r, Ok(42));
     }
 
     #[test]
     fn kernel_result_err() {
         let r: super::KernelResult<i32> = Err(KernelError::NotFound);
-        assert_eq!(r.unwrap_err(), KernelError::NotFound);
+        assert_eq!(r, Err(KernelError::NotFound));
     }
 }

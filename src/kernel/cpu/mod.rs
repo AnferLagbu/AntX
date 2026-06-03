@@ -569,6 +569,8 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
     if !CPU_INFO_INIT.load(Ordering::Acquire) {
         return None;
     }
+    // SAFETY: CPU_INFO_INIT Acquire load guarantees CPU_INFO is initialized
+    // before this read; CPU_INFO is a 'static with valid MaybeUninit layout.
     unsafe { CPU_INFO.as_ref() }
 }
 
@@ -603,6 +605,8 @@ pub extern "C" fn cpu_init() -> i32 {
     use crate::kernel::klog::{klog_write, LogCategory, LogLevel};
 
     static INIT_MSG: &[u8] = b"Initializing QX AMD64 CPU driver...\0";
+    // SAFETY: FFI logging call; INIT_MSG is a static byte slice with a trailing
+    // NUL and the C-side klog_write reads it as a C string.
     unsafe {
         klog_write(
             LogLevel::Info as u8,
@@ -683,6 +687,7 @@ pub extern "C" fn cpu_init() -> i32 {
     // 存储到全局单例
     if CPU_INFO_INIT.swap(true, Ordering::AcqRel) {
         static ERR_MSG: &[u8] = b"ERROR: cpu_init called twice!\0";
+        // SAFETY: FFI logging call; ERR_MSG is a static NUL-terminated byte slice.
         unsafe {
             klog_write(
                 LogLevel::Error as u8,
@@ -696,6 +701,9 @@ pub extern "C" fn cpu_init() -> i32 {
         return -1;
     }
 
+    // SAFETY: CPU_INFO is a 'static MaybeUninit<Option<CpuInfo>>; we just
+    // set CPU_INFO_INIT to true (synchronized with the AcqRel swap), so all
+    // subsequent readers will see the initialized value.
     unsafe {
         CPU_INFO = Some(info);
     }

@@ -184,9 +184,9 @@ fn panic(info: &PanicInfo) -> ! {
         *b"RAX ", *b"RBX ", *b"RCX ", *b"RDX ", *b"RSI ", *b"RDI ", *b"RBP ", *b"RSP ", *b"R8  ",
         *b"R9  ", *b"R10 ", *b"R11 ", *b"R12 ", *b"R13 ", *b"R14 ", *b"R15 ",
     ];
-    #[allow(unused_mut)]
+    #[allow(unused_mut, unused_assignments)]
     let mut cr2: u64 = 0;
-    #[allow(unused_mut)]
+    #[allow(unused_mut, unused_assignments)]
     let mut cr3_val: u64 = 0;
     #[cfg(target_arch = "x86_64")]
     unsafe {

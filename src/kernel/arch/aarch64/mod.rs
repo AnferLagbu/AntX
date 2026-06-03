@@ -40,6 +40,7 @@ impl CoreArch for Aarch64 {
     #[inline(always)]
     fn cpu_id() -> u32 {
         let mpidr: u64;
+        // SAFETY: mrs mpidr_el1 是只读系统寄存器，无副作用。
         unsafe {
             asm!("mrs {}, mpidr_el1", out(reg) mpidr);
         }
@@ -50,6 +51,7 @@ impl CoreArch for Aarch64 {
     #[inline(always)]
     fn timestamp() -> u64 {
         let cnt: u64;
+        // SAFETY: mrs cntpct_el0 是只读系统寄存器。
         unsafe {
             asm!("mrs {}, cntpct_el0", out(reg) cnt, options(nomem, nostack));
         }
@@ -59,6 +61,7 @@ impl CoreArch for Aarch64 {
     /// CPU 暂停等待中断 (wfi)。
     #[inline(always)]
     fn halt() {
+        // SAFETY: wfi 是标准 CPU 暂停指令，无内存副作用。
         unsafe {
             asm!("wfi", options(nomem, nostack));
         }
@@ -67,6 +70,7 @@ impl CoreArch for Aarch64 {
     /// 全内存屏障 (dsb sy)。
     #[inline(always)]
     fn fence() {
+        // SAFETY: dmb sy 是 aarch64 全系统内存屏障。
         unsafe {
             asm!("dmb sy", options(nomem, nostack));
         }
@@ -75,6 +79,7 @@ impl CoreArch for Aarch64 {
     /// 写内存屏障 (dmb st)。
     #[inline(always)]
     fn fence_w() {
+        // SAFETY: dmb st 是 aarch64 写内存屏障。
         unsafe {
             asm!("dmb st", options(nomem, nostack));
         }
@@ -83,6 +88,7 @@ impl CoreArch for Aarch64 {
     /// 读内存屏障 (dmb ld)。
     #[inline(always)]
     fn fence_r() {
+        // SAFETY: dmb ld 是 aarch64 读内存屏障。
         unsafe {
             asm!("dmb ld", options(nomem, nostack));
         }
@@ -96,6 +102,8 @@ impl InterruptArch for Aarch64 {
     #[inline(always)]
     fn interrupt_disable() -> usize {
         let daif: u64;
+        // SAFETY: mrs daif 读取 + msr daifset #2 禁用 IRQ；都使用立即数，
+        // 无内存副作用。必须在关中断前返回原 DAIF。
         unsafe {
             asm!("mrs {}, daif", out(reg) daif);
             asm!("msr daifset, #2");
@@ -106,6 +114,8 @@ impl InterruptArch for Aarch64 {
     /// 恢复 DAIF。
     #[inline(always)]
     fn interrupt_restore(flags: usize) {
+        // SAFETY: msr daif 恢复由 interrupt_disable 保存的标志位；
+        // 立即数 #2 写入 DAIF 启用 IRQ。
         unsafe {
             asm!("msr daif, {}", in(reg) flags as u64);
         }
@@ -114,6 +124,7 @@ impl InterruptArch for Aarch64 {
     /// 启用 IRQ (msr daifclr)。
     #[inline(always)]
     fn interrupt_enable() {
+        // SAFETY: msr daifclr #2 启用 IRQ (清除 I 屏蔽位)。
         unsafe {
             asm!("msr daifclr, #2");
         }
@@ -123,6 +134,7 @@ impl InterruptArch for Aarch64 {
     #[inline(always)]
     fn is_interrupt_enabled() -> bool {
         let daif: u64;
+        // SAFETY: mrs daif 是只读系统寄存器读取。
         unsafe {
             asm!("mrs {}, daif", out(reg) daif);
         }
@@ -132,6 +144,8 @@ impl InterruptArch for Aarch64 {
     /// GICv3 SGI 单播 (ICC_SGI1R_EL1)。
     fn send_ipi(target_cpu: u32, vector: u8) {
         let sgi: u64 = ((vector & 0xF) as u64) << 24 | (1u64 << (16 + (target_cpu & 0xF)));
+        // SAFETY: msr icc_sgi1r_el1 触发 GICv3 SGI；
+        // 目标 CPU 与 vector 已 mask 至合法范围。
         unsafe {
             asm!("msr icc_sgi1r_el1, {}", in(reg) sgi);
         }
@@ -140,6 +154,7 @@ impl InterruptArch for Aarch64 {
     /// GICv3 SGI 广播 (IRM=1)。
     fn broadcast_ipi(vector: u8) {
         let sgi: u64 = (1u64 << 40) | ((vector & 0xF) as u64) << 24;
+        // SAFETY: msr icc_sgi1r_el1 广播 SGI；IRM bit 40 设置为 1 触发广播。
         unsafe {
             asm!("msr icc_sgi1r_el1, {}", in(reg) sgi);
         }
@@ -160,6 +175,8 @@ impl MmuArch for Aarch64 {
     /// TLBI VA 单页刷新。
     #[inline(always)]
     fn tlb_flush_page(vaddr: usize) {
+        // SAFETY: 标准 TLB 单页失效序列；
+        // vaddr 是有效内核虚拟地址 (>> 12 取页号)。
         unsafe {
             asm!("dsb ishst", options(nomem, nostack));
             asm!("tlbi vaae1, {}", in(reg) (vaddr as u64 >> 12));
@@ -171,6 +188,7 @@ impl MmuArch for Aarch64 {
     /// TLBI VMALL 全刷新。
     #[inline(always)]
     fn tlb_flush_all() {
+        // SAFETY: 标准 TLB 全失效序列 (VMALL E1)。
         unsafe {
             asm!("dsb ishst", options(nomem, nostack));
             asm!("tlbi vmalle1", options(nomem, nostack));
@@ -188,6 +206,7 @@ impl MmuArch for Aarch64 {
     /// 写入 TTBR0_EL1 + ISB。
     #[inline(always)]
     fn write_page_table_base(paddr: u64) {
+        // SAFETY: msr ttbr0_el1 写入新页表基址 + isb 同步流水线。
         unsafe {
             asm!("msr ttbr0_el1, {}", in(reg) paddr);
             asm!("isb", options(nomem, nostack));
@@ -202,6 +221,8 @@ impl MmuArch for Aarch64 {
 
     /// AArch64 上下文切换 (x19-x30 + SP + TTBR0 + SPSR + ELR)。
     fn context_switch(from: *mut u8, to: *const u8) {
+        // SAFETY: context::switch 是底层上下文切换函数；
+        // from/to 由调度器提供保证指向有效 Process。
         unsafe {
             context::switch(from, to);
         }
@@ -210,6 +231,8 @@ impl MmuArch for Aarch64 {
     /// 进入 EL0 (eret)。
     fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
         let spsr: u64 = 0x0000;
+        // SAFETY: 进入 EL0 标准序列 (msr sp_el0/elr_el1/spsr_el1 + eret)；
+        // entry/stack/arg 由调用方提供合法用户态值；options(noreturn)。
         unsafe {
             asm!(
                 "msr sp_el0, {sp}",
@@ -228,6 +251,8 @@ impl MmuArch for Aarch64 {
 
     /// 返回 EL0 (eret)。
     fn return_to_user() {
+        // SAFETY: eret 是 aarch64 标准异常返回指令；
+        // options(noreturn) 标识函数不会返回。
         unsafe {
             asm!("eret", options(noreturn));
         }
@@ -248,6 +273,8 @@ impl SystemArch for Aarch64 {
 
     /// PSCI SYSTEM_OFF (SMC)。
     fn shutdown() -> ! {
+        // SAFETY: smc #0 是 aarch64 安全监控调用；PSCI SYSTEM_OFF
+        // 不会返回；loop + wfi 兜底防止固件未实现时的意外返回。
         unsafe {
             let func: u64 = 0x84000008;
             asm!("smc #0", in("x0") func, options(nostack));
@@ -261,6 +288,7 @@ impl SystemArch for Aarch64 {
 
     /// PSCI SYSTEM_RESET (SMC)。
     fn reboot() -> ! {
+        // SAFETY: smc #0 + PSCI SYSTEM_RESET；不会返回。
         unsafe {
             let func: u64 = 0x84000009;
             asm!("smc #0", in("x0") func, options(nostack));

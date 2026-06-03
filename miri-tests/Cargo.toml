@@ -11,3 +11,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "miri-runner"
 path = "src/bin/miri_runner.rs"
+
+[dependencies]
+bitflags = "2.4"

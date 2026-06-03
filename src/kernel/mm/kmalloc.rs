@@ -80,6 +80,8 @@ impl HeapHeader {
 
     /// Get pointer to data area after this header
     pub fn data_ptr(&self) -> *mut u8 {
+        // SAFETY: self is a valid reference to HeapHeader; adding size_of::<Self>()
+        // stays within the same allocation block (header is followed by data).
         unsafe { (self as *const Self as *mut u8).add(core::mem::size_of::<Self>()) }
     }
 
@@ -160,9 +162,13 @@ impl KernelHeap {
         self.heap_start = start;
         self.heap_end = VirtAddr(start.0 + initial_size);
 
+        // SAFETY: caller (kmem_init) provides a valid mapped heap region of
+        // size >= sizeof(HeapHeader); start is page-aligned and exclusive.
         let header = unsafe { &mut *(start.0 as *mut HeapHeader) };
         *header = HeapHeader::new(initial_size, true);
 
+        // SAFETY: free_list_head is a static AtomicPtr; storing the heap's
+        // first block pointer is always valid.
         unsafe {
             *self.free_list_head.get() = header;
         }
@@ -289,7 +295,9 @@ impl KernelHeap {
 
         self.acquire_lock();
 
+        // SAFETY: ptr was returned by kmalloc; magic/size validated below
         let header = unsafe { HeapHeader::from_data_ptr(ptr) };
+        // SAFETY: header is a valid *mut HeapHeader produced by from_data_ptr
         let h = unsafe { &*header };
         if h.magic != HEAP_MAGIC || h.free {
             self.release_lock();
@@ -335,14 +343,18 @@ impl KernelHeap {
             }
         };
 
+        // SAFETY: ptr is a valid pointer to old_data_size bytes; new_ptr is a
+        // distinct allocation of the same size; regions cannot overlap.
         unsafe {
             core::ptr::copy_nonoverlapping(ptr, new_ptr, old_data_size);
         }
 
         // Deallocate old block inline while holding the lock
+        // SAFETY: header is a valid *mut HeapHeader (validated above)
         unsafe {
             (*header).free = true;
         }
+        // SAFETY: header is a valid *mut HeapHeader, reading size is safe
         let freed_size = unsafe { (*header).size };
         self.free_count.fetch_add(1, Ordering::Relaxed);
         self.total_freed.fetch_add(freed_size, Ordering::Relaxed);
@@ -397,9 +409,11 @@ impl KernelHeap {
         self.acquire_lock();
 
         let mut count = 0usize;
+        // SAFETY: free_list_head is a static AtomicPtr; reading it is safe
         let mut current = unsafe { *self.free_list_head.get() };
 
         while !current.is_null() {
+            // SAFETY: current is a non-null *mut HeapHeader in the free list
             unsafe {
                 let header = &*current;
 
@@ -443,9 +457,11 @@ impl KernelHeap {
 
     /// First-fit allocation algorithm
     fn allocate_first_fit(&self, size: u64) -> Option<*mut u8> {
+        // SAFETY: free_list_head is a static AtomicPtr; reading it is safe
         let mut current = unsafe { *self.free_list_head.get() };
 
         while !current.is_null() {
+            // SAFETY: current is a non-null *mut HeapHeader in the free list
             unsafe {
                 let header = current;
                 let block_size = (*header).size;
@@ -471,15 +487,22 @@ impl KernelHeap {
     }
 
     /// Split a block into two parts
+    ///
+    /// # Safety
+    /// - `header` must be a valid *mut HeapHeader with at least `size` bytes
+    ///   of payload space
+    /// - The split point must be aligned to ALIGNMENT
     unsafe fn split_block(&self, header: *mut HeapHeader, size: u64) {
         let original_size = (*header).size;
         let remaining = original_size - size;
 
+        // SAFETY: header + size is within the same allocation (size <= original_size)
         let second_part = (header as *mut u8).add(size as usize) as *mut HeapHeader;
         *second_part = HeapHeader::new(remaining, true);
 
         (*header).size = size;
 
+        // SAFETY: header is valid; we update linked list pointers in place.
         if !(*header).next.is_null() {
             (*second_part).next = (*header).next;
             (*(*header).next).prev = second_part;
@@ -532,6 +555,8 @@ impl KernelHeap {
 
     /// Add a block to the free list
     fn add_to_free_list(&self, header: *mut HeapHeader) {
+        // SAFETY: free_list_head is a static AtomicPtr; linked-list
+        // pointers of header are about to be overwritten with safe values.
         unsafe {
             let head_ptr = self.free_list_head.get();
 
@@ -602,6 +627,8 @@ impl KernelHeap {
             }
         }
 
+        // SAFETY: new pages are mapped writable by vmm.map_page above;
+        // new_start is the mapped region start, exclusive access held under lock.
         let new_block = unsafe { &mut *(new_start.0 as *mut HeapHeader) };
         *new_block = HeapHeader::new(expand_by, true);
 
@@ -620,10 +647,13 @@ impl KernelHeap {
             return None;
         }
 
+        // SAFETY: current is checked above to be within early_buffer bounds
         let ptr = unsafe { self.early_buffer.as_ptr().add(current) as *mut u8 };
 
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
+            // SAFETY: idx < MAX_EARLY_ALLOCS guards the bounds; writing to
+            // the early_allocs slot is a direct pointer write.
             unsafe {
                 let alloc_ptr = self.early_allocs.as_ptr().add(idx) as *mut EarlyHeapAlloc;
                 (*alloc_ptr).ptr = ptr;
@@ -684,7 +714,13 @@ pub struct HeapStats {
 static mut GLOBAL_KMALLOC: KernelHeap = KernelHeap::new();
 
 /// Get reference to global Kmalloc instance
+///
+/// # Safety
+/// GLOBAL_KMALLOC is a static initialized via `KernelHeap::new()` (const).
+/// Reading a static reference is always safe.
 pub fn get_kmalloc() -> &'static KernelHeap {
+    // SAFETY: GLOBAL_KMALLOC is a static; the reference is valid for the
+    // program lifetime, no aliasing concerns for shared access.
     unsafe { &GLOBAL_KMALLOC }
 }
 

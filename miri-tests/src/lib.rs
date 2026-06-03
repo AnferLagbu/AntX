@@ -39,3 +39,8 @@ pub mod validators;
 pub mod alias_registry;
 pub mod dma;
 pub mod arch_consistency;
+pub mod credo_policy;
+pub mod credo_grants;
+pub mod credo_sessions;
+pub mod credo_audit;
+pub mod barrier_attribution;

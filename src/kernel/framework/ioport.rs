@@ -68,6 +68,16 @@ impl IoPort {
         }
     }
 
+    /// 读取 u8 (aarch64 桩)。
+    ///
+    /// aarch64 无 PIO 概念, 应使用 MMIO 替代。此处返回 0xFF 以保持 API 兼容,
+    /// 编译期由 `#[cfg(target_arch = "x86_64")]` 关闭实际定义。
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub fn read_u8(&self, _offset: u16) -> u8 {
+        0xFF
+    }
+
     /// 读取 u16
     #[cfg(target_arch = "x86_64")]
     #[inline]
@@ -78,6 +88,13 @@ impl IoPort {
             asm!("in ax, dx", in("dx") port, out("ax") val, options(nomem, nostack));
             val
         }
+    }
+
+    /// 读取 u16 (aarch64 桩)。
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub fn read_u16(&self, _offset: u16) -> u16 {
+        0xFFFF
     }
 
     /// 读取 u32
@@ -92,6 +109,13 @@ impl IoPort {
         }
     }
 
+    /// 读取 u32 (aarch64 桩)。
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub fn read_u32(&self, _offset: u16) -> u32 {
+        0xFFFF_FFFF
+    }
+
     /// 写入 u8
     #[cfg(target_arch = "x86_64")]
     #[inline]
@@ -100,6 +124,16 @@ impl IoPort {
         unsafe {
             asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack));
         }
+    }
+
+    /// 写入 u8 (aarch64 桩)。
+    ///
+    /// aarch64 上无 PIO, 编译期由 cfg 关闭实际 PIO 实现。
+    /// 调用方应使用 MMIO 寄存器访问 (IoMem) 替代。
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub fn write_u8(&self, _offset: u16, _val: u8) {
+        // no-op on aarch64: PIO is x86-only.
     }
 
     /// 写入 u16
@@ -112,6 +146,13 @@ impl IoPort {
         }
     }
 
+    /// 写入 u16 (aarch64 桩)。
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub fn write_u16(&self, _offset: u16, _val: u16) {
+        // no-op on aarch64.
+    }
+
     /// 写入 u32
     #[cfg(target_arch = "x86_64")]
     #[inline]
@@ -120,6 +161,13 @@ impl IoPort {
         unsafe {
             asm!("out dx, eax", in("dx") port, in("eax") val, options(nomem, nostack));
         }
+    }
+
+    /// 写入 u32 (aarch64 桩)。
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub fn write_u32(&self, _offset: u16, _val: u32) {
+        // no-op on aarch64.
     }
 }
 

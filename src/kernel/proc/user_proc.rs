@@ -435,6 +435,8 @@ pub(crate) mod raw {
 
     /// 用户进程代码页分配 + 清零。
     pub fn alloc_code_page() -> *mut u8 {
+        // SAFETY: pmm_alloc_page 是 C-ABI 物理页分配器；返回的指针是
+        // 物理地址 (本进程内用作内核虚拟地址 by HHDM)。
         let page = unsafe { pmm_alloc_page() };
         if !page.is_null() {
             // SAFETY: page 来自 pmm_alloc_page, 大小为 PAGE_SIZE。

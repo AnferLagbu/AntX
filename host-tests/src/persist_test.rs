@@ -52,11 +52,8 @@ fn hvfs_persistence_roundtrip() {
     hvfs2.init();
     assert!(hvfs2.is_initialized(), "re-init should succeed");
 
-    match hvfs2.open("/file_0", 0x0001, 1) {
-        Ok(fd) => {
-            hvfs2.close(fd as u32);
-        }
-        Err(_) => {}
+    if let Ok(fd) = hvfs2.open("/file_0", 0x0001, 1) {
+        hvfs2.close(fd as u32);
     }
 
     println!("\n=== Persistence Roundtrip Passed ===\n");

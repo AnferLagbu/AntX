@@ -212,6 +212,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     }
 
     let tx_size = core::mem::size_of::<E1000TxDesc>() * E1000_TX_RING_SIZE;
+    // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器；要求 size > 0, align = 2^n。
     let tx_ptr = unsafe { kmalloc_align(tx_size as u64, 16) };
     if tx_ptr.is_null() {
         klog_err!(Net, "e1000: TX desc alloc failed");
@@ -219,6 +220,8 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     }
     let tx_descs = tx_ptr as *mut E1000TxDesc;
     for i in 0..E1000_TX_RING_SIZE {
+        // SAFETY: tx_descs 由 kmalloc_align 分配，大小 tx_size；
+        // E1000_TX_RING_SIZE 计数保证 i < 数组长度。
         unsafe {
             (*tx_descs.add(i)).addr = 0;
             (*tx_descs.add(i)).length = 0;
@@ -247,6 +250,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     }
 
     let rx_size = core::mem::size_of::<E1000RxDesc>() * E1000_RX_RING_SIZE;
+    // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器。
     let rx_ptr = unsafe { kmalloc_align(rx_size as u64, 16) };
     if rx_ptr.is_null() {
         klog_err!(Net, "e1000: RX desc alloc failed");
@@ -255,6 +259,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     let rx_descs = rx_ptr as *mut E1000RxDesc;
 
     for i in 0..E1000_RX_RING_SIZE {
+        // SAFETY: kmalloc_align 分配 RX 缓冲区，16 字节对齐。
         let buf_ptr = unsafe { kmalloc_align(E1000_RX_BUFFER_SIZE as u64, 16) };
         if buf_ptr.is_null() {
             klog_err!(Net, "e1000: RX buf[{}] alloc failed", i);
@@ -262,6 +267,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
         }
         dev.rx_buffers[i] = buf_ptr as *mut u8;
         let buf_phys = virt_to_phys(buf_ptr as u64);
+        // SAFETY: rx_descs 数组已分配；i < E1000_RX_RING_SIZE。
         unsafe {
             (*rx_descs.add(i)).addr = buf_phys;
             (*rx_descs.add(i)).length = 0;
@@ -491,6 +497,8 @@ impl E1000Device {
         }
 
         for bus in 0..255u8 {
+            // SAFETY: pci_read_config_word 是 C-ABI PCI 配置读取；offset 0x00
+            // 读取 vendor_id，是只读寄存器，无副作用。
             let vendor_id = unsafe { pci_read_config_word(bus, 0, 0, 0x00) };
             if vendor_id == 0xFFFF || vendor_id == 0x0000 {
                 if bus > 0 {
@@ -500,6 +508,8 @@ impl E1000Device {
 
             for dev_idx in 0..32u8 {
                 for func in 0..8u8 {
+                    // SAFETY: PCI 配置空间读取 (vendor id / class code)，
+                    // 设备不存在返回 0xFFFF/0x0000。
                     let vid = unsafe { pci_read_config_word(bus, dev_idx, func, 0x00) };
                     if vid == 0xFFFF || vid == 0x0000 {
                         if func == 0 {
@@ -508,7 +518,9 @@ impl E1000Device {
                         continue;
                     }
 
+                    // SAFETY: device id 寄存器 (offset 0x02)。
                     let _did = unsafe { pci_read_config_word(bus, dev_idx, func, 0x02) };
+                    // SAFETY: revision + class code 寄存器 (offset 0x08)。
                     let class_code = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x08) };
                     let base_class = ((class_code >> 24) & 0xFF) as u8;
 
@@ -517,10 +529,14 @@ impl E1000Device {
                         self.device = dev_idx;
                         self.func = func;
 
+                        // SAFETY: BAR0 寄存器 (offset 0x10) 读取。
                         let bar0_lo = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
+                        // SAFETY: 写 BAR0 全 1 用于探测 BAR 大小。
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x10, 0xFFFFFFFF) };
+                        // SAFETY: 读取 BAR0 size mask。
                         let _bar_size_mask =
                             unsafe { pci_read_config_dword(bus, dev_idx, func, 0x10) };
+                        // SAFETY: 恢复原 BAR0 值。
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x10, bar0_lo) };
 
                         let is_io = (bar0_lo & 0x01) != 0;
@@ -530,11 +546,14 @@ impl E1000Device {
 
                         self.mmio_phys = (bar0_lo & 0xFFFFFFF0) as u64;
 
+                        // SAFETY: 中断寄存器 (offset 0x3C)。
                         let irq_reg = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x3C) };
                         self.irq = (irq_reg & 0xFF) as u8;
 
+                        // SAFETY: 命令寄存器 (offset 0x04)；开启 MMIO + Bus Master。
                         let mut cmd = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x04) };
                         cmd |= 0x06;
+                        // SAFETY: 写回命令寄存器。
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x04, cmd) };
 
                         let iomem = match IoMem::from_pci_bar(
@@ -583,6 +602,8 @@ impl E1000Device {
         };
 
         let tail = self.tx_tail;
+        // SAFETY: tx_descs 是 E1000_TX_RING_SIZE 大小的循环数组；
+        // tail % E1000_TX_RING_SIZE 落在有效索引内。
         let desc = unsafe { &mut *tx_descs.add(tail) };
 
         let mut timeout: u32 = E1000_TIMEOUT;
@@ -631,6 +652,8 @@ impl E1000Device {
                 break;
             }
 
+            // SAFETY: rx_descs 是 E1000_RX_RING_SIZE 循环数组；
+            // rx_tail % E1000_RX_RING_SIZE 落在有效索引内。
             let desc = unsafe { &mut *rx_descs.add(self.rx_tail) };
             if desc.status & E1000_RXD_STAT_DD == 0 {
                 klog_warn!(
@@ -693,6 +716,8 @@ impl E1000Device {
                 return None;
             }
 
+            // SAFETY: rx_descs 是 E1000_RX_RING_SIZE 循环数组；
+            // rx_tail % E1000_RX_RING_SIZE 落在有效索引内。
             let desc = unsafe { &mut *rx_descs.add(self.rx_tail) };
             if desc.status & E1000_RXD_STAT_DD == 0 {
                 break;
@@ -798,6 +823,7 @@ pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32
     if driver_data.is_null() || data.is_null() { return -1; }
     // SAFETY: driver_data 由驱动注册时设置, data 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
+    // SAFETY: data 是 NetOps 契约保证的合法用户/内核只读指针。
     let user_data = unsafe { UserReadPtr::new(data, len as usize) };
     match dev.send_packet(user_data.as_slice()) {
         Ok(_) => 0,

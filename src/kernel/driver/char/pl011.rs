@@ -128,22 +128,37 @@ impl Driver for Pl011Driver {
 // CharOps 回调 (C ABI 兼容)
 // ============================================================================
 
-unsafe fn pl011_read(driver_data: *mut u8, buf: &mut [u8]) -> usize {
-    let drv = &mut *(driver_data as *mut Pl011Driver);
+// SAFETY: 调用方 (CharOps::read) 保证 driver_data 有效, buf 至少 buf.len() 字节。
+//         unsafe 逻辑封装在 (self.read)(...) 内。
+extern "C" fn pl011_read(driver_data: *mut u8, buf: *mut u8, len: usize) -> usize {
+    // SAFETY: driver_data 由 CharOps 契约保证指向有效 Pl011Driver；
+    // buf 是调用方提供的 len 字节可写缓冲区。
+    let drv = unsafe { &mut *(driver_data as *mut Pl011Driver) };
     let mut count = 0;
-    for byte in buf.iter_mut() {
-        *byte = drv.read_byte();
+    for i in 0..len {
+        // SAFETY: i < len 保证写入合法；buf 由调用方契约。
+        unsafe {
+            let byte = drv.read_byte();
+            core::ptr::write_volatile(buf.add(i), byte);
+        }
         count += 1;
     }
     count
 }
 
-unsafe fn pl011_write(driver_data: *mut u8, buf: &[u8]) -> usize {
-    let drv = &*(driver_data as *const Pl011Driver);
-    for &byte in buf {
-        drv.write_byte(byte);
+// SAFETY: 调用方 (CharOps::write) 保证 driver_data 有效, buf 至少 len 字节。
+extern "C" fn pl011_write(driver_data: *mut u8, buf: *const u8, len: usize) -> usize {
+    // SAFETY: driver_data 由 CharOps 契约保证指向有效 Pl011Driver；
+    // buf 是调用方提供的 len 字节只读缓冲区。
+    let drv = unsafe { &*(driver_data as *const Pl011Driver) };
+    for i in 0..len {
+        // SAFETY: i < len 保证读合法；buf 由调用方契约。
+        unsafe {
+            let byte = core::ptr::read_volatile(buf.add(i));
+            drv.write_byte(byte);
+        }
     }
-    buf.len()
+    len
 }
 
 /// PL011 CharOps 静态实例

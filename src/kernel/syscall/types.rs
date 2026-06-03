@@ -1,3 +1,6 @@
+// POSIX errno 命名约定 (EAGAIN/EACCES/...) — 全大写缩写是有意的
+#![allow(clippy::upper_case_acronyms)]
+
 /// Syscall 类型定义和常量 — POSIX 原生接口
 ///
 /// syscall 编号采用 POSIX 标准约定，Credo 私有 syscall 分配在 400+。

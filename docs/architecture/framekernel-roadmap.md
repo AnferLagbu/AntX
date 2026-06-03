@@ -806,9 +806,9 @@ MIRIFLAGS="-Zmiri-strict-provenance" cargo miri run --bin miri-runner --release
 
 | 任务 | 说明 | 估时 | 状态 |
 |------|------|------|------|
-| 4.1 PWID 在框内核中的表达 | 能力系统作为 services 层安全策略 | 持续 | 📋 |
-| 4.2 栏栈恢复与 TCB 关系 | 恢复域如何跨越 framework/services 边界 | 持续 | 📋 |
-| 4.3 Verus 形式化验证 | 选 3 个核心 API 做形式化证明 | 持续 | 📋 |
+| 4.1 PWID 在框内核中的表达 | 能力系统作为 services 层安全策略 | 持续 | ✅ **Phase 4.1 完成: services/credo/{policy,grants,sessions,audit}.rs + miri-tests/{credo_policy,credo_grants,credo_sessions,credo_audit}.rs (124 测试, Miri 0 UB)** |
+| 4.2 栏栈恢复与 TCB 关系 | 恢复域如何跨越 framework/services 边界 | 持续 | ✅ **Phase 4.2 完成: services/barrier/attribution.rs (10 测试) + miri-tests/barrier_attribution.rs (13 测试, 0 UB) — 故障归属 (TCB/Services/CrossLayer) + 能力降级** |
+| 4.3 Verus 形式化验证 | 选 3 个核心 API 做形式化证明 | 持续 | ✅ **Phase 4.3 完成: miri-tests/verus_targets.rs (9 verified, 0 errors) — 工具链 verus 0.2026.05.31 集成, 6 个定理全部 SMT 自动证明** |
 | 4.4 论文撰写 | White paper: *QueenX: A Rust-Based Framekernel with Capability-Based Security and Barrier Recovery* | 持续 | 📋 |
 
 ---

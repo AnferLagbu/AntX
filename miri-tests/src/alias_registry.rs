@@ -24,6 +24,19 @@ pub struct AliasRegistry {
     count: usize,
 }
 
+impl core::fmt::Debug for AliasRegistry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AliasRegistry")
+            .field("count", &self.count)
+            .field("entries", &self.entries)
+            .finish()
+    }
+}
+
+impl Default for AliasRegistry {
+    fn default() -> Self { Self::new() }
+}
+
 impl AliasRegistry {
     pub const fn new() -> Self {
         Self {
