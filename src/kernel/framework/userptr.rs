@@ -53,6 +53,11 @@ impl UserReadPtr {
     /// 调用方必须确保 `ptr` 指向至少 `len` 字节的有效、已映射、可读的用户态内存，
     /// 且在返回的 `UserReadPtr` 存活期间该内存不会被释放或重新映射。
     pub unsafe fn new(ptr: *const u8, len: usize) -> Self {
+        // SAFETY: 此函数标记为 `unsafe fn`, 构造时调用方必须保证 (按 doc comment):
+        //   1. `ptr` 是非空且已对齐 (`*const u8` 对齐要求为 1, 总是满足)
+        //   2. `ptr..ptr+len` 全部在用户态页表映射中, 可读
+        //   3. 该内存区域在 `UserReadPtr` 存活期间不会被释放/重新映射/unmap
+        // (典型路径: `UserMode::validate_user_buf` 在 syscall 入口已做检查)
         Self { ptr, len }
     }
 
@@ -61,6 +66,8 @@ impl UserReadPtr {
     /// 此方法是安全的，因为构造时的 `unsafe` 契约已保证了指针有效性。
     pub fn as_slice(&self) -> &[u8] {
         // SAFETY: 构造时的 unsafe 契约保证 ptr + len 是有效的用户态内存
+        // `slice::from_raw_parts` 要求: 1) ptr 对齐 (u8 = 1, ok), 2) len 字节全可读,
+        // 3) ptr 非空 (由 new() 调用方保证), 4) 期间无并发写 (与 Rust `&` 借用保证对齐)
         unsafe { slice::from_raw_parts(self.ptr, self.len) }
     }
 
@@ -98,6 +105,9 @@ impl UserWritePtr {
     /// 调用方必须确保 `ptr` 指向至少 `len` 字节的有效、已映射、可写的用户态内存，
     /// 且在返回的 `UserWritePtr` 存活期间该内存不会被释放或重新映射。
     pub unsafe fn new(ptr: *mut u8, len: usize) -> Self {
+        // SAFETY: 同 `UserReadPtr::new`, 但需可写 (非只读); 调用方需额外保证:
+        //   1. 内存映射权限含 W (页表 PTE_RW=1)
+        //   2. 在 `UserWritePtr` 存活期间不会有其他 writer (独占 `&mut` 借用)
         Self { ptr, len }
     }
 
@@ -106,12 +116,15 @@ impl UserWritePtr {
     /// 此方法是安全的，因为构造时的 `unsafe` 契约已保证了指针有效性。
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         // SAFETY: 构造时的 unsafe 契约保证 ptr + len 是有效的可写用户态内存
+        // `&mut self` 提供独占借用, 保证构造到 as_mut_slice 之间无其他路径
+        // 同时持有 `&mut` 引用, 因此 `from_raw_parts_mut` 安全。
         unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 
     /// 以不可变字节切片形式访问用户内存。
     pub fn as_slice(&self) -> &[u8] {
         // SAFETY: 构造时的 unsafe 契约保证 ptr + len 是有效的用户态内存
+        // 从 `*mut u8` cast 到 `*const u8` 保持对齐 (1), 借用规则防止并发写
         unsafe { slice::from_raw_parts(self.ptr as *const u8, self.len) }
     }
 
@@ -147,6 +160,11 @@ impl<T> UserRefMut<T> {
     ///
     /// 调用方必须确保 `ptr` 指向有效的、已映射、可写的用户态 `T` 实例。
     pub unsafe fn new(ptr: *mut T) -> Self {
+        // SAFETY: 调用方必须保证 (按 doc comment):
+        //   1. `ptr` 已对齐到 `align_of::<T>()`
+        //   2. `ptr` 指向的用户态内存已映射, 含 W 权限
+        //   3. 大小至少 `size_of::<T>()`
+        //   4. 期间无其他 writer (独占 `&mut` 借用)
         Self { ptr }
     }
 
@@ -156,6 +174,7 @@ impl<T> UserRefMut<T> {
     #[allow(clippy::should_implement_trait)]
     pub fn as_mut(&mut self) -> &mut T {
         // SAFETY: 构造时的 unsafe 契约保证 ptr 是有效的可写 T
+        // `&mut self` 提供独占借用, 保证 `&mut *self.ptr` 期间无其他引用
         unsafe { &mut *self.ptr }
     }
 

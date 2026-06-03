@@ -61,6 +61,9 @@ impl IoPort {
     #[inline]
     pub fn read_u8(&self, offset: u16) -> u8 {
         let port = self.check_offset(offset, 1).unwrap_or_else(|e| panic!("IoPort::read_u8: {}", e));
+        // SAFETY: `in al, dx` 触发 x86 I/O 端口读; `check_offset` 已验证 `offset + 1`
+        // 不超出本 IoPort 持有的端口范围; `port` 是 u16 (与 dx 寄存器同宽), 由
+        // `nomem`/`nostack` 告诉编译器此指令无内存/栈副作用, 不会与 Rust 内存模型冲突。
         unsafe {
             let val: u8;
             asm!("in al, dx", in("dx") port, out("al") val, options(nomem, nostack));
@@ -83,6 +86,8 @@ impl IoPort {
     #[inline]
     pub fn read_u16(&self, offset: u16) -> u16 {
         let port = self.check_offset(offset, 2).unwrap_or_else(|e| panic!("IoPort::read_u16: {}", e));
+        // SAFETY: `in ax, dx` 2 字节 PIO 读; `check_offset(offset, 2)` 已验证 2 字节不越界;
+        // 2 字节对齐由 x86 PIO 总线自然保证 (端口按字节寻址, 2 字节访问需偶地址端口)。
         unsafe {
             let val: u16;
             asm!("in ax, dx", in("dx") port, out("ax") val, options(nomem, nostack));
@@ -102,6 +107,8 @@ impl IoPort {
     #[inline]
     pub fn read_u32(&self, offset: u16) -> u32 {
         let port = self.check_offset(offset, 4).unwrap_or_else(|e| panic!("IoPort::read_u32: {}", e));
+        // SAFETY: `in eax, dx` 4 字节 PIO 读; `check_offset(offset, 4)` 已验证 4 字节不越界;
+        // 4 字节对齐由 x86 PIO 总线自然保证 (4 字节端口访问需 4 字节对齐端口)。
         unsafe {
             let val: u32;
             asm!("in eax, dx", in("dx") port, out("eax") val, options(nomem, nostack));
@@ -121,6 +128,8 @@ impl IoPort {
     #[inline]
     pub fn write_u8(&self, offset: u16, val: u8) {
         let port = self.check_offset(offset, 1).unwrap_or_else(|e| panic!("IoPort::write_u8: {}", e));
+        // SAFETY: `out dx, al` 触发 x86 I/O 端口写; `check_offset` 已验证 1 字节不越界;
+        // `nomem`/`nostack` 正确声明指令无 Rust 可见副作用, 不破坏借用检查。
         unsafe {
             asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack));
         }
@@ -141,6 +150,8 @@ impl IoPort {
     #[inline]
     pub fn write_u16(&self, offset: u16, val: u16) {
         let port = self.check_offset(offset, 2).unwrap_or_else(|e| panic!("IoPort::write_u16: {}", e));
+        // SAFETY: `out dx, ax` 2 字节 PIO 写; `check_offset(offset, 2)` 已验证 2 字节不越界;
+        // 2 字节对齐由 x86 PIO 总线自然保证。
         unsafe {
             asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
         }
@@ -158,6 +169,8 @@ impl IoPort {
     #[inline]
     pub fn write_u32(&self, offset: u16, val: u32) {
         let port = self.check_offset(offset, 4).unwrap_or_else(|e| panic!("IoPort::write_u32: {}", e));
+        // SAFETY: `out dx, eax` 4 字节 PIO 写; `check_offset(offset, 4)` 已验证 4 字节不越界;
+        // 4 字节对齐由 x86 PIO 总线自然保证。
         unsafe {
             asm!("out dx, eax", in("dx") port, in("eax") val, options(nomem, nostack));
         }

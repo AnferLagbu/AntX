@@ -90,6 +90,14 @@ const MAX_ISR_VECTORS: usize = 256;
 /// 初始化时单线程写入, 运行时只读 → 无锁安全。
 static mut ISR_TABLE: [Option<InterruptHandler>; MAX_ISR_VECTORS] = [None; MAX_ISR_VECTORS];
 
+/// 注册中断向量对应的 ISR 处理器。
+///
+/// # Safety
+///
+/// 1. 仅在启动单线程阶段 (无并发中断) 调用, 写 ISR_TABLE 安全
+/// 2. `vector` 必须小于 `MAX_ISR_VECTORS` (内部会检查)
+/// 3. `handler` 必须是 `'static` 生命周期的合法函数指针, 可被中断上下文调用
+///    (不持有任何 Rust 锁, 不分配, 不睡眠)
 unsafe fn register_isr(vector: u8, handler: InterruptHandler) {
     // SAFETY: 单线程初始化上下文, 无竞争。
     let idx = vector as usize;

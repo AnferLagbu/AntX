@@ -59,8 +59,19 @@ impl SlabAlloc for KmallocSlabAlloc {
         Some(ptr)
     }
 
+    /// 释放 ptr 指向的内存。
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须保证 `ptr` 来自本分配器的 `allocate` 返回, 且未被双重 free。
+    /// GlobalAlloc 契约要求 ptr.layout 与本分配器路由一致。
     unsafe fn free(&self, ptr: NonNull<u8>, _layout: Layout) {
-        // SAFETY: 调用方保证 ptr 来自本分配器。
+        // SAFETY:
+        //   1. `ptr` 是 `NonNull<u8>`, 由 `allocate` 返回, 保证非空
+        //   2. 调用方 (按 `GlobalAlloc::dealloc` 契约) 必须保证 ptr 来自本分配器
+        //   3. 同一 ptr 未被双重 free (GlobalAlloc 自身要求, 不在 SAFETY 内)
+        // `get_kmalloc()` 返回全局 kmalloc 堆, `deallocate` 内部按 size class
+        // 归还到对应 slab; `_layout` 在当前实现中未使用 (slab 按 size class 路由)
         let heap = crate::kernel::mm::kmalloc::get_kmalloc();
         heap.deallocate(ptr.as_ptr());
     }

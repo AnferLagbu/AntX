@@ -20,11 +20,26 @@ FW_UNSAFE=$(grep -rn "unsafe " src/kernel/framework/ 2>/dev/null | wc -l || echo
 FW_LINES=$(find src/kernel/framework -name "*.rs" -exec cat {} \; 2>/dev/null | wc -l || echo 0)
 
 # 统计 services 中 unsafe (期望为 0)
-# 仅匹配实际 unsafe 代码块 (排除注释中的 "unsafe" 字样)
+# 匹配实际的 unsafe 代码块 / 函数 / impl, 排除注释行。
+# 修复历史: 之前用 `(?<!//.*)\bunsafe\s*[\{fn]` 含变长 lookbehind,
+# PCRE2 直接拒匹配 (length of lookbehind assertion is not limited),
+# 导致 services 不论有什么 unsafe 都报告 0。
+#
+# 过滤策略: 仅丢弃行首是 `//`(行注释) / `*`/`/*` (块注释延续) 的行。
+# 错误地把 `unsafe impl<T: Send>` 误判为注释是上次 bug, 这里改用更稳的判定。
 SV_UNSAFE=0
 SV_LINES=0
 if [ -d "src/kernel/services" ]; then
-    SV_UNSAFE=$(grep -rPn '(?<!//.*)\bunsafe\s*[\{fn]' src/kernel/services/ 2>/dev/null | wc -l || echo 0)
+    SV_UNSAFE=$(grep -rPn '\bunsafe\b' src/kernel/services/ --include='*.rs' 2>/dev/null \
+        | awk -F: '{
+            # 跳过行注释和块注释
+            code=$0; sub(/^[^:]+:[^:]+:/, "", code);
+            if (code ~ /^[[:space:]]*\/\//) next;
+            if (code ~ /^[[:space:]]*\*/) next;
+            # 跳过字符串字面量内的 unsafe (极少, 简单起见不处理)
+            print
+        }' \
+        | wc -l || echo 0)
     SV_LINES=$(find src/kernel/services -name "*.rs" -exec cat {} \; 2>/dev/null | wc -l || echo 0)
 fi
 
@@ -49,7 +64,8 @@ echo ""
 if [ -d "src/kernel/services" ]; then
     if [ "$SV_UNSAFE" -gt 0 ]; then
         echo -e "${RED}FAIL${NC}: services/ 中发现 unsafe 块:"
-        grep -rPn '(?<!//.*)\bunsafe\s*[\{fn]' src/kernel/services/
+        grep -rPn '\bunsafe\b' src/kernel/services/ --include='*.rs' 2>/dev/null \
+            | awk -F: '{ code=$0; sub(/^[^:]+:[^:]+:/, "", code); if (code !~ /^[[:space:]]*(\/\/|\*)/) print }'
         exit 1
     else
         echo -e "${GREEN}PASS${NC}: services/ 无 unsafe"
@@ -65,6 +81,8 @@ fi
 
 echo ""
 echo "=== Unsafe Top 10 (全内核) ==="
-grep -rln "unsafe " src/kernel/ 2>/dev/null | \
-    xargs -I {} sh -c 'count=$(grep -c "unsafe " {} 2>/dev/null); echo "$count {}"' 2>/dev/null | \
-    sort -rn | head -10
+{
+    grep -rln "unsafe " src/kernel/ 2>/dev/null
+} | {
+    xargs -I {} sh -c 'count=$(grep -c "unsafe " "{}" 2>/dev/null || echo 0); echo "$count {}"' 2>/dev/null || true
+} | sort -rn | head -10 || true

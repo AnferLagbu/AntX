@@ -53,41 +53,55 @@ impl Task {
 
     /// 进程状态 (AtomicU32)。
     pub fn state(&self) -> u32 {
+        // SAFETY: `Task` 包装了 `*const Process`, 由 `Task::new`/`from_pid` 等构造路径
+        // 保证该指针指向有效的 `Process` 实例, 且通过 `&self` 借用保证存活。
+        // 字段 `state` 是 `AtomicU32`, 任何对齐的 load 总是 safe (仅要求指针有效)。
+        // `Acquire` ordering 保证与并发写入同步。
         unsafe { (*self.proc_ptr).state.load(Ordering::Acquire) }
     }
 
     /// 优先级 (AtomicU32)。
     pub fn priority(&self) -> u32 {
+        // SAFETY: 同 `state` 的契约; 字段是 `AtomicU32`。
         unsafe { (*self.proc_ptr).priority.load(Ordering::Acquire) }
     }
 
     /// 是否为内核线程。
     pub fn is_kernel(&self) -> bool {
+        // SAFETY: 同 `state` 的契约; `is_kernel()` 是 `Process` 的 safe 方法, 仅访问
+        // 内部 `is_kernel_thread: bool` 字段。
         unsafe { (*self.proc_ptr).is_kernel() }
     }
 
     /// PWM 安全上下文。
     pub fn pwm(&self) -> u64 {
+        // SAFETY: 同 `state` 的契约; `get_pwm()` 是 `Process` 的 safe 方法, 读取
+        // capability 上下文的 u64 标识符。
         unsafe { (*self.proc_ptr).get_pwm() }
     }
 
     /// 退出码。
     pub fn exit_code(&self) -> u32 {
+        // SAFETY: 同 `state` 的契约; 字段是 `AtomicU32`。
         unsafe { (*self.proc_ptr).exit_code.load(Ordering::Acquire) }
     }
 
     /// 累计 CPU 时间 (ticks)。
     pub fn cpu_time_ticks(&self) -> u64 {
+        // SAFETY: 同 `state` 的契约; 字段是 `AtomicU64`。
         unsafe { (*self.proc_ptr).cpu_time.load(Ordering::Acquire) }
     }
 
     /// CR3 页表根。
     pub fn cr3(&self) -> u64 {
+        // SAFETY: 同 `state` 的契约; 字段是 `AtomicU64` (页表基址, 物理地址)。
         unsafe { (*self.proc_ptr).cr3.load(Ordering::Acquire) }
     }
 
     /// 信号待处理掩码。
     pub fn pending_signals(&self) -> u64 {
+        // SAFETY: 同 `state` 的契约; `signal_pending_get()` 是 `Process` 的 safe 方法,
+        // 返回 `signal_pending: AtomicU64` 的当前值。
         unsafe { (*self.proc_ptr).signal_pending_get() }
     }
 }

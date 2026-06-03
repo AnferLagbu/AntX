@@ -60,6 +60,12 @@ pub mod credo;
 /// 故障恢复 — 栏栈恢复
 pub mod barrier;
 
+/// 同步原语高级封装 — IrqSpinLock / scoped / Barrier / Once
+///
+/// 基础同步原语见 `framework::sync` (TCB); 本模块提供
+/// services 层的安全抽象 (闭包 API / 一次性初始化等)。
+pub mod sync;
+
 /// WASM 沙箱
 pub mod wasm;
 

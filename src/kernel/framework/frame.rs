@@ -107,6 +107,12 @@ impl Frame {
     /// 零填充帧内容
     pub fn zero(&self) {
         let ptr = self.as_virt_ptr();
+        // SAFETY: `as_virt_ptr()` 由 `phys_to_virt` 转换物理地址到内核虚拟地址;
+        // `Frame` 持有的 `phys` 由 `FrameAlloc::allocate_frame` 返回, 保证:
+        //   1. 物理地址是已分配 (free list 中扣除) 的 4K 对齐页
+        //   2. 物理地址在 `phys_to_virt` 线性映射范围内 (内核高半区直接映射)
+        //   3. `self.size()` 字节全部可写, 写 0 不会破坏其他数据结构
+        //   4. 期间无并发写 (Frame 所有权唯一, 由 FrameAlloc 跟踪)
         unsafe {
             core::ptr::write_bytes(ptr, 0, self.size());
         }

@@ -23,6 +23,36 @@ step() { echo -e "\n${YELLOW}━━━ $1 ━━━${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 err()  { echo -e "${RED}✗ $1${NC}"; exit 1; }
 
+# ── 0. TCB 安全边界门禁 (M2 里程碑硬约束) ────────────────────
+# 服务层 (services/) 不允许任何 unsafe 代码。这是框内核架构的核心契约。
+# check_tcb.sh 是 fail-fast 门禁: 一旦发现立即 exit 1, 整个 audit 终止。
+# 历史教训: 2026-06-03 审计发现 check_tcb.sh 正则有 bug (变长 lookbehind),
+# 导致 services/ 出现 8 处 unsafe 仍报 PASS。已修复, 见 tools/check_tcb.sh 顶部注释。
+step "0/6 TCB 安全边界门禁 (services/ 零 unsafe)"
+if [ -x "$PROJECT_ROOT/tools/check_tcb.sh" ]; then
+    if "$PROJECT_ROOT/tools/check_tcb.sh"; then
+        ok "TCB 边界: services/ 零 unsafe, framework/ 收敛"
+    else
+        err "TCB 边界被破坏! 见上方 FAIL 输出"
+    fi
+else
+    err "tools/check_tcb.sh 不存在或不可执行"
+fi
+
+# Phase 3.2 真实工具: framework 全量 SAFETY 注释覆盖审计
+# quick 模式也会跑 (核心 fail-fast 门禁, 不需要 Lockbud/Miri 等重工具)
+if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/tools/audit_unsafe.py" ]; then
+    step "0.5/6 Framework SAFETY 注释全量审计 (Phase 3.2)"
+    AUDIT_RESULT=$("$PROJECT_ROOT/tools/audit_unsafe.py" --summary 2>&1 || true)
+    echo "$AUDIT_RESULT" | tail -12
+    MISSING=$(echo "$AUDIT_RESULT" | grep -E "缺 SAFETY:" | head -1 | awk '{print $NF}')
+    if [ -n "$MISSING" ] && [ "$MISSING" -eq 0 ]; then
+        ok "framework 100% SAFETY 覆盖 (Phase 3.2 达成)"
+    elif [ -n "$MISSING" ]; then
+        err "framework 仍有 $MISSING 处缺 SAFETY 注释 (Phase 3.2 未达成)"
+    fi
+fi
+
 # ── 1. 双架构 check ─────────────────────────────────────────────
 step "1/6 双架构 cargo check (x86_64 + aarch64)"
 pushd src/rust > /dev/null

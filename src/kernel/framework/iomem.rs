@@ -138,6 +138,12 @@ impl IoMem {
     /// Caller must ensure the struct type matches the MMIO layout,
     /// and only performs volatile reads/writes with proper alignment.
     #[inline(always)] pub unsafe fn virt_ptr(&self) -> *mut u8 {
+        // SAFETY: `self.virt` 是 `IoMem::from_*` 构造时由 `NonNull::new_unchecked`
+        // 校验的物理基地址经 MMU 映射后的虚拟地址, 满足 NonNull 契约。
+        // 调用方 (标记为 `unsafe fn`) 须自行保证:
+        //   1. 指针类型 (`*mut T`) 与 MMIO 寄存器布局一致 (大小/对齐)
+        //   2. 仅通过 volatile 访问 (无编译器重排)
+        //   3. 不会写出 `IoMem` 自身的字节范围 (`offset + size_of::<T>() <= self.len`)
         self.virt.as_ptr()
     }
 
@@ -150,34 +156,46 @@ impl IoMem {
 
     #[inline] pub fn read_u8(&self, offset: usize) -> u8 {
         self.check_offset(offset, 1).unwrap();
+        // SAFETY: `check_offset` 已验证 `offset + 1 <= self.len`, 指针 `self.virt + offset`
+        // 落在 IoMem 持有的 MMIO 区域内, 不会越界; `read_volatile` 防止编译器重排。
         unsafe { self.virt.as_ptr().add(offset).read_volatile() }
     }
     #[inline] pub fn read_u16(&self, offset: usize) -> u16 {
         self.check_offset(offset, 2).unwrap();
+        // SAFETY: `check_offset(offset, 2)` 已验证 2 字节访问不越界; u16 转换要求
+        // 2 字节对齐 (PCI BAR MMIO 由 BIOS/UEFI 建立时保证自然对齐)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u16).read_volatile() }
     }
     #[inline] pub fn read_u32(&self, offset: usize) -> u32 {
         self.check_offset(offset, 4).unwrap();
+        // SAFETY: `check_offset(offset, 4)` 已验证 4 字节访问不越界; 4 字节自然对齐
+        // 由 MMIO 基地址的页对齐保证 (PAGE_SIZE=4096, 任何 4 字节偏移都对其)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u32).read_volatile() }
     }
     #[inline] pub fn read_u64(&self, offset: usize) -> u64 {
         self.check_offset(offset, 8).unwrap();
+        // SAFETY: `check_offset(offset, 8)` 已验证 8 字节访问不越界; 8 字节自然对齐
+        // 由 MMIO 基地址的页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *const u64).read_volatile() }
     }
     #[inline] pub fn write_u8(&self, offset: usize, val: u8) {
         self.check_offset(offset, 1).unwrap();
+        // SAFETY: 与 `read_u8` 对称, 写 1 字节不会越界; volatile 写保证设备立即可见。
         unsafe { self.virt.as_ptr().add(offset).write_volatile(val); }
     }
     #[inline] pub fn write_u16(&self, offset: usize, val: u16) {
         self.check_offset(offset, 2).unwrap();
+        // SAFETY: `check_offset(offset, 2)` 已验证 2 字节写不越界; 2 字节对齐由 MMIO 基地址页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u16).write_volatile(val); }
     }
     #[inline] pub fn write_u32(&self, offset: usize, val: u32) {
         self.check_offset(offset, 4).unwrap();
+        // SAFETY: `check_offset(offset, 4)` 已验证 4 字节写不越界; 4 字节自然对齐由页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u32).write_volatile(val); }
     }
     #[inline] pub fn write_u64(&self, offset: usize, val: u64) {
         self.check_offset(offset, 8).unwrap();
+        // SAFETY: `check_offset(offset, 8)` 已验证 8 字节写不越界; 8 字节自然对齐由页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u64).write_volatile(val); }
     }
 }

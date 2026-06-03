@@ -55,12 +55,13 @@ else
 endif
 
 # ── 架构条件构建对象 ─────────────────────────────────────────────────
+# 注: build/lib/string.o 已废弃 — string.c 已被 string.rs (Rust) 取代,
+#     string 符号由 $(RUST_LIB) 通过 --whole-archive 包含。
 ifeq ($(ARCH),aarch64)
-    KERNEL_OBJS = build/boot.o build/lib/string.o
+    KERNEL_OBJS = build/boot.o
     KERNEL_TEST_OBJS = build/boot.o
 else
     KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-                  build/lib/string.o \
                   build/arch/x86_64/trampoline.o
     KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
                   build/kernel_test.o build/test_main.o \
@@ -170,21 +171,13 @@ $(RUST_LIB_CHAOS):
 	@echo "Building Rust chaos kernel (fault_injection enabled)..."
 	cd src/rust && cargo build --release --target $(RUST_TARGET) --features "kernel_test fault_injection" --target-dir target/chaos-release
 
-build/lib/string.o: src/kernel/lib/string.c
+build/%.o: src/kernel/%.asm
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/%.o: src/kernel/%.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(AS) $(ASFLAGS) $< -o $@
 
 $(STAGE1_BIN): src/kernel/boot/stage1.asm
 	@mkdir -p build
 	$(AS) -f bin $< -o $@
-
-build/%.o: src/kernel/%.asm
-	@mkdir -p $(dir $@)
-	$(AS) $(ASFLAGS) $< -o $@
 
 build/%.o: src/kernel/boot/%.asm
 	@mkdir -p build

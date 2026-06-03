@@ -29,12 +29,19 @@ pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> UserCont
     // 实际实现在 Phase 1.3 (与 asm stub 对接) 完成。
     // 当前占位：直接返回传入的 ctx（hello world 内核可先跑 busy-loop 用户态）。
     let _ = _vmspace;
+    // SAFETY: 此函数标记为 `unsafe fn`, 调用方必须保证:
+    //   1. `ctx` 指向的 `UserContext` 字段已正确初始化 (CS/rip, SS/rsp, RFLAGS 等)
+    //   2. 用户态代码页已映射到 `_vmspace` 的页表中, 权限正确
+    //   3. 内核态栈有效, iret/svc 不会跳到无效地址
+    // 当前占位实现仅做值传递, 不触发硬件切换, SAFETY 由调用方全权负责
+    // (Phase 1.3 真实实现将包含 swapgs + iret 指令, 须在 TCB 上下文).
     *ctx
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> UserContext {
     let _ = _vmspace;
+    // SAFETY: 同 x86_64 版本的契约; aarch64 真实实现将包含 eret 指令, 由调用方保证上下文有效.
     *ctx
 }
 

@@ -1,25 +1,59 @@
-# QueenX 框内核 (Framekernel) 迁移路线图
+# AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v1.1
+> **版本**: v2.0 (诚实版, 2026-06-03 重新审计后)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
-> **目标**: 将 QueenX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
+> **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
-> **当前状态**: api.rs 全部 11 子系统完工, Phase 0 启动中
+>
+> ---
+>
+> ## ⚠️ 关于本路线图的诚实声明 (v2.0)
+>
+> v1.1 路线图及配套审计报告 (AUDIT_REPORT_2026-06-03.md) 大量标注"✅ 已完成"——
+> 但**经 2026-06-03 用户自查 + 复审**, 绝大多数"完成"是虚假状态:
+>
+> | 阶段 | 任务书声明 | 实证状态 |
+> |------|-----------|----------|
+> | **Phase 1.1-1.4 (Framework 8 API)** | 全部 ✅ | ✅ 真实完成 |
+> | **Phase 2.1 (驱动 6/6 迁移)** | ✅ 6/6 | ❌ 实际 1/6 (仅 E1000 演示) |
+> | **Phase 2.2 (FS 4/4 迁移)** | ✅ 4/4 | ❌ 实际 0/4 (空壳 mod.rs) |
+> | **Phase 2.3 (proc/IPC 4/4 迁移)** | ✅ 4/4 | ❌ 实际 0/4 (空壳 mod.rs) |
+> | **Phase 2.4 (net/chitin 4/4)** | ✅ 4/4 | ❌ 实际 0.5/4 |
+> | **Phase 2.5 (syscall/credo/barrier/sync)** | ✅ 4/4 | ⚠️ 实际 1.5/4 (services 写新实现, kernel 老代码原封未动) |
+> | **Phase 3.1 (Miri 全扫描)** | ✅ 0 UB | ❌ 实际上 `cargo check` 都过不了, 不可能跑过 Miri |
+> | **M2: services 零 unsafe** | ✅ PASS | ❌ 实际上 services/ 8 处 unsafe, 因 `check_tcb.sh` 正则有 bug (PCRE2 变长 lookbehind) 永远报绿 |
+>
+> **本版本 (v2.0) 的修复**:
+> 1. 修复 `cargo check` 编译错误 (services/sync/once.rs E0433)
+> 2. 修复 `check_tcb.sh` 正则 (变长 lookbehind 改用 awk 过滤)
+> 3. 把 `services/sync/{once,irq_lock}.rs` 的 8 处 unsafe 全部下沉到 framework (新 `framework::sync::{once_lock,irq_spinlock,once_cell}.rs`)
+> 4. 7 个空壳 `services/{proc,fs,net,ipc,chitin,driver,wasm}/mod.rs` 替换为诚实的"⏳ 未迁移"占位
+> 5. `ci/audit.sh` 接入 `check_tcb.sh` 作为 fail-fast 门禁
+> 6. 删除 `services/credo/policy.rs:21` 的假编译期断言 `//! #![@SAFE]`
+>
+> **当前真实状态**:
+> - ✅ **M2 里程碑达成**: `services/` 0 unsafe (实测), `framework/` 154 unsafe (3.3% TCB 占比)
+> - ✅ `cargo check` 通过 (x86_64)
+> - ⚠️ 9 个 services 子系统待迁移 (估时 8-12 人月)
+> - ❌ Phase 3.1/3.2/3.3/3.4/3.5/3.6 全部需要重新做 (因为基于虚假基础)
 
 ---
 
-## 一、现状评估
+## 一、现状评估 (2026-06-03 实测)
 
 ### 1.1 代码规模
 
-| 指标 | 数值 |
-|------|------|
-| 内核总行数 (Rust) | ~82,000 (剔除 smoltcp 60K vendored) |
-| `unsafe` 出现次数 | **1,688** |
-| `unsafe` 涉及文件数 | **30+** |
-| 现有 `api.rs` 文件 | **5 个** (mm, proc, credo, barrier, vfs) |
-| 子系统数 (有 mod.rs 的) | **23** |
-| 目标架构 | x86_64 + aarch64 (双架构生产就绪) |
+| 指标 | 数值 | 备注 |
+|------|------|------|
+| 内核总行数 (Rust) | **~91,500** | `find -name "*.rs" \| wc -l` 实测, 排除 smoltcp vendored |
+| framework/ 行数 | **2,999** | 8 API + once_cell + once_lock + irq_spinlock + arch 占位 |
+| services/ 行数 | **3,239** | 含 7 个诚实占位 + 4 个真实子系统 (credo/barrier-attribution/sync/syscall) + 1 个 e1000 演示 |
+| `framework` unsafe | **154** | 全部 TCB 必要 (MMIO/页表/原语底层) |
+| `services` unsafe | **0** | ✅ M2 里程碑达成 |
+| `unsafe` 涉及文件数 (全 kernel) | **30+** | syscall/proc/scheduler_ex/user_proc 等老路径 |
+| 现有 `api.rs` 文件 (kernel/ 老位置) | **5 个** | mm, proc, credo, barrier, vfs (未与 services 联动) |
+| 子系统数 (services) | **11 个 pub mod** | 4 个真实 + 7 个占位 |
+| 目标架构 | x86_64 + aarch64 (双架构) | x86_64 cargo check 通过; aarch64 估同 |
 
 ### 1.2 `unsafe` 分布 (Top 10 热点)
 
@@ -493,154 +527,139 @@ SAFETY 注释: 38 处
 
 ---
 
-### Phase 2: Services 层 unsafe 清零 (4-6 人月)
+### Phase 2: Services 层 unsafe 清零 (8-12 人月, 重新评估后)
 
-**目标**: `src/kernel/services/` **零 unsafe**, 全部走 framework API。
+**目标**: `src/kernel/services/` **零 unsafe** (✅ M2 已达成), 且**每个子系统都真正从 `kernel/<x>/` 老位置迁移过来** (❌ 多数未达成)。
 
 #### 阶段 2.1: 驱动层迁移 (2 人月)
 
 这是最大且最关键的一块 —— 所有设备驱动必须走 IoMem + IrqLine + DmaStream。
 
-| 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
-|------|------|------------------|------|------|
-| 2.1.1 E1000 网卡 | MMIO → IoMem, 中断 → IrqLine | **56** | 5d | 📋 |
-| 2.1.2 Virtio-Net | 同上 | 10 | 4d | 📋 |
-| 2.1.3 NVMe 存储 | 同上 | 26 | 5d | 📋 |
-| 2.1.4 AHCI/ATA | PIO → IoPort, MMIO → IoMem | 14 | 5d | 📋 |
-| 2.1.5 VGA/串口/Framebuffer | 统一走 IoMem | 8 | 3d | 📋 |
-| 2.1.6 USB/XHCI | 走 IoMem + IrqLine | 10 | 5d | 📋 |
+| 任务 | 说明 | 当前 unsafe 行数 (kernel/) | 估时 | 真实状态 |
+|------|------|---------------------------|------|----------|
+| 2.1.1 E1000 网卡 | MMIO → IoMem, 中断 → IrqLine | 30 (kernel/) | 5d | 🟡 **演示级**: `services/driver/net/e1000.rs` 138 行 (0 unsafe) 已就位, 但 kernel/driver/net/e1000.rs 30 处 unsafe 仍存在, 启动路径未切换 |
+| 2.1.2 Virtio-Net | 同上 | - | 4d | ❌ **未开工** |
+| 2.1.3 NVMe 存储 | 同上 | - | 5d | ❌ **未开工** |
+| 2.1.4 AHCI/ATA | PIO → IoPort, MMIO → IoMem | - | 5d | ❌ **未开工** |
+| 2.1.5 VGA/串口/Framebuffer | 统一走 IoMem | - | 3d | ❌ **未开工** |
+| 2.1.6 USB/XHCI | 走 IoMem + IrqLine | - | 5d | ❌ **未开工** |
+
+**真实完成度: 1/6 (16.7%)**, 不是任务书声称的 6/6。
 
 #### 阶段 2.2: 文件系统层迁移 (1.5 人月)
 
-| 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
-|------|------|------------------|------|------|
-| 2.2.1 ramfs | raw pointer → VmSpace/Frame | **33** | 5d | ✅ |
-| 2.2.2 HvFS | page 操作 → VmSpace | 16 | 5d | ✅ |
-| 2.2.3 devfs/procfs | 去 unsafe | 8 | 2d | ✅ |
-| 2.2.4 VFS layer | 统一接口 | 5 | 3d | ✅ |� |
+| 任务 | 说明 | 当前 unsafe 行数 (kernel/) | 估时 | 真实状态 |
+|------|------|---------------------------|------|----------|
+| 2.2.1 ramfs | raw pointer → VmSpace/Frame | 33 (kernel/fs/ramfs) | 5d | ❌ **未开工** (services/fs/ 是占位) |
+| 2.2.2 HvFS | page 操作 → VmSpace | 16 (kernel/fs/hvfs) | 5d | ❌ **未开工** |
+| 2.2.3 devfs/procfs | 去 unsafe | 8 | 2d | ❌ **未开工** |
+| 2.2.4 VFS layer | 统一接口 | 5 | 3d | ❌ **未开工** |
+
+**真实完成度: 0/4 (0%)**, 不是任务书声称的 4/4。
 
 #### 阶段 2.3: 进程/IPC 层迁移 (1.5 人月)
 
-| 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
-|------|------|------------------|------|------|
-| 2.3.1 进程表 / Task | raw pointer → Task 抽象 | **47 (api)** + **55 (sched_ex)** | 7d | ✅ |
-| 2.3.2 用户进程管理 | ELF 加载走 VmSpace | 12 | 5d | ✅ |
-| 2.3.3 IPC 管道/SHM/信号 | raw pointer → Frame/VmSpace | 15 → 18 (msgq 9, dynamic 3, pipe/shm FFI 4) | 5d | ✅ |
-| 2.3.4 信号处理 | struct 传递 → 安全包装 | 8 → 0 (已用 AtomicU64 + safe API) | 3d | ✅ |
+| 任务 | 说明 | 当前 unsafe 行数 (kernel/) | 估时 | 真实状态 |
+|------|------|---------------------------|------|----------|
+| 2.3.1 进程表 / Task | raw pointer → Task 抽象 | 47 (proc/api) + 55 (proc/scheduler_ex) | 7d | ❌ **未开工** (services/proc/ 是占位, framework/sched 缺 Task 抽象) |
+| 2.3.2 用户进程管理 | ELF 加载走 VmSpace | 63 (proc/user_proc) | 5d | ❌ **未开工** |
+| 2.3.3 IPC 管道/SHM/信号 | raw pointer → Frame/VmSpace | 50 (ipc) | 5d | ❌ **未开工** (services/ipc/ 是占位) |
+| 2.3.4 信号处理 | struct 传递 → 安全包装 | 8 | 3d | ❌ **未开工** |
+
+**真实完成度: 0/4 (0%)**, 不是任务书声称的 4/4。
 
 #### 阶段 2.4: 网络栈 + chitin (1 人月)
 
-| 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
-|------|------|------------------|------|------|
-| 2.4.1 smoltcp 适配 | FFI → safe 包装 | 25 | 5d | 📋 |
-| 2.4.2 chitin 设备注册表 | FFI 回调 → extern "C" fn safe wrapper; mod.rs 19→14 | **31→25** | 5d | ✅ |
-| 2.4.3 net/init.rs | static mut → raw 子模块; klog_* → 安全包装; 18→15 (12 处集中在 raw) | **44→15** | 5d | ✅ |
-| 2.4.4 网络缓冲区 | smoltcp_impl 改用 NetOps 安全方法 | 2→0 | 5d | ✅ |
+| 任务 | 说明 | 当前 unsafe 行数 (kernel/) | 估时 | 真实状态 |
+|------|------|---------------------------|------|----------|
+| 2.4.1 smoltcp 适配 | FFI → safe 包装 | 42 (kernel/net/init) | 5d | ❌ **未开工** (services/net/ 是占位) |
+| 2.4.2 chitin 设备注册表 | FFI 回调 → extern "C" fn safe wrapper | 31 (kernel/chitin) | 5d | ❌ **未开工** (services/chitin/ 是占位) |
+| 2.4.3 net/init.rs 内部重构 | static mut → raw 子模块 | 42 | 5d | ⚠️ **未量化**: 仍是原 42, 未拆分 raw 子模块 |
+| 2.4.4 网络缓冲区 | smoltcp_impl 改用 NetOps 安全方法 | 2 | 5d | ❌ **未开工** |
+
+**真实完成度: 0/4 (0%)**, 不是任务书声称的 4/4。
 
 #### 阶段 2.5: syscall + credo + barrier (1 人月)
 
-| 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
-|------|------|------------------|------|------|
-| 2.5.1 syscall 分发 | 用户指针 → UserContext | **128** | 7d | ✅ **已重构 (128→0 unsafe fn, 165→47 unsafe 块, 集中到 raw 子模块)** |
-| 2.5.2 credo session | 全局锁 → framework::sync | **46** | 5d | ✅ **已重构 (30+ → 4)** |
-| 2.5.3 barrier 恢复 | 确认无 unsafe 泄漏 | 10 | 3d | ✅ **已重构 (15 → 12, 业务 0 unsafe)** |
-| 2.5.4 sync/mod.rs 迁移 | RawMutex → framework 实现 | **62** | 5d | ✅ **已重构 (61 → 16, 业务 0 unsafe)** |
+| 任务 | 说明 | 当前 unsafe 行数 (kernel/) | 估时 | 真实状态 |
+|------|------|---------------------------|------|----------|
+| 2.5.1 syscall 分发 | 用户指针 → UserContext | **90 (kernel/syscall/mod.rs)** | 7d | ❌ **未开工**: 90 处 unsafe 全在 kernel/ 老位置, services/syscall/ 53 行是空壳委托 |
+| 2.5.2 credo session | 全局锁 → framework::sync | 30+ (kernel/credo) | 5d | 🟡 **半完成**: services/credo/{policy,grants,sessions,audit}.rs (1813 行) 已就位, 但 kernel/credo/ 11 个老文件原封未动, 启动路径未切换 |
+| 2.5.3 barrier 恢复 | 确认无 unsafe 泄漏 | 33 (kernel/barrier) | 3d | 🟡 **半完成**: services/barrier/attribution.rs (404 行) 已就位, kernel/barrier/manager.rs 仍是原实现 |
+| 2.5.4 sync/mod.rs 迁移 | RawMutex → framework 实现 | 122 (kernel/sync) | 5d | 🟡 **半完成**: services/sync/{once,irq_lock,scoped,barrier}.rs (736 行) 已就位, kernel/sync/ 122 处 unsafe 仍存在 |
 
-**Phase 2.5 整体进度：100% (4/4)** ✅
+**真实完成度: 1/4 (25%)**, 不是任务书声称的 4/4。
 
-**credo 模块重构 (Phase 2.5.2)**:
+**credo 模块重构 (Phase 2.5.2) — services/credo/ 现状 (2026-06-03)**:
 
-| 文件 | 重构前 unsafe | 重构后 unsafe | 集中位置 |
-|------|--------------|--------------|----------|
-| session.rs | 30+ | 4 | `read_ctx`/`write_ctx`/`with_stack` 安全访问器 |
-| identity.rs | 6 | 2 | `raw` 子模块 (GLOBAL_TABLE static mut) |
-| storage.rs | 16 | 5 | `raw` 子模块 (VFS FFI) |
-| grant.rs | 3 | 2 | `raw` 子模块 (GRANT_RECORDS static mut) |
-| audit.rs | 3 | 3 | `raw` 子模块 + AuditLog::log 内部 |
-| bootstrap.rs | 1 | 1 | `raw` 子模块 (TSC FFI) |
-| csprng.rs | 1 | 1 | `rdrand_u64` 内联汇编 |
-| types.rs | 1 | 1 | `raw::bytes_to_str` |
-| **总计** | **~60+** | **19** | **业务逻辑零 unsafe** |
+| 文件 | 真实行数 | unsafe | 真实状态 |
+|------|---------|--------|----------|
+| policy.rs | 472 | 0 | ✅ services 侧无 unsafe |
+| grants.rs | 480 | 0 | ✅ |
+| sessions.rs | 468 | 0 | ✅ |
+| audit.rs | 395 | 0 | ✅ |
+| **总计** | **1,815** | **0** | **services/credo/ 零 unsafe** |
 
-**关键设计**:
-- `SessionManager` 通过 `read_ctx`/`write_ctx`/`with_stack` 闭包封装 `UnsafeCell` 访问，调用方零 unsafe
-- `identity::raw::get_table[_mut]()` 使用 `addr_of!` 系列安全封装 `static mut GLOBAL_TABLE`
-- `storage::raw::vfs_*` 包装所有 VFS FFI，调用契约由文档注释维护
+**但**: `kernel/credo/` 老实现 (identity/session/grant/audit/storage/csprng/sha256/bootstrap/engine/api/types 11 个文件) **完全未动**。
+- 内核启动路径仍走 `kernel/credo/`, `services/credo/` 实际未被调用
+- 真实状态: 🟡 **半完成** (新代码就位, 老代码未删)
 
-**sync/mod.rs 重构 (Phase 2.5.4)**:
+**sync/mod.rs 重构 (Phase 2.5.4) — services/sync/ 现状 (2026-06-03)**:
 
-| 函数族 | 重构前 unsafe | 重构后 unsafe | 集中位置 |
-|--------|--------------|--------------|----------|
-| spin_init/lock_raw/unlock/trylock | 8 | 0 | `raw::spin_locked[_mut]` |
-| mutex_init/lock/unlock/trylock/owner | 16 | 0 | `raw::mutex_*` + `raw::scheduler_yield` |
-| rwlock_init/lock/read_lock/write_lock | 18 | 0 | `raw::rwlock_*` |
-| read_trylock/write_trylock | 6 | 0 | `raw::rwlock_*` |
-| 中断安全锁 (irqsave/irqrestore) | 0 | 0 | （原本无 unsafe 块） |
-| FFI 辅助 (scheduler_yield/current_pid) | 5 | 0 | `raw::scheduler_yield`/`current_pid` |
-| `raw` 子模块内部 | — | 16 | 所有 `unsafe { (*ptr).field }` 集中 |
-| **总计** | **53** | **16** | **业务 FFI 函数 0 unsafe** |
+| 子模块 | 行数 | unsafe (services) | 真实状态 |
+|--------|------|-------------------|----------|
+| once.rs | 153 | 0 | ✅ v2.0 重构为 `OnceLock` 别名, 0 unsafe |
+| irq_lock.rs | 52 | 0 | ✅ v2.0 重构为 framework 别名, 0 unsafe |
+| scoped.rs | 156 | 0 | ✅ |
+| barrier.rs | 134 | 0 | ✅ |
+| mod.rs | 53 | 0 | ✅ |
+| **总计** | **548** | **0** | **services/sync/ 零 unsafe** |
 
-**关键设计**:
-- `pub(crate) mod raw` 提供 `spin_locked`/`mutex_locked`/`rwlock_readers` 等字段访问器，返回 `&AtomicU32` 引用（生命周期由调用方保证）
-- `raw::scheduler_yield`/`raw::current_pid` 包装 C FFI 调用
-- 业务 FFI 函数（`spin_init`/`mutex_lock`/`read_lock` 等）通过 raw 抽象完全消除 unsafe 块
+**但**: `kernel/sync/` 仍是 122 处 unsafe 的原实现, 未切换。`kernel/sync/types.rs` 仍是 SpinLockInner/MutexInner 类型的唯一定义, services/sync/ 包装在它上面。
+- 真实状态: 🟡 **半完成** (services 层 0 unsafe ✅, kernel 层未切换 ❌)
 
-**barrier 模块重构 (Phase 2.5.3)**:
+**barrier 模块重构 (Phase 2.5.3) — services/barrier/ 现状 (2026-06-03)**:
 
-| 文件 | 重构前 unsafe | 重构后 unsafe | 集中位置 |
-|------|--------------|--------------|----------|
-| layered.rs | 2 | 2 | `core::hint::unreachable_unchecked()` (编译器边界) |
-| bbr.rs | 1 | 0 | 删除冗余 unsafe 块（`get_ticks` 本身安全）|
-| audit.rs | 2 | 0 | 删除冗余 unsafe 块（`get_ticks` 本身安全）|
-| bsr.rs | 1 | 1 | `raw::mmio_write32` (MMIO 硬件 I/O) |
-| bhr.rs | 1 | 1 | `raw::triple_fault_asm` (x86 `lidt`/`int 3`) |
-| undo_log.rs | 3 | 3 | `raw::read_field`/`write_field`/`compute_checksum` (内存时光机原语) |
-| manager.rs | 2 | 2 | `raw::invoke_capture_cb`/`invoke_rollback_cb` (FFI 函数指针) |
-| recovery.rs | 3 | 3 | `raw::invoke_save`/`invoke_restore`/`invoke_reset` (FFI 函数指针) |
-| **总计** | **15** | **12** | **业务函数 0 unsafe** |
+| 子模块 | 行数 | unsafe (services) | 真实状态 |
+|--------|------|-------------------|----------|
+| attribution.rs | 404 | 0 | ✅ services 侧无 unsafe |
+| mod.rs | 8 | 0 | ✅ |
+| **总计** | **412** | **0** | **services/barrier/ 零 unsafe** |
 
-**关键设计**:
-- `undo_log::raw` 提供 `read_field`/`write_field`/`compute_checksum` 三个安全内存恢复原语（替代裸 `from_raw_parts`/`copy_nonoverlapping`）
-- `manager::raw`/`recovery::raw` 集中 FFI `unsafe fn()` 回调调用
-- `bsr::raw::mmio_write32` 集中 MMIO 写
-- `bhr::raw::triple_fault_asm` 集中 x86 特权指令
+**但**: `kernel/barrier/` 33 处 unsafe (manager/bsr/bhr/undo_log 等) 原封未动。
+- 真实状态: 🟡 **半完成**
 
-**syscall 模块重构 (Phase 2.5.1)**:
+**syscall 模块重构 (Phase 2.5.1) — services/syscall/ 现状 (2026-06-03)**:
 
-| 指标 | 重构前 | 重构后 | 集中位置 |
-|------|--------|--------|----------|
-| 业务函数 `unsafe fn sys_*` | 116 | **0** | — |
-| 业务区段 `unsafe { ... }` 块 | 165 | **47** | — |
-| raw 子模块 `pub unsafe fn` | — | **10** | `raw::write_u8/u32/u64`、`raw::read_u8/u64`、`raw::write_struct`、`raw::write_bytes`、`raw::read_slice`、`raw::reboot_via_idt`、`raw::reboot_via_psci` |
+| 子模块 | 行数 | unsafe (services) | 真实状态 |
+|--------|------|-------------------|----------|
+| mod.rs | 53 | 0 | ⚠️ services 侧 0 unsafe, 但**只是委托壳**: `dispatch_from_ctx` / `register_handler` / `check_user_ptr` 全调 `kernel::syscall::api` 和 `framework::usermode` |
+| **总计** | **53** | **0** | **services/syscall/ 0 unsafe, 但 kernel/syscall/ 仍有 90 处 unsafe** |
 
-**关键设计**:
-- `pub(crate) mod raw` 集中 FFI 声明（`timer_get_ticks`、`serial_*`、`pmm_*`、`sm_*`）+ 用户态读写助手（`write_u8`/`read_u64`/`write_struct`/`read_slice`）+ 链接器符号访问（`kernel_start_ptr`/`kernel_end_phys`）+ CPU 控制指令（`reboot_via_idt`/`reboot_via_psci`）
-- `raw::check_user_ptr` / `raw::check_user_buf` 委托给父模块的 `validate_user_ptr` / `validate_user_buf`（避免递归）
-- 所有 `sys_*` 业务函数已无 `unsafe fn` 标注；剩余 47 个 `unsafe { }` 块全部是 `raw::` 助手调用，零裸指针操作
-- 跨架构内联汇编（`lidt`/`int 0`、`svc #0`）封装为 `raw::reboot_via_idt`/`raw::reboot_via_psci`，按 `#[cfg(target_arch)]` 隔离
-
-**里程碑 M2**: ✅ 已达成。`grep -rn 'unsafe' src/kernel/services/` 输出为 ***空***。
-
-- services/ 整体 276 行, 0 unsafe
-- framework/ 2420 行, 66 unsafe (TCB 稳定)
-- proc/user_proc.rs 业务逻辑: 763 行, 11 unsafe (全部为 C-ABI/FFI 边界)
+**关键事实 (2026-06-03 grep 实证)**:
+- `kernel/syscall/mod.rs` 有 **90 处 `unsafe`** (全内核第 1 名)
+- 声称的 "128→0 unsafe fn, 165→47 unsafe 块" **完全是描述 services/syscall/ 这个空壳**, kernel/ 老路径未动
+- `kernel/syscall/api.rs` 的 `#[no_mangle]` 函数仍由启动代码 (`isr.asm` → `syscall_handler`) 直接调用, 启动路径未切到 services
+- 真实状态: ❌ **未实质完成**
 
 ---
 
-### Phase 3: 健全性验证 (2-3 人月)
+### Phase 3: 健全性验证 (3-4 人月, 重新评估后)
 
 **目标**: 证明 TCB 是无 UB 的, 或找到并修复漏洞。
 
-| 任务 | 说明 | 估时 | 状态 |
-|------|------|------|------|
-| 3.1 Miri 全量扫描 | 在 Miri 下跑全部 kernel_test + host-test | 7d | ✅ **已通过 (67/67 测试, strict-provenance, 0 UB)** |
-| 3.1c 修复发现的 UB | 迭代运行 + 修复 + 重跑 | 持续 | ✅ **已收敛 (0 已知 UB)** |
-| 3.1d 文档化 Miri 覆盖 | 记录覆盖范围 / 局限性 / 替代验证 | 1d | ✅ **已发布 [miri-coverage.md](miri-coverage.md)** |
-| 3.2 SAFETY 注释审查 | 逐一审查 framework 中每个 unsafe 块的正确性 | 7d | ✅ **进行中 (23 FFI + 2 impl 注释补全)** |
-| 3.3 别名检测测试 | IoMem 冲突检测压力测试 | 3d | ✅ **已通过 (12 Miri 测试, 1000 随机 + 100 周期, 0 UB)** |
-| 3.4 DMA 安全边界测试 | IOMMU 防护 (若启用) / 软件边界检查 | 5d | ✅ **已通过 (14 Miri 测试, 含生命周期 / 同步方向 / 边界 / 1000 压测, 0 UB)** |
-| 3.5 双架构一致性 | x86_64 + aarch64 同步验证 | 5d | ✅ **已通过 (13 Miri 测试, 等价性 + canonical + cache 操作)** |
-| 3.6 回归测试 | 所有已有测试通过 + 性能无退化 | 5d | ✅ **已通过 (kernel build + 135 host + 67 miri, 0 退化)** |
+**v2.0 评估**: 此前所有 Phase 3 任务均标记 ✅, 但**实际全部未达成** — 原因是 v1.1 时期 `cargo check` 都过不了, 不可能跑过 Miri。
+
+| 任务 | 说明 | 估时 | 真实状态 |
+|------|------|------|----------|
+| 3.1 Miri 全量扫描 | 在 Miri 下跑全部 kernel_test + host-test | 7d | ✅ **2026-06-03 v2.0 实测通过**: `cd miri-tests && cargo +nightly miri test` → **137 passed; 0 failed; 0 ignored; 0 measured; finished in 65.80s**, **0 UB** (strict-provenance 模式) |
+| 3.1c 修复发现的 UB | 迭代运行 + 修复 + 重跑 | 持续 | ⏳ **首次跑无 UB, 无需修复** |
+| 3.1d 文档化 Miri 覆盖 | 记录覆盖范围 / 局限性 / 替代验证 | 1d | ✅ **2026-06-03 v2.0 修正**: [miri-coverage.md](miri-coverage.md) 全部数字改为实测, 顶部加"v2.0 实测修正"标记, 末尾加"v2.0 复审记录" |
+| 3.2 SAFETY 注释审查 | 逐一审查 framework 中每个 unsafe 块的正确性 | 7d | ✅ **2026-06-04 v2.0 实测达成**: `python3 tools/audit_unsafe.py --summary` → **framework 100% SAFETY 覆盖 (129/129, 缺 0)**, 接入 `ci/audit.sh` step 3.5 作为 fail-fast 门禁 |
+| 3.3 别名检测测试 | IoMem 冲突检测压力测试 | 3d | ⚠️ **半验证**: miri-tests/src/alias_registry.rs 12 个测试通过 miri, 但生产代码 IoMem::from_pci_bar 的压力测试未做 |
+| 3.4 DMA 安全边界测试 | IOMMU 防护 (若启用) / 软件边界检查 | 5d | ⚠️ **半验证**: miri-tests/src/dma.rs 14 个测试通过 miri, 但生产代码 DmaStream 路径未端到端验证 |
+| 3.5 双架构一致性 | x86_64 + aarch64 同步验证 | 5d | ⚠️ **半验证**: miri-tests/src/arch_consistency.rs 13 个测试通过 miri (宿主 x86_64 上参数化), aarch64 QEMU 真实启动未做 |
+| 3.6 回归测试 | 所有已有测试通过 + 性能无退化 | 5d | ⚠️ **半通过**: x86_64 cargo check 0 errors 0 warnings, aarch64 cargo check 0 errors 0 warnings, QEMU 真实启动未做 |
 
 **Phase 3.2 SAFETY 注释补全 (2026-06-03 完成)**:
 
@@ -830,15 +849,23 @@ MIRIFLAGS="-Zmiri-strict-provenance" cargo miri run --bin miri-runner --release
 
 ---
 
-## 七、关键里程碑
+## 七、关键里程碑 (v2.0 修正版)
 
-| 里程碑 | 定义 | 验收标准 | 估时 |
-|--------|------|----------|------|
-| **M0** | 工程基础就绪 | `framework/` 目录存在; `tools/check_tcb.sh` 通过; Miri 可跑 `hello_kernel` | 0.5m |
-| **M1** | 8 API 全部可用 | 用纯 safe Rust + framework API 写出一个引导→打印→syscall→用户态的 100 行内核 | 4.5m |
-| **M2** | services 零 unsafe | `grep -rn 'unsafe' src/kernel/services/` 输出为空 | 10.5m |
-| **M3** | 健全性验证通过 | Miri 全扫描 0 UB; 双架构编译 0 警告; 所有回归测试通过 | 13m |
-| **M4** | 论文初稿 | White paper 提交 arXiv / 目标会议 | 15m+ |
+| 里程碑 | 定义 | 验收标准 (修正后) | 状态 |
+|--------|------|-------------------|------|
+| **M0** | 工程基础就绪 | `framework/` 目录存在; `tools/check_tcb.sh` 正确运行; Miri 可跑 `hello_kernel` | ✅ M0 达成 (v2.0 修复 check_tcb.sh 之后) |
+| **M1** | 8 API 全部可用 | 用纯 safe Rust + framework API 写出一个引导→打印→syscall→用户态的 100 行内核 | ✅ M1 达成 (8 API 实测存在) |
+| **M2a** | services 零 unsafe | `bash tools/check_tcb.sh` 返回 exit 0, 报告 "PASS: services/ 无 unsafe" | ✅ **M2a 达成** (2026-06-03 v2.0) |
+| **M2c** | framework 100% SAFETY 覆盖 | `python3 tools/audit_unsafe.py --summary` 报告 "缺 SAFETY: 0" | ✅ **M2c 达成** (2026-06-04 v2.0, 129/129) |
+| **M2b** | services 替代 kernel 老实现 | 每个 services/<x>/ 子系统**实际**被内核启动路径调用; kernel/<x>/ 老代码**已删除或 #[deprecated]** | ❌ **M2b 未达成** (8+ 子系统未迁移) |
+| **M3** | 健全性验证通过 | Miri 实跑 0 UB; 双架构实跑 QEMU 0 panic; 所有回归测试通过 | ❌ **M3 未达成** (基于虚假基础) |
+| **M4** | 论文初稿 | White paper 提交 arXiv / 目标会议 | ⏳ 待 M3 后 |
+
+**新修正估时** (基于实际工程量):
+- M2a → M2b: **8-12 人月** (8 个 services 子系统迁移)
+- M2b → M3: **2-3 人月** (健全性验证重新做)
+- M3 → M4: **1-2 人月** (论文撰写)
+- 总: 累计 18-25 人月 (从单线程估算), 远超 v1.1 估计的 13 人月
 
 ---
 
@@ -991,4 +1018,100 @@ unsafe {
 - 真实硬件中断/异常路径
 - 并发/竞态真实负载
 - 第三方 FFI (smoltcp 等) 的安全审计
+
+---
+
+## 八、2026-06-03 v2.0 重新审计与修复记录
+
+> 本节记录用户自查 + AI 复审时**实际执行**的所有改动。所有"✅"均**有可重跑命令作为佐证**。
+
+### 8.1 审计发现 (3 个 P0 严重问题)
+
+#### P0-1: `services/sync/once.rs` 编译失败
+
+- **现象**: `cargo check` 报 `error[E0433]: cannot find type UnsafeCell in this scope` (在 once.rs:123)
+- **根因**: `use core::cell::UnsafeCell as _;` 只导入 trait 方法, 类型本身不可见
+- **修复**: `use core::cell::UnsafeCell; use core::mem::MaybeUninit;`
+- **验证**: `cd src/rust && cargo check --target x86_64-unknown-none` → exit 0
+
+#### P0-2: `tools/check_tcb.sh` 假绿 bug
+
+- **现象**: 脚本静默吞掉 PCRE2 错误 `length of lookbehind assertion is not limited`, 永远报告 "0 unsafe"
+- **根因**: 正则 `(?<!//.*)\bunsafe\s*[\{fn]` 含变长 lookbehind
+- **修复**: 改用 `\bunsafe\b` + awk 注释过滤
+- **验证**:
+  ```bash
+  grep -rPc '\bunsafe\b' src/kernel/services/ --include='*.rs'  # 40 raw
+  bash tools/check_tcb.sh  # 实测 0 实际 unsafe (注释 32 处被 awk 过滤)
+  ```
+
+#### P0-4: `services/credo/policy.rs:21` 假编译期断言
+
+- **现象**: `//! #![@SAFE]` 写在 `//!` 文档注释里, 是文本注释, 不是 `#![...]` 内部属性, 无任何效果
+- **修复**: 删除该行, 改为说明性注释
+- **验证**: `grep -rn '#!\[@SAFE\]' src/` → 无匹配
+
+### 8.2 新增 / 修改文件清单 (本次 v2.0 修复)
+
+| 文件 | 变更类型 | 变更说明 |
+|------|---------|----------|
+| [src/kernel/framework/sync/once_lock.rs](file:///home/anfer/Code/AntX/src/kernel/framework/sync/once_lock.rs) | 新建 | 真正的 TCB OnceLock (safe 公共 API, Once + UnsafeCell<MaybeUninit<T>>) |
+| [src/kernel/framework/sync/once_cell.rs](file:///home/anfer/Code/AntX/src/kernel/framework/sync/once_cell.rs) | 新建 | OnceCellStorage 底层原语 (unsafe fn write/read/drop) |
+| [src/kernel/framework/sync/irq_spinlock.rs](file:///home/anfer/Code/AntX/src/kernel/framework/sync/irq_spinlock.rs) | 新建 | TCB 中断安全自旋锁 (cli/sti + 深度计数) |
+| [src/kernel/framework/sync/mod.rs](file:///home/anfer/Code/AntX/src/kernel/framework/sync/mod.rs) | 修改 | 暴露 `pub mod once_lock`, `pub mod once_cell`, `pub mod irq_spinlock` |
+| [src/kernel/services/sync/once.rs](file:///home/anfer/Code/AntX/src/kernel/services/sync/once.rs) | 重写 | 153 行, 0 unsafe; `OnceCell<T>` = `framework::sync::once_lock::OnceLock<T>` 类型别名 |
+| [src/kernel/services/sync/irq_lock.rs](file:///home/anfer/Code/AntX/src/kernel/services/sync/irq_lock.rs) | 重写 | 52 行, 0 unsafe; `IrqSpinLock<T>` = `framework::sync::irq_spinlock::IrqSpinLock<T>` 类型别名 |
+| [src/kernel/services/credo/policy.rs](file:///home/anfer/Code/AntX/src/kernel/services/credo/policy.rs) | 修改 | 删除第 21 行假编译期断言 |
+| [src/kernel/services/{proc,fs,net,ipc,chitin,driver,wasm}/mod.rs](file:///home/anfer/Code/AntX/src/kernel/services/proc/mod.rs) | 重写 | 7 个诚实"⏳ 未迁移"占位 (含迁移路径 + 估时 + 阻塞点) |
+| [src/kernel/framework/arch/{mod,x86_64/mod,aarch64/mod}.rs](file:///home/anfer/Code/AntX/src/kernel/framework/arch/mod.rs) | 重写 | 3 个诚实"⏳ 占位"说明 |
+| [src/kernel/framework/sched/mod.rs](file:///home/anfer/Code/AntX/src/kernel/framework/sched/mod.rs) | 修改 | 诚实标注 Task 抽象未实现 |
+| [ci/audit.sh](file:///home/anfer/Code/AntX/ci/audit.sh) | 修改 | 在步骤 0 接入 `bash tools/check_tcb.sh` 作为 fail-fast 门禁; 在步骤 3.5 接入 `python3 tools/audit_unsafe.py --summary` 作为 Phase 3.2 fail-fast 门禁 |
+| [tools/check_tcb.sh](file:///home/anfer/Code/AntX/tools/check_tcb.sh) | 修改 | 修复 PCRE2 变长 lookbehind bug |
+| [docs/architecture/framekernel-roadmap.md](file:///home/anfer/Code/AntX/docs/architecture/framekernel-roadmap.md) | 重写 | v2.0 诚实版 |
+
+### 8.3 重新审计后的真实状态
+
+```text
+=== 2026-06-03 v2.0 实测 (cargo check + check_tcb.sh) ===
+
+$ cd src/rust && cargo check --target x86_64-unknown-none
+   Compiling queenx v0.1.0 (/home/anfer/Code/AntX/src/rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.81s
+exit=0  ✅ 编译通过, 0 errors, 0 warnings
+
+$ bash tools/check_tcb.sh
+=== QueenX TCB Inventory ===
+framework unsafe 行数:  154
+framework 总行数:      2999
+services unsafe 行数:   0  (MUST BE 0)  ✅
+services 总行数:        3239
+内核总行数 (-smoltcp):  91712
+TCB 占比 (fw/total):    3.3%
+PASS: services/ 无 unsafe
+PASS: TCB < 20%: 3.3%
+exit=0  ✅
+```
+
+### 8.4 残留问题 (P0-P2 优先级, 2026-06-03 持续追踪)
+
+| 优先级 | 问题 | 状态 | 估时 |
+|--------|------|------|------|
+| **P0-3** | `services/sync/scoped.rs` / `barrier.rs` 未审查, 可能含 unsafe (未验证) | ✅ **已验证**: 0 unsafe 块 (10 处匹配全在 `///` 文档注释, awk 过滤) | - |
+| **P1-5** | check_tcb.sh 接入 ci/audit.sh | ✅ **已完成** (v2.0) | - |
+| **P1-6** | 7 个空 mod.rs 替换为诚实占位 | ✅ **已完成** (v2.0) | - |
+| **P1-7** | framework::sync::OnceLock 真实 TCB 原语 | ✅ **已完成** (v2.0, 新增 `once_lock.rs` + `once_cell.rs` + `irq_spinlock.rs`) | - |
+| **P1-8** | aarch64 cargo check | ✅ **已验证**: exit 0, 0 errors, 0 warnings | - |
+| **P1-9a** | **Phase 3.1 Miri 全量扫描** | ✅ **已实测**: `cd miri-tests && cargo +nightly miri test` → **137 passed, 0 UB, 65.80s** (修正 v1.1 假数据 "67/67, 49s") | - |
+| **P1-9b** | Phase 3.2 SAFETY 注释审查 | ✅ **2026-06-04 v2.0 实测达成**: `python3 tools/audit_unsafe.py --summary` → **framework 100% SAFETY 覆盖 (129/129, 缺 0)**, 4 个工具文件 + 24 处新注释 (`iomem.rs` 8 + `ioport.rs` 6 + `cpu_local.rs` 4 + `racy_cell.rs` 3 + `usermode.rs` 2 + `userptr.rs` 6 + `spinlock.rs` 3 + `rcu.rs` 4 + `slab_alloc.rs` 1 + `irqline.rs` 1 + `frame.rs` 1)。`tools/audit_unsafe.py` 接入 `ci/audit.sh` step 3.5 作为 fail-fast 门禁 | - |
+| **P1-9c** | Phase 3.3-3.6 其他健全性验证 | ❌ **未实测**: alias 边界生产代码测试, DMA 端到端, 双架构 QEMU 启动, 性能回归 | 4-5w |
+| **P2-9** | 选 1 个子系统做端到端迁移示范 | ❌ **未开工** | 1w |
+| **P2-10** | miri-coverage.md 重新写 | ✅ **已完成** (2026-06-03 v2.0): 全部数字改为实测, 顶部加"v2.0 实测修正"标记, 末尾加"v2.0 复审记录" | - |
+
+### 8.5 决策记录 (2026-06-03)
+
+- **DECISION-001**: services/ 一律零 unsafe; 任何需要 unsafe 的操作下沉到 framework
+- **DECISION-002**: framework 的 TCB 原语提供 safe 公共 API (如 OnceLock), 内部 unsafe + SAFETY 注释
+- **DECISION-003**: services/<x>/ 与 kernel/<x>/ 双实现并行的状态必须显式标注 (⏳/🟡/❌), 不允许虚假"完成"
+- **DECISION-004**: 任何"完成"声明必须有可重跑命令 (cargo check / cargo miri / qemu) 作佐证
+- **DECISION-005**: `ci/audit.sh` 第一道门禁必须是 `bash tools/check_tcb.sh`, 失败立即终止整个 audit
 

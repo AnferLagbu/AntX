@@ -17,8 +17,9 @@
 //!
 //! ## @SAFE
 //! 本文件不含 `unsafe`。所有硬件交互通过 `framework::credo` 的安全 API。
-
-//! #![@SAFE]
+//!
+//! CI 由 `tools/check_tcb.sh` 通过 `grep -rP 'unsafe\s*(\{|fn |impl)'` 实际校验,
+//! 不用编译期假属性 (历史上曾误用 `//! #![@SAFE]` 注释伪装, 已删除)。
 
 #![allow(dead_code)]
 

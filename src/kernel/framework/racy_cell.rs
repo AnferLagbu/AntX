@@ -48,6 +48,9 @@ impl<T> RacyCell<T> {
     ///
     /// 调用方必须保证当前没有对同一数据的可变引用。
     pub unsafe fn get(&self) -> &T {
+        // SAFETY: `UnsafeCell::get()` 返回 `*mut T`, `&*` 解引用为 `&T`。
+        // 调用方 (此函数标记为 `unsafe fn`) 必须保证: 当前无其他线程持有
+        // `&mut T` 引用, 否则构成数据竞争 (Rust 内存模型 UB)。
         &*self.inner.get()
     }
 
@@ -58,6 +61,8 @@ impl<T> RacyCell<T> {
     pub fn get_mut(&self) -> &mut T {
         // SAFETY: RacyCell 的 Sync 实现由调用方通过外部同步保证。
         // 在单线程或持有锁的上下文中调用是安全的。
+        // `&mut *UnsafeCell::get()` 产生独占引用, 与外部同步原语 (如 SpinLock) 配合
+        // 时, 锁的持有期间独占, drop 时释放, 借用检查器接受是因为 UnsafeCell 的特殊规则。
         unsafe { &mut *self.inner.get() }
     }
 
@@ -70,6 +75,9 @@ impl<T> RacyCell<T> {
     where
         T: Copy,
     {
+        // SAFETY: `core::ptr::read` 是未对齐的 memcpy, 不要求 T 初始化;
+        // 调用方必须保证: 1) T: Copy (T 是无 drop 的简单值), 2) 当前无并发写
+        // (避免读到撕裂值), 3) 地址来自 UnsafeCell, 必然 valid for reads。
         core::ptr::read(self.inner.get())
     }
 
@@ -80,6 +88,9 @@ impl<T> RacyCell<T> {
     /// 调用方必须保证独占写入。
     #[allow(dead_code)]
     pub unsafe fn write(&self, val: T) {
+        // SAFETY: `core::ptr::write` 是未对齐的 memcpy, 不读旧值 (避免 drop);
+        // 调用方必须保证: 1) 当前无其他线程读/写, 2) 目标地址 valid for writes,
+        // 3) val 不会被 writer 重新使用 (避免 double drop)。
         core::ptr::write(self.inner.get(), val)
     }
 
