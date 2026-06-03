@@ -51,9 +51,7 @@ pub fn reset_devices() -> RecoveryResult {
     use crate::kernel::barrier::snapshot;
 
     fn mmio_write32(base: u64, offset: u32, value: u32) {
-        unsafe {
-            core::ptr::write_volatile((base + offset as u64) as *mut u32, value);
-        }
+        raw::mmio_write32(base, offset, value);
     }
 
     let (success, failed) = snapshot::snapshot_restore_all(mmio_write32);
@@ -118,5 +116,25 @@ pub mod tests {
         freeze_all_domains();
         unfreeze_all_domains();
         true
+    }
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 MMIO 写操作
+// ============================================================================
+//
+// BSR (Barrier Soft Reset) 通过 MMIO 写恢复设备寄存器, 这是
+// 硬件 I/O 的本质需求。本子模块集中 `write_volatile` 调用。
+
+pub(crate) mod raw {
+    /// MMIO 32位写
+    ///
+    /// # SAFETY
+    /// 调用方必须确保 `base + offset` 指向有效的设备寄存器地址。
+    pub fn mmio_write32(base: u64, offset: u32, value: u32) {
+        // SAFETY: 见函数契约。
+        unsafe {
+            core::ptr::write_volatile((base + offset as u64) as *mut u32, value);
+        }
     }
 }

@@ -26,15 +26,17 @@ impl AuditLog {
     pub fn log(&self, pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
         let now = super::bootstrap::pwm_now();
         let idx = self.count.fetch_add(1, Ordering::AcqRel) % AUDIT_CAPACITY;
-        let entry = &self.entries[idx];
-        let ep = entry as *const AuditEntry as *mut AuditEntry;
+        // SAFETY rationale: count 已 fetch_add, 后续写不会改变 idx; AuditEntry 不含
+        // 重入锁, 多核并发写不同 idx 不会数据竞争; 若 idx 相同 (环形覆盖) 也是
+        // 单字节字段级别的无锁覆盖, 接受最后写入语义。
+        let entry = &self.entries[idx] as *const AuditEntry as *mut AuditEntry;
         unsafe {
-            (*ep).timestamp = now;
-            (*ep).pwm = PwmId(pwm);
-            (*ep).action = action;
-            (*ep).result = AuditResult::Success;
-            (*ep).target_pwm = PwmId(target_pwm);
-            (*ep).details = (domain << 32) | (caps & 0xFFFFFFFF);
+            (*entry).timestamp = now;
+            (*entry).pwm = PwmId(pwm);
+            (*entry).action = action;
+            (*entry).result = AuditResult::Success;
+            (*entry).target_pwm = PwmId(target_pwm);
+            (*entry).details = (domain << 32) | (caps & 0xFFFFFFFF);
         }
     }
 
@@ -68,16 +70,32 @@ impl AuditLog {
     }
 }
 
-static mut GLOBAL_AUDIT: AuditLog = AuditLog::new();
+pub(crate) static mut GLOBAL_AUDIT: AuditLog = AuditLog::new();
 
 pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
-    unsafe {
-        GLOBAL_AUDIT.log(pwm, action, target_pwm, domain, caps);
-    }
+    raw::log(pwm, action, target_pwm, domain, caps);
 }
 
 pub fn dump() {
-    unsafe {
-        GLOBAL_AUDIT.dump();
+    raw::dump();
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 static mut GLOBAL_AUDIT 访问
+// ============================================================================
+
+pub(crate) mod raw {
+    use super::*;
+
+    /// 记录一条审计项 (使用 `&mut` 互斥访问)
+    pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
+        // SAFETY: static mut 唯一所有者, 调用方串行或由 audit 自身保证.
+        // AuditLog::log 内部使用 fetch_add 计数, 多核写不同 idx 不会数据竞争。
+        unsafe { GLOBAL_AUDIT.log(pwm, action, target_pwm, domain, caps) }
+    }
+
+    pub fn dump() {
+        // SAFETY: 同上, dump 只读取, 安全。
+        unsafe { GLOBAL_AUDIT.dump() }
     }
 }

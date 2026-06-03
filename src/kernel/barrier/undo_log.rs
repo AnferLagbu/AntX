@@ -61,9 +61,8 @@ impl UndoLog {
             self.emergency_compact(self.current_generation.saturating_sub(1));
         }
 
-        let raw = unsafe { core::slice::from_raw_parts(&old_value as *const T as *const u8, size) };
-        let mut old_bytes = [0u8; 8];
-        old_bytes[..size].copy_from_slice(&raw[..size]);
+        let raw = raw::read_field(&old_value as *const T as *const u8, size);
+        let old_bytes = raw;
 
         let checksum = fnv1a_32(&old_bytes[..size]);
 
@@ -86,13 +85,10 @@ impl UndoLog {
             }
 
             let size = entry.value_size as usize;
-            let current_checksum =
-                unsafe { fnv1a_32(core::slice::from_raw_parts(entry.field_ptr, size)) };
+            let current_checksum = raw::compute_checksum(entry.field_ptr, size);
 
             if current_checksum == entry.checksum {
-                unsafe {
-                    core::ptr::copy_nonoverlapping(entry.old_value.as_ptr(), entry.field_ptr, size);
-                }
+                raw::write_field(entry.field_ptr, &entry.old_value, size);
             }
 
             self.count -= 1;
@@ -181,5 +177,58 @@ impl UndoLog {
             }
             self.count = new_count;
         }
+    }
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中裸指针内存恢复原语
+// ============================================================================
+//
+// barrier 模块的 `UndoLog` 是框架核心的"内存时光机": 记录回滚前的字节,
+// 在恢复时通过裸指针写回。`unsafe` 在此是**本质需求** (无安全抽象可替代
+// 的内存恢复操作)。本子模块集中所有裸指针读写, 业务逻辑通过
+// `raw::read_field` / `raw::write_field` / `raw::compute_checksum` 调用。
+
+pub(crate) mod raw {
+    /// 从裸指针安全读取 N 字节到栈数组
+    ///
+    /// # SAFETY
+    /// 调用方必须确保:
+    /// - `ptr` 非空且对齐
+    /// - `size <= 8` (栈数组大小限制)
+    /// - 指针指向有效内存, 至少 `size` 字节可读
+    pub fn read_field(ptr: *const u8, size: usize) -> [u8; 8] {
+        debug_assert!(size <= 8, "size must be <= 8 for UndoLog field");
+        let mut buf = [0u8; 8];
+        // SAFETY: 见函数契约
+        unsafe {
+            core::ptr::copy_nonoverlapping(ptr, buf.as_mut_ptr(), size);
+        }
+        buf
+    }
+
+    /// 将字节写回裸指针
+    ///
+    /// # SAFETY
+    /// 调用方必须确保:
+    /// - `ptr` 非空且对齐
+    /// - `size <= 8`
+    /// - 指针指向有效可写内存, 至少 `size` 字节
+    pub fn write_field(ptr: *mut u8, bytes: &[u8; 8], size: usize) {
+        debug_assert!(size <= 8, "size must be <= 8 for UndoLog field");
+        // SAFETY: 见函数契约
+        unsafe {
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, size);
+        }
+    }
+
+    /// 对裸指针指向的内存计算 FNV-1a 校验和
+    ///
+    /// # SAFETY
+    /// 调用方必须确保 `ptr` 指向的内存至少有 `size` 字节可读
+    pub fn compute_checksum(ptr: *const u8, size: usize) -> u32 {
+        // SAFETY: 见函数契约
+        let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
+        super::fnv1a_32(slice)
     }
 }

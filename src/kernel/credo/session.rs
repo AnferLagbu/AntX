@@ -51,6 +51,43 @@ impl SessionManager {
         self.lock.store(false, Ordering::Release);
     }
 
+    // ===== raw 子模块封装的 UnsafeCell 安全访问器 (Framekernel) =====
+    // SAFETY rationale: 所有方法均通过 acquire/release 自旋锁保护,
+    // 因此 UnsafeCell::get() 的别名违反风险被排除。
+
+    fn read_ctx<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&PwmContext) -> R,
+    {
+        self.acquire();
+        // SAFETY: 持锁下访问 UnsafeCell, 排他性已保证。
+        let r = unsafe { f(&*self.current.get()) };
+        self.release();
+        r
+    }
+
+    fn write_ctx<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut PwmContext) -> R,
+    {
+        self.acquire();
+        // SAFETY: 持锁下访问 UnsafeCell, 排他性已保证。
+        let r = unsafe { f(&mut *self.current.get()) };
+        self.release();
+        r
+    }
+
+    fn with_stack<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut [PwmContext; 8]) -> R,
+    {
+        self.acquire();
+        // SAFETY: 持锁下访问 UnsafeCell, 排他性已保证。
+        let r = unsafe { f(&mut *self.elevation_stack.get()) };
+        self.release();
+        r
+    }
+
     pub fn login(&self, note: &str, password: &str) -> Result<u64, PwmError> {
         let t = identity::get_table();
         let entry = t.find_by_note(note).ok_or(PwmError::NotFound)?;
@@ -85,9 +122,7 @@ impl SessionManager {
         let uid = entry.get_uid();
         let gid = entry.get_gid();
 
-        self.acquire();
-        unsafe {
-            let ctx = &mut *self.current.get();
+        self.write_ctx(|ctx| {
             ctx.current_entry = entry;
             ctx.session_pwm = PwmId(pwm);
             ctx.cached_uid = uid;
@@ -98,8 +133,7 @@ impl SessionManager {
             ctx.saved_egid = gid;
             ctx.active_domain_id = DomainId::from_uid(uid);
             ctx.elevation_granted_pwm = PwmId::ZERO;
-        }
-        self.release();
+        });
 
         super::audit::log(pwm, AuditAction::Login, pwm, 0, 0);
 
@@ -107,9 +141,7 @@ impl SessionManager {
     }
 
     pub fn logout(&self) {
-        self.acquire();
-        unsafe {
-            let ctx = &mut *self.current.get();
+        let pwm = self.write_ctx(|ctx| {
             let pwm = ctx.session_pwm.as_u64();
             ctx.current_entry = core::ptr::null();
             ctx.session_pwm = PwmId::ZERO;
@@ -121,46 +153,46 @@ impl SessionManager {
             ctx.saved_egid = 0;
             ctx.active_domain_id = DomainId::ZERO;
             ctx.elevation_granted_pwm = PwmId::ZERO;
-            self.elevation_depth.store(0, Ordering::Release);
-            super::audit::log(pwm, AuditAction::Logout, pwm, 0, 0);
-        }
-        self.release();
+            pwm
+        });
+        self.elevation_depth.store(0, Ordering::Release);
+        super::audit::log(pwm, AuditAction::Logout, pwm, 0, 0);
     }
 
     pub fn get_current_pwm(&self) -> u64 {
-        unsafe { (*self.current.get()).session_pwm.as_u64() }
+        self.read_ctx(|ctx| ctx.session_pwm.as_u64())
     }
 
     pub fn get_current_entry(&self) -> *const PwmEntry {
-        unsafe { (*self.current.get()).current_entry }
+        self.read_ctx(|ctx| ctx.current_entry)
     }
 
     pub fn get_current_uid(&self) -> u32 {
-        unsafe { (*self.current.get()).cached_uid }
+        self.read_ctx(|ctx| ctx.cached_uid)
     }
 
     pub fn get_current_gid(&self) -> u32 {
-        unsafe { (*self.current.get()).cached_gid }
+        self.read_ctx(|ctx| ctx.cached_gid)
     }
 
     pub fn get_euid(&self) -> u32 {
-        unsafe { (*self.current.get()).euid }
+        self.read_ctx(|ctx| ctx.euid)
     }
 
     pub fn get_egid(&self) -> u32 {
-        unsafe { (*self.current.get()).egid }
+        self.read_ctx(|ctx| ctx.egid)
     }
 
     pub fn get_saved_euid(&self) -> u32 {
-        unsafe { (*self.current.get()).saved_euid }
+        self.read_ctx(|ctx| ctx.saved_euid)
     }
 
     pub fn get_saved_egid(&self) -> u32 {
-        unsafe { (*self.current.get()).saved_egid }
+        self.read_ctx(|ctx| ctx.saved_egid)
     }
 
     pub fn get_domain_id(&self) -> DomainId {
-        unsafe { (*self.current.get()).active_domain_id }
+        self.read_ctx(|ctx| ctx.active_domain_id)
     }
 
     pub fn is_logged_in(&self) -> bool {
@@ -184,31 +216,32 @@ impl SessionManager {
         let target_uid = target_entry.get_uid();
         let target_gid = target_entry.get_gid();
 
-        self.acquire();
         let depth = self.elevation_depth.load(Ordering::Acquire);
         if depth >= MAX_ELEVATION_DEPTH {
-            self.release();
             return false;
         }
 
-        unsafe {
-            let stack = &mut *self.elevation_stack.get();
-            let ctx = &*self.current.get();
-            stack[depth as usize] = *ctx;
+        let mut session_pwm = 0u64;
+        self.write_ctx(|ctx| {
+            session_pwm = ctx.session_pwm.as_u64();
+            ctx.euid = target_uid;
+            ctx.egid = target_gid;
+            ctx.saved_euid = target_uid;
+            ctx.saved_egid = target_gid;
+            ctx.active_domain_id = DomainId::from_uid(target_uid);
+            ctx.elevation_granted_pwm = PwmId(target_pwm);
+        });
 
-            let elevated = &mut *self.current.get();
-            elevated.euid = target_uid;
-            elevated.egid = target_gid;
-            elevated.saved_euid = target_uid;
-            elevated.saved_egid = target_gid;
-            elevated.active_domain_id = DomainId::from_uid(target_uid);
-            elevated.elevation_granted_pwm = PwmId(target_pwm);
-        }
+        // push current ctx snapshot onto stack
+        let snapshot = self.read_ctx(|ctx| *ctx);
+        self.with_stack(|stack| {
+            stack[depth as usize] = snapshot;
+        });
+
         self.elevation_depth.store(depth + 1, Ordering::Release);
-        self.release();
 
         super::audit::log(
-            unsafe { (*self.current.get()).session_pwm.as_u64() },
+            session_pwm,
             AuditAction::Grant,
             target_pwm,
             0,
@@ -219,26 +252,21 @@ impl SessionManager {
     }
 
     pub fn drop_elevation(&self) -> bool {
-        self.acquire();
         let depth = self.elevation_depth.load(Ordering::Acquire);
         if depth == 0 {
-            self.release();
             return false;
         }
 
-        unsafe {
-            let stack = &mut *self.elevation_stack.get();
-            let saved = stack[(depth - 1) as usize];
-            let ctx = &mut *self.current.get();
+        let saved = self.with_stack(|stack| stack[(depth - 1) as usize]);
+        self.write_ctx(|ctx| {
             *ctx = saved;
-        }
+        });
         self.elevation_depth.store(depth - 1, Ordering::Release);
-        self.release();
         true
     }
 
     pub fn has_elevation_authority(&self, target_pwm: u64) -> bool {
-        unsafe { (*self.current.get()).elevation_granted_pwm == PwmId(target_pwm) }
+        self.read_ctx(|ctx| ctx.elevation_granted_pwm == PwmId(target_pwm))
     }
 
     pub fn try_setuid(&self, target_uid: u32) -> bool {
@@ -263,7 +291,7 @@ impl SessionManager {
     }
 
     pub fn try_setgid(&self, target_gid: u32) -> bool {
-        let egid = unsafe { (*self.current.get()).egid };
+        let egid = self.get_egid();
         if target_gid == egid {
             return true;
         }
@@ -275,29 +303,22 @@ impl SessionManager {
         };
         let target_pwm = target_entry.get_pwm().0;
 
-        self.acquire();
-        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
-        let cached_gid = unsafe { (*self.current.get()).cached_gid };
-        let saved_egid = unsafe { (*self.current.get()).saved_egid };
-        self.release();
+        let (current_pwm, cached_gid, saved_egid) = self.read_ctx(|ctx| {
+            (ctx.session_pwm.as_u64(), ctx.cached_gid, ctx.saved_egid)
+        });
 
         if super::engine::check_privilege(target_pwm, current_pwm) {
-            self.acquire();
-            unsafe {
-                let ctx = &mut *self.current.get();
+            self.write_ctx(|ctx| {
                 ctx.egid = target_gid;
                 ctx.saved_egid = target_gid;
-            }
-            self.release();
+            });
             return true;
         }
 
         if target_gid == cached_gid || target_gid == saved_egid {
-            self.acquire();
-            unsafe {
-                (*self.current.get()).egid = target_gid;
-            }
-            self.release();
+            self.write_ctx(|ctx| {
+                ctx.egid = target_gid;
+            });
             return true;
         }
 
@@ -305,7 +326,7 @@ impl SessionManager {
     }
 
     pub fn try_seteuid(&self, target_euid: u32) -> bool {
-        let euid = unsafe { (*self.current.get()).euid };
+        let euid = self.get_euid();
         if target_euid == euid {
             return true;
         }
@@ -317,29 +338,22 @@ impl SessionManager {
         };
         let target_pwm = target_entry.get_pwm().0;
 
-        self.acquire();
-        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
-        let cached_uid = unsafe { (*self.current.get()).cached_uid };
-        let saved_euid = unsafe { (*self.current.get()).saved_euid };
-        self.release();
+        let (current_pwm, cached_uid, saved_euid) = self.read_ctx(|ctx| {
+            (ctx.session_pwm.as_u64(), ctx.cached_uid, ctx.saved_euid)
+        });
 
         if super::engine::check_privilege(target_pwm, current_pwm) {
-            self.acquire();
-            unsafe {
-                let ctx = &mut *self.current.get();
+            self.write_ctx(|ctx| {
                 ctx.euid = target_euid;
                 ctx.saved_euid = target_euid;
-            }
-            self.release();
+            });
             return true;
         }
 
         if target_euid == cached_uid || target_euid == saved_euid {
-            self.acquire();
-            unsafe {
-                (*self.current.get()).euid = target_euid;
-            }
-            self.release();
+            self.write_ctx(|ctx| {
+                ctx.euid = target_euid;
+            });
             return true;
         }
 
@@ -347,7 +361,7 @@ impl SessionManager {
     }
 
     pub fn try_setegid(&self, target_egid: u32) -> bool {
-        let egid = unsafe { (*self.current.get()).egid };
+        let egid = self.get_egid();
         if target_egid == egid {
             return true;
         }
@@ -359,29 +373,22 @@ impl SessionManager {
         };
         let target_pwm = target_entry.get_pwm().0;
 
-        self.acquire();
-        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
-        let cached_gid = unsafe { (*self.current.get()).cached_gid };
-        let saved_egid = unsafe { (*self.current.get()).saved_egid };
-        self.release();
+        let (current_pwm, cached_gid, saved_egid) = self.read_ctx(|ctx| {
+            (ctx.session_pwm.as_u64(), ctx.cached_gid, ctx.saved_egid)
+        });
 
         if super::engine::check_privilege(target_pwm, current_pwm) {
-            self.acquire();
-            unsafe {
-                let ctx = &mut *self.current.get();
+            self.write_ctx(|ctx| {
                 ctx.egid = target_egid;
                 ctx.saved_egid = target_egid;
-            }
-            self.release();
+            });
             return true;
         }
 
         if target_egid == cached_gid || target_egid == saved_egid {
-            self.acquire();
-            unsafe {
-                (*self.current.get()).egid = target_egid;
-            }
-            self.release();
+            self.write_ctx(|ctx| {
+                ctx.egid = target_egid;
+            });
             return true;
         }
 
@@ -398,12 +405,14 @@ impl SessionManager {
             }
         }
 
-        self.acquire();
-        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
-        let old_cached_uid = unsafe { (*self.current.get()).cached_uid };
-        let old_euid = unsafe { (*self.current.get()).euid };
-        let old_saved_euid = unsafe { (*self.current.get()).saved_euid };
-        self.release();
+        let (current_pwm, old_cached_uid, old_euid, old_saved_euid) = self.read_ctx(|ctx| {
+            (
+                ctx.session_pwm.as_u64(),
+                ctx.cached_uid,
+                ctx.euid,
+                ctx.saved_euid,
+            )
+        });
 
         let ruid_is_set = target_ruid != u32::MAX;
         let euid_is_set = target_euid != u32::MAX;
@@ -437,17 +446,14 @@ impl SessionManager {
             }
         }
 
-        self.acquire();
         let saved_euid_should_update = ruid_is_set || (euid_is_set && new_euid != old_cached_uid);
-        unsafe {
-            let ctx = &mut *self.current.get();
+        self.write_ctx(|ctx| {
             ctx.cached_uid = new_ruid;
             ctx.euid = new_euid;
             if saved_euid_should_update {
                 ctx.saved_euid = new_euid;
             }
-        }
-        self.release();
+        });
 
         true
     }
@@ -462,12 +468,14 @@ impl SessionManager {
             }
         }
 
-        self.acquire();
-        let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
-        let old_cached_gid = unsafe { (*self.current.get()).cached_gid };
-        let old_egid = unsafe { (*self.current.get()).egid };
-        let old_saved_egid = unsafe { (*self.current.get()).saved_egid };
-        self.release();
+        let (current_pwm, old_cached_gid, old_egid, old_saved_egid) = self.read_ctx(|ctx| {
+            (
+                ctx.session_pwm.as_u64(),
+                ctx.cached_gid,
+                ctx.egid,
+                ctx.saved_egid,
+            )
+        });
 
         let rgid_is_set = target_rgid != u32::MAX;
         let egid_is_set = target_egid != u32::MAX;
@@ -501,17 +509,14 @@ impl SessionManager {
             }
         }
 
-        self.acquire();
         let saved_egid_should_update = rgid_is_set || (egid_is_set && new_egid != old_cached_gid);
-        unsafe {
-            let ctx = &mut *self.current.get();
+        self.write_ctx(|ctx| {
             ctx.cached_gid = new_rgid;
             ctx.egid = new_egid;
             if saved_egid_should_update {
                 ctx.saved_egid = new_egid;
             }
-        }
-        self.release();
+        });
 
         true
     }

@@ -273,7 +273,7 @@ impl PwmEntry {
             .iter()
             .position(|&b| b == 0)
             .unwrap_or(self.note.len());
-        unsafe { core::str::from_utf8_unchecked(&self.note[..len]) }
+        raw::bytes_to_str(&self.note[..len])
     }
 
     pub fn set_note(&mut self, note: &str) {
@@ -438,4 +438,18 @@ pub struct AuditEntry {
     pub result: AuditResult,
     pub target_pwm: PwmId,
     pub details: u64,
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中不安全转换
+// ============================================================================
+
+pub(crate) mod raw {
+    /// 字节切片 → &str (调用方契约: 切片为合法 UTF-8)
+    /// 合法来源: set_note() 写入的字符串已经是合法 UTF-8。
+    pub fn bytes_to_str(bytes: &[u8]) -> &str {
+        // SAFETY: bytes 来自 set_note() 写入的合法 UTF-8 字节序列,
+        // 中间无 NUL 截断外的非法字节。
+        unsafe { core::str::from_utf8_unchecked(bytes) }
+    }
 }

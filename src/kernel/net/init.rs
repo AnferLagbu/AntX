@@ -155,7 +155,7 @@ pub unsafe fn poll_network() {
     };
     let sockets = &mut *raw::socket_set();
     smoltcp_impl::poll_stack(nic, stack, sockets);
-    unsafe { process_dhcp_events(sockets) };
+    raw::process_dhcp_events(sockets);
 }
 
 // ============================================================================
@@ -170,13 +170,13 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
         if probe_result == 0 {
             let mut dev = crate::kernel::driver::net::e1000::take_device()?;
             if crate::kernel::driver::framework::Driver::init(&mut *dev).is_err() {
-                klog_net_err("e1000: hardware init failed\0".as_ptr().cast());
+                raw::klog_err("e1000: hardware init failed");
                 return None;
             }
             let mac = dev.mac;
             let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
             let nic = ChitinNetDevice::new(&E1000_NET_OPS_STATIC, raw_ptr, mac);
-            klog_net("e1000: probed successfully\0".as_ptr().cast());
+            raw::klog_msg("e1000: probed successfully");
             return Some(nic);
         }
     }
@@ -189,7 +189,7 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
             let mac = dev.mac;
             let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
             let nic = ChitinNetDevice::new(&VIRTIO_NET_OPS_STATIC, raw_ptr, mac);
-            klog_net("virtio-net: probed successfully\0".as_ptr().cast());
+            raw::klog_msg("virtio-net: probed successfully");
             return Some(nic);
         }
     }
@@ -262,20 +262,20 @@ unsafe fn net_reset() {
 
 #[no_mangle]
 pub extern "C" fn qx_net_init() {
-    raw::klog_msg("--- Network Subsystem Init ---");
+    // SAFETY: 网络初始化由启动流程串行调用, 无并发访问全局状态。
+    unsafe {
+        raw::klog_init("--- Network Subsystem Init ---");
 
         if transition_state(InitState::Uninitialized, InitState::HardwareProbed).is_err() {
             let current = G_INIT_STATE.load(Ordering::Acquire);
             if current == InitState::FullyInitialized as u8 {
-                klog_net("Network already initialized\0".as_ptr().cast());
+                raw::klog_msg("Network already initialized");
                 return;
             } else if current == InitState::Failed as u8 {
-                klog_net_err(
-                    "Previous initialization failed, retrying...\0".as_ptr().cast(),
-                );
+                raw::klog_err("Previous initialization failed, retrying...");
                 G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
             } else {
-                klog_net_err("Invalid init state, aborting\0".as_ptr().cast());
+                raw::klog_err("Invalid init state, aborting");
                 return;
             }
             if transition_state(InitState::Uninitialized, InitState::HardwareProbed).is_err() {
@@ -283,66 +283,62 @@ pub extern "C" fn qx_net_init() {
             }
         }
 
-        klog_net("Step1: hardware probe\0".as_ptr().cast());
+        raw::klog_msg("Step1: hardware probe");
 
         let mut nic = match nic_probe_all() {
             Some(n) => n,
             None => {
                 let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
-                klog_net(
-                    "No NIC found, running without network\0".as_ptr().cast(),
-                );
-                klog_init_msg(
-                    "--- Network Subsystem Ready (No Network) ---\0".as_ptr().cast(),
-                );
+                raw::klog_msg("No NIC found, running without network");
+                raw::klog_init("--- Network Subsystem Ready (No Network) ---");
                 return;
             }
         };
 
-        klog_net("Step2: init device hardware\0".as_ptr().cast());
+        raw::klog_msg("Step2: init device hardware");
 
         let mac = nic.mac;
         let stack = smoltcp_impl::init_stack(&mut nic, mac);
 
         {
             let _guard = NET_LOCK.lock();
-            NET_DEVICE = Some(nic);
-            NET_STACK = Some(stack);
+            raw::set_device(Some(nic));
+            raw::set_stack(Some(stack));
         }
 
         if transition_state(InitState::HardwareProbed, InitState::InterfaceReady).is_err() {
             set_failed();
-            klog_net_err("Failed to transition to InterfaceReady\0".as_ptr().cast());
+            raw::klog_err("Failed to transition to InterfaceReady");
             return;
         }
 
-        klog_net("Step3: init network interface\0".as_ptr().cast());
+        raw::klog_msg("Step3: init network interface");
 
         {
             let _guard = NET_LOCK.lock();
-            init_sockets();
-            let sockets = &mut *socket_set();
+            raw::init_sockets();
+            let sockets = &mut *raw::socket_set();
             let dhcp_socket = dhcpv4::Socket::new();
             let handle = sockets.add(dhcp_socket);
-            DHCP_HANDLE = Some(handle);
+            raw::set_dhcp_handle(Some(handle));
         }
 
         crate::kernel::net::types::NET_READY.store(true, Ordering::Release);
 
         if transition_state(InitState::InterfaceReady, InitState::FullyInitialized).is_err() {
             set_failed();
-            klog_net_err("Failed to transition to FullyInitialized\0".as_ptr().cast());
+            raw::klog_err("Failed to transition to FullyInitialized");
             return;
         }
 
-        klog_net("DHCP: boot poll...\0".as_ptr().cast());
+        raw::klog_msg("DHCP: boot poll...");
         for _attempt in 0u32..500 {
             poll_network();
             for _ in 0..50000 {
                 core::hint::spin_loop();
             }
             if crate::kernel::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
-                klog_net("DHCP: lease acquired\0".as_ptr().cast());
+                raw::klog_msg("DHCP: lease acquired");
                 break;
             }
         }
@@ -353,20 +349,20 @@ pub extern "C" fn qx_net_init() {
                 24,
             ));
             let _guard = NET_LOCK.lock();
-            if let Some(stack) = NET_STACK.as_mut() {
+            if let Some(stack) = raw::stack_mut() {
                 stack.iface.update_ip_addrs(|addrs| {
                     let _ = addrs.push(cidr);
                 });
                 let gw = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
                 let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
                 crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
-                klog_net("Static IP 10.0.2.15/24 (fallback)\0".as_ptr().cast());
+                raw::klog_msg("Static IP 10.0.2.15/24 (fallback)");
             }
         }
 
         crate::arch!(interrupt_enable());
 
-        klog_init_msg("--- Network Subsystem Ready ---\0".as_ptr().cast());
+        raw::klog_init("--- Network Subsystem Ready ---");
 
         // 演进 6: 网络 init 完成后做 driver 维度自检
         if let Err(e) = crate::kernel::config::validate_network_subsystem() {
@@ -381,6 +377,7 @@ pub extern "C" fn qx_net_init() {
             net_restore,
             net_reset,
         );
+    }
 }
 
 // ============================================================================
@@ -1061,6 +1058,18 @@ pub(crate) mod raw {
         unsafe { NET_DEVICE.as_mut() }
     }
 
+    /// 安全设置 NET_DEVICE
+    pub fn set_device(d: Option<ChitinNetDevice>) {
+        // SAFETY: 由 NET_LOCK 保护。
+        unsafe { NET_DEVICE = d; }
+    }
+
+    /// 安全设置 NET_STACK
+    pub fn set_stack(s: Option<NetworkStack>) {
+        // SAFETY: 由 NET_LOCK 保护。
+        unsafe { NET_STACK = s; }
+    }
+
     /// 安全读取 DHCP_HANDLE
     pub fn dhcp_handle() -> Option<SocketHandle> {
         // SAFETY: SocketHandle 是 Copy, 读取无副作用。
@@ -1093,6 +1102,12 @@ pub(crate) mod raw {
     pub fn init_sockets() {
         // SAFETY: 由 NET_LOCK 保护, 单次初始化。
         unsafe { super::init_sockets() }
+    }
+
+    /// 安全处理 DHCP 事件
+    pub fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
+        // SAFETY: 由 NET_LOCK 保护, sockets 来自本模块的 socket_set()。
+        unsafe { super::process_dhcp_events(sockets) }
     }
 
     /// klog 网络消息 (C 字符串) - 安全包装

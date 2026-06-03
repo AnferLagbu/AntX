@@ -113,7 +113,7 @@ pub fn audit_record(layer: RecoveryLayer, result: RecoveryResult, reason: u32) {
     if !RECOVERY_CONFIG.audit_enabled {
         return;
     }
-    let tick = unsafe { crate::kernel::timer::tick::get_ticks() };
+    let tick = crate::kernel::timer::tick::get_ticks();
     let mut log = RESET_AUDIT_LOG.lock();
     log.record_simple(tick, layer, result, reason);
 }
@@ -130,7 +130,7 @@ pub fn audit_record_domain(
     if !RECOVERY_CONFIG.audit_enabled {
         return;
     }
-    let tick = unsafe { crate::kernel::timer::tick::get_ticks() };
+    let tick = crate::kernel::timer::tick::get_ticks();
     let mut log = RESET_AUDIT_LOG.lock();
     log.record(tick, layer, result, reason, domain_id, entries_rolled);
 }

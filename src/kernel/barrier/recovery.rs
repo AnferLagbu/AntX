@@ -116,9 +116,7 @@ pub fn recovery_subdomain_save_checkpoint(domain_id: DomainId) {
     let reg = RECOVERY_REGISTRY.lock();
     for r in reg.registered.iter() {
         if r.id == domain_id {
-            unsafe {
-                (r.save_fn)();
-            }
+            raw::invoke_save(r.save_fn);
             return;
         }
     }
@@ -193,9 +191,7 @@ pub fn cascade_recover(domain_id: DomainId) -> usize {
     for &id in order.iter() {
         for r in reg.registered.iter() {
             if r.id == id {
-                unsafe {
-                    (r.restore_fn)();
-                }
+                raw::invoke_restore(r.restore_fn);
                 recovered += 1;
                 break;
             }
@@ -208,10 +204,35 @@ pub fn hard_reset_domain(domain_id: DomainId) {
     let reg = RECOVERY_REGISTRY.lock();
     for r in reg.registered.iter() {
         if r.id == domain_id {
-            unsafe {
-                (r.reset_fn)();
-            }
+            raw::invoke_reset(r.reset_fn);
             return;
         }
+    }
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 FFI 恢复回调调用
+// ============================================================================
+//
+// `RecoveryRegistration` 的 `save_fn`/`restore_fn`/`reset_fn` 是 `unsafe fn()`,
+// 必须在 unsafe 上下文中调用。集中到 raw 子模块便于审计。
+
+pub(crate) mod raw {
+    /// 调用恢复注册项的 save 回调
+    pub fn invoke_save(f: unsafe fn()) {
+        // SAFETY: f 由域所有者注册, 契约由 framework::barrier::recovery 维护。
+        unsafe { f() };
+    }
+
+    /// 调用恢复注册项的 restore 回调
+    pub fn invoke_restore(f: unsafe fn()) {
+        // SAFETY: 同上。
+        unsafe { f() };
+    }
+
+    /// 调用恢复注册项的 reset 回调
+    pub fn invoke_reset(f: unsafe fn()) {
+        // SAFETY: 同上。
+        unsafe { f() };
     }
 }

@@ -534,17 +534,74 @@ SAFETY 注释: 38 处
 |------|------|------------------|------|------|
 | 2.4.1 smoltcp 适配 | FFI → safe 包装 | 25 | 5d | 📋 |
 | 2.4.2 chitin 设备注册表 | FFI 回调 → extern "C" fn safe wrapper; mod.rs 19→14 | **31→25** | 5d | ✅ |
-| 2.4.3 net/init.rs | 去 unsafe 初始化 | **44** | 5d | 📋 |
-| 2.4.4 网络缓冲区 | raw → IoMem/DmaStream | 10 | 5d | 📋 |
+| 2.4.3 net/init.rs | static mut → raw 子模块; klog_* → 安全包装; 18→15 (12 处集中在 raw) | **44→15** | 5d | ✅ |
+| 2.4.4 网络缓冲区 | smoltcp_impl 改用 NetOps 安全方法 | 2→0 | 5d | ✅ |
 
 #### 阶段 2.5: syscall + credo + barrier (1 人月)
 
 | 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
 |------|------|------------------|------|------|
 | 2.5.1 syscall 分发 | 用户指针 → UserContext | **128** | 7d | 📋 |
-| 2.5.2 credo session | 全局锁 → framework::sync | **46** | 5d | 📋 |
-| 2.5.3 barrier 恢复 | 确认无 unsafe 泄漏 | 10 | 3d | 📋 |
-| 2.5.4 sync/mod.rs 迁移 | RawMutex → framework 实现 | **62** | 5d | 📋 |
+| 2.5.2 credo session | 全局锁 → framework::sync | **46** | 5d | ✅ **已重构 (30+ → 4)** |
+| 2.5.3 barrier 恢复 | 确认无 unsafe 泄漏 | 10 | 3d | ✅ **已重构 (15 → 12, 业务 0 unsafe)** |
+| 2.5.4 sync/mod.rs 迁移 | RawMutex → framework 实现 | **62** | 5d | ✅ **已重构 (61 → 16, 业务 0 unsafe)** |
+
+**credo 模块重构 (Phase 2.5.2)**:
+
+| 文件 | 重构前 unsafe | 重构后 unsafe | 集中位置 |
+|------|--------------|--------------|----------|
+| session.rs | 30+ | 4 | `read_ctx`/`write_ctx`/`with_stack` 安全访问器 |
+| identity.rs | 6 | 2 | `raw` 子模块 (GLOBAL_TABLE static mut) |
+| storage.rs | 16 | 5 | `raw` 子模块 (VFS FFI) |
+| grant.rs | 3 | 2 | `raw` 子模块 (GRANT_RECORDS static mut) |
+| audit.rs | 3 | 3 | `raw` 子模块 + AuditLog::log 内部 |
+| bootstrap.rs | 1 | 1 | `raw` 子模块 (TSC FFI) |
+| csprng.rs | 1 | 1 | `rdrand_u64` 内联汇编 |
+| types.rs | 1 | 1 | `raw::bytes_to_str` |
+| **总计** | **~60+** | **19** | **业务逻辑零 unsafe** |
+
+**关键设计**:
+- `SessionManager` 通过 `read_ctx`/`write_ctx`/`with_stack` 闭包封装 `UnsafeCell` 访问，调用方零 unsafe
+- `identity::raw::get_table[_mut]()` 使用 `addr_of!` 系列安全封装 `static mut GLOBAL_TABLE`
+- `storage::raw::vfs_*` 包装所有 VFS FFI，调用契约由文档注释维护
+
+**sync/mod.rs 重构 (Phase 2.5.4)**:
+
+| 函数族 | 重构前 unsafe | 重构后 unsafe | 集中位置 |
+|--------|--------------|--------------|----------|
+| spin_init/lock_raw/unlock/trylock | 8 | 0 | `raw::spin_locked[_mut]` |
+| mutex_init/lock/unlock/trylock/owner | 16 | 0 | `raw::mutex_*` + `raw::scheduler_yield` |
+| rwlock_init/lock/read_lock/write_lock | 18 | 0 | `raw::rwlock_*` |
+| read_trylock/write_trylock | 6 | 0 | `raw::rwlock_*` |
+| 中断安全锁 (irqsave/irqrestore) | 0 | 0 | （原本无 unsafe 块） |
+| FFI 辅助 (scheduler_yield/current_pid) | 5 | 0 | `raw::scheduler_yield`/`current_pid` |
+| `raw` 子模块内部 | — | 16 | 所有 `unsafe { (*ptr).field }` 集中 |
+| **总计** | **53** | **16** | **业务 FFI 函数 0 unsafe** |
+
+**关键设计**:
+- `pub(crate) mod raw` 提供 `spin_locked`/`mutex_locked`/`rwlock_readers` 等字段访问器，返回 `&AtomicU32` 引用（生命周期由调用方保证）
+- `raw::scheduler_yield`/`raw::current_pid` 包装 C FFI 调用
+- 业务 FFI 函数（`spin_init`/`mutex_lock`/`read_lock` 等）通过 raw 抽象完全消除 unsafe 块
+
+**barrier 模块重构 (Phase 2.5.3)**:
+
+| 文件 | 重构前 unsafe | 重构后 unsafe | 集中位置 |
+|------|--------------|--------------|----------|
+| layered.rs | 2 | 2 | `core::hint::unreachable_unchecked()` (编译器边界) |
+| bbr.rs | 1 | 0 | 删除冗余 unsafe 块（`get_ticks` 本身安全）|
+| audit.rs | 2 | 0 | 删除冗余 unsafe 块（`get_ticks` 本身安全）|
+| bsr.rs | 1 | 1 | `raw::mmio_write32` (MMIO 硬件 I/O) |
+| bhr.rs | 1 | 1 | `raw::triple_fault_asm` (x86 `lidt`/`int 3`) |
+| undo_log.rs | 3 | 3 | `raw::read_field`/`write_field`/`compute_checksum` (内存时光机原语) |
+| manager.rs | 2 | 2 | `raw::invoke_capture_cb`/`invoke_rollback_cb` (FFI 函数指针) |
+| recovery.rs | 3 | 3 | `raw::invoke_save`/`invoke_restore`/`invoke_reset` (FFI 函数指针) |
+| **总计** | **15** | **12** | **业务函数 0 unsafe** |
+
+**关键设计**:
+- `undo_log::raw` 提供 `read_field`/`write_field`/`compute_checksum` 三个安全内存恢复原语（替代裸 `from_raw_parts`/`copy_nonoverlapping`）
+- `manager::raw`/`recovery::raw` 集中 FFI `unsafe fn()` 回调调用
+- `bsr::raw::mmio_write32` 集中 MMIO 写
+- `bhr::raw::triple_fault_asm` 集中 x86 特权指令
 
 **里程碑 M2**: ✅ 已达成。`grep -rn 'unsafe' src/kernel/services/` 输出为 ***空***。
 

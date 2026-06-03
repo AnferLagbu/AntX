@@ -58,13 +58,25 @@ pub fn grant_from_first_token(
 
 pub fn pwm_now() -> u64 {
     let tsc = crate::arch!(timestamp());
-    extern "C" {
-        fn cpu_get_tsc_frequency() -> u64;
-    }
-    let freq = unsafe { cpu_get_tsc_frequency() };
+    let freq = raw::tsc_frequency();
     if freq > 0 {
         (tsc / freq) * 1_000_000
     } else {
         tsc
+    }
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 TSC 频率 FFI
+// ============================================================================
+
+pub(crate) mod raw {
+    /// 安全获取 CPU TSC 频率 (C ABI 包装, 无内存不安全)
+    pub fn tsc_frequency() -> u64 {
+        extern "C" {
+            fn cpu_get_tsc_frequency() -> u64;
+        }
+        // SAFETY: cpu_get_tsc_frequency 为纯函数 FFI, 无内存访问, 安全。
+        unsafe { cpu_get_tsc_frequency() }
     }
 }

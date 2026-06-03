@@ -28,9 +28,11 @@ fn check_rdrand() -> bool {
 
 #[cfg(target_arch = "x86_64")]
 fn rdrand_u64() -> Option<u64> {
-    let mut ret: u64;
-    let mut ok: u8;
+    // SAFETY: rdrand 是原子指令, options(nomem, nostack) 不污染内存;
+    // 调用方契约: 硬件支持 rdrand (由 check_rdrand 保证)。
     unsafe {
+        let mut ret: u64;
+        let mut ok: u8;
         core::arch::asm!(
             "rdrand {}",
             "setc {}",
@@ -38,11 +40,7 @@ fn rdrand_u64() -> Option<u64> {
             lateout(reg_byte) ok,
             options(nomem, nostack),
         );
-    }
-    if ok != 0 {
-        Some(ret)
-    } else {
-        None
+        if ok != 0 { Some(ret) } else { None }
     }
 }
 

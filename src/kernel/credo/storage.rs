@@ -189,15 +189,13 @@ pub fn save_database() -> i32 {
 
     let path = path_to_bytes(DB_PATH);
     let flags = O_WRONLY | O_CREAT | O_TRUNC;
-    let fd = unsafe { vfs_open_internal(as_cstr(&path), flags, 0) };
+    let fd = raw::vfs_open(as_cstr(&path), flags, 0);
     if fd < 0 {
         return -1;
     }
 
-    let written = unsafe { vfs_write_internal(fd as u32, buf.as_ptr(), sz as u32) };
-    unsafe {
-        vfs_close_internal(fd as u32);
-    }
+    let written = raw::vfs_write(fd as u32, buf.as_ptr(), sz as u32);
+    raw::vfs_close(fd as u32);
     if written as usize != sz {
         return -1;
     }
@@ -208,17 +206,15 @@ pub fn save_database() -> i32 {
 
 pub fn load_database() -> i32 {
     let path = path_to_bytes(DB_PATH);
-    let fd = unsafe { vfs_open_internal(as_cstr(&path), O_RDONLY, 0) };
+    let fd = raw::vfs_open(as_cstr(&path), O_RDONLY, 0);
     if fd < 0 {
         return 0;
     }
 
     let mut hdr = [0u8; HDR_SZ];
-    let rd = unsafe { vfs_read_internal(fd as u32, hdr.as_mut_ptr(), HDR_SZ as u32) };
+    let rd = raw::vfs_read(fd as u32, hdr.as_mut_ptr(), HDR_SZ as u32);
     if rd < HDR_SZ as i32 {
-        unsafe {
-            vfs_close_internal(fd as u32);
-        }
+        raw::vfs_close(fd as u32);
         return -1;
     }
 
@@ -227,9 +223,7 @@ pub fn load_database() -> i32 {
         || hdr[2] != DB_MAGIC[2]
         || hdr[3] != DB_MAGIC[3]
     {
-        unsafe {
-            vfs_close_internal(fd as u32);
-        }
+        raw::vfs_close(fd as u32);
         return -1;
     }
 
@@ -238,9 +232,7 @@ pub fn load_database() -> i32 {
     let _vmin = r16(&hdr, &mut hp);
     let count = r32(&hdr, &mut hp) as usize;
     if count == 0 || count > MAX_PWM_ENTRIES {
-        unsafe {
-            vfs_close_internal(fd as u32);
-        }
+        raw::vfs_close(fd as u32);
         return -1;
     }
 
@@ -251,15 +243,13 @@ pub fn load_database() -> i32 {
             ENTRY_SZ
         };
     let mut data = [0u8; 80000];
-    let dr = unsafe { vfs_read_internal(fd as u32, data.as_mut_ptr(), ds as u32) };
-    unsafe {
-        vfs_close_internal(fd as u32);
-    }
+    let dr = raw::vfs_read(fd as u32, data.as_mut_ptr(), ds as u32);
+    raw::vfs_close(fd as u32);
     if dr < ds as i32 {
         return -1;
     }
 
-    let t = unsafe { identity::get_table_mut() };
+    let t = raw::table_mut();
     let mut p: usize = 0;
 
     if vmaj < 5 {
@@ -286,7 +276,7 @@ pub fn load_database() -> i32 {
 
             for i in 0..MAX_PWM_ENTRIES {
                 if !t.entries[i].is_valid() {
-                    let e = &t.entries[i];
+                    let e = &mut t.entries[i];
                     e.pwm.store(pwm, Ordering::Release);
                     e.creator_pwm.store(0, Ordering::Release);
                     e.privilege_level.store(level, Ordering::Release);
@@ -295,15 +285,10 @@ pub fn load_database() -> i32 {
                         e.caps[j].store(caps[j], Ordering::Release);
                     }
                     let note_trunc = note.len().min(PWM_NOTE_LEN);
-                    let np = e.note.as_ptr() as *mut u8;
-                    unsafe {
-                        core::ptr::copy_nonoverlapping(note.as_ptr(), np, note_trunc);
-                        *np.add(note_trunc.min(PWM_NOTE_LEN - 1)) = 0;
-                    }
-                    let hp = e.password_hash.as_ptr() as *mut u8;
-                    unsafe {
-                        core::ptr::copy_nonoverlapping(h.as_ptr(), hp, PWM_HASH_LEN);
-                    }
+                    let zero_pos = note_trunc.min(PWM_NOTE_LEN - 1);
+                    e.note[..zero_pos].copy_from_slice(&note[..zero_pos]);
+                    e.note[zero_pos] = 0;
+                    e.password_hash[..PWM_HASH_LEN].copy_from_slice(&h);
                     e.created_time.store(created, Ordering::Release);
                     e.expires_at.store(expires, Ordering::Release);
                     t.count.fetch_add(1, Ordering::Relaxed);
@@ -327,7 +312,7 @@ pub fn load_database() -> i32 {
             {
                 for i in 0..MAX_PWM_ENTRIES {
                     if !t.entries[i].is_valid() {
-                        let e = &t.entries[i];
+                        let e = &mut t.entries[i];
                         e.pwm.store(pwm, Ordering::Release);
                         e.creator_pwm.store(creator_pwm, Ordering::Release);
                         e.privilege_level.store(privilege_level, Ordering::Release);
@@ -335,14 +320,8 @@ pub fn load_database() -> i32 {
                         for j in 0..16 {
                             e.caps[j].store(caps[j], Ordering::Release);
                         }
-                        let np = e.note.as_ptr() as *mut u8;
-                        unsafe {
-                            core::ptr::copy_nonoverlapping(note.as_ptr(), np, PWM_NOTE_LEN);
-                        }
-                        let hp = e.password_hash.as_ptr() as *mut u8;
-                        unsafe {
-                            core::ptr::copy_nonoverlapping(h.as_ptr(), hp, PWM_HASH_LEN);
-                        }
+                        e.note[..PWM_NOTE_LEN].copy_from_slice(&note[..PWM_NOTE_LEN]);
+                        e.password_hash[..PWM_HASH_LEN].copy_from_slice(&h);
                         e.created_time.store(created, Ordering::Release);
                         e.expires_at.store(expires, Ordering::Release);
                         t.count.fetch_add(1, Ordering::Relaxed);
@@ -362,5 +341,50 @@ pub fn load_database() -> i32 {
 
 pub fn remove_database() -> i32 {
     let path = path_to_bytes(DB_PATH);
-    unsafe { vfs_unlink_internal(as_cstr(&path), 0) }
+    raw::vfs_unlink(as_cstr(&path), 0)
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 VFS FFI 与身份表访问
+// ============================================================================
+
+pub(crate) mod raw {
+    use super::*;
+
+    /// VFS open 包装 (调用方负责 path 指针有效)
+    pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {
+        // SAFETY: 调用方契约: path 指向以 NUL 结尾的合法 C 字符串,
+        // flags/pwm 为合法标志字。
+        unsafe { vfs_open_internal(path, flags, pwm) }
+    }
+
+    pub fn vfs_close(fd: u32) -> i32 {
+        // SAFETY: fd 由 vfs_open 返回的有效描述符。
+        unsafe { vfs_close_internal(fd) }
+    }
+
+    pub fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
+        // SAFETY: 调用方契约: buf 在 write 期间有效, count 正确。
+        unsafe { vfs_write_internal(fd, buf, count) }
+    }
+
+    pub fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
+        // SAFETY: 调用方契约: buf 在 read 期间有效, count 正确。
+        unsafe { vfs_read_internal(fd, buf, count) }
+    }
+
+    pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
+        // SAFETY: path 指向以 NUL 结尾的合法 C 字符串。
+        unsafe { vfs_unlink_internal(path, pwm) }
+    }
+
+    /// 安全访问 identity 表 (读视图)
+    pub fn table() -> &'static super::identity::IdentityTable {
+        super::identity::raw::get_table()
+    }
+
+    /// 安全访问 identity 表 (写视图, 外部互斥)
+    pub fn table_mut() -> &'static mut super::identity::IdentityTable {
+        super::identity::raw::get_table_mut()
+    }
 }

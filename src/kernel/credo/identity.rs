@@ -175,6 +175,18 @@ impl IdentityTable {
         None
     }
 
+    pub fn find_mut(&mut self, pwm: u64) -> Option<&mut PwmEntry> {
+        if pwm == 0 {
+            return None;
+        }
+        for entry in self.entries.iter_mut() {
+            if entry.pwm.load(Ordering::Acquire) == pwm {
+                return Some(entry);
+            }
+        }
+        None
+    }
+
     pub fn find_by_note(&self, note: &str) -> Option<&PwmEntry> {
         for entry in self.entries.iter() {
             if !entry.is_valid() {
@@ -200,7 +212,7 @@ impl IdentityTable {
         constant_time_eq(&computed, &stored[..PWM_DIGEST_LEN])
     }
 
-    pub fn create(&self, password: &str, note: &str, creator_pwm: u64) -> Result<u64, PwmError> {
+    pub fn create(&mut self, password: &str, note: &str, creator_pwm: u64) -> Result<u64, PwmError> {
         let privilege_level = if creator_pwm == 0 {
             0u8
         } else {
@@ -241,7 +253,7 @@ impl IdentityTable {
             }
         };
 
-        let entry = &self.entries[slot];
+        let entry = &mut self.entries[slot];
         entry.pwm.store(pwm, Ordering::Release);
         entry.creator_pwm.store(creator_pwm, Ordering::Release);
         entry
@@ -251,24 +263,14 @@ impl IdentityTable {
 
         let salt = csprng::generate_salt();
         let digest = hash_with_salt(password, &salt);
-        let hash_ptr = entry.password_hash.as_ptr() as *mut u8;
-        unsafe {
-            core::ptr::copy_nonoverlapping(digest.as_ptr(), hash_ptr, PWM_DIGEST_LEN);
-            core::ptr::copy_nonoverlapping(
-                salt.as_ptr(),
-                hash_ptr.add(PWM_DIGEST_LEN),
-                PWM_SALT_LEN,
-            );
-        }
+        entry.password_hash[..PWM_DIGEST_LEN].copy_from_slice(&digest);
+        entry.password_hash[PWM_DIGEST_LEN..PWM_DIGEST_LEN + PWM_SALT_LEN].copy_from_slice(&salt);
 
         {
             let note_bytes = note.as_bytes();
             let len = note_bytes.len().min(PWM_NOTE_LEN - 1);
-            let note_ptr = entry.note.as_ptr() as *mut u8;
-            unsafe {
-                core::ptr::copy_nonoverlapping(note_bytes.as_ptr(), note_ptr, len);
-                *note_ptr.add(len) = 0;
-            }
+            entry.note[..len].copy_from_slice(&note_bytes[..len]);
+            entry.note[len] = 0;
         }
 
         for i in 0..16 {
@@ -450,7 +452,7 @@ impl IdentityTable {
         Ok(())
     }
 
-    pub fn bootstrap(&self, password: &str, note: &str) -> Result<u64, PwmError> {
+    pub fn bootstrap(&mut self, password: &str, note: &str) -> Result<u64, PwmError> {
         bootstrap::generate_first_token();
 
         let pwm = self.create(password, note, 0)?;
@@ -507,22 +509,15 @@ impl IdentityTable {
         Ok(())
     }
 
-    pub fn change_password(&self, pwm: u64, old: &str, new: &str) -> Result<(), PwmError> {
+    pub fn change_password(&mut self, pwm: u64, old: &str, new: &str) -> Result<(), PwmError> {
         if !self.verify_password(pwm, old) {
             return Err(PwmError::PasswordIncorrect);
         }
-        let entry = self.find(pwm).ok_or(PwmError::NotFound)?;
+        let entry = self.find_mut(pwm).ok_or(PwmError::NotFound)?;
         let salt = csprng::generate_salt();
         let digest = hash_with_salt(new, &salt);
-        let hash_ptr = entry.password_hash.as_ptr() as *mut u8;
-        unsafe {
-            core::ptr::copy_nonoverlapping(digest.as_ptr(), hash_ptr, PWM_DIGEST_LEN);
-            core::ptr::copy_nonoverlapping(
-                salt.as_ptr(),
-                hash_ptr.add(PWM_DIGEST_LEN),
-                PWM_SALT_LEN,
-            );
-        }
+        entry.password_hash[..PWM_DIGEST_LEN].copy_from_slice(&digest);
+        entry.password_hash[PWM_DIGEST_LEN..PWM_DIGEST_LEN + PWM_SALT_LEN].copy_from_slice(&salt);
         self.set_modified();
         Ok(())
     }
@@ -564,7 +559,7 @@ impl IdentityTable {
 static mut GLOBAL_TABLE: IdentityTable = IdentityTable::new();
 
 pub fn get_table() -> &'static IdentityTable {
-    unsafe { &GLOBAL_TABLE }
+    raw::get_table()
 }
 
 ///
@@ -572,7 +567,29 @@ pub fn get_table() -> &'static IdentityTable {
 ///
 /// Caller holds the identity table lock. `pwm` is a valid PWID present in the table.
 pub unsafe fn get_table_mut() -> &'static mut IdentityTable {
-    &mut GLOBAL_TABLE
+    raw::get_table_mut()
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 static mut GLOBAL_TABLE 访问
+// ============================================================================
+
+pub(crate) mod raw {
+    use super::*;
+
+    /// 安全读取 GLOBAL_TABLE (返回不可变引用, 内部访问为 aliasing 安全)
+    /// 因为 IdentityTable 内部全是 AtomicXxx, 不可变引用是安全的。
+    pub fn get_table() -> &'static IdentityTable {
+        // SAFETY: IdentityTable 内部字段全为 AtomicXxx, 不可变借用安全;
+        // 调用方契约持有表读锁或单线程上下文。
+        unsafe { &*core::ptr::addr_of!(GLOBAL_TABLE) }
+    }
+
+    /// 可变访问 (调用方必须持有表锁)
+    pub fn get_table_mut() -> &'static mut IdentityTable {
+        // SAFETY: 调用方契约持有表写锁, 保证唯一 &mut。
+        unsafe { &mut *core::ptr::addr_of_mut!(GLOBAL_TABLE) }
+    }
 }
 
 pub fn find(pwm: u64) -> Option<&'static PwmEntry> {

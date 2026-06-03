@@ -54,9 +54,7 @@ pub fn keyboard_reset() -> ! {
 
 pub fn triple_fault() -> ! {
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-    unsafe {
-        core::arch::asm!("lidt [0]", "int 3", options(nomem, nostack));
-    }
+    raw::triple_fault_asm();
 
     loop {
         core::hint::spin_loop();
@@ -90,3 +88,21 @@ pub fn execute_fallback() -> ! {
 }
 
 use super::config::RecoveryResult;
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 x86 特权硬件指令
+// ============================================================================
+//
+// `triple_fault` 使用 `lidt [0]` (加载空 IDT) + `int 3` 触发 CPU
+// 三重故障, 是 x86 平台级硬重置的最终手段。无安全抽象可替代。
+
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
+pub(crate) mod raw {
+    /// 通过加载空 IDT 并触发 #BP 强制 CPU 三重故障
+    pub fn triple_fault_asm() {
+        // SAFETY: 这是有意触发的硬重置, 不应返回。CPU 将进入 S5/关机。
+        unsafe {
+            core::arch::asm!("lidt [0]", "int 3", options(nomem, nostack));
+        }
+    }
+}

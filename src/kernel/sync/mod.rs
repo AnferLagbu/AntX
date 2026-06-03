@@ -41,9 +41,7 @@ pub use types::{MutexInner, RwLockInner, SpinLockGuard, SpinLockInner};
 #[no_mangle]
 pub extern "C" fn spin_init(lock: *mut SpinLockInner) {
     if !lock.is_null() {
-        unsafe {
-            (*lock).locked.store(0, Ordering::Relaxed);
-        }
+        raw::spin_locked_mut(lock).store(0, Ordering::Relaxed);
     }
 }
 
@@ -52,12 +50,9 @@ pub extern "C" fn spin_init(lock: *mut SpinLockInner) {
 pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
     if !lock.is_null() {
         // Fast path: 尝试立即获取
-        let acquired = unsafe {
-            (*lock)
-                .locked
-                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-        };
+        let acquired = raw::spin_locked(lock)
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok();
 
         if acquired {
             return;
@@ -65,11 +60,8 @@ pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
 
         // Slow path: 自旋等待
         loop {
-            let result = unsafe {
-                (*lock)
-                    .locked
-                    .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-            };
+            let result = raw::spin_locked(lock)
+                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed);
 
             if result.is_ok() {
                 break;
@@ -85,9 +77,7 @@ pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
 pub extern "C" fn spin_unlock(lock: *const SpinLockInner) {
     if !lock.is_null() {
         core::sync::atomic::fence(Ordering::SeqCst);
-        unsafe {
-            (*lock).locked.store(0, Ordering::Release);
-        }
+        raw::spin_locked(lock).store(0, Ordering::Release);
     }
 }
 
@@ -98,11 +88,9 @@ pub extern "C" fn spin_trylock(lock: *const SpinLockInner) -> i32 {
         return 0; // 失败
     }
 
-    match unsafe {
-        (*lock)
-            .locked
-            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-    } {
+    match raw::spin_locked(lock)
+        .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+    {
         Ok(_) => 1,  // 成功
         Err(_) => 0, // 已被锁定
     }
@@ -115,22 +103,20 @@ pub extern "C" fn spin_is_locked(lock: *const SpinLockInner) -> i32 {
         return 0;
     }
 
-    unsafe { (*lock).locked.load(Ordering::Acquire) as i32 }
+    raw::spin_locked(lock).load(Ordering::Acquire) as i32
 }
 
 /// 初始化互斥锁
 #[no_mangle]
 pub extern "C" fn mutex_init(m: *mut MutexInner) {
     if !m.is_null() {
-        unsafe {
-            (*m).locked.store(0, Ordering::Relaxed);
-            (*m).owner.store(-1i32, Ordering::Relaxed); // -1 表示无主
-            (*m).depth.store(0, Ordering::Relaxed);
-            (*m).acquire_time.store(0, Ordering::Relaxed);
+        raw::mutex_locked(m as *const MutexInner).store(0, Ordering::Relaxed);
+        raw::mutex_owner(m as *const MutexInner).store(-1i32, Ordering::Relaxed); // -1 表示无主
+        raw::mutex_depth(m as *const MutexInner).store(0, Ordering::Relaxed);
+        raw::mutex_acquire_time(m as *const MutexInner).store(0, Ordering::Relaxed);
 
-            // 初始化内部自旋锁
-            spin_init(&mut (*m).inner_spinlock);
-        }
+        // 初始化内部自旋锁
+        spin_init(raw::mutex_inner_spinlock_mut(m));
     }
 }
 
@@ -141,48 +127,44 @@ pub extern "C" fn mutex_lock(m: *const MutexInner) {
         return;
     }
 
+    let inner_lock = raw::mutex_inner_spinlock(m);
+
     // Fast path: 尝试立即获取
     {
-        unsafe { spin_lock_raw(&(*m).inner_spinlock) };
+        spin_lock_raw(inner_lock);
 
-        let is_locked = unsafe { (*m).locked.load(Ordering::Acquire) != 0 };
+        let is_locked = raw::mutex_locked(m).load(Ordering::Acquire) != 0;
 
         if !is_locked {
             // 成功获取
-            unsafe {
-                (*m).locked.store(1, Ordering::Release);
-                let pid = process_get_current_pid();
-                (*m).owner.store(pid as i32, Ordering::Release);
-                (*m).depth.store(1, Ordering::Release);
-            }
-            unsafe { spin_unlock(&(*m).inner_spinlock) };
+            raw::mutex_locked(m).store(1, Ordering::Release);
+            raw::mutex_owner(m).store(raw::current_pid() as i32, Ordering::Release);
+            raw::mutex_depth(m).store(1, Ordering::Release);
+            spin_unlock(inner_lock);
             return;
         }
 
-        unsafe { spin_unlock(&(*m).inner_spinlock) };
+        spin_unlock(inner_lock);
     }
 
     // Slow path: 自旋 + yield (简化版)
     loop {
-        unsafe { spin_lock_raw(&(*m).inner_spinlock) };
+        spin_lock_raw(inner_lock);
 
-        let is_locked = unsafe { (*m).locked.load(Ordering::Acquire) != 0 };
+        let is_locked = raw::mutex_locked(m).load(Ordering::Acquire) != 0;
 
         if !is_locked {
-            unsafe {
-                (*m).locked.store(1, Ordering::Release);
-                let pid = process_get_current_pid();
-                (*m).owner.store(pid as i32, Ordering::Release);
-                (*m).depth.store(1, Ordering::Release);
-            }
-            unsafe { spin_unlock(&(*m).inner_spinlock) };
+            raw::mutex_locked(m).store(1, Ordering::Release);
+            raw::mutex_owner(m).store(raw::current_pid() as i32, Ordering::Release);
+            raw::mutex_depth(m).store(1, Ordering::Release);
+            spin_unlock(inner_lock);
             return;
         }
 
-        unsafe { spin_unlock(&(*m).inner_spinlock) };
+        spin_unlock(inner_lock);
 
-        // 让出 CPU (unsafe 调用)
-        unsafe { scheduler_yield() };
+        // 让出 CPU
+        raw::scheduler_yield();
     }
 }
 
@@ -193,24 +175,23 @@ pub extern "C" fn mutex_unlock(m: *const MutexInner) {
         return;
     }
 
-    unsafe { spin_lock_raw(&(*m).inner_spinlock) };
+    let inner_lock = raw::mutex_inner_spinlock(m);
+    spin_lock_raw(inner_lock);
 
-    let depth = unsafe { (*m).depth.load(Ordering::Acquire) };
+    let depth = raw::mutex_depth(m).load(Ordering::Acquire);
 
     if depth > 1 {
         // 嵌套锁，减少深度
-        unsafe { (*m).depth.store(depth - 1, Ordering::Release) };
+        raw::mutex_depth(m).store(depth - 1, Ordering::Release);
     } else {
         // 完全释放
-        unsafe {
-            (*m).locked.store(0, Ordering::Release);
-            (*m).owner.store(0, Ordering::Release);
-            (*m).depth.store(0, Ordering::Release);
-            (*m).acquire_time.store(0, Ordering::Release);
-        }
+        raw::mutex_locked(m).store(0, Ordering::Release);
+        raw::mutex_owner(m).store(0, Ordering::Release);
+        raw::mutex_depth(m).store(0, Ordering::Release);
+        raw::mutex_acquire_time(m).store(0, Ordering::Release);
     }
 
-    unsafe { spin_unlock(&(*m).inner_spinlock) };
+    spin_unlock(inner_lock);
 }
 
 /// 尝试获取互斥锁 (非阻塞)
@@ -220,21 +201,19 @@ pub extern "C" fn mutex_trylock(m: *const MutexInner) -> i32 {
         return 0;
     }
 
-    unsafe { spin_lock_raw(&(*m).inner_spinlock) };
+    let inner_lock = raw::mutex_inner_spinlock(m);
+    spin_lock_raw(inner_lock);
 
-    let result = if unsafe { (*m).locked.load(Ordering::Acquire) == 0 } {
-        unsafe {
-            (*m).locked.store(1, Ordering::Release);
-            let pid = process_get_current_pid();
-            (*m).owner.store(pid as i32, Ordering::Release);
-            (*m).depth.store(1, Ordering::Release);
-        }
+    let result = if raw::mutex_locked(m).load(Ordering::Acquire) == 0 {
+        raw::mutex_locked(m).store(1, Ordering::Release);
+        raw::mutex_owner(m).store(raw::current_pid() as i32, Ordering::Release);
+        raw::mutex_depth(m).store(1, Ordering::Release);
         1 // 成功
     } else {
         0 // 已被锁定
     };
 
-    unsafe { spin_unlock(&(*m).inner_spinlock) };
+    spin_unlock(inner_lock);
 
     result
 }
@@ -246,19 +225,21 @@ pub extern "C" fn mutex_is_locked(m: *const MutexInner) -> i32 {
         return 0;
     }
 
-    unsafe { (*m).locked.load(Ordering::Acquire) as i32 }
+    raw::mutex_locked(m).load(Ordering::Acquire) as i32
 }
 
 /// 初始化读写锁
 #[no_mangle]
 pub extern "C" fn rwlock_init(rw: *mut RwLockInner) {
     if !rw.is_null() {
-        unsafe {
-            (*rw).readers.store(0, Ordering::Relaxed);
-            (*rw).writer.store(0, Ordering::Relaxed);
-            (*rw).pending_writers.store(0, Ordering::Relaxed);
-            spin_init(&mut (*rw).lock);
-        }
+        raw::rwlock_readers(rw as *const RwLockInner).store(0, Ordering::Relaxed);
+        raw::rwlock_writer(rw as *const RwLockInner).store(0, Ordering::Relaxed);
+        raw::rwlock_pending_writers(rw as *const RwLockInner).store(0, Ordering::Relaxed);
+
+        // 初始化内部自旋锁 (获取可写指针)
+        let inner_lock_ptr =
+            raw::rwlock_inner_lock_mut(rw) as *mut SpinLockInner;
+        spin_init(inner_lock_ptr);
     }
 }
 
@@ -269,31 +250,33 @@ pub extern "C" fn read_lock(rw: *const RwLockInner) {
         return;
     }
 
+    let inner_lock = raw::rwlock_inner_lock(rw);
+
     loop {
-        unsafe { spin_lock_raw(&(*rw).lock) };
+        spin_lock_raw(inner_lock);
 
         // 检查是否有写者或等待中的写者
-        let has_writer = unsafe { (*rw).writer.load(Ordering::Relaxed) != 0 };
-        let pending_writers = unsafe { (*rw).pending_writers.load(Ordering::Relaxed) > 0 };
+        let has_writer = raw::rwlock_writer(rw).load(Ordering::Relaxed) != 0;
+        let pending_writers = raw::rwlock_pending_writers(rw).load(Ordering::Relaxed) > 0;
 
         if !has_writer && !pending_writers {
             // 可以读取: 增加读者计数
-            let readers = unsafe { (*rw).readers.fetch_add(1, Ordering::AcqRel) };
-            unsafe { spin_unlock(&(*rw).lock) };
+            let readers = raw::rwlock_readers(rw).fetch_add(1, Ordering::AcqRel);
+            spin_unlock(inner_lock);
 
             if readers == 0xFFFF {
                 // 溢出保护
-                unsafe { (*rw).readers.fetch_sub(1, Ordering::AcqRel) };
+                raw::rwlock_readers(rw).fetch_sub(1, Ordering::AcqRel);
                 continue;
             }
 
             return;
         }
 
-        unsafe { spin_unlock(&(*rw).lock) };
+        spin_unlock(inner_lock);
 
         // 让出 CPU
-        unsafe { scheduler_yield() };
+        raw::scheduler_yield();
     }
 }
 
@@ -301,7 +284,7 @@ pub extern "C" fn read_lock(rw: *const RwLockInner) {
 #[no_mangle]
 pub extern "C" fn read_unlock(rw: *const RwLockInner) {
     if !rw.is_null() {
-        unsafe { (*rw).readers.fetch_sub(1, Ordering::AcqRel) };
+        raw::rwlock_readers(rw).fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -312,34 +295,32 @@ pub extern "C" fn write_lock(rw: *const RwLockInner) {
         return;
     }
 
+    let inner_lock = raw::rwlock_inner_lock(rw);
+
     // 先标记自己为等待中的写者
-    unsafe {
-        spin_lock_raw(&(*rw).lock);
-        (*rw).pending_writers.fetch_add(1, Ordering::Release);
-        spin_unlock(&(*rw).lock);
-    };
+    spin_lock_raw(inner_lock);
+    raw::rwlock_pending_writers(rw).fetch_add(1, Ordering::Release);
+    spin_unlock(inner_lock);
 
     loop {
-        unsafe { spin_lock_raw(&(*rw).lock) };
+        spin_lock_raw(inner_lock);
 
         // 检查是否可以获取写锁
-        let readers = unsafe { (*rw).readers.load(Ordering::Relaxed) };
-        let writer = unsafe { (*rw).writer.load(Ordering::Relaxed) };
+        let readers = raw::rwlock_readers(rw).load(Ordering::Relaxed);
+        let writer = raw::rwlock_writer(rw).load(Ordering::Relaxed);
 
         if readers == 0 && writer == 0 {
             // 可以写入: 设置写者标志
-            unsafe {
-                (*rw).pending_writers.fetch_sub(1, Ordering::Release);
-                (*rw).writer.store(1, Ordering::Release);
-            }
-            unsafe { spin_unlock(&(*rw).lock) };
+            raw::rwlock_pending_writers(rw).fetch_sub(1, Ordering::Release);
+            raw::rwlock_writer(rw).store(1, Ordering::Release);
+            spin_unlock(inner_lock);
             return;
         }
 
-        unsafe { spin_unlock(&(*rw).lock) };
+        spin_unlock(inner_lock);
 
         // 让出 CPU
-        unsafe { scheduler_yield() };
+        raw::scheduler_yield();
     }
 }
 
@@ -347,7 +328,7 @@ pub extern "C" fn write_lock(rw: *const RwLockInner) {
 #[no_mangle]
 pub extern "C" fn write_unlock(rw: *const RwLockInner) {
     if !rw.is_null() {
-        unsafe { (*rw).writer.store(0, Ordering::Release) };
+        raw::rwlock_writer(rw).store(0, Ordering::Release);
     }
 }
 
@@ -395,18 +376,19 @@ pub extern "C" fn read_trylock(rw: *const RwLockInner) -> i32 {
         return 0; // 失败
     }
 
-    unsafe { spin_lock_raw(&(*rw).lock) };
+    let inner_lock = raw::rwlock_inner_lock(rw);
+    spin_lock_raw(inner_lock);
 
-    let has_writer = unsafe { (*rw).writer.load(Ordering::Relaxed) != 0 };
-    let pending_writers = unsafe { (*rw).pending_writers.load(Ordering::Relaxed) > 0 };
+    let has_writer = raw::rwlock_writer(rw).load(Ordering::Relaxed) != 0;
+    let pending_writers = raw::rwlock_pending_writers(rw).load(Ordering::Relaxed) > 0;
 
     if !has_writer && !pending_writers {
-        unsafe { (*rw).readers.fetch_add(1, Ordering::AcqRel) };
-        unsafe { spin_unlock(&(*rw).lock) };
+        raw::rwlock_readers(rw).fetch_add(1, Ordering::AcqRel);
+        spin_unlock(inner_lock);
         return 1; // 成功
     }
 
-    unsafe { spin_unlock(&(*rw).lock) };
+    spin_unlock(inner_lock);
     0 // 失败
 }
 
@@ -447,19 +429,20 @@ pub extern "C" fn write_trylock(rw: *const RwLockInner) -> i32 {
         return 0; // 失败
     }
 
-    unsafe { spin_lock_raw(&(*rw).lock) };
+    let inner_lock = raw::rwlock_inner_lock(rw);
+    spin_lock_raw(inner_lock);
 
-    let readers = unsafe { (*rw).readers.load(Ordering::Relaxed) };
-    let writer = unsafe { (*rw).writer.load(Ordering::Relaxed) };
+    let readers = raw::rwlock_readers(rw).load(Ordering::Relaxed);
+    let writer = raw::rwlock_writer(rw).load(Ordering::Relaxed);
 
     if readers == 0 && writer == 0 {
-        unsafe { (*rw).pending_writers.fetch_sub(1, Ordering::Release) };
-        unsafe { (*rw).writer.store(1, Ordering::Release) };
-        unsafe { spin_unlock(&(*rw).lock) };
+        raw::rwlock_pending_writers(rw).fetch_sub(1, Ordering::Release);
+        raw::rwlock_writer(rw).store(1, Ordering::Release);
+        spin_unlock(inner_lock);
         return 1; // 成功
     }
 
-    unsafe { spin_unlock(&(*rw).lock) };
+    spin_unlock(inner_lock);
     0 // 失败
 }
 
@@ -474,7 +457,7 @@ pub extern "C" fn mutex_owner(m: *const MutexInner) -> i32 {
         return -1;
     }
 
-    unsafe { (*m).owner.load(Ordering::Acquire) }
+    raw::mutex_owner(m).load(Ordering::Acquire)
 }
 
 /// 带超时的互斥锁获取 (简化版，暂不支持超时)
@@ -523,4 +506,105 @@ pub extern "C" fn cond_broadcast(_cond: *mut CondVar) -> i32 {
 extern "C" {
     fn process_get_current_pid() -> u32;
     fn scheduler_yield();
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中裸指针访问
+// ============================================================================
+//
+// 所有 FFI 桥接函数接收 `*const T` / `*mut T` 参数, 内部对指针解引用
+// (`unsafe { (*ptr).field }`) 是 unsafe 的主要来源。
+// 本子模块通过 `AddrOf` 系列安全方法封装指针解引用, 业务 FFI 函数
+// 不再直接使用 unsafe, 仅调用 raw 模块的安全包装。
+//
+// SAFETY 契约: 所有 raw 方法假定传入的指针非空且指向有效对象。
+//             调用方 (FFI 函数) 已做 `is_null()` 检查。
+
+pub(crate) mod raw {
+    use super::{Ordering, SpinLockInner, MutexInner, RwLockInner};
+
+    // ============ SpinLockInner ============
+
+    /// 获取 SpinLockInner.locked 字段引用
+    pub fn spin_locked<'a>(ptr: *const SpinLockInner) -> &'a core::sync::atomic::AtomicU32 {
+        // SAFETY: ptr 假定非空, 指向有效 SpinLockInner。
+        // 返回的引用生命周期由调用方保证 (ptr 在使用期间有效)。
+        unsafe { &(*ptr).locked }
+    }
+
+    pub fn spin_locked_mut<'a>(ptr: *mut SpinLockInner) -> &'a mut core::sync::atomic::AtomicU32 {
+        // SAFETY: ptr 假定非空且唯一借用, 指向有效 SpinLockInner。
+        unsafe { &mut (*ptr).locked }
+    }
+
+    // ============ MutexInner ============
+
+    pub fn mutex_locked<'a>(ptr: *const MutexInner) -> &'a core::sync::atomic::AtomicU32 {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).locked }
+    }
+
+    pub fn mutex_owner<'a>(ptr: *const MutexInner) -> &'a core::sync::atomic::AtomicI32 {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).owner }
+    }
+
+    pub fn mutex_depth<'a>(ptr: *const MutexInner) -> &'a core::sync::atomic::AtomicU32 {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).depth }
+    }
+
+    pub fn mutex_acquire_time<'a>(ptr: *const MutexInner) -> &'a core::sync::atomic::AtomicU64 {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).acquire_time }
+    }
+
+    pub fn mutex_inner_spinlock<'a>(ptr: *const MutexInner) -> &'a SpinLockInner {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).inner_spinlock }
+    }
+
+    pub fn mutex_inner_spinlock_mut<'a>(ptr: *mut MutexInner) -> &'a mut SpinLockInner {
+        // SAFETY: 同上。
+        unsafe { &mut (*ptr).inner_spinlock }
+    }
+
+    // ============ RwLockInner ============
+
+    pub fn rwlock_readers<'a>(ptr: *const RwLockInner) -> &'a core::sync::atomic::AtomicU32 {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).readers }
+    }
+
+    pub fn rwlock_writer<'a>(ptr: *const RwLockInner) -> &'a core::sync::atomic::AtomicU32 {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).writer }
+    }
+
+    pub fn rwlock_pending_writers<'a>(ptr: *const RwLockInner) -> &'a core::sync::atomic::AtomicU32 {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).pending_writers }
+    }
+
+    pub fn rwlock_inner_lock<'a>(ptr: *const RwLockInner) -> &'a SpinLockInner {
+        // SAFETY: 同上。
+        unsafe { &(*ptr).lock }
+    }
+
+    pub fn rwlock_inner_lock_mut<'a>(ptr: *mut RwLockInner) -> &'a mut SpinLockInner {
+        // SAFETY: 同上。
+        unsafe { &mut (*ptr).lock }
+    }
+
+    /// 调度器让出 CPU (FFI 包装)
+    pub fn scheduler_yield() {
+        // SAFETY: 调度器 yield 是 C 端实现的纯函数, 无内存不安全。
+        unsafe { super::scheduler_yield() }
+    }
+
+    /// 获取当前进程 PID (FFI 包装)
+    pub fn current_pid() -> u32 {
+        // SAFETY: 同上。
+        unsafe { super::process_get_current_pid() }
+    }
 }

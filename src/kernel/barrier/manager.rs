@@ -100,11 +100,7 @@ impl RecoveryManager {
                     dom.next_barrier_tick
                         .store(current_tick + dom.barrier_interval_ticks, Ordering::SeqCst);
                     dom.push_barrier_snapshot(current_tick);
-                    if let Some(cb) = *dom.capture_cb.lock() {
-                        unsafe {
-                            cb();
-                        }
-                    }
+                    raw::invoke_capture_cb(*dom.capture_cb.lock());
                 }
                 // Health monitoring: escalate to BSR if heartbeat lost
                 if !dom.check_health(current_tick) {
@@ -234,11 +230,7 @@ impl RecoveryManager {
             entries_rolled_back = undo.rollback_to(target_gen);
         }
 
-        if let Some(cb) = *dom.rollback_cb.lock() {
-            unsafe {
-                cb();
-            }
-        }
+        raw::invoke_rollback_cb(*dom.rollback_cb.lock());
 
         let result = if entries_rolled_back > 0 { 0 } else { -1 };
         dom.set_state(DomainState::Active, Ordering::SeqCst);
@@ -314,5 +306,31 @@ impl RecoveryManager {
         }
 
         rolled_back
+    }
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 FFI 回调调用
+// ============================================================================
+//
+// `RecoveryDomain::capture_cb` 和 `rollback_cb` 是 `unsafe fn()` 函数指针,
+// 调用必须用 unsafe 块。这是 FFI 类型边界, 无安全抽象可消除。
+// 本子模块提供 `invoke_capture_cb` / `invoke_rollback_cb` 集中调用点。
+
+pub(crate) mod raw {
+    /// 调用域的 capture 回调 (barrier 快照前)
+    pub fn invoke_capture_cb(cb: Option<unsafe fn()>) {
+        if let Some(f) = cb {
+            // SAFETY: f 由域所有者注册, 契约由 framework::barrier::api 维护。
+            unsafe { f() };
+        }
+    }
+
+    /// 调用域的 rollback 回调 (回滚完成后)
+    pub fn invoke_rollback_cb(cb: Option<unsafe fn() -> bool>) {
+        if let Some(f) = cb {
+            // SAFETY: 同上。
+            unsafe { f() };
+        }
     }
 }

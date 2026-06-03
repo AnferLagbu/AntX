@@ -76,9 +76,7 @@ impl Device for ChitinNetDevice {
         &mut self,
         _timestamp: Instant,
     ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        let n = unsafe {
-            (self.ops.try_receive)(self.driver_data as *mut u8, self.rx_buf.as_mut_ptr(), RX_BUF_SIZE as u32)
-        };
+        let n = self.ops.try_receive(self.driver_data as *mut u8, &mut self.rx_buf);
         if n <= 0 {
             return None;
         }
@@ -126,9 +124,7 @@ impl<'a> TxToken for ChitinTxToken<'a> {
         F: FnOnce(&mut [u8]) -> R,
     {
         let result = f(&mut self.tx_buf[..len]);
-        unsafe {
-            (self.ops.send)(self.driver_data as *mut u8, self.tx_buf.as_ptr(), len as u32);
-        }
+        self.ops.send(self.driver_data as *mut u8, &self.tx_buf[..len]);
         result
     }
 }

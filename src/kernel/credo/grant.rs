@@ -23,40 +23,29 @@ static mut GRANT_RECORDS: [GrantRecord; MAX_GRANT_RECORDS] =
 
 pub fn add_record(record: GrantRecord) -> Result<(), PwmError> {
     lock_grants();
-    let records = unsafe { &mut *core::ptr::addr_of_mut!(GRANT_RECORDS) };
-    for i in 0..MAX_GRANT_RECORDS {
-        if records[i].is_empty() {
-            records[i] = record;
-            unlock_grants();
-            return Ok(());
-        }
-    }
+    let result = raw::records_mut().iter_mut()
+        .find(|r| r.is_empty())
+        .map(|slot| { *slot = record; Ok(()) })
+        .unwrap_or(Err(PwmError::TableFull));
     unlock_grants();
-    Err(PwmError::TableFull)
+    result
 }
 
 pub fn is_grantor(grantor_pwm: u64, grantee_pwm: u64, domain: CapDomain, caps: CapBits) -> bool {
     lock_grants();
-    let records = unsafe { &*core::ptr::addr_of!(GRANT_RECORDS) };
-    let mut found = false;
-    for record in records.iter() {
-        if record.grantor_pwm.0 == grantor_pwm
-            && record.grantee_pwm.0 == grantee_pwm
-            && record.domain == domain
-            && (record.caps & caps) == caps
-        {
-            found = true;
-            break;
-        }
-    }
+    let found = raw::records().iter().any(|r| {
+        r.grantor_pwm.0 == grantor_pwm
+            && r.grantee_pwm.0 == grantee_pwm
+            && r.domain == domain
+            && (r.caps & caps) == caps
+    });
     unlock_grants();
     found
 }
 
 pub fn clear_records(revoker_pwm: u64, target_pwm: u64, domain: CapDomain, caps: CapBits) {
     lock_grants();
-    let records = unsafe { &mut *core::ptr::addr_of_mut!(GRANT_RECORDS) };
-    for record in records.iter_mut() {
+    for record in raw::records_mut().iter_mut() {
         if record.grantor_pwm.0 == revoker_pwm
             && record.grantee_pwm.0 == target_pwm
             && record.domain == domain
@@ -68,4 +57,24 @@ pub fn clear_records(revoker_pwm: u64, target_pwm: u64, domain: CapDomain, caps:
         }
     }
     unlock_grants();
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 static mut GRANT_RECORDS 访问
+// ============================================================================
+
+pub(crate) mod raw {
+    use super::*;
+
+    /// 安全读视图 (调用方持有 GRANT_LOCK)
+    pub fn records() -> &'static [GrantRecord; MAX_GRANT_RECORDS] {
+        // SAFETY: 调用方契约持有 GRANT_LOCK, 保证唯一读访问。
+        unsafe { &*core::ptr::addr_of!(GRANT_RECORDS) }
+    }
+
+    /// 安全写视图 (调用方持有 GRANT_LOCK)
+    pub fn records_mut() -> &'static mut [GrantRecord; MAX_GRANT_RECORDS] {
+        // SAFETY: 调用方契约持有 GRANT_LOCK, 保证唯一 &mut。
+        unsafe { &mut *core::ptr::addr_of_mut!(GRANT_RECORDS) }
+    }
 }
