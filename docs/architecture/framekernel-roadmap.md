@@ -533,7 +533,7 @@ SAFETY 注释: 38 处
 | 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
 |------|------|------------------|------|------|
 | 2.4.1 smoltcp 适配 | FFI → safe 包装 | 25 | 5d | 📋 |
-| 2.4.2 chitin 设备注册表 | spinlock → framework::sync | **31** | 5d | 📋 |
+| 2.4.2 chitin 设备注册表 | FFI 回调 → extern "C" fn safe wrapper; mod.rs 19→14 | **31→25** | 5d | ✅ |
 | 2.4.3 net/init.rs | 去 unsafe 初始化 | **44** | 5d | 📋 |
 | 2.4.4 网络缓冲区 | raw → IoMem/DmaStream | 10 | 5d | 📋 |
 

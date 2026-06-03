@@ -511,13 +511,13 @@ pub fn probe() -> i32 {
 // NetOps 桥接 — 供 ChitinNetDevice 使用
 // ============================================================================
 
-pub unsafe fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
+pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() || len == 0 { return -1; }
-    let dev = &mut *(driver_data as *mut VirtioNet);
+    // SAFETY: driver_data 由 Chitin 注册时设置, data 由 Chitin NetOps 契约保证有效。
+    let dev = unsafe { &mut *(driver_data as *mut VirtioNet) };
     let hdr = dev.hdr_size;
     let total = (hdr + len as usize).min(dev.tx_dma_buf.len());
     dev.tx_dma_buf[..hdr].fill(0);
-    // SAFETY: 网络栈保证用户缓冲区有效性
     let user_data = unsafe { UserReadPtr::new(data, len as usize) };
     dev.tx_dma_buf[hdr..total].copy_from_slice(&user_data.as_slice()[..total - hdr]);
     let phys = dev.tx_dma_buf.as_ptr() as u64;
@@ -528,10 +528,10 @@ pub unsafe fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -
     }
 }
 
-pub unsafe fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
+pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return -1; }
-    let dev = &mut *(driver_data as *mut VirtioNet);
-    // SAFETY: 网络栈保证用户缓冲区有效性
+    // SAFETY: driver_data 由 Chitin 注册时设置, buf 由 Chitin NetOps 契约保证有效。
+    let dev = unsafe { &mut *(driver_data as *mut VirtioNet) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
     match dev.try_receive(user_buf.as_mut_slice()) {
         Some(n) => n as i32,
@@ -539,14 +539,16 @@ pub unsafe fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) 
     }
 }
 
-pub unsafe fn virtio_net_get_mac(driver_data: *mut u8, mac: &mut [u8; 6]) {
+pub extern "C" fn virtio_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
     if driver_data.is_null() { return; }
-    let dev = &*(driver_data as *const VirtioNet);
-    *mac = dev.mac;
+    // SAFETY: driver_data 由 Chitin 注册时设置, mac 由 Chitin NetOps 契约保证有效。
+    let dev = unsafe { &*(driver_data as *const VirtioNet) };
+    unsafe { *mac = dev.mac; }
 }
 
-pub unsafe fn virtio_net_irq(driver_data: *mut u8) {
+pub extern "C" fn virtio_net_irq(driver_data: *mut u8) {
     if driver_data.is_null() { return; }
-    let dev = &*(driver_data as *const VirtioNet);
+    // SAFETY: driver_data 由 Chitin 注册时设置。
+    let dev = unsafe { &*(driver_data as *const VirtioNet) };
     dev.handle_interrupt();
 }

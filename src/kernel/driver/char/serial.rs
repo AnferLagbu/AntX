@@ -797,14 +797,16 @@ mod tests {
 
 use crate::kernel::chitin::proto_char::CharOps;
 
-unsafe fn serial_char_write(driver_data: *mut u8, buf: &[u8]) -> usize {
-    if driver_data.is_null() { return 0; }
-    let port = &*(driver_data as *const SerialPort);
+extern "C" fn serial_char_write(driver_data: *mut u8, buf: *const u8, len: usize) -> usize {
+    if driver_data.is_null() || buf.is_null() { return 0; }
+    // SAFETY: driver_data 由 Chitin CharOps 契约保证有效, buf 在调用期间有效。
+    let port = unsafe { &*(driver_data as *const SerialPort) };
     let io = match &port.io {
         Some(io) => io,
         None => return 0,
     };
-    for &byte in buf {
+    let slice = unsafe { core::slice::from_raw_parts(buf, len) };
+    for &byte in slice {
         if byte == b'\n' {
             write_byte(io, b'\r');
         }
@@ -813,18 +815,20 @@ unsafe fn serial_char_write(driver_data: *mut u8, buf: &[u8]) -> usize {
         }
         write_byte(io, byte);
     }
-    buf.len()
+    slice.len()
 }
 
-unsafe fn serial_char_read(driver_data: *mut u8, buf: &mut [u8]) -> usize {
-    if driver_data.is_null() { return 0; }
-    let port = &*(driver_data as *const SerialPort);
+extern "C" fn serial_char_read(driver_data: *mut u8, buf: *mut u8, len: usize) -> usize {
+    if driver_data.is_null() || buf.is_null() { return 0; }
+    // SAFETY: driver_data 由 Chitin CharOps 契约保证有效, buf 至少 len 字节可写。
+    let port = unsafe { &*(driver_data as *const SerialPort) };
     let io = match &port.io {
         Some(io) => io,
         None => return 0,
     };
+    let slice = unsafe { core::slice::from_raw_parts_mut(buf, len) };
     let mut count = 0;
-    for byte in buf.iter_mut() {
+    for byte in slice.iter_mut() {
         if is_data_ready(io) {
             *byte = read_byte(io);
             count += 1;

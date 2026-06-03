@@ -12,22 +12,33 @@ use crate::kernel::chitin::{
 use crate::kernel::driver::block::BlockDevice;
 use alloc::boxed::Box;
 
-unsafe fn blk_read_thunk(data: *mut u8, sector: u64, buf: &mut [u8]) -> i32 {
+extern "C" fn blk_read_thunk(data: *mut u8, sector: u64, buf: *mut u8) -> i32 {
+    if data.is_null() || buf.is_null() { return -1; }
+    // SAFETY: 由 Chitin BlockOps 契约保证 data 指向有效 Box<dyn BlockDevice>,
+    // buf 至少 512 字节可写。
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
-    dev.blk_read(sector, buf)
+    let slice = unsafe { core::slice::from_raw_parts_mut(buf, 512) };
+    dev.blk_read(sector, slice)
 }
 
-unsafe fn blk_write_thunk(data: *mut u8, sector: u64, buf: &[u8]) -> i32 {
+extern "C" fn blk_write_thunk(data: *mut u8, sector: u64, buf: *const u8) -> i32 {
+    if data.is_null() || buf.is_null() { return -1; }
+    // SAFETY: 由 Chitin BlockOps 契约保证 data/buf 有效, 调用期间 buf 借用。
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
-    dev.blk_write(sector, buf)
+    let slice = unsafe { core::slice::from_raw_parts(buf, 512) };
+    dev.blk_write(sector, slice)
 }
 
-unsafe fn blk_is_present_thunk(data: *mut u8) -> bool {
+extern "C" fn blk_is_present_thunk(data: *mut u8) -> bool {
+    if data.is_null() { return false; }
+    // SAFETY: data 有效, 由驱动注册时设置。
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
     dev.blk_is_present()
 }
 
-unsafe fn blk_total_sectors_thunk(data: *mut u8) -> u64 {
+extern "C" fn blk_total_sectors_thunk(data: *mut u8) -> u64 {
+    if data.is_null() { return 0; }
+    // SAFETY: data 有效, 由驱动注册时设置。
     let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
     dev.blk_total_sectors()
 }

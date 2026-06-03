@@ -794,10 +794,10 @@ pub fn take_device() -> Option<Box<E1000Device>> {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-pub unsafe fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
+pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() { return -1; }
-    let dev = &mut *(driver_data as *mut E1000Device);
-    // SAFETY: data/len come from the network stack which guarantees valid user buffers
+    // SAFETY: driver_data 由驱动注册时设置, data 由 Chitin NetOps 契约保证有效。
+    let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     let user_data = unsafe { UserReadPtr::new(data, len as usize) };
     match dev.send_packet(user_data.as_slice()) {
         Ok(_) => 0,
@@ -806,10 +806,10 @@ pub unsafe fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) ->
 }
 
 #[cfg(not(feature = "kernel_test"))]
-pub unsafe fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
+pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return -1; }
-    let dev = &mut *(driver_data as *mut E1000Device);
-    // SAFETY: buf/buf_len come from the network stack which guarantees valid user buffers
+    // SAFETY: 同上。
+    let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
     match dev.try_receive(user_buf.as_mut_slice()) {
         Some(n) => n as i32,
@@ -818,16 +818,18 @@ pub unsafe fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -
 }
 
 #[cfg(not(feature = "kernel_test"))]
-pub unsafe fn e1000_net_get_mac(driver_data: *mut u8, mac: &mut [u8; 6]) {
+pub extern "C" fn e1000_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
     if driver_data.is_null() { return; }
-    let dev = &*(driver_data as *const E1000Device);
-    *mac = dev.mac;
+    // SAFETY: driver_data 由驱动注册时设置, mac 由 Chitin NetOps 契约保证有效。
+    let dev = unsafe { &*(driver_data as *const E1000Device) };
+    unsafe { *mac = dev.mac; }
 }
 
 #[cfg(not(feature = "kernel_test"))]
-pub unsafe fn e1000_net_irq(driver_data: *mut u8) {
+pub extern "C" fn e1000_net_irq(driver_data: *mut u8) {
     if driver_data.is_null() { return; }
-    let dev = &mut *(driver_data as *mut E1000Device);
+    // SAFETY: driver_data 由 Chitin NetOps 契约保证有效。
+    let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     dev.handle_interrupt();
 }
 

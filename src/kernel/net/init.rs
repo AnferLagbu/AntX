@@ -92,7 +92,7 @@ unsafe fn socket_set() -> *mut SocketSet<'static> {
 unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
     static FIRST_DECONFIG: AtomicBool = AtomicBool::new(true);
 
-    let dhcp_handle = match unsafe { DHCP_HANDLE } {
+    let dhcp_handle = match raw::dhcp_handle() {
         Some(h) => h,
         None => return,
     };
@@ -105,20 +105,18 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
             if FIRST_DECONFIG.swap(false, Ordering::AcqRel) {
                 return;
             }
-            if let Some(stack) = unsafe { NET_STACK.as_mut() } {
+            if let Some(stack) = raw::stack_mut() {
                 stack.iface.update_ip_addrs(|addrs| {
                     addrs.clear();
                 });
                 let _ = stack.iface.routes_mut().remove_default_ipv4_route();
             }
             crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
-            unsafe {
-                klog_net("DHCP deconfigured\0".as_ptr().cast());
-            }
+            raw::klog_msg("DHCP deconfigured");
         }
         Some(dhcpv4::Event::Configured(config)) => {
             FIRST_DECONFIG.store(false, Ordering::Release);
-            if let Some(stack) = unsafe { NET_STACK.as_mut() } {
+            if let Some(stack) = raw::stack_mut() {
                 let cidr = config.address;
                 stack.iface.update_ip_addrs(|addrs| {
                     addrs.clear();
@@ -129,9 +127,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
                 }
             }
             crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
-            unsafe {
-                klog_net("DHCP configured\0".as_ptr().cast());
-            }
+            raw::klog_msg("DHCP configured");
         }
     }
 }
@@ -149,15 +145,15 @@ pub unsafe fn poll_network() {
         None => return,
     };
 
-    let nic = match unsafe { NET_DEVICE.as_mut() } {
+    let nic = match raw::device_mut() {
         Some(d) => d,
         None => return,
     };
-    let stack = match unsafe { NET_STACK.as_mut() } {
+    let stack = match raw::stack_mut() {
         Some(s) => s,
         None => return,
     };
-    let sockets = &mut *unsafe { socket_set() };
+    let sockets = &mut *raw::socket_set();
     smoltcp_impl::poll_stack(nic, stack, sockets);
     unsafe { process_dhcp_events(sockets) };
 }
@@ -230,11 +226,7 @@ unsafe fn net_restore() {
     crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
     crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
 
-    unsafe {
-        NET_DEVICE = None;
-        NET_STACK = None;
-        DHCP_HANDLE = None;
-    }
+    raw::clear_all();
     SOCKETS_INITIALIZED.store(false, Ordering::Release);
 
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
@@ -244,9 +236,7 @@ unsafe fn net_restore() {
     qx_net_init();
 
     crate::arch!(interrupt_enable());
-    unsafe {
-        klog_init_msg("--- Network Recovered ---\0".as_ptr().cast());
-    }
+    raw::klog_msg("--- Network Recovered ---");
 }
 
 unsafe fn net_reset() {
@@ -255,18 +245,12 @@ unsafe fn net_reset() {
     crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
     crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
 
-    unsafe {
-        NET_DEVICE = None;
-        NET_STACK = None;
-        DHCP_HANDLE = None;
-    }
+    raw::clear_all();
     SOCKETS_INITIALIZED.store(false, Ordering::Release);
 
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
 
-    unsafe {
-        klog_init_msg("--- Network Hard Reset ---\0".as_ptr().cast());
-    }
+    raw::klog_msg("--- Network Hard Reset ---");
 }
 
 // ============================================================================
@@ -278,8 +262,7 @@ unsafe fn net_reset() {
 
 #[no_mangle]
 pub extern "C" fn qx_net_init() {
-    unsafe {
-        klog_init_msg("--- Network Subsystem Init ---\0".as_ptr().cast());
+    raw::klog_msg("--- Network Subsystem Init ---");
 
         if transition_state(InitState::Uninitialized, InitState::HardwareProbed).is_err() {
             let current = G_INIT_STATE.load(Ordering::Acquire);
@@ -398,7 +381,6 @@ pub extern "C" fn qx_net_init() {
             net_restore,
             net_reset,
         );
-    }
 }
 
 // ============================================================================
@@ -430,7 +412,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
 
     let _guard = NET_LOCK.lock();
 
-    let stack = match unsafe { NET_STACK.as_mut() } {
+    let stack = match raw::stack_mut() {
         Some(s) => s,
         None => return -1,
     };
@@ -506,9 +488,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
 
     crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
 
-    unsafe {
-        klog_net("Static IP configured\0".as_ptr().cast());
-    }
+    raw::klog_msg("Static IP configured");
     0
 }
 
@@ -1058,12 +1038,92 @@ pub unsafe fn reset_network_state() {
 
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
 
-    unsafe {
-        NET_DEVICE = None;
-        NET_STACK = None;
-        DHCP_HANDLE = None;
-    }
+    raw::clear_all();
     SOCKETS_INITIALIZED.store(false, Ordering::Release);
+}
+
+// ============================================================================
+// 特权子模块 (Framekernel raw): 集中 static mut 访问
+// ============================================================================
+
+pub(crate) mod raw {
+    use super::*;
+
+    /// 安全访问 NET_STACK (Framekernel 集中 unsafe 边界)
+    pub fn stack_mut() -> Option<&'static mut NetworkStack> {
+        // SAFETY: NET_STACK 由 NET_LOCK 保护, 调用方已持有锁或处于单线程上下文。
+        unsafe { NET_STACK.as_mut() }
+    }
+
+    /// 安全访问 NET_DEVICE
+    pub fn device_mut() -> Option<&'static mut ChitinNetDevice> {
+        // SAFETY: 同上。
+        unsafe { NET_DEVICE.as_mut() }
+    }
+
+    /// 安全读取 DHCP_HANDLE
+    pub fn dhcp_handle() -> Option<SocketHandle> {
+        // SAFETY: SocketHandle 是 Copy, 读取无副作用。
+        unsafe { DHCP_HANDLE }
+    }
+
+    /// 安全设置 DHCP_HANDLE
+    pub fn set_dhcp_handle(h: Option<SocketHandle>) {
+        // SAFETY: 由 NET_LOCK 保护。
+        unsafe { DHCP_HANDLE = h; }
+    }
+
+    /// 安全清空网络全局状态
+    pub fn clear_all() {
+        // SAFETY: 由 NET_LOCK 保护, 串行重置流程。
+        unsafe {
+            NET_DEVICE = None;
+            NET_STACK = None;
+            DHCP_HANDLE = None;
+        }
+    }
+
+    /// 安全获取 SocketSet 指针
+    pub fn socket_set() -> *mut SocketSet<'static> {
+        // SAFETY: SOCKET_SET 在 init_sockets 后已初始化, 调用方在 NET_LOCK 下。
+        unsafe { SOCKET_SET.as_mut_ptr() }
+    }
+
+    /// 安全初始化 sockets
+    pub fn init_sockets() {
+        // SAFETY: 由 NET_LOCK 保护, 单次初始化。
+        unsafe { super::init_sockets() }
+    }
+
+    /// klog 网络消息 (C 字符串) - 安全包装
+    pub fn klog_msg(s: &str) {
+        let mut buf = [0u8; 256];
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(buf.len() - 1);
+        buf[..len].copy_from_slice(&bytes[..len]);
+        // SAFETY: 临时 C 字符串, 在 klog_net 调用期间有效。
+        unsafe { klog_net(buf.as_ptr().cast()) };
+    }
+
+    /// klog 初始化消息 (走 klog_init_msg)
+    pub fn klog_init(s: &str) {
+        let mut buf = [0u8; 256];
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(buf.len() - 1);
+        buf[..len].copy_from_slice(&bytes[..len]);
+        // SAFETY: 临时 C 字符串, 在 klog_init_msg 调用期间有效。
+        unsafe { klog_init_msg(buf.as_ptr().cast()) };
+    }
+
+    /// klog 错误消息
+    pub fn klog_err(s: &str) {
+        let mut buf = [0u8; 256];
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(buf.len() - 1);
+        buf[..len].copy_from_slice(&bytes[..len]);
+        // SAFETY: 临时 C 字符串, 在 klog_net_err 调用期间有效。
+        unsafe { klog_net_err(buf.as_ptr().cast()) };
+    }
 }
 
 // ============================================================================

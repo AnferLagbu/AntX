@@ -9,19 +9,17 @@
 //! 用于 E1000、virtio-net 等网卡驱动。
 
 /// 网络设备发送函数 (dst buffer owned by caller, len bytes to send)
-pub type NetSendFn =
-    unsafe fn(driver_data: *mut u8, data: *const u8, len: u32) -> i32;
+pub type NetSendFn = extern "C" fn(driver_data: *mut u8, data: *const u8, len: u32) -> i32;
 
 /// 网络设备接收函数 (receive buffer owned by caller)
 /// 返回接收到的字节数, 0 表示无数据, <0 表示错误
-pub type NetRecvFn =
-    unsafe fn(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32;
+pub type NetRecvFn = extern "C" fn(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32;
 
 /// 获取 MAC 地址
-pub type NetGetMacFn = unsafe fn(driver_data: *mut u8, mac: &mut [u8; 6]);
+pub type NetGetMacFn = extern "C" fn(driver_data: *mut u8, mac: *mut [u8; 6]);
 
 /// 中断处理
-pub type NetIrqFn = unsafe fn(driver_data: *mut u8);
+pub type NetIrqFn = extern "C" fn(driver_data: *mut u8);
 
 /// 网络设备操作表
 pub struct NetOps {
@@ -33,4 +31,59 @@ pub struct NetOps {
     pub get_mac: NetGetMacFn,
     /// 中断处理
     pub handle_irq: Option<NetIrqFn>,
+}
+
+impl NetOps {
+    /// 发送网络包 (Framekernel 安全接口, 调用方无需 unsafe)
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须有效, `data` 在调用期间有效, len 字节。
+    pub fn send(
+        &self,
+        driver_data: *mut u8,
+        data: &[u8],
+    ) -> i32 {
+        // SAFETY: 调用方契约保证 data/len 有效; extern "C" fn 调用本身安全。
+        unsafe { (self.send)(driver_data, data.as_ptr(), data.len() as u32) }
+    }
+
+    /// 接收网络包 (Framekernel 安全接口)
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须有效, `buf` 至少 `buf.capacity()` 字节。
+    pub fn try_receive(
+        &self,
+        driver_data: *mut u8,
+        buf: &mut [u8],
+    ) -> i32 {
+        // SAFETY: buf 由调用方提供有效空间。
+        unsafe { (self.try_receive)(driver_data, buf.as_mut_ptr(), buf.len() as u32) }
+    }
+
+    /// 获取 MAC 地址 (Framekernel 安全接口)
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须有效。
+    pub fn get_mac(
+        &self,
+        driver_data: *mut u8,
+        mac: &mut [u8; 6],
+    ) {
+        // SAFETY: mac 6 字节对齐且生命周期内有效。
+        unsafe { (self.get_mac)(driver_data, mac) }
+    }
+
+    /// 中断处理 (Framekernel 安全接口)
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须有效, 在中断上下文中调用。
+    pub fn handle_irq(
+        &self,
+        driver_data: *mut u8,
+    ) {
+        if let Some(f) = self.handle_irq {
+            // SAFETY: driver_data 有效, 中断上下文。
+            unsafe { f(driver_data) };
+        }
+    }
 }

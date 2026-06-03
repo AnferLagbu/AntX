@@ -795,21 +795,36 @@ mod tests {
 
 use crate::kernel::chitin::proto_input::InputOps;
 
-unsafe fn kb_input_read(driver_data: *mut u8) -> Option<u8> {
-    if driver_data.is_null() { return None; }
-    let kb = &mut *(driver_data as *mut KeyboardDriver);
-    kb.read_char()
+extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
+    if driver_data.is_null() { return core::ptr::null(); }
+    // SAFETY: driver_data 由 Chitin InputOps 契约保证有效。
+    let kb = unsafe { &mut *(driver_data as *mut KeyboardDriver) };
+    match kb.read_char() {
+        Some(b) => {
+            // 使用静态槽位存放返回值, 调用方在返回后立即拷贝, 借用安全。
+            // SAFETY: 单线程调用方串行使用, 借用结束于下个 read_char 调用。
+            let slot = unsafe { &mut KB_READ_SLOT };
+            *slot = b;
+            slot as *const u8
+        }
+        None => core::ptr::null(),
+    }
 }
 
-unsafe fn kb_input_has(driver_data: *mut u8) -> bool {
+/// 临时存放 read_char 返回值的槽位
+static mut KB_READ_SLOT: u8 = 0;
+
+extern "C" fn kb_input_has(driver_data: *mut u8) -> bool {
     if driver_data.is_null() { return false; }
-    let kb = &*(driver_data as *const KeyboardDriver);
+    // SAFETY: 同上。
+    let kb = unsafe { &*(driver_data as *const KeyboardDriver) };
     !kb.is_buffer_empty()
 }
 
-unsafe fn kb_input_irq(driver_data: *mut u8) {
+extern "C" fn kb_input_irq(driver_data: *mut u8) {
     if driver_data.is_null() { return; }
-    let kb = &mut *(driver_data as *mut KeyboardDriver);
+    // SAFETY: driver_data 由 Chitin InputOps 契约保证有效。
+    let kb = unsafe { &mut *(driver_data as *mut KeyboardDriver) };
     kb.handle_interrupt();
 }
 

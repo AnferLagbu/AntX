@@ -120,10 +120,61 @@ pub enum DeviceState {
 /// 每个块设备驱动提供这四个函数指针, Chitin 通过它们执行 I/O,
 /// 无需虚表分发或 trait object, 实现零开销抽象。
 pub struct BlockOps {
-    pub read: unsafe fn(driver_data: *mut u8, sector: u64, buf: &mut [u8]) -> i32,
-    pub write: unsafe fn(driver_data: *mut u8, sector: u64, buf: &[u8]) -> i32,
-    pub is_present: unsafe fn(driver_data: *mut u8) -> bool,
-    pub total_sectors: unsafe fn(driver_data: *mut u8) -> u64,
+    pub read: extern "C" fn(driver_data: *mut u8, sector: u64, buf: *mut u8) -> i32,
+    pub write: extern "C" fn(driver_data: *mut u8, sector: u64, buf: *const u8) -> i32,
+    pub is_present: extern "C" fn(driver_data: *mut u8) -> bool,
+    pub total_sectors: extern "C" fn(driver_data: *mut u8) -> u64,
+}
+
+impl BlockOps {
+    /// 块设备读 (Framekernel 安全接口, 调用方无需 unsafe)
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须指向由驱动注册时提供的有效对象。
+    /// - `buf` 必须可写 `buf.len()` 字节。
+    pub fn read_sector(
+        &self,
+        driver_data: *mut u8,
+        sector: u64,
+        buf: &mut [u8],
+    ) -> i32 {
+        // SAFETY: 调用方契约保证 driver_data/buf 有效; extern "C" fn
+        // 调用本身是安全的, 我们仅用 unsafe 块满足类型系统对裸指针的
+        // 借用要求。
+        unsafe { (self.read)(driver_data, sector, buf.as_mut_ptr()) }
+    }
+
+    /// 块设备写 (Framekernel 安全接口)
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须有效, `buf` 在调用期间保持借用。
+    pub fn write_sector(
+        &self,
+        driver_data: *mut u8,
+        sector: u64,
+        buf: &[u8],
+    ) -> i32 {
+        // SAFETY: 同上。
+        unsafe { (self.write)(driver_data, sector, buf.as_ptr()) }
+    }
+
+    /// 设备是否在线
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须有效。
+    pub fn is_present(&self, driver_data: *mut u8) -> bool {
+        // SAFETY: driver_data 由驱动设置, 生命周期内有效。
+        unsafe { (self.is_present)(driver_data) }
+    }
+
+    /// 设备总扇区数
+    ///
+    /// # Safety (调用方)
+    /// - `driver_data` 必须有效。
+    pub fn total_sectors(&self, driver_data: *mut u8) -> u64 {
+        // SAFETY: driver_data 由驱动设置, 生命周期内有效。
+        unsafe { (self.total_sectors)(driver_data) }
+    }
 }
 
 /// 协议级 I/O 操作表 (联合体, 按协议类型取对应变体)
@@ -345,7 +396,7 @@ pub fn chitin_find_net_device() -> Option<(
         match &dev.ops {
             Some(ChitinOps::Net(net_ops)) => {
                 let mut mac = [0u8; 6];
-                unsafe { (net_ops.get_mac)(dev.driver_data, &mut mac) };
+                net_ops.get_mac(dev.driver_data, &mut mac);
                 return Some((net_ops, dev.driver_data, mac));
             }
             _ => continue,
@@ -409,7 +460,7 @@ pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
         return -1;
     }
     match dev.block_ops() {
-        Some(ops) => unsafe { (ops.read)(dev.driver_data, sector, buf) },
+        Some(ops) => ops.read_sector(dev.driver_data, sector, buf),
         None => -1,
     }
 }
@@ -432,7 +483,7 @@ pub fn chitin_blk_write(drive: u8, sector: u64, buf: &[u8]) -> i32 {
         return -1;
     }
     match dev.block_ops() {
-        Some(ops) => unsafe { (ops.write)(dev.driver_data, sector, buf) },
+        Some(ops) => ops.write_sector(dev.driver_data, sector, buf),
         None => -1,
     }
 }
@@ -452,7 +503,7 @@ pub fn chitin_blk_is_present(drive: u8) -> bool {
         return false;
     }
     match dev.block_ops() {
-        Some(ops) => unsafe { (ops.is_present)(dev.driver_data) },
+        Some(ops) => ops.is_present(dev.driver_data),
         None => false,
     }
 }
@@ -469,7 +520,7 @@ pub fn chitin_blk_total_sectors(drive: u8) -> u64 {
         return 0;
     }
     match dev.block_ops() {
-        Some(ops) => unsafe { (ops.total_sectors)(dev.driver_data) },
+        Some(ops) => ops.total_sectors(dev.driver_data),
         None => 0,
     }
 }
@@ -517,7 +568,7 @@ pub fn chitin_char_write(data: &[u8]) {
         }
         match dev.char_ops() {
             Some(ops) => {
-                unsafe { (ops.write)(dev.driver_data, data) };
+                ops.write(dev.driver_data, data);
                 return;
             }
             None => continue,
@@ -536,7 +587,7 @@ pub fn chitin_char_read(buf: &mut [u8]) -> usize {
             continue;
         }
         match dev.char_ops() {
-            Some(ops) => return unsafe { (ops.read)(dev.driver_data, buf) },
+            Some(ops) => return ops.read(dev.driver_data, buf),
             None => continue,
         }
     }
@@ -556,7 +607,7 @@ pub fn chitin_input_read() -> Option<u8> {
             continue;
         }
         match dev.input_ops() {
-            Some(ops) => return unsafe { (ops.read_char)(dev.driver_data) },
+            Some(ops) => return ops.read_char(dev.driver_data),
             None => continue,
         }
     }
@@ -574,7 +625,7 @@ pub fn chitin_input_has_data() -> bool {
             continue;
         }
         match dev.input_ops() {
-            Some(ops) => return unsafe { (ops.has_char)(dev.driver_data) },
+            Some(ops) => return ops.has_char(dev.driver_data),
             None => continue,
         }
     }
