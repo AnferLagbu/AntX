@@ -76,10 +76,12 @@ fi
 step "4/6 Lockbud 死锁/数据竞争扫描"
 pushd src/rust > /dev/null
 unset RUSTC_WRAPPER
-if cargo +nightly lockbud --target x86_64-unknown-none 2>&1 | tail -20; then
+LOCKBUD_RESULT=0
+cargo +nightly lockbud --target x86_64-unknown-none 2>&1 | tail -25 || LOCKBUD_RESULT=$?
+if [ $LOCKBUD_RESULT -eq 0 ]; then
     ok "lockbud: passed"
 else
-    echo -e "${YELLOW}⚠ lockbud 发现潜在问题 (见上)${NC}"
+    echo -e "${YELLOW}⚠ lockbud 返回非零 (可能发现潜在问题或工具未安装, 见上)${NC}"
 fi
 popd > /dev/null
 
