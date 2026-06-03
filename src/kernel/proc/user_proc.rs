@@ -1146,7 +1146,7 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
     // SAFETY: parent_proc / child_kernel_proc 均来自管理器, 有效。
     unsafe {
         let parent_ref = UserProcRef::new_unchecked(parent_proc);
-        let child_up = raw::alloc_user_process().unwrap_or(core::ptr::null_mut());
+        let child_up = raw::alloc_user_process().unwrap_or_default();
         if child_up.is_null() {
             return -1;
         }

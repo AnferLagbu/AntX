@@ -66,6 +66,9 @@ impl<'a, T> Deref for MutexGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        // 必须显式取址: `self.guard.data` 是 T 拷贝 (若 T: Copy),
+        // 而 trait 需要 &T 引用。
+        #[allow(clippy::needless_borrow)]
         &self.guard.data
     }
 }

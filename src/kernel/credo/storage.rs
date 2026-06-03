@@ -379,6 +379,7 @@ pub(crate) mod raw {
     }
 
     /// 安全访问 identity 表 (读视图)
+    #[allow(dead_code)]
     pub fn table() -> &'static super::identity::IdentityTable {
         super::identity::raw::get_table()
     }

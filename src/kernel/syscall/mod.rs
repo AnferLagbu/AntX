@@ -464,11 +464,11 @@ pub unsafe extern "Rust" fn syscall_register(_num: u64, _handler: SyscallHandler
 // 文件 I/O — read / write / open / close
 // ============================================================================
 
-unsafe fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
+fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 {
         return Errno::EINVAL.as_ret();
     }
-    if !validate_user_buf(buf as u64, count) {
+    if !raw::check_user_buf(buf as u64, count) {
         return Errno::EFAULT.as_ret();
     }
     if fd == 1 || fd == 2 {
@@ -477,30 +477,16 @@ unsafe fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if fd == 0 {
         #[cfg(not(feature = "kernel_test"))]
         {
-            extern "C" {
-                fn serial_has_data(com: i32) -> bool;
-                fn serial_getc(com: i32) -> i32;
-            }
             #[cfg(target_arch = "x86_64")]
             {
-                extern "C" {
-                    fn keyboard_has_data() -> bool;
-                    fn keyboard_get_char() -> i32;
-                }
-                if keyboard_has_data() {
-                    let c = keyboard_get_char();
-                    if c > 0 {
-                        *buf = c as u8;
-                        return 1;
-                    }
-                }
-            }
-            if serial_has_data(0) {
-                let c = serial_getc(0);
-                if c > 0 {
-                    *buf = c as u8;
+                if let Some(c) = raw::read_keyboard_byte() {
+                    unsafe { raw::write_u8(buf, c) };
                     return 1;
                 }
+            }
+            if let Some(c) = raw::read_serial_byte(0) {
+                unsafe { raw::write_u8(buf, c) };
+                return 1;
             }
         }
         return 0;
@@ -508,16 +494,16 @@ unsafe fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     crate::kernel::fs::vfs::api::vfs_read(fd as u32, buf, count as u32) as i64
 }
 
-unsafe fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
+fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 {
         return Errno::EINVAL.as_ret();
     }
-    if !validate_user_buf(buf as u64, count) {
+    if !raw::check_user_buf(buf as u64, count) {
         return Errno::EFAULT.as_ret();
     }
     if fd == 1 || fd == 2 {
         if count > 0 {
-            let data = unsafe { core::slice::from_raw_parts(buf, count as usize) };
+            let data = unsafe { raw::read_slice(buf, count as usize) };
             crate::kernel::klog::serial_write_bytes(data);
         }
         return count as i64;
@@ -525,27 +511,27 @@ unsafe fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     crate::kernel::fs::vfs::api::vfs_write(fd as u32, buf, count as u32) as i64
 }
 
-unsafe fn sys_open(path: *const u8, flags: i32, _mode: i32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_open(path: *const u8, flags: i32, _mode: i32) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
     crate::kernel::fs::vfs::api::vfs_open(path, flags as u32, pwm) as i64
 }
 
-unsafe fn sys_close(fd: i32) -> i64 {
+fn sys_close(fd: i32) -> i64 {
     if fd < 0 {
         return Errno::EBADF.as_ret();
     }
     crate::kernel::fs::vfs::api::vfs_close(fd as u32) as i64
 }
 
-unsafe fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     if st_buf.is_null()
-        || !validate_user_buf(
+        || !raw::check_user_buf(
             st_buf as u64,
             core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64,
         )
@@ -560,9 +546,9 @@ unsafe fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
     ) as i64
 }
 
-unsafe fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
+fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
     if st_buf.is_null()
-        || !validate_user_buf(
+        || !raw::check_user_buf(
             st_buf as u64,
             core::mem::size_of::<crate::kernel::fs::vfs::types::VfsStat>() as u64,
         )
@@ -577,11 +563,11 @@ unsafe fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
     ) as i64
 }
 
-unsafe fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
+fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
     crate::kernel::fs::vfs::api::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
 }
 
-unsafe fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
+fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
     crate::kernel::fs::vfs::api::vfs_readdir(
         fd as u32,
         buf as *mut crate::kernel::fs::vfs::types::VfsDirEntry,
@@ -592,26 +578,26 @@ unsafe fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
 // 目录/文件操作
 // ============================================================================
 
-unsafe fn sys_getcwd(buf: *mut u8, size: u64) -> i64 {
+fn sys_getcwd(buf: *mut u8, size: u64) -> i64 {
     if buf.is_null() || size == 0 {
         return Errno::EINVAL.as_ret();
     }
-    if !validate_user_buf(buf as u64, size) {
+    if !raw::check_user_buf(buf as u64, size) {
         return Errno::EFAULT.as_ret();
     }
     crate::kernel::fs::vfs::api::vfs_get_cwd(buf, size as u32) as i64
 }
 
-unsafe fn sys_chdir(path: *const u8) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_chdir(path: *const u8) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     crate::kernel::fs::vfs::api::vfs_set_cwd(path);
     0
 }
 
-unsafe fn sys_mkdir(path: *const u8, _mode: i32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_mkdir(path: *const u8, _mode: i32) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
@@ -619,27 +605,27 @@ unsafe fn sys_mkdir(path: *const u8, _mode: i32) -> i64 {
     crate::kernel::fs::vfs::api::vfs_mkdir(path, pwm) as i64
 }
 
-unsafe fn sys_rmdir(path: *const u8) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_rmdir(path: *const u8) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
     crate::kernel::fs::vfs::api::vfs_rmdir(path, pwm) as i64
 }
 
-unsafe fn sys_unlink(path: *const u8) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_unlink(path: *const u8) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
     crate::kernel::fs::vfs::api::vfs_unlink(path, pwm) as i64
 }
 
-unsafe fn sys_rename(old: *const u8, new: *const u8) -> i64 {
+fn sys_rename(old: *const u8, new: *const u8) -> i64 {
     if old.is_null()
         || new.is_null()
-        || !validate_user_ptr(old as u64)
-        || !validate_user_ptr(new as u64)
+        || !raw::check_user_ptr(old as u64)
+        || !raw::check_user_ptr(new as u64)
     {
         return Errno::EFAULT.as_ret();
     }
@@ -647,12 +633,12 @@ unsafe fn sys_rename(old: *const u8, new: *const u8) -> i64 {
     crate::kernel::fs::vfs::api::vfs_rename(old, new, pwm) as i64
 }
 
-unsafe fn sys_access(path: *const u8, _mode: i32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_access(path: *const u8, _mode: i32) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
-    let stat_ptr: *mut crate::kernel::fs::vfs::types::VfsStat = &mut core::mem::zeroed();
+    let stat_ptr: *mut crate::kernel::fs::vfs::types::VfsStat = unsafe { &mut core::mem::zeroed() };
     let result = crate::kernel::fs::vfs::api::vfs_stat(path, stat_ptr, pwm);
     if result < 0 {
         return result as i64;
@@ -660,16 +646,16 @@ unsafe fn sys_access(path: *const u8, _mode: i32) -> i64 {
     0
 }
 
-unsafe fn sys_sync() -> i64 {
+fn sys_sync() -> i64 {
     crate::kernel::fs::vfs::api::vfs_sync() as i64
 }
 
-unsafe fn sys_mount(
+fn sys_mount(
     _source: *const u8,
     target: *const u8,
     fstype: *const u8,
 ) -> i64 {
-    if target.is_null() || !validate_user_ptr(target as u64) {
+    if target.is_null() || !raw::check_user_ptr(target as u64) {
         return Errno::EFAULT.as_ret();
     }
     if fstype.is_null() {
@@ -682,16 +668,16 @@ unsafe fn sys_mount(
 // 进程 — fork / execve / exit / wait / getpid
 // ============================================================================
 
-unsafe fn sys_getpid() -> i64 {
+fn sys_getpid() -> i64 {
     crate::kernel::proc::api::process_get_current_pid() as i64
 }
 
-unsafe fn sys_getppid() -> i64 {
+fn sys_getppid() -> i64 {
     let pid = crate::kernel::proc::api::process_get_current_pid();
     crate::kernel::proc::api::proc_get_ppid(pid) as i64
 }
 
-unsafe fn sys_sched_yield() -> i64 {
+fn sys_sched_yield() -> i64 {
     crate::kernel::proc::api::scheduler_yield();
     0
 }
@@ -723,15 +709,15 @@ fn priority_to_nice(p: crate::kernel::proc::types::ProcessPriority) -> i32 {
     }
 }
 
-unsafe fn sys_nice(inc: i32) -> i64 {
+fn sys_nice(inc: i32) -> i64 {
     let pid = crate::kernel::proc::api::process_get_current_pid();
-    let current_nice = sys_getpriority(PRIO_PROCESS, pid) as i32;
+    let current_nice = unsafe { sys_getpriority(PRIO_PROCESS, pid) as i32 };
     let new_nice = (current_nice + inc).clamp(-20, 19);
-    sys_setpriority(PRIO_PROCESS, pid, new_nice);
+    unsafe { sys_setpriority(PRIO_PROCESS, pid, new_nice) };
     new_nice as i64
 }
 
-unsafe fn sys_getpriority(which: i32, who: u32) -> i64 {
+fn sys_getpriority(which: i32, who: u32) -> i64 {
     if which != PRIO_PROCESS {
         return Errno::EINVAL.as_ret();
     }
@@ -745,11 +731,11 @@ unsafe fn sys_getpriority(which: i32, who: u32) -> i64 {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),
     };
-    let pri = (*proc).get_priority();
+    let pri = unsafe { (*proc).get_priority() };
     priority_to_nice(pri) as i64
 }
 
-unsafe fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
+fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
     if which != PRIO_PROCESS {
         return Errno::EINVAL.as_ret();
     }
@@ -765,41 +751,41 @@ unsafe fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
         None => return Errno::ESRCH.as_ret(),
     };
     let new_pri = nice_to_priority(clamped);
-    (*proc).set_priority(new_pri);
+    unsafe { (*proc).set_priority(new_pri) };
     0
 }
 
-unsafe fn sys_fork() -> i64 {
+fn sys_fork() -> i64 {
     crate::kernel::proc::api::sys_fork() as i64
 }
 
-unsafe fn sys_execve(
+fn sys_execve(
     path: *const u8,
     argv: *const *const u8,
     _envp: *const *const u8,
 ) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let mut argc: u32 = 0;
     if !argv.is_null() {
-        if !validate_user_ptr(argv as u64) {
+        if !raw::check_user_ptr(argv as u64) {
             return Errno::EFAULT.as_ret();
         }
         let mut p = argv;
         loop {
-            if !validate_user_ptr(p as u64) {
+            if !raw::check_user_ptr(p as u64) {
                 return Errno::EFAULT.as_ret();
             }
-            let entry = core::ptr::read_volatile(p);
+            let entry = unsafe { core::ptr::read_volatile(p) };
             if entry.is_null() {
                 break;
             }
-            if !validate_user_ptr(entry as u64) {
+            if !raw::check_user_ptr(entry as u64) {
                 return Errno::EFAULT.as_ret();
             }
             argc += 1;
-            p = p.add(1);
+            p = unsafe { p.add(1) };
         }
     }
 
@@ -808,7 +794,7 @@ unsafe fn sys_execve(
     let stat_result =
         crate::kernel::fs::vfs::api::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
     if stat_result == 0 {
-        let st = stat_buf.assume_init();
+        let st = unsafe { stat_buf.assume_init() };
         if (st.perm & 0o4000) != 0 && st.owner_pwm != 0 {
             crate::kernel::credo::session::elevate_for_suid(st.owner_pwm);
         }
@@ -822,12 +808,12 @@ unsafe fn sys_execve(
     }
 }
 
-unsafe fn sys_exit(status: i32) -> i64 {
+fn sys_exit(status: i32) -> i64 {
     crate::kernel::proc::api::process_exit(status as u32);
     0
 }
 
-unsafe fn sys_wait4(_pid: i32) -> i64 {
+fn sys_wait4(_pid: i32) -> i64 {
     let result = crate::kernel::proc::api::proc_wait_child(0);
     result as i64
 }
@@ -836,23 +822,23 @@ unsafe fn sys_wait4(_pid: i32) -> i64 {
 // 用户/组 — getuid / getgid / geteuid / getegid
 // ============================================================================
 
-unsafe fn sys_getuid() -> i64 {
+fn sys_getuid() -> i64 {
     crate::kernel::credo::session::get_current_uid() as i64
 }
 
-unsafe fn sys_getgid() -> i64 {
+fn sys_getgid() -> i64 {
     crate::kernel::credo::session::get_current_gid() as i64
 }
 
-unsafe fn sys_geteuid() -> i64 {
+fn sys_geteuid() -> i64 {
     crate::kernel::credo::session::get_euid() as i64
 }
 
-unsafe fn sys_getegid() -> i64 {
+fn sys_getegid() -> i64 {
     crate::kernel::credo::session::get_egid() as i64
 }
 
-unsafe fn sys_setuid(uid: u32) -> i64 {
+fn sys_setuid(uid: u32) -> i64 {
     if uid == crate::kernel::credo::session::get_current_uid()
         || uid == crate::kernel::credo::session::get_euid()
         || uid == crate::kernel::credo::session::get_saved_euid()
@@ -865,7 +851,7 @@ unsafe fn sys_setuid(uid: u32) -> i64 {
     Errno::EPERM.as_ret()
 }
 
-unsafe fn sys_setgid(gid: u32) -> i64 {
+fn sys_setgid(gid: u32) -> i64 {
     if gid == crate::kernel::credo::session::get_current_gid()
         || gid == crate::kernel::credo::session::get_egid()
         || gid == crate::kernel::credo::session::get_saved_egid()
@@ -878,7 +864,7 @@ unsafe fn sys_setgid(gid: u32) -> i64 {
     Errno::EPERM.as_ret()
 }
 
-unsafe fn sys_seteuid(euid: u32) -> i64 {
+fn sys_seteuid(euid: u32) -> i64 {
     if euid == crate::kernel::credo::session::get_current_uid()
         || euid == crate::kernel::credo::session::get_euid()
         || euid == crate::kernel::credo::session::get_saved_euid()
@@ -891,7 +877,7 @@ unsafe fn sys_seteuid(euid: u32) -> i64 {
     Errno::EPERM.as_ret()
 }
 
-unsafe fn sys_setegid(egid: u32) -> i64 {
+fn sys_setegid(egid: u32) -> i64 {
     if egid == crate::kernel::credo::session::get_current_gid()
         || egid == crate::kernel::credo::session::get_egid()
         || egid == crate::kernel::credo::session::get_saved_egid()
@@ -904,14 +890,14 @@ unsafe fn sys_setegid(egid: u32) -> i64 {
     Errno::EPERM.as_ret()
 }
 
-unsafe fn sys_setreuid(ruid: u32, euid: u32) -> i64 {
+fn sys_setreuid(ruid: u32, euid: u32) -> i64 {
     if crate::kernel::credo::session::try_setreuid(ruid, euid) {
         return 0;
     }
     Errno::EPERM.as_ret()
 }
 
-unsafe fn sys_setregid(rgid: u32, egid: u32) -> i64 {
+fn sys_setregid(rgid: u32, egid: u32) -> i64 {
     if crate::kernel::credo::session::try_setregid(rgid, egid) {
         return 0;
     }
@@ -922,8 +908,8 @@ unsafe fn sys_setregid(rgid: u32, egid: u32) -> i64 {
 // 管道 — pipe / dup / dup2
 // ============================================================================
 
-unsafe fn sys_pipe(fds: *mut i32) -> i64 {
-    if fds.is_null() || !validate_user_buf(fds as u64, 8) {
+fn sys_pipe(fds: *mut i32) -> i64 {
+    if fds.is_null() || !raw::check_user_buf(fds as u64, 8) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
@@ -931,26 +917,26 @@ unsafe fn sys_pipe(fds: *mut i32) -> i64 {
         return Errno::EACCES.as_ret();
     }
     let mut pipefd: [i32; 2] = [0; 2];
-    let result = crate::kernel::ipc::pipe::ipc_pipe_create(pipefd.as_mut_ptr());
+    let result = unsafe { crate::kernel::ipc::pipe::ipc_pipe_create(pipefd.as_mut_ptr()) };
     if result < 0 {
         return Errno::EBUSY.as_ret();
     }
     if pipefd[0] < 0 || pipefd[1] < 0 {
         return Errno::EBUSY.as_ret();
     }
-    *fds = pipefd[0];
-    *fds.offset(1) = pipefd[1];
+    unsafe { raw::write_u32(fds as *mut u32, pipefd[0] as u32) };
+    unsafe { raw::write_u32(fds.offset(1) as *mut u32, pipefd[1] as u32) };
     0
 }
 
-unsafe fn sys_dup(oldfd: i32) -> i64 {
+fn sys_dup(oldfd: i32) -> i64 {
     if oldfd < 0 {
         return Errno::EBADF.as_ret();
     }
     crate::kernel::fs::vfs::api::vfs_dup(oldfd as u32) as i64
 }
 
-unsafe fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
+fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
     if oldfd < 0 || newfd < 0 {
         return Errno::EBADF.as_ret();
     }
@@ -968,7 +954,7 @@ unsafe fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
 // 内存 — brk / mmap / munmap
 // ============================================================================
 
-unsafe fn sys_brk(addr: u64) -> i64 {
+fn sys_brk(addr: u64) -> i64 {
     use core::sync::atomic::AtomicU64;
     static BRK: AtomicU64 = AtomicU64::new(0x400000 + 65536);
 
@@ -997,10 +983,7 @@ unsafe fn sys_brk(addr: u64) -> i64 {
     if addr > current {
         let extra = addr - current;
         let pages = extra.div_ceil(4096);
-        extern "C" {
-            fn pmm_alloc_pages(count: u64) -> *mut u8;
-        }
-        let ptr = pmm_alloc_pages(pages);
+        let ptr = raw::alloc_pages(pages);
         if ptr.is_null() {
             return Errno::ENOMEM.as_ret();
         }
@@ -1009,7 +992,7 @@ unsafe fn sys_brk(addr: u64) -> i64 {
     addr as i64
 }
 
-unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
+fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
     if size == 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -1021,11 +1004,8 @@ unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
     let mm = match crate::kernel::mm::vma::get_current_mm() {
         Some(m) => m,
         None => {
-            extern "C" {
-                fn pmm_alloc_pages(count: u64) -> *mut u8;
-            }
             let pages = size.div_ceil(4096);
-            let ptr = pmm_alloc_pages(pages);
+            let ptr = raw::alloc_pages(pages);
             return if ptr.is_null() {
                 Errno::ENOMEM.as_ret()
             } else {
@@ -1040,7 +1020,7 @@ unsafe fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
     }
 }
 
-unsafe fn sys_munmap(addr: u64, size: u64) -> i64 {
+fn sys_munmap(addr: u64, size: u64) -> i64 {
     if addr == 0 || size == 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -1048,11 +1028,8 @@ unsafe fn sys_munmap(addr: u64, size: u64) -> i64 {
     let mm = match crate::kernel::mm::vma::get_current_mm() {
         Some(m) => m,
         None => {
-            extern "C" {
-                fn pmm_free_pages(addr: *mut u8, count: u64);
-            }
             let pages = size.div_ceil(4096);
-            pmm_free_pages(addr as *mut u8, pages);
+            raw::free_pages(addr as *mut u8, pages);
             return 0;
         }
     };
@@ -1067,8 +1044,8 @@ unsafe fn sys_munmap(addr: u64, size: u64) -> i64 {
 // 系统信息 — uname
 // ============================================================================
 
-unsafe fn sys_uname(buf: *mut u8) -> i64 {
-    if buf.is_null() || !validate_user_buf(buf as u64, 390) {
+fn sys_uname(buf: *mut u8) -> i64 {
+    if buf.is_null() || !raw::check_user_buf(buf as u64, 390) {
         return Errno::EFAULT.as_ret();
     }
     #[repr(C)]
@@ -1103,9 +1080,9 @@ unsafe fn sys_uname(buf: *mut u8) -> i64 {
         },
         domainname: [0u8; 65],
     };
-    let dst = buf as *mut u8;
+    let dst = buf;
     let src = &un as *const Utsname as *const u8;
-    core::ptr::copy_nonoverlapping(src, dst, core::mem::size_of::<Utsname>());
+    unsafe { core::ptr::copy_nonoverlapping(src, dst, core::mem::size_of::<Utsname>()) };
     0
 }
 
@@ -1113,15 +1090,12 @@ unsafe fn sys_uname(buf: *mut u8) -> i64 {
 // 时间 — time
 // ============================================================================
 
-unsafe fn sys_time(buf: *mut u64) -> i64 {
+fn sys_time(buf: *mut u64) -> i64 {
     if buf.is_null() {
         return Errno::EINVAL.as_ret();
     }
-    extern "C" {
-        fn timer_get_ticks() -> u64;
-    }
-    let ticks = timer_get_ticks();
-    *buf = ticks;
+    let ticks = raw::get_ticks();
+    unsafe { raw::write_u64(buf, ticks) };
     ticks as i64
 }
 
@@ -1130,109 +1104,67 @@ unsafe fn sys_time(buf: *mut u64) -> i64 {
 // ============================================================================
 
 #[cfg(feature = "net")]
-unsafe fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
+fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
     let pwm = crate::kernel::credo::api::pwm_get_current();
     if !crate::kernel::credo::api::pwm_has_capability(pwm, 2, 0x01) {
         return Errno::EACCES.as_ret();
     }
-    extern "C" {
-        fn sm_socket(domain: i32, sock_type: i32, protocol: i32) -> i32;
-    }
-    sm_socket(domain, sock_type, protocol) as i64
+    raw::sm_socket_call(domain, sock_type, protocol) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
-    extern "C" {
-        fn sm_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
-    }
-    sm_bind(sockfd, addr as *const u8, addrlen) as i64
+fn sys_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
+    raw::sm_bind_call(sockfd, addr as *const u8, addrlen) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_listen(sockfd: i32, backlog: i32) -> i64 {
-    extern "C" {
-        fn sm_listen(sockfd: i32, backlog: i32) -> i32;
-    }
-    sm_listen(sockfd, backlog) as i64
+fn sys_listen(sockfd: i32, backlog: i32) -> i64 {
+    raw::sm_listen_call(sockfd, backlog) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    extern "C" {
-        fn sm_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
-    }
-    sm_accept(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
+fn sys_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
+    raw::sm_accept_call(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
-    extern "C" {
-        fn sm_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
-    }
-    sm_connect(sockfd, addr as *const u8, addrlen) as i64
+fn sys_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
+    raw::sm_connect_call(sockfd, addr as *const u8, addrlen) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_sendto(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
-    extern "C" {
-        fn sm_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32;
-    }
-    sm_send(sockfd, buf as *const u8, len, flags) as i64
+fn sys_sendto(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
+    raw::sm_send_call(sockfd, buf as *const u8, len, flags) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_recvfrom(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
-    extern "C" {
-        fn sm_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32;
-    }
-    sm_recv(sockfd, buf as *mut u8, len, flags) as i64
+fn sys_recvfrom(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
+    raw::sm_recv_call(sockfd, buf as *mut u8, len, flags) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_shutdown(sockfd: i32, _how: i32) -> i64 {
-    extern "C" {
-        fn sm_close(sockfd: i32) -> i32;
-    }
-    sm_close(sockfd) as i64
+fn sys_shutdown(sockfd: i32, _how: i32) -> i64 {
+    raw::sm_close_call(sockfd) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_sendmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
+fn sys_sendmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
     Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_recvmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
+fn sys_recvmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
     Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_setsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u32) -> i64 {
-    extern "C" {
-        fn sm_setsockopt(
-            sockfd: i32,
-            level: i32,
-            optname: i32,
-            optval: *const u8,
-            optlen: u32,
-        ) -> i32;
-    }
-    sm_setsockopt(sockfd, level, optname, optval as *const u8, optlen) as i64
+fn sys_setsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u32) -> i64 {
+    raw::sm_setsockopt_call(sockfd, level, optname, optval as *const u8, optlen) as i64
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u64) -> i64 {
-    extern "C" {
-        fn sm_getsockopt(
-            sockfd: i32,
-            level: i32,
-            optname: i32,
-            optval: *mut u8,
-            optlen: *mut u32,
-        ) -> i32;
-    }
-    sm_getsockopt(
+fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u64) -> i64 {
+    raw::sm_getsockopt_call(
         sockfd,
         level,
         optname,
@@ -1242,17 +1174,17 @@ unsafe fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, opt
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_getsockname(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
+fn sys_getsockname(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
     Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_getpeername(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
+fn sys_getpeername(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
     Errno::ENOSYS.as_ret()
 }
 
 #[cfg(feature = "net")]
-unsafe fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
+fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
     Errno::ENOSYS.as_ret()
 }
 
@@ -1260,19 +1192,19 @@ unsafe fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
 // PWM 认证/权限 (Credo 私有 syscall)
 // ============================================================================
 
-unsafe fn sys_auth_login(
+fn sys_auth_login(
     password: *const u8,
     note: *const u8,
 ) -> i64 {
     crate::kernel::credo::api::pwm_login(note, password)
 }
 
-unsafe fn sys_auth_logout() -> i64 {
+fn sys_auth_logout() -> i64 {
     crate::kernel::credo::api::pwm_logout();
     0
 }
 
-unsafe fn sys_auth_create(
+fn sys_auth_create(
     password: *const u8,
     note: *const u8,
     _level: u8,
@@ -1281,15 +1213,15 @@ unsafe fn sys_auth_create(
     crate::kernel::credo::api::pwm_create(password, note, creator)
 }
 
-unsafe fn sys_auth_delete(target: u64) -> i64 {
+fn sys_auth_delete(target: u64) -> i64 {
     crate::kernel::credo::api::pwm_delete(target) as i64
 }
 
-unsafe fn sys_auth_info(target: u64) -> i64 {
+fn sys_auth_info(target: u64) -> i64 {
     crate::kernel::credo::api::pwm_get_privilege_level(target) as i64
 }
 
-unsafe fn sys_auth_changepw(
+fn sys_auth_changepw(
     old_pw: *const u8,
     new_pw: *const u8,
 ) -> i64 {
@@ -1297,27 +1229,27 @@ unsafe fn sys_auth_changepw(
     crate::kernel::credo::api::pwm_change_password(pwm, old_pw, new_pw) as i64
 }
 
-unsafe fn sys_auth_verify(password: *const u8) -> i64 {
+fn sys_auth_verify(password: *const u8) -> i64 {
     let pwm = crate::kernel::credo::api::pwm_get_current();
     crate::kernel::credo::api::pwm_verify_password(pwm, password) as i64
 }
 
-unsafe fn sys_auth_create_first(password: *const u8) -> i64 {
+fn sys_auth_create_first(password: *const u8) -> i64 {
     if password.is_null() {
         return Errno::EINVAL.as_ret();
     }
     crate::kernel::credo::api::pwm_create_first_identity(password)
 }
 
-unsafe fn sys_auth_grant(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
+fn sys_auth_grant(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
     crate::kernel::credo::api::pwm_grant(grantor, grantee, domain, caps) as i64
 }
 
-unsafe fn sys_auth_revoke(revoker: u64, target: u64, domain: u16, caps: u64) -> i64 {
+fn sys_auth_revoke(revoker: u64, target: u64, domain: u16, caps: u64) -> i64 {
     crate::kernel::credo::api::pwm_revoke(revoker, target, domain, caps) as i64
 }
 
-unsafe fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
+fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
     if crate::kernel::credo::api::pwm_has_capability(pwm, domain, required) {
         1
     } else {
@@ -1325,15 +1257,15 @@ unsafe fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
     }
 }
 
-unsafe fn sys_auth_get_caps(pwm: u64, domain: u16) -> i64 {
+fn sys_auth_get_caps(pwm: u64, domain: u16) -> i64 {
     crate::kernel::credo::api::pwm_get_capability_raw(pwm, domain) as i64
 }
 
-unsafe fn sys_pwm_get() -> i64 {
+fn sys_pwm_get() -> i64 {
     crate::kernel::credo::api::pwm_get_current() as i64
 }
 
-unsafe fn sys_pwm_set(pwm: u64) -> i64 {
+fn sys_pwm_set(pwm: u64) -> i64 {
     let pid = crate::kernel::proc::api::process_get_current_pid();
     crate::kernel::proc::api::proc_set_pwm(pid, pwm) as i64
 }
@@ -1342,18 +1274,18 @@ unsafe fn sys_pwm_set(pwm: u64) -> i64 {
 // 系统信息 / 环境 (Credo 私有 syscall)
 // ============================================================================
 
-unsafe fn sys_gethostname(buf: *mut u8, size: u64) -> i64 {
-    if buf.is_null() || size == 0 || !validate_user_buf(buf as u64, size) {
+fn sys_gethostname(buf: *mut u8, size: u64) -> i64 {
+    if buf.is_null() || size == 0 || !raw::check_user_buf(buf as u64, size) {
         return Errno::EFAULT.as_ret();
     }
     let hostname = b"localhost\0";
     let copy_len = hostname.len().min(size as usize - 1);
-    core::ptr::copy_nonoverlapping(hostname.as_ptr(), buf as *mut u8, copy_len);
-    *buf.add(copy_len) = 0;
+    unsafe { core::ptr::copy_nonoverlapping(hostname.as_ptr(), buf as *mut u8, copy_len) };
+    unsafe { raw::write_u8(buf.add(copy_len), 0) };
     0
 }
 
-unsafe fn sys_sethostname(name: *const u8, len: u64) -> i64 {
+fn sys_sethostname(name: *const u8, len: u64) -> i64 {
     if name.is_null() || len == 0 || len > 63 {
         return Errno::EINVAL.as_ret();
     }
@@ -1364,36 +1296,27 @@ unsafe fn sys_sethostname(name: *const u8, len: u64) -> i64 {
     0
 }
 
-unsafe fn sys_reboot(cmd: i32) -> i64 {
+fn sys_reboot(cmd: i32) -> i64 {
     let pwm = crate::kernel::credo::api::pwm_get_current();
     if !crate::kernel::credo::api::pwm_has_capability(pwm, 0, 0x01) {
         return Errno::EACCES.as_ret();
     }
+    // SAFETY: 已在调用方通过 PWM CAP 检查, 重启为合法操作。
     match cmd {
         0 => loop {},
-        1 => {
+        1 => match () {
             #[cfg(target_arch = "x86_64")]
-            unsafe {
-                core::arch::asm!(
-                    "lidt [rdi]",
-                    "int 0",
-                    in("rdi") &[0u16; 4],
-                    options(nostack, nomem)
-                );
-            }
+            () => unsafe { raw::reboot_via_idt() },
             #[cfg(target_arch = "aarch64")]
-            {
-                core::arch::asm!("svc #0", in("x0") 0u64, options(nostack));
-            }
+            () => unsafe { raw::reboot_via_psci() },
             #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-            loop {}
-            loop {}
-        }
+            () => loop {},
+        },
         _ => Errno::EINVAL.as_ret(),
     }
 }
 
-unsafe fn sys_boot_check(check_type: i32) -> i64 {
+fn sys_boot_check(check_type: i32) -> i64 {
     match check_type {
         0 => {
             if crate::kernel::credo::api::pwm_any_identity_exists() {
@@ -1411,20 +1334,20 @@ unsafe fn sys_boot_check(check_type: i32) -> i64 {
 // ============================================================================
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-unsafe fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
+fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     if disks.is_null() || max_count == 0 {
         return Errno::EINVAL.as_ret();
     }
     let count = crate::kernel::driver::block::block_device_count();
     let limit = max_count.min(count as u32);
     for i in 0..limit {
-        *disks.add(i as usize) = i as u64;
+        unsafe { raw::write_u64(disks.add(i as usize), i as u64) };
     }
     limit as i64
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
+fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     if info.is_null() {
         return Errno::EINVAL.as_ret();
     }
@@ -1445,8 +1368,9 @@ unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     } else {
         63
     };
-    core::ptr::copy_nonoverlapping(model_bytes.as_ptr(), model.as_mut_ptr(), copy_len);
+    model[..copy_len].copy_from_slice(&model_bytes[..copy_len]);
     #[repr(C)]
+    #[derive(Copy, Clone)]
     struct UserDiskInfo {
         disk_id: u32,
         present: u32,
@@ -1461,16 +1385,12 @@ unsafe fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
         sectors,
         model,
     };
-    core::ptr::copy_nonoverlapping(
-        &disk_info as *const UserDiskInfo as *const u8,
-        info,
-        core::mem::size_of::<UserDiskInfo>(),
-    );
+    unsafe { raw::write_struct(info as *mut UserDiskInfo, &disk_info) };
     0
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-unsafe fn sys_disk_format(disk_id: u32, fstype: *const u8) -> i64 {
+fn sys_disk_format(disk_id: u32, fstype: *const u8) -> i64 {
     if fstype.is_null() {
         return Errno::EINVAL.as_ret();
     }
@@ -1515,7 +1435,7 @@ fn write_le16(buf: &mut [u8], offset: usize, val: u16) {
 const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
+fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     let pwm = crate::kernel::credo::api::pwm_get_current();
     if !crate::kernel::credo::api::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
@@ -1552,7 +1472,7 @@ unsafe fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-unsafe fn sys_fat_format(disk_id: u32) -> i64 {
+fn sys_fat_format(disk_id: u32) -> i64 {
     let pwm = crate::kernel::credo::api::pwm_get_current();
     if !crate::kernel::credo::api::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
@@ -1638,7 +1558,7 @@ unsafe fn sys_fat_format(disk_id: u32) -> i64 {
 }
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-unsafe fn sys_boot_install(disk_id: u32) -> i64 {
+fn sys_boot_install(disk_id: u32) -> i64 {
     let pwm = crate::kernel::credo::api::pwm_get_current();
     if !crate::kernel::credo::api::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
@@ -1651,7 +1571,7 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     if crate::kernel::driver::block::hdd_read_sector(disk_id as u8, 0, &mut mbr) < 0 {
         return Errno::EIO.as_ret();
     }
-    core::ptr::copy_nonoverlapping(stage1.as_ptr(), mbr.as_mut_ptr(), 440);
+    unsafe { core::ptr::copy_nonoverlapping(stage1.as_ptr(), mbr.as_mut_ptr(), 440) };
     let total_sectors = crate::kernel::driver::block::hdd_total_sectors(disk_id as u8);
     let hvfs_start = BOOT_PART_SECTORS;
     let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
@@ -1677,15 +1597,10 @@ unsafe fn sys_boot_install(disk_id: u32) -> i64 {
     if crate::kernel::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
         return Errno::EIO.as_ret();
     }
-    extern "C" {
-        static _kernel_start: u8;
-        static _kernel_end: u8;
-    }
-    let kernel_ptr = unsafe { &_kernel_start as *const u8 };
+    let kernel_ptr = raw::kernel_start_ptr();
     let kernel_len = {
-        let vma_end = unsafe { &_kernel_end as *const u8 as usize };
         const HHDM_OFFSET: usize = 0xFFFF_8000_0000_0000;
-        let phys_end = vma_end.wrapping_sub(HHDM_OFFSET);
+        let phys_end = raw::kernel_end_phys(HHDM_OFFSET);
         phys_end - (kernel_ptr as usize)
     };
     let total_kernel_sectors = kernel_len.div_ceil(512) as u32;
@@ -1737,8 +1652,8 @@ struct ProcListEntry {
     name: [u8; 48],
 }
 
-unsafe fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
-    if buf.is_null() || !validate_user_ptr(buf as u64) {
+fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
+    if buf.is_null() || !raw::check_user_ptr(buf as u64) {
         return Errno::EFAULT.as_ret();
     }
     let entry_size = core::mem::size_of::<ProcListEntry>() as u32;
@@ -1746,7 +1661,9 @@ unsafe fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
     let table = &crate::kernel::proc::process::PROCESS_TABLE;
     table.for_each(|proc| {
         if (count as u32) < max_entries {
-            let entry = &mut *(buf.add(count as usize * entry_size as usize) as *mut ProcListEntry);
+            let entry_ptr =
+                unsafe { buf.add(count as usize * entry_size as usize) as *mut ProcListEntry };
+            let entry = unsafe { &mut *entry_ptr };
             entry.pid = proc.pid.0;
             entry.state = proc.get_state() as u8;
             entry._pad = [0u8; 3];
@@ -1765,7 +1682,7 @@ unsafe fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
     count as i64
 }
 
-unsafe fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
+fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
     crate::kernel::proc::api::proc_set_priority(pid, priority) as i64
 }
 
@@ -1779,7 +1696,7 @@ const F_SETFD: i32 = 2;
 const F_GETFL: i32 = 3;
 const F_SETFL: i32 = 4;
 
-unsafe fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
+fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
     match cmd {
         F_GETFD => 0,
         F_SETFD => 0,
@@ -1804,13 +1721,14 @@ unsafe fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
 const TIOCGWINSZ: u64 = 0x5413;
 const TCGETS: u64 = 0x5401;
 
-unsafe fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
+fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
     if arg == 0 {
         return Errno::EINVAL.as_ret();
     }
     match request {
         TIOCGWINSZ => {
             #[repr(C)]
+            #[derive(Copy, Clone)]
             struct Winsize {
                 ws_row: u16,
                 ws_col: u16,
@@ -1824,7 +1742,7 @@ unsafe fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
                 ws_ypixel: 0,
             };
             let dst = arg as *mut Winsize;
-            core::ptr::write_volatile(dst, ws);
+            unsafe { raw::write_struct(dst, &ws) };
             0
         }
         TCGETS => 0,
@@ -1836,8 +1754,8 @@ unsafe fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
 // nanosleep — 高精度睡眠 (基于 ticks, 1ms 粒度)
 // ============================================================================
 
-unsafe fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
-    if req == 0 || !validate_user_ptr(req) {
+fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
+    if req == 0 || !raw::check_user_ptr(req) {
         return Errno::EINVAL.as_ret();
     }
     #[repr(C)]
@@ -1845,7 +1763,7 @@ unsafe fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
         tv_sec: i64,
         tv_nsec: i64,
     }
-    let ts = core::ptr::read_volatile(req as *const Timespec);
+    let ts = unsafe { core::ptr::read_volatile(req as *const Timespec) };
     if ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1_000_000_000 {
         return Errno::EINVAL.as_ret();
     }
@@ -1853,12 +1771,9 @@ unsafe fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
     if total_ms == 0 {
         return 0;
     }
-    extern "C" {
-        fn timer_get_ticks() -> u64;
-    }
-    let start = timer_get_ticks();
+    let start = raw::get_ticks();
     let target = start + total_ms;
-    while timer_get_ticks() < target {
+    while raw::get_ticks() < target {
         core::hint::spin_loop();
     }
     0
@@ -1871,50 +1786,46 @@ unsafe fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
 const CLOCK_REALTIME: i32 = 0;
 const CLOCK_MONOTONIC: i32 = 1;
 
-unsafe fn sys_gettimeofday(tv: *mut u8, _tz: *mut u8) -> i64 {
+fn sys_gettimeofday(tv: *mut u8, _tz: *mut u8) -> i64 {
     if tv.is_null() {
         return Errno::EINVAL.as_ret();
     }
-    extern "C" {
-        fn timer_get_ticks() -> u64;
-    }
     #[repr(C)]
+    #[derive(Copy, Clone)]
     struct Timeval {
         tv_sec: i64,
         tv_usec: i64,
     }
-    let ticks = timer_get_ticks();
+    let ticks = raw::get_ticks();
     let t = Timeval {
         tv_sec: (ticks / 1000) as i64,
         tv_usec: ((ticks % 1000) * 1000) as i64,
     };
     let dst = tv as *mut Timeval;
-    core::ptr::write_volatile(dst, t);
+    unsafe { raw::write_struct(dst, &t) };
     0
 }
 
-unsafe fn sys_clock_gettime(clk_id: i32, tp: *mut u8) -> i64 {
+fn sys_clock_gettime(clk_id: i32, tp: *mut u8) -> i64 {
     if tp.is_null() {
         return Errno::EINVAL.as_ret();
     }
     if clk_id != CLOCK_REALTIME && clk_id != CLOCK_MONOTONIC {
         return Errno::EINVAL.as_ret();
     }
-    extern "C" {
-        fn timer_get_ticks() -> u64;
-    }
     #[repr(C)]
+    #[derive(Copy, Clone)]
     struct Timespec {
         tv_sec: i64,
         tv_nsec: i64,
     }
-    let ticks = timer_get_ticks();
+    let ticks = raw::get_ticks();
     let t = Timespec {
         tv_sec: (ticks / 1000) as i64,
         tv_nsec: ((ticks % 1000) * 1000000) as i64,
     };
     let dst = tp as *mut Timespec;
-    core::ptr::write_volatile(dst, t);
+    unsafe { raw::write_struct(dst, &t) };
     0
 }
 
@@ -1925,11 +1836,12 @@ unsafe fn sys_clock_gettime(clk_id: i32, tp: *mut u8) -> i64 {
 const POLLIN: i16 = 1;
 const POLLOUT: i16 = 4;
 
-unsafe fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
+fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
     if fds.is_null() || nfds == 0 {
         return 0;
     }
     #[repr(C)]
+    #[derive(Copy, Clone)]
     struct PollFd {
         fd: i32,
         events: i16,
@@ -1937,7 +1849,8 @@ unsafe fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
     }
     let mut ready: i32 = 0;
     for i in 0..nfds as usize {
-        let pfd = &mut *(fds as *mut PollFd).add(i);
+        let pfd_ptr = unsafe { (fds as *mut PollFd).add(i) };
+        let pfd = unsafe { &mut *pfd_ptr };
         pfd.revents = 0;
         if pfd.fd < 0 {
             continue;
@@ -1961,20 +1874,20 @@ unsafe fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
 // chmod / fchmod / chown
 // ============================================================================
 
-unsafe fn sys_chmod(path: *const u8, mode: u32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_chmod(path: *const u8, mode: u32) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
     crate::kernel::fs::vfs::api::vfs_chmod(path, mode as u16, pwm) as i64
 }
 
-unsafe fn sys_fchmod(fd: i32, mode: u32) -> i64 {
+fn sys_fchmod(fd: i32, mode: u32) -> i64 {
     crate::kernel::fs::vfs::api::vfs_fchmod(fd as u32, mode as u16) as i64
 }
 
-unsafe fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) {
+fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
     let tbl = crate::kernel::credo::identity::get_table();
@@ -1991,7 +1904,7 @@ unsafe fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
 const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
 
-unsafe fn sys_kill(pid: i32, sig: i32) -> i64 {
+fn sys_kill(pid: i32, sig: i32) -> i64 {
     if pid <= 0 && pid != -1 {
         return Errno::ESRCH.as_ret();
     }
@@ -2024,7 +1937,7 @@ unsafe fn sys_kill(pid: i32, sig: i32) -> i64 {
 // 注: HvFS 当前不支持符号链接, 返回 EINVAL 提示调用者此路径非符号链接。
 // ============================================================================
 
-unsafe fn sys_readlink(
+fn sys_readlink(
     path: *const u8,
     buf: *mut u8,
     bufsiz: u64,
@@ -2033,7 +1946,7 @@ unsafe fn sys_readlink(
         return Errno::EINVAL.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
-    let mut st_buf: crate::kernel::fs::vfs::types::VfsStat = core::mem::zeroed();
+    let mut st_buf: crate::kernel::fs::vfs::types::VfsStat = unsafe { core::mem::zeroed() };
     let result = crate::kernel::fs::vfs::api::vfs_stat(path, &mut st_buf, pwm);
     if result < 0 {
         return Errno::ENOENT.as_ret();
@@ -2045,8 +1958,8 @@ unsafe fn sys_readlink(
 // umount2
 // ============================================================================
 
-unsafe fn sys_umount2(target: *const u8, _flags: i32) -> i64 {
-    if target.is_null() || !validate_user_ptr(target as u64) {
+fn sys_umount2(target: *const u8, _flags: i32) -> i64 {
+    if target.is_null() || !raw::check_user_ptr(target as u64) {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::credo::api::pwm_get_current();
@@ -2060,11 +1973,12 @@ unsafe fn sys_umount2(target: *const u8, _flags: i32) -> i64 {
 // getrlimit / sysinfo
 // ============================================================================
 
-unsafe fn sys_getrlimit(_resource: i32, rlim: *mut u8) -> i64 {
+fn sys_getrlimit(_resource: i32, rlim: *mut u8) -> i64 {
     if rlim.is_null() {
         return Errno::EINVAL.as_ret();
     }
     #[repr(C)]
+    #[derive(Copy, Clone)]
     struct Rlimit {
         rlim_cur: u64,
         rlim_max: u64,
@@ -2074,15 +1988,16 @@ unsafe fn sys_getrlimit(_resource: i32, rlim: *mut u8) -> i64 {
         rlim_max: u64::MAX,
     };
     let dst = rlim as *mut Rlimit;
-    core::ptr::write_volatile(dst, r);
+    unsafe { raw::write_struct(dst, &r) };
     0
 }
 
-unsafe fn sys_sysinfo(info: *mut u8) -> i64 {
+fn sys_sysinfo(info: *mut u8) -> i64 {
     if info.is_null() {
         return Errno::EINVAL.as_ret();
     }
     #[repr(C)]
+    #[derive(Copy, Clone)]
     struct SysInfo {
         uptime: i64,
         loads: [u64; 3],
@@ -2099,12 +2014,7 @@ unsafe fn sys_sysinfo(info: *mut u8) -> i64 {
         mem_unit: u32,
     }
     let si = SysInfo {
-        uptime: {
-            extern "C" {
-                fn timer_get_ticks() -> u64;
-            }
-            (timer_get_ticks() / 1000) as i64
-        },
+        uptime: (raw::get_ticks() / 1000) as i64,
         loads: [0, 0, 0],
         totalram: 128 * 1024 * 1024,
         freeram: 97 * 1024 * 1024,
@@ -2119,7 +2029,7 @@ unsafe fn sys_sysinfo(info: *mut u8) -> i64 {
         mem_unit: 1,
     };
     let dst = info as *mut SysInfo;
-    core::ptr::write_volatile(dst, si);
+    unsafe { raw::write_struct(dst, &si) };
     0
 }
 
@@ -2127,8 +2037,8 @@ unsafe fn sys_sysinfo(info: *mut u8) -> i64 {
 // 文件截断 — truncate / ftruncate
 // ============================================================================
 
-unsafe fn sys_truncate(path: *const u8, length: i64) -> i64 {
-    if path.is_null() || !validate_user_ptr(path as u64) || length < 0 {
+fn sys_truncate(path: *const u8, length: i64) -> i64 {
+    if path.is_null() || !raw::check_user_ptr(path as u64) || length < 0 {
         return Errno::EINVAL.as_ret();
     }
     let fd = crate::kernel::fs::vfs::api::vfs_open(
@@ -2148,7 +2058,7 @@ unsafe fn sys_truncate(path: *const u8, length: i64) -> i64 {
     }
 }
 
-unsafe fn sys_ftruncate(fd: i32, length: i64) -> i64 {
+fn sys_ftruncate(fd: i32, length: i64) -> i64 {
     if fd < 0 || length < 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -2164,7 +2074,7 @@ unsafe fn sys_ftruncate(fd: i32, length: i64) -> i64 {
 // umask — 文件创建模式掩码
 // ============================================================================
 
-unsafe fn sys_umask(mask: u32) -> i64 {
+fn sys_umask(mask: u32) -> i64 {
     static UMASK: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0o22);
     let old = UMASK.swap(mask & 0o777, core::sync::atomic::Ordering::SeqCst);
     old as i64
@@ -2174,7 +2084,7 @@ unsafe fn sys_umask(mask: u32) -> i64 {
 // 文件同步 — fsync
 // ============================================================================
 
-unsafe fn sys_fsync(fd: i32) -> i64 {
+fn sys_fsync(fd: i32) -> i64 {
     if fd < 0 {
         return Errno::EBADF.as_ret();
     }
@@ -2186,7 +2096,7 @@ unsafe fn sys_fsync(fd: i32) -> i64 {
 // 进程组/会话 — getpgid / setsid
 // ============================================================================
 
-unsafe fn sys_getpgid(pid: i32) -> i64 {
+fn sys_getpgid(pid: i32) -> i64 {
     if pid < 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -2198,12 +2108,12 @@ unsafe fn sys_getpgid(pid: i32) -> i64 {
     crate::kernel::proc::api::process_get_current_pid() as i64
 }
 
-unsafe fn sys_setsid() -> i64 {
+fn sys_setsid() -> i64 {
     let pid = crate::kernel::proc::api::process_get_current_pid();
     pid as i64
 }
 
-unsafe fn sys_gettid() -> i64 {
+fn sys_gettid() -> i64 {
     crate::kernel::proc::api::process_get_current_pid() as i64
 }
 
@@ -2211,7 +2121,7 @@ unsafe fn sys_gettid() -> i64 {
 // tgkill — 向指定线程发送信号
 // ============================================================================
 
-unsafe fn sys_tgkill(_tgid: i32, tid: i32, sig: i32) -> i64 {
+fn sys_tgkill(_tgid: i32, tid: i32, sig: i32) -> i64 {
     sys_kill(tid, sig)
 }
 
@@ -2228,30 +2138,30 @@ const SIG_SETMASK: i32 = 2;
 static SIGNAL_HANDLERS: Mutex<[u64; 32]> = Mutex::new([SIG_DFL; 32]);
 static SIGMASK: Mutex<u64> = Mutex::new(0);
 
-unsafe fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
+fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
     if !(1..=31).contains(&signum) {
         return Errno::EINVAL.as_ret();
     }
     let mut handlers = SIGNAL_HANDLERS.lock();
     if oact != 0 {
         let dst = oact as *mut u64;
-        core::ptr::write_volatile(dst, handlers[signum as usize]);
+        unsafe { raw::write_u64(dst, handlers[signum as usize]) };
     }
     if act != 0 {
         let src = act as *const u64;
-        handlers[signum as usize] = core::ptr::read_volatile(src);
+        handlers[signum as usize] = unsafe { raw::read_u64(src) };
     }
     0
 }
 
-unsafe fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
+fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
     let mut mask = SIGMASK.lock();
     if oset != 0 {
         let dst = oset as *mut u64;
-        core::ptr::write_volatile(dst, *mask);
+        unsafe { raw::write_u64(dst, *mask) };
     }
     if set != 0 {
-        let new_set = core::ptr::read_volatile(set as *const u64);
+        let new_set = unsafe { raw::read_u64(set as *const u64) };
         match how {
             SIG_BLOCK => *mask |= new_set,
             SIG_UNBLOCK => *mask &= !new_set,
@@ -2262,7 +2172,7 @@ unsafe fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
     0
 }
 
-unsafe fn sys_rt_sigreturn() -> i64 {
+fn sys_rt_sigreturn() -> i64 {
     0
 }
 
@@ -2270,11 +2180,11 @@ unsafe fn sys_rt_sigreturn() -> i64 {
 // 热插拔状态查询 (Credo 私有 syscall 437)
 // ============================================================================
 
-unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
+fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     if buf.is_null() || buf_size == 0 {
         return Errno::EINVAL.as_ret();
     }
-    if !validate_user_buf(buf as u64, buf_size as u64) {
+    if !raw::check_user_buf(buf as u64, buf_size as u64) {
         return Errno::EFAULT.as_ret();
     }
 
@@ -2304,7 +2214,9 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     if offset + 16 > buf_size {
         return offset as i64;
     }
-    core::ptr::copy_nonoverlapping(header.as_ptr(), buf.add(offset as usize), 16);
+    unsafe {
+        core::ptr::copy_nonoverlapping(header.as_ptr(), buf.add(offset as usize), 16);
+    }
     offset += 16;
 
     // 写入槽位信息 (每槽 8 字节)
@@ -2323,7 +2235,13 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
             0,
             0,
         ];
-        core::ptr::copy_nonoverlapping(info.as_ptr(), buf.add(offset as usize), slot_size as usize);
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                info.as_ptr(),
+                buf.add(offset as usize),
+                slot_size as usize,
+            );
+        }
         offset += slot_size;
     }
 
@@ -2351,14 +2269,20 @@ unsafe fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
             0,
             0,
         ];
-        core::ptr::copy_nonoverlapping(info.as_ptr(), buf.add(offset as usize), dev_size as usize);
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                info.as_ptr(),
+                buf.add(offset as usize),
+                dev_size as usize,
+            );
+        }
         offset += dev_size;
     }
 
     offset as i64
 }
 
-unsafe fn sys_credo_proc_cputime(pid: u32) -> i64 {
+fn sys_credo_proc_cputime(pid: u32) -> i64 {
     let target_pid = if pid == 0 {
         crate::kernel::proc::api::process_get_current_pid()
     } else {
@@ -2375,9 +2299,11 @@ unsafe fn sys_credo_proc_cputime(pid: u32) -> i64 {
             if current.is_null() {
                 return -1;
             }
-            let cputime = (*current)
-                .cpu_time
-                .load(core::sync::atomic::Ordering::Acquire);
+            let cputime = unsafe {
+                (*current)
+                    .cpu_time
+                    .load(core::sync::atomic::Ordering::Acquire)
+            };
             cputime as i64
         }
         None => Errno::ESRCH.as_ret(),
@@ -2399,6 +2325,7 @@ unsafe fn sys_credo_proc_cputime(pid: u32) -> i64 {
 // ============================================================================
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 struct FbInfo {
     phys_addr: u64,
     size: u64,
@@ -2409,8 +2336,8 @@ struct FbInfo {
     _pad: [u8; 3],
 }
 
-unsafe fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
-    if info_ptr == 0 || !validate_user_ptr(info_ptr) {
+fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
+    if info_ptr == 0 || !raw::check_user_ptr(info_ptr) {
         return Errno::EFAULT.as_ret();
     }
 
@@ -2444,11 +2371,11 @@ unsafe fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
     };
 
     let dst = info_ptr as *mut FbInfo;
-    core::ptr::write_volatile(dst, info);
+    unsafe { raw::write_struct(dst, &info) };
     0
 }
 
-unsafe fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
+fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
     if target_vaddr == 0 || target_vaddr & 0xFFF != 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -2493,6 +2420,296 @@ unsafe fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
     target_vaddr as i64
 }
 
-unsafe fn sys_fb_release(_vaddr: u64) -> i64 {
+fn sys_fb_release(_vaddr: u64) -> i64 {
     0
+}
+
+// ============================================================================
+// raw 子模块 — 集中所有 unsafe 操作与 FFI 声明
+// ============================================================================
+//
+// 设计目的：
+// 1. 隔离 unsafe 到单一文件作用域，降低 sys_* 业务函数的认知负载
+// 2. 复用 services/credo、services/barrier 的"raw 子模块"模式
+// 3. 为 Phase 2.5.1 的 60+ unsafe 函数提供统一的 SAFETY 注释入口
+//
+// 调用契约：
+// - 所有 read_* / write_* 函数均要求调用方先调用 check_user_ptr 或
+//   check_user_buf 完成边界校验；否则会触发 UAF/越界写。
+// - 所有 FFI 包装函数 (sm_*_call、read_keyboard_byte 等) 假定在中断
+//   上下文中调用，不可在持锁睡眠上下文中调用。
+// ============================================================================
+
+pub(crate) mod raw {
+    // ============= 集中 FFI 声明 =============
+    extern "C" {
+        // 时间
+        fn timer_get_ticks() -> u64;
+        // 串口 (COM1/COM2)
+        fn serial_has_data(com: i32) -> bool;
+        fn serial_getc(com: i32) -> i32;
+        // 物理内存分配 (PMM FFI 桥)
+        fn pmm_alloc_pages(count: u64) -> *mut u8;
+        fn pmm_free_pages(addr: *mut u8, count: u64);
+        // smoltcp 网络栈
+        fn sm_socket(domain: i32, sock_type: i32, protocol: i32) -> i32;
+        fn sm_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
+        fn sm_listen(sockfd: i32, backlog: i32) -> i32;
+        fn sm_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
+        fn sm_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
+        fn sm_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32;
+        fn sm_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32;
+        fn sm_close(sockfd: i32) -> i32;
+        fn sm_setsockopt(
+            sockfd: i32,
+            level: i32,
+            optname: i32,
+            optval: *const u8,
+            optlen: u32,
+        ) -> i32;
+        fn sm_getsockopt(
+            sockfd: i32,
+            level: i32,
+            optname: i32,
+            optval: *mut u8,
+            optlen: *mut u32,
+        ) -> i32;
+        // 链接器符号
+        static _kernel_start: u8;
+        static _kernel_end: u8;
+    }
+
+    // x86_64 专属: 键盘
+    #[cfg(target_arch = "x86_64")]
+    extern "C" {
+        fn keyboard_has_data() -> bool;
+        fn keyboard_get_char() -> i32;
+    }
+
+    // ============= 用户指针校验（safe 包装） =============
+
+    /// 校验单个用户指针是否在合法范围 [1, USER_ADDR_MAX)
+    pub fn check_user_ptr(ptr: u64) -> bool {
+        super::validate_user_ptr(ptr)
+    }
+
+    /// 校验用户缓冲区 [ptr, ptr+len) 是否完全在用户空间
+    pub fn check_user_buf(ptr: u64, len: u64) -> bool {
+        super::validate_user_buf(ptr, len)
+    }
+
+    // ============= 用户态读写助手（unsafe 集中点） =============
+
+    /// 写一个 u8 到用户指针。
+    /// # SAFETY: 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证指针合法。
+    pub unsafe fn write_u8(ptr: *mut u8, val: u8) {
+        unsafe { core::ptr::write_volatile(ptr, val) }
+    }
+
+    /// 写一个 u32 到用户指针。
+    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, 4)` 验证。
+    pub unsafe fn write_u32(ptr: *mut u32, val: u32) {
+        unsafe { core::ptr::write_volatile(ptr, val) }
+    }
+
+    /// 写一个 u64 到用户指针。
+    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, 8)` 验证。
+    pub unsafe fn write_u64(ptr: *mut u64, val: u64) {
+        unsafe { core::ptr::write_volatile(ptr, val) }
+    }
+
+    /// 读一个 u8。
+    /// # SAFETY: 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证。
+    pub unsafe fn read_u8(ptr: *const u8) -> u8 {
+        unsafe { core::ptr::read_volatile(ptr) }
+    }
+
+    /// 读一个 u64。
+    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, 8)` 验证。
+    pub unsafe fn read_u64(ptr: *const u64) -> u64 {
+        unsafe { core::ptr::read_volatile(ptr) }
+    }
+
+    /// 从 src 复制 len 字节到用户指针 dst。
+    /// # SAFETY: 调用方必须先调用 `check_user_buf(dst as u64, len)` 验证。
+    pub unsafe fn write_bytes(dst: *mut u8, src: &[u8]) {
+        unsafe { core::ptr::copy_nonoverlapping(src.as_ptr(), dst, src.len()) }
+    }
+
+    /// 从用户指针读取 len 字节构造 slice。
+    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, len)` 验证。
+    pub unsafe fn read_slice<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
+        unsafe { core::slice::from_raw_parts(ptr, len) }
+    }
+
+    /// 复制结构体到用户指针（repr(C) 类型）。
+    /// # SAFETY: 调用方必须先调用 `check_user_buf(ptr as u64, size_of::<T>())` 验证。
+    pub unsafe fn write_struct<T: Copy>(dst: *mut T, src: &T) {
+        unsafe { core::ptr::write_volatile(dst, *src) }
+    }
+
+    // ============= 设备输入抽象 =============
+
+    /// 从键盘读取一个字节（x86_64 专属）。None 表示无数据。
+    /// # SAFETY: FFI 调用，需在中断上下文。
+    #[cfg(target_arch = "x86_64")]
+    pub fn read_keyboard_byte() -> Option<u8> {
+        unsafe {
+            if keyboard_has_data() {
+                let c = keyboard_get_char();
+                if c > 0 {
+                    Some(c as u8)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    }
+
+    /// 从串口读取一个字节。None 表示无数据。
+    /// # SAFETY: FFI 调用，需在中断上下文。
+    pub fn read_serial_byte(com: i32) -> Option<u8> {
+        unsafe {
+            if serial_has_data(com) {
+                let c = serial_getc(com);
+                if c > 0 {
+                    Some(c as u8)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    }
+
+    // ============= 物理内存分配 =============
+
+    /// 分配 count 个连续物理页。
+    /// # SAFETY: FFI 调用，返回的指针是物理地址（需 HHDM 转换）。
+    pub fn alloc_pages(count: u64) -> *mut u8 {
+        unsafe { pmm_alloc_pages(count) }
+    }
+
+    /// 释放 count 个连续物理页。
+    /// # SAFETY: FFI 调用，addr 必须是 alloc_pages 返回的同一基址。
+    pub fn free_pages(addr: *mut u8, count: u64) {
+        unsafe { pmm_free_pages(addr, count) }
+    }
+
+    // ============= 时间 =============
+
+    /// 读取 tick 计数（1ms 粒度）。
+    /// # SAFETY: FFI 调用，硬件定时器寄存器读取。
+    pub fn get_ticks() -> u64 {
+        unsafe { timer_get_ticks() }
+    }
+
+    // ============= smoltcp 网络栈 FFI 包装 =============
+
+    /// # SAFETY: FFI 调用，需在中断上下文。
+    pub fn sm_socket_call(domain: i32, sock_type: i32, protocol: i32) -> i32 {
+        unsafe { sm_socket(domain, sock_type, protocol) }
+    }
+
+    /// # SAFETY: FFI 调用，addr/addrlen 由调用方负责用户态校验。
+    pub fn sm_bind_call(sockfd: i32, addr: *const u8, addrlen: u32) -> i32 {
+        unsafe { sm_bind(sockfd, addr, addrlen) }
+    }
+
+    /// # SAFETY: FFI 调用。
+    pub fn sm_listen_call(sockfd: i32, backlog: i32) -> i32 {
+        unsafe { sm_listen(sockfd, backlog) }
+    }
+
+    /// # SAFETY: FFI 调用，addr/addrlen 由调用方负责用户态校验。
+    pub fn sm_accept_call(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+        unsafe { sm_accept(sockfd, addr, addrlen) }
+    }
+
+    /// # SAFETY: FFI 调用，addr/addrlen 由调用方负责用户态校验。
+    pub fn sm_connect_call(sockfd: i32, addr: *const u8, addrlen: u32) -> i32 {
+        unsafe { sm_connect(sockfd, addr, addrlen) }
+    }
+
+    /// # SAFETY: FFI 调用，buf 由调用方负责用户态校验。
+    pub fn sm_send_call(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32 {
+        unsafe { sm_send(sockfd, buf, len, flags) }
+    }
+
+    /// # SAFETY: FFI 调用，buf 由调用方负责用户态校验。
+    pub fn sm_recv_call(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32 {
+        unsafe { sm_recv(sockfd, buf, len, flags) }
+    }
+
+    /// # SAFETY: FFI 调用。
+    pub fn sm_close_call(sockfd: i32) -> i32 {
+        unsafe { sm_close(sockfd) }
+    }
+
+    /// # SAFETY: FFI 调用，optval 由调用方负责用户态校验。
+    pub fn sm_setsockopt_call(
+        sockfd: i32,
+        level: i32,
+        optname: i32,
+        optval: *const u8,
+        optlen: u32,
+    ) -> i32 {
+        unsafe { sm_setsockopt(sockfd, level, optname, optval, optlen) }
+    }
+
+    /// # SAFETY: FFI 调用，optval/optlen 由调用方负责用户态校验。
+    pub fn sm_getsockopt_call(
+        sockfd: i32,
+        level: i32,
+        optname: i32,
+        optval: *mut u8,
+        optlen: *mut u32,
+    ) -> i32 {
+        unsafe { sm_getsockopt(sockfd, level, optname, optval, optlen) }
+    }
+
+    // ============= 链接器符号访问 =============
+
+    /// 内核映像起始虚拟地址。
+    /// # SAFETY: 链接器符号，仅在 boot 后有效。
+    pub fn kernel_start_ptr() -> *const u8 {
+        unsafe { &_kernel_start as *const u8 }
+    }
+
+    /// 内核映像结束物理地址（已减 HHDM_OFFSET）。
+    /// # SAFETY: 链接器符号，hhdm_offset 必须与启动时一致。
+    pub fn kernel_end_phys(hhdm_offset: usize) -> usize {
+        unsafe { (&_kernel_end as *const u8 as usize).wrapping_sub(hhdm_offset) }
+    }
+
+    /// 用户地址空间上限（导出方便 raw 内部判断）。
+    pub const fn user_addr_max() -> u64 {
+        super::USER_ADDR_MAX
+    }
+
+    // ============= CPU 控制指令集中点 =============
+
+    /// 加载空 IDT 后触发异常，重启 CPU（x86_64）。
+    /// # SAFETY: 不返回；调用方须确保已关闭其他 CPU。
+    #[cfg(target_arch = "x86_64")]
+    pub unsafe fn reboot_via_idt() -> ! {
+        core::arch::asm!(
+            "lidt [rdi]",
+            "int 0",
+            in("rdi") &[0u16; 4],
+            options(nostack, nomem)
+        );
+        loop {}
+    }
+
+    /// 通过 SVC 触发 PSCI reset（aarch64）。
+    /// # SAFETY: 不返回；调用方须确保已关闭其他 CPU。
+    #[cfg(target_arch = "aarch64")]
+    pub unsafe fn reboot_via_psci() -> ! {
+        core::arch::asm!("svc #0", in("x0") 0u64, options(nostack));
+        loop {}
+    }
 }

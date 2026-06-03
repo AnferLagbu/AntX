@@ -110,5 +110,7 @@ pub fn dispatch_irq(vector: u8) -> bool {
     false
 }
 
+// SAFETY: IrqLine 句柄在设备驱动中独占, 启动阶段单线程注册, 运行时只读。
 unsafe impl Send for IrqLine {}
+// SAFETY: ISR_TABLE 初始化后运行时只读, 句柄字段 (vector/irq/registered) 在驱动上下文独占访问。
 unsafe impl Sync for IrqLine {}

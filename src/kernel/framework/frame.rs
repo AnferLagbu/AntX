@@ -41,7 +41,7 @@ impl Frame {
     /// 调用方保证 `phys` 是有效的可分配物理地址，
     /// 且未被其他 `Frame` 实例持有。
     pub unsafe fn from_raw(phys: PhysAddr, order: u8) -> Self {
-        debug_assert!(phys.as_u64() % PAGE_SIZE as u64 == 0, "Frame must be page-aligned");
+        debug_assert!(phys.as_u64().is_multiple_of(PAGE_SIZE as u64), "Frame must be page-aligned");
         Self {
             phys,
             ref_count: AtomicU32::new(1),

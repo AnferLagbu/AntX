@@ -1,0 +1,13 @@
+[package]
+name = "queenx-miri-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Miri verification harness for QueenX TCB algorithms. See README."
+
+[lib]
+name = "queenx_miri_tests"
+path = "src/lib.rs"
+
+[[bin]]
+name = "miri-runner"
+path = "src/bin/miri_runner.rs"

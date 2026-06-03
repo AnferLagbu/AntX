@@ -94,7 +94,7 @@ impl IoMem {
         if len == 0 {
             return Err("IoMem: zero-length MMIO region");
         }
-        if phys.as_u64() % 4 != 0 {
+        if !phys.as_u64().is_multiple_of(4) {
             return Err("IoMem: phys must be 4-byte aligned");
         }
 
@@ -130,6 +130,7 @@ impl IoMem {
 
     #[inline(always)] pub fn phys(&self) -> PhysAddr { self.phys_base }
     #[inline(always)] pub fn len(&self) -> usize { self.len }
+    #[inline(always)] pub fn is_empty(&self) -> bool { self.len == 0 }
     #[inline(always)] pub fn name(&self) -> &'static str { self.name }
 
     /// Get the virtual address pointer for struct overlay access.
@@ -194,5 +195,7 @@ impl fmt::Display for IoMem {
     }
 }
 
+// SAFETY: IoMem 封装了独占的 MMIO 物理区域, 内核态独占访问。
 unsafe impl Send for IoMem {}
+// SAFETY: &IoMem 通过别名检测 + SpinLock (内核层注册表) 保证无并发写。
 unsafe impl Sync for IoMem {}

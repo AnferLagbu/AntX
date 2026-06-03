@@ -38,7 +38,7 @@ pub fn validate_memory_config() -> Result<(), ConfigError> {
     }
 
     // 2. SLAB_DEFAULT_SIZE 必须按页对齐
-    if (SLAB_DEFAULT_SIZE as u64) % PAGE_SIZE != 0 {
+    if !(SLAB_DEFAULT_SIZE as u64).is_multiple_of(PAGE_SIZE) {
         return Err(ConfigError::MemoryLayoutInvalid);
     }
 

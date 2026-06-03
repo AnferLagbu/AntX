@@ -192,7 +192,11 @@ pub fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
     }
 }
 
-/// FFI: 附加共享内存段
+/// FFI: 附加共享内存段。
+///
+/// # Safety
+/// `addr` 必须是有效可写指针, 用于返回映射的虚拟地址。
+/// 由 `sys_shmat` 分发, cred 校验已通过。
 #[no_mangle]
 pub unsafe fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();

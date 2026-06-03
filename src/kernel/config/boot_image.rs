@@ -95,9 +95,11 @@ pub fn encode_boot_image() {
     let caps = s.capabilities;
 
     let mut guard = BOOT_IMAGE.lock();
+    // 必须显式解引用: `&mut guard` 类型是 `&mut MutexGuard<...>`,
+    // 而 `pack_u32` 需要 `&mut [u8; N]`。
+    #[allow(clippy::explicit_auto_deref)]
     let buf: &mut [u8; ENCODED_LEN] = &mut *guard;
     buf.fill(0);
-
     pack_u32(buf, 0, HEADER_MAGIC);
     // boot_epoch: 在 32/64 位系统都安全 — 当前用 0 占位, 未来接 tick
     pack_u32(buf, 4, 0);

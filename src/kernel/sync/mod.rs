@@ -521,7 +521,7 @@ extern "C" {
 //             调用方 (FFI 函数) 已做 `is_null()` 检查。
 
 pub(crate) mod raw {
-    use super::{Ordering, SpinLockInner, MutexInner, RwLockInner};
+    use super::{SpinLockInner, MutexInner, RwLockInner};
 
     // ============ SpinLockInner ============
 

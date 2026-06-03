@@ -139,6 +139,14 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
 // try_lock() 在 ISR 上下文中不会阻塞：若锁已被持有则直接返回。
 // ============================================================================
 
+/// 轮询网络栈 (驱动 TX/RX、定时器、DHCP)。
+///
+/// 在 timer ISR 或网络任务中调用, 内部 try_lock 避免阻塞。
+/// 若 NET_LOCK 已被持有则直接返回, 不会等待。
+///
+/// # Safety
+/// - `try_lock` 保证 ISR 安全 (不阻塞)。
+/// - 内部 raw::device_mut / raw::stack_mut 通过 NET_LOCK 互斥保护。
 pub unsafe fn poll_network() {
     let _guard = match NET_LOCK.try_lock() {
         Some(g) => g,
@@ -388,6 +396,10 @@ pub extern "C" fn qx_net_init() {
 ///
 /// 调用后 DHCP Discover 会在下一个 timer tick 发出。
 /// 用户态通过 poll/select 或轮询 NET_CONFIGURED 等待完成。
+///
+/// # Safety
+/// 调用方保证 NET 已初始化 (通过 `qx_net_init` 注册)，
+/// `NET_READY` 由网络栈在链路就绪后置位。
 #[no_mangle]
 pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
     if !crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
@@ -401,6 +413,11 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
 ///
 /// 格式: "10.0.2.15/24,10.0.2.2"
 /// 返回 0 成功, -1 失败
+///
+/// # Safety
+/// - `cidr_str` 与 `gw_str` 必须是有效的 C 字符串指针 (NUL 终止),
+///   指向的内存必须在调用期间保持有效。
+/// - 调用方保证 NET 已初始化。
 #[no_mangle]
 pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 {
     if !crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
@@ -441,7 +458,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
             octet_idx += 1;
             if octet_idx >= 4 { return -1; }
             current = 0;
-        } else if b >= b'0' && b <= b'9' {
+        } else if b.is_ascii_digit() {
             current = current * 10 + (b - b'0') as u32;
         } else {
             return -1;
@@ -467,7 +484,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
             gw_idx += 1;
             if gw_idx >= 4 { return -1; }
             gw_current = 0;
-        } else if b >= b'0' && b <= b'9' {
+        } else if b.is_ascii_digit() {
             gw_current = gw_current * 10 + (b - b'0') as u32;
         } else {
             return -1;
@@ -522,6 +539,11 @@ const E_NOTCONN: i32 = 107;
 const E_CONNREFUSED: i32 = 111;
 const E_NODEV: i32 = 19;
 
+/// POSIX `socket(domain, type, protocol)` 内核实现。
+///
+/// # Safety
+/// - 由 `sys_socket` 系统调用分发, 参数由 syscall 层校验 (cred 检查)。
+/// - 必须 NET_LOCK 持有。
 #[no_mangle]
 pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) -> i32 {
     if !is_network_initialized() {
@@ -575,6 +597,10 @@ struct SockaddrIn {
     sin_zero: [u8; 8],
 }
 
+/// 从 sockaddr_in C 结构体解析 IPv4 端点。
+///
+/// # Safety
+/// `addr` 必须指向有效的 `SockaddrIn` 结构体, 至少含 8 字节已初始化。
 unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
     if addr.is_null() {
         return None;
@@ -596,6 +622,12 @@ unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
     })
 }
 
+/// POSIX `bind(fd, addr, addrlen)` 内核实现。
+///
+/// # Safety
+/// - `addr` 必须是有效的 sockaddr 指针, 含 `_addrlen` 字节已初始化。
+/// - 由 `sys_bind` 系统调用分发, 调用方验证权限。
+/// - NET_LOCK 持有。
 #[no_mangle]
 pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
     let _guard = NET_LOCK.lock();
@@ -629,6 +661,10 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
     }
 }
 
+/// POSIX `listen(fd, backlog)` 内核实现。
+///
+/// # Safety
+/// NET_LOCK 持有; 由 `sys_listen` 分发, 调用方验证权限。
 #[no_mangle]
 pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
     let _guard = NET_LOCK.lock();
@@ -658,6 +694,11 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
     }
 }
 
+/// POSIX `accept(fd, addr, addrlen)` 内核实现。
+///
+/// # Safety
+/// - `addr`/`_addrlen` 必须是有效的 sockaddr 指针 (此处忽略)。
+/// - NET_LOCK 持有; 由 `sys_accept` 分发, 调用方验证权限。
 #[no_mangle]
 pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 {
     let _guard = NET_LOCK.lock();
@@ -684,6 +725,11 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
     }
 }
 
+/// POSIX `connect(fd, addr, addrlen)` 内核实现。
+///
+/// # Safety
+/// `addr` 必须指向有效的 sockaddr 结构, 至少 `_addrlen` 字节。
+/// NET_LOCK 持有。
 #[no_mangle]
 pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
     let _guard = NET_LOCK.lock();
@@ -727,6 +773,11 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
     }
 }
 
+/// POSIX `send(fd, buf, len, flags)` 内核实现。
+///
+/// # Safety
+/// `buf` 必须指向至少 `len` 字节的有效可读内存, 内存必须在调用期间保持有效。
+/// NET_LOCK 持有; 由 `sys_send` 分发, cred 校验已通过。
 #[no_mangle]
 pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 {
     let _guard = NET_LOCK.lock();
@@ -762,6 +813,11 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
     }
 }
 
+/// POSIX `recv(fd, buf, len, flags)` 内核实现。
+///
+/// # Safety
+/// `buf` 必须指向至少 `len` 字节的有效可写内存, 内存必须在调用期间保持有效。
+/// NET_LOCK 持有; 由 `sys_recv` 分发。
 #[no_mangle]
 pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 {
     let _guard = NET_LOCK.lock();
@@ -805,6 +861,11 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
     }
 }
 
+/// POSIX `sendto(fd, buf, len, flags, addr, addrlen)` 内核实现。
+///
+/// # Safety
+/// `buf`/`addr` 必须是有效指针, 内存至少含 `len`/`_addrlen` 字节。
+/// NET_LOCK 持有; 由 `sys_sendto` 分发。
 #[no_mangle]
 pub unsafe extern "C" fn sm_sendto(
     fd: i32,
@@ -854,6 +915,11 @@ pub unsafe extern "C" fn sm_sendto(
     }
 }
 
+/// POSIX `recvfrom(fd, buf, len, flags, addr, addrlen)` 内核实现。
+///
+/// # Safety
+/// `buf` 必须是有效可写指针, 至少 `len` 字节; `addr`/`_addrlen` 可选地写入对端地址。
+/// NET_LOCK 持有; 由 `sys_recvfrom` 分发。
 #[no_mangle]
 pub unsafe extern "C" fn sm_recvfrom(
     fd: i32,
@@ -904,6 +970,10 @@ pub unsafe extern "C" fn sm_recvfrom(
     }
 }
 
+/// POSIX `close(fd)` 内核实现。
+///
+/// # Safety
+/// NET_LOCK 持有; 由 `sys_close` 分发, cred 校验已通过。
 #[no_mangle]
 pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     let _guard = NET_LOCK.lock();
@@ -937,6 +1007,10 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     0
 }
 
+/// POSIX `setsockopt` 内核实现 (当前空操作占位)。
+///
+/// # Safety
+/// `_optval` 必须是有效指针, 含 `_optlen` 字节 (此处忽略)。
 #[no_mangle]
 pub unsafe extern "C" fn sm_setsockopt(
     _fd: i32,
@@ -948,6 +1022,10 @@ pub unsafe extern "C" fn sm_setsockopt(
     0
 }
 
+/// POSIX `getsockopt` 内核实现 (当前空操作占位)。
+///
+/// # Safety
+/// `_optval` 必须是有效可写指针, `_optlen` 必须是有效可写 u32 指针 (此处忽略)。
 #[no_mangle]
 pub unsafe extern "C" fn sm_getsockopt(
     _fd: i32,
@@ -959,6 +1037,10 @@ pub unsafe extern "C" fn sm_getsockopt(
     0
 }
 
+/// 轮询所有 socket 状态 (驱动 `select/poll` 内核实现)。
+///
+/// # Safety
+/// NET_LOCK 持有; 由 `sys_poll`/`sys_select` 分发。
 #[no_mangle]
 pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
     let _guard = NET_LOCK.lock();
@@ -1030,6 +1112,11 @@ pub fn get_init_state() -> InitState {
     }
 }
 
+/// 重置网络栈状态 (供栏栈 BHR / 异常恢复使用)。
+///
+/// # Safety
+/// - 必须持有 NET_LOCK (内部获取)。
+/// - 必须在所有 socket 关闭后调用, 否则可能泄漏资源。
 pub unsafe fn reset_network_state() {
     let _guard = NET_LOCK.lock();
 

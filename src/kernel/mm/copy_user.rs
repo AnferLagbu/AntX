@@ -373,9 +373,7 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
             clear_exception_recovery();
         }
 
-        if exception_occurred() {
-            Err(())
-        } else if bytes.len() == max_len {
+        if exception_occurred() || bytes.len() == max_len {
             Err(())
         } else {
             alloc::string::String::from_utf8(bytes).map_err(|_| ())

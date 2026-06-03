@@ -347,7 +347,11 @@ pub fn ipc_msgq_create(perm: i32) -> IpcId {
     }
 }
 
-/// FFI: 发送消息
+/// FFI: 发送消息。
+///
+/// # Safety
+/// `data` 必须是有效可读指针, 至少 `size` 字节, 内存必须在调用期间保持有效。
+/// 由 `sys_msgsnd` 分发, cred 校验已通过。
 #[no_mangle]
 pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
@@ -370,7 +374,11 @@ pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -
     }
 }
 
-/// FFI: 接收消息
+/// FFI: 接收消息。
+///
+/// # Safety
+/// `data` 必须是有效可写指针, 至少 `size` 字节; `type_out` 用于返回消息类型。
+/// 由 `sys_msgrcv` 分发, cred 校验已通过。
 #[no_mangle]
 pub unsafe fn ipc_msgq_recv(
     id: IpcId,
