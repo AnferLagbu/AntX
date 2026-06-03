@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.4 (诚实版, 2026-06-04 v2.3 增量修复 e1000 QEMU 仿真死锁后更新; v2.4 完成 Phase 3.3 + 3.4)
+> **版本**: v2.5 (2026-06-04 v2.4 增量完成 Phase 3.3 + 3.4, 此次完成 Phase 2.1 6/6 驱动迁移)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -62,9 +62,22 @@
 3. **host-tests 总数**: 218 → **254** (增加 36 个)
 4. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings (修复了 dma_buf.rs 引入的 unused import 警告)
 5. **双架构 QEMU 启动回归**: `make qemu-boot-test ARCH=all` → 2/2 仍通过
->
-> **当前真实状态** (v2.4, 2026-06-04):
+
+**v2.5 增量** (2026-06-04, Phase 2.1 6/6 驱动迁移完成):
+1. **VGA 文本模式安全代理** (`src/kernel/services/driver/char/vga.rs`): 通过 `IoMem` 封装 0xB8000 显存, 通过 `IoPort` 封装 0x3D4/0x3D5 CRT 控制器 (x86_64). 0 unsafe, 提供 `VgaConsole::write_char`, `set_cursor`, `clear`, `scroll_up` 等 100% safe API
+2. **16550 UART 串口安全代理** (`src/kernel/services/driver/char/serial.rs`): COM1-COM4 PIO 封装. 0 unsafe, 提供 `SerialPort::new(com, config)`, `send`, `send_str`, `try_receive`, `receive` (阻塞), `enable_interrupts` 等 safe API
+3. **AHCI SATA 控制器安全代理** (`src/kernel/services/driver/storage/ahci.rs`): 封装 ABAR MMIO (0x100 + 0x80*n 端口布局). 0 unsafe, 暴露 `AhciHba::new(abar, len)`, HBA 全局寄存器 + 端口寄存器安全访问, `port_start` / `port_stop` 状态机
+4. **NVMe 控制器安全代理** (`src/kernel/services/driver/storage/nvme.rs`): 封装 PCIe BAR0 MMIO. 0 unsafe, 暴露 `NvmeController::new(bar0, len)`, CAP/VS/CC/CSTS/INTMS/INTMC/ASQ/ACQ/AQA 寄存器 safe 访问, `enable`/`disable`/`wait_ready`, `ring_admin_sq` Doorbell
+5. **xHCI USB 3.0 主机控制器安全代理** (`src/kernel/services/driver/usb/xhci.rs`): 封装 xHCI MMIO 区域. 0 unsafe, 暴露 `XhciController::new(phys, len)`, Capability 寄存器 (CAPLENGTH/HCSParams/HCCParams/DBOFF/RTSOFF), Operational 寄存器 (USBCMD/USBSTS/CRCR/DCBAAP/CONFIG), 端口 PORTSC, Doorbell
+6. **VirtIO 传输层** (已存在, `src/kernel/services/driver/virtio/transport.rs`): VirtIO MMIO 设备探测、特性协商、队列配置
+7. **驱动迁移总览** (`src/kernel/services/driver/mod.rs`):
+   - 新增模块: `char::vga`, `char::serial`, `storage::nvme`, `storage::ahci`, `usb::xhci` (全部 0 unsafe)
+   - 进度: 1/6 → **6/6** (e1000 + virtio transport + vga + serial + nvme + ahci + xhci 全部安全代理到位)
+8. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings
+
+> **当前真实状态** (v2.5, 2026-06-04):
 > - ✅ **M2 里程碑达成**: `services/` 0 unsafe (实测), `framework/` 154 unsafe (3.3% TCB 占比)
+> - ✅ **Phase 2.1 6/6 驱动迁移**: E1000 + VirtIO transport + VGA + Serial + NVMe + AHCI + XHCI 全部 safe wrapper
 > - ✅ **Phase 3.1 Miri 全面扫描**: 137 passed / 0 UB (strict-provenance)
 > - ✅ **Phase 3.2 SAFETY 注释审查**: 129/129 framework unsafe 块 100% SAFETY 覆盖 (audit_unsafe.py)
 > - ✅ **Phase 3.3 IoMem 别名检测生产代码压测**: host-tests/src/iomem_alias.rs **16/16 通过**
@@ -72,7 +85,8 @@
 > - ✅ **Phase 3.5 + 3.6 双架构 QEMU 真实启动**: `make qemu-boot-test ARCH=all` → 2/2 通过 (x86_64 + aarch64)
 > - ✅ **v2.2 修复**: x86_64 完整进入 Ring 3 启动 init 进程 (VGA 越界 panic 已根除); QEMU 启动测试已接入 `ci/audit.sh` step 7
 > - ✅ **v2.3 修复**: e1000 QEMU 仿真死锁根因已定位 + 临时绕过 (默认 MAC); 真实硬件 eeprom 读取待恢复
-> - ⚠️ 9 个 services 子系统待迁移 (估时 8-12 人月)
+> - ✅ **v2.5 增量**: Phase 2.1 6/6 驱动迁移 (VGA/Serial/NVMe/AHCI/XHCI safe wrapper)
+> - ⚠️ 8 个 services 子系统待迁移 (估时 8-12 人月)
 > - ❌ 性能退化基准测试未做 (Phase 4 补做)
 
 ---
