@@ -326,7 +326,7 @@ pub fn storage_init() -> framework::Result<()> {
             if let Some(blk) = virtio::blk::VirtioBlk::new(dev) {
                 let blk_name = alloc::format!("virtio-blk{}", blk_count);
                 let name_leaked: &'static str = blk_name.leak();
-                let mmio_base = blk.device.mmio_base;
+                let mmio_base = blk.device.iomem.phys().as_u64();
                 crate::kernel::chitin::proto_block::register_block_device(
                     name_leaked,
                     blk,

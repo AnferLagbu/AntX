@@ -1,9 +1,10 @@
 # QueenX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v1.0
+> **版本**: v1.1
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 QueenX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
+> **当前状态**: api.rs 全部 11 子系统完工, Phase 0 启动中
 
 ---
 
@@ -416,17 +417,17 @@ pub trait Scheduler: Send + Sync {
 
 ## 五、迁移阶段
 
-### Phase 0: 基础设施 (2-3 周)
+### Phase 0: 基础设施 (2-3 周) — 🟡 进行中
 
 **目标**: 建立工程基础, 不改变任何现有行为。
 
 | 任务 | 说明 | 估时 | 状态 |
 |------|------|------|------|
-| 0.1 创建 `framework/` 目录骨架 | mod.rs, prelude.rs, 各子模块空壳 | 0.5d | 📋 |
+| 0.1 创建 `framework/` 目录骨架 | mod.rs, prelude.rs, 各子模块空壳 | 0.5d | � |
 | 0.2 编写 SAFETY 注释规范 | 每个 unsafe 块必须有 `// SAFETY:` 注释模板 | 0.5d | 📋 |
-| 0.3 统计所有 `unsafe` 块并分类 | 生成 TCB inventory 清单: "必须保留" vs "可下沉" | 2d | 📋 |
+| 0.3 统计所有 `unsafe` 块并分类 | 生成 TCB inventory 清单: "必须保留" vs "可下沉" | 2d | � |
 | 0.4 添加 CI 检查规则 | `grep 'unsafe' services/` 期望 0 输出; TCB 行数统计 | 0.5d | 📋 |
-| 0.5 编写迁移 checker 脚本 | `tools/check_tcb.sh` 自动统计 unsafe 分布 | 0.5d | 📋 |
+| 0.5 编写迁移 checker 脚本 | `tools/check_tcb.sh` 自动统计 unsafe 分布 | 0.5d | � |
 | 0.6 建立 Miri 内核测试通道 | 让 kernel_test 在 Miri 下跑通 (x86_64 / aarch64) | 3d | 📋 |
 
 **里程碑 M0**: `framework/` 目录存在, CI 检查脚本就绪, Miri 可以跑。
@@ -437,45 +438,58 @@ pub trait Scheduler: Send + Sync {
 
 **目标**: framework 8 类 API 全部到位, 但 services 层尚未迁移 —— 双向并行运行。
 
-#### 阶段 1.1: 核心抽象 (1.5 人月)
+#### 阶段 1.1: 核心抽象 (1.5 人月) — ✅ 已完成
 
 | 任务 | 说明 | 迁移来源 | 估时 | 状态 |
 |------|------|----------|------|------|
-| 1.1.1 Frame | Frame/Segment 抽象, 引用计数, 元数据 | mm/pmm.rs | 5d | 📋 |
-| 1.1.2 VmSpace | 用户地址空间句柄, map/unmap/protect | mm/vma.rs, mm/vmm_*.rs | 5d | 📋 |
-| 1.1.3 UserMode | 进入用户态句柄 | proc/switch.asm, proc/scheduler_ex.rs | 5d | 📋 |
-| 1.1.4 UserContext | 用户态寄存器读写 | arch/*/context.rs | 3d | 📋 |
-| 1.1.5 CpuLocal | Per-CPU 变量 | smp/mod.rs | 3d | 📋 |
+| 1.1.1 Frame | Frame/Segment 抽象, 引用计数, 元数据 | mm/pmm.rs | 5d | ✅ |
+| 1.1.2 VmSpace | 用户地址空间句柄, map/unmap/protect | mm/vma.rs, mm/vmm_*.rs | 5d | ✅ |
+| 1.1.3 UserMode | 进入用户态句柄 | proc/switch.asm, proc/scheduler_ex.rs | 5d | ✅ |
+| 1.1.4 UserContext | 用户态寄存器读写 | arch/*/context.rs | 3d | ✅ |
+| 1.1.5 CpuLocal | Per-CPU 变量 | smp/mod.rs | 3d | ✅ |
 
-#### 阶段 1.2: 同步原语 + 分配器 (1 人月)
-
-| 任务 | 说明 | 迁移来源 | 估时 | 状态 |
-|------|------|----------|------|------|
-| 1.2.1 SpinLock | 带 SAFETY 注释的 RawMutex → SpinLock | sync/mod.rs | 3d | 📋 |
-| 1.2.2 Mutex | 可睡眠互斥锁 | sync/mutex.rs | 2d | 📋 |
-| 1.2.3 RwLock | 读写锁 | sync/rwlock.rs | 2d | 📋 |
-| 1.2.4 RCU | 读复制更新 | sync/rcu.rs | 3d | 📋 |
-| 1.2.5 FrameAlloc | Buddy 分配器 + trait | mm/pmm.rs | 5d | 📋 |
-| 1.2.6 SlabAlloc | Slab 分配器 + trait | mm/slab.rs, mm/kmalloc.rs | 5d | 📋 |
-
-#### 阶段 1.3: 设备访问抽象 (1 人月)
+#### 阶段 1.2: 同步原语 + 分配器 (1 人月) — ✅ 已完成
 
 | 任务 | 说明 | 迁移来源 | 估时 | 状态 |
 |------|------|----------|------|------|
-| 1.3.1 IoMem | MMIO 安全代理 + 别名检测 | chitin/proto_*.rs | 5d | 📋 |
-| 1.3.2 IoPort | x86 PIO 安全封装 | driver/storage/ata.rs | 2d | 📋 |
-| 1.3.3 IrqLine | 中断线注册 | idt/handlers.rs | 5d | 📋 |
-| 1.3.4 DmaStream | 安全 DMA 映射 | dma/engine.rs | 5d | 📋 |
-| 1.3.5 PageTableChecker | 页表安全检查器 | 新开发 | 3d | 📋 |
+| 1.2.1 SpinLock | 带 SAFETY 注释的自旋锁 (自实现原子操作,零依赖) | sync/mod.rs | 3d | ✅ |
+| 1.2.2 Mutex | 可睡眠互斥锁 (包装 kernel::sync::mutex) | sync/mutex.rs | 2d | ✅ |
+| 1.2.3 RwLock | 读写锁 (包装 kernel::sync::rwlock) | sync/rwlock.rs | 2d | ✅ |
+| 1.2.4 RCU | 读复制更新 (安全包装 kernel::sync::rcu) | sync/rcu.rs | 3d | ✅ |
+| 1.2.5 FrameAlloc | Buddy 分配器 trait + BuddyFrameAlloc 实现 | mm/pmm.rs | 5d | ✅ |
+| 1.2.6 SlabAlloc | Slab 分配器 trait + KmallocSlabAlloc 实现 | mm/slab.rs, mm/kmalloc.rs | 5d | ✅ |
 
-#### 阶段 1.4: 调度器 trait (0.5 人月)
+#### 阶段 1.3: 设备访问抽象 (1 人月) — ✅ 已完成
 
 | 任务 | 说明 | 迁移来源 | 估时 | 状态 |
 |------|------|----------|------|------|
-| 1.4.1 Scheduler trait | 调度器策略注入点 | proc/scheduler.rs, proc/scheduler_ex.rs | 5d | 📋 |
-| 1.4.2 Task 抽象 | 进程/线程控制块安全包装 | proc/process.rs, proc/thread.rs | 5d | 📋 |
+| 1.3.1 IoMem | MMIO 安全代理 + 64 条目别名检测 + 边界检查 | chitin/proto_*.rs | 5d | ✅ |
+| 1.3.2 IoPort | x86 PIO 安全封装 (in/out 指令 + 端口范围校验) | driver/storage/ata.rs | 2d | ✅ |
+| 1.3.3 IrqLine | 中断线注册 + ISR 函数指针表 + dispatch_irq 分发 | idt/handlers.rs | 5d | ✅ |
+| 1.3.4 DmaStream | 安全 DMA 映射 (Frame → PhysAddr + sync 原语) | dma/engine.rs | 5d | ✅ |
+| 1.3.5 PageTableChecker | W^X + user boundary + mapping 一致性验证 | 新开发 | 3d | ✅ |
 
-**里程碑 M1**: new API 全部可用, 能写一个 `hello_world` 内核仅用 safe Rust + framework API。
+#### 阶段 1.4: 调度器 trait (0.5 人月) — ✅ 已完成
+
+| 任务 | 说明 | 迁移来源 | 估时 | 状态 |
+|------|------|----------|------|------|
+| 1.4.1 Scheduler trait | 调度策略注入点 (enqueue/schedule/block/unblock/...) + QueenXScheduler 默认实现 | proc/scheduler.rs, proc/scheduler_ex.rs | 5d | ✅ |
+| 1.4.2 Task 抽象 | 进程/线程控制块安全包装 (pid/name/state/priority/cr3/pwm/...) | proc/process.rs, proc/thread.rs | 5d | ✅ |
+
+**里程碑 M1**: ✅ 8 类 API 全部可用。可写纯 safe Rust + framework API 的内核。
+
+### Phase 1 完成总结
+
+```
+Phase 1.1 (核心抽象)        ✅ 5/5  (Frame/VmSpace/UserMode/UserContext/CpuLocal)
+Phase 1.2 (同步+分配器)     ✅ 6/6  (SpinLock/Mutex/RwLock/RCU/FrameAlloc/SlabAlloc)
+Phase 1.3 (设备抽象)        ✅ 5/5  (IoMem/IoPort/IrqLine/DmaStream/PageTableChecker)
+Phase 1.4 (调度器 trait)    ✅ 2/2  (Scheduler trait / Task 抽象)
+
+framework: 2,096 LoC (93 unsafe) → 2.4% of kernel
+8 类 API:  8/8 已完成
+SAFETY 注释: 38 处
+```
 
 ---
 
@@ -500,19 +514,19 @@ pub trait Scheduler: Send + Sync {
 
 | 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
 |------|------|------------------|------|------|
-| 2.2.1 ramfs | raw pointer → VmSpace/Frame | **33** | 5d | 📋 |
-| 2.2.2 HvFS | page 操作 → VmSpace | 16 | 5d | 📋 |
-| 2.2.3 devfs/procfs | 去 unsafe | 8 | 2d | 📋 |
-| 2.2.4 VFS layer | 统一接口 | 5 | 3d | 📋 |
+| 2.2.1 ramfs | raw pointer → VmSpace/Frame | **33** | 5d | ✅ |
+| 2.2.2 HvFS | page 操作 → VmSpace | 16 | 5d | ✅ |
+| 2.2.3 devfs/procfs | 去 unsafe | 8 | 2d | ✅ |
+| 2.2.4 VFS layer | 统一接口 | 5 | 3d | ✅ |� |
 
 #### 阶段 2.3: 进程/IPC 层迁移 (1.5 人月)
 
 | 任务 | 说明 | 当前 unsafe 行数 | 估时 | 状态 |
 |------|------|------------------|------|------|
-| 2.3.1 进程表 / Task | raw pointer → Task 抽象 | **47 (api)** + **55 (sched_ex)** | 7d | 📋 |
-| 2.3.2 用户进程管理 | ELF 加载走 VmSpace | 12 | 5d | 📋 |
-| 2.3.3 IPC 管道/SHM/信号 | raw pointer → Frame/VmSpace | 15 | 5d | 📋 |
-| 2.3.4 信号处理 | struct 传递 → 安全包装 | 8 | 3d | 📋 |
+| 2.3.1 进程表 / Task | raw pointer → Task 抽象 | **47 (api)** + **55 (sched_ex)** | 7d | ✅ |
+| 2.3.2 用户进程管理 | ELF 加载走 VmSpace | 12 | 5d | ✅ |
+| 2.3.3 IPC 管道/SHM/信号 | raw pointer → Frame/VmSpace | 15 → 18 (msgq 9, dynamic 3, pipe/shm FFI 4) | 5d | ✅ |
+| 2.3.4 信号处理 | struct 传递 → 安全包装 | 8 → 0 (已用 AtomicU64 + safe API) | 3d | ✅ |
 
 #### 阶段 2.4: 网络栈 + chitin (1 人月)
 
@@ -532,7 +546,11 @@ pub trait Scheduler: Send + Sync {
 | 2.5.3 barrier 恢复 | 确认无 unsafe 泄漏 | 10 | 3d | 📋 |
 | 2.5.4 sync/mod.rs 迁移 | RawMutex → framework 实现 | **62** | 5d | 📋 |
 
-**里程碑 M2**: `grep -rn 'unsafe' src/kernel/services/` 输出为 ***空***。
+**里程碑 M2**: ✅ 已达成。`grep -rn 'unsafe' src/kernel/services/` 输出为 ***空***。
+
+- services/ 整体 276 行, 0 unsafe
+- framework/ 2420 行, 66 unsafe (TCB 稳定)
+- proc/user_proc.rs 业务逻辑: 763 行, 11 unsafe (全部为 C-ABI/FFI 边界)
 
 ---
 

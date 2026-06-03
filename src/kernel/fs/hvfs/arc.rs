@@ -68,10 +68,7 @@ pub struct HvArcBuf {
     pub compressed: bool,
 }
 
-// SAFETY: HvArcBuf contains only Copy/primitive types and Vec<u8>.
-// No interior mutability without synchronization; mutation is external-lock-protected.
-unsafe impl Send for HvArcBuf {}
-unsafe impl Sync for HvArcBuf {}
+// SAFETY (Framekernel P2.2.2): HvArcBuf 全部字段自动 Send + Sync。
 
 impl HvArcBuf {
     pub fn new(key: HvArcKey, size: usize, buf_type: HvArcBufType) -> Self {
@@ -174,10 +171,8 @@ pub struct HvArc {
     initialized: AtomicBool,
 }
 
-// SAFETY: HvArc uses Mutex for inner state and AtomicBool for initialized.
-// HvArcStats is plain Copy. No UnsafeCell without synchronization.
-unsafe impl Send for HvArc {}
-unsafe impl Sync for HvArc {}
+// SAFETY (Framekernel P2.2.2): HvArc 全部字段 (Mutex<T>, AtomicBool, HvArcStats)
+// 都自动实现 Send + Sync。
 
 impl HvArc {
     pub fn new() -> Self {
@@ -284,6 +279,13 @@ impl HvArc {
         }
         self.stats.misses.fetch_add(1, Ordering::Relaxed);
         None
+    }
+
+    /// Framekernel P2.2.2: 安全地获取缓存切片，封装 unsafe from_raw_parts
+    /// 调用者仍需在访问后调用 release(key) 释放引用计数
+    pub fn lookup_slice(&self, key: &HvArcKey, len: usize) -> Option<&[u8]> {
+        let ptr = self.lookup(key)?;
+        Some(unsafe { core::slice::from_raw_parts(ptr, len) })
     }
 
     pub fn insert(&self, key: HvArcKey, data: &[u8], buf_type: HvArcBufType) -> Option<*const u8> {

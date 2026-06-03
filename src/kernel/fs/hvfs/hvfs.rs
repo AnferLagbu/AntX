@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::kernel::credo::api as pwm_api;
 use crate::kernel::driver::block;
 use crate::kernel::fs::hvfs::arc::{HvArcBufType, HvArcKey};
 use crate::kernel::fs::hvfs::bp::*;
@@ -15,21 +16,13 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use spin::Mutex;
 
-extern "C" {
-    fn klog_ffi_info(msg: *const u8);
-    fn pwm_get_privilege_level(pwm: u64) -> u8;
-    fn pwm_has_capability(pwm: u64, domain: u16, required: u64) -> bool;
-    fn timer_get_ticks() -> u64;
-}
-
 fn log(s: &str) {
-    unsafe {
-        klog_ffi_info(s.as_ptr());
-    }
+    // Framekernel P2.2.2: 使用 klog_info! 安全宏 (替代 extern "C" klog_ffi_info)
+    crate::klog_info!(FS, "{}", s);
 }
 
-unsafe fn hvfs_save() {}
-unsafe fn hvfs_restore() {
+fn hvfs_save() {}
+fn hvfs_restore() {
     let hvfs = get_hvfs();
     hvfs.initialized.store(false, Ordering::Release);
     hvfs.mounted.store(false, Ordering::Release);
@@ -41,7 +34,7 @@ unsafe fn hvfs_restore() {
     hvfs.initialized.store(true, Ordering::Release);
     log("[HvFS] Recovery: domain restored\n");
 }
-unsafe fn hvfs_reset() {
+fn hvfs_reset() {
     log("[HvFS] Recovery: domain hard reset\n");
 }
 
@@ -85,10 +78,8 @@ pub struct HvfsData {
     pub partition_start: AtomicU32,
 }
 
-// SAFETY: HvfsData uses Mutex for drives_discovered and Atomic types
-// for all other mutable state. No UnsafeCell without synchronization.
-unsafe impl Send for HvfsData {}
-unsafe impl Sync for HvfsData {}
+// SAFETY (Framekernel P2.2.2): HvfsData 全部字段 (Mutex<T>, Atomic*, HvSpa/HvZil/HvSnapshotManager)
+// 都自动实现 Send + Sync, 无需 unsafe impl。
 
 static HVFS_DATA: spin::Once<HvfsData> = spin::Once::new();
 
@@ -533,7 +524,8 @@ impl HvfsData {
         if pwm == 0 {
             return false;
         }
-        let level = unsafe { pwm_get_privilege_level(pwm) };
+        // Framekernel P2.2.2: 使用 safe 包装
+        let level = pwm_api::pwm_get_privilege_level(pwm);
         if level == 0xFF {
             return false;
         }
@@ -543,7 +535,8 @@ impl HvfsData {
         if obj.owner_pwm == pwm {
             return true;
         }
-        unsafe { pwm_has_capability(pwm, 3, cap) }
+        // domain=3 (DS = dataset)
+        pwm_api::pwm_has_capability(pwm, 3, cap)
     }
 
     pub fn open(&self, path: &str, flags: u32, pwm: u64) -> Result<i32, KernelError> {
@@ -641,8 +634,7 @@ impl HvfsData {
         }
         let block_offset = (offset / 4096) * 4096;
         let block_key = HvArcKey::new(0, (obj_id << 40) | block_offset, obj.birth_txg);
-        if let Some(data_ptr) = self.spa.arc.lookup(&block_key) {
-            let data = unsafe { core::slice::from_raw_parts(data_ptr, 4096) };
+        if let Some(data) = self.spa.arc.lookup_slice(&block_key, 4096) {
             let start = (offset - block_offset) as usize;
             let end = (start + to_read).min(4096);
             buf[..end - start].copy_from_slice(&data[start..end]);
@@ -715,7 +707,8 @@ impl HvfsData {
         }
         obj.cow_bp(new_bp, txg);
         obj.size = (offset + to_write as u64).max(obj.size);
-        obj.mtime = unsafe { timer_get_ticks() };
+        // Framekernel P2.2.2: 使用 safe timestamp() 替代 extern "C" timer_get_ticks
+        obj.mtime = crate::arch!(timestamp());
         if !self.is_disk_mode() {
             let block_offset = (offset / 4096) * 4096;
             let arc_key = HvArcKey::new(0, (obj_id << 40) | block_offset, txg);
@@ -830,14 +823,16 @@ impl HvfsData {
         };
 
         if obj.owner_pwm != pwm {
-            let level = unsafe { pwm_get_privilege_level(pwm) };
+            // Framekernel P2.2.2: safe 包装
+            let level = pwm_api::pwm_get_privilege_level(pwm);
             if level != 0 {
                 return KernelError::PermissionDenied.as_i32();
             }
         }
 
         obj.pwm_perm = mode;
-        obj.ctime = unsafe { timer_get_ticks() };
+        // Framekernel P2.2.2: safe timestamp
+        obj.ctime = crate::arch!(timestamp());
         obj.dirty = true;
 
         if ds.objset.update_obj(&obj) {
@@ -857,7 +852,8 @@ impl HvfsData {
         }
         let name = path.trim_start_matches('/');
 
-        let level = unsafe { pwm_get_privilege_level(pwm) };
+        // Framekernel P2.2.2: safe 包装
+        let level = pwm_api::pwm_get_privilege_level(pwm);
         if level != 0 {
             return KernelError::PermissionDenied.as_i32();
         }
@@ -878,7 +874,8 @@ impl HvfsData {
         if group_pwm != 0 {
             obj.group_pwm = group_pwm;
         }
-        obj.ctime = unsafe { timer_get_ticks() };
+        // Framekernel P2.2.2: safe timestamp
+        obj.ctime = crate::arch!(timestamp());
         obj.dirty = true;
 
         if ds.objset.update_obj(&obj) {
@@ -1093,8 +1090,7 @@ impl HvfsData {
         let to_read = target_len.min(buf.len());
 
         let block_key = HvArcKey::new(0, 0, obj.birth_txg);
-        if let Some(data_ptr) = self.spa.arc.lookup(&block_key) {
-            let data = unsafe { core::slice::from_raw_parts(data_ptr, target_len) };
+        if let Some(data) = self.spa.arc.lookup_slice(&block_key, target_len) {
             buf[..to_read].copy_from_slice(&data[..to_read]);
             return to_read as i32;
         }
@@ -1300,7 +1296,7 @@ impl HvfsData {
         {
             let mut ub = self.spa.uberblock.lock();
             ub.txg = txg;
-            ub.timestamp = unsafe { timer_get_ticks() };
+            ub.timestamp = crate::arch!(timestamp());
             if let Some(bp) = meta_bp {
                 ub.root_bp = bp;
             }
@@ -1395,11 +1391,9 @@ impl HvfsData {
             if off + BP_BYTES > buf.len() {
                 return None;
             }
-            let bp_bytes = unsafe {
-                core::slice::from_raw_parts(&obj.bp as *const HvBlockPointer as *const u8, BP_BYTES)
-            };
-            buf[off..off + BP_BYTES].copy_from_slice(bp_bytes);
-            off += BP_BYTES;
+            let bp_bytes = obj.bp.as_bytes();
+            buf[off..off + HvBlockPointer::BYTES].copy_from_slice(bp_bytes);
+            off += HvBlockPointer::BYTES;
             if !Self::write_le64(&mut buf, off, obj.atime) {
                 return None;
             }
@@ -1554,18 +1548,14 @@ impl HvfsData {
                 };
                 off += 8;
 
-                if off + BP_BYTES > buf.len() {
+                if off + HvBlockPointer::BYTES > buf.len() {
                     return false;
                 }
-                let mut bp_val = HvBlockPointer::null();
-                let bp_slice = unsafe {
-                    core::slice::from_raw_parts_mut(
-                        &mut bp_val as *mut HvBlockPointer as *mut u8,
-                        BP_BYTES,
-                    )
+                let bp_val = match HvBlockPointer::from_bytes(&buf[off..off + HvBlockPointer::BYTES]) {
+                    Some(v) => v,
+                    None => return false,
                 };
-                bp_slice.copy_from_slice(&buf[off..off + BP_BYTES]);
-                off += BP_BYTES;
+                off += HvBlockPointer::BYTES;
 
                 let atime = match Self::read_le64(&buf, off) {
                     Some(v) => v,

@@ -1,0 +1,104 @@
+//! FrameAlloc — 物理页分配器 trait (TCB)
+//!
+//! 策略注入点: services 层通过此 trait 分配/释放物理帧,
+//! 而不直接操作 Buddy 分配器或位图。
+//!
+//! ## 与 Asterinas OSTD `FrameAlloc` 的关系
+//!
+//! 等价于 OSTD 的 `FrameAlloc` trait。
+//!
+//! ## SAFETY 不变量
+//!
+//! - `alloc()` 返回的 Frame 必须唯一 (同一 phys 不被多次分配)。
+//! - 调用方负责在释放前解除所有映射 (页表 / DMA)。
+//! - 分配器内部用 spinlock 保护, ISR 安全。
+
+use crate::kernel::mm::PageSize;
+
+use super::super::frame::Frame;
+
+/// 物理帧分配器 trait。
+///
+/// 当前实现在 `mm/pmm.rs` (Buddy 分配器),
+/// 未来可替换为自定义策略。
+pub trait FrameAlloc: Send + Sync {
+    /// 分配一个物理帧 (order 4K or 2M)。
+    fn alloc(&self, order: u8) -> Option<Frame>;
+
+    /// 分配连续多个 4K 帧 (用于 DMA 缓冲区等)。
+    fn alloc_pages(&self, count: usize) -> Option<Frame>;
+
+    /// 分配大页 (2MB / 1GB)。
+    fn alloc_huge(&self, size: PageSize) -> Option<Frame>;
+
+    /// 释放帧。
+    fn free(&self, frame: Frame);
+
+    /// 剩余空闲页数。
+    fn free_pages(&self) -> u64;
+
+    /// 总页数。
+    fn total_pages(&self) -> u64;
+}
+
+// ============================================================================
+// 默认实现: 委托给现有 PMM
+// ============================================================================
+
+/// Buddy 分配器实现的 FrameAlloc。
+pub struct BuddyFrameAlloc;
+
+impl FrameAlloc for BuddyFrameAlloc {
+    fn alloc(&self, order: u8) -> Option<Frame> {
+        let pmm = crate::kernel::mm::pmm::get_pmm();
+        if order == 0 {
+            let phys = pmm.alloc_page()?;
+            // SAFETY: pmm.alloc_page() guarantees unique ownership.
+            unsafe { Some(Frame::from_raw(phys, 0)) }
+        } else {
+            let count = 1 << order;
+            self.alloc_pages(count)
+        }
+    }
+
+    fn alloc_pages(&self, count: usize) -> Option<Frame> {
+        let pmm = crate::kernel::mm::pmm::get_pmm();
+        let order = if count <= 1 {
+            0u8
+        } else if count <= 512 {
+            9u8
+        } else {
+            return None;
+        };
+        let phys = pmm.alloc_pages(count)?;
+        // SAFETY: pmm.alloc_pages() guarantees unique ownership.
+        unsafe { Some(Frame::from_raw(phys, order)) }
+    }
+
+    fn alloc_huge(&self, size: PageSize) -> Option<Frame> {
+        let pmm = crate::kernel::mm::pmm::get_pmm();
+        let phys = pmm.alloc_huge_page(size)?;
+        let order = match size {
+            PageSize::Size2M => 9u8,
+            PageSize::Size1G => 18u8,
+            _ => 0u8,
+        };
+        // SAFETY: pmm.alloc_huge_page() guarantees unique ownership.
+        unsafe { Some(Frame::from_raw(phys, order)) }
+    }
+
+    fn free(&self, frame: Frame) {
+        let pmm = crate::kernel::mm::pmm::get_pmm();
+        if frame.dec_ref() {
+            pmm.free_page(frame.phys());
+        }
+    }
+
+    fn free_pages(&self) -> u64 {
+        crate::kernel::mm::pmm::get_pmm().get_free_pages()
+    }
+
+    fn total_pages(&self) -> u64 {
+        crate::kernel::mm::pmm::get_pmm().get_total_pages()
+    }
+}

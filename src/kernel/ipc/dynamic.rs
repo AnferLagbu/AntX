@@ -17,12 +17,48 @@
 //! 旧版 `IpcNamespace` 保持不变（向后兼容）。
 //! 新代码使用 `DynIpcNamespace`，通过 FFI 桥接暴露给 C。
 
-use alloc::alloc::dealloc;
 use alloc::vec::Vec;
-use core::alloc::Layout;
 use spin::Mutex;
 
 use super::types::*;
+
+/// === Message 原始指针特权封装 (Framekernel 模式) ===
+///
+/// 与 `msgq.rs` 中的 `MessageRef` 同样思路: 把侵入式链表的 NonNull
+/// 操作 (`Box::from_raw` / `*msg_nn.as_ptr()`) 集中到 `raw` 子模块,
+/// 业务代码 (destroy 释放) 走安全接口。
+pub(crate) mod raw {
+    use super::Message;
+    use alloc::boxed::Box;
+    use core::ptr::NonNull;
+
+    /// `NonNull<Message>` 的安全 newtype
+    #[derive(Clone, Copy)]
+    pub struct MessageRef(NonNull<Message>);
+
+    impl MessageRef {
+        /// # Safety (内部)
+        /// nn 必须是 `Box::into_raw` 产生的有效 NonNull。
+        pub(crate) unsafe fn from_non_null(nn: NonNull<Message>) -> Self {
+            Self(nn)
+        }
+
+        /// 读取 `next` 字段 (侵入式链表)
+        pub fn next(&self) -> Option<NonNull<Message>> {
+            // SAFETY: self 来自 `from_non_null`, 指向有效 Message。
+            unsafe { (*self.0.as_ptr()).next }
+        }
+
+        /// 通过 `Box::from_raw` 释放, 触发 Drop
+        pub fn free(self) {
+            // SAFETY: self 来自 `Box::into_raw`。
+            let _ = unsafe { Box::from_raw(self.0.as_ptr()) };
+        }
+    }
+}
+
+use raw::MessageRef;
+use crate::kernel::framework::racy_cell::RacyCell;
 
 pub struct DynIpcNamespace {
     pub pipes: Mutex<Vec<Pipe>>,
@@ -128,8 +164,8 @@ impl DynIpcNamespace {
         let mq = MsgQueue {
             id,
             owner: owner_pid,
-            head: core::ptr::null_mut(),
-            tail: core::ptr::null_mut(),
+            head: None,
+            tail: None,
             count: 0,
             max_msgs,
             max_size,
@@ -149,13 +185,15 @@ impl DynIpcNamespace {
         let mq = queues.remove(pos);
 
         let mut cur = mq.head;
-        while !cur.is_null() {
-            let next = unsafe { (*cur).next };
-            unsafe {
-                let layout = Layout::new::<Message>();
-                dealloc(cur as *mut u8, layout);
-            }
-            cur = next;
+        while let Some(msg_nn) = cur {
+            // SAFETY: msg_nn is a valid pointer from a Box<Message> allocated
+            // via Box::into_raw. The message linked list is only mutated while
+            // holding msg_queues lock.
+            let msg_ref = unsafe { MessageRef::from_non_null(msg_nn) };
+            cur = msg_ref.next();
+            // SAFETY: msg_nn was allocated by Box::into_raw; we re-create the
+            // Box here to drop it, freeing the memory.
+            msg_ref.free();
         }
 
         Ok(())
@@ -202,18 +240,24 @@ impl DynIpcNamespace {
     }
 }
 
-static mut DYN_IPC: Option<DynIpcNamespace> = None;
+/// 动态 IPC 命名空间全局实例
+///
+/// 使用 RacyCell 提供安全访问，替代 `static mut`。
+/// 在内核启动单线程阶段通过 `dyn_ipc_init()` 初始化，
+/// 之后只读访问，无需额外同步。
+static DYN_IPC: RacyCell<Option<DynIpcNamespace>> = RacyCell::new(None);
 
 fn dyn_ipc_init_impl() {
-    // SAFETY: single-threaded boot path; one-time initialization
-    unsafe {
-        DYN_IPC = Some(DynIpcNamespace::new());
-    }
+    // SAFETY: single-threaded boot path; one-time initialization.
+    // RacyCell::get_mut() is safe — callers guarantee exclusive access
+    // during boot before any concurrent access.
+    *DYN_IPC.get_mut() = Some(DynIpcNamespace::new());
 }
 
 pub fn get_dyn_ipc() -> &'static DynIpcNamespace {
-    // SAFETY: DYN_IPC is set by dyn_ipc_init before any concurrent access
-    unsafe { DYN_IPC.as_ref().expect("DynIpcNamespace not initialized") }
+    // SAFETY 集中在 framework::RacyCell::get_ref 内部;
+    // 调用方保证 DYN_IPC 在 dyn_ipc_init() 中初始化, 此后只读。
+    DYN_IPC.get_ref()
 }
 
 #[no_mangle]

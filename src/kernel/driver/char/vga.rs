@@ -25,7 +25,10 @@
 //! # Safety
 //! 此模块直接操作 VGA 显存和硬件端口。
 
-use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, Result};
+use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::iomem::IoMem;
+use crate::kernel::framework::ioport::IoPort;
+use crate::kernel::mm::PhysAddr;
 
 // ============================================================================
 // 硬件常量定义
@@ -80,6 +83,31 @@ pub enum Color {
 impl Default for Color {
     fn default() -> Self {
         Color::LightGrey
+    }
+}
+
+impl Color {
+    /// 从 u8 安全转换
+    pub fn from_u8(v: u8) -> Option<Self> {
+        Some(match v {
+            0 => Color::Black,
+            1 => Color::Blue,
+            2 => Color::Green,
+            3 => Color::Cyan,
+            4 => Color::Red,
+            5 => Color::Magenta,
+            6 => Color::Brown,
+            7 => Color::LightGrey,
+            8 => Color::DarkGrey,
+            9 => Color::LightBlue,
+            10 => Color::LightGreen,
+            11 => Color::LightCyan,
+            12 => Color::LightRed,
+            13 => Color::LightMagenta,
+            14 => Color::Yellow,
+            15 => Color::White,
+            _ => return None,
+        })
     }
 }
 
@@ -149,29 +177,15 @@ impl Default for VgaChar {
 }
 
 // ============================================================================
-// 底层 I/O 操作
-// ============================================================================
-
-/// 向指定端口写入字节
-#[inline(always)]
-unsafe fn outb(port: u16, value: u8) {
-    crate::arch!(outb(port, value));
-}
-
-/// 从指定端口读入字节
-#[inline(always)]
-unsafe fn inb(port: u16) -> u8 {
-    crate::arch!(inb(port))
-}
-
-// ============================================================================
 // VGA 驱动主结构
 // ============================================================================
 
 /// VGA 文本模式驱动
 pub struct VgaDriver {
-    /// 显存缓冲区指针
-    buffer: *mut VgaChar,
+    /// VGA 显存 MMIO 句柄 (safe access proxy)
+    iomem: Option<IoMem>,
+    /// VGA CRT 控制器端口
+    vga_port: Option<IoPort>,
     /// 当前光标位置 (列)
     cursor_x: usize,
     /// 当前光标位置 (行)
@@ -198,6 +212,20 @@ impl Driver for VgaDriver {
     }
 
     fn init(&mut self) -> Result<()> {
+        // 初始化 VGA 显存 IoMem
+        // SAFETY: 0xB8000 是 VGA 标准显存物理地址, 内核 identity-map 后可直接访问
+        self.iomem = Some(unsafe {
+            IoMem::new(PhysAddr(VGA_BUFFER_START as u64), VGA_BUFFER_SIZE, "vga-buffer")
+                .map_err(|_| DriverError::HardwareError)?
+        });
+
+        // 初始化 VGA CRT 控制器 IoPort
+        // SAFETY: 0x3D4-0x3D5 是标准 VGA CRT 控制器端口
+        self.vga_port = Some(unsafe {
+            IoPort::new(VGA_CTRL_REGISTER, 2, "vga-crt")
+                .map_err(|_| DriverError::HardwareError)?
+        });
+
         self.clear_screen();
         self.set_cursor(0, 0);
         #[cfg(target_arch = "x86_64")]
@@ -232,7 +260,8 @@ impl VgaDriver {
     /// 创建新的 VGA 驱动实例
     pub fn new() -> Self {
         Self {
-            buffer: VGA_BUFFER_START as *mut VgaChar,
+            iomem: None,
+            vga_port: None,
             cursor_x: 0,
             cursor_y: 0,
             attribute: TextAttribute::default(),
@@ -241,14 +270,35 @@ impl VgaDriver {
         }
     }
 
+    /// 获取显存缓冲区为 u16 切片 (只读)
+    fn buffer_slice(&self) -> &[u16] {
+        // SAFETY: IoMem 保证 0xB8000 开始的 VGA_BUFFER_SIZE 字节已正确映射
+        unsafe {
+            core::slice::from_raw_parts(
+                self.iomem.as_ref().unwrap().virt_ptr() as *const u16,
+                SCREEN_WIDTH * SCREEN_HEIGHT,
+            )
+        }
+    }
+
+    /// 获取显存缓冲区为 u16 切片 (可写)
+    fn buffer_slice_mut(&mut self) -> &mut [u16] {
+        // SAFETY: IoMem 保证 0xB8000 开始的 VGA_BUFFER_SIZE 字节已正确映射
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self.iomem.as_ref().unwrap().virt_ptr() as *mut u16,
+                SCREEN_WIDTH * SCREEN_HEIGHT,
+            )
+        }
+    }
+
     /// 清屏
     pub fn clear_screen(&mut self) {
-        let blank = VgaChar::new(b' ', self.attribute);
-
-        unsafe {
-            for i in 0..(SCREEN_WIDTH * SCREEN_HEIGHT) {
-                *self.buffer.add(i) = blank;
-            }
+        let attr = self.attribute.as_u8();
+        let buf = self.buffer_slice_mut();
+        let blank = ((attr as u16) << 8) | b' ' as u16;
+        for v in buf.iter_mut() {
+            *v = blank;
         }
 
         self.cursor_x = 0;
@@ -300,11 +350,8 @@ impl VgaDriver {
                 }
 
                 let idx = self.cursor_y * SCREEN_WIDTH + self.cursor_x;
-                let vga_char = VgaChar::new(ch, self.attribute);
-
-                unsafe {
-                    *self.buffer.add(idx) = vga_char;
-                }
+                let val = ((self.attribute.as_u8() as u16) << 8) | ch as u16;
+                self.buffer_slice_mut()[idx] = val;
 
                 self.cursor_x += 1;
                 if self.cursor_x >= SCREEN_WIDTH {
@@ -332,17 +379,17 @@ impl VgaDriver {
 
     /// 滚动屏幕 (向上滚动一行)
     pub fn scroll_up(&mut self) {
-        unsafe {
-            let src = self.buffer.add(SCREEN_WIDTH);
-            let dst = self.buffer;
-            let count = SCREEN_WIDTH * (SCREEN_HEIGHT - 1);
+        let attr = self.attribute.as_u8();
+        let buf = self.buffer_slice_mut();
+        let blank = ((attr as u16) << 8) | b' ' as u16;
 
-            core::ptr::copy(src, dst, count);
+        // Copy row 1..N to row 0..N-1
+        let count = SCREEN_WIDTH * (SCREEN_HEIGHT - 1);
+        buf.copy_within(SCREEN_WIDTH..SCREEN_WIDTH + count, 0);
 
-            let blank = VgaChar::new(b' ', self.attribute);
-            for i in 0..SCREEN_WIDTH {
-                *self.buffer.add(count + i) = blank;
-            }
+        // Clear last row
+        for v in &mut buf[count..count + SCREEN_WIDTH] {
+            *v = blank;
         }
 
         if self.cursor_y > 0 {
@@ -367,28 +414,24 @@ impl VgaDriver {
     #[cfg(target_arch = "x86_64")]
     fn update_hardware_cursor(&mut self) {
         let pos = (self.cursor_y * SCREEN_WIDTH + self.cursor_x) as u16;
+        let port = self.vga_port.as_ref().unwrap();
 
-        unsafe {
-            outb(VGA_CTRL_REGISTER, VGA_CURSOR_LOW);
-            outb(VGA_DATA_REGISTER, (pos & 0xFF) as u8);
-
-            outb(VGA_CTRL_REGISTER, VGA_CURSOR_HIGH);
-            outb(VGA_DATA_REGISTER, ((pos >> 8) & 0xFF) as u8);
-        }
+        port.write_u8(VGA_CURSOR_LOW as u16, (pos & 0xFF) as u8);
+        port.write_u8(VGA_CURSOR_HIGH as u16, ((pos >> 8) & 0xFF) as u8);
     }
 
     /// 启用/禁用光标
     #[cfg(target_arch = "x86_64")]
     pub fn enable_cursor(&mut self, enable: bool) {
-        unsafe {
-            outb(VGA_CTRL_REGISTER, 0x0A);
-            let cursor_start = inb(VGA_DATA_REGISTER);
+        let port = self.vga_port.as_ref().unwrap();
 
-            if enable {
-                outb(VGA_DATA_REGISTER, cursor_start & 0xC0);
-            } else {
-                outb(VGA_DATA_REGISTER, 0x20);
-            }
+        port.write_u8(0x0A, 0x0A); // 选择光标起始寄存器
+        let cursor_start = port.read_u8(0x0A);
+
+        if enable {
+            port.write_u8(0x0A, cursor_start & 0xC0);
+        } else {
+            port.write_u8(0x0A, 0x20);
         }
     }
 
@@ -399,11 +442,8 @@ impl VgaDriver {
         }
 
         let idx = y * SCREEN_WIDTH + x;
-        let vga_char = VgaChar::new(ch, self.attribute);
-
-        unsafe {
-            *self.buffer.add(idx) = vga_char;
-        }
+        let val = ((self.attribute.as_u8() as u16) << 8) | ch as u16;
+        self.buffer_slice_mut()[idx] = val;
     }
 
     /// 在指定位置写入字符串 (不移动光标)
@@ -423,7 +463,11 @@ impl VgaDriver {
         }
 
         let idx = y * SCREEN_WIDTH + x;
-        unsafe { Some(*self.buffer.add(idx)) }
+        let raw = self.buffer_slice()[idx];
+        Some(VgaChar {
+            character: (raw & 0xFF) as u8,
+            attribute: ((raw >> 8) & 0xFF) as u8,
+        })
     }
 
     /// 填充矩形区域
@@ -526,14 +570,8 @@ pub extern "C" fn vga_clear() {
 pub extern "C" fn vga_set_color(fg: u8, bg: u8) {
     unsafe {
         if let Some(ref mut vga) = VGA_DRIVER {
-            let fg_color = match fg {
-                0..=15 => unsafe { core::mem::transmute(fg) },
-                _ => Color::White,
-            };
-            let bg_color = match bg {
-                0..=15 => unsafe { core::mem::transmute(bg) },
-                _ => Color::Black,
-            };
+            let fg_color = Color::from_u8(fg).unwrap_or(Color::White);
+            let bg_color = Color::from_u8(bg).unwrap_or(Color::Black);
             vga.set_color(fg_color, bg_color);
         }
     }

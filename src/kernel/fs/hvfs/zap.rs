@@ -80,9 +80,7 @@ pub enum HvZapType {
     Leaf = 2,
 }
 
-// SAFETY: HvZap uses Mutex for entries and AtomicU64 for size. No UnsafeCell.
-unsafe impl Send for HvZap {}
-unsafe impl Sync for HvZap {}
+// SAFETY (Framekernel P2.2.2): HvZap 全部字段 (Mutex<T>, AtomicU64) 自动 Send + Sync。
 
 impl HvZap {
     pub fn new() -> Self {

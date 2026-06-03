@@ -38,7 +38,9 @@ pub use dp::{DpController, Dpcd, LaneCount, LinkRate, TrainingState};
 pub use controller::{DisplayController, DisplayManager, DisplayMode, DisplayOutput, MonitorInfo};
 
 use super::framework;
-use super::framework::Driver;
+use super::framework::{Driver, DriverError};
+use crate::kernel::framework::iomem::IoMem;
+use crate::kernel::mm::PhysAddr;
 
 struct DisplayDriver;
 
@@ -285,12 +287,18 @@ pub fn display_init() -> framework::Result<()> {
     FB_PHYS_ADDR.store(fb_addr, core::sync::atomic::Ordering::Release);
     FB_PHYS_SIZE.store(fb_size, core::sync::atomic::Ordering::Release);
 
-    let virt_addr = crate::kernel::mm::map_framebuffer(fb_addr, fb_size);
+    let _virt_addr = crate::kernel::mm::map_framebuffer(fb_addr, fb_size);
 
     let format = infer_pixel_format(bpp, 16, 8, 0);
 
+    // SAFETY: framebuffer physical address from bootloader, identity-mapped by map_framebuffer
+    let fb_iomem = unsafe {
+        IoMem::new(PhysAddr(fb_addr), fb_size as usize, "fb")
+            .map_err(|_| DriverError::HardwareError)?
+    };
+
     unsafe {
-        GLOBAL_FRAMEBUFFER = Some(Framebuffer::new(virt_addr, width, height, pitch, format));
+        GLOBAL_FRAMEBUFFER = Some(Framebuffer::new(fb_iomem, width, height, pitch, format));
 
         if let Some(ref mut fb) = GLOBAL_FRAMEBUFFER {
             let _ = fb.init();

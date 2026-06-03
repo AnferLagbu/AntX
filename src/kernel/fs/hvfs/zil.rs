@@ -220,9 +220,7 @@ pub struct HvZil {
     pub enabled: AtomicBool,
 }
 
-// SAFETY: HvZil uses Mutex for records/itxgs and Atomic types for state flags.
-unsafe impl Send for HvZil {}
-unsafe impl Sync for HvZil {}
+// SAFETY (Framekernel P2.2.2): HvZil 全部字段 (Mutex<T>, Atomic*) 自动 Send + Sync。
 
 impl HvZil {
     pub fn new() -> Self {

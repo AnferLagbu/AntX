@@ -34,6 +34,7 @@ use super::session::SESSION_MANAGER;
 use super::thread::THREAD_MANAGER;
 use super::types::*;
 use super::user_proc::{proc_alloc_pid, user_proc_clone, USER_PROC_MANAGER};
+use crate::kernel::lib::cstr::CStrExt;
 use crate::kernel::klog::klog_ffi_info;
 use crate::kernel::mm::api::{
     pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
@@ -41,10 +42,126 @@ use crate::kernel::mm::api::{
 };
 use crate::kernel::timer::timer_get_ticks;
 
+// === 特权层: 进程子系统裸指针/FFI 桥接集中地 ===
+//
+// 本子模块包含所有与 C ABI、裸指针 (进程表 entry) 以及 extern "C" FFI 交互
+// 的 `unsafe` 代码。本模块的其余部分 (`api.rs` 顶层) 保持 100% 安全 Rust,
+// 通过 `raw::*` 安全函数访问底层功能。
+pub(crate) mod raw {
+    use super::*;
+
+    /// 从裸指针读取 `&Process`。
+    ///
+    /// # Safety (内部)
+    /// - `ptr` 必须为非空, 指向有效 `Process` 实例
+    pub fn process_ref<'a>(ptr: *const Process) -> &'a Process {
+        // SAFETY: 调用方在 fork/exec 路径中保证 ptr 来自 PROCESS_TABLE
+        unsafe { &*ptr }
+    }
+
+    /// 从裸指针读取 `&mut Process`。
+    ///
+    /// # Safety (内部)
+    /// - `ptr` 必须为非空, 指向有效 `Process` 实例
+    /// - 同一时刻只能存在一个可变引用
+    pub fn process_ref_mut<'a>(ptr: *mut Process) -> &'a mut Process {
+        // SAFETY: 调用方在 fork 路径中保证 `&mut` 唯一性
+        unsafe { &mut *ptr }
+    }
+
+    /// 分配并构造一个 `Process` (用于 fork 创建子进程)。
+    ///
+    /// # Safety (内部)
+    /// - 调用方在 fork 错误路径中负责 `dealloc_process` 释放。
+    pub fn alloc_process(pid: u32, name: &str, parent: Option<ProcessId>) -> *mut Process {
+        // SAFETY: alloc/dealloc 配对, 见 dealloc_process。
+        unsafe {
+            let layout = alloc::alloc::Layout::new::<Process>();
+            let ptr = alloc::alloc::alloc(layout) as *mut Process;
+            core::ptr::write(ptr, Process::new(pid, name, parent));
+            ptr
+        }
+    }
+
+    /// 释放 `alloc_process` 分配的内存。
+    ///
+    /// # Safety (内部)
+    /// - `ptr` 必须由 `alloc_process` 产生且未被释放。
+    #[allow(dead_code)]
+    pub fn dealloc_process(ptr: *mut Process) {
+        if !ptr.is_null() {
+            // SAFETY: alloc/dealloc 配对。
+            unsafe {
+                let layout = alloc::alloc::Layout::new::<Process>();
+                alloc::alloc::dealloc(ptr as *mut u8, layout);
+            }
+        }
+    }
+
+    /// 从裸指针 (Box 所有权) 还原 Box 并 drop。
+    ///
+    /// # Safety (内部)
+    /// - `ptr` 必须由 `Box::into_raw` 产生且未被 drop。
+    pub fn drop_boxed_process(ptr: *mut Process) {
+        if !ptr.is_null() {
+            // SAFETY: Box 所有权还原。
+            unsafe { drop(alloc::boxed::Box::from_raw(ptr)) }
+        }
+    }
+
+    /// 复制父进程内核栈内容到子进程。
+    ///
+    /// # Safety (内部)
+    /// - `dst` 和 `src` 必须都是有效的、已映射的、可写的内核栈地址。
+    /// - 区间 `[src, src+size)` 与 `[dst, dst+size)` 不得重叠。
+    pub fn copy_kstack(dst: u64, src: u64, size: usize) {
+        // SAFETY: 调用方在 fork 路径中保证栈映射有效且区间不重叠。
+        unsafe { core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, size) }
+    }
+
+    /// 释放 `vmm_clone_user_page_table_cow` 产生的用户页表。
+    ///
+    /// # Safety (内部)
+    /// - `cr3` 必须为 `vmm_clone_user_page_table_cow` 返回的非零物理地址。
+    pub fn destroy_user_page_table(cr3: u64) {
+        // SAFETY: cr3 由 vmm_clone_user_page_table_cow 创建。
+        unsafe { vmm_destroy_page_table(cr3) }
+    }
+
+    /// 调用 `vmm_switch_page_table` (特权级页表切换)。
+    ///
+    /// # Safety (内部)
+    /// - `cr3` 必须为有效的已建立物理页表基址。
+    pub fn switch_page_table(cr3: u64) {
+        // SAFETY: cr3 是从 vmm_clone_user_page_table_cow / kernel_pml4 获取的合法值。
+        unsafe { vmm_switch_page_table(cr3) }
+    }
+
+    /// 调用 `vmm_clone_user_page_table_cow` (fork 路径, COW 共享页表)。
+    ///
+    /// # Safety (内部)
+    /// - `parent_cr3` 必须是有效的、已建立的用户页表基址 (由 process.cr3 提供)。
+    /// - 调用方在子进程使用完毕后, 通过 `destroy_user_page_table` 释放。
+    pub fn clone_user_page_table_cow(parent_cr3: u64) -> u64 {
+        // SAFETY: parent_cr3 来自 process.cr3, 已建立的页表。
+        unsafe { vmm_clone_user_page_table_cow(parent_cr3) }
+    }
+
+    /// 通过 FFI 输出 info 级别日志。
+    ///
+    /// # Safety (内部, 由本模块封闭)
+    /// - `msg` 必须为以 `\0` 结尾的有效 C 字符串。
+    pub fn klog_info(msg: &[u8]) {
+        // SAFETY: msg 来自上层调用, 上层 `api.rs` 中只传入静态字节串字面量。
+        unsafe { klog_ffi_info(msg.as_ptr()) }
+    }
+}
+
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
 static INIT_PROCESS_CREATED: AtomicU32 = AtomicU32::new(0);
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 struct CProcess {
     pid: u64,
     session_id: u64,
@@ -58,18 +175,26 @@ struct CProcess {
     time_slice: u64,
 }
 
-static mut C_CURRENT_PROCESS: CProcess = CProcess {
-    pid: 0,
-    session_id: 0,
-    parent_pid: 0,
-    pwm: 0,
-    state: 0,
-    exit_code: 0,
-    priority: 2,
-    cpu_time: 0,
-    start_time: 0,
-    time_slice: 10,
-};
+impl CProcess {
+    const fn zero() -> Self {
+        Self {
+            pid: 0,
+            session_id: 0,
+            parent_pid: 0,
+            pwm: 0,
+            state: 0,
+            exit_code: 0,
+            priority: 2,
+            cpu_time: 0,
+            start_time: 0,
+            time_slice: 10,
+        }
+    }
+}
+
+use crate::kernel::framework::racy_cell::RacyCell;
+
+static C_CURRENT_PROCESS: RacyCell<CProcess> = RacyCell::new(CProcess::zero());
 
 #[no_mangle]
 pub fn process_get_current() -> u64 {
@@ -86,19 +211,16 @@ pub fn process_get_current() -> u64 {
 
 fn create_init_process() {
     INIT_PROCESS_CREATED.store(1, Ordering::SeqCst);
-    unsafe {
-        C_CURRENT_PROCESS.pid = 1;
-        C_CURRENT_PROCESS.state = 2;
-        C_CURRENT_PROCESS.priority = 2;
-        C_CURRENT_PROCESS.time_slice = 10;
-
-        let msg = b"[PROC] Init process created (pid=1)";
-        unsafe {
-            klog_ffi_info(msg.as_ptr());
-        }
-    }
+    C_CURRENT_PROCESS.map_mut(|p| {
+        p.pid = 1;
+        p.state = 2;
+        p.priority = 2;
+        p.time_slice = 10;
+    });
+    // SAFETY: klog_ffi_info is unsafe extern "C". msg is a valid static byte slice.
+    raw::klog_info(b"[PROC] Init process created (pid=1)");
     CURRENT_PROCESS_PTR.store(
-        unsafe { &C_CURRENT_PROCESS as *const CProcess as u64 },
+        C_CURRENT_PROCESS.as_ptr() as u64,
         Ordering::SeqCst,
     );
 }
@@ -108,10 +230,14 @@ pub fn update_current_process_ptr(ptr: u64) {
     CURRENT_PROCESS_PTR.store(ptr, Ordering::SeqCst);
     if ptr != 0 {
         let proc_ptr = ptr as *const Process;
-        unsafe {
-            C_CURRENT_PROCESS.pid = (*proc_ptr).pid.0 as u64;
-            C_CURRENT_PROCESS.pwm = (*proc_ptr).get_pwm();
-        }
+        // SAFETY: proc_ptr is a valid Process pointer from the process table.
+        let proc = raw::process_ref(proc_ptr);
+        let pwm_val = proc.get_pwm();
+        let pid_val = proc.pid.0 as u64;
+        C_CURRENT_PROCESS.map_mut(|p| {
+            p.pid = pid_val;
+            p.pwm = pwm_val;
+        });
     }
 }
 
@@ -122,12 +248,10 @@ pub fn process_get_current_pid() -> u32 {
 
 #[no_mangle]
 pub fn process_get_by_pid(_pid: u32) -> u64 {
-    unsafe {
-        if _pid as u64 == C_CURRENT_PROCESS.pid {
-            &C_CURRENT_PROCESS as *const CProcess as u64
-        } else {
-            PROCESS_TABLE.get(_pid).map(|p| p as u64).unwrap_or(0)
-        }
+    if _pid as u64 == C_CURRENT_PROCESS.map(|p| p.pid) {
+        C_CURRENT_PROCESS.as_ptr() as u64
+    } else {
+        PROCESS_TABLE.get(_pid).map(|p| p as u64).unwrap_or(0)
     }
 }
 
@@ -137,14 +261,7 @@ pub fn process_get_current_pwm() -> u64 {
     if pid == 0 {
         return 0;
     }
-    if let Some(proc) = PROCESS_TABLE.get(pid) {
-        // SAFETY: proc is a valid pointer obtained from PROCESS_TABLE.get()
-        // which returns pointers to live Process entries. get_pwm() is an
-        // AtomicU64 load — no mutable aliasing issue.
-        unsafe { (*proc).get_pwm() }
-    } else {
-        0
-    }
+    PROCESS_TABLE.with_process(pid, |p| p.get_pwm()).unwrap_or(0)
 }
 
 #[no_mangle]
@@ -152,14 +269,7 @@ pub fn process_get_pwm_by_pid(pid: u32) -> u64 {
     if pid == 0 {
         return 0;
     }
-    if let Some(proc) = PROCESS_TABLE.get(pid) {
-        // SAFETY: proc is a valid pointer from PROCESS_TABLE. Each Process
-        // lives for the entire lifetime of the table entry. get_pwm() reads
-        // an AtomicU64, which is safe to dereference concurrently.
-        unsafe { (*proc).get_pwm() }
-    } else {
-        0
-    }
+    PROCESS_TABLE.with_process(pid, |p| p.get_pwm()).unwrap_or(0)
 }
 
 #[no_mangle]
@@ -173,9 +283,8 @@ pub fn process_exit(exit_code: u32) {
     if current_pid != 0 {
         let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
         if kernel_cr3 != 0 {
-            unsafe {
-                vmm_switch_page_table(kernel_cr3);
-            }
+            // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
+            raw::switch_page_table(kernel_cr3);
         }
         USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
     }
@@ -184,24 +293,25 @@ pub fn process_exit(exit_code: u32) {
 
 #[no_mangle]
 pub fn process_kill(pid: u32, exit_code: u32) {
-    // ✅ 修复: 杀指定 PID, 而非当前进程
     if pid == 0 {
         return;
     }
 
-    if let Some(proc) = PROCESS_TABLE.get(pid) {
-        unsafe {
-            let state = (*proc).get_state();
+    let should_kill = PROCESS_TABLE
+        .with_process(pid, |proc| {
+            let state = proc.get_state();
             if state == ProcessState::Zombie || state == ProcessState::Terminated {
-                return; // already dead
+                false
+            } else {
+                proc.exit_code.store(exit_code, Ordering::SeqCst);
+                let _ = proc.set_state_safe(ProcessState::Zombie);
+                true
             }
-            (*proc).exit_code.store(exit_code, Ordering::SeqCst);
-            let _ = (*proc).set_state_safe(ProcessState::Zombie);
-        }
+        })
+        .unwrap_or(false);
 
-        // 如果目标正在阻塞, 唤醒它使其能立即调度到并退出
+    if should_kill {
         SCHEDULER.unblock(pid);
-        // 触发重新调度
         SCHEDULER.set_need_reschedule();
     }
 }
@@ -275,8 +385,8 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let mut st: crate::kernel::fs::vfs::types::VfsStat = unsafe { core::mem::zeroed() };
-    let stat_result = unsafe { crate::kernel::fs::vfs::api::vfs_stat(path, &mut st, pwm) };
+    let mut st: crate::kernel::fs::vfs::types::VfsStat = crate::kernel::fs::vfs::types::VfsStat::default();
+    let stat_result = crate::kernel::fs::vfs::api::vfs_stat(path, &mut st, pwm);
     if stat_result < 0 {
         return -1;
     }
@@ -286,23 +396,22 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let fd = unsafe { crate::kernel::fs::vfs::api::vfs_open(path, 0, pwm) };
+    let fd = crate::kernel::fs::vfs::api::vfs_open(path, 0, pwm);
     if fd < 0 {
         return -1;
     }
 
     let pages = file_size.div_ceil(4096u64) as usize;
-    let buffer = unsafe { pmm_alloc_pages(pages) };
+    let buffer = pmm_alloc_pages(pages);
     if buffer.is_null() {
-        unsafe { crate::kernel::fs::vfs::api::vfs_close(fd as u32) };
+        crate::kernel::fs::vfs::api::vfs_close(fd as u32);
         return -1;
     }
 
-    let bytes_read = unsafe {
-        crate::kernel::fs::vfs::api::vfs_read(fd as u32, buffer as *mut u8, file_size as u32)
-    };
+    let bytes_read =
+        crate::kernel::fs::vfs::api::vfs_read(fd as u32, buffer as *mut u8, file_size as u32);
 
-    unsafe { crate::kernel::fs::vfs::api::vfs_close(fd as u32) };
+    crate::kernel::fs::vfs::api::vfs_close(fd as u32);
 
     if bytes_read <= 0 {
         pmm_free_pages(buffer, pages);
@@ -355,13 +464,28 @@ pub unsafe fn user_proc_setup_argv(
 
 #[no_mangle]
 pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
+    let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER
+        .with_process(pid, |proc| {
+            (
+                proc.pid as u64,
+                proc.pwm.load(Ordering::SeqCst),
+                proc.state.load(Ordering::SeqCst),
+            )
+        })
+        .unwrap_or((0, 0, 0));
+
+    if pid_val == 0 {
+        return -1;
+    }
+
+    C_CURRENT_PROCESS.map_mut(|p| {
+        p.pid = pid_val;
+        p.pwm = pwm_val;
+        p.state = state_val;
+        p.parent_pid = 1;
+    });
+
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
-        unsafe {
-            C_CURRENT_PROCESS.pid = (*proc).pid as u64;
-            C_CURRENT_PROCESS.pwm = (*proc).pwm.load(Ordering::SeqCst);
-            C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
-            C_CURRENT_PROCESS.parent_pid = 1;
-        }
         USER_PROC_MANAGER.enter(proc);
         0
     } else {
@@ -377,7 +501,7 @@ pub fn launch_first_user_process() -> ! {
     let bin = include_bytes!("../../../build/user/init.bin");
 
     #[cfg(target_arch = "x86_64")]
-    unsafe {
+    {
         let bin_ptr = bin.as_ptr();
         let bin_size = bin.len() as u64;
 
@@ -394,10 +518,12 @@ pub fn launch_first_user_process() -> ! {
 
         let pid_u32 = pid as u32;
 
-        C_CURRENT_PROCESS.pid = pid_u32 as u64;
-        C_CURRENT_PROCESS.pwm = 0;
-        C_CURRENT_PROCESS.state = 2;
-        C_CURRENT_PROCESS.parent_pid = 1;
+        C_CURRENT_PROCESS.map_mut(|p| {
+            p.pid = pid_u32 as u64;
+            p.pwm = 0;
+            p.state = 2;
+            p.parent_pid = 1;
+        });
 
         SCHEDULER.add(pid_u32);
 
@@ -406,7 +532,7 @@ pub fn launch_first_user_process() -> ! {
     }
 
     #[cfg(target_arch = "aarch64")]
-    unsafe {
+    {
         // On aarch64, init.bin is an AArch64 ELF binary built from src/user/
         let bin = include_bytes!("../../../build/user/init.bin");
         let bin_ptr = bin.as_ptr();
@@ -429,10 +555,12 @@ pub fn launch_first_user_process() -> ! {
 
         let pid_u32 = pid as u32;
 
-        C_CURRENT_PROCESS.pid = pid_u32 as u64;
-        C_CURRENT_PROCESS.pwm = 0;
-        C_CURRENT_PROCESS.state = 2;
-        C_CURRENT_PROCESS.parent_pid = 1;
+        C_CURRENT_PROCESS.map_mut(|p| {
+            p.pid = pid_u32 as u64;
+            p.pwm = 0;
+            p.state = 2;
+            p.parent_pid = 1;
+        });
 
         SCHEDULER.add(pid_u32);
 
@@ -470,16 +598,9 @@ pub fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
         return 0;
     }
 
-    let name_str = unsafe {
-        const MAX_NAME_LEN: usize = 256;
-        let len = (0..MAX_NAME_LEN)
-            .find(|&i| *name.add(i) == 0)
-            .unwrap_or(MAX_NAME_LEN);
-        let slice = core::slice::from_raw_parts(name as *const u8, len);
-        match core::str::from_utf8(slice) {
-            Ok(s) => s,
-            Err(_) => return 0,
-        }
+    let name_str = match name.as_kstr_opt() {
+        Some(s) if !s.is_empty() => s,
+        _ => return 0,
     };
 
     let parent = if parent_pid == 0 {
@@ -493,12 +614,9 @@ pub fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
 
 #[no_mangle]
 pub fn scheduler_get_current_pwm() -> u64 {
-    if let Some(pid) = SCHEDULER.current() {
-        if let Some(process) = PROCESS_TABLE.get(pid) {
-            return unsafe { (*process).get_pwm() };
-        }
-    }
-    0
+    SCHEDULER.current()
+        .and_then(|pid| PROCESS_TABLE.with_process(pid, |p| p.get_pwm()))
+        .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -544,12 +662,10 @@ pub fn proc_unblock(pid: Pid) {
 
 #[no_mangle]
 pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
-    use super::process::PROCESS_TABLE;
-
-    if let Some(process) = PROCESS_TABLE.get(pid) {
-        unsafe {
-            (*process).set_priority(ProcessPriority::from_u32(priority));
-        }
+    if PROCESS_TABLE.with_process(pid, |p| {
+        p.set_priority(ProcessPriority::from_u32(priority));
+    }).is_some()
+    {
         0
     } else {
         -1
@@ -558,13 +674,8 @@ pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
 
 #[no_mangle]
 pub fn proc_get_state(pid: Pid) -> u32 {
-    use super::process::PROCESS_TABLE;
-
-    if let Some(process) = PROCESS_TABLE.get(pid) {
-        unsafe { (*process).get_state() as u32 }
-    } else {
-        ProcessState::Terminated as u32
-    }
+    PROCESS_TABLE.with_process(pid, |p| p.get_state() as u32)
+        .unwrap_or(ProcessState::Terminated as u32)
 }
 
 #[no_mangle]
@@ -603,17 +714,8 @@ pub fn sched_get_current() -> Pid {
 
 #[no_mangle]
 pub fn proc_get_exit_code(pid: Pid) -> i32 {
-    use super::process::PROCESS_TABLE;
-
-    if let Some(process) = PROCESS_TABLE.get(pid) {
-        unsafe {
-            (*process)
-                .exit_code
-                .load(core::sync::atomic::Ordering::SeqCst) as i32
-        }
-    } else {
-        -1
-    }
+    PROCESS_TABLE.with_process(pid, |p| p.exit_code.load(Ordering::SeqCst) as i32)
+        .unwrap_or(-1)
 }
 
 #[no_mangle]
@@ -685,6 +787,7 @@ pub fn proc_create_user(
 
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     let name_str = unsafe {
+        // SAFETY: path is non-null C string from caller (C ABI contract).
         let cstr = core::ffi::CStr::from_ptr(path as *const core::ffi::c_char);
         cstr.to_str().unwrap_or("user")
     };
@@ -706,29 +809,24 @@ pub fn proc_create_user(
 
     // Create session for the new user process
     if let Some(sid) = SESSION_MANAGER.create(pwm) {
-        if let Some(proc) = PROCESS_TABLE.get(child_pid) {
-            unsafe {
-                (*proc).session_id.store(sid, Ordering::SeqCst);
-            }
-        }
+        PROCESS_TABLE.with_process(child_pid, |proc| {
+            proc.session_id.store(sid, Ordering::SeqCst);
+        });
     }
 
     // Initialize per-process fd_table
-    if let Some(proc) = PROCESS_TABLE.get(child_pid) {
-        unsafe {
-            (*proc).fd_table.init();
-        }
-    }
+    PROCESS_TABLE.with_process(child_pid, |proc| {
+        proc.fd_table.init();
+    });
 
     let load_result = user_proc_load_elf(path, pwm);
     if load_result < 0 {
         let pid = child_pid;
-        // 保存 session_id 在释放之前
         let sid = PROCESS_TABLE
-            .get(pid)
-            .map(|p| unsafe { (*p).session_id.load(Ordering::SeqCst) });
+            .with_process(pid, |p| p.session_id.load(Ordering::SeqCst))
+            .filter(|&s| s != 0);
         PROCESS_TABLE.remove_and_free(pid);
-        if let Some(sid) = sid.filter(|&s| s != 0) {
+        if let Some(sid) = sid {
             SESSION_MANAGER.destroy(sid);
         }
         USER_PROC_MANAGER.destroy_by_pid(pid);
@@ -758,9 +856,8 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
 
     let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
     if kernel_cr3 != 0 {
-        unsafe {
-            vmm_switch_page_table(kernel_cr3);
-        }
+        // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
+        raw::switch_page_table(kernel_cr3);
     }
     USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
     PROCESS_TABLE.remove_and_free(current_pid);
@@ -775,17 +872,27 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
 
     if !argv.is_null() && argc > 0 {
         let envp: *const *const u8 = core::ptr::null();
+        // SAFETY: argv 来自 C ABI 调用方, 由本函数 C ABI contract 保证。
         unsafe {
             user_proc_setup_argv(new_pid_u32, argv, argc, envp, 0);
         }
     }
 
-    if let Some(proc) = USER_PROC_MANAGER.get(new_pid_u32) {
-        unsafe {
-            C_CURRENT_PROCESS.pid = (*proc).pid as u64;
-            C_CURRENT_PROCESS.pwm = (*proc).pwm.load(Ordering::SeqCst);
-            C_CURRENT_PROCESS.state = (*proc).state.load(Ordering::SeqCst);
-        }
+    if USER_PROC_MANAGER.get(new_pid_u32).is_some() {
+        let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER
+            .with_process(new_pid_u32, |proc| {
+                (
+                    proc.pid as u64,
+                    proc.pwm.load(Ordering::SeqCst),
+                    proc.state.load(Ordering::SeqCst),
+                )
+            })
+            .unwrap_or((0, 0, 0));
+        C_CURRENT_PROCESS.map_mut(|p| {
+            p.pid = pid_val;
+            p.pwm = pwm_val;
+            p.state = state_val;
+        });
     }
 
     user_proc_enter_by_pid(new_pid_u32);
@@ -803,13 +910,21 @@ pub fn proc_wait_child(pid: Pid) -> i32 {
         return -1;
     }
 
-    let process = unsafe { &*proc.unwrap() };
-    let state = process.get_state();
+    let (state, code) = PROCESS_TABLE
+        .with_process(pid, |process| {
+            let state = process.get_state();
+            if state == ProcessState::Zombie {
+                let code = process.exit_code.load(Ordering::SeqCst) as i32;
+                (state, Some(code))
+            } else {
+                (state, None)
+            }
+        })
+        .unwrap_or((ProcessState::Terminated, None));
+
     if state == ProcessState::Zombie {
-        let code = process.exit_code.load(Ordering::SeqCst) as i32;
-        // ✅ 修复内存泄漏: 回收 Zombie 子进程 PCB
         PROCESS_TABLE.remove_and_free(pid);
-        return code;
+        return code.unwrap_or(-1);
     }
 
     SCHEDULER.block(BlockReason::WaitingForChild);
@@ -839,11 +954,9 @@ pub fn proc_sleep_ms(ms: u64) {
     let wakeup_at = current_ticks + ticks_to_sleep;
 
     // 设置 sleep_until 并阻塞进程
-    if let Some(proc) = PROCESS_TABLE.get(pid) {
-        unsafe {
-            (*proc).sleep_until.store(wakeup_at, Ordering::SeqCst);
-        }
-    }
+    PROCESS_TABLE.with_process(pid, |proc| {
+        proc.sleep_until.store(wakeup_at, Ordering::SeqCst);
+    });
 
     SCHEDULER.block(BlockReason::Sleeping);
     SCHEDULER.schedule();
@@ -857,101 +970,97 @@ pub fn proc_sleep_ms(ms: u64) {
 pub fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     if parent_pid == 0 {
-        unsafe {
-            klog_ffi_info(b"[FORK] No current process\n\0".as_ptr());
-        }
+        // SAFETY: klog_ffi_info is unsafe extern "C". msg is a valid static byte slice.
+        raw::klog_info(b"[FORK] No current process\n\0");
         return 0;
     }
 
-    let parent_ptr = match PROCESS_TABLE.get(parent_pid) {
-        Some(p) => p,
-        None => {
-            return 0;
-        }
-    };
-
-    let parent = unsafe { &*parent_ptr };
-
     // COW: 共享物理页, 双方标记只读
-    let parent_cr3 = parent.cr3.load(Ordering::SeqCst);
-    let child_cr3 = unsafe { vmm_clone_user_page_table_cow(parent_cr3) };
+    let parent_cr3 = PROCESS_TABLE
+        .with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst))
+        .unwrap_or(0);
+    if parent_cr3 == 0 {
+        return 0;
+    }
+
+    // SAFETY: parent_cr3 来自 process.cr3, 已被 vmm_clone_user_page_table_cow 接受。
+    let child_cr3 = raw::clone_user_page_table_cow(parent_cr3);
     if child_cr3 == 0 {
-        unsafe {
-            klog_ffi_info(b"[FORK] COW page table clone failed\n\0".as_ptr());
-        }
+        // SAFETY: klog_ffi_info is unsafe extern "C".
+        raw::klog_info(b"[FORK] COW page table clone failed\n\0");
         return 0;
     }
 
     // Allocate child PID
     let child_pid = proc_alloc_pid();
     if child_pid == 0 {
-        unsafe {
-            vmm_destroy_page_table(child_cr3);
-        }
+        // SAFETY: child_cr3 来自 vmm_clone_user_page_table_cow 成功返回。
+        raw::destroy_user_page_table(child_cr3);
         return 0;
     }
 
     // Clone parent name
-    let parent_name = unsafe { parent.name.lock() };
-    let name_str = alloc::string::String::clone(&*parent_name);
-    drop(parent_name);
+    let name_str = PROCESS_TABLE
+        .with_process(parent_pid, |p| {
+            let name = p.name.lock();
+            alloc::string::String::clone(&*name)
+        })
+        .unwrap_or_default();
     let name_ref = name_str.as_str();
 
     // Create child Process
-    let child = unsafe {
-        let layout = alloc::alloc::Layout::new::<Process>();
-        let ptr = alloc::alloc::alloc(layout) as *mut Process;
-        core::ptr::write(
-            ptr,
-            Process::new(child_pid, name_ref, Some(ProcessId(parent_pid))),
-        );
-        &mut *ptr
-    };
+    // SAFETY: alloc_process 拥有 child 内存的所有权; 错误路径由 dealloc/drop 释放。
+    let child_ptr = raw::alloc_process(child_pid, name_ref, Some(ProcessId(parent_pid)));
+    let child = raw::process_ref_mut(child_ptr);
 
-    // Copy remaining parent properties
-    child
-        .pwm
-        .store(parent.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
+    // Copy parent properties to child
+    let (parent_pwm, parent_sched_policy, parent_rt_priority) = PROCESS_TABLE
+        .with_process(parent_pid, |p| {
+            (
+                p.pwm.load(Ordering::SeqCst),
+                p.sched_policy.load(Ordering::SeqCst),
+                p.rt_priority.load(Ordering::SeqCst),
+            )
+        })
+        .unwrap_or((0, 0, 0));
+    child.pwm.store(parent_pwm, Ordering::SeqCst);
     child.cr3.store(child_cr3, Ordering::SeqCst);
-    child
-        .sched_policy
-        .store(parent.sched_policy.load(Ordering::SeqCst), Ordering::SeqCst);
-    child
-        .rt_priority
-        .store(parent.rt_priority.load(Ordering::SeqCst), Ordering::SeqCst);
+    child.sched_policy.store(parent_sched_policy, Ordering::SeqCst);
+    child.rt_priority.store(parent_rt_priority, Ordering::SeqCst);
 
     // Add child to parent's children list
-    parent.children.lock().push(ProcessId(child_pid));
+    PROCESS_TABLE.with_process(parent_pid, |p| {
+        p.children.lock().push(ProcessId(child_pid));
+    });
 
     // Allocate kernel stack for child
     if !child.allocate_kernel_stack() {
-        unsafe {
-            drop(alloc::boxed::Box::from_raw(child as *mut Process));
-            vmm_destroy_page_table(child_cr3);
-        }
+        // SAFETY: child_ptr 来自 alloc_process, 需要释放。
+        raw::drop_boxed_process(child_ptr);
+        // SAFETY: child_cr3 来自 vmm_clone_user_page_table_cow 成功返回。
+        raw::destroy_user_page_table(child_cr3);
         return 0;
     }
 
     // Copy parent's kernel stack contents to child's kernel stack
     {
-        let parent_kstack = parent.kernel_stack.load(Ordering::SeqCst);
+        let parent_kstack = PROCESS_TABLE
+            .with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
+            .unwrap_or(0);
         let child_kstack = child.kernel_stack.load(Ordering::SeqCst);
         let stack_size: usize = 65536;
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                parent_kstack as *const u8,
-                child_kstack as *mut u8,
-                stack_size,
-            );
-        }
+        // SAFETY: parent_kstack 与 child_kstack 都是已分配的内核栈, 区间不重叠。
+        raw::copy_kstack(child_kstack, parent_kstack, stack_size);
         crate::kernel::proc::process::kernel_stack_write_canary(child_kstack);
     }
 
     // Copy parent's ProcessContext to child's, but set RAX=0 for child
+    let parent_ctx = PROCESS_TABLE
+        .with_process(parent_pid, |p| *p.context.lock())
+        .unwrap();
     {
-        let parent_ctx = parent.context.lock();
         let mut child_ctx = child.context.lock();
-        *child_ctx = *parent_ctx;
+        *child_ctx = parent_ctx;
         child_ctx.cr3 = child_cr3;
         child_ctx.rax = 0;
     }
@@ -969,7 +1078,7 @@ pub fn sys_fork() -> Pid {
     }
 
     // Add child to scheduler
-    let _ = unsafe { (*child).set_state_safe(ProcessState::Ready) };
+    let _ = child.set_state_safe(ProcessState::Ready);
     SCHEDULER.add_to_run_queue(child_pid);
 
     child_pid
@@ -977,21 +1086,13 @@ pub fn sys_fork() -> Pid {
 
 #[no_mangle]
 pub fn proc_get_ppid(pid: Pid) -> Pid {
-    let proc = PROCESS_TABLE.get(pid);
-    if let Some(p) = proc {
-        unsafe { (*p).parent.map(|p| p.0).unwrap_or(0) }
-    } else {
-        0
-    }
+    PROCESS_TABLE.with_process(pid, |p| p.parent.map(|p| p.0).unwrap_or(0))
+        .unwrap_or(0)
 }
 
 #[no_mangle]
 pub fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
-    let proc = PROCESS_TABLE.get(pid);
-    if let Some(p) = proc {
-        unsafe {
-            (*p).pwm.store(pwm, Ordering::SeqCst);
-        }
+    if PROCESS_TABLE.with_process(pid, |p| p.pwm.store(pwm, Ordering::SeqCst)).is_some() {
         0
     } else {
         -1

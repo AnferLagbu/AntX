@@ -40,7 +40,8 @@ pub mod blk;
 pub mod net;
 pub mod queue;
 
-use crate::kernel::mm::KERNEL_BASE;
+use crate::kernel::framework::iomem::IoMem;
+use crate::kernel::mm::PhysAddr;
 use crate::klog_info;
 use crate::klog_warn;
 
@@ -105,10 +106,9 @@ pub const VIRTIO_MMIO_MAX_DEVICES: u32 = 32;
 pub const VIRTIO_F_VERSION_1: u64 = 1 << 32;
 
 /// A discovered virtio device via MMIO transport.
-#[derive(Clone, Copy)]
 pub struct VirtioMmioDevice {
-    /// Base MMIO address of this device's register space.
-    pub mmio_base: u64,
+    /// MMIO region handle (safe access proxy).
+    pub iomem: IoMem,
     /// Device ID (e.g. 2 for block device).
     pub device_id: u32,
     /// Number of virtqueues the device supports.
@@ -119,57 +119,54 @@ pub struct VirtioMmioDevice {
 impl VirtioMmioDevice {
     /// Read a 32-bit register from the device's MMIO space.
     #[inline(always)]
-    unsafe fn read32(&self, offset: usize) -> u32 {
-        let addr = (self.mmio_base + KERNEL_BASE + offset as u64) as *const u32;
-        core::ptr::read_volatile(addr)
+    fn read32(&self, offset: usize) -> u32 {
+        self.iomem.read_u32(offset)
     }
 
     /// Write a 32-bit register to the device's MMIO space.
     #[inline(always)]
-    unsafe fn write32(&self, offset: usize, val: u32) {
-        let addr = (self.mmio_base + KERNEL_BASE + offset as u64) as *mut u32;
-        core::ptr::write_volatile(addr, val);
+    fn write32(&self, offset: usize, val: u32) {
+        self.iomem.write_u32(offset, val);
     }
 
     /// Read a 64-bit value split across Low/High registers.
-    unsafe fn read64(&self, low_off: usize, high_off: usize) -> u64 {
+    fn read64(&self, low_off: usize, high_off: usize) -> u64 {
         let lo = self.read32(low_off) as u64;
         let hi = self.read32(high_off) as u64;
         lo | (hi << 32)
     }
 
     /// Write a 64-bit value split across Low/High registers.
-    unsafe fn write64(&self, low_off: usize, high_off: usize, val: u64) {
+    fn write64(&self, low_off: usize, high_off: usize, val: u64) {
         self.write32(low_off, (val & 0xFFFF_FFFF) as u32);
         self.write32(high_off, (val >> 32) as u32);
     }
 
     /// Probe whether the device at the given MMIO base is a valid virtio device.
     pub fn probe(mmio_base: u64) -> Option<Self> {
-        // Create a temporary device for register access
-        let dev = VirtioMmioDevice {
-            mmio_base,
-            device_id: 0,
-            queue_count: 0,
+        // Create IoMem for the MMIO region (0x200 per device)
+        let iomem = match IoMem::from_pci_bar(PhysAddr::new(mmio_base), 0x200, "virtio-mmio") {
+            Ok(m) => m,
+            Err(_) => return None,
         };
 
-        let magic = unsafe { dev.read32(MAGIC_VALUE) };
+        let magic = iomem.read_u32(MAGIC_VALUE);
         if magic != VIRTIO_MAGIC {
             return None;
         }
 
-        let version = unsafe { dev.read32(VERSION) };
+        let version = iomem.read_u32(VERSION);
         // QEMU virt uses VirtIO 1.0 (version 2) or transitional (version 1)
         if version != 1 && version != 2 {
             return None;
         }
 
-        let device_id = unsafe { dev.read32(DEVICE_ID) };
+        let device_id = iomem.read_u32(DEVICE_ID);
         if device_id == 0 {
             return None; // No device attached to this slot
         }
 
-        let vendor_id = unsafe { dev.read32(VENDOR_ID) };
+        let vendor_id = iomem.read_u32(VENDOR_ID);
 
         klog_info!(
             Driver,
@@ -182,7 +179,7 @@ impl VirtioMmioDevice {
         let queue_count = if device_id == VIRTIO_ID_BLOCK { 1 } else { 2 };
 
         Some(VirtioMmioDevice {
-            mmio_base,
+            iomem,
             device_id,
             queue_count,
         })
@@ -194,155 +191,143 @@ impl VirtioMmioDevice {
     /// 3. Negotiate features
     /// 4. Set DRIVER_OK
     pub fn init(&self) -> Result<(), ()> {
-        unsafe {
-            // Step 1: Reset
-            self.write32(STATUS, 0);
-            // Ensure device observes reset
-            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+        // Step 1: Reset
+        self.write32(STATUS, 0);
+        // Ensure device observes reset
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
-            // Step 2: ACKNOWLEDGE
-            self.write32(STATUS, STATUS_ACKNOWLEDGE);
+        // Step 2: ACKNOWLEDGE
+        self.write32(STATUS, STATUS_ACKNOWLEDGE);
 
-            // Step 3: DRIVER
-            self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
+        // Step 3: DRIVER
+        self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
 
-            // Step 4: Feature negotiation
-            // Read device features
-            self.write32(DEVICE_FEATURES_SEL, 0);
-            let _dev_features_lo = self.read32(DEVICE_FEATURES);
-            self.write32(DEVICE_FEATURES_SEL, 1);
-            let _dev_features_hi = self.read32(DEVICE_FEATURES);
+        // Step 4: Feature negotiation
+        // Read device features
+        self.write32(DEVICE_FEATURES_SEL, 0);
+        let _dev_features_lo = self.read32(DEVICE_FEATURES);
+        self.write32(DEVICE_FEATURES_SEL, 1);
+        let _dev_features_hi = self.read32(DEVICE_FEATURES);
 
-            // Acknowledge VIRTIO_F_VERSION_1
-            self.write32(DRIVER_FEATURES_SEL, 1);
-            self.write32(DRIVER_FEATURES, (VIRTIO_F_VERSION_1 >> 32) as u32);
-            self.write32(DRIVER_FEATURES_SEL, 0);
-            self.write32(DRIVER_FEATURES, 0);
+        // Acknowledge VIRTIO_F_VERSION_1
+        self.write32(DRIVER_FEATURES_SEL, 1);
+        self.write32(DRIVER_FEATURES, (VIRTIO_F_VERSION_1 >> 32) as u32);
+        self.write32(DRIVER_FEATURES_SEL, 0);
+        self.write32(DRIVER_FEATURES, 0);
 
-            // Step 5: FEATURES_OK
-            self.write32(
-                STATUS,
-                STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK,
+        // Step 5: FEATURES_OK
+        self.write32(
+            STATUS,
+            STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK,
+        );
+
+        // Verify FEATURES_OK was accepted
+        let status = self.read32(STATUS);
+        if status & STATUS_FEATURES_OK == 0 {
+            klog_warn!(
+                Driver,
+                "virtio: FEATURES_OK rejected at {:#x}",
+                self.iomem.phys().as_u64()
             );
-
-            // Verify FEATURES_OK was accepted
-            let status = self.read32(STATUS);
-            if status & STATUS_FEATURES_OK == 0 {
-                klog_warn!(
-                    Driver,
-                    "virtio: FEATURES_OK rejected at {:#x}",
-                    self.mmio_base
-                );
-                return Err(());
-            }
-
-            // Step 6: DRIVER_OK (final step - device is live)
-            // Moved to set_driver_ok() — caller must call it after queue setup.
-            Ok(())
+            return Err(());
         }
+
+        Ok(())
     }
 
     /// Set DRIVER_OK (device goes live). Must be called after all virtqueues are configured.
     pub fn set_driver_ok(&self) {
-        unsafe {
-            self.write32(
-                STATUS,
-                STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK,
-            );
-        }
+        self.write32(
+            STATUS,
+            STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK,
+        );
     }
 
     /// Configure a virtqueue on this device.
     pub fn setup_vq(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
-        unsafe {
-            // Select the virtqueue
-            self.write32(QUEUE_SEL, vq_index as u32);
+        // Select the virtqueue
+        self.write32(QUEUE_SEL, vq_index as u32);
 
-            // Check max queue size
-            let max_size = self.read32(QUEUE_NUM_MAX);
-            if vq.queue_size as u32 > max_size {
-                klog_warn!(
-                    Driver,
-                    "virtio: queue size {} exceeds max {}",
-                    vq.queue_size,
-                    max_size
-                );
-            }
-            klog_info!(Driver, "virtio: vq{} max_size={}", vq_index, max_size);
-
-            // Set queue size
-            self.write32(QUEUE_NUM, vq.queue_size as u32);
-            klog_info!(
+        // Check max queue size
+        let max_size = self.read32(QUEUE_NUM_MAX);
+        if vq.queue_size as u32 > max_size {
+            klog_warn!(
                 Driver,
-                "virtio: vq{} QUEUE_NUM set, writing desc={:#x}",
-                vq_index,
-                vq.desc_paddr()
+                "virtio: queue size {} exceeds max {}",
+                vq.queue_size,
+                max_size
             );
-
-            // Set physical addresses of the three ring parts
-            self.write64(QUEUE_DESC_LOW, QUEUE_DESC_HIGH, vq.desc_paddr());
-            klog_info!(Driver, "virtio: vq{} desc written", vq_index);
-            self.write64(QUEUE_DRIVER_LOW, QUEUE_DRIVER_HIGH, vq.avail_paddr());
-            klog_info!(Driver, "virtio: vq{} avail written", vq_index);
-            self.write64(QUEUE_DEVICE_LOW, QUEUE_DEVICE_HIGH, vq.used_paddr());
-            klog_info!(Driver, "virtio: vq{} used written", vq_index);
-
-            // Mark queue as ready
-            self.write32(QUEUE_READY, 1);
-            klog_info!(Driver, "virtio: vq{} ready", vq_index);
-
-            Ok(())
         }
+        klog_info!(Driver, "virtio: vq{} max_size={}", vq_index, max_size);
+
+        // Set queue size
+        self.write32(QUEUE_NUM, vq.queue_size as u32);
+        klog_info!(
+            Driver,
+            "virtio: vq{} QUEUE_NUM set, writing desc={:#x}",
+            vq_index,
+            vq.desc_paddr()
+        );
+
+        // Set physical addresses of the three ring parts
+        self.write64(QUEUE_DESC_LOW, QUEUE_DESC_HIGH, vq.desc_paddr());
+        klog_info!(Driver, "virtio: vq{} desc written", vq_index);
+        self.write64(QUEUE_DRIVER_LOW, QUEUE_DRIVER_HIGH, vq.avail_paddr());
+        klog_info!(Driver, "virtio: vq{} avail written", vq_index);
+        self.write64(QUEUE_DEVICE_LOW, QUEUE_DEVICE_HIGH, vq.used_paddr());
+        klog_info!(Driver, "virtio: vq{} used written", vq_index);
+
+        // Mark queue as ready
+        self.write32(QUEUE_READY, 1);
+        klog_info!(Driver, "virtio: vq{} ready", vq_index);
+
+        Ok(())
     }
 
     /// Configure a virtqueue using legacy QueuePFN interface (VirtIO 0.9.5).
     /// Used when VIRTIO_F_VERSION_1 is NOT negotiated (transitional/legacy devices).
     pub fn setup_vq_legacy(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
-        unsafe {
-            self.write32(QUEUE_SEL, vq_index as u32);
+        self.write32(QUEUE_SEL, vq_index as u32);
 
-            let max_size = self.read32(QUEUE_NUM_MAX);
-            if vq.queue_size as u32 > max_size {
-                klog_warn!(
-                    Driver,
-                    "virtio: legacy queue size {} exceeds max {}",
-                    vq.queue_size,
-                    max_size
-                );
-            }
-
-            self.write32(QUEUE_NUM, vq.queue_size as u32);
-
-            // Legacy: write guest-physical page number of the queue
-            // The queue (desc + avail + used) is laid out contiguously within one page
-            let pfn = (vq.desc_paddr() >> 12) as u32;
-            self.write32(QUEUE_PFN, pfn);
-
-            klog_info!(
+        let max_size = self.read32(QUEUE_NUM_MAX);
+        if vq.queue_size as u32 > max_size {
+            klog_warn!(
                 Driver,
-                "virtio: legacy vq{} pfn={:#x} (desc={:#x})",
-                vq_index,
-                pfn,
-                vq.desc_paddr()
+                "virtio: legacy queue size {} exceeds max {}",
+                vq.queue_size,
+                max_size
             );
-            Ok(())
         }
+
+        self.write32(QUEUE_NUM, vq.queue_size as u32);
+
+        // Legacy: write guest-physical page number of the queue
+        // The queue (desc + avail + used) is laid out contiguously within one page
+        let pfn = (vq.desc_paddr() >> 12) as u32;
+        self.write32(QUEUE_PFN, pfn);
+
+        klog_info!(
+            Driver,
+            "virtio: legacy vq{} pfn={:#x} (desc={:#x})",
+            vq_index,
+            pfn,
+            vq.desc_paddr()
+        );
+        Ok(())
     }
 
     /// Notify the device that new descriptors are available on a virtqueue.
     pub fn notify(&self, vq_index: u16) {
-        unsafe {
-            self.write32(QUEUE_NOTIFY, vq_index as u32);
-        }
+        self.write32(QUEUE_NOTIFY, vq_index as u32);
     }
 
     /// Read from device-specific config space (offset relative to 0x100).
     pub fn read_config32(&self, offset: usize) -> u32 {
-        unsafe { self.read32(0x100 + offset) }
+        self.read32(0x100 + offset)
     }
 
     pub fn read_config64(&self, offset: usize) -> u64 {
-        unsafe { self.read64(0x100 + offset, 0x100 + offset + 4) }
+        self.read64(0x100 + offset, 0x100 + offset + 4)
     }
 }
 

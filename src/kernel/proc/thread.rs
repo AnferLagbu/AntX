@@ -1,3 +1,4 @@
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::types::{ThreadPriority, ThreadState, SCHED_LEVEL_2_QUANTUM};
@@ -52,9 +53,7 @@ pub struct Thread {
     pub frozen_since: AtomicU64,
 }
 
-// SAFETY: Thread uses AtomicU64 for linked-list pointers and state tracking.
-// Primitive fields (tid, pid, etc.) are written only during creation or
-// under scheduler lock. No UnsafeCell without synchronization.
+// All fields (Atomic*, u32, u64) are Send + Sync.
 unsafe impl Send for Thread {}
 unsafe impl Sync for Thread {}
 
@@ -135,14 +134,15 @@ impl Thread {
 }
 
 pub struct ThreadTable {
-    threads: Mutex<[Option<*mut Thread>; MAX_THREADS]>,
+    threads: Mutex<[Option<NonNull<Thread>>; MAX_THREADS]>,
     next_tid: AtomicU32,
 }
 
 use spin::Mutex;
 
-// SAFETY: ThreadTable uses Mutex for the thread array and AtomicU32
-// for next_tid. All mutations are serialized through the Mutex.
+// SAFETY: ThreadTable is always accessed via static THREAD_TABLE.
+// All mutations go through the Mutex, and the NonNull pointers target
+// Thread objects whose fields are all Atomic* or plain integers.
 unsafe impl Send for ThreadTable {}
 unsafe impl Sync for ThreadTable {}
 
@@ -167,21 +167,25 @@ impl ThreadTable {
         if thread.is_null() {
             return false;
         }
-        let tid = unsafe { (*thread).tid };
+        // SAFETY: caller guarantees thread is a valid, non-null pointer.
+        let nn = unsafe { NonNull::new_unchecked(thread) };
+        let tid = unsafe { nn.as_ref().tid };
         let mut table = self.threads.lock();
         if (tid as usize) < MAX_THREADS {
-            table[tid as usize] = Some(thread);
+            table[tid as usize] = Some(nn);
             true
         } else {
             false
         }
     }
 
+    /// 获取线程裸指针 (向后兼容接口)。
+    /// 内部存储为 NonNull, 转为 *mut 供外部调用。
     pub fn get(&self, tid: u32) -> Option<*mut Thread> {
         if (tid as usize) >= MAX_THREADS {
             return None;
         }
-        self.threads.lock()[tid as usize]
+        self.threads.lock()[tid as usize].map(|n| n.as_ptr())
     }
 
     pub fn remove(&self, tid: u32) {
@@ -198,10 +202,7 @@ pub struct ThreadManager {
     thread_count: AtomicU32,
 }
 
-// SAFETY: ThreadManager uses only AtomicU64/AtomicU32 fields.
-// All operations are lock-free atomic, safe for concurrent access.
-unsafe impl Send for ThreadManager {}
-unsafe impl Sync for ThreadManager {}
+// All fields (AtomicU64, AtomicU32) auto-implement Send + Sync.
 
 impl ThreadManager {
     pub const fn new() -> Self {

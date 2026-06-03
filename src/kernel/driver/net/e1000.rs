@@ -7,6 +7,12 @@ use core::sync::atomic::AtomicU32;
 use crate::kernel::driver::framework::DriverError;
 use crate::kernel::driver::framework::{DeviceType, Driver, Result};
 #[cfg(not(feature = "kernel_test"))]
+use crate::kernel::framework::iomem::IoMem;
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::mm::PhysAddr;
+#[cfg(not(feature = "kernel_test"))]
 use crate::klog_debug;
 #[cfg(not(feature = "kernel_test"))]
 use crate::klog_err;
@@ -125,7 +131,7 @@ pub struct E1000Device {
     pub device: u8,
     pub func: u8,
     mmio_phys: u64,
-    mmio_base: *mut u8,
+    iomem: Option<IoMem>,
     pub irq: u8,
     pub mac: [u8; 6],
     tx_descs: Option<*mut E1000TxDesc>,
@@ -148,7 +154,7 @@ impl Default for E1000Device {
             device: 0,
             func: 0,
             mmio_phys: 0,
-            mmio_base: core::ptr::null_mut(),
+            iomem: None,
             irq: 0,
             mac: [0u8; 6],
             tx_descs: None,
@@ -169,36 +175,22 @@ impl Default for E1000Device {
     }
 }
 
-#[inline(always)]
-unsafe fn mmio_read32(base: *mut u8, reg: u32) -> u32 {
-    let ptr = base.add(reg as usize) as *const u32;
-    core::ptr::read_volatile(ptr)
-}
-
-#[inline(always)]
-unsafe fn mmio_write32(base: *mut u8, reg: u32, val: u32) {
-    let ptr = base.add(reg as usize) as *mut u32;
-    core::ptr::write_volatile(ptr, val);
-}
-
 fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
-    unsafe {
-        mmio_write32(
-            dev.mmio_base,
-            E1000_EERD,
-            ((addr as u32) << 2) | E1000_EERD_START,
-        );
-        let mut timeout: u32 = 0;
-        while timeout < E1000_TIMEOUT {
-            let val = mmio_read32(dev.mmio_base, E1000_EERD);
-            if val & E1000_EERD_DONE != 0 {
-                return ((val >> 16) & 0xFFFF) as u16;
-            }
-            timeout += 1;
-            core::hint::spin_loop();
+    let iomem = dev.iomem.as_ref().unwrap();
+    iomem.write_u32(
+        E1000_EERD as usize,
+        ((addr as u32) << 2) | E1000_EERD_START,
+    );
+    let mut timeout: u32 = 0;
+    while timeout < E1000_TIMEOUT {
+        let val = iomem.read_u32(E1000_EERD as usize);
+        if val & E1000_EERD_DONE != 0 {
+            return ((val >> 16) & 0xFFFF) as u16;
         }
-        0xFFFF
+        timeout += 1;
+        core::hint::spin_loop();
     }
+    0xFFFF
 }
 
 fn read_mac_address(dev: &mut E1000Device) {
@@ -237,7 +229,8 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     dev.tx_tail = 0;
     dev.tx_descs = Some(tx_descs);
 
-    unsafe {
+    let iomem = dev.iomem.as_ref().unwrap();
+    {
         let tx_phys = virt_to_phys(tx_ptr as u64);
         klog_debug!(
             Net,
@@ -246,11 +239,11 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
             tx_phys,
             tx_size
         );
-        mmio_write32(dev.mmio_base, E1000_TDBAL, (tx_phys & 0xFFFFFFFF) as u32);
-        mmio_write32(dev.mmio_base, E1000_TDBAH, (tx_phys >> 32) as u32);
-        mmio_write32(dev.mmio_base, E1000_TDLEN, tx_size as u32);
-        mmio_write32(dev.mmio_base, E1000_TDH, 0);
-        mmio_write32(dev.mmio_base, E1000_TDT, 0);
+        iomem.write_u32(E1000_TDBAL as usize, (tx_phys & 0xFFFFFFFF) as u32);
+        iomem.write_u32(E1000_TDBAH as usize, (tx_phys >> 32) as u32);
+        iomem.write_u32(E1000_TDLEN as usize, tx_size as u32);
+        iomem.write_u32(E1000_TDH as usize, 0);
+        iomem.write_u32(E1000_TDT as usize, 0);
     }
 
     let rx_size = core::mem::size_of::<E1000RxDesc>() * E1000_RX_RING_SIZE;
@@ -286,7 +279,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
     dev.rx_tail = 0;
     dev.rx_descs = Some(rx_descs);
 
-    unsafe {
+    {
         let rx_phys = virt_to_phys(rx_ptr as u64);
         klog_debug!(
             Net,
@@ -295,11 +288,11 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
             rx_phys,
             rx_size
         );
-        mmio_write32(dev.mmio_base, E1000_RDBAL, (rx_phys & 0xFFFFFFFF) as u32);
-        mmio_write32(dev.mmio_base, E1000_RDBAH, (rx_phys >> 32) as u32);
-        mmio_write32(dev.mmio_base, E1000_RDLEN, rx_size as u32);
-        mmio_write32(dev.mmio_base, E1000_RDH, 0);
-        mmio_write32(dev.mmio_base, E1000_RDT, (E1000_RX_RING_SIZE - 1) as u32);
+        iomem.write_u32(E1000_RDBAL as usize, (rx_phys & 0xFFFFFFFF) as u32);
+        iomem.write_u32(E1000_RDBAH as usize, (rx_phys >> 32) as u32);
+        iomem.write_u32(E1000_RDLEN as usize, rx_size as u32);
+        iomem.write_u32(E1000_RDH as usize, 0);
+        iomem.write_u32(E1000_RDT as usize, (E1000_RX_RING_SIZE - 1) as u32);
     }
     dev.rx_tail = 0;
 
@@ -326,77 +319,72 @@ impl Driver for E1000Device {
 
     #[cfg(not(feature = "kernel_test"))]
     fn init(&mut self) -> Result<()> {
-        if self.mmio_base.is_null() || self.mmio_base.is_null() {
+        if self.iomem.is_none() {
             return Err(DriverError::NotInitialized);
         }
 
-        let base = self.mmio_base;
-
-        unsafe {
-            mmio_write32(base, E1000_CTRL, E1000_CTRL_RST);
-        }
-        for _ in 0..100000 {
-            let ctrl = unsafe { mmio_read32(base, E1000_CTRL) };
-            if ctrl & E1000_CTRL_RST == 0 {
-                break;
-            }
-            core::hint::spin_loop();
-        }
-
-        unsafe {
-            mmio_write32(base, E1000_IMC, 0xFFFFFFFF);
-        }
-
         {
-            let ctrl = unsafe { mmio_read32(base, E1000_CTRL) };
-            let new_ctrl = (ctrl & !(E1000_CTRL_RST))
-                | E1000_CTRL_SLU
-                | E1000_CTRL_ASDE
-                | E1000_CTRL_FRCSPD
-                | E1000_CTRL_SPEED_1000
-                | E1000_CTRL_FRCDPX
-                | E1000_CTRL_FD;
-            unsafe {
-                mmio_write32(base, E1000_CTRL, new_ctrl);
-            }
-        }
+            let iomem = self.iomem.as_ref().unwrap();
 
-        let mut link_ready = false;
-        for _ in 0..500000 {
-            let status = unsafe { mmio_read32(base, E1000_STATUS) };
-            if status & E1000_STATUS_LU != 0 {
-                link_ready = true;
-                break;
+            iomem.write_u32(E1000_CTRL as usize, E1000_CTRL_RST);
+            for _ in 0..100000 {
+                let ctrl = iomem.read_u32(E1000_CTRL as usize);
+                if ctrl & E1000_CTRL_RST == 0 {
+                    break;
+                }
+                core::hint::spin_loop();
             }
-            core::hint::spin_loop();
-        }
 
-        if !link_ready {
-            klog_warn!(Net, "e1000: link not ready, continuing anyway");
-        } else {
-            let status = unsafe { mmio_read32(base, E1000_STATUS) };
-            let speed = if status & E1000_STATUS_SPEED_1000 != 0 {
-                "1000"
-            } else if status & E1000_STATUS_SPEED_100 != 0 {
-                "100"
+            iomem.write_u32(E1000_IMC as usize, 0xFFFFFFFF);
+
+            {
+                let ctrl = iomem.read_u32(E1000_CTRL as usize);
+                let new_ctrl = (ctrl & !(E1000_CTRL_RST))
+                    | E1000_CTRL_SLU
+                    | E1000_CTRL_ASDE
+                    | E1000_CTRL_FRCSPD
+                    | E1000_CTRL_SPEED_1000
+                    | E1000_CTRL_FRCDPX
+                    | E1000_CTRL_FD;
+                iomem.write_u32(E1000_CTRL as usize, new_ctrl);
+            }
+
+            let mut link_ready = false;
+            for _ in 0..500000 {
+                let status = iomem.read_u32(E1000_STATUS as usize);
+                if status & E1000_STATUS_LU != 0 {
+                    link_ready = true;
+                    break;
+                }
+                core::hint::spin_loop();
+            }
+
+            if !link_ready {
+                klog_warn!(Net, "e1000: link not ready, continuing anyway");
             } else {
-                "10"
-            };
-            let duplex = if status & E1000_STATUS_FD != 0 {
-                "FD"
-            } else {
-                "HD"
-            };
-            klog_info!(Net, "e1000: NIC Link is Up {} Mbps Full Duplex", speed);
-            let _ = duplex;
-        }
+                let status = iomem.read_u32(E1000_STATUS as usize);
+                let speed = if status & E1000_STATUS_SPEED_1000 != 0 {
+                    "1000"
+                } else if status & E1000_STATUS_SPEED_100 != 0 {
+                    "100"
+                } else {
+                    "10"
+                };
+                let duplex = if status & E1000_STATUS_FD != 0 {
+                    "FD"
+                } else {
+                    "HD"
+                };
+                klog_info!(Net, "e1000: NIC Link is Up {} Mbps Full Duplex", speed);
+                let _ = duplex;
+            }
+        } // drop iomem borrow before setup_descriptor_rings
 
         setup_descriptor_rings(self)?;
 
+        let iomem = self.iomem.as_ref().unwrap();
         let tctl = E1000_TCTL_EN | E1000_TCTL_PSP | E1000_TCTL_COLD_FD | E1000_TCTL_CT_FD;
-        unsafe {
-            mmio_write32(base, E1000_TCTL, tctl);
-        }
+        iomem.write_u32(E1000_TCTL as usize, tctl);
 
         let rctl = E1000_RCTL_EN
             | E1000_RCTL_SBP
@@ -405,9 +393,7 @@ impl Driver for E1000Device {
             | E1000_RCTL_BAM
             | E1000_RCTL_SECRC
             | E1000_RCTL_BSIZE_2048;
-        unsafe {
-            mmio_write32(base, E1000_RCTL, rctl);
-        }
+        iomem.write_u32(E1000_RCTL as usize, rctl);
 
         {
             let ral = (self.mac[0] as u32)
@@ -415,10 +401,8 @@ impl Driver for E1000Device {
                 | ((self.mac[2] as u32) << 16)
                 | ((self.mac[3] as u32) << 24);
             let rah = (self.mac[4] as u32) | ((self.mac[5] as u32) << 8) | E1000_RAH_AV;
-            unsafe {
-                mmio_write32(base, E1000_RAL0, ral);
-                mmio_write32(base, E1000_RAH0, rah);
-            }
+            iomem.write_u32(E1000_RAL0 as usize, ral);
+            iomem.write_u32(E1000_RAH0 as usize, rah);
             klog_info!(
                 Net,
                 "e1000: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
@@ -431,30 +415,23 @@ impl Driver for E1000Device {
             );
         }
 
-        unsafe {
-            mmio_write32(base, E1000_RDT, (E1000_RX_RING_SIZE - 1) as u32);
-        }
+        iomem.write_u32(E1000_RDT as usize, (E1000_RX_RING_SIZE - 1) as u32);
         self.rx_tail = 0;
 
-        unsafe {
-            mmio_write32(base, E1000_IPG, 0x0060200A);
-        }
+        iomem.write_u32(E1000_IPG as usize, 0x0060200A);
 
-        unsafe {
-            mmio_write32(
-                base,
-                E1000_IMS,
-                E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC,
-            );
-        }
+        iomem.write_u32(
+            E1000_IMS as usize,
+            E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC,
+        );
 
-        unsafe {
-            let ctrl = mmio_read32(base, E1000_CTRL);
+        {
+            let ctrl = iomem.read_u32(E1000_CTRL as usize);
             klog_info!(
                 Net,
                 "e1000: initialized (CTRL=0x{:x} RDLEN=0x{:x})",
                 ctrl,
-                mmio_read32(base, E1000_RDLEN)
+                iomem.read_u32(E1000_RDLEN as usize)
             );
         }
 
@@ -469,30 +446,30 @@ impl Driver for E1000Device {
     }
 
     fn shutdown(&mut self) -> Result<()> {
-        if !self.initialized || self.mmio_base.is_null() {
+        if !self.initialized || self.iomem.is_none() {
             self.initialized = false;
             return Ok(());
         }
-        unsafe {
-            let base = self.mmio_base;
-            let mut ctrl = mmio_read32(base, E1000_CTRL);
+        {
+            let iomem = self.iomem.as_ref().unwrap();
+            let mut ctrl = iomem.read_u32(E1000_CTRL as usize);
             ctrl &= !(E1000_CTRL_SLU | E1000_CTRL_FD);
-            mmio_write32(base, E1000_CTRL, ctrl);
-            mmio_write32(base, E1000_RCTL, 0);
-            mmio_write32(base, E1000_TCTL, 0);
+            iomem.write_u32(E1000_CTRL as usize, ctrl);
+            iomem.write_u32(E1000_RCTL as usize, 0);
+            iomem.write_u32(E1000_TCTL as usize, 0);
         }
         self.initialized = false;
         Ok(())
     }
 
     fn is_ready(&self) -> bool {
-        self.initialized && !self.mmio_base.is_null()
+        self.initialized && self.iomem.is_some()
     }
 
     fn status(&self) -> &'static str {
         if !self.initialized {
             "Not initialized"
-        } else if self.mmio_base.is_null() {
+        } else if self.iomem.is_none() {
             "MMIO not mapped"
         } else {
             "Link ready"
@@ -560,42 +537,24 @@ impl E1000Device {
                         cmd |= 0x06;
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x04, cmd) };
 
-                        unsafe {
-                            extern "C" {
-                                fn vmm_map_huge_page(
-                                    virt: u64,
-                                    phys: u64,
-                                    flags: u64,
-                                    size_type: u8,
-                                ) -> i32;
-                            }
-                            let mmio_aligned = self.mmio_phys & !0x1FFFFF;
-                            let flags: u64 = 0x13;
-                            let ret1 = vmm_map_huge_page(mmio_aligned, mmio_aligned, flags, 1);
-                            let ret2 = vmm_map_huge_page(
-                                mmio_aligned + 0x200000,
-                                mmio_aligned + 0x200000,
-                                flags,
-                                1,
-                            );
-                            if ret1 != 0 || ret2 != 0 {
-                                klog_err!(
-                                    Net,
-                                    "e1000: MMIO mapping failed ret1={} ret2={}",
-                                    ret1,
-                                    ret2
-                                );
+                        let iomem = match IoMem::from_pci_bar(
+                            PhysAddr::new(self.mmio_phys),
+                            128 * 1024, // E1000 BAR0 is 128KB
+                            "e1000-bar0",
+                        ) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                klog_err!(Net, "e1000: IoMem::from_pci_bar failed: {}", e);
                                 return Err(DriverError::HardwareError);
                             }
-                            self.mmio_base = self.mmio_phys as *mut u8;
-                            klog_info!(
-                                Net,
-                                "e1000: MMIO phys=0x{:x} base={:p} IRQ={}",
-                                self.mmio_phys,
-                                self.mmio_base,
-                                self.irq
-                            );
-                        }
+                        };
+                        klog_info!(
+                            Net,
+                            "e1000: MMIO phys=0x{:x} IRQ={}",
+                            self.mmio_phys,
+                            self.irq
+                        );
+                        self.iomem = Some(iomem);
 
                         read_mac_address(self);
 
@@ -647,9 +606,7 @@ impl E1000Device {
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
         self.tx_tail = (tail + 1) % E1000_TX_RING_SIZE;
-        unsafe {
-            mmio_write32(self.mmio_base, E1000_TDT, self.tx_tail as u32);
-        }
+        self.iomem.as_ref().unwrap().write_u32(E1000_TDT as usize, self.tx_tail as u32);
 
         self.tx_count += 1;
         Ok(total_len)
@@ -669,7 +626,7 @@ impl E1000Device {
         let mut processed = 0u32;
 
         loop {
-            let rdh = unsafe { mmio_read32(self.mmio_base, E1000_RDH) as usize };
+            let rdh = self.iomem.as_ref().unwrap().read_u32(E1000_RDH as usize) as usize;
             if self.rx_tail == rdh {
                 break;
             }
@@ -709,9 +666,7 @@ impl E1000Device {
             let prev = self.rx_tail;
             self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
 
-            unsafe {
-                mmio_write32(self.mmio_base, E1000_RDT, prev as u32);
-            }
+            self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, prev as u32);
         }
 
         if processed > 0 {
@@ -733,7 +688,7 @@ impl E1000Device {
         let rx_descs = self.rx_descs?;
 
         loop {
-            let rdh = unsafe { mmio_read32(self.mmio_base, E1000_RDH) as usize };
+            let rdh = self.iomem.as_ref().unwrap().read_u32(E1000_RDH as usize) as usize;
             if self.rx_tail == rdh {
                 return None;
             }
@@ -758,9 +713,7 @@ impl E1000Device {
                 desc.status = 0;
                 let prev = self.rx_tail;
                 self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-                unsafe {
-                    mmio_write32(self.mmio_base, E1000_RDT, prev as u32);
-                }
+                self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, prev as u32);
                 continue;
             }
 
@@ -780,9 +733,7 @@ impl E1000Device {
 
             let prev = self.rx_tail;
             self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-            unsafe {
-                mmio_write32(self.mmio_base, E1000_RDT, prev as u32);
-            }
+            self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, prev as u32);
 
             return Some(copy_len);
         }
@@ -796,7 +747,7 @@ impl E1000Device {
             return;
         }
 
-        let icr = unsafe { mmio_read32(self.mmio_base, E1000_ICR) };
+        let icr = self.iomem.as_ref().unwrap().read_u32(E1000_ICR as usize);
         if icr == 0 {
             return;
         }
@@ -846,7 +797,9 @@ pub fn take_device() -> Option<Box<E1000Device>> {
 pub unsafe fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() { return -1; }
     let dev = &mut *(driver_data as *mut E1000Device);
-    match dev.send_packet(core::slice::from_raw_parts(data, len as usize)) {
+    // SAFETY: data/len come from the network stack which guarantees valid user buffers
+    let user_data = unsafe { UserReadPtr::new(data, len as usize) };
+    match dev.send_packet(user_data.as_slice()) {
         Ok(_) => 0,
         Err(_) => -1,
     }
@@ -856,8 +809,9 @@ pub unsafe fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) ->
 pub unsafe fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return -1; }
     let dev = &mut *(driver_data as *mut E1000Device);
-    let buf_slice = core::slice::from_raw_parts_mut(buf, buf_len as usize);
-    match dev.try_receive(buf_slice) {
+    // SAFETY: buf/buf_len come from the network stack which guarantees valid user buffers
+    let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
+    match dev.try_receive(user_buf.as_mut_slice()) {
         Some(n) => n as i32,
         None => 0,
     }
@@ -949,24 +903,24 @@ pub extern "C" fn e1000_dump_regs() {
     {
         let guard = E1000_DEVICE.lock();
         if let Some(ref dev) = *guard {
-            let base = dev.mmio_base;
-            if base.is_null() {
-                return;
-            }
-            unsafe {
-                let ctrl = mmio_read32(base, E1000_CTRL);
-                let status = mmio_read32(base, E1000_STATUS);
-                let tctl = mmio_read32(base, E1000_TCTL);
-                let rctl = mmio_read32(base, E1000_RCTL);
-                let icr = mmio_read32(base, E1000_ICR);
-                let ims = mmio_read32(base, E1000_IMS);
-                let tdh = mmio_read32(base, E1000_TDH);
-                let tdt = mmio_read32(base, E1000_TDT);
-                let rdh = mmio_read32(base, E1000_RDH);
-                let rdt = mmio_read32(base, E1000_RDT);
-                let rdbal = mmio_read32(base, E1000_RDBAL);
-                let rdbah = mmio_read32(base, E1000_RDBAH);
-                let rdlen = mmio_read32(base, E1000_RDLEN);
+            let iomem = match dev.iomem.as_ref() {
+                Some(m) => m,
+                None => return,
+            };
+            {
+                let ctrl = iomem.read_u32(E1000_CTRL as usize);
+                let status = iomem.read_u32(E1000_STATUS as usize);
+                let tctl = iomem.read_u32(E1000_TCTL as usize);
+                let rctl = iomem.read_u32(E1000_RCTL as usize);
+                let icr = iomem.read_u32(E1000_ICR as usize);
+                let ims = iomem.read_u32(E1000_IMS as usize);
+                let tdh = iomem.read_u32(E1000_TDH as usize);
+                let tdt = iomem.read_u32(E1000_TDT as usize);
+                let rdh = iomem.read_u32(E1000_RDH as usize);
+                let rdt = iomem.read_u32(E1000_RDT as usize);
+                let rdbal = iomem.read_u32(E1000_RDBAL as usize);
+                let rdbah = iomem.read_u32(E1000_RDBAH as usize);
+                let rdlen = iomem.read_u32(E1000_RDLEN as usize);
                 klog_info!(Net, "=== E1000 Register Dump ===");
                 klog_info!(Net, "CTRL=0x{:x} STATUS=0x{:x}", ctrl, status);
                 klog_info!(Net, "TCTL=0x{:x} RCTL=0x{:x}", tctl, rctl);

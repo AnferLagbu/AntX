@@ -107,19 +107,31 @@ impl ZilBlockHeader {
 
     pub fn compute_header_checksum(&mut self) {
         self.header_checksum = 0;
-        let bytes = unsafe {
-            core::slice::from_raw_parts(
-                self as *const ZilBlockHeader as *const u8,
-                core::mem::size_of::<ZilBlockHeader>(),
-            )
-        };
-        self.header_checksum = crc32_checksum(bytes);
+        self.header_checksum = crc32_checksum(self.as_bytes());
     }
 
     pub fn verify_header(&self) -> bool {
         let mut copy = *self;
         copy.compute_header_checksum();
         copy.header_checksum == self.header_checksum
+    }
+
+    /// Framekernel P2.2.2: 安全地将 ZilBlockHeader 转换为字节切片
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: ZilBlockHeader 是 repr(C)，大小经编译期断言验证
+        unsafe {
+            core::slice::from_raw_parts(self as *const Self as *const u8, ZIL_HEADER_SIZE)
+        }
+    }
+
+    /// Framekernel P2.2.2: 从 block 字节切片安全地获取 header 引用
+    /// SAFETY: 调用者需保证 block 包含有效的 ZilBlockHeader 数据
+    pub fn from_block(block: &[u8]) -> Option<&Self> {
+        if block.len() < ZIL_HEADER_SIZE {
+            return None;
+        }
+        // SAFETY: 已检查长度，ZilBlockHeader 是 repr(C)，对齐要求满足
+        Some(unsafe { &*(block.as_ptr() as *const ZilBlockHeader) })
     }
 }
 
@@ -133,6 +145,14 @@ impl ZilBlockTrailer {
 
     pub fn is_valid(&self) -> bool {
         self.tail_magic == ZIL_TAIL_MAGIC
+    }
+
+    /// Framekernel P2.2.2: 安全地将 ZilBlockTrailer 转换为字节切片
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: ZilBlockTrailer 是 repr(C)，大小经编译期断言验证
+        unsafe {
+            core::slice::from_raw_parts(self as *const Self as *const u8, ZIL_TRAILER_SIZE)
+        }
     }
 }
 
@@ -158,20 +178,22 @@ fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
         buf.len(),
         ZIL_RECORD_PAYLOAD
     );
-    let ptr = buf.as_mut_ptr();
-    unsafe {
-        ptr.write(record.rec_type as u8);
-        (ptr.add(1) as *mut u64).write_unaligned(record.txg);
-        (ptr.add(9) as *mut u64).write_unaligned(record.obj_id);
-        (ptr.add(17) as *mut u64).write_unaligned(record.parent_obj);
-        (ptr.add(25) as *mut u64).write_unaligned(record.offset);
-        (ptr.add(33) as *mut u32).write_unaligned(record.size);
-        (ptr.add(37) as *mut u64).write_unaligned(record.seq);
-        core::ptr::copy_nonoverlapping(record.name.as_ptr(), ptr.add(45), 128);
-        core::ptr::copy_nonoverlapping(record.data_hash.as_ptr(), ptr.add(173) as *mut u64, 4);
-        let rec_crc = crc32_checksum(core::slice::from_raw_parts(ptr, 173 + 32));
-        (ptr.add(173 + 32) as *mut u32).write_unaligned(rec_crc);
+    buf[0] = record.rec_type as u8;
+    buf[1..9].copy_from_slice(&record.txg.to_le_bytes());
+    buf[9..17].copy_from_slice(&record.obj_id.to_le_bytes());
+    buf[17..25].copy_from_slice(&record.parent_obj.to_le_bytes());
+    buf[25..33].copy_from_slice(&record.offset.to_le_bytes());
+    buf[33..37].copy_from_slice(&record.size.to_le_bytes());
+    buf[37..45].copy_from_slice(&record.seq.to_le_bytes());
+    buf[45..173].copy_from_slice(&record.name);
+    // Convert [u64; 4] to bytes safely
+    for (i, val) in record.data_hash.iter().enumerate() {
+        let off = 173 + i * 8;
+        buf[off..off + 8].copy_from_slice(&val.to_le_bytes());
     }
+    let payload_end = 173 + 32;
+    let rec_crc = crc32_checksum(&buf[..payload_end]);
+    buf[payload_end..payload_end + 4].copy_from_slice(&rec_crc.to_le_bytes());
 }
 
 fn deserialize_record(buf: &[u8]) -> Option<HvZilRecord> {
@@ -180,69 +202,68 @@ fn deserialize_record(buf: &[u8]) -> Option<HvZilRecord> {
     }
 
     let actual_size = 173 + 32 + 4;
-    let rec_crc = unsafe { *(buf.as_ptr().add(actual_size - 4) as *const u32) };
+    if buf.len() < actual_size {
+        return None;
+    }
+    // SAFETY: we've checked buf.len() >= actual_size, and actual_size >= 4
+    let rec_crc = u32::from_le_bytes(buf[actual_size - 4..actual_size].try_into().unwrap());
     let computed = crc32_checksum(&buf[..actual_size - 4]);
     if rec_crc != computed {
         return None;
     }
 
-    unsafe {
-        let rec_type = buf[0];
-        let txg = (buf.as_ptr().add(1) as *const u64).read_unaligned();
-        let obj_id = (buf.as_ptr().add(9) as *const u64).read_unaligned();
-        let parent_obj = (buf.as_ptr().add(17) as *const u64).read_unaligned();
-        let offset = (buf.as_ptr().add(25) as *const u64).read_unaligned();
-        let size = (buf.as_ptr().add(33) as *const u32).read_unaligned();
-        let seq = (buf.as_ptr().add(37) as *const u64).read_unaligned();
+    let rec_type = buf[0];
+    let txg = u64::from_le_bytes(buf[1..9].try_into().unwrap());
+    let obj_id = u64::from_le_bytes(buf[9..17].try_into().unwrap());
+    let parent_obj = u64::from_le_bytes(buf[17..25].try_into().unwrap());
+    let offset = u64::from_le_bytes(buf[25..33].try_into().unwrap());
+    let size = u32::from_le_bytes(buf[33..37].try_into().unwrap());
+    let seq = u64::from_le_bytes(buf[37..45].try_into().unwrap());
 
-        let mut name = [0u8; 128];
-        core::ptr::copy_nonoverlapping(buf.as_ptr().add(45), name.as_mut_ptr(), 128);
+    let mut name = [0u8; 128];
+    name.copy_from_slice(&buf[45..173]);
 
-        let mut data_hash = [0u64; 4];
-        core::ptr::copy_nonoverlapping(
-            buf.as_ptr().add(173),
-            data_hash.as_mut_ptr() as *mut u8,
-            32,
-        );
-
-        let rec_type_enum = match rec_type {
-            1 => super::zil::HvZilRecordType::Create,
-            2 => super::zil::HvZilRecordType::Remove,
-            3 => super::zil::HvZilRecordType::Link,
-            4 => super::zil::HvZilRecordType::Rename,
-            5 => super::zil::HvZilRecordType::Write,
-            6 => super::zil::HvZilRecordType::Truncate,
-            7 => super::zil::HvZilRecordType::SetAttr,
-            8 => super::zil::HvZilRecordType::Acl,
-            9 => super::zil::HvZilRecordType::CreateAcl,
-            10 => super::zil::HvZilRecordType::Mkdir,
-            11 => super::zil::HvZilRecordType::Symlink,
-            12 => super::zil::HvZilRecordType::DedupRef,
-            13 => super::zil::HvZilRecordType::DedupUnref,
-            _ => return None,
-        };
-
-        Some(HvZilRecord {
-            rec_type: rec_type_enum,
-            txg,
-            obj_id,
-            parent_obj,
-            offset,
-            size,
-            name,
-            data_hash,
-            seq,
-        })
+    let mut data_hash = [0u64; 4];
+    for (i, val) in data_hash.iter_mut().enumerate() {
+        let off = 173 + i * 8;
+        *val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
     }
+
+    let rec_type_enum = match rec_type {
+        1 => super::zil::HvZilRecordType::Create,
+        2 => super::zil::HvZilRecordType::Remove,
+        3 => super::zil::HvZilRecordType::Link,
+        4 => super::zil::HvZilRecordType::Rename,
+        5 => super::zil::HvZilRecordType::Write,
+        6 => super::zil::HvZilRecordType::Truncate,
+        7 => super::zil::HvZilRecordType::SetAttr,
+        8 => super::zil::HvZilRecordType::Acl,
+        9 => super::zil::HvZilRecordType::CreateAcl,
+        10 => super::zil::HvZilRecordType::Mkdir,
+        11 => super::zil::HvZilRecordType::Symlink,
+        12 => super::zil::HvZilRecordType::DedupRef,
+        13 => super::zil::HvZilRecordType::DedupUnref,
+        _ => return None,
+    };
+
+    Some(HvZilRecord {
+        rec_type: rec_type_enum,
+        txg,
+        obj_id,
+        parent_obj,
+        offset,
+        size,
+        name,
+        data_hash,
+        seq,
+    })
 }
 
 pub struct HvZilPersist {
     pub zil_blocks_written: AtomicBool,
 }
 
-// SAFETY: HvZilPersist only contains AtomicBool; all operations are lock-free.
-unsafe impl Send for HvZilPersist {}
-unsafe impl Sync for HvZilPersist {}
+// SAFETY (Framekernel P2.2.2): HvZilPersist 全部字段 (AtomicBool) 自动 Send + Sync。
 
 impl HvZilPersist {
     pub const fn new() -> Self {
@@ -264,12 +285,7 @@ impl HvZilPersist {
         header.record_count = count as u16;
         header.compute_header_checksum();
 
-        let header_bytes = unsafe {
-            core::slice::from_raw_parts(
-                &header as *const ZilBlockHeader as *const u8,
-                ZIL_HEADER_SIZE,
-            )
-        };
+        let header_bytes = header.as_bytes();
         block[..ZIL_HEADER_SIZE].copy_from_slice(header_bytes);
 
         let record_area = ZIL_HEADER_SIZE;
@@ -283,30 +299,16 @@ impl HvZilPersist {
 
         let data_end = record_area + count * ZIL_RECORD_DISK_SIZE;
         header.data_checksum = crc32_checksum(&block[ZIL_HEADER_SIZE..data_end]);
-        let header_bytes = unsafe {
-            core::slice::from_raw_parts(
-                &header as *const ZilBlockHeader as *const u8,
-                ZIL_HEADER_SIZE,
-            )
-        };
+        let header_bytes = header.as_bytes();
         block[..ZIL_HEADER_SIZE].copy_from_slice(header_bytes);
 
         let trailer_offset = ZIL_BLOCK_SIZE - ZIL_TRAILER_SIZE;
         let trailer = ZilBlockTrailer::new();
-        let trailer_bytes = unsafe {
-            core::slice::from_raw_parts(
-                &trailer as *const ZilBlockTrailer as *const u8,
-                ZIL_TRAILER_SIZE,
-            )
-        };
+        let trailer_bytes = trailer.as_bytes();
         block[trailer_offset..].copy_from_slice(trailer_bytes);
 
         let full_checksum = crc32_checksum(&block[..trailer_offset]);
-        let trailer_offset = ZIL_BLOCK_SIZE - ZIL_TRAILER_SIZE;
-        unsafe {
-            let t = &mut *(block.as_mut_ptr().add(trailer_offset) as *mut ZilBlockTrailer);
-            t.block_checksum = full_checksum;
-        }
+        block[trailer_offset + 4..trailer_offset + 8].copy_from_slice(&full_checksum.to_le_bytes());
 
         Some(block)
     }
@@ -318,15 +320,20 @@ impl HvZilPersist {
             return records;
         }
 
-        let header = unsafe { &*(block.as_ptr() as *const ZilBlockHeader) };
+        let header = match ZilBlockHeader::from_block(block) {
+            Some(h) => h,
+            None => return records,
+        };
 
         if !header.is_valid() || !header.verify_header() {
             return records;
         }
 
-        let trailer = unsafe {
-            &*(block.as_ptr().add(ZIL_BLOCK_SIZE - ZIL_TRAILER_SIZE) as *const ZilBlockTrailer)
-        };
+        // SAFETY: block.len() >= ZIL_BLOCK_SIZE (checked above), so this offset is valid
+        let trailer_offset = ZIL_BLOCK_SIZE - ZIL_TRAILER_SIZE;
+        let tail_magic = u32::from_le_bytes(block[trailer_offset..trailer_offset + 4].try_into().unwrap());
+        let block_checksum = u32::from_le_bytes(block[trailer_offset + 4..trailer_offset + 8].try_into().unwrap());
+        let trailer = ZilBlockTrailer { tail_magic, block_checksum };
 
         if !trailer.is_valid() {
             return records;

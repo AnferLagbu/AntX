@@ -11,9 +11,7 @@ pub struct HvSnapshotManager {
     pub next_snap_id: AtomicU64,
 }
 
-// SAFETY: HvSnapshotManager uses Mutex for snapshots and AtomicU64 for next_snap_id.
-unsafe impl Send for HvSnapshotManager {}
-unsafe impl Sync for HvSnapshotManager {}
+// SAFETY (Framekernel P2.2.2): HvSnapshotManager 全部字段 (Mutex<T>, AtomicU64) 自动 Send + Sync。
 
 #[derive(Debug, Clone)]
 pub struct HvSnapshot {

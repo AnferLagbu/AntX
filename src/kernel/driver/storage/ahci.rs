@@ -29,6 +29,7 @@
 
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::dma::engine::get_dma;
+use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::klog_info;
 use crate::klog_warn;
@@ -62,6 +63,46 @@ const MAX_SECTORS_PER_CMD: u16 = 128;
 
 /// 扇区大小
 const SECTOR_SIZE: usize = 512;
+
+// AHCI GHC Register Offsets (within ABAR)
+#[allow(dead_code)]
+const GHC_CAP: usize = 0x00;  // u32: Host Capabilities
+const GHC_GHC: usize = 0x04;  // u32: Global Host Control
+#[allow(dead_code)]
+const GHC_IS: usize = 0x08;   // u32: Interrupt Status
+const GHC_PI: usize = 0x0C;   // u32: Ports Implemented
+#[allow(dead_code)]
+const GHC_VS: usize = 0x10;   // u32: Version
+
+// AHCI Port Register Offsets (within port region, i.e. 0x100 + n*0x80)
+#[allow(dead_code)]
+const PORT_CLB: usize = 0x00;  // u32: Command List Base
+#[allow(dead_code)]
+const PORT_CLBU: usize = 0x04; // u32: Command List Base Upper
+#[allow(dead_code)]
+const PORT_FB: usize = 0x08;   // u32: FIS Base
+#[allow(dead_code)]
+const PORT_FBU: usize = 0x0C;  // u32: FIS Base Upper
+#[allow(dead_code)]
+const PORT_IS: usize = 0x10;   // u32: Interrupt Status
+#[allow(dead_code)]
+const PORT_IE: usize = 0x14;   // u32: Interrupt Enable
+#[allow(dead_code)]
+const PORT_CMD: usize = 0x18;  // u32: Command and Status
+#[allow(dead_code)]
+const PORT_TFD: usize = 0x20;  // u32: Task File Data
+#[allow(dead_code)]
+const PORT_SIG: usize = 0x24;  // u32: Signature
+#[allow(dead_code)]
+const PORT_SSTS: usize = 0x28; // u32: SATA Status
+#[allow(dead_code)]
+const PORT_SERR: usize = 0x30; // u32: SATA Error
+#[allow(dead_code)]
+const PORT_CI: usize = 0x38;   // u32: Command Issue
+
+// Port region offset within ABAR
+const PORT_REG_BASE: usize = 0x100;
+const PORT_REG_STRIDE: usize = 0x80;
 
 // ============================================================================
 // AHCI 寄存器定义 (repr(C, packed) 与硬件匹配)
@@ -683,8 +724,8 @@ unsafe impl Sync for AhciController {}
 // ============================================================================
 
 pub struct AhciController {
-    mmio_base: usize,
-    hba: *mut AhciHbaGhc,
+    mmio_phys: u64,            // PCI BAR physical address (for external use)
+    iomem: Option<IoMem>,      // MMIO region handle (safe access proxy)
     ports: Vec<AhciPort>,
     port_bitmap: u32,
     #[allow(dead_code)]
@@ -693,10 +734,10 @@ pub struct AhciController {
 }
 
 impl AhciController {
-    pub fn new(mmio_base: usize) -> Self {
+    pub fn new(mmio_phys: usize) -> Self {
         Self {
-            mmio_base,
-            hba: ptr::null_mut(),
+            mmio_phys: mmio_phys as u64,
+            iomem: None,
             ports: Vec::new(),
             port_bitmap: 0,
             info: DeviceInfo::new("ahci", DeviceType::Block),
@@ -706,60 +747,70 @@ impl AhciController {
 
     /// 初始化控制器
     pub fn init_controller(&mut self) -> Result<()> {
-        unsafe {
-            self.hba = self.mmio_base as *mut AhciHbaGhc;
-            let hba = &mut *self.hba;
+        // 初始化 IoMem
+        let iomem = IoMem::from_pci_bar(
+            PhysAddr(self.mmio_phys),
+            8192, // ABAR is typically 8KB
+            "ahci-abar",
+        ).map_err(|_| DriverError::HardwareError)?;
 
-            // 确保 AHCI 模式已启用
-            if hba.ghc & ghc::AE == 0 {
-                hba.ghc |= ghc::AE;
+        // 确保 AHCI 模式已启用
+        let mut ghc_val = iomem.read_u32(GHC_GHC);
+        if ghc_val & ghc::AE == 0 {
+            ghc_val |= ghc::AE;
+            iomem.write_u32(GHC_GHC, ghc_val);
+        }
+
+        // HBA 复位
+        iomem.write_u32(GHC_GHC, ghc_val | ghc::HR);
+        let mut timeout = 1_000_000u64;
+        while iomem.read_u32(GHC_GHC) & ghc::HR != 0 && timeout > 0 {
+            timeout -= 1;
+            core::hint::spin_loop();
+        }
+        if timeout == 0 {
+            return Err(DriverError::Timeout);
+        }
+
+        // 启中断
+        iomem.write_u32(GHC_GHC, iomem.read_u32(GHC_GHC) | ghc::IE);
+
+        // 获取已实现的端口
+        self.port_bitmap = iomem.read_u32(GHC_PI);
+
+        // 初始化每个端口
+        for i in 0..AHCI_MAX_PORTS {
+            if self.port_bitmap & (1u32 << i) == 0 {
+                continue;
             }
 
-            // HBA 复位
-            hba.ghc |= ghc::HR;
-            let mut timeout = 1_000_000u64;
-            while hba.ghc & ghc::HR != 0 && timeout > 0 {
-                timeout -= 1;
-                core::hint::spin_loop();
-            }
-            if timeout == 0 {
-                return Err(DriverError::Timeout);
-            }
+            // SAFETY: IoMem ensures the MMIO region is validly mapped.
+            // The port register offset is within the BAR.
+            let port_regs = unsafe {
+                let base = iomem.virt_ptr();
+                base.add(PORT_REG_BASE + i * PORT_REG_STRIDE) as *mut AhciPortRegs
+            };
+            let mut port = AhciPort::new(i as u8, port_regs);
 
-            // 启中断
-            hba.ghc |= ghc::IE;
-
-            // 获取已实现的端口
-            self.port_bitmap = hba.pi;
-
-            // 初始化每个端口
-            for i in 0..AHCI_MAX_PORTS {
-                if self.port_bitmap & (1u32 << i) == 0 {
-                    continue;
-                }
-
-                let port_regs = (self.mmio_base + 0x100 + i * 0x80) as *mut AhciPortRegs;
-                let mut port = AhciPort::new(i as u8, port_regs);
-
-                if port.detect_device() {
-                    match port.enable() {
-                        Ok(()) => {
-                            klog_info!(
-                                Driver,
-                                "AHCI: port {} enabled (sig={:08X})",
-                                i,
-                                port.signature
-                            );
-                            self.ports.push(port);
-                        }
-                        Err(e) => {
-                            klog_warn!(Driver, "AHCI: port {} enable failed: {:?}", i, e);
-                        }
+            if port.detect_device() {
+                match port.enable() {
+                    Ok(()) => {
+                        klog_info!(
+                            Driver,
+                            "AHCI: port {} enabled (sig={:08X})",
+                            i,
+                            port.signature
+                        );
+                        self.ports.push(port);
+                    }
+                    Err(e) => {
+                        klog_warn!(Driver, "AHCI: port {} enable failed: {:?}", i, e);
                     }
                 }
             }
         }
 
+        self.iomem = Some(iomem);
         Ok(())
     }
 
@@ -800,10 +851,9 @@ impl Driver for AhciController {
         for port in &mut self.ports {
             let _ = port.disable();
         }
-        if !self.hba.is_null() {
-            unsafe {
-                (*self.hba).ghc &= !ghc::AE;
-            }
+        if let Some(iomem) = self.iomem.as_ref() {
+            let ghc = iomem.read_u32(GHC_GHC);
+            iomem.write_u32(GHC_GHC, ghc & !ghc::AE);
         }
         self.initialized = false;
         Ok(())

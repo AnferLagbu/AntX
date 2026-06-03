@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
 
@@ -171,12 +172,7 @@ pub struct Process {
 // 3. 不存在内部可变性导致的未同步修改
 // 4. 调度器在切换进程时通过 scheduler_lock 保护整个 ProcessTable
 //
-// SAFETY: Process uses Mutex for mutable state; all fields are either
-// Copy/primitive types or protected by locks. No UnsafeCell or interior
-// mutability without synchronization. Cross-thread access is safe because
-// mutation always goes through the scheduler lock or per-field Mutex.
-unsafe impl Send for Process {}
-unsafe impl Sync for Process {}
+// All fields (Mutex<T>, Atomic*, u32, u64, bool, Option<ProcessId>) auto-implement Send + Sync.
 
 impl Process {
     pub fn new(pid: Pid, name: &str, parent: Option<ProcessId>) -> Self {
@@ -387,12 +383,14 @@ impl Drop for Process {
 }
 
 pub struct ProcessTable {
-    processes: Mutex<[Option<usize>; MAX_PROCESSES]>,
+    processes: Mutex<[Option<NonNull<Process>>; MAX_PROCESSES]>,
     next_pid: AtomicU32,
 }
 
-// SAFETY: ProcessTable uses Mutex for the process array and AtomicU32
-// for next_pid. All mutations are serialized through the Mutex.
+// SAFETY: ProcessTable is always accessed via static PROCESS_TABLE.
+// Process fields are all Mutex/Atomic*/plain integers, making Process Send+Sync.
+// NonNull<Process> does not auto-impl Send+Sync in nightly 1.97, hence the explicit impl.
+// All mutations go through the Mutex.
 unsafe impl Send for ProcessTable {}
 unsafe impl Sync for ProcessTable {}
 
@@ -414,12 +412,18 @@ impl ProcessTable {
     }
 
     pub fn insert(&self, process: *mut Process) -> bool {
+        // SAFETY: caller guarantees process is a valid non-null pointer.
+        let nn = match NonNull::new(process) {
+            Some(nn) => nn,
+            None => return false,
+        };
         let mut table = self.processes.lock();
-        let pid = unsafe { (*process).pid.0 as usize };
+        // SAFETY: nn is a valid non-null pointer.
+        let pid = unsafe { nn.as_ref().pid.0 as usize };
         if pid >= MAX_PROCESSES {
             return false;
         }
-        table[pid] = Some(process as usize);
+        table[pid] = Some(nn);
         true
     }
 
@@ -428,7 +432,7 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
-        table[pid as usize].map(|addr| addr as *mut Process)
+        table[pid as usize].map(|nn| nn.as_ptr())
     }
 
     pub fn with_process<F, R>(&self, pid: Pid, f: F) -> Option<R>
@@ -440,8 +444,9 @@ impl ProcessTable {
             return None;
         }
         match table[pid as usize] {
-            Some(addr) => {
-                let proc_ref = unsafe { &*(addr as *const Process) };
+            Some(nn) => {
+                // SAFETY: nn is a valid NonNull pointer inserted by insert().
+                let proc_ref = unsafe { nn.as_ref() };
                 Some(f(proc_ref))
             }
             None => None,
@@ -457,8 +462,10 @@ impl ProcessTable {
             return None;
         }
         match table[pid as usize] {
-            Some(addr) => {
-                let proc_ref = unsafe { &mut *(addr as *mut Process) };
+            Some(mut nn) => {
+                // SAFETY: nn is a valid NonNull pointer inserted by insert().
+                // Mutex lock guarantees exclusive access.
+                let proc_ref = unsafe { nn.as_mut() };
                 Some(f(proc_ref))
             }
             None => None,
@@ -470,7 +477,7 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
-        table[pid as usize].take().map(|addr| addr as *mut Process)
+        table[pid as usize].take().map(|nn| nn.as_ptr())
     }
 
     /// 移除进程并释放 Box<Process> 内存
@@ -484,15 +491,18 @@ impl ProcessTable {
             return;
         }
         match table[pid as usize] {
-            Some(addr) => {
-                let proc = unsafe { &mut *(addr as *mut Process) };
+            Some(nn) => {
+                // SAFETY: nn is a valid NonNull pointer inserted by insert().
+                let proc = unsafe { nn.as_ref() };
                 proc.pending_free.store(true, Ordering::Release);
                 let prev = proc.dec_ref();
                 if prev == 0 {
                     table[pid as usize] = None;
                     drop(table);
+                    // SAFETY: nn was allocated via Box::into_raw, and we hold
+                    // the only reference (ref_count reached 0).
                     unsafe {
-                        let boxed = Box::from_raw(addr as *mut Process);
+                        let boxed = Box::from_raw(nn.as_ptr());
                         drop(boxed);
                     }
                 }
@@ -507,8 +517,9 @@ impl ProcessTable {
             return false;
         }
         match table[pid as usize] {
-            Some(addr) => {
-                let proc_ref = unsafe { &*(addr as *const Process) };
+            Some(nn) => {
+                // SAFETY: nn is a valid NonNull pointer inserted by insert().
+                let proc_ref = unsafe { nn.as_ref() };
                 proc_ref.try_inc_ref()
             }
             None => false,
@@ -521,14 +532,18 @@ impl ProcessTable {
             return;
         }
         match table[pid as usize] {
-            Some(addr) => {
-                let proc = unsafe { &mut *(addr as *mut Process) };
+            Some(nn) => {
+                // SAFETY: nn is a valid NonNull pointer inserted by insert().
+                // Mutex lock guarantees exclusive access.
+                let proc = unsafe { nn.as_ref() };
                 let prev = proc.dec_ref();
                 if prev == 0 && proc.pending_free.load(Ordering::Acquire) {
                     table[pid as usize] = None;
                     drop(table);
+                    // SAFETY: nn was allocated via Box::into_raw, and we hold
+                    // the only reference (ref_count reached 0).
                     unsafe {
-                        let boxed = Box::from_raw(addr as *mut Process);
+                        let boxed = Box::from_raw(nn.as_ptr());
                         drop(boxed);
                     }
                 }
@@ -541,8 +556,9 @@ impl ProcessTable {
     pub fn for_each<F: FnMut(&Process) -> bool>(&self, mut f: F) {
         let table = self.processes.lock();
         for entry in table.iter() {
-            if let &Some(addr) = entry {
-                let proc = unsafe { &*(addr as *const Process) };
+            if let Some(nn) = entry {
+                // SAFETY: nn is a valid NonNull pointer inserted by insert().
+                let proc = unsafe { nn.as_ref() };
                 if !f(proc) {
                     break;
                 }
@@ -556,8 +572,14 @@ pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
 #[derive(Clone, Copy)]
 struct ProcSnapshot {
     next_pid: u32,
-    slots: [Option<usize>; MAX_PROCESSES],
+    slots: [Option<NonNull<Process>>; MAX_PROCESSES],
 }
+
+// SAFETY: ProcSnapshot is a snapshot of the process table. It contains
+// NonNull<Process> pointers which are valid until the snapshot is discarded.
+// Accessed only under PROC_SNAPSHOT Mutex.
+unsafe impl Send for ProcSnapshot {}
+unsafe impl Sync for ProcSnapshot {}
 
 static PROC_SNAPSHOT: Mutex<Option<ProcSnapshot>> = Mutex::new(None);
 

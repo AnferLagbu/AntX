@@ -20,6 +20,7 @@ use core::task::{Context, Poll, Waker};
 use super::msgq;
 use super::pipe;
 use super::types::*;
+use super::IPC_NAMESPACE;
 
 // ============================================================================
 // 异步管道实现
@@ -72,34 +73,32 @@ impl Future for AsyncPipeWriter {
             return Poll::Ready(Ok(self.written)); // 已写完
         }
 
-        unsafe {
-            // 尝试写入剩余数据
-            let remaining = &data[self.written..];
+        // 尝试写入剩余数据
+        let remaining = &data[self.written..];
 
-            // 调用同步写入接口 (非阻塞模式)
-            match pipe::pipe_write_safe(
-                &mut *core::ptr::addr_of_mut!(IPC_NAMESPACE),
-                self.pipe_id,
-                remaining.as_ptr(),
-                remaining.len(),
-            ) {
-                Ok(n) if n > 0 => {
-                    self.written += n;
-                    if self.written >= data.len() {
-                        Poll::Ready(Ok(self.written))
-                    } else {
-                        // 还有数据未写入，注册 waker 后继续
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    }
-                }
-                Ok(0) => {
-                    // 管道满或无写端，挂起等待
-                    cx.waker().clone(); // 保存 waker 以便唤醒
+        // 调用同步写入接口 (非阻塞模式)
+        match pipe::pipe_write_safe(
+            IPC_NAMESPACE.get_mut(),
+            self.pipe_id,
+            remaining.as_ptr(),
+            remaining.len(),
+        ) {
+            Ok(n) if n > 0 => {
+                self.written += n;
+                if self.written >= data.len() {
+                    Poll::Ready(Ok(self.written))
+                } else {
+                    // 还有数据未写入，注册 waker 后继续
+                    cx.waker().wake_by_ref();
                     Poll::Pending
                 }
-                Err(e) => Poll::Ready(Err(e)),
             }
+            Ok(0) => {
+                // 管道满或无写端，挂起等待
+                cx.waker().clone(); // 保存 waker 以便唤醒
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
 }
@@ -140,29 +139,27 @@ impl Future for AsyncPipeReader {
             None => return Poll::Ready(Err(-1)), // 未设置缓冲区
         };
 
-        unsafe {
-            // 尝试读取数据
-            let mut bytes_read: u64 = 0;
+        // 尝试读取数据
+        let mut bytes_read: u64 = 0;
 
-            match pipe::pipe_read_safe(
-                &mut *core::ptr::addr_of_mut!(IPC_NAMESPACE),
-                self.pipe_id,
-                buffer.as_mut_ptr(),
-                buffer.len(),
-                Some(&mut bytes_read),
-            ) {
-                Ok(_) if bytes_read > 0 => {
-                    buffer.truncate(bytes_read as usize);
-                    let result = buffer.clone();
-                    Poll::Ready(Ok(result))
-                }
-                Ok(_) => {
-                    // 管道空或无读端，挂起等待
-                    cx.waker().clone();
-                    Poll::Pending
-                }
-                Err(e) => Poll::Ready(Err(e)),
+        match pipe::pipe_read_safe(
+            IPC_NAMESPACE.get_mut(),
+            self.pipe_id,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            Some(&mut bytes_read),
+        ) {
+            Ok(_) if bytes_read > 0 => {
+                buffer.truncate(bytes_read as usize);
+                let result = buffer.clone();
+                Poll::Ready(Ok(result))
             }
+            Ok(_) => {
+                // 管道空或无读端，挂起等待
+                cx.waker().clone();
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
 }
@@ -215,24 +212,22 @@ impl Future for AsyncMsgSender {
             None => return Poll::Ready(Err(-1)), // 未设置消息
         };
 
-        unsafe {
-            // 尝试发送消息
-            match msgq::msgq_send_safe(
-                &mut *core::ptr::addr_of_mut!(IPC_NAMESPACE),
-                this.msgq_id,
-                msg.msg_type,
-                Some(&msg.data),
-                msg.size as usize,
-                msg.sender_pid,
-            ) {
-                Ok(_) => Poll::Ready(Ok(())),
-                Err(e) if e == -3 => {
-                    // 队列满
-                    cx.waker().clone();
-                    Poll::Pending
-                }
-                Err(e) => Poll::Ready(Err(e)),
+        // 尝试发送消息
+        match msgq::msgq_send_safe(
+            IPC_NAMESPACE.get_mut(),
+            this.msgq_id,
+            msg.msg_type,
+            Some(&msg.data),
+            msg.size as usize,
+            msg.sender_pid,
+        ) {
+            Ok(_) => Poll::Ready(Ok(())),
+            Err(e) if e == -3 => {
+                // 队列满
+                cx.waker().clone();
+                Poll::Pending
             }
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
 }
@@ -267,28 +262,26 @@ impl Future for AsyncMsgReceiver {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        unsafe {
-            let mut recv_msg = Message::new();
+        let mut recv_msg = Message::new();
 
-            match msgq::msgq_recv_safe(
-                &mut *core::ptr::addr_of_mut!(IPC_NAMESPACE),
-                this.msgq_id,
-                this.filter_type.as_mut(),
-                Some(&mut recv_msg.data),
-                Some(&mut recv_msg.size),
-            ) {
-                Ok(_) => {
-                    // 填充消息元信息
-                    recv_msg.msg_type = this.filter_type.unwrap_or(0);
-                    Poll::Ready(Ok(recv_msg))
-                }
-                Err(e) if e == -4 => {
-                    // 队列空
-                    cx.waker().clone();
-                    Poll::Pending
-                }
-                Err(e) => Poll::Ready(Err(e)),
+        match msgq::msgq_recv_safe(
+            IPC_NAMESPACE.get_mut(),
+            this.msgq_id,
+            this.filter_type.as_mut(),
+            Some(&mut recv_msg.data),
+            Some(&mut recv_msg.size),
+        ) {
+            Ok(_) => {
+                // 填充消息元信息
+                recv_msg.msg_type = this.filter_type.unwrap_or(0);
+                Poll::Ready(Ok(recv_msg))
             }
+            Err(e) if e == -4 => {
+                // 队列空
+                cx.waker().clone();
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
 }

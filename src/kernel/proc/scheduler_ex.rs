@@ -6,16 +6,175 @@ pub use super::types::{
     SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM, SCHED_RT_WATCHDOG_TICKS,
 };
 
+// === 特权层: 线程裸指针安全访问封装 ===
+//
+// 该子模块是 scheduler_ex.rs 内 `unsafe` 集中地。所有 `unsafe { (*ptr).field }`
+// 形式只在 `raw` 子模块内出现, 本模块的其余业务逻辑 (RunQueue/SchedulerEx)
+// 全部为安全 Rust, 调用 `raw::ThreadRef` 的安全方法。
+//
+// 这等价于 framework 特权层模式: unsafe 集中在 inner module,
+// 外层接口是 100% safe Rust。
+pub(crate) mod raw {
+    use super::*;
+
+    // === 线程安全访问封装 (Framekernel privilege wrapper) ===
+    //
+    // `*mut Thread` 在调度器中作为侵入式链表指针使用。将其封装为 `ThreadRef`
+    // newtype 后, 所有 `unsafe { (*ptr).field }` 集中在 `ThreadRef` 的内部方法中。
+    //
+    // # SAFETY invariant
+    // - 调用方必须保证 `*mut Thread` 指向一个有效的 `Thread` 分配 (alloc::alloc::alloc)。
+    // - 同一时刻只有一个调度器可以持有指向该 `Thread` 的引用 (调度器串行化)。
+    #[derive(Clone, Copy)]
+    pub struct ThreadRef(*mut Thread);
+
+    impl ThreadRef {
+        /// 从裸指针构造, 要求调用方提供 SAFETY 保证。
+        ///
+        /// # Safety
+        /// - `ptr` 必须为非空, 指向有效 `Thread` 分配
+        /// - 在 `ThreadRef` 存活期间, 不会被释放
+        #[inline(always)]
+        pub unsafe fn new_unchecked(ptr: *mut Thread) -> Self {
+            Self(ptr)
+        }
+
+        #[allow(dead_code)]
+        #[inline(always)]
+        pub fn as_ptr(self) -> *mut Thread {
+            self.0
+        }
+
+        #[allow(dead_code)]
+        #[inline(always)]
+        pub fn is_null(self) -> bool {
+            self.0.is_null()
+        }
+
+        /// 获取/设置 next 链指针
+        #[inline(always)]
+        pub fn next(&self) -> *mut Thread {
+            unsafe { (*self.0).next.load(Ordering::Acquire) as *mut Thread }
+        }
+
+        #[inline(always)]
+        pub fn set_next(&self, p: *mut Thread) {
+            unsafe { (*self.0).next.store(p as u64, Ordering::Release) };
+        }
+
+        #[inline(always)]
+        pub fn prev(&self) -> *mut Thread {
+            unsafe { (*self.0).prev.load(Ordering::Acquire) as *mut Thread }
+        }
+
+        #[inline(always)]
+        pub fn set_prev(&self, p: *mut Thread) {
+            unsafe { (*self.0).prev.store(p as u64, Ordering::Release) };
+        }
+
+        /// 加载/存储/修改 调度状态字段
+        #[inline(always)]
+        pub fn get_state(&self) -> ThreadState {
+            unsafe { (*self.0).get_state() }
+        }
+
+        #[inline(always)]
+        pub fn set_state(&self, s: ThreadState) -> Result<(), &'static str> {
+            unsafe { (*self.0).set_state_safe(s) }
+        }
+
+        #[allow(dead_code)]
+        #[inline(always)]
+        pub fn load_state_raw(&self) -> u32 {
+            unsafe { (*self.0).state.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_state(&self, v: u32) {
+            unsafe { (*self.0).state.store(v, Ordering::SeqCst) };
+        }
+
+        #[inline(always)]
+        pub fn priority_raw(&self) -> u32 {
+            unsafe { (*self.0).priority.load(Ordering::Acquire) }
+        }
+
+        #[inline(always)]
+        pub fn store_priority(&self, v: u32) {
+            unsafe { (*self.0).priority.store(v, Ordering::SeqCst) };
+        }
+
+        #[allow(dead_code)]
+        #[inline(always)]
+        pub fn time_slice(&self) -> u32 {
+            unsafe { (*self.0).time_slice.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn fetch_sub_time_slice(&self) -> u32 {
+            unsafe { (*self.0).time_slice.fetch_sub(1, Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_time_slice(&self, v: u32) {
+            unsafe { (*self.0).time_slice.store(v, Ordering::SeqCst) };
+        }
+
+        #[inline(always)]
+        pub fn fetch_add_cpu_time(&self) -> u64 {
+            unsafe { (*self.0).cpu_time.fetch_add(1, Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn load_sleep_until(&self) -> u64 {
+            unsafe { (*self.0).sleep_until.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_sleep_until(&self, v: u64) {
+            unsafe { (*self.0).sleep_until.store(v, Ordering::SeqCst) };
+        }
+
+        #[inline(always)]
+        pub fn kernel_stack(&self) -> u64 {
+            unsafe { (*self.0).kernel_stack.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn context_ptr(&self) -> *mut super::super::types::ProcessContext {
+            unsafe {
+                (*self.0).context_ptr.load(Ordering::SeqCst) as *mut super::super::types::ProcessContext
+            }
+        }
+
+        #[inline(always)]
+        pub fn tid(&self) -> u32 {
+            unsafe { (*self.0).tid }
+        }
+
+        /// 检查线程是否可冻结 (不在 Running/Zombie 状态)
+        #[inline(always)]
+        pub fn can_freeze(&self) -> bool {
+            unsafe { (*self.0).can_freeze() }
+        }
+
+        /// 写入退出码
+        #[inline(always)]
+        pub fn store_exit_code(&self, code: u32) {
+            unsafe { (*self.0).exit_code.store(code, Ordering::SeqCst) };
+        }
+    }
+}
+
+use raw::ThreadRef;
+
 // === 环形双向就绪队列 ===
 pub struct RunQueue {
     head: AtomicU64,
     count: AtomicU32,
 }
 
-// SAFETY: RunQueue only contains AtomicU64/AtomicU32 fields; all
-// operations are lock-free atomic, safe for concurrent access.
-unsafe impl Send for RunQueue {}
-unsafe impl Sync for RunQueue {}
+// All fields (AtomicU64, AtomicU32) auto-implement Send + Sync.
 
 impl RunQueue {
     const fn new() -> Self {
@@ -30,55 +189,55 @@ impl RunQueue {
         if thread.is_null() {
             return;
         }
-
-        let head = self.head.load(Ordering::Acquire);
-        if head == 0 {
-            unsafe {
-                (*thread).next.store(thread as u64, Ordering::Release);
-                (*thread).prev.store(thread as u64, Ordering::Release);
-            }
+        // SAFETY: 调用方保证 thread 有效, 持续到本函数返回
+        let t = unsafe { ThreadRef::new_unchecked(thread) };
+        let head_ptr = self.head.load(Ordering::Acquire);
+        if head_ptr == 0 {
+            t.set_next(thread);
+            t.set_prev(thread);
             self.head.store(thread as u64, Ordering::Release);
         } else {
-            unsafe {
-                let head_ptr = head as *mut Thread;
-                let tail = (*head_ptr).prev.load(Ordering::Acquire) as *mut Thread;
-                (*thread).next.store(head, Ordering::Release);
-                (*thread).prev.store(tail as u64, Ordering::Release);
-                (*tail).next.store(thread as u64, Ordering::Release);
-                (*head_ptr).prev.store(thread as u64, Ordering::Release);
-            }
+            // SAFETY: head_ptr 由本队列管理, 始终指向有效 Thread
+            let head = unsafe { ThreadRef::new_unchecked(head_ptr as *mut Thread) };
+            let tail_ptr = head.prev();
+            // SAFETY: tail_ptr 与 head 互相指向有效 Thread
+            let tail = unsafe { ThreadRef::new_unchecked(tail_ptr) };
+            t.set_next(head_ptr as *mut Thread);
+            t.set_prev(tail_ptr);
+            tail.set_next(thread);
+            head.set_prev(thread);
         }
         self.count.fetch_add(1, Ordering::Release);
     }
 
     /// 从队列头部取出
     pub fn pop_front(&self) -> Option<*mut Thread> {
-        let head = self.head.load(Ordering::Acquire) as *mut Thread;
-        if head.is_null() {
+        let head_ptr = self.head.load(Ordering::Acquire) as *mut Thread;
+        if head_ptr.is_null() {
             return None;
         }
-
+        // SAFETY: head_ptr 由本队列管理, 始终有效
+        let head = unsafe { ThreadRef::new_unchecked(head_ptr) };
         let count = self.count.load(Ordering::Acquire);
         let result = if count == 1 {
             self.head.store(0, Ordering::Release);
-            unsafe {
-                (*head).next.store(0, Ordering::Release);
-                (*head).prev.store(0, Ordering::Release);
-            }
-            Some(head)
+            head.set_next(core::ptr::null_mut());
+            head.set_prev(core::ptr::null_mut());
+            Some(head_ptr)
         } else {
-            let new_head = unsafe { (*head).next.load(Ordering::Acquire) as *mut Thread };
-            let tail = unsafe { (*head).prev.load(Ordering::Acquire) as *mut Thread };
-            if !new_head.is_null() {
-                unsafe {
-                    (*new_head).prev.store(tail as u64, Ordering::Release);
-                    (*tail).next.store(new_head as u64, Ordering::Release);
-                    (*head).next.store(0, Ordering::Release);
-                    (*head).prev.store(0, Ordering::Release);
-                }
-                self.head.store(new_head as u64, Ordering::Release);
+            let new_head_ptr = head.next();
+            let tail_ptr = head.prev();
+            if !new_head_ptr.is_null() {
+                // SAFETY: 由环形链表结构保证
+                let new_head = unsafe { ThreadRef::new_unchecked(new_head_ptr) };
+                let tail = unsafe { ThreadRef::new_unchecked(tail_ptr) };
+                new_head.set_prev(tail_ptr);
+                tail.set_next(new_head_ptr);
+                head.set_next(core::ptr::null_mut());
+                head.set_prev(core::ptr::null_mut());
+                self.head.store(new_head_ptr as u64, Ordering::Release);
             }
-            Some(head)
+            Some(head_ptr)
         };
 
         if result.is_some() {
@@ -92,22 +251,22 @@ impl RunQueue {
         if thread.is_null() {
             return false;
         }
-
-        let head = self.head.load(Ordering::Acquire) as *mut Thread;
-        if head.is_null() {
+        // SAFETY: 调用方保证 thread 有效
+        let t = unsafe { ThreadRef::new_unchecked(thread) };
+        let head_ptr = self.head.load(Ordering::Acquire) as *mut Thread;
+        if head_ptr.is_null() {
             return false;
         }
-
+        // SAFETY: head_ptr 由本队列管理
+        let _head = unsafe { ThreadRef::new_unchecked(head_ptr) };
         let count = self.count.load(Ordering::Acquire);
         let addr = thread as u64;
 
         if count == 1 {
-            if head as u64 == addr {
+            if head_ptr as u64 == addr {
                 self.head.store(0, Ordering::Release);
-                unsafe {
-                    (*thread).next.store(0, Ordering::Release);
-                    (*thread).prev.store(0, Ordering::Release);
-                }
+                t.set_next(core::ptr::null_mut());
+                t.set_prev(core::ptr::null_mut());
                 self.count.fetch_sub(1, Ordering::Release);
                 return true;
             }
@@ -115,40 +274,35 @@ impl RunQueue {
         }
 
         // 遍历链表查找
-        let mut current = head;
+        let mut current = head_ptr;
         for _ in 0..count {
             if current as u64 == addr {
-                let prev = unsafe { (*current).prev.load(Ordering::Acquire) as *mut Thread };
-                let next = unsafe { (*current).next.load(Ordering::Acquire) as *mut Thread };
-
+                // SAFETY: 闭环链表节点
+                let prev = t.prev();
+                let next = t.next();
                 if !prev.is_null() {
-                    unsafe {
-                        (*prev).next.store(next as u64, Ordering::Release);
-                    }
+                    let p = unsafe { ThreadRef::new_unchecked(prev) };
+                    p.set_next(next);
                 }
                 if !next.is_null() {
-                    unsafe {
-                        (*next).prev.store(prev as u64, Ordering::Release);
-                    }
+                    let n = unsafe { ThreadRef::new_unchecked(next) };
+                    n.set_prev(prev);
                 }
-
-                if head as u64 == addr {
+                if head_ptr as u64 == addr {
                     self.head.store(next as u64, Ordering::Release);
                 }
-
-                unsafe {
-                    (*thread).next.store(0, Ordering::Release);
-                    (*thread).prev.store(0, Ordering::Release);
-                }
-
+                t.set_next(core::ptr::null_mut());
+                t.set_prev(core::ptr::null_mut());
                 self.count.fetch_sub(1, Ordering::Release);
                 return true;
             }
-            let n = unsafe { (*current).next.load(Ordering::Acquire) as *mut Thread };
-            if n == head {
+            // SAFETY: 链表内 next 节点有效
+            let n = unsafe { ThreadRef::new_unchecked(current) };
+            let n_next = n.next();
+            if n_next == head_ptr {
                 break;
             } // 循环一周
-            current = n;
+            current = n_next;
         }
 
         false
@@ -198,7 +352,9 @@ impl Iterator for RunQueueIter {
             return None;
         }
 
-        self.current = unsafe { (*t).next.load(Ordering::Acquire) };
+        // SAFETY: t 来自环形链表, 调度器串行访问, 节点有效
+        let tr = unsafe { ThreadRef::new_unchecked(t) };
+        self.current = tr.next() as u64;
         self.visited += 1;
 
         Some(t)
@@ -240,11 +396,7 @@ pub struct SchedulerEx {
     pub is_frozen_global: AtomicBool,
 }
 
-// SAFETY: SchedulerEx uses only Atomic types for mutable state.
-// All fields are atomic (AtomicU32/AtomicU64/AtomicBool) or plain
-// Copy data (SchedulerStats). No interior mutability without atomics.
-unsafe impl Send for SchedulerEx {}
-unsafe impl Sync for SchedulerEx {}
+// All fields (RunQueue with Atomic*, AtomicU64, AtomicBool, plain stats) auto-implement Send + Sync.
 
 impl SchedulerEx {
     pub const fn new() -> Self {
@@ -273,19 +425,19 @@ impl SchedulerEx {
     }
 
     pub fn init(&self) {
-        let idle =
-            unsafe { alloc::alloc::alloc(alloc::alloc::Layout::new::<Thread>()) as *mut Thread };
+        // SAFETY: 分配 0 号 (idle) Thread, 立即写入有效值
+        let idle = unsafe {
+            let layout = alloc::alloc::Layout::new::<Thread>();
+            let raw = alloc::alloc::alloc(layout) as *mut Thread;
+            core::ptr::write(raw, Thread::new(0, 0));
+            raw
+        };
         if !idle.is_null() {
-            unsafe {
-                core::ptr::write(idle, Thread::new(0, 0));
-                (*idle)
-                    .state
-                    .store(ThreadState::Ready as u32, Ordering::SeqCst);
-                (*idle)
-                    .priority
-                    .store(ThreadPriority::Idle as u32, Ordering::SeqCst);
-                (*idle).time_slice.store(u32::MAX, Ordering::SeqCst);
-            }
+            // SAFETY: idle 由本调用方才分配的 alloc, 必有效
+            let idle_ref = unsafe { ThreadRef::new_unchecked(idle) };
+            idle_ref.store_state(ThreadState::Ready as u32);
+            idle_ref.store_priority(ThreadPriority::Idle as u32);
+            idle_ref.store_time_slice(u32::MAX);
             self.idle_thread.store(idle as u64, Ordering::SeqCst);
             self.current.store(idle as u64, Ordering::SeqCst);
             self.run_queues[ThreadPriority::Idle as usize].push_back(idle);
@@ -298,16 +450,14 @@ impl SchedulerEx {
             return;
         }
 
-        unsafe {
-            let state = (*thread).get_state();
-            if state == ThreadState::Ready || state == ThreadState::Created {
-                (*thread)
-                    .state
-                    .store(ThreadState::Ready as u32, Ordering::SeqCst);
-                let prio = ThreadPriority::from_u32((*thread).priority.load(Ordering::Acquire));
-                let idx = Self::queue_idx(prio);
-                self.run_queues[idx].push_back(thread);
-            }
+        // SAFETY: 调用方保证 thread 有效
+        let t = unsafe { ThreadRef::new_unchecked(thread) };
+        let state = t.get_state();
+        if state == ThreadState::Ready || state == ThreadState::Created {
+            t.store_state(ThreadState::Ready as u32);
+            let prio = ThreadPriority::from_u32(t.priority_raw());
+            let idx = Self::queue_idx(prio);
+            self.run_queues[idx].push_back(thread);
         }
     }
 
@@ -328,23 +478,22 @@ impl SchedulerEx {
 
         let current = self.current.load(Ordering::SeqCst);
         if current != 0 {
-            unsafe {
-                let thread = current as *mut Thread;
-                let time_slice = (*thread).time_slice.fetch_sub(1, Ordering::SeqCst);
-                (*thread).cpu_time.fetch_add(1, Ordering::SeqCst);
+            // SAFETY: current 由调度器自管理, 必指向有效 Thread
+            let thread = unsafe { ThreadRef::new_unchecked(current as *mut Thread) };
+            let time_slice = thread.fetch_sub_time_slice();
+            thread.fetch_add_cpu_time();
 
-                let sleep_until = (*thread).sleep_until.load(Ordering::SeqCst);
-                if sleep_until != 0 {
-                    let ticks = crate::kernel::timer::get_ticks();
-                    if ticks >= sleep_until {
-                        (*thread).sleep_until.store(0, Ordering::SeqCst);
-                        let _ = (*thread).set_state_safe(ThreadState::Ready);
-                    }
+            let sleep_until = thread.load_sleep_until();
+            if sleep_until != 0 {
+                let ticks = crate::kernel::timer::get_ticks();
+                if ticks >= sleep_until {
+                    thread.store_sleep_until(0);
+                    let _ = thread.set_state(ThreadState::Ready);
                 }
+            }
 
-                if time_slice <= 1 {
-                    self.need_reschedule.store(1, Ordering::SeqCst);
-                }
+            if time_slice <= 1 {
+                self.need_reschedule.store(1, Ordering::SeqCst);
             }
         }
 
@@ -393,50 +542,53 @@ impl SchedulerEx {
         };
 
         if !prev.is_null() && prev as u64 != next as u64 {
-            unsafe {
-                let prev_state = (*prev).get_state();
-                if prev_state.is_alive() && prev_state != ThreadState::Zombie {
-                    let _ = (*prev).set_state_safe(ThreadState::Ready);
-                    let prio = ThreadPriority::from_u32((*prev).priority.load(Ordering::Acquire));
-                    self.run_queues[Self::queue_idx(prio)].push_back(prev);
-                }
+            // SAFETY: prev 由调度器自管理, 必有效
+            let prev_ref = unsafe { ThreadRef::new_unchecked(prev) };
+            let prev_state = prev_ref.get_state();
+            if prev_state.is_alive() && prev_state != ThreadState::Zombie {
+                let _ = prev_ref.set_state(ThreadState::Ready);
+                let prio = ThreadPriority::from_u32(prev_ref.priority_raw());
+                self.run_queues[Self::queue_idx(prio)].push_back(prev);
             }
         }
 
-        unsafe {
-            let _ = (*next).set_state_safe(ThreadState::Running);
-        }
+        // SAFETY: next 由调度器自管理
+        let next_ref = unsafe { ThreadRef::new_unchecked(next) };
+        let _ = next_ref.set_state(ThreadState::Running);
 
         self.current.store(next as u64, Ordering::SeqCst);
 
         // 更新 TSS 内核栈
-        let kernel_stack = unsafe { (*next).kernel_stack.load(Ordering::SeqCst) };
+        let kernel_stack = next_ref.kernel_stack();
         if kernel_stack != 0 {
             crate::kernel::cpu::arch::set_kernel_stack(kernel_stack);
         }
 
         // 硬件上下文切换
         if !prev.is_null() && prev as u64 != next as u64 {
-            unsafe {
-                let prev_ctx =
-                    (*prev).context_ptr.load(Ordering::SeqCst) as *mut super::types::ProcessContext;
-                let next_ctx =
-                    (*next).context_ptr.load(Ordering::SeqCst) as *mut super::types::ProcessContext;
+            // SAFETY: prev/next 由调度器自管理
+            let prev_ref2 = unsafe { ThreadRef::new_unchecked(prev) };
+            let next_ref2 = next_ref;
+            let prev_ctx = prev_ref2.context_ptr();
+            let next_ctx = next_ref2.context_ptr();
 
-                if !prev_ctx.is_null() && !next_ctx.is_null() {
-                    // ✅ 栈顶 canary 检测
-                    let ks = (*prev).kernel_stack.load(Ordering::SeqCst);
-                    let canary_addr = ks + super::types::KERNEL_STACK_SIZE as u64 - 8;
-                    let canary = *(canary_addr as *const u64);
-                    if canary != 0xDEADBEEF_CAFEBABE_u64 {
-                        extern "C" {
-                            fn klog_ffi_info(msg: *const u8);
-                        }
+            if !prev_ctx.is_null() && !next_ctx.is_null() {
+                // ✅ 栈顶 canary 检测
+                let ks = prev_ref2.kernel_stack();
+                // SAFETY: canary 地址由本调度器维护, 始终位于已映射内核栈内
+                let canary_addr = ks + super::types::KERNEL_STACK_SIZE as u64 - 8;
+                let canary = unsafe { *(canary_addr as *const u64) };
+                if canary != 0xDEADBEEF_CAFEBABE_u64 {
+                    extern "C" {
+                        fn klog_ffi_info(msg: *const u8);
+                    }
+                    // SAFETY: klog_ffi_info 是 unsafe extern "C" FFI 函数
+                    unsafe {
                         klog_ffi_info(b"[SCHED_EX] KERNEL STACK CANARY CORRUPTED\0".as_ptr());
                     }
-
-                    crate::arch!(context_switch(prev_ctx as *mut u8, next_ctx as *const u8));
                 }
+
+                crate::arch!(context_switch(prev_ctx as *mut u8, next_ctx as *const u8));
             }
         }
 
@@ -451,17 +603,15 @@ impl SchedulerEx {
             return false;
         }
 
-        unsafe {
-            if !(*thread).can_freeze() {
-                return false;
-            }
+        // SAFETY: 调用方保证 thread 有效
+        let t = unsafe { ThreadRef::new_unchecked(thread) };
+        if !t.can_freeze() {
+            return false;
         }
 
         for i in 0..5 {
             if self.run_queues[i].remove(thread) {
-                unsafe {
-                    let _ = (*thread).set_state_safe(ThreadState::Frozen);
-                }
+                let _ = t.set_state(ThreadState::Frozen);
                 self.frozen_queue.push_back(thread);
                 self.stats.frozen_count.fetch_add(1, Ordering::SeqCst);
                 return true;
@@ -476,21 +626,19 @@ impl SchedulerEx {
             return false;
         }
 
-        unsafe {
-            if (*thread).get_state() != ThreadState::Frozen {
-                return false;
-            }
+        // SAFETY: 调用方保证 thread 有效
+        let t = unsafe { ThreadRef::new_unchecked(thread) };
+        if t.get_state() != ThreadState::Frozen {
+            return false;
         }
 
         if !self.frozen_queue.remove(thread) {
             return false;
         }
 
-        unsafe {
-            let _ = (*thread).set_state_safe(ThreadState::Ready);
-            let prio = ThreadPriority::from_u32((*thread).priority.load(Ordering::Acquire));
-            self.run_queues[Self::queue_idx(prio)].push_back(thread);
-        }
+        let _ = t.set_state(ThreadState::Ready);
+        let prio = ThreadPriority::from_u32(t.priority_raw());
+        self.run_queues[Self::queue_idx(prio)].push_back(thread);
         self.stats.frozen_count.fetch_sub(1, Ordering::SeqCst);
         true
     }
@@ -551,10 +699,10 @@ impl SchedulerEx {
             return;
         }
 
-        unsafe {
-            (*current).exit_code.store(exit_code, Ordering::SeqCst);
-            let _ = (*current).set_state_safe(ThreadState::Zombie);
-        }
+        // SAFETY: current 由调度器自管理
+        let t = unsafe { ThreadRef::new_unchecked(current) };
+        t.store_exit_code(exit_code);
+        let _ = t.set_state(ThreadState::Zombie);
 
         self.need_reschedule.store(1, Ordering::SeqCst);
         self.schedule();
@@ -570,7 +718,9 @@ impl SchedulerEx {
                 if t.is_null() || count >= 32 {
                     break;
                 }
-                if unsafe { (*t).get_state() == ThreadState::Zombie } {
+                // SAFETY: t 来自本调度器队列
+                let tr = unsafe { ThreadRef::new_unchecked(t) };
+                if tr.get_state() == ThreadState::Zombie {
                     to_reap[count] = t as u64;
                     count += 1;
                 }
@@ -584,11 +734,10 @@ impl SchedulerEx {
                     break;
                 }
             }
-            let tid = unsafe { (*t).tid };
-            if tid != 0 {
-                unsafe {
-                    let _ = (*t).set_state_safe(ThreadState::Terminated);
-                }
+            // SAFETY: t 来自本调度器
+            let tr = unsafe { ThreadRef::new_unchecked(t) };
+            if tr.tid() != 0 {
+                let _ = tr.set_state(ThreadState::Terminated);
                 self.stats.zombie_reaped.fetch_add(1, Ordering::SeqCst);
             }
         }
@@ -600,12 +749,10 @@ impl SchedulerEx {
 
         for src in 0..4 {
             while let Some(t) = self.run_queues[src].pop_front() {
-                unsafe {
-                    (*t).priority
-                        .store(ThreadPriority::High as u32, Ordering::SeqCst);
-                    (*t).time_slice
-                        .store(SCHED_LEVEL_0_QUANTUM, Ordering::SeqCst);
-                }
+                // SAFETY: t 来自本调度器
+                let tr = unsafe { ThreadRef::new_unchecked(t) };
+                tr.store_priority(ThreadPriority::High as u32);
+                tr.store_time_slice(SCHED_LEVEL_0_QUANTUM);
                 self.run_queues[3].push_back(t);
             }
         }
@@ -628,17 +775,24 @@ mod tests {
     use alloc::vec::Vec;
 
     /// 辅助: 创建测试线程
+    ///
+    /// # Safety
+    /// 返回原始指针, 调用方在 `Box::from_raw` 之后确保唯一所有权。
+    /// 为安全 Rust 接口, 测试需要 `unsafe` 包装 (无法避免原始指针)。
     fn make_test_thread(tid: u32, pid: u32, priority: ThreadPriority) -> *mut Thread {
-        let t = Box::into_raw(Box::new(Thread::new(tid, pid)));
-        unsafe {
-            (*t).priority.store(priority as u32, Ordering::SeqCst);
-            (*t).state
-                .store(ThreadState::Ready as u32, Ordering::SeqCst);
-        }
+        // SAFETY: Box::into_raw 转移所有权到调用方
+        let t = unsafe { Box::into_raw(Box::new(Thread::new(tid, pid))) };
+        // SAFETY: t 来自 Box::into_raw 立即调用, 分配有效
+        let tr = unsafe { ThreadRef::new_unchecked(t) };
+        tr.store_priority(priority as u32);
+        tr.store_state(ThreadState::Ready as u32);
         t
     }
 
     /// 辅助: 释放测试线程
+    ///
+    /// # Safety
+    /// - `t` 必须由 `make_test_thread` 产生且未被释放
     unsafe fn free_test_thread(t: *mut Thread) {
         if !t.is_null() {
             drop(Box::from_raw(t));
@@ -740,8 +894,10 @@ mod tests {
 
         let best = sched.pop_highest();
         assert!(best.is_some());
+        // SAFETY: best 来自 pop_highest
+        let best_tr = unsafe { ThreadRef::new_unchecked(best.unwrap()) };
+        assert_eq!(best_tr.tid(), 2); // highest priority
         unsafe {
-            assert_eq!((*best.unwrap()).tid, 2); // highest priority
             free_test_thread(t1);
             free_test_thread(t2);
             free_test_thread(t3);
@@ -753,16 +909,15 @@ mod tests {
     fn test_thread_state_transitions() {
         let t = make_test_thread(1, 1, ThreadPriority::Normal);
 
-        unsafe {
-            assert!((*t).set_state_safe(ThreadState::Ready).is_err()); // Created → Ready
-                                                                       // Reset to Created for fresh test
-            (*t).state
-                .store(ThreadState::Created as u32, Ordering::SeqCst);
-            assert!((*t).set_state_safe(ThreadState::Ready).is_err()); // Actually Created → Ready should be OK
-        }
+        // SAFETY: t 由 make_test_thread 分配, 立即构造 ThreadRef
+        let tr = unsafe { ThreadRef::new_unchecked(t) };
+        assert!(tr.set_state(ThreadState::Ready).is_err()); // Created → Ready
+                                                            // Reset to Created for fresh test
+        tr.store_state(ThreadState::Created as u32);
+        assert!(tr.set_state(ThreadState::Ready).is_err()); // Actually Created → Ready should be OK
 
         // This test validates state machine
-        let states = unsafe { (*t).state.load(Ordering::SeqCst) };
+        let states = tr.load_state_raw();
         // Just verify state is set
         assert!(states > 0);
 
@@ -775,10 +930,9 @@ mod tests {
     fn test_freeze_thaw() {
         let sched = SchedulerEx::new();
         let t = make_test_thread(1, 1, ThreadPriority::Normal);
-        unsafe {
-            (*t).state
-                .store(ThreadState::Ready as u32, Ordering::SeqCst);
-        }
+        // SAFETY: t 由 make_test_thread 分配
+        let tr = unsafe { ThreadRef::new_unchecked(t) };
+        tr.store_state(ThreadState::Ready as u32);
 
         sched.run_queues[ThreadPriority::Normal as usize].push_back(t);
         assert!(sched.freeze_thread(t));
@@ -798,11 +952,10 @@ mod tests {
     fn test_tick_accounting() {
         let sched = SchedulerEx::new();
         let t = make_test_thread(100, 1, ThreadPriority::Normal);
-        unsafe {
-            (*t).time_slice.store(10, Ordering::SeqCst);
-            (*t).state
-                .store(ThreadState::Ready as u32, Ordering::SeqCst);
-        }
+        // SAFETY: t 由 make_test_thread 分配
+        let tr = unsafe { ThreadRef::new_unchecked(t) };
+        tr.store_time_slice(10);
+        tr.store_state(ThreadState::Ready as u32);
 
         sched.run_queues[ThreadPriority::Normal as usize].push_back(t);
         sched.current.store(t as u64, Ordering::SeqCst);
@@ -811,9 +964,9 @@ mod tests {
             sched.tick_accounting();
         }
 
+        let ts = tr.time_slice();
+        assert_eq!(ts, 5); // 10 - 5 = 5
         unsafe {
-            let ts = (*t).time_slice.load(Ordering::SeqCst);
-            assert_eq!(ts, 5); // 10 - 5 = 5
             free_test_thread(t);
         }
     }
@@ -822,11 +975,10 @@ mod tests {
     fn test_need_reschedule_flag() {
         let sched = SchedulerEx::new();
         let t = make_test_thread(100, 1, ThreadPriority::Normal);
-        unsafe {
-            (*t).time_slice.store(1, Ordering::SeqCst);
-            (*t).state
-                .store(ThreadState::Ready as u32, Ordering::SeqCst);
-        }
+        // SAFETY: t 由 make_test_thread 分配
+        let tr = unsafe { ThreadRef::new_unchecked(t) };
+        tr.store_time_slice(1);
+        tr.store_state(ThreadState::Ready as u32);
 
         sched.run_queues[ThreadPriority::Normal as usize].push_back(t);
         sched.current.store(t as u64, Ordering::SeqCst);
@@ -847,10 +999,9 @@ mod tests {
         sched.current.store(idle as u64, Ordering::SeqCst);
 
         let t = make_test_thread(1, 1, ThreadPriority::Normal);
-        unsafe {
-            (*t).state
-                .store(ThreadState::Ready as u32, Ordering::SeqCst);
-        }
+        // SAFETY: t 由 make_test_thread 分配
+        let tr = unsafe { ThreadRef::new_unchecked(t) };
+        tr.store_state(ThreadState::Ready as u32);
         sched.add_thread(t);
         sched.need_reschedule.store(1, Ordering::SeqCst);
 

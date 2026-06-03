@@ -22,6 +22,7 @@ use super::types::*;
 use super::vfs::VFS_MANAGER;
 use crate::kernel::fs::hvfs::hvfs::get_hvfs;
 use crate::kernel::fs::ramfs::ramfs::RAMFS_DATA;
+use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
 use crate::kernel::lib::cstr::CStrExt;
 
 // ============================================================================
@@ -216,7 +217,7 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
         None => return -1,
     };
 
-    let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
+    let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
 
     let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
         Some(r) => r,
@@ -227,13 +228,13 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
         FsType::RamFs => {
             let mut ramfs = RAMFS_DATA.lock();
             let mut offset = offset;
-            let result = ramfs.read(node_id, &mut offset, buf_slice, pwm);
+            let result = ramfs.read(node_id, &mut offset, user_buf.as_mut_slice(), pwm);
             VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
             result
         }
         FsType::HvFs => {
             let hvfs = get_hvfs();
-            hvfs.read(node_id, buf_slice, count)
+            hvfs.read(node_id, user_buf.as_mut_slice(), count)
         }
 
         FsType::Unknown => -1,
@@ -302,7 +303,7 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
         None => return -1,
     };
 
-    let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
+    let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
 
     let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
         Some(r) => r,
@@ -313,13 +314,13 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
         FsType::RamFs => {
             let mut ramfs = RAMFS_DATA.lock();
             let mut offset = offset;
-            let result = ramfs.write(node_id, &mut offset, buf_slice, pwm);
+            let result = ramfs.write(node_id, &mut offset, user_buf.as_slice(), pwm);
             VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
             result
         }
         FsType::HvFs => {
             let hvfs = get_hvfs();
-            hvfs.write(node_id, buf_slice, count)
+            hvfs.write(node_id, user_buf.as_slice(), count)
         }
 
         FsType::Unknown => -1,
@@ -399,6 +400,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     if st.is_null() {
         return -1;
     }
+    let mut st_ref = unsafe { UserRefMut::new(st) };
 
     let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
         Some(r) => r,
@@ -412,9 +414,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
             match ramfs.resolve_path(rel_path) {
                 Some(node_id) => match ramfs.stat(node_id) {
                     Some(stat) => {
-                        unsafe {
-                            *st = stat;
-                        }
+                        *st_ref.as_mut() = stat;
                         0
                     }
                     None => -1,
@@ -426,20 +426,19 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
             let hvfs = get_hvfs();
             match hvfs.stat(rel_path, pwm) {
                 Some(obj) => {
-                    unsafe {
-                        (*st).node_id = obj.obj_id as u32;
-                        (*st).mode = obj.pwm_perm;
-                        (*st).size = obj.size as u32;
-                        (*st).owner_pwm = obj.owner_pwm;
-                        (*st).group_pwm = obj.group_pwm;
-                        (*st).perm = obj.pwm_perm;
-                        (*st).sensitivity = obj.sensitivity;
-                        (*st).file_type = if obj.is_dir() {
-                            VfsFileType::Dir.as_u8()
-                        } else {
-                            VfsFileType::File.as_u8()
-                        };
-                    }
+                    let r = st_ref.as_mut();
+                    r.node_id = obj.obj_id as u32;
+                    r.mode = obj.pwm_perm;
+                    r.size = obj.size as u32;
+                    r.owner_pwm = obj.owner_pwm;
+                    r.group_pwm = obj.group_pwm;
+                    r.perm = obj.pwm_perm;
+                    r.sensitivity = obj.sensitivity;
+                    r.file_type = if obj.is_dir() {
+                        VfsFileType::Dir.as_u8()
+                    } else {
+                        VfsFileType::File.as_u8()
+                    };
                     0
                 }
                 None => -1,
@@ -451,12 +450,11 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
 
     if result == 0 {
         let tbl = crate::kernel::credo::identity::get_table();
-        unsafe {
-            (*st).uid = tbl.uid_of((*st).owner_pwm);
-            (*st).gid = tbl.gid_of((*st).group_pwm);
-            if (*st).gid == 0xFFFF_FFFF {
-                (*st).gid = (*st).uid;
-            }
+        let r = st_ref.as_mut();
+        r.uid = tbl.uid_of(r.owner_pwm);
+        r.gid = tbl.gid_of(r.group_pwm);
+        if r.gid == 0xFFFF_FFFF {
+            r.gid = r.uid;
         }
     }
 
@@ -485,36 +483,26 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
         FsType::RamFs => {
             let mut ramfs = RAMFS_DATA.lock();
             let mut dir_offset = offset;
-            let mut raw_entry = crate::kernel::fs::ramfs::ramfs::RamFsDirEntry::new();
             let raw_size = dirent_size as usize;
-            let entry_slice = unsafe {
-                core::slice::from_raw_parts_mut(
-                    &mut raw_entry as *mut crate::kernel::fs::ramfs::ramfs::RamFsDirEntry
-                        as *mut u8,
-                    raw_size,
-                )
-            };
-            let result = ramfs.read(_node_id, &mut dir_offset, entry_slice, pwm);
+            let mut raw_buf = alloc::vec![0u8; raw_size];
+            let result = ramfs.read(_node_id, &mut dir_offset, &mut raw_buf, pwm);
+            let raw_entry = crate::kernel::fs::ramfs::ramfs::RamFsDirEntry::read_at(&raw_buf, 0);
             if result <= 0 || raw_entry.node == 0 {
                 return 0;
             }
-            unsafe {
-                (*entry).node = raw_entry.node;
-                (*entry).file_type = raw_entry.file_type;
-                let name_len = raw_entry
-                    .name
-                    .iter()
-                    .position(|&b| b == 0)
-                    .unwrap_or(VFS_MAX_NAME);
-                let copy_len = name_len.min(VFS_MAX_NAME);
-                core::ptr::copy_nonoverlapping(
-                    raw_entry.name.as_ptr(),
-                    (*entry).name.as_mut_ptr(),
-                    copy_len,
-                );
-                if name_len < VFS_MAX_NAME {
-                    (*entry).name[name_len] = 0;
-                }
+            let mut entry_ref = unsafe { UserRefMut::new(entry) };
+            let e = entry_ref.as_mut();
+            e.node = raw_entry.node;
+            e.file_type = raw_entry.file_type;
+            let name_len = raw_entry
+                .name
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(VFS_MAX_NAME);
+            let copy_len = name_len.min(VFS_MAX_NAME);
+            e.name[..copy_len].copy_from_slice(&raw_entry.name[..copy_len]);
+            if name_len < VFS_MAX_NAME {
+                e.name[name_len] = 0;
             }
             VFS_MANAGER.set_fd_offset(fd as usize, dir_offset);
             (raw_entry.node != 0) as i32
@@ -538,10 +526,10 @@ pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     let cwd = VFS_MANAGER.get_cwd();
     let bytes = cwd.as_bytes();
     let len = bytes.len().min((size - 1) as usize);
-    unsafe {
-        core::ptr::copy_nonoverlapping(bytes.as_ptr(), buf as *mut u8, len);
-        *buf.add(len) = 0;
-    }
+    let mut user_buf = unsafe { UserWritePtr::new(buf as *mut u8, size as usize) };
+    let slice = user_buf.as_mut_slice();
+    slice[..len].copy_from_slice(&bytes[..len]);
+    slice[len] = 0;
     len as i32
 }
 
@@ -607,9 +595,9 @@ pub fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
-    let buf_slice = unsafe { core::slice::from_raw_parts_mut(buf, count as usize) };
+    let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
     let hvfs = get_hvfs();
-    hvfs.read(fd, buf_slice, count)
+    hvfs.read(fd, user_buf.as_mut_slice(), count)
 }
 
 #[no_mangle]
@@ -617,9 +605,9 @@ pub fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
-    let buf_slice = unsafe { core::slice::from_raw_parts(buf, count as usize) };
+    let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
     let hvfs = get_hvfs();
-    hvfs.write(fd, buf_slice, count)
+    hvfs.write(fd, user_buf.as_slice(), count)
 }
 
 #[no_mangle]
@@ -645,19 +633,21 @@ pub fn hvfs_get_stats_internal(
 ) {
     let hvfs = get_hvfs();
     let (allocs, frees, _reads, _writes) = hvfs.get_stats();
-    unsafe {
-        if !total_blocks.is_null() {
-            *total_blocks = allocs as u32;
-        }
-        if !free_blocks.is_null() {
-            *free_blocks = frees as u32;
-        }
-        if !total_nodes.is_null() {
-            *total_nodes = 0;
-        }
-        if !free_nodes.is_null() {
-            *free_nodes = 0;
-        }
+    if !total_blocks.is_null() {
+        let mut r = unsafe { UserRefMut::new(total_blocks) };
+        *r.as_mut() = allocs as u32;
+    }
+    if !free_blocks.is_null() {
+        let mut r = unsafe { UserRefMut::new(free_blocks) };
+        *r.as_mut() = frees as u32;
+    }
+    if !total_nodes.is_null() {
+        let mut r = unsafe { UserRefMut::new(total_nodes) };
+        *r.as_mut() = 0;
+    }
+    if !free_nodes.is_null() {
+        let mut r = unsafe { UserRefMut::new(free_nodes) };
+        *r.as_mut() = 0;
     }
 }
 
@@ -997,14 +987,13 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
         (fd_table[fd_usize].node_id, 0)
     };
     let _pwm = resolve_pwm(pwm);
+    let mut st_ref = unsafe { UserRefMut::new(st) };
 
     let result = {
         let ramfs = RAMFS_DATA.lock();
         match ramfs.stat(node_id) {
             Some(stat) => {
-                unsafe {
-                    *st = stat;
-                }
+                *st_ref.as_mut() = stat;
                 0
             }
             None => {
@@ -1017,20 +1006,19 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
                 .unwrap_or("");
                 match hvfs.stat(path_str, pwm) {
                     Some(obj) => {
-                        unsafe {
-                            (*st).node_id = obj.obj_id as u32;
-                            (*st).mode = obj.pwm_perm;
-                            (*st).size = obj.size as u32;
-                            (*st).owner_pwm = obj.owner_pwm;
-                            (*st).group_pwm = obj.group_pwm;
-                            (*st).perm = obj.pwm_perm;
-                            (*st).sensitivity = obj.sensitivity;
-                            (*st).file_type = if obj.is_dir() {
-                                VfsFileType::Dir.as_u8()
-                            } else {
-                                VfsFileType::File.as_u8()
-                            };
-                        }
+                        let r = st_ref.as_mut();
+                        r.node_id = obj.obj_id as u32;
+                        r.mode = obj.pwm_perm;
+                        r.size = obj.size as u32;
+                        r.owner_pwm = obj.owner_pwm;
+                        r.group_pwm = obj.group_pwm;
+                        r.perm = obj.pwm_perm;
+                        r.sensitivity = obj.sensitivity;
+                        r.file_type = if obj.is_dir() {
+                            VfsFileType::Dir.as_u8()
+                        } else {
+                            VfsFileType::File.as_u8()
+                        };
                         0
                     }
                     None => -1,
@@ -1041,12 +1029,11 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
 
     if result == 0 {
         let tbl = crate::kernel::credo::identity::get_table();
-        unsafe {
-            (*st).uid = tbl.uid_of((*st).owner_pwm);
-            (*st).gid = tbl.gid_of((*st).group_pwm);
-            if (*st).gid == 0xFFFF_FFFF {
-                (*st).gid = (*st).uid;
-            }
+        let r = st_ref.as_mut();
+        r.uid = tbl.uid_of(r.owner_pwm);
+        r.gid = tbl.gid_of(r.group_pwm);
+        if r.gid == 0xFFFF_FFFF {
+            r.gid = r.uid;
         }
     }
 

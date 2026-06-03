@@ -31,9 +31,7 @@ pub struct HvMetaslab {
 }
 
 // SAFETY: HvMetaslab uses Mutex for bitmap and plain Copy types for other fields.
-// Mutation of bitmap is serialized through the Mutex.
-unsafe impl Send for HvMetaslab {}
-unsafe impl Sync for HvMetaslab {}
+// SAFETY (Framekernel P2.2.2): HvMetaslab 全部字段 (Mutex<T>, [T; N]) 自动 Send + Sync。
 
 impl HvMetaslab {
     pub fn new(id: u32, vdev_id: u16, start: u64, size: u64) -> Self {

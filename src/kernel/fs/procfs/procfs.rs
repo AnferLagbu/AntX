@@ -1,10 +1,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 
-extern "C" {
-    fn pmm_get_total_pages() -> u64;
-    fn pmm_get_free_pages() -> u64;
-}
+use crate::kernel::mm::api as pmm_api;
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;
 pub const PROCFS_MAX_NAME: usize = 32;
@@ -33,9 +30,7 @@ pub struct ProcfsData {
     entry_count: AtomicU32,
 }
 
-// SAFETY: ProcfsData uses Mutex for entries and AtomicU32 for entry_count.
-unsafe impl Send for ProcfsData {}
-unsafe impl Sync for ProcfsData {}
+// SAFETY (Framekernel P2.2.3): ProcfsData 全部字段自动 Send + Sync。
 
 impl ProcfsData {
     pub const fn new() -> Self {
@@ -158,8 +153,8 @@ impl ProcfsData {
         }
 
         if name == "sys/memory" {
-            let total = unsafe { pmm_get_total_pages() };
-            let free = unsafe { pmm_get_free_pages() };
+            let total = pmm_api::pmm_get_total_pages();
+            let free = pmm_api::pmm_get_free_pages();
             let total_mb = total * 4 / 1024;
             let free_mb = free * 4 / 1024;
 

@@ -30,6 +30,7 @@
 
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use super::usb_core::{HostController, Urb, UsbSpeed};
+use crate::kernel::framework::iomem::IoMem;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr;
@@ -279,8 +280,8 @@ impl Trb {
 
 /// xHCI 主机控制器驱动
 pub struct XhciController {
-    /// MMIO基地址
-    mmio_base: usize,
+    /// MMIO 句柄 (safe access proxy)
+    iomem: Option<IoMem>,
     /// 能力寄存器指针
     cap_regs: *const XhciCapabilityRegisters,
     /// 操作寄存器指针
@@ -299,9 +300,9 @@ pub struct XhciController {
 
 impl XhciController {
     /// 创建新的xHCI控制器实例
-    pub fn new(mmio_base: usize) -> Self {
+    pub fn new(iomem: IoMem) -> Self {
         Self {
-            mmio_base,
+            iomem: Some(iomem),
             cap_regs: ptr::null(),
             op_regs: ptr::null_mut(),
             port_regs: ptr::null_mut(),
@@ -315,14 +316,16 @@ impl XhciController {
     /// 初始化控制器
     fn init_hardware(&mut self) -> Result<()> {
         unsafe {
+            let base = self.iomem.as_ref().unwrap().virt_ptr() as usize;
+
             // 设置能力寄存器指针
-            self.cap_regs = self.mmio_base as *const XhciCapabilityRegisters;
+            self.cap_regs = base as *const XhciCapabilityRegisters;
 
             // 读取能力寄存器
             let cap = &*self.cap_regs;
 
             // 计算操作寄存器地址
-            let op_base = self.mmio_base + cap.cap_length as usize;
+            let op_base = base + cap.cap_length as usize;
             self.op_regs = op_base as *mut XhciOperationalRegisters;
 
             // 解析结构参数
@@ -559,7 +562,12 @@ mod tests {
 
     #[test]
     fn test_xhci_controller_creation() {
-        let ctrl = XhciController::new(0xFE000000);
+        // SAFETY: 测试用固定 MMIO 地址, identity-mapped in test environment
+        let iomem = unsafe {
+            IoMem::new(crate::kernel::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        };
+        let ctrl = XhciController::new(iomem);
         assert_eq!(ctrl.name(), "xHCI Controller");
         assert_eq!(ctrl.device_type(), DeviceType::Bus);
         assert!(!ctrl.is_ready());

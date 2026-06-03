@@ -3,6 +3,7 @@ use super::process::{FdTable, Process, PROCESS_TABLE};
 use super::types::{ProcessContext, ProcessId, ProcessPriority, ProcessState};
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
 
@@ -27,6 +28,7 @@ extern "C" {
     fn vmm_split_2mb_page(vaddr: u64) -> i32;
     fn vmm_ensure_path_user(vaddr: u64);
     fn vmm_switch_page_table(table: u64);
+    fn vmm_destroy_page_table(cr3: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
     fn memset(s: *mut u8, c: i32, n: u64);
     fn memcpy(dest: *mut u8, src: *const u8, n: u64);
@@ -97,170 +99,424 @@ pub struct UserProcInfo {
     pub code_data: *const u8,
 }
 
-#[repr(C)]
-pub struct UserProcess {
-    pub pid: u32,
-    pub pwm: AtomicU64,
-    pub cr3: AtomicU64,
-    pub kernel_stack: AtomicU64,
-    pub user_stack: AtomicU64,
-    pub stack_bottom: AtomicU64,
-    pub entry: u64,
-    pub state: AtomicU32,
-    pub create_time: u64,
-}
+// === 特权层: UserProcess 裸指针/FFI 桥接集中地 ===
+//
+// 本子模块包含所有与裸指针 (`*mut UserProcess`)、extern "C" FFI 调用
+// (kmalloc/memset/memcpy/vmm_*) 相关的 `unsafe` 代码。
+//
+// 上层 `user_proc.rs` 业务逻辑 (create/enter/setup_user_stack/load_elf_from_memory 等)
+// 通过 `raw::UserProcRef` newtype 安全访问 UserProcess 字段, 保持 100% safe Rust。
+//
+// `unsafe impl Send/Sync` 在本子模块中声明, 因为类型定义本身需要这些 trait
+// 才能被 `static USER_PROC_MANAGER` 使用。
+pub(crate) mod raw {
+    use super::*;
 
-pub struct UserProcManager {
-    current: AtomicU64,
-    processes: Mutex<alloc::collections::BTreeMap<u32, *mut UserProcess>>,
-}
+    // === UserProcess 安全访问封装 (Framekernel privilege wrapper) ===
+    //
+    // `*mut UserProcess` 在用户进程管理中作为索引句柄使用。将其封装为 `UserProcRef`
+    // newtype 后, 所有 `unsafe { (*ptr).field }` 集中在 `UserProcRef` 内部方法中。
+    //
+    // # SAFETY invariant
+    // - 调用方必须保证 `*mut UserProcess` 指向一个有效的 `UserProcess` 分配 (kmalloc)。
+    // - 通过 USER_PROC_MANAGER.processes BTreeMap 持有的 NonNull 句柄都是有效的。
+    #[derive(Clone, Copy)]
+    pub struct UserProcRef(*mut UserProcess);
 
-// SAFETY: UserProcManager uses AtomicU64 for current and Mutex<BTreeMap>
-// for processes. All mutations are serialized through the Mutex.
-unsafe impl Send for UserProcManager {}
-unsafe impl Sync for UserProcManager {}
+    impl UserProcRef {
+        /// 从裸指针构造, 要求调用方提供 SAFETY 保证。
+        ///
+        /// # Safety
+        /// - `ptr` 必须为非空, 指向有效 `UserProcess` 分配
+        /// - 在 `UserProcRef` 存活期间, 不会被释放
+        #[inline(always)]
+        pub unsafe fn new_unchecked(ptr: *mut UserProcess) -> Self {
+            Self(ptr)
+        }
 
-impl UserProcManager {
-    pub const fn new() -> Self {
-        Self {
-            current: AtomicU64::new(0),
-            processes: Mutex::new(alloc::collections::BTreeMap::new()),
+        #[allow(dead_code)]
+        #[inline(always)]
+        pub fn as_ptr(self) -> *mut UserProcess {
+            self.0
+        }
+
+        /// 访问 pid 字段 (读写)
+        #[inline(always)]
+        pub fn pid(&self) -> u32 {
+            unsafe { (*self.0).pid }
+        }
+
+        #[inline(always)]
+        pub fn set_pid(&self, v: u32) {
+            unsafe {
+                (*self.0).pid = v;
+            }
+        }
+
+        /// 访问 entry 字段 (读写)
+        #[inline(always)]
+        pub fn entry(&self) -> u64 {
+            unsafe { (*self.0).entry }
+        }
+
+        #[inline(always)]
+        pub fn set_entry(&self, v: u64) {
+            unsafe {
+                (*self.0).entry = v;
+            }
+        }
+
+        /// 访问 create_time 字段 (读写)
+        #[inline(always)]
+        pub fn create_time(&self) -> u64 {
+            unsafe { (*self.0).create_time }
+        }
+
+        #[inline(always)]
+        pub fn set_create_time(&self, v: u64) {
+            unsafe {
+                (*self.0).create_time = v;
+            }
+        }
+
+        /// 访问 pwm/cr3/kernel_stack/user_stack/stack_bottom/state 原子字段
+        #[inline(always)]
+        pub fn load_pwm(&self) -> u64 {
+            unsafe { (*self.0).pwm.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_pwm(&self, v: u64) {
+            unsafe {
+                (*self.0).pwm.store(v, Ordering::SeqCst);
+            }
+        }
+
+        #[inline(always)]
+        pub fn load_cr3(&self) -> u64 {
+            unsafe { (*self.0).cr3.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_cr3(&self, v: u64) {
+            unsafe {
+                (*self.0).cr3.store(v, Ordering::SeqCst);
+            }
+        }
+
+        #[inline(always)]
+        pub fn load_kernel_stack(&self) -> u64 {
+            unsafe { (*self.0).kernel_stack.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_kernel_stack(&self, v: u64) {
+            unsafe {
+                (*self.0).kernel_stack.store(v, Ordering::SeqCst);
+            }
+        }
+
+        #[inline(always)]
+        pub fn load_user_stack(&self) -> u64 {
+            unsafe { (*self.0).user_stack.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_user_stack(&self, v: u64) {
+            unsafe {
+                (*self.0).user_stack.store(v, Ordering::SeqCst);
+            }
+        }
+
+        #[inline(always)]
+        pub fn load_stack_bottom(&self) -> u64 {
+            unsafe { (*self.0).stack_bottom.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_stack_bottom(&self, v: u64) {
+            unsafe {
+                (*self.0).stack_bottom.store(v, Ordering::SeqCst);
+            }
+        }
+
+        #[inline(always)]
+        pub fn load_state(&self) -> u32 {
+            unsafe { (*self.0).state.load(Ordering::SeqCst) }
+        }
+
+        #[inline(always)]
+        pub fn store_state(&self, v: u32) {
+            unsafe {
+                (*self.0).state.store(v, Ordering::SeqCst);
+            }
         }
     }
 
-    pub fn init(&self) {}
+    /// 在 BTreeMap 中按 pid 索引得到的 NonNull 句柄转成安全引用。
+    ///
+    /// # Safety (内部)
+    /// - `nn` 必须由 USER_PROC_MANAGER 持有, 指向有效 UserProcess 分配。
+    pub fn deref_non_null(nn: NonNull<UserProcess>) -> &'static UserProcess {
+        // SAFETY: nn is from USER_PROC_MANAGER BTreeMap, allocation outlives the manager.
+        unsafe { &*nn.as_ptr() }
+    }
 
-    fn destroy(&self, proc: *mut UserProcess, keep_kstack: bool) {
-        if proc.is_null() {
-            return;
+    /// 获取当前活跃进程 (current: AtomicU64 → NonNull→ ref)。
+    ///
+    /// # Safety (内部)
+    /// - 必须持有 USER_PROC_MANAGER 锁或保证 current 不会并发改变。
+    pub fn current_proc() -> Option<UserProcRef> {
+        let cur = USER_PROC_MANAGER.current.load(Ordering::SeqCst);
+        if cur == 0 {
+            None
+        } else {
+            // SAFETY: cur > 0, 此前由 set_current 设为有效的 NonNull 指针。
+            Some(unsafe { UserProcRef::new_unchecked(cur as *mut UserProcess) })
         }
+    }
+
+    pub fn set_current_ref(r: Option<UserProcRef>) {
+        if let Some(p) = r {
+            USER_PROC_MANAGER
+                .current
+                .store(p.as_ptr() as u64, Ordering::SeqCst);
+        } else {
+            USER_PROC_MANAGER.current.store(0, Ordering::SeqCst);
+        }
+    }
+
+    // === FFI 桥接安全包装 (mm/vmm 设备) ===
+
+    /// 释放一个物理页 (来自内核栈)。
+    ///
+    /// # Safety (内部)
+    /// - `phys` 必须为 `pmm_alloc_page` 返回的合法物理页基址。
+    pub fn free_phys_page(phys: *mut u8) {
+        // SAFETY: 物理页所有权从分配者转移给本 free。
+        unsafe { pmm_free_page(phys) }
+    }
+
+    /// 销毁用户页表 (cr3)。
+    ///
+    /// # Safety (内部)
+    /// - `cr3` 必须为 `vmm_create_user_page_table` 返回的合法页表基址。
+    pub fn destroy_user_page_table(cr3: u64) {
+        // SAFETY: cr3 是 vmm_create_user_page_table 创建的, 调用方负责所有权释放。
+        unsafe { vmm_destroy_page_table(cr3) }
+    }
+
+    /// 查询用户页表中虚拟地址对应的物理地址。
+    ///
+    /// # Safety (内部)
+    /// - `cr3` 必须是有效的页表基址。
+    pub fn virt_to_phys(cr3: u64, vaddr: u64) -> u64 {
+        // SAFETY: cr3 来自 user proc 的 cr3 字段, 已由 vmm_create_user_page_table 创建。
+        unsafe { vmm_get_physical_in_table(cr3, vaddr) }
+    }
+
+    /// 创建用户页表。
+    pub fn create_user_page_table() -> u64 {
+        // SAFETY: FFI 调用, 内部保证返回非零 cr3 或 0 表示失败。
+        unsafe { vmm_create_user_page_table() }
+    }
+
+    /// 分配多页连续物理页。
+    ///
+    /// # Safety (内部)
+    /// - 调用方负责通过 `free_phys_pages` 释放。
+    pub fn alloc_phys_pages(count: u64) -> *mut u8 {
+        // SAFETY: 物理页分配, 调用方负责所有权。
+        unsafe { pmm_alloc_pages(count) }
+    }
+
+    /// 释放多页连续物理页。
+    ///
+    /// # Safety (内部)
+    /// - `pages` 必须为 `alloc_phys_pages` 返回的合法物理页基址。
+    pub fn free_phys_pages(pages: *mut u8, count: u64) {
+        for i in 0..count {
+            raw::free_phys_page((pages as u64 + i * PAGE_SIZE) as *mut u8);
+        }
+    }
+
+    /// 分配一页物理页 (单页)。
+    pub fn alloc_phys_page() -> *mut u8 {
+        // SAFETY: 物理页分配, 调用方负责所有权。
+        unsafe { pmm_alloc_page() }
+    }
+
+    /// 在用户页表中建立映射。
+    pub fn vmm_map_user_page(cr3: u64, vaddr: u64, paddr: u64, flags: u64) {
+        // SAFETY: cr3 来自 user proc 的 cr3 字段, 已建立。
         unsafe {
-            let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            if cr3 != 0 {
-                extern "C" {
-                    fn vmm_destroy_page_table(cr3: u64);
-                }
-                vmm_destroy_page_table(cr3);
-            }
-            if !keep_kstack {
-                let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
-                if kstack != 0 {
-                    let kstack_base_virt = kstack - USER_KSTACK_SIZE;
-                    let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
-                    for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
-                        pmm_free_page((kstack_base_phys + i * PAGE_SIZE) as *mut u8);
-                    }
-                }
-            }
-            let ustack = (*proc).user_stack.load(Ordering::SeqCst);
-            if ustack != 0 {
-                let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
-                for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
-                    let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
-                    let phys = vmm_get_physical_in_table(cr3, svirt);
-                    if phys != 0 {
-                        pmm_free_page(phys as *mut u8);
-                    }
-                }
-            }
-            let pid = (*proc).pid;
-            self.processes.lock().remove(&pid);
+            vmm_map_page_in_table(cr3, vaddr, paddr, flags);
+            vmm_map_page(vaddr, paddr, flags);
+            vmm_ensure_path_user(vaddr);
         }
     }
 
-    pub fn get(&self, pid: u32) -> Option<*mut UserProcess> {
-        self.processes.lock().get(&pid).copied()
-    }
-
-    pub fn destroy_by_pid(&self, pid: u32) {
-        if let Some(proc) = self.get(pid) {
-            self.destroy(proc, false);
-        }
-    }
-
-    pub fn destroy_by_pid_no_kstack(&self, pid: u32) {
-        if let Some(proc) = self.get(pid) {
-            self.destroy(proc, true);
-        }
-    }
-
-    pub fn create(&self, info: &UserProcInfo, pwm: u64) -> Option<*mut UserProcess> {
-        let pid = PROCESS_TABLE.allocate_pid()?;
-
-        let proc = unsafe {
-            let ptr = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
-            if ptr.is_null() {
-                return None;
-            }
-            memset(
-                ptr as *mut u8,
-                0,
-                core::mem::size_of::<UserProcess>() as u64,
-            );
-            ptr
-        };
-
+    /// 写一个 u8 到用户页表中的某个字节。
+    pub fn write_user_byte(cr3: u64, off: usize, v: u8) {
+        // SAFETY: vmm_get_physical_in_table 保证返回的物理页对应 vaddr, KERNEL_BASE 偏移后内核可访问。
         unsafe {
-            (*proc).pid = pid;
-            let cr3_val = vmm_create_user_page_table();
-            (*proc).cr3.store(cr3_val, Ordering::SeqCst);
-            if cr3_val == 0 {
-                return None;
+            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
+            if phys != 0 {
+                let addr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u8;
+                *addr = v;
             }
-
-            let stack_pages = pmm_alloc_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
-            if stack_pages.is_null() {
-                pmm_free_page(cr3_val as *mut u8);
-                return None;
-            }
-
-            let stack_phys = stack_pages as u64;
-            let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
-
-            for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
-                let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
-                let sphys = stack_phys + i * PAGE_SIZE;
-                vmm_map_page_in_table(
-                    (*proc).cr3.load(Ordering::SeqCst),
-                    svirt,
-                    sphys,
-                    PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
-                );
-                vmm_map_page(svirt, sphys, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
-                vmm_ensure_path_user(svirt);
-            }
-
-            (*proc).user_stack.store(USER_STACK_TOP, Ordering::SeqCst);
-            let initial_stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
-            (*proc)
-                .stack_bottom
-                .store(initial_stack_bottom, Ordering::SeqCst);
-
-            let kstack = pmm_alloc_pages(USER_KSTACK_SIZE / PAGE_SIZE);
-            if kstack.is_null() {
-                pmm_free_page(stack_pages);
-                pmm_free_page((*proc).cr3.load(Ordering::SeqCst) as *mut u8);
-                return None;
-            }
-            let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
-            (*proc).kernel_stack.store(kstack_top, Ordering::SeqCst);
-            crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
-
-            (*proc).entry = info.entry;
-            (*proc).pwm.store(pwm, Ordering::SeqCst);
-            (*proc).state.store(1, Ordering::SeqCst);
-            (*proc).create_time = crate::kernel::timer::get_ticks();
         }
+    }
 
-        self.processes.lock().insert(pid, proc);
-
-        // 使用 kmalloc 直接分配 Process, 避免 global allocator 问题
-        let kproc_ptr = unsafe { kmalloc(core::mem::size_of::<Process>() as u64) as *mut Process };
-        if kproc_ptr.is_null() {
-            return None;
+    /// 写一个 u64 到用户页表中的某个偏移 (unaligned)。
+    pub fn write_user_u64(cr3: u64, off: usize, v: u64) {
+        // SAFETY: vmm_get_physical_in_table 保证返回的物理页对应 vaddr, KERNEL_BASE 偏移后内核可访问。
+        unsafe {
+            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
+            if phys != 0 {
+                let ptr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u64;
+                core::ptr::write_unaligned(ptr, v);
+            }
         }
+    }
 
-        // 手动构建 Process (避免 Box::new + String::from 的 alloc 调用)
+    /// 读一个字节 (从用户态指针) - 内部 unsafe 封装。
+    pub fn read_byte_from_user_ptr(src: *const u8, j: usize) -> u8 {
+        // SAFETY: 由调用方保证 src 在 [src, src+j+1) 区间内可读。
+        unsafe { *src.add(j) }
+    }
+
+    /// 物理页零初始化 + 映射到用户页表。
+    pub fn alloc_zeroed_user_page(cr3: u64, vaddr: u64, flags: u64) -> *mut u8 {
+        // SAFETY: 物理页分配, 调用方负责所有权。
+        let page = unsafe { pmm_alloc_page() };
+        if page.is_null() {
+            return page;
+        }
+        // SAFETY: page 来自 pmm_alloc_page, 大小为 PAGE_SIZE。
+        unsafe { memset(page, 0, PAGE_SIZE) }
+        raw::vmm_map_user_page(cr3, vaddr, page as u64, flags);
+        page
+    }
+
+    /// 释放物理页 (用于 ELF 加载失败回滚)。
+    pub fn free_phys_page_for_rollback(phys: u64) {
+        // SAFETY: 物理页所有权从分配者转移给本 free。
+        unsafe { pmm_free_page(phys as *mut u8) }
+    }
+
+    /// 从 ELF 文件复制 chunk 到用户物理页 (通过内核映射)。
+    pub fn elf_chunk_copy(
+        page_phys: u64,
+        off_in_page: u64,
+        elf_data: *const u8,
+        src_off: usize,
+        chunk: u64,
+    ) {
+        // SAFETY: 物理页 + KERNEL_BASE 偏移后内核可写, elf_data 区间内可读。
+        unsafe {
+            let dest = (page_phys + KERNEL_BASE + off_in_page) as *mut u8;
+            let src = elf_data.add(src_off);
+            memcpy(dest, src, chunk);
+        }
+    }
+
+    /// 映射单个物理页到用户页表 (用于代码段加载)。
+    pub fn map_code_page(cr3: u64, vaddr: u64, page_phys: u64) {
+        // SAFETY: 物理页已分配, flags = R|X 简化形式。
+        let flags = PAGE_PRESENT | PAGE_USER;
+        // SAFETY: cr3 已建立, page_phys 来自 pmm_alloc_page。
+        unsafe {
+            vmm_map_page_in_table(cr3, vaddr, page_phys, flags);
+            vmm_map_page(vaddr, page_phys, flags);
+            vmm_ensure_path_user(vaddr);
+        }
+    }
+
+    /// 用户进程代码页分配 + 清零。
+    pub fn alloc_code_page() -> *mut u8 {
+        let page = unsafe { pmm_alloc_page() };
+        if !page.is_null() {
+            // SAFETY: page 来自 pmm_alloc_page, 大小为 PAGE_SIZE。
+            unsafe { memset(page, 0, PAGE_SIZE) }
+        }
+        page
+    }
+
+    /// 物理页 → 内核可写指针 (用于代码段 chunk 复制)。
+    pub fn phys_to_kern_mut(phys: u64, off: u64) -> *mut u8 {
+        (phys + KERNEL_BASE + off) as *mut u8
+    }
+
+    /// ELF 文件指针 + 偏移。
+    pub fn elf_ptr_at(elf_data: *const u8, off: usize) -> *const u8 {
+        // SAFETY: 调用方保证 off 在 elf_size 范围内。
+        unsafe { elf_data.add(off) }
+    }
+
+    /// 切换到用户页表 (aarch64 用户态进入前)。
+    pub fn vmm_switch_to_user(cr3: u64) {
+        // SAFETY: cr3 来自 user proc 的 cr3 字段, 已由 vmm_create_user_page_table 创建。
+        unsafe { vmm_switch_page_table(cr3) }
+    }
+
+    /// 分配内存并清零 (类似 calloc)。
+    pub fn alloc_zeroed(size: u64) -> *mut u8 {
+        // SAFETY: kmalloc 由 kernel allocator 提供, 调用方负责释放。
+        let ptr = unsafe { kmalloc(size) } as *mut u8;
+        if !ptr.is_null() {
+            // SAFETY: ptr 来自 kmalloc, 大小为 size, 清零区间 [ptr, ptr+size) 合法。
+            unsafe { memset(ptr, 0, size) }
+        }
+        ptr
+    }
+
+    /// 分配并构造一个 `UserProcess` 内存, 清零后返回。
+    pub fn alloc_user_process() -> Option<*mut UserProcess> {
+        let size = core::mem::size_of::<UserProcess>() as u64;
+        let ptr = raw::alloc_zeroed(size) as *mut UserProcess;
+        if ptr.is_null() {
+            None
+        } else {
+            Some(ptr)
+        }
+    }
+
+    /// 分配并清零一个 `Process` (用于 process table)。
+    pub fn alloc_kernel_process() -> Option<*mut Process> {
+        let size = core::mem::size_of::<Process>() as u64;
+        let ptr = raw::alloc_zeroed(size) as *mut Process;
+        if ptr.is_null() {
+            None
+        } else {
+            Some(ptr)
+        }
+    }
+
+    /// 从 PID/CR3 构造 UserProcRef 用于新创建进程。
+    ///
+    /// # Safety (内部)
+    /// - `proc` 必须为 alloc_user_process 返回的合法指针, 拥有完整所有权。
+    pub fn new_proc_ref(proc: *mut UserProcess) -> UserProcRef {
+        // SAFETY: proc 来自 alloc_user_process, 指向有效 UserProcess 分配。
+        unsafe { UserProcRef::new_unchecked(proc) }
+    }
+
+    /// 在已清零的 `Process` 内存上写入基本字段 (避免业务逻辑中的 `unsafe`)。
+    ///
+    /// # Safety (内部)
+    /// - `kproc_ptr` 必须为 `alloc_kernel_process` 返回的合法指针, 已被清零。
+    #[allow(clippy::too_many_arguments)]
+    pub fn init_kernel_process_fields(
+        kproc_ptr: *mut Process,
+        pid: u32,
+        pwm: u64,
+        cr3: u64,
+        kstack: u64,
+        ustack: u64,
+    ) {
+        use crate::kernel::proc::scheduler::SchedPolicy;
+        // SAFETY: kproc_ptr 来自 alloc_kernel_process, 已清零, 字段可被 ptr::write 覆盖。
         unsafe {
             core::ptr::write(&mut (*kproc_ptr).pid, ProcessId(pid));
             core::ptr::write(&mut (*kproc_ptr).pwm, AtomicU64::new(pwm));
@@ -273,39 +529,27 @@ impl UserProcManager {
                 AtomicU32::new(ProcessPriority::Normal as u32),
             );
             core::ptr::write(&mut (*kproc_ptr).flags, AtomicU32::new(0));
-            // Bypass String::from allocation - use zeroed memory temporarily
-            // core::ptr::write(&mut (*kproc_ptr).name, Mutex::new(String::from("user_proc")));
-            // Leave name field as uninitialized - we'll fix later
             core::ptr::write(&mut (*kproc_ptr).parent, None);
-            // Bypass Vec::new allocation
-            // core::ptr::write(&mut (*kproc_ptr).children, Mutex::new(Vec::new()));
-            // Bypass ProcessContext::new allocation
-            // core::ptr::write(&mut (*kproc_ptr).context, Mutex::new(ProcessContext::new()));
+            core::ptr::write(&mut (*kproc_ptr).cr3, AtomicU64::new(cr3));
             core::ptr::write(
-                &mut (*kproc_ptr).cr3,
-                AtomicU64::new((*proc).cr3.load(Ordering::SeqCst)),
+                &mut (*kproc_ptr).kernel_stack,
+                AtomicU64::new(kstack),
             );
-            let ks_val = (*proc).kernel_stack.load(Ordering::SeqCst);
-            core::ptr::write(&mut (*kproc_ptr).kernel_stack, AtomicU64::new(ks_val));
             core::ptr::write(
                 &mut (*kproc_ptr).user_stack,
-                AtomicU64::new((*proc).user_stack.load(Ordering::SeqCst)),
+                AtomicU64::new(ustack),
             );
             core::ptr::write(&mut (*kproc_ptr).exit_code, AtomicU32::new(0));
             core::ptr::write(&mut (*kproc_ptr).cpu_time, AtomicU64::new(0));
             core::ptr::write(&mut (*kproc_ptr).block_reason, AtomicU32::new(0));
             core::ptr::write(
                 &mut (*kproc_ptr).sched_policy,
-                AtomicU32::new(super::scheduler::SchedPolicy::Normal as u32),
+                AtomicU32::new(SchedPolicy::Normal as u32),
             );
             (*kproc_ptr).rt_priority.store(0, Ordering::SeqCst);
             (*kproc_ptr).session_id.store(0, Ordering::SeqCst);
-            // Bypass FdTable::new allocation
-            // core::ptr::write(&mut (*kproc_ptr).fd_table, FdTable::new());
             (*kproc_ptr).sleep_until.store(0, Ordering::SeqCst);
-        }
-        // zero out the fields we skipped to avoid undefined behavior
-        unsafe {
+            // 零初始化包含 alloc 的字段 (Mutex/Vec/String), 保持有效空状态
             core::ptr::write_bytes(
                 &mut (*kproc_ptr).name as *mut _ as *mut u8,
                 0,
@@ -327,10 +571,198 @@ impl UserProcManager {
                 core::mem::size_of::<FdTable>(),
             );
         }
+    }
+}
+
+use raw::UserProcRef;
+
+#[repr(C)]
+pub struct UserProcess {
+    pub pid: u32,
+    pub pwm: AtomicU64,
+    pub cr3: AtomicU64,
+    pub kernel_stack: AtomicU64,
+    pub user_stack: AtomicU64,
+    pub stack_bottom: AtomicU64,
+    pub entry: u64,
+    pub state: AtomicU32,
+    pub create_time: u64,
+}
+
+// All fields (u32, AtomicU64, AtomicU32, u64) are Send + Sync.
+unsafe impl Send for UserProcess {}
+unsafe impl Sync for UserProcess {}
+
+pub struct UserProcManager {
+    current: AtomicU64,
+    // 使用 NonNull<UserProcess> 替代 *mut UserProcess,
+    // 使 BTreeMap 自动实现 Send + Sync (NonNull: Send + Sync when T: Send + Sync)。
+    processes: Mutex<alloc::collections::BTreeMap<u32, NonNull<UserProcess>>>,
+}
+
+// SAFETY: UserProcManager is always accessed via static USER_PROC_MANAGER.
+// All mutations go through the Mutex, and the NonNull pointers target
+// UserProcess objects whose fields are all Atomic* or plain integers.
+unsafe impl Send for UserProcManager {}
+unsafe impl Sync for UserProcManager {}
+
+impl UserProcManager {
+    pub const fn new() -> Self {
+        Self {
+            current: AtomicU64::new(0),
+            processes: Mutex::new(alloc::collections::BTreeMap::new()),
+        }
+    }
+
+    pub fn init(&self) {}
+
+    fn destroy(&self, proc: NonNull<UserProcess>, keep_kstack: bool) {
+        // SAFETY: proc is a NonNull<UserProcess> that was allocated via kmalloc
+        // and inserted into the BTreeMap. It remains valid until destroyed.
+        let proc_ref = raw::deref_non_null(proc);
+        let cr3 = proc_ref.cr3.load(Ordering::SeqCst);
+        if cr3 != 0 {
+            raw::destroy_user_page_table(cr3);
+        }
+        if !keep_kstack {
+            let kstack = proc_ref.kernel_stack.load(Ordering::SeqCst);
+            if kstack != 0 {
+                let kstack_base_virt = kstack - USER_KSTACK_SIZE;
+                let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
+                for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
+                    raw::free_phys_page((kstack_base_phys + i * PAGE_SIZE) as *mut u8);
+                }
+            }
+        }
+        let ustack = proc_ref.user_stack.load(Ordering::SeqCst);
+        if ustack != 0 {
+            let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
+            for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
+                let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
+                let phys = raw::virt_to_phys(cr3, svirt);
+                if phys != 0 {
+                    raw::free_phys_page(phys as *mut u8);
+                }
+            }
+        }
+        let pid = proc_ref.pid;
+        self.processes.lock().remove(&pid);
+    }
+
+    /// 销毁进程 (接受裸指针的兼容接口)
+    fn destroy_raw(&self, proc: *mut UserProcess, keep_kstack: bool) {
+        if let Some(nn) = NonNull::new(proc) {
+            self.destroy(nn, keep_kstack);
+        }
+    }
+
+    /// 获取进程裸指针 (向后兼容接口)。
+    /// 内部存储为 NonNull, 转为 *mut 供外部调用。
+    pub fn get(&self, pid: u32) -> Option<*mut UserProcess> {
+        self.processes.lock().get(&pid).map(|n| n.as_ptr())
+    }
+
+    /// 通过闭包安全访问进程
+    pub fn with_process<F, R>(&self, pid: u32, f: F) -> Option<R>
+    where
+        F: FnOnce(&UserProcess) -> R,
+    {
+        let processes = self.processes.lock();
+        processes.get(&pid).map(|ptr| {
+            // SAFETY: ptr is a NonNull<UserProcess> from the BTreeMap.
+            // The process lives for the lifetime of the manager; processes
+            // are never freed while the lock is held.
+            f(raw::deref_non_null(*ptr))
+        })
+    }
+
+    pub fn destroy_by_pid(&self, pid: u32) {
+        // SAFETY: get returns *mut from NonNull which is never null.
+        if let Some(proc) = self.processes.lock().get(&pid).copied() {
+            self.destroy(proc, false);
+        }
+    }
+
+    pub fn destroy_by_pid_no_kstack(&self, pid: u32) {
+        if let Some(proc) = self.processes.lock().get(&pid).copied() {
+            self.destroy(proc, true);
+        }
+    }
+
+    pub fn create(&self, info: &UserProcInfo, pwm: u64) -> Option<*mut UserProcess> {
+        let pid = PROCESS_TABLE.allocate_pid()?;
+
+        // 分配并清零 UserProcess 内存
+        let proc_ptr = raw::alloc_user_process()?;
+        let proc = raw::new_proc_ref(proc_ptr);
+
+        // 创建用户页表
+        let cr3_val = raw::create_user_page_table();
+        proc.store_cr3(cr3_val);
+        if cr3_val == 0 {
+            return None;
+        }
+
+        // 分配用户栈
+        let stack_pages = raw::alloc_phys_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
+        if stack_pages.is_null() {
+            raw::destroy_user_page_table(cr3_val);
+            return None;
+        }
+
+        let stack_phys = stack_pages as u64;
+        let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
+
+        for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
+            let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
+            let sphys = stack_phys + i * PAGE_SIZE;
+            raw::vmm_map_user_page(
+                cr3_val,
+                svirt,
+                sphys,
+                PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
+            );
+        }
+
+        proc.store_user_stack(USER_STACK_TOP);
+        let initial_stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
+        proc.store_stack_bottom(initial_stack_bottom);
+
+        // 分配内核栈
+        let kstack = raw::alloc_phys_pages(USER_KSTACK_SIZE / PAGE_SIZE);
+        if kstack.is_null() {
+            raw::free_phys_page(stack_pages);
+            raw::destroy_user_page_table(cr3_val);
+            return None;
+        }
+        let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
+        proc.store_kernel_stack(kstack_top);
+        crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
+
+        proc.set_pid(pid);
+        proc.set_entry(info.entry);
+        proc.store_pwm(pwm);
+        proc.store_state(1);
+        proc.set_create_time(crate::kernel::timer::get_ticks());
+
+        self.processes
+            .lock()
+            .insert(pid, NonNull::new(proc_ptr).unwrap());
+
+        // 分配并构造 Process (用于 process table)
+        let kproc_ptr = raw::alloc_kernel_process()?;
+        raw::init_kernel_process_fields(
+            kproc_ptr,
+            pid,
+            pwm,
+            cr3_val,
+            proc.load_kernel_stack(),
+            proc.load_user_stack(),
+        );
 
         PROCESS_TABLE.insert(kproc_ptr);
 
-        Some(proc)
+        Some(proc_ptr)
     }
 
     pub fn enter(&self, proc: *mut UserProcess) {
@@ -338,29 +770,32 @@ impl UserProcManager {
             return;
         }
 
+        // SAFETY: proc 由调用方保证为非空、生命周期有效 (BTreeMap 中已存在)。
+        let proc_ref = unsafe { UserProcRef::new_unchecked(proc) };
+        self.current.store(proc as u64, Ordering::SeqCst);
+        proc_ref.store_state(2);
+
+        let kstack = proc_ref.load_kernel_stack();
+        let rip_val = proc_ref.entry();
+        let rsp_val = proc_ref.load_user_stack();
+        #[cfg(target_arch = "aarch64")]
+        let cr3 = proc_ref.load_cr3();
+        let _ss_val = GDT_USER_DATA | 0x03;
+        let _cs_val = GDT_USER_CODE | 0x03;
+        let _rflags_val: u64 = 0x3202;
+
+        crate::kernel::cpu::arch::set_kernel_stack(kstack);
+
+        // On aarch64, TTBR0_EL1 must point to the user page table before
+        // entering EL0. The user L0 table has kernel identity-mapped entries
+        // copied, so kernel code and MMIO remain accessible after the switch.
+        #[cfg(target_arch = "aarch64")]
+        {
+            raw::vmm_switch_to_user(cr3);
+        }
+
+        // SAFETY: enter_user 是平台特定的 arch 入口, 不会返回, 由调用方保证上下文有效。
         unsafe {
-            self.current.store(proc as u64, Ordering::SeqCst);
-            (*proc).state.store(2, Ordering::SeqCst);
-
-            let kstack = (*proc).kernel_stack.load(Ordering::SeqCst);
-            let rip_val = (*proc).entry;
-            let rsp_val = (*proc).user_stack.load(Ordering::SeqCst);
-            #[cfg(target_arch = "aarch64")]
-            let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            let _ss_val = GDT_USER_DATA | 0x03;
-            let _cs_val = GDT_USER_CODE | 0x03;
-            let _rflags_val: u64 = 0x3202;
-
-            crate::kernel::cpu::arch::set_kernel_stack(kstack);
-
-            // On aarch64, TTBR0_EL1 must point to the user page table before
-            // entering EL0. The user L0 table has kernel identity-mapped entries
-            // copied, so kernel code and MMIO remain accessible after the switch.
-            #[cfg(target_arch = "aarch64")]
-            {
-                vmm_switch_page_table(cr3);
-            }
-
             crate::arch!(enter_user(rip_val as usize, rsp_val as usize, 0));
         }
     }
@@ -383,8 +818,10 @@ impl UserProcManager {
             return 0;
         }
 
-        let stack_top = (*proc).user_stack.load(Ordering::SeqCst);
-        let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+        // SAFETY: proc 由调用方保证有效, 内部访问均经 UserProcRef 安全包装。
+        let proc_ref = unsafe { UserProcRef::new_unchecked(proc) };
+        let stack_top = proc_ref.load_user_stack();
+        let cr3 = proc_ref.load_cr3();
 
         // Space needed: argc(8) + argv_ptrs(8*(argc+1)) + envp_ptrs(8*(envc+1)) + strings
         let mut string_bytes: usize = 0;
@@ -392,10 +829,12 @@ impl UserProcManager {
 
         if !argv.is_null() {
             for i in 0..argc {
-                let s = *argv.add(i);
+                // SAFETY: argv 由调用方保证至少 argc 个有效指针。
+                let s = unsafe { *argv.add(i) };
                 if !s.is_null() {
                     let mut len: usize = 0;
-                    while *s.add(len) != 0 {
+                    // SAFETY: s 是 C 字符串, 不断读直到 NUL。
+                    while unsafe { *s.add(len) } != 0 {
                         len += 1;
                     }
                     arg_lens.push(len + 1);
@@ -431,78 +870,40 @@ impl UserProcManager {
         // String area starts here
         let strings_off = pos;
 
-        // Resolve virtual addresses in user space by writing through kernel mapping
-        let w64 = |off: usize, v: u64| {
-            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
-            if phys != 0 {
-                let addr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u8;
-                core::ptr::write_unaligned(addr as *mut u64, v);
-            }
-        };
-        let w8 = |off: usize, v: u8| {
-            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
-            if phys != 0 {
-                let addr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u8;
-                *addr = v;
-            }
-        };
-
         // Write argc
-        w64(argc_off, argc as u64);
+        raw::write_user_u64(cr3, argc_off, argc as u64);
 
         // Write argv strings + pointers
         let mut str_off = strings_off;
         for i in 0..argc {
-            w64(
-                argv_start_off + i * 8,
-                new_sp.wrapping_add(
-                    str_off as u64 - new_sp + strings_off as u64 - strings_off as u64,
-                ),
-            );
-            // Actually compute absolute user-space address:
             let abs_addr = str_off as u64;
-            // Write pointer: user-space address
-            let p_addr = argv_start_off + i * 8;
-            let p_phys = vmm_get_physical_in_table(cr3, p_addr as u64 & !0xFFF);
-            if p_phys != 0 {
-                let p_ptr = (p_phys + KERNEL_BASE + (p_addr as u64 & 0xFFF)) as *mut u64;
-                core::ptr::write_unaligned(p_ptr, abs_addr);
-            }
+            raw::write_user_u64(cr3, argv_start_off + i * 8, abs_addr);
 
             if !argv.is_null() && (i < argc) {
-                let src = *argv.add(i);
+                // SAFETY: argv 由调用方保证, i < argc 有效。
+                let src = unsafe { *argv.add(i) };
                 let l = arg_lens[i];
                 for j in 0..l {
                     let b = if src.is_null() {
                         0u8
                     } else {
-                        unsafe { *src.add(j) }
+                        raw::read_byte_from_user_ptr(src, j)
                     };
-                    w8(str_off + j, b);
+                    raw::write_user_byte(cr3, str_off + j, b);
                 }
                 str_off += l;
             }
         }
         // argv NULL terminator
-        let null_ptr_off = argv_start_off + argc * 8;
-        let np_phys = vmm_get_physical_in_table(cr3, null_ptr_off as u64 & !0xFFF);
-        if np_phys != 0 {
-            let np_ptr = (np_phys + KERNEL_BASE + (null_ptr_off as u64 & 0xFFF)) as *mut u64;
-            core::ptr::write_unaligned(np_ptr, 0u64);
-        }
+        raw::write_user_u64(cr3, argv_start_off + argc * 8, 0u64);
 
         // envp pointers (all NULL for now)
         for i in 0..(envc + 1) {
-            let ep_off = envp_start_off + i * 8;
-            let ep_phys = vmm_get_physical_in_table(cr3, ep_off as u64 & !0xFFF);
-            if ep_phys != 0 {
-                let ep_ptr = (ep_phys + KERNEL_BASE + (ep_off as u64 & 0xFFF)) as *mut u64;
-                core::ptr::write_unaligned(ep_ptr, 0u64);
-            }
+            raw::write_user_u64(cr3, envp_start_off + i * 8, 0u64);
         }
 
         // Update process stack pointer
-        (*proc).user_stack.store(new_sp, Ordering::SeqCst);
+        proc_ref.store_user_stack(new_sp);
         new_sp
     }
 
@@ -511,6 +912,7 @@ impl UserProcManager {
             return -1;
         }
 
+        // SAFETY: elf_data 区间已校验 (非空 + size >= header), 内部访问通过 raw 包装。
         unsafe {
             let header = elf_data as *const ElfHeader;
 
@@ -539,16 +941,19 @@ impl UserProcManager {
                 None => return -1,
             };
 
-            let cr3 = (*proc).cr3.load(Ordering::SeqCst);
+            // SAFETY: proc 由 create 返回, 生命周期由 UserProcManager 管理。
+            let proc_ref = UserProcRef::new_unchecked(proc);
+            let cr3 = proc_ref.load_cr3();
 
             // Use static array to avoid 8KB stack allocation
-            static mut ALLOCATED_PAGES: [u64; 1024] = [0; 1024];
-            let allocated_pages = unsafe { &mut ALLOCATED_PAGES };
+            static ALLOCATED_PAGES: crate::kernel::framework::racy_cell::RacyCell<[u64; 1024]> =
+                crate::kernel::framework::racy_cell::RacyCell::new([0; 1024]);
+            let allocated_pages = ALLOCATED_PAGES.get_mut();
             let mut page_count: usize = 0;
 
             let phnum = (*header).phnum as usize;
             if phnum > 256 {
-                self.destroy(proc, false);
+                self.destroy_raw(proc, false);
                 return -1;
             }
 
@@ -556,7 +961,7 @@ impl UserProcManager {
                 let phdr_size = core::mem::size_of::<ElfPhdr>() as u64;
                 let phdr_offset = (*header).phoff + (i as u64) * (*header).phentsize as u64;
                 if phdr_offset + phdr_size > elf_size {
-                    self.destroy(proc, false);
+                    self.destroy_raw(proc, false);
                     return -1;
                 }
                 let phdr = (elf_data.add(phdr_offset as usize)) as *const ElfPhdr;
@@ -583,25 +988,21 @@ impl UserProcManager {
                     #[cfg(target_arch = "aarch64")]
                     let existing_phys: u64 = 0;
                     #[cfg(not(target_arch = "aarch64"))]
-                    let existing_phys = vmm_get_physical_in_table(cr3, vaddr);
+                    let existing_phys = raw::virt_to_phys(cr3, vaddr);
 
                     if existing_phys == 0 {
-                        let page = pmm_alloc_page();
+                        let page = raw::alloc_zeroed_user_page(cr3, vaddr, flags);
                         if page.is_null() {
                             for pi in 0..page_count {
-                                pmm_free_page(allocated_pages[pi] as *mut u8);
+                                raw::free_phys_page_for_rollback(allocated_pages[pi]);
                             }
-                            self.destroy(proc, false);
+                            self.destroy_raw(proc, false);
                             return -1;
                         }
                         if page_count < 1024 {
                             allocated_pages[page_count] = page as u64;
                             page_count += 1;
                         }
-                        memset(page as *mut u8, 0, PAGE_SIZE);
-                        vmm_map_page_in_table(cr3, vaddr, page as u64, flags);
-                        vmm_map_page(vaddr, page as u64, flags);
-                        vmm_ensure_path_user(vaddr);
                     } else {
                         // Reuse existing page, record it
                         if page_count < 1024 {
@@ -627,8 +1028,6 @@ impl UserProcManager {
                         }
 
                         let off_in_page = if j == 0 { first_page_offset } else { 0 };
-                        let dest = (page_phys + KERNEL_BASE + off_in_page) as *mut u8;
-                        let src = elf_data.add(file_offset_bytes + (copied as usize));
                         let max_in_page = PAGE_SIZE - off_in_page;
                         let remaining = (*phdr).p_filesz - copied;
                         let chunk = if max_in_page < remaining {
@@ -636,15 +1035,21 @@ impl UserProcManager {
                         } else {
                             remaining
                         };
-                        memcpy(dest, src, chunk);
+                        raw::elf_chunk_copy(
+                            page_phys,
+                            off_in_page,
+                            elf_data,
+                            file_offset_bytes + (copied as usize),
+                            chunk,
+                        );
                         copied += chunk;
                     }
                 }
             }
 
-            (*proc).entry = (*header).entry;
+            proc_ref.set_entry((*header).entry);
 
-            (*proc).pid as i32
+            proc_ref.pid() as i32
         }
     }
 
@@ -661,45 +1066,37 @@ impl UserProcManager {
             None => return -1,
         };
 
-        unsafe {
-            let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-            let num_code_pages = code_size.div_ceil(PAGE_SIZE);
+        // SAFETY: proc 由 create 返回, 生命周期由 UserProcManager 管理。
+        let proc_ref = unsafe { UserProcRef::new_unchecked(proc) };
+        let cr3 = proc_ref.load_cr3();
+        let num_code_pages = code_size.div_ceil(PAGE_SIZE);
 
-            for i in 0..num_code_pages {
-                let page = pmm_alloc_page();
-                if page.is_null() {
-                    return -1;
-                }
+        for i in 0..num_code_pages {
+            let page = raw::alloc_code_page();
+            if page.is_null() {
+                return -1;
+            }
 
-                memset(page as *mut u8, 0, PAGE_SIZE);
+            let copy_size = if code_size - i * PAGE_SIZE > PAGE_SIZE {
+                PAGE_SIZE
+            } else {
+                code_size - i * PAGE_SIZE
+            };
 
-                let copy_size = if code_size - i * PAGE_SIZE > PAGE_SIZE {
-                    PAGE_SIZE
-                } else {
-                    code_size - i * PAGE_SIZE
-                };
-
+            // SAFETY: page 来自 pmm_alloc_page, code 区间内可读。
+            unsafe {
                 memcpy(
                     page as *mut u8,
                     code.add((i * PAGE_SIZE) as usize),
                     copy_size,
                 );
-
-                vmm_map_page_in_table(
-                    cr3,
-                    USER_CODE_BASE + i * PAGE_SIZE,
-                    page as u64,
-                    PAGE_PRESENT | PAGE_USER,
-                );
-
-                // Also map into kernel PML4
-                let vaddr = USER_CODE_BASE + i * PAGE_SIZE;
-                vmm_map_page(vaddr, page as u64, PAGE_PRESENT | PAGE_USER);
-                vmm_ensure_path_user(vaddr);
             }
 
-            (*proc).pid as i32
+            let vaddr = USER_CODE_BASE + i * PAGE_SIZE;
+            raw::map_code_page(cr3, vaddr, page as u64);
         }
+
+        proc_ref.pid() as i32
     }
 
     pub fn get_current(&self) -> Option<*mut UserProcess> {
@@ -746,45 +1143,31 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         None => return -1,
     };
 
+    // SAFETY: parent_proc / child_kernel_proc 均来自管理器, 有效。
     unsafe {
-        let child_up = kmalloc(core::mem::size_of::<UserProcess>() as u64) as *mut UserProcess;
+        let parent_ref = UserProcRef::new_unchecked(parent_proc);
+        let child_up = raw::alloc_user_process().unwrap_or(core::ptr::null_mut());
         if child_up.is_null() {
             return -1;
         }
-        memset(
-            child_up as *mut u8,
-            0,
-            core::mem::size_of::<UserProcess>() as u64,
-        );
+        let child_ref = UserProcRef::new_unchecked(child_up);
 
-        (*child_up).pid = child_pid;
-        (*child_up)
-            .pwm
-            .store((*parent_proc).pwm.load(Ordering::SeqCst), Ordering::SeqCst);
-        (*child_up).cr3.store(
-            (*child_kernel_proc).cr3.load(Ordering::SeqCst),
-            Ordering::SeqCst,
-        );
-        (*child_up).kernel_stack.store(
+        child_ref.set_pid(child_pid);
+        child_ref.store_pwm(parent_ref.load_pwm());
+        child_ref.store_cr3((*child_kernel_proc).cr3.load(Ordering::SeqCst));
+        child_ref.store_kernel_stack(
             (*child_kernel_proc).kernel_stack.load(Ordering::SeqCst),
-            Ordering::SeqCst,
         );
-        (*child_up).user_stack.store(
-            (*parent_proc).user_stack.load(Ordering::SeqCst),
-            Ordering::SeqCst,
-        );
-        (*child_up).stack_bottom.store(
-            (*parent_proc).stack_bottom.load(Ordering::SeqCst),
-            Ordering::SeqCst,
-        );
-        (*child_up).entry = (*parent_proc).entry;
-        (*child_up).state.store(1, Ordering::SeqCst); // Ready
-        (*child_up).create_time = crate::kernel::timer::get_ticks();
+        child_ref.store_user_stack(parent_ref.load_user_stack());
+        child_ref.store_stack_bottom(parent_ref.load_stack_bottom());
+        child_ref.set_entry(parent_ref.entry());
+        child_ref.store_state(1);
+        child_ref.set_create_time(crate::kernel::timer::get_ticks());
 
         USER_PROC_MANAGER
             .processes
             .lock()
-            .insert(child_pid, child_up);
+            .insert(child_pid, NonNull::new(child_up).unwrap());
     }
 
     0
@@ -803,53 +1186,41 @@ pub fn try_expand_user_stack(fault_addr: u64) -> bool {
         None => return false,
     };
 
-    unsafe {
-        let stack_bottom = (*proc).stack_bottom.load(Ordering::SeqCst);
-        if fault_addr >= stack_bottom {
-            return false;
-        }
-
-        let cr3 = (*proc).cr3.load(Ordering::SeqCst);
-        if cr3 == 0 {
-            return false;
-        }
-
-        let page_addr = fault_addr & !(PAGE_SIZE - 1);
-        let pages_needed = (stack_bottom - page_addr) / PAGE_SIZE;
-
-        for i in 0..pages_needed {
-            let vaddr = page_addr + i * PAGE_SIZE;
-            if vaddr >= stack_bottom {
-                break;
-            }
-
-            let phys = vmm_get_physical_in_table(cr3, vaddr);
-            if phys != 0 {
-                continue;
-            }
-
-            let new_page = pmm_alloc_page();
-            if new_page.is_null() {
-                return false;
-            }
-
-            memset(new_page as *mut u8, 0, PAGE_SIZE);
-
-            vmm_map_page_in_table(
-                cr3,
-                vaddr,
-                new_page as u64,
-                PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
-            );
-            vmm_map_page(
-                vaddr,
-                new_page as u64,
-                PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
-            );
-            vmm_ensure_path_user(vaddr);
-        }
-
-        (*proc).stack_bottom.store(page_addr, Ordering::SeqCst);
-        true
+    // SAFETY: proc 由管理器返回, 有效。
+    let proc_ref = unsafe { UserProcRef::new_unchecked(proc) };
+    let stack_bottom = proc_ref.load_stack_bottom();
+    if fault_addr >= stack_bottom {
+        return false;
     }
+
+    let cr3 = proc_ref.load_cr3();
+    if cr3 == 0 {
+        return false;
+    }
+
+    let page_addr = fault_addr & !(PAGE_SIZE - 1);
+    let pages_needed = (stack_bottom - page_addr) / PAGE_SIZE;
+
+    for i in 0..pages_needed {
+        let vaddr = page_addr + i * PAGE_SIZE;
+        if vaddr >= stack_bottom {
+            break;
+        }
+
+        if raw::virt_to_phys(cr3, vaddr) != 0 {
+            continue;
+        }
+
+        let new_page = raw::alloc_zeroed_user_page(
+            cr3,
+            vaddr,
+            PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
+        );
+        if new_page.is_null() {
+            return false;
+        }
+    }
+
+    proc_ref.store_stack_bottom(page_addr);
+    true
 }

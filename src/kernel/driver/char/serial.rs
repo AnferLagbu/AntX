@@ -29,8 +29,8 @@
 //! # Safety
 //! 此模块直接操作串口硬件端口。
 
-use crate::kernel::driver::framework::{inb, outb};
 use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::ioport::IoPort;
 
 // ============================================================================
 // 硬件常量定义
@@ -259,8 +259,8 @@ impl<T: Default + Copy> RingBuffer<T> {
 
 /// 串口设备实例
 pub struct SerialPort {
-    /// I/O 基地址
-    base: u16,
+    /// I/O 端口句柄 (safe PIO proxy)
+    io: Option<IoPort>,
     /// 端口号 (0-3 对应 COM1-COM4)
     port_num: u8,
     /// 当前配置
@@ -280,40 +280,36 @@ pub struct SerialPort {
 // ============================================================================
 
 /// 设置波特率
-fn set_baud_rate(base: u16, divisor: u16) {
-    unsafe {
-        // 启用 DLAB 以访问分频寄存器
-        outb(base + UART_LCR, LCR_DLAB);
+fn set_baud_rate(io: &IoPort, divisor: u16) {
+    // 启用 DLAB 以访问分频寄存器
+    io.write_u8(UART_LCR, LCR_DLAB);
 
-        // 设置低字节和高字节
-        outb(base, (divisor & 0xFF) as u8);
-        outb(base + 1, ((divisor >> 8) & 0xFF) as u8);
+    // 设置低字节和高字节
+    io.write_u8(0, (divisor & 0xFF) as u8);
+    io.write_u8(1, ((divisor >> 8) & 0xFF) as u8);
 
-        // 关闭 DLAB，设置数据格式
-        outb(base + UART_LCR, 0x03); // 8N1
-    }
+    // 关闭 DLAB，设置数据格式
+    io.write_u8(UART_LCR, 0x03); // 8N1
 }
 
 /// 检查接收缓冲区是否有数据
-fn is_data_ready(base: u16) -> bool {
-    unsafe { inb(base + UART_LSR) & LSR_DATA_READY != 0 }
+fn is_data_ready(io: &IoPort) -> bool {
+    io.read_u8(UART_LSR) & LSR_DATA_READY != 0
 }
 
 /// 检查发送保持寄存器是否为空
-fn is_transmit_empty(base: u16) -> bool {
-    unsafe { inb(base + UART_LSR) & LSR_TRANSMIT_EMPTY != 0 }
+fn is_transmit_empty(io: &IoPort) -> bool {
+    io.read_u8(UART_LSR) & LSR_TRANSMIT_EMPTY != 0
 }
 
 /// 从 UART 读取一个字节
-fn read_byte(base: u16) -> u8 {
-    unsafe { inb(base + UART_RBR) }
+fn read_byte(io: &IoPort) -> u8 {
+    io.read_u8(UART_RBR)
 }
 
 /// 向 UART 写入一个字节
-fn write_byte(base: u16, byte: u8) {
-    unsafe {
-        outb(base + UART_THR, byte);
-    }
+fn write_byte(io: &IoPort, byte: u8) {
+    io.write_u8(UART_THR, byte);
 }
 
 // ============================================================================
@@ -336,29 +332,27 @@ impl Driver for SerialPort {
     }
 
     fn init(&mut self) -> Result<()> {
-        let base = self.base;
+        let io = self.io.as_ref().ok_or(DriverError::HardwareError)?;
 
-        unsafe {
-            // 1. 禁用所有中断
-            outb(base + UART_IER, 0x00);
+        // 1. 禁用所有中断
+        io.write_u8(UART_IER, 0x00);
 
-            // 2. 启用 DLAB 并设置波特率
-            set_baud_rate(base, self.config.baud_rate.to_divisor());
+        // 2. 启用 DLAB 并设置波特率
+        set_baud_rate(io, self.config.baud_rate.to_divisor());
 
-            // 3. 设置数据格式 (8N1)
-            outb(
-                base + UART_LCR,
-                self.config.data_bits.to_lcr_value()
-                    | self.config.stop_bits.to_lcr_value()
-                    | self.config.parity.to_lcr_value(),
-            );
+        // 3. 设置数据格式 (8N1)
+        io.write_u8(
+            UART_LCR,
+            self.config.data_bits.to_lcr_value()
+                | self.config.stop_bits.to_lcr_value()
+                | self.config.parity.to_lcr_value(),
+        );
 
-            // 4. 启用 FIFO，清除缓冲区
-            outb(base + UART_FCR, FCR_ENABLE_FIFO);
+        // 4. 启用 FIFO，清除缓冲区
+        io.write_u8(UART_FCR, FCR_ENABLE_FIFO);
 
-            // 5. 设置 MCR (DTR + RTS + OUT2)
-            outb(base + UART_MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
-        }
+        // 5. 设置 MCR (DTR + RTS + OUT2)
+        io.write_u8(UART_MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
 
         // 清空缓冲区
         self.rx_buffer.clear();
@@ -370,8 +364,8 @@ impl Driver for SerialPort {
 
     fn shutdown(&mut self) -> Result<()> {
         // 禁用所有中断
-        unsafe {
-            outb(self.base + UART_IER, 0x00);
+        if let Some(io) = &self.io {
+            io.write_u8(UART_IER, 0x00);
         }
 
         self.initialized = false;
@@ -415,8 +409,11 @@ impl SerialPort {
             _ => return None,
         };
 
+        // SAFETY: COM1-COM4 base addresses are standard PC serial port mappings
+        let io = unsafe { IoPort::new(base, 8, "serial").ok()? };
+
         Some(Self {
-            base,
+            io: Some(io),
             port_num: port,
             config: SerialConfig::default(),
             rx_buffer: RingBuffer::default(),
@@ -441,13 +438,14 @@ impl SerialPort {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
         }
+        let io = self.io.as_ref().ok_or(DriverError::HardwareError)?;
 
         // 等待发送保持寄存器为空
-        while !is_transmit_empty(self.base) {
+        while !is_transmit_empty(io) {
             core::hint::spin_loop();
         }
 
-        write_byte(self.base, byte);
+        write_byte(io, byte);
         Ok(())
     }
 
@@ -468,11 +466,13 @@ impl SerialPort {
     /// * `Some(u8)` - 收到的字节
     /// * `None` - 无数据可读
     pub fn receive_byte(&mut self) -> Option<u8> {
-        if !is_data_ready(self.base) {
+        let io = self.io.as_ref()?;
+
+        if !is_data_ready(io) {
             return None;
         }
 
-        let byte = read_byte(self.base);
+        let byte = read_byte(io);
         let _ = self.rx_buffer.push(byte);
         Some(byte)
     }
@@ -487,7 +487,11 @@ impl SerialPort {
     /// 应在 IRQ3/IRQ4 中断处理程序中调用。
     pub fn handle_interrupt(&mut self) {
         // 读取 IIR 判断中断类型
-        let iir = unsafe { inb(self.base + UART_IIR) };
+        let io = match &self.io {
+            Some(io) => io,
+            None => return,
+        };
+        let iir = io.read_u8(UART_IIR);
 
         // bit 0 = 0 表示有挂起的中断
         if iir & 0x01 != 0 {
@@ -500,8 +504,8 @@ impl SerialPort {
         match interrupt_id {
             0x02 => {
                 // 接收数据可用
-                while is_data_ready(self.base) {
-                    let byte = read_byte(self.base);
+                while is_data_ready(io) {
+                    let byte = read_byte(io);
                     let _ = self.rx_buffer.push(byte);
                 }
             }
@@ -509,7 +513,7 @@ impl SerialPort {
                 // 发送保持寄存器空
                 // 可以从 tx_buffer 取出数据发送
                 if let Some(byte) = self.tx_buffer.pop() {
-                    write_byte(self.base, byte);
+                    write_byte(io, byte);
                 }
             }
             _ => {} // 其他中断类型暂不处理
@@ -518,7 +522,13 @@ impl SerialPort {
 
     /// 检查是否有数据可读
     pub fn has_data(&self) -> bool {
-        !self.rx_buffer.is_empty() || is_data_ready(self.base)
+        if !self.rx_buffer.is_empty() {
+            return true;
+        }
+        if let Some(io) = &self.io {
+            return is_data_ready(io);
+        }
+        false
     }
 
     /// 获取接收缓冲区中的字节数
@@ -533,7 +543,13 @@ impl SerialPort {
 
     /// 获取 I/O 基地址
     pub fn get_base_address(&self) -> u16 {
-        self.base
+        match self.port_num {
+            0 => COM1_BASE,
+            1 => COM2_BASE,
+            2 => COM3_BASE,
+            3 => COM4_BASE,
+            _ => 0,
+        }
     }
 
     /// 获取当前配置
@@ -784,14 +800,18 @@ use crate::kernel::chitin::proto_char::CharOps;
 unsafe fn serial_char_write(driver_data: *mut u8, buf: &[u8]) -> usize {
     if driver_data.is_null() { return 0; }
     let port = &*(driver_data as *const SerialPort);
+    let io = match &port.io {
+        Some(io) => io,
+        None => return 0,
+    };
     for &byte in buf {
         if byte == b'\n' {
-            write_byte(port.base, b'\r');
+            write_byte(io, b'\r');
         }
-        while !is_transmit_empty(port.base) {
+        while !is_transmit_empty(io) {
             core::hint::spin_loop();
         }
-        write_byte(port.base, byte);
+        write_byte(io, byte);
     }
     buf.len()
 }
@@ -799,10 +819,14 @@ unsafe fn serial_char_write(driver_data: *mut u8, buf: &[u8]) -> usize {
 unsafe fn serial_char_read(driver_data: *mut u8, buf: &mut [u8]) -> usize {
     if driver_data.is_null() { return 0; }
     let port = &*(driver_data as *const SerialPort);
+    let io = match &port.io {
+        Some(io) => io,
+        None => return 0,
+    };
     let mut count = 0;
     for byte in buf.iter_mut() {
-        if is_data_ready(port.base) {
-            *byte = read_byte(port.base);
+        if is_data_ready(io) {
+            *byte = read_byte(io);
             count += 1;
         } else {
             break;

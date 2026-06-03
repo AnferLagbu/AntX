@@ -22,24 +22,24 @@ use crate::kernel::proc::api::{scheduler_yield_ex, thread_get_current};
 /// * Err(i32) - 错误码 (-1: 超时, -2: 被信号中断)
 #[inline]
 pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Result<(), i32> {
-    unsafe {
-        let thread_addr = thread_get_current();
+    let thread_addr = thread_get_current();
 
-        if thread_addr != 0 {
-            let tid = *(thread_addr as *const u32);
+    if thread_addr != 0 {
+        // Thread IDs are stored as u32 in WaitQueueItem; the u64 returned
+        // by thread_get_current fits in u32 for all valid thread IDs.
+        let tid = thread_addr as u32;
 
-            // 创建等待项并加入队列
-            let item = WaitQueueItem { tid };
-            wait_queue.add(item);
+        // 创建等待项并加入队列
+        let item = WaitQueueItem { tid };
+        wait_queue.add(item);
 
-            // 让出 CPU (调用扩展调度器)
-            scheduler_yield_ex();
+        // 让出 CPU (调用扩展调度器)
+        scheduler_yield_ex();
 
-            // 被唤醒后返回
-            Ok(())
-        } else {
-            Err(-2) // 无效线程
-        }
+        // 被唤醒后返回
+        Ok(())
+    } else {
+        Err(-2) // 无效线程
     }
 }
 
@@ -104,9 +104,7 @@ pub fn block_with_timeout(wait_queue: &mut WaitQueue, timeout_ms: u64) -> Result
         }
 
         // 短暂让出 CPU (避免忙等待占用过多资源)
-        unsafe {
-            scheduler_yield_ex();
-        }
+        scheduler_yield_ex();
     }
 }
 

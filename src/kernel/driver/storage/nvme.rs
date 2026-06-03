@@ -29,6 +29,7 @@
 
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::dma::engine::get_dma;
+use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::mm::{PhysAddr, VirtAddr};
 use crate::klog_info;
 use core::ptr;
@@ -51,6 +52,20 @@ const SECTOR_SIZE: usize = 512;
 
 /// 最大扇区数 (128 sectors = 64KB, 单次命令)
 const MAX_SECTORS_PER_CMD: u16 = 128;
+
+// NVMe Controller Register Offsets (BAR0)
+const NVME_REG_CAP: usize = 0x00;    // u64: 控制器能力
+const NVME_REG_VS: usize = 0x08;     // u32: 版本
+const NVME_REG_INTMS: usize = 0x0C;  // u32: 中断掩码设置
+const NVME_REG_INTMC: usize = 0x10;  // u32: 中断掩码清除
+const NVME_REG_CC: usize = 0x14;     // u32: 控制器配置
+const NVME_REG_CSTS: usize = 0x1C;   // u32: 控制器状态
+const NVME_REG_AQA: usize = 0x24;    // u32: Admin 队列属性
+const NVME_REG_ASQ: usize = 0x28;    // u64: Admin SQ 基地址
+const NVME_REG_ACQ: usize = 0x30;    // u64: Admin CQ 基地址
+
+// Doorbell registers start at offset 0x1000
+const NVME_DB_BASE: usize = 0x1000;
 
 // ============================================================================
 // NVMe 寄存器定义
@@ -384,10 +399,9 @@ struct QueueDma {
 
 /// NVMe 控制器驱动
 pub struct NvmeController {
-    mmio_base: usize,
-    regs: *mut NvmeControllerRegisters,
-    doorbell_base: usize, // 门铃寄存器基地址
-    db_stride: u32,       // 门铃步长
+    mmio_phys: u64,            // PCI BAR0 physical address (for external use)
+    iomem: Option<IoMem>,      // MMIO region handle (safe access proxy)
+    db_stride: u32,            // 门铃步长
 
     // Admin 队列 (DMA 分配的 SQ/CQ)
     admin_sq_dma: QueueDma,
@@ -418,9 +432,8 @@ pub struct NvmeController {
 impl NvmeController {
     pub fn new(mmio_base: usize) -> Self {
         Self {
-            mmio_base,
-            regs: ptr::null_mut(),
-            doorbell_base: 0,
+            mmio_phys: mmio_base as u64,
+            iomem: None,
             db_stride: 0,
             admin_sq_dma: QueueDma {
                 virt: VirtAddr(0),
@@ -547,14 +560,14 @@ impl NvmeController {
     }
 
     /// 向门铃寄存器写入
-    unsafe fn write_doorbell(&self, qid: u16, is_sq: bool, value: u32) {
+    fn write_doorbell(&self, qid: u16, is_sq: bool, value: u32) {
+        let iomem = self.iomem.as_ref().expect("NVMe: IoMem not initialized");
         let offset = if is_sq {
-            0x1000 + (qid as usize * 2 * self.db_stride as usize)
+            NVME_DB_BASE + (qid as usize * 2 * self.db_stride as usize)
         } else {
-            0x1000 + (qid as usize * 2 + 1) * self.db_stride as usize
+            NVME_DB_BASE + (qid as usize * 2 + 1) * self.db_stride as usize
         };
-        let ptr = (self.doorbell_base + offset) as *mut u32;
-        ptr.write_volatile(value);
+        iomem.write_u32(offset, value);
     }
 
     /// 提交 Admin 命令并等待完成
@@ -608,50 +621,26 @@ impl NvmeController {
         // 分配 Admin 队列
         self.alloc_admin_queues()?;
 
-        unsafe {
-            self.regs = self.mmio_base as *mut NvmeControllerRegisters;
-            let regs = &mut *self.regs;
+        // 初始化 IoMem
+        let iomem = IoMem::from_pci_bar(
+            PhysAddr(self.mmio_phys),
+            8192, // NVMe BAR0 is typically 8KB+
+            "nvme-bar0",
+        ).map_err(|_| DriverError::HardwareError)?;
 
-            // 读取能力: 门铃步长
-            let dstrd = ((regs.cap >> 32) & 0xF) as u32;
-            self.db_stride = 1 << dstrd;
+        // 读取能力: 门铃步长
+        let cap = iomem.read_u64(NVME_REG_CAP);
+        let dstrd = ((cap >> 32) & 0xF) as u32;
+        self.db_stride = 1 << dstrd;
 
-            // 门铃寄存器基地址 (紧随 regs struct)
-            self.doorbell_base = self.mmio_base + 0x1000;
+        // MPS: 使用 4KB (= 0)
+        let mps: u32 = 0; // 2^(12 + 0) = 4096
 
-            // MPS: 使用 4KB (= 0)
-            let mps: u32 = 0; // 2^(12 + 0) = 4096
-
-            // ── 禁用控制器 ──
-            if regs.csts & csts::RDY != 0 {
-                regs.cc = 0;
-                let mut timeout = 1_000_000u64;
-                while regs.csts & csts::RDY != 0 && timeout > 0 {
-                    timeout -= 1;
-                    core::hint::spin_loop();
-                }
-                if timeout == 0 {
-                    return Err(DriverError::Timeout);
-                }
-            }
-
-            // ── 设置 Admin 队列 ──
-            regs.aqa = (((QUEUE_DEPTH as u32) - 1) << 16) | ((QUEUE_DEPTH as u32) - 1);
-            regs.asq = self.admin_sq_dma.phys.0;
-            regs.acq = self.admin_cq_dma.phys.0;
-
-            // ── 启用控制器 ──
-            let iocqes: u32 = 4; // log2(16) = 4
-            let iosqes: u32 = 6; // log2(64) = 6
-            regs.cc = cc::EN
-                | cc::CSS_NVM
-                | (mps << cc::MPS_SHIFT)
-                | cc::AMS_RR
-                | (iocqes << cc::IOCQES_SHIFT)
-                | (iosqes << cc::IOSQES_SHIFT);
-
+        // ── 禁用控制器 ──
+        if iomem.read_u32(NVME_REG_CSTS) & csts::RDY != 0 {
+            iomem.write_u32(NVME_REG_CC, 0);
             let mut timeout = 1_000_000u64;
-            while regs.csts & csts::RDY == 0 && timeout > 0 {
+            while iomem.read_u32(NVME_REG_CSTS) & csts::RDY != 0 && timeout > 0 {
                 timeout -= 1;
                 core::hint::spin_loop();
             }
@@ -660,6 +649,37 @@ impl NvmeController {
             }
         }
 
+        // ── 设置 Admin 队列 ──
+        iomem.write_u32(
+            NVME_REG_AQA,
+            (((QUEUE_DEPTH as u32) - 1) << 16) | ((QUEUE_DEPTH as u32) - 1),
+        );
+        iomem.write_u64(NVME_REG_ASQ, self.admin_sq_dma.phys.0);
+        iomem.write_u64(NVME_REG_ACQ, self.admin_cq_dma.phys.0);
+
+        // ── 启用控制器 ──
+        let iocqes: u32 = 4; // log2(16) = 4
+        let iosqes: u32 = 6; // log2(64) = 6
+        iomem.write_u32(
+            NVME_REG_CC,
+            cc::EN
+                | cc::CSS_NVM
+                | (mps << cc::MPS_SHIFT)
+                | cc::AMS_RR
+                | (iocqes << cc::IOCQES_SHIFT)
+                | (iosqes << cc::IOSQES_SHIFT),
+        );
+
+        let mut timeout = 1_000_000u64;
+        while iomem.read_u32(NVME_REG_CSTS) & csts::RDY == 0 && timeout > 0 {
+            timeout -= 1;
+            core::hint::spin_loop();
+        }
+        if timeout == 0 {
+            return Err(DriverError::Timeout);
+        }
+
+        self.iomem = Some(iomem);
         Ok(())
     }
 
@@ -971,16 +991,18 @@ impl Driver for NvmeController {
         }
 
         // 关机通知
-        unsafe {
-            let regs = &mut *self.regs;
-            let shn: u32 = 1 << 14; // Normal shutdown
-            regs.cc = (regs.cc & !0x3C000) | shn;
+        let iomem = match self.iomem.as_ref() {
+            Some(m) => m,
+            None => return Ok(()),
+        };
+        let shn: u32 = 1 << 14; // Normal shutdown
+        let cc = iomem.read_u32(NVME_REG_CC);
+        iomem.write_u32(NVME_REG_CC, (cc & !0x3C000) | shn);
 
-            let mut timeout = 1_000_000u64;
-            while regs.csts & (0x3 << 2) != (2 << 2) && timeout > 0 {
-                timeout -= 1;
-                core::hint::spin_loop();
-            }
+        let mut timeout = 1_000_000u64;
+        while iomem.read_u32(NVME_REG_CSTS) & (0x3 << 2) != (2 << 2) && timeout > 0 {
+            timeout -= 1;
+            core::hint::spin_loop();
         }
 
         self.free_queues();

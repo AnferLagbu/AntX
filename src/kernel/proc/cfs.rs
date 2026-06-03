@@ -166,11 +166,8 @@ pub struct CfsRunQueue {
     pub last_boost_tick: u64,
 }
 
-// SAFETY: CfsRunQueue is per-CPU data accessed only from the owning CPU's
-// schedule()/tick() paths. tree is mutated under implicit per-CPU
-// serialization. Atomic fields are lock-free.
-unsafe impl Send for CfsRunQueue {}
-unsafe impl Sync for CfsRunQueue {}
+// CfsRunQueue is always stored inside a Mutex (in the scheduler).
+// All fields auto-implement Send; Sync is provided by the wrapping Mutex.
 
 impl CfsRunQueue {
     pub fn new() -> Self {
@@ -350,10 +347,8 @@ pub struct DlRunQueue {
     pub total_utilization: u64,
 }
 
-// SAFETY: DlRunQueue is per-CPU data with the same serialization guarantees
-// as CfsRunQueue. tree is only mutated from schedule()/tick() on the owning CPU.
-unsafe impl Send for DlRunQueue {}
-unsafe impl Sync for DlRunQueue {}
+// DlRunQueue is always stored inside a Mutex (in the scheduler).
+// All fields auto-implement Send; Sync is provided by the wrapping Mutex.
 
 impl DlRunQueue {
     pub fn new() -> Self {

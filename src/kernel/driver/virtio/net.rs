@@ -12,6 +12,7 @@
 
 use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
+use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 use crate::kernel::mm::KERNEL_BASE;
 use crate::klog_err;
 use crate::klog_error;
@@ -86,9 +87,9 @@ pub struct VirtioNet {
     tx_dma_buf: [u8; NET_HDR_SIZE + 2048],
 }
 
-// SAFETY: VirtioNet uses DMA buffers from PMM; single-owner &mut self
-// access ensures no concurrent I/O on the same device. MMIO writes
-// use volatile + fence for cross-CPU visibility.
+// SAFETY: IoMem is Send+Sync; VirtQueue is Send+Sync; DMA buffers via PMM
+// with single-owner &mut self access ensure no concurrent I/O on same device.
+// SAFETY: VirtualNet is Send+Sync because all its fields are Send+Sync.
 unsafe impl Send for VirtioNet {}
 unsafe impl Sync for VirtioNet {}
 
@@ -104,11 +105,11 @@ impl VirtioNet {
         klog_info!(
             Driver,
             "virtio-net: initializing at {:#x}",
-            device.mmio_base
+            device.iomem.phys().as_u64()
         );
 
         // Read device version to determine legacy vs modern
-        let version = unsafe { device.read32(super::VERSION) };
+        let version = device.read32(super::VERSION);
         let is_legacy = version == 1; // 1=transitional, 2=modern-only
         klog_info!(
             Driver,
@@ -120,7 +121,7 @@ impl VirtioNet {
         // Feature negotiation
         let negotiated_v1: bool;
         let hdr_size: usize;
-        unsafe {
+        {
             use super::STATUS;
             use super::STATUS_ACKNOWLEDGE;
             use super::STATUS_DRIVER;
@@ -330,9 +331,7 @@ impl VirtioNet {
                 self.tx_count += 1;
                 return Ok(());
             }
-            unsafe {
-                self.device.read32(super::INTERRUPT_STATUS);
-            }
+            self.device.read32(super::INTERRUPT_STATUS);
             for _ in 0..100 {
                 core::hint::spin_loop();
             }
@@ -450,9 +449,7 @@ impl VirtioNet {
     /// Used for interrupt-driven polling.
     pub fn handle_interrupt(&self) {
         // Read and clear interrupt status
-        unsafe {
-            self.device.write32(0x64, self.device.read32(0x60)); // ACK = STATUS
-        }
+        self.device.write32(super::INTERRUPT_ACK, self.device.read32(super::INTERRUPT_STATUS));
     }
 }
 
@@ -492,7 +489,7 @@ pub fn probe() -> i32 {
                     let _id = crate::kernel::chitin::chitin_register(
                         "virtio_net",
                         crate::kernel::chitin::ChitinProto::Net,
-                        Some(boxed.device.mmio_base),
+                        Some(boxed.device.iomem.phys().as_u64()),
                         None,
                         raw_ptr as *mut u8,
                     );
@@ -520,7 +517,9 @@ pub unsafe fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -
     let hdr = dev.hdr_size;
     let total = (hdr + len as usize).min(dev.tx_dma_buf.len());
     dev.tx_dma_buf[..hdr].fill(0);
-    dev.tx_dma_buf[hdr..total].copy_from_slice(core::slice::from_raw_parts(data, total - hdr));
+    // SAFETY: 网络栈保证用户缓冲区有效性
+    let user_data = unsafe { UserReadPtr::new(data, len as usize) };
+    dev.tx_dma_buf[hdr..total].copy_from_slice(&user_data.as_slice()[..total - hdr]);
     let phys = dev.tx_dma_buf.as_ptr() as u64;
     let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
     match dev.send_packet(dma_phys, total as u32) {
@@ -532,8 +531,9 @@ pub unsafe fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -
 pub unsafe fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return -1; }
     let dev = &mut *(driver_data as *mut VirtioNet);
-    let buf_slice = core::slice::from_raw_parts_mut(buf, buf_len as usize);
-    match dev.try_receive(buf_slice) {
+    // SAFETY: 网络栈保证用户缓冲区有效性
+    let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
+    match dev.try_receive(user_buf.as_mut_slice()) {
         Some(n) => n as i32,
         None => 0,
     }

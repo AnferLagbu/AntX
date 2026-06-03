@@ -78,23 +78,24 @@ pub mod async_ipc;
 // ============================================================================
 
 use types::*;
+use crate::kernel::framework::racy_cell::RacyCell;
 
 /// IPC 命名空间 (全局资源容器)
 ///
 /// 存储所有 IPC 资源的静态数组。
 /// 在内核初始化时通过 `ipc_init()` 初始化。
-static mut IPC_NAMESPACE: IpcNamespace = IpcNamespace {
+pub static IPC_NAMESPACE: RacyCell<IpcNamespace> = RacyCell::new(IpcNamespace {
     pipes: [const { Pipe::new() }; IPC_MAX_PIPES],
     shm_segs: [const { ShmSegment::new() }; IPC_MAX_SHM_SEGS],
     msg_queues: [const { MsgQueue::new() }; IPC_MAX_MSG_QUEUES],
     semaphores: [const { Semaphore::new() }; IPC_MAX_SEMAPHORES],
-};
+});
 
 /// 全局 ID 分配器
 ///
 /// 确保每个 IPC 资源有唯一标识符。
 /// 从 1 开始递增，0 表示"未使用/无效"。
-static mut NEXT_IPC_ID: IpcId = 1;
+pub static NEXT_IPC_ID: RacyCell<IpcId> = RacyCell::new(1);
 
 // ============================================================================
 // 初始化函数
@@ -103,33 +104,33 @@ static mut NEXT_IPC_ID: IpcId = 1;
 /// 初始化 IPC 子系统
 ///
 /// 必须在内核启动早期调用，初始化所有资源槽位。
-///
-/// # Safety
 /// 此函数只能调用一次，且必须在多核启动前完成。
 #[no_mangle]
-pub unsafe fn ipc_init() {
+pub fn ipc_init() {
     // 重置 ID 分配器
-    NEXT_IPC_ID = 1;
+    NEXT_IPC_ID.map_mut(|id| *id = 1);
 
-    // 初始化管道等待队列
-    for i in 0..IPC_MAX_PIPES {
-        IPC_NAMESPACE.pipes[i].id = 0;
-        IPC_NAMESPACE.pipes[i].read_wait.init();
-        IPC_NAMESPACE.pipes[i].write_wait.init();
-    }
+    IPC_NAMESPACE.map_mut(|ns| {
+        // 初始化管道等待队列
+        for i in 0..IPC_MAX_PIPES {
+            ns.pipes[i].id = 0;
+            ns.pipes[i].read_wait.init();
+            ns.pipes[i].write_wait.init();
+        }
 
-    // 初始化消息队列等待队列
-    for i in 0..IPC_MAX_MSG_QUEUES {
-        IPC_NAMESPACE.msg_queues[i].id = 0;
-        IPC_NAMESPACE.msg_queues[i].send_wait.init();
-        IPC_NAMESPACE.msg_queues[i].recv_wait.init();
-    }
+        // 初始化消息队列等待队列
+        for i in 0..IPC_MAX_MSG_QUEUES {
+            ns.msg_queues[i].id = 0;
+            ns.msg_queues[i].send_wait.init();
+            ns.msg_queues[i].recv_wait.init();
+        }
 
-    // 初始化信号量等待队列
-    for i in 0..IPC_MAX_SEMAPHORES {
-        IPC_NAMESPACE.semaphores[i].id = 0;
-        IPC_NAMESPACE.semaphores[i].wait.init();
-    }
+        // 初始化信号量等待队列
+        for i in 0..IPC_MAX_SEMAPHORES {
+            ns.semaphores[i].id = 0;
+            ns.semaphores[i].wait.init();
+        }
+    });
 }
 
 // ============================================================================

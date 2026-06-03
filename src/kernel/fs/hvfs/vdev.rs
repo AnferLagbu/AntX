@@ -92,9 +92,7 @@ pub struct HvVdev {
 }
 
 // SAFETY: HvVdev contains only Copy/primitive types and Mutex-protected fields.
-// No UnsafeCell; mutation is serialized through the Mutex.
-unsafe impl Send for HvVdev {}
-unsafe impl Sync for HvVdev {}
+// SAFETY (Framekernel P2.2.2): HvVdev 全部字段 (Mutex<T>, Atomic*, [T; N]) 自动 Send + Sync。
 
 impl HvVdev {
     pub fn new(config: HvVdevConfig) -> Self {

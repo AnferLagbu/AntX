@@ -139,10 +139,8 @@ struct VfsSnapshot {
     next_fd: u32,
 }
 
-// SAFETY: VfsManager uses Mutex for mounts/fd_table/cwd; next_fd is accessed
-// under the same lock. No UnsafeCell without synchronization.
-unsafe impl Send for VfsManager {}
-unsafe impl Sync for VfsManager {}
+// All fields (Mutex<T>, AtomicU32) automatically implement Send + Sync
+// because T: Send for all inner types ([VfsMount; N], [VfsFile; N], [u8; N], bool, Option<VfsSnapshot>).
 
 impl VfsManager {
     pub const fn new() -> Self {

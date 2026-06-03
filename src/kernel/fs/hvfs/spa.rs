@@ -11,10 +11,6 @@ use crate::kernel::sync::mutex::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
-extern "C" {
-    fn timer_get_ticks() -> u64;
-}
-
 pub const HV_SPA_MAGIC: u32 = 0x48564653;
 pub const HV_UBERBLOCK_COUNT: usize = 128;
 pub const HV_UBERBLOCK_SECTOR: u32 = 0;
@@ -74,13 +70,7 @@ impl HvUberblock {
 
     pub fn compute_checksum(&mut self) {
         self.checksum = [0; 4];
-        let bytes = unsafe {
-            core::slice::from_raw_parts(
-                self as *const Self as *const u8,
-                core::mem::size_of::<Self>(),
-            )
-        };
-        let ck = HvChecksum::compute(HvCksumType::Fletcher4, bytes);
+        let ck = HvChecksum::compute(HvCksumType::Fletcher4, self.as_bytes());
         self.checksum = ck.value;
     }
 
@@ -88,14 +78,25 @@ impl HvUberblock {
         let mut copy = *self;
         let saved = copy.checksum;
         copy.checksum = [0; 4];
-        let bytes = unsafe {
-            core::slice::from_raw_parts(
-                &copy as *const Self as *const u8,
-                core::mem::size_of::<Self>(),
-            )
-        };
-        let ck = HvChecksum::compute(HvCksumType::Fletcher4, bytes);
+        let ck = HvChecksum::compute(HvCksumType::Fletcher4, copy.as_bytes());
         ck.value == saved
+    }
+
+    /// Framekernel P2.2.2: 安全地将 HvUberblock 转换为字节切片
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: HvUberblock is repr(C), layout well-defined
+        unsafe {
+            core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>())
+        }
+    }
+
+    /// Framekernel P2.2.2: 从字节切片安全地反序列化 HvUberblock
+    /// SAFETY: 已验证输入长度足够；使用 read_unaligned 因为缓冲区可能不满足对齐要求
+    pub fn from_bytes_unaligned(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < core::mem::size_of::<Self>() {
+            return None;
+        }
+        Some(unsafe { core::ptr::read_unaligned(bytes.as_ptr() as *const HvUberblock) })
     }
 }
 
@@ -151,10 +152,7 @@ pub struct HvSpa {
     pub partition_start: AtomicU32,
 }
 
-// SAFETY: HvSpa uses Mutex for config/vdevs/metaslabs and Atomic types
-// for all other mutable state. No UnsafeCell without synchronization.
-unsafe impl Send for HvSpa {}
-unsafe impl Sync for HvSpa {}
+// SAFETY (Framekernel P2.2.2): HvSpa 全部字段 (Mutex<T>, Atomic*, Vec) 自动 Send + Sync。
 
 impl HvSpa {
     pub fn new() -> Self {
@@ -182,7 +180,7 @@ impl HvSpa {
     }
 
     fn generate_guid() -> u64 {
-        let t = unsafe { timer_get_ticks() };
+        let t = crate::arch!(timestamp());
         let mut h: u64 = 14695981039346656037;
         h ^= t;
         h = h.wrapping_mul(1099511628211);
@@ -374,12 +372,7 @@ impl HvSpa {
         }
         let mut copy = *ub;
         copy.compute_checksum();
-        let ub_bytes = unsafe {
-            core::slice::from_raw_parts(
-                &copy as *const HvUberblock as *const u8,
-                core::mem::size_of::<HvUberblock>(),
-            )
-        };
+        let ub_bytes = copy.as_bytes();
         let ub_sector =
             (self.txg_current.load(Ordering::Relaxed) as u32) % HV_UBERBLOCK_COUNT as u32;
         let sector = HV_UBERBLOCK_SECTOR + ub_sector;
@@ -388,7 +381,7 @@ impl HvSpa {
         sector_buf[..copy_len].copy_from_slice(&ub_bytes[..copy_len]);
         let _ = self.write_sector(sector, &sector_buf);
         self.last_sync_time
-            .store(unsafe { timer_get_ticks() }, Ordering::Relaxed);
+            .store(crate::arch!(timestamp()), Ordering::Relaxed);
     }
 
     pub fn read_uberblock_from_disk(&self) -> Option<HvUberblock> {
@@ -398,11 +391,10 @@ impl HvSpa {
             if self.read_sector(sector, &mut sector_buf) != 0 {
                 continue;
             }
-            // SAFETY: HvUberblock is repr(C) and _ASSERT_UBERBLOCK_FITS verifies
-            // it fits in the 512-byte sector buffer. read_unaligned is used because
-            // the buffer may not satisfy the struct's alignment requirements.
-            let ub: HvUberblock =
-                unsafe { core::ptr::read_unaligned(sector_buf.as_ptr() as *const HvUberblock) };
+            let ub = match HvUberblock::from_bytes_unaligned(&sector_buf) {
+                Some(u) => u,
+                None => continue,
+            };
             if ub.is_valid() && ub.verify_checksum() {
                 return Some(ub);
             }

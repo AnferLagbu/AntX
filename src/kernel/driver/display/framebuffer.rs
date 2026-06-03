@@ -17,7 +17,8 @@
 //! └── 双缓冲支持
 //! ```
 
-use super::super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use super::super::framework::{DeviceInfo, DeviceType, Driver, Result};
+use crate::kernel::framework::iomem::IoMem;
 
 // ============================================================================
 // 像素格式定义
@@ -227,8 +228,8 @@ impl Rect {
 
 /// Framebuffer 驱动
 pub struct Framebuffer {
-    /// 帧缓冲基地址
-    buffer: *mut u8,
+    /// 帧缓冲 MMIO 句柄
+    iomem: IoMem,
     /// 宽度 (像素)
     width: u32,
     /// 高度 (像素)
@@ -247,9 +248,9 @@ pub struct Framebuffer {
 
 impl Framebuffer {
     /// 创建新的Framebuffer实例
-    pub fn new(buffer: *mut u8, width: u32, height: u32, pitch: u32, format: PixelFormat) -> Self {
+    pub fn new(iomem: IoMem, width: u32, height: u32, pitch: u32, format: PixelFormat) -> Self {
         Self {
-            buffer,
+            iomem,
             width,
             height,
             pitch,
@@ -287,17 +288,16 @@ impl Framebuffer {
         self.bpp
     }
 
-    /// 获取帧缓冲基地址（仅 crate 内部）
+    /// 获取帧缓冲 IoMem 句柄（仅 crate 内部）
     #[inline]
-    pub(crate) fn buffer_ptr(&self) -> *mut u8 {
-        self.buffer
+    pub(crate) fn iomem(&self) -> &IoMem {
+        &self.iomem
     }
 
-    /// 获取像素地址
+    /// 计算像素偏移量
     #[inline]
-    unsafe fn pixel_address(&self, x: u32, y: u32) -> *mut u8 {
-        self.buffer
-            .add((y as usize * self.pitch as usize) + (x as usize * self.bpp))
+    fn pixel_offset(&self, x: u32, y: u32) -> usize {
+        (y as usize * self.pitch as usize) + (x as usize * self.bpp)
     }
 
     /// 设置像素颜色
@@ -306,35 +306,33 @@ impl Framebuffer {
             return;
         }
 
-        unsafe {
-            let addr = self.pixel_address(x, y);
+        let offset = self.pixel_offset(x, y);
 
-            match self.format {
-                PixelFormat::Rgb565 => {
-                    let pixel = color.to_rgb565();
-                    core::ptr::write_unaligned(addr as *mut u16, pixel);
-                }
-                PixelFormat::Argb8888 => {
-                    let pixel = color.to_argb8888();
-                    core::ptr::write_unaligned(addr as *mut u32, pixel);
-                }
-                PixelFormat::Rgb888 => {
-                    *addr = color.r;
-                    *addr.add(1) = color.g;
-                    *addr.add(2) = color.b;
-                }
-                PixelFormat::Bgr888 => {
-                    *addr = color.b;
-                    *addr.add(1) = color.g;
-                    *addr.add(2) = color.r;
-                }
-                PixelFormat::Bgra8888 => {
-                    let pixel = ((color.b as u32) << 24)
-                        | ((color.g as u32) << 16)
-                        | ((color.r as u32) << 8)
-                        | (color.a as u32);
-                    core::ptr::write_unaligned(addr as *mut u32, pixel);
-                }
+        match self.format {
+            PixelFormat::Rgb565 => {
+                let pixel = color.to_rgb565();
+                self.iomem.write_u16(offset, pixel);
+            }
+            PixelFormat::Argb8888 => {
+                let pixel = color.to_argb8888();
+                self.iomem.write_u32(offset, pixel);
+            }
+            PixelFormat::Rgb888 => {
+                self.iomem.write_u8(offset, color.r);
+                self.iomem.write_u8(offset + 1, color.g);
+                self.iomem.write_u8(offset + 2, color.b);
+            }
+            PixelFormat::Bgr888 => {
+                self.iomem.write_u8(offset, color.b);
+                self.iomem.write_u8(offset + 1, color.g);
+                self.iomem.write_u8(offset + 2, color.r);
+            }
+            PixelFormat::Bgra8888 => {
+                let pixel = ((color.b as u32) << 24)
+                    | ((color.g as u32) << 16)
+                    | ((color.r as u32) << 8)
+                    | (color.a as u32);
+                self.iomem.write_u32(offset, pixel);
             }
         }
     }
@@ -345,28 +343,34 @@ impl Framebuffer {
             return None;
         }
 
-        unsafe {
-            let addr = self.pixel_address(x, y);
+        let offset = self.pixel_offset(x, y);
 
-            match self.format {
-                PixelFormat::Rgb565 => {
-                    let pixel = core::ptr::read_unaligned(addr as *const u16);
-                    Some(Color::from_rgb565(pixel))
-                }
-                PixelFormat::Argb8888 => {
-                    let pixel = core::ptr::read_unaligned(addr as *const u32);
-                    Some(Color::from_argb8888(pixel))
-                }
-                PixelFormat::Rgb888 => Some(Color::new(*addr, *addr.add(1), *addr.add(2))),
-                PixelFormat::Bgr888 => Some(Color::new(*addr.add(2), *addr.add(1), *addr)),
-                PixelFormat::Bgra8888 => {
-                    let pixel = core::ptr::read_unaligned(addr as *const u32);
-                    Some(Color::new(
-                        ((pixel >> 8) & 0xFF) as u8,
-                        ((pixel >> 16) & 0xFF) as u8,
-                        ((pixel >> 24) & 0xFF) as u8,
-                    ))
-                }
+        match self.format {
+            PixelFormat::Rgb565 => {
+                let pixel = self.iomem.read_u16(offset);
+                Some(Color::from_rgb565(pixel))
+            }
+            PixelFormat::Argb8888 => {
+                let pixel = self.iomem.read_u32(offset);
+                Some(Color::from_argb8888(pixel))
+            }
+            PixelFormat::Rgb888 => Some(Color::new(
+                self.iomem.read_u8(offset),
+                self.iomem.read_u8(offset + 1),
+                self.iomem.read_u8(offset + 2),
+            )),
+            PixelFormat::Bgr888 => Some(Color::new(
+                self.iomem.read_u8(offset + 2),
+                self.iomem.read_u8(offset + 1),
+                self.iomem.read_u8(offset),
+            )),
+            PixelFormat::Bgra8888 => {
+                let pixel = self.iomem.read_u32(offset);
+                Some(Color::new(
+                    ((pixel >> 8) & 0xFF) as u8,
+                    ((pixel >> 16) & 0xFF) as u8,
+                    ((pixel >> 24) & 0xFF) as u8,
+                ))
             }
         }
     }
@@ -683,9 +687,6 @@ impl Driver for Framebuffer {
     }
 
     fn init(&mut self) -> Result<()> {
-        if self.buffer.is_null() {
-            return Err(DriverError::InvalidParameter);
-        }
         self.initialized = true;
         Ok(())
     }

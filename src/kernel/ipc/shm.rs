@@ -4,29 +4,17 @@
 //! 功能等价于 POSIX shmget/shmat/shmdt
 
 use super::types::*;
+use crate::kernel::framework::userptr::UserRefMut;
 use crate::kernel::proc::api::process_get_current_pid;
 
 /// 查找空闲共享内存段槽位
-unsafe fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&'static mut ShmSegment> {
-    for i in 0..IPC_MAX_SHM_SEGS {
-        if namespace.shm_segs[i].id == 0 {
-            return Some(&mut *(&mut namespace.shm_segs[i] as *mut ShmSegment));
-        }
-    }
-    None
+fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&mut ShmSegment> {
+    namespace.shm_segs.iter_mut().find(|s| s.id == 0)
 }
 
 /// 根据 ID 查找共享内存段
-unsafe fn shm_find_by_id(
-    namespace: &mut IpcNamespace,
-    id: IpcId,
-) -> Option<&'static mut ShmSegment> {
-    for i in 0..IPC_MAX_SHM_SEGS {
-        if namespace.shm_segs[i].id == id {
-            return Some(&mut *(&mut namespace.shm_segs[i] as *mut ShmSegment));
-        }
-    }
-    None
+fn shm_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&mut ShmSegment> {
+    namespace.shm_segs.iter_mut().find(|s| s.id == id)
 }
 
 /// 创建共享内存段 (Rust 安全接口)
@@ -53,38 +41,33 @@ pub fn shm_create_safe(
         return Err(-1);
     }
 
-    unsafe {
-        // 查找空闲槽位
-        let shm = match shm_find_free(namespace) {
-            Some(s) => s,
-            None => return Err(-2),
-        };
+    // 查找空闲槽位
+    let shm = match shm_find_free(namespace) {
+        Some(s) => s,
+        None => return Err(-2),
+    };
 
-        // 计算需要的页数并分配物理内存
-        let pages = size.div_ceil(4096);
-
-        let phys = crate::kernel::mm::api::pmm_alloc_pages(pages as usize);
-
-        if phys.is_null() {
-            return Err(-3);
-        }
-
-        // 初始化共享内存段
-        shm.id = *next_id;
-        *next_id += 1;
-
-        shm.phys_addr = phys as u64;
-        shm.size = size;
-        shm.creator = current_pid;
-        shm.ref_count = 0;
-        shm.attach_count = 0;
-        shm.flags = 0;
-        shm.perm = perm;
-
-        shm.attached_pids = [0u32; 16];
-
-        Ok(shm.id)
+    // 计算需要的页数并分配物理内存
+    let pages = size.div_ceil(4096);
+    let phys = crate::kernel::mm::api::pmm_alloc_pages(pages as usize);
+    if phys.is_null() {
+        return Err(-3);
     }
+
+    // 初始化共享内存段
+    shm.id = *next_id;
+    *next_id += 1;
+
+    shm.phys_addr = phys as u64;
+    shm.size = size;
+    shm.creator = current_pid;
+    shm.ref_count = 0;
+    shm.attach_count = 0;
+    shm.flags = 0;
+    shm.perm = perm;
+    shm.attached_pids = [0u32; 16];
+
+    Ok(shm.id)
 }
 
 /// 将共享内存段附加到当前进程地址空间 (Rust 安全接口)
@@ -102,31 +85,29 @@ pub fn shm_attach_safe(
     id: IpcId,
     current_pid: u32,
 ) -> Result<u64, i32> {
-    unsafe {
-        let shm = match shm_find_by_id(namespace, id) {
-            Some(s) => s,
-            None => return Err(-1), // 无效 ID
-        };
+    let shm = match shm_find_by_id(namespace, id) {
+        Some(s) => s,
+        None => return Err(-1), // 无效 ID
+    };
 
-        // 检查是否已经附加过
-        for i in 0..shm.attach_count as usize {
-            if shm.attached_pids[i] == current_pid {
-                return Ok(shm.phys_addr); // 已附加，直接返回地址
-            }
+    // 检查是否已经附加过
+    for i in 0..shm.attach_count as usize {
+        if shm.attached_pids[i] == current_pid {
+            return Ok(shm.phys_addr); // 已附加，直接返回地址
         }
-
-        // 检查是否超过最大附加进程数
-        if shm.attach_count >= 16 {
-            return Err(-2); // 超出限制
-        }
-
-        // 记录附加信息
-        shm.attached_pids[shm.attach_count as usize] = current_pid;
-        shm.attach_count += 1;
-        shm.ref_count += 1;
-
-        Ok(shm.phys_addr)
     }
+
+    // 检查是否超过最大附加进程数
+    if shm.attach_count >= 16 {
+        return Err(-2); // 超出限制
+    }
+
+    // 记录附加信息
+    shm.attached_pids[shm.attach_count as usize] = current_pid;
+    shm.attach_count += 1;
+    shm.ref_count += 1;
+
+    Ok(shm.phys_addr)
 }
 
 /// 从当前进程分离共享内存段 (Rust 安全接口)
@@ -144,25 +125,23 @@ pub fn shm_detach_safe(
     id: IpcId,
     current_pid: u32,
 ) -> Result<(), i32> {
-    unsafe {
-        let shm = match shm_find_by_id(namespace, id) {
-            Some(s) => s,
-            None => return Err(-1),
-        };
+    let shm = match shm_find_by_id(namespace, id) {
+        Some(s) => s,
+        None => return Err(-1),
+    };
 
-        // 查找并移除当前进程的附加记录
-        for i in 0..shm.attach_count as usize {
-            if shm.attached_pids[i] == current_pid {
-                shm.attached_pids[i] = shm.attached_pids[shm.attach_count as usize - 1];
-                shm.attached_pids[shm.attach_count as usize - 1] = 0;
-                shm.attach_count -= 1;
-                shm.ref_count -= 1;
-                return Ok(());
-            }
+    // 查找并移除当前进程的附加记录
+    for i in 0..shm.attach_count as usize {
+        if shm.attached_pids[i] == current_pid {
+            shm.attached_pids[i] = shm.attached_pids[shm.attach_count as usize - 1];
+            shm.attached_pids[shm.attach_count as usize - 1] = 0;
+            shm.attach_count -= 1;
+            shm.ref_count -= 1;
+            return Ok(());
         }
-
-        Err(-2) // 进程未附加此段
     }
+
+    Err(-2) // 进程未附加此段
 }
 
 /// 销毁共享内存段 (Rust 安全接口)
@@ -175,31 +154,26 @@ pub fn shm_detach_safe(
 /// * Ok(()) - 成功
 /// * Err(i32) - 错误码 (-1: 无效 ID, -2: 仍有进程附加)
 pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32> {
-    unsafe {
-        let shm = match shm_find_by_id(namespace, id) {
-            Some(s) => s,
-            None => return Err(-1),
-        };
+    let shm = match shm_find_by_id(namespace, id) {
+        Some(s) => s,
+        None => return Err(-1),
+    };
 
-        // 检查是否有进程仍附加
-        if shm.ref_count > 0 {
-            return Err(-2);
-        }
-
-        // 释放物理页
-        let pages = shm.size.div_ceil(4096);
-        crate::kernel::mm::api::pmm_free_pages(
-            shm.phys_addr as *mut u8,
-            pages as usize,
-        );
-
-        // 清理结构体
-        shm.id = 0;
-        shm.phys_addr = 0;
-        shm.size = 0;
-
-        Ok(())
+    // 检查是否有进程仍附加
+    if shm.ref_count > 0 {
+        return Err(-2);
     }
+
+    // 释放物理页
+    let pages = shm.size.div_ceil(4096);
+    crate::kernel::mm::api::pmm_free_pages(shm.phys_addr as *mut u8, pages as usize);
+
+    // 清理结构体
+    shm.id = 0;
+    shm.phys_addr = 0;
+    shm.size = 0;
+
+    Ok(())
 }
 
 // ============================================================================
@@ -209,62 +183,51 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
 /// FFI: 创建共享内存段
 #[no_mangle]
 pub fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
-    unsafe {
-        use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
-
-        let pid = process_get_current_pid();
-
-        match shm_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, size, perm, pid) {
-            Ok(id) => id,
-            Err(_) => 0,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    let next_id = super::NEXT_IPC_ID.get_mut();
+    let pid = process_get_current_pid();
+    match shm_create_safe(ns, next_id, size, perm, pid) {
+        Ok(id) => id,
+        Err(_) => 0,
     }
 }
 
 /// FFI: 附加共享内存段
 #[no_mangle]
-pub fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
-
-        let pid = process_get_current_pid();
-
-        match shm_attach_safe(&mut IPC_NAMESPACE, id, pid) {
-            Ok(phys_addr) => {
-                if !addr.is_null() {
-                    *addr = phys_addr as *mut u8;
-                }
-                0
+pub unsafe fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
+    let ns = super::IPC_NAMESPACE.get_mut();
+    let pid = process_get_current_pid();
+    match shm_attach_safe(ns, id, pid) {
+        Ok(phys_addr) => {
+            if !addr.is_null() {
+                // SAFETY: caller guarantees addr is a valid pointer to
+                // a *mut u8 in user memory.
+                let mut out = unsafe { UserRefMut::<*mut u8>::new(addr) };
+                *out.as_mut() = phys_addr as *mut u8;
             }
-            Err(_) => -1,
+            0
         }
+        Err(_) => -1,
     }
 }
 
 /// FFI: 分离共享内存段
 #[no_mangle]
 pub fn ipc_shm_detach(id: IpcId) -> i32 {
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
-
-        let pid = process_get_current_pid();
-
-        match shm_detach_safe(&mut IPC_NAMESPACE, id, pid) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    let pid = process_get_current_pid();
+    match shm_detach_safe(ns, id, pid) {
+        Ok(()) => 0,
+        Err(_) => -1,
     }
 }
 
 /// FFI: 销毁共享内存段
 #[no_mangle]
 pub fn ipc_shm_destroy(id: IpcId) -> i32 {
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
-
-        match shm_destroy_safe(&mut IPC_NAMESPACE, id) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    match shm_destroy_safe(ns, id) {
+        Ok(()) => 0,
+        Err(_) => -1,
     }
 }

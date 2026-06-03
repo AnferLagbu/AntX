@@ -4,54 +4,113 @@
 //! 功能等价于 System V 消息队列
 
 use super::types::*;
+use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::proc::api::process_get_current_pid;
-use alloc::alloc::{alloc, dealloc, Layout};
 
-/// 查找空闲消息队列槽位
-unsafe fn msgq_find_free(namespace: &mut IpcNamespace) -> Option<&'static mut MsgQueue> {
-    for i in 0..IPC_MAX_MSG_QUEUES {
-        if namespace.msg_queues[i].id == 0 {
-            return Some(&mut *(&mut namespace.msg_queues[i] as *mut MsgQueue));
+/// === 消息原始指针特权封装 (Framekernel 模式) ===
+///
+/// `NonNull<Message>` 是侵入式链表的关键句柄, 所有 unsafe 访问
+/// (Box::from_raw/NonNull::new_unchecked/裸字段读) 都集中在 `MessageRef` 内部,
+/// 业务逻辑 (`send`/`receive`/`free`) 通过安全方法操作。
+pub(crate) mod raw {
+    use super::Message;
+    use alloc::boxed::Box;
+    use core::ptr::NonNull;
+
+    /// `NonNull<Message>` 的安全 newtype 封装
+    #[derive(Clone, Copy)]
+    pub struct MessageRef(NonNull<Message>);
+
+    impl MessageRef {
+        /// 构造一个 `MessageRef` (内部 unsafe 边界)
+        ///
+        /// # Safety (内部)
+        /// - `nn` 必须为 `allocate_message` 返回的有效 NonNull。
+        pub(crate) unsafe fn from_non_null(nn: NonNull<Message>) -> Self {
+            Self(nn)
+        }
+
+        /// 从 `Option<NonNull<Message>>` 安全提升为 `MessageRef`
+        ///
+        /// - 内部 unsafe: 在 `raw` 子模块内已声明 `from_non_null` 边界
+        /// - 调用方只需保证 `nn` 是 Some (从 mq.head/mq.tail 取出)
+        pub(crate) fn from_some(nn: NonNull<Message>) -> Self {
+            // SAFETY: nn is from Option::unwrap on a queue field that was
+            // populated by allocate_message (intrusive list invariant).
+            unsafe { Self::from_non_null(nn) }
+        }
+
+        /// 获取底层 NonNull
+        #[inline(always)]
+        pub fn as_non_null(self) -> NonNull<Message> {
+            self.0
+        }
+
+        /// 读 `next` 字段 (侵入式链表)
+        ///
+        /// # Safety (内部)
+        /// - `self` 必须是有效的 Message。
+        #[inline(always)]
+        pub fn next(&self) -> Option<NonNull<Message>> {
+            // SAFETY: 调用方保证 self 指向有效 Message。
+            unsafe { (*self.0.as_ptr()).next }
+        }
+
+        /// 写 `next` 字段
+        #[inline(always)]
+        pub fn set_next(&self, next: Option<NonNull<Message>>) {
+            // SAFETY: 同上, self 必须是有效 Message。
+            unsafe { (*self.0.as_ptr()).next = next }
+        }
+
+        /// 获取 &Message 引用
+        #[inline(always)]
+        pub fn as_ref(&self) -> &Message {
+            // SAFETY: self 指向有效 Message。
+            unsafe { &*self.0.as_ptr() }
+        }
+
+        /// 获取 &mut Message 引用
+        #[inline(always)]
+        pub fn as_mut(&self) -> &mut Message {
+            // SAFETY: self 指向有效 Message, &mut 保证独占。
+            unsafe { &mut *self.0.as_ptr() }
+        }
+
+        /// 释放消息 (Box::from_raw + drop)
+        pub fn free(self) {
+            // SAFETY: self 来自 allocate_message, 由 Box::into_raw 创建。
+            let _ = unsafe { Box::from_raw(self.0.as_ptr()) };
         }
     }
-    None
+
+    /// 分配一个新 `Message` 并包装为 `MessageRef` (集中 unsafe 入口)
+    pub fn allocate() -> Option<MessageRef> {
+        let msg = Box::new(Message::new());
+        // Box::into_raw never returns null; if it somehow did, treat as OOM.
+        let ptr = NonNull::new(Box::into_raw(msg))?;
+        // SAFETY: ptr is non-null and was just produced by Box::into_raw.
+        Some(unsafe { MessageRef::from_non_null(ptr) })
+    }
+}
+
+use raw::MessageRef;
+
+/// 查找空闲消息队列槽位
+fn msgq_find_free(namespace: &mut IpcNamespace) -> Option<&mut MsgQueue> {
+    namespace.msg_queues.iter_mut().find(|q| q.id == 0)
 }
 
 /// 根据 ID 查找消息队列
-unsafe fn msgq_find_by_id(
-    namespace: &mut IpcNamespace,
-    id: IpcId,
-) -> Option<&'static mut MsgQueue> {
-    for i in 0..IPC_MAX_MSG_QUEUES {
-        if namespace.msg_queues[i].id == id {
-            return Some(&mut *(&mut namespace.msg_queues[i] as *mut MsgQueue));
-        }
-    }
-    None
+fn msgq_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&mut MsgQueue> {
+    namespace.msg_queues.iter_mut().find(|q| q.id == id)
 }
 
-/// 分配消息结构体 (使用内核堆)
-///
-/// # Returns
-/// * Some(*mut Message) - 成功分配
-/// * None - 分配失败
-fn allocate_message() -> Option<*mut Message> {
-    unsafe {
-        let layout = Layout::new::<Message>();
-        let ptr = alloc(layout);
-        if ptr.is_null() {
-            None
-        } else {
-            Some(ptr as *mut Message)
-        }
-    }
+/// 分配消息结构体 (委托给 `raw::allocate`)
+fn allocate_message() -> Option<MessageRef> {
+    raw::allocate()
 }
 
-/// 释放消息结构体
-unsafe fn free_message(msg: *mut Message) {
-    let layout = Layout::new::<Message>();
-    dealloc(msg as *mut u8, layout);
-}
 
 /// 创建消息队列 (Rust 安全接口)
 ///
@@ -70,30 +129,28 @@ pub fn msgq_create_safe(
     perm: i32,
     current_pid: u32,
 ) -> Result<IpcId, i32> {
-    unsafe {
-        let mq = match msgq_find_free(namespace) {
-            Some(q) => q,
-            None => return Err(-1),
-        };
+    let mq = match msgq_find_free(namespace) {
+        Some(q) => q,
+        None => return Err(-1),
+    };
 
-        // 初始化消息队列
-        mq.id = *next_id;
-        *next_id += 1;
+    // 初始化消息队列
+    mq.id = *next_id;
+    *next_id += 1;
 
-        mq.owner = current_pid;
-        mq.head = core::ptr::null_mut();
-        mq.tail = core::ptr::null_mut();
-        mq.count = 0;
-        mq.max_msgs = MSG_QUEUE_MAX_MSGS;
-        mq.max_size = MSG_MAX_SIZE as u32;
-        mq.flags = 0;
-        mq.perm = perm;
+    mq.owner = current_pid;
+    mq.head = None;
+    mq.tail = None;
+    mq.count = 0;
+    mq.max_msgs = MSG_QUEUE_MAX_MSGS;
+    mq.max_size = MSG_MAX_SIZE as u32;
+    mq.flags = 0;
+    mq.perm = perm;
 
-        mq.send_wait.init();
-        mq.recv_wait.init();
+    mq.send_wait.init();
+    mq.recv_wait.init();
 
-        Ok(mq.id)
-    }
+    Ok(mq.id)
 }
 
 /// 向消息队列发送消息 (Rust 安全接口)
@@ -122,54 +179,56 @@ pub fn msgq_send_safe(
         return Err(-2);
     }
 
-    unsafe {
-        let mq = match msgq_find_by_id(namespace, id) {
-            Some(q) => q,
-            None => return Err(-1),
-        };
+    let mq = match msgq_find_by_id(namespace, id) {
+        Some(q) => q,
+        None => return Err(-1),
+    };
 
-        // 检查队列是否已满
-        if mq.count >= mq.max_msgs {
-            return Err(-3);
-        }
-
-        // 分配消息结构体
-        let msg = match allocate_message() {
-            Some(m) => m,
-            None => return Err(-4),
-        };
-
-        // 初始化消息
-        (*msg).type_ = type_;
-        (*msg).sender = current_pid as u64;
-        (*msg).size = size as u64;
-        (*msg).next = core::ptr::null_mut();
-        (*msg).data = [0u8; MSG_MAX_SIZE];
-
-        // 复制数据 (如果有)
-        if let Some(src) = data {
-            if size > 0 && !src.is_empty() {
-                (&mut (*msg).data)[..size].copy_from_slice(&src[..size]);
-            }
-        }
-
-        // 入队 (尾插法)
-        if mq.tail.is_null() {
-            mq.head = msg;
-            mq.tail = msg;
-        } else {
-            (*mq.tail).next = msg;
-            mq.tail = msg;
-        }
-        mq.count += 1;
-
-        // 唤醒等待接收的线程
-        if mq.recv_wait.count() > 0 {
-            mq.recv_wait.wake_one();
-        }
-
-        Ok(())
+    // 检查队列是否已满
+    if mq.count >= mq.max_msgs {
+        return Err(-3);
     }
+
+    // 分配消息结构体
+    let msg_nn = match allocate_message() {
+        Some(m) => m,
+        None => return Err(-4),
+    };
+
+    // SAFETY: msg was just allocated by allocate_message and is non-null;
+    // it will be freed by msgq_recv_safe or msgq_destroy_safe.
+    let msg_ref = msg_nn.as_mut();
+    msg_ref.type_ = type_;
+    msg_ref.sender = current_pid as u64;
+    msg_ref.size = size as u64;
+    msg_ref.next = None;
+
+    // 复制数据 (如果有)
+    if let Some(src) = data {
+        if size > 0 && !src.is_empty() {
+            msg_ref.data[..size].copy_from_slice(&src[..size]);
+        }
+    }
+
+    // 入队 (尾插法)
+    if mq.tail.is_none() {
+        mq.head = Some(msg_nn.as_non_null());
+        mq.tail = Some(msg_nn.as_non_null());
+    } else {
+        // SAFETY: mq.tail is Some, pointing to a valid allocated Message
+        let tail_nn = mq.tail.unwrap();
+        let tail_ref = MessageRef::from_some(tail_nn);
+        tail_ref.set_next(Some(msg_nn.as_non_null()));
+        mq.tail = Some(msg_nn.as_non_null());
+    }
+    mq.count += 1;
+
+    // 唤醒等待接收的线程
+    if mq.recv_wait.count() > 0 {
+        mq.recv_wait.wake_one();
+    }
+
+    Ok(())
 }
 
 /// 从消息队列接收消息 (Rust 安全接口)
@@ -192,54 +251,56 @@ pub fn msgq_recv_safe(
     data_out: Option<&mut [u8]>,
     size_out: Option<&mut u64>,
 ) -> Result<usize, i32> {
-    unsafe {
-        let mq = match msgq_find_by_id(namespace, id) {
-            Some(q) => q,
-            None => return Err(-1),
-        };
+    let mq = match msgq_find_by_id(namespace, id) {
+        Some(q) => q,
+        None => return Err(-1),
+    };
 
-        // 检查队列是否为空
-        if mq.head.is_null() {
-            return Err(-2);
-        }
-
-        // 出队 (头删法)
-        let msg = mq.head;
-        mq.head = (*msg).next;
-
-        if mq.head.is_null() {
-            mq.tail = core::ptr::null_mut();
-        }
-        mq.count -= 1;
-
-        // 提取消息信息
-        let read_size = (*msg).size as usize;
-
-        if let Some(t) = type_out {
-            *t = (*msg).type_;
-        }
-
-        if let Some(buf) = data_out {
-            let copy_len = read_size.min(buf.len());
-            if read_size > 0 {
-                buf[..copy_len].copy_from_slice(&(&(*msg).data)[..copy_len]);
-            }
-        }
-
-        if let Some(s) = size_out {
-            *s = (*msg).size;
-        }
-
-        // 释放消息内存
-        free_message(msg);
-
-        // 唤醒等待发送的线程
-        if mq.send_wait.count() > 0 {
-            mq.send_wait.wake_one();
-        }
-
-        Ok(read_size)
+    // 检查队列是否为空
+    if mq.head.is_none() {
+        return Err(-2);
     }
+
+    // 出队 (头删法)
+    let msg_nn = mq.head.unwrap();
+    let msg_ref = MessageRef::from_some(msg_nn);
+    mq.head = msg_ref.next();
+
+    if mq.head.is_none() {
+        mq.tail = None;
+    }
+    mq.count -= 1;
+
+    // 通过 MessageRef 安全读取字段
+    let read_size = msg_ref.as_ref().size as usize;
+    let msg_type = msg_ref.as_ref().type_;
+    let msg_data = msg_ref.as_ref().data;
+    let msg_size = msg_ref.as_ref().size;
+
+    if let Some(t) = type_out {
+        *t = msg_type;
+    }
+
+    if let Some(buf) = data_out {
+        let copy_len = read_size.min(buf.len());
+        if read_size > 0 {
+            buf[..copy_len].copy_from_slice(&msg_data[..copy_len]);
+        }
+    }
+
+    if let Some(s) = size_out {
+        *s = msg_size;
+    }
+
+    // 通过 MessageRef 释放内存
+    msg_ref.free();
+
+    // 唤醒等待发送的线程
+    if mq.send_wait.count() > 0 {
+        mq.send_wait.wake_one();
+    }
+
+    Ok(read_size)
 }
 
 /// 销毁消息队列 (Rust 安全接口)
@@ -252,24 +313,22 @@ pub fn msgq_recv_safe(
 /// * Ok(()) - 成功
 /// * Err(i32) - 错误码 (-1: 无效 ID)
 pub fn msgq_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32> {
-    unsafe {
-        let mq = match msgq_find_by_id(namespace, id) {
-            Some(q) => q,
-            None => return Err(-1),
-        };
+    let mq = match msgq_find_by_id(namespace, id) {
+        Some(q) => q,
+        None => return Err(-1),
+    };
 
-        // 释放所有剩余消息
-        while !mq.head.is_null() {
-            let msg = mq.head;
-            mq.head = (*msg).next;
-            free_message(msg);
-        }
-
-        // 清理结构体
-        mq.id = 0;
-
-        Ok(())
+    // 释放所有剩余消息
+    while let Some(msg_nn) = mq.head {
+        let msg_ref = MessageRef::from_some(msg_nn);
+        mq.head = msg_ref.next();
+        msg_ref.free();
     }
+
+    // 清理结构体
+    mq.id = 0;
+
+    Ok(())
 }
 
 // ============================================================================
@@ -279,84 +338,89 @@ pub fn msgq_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), 
 /// FFI: 创建消息队列
 #[no_mangle]
 pub fn ipc_msgq_create(perm: i32) -> IpcId {
-    unsafe {
-        use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
-
-        let pid = process_get_current_pid();
-
-        match msgq_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, perm, pid) {
-            Ok(id) => id,
-            Err(_) => 0,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    let next_id = super::NEXT_IPC_ID.get_mut();
+    let pid = process_get_current_pid();
+    match msgq_create_safe(ns, next_id, perm, pid) {
+        Ok(id) => id,
+        Err(_) => 0,
     }
 }
 
 /// FFI: 发送消息
 #[no_mangle]
-pub fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
+pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
+    let ns = super::IPC_NAMESPACE.get_mut();
+    let pid = process_get_current_pid();
 
-        let pid = process_get_current_pid();
+    let slice = if data.is_null() || size == 0 {
+        None
+    } else {
+        // SAFETY: caller guarantees data is valid for size bytes in user memory.
+        let user_data = unsafe { UserReadPtr::new(data, size as usize) };
+        Some(user_data)
+    };
 
-        let slice = if data.is_null() || size == 0 {
-            None
-        } else {
-            Some(core::slice::from_raw_parts(data, size as usize))
-        };
+    // Convert UserReadPtr to Option<&[u8]> for the safe API
+    let data_slice = slice.as_ref().map(|u| u.as_slice());
 
-        match msgq_send_safe(&mut IPC_NAMESPACE, id, type_, slice, size as usize, pid) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
+    match msgq_send_safe(ns, id, type_, data_slice, size as usize, pid) {
+        Ok(()) => 0,
+        Err(_) => -1,
     }
 }
 
 /// FFI: 接收消息
 #[no_mangle]
-pub fn ipc_msgq_recv(
+pub unsafe fn ipc_msgq_recv(
     id: IpcId,
     type_out: *mut u64,
     data: *mut u8,
     size_out: *mut u64,
 ) -> i64 {
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
+    let ns = super::IPC_NAMESPACE.get_mut();
 
-        let type_opt = if type_out.is_null() {
-            None
-        } else {
-            Some(&mut *type_out)
-        };
+    let mut type_opt = if type_out.is_null() {
+        None
+    } else {
+        // SAFETY: caller guarantees type_out is a valid pointer to u64 in user memory.
+        let out = unsafe { UserRefMut::<u64>::new(type_out) };
+        Some(out)
+    };
 
-        let data_opt = if data.is_null() {
-            None
-        } else {
-            Some(core::slice::from_raw_parts_mut(data, MSG_MAX_SIZE))
-        };
+    let mut data_opt = if data.is_null() {
+        None
+    } else {
+        // SAFETY: caller guarantees data is valid for MSG_MAX_SIZE bytes in user memory.
+        let buf = unsafe { UserWritePtr::new(data, MSG_MAX_SIZE) };
+        Some(buf)
+    };
 
-        let size_opt = if size_out.is_null() {
-            None
-        } else {
-            Some(&mut *size_out)
-        };
+    let mut size_opt = if size_out.is_null() {
+        None
+    } else {
+        // SAFETY: caller guarantees size_out is a valid pointer to u64 in user memory.
+        let out = unsafe { UserRefMut::<u64>::new(size_out) };
+        Some(out)
+    };
 
-        match msgq_recv_safe(&mut IPC_NAMESPACE, id, type_opt, data_opt, size_opt) {
-            Ok(n) => n as i64,
-            Err(_) => -1,
-        }
+    // Convert framework wrappers to safe Rust types
+    let type_ref = type_opt.as_mut().map(|u| u.as_mut());
+    let data_ref = data_opt.as_mut().map(|u| u.as_mut_slice());
+    let size_ref = size_opt.as_mut().map(|u| u.as_mut());
+
+    match msgq_recv_safe(ns, id, type_ref, data_ref, size_ref) {
+        Ok(n) => n as i64,
+        Err(_) => -1,
     }
 }
 
 /// FFI: 销毁消息队列
 #[no_mangle]
 pub fn ipc_msgq_destroy(id: IpcId) -> i32 {
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
-
-        match msgq_destroy_safe(&mut IPC_NAMESPACE, id) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    match msgq_destroy_safe(ns, id) {
+        Ok(()) => 0,
+        Err(_) => -1,
     }
 }

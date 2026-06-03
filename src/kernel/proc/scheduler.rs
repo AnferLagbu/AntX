@@ -102,12 +102,7 @@ struct PerCpuSched {
     fifo_watchdog: AtomicU64,
 }
 
-// SAFETY: PerCpuSched is per-CPU data; each instance is only accessed by
-// its owning CPU. Mutex<VecDeque> fields provide internal synchronization.
-// Atomic fields are lock-free. The combination is safe to send/share
-// across threads because mutation is always guarded.
-unsafe impl Send for PerCpuSched {}
-unsafe impl Sync for PerCpuSched {}
+// All fields (Mutex<VecDeque<Pid>>, Mutex<CfsRunQueue>, Mutex<DlRunQueue>, Atomic*) auto-implement Send + Sync.
 
 static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; crate::kernel::config::MAX_CPUS] =
     [const { Mutex::new(None) }; crate::kernel::config::MAX_CPUS];
@@ -187,11 +182,7 @@ pub struct Scheduler {
     initialized: AtomicBool,
 }
 
-// SAFETY: Scheduler uses Mutex for all mutable state (quotas, limits).
-// AtomicBool for initialized flag is lock-free. All accesses are
-// serialized through the Mutex, making cross-thread access safe.
-unsafe impl Send for Scheduler {}
-unsafe impl Sync for Scheduler {}
+// All fields (Mutex<[PwidQuota; N]>, Mutex<[PwidLimit; N]>, AtomicBool) auto-implement Send + Sync.
 
 impl Scheduler {
     pub const fn new() -> Self {

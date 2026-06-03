@@ -9,10 +9,10 @@
 //!   仅返回数组索引，不涉及裸指针转换。
 //! - 所有对 `namespace.pipes[idx]` 的访问在 `PIPE_LOCK` 保护下进行，
 //!   防止并发竞争。
-//! - FFI 函数中的 `unsafe` 块仅用于：访问全局 `IPC_NAMESPACE` 静态可变变量、
-//!   从 C 指针构造切片。
+//! - FFI 函数通过 `RacyCell::get_mut()` 安全访问全局 IPC_NAMESPACE。
 
 use super::types::*;
+use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::proc::api::process_get_current_pid;
 
 static PIPE_LOCK: spin::Mutex<()> = spin::Mutex::new(());
@@ -206,77 +206,66 @@ pub fn pipe_close_safe(namespace: &mut IpcNamespace, fd: i32) -> Result<(), i32>
 }
 
 #[no_mangle]
-pub fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
+pub unsafe fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
     if pipefd.is_null() {
         return -1;
     }
 
-    // SAFETY: IPC_NAMESPACE is a static mut accessed only under PIPE_LOCK;
-    // pipefd is validated non-null above; add(0)/add(1) stay within the
-    // two-int array that the caller must provide.
-    unsafe {
-        use crate::kernel::ipc::{IPC_NAMESPACE, NEXT_IPC_ID};
+    let ns = super::IPC_NAMESPACE.get_mut();
+    let next_id = super::NEXT_IPC_ID.get_mut();
+    let current_pid = process_get_current_pid();
 
-        let current_pid = process_get_current_pid();
-
-        match pipe_create_safe(&mut IPC_NAMESPACE, &mut NEXT_IPC_ID, current_pid) {
-            Ok((rfd, wfd)) => {
-                *pipefd.add(0) = rfd;
-                *pipefd.add(1) = wfd;
-                0
-            }
-            Err(_) => -1,
+    match pipe_create_safe(ns, next_id, current_pid) {
+        Ok((rfd, wfd)) => {
+            // SAFETY: pipefd is validated non-null above; caller guarantees
+            // it points to at least 2 valid i32 values in user memory.
+            let mut fds = unsafe { UserRefMut::<[i32; 2]>::new(pipefd as *mut [i32; 2]) };
+            let arr = fds.as_mut();
+            arr[0] = rfd;
+            arr[1] = wfd;
+            0
         }
+        Err(_) => -1,
     }
 }
 
 #[no_mangle]
-pub fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
+pub unsafe fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
 
-    // SAFETY: buf is validated non-null; count matches the valid region;
-    // IPC_NAMESPACE access is serialized by PIPE_LOCK internally.
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
-
-        let slice = core::slice::from_raw_parts_mut(buf, count as usize);
-        match pipe_read_safe(&mut IPC_NAMESPACE, fd, slice, count) {
-            Ok(n) => n as i32,
-            Err(_) => -1,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    // SAFETY: buf is validated non-null above; caller guarantees it points
+    // to at least count valid bytes in user memory.
+    let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
+    match pipe_read_safe(ns, fd, user_buf.as_mut_slice(), count) {
+        Ok(n) => n as i32,
+        Err(_) => -1,
     }
 }
 
 #[no_mangle]
-pub fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
+pub unsafe fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
 
-    // SAFETY: buf is validated non-null; count matches the valid region;
-    // IPC_NAMESPACE access is serialized by PIPE_LOCK internally.
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
-
-        let slice = core::slice::from_raw_parts(buf, count as usize);
-        match pipe_write_safe(&mut IPC_NAMESPACE, fd, slice, count) {
-            Ok(n) => n as i32,
-            Err(_) => -1,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    // SAFETY: buf is validated non-null above; caller guarantees it points
+    // to at least count valid bytes in user memory.
+    let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
+    match pipe_write_safe(ns, fd, user_buf.as_slice(), count) {
+        Ok(n) => n as i32,
+        Err(_) => -1,
     }
 }
 
 #[no_mangle]
 pub fn ipc_pipe_close(fd: i32) -> i32 {
-    // SAFETY: IPC_NAMESPACE access is serialized by PIPE_LOCK internally.
-    unsafe {
-        use crate::kernel::ipc::IPC_NAMESPACE;
-
-        match pipe_close_safe(&mut IPC_NAMESPACE, fd) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
+    let ns = super::IPC_NAMESPACE.get_mut();
+    match pipe_close_safe(ns, fd) {
+        Ok(()) => 0,
+        Err(_) => -1,
     }
 }

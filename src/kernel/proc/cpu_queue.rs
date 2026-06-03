@@ -29,9 +29,7 @@ pub struct CpuQueue {
     pub online: AtomicBool,
 }
 
-// SAFETY: CpuQueue only contains AtomicU32/AtomicBool fields.
-// All operations are lock-free atomic, safe for concurrent access.
-unsafe impl Sync for CpuQueue {}
+// All fields (AtomicU32, AtomicBool) auto-implement Send + Sync.
 
 impl CpuQueue {
     pub const fn new() -> Self {

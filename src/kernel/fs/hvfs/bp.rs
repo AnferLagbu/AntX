@@ -180,4 +180,31 @@ impl HvBlockPointer {
     pub fn is_metadata(&self) -> bool {
         self.prop.level > 0 && !self.is_hole()
     }
+
+    /// Framekernel P2.2.2: 安全地将 HvBlockPointer 转换为字节切片
+    /// SAFETY: HvBlockPointer 是 repr(C) 结构体，字段布局确定，无内部 padding 导致 UB
+    pub const BYTES: usize = core::mem::size_of::<Self>();
+
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(self as *const Self as *const u8, Self::BYTES)
+        }
+    }
+
+    /// Framekernel P2.2.2: 从字节切片安全地反序列化 HvBlockPointer
+    /// SAFETY: 已验证输入长度足够
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < Self::BYTES {
+            return None;
+        }
+        let mut bp = Self::null();
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                &mut bp as *mut Self as *mut u8,
+                Self::BYTES,
+            );
+        }
+        Some(bp)
+    }
 }

@@ -2,6 +2,8 @@
 //!
 //! 提供所有 IPC 子系统使用的核心数据结构、常量和枚举
 
+use core::ptr::NonNull;
+
 /// IPC 资源 ID 类型 (全局唯一标识符)
 pub type IpcId = u32;
 
@@ -366,7 +368,7 @@ pub struct Message {
     /// 消息数据
     pub data: [u8; MSG_MAX_SIZE],
     /// 下一条消息 (链表)
-    pub next: *mut Message,
+    pub next: Option<NonNull<Message>>,
 }
 
 impl Message {
@@ -376,7 +378,7 @@ impl Message {
             sender: 0,
             size: 0,
             data: [0u8; MSG_MAX_SIZE],
-            next: core::ptr::null_mut(),
+            next: None,
         }
     }
 }
@@ -390,9 +392,9 @@ pub struct MsgQueue {
     pub owner: u32,
 
     /// 队列头指针
-    pub head: *mut Message,
+    pub head: Option<NonNull<Message>>,
     /// 队列尾指针
-    pub tail: *mut Message,
+    pub tail: Option<NonNull<Message>>,
     /// 当前消息数
     pub count: u32,
     /// 最大消息数
@@ -416,8 +418,8 @@ impl MsgQueue {
         Self {
             id: 0,
             owner: 0,
-            head: core::ptr::null_mut(),
-            tail: core::ptr::null_mut(),
+            head: None,
+            tail: None,
             count: 0,
             max_msgs: MSG_QUEUE_MAX_MSGS,
             max_size: MSG_MAX_SIZE as u32,

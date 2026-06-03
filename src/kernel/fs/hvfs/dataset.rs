@@ -78,9 +78,7 @@ pub struct HvDataset {
 }
 
 // SAFETY: HvDataset uses AtomicBool for mounted; other fields are plain
-// types written only during creation or under external lock.
-unsafe impl Send for HvDataset {}
-unsafe impl Sync for HvDataset {}
+// SAFETY (Framekernel P2.2.2): HvDataset 全部字段自动 Send + Sync。
 
 impl HvDataset {
     pub fn new(ds_id: u64, name: &str, owner_pwm: u64) -> Self {

@@ -3,14 +3,9 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 
+use crate::kernel::credo::api as pwm_api;
 use crate::kernel::fs::vfs::types::KernelError;
 use crate::kernel::fs::vfs::types::*;
-
-extern "C" {
-    fn pwm_get_privilege_level(pwm: u64) -> u8;
-    fn pwm_get_fs_capability(pwm: u64) -> u64;
-    fn pwm_has_capability(pwm: u64, domain: u16, required: u64) -> bool;
-}
 
 const RAMFS_MAX_NODES: usize = 256;
 const RAMFS_MAX_BLOCKS: usize = 2048;
@@ -92,6 +87,33 @@ impl RamFsDirEntry {
         self.name[..len].copy_from_slice(&bytes[..len]);
         self.name[len] = 0;
     }
+
+    /// Framekernel P2.2.1: 安全地从字节切片中读取目录项 (纯 safe Rust)。
+    /// 替代 `&*(&data[offset] as *const u8 as *const RamFsDirEntry)`。
+    ///
+    /// 布局 (repr(C)): node(0..4) | file_type(4) | pad(5..8) | name(8..)
+    pub fn read_at(data: &[u8], offset: usize) -> Self {
+        let mut entry = Self::new();
+        let node_bytes: [u8; 4] = data[offset..offset + 4]
+            .try_into()
+            .expect("ramfs: read_at node slice OOB");
+        entry.node = u32::from_le_bytes(node_bytes);
+        entry.file_type = data[offset + 4];
+        let name_end = offset + 8 + VFS_MAX_NAME;
+        entry.name.copy_from_slice(&data[offset + 8..name_end]);
+        entry
+    }
+
+    /// Framekernel P2.2.1: 安全地将目录项写入字节切片 (纯 safe Rust)。
+    /// 替代 `&mut *(&mut data[offset] as *mut u8 as *mut RamFsDirEntry)`。
+    pub fn write_at(&self, data: &mut [u8], offset: usize) {
+        data[offset..offset + 4].copy_from_slice(&self.node.to_le_bytes());
+        data[offset + 4] = self.file_type;
+        // 清零 padding 区域以维持稳定的字节布局
+        data[offset + 5..offset + 8].fill(0);
+        let name_end = offset + 8 + VFS_MAX_NAME;
+        data[offset + 8..name_end].copy_from_slice(&self.name);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -126,10 +148,8 @@ pub struct RamFsData {
     pub free_blocks: AtomicU32,
 }
 
-// SAFETY: RamFsData uses AtomicU32 for free_nodes/free_blocks; nodes array
-// is accessed under external lock. No UnsafeCell without synchronization.
-unsafe impl Send for RamFsData {}
-unsafe impl Sync for RamFsData {}
+// SAFETY (Framekernel P2.2.1): RamFsData 全部字段 (u32/u8/u64 arrays,
+// AtomicU32) 都自动实现 Send + Sync, 无需 unsafe impl。
 
 impl RamFsData {
     pub const fn new() -> Self {
@@ -209,12 +229,11 @@ impl RamFsData {
             }
 
             let indirect_offset = block_idx - direct_limit;
-            let data_ptr = data_area.as_mut_ptr();
             let indirect_ptr_addr =
                 node.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
 
-            let existing_block: u32 =
-                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
+            // Framekernel P2.2.1: 安全读取
+            let existing_block: u32 = Self::read_u32(data_area, indirect_ptr_addr);
 
             if existing_block == 0 {
                 let new_data_block =
@@ -223,10 +242,8 @@ impl RamFsData {
                     return None;
                 }
 
-                unsafe {
-                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
-                    core::ptr::write_volatile(ptr, new_data_block);
-                }
+                // Framekernel P2.2.1: 安全写入
+                Self::write_u32(data_area, indirect_ptr_addr, new_data_block);
 
                 Some(new_data_block)
             } else {
@@ -246,12 +263,11 @@ impl RamFsData {
             let indirect_index = double_indirect_offset / INDIRECT_BLOCKS_PER_BLOCK;
             let block_index_in_indirect = double_indirect_offset % INDIRECT_BLOCKS_PER_BLOCK;
 
-            let data_ptr = data_area.as_mut_ptr();
             let indirect_ptr_addr =
                 node.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
 
-            let existing_indirect: u32 =
-                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
+            // Framekernel P2.2.1: 安全读取
+            let existing_indirect: u32 = Self::read_u32(data_area, indirect_ptr_addr);
 
             let indirect_block_num = if existing_indirect == 0 {
                 let new_indirect = Self::alloc_block_internal(data_area, block_bitmap, free_blocks);
@@ -259,10 +275,8 @@ impl RamFsData {
                     return None;
                 }
 
-                unsafe {
-                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
-                    core::ptr::write_volatile(ptr, new_indirect);
-                }
+                // Framekernel P2.2.1: 安全写入
+                Self::write_u32(data_area, indirect_ptr_addr, new_indirect);
 
                 new_indirect
             } else {
@@ -272,8 +286,8 @@ impl RamFsData {
             let data_ptr_addr =
                 indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
 
-            let existing_data: u32 =
-                unsafe { core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32) };
+            // Framekernel P2.2.1: 安全读取
+            let existing_data: u32 = Self::read_u32(data_area, data_ptr_addr);
 
             if existing_data == 0 {
                 let new_data_block =
@@ -282,10 +296,8 @@ impl RamFsData {
                     return None;
                 }
 
-                unsafe {
-                    let ptr = data_ptr.add(data_ptr_addr) as *mut u32;
-                    core::ptr::write_volatile(ptr, new_data_block);
-                }
+                // Framekernel P2.2.1: 安全写入
+                Self::write_u32(data_area, data_ptr_addr, new_data_block);
 
                 Some(new_data_block)
             } else {
@@ -342,6 +354,20 @@ impl RamFsData {
         self.free_nodes.fetch_sub(1, Ordering::SeqCst);
     }
 
+    /// Framekernel P2.2.1: 从字节切片安全读取 u32 (替代 read_volatile)。
+    /// 边界检查: 由调用方确保 offset+4 <= data.len()。
+    fn read_u32(data: &[u8], offset: usize) -> u32 {
+        let bytes: [u8; 4] = data[offset..offset + 4]
+            .try_into()
+            .expect("ramfs: read_u32 OOB");
+        u32::from_le_bytes(bytes)
+    }
+
+    /// Framekernel P2.2.1: 向字节切片安全写入 u32 (替代 write_volatile)。
+    fn write_u32(data: &mut [u8], offset: usize, val: u32) {
+        data[offset..offset + 4].copy_from_slice(&val.to_le_bytes());
+    }
+
     fn get_data_block(&mut self, node: &mut RamFsNode, block_idx: usize) -> Option<u32> {
         let direct_limit = DIRECT_BLOCKS;
         let indirect_limit = direct_limit + INDIRECT_BLOCKS_PER_BLOCK;
@@ -367,12 +393,11 @@ impl RamFsData {
             }
 
             let indirect_offset = block_idx - direct_limit;
-            let data_ptr = self.data_area.as_mut_ptr();
             let indirect_ptr_addr =
                 node.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
 
-            let existing_block: u32 =
-                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
+            // Framekernel P2.2.1: 安全读取 (替代 read_volatile)
+            let existing_block: u32 = Self::read_u32(&self.data_area, indirect_ptr_addr);
 
             if existing_block == 0 {
                 let new_data_block = self.block_alloc();
@@ -380,10 +405,8 @@ impl RamFsData {
                     return None;
                 }
 
-                unsafe {
-                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
-                    core::ptr::write_volatile(ptr, new_data_block);
-                }
+                // Framekernel P2.2.1: 安全写入 (替代 write_volatile)
+                Self::write_u32(&mut self.data_area, indirect_ptr_addr, new_data_block);
 
                 Some(new_data_block)
             } else {
@@ -402,12 +425,11 @@ impl RamFsData {
             let indirect_index = double_indirect_offset / INDIRECT_BLOCKS_PER_BLOCK;
             let block_index_in_indirect = double_indirect_offset % INDIRECT_BLOCKS_PER_BLOCK;
 
-            let data_ptr = self.data_area.as_mut_ptr();
             let indirect_ptr_addr =
                 node.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
 
-            let existing_indirect: u32 =
-                unsafe { core::ptr::read_volatile(data_ptr.add(indirect_ptr_addr) as *const u32) };
+            // Framekernel P2.2.1: 安全读取
+            let existing_indirect: u32 = Self::read_u32(&self.data_area, indirect_ptr_addr);
 
             let indirect_block_num = if existing_indirect == 0 {
                 let new_indirect = self.block_alloc();
@@ -415,10 +437,8 @@ impl RamFsData {
                     return None;
                 }
 
-                unsafe {
-                    let ptr = data_ptr.add(indirect_ptr_addr) as *mut u32;
-                    core::ptr::write_volatile(ptr, new_indirect);
-                }
+                // Framekernel P2.2.1: 安全写入
+                Self::write_u32(&mut self.data_area, indirect_ptr_addr, new_indirect);
 
                 new_indirect
             } else {
@@ -428,8 +448,8 @@ impl RamFsData {
             let data_ptr_addr =
                 indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
 
-            let existing_data: u32 =
-                unsafe { core::ptr::read_volatile(data_ptr.add(data_ptr_addr) as *const u32) };
+            // Framekernel P2.2.1: 安全读取
+            let existing_data: u32 = Self::read_u32(&self.data_area, data_ptr_addr);
 
             if existing_data == 0 {
                 let new_data_block = self.block_alloc();
@@ -437,10 +457,8 @@ impl RamFsData {
                     return None;
                 }
 
-                unsafe {
-                    let ptr = data_ptr.add(data_ptr_addr) as *mut u32;
-                    core::ptr::write_volatile(ptr, new_data_block);
-                }
+                // Framekernel P2.2.1: 安全写入
+                Self::write_u32(&mut self.data_area, data_ptr_addr, new_data_block);
 
                 Some(new_data_block)
             } else {
@@ -459,9 +477,8 @@ impl RamFsData {
         for i in start_idx..end_idx.min(INDIRECT_BLOCKS_PER_BLOCK) {
             let ptr_addr = indirect_block as usize * RAMFS_BLOCK_SIZE + i * 4;
 
-            let block_num: u32 = unsafe {
-                core::ptr::read_volatile(self.data_area.as_ptr().add(ptr_addr) as *const u32)
-            };
+            // Framekernel P2.2.1: 安全读取 (替代 read_volatile)
+            let block_num: u32 = Self::read_u32(&self.data_area, ptr_addr);
 
             if block_num != 0 {
                 self.block_set_free(block_num);
@@ -488,11 +505,8 @@ impl RamFsData {
             let indirect_ptr_addr =
                 double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_idx * 4;
 
-            let indirect_block_num: u32 = unsafe {
-                core::ptr::read_volatile(
-                    self.data_area.as_ptr().add(indirect_ptr_addr) as *const u32
-                )
-            };
+            // Framekernel P2.2.1: 安全读取 (替代 read_volatile)
+            let indirect_block_num: u32 = Self::read_u32(&self.data_area, indirect_ptr_addr);
 
             if indirect_block_num != 0 {
                 let local_start = if indirect_idx == start_indirect_idx {
@@ -546,7 +560,8 @@ impl RamFsData {
     /// Permission Model v3 — Five-layer check:
     /// L0: Root bypass, L1: Sensitivity, L2: ACE, L3: Capability, L4: Trust chain
     fn check_permission(&self, node: &RamFsNode, pwm: u64, cap: u64) -> bool {
-        let level = unsafe { pwm_get_privilege_level(pwm) };
+        // Framekernel P2.2.1: 使用 cred::api 安全包装 (替代 extern "C" FFI)
+        let level = pwm_api::pwm_get_privilege_level(pwm);
 
         if level == 0xFF {
             return false;
@@ -579,13 +594,14 @@ impl RamFsData {
             }
         }
 
-        let caps = unsafe { pwm_get_fs_capability(pwm) };
+        let caps = pwm_api::pwm_get_fs_capability(pwm);
         if (caps & cap) == cap {
             return true;
         }
 
         if node.owner_pwm != 0 && node.owner_pwm != pwm {
-            let has_cap = unsafe { pwm_has_capability(pwm, 1, cap) };
+            // Framekernel P2.2.1: domain=1 (FS) 通过安全包装
+            let has_cap = pwm_api::pwm_has_capability(pwm, 1, cap);
             if has_cap {
                 return true;
             }
@@ -625,8 +641,8 @@ impl RamFsData {
 
             for i in 0..num_entries {
                 let offset = (block_num as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-                let entry: &RamFsDirEntry =
-                    unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
+                // Framekernel P2.2.1: 安全读取 (替代 *const 强制转换)
+                let entry = RamFsDirEntry::read_at(&self.data_area, offset);
 
                 if entry.node != 0 {
                     let end = entry
@@ -698,18 +714,18 @@ impl RamFsData {
         let dirent_size = core::mem::size_of::<RamFsDirEntry>();
         let offset = (block as usize) * RAMFS_BLOCK_SIZE;
 
-        let dot: &mut RamFsDirEntry =
-            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
+        // Framekernel P2.2.1: 安全写入 (替代 *mut 强制转换)
+        let mut dot = RamFsDirEntry::read_at(&self.data_area, offset);
         dot.node = 1;
         dot.file_type = VfsFileType::Dir as u8;
         dot.set_name(".");
+        dot.write_at(&mut self.data_area, offset);
 
-        let dotdot: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[offset + dirent_size] as *mut u8 as *mut RamFsDirEntry)
-        };
+        let mut dotdot = RamFsDirEntry::read_at(&self.data_area, offset + dirent_size);
         dotdot.node = 1;
         dotdot.file_type = VfsFileType::Dir as u8;
         dotdot.set_name("..");
+        dotdot.write_at(&mut self.data_area, offset + dirent_size);
 
         0
     }
@@ -1060,12 +1076,12 @@ impl RamFsData {
 
             for i in 0..num_entries {
                 let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-                let entry: &mut RamFsDirEntry =
-                    unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
-
+                // Framekernel P2.2.1: 安全读-改-写 (替代 *mut 强制转换)
+                let mut entry = RamFsDirEntry::read_at(&self.data_area, offset);
                 if entry.node == node_id {
                     // Mark entry as deleted
                     entry.node = 0;
+                    entry.write_at(&mut self.data_area, offset);
                     break;
                 }
             }
@@ -1116,8 +1132,8 @@ impl RamFsData {
 
         for i in 0..num_entries {
             let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-            let entry: &RamFsDirEntry =
-                unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
+            // Framekernel P2.2.1: 安全读取
+            let entry = RamFsDirEntry::read_at(&self.data_area, offset);
             if entry.node != 0 {
                 let end = entry
                     .name
@@ -1140,11 +1156,12 @@ impl RamFsData {
             return None;
         }
 
-        let entry: &mut RamFsDirEntry =
-            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
+        // Framekernel P2.2.1: 安全写入新目录项
+        let mut entry = RamFsDirEntry::new();
         entry.node = new_node_id;
         entry.file_type = VfsFileType::File as u8;
         entry.set_name(name);
+        entry.write_at(&mut self.data_area, offset);
 
         self.nodes[parent_num as usize].size += dirent_size as u32;
         self.nodes[parent_num as usize].link_count += 1;
@@ -1191,8 +1208,8 @@ impl RamFsData {
 
         for i in 0..num_entries {
             let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-            let entry: &RamFsDirEntry =
-                unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
+            // Framekernel P2.2.1: 安全读取
+            let entry = RamFsDirEntry::read_at(&self.data_area, offset);
 
             if entry.node != 0 {
                 let end = entry
@@ -1217,21 +1234,19 @@ impl RamFsData {
             return -1;
         }
 
-        let dot: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[(block as usize) * RAMFS_BLOCK_SIZE] as *mut u8
-                as *mut RamFsDirEntry)
-        };
+        // Framekernel P2.2.1: 安全写入 '.' 和 '..'
+        let block_base = (block as usize) * RAMFS_BLOCK_SIZE;
+        let mut dot = RamFsDirEntry::new();
         dot.node = new_node_id;
         dot.file_type = VfsFileType::Dir as u8;
         dot.set_name(".");
+        dot.write_at(&mut self.data_area, block_base);
 
-        let dotdot: &mut RamFsDirEntry = unsafe {
-            &mut *(&mut self.data_area[(block as usize) * RAMFS_BLOCK_SIZE + dirent_size] as *mut u8
-                as *mut RamFsDirEntry)
-        };
+        let mut dotdot = RamFsDirEntry::new();
         dotdot.node = parent_num;
         dotdot.file_type = VfsFileType::Dir as u8;
         dotdot.set_name("..");
+        dotdot.write_at(&mut self.data_area, block_base + dirent_size);
 
         self.nodes[new_node_id as usize].link_count = 2;
 
@@ -1247,11 +1262,12 @@ impl RamFsData {
             return -1;
         }
 
-        let entry: &mut RamFsDirEntry =
-            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
+        // Framekernel P2.2.1: 安全写入新目录项
+        let mut entry = RamFsDirEntry::new();
         entry.node = new_node_id;
         entry.file_type = VfsFileType::Dir as u8;
         entry.set_name(name);
+        entry.write_at(&mut self.data_area, offset);
 
         self.nodes[parent_num as usize].size += dirent_size as u32;
         self.nodes[parent_num as usize].link_count += 1;
@@ -1297,7 +1313,8 @@ impl RamFsData {
 
         // Permission check: only owner or privileged user can change permissions
         if node.owner_pwm != pwm {
-            let level = unsafe { pwm_get_privilege_level(pwm) };
+            // Framekernel P2.2.1: 使用 safe 包装
+            let level = pwm_api::pwm_get_privilege_level(pwm);
             if level != 0 {
                 return -1;
             }
@@ -1323,7 +1340,7 @@ impl RamFsData {
             return -1;
         }
 
-        let level = unsafe { pwm_get_privilege_level(pwm) };
+        let level = pwm_api::pwm_get_privilege_level(pwm);
         if level != 0 {
             return -1;
         }
@@ -1410,8 +1427,8 @@ impl RamFsData {
 
         for i in 0..num_entries {
             let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
-            let entry: &RamFsDirEntry =
-                unsafe { &*(&self.data_area[offset] as *const u8 as *const RamFsDirEntry) };
+            // Framekernel P2.2.1: 安全读取
+            let entry = RamFsDirEntry::read_at(&self.data_area, offset);
             if entry.node != 0 {
                 let end = entry
                     .name
@@ -1430,11 +1447,12 @@ impl RamFsData {
             return -1;
         }
 
-        let entry: &mut RamFsDirEntry =
-            unsafe { &mut *(&mut self.data_area[offset] as *mut u8 as *mut RamFsDirEntry) };
+        // Framekernel P2.2.1: 安全写入新目录项
+        let mut entry = RamFsDirEntry::new();
         entry.node = target_node;
         entry.file_type = self.nodes[target_node as usize].file_type;
         entry.set_name(name);
+        entry.write_at(&mut self.data_area, offset);
 
         self.nodes[parent_node as usize].size += dirent_size as u32;
         self.nodes[parent_node as usize].link_count += 1;

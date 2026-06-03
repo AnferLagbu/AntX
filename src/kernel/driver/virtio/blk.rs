@@ -73,7 +73,7 @@ impl VirtioBlk {
             klog_warn!(
                 Driver,
                 "virtio-blk: device init failed at {:#x}",
-                device.mmio_base
+                device.iomem.phys().as_u64()
             );
             return None;
         }

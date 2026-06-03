@@ -243,14 +243,14 @@ impl GfxConsole {
         let pitch = fb.pitch();
 
         unsafe {
-            let src = fb.buffer_ptr().add((scroll_start * pitch) as usize);
-            let dst = fb.buffer_ptr().add(margin_px as usize * pitch as usize);
+            let src = fb.iomem().virt_ptr().add((scroll_start * pitch) as usize);
+            let dst = fb.iomem().virt_ptr().add(margin_px as usize * pitch as usize);
             let count = ((scroll_end - scroll_start) * pitch) as usize;
             core::ptr::copy(src, dst, count);
 
             let clear_start = (scroll_end - scroll_h) * pitch;
             let clear_size = (scroll_h * pitch) as usize;
-            core::ptr::write_bytes(fb.buffer_ptr().add(clear_start as usize), 0u8, clear_size);
+            core::ptr::write_bytes(fb.iomem().virt_ptr().add(clear_start as usize), 0u8, clear_size);
         }
 
         self.cursor_y -= lines;

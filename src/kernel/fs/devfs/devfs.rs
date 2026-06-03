@@ -1,10 +1,6 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 
-extern "C" {
-    fn klog_ffi_info(msg: *const u8);
-}
-
 pub const DEVFS_MAX_DEVICES: usize = 16;
 pub const DEVFS_MAX_NAME: usize = 32;
 
@@ -60,9 +56,7 @@ pub struct DevfsData {
     device_count: AtomicU32,
 }
 
-// SAFETY: DevfsData uses Mutex for devices and AtomicU32 for device_count.
-unsafe impl Send for DevfsData {}
-unsafe impl Sync for DevfsData {}
+// SAFETY (Framekernel P2.2.3): DevfsData 全部字段 (Mutex<T>, AtomicU32) 自动 Send + Sync。
 
 impl DevfsData {
     pub const fn new() -> Self {
@@ -250,8 +244,9 @@ impl DevfsData {
         match dev_type {
             DEV_TYPE_NULL | DEV_TYPE_ZERO => buf.len() as i32,
             DEV_TYPE_CONSOLE | DEV_TYPE_TTY => {
-                unsafe {
-                    klog_ffi_info(buf.as_ptr());
+                // Framekernel P2.2.3: 使用 safe klog 包装 (替代 extern "C" klog_ffi_info)
+                if let Ok(s) = core::str::from_utf8(buf) {
+                    crate::klog_info!(FS, "{}", s);
                 }
                 buf.len() as i32
             }
