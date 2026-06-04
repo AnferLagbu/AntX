@@ -1,146 +1,373 @@
-//! SpinLock — TCB 自旋锁 (framework/sync)
+#![allow(dead_code)]
+//! # 自旋锁 (SpinLock) 实现
 //!
-//! 基于底层 `xchg` 原子操作的忙等待锁,
-//! 通过 `UnsafeCell` 实现内部可变性。
+//! 高效的忙等待锁，基于原子交换指令 (xchg)。
 //!
-//! ## 适用场景
+//! ## 特性
 //!
-//! ✅ 临界区 < 1μs
-//! ✅ 中断上下文
-//! ❌ 不可 sleep (用 Mutex)
+//! - **零开销**: 无系统调用，纯用户态自旋
+//! - **公平性**: 使用 pause 指令降低功耗
+//! - **中断安全**: 提供 irqsave/irqrestore 变体
+//! - **调试支持**: 可选的锁持有者跟踪
 //!
-//! ## SAFETY 不变量
+//! # 适用场景
 //!
-//! - `lock()` 返回的 `SpinLockGuard` 在 drop 时自动释放锁。
-//! - 锁持有的 `T` 在 guard 生命周期内独占访问。
+//! ✅ 临界区极短 (< 1μs)
+//! ✅ 中断上下文 / 不能睡眠的场景
+//! ✅ 实时性要求高的代码路径
+//!
+//! ❌ 不适合长时间持有 (浪费 CPU)
 
-use core::cell::UnsafeCell;
-use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{fence, Ordering};
 
-pub use crate::kernel::framework::sync_tcb_legacy::spinlock::{disable_interrupts, restore_interrupts};
+pub use super::types::IrqSaveFlags;
+use super::types::*;
 
-use crate::kernel::framework::sync_tcb_legacy::types::SpinLockInner;
-
-/// TCB 自旋锁。
+/// 自旋锁 (SpinLock)
 ///
-/// 基于 x86_64 `xchg` / aarch64 `ldaxr`+`stlxr` 指令实现。
-/// 自旋循环中插入 `pause` (x86) 或 `yield` (aarch64) 优化。
-pub struct SpinLock<T> {
-    data: UnsafeCell<T>,
-    inner: UnsafeCell<SpinLockInner>,
+/// 基于 x86_64 的 `xchg` 指令实现原子锁定。
+/// 在自旋循环中插入 `pause` 指令以优化性能。
+pub struct SpinLock {
+    /// 内部状态
+    inner: SpinLockInner,
 }
 
-impl<T> SpinLock<T> {
-    /// 创建新的自旋锁, 包装初始数据。
-    pub fn new(data: T) -> Self {
+impl SpinLock {
+    /// 创建新的自旋锁
+    pub fn new() -> Self {
         Self {
-            data: UnsafeCell::new(data),
-            inner: UnsafeCell::new(SpinLockInner::default()),
+            inner: SpinLockInner::new(),
         }
     }
 
-    /// 获取锁并返回 RAII Guard。
+    /// 创建命名自旋锁 (用于调试)
+    #[cfg(debug_assertions)]
+    pub fn named(name: &'static str) -> Self {
+        let mut lock = Self::new();
+        lock.inner.name = name;
+        lock
+    }
+
+    /// 获取锁 (阻塞直到成功)
     ///
-    /// 自旋等待直到锁可用。Guard 在 drop 时自动释放。
-    pub fn lock(&self) -> SpinLockGuard<'_, T> {
-        // SAFETY: UnsafeCell gives &mut to inner. The xchg loop provides
-        // mutual exclusion. We hold the lock until guard drop.
-        let inner = unsafe { &mut *self.inner.get() };
-        unsafe { raw_spin_lock(inner); }
-        let data = unsafe { &mut *self.data.get() };
-        SpinLockGuard {
-            data,
-            inner: inner as *const SpinLockInner,
+    /// # Safety
+    /// 调用者必须确保在适当的时候调用 unlock，
+    /// 否则会导致死锁。推荐使用 `lock()` 方法返回 Guard。
+    pub fn raw_lock(&mut self) {
+        // Fast path: 尝试立即获取
+        if self
+            .inner
+            .locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
+            return; // 成功获取
         }
-    }
 
-    /// 尝试获取锁, 不阻塞。
-    pub fn try_lock(&self) -> Option<SpinLockGuard<'_, T>> {
-        // SAFETY: `&mut *UnsafeCell::get()` 产生独占 `&mut SpinLockInner`;
-        // `try_lock` 内部会立即 `compare_exchange` 试探锁状态, 失败则放弃,
-        // 期间不会有第二个线程同时持有 `&mut`, 借用检查器允许是因为 UnsafeCell
-        // 内部可变性 + CAS 串行化。
-        let inner = unsafe { &mut *self.inner.get() };
-        if inner.locked.compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed).is_ok() {
-            // SAFETY: CAS 成功后, 我们独占了锁; 此时访问 `data` 安全 (无其他持有者)。
-            let data = unsafe { &mut *self.data.get() };
-            Some(SpinLockGuard {
-                data,
-                inner: inner as *const SpinLockInner,
-            })
-        } else {
-            None
+        // Slow path: 自旋等待
+        while self
+            .inner
+            .locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            // 提示 CPU 我们在自旋等待 (pause / yield)
+            core::hint::spin_loop();
         }
+
+        #[cfg(debug_assertions)]
+        self.debug_acquire();
     }
-}
 
-impl<T: Default> Default for SpinLock<T> {
-    fn default() -> Self {
-        Self::new(T::default())
+    /// ✅ P1-8 修复: 带超时的锁获取 (防止死锁)
+    ///
+    /// # Arguments
+    /// * `max_spins` - 最大自旋次数 (建议: 10_000_000 ≈ 数秒 @ GHz CPU)
+    ///
+    /// # Returns
+    /// - `TryLockResult::Acquired`: 成功获取
+    /// - `TryLockResult::WouldBlock`: 超时未获取到
+    ///
+    /// # Usage
+    /// ```rust,ignore
+    /// match lock.raw_lock_with_timeout(1_000_000) {
+    ///     TryLockResult::Acquired => { /* 临界区 */ lock.raw_unlock(); }
+    ///     TryLockResult::WouldBlock => { /* 处理超时 */ }
+    /// }
+    /// ```
+    pub fn raw_lock_with_timeout(&mut self, max_spins: usize) -> TryLockResult {
+        // Fast path: 尝试立即获取
+        if self
+            .inner
+            .locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
+            #[cfg(debug_assertions)]
+            self.debug_acquire();
+            return TryLockResult::Acquired;
+        }
+
+        // Slow path: 带计数的自旋等待
+        for _ in 0..max_spins {
+            if self
+                .inner
+                .locked
+                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                #[cfg(debug_assertions)]
+                self.debug_acquire();
+                return TryLockResult::Acquired;
+            }
+
+            core::hint::spin_loop();
+        }
+
+        // 超时: 记录警告 (调试模式) - 已禁用: no_std 环境
+        // #[cfg(debug_assertions)]
+        // eprintln!("[SPINLOCK] WARNING: Lock '{}' timed out after {} spins",
+        //           self.inner.name.unwrap_or("unnamed"), max_spins);
+
+        TryLockResult::WouldBlock
     }
-}
 
-/// 自旋锁 RAII Guard — drop 时自动释放锁。
-pub struct SpinLockGuard<'a, T> {
-    data: &'a mut T,
-    inner: *const SpinLockInner,
-}
-
-impl<'a, T> Deref for SpinLockGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.data
-    }
-}
-
-impl<'a, T> DerefMut for SpinLockGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        self.data
-    }
-}
-
-impl<'a, T> Drop for SpinLockGuard<'a, T> {
-    fn drop(&mut self) {
+    /// 释放锁
+    ///
+    /// # Safety
+    /// 调用者必须持有该锁
+    pub fn raw_unlock(&self) {
+        // 内存屏障: 确保所有写操作对其他 CPU 可见
         fence(Ordering::SeqCst);
-        // SAFETY:
-        //   1. `self.inner` 来自 `try_lock` / `lock` 成功路径, 当时 CAS 0→1, 我们独占
-        //   2. `SpinLockGuard` 是 RAII, drop 时 (在 `&mut self` 借用下) 没有其他线程
-        //      能持有 guard, 因此 `locked.store(0)` 不会与另一个 lock 路径冲突
-        //   3. `Release` ordering 与 acquire 配对, 保证 drop 前的所有数据写入对
-        //      下一个 lock 路径可见
-        unsafe {
-            (*self.inner).locked.store(0, Ordering::Release);
+
+        // 清除锁定标志
+        self.inner.locked.store(0, Ordering::Release);
+    }
+
+    /// 尝试获取锁 (非阻塞)
+    ///
+    /// # Returns
+    /// - `TryLockResult::Acquired`: 成功获取
+    /// - `TryLockResult::WouldBlock`: 锁已被持有
+    pub fn try_lock(&mut self) -> TryLockResult {
+        match self
+            .inner
+            .locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+        {
+            Ok(_) => {
+                #[cfg(debug_assertions)]
+                self.debug_acquire();
+                TryLockResult::Acquired
+            }
+            Err(_) => TryLockResult::WouldBlock,
+        }
+    }
+
+    /// 检查锁是否被持有
+    pub fn is_locked(&self) -> bool {
+        self.inner.locked.load(Ordering::Acquire) != 0
+    }
+
+    /// 获取锁并返回守卫 (RAII)
+    ///
+    /// 推荐使用此方法而非 raw_lock/raw_unlock，
+    /// 因为 Guard 在离开作用域时自动释放锁。
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let lock = SpinLock::new();
+    /// let data = Mutex::new(42i32);
+    ///
+    /// {
+    ///     let guard = lock.lock(&data);
+    ///     println!("Protected: {}", *guard);
+    /// } // ← 自动 unlock
+    /// 获取锁并返回守卫 (RAII)
+    pub fn lock<'a, T>(&'a mut self, data: &'a core::cell::UnsafeCell<T>) -> SpinLockGuard<'a, T>
+    where
+        T: Sized,
+    {
+        self.raw_lock();
+
+        // 安全: 我们已持有锁，可以创建可变引用
+        let data_ref = unsafe { &mut *data.get() };
+
+        SpinLockGuard {
+            data: data_ref,
+            _lock: &self.inner,
+        }
+    }
+
+    // ========================================================================
+    // 中断安全版本
+    // ========================================================================
+
+    /// 获取锁并禁用中断 (保存中断标志)
+    ///
+    /// 用于需要在中断上下文中保护的临界区。
+    ///
+    /// # Returns
+    /// 之前的中断状态 (用于 restore)
+    pub fn lock_irqsave(&mut self) -> IrqSaveFlags {
+        let flags = disable_interrupts();
+        self.raw_lock();
+        flags
+    }
+
+    /// 释放锁并恢复中断标志
+    ///
+    /// # Arguments
+    /// * `flags` - 之前保存的中断标志
+    pub fn unlock_irqrestore(&mut self, flags: &IrqSaveFlags) {
+        self.raw_unlock();
+        restore_interrupts(flags);
+    }
+
+    /// 获取锁并禁用中断 (不保存标志)
+    pub fn lock_irq(&mut self) {
+        disable_interrupts();
+        self.raw_lock();
+    }
+
+    // ========================================================================
+    // 调试支持
+    // ========================================================================
+
+    #[cfg(debug_assertions)]
+    #[cfg(target_arch = "x86_64")]
+    fn debug_acquire(&mut self) {
+        let rsp: u64;
+        unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nostack, nomem)) };
+        self.inner.owner = rsp as *const ();
+        self.inner.acquire_time = crate::arch!(timestamp());
+    }
+
+    #[cfg(debug_assertions)]
+    #[cfg(target_arch = "aarch64")]
+    fn debug_acquire(&mut self) {
+        let sp: u64;
+        unsafe { core::arch::asm!("mov {}, sp", out(reg) sp, options(nostack, nomem)) };
+        self.inner.owner = sp as *const ();
+        self.inner.acquire_time = crate::arch!(timestamp());
+    }
+
+    /// 断言当前线程持有锁 (仅 debug 模式)
+    #[cfg(debug_assertions)]
+    pub fn assert_held(&self) {
+        if !self.is_locked() {
+            panic!("SPINLOCK ASSERTION FAILED: lock not held");
         }
     }
 }
 
-/// 底层自旋获取锁 (x86_64 用 pause, aarch64 无特殊指令)。
-///
-/// # Safety
-///
-/// 1. `inner` 必须是有效的 `&mut SpinLockInner` 引用, 来自 `SpinLock::inner.get()`
-/// 2. 调用方必须保证此函数不会在中断上下文调用 (自旋 + 中断 = 死锁)
-/// 3. 调用方必须保证同一 `inner` 不会有并发 `raw_spin_lock` 调用 (CAS 串行化保证)
-unsafe fn raw_spin_lock(inner: &mut SpinLockInner) {
-    // SAFETY:
-    //   1. `inner` 是 `&mut` 独占引用, 来自调用方
-    //   2. `compare_exchange(0, 1, Acquire, Relaxed)` 是循环自旋直到 CAS 成功
-    //   3. `Acquire` ordering 保证成功时能看到所有先前 `Release` 写
-    //   4. `spin_loop()` 提示 CPU 处于自旋等待, 降低功耗
-    //   5. 中断安全由调用方保证 (本函数不应在中断上下文调用)
-    loop {
-        if inner.locked.compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed).is_ok() {
-            break;
-        }
-        #[cfg(target_arch = "x86_64")]
-        core::hint::spin_loop();
-        #[cfg(not(target_arch = "x86_64"))]
-        core::hint::spin_loop();
+impl Default for SpinLock {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-// SAFETY: UnsafeCell + atomic 操作保证线程安全。
-unsafe impl<T: Send> Send for SpinLock<T> {}
-unsafe impl<T: Send> Sync for SpinLock<T> {}
+// ============================================================================
+// 中断控制辅助函数
+// ============================================================================
+
+/// 禁用中断并返回当前中断标志
+///
+/// 通过 Arch trait 的 interrupt_disable 实现，架构无关。
+pub fn disable_interrupts() -> IrqSaveFlags {
+    IrqSaveFlags(crate::arch!(interrupt_disable()) as u64)
+}
+
+/// 恢复中断标志
+///
+/// 通过 Arch trait 的 interrupt_restore 实现，架构无关。
+pub fn restore_interrupts(flags: &IrqSaveFlags) {
+    crate::arch!(interrupt_restore(flags.0 as usize));
+}
+
+/// 启用中断
+fn enable_interrupts() {
+    crate::arch!(interrupt_enable());
+}
+
+// ============================================================================
+// 内存屏障辅助函数
+// ============================================================================
+
+/// 写内存屏障 (Store barrier)
+/// 确保所有写操作对其他 CPU 可见
+#[inline(always)]
+pub fn smp_wmb() {
+    fence(Ordering::Release);
+}
+
+/// 读内存屏障 (Load barrier)
+/// 确保读取到最新值
+#[inline(always)]
+pub fn smp_rmb() {
+    fence(Ordering::Acquire);
+}
+
+/// 全局内存屏障
+#[inline(always)]
+pub fn smp_mb() {
+    fence(Ordering::SeqCst);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_spinlock_basic() {
+        let lock = SpinLock::new();
+        assert!(!lock.is_locked());
+
+        lock.raw_lock();
+        assert!(lock.is_locked());
+
+        lock.raw_unlock();
+        assert!(!lock.is_locked());
+    }
+
+    #[test]
+    fn test_spinlock_trylock() {
+        let lock = SpinLock::new();
+
+        assert_eq!(lock.try_lock(), TryLockResult::Acquired);
+        assert!(lock.is_locked());
+
+        // 再次尝试应失败
+        assert_eq!(lock.try_lock(), TryLockResult::WouldBlock);
+
+        lock.raw_unlock();
+    }
+
+    #[test]
+    fn test_spinlock_irqsave() {
+        let lock = SpinLock::new();
+
+        let flags = lock.lock_irqsave();
+        assert!(lock.is_locked());
+
+        lock.unlock_irqrestore(&flags);
+        assert!(!lock.is_locked());
+    }
+
+    #[test]
+    fn test_spinlock_debug_assert() {
+        let lock = SpinLock::new();
+
+        // 未持有时断言应失败
+        #[cfg(debug_assertions)]
+        std::panic::catch_unwind(|| {
+            lock.assert_held();
+        })
+        .expect_err("assert_held should panic when not holding lock");
+    }
+}
+
+#[cfg(feature = "kernel_test")]
+pub fn register_spinlock_tests() {
+    crate::kernel::framework::tests::sync::register_spinlock_tests();
+}

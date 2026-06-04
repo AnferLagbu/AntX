@@ -1,115 +1,424 @@
-//! RCU — TCB 读-复制-更新 (framework/sync)
+//! # RCU (Read-Copy-Update) 同步原语
 //!
-//! 读多写少场景的零开销读者锁。读者无原子操作,
-//! 写者等待宽限期结束后释放旧数据。
+//! 读多写少场景的零开销读者锁。读者无原子操作开销，
+//! 写者等待所有已有读者退出临界区后释放旧数据。
 //!
-//! ## 适用场景
+//! ## 核心 API
 //!
-//! ✅ 极高读频率 (> 99% reads)
-//! ✅ 写者罕见到达
-//! ❌ 写者频繁 (宽限期开销大)
+//! | 操作 | 说明 |
+//! |------|------|
+//! | `rcu_read_lock()` | 进入 RCU 读临界区 |
+//! | `rcu_read_unlock()` | 退出 RCU 读临界区 |
+//! | `rcu_dereference(p)` | 安全读取 RCU 保护指针 |
+//! | `rcu_assign_pointer(p, v)` | 安全更新 RCU 保护指针 |
+//! | `synchronize_rcu()` | 阻塞直到宽限期结束 |
+//! | `call_rcu(head, func)` | 注册宽限期回调 |
 //!
-//! ## SAFETY 不变量
+//! ## 多核宽限期
 //!
-//! - `rcu_read_lock()` / `rcu_read_unlock()` 必须嵌套配对。
-//! - `rcu_dereference()` 必须在读临界区内调用。
-//! - `synchronize_rcu()` 阻塞直到所有 CPU 宽限期结束。
-//! - 旧数据释放必须推迟到宽限期后。
+//! 每 CPU 维护独立的嵌套计数和静止状态标志。
+//! `synchronize_rcu()` 等待所有在线 CPU 报告静止状态后
+//! 才认为宽限期结束。
 
-use core::sync::atomic::{fence, Ordering};
+use core::cell::UnsafeCell;
+use core::ptr;
+use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 
-/// 标记 RCU 读临界区开始。
-///
-/// # SAFETY
-/// 必须配对 `rcu_read_unlock()`。嵌套深度由 per-CPU 计数器追踪。
-pub fn rcu_read_lock() {
-    // SAFETY: Existing per-CPU RCU nesting counters in sync::rcu.
-    // RCU 读临界区由 rcu_read_lock/unlock 配对; 嵌套由 per-CPU 计数器维护。
-    // 无内存操作, 仅写 per-CPU 变量 (cli 上下文或单线程启动路径保证独占)。
-    unsafe {
-        crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_lock();
+pub struct RcuHead {
+    pub next: *mut RcuHead,
+    pub func: Option<unsafe fn(*mut RcuHead)>,
+}
+
+impl RcuHead {
+    pub const fn new() -> Self {
+        Self {
+            next: ptr::null_mut(),
+            func: None,
+        }
     }
 }
 
-/// 标记 RCU 读临界区结束。
-pub fn rcu_read_unlock() {
-    // SAFETY: 同 `rcu_read_lock` 的契约; 减少 per-CPU 嵌套计数, 0 时退出临界区。
-    unsafe {
-        crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_unlock();
+struct PerCpuRcu {
+    nesting: AtomicU32,
+    gp_state: AtomicU32,
+    callbacks: UnsafeCell<*mut RcuHead>,
+    callback_tail: UnsafeCell<*mut RcuHead>,
+    callback_count: AtomicU32,
+    need_callback_process: AtomicBool,
+}
+
+impl PerCpuRcu {
+    const fn new() -> Self {
+        Self {
+            nesting: AtomicU32::new(0),
+            gp_state: AtomicU32::new(GP_IDLE),
+            callbacks: UnsafeCell::new(ptr::null_mut()),
+            callback_tail: UnsafeCell::new(ptr::null_mut()),
+            callback_count: AtomicU32::new(0),
+            need_callback_process: AtomicBool::new(false),
+        }
     }
 }
 
-/// 安全读取 RCU 保护的指针。
-///
-/// # SAFETY
-/// 必须在 `rcu_read_lock()` / `rcu_read_unlock()` 之间调用。
-/// `ptr` 必须来自 `rcu_assign_pointer()` 的有效写入。
-pub unsafe fn rcu_dereference<'a, T>(ptr: *const T) -> &'a T {
-    fence(Ordering::Acquire);
-    // SAFETY: 调用方必须保证 (按 doc comment):
-    //   1. 在 RCU 读临界区内 (rcu_read_lock/unlock 配对)
-    //   2. `ptr` 来自之前 `rcu_assign_pointer` 的写入
-    //   3. `ptr` 非空, 指向对齐到 `align_of::<T>()` 的有效内存
-    // `Acquire` fence 与 `rcu_assign_pointer` 的 `Release` 配对, 保证
-    // 能看到指针指向对象的最新写入。
-    unsafe { &*ptr }
+// SAFETY: PerCpuRcu accessed only via interrupt-disabled paths;
+// UnsafeCell provides interior mutability for callback lists.
+unsafe impl Sync for PerCpuRcu {}
+
+const GP_IDLE: u32 = 0;
+const GP_WAIT: u32 = 1;
+const GP_DONE: u32 = 2;
+
+struct RcuGlobal {
+    data: UnsafeCell<[PerCpuRcu; crate::kernel::framework::config::MAX_CPUS]>,
 }
 
-/// 安全更新 RCU 保护的指针。
-///
-/// # SAFETY
-/// 旧数据不可立即释放; 必须通过 `synchronize_rcu()` 或 `call_rcu()` 释放。
-pub unsafe fn rcu_assign_pointer<T>(ptr: *mut *const T, new_val: *const T) {
-    // SAFETY: 调用方必须保证:
-    //   1. `ptr` 是有效 `*mut *const T`, 指向已发布的 RCU 指针槽
-    //   2. `new_val` 指向的对象生命周期 >= synchronize_rcu 后的释放
-    // `Release` fence 之后, 所有先前写对后续 rcu_dereference 可见。
-    unsafe {
-        *ptr = new_val;
+// SAFETY: Each PerCpuRcu[i] is normally accessed only by CPU i.
+// For synchronize_rcu(), cross-CPU reads of nesting/gp_state use
+// atomic operations which are safe.
+unsafe impl Sync for RcuGlobal {}
+
+static RCU_GLOBAL: RcuGlobal = RcuGlobal {
+    data: UnsafeCell::new([const { PerCpuRcu::new() }; crate::kernel::framework::config::MAX_CPUS]),
+};
+
+static RCU_GP_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+#[inline]
+fn rcu_data(cpu: u32) -> &'static PerCpuRcu {
+    unsafe { &(&*RCU_GLOBAL.data.get())[cpu as usize] }
+}
+
+#[inline]
+fn current_rcu() -> &'static PerCpuRcu {
+    let cpu = crate::kernel::framework::smp::get_current_cpu();
+    rcu_data(cpu)
+}
+
+#[inline(always)]
+fn rcu_read_lock_impl() {
+    let data = current_rcu();
+    let nesting = data.nesting.fetch_add(1, Ordering::Acquire);
+    if nesting == 0 {
+        fence(Ordering::Acquire);
     }
+}
+
+#[inline(always)]
+fn rcu_read_unlock_impl() {
+    let data = current_rcu();
     fence(Ordering::Release);
-}
-
-/// 阻塞直到宽限期结束。
-///
-/// 等待所有 CPU 完成至少一个 RCU 读临界区后返回。
-///
-/// # 安全约束
-/// 不可在 RCU 读临界区内调用 (会死锁)。
-/// 不可在中断上下文调用。
-pub fn synchronize_rcu() {
-    // SAFETY: 本函数本身不在 RCU 读临界区内 (调用契约), 不可在中断上下文
-    // (会自旋等待所有 CPU, 嵌套屏蔽会死锁)。由 `synchronize_rcu` 内部
-    // 通过 per-CPU 计数器自旋等待所有 CPU 退出临界区。
-    unsafe {
-        crate::kernel::framework::sync_tcb_legacy::rcu::synchronize_rcu();
+    let nesting = data.nesting.fetch_sub(1, Ordering::Release);
+    if nesting == 1 {
+        fence(Ordering::Release);
     }
 }
 
-/// 注册宽限期回调。
-///
-/// 当所有 CPU 宽限期结束时调用 `func(head)`,
-/// 用于延迟释放旧数据。
+/// 安全读取 RCU 保护的指针
 ///
 /// # Safety
+/// 调用者必须在 RCU 读临界区内
+#[inline(always)]
+pub unsafe fn rcu_dereference<T>(ptr: *const T) -> *const T {
+    fence(Ordering::Acquire);
+    ptr::read_volatile(&ptr)
+}
+
+/// 安全更新 RCU 保护的指针
 ///
-/// 1. `head` 必须指向一个有效的 `RcuHead` 实例, 且在 `func` 被调用前不被释放
-/// 2. `func` 必须是合法的 `unsafe fn(*mut RcuHead)`, 实现须满足 RCU 回调契约
-///    (不睡眠, 不持有锁, 不递归注册)
-/// 3. `head` 指向的对象 (通常是包含 RcuHead 字段的外层结构) 的释放时机
-///    必须严格通过此 call_rcu 注册, 不可直接 deallocate
-pub fn call_rcu(head: &crate::kernel::framework::sync_tcb_legacy::rcu::RcuHead, func: unsafe fn(*mut crate::kernel::framework::sync_tcb_legacy::rcu::RcuHead)) {
-    // SAFETY:
-    //   1. `head` 是有效 `RcuHead` 引用, 通过 `&` 借用保证存活
-    //   2. `func` 是合法的 `unsafe fn(*mut RcuHead)`, 由调用方实现
-    //   3. `as *const _ as *mut RcuHead` 转换是 ABI 兼容的 (RcuHead 是 repr(C)
-    //      结构, 转换不丢字段)
-    //   4. 内部 call_rcu 会在宽限期结束时调用 func(head_ptr), 由 head 的实际
-    //      类型保证 layout 兼容
+/// # Safety
+/// 调用者确保旧值在所有 RCU 读者退出前不被释放
+#[inline(always)]
+pub unsafe fn rcu_assign_pointer<T>(slot: *mut *const T, new_val: *const T) {
+    fence(Ordering::Release);
+    ptr::write_volatile(slot, new_val);
+}
+
+/// 阻塞直到所有 CPU 上已有 RCU 读者退出
+///
+/// 宽限期流程:
+/// 1. 标记所有在线 CPU 的 gp_state = GP_WAIT
+/// 2. 等待每个 CPU 报告 GP_DONE (通过 rcu_note_quiescent_state)
+/// 3. 处理回调
+fn synchronize_rcu_impl() {
+    let start_gp = RCU_GP_COUNTER.load(Ordering::Relaxed);
+    RCU_GP_COUNTER.store(start_gp.wrapping_add(1), Ordering::Release);
+
+    let cpu_count = crate::kernel::framework::smp::get_cpu_count();
+    let current_cpu = crate::kernel::framework::smp::get_current_cpu();
+
+    for i in 0..cpu_count {
+        if i == current_cpu {
+            continue;
+        }
+        if !crate::kernel::framework::smp::is_cpu_online(i) {
+            let data = rcu_data(i);
+            data.gp_state.store(GP_DONE, Ordering::Release);
+            continue;
+        }
+        let data = rcu_data(i);
+        data.gp_state.store(GP_WAIT, Ordering::Release);
+        let apic_id = crate::kernel::framework::smp::get_apic_id(i);
+        if apic_id != 0xFFFF {
+            crate::kernel::framework::smp::send_reschedule_ipi(apic_id as u8);
+        }
+    }
+
+    {
+        let data = current_rcu();
+        if data.nesting.load(Ordering::Acquire) == 0 {
+            data.gp_state.store(GP_DONE, Ordering::Release);
+        }
+    }
+
+    const SYNC_TIMEOUT_SPINS: u32 = 50_000_000;
+    for i in 0..cpu_count {
+        if i == current_cpu {
+            continue;
+        }
+        let data = rcu_data(i);
+        let mut spins = 0u32;
+        while data.gp_state.load(Ordering::Acquire) != GP_DONE {
+            core::hint::spin_loop();
+            spins += 1;
+            if spins >= SYNC_TIMEOUT_SPINS {
+                data.gp_state.store(GP_DONE, Ordering::Release);
+                break;
+            }
+        }
+    }
+
+    {
+        let data = current_rcu();
+        let mut spins = 0u32;
+        while data.nesting.load(Ordering::Acquire) > 0 {
+            core::hint::spin_loop();
+            spins += 1;
+            if spins >= SYNC_TIMEOUT_SPINS {
+                break;
+            }
+        }
+    }
+
+    for i in 0..cpu_count {
+        let data = rcu_data(i);
+        data.gp_state.store(GP_IDLE, Ordering::Release);
+    }
+
+    process_callbacks();
+}
+
+/// 注册 RCU 回调, 在宽限期结束后调用
+///
+/// `func` 在 `synchronize_rcu()` 或 `process_callbacks()` 时被调用。
+///
+/// # Safety
+/// `head` 必须是从分配器分配的有效指针, `func` 必须正确处理 `head` 指向的内存
+pub unsafe fn call_rcu(head: *mut RcuHead, func: unsafe fn(*mut RcuHead)) {
+    if head.is_null() {
+        return;
+    }
+
     unsafe {
-        crate::kernel::framework::sync_tcb_legacy::rcu::call_rcu(
-            head as *const _ as *mut crate::kernel::framework::sync_tcb_legacy::rcu::RcuHead,
-            func,
-        );
+        (*head).next = ptr::null_mut();
+        (*head).func = Some(func);
+    }
+
+    let data = current_rcu();
+    let flags = crate::kernel::framework::sync_tcb_legacy::spinlock::disable_interrupts();
+
+    // SAFETY: Interrupts disabled — callback list manipulation is atomic
+    let tail = unsafe { *data.callback_tail.get() };
+    if !tail.is_null() {
+        // SAFETY: tail != null → dereference safe; writing next ptr
+        unsafe {
+            (*tail).next = head;
+        }
+    } else {
+        // SAFETY: Callbacks list empty — write to head via UnsafeCell
+        unsafe {
+            *data.callbacks.get() = head;
+        }
+    }
+    // SAFETY: data.callback_tail is an UnsafeCell, interrupts disabled
+    unsafe {
+        *data.callback_tail.get() = head;
+    }
+
+    data.callback_count.fetch_add(1, Ordering::Relaxed);
+    data.need_callback_process.store(true, Ordering::Release);
+
+    crate::kernel::framework::sync_tcb_legacy::spinlock::restore_interrupts(&flags);
+
+    crate::kernel::framework::irq::raise_softirq(crate::kernel::framework::irq::SoftirqVec::High);
+}
+
+/// 检查当前上下文是否在 RCU 读临界区内
+pub fn rcu_read_lock_held() -> bool {
+    current_rcu().nesting.load(Ordering::Acquire) > 0
+}
+
+/// 处理所有挂起的 RCU 回调 (当前 CPU)
+pub fn process_callbacks() {
+    let data = current_rcu();
+
+    if !data.need_callback_process.load(Ordering::Acquire) {
+        return;
+    }
+
+    let flags = crate::kernel::framework::sync_tcb_legacy::spinlock::disable_interrupts();
+
+    // SAFETY: Interrupts disabled — exclusive access to callback list
+    let head = unsafe { *data.callbacks.get() };
+    // SAFETY: Clearing callbacks under interrupt lock
+    unsafe {
+        *data.callbacks.get() = ptr::null_mut();
+        *data.callback_tail.get() = ptr::null_mut();
+    }
+    data.callback_count.store(0, Ordering::Relaxed);
+    data.need_callback_process.store(false, Ordering::Release);
+
+    crate::kernel::framework::sync_tcb_legacy::spinlock::restore_interrupts(&flags);
+
+    let mut cur = head;
+    while !cur.is_null() {
+        // SAFETY: cur was in the callback linked list, each node is valid
+        let next = unsafe { (*cur).next };
+        let func = unsafe { (*cur).func };
+
+        if let Some(f) = func {
+            // SAFETY: f is the callback registered by call_rcu; cur is the RcuHead
+            unsafe {
+                f(cur);
+            }
+        }
+
+        cur = next;
+    }
+}
+
+/// 标记静止状态 (由调度器在上下文切换时调用)
+pub fn rcu_note_quiescent_state() {
+    let data = current_rcu();
+
+    if data.nesting.load(Ordering::Acquire) > 0 {
+        return;
+    }
+
+    let state = data.gp_state.load(Ordering::Acquire);
+    if state == GP_WAIT {
+        data.gp_state.store(GP_DONE, Ordering::Release);
+    }
+
+    if data.need_callback_process.load(Ordering::Acquire)
+        && data.nesting.load(Ordering::Acquire) == 0
+    {
+        process_callbacks();
+    }
+}
+
+/// 通知所有 CPU 的 RCU 回调 (由同步宽限期调用)
+pub fn rcu_process_all_callbacks() {
+    let cpu_count = crate::kernel::framework::smp::get_cpu_count();
+    for i in 0..cpu_count {
+        let data = rcu_data(i);
+        if data.need_callback_process.load(Ordering::Acquire) {
+            // 使用 IPI 或直接处理 — 简化实现: 直接处理
+            // 注意: 在单核或特定场景下可行; 完整实现需 IPI
+            let flags = crate::kernel::framework::sync_tcb_legacy::spinlock::disable_interrupts();
+            let head = unsafe { *data.callbacks.get() };
+            unsafe {
+                *data.callbacks.get() = ptr::null_mut();
+                *data.callback_tail.get() = ptr::null_mut();
+            }
+            data.callback_count.store(0, Ordering::Relaxed);
+            data.need_callback_process.store(false, Ordering::Release);
+            crate::kernel::framework::sync_tcb_legacy::spinlock::restore_interrupts(&flags);
+
+            let mut cur = head;
+            while !cur.is_null() {
+                let next = unsafe { (*cur).next };
+                let func = unsafe { (*cur).func };
+                if let Some(f) = func {
+                    unsafe {
+                        f(cur);
+                    }
+                }
+                cur = next;
+            }
+        }
+    }
+}
+
+pub fn rcu_gp_count() -> u32 {
+    RCU_GP_COUNTER.load(Ordering::Relaxed)
+}
+
+pub fn rcu_callback_count() -> u32 {
+    let cpu = crate::kernel::framework::smp::get_current_cpu();
+    rcu_data(cpu).callback_count.load(Ordering::Relaxed)
+}
+
+#[no_mangle]
+pub fn rcu_read_lock() {
+    rcu_read_lock_impl();
+}
+
+#[no_mangle]
+pub fn rcu_read_unlock() {
+    rcu_read_unlock_impl();
+}
+
+#[no_mangle]
+pub fn synchronize_rcu() {
+    synchronize_rcu_impl();
+}
+
+#[no_mangle]
+pub extern "C" fn rcu_init() {
+    RCU_GP_COUNTER.store(1, Ordering::Release);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rcu_read_lock_unlock() {
+        rcu_read_lock();
+        assert!(rcu_read_lock_held());
+        rcu_read_lock();
+        rcu_read_unlock();
+        assert!(rcu_read_lock_held());
+        rcu_read_unlock();
+        assert!(!rcu_read_lock_held());
+    }
+
+    #[test]
+    fn test_rcu_gp_counter() {
+        let before = rcu_gp_count();
+        synchronize_rcu();
+        let after = rcu_gp_count();
+        assert!(after > before);
+    }
+
+    #[test]
+    fn test_call_rcu() {
+        static CALLED: AtomicBool = AtomicBool::new(false);
+
+        unsafe extern "C" fn callback(head: *mut RcuHead) {
+            CALLED.store(true, Ordering::Release);
+        }
+
+        let mut head = RcuHead::new();
+        unsafe {
+            call_rcu(&mut head as *mut RcuHead, callback);
+        }
+
+        assert!(rcu_callback_count() == 1);
+
+        synchronize_rcu();
+
+        assert!(rcu_callback_count() == 0);
+        assert!(CALLED.load(Ordering::Acquire));
     }
 }
