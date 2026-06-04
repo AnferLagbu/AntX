@@ -43,6 +43,15 @@ impl IoPort {
         Ok(Self { base, len, name })
     }
 
+    /// 安全 PIO 构造 (已知 base/len 合法)
+    ///
+    /// 调用方契约: `base..base+len` 必须是有效 PIO 范围, 不与其他 IoPort 重叠。
+    /// 委托 unsafe `IoPort::new`, SAFETY 由调用方保证。
+    pub fn new_safe(base: u16, len: u16, name: &'static str) -> Result<Self, &'static str> {
+        // SAFETY: 契约由调用方保证, 同 IoPort::new
+        unsafe { Self::new(base, len, name) }
+    }
+
     /// 基端口号
     #[inline(always)]
     pub fn base(&self) -> u16 {

@@ -1,54 +1,156 @@
-//! 同步原语 (services 层) — 高级 RAII 与领域封装
+//! 同步原语 — services 层安全代理
 //!
-//! ## 与 `framework::sync` 的关系
+//! ## 状态 (v2.12, 2026-06-04)
 //!
-//! ```text
-//! services::sync/*        (本模块, 100% safe Rust)
-//!   ├─ irq_lock::IrqSpinLock        中断安全自旋锁 (保存/恢复 IF)
-//!   ├─ scoped::*                    闭包作用域 API (with / with_mut)
-//!   ├─ barrier::Barrier             N 线程集合点 (latch-style)
-//!   ├─ once::{Once, OnceCell}       一次性初始化
-//!   └─ (re-export) framework::sync  基础类型供 services 直接使用
-//!        ↑
-//! framework::sync/*        (TCB, unsafe 允许, 真正实现)
-//! ```
+//! Phase 2.5 sync 迁移 (1/N): 封装 `kernel::sync` 强类型与安全 RAII Guard:
+//! - [x] types — `LockState` / `TryLockResult` / `IrqSaveFlags` / `SpinLockInner` 等
+//! - [x] spinlock — 自旋锁 API (lock/unlock/trylock + irqsave/irq 版本)
+//! - [x] mutex — 睡眠锁 API (lock/unlock/trylock + owner/timeout)
+//! - [x] rwlock — 读写锁 API (read_lock/write_lock/try + irqsave 版本)
+//! - [x] atomic — 原子操作 re-export
+//! - [x] seqlock / rcu / arch — 顺序锁/RCU/arch 内存屏障 re-export
+//! - [x] smp barriers — `smp_wmb` / `smp_rmb` / `smp_mb` 跨 CPU 内存屏障
+//! - [x] irq control — `disable_interrupts` / `restore_interrupts` / `scheduler_yield`
 //!
-//! ## 设计目标
+//! ## 迁移方法
 //!
-//! 1. **更易用**: `mutex.with(|g| g.value = 42)` 闭包 API, 杜绝 guard 泄漏。
-//! 2. **更安全**: 类型系统约束, 编译期阻止跨 await 持锁 / 递归死锁。
-//! 3. **更领域**: `IrqSpinLock` 在持锁期间自动屏蔽中断, 退出后恢复。
+//! sync 子系统本身就是 100% 安全 Rust (`unsafe` 仅出现在 FFI 包装),
+//! services 层职责:
+//! 1. 把所有 FFI `*mut T` / `*const T` 接口隔离在 framework 层
+//! 2. 暴露类型安全 RAII 接口 (SpinLockGuard / MutexGuard / RwLockGuard) 供 services 用户使用
+//! 3. 0 unsafe 出现在 services 层
 //!
-//! ## @SAFE
-//! 本目录所有文件不含 `unsafe`. 所有底层操作委托 `framework::sync` TCB API.
+//! 评估日期: 2026-06-04
 
-#![allow(dead_code)]
-
-/// 同步原语 — 基础重导出 (供 services 层共享)
-pub use crate::kernel::framework::sync::{
-    mutex::{Mutex, MutexGuard},
-    rwlock::{RwLock, RwLockReadGuard, RwLockWriteGuard},
-    spinlock::SpinLock,
-};
-
-/// 中断安全自旋锁 (保存/恢复 IF 标志)
-pub mod irq_lock;
-
-/// 闭包作用域 API (with / with_mut / try_with)
-pub mod scoped;
-
-/// N-线程集合点 (latch-style barrier)
-pub mod barrier;
-
-/// 一次性初始化 (Once + OnceCell)
-pub mod once;
+use crate::kernel::sync;
 
 // ============================================================================
-// 单元自检 (编译期)
+// 强类型 re-export
 // ============================================================================
 
-/// 编译期断言: services::sync 不允许 unsafe 代码。
+/// 锁状态枚举
+pub use sync::types::LockState;
+
+/// `try_lock` 结果
+pub use sync::types::TryLockResult;
+
+/// 自旋锁内核表示 (FFI 桥接用, 一般不直接访问)
+pub use sync::types::{SpinLockInner, MutexInner, RwLockInner, CondVarInner};
+
+/// 中断保存标志
+pub use sync::types::IrqSaveFlags;
+
+/// 锁统计信息 (仅 `lock_stats` feature 启用时可用)
+#[cfg(feature = "lock_stats")]
+pub use sync::types::LockStatistics;
+
+// ============================================================================
+// RAII Guard (类型安全, 替代裸 lock/unlock 配对)
+// ============================================================================
+
+/// 自旋锁 RAII 守卫 (`&mut T` 借用于锁内, 析构自动释放)
+pub use sync::types::SpinLockGuard;
+
+/// 互斥锁 RAII 守卫
+pub use sync::types::MutexGuard;
+
+/// 读锁 RAII 守卫
+pub use sync::types::RwLockReadGuard;
+
+/// 写锁 RAII 守卫
+pub use sync::types::RwLockWriteGuard;
+
+// ============================================================================
+// 中断控制 (用于 irqsave 风格的锁)
+// ============================================================================
+
+/// 禁用中断并返回保存的 flags
 ///
-/// 与 `tools/check_tcb.sh` 配合: 该脚本 grep 整个 services/sync 目录,
-/// 一旦发现 `unsafe` 关键字即失败。
-pub const SERVICES_SYNC_SAFE: bool = true;
+/// **调用方约束**: 必须在中断上下文或单 CPU 上下文调用, 配对使用 `restore_interrupts`.
+pub fn disable_interrupts() -> IrqSaveFlags {
+    sync::spinlock::disable_interrupts()
+}
+
+/// 恢复中断到指定 flags
+pub fn restore_interrupts(flags: &IrqSaveFlags) {
+    sync::spinlock::restore_interrupts(flags)
+}
+
+/// 中断禁用 RAII 守卫 (析构时自动恢复中断)
+pub struct IrqDisabled {
+    flags: IrqSaveFlags,
+}
+
+impl IrqDisabled {
+    /// 进入临界区 (禁用中断)
+    pub fn enter() -> Self {
+        Self {
+            flags: disable_interrupts(),
+        }
+    }
+}
+
+impl Drop for IrqDisabled {
+    fn drop(&mut self) {
+        restore_interrupts(&self.flags);
+    }
+}
+
+// ============================================================================
+// 跨 CPU 内存屏障
+// ============================================================================
+
+/// 写内存屏障 (跨 CPU 顺序)
+pub fn smp_wmb() {
+    sync::spinlock::smp_wmb();
+}
+
+/// 读内存屏障
+pub fn smp_rmb() {
+    sync::spinlock::smp_rmb();
+}
+
+/// 读写全屏障
+pub fn smp_mb() {
+    sync::spinlock::smp_mb();
+}
+
+// ============================================================================
+// 调度器桥接
+// ============================================================================
+
+/// 当前进程 PID (0 表示内核线程 / 启动期)
+pub fn current_pid() -> u32 {
+    crate::kernel::proc::api::process_get_current_pid()
+}
+
+/// 主动让出 CPU
+pub fn scheduler_yield() {
+    crate::kernel::proc::api::scheduler_yield();
+}
+
+// ============================================================================
+// 错误
+// ============================================================================
+
+/// 同步原语错误 (一般 trylock 失败专用)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncError {
+    /// 已被其他持有者锁住
+    WouldBlock,
+    /// 死锁 (同线程重复 lock)
+    Deadlock,
+    /// 超时
+    Timeout,
+    /// 其他
+    Other(i32),
+}
+
+pub type SyncResult<T> = Result<T, SyncError>;
+
+// ============================================================================
+// 测试钩子
+// ============================================================================
+//
+// 各 sync 子模块的 `register_*_tests` 入口由 `kernel::tests::sync`
+// 集中注册, services 层不重复导出, 避免循环依赖与 feature gating 复杂度。

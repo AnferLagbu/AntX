@@ -59,6 +59,14 @@ pub mod irqline;
 pub mod dma_buf;
 pub mod page_table;
 
+pub mod net_socket;
+
+pub mod credo_pwm;
+
+pub mod proc_elf;
+
+pub mod syscall_init;
+
 pub mod prelude;
 
 pub mod racy_cell;

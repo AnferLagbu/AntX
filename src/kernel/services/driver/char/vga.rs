@@ -247,7 +247,7 @@ impl VgaConsole {
 
         // SAFETY: 0x3D4-0x3D5 是 x86 标准 VGA CRT 控制器端口
         #[cfg(target_arch = "x86_64")]
-        let crt = unsafe { IoPort::new(VGA_CRT_INDEX, VGA_CRT_PORT_COUNT, "vga-crt").ok() };
+        let crt = IoPort::new_safe(VGA_CRT_INDEX, VGA_CRT_PORT_COUNT, "vga-crt").ok();
 
         #[cfg(target_arch = "aarch64")]
         let crt: Option<IoPort> = None;

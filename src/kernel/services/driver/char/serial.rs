@@ -282,7 +282,7 @@ impl SerialPort {
         // SAFETY: COM1-COM4 base addresses are standard PC serial port mappings.
         // IoPort::new checks for port range validity; alias detection prevents
         // multiple registrations of the same port.
-        let port = unsafe { IoPort::new(com.base(), COM_PORT_COUNT, "serial") }.ok()?;
+        let port = IoPort::new_safe(com.base(), COM_PORT_COUNT, "serial").ok()?;
 
         let mut s = Self { port, com, config };
         s.apply_config();

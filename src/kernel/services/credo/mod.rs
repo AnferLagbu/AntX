@@ -19,7 +19,9 @@
 //! 本文件不含 `unsafe`. 所有硬件交互通过 `framework::credo` 的安全 API.
 
 pub mod audit;
+pub mod crypto;
 pub mod grants;
+pub mod identity;
 pub mod policy;
 pub mod sessions;
 
@@ -36,3 +38,4 @@ pub use sessions::{
     LoginDeny, LoginResult, Session, SessionError, SessionId, SessionManager, SessionState,
     SessionTable, MAX_SESSIONS,
 };
+pub use identity::{PwmError, PwmId, PwmResult};

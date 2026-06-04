@@ -16,6 +16,7 @@
 //!
 //! 评估日期: 2026-06-04
 
+use crate::kernel::framework::net_socket as fw_net_socket;
 use crate::kernel::net;
 
 pub mod socket;
@@ -99,12 +100,8 @@ impl From<net::init::InitState> for InitState {
 ///
 /// 探测网卡 (e1000 / virtio-net), 启动协议栈, 启动 DHCP 异步获取 IP。
 /// 如果无 NIC 则进入 "NoNetwork" 状态。
-///
-/// # Safety
-/// 调用方保证单线程上下文 (启动期) 调用一次。
 pub fn init() {
-    // SAFETY: 单线程启动期调用, 内部全局状态串行化
-    unsafe { net::init::qx_net_init() }
+    fw_net_socket::qx_net_init();
 }
 
 /// 轮询网络栈 (驱动 TX/RX、定时器、DHCP)
@@ -112,8 +109,7 @@ pub fn init() {
 /// 在 timer ISR 或网络任务中调用, 内部 `try_lock` 避免阻塞。
 /// 若网络锁已被持有则直接返回, 不会等待。
 pub fn poll() {
-    // SAFETY: try_lock 保证 ISR 安全
-    unsafe { net::init::poll_network() }
+    fw_net_socket::poll_network();
 }
 
 /// 启动 DHCP (异步, 由 timer ISR 驱动 poll 完成)
@@ -121,8 +117,7 @@ pub fn poll() {
 /// 调用后 DHCP Discover 会在下一个 timer tick 发出。
 /// 用户态通过 `is_configured()` 轮询等待完成。
 pub fn start_dhcp() -> NetResult<()> {
-    // SAFETY: 由 services 串行调用, NET_LOCK 由内核管理
-    let rc = unsafe { net::init::qx_net_start_dhcp() };
+    let rc = fw_net_socket::qx_net_start_dhcp();
     if rc == 0 { Ok(()) } else { Err(NetError::from_i32(rc)) }
 }
 
@@ -144,12 +139,7 @@ pub fn static_ip(cidr_str: &str, gw_str: &str) -> NetResult<()> {
     gw_c.extend_from_slice(gw_str.as_bytes());
     gw_c.push(0);
 
-    // SAFETY: cidr_c/gw_c 由 Box 持有, 内核借用其指针期间不释放
-    let rc = unsafe {
-        let cidr_ptr = cidr_c.as_ptr();
-        let gw_ptr = gw_c.as_ptr();
-        net::init::qx_net_static_ip(cidr_ptr, gw_ptr)
-    };
+    let rc = fw_net_socket::qx_net_static_ip(cidr_c.as_ptr(), gw_c.as_ptr());
     if rc == 0 { Ok(()) } else { Err(NetError::from_i32(rc)) }
 }
 
@@ -174,6 +164,5 @@ pub fn state() -> InitState {
 
 /// 重置网络状态 (恢复机制)
 pub fn reset_state() {
-    // SAFETY: 恢复域串行调用
-    unsafe { net::init::reset_network_state() }
+    fw_net_socket::reset_network_state();
 }

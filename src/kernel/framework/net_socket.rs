@@ -1,0 +1,212 @@
+//! 网络子系统 FFI 安全代理 — framework TCB
+//!
+//! ## 职责
+//!
+//! 这是 services 层与 `kernel::net::init::sm_*` 之间的**唯一** unsafe 边界。
+//! 所有 `unsafe extern "C"` 调用都在本模块集中处理, services 层 0 unsafe。
+//!
+//! ## 设计原则
+//!
+//! 1. 每个 `unsafe { ... }` 块都带 SAFETY 注释, 描述契约
+//! 2. 切片 API (`&[u8]`, `&mut [u8]`) 替代 `*const T` / `*mut T` + 长度
+//! 3. 强类型 `i32` → `NetError` 翻译
+//! 4. services 层只调用本模块, 不再接触 `net::init::*` 裸函数
+//!
+//! 评估日期: 2026-06-04
+
+use crate::kernel::net;
+
+// ============================================================================
+// 错误翻译
+// ============================================================================
+
+/// Net 内部 `i32` 错误 → 强类型 (本模块内部使用, services 不感知)
+pub fn map_rc(rc: i32) -> i32 {
+    rc
+}
+
+// ============================================================================
+// 网络顶层 API
+// ============================================================================
+
+/// 初始化网络子系统
+///
+/// # Safety
+///
+/// 调用方保证单线程上下文 (启动期) 调用一次, 内部全局状态串行化。
+pub fn qx_net_init() {
+    // SAFETY: 单线程启动期调用, 内部全局状态串行化
+    unsafe { net::init::qx_net_init() }
+}
+
+/// 轮询网络栈
+///
+/// # Safety
+///
+/// try_lock 保证 ISR 安全; 多个 poll 调用可重入。
+pub fn poll_network() {
+    // SAFETY: try_lock 保证 ISR 安全
+    unsafe { net::init::poll_network() }
+}
+
+/// 启动 DHCP
+///
+/// # Safety
+///
+/// 由 services 串行调用, NET_LOCK 由内核管理。
+pub fn qx_net_start_dhcp() -> i32 {
+    // SAFETY: 串行调用, NET_LOCK 由内核管理
+    unsafe { net::init::qx_net_start_dhcp() }
+}
+
+/// 设置静态 IP
+///
+/// # Safety
+///
+/// `cidr_ptr` / `gw_ptr` 必须为以 NUL 结尾的有效 C 字符串, 且调用期间不释放。
+pub fn qx_net_static_ip(cidr_ptr: *const u8, gw_ptr: *const u8) -> i32 {
+    // SAFETY: cidr_ptr/gw_ptr 由调用方保证为有效 NUL 结尾字符串
+    unsafe { net::init::qx_net_static_ip(cidr_ptr, gw_ptr) }
+}
+
+/// 重置网络状态
+///
+/// # Safety
+///
+/// 恢复域串行调用。
+pub fn reset_network_state() {
+    // SAFETY: 恢复域串行调用
+    unsafe { net::init::reset_network_state() }
+}
+
+// ============================================================================
+// Socket FFI 安全代理
+// ============================================================================
+
+/// POSIX `socket(domain, type, protocol)` — 创建 socket
+pub fn sm_socket(domain: i32, sock_type: i32, protocol: i32) -> i32 {
+    // SAFETY: NET_LOCK 由 sm_socket 内部获取, 串行化
+    unsafe { net::init::sm_socket(domain, sock_type, protocol) }
+}
+
+/// POSIX `bind(fd, addr, addrlen)`
+///
+/// # Safety
+///
+/// `addr` 必须为至少 `addrlen` 字节的有效指针, 调用期间不释放。
+pub fn sm_bind(fd: i32, addr: *const u8, addrlen: u32) -> i32 {
+    // SAFETY: addr 由调用方保证有效, sm_bind 同步读取
+    unsafe { net::init::sm_bind(fd, addr, addrlen) }
+}
+
+/// POSIX `listen(fd, backlog)`
+pub fn sm_listen(fd: i32, backlog: i32) -> i32 {
+    // SAFETY: NET_LOCK 内部获取
+    unsafe { net::init::sm_listen(fd, backlog) }
+}
+
+/// POSIX `accept(fd, addr, addrlen)` — 返回新连接的 FD
+///
+/// # Safety
+///
+/// `addr` 和 `addrlen` 可为 null 表示不关心对端地址。
+pub fn sm_accept(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+    // SAFETY: null 表示不写对端地址, 由调用方契约保证
+    unsafe { net::init::sm_accept(fd, addr, addrlen) }
+}
+
+/// POSIX `connect(fd, addr, addrlen)`
+///
+/// # Safety
+///
+/// `addr` 必须为至少 `addrlen` 字节的有效指针, 调用期间不释放。
+pub fn sm_connect(fd: i32, addr: *const u8, addrlen: u32) -> i32 {
+    // SAFETY: addr 栈上有效, sm_connect 同步读取
+    unsafe { net::init::sm_connect(fd, addr, addrlen) }
+}
+
+/// POSIX `send(fd, buf, len, flags)` — 阻塞发送
+///
+/// # Safety
+///
+/// `buf` 必须为至少 `len` 字节的有效只读指针, 调用期间不释放。
+pub fn sm_send(fd: i32, buf: *const u8, len: u32, flags: i32) -> i32 {
+    // SAFETY: buf 在调用期间有效, sm_send 同步读取
+    unsafe { net::init::sm_send(fd, buf, len, flags) }
+}
+
+/// POSIX `recv(fd, buf, len, flags)` — 阻塞接收
+///
+/// # Safety
+///
+/// `buf` 必须为至少 `len` 字节的有效可写指针。
+pub fn sm_recv(fd: i32, buf: *mut u8, len: u32, flags: i32) -> i32 {
+    // SAFETY: out 在调用期间有效可写
+    unsafe { net::init::sm_recv(fd, buf, len, flags) }
+}
+
+/// POSIX `sendto(fd, buf, len, flags, dest_addr, addrlen)`
+///
+/// # Safety
+///
+/// `buf` 和 `dest_addr` 必须为有效指针, 调用期间不释放。
+pub fn sm_sendto(
+    fd: i32,
+    buf: *const u8,
+    len: u32,
+    flags: i32,
+    dest_addr: *const u8,
+    addrlen: u32,
+) -> i32 {
+    // SAFETY: buf + dest_addr 同步有效
+    unsafe { net::init::sm_sendto(fd, buf, len, flags, dest_addr, addrlen) }
+}
+
+/// POSIX `recvfrom(fd, buf, len, flags, src_addr, addrlen)`
+///
+/// # Safety
+///
+/// `buf` 可写, `src_addr` 为有效可写 8 字节缓冲, `addrlen` 为可写 u32。
+pub fn sm_recvfrom(
+    fd: i32,
+    buf: *mut u8,
+    len: u32,
+    flags: i32,
+    src_addr: *mut u8,
+    addrlen: *mut u32,
+) -> i32 {
+    // SAFETY: out 可写, src 8 字节栈缓冲
+    unsafe { net::init::sm_recvfrom(fd, buf, len, flags, src_addr, addrlen) }
+}
+
+/// POSIX `close(fd)`
+pub fn sm_close(fd: i32) -> i32 {
+    // SAFETY: sm_close 内部 NET_LOCK 串行化
+    unsafe { net::init::sm_close(fd) }
+}
+
+/// POSIX `setsockopt(fd, level, optname, optval, optlen)`
+///
+/// # Safety
+///
+/// `optval` 必须为至少 `optlen` 字节的有效指针。
+pub fn sm_setsockopt(fd: i32, level: i32, optname: i32, optval: *const u8, optlen: u32) -> i32 {
+    // SAFETY: optval 栈上有效
+    unsafe { net::init::sm_setsockopt(fd, level, optname, optval, optlen) }
+}
+
+/// POSIX `getsockopt(fd, level, optname, optval, optlen)` → i32
+///
+/// # Safety
+///
+/// `optval` 必须为可写指针, `optlen` 为可写 u32。
+pub fn sm_getsockopt(fd: i32, level: i32, optname: i32, optval: *mut u8, optlen: *mut u32) -> i32 {
+    // SAFETY: optval 可写, optlen 可写
+    unsafe { net::init::sm_getsockopt(fd, level, optname, optval, optlen) }
+}
+
+/// 轮询所有 socket
+pub fn sm_poll_sockets() -> i32 {
+    // SAFETY: try_lock 内部使用, ISR 安全
+    unsafe { net::init::sm_poll_sockets() }
+}

@@ -20,7 +20,7 @@
 
 extern crate alloc;
 
-use crate::kernel::net;
+use crate::kernel::framework::net_socket;
 
 // ============================================================================
 // 错误
@@ -189,8 +189,7 @@ fn bytes_to_sockaddr_in(buf: &[u8; 8]) -> Option<SockAddrIn> {
 ///
 /// 成功返回新 socket 的 FD, 失败返回 `SocketError`。
 pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResult<i32> {
-    // SAFETY: NET_LOCK 由 sm_socket 内部获取
-    let fd = unsafe { net::init::sm_socket(domain as i32, sock_type as i32, 0) };
+    let fd = net_socket::sm_socket(domain as i32, sock_type as i32, 0);
     if fd < 0 {
         Err(SocketError::from_i32(fd))
     } else {
@@ -201,22 +200,19 @@ pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResu
 /// POSIX `bind(fd, addr, addrlen)`
 pub fn bind(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
     let bytes = sockaddr_in_to_bytes(addr);
-    // SAFETY: bytes 在栈上, 8 字节有效, 由 sm_bind 同步读取
-    let rc = unsafe { net::init::sm_bind(fd, bytes.as_ptr(), bytes.len() as u32) };
+    let rc = net_socket::sm_bind(fd, bytes.as_ptr(), bytes.len() as u32);
     if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
 }
 
 /// POSIX `listen(fd, backlog)`
 pub fn listen(fd: i32, backlog: i32) -> SocketResult<()> {
-    // SAFETY: NET_LOCK 内部获取
-    let rc = unsafe { net::init::sm_listen(fd, backlog) };
+    let rc = net_socket::sm_listen(fd, backlog);
     if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
 }
 
 /// POSIX `accept(fd, addr, addrlen)` — 返回新连接的 FD
 pub fn accept(fd: i32) -> SocketResult<i32> {
-    // SAFETY: NULL 地址, 不返回对端地址
-    let new_fd = unsafe { net::init::sm_accept(fd, core::ptr::null_mut(), core::ptr::null_mut()) };
+    let new_fd = net_socket::sm_accept(fd, core::ptr::null_mut(), core::ptr::null_mut());
     if new_fd < 0 {
         Err(SocketError::from_i32(new_fd))
     } else {
@@ -227,17 +223,13 @@ pub fn accept(fd: i32) -> SocketResult<i32> {
 /// POSIX `connect(fd, addr, addrlen)`
 pub fn connect(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
     let bytes = sockaddr_in_to_bytes(addr);
-    // SAFETY: bytes 栈上有效
-    let rc = unsafe { net::init::sm_connect(fd, bytes.as_ptr(), bytes.len() as u32) };
+    let rc = net_socket::sm_connect(fd, bytes.as_ptr(), bytes.len() as u32);
     if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
 }
 
 /// POSIX `send(fd, buf, len, flags)` → 实际发送字节数
 pub fn send(fd: i32, buf: &[u8]) -> SocketResult<usize> {
-    // SAFETY: buf 在调用期间有效, sm_send 同步读取
-    let n = unsafe {
-        net::init::sm_send(fd, buf.as_ptr(), buf.len() as u32, 0)
-    };
+    let n = net_socket::sm_send(fd, buf.as_ptr(), buf.len() as u32, 0);
     if n < 0 {
         Err(SocketError::from_i32(n))
     } else {
@@ -249,10 +241,7 @@ pub fn send(fd: i32, buf: &[u8]) -> SocketResult<usize> {
 ///
 /// 写入 `out` 切片, 返回字节数; `WouldBlock` 表示无数据可读。
 pub fn recv(fd: i32, out: &mut [u8]) -> SocketResult<usize> {
-    // SAFETY: out 在调用期间有效可写
-    let n = unsafe {
-        net::init::sm_recv(fd, out.as_mut_ptr(), out.len() as u32, 0)
-    };
+    let n = net_socket::sm_recv(fd, out.as_mut_ptr(), out.len() as u32, 0);
     if n < 0 {
         Err(SocketError::from_i32(n))
     } else {
@@ -263,17 +252,14 @@ pub fn recv(fd: i32, out: &mut [u8]) -> SocketResult<usize> {
 /// POSIX `sendto(fd, buf, len, flags, dest_addr, addrlen)`
 pub fn sendto(fd: i32, buf: &[u8], dest: &SockAddrIn) -> SocketResult<usize> {
     let bytes = sockaddr_in_to_bytes(dest);
-    // SAFETY: buf + bytes 同步有效
-    let n = unsafe {
-        net::init::sm_sendto(
-            fd,
-            buf.as_ptr(),
-            buf.len() as u32,
-            0,
-            bytes.as_ptr(),
-            bytes.len() as u32,
-        )
-    };
+    let n = net_socket::sm_sendto(
+        fd,
+        buf.as_ptr(),
+        buf.len() as u32,
+        0,
+        bytes.as_ptr(),
+        bytes.len() as u32,
+    );
     if n < 0 {
         Err(SocketError::from_i32(n))
     } else {
@@ -284,17 +270,14 @@ pub fn sendto(fd: i32, buf: &[u8], dest: &SockAddrIn) -> SocketResult<usize> {
 /// POSIX `recvfrom(fd, buf, len, flags, src_addr, addrlen)` → (字节数, 源地址)
 pub fn recvfrom(fd: i32, out: &mut [u8]) -> SocketResult<(usize, SockAddrIn)> {
     let mut src = [0u8; 8];
-    // SAFETY: out 可写, src 8 字节栈缓冲
-    let n = unsafe {
-        net::init::sm_recvfrom(
-            fd,
-            out.as_mut_ptr(),
-            out.len() as u32,
-            0,
-            src.as_mut_ptr(),
-            &mut (src.len() as u32),
-        )
-    };
+    let n = net_socket::sm_recvfrom(
+        fd,
+        out.as_mut_ptr(),
+        out.len() as u32,
+        0,
+        src.as_mut_ptr(),
+        &mut (src.len() as u32),
+    );
     if n < 0 {
         Err(SocketError::from_i32(n))
     } else {
@@ -306,8 +289,7 @@ pub fn recvfrom(fd: i32, out: &mut [u8]) -> SocketResult<(usize, SockAddrIn)> {
 
 /// POSIX `close(fd)`
 pub fn close(fd: i32) -> SocketResult<()> {
-    // SAFETY: sm_close 内部 NET_LOCK 串行化
-    let rc = unsafe { net::init::sm_close(fd) };
+    let rc = net_socket::sm_close(fd);
     if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
 }
 
@@ -319,16 +301,13 @@ pub fn close(fd: i32) -> SocketResult<()> {
 /// - `val`: 选项值 (u32)
 pub fn setsockopt(fd: i32, level: i32, optname: i32, val: u32) -> SocketResult<()> {
     let val_bytes = val.to_ne_bytes();
-    // SAFETY: val_bytes 栈上有效
-    let rc = unsafe {
-        net::init::sm_setsockopt(
-            fd,
-            level,
-            optname,
-            val_bytes.as_ptr(),
-            val_bytes.len() as u32,
-        )
-    };
+    let rc = net_socket::sm_setsockopt(
+        fd,
+        level,
+        optname,
+        val_bytes.as_ptr(),
+        val_bytes.len() as u32,
+    );
     if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
 }
 
@@ -336,16 +315,13 @@ pub fn setsockopt(fd: i32, level: i32, optname: i32, val: u32) -> SocketResult<(
 pub fn getsockopt(fd: i32, level: i32, optname: i32) -> SocketResult<u32> {
     let mut out = 0u32;
     let mut out_len = core::mem::size_of::<u32>() as u32;
-    // SAFETY: out 可写, 4 字节
-    let rc = unsafe {
-        net::init::sm_getsockopt(
-            fd,
-            level,
-            optname,
-            &mut out as *mut u32 as *mut u8,
-            &mut out_len,
-        )
-    };
+    let rc = net_socket::sm_getsockopt(
+        fd,
+        level,
+        optname,
+        &mut out as *mut u32 as *mut u8,
+        &mut out_len,
+    );
     if rc == 0 { Ok(out) } else { Err(SocketError::from_i32(rc)) }
 }
 
@@ -353,8 +329,7 @@ pub fn getsockopt(fd: i32, level: i32, optname: i32) -> SocketResult<u32> {
 ///
 /// 由 timer ISR 或专用网络任务周期性调用。
 pub fn poll_all() -> SocketResult<i32> {
-    // SAFETY: try_lock 内部使用, ISR 安全
-    let n = unsafe { net::init::sm_poll_sockets() };
+    let n = net_socket::sm_poll_sockets();
     if n < 0 { Err(SocketError::from_i32(n)) } else { Ok(n) }
 }
 
