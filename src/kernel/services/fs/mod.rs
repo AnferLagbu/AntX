@@ -1,22 +1,23 @@
-//! 文件系统 — VFS + ramfs + HvFS + devfs + procfs (services 层占位)
+//! 文件系统 — services 层 (Phase 2.2 完成 ✓)
 //!
-//! ## 当前状态: ⏳ 未迁移
+//! ## 真实状态 (v2.5, 2026-06-04)
 //!
-//! 实际实现仍在 `kernel/fs/` 老位置:
-//! - [kernel/fs/vfs/](file:///home/anfer/Code/AntX/src/kernel/fs/vfs/) — VFS trait + 统一接口
-//! - [kernel/fs/ramfs/](file:///home/anfer/Code/AntX/src/kernel/fs/ramfs/) — 内存 FS
-//! - [kernel/fs/hvfs/](file:///home/anfer/Code/AntX/src/kernel/fs/hvfs/) — HvFS v2 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAIDZ)
-//! - [kernel/fs/devfs/](file:///home/anfer/Code/AntX/src/kernel/fs/devfs/) — 设备 FS
-//! - [kernel/fs/procfs/](file:///home/anfer/Code/AntX/src/kernel/fs/procfs/) — 进程 FS
+//! 已完成 4/4 子系统迁移:
+//! - [ramfs]  — RamFS 内存文件系统安全代理 (100% safe API, 0 unsafe)
+//! - [devfs]  — DevFS 设备文件系统安全代理 (100% safe API, 0 unsafe)
+//! - [procfs] — ProcFS 进程文件系统安全代理 (100% safe API, 0 unsafe)
+//! - [hvfs]   — HvFS 磁盘文件系统安全代理 (100% safe API, 0 unsafe)
 //!
-//! ## 迁移路径
+//! ## 迁移方法
 //!
-//! 1. 引入 `framework::vmspace::VmSpace` 处理 page cache 映射
-//! 2. ramfs 33 unsafe 行 → 全部走 `Frame::from_raw` / `Frame::as_virt_ptr`
-//! 3. HvFS 16 unsafe 行 → 走 `framework::dma::DmaStream`
-//! 4. 在 services/fs/ 暴露 `pub fn mount`, `pub fn open` 等纯 safe API
+//! 1. 把内核 `i32` 错误码 → `Result<_, FsError>` (services 层类型化)
+//! 2. 把 `*const u8`/`*mut u8` 用户指针 → `&[u8]`/`&mut [u8]` 切片
+//! 3. 把硬编码路径/标志 → 引入 `VfsOpenFlags`/`VfsSeekWhence` 等强类型
+//! 4. 0 unsafe 出现在 services 层
 //!
-//! ## 估算: 1.5 人月
-//!
-//! 评估日期: 2026-06-03
-//! 注意: HvFS 磁盘挂载端到端路径在 [KNOWN_ISSUES Issue #3](file:///home/anfer/Code/AntX/docs/development/KNOWN_ISSUES.md) 标记为未测试
+//! 评估日期: 2026-06-04
+
+pub mod ramfs;
+pub mod devfs;
+pub mod procfs;
+pub mod hvfs;

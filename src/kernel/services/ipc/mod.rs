@@ -1,20 +1,425 @@
-//! IPC — 管道/共享内存/消息队列/信号 (services 层占位)
+//! IPC — 进程间通信 (Phase 2.3 启动)
 //!
-//! ## 当前状态: ⏳ 未迁移
+//! ## 真实状态 (v2.6, 2026-06-04)
 //!
-//! 实际实现仍在 `kernel/ipc/` 老位置:
-//! - [kernel/ipc/pipe.rs](file:///home/anfer/Code/AntX/src/kernel/ipc/pipe.rs) — 管道
-//! - [kernel/ipc/shm.rs](file:///home/anfer/Code/AntX/src/kernel/ipc/shm.rs) — 共享内存
-//! - [kernel/ipc/msgq.rs](file:///home/anfer/Code/AntX/src/kernel/ipc/msgq.rs) — 消息队列
-//! - [kernel/ipc/sem.rs](file:///home/anfer/Code/AntX/src/kernel/ipc/sem.rs) — 信号量
-//! - [kernel/ipc/signal.rs](file:///home/anfer/Code/AntX/src/kernel/ipc/signal.rs) — 信号
+//! 已完成 1/4 子系统迁移:
+//! - 管道 (pipe) — 完整 safe API, 通过 `IPC_NAMESPACE` 共享底层
 //!
-//! ## 迁移路径
+//! 待迁移:
+//! - shm   (Phase 2.3.2)
+//! - msgq  (Phase 2.3.3)
+//! - sem   (Phase 2.3.4)
+//! - signal (Phase 2.3.5)
 //!
-//! 1. 管道/共享内存/消息队列的 buffer 走 `framework::Frame` + `framework::VmSpace`
-//! 2. 信号注册表走 `framework::sync::SpinLock` (不再用 kernel::sync)
-//! 3. 在 services/ipc/ 暴露 `pub fn pipe_create` 等纯 safe API
-//!
-//! ## 估算: 1 人月
-//!
-//! 评估日期: 2026-06-03
+//! 评估日期: 2026-06-04
+
+use crate::kernel::ipc::pipe;
+use crate::kernel::ipc::shm;
+use crate::kernel::ipc::msgq;
+use crate::kernel::ipc::sem;
+
+// ============================================================================
+// 错误
+// ============================================================================
+
+/// IPC 错误 (强类型, 替代内核 `i32`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpcError {
+    /// 表已满 / 资源耗尽
+    NoResources,
+    /// 无效文件描述符
+    BadFd,
+    /// 无效操作 (写读端 / 读写端)
+    InvalidOp,
+    /// 资源未找到
+    NotFound,
+    /// 操作会阻塞
+    WouldBlock,
+    /// 权限不足
+    PermissionDenied,
+    /// 无效参数
+    InvalidArgument,
+    /// 其他
+    Other(i32),
+}
+
+impl IpcError {
+    pub fn from_i32(rc: i32) -> Self {
+        match rc {
+            -1 => Self::NoResources,
+            -2 => Self::InvalidOp,
+            -3 => Self::NotFound,
+            -4 => Self::WouldBlock,
+            -13 => Self::PermissionDenied,
+            -22 => Self::InvalidArgument,
+            -9 | -77 => Self::BadFd,
+            rc => Self::Other(rc),
+        }
+    }
+}
+
+// ============================================================================
+// 句柄
+// ============================================================================
+
+/// IPC 资源 ID (services 层视图, 内核 `IpcId = u32` 的包装)
+pub type IpcId = u32;
+
+/// 管道文件描述符
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipeFd {
+    pub fd: i32,
+}
+
+/// 共享内存段句柄
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShmHandle {
+    /// 共享内存 ID
+    pub id: IpcId,
+    /// 物理地址 (attach 时获得)
+    pub phys_addr: u64,
+}
+
+/// 消息队列句柄
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MsgqHandle {
+    pub id: IpcId,
+}
+
+/// 信号量句柄
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemHandle {
+    pub id: IpcId,
+}
+
+// ============================================================================
+// 全局命名空间
+// ============================================================================
+
+use spin::Once;
+static GLOBAL_IPC: Once<IpcNamespaceRef> = Once::new();
+
+/// 初始化全局 IPC 命名空间
+pub fn init_global() {
+    GLOBAL_IPC.call_once(|| IpcNamespaceRef::new());
+}
+
+/// 获取全局 IPC 引用
+pub fn global() -> &'static IpcNamespaceRef {
+    GLOBAL_IPC.get().expect("ipc::global() called before init_global()")
+}
+
+/// IPC 命名空间的安全视图
+pub struct IpcNamespaceRef;
+
+impl IpcNamespaceRef {
+    pub fn new() -> Self { Self }
+
+    /// 获取命名空间锁 (spin, 短临界区)
+    pub fn lock(&self) -> IpcLock {
+        IpcLock
+    }
+}
+
+/// IPC 命名空间临界区守卫
+pub struct IpcLock;
+
+impl IpcLock {
+    // ── Pipe ──
+
+    /// 创建管道
+    pub fn pipe_create(&self, current_pid: u32) -> Result<(PipeFd, PipeFd), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        pipe::pipe_create_safe(ns, next_id, current_pid)
+            .map(|(r, w)| (PipeFd { fd: r }, PipeFd { fd: w }))
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 管道读
+    pub fn pipe_read(&self, fd: PipeFd, buf: &mut [u8]) -> Result<usize, IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        pipe::pipe_read_safe(ns, fd.fd, buf, buf.len() as u32)
+            .map(|n| n as usize)
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 管道写
+    pub fn pipe_write(&self, fd: PipeFd, buf: &[u8]) -> Result<usize, IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        pipe::pipe_write_safe(ns, fd.fd, buf, buf.len() as u32)
+            .map(|n| n as usize)
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 关闭管道
+    pub fn pipe_close(&self, fd: PipeFd) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        pipe::pipe_close_safe(ns, fd.fd).map_err(IpcError::from_i32)
+    }
+
+    // ── SHM ──
+
+    /// 创建共享内存段
+    pub fn shm_create(&self, current_pid: u32, size: usize) -> Result<ShmHandle, IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        shm::shm_create_safe(ns, next_id, size as u64, 0, current_pid)
+            .map(|id| ShmHandle { id, phys_addr: 0 })
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 附加共享内存段
+    pub fn shm_attach(&self, id: IpcId, current_pid: u32) -> Result<ShmHandle, IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        shm::shm_attach_safe(ns, id, current_pid)
+            .map(|phys_addr| ShmHandle { id, phys_addr })
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 分离共享内存段
+    pub fn shm_detach(&self, handle: ShmHandle, current_pid: u32) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        shm::shm_detach_safe(ns, handle.id, current_pid).map_err(IpcError::from_i32)
+    }
+
+    /// 删除共享内存段
+    pub fn shm_destroy(&self, id: IpcId) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        shm::shm_destroy_safe(ns, id).map_err(IpcError::from_i32)
+    }
+
+    // ── MsgQ ──
+
+    /// 创建消息队列
+    pub fn msgq_create(&self, current_pid: u32) -> Result<MsgqHandle, IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        msgq::msgq_create_safe(ns, next_id, 0, current_pid)
+            .map(MsgqHandle::from)
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 发送消息
+    pub fn msgq_send(&self, q: MsgqHandle, data: &[u8], current_pid: u32) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        msgq::msgq_send_safe(ns, q.id, 0, Some(data), data.len(), current_pid)
+            .map(|_| ())
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 接收消息
+    pub fn msgq_recv(&self, q: MsgqHandle, buf: &mut [u8]) -> Result<usize, IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let mut type_buf = 0u64;
+        let mut size_buf = 0u64;
+        msgq::msgq_recv_safe(ns, q.id, Some(&mut type_buf), Some(buf), Some(&mut size_buf))
+            .map(|n| n as usize)
+            .map_err(IpcError::from_i32)
+    }
+
+    /// 销毁消息队列
+    pub fn msgq_destroy(&self, q: MsgqHandle) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        msgq::msgq_destroy_safe(ns, q.id).map_err(IpcError::from_i32)
+    }
+
+    // ── Semaphore ──
+
+    /// 创建信号量
+    pub fn sem_create(&self, initial: u32, max_count: u32, current_pid: u32) -> Result<SemHandle, IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        sem::sem_create_safe(ns, next_id, initial, max_count, current_pid)
+            .map(SemHandle::from)
+            .map_err(IpcError::from_i32)
+    }
+
+    /// P 操作 (wait)
+    pub fn sem_wait(&self, s: SemHandle) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        sem::sem_wait_safe(ns, s.id).map_err(IpcError::from_i32)
+    }
+
+    /// V 操作 (signal/post)
+    pub fn sem_post(&self, s: SemHandle) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        sem::sem_post_safe(ns, s.id).map_err(IpcError::from_i32)
+    }
+
+    /// 销毁信号量
+    pub fn sem_destroy(&self, s: SemHandle) -> Result<(), IpcError> {
+        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        sem::sem_destroy_safe(ns, s.id).map_err(IpcError::from_i32)
+    }
+}
+
+// ============================================================================
+// 句柄类型转换
+// ============================================================================
+
+impl ShmHandle {
+    /// 从 ID + 物理地址构造
+    pub fn from_id_and_addr(id: IpcId, phys_addr: u64) -> Self { Self { id, phys_addr } }
+}
+
+impl MsgqHandle {
+    /// 从内核 `IpcId` 构造
+    pub fn from(id: IpcId) -> Self { Self { id } }
+}
+
+impl SemHandle {
+    /// 从内核 `IpcId` 构造
+    pub fn from(id: IpcId) -> Self { Self { id } }
+}
+
+// ============================================================================
+// 便利函数 (顶层)
+// ============================================================================
+
+/// 创建管道
+pub fn pipe_create(current_pid: u32) -> Result<(PipeFd, PipeFd), IpcError> {
+    global().lock().pipe_create(current_pid)
+}
+
+/// 管道读
+pub fn pipe_read(fd: PipeFd, buf: &mut [u8]) -> Result<usize, IpcError> {
+    global().lock().pipe_read(fd, buf)
+}
+
+/// 管道写
+pub fn pipe_write(fd: PipeFd, buf: &[u8]) -> Result<usize, IpcError> {
+    global().lock().pipe_write(fd, buf)
+}
+
+/// 关闭管道
+pub fn pipe_close(fd: PipeFd) -> Result<(), IpcError> {
+    global().lock().pipe_close(fd)
+}
+
+// ============================================================================
+// 便利函数 (顶层 shm/msgq/sem)
+// ============================================================================
+
+/// 创建共享内存段
+pub fn shm_create(current_pid: u32, size: usize) -> Result<ShmHandle, IpcError> {
+    global().lock().shm_create(current_pid, size)
+}
+
+/// 附加共享内存段
+pub fn shm_attach(id: IpcId, current_pid: u32) -> Result<ShmHandle, IpcError> {
+    global().lock().shm_attach(id, current_pid)
+}
+
+/// 分离共享内存段
+pub fn shm_detach(handle: ShmHandle, current_pid: u32) -> Result<(), IpcError> {
+    global().lock().shm_detach(handle, current_pid)
+}
+
+/// 删除共享内存段
+pub fn shm_destroy(id: IpcId) -> Result<(), IpcError> {
+    global().lock().shm_destroy(id)
+}
+
+/// 创建消息队列
+pub fn msgq_create(current_pid: u32) -> Result<MsgqHandle, IpcError> {
+    global().lock().msgq_create(current_pid)
+}
+
+/// 发送消息
+pub fn msgq_send(q: MsgqHandle, data: &[u8], current_pid: u32) -> Result<(), IpcError> {
+    global().lock().msgq_send(q, data, current_pid)
+}
+
+/// 接收消息
+pub fn msgq_recv(q: MsgqHandle, buf: &mut [u8]) -> Result<usize, IpcError> {
+    global().lock().msgq_recv(q, buf)
+}
+
+/// 销毁消息队列
+pub fn msgq_destroy(q: MsgqHandle) -> Result<(), IpcError> {
+    global().lock().msgq_destroy(q)
+}
+
+/// 创建信号量
+pub fn sem_create(initial: u32, max_count: u32, current_pid: u32) -> Result<SemHandle, IpcError> {
+    global().lock().sem_create(initial, max_count, current_pid)
+}
+
+/// P 操作 (wait)
+pub fn sem_wait(s: SemHandle) -> Result<(), IpcError> {
+    global().lock().sem_wait(s)
+}
+
+/// V 操作 (signal/post)
+pub fn sem_post(s: SemHandle) -> Result<(), IpcError> {
+    global().lock().sem_post(s)
+}
+
+/// 销毁信号量
+pub fn sem_destroy(s: SemHandle) -> Result<(), IpcError> {
+    global().lock().sem_destroy(s)
+}
+
+// ============================================================================
+// 旧 shm_mod/msgq_mod/sem_mod 子模块 (向后兼容别名)
+// ============================================================================
+
+/// 共享内存子模块 (别名, 弃用, 使用顶层 `shm_*` 函数)
+#[deprecated(note = "use top-level shm_create / shm_attach / shm_detach / shm_destroy")]
+pub mod shm_mod {
+    #[allow(dead_code)]
+    pub fn create(_size: usize) -> Result<super::ShmHandle, super::IpcError> {
+        super::shm_create(0, _size)
+    }
+    #[allow(dead_code)]
+    pub fn attach(_id: u32) -> Result<super::ShmHandle, super::IpcError> {
+        super::shm_attach(_id, 0)
+    }
+    #[allow(dead_code)]
+    pub fn destroy(_id: u32) -> Result<(), super::IpcError> {
+        super::shm_destroy(_id)
+    }
+}
+
+/// 消息队列子模块 (别名, 弃用, 使用顶层 `msgq_*` 函数)
+#[deprecated(note = "use top-level msgq_create / msgq_send / msgq_recv / msgq_destroy")]
+pub mod msgq_mod {
+    #[allow(dead_code)]
+    pub fn create() -> Result<super::MsgqHandle, super::IpcError> {
+        super::msgq_create(0)
+    }
+    #[allow(dead_code)]
+    pub fn send(_q: super::MsgqHandle, _data: &[u8]) -> Result<(), super::IpcError> {
+        super::msgq_send(_q, _data, 0)
+    }
+    #[allow(dead_code)]
+    pub fn recv(_q: super::MsgqHandle, _buf: &mut [u8]) -> Result<usize, super::IpcError> {
+        super::msgq_recv(_q, _buf)
+    }
+    #[allow(dead_code)]
+    pub fn destroy(_q: super::MsgqHandle) -> Result<(), super::IpcError> {
+        super::msgq_destroy(_q)
+    }
+}
+
+/// 信号量子模块 (别名, 弃用, 使用顶层 `sem_*` 函数)
+#[deprecated(note = "use top-level sem_create / sem_wait / sem_post / sem_destroy")]
+pub mod sem_mod {
+    #[allow(dead_code)]
+    pub fn create(_initial: u32) -> Result<super::SemHandle, super::IpcError> {
+        super::sem_create(_initial, u32::MAX, 0)
+    }
+    #[allow(dead_code)]
+    pub fn wait(_s: super::SemHandle) -> Result<(), super::IpcError> {
+        super::sem_wait(_s)
+    }
+    #[allow(dead_code)]
+    pub fn post(_s: super::SemHandle) -> Result<(), super::IpcError> {
+        super::sem_post(_s)
+    }
+    #[allow(dead_code)]
+    pub fn destroy(_s: super::SemHandle) -> Result<(), super::IpcError> {
+        super::sem_destroy(_s)
+    }
+}

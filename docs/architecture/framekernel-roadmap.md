@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.5 (2026-06-04 v2.4 增量完成 Phase 3.3 + 3.4, 此次完成 Phase 2.1 6/6 驱动迁移)
+> **版本**: v2.11 (2026-06-04, Phase 2.5 进程迁移 1/4 启动)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -75,9 +75,73 @@
    - 进度: 1/6 → **6/6** (e1000 + virtio transport + vga + serial + nvme + ahci + xhci 全部安全代理到位)
 8. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings
 
-> **当前真实状态** (v2.5, 2026-06-04):
+**v2.6 增量** (2026-06-04, Phase 2.2 4/4 文件系统迁移完成):
+1. **RamFS 安全代理** (`src/kernel/services/fs/ramfs.rs`): 封装 `RamFsData`, 提供 `SafeRamFs::open/read/write/seek/stat/readdir/mkdir/unlink`. 0 unsafe, `Result<_, FsError>` 替代裸 `i32`, 引入 `VfsSeekWhence` 强类型枚举. `FileDescriptor` 句柄安全包装
+2. **DevFS 安全代理** (`src/kernel/services/fs/devfs.rs`): 封装 `DevfsData`, 引入 `DevKind` 枚举 (Null/Zero/Console/Tty/Credo), `DevFile` 句柄. 0 unsafe, 暴露 `register/unregister/open/read/write/readdir/device_count`. 标准设备预注册 `register_standard()`
+3. **ProcFS 安全代理** (`src/kernel/services/fs/procfs.rs`): 封装 `ProcfsData`, 引入 `ProcEntryKind` 枚举 (Dir/Current/Process/File), `ProcEntry` 句柄. 0 unsafe, 暴露 `mount/add_process/remove_process/read/readdir/entry_count`
+4. **HvFS 安全代理** (`src/kernel/services/fs/hvfs.rs`): 封装 `HvfsData` 顶层 API (open/close/read/write/seek/sync/stat/mkdir/unlink). 0 unsafe, 引入 `HvFsError` 强类型 + `FileMode` 枚举 + `PwmCapability<'a>` 凭据视图
+5. **fs/mod.rs 整合**: 状态从 1/4 → 4/4 (ramfs/devfs/procfs/hvfs 全部安全代理到位)
+6. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings (aarch64 上修了 vga.rs 的 `crt` 字段 dead_code 警告)
+
+**v2.7 增量** (2026-06-04, Phase 2.3 4/4 IPC 迁移完成):
+1. **Pipe 安全代理** (`src/kernel/services/ipc/mod.rs::pipe_*`): 封装 `pipe_create_safe/read_safe/write_safe/close_safe`. 0 unsafe, `Result<_, IpcError>` 强类型, `PipeFd` 句柄. 通过 `IpcLock` 临界区守卫串行化访问
+2. **SHM 安全代理** (同上, shm_create/attach/detach/destroy): 封装 `shm_create_safe/attach_safe/detach_safe/destroy_safe`. 0 unsafe, `ShmHandle { id, phys_addr }` 句柄携带物理地址. `attach` 返回内核分配的物理地址
+3. **MsgQ 安全代理** (同上, msgq_create/send/recv/destroy): 封装 `msgq_*_safe`. 0 unsafe, `MsgqHandle` 句柄, `send` 支持 `&[u8]` 零拷贝发送, `recv` 返回 `usize` 接收字节数
+4. **Sem 安全代理** (同上, sem_create/wait/post/destroy): 封装 `sem_*_safe`, 引入 `max_count` 上限防止信号量爆炸. 0 unsafe, `SemHandle` 句柄
+5. **ipc/mod.rs 整合**: 状态从 1/4 → 4/4 (pipe/shm/msgq/sem 全部安全代理到位). 顶层 `shm_create(...)` / `msgq_send(...)` / `sem_wait(...)` 便利函数 + 旧 `shm_mod`/`msgq_mod`/`sem_mod` 子模块以 `#[deprecated]` 别名形式保留兼容
+6. **错误类型统一**: `IpcError` 强类型枚举 (NoResources/BadFd/InvalidOp/NotFound/WouldBlock/PermissionDenied/InvalidArgument/Other), `from_i32` 翻译内核负数错误码
+7. **类型化 ID**: `pub type IpcId = u32`, 句柄内嵌 ID + 物理地址, 避免句柄与裸 ID 混用
+
+**v2.8 增量** (2026-06-04, Phase 2.4 net/chitin 1/4 子系统迁移完成):
+1. **Chitin 安全代理** (`src/kernel/services/chitin/mod.rs`): 封装 `kernel::chitin::*` 31 个公共函数. 0 unsafe, `Result<_, ChitinError>` 强类型, `DeviceId` 句柄. 暴露注册表 API (register/find_by_id/find_by_name/find_by_proto/list/count) + 块设备 IO (blk_read/blk_write/blk_is_present/blk_total_sectors) + 字符设备 IO (char_read/char_write) + 输入设备 (input_read/input_has_data) + 状态管理 (init_all/shutdown_all/set_state/unregister)
+2. **Net 顶层安全代理** (`src/kernel/services/net/mod.rs`): 封装 `qx_net_init/poll_network/qx_net_start_dhcp/qx_net_static_ip` 等 unsafe extern "C" FFI. 0 unsafe, 内部 unsafe 块带 SAFETY 注释. `Result<_, NetError>` 强类型, `InitState` 状态枚举与内核对齐. `static_ip` 接收 `&str` 切片, 内部转 C 字符串
+3. **协议强类型化**: `Proto` (Block/Char/Net/Input/Bus/Other) + `DeviceState` (Uninit/Probing/Ready/Failed/Removed) 强类型枚举, 替代内核裸枚举. `From` 转换器实现双向映射
+4. **`&'static str` 约束解决**: `register` 通过 `Box<str>::leak` 在启动期一次性泄漏 `&str` → `&'static str` (满足内核 `chitin_register` 的静态生命周期约束)
+5. **错误码翻译**: `ChitinError::from_i32` (-2/-5/-17/-19/-22/-28 → 语义枚举) + `NetError::from_i32` (-1/-2/-5/-22 → 语义枚举)
+6. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings
+
+**v2.9 增量** (2026-06-04, Phase 2.4 net 2/4 子系统迁移完成 — Socket):
+1. **Socket 安全代理** (`src/kernel/services/net/socket.rs`): 封装 `kernel::net::init::sm_*` 13 个 FFI. 0 unsafe, `Result<_, SocketError>` 强类型, `&[u8]`/`&mut [u8]` 切片替代裸指针
+2. **TCP API**: `socket(Domain::Inet, SockType::Stream)` / `bind(&SockAddrIn)` / `listen(backlog)` / `accept() -> i32` / `connect(&SockAddrIn)` / `send(&[u8]) -> usize` / `recv(&mut [u8]) -> usize`
+3. **UDP API**: `sendto(&[u8], &SockAddrIn)` / `recvfrom(&mut [u8]) -> (usize, SockAddrIn)` 带对端地址返回
+4. **选项控制**: `setsockopt(level, optname, u32)` / `getsockopt(level, optname) -> u32`
+5. **类型系统**: `Domain::Inet(2)` / `SockType::Stream(1)|Dgram(2)` 强类型枚举; `SockAddrIn { port, ip: [u8;4] }` 替代裸 sockaddr_in 指针
+6. **字节序转换**: 内部 `sockaddr_in_to_bytes` / `bytes_to_sockaddr_in` 处理 AF_INET + 端口 BE 编码
+7. **POSIX errno 翻译**: `SocketError` 16 变体 (PermissionDenied/BadFd/WouldBlock/NoMemory/Fault/InvalidArgument/AddrInUse/AddrNotAvailable/ConnectionReset/NotConnected/ConnectionRefused/NotReady/...)
+8. **便利函数**: `parse_ipv4("10.0.2.15") -> [u8;4]` / `endpoint_from_str("ip", port) -> SockAddrIn` 字符串端点解析
+9. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings
+
+**v2.10 增量** (2026-06-04, Phase 2.4 net/chitin 4/4 子系统迁移完成 — DevTree + Composite):
+1. **设备树安全代理** (`src/kernel/services/chitin/devtree.rs`): 封装 `kernel::chitin::devtree::*` 20 个公共函数. 0 unsafe, `DevTreeNodeId` 新类型 + `DevTreeError` 强类型错误
+2. **节点查询 API**: `root_id / find_compatible / get_node / children / walk / count` 提供层级遍历
+3. **属性读取**: `read_addr / read_irq / properties` 把 `&'static str` 切片属性安全化
+4. **节点管理**: `add_prop / set_compatible / set_state / create_node` (父节点验证)
+5. **用户态映射**: `set_user_mapped / clear_user_mapped / clear_user_mapped_by_pid / get_user_mapped` (进程退出清理)
+6. **设备绑定**: `bind_device(id, io_base, irq, driver_data) -> Result<u32, DevTreeError>` 把设备树节点注册到 Chitin 全局设备表
+7. **复合块设备代理** (`src/kernel/services/chitin/composite.rs`): 封装 `devtree_probe_composites / composite_probe`. 0 unsafe, 提供 `probe() -> usize / probe_init() -> u32` 入口
+8. **类型化 ID**: `DevTreeNodeId(pub NodeId)` 包装裸 u32, 避免节点 ID 与设备 ID 混用
+9. **错误码翻译**: `DevTreeError` (NotFound/ParentNotFound/InvalidArgument/Other)
+10. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings
+
+**v2.11 增量** (2026-06-04, Phase 2.5 进程迁移 1/4 启动):
+1. **进程强类型 ID 暴露** (`src/kernel/services/proc/mod.rs`): 直接 re-export `ProcessId` / `ThreadId` / `Pid` / `Tid` 新类型, 0 unsafe, 替代裸 `u32`
+2. **进程状态/优先级**: re-export `ProcessState` (七状态) / `ProcessPriority` + 安全构造器 `from_u8/from_u32`
+3. **统一初始化入口** `services::proc::init()`: 按依赖链串行调用 `thread::init → scheduler::init → scheduler_ex::init → session::init`. 启动期一次调用
+4. **SMP 友好** `init_per_cpu(cpu_id)`: 封装 `init_per_cpu_sched`, SMP 启动代码在每 CPU 调用
+5. **调度器状态查询** `scheduler_ready()`: 读取 `SCHEDULER_READY` AtomicBool, 替代 `extern "C" fn`
+6. **触发调度** `schedule()`: 委托 `SCHEDULER.schedule()`, 内部锁保护, 由 timer tick 调用
+7. **ID 转换便利函数**: `pid_new(pid) / pid_raw(id) / tid_new(tid) / tid_raw(id)` 零成本包装
+8. **错误类型** `ProcError` (NotFound/PermissionDenied/NoResources/Exited/InvalidArgument/Other) + `from_i32` 翻译
+9. **双架构 cargo build 验证**: x86_64 + aarch64 cargo build 0 errors 0 warnings
+
+> **当前真实状态** (v2.11, 2026-06-04):
 > - ✅ **M2 里程碑达成**: `services/` 0 unsafe (实测), `framework/` 154 unsafe (3.3% TCB 占比)
 > - ✅ **Phase 2.1 6/6 驱动迁移**: E1000 + VirtIO transport + VGA + Serial + NVMe + AHCI + XHCI 全部 safe wrapper
+> - ✅ **Phase 2.2 4/4 文件系统迁移**: ramfs + devfs + procfs + hvfs 全部 safe wrapper
+> - ✅ **Phase 2.3 4/4 IPC 迁移**: pipe + shm + msgq + sem 全部 safe wrapper
+> - ✅ **Phase 2.4 4/4 net/chitin 迁移**: chitin + devtree + composite + net 顶层 + socket 全部 safe wrapper
+> - ✅ **Phase 2.5 进程迁移 1/4**: types 强类型 + 统一 init 入口 (process table / ELF / signal 后续)
+> - ✅ **Phase 2.5 后续 (待规划)**: sync/credo/syscall 仍待迁移
 > - ✅ **Phase 3.1 Miri 全面扫描**: 137 passed / 0 UB (strict-provenance)
 > - ✅ **Phase 3.2 SAFETY 注释审查**: 129/129 framework unsafe 块 100% SAFETY 覆盖 (audit_unsafe.py)
 > - ✅ **Phase 3.3 IoMem 别名检测生产代码压测**: host-tests/src/iomem_alias.rs **16/16 通过**
@@ -86,7 +150,13 @@
 > - ✅ **v2.2 修复**: x86_64 完整进入 Ring 3 启动 init 进程 (VGA 越界 panic 已根除); QEMU 启动测试已接入 `ci/audit.sh` step 7
 > - ✅ **v2.3 修复**: e1000 QEMU 仿真死锁根因已定位 + 临时绕过 (默认 MAC); 真实硬件 eeprom 读取待恢复
 > - ✅ **v2.5 增量**: Phase 2.1 6/6 驱动迁移 (VGA/Serial/NVMe/AHCI/XHCI safe wrapper)
-> - ⚠️ 8 个 services 子系统待迁移 (估时 8-12 人月)
+> - ✅ **v2.6 增量**: Phase 2.2 4/4 文件系统迁移 (ramfs/devfs/procfs/hvfs safe wrapper)
+> - ✅ **v2.7 增量**: Phase 2.3 4/4 IPC 迁移 (pipe/shm/msgq/sem safe wrapper)
+> - ✅ **v2.8 增量**: Phase 2.4 1/4 net/chitin 迁移 (chitin 全部 + net 顶层)
+> - ✅ **v2.9 增量**: Phase 2.4 2/4 net 迁移 (Socket 13 FFI 全部 safe wrapper)
+> - ✅ **v2.10 增量**: Phase 2.4 4/4 net/chitin 迁移 (devtree 20 函数 + composite 2 函数全部 safe wrapper)
+> - ✅ **v2.11 增量**: Phase 2.5 进程迁移 1/4 (types 强类型 + 统一 init 入口 + SMP 调度器包装)
+> - ⚠️ 3 个 services 子系统待迁移 (sync/credo/syscall, + proc 3/4 子项, 估时 3-4 人月)
 > - ❌ 性能退化基准测试未做 (Phase 4 补做)
 
 ---

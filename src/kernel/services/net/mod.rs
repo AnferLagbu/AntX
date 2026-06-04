@@ -1,19 +1,179 @@
-//! 网络栈 — smoltcp + 驱动适配 (services 层占位)
+//! 网络子系统 — services 层安全代理
 //!
-//! ## 当前状态: ⏳ 未迁移
+//! ## 状态 (v2.7, 2026-06-04)
 //!
-//! 实际实现仍在 `kernel/net/` 老位置:
-//! - [kernel/net/init.rs](file:///home/anfer/Code/AntX/src/kernel/net/init.rs) — smoltcp 初始化 (42 unsafe)
-//! - [kernel/net/smoltcp/](file:///home/anfer/Code/AntX/src/kernel/net/smoltcp/) — smoltcp vendored 协议栈
-//! - [kernel/net/driver/e1000.rs](file:///home/anfer/Code/AntX/src/kernel/net/driver/e1000.rs) — Intel e1000
+//! 已完成 1/4 子系统迁移 (net 顶层), 封装 `kernel::net::*` 老 API:
+//! - [x] net (本文件) — init / poll / DHCP / 状态查询
+//! - [ ] smoltcp — 协议栈内部 (smoltcp 自身大量 unsafe 在 vendored code, 不在 TCB 范围)
+//! - [ ] e1000/virtio-net — 走 driver 子系统, 已通过 chitin 注册
+//! - [ ] socket API — 后续 Phase 2.4.x
 //!
-//! ## 迁移路径
+//! ## 迁移方法
 //!
-//! 1. e1000 驱动走 `framework::iomem::IoMem` (services/driver/net/e1000.rs 已有演示)
-//! 2. smoltcp FFI 调用走 `framework::dma::DmaStream`
-//! 3. 在 services/net/ 暴露 `pub fn init`, `pub fn poll` 等纯 safe API
+//! 1. 把 `unsafe extern "C" fn qx_net_init` → `safe fn init()`
+//! 2. 把 `unsafe fn poll_network` → `safe fn poll()` (内部仍走 unsafe, 但锁定语义保留)
+//! 3. `Result<_, NetError>` 替代 `i32` 返回码
 //!
-//! ## 估算: 1 人月
-//!
-//! 评估日期: 2026-06-03
-//! 关键依赖: framework::iomem / framework::dma / framework::irqline 必须先就绪
+//! 评估日期: 2026-06-04
+
+use crate::kernel::net;
+
+pub mod socket;
+
+pub use socket::{
+    Domain, SockAddrIn, SockType, SocketError, SocketResult,
+    socket, bind, listen, accept, connect,
+    send, recv, sendto, recvfrom, close,
+    setsockopt, getsockopt, poll_all,
+    parse_ipv4, endpoint_from_str,
+};
+
+// ============================================================================
+// 错误
+// ============================================================================
+
+/// 网络操作错误 (强类型, 替代内核 `i32`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetError {
+    /// 网络未就绪
+    NotReady,
+    /// DHCP 未配置
+    NotConfigured,
+    /// 参数无效
+    InvalidArgument,
+    /// 设备未找到
+    NotFound,
+    /// IO 失败
+    Io,
+    /// 其他
+    Other(i32),
+}
+
+impl NetError {
+    pub fn from_i32(rc: i32) -> Self {
+        match rc {
+            -1 => Self::NotReady,
+            -2 => Self::NotFound,
+            -5 => Self::Io,
+            -22 => Self::InvalidArgument,
+            _ => Self::Other(rc),
+        }
+    }
+}
+
+/// services 层结果类型别名
+pub type NetResult<T> = Result<T, NetError>;
+
+// ============================================================================
+// 状态
+// ============================================================================
+
+/// 网络初始化状态 (与 kernel::net::init::InitState 对齐)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum InitState {
+    Uninitialized = 0,
+    HardwareProbed = 1,
+    InterfaceReady = 2,
+    FullyInitialized = 3,
+    Failed = 255,
+}
+
+impl From<net::init::InitState> for InitState {
+    fn from(s: net::init::InitState) -> Self {
+        match s {
+            net::init::InitState::Uninitialized => Self::Uninitialized,
+            net::init::InitState::HardwareProbed => Self::HardwareProbed,
+            net::init::InitState::InterfaceReady => Self::InterfaceReady,
+            net::init::InitState::FullyInitialized => Self::FullyInitialized,
+            net::init::InitState::Failed => Self::Failed,
+        }
+    }
+}
+
+// ============================================================================
+// 顶层 API
+// ============================================================================
+
+/// 初始化网络子系统
+///
+/// 探测网卡 (e1000 / virtio-net), 启动协议栈, 启动 DHCP 异步获取 IP。
+/// 如果无 NIC 则进入 "NoNetwork" 状态。
+///
+/// # Safety
+/// 调用方保证单线程上下文 (启动期) 调用一次。
+pub fn init() {
+    // SAFETY: 单线程启动期调用, 内部全局状态串行化
+    unsafe { net::init::qx_net_init() }
+}
+
+/// 轮询网络栈 (驱动 TX/RX、定时器、DHCP)
+///
+/// 在 timer ISR 或网络任务中调用, 内部 `try_lock` 避免阻塞。
+/// 若网络锁已被持有则直接返回, 不会等待。
+pub fn poll() {
+    // SAFETY: try_lock 保证 ISR 安全
+    unsafe { net::init::poll_network() }
+}
+
+/// 启动 DHCP (异步, 由 timer ISR 驱动 poll 完成)
+///
+/// 调用后 DHCP Discover 会在下一个 timer tick 发出。
+/// 用户态通过 `is_configured()` 轮询等待完成。
+pub fn start_dhcp() -> NetResult<()> {
+    // SAFETY: 由 services 串行调用, NET_LOCK 由内核管理
+    let rc = unsafe { net::init::qx_net_start_dhcp() };
+    if rc == 0 { Ok(()) } else { Err(NetError::from_i32(rc)) }
+}
+
+/// 设置静态 IP (格式: "10.0.2.15/24,10.0.2.2")
+///
+/// # 参数
+/// - `cidr_str`: CIDR 字符串, 如 "192.168.1.100/24"
+/// - `gw_str`: 网关地址字符串, 如 "192.168.1.1"
+///
+/// # 返回
+/// 成功返回 `Ok(())`, 失败返回 `NetError`
+pub fn static_ip(cidr_str: &str, gw_str: &str) -> NetResult<()> {
+    // 复制到 C 字符串 (添加 NUL 终止符)
+    let mut cidr_c = alloc::vec::Vec::with_capacity(cidr_str.len() + 1);
+    cidr_c.extend_from_slice(cidr_str.as_bytes());
+    cidr_c.push(0);
+
+    let mut gw_c = alloc::vec::Vec::with_capacity(gw_str.len() + 1);
+    gw_c.extend_from_slice(gw_str.as_bytes());
+    gw_c.push(0);
+
+    // SAFETY: cidr_c/gw_c 由 Box 持有, 内核借用其指针期间不释放
+    let rc = unsafe {
+        let cidr_ptr = cidr_c.as_ptr();
+        let gw_ptr = gw_c.as_ptr();
+        net::init::qx_net_static_ip(cidr_ptr, gw_ptr)
+    };
+    if rc == 0 { Ok(()) } else { Err(NetError::from_i32(rc)) }
+}
+
+// ============================================================================
+// 状态查询
+// ============================================================================
+
+/// 网络是否已完全初始化
+pub fn is_initialized() -> bool {
+    net::init::is_network_initialized()
+}
+
+/// 网络是否已完成 DHCP/Static IP 配置
+pub fn is_configured() -> bool {
+    net::init::is_network_configured()
+}
+
+/// 当前初始化状态
+pub fn state() -> InitState {
+    InitState::from(net::init::get_init_state())
+}
+
+/// 重置网络状态 (恢复机制)
+pub fn reset_state() {
+    // SAFETY: 恢复域串行调用
+    unsafe { net::init::reset_network_state() }
+}
