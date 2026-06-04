@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 闭包作用域 API (services 层)
 //!
 //! 提供 `with` / `with_mut` / `try_with` 闭包形式的锁使用方式,

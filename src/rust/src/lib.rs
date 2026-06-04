@@ -366,7 +366,7 @@ pub extern "C" fn kernel_init() {
 
         crate::kernel::framework::smp::init();
         crate::klog_boot_info!("Test mode: SMP BSP registered");
-        crate::kernel::framework::proc_legacy::scheduler::init();
+        crate::kernel::framework::proc_tcb_legacy::scheduler::init();
         crate::klog_boot_info!("Test mode: Scheduler ready");
 
         #[cfg(feature = "fault_injection")]
@@ -437,7 +437,7 @@ pub extern "C" fn kernel_init() {
         // Register PMM + PROC domains before interrupts are enabled so timer IRQ
         // won't race with domain registration on the RECOVERY_MANAGER spinlock
         crate::kernel::framework::mm::pmm::pmm_register_barrier_domain();
-        crate::kernel::framework::proc_legacy::process::proc_register_barrier_domain();
+        crate::kernel::framework::proc_tcb_legacy::process::proc_register_barrier_domain();
         #[cfg(target_arch = "aarch64")]
         unsafe {
             crate::kernel::framework::arch::aarch64::barrier::enable_barrier_sgi();
@@ -461,8 +461,8 @@ pub extern "C" fn kernel_init() {
         }
 
         // 8. Scheduler
-        crate::kernel::framework::proc_legacy::scheduler::init();
-        crate::kernel::framework::proc_legacy::scheduler_ex::init();
+        crate::kernel::framework::proc_tcb_legacy::scheduler::init();
+        crate::kernel::framework::proc_tcb_legacy::scheduler_ex::init();
         crate::klog_boot_info!("Scheduler ready");
 
         // 9. VFS
@@ -546,7 +546,7 @@ pub extern "C" fn kernel_init() {
 
         // 12. Launch first user process
         unsafe {
-            crate::kernel::framework::proc_legacy::api::launch_first_user_process();
+            crate::kernel::framework::proc_tcb_legacy::api::launch_first_user_process();
         }
         // unreachable: launch_first_user_process is noreturn
     } // end #[cfg(not(feature = "kernel_test"))]

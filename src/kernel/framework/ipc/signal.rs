@@ -4,7 +4,7 @@
 //! 功能等价于 POSIX signals
 
 use super::types::*;
-use crate::kernel::framework::proc_legacy::api::{
+use crate::kernel::framework::proc_tcb_legacy::api::{
     process_get_by_pid, process_get_current_pwm, process_get_pwm_by_pid,
 };
 

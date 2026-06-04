@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 系统调用 (Syscall) — services 层安全代理
 //!
 //! ## 状态 (v2.18, 2026-06-04)

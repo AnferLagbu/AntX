@@ -27,7 +27,7 @@ pub fn rcu_read_lock() {
     // RCU 读临界区由 rcu_read_lock/unlock 配对; 嵌套由 per-CPU 计数器维护。
     // 无内存操作, 仅写 per-CPU 变量 (cli 上下文或单线程启动路径保证独占)。
     unsafe {
-        crate::kernel::framework::sync_legacy::rcu::rcu_read_lock();
+        crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_lock();
     }
 }
 
@@ -35,7 +35,7 @@ pub fn rcu_read_lock() {
 pub fn rcu_read_unlock() {
     // SAFETY: 同 `rcu_read_lock` 的契约; 减少 per-CPU 嵌套计数, 0 时退出临界区。
     unsafe {
-        crate::kernel::framework::sync_legacy::rcu::rcu_read_unlock();
+        crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_unlock();
     }
 }
 
@@ -82,7 +82,7 @@ pub fn synchronize_rcu() {
     // (会自旋等待所有 CPU, 嵌套屏蔽会死锁)。由 `synchronize_rcu` 内部
     // 通过 per-CPU 计数器自旋等待所有 CPU 退出临界区。
     unsafe {
-        crate::kernel::framework::sync_legacy::rcu::synchronize_rcu();
+        crate::kernel::framework::sync_tcb_legacy::rcu::synchronize_rcu();
     }
 }
 
@@ -98,7 +98,7 @@ pub fn synchronize_rcu() {
 ///    (不睡眠, 不持有锁, 不递归注册)
 /// 3. `head` 指向的对象 (通常是包含 RcuHead 字段的外层结构) 的释放时机
 ///    必须严格通过此 call_rcu 注册, 不可直接 deallocate
-pub fn call_rcu(head: &crate::kernel::framework::sync_legacy::rcu::RcuHead, func: unsafe fn(*mut crate::kernel::framework::sync_legacy::rcu::RcuHead)) {
+pub fn call_rcu(head: &crate::kernel::framework::sync_tcb_legacy::rcu::RcuHead, func: unsafe fn(*mut crate::kernel::framework::sync_tcb_legacy::rcu::RcuHead)) {
     // SAFETY:
     //   1. `head` 是有效 `RcuHead` 引用, 通过 `&` 借用保证存活
     //   2. `func` 是合法的 `unsafe fn(*mut RcuHead)`, 由调用方实现
@@ -107,8 +107,8 @@ pub fn call_rcu(head: &crate::kernel::framework::sync_legacy::rcu::RcuHead, func
     //   4. 内部 call_rcu 会在宽限期结束时调用 func(head_ptr), 由 head 的实际
     //      类型保证 layout 兼容
     unsafe {
-        crate::kernel::framework::sync_legacy::rcu::call_rcu(
-            head as *const _ as *mut crate::kernel::framework::sync_legacy::rcu::RcuHead,
+        crate::kernel::framework::sync_tcb_legacy::rcu::call_rcu(
+            head as *const _ as *mut crate::kernel::framework::sync_tcb_legacy::rcu::RcuHead,
             func,
         );
     }

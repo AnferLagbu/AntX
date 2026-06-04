@@ -199,7 +199,7 @@ impl VirtQueue {
     pub fn commit_and_kick(&mut self) {
         unsafe {
             // Full memory barrier: ensure descriptor and ring writes are globally visible
-            crate::kernel::framework::sync_legacy::arch::fence();
+            crate::kernel::framework::sync_tcb_legacy::arch::fence();
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
             core::ptr::write_volatile(&mut (*self.avail).idx, self.next_avail_idx);
         }

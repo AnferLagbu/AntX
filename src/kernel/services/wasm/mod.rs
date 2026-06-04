@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! WASM 沙箱 (services 层占位)
 //!
 //! ## 当前状态: ⏳ 未迁移 (Phase 7 未完成)

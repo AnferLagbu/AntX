@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
 //! 进程文件系统 (ProcFS) — services 层安全代理 (Phase 2.2.3)

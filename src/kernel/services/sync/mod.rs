@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 同步原语 — services 层安全代理
 //!
 //! ## 状态 (v2.12, 2026-06-04)
@@ -28,36 +29,36 @@
 // ============================================================================
 
 /// 锁状态枚举
-pub use crate::kernel::framework::sync_legacy::types::LockState;
+pub use crate::kernel::framework::sync_tcb_legacy::types::LockState;
 
 /// `try_lock` 结果
-pub use crate::kernel::framework::sync_legacy::types::TryLockResult;
+pub use crate::kernel::framework::sync_tcb_legacy::types::TryLockResult;
 
 /// 自旋锁内核表示 (FFI 桥接用, 一般不直接访问)
-pub use crate::kernel::framework::sync_legacy::types::{SpinLockInner, MutexInner, RwLockInner, CondVarInner};
+pub use crate::kernel::framework::sync_tcb_legacy::types::{SpinLockInner, MutexInner, RwLockInner, CondVarInner};
 
 /// 中断保存标志
-pub use crate::kernel::framework::sync_legacy::types::IrqSaveFlags;
+pub use crate::kernel::framework::sync_tcb_legacy::types::IrqSaveFlags;
 
 /// 锁统计信息 (仅 `lock_stats` feature 启用时可用)
 #[cfg(feature = "lock_stats")]
-pub use crate::kernel::framework::sync_legacy::types::LockStatistics;
+pub use crate::kernel::framework::sync_tcb_legacy::types::LockStatistics;
 
 // ============================================================================
 // RAII Guard (类型安全, 替代裸 lock/unlock 配对)
 // ============================================================================
 
 /// 自旋锁 RAII 守卫 (`&mut T` 借用于锁内, 析构自动释放)
-pub use crate::kernel::framework::sync_legacy::types::SpinLockGuard;
+pub use crate::kernel::framework::sync_tcb_legacy::types::SpinLockGuard;
 
 /// 互斥锁 RAII 守卫
-pub use crate::kernel::framework::sync_legacy::types::MutexGuard;
+pub use crate::kernel::framework::sync_tcb_legacy::types::MutexGuard;
 
 /// 读锁 RAII 守卫
-pub use crate::kernel::framework::sync_legacy::types::RwLockReadGuard;
+pub use crate::kernel::framework::sync_tcb_legacy::types::RwLockReadGuard;
 
 /// 写锁 RAII 守卫
-pub use crate::kernel::framework::sync_legacy::types::RwLockWriteGuard;
+pub use crate::kernel::framework::sync_tcb_legacy::types::RwLockWriteGuard;
 
 // ============================================================================
 // 中断控制 (用于 irqsave 风格的锁)
@@ -67,12 +68,12 @@ pub use crate::kernel::framework::sync_legacy::types::RwLockWriteGuard;
 ///
 /// **调用方约束**: 必须在中断上下文或单 CPU 上下文调用, 配对使用 `restore_interrupts`.
 pub fn disable_interrupts() -> IrqSaveFlags {
-    crate::kernel::framework::sync_legacy::spinlock::disable_interrupts()
+    crate::kernel::framework::sync_tcb_legacy::spinlock::disable_interrupts()
 }
 
 /// 恢复中断到指定 flags
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
-    crate::kernel::framework::sync_legacy::spinlock::restore_interrupts(flags)
+    crate::kernel::framework::sync_tcb_legacy::spinlock::restore_interrupts(flags)
 }
 
 /// 中断禁用 RAII 守卫 (析构时自动恢复中断)
@@ -101,17 +102,17 @@ impl Drop for IrqDisabled {
 
 /// 写内存屏障 (跨 CPU 顺序)
 pub fn smp_wmb() {
-    crate::kernel::framework::sync_legacy::spinlock::smp_wmb();
+    crate::kernel::framework::sync_tcb_legacy::spinlock::smp_wmb();
 }
 
 /// 读内存屏障
 pub fn smp_rmb() {
-    crate::kernel::framework::sync_legacy::spinlock::smp_rmb();
+    crate::kernel::framework::sync_tcb_legacy::spinlock::smp_rmb();
 }
 
 /// 读写全屏障
 pub fn smp_mb() {
-    crate::kernel::framework::sync_legacy::spinlock::smp_mb();
+    crate::kernel::framework::sync_tcb_legacy::spinlock::smp_mb();
 }
 
 // ============================================================================
@@ -120,12 +121,12 @@ pub fn smp_mb() {
 
 /// 当前进程 PID (0 表示内核线程 / 启动期)
 pub fn current_pid() -> u32 {
-    crate::kernel::framework::proc_legacy::api::process_get_current_pid()
+    crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid()
 }
 
 /// 主动让出 CPU
 pub fn scheduler_yield() {
-    crate::kernel::framework::proc_legacy::api::scheduler_yield();
+    crate::kernel::framework::proc_tcb_legacy::api::scheduler_yield();
 }
 
 // ============================================================================

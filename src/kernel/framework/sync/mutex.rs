@@ -17,7 +17,7 @@
 
 use core::ops::{Deref, DerefMut};
 
-use crate::kernel::framework::sync_legacy::mutex::Mutex as InnerMutex;
+use crate::kernel::framework::sync_tcb_legacy::mutex::Mutex as InnerMutex;
 
 /// TCB 睡眠互斥锁。
 pub struct Mutex<T> {
@@ -59,7 +59,7 @@ impl<T: Default> Default for Mutex<T> {
 
 /// 互斥锁 RAII Guard — drop 时自动释放。
 pub struct MutexGuard<'a, T> {
-    guard: crate::kernel::framework::sync_legacy::types::MutexGuard<'a, T>,
+    guard: crate::kernel::framework::sync_tcb_legacy::types::MutexGuard<'a, T>,
 }
 
 impl<'a, T> Deref for MutexGuard<'a, T> {

@@ -18,9 +18,9 @@ use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{fence, Ordering};
 
-pub use crate::kernel::framework::sync_legacy::spinlock::{disable_interrupts, restore_interrupts};
+pub use crate::kernel::framework::sync_tcb_legacy::spinlock::{disable_interrupts, restore_interrupts};
 
-use crate::kernel::framework::sync_legacy::types::SpinLockInner;
+use crate::kernel::framework::sync_tcb_legacy::types::SpinLockInner;
 
 /// TCB 自旋锁。
 ///

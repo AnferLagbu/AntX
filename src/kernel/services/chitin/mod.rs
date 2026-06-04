@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Chitin 设备驱动框架 — services 层安全代理
 //!
 //! ## 状态 (v2.7, 2026-06-04)

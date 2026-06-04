@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
 //! xHCI (eXtensible Host Controller Interface) USB 3.0 驱动 — services 层安全代理 (Phase 2.1.6)

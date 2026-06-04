@@ -673,48 +673,48 @@ fn sys_mount(
 // ============================================================================
 
 fn sys_getpid() -> i64 {
-    crate::kernel::framework::proc_legacy::api::process_get_current_pid() as i64
+    crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid() as i64
 }
 
 fn sys_getppid() -> i64 {
-    let pid = crate::kernel::framework::proc_legacy::api::process_get_current_pid();
-    crate::kernel::framework::proc_legacy::api::proc_get_ppid(pid) as i64
+    let pid = crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid();
+    crate::kernel::framework::proc_tcb_legacy::api::proc_get_ppid(pid) as i64
 }
 
 fn sys_sched_yield() -> i64 {
-    crate::kernel::framework::proc_legacy::api::scheduler_yield();
+    crate::kernel::framework::proc_tcb_legacy::api::scheduler_yield();
     0
 }
 
 const PRIO_PROCESS: i32 = 0;
 
-fn nice_to_priority(nice: i32) -> crate::kernel::framework::proc_legacy::types::ProcessPriority {
+fn nice_to_priority(nice: i32) -> crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority {
     let clamped = nice.clamp(-20, 19);
     if clamped < -10 {
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::RealTime
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::RealTime
     } else if clamped < 0 {
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::High
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::High
     } else if clamped < 10 {
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::Normal
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::Normal
     } else if clamped < 19 {
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::Low
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::Low
     } else {
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::Idle
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::Idle
     }
 }
 
-fn priority_to_nice(p: crate::kernel::framework::proc_legacy::types::ProcessPriority) -> i32 {
+fn priority_to_nice(p: crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority) -> i32 {
     match p {
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::RealTime => -20,
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::High => -10,
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::Normal => 0,
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::Low => 10,
-        crate::kernel::framework::proc_legacy::types::ProcessPriority::Idle => 19,
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::RealTime => -20,
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::High => -10,
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::Normal => 0,
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::Low => 10,
+        crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority::Idle => 19,
     }
 }
 
 fn sys_nice(inc: i32) -> i64 {
-    let pid = crate::kernel::framework::proc_legacy::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid();
     // SAFETY: sys_getpriority 是 libc 兼容的 FFI；传入有效 PRIO_PROCESS
     // 常量与进程 pid (由 process_get_current_pid 返回)。
     let current_nice = unsafe { sys_getpriority(PRIO_PROCESS, pid) as i32 };
@@ -729,11 +729,11 @@ fn sys_getpriority(which: i32, who: u32) -> i64 {
         return Errno::EINVAL.as_ret();
     }
     let pid = if who == 0 {
-        crate::kernel::framework::proc_legacy::api::process_get_current_pid()
+        crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid()
     } else {
         who
     };
-    use crate::kernel::framework::proc_legacy::process::PROCESS_TABLE;
+    use crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE;
     let proc = match PROCESS_TABLE.get(pid) {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),
@@ -749,11 +749,11 @@ fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
     }
     let clamped = prio.clamp(-20, 19);
     let pid = if who == 0 {
-        crate::kernel::framework::proc_legacy::api::process_get_current_pid()
+        crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid()
     } else {
         who
     };
-    use crate::kernel::framework::proc_legacy::process::PROCESS_TABLE;
+    use crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE;
     let proc = match PROCESS_TABLE.get(pid) {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),
@@ -765,7 +765,7 @@ fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
 }
 
 fn sys_fork() -> i64 {
-    crate::kernel::framework::proc_legacy::api::sys_fork() as i64
+    crate::kernel::framework::proc_tcb_legacy::api::sys_fork() as i64
 }
 
 fn sys_execve(
@@ -813,7 +813,7 @@ fn sys_execve(
         }
     }
 
-    let result = crate::kernel::framework::proc_legacy::api::proc_exec_replace(path, argv, argc);
+    let result = crate::kernel::framework::proc_tcb_legacy::api::proc_exec_replace(path, argv, argc);
     if result < 0 {
         Errno::ENOENT.as_ret()
     } else {
@@ -822,12 +822,12 @@ fn sys_execve(
 }
 
 fn sys_exit(status: i32) -> i64 {
-    crate::kernel::framework::proc_legacy::api::process_exit(status as u32);
+    crate::kernel::framework::proc_tcb_legacy::api::process_exit(status as u32);
     0
 }
 
 fn sys_wait4(_pid: i32) -> i64 {
-    let result = crate::kernel::framework::proc_legacy::api::proc_wait_child(0);
+    let result = crate::kernel::framework::proc_tcb_legacy::api::proc_wait_child(0);
     result as i64
 }
 
@@ -1279,8 +1279,8 @@ fn sys_pwm_get() -> i64 {
 }
 
 fn sys_pwm_set(pwm: u64) -> i64 {
-    let pid = crate::kernel::framework::proc_legacy::api::process_get_current_pid();
-    crate::kernel::framework::proc_legacy::api::proc_set_pwm(pid, pwm) as i64
+    let pid = crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid();
+    crate::kernel::framework::proc_tcb_legacy::api::proc_set_pwm(pid, pwm) as i64
 }
 
 // ============================================================================
@@ -1671,7 +1671,7 @@ fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
     }
     let entry_size = core::mem::size_of::<ProcListEntry>() as u32;
     let mut count: i32 = 0;
-    let table = &crate::kernel::framework::proc_legacy::process::PROCESS_TABLE;
+    let table = &crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE;
     table.for_each(|proc| {
         if (count as u32) < max_entries {
             let entry_ptr =
@@ -1696,7 +1696,7 @@ fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
 }
 
 fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
-    crate::kernel::framework::proc_legacy::api::proc_set_priority(pid, priority) as i64
+    crate::kernel::framework::proc_tcb_legacy::api::proc_set_priority(pid, priority) as i64
 }
 
 // ============================================================================
@@ -1922,18 +1922,18 @@ fn sys_kill(pid: i32, sig: i32) -> i64 {
         return Errno::ESRCH.as_ret();
     }
     if sig == 0 {
-        let target = crate::kernel::framework::proc_legacy::process::PROCESS_TABLE.get(pid as u32);
+        let target = crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE.get(pid as u32);
         if target.is_some() {
             0
         } else {
             Errno::ESRCH.as_ret()
         }
     } else if sig == SIGTERM || sig == SIGKILL {
-        let target = crate::kernel::framework::proc_legacy::process::PROCESS_TABLE.get(pid as u32);
+        let target = crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE.get(pid as u32);
         match target {
             Some(_proc) => {
                 unsafe {
-                    crate::kernel::framework::proc_legacy::process::PROCESS_TABLE.remove_and_free(pid as u32);
+                    crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE.remove_and_free(pid as u32);
                 }
                 0
             }
@@ -2114,20 +2114,20 @@ fn sys_getpgid(pid: i32) -> i64 {
         return Errno::EINVAL.as_ret();
     }
     let _target_pid = if pid == 0 {
-        crate::kernel::framework::proc_legacy::api::process_get_current_pid()
+        crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid()
     } else {
         pid as u32
     };
-    crate::kernel::framework::proc_legacy::api::process_get_current_pid() as i64
+    crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid() as i64
 }
 
 fn sys_setsid() -> i64 {
-    let pid = crate::kernel::framework::proc_legacy::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid();
     pid as i64
 }
 
 fn sys_gettid() -> i64 {
-    crate::kernel::framework::proc_legacy::api::process_get_current_pid() as i64
+    crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid() as i64
 }
 
 // ============================================================================
@@ -2297,18 +2297,18 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
 
 fn sys_credo_proc_cputime(pid: u32) -> i64 {
     let target_pid = if pid == 0 {
-        crate::kernel::framework::proc_legacy::api::process_get_current_pid()
+        crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid()
     } else {
         pid
     };
-    use crate::kernel::framework::proc_legacy::process::PROCESS_TABLE;
-    use crate::kernel::framework::proc_legacy::scheduler_ex::SCHEDULER_EX;
+    use crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE;
+    use crate::kernel::framework::proc_tcb_legacy::scheduler_ex::SCHEDULER_EX;
     match PROCESS_TABLE.get(target_pid) {
         Some(_) => {
             let current = SCHEDULER_EX
                 .current
                 .load(core::sync::atomic::Ordering::Acquire)
-                as *mut crate::kernel::framework::proc_legacy::thread::Thread;
+                as *mut crate::kernel::framework::proc_tcb_legacy::thread::Thread;
             if current.is_null() {
                 return -1;
             }
@@ -2409,7 +2409,7 @@ fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
     }
 
     let cr3 =
-        crate::kernel::framework::proc_legacy::user_proc::user_entry_cr3.load(core::sync::atomic::Ordering::SeqCst);
+        crate::kernel::framework::proc_tcb_legacy::user_proc::user_entry_cr3.load(core::sync::atomic::Ordering::SeqCst);
     if cr3 == 0 {
         return Errno::ENODEV.as_ret();
     }

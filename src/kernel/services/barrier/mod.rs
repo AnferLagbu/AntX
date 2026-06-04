@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 故障恢复 — 栏栈恢复 (services 层)
 
 pub mod attribution;

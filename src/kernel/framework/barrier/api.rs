@@ -28,7 +28,7 @@ static BOOT_FINGERPRINTS_CHECKED: AtomicBool = AtomicBool::new(false);
 
 #[no_mangle]
 pub fn recovery_barrier_maintenance() {
-    use crate::kernel::framework::proc_legacy::scheduler::TICK_COUNT;
+    use crate::kernel::framework::proc_tcb_legacy::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
 
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -73,7 +73,7 @@ pub fn recovery_domain_unregister(domain_id: u64) -> i32 {
 #[cfg(feature = "kernel_test")]
 #[no_mangle]
 pub fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
-    use crate::kernel::framework::proc_legacy::scheduler::TICK_COUNT;
+    use crate::kernel::framework::proc_tcb_legacy::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
     let mgr = super::RECOVERY_MANAGER.lock();
     let rollbacks = mgr.cascade_rollback(domain_id, tick, crash_fingerprint);
@@ -96,7 +96,7 @@ pub fn recovery_panic_flag_clear() {
 
 #[no_mangle]
 pub fn recovery_try_recover_from_idt() -> i32 {
-    use crate::kernel::framework::proc_legacy::scheduler::TICK_COUNT;
+    use crate::kernel::framework::proc_tcb_legacy::scheduler::TICK_COUNT;
     let tick = TICK_COUNT.load(Ordering::SeqCst);
 
     if RECOVERY_ATTEMPTED.swap(true, Ordering::SeqCst) {

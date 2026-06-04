@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
 //! AHCI (Advanced Host Controller Interface) SATA 驱动 — services 层安全代理 (Phase 2.1.4)

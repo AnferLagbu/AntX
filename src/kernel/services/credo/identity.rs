@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! PWM 身份 (Identity) — services 层安全代理
 //!
 //! ## 状态 (v2.16, 2026-06-04)

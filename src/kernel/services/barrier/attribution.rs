@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 栏栈恢复 — 跨 framework/services 边界的故障归属 (services 层)
 //!
 //! ## 框内核中的 TCB/Services 故障边界

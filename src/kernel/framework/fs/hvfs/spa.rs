@@ -7,7 +7,7 @@ use crate::kernel::framework::fs::hvfs::checksum::HvChecksum;
 use crate::kernel::framework::fs::hvfs::dva::HvDva;
 use crate::kernel::framework::fs::hvfs::metaslab::*;
 use crate::kernel::framework::fs::hvfs::vdev::*;
-use crate::kernel::framework::sync_legacy::mutex::Mutex;
+use crate::kernel::framework::sync_tcb_legacy::mutex::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 

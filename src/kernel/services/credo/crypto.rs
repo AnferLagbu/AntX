@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Credo 密码学原语 — services 层安全代理
 //!
 //! ## 状态 (v2.17, 2026-06-04)

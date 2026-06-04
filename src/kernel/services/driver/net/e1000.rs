@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //! 所有 MMIO 操作通过 `framework::IoMem` 安全代理,
 //! 替代原始 e1000 驱动中的裸 `mmio_read32`/`mmio_write32` (56 unsafe 行)。

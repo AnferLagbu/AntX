@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
 //! 字符设备驱动 — services 层 (Phase 2.1.5)

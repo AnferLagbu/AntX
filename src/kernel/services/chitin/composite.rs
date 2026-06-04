@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 复合块设备 (Composite Block) — services 层安全代理
 //!
 //! ## 状态 (v2.10, 2026-06-04)

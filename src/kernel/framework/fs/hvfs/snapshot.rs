@@ -1,6 +1,6 @@
 use crate::kernel::framework::fs::hvfs::bp::HvBlockPointer;
 use crate::kernel::framework::fs::hvfs::dataset::HvDataset;
-use crate::kernel::framework::sync_legacy::mutex::Mutex;
+use crate::kernel::framework::sync_tcb_legacy::mutex::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 

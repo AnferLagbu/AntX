@@ -43,7 +43,7 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
 
     // 5. 触发调度器 tick (统一入口: MLFQ 进程调度器负责线程记账 + 调度决策)
     // ✅ 安全检查: 仅当调度器已初始化时才触发 tick (与 ARM 版本一致, 避免竞态崩溃)
-    if crate::kernel::framework::proc_legacy::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
+    if crate::kernel::framework::proc_tcb_legacy::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
         extern "C" {
             fn scheduler_tick_mlfq();
         }

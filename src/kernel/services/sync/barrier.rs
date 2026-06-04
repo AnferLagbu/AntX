@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! N-线程集合点 (latch-style Barrier)
 //!
 //! ## 语义

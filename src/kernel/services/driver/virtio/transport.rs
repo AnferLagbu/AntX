@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
 //! VirtIO MMIO Transport — services 层安全代理

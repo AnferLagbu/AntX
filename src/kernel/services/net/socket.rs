@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Socket 子系统 — services 层安全代理
 //!
 //! ## 状态 (v2.8, 2026-06-04)

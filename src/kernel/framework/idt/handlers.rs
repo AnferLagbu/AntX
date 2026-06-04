@@ -186,10 +186,10 @@ impl ExceptionHandler for PageFaultHandler {
         let analysis = Self::analyze_error_code(unsafe { (*frame).err_code });
 
         if unsafe { (*frame).is_user_mode() } {
-            if crate::kernel::framework::proc_legacy::user_proc::try_expand_user_stack(fault_addr) {
+            if crate::kernel::framework::proc_tcb_legacy::user_proc::try_expand_user_stack(fault_addr) {
                 return RecoveryAction::Recovered;
             }
-            let pid = crate::kernel::framework::proc_legacy::api::process_get_current_pid();
+            let pid = crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid();
             return RecoveryAction::TerminateProcess(pid);
         }
 

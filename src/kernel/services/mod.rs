@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! QueenX Services 层 — 100% safe Rust (去特权)
 //!
 //! **禁止** 包含任何 `unsafe` 代码。

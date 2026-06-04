@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 设备树 (Device Tree) — services 层安全代理
 //!
 //! ## 状态 (v2.10, 2026-06-04)

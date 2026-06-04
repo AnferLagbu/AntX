@@ -582,7 +582,7 @@ impl IdtManager {
             }
 
             if !error_flags.contains(super::types::ErrorFlags::PRESENT) {
-                if crate::kernel::framework::proc_legacy::user_proc::try_expand_user_stack(fault_addr) {
+                if crate::kernel::framework::proc_tcb_legacy::user_proc::try_expand_user_stack(fault_addr) {
                     return;
                 }
             }

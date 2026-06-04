@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 中断安全自旋锁 (services 层 — 类型别名指向 framework)
 //!
 //! ## 与 `SpinLock` 的区别

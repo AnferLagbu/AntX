@@ -5,7 +5,7 @@
 
 use super::types::*;
 use crate::kernel::framework::userptr::UserRefMut;
-use crate::kernel::framework::proc_legacy::api::process_get_current_pid;
+use crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid;
 
 /// 查找空闲共享内存段槽位
 fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&mut ShmSegment> {

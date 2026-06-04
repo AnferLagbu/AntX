@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 会话生命周期 (services 层)
 //!
 //! ## 框内核中的表达

@@ -517,7 +517,7 @@ pub(crate) mod raw {
         kstack: u64,
         ustack: u64,
     ) {
-        use crate::kernel::framework::proc_legacy::scheduler::SchedPolicy;
+        use crate::kernel::framework::proc_tcb_legacy::scheduler::SchedPolicy;
         // SAFETY: kproc_ptr 来自 alloc_kernel_process, 已清零, 字段可被 ptr::write 覆盖。
         unsafe {
             core::ptr::write(&mut (*kproc_ptr).pid, ProcessId(pid));
@@ -739,7 +739,7 @@ impl UserProcManager {
         }
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
         proc.store_kernel_stack(kstack_top);
-        crate::kernel::framework::proc_legacy::process::kernel_stack_write_canary(kstack_top);
+        crate::kernel::framework::proc_tcb_legacy::process::kernel_stack_write_canary(kstack_top);
 
         proc.set_pid(pid);
         proc.set_entry(info.entry);

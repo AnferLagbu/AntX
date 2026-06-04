@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! 身份与权限 — PWM/能力矩阵/会话 (services 层)
 //!
 //! ## 框内核中的 PWID 表达
