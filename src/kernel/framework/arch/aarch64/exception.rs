@@ -452,7 +452,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
         }
 
         // 仅当 scheduler 已初始化时触发调度
-        if crate::kernel::framework::proc_tcb_legacy::scheduler::SCHEDULER_READY.load(Ordering::Acquire) {
+        if crate::kernel::framework::proc::scheduler::SCHEDULER_READY.load(Ordering::Acquire) {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }
@@ -583,7 +583,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         }
 
         // 仅当 scheduler 已初始化时触发调度
-        if crate::kernel::framework::proc_tcb_legacy::scheduler::SCHEDULER_READY
+        if crate::kernel::framework::proc::scheduler::SCHEDULER_READY
             .load(core::sync::atomic::Ordering::Acquire)
         {
             extern "C" {

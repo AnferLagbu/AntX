@@ -228,9 +228,9 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     crate::kernel::framework::smp::register_cpu(lapic_id);
 
-    crate::kernel::framework::proc_tcb_legacy::cpu_queue::init_cpu_queue(cpu_index, 0);
+    crate::kernel::framework::proc::cpu_queue::init_cpu_queue(cpu_index, 0);
 
-    crate::kernel::framework::proc_tcb_legacy::scheduler::init_per_cpu_sched(cpu_index);
+    crate::kernel::framework::proc::scheduler::init_per_cpu_sched(cpu_index);
 
     unsafe {
         core::arch::asm!("sti", options(nomem, nostack));

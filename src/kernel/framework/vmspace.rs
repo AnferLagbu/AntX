@@ -147,6 +147,9 @@ impl VmSpace {
     /// 调用方确保当前 CPU 不在中断上下文中。
     pub unsafe fn activate(&self) {
         let vmm = get_vmm();
+        // SAFETY: `vmm.switch_page_table()` 内部用 cli 串行化, 无并发;
+        // pt_root 由本 VmSpace 持有且未释放, 指向已建立的页表基址。
+        // 外层 `unsafe fn` 已声明 SAFETY 契约 (见 docstring).
         unsafe {
             vmm.switch_page_table(self.pt_root.as_u64());
         }
@@ -158,6 +161,8 @@ impl VmSpace {
     /// 调用前确保无 CPU 运行在此地址空间上。
     pub unsafe fn destroy(&self) {
         let vmm = get_vmm();
+        // SAFETY: `vmm.destroy_page_table()` 仅释放本 VmSpace 持有的 pt_root,
+        // 调用方已通过外层 `unsafe fn` 契约保证无 CPU 在此地址空间上运行.
         unsafe {
             vmm.destroy_page_table(self.pt_root.as_u64());
         }

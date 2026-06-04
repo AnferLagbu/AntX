@@ -13,7 +13,7 @@
 
 use super::types::*;
 use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
-use crate::kernel::framework::proc_tcb_legacy::api::process_get_current_pid;
+use crate::kernel::framework::proc::api::process_get_current_pid;
 
 static PIPE_LOCK: spin::Mutex<()> = spin::Mutex::new(());
 

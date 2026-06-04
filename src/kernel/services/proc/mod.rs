@@ -3,7 +3,7 @@
 //!
 //! ## 状态 (v2.11, 2026-06-04)
 //!
-//! Phase 2.5 进程迁移 (1/4): 封装 `kernel::crate::kernel::framework::proc_tcb_legacy::types` 强类型与状态/ID API:
+//! Phase 2.5 进程迁移 (1/4): 封装 `kernel::crate::kernel::framework::proc::types` 强类型与状态/ID API:
 //! - [x] types — `Pid` / `Tid` / `ProcessId` / `ThreadId` / `ProcessState` / `ProcessPriority`
 //! - [x] session — 初始化入口
 //! - [x] scheduler / scheduler_ex — 调度器初始化入口
@@ -30,13 +30,13 @@ pub mod table;
 // ============================================================================
 
 /// 进程 ID (新类型, 替代裸 `u32`)
-pub use crate::kernel::framework::proc_tcb_legacy::types::{Pid, Tid, ProcessId, ThreadId};
+pub use crate::kernel::framework::proc::types::{Pid, Tid, ProcessId, ThreadId};
 
 /// 进程状态 (七状态模型)
-pub use crate::kernel::framework::proc_tcb_legacy::types::ProcessState;
+pub use crate::kernel::framework::proc::types::ProcessState;
 
 /// 进程优先级
-pub use crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority;
+pub use crate::kernel::framework::proc::types::ProcessPriority;
 
 // ============================================================================
 // 错误
@@ -88,17 +88,17 @@ pub type ProcResult<T> = Result<T, ProcError>;
 ///
 /// 由启动期 `kernel::init` 调用一次。
 pub fn init() {
-    crate::kernel::framework::proc_tcb_legacy::thread::init();
-    crate::kernel::framework::proc_tcb_legacy::scheduler::init();
-    crate::kernel::framework::proc_tcb_legacy::scheduler_ex::init();
-    crate::kernel::framework::proc_tcb_legacy::session::init();
+    crate::kernel::framework::proc::thread::init();
+    crate::kernel::framework::proc::scheduler::init();
+    crate::kernel::framework::proc::scheduler_ex::init();
+    crate::kernel::framework::proc::session::init();
 }
 
 /// 初始化指定 CPU 的每 CPU 调度队列
 ///
 /// 由 SMP 启动代码在每个 CPU 上调用一次。
 pub fn init_per_cpu(cpu_id: u32) {
-    crate::kernel::framework::proc_tcb_legacy::scheduler::init_per_cpu_sched(cpu_id);
+    crate::kernel::framework::proc::scheduler::init_per_cpu_sched(cpu_id);
 }
 
 // ============================================================================
@@ -107,14 +107,14 @@ pub fn init_per_cpu(cpu_id: u32) {
 
 /// 调度器是否已就绪
 pub fn scheduler_ready() -> bool {
-    crate::kernel::framework::proc_tcb_legacy::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire)
+    crate::kernel::framework::proc::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire)
 }
 
 /// 触发调度 (在 timer tick 或阻塞唤醒后调用)
 ///
 /// 由架构中断处理代码调用。
 pub fn schedule() {
-    crate::kernel::framework::proc_tcb_legacy::scheduler::SCHEDULER.schedule();
+    crate::kernel::framework::proc::scheduler::SCHEDULER.schedule();
 }
 
 // ============================================================================

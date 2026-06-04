@@ -285,7 +285,7 @@ pub type SignalResult<T> = Result<T, SignalError>;
 /// 向指定进程发送信号
 ///
 /// **实现**: 设置 `signal_pending` 位, 由内核在返回用户态前检查并分发
-pub fn send(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, sig: Signal) -> SignalResult<()> {
+pub fn send(pid: crate::kernel::framework::proc::types::Pid, sig: Signal) -> SignalResult<()> {
     if sig == Signal::NONE {
         // POSIX: kill(pid, 0) 仅检查进程存在, 不发送
         return crate::kernel::services::proc::table::with(pid, |_p| ()).ok_or(SignalError::NoSuchProcess);
@@ -298,12 +298,12 @@ pub fn send(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, sig: Sig
 }
 
 /// 检查进程是否有信号待处理
-pub fn pending(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<u64> {
+pub fn pending(pid: crate::kernel::framework::proc::types::Pid) -> Option<u64> {
     crate::kernel::services::proc::table::signal_get(pid)
 }
 
 /// 清除进程的信号位
-pub fn clear(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, mask: u64) -> SignalResult<()> {
+pub fn clear(pid: crate::kernel::framework::proc::types::Pid, mask: u64) -> SignalResult<()> {
     crate::kernel::services::proc::table::signal_clear(pid, mask)
         .map_err(|_| SignalError::ProcessExited)
 }
@@ -313,22 +313,22 @@ pub fn clear(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, mask: u
 // ============================================================================
 
 /// 终止进程 (等价 kill(pid, SIGKILL))
-pub fn kill(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> SignalResult<()> {
+pub fn kill(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Kill))
 }
 
 /// 中断进程 (等价 kill(pid, SIGINT))
-pub fn interrupt(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> SignalResult<()> {
+pub fn interrupt(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Int))
 }
 
 /// 停止进程 (等价 kill(pid, SIGSTOP))
-pub fn stop(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> SignalResult<()> {
+pub fn stop(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Stop))
 }
 
 /// 唤醒已停止的进程 (等价 kill(pid, SIGCONT))
-pub fn cont(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> SignalResult<()> {
+pub fn cont(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Cont))
 }
 

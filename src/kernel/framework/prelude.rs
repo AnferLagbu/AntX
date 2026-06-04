@@ -7,12 +7,12 @@ pub use super::userctx::UserContext;
 pub use super::cpu_local::CpuLocal;
 
 pub use super::sync::spinlock::SpinLock;
-pub use super::sync::spinlock::SpinLockGuard;
+pub use super::sync::types::SpinLockGuard;
 pub use super::sync::mutex::Mutex;
-pub use super::sync::mutex::MutexGuard;
+pub use super::sync::types::MutexGuard;
 pub use super::sync::rwlock::RwLock;
-pub use super::sync::rwlock::RwLockReadGuard;
-pub use super::sync::rwlock::RwLockWriteGuard;
+pub use super::sync::types::RwLockReadGuard;
+pub use super::sync::types::RwLockWriteGuard;
 pub use super::sync::rcu::{
     rcu_read_lock, rcu_read_unlock,
     rcu_dereference, rcu_assign_pointer,

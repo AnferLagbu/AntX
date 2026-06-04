@@ -1,6 +1,6 @@
-use crate::kernel::framework::proc_tcb_legacy::scheduler_ex::{SchedulerEx, ThreadState};
-use crate::kernel::framework::proc_tcb_legacy::thread::Thread;
-use crate::kernel::framework::proc_tcb_legacy::types::{
+use crate::kernel::framework::proc::scheduler_ex::{SchedulerEx, ThreadState};
+use crate::kernel::framework::proc::thread::Thread;
+use crate::kernel::framework::proc::types::{
     ThreadPriority, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM,
     SCHED_LEVEL_3_QUANTUM,
 };

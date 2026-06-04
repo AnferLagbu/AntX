@@ -44,7 +44,7 @@ use super::*;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
-use crate::kernel::framework::sync_tcb_legacy::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
 static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 

@@ -92,7 +92,7 @@ static mut ISR_TABLE: [Option<InterruptHandler>; MAX_ISR_VECTORS] = [None; MAX_I
 
 /// 注册中断向量对应的 ISR 处理器。
 ///
-/// # Safety
+/// # SAFETY
 ///
 /// 1. 仅在启动单线程阶段 (无并发中断) 调用, 写 ISR_TABLE 安全
 /// 2. `vector` 必须小于 `MAX_ISR_VECTORS` (内部会检查)
@@ -102,6 +102,8 @@ unsafe fn register_isr(vector: u8, handler: InterruptHandler) {
     // SAFETY: 单线程初始化上下文, 无竞争。
     let idx = vector as usize;
     if idx < MAX_ISR_VECTORS {
+        // SAFETY: 启动阶段单线程, ISR_TABLE 全局表只被本函数写, 后续只读。
+        // idx 已通过 `idx < MAX_ISR_VECTORS` 边界检查, 不会越界写入。
         unsafe { ISR_TABLE[idx] = Some(handler); }
     }
 }

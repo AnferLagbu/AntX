@@ -1,6 +1,6 @@
 use super::assert_eq_test;
 use super::check;
-use crate::kernel::framework::proc_tcb_legacy::types::*;
+use crate::kernel::framework::proc::types::*;
 use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
@@ -144,7 +144,7 @@ fn test_process_state_lifecycle() -> TestResult {
 }
 
 fn test_stack_canary() -> TestResult {
-    use crate::kernel::framework::proc_tcb_legacy::process::KERNEL_STACK_CANARY;
+    use crate::kernel::framework::proc::process::KERNEL_STACK_CANARY;
     check!(
         KERNEL_STACK_CANARY == 0xDEADBEEF_CAFEBABE,
         "canary value mismatch"

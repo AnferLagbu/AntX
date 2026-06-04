@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.21 (2026-06-04, M5 lint 强化 + legacy 重命名 — services 强制 #![deny(unsafe_code)], `sync_legacy`/`proc_legacy` → `sync_tcb_legacy`/`proc_tcb_legacy` 语义重命名)
+> **版本**: v2.22 (2026-06-04, M5 sync/proc 终极合并 + TCB 单一入口)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -256,18 +256,18 @@
 >     - `services/` 物理禁止 unsafe (待加 `#![deny(unsafe_code)]` lint, 后续 Phase 2.0 lint 集成时启用)
 >     - `kernel/mod.rs` 入口仅 2 个 `pub mod` 声明, 是框内核架构的可见标志
 
-> **v2.21 增量** (2026-06-04, M5 lint 强化 + 语义重命名):
-> 1. **services 强制 `#![deny(unsafe_code)]`**: 44 个 services `.rs` 文件全部顶部添加 `#![deny(unsafe_code)]` 内层属性, 编译期禁止任何 unsafe 块/函数/extern. 任何后续 regression 都会立即在 `cargo build` 阶段 fail, 而非运行时崩溃
-> 2. **编译验证**: `cargo build --target x86_64-unknown-none` 与 `--target aarch64-unknown-none` **双双 0 errors 0 warnings** — `deny` lint 实际生效 (若有 unsafe 必然编译失败, 此即"实测" 0 unsafe 的硬证明)
-> 3. **`sync_legacy` → `sync_tcb_legacy` 语义重命名**: 原 `framework/sync_legacy/` (3127 LoC) 改名为 `framework/sync_tcb_legacy/`, 强调其 TCB 内部实现身份, 区别于 `framework/sync/` (842 LoC, 含新 TCB 原语 OnceLock/OnceCell/IrqSpinLock 的对外 API). 这是 v2.0 声明的 P1-7 任务的命名清理延续
-> 4. **`proc_legacy` → `proc_tcb_legacy` 语义重命名**: 同上, 强调该目录是 TCB 进程管理原始实现, 区别于 `services/proc/` 安全代理
-> 5. **全量引用更新**: 27 个引用 `_legacy` 路径的源文件 (含 framework 的 fs/mm/ipc/chitin/syscall/timer/tests/services 各层) 通过 `sed` 批量更新到新名称, 无遗漏
-> 6. **架构清晰度**: 命名后, 任何开发者能立即从目录名区分:
->    - `framework/{sync,proc}_tcb_legacy/` = TCB 原始实现 (内部, 演进中)
->    - `framework/sync/` = TCB 现代 API (含 OnceLock 等新原语, 对外)
+> **v2.22 增量** (2026-06-04, M5 sync/proc 终极合并 + TCB 单一入口):
+> 1. **`sync_tcb_legacy/` → `framework/sync/` 终极合并**: M5.6-M5.11 完成的 sync 合并闭环. 3127 LoC 的 `sync_tcb_legacy/` 全量合并到 `framework/sync/`, 8 个子模块 (`spinlock`/`mutex`/`rwlock`/`rcu`/`atomic`/`seqlock`/`types`/`arch`) 加上现代 TCB 原语 (`once_lock`/`once_cell`/`irq_spinlock`) 共 11 个子模块, 现在全部统一在 `framework/sync/` 一个目录下, 命名不再有 "legacy" 后缀
+> 2. **`proc_tcb_legacy/` → `framework/proc/` 重命名**: M5.12 完成. 原 `framework/proc_tcb_legacy/` (12 子模块, 7096 LoC) 改名为 `framework/proc/`, 与 `framework/sync/` 对齐. 12 个子模块 (`types`/`process`/`thread`/`session`/`elf`/`api`/`scheduler`/`scheduler_ex`/`cfs`/`cpu_queue`/`oomd`/`user_proc`) 天然就是按子域拆分, 不再需要二次 sub-directory 拆分
+> 3. **`IrqSpinLock` 重写**: 旧的 `IrqSpinLock<T>` 包装旧 `sync/spinlock.rs` 的 `SpinLock<T>`, 现统一到 `sync/spinlock.rs` 的 raw `SpinLock` (无泛型). 重写为 `UnsafeCell<SpinLock>` + `UnsafeCell<T>`, 通过 `cli` + 自旋锁串行化访问. 行为完全保留, unsafe 集中, SAFETY 注释完备
+> 4. **`prelude.rs` 路径修正**: `SpinLockGuard`/`MutexGuard`/`RwLockReadGuard`/`RwLockWriteGuard` 实际定义在 `sync::types`, 而非 `sync::spinlock/mutex/rwlock`. 修正 prelude 重新导出路径, 避免 "private struct import" 错误
+> 5. **全量引用更新**: 30 个引用 `proc_tcb_legacy` 路径的源文件通过 `sed` 批量更新, 0 残留
+> 6. **编译验证**: `cargo build --target x86_64-unknown-none` 与 `--target aarch64-unknown-none` **双双 0 errors 0 warnings** (合并后)
+> 7. **P1-7 完全闭环**: 至此 framework 顶层 TCB 目录对齐:
+>    - `framework/sync/` = 同步原语 TCB 唯一入口 (11 子模块)
+>    - `framework/proc/` = 进程管理 TCB 唯一入口 (12 子模块)
 >    - `services/{sync,proc}/` = 业务层 100% safe 代理, 强制 deny unsafe
-> 7. **P1-7 闭环**: 此前"sync_legacy"与"sync"两个相似名称造成架构混淆, v2.21 通过 `_tcb_legacy` 后缀明确表达"这是 TCB 层的 legacy 路径, 演进后将被 framework/sync 完全吸收", 为后续 M5.x 的最终合并留出明确语义
-> 8. **后续 M5.x 计划**: (a) `sync_tcb_legacy/` 实际合并到 `sync/`, 统一 TCB 入口; (b) `proc_tcb_legacy/` 按进程表 CRUD / ELF / signal / sched 四个子域拆分到 `framework/proc/{table,elf,signal,sched}/` 与 `services/proc/` 平行对齐; (c) CI 接入 `cargo clippy -- -D unsafe-code` 作为 fail-fast
+> 8. **后续 M5.x 计划**: (a) `framework/proc/user_proc.rs` 与 `framework/proc/types.rs` 重叠定义清理; (b) CI 接入 `cargo clippy -- -D unsafe-code` 作为 fail-fast; (c) 性能基准测试 (Phase 4)
 > - ⚠️ 性能退化基准测试未做 (Phase 4 补做)
 
 ---

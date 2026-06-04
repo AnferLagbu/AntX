@@ -11,7 +11,7 @@ use crate::kernel::framework::credo::types::{CapBits, CapDomain};
 use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::vmm::get_vmm;
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};
-use crate::kernel::framework::proc_tcb_legacy::process::PROCESS_TABLE;
+use crate::kernel::framework::proc::process::PROCESS_TABLE;
 use crate::klog_info;
 use crate::klog_warn;
 use core::sync::atomic::Ordering;

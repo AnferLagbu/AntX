@@ -22,34 +22,34 @@
 //!
 //! 评估日期: 2026-06-04
 
-use crate::kernel::framework::proc_tcb_legacy::process::{self, PROCESS_TABLE};
-use crate::kernel::framework::proc_tcb_legacy::types::ProcessState;
-use crate::kernel::framework::proc_tcb_legacy::types::ProcessPriority;
+use crate::kernel::framework::proc::process::{self, PROCESS_TABLE};
+use crate::kernel::framework::proc::types::ProcessState;
+use crate::kernel::framework::proc::types::ProcessPriority;
 
 // ============================================================================
 // 强类型 re-export
 // ============================================================================
 
 /// 进程调度策略 (从 `proc::scheduler` 透传)
-pub use crate::kernel::framework::proc_tcb_legacy::scheduler::SchedPolicy;
+pub use crate::kernel::framework::proc::scheduler::SchedPolicy;
 
 /// 进程句柄 (新类型包装, 表示对表项的活跃引用)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProcessHandle {
     /// 进程 PID
-    pub pid: crate::kernel::framework::proc_tcb_legacy::types::Pid,
+    pub pid: crate::kernel::framework::proc::types::Pid,
 }
 
 impl ProcessHandle {
     /// 构造新句柄
     #[inline]
-    pub const fn new(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Self {
+    pub const fn new(pid: crate::kernel::framework::proc::types::Pid) -> Self {
         Self { pid }
     }
 
     /// 获取 PID
     #[inline]
-    pub const fn pid(self) -> crate::kernel::framework::proc_tcb_legacy::types::Pid {
+    pub const fn pid(self) -> crate::kernel::framework::proc::types::Pid {
         self.pid
     }
 }
@@ -82,7 +82,7 @@ pub type TableResult<T> = Result<T, TableError>;
 /// 分配一个新 PID
 ///
 /// **返回**: 成功返回 PID, 表已满返回 `TableError::TableFull`.
-pub fn allocate_pid() -> TableResult<crate::kernel::framework::proc_tcb_legacy::types::Pid> {
+pub fn allocate_pid() -> TableResult<crate::kernel::framework::proc::types::Pid> {
     PROCESS_TABLE
         .allocate_pid()
         .ok_or(TableError::TableFull)
@@ -95,7 +95,7 @@ pub fn allocate_pid() -> TableResult<crate::kernel::framework::proc_tcb_legacy::
 /// 增加进程引用计数
 ///
 /// **返回**: 成功返回 (), 进程不存在返回 `NotFound`.
-pub fn try_inc_ref(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> TableResult<()> {
+pub fn try_inc_ref(pid: crate::kernel::framework::proc::types::Pid) -> TableResult<()> {
     if PROCESS_TABLE.try_inc_ref(pid) {
         Ok(())
     } else {
@@ -104,7 +104,7 @@ pub fn try_inc_ref(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -
 }
 
 /// 减少引用计数, 归零时回收 PCB
-pub fn dec_ref_and_maybe_free(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) {
+pub fn dec_ref_and_maybe_free(pid: crate::kernel::framework::proc::types::Pid) {
     PROCESS_TABLE.dec_ref_and_maybe_free(pid);
 }
 
@@ -118,7 +118,7 @@ pub fn dec_ref_and_maybe_free(pid: crate::kernel::framework::proc_tcb_legacy::ty
 /// ```ignore
 /// let state = with(handle.pid(), |p| p.get_state());
 /// ```
-pub fn with<F, R>(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, f: F) -> Option<R>
+pub fn with<F, R>(pid: crate::kernel::framework::proc::types::Pid, f: F) -> Option<R>
 where
     F: FnOnce(&process::Process) -> R,
 {
@@ -126,7 +126,7 @@ where
 }
 
 /// 在持有表锁的情况下, 对进程执行可变闭包
-pub fn with_mut<F, R>(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, f: F) -> Option<R>
+pub fn with_mut<F, R>(pid: crate::kernel::framework::proc::types::Pid, f: F) -> Option<R>
 where
     F: FnOnce(&mut process::Process) -> R,
 {
@@ -138,68 +138,68 @@ where
 // ============================================================================
 
 /// 获取进程状态
-pub fn get_state(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<ProcessState> {
+pub fn get_state(pid: crate::kernel::framework::proc::types::Pid) -> Option<ProcessState> {
     with(pid, |p| p.get_state())
 }
 
 /// 设置进程状态 (安全版本, 自动检查状态转换合法性)
-pub fn set_state(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, state: ProcessState) -> TableResult<()> {
+pub fn set_state(pid: crate::kernel::framework::proc::types::Pid, state: ProcessState) -> TableResult<()> {
     with_mut(pid, |p| p.set_state_safe(state))
         .ok_or(TableError::NotFound)?
         .map_err(|_| TableError::InvalidStateTransition)
 }
 
 /// 获取进程优先级
-pub fn get_priority(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<ProcessPriority> {
+pub fn get_priority(pid: crate::kernel::framework::proc::types::Pid) -> Option<ProcessPriority> {
     with(pid, |p| p.get_priority())
 }
 
 /// 设置进程优先级
-pub fn set_priority(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, priority: ProcessPriority) -> TableResult<()> {
+pub fn set_priority(pid: crate::kernel::framework::proc::types::Pid, priority: ProcessPriority) -> TableResult<()> {
     with_mut(pid, |p| p.set_priority(priority));
     Ok(())
 }
 
 /// 是否内核进程
-pub fn is_kernel(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<bool> {
+pub fn is_kernel(pid: crate::kernel::framework::proc::types::Pid) -> Option<bool> {
     with(pid, |p| p.is_kernel())
 }
 
 /// 设置内核/用户标志
-pub fn set_kernel(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, is_kernel: bool) -> TableResult<()> {
+pub fn set_kernel(pid: crate::kernel::framework::proc::types::Pid, is_kernel: bool) -> TableResult<()> {
     with_mut(pid, |p| p.set_kernel(is_kernel));
     Ok(())
 }
 
 /// 获取调度策略
-pub fn get_sched_policy(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<SchedPolicy> {
+pub fn get_sched_policy(pid: crate::kernel::framework::proc::types::Pid) -> Option<SchedPolicy> {
     with(pid, |p| p.get_sched_policy())
 }
 
 /// 设置调度策略
-pub fn set_sched_policy(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, policy: SchedPolicy) -> TableResult<()> {
+pub fn set_sched_policy(pid: crate::kernel::framework::proc::types::Pid, policy: SchedPolicy) -> TableResult<()> {
     with_mut(pid, |p| p.set_sched_policy(policy));
     Ok(())
 }
 
 /// 获取 RT 优先级 (0-99)
-pub fn get_rt_priority(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<u8> {
+pub fn get_rt_priority(pid: crate::kernel::framework::proc::types::Pid) -> Option<u8> {
     with(pid, |p| p.get_rt_priority())
 }
 
 /// 设置 RT 优先级
-pub fn set_rt_priority(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, priority: u8) -> TableResult<()> {
+pub fn set_rt_priority(pid: crate::kernel::framework::proc::types::Pid, priority: u8) -> TableResult<()> {
     with_mut(pid, |p| p.set_rt_priority(priority));
     Ok(())
 }
 
 /// 获取进程 PMM (Per-Memory Mapping) 字节数
-pub fn get_pwm(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<u64> {
+pub fn get_pwm(pid: crate::kernel::framework::proc::types::Pid) -> Option<u64> {
     with(pid, |p| p.get_pwm())
 }
 
 /// 设置 PMM
-pub fn set_pwm(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, pwm: u64) -> TableResult<()> {
+pub fn set_pwm(pid: crate::kernel::framework::proc::types::Pid, pwm: u64) -> TableResult<()> {
     with_mut(pid, |p| p.set_pwm(pwm));
     Ok(())
 }
@@ -209,18 +209,18 @@ pub fn set_pwm(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, pwm: 
 // ============================================================================
 
 /// 设置待处理信号位
-pub fn signal_set(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, sig: u32) -> TableResult<()> {
+pub fn signal_set(pid: crate::kernel::framework::proc::types::Pid, sig: u32) -> TableResult<()> {
     with_mut(pid, |p| p.signal_pending_set(sig));
     Ok(())
 }
 
 /// 获取待处理信号位图
-pub fn signal_get(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) -> Option<u64> {
+pub fn signal_get(pid: crate::kernel::framework::proc::types::Pid) -> Option<u64> {
     with(pid, |p| p.signal_pending_get())
 }
 
 /// 清除待处理信号位
-pub fn signal_clear(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid, mask: u64) -> TableResult<()> {
+pub fn signal_clear(pid: crate::kernel::framework::proc::types::Pid, mask: u64) -> TableResult<()> {
     with_mut(pid, |p| p.signal_pending_clear(mask));
     Ok(())
 }
@@ -264,12 +264,12 @@ where
 /// 移除并释放进程 PCB
 ///
 /// **安全保证**: 内部引用计数归零后才真正释放内存.
-pub fn remove_and_free(pid: crate::kernel::framework::proc_tcb_legacy::types::Pid) {
+pub fn remove_and_free(pid: crate::kernel::framework::proc::types::Pid) {
     PROCESS_TABLE.remove_and_free(pid);
 }
 
 /// 强制分配 PID (内核线程专用, 0/1/2 等保留 PID)
-pub fn allocate_reserved_pid() -> TableResult<crate::kernel::framework::proc_tcb_legacy::types::Pid> {
+pub fn allocate_reserved_pid() -> TableResult<crate::kernel::framework::proc::types::Pid> {
     // 启动期特殊 PID (0=kthread, 1=init) 由 thread 模块单独分配
     // 普通进程用 allocate_pid
     allocate_pid()

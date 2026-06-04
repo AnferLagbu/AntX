@@ -1,0 +1,78 @@
+# QueenX CI Local Targets
+#
+# Usage:
+#   make -f Makefile.ci ci              # Full CI flow
+#   make -f Makefile.ci ci-audit        # SAFETY + boundary + deadlock audit
+#   make -f Makefile.ci ci-cargo        # cargo check (x86_64 + aarch64)
+#   make -f Makefile.ci ci-unsafe-scan  # services 0-unsafe scan
+#   make -f Makefile.ci ci-fix          # auto-fix where possible
+
+LOG_DIR := build/log
+PY := python3
+
+.PHONY: ci ci-audit ci-cargo ci-unsafe-scan ci-fix ci-clean help
+
+help:
+	@echo "QueenX CI Targets"
+	@echo ""
+	@echo "  make -f Makefile.ci ci              - Full CI flow"
+	@echo "  make -f Makefile.ci ci-audit        - SAFETY + boundary + deadlock audit"
+	@echo "  make -f Makefile.ci ci-cargo        - cargo check (x86_64 + aarch64)"
+	@echo "  make -f Makefile.ci ci-unsafe-scan  - services 0-unsafe scan"
+	@echo "  make -f Makefile.ci ci-fix          - auto-fix where possible"
+	@echo "  make -f Makefile.ci ci-clean        - clean log dir"
+	@echo ""
+
+# Full CI
+ci: ci-unsafe-scan ci-audit ci-cargo
+	@echo ""
+	@echo "=========================================="
+	@echo "QueenX Framekernel Compliance: PASS"
+	@echo "=========================================="
+
+# Unsafe scan (uses Python script for accurate comment filtering)
+ci-unsafe-scan:
+	@echo "[1/3] services 0-unsafe scan..."
+	@mkdir -p $(LOG_DIR)
+	@$(PY) scripts/ci_check_services_unsafe.py
+
+# Audit
+ci-audit:
+	@echo "[2/3] SAFETY + boundary + deadlock audit..."
+	@mkdir -p $(LOG_DIR)
+	@echo "  - SAFETY comment audit (M6.1)..."
+	@$(PY) scripts/audit_safety_coverage.py > $(LOG_DIR)/safety_audit.txt 2>&1
+	@echo "  - services->framework boundary (M6.3)..."
+	@$(PY) scripts/audit_services_boundary.py > $(LOG_DIR)/services_boundary.txt 2>&1
+	@echo "  - deadlock matrix (M6.2)..."
+	@$(PY) scripts/audit_deadlock_matrix.py > $(LOG_DIR)/deadlock_matrix.txt 2>&1
+	@if grep -q "CRITICAL" $(LOG_DIR)/deadlock_matrix.txt; then \
+		echo "FAIL: deadlock matrix CRITICAL" ; \
+		head -50 $(LOG_DIR)/deadlock_matrix.txt ; \
+		exit 1 ; \
+	fi
+	@echo "PASS: all audits pass"
+
+# Cargo check
+ci-cargo:
+	@echo "[3/3] cargo check (x86_64 + aarch64)..."
+	@mkdir -p $(LOG_DIR)
+	@cd src/rust && cargo check --target x86_64-unknown-none 2>&1 | tee ../../$(LOG_DIR)/cargo_check_x86_64.txt
+	@cd src/rust && cargo check --target aarch64-unknown-none 2>&1 | tee ../../$(LOG_DIR)/cargo_check_aarch64.txt
+	@if grep -q "^error\[" $(LOG_DIR)/cargo_check_x86_64.txt $(LOG_DIR)/cargo_check_aarch64.txt 2>/dev/null; then \
+		echo "FAIL: cargo check failed" ; \
+		exit 1 ; \
+	fi
+	@echo "PASS: cargo check"
+
+# Auto-fix
+ci-fix:
+	@echo "Running auto-fix..."
+	@echo "  - cargo fix --allow-dirty"
+	@cd src/rust && cargo fix --target x86_64-unknown-none --allow-dirty --allow-staged 2>&1 | tail -10 || true
+	@echo "PASS: auto-fix complete (please re-run make ci)"
+
+# Clean
+ci-clean:
+	@rm -rf $(LOG_DIR)
+	@echo "PASS: clean"

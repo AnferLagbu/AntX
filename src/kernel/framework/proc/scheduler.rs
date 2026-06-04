@@ -549,7 +549,7 @@ impl Scheduler {
 
         if let Some(next_ptr_raw) = next_ptr {
             unsafe {
-                crate::kernel::framework::proc_tcb_legacy::api::update_current_process_ptr(next_ptr_raw as u64);
+                crate::kernel::framework::proc::api::update_current_process_ptr(next_ptr_raw as u64);
             }
         }
 
@@ -647,7 +647,7 @@ impl Scheduler {
             }
         }
 
-        crate::kernel::framework::sync_tcb_legacy::rcu::rcu_note_quiescent_state();
+        crate::kernel::framework::sync::rcu::rcu_note_quiescent_state();
 
         Some(next)
     }
@@ -873,7 +873,7 @@ impl Scheduler {
     pub fn tick(&self, cpu_id: usize) {
         // SMP: 禁用中断保护整个 tick 临界区
         // 防止非中断上下文的 schedule() 调用与 timer ISR 的 tick() 并发修改 per-CPU 状态
-        let flags = crate::kernel::framework::sync_tcb_legacy::spinlock::disable_interrupts();
+        let flags = crate::kernel::framework::sync::spinlock::disable_interrupts();
 
         let new_tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
         let per_cpu = per_cpu_for(cpu_id as u32);
@@ -894,8 +894,8 @@ impl Scheduler {
             crate::kernel::framework::barrier::reset::bsr::clear_panic_state();
         }
 
-        crate::kernel::framework::proc_tcb_legacy::oomd::OOMD.tick();
-        crate::kernel::framework::proc_tcb_legacy::scheduler_ex::SCHEDULER_EX.tick_accounting();
+        crate::kernel::framework::proc::oomd::OOMD.tick();
+        crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
 
         // Periodic CFS boost — prevent vruntime starvation
         if new_tick.is_multiple_of(CFS_BOOST_INTERVAL_TICKS) {
@@ -1104,7 +1104,7 @@ impl Scheduler {
             self.schedule();
         }
 
-        crate::kernel::framework::sync_tcb_legacy::spinlock::restore_interrupts(&flags);
+        crate::kernel::framework::sync::spinlock::restore_interrupts(&flags);
     }
 
     pub fn boost_priority(&self) {

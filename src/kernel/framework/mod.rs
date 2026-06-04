@@ -84,8 +84,10 @@ pub mod klog;
 pub mod config;
 pub mod smp;
 pub mod lib;
-pub mod sync_tcb_legacy;
-pub mod proc_tcb_legacy;
+pub mod sync;
+pub mod alloc;
+pub mod sched;
+pub mod proc;
 pub mod syscall;
 pub mod timer;
 pub mod wasm;
@@ -98,10 +100,6 @@ pub mod usermode;
 pub mod userctx;
 pub mod userptr;
 pub mod cpu_local;
-
-pub mod sync;
-pub mod alloc;
-pub mod sched;
 
 // Phase 1.3 — 设备访问抽象
 pub mod iomem;

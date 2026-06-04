@@ -592,7 +592,7 @@ impl SchedulerEx {
             }
         }
 
-        crate::kernel::framework::sync_tcb_legacy::rcu::rcu_note_quiescent_state();
+        crate::kernel::framework::sync::rcu::rcu_note_quiescent_state();
 
         self.need_reschedule.store(0, Ordering::SeqCst);
     }

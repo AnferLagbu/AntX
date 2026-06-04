@@ -133,11 +133,15 @@ impl IoMem {
     #[inline(always)] pub fn is_empty(&self) -> bool { self.len == 0 }
     #[inline(always)] pub fn name(&self) -> &'static str { self.name }
 
-    /// Get the virtual address pointer for struct overlay access.
-    /// # Safety
-    /// Caller must ensure the struct type matches the MMIO layout,
-    /// and only performs volatile reads/writes with proper alignment.
-    #[inline(always)] pub unsafe fn virt_ptr(&self) -> *mut u8 {
+    /// 获取 IoMem 内部虚拟地址指针 (供上层安全访问结构体 MMIO)。
+    ///
+    /// # SAFETY
+    /// 调用方必须保证:
+    /// - 返回的指针类型与 MMIO 寄存器布局一致 (大小/对齐)。
+    /// - 仅通过 volatile 访问 (无编译器重排)。
+    /// - 不会写出 IoMem 自身的字节范围 (offset + size_of::<T>() <= self.len)。
+    #[inline(always)]
+    pub unsafe fn virt_ptr(&self) -> *mut u8 {
         // SAFETY: `self.virt` 是 `IoMem::from_*` 构造时由 `NonNull::new_unchecked`
         // 校验的物理基地址经 MMU 映射后的虚拟地址, 满足 NonNull 契约。
         // 调用方 (标记为 `unsafe fn`) 须自行保证:

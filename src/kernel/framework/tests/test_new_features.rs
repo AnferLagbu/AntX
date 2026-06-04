@@ -93,34 +93,34 @@ fn test_cow_ref_inc_dec() -> TestResult {
 // ============================================================
 
 fn test_elf64_header_sizes() -> TestResult {
-    use crate::kernel::framework::proc_tcb_legacy::elf::Elf64Header;
-    use crate::kernel::framework::proc_tcb_legacy::elf::Elf64Phdr;
+    use crate::kernel::framework::proc::elf::Elf64Header;
+    use crate::kernel::framework::proc::elf::Elf64Phdr;
     assert_eq_test!(core::mem::size_of::<Elf64Header>(), 64, "header size");
     assert_eq_test!(core::mem::size_of::<Elf64Phdr>(), 56, "phdr size");
     TestResult::Pass
 }
 
 fn test_elf_validation_null() -> TestResult {
-    let result = crate::kernel::framework::proc_tcb_legacy::elf::elf_validate(core::ptr::null(), 64);
+    let result = crate::kernel::framework::proc::elf::elf_validate(core::ptr::null(), 64);
     check!(result.is_none(), "null pointer rejected");
     TestResult::Pass
 }
 
 fn test_elf_validation_small() -> TestResult {
-    let result = crate::kernel::framework::proc_tcb_legacy::elf::elf_validate(&0u8 as *const u8, 10);
+    let result = crate::kernel::framework::proc::elf::elf_validate(&0u8 as *const u8, 10);
     check!(result.is_none(), "too small rejected");
     TestResult::Pass
 }
 
 fn test_elf_magic_rejected() -> TestResult {
     let data = [0u8; 64];
-    let result = crate::kernel::framework::proc_tcb_legacy::elf::elf_validate(data.as_ptr(), 64);
+    let result = crate::kernel::framework::proc::elf::elf_validate(data.as_ptr(), 64);
     check!(result.is_none(), "bad magic rejected");
     TestResult::Pass
 }
 
 fn test_elf_valid_minimal() -> TestResult {
-    use crate::kernel::framework::proc_tcb_legacy::elf::Elf64Header;
+    use crate::kernel::framework::proc::elf::Elf64Header;
     let data = [0u8; 80]; // header + some room
     let hdr = unsafe { &mut *(data.as_ptr() as *mut Elf64Header) };
     hdr.e_ident[0] = 0x7F;
@@ -130,7 +130,7 @@ fn test_elf_valid_minimal() -> TestResult {
     hdr.e_ident[4] = 2; // ELFCLASS64
     hdr.e_machine = 0x3E; // x86_64
     hdr.e_phentsize = 56; // sizeof(Elf64Phdr)
-    let result = crate::kernel::framework::proc_tcb_legacy::elf::elf_validate(data.as_ptr(), 80);
+    let result = crate::kernel::framework::proc::elf::elf_validate(data.as_ptr(), 80);
     check!(result.is_some(), "valid elf accepted");
     TestResult::Pass
 }
@@ -140,17 +140,17 @@ fn test_elf_valid_minimal() -> TestResult {
 // ============================================================
 
 fn test_rcu_read_lock_unlock() -> TestResult {
-    crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_lock();
+    crate::kernel::framework::sync::rcu::rcu_read_lock();
     // In single-core context, nesting should be 1
-    crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_unlock();
+    crate::kernel::framework::sync::rcu::rcu_read_unlock();
     TestResult::Pass
 }
 
 fn test_rcu_nested_locks() -> TestResult {
-    crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_lock();
-    crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_lock();
-    crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_unlock();
-    crate::kernel::framework::sync_tcb_legacy::rcu::rcu_read_unlock();
+    crate::kernel::framework::sync::rcu::rcu_read_lock();
+    crate::kernel::framework::sync::rcu::rcu_read_lock();
+    crate::kernel::framework::sync::rcu::rcu_read_unlock();
+    crate::kernel::framework::sync::rcu::rcu_read_unlock();
     TestResult::Pass
 }
 

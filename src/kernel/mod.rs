@@ -26,8 +26,14 @@
 //! │   ├── lib/       底层工具
 //! │   ├── link/      链接脚本
 //! │   ├── alloc/     全局分配器
-//! │   ├── sync/      同步原语 (TCB)
+//! │   ├── sync/      同步原语 TCB (11 子模块: spinlock/mutex/rwlock/rcu/atomic/seqlock/types/arch/once_lock/once_cell/irq_spinlock)
+//! │   ├── proc/      进程管理 TCB (12 子模块: types/process/thread/session/elf/api/scheduler/scheduler_ex/cfs/cpu_queue/oomd/user_proc)
 //! │   ├── sched/     调度器特质
+//! │   ├── syscall/   系统调用底层
+//! │   ├── timer/     时钟底层
+//! │   ├── wasm/      WASM 运行时底层
+//! │   ├── pci/       PCI 设备底层
+//! │   ├── tests/     框架单元测试
 //! │   └── frame.rs/vmspace.rs/usermode.rs/userctx.rs/userptr.rs
 //! │     iomem.rs/ioport.rs/irqline.rs/dma_buf.rs/page_table.rs
 //! │     cpu_local.rs/racy_cell.rs
@@ -44,9 +50,8 @@
 //!     ├── credo/     身份/密码学业务
 //!     ├── chitin/    用户态驱动框架
 //!     ├── barrier/   弹性归因业务
-//!     ├── config/    配置业务解析
-//!     ├── console/   控制台业务
-//!     ├── klog/      日志业务
+//!     ├── console/   控制台业务 (services 实际通过 framework::console 复用)
+//!     ├── klog/      日志业务 (services 实际通过 framework::klog 复用)
 //!     └── wasm/      WASM 运行时
 //! ```
 //!

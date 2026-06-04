@@ -1051,7 +1051,7 @@ pub fn sys_fork() -> Pid {
         let stack_size: usize = 65536;
         // SAFETY: parent_kstack 与 child_kstack 都是已分配的内核栈, 区间不重叠。
         raw::copy_kstack(child_kstack, parent_kstack, stack_size);
-        crate::kernel::framework::proc_tcb_legacy::process::kernel_stack_write_canary(child_kstack);
+        crate::kernel::framework::proc::process::kernel_stack_write_canary(child_kstack);
     }
 
     // Copy parent's ProcessContext to child's, but set RAX=0 for child

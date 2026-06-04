@@ -39,6 +39,11 @@ pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> UserCont
 }
 
 #[cfg(target_arch = "aarch64")]
+/// 进入用户模式 (aarch64 架构版)。
+///
+/// # SAFETY
+/// 契约同 x86_64 版本: 调用方必须保证 ctx 有效, 用户态代码页已映射, 内核栈有效。
+/// 真实实现包含 `eret` 指令, 须在 TCB 上下文执行。
 pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> UserContext {
     let _ = _vmspace;
     // SAFETY: 同 x86_64 版本的契约; aarch64 真实实现将包含 eret 指令, 由调用方保证上下文有效.

@@ -20,7 +20,7 @@ macro_rules! klog_pmm {
 }
 
 use super::*;
-use crate::kernel::framework::sync_tcb_legacy::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 use core::cell::{Cell, UnsafeCell};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 

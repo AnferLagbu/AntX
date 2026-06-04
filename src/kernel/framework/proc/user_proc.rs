@@ -35,12 +35,18 @@ extern "C" {
     fn kmalloc(size: u64) -> *mut u8;
 }
 
-/// Page size in bytes.
+/// 进程/调度规模常量 — 统一从 `super::types` 引用
 ///
-/// 统一从 `config.rs` 引用以避免分散定义。
-pub use crate::kernel::framework::config::{
-    PAGE_SIZE, USER_STACK_SIZE, USER_STACK_GUARD, USER_STACK_TOP, USER_KSTACK_SIZE,
-    USER_STACK_MAX_SIZE, USER_CODE_BASE,
+/// 全部进程规模/栈/调度参数已在 `types.rs` 集中 re-export, 本文件仅 `use` 它们,
+/// 避免分散定义与影子覆盖问题。
+pub use super::types::{
+    PAGE_SIZE,
+    MAX_PROCESSES, MAX_OPEN_FILES,
+    KERNEL_STACK_SIZE, USER_KSTACK_SIZE,
+    USER_STACK_SIZE, USER_STACK_GUARD, USER_STACK_TOP, USER_STACK_MAX_SIZE, USER_CODE_BASE,
+    SCHED_BOOST_INTERVAL,
+    SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
+    SCHED_RT_WATCHDOG_TICKS,
 };
 
 /// 派生常量: 用户栈自动扩展的下界 (USER_STACK_TOP - USER_STACK_MAX_SIZE)
@@ -517,7 +523,7 @@ pub(crate) mod raw {
         kstack: u64,
         ustack: u64,
     ) {
-        use crate::kernel::framework::proc_tcb_legacy::scheduler::SchedPolicy;
+        use crate::kernel::framework::proc::scheduler::SchedPolicy;
         // SAFETY: kproc_ptr 来自 alloc_kernel_process, 已清零, 字段可被 ptr::write 覆盖。
         unsafe {
             core::ptr::write(&mut (*kproc_ptr).pid, ProcessId(pid));
@@ -739,7 +745,7 @@ impl UserProcManager {
         }
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
         proc.store_kernel_stack(kstack_top);
-        crate::kernel::framework::proc_tcb_legacy::process::kernel_stack_write_canary(kstack_top);
+        crate::kernel::framework::proc::process::kernel_stack_write_canary(kstack_top);
 
         proc.set_pid(pid);
         proc.set_entry(info.entry);

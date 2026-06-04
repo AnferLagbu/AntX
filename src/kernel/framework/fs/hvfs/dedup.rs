@@ -15,7 +15,7 @@
 //! ```
 
 use super::bp::HvBlockPointer;
-use crate::kernel::framework::sync_tcb_legacy::mutex::Mutex;
+use crate::kernel::framework::sync::mutex::Mutex;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};

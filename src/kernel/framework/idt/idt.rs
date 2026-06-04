@@ -7,7 +7,7 @@
 //!
 //! ```text
 //! IdtManager (全局单例)
-//!   ├── inner: Mutex<IdtState>
+//!   ├── inner: IrqSpinLock<IdtState>   (中断安全, 锁内自动 cli)
 //!   │     ├── entries[256]    (IDT 门描述符)
 //!   │     ├── handlers[256]   (异常/IRQ 处理函数)
 //!   │     └── irq_desc[16]    (IRQ 扩展信息)
@@ -15,12 +15,20 @@
 //!   ├── detailed_stats: DetailedStatistics      ← Phase 3
 //!   └── exception_handlers: Trait objects       ← Phase 3
 //! ```
+//!
+//! ## 安全性
+//!
+//! - `state` 字段为 `IrqSpinLock` (来自 `framework::sync::irq_spinlock`),
+//!   锁内自动屏蔽中断, 防止中断处理程序与线程争用同一锁导致死锁.
+//! - 中断上下文 (`handle_irq`/`handle_exception`) 仅获取 `IrqSpinLock`,
+//!   禁止使用第三方 `spin::Mutex`.
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::handlers::*;
 use super::statistics::*;
 use super::types::*;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // 内联硬件操作函数 (避免跨模块导入问题)
 /// 从端口读字节
@@ -129,8 +137,11 @@ impl Default for IdtState {
 
 /// 全局 IDT 管理器
 pub struct IdtManager {
-    /// 内部状态 (Mutex 保护)
-    pub(crate) state: spin::Mutex<IdtState>,
+    /// 内部状态 (IrqSpinLock 保护, 中断安全)
+    ///
+    /// 锁内自动屏蔽中断, 防止中断处理程序与线程争用同一锁导致死锁.
+    /// 所有中断上下文访问 (`handle_irq`/`handle_exception`) 仅使用本字段.
+    pub(crate) state: IrqSpinLock<IdtState>,
     /// 基础统计 (Phase 1)
     pub stats: InterruptStatistics,
     /// 详细统计 (Phase 3)
@@ -149,7 +160,7 @@ impl IdtManager {
     pub fn instance() -> &'static IdtManager {
         IDT_MANAGER_INSTANCE.call_once(|| {
             IdtManager {
-                state: spin::Mutex::new(IdtState::default()),
+                state: IrqSpinLock::new(IdtState::default()),
                 stats: InterruptStatistics::new(),
                 detailed_stats: DetailedStatistics::new(), // Phase 3
                 nested_count: AtomicU64::new(0),
@@ -582,7 +593,7 @@ impl IdtManager {
             }
 
             if !error_flags.contains(super::types::ErrorFlags::PRESENT) {
-                if crate::kernel::framework::proc_tcb_legacy::user_proc::try_expand_user_stack(fault_addr) {
+                if crate::kernel::framework::proc::user_proc::try_expand_user_stack(fault_addr) {
                     return;
                 }
             }

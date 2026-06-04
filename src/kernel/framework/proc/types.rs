@@ -208,8 +208,20 @@ impl Default for ProcessContext {
 }
 
 // === 进程规模常量 (统一从 config.rs 引用) ===
+//
+// 集中式 re-export: 所有 proc 子模块 (types/process/thread/user_proc) 共享同一组常量,
+// 避免分散定义与影子覆盖。user_proc.rs 等子模块通过 `use super::types::*;` 引入。
 pub use crate::kernel::framework::config::{
-    MAX_PROCESSES, MAX_OPEN_FILES, KERNEL_STACK_SIZE, USER_STACK_SIZE, SCHED_BOOST_INTERVAL,
+    // 内存页
+    PAGE_SIZE,
+    // 进程规模
+    MAX_PROCESSES, MAX_OPEN_FILES,
+    // 栈规模
+    KERNEL_STACK_SIZE, USER_KSTACK_SIZE,
+    USER_STACK_SIZE, USER_STACK_GUARD, USER_STACK_TOP, USER_STACK_MAX_SIZE,
+    USER_CODE_BASE,
+    // 调度参数
+    SCHED_BOOST_INTERVAL,
     SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
     SCHED_RT_WATCHDOG_TICKS,
 };

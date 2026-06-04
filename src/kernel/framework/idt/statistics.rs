@@ -13,6 +13,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::types::*;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 /// 中断事件记录 (用于历史追踪)
 #[derive(Debug, Clone, Copy)]
@@ -56,8 +57,8 @@ pub struct DetailedStatistics {
     pub domain_recoveries: AtomicU64,
     pub panics: AtomicU64,
 
-    // 历史记录 (环形缓冲区)
-    history: spin::Mutex<InterruptHistory>,
+    // 历史记录 (环形缓冲区, IrqSpinLock 保证中断安全)
+    history: IrqSpinLock<InterruptHistory>,
 }
 
 /// 历史记录缓冲区
@@ -115,7 +116,7 @@ impl DetailedStatistics {
             process_terminations: AtomicU64::new(0),
             domain_recoveries: AtomicU64::new(0),
             panics: AtomicU64::new(0),
-            history: spin::Mutex::new(history),
+            history: IrqSpinLock::new(history),
         }
     }
 
@@ -440,7 +441,7 @@ pub fn get_detailed_statistics() -> &'static DetailedStatistics {
             process_terminations: AtomicU64::new(0),
             domain_recoveries: AtomicU64::new(0),
             panics: AtomicU64::new(0),
-            history: spin::Mutex::new(history),
+            history: IrqSpinLock::new(history),
         }
     })
 }
