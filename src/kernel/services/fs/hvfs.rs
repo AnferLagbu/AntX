@@ -21,8 +21,8 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.2.4 任务: 磁盘文件系统迁移 (最复杂)
 
-use crate::kernel::fs::hvfs::hvfs::HvfsData;
-use crate::kernel::fs::vfs::types::KernelError;
+use crate::kernel::framework::fs::hvfs::hvfs::HvfsData;
+use crate::kernel::framework::fs::vfs::types::KernelError;
 
 // ============================================================================
 // 错误码
@@ -163,7 +163,7 @@ impl SafeHvFs {
     /// 创建全局 HvFS 代理
     pub fn new() -> Self {
         Self {
-            inner: crate::kernel::fs::hvfs::hvfs::get_hvfs(),
+            inner: crate::kernel::framework::fs::hvfs::hvfs::get_hvfs(),
         }
     }
 

@@ -1,9 +1,9 @@
 use super::check;
-use crate::kernel::credo::capability;
-use crate::kernel::credo::engine;
-use crate::kernel::credo::sha256;
-use crate::kernel::credo::types::*;
-use crate::kernel::tests::{runner, TestResult};
+use crate::kernel::framework::credo::capability;
+use crate::kernel::framework::credo::engine;
+use crate::kernel::framework::credo::sha256;
+use crate::kernel::framework::credo::types::*;
+use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
 fn test_sha256_vectors() -> TestResult {
@@ -197,8 +197,8 @@ fn test_viable_floor() -> TestResult {
 
 #[cfg(target_arch = "x86_64")]
 fn test_pwmentry_cow_bp() -> TestResult {
-    use crate::kernel::fs::hvfs::bp::HvBlockPointer;
-    use crate::kernel::fs::hvfs::dmu::HvDmuObject;
+    use crate::kernel::framework::fs::hvfs::bp::HvBlockPointer;
+    use crate::kernel::framework::fs::hvfs::dmu::HvDmuObject;
 
     let mut obj = HvDmuObject::new_file(1, 0);
     let bp = HvBlockPointer::null();

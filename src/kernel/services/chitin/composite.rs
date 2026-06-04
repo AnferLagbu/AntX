@@ -13,7 +13,7 @@
 //!
 //! 评估日期: 2026-06-04
 
-use crate::kernel::chitin::composite;
+use crate::kernel::framework::chitin::composite;
 
 // ============================================================================
 // 顶层 API

@@ -36,7 +36,7 @@ use super::types::Pid;
 // CFS Constants (统一从 config.rs 引用)
 // ============================================================================
 
-pub use crate::kernel::config::{
+pub use crate::kernel::framework::config::{
     CFS_NICE0_WEIGHT as NICE0_WEIGHT,
     CFS_TARGET_LATENCY as TARGET_LATENCY_TICKS,
     CFS_MIN_GRANULARITY as MIN_GRANULARITY_TICKS,

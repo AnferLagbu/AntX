@@ -1,4 +1,4 @@
-use crate::kernel::driver::block;
+use crate::kernel::framework::driver::block;
 use alloc::vec::Vec;
 
 pub const HV_VDEV_MAX: usize = 8;

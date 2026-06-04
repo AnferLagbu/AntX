@@ -1,13 +1,13 @@
 //! PCI 总线驱动 (PCI Bus Driver)
 //!
-//! 对接真实的 PCI 子系统 (crate::kernel::pci)，
+//! 对接真实的 PCI 子系统 (crate::kernel::framework::pci)，
 //! 提供设备枚举、配置空间访问和 C FFI 导出。
 //!
 //! 通过 Chitin 框架注册为 Bus 类型设备。
 
 #![cfg(target_arch = "x86_64")]
 
-use crate::kernel::driver::framework::{DeviceType, Driver, DriverError};
+use crate::kernel::framework::driver::framework::{DeviceType, Driver, DriverError};
 use crate::klog_info;
 
 struct PciBusDriver;
@@ -37,18 +37,18 @@ impl Driver for PciBusDriver {
 /// 返回发现的设备数量。
 #[no_mangle]
 pub fn pci_init() -> i32 {
-    let count = crate::kernel::pci::init() as i32;
+    let count = crate::kernel::framework::pci::init() as i32;
 
-    crate::kernel::chitin::chitin_register_driver(
+    crate::kernel::framework::chitin::chitin_register_driver(
         "pci-bus",
-        crate::kernel::chitin::ChitinProto::Bus,
+        crate::kernel::framework::chitin::ChitinProto::Bus,
         Some(0xCF8),
         None,
         alloc::boxed::Box::new(PciBusDriver),
     );
 
     // 演进 6: PCI init 完成后做 driver 维度自检
-    if let Err(e) = crate::kernel::config::validate_pci_subsystem() {
+    if let Err(e) = crate::kernel::framework::config::validate_pci_subsystem() {
         crate::klog_drv_warn!("PCI validation: {}", e);
     }
 
@@ -57,7 +57,7 @@ pub fn pci_init() -> i32 {
 
 /// 扫描所有 PCI 总线并返回设备列表
 pub fn pci_scan() {
-    let devices = crate::kernel::pci::scan_all_buses();
+    let devices = crate::kernel::framework::pci::scan_all_buses();
     for dev in &devices {
         klog_info!(
             Driver,
@@ -75,7 +75,7 @@ pub fn pci_scan() {
 
 /// 获取已发现的 PCI 设备数量
 pub fn pci_device_count() -> usize {
-    crate::kernel::pci::device_count()
+    crate::kernel::framework::pci::device_count()
 }
 
 // Note: pci_read_config_word / pci_write_config_word C FFI symbols

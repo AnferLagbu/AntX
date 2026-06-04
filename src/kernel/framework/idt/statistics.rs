@@ -538,5 +538,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_idt_statistics_tests() {
-    crate::kernel::tests::idt::register_idt_statistics_tests();
+    crate::kernel::framework::tests::idt::register_idt_statistics_tests();
 }

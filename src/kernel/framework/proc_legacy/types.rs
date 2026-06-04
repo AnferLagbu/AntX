@@ -208,7 +208,7 @@ impl Default for ProcessContext {
 }
 
 // === 进程规模常量 (统一从 config.rs 引用) ===
-pub use crate::kernel::config::{
+pub use crate::kernel::framework::config::{
     MAX_PROCESSES, MAX_OPEN_FILES, KERNEL_STACK_SIZE, USER_STACK_SIZE, SCHED_BOOST_INTERVAL,
     SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
     SCHED_RT_WATCHDOG_TICKS,

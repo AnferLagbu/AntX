@@ -35,7 +35,7 @@ pub use pmm::*;
 pub use vmm::*;
 
 /// Page size and huge-page constants (统一从 config.rs 引用)
-pub use crate::kernel::config::{
+pub use crate::kernel::framework::config::{
     PAGE_SIZE, PAGE_SHIFT, HUGE_PAGE_2M_SIZE, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT,
     HUGE_PAGE_1G_SHIFT,
 };
@@ -430,7 +430,7 @@ impl Default for PageTableEntry {
 /// G1 阶段暂不配置 Write-Combining 缓存模式 (通过 PAT)，
 /// 这不会阻止像素正常显示；WC 优化将在 G3 阶段添加。
 pub fn map_framebuffer(phys_addr: u64, size: u64) -> *mut u8 {
-    use crate::kernel::mm::vmm::get_vmm;
+    use crate::kernel::framework::mm::vmm::get_vmm;
 
     let vmm = get_vmm();
 

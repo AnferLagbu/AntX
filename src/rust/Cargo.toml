@@ -19,7 +19,7 @@ opt-level = "z"
 [dependencies]
 spin = "0.9"
 bitflags = "2.4"
-smoltcp = { path = "../kernel/net/smoltcp", default-features = false, features = [
+smoltcp = { path = "../kernel/framework/net/smoltcp", default-features = false, features = [
     "medium-ethernet",
     "proto-ipv4",
     "proto-ipv6",

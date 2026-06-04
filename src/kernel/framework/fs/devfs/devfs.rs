@@ -178,9 +178,9 @@ impl DevfsData {
             }
             DEV_TYPE_CONSOLE | DEV_TYPE_TTY => 0,
             DEV_TYPE_CREDO => {
-                let pwm = crate::kernel::credo::session::get_current_pwm();
-                let euid = crate::kernel::credo::session::get_euid();
-                let uid = crate::kernel::credo::session::get_current_uid();
+                let pwm = crate::kernel::framework::credo::session::get_current_pwm();
+                let euid = crate::kernel::framework::credo::session::get_euid();
+                let uid = crate::kernel::framework::credo::session::get_current_uid();
                 if pwm != 0 {
                     let mut off = 0;
                     let blen = buf.len();
@@ -259,7 +259,7 @@ impl DevfsData {
                 if note.is_empty() || password.is_empty() {
                     return -1;
                 }
-                match crate::kernel::credo::session::login(note, password) {
+                match crate::kernel::framework::credo::session::login(note, password) {
                     Ok(_pwm) => buf.len() as i32,
                     Err(_) => -1,
                 }

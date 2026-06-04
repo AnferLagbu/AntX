@@ -9,9 +9,9 @@
 
 extern crate alloc;
 
-use crate::kernel::mm::pmm::get_pmm;
-use crate::kernel::mm::vmm::get_vmm;
-use crate::kernel::mm::{PhysAddr, VirtAddr};
+use crate::kernel::framework::mm::pmm::get_pmm;
+use crate::kernel::framework::mm::vmm::get_vmm;
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
 use core::ptr::{self};
 use core::sync::atomic::{AtomicU64, Ordering};
 

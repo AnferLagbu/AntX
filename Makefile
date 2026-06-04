@@ -9,7 +9,7 @@ ifeq ($(ARCH),aarch64)
     QEMU = qemu-system-aarch64
     QEMU_MACHINE = virt
     QEMU_CPU := max
-    LDSCRIPT = src/kernel/link/aarch64.ld
+    LDSCRIPT = src/kernel/framework/link/aarch64.ld
     ASFLAGS = -march=armv8-a
     CFLAGS_BASE = -std=c11 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
                   -fno-asynchronous-unwind-tables -fno-ident \
@@ -21,7 +21,7 @@ else
     RUST_TARGET = x86_64-unknown-none
     QEMU = qemu-system-x86_64
     QEMU_CPU ?= qemu64
-    LDSCRIPT = src/kernel/link/x86_64.ld
+    LDSCRIPT = src/kernel/framework/link/x86_64.ld
     ASFLAGS = -f elf64 -w-zeroing
     CFLAGS_BASE = -std=c11 -m64 -Wall -Wextra -nostdinc -nostdlib -fPIC -fno-stack-protector \
                   -fno-asynchronous-unwind-tables -fno-ident -mcmodel=medium \
@@ -29,8 +29,8 @@ else
 endif
 
 CFLAGS = $(CFLAGS_BASE) \
-         -Isrc/kernel/lib \
-         -Isrc/kernel/net -Isrc/kernel/net/arch -Isrc/kernel/net/driver
+         -Isrc/kernel/framework/lib \
+         -Isrc/kernel/framework/net -Isrc/kernel/framework/net/arch -Isrc/kernel/framework/net/driver
 
 # ============================================================================
 # 网络子系统已迁移至 smoltcp (纯 Rust)

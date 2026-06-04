@@ -4,14 +4,14 @@
 use core::sync::atomic::AtomicU32;
 
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::driver::framework::DriverError;
-use crate::kernel::driver::framework::{DeviceType, Driver, Result};
+use crate::kernel::framework::driver::framework::DriverError;
+use crate::kernel::framework::driver::framework::{DeviceType, Driver, Result};
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::iomem::IoMem;
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 #[cfg(not(feature = "kernel_test"))]
 use crate::klog_debug;
 #[cfg(not(feature = "kernel_test"))]
@@ -143,7 +143,7 @@ pub struct E1000Device {
     rx_count: u64,
     isr_count: u64,
     link_change_count: u64,
-    info: crate::kernel::driver::framework::DeviceInfo,
+    info: crate::kernel::framework::driver::framework::DeviceInfo,
     initialized: bool,
 }
 
@@ -166,7 +166,7 @@ impl Default for E1000Device {
             rx_count: 0,
             isr_count: 0,
             link_change_count: 0,
-            info: crate::kernel::driver::framework::DeviceInfo::new(
+            info: crate::kernel::framework::driver::framework::DeviceInfo::new(
                 "Intel E1000",
                 DeviceType::Network,
             ),
@@ -797,7 +797,7 @@ impl E1000Device {
         )
     }
 
-    pub fn get_info(&self) -> &crate::kernel::driver::framework::DeviceInfo {
+    pub fn get_info(&self) -> &crate::kernel::framework::driver::framework::DeviceInfo {
         &self.info
     }
 }
@@ -878,20 +878,20 @@ pub extern "C" fn e1000_probe() -> i32 {
         match dev.probe() {
             Ok(()) => {
                 let raw_ptr: *mut E1000Device = &mut *dev;
-                static E1000_NET_OPS: crate::kernel::chitin::proto_net::NetOps =
-                    crate::kernel::chitin::proto_net::NetOps {
+                static E1000_NET_OPS: crate::kernel::framework::chitin::proto_net::NetOps =
+                    crate::kernel::framework::chitin::proto_net::NetOps {
                         send: e1000_net_send,
                         try_receive: e1000_net_recv,
                         get_mac: e1000_net_get_mac,
                         handle_irq: Some(e1000_net_irq),
                     };
-                let _id = crate::kernel::chitin::chitin_register_with_ops(
+                let _id = crate::kernel::framework::chitin::chitin_register_with_ops(
                     "e1000",
-                    crate::kernel::chitin::ChitinProto::Net,
+                    crate::kernel::framework::chitin::ChitinProto::Net,
                     Some(dev.mmio_phys),
                     Some(dev.irq),
                     raw_ptr as *mut u8,
-                    crate::kernel::chitin::ChitinOps::Net(&E1000_NET_OPS),
+                    crate::kernel::framework::chitin::ChitinOps::Net(&E1000_NET_OPS),
                 );
                 *E1000_DEVICE.lock() = Some(dev);
                 return 0;

@@ -369,5 +369,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_spinlock_tests() {
-    crate::kernel::tests::sync::register_spinlock_tests();
+    crate::kernel::framework::tests::sync::register_spinlock_tests();
 }

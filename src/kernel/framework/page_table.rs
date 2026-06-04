@@ -16,7 +16,7 @@
 //! - 不修改页表, 纯只读验证。
 //! - 可在每次 map/unmap 后调用 (性能敏感路径用 feature gate)。
 
-use crate::kernel::mm::{PhysAddr, VirtAddr, PageFlags, get_vmm};
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PageFlags, get_vmm};
 
 /// 检查虚拟地址是否在用户地址空间内。
 ///

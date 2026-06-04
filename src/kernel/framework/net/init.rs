@@ -4,8 +4,8 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use spin::Mutex;
 
-use crate::kernel::klog::{klog_net, klog_net_err, klog_init_msg};
-use crate::kernel::net::smoltcp_impl::{self, ChitinNetDevice, NetworkStack};
+use crate::kernel::framework::klog::{klog_net, klog_net_err, klog_init_msg};
+use crate::kernel::framework::net::smoltcp_impl::{self, ChitinNetDevice, NetworkStack};
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
 use smoltcp::socket::dhcpv4;
 use smoltcp::socket::{tcp, udp};
@@ -111,7 +111,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
                 });
                 let _ = stack.iface.routes_mut().remove_default_ipv4_route();
             }
-            crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+            crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
             raw::klog_msg("DHCP deconfigured");
         }
         Some(dhcpv4::Event::Configured(config)) => {
@@ -126,7 +126,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
                     let _ = stack.iface.routes_mut().add_default_ipv4_route(router);
                 }
             }
-            crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+            crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
             raw::klog_msg("DHCP configured");
         }
     }
@@ -174,10 +174,10 @@ pub unsafe fn poll_network() {
 unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
     #[cfg(target_arch = "x86_64")]
     {
-        let probe_result = crate::kernel::driver::net::e1000::e1000_probe();
+        let probe_result = crate::kernel::framework::driver::net::e1000::e1000_probe();
         if probe_result == 0 {
-            let mut dev = crate::kernel::driver::net::e1000::take_device()?;
-            if crate::kernel::driver::framework::Driver::init(&mut *dev).is_err() {
+            let mut dev = crate::kernel::framework::driver::net::e1000::take_device()?;
+            if crate::kernel::framework::driver::framework::Driver::init(&mut *dev).is_err() {
                 raw::klog_err("e1000: hardware init failed");
                 return None;
             }
@@ -191,9 +191,9 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
 
     #[cfg(target_arch = "aarch64")]
     {
-        let probe_result = crate::kernel::driver::virtio::net::virtio_net_probe();
+        let probe_result = crate::kernel::framework::driver::virtio::net::virtio_net_probe();
         if probe_result == 0 {
-            let dev = crate::kernel::driver::virtio::net::take_device()?;
+            let dev = crate::kernel::framework::driver::virtio::net::take_device()?;
             let mac = dev.mac;
             let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
             let nic = ChitinNetDevice::new(&VIRTIO_NET_OPS_STATIC, raw_ptr, mac);
@@ -206,20 +206,20 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-static E1000_NET_OPS_STATIC: crate::kernel::chitin::proto_net::NetOps =
-    crate::kernel::chitin::proto_net::NetOps {
-        send: crate::kernel::driver::net::e1000::e1000_net_send,
-        try_receive: crate::kernel::driver::net::e1000::e1000_net_recv,
-        get_mac: crate::kernel::driver::net::e1000::e1000_net_get_mac,
-        handle_irq: Some(crate::kernel::driver::net::e1000::e1000_net_irq),
+static E1000_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOps =
+    crate::kernel::framework::chitin::proto_net::NetOps {
+        send: crate::kernel::framework::driver::net::e1000::e1000_net_send,
+        try_receive: crate::kernel::framework::driver::net::e1000::e1000_net_recv,
+        get_mac: crate::kernel::framework::driver::net::e1000::e1000_net_get_mac,
+        handle_irq: Some(crate::kernel::framework::driver::net::e1000::e1000_net_irq),
     };
 
-static VIRTIO_NET_OPS_STATIC: crate::kernel::chitin::proto_net::NetOps =
-    crate::kernel::chitin::proto_net::NetOps {
-        send: crate::kernel::driver::virtio::net::virtio_net_send,
-        try_receive: crate::kernel::driver::virtio::net::virtio_net_recv,
-        get_mac: crate::kernel::driver::virtio::net::virtio_net_get_mac,
-        handle_irq: Some(crate::kernel::driver::virtio::net::virtio_net_irq),
+static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOps =
+    crate::kernel::framework::chitin::proto_net::NetOps {
+        send: crate::kernel::framework::driver::virtio::net::virtio_net_send,
+        try_receive: crate::kernel::framework::driver::virtio::net::virtio_net_recv,
+        get_mac: crate::kernel::framework::driver::virtio::net::virtio_net_get_mac,
+        handle_irq: Some(crate::kernel::framework::driver::virtio::net::virtio_net_irq),
     };
 
 // ============================================================================
@@ -231,8 +231,8 @@ unsafe fn net_save() {}
 unsafe fn net_restore() {
     let _guard = NET_LOCK.lock();
 
-    crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
-    crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+    crate::kernel::framework::net::types::NET_READY.store(false, Ordering::Release);
+    crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
 
     raw::clear_all();
     SOCKETS_INITIALIZED.store(false, Ordering::Release);
@@ -250,8 +250,8 @@ unsafe fn net_restore() {
 unsafe fn net_reset() {
     let _guard = NET_LOCK.lock();
 
-    crate::kernel::net::types::NET_READY.store(false, Ordering::Release);
-    crate::kernel::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+    crate::kernel::framework::net::types::NET_READY.store(false, Ordering::Release);
+    crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
 
     raw::clear_all();
     SOCKETS_INITIALIZED.store(false, Ordering::Release);
@@ -331,7 +331,7 @@ pub extern "C" fn qx_net_init() {
             raw::set_dhcp_handle(Some(handle));
         }
 
-        crate::kernel::net::types::NET_READY.store(true, Ordering::Release);
+        crate::kernel::framework::net::types::NET_READY.store(true, Ordering::Release);
 
         if transition_state(InitState::InterfaceReady, InitState::FullyInitialized).is_err() {
             set_failed();
@@ -345,13 +345,13 @@ pub extern "C" fn qx_net_init() {
             for _ in 0..50000 {
                 core::hint::spin_loop();
             }
-            if crate::kernel::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
+            if crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
                 raw::klog_msg("DHCP: lease acquired");
                 break;
             }
         }
 
-        if !crate::kernel::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
+        if !crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
             let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
                 smoltcp::wire::Ipv4Address::new(10, 0, 2, 15),
                 24,
@@ -363,7 +363,7 @@ pub extern "C" fn qx_net_init() {
                 });
                 let gw = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
                 let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
-                crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+                crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
                 raw::klog_msg("Static IP 10.0.2.15/24 (fallback)");
             }
         }
@@ -373,11 +373,11 @@ pub extern "C" fn qx_net_init() {
         raw::klog_init("--- Network Subsystem Ready ---");
 
         // 演进 6: 网络 init 完成后做 driver 维度自检
-        if let Err(e) = crate::kernel::config::validate_network_subsystem() {
+        if let Err(e) = crate::kernel::framework::config::validate_network_subsystem() {
             crate::klog_drv_warn!("Network validation: {}", e);
         }
 
-        crate::kernel::barrier::recovery::recovery_domain_register(
+        crate::kernel::framework::barrier::recovery::recovery_domain_register(
             "net",
             5,
             &[],
@@ -402,7 +402,7 @@ pub extern "C" fn qx_net_init() {
 /// `NET_READY` 由网络栈在链路就绪后置位。
 #[no_mangle]
 pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
-    if !crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
+    if !crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire) {
         return -1;
     }
     poll_network();
@@ -420,7 +420,7 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
 /// - 调用方保证 NET 已初始化。
 #[no_mangle]
 pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 {
-    if !crate::kernel::net::types::NET_READY.load(Ordering::Acquire) {
+    if !crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire) {
         return -1;
     }
 
@@ -500,7 +500,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
     });
     let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
 
-    crate::kernel::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+    crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
 
     raw::klog_msg("Static IP configured");
     0
@@ -742,7 +742,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         None => return -E_BADF,
     };
 
-    if !crate::kernel::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
+    if !crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
         return -E_NODEV;
     }
 
@@ -1095,11 +1095,11 @@ unsafe fn sm_alloc_fd() -> i32 {
 }
 
 pub fn is_network_initialized() -> bool {
-    crate::kernel::net::types::NET_READY.load(Ordering::Acquire)
+    crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire)
 }
 
 pub fn is_network_configured() -> bool {
-    crate::kernel::net::types::NET_CONFIGURED.load(Ordering::Acquire)
+    crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire)
 }
 
 pub fn get_init_state() -> InitState {

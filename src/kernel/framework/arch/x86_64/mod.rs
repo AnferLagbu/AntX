@@ -34,7 +34,7 @@ pub struct X8664;
 // 每个 trait 互不依赖，可独立单元测试。
 // ============================================================================
 
-use crate::kernel::arch::{Arch, CoreArch, InterruptArch, MmuArch, SystemArch};
+use crate::kernel::framework::arch::{Arch, CoreArch, InterruptArch, MmuArch, SystemArch};
 
 // ── CoreArch: 基础核心 ──────────────────────────────────────────────────
 
@@ -42,12 +42,12 @@ impl CoreArch for X8664 {
     /// 获取当前 CPU ID (Local APIC ID)。
     #[inline(always)]
     fn cpu_id() -> u32 {
-        use crate::kernel::arch::x86_64::apic;
+        use crate::kernel::framework::arch::x86_64::apic;
         let id = apic::get_id();
         if id != 0 {
             return id;
         }
-        let (_, ebx, _, _) = crate::kernel::cpu::cpuid::cpuid(1, 0);
+        let (_, ebx, _, _) = crate::kernel::framework::cpu::cpuid::cpuid(1, 0);
         ebx >> 24
     }
 
@@ -172,27 +172,27 @@ impl InterruptArch for X8664 {
     /// 向目标 CPU 发送 IPI (通过 Local APIC)。
     #[inline(always)]
     fn send_ipi(target_cpu: u32, vector: u8) {
-        use crate::kernel::arch::x86_64::apic;
+        use crate::kernel::framework::arch::x86_64::apic;
         apic::send_ipi(target_cpu as u8, vector);
     }
 
     /// 广播 IPI 到所有 CPU (不含自身)。
     #[inline(always)]
     fn broadcast_ipi(vector: u8) {
-        use crate::kernel::arch::x86_64::apic;
+        use crate::kernel::framework::arch::x86_64::apic;
         apic::broadcast_ipi(vector);
     }
 
     fn interrupt_early_init() {
-        crate::kernel::idt::idt_init();
+        crate::kernel::framework::idt::idt_init();
     }
 
     fn interrupt_late_init() {
-        crate::kernel::arch::x86_64::gdt::gdt_init();
-        crate::kernel::idt::idt_init();
-        crate::kernel::arch::x86_64::apic::apic_init();
-        crate::kernel::smp::init();
-        crate::kernel::arch::x86_64::smp_init::init();
+        crate::kernel::framework::arch::x86_64::gdt::gdt_init();
+        crate::kernel::framework::idt::idt_init();
+        crate::kernel::framework::arch::x86_64::apic::apic_init();
+        crate::kernel::framework::smp::init();
+        crate::kernel::framework::arch::x86_64::smp_init::init();
     }
 }
 

@@ -139,7 +139,7 @@ impl RecoveryManager {
                     if failures >= 3 {
                         crate::klog_ffi!(klog_ffi_warn,
                             "[BARRIER] domain {} persistent failures ({failures}), escalating to BSR", dom.id);
-                        crate::kernel::barrier::NEED_BSR_ESCALATION.store(true, Ordering::SeqCst);
+                        crate::kernel::framework::barrier::NEED_BSR_ESCALATION.store(true, Ordering::SeqCst);
                         return;
                     }
                 }

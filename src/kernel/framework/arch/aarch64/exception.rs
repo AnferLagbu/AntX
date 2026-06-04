@@ -411,7 +411,7 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
 
     // 调用通用 syscall 分发器 (syscall 模块已全局化)
     let result =
-        unsafe { crate::kernel::syscall::syscall_dispatch(syscall_num, arg0, arg1, arg2, arg3) };
+        unsafe { crate::kernel::framework::syscall::syscall_dispatch(syscall_num, arg0, arg1, arg2, arg3) };
 
     // 返回值写入 x0
     result as u64
@@ -439,20 +439,20 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
                 Boot,
                 "TIMER IRQ (EL0) count={} ready={}",
                 el0count,
-                crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+                crate::kernel::framework::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
             );
         }
 
-        crate::kernel::timer::on_timer_interrupt();
+        crate::kernel::framework::timer::on_timer_interrupt();
 
         // smoltcp: 始终轮询（DHCP 需要在 poll 中完成握手）
         #[cfg(not(feature = "kernel_test"))]
         unsafe {
-            crate::kernel::net::init::poll_network();
+            crate::kernel::framework::net::init::poll_network();
         }
 
         // 仅当 scheduler 已初始化时触发调度
-        if crate::kernel::proc::scheduler::SCHEDULER_READY.load(Ordering::Acquire) {
+        if crate::kernel::framework::proc_legacy::scheduler::SCHEDULER_READY.load(Ordering::Acquire) {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }
@@ -464,7 +464,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
     super::gic::end_of_interrupt(intid);
 
-    crate::kernel::irq::do_softirq();
+    crate::kernel::framework::irq::do_softirq();
 }
 
 /// 默认同步异常处理 (EL1h)
@@ -570,20 +570,20 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
                 Boot,
                 "TIMER IRQ count={} ready={}",
                 tcount,
-                crate::kernel::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+                crate::kernel::framework::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
             );
         }
 
-        crate::kernel::timer::on_timer_interrupt();
+        crate::kernel::framework::timer::on_timer_interrupt();
 
         // 网络轮询
         #[cfg(not(feature = "kernel_test"))]
         unsafe {
-            crate::kernel::net::init::poll_network();
+            crate::kernel::framework::net::init::poll_network();
         }
 
         // 仅当 scheduler 已初始化时触发调度
-        if crate::kernel::proc::scheduler::SCHEDULER_READY
+        if crate::kernel::framework::proc_legacy::scheduler::SCHEDULER_READY
             .load(core::sync::atomic::Ordering::Acquire)
         {
             extern "C" {

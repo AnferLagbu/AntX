@@ -13,7 +13,7 @@
 use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
-use crate::kernel::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::KERNEL_BASE;
 use crate::klog_err;
 use crate::klog_error;
 use crate::klog_info;
@@ -486,9 +486,9 @@ pub fn probe() -> i32 {
 
                     // 注册到几丁质框架 (非所有权指针, 内存由 VIRTIO_NET_DEVICE 管理)
                     let raw_ptr: *mut VirtioNet = &mut *boxed;
-                    let _id = crate::kernel::chitin::chitin_register(
+                    let _id = crate::kernel::framework::chitin::chitin_register(
                         "virtio_net",
-                        crate::kernel::chitin::ChitinProto::Net,
+                        crate::kernel::framework::chitin::ChitinProto::Net,
                         Some(boxed.device.iomem.phys().as_u64()),
                         None,
                         raw_ptr as *mut u8,

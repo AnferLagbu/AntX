@@ -15,7 +15,7 @@
 //! ```
 
 use super::bp::HvBlockPointer;
-use crate::kernel::sync::mutex::Mutex;
+use crate::kernel::framework::sync_legacy::mutex::Mutex;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -178,7 +178,7 @@ pub fn cas_aware_write(data: &[u8], txg: u64, obj_id: u64) -> Option<super::bp::
 
     if let Some(existing) = cas.lookup(&hash) {
         cas.ref_inc(&hash);
-        crate::kernel::fs::hvfs::zil::HvZilRecord::new_dedup_ref(
+        crate::kernel::framework::fs::hvfs::zil::HvZilRecord::new_dedup_ref(
             txg,
             [
                 u64::from_be_bytes(hash[0..8].try_into().unwrap_or_else(|_| [0u8; 8])),

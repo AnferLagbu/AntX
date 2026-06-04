@@ -23,7 +23,7 @@
 //! - 散射聚集: 最多 64 条目
 //! - 统计: lock-free AtomicU64, ISR 安全
 
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ============================================================================
 // 契约常量

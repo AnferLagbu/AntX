@@ -1,19 +1,19 @@
-use crate::kernel::driver::char::serial::{
+use crate::kernel::framework::driver::char::serial::{
     BaudRate, DataBits, ParityMode, RingBuffer, SerialConfig, SerialPort, StopBits, COM1_BASE,
     COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE,
 };
-use crate::kernel::driver::framework::Driver;
-use crate::kernel::driver::framework::{DeviceInfo, DeviceType, DriverError, Result};
-use crate::kernel::driver::input::keyboard::{
+use crate::kernel::framework::driver::framework::Driver;
+use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, DriverError, Result};
+use crate::kernel::framework::driver::input::keyboard::{
     get_special_key, KeyboardBuffer, KeyboardDriver, ModifierState, SpecialKey, KB_LED_CAPS_LOCK,
     KB_LED_NUM_LOCK, SCANCODE_TABLE, SHIFT_TABLE,
 };
 #[cfg(target_arch = "x86_64")]
-use crate::kernel::driver::storage::ata::{
+use crate::kernel::framework::driver::storage::ata::{
     get_ctrl_base, get_io_base, AtaController, AtaDevice, ATA_PRIMARY_CTRL, ATA_PRIMARY_IO,
     ATA_SECONDARY_CTRL, ATA_SECONDARY_IO, MAX_ATA_DEVICES, WORDS_PER_SECTOR,
 };
-use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
 
 fn driver_error_codes() -> TestResult {

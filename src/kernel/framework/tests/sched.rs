@@ -1,10 +1,10 @@
-use crate::kernel::proc::scheduler_ex::{SchedulerEx, ThreadState};
-use crate::kernel::proc::thread::Thread;
-use crate::kernel::proc::types::{
+use crate::kernel::framework::proc_legacy::scheduler_ex::{SchedulerEx, ThreadState};
+use crate::kernel::framework::proc_legacy::thread::Thread;
+use crate::kernel::framework::proc_legacy::types::{
     ThreadPriority, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM,
     SCHED_LEVEL_3_QUANTUM,
 };
-use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
 use alloc::boxed::Box;
 use core::sync::atomic::Ordering;

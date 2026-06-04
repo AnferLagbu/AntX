@@ -1,10 +1,10 @@
-use crate::kernel::chitin::devtree::{devtree_children, devtree_get_node, devtree_walk};
-use crate::kernel::chitin::proto_block;
-use crate::kernel::chitin::{
+use crate::kernel::framework::chitin::devtree::{devtree_children, devtree_get_node, devtree_walk};
+use crate::kernel::framework::chitin::proto_block;
+use crate::kernel::framework::chitin::{
     chitin_blk_is_present, chitin_blk_read, chitin_blk_total_sectors, chitin_blk_write,
     chitin_find_by_id, chitin_find_by_name, ChitinProto,
 };
-use crate::kernel::driver::block::BlockDevice;
+use crate::kernel::framework::driver::block::BlockDevice;
 use crate::klog_info;
 use crate::klog_warn;
 use core::sync::atomic::{AtomicU32, Ordering};

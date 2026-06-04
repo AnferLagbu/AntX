@@ -15,7 +15,7 @@ use super::*;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+use crate::kernel::framework::sync_legacy::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
 fn phys_to_virt(phys: u64) -> u64 {
     phys + super::KERNEL_BASE

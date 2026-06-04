@@ -44,7 +44,7 @@ use super::*;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
-use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+use crate::kernel::framework::sync_legacy::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
 static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
@@ -1064,7 +1064,7 @@ impl VirtualMemoryManager {
 
         #[cfg(feature = "smp")]
         {
-            use crate::kernel::smp;
+            use crate::kernel::framework::smp;
             if smp::is_enabled() && smp::get_cpu_count() > 1 {
                 smp::broadcast_tlb_invalidate();
             }

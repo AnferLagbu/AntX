@@ -321,5 +321,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_ipc_tests() {
-    crate::kernel::tests::test_ipc::register_ipc_tests();
+    crate::kernel::framework::tests::test_ipc::register_ipc_tests();
 }

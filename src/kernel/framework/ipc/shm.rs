@@ -5,7 +5,7 @@
 
 use super::types::*;
 use crate::kernel::framework::userptr::UserRefMut;
-use crate::kernel::proc::api::process_get_current_pid;
+use crate::kernel::framework::proc_legacy::api::process_get_current_pid;
 
 /// 查找空闲共享内存段槽位
 fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&mut ShmSegment> {
@@ -49,7 +49,7 @@ pub fn shm_create_safe(
 
     // 计算需要的页数并分配物理内存
     let pages = size.div_ceil(4096);
-    let phys = crate::kernel::mm::api::pmm_alloc_pages(pages as usize);
+    let phys = crate::kernel::framework::mm::api::pmm_alloc_pages(pages as usize);
     if phys.is_null() {
         return Err(-3);
     }
@@ -166,7 +166,7 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
 
     // 释放物理页
     let pages = shm.size.div_ceil(4096);
-    crate::kernel::mm::api::pmm_free_pages(shm.phys_addr as *mut u8, pages as usize);
+    crate::kernel::framework::mm::api::pmm_free_pages(shm.phys_addr as *mut u8, pages as usize);
 
     // 清理结构体
     shm.id = 0;

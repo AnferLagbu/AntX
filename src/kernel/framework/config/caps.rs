@@ -57,7 +57,7 @@ impl KernelCapabilities {
 pub fn get_config_summary() -> ConfigSummary {
     ConfigSummary {
         max_cpus: MAX_CPUS,
-        actual_cpus: crate::kernel::smp::get_cpu_count(),
+        actual_cpus: crate::kernel::framework::smp::get_cpu_count(),
         max_irqs: MAX_IRQS,
         max_processes: MAX_PROCESSES,
         max_threads: MAX_THREADS,
@@ -72,7 +72,7 @@ pub fn get_config_summary() -> ConfigSummary {
 /// 跨架构安全: 在 x86_64 上查 APIC 状态, 其他架构默认 false。
 #[cfg(target_arch = "x86_64")]
 fn apic_initialized() -> bool {
-    crate::kernel::arch::x86_64::apic::is_initialized()
+    crate::kernel::framework::arch::x86_64::apic::is_initialized()
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -82,7 +82,7 @@ fn apic_initialized() -> bool {
 
 #[cfg(target_arch = "x86_64")]
 fn ioapic_initialized() -> bool {
-    crate::kernel::arch::x86_64::ioapic::is_initialized()
+    crate::kernel::framework::arch::x86_64::ioapic::is_initialized()
 }
 
 #[cfg(not(target_arch = "x86_64"))]

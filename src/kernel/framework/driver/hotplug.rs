@@ -18,7 +18,7 @@
 //!
 //! 不使用中断线程, 采用轮询模式 (在调度器 idle loop 中调用 poll)。
 
-use crate::kernel::pci::hotplug::PcieHotplugSlot;
+use crate::kernel::framework::pci::hotplug::PcieHotplugSlot;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -96,7 +96,7 @@ impl HotplugManager {
 
         #[cfg(target_arch = "x86_64")]
         {
-            let found = crate::kernel::pci::hotplug::scan_hotplug_slots();
+            let found = crate::kernel::framework::pci::hotplug::scan_hotplug_slots();
             if !found.is_empty() {
                 crate::klog_info!(Driver, "hotplug: {} PCIe slot(s) found", found.len());
             }
@@ -186,10 +186,10 @@ impl HotplugManager {
             .collect();
         drop(slots);
 
-        let blk_count = crate::kernel::driver::block::block_device_count();
+        let blk_count = crate::kernel::framework::driver::block::block_device_count();
         let mut blk_states: Vec<BlockDeviceState> = Vec::new();
         for d in 0..blk_count as u8 {
-            let (present, removing, io_count) = crate::kernel::driver::block::block_device_state(d);
+            let (present, removing, io_count) = crate::kernel::framework::driver::block::block_device_state(d);
             blk_states.push(BlockDeviceState {
                 drive: d,
                 present,

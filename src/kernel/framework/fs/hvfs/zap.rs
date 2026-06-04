@@ -1,4 +1,4 @@
-use crate::kernel::sync::mutex::Mutex;
+use crate::kernel::framework::sync_legacy::mutex::Mutex;
 use alloc::string::String;
 use alloc::vec::Vec;
 

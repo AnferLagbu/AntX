@@ -16,7 +16,7 @@
 //!
 //! 评估日期: 2026-06-04
 
-use crate::kernel::credo;
+use crate::kernel::framework::credo;
 use crate::kernel::framework::credo_pwm;
 
 // ============================================================================

@@ -22,8 +22,8 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use crate::kernel::chitin;
-pub use crate::kernel::chitin::devtree::{
+use crate::kernel::framework::chitin;
+pub use crate::kernel::framework::chitin::devtree::{
     ChitinNode, NodeId, Property, PropertyValue,
 };
 

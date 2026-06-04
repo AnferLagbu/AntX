@@ -1,5 +1,5 @@
-use crate::kernel::fs::hvfs::bp::HvBlockPointer;
-use crate::kernel::sync::mutex::Mutex;
+use crate::kernel::framework::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::framework::sync_legacy::mutex::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 

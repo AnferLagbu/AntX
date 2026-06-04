@@ -25,13 +25,13 @@
 //! [arch::uart::init] 提前初始化以支持早期控制台输出。
 //! 本驱动的 `init()` 会检测此状态，避免重复初始化。
 
-use crate::kernel::arch::aarch64::uart;
-use crate::kernel::chitin::proto_char::CharOps;
-use crate::kernel::driver::framework::{DeviceType, Driver, Result};
+use crate::kernel::framework::arch::aarch64::uart;
+use crate::kernel::framework::chitin::proto_char::CharOps;
+use crate::kernel::framework::driver::framework::{DeviceType, Driver, Result};
 
 /// PL011 UART 字符设备驱动 (单例)
 ///
-/// 作为 [Chitin](crate::kernel::chitin) 字符设备的底层驱动，
+/// 作为 [Chitin](crate::kernel::framework::chitin) 字符设备的底层驱动，
 /// 提供完整的生命周期管理（init/shutdown）和 I/O 能力（read/write）。
 ///
 /// 所有硬件访问委托给 [arch::uart] 模块，该模块硬编码使用

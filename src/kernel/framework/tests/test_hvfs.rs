@@ -2,15 +2,15 @@
 use crate::register_tests_inner;
 
 use super::check;
-use crate::kernel::fs::hvfs::arc::*;
-use crate::kernel::fs::hvfs::bp::*;
-use crate::kernel::fs::hvfs::checksum::HvChecksum;
-use crate::kernel::fs::hvfs::dmu::*;
-use crate::kernel::fs::hvfs::spa::*;
-use crate::kernel::fs::hvfs::txg::*;
-use crate::kernel::fs::hvfs::zap::*;
-use crate::kernel::fs::hvfs::zil::*;
-use crate::kernel::tests::{runner, TestResult};
+use crate::kernel::framework::fs::hvfs::arc::*;
+use crate::kernel::framework::fs::hvfs::bp::*;
+use crate::kernel::framework::fs::hvfs::checksum::HvChecksum;
+use crate::kernel::framework::fs::hvfs::dmu::*;
+use crate::kernel::framework::fs::hvfs::spa::*;
+use crate::kernel::framework::fs::hvfs::txg::*;
+use crate::kernel::framework::fs::hvfs::zap::*;
+use crate::kernel::framework::fs::hvfs::zil::*;
+use crate::kernel::framework::tests::{runner, TestResult};
 
 fn test_bp_null() -> TestResult {
     let bp = HvBlockPointer::null();

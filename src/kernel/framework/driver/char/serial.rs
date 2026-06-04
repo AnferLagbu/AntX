@@ -29,7 +29,7 @@
 //! # Safety
 //! 此模块直接操作串口硬件端口。
 
-use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::framework::ioport::IoPort;
 
 // ============================================================================
@@ -795,7 +795,7 @@ mod tests {
 // CharOps 桥接 — 供 Chitin 统一字符设备 I/O
 // ============================================================================
 
-use crate::kernel::chitin::proto_char::CharOps;
+use crate::kernel::framework::chitin::proto_char::CharOps;
 
 extern "C" fn serial_char_write(driver_data: *mut u8, buf: *const u8, len: usize) -> usize {
     if driver_data.is_null() || buf.is_null() { return 0; }

@@ -1,6 +1,6 @@
 use super::check;
-use crate::kernel::fs::devfs::devfs::{DEVFS_DATA, DEVFS_MAX_DEVICES};
-use crate::kernel::tests::{runner, TestResult};
+use crate::kernel::framework::fs::devfs::devfs::{DEVFS_DATA, DEVFS_MAX_DEVICES};
+use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
 fn test_devfs_mount() -> TestResult {

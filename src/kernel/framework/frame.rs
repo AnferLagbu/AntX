@@ -19,8 +19,8 @@
 use core::fmt;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::kernel::mm::PhysAddr;
-use crate::kernel::mm::PAGE_SIZE;
+use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::framework::mm::PAGE_SIZE;
 
 /// 一个带引用计数和自定义元数据的物理帧。
 ///
@@ -101,7 +101,7 @@ impl Frame {
 
     /// 转换为内核可访问的虚拟地址
     pub fn as_virt_ptr(&self) -> *mut u8 {
-        crate::kernel::mm::phys_to_virt(self.phys.as_u64()) as *mut u8
+        crate::kernel::framework::mm::phys_to_virt(self.phys.as_u64()) as *mut u8
     }
 
     /// 零填充帧内容

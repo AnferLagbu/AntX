@@ -17,7 +17,7 @@
 //! - 零依赖: 直接调用 Arch trait，无中间层
 //! - 可替换: Phase 2/3 只需更新 Arch impl，此处无需改动
 
-use crate::kernel::arch::Arch;
+use crate::kernel::framework::arch::Arch;
 
 /// CPU 自旋提示 — 告知 CPU 当前在自旋等待锁。
 ///
@@ -27,19 +27,19 @@ use crate::kernel::arch::Arch;
 pub fn spin_hint() {
     // 使用 fence() 作为通用自旋提示: 强内存屏障防止 CPU 投机执行
     // Phase 2: x86_64 换为专用 pause 指令
-    <crate::kernel::arch::CurrentArch as Arch>::fence();
+    <crate::kernel::framework::arch::CurrentArch as Arch>::fence();
 }
 
 /// 全内存屏障 (mfence / dsb sy)。
 #[inline(always)]
 pub fn fence() {
-    <crate::kernel::arch::CurrentArch as Arch>::fence();
+    <crate::kernel::framework::arch::CurrentArch as Arch>::fence();
 }
 
 /// 写内存屏障 (sfence / dmb st)。
 #[inline(always)]
 pub fn fence_w() {
-    <crate::kernel::arch::CurrentArch as Arch>::fence_w();
+    <crate::kernel::framework::arch::CurrentArch as Arch>::fence_w();
 }
 
 /// 禁用中断并返回之前的中断状态标志。
@@ -49,7 +49,7 @@ pub fn fence_w() {
 /// 调用方必须确保 `interrupt_restore` 在适当时候被调用以恢复中断状态。
 #[inline(always)]
 pub fn interrupt_save() -> usize {
-    <crate::kernel::arch::CurrentArch as Arch>::interrupt_disable()
+    <crate::kernel::framework::arch::CurrentArch as Arch>::interrupt_disable()
 }
 
 /// 恢复之前保存的中断状态。
@@ -59,17 +59,17 @@ pub fn interrupt_save() -> usize {
 /// `flags` 必须是从 `interrupt_save()` 获取的值。
 #[inline(always)]
 pub fn interrupt_restore(flags: usize) {
-    <crate::kernel::arch::CurrentArch as Arch>::interrupt_restore(flags);
+    <crate::kernel::framework::arch::CurrentArch as Arch>::interrupt_restore(flags);
 }
 
 /// 启用中断 (sti / msr daifclr)。
 #[inline(always)]
 pub fn interrupt_enable() {
-    <crate::kernel::arch::CurrentArch as Arch>::interrupt_enable();
+    <crate::kernel::framework::arch::CurrentArch as Arch>::interrupt_enable();
 }
 
 /// 检查中断是否已启用。
 #[inline(always)]
 pub fn is_interrupt_enabled() -> bool {
-    <crate::kernel::arch::CurrentArch as Arch>::is_interrupt_enabled()
+    <crate::kernel::framework::arch::CurrentArch as Arch>::is_interrupt_enabled()
 }

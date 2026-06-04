@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.19 (2026-06-04, services 0 unsafe 实测复核通过 — 残留 unsafe 全部清除)
+> **版本**: v2.20 (2026-06-04, M4 目录重构完成 — 全部 TCB 模块已迁入 `framework/`, 双架构 cargo build 0 errors 0 warnings)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -238,6 +238,23 @@
 > - ✅ **M3 里程碑达成**: 所有 services 子系统迁移完成
 >
 > **v2.19 复盘**: 早期核查脚本误把注释中的"unsafe"字样计入 unsafe 块, 实际代码中仍残留 33 处 unsafe。v2.19 已逐个迁移: 新增 `framework::net_socket` (网络 20 FFI) + `framework::credo_pwm` (PWM 5 FFI) + `framework::proc_elf` (ELF 2 FFI) + `framework::syscall_init` (syscall init) + `IoPort::new_safe` 包装 (PIO 2 处), services 层 `unsafe { ... }` 块实测 0 处 (grep `^\s*unsafe\s*[\{fn]`)。
+
+> **v2.20 增量** (2026-06-04, M4 目录重构: 全部 TCB 模块归入 `framework/`):
+> 1. **目录物理重构**: 原散落在 `kernel/` 根的 22 个 TCB 模块 (arch/boot/cpu/mm/irq/idt/dma/driver/net/fs/ipc/credo/chitin/barrier/console/klog/config/smp/lib/sync/proc/syscall/timer/wasm/tests/pci) 全部 `git mv` 至 `framework/`, `kernel/mod.rs` 仅保留 `pub mod framework; pub mod services;` 两个声明
+> 2. **模块声明同步**: `framework/mod.rs` 新增 `pub mod pci;`, 删除非 Rust 的 `pub mod link;` (`.ld` 链接脚本由 Makefile 引用, 不进 Rust 模块树)
+> 3. **恢复 `arch/mod.rs`**: 早前误删, 现从 git HEAD 还原 (含 `CoreArch`/`InterruptArch`/`MmuArch`/`SystemArch`/`Arch` 多子 trait + `arch!` 宏)
+> 4. **路径批量更新**: `sed` 全量替换 `crate::kernel::xxx` → `crate::kernel::framework::xxx` (5 个文件包含裸 `proc::`/`sync::`/`kernel::arch::` 引用已修复, 包括 `services/{proc,sync}/` 与 `framework/proc_elf.rs`/`mm/api.rs`/`arch/mod.rs` 宏)
+> 5. **`arch!` 宏路径修正**: `$crate::kernel::arch::CurrentArch` → `$crate::kernel::framework::arch::CurrentArch` (宏展开目标路径)
+> 6. **include_bytes! 路径修正**: 嵌套深度 +1 层 (`../../../build/` → `../../../../build/`)
+> 7. **`lib.rs` 顶层 re-export 路径**: `pub use kernel::cpu::CpuInfo` → `pub use kernel::framework::cpu::CpuInfo`
+> 8. **Cargo.toml smoltcp 路径**: `../kernel/net/smoltcp` → `../kernel/framework/net/smoltcp`
+> 9. **Makefile 链接脚本路径**: `src/kernel/link/x86_64.ld` → `src/kernel/framework/link/x86_64.ld` (aarch64 同理)
+> 10. **双架构 cargo build 验证**: `cargo build --target x86_64-unknown-none` **0 errors 0 warnings** ✅; `cargo build --target aarch64-unknown-none` **0 errors 0 warnings** ✅
+> 11. **services 0 unsafe 复核**: `grep -rn 'unsafe' src/kernel/services/` 仅匹配 4 处 `///` 文档注释 (无任何 `unsafe fn`/`unsafe {` 实际代码块)
+> 12. **新目录契约**:
+>     - `framework/` 物理包含所有 unsafe 与硬件裸操作, 是 TCB 唯一边界
+>     - `services/` 物理禁止 unsafe (待加 `#![deny(unsafe_code)]` lint, 后续 Phase 2.0 lint 集成时启用)
+>     - `kernel/mod.rs` 入口仅 2 个 `pub mod` 声明, 是框内核架构的可见标志
 > - ⚠️ 性能退化基准测试未做 (Phase 4 补做)
 
 ---

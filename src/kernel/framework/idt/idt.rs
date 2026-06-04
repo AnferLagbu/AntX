@@ -376,8 +376,8 @@ impl IdtManager {
         let ioapic_handled = {
             #[cfg(target_arch = "x86_64")]
             {
-                if crate::kernel::arch::x86_64::ioapic::is_initialized() {
-                    crate::kernel::arch::x86_64::ioapic::unmask_irq(irq);
+                if crate::kernel::framework::arch::x86_64::ioapic::is_initialized() {
+                    crate::kernel::framework::arch::x86_64::ioapic::unmask_irq(irq);
                     true
                 } else {
                     false
@@ -558,31 +558,31 @@ impl IdtManager {
 
         if frame.is_user_mode() {
             // 尝试 Demand Paging
-            let pf_info = crate::kernel::mm::page_fault::PageFaultInfo::from_error_code(
+            let pf_info = crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(
                 fault_addr, error_code,
             );
 
-            match crate::kernel::mm::page_fault::handle_user_page_fault(pf_info) {
-                crate::kernel::mm::page_fault::PfResult::Fixed => return,
-                crate::kernel::mm::page_fault::PfResult::SignalSegv => {
+            match crate::kernel::framework::mm::page_fault::handle_user_page_fault(pf_info) {
+                crate::kernel::framework::mm::page_fault::PfResult::Fixed => return,
+                crate::kernel::framework::mm::page_fault::PfResult::SignalSegv => {
                     self.terminate_user_process(frame, 11); // SIGSEGV
                     return;
                 }
-                crate::kernel::mm::page_fault::PfResult::SignalBus => {
+                crate::kernel::framework::mm::page_fault::PfResult::SignalBus => {
                     self.terminate_user_process(frame, 7); // SIGBUS
                     return;
                 }
-                crate::kernel::mm::page_fault::PfResult::Oom => {
+                crate::kernel::framework::mm::page_fault::PfResult::Oom => {
                     self.terminate_user_process(frame, 9); // SIGKILL (OOM)
                     return;
                 }
-                crate::kernel::mm::page_fault::PfResult::Unhandled => {
+                crate::kernel::framework::mm::page_fault::PfResult::Unhandled => {
                     // 回退到原有逻辑
                 }
             }
 
             if !error_flags.contains(super::types::ErrorFlags::PRESENT) {
-                if crate::kernel::proc::user_proc::try_expand_user_stack(fault_addr) {
+                if crate::kernel::framework::proc_legacy::user_proc::try_expand_user_stack(fault_addr) {
                     return;
                 }
             }
@@ -653,7 +653,7 @@ impl IdtManager {
 
     /// 尝试域级恢复
     fn attempt_domain_recovery(&self, frame: &InterruptFrame) {
-        crate::kernel::barrier::CRASH_RIP.store(frame.rip, core::sync::atomic::Ordering::SeqCst);
+        crate::kernel::framework::barrier::CRASH_RIP.store(frame.rip, core::sync::atomic::Ordering::SeqCst);
         extern "C" {
             fn recovery_try_recover_from_idt() -> i32;
         }
@@ -739,7 +739,7 @@ impl IdtManager {
 
             self.send_eoi(irq);
 
-            crate::kernel::irq::do_softirq();
+            crate::kernel::framework::irq::do_softirq();
         }
     }
 
@@ -749,8 +749,8 @@ impl IdtManager {
         let apic_handled = {
             #[cfg(target_arch = "x86_64")]
             {
-                if crate::kernel::arch::x86_64::apic::is_initialized() {
-                    crate::kernel::arch::x86_64::apic::eoi();
+                if crate::kernel::framework::arch::x86_64::apic::is_initialized() {
+                    crate::kernel::framework::arch::x86_64::apic::eoi();
                     true
                 } else {
                     false

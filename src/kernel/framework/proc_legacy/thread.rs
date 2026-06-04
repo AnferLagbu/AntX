@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::types::{ThreadPriority, ThreadState, SCHED_LEVEL_2_QUANTUM};
 
-pub use crate::kernel::config::{MAX_THREADS, MAX_THREADS_PER_PROCESS};
+pub use crate::kernel::framework::config::{MAX_THREADS, MAX_THREADS_PER_PROCESS};
 
 /// ✅ 统一线程结构体 — 合并了 Thread 和 ThreadNode, 消除类型强转 UB
 ///
@@ -110,7 +110,7 @@ impl Thread {
 
         if new_state == ThreadState::Frozen {
             self.frozen_since
-                .store(crate::kernel::timer::get_ticks(), Ordering::Relaxed);
+                .store(crate::kernel::framework::timer::get_ticks(), Ordering::Relaxed);
         }
 
         Ok(())

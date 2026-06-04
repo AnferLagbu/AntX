@@ -1,4 +1,4 @@
-use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
 use core::sync::atomic::Ordering;
 
@@ -7,22 +7,22 @@ use core::sync::atomic::Ordering;
 // ============================================================
 
 fn test_smp_cpu_count_positive() -> TestResult {
-    let count = crate::kernel::smp::get_cpu_count();
+    let count = crate::kernel::framework::smp::get_cpu_count();
     check!(count >= 1, "cpu_count >= 1");
     check!(count <= 64, "cpu_count <= 64 (sane upper bound)");
     TestResult::Pass
 }
 
 fn test_smp_current_cpu_valid() -> TestResult {
-    let cpu = crate::kernel::smp::get_current_cpu();
-    let count = crate::kernel::smp::get_cpu_count();
+    let cpu = crate::kernel::framework::smp::get_current_cpu();
+    let count = crate::kernel::framework::smp::get_cpu_count();
     check!(cpu < count, "current CPU index within range");
     TestResult::Pass
 }
 
 fn test_smp_cpu_online() -> TestResult {
-    let cpu = crate::kernel::smp::get_current_cpu();
-    let online = crate::kernel::smp::is_cpu_online(cpu);
+    let cpu = crate::kernel::framework::smp::get_current_cpu();
+    let online = crate::kernel::framework::smp::is_cpu_online(cpu);
     check!(online, "BSP (cpu 0) must be online");
     TestResult::Pass
 }
@@ -32,7 +32,7 @@ fn test_smp_cpu_online() -> TestResult {
 // ============================================================
 
 fn test_per_cpu_sched_init() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER_READY;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER_READY;
     check!(
         SCHEDULER_READY.load(Ordering::Acquire),
         "scheduler initialized"
@@ -41,19 +41,19 @@ fn test_per_cpu_sched_init() -> TestResult {
 }
 
 fn test_per_cpu_current_valid() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     let _current = SCHEDULER.current();
     TestResult::Pass
 }
 
 fn test_per_cpu_has_runnable() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     let _runnable = SCHEDULER.has_any_runnable();
     TestResult::Pass
 }
 
 fn test_per_cpu_time_slice_positive() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     let slice = SCHEDULER.get_time_slice();
     check!(slice > 0, "time slice > 0");
     check!(slice <= 80, "time slice within quantum range");
@@ -61,7 +61,7 @@ fn test_per_cpu_time_slice_positive() -> TestResult {
 }
 
 fn test_per_cpu_rt_count() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     let count = SCHEDULER.get_rt_count();
     check!(count <= 256, "RT task count bounded");
     TestResult::Pass
@@ -72,7 +72,7 @@ fn test_per_cpu_rt_count() -> TestResult {
 // ============================================================
 
 fn test_sched_policy_from_u32() -> TestResult {
-    use crate::kernel::proc::scheduler::SchedPolicy;
+    use crate::kernel::framework::proc_legacy::scheduler::SchedPolicy;
 
     assert_eq_test!(SchedPolicy::from_u32(0), SchedPolicy::Normal, "0 → Normal");
     assert_eq_test!(SchedPolicy::from_u32(1), SchedPolicy::Fifo, "1 → Fifo");
@@ -87,7 +87,7 @@ fn test_sched_policy_from_u32() -> TestResult {
 }
 
 fn test_sched_policy_discriminant() -> TestResult {
-    use crate::kernel::proc::scheduler::SchedPolicy;
+    use crate::kernel::framework::proc_legacy::scheduler::SchedPolicy;
     check!(SchedPolicy::Normal as u32 == 0, "Normal=0");
     check!(SchedPolicy::Fifo as u32 == 1, "Fifo=1");
     check!(SchedPolicy::Rr as u32 == 2, "Rr=2");
@@ -96,7 +96,7 @@ fn test_sched_policy_discriminant() -> TestResult {
 }
 
 fn test_sched_quota_operations() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     let test_pwm: u64 = 0xDEAD0000;
     SCHEDULER.set_quota(test_pwm, 100_000_000, 1_000_000_000);
     SCHEDULER.remove_quota(test_pwm);
@@ -104,7 +104,7 @@ fn test_sched_quota_operations() -> TestResult {
 }
 
 fn test_sched_limit_init() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     SCHEDULER.set_limit(0x100001, 5);
     SCHEDULER.remove_quota(0x100001);
     TestResult::Pass
@@ -115,8 +115,8 @@ fn test_sched_limit_init() -> TestResult {
 // ============================================================
 
 fn test_rt_policy_switching_self() -> TestResult {
-    use crate::kernel::proc::scheduler::SchedPolicy;
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SchedPolicy;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
 
     let pid = SCHEDULER.current().unwrap_or(0);
     if pid == 0 {
@@ -135,8 +135,8 @@ fn test_rt_policy_switching_self() -> TestResult {
 }
 
 fn test_rt_invalid_pid() -> TestResult {
-    use crate::kernel::proc::scheduler::SchedPolicy;
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SchedPolicy;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
 
     let result = SCHEDULER.set_sched_policy(0xFFFFFFFF, SchedPolicy::Fifo, 50);
     check!(!result, "invalid PID must fail");
@@ -148,13 +148,13 @@ fn test_rt_invalid_pid() -> TestResult {
 // ============================================================
 
 fn test_load_balance_no_panic() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     SCHEDULER.load_balance();
     TestResult::Pass
 }
 
 fn test_boost_priority_no_panic() -> TestResult {
-    use crate::kernel::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc_legacy::scheduler::SCHEDULER;
     SCHEDULER.boost_priority();
     TestResult::Pass
 }
@@ -164,22 +164,22 @@ fn test_boost_priority_no_panic() -> TestResult {
 // ============================================================
 
 fn test_kernel_pml4_exists() -> TestResult {
-    let kpml4 = crate::kernel::mm::vmm::get_kernel_pml4();
+    let kpml4 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
     check!(kpml4 != 0, "kernel PML4 is non-zero");
     TestResult::Pass
 }
 
 fn test_kernel_pml4_stable() -> TestResult {
-    let k1 = crate::kernel::mm::vmm::get_kernel_pml4();
-    let k2 = crate::kernel::mm::vmm::get_kernel_pml4();
+    let k1 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
+    let k2 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
     check!(k1 == k2, "kernel PML4 is stable across calls");
     TestResult::Pass
 }
 
 fn test_user_proc_manager_destroy_no_kstack() -> TestResult {
-    use crate::kernel::proc::user_proc::USER_PROC_MANAGER;
+    use crate::kernel::framework::proc_legacy::user_proc::USER_PROC_MANAGER;
 
-    let pid = crate::kernel::proc::scheduler::SCHEDULER
+    let pid = crate::kernel::framework::proc_legacy::scheduler::SCHEDULER
         .current()
         .unwrap_or(0);
     if pid == 0 {
@@ -196,7 +196,7 @@ fn test_user_proc_manager_destroy_no_kstack() -> TestResult {
 // ============================================================
 
 fn test_softirq_vec_enum_values() -> TestResult {
-    use crate::kernel::irq::SoftirqVec;
+    use crate::kernel::framework::irq::SoftirqVec;
     check!(SoftirqVec::High.to_idx() == 0, "High=0");
     check!(SoftirqVec::Timer.to_idx() == 1, "Timer=1");
     check!(SoftirqVec::NetRx.to_idx() == 2, "NetRx=2");
@@ -208,7 +208,7 @@ fn test_softirq_vec_enum_values() -> TestResult {
 }
 
 fn test_softirq_from_u8() -> TestResult {
-    use crate::kernel::irq::SoftirqVec;
+    use crate::kernel::framework::irq::SoftirqVec;
     check!(SoftirqVec::from_u8(0) == Some(SoftirqVec::High), "0→High");
     check!(SoftirqVec::from_u8(1) == Some(SoftirqVec::Timer), "1→Timer");
     check!(
@@ -220,40 +220,40 @@ fn test_softirq_from_u8() -> TestResult {
 }
 
 fn test_softirq_not_initially_in() -> TestResult {
-    let in_softirq = crate::kernel::irq::in_softirq();
+    let in_softirq = crate::kernel::framework::irq::in_softirq();
     check!(!in_softirq, "not in softirq context at test start");
     TestResult::Pass
 }
 
 fn test_softirq_pending_initially_zero() -> TestResult {
-    let pending = crate::kernel::irq::pending_softirq();
+    let pending = crate::kernel::framework::irq::pending_softirq();
     check!(!pending, "no pending softirqs at test start");
     TestResult::Pass
 }
 
 fn test_softirq_raise_then_check() -> TestResult {
-    use crate::kernel::irq::SoftirqVec;
+    use crate::kernel::framework::irq::SoftirqVec;
 
-    crate::kernel::irq::open_softirq(SoftirqVec::Tasklet, || {});
-    crate::kernel::irq::raise_softirq(SoftirqVec::Tasklet);
+    crate::kernel::framework::irq::open_softirq(SoftirqVec::Tasklet, || {});
+    crate::kernel::framework::irq::raise_softirq(SoftirqVec::Tasklet);
 
-    let pending = crate::kernel::irq::pending_softirq();
+    let pending = crate::kernel::framework::irq::pending_softirq();
     check!(pending, "softirq should be pending after raise");
 
-    crate::kernel::irq::do_softirq();
+    crate::kernel::framework::irq::do_softirq();
     TestResult::Pass
 }
 
 fn test_softirq_mask_raise() -> TestResult {
-    let mask: u64 = (1u64 << crate::kernel::irq::SoftirqVec::Timer.to_idx())
-        | (1u64 << crate::kernel::irq::SoftirqVec::NetRx.to_idx());
+    let mask: u64 = (1u64 << crate::kernel::framework::irq::SoftirqVec::Timer.to_idx())
+        | (1u64 << crate::kernel::framework::irq::SoftirqVec::NetRx.to_idx());
 
-    crate::kernel::irq::raise_softirq_mask(mask);
+    crate::kernel::framework::irq::raise_softirq_mask(mask);
 
-    let pending = crate::kernel::irq::pending_softirq();
+    let pending = crate::kernel::framework::irq::pending_softirq();
     check!(pending, "mask-raised softirqs should be pending");
 
-    crate::kernel::irq::do_softirq();
+    crate::kernel::framework::irq::do_softirq();
     TestResult::Pass
 }
 

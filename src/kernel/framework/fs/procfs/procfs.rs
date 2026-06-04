@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 
-use crate::kernel::mm::api as pmm_api;
+use crate::kernel::framework::mm::api as pmm_api;
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;
 pub const PROCFS_MAX_NAME: usize = 32;
@@ -125,7 +125,7 @@ impl ProcfsData {
                 *pos += len;
             };
 
-            let cpu_info = crate::kernel::cpu::get_cpu_info();
+            let cpu_info = crate::kernel::framework::cpu::get_cpu_info();
             match cpu_info {
                 Some(info) => {
                     write_str(buf, &mut pos, "CPU: ");
@@ -207,12 +207,12 @@ impl ProcfsData {
         }
 
         if name == "sys/config" {
-            return crate::kernel::config::procfs::read_sys_config(buf) as i32;
+            return crate::kernel::framework::config::procfs::read_sys_config(buf) as i32;
         }
 
         // 演进 8: JSON 格式 (与 text 模式字段一一对应)
         if name == "sys/config.json" {
-            return crate::kernel::config::procfs::read_sys_config_json(buf) as i32;
+            return crate::kernel::framework::config::procfs::read_sys_config_json(buf) as i32;
         }
 
         -1

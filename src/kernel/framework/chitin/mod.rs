@@ -381,7 +381,7 @@ pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
 /// 供 smoltcp_impl 使用——协议栈不关心具体驱动类型, 只需要
 /// 四个函数指针 (send/recv/get_mac/irq) 和 driver_data。
 pub fn chitin_find_net_device() -> Option<(
-    &'static crate::kernel::chitin::proto_net::NetOps,
+    &'static crate::kernel::framework::chitin::proto_net::NetOps,
     *mut u8,
     [u8; 6],
 )> {

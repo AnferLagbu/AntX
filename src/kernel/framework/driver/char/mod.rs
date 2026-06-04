@@ -34,21 +34,21 @@ pub use vga::{Color, TextAttribute, VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WI
 pub fn char_init() {
     vga::vga_init();
     serial::serial_init(0);
-    crate::kernel::chitin::chitin_register_driver(
+    crate::kernel::framework::chitin::chitin_register_driver(
         "vga",
-        crate::kernel::chitin::ChitinProto::Char,
+        crate::kernel::framework::chitin::ChitinProto::Char,
         None,
         None,
         alloc::boxed::Box::new(vga::VgaDriver::new()),
     );
     if let Some(com1) = serial::SerialPort::new(0) {
-        crate::kernel::chitin::chitin_register_driver_with_ops(
+        crate::kernel::framework::chitin::chitin_register_driver_with_ops(
             "serial0",
-            crate::kernel::chitin::ChitinProto::Char,
+            crate::kernel::framework::chitin::ChitinProto::Char,
             Some(0x3F8),
             Some(4),
             alloc::boxed::Box::new(com1),
-            crate::kernel::chitin::ChitinOps::Char(&serial::NS16550_CHAR_OPS),
+            crate::kernel::framework::chitin::ChitinOps::Char(&serial::NS16550_CHAR_OPS),
         );
     }
 }
@@ -56,12 +56,12 @@ pub fn char_init() {
 /// 初始化字符设备子系统 (AArch64: PL011 UART)
 #[cfg(target_arch = "aarch64")]
 pub fn char_init() {
-    use crate::kernel::chitin::ChitinOps;
+    use crate::kernel::framework::chitin::ChitinOps;
 
-    crate::kernel::chitin::chitin_register_driver_with_ops(
+    crate::kernel::framework::chitin::chitin_register_driver_with_ops(
         "pl011",
-        crate::kernel::chitin::ChitinProto::Char,
-        Some(crate::kernel::arch::aarch64::uart::PL011_BASE),
+        crate::kernel::framework::chitin::ChitinProto::Char,
+        Some(crate::kernel::framework::arch::aarch64::uart::PL011_BASE),
         None,
         alloc::boxed::Box::new(pl011::Pl011Driver::new()),
         ChitinOps::Char(&pl011::PL011_CHAR_OPS),

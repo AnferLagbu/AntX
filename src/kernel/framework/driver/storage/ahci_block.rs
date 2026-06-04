@@ -3,7 +3,7 @@
 //! 将 AHCI/SATA 端口封装为标准的 BlockDevice trait 实现，
 //! 使 HvFS 等多磁盘文件系统可以通过统一接口访问 AHCI 磁盘。
 
-use crate::kernel::driver::block::BlockDevice;
+use crate::kernel::framework::driver::block::BlockDevice;
 
 use super::AHCI_CONTROLLERS;
 

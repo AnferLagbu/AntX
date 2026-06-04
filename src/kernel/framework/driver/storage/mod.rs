@@ -52,7 +52,7 @@ static NVME_CONTROLLERS: Mutex<Vec<NvmeController>> = Mutex::new(Vec::new());
 #[cfg(target_arch = "x86_64")]
 pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
-    let pci_count = crate::kernel::pci::init();
+    let pci_count = crate::kernel::framework::pci::init();
     if pci_count == 0 {
         klog_warn!(
             Driver,
@@ -61,7 +61,7 @@ pub fn storage_init() -> framework::Result<()> {
     }
 
     // Step 2: 扫描 PCI 总线寻找存储控制器
-    let devices = crate::kernel::pci::scan_all_buses();
+    let devices = crate::kernel::framework::pci::scan_all_buses();
 
     let mut ahci_found = 0u32;
     let mut nvme_found = 0u32;
@@ -182,22 +182,22 @@ pub fn storage_init() -> framework::Result<()> {
     // Step 3: 传统 ATA 检测 (回退)
     // ATA 驱动使用内部全局单例, 通过 C FFI 接口初始化
     unsafe {
-        crate::kernel::driver::storage::ata::ata_init();
+        crate::kernel::framework::driver::storage::ata::ata_init();
     }
 
-    crate::kernel::chitin::chitin_register_driver(
+    crate::kernel::framework::chitin::chitin_register_driver(
         "ata_controller",
-        crate::kernel::chitin::ChitinProto::Block,
+        crate::kernel::framework::chitin::ChitinProto::Block,
         None,
         None,
-        alloc::boxed::Box::new(crate::kernel::driver::storage::ata::AtaController::new()),
+        alloc::boxed::Box::new(crate::kernel::framework::driver::storage::ata::AtaController::new()),
     );
 
     // Step 3.5: 将 ATA 磁盘注册到 Chitin (唯一注册入口)
     {
-        use crate::kernel::chitin::proto_block;
-        use crate::kernel::driver::block::BlockDevice;
-        use crate::kernel::driver::storage::ata_block::AtaBlockDevice;
+        use crate::kernel::framework::chitin::proto_block;
+        use crate::kernel::framework::driver::block::BlockDevice;
+        use crate::kernel::framework::driver::storage::ata_block::AtaBlockDevice;
         for drive in 0..4u8 {
             if let Some(dev) = AtaBlockDevice::new(drive) {
                 let sectors = dev.blk_total_sectors();
@@ -221,9 +221,9 @@ pub fn storage_init() -> framework::Result<()> {
 
     // Step 3.6: 将 AHCI 端口注册到 Chitin (唯一注册入口)
     {
-        use crate::kernel::chitin::proto_block;
-        use crate::kernel::driver::block::BlockDevice;
-        use crate::kernel::driver::storage::ahci_block::AhciBlockDevice;
+        use crate::kernel::framework::chitin::proto_block;
+        use crate::kernel::framework::driver::block::BlockDevice;
+        use crate::kernel::framework::driver::storage::ahci_block::AhciBlockDevice;
 
         let mut ahci_ports: Vec<(usize, usize)> = Vec::new();
         {
@@ -260,9 +260,9 @@ pub fn storage_init() -> framework::Result<()> {
 
     // Step 3.7: 将 NVMe 命名空间注册到 Chitin (唯一注册入口)
     {
-        use crate::kernel::chitin::proto_block;
-        use crate::kernel::driver::block::BlockDevice;
-        use crate::kernel::driver::storage::nvme_block::NvmeBlockDevice;
+        use crate::kernel::framework::chitin::proto_block;
+        use crate::kernel::framework::driver::block::BlockDevice;
+        use crate::kernel::framework::driver::storage::nvme_block::NvmeBlockDevice;
 
         let mut nvme_ns: Vec<(usize, u32)> = Vec::new();
         {
@@ -315,7 +315,7 @@ pub fn storage_init() -> framework::Result<()> {
 /// AArch64 存储初始化 — 通过 virtio-mmio 发现块设备。
 #[cfg(not(target_arch = "x86_64"))]
 pub fn storage_init() -> framework::Result<()> {
-    use crate::kernel::driver::virtio::{self, VIRTIO_ID_BLOCK};
+    use crate::kernel::framework::driver::virtio::{self, VIRTIO_ID_BLOCK};
 
     // 扫描 virtio-mmio 区域，寻找块设备
     let devices = virtio::probe_all();
@@ -327,7 +327,7 @@ pub fn storage_init() -> framework::Result<()> {
                 let blk_name = alloc::format!("virtio-blk{}", blk_count);
                 let name_leaked: &'static str = blk_name.leak();
                 let mmio_base = blk.device.iomem.phys().as_u64();
-                crate::kernel::chitin::proto_block::register_block_device(
+                crate::kernel::framework::chitin::proto_block::register_block_device(
                     name_leaked,
                     blk,
                     Some(mmio_base as u64),

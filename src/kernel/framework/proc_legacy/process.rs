@@ -7,7 +7,7 @@ use spin::Mutex;
 
 use super::scheduler::SchedPolicy;
 use super::types::*;
-use crate::kernel::chitin::user_driver::chitin_process_cleanup;
+use crate::kernel::framework::chitin::user_driver::chitin_process_cleanup;
 
 const MAX_FDS_PER_PROCESS: usize = 64;
 
@@ -609,8 +609,8 @@ fn proc_barrier_rollback_cb() -> bool {
 }
 
 pub fn proc_register_barrier_domain() {
-    crate::kernel::barrier::recovery_domain_register(4);
-    if let Some(dom) = crate::kernel::barrier::RECOVERY_MANAGER.lock().find(4) {
+    crate::kernel::framework::barrier::recovery_domain_register(4);
+    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER.lock().find(4) {
         *dom.capture_cb.lock() = Some(proc_barrier_capture_cb);
         *dom.rollback_cb.lock() = Some(proc_barrier_rollback_cb);
     }

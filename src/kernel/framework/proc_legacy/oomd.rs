@@ -12,7 +12,7 @@
 //! | Emergency | SIGTERM → 最大 RSS 进程, 5s 后 SIGKILL |
 
 use super::scheduler::TICK_COUNT;
-use crate::kernel::mm::pressure;
+use crate::kernel::framework::mm::pressure;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 const OOMD_CHECK_INTERVAL: u64 = 100;
@@ -50,7 +50,7 @@ impl OomDaemon {
         }
         self.last_check.store(tick, Ordering::Relaxed);
 
-        let pmm = crate::kernel::mm::pmm::get_pmm();
+        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
         let free_pages = pmm.get_free_pages();
         let total_pages = pmm.get_total_pages();
 

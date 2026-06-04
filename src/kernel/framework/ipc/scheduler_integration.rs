@@ -6,7 +6,7 @@
 //! - 支持超时等待
 
 use super::types::{WaitQueue, WaitQueueItem};
-use crate::kernel::proc::api::{scheduler_yield_ex, thread_get_current};
+use crate::kernel::framework::proc_legacy::api::{scheduler_yield_ex, thread_get_current};
 
 /// 阻塞当前线程到指定等待队列
 ///

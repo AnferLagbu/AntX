@@ -1,17 +1,17 @@
-use crate::kernel::chitin::devtree::{
+use crate::kernel::framework::chitin::devtree::{
     devtree_clear_user_mapped, devtree_clear_user_mapped_by_pid, devtree_get_node,
     devtree_get_user_mapped, devtree_set_user_mapped, NodeId, PropertyValue,
 };
-use crate::kernel::chitin::{ChitinProto, DeviceState};
-use crate::kernel::credo::capability::{
+use crate::kernel::framework::chitin::{ChitinProto, DeviceState};
+use crate::kernel::framework::credo::capability::{
     CAP_DOMAIN_DEVICE, DEVICE_CAP_BIND, DEVICE_CAP_IRQ, DEVICE_CAP_MMIO,
 };
-use crate::kernel::credo::engine;
-use crate::kernel::credo::types::{CapBits, CapDomain};
-use crate::kernel::mm::vma::{MmStruct, Vma, VmaType};
-use crate::kernel::mm::vmm::get_vmm;
-use crate::kernel::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};
-use crate::kernel::proc::process::PROCESS_TABLE;
+use crate::kernel::framework::credo::engine;
+use crate::kernel::framework::credo::types::{CapBits, CapDomain};
+use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::vmm::get_vmm;
+use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::kernel::framework::proc_legacy::process::PROCESS_TABLE;
 use crate::klog_info;
 use crate::klog_warn;
 use core::sync::atomic::Ordering;

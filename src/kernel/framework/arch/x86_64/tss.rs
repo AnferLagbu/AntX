@@ -304,5 +304,5 @@ mod tests {
 }
 #[cfg(feature = "kernel_test")]
 pub fn register_tss_tests() {
-    crate::kernel::tests::arch::register_tss_tests();
+    crate::kernel::framework::tests::arch::register_tss_tests();
 }

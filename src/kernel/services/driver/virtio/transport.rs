@@ -28,7 +28,7 @@
 //! Phase 2.1.2 任务: VirtIO 传输层迁移
 
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ── MMIO 寄存器偏移 (与 VirtIO 1.0 规范一致) ──
 

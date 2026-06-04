@@ -13,7 +13,7 @@ use super::slab::SLAB_DEFAULT_SIZE;
 ///
 /// 检查: 实际 CPU 数是否超出 `MAX_CPUS`。
 pub fn validate_cpu_config() -> Result<(), ConfigError> {
-    let cpu_count = crate::kernel::smp::get_cpu_count();
+    let cpu_count = crate::kernel::framework::smp::get_cpu_count();
 
     if cpu_count as usize > super::capacity::MAX_CPUS {
         return Err(ConfigError::CpuCountExceedsMax {
@@ -70,8 +70,8 @@ pub fn validate_memory_config() -> Result<(), ConfigError> {
 pub fn validate_interrupt_config() -> Result<(), ConfigError> {
     #[cfg(target_arch = "x86_64")]
     {
-        let apic_ok = crate::kernel::arch::x86_64::apic::is_initialized();
-        let ioapic_ok = crate::kernel::arch::x86_64::ioapic::is_initialized();
+        let apic_ok = crate::kernel::framework::arch::x86_64::apic::is_initialized();
+        let ioapic_ok = crate::kernel::framework::arch::x86_64::ioapic::is_initialized();
         if !apic_ok && !ioapic_ok {
             return Err(ConfigError::IrqControllerUnavailable);
         }
@@ -107,7 +107,7 @@ pub fn validate_cross_module_consistency() -> Result<(), ConfigError> {
 /// 已配置为启用时, PCI 必须在它们之前完成初始化。
 /// 本函数为软检查 — 报告但不 panic, 因为某些嵌入式环境可能不包含 PCI 总线。
 pub fn validate_pci_subsystem() -> Result<(), ConfigError> {
-    if !crate::kernel::pci::is_initialized() {
+    if !crate::kernel::framework::pci::is_initialized() {
         return Err(ConfigError::DriverConfigInvalid("pci"));
     }
     Ok(())
@@ -200,7 +200,7 @@ pub fn validate_system_config() -> u32 {
     }
 
     // 演进 9: KASLR 偏移自检
-    if let Err(msg) = crate::kernel::config::validate_kaslr_offset() {
+    if let Err(msg) = crate::kernel::framework::config::validate_kaslr_offset() {
         errors += 1;
         use crate::klog_err;
         klog_err!(Boot, "CONFIG: KASLR: {}", msg);

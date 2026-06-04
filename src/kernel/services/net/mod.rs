@@ -17,7 +17,7 @@
 //! 评估日期: 2026-06-04
 
 use crate::kernel::framework::net_socket as fw_net_socket;
-use crate::kernel::net;
+use crate::kernel::framework::net;
 
 pub mod socket;
 

@@ -19,8 +19,8 @@
 //! # Safety
 //! 此模块直接操作 PS/2 控制器硬件。
 
-use crate::kernel::driver::framework::{inb, outb};
-use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::framework::{inb, outb};
+use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use alloc::boxed::Box;
 use spin::Mutex;
 
@@ -625,13 +625,13 @@ pub extern "C" fn keyboard_init() {
     let _ = driver.init();
 
     let raw_ptr: *mut KeyboardDriver = &mut *driver;
-    let _id = crate::kernel::chitin::chitin_register_with_ops(
+    let _id = crate::kernel::framework::chitin::chitin_register_with_ops(
         "ps2_keyboard",
-        crate::kernel::chitin::ChitinProto::Input,
+        crate::kernel::framework::chitin::ChitinProto::Input,
         None,
         Some(1),
         raw_ptr as *mut u8,
-        crate::kernel::chitin::ChitinOps::Input(&PS2_KEYBOARD_INPUT_OPS),
+        crate::kernel::framework::chitin::ChitinOps::Input(&PS2_KEYBOARD_INPUT_OPS),
     );
 
     *KEYBOARD_DEVICE.lock() = Some(driver);
@@ -651,7 +651,7 @@ pub extern "C" fn keyboard_irq_handler() {
 /// 读取字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
 #[no_mangle]
 pub extern "C" fn keyboard_read_char() -> i32 {
-    match crate::kernel::chitin::chitin_input_read() {
+    match crate::kernel::framework::chitin::chitin_input_read() {
         Some(ch) => ch as i32,
         None => -1,
     }
@@ -660,7 +660,7 @@ pub extern "C" fn keyboard_read_char() -> i32 {
 /// 检查是否有可读字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
 #[no_mangle]
 pub extern "C" fn keyboard_has_char() -> i32 {
-    if crate::kernel::chitin::chitin_input_has_data() {
+    if crate::kernel::framework::chitin::chitin_input_has_data() {
         1
     } else {
         0
@@ -793,7 +793,7 @@ mod tests {
 // InputOps 桥接 — 供 Chitin 统一输入设备 I/O
 // ============================================================================
 
-use crate::kernel::chitin::proto_input::InputOps;
+use crate::kernel::framework::chitin::proto_input::InputOps;
 
 extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
     if driver_data.is_null() { return core::ptr::null(); }

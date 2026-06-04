@@ -1,4 +1,4 @@
-use crate::kernel::fs::hvfs::bp::HvCompType;
+use crate::kernel::framework::fs::hvfs::bp::HvCompType;
 use alloc::vec::Vec;
 
 pub const HV_COMP_MIN_SIZE: usize = 64;

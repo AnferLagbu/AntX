@@ -182,5 +182,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_sha256_tests() {
-    crate::kernel::tests::sys::register_sha256_tests();
+    crate::kernel::framework::tests::sys::register_sha256_tests();
 }

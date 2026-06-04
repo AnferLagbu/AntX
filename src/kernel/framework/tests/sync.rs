@@ -1,15 +1,15 @@
-use crate::kernel::sync::atomic::{
+use crate::kernel::framework::sync_legacy::atomic::{
     atomic_add, atomic_cmpxchg, atomic_dec, atomic_inc, atomic_read, atomic_set, atomic_sub,
     AtomicBool,
 };
-use crate::kernel::sync::mutex::{CondVar, Mutex};
-use crate::kernel::sync::rwlock::RwLock;
-use crate::kernel::sync::seqlock::SeqLock;
-use crate::kernel::sync::spinlock::SpinLock;
-use crate::kernel::sync::types::{
+use crate::kernel::framework::sync_legacy::mutex::{CondVar, Mutex};
+use crate::kernel::framework::sync_legacy::rwlock::RwLock;
+use crate::kernel::framework::sync_legacy::seqlock::SeqLock;
+use crate::kernel::framework::sync_legacy::spinlock::SpinLock;
+use crate::kernel::framework::sync_legacy::types::{
     IrqSaveFlags, MutexInner, RwLockInner, SpinLockInner, TryLockResult,
 };
-use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
 use core::sync::atomic::Ordering;
 

@@ -3,9 +3,9 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 
-use crate::kernel::credo::api as pwm_api;
-use crate::kernel::fs::vfs::types::KernelError;
-use crate::kernel::fs::vfs::types::*;
+use crate::kernel::framework::credo::api as pwm_api;
+use crate::kernel::framework::fs::vfs::types::KernelError;
+use crate::kernel::framework::fs::vfs::types::*;
 
 const RAMFS_MAX_NODES: usize = 256;
 const RAMFS_MAX_BLOCKS: usize = 2048;

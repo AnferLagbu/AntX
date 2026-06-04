@@ -57,7 +57,7 @@ pub fn dispatch_syscall(num: u64, a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     // SAFETY: syscall_dispatch is unsafe extern "C" because it processes
     // raw user-supplied arguments. The framework is the TCB and is
     // responsible for validating these arguments before passing to services.
-    unsafe { crate::kernel::syscall::syscall_dispatch(num, a0, a1, a2, a3) }
+    unsafe { crate::kernel::framework::syscall::syscall_dispatch(num, a0, a1, a2, a3) }
 }
 
 /// 安全注册系统调用处理器 (services 层入口)。
@@ -68,7 +68,7 @@ pub fn dispatch_syscall(num: u64, a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 /// # 安全约束
 /// - 仅在内核启动阶段单线程调用。
 /// - `num` 不可与已有注册冲突。
-pub fn register_syscall_handler(num: u64, handler: crate::kernel::syscall::types::SyscallHandler) {
+pub fn register_syscall_handler(num: u64, handler: crate::kernel::framework::syscall::types::SyscallHandler) {
     // SAFETY: 启动阶段单线程安全, handler 来自 services 层。
-    unsafe { crate::kernel::syscall::api::syscall_register(num, handler) }
+    unsafe { crate::kernel::framework::syscall::api::syscall_register(num, handler) }
 }

@@ -20,10 +20,10 @@
 //! - 字符串路径解析纯栈上,无堆分配 (除路径 split 时 alloc::string)
 use super::types::*;
 use super::vfs::VFS_MANAGER;
-use crate::kernel::fs::hvfs::hvfs::get_hvfs;
-use crate::kernel::fs::ramfs::ramfs::RAMFS_DATA;
+use crate::kernel::framework::fs::hvfs::hvfs::get_hvfs;
+use crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA;
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
-use crate::kernel::lib::cstr::CStrExt;
+use crate::kernel::framework::lib::cstr::CStrExt;
 
 // ============================================================================
 // 对外契约: Vfs trait (用于 trait-object 注册 / host 端测试)
@@ -449,7 +449,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     };
 
     if result == 0 {
-        let tbl = crate::kernel::credo::identity::get_table();
+        let tbl = crate::kernel::framework::credo::identity::get_table();
         let r = st_ref.as_mut();
         r.uid = tbl.uid_of(r.owner_pwm);
         r.gid = tbl.gid_of(r.group_pwm);
@@ -477,7 +477,7 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
         None => return -1,
     };
 
-    let dirent_size = core::mem::size_of::<crate::kernel::fs::ramfs::ramfs::RamFsDirEntry>() as u64;
+    let dirent_size = core::mem::size_of::<crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry>() as u64;
 
     match fs_type {
         FsType::RamFs => {
@@ -486,7 +486,7 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
             let raw_size = dirent_size as usize;
             let mut raw_buf = alloc::vec![0u8; raw_size];
             let result = ramfs.read(_node_id, &mut dir_offset, &mut raw_buf, pwm);
-            let raw_entry = crate::kernel::fs::ramfs::ramfs::RamFsDirEntry::read_at(&raw_buf, 0);
+            let raw_entry = crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry::read_at(&raw_buf, 0);
             if result <= 0 || raw_entry.node == 0 {
                 return 0;
             }
@@ -1028,7 +1028,7 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
     };
 
     if result == 0 {
-        let tbl = crate::kernel::credo::identity::get_table();
+        let tbl = crate::kernel::framework::credo::identity::get_table();
         let r = st_ref.as_mut();
         r.uid = tbl.uid_of(r.owner_pwm);
         r.gid = tbl.gid_of(r.group_pwm);

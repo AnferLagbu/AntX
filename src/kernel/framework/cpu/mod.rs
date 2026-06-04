@@ -602,7 +602,7 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 /// FFI export function (C-callable)
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn cpu_init() -> i32 {
-    use crate::kernel::klog::{klog_write, LogCategory, LogLevel};
+    use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 
     static INIT_MSG: &[u8] = b"Initializing QX AMD64 CPU driver...\0";
     // SAFETY: FFI logging call; INIT_MSG is a static byte slice with a trailing
@@ -1463,5 +1463,5 @@ mod tests {
 }
 #[cfg(feature = "kernel_test")]
 pub fn register_cpu_tests() {
-    crate::kernel::tests::arch::register_cpu_tests();
+    crate::kernel::framework::tests::arch::register_cpu_tests();
 }

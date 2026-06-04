@@ -32,7 +32,7 @@
 //! Phase 2.1.3 任务: NVMe 存储控制器迁移
 
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ── BAR0 寄存器偏移 ──
 

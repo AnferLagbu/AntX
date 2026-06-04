@@ -360,14 +360,14 @@ fn per_cpu_gdt_mut(cpu: u32) -> &'static mut PerCpuGdt {
 /// 获取当前 CPU 的 GDT 不可变引用
 #[inline]
 fn current_per_cpu_gdt() -> &'static PerCpuGdt {
-    let cpu = crate::kernel::smp::get_current_cpu();
+    let cpu = crate::kernel::framework::smp::get_current_cpu();
     per_cpu_gdt(cpu)
 }
 
 /// 获取当前 CPU 的 GDT 可变引用
 #[inline]
 fn current_per_cpu_gdt_mut() -> &'static mut PerCpuGdt {
-    let cpu = crate::kernel::smp::get_current_cpu();
+    let cpu = crate::kernel::framework::smp::get_current_cpu();
     per_cpu_gdt_mut(cpu)
 }
 
@@ -419,7 +419,7 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 /// 4. 加载 GDTR (lgdt 指令)
 /// 5. 加载 TR (ltr 指令, 任务寄存器)
 pub fn gdt_init() -> i32 {
-    use crate::kernel::klog::{klog_write, LogCategory, LogLevel};
+    use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 
     static INIT_MSG: &[u8] = b"Initializing GDT and TSS (BSP)...\0";
     unsafe {
@@ -467,7 +467,7 @@ pub fn gdt_init() -> i32 {
 
         // IA32_KERNEL_GS_BASE — swapgs 时切换到该地址
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
-        crate::kernel::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &gdt.syscall as *const _ as u64);
+        crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &gdt.syscall as *const _ as u64);
     }
 
     static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
@@ -523,7 +523,7 @@ pub fn gdt_init_ap(cpu_index: u32) {
         ap.syscall.kernel_rsp = ap.syscall_stack.as_ptr() as u64 + ap.syscall_stack.len() as u64;
 
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
-        crate::kernel::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
+        crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
     }
 }
 
@@ -636,5 +636,5 @@ mod tests {
 }
 #[cfg(feature = "kernel_test")]
 pub fn register_gdt_tests() {
-    crate::kernel::tests::arch::register_gdt_tests();
+    crate::kernel::framework::tests::arch::register_gdt_tests();
 }

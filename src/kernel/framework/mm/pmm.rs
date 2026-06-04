@@ -20,7 +20,7 @@ macro_rules! klog_pmm {
 }
 
 use super::*;
-use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+use crate::kernel::framework::sync_legacy::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 use core::cell::{Cell, UnsafeCell};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
@@ -975,8 +975,8 @@ fn pmm_barrier_rollback_cb() -> bool {
 }
 
 pub fn pmm_register_barrier_domain() {
-    crate::kernel::barrier::recovery_domain_register(3);
-    if let Some(dom) = crate::kernel::barrier::RECOVERY_MANAGER.lock().find(3) {
+    crate::kernel::framework::barrier::recovery_domain_register(3);
+    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER.lock().find(3) {
         *dom.capture_cb.lock() = Some(pmm_barrier_capture_cb);
         *dom.rollback_cb.lock() = Some(pmm_barrier_rollback_cb);
     }

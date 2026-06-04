@@ -1,8 +1,8 @@
 use super::check;
-use crate::kernel::barrier::domain::RecoveryDomain;
-use crate::kernel::barrier::manager::RecoveryManager;
-use crate::kernel::barrier::types::*;
-use crate::kernel::tests::{runner, TestResult};
+use crate::kernel::framework::barrier::domain::RecoveryDomain;
+use crate::kernel::framework::barrier::manager::RecoveryManager;
+use crate::kernel::framework::barrier::types::*;
+use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
 fn test_domain_state_semantic() -> TestResult {

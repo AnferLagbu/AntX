@@ -5,8 +5,8 @@
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use super::config;
-use crate::kernel::barrier::types::DomainState;
-use crate::kernel::barrier::RECOVERY_MANAGER;
+use crate::kernel::framework::barrier::types::DomainState;
+use crate::kernel::framework::barrier::RECOVERY_MANAGER;
 
 pub const MAX_DEPENDENCY_LAYERS: usize = 8;
 pub const MAX_DOMAINS_PER_LAYER: usize = 16;

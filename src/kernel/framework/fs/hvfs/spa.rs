@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
-use crate::kernel::driver::block;
-use crate::kernel::fs::hvfs::arc::HvArc;
-use crate::kernel::fs::hvfs::bp::*;
-use crate::kernel::fs::hvfs::checksum::HvChecksum;
-use crate::kernel::fs::hvfs::dva::HvDva;
-use crate::kernel::fs::hvfs::metaslab::*;
-use crate::kernel::fs::hvfs::vdev::*;
-use crate::kernel::sync::mutex::Mutex;
+use crate::kernel::framework::driver::block;
+use crate::kernel::framework::fs::hvfs::arc::HvArc;
+use crate::kernel::framework::fs::hvfs::bp::*;
+use crate::kernel::framework::fs::hvfs::checksum::HvChecksum;
+use crate::kernel::framework::fs::hvfs::dva::HvDva;
+use crate::kernel::framework::fs::hvfs::metaslab::*;
+use crate::kernel::framework::fs::hvfs::vdev::*;
+use crate::kernel::framework::sync_legacy::mutex::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 

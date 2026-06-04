@@ -26,9 +26,9 @@ pub mod types;
 use core::sync::atomic::Ordering;
 
 // 导入 spinlock 模块的中断控制函数
-use crate::kernel::sync::spinlock::{disable_interrupts, restore_interrupts};
+use crate::kernel::framework::sync_legacy::spinlock::{disable_interrupts, restore_interrupts};
 // 导入 IrqSaveFlags 类型
-use crate::kernel::sync::types::IrqSaveFlags;
+use crate::kernel::framework::sync_legacy::types::IrqSaveFlags;
 
 /// 重新导出类型
 pub use types::{MutexInner, RwLockInner, SpinLockGuard, SpinLockInner};

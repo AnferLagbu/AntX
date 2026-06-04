@@ -1,130 +1,69 @@
-//! QueenX 内核 (纯 Rust 实现)
+//! QueenX 内核 (纯 Rust 实现) — 框内核 (Framekernel)
 //!
-//! ## 架构概览
+//! ## 架构概览 (Asterinas OSTD 范式)
 //!
 //! ```text
 //! kernel/
-//! ├── arch/          # 架构相关 (GDT, TSS, x86_64 特定)
-//! │   └── x86_64/
-//! ├── boot/          # 启动信息 (Multiboot, 内存映射)
-//! ├── cpu/           # CPU 管理 (CPUID, MSR, TSC, 缓存, 拓扑)
-//! ├── lib/           # 基础库 (字符串/内存操作, C 标准库函数)
-//! ├── mm/            # 内存管理 (PMM, VMM, Slab, Kmalloc)
-//! ├── proc/          # 进程/线程管理 (PCB, 调度器, 用户进程)
-//! ├── fs/            # 文件系统 (VFS, ramfs, HvFS v2, devfs, procfs)
-//! ├── net/           # 网络协议栈 (smoltcp, 驱动)
-//! ├── idt/           # 中断描述符表 (IDT, handlers, 统计)
-//! ├── sync/          # 同步原语 (spinlock, mutex, rwlock)
-//! ├── credo/        # 身份与权限框架 (DID, 能力矩阵, 会话)
-//! ├── dma/           # DMA 引擎
-//! ├── barrier/       # 故障恢复系统
-//! ├── pci/           # PCI 设备管理
-//! ├── syscall/       # 系统调用接口
-//! ├── driver/        # 设备驱动 (ATA, 键盘, 串口)
-//! ├── ipc/           # 进程间通信
-//! └── timer/         # 定时器子系统
+//! ├── framework/   # 【唯一 TCB / 唯一允许 unsafe】底层硬件基座
+//! │   ├── arch/      架构特定 (GDT/IDT/APIC/MMU/GIC)
+//! │   ├── boot/      引导协议 (Multiboot2/UEFI/...)
+//! │   ├── cpu/       CPU 探测 (CPUID/MSR/TSC/缓存/拓扑)
+//! │   ├── mm/        物理/虚拟内存 (PMM/VMM/Slab/Kmalloc)
+//! │   ├── irq/       中断控制器底层
+//! │   ├── idt/       中断描述符表
+//! │   ├── dma/       DMA 引擎
+//! │   ├── driver/    原生硬件驱动 (寄存器/时序)
+//! │   ├── net/       网络硬件 + 协议栈
+//! │   ├── fs/        文件系统底层 (VFS 抽象 + 块设备层)
+//! │   ├── ipc/       IPC 底层 (内核态通道)
+//! │   ├── credo/     身份/密码学硬件
+//! │   ├── chitin/    设备框架底层
+//! │   ├── barrier/   弹性恢复底层
+//! │   ├── console/   串口/终端硬件
+//! │   ├── klog/      日志硬件输出
+//! │   ├── config/    硬件相关配置
+//! │   ├── smp/       多核支持
+//! │   ├── lib/       底层工具
+//! │   ├── link/      链接脚本
+//! │   ├── alloc/     全局分配器
+//! │   ├── sync/      同步原语 (TCB)
+//! │   ├── sched/     调度器特质
+//! │   └── frame.rs/vmspace.rs/usermode.rs/userctx.rs/userptr.rs
+//! │     iomem.rs/ioport.rs/irqline.rs/dma_buf.rs/page_table.rs
+//! │     cpu_local.rs/racy_cell.rs
+//! │     net_socket.rs/credo_pwm.rs/proc_elf.rs/syscall_init.rs
+//! │
+//! └── services/    # 【全 safe / #![deny(unsafe_code)]】业务层
+//!     ├── driver/    设备驱动 safe wrapper
+//!     ├── fs/        文件系统业务 (VFS + 4 FS 实现)
+//!     ├── net/       网络业务 (socket)
+//!     ├── ipc/       IPC 业务
+//!     ├── proc/      进程子系统
+//!     ├── sync/      同步原语业务封装
+//!     ├── syscall/   系统调用分发
+//!     ├── credo/     身份/密码学业务
+//!     ├── chitin/    用户态驱动框架
+//!     ├── barrier/   弹性归因业务
+//!     ├── config/    配置业务解析
+//!     ├── console/   控制台业务
+//!     ├── klog/      日志业务
+//!     └── wasm/      WASM 运行时
 //! ```
 //!
 //! ## 设计理念
 //!
-//! - **功能复刻**: 理解 C 版本逻辑后用 Rust 惯用方式重写
+//! - **TCB 收拢**: 所有 `unsafe` 与硬件裸操作集中于 `framework/`
+//! - **业务隔离**: `services/` 全目录 `#![deny(unsafe_code)]`, 100% safe
 //! - **类型安全**: 利用枚举、Option、Result 消除不安全代码
 //! - **零成本抽象**: 关键路径性能与 C 版本相当
 //! - **模块化**: 每个子系统独立可测试
 
 // ============================================================================
-// 核心子系统声明
+// 顶层声明: 仅 2 个目录
 // ============================================================================
 
 /// 框内核 Framework (TCB) — 唯一允许 unsafe 的模块
 pub mod framework;
 
-/// 架构相关模块 (GDT, TSS)
-pub mod arch;
-
-/// 启动信息模块 (Multiboot, 内存映射)
-pub mod boot;
-
-/// CPU 驱动核心 (CPUID, MSR, TSC, 缓存检测, 多核拓扑)
-pub mod cpu;
-
-// ============================================================================
-// 主要子系统 (从 src/ 根目录提升至此)
-// ============================================================================
-
-/// 内存管理子系统 (PMM, VMM, Slab, Kmalloc)
-pub mod mm;
-
-/// 进程/线程管理 (PCB, 调度器, MLFQ, 用户进程加载)
-pub mod proc;
-
-/// 文件系统 (VFS, ramfs, devfs, procfs, diskfs)
-pub mod fs;
-
-/// 网络协议栈 (smoltcp, 网卡驱动)
-/// x86_64: E1000 PCI  /  aarch64: virtio-net MMIO
-pub mod net;
-
-/// 中断描述符表 (IDT, ISR, 异常处理, 统计)
-pub mod idt;
-
-/// 中断底部半 (Softirq, 延迟处理)
-pub mod irq;
-
-/// 同步原语 (SpinLock, Mutex, RwLock, 原子操作)
-pub mod sync;
-
-/// Credo v1 身份与权限框架 (DID, 能力矩阵, 会话管理, 审计)
-pub mod credo;
-
-/// DMA 引擎 (映射, 缓冲区管理, 一致性)
-pub mod dma;
-
-/// 故障恢复屏障 (panic 恢复, 域隔离)
-pub mod barrier;
-
-/// PCI 设备管理 (枚举, 配置空间访问, 双架构 ECAM/Port I/O)
-pub mod pci;
-
-/// 系统调用接口 (syscall 表, 参数验证, 双架构支持)
-pub mod syscall;
-
-/// 设备驱动 (ATA 磁盘, 键盘, 串口)
-pub mod driver;
-
-/// 几丁质设备框架 (Chitin: 统一设备注册/发现/分类)
-pub mod chitin;
-
-/// IPC 子系统 (管道, 共享内存, 消息队列, 信号量, 信号)
-pub mod ipc;
-
-/// Timer 子系统 (PIT 驱动, Tick 计数器, Sleep 机制)
-pub mod timer;
-
-/// WASM 虚拟机子系统 (WebAssembly 解释器引擎)
-pub mod wasm;
-
-/// 基础库 (字符串/内存操作, C 标准库函数的 Rust 实现)
-pub mod lib;
-
-pub mod console;
-/// 日志系统 (KLog, 多级别, 分类输出)
-pub mod klog;
-
-/// SMP 多核支持 (双架构桩实现, feature=smp 时启用真实 IPI)
-pub mod smp;
-
-/// System configuration validation
-pub mod config;
-
-/// 内核测试框架
-pub mod tests;
-
 /// Services 层 — 去特权 100% safe Rust (框内核架构)
 pub mod services;
-
-// ============================================================================
-// 重新导出常用类型 (方便其他模块使用)
-// ============================================================================
-
-pub use cpu::CpuInfo;

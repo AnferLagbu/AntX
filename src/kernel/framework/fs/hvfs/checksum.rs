@@ -1,4 +1,4 @@
-use crate::kernel::fs::hvfs::bp::HvCksumType;
+use crate::kernel::framework::fs::hvfs::bp::HvCksumType;
 
 pub const HV_CKSUM_FLETCHER2: usize = 1;
 pub const HV_CKSUM_FLETCHER4: usize = 2;
@@ -94,7 +94,7 @@ impl HvChecksum {
     }
 
     fn sha256(&mut self, data: &[u8]) {
-        let hash = crate::kernel::credo::sha256::sha256(data);
+        let hash = crate::kernel::framework::credo::sha256::sha256(data);
         self.value[0] = u64::from_be_bytes(
             hash[0..8].try_into().unwrap_or_else(|_| [0u8; 8])
         );

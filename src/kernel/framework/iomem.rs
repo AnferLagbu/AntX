@@ -16,7 +16,7 @@
 use core::fmt;
 use core::ptr::NonNull;
 
-use crate::kernel::mm::{PhysAddr, phys_to_virt};
+use crate::kernel::framework::mm::{PhysAddr, phys_to_virt};
 
 /// MMIO 别名注册表, 防止同一物理区域被多次映射。
 /// 使用 spin::Mutex (已在内核中广泛使用) 保证线程安全。

@@ -21,8 +21,8 @@
 //! `elf_data` 必须是有效的内核虚拟地址，指向完整 ELF 文件。
 //! 调用者负责保证 ELF 数据在加载期间不被修改。
 
-use crate::kernel::mm::vma::{MmStruct, Vma, VmaType};
-use crate::kernel::mm::{PageFlags, VirtAddr, PAGE_SIZE};
+use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::{PageFlags, VirtAddr, PAGE_SIZE};
 
 const ELF_MAGIC: &[u8; 4] = b"\x7FELF";
 const ELF_CLASS_64: u8 = 2;
@@ -199,14 +199,14 @@ pub fn elf_load(
         mm.insert_vma(vma).map_err(|_| "VMA insertion failed")?;
 
         // 复制段数据到物理页
-        let vmm_inst = crate::kernel::mm::vmm::get_vmm();
-        let pml4 = crate::kernel::mm::vmm::get_current_pml4();
+        let vmm_inst = crate::kernel::framework::mm::vmm::get_vmm();
+        let pml4 = crate::kernel::framework::mm::vmm::get_current_pml4();
 
         let file_end = file_offset + filesz;
         let mut cur = vaddr_start;
 
         while cur < vaddr_end as u64 {
-            let pmm_inst = crate::kernel::mm::pmm::get_pmm();
+            let pmm_inst = crate::kernel::framework::mm::pmm::get_pmm();
             let phys = pmm_inst.alloc_page().ok_or("OOM loading ELF")?;
 
             let page_virt = phys.to_virt();
@@ -243,7 +243,7 @@ pub fn elf_load(
     result.brk_base = (max_vaddr + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
 
     // 连接 MmStruct 到当前进程
-    crate::kernel::mm::vma::set_current_mm(mm as *const MmStruct);
+    crate::kernel::framework::mm::vma::set_current_mm(mm as *const MmStruct);
 
     Ok(result)
 }

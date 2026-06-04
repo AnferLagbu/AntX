@@ -15,7 +15,7 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.2.2 任务: 设备文件系统迁移
 
-use crate::kernel::fs::devfs::devfs::{DevfsData, DEVFS_MAX_NAME};
+use crate::kernel::framework::fs::devfs::devfs::{DevfsData, DEVFS_MAX_NAME};
 
 // ============================================================================
 // 设备类型
@@ -90,7 +90,7 @@ impl SafeDevFs {
     /// 创建全局 DevFS 代理
     pub fn new() -> Self {
         Self {
-            inner: &crate::kernel::fs::devfs::devfs::DEVFS_DATA,
+            inner: &crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA,
         }
     }
 

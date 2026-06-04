@@ -10,8 +10,8 @@ use core::sync::atomic::Ordering;
 
 use super::audit;
 use super::config::{self, RecoveryLayer, RecoveryResult};
-use crate::kernel::barrier::types::DomainState;
-use crate::kernel::barrier::RECOVERY_MANAGER;
+use crate::kernel::framework::barrier::types::DomainState;
+use crate::kernel::framework::barrier::RECOVERY_MANAGER;
 
 pub fn locate_domain_from_panic(panic_location: &core::panic::PanicInfo<'_>) -> Option<u64> {
     let manager = RECOVERY_MANAGER.lock();
@@ -70,7 +70,7 @@ pub fn execute(panic_info: &core::panic::PanicInfo<'_>) -> RecoveryResult {
 
     crate::klog_crit!(Kernel, "[BBR] Barrier Base Recovery initiated");
 
-    let tick = crate::kernel::timer::tick::get_ticks();
+    let tick = crate::kernel::framework::timer::tick::get_ticks();
     let fingerprint = compute_fingerprint(panic_info);
 
     if let Some(domain_id) = locate_domain_from_panic(panic_info) {

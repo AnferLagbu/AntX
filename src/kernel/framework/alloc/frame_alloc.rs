@@ -13,7 +13,7 @@
 //! - 调用方负责在释放前解除所有映射 (页表 / DMA)。
 //! - 分配器内部用 spinlock 保护, ISR 安全。
 
-use crate::kernel::mm::PageSize;
+use crate::kernel::framework::mm::PageSize;
 
 use super::super::frame::Frame;
 
@@ -50,7 +50,7 @@ pub struct BuddyFrameAlloc;
 
 impl FrameAlloc for BuddyFrameAlloc {
     fn alloc(&self, order: u8) -> Option<Frame> {
-        let pmm = crate::kernel::mm::pmm::get_pmm();
+        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
         if order == 0 {
             let phys = pmm.alloc_page()?;
             // SAFETY: pmm.alloc_page() guarantees unique ownership.
@@ -62,7 +62,7 @@ impl FrameAlloc for BuddyFrameAlloc {
     }
 
     fn alloc_pages(&self, count: usize) -> Option<Frame> {
-        let pmm = crate::kernel::mm::pmm::get_pmm();
+        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
         let order = if count <= 1 {
             0u8
         } else if count <= 512 {
@@ -76,7 +76,7 @@ impl FrameAlloc for BuddyFrameAlloc {
     }
 
     fn alloc_huge(&self, size: PageSize) -> Option<Frame> {
-        let pmm = crate::kernel::mm::pmm::get_pmm();
+        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
         let phys = pmm.alloc_huge_page(size)?;
         let order = match size {
             PageSize::Size2M => 9u8,
@@ -88,17 +88,17 @@ impl FrameAlloc for BuddyFrameAlloc {
     }
 
     fn free(&self, frame: Frame) {
-        let pmm = crate::kernel::mm::pmm::get_pmm();
+        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
         if frame.dec_ref() {
             pmm.free_page(frame.phys());
         }
     }
 
     fn free_pages(&self) -> u64 {
-        crate::kernel::mm::pmm::get_pmm().get_free_pages()
+        crate::kernel::framework::mm::pmm::get_pmm().get_free_pages()
     }
 
     fn total_pages(&self) -> u64 {
-        crate::kernel::mm::pmm::get_pmm().get_total_pages()
+        crate::kernel::framework::mm::pmm::get_pmm().get_total_pages()
     }
 }

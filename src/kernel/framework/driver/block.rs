@@ -193,38 +193,38 @@ pub fn write_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &[u
 // 这确保 HvFS 的所有块设备访问都经过 Chitin。
 
 pub fn hdd_read_sector(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
-    crate::kernel::chitin::chitin_blk_read(drive, sector, buf)
+    crate::kernel::framework::chitin::chitin_blk_read(drive, sector, buf)
 }
 
 pub fn hdd_write_sector(drive: u8, sector: u64, buf: &[u8]) -> i32 {
-    crate::kernel::chitin::chitin_blk_write(drive, sector, buf)
+    crate::kernel::framework::chitin::chitin_blk_write(drive, sector, buf)
 }
 
 pub fn hdd_is_present(drive: u8) -> bool {
-    crate::kernel::chitin::chitin_blk_is_present(drive)
+    crate::kernel::framework::chitin::chitin_blk_is_present(drive)
 }
 
 pub fn hdd_total_sectors(drive: u8) -> u64 {
-    crate::kernel::chitin::chitin_blk_total_sectors(drive)
+    crate::kernel::framework::chitin::chitin_blk_total_sectors(drive)
 }
 
 pub fn block_device_name(drive: u8) -> Option<&'static str> {
-    crate::kernel::chitin::chitin_blk_name(drive)
+    crate::kernel::framework::chitin::chitin_blk_name(drive)
 }
 
 pub fn block_device_info(drive: u8) -> (&'static str, bool, u64) {
-    crate::kernel::chitin::chitin_blk_info(drive)
+    crate::kernel::framework::chitin::chitin_blk_info(drive)
 }
 
 pub fn block_device_count() -> usize {
-    crate::kernel::chitin::chitin_blk_count()
+    crate::kernel::framework::chitin::chitin_blk_count()
 }
 
 pub fn block_device_list() -> Vec<(usize, &'static str, u64)> {
-    let devices = crate::kernel::chitin::CHITIN_DEVICES.lock();
+    let devices = crate::kernel::framework::chitin::CHITIN_DEVICES.lock();
     devices
         .iter()
-        .filter(|d| d.proto == crate::kernel::chitin::ChitinProto::Block)
+        .filter(|d| d.proto == crate::kernel::framework::chitin::ChitinProto::Block)
         .enumerate()
         .map(|(i, d)| {
             let sectors = match d.block_ops() {

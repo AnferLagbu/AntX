@@ -185,7 +185,7 @@ impl TestRunner {
         #[cfg(target_arch = "aarch64")]
         for &b in s {
             unsafe {
-                crate::kernel::arch::aarch64::uart::putc(b);
+                crate::kernel::framework::arch::aarch64::uart::putc(b);
             }
         }
     }
@@ -197,7 +197,7 @@ impl TestRunner {
         {
             if n == 0 {
                 unsafe {
-                    crate::kernel::arch::aarch64::uart::putc(b'0');
+                    crate::kernel::framework::arch::aarch64::uart::putc(b'0');
                 }
                 return;
             }
@@ -211,7 +211,7 @@ impl TestRunner {
             }
             for i in (0..pos).rev() {
                 unsafe {
-                    crate::kernel::arch::aarch64::uart::putc(buf[i]);
+                    crate::kernel::framework::arch::aarch64::uart::putc(buf[i]);
                 }
             }
         }
@@ -282,7 +282,7 @@ pub fn runner() -> &'static TestRunner {
 macro_rules! check {
     ($cond:expr, $msg:literal $(,)?) => {
         if !($cond) {
-            return $crate::kernel::tests::TestResult::Fail($msg);
+            return $crate::kernel::framework::tests::TestResult::Fail($msg);
         }
     };
 }
@@ -293,7 +293,7 @@ macro_rules! assert_eq_test {
         let l = $left;
         let r = $right;
         if l != r {
-            return $crate::kernel::tests::TestResult::Fail($msg);
+            return $crate::kernel::framework::tests::TestResult::Fail($msg);
         }
     };
 }
@@ -301,7 +301,7 @@ macro_rules! assert_eq_test {
 #[macro_export]
 macro_rules! skip_test {
     ($reason:literal $(,)?) => {
-        return $crate::kernel::tests::TestResult::Skip($reason);
+        return $crate::kernel::framework::tests::TestResult::Skip($reason);
     };
 }
 
@@ -354,13 +354,13 @@ pub fn test_runner_init() {
         reset::register_tests();
         #[cfg(target_arch = "x86_64")]
         {
-            crate::kernel::timer::pit::register_pit_tests();
-            crate::kernel::timer::calibration::register_timer_calibration_tests();
+            crate::kernel::framework::timer::pit::register_pit_tests();
+            crate::kernel::framework::timer::calibration::register_timer_calibration_tests();
         }
-        crate::kernel::timer::tick::register_timer_tick_tests();
+        crate::kernel::framework::timer::tick::register_timer_tick_tests();
         #[cfg(target_arch = "x86_64")]
-        crate::kernel::timer::irq::register_timer_irq_tests();
-        crate::kernel::timer::sleep::register_timer_sleep_tests();
+        crate::kernel::framework::timer::irq::register_timer_irq_tests();
+        crate::kernel::framework::timer::sleep::register_timer_sleep_tests();
     }
 
     let r = runner();

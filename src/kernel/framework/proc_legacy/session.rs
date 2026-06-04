@@ -11,7 +11,7 @@ fn log(s: &str) {
     }
 }
 
-pub use crate::kernel::config::MAX_SESSIONS;
+pub use crate::kernel::framework::config::MAX_SESSIONS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

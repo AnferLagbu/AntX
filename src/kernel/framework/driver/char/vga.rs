@@ -25,10 +25,10 @@
 //! # Safety
 //! 此模块直接操作 VGA 显存和硬件端口。
 
-use crate::kernel::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::ioport::IoPort;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ============================================================================
 // 硬件常量定义

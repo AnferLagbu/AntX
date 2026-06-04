@@ -1,9 +1,9 @@
-use crate::kernel::driver::{DeviceType, Driver};
-use crate::kernel::driver::net::e1000::{
+use crate::kernel::framework::driver::{DeviceType, Driver};
+use crate::kernel::framework::driver::net::e1000::{
     virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE,
     E1000_TX_RING_SIZE,
 };
-use crate::kernel::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
 use crate::register_tests_inner;
 
 fn net_e1000_device_creation() -> TestResult {

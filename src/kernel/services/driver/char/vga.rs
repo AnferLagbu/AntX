@@ -31,7 +31,7 @@
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::ioport::IoPort;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ── 硬件常量 ──
 

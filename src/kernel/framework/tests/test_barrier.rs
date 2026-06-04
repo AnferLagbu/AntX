@@ -1,7 +1,7 @@
 use super::check;
-use crate::kernel::barrier::domain::RecoveryDomain;
-use crate::kernel::barrier::undo_log::UndoLog;
-use crate::kernel::tests::{runner, TestResult};
+use crate::kernel::framework::barrier::domain::RecoveryDomain;
+use crate::kernel::framework::barrier::undo_log::UndoLog;
+use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 use alloc::boxed::Box;
 

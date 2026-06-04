@@ -6,9 +6,9 @@ use core::sync::atomic::Ordering;
 
 use super::audit;
 use super::config::{self, RecoveryLayer, RecoveryResult};
-use crate::kernel::barrier::types::DomainState;
-use crate::kernel::barrier::PANIC_FLAG;
-use crate::kernel::barrier::RECOVERY_MANAGER;
+use crate::kernel::framework::barrier::types::DomainState;
+use crate::kernel::framework::barrier::PANIC_FLAG;
+use crate::kernel::framework::barrier::RECOVERY_MANAGER;
 
 pub fn freeze_all_domains() {
     let manager = RECOVERY_MANAGER.lock();
@@ -48,7 +48,7 @@ pub fn rollback_to_init() -> usize {
 }
 
 pub fn reset_devices() -> RecoveryResult {
-    use crate::kernel::barrier::snapshot;
+    use crate::kernel::framework::barrier::snapshot;
 
     fn mmio_write32(base: u64, offset: u32, value: u32) {
         raw::mmio_write32(base, offset, value);

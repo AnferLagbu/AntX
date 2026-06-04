@@ -20,7 +20,7 @@
 //! ```
 
 #[cfg(target_arch = "x86_64")]
-use crate::kernel::idt::types::InterruptFrame;
+use crate::kernel::framework::idt::types::InterruptFrame;
 
 
 /// Timer IRQ0 中断处理程序 (仅 x86_64)
@@ -28,7 +28,7 @@ use crate::kernel::idt::types::InterruptFrame;
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
-    crate::kernel::timer::on_timer_interrupt();
+    crate::kernel::framework::timer::on_timer_interrupt();
 
     #[cfg(not(feature = "kernel_test"))]
     {
@@ -36,14 +36,14 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
         {
             // smoltcp: 始终轮询
             unsafe {
-                crate::kernel::net::init::poll_network();
+                crate::kernel::framework::net::init::poll_network();
             }
         }
     }
 
     // 5. 触发调度器 tick (统一入口: MLFQ 进程调度器负责线程记账 + 调度决策)
     // ✅ 安全检查: 仅当调度器已初始化时才触发 tick (与 ARM 版本一致, 避免竞态崩溃)
-    if crate::kernel::proc::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
+    if crate::kernel::framework::proc_legacy::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
         extern "C" {
             fn scheduler_tick_mlfq();
         }
@@ -56,7 +56,7 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
 /// 注册 Timer IRQ0 handler 到 IDT 系统 (仅 x86_64)
 #[cfg(target_arch = "x86_64")]
 pub fn register_timer_irq() -> Result<(), &'static str> {
-    use crate::kernel::idt::IdtManager;
+    use crate::kernel::framework::idt::IdtManager;
 
     let manager = IdtManager::instance();
 
@@ -108,7 +108,7 @@ mod tests {
 
 #[cfg(all(feature = "kernel_test", target_arch = "x86_64"))]
 pub fn register_timer_irq_tests() {
-    use crate::kernel::tests::{runner, TestFn, TestResult};
+    use crate::kernel::framework::tests::{runner, TestFn, TestResult};
 
     fn timer_irq0_handler_signature() -> TestResult {
         let _handler: extern "C" fn(*mut InterruptFrame) = timer_irq0_handler;

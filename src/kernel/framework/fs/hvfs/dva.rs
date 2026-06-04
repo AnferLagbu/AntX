@@ -1,1 +1,1 @@
-pub use crate::kernel::fs::hvfs::bp::{HvDva, HV_DVA_MAX};
+pub use crate::kernel::framework::fs::hvfs::bp::{HvDva, HV_DVA_MAX};

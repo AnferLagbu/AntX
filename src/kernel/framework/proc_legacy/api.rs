@@ -34,13 +34,13 @@ use super::session::SESSION_MANAGER;
 use super::thread::THREAD_MANAGER;
 use super::types::*;
 use super::user_proc::{proc_alloc_pid, user_proc_clone, USER_PROC_MANAGER};
-use crate::kernel::lib::cstr::CStrExt;
-use crate::kernel::klog::klog_ffi_info;
-use crate::kernel::mm::api::{
+use crate::kernel::framework::lib::cstr::CStrExt;
+use crate::kernel::framework::klog::klog_ffi_info;
+use crate::kernel::framework::mm::api::{
     pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
     vmm_switch_page_table,
 };
-use crate::kernel::timer::timer_get_ticks;
+use crate::kernel::framework::timer::timer_get_ticks;
 
 // === 特权层: 进程子系统裸指针/FFI 桥接集中地 ===
 //
@@ -281,7 +281,7 @@ pub fn process_create(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
 pub fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid != 0 {
-        let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
+        let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
         if kernel_cr3 != 0 {
             // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
             raw::switch_page_table(kernel_cr3);
@@ -385,8 +385,8 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let mut st: crate::kernel::fs::vfs::types::VfsStat = crate::kernel::fs::vfs::types::VfsStat::default();
-    let stat_result = crate::kernel::fs::vfs::api::vfs_stat(path, &mut st, pwm);
+    let mut st: crate::kernel::framework::fs::vfs::types::VfsStat = crate::kernel::framework::fs::vfs::types::VfsStat::default();
+    let stat_result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, &mut st, pwm);
     if stat_result < 0 {
         return -1;
     }
@@ -396,7 +396,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let fd = crate::kernel::fs::vfs::api::vfs_open(path, 0, pwm);
+    let fd = crate::kernel::framework::fs::vfs::api::vfs_open(path, 0, pwm);
     if fd < 0 {
         return -1;
     }
@@ -404,14 +404,14 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     let pages = file_size.div_ceil(4096u64) as usize;
     let buffer = pmm_alloc_pages(pages);
     if buffer.is_null() {
-        crate::kernel::fs::vfs::api::vfs_close(fd as u32);
+        crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32);
         return -1;
     }
 
     let bytes_read =
-        crate::kernel::fs::vfs::api::vfs_read(fd as u32, buffer as *mut u8, file_size as u32);
+        crate::kernel::framework::fs::vfs::api::vfs_read(fd as u32, buffer as *mut u8, file_size as u32);
 
-    crate::kernel::fs::vfs::api::vfs_close(fd as u32);
+    crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32);
 
     if bytes_read <= 0 {
         pmm_free_pages(buffer, pages);
@@ -498,7 +498,7 @@ pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
     #[cfg(target_arch = "x86_64")]
-    let bin = include_bytes!("../../../build/user/init.bin");
+    let bin = include_bytes!("../../../../build/user/init.bin");
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -507,13 +507,13 @@ pub fn launch_first_user_process() -> ! {
 
         if bin_size == 0 {
             crate::klog_err!(Boot, "[USER] init binary is empty");
-            crate::kernel::tests::qemu_exit(false);
+            crate::kernel::framework::tests::qemu_exit(false);
         }
 
         let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
         if pid <= 0 {
             crate::klog_err!(Boot, "[USER] Failed to load init ELF, pid={}", pid);
-            crate::kernel::tests::qemu_exit(false);
+            crate::kernel::framework::tests::qemu_exit(false);
         }
 
         let pid_u32 = pid as u32;
@@ -534,7 +534,7 @@ pub fn launch_first_user_process() -> ! {
     #[cfg(target_arch = "aarch64")]
     {
         // On aarch64, init.bin is an AArch64 ELF binary built from src/user/
-        let bin = include_bytes!("../../../build/user/init.bin");
+        let bin = include_bytes!("../../../../build/user/init.bin");
         let bin_ptr = bin.as_ptr();
         let bin_size = bin.len() as u64;
 
@@ -739,7 +739,7 @@ pub fn scheduler_get_current_level() -> u32 {
 
 #[no_mangle]
 pub fn scheduler_tick_mlfq() {
-    let cpu = crate::kernel::smp::get_current_cpu() as usize;
+    let cpu = crate::kernel::framework::smp::get_current_cpu() as usize;
     SCHEDULER.tick(cpu)
 }
 
@@ -854,7 +854,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
         return -1;
     }
 
-    let kernel_cr3 = crate::kernel::mm::vmm::get_kernel_pml4();
+    let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
     if kernel_cr3 != 0 {
         // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
         raw::switch_page_table(kernel_cr3);
@@ -1051,7 +1051,7 @@ pub fn sys_fork() -> Pid {
         let stack_size: usize = 65536;
         // SAFETY: parent_kstack 与 child_kstack 都是已分配的内核栈, 区间不重叠。
         raw::copy_kstack(child_kstack, parent_kstack, stack_size);
-        crate::kernel::proc::process::kernel_stack_write_canary(child_kstack);
+        crate::kernel::framework::proc_legacy::process::kernel_stack_write_canary(child_kstack);
     }
 
     // Copy parent's ProcessContext to child's, but set RAX=0 for child

@@ -150,14 +150,14 @@ pub fn init_all() {
 
     hotplug::hotplug_init();
 
-    let _ = crate::kernel::chitin::composite::devtree_probe_composites();
+    let _ = crate::kernel::framework::chitin::composite::devtree_probe_composites();
 }
 
 /// 关闭所有设备驱动
 ///
 /// 通过 Chitin 框架统一关闭所有注册的设备。
 pub fn shutdown_all() {
-    crate::kernel::chitin::chitin_shutdown_all();
+    crate::kernel::framework::chitin::chitin_shutdown_all();
 }
 
 /// 获取系统已检测到的设备列表 (从 Chitin + BlockDevice 读取)
@@ -168,7 +168,7 @@ pub fn list_devices() -> alloc::string::String {
     use alloc::format;
     let mut info = alloc::string::String::from("=== Chitin Device Registry ===\n\n");
 
-    let chitin_devs = crate::kernel::chitin::chitin_list();
+    let chitin_devs = crate::kernel::framework::chitin::chitin_list();
     if chitin_devs.is_empty() {
         info.push_str("  (no devices)\n");
     } else {
@@ -182,10 +182,10 @@ pub fn list_devices() -> alloc::string::String {
             let st = format!("{:?}", state);
             let line = format!("  [id={}] {} proto={:?} state={}", id, name, proto, st);
             match proto {
-                crate::kernel::chitin::ChitinProto::Block => block.push(line),
-                crate::kernel::chitin::ChitinProto::Input => input.push(line),
-                crate::kernel::chitin::ChitinProto::Net => net.push(line),
-                crate::kernel::chitin::ChitinProto::Char => char_dev.push(line),
+                crate::kernel::framework::chitin::ChitinProto::Block => block.push(line),
+                crate::kernel::framework::chitin::ChitinProto::Input => input.push(line),
+                crate::kernel::framework::chitin::ChitinProto::Net => net.push(line),
+                crate::kernel::framework::chitin::ChitinProto::Char => char_dev.push(line),
                 _ => other.push(line),
             }
         }

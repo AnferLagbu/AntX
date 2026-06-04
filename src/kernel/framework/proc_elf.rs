@@ -2,7 +2,7 @@
 //!
 //! ## 职责
 //!
-//! 这是 services 层与 `kernel::proc::elf::elf_*` 之间的**唯一** unsafe 边界。
+//! 这是 services 层与 `kernel::crate::kernel::framework::proc_legacy::elf::elf_*` 之间的**唯一** unsafe 边界。
 //! 所有 `unsafe { ... }` 块都集中在本模块处理, services 层 0 unsafe。
 //!
 //! ## 设计原则
@@ -13,8 +13,8 @@
 //!
 //! 评估日期: 2026-06-04
 
-use crate::kernel::mm::vma::MmStruct;
-use crate::kernel::proc;
+use crate::kernel::framework::mm::vma::MmStruct;
+use crate::kernel::framework::proc_legacy;
 
 // ============================================================================
 // ELF 校验
@@ -25,9 +25,9 @@ use crate::kernel::proc;
 /// # Safety
 ///
 /// `data` 必须为至少 64 字节的有效切片, 调用期间不释放。
-pub fn elf_validate(data: *const u8, len: u64) -> Option<&'static proc::elf::Elf64Header> {
+pub fn elf_validate(data: *const u8, len: u64) -> Option<&'static proc_legacy::elf::Elf64Header> {
     // SAFETY: data 由调用方保证有效, elf_validate 内部检查长度
-    unsafe { proc::elf::elf_validate(data, len) }
+    unsafe { proc_legacy::elf::elf_validate(data, len) }
 }
 
 // ============================================================================
@@ -45,7 +45,7 @@ pub fn elf_load(
     mm: &MmStruct,
     data: *const u8,
     len: u64,
-) -> Result<proc::elf::ElfLoadResult, &'static str> {
+) -> Result<proc_legacy::elf::ElfLoadResult, &'static str> {
     // SAFETY: 切片借用保证 data 在 load 期间有效; mm 唯一借用保证无并发
-    unsafe { proc::elf::elf_load(mm, data, len) }
+    unsafe { proc_legacy::elf::elf_load(mm, data, len) }
 }

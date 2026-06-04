@@ -31,7 +31,7 @@ use core::arch::asm;
 /// AArch64 CPU 架构实现 (Aarch64 结构体)
 pub struct Aarch64;
 
-use crate::kernel::arch::{Arch, CoreArch, InterruptArch, MmuArch, SystemArch};
+use crate::kernel::framework::arch::{Arch, CoreArch, InterruptArch, MmuArch, SystemArch};
 
 // ── CoreArch: 基础核心 ──────────────────────────────────────────────────
 

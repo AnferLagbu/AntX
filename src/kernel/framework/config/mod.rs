@@ -66,7 +66,7 @@ pub use caps::{get_config_summary, ConfigSummary, KernelCapabilities};
 pub use error::ConfigError;
 
 // ============================================================================
-// 重新导出: 常量 (保持外部 `use crate::kernel::config::XXX` 路径完全不变)
+// 重新导出: 常量 (保持外部 `use crate::kernel::framework::config::XXX` 路径完全不变)
 // ============================================================================
 
 pub use capacity::{

@@ -992,5 +992,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_string_tests() {
-    crate::kernel::tests::string::register_string_tests();
+    crate::kernel::framework::tests::string::register_string_tests();
 }

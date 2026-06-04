@@ -21,7 +21,7 @@
 use crate::kernel::framework::syscall_init as fw_syscall_init;
 use crate::kernel::framework::userctx::UserContext;
 use crate::kernel::framework::usermode;
-use crate::kernel::syscall;
+use crate::kernel::framework::syscall;
 
 // ============================================================================
 // 强类型 re-export

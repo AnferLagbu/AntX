@@ -58,15 +58,15 @@ static EXCEPTION_TABLE_START: ExceptionTableEntry = ExceptionTableEntry {
 
 /// Per-CPU exception context storage
 /// Using static array instead of thread_local! for bare metal compatibility
-static PER_CPU_EXCEPTION_CTX: [AtomicU64; crate::kernel::config::MAX_CPUS] = 
-    [const { AtomicU64::new(0) }; crate::kernel::config::MAX_CPUS];
+static PER_CPU_EXCEPTION_CTX: [AtomicU64; crate::kernel::framework::config::MAX_CPUS] = 
+    [const { AtomicU64::new(0) }; crate::kernel::framework::config::MAX_CPUS];
 
 /// Marker value indicating no exception context is set
 const NO_EXCEPTION_CTX: u64 = 0;
 
 /// Per-CPU exception occurred flag
-static PER_CPU_EXCEPTION_OCCURRED: [AtomicBool; crate::kernel::config::MAX_CPUS] = 
-    [const { AtomicBool::new(false) }; crate::kernel::config::MAX_CPUS];
+static PER_CPU_EXCEPTION_OCCURRED: [AtomicBool; crate::kernel::framework::config::MAX_CPUS] = 
+    [const { AtomicBool::new(false) }; crate::kernel::framework::config::MAX_CPUS];
 
 /// Get current CPU ID with bounds checking
 /// 
@@ -78,8 +78,8 @@ static PER_CPU_EXCEPTION_OCCURRED: [AtomicBool; crate::kernel::config::MAX_CPUS]
 /// but this indicates a configuration problem (too many CPUs)
 #[inline]
 fn current_cpu_id() -> usize {
-    let cpu = crate::kernel::cpu::arch::cpu_id() as usize;
-    let max_cpus = crate::kernel::config::MAX_CPUS;
+    let cpu = crate::kernel::framework::cpu::arch::cpu_id() as usize;
+    let max_cpus = crate::kernel::framework::config::MAX_CPUS;
     
     #[cfg(debug_assertions)]
     {

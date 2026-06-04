@@ -13,10 +13,10 @@
 //!
 //! 评估日期: 2026-06-04
 
-use crate::kernel::ipc::pipe;
-use crate::kernel::ipc::shm;
-use crate::kernel::ipc::msgq;
-use crate::kernel::ipc::sem;
+use crate::kernel::framework::ipc::pipe;
+use crate::kernel::framework::ipc::shm;
+use crate::kernel::framework::ipc::msgq;
+use crate::kernel::framework::ipc::sem;
 
 // ============================================================================
 // 错误
@@ -129,8 +129,8 @@ impl IpcLock {
 
     /// 创建管道
     pub fn pipe_create(&self, current_pid: u32) -> Result<(PipeFd, PipeFd), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
-        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::framework::ipc::NEXT_IPC_ID.get_mut();
         pipe::pipe_create_safe(ns, next_id, current_pid)
             .map(|(r, w)| (PipeFd { fd: r }, PipeFd { fd: w }))
             .map_err(IpcError::from_i32)
@@ -138,7 +138,7 @@ impl IpcLock {
 
     /// 管道读
     pub fn pipe_read(&self, fd: PipeFd, buf: &mut [u8]) -> Result<usize, IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         pipe::pipe_read_safe(ns, fd.fd, buf, buf.len() as u32)
             .map(|n| n as usize)
             .map_err(IpcError::from_i32)
@@ -146,7 +146,7 @@ impl IpcLock {
 
     /// 管道写
     pub fn pipe_write(&self, fd: PipeFd, buf: &[u8]) -> Result<usize, IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         pipe::pipe_write_safe(ns, fd.fd, buf, buf.len() as u32)
             .map(|n| n as usize)
             .map_err(IpcError::from_i32)
@@ -154,7 +154,7 @@ impl IpcLock {
 
     /// 关闭管道
     pub fn pipe_close(&self, fd: PipeFd) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         pipe::pipe_close_safe(ns, fd.fd).map_err(IpcError::from_i32)
     }
 
@@ -162,8 +162,8 @@ impl IpcLock {
 
     /// 创建共享内存段
     pub fn shm_create(&self, current_pid: u32, size: usize) -> Result<ShmHandle, IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
-        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::framework::ipc::NEXT_IPC_ID.get_mut();
         shm::shm_create_safe(ns, next_id, size as u64, 0, current_pid)
             .map(|id| ShmHandle { id, phys_addr: 0 })
             .map_err(IpcError::from_i32)
@@ -171,7 +171,7 @@ impl IpcLock {
 
     /// 附加共享内存段
     pub fn shm_attach(&self, id: IpcId, current_pid: u32) -> Result<ShmHandle, IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         shm::shm_attach_safe(ns, id, current_pid)
             .map(|phys_addr| ShmHandle { id, phys_addr })
             .map_err(IpcError::from_i32)
@@ -179,13 +179,13 @@ impl IpcLock {
 
     /// 分离共享内存段
     pub fn shm_detach(&self, handle: ShmHandle, current_pid: u32) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         shm::shm_detach_safe(ns, handle.id, current_pid).map_err(IpcError::from_i32)
     }
 
     /// 删除共享内存段
     pub fn shm_destroy(&self, id: IpcId) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         shm::shm_destroy_safe(ns, id).map_err(IpcError::from_i32)
     }
 
@@ -193,8 +193,8 @@ impl IpcLock {
 
     /// 创建消息队列
     pub fn msgq_create(&self, current_pid: u32) -> Result<MsgqHandle, IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
-        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::framework::ipc::NEXT_IPC_ID.get_mut();
         msgq::msgq_create_safe(ns, next_id, 0, current_pid)
             .map(MsgqHandle::from)
             .map_err(IpcError::from_i32)
@@ -202,7 +202,7 @@ impl IpcLock {
 
     /// 发送消息
     pub fn msgq_send(&self, q: MsgqHandle, data: &[u8], current_pid: u32) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         msgq::msgq_send_safe(ns, q.id, 0, Some(data), data.len(), current_pid)
             .map(|_| ())
             .map_err(IpcError::from_i32)
@@ -210,7 +210,7 @@ impl IpcLock {
 
     /// 接收消息
     pub fn msgq_recv(&self, q: MsgqHandle, buf: &mut [u8]) -> Result<usize, IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         let mut type_buf = 0u64;
         let mut size_buf = 0u64;
         msgq::msgq_recv_safe(ns, q.id, Some(&mut type_buf), Some(buf), Some(&mut size_buf))
@@ -220,7 +220,7 @@ impl IpcLock {
 
     /// 销毁消息队列
     pub fn msgq_destroy(&self, q: MsgqHandle) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         msgq::msgq_destroy_safe(ns, q.id).map_err(IpcError::from_i32)
     }
 
@@ -228,8 +228,8 @@ impl IpcLock {
 
     /// 创建信号量
     pub fn sem_create(&self, initial: u32, max_count: u32, current_pid: u32) -> Result<SemHandle, IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
-        let next_id = crate::kernel::ipc::NEXT_IPC_ID.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
+        let next_id = crate::kernel::framework::ipc::NEXT_IPC_ID.get_mut();
         sem::sem_create_safe(ns, next_id, initial, max_count, current_pid)
             .map(SemHandle::from)
             .map_err(IpcError::from_i32)
@@ -237,19 +237,19 @@ impl IpcLock {
 
     /// P 操作 (wait)
     pub fn sem_wait(&self, s: SemHandle) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         sem::sem_wait_safe(ns, s.id).map_err(IpcError::from_i32)
     }
 
     /// V 操作 (signal/post)
     pub fn sem_post(&self, s: SemHandle) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         sem::sem_post_safe(ns, s.id).map_err(IpcError::from_i32)
     }
 
     /// 销毁信号量
     pub fn sem_destroy(&self, s: SemHandle) -> Result<(), IpcError> {
-        let ns = crate::kernel::ipc::IPC_NAMESPACE.get_mut();
+        let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
         sem::sem_destroy_safe(ns, s.id).map_err(IpcError::from_i32)
     }
 }

@@ -9,7 +9,7 @@
 //! 完整迁移 (Phase 2 后续) 将 DMA 描述符改为 `DmaStream`。
 
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ── E1000 寄存器常量 (从原始驱动复制, 保持 ABI 兼容) ──
 

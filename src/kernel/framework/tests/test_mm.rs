@@ -1,8 +1,8 @@
 use super::check;
-use crate::kernel::mm::KERNEL_BASE;
-use crate::kernel::mm::{pd_index, pdpt_index, phys_to_virt, pml4_index, pt_index, virt_to_phys};
-use crate::kernel::mm::{MemoryInfo, PageFlags, PageSize, PageTableEntry, PhysAddr, VirtAddr};
-use crate::kernel::tests::{runner, TestResult};
+use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::{pd_index, pdpt_index, phys_to_virt, pml4_index, pt_index, virt_to_phys};
+use crate::kernel::framework::mm::{MemoryInfo, PageFlags, PageSize, PageTableEntry, PhysAddr, VirtAddr};
+use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
 fn test_phys_addr() -> TestResult {

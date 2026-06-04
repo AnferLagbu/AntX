@@ -21,7 +21,7 @@
 //! 关键路径函数已标记 `#[inline(always)]` 以优化性能。
 
 use super::tick::{get_ticks, is_initialized, ms_to_ticks};
-use crate::kernel::cpu::tsc::{cycles_to_nanoseconds, read_tsc};
+use crate::kernel::framework::cpu::tsc::{cycles_to_nanoseconds, read_tsc};
 
 // ============================================================================
 // 忙等待实现 (Busy-wait)
@@ -462,7 +462,7 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_timer_sleep_tests() {
-    use crate::kernel::tests::{runner, TestFn, TestResult};
+    use crate::kernel::framework::tests::{runner, TestFn, TestResult};
     let r = runner();
 
     fn busy_wait_zero_duration() -> TestResult {

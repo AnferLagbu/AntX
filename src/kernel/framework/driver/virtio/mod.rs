@@ -41,7 +41,7 @@ pub mod net;
 pub mod queue;
 
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 use crate::klog_info;
 use crate::klog_warn;
 

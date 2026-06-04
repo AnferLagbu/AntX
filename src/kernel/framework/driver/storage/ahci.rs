@@ -28,9 +28,9 @@
 //! AHCI驱动涉及MMIO寄存器和DMA操作。
 
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
-use crate::kernel::dma::engine::get_dma;
+use crate::kernel::framework::dma::engine::get_dma;
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::{PhysAddr, VirtAddr};
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
 use crate::klog_info;
 use crate::klog_warn;
 use alloc::vec::Vec;

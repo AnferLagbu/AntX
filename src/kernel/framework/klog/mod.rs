@@ -82,7 +82,7 @@ macro_rules! klog_ffi {
         let mut buf: [u8; 256] = [0u8; 256];
         let mut cursor = 0;
         let _ = core::fmt::write(
-            &mut $crate::kernel::klog::CursorWriter::new(&mut buf, &mut cursor),
+            &mut $crate::kernel::framework::klog::CursorWriter::new(&mut buf, &mut cursor),
             format_args!($($arg)*),
         );
         if cursor > 0 {
@@ -95,12 +95,12 @@ macro_rules! klog_ffi {
 #[macro_export]
 macro_rules! klog_fmt {
     ($lvl:ident, $cat:ident, $($arg:tt)*) => {{
-        let mut w = $crate::kernel::klog::KlogWriter::new();
+        let mut w = $crate::kernel::framework::klog::KlogWriter::new();
         let _ = core::fmt::Write::write_fmt(&mut w, format_args!($($arg)*));
         unsafe {
-            $crate::kernel::klog::klog_write(
-                $crate::kernel::klog::LogLevel::$lvl as u8,
-                $crate::kernel::klog::LogCategory::$cat as u8,
+            $crate::kernel::framework::klog::klog_write(
+                $crate::kernel::framework::klog::LogLevel::$lvl as u8,
+                $crate::kernel::framework::klog::LogCategory::$cat as u8,
                 core::ptr::null(), core::ptr::null(), 0,
                 w.as_slice().as_ptr() as *const u8,
             );
@@ -181,7 +181,7 @@ mod serial_impl {
 
 #[cfg(target_arch = "aarch64")]
 mod serial_impl {
-    use crate::kernel::arch::aarch64::uart;
+    use crate::kernel::framework::arch::aarch64::uart;
 
     pub fn serial_init() {
         // UART already initialized in entry.rs
@@ -426,7 +426,7 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     ring.push_str(msg);
     ring.push(b'\n');
 
-    crate::kernel::console::gfx_console_write(msg);
+    crate::kernel::framework::console::gfx_console_write(msg);
 }
 
 // ============================================================================

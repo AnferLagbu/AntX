@@ -7,7 +7,7 @@
 //!
 //! Memory layout follows the VirtIO 1.0 specification section 2.6 "Split Virtqueues".
 
-use crate::kernel::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::KERNEL_BASE;
 
 /// Maximum number of virtqueue entries (must be a power of 2).
 pub const VQ_SIZE: u16 = 32;
@@ -199,7 +199,7 @@ impl VirtQueue {
     pub fn commit_and_kick(&mut self) {
         unsafe {
             // Full memory barrier: ensure descriptor and ring writes are globally visible
-            crate::kernel::sync::arch::fence();
+            crate::kernel::framework::sync_legacy::arch::fence();
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
             core::ptr::write_volatile(&mut (*self.avail).idx, self.next_avail_idx);
         }

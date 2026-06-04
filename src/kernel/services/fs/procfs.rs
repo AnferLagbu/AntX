@@ -15,7 +15,7 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.2.3 任务: 进程文件系统迁移
 
-use crate::kernel::fs::procfs::procfs::{ProcfsData, PROCFS_MAX_NAME};
+use crate::kernel::framework::fs::procfs::procfs::{ProcfsData, PROCFS_MAX_NAME};
 
 // ============================================================================
 // 条目类型
@@ -72,7 +72,7 @@ impl SafeProcFs {
     /// 创建全局 ProcFS 代理
     pub fn new() -> Self {
         Self {
-            inner: &crate::kernel::fs::procfs::procfs::PROCFS_DATA,
+            inner: &crate::kernel::framework::fs::procfs::procfs::PROCFS_DATA,
         }
     }
 

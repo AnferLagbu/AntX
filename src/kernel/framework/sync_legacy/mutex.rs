@@ -387,5 +387,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_mutex_tests() {
-    crate::kernel::tests::sync::register_mutex_tests();
+    crate::kernel::framework::tests::sync::register_mutex_tests();
 }

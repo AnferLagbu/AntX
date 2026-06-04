@@ -564,7 +564,7 @@ mod tests {
     fn test_xhci_controller_creation() {
         // SAFETY: 测试用固定 MMIO 地址, identity-mapped in test environment
         let iomem = unsafe {
-            IoMem::new(crate::kernel::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
                 .expect("test IoMem")
         };
         let ctrl = XhciController::new(iomem);

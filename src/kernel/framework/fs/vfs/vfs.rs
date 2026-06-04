@@ -224,7 +224,7 @@ impl VfsManager {
 
         *self.initialized.lock() = true;
 
-        if let Some(dom) = crate::kernel::barrier::RECOVERY_MANAGER.lock().find(2) {
+        if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER.lock().find(2) {
             *dom.capture_cb.lock() = Some(vfs_barrier_capture_cb);
             *dom.rollback_cb.lock() = Some(vfs_barrier_rollback_cb);
         }

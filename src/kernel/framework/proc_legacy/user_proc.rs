@@ -38,7 +38,7 @@ extern "C" {
 /// Page size in bytes.
 ///
 /// 统一从 `config.rs` 引用以避免分散定义。
-pub use crate::kernel::config::{
+pub use crate::kernel::framework::config::{
     PAGE_SIZE, USER_STACK_SIZE, USER_STACK_GUARD, USER_STACK_TOP, USER_KSTACK_SIZE,
     USER_STACK_MAX_SIZE, USER_CODE_BASE,
 };
@@ -517,7 +517,7 @@ pub(crate) mod raw {
         kstack: u64,
         ustack: u64,
     ) {
-        use crate::kernel::proc::scheduler::SchedPolicy;
+        use crate::kernel::framework::proc_legacy::scheduler::SchedPolicy;
         // SAFETY: kproc_ptr 来自 alloc_kernel_process, 已清零, 字段可被 ptr::write 覆盖。
         unsafe {
             core::ptr::write(&mut (*kproc_ptr).pid, ProcessId(pid));
@@ -739,13 +739,13 @@ impl UserProcManager {
         }
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
         proc.store_kernel_stack(kstack_top);
-        crate::kernel::proc::process::kernel_stack_write_canary(kstack_top);
+        crate::kernel::framework::proc_legacy::process::kernel_stack_write_canary(kstack_top);
 
         proc.set_pid(pid);
         proc.set_entry(info.entry);
         proc.store_pwm(pwm);
         proc.store_state(1);
-        proc.set_create_time(crate::kernel::timer::get_ticks());
+        proc.set_create_time(crate::kernel::framework::timer::get_ticks());
 
         self.processes
             .lock()
@@ -786,7 +786,7 @@ impl UserProcManager {
         let _cs_val = GDT_USER_CODE | 0x03;
         let _rflags_val: u64 = 0x3202;
 
-        crate::kernel::cpu::arch::set_kernel_stack(kstack);
+        crate::kernel::framework::cpu::arch::set_kernel_stack(kstack);
 
         // On aarch64, TTBR0_EL1 must point to the user page table before
         // entering EL0. The user L0 table has kernel identity-mapped entries
@@ -1164,7 +1164,7 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         child_ref.store_stack_bottom(parent_ref.load_stack_bottom());
         child_ref.set_entry(parent_ref.entry());
         child_ref.store_state(1);
-        child_ref.set_create_time(crate::kernel::timer::get_ticks());
+        child_ref.set_create_time(crate::kernel::framework::timer::get_ticks());
 
         USER_PROC_MANAGER
             .processes

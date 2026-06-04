@@ -22,7 +22,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use crate::kernel::chitin;
+use crate::kernel::framework::chitin;
 
 pub mod devtree;
 pub mod composite;
@@ -258,7 +258,7 @@ pub fn count_by_proto(proto: Proto) -> usize {
 
 /// 查找网络设备 (返回 (NetOps, driver_data, mac))
 pub fn find_net_device() -> Option<(
-    &'static crate::kernel::chitin::proto_net::NetOps,
+    &'static crate::kernel::framework::chitin::proto_net::NetOps,
     *mut u8,
     [u8; 6],
 )> {

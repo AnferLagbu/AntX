@@ -19,7 +19,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::kernel::cpu::tsc::{read_tsc, read_tsc_serialized};
+use crate::kernel::framework::cpu::tsc::{read_tsc, read_tsc_serialized};
 
 // ============================================================================
 // 全局状态
@@ -372,7 +372,7 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_timer_calibration_tests() {
-    use crate::kernel::tests::{runner, TestFn, TestResult};
+    use crate::kernel::framework::tests::{runner, TestFn, TestResult};
     let r = runner();
 
     fn initial_state() -> TestResult {

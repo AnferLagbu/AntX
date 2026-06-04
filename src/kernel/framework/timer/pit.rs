@@ -331,7 +331,7 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_pit_tests() {
-    use crate::kernel::tests::{runner, TestFn, TestResult};
+    use crate::kernel::framework::tests::{runner, TestFn, TestResult};
     let r = runner();
 
     fn constants() -> TestResult {

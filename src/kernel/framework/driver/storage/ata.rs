@@ -603,9 +603,9 @@ pub extern "C" fn ata_init() {
 
     // 注册到几丁质框架 (非所有权指针)
     let raw_ptr: *mut AtaController = &mut *controller;
-    let _id = crate::kernel::chitin::chitin_register(
+    let _id = crate::kernel::framework::chitin::chitin_register(
         "ata_controller",
-        crate::kernel::chitin::ChitinProto::Block,
+        crate::kernel::framework::chitin::ChitinProto::Block,
         Some(0x1F0), // Primary IO
         Some(14),    // IRQ 14
         raw_ptr as *mut u8,

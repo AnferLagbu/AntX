@@ -36,7 +36,7 @@
 //! Phase 2.1.4 任务: 存储设备 (AHCI) 迁移
 
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ── HBA 寄存器偏移 ──
 

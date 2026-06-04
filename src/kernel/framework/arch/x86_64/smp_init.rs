@@ -73,7 +73,7 @@ pub fn init() {
     let ap_count = super::acpi::get_ap_count();
     if ap_count <= 1 {
         unsafe {
-            crate::kernel::klog::klog_info(
+            crate::kernel::framework::klog::klog_info(
                 c"[KERN] [SMP] Single-core system, skipping AP startup".as_ptr(),
             );
         }
@@ -105,9 +105,9 @@ pub fn init() {
 
     let started = cpu_index - 1;
     if started > 0 {
-        crate::kernel::klog::serial_write_bytes(b"[SMP] All APs started successfully\n");
+        crate::kernel::framework::klog::serial_write_bytes(b"[SMP] All APs started successfully\n");
     } else {
-        crate::kernel::klog::serial_write_bytes(b"[SMP] No APs started\n");
+        crate::kernel::framework::klog::serial_write_bytes(b"[SMP] No APs started\n");
     }
 }
 
@@ -139,7 +139,7 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
     let stack_top = per_cpu.stack.as_ptr() as u64 + AP_STACK_SIZE as u64;
     AP_PER_CPU[cpu_index as usize] = Some(alloc::boxed::Box::into_raw(per_cpu));
 
-    let cr3_val = crate::kernel::mm::vmm::get_kernel_pml4();
+    let cr3_val = crate::kernel::framework::mm::vmm::get_kernel_pml4();
     let gdt_ptr = super::gdt::get_gdt_ptr();
     let entry_addr = ap_entry as *const () as u64;
 
@@ -226,11 +226,11 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     super::gdt::gdt_init_ap(cpu_index);
 
-    crate::kernel::smp::register_cpu(lapic_id);
+    crate::kernel::framework::smp::register_cpu(lapic_id);
 
-    crate::kernel::proc::cpu_queue::init_cpu_queue(cpu_index, 0);
+    crate::kernel::framework::proc_legacy::cpu_queue::init_cpu_queue(cpu_index, 0);
 
-    crate::kernel::proc::scheduler::init_per_cpu_sched(cpu_index);
+    crate::kernel::framework::proc_legacy::scheduler::init_per_cpu_sched(cpu_index);
 
     unsafe {
         core::arch::asm!("sti", options(nomem, nostack));

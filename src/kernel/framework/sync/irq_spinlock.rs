@@ -28,7 +28,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::spinlock::{
     disable_interrupts, restore_interrupts, SpinLock as TcbSpinLock, SpinLockGuard as TcbGuard,
 };
-use crate::kernel::sync::types::IrqSaveFlags;
+use crate::kernel::framework::sync_legacy::types::IrqSaveFlags;
 
 /// 中断安全自旋锁 (TCB)。
 ///

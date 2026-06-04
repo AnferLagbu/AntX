@@ -23,7 +23,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-pub use crate::kernel::config::MAX_CPUS;
+pub use crate::kernel::framework::config::MAX_CPUS;
 
 /// MADT 条目类型
 const MADT_TYPE_LAPIC: u8 = 0x00;
@@ -87,7 +87,7 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
             let rsdp_ptr = unsafe { *((ptr as *const u64).add(offset / 8 + 1)) };
             if is_valid_rsdp(rsdp_ptr) {
                 unsafe {
-                    crate::kernel::klog::klog_info(c"[ACPI] RSDP found via Multiboot2".as_ptr());
+                    crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP found via Multiboot2".as_ptr());
                 }
                 return Some(rsdp_ptr);
             }
@@ -124,7 +124,7 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
     while addr + 36 <= end {
         if is_valid_rsdp(addr) {
             unsafe {
-                crate::kernel::klog::klog_info(c"[ACPI] RSDP found via BIOS scan".as_ptr());
+                crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP found via BIOS scan".as_ptr());
             }
             return Some(addr);
         }
@@ -240,7 +240,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         Some(addr) => addr,
         None => {
             unsafe {
-                crate::kernel::klog::klog_info(c"[ACPI] RSDP not found".as_ptr());
+                crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP not found".as_ptr());
             }
             return false;
         }
@@ -250,7 +250,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         Some(sdt) => sdt,
         None => {
             unsafe {
-                crate::kernel::klog::klog_info(c"[ACPI] RSDT/XSDT not found".as_ptr());
+                crate::kernel::framework::klog::klog_info(c"[ACPI] RSDT/XSDT not found".as_ptr());
             }
             return false;
         }
@@ -291,7 +291,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     }
 
     unsafe {
-        crate::kernel::klog::klog_info(c"[ACPI] MADT not found in RSDT/XSDT".as_ptr());
+        crate::kernel::framework::klog::klog_info(c"[ACPI] MADT not found in RSDT/XSDT".as_ptr());
     }
     false
 }
@@ -343,7 +343,7 @@ fn parse_madt_entries(madt_ptr: u64) {
 
     unsafe {
         let _count = AP_COUNT.load(Ordering::Acquire);
-        crate::kernel::klog::klog_info(c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr());
+        crate::kernel::framework::klog::klog_info(c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr());
     }
 }
 

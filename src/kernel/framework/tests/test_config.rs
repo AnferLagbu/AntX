@@ -7,7 +7,7 @@
 //! 安全调用, 故本测试只测纯函数与不变式, 不调用 `init()`。
 
 use super::{assert_eq_test, check};
-use crate::kernel::config::{
+use crate::kernel::framework::config::{
     get_config_summary, print_config_table, validate_cross_module_consistency,
     validate_memory_config, ConfigError, CFS_BOOST_INTERVAL, CFS_MIN_GRANULARITY, CFS_NICE0_WEIGHT,
     CFS_TARGET_LATENCY, HUGE_PAGE_1G_SHIFT, HUGE_PAGE_2M_SHIFT, KERNEL_STACK_SIZE, MAX_CPUS,
@@ -17,7 +17,7 @@ use crate::kernel::config::{
     SLAB_MIN_OBJECT_SIZE, USER_CODE_BASE, USER_STACK_GUARD, USER_STACK_SIZE, USER_STACK_TOP,
     KernelCapabilities,
 };
-use crate::kernel::tests::{runner, TestResult};
+use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
 // ============================================================================
@@ -188,7 +188,7 @@ fn test_print_config_table_no_panic() -> TestResult {
 
 fn test_procfs_read_sys_config_basic() -> TestResult {
     let mut buf = [0u8; 1024];
-    let n = crate::kernel::config::procfs::read_sys_config(&mut buf);
+    let n = crate::kernel::framework::config::procfs::read_sys_config(&mut buf);
     check!(n > 0, "should write something");
     check!(n <= buf.len(), "should not overflow");
 
@@ -203,7 +203,7 @@ fn test_procfs_read_sys_config_basic() -> TestResult {
 fn test_procfs_read_sys_config_truncation_safe() -> TestResult {
     // 极小缓冲区, 验证不会越界写
     let mut buf = [0u8; 16];
-    let n = crate::kernel::config::procfs::read_sys_config(&mut buf);
+    let n = crate::kernel::framework::config::procfs::read_sys_config(&mut buf);
     check!(n <= buf.len(), "truncated output must not exceed buf len");
     check!(n > 0, "should write at least 16 bytes before truncating");
     TestResult::Pass
@@ -211,7 +211,7 @@ fn test_procfs_read_sys_config_truncation_safe() -> TestResult {
 
 fn test_procfs_read_sys_config_zero_size() -> TestResult {
     let mut buf = [0u8; 0];
-    let n = crate::kernel::config::procfs::read_sys_config(&mut buf);
+    let n = crate::kernel::framework::config::procfs::read_sys_config(&mut buf);
     assert_eq_test!(n, 0, "zero-size buf -> zero write");
     TestResult::Pass
 }

@@ -16,7 +16,7 @@
 
 use core::ops::{Deref, DerefMut};
 
-use crate::kernel::sync::rwlock::RwLock as InnerRwLock;
+use crate::kernel::framework::sync_legacy::rwlock::RwLock as InnerRwLock;
 
 /// TCB 读写锁。
 pub struct RwLock<T> {
@@ -54,7 +54,7 @@ impl<T: Default> Default for RwLock<T> {
 
 /// 读锁 RAII Guard — drop 时释放读锁。
 pub struct RwLockReadGuard<'a, T> {
-    guard: crate::kernel::sync::types::RwLockReadGuard<'a, T>,
+    guard: crate::kernel::framework::sync_legacy::types::RwLockReadGuard<'a, T>,
 }
 
 impl<'a, T> Deref for RwLockReadGuard<'a, T> {
@@ -70,7 +70,7 @@ impl<'a, T> Deref for RwLockReadGuard<'a, T> {
 
 /// 写锁 RAII Guard — drop 时释放写锁。
 pub struct RwLockWriteGuard<'a, T> {
-    guard: crate::kernel::sync::types::RwLockWriteGuard<'a, T>,
+    guard: crate::kernel::framework::sync_legacy::types::RwLockWriteGuard<'a, T>,
 }
 
 impl<'a, T> Deref for RwLockWriteGuard<'a, T> {

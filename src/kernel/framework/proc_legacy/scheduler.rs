@@ -104,11 +104,11 @@ struct PerCpuSched {
 
 // All fields (Mutex<VecDeque<Pid>>, Mutex<CfsRunQueue>, Mutex<DlRunQueue>, Atomic*) auto-implement Send + Sync.
 
-static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; crate::kernel::config::MAX_CPUS] =
-    [const { Mutex::new(None) }; crate::kernel::config::MAX_CPUS];
+static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; crate::kernel::framework::config::MAX_CPUS] =
+    [const { Mutex::new(None) }; crate::kernel::framework::config::MAX_CPUS];
 
 pub fn init_per_cpu_sched(cpu_id: u32) {
-    let idx = (cpu_id as usize) % crate::kernel::config::MAX_CPUS;
+    let idx = (cpu_id as usize) % crate::kernel::framework::config::MAX_CPUS;
     let mut guard = PER_CPU_SCHED[idx].lock();
     if guard.is_some() {
         return;
@@ -135,8 +135,8 @@ pub fn init_per_cpu_sched(cpu_id: u32) {
 
 #[inline]
 fn per_cpu() -> &'static PerCpuSched {
-    let cpu = crate::kernel::smp::get_current_cpu();
-    let idx = (cpu as usize) % crate::kernel::config::MAX_CPUS;
+    let cpu = crate::kernel::framework::smp::get_current_cpu();
+    let idx = (cpu as usize) % crate::kernel::framework::config::MAX_CPUS;
     {
         let guard = PER_CPU_SCHED[idx].lock();
         if guard.is_none() {
@@ -161,7 +161,7 @@ fn per_cpu() -> &'static PerCpuSched {
 
 #[inline]
 fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
-    let idx = (cpu_id as usize) % crate::kernel::config::MAX_CPUS;
+    let idx = (cpu_id as usize) % crate::kernel::framework::config::MAX_CPUS;
     {
         let guard = PER_CPU_SCHED[idx].lock();
         if guard.is_none() {
@@ -496,7 +496,7 @@ impl Scheduler {
         }
 
         // 4. Load balance if nothing found locally
-        if next_pid.is_none() && crate::kernel::smp::is_enabled() {
+        if next_pid.is_none() && crate::kernel::framework::smp::is_enabled() {
             self.load_balance();
             next_pid = self.pick_cfs_task();
         }
@@ -537,7 +537,7 @@ impl Scheduler {
             let _ = proc.set_state_safe(ProcessState::Running);
             let next_kernel_stack = proc.kernel_stack.load(Ordering::SeqCst);
             if next_kernel_stack != 0 {
-                crate::kernel::cpu::arch::set_kernel_stack(next_kernel_stack);
+                crate::kernel::framework::cpu::arch::set_kernel_stack(next_kernel_stack);
             }
         });
 
@@ -549,7 +549,7 @@ impl Scheduler {
 
         if let Some(next_ptr_raw) = next_ptr {
             unsafe {
-                crate::kernel::proc::api::update_current_process_ptr(next_ptr_raw as u64);
+                crate::kernel::framework::proc_legacy::api::update_current_process_ptr(next_ptr_raw as u64);
             }
         }
 
@@ -647,7 +647,7 @@ impl Scheduler {
             }
         }
 
-        crate::kernel::sync::rcu::rcu_note_quiescent_state();
+        crate::kernel::framework::sync_legacy::rcu::rcu_note_quiescent_state();
 
         Some(next)
     }
@@ -873,29 +873,29 @@ impl Scheduler {
     pub fn tick(&self, cpu_id: usize) {
         // SMP: 禁用中断保护整个 tick 临界区
         // 防止非中断上下文的 schedule() 调用与 timer ISR 的 tick() 并发修改 per-CPU 状态
-        let flags = crate::kernel::sync::spinlock::disable_interrupts();
+        let flags = crate::kernel::framework::sync_legacy::spinlock::disable_interrupts();
 
         let new_tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
         let per_cpu = per_cpu_for(cpu_id as u32);
 
-        crate::kernel::barrier::RECOVERY_MANAGER
+        crate::kernel::framework::barrier::RECOVERY_MANAGER
             .lock()
             .tick(new_tick);
 
-        if crate::kernel::barrier::check_and_clear_bsr_escalation() {
-            crate::kernel::barrier::reset::config::set_reset_in_progress(true);
-            crate::kernel::barrier::reset::config::set_current_layer(
-                crate::kernel::barrier::reset::config::RecoveryLayer::Layer2,
+        if crate::kernel::framework::barrier::check_and_clear_bsr_escalation() {
+            crate::kernel::framework::barrier::reset::config::set_reset_in_progress(true);
+            crate::kernel::framework::barrier::reset::config::set_current_layer(
+                crate::kernel::framework::barrier::reset::config::RecoveryLayer::Layer2,
             );
-            crate::kernel::barrier::reset::bsr::freeze_all_domains();
-            crate::kernel::barrier::reset::bsr::rollback_to_init();
-            crate::kernel::barrier::reset::bsr::reset_devices();
-            crate::kernel::barrier::reset::bsr::unfreeze_all_domains();
-            crate::kernel::barrier::reset::bsr::clear_panic_state();
+            crate::kernel::framework::barrier::reset::bsr::freeze_all_domains();
+            crate::kernel::framework::barrier::reset::bsr::rollback_to_init();
+            crate::kernel::framework::barrier::reset::bsr::reset_devices();
+            crate::kernel::framework::barrier::reset::bsr::unfreeze_all_domains();
+            crate::kernel::framework::barrier::reset::bsr::clear_panic_state();
         }
 
-        crate::kernel::proc::oomd::OOMD.tick();
-        crate::kernel::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
+        crate::kernel::framework::proc_legacy::oomd::OOMD.tick();
+        crate::kernel::framework::proc_legacy::scheduler_ex::SCHEDULER_EX.tick_accounting();
 
         // Periodic CFS boost — prevent vruntime starvation
         if new_tick.is_multiple_of(CFS_BOOST_INTERVAL_TICKS) {
@@ -1094,7 +1094,7 @@ impl Scheduler {
 
         // Periodic load balance
         if new_tick.is_multiple_of(64) {
-            let local_load = self.total_runnable_for(crate::kernel::smp::get_current_cpu());
+            let local_load = self.total_runnable_for(crate::kernel::framework::smp::get_current_cpu());
             if local_load < 2 {
                 self.load_balance();
             }
@@ -1104,7 +1104,7 @@ impl Scheduler {
             self.schedule();
         }
 
-        crate::kernel::sync::spinlock::restore_interrupts(&flags);
+        crate::kernel::framework::sync_legacy::spinlock::restore_interrupts(&flags);
     }
 
     pub fn boost_priority(&self) {
@@ -1149,12 +1149,12 @@ impl Scheduler {
     }
 
     pub fn load_balance(&self) {
-        let cpu_count = crate::kernel::smp::get_cpu_count();
+        let cpu_count = crate::kernel::framework::smp::get_cpu_count();
         if cpu_count <= 1 {
             return;
         }
 
-        let this_cpu = crate::kernel::smp::get_current_cpu();
+        let this_cpu = crate::kernel::framework::smp::get_current_cpu();
         let local_weight = {
             let sched = per_cpu_for(this_cpu);
             sched.cfs_rq.lock().total_weight.load(Ordering::Acquire)

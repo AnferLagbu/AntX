@@ -25,13 +25,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::kernel::fs::ramfs::ramfs::RamFsData;
+use crate::kernel::framework::fs::ramfs::ramfs::RamFsData;
 
 // services 层透出的常量 (镜像 kernel/fs/ramfs/ramfs.rs 内部常量)
 pub const RAMFS_BLOCK_SIZE: usize = 4096;
 pub const RAMFS_MAX_NODES: usize = 256;
 pub const RAMFS_MAX_BLOCKS: usize = 2048;
-pub use crate::kernel::fs::vfs::types::{
+pub use crate::kernel::framework::fs::vfs::types::{
     VfsDirEntry, VfsFileType, VfsOpenFlags, VfsSeekWhence, VfsStat, VFS_MAX_NAME, VFS_MAX_PATH,
 };
 

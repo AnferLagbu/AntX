@@ -40,7 +40,7 @@ pub use controller::{DisplayController, DisplayManager, DisplayMode, DisplayOutp
 use super::framework;
 use super::framework::{Driver, DriverError};
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 struct DisplayDriver;
 
@@ -168,7 +168,7 @@ fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
 
 /// 通过 PCI 探测 VGA 设备 BAR0 获取帧缓冲信息
 fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
-    let devices = crate::kernel::pci::find_by_class(crate::kernel::pci::CLASS_DISPLAY);
+    let devices = crate::kernel::framework::pci::find_by_class(crate::kernel::framework::pci::CLASS_DISPLAY);
     for dev in &devices {
         if dev.subclass_code != 0x00 {
             crate::klog_info!(
@@ -241,7 +241,7 @@ pub fn display_init() -> framework::Result<()> {
     crate::klog_boot_info!("[DISPLAY] display_init: probing framebuffer");
 
     // ── 方案 A: Multiboot2 tag 8 (GRUB boot) ──
-    let fb_info = match crate::kernel::boot::multiboot2_fb::get_framebuffer_info() {
+    let fb_info = match crate::kernel::framework::boot::multiboot2_fb::get_framebuffer_info() {
         Some(info) if info.is_valid() => {
             crate::klog_boot_info!(
                 "[DISPLAY] got framebuffer from Multiboot2: {}x{}x{} @ 0x{:X}",
@@ -287,7 +287,7 @@ pub fn display_init() -> framework::Result<()> {
     FB_PHYS_ADDR.store(fb_addr, core::sync::atomic::Ordering::Release);
     FB_PHYS_SIZE.store(fb_size, core::sync::atomic::Ordering::Release);
 
-    let _virt_addr = crate::kernel::mm::map_framebuffer(fb_addr, fb_size);
+    let _virt_addr = crate::kernel::framework::mm::map_framebuffer(fb_addr, fb_size);
 
     let format = infer_pixel_format(bpp, 16, 8, 0);
 
@@ -321,18 +321,18 @@ pub fn display_init() -> framework::Result<()> {
             }
 
             let console = alloc::boxed::Box::new(
-                crate::kernel::console::gfx_console::GfxConsole::new(fb as *mut _, font),
+                crate::kernel::framework::console::gfx_console::GfxConsole::new(fb as *mut _, font),
             );
-            crate::kernel::console::gfx_console_init(alloc::boxed::Box::leak(console));
+            crate::kernel::framework::console::gfx_console_init(alloc::boxed::Box::leak(console));
             crate::klog_info!(Driver, "[DISPLAY] GfxConsole initialized");
         }
     }
 
     let _manager = DisplayManager::new();
 
-    crate::kernel::chitin::chitin_register_driver(
+    crate::kernel::framework::chitin::chitin_register_driver(
         "vga-display",
-        crate::kernel::chitin::ChitinProto::Other,
+        crate::kernel::framework::chitin::ChitinProto::Other,
         Some(fb_addr),
         None,
         alloc::boxed::Box::new(DisplayDriver),

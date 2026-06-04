@@ -46,7 +46,7 @@ macro_rules! klog_slab {
 // ============================================================================
 
 /// Slab 配置常量 (统一从 config.rs 引用)
-pub use crate::kernel::config::{
+pub use crate::kernel::framework::config::{
     SLAB_DEFAULT_SIZE, SLAB_MIN_OBJECT_SIZE, SLAB_MAX_OBJECT_SIZE, SLAB_GENERAL_CACHE_NUM,
 };
 
@@ -876,5 +876,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_slab_tests() {
-    crate::kernel::tests::sys::register_slab_tests();
+    crate::kernel::framework::tests::sys::register_slab_tests();
 }

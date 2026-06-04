@@ -33,7 +33,7 @@
 //! Phase 2.1.6 任务: USB/XHCI 驱动迁移
 
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 // ── Capability 寄存器偏移 (在 MMIO 起始处) ──
 

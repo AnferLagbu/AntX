@@ -20,9 +20,9 @@ pub use keyboard::KeyboardDriver;
 
 pub fn input_init() {
     keyboard::keyboard_init();
-    crate::kernel::chitin::chitin_register_driver(
+    crate::kernel::framework::chitin::chitin_register_driver(
         "ps2_keyboard",
-        crate::kernel::chitin::ChitinProto::Input,
+        crate::kernel::framework::chitin::ChitinProto::Input,
         None,
         None,
         alloc::boxed::Box::new(keyboard::KeyboardDriver::new()),

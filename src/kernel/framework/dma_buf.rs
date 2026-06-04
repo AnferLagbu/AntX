@@ -20,7 +20,7 @@
 use core::fmt;
 use core::ptr::NonNull;
 
-use crate::kernel::mm::PhysAddr;
+use crate::kernel::framework::mm::PhysAddr;
 
 use super::frame::Frame;
 

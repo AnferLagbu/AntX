@@ -194,5 +194,5 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_seqlock_tests() {
-    crate::kernel::tests::sync::register_seqlock_tests();
+    crate::kernel::framework::tests::sync::register_seqlock_tests();
 }
