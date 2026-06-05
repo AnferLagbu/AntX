@@ -37,6 +37,10 @@ smoltcp = { path = "../kernel/framework/net/smoltcp", default-features = false, 
 
 [features]
 default = []
+# 启用真实硬件 e1000 EEPROM 读取路径 (EERD 寄存器轮询).
+# 关闭时 (默认) 走 QEMU 仿真兼容路径: 立即返回 0xFFFF, MAC 填入 QEMU 默认值.
+# 真实硬件 (i210/i219/i211 等) 需要打开此 feature 才能读取 NIC EEPROM 中的真实 MAC.
+e1000-real-hw = []
 e1000-verbose = []
 kernel_test = []
 fault_injection = []

@@ -60,14 +60,20 @@ def compare(baseline: dict, current: dict, threshold: float) -> tuple[list, list
 
     过滤规则:
       - baseline 或 current 为 0 / 负数: 跳过 (compiler 优化到极限, 无意义)
-      - 绝对差 < MIN_ABS_NS (默认 1.0ns): 视为亚纳秒测量噪声, 跳过
+      - 亚纳秒测量噪声处理:
+        * 绝对差 < MIN_ABS_NS (默认 1.0ns) 时, 启用相对噪声门限
+          (REL_NOISE_THRESHOLD, 默认 50%). 即: 当 |delta| < 50% 时视为噪声.
+          这一规则适用于 sub-nanosecond 量级 (ps 级) 的微基准, 避免
+          测量抖动掩盖真正的性能退化 (e.g. +400% 的 5ps→25ps 退化).
+        * 绝对差 >= 1ns 时, 仍按传入的 `threshold` 判定
       - 退化超阈值: 进入 regressions
       - 改善超阈值: 进入 improvements
     """
-    # 噪声过滤: 绝对差小于 1ns 的波动视为测量噪声 (典型亚纳秒 jitter 来自
-    # CPU 频率抖动 / 指令调度 / cache 状态). 仅当 |current - baseline| >= 1ns 时
-    # 才应用相对阈值.
+    # 噪声过滤: 区分亚纳秒 (ps 级) 与纳秒级.
+    # 亚纳秒抖动来自 CPU 频率切换 / cache 状态变化, 通常在 ±30% 内;
+    # 真正的回归 (例如 +100%, +400%) 即使绝对值很小也应被捕获.
     MIN_ABS_NS = 1.0
+    REL_NOISE_THRESHOLD = 0.50  # 亚纳秒时, |delta| < 50% 视为噪声
 
     by_name = {r["name"]: r for r in baseline.get("results", [])}
     regressions, improvements, warnings = [], [], []
@@ -93,13 +99,15 @@ def compare(baseline: dict, current: dict, threshold: float) -> tuple[list, list
             continue
         delta_pct = (c_ns - b_ns) / b_ns
         abs_diff = abs(c_ns - b_ns)
-        # 绝对差 < 1ns 视为亚纳秒测量噪声, 跳过 (不论相对差多大)
         if abs_diff < MIN_ABS_NS:
-            warnings.append({
-                "name": name,
-                "msg": f"|diff|={abs_diff:.4f}ns < {MIN_ABS_NS}ns 噪声, 跳过 ({delta_pct:+.1%})"
-            })
-            continue
+            # 亚纳秒测量: 启用相对噪声门限, 避免小波动掩盖大相对变化
+            if abs(delta_pct) < REL_NOISE_THRESHOLD:
+                warnings.append({
+                    "name": name,
+                    "msg": f"|diff|={abs_diff:.4f}ns < {MIN_ABS_NS}ns 噪声, 跳过 ({delta_pct:+.1%})"
+                })
+                continue
+            # 否则 (e.g. +400% ps 级回归), 不应被视为噪声, 继续到下方判定
         rec = {
             "name": name,
             "category": cur.get("category", base.get("category", "")),

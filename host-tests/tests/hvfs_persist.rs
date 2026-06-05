@@ -1,3 +1,16 @@
+//! HvFS 持久化往返集成测试 (HvFS Persistence Roundtrip Integration Tests)
+//!
+//! 验证 HvFS 的内存持久化往返行为:
+//! 1. 写入一批文件 → sync
+//! 2. 验证 pre-reset 可读
+//! 3. 重置单例
+//! 4. 重新 init 后, 旧文件应不存在 (证明是单例, 非持久)
+//!
+//! ## 测试组织
+//! 集成测试置于 `tests/` 目录, 由 Cargo 自动发现. 通过
+//! `use antx_host_tests::hvfs::hvfs::{get_hvfs, HVFS_DATA}` 访问
+//! lib 暴露的 HvFS API, 取代原 `src/persist_test.rs` 内联版本.
+
 use antx_host_tests::hvfs::hvfs::{get_hvfs, HVFS_DATA};
 
 #[test]

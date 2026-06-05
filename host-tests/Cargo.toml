@@ -2,44 +2,27 @@
 name = "antx-host-tests"
 version = "0.1.0"
 edition = "2021"
-description = "QueenX host-side unit tests"
+description = "QueenX host-side tests + microbenchmarks"
 authors = ["Anfer"]
 
-[[test]]
-name = "capability"
-path = "src/capability.rs"
-
-[[test]]
-name = "checksum"
-path = "src/checksum.rs"
-
-[[test]]
-name = "sha256"
-path = "src/sha256.rs"
-
-[[test]]
-name = "buddy"
-path = "src/buddy.rs"
-
-[[test]]
-name = "hvfs"
-path = "src/hvfs_test.rs"
-
-[[test]]
-name = "hvfs_persist"
-path = "src/persist_test.rs"
-
-[[test]]
-name = "iomem_alias"
-path = "src/iomem_alias.rs"
-
-[[test]]
-name = "dma_stream"
-path = "src/dma_stream.rs"
-
-[[test]]
-name = "framekernel_bench"
-path = "src/framekernel_bench.rs"
+# 集成测试 (integration tests) 由 Cargo 自动从 tests/ 目录发现
+# - tests/display.rs       — 显示器驱动 (PixelFormat/Color/DisplayMode/HDMI/DP)
+# - tests/e1000_eeprom.rs  — e1000 EEPROM 读取 (QEMU 兼容 + 真实硬件双路径)
+# - tests/iomem_alias.rs   — IoMem 别名检测 (16 用例)
+# - tests/hvfs_test.rs     — HvFS 综合端到端 (CRUD/seek/error/advanced/FD)
+# - tests/hvfs_persist.rs  — HvFS 内存持久化往返
+# - tests/stress_test.rs   — HvFS 压力 (CAS/ZAP/ZIL 各 100~256 循环)
+# - tests/common/mod.rs    — 共享 helper 占位 (Rust 官方测试组织标准 §tests/common/)
+#
+# 单元测试 (unit tests) 内联于 src/*.rs 的 #[cfg(test)] mod tests:
+# - src/buddy.rs       — 伙伴分配器
+# - src/capability.rs  — 能力位矩阵
+# - src/checksum.rs    — Fletcher2/4 / SHA-256 / EdonR
+# - src/sha256.rs      — SHA-256 纯算法
+# - src/dma_stream.rs  — DMA 状态机 + 校验
+#
+# 性能基准 (binary, 通过 bin/ 入口运行):
+# - src/bin/framekernel_bench.rs 调用 lib::framekernel_bench::run_all() 输出 JSON
 
 [[bin]]
 name = "framekernel-bench"

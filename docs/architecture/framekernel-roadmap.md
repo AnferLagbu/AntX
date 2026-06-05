@@ -50,6 +50,11 @@
 3. **测试验证**: `make qemu-boot-test ARCH=all` → **2/2 通过** (x86_64 + aarch64, 均到达 `Entering Ring 3` / `Entering EL0` 启动 init 进程)
 4. **后续待办** (Phase 3.6 收尾): 真实硬件 e1000 驱动需在 iomem 抽象基础上恢复 eeprom_read (建议用 `#![cfg(target_arch = ...)]` 区分 QEMU/真实硬件路径); 提交 QEMU upstream 报告 e1000 仿真死锁 bug
 
+**v2.23 增量** (2026-06-05, e1000 真实硬件路径恢复 + 性能基线脚本化):
+1. **e1000 真实硬件 EERD 路径恢复** (`src/rust/Cargo.toml` + `src/kernel/framework/driver/net/e1000.rs`): 引入 feature flag `e1000-real-hw`, 默认 (关闭) 走 QEMU 仿真兼容路径 (eeprom_read 立即返回 0xFFFF, MAC 填入 QEMU 默认值 `52:54:00:12:34:56`); 启用 (真实硬件) 走 EERD.START 触发读 + 轮询 EERD.DONE (100k 次 spin_loop 超时) 路径, 从 EEPROM 读 3 个 16-bit 字拼成 6 字节 MAC. **双路径都通过 `cargo build --release` 编译验证**
+2. **e1000_eeprom 单元测试** (`host-tests/src/e1000_eeprom.rs`): 13 个测试全部通过. 覆盖: QEMU 兼容路径 (默认 MAC + eeprom_read 返回 0xFFFF), 真实硬件路径 (高 16 位提取 / EERD 状态机轮询 / 寄存器偏移 / 多轮 poll 计数), MAC 字节序 (小端组装, 6 字节), 超时路径 (stuck → 0xFFFF), 端到端 MAC 工作流 (3 word → 6 byte). 通过 `MockIoMem` 复刻 `IoMem::read_u32/write_u32` 行为
+3. **性能基线 CI 化** (`scripts/check_bench_regression.py` + `Makefile.ci`): 修复原脚本的"绝对差 < 1ns 视为噪声"缺陷 —— 该规则在亚纳秒微基准下会掩盖真正的性能退化 (e.g. 5ps→25ps 即 +400% 也被判为噪声). 改为**双门限**: 绝对差 < 1ns 时启用相对噪声门限 (默认 50%), 超过则按原 threshold 判定. 验证: 注入 +420% sha256_block / +50% iomem_alias_check 回归, `check_bench_regression.py` 正确识别为 FAIL, 退出码 1; 恢复 baseline 后无回归 PASS, 退出码 0
+
 **v2.4 增量** (2026-06-04, Phase 3.3 + 3.4 端到端验证):
 1. **生产代码 DmaStream 升级** (`src/kernel/framework/dma_buf.rs`): 之前 `from_frame` 返回 `Option<Self>` 且无任何验证, 状态机缺失. 现在:
    - `from_frame` 返回 `Result<Self, DmaError>`, 验证 4 项不变量: 页对齐、size>0、size≤DMA_MAX_SIZE、paddr+size 不溢出
@@ -892,7 +897,7 @@ SAFETY 注释: 38 处
 | 3.3 别名检测测试 | IoMem 冲突检测压力测试 | 3d | ✅ **2026-06-04 v2.4 达成**: `host-tests/src/iomem_alias.rs` 16 个测试全部通过. 覆盖区间重叠 (前/后/包含/完全相同)、对齐检查、容量上限 (64 条)、unregister、PCI BAR 场景 (e1000/ahci/xhci)、saturating_add 溢出边界. 镜像生产代码 `src/kernel/framework/iomem.rs::AliasRegistry` 算法 |
 | 3.4 DMA 安全边界测试 | IOMMU 防护 (若启用) / 软件边界检查 | 5d | ✅ **2026-06-04 v2.4 达成**: `host-tests/src/dma_stream.rs` 20 个测试全部通过. 同时升级生产代码 `src/kernel/framework/dma_buf.rs::DmaStream` 加 4 项验证 (页对齐/zero size/size 上限/范围溢出) + 状态机 (CpuReady/DeviceReady/BidirInProgress) + 方向检查 (ToDevice 不能 sync_for_cpu 等). miri-tests/src/dma.rs 14 个测试 + host-tests/src/dma_stream.rs 20 个 + 生产代码 DmaStream 升级 = 端到端覆盖 |
 | 3.5 双架构一致性 | x86_64 + aarch64 同步验证 | 5d | ✅ **2026-06-04 v2.1 达成**: x86_64 cargo check 0 errors 0 warnings, aarch64 cargo check 0 errors 0 warnings, **双架构 QEMU 真实启动通过** (见 Phase 3.6), 修复了 Makefile 中 `string.c` 过期引用导致 x86_64 构建失败的 bug |
-| 3.6 回归测试 | 所有已有测试通过 + 性能无退化 | 5d | ✅ **2026-06-04 v2.4 达成**: `make qemu-boot-test ARCH=all` → **2/2 通过**. x86_64 QEMU 启动 80 行日志, 完整进入 **Ring 3 启动 init 进程** (v2.1 时卡在 IoPort 越界, v2.2 修复 `enable_cursor` / `update_hardware_cursor` 的两步写端口模式后通过; v2.3 定位 e1000 QEMU 仿真死锁并临时绕过; v2.4 升级 DmaStream 加状态机后双架构 cargo build 0 errors 0 warnings); aarch64 QEMU 启动 67 行日志, **完整进入 EL0 启动 init 进程**. QEMU 启动测试已接入 `ci/audit.sh` step 7 作为 fail-fast 门禁. **host-tests 254 passed (v2.4 新增 36 个), miri-tests 137 passed (0 UB)**. 已知 issue: x86_64 e1000 默认 NIC 下 QEMU 仿真器内部死锁 (用 `-nic none` 隔离测试, 待提交 QEMU upstream). 性能退化: 未做基准测试, Phase 4 补做 |
+| 3.6 回归测试 | 所有已有测试通过 + 性能无退化 | 5d | ✅ **2026-06-04 v2.4 达成**: `make qemu-boot-test ARCH=all` → **2/2 通过**. x86_64 QEMU 启动 80 行日志, 完整进入 **Ring 3 启动 init 进程** (v2.1 时卡在 IoPort 越界, v2.2 修复 `enable_cursor` / `update_hardware_cursor` 的两步写端口模式后通过; v2.3 定位 e1000 QEMU 仿真死锁并临时绕过; v2.4 升级 DmaStream 加状态机后双架构 cargo build 0 errors 0 warnings); aarch64 QEMU 启动 67 行日志, **完整进入 EL0 启动 init 进程**. QEMU 启动测试已接入 `ci/audit.sh` step 7 作为 fail-fast 门禁. **host-tests 254 passed (v2.4 新增 36 个), miri-tests 137 passed (0 UB)**. 已知 issue: x86_64 e1000 默认 NIC 下 QEMU 仿真器内部死锁 (用 `-nic none` 隔离测试, 待提交 QEMU upstream). **v2.23 性能基线 CI 化**: `make -f Makefile.ci ci-bench` 接入 `framekernel-bench` 回归检查 (阈值 15%), 修复了原 `check_bench_regression.py` 的亚纳秒噪声门限缺陷 (5ps→25ps 即 +400% 也被判为噪声), 改为双门限 (绝对差 < 1ns 时启用相对噪声门限 50%); 注入测试验证可正确捕获 +420% / +50% 回归. **v2.23 e1000 真实硬件路径**: 引入 `e1000-real-hw` feature flag, 真实硬件走 EERD.START 轮询路径; `host-tests/src/e1000_eeprom.rs` 13 测试全过 |
 
 **Phase 3.2 SAFETY 注释补全 (2026-06-03 完成)**:
 

@@ -1,3 +1,18 @@
+//! HvFS 综合集成测试 (HvFS Comprehensive Integration Tests)
+//!
+//! 验证 HvFS 端到端 API 在典型工作负载下的正确性:
+//! - 文件 / 目录 CRUD
+//! - seek / read / write 边界
+//! - 错误码 (NotFound / AlreadyExists / NotDirectory 等)
+//! - 高级特性 (symlink / hardlink / xattr / chmod / chown)
+//! - Snapshot & Clone
+//! - FD 管理 (O_APPEND / 重复 close / 越界读)
+//!
+//! ## 测试组织
+//! 集成测试置于 `tests/` 目录, 由 Cargo 自动发现. 通过
+//! `use antx_host_tests::hvfs::hvfs::get_hvfs` 访问 lib 暴露的
+//! HvFS API, 取代原 `src/hvfs_test.rs` 内联版本, 避免双重编译.
+
 use antx_host_tests::hvfs::hvfs::get_hvfs;
 use antx_host_tests::hvfs_mock::KernelError;
 use std::sync::Once;

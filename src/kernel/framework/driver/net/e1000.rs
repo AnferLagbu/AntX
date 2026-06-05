@@ -175,26 +175,71 @@ impl Default for E1000Device {
     }
 }
 
+/// E1000 EEPROM 读取 (按 feature 切换).
+///
+/// - 默认 (`e1000-real-hw` 关闭): QEMU 仿真器对 EERD 寄存器的写操作会触发内部
+///   mutex 死锁, 因此 eeprom_read 立即返回 `0xFFFF`, 由 [`read_mac_address`]
+///   填入 QEMU 默认 MAC `52:54:00:12:34:56`.
+/// - 启用 `e1000-real-hw` feature: 通过 EERD.START 触发读, 轮询 EERD.DONE
+///   位 (带 100k 次 spin_loop 超时), 返回 (val >> 16) & 0xFFFF.
+///
+/// 真实硬件 (i210 / i211 / i219 / 82574L 等) 必须在 build 时打开该 feature,
+/// 否则无法读取 NIC 真实 MAC.
+#[cfg(not(feature = "e1000-real-hw"))]
 fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
     let iomem = dev.iomem.as_ref().unwrap();
-    // v2.2 修复: 已知问题 — QEMU 8.x 默认 e1000 仿真对 EERD 写入会触发内部死锁。
-    //              临时方案: eeprom_read 立即返回 0xFFFF, 让 read_mac_address 走默认 MAC。
-    //              真实硬件 (i219/i210/i211 等) 仍需 eeprom 读取, 后续恢复标准路径。
-    // 现象: qemu-system-x86_64 默认 NIC 下, 首次写 EERD.START 后 QEMU 主线程 hang
-    //       (gdb 显示 spin 在 e1000_mmio_write 内部 mutex), 内核无法继续。
-    //       当前 qemu_boot_test.sh 用 `-nic none` 隔离测试, 故此问题暂不阻塞 CI。
+    // QEMU 兼容路径: 跳过 EERD 访问, 立即返回空值. 让 read_mac_address 走默认 MAC.
     let _ = iomem;
     let _ = addr;
     0xFFFF
 }
 
+/// 真实硬件 EERD 读取路径. 由 `e1000-real-hw` feature 启用.
+#[cfg(feature = "e1000-real-hw")]
+fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
+    let iomem = dev.iomem.as_ref().unwrap();
+    // SAFETY: iomem 由 IoMem 抽象提供, 写 32 位寄存器的边界 + 对齐检查在 IoMem::write_u32 内部完成.
+    iomem.write_u32(E1000_EERD as usize, ((addr as u32) << 2) | E1000_EERD_START);
+    let mut timeout: u32 = 0;
+    while timeout < E1000_TIMEOUT {
+        let val = iomem.read_u32(E1000_EERD as usize);
+        if val & E1000_EERD_DONE != 0 {
+            return ((val >> 16) & 0xFFFF) as u16;
+        }
+        timeout += 1;
+        core::hint::spin_loop();
+    }
+    klog_warn!(Net, "e1000: eeprom_read timeout addr={}", addr);
+    0xFFFF
+}
+
+/// 读取 MAC 地址 (按 feature 切换).
+///
+/// - 默认: 跳过所有 MMIO 读取, 使用 QEMU 默认 MAC.
+/// - `e1000-real-hw` 启用: 通过 EERD 读取 3 个 16 位 EEPROM 字 (word 0..=2),
+///   拼成 6 字节 MAC. 真实 NIC 的 MAC 即在 EEPROM 偏移 0 处开始.
 fn read_mac_address(dev: &mut E1000Device) {
-    // v2.2 修复: QEMU 默认 e1000 模型的 MMIO 访问 (含 EERD / RAL / RAH) 不可靠,
-    //              任何读操作都可能挂起整个 QEMU 桥。
-    //              直接使用 QEMU 默认 MAC (52:54:00:12:34:56) 跳过所有 MMIO 读取。
-    //              真实硬件需要恢复 eeprom_read / RAL 读取路径。
-    let _ = dev.iomem.as_ref();
-    dev.mac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
+    #[cfg(not(feature = "e1000-real-hw"))]
+    {
+        // QEMU 兼容路径: 默认 MAC 52:54:00:12:34:56
+        dev.mac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
+    }
+    #[cfg(feature = "e1000-real-hw")]
+    {
+        // 真实硬件路径: 从 EEPROM 读 3 个字, 拼成 6 字节 MAC
+        let lo = eeprom_read(dev, 0);
+        let mid = eeprom_read(dev, 1);
+        let hi = eeprom_read(dev, 2);
+        dev.mac = [
+            (lo & 0xFF) as u8,
+            ((lo >> 8) & 0xFF) as u8,
+            (mid & 0xFF) as u8,
+            ((mid >> 8) & 0xFF) as u8,
+            (hi & 0xFF) as u8,
+            ((hi >> 8) & 0xFF) as u8,
+        ];
+        klog_info!(Net, "e1000: MAC from EEPROM {:02x?}", dev.mac);
+    }
 }
 
 #[cfg(not(feature = "kernel_test"))]
