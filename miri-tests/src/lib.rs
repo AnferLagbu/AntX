@@ -44,3 +44,4 @@ pub mod credo_grants;
 pub mod credo_sessions;
 pub mod credo_audit;
 pub mod barrier_attribution;
+pub mod user_proc_sync;

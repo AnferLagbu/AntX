@@ -4,27 +4,6 @@
 # 适用: AntX Framekernel (Rust no_std 内核, 裸机)
 # 内核风格: 文档化所有公开 API, 强制 SAFETY 注释紧邻 unsafe 块。
 
-# ── 严格模式 ────────────────────────────────────────────────
-# Deny all warnings - treat them as errors
-deny = ["all", "warnings"]
-
-# Allow some common patterns that are acceptable in kernel code
-allow = [
-    "unsafe_code",           # We use unsafe deliberately with SAFETY comments
-    "dead_code",             # Some FFI functions may not be used yet
-    "unused_variables",      # Common in FFI stubs
-    "unused_imports",        # May be needed for future features
-]
-
-# Warn about potential issues
-warn = [
-    "unsafe_derive_deserialize",  # Unsafe impl of Deserialize
-    "unsafe_removed_from_name",   # Functions renamed from unsafe
-    "unused_unsafe",              # Unnecessary unsafe blocks
-    "redundant_unsafe",           # Redundant unsafe blocks
-    "multiple_unsafe_implicit",   # Multiple implicit unsafe ops
-]
-
 # ── 内核风格阈值 ──────────────────────────────────────────────
 # Cognitive complexity limit - keep functions understandable
 cognitive-complexity-threshold = 25
@@ -36,7 +15,8 @@ type-complexity-threshold = 250
 too-many-lines-threshold = 100
 
 # Avoid large types passed by value
-trivially-copy-pass-by-ref-threshold = 16
+# 旧名 trivially-copy-pass-by-ref-threshold 已弃用, 改为 trivial-copy-size-limit
+trivial-copy-size-limit = 16
 
 # ── 文档要求 ──────────────────────────────────────────────────
 # 内核风格: 文档化所有公开 API
@@ -46,12 +26,11 @@ missing-docs-in-crate-items = true
 # (内核导出 API 时可自由重构, 不应触发稳定化警告)
 avoid-breaking-exported-api = false
 
-# ── 允许的 unsafe 块必须紧邻 SAFETY 注释 ─────────────────────
-# (与 #![warn(clippy::undocumented_unsafe_blocks)] 等价)
-
 # ── 标准宏 ────────────────────────────────────────────────────
+# 格式: { name = "宏名", brace = "<单个字符>" }, 字符为左/右配对中的"开括号"
+# 配对规则: () → ( ; [] → [ ; {} → { ; <> → <
 standard-macro-braces = [
-    { name = "klog_pmm", brace = "Paren" },
-    { name = "klog_slab", brace = "Paren" },
-    { name = "klog_error", brace = "Paren" },
+    { name = "klog_pmm", brace = "(" },
+    { name = "klog_slab", brace = "(" },
+    { name = "klog_error", brace = "(" },
 ]

@@ -458,12 +458,25 @@ pub(crate) mod raw {
     }
 
     /// 分配并构造一个 `UserProcess` 内存, 清零后返回。
-    pub fn alloc_user_process() -> Option<*mut UserProcess> {
+    ///
+    /// # Arguments
+    /// - `process`: 与本 `UserProcess` 镜像关联的权威 `Process` NonNull 句柄.
+    ///              构造时写入 `UserProcess::process` 字段, 后续通过
+    ///              `UserProcess::process()` 安全访问.
+    ///
+    /// # 返回
+    /// 已清零的 `UserProcess` 裸指针; `process` 字段已正确指向传入的 `Process`.
+    pub fn alloc_user_process(process: NonNull<Process>) -> Option<*mut UserProcess> {
         let size = core::mem::size_of::<UserProcess>() as u64;
         let ptr = raw::alloc_zeroed(size) as *mut UserProcess;
         if ptr.is_null() {
             None
         } else {
+            // SAFETY: ptr 来自 alloc_zeroed, 大小为 size_of::<UserProcess>(), 区间合法.
+            //         process NonNull 句柄由调用方保证有效 (INV-USER-PROC-2).
+            unsafe {
+                core::ptr::write(&mut (*ptr).process, process);
+            }
             Some(ptr)
         }
     }
@@ -562,22 +575,138 @@ pub(crate) mod raw {
 
 use raw::UserProcRef;
 
+/// 用户进程 FFI 桥接缓存 (Framekernel privilege wrapper)
+///
+/// # 设计: 单源真相 + FFI 镜像
+///
+/// AntX 进程子系统维护**两个并行结构**:
+/// - `Process` (在 `process.rs` 中, 权威单一源) — 全量进程描述符, 包含调度/
+///   信号/文件系统/会话等所有元数据, 由 `PROCESS_TABLE` 管理.
+/// - `UserProcess` (本结构, FFI 镜像) — 仅缓存进入 Ring 3 路径上**热访问**的
+///   字段 (pid/pwm/cr3/kernel_stack/user_stack/state), 以及**独占**的 FFI 字段
+///   (entry/stack_bottom/create_time).
+///
+/// # 字段分类
+///
+/// ## 共享字段 (与 `Process` 重叠, 同步方向: Process → UserProcess)
+///
+/// - `pid`           ←→ `Process::pid`
+/// - `pwm`           ←→ `Process::pwm` (AtomicU64)
+/// - `cr3`           ←→ `Process::cr3` (AtomicU64)
+/// - `kernel_stack`  ←→ `Process::kernel_stack` (AtomicU64)
+/// - `user_stack`    ←→ `Process::user_stack` (AtomicU64)
+/// - `state`         ←→ `Process::state` (AtomicU32)
+///
+/// 共享字段在 `create()` 完成后即与 `Process` 镜像同步; 运行期状态变更
+/// 优先写 `Process`, 然后通过 `sync_from_process()` 推送到本镜像.
+///
+/// ## FFI 独占字段 (本结构独有, 不存在于 `Process`)
+///
+/// - `entry`         — asm 跳转入口, 由 `enter()` 读取并跳转
+/// - `stack_bottom`  — 用户栈底地址, `setup_user_stack()` 计算依据
+/// - `create_time`   — 进程创建时间戳, 调度/审计用
+///
+/// # 不变量 (INV-USER-PROC)
+///
+/// 1. **同步不变量**: 本结构共享字段值与 `Process` 对应字段**最终一致**.
+///    同步通过 `sync_to_process()` / `sync_from_process()` 显式调用完成.
+/// 2. **生命周期不变量**: `process` NonNull 指向的 `Process` 存活期 ≥ 本结构.
+///    销毁本结构前必须先从 `USER_PROC_MANAGER.processes` 移除条目.
+/// 3. **FFI 安全不变量**: `#[repr(C)]` 保持稳定的内存布局, 避免跨 FFI 边界时
+///    Rust 端重新布局导致 C 端解析错误.
+// SAFETY: UserProcess::process 字段存储 NonNull<Process> 句柄, 不持有所有权.
+//         共享字段 (pid/pwm/cr3/kstack/ustack/state) 均为 Atomic* 或 u32, 满足 Send.
+//         FFI 独占字段 (entry/stack_bottom/create_time) 均为 u64, 满足 Send.
+//         综合: UserProcess 可在线程间安全转移.
+unsafe impl Send for UserProcess {}
+unsafe impl Sync for UserProcess {}
 #[repr(C)]
 pub struct UserProcess {
+    /// ✅ 权威引用: 指向 `PROCESS_TABLE` 中对应的 `Process`.
+    ///
+    /// 持有 NonNull 而非裸指针, 表达"一定有值"的语义;
+    /// 构造时强制调用方提供 `Process` 句柄, 杜绝悬垂.
+    pub(crate) process: NonNull<Process>,
+
+    // === 共享字段 (与 Process 镜像同步) ===
+    /// `Process::pid.0` 的扁平缓存. 业务访问应走 `self.process().pid`.
     pub pid: u32,
+    /// `Process::pwm` 镜像. 业务访问应走 `self.process().pwm`.
     pub pwm: AtomicU64,
+    /// `Process::cr3` 镜像. 业务访问应走 `self.process().cr3`.
     pub cr3: AtomicU64,
+    /// `Process::kernel_stack` 镜像. 业务访问应走 `self.process().kernel_stack`.
     pub kernel_stack: AtomicU64,
+    /// `Process::user_stack` 镜像. 业务访问应走 `self.process().user_stack`.
     pub user_stack: AtomicU64,
-    pub stack_bottom: AtomicU64,
-    pub entry: u64,
+    /// `Process::state` 镜像. 业务访问应走 `self.process().state`.
     pub state: AtomicU32,
+
+    // === FFI 独占字段 ===
+    /// asm 跳转入口地址 (由 `enter()` 读取并执行 `jmp entry`).
+    pub entry: u64,
+    /// 用户栈底虚拟地址, `setup_user_stack()` 据此计算 argv/envp 摆放位置.
+    pub stack_bottom: AtomicU64,
+    /// 进程创建时间戳 (ticks). 调度/审计用, 不属于 Process 状态.
     pub create_time: u64,
 }
 
-// All fields (u32, AtomicU64, AtomicU32, u64) are Send + Sync.
-unsafe impl Send for UserProcess {}
-unsafe impl Sync for UserProcess {}
+impl UserProcess {
+    /// 获取权威 `Process` 引用.
+    ///
+    /// # Returns
+    /// 对 `PROCESS_TABLE` 中存储的 `Process` 的 `&'static` 引用 (非空保证由
+    /// NonNull 字段提供).
+    pub fn process(&self) -> &Process {
+        // SAFETY: UserProcess::process NonNull 字段的不变量 (INV-USER-PROC-2)
+        // 保证其指向的 Process 在 UserProcess 存活期间有效.
+        unsafe { self.process.as_ref() }
+    }
+
+    /// 从权威 `Process` 拉取共享字段, 同步到本镜像.
+    ///
+    /// 适用场景: 业务代码修改了 `Process` 字段, 需要刷新本镜像 (例如调度器
+    /// 切换进程时, 将目标进程的 CR3 同步到 UserProcess 以便 enter() 读取).
+    pub fn sync_from_process(&self) {
+        let p = self.process();
+        self.pwm.store(p.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
+        self.cr3.store(p.cr3.load(Ordering::SeqCst), Ordering::SeqCst);
+        self.kernel_stack
+            .store(p.kernel_stack.load(Ordering::SeqCst), Ordering::SeqCst);
+        self.user_stack
+            .store(p.user_stack.load(Ordering::SeqCst), Ordering::SeqCst);
+        self.state.store(p.state.load(Ordering::SeqCst), Ordering::SeqCst);
+    }
+
+    /// 将本镜像的共享字段推送到权威 `Process`.
+    ///
+    /// 适用场景: FFI 桥接层 (如 `user_proc_clone()`) 创建/修改了本镜像, 需
+    /// 要将变更同步到 PROCESS_TABLE, 避免两侧脱节.
+    pub fn sync_to_process(&self) {
+        let p = self.process();
+        p.pwm.store(self.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
+        p.cr3.store(self.cr3.load(Ordering::SeqCst), Ordering::SeqCst);
+        p.kernel_stack
+            .store(self.kernel_stack.load(Ordering::SeqCst), Ordering::SeqCst);
+        p.user_stack
+            .store(self.user_stack.load(Ordering::SeqCst), Ordering::SeqCst);
+        p.state.store(self.state.load(Ordering::SeqCst), Ordering::SeqCst);
+    }
+
+    /// 运行时不变量检查 (调试用).
+    ///
+    /// 校验 INV-USER-PROC-1: 本镜像共享字段与 Process 对应字段一致.
+    /// 不一致则返回 false, 调用方可触发 `sync_from_process()` 修复.
+    pub fn check_sync(&self) -> bool {
+        let p = self.process();
+        self.pid == p.pid.0
+            && self.pwm.load(Ordering::SeqCst) == p.pwm.load(Ordering::SeqCst)
+            && self.cr3.load(Ordering::SeqCst) == p.cr3.load(Ordering::SeqCst)
+            && self.kernel_stack.load(Ordering::SeqCst) == p.kernel_stack.load(Ordering::SeqCst)
+            && self.user_stack.load(Ordering::SeqCst) == p.user_stack.load(Ordering::SeqCst)
+            && self.state.load(Ordering::SeqCst) == p.state.load(Ordering::SeqCst)
+    }
+}
 
 pub struct UserProcManager {
     current: AtomicU64,
@@ -678,8 +807,13 @@ impl UserProcManager {
     pub fn create(&self, info: &UserProcInfo, pwm: u64) -> Option<*mut UserProcess> {
         let pid = PROCESS_TABLE.allocate_pid()?;
 
-        // 分配并清零 UserProcess 内存
-        let proc_ptr = raw::alloc_user_process()?;
+        // ✅ 单源真相: 优先分配权威 Process, 再分配 UserProcess 镜像并关联.
+        //    此顺序保证 UserProcess::process NonNull 字段构造时即指向有效 Process.
+        let kproc_ptr = raw::alloc_kernel_process()?;
+        let kproc_nn = NonNull::new(kproc_ptr).unwrap();
+
+        // 分配并清零 UserProcess 内存, 关联权威 Process 句柄
+        let proc_ptr = raw::alloc_user_process(kproc_nn)?;
         let proc = raw::new_proc_ref(proc_ptr);
 
         // 创建用户页表
@@ -735,8 +869,7 @@ impl UserProcManager {
             .lock()
             .insert(pid, NonNull::new(proc_ptr).unwrap());
 
-        // 分配并构造 Process (用于 process table)
-        let kproc_ptr = raw::alloc_kernel_process()?;
+        // 在权威 Process 上写入基本字段 (与 UserProcess 镜像共享字段保持一致).
         raw::init_kernel_process_fields(
             kproc_ptr,
             pid,
@@ -746,6 +879,7 @@ impl UserProcManager {
             proc.load_user_stack(),
         );
 
+        // 插入 PROCESS_TABLE 完成权威注册.
         PROCESS_TABLE.insert(kproc_ptr);
 
         Some(proc_ptr)
@@ -1130,14 +1264,18 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
     };
 
     let child_kernel_proc = match PROCESS_TABLE.get(child_pid) {
-        Some(p) => p,
+        Some(p) => match NonNull::new(p) {
+            Some(nn) => nn,
+            None => return -1,
+        },
         None => return -1,
     };
 
     // SAFETY: parent_proc / child_kernel_proc 均来自管理器, 有效。
     unsafe {
         let parent_ref = UserProcRef::new_unchecked(parent_proc);
-        let child_up = raw::alloc_user_process().unwrap_or_default();
+        // ✅ 关联权威 child_kernel_proc 句柄, 建立 UserProcess→Process 反向引用.
+        let child_up = raw::alloc_user_process(child_kernel_proc).unwrap_or_default();
         if child_up.is_null() {
             return -1;
         }
@@ -1145,15 +1283,18 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
 
         child_ref.set_pid(child_pid);
         child_ref.store_pwm(parent_ref.load_pwm());
-        child_ref.store_cr3((*child_kernel_proc).cr3.load(Ordering::SeqCst));
+        child_ref.store_cr3((*child_kernel_proc.as_ptr()).cr3.load(Ordering::SeqCst));
         child_ref.store_kernel_stack(
-            (*child_kernel_proc).kernel_stack.load(Ordering::SeqCst),
+            (*child_kernel_proc.as_ptr()).kernel_stack.load(Ordering::SeqCst),
         );
         child_ref.store_user_stack(parent_ref.load_user_stack());
         child_ref.store_stack_bottom(parent_ref.load_stack_bottom());
         child_ref.set_entry(parent_ref.entry());
         child_ref.store_state(1);
         child_ref.set_create_time(crate::kernel::framework::timer::get_ticks());
+
+        // ✅ 同步子进程镜像共享字段到权威 Process (INV-USER-PROC-1).
+        (*child_up).sync_to_process();
 
         USER_PROC_MANAGER
             .processes

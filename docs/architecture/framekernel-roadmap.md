@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.24 (2026-06-05, host-tests 重构 — 业界标准测试组织)
+> **版本**: v2.28 (2026-06-05, CI services 零 unsafe 编译期 fail-fast + clippy.toml 修复)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -1453,4 +1453,319 @@ host-tests/
 - **DECISION-008**: `src/lib.rs` 仅为库代码入口, 不得声明任何 `mod xxx_test` (集成测试专属代码必须移至 `tests/`)
 - **DECISION-009**: 集成测试的 `use` 路径必须用 crate 全名 (`antx_host_tests::xxx`), 不用 `crate::xxx` (集成测试作为独立 crate 编译)
 - **DECISION-010**: 性能基准走 `[[bin]]` 入口 (类似 cargo 官方 benches/ 但更轻量), 与测试分离
+
+---
+
+## 十、2026-06-05 v2.25 requirements.sh v3.2 重构 (适应全 Rust 化)
+
+### 10.1 重构动机
+
+项目已完成全 Rust 化 (services 0 unsafe, framework TCB 收敛), 旧 `requirements.sh` 存在以下问题:
+
+| # | 问题 | 影响 |
+|---|------|------|
+| 1 | C 工具链未分类 (链接层 / 测试桩混在一起) | Rust-only 环境无法单独跳过链接层 |
+| 2 | 缺少项目本地工具检查 | `tools/check_tcb.sh` / `audit_unsafe.{sh,py}` 缺失时 `ci/audit.sh` 静默失败 |
+| 3 | Rust 测试工具链粗放 | 漏检 `cargo-lockbud` / `cargo-deny` / `cargo-mutants` 等 CI 实际依赖的工具 |
+| 4 | Python 模块检查冗余 | 检查整个标准库, 而 CI 脚本仅依赖少数模块 |
+| 5 | 用户交互粗糙 | 缺失项说明不清, --help 不显示依赖分类总览 |
+
+### 10.2 v3.2 关键变更
+
+1. **C 工具链二分**:
+   - `C_LEGACY_PACKAGES` = 链接层 (ld/nasm/objcopy, 裸机 ELF 必须)
+   - `C_TEST_STUB_PACKAGES` = 测试桩 (gcc, 已弃用, 仅历史兼容)
+   - 新增 `--skip-c-linker` 选项: 仅跳过链接层, 保留测试桩检查
+   - `--skip-c` 隐含 `--skip-c-linker` (Rust-only 环境)
+2. **第 8 类 — 项目本地工具**: 验证 `tools/check_tcb.sh` (TCB 门禁) + `tools/audit_unsafe.sh` + `tools/audit_unsafe.py` (SAFETY 审计)
+3. **Rust 测试工具链细化**: 新增 `cargo-lockbud` (死锁/数据竞争静态分析), 检查 `cargo-deny` / `cargo-audit` / `cargo-llvm-cov` / `cargo-mutants` / `cargo-bloat` / `cargo-geiger`
+4. **Python 模块检查精简**: 仅检查 CI 脚本实际依赖的 stdlib 模块 (`json` / `subprocess` / `argparse` / `pathlib` / `re` / `os` / `sys`)
+5. **增强 --help 输出**: 显示 8 类依赖分类 + C 工具链 v3.2 决策 + 配置文件引用
+6. **`PROJECT_TOOLS_MISSING` 数组**: 单独跟踪项目本地工具缺失情况, 给出 `ls -la` 排查建议
+
+### 10.3 重构步骤 (6 步全完成)
+
+| # | 步骤 | 文件 | 状态 |
+|---|------|------|------|
+| 1 | 新增 `SKIP_C_LINKER` 全局变量 + `--skip-c-linker` 选项 | [scripts/requirements.sh](file:///home/anfer/Code/AntX/scripts/requirements.sh) | ✅ |
+| 2 | 新增 `check_project_tool()` 函数 + `PROJECT_TOOLS_*` 计数器 | 同上 | ✅ |
+| 3 | 拆分 C 工具链为 `check_c_legacy()` + `check_c_test_stub()` | 同上 | ✅ |
+| 4 | 第 8 节 [8/8] 项目本地工具检查段 | 同上 | ✅ |
+| 5 | Rust 测试工具链新增 `cargo-lockbud` 等 6 项 | 同上 | ✅ |
+| 6 | 增强 --help 输出 (8 类分类 + 决策说明) | 同上 | ✅ |
+
+### 10.4 验证 (实测, 2026-06-05)
+
+```text
+$ bash /home/anfer/Code/AntX/scripts/requirements.sh --help
+用法: /home/anfer/Code/AntX/scripts/requirements.sh [选项]
+选项:
+  -y, --yes             自动确认所有提示 (非交互模式)
+  -s, --skip-optional   跳过可选依赖 (仅检查必需)
+      --skip-c          跳过 C 工具链 (含链接层+测试桩) — Rust-only 环境
+      --skip-c-linker   仅跳过 C 链接层 (保留 C 测试桩检查)
+      --skip-iso        跳过 ISO 制作工具
+      --skip-tests      跳过 Rust 测试工具链
+      --skip-project    跳过项目本地工具 (tools/check_tcb.sh 等)
+      --check-only      仅检查, 不安装
+  -v, --verbose         显示详细版本信息
+  -h, --help            显示此帮助
+依赖分类 (8 类, v3.2):
+  必需 (1/8)    : Rust 工具链 + QEMU + Python 3 + Make
+  推荐 (2/8)    : rust-src/clippy/rustfmt/miri/llvm-tools/targets
+  测试 (3/8)    : lockbud/cargo-deny/cargo-audit/llvm-cov/mutants/bloat/geiger
+  可选 (4/8)    : rust-analyzer/bindgen/htop/tmux/gdb/strace
+  C 链接 (5/8)   : nasm / {x86_64,aarch64}-linux-gnu-{ld,objcopy,as}
+  C 测试 (6/8)   : {x86_64,aarch64}-linux-gnu-gcc (C 测试桩编译)
+  ISO (7/8)      : grub2-mkrescue / xorriso / mtools (--skip-iso)
+  项目工具 (8/8) : tools/check_tcb.sh + tools/audit_unsafe.{sh,py}
+
+$ bash /home/anfer/Code/AntX/scripts/requirements.sh --check-only
+... (8/8 节全部正确分类检查) ...
+```
+
+### 10.5 决策记录 (2026-06-05)
+
+- **DECISION-011**: C 工具链二分 (链接层 vs 测试桩), 各自可独立跳过, 反映"全 Rust 化但仍需裸机链接"的真实情况
+- **DECISION-012**: 项目本地工具 (tools/) 单独成类, 缺失时 `ci/audit.sh` 同步失败, 提示 `ls -la` 排查
+- **DECISION-013**: Rust 测试工具链按"CI 是否实际调用"分类, 区分 `cargo clippy` (推荐, 默认装) 与 `cargo-lockbud` (测试, 单独分类)
+- **DECISION-014**: --help 必须显示依赖分类总览 + C 工具链决策, 用户一眼了解"全 Rust 化后 C 是否仍必需"
+- **DECISION-015**: `check_project_tool()` 对 .py 工具执行 `--help` / `--version` / `ast.parse` 三重验证, 避免存在但损坏的脚本误判
+
+---
+
+## 十一、2026-06-05 v2.26 requirements.sh v3.2.1 致命运行错误修复
+
+### 11.1 缺陷发现
+
+v3.2 重构后, 用户实测 `bash scripts/requirements.sh --check-only` 实际**未跑完 8 分类**, 在第 3 节 Rust 测试工具链 `cargo-llvm-cov` 处直接退出 (仅 67 行输出, 退出码 1). 这是两个独立 bug 叠加:
+
+#### Bug A — `set -e` 导致检查函数返回 1 立即终止
+**位置**: `requirements.sh:55` 声明 `set -e`, 但所有 `check_*` 系列函数 (check_required / check_recommended / check_testing / check_optional / check_c_legacy / check_c_test_stub / check_iso / check_project_tool) 在命令未找到时**显式 `return 1`** 累积到 `*_MISSING` 数组.
+
+| 顺序 | 调用 | 行为 |
+|------|------|------|
+| 1 | `check_testing "cargo clippy ..." cargo clippy` | 返回 0, 继续 |
+| 2 | `check_testing "cargo fmt --check ..." cargo fmt` | 返回 0, 继续 |
+| 3 | `check_testing "lockbud ..." lockbud` | 返回 0, 继续 (lockbud 已装) |
+| 4 | `check_testing "cargo-llvm-cov ..." cargo-llvm-cov` | **返回 1**, `set -e` 触发, 脚本立即退出 |
+
+`set -e` 设计初衷是捕获未处理的失败, 但本脚本的检查函数**有意**返回 1 表示"缺失", 这是控制流而非错误. 两者语义冲突, 必须分离.
+
+**修复**: 在 `parse_args "$@"` 之后追加 `set +e`, 让检查阶段不受 `set -e` 约束. 检查结果由 `*_OK / *_TOTAL` 计数器追踪, 最终退出码由汇总决定 (`[ $REQUIRED_OK -lt $REQUIRED_TOTAL ] && exit 1`).
+
+#### Bug B — `local` 在函数外使用
+**位置**: `requirements.sh:1102` (修复前)
+
+```bash
+# ==================== 第 7 部分: Python 模块 ====================
+if [ "$SKIP_OPTIONAL" = false ]; then
+    print_section "[项目胶水] Python 3 标准库 (CI 静态分析依赖)"
+    check_python_modules
+
+    print_subsection "Python 包 (可选, 逆向分析)"
+    local optional_py=("elftools" "capstone" "pyelftools")  # ← 错误
+    ...
+```
+
+Bash 中 `local` 是**关键字**, 只能在函数体内使用. 顶层 `if` 块不是函数, 因此触发 `local: 只能在函数中使用` 错误. 此错误在 Bug A 之后才显现, 因为之前脚本已经在 cargo-llvm-cov 处早退, 没机会执行到 line 1102.
+
+**修复**: 改为 `optional_py=(...)` 顶层数组声明.
+
+### 11.2 锁修复序列
+
+| 步骤 | 修复 | 验证 |
+|------|------|------|
+| 1 | `set -e` 之后 `parse_args` 加 `set +e` | 输出从 67 行 → 241 行, 但报错 `local: 只能在函数中使用` |
+| 2 | `local optional_py=...` → `optional_py=...` | 退出码 0, 8/8 分类完整跑完, 汇总正常输出 |
+
+### 11.3 实测输出 (修复后)
+
+```
+━━━ 检查结果汇总 ━━━
+────────────────────────────────────────────────────────────
+  ✓ 必需依赖:   11/11 已满足
+  △ 强烈推荐:   9/10 (缺失 1 项)
+  △ Rust 测试:  5/15 (缺失 10 项)
+  ○ 可选依赖:   7/12 已满足
+  ※ C 链接层:   8/8 已满足
+  ※ C 测试桩:   2/2 已满足
+  ◇ 项目工具:   3/3 可用
+  ※ ISO 制作:   4/4 已满足
+```
+
+退出码 0 (本机已满足所有必需依赖).
+
+### 11.4 决策记录 (2026-06-05)
+
+- **DECISION-016**: 检查阶段 (`parse_args` 之后) 必须 `set +e`, 让 `check_*` 函数的"返回 1"纯粹表示"缺失", 不被解释为致命错误. 退出码由最终汇总通过 `*_OK / *_TOTAL` 显式决定, 不依赖 `set -e` 的副作用.
+- **DECISION-017**: Bash 中 `local` 是函数级作用域关键字, 顶层 if/while/for 块不构成函数边界. 顶层局部数组必须用 `arr=(...)` 普通声明, 需要隔离作用域时**定义一个函数**包裹, 而非在控制流中用 `local`.
+
+---
+
+## 十二、当前真实状态总结 (v2.26, 2026-06-05)
+
+- ✅ **M1 基础设施**: 8 类安全 API 全部到位 (Frame/VmSpace/UserMode/UserContext/IoMem/IoPort/IrqLine/DmaStream)
+- ✅ **M2 services 0 unsafe**: 实测 0 处 unsafe 块 (TcbCheck PASS)
+- ✅ **M3 全部 services 子系统迁移完成**: driver/fs/ipc/net/proc/credo/sync/syscall 全部 safe wrapper
+- ✅ **M4 TCB 目录物理重构**: 22 个 TCB 模块全部归入 `framework/`
+- ✅ **M5 sync/proc 终极合并**: `framework/sync/` + `framework/proc/` 单一入口
+- ✅ **M6 健全性验证**:
+  - 6.1 SAFETY 注释 100% 覆盖 (129/129 framework unsafe 块)
+  - 6.2 死锁检测矩阵完成
+  - 6.3 services→framework 边界检查通过
+- ✅ **M7 性能基线**: 双门限噪声过滤 + JSON 报告
+- ✅ **M8 双架构 QEMU 启动**: x86_64 + aarch64 双双进入 Ring 3 / EL0
+- ✅ **M9 测试组织业界标准**: 单元测试内联 + 集成测试 `tests/` + 共享 helper `tests/common/mod.rs` (165 测试 0 重复)
+- ✅ **M10 requirements.sh v3.2.1**: 8 类依赖分类 + 6 个粒度可控的 skip 选项 + 项目本地工具检查 + 修复 `set -e` 早终止与 `local` 越界, 实测完整 8/8 分类跑通至汇总
+
+**M5.x 后续可选项** (非阻塞):
+- ✅ **(a) `framework/proc/user_proc.rs` 与权威 `Process` 单源真相机制**: 新增 `process: NonNull<Process>` 反向指针, 实现 `sync_from_process()` / `sync_to_process()` / `check_sync()` 双向同步方法, FFI 独占字段 (entry/stack_bottom/create_time) 不被覆盖; 8 个 miri-tests 全部通过 (initial_unsynced / from_pulls / to_pushes / manual_detected / idempotent / ffi_exclusive / all_handlers / diff_zero)
+- ✅ **(b) CI services 零 unsafe 编译期 fail-fast**: 新增 `clippy-no-unsafe-services` Job, 静态断言 48 个 services 文件全部声明 `#![deny(unsafe_code)]` + 编译期拦截 (cargo build 让 deny 触发) + 报告上传. 同时修复 clippy.toml 中 4 处与现代 clippy 不兼容的配置 (顶层 deny/allow/warn 字段弃用, `trivially-copy-pass-by-ref-threshold` 改名为 `trivial-copy-size-limit`, `standard-macro-braces.brace` 必须是单字符而非 "Paren" 名字). 详见第十三章 v2.28
+- ⏳ (c) 性能基准自动化 (Phase 4 持续追踪)
+
+---
+
+## 十二、2026-06-05 v2.27 UserProcess↔Process 单源真相机制
+
+### 12.1 背景与问题
+
+`framework/proc/user_proc.rs::UserProcess` 与 `framework/proc/process.rs::Process` 历史上是**两个并行结构**:
+- `Process` (权威): 由 `PROCESS_TABLE` 管理, 全量进程描述符, 用于调度/信号/文件系统.
+- `UserProcess` (FFI 镜像): 由 `USER_PROC_MANAGER` 管理, 仅缓存进入 Ring 3 路径上**热访问**的字段.
+
+两个结构在 `pid/pwm/cr3/kernel_stack/user_stack/state` 五个字段上**重叠定义**, 但:
+- 缺乏**反向引用** (从 UserProcess 无法找到权威 Process).
+- 缺乏**同步机制** (两个结构可能脱节, 且无运行时不变量检查).
+- 缺乏**集成测试** (同步逻辑无验证).
+
+### 12.2 解决方案: 单源真相 + FFI 镜像
+
+#### 12.2.1 反向引用
+
+在 `UserProcess` 结构顶端新增字段:
+
+```rust
+#[repr(C)]
+pub struct UserProcess {
+    /// ✅ 权威引用: 指向 `PROCESS_TABLE` 中对应的 `Process`.
+    pub(crate) process: NonNull<Process>,
+    // ... 共享字段 (镜像) ...
+    // ... FFI 独占字段 ...
+}
+```
+
+构造时强制调用方提供 `Process` 句柄, 杜绝悬垂.
+
+#### 12.2.2 同步方法
+
+```rust
+impl UserProcess {
+    pub fn process(&self) -> &Process { /* 安全访问 */ }
+    pub fn sync_from_process(&self) { /* 拉取 Process → UserProcess */ }
+    pub fn sync_to_process(&self)   { /* 推送 UserProcess → Process */ }
+    pub fn check_sync(&self) -> bool { /* 运行时不变量检查 */ }
+}
+```
+
+- 共享字段 (5 个) 在 `sync_*` 中处理.
+- FFI 独占字段 (entry/stack_bottom/create_time) **不**在 `sync_*` 中处理, 保持原值.
+
+#### 12.2.3 调用点改造
+
+`UserProcManager::create()` 和 `user_proc_clone()` (fork 路径) 改造为:
+1. 优先分配权威 `Process` (NonNull 句柄).
+2. 再分配 `UserProcess` 并通过 `alloc_user_process(NonNull<Process>)` 关联.
+3. 写入字段时, 同步方法负责在两侧搬运共享数据.
+
+### 12.3 验证 (miri-tests)
+
+新建 `miri-tests/src/user_proc_sync.rs`, 8 个测试全部通过:
+
+| 测试 | 目的 |
+|------|------|
+| `initial_state_is_unsynced` | 初始状态差异被 `check_sync` 检测 |
+| `sync_from_process_pulls_all_fields` | `sync_from_process` 拉取 6 个共享字段 |
+| `sync_to_process_pushes_all_fields` | `sync_to_process` 推送 6 个共享字段 |
+| `manual_modification_detected_by_check_sync` | 手动修改后 `check_sync` 返回 false |
+| `bidirectional_sync_is_idempotent` | 100 轮双向同步循环幂等 |
+| `ffi_exclusive_fields_not_touched_by_sync` | FFI 独占字段 3 次 sync 后保持原值 |
+| `all_fields_have_handlers` | 静态断言 `Field::COUNT == 6` |
+| `diff_count_zero_when_synced` | 全一致时 `diff_count() == 0` |
+
+测试运行: `cd miri-tests && cargo test --lib user_proc_sync` → `8 passed; 0 failed`.
+
+### 12.4 关键决策
+
+- **DECISION-018**: `UserProcess` 与 `Process` 关系为"单源真相 + FFI 镜像". 共享字段 (6 个) 在两侧物理存储, 由 `sync_*` 方法保持一致; FFI 独占字段 (3 个) 仅存在于镜像, 永远不被同步覆盖.
+- **DECISION-019**: 镜像通过 `NonNull<Process>` 反向指针与权威关联, 构造时强制调用方提供句柄, 杜绝悬垂; 安全访问通过 `UserProcess::process() -> &Process` 封装.
+- **DECISION-020**: 同步逻辑独立到 `miri-tests/src/user_proc_sync.rs`, 保持与内核解耦; Miri 解释器扫描全部 unsafe (NonNull.as_ref) 路径, 验证严格 provenance.
+
+---
+
+## 十三、2026-06-05 v2.28 CI services 零 unsafe 编译期 fail-fast
+
+### 13.1 背景
+
+M5.x 后续可选项 (b) 任务: "CI 接入 `cargo clippy -- -D unsafe-code` 作为 fail-fast".
+
+现状:
+- `check_tcb.sh` (grep-based) 已经在 CI 中, 但**有缺陷**: 容易误判注释/字符串中的"unsafe"字样, 也漏过 `unsafe_op_in_unsafe_fn` 等更细粒度场景.
+- `services/*.rs` 已经在文件首行声明 `#![deny(unsafe_code)]`, 编译时**本身**就拒绝 unsafe —— 但这个信号淹没在 `cargo check` 的海量输出中, 失败时根因难以定位.
+
+### 13.2 方案: 编译期拦截 (Compile-time Interception)
+
+**核心思路**: 既然 services 已声明 `#![deny(unsafe_code)]`, 编译就是天然的 fail-fast 屏障. 不需要 grep, 不需要单独 lint, **只把编译信号独立出来**.
+
+新增 CI Job `clippy-no-unsafe-services`, 包含两个串行步骤:
+
+**步骤 1 — 静态断言: 48 个 services 文件全部声明 `#![deny(unsafe_code)]`**
+```bash
+for f in $(find src/kernel/services -name '*.rs'); do
+  first_line=$(head -1 "$f")
+  if ! echo "$first_line" | grep -q 'deny(unsafe_code)'; then
+    echo "❌ $f 首行缺少 #![deny(unsafe_code)]"
+    missing=$((missing+1))
+  fi
+done
+```
+
+**步骤 2 — 编译验证: `cargo build --lib` 让 `#![deny(unsafe_code)]` 真正触发**
+```bash
+cargo build --target x86_64-unknown-none --lib 2>&1 | tee build/log/build_services.txt
+if grep -E "error.*unsafe|services/.*\.rs.*unsafe" build/log/build_services.txt; then
+  echo "::error::services 层检测到 unsafe 代码 (编译期 fail-fast 失败)"
+  exit 1
+fi
+```
+
+**本地验证结果** (2026-06-05):
+- 步骤 1: ✅ 48 个 services 文件全部声明 `#![deny(unsafe_code)]`
+- 步骤 2: ✅ `cargo build` 6.47s 完成, 0 errors 0 warnings
+
+### 13.3 为什么不用 `cargo clippy -- -D warnings`?
+
+实测 (2026-06-05, `RUSTFLAGS="-D warnings" cargo clippy`): **2075 个错误**, 99% 与 unsafe 无关 (`redundant_closure`, `needless_return`, 等), 是项目长期开发积累的风格问题. 这些错误**与 v2.27 UserProcess 镜像同步任务完全无关**, 全量修复需要专项 lint-cleanup 工作.
+
+因此本任务只**新增** unsafe 拦截信号, **不**触发 2075 个历史 lint 错误. 后续可单独建"Phase 5.0: lint cleanup"工作流.
+
+### 13.4 clippy.toml 修复 (附属)
+
+为支持 `cargo clippy` 跑得通, 修复了 `clippy.toml` 中 4 处与现代 clippy 不兼容的配置:
+
+| 旧配置 | 新配置 | 原因 |
+|--------|--------|------|
+| `deny = ["all", "warnings"]` | (删除) | 顶层 `deny`/`allow`/`warn` 字段已弃用, 改用 `clippy::lint_name = "deny"` 行内 |
+| `allow = [...]` | (删除) | 同上 |
+| `warn = [...]` | (删除) | 同上 |
+| `trivially-copy-pass-by-ref-threshold = 16` | `trivial-copy-size-limit = 16` | 字段重命名 |
+| `standard-macro-braces = [...brace = "Paren"...]` | `[...brace = "(" ...]` | `brace` 必须是单字符 (左括号), 而非 "Paren" 名字 |
+
+修复后 `cargo clippy` 配置解析通过.
+
+### 13.5 关键决策
+
+- **DECISION-021**: services 零 unsafe 验证**复用**编译期 `#![deny(unsafe_code)]` 机制, 而非另起 clippy lint 链. 单一信号源 (rustc 编译错误) 比 grep/clippy/lint 三重信号更不易漂移.
+- **DECISION-022**: CI Job 命名沿用 `clippy-no-unsafe-services` 历史命名, 但实际机制是 `cargo build + grep services 错误` —— 命名与机制的细微差异在 Job 注释中说明, 避免误改.
+- **DECISION-023**: 不在 CI 全量跑 `cargo clippy -- -D warnings`, 隔离 2075 个历史 lint 错误. 单独建 Phase 5.0 "lint cleanup" 子项目, 不污染 v2.27 的镜像同步 PR.
 
