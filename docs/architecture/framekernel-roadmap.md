@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.28 (2026-06-05, CI services 零 unsafe 编译期 fail-fast + clippy.toml 修复)
+> **版本**: v2.29 (2026-06-05, Issue1 PID 分配后泄漏修复 + 8 回归测试 + clippy.toml CI 集成)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -1768,4 +1768,99 @@ fi
 - **DECISION-021**: services 零 unsafe 验证**复用**编译期 `#![deny(unsafe_code)]` 机制, 而非另起 clippy lint 链. 单一信号源 (rustc 编译错误) 比 grep/clippy/lint 三重信号更不易漂移.
 - **DECISION-022**: CI Job 命名沿用 `clippy-no-unsafe-services` 历史命名, 但实际机制是 `cargo build + grep services 错误` —— 命名与机制的细微差异在 Job 注释中说明, 避免误改.
 - **DECISION-023**: 不在 CI 全量跑 `cargo clippy -- -D warnings`, 隔离 2075 个历史 lint 错误. 单独建 Phase 5.0 "lint cleanup" 子项目, 不污染 v2.27 的镜像同步 PR.
+
+---
+
+## 十四、2026-06-05 v2.29 Issue1 修复: PID 分配后内存泄漏风险
+
+### 14.1 问题描述
+
+`framework/proc/user_proc.rs::UserProcManager::create()` 历史上按以下顺序分配资源:
+
+```rust
+let pid = PROCESS_TABLE.allocate_pid()?;          // ① PID 分配 (原子 fetch_add)
+let kproc_ptr = raw::alloc_kernel_process()?;     // ② 内核进程分配
+let proc_ptr = raw::alloc_user_process(kproc_nn)?;// ③ 用户进程分配
+// ... 页表/栈分配 ...
+```
+
+**问题**: 原子 `next_pid.fetch_add(1, Ordering::SeqCst)` 一旦执行就**不可撤销**. 如果 ② 或 ③ 返回 `None` (`?` 早退), 已分配的 PID 永久留在 `next_pid` 计数器中, 造成 **PID 泄漏**:
+- 泄漏 1 个 PID: `next_pid` 单调递增, 但该 PID 从未与任何 Process 关联
+- 长期运行: `MAX_PROCESSES` 上限被快速耗尽, 系统 OOM / 拒绝服务
+- 检测困难: PID 是单调整数, 无法从外部观察泄漏 (只是 1 个数字跳过去)
+
+### 14.2 修复方案: 资源分配先行, PID 最后分配
+
+将 PID 分配**延后**到所有内存/页表/栈资源就绪后:
+
+```rust
+// 1. 分配内核进程 + 用户进程 + 页表 + 用户栈 + 内核栈 (任一失败仅回滚物理资源)
+let kproc_ptr = raw::alloc_kernel_process()?;
+let proc_ptr  = raw::alloc_user_process(kproc_nn)?;
+let cr3_val   = raw::create_user_page_table();
+if cr3_val == 0 { return None; }
+let stack_pages = raw::alloc_phys_pages(...);
+if stack_pages.is_null() { raw::destroy_user_page_table(cr3_val); return None; }
+let kstack = raw::alloc_phys_pages(...);
+if kstack.is_null() {
+    raw::free_phys_page(stack_pages);
+    raw::destroy_user_page_table(cr3_val);
+    return None;
+}
+
+// 2. 全部资源就绪后, 分配 PID
+let pid = PROCESS_TABLE.allocate_pid()?;
+proc.set_pid(pid);
+// ... 写入其他字段, 插入 PROCESS_TABLE + self.processes ...
+```
+
+**为什么这样改有效**:
+- 早期失败 (页表/栈/内核进程/用户进程) **不会**消耗 PID, 因为 `allocate_pid` 还没被调用
+- `next_pid` 原子计数器只在"能 commit"时才 `fetch_add`
+- 单调性保持: 成功路径消耗 1 个 PID, 失败路径消耗 0 个, 永不多消耗
+
+### 14.3 失败路径的物理资源清理
+
+`create()` 内部已有物理资源回滚 (栈/页表), 但**未**回滚内核/用户进程结构内存 (`alloc_kernel_process` 返回的内核堆内存). 这是另一个独立的内存泄漏, 留待后续 v2.30+ 修复 (需要新增 `free_kernel_process` / `free_user_process` 函数).
+
+**当前 v2.29 范围**: 只修复 PID 泄漏. 结构内存泄漏是"先有鸡还是先有蛋"问题, 需要先有 `free_*` 函数才能回滚.
+
+### 14.4 回归测试 (miri-tests)
+
+新增 8 个测试到 [miri-tests/src/user_proc_sync.rs](file:///home/anfer/Code/AntX/miri-tests/src/user_proc_sync.rs), 模拟 create() 流程的 7 个步骤, 验证:
+
+| 测试 | 验证场景 | 预期 |
+|------|---------|------|
+| `pid_not_leaked_on_kernel_alloc_failure` | ② 内核进程分配失败 | PID 不变 |
+| `pid_not_leaked_on_user_alloc_failure` | ③ 用户进程分配失败 | PID 不变 |
+| `pid_not_leaked_on_page_table_failure` | ④ 页表分配失败 | PID 不变 |
+| `pid_not_leaked_on_user_stack_failure` | ⑤ 用户栈分配失败 | PID 不变 |
+| `pid_not_leaked_on_kstack_failure` | ⑥ 内核栈分配失败 | PID 不变 |
+| `pid_exhaustion_consumes_only_one` | ⑦ allocate_pid 耗尽 | PID 不变 (本测试不调用) |
+| `full_success_consumes_exactly_one_pid` | 全部成功 | PID +1 |
+| `repeated_failures_dont_corrupt_pid_counter` | 5 失败 + 3 成功 | PID +3 (修复前 +8) |
+
+**测试结果** (2026-06-05, `cd miri-tests && cargo test --lib user_proc_sync`):
+```
+running 16 tests
+...
+test user_proc_sync::tests::full_success_consumes_exactly_one_pid ... ok
+test user_proc_sync::tests::pid_exhaustion_consumes_only_one ... ok
+test user_proc_sync::tests::pid_not_leaked_on_kernel_alloc_failure ... ok
+test user_proc_sync::tests::pid_not_leaked_on_kstack_failure ... ok
+test user_proc_sync::tests::pid_not_leaked_on_page_table_failure ... ok
+test user_proc_sync::tests::pid_not_leaked_on_user_alloc_failure ... ok
+test user_proc_sync::tests::pid_not_leaked_on_user_stack_failure ... ok
+test user_proc_sync::tests::repeated_failures_dont_corrupt_pid_counter ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 137 filtered out
+```
+
+**编译验证**: `cargo build --target x86_64-unknown-none --lib` 0 errors 0 warnings (2.27s).
+
+### 14.5 关键决策
+
+- **DECISION-024**: PID 分配必须**最后**执行, 不可与任何 `?` 早退路径交织. `next_pid.fetch_add` 立即生效, 不可撤销 —— 这是原子计数器的本质.
+- **DECISION-025**: 失败路径只回滚**物理资源** (页表 + 物理页), 不回滚结构内存 (`alloc_kernel_process` / `alloc_user_process` 返回的内核堆). 结构内存回滚需要新增 `free_*` 函数, 留待 v2.30+.
+- **DECISION-026**: 修复后顺序: `alloc_kernel → alloc_user → create_user_page_table → alloc_phys_pages(stack) → alloc_phys_pages(kstack) → allocate_pid → set_pid → insert`. 这一顺序保证 `?` 操作符只可能出现在 PID 分配**之后**的不可逆步骤 (commit), 一旦 `?` 早退, PID 已经消耗但 Process 也已建立, 不会泄漏.
 

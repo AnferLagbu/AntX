@@ -805,8 +805,6 @@ impl UserProcManager {
     }
 
     pub fn create(&self, info: &UserProcInfo, pwm: u64) -> Option<*mut UserProcess> {
-        let pid = PROCESS_TABLE.allocate_pid()?;
-
         // ✅ 单源真相: 优先分配权威 Process, 再分配 UserProcess 镜像并关联.
         //    此顺序保证 UserProcess::process NonNull 字段构造时即指向有效 Process.
         let kproc_ptr = raw::alloc_kernel_process()?;
@@ -859,6 +857,11 @@ impl UserProcManager {
         proc.store_kernel_stack(kstack_top);
         crate::kernel::framework::proc::process::kernel_stack_write_canary(kstack_top);
 
+        // ✅ PID 分配延后到所有内存/页表/栈资源就绪后:
+        //   避免 `alloc_kernel_process` 或 `alloc_user_process` 失败时, 已分配
+        //   的 PID 留在 next_pid 计数器中造成 PID 泄漏. 早期失败 (页表/栈分配)
+        //   只回滚物理页与页表, 不需要回滚 PID.
+        let pid = PROCESS_TABLE.allocate_pid()?;
         proc.set_pid(pid);
         proc.set_entry(info.entry);
         proc.store_pwm(pwm);

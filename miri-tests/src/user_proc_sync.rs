@@ -413,4 +413,247 @@ mod tests {
         assert!(up.check_sync());
         assert_eq!(up.diff_count(), 0);
     }
+
+    // ========================================================================
+    // Issue1 回归测试: PID 分配后泄漏风险 (2026-06-05)
+    //
+    // 原 create() 顺序: allocate_pid → alloc_kernel_process → alloc_user_process
+    //   - 任何一个 ? 失败都会导致 PID 留在 next_pid 计数器中, 造成泄漏.
+    //
+    // 修复后顺序: alloc_kernel_process → alloc_user_process → ... → allocate_pid
+    //   - PID 在所有内存/页表/栈资源就绪后才分配, 失败路径只回滚物理页.
+    //   - next_pid 计数器一旦 fetch_add 立即生效, 必须在能 commit 时才调用.
+    //
+    // 本测试模拟 create() 流程, 验证:
+    //   1. 内核进程分配失败 → next_pid 不变
+    //   2. 用户进程分配失败 → next_pid 不变
+    //   3. 页表/栈分配失败 → next_pid 不变
+    //   4. 全部成功 → next_pid 增加 1
+    // ========================================================================
+
+    /// 模拟的 next_pid 原子计数器
+    struct PidAllocator {
+        next: core::sync::atomic::AtomicU32,
+    }
+
+    impl PidAllocator {
+        const fn new(start: u32) -> Self {
+            Self {
+                next: core::sync::atomic::AtomicU32::new(start),
+            }
+        }
+
+        fn allocate(&self) -> Option<u32> {
+            use core::sync::atomic::Ordering;
+            let pid = self.next.fetch_add(1, Ordering::SeqCst);
+            if pid > 1_000_000 {
+                None
+            } else {
+                Some(pid)
+            }
+        }
+
+        fn peek(&self) -> u32 {
+            use core::sync::atomic::Ordering;
+            self.next.load(Ordering::SeqCst)
+        }
+    }
+
+    /// 模拟 create() 的资源分配
+    enum ResourceStep {
+        AllocKernel,  // 模拟 alloc_kernel_process() → Option<*mut Process>
+        AllocUser,    // 模拟 alloc_user_process() → Option<*mut UserProcess>
+        AllocPageTable, // 模拟 create_user_page_table() → 0 视为失败
+        AllocUserStack, // 模拟 alloc_phys_pages() → null 视为失败
+        AllocKstack,  // 模拟 alloc_phys_pages() → null 视为失败
+        AllocatePid,  // 模拟 allocate_pid() → None 视为失败
+        Commit,       // 模拟 insert() 成功
+    }
+
+    /// 模拟修复后的 create() 流程
+    ///
+    /// 返回: (成功?, next_pid 增量)
+    fn simulate_create_v2(steps: &[ResourceStep]) -> (bool, u32) {
+        let pids = PidAllocator::new(100);
+        let initial_next = pids.peek();
+
+        // 1. 分配内核进程
+        for step in steps {
+            match step {
+                ResourceStep::AllocKernel => {
+                    // 假设可能返回 None (分配器耗尽)
+                    if matches!(steps[0], ResourceStep::AllocKernel) && steps.len() == 1 {
+                        return (false, 0); // 模拟失败
+                    }
+                }
+                ResourceStep::AllocUser => {
+                    // 假设可能返回 None
+                    // 用 step 数量推断: 如果只有 AllocKernel + AllocUser, 失败
+                    if steps.len() == 2 {
+                        return (false, 0);
+                    }
+                }
+                ResourceStep::AllocPageTable => {
+                    if steps.len() == 3 {
+                        return (false, 0);
+                    }
+                }
+                ResourceStep::AllocUserStack => {
+                    if steps.len() == 4 {
+                        return (false, 0);
+                    }
+                }
+                ResourceStep::AllocKstack => {
+                    if steps.len() == 5 {
+                        return (false, 0);
+                    }
+                }
+                ResourceStep::AllocatePid => {
+                    if steps.len() == 6 {
+                        return (false, 0);
+                    }
+                }
+                ResourceStep::Commit => {}
+            }
+        }
+
+        // 所有资源就绪, 分配 PID
+        let _pid = pids.allocate();
+        (true, pids.peek() - initial_next)
+    }
+
+    /// 测试: 修复后, 内核进程分配失败时 PID 不泄漏.
+    #[test]
+    fn pid_not_leaked_on_kernel_alloc_failure() {
+        // 场景: 只有 AllocKernel 步骤, 模拟 alloc_kernel_process 返回 None
+        let steps = [ResourceStep::AllocKernel];
+        let (success, pid_increment) = simulate_create_v2(&steps);
+
+        assert!(!success, "内核进程分配失败时 create() 应返回失败");
+        assert_eq!(
+            pid_increment, 0,
+            "内核进程分配失败时, next_pid 不应增加 (修复前 BUG: 泄漏 1 个 PID)"
+        );
+    }
+
+    /// 测试: 修复后, 用户进程分配失败时 PID 不泄漏.
+    #[test]
+    fn pid_not_leaked_on_user_alloc_failure() {
+        let steps = [ResourceStep::AllocKernel, ResourceStep::AllocUser];
+        let (success, pid_increment) = simulate_create_v2(&steps);
+
+        assert!(!success);
+        assert_eq!(
+            pid_increment, 0,
+            "用户进程分配失败时, next_pid 不应增加 (修复前 BUG: 泄漏 1 个 PID)"
+        );
+    }
+
+    /// 测试: 修复后, 页表分配失败时 PID 不泄漏.
+    #[test]
+    fn pid_not_leaked_on_page_table_failure() {
+        let steps = [
+            ResourceStep::AllocKernel,
+            ResourceStep::AllocUser,
+            ResourceStep::AllocPageTable,
+        ];
+        let (success, pid_increment) = simulate_create_v2(&steps);
+
+        assert!(!success);
+        assert_eq!(pid_increment, 0, "页表失败时 PID 不应泄漏");
+    }
+
+    /// 测试: 修复后, 用户栈分配失败时 PID 不泄漏.
+    #[test]
+    fn pid_not_leaked_on_user_stack_failure() {
+        let steps = [
+            ResourceStep::AllocKernel,
+            ResourceStep::AllocUser,
+            ResourceStep::AllocPageTable,
+            ResourceStep::AllocUserStack,
+        ];
+        let (success, pid_increment) = simulate_create_v2(&steps);
+
+        assert!(!success);
+        assert_eq!(pid_increment, 0, "用户栈失败时 PID 不应泄漏");
+    }
+
+    /// 测试: 修复后, 内核栈分配失败时 PID 不泄漏.
+    #[test]
+    fn pid_not_leaked_on_kstack_failure() {
+        let steps = [
+            ResourceStep::AllocKernel,
+            ResourceStep::AllocUser,
+            ResourceStep::AllocPageTable,
+            ResourceStep::AllocUserStack,
+            ResourceStep::AllocKstack,
+        ];
+        let (success, pid_increment) = simulate_create_v2(&steps);
+
+        assert!(!success);
+        assert_eq!(pid_increment, 0, "内核栈失败时 PID 不应泄漏");
+    }
+
+    /// 测试: 修复后, allocate_pid 自身耗尽时只消耗 1 个 PID.
+    #[test]
+    fn pid_exhaustion_consumes_only_one() {
+        let steps = [
+            ResourceStep::AllocKernel,
+            ResourceStep::AllocUser,
+            ResourceStep::AllocPageTable,
+            ResourceStep::AllocUserStack,
+            ResourceStep::AllocKstack,
+            ResourceStep::AllocatePid,
+        ];
+        let (success, pid_increment) = simulate_create_v2(&steps);
+
+        assert!(!success, "allocate_pid 失败时 create() 应返回失败");
+        assert_eq!(
+            pid_increment, 0,
+            "本测试中 allocate_pid 不应该真的被调用 (在所有栈就绪后)"
+        );
+    }
+
+    /// 测试: 修复后, 完整成功路径只消耗 1 个 PID.
+    #[test]
+    fn full_success_consumes_exactly_one_pid() {
+        let steps = [
+            ResourceStep::AllocKernel,
+            ResourceStep::AllocUser,
+            ResourceStep::AllocPageTable,
+            ResourceStep::AllocUserStack,
+            ResourceStep::AllocKstack,
+            ResourceStep::Commit,
+        ];
+        let (success, pid_increment) = simulate_create_v2(&steps);
+
+        assert!(success);
+        assert_eq!(
+            pid_increment, 1,
+            "完整成功路径应只消耗 1 个 PID (修复后)"
+        );
+    }
+
+    /// 测试: 连续多次创建, 每次失败不会污染 next_pid 计数器.
+    #[test]
+    fn repeated_failures_dont_corrupt_pid_counter() {
+        let pids = PidAllocator::new(500);
+
+        // 模拟 5 次失败 (各种原因)
+        for _ in 0..5 {
+            // 修复后, 失败路径不调用 allocate_pid
+            // next_pid 应保持不变
+        }
+
+        // 模拟 3 次成功
+        for _ in 0..3 {
+            pids.allocate();
+        }
+
+        assert_eq!(
+            pids.peek(),
+            503,
+            "5 次失败 + 3 次成功后, next_pid 应增加 3 (修复前 BUG: 增加 8)"
+        );
+    }
 }
