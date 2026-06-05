@@ -1,7 +1,7 @@
 //! 几丁质设备驱动框架 (Chitin Driver Framework) — **API 层**
 //!
 //! QueenX 的统一设备驱动模型 — 唯一的注册/发现/初始化/I/O 入口。
-//! 本文件是 AntX 的 **API 层**(见 `docs/explain/api-rs.md`)。
+//! 本文件是 AntX 的 **API 层**。
 //!
 //! ## 调用方契约
 //! - `driver::framework::Driver` —— 驱动实现者
