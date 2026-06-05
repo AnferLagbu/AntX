@@ -52,50 +52,28 @@ pub use super::types::{
 /// 派生常量: 用户栈自动扩展的下界 (USER_STACK_TOP - USER_STACK_MAX_SIZE)
 pub const USER_STACK_EXPAND_LIMIT: u64 = USER_STACK_TOP - USER_STACK_MAX_SIZE;
 
+/// PAGE_PRESENT / WRITABLE / USER — 旧式裸 u64 常量 (保留以兼容 C 端)
+/// 业务层推荐使用 `framework::mm::PageFlags` 类型化抽象, FFI 边界通过 `.bits()` 转换.
+#[deprecated(note = "use framework::mm::PageFlags 替代 (类型安全 + 编译期检查)")]
 pub const PAGE_PRESENT: u64 = 1;
+#[deprecated(note = "use framework::mm::PageFlags::WRITABLE 替代")]
 pub const PAGE_WRITABLE: u64 = 2;
+#[deprecated(note = "use framework::mm::PageFlags::USER 替代")]
 pub const PAGE_USER: u64 = 4;
+
+/// 类型化页面标志 (从 framework::mm 引入, 在 FFI 边界通过 .bits() 转 u64)
+use crate::kernel::framework::mm::PageFlags;
 
 pub const GDT_USER_DATA: u64 = 0x18;
 pub const GDT_USER_CODE: u64 = 0x20;
 
 pub const PT_LOAD: u32 = 1;
 
-#[repr(C)]
-pub struct ElfHeader {
-    pub magic: [u8; 4],
-    pub class: u8,
-    pub endian: u8,
-    pub version: u8,
-    pub os_abi: u8,
-    pub abi_version: u8,
-    pub padding: [u8; 7],
-    pub e_type: u16,
-    pub machine: u16,
-    pub e_version: u32,
-    pub entry: u64,
-    pub phoff: u64,
-    pub shoff: u64,
-    pub flags: u32,
-    pub ehsize: u16,
-    pub phentsize: u16,
-    pub phnum: u16,
-    pub shentsize: u16,
-    pub shnum: u16,
-    pub shstrndx: u16,
-}
-
-#[repr(C)]
-pub struct ElfPhdr {
-    pub p_type: u32,
-    pub p_flags: u32,
-    pub p_offset: u64,
-    pub p_vaddr: u64,
-    pub p_paddr: u64,
-    pub p_filesz: u64,
-    pub p_memsz: u64,
-    pub p_align: u64,
-}
+/// ELF 头部 / 程序头 — 重导出 elf.rs canonical 定义
+///
+/// 使用 `framework::proc::elf::Elf64Header` 作为唯一权威, 避免重复定义
+/// 引起字段名不一致 (`machine` vs `e_machine` 等).
+pub use super::elf::{Elf64Header as ElfHeader, Elf64Phdr as ElfPhdr};
 
 #[repr(C)]
 pub struct UserProcInfo {
@@ -430,7 +408,7 @@ pub(crate) mod raw {
     /// 映射单个物理页到用户页表 (用于代码段加载)。
     pub fn map_code_page(cr3: u64, vaddr: u64, page_phys: u64) {
         // SAFETY: 物理页已分配, flags = R|X 简化形式。
-        let flags = PAGE_PRESENT | PAGE_USER;
+        let flags = (PageFlags::PRESENT | PageFlags::USER).bits();
         // SAFETY: cr3 已建立, page_phys 来自 pmm_alloc_page。
         unsafe {
             vmm_map_page_in_table(cr3, vaddr, page_phys, flags);
@@ -728,7 +706,7 @@ impl UserProcManager {
                 cr3_val,
                 svirt,
                 sphys,
-                PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
+                (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER).bits(),
             );
         }
 
@@ -921,24 +899,28 @@ impl UserProcManager {
         }
 
         // SAFETY: elf_data 区间已校验 (非空 + size >= header), 内部访问通过 raw 包装。
-        unsafe {
-            let header = elf_data as *const ElfHeader;
+            //
+            // ElfHeader = Elf64Header 重导出, 字段命名为 e_ident / e_machine / e_entry 等。
+            unsafe {
+                let header = elf_data as *const ElfHeader;
 
-            if (*header).magic[0] != 0x7F
-                || (*header).magic[1] != b'E'
-                || (*header).magic[2] != b'L'
-                || (*header).magic[3] != b'F'
-            {
-                return -1;
-            }
+                if (*header).e_ident[0] != 0x7F
+                    || (*header).e_ident[1] != b'E'
+                    || (*header).e_ident[2] != b'L'
+                    || (*header).e_ident[3] != b'F'
+                {
+                    return -1;
+                }
 
-            // Accept ELF64 for both x86_64 (0x3E) and AArch64 (0xB7)
-            if (*header).class != 2 || ((*header).machine != 0x3E && (*header).machine != 0xB7) {
-                return -1;
-            }
+                // Accept ELF64 for both x86_64 (0x3E) and AArch64 (0xB7)
+                if (*header).e_ident[4] != 2
+                    || ((*header).e_machine != 0x3E && (*header).e_machine != 0xB7)
+                {
+                    return -1;
+                }
 
-            let info = UserProcInfo {
-                entry: (*header).entry,
+                let info = UserProcInfo {
+                    entry: (*header).e_entry,
                 name: [0; 64],
                 code_size: 0,
                 code_data: core::ptr::null(),
@@ -959,7 +941,7 @@ impl UserProcManager {
             let allocated_pages = ALLOCATED_PAGES.get_mut();
             let mut page_count: usize = 0;
 
-            let phnum = (*header).phnum as usize;
+            let phnum = (*header).e_phnum as usize;
             if phnum > 256 {
                 self.destroy_raw(proc, false);
                 return -1;
@@ -967,7 +949,7 @@ impl UserProcManager {
 
             for i in 0..phnum {
                 let phdr_size = core::mem::size_of::<ElfPhdr>() as u64;
-                let phdr_offset = (*header).phoff + (i as u64) * (*header).phentsize as u64;
+                let phdr_offset = (*header).e_phoff + (i as u64) * (*header).e_phentsize as u64;
                 if phdr_offset + phdr_size > elf_size {
                     self.destroy_raw(proc, false);
                     return -1;
@@ -985,10 +967,11 @@ impl UserProcManager {
                 for j in 0..num_pages {
                     let vaddr = vaddr_start + j * PAGE_SIZE;
 
-                    let mut flags = PAGE_PRESENT | PAGE_USER;
+                    let mut flags = PageFlags::PRESENT | PageFlags::USER;
                     if (*phdr).p_flags & 0x02 != 0 {
-                        flags |= PAGE_WRITABLE;
+                        flags |= PageFlags::WRITABLE;
                     }
+                    let flags = flags.bits();
 
                     // On aarch64, the 2MB BLOCK descriptors in L2_DEVICE cause
                     // vmm_get_physical_in_table to return non-zero for unmapped
@@ -1055,7 +1038,7 @@ impl UserProcManager {
                 }
             }
 
-            proc_ref.set_entry((*header).entry);
+            proc_ref.set_entry((*header).e_entry);
 
             proc_ref.pid() as i32
         }
@@ -1222,7 +1205,7 @@ pub fn try_expand_user_stack(fault_addr: u64) -> bool {
         let new_page = raw::alloc_zeroed_user_page(
             cr3,
             vaddr,
-            PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
+            (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER).bits(),
         );
         if new_page.is_null() {
             return false;

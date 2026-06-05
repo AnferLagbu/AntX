@@ -5,26 +5,30 @@
 #   make -f Makefile.ci ci-audit        # SAFETY + boundary + deadlock audit
 #   make -f Makefile.ci ci-cargo        # cargo check (x86_64 + aarch64)
 #   make -f Makefile.ci ci-unsafe-scan  # services 0-unsafe scan
+#   make -f Makefile.ci ci-bench        # framekernel-bench + 回归检查
+#   make -f Makefile.ci ci-bench-record # 重新记录性能基线
 #   make -f Makefile.ci ci-fix          # auto-fix where possible
 
 LOG_DIR := build/log
 PY := python3
 
-.PHONY: ci ci-audit ci-cargo ci-unsafe-scan ci-fix ci-clean help
+.PHONY: ci ci-audit ci-cargo ci-unsafe-scan ci-bench ci-bench-record ci-fix ci-clean help
 
 help:
 	@echo "QueenX CI Targets"
 	@echo ""
-	@echo "  make -f Makefile.ci ci              - Full CI flow"
-	@echo "  make -f Makefile.ci ci-audit        - SAFETY + boundary + deadlock audit"
-	@echo "  make -f Makefile.ci ci-cargo        - cargo check (x86_64 + aarch64)"
-	@echo "  make -f Makefile.ci ci-unsafe-scan  - services 0-unsafe scan"
-	@echo "  make -f Makefile.ci ci-fix          - auto-fix where possible"
-	@echo "  make -f Makefile.ci ci-clean        - clean log dir"
+	@echo "  make -f Makefile.ci ci                - Full CI flow"
+	@echo "  make -f Makefile.ci ci-audit          - SAFETY + boundary + deadlock audit"
+	@echo "  make -f Makefile.ci ci-cargo          - cargo check (x86_64 + aarch64)"
+	@echo "  make -f Makefile.ci ci-unsafe-scan    - services 0-unsafe scan"
+	@echo "  make -f Makefile.ci ci-bench          - framekernel-bench + 回归检查"
+	@echo "  make -f Makefile.ci ci-bench-record   - 重新记录性能基线"
+	@echo "  make -f Makefile.ci ci-fix            - auto-fix where possible"
+	@echo "  make -f Makefile.ci ci-clean          - clean log dir"
 	@echo ""
 
 # Full CI
-ci: ci-unsafe-scan ci-audit ci-cargo
+ci: ci-unsafe-scan ci-audit ci-cargo ci-bench
 	@echo ""
 	@echo "=========================================="
 	@echo "QueenX Framekernel Compliance: PASS"
@@ -38,7 +42,7 @@ ci-unsafe-scan:
 
 # Audit
 ci-audit:
-	@echo "[2/3] SAFETY + boundary + deadlock audit..."
+	@echo "[2/4] SAFETY + boundary + deadlock audit..."
 	@mkdir -p $(LOG_DIR)
 	@echo "  - SAFETY comment audit (M6.1)..."
 	@$(PY) scripts/audit_safety_coverage.py > $(LOG_DIR)/safety_audit.txt 2>&1
@@ -71,6 +75,29 @@ ci-fix:
 	@echo "  - cargo fix --allow-dirty"
 	@cd src/rust && cargo fix --target x86_64-unknown-none --allow-dirty --allow-staged 2>&1 | tail -10 || true
 	@echo "PASS: auto-fix complete (please re-run make ci)"
+
+# Bench: 运行 framekernel-bench 并做 15% 回归检查
+ci-bench:
+	@echo "[4/4] framekernel-bench + 回归检查 (M6.9)..."
+	@mkdir -p $(LOG_DIR)
+	@if [ ! -f host-tests/benches/baseline.json ]; then \
+		echo "  - baseline.json 不存在, 自动记录初始基线..." ; \
+		$(PY) scripts/record_bench_baseline.py > $(LOG_DIR)/bench_baseline_init.txt 2>&1 ; \
+		echo "  - 已生成 baseline.json, 后续将进入回归检查模式" ; \
+	fi
+	@echo "  - 运行回归检查..."
+	@$(PY) scripts/check_bench_regression.py > $(LOG_DIR)/bench_regression.txt 2>&1 || \
+		( echo "FAIL: bench 回归检查失败, 见 $(LOG_DIR)/bench_regression.txt" ; \
+		  cat $(LOG_DIR)/bench_regression.txt ; \
+		  exit 1 )
+	@echo "PASS: bench 回归检查通过"
+
+# Bench record: 主动重新记录基线
+ci-bench-record:
+	@echo "[bench] 重新记录性能基线..."
+	@mkdir -p $(LOG_DIR)
+	@$(PY) scripts/record_bench_baseline.py | tee $(LOG_DIR)/bench_baseline.txt
+	@echo "PASS: baseline.json 已更新"
 
 # Clean
 ci-clean:

@@ -7,6 +7,7 @@ mod capability;
 mod checksum;
 mod display;
 mod dma_stream;
+pub mod framekernel_bench;
 mod iomem_alias;
 pub mod hvfs_mock;
 mod sha256;
