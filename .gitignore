@@ -1,26 +1,95 @@
+# ===== 临时目录 =====
 logs/
 build/
 isodir/
 tmp/
-*.log
+backup/
+
+# ===== 通用构建产物 =====
 *.o
+*.a
+*.so
+*.d
+*.ko
+*.ll
+
+# 链接与二进制产物
 *.bin
 *.elf
 *.iso
 *.img
+*.map
+*.sym
+*.lst
 
-src/rust/target/
-host-tests/target/
-src/user/target/
+# ===== Rust / Cargo 产物 =====
+# 使用 globstar 模式覆盖所有 Cargo workspace 子项目
+# (历史上漏掉了 miri-tests/target/, 现统一用 **/target/ 防漏)
+**/target/
+**/Cargo.lock.bak
+*.rs.bk
 
-tests/reports/*.json
-tests/reports/*.md
+# 预编译 Rust 库产物 (miri-tests/libverus_targets.rlib 不应入仓)
+*.rlib
 
+# Cargo 调试编译数据库 (clangd/rust-analyzer 生成)
+compile_commands.json
+
+# ===== C 工具链产物 =====
+# gcc/clang 覆盖率
+*.gcno
+*.gcda
+*.gcov
+
+# ===== Python 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyz
+
+# Python 工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ===== 测试报告 =====
+# tests/reports/ 是运行时测试输出目录, 不应入仓 (含 .json/.md/.log/.txt 等)
+tests/reports/
+
+# ===== 操作系统垃圾 =====
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# ===== 编辑器/IDE 临时文件 =====
 *.swp
 *.swo
 *~
+*.bak
+*.orig
+*.rej
 
+# IDE 配置目录
+.idea/
+.vscode/
+*.code-workspace
+*.iml
+
+# ===== 本地环境配置 =====
+# 严禁上传密钥/凭据
+.env
+.envrc
+.env.*
+!.env.example
+
+# ===== 启动盘/调试产物 =====
 boot_disk*
-backup/
+*.pcap
+
+# ===== 工具锁文件 =====
+# 防止误提交的工具锁文件 (如 miri-tests/gitee..lock)
+*..lock
