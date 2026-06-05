@@ -1,7 +1,7 @@
 //! # Barrier Stack — AntX 宏内核故障恢复子系统
 //!
 //! 栏栈是 AntX 在宏内核架构下实现模块级"重生"的核心基础设施。
-//! 原理详见 [docs/development/barrier-stack-design.md](docs/development/barrier-stack-design.md)。
+//! 原理详见 [docs/explain/barrier-stack-design.md](docs/explain/barrier-stack-design.md)。
 //!
 //! ## 架构
 //!

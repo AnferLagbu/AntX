@@ -147,7 +147,7 @@ cd /home/anfer/Code/AntX
 
 ### 新增文件
 - [ci/audit.sh](file:///home/anfer/Code/AntX/ci/audit.sh) — 审计工具栈 CI 脚本
-- [docs/changelog/AUDIT_REPORT_2026-06-03.md](file:///home/anfer/Code/AntX/docs/changelog/AUDIT_REPORT_2026-06-03.md) — 此前综合审计报告
+- [docs/plan/audit-2026-06-03.md](file:///home/anfer/Code/AntX/docs/plan/audit-2026-06-03.md) — 此前综合审计报告
 
 ### 关键修改文件
 - [src/kernel/framework/ioport.rs](file:///home/anfer/Code/AntX/src/kernel/framework/ioport.rs) — aarch64 桩实现

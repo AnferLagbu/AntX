@@ -770,7 +770,7 @@ git push origin --delete feat/arch-abstraction
 |------|------|
 | 架构无关测试 | host-tests 中新增 trait 方法单元测试 |
 | 双架构 CI | CI 脚本同时跑 x86_64 + aarch64 构建 |
-| 移植指南 | `docs/development/arch-porting-guide.md` — 给未来 riscv64 等架构 |
+| 移植指南 | `docs/explain/arch-porting.md` — 给未来 riscv64 等架构 |
 | 本规划书 | 更新为 "已完成" 状态，记录实际耗时与踩坑记录 |
 | 双架构 README | 更新 `README.md`，标注支持 x86_64 + aarch64 |
 
@@ -780,7 +780,7 @@ git push origin --delete feat/arch-abstraction
 |------|------|------|
 | 架构无关测试 | host-tests 沿用现有测试套件 (`make test-host` 27/27 通过) | ✅ |
 | 双架构 CI | `ci/build.sh` — x86_64 + aarch64 编译 + host tests + asm 门控检查 | ✅ |
-| 移植指南 | `docs/development/arch-porting-guide.md` — 7 章完整移植指南 | ✅ |
+| 移植指南 | `docs/explain/arch-porting.md` — 7 章完整移植指南 | ✅ |
 | 本规划书 | 状态更新为 "Phase 7 完成"，所有阶段均已交付 | ✅ |
 | 双架构 README | `README.md` 标注支持 x86_64 + aarch64，含构建指令 | ✅ |
 
@@ -907,5 +907,5 @@ fn test_interrupt_disable_restore() {
 
 ---
 
-> 此文档存放于 `docs/development/multiarch-decoupling-plan.md`
+> 此文档存放于 `docs/plan/multiarch-decoupling.md`
 > 执行过程中如有重大决策变更，请更新本文档并记录在 Phase 对应小节下。

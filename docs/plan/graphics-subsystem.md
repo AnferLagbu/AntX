@@ -16,8 +16,8 @@
 | **显示控制器抽象** | `driver/display/controller.rs` | ✅ 70% | DisplayController trait, DisplayManager, DisplayMode, MonitorInfo, 多显示器 |
 | **HDMI 骨架** | `driver/display/hdmi.rs` | ⚠️ 30% | EDID 结构体, VideoMode 枚举, 端口常量 |
 | **DP 骨架** | `driver/display/dp.rs` | ⚠️ 20% | DPCD, LinkRate, LaneCount, TrainingState |
-| **Hymenoptera 设计** | `docs/design/hymenoptera-display-server.md` | 📝 100% | 多用户多会话架构, Hymenoptera 协议, 会话/窗口/合成/输入管理器 |
-| **显示驱动文档** | `docs/drivers/display-drivers.md` | 📝 100% | Framebuffer API 参考, HDMI/DP 使用示例 |
+| **Hymenoptera 设计** | `docs/explain/hymenoptera-display.md` | 📝 100% | 多用户多会话架构, Hymenoptera 协议, 会话/窗口/合成/输入管理器 |
+| **显示驱动文档** | `docs/explain/display-drivers.md` | 📝 100% | Framebuffer API 参考, HDMI/DP 使用示例 |
 
 ### 1.2 核心缺口
 

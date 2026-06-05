@@ -40,7 +40,7 @@ BHR (Barrier Hard Reset)     → 硬重启：硬件级重置
 - 并发支持（独立模块并行恢复）
 - 成功率高（测试显示95%+恢复成功率）
 
-详见 [栏栈恢复子系统](../subsystems/barrier/)
+详见 [栏栈恢复子系统](../explain/barrier/)
 
 ---
 
@@ -59,7 +59,7 @@ BHR (Barrier Hard Reset)     → 硬重启：硬件级重置
 - 支持委托和撤销
 - 审计追踪完整
 
-详见 [安全子系统](../subsystems/security/)
+详见 [安全子系统](../explain/security/)
 
 ---
 
@@ -73,7 +73,7 @@ BHR (Barrier Hard Reset)     → 硬重启：硬件级重置
 - 运行时切换：无需重启
 - ZFS风格：写时复制、快照、校验和
 
-详见 [HvFS文件系统](../changelog/CHANGELOG.md)
+详见 [HvFS文件系统](../changelog.md)
 
 ---
 
@@ -242,7 +242,7 @@ AntX采用四级测试策略：
 - 恢复成功率：95%+
 - 执行时间：< 2分钟
 
-详见 [测试框架](../testing/test-framework.md)
+详见 [测试框架](../explain/test-framework.md)
 
 ---
 
@@ -277,7 +277,7 @@ AntX采用四级测试策略：
 - [ ] 虚拟化支持（KVM风格）
 - [ ] 安全增强（ASLR、MAC）
 
-详见 [变更日志](../changelog/CHANGELOG.md)
+详见 [变更日志](../changelog.md)
 
 ---
 
@@ -297,7 +297,7 @@ AntX采用四级测试策略：
 ## 📚 参考资料
 
 ### 学术论文
-- [栏栈恢复机制论文](../research/barrier-stack-paper.md)（待发表）
+- [栏栈恢复机制论文](../explain/barrier-stack-paper.md)（待发表）
 
 ### 相关项目
 - Linux Kernel: https://www.kernel.org

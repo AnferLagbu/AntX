@@ -208,10 +208,10 @@ git push origin feature/my-feature
 
 ## 🎯 下一步
 
-- [阅读系统概述](../architecture/overview.md)
-- [了解内核架构](../architecture/kernel-architecture.md)
+- [阅读系统概述](../explain/overview.md)
+- [了解内核架构](../explain/kernel-architecture.md)
 - [学习编码规范](./coding-style.md)
-- [探索子系统](../subsystems/)
+- [探索子系统](../explain/)
 
 ---
 
@@ -241,16 +241,16 @@ sudo make test
 
 ### Q: 如何添加新系统调用？
 
-**A**: 参考 [系统调用文档](../api/syscall.md)
+**A**: 参考 [系统调用文档](../explain/syscall.md)
 
 ---
 
 ## 📚 学习资源
 
-- [AntX架构文档](../architecture/)
+- [AntX架构文档](../explain/)
 - [内核开发指南](./)
-- [API参考](../api/)
-- [测试框架](../testing/)
+- [API参考](../explain/)
+- [测试框架](../explain/)
 
 ---
 

@@ -1,6 +1,6 @@
 # AntX Clippy 代码质量提升工程报告
 
-> **关联报告**: [FIX_REPORT_2026-06-09](./FIX_REPORT_2026-06-09.md) (审计修复工程 — 并行产出，本报告锚定 Clippy 清零工作)
+> **关联报告**: [FIX_REPORT_2026-06-09](./fix-report-2026-06-09.md) (审计修复工程 — 并行产出，本报告锚定 Clippy 清零工作)
 > **报告日期**: 2026-05-31
 > **目标**: Clippy errors 及 warnings 清零
 

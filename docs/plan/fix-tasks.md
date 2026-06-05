@@ -1,6 +1,6 @@
 # AntX 审计修复工程 — 委派任务清单
 
-> **来源**: [审计报告](../changelog/AUDIT_REPORT_2026-05-30.md) + [Clippy 附录](../changelog/AUDIT_REPORT_2026-05-30.md#附录-a-clippy-死代码检测报告)
+> **来源**: [审计报告](../plan/audit-2026-05-30.md) + [Clippy 附录](../plan/audit-2026-05-30.md#附录-a-clippy-死代码检测报告)
 > **生成日期**: 2026-05-30
 > **用法**: 每个任务独立可委派，包含完整上下文、修复步骤和验证方法。
 
@@ -380,7 +380,7 @@ ELF 解析器信任文件中的 `e_phoff`、`e_phentsize`、`p_offset`、`p_file
 - **委派标签**: `documentation` `syscall`
 
 **文件**:
-- `docs/api/syscall.md` — 过时的系统调用文档
+- `docs/explain/syscall.md` — 过时的系统调用文档
 - `src/kernel/syscall/types.rs` — 实际的 syscall 编号定义
 - `src/user/lib/src/sys.rs` — 用户态 syscall 常量
 
@@ -407,7 +407,7 @@ ELF 解析器信任文件中的 `e_phoff`、`e_phentsize`、`p_offset`、`p_file
 - **委派标签**: `documentation` `architecture`
 
 **文件**:
-- `docs/architecture/kernel-architecture.md`
+- `docs/explain/kernel-architecture.md`
 
 **当前问题**:
 文档描述的目录结构是 C 语言项目（`main.c`、`process.c`、`pmm.c`），实际代码已全部转换为 Rust。新开发者按文档找代码完全失败。
@@ -608,7 +608,7 @@ ELF 解析器信任文件中的 `e_phoff`、`e_phentsize`、`p_offset`、`p_file
 
 **文件**: `README.md`
 
-**问题**: 引用 `docs/development/hivefs.md`、`docs/development/pwid-model.md`、`docs/development/klog-system.md` 等不存在的文件。
+**问题**: 引用 `docs/explain/hivefs.md`、`docs/explain/pwid-model.md`、`docs/explain/klog-system.md` 等不存在的文件。
 
 **修复**: 检查所有链接，修复或移除失效引用。
 
@@ -620,7 +620,7 @@ ELF 解析器信任文件中的 `e_phoff`、`e_phentsize`、`p_offset`、`p_file
 
 - **委派标签**: `documentation`
 
-**文件**: `docs/architecture/boot-process.md`
+**文件**: `docs/explain/boot-process.md`
 
 **问题**: 描述的函数名 `antx_init()`、`kernel_main()` 已不存在，实际为 `kernel_init()`。
 
@@ -634,7 +634,7 @@ ELF 解析器信任文件中的 `e_phoff`、`e_phentsize`、`p_offset`、`p_file
 
 - **委派标签**: `documentation`
 
-**文件**: `docs/architecture/overview.md`
+**文件**: `docs/explain/overview.md`
 
 **问题**: 引用不存在的 `subsystems/filesystem/hvfs.md`；ARM 状态描述不准确。
 
@@ -648,7 +648,7 @@ ELF 解析器信任文件中的 `e_phoff`、`e_phentsize`、`p_offset`、`p_file
 
 - **委派标签**: `documentation`
 
-**文件**: `docs/testing/test-framework.md`
+**文件**: `docs/explain/test-framework.md`
 
 **问题**: 引用不存在的 `.github/` CI 配置和 `make coverage` 目标。
 

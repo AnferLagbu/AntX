@@ -1,7 +1,7 @@
 # AntX 已知问题与待解决项
 
 > 最后更新: 2026-06-09
-> 全面代码审计完成 — 详见 [审计报告](../changelog/AUDIT_REPORT_2026-05-30.md)
+> 全面代码审计完成 — 详见 [审计报告](../plan/audit-2026-05-30.md)
 > A1-A15 全部审计确认已修复 ✅
 
 ---
@@ -83,7 +83,7 @@
 - **修复**: 使用 SpinLock 保护 buddy allocator 操作
 
 ### A10. syscall.md 完全过时 (P1) ✅ 已修复
-- **文件**: `docs/api/syscall.md`
+- **文件**: `docs/explain/syscall.md`
 - **修复日期**: 2026-05-31
 - **问题**: 文档 syscall 编号与实际 POSIX 实现完全不同
 - **影响**: 依赖文档的开发者无法编写用户态程序
@@ -257,7 +257,7 @@
 
 ### 13. VMM 页表操作缺陷修复 (C3/C9/C13) ✅ 已修复
 **日期**: 2026-06-09
-**审计参考**: [C3, C9, C13](../changelog/AUDIT_REPORT_2026-05-30.md#c3-vmm-页表更新缺少-tlb-刷新vmmrs)
+**审计参考**: [C3, C9, C13](../plan/audit-2026-05-30.md#c3-vmm-页表更新缺少-tlb-刷新vmmrs)
 
 #### C3: 页表修改后缺少 TLB 刷新
 - **问题**: `ensure_pml4_user()` 和 `ensure_path_user()` 修改 USER 位后未调用 `flush_tlb()`，TLB 可能缓存旧条目（无 USER 位），导致用户态访问时 page fault
@@ -345,6 +345,6 @@
 ## 📖 相关文档
 
 - [开发规划](./roadmap.md)
-- [内核架构](../architecture/kernel-architecture.md)
-- [启动流程](../architecture/boot-process.md)
-- [构建系统](./build-system.md)
+- [内核架构](../explain/kernel-architecture.md)
+- [启动流程](../explain/boot-process.md)
+- [构建系统](../explain/build-system.md)

@@ -40,7 +40,7 @@ make ARCH=aarch64
 make test-host
 ```
 
-新架构移植请参考 [移植指南](docs/development/arch-porting-guide.md)。
+新架构移植请参考 [移植指南](docs/explain/arch-porting.md)。
 
 ## 设计原则
 
@@ -52,22 +52,22 @@ make test-host
 
 技术细节、开发日志和设计文档在 `docs/` 目录下：
 
-- [内核架构设计](docs/architecture/kernel-architecture.md)
-- [系统概述](docs/architecture/overview.md)
-- [CREDO DID 设计](docs/architecture/credo-did-design.md)
-- [系统调用接口](docs/api/syscall.md)
-- [测试框架](docs/testing/test-framework.md)
-- [启动流程](docs/architecture/boot-process.md)
-- [编码规范](docs/development/coding-style.md)
-- [构建系统](docs/development/build-system.md)
-- [多架构解耦工程](docs/development/multiarch-decoupling-plan.md)
-- [架构移植指南](docs/development/arch-porting-guide.md)
-- [子系统文档](docs/subsystems/)
-- [驱动文档](docs/drivers/README.md)
-- [演进蓝图](docs/development/ROADMAP.md)
-- [已知问题](docs/development/KNOWN_ISSUES.md)
-- [变更日志](docs/changelog/CHANGELOG.md)
-- [审计报告](docs/changelog/AUDIT_REPORT_2026-05-30.md)
+- [内核架构设计](docs/explain/kernel-architecture.md)
+- [系统概述](docs/explain/overview.md)
+- [CREDO DID 设计](docs/explain/credo-did.md)
+- [系统调用接口](docs/explain/syscall.md)
+- [测试框架](docs/explain/test-framework.md)
+- [启动流程](docs/explain/boot-process.md)
+- [编码规范](docs/explain/coding-style.md)
+- [构建系统](docs/explain/build-system.md)
+- [多架构解耦工程](docs/plan/multiarch-decoupling.md)
+- [架构移植指南](docs/explain/arch-porting.md)
+- [子系统文档](docs/explain/)
+- [驱动文档](docs/explain/drivers.md)
+- [演进蓝图](docs/plan/roadmap.md)
+- [已知问题](docs/plan/known-issues.md)
+- [变更日志](docs/changelog.md)
+- [审计报告](docs/plan/audit-2026-05-30.md)
 
 ---
 

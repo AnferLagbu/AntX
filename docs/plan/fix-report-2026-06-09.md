@@ -1,7 +1,7 @@
 # AntX 代码审计修复工程最终报告
 
-> **审计基线**: [AUDIT_REPORT_2026-05-30](./AUDIT_REPORT_2026-05-30.md) (338 项发现)
-> **任务清单**: [FIX_TASKS.md](../../FIX_TASKS.md)
+> **审计基线**: [AUDIT_REPORT_2026-05-30](./audit-2026-05-30.md) (338 项发现)
+> **任务清单**: [FIX_TASKS.md](./fix-tasks.md)
 > **报告日期**: 2026-06-09
 > **修复状态**: 27/27 任务完成（含 10 项审计误报确认）
 
@@ -118,13 +118,13 @@
 
 - **审计 ID**: C81
 - **修复**: 从 [syscall/types.rs](../../src/kernel/syscall/types.rs) 和 [syscall/mod.rs](../../src/kernel/syscall/mod.rs) 调度表逐项提取，重写为 200 行完整文档，包含 POSIX 标准编号（0-234）、Credo 私有调用（400-438）、帧缓冲区调用（450-452）、错误码表（errno 1-38），每项标注 ✅/🔴 ENOSYS 状态
-- **文件**: `docs/api/syscall.md`
+- **文件**: `docs/explain/syscall.md`
 
 #### B6 — kernel-architecture.md 重写
 
 - **审计 ID**: C84 (部分)
 - **修复**: 目录结构从 C 版本（`main.c`/`pmm.c`/`vmm.c`）重写为实际 Rust 125+ 源文件映射，反映当前模块树：`mm/`（pmm/buddy/vma/slab/cow）、`proc/`（scheduler/cfs/elf/thread/user_proc）、`fs/hvfs/`（SPA/DMU/ZAP/TXG/ZIL/ARC）、`credo/`、`barrier/`、`driver/`、`net/`、`ipc/`、`sync/`、`wasm/`
-- **文件**: `docs/architecture/kernel-architecture.md`
+- **文件**: `docs/explain/kernel-architecture.md`
 
 #### B7 — WASM 沙箱安全加固
 
@@ -198,10 +198,10 @@
 | 任务 | 内容 | 文件 |
 |------|------|------|
 | D1 | README.md 6 个失效链接修复 | `README.md` |
-| D2 | boot-process.md: `kernel_main`→`kernel_init`, `antx_init`→`kernel_init` | `docs/architecture/boot-process.md` |
-| D3 | overview.md 2 个失效引用修复 | `docs/architecture/overview.md` |
-| B5 | syscall.md 从源码完全重写 (200 行) | `docs/api/syscall.md` |
-| B6 | kernel-architecture.md 目录结构重写 | `docs/architecture/kernel-architecture.md` |
+| D2 | boot-process.md: `kernel_main`→`kernel_init`, `antx_init`→`kernel_init` | `docs/explain/boot-process.md` |
+| D3 | overview.md 2 个失效引用修复 | `docs/explain/overview.md` |
+| B5 | syscall.md 从源码完全重写 (200 行) | `docs/explain/syscall.md` |
+| B6 | kernel-architecture.md 目录结构重写 | `docs/explain/kernel-architecture.md` |
 
 ---
 

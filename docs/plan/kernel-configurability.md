@@ -134,6 +134,6 @@ pwid = []      # 安全框架
 
 ## 6. 相关文档
 
-- [架构移植指南](file:///home/anfer/Code/AntX/docs/development/arch-porting-guide.md)
-- [多架构解耦计划](file:///home/anfer/Code/AntX/docs/development/multiarch-decoupling-plan.md)
-- [构建系统](file:///home/anfer/Code/AntX/docs/development/build-system.md)
+- [架构移植指南](file:///home/anfer/Code/AntX/docs/explain/arch-porting.md)
+- [多架构解耦计划](file:///home/anfer/Code/AntX/docs/plan/multiarch-decoupling.md)
+- [构建系统](file:///home/anfer/Code/AntX/docs/explain/build-system.md)

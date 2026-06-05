@@ -453,7 +453,7 @@ domain.register_recovery_fn(|| {
 
 ### 相关论文
 
-- [Barrier Stack: A Novel Fault Recovery Mechanism for Monolithic Kernels](../../research/barrier-stack-paper.md) (待发表)
+- [Barrier Stack: A Novel Fault Recovery Mechanism for Monolithic Kernels](./barrier-stack-paper.md) (待发表)
 
 ### 对比系统
 

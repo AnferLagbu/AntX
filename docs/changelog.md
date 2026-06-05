@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### 变更
+- **docs/ 目录重构**: 精简为两个目录 (`plan/` `explain/`) + 两个根文档 (`readme.md` `changelog.md`)
+  - 11 个原目录 (api/architecture/changelog/design/development/drivers/engineering/research/subsystems/testing/) 全部合并
+  - 47 个原文档按用途归类: 计划性内容入 `plan/`, 解释性内容入 `explain/`
+  - 命名统一为 kebab-case (e.g. `framekernel-roadmap.md` → `framekernel.md`)
+  - 历史审计/修复报告归档入 `plan/` (audit-*, fix-report-*, delivery-summary-*)
+  - 详见 [docs/readme.md](./readme.md) 存放规则详解
+
 ### 新增
 - 文档重构：全新的文档结构和内容
 

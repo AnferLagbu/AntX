@@ -238,4 +238,4 @@ grep -rn 'asm!("rdtsc")' src/kernel/
 - [ARM Architecture Reference Manual (ARMv8-A)](https://developer.arm.com/documentation/ddi0487/)
 - [RISC-V Privileged Specification](https://github.com/riscv/riscv-isa-manual)
 - [QEMU virt machine documentation](https://www.qemu.org/docs/master/system/arm/virt.html)
-- AntX 多架构解耦规划书: `docs/development/multiarch-decoupling-plan.md`
+- AntX 多架构解耦规划书: `docs/plan/multiarch-decoupling.md`

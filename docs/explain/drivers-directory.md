@@ -249,8 +249,8 @@ pub use xxx::MyDriver;
 
 ## 📚 相关文档
 
-- [基本驱动文档](./README.md)
-- [高级驱动文档](./advanced-drivers.md)
+- [基本驱动文档](./drivers.md)
+- [高级驱动文档](./drivers-advanced.md)
 - [SSD驱动文档](./ssd-drivers.md)
 
 ---

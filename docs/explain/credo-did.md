@@ -3,7 +3,7 @@
 > **版本**: 0.1.0-draft  
 > **作者**: AntX Kernel Team  
 > **日期**: 2025-06  
-> **关联文档**: [posix-interface-plan.md](../engineering/posix-interface-plan.md), [kernel-architecture.md](kernel-architecture.md)
+> **关联文档**: [posix-interface.md](../plan/posix-interface.md), [kernel-architecture.md](kernel-architecture.md)
 
 ---
 
@@ -349,8 +349,8 @@ credential_check(did, resource, operation):
 
 | 步骤 | 操作 |
 |------|------|
-| 4.1 | 更新 `docs/api/syscall.md` 安全模型章节 |
-| 4.2 | 更新 `docs/architecture/kernel-architecture.md` |
+| 4.1 | 更新 `docs/explain/syscall.md` 安全模型章节 |
+| 4.2 | 更新 `docs/explain/kernel-architecture.md` |
 | 4.3 | 移除所有 `#[allow(dead_code)]` 的 PWM 残留注释 |
 | 4.4 | `make test-host test-unit` 双验证 |
 | 4.5 | git commit: "pwm → credo: Domain Identity security model" |
@@ -414,8 +414,8 @@ credential_check(did, resource, operation):
 | `src/kernel/tests/test_pwm.rs` | **重命名** → `test_credo.rs` |
 | `src/user/lib/src/sys.rs` | syscall 编号不变，零变更 |
 | `src/user/axsh/src/commands/identity.rs` | 函数名更新 |
-| `docs/api/syscall.md` | 安全模型章节更新 |
-| `docs/architecture/kernel-architecture.md` | 子系统名称更新 |
+| `docs/explain/syscall.md` | 安全模型章节更新 |
+| `docs/explain/kernel-architecture.md` | 子系统名称更新 |
 
 ### 9.2 术语表
 

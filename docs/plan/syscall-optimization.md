@@ -1,7 +1,7 @@
 # 系统调用接口优化方案
 
 > **版本**: 1.0  
-> **关联文档**: [credo-did-design.md](credo-did-design.md), [posix-interface-plan.md](../engineering/posix-interface-plan.md)
+> **关联文档**: [../explain/credo-did.md](../explain/credo-did.md), [posix-interface-plan.md](../plan/posix-interface.md)
 
 ---
 

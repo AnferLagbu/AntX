@@ -63,7 +63,7 @@
 //! 2. 调用方保证: 哪些条件由调用上下文的类型/生命周期保证
 //! 3. 硬件契约: 对 CPU/MMU/DMA 行为的假设
 //!
-//! 参考: `docs/development/api-rs-guideline.md` §附录 B
+//! 参考: `docs/explain/api-rs.md` §附录 B
 
 pub mod arch;
 pub mod boot;

@@ -320,7 +320,7 @@ def main():
     print(report)
 
     # 保存 JSON 报告
-    json_path = Path('docs/architecture/services-boundary.json')
+    json_path = Path('docs/explain/services-boundary.json')
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump({
