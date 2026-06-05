@@ -492,6 +492,41 @@ pub(crate) mod raw {
         }
     }
 
+    /// 释放 `alloc_kernel_process` 分配的 `Process` 内存 (回滚路径专用).
+    ///
+    /// # Safety (内部)
+    /// - `kproc_ptr` 必须为 `alloc_kernel_process` 返回的合法指针, 且未再被使用.
+    ///   调用后该指针失效, 不得再次解引用.
+    /// - 仅用于 `UserProcManager::create()` 的失败回滚路径; 成功路径下应
+    ///   将其所有权转移给 `PROCESS_TABLE.insert` 或 `destroy` 链路.
+    pub fn free_kernel_process(kproc_ptr: *mut Process) {
+        if kproc_ptr.is_null() {
+            return;
+        }
+        // SAFETY: kproc_ptr 来自 alloc_kernel_process (基于 alloc_zeroed -> kmalloc).
+        //         调用方保证此后不再访问该指针.
+        unsafe {
+            crate::kernel::framework::mm::api::kfree(kproc_ptr as *mut u8);
+        }
+    }
+
+    /// 释放 `alloc_user_process` 分配的 `UserProcess` 镜像内存 (回滚路径专用).
+    ///
+    /// # Safety (内部)
+    /// - `proc_ptr` 必须为 `alloc_user_process` 返回的合法指针, 且未再被使用.
+    /// - 必须先于 `free_kernel_process` 调用 (LIFO 反序), 以避免
+    ///   `UserProcess::process` NonNull 字段成为悬挂指针.
+    pub fn free_user_process(proc_ptr: *mut UserProcess) {
+        if proc_ptr.is_null() {
+            return;
+        }
+        // SAFETY: proc_ptr 来自 alloc_user_process (基于 alloc_zeroed -> kmalloc).
+        //         调用方保证此后不再访问该指针.
+        unsafe {
+            crate::kernel::framework::mm::api::kfree(proc_ptr as *mut u8);
+        }
+    }
+
     /// 从 PID/CR3 构造 UserProcRef 用于新创建进程。
     ///
     /// # Safety (内部)
@@ -818,13 +853,21 @@ impl UserProcManager {
         let cr3_val = raw::create_user_page_table();
         proc.store_cr3(cr3_val);
         if cr3_val == 0 {
+            // 失败回滚 (DECISION-027): 页表创建失败, 必须释放已分配的
+            // UserProcess + Process 内存. 顺序为 LIFO 反序: 先 UserProcess
+            // (避免 process NonNull 字段成为悬挂), 再 Process.
+            raw::free_user_process(proc_ptr);
+            raw::free_kernel_process(kproc_ptr);
             return None;
         }
 
         // 分配用户栈
         let stack_pages = raw::alloc_phys_pages((USER_STACK_SIZE + USER_STACK_GUARD) / PAGE_SIZE);
         if stack_pages.is_null() {
+            // 失败回滚: 用户栈物理页分配失败, 销毁页表并释放结构内存.
             raw::destroy_user_page_table(cr3_val);
+            raw::free_user_process(proc_ptr);
+            raw::free_kernel_process(kproc_ptr);
             return None;
         }
 
@@ -849,8 +892,12 @@ impl UserProcManager {
         // 分配内核栈
         let kstack = raw::alloc_phys_pages(USER_KSTACK_SIZE / PAGE_SIZE);
         if kstack.is_null() {
+            // 失败回滚: 内核栈物理页分配失败, 释放栈页+页表+结构内存.
+            // 顺序仍为 LIFO 反序: 物理资源 → 镜像 → 权威结构.
             raw::free_phys_page(stack_pages);
             raw::destroy_user_page_table(cr3_val);
+            raw::free_user_process(proc_ptr);
+            raw::free_kernel_process(kproc_ptr);
             return None;
         }
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;

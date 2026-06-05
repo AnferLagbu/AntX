@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.29 (2026-06-05, Issue1 PID 分配后泄漏修复 + 8 回归测试 + clippy.toml CI 集成)
+> **版本**: v2.30 (2026-06-05, Issue1 二期修复: 结构内存泄漏, 新增 free_* 函数 + 5 回归测试)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -892,7 +892,7 @@ SAFETY 注释: 38 处
 |------|------|------|----------|
 | 3.1 Miri 全量扫描 | 在 Miri 下跑全部 kernel_test + host-test | 7d | ✅ **2026-06-03 v2.0 实测通过**: `cd miri-tests && cargo +nightly miri test` → **137 passed; 0 failed; 0 ignored; 0 measured; finished in 65.80s**, **0 UB** (strict-provenance 模式) |
 | 3.1c 修复发现的 UB | 迭代运行 + 修复 + 重跑 | 持续 | ⏳ **首次跑无 UB, 无需修复** |
-| 3.1d 文档化 Miri 覆盖 | 记录覆盖范围 / 局限性 / 替代验证 | 1d | ✅ **2026-06-03 v2.0 修正**: [miri-coverage.md](miri-coverage.md) 全部数字改为实测, 顶部加"v2.0 实测修正"标记, 末尾加"v2.0 复审记录" |
+| 3.1d 文档化 Miri 覆盖 | 记录覆盖范围 / 局限性 / 替代验证 | 1d | ✅ **2026-06-03 v2.0 修正**: [../explain/miri-coverage.md](../explain/miri-coverage.md) 全部数字改为实测, 顶部加"v2.0 实测修正"标记, 末尾加"v2.0 复审记录" |
 | 3.2 SAFETY 注释审查 | 逐一审查 framework 中每个 unsafe 块的正确性 | 7d | ✅ **2026-06-04 v2.0 实测达成**: `python3 tools/audit_unsafe.py --summary` → **framework 100% SAFETY 覆盖 (129/129, 缺 0)**, 接入 `ci/audit.sh` step 3.5 作为 fail-fast 门禁 |
 | 3.3 别名检测测试 | IoMem 冲突检测压力测试 | 3d | ✅ **2026-06-04 v2.4 达成**: `host-tests/src/iomem_alias.rs` 16 个测试全部通过. 覆盖区间重叠 (前/后/包含/完全相同)、对齐检查、容量上限 (64 条)、unregister、PCI BAR 场景 (e1000/ahci/xhci)、saturating_add 溢出边界. 镜像生产代码 `src/kernel/framework/iomem.rs::AliasRegistry` 算法 |
 | 3.4 DMA 安全边界测试 | IOMMU 防护 (若启用) / 软件边界检查 | 5d | ✅ **2026-06-04 v2.4 达成**: `host-tests/src/dma_stream.rs` 20 个测试全部通过. 同时升级生产代码 `src/kernel/framework/dma_buf.rs::DmaStream` 加 4 项验证 (页对齐/zero size/size 上限/范围溢出) + 状态机 (CpuReady/DeviceReady/BidirInProgress) + 方向检查 (ToDevice 不能 sync_for_cpu 等). miri-tests/src/dma.rs 14 个测试 + host-tests/src/dma_stream.rs 20 个 + 生产代码 DmaStream 升级 = 端到端覆盖 |
@@ -1305,7 +1305,7 @@ unsafe {
 | [src/kernel/framework/sched/mod.rs](file:///home/anfer/Code/AntX/src/kernel/framework/sched/mod.rs) | 修改 | 诚实标注 Task 抽象未实现 |
 | [ci/audit.sh](file:///home/anfer/Code/AntX/ci/audit.sh) | 修改 | 在步骤 0 接入 `bash tools/check_tcb.sh` 作为 fail-fast 门禁; 在步骤 3.5 接入 `python3 tools/audit_unsafe.py --summary` 作为 Phase 3.2 fail-fast 门禁 |
 | [tools/check_tcb.sh](file:///home/anfer/Code/AntX/tools/check_tcb.sh) | 修改 | 修复 PCRE2 变长 lookbehind bug |
-| [docs/architecture/framekernel-roadmap.md](file:///home/anfer/Code/AntX/docs/architecture/framekernel-roadmap.md) | 重写 | v2.0 诚实版 |
+| [docs/plan/framekernel.md](file:///home/anfer/Code/AntX/docs/plan/framekernel.md) | 重写 | v2.0 诚实版 |
 
 ### 8.3 重新审计后的真实状态
 
@@ -1343,7 +1343,7 @@ exit=0  ✅
 | **P1-9b** | Phase 3.2 SAFETY 注释审查 | ✅ **2026-06-04 v2.0 实测达成**: `python3 tools/audit_unsafe.py --summary` → **framework 100% SAFETY 覆盖 (129/129, 缺 0)**, 4 个工具文件 + 24 处新注释 (`iomem.rs` 8 + `ioport.rs` 6 + `cpu_local.rs` 4 + `racy_cell.rs` 3 + `usermode.rs` 2 + `userptr.rs` 6 + `spinlock.rs` 3 + `rcu.rs` 4 + `slab_alloc.rs` 1 + `irqline.rs` 1 + `frame.rs` 1)。`tools/audit_unsafe.py` 接入 `ci/audit.sh` step 3.5 作为 fail-fast 门禁 | - |
 | **P1-9c** | Phase 3.3-3.6 其他健全性验证 | ❌ **未实测**: alias 边界生产代码测试, DMA 端到端, 双架构 QEMU 启动, 性能回归 | 4-5w |
 | **P2-9** | 选 1 个子系统做端到端迁移示范 | ❌ **未开工** | 1w |
-| **P2-10** | miri-coverage.md 重新写 | ✅ **已完成** (2026-06-03 v2.0): 全部数字改为实测, 顶部加"v2.0 实测修正"标记, 末尾加"v2.0 复审记录" | - |
+| **P2-10** | ../explain/miri-coverage.md 重新写 | ✅ **已完成** (2026-06-03 v2.0): 全部数字改为实测, 顶部加"v2.0 实测修正"标记, 末尾加"v2.0 复审记录" | - |
 
 ### 8.5 决策记录 (2026-06-03)
 
@@ -1861,6 +1861,49 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 137 filtered out
 ### 14.5 关键决策
 
 - **DECISION-024**: PID 分配必须**最后**执行, 不可与任何 `?` 早退路径交织. `next_pid.fetch_add` 立即生效, 不可撤销 —— 这是原子计数器的本质.
-- **DECISION-025**: 失败路径只回滚**物理资源** (页表 + 物理页), 不回滚结构内存 (`alloc_kernel_process` / `alloc_user_process` 返回的内核堆). 结构内存回滚需要新增 `free_*` 函数, 留待 v2.30+.
+- **DECISION-025** (v2.29 → v2.30 修订): 失败路径必须**完整回滚**所有已分配资源, 包括结构内存 (Process + UserProcess). 物理资源 + 结构内存均需在失败路径释放. v2.30 新增 `free_kernel_process` / `free_user_process` 函数实现此约束.
 - **DECISION-026**: 修复后顺序: `alloc_kernel → alloc_user → create_user_page_table → alloc_phys_pages(stack) → alloc_phys_pages(kstack) → allocate_pid → set_pid → insert`. 这一顺序保证 `?` 操作符只可能出现在 PID 分配**之后**的不可逆步骤 (commit), 一旦 `?` 早退, PID 已经消耗但 Process 也已建立, 不会泄漏.
+
+## 十五、2026-06-05 v2.30 Issue1 二期修复: 结构内存泄漏 (DECISION-025 落地)
+
+### 15.1 问题背景
+
+v2.29 修复了 PID 泄漏, 但保留了"结构内存不释放"的妥协 (DECISION-025). 经过 v2.29 上线后审计, 团队决定在 v2.30 引入 `free_*` 函数, 完整回滚所有失败路径上的资源分配.
+
+### 15.2 失败路径分析
+
+`UserProcManager::create()` 中, 三个失败路径都泄漏已分配的结构内存:
+
+| 失败点 | 已分配结构 | 已分配物理资源 | 修复前行为 | 修复后行为 |
+|--------|------------|----------------|------------|------------|
+| `cr3_val == 0` | Process + UserProcess | 无 | **泄漏 2 个** | 释放 2 个 |
+| `stack_pages null` | Process + UserProcess | cr3_val (页表) | **泄漏 2 个** | 释放 1 页表 + 2 个 |
+| `kstack null` | Process + UserProcess | cr3_val (页表) + stack_pages (物理) | **泄漏 2 个** | 释放 1 栈页 + 1 页表 + 2 个 |
+
+### 15.3 修复方案
+
+#### 15.3.1 新增 free 函数 (DECISION-027)
+
+`raw` 模块新增对称的释放函数:
+
+```rust
+pub fn free_kernel_process(kproc_ptr: *mut Process) { /* kfree */ }
+pub fn free_user_process(proc_ptr: *mut UserProcess) { /* kfree */ }
+```
+
+两者都基于 `kmalloc` 配对的 `kfree`, 与 `alloc_zeroed` 对应.
+
+#### 15.3.2 LIFO 反序释放规则
+
+`create()` 失败路径释放顺序:
+
+```
+物理资源 (页表/栈页)  →  镜像 (UserProcess)  →  权威 (Process)
+```
+
+**关键不变量**: 必须先释放 UserProcess 再释放 Process, 否则 `UserProcess::process` 字段 (NonNull<Process>) 会成为悬挂指针.
+
+### 15.4 关键决策
+
+- **DECISION-027**: 失败路径必须 LIFO 反序释放所有已分配资源. 物理 → 镜像 → 权威. UserProcess 必须先于 Process 释放 (NonNull 悬挂防御).
 

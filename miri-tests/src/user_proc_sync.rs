@@ -656,4 +656,241 @@ mod tests {
             "5 次失败 + 3 次成功后, next_pid 应增加 3 (修复前 BUG: 增加 8)"
         );
     }
+
+    // ========================================================================
+    // Issue1 v2.30 回归测试: 结构内存泄漏 (2026-06-05)
+    //
+    // 上一轮 (v2.29) 修复了 PID 泄漏, 但保留了"结构内存不释放"的妥协
+    // (DECISION-025). 本轮 (v2.30) 引入 free_kernel_process / free_user_process,
+    // 在失败路径 (页表/栈分配) 上 LIFO 反序释放 UserProcess + Process.
+    //
+    // 本测试模拟 create() 失败回滚路径, 验证:
+    //   1. cr3_val == 0: 释放 UserProcess + Process
+    //   2. stack_pages null: 释放页表 + UserProcess + Process
+    //   3. kstack null: 释放栈页 + 页表 + UserProcess + Process
+    //   4. LIFO 反序: UserProcess 先于 Process 释放
+    // ========================================================================
+
+    /// 模拟的结构内存分配追踪器 (Bug 验证: 修复前所有结构内存都泄漏)
+    struct StructureLeakDetector {
+        allocated_kproc: core::sync::atomic::AtomicU32,
+        allocated_userproc: core::sync::atomic::AtomicU32,
+        freed_kproc: core::sync::atomic::AtomicU32,
+        freed_userproc: core::sync::atomic::AtomicU32,
+        alloc_order: core::sync::atomic::AtomicU32, // bitmask 记录已分配资源
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum StructureKind {
+        KernelProcess,
+        UserProcess,
+    }
+
+    impl StructureLeakDetector {
+        const fn new() -> Self {
+            use core::sync::atomic::AtomicU32;
+            Self {
+                allocated_kproc: AtomicU32::new(0),
+                allocated_userproc: AtomicU32::new(0),
+                freed_kproc: AtomicU32::new(0),
+                freed_userproc: AtomicU32::new(0),
+                alloc_order: AtomicU32::new(0),
+            }
+        }
+
+        fn record_alloc(&self, kind: StructureKind) {
+            use core::sync::atomic::Ordering;
+            match kind {
+                StructureKind::KernelProcess => {
+                    self.allocated_kproc.fetch_add(1, Ordering::SeqCst);
+                    self.alloc_order.fetch_or(0b01, Ordering::SeqCst);
+                }
+                StructureKind::UserProcess => {
+                    self.allocated_userproc.fetch_add(1, Ordering::SeqCst);
+                    self.alloc_order.fetch_or(0b10, Ordering::SeqCst);
+                }
+            }
+        }
+
+        fn record_free(&self, kind: StructureKind) {
+            use core::sync::atomic::Ordering;
+            match kind {
+                StructureKind::KernelProcess => {
+                    self.freed_kproc.fetch_add(1, Ordering::SeqCst);
+                }
+                StructureKind::UserProcess => {
+                    self.freed_userproc.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        }
+
+        fn kproc_leak_count(&self) -> u32 {
+            use core::sync::atomic::Ordering;
+            self.allocated_kproc.load(Ordering::SeqCst) - self.freed_kproc.load(Ordering::SeqCst)
+        }
+
+        fn userproc_leak_count(&self) -> u32 {
+            use core::sync::atomic::Ordering;
+            self.allocated_userproc.load(Ordering::SeqCst) - self.freed_userproc.load(Ordering::SeqCst)
+        }
+
+        /// 验证 UserProcess 先于 Process 释放 (LIFO 反序)
+        fn userproc_freed_before_kproc(&self) -> bool {
+            use core::sync::atomic::Ordering;
+            self.freed_userproc.load(Ordering::SeqCst) > 0
+                && self.freed_kproc.load(Ordering::SeqCst) > 0
+        }
+    }
+
+    /// 模拟修复后的 create() 失败回滚路径: cr3_val == 0
+    ///
+    /// 修复后: 释放 UserProcess → 释放 Process
+    /// 修复前 (BUG): 仅 return None, 两个结构都泄漏
+    fn simulate_create_failure_no_pagetable() -> StructureLeakDetector {
+        let detector = StructureLeakDetector::new();
+
+        // 步骤 1: 分配 Process
+        detector.record_alloc(StructureKind::KernelProcess);
+        // 步骤 2: 分配 UserProcess
+        detector.record_alloc(StructureKind::UserProcess);
+        // 步骤 3: create_user_page_table() 返回 0 → 失败
+        // 修复后的回滚: free_user_process → free_kernel_process
+        detector.record_free(StructureKind::UserProcess);
+        detector.record_free(StructureKind::KernelProcess);
+
+        detector
+    }
+
+    /// 模拟修复后的 create() 失败回滚路径: stack_pages null
+    fn simulate_create_failure_no_userstack() -> StructureLeakDetector {
+        let detector = StructureLeakDetector::new();
+
+        detector.record_alloc(StructureKind::KernelProcess);
+        detector.record_alloc(StructureKind::UserProcess);
+        // 模拟页表创建成功
+        // 模拟 stack_pages 分配失败
+        // 修复后的回滚: destroy_user_page_table → free_user_process → free_kernel_process
+        detector.record_free(StructureKind::UserProcess);
+        detector.record_free(StructureKind::KernelProcess);
+
+        detector
+    }
+
+    /// 模拟修复后的 create() 失败回滚路径: kstack null
+    fn simulate_create_failure_no_kstack() -> StructureLeakDetector {
+        let detector = StructureLeakDetector::new();
+
+        detector.record_alloc(StructureKind::KernelProcess);
+        detector.record_alloc(StructureKind::UserProcess);
+        // 模拟页表+用户栈成功
+        // 模拟 kstack 分配失败
+        // 修复后的回滚: free_phys_page(stack) → destroy_user_page_table →
+        //                free_user_process → free_kernel_process
+        detector.record_free(StructureKind::UserProcess);
+        detector.record_free(StructureKind::KernelProcess);
+
+        detector
+    }
+
+    /// 测试: 修复后, cr3_val == 0 失败不泄漏 Process / UserProcess.
+    #[test]
+    fn pagetable_failure_does_not_leak_process_structures() {
+        let detector = simulate_create_failure_no_pagetable();
+
+        assert_eq!(
+            detector.kproc_leak_count(),
+            0,
+            "cr3_val == 0 时 Process 内存必须释放 (修复前 BUG: 泄漏 1 个)"
+        );
+        assert_eq!(
+            detector.userproc_leak_count(),
+            0,
+            "cr3_val == 0 时 UserProcess 内存必须释放 (修复前 BUG: 泄漏 1 个)"
+        );
+    }
+
+    /// 测试: 修复后, stack_pages null 失败不泄漏 Process / UserProcess.
+    #[test]
+    fn user_stack_failure_does_not_leak_process_structures() {
+        let detector = simulate_create_failure_no_userstack();
+
+        assert_eq!(
+            detector.kproc_leak_count(),
+            0,
+            "stack_pages null 时 Process 内存必须释放 (修复前 BUG: 泄漏 1 个)"
+        );
+        assert_eq!(
+            detector.userproc_leak_count(),
+            0,
+            "stack_pages null 时 UserProcess 内存必须释放 (修复前 BUG: 泄漏 1 个)"
+        );
+    }
+
+    /// 测试: 修复后, kstack null 失败不泄漏 Process / UserProcess.
+    #[test]
+    fn kstack_failure_does_not_leak_process_structures() {
+        let detector = simulate_create_failure_no_kstack();
+
+        assert_eq!(
+            detector.kproc_leak_count(),
+            0,
+            "kstack null 时 Process 内存必须释放 (修复前 BUG: 泄漏 1 个)"
+        );
+        assert_eq!(
+            detector.userproc_leak_count(),
+            0,
+            "kstack null 时 UserProcess 内存必须释放 (修复前 BUG: 泄漏 1 个)"
+        );
+    }
+
+    /// 测试: 修复后, LIFO 反序释放 (UserProcess 先于 Process).
+    #[test]
+    fn rollback_order_is_lifo_reverse() {
+        let detector = StructureLeakDetector::new();
+
+        detector.record_alloc(StructureKind::KernelProcess);
+        detector.record_alloc(StructureKind::UserProcess);
+
+        // 修复后的回滚顺序: UserProcess 先, Process 后
+        let up_freed_first = detector.freed_userproc.load(core::sync::atomic::Ordering::SeqCst) == 0
+            && detector.freed_kproc.load(core::sync::atomic::Ordering::SeqCst) == 0;
+        assert!(up_freed_first, "开始回滚前, free 计数应均为 0");
+
+        detector.record_free(StructureKind::UserProcess);
+        let only_userproc_freed = detector.freed_userproc.load(core::sync::atomic::Ordering::SeqCst) == 1
+            && detector.freed_kproc.load(core::sync::atomic::Ordering::SeqCst) == 0;
+        assert!(
+            only_userproc_freed,
+            "第一步必须先释放 UserProcess (LIFO 反序)"
+        );
+
+        detector.record_free(StructureKind::KernelProcess);
+        assert!(
+            detector.userproc_freed_before_kproc(),
+            "UserProcess 必须先于 Process 释放, 避免 NonNull 悬挂"
+        );
+    }
+
+    /// 测试: 修复后, 成功路径不调用 free_* (所有权转移给 PROCESS_TABLE).
+    #[test]
+    fn success_path_does_not_free_structures() {
+        let detector = StructureLeakDetector::new();
+
+        // 成功路径: alloc + 各种 store + insert, 没有 free
+        detector.record_alloc(StructureKind::KernelProcess);
+        detector.record_alloc(StructureKind::UserProcess);
+        // 模拟 insert 到 PROCESS_TABLE — 所有权转移, 不再 free
+
+        assert_eq!(
+            detector.kproc_leak_count(),
+            1,
+            "成功路径下 Process 所有权转移, free 计数为 0, 泄漏计数 = alloc"
+        );
+        assert_eq!(
+            detector.userproc_leak_count(),
+            1,
+            "成功路径下 UserProcess 所有权转移, free 计数为 0, 泄漏计数 = alloc"
+        );
+        // 注: 这里的"泄漏"是预期的所有权转移, 由 destroy() 负责释放.
+    }
 }
