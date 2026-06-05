@@ -1,6 +1,6 @@
 # AntX 框内核 (Framekernel) 迁移路线图
 
-> **版本**: v2.22 (2026-06-04, M5 sync/proc 终极合并 + TCB 单一入口)
+> **版本**: v2.24 (2026-06-05, host-tests 重构 — 业界标准测试组织)
 > **参考论文**: [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://arxiv.org/abs/2506.03876) (USENIX ATC 2025)
 > **目标**: 将 AntX 从"unsafe 散布的宏内核"改造为"TCB 清晰收敛的框内核"
 > **核心理念**: 宏内核的性能 + 微内核的安全 —— 用 Rust 语言级特权分离取代进程级 IPC
@@ -1352,4 +1352,105 @@ exit=0  ✅
 - **DECISION-003**: services/<x>/ 与 kernel/<x>/ 双实现并行的状态必须显式标注 (⏳/🟡/❌), 不允许虚假"完成"
 - **DECISION-004**: 任何"完成"声明必须有可重跑命令 (cargo check / cargo miri / qemu) 作佐证
 - **DECISION-005**: `ci/audit.sh` 第一道门禁必须是 `bash tools/check_tcb.sh`, 失败立即终止整个 audit
+
+---
+
+## 九、2026-06-05 v2.24 host-tests 业界标准测试组织重构
+
+### 9.1 重构动机 — 7 个反模式 (实测发现的混乱)
+
+| # | 反模式 | 现象 | 影响 |
+|---|--------|------|------|
+| 1 | **重复声明测试文件** | 6 个测试文件同时通过 `mod` 和 `[[test]]` 声明 | 每个测试被编译 2 次, 运行 2 次, 报告混乱 |
+| 2 | **集成测试未放 `tests/`** | 6 个 `src/*.rs` 顶层 `#[test]` 实际是集成测试 | 违反 Rust 官方测试组织标准 |
+| 3 | **共享 helper 污染 lib** | `pub mod mock_iomem; pub mod buddy_helper;` 在 `src/lib.rs` 顶部 | 集成测试专属代码污染生产库 |
+| 4 | **`mod tests` 双重包装** | `src/display.rs` 等保留 `#[cfg(test)] mod tests { ... }` | 单元 + 集成双重触发 |
+| 5 | **use 路径不一致** | 部分 `use crate::hvfs::`, 部分 `use antx_host_tests::hvfs::` | 跨文件重构易失败 |
+| 6 | **Cargo.toml 9 个 `[[test]]` 显式声明** | 手动列出每个测试路径 | 违反 Cargo 自动发现惯例 |
+| 7 | **共享代码找不到归属** | MockIoMem/EerdState/BuddyAllocator 无明确放置位置 | 多个测试文件复制粘贴 |
+
+### 9.2 业界标准对照 (Rust 官方 + Asterinas OSDK)
+
+**Rust 官方 §Integration Tests** (The Rust Programming Language §11.3):
+> "The `tests/` directory is special: Cargo knows to look in here for integration tests. Each `.rs` file in `tests/` is compiled as a separate crate. To share code among integration tests, place it in `tests/common/mod.rs`."
+
+**Asterinas `kernel/comps/framekernel-bench/`**:
+- `src/lib.rs` 仅为库入口 (无 `#[test]`)
+- 集成测试在 `tests/` 目录
+- 共享 helper 在 `tests/common/mod.rs`
+
+### 9.3 重构后目录结构 (业界标准)
+
+```
+host-tests/
+├── Cargo.toml              # 删 9 个 [[test]], 仅保留 [[bin]] + 自动发现
+├── src/
+│   ├── lib.rs              # 仅导出库代码 (hvfs_mock / hvfs / framekernel_bench)
+│   ├── bin/
+│   │   └── framekernel_bench.rs  # [[bin]] 性能基准入口
+│   ├── buddy.rs            # 单元测试载体 (内联 #[cfg(test)] mod tests)
+│   ├── capability.rs
+│   ├── checksum.rs
+│   ├── sha256.rs
+│   ├── dma_stream.rs
+│   ├── hvfs_mock.rs
+│   ├── hvfs/               # HvFS 子模块 (内联单元测试)
+│   │   ├── mod.rs
+│   │   ├── arc.rs
+│   │   ├── compress.rs
+│   │   ├── dataset.rs
+│   │   ├── raidz.rs
+│   │   ├── dedup.rs
+│   │   ├── zap.rs
+│   │   ├── zil.rs
+│   │   ├── bp.rs
+│   │   ├── checksum.rs
+│   │   └── hvfs.rs
+│   └── framekernel_bench.rs
+└── tests/                  # 集成测试 (Cargo 自动发现)
+    ├── common/
+    │   └── mod.rs          # 共享 helper (MockIoMem / EerdState 占位)
+    ├── display.rs          # 显示器驱动 (7 测试)
+    ├── e1000_eeprom.rs     # e1000 EEPROM 读取 (13 测试)
+    ├── iomem_alias.rs      # IoMem 别名检测 (16 测试)
+    ├── hvfs_test.rs        # HvFS 综合端到端 (5 测试)
+    ├── hvfs_persist.rs     # HvFS 持久化往返 (1 测试)
+    └── stress_test.rs      # HvFS 压力 (6 测试)
+```
+
+### 9.4 重构步骤 (9 步全完成)
+
+| # | 步骤 | 文件 | 状态 |
+|---|------|------|------|
+| 1 | 审计 11 个测试文件跨文件依赖 | (分析) | ✅ |
+| 2 | 设计 `tests/common/mod.rs` 占位 | [tests/common/mod.rs](file:///home/anfer/Code/AntX/host-tests/tests/common/mod.rs) | ✅ |
+| 3 | 创建 `tests/` 目录结构并移动 6 个文件 | [tests/](file:///home/anfer/Code/AntX/host-tests/tests/) | ✅ |
+| 4 | 重写 `src/lib.rs` 仅保留库代码 | [src/lib.rs](file:///home/anfer/Code/AntX/host-tests/src/lib.rs) | ✅ |
+| 5 | 删除 `Cargo.toml` 9 个 `[[test]]` 入口 | [Cargo.toml](file:///home/anfer/Code/AntX/host-tests/Cargo.toml) | ✅ |
+| 6 | 调整 `use` 路径 (`crate::xxx` → `antx_host_tests::xxx`) | 6 个测试文件 | ✅ |
+| 7 | 验证 `cargo test` 每个测试只跑一次 | 165 测试全部通过 | ✅ |
+| 8 | 更新 `Makefile.ci` 添加 `ci-test-host` 任务 | [Makefile.ci](file:///home/anfer/Code/AntX/Makefile.ci) | ✅ |
+| 9 | 更新 `framekernel-roadmap.md` 记录 v2.24 | 本文件 | ✅ |
+
+### 9.5 验证结果 (cargo test --tests --quiet)
+
+| 测试源 | 测试数 | 状态 |
+|--------|--------|------|
+| `lib` unittests (内联 `#[cfg(test)] mod tests`) | **117** | ✅ 一次只跑一次 |
+| `bin` framekernel-bench | 0 | ✅ 性能基准, 非测试 |
+| `tests/display.rs` (集成) | 7 | ✅ 一次只跑一次 |
+| `tests/e1000_eeprom.rs` (集成) | 13 | ✅ 一次只跑一次 |
+| `tests/iomem_alias.rs` (集成) | 16 | ✅ 一次只跑一次 |
+| `tests/hvfs_test.rs` (集成) | 5 | ✅ 一次只跑一次 |
+| `tests/hvfs_persist.rs` (集成) | 1 | ✅ 一次只跑一次 |
+| `tests/stress_test.rs` (集成) | 6 | ✅ 一次只跑一次 |
+| **总计** | **165** | **✅ 0 重复, 0 失败** |
+
+### 9.6 决策记录 (2026-06-05)
+
+- **DECISION-006**: host-tests 严格遵循 Rust 官方测试组织标准 — 单元测试内联 `src/*.rs`, 集成测试放 `tests/`, 共享 helper 放 `tests/common/mod.rs`
+- **DECISION-007**: 严禁 `[[test]]` 显式声明, 全部由 Cargo 自动发现 (避免双重编译 + 维护负担)
+- **DECISION-008**: `src/lib.rs` 仅为库代码入口, 不得声明任何 `mod xxx_test` (集成测试专属代码必须移至 `tests/`)
+- **DECISION-009**: 集成测试的 `use` 路径必须用 crate 全名 (`antx_host_tests::xxx`), 不用 `crate::xxx` (集成测试作为独立 crate 编译)
+- **DECISION-010**: 性能基准走 `[[bin]]` 入口 (类似 cargo 官方 benches/ 但更轻量), 与测试分离
 

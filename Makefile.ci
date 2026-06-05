@@ -7,12 +7,13 @@
 #   make -f Makefile.ci ci-unsafe-scan  # services 0-unsafe scan
 #   make -f Makefile.ci ci-bench        # framekernel-bench + 回归检查
 #   make -f Makefile.ci ci-bench-record # 重新记录性能基线
+#   make -f Makefile.ci ci-test-host    # host-tests (单元 + 集成) 全量测试
 #   make -f Makefile.ci ci-fix          # auto-fix where possible
 
 LOG_DIR := build/log
 PY := python3
 
-.PHONY: ci ci-audit ci-cargo ci-unsafe-scan ci-bench ci-bench-record ci-fix ci-clean help
+.PHONY: ci ci-audit ci-cargo ci-unsafe-scan ci-bench ci-bench-record ci-test-host ci-fix ci-clean help
 
 help:
 	@echo "QueenX CI Targets"
@@ -23,6 +24,7 @@ help:
 	@echo "  make -f Makefile.ci ci-unsafe-scan    - services 0-unsafe scan"
 	@echo "  make -f Makefile.ci ci-bench          - framekernel-bench + 回归检查"
 	@echo "  make -f Makefile.ci ci-bench-record   - 重新记录性能基线"
+	@echo "  make -f Makefile.ci ci-test-host      - host-tests 单元+集成全量 (Cargo 自动发现)"
 	@echo "  make -f Makefile.ci ci-fix            - auto-fix where possible"
 	@echo "  make -f Makefile.ci ci-clean          - clean log dir"
 	@echo ""
@@ -98,6 +100,18 @@ ci-bench-record:
 	@mkdir -p $(LOG_DIR)
 	@$(PY) scripts/record_bench_baseline.py | tee $(LOG_DIR)/bench_baseline.txt
 	@echo "PASS: baseline.json 已更新"
+
+# Host-tests: 单元 (内联 #[cfg(test)]) + 集成 (tests/ 自动发现)
+# v2.24 重构后, 不再使用 [[test]] 显式声明, 全部由 Cargo 自动发现, 避免双重编译.
+# 测试分布:
+#   - 单元测试: src/{buddy,capability,checksum,sha256,dma_stream,framekernel_bench,hvfs_mock}.rs
+#   - 集成测试: tests/{display,e1000_eeprom,iomem_alias,hvfs_test,hvfs_persist,stress_test}.rs
+#   - 共享helper: tests/common/mod.rs
+ci-test-host:
+	@echo "[host-tests] 单元 + 集成测试 (Cargo 自动发现)..."
+	@mkdir -p $(LOG_DIR)
+	@cd host-tests && cargo test --quiet 2>&1 | tee ../$(LOG_DIR)/host_tests.txt
+	@echo "PASS: host-tests 全量通过"
 
 # Clean
 ci-clean:
