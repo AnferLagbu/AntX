@@ -197,16 +197,3 @@ src/kernel/services/
   - [Asterinas: A Rust-Based Framekernel to Reimagine Linux (login; 2025-06-17)](https://www.usenix.org/publications/loginonline/asterinas-rust-based-framekernel-reimagine-linux-2020s)
   - [星绽 OS 登顶 SOSP: 框内核的技术解析 (今日头条, 2025)](http://m.toutiao.com/group/7567348017276240425/)
 
----
-
-## 变更历史
-
-- 2026-06-06: 初始版本, 解释框内核概念及在 AntX/QueenX 的具体落地 (framework/ + services/ 双子树, safe API 失败回滚样例, 强制契约与 CI 审计).
-
-## 元数据
-
-- 创建: 2026-06-06
-- 最后更新: 2026-06-06
-- 适用范围: 内核 (framework + services 两层)
-- 状态: 已审
-- 主要参考: Asterinas USENIX ATC 2025 论文 (Peng et al., 2025-06) + OSTD 官方书
