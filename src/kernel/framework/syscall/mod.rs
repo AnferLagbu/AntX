@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 pub mod api;
+pub mod futex;
 pub mod mmap;
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
@@ -61,7 +62,9 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     let a1 = f.rsi;
     let a2 = f.rdx;
     let a3 = f.r10;
-    let result = syscall_dispatch(syscall_num, a0, a1, a2, a3);
+    let a4 = f.r8;
+    let a5 = f.r9;
+    let result = syscall_dispatch(syscall_num, a0, a1, a2, a3, a4, a5);
     f.rax = result as u64;
 }
 
@@ -89,7 +92,7 @@ macro_rules! dispatch {
 /// # Safety
 ///
 /// Called from interrupt context (int 0x80). All register values come from the interrupted user context.
-pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     match num {
         // ==================== 文件 I/O ====================
         SYS_read => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
@@ -118,7 +121,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_lseek => dispatch!(sys_lseek(a0 as i32, a1 as i64, a2 as i32), b"lseek\0"),
 
         // ==================== 内存管理 ====================
-        SYS_mmap => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32), b"mmap\0"),
+        SYS_mmap => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5), b"mmap\0"),
         SYS_mprotect => dispatch!(Errno::ENOSYS.as_ret(), b"mprotect\0"),
         SYS_munmap => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
         SYS_brk => dispatch!(sys_brk(a0), b"brk\0"),
@@ -343,6 +346,12 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
         SYS_exit_group => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
         SYS_tgkill => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
+
+        // ==================== 同步 ====================
+        SYS_futex => dispatch!(
+            futex::sys_futex(a0, a1 as i32, a2 as i32, a3, 0),
+            b"futex\0"
+        ),
 
         // ==================== Credo 私有 syscall (400+) ====================
         SYS_CREDO_LOGIN => dispatch!(
@@ -771,7 +780,7 @@ fn sys_fork() -> i64 {
 fn sys_execve(
     path: *const u8,
     argv: *const *const u8,
-    _envp: *const *const u8,
+    envp: *const *const u8,
 ) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
@@ -802,6 +811,27 @@ fn sys_execve(
         }
     }
 
+    // 计算 envc
+    let mut envc: u32 = 0;
+    if !envp.is_null() {
+        if !raw::check_user_ptr(envp as u64) {
+            return Errno::EFAULT.as_ret();
+        }
+        let mut p = envp;
+        loop {
+            if !raw::check_user_ptr(p as u64) {
+                return Errno::EFAULT.as_ret();
+            }
+            let entry = unsafe { core::ptr::read_volatile(p) };
+            if entry.is_null() {
+                break;
+            }
+            envc += 1;
+            p = unsafe { p.add(1) };
+        }
+    }
+
+    // SUID 处理
     let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::vfs::types::VfsStat>::uninit();
     let current_pwm = crate::kernel::framework::credo::session::get_current_pwm();
     let stat_result =
@@ -1005,7 +1035,7 @@ fn sys_brk(addr: u64) -> i64 {
     addr as i64
 }
 
-fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
+fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -> i64 {
     if size == 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -1027,7 +1057,7 @@ fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32) -> i64 {
         }
     };
 
-    match crate::kernel::framework::syscall::mmap::mmap_syscall(mm, addr, size, prot, flags) {
+    match crate::kernel::framework::syscall::mmap::mmap_syscall(mm, addr, size, prot, flags, fd, offset) {
         Ok(a) => a as i64,
         Err(e) => e.as_ret(),
     }
@@ -1921,26 +1951,15 @@ fn sys_kill(pid: i32, sig: i32) -> i64 {
     if pid <= 0 && pid != -1 {
         return Errno::ESRCH.as_ret();
     }
-    if sig == 0 {
-        let target = crate::kernel::framework::proc::process::PROCESS_TABLE.get(pid as u32);
-        if target.is_some() {
-            0
-        } else {
-            Errno::ESRCH.as_ret()
-        }
-    } else if sig == SIGTERM || sig == SIGKILL {
-        let target = crate::kernel::framework::proc::process::PROCESS_TABLE.get(pid as u32);
-        match target {
-            Some(_proc) => {
-                unsafe {
-                    crate::kernel::framework::proc::process::PROCESS_TABLE.remove_and_free(pid as u32);
-                }
-                0
-            }
-            None => Errno::ESRCH.as_ret(),
-        }
-    } else {
-        0
+    if sig < 0 || sig > 31 {
+        return Errno::EINVAL.as_ret();
+    }
+
+    match crate::kernel::framework::proc::signal::do_signal_send(pid as u32, sig as u8) {
+        Ok(()) => 0,
+        Err(-1) => Errno::EINVAL.as_ret(),
+        Err(-2) => Errno::ESRCH.as_ret(),
+        Err(_) => Errno::EPERM.as_ret(),
     }
 }
 
@@ -2142,50 +2161,88 @@ fn sys_tgkill(_tgid: i32, tid: i32, sig: i32) -> i64 {
 // 信号框架 — rt_sigaction / rt_sigprocmask / rt_sigreturn
 // ============================================================================
 
-const SIG_DFL: u64 = 0;
-const SIG_IGN: u64 = 1;
+const SIG_DFL_SYSCALL: u64 = 0;
+const SIG_IGN_SYSCALL: u64 = 1;
 const SIG_BLOCK: i32 = 0;
 const SIG_UNBLOCK: i32 = 1;
 const SIG_SETMASK: i32 = 2;
-
-static SIGNAL_HANDLERS: Mutex<[u64; 32]> = Mutex::new([SIG_DFL; 32]);
-static SIGMASK: Mutex<u64> = Mutex::new(0);
 
 fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
     if !(1..=31).contains(&signum) {
         return Errno::EINVAL.as_ret();
     }
-    let mut handlers = SIGNAL_HANDLERS.lock();
+
+    let pid = match crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
+        Some(p) => p,
+        None => return Errno::ESRCH.as_ret(),
+    };
+
+    // 读取旧值
     if oact != 0 {
-        let dst = oact as *mut u64;
-        unsafe { raw::write_u64(dst, handlers[signum as usize]) };
+        if !raw::check_user_buf(oact, 8) {
+            return Errno::EFAULT.as_ret();
+        }
+        let old = crate::kernel::framework::proc::signal::get_sigaction(pid, signum as u8);
+        match old {
+            Some(v) => unsafe { raw::write_u64(oact as *mut u64, v) },
+            None => return Errno::EINVAL.as_ret(),
+        }
     }
+
+    // 设置新值
     if act != 0 {
-        let src = act as *const u64;
-        handlers[signum as usize] = unsafe { raw::read_u64(src) };
+        if !raw::check_user_buf(act, 8) {
+            return Errno::EFAULT.as_ret();
+        }
+        let new_action = unsafe { raw::read_u64(act as *const u64) };
+        match crate::kernel::framework::proc::signal::set_sigaction(pid, signum as u8, new_action) {
+            Some(_) => {}
+            None => return Errno::EINVAL.as_ret(), // SIGKILL/SIGSTOP
+        }
     }
+
     0
 }
 
 fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
-    let mut mask = SIGMASK.lock();
+    let pid = match crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
+        Some(p) => p,
+        None => return Errno::ESRCH.as_ret(),
+    };
+
+    // 返回旧屏蔽字
     if oset != 0 {
-        let dst = oset as *mut u64;
-        unsafe { raw::write_u64(dst, *mask) };
-    }
-    if set != 0 {
-        let new_set = unsafe { raw::read_u64(set as *const u64) };
-        match how {
-            SIG_BLOCK => *mask |= new_set,
-            SIG_UNBLOCK => *mask &= !new_set,
-            SIG_SETMASK => *mask = new_set,
-            _ => return Errno::EINVAL.as_ret(),
+        if !raw::check_user_buf(oset, 8) {
+            return Errno::EFAULT.as_ret();
         }
+        let old = crate::kernel::framework::proc::signal::get_blocked_mask(pid);
+        unsafe { raw::write_u64(oset as *mut u64, old) };
     }
+
+    // 设置新屏蔽字
+    if set != 0 {
+        if !raw::check_user_buf(set, 8) {
+            return Errno::EFAULT.as_ret();
+        }
+        let new_set = unsafe { raw::read_u64(set as *const u64) };
+        let old = crate::kernel::framework::proc::signal::get_blocked_mask(pid);
+        let updated = match how {
+            SIG_BLOCK => old | new_set,
+            SIG_UNBLOCK => old & !new_set,
+            SIG_SETMASK => new_set,
+            _ => return Errno::EINVAL.as_ret(),
+        };
+        // SIGKILL/SIGSTOP 不可屏蔽
+        let updated = updated & !((1u64 << 9) | (1u64 << 19));
+        crate::kernel::framework::proc::signal::set_blocked_mask(pid, updated);
+    }
+
     0
 }
 
 fn sys_rt_sigreturn() -> i64 {
+    // TODO: 架构相关 — 从信号栈帧恢复原始寄存器状态
+    // 当前简化实现: 直接返回 0
     0
 }
 

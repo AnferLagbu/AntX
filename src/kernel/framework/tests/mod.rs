@@ -362,6 +362,12 @@ pub fn test_runner_init() {
         crate::kernel::framework::timer::irq::register_timer_irq_tests();
         crate::kernel::framework::timer::sleep::register_timer_sleep_tests();
         crate::kernel::framework::timer::hrtimer::register_hrtimer_tests();
+        crate::kernel::framework::proc::signal::register_signal_tests();
+        crate::kernel::framework::config::memory::register_aslr_tests();
+        crate::kernel::framework::fs::initramfs::register_initramfs_tests();
+        crate::kernel::framework::syscall::futex::register_futex_tests();
+        crate::kernel::framework::mm::pcache::register_pcache_tests();
+        crate::kernel::framework::mm::swap::register_swap_tests();
     }
 
     let r = runner();

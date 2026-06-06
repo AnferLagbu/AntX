@@ -291,6 +291,37 @@ pub fn process_exit(exit_code: u32) {
     SCHEDULER.exit(exit_code);
 }
 
+/// 阻塞当前进程 (用于 futex wait / 等待 I/O 等)
+///
+/// 将当前进程状态设为 Blocked, 并设置阻塞原因.
+/// 下次调度时会切换到其他就绪进程.
+#[no_mangle]
+pub fn process_block(pid: u32) {
+    use super::types::BlockReason;
+    if pid == 0 {
+        return;
+    }
+    // 仅阻塞当前正在运行的进程
+    let current_pid = SCHEDULER.current().unwrap_or(0);
+    if pid != current_pid {
+        return;
+    }
+    SCHEDULER.block(BlockReason::FutexWait);
+    // 触发调度, 让出 CPU
+    SCHEDULER.schedule();
+}
+
+/// 解除进程阻塞 (用于 futex wake / I/O 完成等)
+///
+/// 将指定进程从 Blocked 状态恢复为 Ready, 允许调度器重新调度它.
+#[no_mangle]
+pub fn process_unblock(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    SCHEDULER.unblock(pid);
+}
+
 #[no_mangle]
 pub fn process_kill(pid: u32, exit_code: u32) {
     if pid == 0 {
@@ -497,11 +528,55 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
 pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
-    #[cfg(target_arch = "x86_64")]
-    let bin = include_bytes!("../../../../build/user/init.bin");
+    // 1. 挂载 ramfs 为根文件系统
+    let mount_result = crate::kernel::framework::fs::vfs::api::vfs_mount(
+        b"/\0".as_ptr(),
+        b"ramfs\0".as_ptr(),
+    );
+    if mount_result < 0 {
+        crate::klog_boot_info!("[USER] Warning: ramfs mount on / failed ({})", mount_result);
+    }
 
-    #[cfg(target_arch = "x86_64")]
+    // 2. 解压 initramfs (如果启用 feature "initramfs")
+    //    使用: cargo build --features initramfs
+    //    需要在 build/user/initramfs.cpio 放置 cpio newc 归档
+    #[cfg(all(target_arch = "x86_64", feature = "initramfs"))]
     {
+        let initramfs = include_bytes!("../../../../build/user/initramfs.cpio");
+        if initramfs.len() > 0 {
+            let result = unsafe {
+                crate::kernel::framework::fs::initramfs::unpack(
+                    initramfs.as_ptr(),
+                    initramfs.len(),
+                )
+            };
+            match result {
+                Ok(count) => {
+                    crate::klog_boot_info!("[USER] initramfs: {} files unpacked", count);
+                    // 尝试从 /init 执行
+                    let pid = user_proc_load_elf(b"/init\0".as_ptr(), 0);
+                    if pid > 0 {
+                        let pid_u32 = pid as u32;
+                        C_CURRENT_PROCESS.map_mut(|p| {
+                            p.pid = pid_u32 as u64;
+                            p.pwm = 0;
+                            p.state = 2;
+                            p.parent_pid = 1;
+                        });
+                        SCHEDULER.add(pid_u32);
+                        crate::klog_boot_info!("[USER] Entering Ring 3 (init from /init, pid={})...", pid_u32);
+                        user_proc_enter_by_pid(pid_u32);
+                    }
+                    crate::klog_boot_info!("[USER] /init not found, falling back to init.bin");
+                }
+                Err(e) => {
+                    crate::klog_boot_info!("[USER] initramfs unpack failed: {}", e);
+                }
+            }
+        }
+
+        // 回退: 直接加载内嵌的 init.bin
+        let bin = include_bytes!("../../../../build/user/init.bin");
         let bin_ptr = bin.as_ptr();
         let bin_size = bin.len() as u64;
 
@@ -533,6 +608,12 @@ pub fn launch_first_user_process() -> ! {
 
     #[cfg(target_arch = "aarch64")]
     {
+        // 挂载 ramfs
+        let _ = crate::kernel::framework::fs::vfs::api::vfs_mount(
+            b"/\0".as_ptr(),
+            b"ramfs\0".as_ptr(),
+        );
+
         // On aarch64, init.bin is an AArch64 ELF binary built from src/user/
         let bin = include_bytes!("../../../../build/user/init.bin");
         let bin_ptr = bin.as_ptr();
@@ -854,22 +935,35 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
         return -1;
     }
 
+    // 1. 切换到内核页表, 避免在销毁用户地址空间后访问已释放的页
     let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
     if kernel_cr3 != 0 {
         // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
         raw::switch_page_table(kernel_cr3);
     }
+
+    // 2. 销毁旧用户地址空间 (保留内核栈和 PID)
+    //    destroy_by_pid_no_kstack 仅销毁用户页表和 UserProcess 镜像,
+    //    保留内核栈供后续调度使用.
     USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
+
+    // 3. 从 PROCESS_TABLE 中移除旧 Process (但保留 PID 供新进程复用)
+    //    注意: remove_and_free 会释放 Process 内存, 新 load_elf 会分配新 Process
+    //    TODO: 未来优化为原地替换地址空间, 不释放/重分配 Process 结构
     PROCESS_TABLE.remove_and_free(current_pid);
 
+    // 4. 加载新 ELF (使用 ASLR 随机化地址)
     let pwm = scheduler_get_current_pwm();
     let new_pid = user_proc_load_elf(path, pwm);
     if new_pid < 0 {
+        // 加载失败: 进程已销毁, 无法恢复 — 这是 execve 的标准语义:
+        // 如果 exec 失败且原进程已部分替换, 进程应终止
         return -1;
     }
 
     let new_pid_u32 = new_pid as u32;
 
+    // 5. 设置 argv/envp
     if !argv.is_null() && argc > 0 {
         let envp: *const *const u8 = core::ptr::null();
         // SAFETY: argv 来自 C ABI 调用方, 由本函数 C ABI contract 保证。
@@ -878,6 +972,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
         }
     }
 
+    // 6. 同步当前进程信息
     if USER_PROC_MANAGER.get(new_pid_u32).is_some() {
         let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER
             .with_process(new_pid_u32, |proc| {
@@ -895,6 +990,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
         });
     }
 
+    // 7. 进入新进程
     user_proc_enter_by_pid(new_pid_u32);
     0
 }

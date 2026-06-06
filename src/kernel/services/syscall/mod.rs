@@ -68,17 +68,21 @@ impl From<SyscallNumber> for u64 {
 // Syscall 参数 (替代 4 个独立 u64)
 // ============================================================================
 
-/// Syscall 参数 (4 个 u64)
+/// Syscall 参数 (6 个 u64)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SyscallArgs {
-    /// 第 1 参数 (rdi / x0)
+    /// 第 1 参数 (rdi / x1)
     pub a0: u64,
-    /// 第 2 参数 (rsi / x1)
+    /// 第 2 参数 (rsi / x2)
     pub a1: u64,
-    /// 第 3 参数 (rdx / x2)
+    /// 第 3 参数 (rdx / x3)
     pub a2: u64,
-    /// 第 4 参数 (r10 / x3)
+    /// 第 4 参数 (r10 / x4)
     pub a3: u64,
+    /// 第 5 参数 (r8 / x5)
+    pub a4: u64,
+    /// 第 6 参数 (r9 / x6)
+    pub a5: u64,
 }
 
 impl SyscallArgs {
@@ -88,30 +92,38 @@ impl SyscallArgs {
         a1: 0,
         a2: 0,
         a3: 0,
+        a4: 0,
+        a5: 0,
     };
 
     /// 构造
     #[inline]
-    pub const fn new(a0: u64, a1: u64, a2: u64, a3: u64) -> Self {
-        Self { a0, a1, a2, a3 }
+    pub const fn new(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> Self {
+        Self { a0, a1, a2, a3, a4, a5 }
     }
 
     /// 1 参数
     #[inline]
     pub const fn one(a0: u64) -> Self {
-        Self::new(a0, 0, 0, 0)
+        Self::new(a0, 0, 0, 0, 0, 0)
     }
 
     /// 2 参数
     #[inline]
     pub const fn two(a0: u64, a1: u64) -> Self {
-        Self::new(a0, a1, 0, 0)
+        Self::new(a0, a1, 0, 0, 0, 0)
     }
 
     /// 3 参数
     #[inline]
     pub const fn three(a0: u64, a1: u64, a2: u64) -> Self {
-        Self::new(a0, a1, a2, 0)
+        Self::new(a0, a1, a2, 0, 0, 0)
+    }
+
+    /// 4 参数
+    #[inline]
+    pub const fn four(a0: u64, a1: u64, a2: u64, a3: u64) -> Self {
+        Self::new(a0, a1, a2, a3, 0, 0)
     }
 }
 
@@ -215,12 +227,14 @@ pub fn dispatch_from_ctx(ctx: &UserContext) -> i64 {
     let a1 = ctx.arg1();
     let a2 = ctx.arg2();
     let a3 = ctx.arg3();
-    usermode::dispatch_syscall(num, a0, a1, a2, a3)
+    let a4 = ctx.arg4();
+    let a5 = ctx.arg5();
+    usermode::dispatch_syscall(num, a0, a1, a2, a3, a4, a5)
 }
 
 /// 通过 `SyscallNumber` + `SyscallArgs` 强类型分发
 pub fn dispatch(num: SyscallNumber, args: SyscallArgs) -> i64 {
-    usermode::dispatch_syscall(num.0, args.a0, args.a1, args.a2, args.a3)
+    usermode::dispatch_syscall(num.0, args.a0, args.a1, args.a2, args.a3, args.a4, args.a5)
 }
 
 /// 通过 `UserContext` 分发并解析为 `SyscallResult<u64>`

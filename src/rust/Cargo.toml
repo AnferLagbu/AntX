@@ -50,6 +50,8 @@ alloc = []
 async = []
 lock_stats = []
 debug_mutex = []
+# 启用 initramfs 支持: 从 build/user/initramfs.cpio 加载根文件系统
+initramfs = []
 atomic_stats = []
 log = []
 json_export = []

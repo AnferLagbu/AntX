@@ -271,6 +271,45 @@ impl VirtualMemoryManager {
         }
     }
 
+    /// 读取 PTE 原始值 (用于 swap entry 检测)
+    ///
+    /// 返回 4KB 页的 PTE 原始值, 若页表层级不存在则返回 None.
+    pub fn get_pte_value(&self, pml4: u64, virt: VirtAddr) -> Option<u64> {
+        if pml4 == 0 {
+            return None;
+        }
+
+        let pml4_virt = PhysAddr(pml4).to_virt();
+
+        unsafe {
+            let pml4_raw = pml4_virt.0 as *const u64;
+            let pml4e = pml4_raw.add(virt.pml4_idx()).read_volatile();
+            if (pml4e & 1) == 0 {
+                return None;
+            }
+
+            let pdpt_virt = (pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pdpt_raw = pdpt_virt as *const u64;
+            let pdpte = pdpt_raw.add(virt.pdpt_idx()).read_volatile();
+            if (pdpte & 1) == 0 || (pdpte & 0x80) != 0 {
+                return None;
+            }
+
+            let pd_virt = (pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pd_raw = pd_virt as *const u64;
+            let pde = pd_raw.add(virt.pd_idx()).read_volatile();
+            if (pde & 1) == 0 || (pde & 0x80) != 0 {
+                return None;
+            }
+
+            let pt_virt = (pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pt_raw = pt_virt as *const u64;
+            let pte = pt_raw.add(virt.pt_idx()).read_volatile();
+
+            Some(pte)
+        }
+    }
+
     pub fn switch_page_table(&self, pml4: u64) {
         // SAFETY: pml4 must point to a valid PML4 table; CR3 write is privileged
         unsafe {

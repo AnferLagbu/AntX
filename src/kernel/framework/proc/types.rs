@@ -99,6 +99,7 @@ pub enum BlockReason {
     WaitingForChild = 1,
     WaitingForSignal = 2,
     Sleeping = 3,
+    FutexWait = 4,
     Unknown = 255,
 }
 
@@ -109,6 +110,7 @@ impl BlockReason {
             1 => BlockReason::WaitingForChild,
             2 => BlockReason::WaitingForSignal,
             3 => BlockReason::Sleeping,
+            4 => BlockReason::FutexWait,
             _ => BlockReason::Unknown,
         }
     }

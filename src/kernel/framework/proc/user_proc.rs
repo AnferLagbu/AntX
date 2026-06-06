@@ -872,7 +872,9 @@ impl UserProcManager {
         }
 
         let stack_phys = stack_pages as u64;
-        let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
+        // ASLR: 随机化栈顶地址
+        let aslr_stack_top = crate::kernel::framework::config::aslr_stack_top();
+        let stack_virt = aslr_stack_top - USER_STACK_SIZE - USER_STACK_GUARD;
 
         for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
             let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
@@ -885,8 +887,8 @@ impl UserProcManager {
             );
         }
 
-        proc.store_user_stack(USER_STACK_TOP);
-        let initial_stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
+        proc.store_user_stack(aslr_stack_top);
+        let initial_stack_bottom = aslr_stack_top - USER_STACK_SIZE;
         proc.store_stack_bottom(initial_stack_bottom);
 
         // 分配内核栈
@@ -1103,8 +1105,17 @@ impl UserProcManager {
                     return -1;
                 }
 
+                // PIE (ET_DYN) 支持: 检测 ELF 类型并计算 load_bias
+                let is_pie = (*header).e_type == 3; // ET_DYN = 3
+                let load_bias: u64 = if is_pie {
+                    crate::kernel::framework::config::aslr_pie_base()
+                } else {
+                    0
+                };
+                let entry = (*header).e_entry + load_bias;
+
                 let info = UserProcInfo {
-                    entry: (*header).e_entry,
+                    entry,
                 name: [0; 64],
                 code_size: 0,
                 code_data: core::ptr::null(),
@@ -1144,8 +1155,8 @@ impl UserProcManager {
                     continue;
                 }
 
-                let vaddr_start = (*phdr).p_vaddr & !0xFFF;
-                let vaddr_end = ((*phdr).p_vaddr + (*phdr).p_memsz + 0xFFF) & !0xFFF;
+                let vaddr_start = ((*phdr).p_vaddr + load_bias) & !0xFFF;
+                let vaddr_end = ((*phdr).p_vaddr + (*phdr).p_memsz + load_bias + 0xFFF) & !0xFFF;
                 let num_pages = (vaddr_end - vaddr_start) / PAGE_SIZE;
 
                 for j in 0..num_pages {
@@ -1222,7 +1233,7 @@ impl UserProcManager {
                 }
             }
 
-            proc_ref.set_entry((*header).e_entry);
+            proc_ref.set_entry(entry);
 
             proc_ref.pid() as i32
         }

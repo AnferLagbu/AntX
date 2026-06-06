@@ -1,24 +1,42 @@
 //! mmap/munmap/mprotect 系统调用实现
 //!
-//! 与 VMA + Demand Paging 集成，实现 POSIX mmap 语义:
+//! 与 VMA + Demand Paging + Page Cache 集成，实现 POSIX mmap 语义:
 //!
 //! - mmap: 创建 VMA，延迟物理页分配 (demand paging)
+//!   - MAP_ANONYMOUS: 匿名映射 (malloc 等)
+//!   - MAP_PRIVATE + fd: 文件私有映射 (COW, 写入不回写)
+//!   - MAP_SHARED + fd: 文件共享映射 (写入回写 Page Cache)
 //! - munmap: 删除 VMA，释放已映射物理页
 //! - mprotect: 修改 VMA 保护属性
 //! - brk: 扩展/收缩堆
 //!
-//! ## 与旧版区别
+//! ## 文件映射 #PF 流程
 //!
-//! | 特性 | 旧版 (直接分配) | 新版 (VMA+Demand) |
-//! |------|-----------------|-------------------|
-//! | 物理页分配 | mmap 时立即分配 | #PF 时懒惰分配 |
-//! | 地址空间管理 | 无跟踪 | VMA 红黑树/链表 |
-//! | munmap | 仅释放物理页 | VMA 删除 + TLB flush |
-//! | COW | 不支持 | 支持 |
+//! ```text
+//! #PF(FileBacked VMA)
+//!   ├── page_index = (fault_addr - vma.start) / PAGE_SIZE + vma.offset / PAGE_SIZE
+//!   ├── pcache_get(inode_id, page_index)
+//!   │   ├── Hit → map_page (MAP_SHARED: writable, MAP_PRIVATE: read-only+COW)
+//!   │   └── Miss → alloc + fill from file → insert → map_page
+//!   └── Return PfResult::Fixed
+//! ```
 
 use super::types::*;
 use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::{PageFlags as VmaFlags, PAGE_SIZE};
+
+// ============================================================================
+// mmap 标志位
+// ============================================================================
+
+/// MAP_SHARED: 写入回写文件
+const MAP_SHARED: i32 = 0x01;
+/// MAP_PRIVATE: 写入触发 COW, 不回写文件
+const MAP_PRIVATE: i32 = 0x02;
+/// MAP_ANONYMOUS: 匿名映射 (无文件后端)
+const MAP_ANONYMOUS: i32 = 0x20;
+/// MAP_FIXED: 强制使用指定地址
+const MAP_FIXED: i32 = 0x10;
 
 pub const SYS_MMAP_FLAGS: u64 = 0;
 
@@ -29,6 +47,8 @@ pub fn mmap_syscall(
     length: u64,
     prot: i32,
     flags: i32,
+    fd: i32,
+    offset: u64,
 ) -> Result<usize, Errno> {
     if length == 0 {
         return Err(Errno::EINVAL);
@@ -38,25 +58,23 @@ pub fn mmap_syscall(
 
     let page_flags = prot_to_vma_flags(prot);
 
-    let map_private = (flags & 0x02) != 0; // MAP_PRIVATE
-    let map_anonymous = (flags & 0x20) != 0; // MAP_ANONYMOUS
+    let map_private = (flags & MAP_PRIVATE) != 0;
+    let map_shared = (flags & MAP_SHARED) != 0;
+    let map_anonymous = (flags & MAP_ANONYMOUS) != 0;
 
-    if !map_anonymous {
-        return Err(Errno::ENOSYS);
+    // 必须指定 SHARED 或 PRIVATE (不可同时)
+    if map_shared && map_private {
+        return Err(Errno::EINVAL);
+    }
+    if !map_shared && !map_private {
+        return Err(Errno::EINVAL);
     }
 
-    let addr = if addr_hint != 0 && addr_hint < 0x0000_7FFF_FFFF_F000 {
-        addr_hint as usize
-    } else {
-        match mm.find_free_range(len_aligned) {
-            Some(a) => a,
-            None => return Err(Errno::ENOMEM),
-        }
-    };
+    // ── 匿名映射 ──
+    if map_anonymous {
+        let addr = find_or_allocate_addr(mm, addr_hint, len_aligned)?;
+        let aligned_addr = addr & !(PAGE_SIZE as usize - 1);
 
-    let aligned_addr = addr & !(PAGE_SIZE as usize - 1);
-
-    if map_private {
         let final_flags = page_flags | VmaFlags::PRESENT;
         let vma = Vma::new(
             aligned_addr,
@@ -68,9 +86,78 @@ pub fn mmap_syscall(
             Ok(()) => {}
             Err(_) => return Err(Errno::ENOMEM),
         }
+
+        return Ok(aligned_addr);
+    }
+
+    // ── 文件映射 ──
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+
+    // offset 必须页对齐
+    if offset % PAGE_SIZE != 0 {
+        return Err(Errno::EINVAL);
+    }
+
+    // 从 fd 获取 inode_id (通过 VFS)
+    let inode_id = fd_to_inode_id(fd);
+    if inode_id == 0 {
+        return Err(Errno::EBADF);
+    }
+
+    let addr = find_or_allocate_addr(mm, addr_hint, len_aligned)?;
+    let aligned_addr = addr & !(PAGE_SIZE as usize - 1);
+
+    let final_flags = if map_shared {
+        // MAP_SHARED: 可写时标记 WRITABLE, 写入回写 Page Cache
+        page_flags | VmaFlags::PRESENT
+    } else {
+        // MAP_PRIVATE: 初始映射为只读, 写入时 COW
+        (page_flags | VmaFlags::PRESENT) & !VmaFlags::WRITABLE
+    };
+
+    let vma = Vma::file_backed(
+        aligned_addr,
+        aligned_addr + len_aligned,
+        final_flags,
+        offset,
+        inode_id,
+        map_shared,
+    );
+
+    match mm.insert_vma(vma) {
+        Ok(()) => {}
+        Err(_) => return Err(Errno::ENOMEM),
     }
 
     Ok(aligned_addr)
+}
+
+/// 查找或分配映射地址
+fn find_or_allocate_addr(mm: &MmStruct, addr_hint: u64, len_aligned: usize) -> Result<usize, Errno> {
+    if addr_hint != 0 && addr_hint < 0x0000_7FFF_FFFF_F000 {
+        Ok(addr_hint as usize)
+    } else {
+        match mm.find_free_range(len_aligned) {
+            Some(a) => Ok(a),
+            None => Err(Errno::ENOMEM),
+        }
+    }
+}
+
+/// 从 fd 获取 inode_id
+///
+/// 通过进程文件描述符表查找对应的 inode 编号.
+/// 当前简化实现: fd 直接映射为 inode_id + 1 (避免 0).
+/// 后续集成完整 VFS fdtable 后替换.
+fn fd_to_inode_id(fd: i32) -> u32 {
+    if fd < 0 {
+        return 0;
+    }
+    // TODO: 从当前进程的 fdtable 获取 inode_id
+    // 当前简化: fd + 1 作为 inode_id (0 表示无效)
+    (fd as u32).wrapping_add(1)
 }
 
 #[inline]
@@ -82,8 +169,35 @@ pub fn munmap_syscall(mm: &MmStruct, addr: u64, length: u64) -> Result<(), Errno
     let start = addr as usize;
     let end = start + length as usize;
 
+    // 释放文件映射的 Page Cache 引用
+    release_file_pages(mm, start, end);
+
     mm.remove_range(start, end);
     Ok(())
+}
+
+/// 释放文件映射区域的 Page Cache 引用
+fn release_file_pages(mm: &MmStruct, start: usize, end: usize) {
+    let vmas = mm.vmas.lock();
+    for vma in vmas.iter() {
+        if vma.vma_type != VmaType::FileBacked || vma.inode_id == 0 {
+            continue;
+        }
+        if vma.start >= end || vma.end <= start {
+            continue;
+        }
+
+        // 计算重叠区域对应的页范围
+        let overlap_start = vma.start.max(start);
+        let overlap_end = vma.end.min(end);
+
+        let mut addr = overlap_start;
+        while addr < overlap_end {
+            let page_index = ((addr - vma.start) as u64 + vma.offset) / PAGE_SIZE;
+            crate::kernel::framework::mm::pcache::pcache_put(vma.inode_id, page_index);
+            addr += PAGE_SIZE as usize;
+        }
+    }
 }
 
 #[inline]
@@ -141,5 +255,12 @@ mod tests {
         assert!(rwx.contains(VmaFlags::PRESENT));
         assert!(rwx.contains(VmaFlags::WRITABLE));
         assert!(!rwx.contains(VmaFlags::NX));
+    }
+
+    #[test]
+    fn test_mmap_flags_constants() {
+        assert_eq!(MAP_SHARED, 0x01);
+        assert_eq!(MAP_PRIVATE, 0x02);
+        assert_eq!(MAP_ANONYMOUS, 0x20);
     }
 }

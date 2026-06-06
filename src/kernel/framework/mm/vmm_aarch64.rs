@@ -719,6 +719,38 @@ impl Aarch64Vmm {
         ))
     }
 
+    /// 读取 L3 页表项原始值 (用于 swap entry 检测)
+    pub fn get_pte_value(&self, root_paddr: u64, virt: VirtAddr) -> Option<u64> {
+        let vaddr = virt.as_u64();
+
+        let l0 = root_paddr as *const u64;
+        let l0_idx = l0_index(vaddr);
+        let l0_entry = unsafe { ptr::read_volatile(l0.add(l0_idx)) };
+        if l0_entry & 0b11 != 0b11 {
+            return None;
+        }
+
+        let l1 = phys_to_virt(l0_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+        let l1_idx = l1_index(vaddr);
+        let l1_entry = unsafe { ptr::read_volatile(l1.add(l1_idx)) };
+        if l1_entry & 0b11 != 0b11 {
+            return None;
+        }
+
+        let l2 = phys_to_virt(l1_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+        let l2_idx = l2_index(vaddr);
+        let l2_entry = unsafe { ptr::read_volatile(l2.add(l2_idx)) };
+        if l2_entry & 0b11 != 0b11 {
+            return None;
+        }
+
+        let l3 = phys_to_virt(l2_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+        let l3_idx = l3_index(vaddr);
+        let l3_entry = unsafe { ptr::read_volatile(l3.add(l3_idx)) };
+
+        Some(l3_entry)
+    }
+
     // ─── Clone / Destroy User Page Table ────────────────────────────
 
     pub fn clone_user_page_table(&self, parent_paddr: u64) -> Option<u64> {

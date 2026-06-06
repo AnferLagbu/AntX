@@ -134,6 +134,24 @@ impl UserContext {
     #[inline(always)]
     pub fn arg3(&self) -> u64 { self.x3 }
 
+    /// 参数 4
+    #[cfg(target_arch = "x86_64")]
+    #[inline(always)]
+    pub fn arg4(&self) -> u64 { self.r8 }
+
+    #[cfg(target_arch = "aarch64")]
+    #[inline(always)]
+    pub fn arg4(&self) -> u64 { self.x4 }
+
+    /// 参数 5
+    #[cfg(target_arch = "x86_64")]
+    #[inline(always)]
+    pub fn arg5(&self) -> u64 { self.r9 }
+
+    #[cfg(target_arch = "aarch64")]
+    #[inline(always)]
+    pub fn arg5(&self) -> u64 { self.x5 }
+
     /// 用户态栈指针
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]

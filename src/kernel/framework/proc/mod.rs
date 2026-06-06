@@ -44,6 +44,7 @@ pub mod process;
 pub mod scheduler;
 pub mod scheduler_ex;
 pub mod session;
+pub mod signal;
 pub mod thread;
 pub mod types;
 pub mod user_proc;

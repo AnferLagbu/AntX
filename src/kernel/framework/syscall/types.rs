@@ -182,6 +182,9 @@ pub const SYS_clock_gettime: u64 = 228;
 pub const SYS_exit_group: u64 = 231;
 pub const SYS_tgkill: u64 = 234;
 
+// 同步
+pub const SYS_futex: u64 = 202;
+
 // ==================== Credo 私有 syscall (400+ 不与 POSIX 冲突) ====================
 
 pub const SYS_CREDO_LOGIN: u64 = 400;

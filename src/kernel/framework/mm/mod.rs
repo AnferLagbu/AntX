@@ -24,9 +24,11 @@ pub mod copy_user;
 pub mod cow;
 pub mod kmalloc;
 pub mod kmalloc_slab;
+pub mod pcache;
 pub mod page_fault;
 pub mod pressure;
 pub mod slab;
+pub mod swap;
 pub mod vma;
 
 // Re-export commonly used types

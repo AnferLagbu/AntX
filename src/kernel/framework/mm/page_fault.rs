@@ -94,6 +94,21 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
         return PfResult::SignalBus;
     }
 
+    // Swap-in: PTE 为 swap entry (present=0 但非零)
+    if !info.present && info.user {
+        let pml4 = vmm::get_current_pml4();
+        let vmm_inst = vmm::get_vmm();
+        if let Some(pte) = vmm_inst.get_pte_value(pml4, VirtAddr(info.fault_addr)) {
+            if super::swap::is_swap_pte(pte) {
+                let result = super::swap::handle_swap_fault(pml4, info.fault_addr);
+                if result == PfResult::Fixed {
+                    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
+                }
+                return result;
+            }
+        }
+    }
+
     // COW: 写已存在但只读的页
     if info.write && info.present {
         let pml4 = vmm::get_current_pml4();
@@ -175,10 +190,17 @@ fn handle_stack_expansion_simple(addr: usize) -> PfResult {
 fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> PfResult {
     let aligned = (info.fault_addr as usize) & !(PAGE_SIZE as usize - 1);
 
+    // ── FileBacked VMA: 从 Page Cache 获取缓存页 ──
+    if vma.vma_type == VmaType::FileBacked && vma.inode_id != 0 {
+        return handle_file_fault(mm, vma, info, aligned);
+    }
+
+    // ── COW: 写入只读页 ──
     if info.write && !vma.flags.contains(PageFlags::WRITABLE) {
         return do_cow_copy_with_mm(mm, vma, aligned);
     }
 
+    // ── 普通匿名页分配 ──
     let pmm_inst = pmm::get_pmm();
     let phys = match pmm_inst.alloc_page() {
         Some(p) => p,
@@ -196,6 +218,80 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> P
     let pml4 = vmm::get_current_pml4();
 
     vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), phys, flags);
+
+    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
+    PfResult::Fixed
+}
+
+/// 文件映射缺页处理: 从 Page Cache 获取/创建缓存页
+fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize) -> PfResult {
+    let page_index = ((aligned - vma.start) as u64 + vma.offset) / PAGE_SIZE;
+
+    // 从 Page Cache 获取缓存页
+    let cache_phys = match super::pcache::pcache_get(vma.inode_id, page_index) {
+        Some(p) => p,
+        None => return PfResult::Oom,
+    };
+
+    let vmm_inst = vmm::get_vmm();
+    let pml4 = vmm::get_current_pml4();
+
+    if vma.shared {
+        // MAP_SHARED: 可写映射, 写入回写 Page Cache
+        let flags = vma.flags | PageFlags::PRESENT | PageFlags::WRITABLE;
+        vmm_inst.map_page_in_table(
+            pml4,
+            VirtAddr(aligned as u64),
+            PhysAddr(cache_phys),
+            flags,
+        );
+
+        // 写入时标记脏页
+        if info.write {
+            super::pcache::pcache_mark_dirty(vma.inode_id, page_index);
+        }
+    } else {
+        // MAP_PRIVATE: 只读映射, 写入时触发 COW
+        let flags = (vma.flags | PageFlags::PRESENT) & !PageFlags::WRITABLE;
+        vmm_inst.map_page_in_table(
+            pml4,
+            VirtAddr(aligned as u64),
+            PhysAddr(cache_phys),
+            flags,
+        );
+
+        // 写入时 COW: 分配新页, 复制数据, 可写映射
+        if info.write {
+            let pmm_inst = pmm::get_pmm();
+            let new_phys = match pmm_inst.alloc_page() {
+                Some(p) => p,
+                None => return PfResult::Oom,
+            };
+
+            // 从缓存页复制数据到新页
+            let src_virt = PhysAddr(cache_phys).to_virt();
+            let dst_virt = new_phys.to_virt();
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    src_virt.0 as *const u8,
+                    dst_virt.0 as *mut u8,
+                    PAGE_SIZE as usize,
+                );
+            }
+
+            // 释放 Page Cache 引用
+            super::pcache::pcache_put(vma.inode_id, page_index);
+
+            // 用新页替换映射 (可写)
+            let cow_flags = vma.flags | PageFlags::PRESENT | PageFlags::WRITABLE;
+            vmm_inst.map_page_in_table(
+                pml4,
+                VirtAddr(aligned as u64),
+                new_phys,
+                cow_flags,
+            );
+        }
+    }
 
     PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed

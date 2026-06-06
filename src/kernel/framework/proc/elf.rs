@@ -64,6 +64,11 @@ const PF_W: u32 = 2;
 const PF_R: u32 = 4;
 const MAX_PHDR_COUNT: usize = 128;
 
+/// ET_EXEC: 固定地址可执行文件
+const ET_EXEC: u16 = 2;
+/// ET_DYN: 共享对象 / PIE 可执行文件
+const ET_DYN: u16 = 3;
+
 pub struct ElfLoadResult {
     pub entry: u64,
     pub phdr_addr: u64,
@@ -121,9 +126,26 @@ pub fn elf_load(
     elf_data: *const u8,
     elf_size: u64,
 ) -> Result<ElfLoadResult, &'static str> {
+    elf_load_with_bias(mm, elf_data, elf_size, 0)
+}
+
+/// 加载 ELF 文件到指定地址空间, 支持可选加载偏移 (PIE/ASLR).
+///
+/// `load_bias` = 0 表示 ET_EXEC (固定地址加载).
+/// `load_bias` > 0 表示 ET_DYN/PIE (在随机基址加载).
+pub fn elf_load_with_bias(
+    mm: &MmStruct,
+    elf_data: *const u8,
+    elf_size: u64,
+    load_bias: u64,
+) -> Result<ElfLoadResult, &'static str> {
     let header = elf_validate(elf_data, elf_size).ok_or("Invalid ELF header")?;
 
-    let entry = header.e_entry;
+    // PIE (ET_DYN) 需要非零 load_bias; ET_EXEC 使用固定地址
+    let is_pie = header.e_type == ET_DYN;
+    let bias = if is_pie { load_bias } else { 0 };
+
+    let entry = header.e_entry + bias;
 
     if header.e_phoff == 0 || header.e_phnum == 0 {
         return Err("No program headers");
@@ -135,10 +157,10 @@ pub fn elf_load(
     let mut max_vaddr: u64 = 0;
     let mut result = ElfLoadResult {
         entry,
-        phdr_addr: phdr_base as u64,
+        phdr_addr: phdr_base as u64 + bias,
         phdr_count,
         brk_base: 0,
-        stack_top: 0x0000_7FFF_FFFF_F000,
+        stack_top: crate::kernel::framework::config::aslr_stack_top(),
     };
 
     for i in 0..phdr_count {
@@ -158,11 +180,12 @@ pub fn elf_load(
             continue;
         }
 
-        let vaddr_start = phdr.p_vaddr & !(PAGE_SIZE - 1);
+        let vaddr_start = (phdr.p_vaddr + bias) & !(PAGE_SIZE - 1);
         let vaddr_end_raw = phdr
             .p_vaddr
             .checked_add(phdr.p_memsz)
-            .ok_or("ELF: vaddr + memsz overflow")?;
+            .ok_or("ELF: vaddr + memsz overflow")?
+            + bias;
         let vaddr_end = ((vaddr_end_raw + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)) as usize;
         let filesz = phdr.p_filesz as usize;
         let file_offset = phdr.p_offset as usize;

@@ -72,6 +72,7 @@ pub const SYS_mount: u64 = 165;
 pub const SYS_umount2: u64 = 166;
 pub const SYS_sched_yield: u64 = 24;
 pub const SYS_exit_group: u64 = 231;
+pub const SYS_futex: u64 = 202;
 pub const SYS_clock_gettime: u64 = 228;
 pub const SYS_CREDO_BASE: u64 = 400;
 pub const MAX_SYSCALLS: u64 = 512;

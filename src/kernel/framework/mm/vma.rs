@@ -57,6 +57,10 @@ pub struct Vma {
     pub flags: PageFlags,
     pub vma_type: VmaType,
     pub offset: u64,
+    /// 文件映射: inode 编号 (0 = 无文件后端)
+    pub inode_id: u32,
+    /// 文件映射: 是否为 MAP_SHARED (true) 或 MAP_PRIVATE (false)
+    pub shared: bool,
 }
 
 impl Vma {
@@ -67,6 +71,8 @@ impl Vma {
             flags,
             vma_type,
             offset: 0,
+            inode_id: 0,
+            shared: false,
         }
     }
 
@@ -77,6 +83,28 @@ impl Vma {
             flags,
             vma_type: VmaType::FileBacked,
             offset,
+            inode_id: 0,
+            shared: false,
+        }
+    }
+
+    /// 创建文件映射 VMA
+    pub fn file_backed(
+        start: usize,
+        end: usize,
+        flags: PageFlags,
+        offset: u64,
+        inode_id: u32,
+        shared: bool,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            flags,
+            vma_type: VmaType::FileBacked,
+            offset,
+            inode_id,
+            shared,
         }
     }
 

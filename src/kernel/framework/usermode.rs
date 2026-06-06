@@ -58,11 +58,11 @@ pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> UserCont
 /// # 安全约束
 /// - 调用方保证 `num` 是有效的系统调用号。
 /// - 参数 `a0..a3` 来自用户态寄存器, 由 `UserContext` 提取。
-pub fn dispatch_syscall(num: u64, a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+pub fn dispatch_syscall(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     // SAFETY: syscall_dispatch is unsafe extern "C" because it processes
     // raw user-supplied arguments. The framework is the TCB and is
     // responsible for validating these arguments before passing to services.
-    unsafe { crate::kernel::framework::syscall::syscall_dispatch(num, a0, a1, a2, a3) }
+    unsafe { crate::kernel::framework::syscall::syscall_dispatch(num, a0, a1, a2, a3, a4, a5) }
 }
 
 /// 安全注册系统调用处理器 (services 层入口)。

@@ -298,6 +298,8 @@ pub enum LogCategory {
     IPC = 8,
     Security = 9,
     Test = 10,
+    Sync = 11,
+    Swap = 12,
 }
 
 impl LogLevel {
@@ -327,6 +329,8 @@ impl LogCategory {
             LogCategory::IPC => b"IPC",
             LogCategory::Security => b"SEC",
             LogCategory::Test => b"TEST",
+            LogCategory::Sync => b"SYNC",
+            LogCategory::Swap => b"SWAP",
         }
     }
 }

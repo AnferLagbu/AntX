@@ -152,6 +152,20 @@ pub struct Process {
     pub ref_count: AtomicU32,
     pub pending_free: AtomicBool,
     pub pending_signals: AtomicU64,
+
+    // --- POSIX 信号处理字段 ---
+
+    /// 信号屏蔽字 (bit i = 信号 i+1 被屏蔽)
+    pub blocked_mask: AtomicU64,
+
+    /// 信号处理动作表 (索引 0..=30 对应 SIGHUP..SIGSYS)
+    /// 每项: 0 = SIG_DFL, 1 = SIG_IGN, 其他 = 用户态 handler 地址
+    pub sigaction_table: Mutex<[u64; 31]>,
+
+    /// 信号替换栈 (sigaltstack), 0 = 未设置
+    pub sigaltstack_addr: AtomicU64,
+    pub sigaltstack_size: AtomicU64,
+    pub sigaltstack_flags: AtomicU32, // SS_ONSTACK / SS_DISABLE
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -210,6 +224,11 @@ impl Process {
             ref_count: AtomicU32::new(1),
             pending_free: AtomicBool::new(false),
             pending_signals: AtomicU64::new(0),
+            blocked_mask: AtomicU64::new(0),
+            sigaction_table: Mutex::new([0u64; 31]),
+            sigaltstack_addr: AtomicU64::new(0),
+            sigaltstack_size: AtomicU64::new(0),
+            sigaltstack_flags: AtomicU32::new(0),
         }
     }
 

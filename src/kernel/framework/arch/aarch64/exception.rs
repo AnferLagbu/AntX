@@ -408,10 +408,12 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     let arg1 = frame.x2;
     let arg2 = frame.x3;
     let arg3 = frame.x4;
+    let arg4 = frame.x5;
+    let arg5 = frame.x6;
 
     // 调用通用 syscall 分发器 (syscall 模块已全局化)
     let result =
-        unsafe { crate::kernel::framework::syscall::syscall_dispatch(syscall_num, arg0, arg1, arg2, arg3) };
+        unsafe { crate::kernel::framework::syscall::syscall_dispatch(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5) };
 
     // 返回值写入 x0
     result as u64
