@@ -445,6 +445,9 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
         crate::kernel::framework::timer::on_timer_interrupt();
 
+        // 处理高精度定时器队列
+        crate::kernel::framework::timer::hrtimer::hrtimer_run_queues();
+
         // smoltcp: 始终轮询（DHCP 需要在 poll 中完成握手）
         #[cfg(not(feature = "kernel_test"))]
         unsafe {

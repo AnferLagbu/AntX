@@ -361,6 +361,7 @@ pub fn test_runner_init() {
         #[cfg(target_arch = "x86_64")]
         crate::kernel::framework::timer::irq::register_timer_irq_tests();
         crate::kernel::framework::timer::sleep::register_timer_sleep_tests();
+        crate::kernel::framework::timer::hrtimer::register_hrtimer_tests();
     }
 
     let r = runner();

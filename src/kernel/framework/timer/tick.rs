@@ -108,6 +108,9 @@ pub fn timer_init(frequency_hz: u32) -> Result<u32, &'static str> {
     // 5. 标记为已初始化
     TIMER_INITIALIZED.store(true, Ordering::Release);
 
+    // 6. 初始化高精度定时器框架
+    super::hrtimer::hrtimer_init();
+
     Ok(actual_freq)
 }
 

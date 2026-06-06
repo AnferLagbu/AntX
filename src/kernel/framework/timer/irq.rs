@@ -30,6 +30,9 @@ use crate::kernel::framework::idt::types::InterruptFrame;
 pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     crate::kernel::framework::timer::on_timer_interrupt();
 
+    // 处理高精度定时器队列
+    crate::kernel::framework::timer::hrtimer::hrtimer_run_queues();
+
     #[cfg(not(feature = "kernel_test"))]
     {
         #[cfg(target_arch = "x86_64")]

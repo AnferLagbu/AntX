@@ -5,6 +5,7 @@
 //! - **Tick 计数器**: 全局时间追踪和转换
 //! - **Sleep 机制**: 多种精度的延时和等待
 //! - **高精度计时**: 基于 TSC 的纳秒级测量
+//! - **HrTimer**: 纳秒级高精度定时器框架
 //!
 //! ## 架构设计
 //!
@@ -15,6 +16,9 @@
 //! │
 //! ├── Tick Manager (tick.rs)
 //! │   └── 时间层: tick 计数、转换、uptime
+//! │
+//! ├── HrTimer (hrtimer.rs)
+//! │   └── 框架层: 纳秒级定时器队列与回调
 //! │
 //! └── Sleep Functions (sleep.rs)
 //!     └── 应用层: 忙等待、调度器阻塞、自适应策略
@@ -78,6 +82,9 @@ pub mod irq;
 /// TSC 频率校准 (PIT-based 高精度测量)
 pub mod calibration;
 
+/// 高精度定时器框架 (纳秒级回调)
+pub mod hrtimer;
+
 // ============================================================================
 // 公共 API 导出 (便捷访问)
 // ============================================================================
@@ -123,6 +130,15 @@ pub use calibration::{
     calibrate_tsc, get_time_ms, get_time_ns, get_time_us, get_tsc_frequency_hz,
     get_tsc_frequency_mhz, is_calibrated, nanoseconds_to_tsc, quick_calibrate, tsc_to_microseconds,
     tsc_to_milliseconds, tsc_to_nanoseconds,
+};
+
+// --- HrTimer 高精度定时器 ---
+
+/// 使用 `hrtimer` 模块的高精度定时器功能
+pub use hrtimer::{
+    hrtimer_cancel, hrtimer_clock_read, hrtimer_init, hrtimer_next_expiry, hrtimer_start,
+    hrtimer_start_periodic, hrtimer_start_rel, hrtimer_run_queues, is_hrtimer_ready,
+    HrTimer, HrTimerRestart, HrTimerState,
 };
 
 // ============================================================================
