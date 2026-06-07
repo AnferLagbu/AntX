@@ -350,6 +350,21 @@ pub fn recvmsg_validate(fd: i32, msg_ptr: u64, _flags: i32) -> Result<(), Errno>
     Ok(())
 }
 
+// =============== init 启动状态 (host 模拟) ===============
+
+/// init 启动状态常量 (与 services::init 保持一致)
+pub const INIT_STATUS_NOT_STARTED: u32 = 0;
+pub const INIT_STATUS_UNPACKING: u32 = 1;
+pub const INIT_STATUS_LOADING: u32 = 2;
+pub const INIT_STATUS_RUNNING: u32 = 3;
+
+/// host 端模拟: init 启动后状态
+pub fn init_status_after_launch() -> u32 {
+    // 真实内核: launch_first_user_process 走完后 status=3
+    // host 端 host-tests 不跑 launch, 验证常量语义
+    INIT_STATUS_RUNNING
+}
+
 // =============== mremap 验证 (host 模拟) ===============
 
 /// MREMAP_MAYMOVE flag (Linux 1)

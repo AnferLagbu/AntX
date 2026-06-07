@@ -409,6 +409,23 @@ pub fn user_proc_init() {
     USER_PROC_MANAGER.init();
 }
 
+// ============================================================================
+// init 启动状态查询 (供 services 包装)
+// ============================================================================
+
+/// init 启动状态: 0=未启动, 1=initramfs 解压中, 2=init ELF 加载中, 3=已 Ring 3 进入
+static INIT_STATUS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// 获取 init 启动状态
+pub fn init_launch_status() -> u32 {
+    INIT_STATUS.load(core::sync::atomic::Ordering::Acquire)
+}
+
+/// 由 launch_first_user_process 内部设置
+fn set_init_status(s: u32) {
+    INIT_STATUS.store(s, core::sync::atomic::Ordering::Release);
+}
+
 const ELF_MAX_SIZE: usize = 1024 * 1024;
 
 #[no_mangle]
@@ -541,6 +558,7 @@ pub fn launch_first_user_process() -> ! {
     // 2. 解压 initramfs (如果启用 feature "initramfs")
     //    使用: cargo build --features initramfs
     //    需要在 build/user/initramfs.cpio 放置 cpio newc 归档
+    set_init_status(1);
     #[cfg(all(target_arch = "x86_64", feature = "initramfs"))]
     {
         let initramfs = include_bytes!("../../../../build/user/initramfs.cpio");
@@ -554,6 +572,7 @@ pub fn launch_first_user_process() -> ! {
             match result {
                 Ok(count) => {
                     crate::klog_boot_info!("[USER] initramfs: {} files unpacked", count);
+                    set_init_status(2);
                     // 尝试从 /init 执行
                     let pid = user_proc_load_elf(b"/init\0".as_ptr(), 0);
                     if pid > 0 {
@@ -565,6 +584,7 @@ pub fn launch_first_user_process() -> ! {
                             p.parent_pid = 1;
                         });
                         SCHEDULER.add(pid_u32);
+                        set_init_status(3);
                         crate::klog_boot_info!("[USER] Entering Ring 3 (init from /init, pid={})...", pid_u32);
                         user_proc_enter_by_pid(pid_u32);
                     }

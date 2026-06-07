@@ -227,8 +227,14 @@ pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str>
             }
             CPIO_S_IFLNK => {
                 // 符号链接: entry.data 是链接目标
-                // TODO: 实现 vfs_symlink 后启用
-                // 当前跳过符号链接
+                // 真实实现: 在 linkpath 父目录下建 Symlink 类型新节点.
+                if !entry.data.is_empty() {
+                    crate::kernel::framework::fs::vfs::api::vfs_symlink(
+                        entry.data.as_ptr(),
+                        path_buf.as_ptr(),
+                        pwm,
+                    );
+                }
             }
             _ => {
                 // 其他类型 (设备文件等) 暂不支持

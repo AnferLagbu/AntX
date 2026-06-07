@@ -782,7 +782,15 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 同步 ====================
         SYS_futex => dispatch!(
-            crate::kernel::services::sync::futex::futex_syscall(a0, a1 as i32, a2 as i32, a3, 0).as_ret(),
+            match crate::kernel::services::sync::futex::futex_syscall(
+                a0, a1 as i32, a2 as i32, a3, 0,
+            ) {
+                Ok(crate::kernel::services::sync::futex::FutexResult::Woken) => 0,
+                Ok(crate::kernel::services::sync::futex::FutexResult::WokenCount(n)) => n as i64,
+                Ok(crate::kernel::services::sync::futex::FutexResult::Requeued { woken, .. }) => woken as i64,
+                Ok(crate::kernel::services::sync::futex::FutexResult::Pending) => 0,
+                Err(e) => e.as_ret(),
+            },
             b"futex\0"
         ),
 

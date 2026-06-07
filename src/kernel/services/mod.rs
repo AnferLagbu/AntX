@@ -79,6 +79,12 @@ pub mod mm;
 /// services 层的安全抽象与参数验证 (credo 鉴权 + 用户指针 + 容量检查)。
 pub mod storage;
 
+/// init 启动子系统 — PID 1 / initramfs / Ring 3 切换状态查询
+///
+/// 底层实现见 `framework::proc::api` (TCB); 本模块提供
+/// services 层的安全状态查询 API, 不暴露 unsafe 入口。
+pub mod init;
+
 /// WASM 沙箱
 pub mod wasm;
 

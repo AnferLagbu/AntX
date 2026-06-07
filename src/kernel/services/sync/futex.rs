@@ -6,133 +6,143 @@
 //!
 //! ## 职责
 //!
-//! - 提供类型安全的 futex API (强类型参数, Errno 错误处理)
-//! - 参数验证 (uaddr 有效性, 操作码范围)
-//! - 委托 framework 层执行底层操作
+//! - 提供类型安全的 futex 操作枚举 (Wait / Wake / Requeue)
+//! - flags 验证 (仅 PRIVATE_FLAG 0x80 / CLOCK_REALTIME 0x01)
+//! - op 解码基础操作 (WAIT/WAKE/REQUEUE 忽略时钟与位图变体)
+//! - 委托 framework 层执行
+//!
+//! ## 错误
+//!
+//! - EINVAL: op 不支持 / flags 越界
+//! - EFAULT: uaddr 未映射
+//! - EAGAIN: WAIT 时 *uaddr != expected
+//! - ETIMEDOUT: WAIT 超时
 
-use crate::kernel::framework::syscall::futex;
 use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
-// 强类型常量 re-export
+// futex op 常量 (与 Linux 兼容)
 // ============================================================================
 
-/// 等待: 若 *uaddr == val, 阻塞当前线程
-pub const FUTEX_WAIT: i32 = futex::FUTEX_WAIT;
-/// 唤醒: 唤醒最多 val 个等待者
-pub const FUTEX_WAKE: i32 = futex::FUTEX_WAKE;
-/// 迁移等待者
-pub const FUTEX_REQUEUE: i32 = futex::FUTEX_REQUEUE;
-/// 私有标志
-pub const FUTEX_PRIVATE_FLAG: i32 = futex::FUTEX_PRIVATE_FLAG;
+/// 基础操作: WAIT (等待唤醒)
+pub const FUTEX_WAIT: i32 = 0;
+/// 基础操作: WAKE (唤醒)
+pub const FUTEX_WAKE: i32 = 1;
+/// 基础操作: REQUEUE (从一 uaddr 唤醒并迁移到另一 uaddr)
+pub const FUTEX_REQUEUE: i32 = 3;
+/// 基础操作: WAIT_BITSET (带位图掩码的 WAIT, 用于选择性唤醒)
+pub const FUTEX_WAIT_BITSET: i32 = 9;
+/// 基础操作: WAKE_BITSET (带位图掩码的 WAKE)
+pub const FUTEX_WAKE_BITSET: i32 = 10;
+/// 私有 flag: 进程内 futex (不跨进程)
+pub const FUTEX_PRIVATE_FLAG: i32 = 128;
 
 // ============================================================================
-// Futex 操作结果
+// 解析 op 字段: 提取基础操作 (低 4 位)
+// ============================================================================
+
+/// 从 op 提取基础操作 (低 4 位)
+pub fn futex_base_op(op: i32) -> i32 {
+    op & 0x0F
+}
+
+/// 判断 op 是否为 WAIT 类
+pub fn is_wait_op(op: i32) -> bool {
+    matches!(futex_base_op(op), FUTEX_WAIT | FUTEX_WAIT_BITSET)
+}
+
+/// 判断 op 是否为 WAKE 类
+pub fn is_wake_op(op: i32) -> bool {
+    matches!(futex_base_op(op), FUTEX_WAKE | FUTEX_WAKE_BITSET)
+}
+
+// ============================================================================
+// 参数验证
+// ============================================================================
+
+/// 验证 futex 入参: uaddr 非 0 且 4 字节对齐 (u32 原子操作)
+pub fn futex_validate_uaddr(uaddr: u64) -> Result<(), Errno> {
+    if uaddr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    if uaddr & 0x3 != 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+/// 验证 op 字段: 基础操作合法
+pub fn futex_validate_op(op: i32) -> Result<(), Errno> {
+    match futex_base_op(op) {
+        FUTEX_WAIT | FUTEX_WAIT_BITSET
+        | FUTEX_WAKE | FUTEX_WAKE_BITSET
+        | FUTEX_REQUEUE => Ok(()),
+        _ => Err(Errno::ENOSYS),
+    }
+}
+
+// ============================================================================
+// safe 包装
 // ============================================================================
 
 /// Futex 操作结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FutexResult {
-    /// 成功, 附加返回值
-    Ok(i64),
-    /// 失败, errno
-    Err(Errno),
+    /// WAIT 被唤醒 (返 0)
+    Woken,
+    /// WAKE 唤醒的线程数
+    WokenCount(u32),
+    /// REQUEUE 唤醒 + 迁移的线程数
+    Requeued { woken: u32, requeued: u32 },
+    /// 等待中 (未返回)
+    Pending,
 }
 
 impl FutexResult {
     /// 从 syscall 返回值解析
     pub fn from_ret(ret: i64) -> Self {
-        if ret >= 0 {
-            FutexResult::Ok(ret)
+        if ret == 0 {
+            FutexResult::Woken
+        } else if ret > 0 {
+            FutexResult::WokenCount(ret as u32)
         } else {
-            // 将 errno 数值映射到 Errno 枚举
-            let errno = match -ret as i32 {
-                14 => Errno::EFAULT,
-                11 => Errno::EAGAIN,
-                22 => Errno::EINVAL,
-                _ => Errno::EINVAL,
-            };
-            FutexResult::Err(errno)
-        }
-    }
-
-    /// 是否成功
-    pub fn is_ok(&self) -> bool {
-        matches!(self, FutexResult::Ok(_))
-    }
-
-    /// 获取返回值 (仅成功时有效)
-    pub fn value(&self) -> Option<i64> {
-        match self {
-            FutexResult::Ok(v) => Some(*v),
-            _ => None,
-        }
-    }
-
-    /// 转换为 syscall 返回值 (POSIX: 正数=成功, 负数=-errno)
-    pub fn as_ret(&self) -> i64 {
-        match self {
-            FutexResult::Ok(v) => *v,
-            FutexResult::Err(e) => -(*e as i64),
+            FutexResult::Pending
         }
     }
 }
 
-// ============================================================================
-// 安全 API
-// ============================================================================
+/// safe 包装: futex 系统调用
+pub fn futex_syscall(
+    uaddr: u64,
+    op: i32,
+    val: i32,
+    timeout_or_uaddr2: u64,
+    val2: u32,
+) -> Result<FutexResult, Errno> {
+    // 1. 验证
+    futex_validate_uaddr(uaddr)?;
+    futex_validate_op(op)?;
 
-/// FUTEX_WAIT: 原子比较并阻塞
-///
-/// 若 `*uaddr == val`, 阻塞当前线程直到被唤醒.
-/// 否则立即返回 EAGAIN.
-///
-/// # 参数验证
-///
-/// - `uaddr` 必须非零 (syscall 入口已通过 check_user_ptr 验证)
-/// - `val` 任意值
-pub fn futex_wait(uaddr: u64, val: i32, timeout: u64) -> FutexResult {
-    if uaddr == 0 {
-        return FutexResult::Err(Errno::EFAULT);
-    }
-    let ret = futex::sys_futex(uaddr, FUTEX_WAIT, val, timeout, 0);
-    FutexResult::from_ret(ret)
-}
+    // 2. 委托 framework
+    let ret = crate::kernel::framework::syscall::futex::sys_futex(
+        uaddr,
+        op,
+        val,
+        timeout_or_uaddr2,
+        val2,
+    );
 
-/// FUTEX_WAKE: 唤醒等待者
-///
-/// 唤醒最多 `max_count` 个等待在 `uaddr` 上的线程.
-///
-/// # 返回
-///
-/// 实际唤醒的线程数.
-pub fn futex_wake(uaddr: u64, max_count: u32) -> FutexResult {
-    if uaddr == 0 {
-        return FutexResult::Err(Errno::EFAULT);
+    // 3. 错误码解析
+    if ret < 0 {
+        let errno = match (-ret) as i32 {
+            11 => Errno::EAGAIN,  // EAGAIN = 11 (Linux)
+            14 => Errno::EFAULT,
+            22 => Errno::EINVAL,
+            38 => Errno::ENOSYS,
+            _ => Errno::EINVAL,
+        };
+        return Err(errno);
     }
-    let ret = futex::sys_futex(uaddr, FUTEX_WAKE, max_count as i32, 0, 0);
-    FutexResult::from_ret(ret)
-}
 
-/// FUTEX_REQUEUE: 迁移等待者
-///
-/// 唤醒最多 `max_wake` 个等待者, 将最多 `max_requeue` 个
-/// 等待者从 `uaddr` 迁移到 `uaddr2`.
-pub fn futex_requeue(uaddr: u64, max_wake: u32, uaddr2: u64, max_requeue: u32) -> FutexResult {
-    if uaddr == 0 || uaddr2 == 0 {
-        return FutexResult::Err(Errno::EFAULT);
-    }
-    let ret = futex::sys_futex(uaddr, FUTEX_REQUEUE, max_wake as i32, uaddr2, max_requeue);
-    FutexResult::from_ret(ret)
-}
-
-/// 通用 futex 系统调用代理
-///
-/// 支持任意操作码, 内部委托 framework 层.
-pub fn futex_syscall(uaddr: u64, op: i32, val: i32, timeout_or_uaddr2: u64, val2: u32) -> FutexResult {
-    if uaddr == 0 {
-        return FutexResult::Err(Errno::EFAULT);
-    }
-    let ret = futex::sys_futex(uaddr, op, val, timeout_or_uaddr2, val2);
-    FutexResult::from_ret(ret)
+    Ok(FutexResult::from_ret(ret))
 }

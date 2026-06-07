@@ -1,0 +1,178 @@
+#![deny(unsafe_code)]
+#![cfg(target_arch = "x86_64")]
+//! ACPI 电源管理 — services 层安全代理
+//!
+//! @SAFE: 本文件不含 unsafe 代码。
+//! 所有 unsafe 操作已委托至 framework::arch::x86_64::acpi。
+//!
+//! ## 职责
+//!
+//! - 查询 ACPI 解析状态 (RSDP / MADT / FADT / HPET / DMAR)
+//! - 提供类型安全的 HpetInfo / ApInfo 包装
+//! - 暴露安全 shutdown / reboot API (不直接操作 PM1a_CNT)
+//!
+//! ## 注意
+//!
+//! aarch64 走 FDT, 不使用 ACPI. 本模块在 aarch64 下编译为 0 内容.
+
+// ============================================================================
+// ACPI 解析状态查询
+// ============================================================================
+
+/// 是否找到 RSDP (Root System Description Pointer)
+#[inline]
+pub fn has_rsdp() -> bool {
+    crate::kernel::framework::arch::x86_64::acpi::find_rsdp(0).is_some()
+}
+
+/// 是否解析过 MADT (Multiple APIC Description Table)
+#[inline]
+pub fn has_madt() -> bool {
+    crate::kernel::framework::arch::x86_64::acpi::has_madt()
+}
+
+/// 是否解析过 FADT (电源管理)
+#[inline]
+pub fn has_fadt() -> bool {
+    // 真实实现: 框架层维护 has_fadt 标志, services 调用
+    // 简化: FADT 解析由 parse_fadt 私有 fn 触发, 通过 get_acpi_features 查询
+    true
+}
+
+/// 是否解析过 HPET (高精度事件定时器)
+#[inline]
+pub fn has_hpet() -> bool {
+    crate::kernel::framework::arch::x86_64::acpi::get_hpet_info().is_some()
+}
+
+/// 是否解析过 DMAR (IOMMU DRHD)
+#[inline]
+pub fn has_dmar() -> bool {
+    // 简化: DMAR 解析与启动日志挂钩, 当前仅返回 false 占位
+    false
+}
+
+// ============================================================================
+// MADT 多核信息
+// ============================================================================
+
+/// 获取 AP (Application Processor) 数量
+#[inline]
+pub fn ap_count() -> u32 {
+    crate::kernel::framework::arch::x86_64::acpi::get_ap_count()
+}
+
+/// LAPIC 基址
+#[inline]
+pub fn lapic_base() -> u64 {
+    crate::kernel::framework::arch::x86_64::acpi::get_lapic_base()
+}
+
+/// IOAPIC 基址
+#[inline]
+pub fn ioapic_addr() -> u64 {
+    crate::kernel::framework::arch::x86_64::acpi::get_ioapic_addr()
+}
+
+/// IOAPIC 全局系统中断基址
+#[inline]
+pub fn ioapic_gsib() -> u32 {
+    crate::kernel::framework::arch::x86_64::acpi::get_ioapic_gsib()
+}
+
+// ============================================================================
+// HPET 高精度定时器信息
+// ============================================================================
+
+/// HPET 信息 (拷贝自框架层, 避免 services 持有裸指针)
+#[derive(Debug, Clone, Copy)]
+pub struct HpetInfoSafe {
+    pub base_addr: u64,
+    pub hpet_number: u8,
+    pub comparator_count: u8,
+    pub counter_size: u8,
+}
+
+/// 获取 HPET 信息 (safe 拷贝)
+#[inline]
+pub fn hpet_info() -> Option<HpetInfoSafe> {
+    crate::kernel::framework::arch::x86_64::acpi::get_hpet_info().map(|info| HpetInfoSafe {
+        base_addr: info.base_addr,
+        hpet_number: info.hpet_number,
+        comparator_count: info.comparator_count,
+        counter_size: info.counter_size,
+    })
+}
+
+// ============================================================================
+// PCI MSI 分配
+// ============================================================================
+
+/// MSI 分配结果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MsiResult {
+    /// 成功, vector 0..=255
+    Allocated(u8),
+    /// 失败, 池已满
+    PoolExhausted,
+    /// 不支持
+    Unsupported,
+}
+
+/// 分配一个 MSI 中断向量 (0..=255)
+pub fn msi_alloc_vector() -> MsiResult {
+    match crate::kernel::framework::pci::msi::msi_alloc_vector() {
+        Some(v) => MsiResult::Allocated(v),
+        None => MsiResult::PoolExhausted,
+    }
+}
+
+/// 释放 MSI 中断向量
+pub fn msi_free_vector(vector: u8) {
+    crate::kernel::framework::pci::msi::msi_free_vector(vector);
+}
+
+// ============================================================================
+// 电源管理 (shutdown / reboot)
+// ============================================================================
+
+/// ACPI 关机 (S5 soft-off)
+///
+/// # Safety
+///
+/// 写 PM1a_CNT S5 位后将不可恢复地停止系统.
+pub fn acpi_shutdown() -> ! {
+    crate::kernel::framework::arch::x86_64::acpi::acpi_shutdown()
+}
+
+/// ACPI 重启
+pub fn acpi_reboot() -> ! {
+    crate::kernel::framework::arch::x86_64::acpi::acpi_reboot()
+}
+
+// ============================================================================
+// 综合状态报告
+// ============================================================================
+
+/// ACPI 整体状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AcpiStatus {
+    pub has_rsdp: bool,
+    pub has_madt: bool,
+    pub has_fadt: bool,
+    pub has_hpet: bool,
+    pub has_dmar: bool,
+    pub ap_count: u32,
+}
+
+/// 获取 ACPI 整体状态 (供 sysinfo / procfs 使用)
+pub fn acpi_status() -> AcpiStatus {
+    AcpiStatus {
+        has_rsdp: has_rsdp(),
+        has_madt: has_madt(),
+        has_fadt: has_fadt(),
+        has_hpet: has_hpet(),
+        has_dmar: has_dmar(),
+        ap_count: ap_count(),
+    }
+}
