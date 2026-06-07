@@ -24,3 +24,5 @@ pub mod procfs;
 pub mod hvfs;
 pub mod io;
 pub mod path;
+pub mod mode;
+pub mod stat;

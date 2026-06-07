@@ -147,15 +147,24 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
         SYS_close => dispatch!(sys_close(a0 as i32), b"close\0"),
         SYS_stat => dispatch!(
-            sys_stat(a0 as *const u8, a1 as *mut u8),
+            match crate::kernel::services::fs::stat::stat_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"stat\0"
         ),
         SYS_fstat => dispatch!(
-            sys_fstat(a0 as i32, a1 as *mut u8),
+            match crate::kernel::services::fs::stat::fstat_syscall(a0 as i32, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"fstat\0"
         ),
         SYS_lstat => dispatch!(
-            sys_stat(a0 as *const u8, a1 as *mut u8),
+            match crate::kernel::services::fs::stat::lstat_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"lstat\0"
         ),
         SYS_poll => dispatch!(
@@ -488,10 +497,19 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"rename\0"
         ),
         SYS_mkdir => dispatch!(
-            sys_mkdir(a0 as *const u8, a1 as i32),
+            match crate::kernel::services::fs::mode::mkdir_syscall(a0, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"mkdir\0"
         ),
-        SYS_rmdir => dispatch!(sys_rmdir(a0 as *const u8), b"rmdir\0"),
+        SYS_rmdir => dispatch!(
+            match crate::kernel::services::fs::mode::rmdir_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"rmdir\0"
+        ),
         SYS_creat => dispatch!(
             sys_open(a0 as *const u8, 0o101, 0o666),
             b"creat\0"
@@ -510,16 +528,31 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 文件权限 ====================
         SYS_chmod => dispatch!(
-            sys_chmod(a0 as *const u8, a1 as u32),
+            match crate::kernel::services::fs::mode::chmod_syscall(a0, a1 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"chmod\0"
         ),
-        SYS_fchmod => dispatch!(sys_fchmod(a0 as i32, a1 as u32), b"fchmod\0"),
+        SYS_fchmod => dispatch!(
+            match crate::kernel::services::fs::mode::fchmod_syscall(a0 as i32, a1 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"fchmod\0"
+        ),
         SYS_chown => dispatch!(
             sys_chown(a0 as *const u8, a1 as u32, a2 as u32),
             b"chown\0"
         ),
         SYS_fchown => dispatch!(Errno::ENOSYS.as_ret(), b"fchown_nosys\0"),
-        SYS_umask => dispatch!(sys_umask(a0 as u32), b"umask\0"),
+        SYS_umask => dispatch!(
+            match crate::kernel::services::fs::mode::umask_syscall(a0 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"umask\0"
+        ),
 
         // ==================== 时间 ====================
         SYS_gettimeofday => dispatch!(
@@ -530,7 +563,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"gettimeofday\0"
         ),
         SYS_getrlimit => dispatch!(
-            sys_getrlimit(a0 as i32, a1 as *mut u8),
+            match crate::kernel::services::proc::rlimit::getrlimit_syscall(a0 as i32, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"getrlimit\0"
         ),
         SYS_sysinfo => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
@@ -2729,6 +2765,17 @@ pub(crate) mod raw {
         unsafe { core::ptr::write_volatile(ptr, val) }
     }
 
+    /// 写两个 u64 到用户指针 (用于 rlimit cur/max)。
+    /// # Safety
+    /// 调用方必须先调用 `check_user_buf(ptr as u64, 16)` 验证。
+    pub unsafe fn write_u64_pair(ptr: *mut u64, cur: u64, max: u64) {
+        // SAFETY: 调用方已验证 ptr 对齐到 8 字节且指向 16 字节可写用户空间。
+        unsafe {
+            core::ptr::write_volatile(ptr, cur);
+            core::ptr::write_volatile(ptr.add(1), max);
+        }
+    }
+
     /// 读一个 u8。
     /// # Safety
     /// 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证。
@@ -2770,6 +2817,36 @@ pub(crate) mod raw {
         // SAFETY: 调用方已验证 dst 对齐到 align_of::<T>() 且 size_of::<T>()
         // 字节可写；src 是有效 T 引用。write_volatile 保留顺序语义。
         unsafe { core::ptr::write_volatile(dst, *src) }
+    }
+
+    /// Safe 包装: 在 services 层用, 写一个 repr(C) 结构体到 user 指针.
+    ///
+    /// 调用方无需 unsafe 块. 内部先 `check_user_buf` 验证后写.
+    pub fn write_struct_to_user<T: Copy>(dst_ptr: u64, src: &T) -> bool {
+        if dst_ptr == 0 {
+            return false;
+        }
+        let size = core::mem::size_of::<T>() as u64;
+        if !check_user_buf(dst_ptr, size) {
+            return false;
+        }
+        // SAFETY: 上方 check_user_buf 已验证 dst_ptr 指向的 user 缓冲
+        // 至少有 size_of::<T>() 字节可写, 且 src 持有有效 T 值.
+        unsafe { write_struct(dst_ptr as *mut T, src) }
+        true
+    }
+
+    /// Safe 包装: 写两个 u64 到 user 指针 (rlim_cur, rlim_max).
+    pub fn write_rlimit_to_user(ptr: u64, cur: u64, max: u64) -> bool {
+        if ptr == 0 {
+            return false;
+        }
+        if !check_user_buf(ptr, 16) {
+            return false;
+        }
+        // SAFETY: check_user_buf 已验证 16 字节可写
+        unsafe { write_u64_pair(ptr as *mut u64, cur, max) }
+        true
     }
 
     // ============= 设备输入抽象 =============

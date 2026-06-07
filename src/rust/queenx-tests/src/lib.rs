@@ -400,3 +400,71 @@ pub fn setreuid_validate(ruid: u32, euid: u32) -> Result<(), Errno> {
     let _ = euid;
     Ok(())
 }
+
+// =============== mode validation ===============
+
+/// 验证 umask 参数 (0..=0o777)
+pub fn umask_validate(mask: u32) -> Result<(), Errno> {
+    if mask > 0o777 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 验证 chmod mode (0..=0o7777)
+pub fn chmod_mode_validate(mode: u32) -> Result<(), Errno> {
+    if mode > 0o7777 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 验证 fchmod (fd >= 0, mode 合法)
+pub fn fchmod_validate(fd: i32, mode: u32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if mode > 0o7777 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 验证 mkdir path
+pub fn mkdir_validate(path_ptr: u64) -> Result<(), Errno> {
+    if path_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+/// 验证 rmdir path
+pub fn rmdir_validate(path_ptr: u64) -> Result<(), Errno> {
+    if path_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+// =============== stat validation ===============
+
+/// 验证 stat 参数
+pub fn stat_validate(path_ptr: u64, st_buf_ptr: u64, stat_size: u64) -> Result<(), Errno> {
+    if path_ptr == 0 { return Err(Errno::EFAULT); }
+    if st_buf_ptr == 0 { return Err(Errno::EFAULT); }
+    if stat_size < MIN_STAT_SIZE { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 验证 lstat 参数 (同 stat)
+pub fn lstat_validate(path_ptr: u64, st_buf_ptr: u64, stat_size: u64) -> Result<(), Errno> {
+    stat_validate(path_ptr, st_buf_ptr, stat_size)
+}
+
+/// 验证 fstat 参数
+pub fn fstat_validate(fd: i32, st_buf_ptr: u64, stat_size: u64) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if st_buf_ptr == 0 { return Err(Errno::EFAULT); }
+    if stat_size < MIN_STAT_SIZE { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 最小 VfsStat 大小 (用于 host 测试固定假设)
+pub const MIN_STAT_SIZE: u64 = 64;
+
+// =============== rlimit validation ===============
+
+/// 验证 getrlimit (rlim != 0, resource 合法)
+pub fn getrlimit_validate(resource: i32, rlim_ptr: u64) -> Result<(), Errno> {
+    if rlim_ptr == 0 { return Err(Errno::EINVAL); }
+    if resource < 0 || resource > 16 { return Err(Errno::EINVAL); }
+    Ok(())
+}

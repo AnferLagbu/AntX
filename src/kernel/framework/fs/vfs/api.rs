@@ -731,6 +731,26 @@ pub fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     vfs_stat_internal(path, st, pwm)
 }
 
+/// Safe 包装: services 层用, 返回 VfsStat 而非 raw pointer.
+///
+/// 内部复用 vfs_stat_internal, 在 stack 上接收结果, 然后转为 Option 返回.
+/// 服务层拿到 Option<VfsStat> 后可安全地用 write_struct_to_user 写回 user.
+pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
+    if path.is_null() {
+        return None;
+    }
+    let mut st = VfsStat::default();
+    let r = vfs_stat_internal(path, &mut st as *mut VfsStat, pwm);
+    if r < 0 {
+        return None;
+    }
+    // SAFETY: vfs_stat_internal 成功时已填充 st; 用 ptr::read 把值取出.
+    // 避免 stack double-drop, st 立即被 drop (Copy 类型无影响).
+    let stat = unsafe { core::ptr::read(&st) };
+    core::mem::forget(st);
+    Some(stat)
+}
+
 #[no_mangle]
 pub fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
     vfs_mkdir_internal(path, pwm)
@@ -1038,6 +1058,19 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
     }
 
     result
+}
+
+/// Safe 包装: services 层用, 返回 VfsStat 而非 raw pointer.
+pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
+    let mut st = VfsStat::default();
+    let r = vfs_fstat(fd, &mut st as *mut VfsStat, pwm);
+    if r < 0 {
+        return None;
+    }
+    // SAFETY: 同 vfs_stat_safe, vfs_fstat 成功时已填充 st
+    let stat = unsafe { core::ptr::read(&st) };
+    core::mem::forget(st);
+    Some(stat)
 }
 
 // ============================================================================

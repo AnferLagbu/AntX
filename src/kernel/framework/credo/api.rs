@@ -349,6 +349,24 @@ pub fn pwm_set_modified() {
     identity::get_table().set_modified();
 }
 
+// ============================================================================
+// 文件创建掩码 umask (单一全局值)
+// ============================================================================
+
+use core::sync::atomic::{AtomicU32, Ordering};
+
+static UMASK: AtomicU32 = AtomicU32::new(0o022);
+
+/// 设置进程 umask, 返回旧值
+pub fn umask_set(new_mask: u32) -> u32 {
+    UMASK.swap(new_mask & 0o777, Ordering::SeqCst)
+}
+
+/// 取当前 umask
+pub fn umask_get() -> u32 {
+    UMASK.load(Ordering::SeqCst)
+}
+
 #[no_mangle]
 pub fn pwm_audit_log(pwm: u64, action: u32, target: u64, details: u64) {
     let act = match action {

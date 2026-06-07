@@ -25,6 +25,7 @@ pub mod elf;
 pub mod execve;
 pub mod clone;
 pub mod info;
+pub mod rlimit;
 pub mod session;
 pub mod signal;
 pub mod sleep;
