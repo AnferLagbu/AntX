@@ -5,6 +5,7 @@ pub mod clone;
 pub mod epoll;
 pub mod futex;
 pub mod info;
+pub mod io;
 pub mod mmap;
 pub mod mprotect;
 pub mod wait4;
@@ -207,7 +208,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             sys_access(a0 as *const u8, a1 as i32),
             b"access\0"
         ),
-        SYS_pipe => dispatch!(sys_pipe(a0 as *mut i32), b"pipe\0"),
+        SYS_pipe => dispatch!(
+            match crate::kernel::services::fs::io::pipe_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"pipe\0"
+        ),
         SYS_select => dispatch!(
             sys_poll(a0 as *mut u8, a1 as u32, a2 as i32),
             b"select\0"
@@ -215,8 +222,20 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_sched_yield => dispatch!(sys_sched_yield(), b"sched_yield\0"),
 
         // ==================== 文件描述符 ====================
-        SYS_dup => dispatch!(sys_dup(a0 as i32), b"dup\0"),
-        SYS_dup2 => dispatch!(sys_dup2(a0 as i32, a1 as i32), b"dup2\0"),
+        SYS_dup => dispatch!(
+            match crate::kernel::services::fs::io::dup_syscall(a0 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"dup\0"
+        ),
+        SYS_dup2 => dispatch!(
+            match crate::kernel::services::fs::io::dup2_syscall(a0 as i32, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"dup2\0"
+        ),
 
         // ==================== 进程优先级 ====================
         SYS_nice => dispatch!(sys_nice(a0 as i32), b"nice\0"),
@@ -352,7 +371,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 文件描述符操作 ====================
-        SYS_fcntl => dispatch!(sys_fcntl(a0 as i32, a1 as i32, a2), b"fcntl\0"),
+        SYS_fcntl => dispatch!(
+            match crate::kernel::services::fs::io::fcntl_syscall(a0 as i32, a1 as i32, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"fcntl\0"
+        ),
 
         // ==================== 文件截断 ====================
         SYS_truncate => dispatch!(
@@ -1082,47 +1107,9 @@ fn sys_setregid(rgid: u32, egid: u32) -> i64 {
 // 管道 — pipe / dup / dup2
 // ============================================================================
 
-fn sys_pipe(fds: *mut i32) -> i64 {
-    if fds.is_null() || !raw::check_user_buf(fds as u64, 8) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 6, 0x01) {
-        return Errno::EACCES.as_ret();
-    }
-    let mut pipefd: [i32; 2] = [0; 2];
-    let result = unsafe { crate::kernel::framework::ipc::pipe::ipc_pipe_create(pipefd.as_mut_ptr()) };
-    if result < 0 {
-        return Errno::EBUSY.as_ret();
-    }
-    if pipefd[0] < 0 || pipefd[1] < 0 {
-        return Errno::EBUSY.as_ret();
-    }
-    unsafe { raw::write_u32(fds as *mut u32, pipefd[0] as u32) };
-    unsafe { raw::write_u32(fds.offset(1) as *mut u32, pipefd[1] as u32) };
-    0
-}
-
-fn sys_dup(oldfd: i32) -> i64 {
-    if oldfd < 0 {
-        return Errno::EBADF.as_ret();
-    }
-    crate::kernel::framework::fs::vfs::api::vfs_dup(oldfd as u32) as i64
-}
-
-fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
-    if oldfd < 0 || newfd < 0 {
-        return Errno::EBADF.as_ret();
-    }
-    if oldfd == newfd {
-        return newfd as i64;
-    }
-    let result = crate::kernel::framework::fs::vfs::api::vfs_dup2(oldfd as u32, newfd as u32);
-    if result < 0 {
-        return Errno::EBADF.as_ret();
-    }
-    result as i64
-}
+fn _unused_sys_pipe_marker() {}
+fn _unused_sys_dup_marker() {}
+fn _unused_sys_dup2_marker() {}
 
 // ============================================================================
 // 内存 — brk / mmap / munmap
@@ -1776,34 +1763,6 @@ fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
 
 fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
     crate::kernel::framework::proc::api::proc_set_priority(pid, priority) as i64
-}
-
-// ============================================================================
-// fcntl — 文件描述符操作
-// ============================================================================
-
-const F_DUPFD: i32 = 0;
-const F_GETFD: i32 = 1;
-const F_SETFD: i32 = 2;
-const F_GETFL: i32 = 3;
-const F_SETFL: i32 = 4;
-
-fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
-    match cmd {
-        F_GETFD => 0,
-        F_SETFD => 0,
-        F_GETFL => {
-            let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
-            if (fd as usize) < 256 && fd_table[fd as usize].used {
-                fd_table[fd as usize].flags as i64
-            } else {
-                Errno::EBADF.as_ret()
-            }
-        }
-        F_SETFL => 0,
-        F_DUPFD => sys_dup2(fd, arg as i32),
-        _ => Errno::EINVAL.as_ret(),
-    }
 }
 
 // ============================================================================

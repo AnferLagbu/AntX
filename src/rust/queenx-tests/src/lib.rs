@@ -138,3 +138,37 @@ pub fn gettimeofday_validate(tv: u64) -> Result<(), Errno> {
     }
     Ok(())
 }
+
+// =============== io validation ===============
+
+/// 验证 pipe 参数 (等价于 services::fs::io::pipe_syscall 的验证部分)
+pub fn pipe_validate(fds: u64) -> Result<(), Errno> {
+    if fds == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 dup 参数 (等价于 services::fs::io::dup_syscall 的验证部分)
+pub fn dup_validate(oldfd: i32) -> Result<(), Errno> {
+    if oldfd < 0 {
+        return Err(Errno::EBADF);
+    }
+    Ok(())
+}
+
+/// 验证 dup2 参数 (等价于 services::fs::io::dup2_syscall 的验证部分)
+pub fn dup2_validate(oldfd: i32, newfd: i32) -> Result<(), Errno> {
+    if oldfd < 0 || newfd < 0 {
+        return Err(Errno::EBADF);
+    }
+    Ok(())
+}
+
+/// 验证 fcntl 参数 (等价于 services::fs::io::fcntl_syscall 的验证部分)
+pub fn fcntl_validate(fd: i32, _cmd: i32, _arg: u64) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    Ok(())
+}

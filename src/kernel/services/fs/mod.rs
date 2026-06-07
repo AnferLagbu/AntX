@@ -22,3 +22,4 @@ pub mod ramfs;
 pub mod devfs;
 pub mod procfs;
 pub mod hvfs;
+pub mod io;

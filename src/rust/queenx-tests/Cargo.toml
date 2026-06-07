@@ -24,3 +24,7 @@ path = "tests/wait4.rs"
 [[test]]
 name = "info"
 path = "tests/info.rs"
+
+[[test]]
+name = "io"
+path = "tests/io.rs"
