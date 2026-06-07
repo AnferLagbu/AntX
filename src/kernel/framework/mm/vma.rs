@@ -277,6 +277,122 @@ impl MmStruct {
         }
     }
 
+    /// 修改 [start, end) 范围的保护属性 (mprotect 实现)
+    ///
+    /// 1. 查找与 [start, end) 重叠的所有 VMA
+    /// 2. 必要时拆分 VMA (前后部分保持原权限)
+    /// 3. 修改目标部分的 VMA flags 和页表权限
+    /// 4. flush TLB
+    pub fn mprotect(&self, start: usize, len: usize, new_flags: PageFlags) -> Result<(), crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+
+        if len == 0 {
+            return Err(Errno::EINVAL);
+        }
+
+        let end = start.checked_add(len).ok_or(Errno::ENOMEM)?;
+        let end = (end + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1); // 页对齐上界
+
+        let mut vmas = self.vmas.lock();
+
+        // 收集需要修改的 VMA 索引
+        let mut to_modify: alloc::vec::Vec<(usize, usize, usize, PageFlags, VmaType)> = alloc::vec::Vec::new();
+
+        for vma in vmas.iter() {
+            if vma.end <= start {
+                continue;
+            }
+            if vma.start >= end {
+                break;
+            }
+            // 有重叠
+            let overlap_start = vma.start.max(start);
+            let overlap_end = vma.end.min(end);
+            to_modify.push((overlap_start, overlap_end, vma.start, vma.flags, vma.vma_type));
+        }
+
+        if to_modify.is_empty() {
+            return Err(Errno::ENOMEM); // 没有映射的区域
+        }
+
+        // 收集要保留的前后片段
+        let mut fragments: alloc::vec::Vec<Vma> = alloc::vec::Vec::new();
+
+        for vma in vmas.iter() {
+            if vma.end <= start || vma.start >= end {
+                // 无重叠, 保留
+                fragments.push(vma.clone());
+                continue;
+            }
+
+            // 前段: [vma.start, start)
+            if vma.start < start {
+                fragments.push(Vma {
+                    start: vma.start,
+                    end: start,
+                    flags: vma.flags,
+                    vma_type: vma.vma_type,
+                    offset: vma.offset,
+                    inode_id: vma.inode_id,
+                    shared: vma.shared,
+                });
+            }
+
+            // 中段: [overlap, overlap_end) — 新权限
+            let overlap_start = vma.start.max(start);
+            let overlap_end = vma.end.min(end);
+            fragments.push(Vma {
+                start: overlap_start,
+                end: overlap_end,
+                flags: new_flags,
+                vma_type: vma.vma_type,
+                offset: vma.offset,
+                inode_id: vma.inode_id,
+                shared: vma.shared,
+            });
+
+            // 后段: [end, vma.end)
+            if vma.end > end {
+                fragments.push(Vma {
+                    start: end,
+                    end: vma.end,
+                    flags: vma.flags,
+                    vma_type: vma.vma_type,
+                    offset: vma.offset,
+                    inode_id: vma.inode_id,
+                    shared: vma.shared,
+                });
+            }
+        }
+
+        // 替换 VMA 列表
+        *vmas = fragments;
+
+        // 修改页表权限
+        #[cfg(target_arch = "x86_64")]
+        {
+            let vmm = crate::kernel::framework::mm::vmm::get_vmm();
+            let page_start = start & !(PAGE_SIZE as usize - 1);
+            let mut addr = page_start;
+            while addr < end {
+                vmm.protect_page(VirtAddr(addr as u64), new_flags);
+                addr += PAGE_SIZE as usize;
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            let vmm = crate::kernel::framework::mm::vmm::get_vmm();
+            let page_start = start & !(PAGE_SIZE as usize - 1);
+            let mut addr = page_start;
+            while addr < end {
+                vmm.protect_page(VirtAddr(addr as u64), new_flags);
+                addr += PAGE_SIZE as usize;
+            }
+        }
+
+        Ok(())
+    }
+
     /// 设置堆边界
     ///
     /// Uses AtomicUsize for brk/start_brk for lock-free thread-safe access.

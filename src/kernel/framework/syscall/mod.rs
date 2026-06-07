@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 pub mod api;
 pub mod brk;
+pub mod clone;
 pub mod epoll;
 pub mod futex;
 pub mod mmap;
+pub mod mprotect;
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
 /// POSIX 标准 syscall 编号 (0-399) + Credo 私有 syscall (400+).
@@ -161,7 +163,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 内存管理 ====================
         SYS_mmap => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5), b"mmap\0"),
-        SYS_mprotect => dispatch!(Errno::ENOSYS.as_ret(), b"mprotect\0"),
+        SYS_mprotect => dispatch!(
+            match crate::kernel::services::mm::mprotect::mprotect_syscall(a0, a1, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"mprotect\0"
+        ),
         SYS_munmap => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
         SYS_brk => dispatch!(
             match crate::kernel::services::mm::brk::brk_syscall(a0) {
@@ -284,7 +292,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 进程创建 ====================
         SYS_fork => dispatch!(sys_fork(), b"fork\0"),
-        SYS_clone => dispatch!(Errno::ENOSYS.as_ret(), b"clone_nosys\0"),
+        SYS_clone => dispatch!(
+            match crate::kernel::services::proc::clone::clone_syscall(a0, a1, a2, a3, a4) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"clone\0"
+        ),
         SYS_execve => dispatch!(
             crate::kernel::services::proc::execve::ExecveResult::from_ret(
                 sys_execve(

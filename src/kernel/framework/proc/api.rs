@@ -33,7 +33,8 @@ use super::scheduler_ex::SCHEDULER_EX;
 use super::session::SESSION_MANAGER;
 use super::thread::THREAD_MANAGER;
 use super::types::*;
-use super::user_proc::{proc_alloc_pid, user_proc_clone, USER_PROC_MANAGER};
+use super::user_proc::{user_proc_clone, USER_PROC_MANAGER};
+pub use super::user_proc::proc_alloc_pid;
 use crate::kernel::framework::lib::cstr::CStrExt;
 use crate::kernel::framework::klog::klog_ffi_info;
 use crate::kernel::framework::mm::api::{

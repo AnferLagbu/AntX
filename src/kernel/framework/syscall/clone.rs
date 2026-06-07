@@ -1,0 +1,187 @@
+//! clone — 线程创建系统调用 (TCB)
+//!
+//! Linux clone() 是 fork() 的超集, 支持细粒度资源共享:
+//! - CLONE_VM: 共享地址空间 (线程)
+//! - CLONE_FS: 共享文件系统信息
+//! - CLONE_FILES: 共享文件描述符表
+//! - CLONE_SIGHAND: 共享信号处理
+//! - CLONE_THREAD: 同一线程组
+//! - CLONE_PARENT: 共享父进程
+//!
+//! ## 实现策略
+//!
+//! 当前简化实现:
+//! - CLONE_VM: 子进程共享父进程的页表 (不 COW)
+//! - 其他标志: 忽略 (子进程独立拷贝)
+//! - 无 CLONE_VM: 等同于 fork (COW)
+//!
+//! # Safety
+//!
+//! - 页表操作需要 VMM 锁
+//! - 进程表操作需要 PROCESS_TABLE 锁
+//! - 栈指针必须指向用户空间
+
+use crate::kernel::framework::proc::api;
+use crate::kernel::framework::proc::api::raw;
+use crate::kernel::framework::proc::types::ProcessState;
+use crate::kernel::framework::proc::process::{PROCESS_TABLE};
+use crate::kernel::framework::proc::scheduler::SCHEDULER;
+use crate::kernel::framework::syscall::types::Errno;
+
+use core::sync::atomic::Ordering;
+
+/// clone 标志位
+pub const CLONE_VM: u64 = 0x00000100;       // 共享地址空间
+pub const CLONE_FS: u64 = 0x00000200;       // 共享 fs 信息
+pub const CLONE_FILES: u64 = 0x00000400;    // 共享 fd 表
+pub const CLONE_SIGHAND: u64 = 0x00000800;  // 共享信号处理
+pub const CLONE_PIDFD: u64 = 0x00001000;    // 返回 pidfd
+pub const CLONE_PARENT: u64 = 0x00008000;   // 共享父进程
+pub const CLONE_THREAD: u64 = 0x00010000;   // 同一线程组
+pub const CLONE_SYSVSEM: u64 = 0x00040000;  // 共享 SysV 信号量
+pub const CLONE_PARENT_SETTID: u64 = 0x00100000;  // 写 TID 到 parent tidptr
+pub const CLONE_CHILD_CLEARTID: u64 = 0x00200000; // 子进程退出时清 tidptr
+pub const CLONE_CHILD_SETTID: u64 = 0x01000000;   // 写 TID 到 child tidptr
+
+/// clone 系统调用实现
+///
+/// `flags`: 克隆标志 (CLONE_VM | CLONE_FS | ...)
+/// `child_stack`: 子进程的用户栈地址 (0 = 与父进程相同)
+/// `parent_tidptr`: 父进程 TID 指针
+/// `child_tidptr`: 子进程 TID 指针
+/// `tls`: TLS 地址
+pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, child_tidptr: u64, tls: u64) -> i64 {
+    let parent_pid = match SCHEDULER.current() {
+        Some(p) => p,
+        None => return Errno::ECHILD.as_ret(),
+    };
+
+    // 如果没有 CLONE_VM, 行为等同于 fork
+    if flags & CLONE_VM == 0 {
+        let child_pid = api::sys_fork();
+        if child_pid == 0 {
+            return Errno::ENOMEM.as_ret();
+        }
+
+        // 如果指定了 child_stack, 修改子进程的 RSP
+        if child_stack != 0 {
+            let _ = PROCESS_TABLE.with_process(child_pid, |p| {
+                let mut ctx = p.context.lock();
+                ctx.rsp = child_stack;
+            });
+        }
+
+        // CLONE_PARENT_SETTID: 写 TID 到 parent_tidptr
+        if flags & CLONE_PARENT_SETTID != 0 && parent_tidptr != 0 {
+            // SAFETY: parent_tidptr 由 syscall 入口验证
+            unsafe {
+                core::ptr::write_volatile(parent_tidptr as *mut i32, child_pid as i32);
+            }
+        }
+
+        return child_pid as i64;
+    }
+
+    // CLONE_VM: 共享地址空间 (创建线程)
+    let parent_cr3 = PROCESS_TABLE
+        .with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst))
+        .unwrap_or(0);
+    if parent_cr3 == 0 {
+        return Errno::ENOMEM.as_ret();
+    }
+
+    // 分配子进程 PID
+    let child_pid = api::proc_alloc_pid();
+    if child_pid == 0 {
+        return Errno::ENOMEM.as_ret();
+    }
+
+    // 克隆父进程名称
+    let name_str = PROCESS_TABLE
+        .with_process(parent_pid, |p| {
+            let name = p.name.lock();
+            alloc::string::String::clone(&*name)
+        })
+        .unwrap_or_default();
+
+    // 创建子进程 (共享 CR3, 不 COW)
+    let child_ptr = raw::alloc_process(child_pid, name_str.as_str(), Some(crate::kernel::framework::proc::types::ProcessId(parent_pid)));
+    let child = raw::process_ref_mut(child_ptr);
+
+    // 共享地址空间: 子进程使用父进程的 CR3
+    child.cr3.store(parent_cr3, Ordering::SeqCst);
+
+    // 复制父进程属性
+    let (parent_pwm, parent_sched_policy, parent_rt_priority) = PROCESS_TABLE
+        .with_process(parent_pid, |p| {
+            (
+                p.pwm.load(Ordering::SeqCst),
+                p.sched_policy.load(Ordering::SeqCst),
+                p.rt_priority.load(Ordering::SeqCst),
+            )
+        })
+        .unwrap_or((0, 0, 0));
+    child.pwm.store(parent_pwm, Ordering::SeqCst);
+    child.sched_policy.store(parent_sched_policy, Ordering::SeqCst);
+    child.rt_priority.store(parent_rt_priority, Ordering::SeqCst);
+
+    // 添加到父进程的子进程列表
+    PROCESS_TABLE.with_process(parent_pid, |p| {
+        p.children.lock().push(crate::kernel::framework::proc::types::ProcessId(child_pid));
+    });
+
+    // 分配内核栈
+    if !child.allocate_kernel_stack() {
+        raw::drop_boxed_process(child_ptr);
+        return Errno::ENOMEM.as_ret();
+    }
+
+    // 复制父进程的内核栈
+    {
+        let parent_kstack = PROCESS_TABLE
+            .with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
+            .unwrap_or(0);
+        let child_kstack = child.kernel_stack.load(Ordering::SeqCst);
+        let stack_size: usize = 65536;
+        raw::copy_kstack(child_kstack, parent_kstack, stack_size);
+        crate::kernel::framework::proc::process::kernel_stack_write_canary(child_kstack);
+    }
+
+    // 复制上下文, 修改 RAX=0 (子进程返回 0)
+    let parent_ctx = PROCESS_TABLE
+        .with_process(parent_pid, |p| *p.context.lock())
+        .unwrap();
+    {
+        let mut child_ctx = child.context.lock();
+        *child_ctx = parent_ctx;
+        child_ctx.cr3 = parent_cr3; // 共享 CR3
+        child_ctx.rax = 0;          // 子进程返回 0
+
+        // 如果指定了 child_stack, 修改 RSP
+        if child_stack != 0 {
+            child_ctx.rsp = child_stack;
+        }
+
+        // 如果指定了 tls, 修改 fs_base (通过 fs 段寄存器传递)
+        // TODO: x86_64 上 TLS 通常通过 arch_prctl(ARCH_SET_FS) 设置, 此处仅记录
+        let _ = tls;
+    }
+
+    // 注册到进程表
+    PROCESS_TABLE.insert(child as *const crate::kernel::framework::proc::process::Process as *mut crate::kernel::framework::proc::process::Process);
+
+    // CLONE_PARENT_SETTID
+    if flags & CLONE_PARENT_SETTID != 0 && parent_tidptr != 0 {
+        unsafe {
+            core::ptr::write_volatile(parent_tidptr as *mut i32, child_pid as i32);
+        }
+    }
+
+    // 添加到调度器
+    let _ = child.set_state_safe(ProcessState::Ready);
+    SCHEDULER.add_to_run_queue(child_pid);
+
+    crate::klog_debug!(Process, "[clone] parent={} child={} flags=0x{:X} (CLONE_VM)", parent_pid, child_pid, flags);
+
+    child_pid as i64
+}

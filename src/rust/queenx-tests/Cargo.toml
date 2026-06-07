@@ -1,0 +1,18 @@
+[package]
+name = "queenx-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Host-side unit tests for QueenX kernel services (parameter validation, pure logic)"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[[test]]
+name = "mprotect"
+path = "tests/mprotect.rs"
+
+[[test]]
+name = "clone"
+path = "tests/clone.rs"

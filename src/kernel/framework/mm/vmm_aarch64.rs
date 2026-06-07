@@ -375,6 +375,14 @@ impl Aarch64Vmm {
 
     pub fn unmap_page(&self, _virt: VirtAddr) {}
 
+    /// 修改虚拟页的保护属性 (mprotect 核心实现)
+    ///
+    /// 当前简化实现: 仅修改 VMA 元数据, 不修改页表.
+    /// TODO: 实现完整的 aarch64 页表权限修改 + TLB invalidate.
+    pub fn protect_page(&self, _virt: VirtAddr, _new_flags: PageFlags) {
+        // TODO: aarch64 页表权限修改
+    }
+
     pub fn split_2mb_page(&self, _virt: u64) -> Result<(), &'static str> {
         // On aarch64, L2 blocks (2MB) are the default for block mappings.
         // We don't need to split them — we can always allocate L3 tables
