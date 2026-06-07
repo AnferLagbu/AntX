@@ -393,6 +393,114 @@ impl MmStruct {
         Ok(())
     }
 
+    /// POSIX `mremap(old_addr, old_size, new_size, flags)` — VMA 描述符搬迁
+    ///
+    /// ## 语义
+    ///
+    /// - `new_size == 0`: 退化为 `munmap`, 返 0
+    /// - `new_size <= old_size`: 截断尾部 VMA, 返 `old_addr`
+    /// - `new_size > old_size`:
+    ///   - `flags & MREMAP_MAYMOVE == 0`: 尝试原地扩展, 失败返 `EFAULT`
+    ///   - `flags & MREMAP_MAYMOVE != 0`: 在空闲区分配新 VMA, 删除旧 VMA, 返新地址
+    ///
+    /// ## 物理页处理 (v1)
+    ///
+    /// v1 阶段只搬迁 VMA 描述符; 旧 vaddr 范围内的已触达物理页在新区域
+    /// 触达时通过 page fault on-demand 重新 alloc (清零).
+    /// v2 计划: 引入 page migration, 逐页 copy 旧→新.
+    ///
+    /// ## 错误
+    ///
+    /// - `EFAULT`: 旧地址未映射 / 范围不匹配 / 原地扩展失败
+    /// - `EINVAL`: 大小参数为 0 或 `flags` 含未实现位
+    /// - `ENOMEM`: 无法分配新范围
+    pub fn mremap(
+        &self,
+        old_addr: usize,
+        old_size: usize,
+        new_size: usize,
+        flags: i32,
+    ) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+
+        // Linux mremap flags (仅 MAYMOVE = 1; MREMAP_FIXED = 2 由 glibc 模拟, 不支持)
+        const MREMAP_MAYMOVE: i32 = 1;
+        const MREMAP_FIXED: i32 = 2;
+
+        if old_size == 0 {
+            return Err(Errno::EINVAL);
+        }
+        if flags & !MREMAP_MAYMOVE != 0 {
+            // 含 MREMAP_FIXED 等未实现位
+            return Err(Errno::EINVAL);
+        }
+
+        let old_size_aligned = (old_size + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
+
+        // 验证旧 vma 存在且精确覆盖 [old_addr, old_addr+old_size_aligned)
+        let old_vma = self.find_vma(old_addr).ok_or(Errno::EFAULT)?;
+        if old_vma.start != old_addr || old_vma.end != old_addr + old_size_aligned {
+            return Err(Errno::EFAULT);
+        }
+
+        // new_size == 0 退化为 munmap
+        if new_size == 0 {
+            self.remove_range(old_addr, old_addr + old_size_aligned);
+            return Ok(0);
+        }
+
+        let new_size_aligned = (new_size + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
+
+        // 缩小: 截断尾部
+        if new_size_aligned <= old_size_aligned {
+            self.remove_range(old_addr + new_size_aligned, old_addr + old_size_aligned);
+            return Ok(old_addr);
+        }
+
+        // 扩大: 必须 MAYMOVE
+        if flags & MREMAP_MAYMOVE == 0 {
+            // 原地扩展: 检查 old_addr+old_size 邻接空区
+            let mut vmas = self.vmas.lock();
+            // 找第一个 start >= old_addr+old_size 的 vma
+            let boundary = old_addr + old_size_aligned;
+            let mut next_start = usize::MAX;
+            for v in vmas.iter() {
+                if v.start >= boundary && v.start < next_start {
+                    next_start = v.start;
+                }
+            }
+            if next_start >= boundary + (new_size_aligned - old_size_aligned) {
+                // 邻接空区足够大: 扩 VMA 尾
+                for v in vmas.iter_mut() {
+                    if v.start == old_addr {
+                        v.end = boundary + (new_size_aligned - old_size_aligned);
+                        return Ok(old_addr);
+                    }
+                }
+            }
+            return Err(Errno::EFAULT);
+        }
+
+        // MAYMOVE: 找新空区
+        let new_start = self.find_free_range(new_size_aligned).ok_or(Errno::ENOMEM)?;
+
+        // 删除旧 vma
+        self.remove_range(old_addr, old_addr + old_size_aligned);
+
+        // 插入新 vma (继承旧 vma 的 flags / type / offset / inode_id / shared)
+        let new_vma = Vma {
+            start: new_start,
+            end: new_start + new_size_aligned,
+            flags: old_vma.flags,
+            vma_type: old_vma.vma_type,
+            offset: old_vma.offset,
+            inode_id: old_vma.inode_id,
+            shared: old_vma.shared,
+        };
+        self.insert_vma(new_vma).map_err(|_| Errno::ENOMEM)?;
+        Ok(new_start)
+    }
+
     /// 设置堆边界
     ///
     /// Uses AtomicUsize for brk/start_brk for lock-free thread-safe access.

@@ -13,5 +13,6 @@
 pub mod pcache;
 pub mod swap;
 pub mod mmap;
+pub mod mremap;
 pub mod brk;
 pub mod mprotect;

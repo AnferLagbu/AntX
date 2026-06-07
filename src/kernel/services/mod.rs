@@ -73,6 +73,12 @@ pub mod sync;
 /// services 层的安全抽象与参数验证。
 pub mod mm;
 
+/// 存储子系统 — 块设备列表/信息/格式化/分区 (Credo 私有 syscall safe 代理)
+///
+/// 底层实现见 `framework::driver::block` (TCB); 本模块提供
+/// services 层的安全抽象与参数验证 (credo 鉴权 + 用户指针 + 容量检查)。
+pub mod storage;
+
 /// WASM 沙箱
 pub mod wasm;
 

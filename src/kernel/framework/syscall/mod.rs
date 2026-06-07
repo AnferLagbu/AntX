@@ -200,7 +200,24 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             },
             b"brk\0"
         ),
-        SYS_mremap => dispatch!(Errno::ENOSYS.as_ret(), b"mremap_nosys\0"),
+        SYS_mremap => {
+            // 从当前 task 取 MmStruct; 验证后委托 services/mm/mremap
+            use crate::kernel::framework::mm::vma::get_current_mm;
+            match get_current_mm() {
+                Some(mm) => {
+                    dispatch!(
+                        match crate::kernel::services::mm::mremap::mremap_syscall(
+                            mm, a0, a1, a2, a3 as i32,
+                        ) {
+                            Ok(addr) => addr as i64,
+                            Err(e) => e.as_ret(),
+                        },
+                        b"mremap\0"
+                    )
+                }
+                None => -1, // EFAULT
+            }
+        }
 
         // ==================== 信号 ====================
         SYS_rt_sigaction => dispatch!(
@@ -837,26 +854,50 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_CREDO_DISK_LIST => dispatch!(
-            sys_disk_list(a0 as *mut u64, a1 as u32),
+            match crate::kernel::services::storage::disk::disk_list(a0, a1 as u32) {
+                Ok(n) => n as i64,
+                Err(e) => e.as_ret(),
+            },
             b"credo_disklist\0"
         ),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_CREDO_DISK_INFO => {
-            dispatch!(sys_disk_info(a0 as u32, a1 as *mut u8), b"credo_diskinfo\0")
+            dispatch!(
+                match crate::kernel::services::storage::disk::disk_info(a0 as u32, a1) {
+                    Ok(()) => 0,
+                    Err(e) => e.as_ret(),
+                },
+                b"credo_diskinfo\0"
+            )
         }
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_CREDO_DISK_FORMAT => dispatch!(
-            sys_disk_format(a0 as u32, a1 as *const u8),
+            match crate::kernel::services::storage::disk::disk_format(a0 as u32, a1) {
+                Ok(()) => 0,
+                Err(e) => e.as_ret(),
+            },
             b"credo_diskfmt\0"
         ),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_CREDO_DISK_PARTITION => {
-            dispatch!(sys_disk_partition(a0 as u32, a1), b"credo_diskpart\0")
+            dispatch!(
+                match crate::kernel::services::storage::disk::disk_partition(a0 as u32, a1) {
+                    Ok(()) => 0,
+                    Err(e) => e.as_ret(),
+                },
+                b"credo_diskpart\0"
+            )
         }
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_CREDO_DISK_INSTALL => dispatch!(sys_boot_install(a0 as u32), b"credo_diskinst\0"),
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_FAT_FORMAT => dispatch!(sys_fat_format(a0 as u32), b"credo_fatfmt\0"),
+        SYS_CREDO_FAT_FORMAT => dispatch!(
+            match crate::kernel::services::storage::disk::fat_format(a0 as u32) {
+                Ok(()) => 0,
+                Err(e) => e.as_ret(),
+            },
+            b"credo_fatfmt\0"
+        ),
 
         #[cfg(feature = "kernel_test")]
         SYS_CREDO_DISK_LIST

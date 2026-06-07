@@ -350,6 +350,67 @@ pub fn recvmsg_validate(fd: i32, msg_ptr: u64, _flags: i32) -> Result<(), Errno>
     Ok(())
 }
 
+// =============== mremap 验证 (host 模拟) ===============
+
+/// MREMAP_MAYMOVE flag (Linux 1)
+pub const MREMAP_MAYMOVE: i32 = 1;
+
+/// 验证 mremap 入参: old_addr 非 0 且页对齐, old_size/new_size > 0
+pub fn mremap_validate(old_addr: u64, old_size: u64, new_size: u64) -> Result<(), Errno> {
+    if old_addr == 0 || old_size == 0 || new_size == 0 {
+        return Err(Errno::EINVAL);
+    }
+    if old_addr & 0xFFF != 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+/// 验证 mremap flags: 仅允许 MREMAP_MAYMOVE
+pub fn mremap_validate_flags(flags: i32) -> Result<(), Errno> {
+    if flags & !MREMAP_MAYMOVE != 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+// =============== storage 验证 (host 模拟) ===============
+
+/// 验证 disk_list 入参: disks 非 0, max_count > 0
+pub fn disk_list_validate(disks_ptr: u64, max_count: u32) -> Result<(), Errno> {
+    if disks_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    if max_count == 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+/// 验证 disk_info 入参: info_ptr 非 0
+pub fn disk_info_validate(info_ptr: u64) -> Result<(), Errno> {
+    if info_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 disk_format 入参: fstype 非 0
+pub fn disk_format_validate(fstype_ptr: u64) -> Result<(), Errno> {
+    if fstype_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 disk_partition 入参: total_sectors 合法 (1..=u32::MAX)
+pub fn disk_partition_validate(total_sectors: u64) -> Result<(), Errno> {
+    if total_sectors == 0 || total_sectors > u32::MAX as u64 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
 // =============== iobuf 容量计算 (host 模拟) ===============
 
 /// 按 iov 列表计算总容量 (模拟 sendmsg 拼接前 size 累计).
