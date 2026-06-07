@@ -434,6 +434,139 @@ pub fn rmdir_validate(path_ptr: u64) -> Result<(), Errno> {
     Ok(())
 }
 
+// =============== access validation ===============
+
+/// POSIX access 权限位
+pub const F_OK: i32 = 0;
+pub const X_OK: i32 = 1;
+pub const W_OK: i32 = 2;
+pub const R_OK: i32 = 4;
+
+/// 验证 access path
+pub fn access_validate(path_ptr: u64) -> Result<(), Errno> {
+    if path_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+/// 验证 access mode 合法 (R_OK=4, W_OK=2, X_OK=1, F_OK=0, 位或 0..=7)
+pub fn access_mode_validate(mode: i32) -> Result<(), Errno> {
+    if mode < 0 || mode > 0o7 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 验证 unlink path
+pub fn unlink_validate(path_ptr: u64) -> Result<(), Errno> {
+    if path_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+// =============== open validation ===============
+
+/// POSIX open flags
+pub const O_RDONLY: i32 = 0o0;
+pub const O_WRONLY: i32 = 0o1;
+pub const O_RDWR: i32 = 0o2;
+pub const O_CREAT: i32 = 0o100;
+pub const O_TRUNC: i32 = 0o1000;
+pub const O_EXCL: i32 = 0o200;
+pub const O_APPEND: i32 = 0o2000;
+pub const O_DIRECTORY: i32 = 0o200_000;
+pub const O_NOFOLLOW: i32 = 0o400_000;
+pub const O_CLOEXEC: i32 = 0o2_000_000;
+
+/// 验证 open path
+pub fn open_path_validate(path_ptr: u64) -> Result<(), Errno> {
+    if path_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+/// 验证 open flags
+pub fn open_flags_validate(flags: i32) -> Result<(), Errno> {
+    if flags < 0 { return Err(Errno::EINVAL); }
+    let access = flags & 0o3;
+    if access > 0o2 { return Err(Errno::EINVAL); }
+    if (flags & O_CREAT) != 0 && access == O_RDONLY { return Err(Errno::EINVAL); }
+    if (flags & O_TRUNC) != 0 && access == O_RDONLY { return Err(Errno::EINVAL); }
+    if (flags & O_DIRECTORY) != 0 && (flags & O_CREAT) != 0 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 验证 open mode (仅 O_CREAT 生效)
+pub fn open_mode_validate(flags: i32, mode: i32) -> Result<(), Errno> {
+    if (flags & O_CREAT) == 0 && mode != 0 { return Err(Errno::EINVAL); }
+    if (flags & O_CREAT) != 0 && (mode < 0 || mode > 0o7777) { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// 验证 close fd
+pub fn close_fd_validate(fd: i32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+// =============== link validation ===============
+
+/// 验证 link oldpath/newpath
+pub fn link_path_validate(oldpath_ptr: u64, newpath_ptr: u64) -> Result<(), Errno> {
+    if oldpath_ptr == 0 || newpath_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+/// 验证 symlink target/linkpath
+pub fn symlink_path_validate(target_ptr: u64, linkpath_ptr: u64) -> Result<(), Errno> {
+    if target_ptr == 0 || linkpath_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+/// 验证 readlink 参数
+pub fn readlink_validate(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<(), Errno> {
+    if path_ptr == 0 || buf_ptr == 0 { return Err(Errno::EFAULT); }
+    if bufsiz == 0 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+// =============== mount validation ===============
+
+/// mount target/fstype 校验
+pub fn mount_target_validate(target_ptr: u64, fstype_ptr: u64, source_ptr: u64) -> Result<(), Errno> {
+    if target_ptr == 0 { return Err(Errno::EFAULT); }
+    if fstype_ptr == 0 { return Err(Errno::EINVAL); }
+    if source_ptr != 0 {
+        // source 可选, 校验其用户态指针
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+/// umount2 target 校验
+pub fn umount2_target_validate(target_ptr: u64) -> Result<(), Errno> {
+    if target_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+// =============== misc fs validation ===============
+
+/// rename 路径校验
+pub fn rename_path_validate(oldpath_ptr: u64, newpath_ptr: u64) -> Result<(), Errno> {
+    if oldpath_ptr == 0 || newpath_ptr == 0 { return Err(Errno::EFAULT); }
+    if oldpath_ptr == newpath_ptr { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// fsync fd 校验
+pub fn fsync_fd_validate(fd: i32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// time tloc 校验
+pub fn time_tloc_validate(tloc_ptr: u64) -> Result<(), Errno> {
+    if tloc_ptr == 0 { return Ok(()); } // tloc 可为 NULL
+    if tloc_ptr & 0x7 != 0 { return Err(Errno::EINVAL); } // 8 字节对齐
+    Ok(())
+}
+
 // =============== stat validation ===============
 
 /// 验证 stat 参数

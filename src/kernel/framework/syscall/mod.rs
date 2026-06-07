@@ -142,10 +142,19 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_read => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
         SYS_write => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
         SYS_open => dispatch!(
-            sys_open(a0 as *const u8, a1 as i32, a2 as i32),
+            match crate::kernel::services::fs::open::open_syscall(a0, a1 as i32, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"open\0"
         ),
-        SYS_close => dispatch!(sys_close(a0 as i32), b"close\0"),
+        SYS_close => dispatch!(
+            match crate::kernel::services::fs::open::close_syscall(a0 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"close\0"
+        ),
         SYS_stat => dispatch!(
             match crate::kernel::services::fs::stat::stat_syscall(a0, a1) {
                 Ok(v) => v as i64,
@@ -214,7 +223,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 文件访问 ====================
         SYS_access => dispatch!(
-            sys_access(a0 as *const u8, a1 as i32),
+            match crate::kernel::services::fs::access::access_syscall(a0, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"access\0"
         ),
         SYS_pipe => dispatch!(
@@ -490,10 +502,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 文件操作 ====================
         SYS_rename => dispatch!(
-            sys_rename(
-                a0 as *const u8,
-                a1 as *const u8
-            ),
+            match crate::kernel::services::fs::misc::rename_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"rename\0"
         ),
         SYS_mkdir => dispatch!(
@@ -511,18 +523,38 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"rmdir\0"
         ),
         SYS_creat => dispatch!(
-            sys_open(a0 as *const u8, 0o101, 0o666),
+            match crate::kernel::services::fs::open::creat_syscall(a0, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"creat\0"
         ),
-        SYS_link => dispatch!(Errno::ENOSYS.as_ret(), b"link_nosys\0"),
-        SYS_unlink => dispatch!(sys_unlink(a0 as *const u8), b"unlink\0"),
-        SYS_symlink => dispatch!(Errno::ENOSYS.as_ret(), b"symlink_nosys\0"),
+        SYS_link => dispatch!(
+            match crate::kernel::services::fs::link::link_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"link\0"
+        ),
+        SYS_unlink => dispatch!(
+            match crate::kernel::services::fs::access::unlink_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"unlink\0"
+        ),
+        SYS_symlink => dispatch!(
+            match crate::kernel::services::fs::link::symlink_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"symlink\0"
+        ),
         SYS_readlink => dispatch!(
-            sys_readlink(
-                a0 as *const u8,
-                a1 as *mut u8,
-                a2
-            ),
+            match crate::kernel::services::fs::link::readlink_syscall(a0, a1, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"readlink\0"
         ),
 
@@ -645,22 +677,42 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 文件同步/挂载 ====================
-        SYS_sync => dispatch!(sys_sync(), b"sync\0"),
-        SYS_fsync => dispatch!(sys_fsync(a0 as i32), b"fsync\0"),
+        SYS_sync => dispatch!(
+            match crate::kernel::services::fs::misc::sync_syscall() {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"sync\0"
+        ),
+        SYS_fsync => dispatch!(
+            match crate::kernel::services::fs::misc::fsync_syscall(a0 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"fsync\0"
+        ),
         SYS_mount => dispatch!(
-            sys_mount(
-                a0 as *const u8,
-                a1 as *const u8,
-                a2 as *const u8
-            ),
+            match crate::kernel::services::fs::mount::mount_syscall(a0, a1, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"mount\0"
         ),
         SYS_umount2 => dispatch!(
-            sys_umount2(a0 as *const u8, a1 as i32),
+            match crate::kernel::services::fs::mount::umount2_syscall(a0, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"umount2\0"
         ),
 
-        SYS_time => dispatch!(sys_time(a0 as *mut u64), b"time\0"),
+        SYS_time => dispatch!(
+            match crate::kernel::services::fs::misc::time_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"time\0"
+        ),
         SYS_clock_gettime => dispatch!(
             sys_clock_gettime(a0 as i32, a1 as *mut u8),
             b"clock_gettime\0"
@@ -2846,6 +2898,21 @@ pub(crate) mod raw {
         }
         // SAFETY: check_user_buf 已验证 16 字节可写
         unsafe { write_u64_pair(ptr as *mut u64, cur, max) }
+        true
+    }
+
+    /// Safe 包装: 在 services 层用, 写一个 u64 到 user 指针.
+    ///
+    /// 调用方无需 unsafe 块. 内部先 `check_user_buf(dst, 8)` 验证.
+    pub fn write_u64_to_user(dst_ptr: u64, val: u64) -> bool {
+        if dst_ptr == 0 {
+            return false;
+        }
+        if !check_user_buf(dst_ptr, 8) {
+            return false;
+        }
+        // SAFETY: check_user_buf 已验证 8 字节可写
+        unsafe { core::ptr::write_unaligned(dst_ptr as *mut u64, val) };
         true
     }
 

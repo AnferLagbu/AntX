@@ -26,3 +26,8 @@ pub mod io;
 pub mod path;
 pub mod mode;
 pub mod stat;
+pub mod access;
+pub mod open;
+pub mod link;
+pub mod mount;
+pub mod misc;

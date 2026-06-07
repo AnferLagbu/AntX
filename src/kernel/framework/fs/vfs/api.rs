@@ -265,6 +265,56 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
         FsType::Unknown => -1,
     }
 }
+// ============================================================================
+// link / symlink / readlink — 暂简化
+//
+// Framekernel 简化:
+// - hard link: ramfs/hvfs 当前未实现 inode 引用计数, 返回 -1 (EPERM)
+// - symlink:   完全未实现, 返回 -1 (EPERM)
+// - readlink:  vfs_stat 检查 file_type 字段, 若是 symlink 则读取,
+//              当前未实现, 一律返回 -EINVAL
+// 这些保留 API 形状以便 services 层一次性完成参数校验, 业务方收到 ENOSYS/EPERM.
+// ============================================================================
+
+#[no_mangle]
+pub fn vfs_link_internal(_oldpath: *const u8, _newpath: *const u8, _pwm: u64) -> i32 {
+    // Framekernel 暂不实现 hard link
+    -1
+}
+
+#[no_mangle]
+pub fn vfs_symlink_internal(_target: *const u8, _linkpath: *const u8, _pwm: u64) -> i32 {
+    // Framekernel 暂不实现 symlink
+    -1
+}
+
+#[no_mangle]
+pub fn vfs_readlink_internal(
+    path: *const u8,
+    buf: *mut u8,
+    bufsiz: u64,
+    pwm: u64,
+) -> i32 {
+    if path.is_null() || buf.is_null() || bufsiz == 0 {
+        return -22; // -EINVAL
+    }
+    let _pwm = resolve_pwm(pwm);
+    // 当前未实现 symlink, 任何路径都不是 symlink
+    -22
+}
+
+/// Safe 包装: services 层用
+pub fn vfs_readlink_safe(
+    path: *const u8,
+    buf_ptr: u64,
+    bufsiz: u64,
+    pwm: u64,
+) -> i32 {
+    if path.is_null() || buf_ptr == 0 || bufsiz == 0 {
+        return -22;
+    }
+    vfs_readlink_internal(path, buf_ptr as *mut u8, bufsiz, pwm)
+}
 
 #[no_mangle]
 pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
@@ -707,6 +757,23 @@ pub fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
 }
 
 #[no_mangle]
+pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
+    if path.is_null() {
+        return -22; // -EINVAL
+    }
+    let path = ptr_to_str(path);
+    match VFS_MANAGER.unmount(path) {
+        Ok(()) => 0,
+        Err(_) => -2, // -ENOENT
+    }
+}
+
+#[no_mangle]
+pub fn vfs_umount(path: *const u8, flags: i32) -> i32 {
+    vfs_umount_internal(path, flags)
+}
+
+#[no_mangle]
 pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {
     vfs_open_internal(path, flags, pwm)
 }
@@ -742,13 +809,10 @@ pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
     let mut st = VfsStat::default();
     let r = vfs_stat_internal(path, &mut st as *mut VfsStat, pwm);
     if r < 0 {
-        return None;
+        None
+    } else {
+        Some(st)
     }
-    // SAFETY: vfs_stat_internal 成功时已填充 st; 用 ptr::read 把值取出.
-    // 避免 stack double-drop, st 立即被 drop (Copy 类型无影响).
-    let stat = unsafe { core::ptr::read(&st) };
-    core::mem::forget(st);
-    Some(stat)
 }
 
 #[no_mangle]
@@ -847,6 +911,21 @@ pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
 #[no_mangle]
 pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
     vfs_unlink_internal(path, pwm)
+}
+
+#[no_mangle]
+pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
+    vfs_link_internal(oldpath, newpath, pwm)
+}
+
+#[no_mangle]
+pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
+    vfs_symlink_internal(target, linkpath, pwm)
+}
+
+#[no_mangle]
+pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
+    vfs_readlink_internal(path, buf, bufsiz, pwm)
 }
 
 #[no_mangle]
@@ -1065,12 +1144,10 @@ pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
     let mut st = VfsStat::default();
     let r = vfs_fstat(fd, &mut st as *mut VfsStat, pwm);
     if r < 0 {
-        return None;
+        None
+    } else {
+        Some(st)
     }
-    // SAFETY: 同 vfs_stat_safe, vfs_fstat 成功时已填充 st
-    let stat = unsafe { core::ptr::read(&st) };
-    core::mem::forget(st);
-    Some(stat)
 }
 
 // ============================================================================
