@@ -268,7 +268,27 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             },
             b"getpgid\0"
         ),
-        SYS_setsid => dispatch!(sys_setsid(), b"setsid\0"),
+        SYS_setsid => dispatch!(
+            match crate::kernel::services::proc::session::setsid_syscall() {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setsid\0"
+        ),
+        SYS_getsid => dispatch!(
+            match crate::kernel::services::proc::session::getsid_syscall(a0 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"getsid\0"
+        ),
+        SYS_setpgid => dispatch!(
+            match crate::kernel::services::proc::session::setpgid_syscall(a0 as i32, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setpgid\0"
+        ),
         SYS_getpriority => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
         SYS_setpriority => dispatch!(
             sys_setpriority(a0 as i32, a1 as u32, a2 as i32),
@@ -443,9 +463,21 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"getdents\0"
         ),
 
-        // ==================== 路径 ====================
-        SYS_getcwd => dispatch!(sys_getcwd(a0 as *mut u8, a1), b"getcwd\0"),
-        SYS_chdir => dispatch!(sys_chdir(a0 as *const u8), b"chdir\0"),
+        // ==================== 路径 (services 代理) ====================
+        SYS_getcwd => dispatch!(
+            match crate::kernel::services::fs::path::getcwd_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"getcwd\0"
+        ),
+        SYS_chdir => dispatch!(
+            match crate::kernel::services::fs::path::chdir_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"chdir\0"
+        ),
 
         // ==================== 文件操作 ====================
         SYS_rename => dispatch!(
@@ -504,17 +536,77 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_sysinfo => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
         SYS_times => dispatch!(Errno::ENOSYS.as_ret(), b"times_nosys\0"),
 
-        // ==================== 用户/组 ====================
-        SYS_getuid => dispatch!(sys_getuid(), b"getuid\0"),
-        SYS_getgid => dispatch!(sys_getgid(), b"getgid\0"),
-        SYS_setuid => dispatch!(sys_setuid(a0 as u32), b"setuid\0"),
-        SYS_setgid => dispatch!(sys_setgid(a0 as u32), b"setgid\0"),
-        SYS_geteuid => dispatch!(sys_geteuid(), b"geteuid\0"),
-        SYS_getegid => dispatch!(sys_getegid(), b"getegid\0"),
-        SYS_seteuid => dispatch!(sys_seteuid(a0 as u32), b"seteuid\0"),
-        SYS_setegid => dispatch!(sys_setegid(a0 as u32), b"setegid\0"),
-        SYS_setreuid => dispatch!(sys_setreuid(a0 as u32, a1 as u32), b"setreuid\0"),
-        SYS_setregid => dispatch!(sys_setregid(a0 as u32, a1 as u32), b"setregid\0"),
+        // ==================== 用户/组 (services 代理) ====================
+        SYS_getuid => dispatch!(
+            match crate::kernel::services::credo::uid::getuid_syscall() {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"getuid\0"
+        ),
+        SYS_getgid => dispatch!(
+            match crate::kernel::services::credo::uid::getgid_syscall() {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"getgid\0"
+        ),
+        SYS_setuid => dispatch!(
+            match crate::kernel::services::credo::uid::setuid_syscall(a0 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setuid\0"
+        ),
+        SYS_setgid => dispatch!(
+            match crate::kernel::services::credo::uid::setgid_syscall(a0 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setgid\0"
+        ),
+        SYS_geteuid => dispatch!(
+            match crate::kernel::services::credo::uid::geteuid_syscall() {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"geteuid\0"
+        ),
+        SYS_getegid => dispatch!(
+            match crate::kernel::services::credo::uid::getegid_syscall() {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"getegid\0"
+        ),
+        SYS_seteuid => dispatch!(
+            match crate::kernel::services::credo::uid::seteuid_syscall(a0 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"seteuid\0"
+        ),
+        SYS_setegid => dispatch!(
+            match crate::kernel::services::credo::uid::setegid_syscall(a0 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setegid\0"
+        ),
+        SYS_setreuid => dispatch!(
+            match crate::kernel::services::credo::uid::setreuid_syscall(a0 as u32, a1 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setreuid\0"
+        ),
+        SYS_setregid => dispatch!(
+            match crate::kernel::services::credo::uid::setregid_syscall(a0 as u32, a1 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setregid\0"
+        ),
 
         // ==================== 文件同步/挂载 ====================
         SYS_sync => dispatch!(sys_sync(), b"sync\0"),

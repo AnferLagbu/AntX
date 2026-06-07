@@ -159,3 +159,45 @@ pub static SESSION_MANAGER: SessionManager = SessionManager::new();
 pub fn init() {
     SESSION_MANAGER.init();
 }
+
+// ============================================================================
+// 系统调用 TCB 入口 (供 services/proc/session 代理调用)
+// ============================================================================
+
+/// setsid — 创建新会话,会话 ID = 当前进程 PID
+///
+/// 简化实现: 成功返回当前 PID 作为新 SID,失败返回 -EPERM (已存在进程组时)。
+/// POSIX 严格语义: 若调用进程已是进程组长, 返回 EPERM。
+pub fn proc_setsid() -> i64 {
+    let pid = super::api::process_get_current_pid() as i64;
+    if pid <= 0 {
+        return -1;
+    }
+    // 简化: 不检查是否进程组长, 直接返回新 SID
+    pid
+}
+
+/// getsid(pid) — 取会话 ID
+///
+/// 简化: 0 → 当前会话 ID, 非 0 → 目标进程会话 ID (此处简化为目标 PID)。
+pub fn proc_getsid(pid: i32) -> i64 {
+    if pid == 0 {
+        return super::api::process_get_current_pid() as i64;
+    }
+    if pid < 0 {
+        return -22; // -EINVAL
+    }
+    pid as i64
+}
+
+/// setpgid(pid, pgid) — 设置进程组
+///
+/// POSIX: 成功 0, 失败 -1 + errno。
+/// 简化: 仅校验参数范围, 不维护 pgid 实际表 (Framekernel 中 pgid 默认 = pid)。
+pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
+    if pid < 0 || pgid < 0 {
+        return -22; // -EINVAL
+    }
+    // 简化: 不真正设置, 视为成功
+    0
+}

@@ -25,6 +25,7 @@ pub mod grants;
 pub mod identity;
 pub mod policy;
 pub mod sessions;
+pub mod uid;
 
 pub use audit::{AuditEvent, AuditEventKind, AuditLog, HashChainNode, AUDIT_BUFFER_SIZE};
 pub use grants::{

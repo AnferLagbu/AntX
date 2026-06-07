@@ -162,6 +162,8 @@ pub const SYS_setregid: u64 = 116;
 pub const SYS_getppid: u64 = 110;
 pub const SYS_getpgid: u64 = 111;
 pub const SYS_setsid: u64 = 112;
+pub const SYS_getsid: u64 = 156;
+pub const SYS_setpgid: u64 = 157;
 
 // 进程调度
 pub const SYS_getpriority: u64 = 140;

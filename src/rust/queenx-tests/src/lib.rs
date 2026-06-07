@@ -293,3 +293,110 @@ pub fn shutdown_validate(fd: i32, _how: i32) -> Result<(), Errno> {
     }
     Ok(())
 }
+
+// =============== session validation ===============
+
+/// setsid — 无参数, 总是尝试创建
+pub fn setsid_validate() -> Result<(), Errno> {
+    Ok(())
+}
+
+/// getsid(pid) — 验证 pid 参数
+pub fn getsid_validate(pid: i32) -> Result<(), Errno> {
+    if pid < 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+/// setpgid(pid, pgid) — 验证两个参数
+pub fn setpgid_validate(pid: i32, pgid: i32) -> Result<(), Errno> {
+    if pid < 0 || pgid < 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+// =============== mmap validation ===============
+
+/// POSIX mmap flags
+pub const MAP_SHARED: i32 = 0x01;
+pub const MAP_PRIVATE: i32 = 0x02;
+pub const MAP_ANONYMOUS: i32 = 0x20;
+pub const MAP_FIXED: i32 = 0x10;
+pub const MAP_FAILED: i64 = -1; // (void*)-1
+
+/// 验证 mmap 参数 (等价于 services::mm::mmap::mmap_syscall 的验证部分)
+pub fn mmap_validate(
+    _addr: u64,
+    size: u64,
+    prot: i32,
+    flags: i32,
+    _fd: i32,
+    _offset: u64,
+) -> Result<(), Errno> {
+    if size == 0 {
+        return Err(Errno::EINVAL);
+    }
+    // 校验 prot
+    let valid_prot = 0x0 | 0x1 | 0x2 | 0x4;
+    if prot & !valid_prot != 0 {
+        return Err(Errno::EINVAL);
+    }
+    // MAP_SHARED / MAP_PRIVATE 必选其一
+    if flags & (MAP_SHARED | MAP_PRIVATE) == 0 {
+        return Err(Errno::EINVAL);
+    }
+    if flags & MAP_SHARED != 0 && flags & MAP_PRIVATE != 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+// =============== brk validation ===============
+
+/// 验证 brk 参数 (等价于 services::mm::brk::brk_syscall 的验证部分)
+pub fn brk_validate(addr: u64) -> Result<(), Errno> {
+    // POSIX 允许 0 (取当前) 或非 0 (请求新 brk)
+    if addr == 0 {
+        return Ok(()); // 0 表示查询当前
+    }
+    // 用户地址范围: 不应超过用户空间上界
+    const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_FFFF;
+    if addr > USER_ADDR_MAX {
+        return Err(Errno::ENOMEM);
+    }
+    Ok(())
+}
+
+// =============== path validation ===============
+
+/// 验证 chdir 参数 (等价于 services::fs::path::chdir_syscall 的验证部分)
+pub fn chdir_validate(path_ptr: u64) -> Result<(), Errno> {
+    if path_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 getcwd 参数 (等价于 services::fs::path::getcwd_syscall 的验证部分)
+pub fn getcwd_validate(buf_ptr: u64, size: u64) -> Result<(), Errno> {
+    if buf_ptr == 0 || size == 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+// =============== uid/gid validation ===============
+
+/// 验证 setuid 参数范围 (简化: u32 范围不溢出,无需校验)
+pub fn setuid_validate(_uid: u32) -> Result<(), Errno> {
+    Ok(())
+}
+
+/// 验证 setreuid 参数 (任一为 (uid_t)-1 = 0xFFFFFFFF 表示不变)
+pub fn setreuid_validate(ruid: u32, euid: u32) -> Result<(), Errno> {
+    let _ = ruid;
+    let _ = euid;
+    Ok(())
+}
