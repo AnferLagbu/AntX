@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 pub mod api;
+pub mod brk;
 pub mod futex;
 pub mod mmap;
 /// Syscall 模块 — POSIX 原生系统调用分发
@@ -124,7 +125,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_mmap => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5), b"mmap\0"),
         SYS_mprotect => dispatch!(Errno::ENOSYS.as_ret(), b"mprotect\0"),
         SYS_munmap => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
-        SYS_brk => dispatch!(sys_brk(a0), b"brk\0"),
+        SYS_brk => dispatch!(
+            match crate::kernel::services::mm::brk::brk_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"brk\0"
+        ),
         SYS_mremap => dispatch!(Errno::ENOSYS.as_ret(), b"mremap_nosys\0"),
 
         // ==================== 信号 ====================
@@ -223,11 +230,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_fork => dispatch!(sys_fork(), b"fork\0"),
         SYS_clone => dispatch!(Errno::ENOSYS.as_ret(), b"clone_nosys\0"),
         SYS_execve => dispatch!(
-            sys_execve(
-                a0 as *const u8,
-                a1 as *const *const u8,
-                a2 as *const *const u8
-            ),
+            crate::kernel::services::proc::execve::ExecveResult::from_ret(
+                sys_execve(
+                    a0 as *const u8,
+                    a1 as *const *const u8,
+                    a2 as *const *const u8
+                )
+            ).as_ret(),
             b"execve\0"
         ),
         SYS_exit => dispatch!(sys_exit(a0 as i32), b"exit\0"),
@@ -349,7 +358,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 同步 ====================
         SYS_futex => dispatch!(
-            futex::sys_futex(a0, a1 as i32, a2 as i32, a3, 0),
+            crate::kernel::services::sync::futex::futex_syscall(a0, a1 as i32, a2 as i32, a3, 0).as_ret(),
             b"futex\0"
         ),
 
@@ -997,44 +1006,6 @@ fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
 // 内存 — brk / mmap / munmap
 // ============================================================================
 
-fn sys_brk(addr: u64) -> i64 {
-    use core::sync::atomic::AtomicU64;
-    static BRK: AtomicU64 = AtomicU64::new(0x400000 + 65536);
-
-    if addr == 0 {
-        // 返回当前 brk (VMA 优先)
-        if let Some(mm) = crate::kernel::framework::mm::vma::get_current_mm() {
-            return mm.brk.load(core::sync::atomic::Ordering::Acquire) as i64;
-        }
-        return BRK.load(core::sync::atomic::Ordering::SeqCst) as i64;
-    }
-
-    if addr > USER_ADDR_MAX {
-        return Errno::ENOMEM.as_ret();
-    }
-
-    // VMA 路径: 通过 MmStruct 扩展/收缩堆
-    if let Some(mm) = crate::kernel::framework::mm::vma::get_current_mm() {
-        match mm.set_brk(addr as usize) {
-            Ok(new_brk) => return new_brk as i64,
-            Err(_) => return Errno::ENOMEM.as_ret(),
-        }
-    }
-
-    // 回退: 全局静态 brk (无 MmStruct 时使用)
-    let current = BRK.load(core::sync::atomic::Ordering::SeqCst);
-    if addr > current {
-        let extra = addr - current;
-        let pages = extra.div_ceil(4096);
-        let ptr = raw::alloc_pages(pages);
-        if ptr.is_null() {
-            return Errno::ENOMEM.as_ret();
-        }
-    }
-    BRK.store(addr, core::sync::atomic::Ordering::SeqCst);
-    addr as i64
-}
-
 fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -> i64 {
     if size == 0 {
         return Errno::EINVAL.as_ret();
@@ -1057,7 +1028,8 @@ fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -
         }
     };
 
-    match crate::kernel::framework::syscall::mmap::mmap_syscall(mm, addr, size, prot, flags, fd, offset) {
+    // 通过 services 层代理: VFS 交互 (fd→inode_id) 在 services 层完成
+    match crate::kernel::services::mm::mmap::mmap_syscall(mm, addr, size, prot, flags, fd, offset) {
         Ok(a) => a as i64,
         Err(e) => e.as_ret(),
     }
@@ -1077,7 +1049,7 @@ fn sys_munmap(addr: u64, size: u64) -> i64 {
         }
     };
 
-    match crate::kernel::framework::syscall::mmap::munmap_syscall(mm, addr, size) {
+    match crate::kernel::services::mm::mmap::munmap_syscall(mm, addr, size) {
         Ok(()) => 0,
         Err(e) => e.as_ret(),
     }

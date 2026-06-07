@@ -44,6 +44,7 @@ use core::fmt;
 
 pub mod api;
 pub mod hotplug;
+pub mod msi;
 
 // ── Port I/O primitives (x86_64 only) ──
 

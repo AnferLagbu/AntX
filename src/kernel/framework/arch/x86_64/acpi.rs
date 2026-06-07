@@ -1,7 +1,13 @@
-//! ACPI / RSDP / MADT — 多核检测与 AP 发现
+//! ACPI / RSDP / MADT / FADT / HPET / DMAR — 多核检测与硬件发现
 //!
-//! 通过 RSDP → RSDT/XSDT → MADT 路径发现所有 LAPIC 条目，
-//! 为 SMP AP 启动提供 CPU 拓扑信息。
+//! 通过 RSDP → RSDT/XSDT → 各 SDT 路径发现硬件信息:
+//!
+//! | 表    | 签名 | 用途 |
+//! |-------|------|------|
+//! | MADT  | APIC | LAPIC/IOAPIC 拓扑, AP 启动 |
+//! | FADT  | FACP | 电源管理寄存器 (PM1a/b), 关机/重启 |
+//! | HPET  | HPET | 高精度事件定时器基址与频率 |
+//! | DMAR  | DMAR | IOMMU (VT-d) DRHD 单元, DMA 重映射 |
 //!
 //! ## 架构
 //!
@@ -22,6 +28,7 @@
 //! ```
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use alloc::vec::Vec;
 
 pub use crate::kernel::framework::config::MAX_CPUS;
 
@@ -391,4 +398,407 @@ pub extern "C" fn acpi_parse_madt(mb2_ptr: u64) -> bool {
 #[no_mangle]
 pub extern "C" fn acpi_get_ap_count() -> u32 {
     get_ap_count()
+}
+
+// ============================================================================
+// FADT (Fixed ACPI Description Table) — 电源管理
+// ============================================================================
+
+/// FADT 结构 (ACPI 2.0+, 关键字段)
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct Fadt {
+    header: SdtHeader,
+    _firmware_ctrl: u32,
+    dsdt: u32,
+    _reserved1: u8,
+    _preferred_pm_profile: u8,
+    _sci_int: u16,
+    _smi_cmd: u32,
+    _acpi_enable: u8,
+    _acpi_disable: u8,
+    _s4bios_req: u8,
+    _pstate_cnt: u8,
+    pm1a_evt_blk: u32,
+    pm1b_evt_blk: u32,
+    pm1a_cnt_blk: u32,
+    pm1b_cnt_blk: u32,
+    pm2_cnt_blk: u32,
+    pm_tmr_blk: u32,
+    gpe0_blk: u32,
+    gpe1_blk: u32,
+    pm1_evt_len: u8,
+    pm1_cnt_len: u8,
+    pm2_cnt_len: u8,
+    pm_tmr_len: u8,
+    gpe0_blk_len: u8,
+    gpe1_blk_len: u8,
+    gpe1_base: u8,
+    _cst_cnt: u8,
+    _p_lvl2_lat: u16,
+    _p_lvl3_lat: u16,
+    _flush_size: u16,
+    _flush_stride: u16,
+    _duty_offset: u8,
+    _duty_width: u8,
+    _day_alrm: u8,
+    _mon_alrm: u8,
+    _century: u8,
+    _iapc_boot_arch: u16,
+    _reserved2: u8,
+    flags: u32,
+    // ACPI 2.0+ 扩展字段
+    reset_reg: [u8; 12],  // Generic Address Structure
+    reset_value: u8,
+    _reserved3: [u8; 3],
+    x_firmware_ctrl: u64,
+    x_dsdt: u64,
+    x_pm1a_evt_blk: [u8; 12],
+    x_pm1b_evt_blk: [u8; 12],
+    x_pm1a_cnt_blk: [u8; 12],
+    x_pm1b_cnt_blk: [u8; 12],
+}
+
+static FADT_ADDR: AtomicU64 = AtomicU64::new(0);
+static FADT_FOUND: AtomicBool = AtomicBool::new(false);
+
+/// FADT 解析
+fn parse_fadt(fadt_ptr: u64) {
+    let fadt = unsafe { &*(fadt_ptr as *const Fadt) };
+    FADT_ADDR.store(fadt_ptr, Ordering::Release);
+    FADT_FOUND.store(true, Ordering::Release);
+
+    let pm1a = fadt.pm1a_evt_blk;
+    let pm1a_cnt = fadt.pm1a_cnt_blk;
+    let flags = fadt.flags;
+    crate::klog_info!(Acpi, "[ACPI] FADT: PM1a_EVT=0x{:X} PM1a_CNT=0x{:X} flags=0x{:X}",
+        pm1a, pm1a_cnt, flags);
+}
+
+/// ACPI 关机 (S5 状态)
+///
+/// 通过 FADT 的 PM1a_CNT 寄存器写入 SLP_TYP + SLP_EN 实现关机.
+/// QEMU 和大多数硬件支持此方式.
+pub fn acpi_shutdown() -> ! {
+    if !FADT_FOUND.load(Ordering::Acquire) {
+        crate::klog_warn!(Acpi, "[ACPI] FADT not found, cannot ACPI shutdown");
+        // 回退: 通过 QEMU debug exit
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            crate::arch!(outl(0x604u16, 0x2000u32));
+        }
+        loop {}
+    }
+
+    let fadt = unsafe { &*(FADT_ADDR.load(Ordering::Acquire) as *const Fadt) };
+    let pm1a_cnt = fadt.pm1a_cnt_blk;
+    let pm1_cnt_len = fadt.pm1_cnt_len;
+
+    // S5 睡眠类型值: 从 DSDT 的 \_S5 对象解析
+    // 大多数 QEMU/硬件: SLP_TYP = 0 (PM1a_CNT 写入 0x1C00 或 0x3400)
+    // 通用做法: 读取 PM1a_CNT, 设置 SLP_TYP (bits 10-12) + SLP_EN (bit 13)
+    // QEMU 默认: S5 SLP_TYP = 0, 所以写入 SLP_EN = 1<<13 = 0x2000
+    let slp_typ_s5: u16 = 0; // QEMU 默认, 真实硬件需从 DSDT 解析
+    let slp_en: u16 = 1 << 13;
+    let value = slp_typ_s5 | slp_en;
+
+    if pm1a_cnt != 0 {
+        // SAFETY: PM1a_CNT 是 ACPI 定义的 MMIO/IO 端口, 写入关机值
+        unsafe {
+            if pm1_cnt_len == 2 {
+                // 16-bit I/O 端口 — 使用 outl 写入 32 位 (低 16 位有效)
+                crate::arch!(outl(pm1a_cnt as u16, value as u32));
+            } else if pm1_cnt_len == 4 {
+                // 32-bit I/O 端口
+                crate::arch!(outl(pm1a_cnt as u16, value as u32));
+            }
+        }
+    }
+
+    // 如果关机失败, 回退到 QEMU debug exit
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        crate::arch!(outl(0x604u16, 0x2000u32));
+    }
+    loop {}
+}
+
+/// ACPI 重启
+pub fn acpi_reboot() -> ! {
+    if FADT_FOUND.load(Ordering::Acquire) {
+        let fadt = unsafe { &*(FADT_ADDR.load(Ordering::Acquire) as *const Fadt) };
+
+        // 方式1: 通过 Reset Register (ACPI 2.0+)
+        let reset_reg_space = fadt.reset_reg[0];
+        let reset_reg_addr = u32::from_le_bytes([fadt.reset_reg[4], fadt.reset_reg[5], fadt.reset_reg[6], fadt.reset_reg[7]]);
+        let reset_val = fadt.reset_value;
+
+        if reset_reg_space == 1 {
+            // I/O 端口空间
+            // SAFETY: Reset Register 写入
+            unsafe {
+                crate::arch!(outb(reset_reg_addr as u16, reset_val));
+            }
+        }
+        // 方式2: MMIO 空间 (reset_reg_space == 0)
+        else if reset_reg_space == 0 && reset_reg_addr != 0 {
+            unsafe {
+                core::ptr::write_volatile(reset_reg_addr as *mut u8, reset_val);
+            }
+        }
+    }
+
+    // 回退: 键盘控制器重启
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        // Pulse reset line via keyboard controller (port 0x64, cmd 0xFE)
+        crate::arch!(outb(0x64u16, 0xFEu8));
+    }
+    loop {}
+}
+
+// ============================================================================
+// HPET (High Precision Event Timer)
+// ============================================================================
+
+/// HPET 结构
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct HpetTable {
+    header: SdtHeader,
+    _hardware_rev_id: u8,
+    _comparator_count: u8,
+    _counter_size: u8,
+    _reserved1: u8,
+    _pci_vendor_id: u16,
+    address: [u8; 12],  // Generic Address Structure
+    hpet_number: u8,
+    _min_tick: u16,
+    _page_protection: u8,
+}
+
+/// HPET 信息
+#[derive(Debug, Clone, Copy)]
+pub struct HpetInfo {
+    /// MMIO 基址
+    pub base_addr: u64,
+    /// HPET 编号
+    pub hpet_number: u8,
+    /// 比较器数量
+    pub comparator_count: u8,
+    /// 计数器位宽 (32 或 64)
+    pub counter_size: u8,
+}
+
+static HPET_INFO: spin::Mutex<Option<HpetInfo>> = spin::Mutex::new(None);
+
+fn parse_hpet(hpet_ptr: u64) {
+    let hpet = unsafe { &*(hpet_ptr as *const HpetTable) };
+
+    // Generic Address Structure: [0]=space_id, [4..8]=address
+    let base_addr = u64::from_le_bytes([
+        hpet.address[4], hpet.address[5], hpet.address[6], hpet.address[7],
+        0, 0, 0, 0,
+    ]);
+
+    let info = HpetInfo {
+        base_addr,
+        hpet_number: hpet.hpet_number,
+        comparator_count: hpet._comparator_count,
+        counter_size: hpet._counter_size,
+    };
+
+    crate::klog_info!(Acpi, "[ACPI] HPET: base=0x{:X} comparators={} counter_size={}",
+        base_addr, info.comparator_count, info.counter_size);
+
+    *HPET_INFO.lock() = Some(info);
+}
+
+/// 获取 HPET 信息
+pub fn get_hpet_info() -> Option<HpetInfo> {
+    *HPET_INFO.lock()
+}
+
+// ============================================================================
+// DMAR (DMA Remapping) — IOMMU VT-d
+// ============================================================================
+
+/// DMAR 表头
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct DmarTable {
+    header: SdtHeader,
+    host_addr_width: u8,
+    flags: u8,
+    _reserved: [u8; 10],
+}
+
+/// DMAR Remapping Structure 类型
+const DMAR_TYPE_DRHD: u16 = 0x0000;
+const DMAR_TYPE_RMRR: u16 = 0x0001;
+const _DMAR_TYPE_ATSR: u16 = 0x0002;
+
+/// DRHD (DMA Remapping Hardware Unit Definition)
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct DrhdEntry {
+    r#type: u16,
+    length: u16,
+    flags: u8,
+    _reserved: u8,
+    segment_number: u16,
+    register_base: u64,
+}
+
+/// DMAR DRHD 单元信息
+#[derive(Debug, Clone, Copy)]
+pub struct DmarDrhdInfo {
+    /// MMIO 寄存器基址
+    pub register_base: u64,
+    /// 段号
+    pub segment_number: u16,
+    /// 是否包含所有 PCI 设备 (INCLUDE_ALL)
+    pub include_all: bool,
+}
+
+static DMAR_DRHD_LIST: spin::Mutex<Vec<DmarDrhdInfo>> = spin::Mutex::new(Vec::new());
+static DMAR_HOST_ADDR_WIDTH: spin::Mutex<u8> = spin::Mutex::new(0);
+
+fn parse_dmar(dmar_ptr: u64) {
+    let dmar = unsafe { &*(dmar_ptr as *const DmarTable) };
+    *DMAR_HOST_ADDR_WIDTH.lock() = dmar.host_addr_width;
+
+    let entries_start = dmar_ptr as usize + core::mem::size_of::<DmarTable>();
+    let entries_end = dmar_ptr as usize + dmar.header.length as usize;
+
+    let mut offset = entries_start;
+    while offset + 4 <= entries_end {
+        let entry_type = unsafe { *((offset) as *const u16) };
+        let entry_len = unsafe { *((offset + 2) as *const u16) };
+
+        if entry_len == 0 {
+            break;
+        }
+
+        if entry_type == DMAR_TYPE_DRHD {
+            if offset + core::mem::size_of::<DrhdEntry>() <= entries_end {
+                let drhd = unsafe { &*(offset as *const DrhdEntry) };
+                let info = DmarDrhdInfo {
+                    register_base: drhd.register_base,
+                    segment_number: drhd.segment_number,
+                    include_all: (drhd.flags & 0x01) != 0,
+                };
+                crate::klog_info!(Acpi, "[ACPI] DMAR DRHD: reg_base=0x{:X} seg={} include_all={}",
+                    info.register_base, info.segment_number, info.include_all);
+                DMAR_DRHD_LIST.lock().push(info);
+            }
+        }
+
+        offset += entry_len as usize;
+    }
+
+    crate::klog_info!(Acpi, "[ACPI] DMAR: host_addr_width={} DRHD_count={}",
+        dmar.host_addr_width, DMAR_DRHD_LIST.lock().len());
+}
+
+/// 获取 DMAR DRHD 列表
+pub fn get_dmar_drhd_list() -> Vec<DmarDrhdInfo> {
+    DMAR_DRHD_LIST.lock().clone()
+}
+
+/// 获取主机物理地址宽度
+pub fn get_dmar_host_addr_width() -> u8 {
+    *DMAR_HOST_ADDR_WIDTH.lock()
+}
+
+// ============================================================================
+// 统一 SDT 遍历 — 发现所有表
+// ============================================================================
+
+/// 解析所有 ACPI 表 (MADT + FADT + HPET + DMAR)
+///
+/// 在内核启动时调用, 替代仅解析 MADT 的 `parse_madt`.
+pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
+    let rsdp = match find_rsdp(multiboot2_info_ptr) {
+        Some(addr) => addr,
+        None => {
+            crate::klog_warn!(Acpi, "[ACPI] RSDP not found");
+            return false;
+        }
+    };
+
+    let rsdt_or_xsdt = match get_rsdt(rsdp) {
+        Some(sdt) => sdt,
+        None => {
+            crate::klog_warn!(Acpi, "[ACPI] RSDT/XSDT not found");
+            return false;
+        }
+    };
+
+    let rsdp_ptr = rsdp as *const u8;
+    let revision = unsafe { rsdp_ptr.add(15).read_volatile() };
+    let uses_xsdt = revision >= 2 && unsafe { *(rsdp_ptr.add(24) as *const u64) } != 0;
+
+    let table_count = if uses_xsdt {
+        (rsdt_or_xsdt.length - 12) / 8
+    } else {
+        (rsdt_or_xsdt.length - 12) / 4
+    } as usize;
+
+    let entries_ptr = unsafe { (rsdt_or_xsdt as *const SdtHeader).add(1) as *const u8 };
+
+    for i in 0..table_count {
+        let table_ptr: u64 = unsafe {
+            if uses_xsdt {
+                *(entries_ptr.add(i * 8) as *const u64)
+            } else {
+                *(entries_ptr.add(i * 4) as *const u32) as u64
+            }
+        };
+
+        if table_ptr == 0 {
+            continue;
+        }
+
+        let header = unsafe { &*(table_ptr as *const SdtHeader) };
+
+        if header.signature == *b"APIC" {
+            parse_madt_entries(table_ptr);
+            MADT_BASE.store(table_ptr, Ordering::Release);
+            MADT_FOUND.store(true, Ordering::Release);
+        } else if header.signature == *b"FACP" {
+            parse_fadt(table_ptr);
+        } else if header.signature == *b"HPET" {
+            parse_hpet(table_ptr);
+        } else if header.signature == *b"DMAR" {
+            parse_dmar(table_ptr);
+        }
+    }
+
+    crate::klog_info!(Acpi, "[ACPI] Table scan complete: MADT={} FADT={} HPET={} DMAR_DRHD={}",
+        MADT_FOUND.load(Ordering::Acquire),
+        FADT_FOUND.load(Ordering::Acquire),
+        HPET_INFO.lock().is_some(),
+        DMAR_DRHD_LIST.lock().len());
+
+    true
+}
+
+// ============================================================================
+// C-ABI 兼容接口
+// ============================================================================
+
+#[no_mangle]
+pub extern "C" fn acpi_parse_all(mb2_ptr: u64) -> bool {
+    parse_all_tables(mb2_ptr)
+}
+
+#[no_mangle]
+pub extern "C" fn acpi_shutdown_system() -> ! {
+    acpi_shutdown()
+}
+
+#[no_mangle]
+pub extern "C" fn acpi_reboot_system() -> ! {
+    acpi_reboot()
 }

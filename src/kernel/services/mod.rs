@@ -67,6 +67,12 @@ pub mod barrier;
 /// services 层的安全抽象 (闭包 API / 一次性初始化等)。
 pub mod sync;
 
+/// 内存管理 — Page Cache / Swap / mmap safe 代理
+///
+/// 底层实现见 `framework::mm` (TCB); 本模块提供
+/// services 层的安全抽象与参数验证。
+pub mod mm;
+
 /// WASM 沙箱
 pub mod wasm;
 

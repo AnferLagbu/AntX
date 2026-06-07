@@ -149,8 +149,7 @@ pub enum SyncError {
 pub type SyncResult<T> = Result<T, SyncError>;
 
 // ============================================================================
-// 测试钩子
+// Futex — 用户态同步原语
 // ============================================================================
-//
-// 各 sync 子模块的 `register_*_tests` 入口由 `kernel::tests::sync`
-// 集中注册, services 层不重复导出, 避免循环依赖与 feature gating 复杂度。
+
+pub mod futex;

@@ -1,0 +1,100 @@
+#![deny(unsafe_code)]
+//! Swap — services 层安全代理
+//!
+//! @SAFE: 本文件不含 unsafe 代码。
+//! 所有 unsafe 操作已委托至 framework::mm::swap。
+//!
+//! ## 职责
+//!
+//! - 提供类型安全的 Swap API
+//! - 参数验证
+//! - Swap 信息查询
+
+use crate::kernel::framework::mm::swap as fw_swap;
+
+// ============================================================================
+// Swap Entry 安全封装
+// ============================================================================
+
+/// Swap entry 安全封装
+///
+/// 表示一个换出页面的 swap slot 引用.
+/// 内部存储 slot 索引, 不暴露 PTE 编码细节.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwapSlot(u64);
+
+impl SwapSlot {
+    /// 从 slot 索引创建
+    pub fn new(slot: u64) -> Self {
+        SwapSlot(slot)
+    }
+
+    /// 获取 slot 索引
+    pub fn index(&self) -> u64 {
+        self.0
+    }
+}
+
+// ============================================================================
+// Swap 信息
+// ============================================================================
+
+/// Swap 区使用信息
+#[derive(Debug, Clone, Copy)]
+pub struct SwapInfo {
+    /// 总容量 (字节)
+    pub total_bytes: u64,
+    /// 空闲容量 (字节)
+    pub free_bytes: u64,
+}
+
+impl SwapInfo {
+    /// 已使用容量 (字节)
+    pub fn used_bytes(&self) -> u64 {
+        self.total_bytes - self.free_bytes
+    }
+
+    /// 使用率 (0.0 ~ 1.0)
+    pub fn usage_ratio(&self) -> f64 {
+        if self.total_bytes == 0 {
+            0.0
+        } else {
+            self.used_bytes() as f64 / self.total_bytes as f64
+        }
+    }
+}
+
+// ============================================================================
+// Swap 安全 API
+// ============================================================================
+
+/// 初始化 swap 子系统
+pub fn swap_init() -> bool {
+    fw_swap::swap_init()
+}
+
+/// 回收页面 (从 LRU inactive 链表选取并换出)
+///
+/// 返回实际回收的页面数.
+pub fn reclaim_pages(max_count: u32) -> u32 {
+    fw_swap::reclaim_pages(max_count)
+}
+
+/// 获取 swap 区使用信息
+pub fn swap_info() -> SwapInfo {
+    let (total, free) = fw_swap::swap_info();
+    SwapInfo {
+        total_bytes: total,
+        free_bytes: free,
+    }
+}
+
+/// 记录页面访问 (添加到 LRU active 链表)
+pub fn lru_touch(virt_addr: u64, phys_addr: u64, dirty: bool) {
+    fw_swap::lru_touch(virt_addr, phys_addr, dirty)
+}
+
+/// 检测 PTE 是否为 swap entry
+pub fn is_swap_pte(pte: u64) -> bool {
+    fw_swap::is_swap_pte(pte)
+}

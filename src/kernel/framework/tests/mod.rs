@@ -368,6 +368,7 @@ pub fn test_runner_init() {
         crate::kernel::framework::syscall::futex::register_futex_tests();
         crate::kernel::framework::mm::pcache::register_pcache_tests();
         crate::kernel::framework::mm::swap::register_swap_tests();
+        crate::kernel::framework::pci::msi::register_msi_tests();
     }
 
     let r = runner();
