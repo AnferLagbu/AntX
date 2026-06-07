@@ -4,8 +4,10 @@ pub mod brk;
 pub mod clone;
 pub mod epoll;
 pub mod futex;
+pub mod info;
 pub mod mmap;
 pub mod mprotect;
+pub mod wait4;
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
 /// POSIX 标准 syscall 编号 (0-399) + Credo 私有 syscall (400+).
@@ -232,16 +234,31 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_setitimer => dispatch!(Errno::ENOSYS.as_ret(), b"setitimer_nosys\0"),
 
         // ==================== 进程 ====================
-        SYS_getpid => dispatch!(sys_getpid(), b"getpid\0"),
-        SYS_getppid => dispatch!(sys_getppid(), b"getppid\0"),
-        SYS_getpgid => dispatch!(sys_getpgid(a0 as i32), b"getpgid\0"),
+        SYS_getpid => dispatch!(
+            crate::kernel::services::proc::info::getpid_syscall() as i64,
+            b"getpid\0"
+        ),
+        SYS_getppid => dispatch!(
+            crate::kernel::services::proc::info::getppid_syscall() as i64,
+            b"getppid\0"
+        ),
+        SYS_getpgid => dispatch!(
+            match crate::kernel::services::proc::info::getpgid_syscall(a0 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"getpgid\0"
+        ),
         SYS_setsid => dispatch!(sys_setsid(), b"setsid\0"),
         SYS_getpriority => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
         SYS_setpriority => dispatch!(
             sys_setpriority(a0 as i32, a1 as u32, a2 as i32),
             b"setpriority\0"
         ),
-        SYS_gettid => dispatch!(sys_gettid(), b"gettid\0"),
+        SYS_gettid => dispatch!(
+            crate::kernel::services::proc::info::gettid_syscall() as i64,
+            b"gettid\0"
+        ),
 
         // ==================== 网络 ====================
         #[cfg(feature = "net")]
@@ -310,7 +327,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"execve\0"
         ),
         SYS_exit => dispatch!(sys_exit(a0 as i32), b"exit\0"),
-        SYS_wait4 => dispatch!(sys_wait4(a0 as i32), b"wait4\0"),
+        SYS_wait4 => dispatch!(
+            match crate::kernel::services::proc::wait4::wait4_syscall(a0 as i32, a1, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"wait4\0"
+        ),
         SYS_kill => dispatch!(
             match crate::kernel::services::proc::signal::kill_syscall(a0 as i32, a1 as i32) {
                 Ok(v) => v as i64,
@@ -320,7 +343,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 系统信息 ====================
-        SYS_uname => dispatch!(sys_uname(a0 as *mut u8), b"uname\0"),
+        SYS_uname => dispatch!(
+            match crate::kernel::services::proc::info::uname_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"uname\0"
+        ),
 
         // ==================== 文件描述符操作 ====================
         SYS_fcntl => dispatch!(sys_fcntl(a0 as i32, a1 as i32, a2), b"fcntl\0"),
@@ -386,7 +415,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 
         // ==================== 时间 ====================
         SYS_gettimeofday => dispatch!(
-            sys_gettimeofday(a0 as *mut u8, a1 as *mut u8),
+            match crate::kernel::services::proc::info::gettimeofday_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"gettimeofday\0"
         ),
         SYS_getrlimit => dispatch!(
@@ -786,17 +818,8 @@ fn sys_mount(
 }
 
 // ============================================================================
-// 进程 — fork / execve / exit / wait / getpid
+// 进程 — fork / execve / exit / wait
 // ============================================================================
-
-fn sys_getpid() -> i64 {
-    crate::kernel::framework::proc::api::process_get_current_pid() as i64
-}
-
-fn sys_getppid() -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-    crate::kernel::framework::proc::api::proc_get_ppid(pid) as i64
-}
 
 fn sys_sched_yield() -> i64 {
     crate::kernel::framework::proc::api::scheduler_yield();
@@ -965,8 +988,8 @@ fn sys_exit(status: i32) -> i64 {
 }
 
 fn sys_wait4(_pid: i32) -> i64 {
-    let result = crate::kernel::framework::proc::api::proc_wait_child(0);
-    result as i64
+    // 已被 wait4::sys_wait4 替代, 通过 services 代理
+    Errno::ENOSYS.as_ret()
 }
 
 // ============================================================================
@@ -1154,51 +1177,6 @@ fn sys_munmap(addr: u64, size: u64) -> i64 {
     }
 }
 
-// ============================================================================
-// 系统信息 — uname
-// ============================================================================
-
-fn sys_uname(buf: *mut u8) -> i64 {
-    if buf.is_null() || !raw::check_user_buf(buf as u64, 390) {
-        return Errno::EFAULT.as_ret();
-    }
-    #[repr(C)]
-    struct Utsname {
-        sysname: [u8; 65],
-        nodename: [u8; 65],
-        release: [u8; 65],
-        version: [u8; 65],
-        machine: [u8; 65],
-        domainname: [u8; 65],
-    }
-    fn str65(s: &[u8]) -> [u8; 65] {
-        let mut buf = [0u8; 65];
-        let len = s.len().min(64);
-        buf[..len].copy_from_slice(&s[..len]);
-        buf
-    }
-    let un = Utsname {
-        sysname: str65(b"Credo"),
-        nodename: str65(b"localhost"),
-        release: str65(b"0.1.0"),
-        version: str65(b"Credo POSIX Kernel"),
-        machine: {
-            #[cfg(target_arch = "x86_64")]
-            {
-                str65(b"x86_64")
-            }
-            #[cfg(target_arch = "aarch64")]
-            {
-                str65(b"aarch64")
-            }
-        },
-        domainname: [0u8; 65],
-    };
-    let dst = buf;
-    let src = &un as *const Utsname as *const u8;
-    unsafe { core::ptr::copy_nonoverlapping(src, dst, core::mem::size_of::<Utsname>()) };
-    0
-}
 
 // ============================================================================
 // 时间 — time
@@ -1917,26 +1895,6 @@ pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
 const CLOCK_REALTIME: i32 = 0;
 const CLOCK_MONOTONIC: i32 = 1;
 
-fn sys_gettimeofday(tv: *mut u8, _tz: *mut u8) -> i64 {
-    if tv.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    #[repr(C)]
-    #[derive(Copy, Clone)]
-    struct Timeval {
-        tv_sec: i64,
-        tv_usec: i64,
-    }
-    let ticks = raw::get_ticks();
-    let t = Timeval {
-        tv_sec: (ticks / 1000) as i64,
-        tv_usec: ((ticks % 1000) * 1000) as i64,
-    };
-    let dst = tv as *mut Timeval;
-    unsafe { raw::write_struct(dst, &t) };
-    0
-}
-
 fn sys_clock_gettime(clk_id: i32, tp: *mut u8) -> i64 {
     if tp.is_null() {
         return Errno::EINVAL.as_ret();
@@ -2216,26 +2174,11 @@ fn sys_fsync(fd: i32) -> i64 {
 // 进程组/会话 — getpgid / setsid
 // ============================================================================
 
-fn sys_getpgid(pid: i32) -> i64 {
-    if pid < 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    let _target_pid = if pid == 0 {
-        crate::kernel::framework::proc::api::process_get_current_pid()
-    } else {
-        pid as u32
-    };
-    crate::kernel::framework::proc::api::process_get_current_pid() as i64
-}
-
 fn sys_setsid() -> i64 {
     let pid = crate::kernel::framework::proc::api::process_get_current_pid();
     pid as i64
 }
 
-fn sys_gettid() -> i64 {
-    crate::kernel::framework::proc::api::process_get_current_pid() as i64
-}
 
 // ============================================================================
 // tgkill — 向指定线程发送信号

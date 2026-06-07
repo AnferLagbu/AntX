@@ -16,3 +16,11 @@ path = "tests/mprotect.rs"
 [[test]]
 name = "clone"
 path = "tests/clone.rs"
+
+[[test]]
+name = "wait4"
+path = "tests/wait4.rs"
+
+[[test]]
+name = "info"
+path = "tests/info.rs"

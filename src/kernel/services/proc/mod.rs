@@ -24,9 +24,11 @@
 pub mod elf;
 pub mod execve;
 pub mod clone;
+pub mod info;
 pub mod signal;
 pub mod sleep;
 pub mod table;
+pub mod wait4;
 
 // ============================================================================
 // ID 与状态 (直接 re-export 内核强类型)

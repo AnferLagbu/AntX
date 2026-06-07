@@ -90,3 +90,51 @@ pub fn clone_validate(
 pub fn errno_from_ret_value(ret: i64) -> Errno {
     Errno::from_ret(ret)
 }
+
+// =============== wait4 validation ===============
+
+pub const WNOHANG: i32 = 0x1;
+pub const WUNTRACED: i32 = 0x2;
+pub const WCONTINUED: i32 = 0x8;
+
+/// 验证 wait4 参数 (等价于 services::proc::wait4::wait4_syscall 的验证部分)
+pub fn wait4_validate(pid: i32, options: i32) -> Result<(), Errno> {
+    // pid 范围: -32768..=32767
+    const PID_MAX: i32 = 0x7FFF;
+    const PID_MIN: i32 = -0x8000;
+    if pid < PID_MIN || pid > PID_MAX {
+        return Err(Errno::EINVAL);
+    }
+
+    let valid_opts = WNOHANG | WUNTRACED | WCONTINUED;
+    if options & !valid_opts != 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+// =============== info validation ===============
+
+/// 验证 getpgid 参数 (等价于 services::proc::info::getpgid_syscall 的验证部分)
+pub fn getpgid_validate(pid: i32) -> Result<(), Errno> {
+    if pid < 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+/// 验证 uname 参数 (等价于 services::proc::info::uname_syscall 的验证部分)
+pub fn uname_validate(buf: u64) -> Result<(), Errno> {
+    if buf == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 gettimeofday 参数 (等价于 services::proc::info::gettimeofday_syscall 的验证部分)
+pub fn gettimeofday_validate(tv: u64) -> Result<(), Errno> {
+    if tv == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
