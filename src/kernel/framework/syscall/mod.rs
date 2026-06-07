@@ -279,38 +279,89 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"gettid\0"
         ),
 
-        // ==================== 网络 ====================
+        // ==================== 网络 (services 代理) ====================
         #[cfg(feature = "net")]
-        SYS_socket => dispatch!(sys_socket(a0 as i32, a1 as i32, a2 as i32), b"socket\0"),
+        SYS_socket => dispatch!(
+            match crate::kernel::services::net::syscall::socket_syscall(a0 as i32, a1 as i32, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"socket\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_connect => dispatch!(sys_connect(a0 as i32, a1, a2 as u32), b"connect\0"),
+        SYS_connect => dispatch!(
+            match crate::kernel::services::net::syscall::connect_syscall(a0 as i32, a1, a2 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"connect\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_accept => dispatch!(sys_accept(a0 as i32, a1, a2), b"accept\0"),
+        SYS_accept => dispatch!(
+            match crate::kernel::services::net::syscall::accept_syscall(a0 as i32, a1, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"accept\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_sendto => dispatch!(sys_sendto(a0 as i32, a1, a2 as u32, a3 as i32), b"sendto\0"),
+        SYS_sendto => dispatch!(
+            match crate::kernel::services::net::syscall::sendto_syscall(a0 as i32, a1, a2 as u32, a3 as i32, a4, a5 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"sendto\0"
+        ),
         #[cfg(feature = "net")]
         SYS_recvfrom => dispatch!(
-            sys_recvfrom(a0 as i32, a1, a2 as u32, a3 as i32),
+            match crate::kernel::services::net::syscall::recvfrom_syscall(a0 as i32, a1, a2 as u32, a3 as i32, a4, a5) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"recvfrom\0"
         ),
         #[cfg(feature = "net")]
-        SYS_shutdown => dispatch!(sys_shutdown(a0 as i32, a1 as i32), b"shutdown\0"),
+        SYS_shutdown => dispatch!(
+            match crate::kernel::services::net::syscall::shutdown_syscall(a0 as i32, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"shutdown\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_bind => dispatch!(sys_bind(a0 as i32, a1, a2 as u32), b"bind\0"),
+        SYS_bind => dispatch!(
+            match crate::kernel::services::net::syscall::bind_syscall(a0 as i32, a1, a2 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"bind\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_listen => dispatch!(sys_listen(a0 as i32, a1 as i32), b"listen\0"),
+        SYS_listen => dispatch!(
+            match crate::kernel::services::net::syscall::listen_syscall(a0 as i32, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"listen\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_sendmsg => dispatch!(sys_sendmsg(a0 as i32, a1, a2 as i32), b"sendmsg\0"),
+        SYS_sendmsg => dispatch!(Errno::ENOSYS.as_ret(), b"sendmsg\0"),
         #[cfg(feature = "net")]
-        SYS_recvmsg => dispatch!(sys_recvmsg(a0 as i32, a1, a2 as i32), b"recvmsg\0"),
+        SYS_recvmsg => dispatch!(Errno::ENOSYS.as_ret(), b"recvmsg\0"),
         #[cfg(feature = "net")]
         SYS_setsockopt => dispatch!(
-            sys_setsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32),
+            match crate::kernel::services::net::syscall::setsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"setsockopt\0"
         ),
         #[cfg(feature = "net")]
         SYS_getsockopt => dispatch!(
-            sys_getsockopt(a0 as i32, a1 as i32, a2 as i32, a3, a4),
+            match crate::kernel::services::net::syscall::getsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
             b"getsockopt\0"
         ),
         #[cfg(feature = "net")]

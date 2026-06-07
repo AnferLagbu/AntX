@@ -21,6 +21,7 @@ use crate::kernel::framework::net_socket as fw_net_socket;
 use crate::kernel::framework::net;
 
 pub mod socket;
+pub mod syscall;
 
 pub use socket::{
     Domain, SockAddrIn, SockType, SocketError, SocketResult,

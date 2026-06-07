@@ -172,3 +172,124 @@ pub fn fcntl_validate(fd: i32, _cmd: i32, _arg: u64) -> Result<(), Errno> {
     }
     Ok(())
 }
+
+// =============== net socket validation ===============
+
+/// POSIX AF_INET
+pub const AF_INET: i32 = 2;
+/// POSIX SOCK_STREAM / SOCK_DGRAM
+pub const SOCK_STREAM: i32 = 1;
+pub const SOCK_DGRAM: i32 = 2;
+/// SOL_SOCKET
+pub const SOL_SOCKET: i32 = 1;
+/// SO_REUSEADDR
+pub const SO_REUSEADDR: i32 = 2;
+
+/// 验证 socket 参数 (等价于 services::net::syscall::socket_syscall 的验证部分)
+pub fn socket_validate(domain: i32, sock_type: i32, protocol: i32) -> Result<(), Errno> {
+    if domain != AF_INET {
+        return Err(Errno::EINVAL);
+    }
+    if sock_type != SOCK_STREAM && sock_type != SOCK_DGRAM {
+        return Err(Errno::EINVAL);
+    }
+    if protocol != 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+/// 验证 bind 参数 (等价于 services::net::syscall::bind_syscall 的验证部分)
+pub fn bind_validate(fd: i32, addr_ptr: u64, _addrlen: u32) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if addr_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 listen 参数
+pub fn listen_validate(fd: i32, backlog: i32) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if backlog < 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(())
+}
+
+/// 验证 accept 参数
+pub fn accept_validate(fd: i32, addr_ptr: u64) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    let _ = addr_ptr; // 0 允许, 非 0 也允许
+    Ok(())
+}
+
+/// 验证 connect 参数
+pub fn connect_validate(fd: i32, addr_ptr: u64, _addrlen: u32) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if addr_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 sendto 参数
+pub fn sendto_validate(fd: i32, buf_ptr: u64, len: u32, dest_ptr: u64) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if len > 0 && buf_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    let _ = dest_ptr;
+    Ok(())
+}
+
+/// 验证 recvfrom 参数
+pub fn recvfrom_validate(fd: i32, buf_ptr: u64, len: u32) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if buf_ptr == 0 || len == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 setsockopt 参数
+pub fn setsockopt_validate(fd: i32, _level: i32, _optname: i32, val_ptr: u64) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if val_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 getsockopt 参数
+pub fn getsockopt_validate(fd: i32, _level: i32, _optname: i32, val_ptr: u64) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if val_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 shutdown 参数
+pub fn shutdown_validate(fd: i32, _how: i32) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    Ok(())
+}
