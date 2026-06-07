@@ -13,6 +13,7 @@
 
 use crate::kernel::framework::net::syscall as fw;
 use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // 12 个 Socket Syscall 安全代理
@@ -112,5 +113,52 @@ pub fn getsockopt_syscall(
 pub fn shutdown_syscall(fd: i32, how: i32) -> Result<usize, Errno> {
     if fd < 0 { return Err(Errno::EBADF); }
     let r = fw::shutdown_syscall(fd, how);
+    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+}
+
+/// sendmsg(fd, msg, flags)
+/// 真实实现: 校验 msg 指针 (Msghdr 56B 可读) + iov 范围; 委托 framework。
+pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if msg_ptr == 0 { return Err(Errno::EFAULT); }
+    if !raw::check_user_buf(msg_ptr, 56) {
+        return Err(Errno::EFAULT);
+    }
+    let iov_ptr = raw::read_u64_from_user(msg_ptr + 16).ok_or(Errno::EFAULT)?;
+    let iovlen = raw::read_u64_from_user(msg_ptr + 24).ok_or(Errno::EFAULT)?;
+    if iovlen == 0 || iovlen > 1024 {
+        return Err(Errno::EINVAL);
+    }
+    if iov_ptr == 0 {
+        return Err(Errno::EINVAL);
+    }
+    let iov_bytes = iovlen.checked_mul(16).ok_or(Errno::EINVAL)?;
+    if !raw::check_user_buf(iov_ptr, iov_bytes) {
+        return Err(Errno::EFAULT);
+    }
+    let r = fw::sendmsg_syscall(fd, msg_ptr, flags);
+    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+}
+
+/// recvmsg(fd, msg, flags)
+pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if msg_ptr == 0 { return Err(Errno::EFAULT); }
+    if !raw::check_user_buf(msg_ptr, 56) {
+        return Err(Errno::EFAULT);
+    }
+    let iov_ptr = raw::read_u64_from_user(msg_ptr + 16).ok_or(Errno::EFAULT)?;
+    let iovlen = raw::read_u64_from_user(msg_ptr + 24).ok_or(Errno::EFAULT)?;
+    if iovlen == 0 || iovlen > 1024 {
+        return Err(Errno::EINVAL);
+    }
+    if iov_ptr == 0 {
+        return Err(Errno::EINVAL);
+    }
+    let iov_bytes = iovlen.checked_mul(16).ok_or(Errno::EINVAL)?;
+    if !raw::check_user_buf(iov_ptr, iov_bytes) {
+        return Err(Errno::EFAULT);
+    }
+    let r = fw::recvmsg_syscall(fd, msg_ptr, flags);
     if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
 }

@@ -143,6 +143,10 @@ pub struct RamFsData {
     pub node_bitmap: [u8; RAMFS_MAX_NODES / 8],
     pub block_bitmap: [u8; RAMFS_MAX_BLOCKS / 8],
     pub aces: [RamFsACE; RAMFS_MAX_ACES],
+    /// 符号链接目标存储: 每节点最多 128 字节, 不包含终止 NUL.
+    /// 0 长度表示该节点不是 symlink 或无 target.
+    pub symlink_targets: [[u8; 128]; RAMFS_MAX_NODES],
+    pub symlink_lens: [u8; RAMFS_MAX_NODES],
     pub root_node: u32,
     pub free_nodes: AtomicU32,
     pub free_blocks: AtomicU32,
@@ -159,6 +163,8 @@ impl RamFsData {
             node_bitmap: [0; RAMFS_MAX_NODES / 8],
             block_bitmap: [0; RAMFS_MAX_BLOCKS / 8],
             aces: [RamFsACE::new(); RAMFS_MAX_ACES],
+            symlink_targets: [[0u8; 128]; RAMFS_MAX_NODES],
+            symlink_lens: [0u8; RAMFS_MAX_NODES],
             root_node: 0,
             free_nodes: AtomicU32::new(0),
             free_blocks: AtomicU32::new(0),
@@ -1460,6 +1466,121 @@ impl RamFsData {
         self.nodes[target_node as usize].link_count += 1;
 
         0
+    }
+
+    /// symlink(target, parent_path, name) — 创建符号链接.
+    /// 真实实现: 在 parent_path 目录下创建新节点, 类型为 Symlink,
+    /// target 写入 symlink_targets[new_node].
+    /// 返回新节点 id 或 -1.
+    pub fn symlink(
+        &mut self,
+        target: &str,
+        parent_path: &str,
+        name: &str,
+        pwm: u64,
+    ) -> i32 {
+        if name.is_empty() || name.contains('/') {
+            return -1;
+        }
+        if target.is_empty() || target.len() >= 128 {
+            return -1;
+        }
+        let parent_num = match self.resolve_path(parent_path) {
+            Some(n) => n,
+            None => return -1,
+        };
+        if parent_num as usize >= RAMFS_MAX_NODES || !self.nodes[parent_num as usize].used {
+            return -1;
+        }
+        if self.nodes[parent_num as usize].file_type != VfsFileType::Dir as u8 {
+            return -1;
+        }
+        if !self.check_permission(&self.nodes[parent_num as usize], pwm, FS_CAP_CREATE) {
+            return -1;
+        }
+
+        // 检查目录是否已存在同名 entry
+        let parent_block = self.nodes[parent_num as usize].direct_blocks[0];
+        if parent_block == u32::MAX {
+            return -1;
+        }
+        let dirent_size = core::mem::size_of::<RamFsDirEntry>();
+        let num_entries = self.nodes[parent_num as usize].size as usize / dirent_size;
+        for i in 0..num_entries {
+            let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
+            let entry = RamFsDirEntry::read_at(&self.data_area, offset);
+            if entry.node != 0 {
+                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let existing = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
+                if existing == name {
+                    return -1; // 已存在
+                }
+            }
+        }
+
+        // 分配新节点
+        let new_id = match self.alloc_node(VfsFileType::Symlink as u8, pwm) {
+            Some(id) => id,
+            None => return -1,
+        };
+        let now = Self::get_time();
+        let target_bytes = target.as_bytes();
+        let target_len = target_bytes.len();
+        {
+            let node = &mut self.nodes[new_id as usize];
+            node.node_id = new_id;
+            node.file_type = VfsFileType::Symlink as u8;
+            node.perm = 0o777;
+            node.owner_pwm = pwm;
+            node.link_count = 1;
+            node.atime = now;
+            node.mtime = now;
+            node.ctime = now;
+            node.used = true;
+        }
+        // 存 target
+        self.symlink_targets[new_id as usize][..target_len]
+            .copy_from_slice(target_bytes);
+        self.symlink_lens[new_id as usize] = target_len as u8;
+
+        // 在 parent 添加 dir entry
+        let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
+        if offset + dirent_size > self.data_area.len() {
+            // 回滚
+            let n = &mut self.nodes[new_id as usize];
+            n.used = false;
+            n.file_type = 0;
+            n.link_count = 0;
+            self.symlink_lens[new_id as usize] = 0;
+            return -1;
+        }
+        let mut entry = RamFsDirEntry::new();
+        entry.node = new_id;
+        entry.file_type = VfsFileType::Symlink as u8;
+        entry.set_name(name);
+        entry.write_at(&mut self.data_area, offset);
+
+        self.nodes[parent_num as usize].size += dirent_size as u32;
+        self.nodes[parent_num as usize].link_count += 1;
+        self.nodes[parent_num as usize].mtime = now;
+        new_id as i32
+    }
+
+    /// readlink(node_id, buf) — 读取符号链接的目标路径, 返回写入字节数 (不含 NUL).
+    pub fn readlink(&self, node_id: u32, buf: &mut [u8]) -> i32 {
+        if node_id as usize >= RAMFS_MAX_NODES {
+            return -1;
+        }
+        let node = &self.nodes[node_id as usize];
+        if !node.used || node.file_type != VfsFileType::Symlink as u8 {
+            return -1;
+        }
+        let len = self.symlink_lens[node_id as usize] as usize;
+        if len > buf.len() {
+            return -1;
+        }
+        buf[..len].copy_from_slice(&self.symlink_targets[node_id as usize][..len]);
+        len as i32
     }
 }
 

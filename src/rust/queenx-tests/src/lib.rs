@@ -294,6 +294,91 @@ pub fn shutdown_validate(fd: i32, _how: i32) -> Result<(), Errno> {
     Ok(())
 }
 
+/// 验证 getsockname 参数: fd 合法, addr/addrlen 不可为 0
+pub fn sockname_validate(fd: i32, addr: u64, addrlen: u64) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if addr == 0 || addrlen == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 getpeername 参数: 同 getsockname
+pub fn peername_validate(fd: i32, addr: u64, addrlen: u64) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if addr == 0 || addrlen == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 getrusage 参数: who 必须为 0/1/2, rusage 不可为 0
+pub fn rusage_validate(who: i32, rusage: u64) -> Result<(), Errno> {
+    if who != 0 && who != 1 && who != 2 {
+        return Err(Errno::EINVAL);
+    }
+    if rusage == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 sendmsg 参数: fd 合法, msg 不可为 0
+/// 完整校验需读 msghdr, 此处只测前置层 (fd/msg 非空).
+pub fn sendmsg_validate(fd: i32, msg_ptr: u64, _flags: i32) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if msg_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+/// 验证 recvmsg 参数: fd 合法, msg 不可为 0
+pub fn recvmsg_validate(fd: i32, msg_ptr: u64, _flags: i32) -> Result<(), Errno> {
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if msg_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    Ok(())
+}
+
+// =============== iobuf 容量计算 (host 模拟) ===============
+
+/// 按 iov 列表计算总容量 (模拟 sendmsg 拼接前 size 累计).
+/// 跳过 base=0 或 len=0 的 iov; 溢出返 0.
+pub fn iobuf_total_capacity(lens: &[usize]) -> usize {
+    let mut total: usize = 0;
+    for &l in lens {
+        if l == 0 {
+            continue;
+        }
+        total = match total.checked_add(l) {
+            Some(v) => v,
+            None => return 0,
+        };
+    }
+    total
+}
+
+/// 验证总容量页对齐后不超过 4MB 上限 (模拟 IobRegion::alloc 上限保护).
+pub fn iobuf_pages(total: usize) -> u64 {
+    if total == 0 {
+        return 1;
+    }
+    // 向上页对齐: (n + 4095) / 4096. 当 total=0 时上面已返回, 这里 total >= 1.
+    // 公式: (total - 1) / 4096 + 1 等价, 防止 total=4096 算出 0 的边界.
+    let t = total as u64;
+    (t - 1) / 4096 + 1
+}
+
 // =============== session validation ===============
 
 /// setsid — 无参数, 总是尝试创建
@@ -542,6 +627,45 @@ pub fn mount_target_validate(target_ptr: u64, fstype_ptr: u64, source_ptr: u64) 
 /// umount2 target 校验
 pub fn umount2_target_validate(target_ptr: u64) -> Result<(), Errno> {
     if target_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+// =============== timer validation ===============
+
+/// ITIMER 类别
+pub const ITIMER_REAL: i32 = 0;
+pub const ITIMER_VIRTUAL: i32 = 1;
+pub const ITIMER_PROF: i32 = 2;
+
+pub fn itimer_which_validate(which: i32) -> Result<(), Errno> {
+    if which < 0 || which > 3 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+pub fn getitimer_value_validate(value_ptr: u64) -> Result<(), Errno> {
+    if value_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+pub fn setitimer_new_validate(new_ptr: u64) -> Result<(), Errno> {
+    if new_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+pub fn alarm_seconds_ok(_seconds: u32) -> Result<(), Errno> {
+    Ok(())
+}
+
+pub fn fchown_fd_validate(fd: i32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+pub fn times_buf_validate(buf_ptr: u64) -> Result<(), Errno> {
+    if buf_ptr != 0 {
+        // tms 结构体 16 字节对齐
+        if buf_ptr & 0x3 != 0 { return Err(Errno::EINVAL); }
+    }
     Ok(())
 }
 

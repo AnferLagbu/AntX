@@ -9,6 +9,7 @@ pub mod io;
 pub mod mmap;
 pub mod mprotect;
 pub mod wait4;
+
 /// Syscall 模块 — POSIX 原生系统调用分发
 ///
 /// POSIX 标准 syscall 编号 (0-399) + Credo 私有 syscall (400+).
@@ -269,9 +270,27 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             },
             b"nanosleep\0"
         ),
-        SYS_getitimer => dispatch!(Errno::ENOSYS.as_ret(), b"getitimer_nosys\0"),
-        SYS_alarm => dispatch!(Errno::ENOSYS.as_ret(), b"alarm\0"),
-        SYS_setitimer => dispatch!(Errno::ENOSYS.as_ret(), b"setitimer_nosys\0"),
+        SYS_getitimer => dispatch!(
+            match crate::kernel::services::fs::misc::getitimer_syscall(a0 as i32, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"getitimer\0"
+        ),
+        SYS_alarm => dispatch!(
+            match crate::kernel::services::fs::misc::alarm_syscall(a0 as u32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"alarm\0"
+        ),
+        SYS_setitimer => dispatch!(
+            match crate::kernel::services::fs::misc::setitimer_syscall(a0 as i32, a1, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"setitimer\0"
+        ),
 
         // ==================== 进程 ====================
         SYS_getpid => dispatch!(
@@ -386,9 +405,21 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"listen\0"
         ),
         #[cfg(feature = "net")]
-        SYS_sendmsg => dispatch!(Errno::ENOSYS.as_ret(), b"sendmsg\0"),
+        SYS_sendmsg => dispatch!(
+            match crate::kernel::services::net::syscall::sendmsg_syscall(a0 as i32, a1, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"sendmsg\0"
+        ),
         #[cfg(feature = "net")]
-        SYS_recvmsg => dispatch!(Errno::ENOSYS.as_ret(), b"recvmsg\0"),
+        SYS_recvmsg => dispatch!(
+            match crate::kernel::services::net::syscall::recvmsg_syscall(a0 as i32, a1, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"recvmsg\0"
+        ),
         #[cfg(feature = "net")]
         SYS_setsockopt => dispatch!(
             match crate::kernel::services::net::syscall::setsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32) {
@@ -577,7 +608,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             sys_chown(a0 as *const u8, a1 as u32, a2 as u32),
             b"chown\0"
         ),
-        SYS_fchown => dispatch!(Errno::ENOSYS.as_ret(), b"fchown_nosys\0"),
+        SYS_fchown => dispatch!(
+            match crate::kernel::services::fs::misc::fchown_syscall(a0 as i32, a1, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"fchown\0"
+        ),
         SYS_umask => dispatch!(
             match crate::kernel::services::fs::mode::umask_syscall(a0 as u32) {
                 Ok(v) => v as i64,
@@ -602,7 +639,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"getrlimit\0"
         ),
         SYS_sysinfo => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
-        SYS_times => dispatch!(Errno::ENOSYS.as_ret(), b"times_nosys\0"),
+        SYS_times => dispatch!(
+            match crate::kernel::services::fs::misc::times_syscall(a0) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"times\0"
+        ),
 
         // ==================== 用户/组 (services 代理) ====================
         SYS_getuid => dispatch!(
@@ -1243,11 +1286,6 @@ fn sys_exit(status: i32) -> i64 {
     0
 }
 
-fn sys_wait4(_pid: i32) -> i64 {
-    // 已被 wait4::sys_wait4 替代, 通过 services 代理
-    Errno::ENOSYS.as_ret()
-}
-
 // ============================================================================
 // 用户/组 — getuid / getgid / geteuid / getegid
 // ============================================================================
@@ -1484,18 +1522,28 @@ fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u6
 }
 
 #[cfg(feature = "net")]
-fn sys_getsockname(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
-    Errno::ENOSYS.as_ret()
+fn sys_getsockname(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
+    raw::sm_getsockname_call(sockfd, addr, addrlen) as i64
 }
 
 #[cfg(feature = "net")]
-fn sys_getpeername(_sockfd: i32, _addr: u64, _addrlen: u64) -> i64 {
-    Errno::ENOSYS.as_ret()
+fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
+    raw::sm_getpeername_call(sockfd, addr, addrlen) as i64
+}
+
+fn sys_getrusage(who: i32, rusage: u64) -> i64 {
+    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    crate::kernel::framework::proc::api::proc_get_rusage(pid, who, rusage as *mut u8, 144) as i64
 }
 
 #[cfg(feature = "net")]
-fn sys_getrusage(_who: i32, _rusage: u64) -> i64 {
-    Errno::ENOSYS.as_ret()
+fn sys_sendmsg(fd: i32, msg: u64, flags: i32) -> i64 {
+    raw::sm_sendmsg_call(fd, msg, flags) as i64
+}
+
+#[cfg(feature = "net")]
+fn sys_recvmsg(fd: i32, msg: u64, flags: i32) -> i64 {
+    raw::sm_recvmsg_call(fd, msg, flags) as i64
 }
 
 // ============================================================================
@@ -2765,6 +2813,10 @@ pub(crate) mod raw {
             optval: *mut u8,
             optlen: *mut u32,
         ) -> i32;
+        fn sm_getsockname(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
+        fn sm_getpeername(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
+        fn sm_sendmsg(fd: i32, msg: *const u8, flags: i32) -> i32;
+        fn sm_recvmsg(fd: i32, msg: *mut u8, flags: i32) -> i32;
         // 链接器符号
         static _kernel_start: u8;
         static _kernel_end: u8;
@@ -2916,6 +2968,22 @@ pub(crate) mod raw {
         true
     }
 
+    /// Safe 包装: 从 user 指针读一个 repr(C) 结构体.
+    /// 调用方无需 unsafe 块. 内部先 `check_user_buf` 验证后读.
+    pub fn read_struct_from_user<T: Copy>(src_ptr: u64, dst: &mut T) -> bool {
+        if src_ptr == 0 {
+            return false;
+        }
+        let size = core::mem::size_of::<T>() as u64;
+        if !check_user_buf(src_ptr, size) {
+            return false;
+        }
+        // SAFETY: check_user_buf 已验证 src_ptr 指向的 user 缓冲
+        // 至少有 size_of::<T>() 字节可读.
+        *dst = unsafe { core::ptr::read_unaligned(src_ptr as *const T) };
+        true
+    }
+
     // ============= 设备输入抽象 =============
 
     /// 从键盘读取一个字节（x86_64 专属）。None 表示无数据。
@@ -2979,6 +3047,19 @@ pub(crate) mod raw {
     }
 
     // ============= 时间 =============
+
+    /// 从用户指针读一个 u64. None 表示失败.
+    /// 调用方无需 unsafe 块. 内部校验 + 读.
+    pub fn read_u64_from_user(src_ptr: u64) -> Option<u64> {
+        if src_ptr == 0 {
+            return None;
+        }
+        if !check_user_buf(src_ptr, 8) {
+            return None;
+        }
+        // SAFETY: check_user_buf 已验证 src_ptr 8 字节可读.
+        Some(unsafe { core::ptr::read_unaligned(src_ptr as *const u64) })
+    }
 
     /// 读取 tick 计数（1ms 粒度）。
     /// # Safety
@@ -3073,6 +3154,42 @@ pub(crate) mod raw {
         // SAFETY: 调用方已验证 optval/optlen 是合法可写用户指针。
         unsafe { sm_getsockopt(sockfd, level, optname, optval, optlen) }
     }
+
+    /// # Safety
+    /// FFI 调用，addr/addrlen 由调用方负责用户态校验 (可写)。
+    pub fn sm_getsockname_call(
+        sockfd: i32,
+        addr: u64,
+        addrlen: u64,
+    ) -> i32 {
+        // SAFETY: addr/addrlen 经 services 校验, 至少 sizeof(SockaddrIn)=16 字节可写.
+        unsafe { sm_getsockname(sockfd, addr as *mut u8, addrlen as *mut u32) }
+    }
+
+    /// # Safety
+    /// FFI 调用，addr/addrlen 由调用方负责用户态校验 (可写)。
+    pub fn sm_getpeername_call(
+            sockfd: i32,
+            addr: u64,
+            addrlen: u64,
+        ) -> i32 {
+            // SAFETY: addr/addrlen 经 services 校验, 至少 sizeof(SockaddrIn)=16 字节可写.
+            unsafe { sm_getpeername(sockfd, addr as *mut u8, addrlen as *mut u32) }
+        }
+
+        /// # Safety
+        /// FFI 调用，`msg` 由 services 校验 msghdr 布局 (iov 范围、iovlen 个 iovec 可读)。
+        pub fn sm_sendmsg_call(fd: i32, msg: u64, flags: i32) -> i32 {
+            // SAFETY: msg 经 services 校验完整 Msghdr (56 字节) 可读, iovlen 个 Iovec 可读.
+            unsafe { sm_sendmsg(fd, msg as *const u8, flags) }
+        }
+
+        /// # Safety
+        /// FFI 调用，`msg` 由 services 校验 msghdr 布局 (iov 范围、iovlen 个 iovec 可写)。
+        pub fn sm_recvmsg_call(fd: i32, msg: u64, flags: i32) -> i32 {
+            // SAFETY: msg 经 services 校验完整 Msghdr (56 字节) 可写, iovlen 个 Iovec 可写.
+            unsafe { sm_recvmsg(fd, msg as *mut u8, flags) }
+        }
 
     // ============= 链接器符号访问 =============
 

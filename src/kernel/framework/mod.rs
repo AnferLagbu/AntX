@@ -91,6 +91,7 @@ pub mod timer;
 pub mod wasm;
 pub mod tests;
 pub mod pci;
+pub mod iobuf;
 
 pub mod frame;
 pub mod vmspace;

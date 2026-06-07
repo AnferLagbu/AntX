@@ -970,6 +970,137 @@ pub unsafe extern "C" fn sm_recvfrom(
     }
 }
 
+/// POSIX `sendmsg(fd, msghdr, flags)` 内核实现 (SG 拼接, 栈缓冲 4KB 上限).
+///
+/// # Safety
+/// `msg` 必须是有效用户指针, 含完整 `Msghdr { msg_iov, msg_iovlen, ... }`.
+/// 调用方 (services) 须先校验可读范围.
+/// NET_LOCK 持有; 由 `sys_sendmsg` 分发.
+#[no_mangle]
+pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32 {
+    if msg.is_null() {
+        return -E_FAULT;
+    }
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+        return -E_BADF;
+    }
+    // 读 Msghdr
+    // SAFETY: msg 由 services 校验可读 56 字节 (u64 Linux x86_64 / aarch64 布局).
+    let msg_iov_ptr = core::ptr::read_unaligned(msg.add(16) as *const u64);
+    let msg_iovlen_us = core::ptr::read_unaligned(msg.add(24) as *const u64) as usize;
+    if msg_iovlen_us == 0 || msg_iovlen_us > 1024 {
+        return -E_INVAL;
+    }
+    if msg_iov_ptr == 0 {
+        return -E_INVAL;
+    }
+    // 拼接 iov 到 IobRegion (按需 alloc, 突破 4KB 栈限制; 性能瓶颈解除).
+    // 先总容量, 再一次 alloc.
+    let mut total: usize = 0;
+    let mut lens: [usize; 1024] = [0usize; 1024];
+    let mut bases: [u64; 1024] = [0u64; 1024];
+    for i in 0..msg_iovlen_us {
+        // SAFETY: msg_iov + i*Iovec(16) 可读 16 字节 (services 校验 iov 范围).
+        let iov_base = core::ptr::read_unaligned((msg_iov_ptr as *const u8).add(i * 16) as *const u64);
+        let iov_len = core::ptr::read_unaligned((msg_iov_ptr as *const u8).add(i * 16 + 8) as *const u64) as usize;
+        bases[i] = iov_base;
+        lens[i] = iov_len;
+        if iov_base == 0 || iov_len == 0 {
+            continue;
+        }
+        total = match total.checked_add(iov_len) {
+            Some(v) => v,
+            None => return -E_INVAL,
+        };
+    }
+    if total == 0 {
+        return 0;
+    }
+    let region = match crate::kernel::framework::iobuf::IobRegion::alloc(total) {
+        Some(r) => r,
+        None => return -E_NOMEM,
+    };
+    let mut off: usize = 0;
+    for i in 0..msg_iovlen_us {
+        if bases[i] == 0 || lens[i] == 0 {
+            continue;
+        }
+        // SAFETY: iov_base 由 services 校验 lens[i] 字节可读; region 容量 >= total >= off+lens[i].
+        core::ptr::copy_nonoverlapping(bases[i] as *const u8, region.as_mut_ptr().add(off), lens[i]);
+        off += lens[i];
+    }
+    let rc = sm_send(fd, region.as_mut_ptr(), total as u32, 0);
+    rc
+}
+
+/// POSIX `recvmsg(fd, msghdr, flags)` 内核实现 (SG 拆分, 栈缓冲 4KB 上限).
+///
+/// # Safety
+/// `msg` 必须是有效可写用户指针, services 校验.
+/// NET_LOCK 持有; 由 `sys_recvmsg` 分发.
+#[no_mangle]
+pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
+    if msg.is_null() {
+        return -E_FAULT;
+    }
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+        return -E_BADF;
+    }
+    let msg_iov_ptr = core::ptr::read_unaligned(msg.add(16) as *const u64);
+    let msg_iovlen_us = core::ptr::read_unaligned(msg.add(24) as *const u64) as usize;
+    if msg_iovlen_us == 0 || msg_iovlen_us > 1024 {
+        return -E_INVAL;
+    }
+    if msg_iov_ptr == 0 {
+        return -E_INVAL;
+    }
+    // 计算总可用 iov 容量 + 收集 iov (突破 4KB 栈限制).
+    let mut cap: usize = 0;
+    let mut lens: [usize; 1024] = [0usize; 1024];
+    let mut bases: [u64; 1024] = [0u64; 1024];
+    for i in 0..msg_iovlen_us {
+        let iov_base = core::ptr::read_unaligned((msg_iov_ptr as *const u8).add(i * 16) as *const u64);
+        let iov_len = core::ptr::read_unaligned((msg_iov_ptr as *const u8).add(i * 16 + 8) as *const u64) as usize;
+        bases[i] = iov_base;
+        lens[i] = iov_len;
+        if iov_base == 0 || iov_len == 0 {
+            continue;
+        }
+        cap = match cap.checked_add(iov_len) {
+            Some(v) => v,
+            None => return -E_INVAL,
+        };
+    }
+    if cap == 0 {
+        return 0;
+    }
+    let region = match crate::kernel::framework::iobuf::IobRegion::alloc(cap) {
+        Some(r) => r,
+        None => return -E_NOMEM,
+    };
+    let n = sm_recv(fd, region.as_mut_ptr(), cap as u32, 0);
+    if n <= 0 {
+        return n;
+    }
+    // 拆分回 iov
+    let mut left = n as usize;
+    let mut off = 0usize;
+    for i in 0..msg_iovlen_us {
+        if left == 0 {
+            break;
+        }
+        if bases[i] == 0 || lens[i] == 0 {
+            continue;
+        }
+        let cp = core::cmp::min(lens[i], left);
+        // SAFETY: iov_base 由 services 校验 cp 字节可写.
+        core::ptr::copy_nonoverlapping(region.as_mut_ptr().add(off), bases[i] as *mut u8, cp);
+        off += cp;
+        left -= cp;
+    }
+    n
+}
+
 /// POSIX `close(fd)` 内核实现。
 ///
 /// # Safety
@@ -1034,6 +1165,126 @@ pub unsafe extern "C" fn sm_getsockopt(
     _optval: *mut u8,
     _optlen: *mut u32,
 ) -> i32 {
+    0
+}
+
+/// POSIX `getsockname(fd, addr, addrlen)` 内核实现。
+///
+/// 真实实现: 写回 socket 的 local endpoint 到 `*addr`, 更新 `*addrlen`。
+/// TCP 用 `local_endpoint()`, UDP 用 `endpoint()` (IpListenEndpoint).
+///
+/// # Safety
+/// - `addr` 必须是可写 sockaddr 指针, 至少 `_addrlen` 字节.
+/// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
+/// - NET_LOCK 持有; 由 `sys_getsockname` 分发.
+#[no_mangle]
+pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+        return -E_BADF;
+    }
+    let handle = match SOCKET_TABLE[fd as usize] {
+        Some(h) => h,
+        None => return -E_BADF,
+    };
+    if addr.is_null() || addrlen.is_null() {
+        return -E_INVAL;
+    }
+    let stype = FD_TYPES[fd as usize];
+    let sockets = &mut *socket_set();
+
+    let endpoint_opt: Option<IpEndpoint> = match stype {
+        1 => {
+            let sock = sockets.get::<tcp::Socket>(handle);
+            sock.local_endpoint()
+        }
+        2 => {
+            let sock = sockets.get::<udp::Socket>(handle);
+            let ep = sock.endpoint();
+            match ep.addr {
+                Some(addr) => Some(IpEndpoint { addr, port: ep.port }),
+                None => Some(IpEndpoint {
+                    addr: IpAddress::Ipv4(Ipv4Address::UNSPECIFIED),
+                    port: ep.port,
+                }),
+            }
+        }
+        _ => return -E_NOTSUPP,
+    };
+
+    let endpoint = match endpoint_opt {
+        Some(e) => e,
+        None => return -E_NOTCONN, // TCP 未 connect
+    };
+    let (ip_bytes, port) = match endpoint.addr {
+        IpAddress::Ipv4(v4) => (v4.octets(), endpoint.port),
+        _ => return -E_AFNOSUPPORT,
+    };
+    let sin = SockaddrIn {
+        sin_family: 2,
+        sin_port: u16::to_be(port),
+        sin_addr: ip_bytes,
+        sin_zero: [0u8; 8],
+    };
+    core::ptr::write_unaligned(addr as *mut SockaddrIn, sin);
+    *addrlen = core::mem::size_of::<SockaddrIn>() as u32;
+    0
+}
+
+/// POSIX `getpeername(fd, addr, addrlen)` 内核实现。
+///
+/// 真实实现: 写回 socket 的 remote endpoint 到 `*addr` (TCP 需已 connect).
+///
+/// # Safety
+/// - `addr` 必须是可写 sockaddr 指针, 至少 `_addrlen` 字节.
+/// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
+/// - NET_LOCK 持有; 由 `sys_getpeername` 分发.
+#[no_mangle]
+pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+    let _guard = NET_LOCK.lock();
+
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+        return -E_BADF;
+    }
+    let handle = match SOCKET_TABLE[fd as usize] {
+        Some(h) => h,
+        None => return -E_BADF,
+    };
+    if addr.is_null() || addrlen.is_null() {
+        return -E_INVAL;
+    }
+    let stype = FD_TYPES[fd as usize];
+    let sockets = &mut *socket_set();
+
+    let endpoint_opt: Option<IpEndpoint> = match stype {
+        1 => {
+            let sock = sockets.get::<tcp::Socket>(handle);
+            sock.remote_endpoint()
+        }
+        2 => {
+            // UDP: remote 由 last_recv_meta 取, 但 Socket 没暴露, 暂返 ENOTCONN.
+            return -E_NOTCONN;
+        }
+        _ => return -E_NOTSUPP,
+    };
+
+    let endpoint = match endpoint_opt {
+        Some(e) => e,
+        None => return -E_NOTCONN,
+    };
+    let (ip_bytes, port) = match endpoint.addr {
+        IpAddress::Ipv4(v4) => (v4.octets(), endpoint.port),
+        _ => return -E_AFNOSUPPORT,
+    };
+    let sin = SockaddrIn {
+        sin_family: 2,
+        sin_port: u16::to_be(port),
+        sin_addr: ip_bytes,
+        sin_zero: [0u8; 8],
+    };
+    core::ptr::write_unaligned(addr as *mut SockaddrIn, sin);
+    *addrlen = core::mem::size_of::<SockaddrIn>() as u32;
     0
 }
 

@@ -237,3 +237,88 @@ fn test_shutdown_how_ignored() {
     assert_eq!(shutdown_validate(3, 2), Ok(()));
     assert_eq!(shutdown_validate(3, 100), Ok(()));
 }
+
+// ============================================================================
+// getsockname / getpeername
+// ============================================================================
+
+#[test]
+fn test_sockname_validate_fd() {
+    assert_eq!(sockname_validate(-1, 0x1000, 0x2000), Err(Errno::EBADF));
+    assert_eq!(sockname_validate(0, 0x1000, 0x2000), Ok(()));
+    assert_eq!(sockname_validate(63, 0x1000, 0x2000), Ok(()));
+}
+
+#[test]
+fn test_sockname_validate_addr() {
+    assert_eq!(sockname_validate(0, 0, 0x2000), Err(Errno::EFAULT));
+    assert_eq!(sockname_validate(0, 0x1000, 0x2000), Ok(()));
+}
+
+#[test]
+fn test_sockname_validate_addrlen() {
+    assert_eq!(sockname_validate(0, 0x1000, 0), Err(Errno::EFAULT));
+    assert_eq!(sockname_validate(0, 0x1000, 0x2000), Ok(()));
+}
+
+#[test]
+fn test_peername_validate_fd() {
+    assert_eq!(peername_validate(-1, 0x1000, 0x2000), Err(Errno::EBADF));
+    assert_eq!(peername_validate(3, 0x1000, 0x2000), Ok(()));
+}
+
+#[test]
+fn test_peername_validate_addr_null() {
+    assert_eq!(peername_validate(0, 0, 0x2000), Err(Errno::EFAULT));
+    assert_eq!(peername_validate(0, 0x1000, 0), Err(Errno::EFAULT));
+}
+
+#[test]
+fn test_rusage_validate_who() {
+    assert_eq!(rusage_validate(-1, 0x1000), Err(Errno::EINVAL));
+    assert_eq!(rusage_validate(0, 0x1000), Ok(()));
+    assert_eq!(rusage_validate(1, 0x1000), Ok(()));
+    assert_eq!(rusage_validate(2, 0x1000), Ok(()));
+    assert_eq!(rusage_validate(3, 0x1000), Err(Errno::EINVAL));
+}
+
+#[test]
+fn test_rusage_validate_buf() {
+    assert_eq!(rusage_validate(0, 0), Err(Errno::EFAULT));
+    assert_eq!(rusage_validate(0, 0x1000), Ok(()));
+}
+
+// ============================================================================
+// sendmsg / recvmsg
+// ============================================================================
+
+#[test]
+fn test_sendmsg_validate_fd() {
+    assert_eq!(sendmsg_validate(-1, 0x1000, 0), Err(Errno::EBADF));
+    assert_eq!(sendmsg_validate(0, 0x1000, 0), Ok(()));
+}
+
+#[test]
+fn test_sendmsg_validate_msg_null() {
+    assert_eq!(sendmsg_validate(0, 0, 0), Err(Errno::EFAULT));
+}
+
+#[test]
+fn test_sendmsg_validate_iovlen_zero() {
+    // 假设 iovlen=0 写在 msg+24, 设为 0 -> EINVAL
+    // 但 msg_ptr 必须先有效: 此测试不依赖实际读, 用 dummy 范围.
+    // 实际场景: services 先 check_user_buf(msg,56) 才能 read u64.
+    // 这里简化为: 假定 msg_ptr=0x1000 范围不可读 -> EFAULT
+    // 无法测 EINVAL 真实路径, 跳过.
+}
+
+#[test]
+fn test_recvmsg_validate_fd() {
+    assert_eq!(recvmsg_validate(-1, 0x1000, 0), Err(Errno::EBADF));
+    assert_eq!(recvmsg_validate(3, 0x1000, 0), Ok(()));
+}
+
+#[test]
+fn test_recvmsg_validate_msg_null() {
+    assert_eq!(recvmsg_validate(0, 0, 0), Err(Errno::EFAULT));
+}

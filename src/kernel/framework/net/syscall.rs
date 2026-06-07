@@ -277,4 +277,18 @@ pub fn shutdown_syscall(fd: i32, _how: i32) -> i64 {
     if rc == 0 { 0 } else { Errno::EBADF.as_ret() }
 }
 
+/// sendmsg(fd, msg, flags) — services 层入口
+pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, _flags: i32) -> i64 {
+    if fd < 0 { return Errno::EBADF.as_ret(); }
+    let rc = net_socket::sm_sendmsg(fd, msg_ptr as *const u8, 0);
+    rc as i64
+}
+
+/// recvmsg(fd, msg, flags) — services 层入口
+pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, _flags: i32) -> i64 {
+    if fd < 0 { return Errno::EBADF.as_ret(); }
+    let rc = net_socket::sm_recvmsg(fd, msg_ptr as *mut u8, 0);
+    rc as i64
+}
+
 extern crate alloc;

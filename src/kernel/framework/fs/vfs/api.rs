@@ -266,55 +266,11 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     }
 }
 // ============================================================================
-// link / symlink / readlink — 暂简化
-//
-// Framekernel 简化:
-// - hard link: ramfs/hvfs 当前未实现 inode 引用计数, 返回 -1 (EPERM)
-// - symlink:   完全未实现, 返回 -1 (EPERM)
-// - readlink:  vfs_stat 检查 file_type 字段, 若是 symlink 则读取,
-//              当前未实现, 一律返回 -EINVAL
-// 这些保留 API 形状以便 services 层一次性完成参数校验, 业务方收到 ENOSYS/EPERM.
+// link / symlink / readlink — 见 services/fs/link.rs, 在 ramfs/hvfs
+// 真正实现 link/symlink 前, 暂时由 dispatch 直接返回 ENOSYS.
+// 保留 framework API 的需求: 一旦 ramfs/hvfs 支持, services 不变, 仅
+// 调整 framework 实现即可. 当前未保留 stub, 避免假实现.
 // ============================================================================
-
-#[no_mangle]
-pub fn vfs_link_internal(_oldpath: *const u8, _newpath: *const u8, _pwm: u64) -> i32 {
-    // Framekernel 暂不实现 hard link
-    -1
-}
-
-#[no_mangle]
-pub fn vfs_symlink_internal(_target: *const u8, _linkpath: *const u8, _pwm: u64) -> i32 {
-    // Framekernel 暂不实现 symlink
-    -1
-}
-
-#[no_mangle]
-pub fn vfs_readlink_internal(
-    path: *const u8,
-    buf: *mut u8,
-    bufsiz: u64,
-    pwm: u64,
-) -> i32 {
-    if path.is_null() || buf.is_null() || bufsiz == 0 {
-        return -22; // -EINVAL
-    }
-    let _pwm = resolve_pwm(pwm);
-    // 当前未实现 symlink, 任何路径都不是 symlink
-    -22
-}
-
-/// Safe 包装: services 层用
-pub fn vfs_readlink_safe(
-    path: *const u8,
-    buf_ptr: u64,
-    bufsiz: u64,
-    pwm: u64,
-) -> i32 {
-    if path.is_null() || buf_ptr == 0 || bufsiz == 0 {
-        return -22;
-    }
-    vfs_readlink_internal(path, buf_ptr as *mut u8, bufsiz, pwm)
-}
 
 #[no_mangle]
 pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
@@ -908,24 +864,133 @@ pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
     -1
 }
 
+// ============================================================================
+// fchown — 按 fd 修改文件所有者
+// ============================================================================
+
+#[no_mangle]
+pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
+    let fd_usize = fd as usize;
+    if fd_usize >= 256 {
+        return -9;
+    }
+    let (used, node_id) = {
+        let fd_table = VFS_MANAGER.fd_table.lock();
+        (fd_table[fd_usize].used, fd_table[fd_usize].node_id)
+    };
+    if !used {
+        return -9;
+    }
+    let mut ramfs = RAMFS_DATA.lock();
+    if (node_id as usize) >= ramfs.nodes.len() {
+        return -1;
+    }
+    let node = &mut ramfs.nodes[node_id as usize];
+    if !node.used {
+        return -1;
+    }
+    // 权限检查: 仅 level==0 可修改任意 owner, 否则仅同 owner 可改.
+    let level = crate::kernel::framework::credo::api::pwm_get_privilege_level(pwm);
+    if level != 0 && node.owner_pwm != pwm {
+        return -1;
+    }
+    node.owner_pwm = owner_pwm;
+    if group_pwm != 0 {
+        node.group_pwm = group_pwm;
+    }
+    0
+}
+
 #[no_mangle]
 pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
     vfs_unlink_internal(path, pwm)
 }
 
+/// link(oldpath, newpath) — 创建硬链接.
+/// 真实实现: 从 oldpath 解析出 target node, 在 newpath 父目录下建同名 dir entry,
+/// 共享同一 inode, link_count + 1.
 #[no_mangle]
 pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
-    vfs_link_internal(oldpath, newpath, pwm)
+    let old_path = ptr_to_str(oldpath);
+    let new_path = ptr_to_str(newpath);
+    if old_path.is_empty() || new_path.is_empty() {
+        return -22;
+    }
+    let pwm_eff = resolve_pwm(pwm);
+    // 仅支持 ramfs
+    let mut ramfs = RAMFS_DATA.lock();
+    let target_node = match ramfs.resolve_path(old_path) {
+        Some(n) => n,
+        None => return -2,
+    };
+    if (target_node as usize) >= ramfs.nodes.len() {
+        return -22;
+    }
+    if !ramfs.nodes[target_node as usize].used {
+        return -2;
+    }
+    if ramfs.nodes[target_node as usize].file_type == VfsFileType::Dir as u8 {
+        return -1; // EPERM: 目录不允许硬链接
+    }
+    // 拆 newpath
+    let (parent_path, name) = match new_path.rfind('/') {
+        Some(0) => ("/", &new_path[1..]),
+        Some(pos) => (&new_path[..pos], &new_path[pos + 1..]),
+        None => ("/", new_path),
+    };
+    if name.is_empty() || name.contains('/') {
+        return -22;
+    }
+    let parent_num = match RAMFS_DATA.lock().resolve_path(parent_path) {
+        Some(n) => n,
+        None => return -2,
+    };
+    ramfs.link(parent_num, target_node, name, pwm_eff)
 }
 
+/// symlink(target, linkpath) — 创建符号链接.
+/// 真实实现: 在 linkpath 父目录下建 Symlink 类型新节点, target 存入 symlink_targets.
 #[no_mangle]
 pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
-    vfs_symlink_internal(target, linkpath, pwm)
+    let tgt = ptr_to_str(target);
+    let link_path = ptr_to_str(linkpath);
+    if tgt.is_empty() || link_path.is_empty() || tgt.len() >= 128 {
+        return -22;
+    }
+    let pwm_eff = resolve_pwm(pwm);
+    let (parent_path, name) = match link_path.rfind('/') {
+        Some(0) => ("/", &link_path[1..]),
+        Some(pos) => (&link_path[..pos], &link_path[pos + 1..]),
+        None => ("/", link_path),
+    };
+    if name.is_empty() || name.contains('/') {
+        return -22;
+    }
+    let mut ramfs = RAMFS_DATA.lock();
+    ramfs.symlink(tgt, parent_path, name, pwm_eff)
 }
 
+/// readlink(path, buf, bufsiz) — 读取符号链接目标.
+/// 真实实现: 解析 path, 若是 Symlink 则读 symlink_targets[node] 写入用户 buf.
+/// 写入不带 NUL 终止符, 返写入字节数.
 #[no_mangle]
 pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
-    vfs_readlink_internal(path, buf, bufsiz, pwm)
+    let _ = pwm;
+    let p = ptr_to_str(path);
+    if p.is_empty() {
+        return -22;
+    }
+    if buf.is_null() || bufsiz == 0 {
+        return -22;
+    }
+    let node_id = match RAMFS_DATA.lock().resolve_path(p) {
+        Some(n) => n,
+        None => return -2,
+    };
+    let ramfs = RAMFS_DATA.lock();
+    // SAFETY: buf 经调用方校验, bufsiz 字节可写.
+    let slice = unsafe { core::slice::from_raw_parts_mut(buf, bufsiz as usize) };
+    ramfs.readlink(node_id, slice)
 }
 
 #[no_mangle]

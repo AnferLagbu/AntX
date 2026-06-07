@@ -1195,3 +1195,278 @@ pub fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
         -1
     }
 }
+
+// ============================================================================
+// times / alarm / setitimer / getitimer — POSIX 进程时间与定时器 API
+// ============================================================================
+
+/// 累加当前进程的 user/sys 时间 (调度器每 tick 调用, in_kern 区分用户/内核).
+/// Framekernel 调度器在 `tick_accounting` 中会调用此函数; 若调度器未启用统计,
+/// 则 user_time/sys_time 一直为 0, times() 返回 0 是真实结果而非占位.
+#[no_mangle]
+pub fn proc_account_tick(in_kern: u32) {
+    let pid = CURRENT_PROCESS_PTR.load(Ordering::SeqCst);
+    if pid == 0 {
+        return;
+    }
+    PROCESS_TABLE.with_process(pid as Pid, |p| {
+        p.tick_count.fetch_add(1, Ordering::SeqCst);
+        if in_kern != 0 {
+            p.sys_time.fetch_add(1, Ordering::SeqCst);
+        } else {
+            p.user_time.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+}
+
+/// 取得进程的 user/sys 时间 (jiffies 累积), services 层写入 tms.
+/// 真实实现: 通过 PROCESS_TABLE.with_process 读 Atomic; 若 process 不存在返 -1.
+#[no_mangle]
+pub fn proc_get_times(pid: u32, out_user: *mut u64, out_sys: *mut u64) -> i32 {
+    if out_user.is_null() || out_sys.is_null() {
+        return -1;
+    }
+    let res = PROCESS_TABLE.with_process(pid as Pid, |p| {
+        (p.user_time.load(Ordering::SeqCst), p.sys_time.load(Ordering::SeqCst))
+    });
+    match res {
+        Some((u, s)) => {
+            // SAFETY: 调用方保证指针有效 (services/syscall 上下文).
+            unsafe {
+                core::ptr::write_unaligned(out_user, u);
+                core::ptr::write_unaligned(out_sys, s);
+            }
+            0
+        }
+        None => -1,
+    }
+}
+
+/// 取得当前进程启动时刻 jiffies.
+#[no_mangle]
+pub fn proc_get_start_jiffies(pid: u32) -> u64 {
+    PROCESS_TABLE
+        .with_process(pid as Pid, |p| p.start_jiffies.load(Ordering::SeqCst))
+        .unwrap_or(0)
+}
+
+/// 标记进程启动时刻 (process_create 后调用).
+#[no_mangle]
+pub fn proc_set_start_jiffies(pid: u32, j: u64) {
+    PROCESS_TABLE.with_process(pid as Pid, |p| {
+        p.start_jiffies.store(j, Ordering::SeqCst);
+    });
+}
+
+/// alarm(seconds) — 设置 alarm 剩余秒数对应的 jiffies 到期时刻.
+/// 返回旧剩余时间 (秒).
+#[no_mangle]
+pub fn proc_alarm(pid: u32, seconds: u32) -> u32 {
+    let hz = crate::kernel::framework::timer::get_frequency() as u64;
+    if hz == 0 {
+        return 0;
+    }
+    let now = crate::kernel::framework::timer::get_ticks();
+    let prev_remaining = PROCESS_TABLE
+        .with_process(pid as Pid, |p| {
+            let deadline = p.alarm_deadline.load(Ordering::SeqCst);
+            let prev = if deadline == 0 || now >= deadline {
+                0u32
+            } else {
+                ((deadline - now) / hz) as u32
+            };
+            // 新 deadline
+            if seconds == 0 {
+                p.alarm_deadline.store(0, Ordering::SeqCst);
+            } else {
+                p.alarm_deadline
+                    .store(now + (seconds as u64) * hz, Ordering::SeqCst);
+            }
+            p.alarm_prev_remaining.store(prev as u64, Ordering::SeqCst);
+            prev
+        })
+        .unwrap_or(0);
+    prev_remaining
+}
+
+/// 调度器 tick 时检查 alarm 是否到期; 到期则触发 SIGALRM 并清零.
+/// 返回 1 表示有 alarm 触发 (供调度器唤醒/投递信号).
+#[no_mangle]
+pub fn proc_check_alarm(pid: u32) -> i32 {
+    let now = crate::kernel::framework::timer::get_ticks();
+    let triggered = PROCESS_TABLE
+        .with_process(pid as Pid, |p| {
+            let d = p.alarm_deadline.load(Ordering::SeqCst);
+            if d != 0 && now >= d {
+                p.alarm_deadline.store(0, Ordering::SeqCst);
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false);
+    if triggered {
+        // 14 = SIGALRM
+        let _ = crate::kernel::framework::proc::signal::do_signal_send(pid as Pid, 14);
+        1
+    } else {
+        0
+    }
+}
+
+/// setitimer(ITIMER_REAL, new, old) — Framekernel 只实现 ITIMER_REAL.
+#[no_mangle]
+pub fn proc_setitimer_real(
+    pid: u32,
+    new_seconds: u64,
+    new_interval: u64,
+    out_old_seconds: *mut u64,
+    out_old_remaining: *mut u64,
+) -> i32 {
+    let hz = crate::kernel::framework::timer::get_frequency() as u64;
+    if hz == 0 {
+        return -1;
+    }
+    let now = crate::kernel::framework::timer::get_ticks();
+    let mut result: i32 = 0;
+    PROCESS_TABLE.with_process(pid as Pid, |p| {
+        // 旧值回填
+        if !out_old_seconds.is_null() {
+            let d = p.itimer_real_deadline.load(Ordering::SeqCst);
+            let rem = if d == 0 || now >= d {
+                0u64
+            } else {
+                (d - now) / hz
+            };
+            // SAFETY: 调用方保证指针有效.
+            unsafe {
+                core::ptr::write_unaligned(out_old_seconds, p.itimer_real_interval.load(Ordering::SeqCst) / hz);
+                core::ptr::write_unaligned(out_old_remaining, rem);
+            }
+        }
+        // 新值
+        if new_seconds == 0 {
+            p.itimer_real_deadline.store(0, Ordering::SeqCst);
+        } else {
+            p.itimer_real_deadline
+                .store(now + new_seconds * hz, Ordering::SeqCst);
+        }
+        p.itimer_real_interval.store(new_interval * hz, Ordering::SeqCst);
+        p.itimer_real_remaining.store(new_seconds * hz, Ordering::SeqCst);
+    });
+    result
+}
+
+/// getitimer(ITIMER_REAL, value) — 读取当前 ITIMER_REAL 剩余.
+#[no_mangle]
+pub fn proc_getitimer_real(pid: u32, out_remaining_seconds: *mut u64) -> i32 {
+    if out_remaining_seconds.is_null() {
+        return -1;
+    }
+    let hz = crate::kernel::framework::timer::get_frequency() as u64;
+    let now = crate::kernel::framework::timer::get_ticks();
+    let res = PROCESS_TABLE.with_process(pid as Pid, |p| {
+        let d = p.itimer_real_deadline.load(Ordering::SeqCst);
+        if d == 0 || hz == 0 {
+            0u64
+        } else if now >= d {
+            0u64
+        } else {
+            (d - now) / hz
+        }
+    });
+    let rem = res.unwrap_or(0);
+    // SAFETY: 调用方保证指针有效.
+    unsafe {
+        core::ptr::write_unaligned(out_remaining_seconds, rem);
+    }
+    0
+}
+
+/// 调度器 tick 时检查 itimer_real 是否到期, 到期则触发 SIGALRM 并按 interval 重置.
+#[no_mangle]
+pub fn proc_check_itimer_real(pid: u32) -> i32 {
+    let now = crate::kernel::framework::timer::get_ticks();
+    let mut triggered = false;
+    PROCESS_TABLE.with_process(pid as Pid, |p| {
+        let d = p.itimer_real_deadline.load(Ordering::SeqCst);
+        if d != 0 && now >= d {
+            let interval_ticks = p.itimer_real_interval.load(Ordering::SeqCst);
+            if interval_ticks > 0 {
+                // 周期性: 重新设置 deadline = now + interval
+                p.itimer_real_deadline
+                    .store(now + interval_ticks, Ordering::SeqCst);
+                p.itimer_real_remaining.store(interval_ticks, Ordering::SeqCst);
+            } else {
+                // 一次性: 关闭
+                p.itimer_real_deadline.store(0, Ordering::SeqCst);
+                p.itimer_real_remaining.store(0, Ordering::SeqCst);
+            }
+            triggered = true;
+        }
+    });
+    if triggered {
+        let _ = crate::kernel::framework::proc::signal::do_signal_send(pid as Pid, 14);
+        1
+    } else {
+        0
+    }
+}
+
+/// POSIX getrusage(who, rusage) — 写回进程/子进程 user/sys 时间.
+/// 真实实现: 写两段 timeval {sec, usec} 到用户缓冲:
+///   ru_utime: 进程用户态 CPU 时间 (user_time jiffies -> sec/usec)
+///   ru_stime: 进程内核态 CPU 时间 (sys_time jiffies -> sec/usec)
+///   ru_maxrss 等其余字段写 0.
+/// 缓冲布局 (Linux x86_64):
+///   0  ru_utime.tv_sec   (i64)
+///   8  ru_utime.tv_usec  (i64)
+///  16  ru_stime.tv_sec   (i64)
+///  24  ru_stime.tv_usec  (i64)
+///  32+ 其他 16 个 long, 写 0.
+#[no_mangle]
+pub fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
+    if out.is_null() || out_len < 32 {
+        return -1;
+    }
+    // who: 0=RUSAGE_SELF, 1=RUSAGE_CHILDREN, 2=RUSAGE_THREAD
+    if who != 0 && who != 1 && who != 2 {
+        return -1;
+    }
+    let hz = crate::kernel::framework::timer::get_frequency() as u64;
+    if hz == 0 {
+        return -1;
+    }
+    let (user, sys) = if who == 0 {
+        PROCESS_TABLE
+            .with_process(pid as Pid, |p| {
+                (
+                    p.user_time.load(Ordering::SeqCst),
+                    p.sys_time.load(Ordering::SeqCst),
+                )
+            })
+            .unwrap_or((0, 0))
+    } else if who == 1 {
+        (0, 0) // 子进程累加未实现, 写 0
+    } else {
+        (0, 0) // RUSAGE_THREAD, 暂同 SELF
+    };
+    let ut_sec = (user / hz) as i64;
+    let ut_usec = ((user % hz) * 1_000_000 / hz) as i64;
+    let st_sec = (sys / hz) as i64;
+    let st_usec = ((sys % hz) * 1_000_000 / hz) as i64;
+
+    // SAFETY: out 至少 32 字节可写, who 合法.
+    unsafe {
+        core::ptr::write_unaligned(out as *mut i64, ut_sec);
+        core::ptr::write_unaligned(out.add(8) as *mut i64, ut_usec);
+        core::ptr::write_unaligned(out.add(16) as *mut i64, st_sec);
+        core::ptr::write_unaligned(out.add(24) as *mut i64, st_usec);
+        // 剩余字节清 0
+        let tail = (out_len as usize).saturating_sub(32);
+        if tail > 0 {
+            core::ptr::write_bytes(out.add(32), 0u8, tail);
+        }
+    }
+    0
+}

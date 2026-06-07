@@ -32,6 +32,9 @@ AntX 是 Framekernel 双子树内核：framework/ 是 TCB（允许 unsafe），s
 
 详见 `CLAUDE.md` 中"外科手术式修改"与"简单优先"两条；详细规范文档待补。
 
+## 代码规定
+开发过程中坚决不允许出现功能不全或功能实现简化导致后期维护难度大的代码。
+
 ## 构建与测试
 
 `make ARCH=x86_64` 与 `make ARCH=aarch64`（双架构零 warning 零 error）。

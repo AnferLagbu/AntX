@@ -126,6 +126,27 @@ pub struct Process {
     pub exit_code: AtomicU32,
     pub cpu_time: AtomicU64,
 
+    /// POSIX times() 报告的用户态 CPU 时间 (ticks)
+    pub user_time: AtomicU64,
+    /// POSIX times() 报告的内核态 CPU 时间 (ticks)
+    pub sys_time: AtomicU64,
+    /// 进程启动时刻 (jiffies)
+    pub start_jiffies: AtomicU64,
+    /// 进程累积运行 tick 计数 (由调度器每 tick 增加)
+    pub tick_count: AtomicU64,
+
+    /// POSIX alarm() 剩余秒数对应的到期时刻 (jiffies, 0 = 无 alarm)
+    pub alarm_deadline: AtomicU64,
+    /// alarm 触发时的 jiffies 快照 (用于 read 旧值)
+    pub alarm_prev_remaining: AtomicU64,
+
+    /// POSIX setitimer(ITIMER_REAL): 到期时刻 (jiffies, 0 = 未启用)
+    pub itimer_real_deadline: AtomicU64,
+    /// 上次触发到当前的间隔 (interval)
+    pub itimer_real_interval: AtomicU64,
+    /// 距离到期剩余时间 (每次 setitimer 写入, getitimer 读)
+    pub itimer_real_remaining: AtomicU64,
+
     pub block_reason: AtomicU32,
 
     pub sched_policy: AtomicU32,
@@ -205,6 +226,15 @@ impl Process {
             user_stack: AtomicU64::new(0),
             exit_code: AtomicU32::new(0),
             cpu_time: AtomicU64::new(0),
+            user_time: AtomicU64::new(0),
+            sys_time: AtomicU64::new(0),
+            start_jiffies: AtomicU64::new(0),
+            tick_count: AtomicU64::new(0),
+            alarm_deadline: AtomicU64::new(0),
+            alarm_prev_remaining: AtomicU64::new(0),
+            itimer_real_deadline: AtomicU64::new(0),
+            itimer_real_interval: AtomicU64::new(0),
+            itimer_real_remaining: AtomicU64::new(0),
             block_reason: AtomicU32::new(BlockReason::Unknown as u32),
             sched_policy: AtomicU32::new(SchedPolicy::Normal as u32),
             rt_priority: AtomicU32::new(0),

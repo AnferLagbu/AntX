@@ -185,6 +185,18 @@ pub fn sm_close(fd: i32) -> i32 {
     unsafe { net::init::sm_close(fd) }
 }
 
+/// POSIX `sendmsg(fd, msg, flags)` — 散聚 I/O
+pub fn sm_sendmsg(fd: i32, msg: *const u8, flags: i32) -> i32 {
+    // SAFETY: sm_sendmsg 内部 NET_LOCK 持有, msg 由 services 校验 msghdr 布局.
+    unsafe { net::init::sm_sendmsg(fd, msg, flags) }
+}
+
+/// POSIX `recvmsg(fd, msg, flags)` — 散聚 I/O
+pub fn sm_recvmsg(fd: i32, msg: *mut u8, flags: i32) -> i32 {
+    // SAFETY: sm_recvmsg 内部 NET_LOCK 持有, msg 由 services 校验 msghdr 布局.
+    unsafe { net::init::sm_recvmsg(fd, msg, flags) }
+}
+
 /// POSIX `setsockopt(fd, level, optname, optval, optlen)`
 ///
 /// # Safety

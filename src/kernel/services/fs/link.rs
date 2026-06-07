@@ -5,13 +5,7 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全
-//! - 委托 framework/fs/vfs::api 完成
-//!
-//! ## Framekernel 简化
-//!
-//! - [link_syscall] hard link 当前未实现 (返回 EPERM), 保留接口
-//! - [symlink_syscall] symlink 当前未实现 (返回 EPERM), 保留接口
-//! - [readlink_syscall] symlink 未实现, 返回 EINVAL
+//! - 委托 framework/fs/vfs::api 完成真实现 (ramfs.link / ramfs.symlink / ramfs.readlink)
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::vfs::api as fw;
@@ -23,8 +17,6 @@ use crate::kernel::framework::syscall::types::Errno;
 // ============================================================================
 
 /// link(oldpath, newpath) — 创建硬链接
-///
-/// Framekernel 简化: 未实现, 返回 EPERM.
 pub fn link_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> {
     if oldpath_ptr == 0 || newpath_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -53,8 +45,6 @@ pub fn link_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> 
 // ============================================================================
 
 /// symlink(target, linkpath) — 创建符号链接
-///
-/// Framekernel 简化: 未实现, 返回 EPERM.
 pub fn symlink_syscall(target_ptr: u64, linkpath_ptr: u64) -> Result<usize, Errno> {
     if target_ptr == 0 || linkpath_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -83,8 +73,6 @@ pub fn symlink_syscall(target_ptr: u64, linkpath_ptr: u64) -> Result<usize, Errn
 // ============================================================================
 
 /// readlink(path, buf, bufsiz) — 读符号链接目标
-///
-/// Framekernel 简化: symlink 未实现, 返回 EINVAL.
 pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usize, Errno> {
     if path_ptr == 0 || buf_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -99,10 +87,9 @@ pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usiz
         return Err(Errno::EFAULT);
     }
     let pwm = current_pwm();
-    // 调用 framework safe wrapper; 内部不再额外校验.
-    let r = fw::vfs_readlink_safe(
+    let r = fw::vfs_readlink(
         path_ptr as *const u8,
-        buf_ptr,
+        buf_ptr as *mut u8,
         bufsiz,
         pwm,
     );
