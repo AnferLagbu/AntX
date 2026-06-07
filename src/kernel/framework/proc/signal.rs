@@ -24,6 +24,26 @@
 //!        └→ sigreturn: 恢复原始栈帧
 //! ```
 //!
+//! ## x86_64 信号栈帧布局
+//!
+//! ```text
+//! 用户栈 (低地址 → 高地址):
+//! ┌────────────────────┐ ← 新 RSP
+//! │ ucontext / siginfo │  (未来扩展)
+//! ├────────────────────┤
+//! │ SignalFrame         │  保存原始寄存器
+//! │   rip              │
+//! │   cs               │
+//! │   rflags           │
+//! │   rsp              │
+//! │   ss               │
+//! │   rax..r15         │
+//! │   signum           │
+//! ├────────────────────┤
+//! │ sigreturn trampoline│  __sigreturn 代码 (syscall 15)
+//! └────────────────────┘ ← handler 返回地址
+//! ```
+//!
 //! # Safety
 //!
 //! - do_signal_send: 操作进程原子字段, 线程安全
@@ -34,6 +54,63 @@ use core::sync::atomic::Ordering;
 
 use super::process::PROCESS_TABLE;
 use super::types::{Pid, ProcessState};
+
+// ============================================================================
+// 信号栈帧 (x86_64)
+// ============================================================================
+
+/// 信号栈帧 — 保存在用户栈上, sigreturn 时恢复
+///
+/// 布局与 InterruptFrame 兼容, 便于直接拷贝寄存器状态.
+/// signum 字段放在最后, handler 通过第一个参数 (rdi) 获取.
+#[repr(C)]
+pub struct SignalFrame {
+    // 通用寄存器 (与 InterruptFrame 顺序一致)
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rdi: u64,
+    pub rsi: u64,
+    pub rbp: u64,
+    pub rdx: u64,
+    pub rcx: u64,
+    pub rbx: u64,
+    pub rax: u64,
+
+    // 中断元数据
+    pub int_no: u64,
+    pub err_code: u64,
+
+    // 返回地址信息
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+
+    // 信号编号 (handler 参数)
+    pub signum: u64,
+}
+
+/// sigreturn trampoline 代码
+///
+/// x86_64 机器码:
+///   mov eax, 15       ; SYS_rt_sigreturn = 15 (x86_64)
+///   syscall            ; 系统调用
+///
+/// 共 8 字节: B8 0F 00 00 00 0F 05
+pub const SIGRETURN_TRAMPOLINE: [u8; 7] = [0xB8, 0x0F, 0x00, 0x00, 0x00, 0x0F, 0x05];
+
+/// sigreturn trampoline 大小
+pub const SIGRETURN_TRAMPOLINE_SIZE: usize = SIGRETURN_TRAMPOLINE.len();
+
+/// 信号栈帧总大小 (含 trampoline)
+pub const SIGNAL_FRAME_TOTAL_SIZE: usize = core::mem::size_of::<SignalFrame>() + SIGRETURN_TRAMPOLINE_SIZE;
 
 // ============================================================================
 // 常量
@@ -202,18 +279,21 @@ pub fn do_signal_default_action(pid: Pid, sig: u8) {
 /// 遍历当前进程的 pending & ~blocked, 逐个投递:
 /// - SIG_DFL: 执行默认动作
 /// - SIG_IGN: 清除 pending 位, 忽略
-/// - handler: 修改用户态栈帧跳转到 handler (当前实现暂执行默认动作)
+/// - handler: 修改用户态栈帧跳转到 handler
+///
+/// # Arguments
+/// * `frame` - 当前中断帧 (用户态寄存器状态), 仅当 handler 投递时修改
 ///
 /// # Returns
 ///
-/// 返回 true 表示有信号被投递.
+/// 返回 true 表示有信号被投递 (handler 已设置, 需要返回用户态执行).
 /// 返回 false 表示无待投递信号.
 ///
-/// # Note
+/// # Safety
 ///
-/// 当前实现仅处理 SIG_DFL 和 SIG_IGN.
-/// handler 跳转需要架构相关的栈帧修改, 将在后续迭代中实现.
-pub fn do_signal_deliver() -> bool {
+/// - frame 指针必须有效且指向当前 CPU 的中断帧
+/// - 仅在返回用户态前调用 (中断上下文或系统调用出口)
+pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::InterruptFrame) -> bool {
     let pid = match super::scheduler::SCHEDULER.current() {
         Some(p) => p,
         None => return false,
@@ -259,11 +339,65 @@ pub fn do_signal_deliver() -> bool {
             SIG_IGN => {
                 delivered = true;
             }
-            _handler_addr => {
-                // TODO: 架构相关的栈帧修改 (x86_64: 修改 RIP/RSP, aarch64: 修改 ELR/SP)
-                // 当前简化实现: 暂时执行默认动作
-                do_signal_default_action(pid, sig);
+            handler_addr => {
+                // 构建信号栈帧并修改 InterruptFrame
+                // SAFETY: frame 由调用方保证有效
+                let f = unsafe { &mut *frame };
+
+                let user_rsp = f.rsp;
+
+                // 栈帧布局:
+                //   frame_rsp+0: 返回地址 (指向 trampoline, handler ret 时弹出)
+                //   frame_rsp+8: SignalFrame (保存原始寄存器)
+                //   frame_rsp+8+sizeof(SignalFrame): trampoline code (rt_sigreturn)
+                let total = 8 + core::mem::size_of::<SignalFrame>() + SIGRETURN_TRAMPOLINE_SIZE;
+                let frame_rsp = if user_rsp >= total as u64 {
+                    user_rsp - total as u64
+                } else {
+                    // 栈溢出, 执行默认动作
+                    do_signal_default_action(pid, sig);
+                    delivered = true;
+                    break;
+                };
+
+                // 构建 SignalFrame (保存原始寄存器)
+                let sigframe = SignalFrame {
+                    r15: f.r15, r14: f.r14, r13: f.r13, r12: f.r12,
+                    r11: f.r11, r10: f.r10, r9: f.r9, r8: f.r8,
+                    rdi: f.rdi, rsi: f.rsi, rbp: f.rbp, rdx: f.rdx,
+                    rcx: f.rcx, rbx: f.rbx, rax: f.rax,
+                    int_no: f.int_no, err_code: f.err_code,
+                    rip: f.rip, cs: f.cs, rflags: f.rflags, rsp: f.rsp, ss: f.ss,
+                    signum: sig as u64,
+                };
+
+                unsafe {
+                    let trampoline_start = frame_rsp + 8 + core::mem::size_of::<SignalFrame>() as u64;
+
+                    // 写入返回地址 (指向 trampoline)
+                    core::ptr::write_unaligned(frame_rsp as *mut u64, trampoline_start);
+
+                    // 写入 SignalFrame
+                    core::ptr::write_unaligned((frame_rsp + 8) as *mut SignalFrame, sigframe);
+
+                    // 写入 trampoline 代码 (mov eax,15; syscall)
+                    core::ptr::copy_nonoverlapping(
+                        SIGRETURN_TRAMPOLINE.as_ptr(),
+                        trampoline_start as *mut u8,
+                        SIGRETURN_TRAMPOLINE_SIZE,
+                    );
+                }
+
+                // 修改 InterruptFrame: 跳转到 handler
+                f.rip = handler_addr;
+                f.rdi = sig as u64;  // 参数1: signum
+                f.rsi = 0;           // 参数2: siginfo (简化: NULL)
+                f.rdx = 0;           // 参数3: ucontext (简化: NULL)
+                f.rsp = frame_rsp;
+
                 delivered = true;
+                // 一次只投递一个 handler 信号 (sigreturn 后再投递下一个)
+                break;
             }
         }
     }

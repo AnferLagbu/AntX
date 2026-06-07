@@ -751,6 +751,16 @@ impl IdtManager {
             self.send_eoi(irq);
 
             crate::kernel::framework::irq::do_softirq();
+
+            // 返回用户态前检查待投递信号
+            // SAFETY: frame 有效, IRQ 处理完成, 即将 iretq
+            unsafe {
+                let f = &*frame;
+                // 仅在返回用户态时检查 (CS 低2位=3 表示用户态)
+                if f.cs & 0x3 == 0x3 {
+                    crate::kernel::framework::proc::signal::do_signal_deliver(frame);
+                }
+            }
         }
     }
 

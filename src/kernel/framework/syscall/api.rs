@@ -103,3 +103,23 @@ pub fn validate_user_ptr(ptr: u64) -> bool {
 pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
     super::validate_user_buf(ptr, len)
 }
+
+/// nanosleep 系统调用实现 (TCB: 操作 hrtimer + 调度器)
+pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
+    super::sys_nanosleep(req, rem)
+}
+
+/// kill 系统调用实现 (TCB: 操作进程信号位)
+pub fn sys_kill(pid: i32, sig: i32) -> i64 {
+    super::sys_kill(pid, sig)
+}
+
+/// rt_sigaction 系统调用实现 (TCB: 操作 sigaction 表)
+pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
+    super::sys_rt_sigaction(signum, act, oact)
+}
+
+/// rt_sigprocmask 系统调用实现 (TCB: 操作信号掩码)
+pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
+    super::sys_rt_sigprocmask(how, set, oset)
+}

@@ -24,6 +24,7 @@
 pub mod elf;
 pub mod execve;
 pub mod signal;
+pub mod sleep;
 pub mod table;
 
 // ============================================================================

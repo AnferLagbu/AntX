@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 pub mod api;
 pub mod brk;
+pub mod epoll;
 pub mod futex;
 pub mod mmap;
 /// Syscall 模块 — POSIX 原生系统调用分发
@@ -59,6 +60,39 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     }
     let f = &mut *frame;
     let syscall_num = f.rax;
+
+    // rt_sigreturn 特殊处理: 需要直接修改 frame, 不走正常 dispatch
+    if syscall_num == SYS_rt_sigreturn {
+        // 从用户栈上的 SignalFrame 恢复寄存器
+        // 布局: rsp+0=返回地址, rsp+8=SignalFrame
+        let sigframe_ptr = (f.rsp + 8) as *const crate::kernel::framework::proc::signal::SignalFrame;
+        if !sigframe_ptr.is_null() {
+            let sigframe = core::ptr::read_unaligned(sigframe_ptr);
+            f.r15 = sigframe.r15;
+            f.r14 = sigframe.r14;
+            f.r13 = sigframe.r13;
+            f.r12 = sigframe.r12;
+            f.r11 = sigframe.r11;
+            f.r10 = sigframe.r10;
+            f.r9 = sigframe.r9;
+            f.r8 = sigframe.r8;
+            f.rdi = sigframe.rdi;
+            f.rsi = sigframe.rsi;
+            f.rbp = sigframe.rbp;
+            f.rdx = sigframe.rdx;
+            f.rcx = sigframe.rcx;
+            f.rbx = sigframe.rbx;
+            f.rax = sigframe.rax;
+            f.rip = sigframe.rip;
+            f.cs = sigframe.cs;
+            f.rflags = sigframe.rflags;
+            f.rsp = sigframe.rsp;
+            f.ss = sigframe.ss;
+        }
+        // sigreturn 不返回值, rax 保持原值
+        return;
+    }
+
     let a0 = f.rdi;
     let a1 = f.rsi;
     let a2 = f.rdx;
@@ -67,6 +101,10 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     let a5 = f.r9;
     let result = syscall_dispatch(syscall_num, a0, a1, a2, a3, a4, a5);
     f.rax = result as u64;
+
+    // 返回用户态前检查待投递信号
+    // SAFETY: frame 有效, 当前在当前 CPU 的 syscall 上下文
+    crate::kernel::framework::proc::signal::do_signal_deliver(frame);
 }
 
 macro_rules! dispatch {
@@ -135,8 +173,20 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_mremap => dispatch!(Errno::ENOSYS.as_ret(), b"mremap_nosys\0"),
 
         // ==================== 信号 ====================
-        SYS_rt_sigaction => dispatch!(sys_rt_sigaction(a0 as i32, a1, a2), b"rt_sigaction\0"),
-        SYS_rt_sigprocmask => dispatch!(sys_rt_sigprocmask(a0 as i32, a1, a2), b"rt_sigprocmask\0"),
+        SYS_rt_sigaction => dispatch!(
+            match crate::kernel::services::proc::signal::rt_sigaction_syscall(a0 as i32, a1, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"rt_sigaction\0"
+        ),
+        SYS_rt_sigprocmask => dispatch!(
+            match crate::kernel::services::proc::signal::rt_sigprocmask_syscall(a0 as i32, a1, a2) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"rt_sigprocmask\0"
+        ),
         SYS_rt_sigreturn => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
 
         // ==================== 设备 ====================
@@ -162,7 +212,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_nice => dispatch!(sys_nice(a0 as i32), b"nice\0"),
 
         // ==================== 定时器 ====================
-        SYS_nanosleep => dispatch!(sys_nanosleep(a0, a1), b"nanosleep\0"),
+        SYS_nanosleep => dispatch!(
+            match crate::kernel::services::proc::sleep::nanosleep_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"nanosleep\0"
+        ),
         SYS_getitimer => dispatch!(Errno::ENOSYS.as_ret(), b"getitimer_nosys\0"),
         SYS_alarm => dispatch!(Errno::ENOSYS.as_ret(), b"alarm\0"),
         SYS_setitimer => dispatch!(Errno::ENOSYS.as_ret(), b"setitimer_nosys\0"),
@@ -241,7 +297,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
         SYS_exit => dispatch!(sys_exit(a0 as i32), b"exit\0"),
         SYS_wait4 => dispatch!(sys_wait4(a0 as i32), b"wait4\0"),
-        SYS_kill => dispatch!(sys_kill(a0 as i32, a1 as i32), b"kill\0"),
+        SYS_kill => dispatch!(
+            match crate::kernel::services::proc::signal::kill_syscall(a0 as i32, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"kill\0"
+        ),
 
         // ==================== 系统信息 ====================
         SYS_uname => dispatch!(sys_uname(a0 as *mut u8), b"uname\0"),
@@ -360,6 +422,29 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         SYS_futex => dispatch!(
             crate::kernel::services::sync::futex::futex_syscall(a0, a1 as i32, a2 as i32, a3, 0).as_ret(),
             b"futex\0"
+        ),
+
+        // ==================== 事件轮询 ====================
+        SYS_epoll_create => dispatch!(
+            match crate::kernel::services::sync::epoll::epoll_create_syscall(a0 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"epoll_create\0"
+        ),
+        SYS_epoll_ctl => dispatch!(
+            match crate::kernel::services::sync::epoll::epoll_ctl_syscall(a0 as i64, a1 as i32, a2 as i32, a3) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"epoll_ctl\0"
+        ),
+        SYS_epoll_wait => dispatch!(
+            match crate::kernel::services::sync::epoll::epoll_wait_syscall(a0 as i64, a1, a2 as i32, a3 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"epoll_wait\0"
         ),
 
         // ==================== Credo 私有 syscall (400+) ====================
@@ -1769,7 +1854,7 @@ fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
 // nanosleep — 高精度睡眠 (基于 ticks, 1ms 粒度)
 // ============================================================================
 
-fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
+pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
     if req == 0 || !raw::check_user_ptr(req) {
         return Errno::EINVAL.as_ret();
     }
@@ -1782,15 +1867,32 @@ fn sys_nanosleep(req: u64, _rem: u64) -> i64 {
     if ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1_000_000_000 {
         return Errno::EINVAL.as_ret();
     }
-    let total_ms = ts.tv_sec as u64 * 1000 + ts.tv_nsec as u64 / 1_000_000;
-    if total_ms == 0 {
+
+    // 计算总纳秒
+    let total_ns = ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64;
+    if total_ns == 0 {
         return 0;
     }
-    let start = raw::get_ticks();
-    let target = start + total_ms;
-    while raw::get_ticks() < target {
-        core::hint::spin_loop();
+
+    // 短延时 (< 1ms): 使用 hrtimer 忙等, 避免调度开销
+    // 长延时 (>= 1ms): 使用调度器阻塞睡眠
+    if total_ns < 1_000_000 {
+        // 忙等: 使用 hrtimer 时钟源精确等待
+        let start = crate::kernel::framework::timer::hrtimer::hrtimer_clock_read();
+        let target = start + total_ns;
+        while crate::kernel::framework::timer::hrtimer::hrtimer_clock_read() < target {
+            core::hint::spin_loop();
+        }
+    } else {
+        // 调度器阻塞: 毫秒级精度
+        let total_ms = total_ns / 1_000_000;
+        let _ = crate::kernel::framework::timer::sleep::timer_sleep(total_ms);
     }
+
+    // 如果有 rem 指针且被信号中断, 写入剩余时间
+    // 当前简化: 总是成功完成, 不处理信号中断
+    let _ = rem;
+
     0
 }
 
@@ -1919,7 +2021,7 @@ fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
 const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
 
-fn sys_kill(pid: i32, sig: i32) -> i64 {
+pub fn sys_kill(pid: i32, sig: i32) -> i64 {
     if pid <= 0 && pid != -1 {
         return Errno::ESRCH.as_ret();
     }
@@ -2139,7 +2241,7 @@ const SIG_BLOCK: i32 = 0;
 const SIG_UNBLOCK: i32 = 1;
 const SIG_SETMASK: i32 = 2;
 
-fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
+pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
     if !(1..=31).contains(&signum) {
         return Errno::EINVAL.as_ret();
     }
@@ -2176,7 +2278,7 @@ fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
     0
 }
 
-fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
+pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
     let pid = match crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),

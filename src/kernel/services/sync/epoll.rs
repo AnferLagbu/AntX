@@ -1,0 +1,91 @@
+#![deny(unsafe_code)]
+//! epoll — services 层安全代理
+//!
+//! 为 epoll 系统调用提供参数验证和类型安全封装:
+//! - `epoll_create_syscall`: 验证 size > 0
+//! - `epoll_ctl_syscall`: 验证 op 有效, fd 非负
+//! - `epoll_wait_syscall`: 验证 maxevents > 0
+//!
+//! ## 安全边界
+//!
+//! - services 层验证标量参数 (size/op/fd/maxevents)
+//! - 原始指针 (`*const EpollEvent` / `*mut EpollEvent`) 委托给 framework 层
+//!   (指针合法性由 syscall 入口 check_user_ptr 保证)
+
+use crate::kernel::framework::syscall::types::Errno;
+
+/// epoll_create 安全代理
+///
+/// 验证: size > 0
+pub fn epoll_create_syscall(size: i32) -> Result<usize, Errno> {
+    if size <= 0 {
+        return Err(Errno::EINVAL);
+    }
+    let ret = crate::kernel::framework::syscall::epoll::sys_epoll_create(size);
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
+}
+
+/// epoll_ctl 安全代理
+///
+/// 验证: op 有效 (ADD/DEL/MOD), fd >= 0
+pub fn epoll_ctl_syscall(
+    epfd: i64,
+    op: i32,
+    fd: i32,
+    event: u64, // 原始指针, 委托 framework 处理
+) -> Result<usize, Errno> {
+    // 验证 op
+    const EPOLL_CTL_ADD: i32 = 1;
+    const EPOLL_CTL_DEL: i32 = 2;
+    const EPOLL_CTL_MOD: i32 = 3;
+    if op != EPOLL_CTL_ADD && op != EPOLL_CTL_DEL && op != EPOLL_CTL_MOD {
+        return Err(Errno::EINVAL);
+    }
+    // 验证 fd
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    // DEL 操作允许 event 为 null
+    if op == EPOLL_CTL_DEL && event == 0 {
+        let ret = crate::kernel::framework::syscall::epoll::sys_epoll_ctl(
+            epfd, op, fd, core::ptr::null(),
+        );
+        return if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(0) };
+    }
+    // ADD/MOD: event 必须非 null
+    if event == 0 {
+        return Err(Errno::EFAULT);
+    }
+    let ret = crate::kernel::framework::syscall::epoll::sys_epoll_ctl(
+        epfd, op, fd, event as *const crate::kernel::framework::syscall::epoll::EpollEvent,
+    );
+    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+}
+
+/// epoll_wait 安全代理
+///
+/// 验证: maxevents > 0
+pub fn epoll_wait_syscall(
+    epfd: i64,
+    events: u64,    // 原始指针, 委托 framework 处理
+    maxevents: i32,
+    timeout: i32,
+) -> Result<usize, Errno> {
+    if maxevents <= 0 {
+        return Err(Errno::EINVAL);
+    }
+    if events == 0 {
+        return Err(Errno::EFAULT);
+    }
+    let ret = crate::kernel::framework::syscall::epoll::sys_epoll_wait(
+        epfd,
+        events as *mut crate::kernel::framework::syscall::epoll::EpollEvent,
+        maxevents,
+        timeout,
+    );
+    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+}

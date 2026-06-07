@@ -153,3 +153,4 @@ pub type SyncResult<T> = Result<T, SyncError>;
 // ============================================================================
 
 pub mod futex;
+pub mod epoll;

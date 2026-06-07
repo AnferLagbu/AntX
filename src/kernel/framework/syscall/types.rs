@@ -185,6 +185,11 @@ pub const SYS_tgkill: u64 = 234;
 // 同步
 pub const SYS_futex: u64 = 202;
 
+// 事件轮询
+pub const SYS_epoll_create: u64 = 213;
+pub const SYS_epoll_ctl: u64 = 233;
+pub const SYS_epoll_wait: u64 = 232;
+
 // ==================== Credo 私有 syscall (400+ 不与 POSIX 冲突) ====================
 
 pub const SYS_CREDO_LOGIN: u64 = 400;
@@ -310,6 +315,54 @@ pub enum Errno {
 impl Errno {
     pub const fn as_ret(self) -> i64 {
         -(self as i64)
+    }
+
+    /// 从负返回值恢复 Errno
+    ///
+    /// 输入: framework 层返回的负错误码 (如 -ENOMEM)
+    /// 输出: 对应的 Errno 枚举值
+    pub fn from_ret(ret: i64) -> Self {
+        let errno = (-ret) as u64;
+        match errno {
+            1 => Self::EPERM,
+            2 => Self::ENOENT,
+            3 => Self::ESRCH,
+            4 => Self::EINTR,
+            5 => Self::EIO,
+            6 => Self::ENXIO,
+            7 => Self::E2BIG,
+            8 => Self::ENOEXEC,
+            9 => Self::EBADF,
+            10 => Self::ECHILD,
+            11 => Self::EAGAIN,
+            12 => Self::ENOMEM,
+            13 => Self::EACCES,
+            14 => Self::EFAULT,
+            16 => Self::EBUSY,
+            17 => Self::EEXIST,
+            18 => Self::EXDEV,
+            19 => Self::ENODEV,
+            20 => Self::ENOTDIR,
+            21 => Self::EISDIR,
+            22 => Self::EINVAL,
+            23 => Self::ENFILE,
+            24 => Self::EMFILE,
+            25 => Self::ENOTTY,
+            27 => Self::EFBIG,
+            28 => Self::ENOSPC,
+            29 => Self::ESPIPE,
+            30 => Self::EROFS,
+            31 => Self::EMLINK,
+            32 => Self::EPIPE,
+            33 => Self::EDOM,
+            34 => Self::ERANGE,
+            35 => Self::EDEADLK,
+            36 => Self::ENAMETOOLONG,
+            38 => Self::ENOSYS,
+            39 => Self::ENOTEMPTY,
+            40 => Self::ELOOP,
+            _ => Self::EINVAL, // 未知错误码回退到 EINVAL
+        }
     }
 }
 

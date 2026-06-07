@@ -403,3 +403,70 @@ mod tests {
         assert_eq!(rt.to_bit(), 1u64 << 32);
     }
 }
+
+// ============================================================================
+// Syscall 安全代理
+// ============================================================================
+
+/// kill 系统调用安全代理
+///
+/// 验证: 信号编号 1..=63, 目标 pid > 0
+pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    use crate::kernel::framework::syscall::types::Errno;
+
+    // 验证信号编号
+    if sig < 0 || sig > 63 {
+        return Err(Errno::EINVAL);
+    }
+    // sig=0 是合法的 (仅检查进程存在)
+    // 验证 pid
+    if pid <= 0 {
+        // TODO: pid=0 广播到同组, pid=-1 广播到所有, pid<-1 广播到 |pid| 组
+        // 当前仅支持 pid > 0
+        return Err(Errno::ESRCH);
+    }
+
+    let ret = crate::kernel::framework::syscall::api::sys_kill(pid, sig);
+    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+}
+
+/// rt_sigaction 系统调用安全代理
+///
+/// 验证: signum 1..=31 (标准信号) 或 32..=64 (RT信号)
+pub fn rt_sigaction_syscall(
+    signum: i32,
+    act: u64,
+    oact: u64,
+) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    use crate::kernel::framework::syscall::types::Errno;
+
+    // 验证信号编号 (SIGKILL=9 和 SIGSTOP=19 不可捕获)
+    if signum < 1 || signum > 64 {
+        return Err(Errno::EINVAL);
+    }
+    if signum == 9 || signum == 19 {
+        return Err(Errno::EINVAL);
+    }
+
+    let ret = crate::kernel::framework::syscall::api::sys_rt_sigaction(signum, act, oact);
+    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+}
+
+/// rt_sigprocmask 系统调用安全代理
+///
+/// 验证: how 有效 (SIG_BLOCK=0, SIG_UNBLOCK=1, SIG_SETMASK=2)
+pub fn rt_sigprocmask_syscall(
+    how: i32,
+    set: u64,
+    oset: u64,
+) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    use crate::kernel::framework::syscall::types::Errno;
+
+    // 验证 how
+    if how < 0 || how > 2 {
+        return Err(Errno::EINVAL);
+    }
+
+    let ret = crate::kernel::framework::syscall::api::sys_rt_sigprocmask(how, set, oset);
+    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+}
