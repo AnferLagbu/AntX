@@ -1,7 +1,5 @@
 # AGENTS.md
 
-## 概览
-
 AntX 是 Framekernel 双子树内核：framework/ 是 TCB（允许 unsafe），services/ 是 100% safe Rust。开始任何任务前先读完本文，再去读列出的文档。
 
 ## 架构责任分离
@@ -10,15 +8,11 @@ AntX 是 Framekernel 双子树内核：framework/ 是 TCB（允许 unsafe），s
 
 ## 必读文档
 
-`docs/` 下所有文档：
-`docs/README.md`
-`docs/explain/framekernel-nature.md`
-`docs/explain/framekernel-dev-guide.md`
-`docs/plan/kernel-roadmap.md`
+`docs/` 下所有文档，包括子目录。
 
 ## CLAUDE.md
 
-`CLAUDE.md` 全文。
+阅读 `CLAUDE.md` 全文。
 
 ## 框架与归属
 
@@ -32,19 +26,13 @@ AntX 是 Framekernel 双子树内核：framework/ 是 TCB（允许 unsafe），s
 
 详见 `CLAUDE.md` 中"外科手术式修改"与"简单优先"两条；详细规范文档待补。
 
-## 代码规定
+## 开发规定
 开发过程中坚决不允许出现功能不全或功能实现简化导致后期维护难度大的代码。
 项目代码仅在必要时参考业界惯例或Linux实现，但绝不盲从Linux实现。
 
 ## 构建与测试
 
-`make ARCH=x86_64` 与 `make ARCH=aarch64`（双架构零 warning 零 error）。
-`make test-host` 主机测试。
-`scripts/qemu_boot_test.sh` 与 `scripts/qemu_debug.sh` QEMU 启动与 GDB。
-`make test-all` 端到端。
-`cargo miri test` 验证 unsafe，case 放 `miri-tests/`。
-集成测试样板 `host-tests/tests/hvfs_test.rs` 与 `host-tests/tests/stress_test.rs`。
-测试组织详见 `host-tests/Cargo.toml` 与 `host-tests/src/lib.rs`。
+完成开发后，必须在双架构下编译通过（0 warning, 0 error），且所有审查（包括但不限于如通过clippy等rust工具与项目自身审计工具的检查）与测试通过（项目自身测试框架通过）。
 
 ## 审计
 
