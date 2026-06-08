@@ -192,12 +192,69 @@ pub fn proc_getsid(pid: i32) -> i64 {
 
 /// setpgid(pid, pgid) — 设置进程组
 ///
-/// POSIX: 成功 0, 失败 -1 + errno。
-/// 简化: 仅校验参数范围, 不维护 pgid 实际表 (Framekernel 中 pgid 默认 = pid)。
+/// POSIX: 成功 0, 失败 -errno。
+/// 简化: 仅校验参数范围 + 写入 Process.pgid (用于 kill 广播语义).
+/// 权限约束 (POSIX 严格语义) 暂未实现: 调用者须为同一会话成员, 此处简化为允许.
 pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
     if pid < 0 || pgid < 0 {
         return -22; // -EINVAL
     }
-    // 简化: 不真正设置, 视为成功
-    0
+    if pid == 0 {
+        return -22; // -EINVAL (pid=0 语义不属于 setpgid 范围)
+    }
+    let target_pid = pid as u32;
+    let new_pgid = pgid as u32;
+    let mut result: i64 = -3; // -ESRCH
+    super::process::PROCESS_TABLE.with_process(target_pid, |proc| {
+        // 仅允许在子进程或自身上设置 (简化: 不做严格检查)
+        proc.pgid.store(new_pgid, Ordering::SeqCst);
+        result = 0;
+    });
+    result
+}
+
+/// getpgid(pid) — 取进程组 ID
+///
+/// POSIX: 成功返回 pgid, 失败 -errno。
+/// pid=0 视为当前进程 (POSIX 语义).
+pub fn proc_getpgid(pid: i32) -> i64 {
+    if pid < 0 {
+        return -22; // -EINVAL
+    }
+    let target_pid = if pid == 0 {
+        super::api::process_get_current_pid()
+    } else {
+        pid as u32
+    };
+    if target_pid == 0 {
+        return -3; // -ESRCH
+    }
+    let mut pgid: u32 = 0;
+    let mut found = false;
+    super::process::PROCESS_TABLE.with_process(target_pid, |proc| {
+        pgid = proc.pgid.load(Ordering::SeqCst);
+        found = true;
+    });
+    if found {
+        // pgid 为 0 表示未初始化, 视作等于 pid (POSIX 默认)
+        if pgid == 0 {
+            target_pid as i64
+        } else {
+            pgid as i64
+        }
+    } else {
+        -3 // -ESRCH
+    }
+}
+
+/// 初始化新创建进程的 pgid (默认自成一组: pgid = pid)
+///
+/// 由 scheduler.create_process 内部调用.
+pub fn proc_init_pgid(pid: u32) {
+    super::process::PROCESS_TABLE.with_process(pid, |proc| {
+        let cur = proc.pgid.load(Ordering::SeqCst);
+        if cur == 0 {
+            proc.pgid.store(pid, Ordering::SeqCst);
+        }
+    });
 }

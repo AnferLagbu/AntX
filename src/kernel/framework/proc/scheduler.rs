@@ -265,6 +265,9 @@ impl Scheduler {
             return None;
         }
 
+        // 初始化进程组 ID (POSIX: 新进程默认自成一组, pgid = pid)
+        crate::kernel::framework::proc::session::proc_init_pgid(pid);
+
         Some(pid)
     }
 

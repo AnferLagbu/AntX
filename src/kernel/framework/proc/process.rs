@@ -166,6 +166,8 @@ pub struct Process {
     pub dl_remaining: AtomicU64,
 
     pub session_id: AtomicU64,
+    /// POSIX 进程组 ID (pgid); 0 表示未初始化 (实际默认为 pid).
+    pub pgid: AtomicU32,
     pub fd_table: FdTable,
 
     /// 阻塞睡眠到期时间 (ticks), 用于 proc_sleep_ms
@@ -250,6 +252,7 @@ impl Process {
             dl_abs: AtomicU64::new(0),
             dl_remaining: AtomicU64::new(0),
             session_id: AtomicU64::new(0),
+            pgid: AtomicU32::new(0),
             fd_table: FdTable::new(),
             sleep_until: AtomicU64::new(0),
             ref_count: AtomicU32::new(1),

@@ -410,21 +410,18 @@ mod tests {
 
 /// kill 系统调用安全代理
 ///
-/// 验证: 信号编号 1..=63, 目标 pid > 0
+/// 验证: 信号编号 0..=31, 目标 pid 接受 POSIX 4 种语义 (pid>0 单进程,
+///        pid=0 同进程组, pid=-1 全部, pid<-1 |pid| 进程组).
 pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
     use crate::kernel::framework::syscall::types::Errno;
 
-    // 验证信号编号
-    if sig < 0 || sig > 63 {
+    // 验证信号编号 (POSIX kill: 0 = 检查存在, 1..=31 = 标准信号)
+    if sig < 0 || sig > 31 {
         return Err(Errno::EINVAL);
     }
-    // sig=0 是合法的 (仅检查进程存在)
-    // 验证 pid
-    if pid <= 0 {
-        // TODO(TRACK-315B7C): pid=0 广播到同组, pid=-1 广播到所有, pid<-1 广播到 |pid| 组
-        // 当前仅支持 pid > 0
-        return Err(Errno::ESRCH);
-    }
+    // 验证 pid 范围 (POSIX: pid 必须非 0, -1, <-1 之一; pid=0 合法)
+    // 原约束 pid <= 0 -> ESRCH 已移除 (TRACK-315B7C 解决)
+    // 最小校验: pid 至少 0 或负数 (i32 范围), 由 framework 内部 4 路径分发
 
     let ret = crate::kernel::framework::syscall::api::sys_kill(pid, sig);
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }

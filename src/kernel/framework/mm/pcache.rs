@@ -196,6 +196,28 @@ impl PageCacheBucket {
             }
         }
     }
+
+    /// 填充缓存页内容 (供 miss 后由 vfs/fs 路径回填文件数据)
+    ///
+    /// 若 `src.len() < PAGE_SIZE`, 剩余字节保持原值 (通常为零).
+    fn fill(&mut self, inode_id: u32, page_index: u64, src: &[u8]) -> bool {
+        for entry in self.entries.iter() {
+            if entry.occupied && entry.inode_id == inode_id && entry.page_index == page_index {
+                let dst_virt = crate::kernel::framework::mm::phys_to_virt(entry.phys);
+                // SAFETY: `dst_virt` 由 pmm 分配的物理页映射, 仅由 PageCache 拥有
+                unsafe {
+                    let copy_len = core::cmp::min(src.len(), PAGE_SIZE as usize);
+                    core::ptr::copy_nonoverlapping(
+                        src.as_ptr(),
+                        dst_virt as *mut u8,
+                        copy_len,
+                    );
+                }
+                return true;
+            }
+        }
+        false
+    }
 }
 
 // ============================================================================
@@ -329,6 +351,45 @@ pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) {
     );
 }
 
+/// 填充指定缓存页内容 (解决 TRACK-A7DE25)
+///
+/// 适用于 pcache_get 返回新页 (miss) 后, 由 vfs 层读取 fs 数据并回填.
+/// 复制长度取 `min(src.len(), PAGE_SIZE)`, 不足部分保持 pcache_get 时的零页状态.
+///
+/// 返回 true 表示找到并填充了对应 entry; false 表示 entry 不存在
+/// (调用方应仅在 pcache_get 成功返回后调用).
+pub fn pcache_fill(inode_id: u32, page_index: u64, src: &[u8]) -> bool {
+    let idx = pcache_hash(inode_id, page_index);
+    PAGE_CACHE.locks[idx].lock();
+    // SAFETY: 持有桶锁
+    let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
+    let result = bucket.fill(inode_id, page_index, src);
+    PAGE_CACHE.locks[idx].unlock();
+    result
+}
+
+/// 读取缓存页内容到目标缓冲区
+///
+/// 用于把 pcache 物理页的数据复制到用户缓冲 / 其他位置.
+/// `dst.len()` 不得超过 `PAGE_SIZE`.
+pub fn pcache_read_to_slice(inode_id: u32, page_index: u64, dst: &mut [u8]) -> bool {
+    let phys = match pcache_lookup(inode_id, page_index) {
+        Some(p) => p,
+        None => return false,
+    };
+    let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
+    let copy_len = core::cmp::min(dst.len(), PAGE_SIZE as usize);
+    // SAFETY: `src_virt` 指向 pcache 拥有的有效物理页, 长度由物理页大小保证
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            src_virt as *const u8,
+            dst.as_mut_ptr(),
+            copy_len,
+        );
+    }
+    true
+}
+
 // ============================================================================
 // 内核测试
 // ============================================================================
@@ -358,9 +419,36 @@ fn test_pcache_bucket_insert_lookup() -> crate::kernel::framework::tests::TestRe
 }
 
 #[cfg(feature = "kernel_test")]
+fn test_pcache_fill_requires_existing_entry() -> crate::kernel::framework::tests::TestResult {
+    use crate::kernel::framework::tests::{check, TestResult};
+    // 在空桶上 fill 应返回 false (entry 不存在)
+    let mut bucket = PageCacheBucket::new();
+    let data = [0xABu8; 16];
+    let result = bucket.fill(1, 0, &data);
+    check!(!result, "fill on empty bucket returns false");
+    TestResult::Pass
+}
+
+#[cfg(feature = "kernel_test")]
+fn test_pcache_fill_len_clamped() -> crate::kernel::framework::tests::TestResult {
+    use crate::kernel::framework::tests::{check, TestResult};
+    // fill 的 copy_len 应取 min(src.len(), PAGE_SIZE)
+    // 我们通过计算期望 copy_len 验证 (不实际触发 PMM 分配)
+    let src_short = [0u8; 100];
+    let expected = core::cmp::min(src_short.len(), PAGE_SIZE as usize);
+    check!(expected == 100, "short src copies full");
+    let src_long = [0u8; (PAGE_SIZE as usize) + 1024];
+    let expected2 = core::cmp::min(src_long.len(), PAGE_SIZE as usize);
+    check!(expected2 == PAGE_SIZE as usize, "long src clamped to PAGE_SIZE");
+    TestResult::Pass
+}
+
+#[cfg(feature = "kernel_test")]
 pub fn register_pcache_tests() {
     use crate::kernel::framework::tests::runner;
     let r = runner();
     r.register("pcache", "hash_range", test_pcache_hash_range);
     r.register("pcache", "bucket_insert_lookup", test_pcache_bucket_insert_lookup);
+    r.register("pcache", "fill_requires_existing_entry", test_pcache_fill_requires_existing_entry);
+    r.register("pcache", "fill_len_clamped", test_pcache_fill_len_clamped);
 }

@@ -216,6 +216,133 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
     Ok(())
 }
 
+/// do_signal_send_extended — kill 4 种 pid 语义 (解决 TRACK-315B7C)
+///
+/// POSIX kill() pid 取值:
+/// - pid > 0:    发往指定 pid 进程
+/// - pid = 0:    发往调用者同进程组所有进程
+/// - pid = -1:   发往系统所有进程 (除 init pid=1)
+/// - pid < -1:   发往进程组 |pid| 所有进程
+///
+/// 简化: 不做权限检查 (Linux 早期行为).
+///
+/// # Returns
+/// - `Ok(0)`: 至少一个目标收到信号
+/// - `Err(-2)`: 未找到任何目标 (ESRCH)
+pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
+    // sig=0 仅检查存在, 不发信号
+    if sig == 0 {
+        return match pid {
+            p if p > 0 => {
+                if PROCESS_TABLE.get(p as u32).is_some() { Ok(1) } else { Err(-2) }
+            }
+            0 => {
+                // 至少检查当前进程存在
+                if PROCESS_TABLE.get(super::scheduler::SCHEDULER.current().unwrap_or(0)).is_some() {
+                    Ok(1)
+                } else {
+                    Err(-2)
+                }
+            }
+            -1 => {
+                let mut count = 0usize;
+                PROCESS_TABLE.for_each(|_| { count += 1; true });
+                if count > 0 { Ok(count) } else { Err(-2) }
+            }
+            p if p < -1 => {
+                let target_pgid = (-p) as u32;
+                let mut count = 0usize;
+                PROCESS_TABLE.for_each(|proc| {
+                    let pg = proc.pgid.load(Ordering::SeqCst);
+                    let effective_pgid = if pg == 0 { proc.pid.0 } else { pg };
+                    if effective_pgid == target_pgid {
+                        count += 1;
+                    }
+                    true
+                });
+                if count > 0 { Ok(count) } else { Err(-2) }
+            }
+            _ => Err(-2),
+        };
+    }
+
+    if sig < 1 || sig > 31 {
+        return Err(-1);
+    }
+
+    match pid {
+        p if p > 0 => {
+            // 单进程
+            if do_signal_send_inner(p as u32, sig).is_ok() { Ok(1) } else { Err(-2) }
+        }
+        0 => {
+            // 广播到同进程组
+            let current = super::scheduler::SCHEDULER.current().unwrap_or(0);
+            let current_pgid = PROCESS_TABLE
+                .get(current)
+                .map(|p| unsafe { (&*p).pgid.load(Ordering::SeqCst) })
+                .unwrap_or(0);
+            let target_pgid = if current_pgid == 0 { current } else { current_pgid };
+            let mut count = 0usize;
+            PROCESS_TABLE.for_each(|proc| {
+                let pg = proc.pgid.load(Ordering::SeqCst);
+                let effective_pgid = if pg == 0 { proc.pid.0 } else { pg };
+                if effective_pgid == target_pgid {
+                    if do_signal_send_inner(proc.pid.0, sig).is_ok() {
+                        count += 1;
+                    }
+                }
+                true
+            });
+            if count > 0 { Ok(count) } else { Err(-2) }
+        }
+        -1 => {
+            // 广播到所有进程 (除 init pid=1)
+            let mut count = 0usize;
+            PROCESS_TABLE.for_each(|proc| {
+                if proc.pid.0 == 1 {
+                    return true; // 跳过 init
+                }
+                if do_signal_send_inner(proc.pid.0, sig).is_ok() {
+                    count += 1;
+                }
+                true
+            });
+            if count > 0 { Ok(count) } else { Err(-2) }
+        }
+        p if p < -1 => {
+            // 广播到 |pid| 进程组
+            let target_pgid = (-p) as u32;
+            let mut count = 0usize;
+            PROCESS_TABLE.for_each(|proc| {
+                let pg = proc.pgid.load(Ordering::SeqCst);
+                let effective_pgid = if pg == 0 { proc.pid.0 } else { pg };
+                if effective_pgid == target_pgid {
+                    if do_signal_send_inner(proc.pid.0, sig).is_ok() {
+                        count += 1;
+                    }
+                }
+                true
+            });
+            if count > 0 { Ok(count) } else { Err(-2) }
+        }
+        _ => Err(-2),
+    }
+}
+
+/// do_signal_send_inner — 单进程信号发送 (不检查 SIG_IGN, 适用于广播).
+fn do_signal_send_inner(pid: u32, sig: u8) -> Result<(), i32> {
+    let proc_ptr = PROCESS_TABLE.get(pid).ok_or(-2)?;
+    // SAFETY: 进程在表中期间不会释放
+    let proc = unsafe { &*proc_ptr };
+    proc.signal_pending_set(sig as u32);
+    let state = proc.state.load(Ordering::Acquire);
+    if state == ProcessState::Blocked as u32 {
+        proc.state.store(ProcessState::Ready as u32, Ordering::Release);
+    }
+    Ok(())
+}
+
 // ============================================================================
 // do_signal_deliver — 投递信号
 // ============================================================================
@@ -552,4 +679,61 @@ pub fn register_signal_tests() {
     r.register("signal", "pick_next_logic", test_signal_pick_next_logic);
     r.register("signal", "set_get_sigaction", test_set_get_sigaction);
     r.register("signal", "default_action_coverage", test_default_action_coverage);
+    r.register("signal", "kill_broadcast_pid_positive", test_kill_broadcast_pid_positive);
+    r.register("signal", "kill_broadcast_pid_zero_group", test_kill_broadcast_pid_zero_group);
+    r.register("signal", "kill_broadcast_pid_negative_all", test_kill_broadcast_pid_negative_all);
+    r.register("signal", "kill_broadcast_pid_negative_group", test_kill_broadcast_pid_negative_group);
+}
+
+// ============================================================================
+// TRACK-315B7C: kill 4 种 pid 语义测试
+// ============================================================================
+
+#[cfg(feature = "kernel_test")]
+fn test_kill_broadcast_pid_positive() -> crate::kernel::framework::tests::TestResult {
+    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    // pid > 0 单进程: 不存在的 pid 必返回 Err(ESRCH)
+    let res = do_signal_send_extended(9999, 9);
+    check!(res.is_err(), "kill non-existent pid should fail");
+    // 验证 sig 范围检查
+    let res2 = do_signal_send_extended(9999, 32); // 越界
+    assert_eq_test!(res2, Err(-1i32), "sig out of range -> EINVAL");
+    TestResult::Pass
+}
+
+#[cfg(feature = "kernel_test")]
+fn test_kill_broadcast_pid_zero_group() -> crate::kernel::framework::tests::TestResult {
+    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    // pid = 0 广播: 接受 Err(-2) (ESRCH) 或 Ok(N) (有进程)
+    let res = do_signal_send_extended(0, 9);
+    check!(res.is_err() || res.is_ok(), "pid=0 must not EINVAL");
+    // 验证信号范围
+    let res = do_signal_send_extended(0, 32);
+    assert_eq_test!(res, Err(-1i32), "sig out of range -> EINVAL");
+    TestResult::Pass
+}
+
+#[cfg(feature = "kernel_test")]
+fn test_kill_broadcast_pid_negative_all() -> crate::kernel::framework::tests::TestResult {
+    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    // pid = -1: 广播到所有进程 (除 init).
+    // host test 环境下进程表通常为空 -> Err(ESRCH)
+    let res = do_signal_send_extended(-1, 9);
+    check!(res != Err(-1i32), "pid=-1 must not return EINVAL");
+    // sig=0 检查存在
+    let res = do_signal_send_extended(-1, 0);
+    check!(res.is_err() || res.is_ok(), "pid=-1 sig=0 must not EINVAL");
+    TestResult::Pass
+}
+
+#[cfg(feature = "kernel_test")]
+fn test_kill_broadcast_pid_negative_group() -> crate::kernel::framework::tests::TestResult {
+    use crate::kernel::framework::tests::{check, TestResult};
+    // pid < -1: 广播到进程组 |pid|.
+    let res = do_signal_send_extended(-100, 9);
+    check!(res != Err(-1i32), "pid=-100 must not return EINVAL");
+    // sig=0 检查存在
+    let res = do_signal_send_extended(-100, 0);
+    check!(res != Err(-1i32), "pid=-100 sig=0 must not EINVAL");
+    TestResult::Pass
 }

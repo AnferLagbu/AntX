@@ -2281,15 +2281,13 @@ const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
 
 pub fn sys_kill(pid: i32, sig: i32) -> i64 {
-    if pid <= 0 && pid != -1 {
-        return Errno::ESRCH.as_ret();
-    }
     if sig < 0 || sig > 31 {
         return Errno::EINVAL.as_ret();
     }
-
-    match crate::kernel::framework::proc::signal::do_signal_send(pid as u32, sig as u8) {
-        Ok(()) => 0,
+    // 解决 TRACK-315B7C: 移除 pid <= 0 阻塞, 接受 POSIX 4 种 pid 语义
+    // (pid>0 单进程, pid=0 同组, pid=-1 全部, pid<-1 |pid| 组).
+    match crate::kernel::framework::proc::signal::do_signal_send_extended(pid, sig as u8) {
+        Ok(_) => 0,
         Err(-1) => Errno::EINVAL.as_ret(),
         Err(-2) => Errno::ESRCH.as_ret(),
         Err(_) => Errno::EPERM.as_ret(),
