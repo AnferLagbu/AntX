@@ -60,6 +60,9 @@ pub struct Vma {
     pub inode_id: u32,
     /// 文件映射: 是否为 MAP_SHARED (true) 或 MAP_PRIVATE (false)
     pub shared: bool,
+    /// 文件映射: 创建该 VMA 的 pwm (用于 #PF 时 vfs_pread_inode 权限校验).
+    /// 匿名/堆/栈/设备/保护 VMA 始终为 0.
+    pub file_pwm: u64,
 }
 
 impl Vma {
@@ -72,6 +75,7 @@ impl Vma {
             offset: 0,
             inode_id: 0,
             shared: false,
+            file_pwm: 0,
         }
     }
 
@@ -84,16 +88,22 @@ impl Vma {
             offset,
             inode_id: 0,
             shared: false,
+            file_pwm: 0,
         }
     }
 
     /// 创建文件映射 VMA
+    ///
+    /// `pwm` 为创建该映射的进程凭证, #PF 同步填 pcache 时通过
+    /// `vfs_pread_inode(inode, off, dst, pwm)` 校验文件访问权限,
+    /// 避免越权读取其它用户文件.
     pub fn file_backed(
         start: usize,
         end: usize,
         flags: PageFlags,
         offset: u64,
         inode_id: u32,
+        pwm: u64,
         shared: bool,
     ) -> Self {
         Self {
@@ -104,6 +114,7 @@ impl Vma {
             offset,
             inode_id,
             shared,
+            file_pwm: pwm,
         }
     }
 
@@ -169,7 +180,12 @@ impl MmStruct {
         let mut i = 0;
         while i < vmas.len() {
             let existing = &vmas[i];
-            if existing.vma_type != merged.vma_type || existing.flags != merged.flags {
+            // file_pwm 不参与合并语义, 但不同 pwm 的相邻 VMA 不可合并:
+            // 合并后用谁的 pwm 调用 vfs_pread_inode 都不严谨 (权限模型).
+            if existing.vma_type != merged.vma_type
+                || existing.flags != merged.flags
+                || existing.file_pwm != merged.file_pwm
+            {
                 i += 1;
                 continue;
             }
@@ -334,6 +350,7 @@ impl MmStruct {
                     offset: vma.offset,
                     inode_id: vma.inode_id,
                     shared: vma.shared,
+                    file_pwm: vma.file_pwm,
                 });
             }
 
@@ -348,6 +365,7 @@ impl MmStruct {
                 offset: vma.offset,
                 inode_id: vma.inode_id,
                 shared: vma.shared,
+                file_pwm: vma.file_pwm,
             });
 
             // 后段: [end, vma.end)
@@ -360,6 +378,7 @@ impl MmStruct {
                     offset: vma.offset,
                     inode_id: vma.inode_id,
                     shared: vma.shared,
+                    file_pwm: vma.file_pwm,
                 });
             }
         }
@@ -485,7 +504,7 @@ impl MmStruct {
         // 删除旧 vma
         self.remove_range(old_addr, old_addr + old_size_aligned);
 
-        // 插入新 vma (继承旧 vma 的 flags / type / offset / inode_id / shared)
+        // 插入新 vma (继承旧 vma 的 flags / type / offset / inode_id / shared / file_pwm)
         let new_vma = Vma {
             start: new_start,
             end: new_start + new_size_aligned,
@@ -494,6 +513,7 @@ impl MmStruct {
             offset: old_vma.offset,
             inode_id: old_vma.inode_id,
             shared: old_vma.shared,
+            file_pwm: old_vma.file_pwm,
         };
         self.insert_vma(new_vma).map_err(|_| Errno::ENOMEM)?;
         Ok(new_start)

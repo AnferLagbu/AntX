@@ -444,9 +444,23 @@ pub extern "C" fn kernel_init() {
         }
         crate::klog_boot_info!("Barrier-stack recovery domains registered (PMM=3, PROC=4)");
 
+        // 5.5. Swap — 物理内存回收/换出 (B3 完整实现)
+        // 必须在 PMM + VMM + kmalloc 初始化之后 (使用 pmm/vmm 接口)
+        // 必须在 interrupt_late_init 之前 (softirq 注册依赖 IRQ 子系统)
+        // 实际上 softirq 是 static handler 表, 不强制 init 顺序, 但保持 init 流程清晰:
+        //   swap_init (PMM 之后) → kswapd_init (interrupt_late_init 之后, scheduler tick 之前)
+        if crate::kernel::services::mm::swap::swap_init() {
+            crate::klog_boot_info!("Swap subsystem initialized");
+        } else {
+            crate::klog_boot_info!("Swap subsystem init FAILED (degraded mode)");
+        }
+
         // 6. 中断/异常设置
         <crate::kernel::framework::arch::CurrentArch as crate::kernel::framework::arch::Arch>::interrupt_late_init();
         crate::klog_boot_info!("Interrupt subsystem ready");
+
+        // 6.5. kswapd softirq 注册 (依赖 IRQ 子系统, scheduler tick 触发 wakeup)
+        crate::kernel::services::mm::swap::kswapd_init();
 
         // 7. Timer 初始化 (中断延后到网络就绪后启用)
         match crate::kernel::framework::timer::timer_init(1000) {

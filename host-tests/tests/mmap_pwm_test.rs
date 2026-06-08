@@ -1,0 +1,150 @@
+//! B2.1: Vma.file_pwm 桥接模型测试
+//!
+//! 验证 file_pwm 从 mmap_syscall 入口到 Vma 存储的语义正确性.
+//! 不链接 queenx (host-tests 是 mock 层), 通过复刻 Vma 数据结构
+//! 验证模型语义与 queenx Vma 一致.
+//!
+//! ## 与 queenx Vma 的一致性
+//! - 字段: start/end/flags/offset/inode_id/shared/file_pwm
+//! - file_backed: file_pwm 参数, 匿名: file_pwm = 0
+//! - insert_vma: 合并判断含 file_pwm (不同 pwm 不合并)
+//!
+//! ## 与单元测试的分工
+//! - host-tests/src/hvfs/* 验证 hvfs 数据结构
+//! - 本文件验证 mmap/pwm 桥接的模型语义
+
+/// 简化的 VmaType (对应 queenx VmaType::FileBacked/Anonymous)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum VmaType {
+    Anonymous = 0,
+    FileBacked = 1,
+}
+
+/// 模型 Vma (镜像 queenx Vma 字段集, 用于语义测试)
+#[derive(Debug, Clone)]
+struct Vma {
+    start: usize,
+    end: usize,
+    offset: u64,
+    inode_id: u32,
+    shared: bool,
+    file_pwm: u64,
+    vma_type: VmaType,
+}
+
+impl Vma {
+    fn file_backed(start: usize, end: usize, offset: u64, inode_id: u32, pwm: u64, shared: bool) -> Self {
+        Self {
+            start,
+            end,
+            offset,
+            inode_id,
+            shared,
+            file_pwm: pwm,
+            vma_type: VmaType::FileBacked,
+        }
+    }
+
+    fn new_anon(start: usize, end: usize) -> Self {
+        Self {
+            start,
+            end,
+            offset: 0,
+            inode_id: 0,
+            shared: false,
+            file_pwm: 0,
+            vma_type: VmaType::Anonymous,
+        }
+    }
+}
+
+#[test]
+fn file_backed_vma_stores_pwm() {
+    let pwm: u64 = 0xDEAD_BEEF_CAFE_F00D;
+    let vma = Vma::file_backed(0x1000, 0x5000, 0, 42, pwm, true);
+    assert_eq!(vma.file_pwm, pwm);
+    assert_eq!(vma.inode_id, 42);
+    assert!(vma.shared);
+    assert_eq!(vma.vma_type, VmaType::FileBacked);
+}
+
+#[test]
+fn anon_vma_has_zero_pwm() {
+    let vma = Vma::new_anon(0x6000, 0x7000);
+    assert_eq!(vma.file_pwm, 0);
+    assert_eq!(vma.inode_id, 0);
+    assert!(!vma.shared);
+    assert_eq!(vma.vma_type, VmaType::Anonymous);
+}
+
+/// 模拟 mmap_syscall 桥接: 接收用户 pwm, 写入 Vma.file_pwm
+fn mock_mmap_file(addr: usize, len: usize, fd: i32, pwm: u64) -> Vma {
+    // 简化: fd + 1 → inode_id (与 queenx TODO(TRACK-5B3EBC) 一致)
+    let inode_id = (fd as u32).wrapping_add(1);
+    Vma::file_backed(addr, addr + len, 0, inode_id, pwm, true)
+}
+
+#[test]
+fn mmap_syscall_passes_pwm_to_vma() {
+    let pwm: u64 = 0x1234_5678_9ABC_DEF0;
+    let vma = mock_mmap_file(0x8000, 0x4000, 5, pwm);
+    // 关键: file_pwm 必须从入口参数透传到 Vma 存储
+    assert_eq!(vma.file_pwm, pwm, "pwm must round-trip through mmap_syscall");
+    // inode_id = fd + 1 (简化版, 待 fdtable 集成)
+    assert_eq!(vma.inode_id, 6);
+}
+
+/// #PF 同步填 pcache 时, 读 vma.file_pwm 调用 vfs_pread_inode
+/// 此处模拟该路径: 验证 vma.file_pwm 是被读取的, 不是其它字段
+fn mock_handle_pf(vma: &Vma) -> u64 {
+    // queenx page_fault::handle_file_fault miss 路径:
+    // vfs_pread_inode(vma.inode_id, file_off, dst, vma.file_pwm)
+    vma.file_pwm
+}
+
+#[test]
+fn page_fault_reads_vma_file_pwm() {
+    let pwm: u64 = 0xCAFE_BABE_DEAD_BEEF;
+    let vma = Vma::file_backed(0, 0x1000, 0, 100, pwm, true);
+    // 关键: #PF miss 路径必须用 vma.file_pwm, 不能用 0 或 TEST_PWM
+    assert_eq!(mock_handle_pf(&vma), pwm, "PF must read vma.file_pwm");
+}
+
+/// 合并语义: 不同 file_pwm 的相邻 VMA 不可合并
+fn should_merge(a: &Vma, b: &Vma) -> bool {
+    a.vma_type == b.vma_type && a.file_pwm == b.file_pwm
+}
+
+#[test]
+fn vma_merge_requires_same_pwm() {
+    let pwm: u64 = 42;
+    let v1 = Vma::file_backed(0x1000, 0x2000, 0, 1, pwm, true);
+    let v2_same = Vma::file_backed(0x2000, 0x3000, 0, 1, pwm, true);
+    let v2_diff = Vma::file_backed(0x2000, 0x3000, 0, 1, pwm + 1, true);
+    assert!(should_merge(&v1, &v2_same), "same pwm 邻接可合并");
+    assert!(!should_merge(&v1, &v2_diff), "不同 pwm 邻接不可合并 (权限隔离)");
+}
+
+/// fork 后 Vma.file_pwm 继承 (vma.clone 镜像)
+#[test]
+fn vma_clone_preserves_file_pwm() {
+    let pwm: u64 = 0xABCD_EF01_2345_6789;
+    let v = Vma::file_backed(0x10000, 0x14000, 0, 7, pwm, false);
+    let cloned = v.clone();
+    assert_eq!(cloned.file_pwm, pwm, "fork COW clone 必须保留 file_pwm");
+    assert_eq!(cloned.inode_id, 7);
+    assert!(!cloned.shared);
+}
+
+/// mremap 后 Vma.file_pwm 保留
+#[test]
+fn mremap_preserves_file_pwm() {
+    let pwm: u64 = 0xFEDC_BA09_8765_4321;
+    let v_old = Vma::file_backed(0x20000, 0x24000, 0, 9, pwm, true);
+    // mremap 模拟: 复制 old_vma → new_vma (在 queenx mremap 实现)
+    let v_new = v_old.clone();
+    assert_eq!(v_new.file_pwm, pwm, "mremap 必须继承 file_pwm");
+    assert_eq!(v_new.inode_id, 9);
+    assert!(v_new.shared);
+}

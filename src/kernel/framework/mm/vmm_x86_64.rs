@@ -393,6 +393,54 @@ impl VirtualMemoryManager {
         }
     }
 
+    /// 直接写入 PTE 原始值 (用于 swap 替换)
+    ///
+    /// 沿 PML4→PDPT→PD→PT 找到最终 PTE, 写入 raw_pte 后 TLB flush.
+    /// 与 map_page_in_table 的区别: 接受任意 raw PTE (含 swap entry, 即将 present=0).
+    /// 若任意中间层缺失 (P 位=0), 静默返回 (不创建中间页表, swap-out 不应触发缺中间页).
+    pub fn set_pte_value(&self, pml4: u64, virt: VirtAddr, raw_pte: u64) {
+        if pml4 == 0 {
+            return;
+        }
+
+        let _flags = self.acquire_lock();
+        let pml4_virt = PhysAddr(pml4).to_virt();
+
+        // SAFETY: VMM_LOCK held; 四级页表查找 PTE 并直接写入
+        unsafe {
+            let pml4_raw = pml4_virt.0 as *const u64;
+            let pml4e = pml4_raw.add(virt.pml4_idx()).read_volatile();
+            if (pml4e & 1) == 0 {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let pdpt_virt = (pml4e & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pdpt_raw = pdpt_virt as *const u64;
+            let pdpte = pdpt_raw.add(virt.pdpt_idx()).read_volatile();
+            if (pdpte & 1) == 0 || (pdpte & 0x80) != 0 {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let pd_virt = (pdpte & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pd_raw = pd_virt as *const u64;
+            let pde = pd_raw.add(virt.pd_idx()).read_volatile();
+            if (pde & 1) == 0 || (pde & 0x80) != 0 {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let pt_virt = (pde & 0x000FFFFFFFFFF000) + KERNEL_BASE;
+            let pt_ptr = (pt_virt as *mut u64).add(virt.pt_idx());
+            pt_ptr.write_volatile(raw_pte);
+
+            self.flush_tlb(virt.0);
+        }
+
+        self.release_lock(&_flags);
+    }
+
     pub fn switch_page_table(&self, pml4: u64) {
         // SAFETY: pml4 must point to a valid PML4 table; CR3 write is privileged
         unsafe {

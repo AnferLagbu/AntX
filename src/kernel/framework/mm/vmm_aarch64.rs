@@ -772,6 +772,54 @@ impl Aarch64Vmm {
         Some(l3_entry)
     }
 
+    /// 直接写入 L3 PTE 原始值 (用于 swap 替换)
+    ///
+    /// 沿 L0→L1→L2→L3 找到最终 PTE, 写入 raw_pte 后 TLB invalidate.
+    /// 与 map_page_in_table 的区别: 接受任意 raw PTE (含 swap entry, 即 valid=0).
+    /// 若任意中间层缺失 (valid=0), 静默返回 (不创建中间页表, swap-out 不应触发缺中间页).
+    pub fn set_pte_value(&self, root_paddr: u64, virt: VirtAddr, raw_pte: u64) {
+        let vaddr = virt.as_u64();
+
+        let _flags = self.acquire_lock();
+
+        // SAFETY: VMM_LOCK held; 四级页表查找 PTE 并直接写入
+        unsafe {
+            let l0 = root_paddr as *const u64;
+            let l0_idx = l0_index(vaddr);
+            let l0_entry = ptr::read_volatile(l0.add(l0_idx));
+            if l0_entry & 0b11 != 0b11 {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let l1 = phys_to_virt(l0_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+            let l1_idx = l1_index(vaddr);
+            let l1_entry = ptr::read_volatile(l1.add(l1_idx));
+            if l1_entry & 0b11 != 0b11 {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let l2 = phys_to_virt(l1_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
+            let l2_idx = l2_index(vaddr);
+            let l2_entry = ptr::read_volatile(l2.add(l2_idx));
+            if l2_entry & 0b11 != 0b11 {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let l3 = phys_to_virt(l2_entry & 0x0000_FFFF_FFFF_F000) as *mut u64;
+            let l3_idx = l3_index(vaddr);
+            let l3_ptr = l3.add(l3_idx);
+            ptr::write_volatile(l3_ptr, raw_pte);
+
+            // TLB invalidate (与 unmap_page_in_table 一致)
+            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+        }
+
+        self.release_lock(&_flags);
+    }
+
     // ─── Clone / Destroy User Page Table ────────────────────────────
 
     pub fn clone_user_page_table(&self, parent_paddr: u64) -> Option<u64> {

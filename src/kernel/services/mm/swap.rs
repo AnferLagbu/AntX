@@ -73,6 +73,25 @@ pub fn swap_init() -> bool {
     fw_swap::swap_init()
 }
 
+/// 初始化 kswapd: 注册 Kswapd softirq handler
+///
+/// 必须在 IRQ 子系统初始化后调用 (lib.rs kernel_init 6.5 阶段).
+pub fn kswapd_init() {
+    fw_swap::kswapd_init()
+}
+
+/// 唤醒 kswapd: 立即 raise Kswapd softirq
+///
+/// 由 scheduler.tick 周期调用, 或 pressure 跃迁调用.
+pub fn kswapd_wakeup() {
+    fw_swap::kswapd_wakeup()
+}
+
+/// 检查 kswapd 是否处于 pending (诊断接口)
+pub fn kswapd_is_pending() -> bool {
+    fw_swap::kswapd_is_pending()
+}
+
 /// 回收页面 (从 LRU inactive 链表选取并换出)
 ///
 /// 返回实际回收的页面数.
@@ -90,8 +109,10 @@ pub fn swap_info() -> SwapInfo {
 }
 
 /// 记录页面访问 (添加到 LRU active 链表)
-pub fn lru_touch(virt_addr: u64, phys_addr: u64, dirty: bool) {
-    fw_swap::lru_touch(virt_addr, phys_addr, dirty)
+///
+/// pml4 为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
+pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
+    fw_swap::lru_touch(pml4, virt_addr, phys_addr, dirty)
 }
 
 /// 检测 PTE 是否为 swap entry

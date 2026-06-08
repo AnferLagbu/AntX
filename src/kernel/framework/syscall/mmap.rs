@@ -49,6 +49,7 @@ pub fn mmap_syscall(
     flags: i32,
     fd: i32,
     offset: u64,
+    pwm: u64,
 ) -> Result<usize, Errno> {
     if length == 0 {
         return Err(Errno::EINVAL);
@@ -123,6 +124,7 @@ pub fn mmap_syscall(
         final_flags,
         offset,
         inode_id,
+        pwm,
         map_shared,
     );
 
@@ -130,6 +132,10 @@ pub fn mmap_syscall(
         Ok(()) => {}
         Err(_) => return Err(Errno::ENOMEM),
     }
+
+    // B2: 不预热 pcache. 传统 demand paging 语义: 用户 #PF 时由
+    // page_fault::handle_file_fault miss 路径同步从 vfs 读 4KB 填 pcache.
+    // 优势: 大文件 mmap 0 开销, 不预先浪费 I/O.
 
     Ok(aligned_addr)
 }

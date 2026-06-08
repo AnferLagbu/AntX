@@ -1442,7 +1442,8 @@ fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -
     };
 
     // 通过 services 层代理: VFS 交互 (fd→inode_id) 在 services 层完成
-    match crate::kernel::services::mm::mmap::mmap_syscall(mm, addr, size, prot, flags, fd, offset) {
+    // 透传进程当前 pwm, Vma 记录后由 #PF miss 路径用于 vfs_pread_inode 权限校验
+    match crate::kernel::services::mm::mmap::mmap_syscall(mm, addr, size, prot, flags, fd, offset, pwm) {
         Ok(a) => a as i64,
         Err(e) => e.as_ret(),
     }

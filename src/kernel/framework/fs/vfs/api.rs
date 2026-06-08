@@ -22,8 +22,14 @@ use super::types::*;
 use super::vfs::VFS_MANAGER;
 use crate::kernel::framework::fs::hvfs::hvfs::get_hvfs;
 use crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA;
+use crate::kernel::framework::mm::{pcache, PAGE_SIZE};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
 use crate::kernel::framework::lib::cstr::CStrExt;
+
+/// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)
+const PCACHE_FAST_MAX_BYTES: usize = 64 * 1024;
+/// B2: 4KB 对齐 read 时的 pcache 命中快路径下限 (1 页 = 4KB)
+const PCACHE_FAST_MIN_BYTES: usize = PAGE_SIZE as usize;
 
 // ============================================================================
 // 对外契约: Vfs trait (用于 trait-object 注册 / host 端测试)
@@ -198,11 +204,15 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
 
 #[no_mangle]
 pub fn vfs_close_internal(fd_idx: u32) -> i32 {
-    let fd_idx = fd_idx as usize;
-    if fd_idx >= VFS_MAX_FDS {
+    let fd_idx_us = fd_idx as usize;
+    if fd_idx_us >= VFS_MAX_FDS {
         return -1;
     }
-    VFS_MANAGER.free_fd(fd_idx);
+    // B2: 释放该 fd 关联 inode 的全部 pcache 缓存页, 避免内存泄漏
+    if let Some((node_id, _, _, _)) = get_fd_info(fd_idx) {
+        pcache::pcache_invalidate_inode(node_id);
+    }
+    VFS_MANAGER.free_fd(fd_idx_us);
     0
 }
 
@@ -227,10 +237,54 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 
     match fs_type {
         FsType::RamFs => {
+            // B2: 4KB 对齐 + 全部 pcache 命中 → 走 pcache 快路径
+            // 条件: count ∈ [1, 16] 页 且 offset / count 均为 4KB 对齐
+            let is_aligned_4k = (count as u64) >= PCACHE_FAST_MIN_BYTES as u64
+                && (count as u64) <= PCACHE_FAST_MAX_BYTES as u64
+                && (count as u64) % PAGE_SIZE == 0
+                && (offset as u64) % PAGE_SIZE == 0;
+
+            if is_aligned_4k {
+                let npages = (count as u64 / PAGE_SIZE) as usize;
+                let first_pi = offset / PAGE_SIZE;
+
+                // 步骤1: 探测全部页是否在 pcache 中
+                let mut all_hit = true;
+                for i in 0..npages {
+                    if pcache::pcache_lookup(node_id, first_pi + i as u64).is_none() {
+                        all_hit = false;
+                        break;
+                    }
+                }
+
+                if all_hit {
+                    // 步骤2: 全部命中, 直接从 pcache 复制到用户 buf
+                    let mut all_ok = true;
+                    for i in 0..npages {
+                        // SAFETY: 4KB 对齐保证 buf.add(i*PAGE_SIZE) 落在 [buf, buf+count) 内
+                        let dst = unsafe {
+                            core::slice::from_raw_parts_mut(
+                                buf.add(i * PAGE_SIZE as usize),
+                                PAGE_SIZE as usize,
+                            )
+                        };
+                        if !pcache::pcache_read_to_slice(node_id, first_pi + i as u64, dst) {
+                            all_ok = false;
+                            break;
+                        }
+                    }
+                    if all_ok {
+                        VFS_MANAGER.set_fd_offset(fd_idx as usize, offset + count as u64);
+                        return count as i32;
+                    }
+                }
+            }
+
+            // 慢速路径: 原 ramfs.read (不填 pcache; pcache 由 mmap 路径 / 显式预热填)
             let mut ramfs = RAMFS_DATA.lock();
-            let mut offset = offset;
-            let result = ramfs.read(node_id, &mut offset, user_buf.as_mut_slice(), pwm);
-            VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
+            let mut new_offset = offset;
+            let result = ramfs.read(node_id, &mut new_offset, user_buf.as_mut_slice(), pwm);
+            VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
             result
         }
         FsType::HvFs => {
@@ -240,6 +294,30 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 
         FsType::Unknown => -1,
     }
+}
+
+/// 按 inode_id 直接读取文件数据 (B2: mmap prewarm 用)
+///
+/// 区别于 `vfs_read_internal`: 不依赖 fd, 而是按 inode 寻址.
+/// 用于 mmap 创建 VMA 时, 同步预热 Page Cache (prewarm 全部页).
+///
+/// 参数:
+/// - `node_id`: ramfs 内部 inode 编号
+/// - `file_offset`: 文件内字节偏移 (调用方保证页对齐)
+/// - `dst`: 目标缓冲区 (长度由调用方提供, 通常为 PAGE_SIZE)
+/// - `pwm`: 权限字 (0 时使用 TEST_PWM)
+///
+/// 返回: 实际读取字节数, 负数表示错误.
+#[no_mangle]
+pub fn vfs_pread_inode(node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
+    let pwm = resolve_pwm(pwm);
+    // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
+    let mut user_buf = unsafe { UserWritePtr::new(dst.as_mut_ptr(), dst.len()) };
+
+    // B2: 当前 mmap prewarm 仅支持 RamFs (HvFs 后续集成)
+    let mut ramfs = RAMFS_DATA.lock();
+    let mut offset = file_offset;
+    ramfs.read(node_id, &mut offset, user_buf.as_mut_slice(), pwm)
 }
 
 #[no_mangle]

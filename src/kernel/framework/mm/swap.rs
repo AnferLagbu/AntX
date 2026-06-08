@@ -41,13 +41,12 @@
 //! - 换出/换入操作在 #PF 上下文中执行, 必须无阻塞
 //! - 当前阶段 swap 区使用预留内存区域模拟, 后续集成块设备
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 
 use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE, pmm, vmm};
 use crate::kernel::framework::mm::page_fault::PfResult;
+use crate::kernel::framework::irq::{self, SoftirqVec};
 
 // ============================================================================
 // Swap Entry 编码
@@ -265,6 +264,8 @@ const LRU_CAPACITY: usize = 256;
 
 #[derive(Clone, Copy)]
 struct LruEntry {
+    /// 所属进程的 PML4 (CR3), 用于 swap-out 时写 PTE 为 swap entry
+    pml4: u64,
     virt_addr: u64,
     phys_addr: u64,
     /// 是否为脏页
@@ -276,6 +277,7 @@ struct LruEntry {
 impl LruEntry {
     const fn empty() -> Self {
         LruEntry {
+            pml4: 0,
             virt_addr: 0,
             phys_addr: 0,
             dirty: false,
@@ -295,7 +297,9 @@ impl LruList {
     }
 
     /// 添加页面到 active 链表 (页面被访问时调用)
-    fn add_active(&mut self, virt_addr: u64, phys_addr: u64, dirty: bool) {
+    ///
+    /// pml4 为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
+    fn add_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
         // 先检查是否已在 inactive 链表中, 若是则提升
         for i in 0..LRU_CAPACITY {
             if self.inactive[i].occupied && self.inactive[i].virt_addr == virt_addr {
@@ -303,16 +307,16 @@ impl LruList {
                 let entry = self.inactive[i];
                 self.inactive[i] = LruEntry::empty();
                 self.inactive_count -= 1;
-                self.push_active(entry.virt_addr, entry.phys_addr, entry.dirty || dirty);
+                self.push_active(pml4, entry.virt_addr, entry.phys_addr, entry.dirty || dirty);
                 return;
             }
         }
 
         // 不在 inactive 中, 直接加入 active
-        self.push_active(virt_addr, phys_addr, dirty);
+        self.push_active(pml4, virt_addr, phys_addr, dirty);
     }
 
-    fn push_active(&mut self, virt_addr: u64, phys_addr: u64, dirty: bool) {
+    fn push_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
         // 检查是否已在 active 中
         for i in 0..LRU_CAPACITY {
             if self.active[i].occupied && self.active[i].virt_addr == virt_addr {
@@ -330,6 +334,7 @@ impl LruList {
         for i in 0..LRU_CAPACITY {
             if !self.active[i].occupied {
                 self.active[i] = LruEntry {
+                    pml4,
                     virt_addr,
                     phys_addr,
                     dirty,
@@ -455,6 +460,7 @@ pub fn swap_init() -> bool {
 ///
 /// - `virt_addr` 必须是已映射的用户空间虚拟地址
 /// - `phys_addr` 必须是对应的有效物理地址
+/// - **不更新 PTE** — 调用方需自行将 PTE 替换为 swap entry 或 unmap
 pub fn swap_out(virt_addr: u64, phys_addr: u64, _dirty: bool) -> Option<SwapEntry> {
     SWAP.lock.lock();
     let area = unsafe { &mut *SWAP.area.get() };
@@ -481,6 +487,44 @@ pub fn swap_out(virt_addr: u64, phys_addr: u64, _dirty: bool) -> Option<SwapEntr
 
     crate::klog_debug!(Swap, "[SWAP] Out: vaddr={:#x} paddr={:#x} -> slot={}",
         virt_addr, phys_addr, slot);
+
+    Some(entry)
+}
+
+/// 换出页面: 完整实现 — 分配 slot + 写入数据 + 替换 PTE 为 swap entry
+///
+/// 返回 (SwapEntry, old_phys).
+/// 若 slot 分配失败或 PTE 替换失败, 返回 None.
+///
+/// ## 完整实现要点
+/// 1. 从 LRU inactive 链表中选 victim
+/// 2. alloc_slot + write_slot (swap_out 内)
+/// 3. vmm.set_pte_value(pml4, virt, swap_entry.to_pte()) — PTE 替换
+/// 4. pmm.free_page(phys) — 释放物理页
+///
+/// # Safety
+///
+/// - virt_addr 必须属于由 pml4 标识的地址空间
+/// - pml4 必须是有效的页表根 (CR3 值)
+/// - virt_addr 对应的 PTE 当前必须是 present 页
+pub fn swap_out_to_pte(pml4: u64, virt_addr: u64) -> Option<SwapEntry> {
+    // 1. 读取当前 PTE 获取物理地址
+    let vmm_inst = vmm::get_vmm();
+    let pte = vmm_inst.get_pte_value(pml4, VirtAddr(virt_addr))?;
+    if (pte & 1) == 0 {
+        // 已是非 present 页, 不应再换出
+        return None;
+    }
+    let phys_addr = pte & 0x000F_FFFF_FFFF_F000;
+
+    // 2. swap_out (分配 slot + 写入)
+    let entry = swap_out(virt_addr, phys_addr, false)?;
+
+    // 3. 替换 PTE 为 swap entry
+    vmm_inst.set_pte_value(pml4, VirtAddr(virt_addr), entry.to_pte());
+
+    crate::klog_debug!(Swap, "[SWAP] Out→PTE: vaddr={:#x} pml4={:#x} slot={}",
+        virt_addr, pml4, entry.slot());
 
     Some(entry)
 }
@@ -541,11 +585,13 @@ pub fn pte_to_swap_entry(pte: u64) -> Option<SwapEntry> {
 }
 
 /// 记录页面访问 (添加到 LRU active 链表)
-pub fn lru_touch(virt_addr: u64, phys_addr: u64, dirty: bool) {
+///
+/// pml4 必须为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
+pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
     SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let lru = unsafe { &mut *SWAP.lru.get() };
-    lru.add_active(virt_addr, phys_addr, dirty);
+    lru.add_active(pml4, virt_addr, phys_addr, dirty);
     SWAP.lock.unlock();
 }
 
@@ -567,22 +613,28 @@ pub fn reclaim_pages(max_count: u32) -> u32 {
 
         match victim {
             Some(entry) => {
-                // 尝试换出
-                if let Some(_swap_entry) = swap_out(entry.virt_addr, entry.phys_addr, entry.dirty) {
-                    // 换出成功: 解除映射, 释放物理页
-                    let vmm_inst = vmm::get_vmm();
-                    vmm_inst.unmap_page(VirtAddr(entry.virt_addr));
-
-                    // 注意: 当前简化实现不更新 PTE 为 swap entry
-                    // 完整实现需要在 unmap_page 中保留 swap entry
-                    // 后续集成: map_page_in_table 支持 swap entry PTE
-
-                    let pmm_inst = pmm::get_pmm();
-                    pmm_inst.free_page(PhysAddr(entry.phys_addr));
-
-                    reclaimed += 1;
+                // 完整 swap-out 路径: 写 PTE 为 swap entry, #PF 时通过 handle_swap_fault 换入
+                if entry.pml4 != 0 {
+                    // 有 pml4 记录: 走 swap_out_to_pte 完整路径
+                    if let Some(_swap_entry) = swap_out_to_pte(entry.pml4, entry.virt_addr) {
+                        // PTE 已替换为 swap entry; 释放物理页
+                        let pmm_inst = pmm::get_pmm();
+                        pmm_inst.free_page(PhysAddr(entry.phys_addr));
+                        reclaimed += 1;
+                    } else {
+                        break;
+                    }
                 } else {
-                    break;
+                    // 无 pml4 记录 (老 LRU 条目): 退化路径, 走 unmap
+                    if swap_out(entry.virt_addr, entry.phys_addr, entry.dirty).is_some() {
+                        let vmm_inst = vmm::get_vmm();
+                        vmm_inst.unmap_page(VirtAddr(entry.virt_addr));
+                        let pmm_inst = pmm::get_pmm();
+                        pmm_inst.free_page(PhysAddr(entry.phys_addr));
+                        reclaimed += 1;
+                    } else {
+                        break;
+                    }
                 }
             }
             None => break,
@@ -642,6 +694,74 @@ pub fn handle_swap_fault(pml4: u64, fault_addr: u64) -> PfResult {
     vmm_inst.map_page_in_table(pml4, VirtAddr(fault_addr), new_phys, flags);
 
     PfResult::Fixed
+}
+
+// ============================================================================
+// kswapd: 内存回收/页面换出 (softirq 驱动)
+// ============================================================================
+//
+// ## 设计
+//
+// AntX 当前没有 kthread 抽象, 因此 kswapd 走 softirq 路径:
+//   1. `kswapd_init()`: 注册 Kswapd softirq handler, 调度器 tick 周期触发
+//   2. `kswapd_wakeup()`: 立即 raise_softirq, 异步执行 reclaim_pages
+//   3. `kswapd_softirq_handler()`: softirq 上下文执行 reclaim_pages
+//
+// ## 触发源
+//
+// - scheduler.tick 周期触发 (例: 每 100 ticks)
+// - pressure 级别跃迁 (Warning/Critical/Emergency) 触发
+// - mmap 失败 (可选, 当前未启用)
+//
+// ## 限制
+//
+// - softirq 上下文: 不可睡眠, 不可长时间持锁
+// - reclaim_pages 当前实现持 SWAP.lock; 锁粒度已细化, 软中断可接受
+// - 单 CPU 串行: 多核并行 swap 由各 CPU softirq 自行触发
+
+/// kswapd softirq 触发状态
+static KSWAPD_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// kswapd softirq handler — 在 softirq 上下文执行
+///
+/// 每次唤醒回收 RECLAIM_BATCH 个页面. 软中断上下文不可睡眠,
+/// 但 reclaim_pages 的所有子操作 (swap_out / vmm.set_pte_value / pmm.free_page)
+/// 均为非阻塞原子操作, 满足软中断约束.
+fn kswapd_softirq_handler() {
+    // 原子清除 pending 标志
+    KSWAPD_PENDING.store(false, Ordering::Release);
+
+    const RECLAIM_BATCH: u32 = 8;
+    let reclaimed = reclaim_pages(RECLAIM_BATCH);
+    if reclaimed > 0 {
+        crate::klog_debug!(Swap, "[KSWAPD] softirq reclaimed {} pages", reclaimed);
+    }
+}
+
+/// 初始化 kswapd: 注册 Kswapd softirq handler
+///
+/// 必须在 irq 子系统初始化 (interrupt_late_init) 之后调用.
+pub fn kswapd_init() {
+    irq::open_softirq(SoftirqVec::Kswapd, kswapd_softirq_handler);
+    crate::klog_info!(Swap, "[KSWAPD] softirq handler registered");
+}
+
+/// 唤醒 kswapd: 立即 raise Kswapd softirq
+///
+/// 由 scheduler.tick 周期调用, 或 pressure 跃迁调用.
+/// 重复唤醒是幂等的 (raise_softirq 仅设置 pending bit).
+pub fn kswapd_wakeup() {
+    // 快速路径: 若已 pending, 不重复触发
+    if KSWAPD_PENDING.load(Ordering::Acquire) {
+        return;
+    }
+    KSWAPD_PENDING.store(true, Ordering::Release);
+    irq::raise_softirq(SoftirqVec::Kswapd);
+}
+
+/// 检查 kswapd 是否处于 pending (诊断接口)
+pub fn kswapd_is_pending() -> bool {
+    KSWAPD_PENDING.load(Ordering::Acquire)
 }
 
 // ============================================================================

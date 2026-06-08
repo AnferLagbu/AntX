@@ -134,8 +134,8 @@ impl PageCacheBucket {
             core::ptr::write_bytes(virt.0 as *mut u8, 0, PAGE_SIZE as usize);
         }
 
-        // TODO(TRACK-A7DE25): 从文件系统读取数据填充此页
-        // 当前阶段文件数据由 initramfs 加载, 后续集成 VFS read
+        // pcache_get 仅分配全零页; miss 时的文件数据回填由调用方
+        // 通过 pcache_fill(inode, page, src) 显式完成 (避免持锁 + 跨层 I/O).
 
         // 插入条目
         for entry in self.entries.iter_mut() {

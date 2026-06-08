@@ -227,10 +227,32 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> P
 fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize) -> PfResult {
     let page_index = ((aligned - vma.start) as u64 + vma.offset) / PAGE_SIZE;
 
-    // 从 Page Cache 获取缓存页
-    let cache_phys = match super::pcache::pcache_get(vma.inode_id, page_index) {
-        Some(p) => p,
-        None => return PfResult::Oom,
+    // Demand Paging (B2 第三步真语义): miss 时同步从 vfs 读 4KB 填 pcache.
+    // 与传统 demand paging 一致: 用户访问哪页才读哪页, 不预先读全部.
+    let cache_phys = match super::pcache::pcache_lookup(vma.inode_id, page_index) {
+        Some(p) => p, // 命中: 直接用
+        None => {
+            // miss → 分配全零页
+            let phys = match super::pcache::pcache_get(vma.inode_id, page_index) {
+                Some(p) => p,
+                None => return PfResult::Oom,
+            };
+            // 同步从 vfs 读 4KB 文件数据填入 pcache
+            // pwm 取自 Vma 记录的创建者凭证, 保证权限校验正确
+            let file_off = vma.offset + (aligned - vma.start) as u64;
+            let mut page_buf = [0u8; PAGE_SIZE as usize];
+            let n = crate::kernel::framework::fs::vfs::api::vfs_pread_inode(
+                vma.inode_id,
+                file_off,
+                &mut page_buf,
+                vma.file_pwm,
+            );
+            if n > 0 {
+                super::pcache::pcache_fill(vma.inode_id, page_index, &page_buf[..n as usize]);
+            }
+            // n <= 0 (EOF / 文件短): 保持 pcache_get 时的零页 (POSIX: mmap 文件尾零填充)
+            phys
+        }
     };
 
     let vmm_inst = vmm::get_vmm();

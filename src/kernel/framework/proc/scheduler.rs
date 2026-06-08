@@ -24,6 +24,10 @@ const RT_PRIORITY_MAX: u8 = 99;
 const RT_TIME_SLICE: u64 = 5;
 const RT_FIFO_WATCHDOG: u64 = 500;
 
+/// kswapd softirq 唤醒周期 (ticks). 100 ticks @ 1kHz timer = 100ms.
+/// B3 完整实现: 周期触发 kswapd, 软中断上下文回收不活跃页面.
+const KSWAPD_TICK_INTERVAL: u64 = 100;
+
 pub struct PwidQuota {
     pub pwm: u64,
     pub used: bool,
@@ -906,6 +910,12 @@ impl Scheduler {
 
         crate::kernel::framework::proc::oomd::OOMD.tick();
         crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
+
+        // Periodic kswapd wakeup — 每 100 ticks 唤醒一次内存回收
+        // (B3 完整实现: kswapd 走 softirq 路径, 由 scheduler tick 周期驱动)
+        if new_tick.is_multiple_of(KSWAPD_TICK_INTERVAL) {
+            crate::kernel::framework::mm::swap::kswapd_wakeup();
+        }
 
         // Periodic CFS boost — prevent vruntime starvation
         if new_tick.is_multiple_of(CFS_BOOST_INTERVAL_TICKS) {
