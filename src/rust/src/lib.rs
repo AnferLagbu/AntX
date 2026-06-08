@@ -483,6 +483,10 @@ pub extern "C" fn kernel_init() {
         crate::kernel::framework::fs::vfs::init();
         crate::klog_boot_info!("VFS ready");
 
+        // 9-1. UDS (AF_UNIX) — Phase C.3
+        crate::kernel::framework::net::unix::uds_init();
+        crate::klog_boot_info!("UDS subsystem initialized");
+
         // 10. Network (smoltcp + 网卡驱动)
         // x86_64: E1000 PCI 网卡驱动
         // aarch64: virtio-net MMIO 网卡驱动

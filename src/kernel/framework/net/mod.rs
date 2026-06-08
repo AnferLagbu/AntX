@@ -3,6 +3,8 @@ pub mod driver;
 pub mod init;
 #[cfg(not(feature = "kernel_test"))]
 pub mod smoltcp_impl;
+/// AF_UNIX 子系统 (Phase C.3)
+pub mod unix;
 
 /// 网络子系统 Rust 模块
 ///

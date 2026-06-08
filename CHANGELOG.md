@@ -8,7 +8,15 @@
 
 ## [Unreleased]
 
-(暂无未发布条目)
+### 新增
+- **Phase C.3: Unix Domain Socket (UDS / AF_UNIX)** — `kernel::framework::net::unix` (TCB) + `kernel::services::net::unix` (safe API, 0 unsafe)
+  - SOCK_STREAM: bind → listen → connect → accept → send/recv → close 完整生命周期
+  - SOCK_DGRAM: bind → connect → sendto/recvfrom → close
+  - 独立路径绑定表 (固定 32 槽位, 不进 VFS inode)
+  - FD 空间 [100, 116), 与 smoltcp [0, 16) 与 VFS [0, 32) 不冲突
+  - 5 个 no_std 单元测试 (stream echo / dgram echo / EADDRINUSE / EAGAIN / listener cancel)
+  - 6 个 syscalls (socket/bind/listen/accept/connect/sendto/recvfrom) 按 `sun_family` + FD 范围分流到 UDS 或 smoltcp
+  - DECISION-006 (UDS 不入 VFS inode) / DECISION-007 (DGRAM 单消息排队) / DECISION-008 (阻塞退化为 EAGAIN)
 
 ---
 

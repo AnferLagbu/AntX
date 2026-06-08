@@ -1035,6 +1035,13 @@ fn sys_close(fd: i32) -> i64 {
     if fd < 0 {
         return Errno::EBADF.as_ret();
     }
+    // UDS FD 范围 [100, 116) → 走 UDS close, 不进 VFS
+    if fd >= 100 && fd < 116 {
+        return match crate::kernel::services::net::unix::close(fd) {
+            Ok(()) => 0,
+            Err(e) => e.to_errno().as_ret(),
+        };
+    }
     crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32) as i64
 }
 

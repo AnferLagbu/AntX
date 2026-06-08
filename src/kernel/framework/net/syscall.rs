@@ -107,6 +107,86 @@ pub fn raw_write_u32(ptr: u64, v: u32) -> Result<(), Errno> {
 }
 
 // ============================================================================
+// sockaddr_un 解析 (Phase C.3 UDS)
+// ============================================================================
+
+/// 从用户指针读 2 字节 sun_family (大端 u16)
+pub fn raw_read_sun_family(ptr: u64) -> Result<u16, Errno> {
+    if ptr == 0 || !raw::check_user_buf(ptr, 2) {
+        return Err(Errno::EFAULT);
+    }
+    // SAFETY: ptr 由 check_user_buf 验证为可读 2 字节
+    let lo = unsafe { core::ptr::read_volatile(ptr as *const u8) };
+    let hi = unsafe { core::ptr::read_volatile((ptr + 1) as *const u8) };
+    Ok(u16::from_be_bytes([hi, lo]))
+}
+
+/// 从用户指针读 sockaddr_un (110 字节布局: family u16 + path[108])
+///
+/// 返回 (path_bytes, path_len)。若用户提供的 addrlen 不足 2 字节返回 EFAULT。
+pub fn raw_read_sockaddr_un(ptr: u64, addrlen: u32) -> Result<crate::kernel::services::net::unix::SockAddrUn, Errno> {
+    if ptr == 0 || addrlen < 2 {
+        return Err(Errno::EFAULT);
+    }
+    if !raw::check_user_buf(ptr, addrlen as u64) {
+        return Err(Errno::EFAULT);
+    }
+    // SAFETY: ptr 由 check_user_buf 验证为可读 addrlen 字节
+    let mut buf = [0u8; 110];
+    let copy_len = (addrlen as usize).min(110);
+    unsafe {
+        core::ptr::copy_nonoverlapping(ptr as *const u8, buf.as_mut_ptr(), copy_len);
+    }
+    // 校验 family = AF_UNIX = 1
+    let family = u16::from_be_bytes([buf[0], buf[1]]);
+    if family != 1 {
+        return Err(Errno::EAFNOSUPPORT);
+    }
+    // 路径从 offset 2 开始, 到第一个 NUL 或末尾
+    let path_bytes = &buf[2..copy_len];
+    let nul_pos = path_bytes.iter().position(|&b| b == 0).unwrap_or(path_bytes.len());
+    if nul_pos == 0 {
+        return Err(Errno::EINVAL);
+    }
+    let mut path = [0u8; 108];
+    path[..nul_pos].copy_from_slice(&path_bytes[..nul_pos]);
+    Ok(crate::kernel::services::net::unix::SockAddrUn {
+        path,
+        path_len: nul_pos as u16,
+    })
+}
+
+/// 向用户指针写 sockaddr_un (110 字节布局)
+pub fn raw_write_sockaddr_un(
+    ptr: u64,
+    addrlen_ptr: u64,
+    addr: &crate::kernel::services::net::unix::SockAddrUn,
+) -> Result<(), Errno> {
+    if ptr == 0 || addrlen_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    if !raw::check_user_buf(ptr, 110) {
+        return Err(Errno::EFAULT);
+    }
+    if !raw::check_user_buf(addrlen_ptr, 4) {
+        return Err(Errno::EFAULT);
+    }
+    let mut buf = [0u8; 110];
+    buf[0..2].copy_from_slice(&(1u16).to_be_bytes()); // AF_UNIX
+    let n = addr.path_len as usize;
+    buf[2..2 + n].copy_from_slice(&addr.path[..n]);
+    // SAFETY: ptr 由 check_user_buf 验证为可写 110 字节
+    unsafe {
+        core::ptr::copy_nonoverlapping(buf.as_ptr(), ptr as *mut u8, 110);
+    }
+    // 写回 addrlen = 110
+    let total = (n + 2) as u32;
+    // SAFETY: addrlen_ptr 由 check_user_buf 验证为可写 4 字节
+    unsafe { core::ptr::write_unaligned(addrlen_ptr as *mut u32, total); }
+    Ok(())
+}
+
+// ============================================================================
 // Socket 12 Syscall TCB 实现
 // ============================================================================
 

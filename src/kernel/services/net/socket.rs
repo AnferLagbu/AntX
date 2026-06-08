@@ -100,6 +100,8 @@ pub type SocketResult<T> = Result<T, SocketError>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum Domain {
+    /// Unix Domain (`AF_UNIX = 1`) — Phase C.3 新增
+    Unix = 1,
     /// IPv4 (`AF_INET = 2`)
     Inet = 2,
 }
@@ -107,6 +109,7 @@ pub enum Domain {
 impl Domain {
     pub fn from_i32(d: i32) -> Option<Self> {
         match d {
+            1 => Some(Self::Unix),
             2 => Some(Self::Inet),
             _ => None,
         }

@@ -186,12 +186,14 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - 调度器: `select_cpu()` 优先选择 allowed 集合内的 CPU
 - 负载均衡: 跨 CPU 迁移时检查亲和性约束
 
-#### C3. Unix Domain Socket
+#### C3. Unix Domain Socket ✓ (2026-06-08)
 
 - 实现 `AF_UNIX` 协议族: 流式 (SOCK_STREAM) + 数据报 (SOCK_DGRAM)
 - 地址格式: `sockaddr_un` (路径名)
 - 数据传输: 内核缓冲区直拷贝 (同地址空间无 IPC 开销)
-- 与 VFS 集成: bind 创建文件系统入口, connect 查找
+- ~~与 VFS 集成: bind 创建文件系统入口, connect 查找~~ → **修订**: UDS 不入 VFS inode, 走独立路径表 (DECISION-006)
+- FD 空间 `[100, 116)` 与 smoltcp / VFS 不冲突
+- 5 个 no_std 单元测试, 详见 [uds-design.md](uds-design.md)
 
 #### C4. io_uring / AIO
 
@@ -247,13 +249,13 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [ ] B4: MSI/MSI-X + ACPI 完整解析
 
 ### Phase C
-- [ ] C1: epoll
-- [ ] C2: CPU 亲和性
-- [ ] C3: Unix Domain Socket
+- [x] C1: epoll
+- [x] C2: CPU 亲和性
+- [x] C3: Unix Domain Socket (2026-06-08, FD 100-115, 独立路径表, 详见 [uds-design.md](uds-design.md))
 - [ ] C4: io_uring / AIO
 - [ ] C5: 路由表 + Netfilter
 - [ ] C6: Lockdep + ftrace
-- [ ] C7: KPTI 实现 + Seccomp
+- [ ] C7: KPTI + Seccomp
 
 ### Phase D
 - [ ] NUMA 感知

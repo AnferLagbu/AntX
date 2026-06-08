@@ -22,6 +22,7 @@ use crate::kernel::framework::net;
 
 pub mod socket;
 pub mod syscall;
+pub mod unix;
 
 pub use socket::{
     Domain, SockAddrIn, SockType, SocketError, SocketResult,
@@ -29,6 +30,15 @@ pub use socket::{
     send, recv, sendto, recvfrom, close,
     setsockopt, getsockopt, poll_all,
     parse_ipv4, endpoint_from_str,
+};
+
+pub use unix::{
+    SockAddrUn, UnixSocketError, UnixResult,
+    socket as unix_socket, bind as unix_bind, listen as unix_listen,
+    accept as unix_accept, connect as unix_connect, send as unix_send, recv as unix_recv,
+    sendto as unix_sendto, recvfrom as unix_recvfrom,
+    close as unix_close, unlink as unix_unlink,
+    is_uds_fd, FD_BASE as UNIX_FD_BASE, PATH_MAX as UNIX_PATH_MAX,
 };
 
 // ============================================================================
