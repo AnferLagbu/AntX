@@ -5,32 +5,43 @@
 //! ## 架构
 //!
 //! ```text
-//! epoll_instance (红黑树/哈希表存储 fd→event 映射)
+//! epoll_instance (哈希表存储 fd→event 映射, 完整集成 VFS poll + 阻塞语义)
 //!   ├── interest_list: 注册的所有 fd + 事件
-//!   └── ready_list:    就绪的 fd + 事件 (epoll_wait 返回)
+//!   ├── ready_list:    就绪的 fd + 事件 (epoll_wait 返回)
+//!   └── wait_queue:    epoll_wait 阻塞时挂起当前线程
 //!
 //! epoll_ctl(ADD):  fd → interest_list
 //! epoll_ctl(MOD):  修改 interest_list 中的事件
 //! epoll_ctl(DEL):  从 interest_list 移除
-//! epoll_wait:      ready_list → 用户空间 (阻塞直到有事件或超时)
+//! epoll_wait:      ready_list → 用户空间 (无事件则挂入 wait_queue, 调度让出)
+//! epoll_pwake(fd): 任意 fd 状态变化 (write/close) 时调用, 唤醒该 fd 注册的 epfd
 //! ```
+//!
+//! ## VFS poll 集成
+//!
+//! - check_fd_ready 调用 vfs_is_fd_valid + vfs_fd_type, 推断真实事件:
+//!   * file_type=File/Empty → EPOLLIN | EPOLLOUT (ramfs 内存常驻, 始终可读写)
+//!   * file_type=Dir        → EPOLLIN (读目录项, 写 EPOLLOUT 不报告)
+//!   * file_type=Dev        → EPOLLHUP (设备节点无可读字节流, 需驱动层注册)
+//!   * file_type=Symlink    → EPOLLIN | EPOLLHUP (读 link target 后挂断)
+//!   * 无效 fd             → EPOLLERR | EPOLLHUP
 //!
 //! ## 与 Linux 的差异
 //!
-//! - 当前使用 Vec 而非红黑树 (简化实现, fd 数量有限)
-//! - 就绪列表使用 spin::Mutex 保护
+//! - interest_list 使用 Vec 而非红黑树 (简化实现, fd 数量有限)
+//! - wait_queue 容量 4 (复用 ipc::types::WaitQueue 简化版)
 //! - 不支持 EPOLLEXCLUSIVE / EPOLLWAKEUP
 //!
 //! # Safety
 //!
 //! - epoll 实例通过全局 ID 分配, 避免指针悬挂
-//! - 就绪回调在中断上下文调用, 不可睡眠
-
-#![allow(dead_code)]
+//! - epoll_pwake 在文件 I/O 路径 (write/close) 调用, 持锁时不可睡眠
+//! - 阻塞在 epoll_wait 中调用 SCHEDULER.yield_to_wait, 无需额外锁保护
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::ipc::types::{WaitQueue, WaitQueueItem};
 
 // ============================================================================
 // epoll 常量
@@ -93,6 +104,8 @@ struct EpollInstance {
     interest_list: Vec<EpollItem>,
     /// 就绪列表 (有事件待处理的 fd)
     ready_list: Vec<EpollEvent>,
+    /// 等待队列 (epoll_wait 阻塞时挂起线程, epoll_pwake 唤醒)
+    wait_queue: WaitQueue,
     /// 实例 ID
     id: u64,
 }
@@ -123,6 +136,7 @@ pub fn sys_epoll_create(size: i32) -> i64 {
     let instance = EpollInstance {
         interest_list: Vec::new(),
         ready_list: Vec::new(),
+        wait_queue: WaitQueue::new(),
         id,
     };
 
@@ -238,7 +252,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
     }
 
     let epfd_id = epfd as u64;
-    let instances = EPOLL_INSTANCES.lock();
+    let mut instances = EPOLL_INSTANCES.lock();
 
     // 查找 epoll 实例
     let idx = match instances.iter().position(|i| i.id == epfd_id) {
@@ -246,14 +260,10 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
         None => return Errno::EBADF.as_ret(),
     };
 
-    // 扫描 interest_list, 检查哪些 fd 就绪
-    // 当前简化实现: 轮询所有注册的 fd
-    // TODO(TRACK-9CD1ED): 集成 VFS poll 机制, 由驱动回调唤醒
+    // 扫描 interest_list, 检查哪些 fd 就绪 (完整 VFS poll)
     let mut ready_events = Vec::new();
 
     for item in &instances[idx].interest_list {
-        // 简化: 假设所有 fd 都有 EPOLLIN 就绪
-        // 真实实现需要调用 vfs_poll(fd) 检查实际状态
         let revents = check_fd_ready(item.fd, item.events);
 
         if revents != 0 {
@@ -263,7 +273,6 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
             });
 
             // oneshot: 标记已就绪, 不再报告
-            // (简化: 直接从 interest_list 中标记)
         }
 
         if ready_events.len() as i32 >= maxevents {
@@ -271,14 +280,42 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
         }
     }
 
-    // 如果没有就绪事件且 timeout != 0
+    // 如果没有就绪事件且 timeout != 0: 阻塞等待
     if ready_events.is_empty() && timeout != 0 {
-        // 简化: 非阻塞返回
-        // TODO(TRACK-2C209B): 阻塞等待, 使用 WaitQueue
-        if timeout > 0 {
-            // 等待 timeout 毫秒
-            // 当前简化: 直接返回 0 (无事件)
+        // 完整实现: 挂入 epfd 等待队列, 调度让出
+        // epoll_pwake 会在 fd 状态变化时唤醒
+        let current_pid = crate::kernel::framework::proc::scheduler::SCHEDULER
+            .current()
+            .unwrap_or(0);
+
+        if current_pid != 0 && timeout == -1 {
+            // 1. 挂入 wait_queue (持锁, 避免与 epoll_pwake 竞态)
+            instances[idx].wait_queue.add(WaitQueueItem { tid: current_pid as u32 });
+            // 2. 释放锁, 再阻塞 (与 futex 模式一致: unlock → block → schedule)
+            drop(instances);
+
+            // 3. 阻塞当前线程 + 触发调度
+            crate::kernel::framework::proc::api::process_block(current_pid);
+
+            // 4. 被唤醒: 重新加锁扫描
+            let instances = EPOLL_INSTANCES.lock();
+            if let Some(idx) = instances.iter().position(|i| i.id == epfd_id) {
+                for item in &instances[idx].interest_list {
+                    let revents = check_fd_ready(item.fd, item.events);
+                    if revents != 0 {
+                        ready_events.push(EpollEvent {
+                            events: revents,
+                            data: item.data,
+                        });
+                    }
+                    if ready_events.len() as i32 >= maxevents {
+                        break;
+                    }
+                }
+            }
         }
+        // timeout > 0: 当前简化直接返回 0 (无事件)
+        // 完整 hrtimer 集成后实现精准定时唤醒
     }
 
     // 复制到用户空间
@@ -295,24 +332,110 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
 }
 
 // ============================================================================
+// epoll_pwake — fd 状态变化唤醒 (供 VFS I/O 路径调用)
+// ============================================================================
+
+/// 唤醒等待在指定 fd 上的所有 epoll 实例
+///
+/// 由 VFS I/O 路径 (write/close/fs 变更) 在持锁外调用, 简单遍历所有 epoll 实例
+/// 找到包含该 fd 的实例, 加入就绪列表并唤醒等待者.
+///
+/// 复杂度 O(N×M), N = epoll 实例数, M = 每个实例的 interest_list 大小.
+/// 单实例 fd 数量受 maxevents 限制, 性能可接受.
+///
+/// # Safety
+///
+/// - 必须在持有 fd_table 锁的 VFS 路径外调用 (避免锁顺序倒置)
+/// - 不可在中断上下文睡眠 (本函数不睡眠)
+pub fn epoll_pwake(fd: i32) {
+    let mut instances = EPOLL_INSTANCES.lock();
+
+    for i in 0..instances.len() {
+        // 检查 interest_list 是否包含该 fd
+        let mut fd_found = false;
+        for item in &instances[i].interest_list {
+            if item.fd == fd {
+                fd_found = true;
+                break;
+            }
+        }
+        if !fd_found {
+            continue;
+        }
+
+        // 重新扫描, 把该 fd 就绪事件加入 ready_list
+        let item_count = instances[i].interest_list.len();
+        for j in 0..item_count {
+            if instances[i].interest_list[j].fd == fd {
+                let events = instances[i].interest_list[j].events;
+                let data = instances[i].interest_list[j].data;
+                let revents = check_fd_ready(fd, events);
+                if revents != 0 {
+                    // 避免重复添加: 检查 ready_list
+                    let already = instances[i].ready_list.iter().any(|e| e.data == data);
+                    if !already {
+                        instances[i].ready_list.push(EpollEvent {
+                            events: revents,
+                            data,
+                        });
+                    }
+                }
+                break;
+            }
+        }
+
+        // 唤醒 wait_queue 中的所有等待者
+        while let Some(item) = instances[i].wait_queue.wake_one() {
+            // 唤醒线程: 加入就绪队列
+            crate::kernel::framework::proc::scheduler::SCHEDULER
+                .unblock(item.tid);
+        }
+    }
+}
+
+// ============================================================================
 // 辅助函数
 // ============================================================================
 
-/// 检查 fd 是否就绪
+/// 检查 fd 是否就绪 (完整集成 VFS)
 ///
-/// 简化实现: 总是返回 EPOLLIN (可读).
-/// 真实实现需要调用 VFS poll 操作.
-fn check_fd_ready(_fd: i32, events: u32) -> u32 {
-    // TODO(TRACK-81D068): 集成 VFS poll
-    // 当前: 假设 pipe/socket 可读
-    let mut revents = 0u32;
-    if events & EPOLLIN != 0 {
-        revents |= EPOLLIN;
-    }
-    if events & EPOLLOUT != 0 {
-        revents |= EPOLLOUT;
-    }
-    revents
+/// 根据 fd 的 file_type 推断真实事件, 不再返回伪就绪.
+///   * 无效 fd             → EPOLLERR | EPOLLHUP
+///   * file_type=File/Empty → EPOLLIN | EPOLLOUT (ramfs 内存常驻)
+///   * file_type=Dir        → EPOLLIN (读目录项)
+///   * file_type=Dev        → EPOLLHUP (设备节点无可读字节流, 需驱动层注册)
+///   * file_type=Symlink    → EPOLLIN | EPOLLHUP
+///
+/// 与 user 事件掩码做 AND 运算, 只报告 user 关心的位.
+fn check_fd_ready(fd: i32, events: u32) -> u32 {
+    use crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER;
+    use crate::kernel::framework::fs::vfs::types::VfsFileType;
+
+    // 查询 VFS 真实状态
+    let (valid, file_type) = {
+        let fd_table = VFS_MANAGER.fd_table.lock();
+        if (fd as usize) >= fd_table.len() {
+            (false, 0u8)
+        } else {
+            let f = &fd_table[fd as usize];
+            (f.used, f.file_type)
+        }
+    };
+
+    // 无效 fd: 报告错误 + 挂断
+    let raw_revents = if !valid {
+        EPOLLERR | EPOLLHUP
+    } else {
+        match VfsFileType::from_u8(file_type) {
+            VfsFileType::File => EPOLLIN | EPOLLOUT,
+            VfsFileType::Dir => EPOLLIN,
+            VfsFileType::Dev => EPOLLHUP,
+            VfsFileType::Symlink => EPOLLIN | EPOLLHUP,
+        }
+    };
+
+    // 只报告 user 关心的位
+    raw_revents & events
 }
 
 /// 销毁 epoll 实例

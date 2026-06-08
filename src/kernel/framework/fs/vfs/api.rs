@@ -25,6 +25,7 @@ use crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA;
 use crate::kernel::framework::mm::{pcache, PAGE_SIZE};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
 use crate::kernel::framework::lib::cstr::CStrExt;
+use crate::kernel::framework::syscall::epoll as fw_epoll;
 
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)
 const PCACHE_FAST_MAX_BYTES: usize = 64 * 1024;
@@ -213,6 +214,8 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
         pcache::pcache_invalidate_inode(node_id);
     }
     VFS_MANAGER.free_fd(fd_idx_us);
+    // C1: fd 关闭 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLHUP|EPOLLERR)
+    fw_epoll::epoll_pwake(fd_idx as i32);
     0
 }
 
@@ -402,6 +405,8 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
             let mut offset = offset;
             let result = ramfs.write(node_id, &mut offset, user_buf.as_slice(), pwm);
             VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
+            // C1: 写完成 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLOUT)
+            fw_epoll::epoll_pwake(fd_idx as i32);
             result
         }
         FsType::HvFs => {

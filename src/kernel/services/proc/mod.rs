@@ -26,6 +26,7 @@ pub mod execve;
 pub mod clone;
 pub mod info;
 pub mod rlimit;
+pub mod sched;
 pub mod session;
 pub mod signal;
 pub mod sleep;

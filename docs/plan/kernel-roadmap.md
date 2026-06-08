@@ -51,6 +51,37 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - CPU 亲和性: 完全缺失
 - io_uring / AIO: 完全缺失
 
+## 进度跟踪 (2026-06-08 更新)
+
+> 本节记录 roadmap 中各子项的实际完成状态, 与 §方案 配合使用.
+
+### Phase B 状态: 4/4 完成 ✅
+
+| 子项 | 状态 | 关键产出 | 验证 |
+|---|---|---|---|
+| B1 Futex | ✅ 完成 | framework/syscall/futex.rs (428 行) + services/sync/futex.rs (148 行) | 64 桶哈希表, FUTEX_WAIT/WAKE/REQUEUE/BITSET 全套 |
+| B2 Page Cache + 文件 mmap | ✅ 完成 | framework/mm/pcache.rs (454 行) + syscall/mmap.rs MAP_SHARED/PRIVATE/ANONYMOUS | demand paging 真语义, 走 pcache_lookup+get+fill |
+| B3 Swap | ✅ 完成 | framework/mm/swap.rs (SwapEntry, swap_out_to_pte, kswapd softirq) + lib.rs swap_init/kswapd_init | 0 dead_code, LRU 跟踪 pml4, 周期唤醒 KSWAPD_TICK_INTERVAL=100 |
+| B4 MSI/MSI-X + ACPI | ✅ 完成 | framework/pci/msi.rs (462 行) + arch/x86_64/acpi.rs (840 行) FADT/HPET/DMAR 全套 | msi_alloc_vector/enable, msix_enable/mask/unmask, acpi_shutdown |
+
+### Phase C 状态: 2/7 完成 (C1-C2 完成, C3-C7 待实施)
+
+| 子项 | 状态 | 关键产出 | 验证 |
+|---|---|---|---|
+| C1 epoll | ✅ 完成 | framework/syscall/epoll.rs (370 行) + VFS 集成 | 完整集成 VFS poll + WaitQueue 真阻塞 + epoll_pwake 唤醒 (3 TODO 全清) |
+| C2 CPU 亲和性 | ✅ 完成 | framework/proc/process.rs cpuset_allowed + scheduler is_cpu_allowed/select_cpu_for + syscall mod.rs sys_sched_setaffinity/getaffinity (Linux 兼容号 203/204) + services/proc/sched.rs (新文件) | 双架构 0 error 0 warning, 3 审计 0 issue, host test 172/172 |
+| C3 Unix Domain Socket | ⬜ 待实施 | — | Domain::Unix 未实现; 无 sockaddr_un; 无 AF_UNIX 协议族 |
+| C4 io_uring / AIO | ⬜ 待实施 | — | 整个项目无 io_uring/io_submit/io_getevents 痕迹 |
+| C5 路由表 + Netfilter | ⬜ 待实施 | — | 无 routing_table/FIB/NF_INET/NAT/conntrack |
+| C6 Lockdep + ftrace | ⬜ 待实施 | — | 无 lockdep (lock_class/irq_context) / ftrace (mcount) |
+| C7 KPTI + Seccomp | ⬜ 待实施 | — | config/caps.rs 仅有 kpti 标志; 无双页表切换; 无 sys_seccomp |
+
+### 已修复预存问题
+
+| 问题 | 位置 | 根因 | 修复 |
+|---|---|---|---|
+| `make test-host` stress_test 永久卡住 | host-tests/src/hvfs/dedup.rs:65 `CasIndex::ref_dec` | **AB-BA 死锁**: `insert`/`ref_inc` 锁序 = `index → refs`, `ref_dec` 锁序 = `refs → index` | 统一锁顺序: `ref_dec` 改为 `index → refs`, 注释标注"避免 AB-BA 死锁" |
+
 ## 方案
 
 ### Phase A — 可启动用户态

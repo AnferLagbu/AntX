@@ -186,6 +186,9 @@ pub const SYS_tgkill: u64 = 234;
 
 // 同步
 pub const SYS_futex: u64 = 202;
+// CPU 亲和性 (Linux 兼容号)
+pub const SYS_sched_setaffinity: u64 = 203;
+pub const SYS_sched_getaffinity: u64 = 204;
 
 // 事件轮询
 pub const SYS_epoll_create: u64 = 213;

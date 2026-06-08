@@ -1157,6 +1157,60 @@ impl Scheduler {
         per_cpu().rt_queue.lock().len()
     }
 
+    /// C2: 检查目标 CPU 是否在进程的 allowed cpuset 中
+    ///
+    /// 调度器选 CPU / 负载均衡迁移时调用, 约束进程 CPU 亲和性.
+    /// 单核系统: 始终返回 true.
+    pub fn is_cpu_allowed(&self, pid: Pid, cpu_id: u32) -> bool {
+        if pid == 0 {
+            return true;
+        }
+        let cpu_count = crate::kernel::framework::smp::get_cpu_count();
+        if cpu_count <= 1 || cpu_id >= cpu_count {
+            return true;
+        }
+        if (cpu_id as usize) >= 64 {
+            return true; // AntX 当前 cpuset 是 64-bit
+        }
+        let allowed = PROCESS_TABLE
+            .with_process(pid, |p| p.cpuset_allowed.load(Ordering::Acquire))
+            .unwrap_or(u64::MAX);
+        (allowed >> cpu_id) & 1 == 1
+    }
+
+    /// C2: 为进程选择最合适的 CPU
+    ///
+    /// 策略: 在 allowed cpuset 中选 load 最低的 CPU.
+    /// 单核: 直接返回当前 CPU.
+    /// 找不到 allowed CPU: 返回 hint_cpu (退化路径, 调度器仍可工作).
+    pub fn select_cpu_for(&self, pid: Pid, hint_cpu: u32) -> u32 {
+        let cpu_count = crate::kernel::framework::smp::get_cpu_count();
+        if cpu_count <= 1 {
+            return hint_cpu.min(cpu_count.saturating_sub(1));
+        }
+
+        // 优先尝试 hint_cpu (通常为当前 CPU, 缓存亲和)
+        if self.is_cpu_allowed(pid, hint_cpu) {
+            return hint_cpu;
+        }
+
+        // 在 allowed cpuset 中选 load 最低的 CPU
+        let mut best_cpu = hint_cpu;
+        let mut best_load: u64 = u64::MAX;
+        for cpu in 0..cpu_count {
+            if !self.is_cpu_allowed(pid, cpu) {
+                continue;
+            }
+            let sched = per_cpu_for(cpu);
+            let load = sched.cfs_rq.lock().total_weight.load(Ordering::Acquire);
+            if load < best_load {
+                best_load = load;
+                best_cpu = cpu;
+            }
+        }
+        best_cpu
+    }
+
     fn total_runnable_for(&self, cpu_id: u32) -> usize {
         let sched = per_cpu_for(cpu_id);
         let mut count = sched.cfs_rq.lock().nr_running as usize;
@@ -1229,6 +1283,21 @@ impl Scheduler {
         let mut dst_rq = per_cpu_for(this_cpu).cfs_rq.lock();
         for i in 0..count {
             let pid = tasks_to_migrate[i];
+            // C2: 亲和性检查 — 目标 CPU (this_cpu) 必须在进程 allowed 集合中,
+            // 否则跳过该进程, 留给后续在 allowed CPU 上调度
+            if !self.is_cpu_allowed(pid, this_cpu) {
+                // 放回源队列 (避免丢失)
+                let vr = PROCESS_TABLE
+                    .with_process(pid, |p| p.cfs_vruntime.load(Ordering::Acquire))
+                    .unwrap_or(0);
+                let weight = PROCESS_TABLE
+                    .with_process(pid, |p| p.cfs_weight.load(Ordering::Acquire))
+                    .unwrap_or(NICE0_WEIGHT);
+                drop(dst_rq);
+                per_cpu_for(busiest_cpu).cfs_rq.lock().enqueue(pid, vr, weight);
+                dst_rq = per_cpu_for(this_cpu).cfs_rq.lock();
+                continue;
+            }
             let (vr, weight) = PROCESS_TABLE
                 .with_process(pid, |p| {
                     (

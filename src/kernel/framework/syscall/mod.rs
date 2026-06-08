@@ -19,6 +19,7 @@ pub mod types;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::idt::types::InterruptFrame;
 use crate::kernel::framework::syscall::types::*;
+use core::sync::atomic::Ordering;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
@@ -258,6 +259,14 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"select\0"
         ),
         SYS_sched_yield => dispatch!(sys_sched_yield(), b"sched_yield\0"),
+        SYS_sched_setaffinity => dispatch!(
+            sys_sched_setaffinity(a0 as i32, a1 as u32, a2),
+            b"sched_setaffinity\0"
+        ),
+        SYS_sched_getaffinity => dispatch!(
+            sys_sched_getaffinity(a0 as i32, a1 as u32, a2),
+            b"sched_getaffinity\0"
+        ),
 
         // ==================== 文件描述符 ====================
         SYS_dup => dispatch!(
@@ -1487,6 +1496,97 @@ fn sys_time(buf: *mut u64) -> i64 {
 // ============================================================================
 // 网络 — socket / bind / listen / accept / connect / sendto / recvfrom / shutdown
 // ============================================================================
+
+/// C2: sched_setaffinity — 设置进程的 CPU 亲和性掩码
+///
+/// Linux 兼容 ABI: `sched_setaffinity(pid, cpusetsize, mask)`
+///   - `pid == 0` 表示当前进程
+///   - `cpusetsize` 必须 >= 8 (u64 掩码大小)
+///   - `mask` 用户空间指针, 指向 64-bit 位图
+///
+/// 返回 0 成功, 负值 -errno 失败
+pub fn sys_sched_setaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
+    if cpusetsize < 8 {
+        return Errno::EINVAL.as_ret();
+    }
+    if mask_ptr == 0 || !validate_user_buf(mask_ptr, 8) {
+        return Errno::EFAULT.as_ret();
+    }
+
+    // 读 user 空间 mask
+    let mask = match raw::read_u64_from_user(mask_ptr) {
+        Some(v) => v,
+        None => return Errno::EFAULT.as_ret(),
+    };
+
+    // 解析 pid (0 = 当前进程)
+    let target_pid = if pid == 0 {
+        crate::kernel::framework::proc::scheduler::SCHEDULER
+            .current()
+            .unwrap_or(0)
+    } else if pid > 0 {
+        pid as u32
+    } else {
+        return Errno::EINVAL.as_ret();
+    };
+
+    if target_pid == 0 {
+        return Errno::ESRCH.as_ret();
+    }
+
+    // 写入 Process.cpuset_allowed
+    let ok = crate::kernel::framework::proc::process::PROCESS_TABLE
+        .with_process(target_pid, |p| {
+            p.cpuset_allowed.store(mask, Ordering::Release);
+        })
+        .is_some();
+
+    if !ok {
+        return Errno::ESRCH.as_ret();
+    }
+
+    crate::klog_debug!(Sync, "[sched] setaffinity pid={} mask=0x{:X}", target_pid, mask);
+    0
+}
+
+/// C2: sched_getaffinity — 获取进程的 CPU 亲和性掩码
+///
+/// Linux 兼容 ABI: `sched_getaffinity(pid, cpusetsize, mask)`
+///
+/// 返回写入的字节数 (8) 成功, 负值 -errno 失败
+pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
+    if cpusetsize < 8 {
+        return Errno::EINVAL.as_ret();
+    }
+    if mask_ptr == 0 || !validate_user_buf(mask_ptr, 8) {
+        return Errno::EFAULT.as_ret();
+    }
+
+    let target_pid = if pid == 0 {
+        crate::kernel::framework::proc::scheduler::SCHEDULER
+            .current()
+            .unwrap_or(0)
+    } else if pid > 0 {
+        pid as u32
+    } else {
+        return Errno::EINVAL.as_ret();
+    };
+
+    if target_pid == 0 {
+        return Errno::ESRCH.as_ret();
+    }
+
+    let mask = crate::kernel::framework::proc::process::PROCESS_TABLE
+        .with_process(target_pid, |p| p.cpuset_allowed.load(Ordering::Acquire))
+        .unwrap_or(u64::MAX);
+
+    if !raw::write_u64_to_user(mask_ptr, mask) {
+        return Errno::EFAULT.as_ret();
+    }
+
+    crate::klog_debug!(Sync, "[sched] getaffinity pid={} mask=0x{:X}", target_pid, mask);
+    8 // 返回写入字节数 (Linux 兼容)
+}
 
 #[cfg(feature = "net")]
 fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {

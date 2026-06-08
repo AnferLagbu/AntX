@@ -170,6 +170,13 @@ pub struct Process {
     pub pgid: AtomicU32,
     pub fd_table: FdTable,
 
+    /// CPU 亲和性掩码 (C2 完整实现):
+    ///   bit i (i < MAX_CPUS) 置位 = 允许在 CPU i 上运行
+    ///   默认值 `u64::MAX` (前 64 个 CPU 都允许), 兼容单核
+    ///   通过 sys_sched_setaffinity 修改
+    ///   调度器 select_cpu 与跨 CPU 迁移时检查
+    pub cpuset_allowed: AtomicU64,
+
     /// 阻塞睡眠到期时间 (ticks), 用于 proc_sleep_ms
     pub sleep_until: AtomicU64,
 
@@ -254,6 +261,8 @@ impl Process {
             session_id: AtomicU64::new(0),
             pgid: AtomicU32::new(0),
             fd_table: FdTable::new(),
+            // C2 CPU 亲和性: 默认所有 CPU (前 64 个) 都允许
+            cpuset_allowed: AtomicU64::new(u64::MAX),
             sleep_until: AtomicU64::new(0),
             ref_count: AtomicU32::new(1),
             pending_free: AtomicBool::new(false),

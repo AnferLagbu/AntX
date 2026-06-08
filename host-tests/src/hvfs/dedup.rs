@@ -63,12 +63,13 @@ impl CasIndex {
     }
 
     pub fn ref_dec(&self, hash: &CasHash) -> u64 {
+        // 锁顺序: 先 index 后 refs, 与 insert/ref_inc 一致, 避免 AB-BA 死锁
+        let mut index = self.hash_to_dva.lock().unwrap();
         let mut refs = self.ref_counts.lock().unwrap();
         if let Some(count) = refs.get_mut(hash) {
             *count = count.saturating_sub(1);
             if *count == 0 {
                 refs.remove(hash);
-                let mut index = self.hash_to_dva.lock().unwrap();
                 index.remove(hash);
                 return 0;
             }
