@@ -801,3 +801,308 @@ pub fn getrlimit_validate(resource: i32, rlim_ptr: u64) -> Result<(), Errno> {
     if resource < 0 || resource > 16 { return Err(Errno::EINVAL); }
     Ok(())
 }
+
+// =============== DNS / IPv4 literal (D1.2) ===============
+
+/// 解析 IPv4 字面量 "a.b.c.d"
+///
+/// 等价于 `framework::net::init::parse_ipv4_literal` (无错处理; 不合法返 None)。
+pub fn parse_ipv4_literal(s: &str) -> Option<[u8; 4]> {
+    let mut octets = [0u8; 4];
+    let mut idx = 0usize;
+    let mut cur: u32 = 0;
+    let mut has_digit = false;
+    for &b in s.as_bytes() {
+        if b == b'.' {
+            if !has_digit || idx >= 3 || cur > 255 {
+                return None;
+            }
+            octets[idx] = cur as u8;
+            idx += 1;
+            cur = 0;
+            has_digit = false;
+        } else if b.is_ascii_digit() {
+            cur = cur * 10 + (b - b'0') as u32;
+            has_digit = true;
+        } else {
+            return None;
+        }
+    }
+    if !has_digit || idx != 3 || cur > 255 {
+        return None;
+    }
+    octets[3] = cur as u8;
+    Some(octets)
+}
+
+/// 静态 hosts 表条目: 主机名 → IPv4
+struct HostEntry {
+    name: &'static str,
+    ip: [u8; 4],
+}
+
+/// 内置静态 hosts (与 framework::net::init::STATIC_HOSTS 保持一致)
+const STATIC_HOSTS: &[HostEntry] = &[
+    HostEntry { name: "localhost",       ip: [127, 0, 0, 1] },
+    HostEntry { name: "router",          ip: [10, 0, 2, 2]  },
+    HostEntry { name: "host",            ip: [10, 0, 2, 15] },
+    HostEntry { name: "qemu-gateway",    ip: [10, 0, 2, 2]  },
+    HostEntry { name: "antx-gateway",    ip: [10, 0, 2, 2]  },
+];
+
+/// 简单 DNS 解析 (等价于 `framework::net::init::dns_resolve`)
+pub fn dns_resolve(name: &str) -> Option<[u8; 4]> {
+    for entry in STATIC_HOSTS {
+        if entry.name.eq_ignore_ascii_case(name) {
+            return Some(entry.ip);
+        }
+    }
+    if let Some(ip) = parse_ipv4_literal(name) {
+        return Some(ip);
+    }
+    None
+}
+
+// =============== Socket 子系统 (D1.3) ===============
+
+/// Socket 错误 (等价于 services::net::socket::SocketError)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SocketError {
+    PermissionDenied,
+    BadFd,
+    WouldBlock,
+    NoMemory,
+    Fault,
+    InvalidArgument,
+    ProcessFileLimit,
+    NoDevice,
+    NotSupported,
+    AddrFamilyNotSupported,
+    AddrInUse,
+    AddrNotAvailable,
+    ConnectionReset,
+    NotConnected,
+    ConnectionRefused,
+    NotReady,
+    Other(i32),
+}
+
+impl SocketError {
+    pub fn from_i32(rc: i32) -> Self {
+        match rc {
+            1 => Self::PermissionDenied,
+            9 => Self::BadFd,
+            11 => Self::WouldBlock,
+            12 => Self::NoMemory,
+            14 => Self::Fault,
+            19 => Self::NoDevice,
+            22 => Self::InvalidArgument,
+            23 => Self::ProcessFileLimit,
+            95 => Self::NotSupported,
+            97 => Self::AddrFamilyNotSupported,
+            98 => Self::AddrInUse,
+            99 => Self::AddrNotAvailable,
+            104 => Self::ConnectionReset,
+            107 => Self::NotConnected,
+            111 => Self::ConnectionRefused,
+            _ => Self::Other(rc),
+        }
+    }
+}
+
+/// Socket 协议族 (等价于 services::net::socket::Domain)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum Domain {
+    Inet = 2,
+}
+
+impl Domain {
+    pub fn from_i32(d: i32) -> Option<Self> {
+        match d {
+            2 => Some(Self::Inet),
+            _ => None,
+        }
+    }
+}
+
+/// Socket 类型 (等价于 services::net::socket::SockType)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum SockType {
+    Stream = 1,
+    Dgram = 2,
+}
+
+impl SockType {
+    pub fn from_i32(t: i32) -> Option<Self> {
+        match t {
+            1 => Some(Self::Stream),
+            2 => Some(Self::Dgram),
+            _ => None,
+        }
+    }
+}
+
+/// IPv4 Socket 地址 (等价于 services::net::socket::SockAddrIn)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SockAddrIn {
+    pub port: u16,
+    pub ip: [u8; 4],
+}
+
+impl SockAddrIn {
+    pub fn new(port: u16, ip: [u8; 4]) -> Self {
+        Self { port, ip }
+    }
+}
+
+/// IPv4 Socket 地址 → 8 字节 C 结构体 (等价于 services::net::socket::sockaddr_in_to_bytes)
+pub fn sockaddr_in_to_bytes(addr: &SockAddrIn) -> [u8; 8] {
+    let mut buf = [0u8; 8];
+    buf[0..2].copy_from_slice(&(2u16).to_be_bytes()); // AF_INET
+    buf[2..4].copy_from_slice(&addr.port.to_be_bytes());
+    buf[4..8].copy_from_slice(&addr.ip);
+    buf
+}
+
+/// 8 字节 C 结构体 → IPv4 Socket 地址 (等价于 services::net::socket::bytes_to_sockaddr_in)
+pub fn bytes_to_sockaddr_in(buf: &[u8; 8]) -> Option<SockAddrIn> {
+    let family = u16::from_be_bytes([buf[0], buf[1]]);
+    if family != 2 {
+        return None;
+    }
+    let port = u16::from_be_bytes([buf[2], buf[3]]);
+    let mut ip = [0u8; 4];
+    ip.copy_from_slice(&buf[4..8]);
+    Some(SockAddrIn { port, ip })
+}
+
+/// 解析 "a.b.c.d" 格式 IP 字符串 (等价于 services::net::socket::parse_ipv4)
+pub fn socket_parse_ipv4(s: &str) -> Option<[u8; 4]> {
+    let mut parts = s.split('.');
+    let mut out = [0u8; 4];
+    for i in 0..4 {
+        let p = parts.next()?;
+        let v: u32 = p.parse().ok()?;
+        if v > 255 {
+            return None;
+        }
+        out[i] = v as u8;
+    }
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(out)
+}
+
+/// 构造 `SockAddrIn` from IP 字符串 + 端口
+pub fn endpoint_from_str(ip: &str, port: u16) -> Option<SockAddrIn> {
+    let bytes = socket_parse_ipv4(ip)?;
+    Some(SockAddrIn::new(port, bytes))
+}
+
+// =============== Socket Syscall 12 dispatch (D1.4) ===============
+//
+// 各 dispatch 的"参数预校验" (前几行 if-check) 在 services/net/syscall.rs 与
+// queenx-tests 中等价, 因为它们只是纯标量验证; 真正的 fw:: 委托调用需要
+// QEMU 集成测试覆盖。
+
+/// `socket_syscall` 不做预校验 (3 个参数全是合法范围, 由底层校验)
+pub fn socket_syscall_validate(_domain: i32, _sock_type: i32, _protocol: i32) -> Result<(), Errno> {
+    Ok(())
+}
+
+/// `bind_syscall` 仅校验 fd<0
+pub fn bind_syscall_validate(fd: i32, _addr_ptr: u64, _addrlen: u32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// `listen_syscall` 校验 fd<0, backlog<0
+pub fn listen_syscall_validate(fd: i32, backlog: i32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if backlog < 0 { return Err(Errno::EINVAL); }
+    Ok(())
+}
+
+/// `accept_syscall` 校验 fd<0
+pub fn accept_syscall_validate(fd: i32, _addr_ptr: u64, _addrlen_ptr: u64) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// `connect_syscall` 校验 fd<0
+pub fn connect_syscall_validate(fd: i32, _addr_ptr: u64, _addrlen: u32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// `sendto_syscall` 校验 fd<0
+pub fn sendto_syscall_validate(
+    fd: i32, _buf_ptr: u64, _len: u32, _flags: i32, _dest_ptr: u64, _dest_len: u32,
+) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// `recvfrom_syscall` 校验 fd<0, buf_ptr==0 || len==0
+pub fn recvfrom_syscall_validate(
+    fd: i32, buf_ptr: u64, len: u32, _flags: i32, _src_ptr: u64, _src_len_ptr: u64,
+) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if buf_ptr == 0 || len == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+/// `setsockopt_syscall` 校验 fd<0
+pub fn setsockopt_syscall_validate(
+    fd: i32, _level: i32, _optname: i32, _val_ptr: u64, _valen: u32,
+) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// `getsockopt_syscall` 校验 fd<0
+pub fn getsockopt_syscall_validate(
+    fd: i32, _level: i32, _optname: i32, _val_ptr: u64, _valen_ptr: u64,
+) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// `shutdown_syscall` 校验 fd<0
+pub fn shutdown_syscall_validate(fd: i32, _how: i32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    Ok(())
+}
+
+/// `sendmsg_syscall` 校验 fd<0, msg_ptr==0, iovlen 范围
+pub fn sendmsg_syscall_validate(fd: i32, msg_ptr: u64, _flags: i32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if msg_ptr == 0 { return Err(Errno::EFAULT); }
+    // 注: iov 校验依赖 raw::check_user_buf + read_u64_from_user, 需 framework
+    // host 端无法复刻, 委托 fw 调用; 此处只覆盖前两个最常见错误
+    Ok(())
+}
+
+/// `recvmsg_syscall` 校验 fd<0, msg_ptr==0, iovlen 范围
+pub fn recvmsg_syscall_validate(fd: i32, msg_ptr: u64, _flags: i32) -> Result<(), Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    if msg_ptr == 0 { return Err(Errno::EFAULT); }
+    Ok(())
+}
+
+/// sendmsg/recvmsg 内部 iov 校验 (供 fw::sendmsg_syscall 调用前)
+///
+/// 校验: iovlen in 1..=1024, iov_bytes = iovlen * 16 不溢出
+pub fn msg_iov_validate(iov_ptr: u64, iovlen: u64) -> Result<(), Errno> {
+    if iovlen == 0 || iovlen > 1024 {
+        return Err(Errno::EINVAL);
+    }
+    if iov_ptr == 0 {
+        return Err(Errno::EINVAL);
+    }
+    let _iov_bytes = iovlen.checked_mul(16).ok_or(Errno::EINVAL)?;
+    Ok(())
+}

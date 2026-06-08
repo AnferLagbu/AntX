@@ -195,7 +195,6 @@ pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str>
         path_buf[0] = b'/';
         path_buf[1..=entry.name.len()].copy_from_slice(entry.name);
         // NUL 终止符已由初始化保证
-        let path_len = 1 + entry.name.len();
 
         let file_type = entry.mode & CPIO_S_IFMT;
 

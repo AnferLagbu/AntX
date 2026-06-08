@@ -271,6 +271,7 @@ fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: u
             // 从缓存页复制数据到新页
             let src_virt = PhysAddr(cache_phys).to_virt();
             let dst_virt = new_phys.to_virt();
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     src_virt.0 as *const u8,

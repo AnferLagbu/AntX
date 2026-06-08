@@ -430,6 +430,7 @@ impl AhciPort {
         }
 
         // 写入寄存器
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let regs = &mut *self.regs;
             regs.clb = self.dma.cmd_list_phys.0 as u32;
@@ -460,6 +461,7 @@ impl AhciPort {
 
     /// 检测设备
     pub fn detect_device(&mut self) -> bool {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let regs = &*self.regs;
             let det = regs.ssts & pxssts::DET;
@@ -479,6 +481,7 @@ impl AhciPort {
         // 先分配 DMA
         self.setup_dma()?;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let regs = &mut *self.regs;
 
@@ -522,6 +525,7 @@ impl AhciPort {
             return Ok(());
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let regs = &mut *self.regs;
 
@@ -665,10 +669,12 @@ impl AhciPort {
 
         let fis = H2dFis::read_dma(lba, count);
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe { self.submit_dma_command(&fis, buf_phys, byte_count, false) };
 
         // 复制数据到用户 buffer
         if result.is_ok() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 ptr::copy_nonoverlapping(buf_virt.0 as *const u8, buffer, byte_count as usize);
             }
@@ -696,11 +702,13 @@ impl AhciPort {
             .ok_or(DriverError::Busy)?;
 
         // 复制数据到 DMA buffer
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             ptr::copy_nonoverlapping(buffer, buf_virt.0 as *mut u8, byte_count as usize);
         }
 
         let fis = H2dFis::write_dma(lba, count);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe { self.submit_dma_command(&fis, buf_phys, byte_count, true) };
 
         dma_engine.free_coherent(buf_virt, byte_count as usize);

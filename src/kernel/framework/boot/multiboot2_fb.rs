@@ -7,8 +7,7 @@
 //! FB_INFO 使用 spin::Once 确保启动早期写入一次，之后只读。
 //! FRAMEBUFFER_TAG_TYPE = 8 对应 Multiboot2 spec 3.6.12。
 
-use spin::Once;
-
+use crate::kernel::framework::sync::once_lock::OnceLock;
 pub const MULTIBOOT2_TAG_FRAMEBUFFER: u32 = 8;
 
 #[derive(Debug, Clone, Copy)]
@@ -50,7 +49,7 @@ impl FramebufferInfo {
     }
 }
 
-static FB_INFO: Once<FramebufferInfo> = Once::new();
+static FB_INFO: OnceLock<FramebufferInfo> = OnceLock::new();
 
 pub fn get_framebuffer_info() -> Option<&'static FramebufferInfo> {
     FB_INFO.get()
@@ -79,6 +78,7 @@ pub fn get_framebuffer_info() -> Option<&'static FramebufferInfo> {
 ///   u8   blue_field_position
 ///   u8   blue_mask_size
 pub fn parse_framebuffer_tag(tag_data: *const u8, _tag_size: u32) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let addr = *(tag_data as *const u64);
         let pitch = *((tag_data as *const u32).add(2));
@@ -106,6 +106,6 @@ pub fn parse_framebuffer_tag(tag_data: *const u8, _tag_size: u32) {
             fb.blue_mask_size = *(tag_data.add(29));
         }
 
-        FB_INFO.call_once(|| fb);
+        FB_INFO.get_or_init(|| fb);
     }
 }

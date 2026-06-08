@@ -34,11 +34,13 @@ const UARTLCR_8N1: u32 = 0b11 << 5;
 // ============================================================================
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn read(offset: u64) -> u32 {
     read_volatile((PL011_BASE + offset) as *const u32)
 }
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn write(offset: u64, val: u32) {
     write_volatile((PL011_BASE + offset) as *mut u32, val);
 }
@@ -108,13 +110,16 @@ pub unsafe fn getc() -> u8 {
 /// 发送字符串
 pub fn puts(s: &str) {
     for c in s.bytes() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             putc(c);
         }
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         putc(b'\r');
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         putc(b'\n');
     }

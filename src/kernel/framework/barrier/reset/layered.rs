@@ -27,6 +27,7 @@ pub fn execute_layered() -> ! {
             RecoveryResult::Success => {
                 crate::klog_crit!(Kernel, "[RECOVERY] Layer 2 (BSR) succeeded");
                 #[cfg(not(feature = "kernel_test"))]
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     core::hint::unreachable_unchecked();
                 }
@@ -69,6 +70,7 @@ pub fn execute_from_panic(panic_info: &core::panic::PanicInfo<'_>) -> ! {
                 crate::klog_crit!(Kernel, "[RECOVERY] Layer 1 (BBR) succeeded");
                 config::set_reset_in_progress(false);
                 #[cfg(not(feature = "kernel_test"))]
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     core::hint::unreachable_unchecked();
                 }

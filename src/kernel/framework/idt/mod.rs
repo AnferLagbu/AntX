@@ -175,6 +175,7 @@ pub extern "C" fn idt_init() -> i32 {
         fn isr0x82();
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         macro_rules! addr {
             ($f:ident) => {
@@ -243,7 +244,7 @@ pub extern "C" fn idt_init() -> i32 {
         ) {
             Ok(()) => MODULE_INIT_SUCCESS,
             Err(msg) => {
-                // TODO: 使用 klog 记录错误 (Phase 3)
+                // TODO(TRACK-2CED20): 使用 klog 记录错误 (Phase 3)
                 let _ = msg;
                 MODULE_INIT_FAILURE
             }
@@ -328,6 +329,7 @@ pub extern "C" fn idt_register_irq(
         ""
     } else {
         // 简单处理：假设 name 指向静态字符串
+        // SAFETY: `const` 由调用方保证为有效指针; 只读访问
         unsafe { core::ffi::CStr::from_ptr(name as *const core::ffi::c_char).to_str().unwrap_or("") }
     };
 

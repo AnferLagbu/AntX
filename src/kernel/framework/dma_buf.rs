@@ -178,7 +178,7 @@ impl DmaStream {
                         // SAFETY: ARCH-specific cache maintenance for DMA.
                         // 对 cpu_addr..cpu_addr+size 范围执行 DC CVAU
                         // 防止 CPU cache 与设备 DMA 视图不一致
-                        // TODO: Phase 2 — integrate with aarch64 cache ops
+                        // TODO(TRACK-CCB422): Phase 2 — integrate with aarch64 cache ops
                     }
                     Ok(())
                 } else {
@@ -203,7 +203,7 @@ impl DmaStream {
                     #[cfg(target_arch = "aarch64")]
                     {
                         // SAFETY: ARCH-specific cache maintenance.
-                        // TODO: Phase 2 — integrate with aarch64 cache ops
+                        // TODO(TRACK-D64319): Phase 2 — integrate with aarch64 cache ops
                     }
                     Ok(())
                 } else {

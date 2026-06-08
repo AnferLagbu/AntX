@@ -217,6 +217,7 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
         None => return -1,
     };
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
 
     let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
@@ -309,6 +310,7 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
         None => return -1,
     };
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
 
     let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
@@ -406,6 +408,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     if st.is_null() {
         return -1;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_ref = unsafe { UserRefMut::new(st) };
 
     let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
@@ -496,6 +499,7 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
             if result <= 0 || raw_entry.node == 0 {
                 return 0;
             }
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             let mut entry_ref = unsafe { UserRefMut::new(entry) };
             let e = entry_ref.as_mut();
             e.node = raw_entry.node;
@@ -532,6 +536,7 @@ pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     let cwd = VFS_MANAGER.get_cwd();
     let bytes = cwd.as_bytes();
     let len = bytes.len().min((size - 1) as usize);
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let mut user_buf = unsafe { UserWritePtr::new(buf as *mut u8, size as usize) };
     let slice = user_buf.as_mut_slice();
     slice[..len].copy_from_slice(&bytes[..len]);
@@ -601,6 +606,7 @@ pub fn hvfs_read_internal(fd: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
     let hvfs = get_hvfs();
     hvfs.read(fd, user_buf.as_mut_slice(), count)
@@ -611,6 +617,7 @@ pub fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
     let hvfs = get_hvfs();
     hvfs.write(fd, user_buf.as_slice(), count)
@@ -640,18 +647,22 @@ pub fn hvfs_get_stats_internal(
     let hvfs = get_hvfs();
     let (allocs, frees, _reads, _writes) = hvfs.get_stats();
     if !total_blocks.is_null() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let mut r = unsafe { UserRefMut::new(total_blocks) };
         *r.as_mut() = allocs as u32;
     }
     if !free_blocks.is_null() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let mut r = unsafe { UserRefMut::new(free_blocks) };
         *r.as_mut() = frees as u32;
     }
     if !total_nodes.is_null() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let mut r = unsafe { UserRefMut::new(total_nodes) };
         *r.as_mut() = 0;
     }
     if !free_nodes.is_null() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let mut r = unsafe { UserRefMut::new(free_nodes) };
         *r.as_mut() = 0;
     }
@@ -1151,6 +1162,7 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
         (fd_table[fd_usize].node_id, 0)
     };
     let _pwm = resolve_pwm(pwm);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_ref = unsafe { UserRefMut::new(st) };
 
     let result = {

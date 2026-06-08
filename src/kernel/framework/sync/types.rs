@@ -68,9 +68,17 @@ impl Default for SpinLockInner {
 }
 
 impl SpinLockInner {
-    /// 创建新的自旋锁内部状态
-    pub fn new() -> Self {
-        Self::default()
+    /// 创建新的自旋锁内部状态 (const, 可用于 static)
+    pub const fn new() -> Self {
+        Self {
+            locked: AtomicU32::new(0),
+            #[cfg(debug_assertions)]
+            owner: core::ptr::null(),
+            #[cfg(debug_assertions)]
+            acquire_time: 0,
+            #[cfg(debug_assertions)]
+            name: "(unnamed)",
+        }
     }
 
     /// 原始锁获取 (用于内部实现)

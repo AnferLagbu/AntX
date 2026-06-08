@@ -98,6 +98,7 @@ impl VirtioBlk {
         extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
+        // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
         let buf = unsafe { pmm_alloc_pages(buf_pages as u64) };
         if buf.is_null() {
             return None;
@@ -105,6 +106,7 @@ impl VirtioBlk {
 
         let buf_phys = buf as u64;
         let buf_virt = (buf_phys + KERNEL_BASE) as *mut u8;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_bytes(buf_virt, 0, buf_size);
         }
@@ -154,6 +156,7 @@ impl VirtioBlk {
         let data_offset = req_size;
         let status_offset = data_offset + 512;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // Fill request header
             let req = &mut *(self.io_buffer as *mut BlkRequest);
@@ -182,6 +185,7 @@ impl VirtioBlk {
             .prepare_desc(self.io_buffer_phys + status_offset as u64, 1, true); // device writes status
 
         // Link the chain: req → data → status
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             (*self.vq.desc.add(desc_req as usize)).flags |= super::queue::VQ_DESC_F_NEXT;
             (*self.vq.desc.add(desc_req as usize)).next = desc_data;
@@ -198,10 +202,11 @@ impl VirtioBlk {
         self.device.notify(0);
 
         // ── Poll for completion ──
-        // Simple polling loop (TODO: use interrupt-driven completion)
+        // Simple polling loop (TODO(TRACK-162CB0): use interrupt-driven completion)
         loop {
             if let Some((_id, _len)) = self.vq.pop_used() {
                 // Check status byte
+                // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                 let status = unsafe { *self.io_buffer.add(status_offset) };
                 self.vq.reclaim_desc(desc_status);
                 self.vq.reclaim_desc(desc_data);
@@ -213,7 +218,9 @@ impl VirtioBlk {
 
                 // For reads, copy data from DMA buffer to user buffer
                 if req_type == VIRTIO_BLK_T_IN {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     let src = unsafe { self.io_buffer.add(data_offset) };
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         core::ptr::copy_nonoverlapping(src, buf.as_ptr() as *mut u8, 512);
                     }

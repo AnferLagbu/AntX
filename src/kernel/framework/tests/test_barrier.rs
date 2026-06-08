@@ -46,6 +46,7 @@ fn test_undo_log_rollback() -> TestResult {
 
     let mut v: u64 = 42;
     undo.record(&mut v as *mut u64, v);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::ptr::write_volatile(&mut v, 99);
     }

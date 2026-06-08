@@ -27,6 +27,8 @@
 
 use super::PciDevice;
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 // ============================================================================
 // 契约常量
 // ============================================================================
@@ -88,7 +90,7 @@ pub trait PciScanner: Send + Sync {
 // 契约: 注册机制
 // ============================================================================
 
-static REGISTERED_SCANNER: spin::Mutex<Option<&'static dyn PciScanner>> = spin::Mutex::new(None);
+static REGISTERED_SCANNER: IrqSpinLock<Option<&'static dyn PciScanner>> = IrqSpinLock::new(None);
 
 /// 注册 PCI 扫描器 (启动时由平台代码调用)
 ///

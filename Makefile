@@ -5,6 +5,7 @@ ifeq ($(ARCH),aarch64)
     CC = aarch64-linux-gnu-gcc
     LD = aarch64-linux-gnu-ld
     AS = aarch64-linux-gnu-as
+    OBJCOPY = aarch64-linux-gnu-objcopy
     RUST_TARGET = aarch64-unknown-none
     QEMU = qemu-system-aarch64
     QEMU_MACHINE = virt
@@ -18,6 +19,7 @@ else
     CC = x86_64-linux-gnu-gcc
     LD = x86_64-linux-gnu-ld
     AS = nasm
+    OBJCOPY = objcopy
     RUST_TARGET = x86_64-unknown-none
     QEMU = qemu-system-x86_64
     QEMU_CPU ?= qemu64
@@ -87,7 +89,34 @@ DISK_IMAGE = build/antx.img
 .PHONY: all clean run run-net debug log log-net iso run-iso disk run-disk user test test-host test-unit test-integration test-smoke test-stress \
          test-all test-chaos test-smp
 
-all: build/kernel.bin
+all: build/kernel.bin build/kernel.flat
+
+# 同时构建 kernel.flat (qemu 直接使用的 raw 镜像),
+# 避免外部脚本在 make 完成后还需要二次 objcopy.
+
+# 跨架构构建时自动清理上架构产物, 避免 boot.o 等被新架构误用。
+# 通过 .build-arch 记录上次构建架构 (放在仓库根, 不被 clean 删除), 不匹配时强制 clean.
+ARCH_STAMP := .build-arch
+PREVIOUS_ARCH := $(shell cat $(ARCH_STAMP) 2>/dev/null || echo none)
+ifneq ($(PREVIOUS_ARCH), $(ARCH))
+ARCH_CHANGED := 1
+endif
+ifeq ($(ARCH_CHANGED),1)
+.PHONY: arch-switch-clean
+arch-switch-clean:
+	@echo "[make] cross-arch switch: $(PREVIOUS_ARCH) → $(ARCH), removing arch-specific build/ artifacts (preserving build/log/)"
+	@rm -f build/boot.o build/entry.o build/isr.o build/switch.o \
+	       build/arch/x86_64/trampoline.o build/gdt_asm.o \
+	       build/kernel.bin build/kernel.flat build/kernel.map build/stage1.bin
+	@cd src/rust && cargo clean >/dev/null 2>&1 || true
+	@cd src/user && cargo clean >/dev/null 2>&1 || true
+	@rm -f build/user/*.bin
+# 挂到所有 asm .o 目标, 强制 clean 后重新评估 .o 的依赖图
+# (clean 在 make 评估图后执行, .o 文件存在与否需要重新触发)
+ASM_OBJS := build/boot.o build/entry.o build/isr.o build/switch.o build/arch/x86_64/trampoline.o
+$(ASM_OBJS): arch-switch-clean
+endif
+$(shell echo $(ARCH) > $(ARCH_STAMP))
 
 # ====== x86_64 Rust user programs ======
 ifeq ($(ARCH),x86_64)
@@ -126,11 +155,12 @@ build/user/httpsrv.bin: $(USER_HTTPSRV_ELF)
 endif
 
 build/kernel.bin: $(KERNEL_OBJS) $(RUST_LIB)
+	@mkdir -p build
 	@echo "[LINK] Linking kernel..."
 	$(LD) $(LDFLAGS) --allow-multiple-definition -o $@ --whole-archive $(RUST_LIB) --no-whole-archive $(KERNEL_OBJS)
 
 build/kernel.flat: build/kernel.bin
-	objcopy -O binary $< $@
+	$(OBJCOPY) -O binary $< $@
 
 # AArch64 用户程序: 使用 Cargo 编译 Rust 用户程序
 ifeq ($(ARCH),aarch64)
@@ -171,30 +201,30 @@ $(RUST_LIB_CHAOS):
 	@echo "Building Rust chaos kernel (fault_injection enabled)..."
 	cd src/rust && cargo build --release --target $(RUST_TARGET) --features "kernel_test fault_injection" --target-dir target/chaos-release
 
-build/%.o: src/kernel/%.asm
+build/%.o: src/kernel/framework/%.asm
 	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) $< -o $@
 
-$(STAGE1_BIN): src/kernel/boot/stage1.asm
+$(STAGE1_BIN): src/kernel/framework/boot/stage1.asm
 	@mkdir -p build
 	$(AS) -f bin $< -o $@
 
-build/%.o: src/kernel/boot/%.asm
+build/%.o: src/kernel/framework/boot/%.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
 # AArch64 启动汇编 (GNU as)
 ifeq ($(ARCH),aarch64)
-build/boot.o: src/kernel/boot/aarch64/start.S
+build/boot.o: src/kernel/framework/boot/aarch64/start.S
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 endif
 
-build/gdt_asm.o: src/kernel/gdt.asm
+build/gdt_asm.o: src/kernel/framework/gdt.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 
-build/switch.o: src/kernel/proc/switch.asm
+build/switch.o: src/kernel/framework/proc/switch.asm
 	@mkdir -p build
 	$(AS) $(ASFLAGS) $< -o $@
 

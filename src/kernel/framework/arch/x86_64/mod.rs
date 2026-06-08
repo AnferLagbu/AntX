@@ -232,6 +232,7 @@ impl MmuArch for X8664 {
     #[inline(always)]
     fn read_page_table_base() -> u64 {
         let cr3: u64;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "mov {}, cr3",
@@ -245,6 +246,7 @@ impl MmuArch for X8664 {
     /// 切换页表 (mov to cr3)。
     #[inline(always)]
     fn write_page_table_base(paddr: u64) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "mov cr3, {}",
@@ -258,6 +260,7 @@ impl MmuArch for X8664 {
     #[inline(always)]
     fn read_fault_address() -> usize {
         let cr2: u64;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "mov {}, cr2",
@@ -274,6 +277,7 @@ impl MmuArch for X8664 {
         extern "C" {
             fn process_switch_asm(prev: *mut u8, next: *const u8);
         }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             process_switch_asm(from, to);
         }
@@ -286,6 +290,7 @@ impl MmuArch for X8664 {
         const USER_CS: u64 = 0x23;
         const RFLAGS_IF: u64 = 0x202;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "cli",
@@ -309,6 +314,7 @@ impl MmuArch for X8664 {
     /// 返回用户态 (iretq)。
     #[inline(always)]
     fn return_to_user() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!("iretq", options(noreturn));
         }
@@ -321,6 +327,7 @@ impl SystemArch for X8664 {
     /// 向 I/O 端口写入字节 (out dx, al)。
     #[inline(always)]
     fn outb(port: u16, value: u8) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "out dx, al",
@@ -335,6 +342,7 @@ impl SystemArch for X8664 {
     #[inline(always)]
     fn inb(port: u16) -> u8 {
         let value: u8;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "in al, dx",
@@ -349,6 +357,7 @@ impl SystemArch for X8664 {
     /// 向 I/O 端口写入双字 (out dx, eax)。
     #[inline(always)]
     fn outl(port: u16, value: u32) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "out dx, eax",
@@ -363,6 +372,7 @@ impl SystemArch for X8664 {
     #[inline(always)]
     fn inl(port: u16) -> u32 {
         let value: u32;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "in eax, dx",
@@ -376,9 +386,11 @@ impl SystemArch for X8664 {
 
     /// 关机 (8042 + triple fault 回退)。
     fn shutdown() -> ! {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!("mov al, 0xFE", "out 0x64, al", options(nomem, nostack));
         }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!("lidt [0]", "int 3", options(nomem, nostack));
         }

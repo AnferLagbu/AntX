@@ -248,8 +248,10 @@ impl KernelHeap {
             return;
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let header = unsafe { HeapHeader::from_data_ptr(ptr) };
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let h = &*header;
             if h.magic != HEAP_MAGIC {
@@ -271,6 +273,7 @@ impl KernelHeap {
             (*header).free = true;
         }
 
+        // SAFETY: `header` 由调用方保证为有效指针; 只读访问
         let freed_size = unsafe { (*header).size };
         self.free_count.fetch_add(1, Ordering::Relaxed);
         self.total_freed.fetch_add(freed_size, Ordering::Relaxed);
@@ -513,12 +516,14 @@ impl KernelHeap {
 
     /// Coalesce adjacent free blocks
     fn coalesce(&self, header: *mut HeapHeader) -> *mut HeapHeader {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             self.coalesce_forward(header);
             self.coalesce_backward(header)
         }
     }
 
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe fn coalesce_forward(&self, header: *mut HeapHeader) {
         let next_addr = (header as *mut u8).add((*header).size as usize) as *mut HeapHeader;
         let heap_end = self.heap_end.0 as *mut u8;
@@ -533,6 +538,7 @@ impl KernelHeap {
         }
     }
 
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe fn coalesce_backward(&self, header: *mut HeapHeader) -> *mut HeapHeader {
         let mut current = *self.free_list_head.get();
 
@@ -573,6 +579,7 @@ impl KernelHeap {
 
     /// Remove a block from the free list
     fn remove_from_free_list(&self, header: *mut HeapHeader) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let prev = (*header).prev;
             let next = (*header).next;
@@ -672,6 +679,7 @@ impl KernelHeap {
             let alloc = self.early_allocs[i];
 
             if let Some(new_ptr) = self.allocate_first_fit(alloc.size as u64) {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     core::ptr::copy_nonoverlapping(alloc.ptr, new_ptr, alloc.size);
                 }

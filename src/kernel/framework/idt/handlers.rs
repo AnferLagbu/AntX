@@ -114,6 +114,7 @@ pub struct DivisionByZeroHandler;
 
 impl ExceptionHandler for DivisionByZeroHandler {
     fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         if unsafe { (*frame).is_user_mode() } {
             // User-mode #DE: 安全终止进程
             RecoveryAction::TerminateProcess(1)
@@ -182,9 +183,12 @@ impl PageFaultHandler {
 
 impl ExceptionHandler for PageFaultHandler {
     fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         let fault_addr = unsafe { (*frame).fault_address() };
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         let analysis = Self::analyze_error_code(unsafe { (*frame).err_code });
 
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         if unsafe { (*frame).is_user_mode() } {
             if crate::kernel::framework::proc::user_proc::try_expand_user_stack(fault_addr) {
                 return RecoveryAction::Recovered;
@@ -196,6 +200,7 @@ impl ExceptionHandler for PageFaultHandler {
         match analysis.cause {
             FaultCause::PageNotPresent => {
                 if fault_addr == 0 || fault_addr < 0x1000 {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         (*frame).rip += 2;
                     }
@@ -203,6 +208,7 @@ impl ExceptionHandler for PageFaultHandler {
                 }
 
                 if fault_addr > 0xFFFF && fault_addr < 0xFFFFFFFF80000000 {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         (*frame).rsp += 8;
                     }
@@ -216,6 +222,7 @@ impl ExceptionHandler for PageFaultHandler {
                 RecoveryAction::Panic(PanicInfo::new(
                     "Page Fault: Protection violation or hardware error",
                     14,
+                    // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
                     unsafe { (*frame).rip },
                 ))
             }
@@ -278,11 +285,13 @@ pub struct GeneralProtectionFaultHandler;
 
 impl ExceptionHandler for GeneralProtectionFaultHandler {
     fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         if unsafe { (*frame).is_user_mode() } {
             // User GPF: 终止进程
             RecoveryAction::TerminateProcess(1)
         } else {
             // Kernel GPF: 打印栈回溯后尝试恢复
+            // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
             self.print_detailed_gpf_info(unsafe { &*frame });
             RecoveryAction::DomainRecovery
         }
@@ -328,7 +337,7 @@ impl GeneralProtectionFaultHandler {
             _ => "Unknown",
         };
 
-        // TODO: 使用 klog 输出详细信息 (当前为简化版)
+        // TODO(TRACK-D0E338): 使用 klog 输出详细信息 (当前为简化版)
         let _ = (external, idt_flag, table_name, index);
     }
 }
@@ -342,6 +351,7 @@ impl ExceptionHandler for DoubleFaultHandler {
     fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
         let count = DOUBLE_FAULT_COUNT.fetch_add(1, Ordering::SeqCst);
 
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         self.print_double_fault_context(unsafe { &*frame });
 
         if count <= 3 {
@@ -352,6 +362,7 @@ impl ExceptionHandler for DoubleFaultHandler {
             RecoveryAction::Panic(PanicInfo::new(
                 "Multiple Double Faults - system unstable",
                 8,
+                // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
                 unsafe { (*frame).rip },
             ))
         }
@@ -375,7 +386,7 @@ impl DoubleFaultHandler {
         let count = DOUBLE_FAULT_COUNT.load(Ordering::Relaxed);
         let nesting = IdtManager::instance().nested_count.load(Ordering::Relaxed);
 
-        // TODO: 使用 klog 输出上下文信息
+        // TODO(TRACK-2B4902): 使用 klog 输出上下文信息
         let _ = (count, nesting);
     }
 }
@@ -418,6 +429,7 @@ impl ExceptionHandler for DefaultHandler {
 #[cfg(target_arch = "x86_64")]
 fn is_currently_user_mode() -> bool {
     let cs: u16;
+    // SAFETY: 内联汇编的寄存器约束与变量类型一致; 无内存副作用; 输出 reg 通过 out(reg) 绑定
     unsafe { core::arch::asm!("mov {0:x}, cs", out(reg) cs, options(nomem, nostack)) };
     (cs & 0x03) == 3
 }

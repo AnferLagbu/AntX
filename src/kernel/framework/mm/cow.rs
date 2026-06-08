@@ -24,7 +24,9 @@ use alloc::collections::BTreeMap;
 use super::vmm;
 use super::*;
 
-static COW_REFS: spin::Mutex<Option<BTreeMap<u64, u32>>> = spin::Mutex::new(None);
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+static COW_REFS: IrqSpinLock<Option<BTreeMap<u64, u32>>> = IrqSpinLock::new(None);
 
 pub fn cow_init() {
     *COW_REFS.lock() = Some(BTreeMap::new());
@@ -177,12 +179,14 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
 
                 let child_pt_phys = pmm.alloc_page()?;
                 let child_pt_virt = child_pt_phys.to_virt().0 as *mut u64;
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     core::ptr::write_bytes(child_pt_virt, 0, PAGE_SIZE as usize);
                 }
 
                 let mut child_pde = parent_pde;
                 child_pde = (child_pde & 0xFFF) | (child_pt_phys.as_u64() & 0x000FFFFFFFFFF000);
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     child_pd_virt.add(k).write_volatile(child_pde);
                 }
@@ -276,6 +280,7 @@ pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let new_virt = new_phys.to_virt();
 
     let old_virt = PhysAddr(old_frame).to_virt();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::ptr::copy_nonoverlapping(
             old_virt.0 as *const u8,

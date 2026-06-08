@@ -52,6 +52,7 @@ impl Pl011Driver {
     ///
     /// 委托给底层 [uart::getc]。
     fn read_byte(&self) -> u8 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe { uart::getc() }
     }
 
@@ -59,6 +60,7 @@ impl Pl011Driver {
     ///
     /// 委托给底层 [uart::putc]。
     fn write_byte(&self, c: u8) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             uart::putc(c);
         }
@@ -66,6 +68,7 @@ impl Pl011Driver {
 
     /// 检查 UART 硬件是否已启用
     fn is_hw_enabled(&self) -> bool {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let cr = core::ptr::read_volatile((uart::PL011_BASE + uart::UARTCR) as *const u32);
             cr & uart::UARTCR_UARTEN != 0
@@ -88,6 +91,7 @@ impl Driver for Pl011Driver {
             return Ok(());
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             uart::init();
         }
@@ -96,6 +100,7 @@ impl Driver for Pl011Driver {
     }
 
     fn shutdown(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(
                 (uart::PL011_BASE + uart::UARTCR) as *mut u32,

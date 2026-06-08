@@ -59,6 +59,7 @@ const BPF_HDRLEN: usize = (((SIZEOF_BPF_HDR + ETHERNET_HEADER_LEN) + mem::align_
 
 macro_rules! try_ioctl {
     ($fd:expr,$cmd:expr,$req:expr) => {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if libc::ioctl($fd, $cmd, $req) == -1 {
                 return Err(io::Error::last_os_error());
@@ -80,6 +81,7 @@ impl AsRawFd for BpfDevice {
 }
 
 fn open_device() -> io::Result<libc::c_int> {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         for i in 0..256 {
             let dev = format!("/dev/bpf{}\0", i);
@@ -140,6 +142,7 @@ impl BpfDevice {
     }
 
     pub fn recv(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let len = libc::read(
                 self.fd,
@@ -164,6 +167,7 @@ impl BpfDevice {
     }
 
     pub fn send(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let len = libc::write(
                 self.fd,
@@ -182,6 +186,7 @@ impl BpfDevice {
 
 impl Drop for BpfDevice {
     fn drop(&mut self) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             libc::close(self.fd);
         }

@@ -3,6 +3,8 @@
 use super::config::RecoveryLayer;
 use super::config::RecoveryResult;
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 pub const MAX_AUDIT_ENTRIES: usize = 16;
 
 #[derive(Debug)]
@@ -105,7 +107,7 @@ impl ResetAuditLog {
     }
 }
 
-pub static RESET_AUDIT_LOG: spin::Mutex<ResetAuditLog> = spin::Mutex::new(ResetAuditLog::new());
+pub static RESET_AUDIT_LOG: IrqSpinLock<ResetAuditLog> = IrqSpinLock::new(ResetAuditLog::new());
 
 pub fn audit_record(layer: RecoveryLayer, result: RecoveryResult, reason: u32) {
     use super::config::RECOVERY_CONFIG;

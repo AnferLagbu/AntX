@@ -72,6 +72,7 @@ pub fn init() {
 
     let ap_count = super::acpi::get_ap_count();
     if ap_count <= 1 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             crate::kernel::framework::klog::klog_info(
                 c"[KERN] [SMP] Single-core system, skipping AP startup".as_ptr(),
@@ -83,6 +84,7 @@ pub fn init() {
 
     let bsp_lapic_id = super::apic::get_id();
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         copy_trampoline();
     }
@@ -94,6 +96,7 @@ pub fn init() {
         if ap.lapic_id == bsp_lapic_id || !ap.enabled {
             continue;
         }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             start_ap(ap.lapic_id, cpu_index);
         }
@@ -111,6 +114,7 @@ pub fn init() {
     }
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn copy_trampoline() {
     let src = ap_trampoline_start as *const u8;
     let end = ap_trampoline_end as *const u8;
@@ -123,6 +127,7 @@ unsafe fn copy_trampoline() {
 }
 
 #[inline(never)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
     if cpu_index as usize >= super::acpi::MAX_CPUS {
         return;
@@ -181,7 +186,7 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
             // ap_entry 最后调用 gdt_init_ap 完成 per-CPU GDT+TSS 初始化。
             // 额外的等待确保 ap_entry 初始化完成。
             //
-            // TODO: 替换为 per-CPU 完成标志 (如 ApStartupInfo.done)
+            // TODO(TRACK-26731B): 替换为 per-CPU 完成标志 (如 ApStartupInfo.done)
             timer_udelay(READY_POLL_US);
             wait -= 1;
         }
@@ -190,6 +195,7 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
     core::arch::asm!("sti", options(nomem, nostack));
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn send_init_ipi(lapic_id: u32, assert: bool) {
     while super::apic::apic_read(0x300) & (1 << 12) != 0 {}
     super::apic::apic_write(0x310, (lapic_id & 0xFF) << 24);
@@ -198,6 +204,7 @@ unsafe fn send_init_ipi(lapic_id: u32, assert: bool) {
     while super::apic::apic_read(0x300) & (1 << 12) != 0 {}
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn send_sipi(lapic_id: u32, vector: u8) {
     while super::apic::apic_read(0x300) & (1 << 12) != 0 {}
     super::apic::apic_write(0x310, (lapic_id & 0xFF) << 24);
@@ -205,6 +212,7 @@ unsafe fn send_sipi(lapic_id: u32, vector: u8) {
     while super::apic::apic_read(0x300) & (1 << 12) != 0 {}
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn timer_udelay(us: u32) {
     for _ in 0..us {
         core::arch::asm!("out dx, al", in("dx") 0x80u16, in("al") 0u8, options(nomem, nostack));
@@ -212,10 +220,12 @@ unsafe fn timer_udelay(us: u32) {
 }
 
 extern "C" fn ap_entry(lapic_id: u32) -> ! {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("cli", options(nomem, nostack));
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let cpu_index = unsafe {
         ((TRAMPOLINE_BASE + AP_INFO_OFFSET) as *const ApStartupInfo)
             .read_volatile()
@@ -232,6 +242,7 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     crate::kernel::framework::proc::scheduler::init_per_cpu_sched(cpu_index);
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("sti", options(nomem, nostack));
     }

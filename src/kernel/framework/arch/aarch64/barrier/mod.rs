@@ -51,6 +51,7 @@ pub const BARRIER_RECOVERY_SGI: u64 = 7;
 /// 或由 bytes_mut 接口触发 domain 故障.
 #[inline(always)]
 pub fn barrier_trigger_recovery() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         // SGI 7, 目标: 当前 CPU (Aff0), IRM=0 (不广播)
         let sgi: u64 = (BARRIER_RECOVERY_SGI << 24)   // INTID = 7
@@ -82,6 +83,7 @@ pub fn barrier_sgi_handler() -> i32 {
     extern "C" {
         fn recovery_try_recover_from_idt() -> i32;
     }
+    // SAFETY: `recovery_try_recover_from_idt` 是有效的 C ABI 函数指针; 参数列表与声明一致
     unsafe { recovery_try_recover_from_idt() }
 }
 

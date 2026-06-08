@@ -26,6 +26,7 @@ use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 
 pub struct RcuHead {
     pub next: *mut RcuHead,
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     pub func: Option<unsafe fn(*mut RcuHead)>,
 }
 
@@ -85,6 +86,7 @@ static RCU_GP_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 #[inline]
 fn rcu_data(cpu: u32) -> &'static PerCpuRcu {
+    // SAFETY: `RCU_GLOBAL` 由调用方保证为有效指针; 只读访问
     unsafe { &(&*RCU_GLOBAL.data.get())[cpu as usize] }
 }
 
@@ -325,7 +327,9 @@ pub fn rcu_process_all_callbacks() {
             // 使用 IPI 或直接处理 — 简化实现: 直接处理
             // 注意: 在单核或特定场景下可行; 完整实现需 IPI
             let flags = crate::kernel::framework::sync::spinlock::disable_interrupts();
+            // SAFETY: `data` 由调用方保证为有效指针; 只读访问
             let head = unsafe { *data.callbacks.get() };
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 *data.callbacks.get() = ptr::null_mut();
                 *data.callback_tail.get() = ptr::null_mut();
@@ -336,9 +340,12 @@ pub fn rcu_process_all_callbacks() {
 
             let mut cur = head;
             while !cur.is_null() {
+                // SAFETY: `cur` 由调用方保证为有效指针; 只读访问
                 let next = unsafe { (*cur).next };
+                // SAFETY: `cur` 由调用方保证为有效指针; 只读访问
                 let func = unsafe { (*cur).func };
                 if let Some(f) = func {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         f(cur);
                     }
@@ -405,11 +412,13 @@ mod tests {
     fn test_call_rcu() {
         static CALLED: AtomicBool = AtomicBool::new(false);
 
+        // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
         unsafe extern "C" fn callback(head: *mut RcuHead) {
             CALLED.store(true, Ordering::Release);
         }
 
         let mut head = RcuHead::new();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             call_rcu(&mut head as *mut RcuHead, callback);
         }

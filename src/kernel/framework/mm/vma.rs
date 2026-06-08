@@ -17,8 +17,7 @@
 
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -425,7 +424,6 @@ impl MmStruct {
 
         // Linux mremap flags (仅 MAYMOVE = 1; MREMAP_FIXED = 2 由 glibc 模拟, 不支持)
         const MREMAP_MAYMOVE: i32 = 1;
-        const MREMAP_FIXED: i32 = 2;
 
         if old_size == 0 {
             return Err(Errno::EINVAL);
@@ -567,6 +565,7 @@ pub extern "C" fn vma_find(mm_ptr: *const MmStruct, addr: u64) -> u64 {
     if mm_ptr.is_null() {
         return 0;
     }
+    // SAFETY: `mm_ptr` 由调用方保证为有效指针; 只读访问
     let mm = unsafe { &*mm_ptr };
     match mm.find_vma(addr as usize) {
         Some(vma) => {

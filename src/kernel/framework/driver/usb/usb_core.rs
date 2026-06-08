@@ -310,6 +310,7 @@ pub struct Urb {
     pub buffer_length: usize,
     pub actual_length: usize,
     pub status: UrbStatus,
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub callback: Option<unsafe fn(&Urb)>,
 }
 
@@ -436,6 +437,7 @@ impl UsbCore {
     pub fn enumerate_devices(&mut self) -> Result<()> {
         let controllers: Vec<*mut dyn HostController> = self.controllers.to_vec();
         for &controller_ptr in &controllers {
+            // SAFETY: `controller_ptr` 由调用方保证为有效指针; 只读访问
             let controller = unsafe { &mut *controller_ptr };
 
             for port in 0..controller.num_ports() {

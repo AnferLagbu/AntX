@@ -135,6 +135,7 @@ pub fn pit_init(frequency_hz: u32) -> Result<u32, &'static str> {
         return Err("Divisor out of range");
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         // 1. 发送控制字到命令寄存器
         //    - 选择通道 0
@@ -180,6 +181,7 @@ pub fn pit_read_count() -> Option<u16> {
         return None;
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         // 发送锁存命令 (读取当前计数值而不影响计数)
         let latch_cmd: u8 = control_word::SELECT_CHANNEL_0 | control_word::LATCH_COUNT;
@@ -260,6 +262,7 @@ pub fn pit_is_initialized() -> bool {
 ///
 /// 通常用于关机或紧急恢复场景。
 pub fn pit_shutdown() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         // 设置为最大分频 (最低频率 ~18.2 Hz)
         let command: u8 = control_word::SELECT_CHANNEL_0

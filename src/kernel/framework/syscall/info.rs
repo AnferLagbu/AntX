@@ -6,11 +6,8 @@
 //! - gettimeofday: 时钟
 
 use crate::kernel::framework::proc::api;
-use crate::kernel::framework::proc::scheduler;
 use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::types::Errno;
-
-use core::sync::atomic::Ordering;
 
 // ============================================================================
 // 进程/线程 ID

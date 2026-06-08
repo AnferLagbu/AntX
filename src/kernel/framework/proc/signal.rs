@@ -266,6 +266,7 @@ pub fn do_signal_default_action(pid: Pid, sig: u8) {
         }
         SignalDefaultAction::Term | SignalDefaultAction::Core => {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
+                // SAFETY: `proc_ptr` 由调用方保证为有效指针; 只读访问
                 let proc = unsafe { &*proc_ptr };
                 proc.exit_code.store((sig as u32) << 8 | 0x7f, Ordering::Release);
                 proc.state.store(ProcessState::Zombie as u32, Ordering::Release);
@@ -371,6 +372,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                     signum: sig as u64,
                 };
 
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     let trampoline_start = frame_rsp + 8 + core::mem::size_of::<SignalFrame>() as u64;
 

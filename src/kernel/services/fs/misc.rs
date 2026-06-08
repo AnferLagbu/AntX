@@ -127,9 +127,6 @@ struct Tms {
 }
 
 impl Tms {
-    const fn zero() -> Self {
-        Self { utime: 0, stime: 0, cutime: 0, cstime: 0 }
-    }
 }
 
 /// itimerval 结构体 (POSIX): {it_interval, it_value} 各为 {tv_sec, tv_usec}

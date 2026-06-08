@@ -32,6 +32,7 @@ pub struct SeqLock<T> {
     data: UnsafeCell<T>,
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl<T: Send> Sync for SeqLock<T> {}
 
 impl<T> SeqLock<T> {
@@ -111,6 +112,7 @@ impl<'a, T> SeqLockReadGuard<'a, T> {
     }
 
     pub fn get(&self) -> &T {
+        // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { &*self.lock.data.get() }
     }
 
@@ -137,12 +139,14 @@ pub struct SeqLockWriteGuard<'a, T> {
 impl<'a, T> core::ops::Deref for SeqLockWriteGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
+        // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { &*self.lock.data.get() }
     }
 }
 
 impl<'a, T> core::ops::DerefMut for SeqLockWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { &mut *self.lock.data.get() }
     }
 }

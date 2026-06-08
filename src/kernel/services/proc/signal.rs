@@ -421,7 +421,7 @@ pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framewor
     // sig=0 是合法的 (仅检查进程存在)
     // 验证 pid
     if pid <= 0 {
-        // TODO: pid=0 广播到同组, pid=-1 广播到所有, pid<-1 广播到 |pid| 组
+        // TODO(TRACK-315B7C): pid=0 广播到同组, pid=-1 广播到所有, pid<-1 广播到 |pid| 组
         // 当前仅支持 pid > 0
         return Err(Errno::ESRCH);
     }

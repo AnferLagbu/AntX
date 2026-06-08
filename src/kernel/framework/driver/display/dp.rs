@@ -215,7 +215,7 @@ impl DpController {
 
     /// 检测热插拔
     pub fn detect_hot_plug(&mut self) -> bool {
-        // TODO: 读取HPD引脚状态
+        // TODO(TRACK-599EDA): 读取HPD引脚状态
         self.connected = true;
         self.connected
     }
@@ -226,7 +226,7 @@ impl DpController {
             return Err(DriverError::DeviceNotFound);
         }
 
-        // TODO: 实现实际的AUX通道读取
+        // TODO(TRACK-B61830): 实现实际的AUX通道读取
         // 这里返回模拟的DPCD数据
         let mut data = vec![0u8; length as usize];
 
@@ -249,7 +249,7 @@ impl DpController {
             return Err(DriverError::DeviceNotFound);
         }
 
-        // TODO: 实现实际的AUX通道写入
+        // TODO(TRACK-9B691E): 实现实际的AUX通道写入
 
         Ok(())
     }
@@ -305,7 +305,7 @@ impl DpController {
         self.aux_write(aux_address::TRAINING_PTN_SET, &[0x21])?;
 
         // 等待训练完成
-        // TODO: 轮询LANE0_1_STATUS寄存器
+        // TODO(TRACK-0350FE): 轮询LANE0_1_STATUS寄存器
 
         Ok(())
     }
@@ -316,7 +316,7 @@ impl DpController {
         self.aux_write(aux_address::TRAINING_PTN_SET, &[0x22])?;
 
         // 等待训练完成
-        // TODO: 轮询LANE_ALIGN_STATUS_UPDATED寄存器
+        // TODO(TRACK-3C1169): 轮询LANE_ALIGN_STATUS_UPDATED寄存器
 
         // 结束训练
         self.aux_write(aux_address::TRAINING_PTN_SET, &[0x00])?;

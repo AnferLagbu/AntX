@@ -24,6 +24,7 @@ pub fn gfx_console_write(msg: &[u8]) {
     }
     let ptr = GFX_CONSOLE_PTR.load(Ordering::Acquire);
     if !ptr.is_null() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let console = &mut *ptr;
             if let Ok(s) = core::str::from_utf8(msg) {
@@ -57,6 +58,7 @@ pub fn gfx_console_panic_reclaim(msg: &str) {
 pub fn gfx_console_panic_write(msg: &str) {
     let ptr = GFX_CONSOLE_PTR.load(Ordering::Acquire);
     if !ptr.is_null() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let console = &mut *ptr;
             console.panic_write(msg);

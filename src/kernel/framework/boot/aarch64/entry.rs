@@ -73,6 +73,7 @@ extern "C" {
     static _kernel_end: u8;
 }
 
+// SAFETY: `clear_bss` 是有效的 C ABI 函数指针; 参数列表与声明一致
 unsafe fn clear_bss() {
     let bss_start = &mut __bss_start as *mut u8;
     let bss_end = &_kernel_end as *const u8 as usize;

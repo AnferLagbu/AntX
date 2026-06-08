@@ -23,8 +23,7 @@ use crate::klog_warn;
 #[cfg(not(feature = "kernel_test"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "kernel_test"))]
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 #[cfg(not(feature = "kernel_test"))]
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
@@ -781,6 +780,7 @@ impl E1000Device {
 
             let copy_len = len.min(buffer.len());
             if !self.rx_buffers[self.rx_tail].is_null() {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     core::ptr::copy_nonoverlapping(
                         self.rx_buffers[self.rx_tail],

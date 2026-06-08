@@ -174,7 +174,9 @@ pub fn recovery_was_attempted() -> i32 {
 #[no_mangle]
 pub fn recovery_domain_set_cbs(
     domain_id: u64,
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     capture_fn: Option<unsafe fn()>,
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     rollback_fn: Option<unsafe fn() -> bool>,
 ) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();

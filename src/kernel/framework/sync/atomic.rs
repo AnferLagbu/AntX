@@ -219,6 +219,7 @@ mod tests {
         let mut val: i32 = 10;
         let ptr = &mut val as *mut i32;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // inc
             assert_eq!(atomic_inc(ptr), 10);

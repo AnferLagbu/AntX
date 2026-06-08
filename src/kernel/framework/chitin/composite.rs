@@ -51,7 +51,9 @@ pub struct CompositeBlockDevice {
     read_round_robin: AtomicU32,
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Send for CompositeBlockDevice {}
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Sync for CompositeBlockDevice {}
 
 impl Clone for CompositeBlockDevice {

@@ -278,6 +278,7 @@ impl SessionManager {
         let target_pwm = target_entry.get_pwm().0;
 
         self.acquire();
+        // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         let current_pwm = unsafe { (*self.current.get()).session_pwm.as_u64() };
         self.release();
 
@@ -522,8 +523,7 @@ impl SessionManager {
     }
 }
 
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // SAFETY: SessionManager uses spinlock (AtomicBool) for all mutations.
 // UnsafeCell<PwmContext> is only accessed under the lock. elevation_stack
 // is similarly guarded. All public methods acquire/release the lock.

@@ -29,6 +29,7 @@
 #![allow(dead_code)]
 
 use core::cell::UnsafeCell;
+use core::fmt;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -61,9 +62,19 @@ unsafe impl<T: Send> Send for IrqSpinLock<T> {}
 // SAFETY: 共享引用跨线程安全, 中断屏蔽保证访问互斥。
 unsafe impl<T: Send> Sync for IrqSpinLock<T> {}
 
+impl<T: fmt::Debug> fmt::Debug for IrqSpinLock<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.try_lock() {
+            // 拿不到锁时, 用占位符表示 (避免 Debug 死锁)
+            None => f.write_str("IrqSpinLock(<locked>)"),
+            Some(guard) => f.debug_struct("IrqSpinLock").field("data", &*guard).finish(),
+        }
+    }
+}
+
 impl<T> IrqSpinLock<T> {
     /// 创建新的中断安全自旋锁, 包装初始数据。
-    pub fn new(data: T) -> Self {
+    pub const fn new(data: T) -> Self {
         Self {
             lock: UnsafeCell::new(SpinLock::new()),
             data: UnsafeCell::new(data),
@@ -99,6 +110,43 @@ impl<T> IrqSpinLock<T> {
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let guard = self.lock();
         f(guard.deref())
+    }
+
+    /// 尝试获取锁, 不阻塞。
+    ///
+    /// 成功时返回 `Some(Guard)`, 失败 (锁已被持有) 时返回 `None`。
+    /// 注意: 与 `lock()` 不同, `try_lock()` 在等待期间**不**屏蔽中断,
+    /// 因此不应在中断上下文使用。
+    pub fn try_lock(&self) -> Option<IrqSpinLockGuard<'_, T>> {
+        use crate::kernel::framework::sync::types::TryLockResult;
+        let inner_ptr = self.lock.get();
+        // SAFETY: 持 &self 借用, 通过 UnsafeCell 获取 &mut 底层 SpinLock; 自旋锁本身
+        // 通过原子操作保证即使两个 &mut 并发也不冲突 (compare_exchange 原子性)。
+        let result = unsafe { &mut *inner_ptr }.try_lock();
+        if matches!(result, TryLockResult::WouldBlock) {
+            return None;
+        }
+        // 获取成功后才 cli (与 lock() 顺序一致, 保证 guard drop 时的 IF 语义)
+        let prev = disable_interrupts();
+        let data_ref = unsafe { &mut *self.data.get() };
+        // SAFETY: 仅本线程访问 depth (cli 保证 ISR 不并发)。
+        unsafe { &*self.depth.get() }.fetch_add(1, Ordering::Relaxed);
+        Some(IrqSpinLockGuard {
+            data: data_ref,
+            lock_ptr: inner_ptr,
+            depth_ptr: self.depth.get(),
+            prev_if: Some(prev),
+        })
+    }
+
+    /// 消费锁, 取出内部数据 (调用方需保证无并发访问)。
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须保证当前没有其他线程或中断上下文在访问此锁。
+    pub unsafe fn into_inner(self) -> T {
+        // SAFETY: 借用规则由调用方契约保证 (见方法文档)。
+        self.data.into_inner()
     }
 }
 

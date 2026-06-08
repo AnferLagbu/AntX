@@ -126,10 +126,9 @@ impl Font {
 }
 
 /// 全局默认字体
-use spin::Once;
-
-static DEFAULT_FONT: Once<Font> = Once::new();
+use crate::kernel::framework::sync::once_lock::OnceLock;
+static DEFAULT_FONT: OnceLock<Font> = OnceLock::new();
 
 pub fn default_font() -> &'static Font {
-    DEFAULT_FONT.call_once(Font::builtin_8x16)
+    DEFAULT_FONT.get_or_init(Font::builtin_8x16)
 }

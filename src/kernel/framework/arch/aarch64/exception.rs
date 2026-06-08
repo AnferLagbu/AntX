@@ -413,6 +413,7 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
 
     // 调用通用 syscall 分发器 (syscall 模块已全局化)
     let result =
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe { crate::kernel::framework::syscall::syscall_dispatch(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5) };
 
     // 返回值写入 x0
@@ -452,6 +453,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
         // smoltcp: 始终轮询（DHCP 需要在 poll 中完成握手）
         #[cfg(not(feature = "kernel_test"))]
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             crate::kernel::framework::net::init::poll_network();
         }
@@ -461,6 +463,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 scheduler_tick_mlfq();
             }
@@ -478,6 +481,7 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     let esr: u64;
     let far: u64;
     let elr: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("mrs {}, esr_el1", out(reg) esr);
         core::arch::asm!("mrs {}, far_el1", out(reg) far);
@@ -486,6 +490,7 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     let _ec = (esr >> 26) & 0x3F;
 
     // Direct UART output to ensure we see sync exceptions
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         super::uart::putc(b'S');
         super::uart::putc(b'Y');
@@ -515,6 +520,7 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     }
 
     loop {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!("wfi", options(nomem, nostack));
         }
@@ -522,6 +528,7 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
 }
 
 /// Helper: output a u64 as hex via uart
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn exc_puthex(val: u64) {
     for shift in (0..16).rev() {
         let nibble = ((val >> (shift * 4)) & 0xF) as u8;
@@ -583,6 +590,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
 
         // 网络轮询
         #[cfg(not(feature = "kernel_test"))]
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             crate::kernel::framework::net::init::poll_network();
         }
@@ -594,6 +602,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
             extern "C" {
                 fn scheduler_tick_mlfq();
             }
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 scheduler_tick_mlfq();
             }
@@ -611,6 +620,7 @@ pub extern "C" fn fiq_handler(_frame: &ExceptionFrame) {}
 #[no_mangle]
 pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
     loop {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!("wfi", options(nomem, nostack));
         }

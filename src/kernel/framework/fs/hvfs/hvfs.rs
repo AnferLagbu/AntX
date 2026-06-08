@@ -14,8 +14,9 @@ use crate::kernel::framework::fs::vfs::types::KernelError;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 
+use crate::kernel::framework::sync::once_lock::OnceLock;
 fn log(s: &str) {
     // Framekernel P2.2.2: 使用 klog_info! 安全宏 (替代 extern "C" klog_ffi_info)
     crate::klog_info!(FS, "{}", s);
@@ -81,10 +82,10 @@ pub struct HvfsData {
 // SAFETY (Framekernel P2.2.2): HvfsData 全部字段 (Mutex<T>, Atomic*, HvSpa/HvZil/HvSnapshotManager)
 // 都自动实现 Send + Sync, 无需 unsafe impl。
 
-static HVFS_DATA: spin::Once<HvfsData> = spin::Once::new();
+static HVFS_DATA: OnceLock<HvfsData> = OnceLock::new();
 
 pub fn get_hvfs() -> &'static HvfsData {
-    HVFS_DATA.call_once(|| HvfsData {
+    HVFS_DATA.get_or_init(|| HvfsData {
         spa: HvSpa::new(),
         txg_group: Mutex::new(None),
         datasets: Mutex::new(Vec::new()),

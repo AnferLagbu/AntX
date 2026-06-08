@@ -232,6 +232,7 @@ extern "C" {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         vga_set_color(Color::LightRed as u8, Color::Black as u8);
         vga_puts(b"\n!!! KERNEL PANIC !!!\n".as_ptr() as *const u8);

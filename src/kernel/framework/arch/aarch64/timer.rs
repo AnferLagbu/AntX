@@ -12,6 +12,7 @@ const TIMER_FREQ_HZ: u64 = 62_500_000;
 #[inline(always)]
 pub fn read_frequency() -> u64 {
     let freq: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         asm!("mrs {}, cntfrq_el0", out(reg) freq);
     }
@@ -23,6 +24,7 @@ pub fn read_frequency() -> u64 {
 /// 向 CNTP_TVAL_EL0 写入 ticks 后触发定时器中断。
 #[inline(always)]
 pub fn set_timer(ticks: u64) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         asm!("msr cntp_tval_el0, {}", in(reg) ticks);
     }
@@ -33,6 +35,7 @@ pub fn set_timer(ticks: u64) {
 /// 向 CNTP_CVAL_EL0 写入绝对计数值, 达到时触发中断。
 #[inline(always)]
 pub fn set_compare(value: u64) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         asm!("msr cntp_cval_el0, {}", in(reg) value);
     }
@@ -42,6 +45,7 @@ pub fn set_compare(value: u64) {
 #[inline(always)]
 pub fn read_count() -> u64 {
     let cnt: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         asm!("mrs {}, cntpct_el0", out(reg) cnt, options(nomem, nostack));
     }
@@ -52,6 +56,7 @@ pub fn read_count() -> u64 {
 #[inline(always)]
 pub fn enable() {
     // bit 0: ENABLE, bit 1: IMASK (0=enabled, 1=masked)
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         asm!("msr cntp_ctl_el0, {}", in(reg) 1u64);
     }
@@ -60,6 +65,7 @@ pub fn enable() {
 /// 禁用定时器
 #[inline(always)]
 pub fn disable() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         asm!("msr cntp_ctl_el0, {}", in(reg) 0u64);
     }
@@ -69,6 +75,7 @@ pub fn disable() {
 #[inline(always)]
 pub fn read_control() -> u64 {
     let ctl: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         asm!("mrs {}, cntp_ctl_el0", out(reg) ctl);
     }
@@ -83,6 +90,7 @@ pub fn init_deferred() -> (u64, u64) {
     let freq = read_frequency();
     let freq = if freq == 0 {
         // QEMU 某些版本可能未设置 CNTFRQ, 使用默认值 62.5MHz
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!("msr cntfrq_el0, {}", in(reg) TIMER_FREQ_HZ);
         }

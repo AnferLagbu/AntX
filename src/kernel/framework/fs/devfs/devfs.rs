@@ -1,6 +1,5 @@
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 pub const DEVFS_MAX_DEVICES: usize = 16;
 pub const DEVFS_MAX_NAME: usize = 32;
 

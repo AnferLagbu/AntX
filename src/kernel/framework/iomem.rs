@@ -18,9 +18,11 @@ use core::ptr::NonNull;
 
 use crate::kernel::framework::mm::{PhysAddr, phys_to_virt};
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 /// MMIO 别名注册表, 防止同一物理区域被多次映射。
 /// 使用 spin::Mutex (已在内核中广泛使用) 保证线程安全。
-static ALIAS_REGISTRY: spin::Mutex<AliasRegistry> = spin::Mutex::new(AliasRegistry::new());
+static ALIAS_REGISTRY: IrqSpinLock<AliasRegistry> = IrqSpinLock::new(AliasRegistry::new());
 
 const MAX_MMIO_MAPPINGS: usize = 64;
 

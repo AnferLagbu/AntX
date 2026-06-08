@@ -82,6 +82,7 @@ static CPU_QUEUES: CpuQueues = CpuQueues {
 
 pub fn cpu_queue(cpu_id: u32) -> &'static CpuQueue {
     let idx = cpu_id as usize % crate::kernel::framework::config::MAX_CPUS;
+    // SAFETY: `CPU_QUEUES` 由调用方保证为有效指针; 只读访问
     unsafe { &(&*CPU_QUEUES.queues.get())[idx] }
 }
 

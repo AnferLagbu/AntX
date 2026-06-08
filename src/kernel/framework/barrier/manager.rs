@@ -3,8 +3,10 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use super::domain::RecoveryDomain;
 use super::types::*;
 
-pub static ROLLBACK_LOG: spin::Mutex<[Option<RollbackEvent>; MAX_ROLLBACK_LOG]> =
-    spin::Mutex::new([None; MAX_ROLLBACK_LOG]);
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+pub static ROLLBACK_LOG: IrqSpinLock<[Option<RollbackEvent>; MAX_ROLLBACK_LOG]> =
+    IrqSpinLock::new([None; MAX_ROLLBACK_LOG]);
 static ROLLBACK_LOG_IDX: AtomicU32 = AtomicU32::new(0);
 
 fn log_rollback_event(event: RollbackEvent) {
@@ -319,6 +321,7 @@ impl RecoveryManager {
 
 pub(crate) mod raw {
     /// 调用域的 capture 回调 (barrier 快照前)
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub fn invoke_capture_cb(cb: Option<unsafe fn()>) {
         if let Some(f) = cb {
             // SAFETY: f 由域所有者注册, 契约由 framework::barrier::api 维护。

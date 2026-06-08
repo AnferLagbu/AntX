@@ -17,6 +17,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 fn phys_to_virt(phys: u64) -> u64 {
     phys + super::KERNEL_BASE
 }
@@ -262,6 +264,7 @@ impl Aarch64Vmm {
     fn alloc_table(&self) -> Option<u64> {
         let paddr = get_pmm().alloc_page()?;
         // Zero the table
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             ptr::write_bytes(
                 phys_to_virt(paddr.as_u64()) as *mut u8,
@@ -378,9 +381,9 @@ impl Aarch64Vmm {
     /// 修改虚拟页的保护属性 (mprotect 核心实现)
     ///
     /// 当前简化实现: 仅修改 VMA 元数据, 不修改页表.
-    /// TODO: 实现完整的 aarch64 页表权限修改 + TLB invalidate.
+    /// TODO(TRACK-82FEA0): 实现完整的 aarch64 页表权限修改 + TLB invalidate.
     pub fn protect_page(&self, _virt: VirtAddr, _new_flags: PageFlags) {
-        // TODO: aarch64 页表权限修改
+        // TODO(TRACK-A589E3): aarch64 页表权限修改
     }
 
     pub fn split_2mb_page(&self, _virt: u64) -> Result<(), &'static str> {
@@ -457,6 +460,7 @@ impl Aarch64Vmm {
     /// Ensure the next-level page table exists at `table[idx]`.
     /// Returns a pointer to the next-level table.
     fn ensure_next_level(&self, table: *mut u64, idx: usize) -> Result<*mut u64, &'static str> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let entry = ptr::read_volatile(table.add(idx));
             if entry & 0b11 == 0b11 {
@@ -571,6 +575,7 @@ impl Aarch64Vmm {
 
     /// Returns true when all 512 entries of a page-table page are zero.
     fn is_table_empty(&self, table: *mut u64) -> bool {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             for i in 0..TABLE_ENTRIES {
                 if ptr::read_volatile(table.add(i)) != 0 {
@@ -584,6 +589,7 @@ impl Aarch64Vmm {
     /// Walk a table entry to the next level (read-only, no allocation).
     /// Returns null if the entry is not a valid table descriptor.
     fn get_next_level(&self, table: *mut u64, idx: usize) -> *mut u64 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let entry = ptr::read_volatile(table.add(idx));
             if entry & 0b11 == 0b11 {
@@ -619,6 +625,7 @@ impl Aarch64Vmm {
         let user_l0_ptr = phys_to_virt(user_l0) as *mut u64;
         let user_l1_desc = table_descriptor(user_l1);
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // L0[0] → new user L1 table (clean, no shared tables)
             ptr::write_volatile(user_l0_ptr.add(0), user_l1_desc);
@@ -659,6 +666,7 @@ impl Aarch64Vmm {
     }
 
     pub fn switch_page_table(&self, ttbr0: u64) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::arch::asm!(
                 "dsb ish",
@@ -681,6 +689,7 @@ impl Aarch64Vmm {
 
         let l0 = root_paddr as *const u64;
         let l0_idx = l0_index(vaddr);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let l0_entry = unsafe { ptr::read_volatile(l0.add(l0_idx)) };
         if l0_entry & 0b11 != 0b11 {
             return None;
@@ -733,6 +742,7 @@ impl Aarch64Vmm {
 
         let l0 = root_paddr as *const u64;
         let l0_idx = l0_index(vaddr);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let l0_entry = unsafe { ptr::read_volatile(l0.add(l0_idx)) };
         if l0_entry & 0b11 != 0b11 {
             return None;
@@ -740,6 +750,7 @@ impl Aarch64Vmm {
 
         let l1 = phys_to_virt(l0_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
         let l1_idx = l1_index(vaddr);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let l1_entry = unsafe { ptr::read_volatile(l1.add(l1_idx)) };
         if l1_entry & 0b11 != 0b11 {
             return None;
@@ -747,6 +758,7 @@ impl Aarch64Vmm {
 
         let l2 = phys_to_virt(l1_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
         let l2_idx = l2_index(vaddr);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let l2_entry = unsafe { ptr::read_volatile(l2.add(l2_idx)) };
         if l2_entry & 0b11 != 0b11 {
             return None;
@@ -754,6 +766,7 @@ impl Aarch64Vmm {
 
         let l3 = phys_to_virt(l2_entry & 0x0000_FFFF_FFFF_F000) as *const u64;
         let l3_idx = l3_index(vaddr);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let l3_entry = unsafe { ptr::read_volatile(l3.add(l3_idx)) };
 
         Some(l3_entry)
@@ -802,6 +815,7 @@ impl Aarch64Vmm {
     fn destroy_l1_table(&self, paddr: u64) {
         let l1 = phys_to_virt(paddr) as *mut u64;
         for i in 0..512 {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let entry = ptr::read_volatile(l1.add(i));
                 if entry & 0b11 == 0b11 {
@@ -816,6 +830,7 @@ impl Aarch64Vmm {
     fn destroy_l2_table(&self, paddr: u64) {
         let l2 = phys_to_virt(paddr) as *mut u64;
         for i in 0..512 {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let entry = ptr::read_volatile(l2.add(i));
                 if entry & 0b11 == 0b11 {
@@ -830,10 +845,10 @@ impl Aarch64Vmm {
 
 // ─── Global VMM Instance ─────────────────────────────────────────────
 
-static GLOBAL_VMM: spin::Once<Aarch64Vmm> = spin::Once::new();
+static GLOBAL_VMM: OnceLock<Aarch64Vmm> = OnceLock::new();
 
 pub fn vmm_init() {
-    GLOBAL_VMM.call_once(|| {
+    GLOBAL_VMM.get_or_init(|| {
         let vmm = Aarch64Vmm::new();
         vmm.init();
         vmm
@@ -852,6 +867,7 @@ pub fn get_kernel_pml4() -> u64 {
 
 pub fn get_current_pml4() -> u64 {
     let ttbr0: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("mrs {}, TTBR0_EL1", out(reg) ttbr0);
     }

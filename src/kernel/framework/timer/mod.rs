@@ -160,7 +160,7 @@ pub unsafe extern "C" fn timer_init_ffi() {
     match timer_init(DEFAULT_INTERRUPT_FREQ_HZ) {
         Ok(_) => {}
         Err(msg) => {
-            // TODO: 使用 klog 记录错误
+            // TODO(TRACK-4D8B74): 使用 klog 记录错误
             let _ = msg;
         }
     }

@@ -580,6 +580,7 @@ static mut SERIAL_PORTS: [Option<SerialPort>; MAX_COM_PORTS] = [None, None, None
 #[no_mangle]
 pub extern "C" fn serial_init(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             SERIAL_PORTS[com as usize] = SerialPort::new(com as u8);
             if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
@@ -593,6 +594,7 @@ pub extern "C" fn serial_init(com: u32) {
 #[no_mangle]
 pub extern "C" fn serial_putc(com: u32, ch: i32) {
     if (com as usize) < MAX_COM_PORTS {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
                 let _ = port.send_byte(ch as u8);
@@ -605,6 +607,7 @@ pub extern "C" fn serial_putc(com: u32, ch: i32) {
 #[no_mangle]
 pub extern "C" fn serial_puts(com: u32, s: *const u8) {
     if (com as usize) < MAX_COM_PORTS && !s.is_null() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
                 let mut ptr = s;
@@ -621,6 +624,7 @@ pub extern "C" fn serial_puts(com: u32, s: *const u8) {
 #[no_mangle]
 pub extern "C" fn serial_getc(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             match &mut SERIAL_PORTS[com as usize] {
                 Some(port) => match port.receive_byte() {
@@ -639,6 +643,7 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
 #[no_mangle]
 pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             match &SERIAL_PORTS[com as usize] {
                 Some(port) => {
@@ -660,6 +665,7 @@ pub extern "C" fn serial_has_char(com: u32) -> i32 {
 #[no_mangle]
 pub extern "C" fn serial_irq_handler(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
                 port.handle_interrupt();

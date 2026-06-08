@@ -107,6 +107,7 @@ impl VirtQueue {
         extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
+        // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
         let mem = unsafe { pmm_alloc_pages(pages as u64) };
         if mem.is_null() {
             return None;
@@ -115,6 +116,7 @@ impl VirtQueue {
         let mem_phys = mem as u64;
         let mem_virt = (mem_phys + KERNEL_BASE) as *mut u8;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_bytes(mem_virt, 0, total_size);
 
@@ -168,6 +170,7 @@ impl VirtQueue {
             return 0xFFFF;
         }
         let head = self.free_head;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let desc = &mut *self.desc.add(head as usize);
             let next_free = desc.next; // Save before overwriting
@@ -184,6 +187,7 @@ impl VirtQueue {
     /// Submit a descriptor chain to the device (kicks the device).
     /// Returns the available ring index that was submitted.
     pub fn submit(&mut self, desc_head: u16) -> u16 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(
                 &mut (*self.avail).ring[self.next_avail_idx as usize % VQ_SIZE as usize],
@@ -197,6 +201,7 @@ impl VirtQueue {
 
     /// Notify device after submission (caller must set avail->idx and write QueueNotify).
     pub fn commit_and_kick(&mut self) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // Full memory barrier: ensure descriptor and ring writes are globally visible
             crate::kernel::framework::sync::arch::fence();
@@ -207,6 +212,7 @@ impl VirtQueue {
 
     /// Check if any used descriptors are available and return them.
     pub fn pop_used(&mut self) -> Option<(u16, u32)> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let used_idx = core::ptr::read_volatile(&(*self.used).idx);
             if self.last_used_idx == used_idx {
@@ -222,6 +228,7 @@ impl VirtQueue {
 
     /// Return a descriptor to the free list after completion.
     pub fn reclaim_desc(&mut self, head: u16) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let desc = &mut *self.desc.add(head as usize);
             desc.next = self.free_head;

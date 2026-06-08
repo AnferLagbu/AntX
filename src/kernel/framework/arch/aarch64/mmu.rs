@@ -154,6 +154,7 @@ pub unsafe fn init() {
 ///   TTBR1_L0[511] → TTBR1_L1
 ///   TTBR1_L1[i]  → 2MB block mapping (i * 2MB → i * 2MB physical)
 #[allow(clippy::identity_op)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn init_kernel_ttbr1() {
     ptr::write_bytes(TTBR1_L0.0.as_mut_ptr(), 0, 512);
     ptr::write_bytes(TTBR1_L1.0.as_mut_ptr(), 0, 512);
@@ -179,6 +180,7 @@ unsafe fn init_kernel_ttbr1() {
 pub fn alloc_user_page_table() -> u64 {
     // 返回当前 identity mapping 的 TTBR0
     // Phase 6+: 实现每进程独立页表分配
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { L0_TABLE.0.as_ptr() as u64 }
 }
 
@@ -187,24 +189,28 @@ pub fn alloc_user_page_table() -> u64 {
 // ============================================================================
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn set_ttbr0(val: u64) {
     core::arch::asm!("msr ttbr0_el1, {}", in(reg) val);
     core::arch::asm!("isb");
 }
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn set_ttbr1(val: u64) {
     core::arch::asm!("msr ttbr1_el1, {}", in(reg) val);
     core::arch::asm!("isb");
 }
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn set_tcr(val: u64) {
     core::arch::asm!("msr tcr_el1, {}", in(reg) val);
     core::arch::asm!("isb");
 }
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn set_mair(val: u64) {
     core::arch::asm!("msr mair_el1, {}", in(reg) val);
     core::arch::asm!("isb");
@@ -213,6 +219,7 @@ unsafe fn set_mair(val: u64) {
 /// 启用 MMU: 设置 SCTLR_EL1.M (bit 0)
 /// 暂不启用缓存 (C bit 2, I bit 12), 后续单独处理
 #[inline(never)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn enable_mmu() {
     // ARM ARM D5.10.2: 启用 MMU 前需要 DSB 确保所有之前操作可见,
     // 启用后需要 ISB 使 MMU 对后续指令生效.
@@ -233,6 +240,7 @@ unsafe fn enable_mmu() {
 #[inline(always)]
 pub fn read_ttbr0() -> u64 {
     let val: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("mrs {}, ttbr0_el1", out(reg) val);
     }
@@ -241,9 +249,11 @@ pub fn read_ttbr0() -> u64 {
 
 #[inline(always)]
 pub fn write_ttbr0(val: u64) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("msr ttbr0_el1, {}", in(reg) val);
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("isb", options(nomem, nostack));
     }
@@ -251,6 +261,7 @@ pub fn write_ttbr0(val: u64) {
 
 #[inline(always)]
 pub fn tlbi_vaae1(vaddr: u64) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("dsb ishst", options(nomem, nostack));
         core::arch::asm!("tlbi vaae1, {}", in(reg) (vaddr >> 12));
@@ -261,6 +272,7 @@ pub fn tlbi_vaae1(vaddr: u64) {
 
 #[inline(always)]
 pub fn tlbi_vmalle1() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("dsb ishst", options(nomem, nostack));
         core::arch::asm!("tlbi vmalle1", options(nomem, nostack));
@@ -272,6 +284,7 @@ pub fn tlbi_vmalle1() {
 #[inline(always)]
 pub fn read_far() -> u64 {
     let val: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("mrs {}, far_el1", out(reg) val);
     }

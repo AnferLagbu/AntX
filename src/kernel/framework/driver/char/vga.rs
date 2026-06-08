@@ -526,6 +526,7 @@ static mut VGA_DRIVER: Option<VgaDriver> = None;
 /// 初始化全局 VGA 驱动
 #[no_mangle]
 pub extern "C" fn vga_init() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         VGA_DRIVER = Some(VgaDriver::new());
         if let Some(ref mut vga) = VGA_DRIVER {
@@ -537,6 +538,7 @@ pub extern "C" fn vga_init() {
 /// 向 VGA 输出字符 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn vga_putchar(ch: i32) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         if let Some(ref mut vga) = VGA_DRIVER {
             vga.putchar(ch as u8);
@@ -551,6 +553,7 @@ pub extern "C" fn vga_puts(s: *const u8) {
         return;
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         if let Some(ref mut vga) = VGA_DRIVER {
             let mut ptr = s;
@@ -565,6 +568,7 @@ pub extern "C" fn vga_puts(s: *const u8) {
 /// 清屏 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn vga_clear() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         if let Some(ref mut vga) = VGA_DRIVER {
             vga.clear_screen();
@@ -575,6 +579,7 @@ pub extern "C" fn vga_clear() {
 /// 设置颜色 (C 兼容接口)
 #[no_mangle]
 pub extern "C" fn vga_set_color(fg: u8, bg: u8) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         if let Some(ref mut vga) = VGA_DRIVER {
             let fg_color = Color::from_u8(fg).unwrap_or(Color::White);

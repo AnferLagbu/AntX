@@ -38,8 +38,7 @@
 //! See src/net/driver/e1000.c → e1000_probe().
 
 use alloc::vec::Vec;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use core::fmt;
 
 pub mod api;
@@ -51,28 +50,33 @@ pub mod msi;
 #[cfg(target_arch = "x86_64")]
 mod port_io {
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn outb(port: u16, val: u8) {
         crate::arch!(outb(port, val));
     }
 
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn outw(port: u16, val: u16) {
         core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
     }
 
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn outl(port: u16, val: u32) {
         crate::arch!(outl(port, val));
     }
 
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn inb(port: u16) -> u8 {
         crate::arch!(inb(port))
     }
 
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn inw(port: u16) -> u16 {
         let ret: u16;
         core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
@@ -80,6 +84,7 @@ mod port_io {
     }
 
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn inl(port: u16) -> u32 {
         crate::arch!(inl(port))
     }
@@ -213,6 +218,7 @@ pub fn read_config_byte(bus: u8, dev: u8, func: u8, offset: u8) -> u8 {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             port_io::outl(PCI_CONFIG_ADDR, addr);
             let val = port_io::inl(PCI_CONFIG_DATA);
@@ -222,6 +228,7 @@ pub fn read_config_byte(bus: u8, dev: u8, func: u8, offset: u8) -> u8 {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *const u8;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe { core::ptr::read_volatile(addr) }
     }
 }
@@ -230,6 +237,7 @@ pub fn read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             port_io::outl(PCI_CONFIG_ADDR, addr);
             let val = port_io::inl(PCI_CONFIG_DATA);
@@ -239,6 +247,7 @@ pub fn read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *const u16;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe { core::ptr::read_volatile(addr) }
     }
 }
@@ -247,6 +256,7 @@ pub fn read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             port_io::outl(PCI_CONFIG_ADDR, addr);
             port_io::inl(PCI_CONFIG_DATA)
@@ -255,6 +265,7 @@ pub fn read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *const u32;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe { core::ptr::read_volatile(addr) }
     }
 }
@@ -263,6 +274,7 @@ pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             port_io::outl(PCI_CONFIG_ADDR, addr);
             let old = port_io::inl(PCI_CONFIG_DATA);
@@ -276,6 +288,7 @@ pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *mut u8;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(addr, val);
         }
@@ -286,6 +299,7 @@ pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             port_io::outl(PCI_CONFIG_ADDR, addr);
             let old = port_io::inl(PCI_CONFIG_DATA);
@@ -299,6 +313,7 @@ pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *mut u16;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(addr, val);
         }
@@ -309,6 +324,7 @@ pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             port_io::outl(PCI_CONFIG_ADDR, addr);
             port_io::outl(PCI_CONFIG_DATA, val);
@@ -317,6 +333,7 @@ pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
     #[cfg(target_arch = "aarch64")]
     {
         let addr = ecam_addr(bus, dev, func, offset) as *mut u32;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(addr, val);
         }
@@ -547,6 +564,7 @@ pub extern "C" fn pci_rust_init() -> i32 {
         fn klog_ffi_info(msg: *const u8);
     }
     let msg = alloc::format!("PCI: Rust subsystem initialised — {} device(s)", count);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         klog_ffi_info(msg.as_ptr());
     }

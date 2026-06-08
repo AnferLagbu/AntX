@@ -22,8 +22,7 @@
 use crate::kernel::framework::driver::framework::{inb, outb};
 use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use alloc::boxed::Box;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ============================================================================
 // 硬件常量定义
 // ============================================================================
@@ -309,6 +308,7 @@ pub struct KeyboardDriver {
 
 /// 等待输入缓冲区为空
 fn wait_input_buffer_empty() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         while inb(PS2_CMD_PORT) & PS2_STATUS_INPUT_FULL != 0 {
             core::hint::spin_loop();
@@ -321,6 +321,7 @@ fn wait_output_buffer_full() -> bool {
     let mut timeout: u32 = 100000;
 
     while timeout > 0 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if inb(PS2_CMD_PORT) & PS2_STATUS_OUTPUT_FULL != 0 {
                 return true;
@@ -336,6 +337,7 @@ fn wait_output_buffer_full() -> bool {
 /// 向 PS/2 控制器发送命令
 fn ps2_send_command(cmd: u8) -> Result<()> {
     wait_input_buffer_empty();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         outb(PS2_CMD_PORT, cmd);
     }
@@ -345,6 +347,7 @@ fn ps2_send_command(cmd: u8) -> Result<()> {
 /// 向键盘发送数据
 fn keyboard_send_data(data: u8) -> Result<()> {
     wait_input_buffer_empty();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         outb(PS2_DATA_PORT, data);
     }
@@ -356,6 +359,7 @@ fn keyboard_read_data() -> Option<u8> {
     if !wait_output_buffer_full() {
         return None;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     Some(unsafe { inb(PS2_DATA_PORT) })
 }
 
@@ -574,6 +578,7 @@ impl KeyboardDriver {
 
             // 让出 CPU (避免忙等待)
             #[cfg(not(feature = "kernel_test"))]
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 extern "C" {
                     fn scheduler_yield_ex();

@@ -31,6 +31,7 @@ static IOAPIC_MAX_IRQ: AtomicU64 = AtomicU64::new(0);
 
 fn ioapic_read(reg: u32) -> u32 {
     let base = IOAPIC_BASE.load(Ordering::Acquire);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::ptr::write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
         core::ptr::read_volatile((base + IOWIN as u64) as *const u32)
@@ -39,6 +40,7 @@ fn ioapic_read(reg: u32) -> u32 {
 
 fn ioapic_write(reg: u32, value: u32) {
     let base = IOAPIC_BASE.load(Ordering::Acquire);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::ptr::write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
         core::ptr::write_volatile((base + IOWIN as u64) as *mut u32, value);

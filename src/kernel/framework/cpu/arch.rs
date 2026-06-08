@@ -51,6 +51,7 @@ pub fn broadcast_ipi(vector: u8) {
 #[inline(always)]
 pub fn set_kernel_stack(_stack: u64) {
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         crate::kernel::framework::arch::x86_64::tss::tss_set_kernel_stack(_stack);
     }

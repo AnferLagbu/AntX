@@ -46,6 +46,8 @@ use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 static VMM_LOCK: AtomicBool = AtomicBool::new(false);
@@ -361,6 +363,7 @@ impl VirtualMemoryManager {
 
         let pml4_virt = PhysAddr(pml4).to_virt();
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let pml4_raw = pml4_virt.0 as *const u64;
             let pml4e = pml4_raw.add(virt.pml4_idx()).read_volatile();
@@ -778,6 +781,7 @@ impl VirtualMemoryManager {
         Ok(())
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn get_or_create_table_entry(
         &self,
         entry: *mut PageTableEntry,
@@ -1166,6 +1170,7 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn read_cr3(&self) -> u64 {
         // SAFETY: Reading CR3 is always safe; returns current page table base
         crate::arch!(read_page_table_base())
@@ -1192,6 +1197,7 @@ impl VirtualMemoryManager {
 
     fn is_table_empty(&self, table: *mut PageTableEntry) -> bool {
         for i in 0..512usize {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 if (*table.add(i)).is_present() {
                     return false;
@@ -1202,10 +1208,10 @@ impl VirtualMemoryManager {
     }
 }
 
-static GLOBAL_VMM: spin::Once<VirtualMemoryManager> = spin::Once::new();
+static GLOBAL_VMM: OnceLock<VirtualMemoryManager> = OnceLock::new();
 
 pub fn vmm_init() {
-    GLOBAL_VMM.call_once(|| {
+    GLOBAL_VMM.get_or_init(|| {
         let vmm = VirtualMemoryManager::new();
         vmm.init();
         vmm

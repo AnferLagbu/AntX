@@ -82,15 +82,10 @@ if [ "$ARCH" = "all" ] || [ "$ARCH" = "x86_64" ]; then
     TESTED=$((TESTED+1))
     info "=== x86_64 QEMU 真实启动 ==="
 
-    if [ ! -f build/kernel.flat ] || file build/kernel.flat | grep -q "ARM aarch64\|aarch64\|data"; then
+    if [ ! -f build/kernel.flat ] || file build/kernel.flat | grep -q "ARM aarch64\|aarch64"; then
         warn "build/kernel.flat 不是 x86_64, 重新构建..."
         rm -f build/kernel.bin build/kernel.flat build/boot.o build/entry.o build/isr.o build/switch.o build/arch/x86_64/trampoline.o
         make ARCH=x86_64 all 2>&1 | tail -3 || true
-        if [ -f build/kernel.bin ]; then
-            objcopy -O binary build/kernel.bin build/kernel.flat
-        else
-            err "x86_64 build 失败, kernel.bin 未生成"
-        fi
     fi
 
     if [ ! -f build/kernel.flat ]; then
@@ -123,15 +118,10 @@ if [ "$ARCH" = "all" ] || [ "$ARCH" = "aarch64" ]; then
     TESTED=$((TESTED+1))
     info "=== aarch64 QEMU 真实启动 ==="
 
-    if [ ! -f build/kernel.flat ] || file build/kernel.flat | grep -q "x86-64\|COM\|data"; then
+    if [ ! -f build/kernel.flat ] || file build/kernel.flat | grep -q "x86-64\|COM"; then
         warn "build/kernel.flat 不是 aarch64, 重新构建..."
         rm -f build/kernel.bin build/kernel.flat build/boot.o
         make ARCH=aarch64 all 2>&1 | tail -3 || true
-        if [ -f build/kernel.bin ]; then
-            aarch64-linux-gnu-objcopy -O binary build/kernel.bin build/kernel.flat
-        else
-            err "aarch64 build 失败, kernel.bin 未生成"
-        fi
     fi
 
     if [ ! -f build/kernel.flat ]; then

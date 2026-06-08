@@ -15,7 +15,9 @@ use super::types::*;
 use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::framework::proc::api::process_get_current_pid;
 
-static PIPE_LOCK: spin::Mutex<()> = spin::Mutex::new(());
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+static PIPE_LOCK: IrqSpinLock<()> = IrqSpinLock::new(());
 
 fn pipe_find_free_index(namespace: &IpcNamespace) -> Option<usize> {
     for i in 0..IPC_MAX_PIPES {

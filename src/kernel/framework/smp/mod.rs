@@ -22,6 +22,7 @@ pub fn init() {
     CPU_ONLINE[0].store(true, Ordering::Release);
     CPU_COUNT.store(1, Ordering::Release);
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         crate::kernel::framework::klog::klog_info(c"[SMP] BSP initialized".as_ptr() as *const i8);
     }

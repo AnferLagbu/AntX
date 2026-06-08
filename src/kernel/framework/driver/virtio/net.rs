@@ -19,8 +19,7 @@ use crate::klog_error;
 use crate::klog_info;
 use crate::klog_warn;
 use alloc::boxed::Box;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ── Feature bits ──
 
 const VIRTIO_NET_F_MAC: u64 = 1 << 5;
@@ -281,6 +280,7 @@ impl VirtioNet {
             extern "C" {
                 fn pmm_alloc_pages(count: u64) -> *mut u8;
             }
+            // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
             let buf = unsafe { pmm_alloc_pages(pages as u64) };
             if buf.is_null() {
                 klog_warn!(Driver, "virtio-net: failed to alloc RX buffer {}", i);
@@ -424,6 +424,7 @@ impl VirtioNet {
         let data_len = (len - self.hdr_size as u32) as usize;
         let copy_len = data_len.min(buffer.len());
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let src = self.rx_buffers[buf_idx].add(self.hdr_size);
             core::ptr::copy_nonoverlapping(src, buffer.as_mut_ptr(), copy_len);

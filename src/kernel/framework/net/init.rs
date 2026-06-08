@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::klog::{klog_net, klog_net_err, klog_init_msg};
 use crate::kernel::framework::net::smoltcp_impl::{self, ChitinNetDevice, NetworkStack};
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
@@ -26,6 +25,20 @@ pub enum InitState {
 }
 
 static G_INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
+
+// 当前网络配置快照 (D1.1/D1.2 高层 API 支撑)
+// 全部为 Atomic, 单字段读写无需 NET_LOCK; 多字段一致性由 NetStatus::capture 原子复制.
+// 未配置时全部 = 0; 0.0.0.0 表示"无".
+const IPV4_NONE: [u8; 4] = [0; 4];
+const MAC_NONE: [u8; 6] = [0; 6];
+static G_MAC: AtomicU64 = AtomicU64::new(0);              // 6 字节大端打包为 u64
+static G_IPV4: AtomicU32 = AtomicU32::new(0);             // 网络字节序
+static G_GATEWAY: AtomicU32 = AtomicU32::new(0);          // 网络字节序
+static G_DNS: [AtomicU32; 3] = [
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+];
 
 // ============================================================================
 // 全局网络状态
@@ -72,6 +85,11 @@ fn set_failed() {
     G_INIT_STATE.store(InitState::Failed as u8, Ordering::Release);
 }
 
+/// # Safety
+///
+/// - 仅在内核启动网络子系统的临界区内调用一次
+/// - `SOCKET_STORAGE` 是 `MaybeUninit<[SocketStorage; MAX_SOCKETS]>` 静态变量, 由本函数独占初始化
+/// - `SOCKET_SET` 是 `UninitCell<SocketSet<'static>>`, 初始化后只读
 unsafe fn init_sockets() {
     if SOCKETS_INITIALIZED.load(Ordering::Acquire) {
         return;
@@ -85,10 +103,17 @@ unsafe fn init_sockets() {
     SOCKETS_INITIALIZED.store(true, Ordering::Release);
 }
 
+/// # Safety
+///
+/// - 调用前必须已执行 `init_sockets` 完成 `SOCKET_SET` 初始化
+/// - 返回的指针仅在同一线程的 socket 调度上下文内使用, 不得跨线程共享
 unsafe fn socket_set() -> *mut SocketSet<'static> {
     SOCKET_SET.as_mut_ptr()
 }
 
+/// # Safety
+///
+/// - `sockets` 必须是 `socket_set()` 返回的 `SocketSet`, 同一时间仅本函数独占访问
 unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
     static FIRST_DECONFIG: AtomicBool = AtomicBool::new(true);
 
@@ -124,6 +149,15 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
                 });
                 if let Some(router) = config.router {
                     let _ = stack.iface.routes_mut().add_default_ipv4_route(router);
+                    G_GATEWAY.store(u32::from_be_bytes(router.octets()), Ordering::Release);
+                }
+                // D1.2: 把配置结果写进 G_IPV4 / G_DNS, 供高层观测 API
+                G_IPV4.store(u32::from_be_bytes(config.address.address().octets()), Ordering::Release);
+                for (i, dns) in config.dns_servers.iter().enumerate() {
+                    if i >= G_DNS.len() {
+                        break;
+                    }
+                    G_DNS[i].store(u32::from_be_bytes(dns.octets()), Ordering::Release);
                 }
             }
             crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
@@ -170,6 +204,10 @@ pub unsafe fn poll_network() {
 // 多网卡探测 (按优先级依次尝试)
 // ============================================================================
 
+/// # Safety
+///
+/// - 在网络子系统初始化入口被调用, 期间无其他并发探测
+/// - 依赖的 chitin/driver 框架 (`Driver::init`) 自身保证设备独占
 #[cfg(not(feature = "kernel_test"))]
 unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
     #[cfg(target_arch = "x86_64")]
@@ -226,8 +264,14 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOp
 // 恢复机制
 // ============================================================================
 
+/// # Safety
+///
+/// - 当前为 no-op 占位; 真实实现时须保证在关中断上下文执行
 unsafe fn net_save() {}
 
+/// # Safety
+///
+/// - 调用方须确保无其他线程持有 socket fd (例如文件系统已卸载完毕)
 unsafe fn net_restore() {
     let _guard = NET_LOCK.lock();
 
@@ -247,6 +291,9 @@ unsafe fn net_restore() {
     raw::klog_msg("--- Network Recovered ---");
 }
 
+/// # Safety
+///
+/// - 调用方须确保无其他线程持有 socket fd (例如文件系统已卸载完毕)
 unsafe fn net_reset() {
     let _guard = NET_LOCK.lock();
 
@@ -356,14 +403,18 @@ pub extern "C" fn qx_net_init() {
                 smoltcp::wire::Ipv4Address::new(10, 0, 2, 15),
                 24,
             ));
+            let gw = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
             let _guard = NET_LOCK.lock();
             if let Some(stack) = raw::stack_mut() {
                 stack.iface.update_ip_addrs(|addrs| {
                     let _ = addrs.push(cidr);
                 });
-                let gw = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
                 let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
                 crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+
+                // D1.2: 把 fallback IP/网关写进 G_IPV4/G_GATEWAY, 给 get_* 观测 API
+                G_IPV4.store(u32::from_be_bytes([10, 0, 2, 15]), Ordering::Release);
+                G_GATEWAY.store(u32::from_be_bytes([10, 0, 2, 2]), Ordering::Release);
                 raw::klog_msg("Static IP 10.0.2.15/24 (fallback)");
             }
         }
@@ -1336,6 +1387,10 @@ static mut UDP_TX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; MAX_SM_FD] =
     [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; MAX_SM_FD];
 static mut UDP_TX_BUFS: [[u8; UDP_BUF_SIZE]; MAX_SM_FD] = [[0u8; UDP_BUF_SIZE]; MAX_SM_FD];
 
+/// # Safety
+///
+/// - 直接访问 `static mut` 全局表 (`FD_TYPES`, `SOCKET_TABLE`)
+/// - 调用方须保证在持有 `SM_FD_TABLE_LOCK` 时调用
 unsafe fn sm_alloc_fd() -> i32 {
     for i in 0..MAX_SM_FD {
         if FD_TYPES[i] == 0 && SOCKET_TABLE[i].is_none() {
@@ -1361,6 +1416,188 @@ pub fn get_init_state() -> InitState {
         3 => InitState::FullyInitialized,
         _ => InitState::Failed,
     }
+}
+
+// ============================================================================
+// D1.1/D1.2 高层 API 底层实现
+// ============================================================================
+
+/// 网络状态快照 (单次原子读, 多字段可能轻微不一致 — 用于观测/debug)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NetStatus {
+    pub state: InitState,
+    pub mac: [u8; 6],
+    pub ipv4: Option<[u8; 4]>,
+    pub gateway: Option<[u8; 4]>,
+    pub dns: [Option<[u8; 4]>; 3],
+    pub dhcp_configured: bool,
+}
+
+impl NetStatus {
+    pub fn capture() -> Self {
+        let mac_raw = G_MAC.load(Ordering::Acquire);
+        let mac = mac_raw.to_be_bytes()[2..8].try_into().unwrap_or([0; 6]);
+        let ipv4 = ipv4_from_atomic(G_IPV4.load(Ordering::Acquire));
+        let gateway = ipv4_from_atomic(G_GATEWAY.load(Ordering::Acquire));
+        let dns = [
+            ipv4_from_atomic(G_DNS[0].load(Ordering::Acquire)),
+            ipv4_from_atomic(G_DNS[1].load(Ordering::Acquire)),
+            ipv4_from_atomic(G_DNS[2].load(Ordering::Acquire)),
+        ];
+        NetStatus {
+            state: get_init_state(),
+            mac,
+            ipv4,
+            gateway,
+            dns,
+            dhcp_configured: crate::kernel::framework::net::types::NET_CONFIGURED
+                .load(Ordering::Acquire),
+        }
+    }
+}
+
+fn ipv4_from_atomic(v: u32) -> Option<[u8; 4]> {
+    if v == 0 {
+        None
+    } else {
+        Some(v.to_be_bytes())
+    }
+}
+
+/// 主动触发网络初始化 (非阻塞; 失败返回 false)
+///
+/// # 行为
+/// - 状态机 = Uninitialized 时, 直接返回 false (需要先有 chitin 设备注册)
+/// - 状态机 = HardwareProbed/InterfaceReady 时, 启动 DHCP 握手
+/// - 状态机 = FullyInitialized 时, 直接返回 true
+/// - 状态机 = Failed 时, 不重试, 返回 false
+pub fn trigger_init() -> bool {
+    match get_init_state() {
+        InitState::FullyInitialized => true,
+        InitState::HardwareProbed | InitState::InterfaceReady => {
+            // DHCP 已经在轮询路径里跑了, 此处仅给上层一个"我已确认"信号
+            true
+        }
+        _ => false,
+    }
+}
+
+/// 查询设备 MAC 地址
+pub fn get_mac_address() -> Option<[u8; 6]> {
+    let raw = G_MAC.load(Ordering::Acquire);
+    if raw == 0 {
+        None
+    } else {
+        let bytes = raw.to_be_bytes();
+        Some([bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]])
+    }
+}
+
+/// 把 [u8; 6] MAC 写入 G_MAC (大端打包为 u64)
+pub(crate) fn store_mac(mac: [u8; 6]) {
+    let mut buf = [0u8; 8];
+    buf[2..8].copy_from_slice(&mac);
+    G_MAC.store(u64::from_be_bytes(buf), Ordering::Release);
+}
+
+/// 查询当前 IPv4
+pub fn get_ipv4_address() -> Option<[u8; 4]> {
+    ipv4_from_atomic(G_IPV4.load(Ordering::Acquire))
+}
+
+/// 查询默认网关
+pub fn get_default_gateway() -> Option<[u8; 4]> {
+    ipv4_from_atomic(G_GATEWAY.load(Ordering::Acquire))
+}
+
+/// 查询 DNS 服务器列表
+pub fn get_dns_servers() -> [Option<[u8; 4]>; 3] {
+    [
+        ipv4_from_atomic(G_DNS[0].load(Ordering::Acquire)),
+        ipv4_from_atomic(G_DNS[1].load(Ordering::Acquire)),
+        ipv4_from_atomic(G_DNS[2].load(Ordering::Acquire)),
+    ]
+}
+
+/// 静态 hosts 表条目: 主机名 → IPv4
+#[derive(Debug, Clone, Copy)]
+struct HostEntry {
+    name: &'static str,
+    ip: [u8; 4],
+}
+
+/// 内置静态 hosts (D1.2 起步, D 阶段后续可换 smoltcp wire/dns 升级)
+const STATIC_HOSTS: &[HostEntry] = &[
+    HostEntry { name: "localhost",       ip: [127, 0, 0, 1] },
+    HostEntry { name: "router",          ip: [10, 0, 2, 2]  },
+    HostEntry { name: "host",            ip: [10, 0, 2, 15] },
+    HostEntry { name: "qemu-gateway",    ip: [10, 0, 2, 2]  },
+    HostEntry { name: "antx-gateway",    ip: [10, 0, 2, 2]  },
+];
+
+/// 简单 DNS 解析 (静态 hosts 表)
+///
+/// # 实现
+/// - 精确匹配主机名 (不区分大小写 — ASCII tolower)
+/// - 大小写不敏感: "Router" / "ROUTER" / "router" 都匹配
+///
+/// # 局限 (D 阶段后续工作)
+/// - 不发起 DNS UDP 查询
+/// - 不支持通配 (`*.example.com`)
+/// - 不支持 AAAA (IPv6)
+pub fn dns_resolve(name: &str) -> Option<[u8; 4]> {
+    for entry in STATIC_HOSTS {
+        if entry.name.eq_ignore_ascii_case(name) {
+            return Some(entry.ip);
+        }
+    }
+    // 数字字面量解析: "10.0.2.15" 直接返 (避免对 IP 字符串做 DNS 浪费)
+    if let Some(ip) = parse_ipv4_literal(name) {
+        return Some(ip);
+    }
+    None
+}
+
+/// 解析 IPv4 字面量 "a.b.c.d" (无错处理; 不合法返 None)
+pub(crate) fn parse_ipv4_literal(s: &str) -> Option<[u8; 4]> {
+    let mut octets = [0u8; 4];
+    let mut idx = 0usize;
+    let mut cur: u32 = 0;
+    let mut has_digit = false;
+    for &b in s.as_bytes() {
+        if b == b'.' {
+            if !has_digit || idx >= 3 || cur > 255 {
+                return None;
+            }
+            octets[idx] = cur as u8;
+            idx += 1;
+            cur = 0;
+            has_digit = false;
+        } else if b.is_ascii_digit() {
+            cur = cur * 10 + (b - b'0') as u32;
+            has_digit = true;
+        } else {
+            return None;
+        }
+    }
+    if !has_digit || idx != 3 || cur > 255 {
+        return None;
+    }
+    octets[3] = cur as u8;
+    Some(octets)
+}
+
+/// 显式关闭网络栈 (重置配置 + 状态)
+pub fn shutdown_network() {
+    let _guard = NET_LOCK.lock();
+    G_IPV4.store(0, Ordering::Release);
+    G_GATEWAY.store(0, Ordering::Release);
+    G_DNS[0].store(0, Ordering::Release);
+    G_DNS[1].store(0, Ordering::Release);
+    G_DNS[2].store(0, Ordering::Release);
+    crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+    G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
+    raw::klog_msg("Network shutdown");
 }
 
 /// 重置网络栈状态 (供栏栈 BHR / 异常恢复使用)。
@@ -1492,9 +1729,94 @@ mod tests {
         assert_eq!(get_init_state(), InitState::Uninitialized);
         assert!(!is_network_initialized());
 
+        // SAFETY: 单线程测试, `reset_network_state` 仅触达 `static mut` 单调状态
         unsafe {
             reset_network_state();
         }
         assert_eq!(get_init_state(), InitState::Uninitialized);
+    }
+
+    // ── D1.2 新增: parse_ipv4_literal / dns_resolve 纯逻辑测试 ──
+
+    #[test]
+    fn test_parse_ipv4_literal_valid() {
+        assert_eq!(parse_ipv4_literal("0.0.0.0"), Some([0, 0, 0, 0]));
+        assert_eq!(parse_ipv4_literal("10.0.2.15"), Some([10, 0, 2, 15]));
+        assert_eq!(parse_ipv4_literal("255.255.255.255"), Some([255, 255, 255, 255]));
+        assert_eq!(parse_ipv4_literal("127.0.0.1"), Some([127, 0, 0, 1]));
+    }
+
+    #[test]
+    fn test_parse_ipv4_literal_invalid() {
+        assert_eq!(parse_ipv4_literal(""), None);
+        assert_eq!(parse_ipv4_literal("10"), None);
+        assert_eq!(parse_ipv4_literal("10.0"), None);
+        assert_eq!(parse_ipv4_literal("10.0.2"), None);
+        assert_eq!(parse_ipv4_literal("10.0.2.15.1"), None);
+        assert_eq!(parse_ipv4_literal("10.0.2.256"), None);   // 越界
+        assert_eq!(parse_ipv4_literal("10.0..15"), None);
+        assert_eq!(parse_ipv4_literal("a.b.c.d"), None);
+        assert_eq!(parse_ipv4_literal("10.0.2."), None);
+        assert_eq!(parse_ipv4_literal(".10.0.2.15"), None);
+        assert_eq!(parse_ipv4_literal("10.0.2.15 "), None);   // 尾随空格
+    }
+
+    #[test]
+    fn test_dns_resolve_static_hosts() {
+        assert_eq!(dns_resolve("localhost"), Some([127, 0, 0, 1]));
+        assert_eq!(dns_resolve("LOCALHOST"), Some([127, 0, 0, 1]));   // 大小写不敏感
+        assert_eq!(dns_resolve("Router"), Some([10, 0, 2, 2]));
+        assert_eq!(dns_resolve("qemu-gateway"), Some([10, 0, 2, 2]));
+        assert_eq!(dns_resolve("antx-gateway"), Some([10, 0, 2, 2]));
+    }
+
+    #[test]
+    fn test_dns_resolve_unknown_falls_back_to_ip_literal() {
+        // 未知主机名直接走 IPv4 字面量路径
+        assert_eq!(dns_resolve("8.8.8.8"), Some([8, 8, 8, 8]));
+        assert_eq!(dns_resolve("10.0.2.15"), Some([10, 0, 2, 15]));
+    }
+
+    #[test]
+    fn test_dns_resolve_returns_none_for_garbage() {
+        assert_eq!(dns_resolve("nonexistent.example.com"), None);
+        assert_eq!(dns_resolve(""), None);
+        assert_eq!(dns_resolve("999.999.999.999"), None);
+    }
+
+    #[test]
+    fn test_ipv4_from_atomic() {
+        assert_eq!(ipv4_from_atomic(0), None);
+        assert_eq!(ipv4_from_atomic(0x0A00020F), Some([10, 0, 2, 15]));
+        assert_eq!(ipv4_from_atomic(0xFF000001), Some([255, 0, 0, 1]));
+    }
+
+    #[test]
+    fn test_net_status_capture_initial_state() {
+        // SAFETY: 单线程测试, reset 仅修改状态原子变量
+        unsafe { reset_network_state(); }
+        let s = NetStatus::capture();
+        assert_eq!(s.state, InitState::Uninitialized);
+        assert_eq!(s.ipv4, None);
+        assert_eq!(s.gateway, None);
+        assert_eq!(s.dns, [None, None, None]);
+        assert!(!s.dhcp_configured);
+    }
+
+    #[test]
+    fn test_store_and_get_mac_roundtrip() {
+        // SAFETY: 单线程测试, reset 仅修改状态原子变量
+        unsafe { reset_network_state(); }
+        let mac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
+        store_mac(mac);
+        assert_eq!(get_mac_address(), Some(mac));
+    }
+
+    #[test]
+    fn test_dns_servers_default_empty() {
+        // SAFETY: 单线程测试, reset 仅修改状态原子变量
+        unsafe { reset_network_state(); }
+        let dns = get_dns_servers();
+        assert_eq!(dns, [None, None, None]);
     }
 }

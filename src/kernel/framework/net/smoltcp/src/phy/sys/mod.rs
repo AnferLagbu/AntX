@@ -44,6 +44,7 @@ pub use self::tuntap_interface::TunTapInterfaceDesc;
 
 /// Wait until given file descriptor becomes readable, but no longer than given timeout.
 pub fn wait(fd: RawFd, duration: Option<Duration>) -> io::Result<()> {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let mut readfds = {
             let mut readfds = mem::MaybeUninit::<libc::fd_set>::uninit();
@@ -125,6 +126,7 @@ fn ifreq_ioctl(
     ifreq: &mut ifreq,
     cmd: libc::c_ulong,
 ) -> io::Result<libc::c_int> {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let res = libc::ioctl(lower, cmd as _, ifreq as *mut ifreq);
         if res == -1 {

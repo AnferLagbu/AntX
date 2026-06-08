@@ -65,7 +65,9 @@ impl ChitinNetDevice {
     }
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Send for ChitinNetDevice {}
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Sync for ChitinNetDevice {}
 
 impl Device for ChitinNetDevice {

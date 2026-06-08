@@ -1,6 +1,6 @@
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::klog_error;
 
 use super::cfs::{
@@ -145,6 +145,7 @@ fn per_cpu() -> &'static PerCpuSched {
         }
     }
     let guard = PER_CPU_SCHED[idx].lock();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         match guard.as_ref() {
             Some(per_cpu) => {
@@ -170,6 +171,7 @@ fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
         }
     }
     let guard = PER_CPU_SCHED[idx].lock();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let ptr = guard.as_ref().unwrap() as *const PerCpuSched;
         &*ptr
@@ -214,6 +216,7 @@ impl Scheduler {
             self.set_current(pid);
 
             if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     extern "C" {
                         fn update_current_process_ptr(ptr: u64);
@@ -252,6 +255,7 @@ impl Scheduler {
         let process_ptr = alloc::boxed::Box::into_raw(process);
 
         if !PROCESS_TABLE.insert(process_ptr) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 alloc::alloc::dealloc(
                     process_ptr as *mut u8,
@@ -548,6 +552,7 @@ impl Scheduler {
             .store(next as u64, Ordering::SeqCst);
 
         if let Some(next_ptr_raw) = next_ptr {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 crate::kernel::framework::proc::api::update_current_process_ptr(next_ptr_raw as u64);
             }
@@ -624,6 +629,7 @@ impl Scheduler {
             });
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let prev_ctx_ptr = prev_ptr.map_or(core::ptr::null_mut(), |p| unsafe {
             &raw mut (*p).context as *mut Mutex<ProcessContext>
         });
@@ -825,6 +831,7 @@ impl Scheduler {
         per_cpu().current.store(pid, Ordering::SeqCst);
 
         if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 extern "C" {
                     fn update_current_process_ptr(ptr: u64);
@@ -1036,6 +1043,7 @@ impl Scheduler {
                     continue;
                 }
                 if let Some(proc) = PROCESS_TABLE.get(pid) {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         let state = (*proc).get_state();
                         if state == ProcessState::Blocked {
@@ -1066,6 +1074,7 @@ impl Scheduler {
                     break;
                 }
                 if let Some(proc) = PROCESS_TABLE.get(pid) {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         if (*proc).get_state() == ProcessState::Zombie {
                             let parent_alive = (*proc).parent.map_or(true, |ppid| {
@@ -1084,6 +1093,7 @@ impl Scheduler {
             }
             for i in 0..reap_count {
                 if let Some(proc) = PROCESS_TABLE.get(to_reap[i]) {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         let _ = (*proc).set_state_safe(ProcessState::Terminated);
                     }
@@ -1119,6 +1129,7 @@ impl Scheduler {
 
     pub fn set_sched_policy(&self, pid: Pid, policy: SchedPolicy, rt_priority: u8) -> bool {
         if let Some(process) = PROCESS_TABLE.get(pid) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*process).set_sched_policy(policy);
                 (*process).set_rt_priority(rt_priority.min(RT_PRIORITY_MAX));

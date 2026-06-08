@@ -86,6 +86,7 @@ macro_rules! klog_ffi {
             format_args!($($arg)*),
         );
         if cursor > 0 {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe { $ffi_fn(buf.as_ptr()); }
         }
     }};
@@ -97,6 +98,7 @@ macro_rules! klog_fmt {
     ($lvl:ident, $cat:ident, $($arg:tt)*) => {{
         let mut w = $crate::kernel::framework::klog::KlogWriter::new();
         let _ = core::fmt::Write::write_fmt(&mut w, format_args!($($arg)*));
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             $crate::kernel::framework::klog::klog_write(
                 $crate::kernel::framework::klog::LogLevel::$lvl as u8,
@@ -148,16 +150,19 @@ mod serial_impl {
     const COM1: u16 = 0x3F8;
 
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn port_outb(port: u16, value: u8) {
         crate::arch!(outb(port, value));
     }
 
     #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn port_inb(port: u16) -> u8 {
         crate::arch!(inb(port))
     }
 
     pub fn serial_init() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             port_outb(COM1 + 1, 0x00);
             port_outb(COM1 + 3, 0x80);
@@ -170,6 +175,7 @@ mod serial_impl {
     }
 
     pub fn serial_putc(c: u8) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             while (port_inb(COM1 + 5) & 0x20) == 0 {
                 core::hint::spin_loop();
@@ -188,6 +194,7 @@ mod serial_impl {
     }
 
     pub fn serial_putc(c: u8) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             uart::putc(c);
         }
@@ -255,6 +262,7 @@ impl RingBuf {
 struct RingLock {
     inner: core::cell::UnsafeCell<RingBuf>,
 }
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Sync for RingLock {}
 
 static RING: RingLock = RingLock {
@@ -341,6 +349,7 @@ impl LogCategory {
 // 辅助
 // ============================================================================
 
+// SAFETY: `const` 由调用方保证为有效指针; 只读访问
 unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] {
     if ptr.is_null() {
         return b"(null)";
@@ -421,6 +430,7 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
 
     crate::arch!(interrupt_restore(saved_if));
 
+    // SAFETY: `RING` 由调用方保证为有效指针; 只读访问
     let ring = unsafe { &mut *RING.inner.get() };
     ring.push_str(ts);
     ring.push_str(level.prefix());

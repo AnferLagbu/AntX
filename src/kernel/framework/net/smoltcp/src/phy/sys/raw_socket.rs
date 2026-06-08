@@ -27,6 +27,7 @@ impl RawSocketDesc {
             Medium::Ieee802154 => imp::ETH_P_IEEE802154,
         };
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let lower = unsafe {
             let lower = libc::socket(
                 libc::AF_PACKET,
@@ -61,6 +62,7 @@ impl RawSocketDesc {
             sll_addr: [0; 8],
         };
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let res = libc::bind(
                 self.lower,
@@ -76,6 +78,7 @@ impl RawSocketDesc {
     }
 
     pub fn recv(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let len = libc::recv(
                 self.lower,
@@ -91,6 +94,7 @@ impl RawSocketDesc {
     }
 
     pub fn send(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let len = libc::send(
                 self.lower,
@@ -108,6 +112,7 @@ impl RawSocketDesc {
 
 impl Drop for RawSocketDesc {
     fn drop(&mut self) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             libc::close(self.lower);
         }

@@ -1,8 +1,7 @@
 #![allow(dead_code)]
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::fs::vfs::types::KernelError;
 use crate::kernel::framework::fs::vfs::types::*;

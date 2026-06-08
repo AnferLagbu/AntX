@@ -220,6 +220,7 @@ pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Resul
         return Err(());
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let result = unsafe {
         let src_ptr = user_src as *const u8;
         let dst_ptr = kernel_dst.as_mut_ptr();
@@ -291,6 +292,7 @@ pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usiz
         return Err(());
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let result = unsafe {
         let src_ptr = kernel_src.as_ptr();
         let dst_ptr = user_dst as *mut u8;
@@ -341,6 +343,7 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
 
     let mut bytes = alloc::vec::Vec::with_capacity(max_len);
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let result = unsafe {
         let ptr = user_str as *const u8;
 
@@ -398,6 +401,7 @@ pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
         return Err(());
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let result = unsafe {
         let ptr = user_ptr as *mut u8;
 
@@ -445,6 +449,7 @@ pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
         return Err(());
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let result = unsafe {
         let ptr = user_str as *const u8;
 

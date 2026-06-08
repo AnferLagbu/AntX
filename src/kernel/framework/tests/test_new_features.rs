@@ -122,6 +122,7 @@ fn test_elf_magic_rejected() -> TestResult {
 fn test_elf_valid_minimal() -> TestResult {
     use crate::kernel::framework::proc::elf::Elf64Header;
     let data = [0u8; 80]; // header + some room
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let hdr = unsafe { &mut *(data.as_ptr() as *mut Elf64Header) };
     hdr.e_ident[0] = 0x7F;
     hdr.e_ident[1] = b'E';

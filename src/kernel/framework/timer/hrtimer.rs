@@ -46,8 +46,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use alloc::vec::Vec;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ============================================================================
 // 公共类型
 // ============================================================================
@@ -275,6 +274,7 @@ pub fn hrtimer_start(timer: &HrTimer, expiry_ns: u64) {
     queue.retain(|entry| {
         if entry.timer.as_ptr() as *const HrTimer == timer as *const HrTimer {
             // 同一个 timer, 检查 seq 是否匹配
+            // SAFETY: `entry` 由调用方保证为有效指针; 只读访问
             let old_seq = unsafe { (*entry.timer.as_ptr()).queue_seq.load(Ordering::Acquire) };
             old_seq != seq
         } else {
@@ -286,6 +286,7 @@ pub fn hrtimer_start(timer: &HrTimer, expiry_ns: u64) {
     let insert_pos = queue
         .iter()
         .position(|entry| {
+            // SAFETY: `entry` 由调用方保证为有效指针; 只读访问
             let other_expiry = unsafe { (*entry.timer.as_ptr()).expiry_ns.load(Ordering::Acquire) };
             other_expiry > expiry_ns
         })
@@ -377,11 +378,13 @@ pub fn hrtimer_run_queues() {
 
         // 移除已到期和已取消的条目
         queue.retain(|entry| {
+            // SAFETY: `entry` 由调用方保证为有效指针; 只读访问
             let state = unsafe { (*entry.timer.as_ptr()).state() };
             state == HrTimerState::Pending
         });
 
         // 重新排序 (retain 可能打乱顺序)
+        // SAFETY: `entry` 由调用方保证为有效指针; 只读访问
         queue.sort_by_key(|entry| unsafe { (*entry.timer.as_ptr()).expiry_ns.load(Ordering::Acquire) });
 
         expired
@@ -410,6 +413,7 @@ pub fn hrtimer_run_queues() {
                         new_expiry
                     };
                     // 重新入队: hrtimer_start 会获取锁
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     hrtimer_start(unsafe { timer_ptr.as_ref() }, next);
                 } else {
                     timer.set_state(HrTimerState::Inactive);
@@ -667,6 +671,7 @@ fn test_queue_operations() -> crate::kernel::framework::tests::TestResult {
     assert_eq_test!(hrtimer_pending_count(), 0, "empty queue");
 
     static mut T1: HrTimer = HrTimer::uninit();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         T1.init(noop_callback);
         hrtimer_start(&T1, 1_000_000_000);
@@ -677,6 +682,7 @@ fn test_queue_operations() -> crate::kernel::framework::tests::TestResult {
     check!(next.is_some(), "has next expiry");
     assert_eq_test!(next.unwrap(), 1_000_000_000, "expiry matches");
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     hrtimer_cancel(unsafe { &T1 });
     // 取消后队列在下一次 run_queues 时清理
     hrtimer_run_queues();
@@ -688,11 +694,13 @@ fn test_queue_operations() -> crate::kernel::framework::tests::TestResult {
 fn test_periodic_restart() -> crate::kernel::framework::tests::TestResult {
     use crate::kernel::framework::tests::{check, TestResult};
     static mut T2: HrTimer = HrTimer::uninit();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         T2.init(periodic_test_callback);
         let now = hrtimer_clock_read();
         hrtimer_start(&T2, now + 1_000_000); // 1ms 后
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     check!(unsafe { T2.is_pending() }, "pending after start");
 
     // 运行队列 (可能未到期, 但测试回调逻辑)

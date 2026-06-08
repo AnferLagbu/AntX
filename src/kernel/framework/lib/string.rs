@@ -763,6 +763,7 @@ mod tests {
 
     #[test]
     fn test_strlen_basic() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             assert_eq!(strlen(c"Hello".as_ptr()), 5);
             assert_eq!(strlen(c"".as_ptr()), 0);
@@ -772,6 +773,7 @@ mod tests {
 
     #[test]
     fn test_strcmp_operations() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 相等
             assert_eq!(strcmp(c"test".as_ptr(), c"test".as_ptr()), 0);
@@ -786,6 +788,7 @@ mod tests {
 
     #[test]
     fn test_strncmp_limit() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 前3个字符相等
             assert_eq!(strncmp(c"abcdef".as_ptr(), c"abcxyz".as_ptr(), 3), 0);
@@ -797,6 +800,7 @@ mod tests {
 
     #[test]
     fn test_strcpy_and_strncpy() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let mut buffer = [0i8; 20];
 
@@ -817,6 +821,7 @@ mod tests {
 
     #[test]
     fn test_strcat() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let mut buffer = [0i8; 30];
             strcpy(buffer.as_mut_ptr(), c"Hello ".as_ptr());
@@ -828,6 +833,7 @@ mod tests {
 
     #[test]
     fn test_strchr_and_strrchr() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let s = b"Hello World\0";
 
@@ -845,6 +851,7 @@ mod tests {
 
     #[test]
     fn test_strstr() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let haystack = b"The quick brown fox jumps over the lazy dog\0";
 
@@ -864,6 +871,7 @@ mod tests {
 
     #[test]
     fn test_memcpy_and_memmove() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let mut dest = [0u8; 10];
             let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -890,6 +898,7 @@ mod tests {
 
     #[test]
     fn test_memset_operations() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let mut buffer = [0xABu8; 20];
 
@@ -910,6 +919,7 @@ mod tests {
 
     #[test]
     fn test_memcmp() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let a = [1, 2, 3, 4, 5];
             let b = [1, 2, 3, 4, 5];
@@ -938,6 +948,7 @@ mod tests {
 
     #[test]
     fn test_memchr() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let data = [1, 2, 3, 4, 5, 3, 7, 8];
 
@@ -955,6 +966,7 @@ mod tests {
 
     #[test]
     fn test_secure_zero() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let mut secret = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
             secure_zero(secret.as_mut_ptr() as *mut u8, 6);

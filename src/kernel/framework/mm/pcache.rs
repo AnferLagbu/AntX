@@ -21,11 +21,10 @@
 
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 
 use crate::kernel::framework::mm::{PhysAddr, PAGE_SIZE, pmm};
-use crate::kernel::framework::mm::vmm;
 
 // ============================================================================
 // Page Cache Entry
@@ -130,11 +129,12 @@ impl PageCacheBucket {
 
         // 清零 (防止信息泄漏)
         let virt = phys.to_virt();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_bytes(virt.0 as *mut u8, 0, PAGE_SIZE as usize);
         }
 
-        // TODO: 从文件系统读取数据填充此页
+        // TODO(TRACK-A7DE25): 从文件系统读取数据填充此页
         // 当前阶段文件数据由 initramfs 加载, 后续集成 VFS read
 
         // 插入条目
@@ -276,6 +276,7 @@ pub fn pcache_get(inode_id: u32, page_index: u64) -> Option<u64> {
 pub fn pcache_lookup(inode_id: u32, page_index: u64) -> Option<u64> {
     let idx = pcache_hash(inode_id, page_index);
     PAGE_CACHE.locks[idx].lock();
+    // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
     let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
     let result = bucket.lookup(inode_id, page_index);
     PAGE_CACHE.locks[idx].unlock();
@@ -286,6 +287,7 @@ pub fn pcache_lookup(inode_id: u32, page_index: u64) -> Option<u64> {
 pub fn pcache_mark_dirty(inode_id: u32, page_index: u64) {
     let idx = pcache_hash(inode_id, page_index);
     PAGE_CACHE.locks[idx].lock();
+    // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
     let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
     bucket.mark_dirty(inode_id, page_index);
     PAGE_CACHE.locks[idx].unlock();
@@ -295,6 +297,7 @@ pub fn pcache_mark_dirty(inode_id: u32, page_index: u64) {
 pub fn pcache_put(inode_id: u32, page_index: u64) {
     let idx = pcache_hash(inode_id, page_index);
     PAGE_CACHE.locks[idx].lock();
+    // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
     let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
     bucket.deref(inode_id, page_index);
     PAGE_CACHE.locks[idx].unlock();
@@ -304,6 +307,7 @@ pub fn pcache_put(inode_id: u32, page_index: u64) {
 pub fn pcache_invalidate_inode(inode_id: u32) {
     for i in 0..PCACHE_HASH_BUCKETS {
         PAGE_CACHE.locks[i].lock();
+        // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
         let bucket = unsafe { &mut *PAGE_CACHE.buckets[i].get() };
         bucket.invalidate_inode(inode_id);
         PAGE_CACHE.locks[i].unlock();

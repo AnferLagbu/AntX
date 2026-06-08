@@ -5,8 +5,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 #[cfg(target_arch = "x86_64")]
 const KERNEL_BASE: u64 = 0xFFFF800000000000;
 #[cfg(target_arch = "aarch64")]
@@ -127,11 +126,13 @@ pub(crate) mod raw {
         /// 访问 pid 字段 (读写)
         #[inline(always)]
         pub fn pid(&self) -> u32 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).pid }
         }
 
         #[inline(always)]
         pub fn set_pid(&self, v: u32) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).pid = v;
             }
@@ -140,11 +141,13 @@ pub(crate) mod raw {
         /// 访问 entry 字段 (读写)
         #[inline(always)]
         pub fn entry(&self) -> u64 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).entry }
         }
 
         #[inline(always)]
         pub fn set_entry(&self, v: u64) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).entry = v;
             }
@@ -153,11 +156,13 @@ pub(crate) mod raw {
         /// 访问 create_time 字段 (读写)
         #[inline(always)]
         pub fn create_time(&self) -> u64 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).create_time }
         }
 
         #[inline(always)]
         pub fn set_create_time(&self, v: u64) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).create_time = v;
             }
@@ -166,11 +171,13 @@ pub(crate) mod raw {
         /// 访问 pwm/cr3/kernel_stack/user_stack/stack_bottom/state 原子字段
         #[inline(always)]
         pub fn load_pwm(&self) -> u64 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).pwm.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_pwm(&self, v: u64) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).pwm.store(v, Ordering::SeqCst);
             }
@@ -178,11 +185,13 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn load_cr3(&self) -> u64 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).cr3.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_cr3(&self, v: u64) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).cr3.store(v, Ordering::SeqCst);
             }
@@ -190,11 +199,13 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn load_kernel_stack(&self) -> u64 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).kernel_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_kernel_stack(&self, v: u64) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).kernel_stack.store(v, Ordering::SeqCst);
             }
@@ -202,11 +213,13 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn load_user_stack(&self) -> u64 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).user_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_user_stack(&self, v: u64) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).user_stack.store(v, Ordering::SeqCst);
             }
@@ -214,11 +227,13 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn load_stack_bottom(&self) -> u64 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).stack_bottom.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_stack_bottom(&self, v: u64) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).stack_bottom.store(v, Ordering::SeqCst);
             }
@@ -226,11 +241,13 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn load_state(&self) -> u32 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).state.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_state(&self, v: u32) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 (*self.0).state.store(v, Ordering::SeqCst);
             }

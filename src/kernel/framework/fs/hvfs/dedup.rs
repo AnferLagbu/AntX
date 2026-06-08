@@ -20,6 +20,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 pub const CAS_HASH_SIZE: usize = 32;
 pub type CasHash = [u8; CAS_HASH_SIZE];
 
@@ -119,10 +121,10 @@ impl CasIndex {
     }
 }
 
-static CAS_INDEX: spin::Once<CasIndex> = spin::Once::new();
+static CAS_INDEX: OnceLock<CasIndex> = OnceLock::new();
 
 pub fn get_cas() -> &'static CasIndex {
-    CAS_INDEX.call_once(CasIndex::new)
+    CAS_INDEX.get_or_init(CasIndex::new)
 }
 
 pub fn cas_init() {

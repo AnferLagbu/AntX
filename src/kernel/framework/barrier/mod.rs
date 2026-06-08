@@ -45,6 +45,8 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 pub mod api;
 pub mod domain;
 pub mod fault_inject;
@@ -92,11 +94,11 @@ pub use api::recovery_test_rollback;
 pub use api::{recovery_get_fault_rate, recovery_set_fault_rate};
 
 pub static PANIC_FLAG: AtomicBool = AtomicBool::new(false);
-pub static PANIC_MSG: spin::Mutex<[u8; 128]> = spin::Mutex::new([0u8; 128]);
+pub static PANIC_MSG: IrqSpinLock<[u8; 128]> = IrqSpinLock::new([0u8; 128]);
 pub static CRASH_RIP: AtomicU64 = AtomicU64::new(0);
 
-pub static RECOVERY_MANAGER: spin::Mutex<RecoveryManager> =
-    spin::Mutex::new(RecoveryManager::new());
+pub static RECOVERY_MANAGER: IrqSpinLock<RecoveryManager> =
+    IrqSpinLock::new(RecoveryManager::new());
 pub static NEED_BSR_ESCALATION: AtomicBool = AtomicBool::new(false);
 
 pub fn check_and_clear_bsr_escalation() -> bool {

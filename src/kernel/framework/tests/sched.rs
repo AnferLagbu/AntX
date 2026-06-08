@@ -256,6 +256,7 @@ fn thread_type_safety() -> TestResult {
     // ✅ 验证 Thread 可以直接传给 SchedulerEx (类型安全, 无需强转)
     let sched = SchedulerEx::new();
     let t = Box::into_raw(Box::new(Thread::new(10, 1)));
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         (*t).state
             .store(ThreadState::Ready as u32, Ordering::SeqCst);
@@ -264,6 +265,7 @@ fn thread_type_safety() -> TestResult {
     assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 1);
     let popped = sched.run_queues[ThreadPriority::Normal as usize].pop_front();
     assert!(popped.is_some());
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         if let Some(p) = popped {
             drop(Box::from_raw(p));

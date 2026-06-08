@@ -268,3 +268,63 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 ## 变更历史
 
 - 2026-06-07: 初始版本
+
+## Backlog: 过期 TODO 跟踪
+
+> 由 `tools/track_todo.py` 自动维护. 每条 `TRACK-XXX` 唯一对应一处未完成项.
+> 修复后删除对应行, 并清掉源码中 `TODO(TRACK-XXX)` 标记.
+
+- [TRACK-CCB422] `src/kernel/framework/dma_buf.rs:181` TODO
+- [TRACK-D64319] `src/kernel/framework/dma_buf.rs:206` TODO
+- [TRACK-315B7C] `src/kernel/services/proc/signal.rs:424` TODO
+- [TRACK-5B3EBC] `src/kernel/services/mm/mmap.rs:46` TODO
+- [TRACK-2CED20] `src/kernel/framework/idt/mod.rs:247` TODO
+- [TRACK-F38D98] `src/kernel/framework/idt/idt.rs:557` TODO
+- [TRACK-57C7C9] `src/kernel/framework/idt/idt.rs:740` TODO
+- [TRACK-B2082D] `src/kernel/framework/idt/idt.rs:826` TODO
+- [TRACK-8F40F4] `src/kernel/framework/idt/idt.rs:837` TODO
+- [TRACK-D0E338] `src/kernel/framework/idt/handlers.rs:340` TODO
+- [TRACK-2B4902] `src/kernel/framework/idt/handlers.rs:389` TODO
+- [TRACK-A99EBB] `src/kernel/framework/dma/engine.rs:365` TODO
+- [TRACK-82FEA0] `src/kernel/framework/mm/vmm_aarch64.rs:384` TODO
+- [TRACK-A589E3] `src/kernel/framework/mm/vmm_aarch64.rs:386` TODO
+- [TRACK-A7DE25] `src/kernel/framework/mm/pcache.rs:137` TODO
+- [TRACK-8C5FFB] `src/kernel/framework/ipc/scheduler_integration.rs:89` TODO
+- [TRACK-48CC21] `src/kernel/framework/ipc/signal.rs:63` TODO
+- [TRACK-614BD5] `src/kernel/framework/ipc/signal.rs:82` TODO
+- [TRACK-F806F4] `src/kernel/framework/ipc/signal.rs:99` TODO
+- [TRACK-3A9016] `src/kernel/framework/ipc/signal.rs:108` TODO
+- [TRACK-21BAF1] `src/kernel/framework/ipc/sem.rs:80` TODO
+- [TRACK-077F14] `src/kernel/framework/syscall/mmap.rs:158` TODO
+- [TRACK-90BFB0] `src/kernel/framework/syscall/types.rs:45` TODO
+- [TRACK-8B3C91] `src/kernel/framework/syscall/types.rs:59` TODO
+- [TRACK-6564B9] `src/kernel/framework/syscall/types.rs:62` TODO
+- [TRACK-0FF0F0] `src/kernel/framework/syscall/types.rs:85` TODO
+- [TRACK-B62489] `src/kernel/framework/syscall/types.rs:121` TODO
+- [TRACK-CFB870] `src/kernel/framework/syscall/types.rs:124` TODO
+- [TRACK-C3720B] `src/kernel/framework/syscall/types.rs:132` TODO
+- [TRACK-1475D8] `src/kernel/framework/syscall/types.rs:145` TODO
+- [TRACK-B29335] `src/kernel/framework/syscall/mod.rs:2569` TODO
+- [TRACK-9CD1ED] `src/kernel/framework/syscall/epoll.rs:251` TODO
+- [TRACK-2C209B] `src/kernel/framework/syscall/epoll.rs:277` TODO
+- [TRACK-81D068] `src/kernel/framework/syscall/epoll.rs:306` TODO
+- [TRACK-FA10A1] `src/kernel/framework/syscall/clone.rs:166` TODO
+- [TRACK-4D8B74] `src/kernel/framework/timer/mod.rs:163` TODO
+- [TRACK-CDB9E5] `src/kernel/framework/timer/sleep.rs:201` TODO
+- [TRACK-2F4B39] `src/kernel/framework/proc/api.rs:976` TODO
+- [TRACK-558BA7] `src/kernel/framework/driver/usb/mod.rs:36` TODO
+- [TRACK-AE516E] `src/kernel/framework/driver/usb/mod.rs:37` TODO
+- [TRACK-832FCE] `src/kernel/framework/driver/usb/mod.rs:38` TODO
+- [TRACK-688EA7] `src/kernel/framework/driver/usb/xhci.rs:544` TODO
+- [TRACK-2E0EB0] `src/kernel/framework/driver/usb/xhci.rs:553` TODO
+- [TRACK-1F75C1] `src/kernel/framework/driver/usb/xhci.rs:558` TODO
+- [TRACK-599EDA] `src/kernel/framework/driver/display/dp.rs:218` TODO
+- [TRACK-B61830] `src/kernel/framework/driver/display/dp.rs:229` TODO
+- [TRACK-9B691E] `src/kernel/framework/driver/display/dp.rs:252` TODO
+- [TRACK-0350FE] `src/kernel/framework/driver/display/dp.rs:308` TODO
+- [TRACK-3C1169] `src/kernel/framework/driver/display/dp.rs:319` TODO
+- [TRACK-CD5DA5] `src/kernel/framework/driver/display/hdmi.rs:437` TODO
+- [TRACK-7CCB60] `src/kernel/framework/driver/display/hdmi.rs:451` TODO
+- [TRACK-1BDEF6] `src/kernel/framework/driver/display/hdmi.rs:498` TODO
+- [TRACK-162CB0] `src/kernel/framework/driver/virtio/blk.rs:205` TODO
+- [TRACK-26731B] `src/kernel/framework/arch/x86_64/smp_init.rs:189` TODO

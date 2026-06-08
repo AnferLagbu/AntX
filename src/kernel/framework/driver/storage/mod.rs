@@ -27,8 +27,7 @@ pub use ahci::{AhciController, AhciPort, AtaCommand, H2dFis};
 pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 
 use alloc::vec::Vec;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::framework::{self, Driver};
 use crate::klog_info;
 #[cfg(target_arch = "x86_64")]
@@ -181,6 +180,7 @@ pub fn storage_init() -> framework::Result<()> {
 
     // Step 3: 传统 ATA 检测 (回退)
     // ATA 驱动使用内部全局单例, 通过 C FFI 接口初始化
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         crate::kernel::framework::driver::storage::ata::ata_init();
     }

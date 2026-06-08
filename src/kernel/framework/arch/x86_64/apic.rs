@@ -59,6 +59,7 @@ static APIC_TIMER_HZ: AtomicU64 = AtomicU64::new(0);
 
 fn rdmsr(msr: u32) -> u64 {
     let (high, low): (u32, u32);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("rdmsr", out("eax") low, out("edx") high, in("ecx") msr, options(nomem, nostack));
     }
@@ -66,6 +67,7 @@ fn rdmsr(msr: u32) -> u64 {
 }
 
 fn wrmsr(msr: u32, value: u64) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("wrmsr", in("ecx") msr, in("eax") value as u32, in("edx") (value >> 32) as u32, options(nomem, nostack));
     }
@@ -73,11 +75,13 @@ fn wrmsr(msr: u32, value: u64) {
 
 pub fn apic_read(reg: u32) -> u32 {
     let base = APIC_BASE.load(Ordering::Acquire);
+    // SAFETY: `const` 由调用方保证为有效指针; 只读访问
     unsafe { core::ptr::read_volatile((base + reg as u64) as *const u32) }
 }
 
 pub fn apic_write(reg: u32, value: u32) {
     let base = APIC_BASE.load(Ordering::Acquire);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::ptr::write_volatile((base + reg as u64) as *mut u32, value);
     }
@@ -205,6 +209,7 @@ pub fn calibrate_timer(_pit_hz: u64, target_ms: u64) -> u64 {
     extern "C" {
         fn timer_sleep_busy(ms: u64);
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         timer_sleep_busy(target_ms);
     }

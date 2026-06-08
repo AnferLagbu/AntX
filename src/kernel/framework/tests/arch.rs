@@ -13,6 +13,7 @@ use crate::kernel::framework::arch::x86_64::tss::{TaskStateSegment, DEFAULT_IOMA
 #[cfg(target_arch = "x86_64")]
 fn gdt_entry_null() -> TestResult {
     let null_desc = GdtEntry::null();
+    // SAFETY: `const` 由调用方保证为有效指针; 只读访问
     let bytes = unsafe { core::ptr::read_volatile(&null_desc as *const _ as *const u64) };
     check!(bytes == 0, "Null descriptor should be all zeros");
     TestResult::Pass

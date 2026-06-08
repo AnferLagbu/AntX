@@ -23,6 +23,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 pub type DomainId = u64;
 
 pub const DOMAIN_ID_HVFS: DomainId = 2;
@@ -43,8 +45,11 @@ pub(crate) struct RegisteredDomain {
     id: DomainId,
     name: String,
     deps: &'static [DomainId],
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     save_fn: unsafe fn(),
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     restore_fn: unsafe fn(),
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     reset_fn: unsafe fn(),
 }
 
@@ -70,7 +75,7 @@ impl RecoveryRegistry {
     }
 }
 
-static RECOVERY_REGISTRY: spin::Mutex<RecoveryRegistry> = spin::Mutex::new(RecoveryRegistry::new());
+static RECOVERY_REGISTRY: IrqSpinLock<RecoveryRegistry> = IrqSpinLock::new(RecoveryRegistry::new());
 
 pub fn recovery_registry_init() {
     let mut reg = RECOVERY_REGISTRY.lock();
@@ -85,8 +90,11 @@ pub fn recovery_domain_register(
     name: &'static str,
     prefer_id: DomainId,
     deps: &'static [DomainId],
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     save_fn: unsafe fn(),
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     restore_fn: unsafe fn(),
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     reset_fn: unsafe fn(),
 ) -> DomainId {
     let mut reg = RECOVERY_REGISTRY.lock();
@@ -219,6 +227,7 @@ pub fn hard_reset_domain(domain_id: DomainId) {
 
 pub(crate) mod raw {
     /// 调用恢复注册项的 save 回调
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub fn invoke_save(f: unsafe fn()) {
         // SAFETY: f 由域所有者注册, 契约由 framework::barrier::recovery 维护。
         unsafe { f() };

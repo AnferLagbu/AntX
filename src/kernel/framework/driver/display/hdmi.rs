@@ -434,7 +434,7 @@ impl HdmiController {
 
     /// 检测热插拔
     pub fn detect_hot_plug(&mut self) -> bool {
-        // TODO: 读取HPD引脚状态
+        // TODO(TRACK-CD5DA5): 读取HPD引脚状态
         // 这里简化实现，假设已连接
         self.connected = true;
         self.connected
@@ -448,7 +448,7 @@ impl HdmiController {
 
         let mut edid_data = [0u8; EDID_MAX_LENGTH];
 
-        // TODO: 通过I2C/DDC读取EDID
+        // TODO(TRACK-7CCB60): 通过I2C/DDC读取EDID
         // 这里使用模拟数据
         edid_data[0..8].copy_from_slice(&EDID_HEADER);
 
@@ -495,7 +495,7 @@ impl HdmiController {
             return Err(DriverError::DeviceNotFound);
         }
 
-        // TODO: 配置HDMI控制器寄存器
+        // TODO(TRACK-1BDEF6): 配置HDMI控制器寄存器
         // 1. 设置像素时钟
         // 2. 配置时序参数
         // 3. 设置同步信号极性

@@ -30,26 +30,32 @@ use super::statistics::*;
 use super::types::*;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 // 内联硬件操作函数 (避免跨模块导入问题)
 /// 从端口读字节
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
 
 /// 向端口写字节
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_outb(port: u16, value: u8) {
     crate::arch!(outb(port, value));
 }
 
 /// I/O 等待
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn io_wait() {
     port_outb(0x80, 0);
 }
 
 /// 重映射 8259A PIC: IRQ0-7→vec32-39, IRQ8-15→vec40-47
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn remap_pic() {
     let m = port_inb(0x21);
     let s = port_inb(0xA1);
@@ -76,6 +82,7 @@ unsafe fn remap_pic() {
 
 /// 禁用中断
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn cli() {
     let _ = crate::arch!(interrupt_disable());
 }
@@ -153,12 +160,12 @@ pub struct IdtManager {
 }
 
 // 全局单例实例
-static IDT_MANAGER_INSTANCE: spin::Once<IdtManager> = spin::Once::new();
+static IDT_MANAGER_INSTANCE: OnceLock<IdtManager> = OnceLock::new();
 
 impl IdtManager {
     /// 获取全局 IDT 管理器实例
     pub fn instance() -> &'static IdtManager {
-        IDT_MANAGER_INSTANCE.call_once(|| {
+        IDT_MANAGER_INSTANCE.get_or_init(|| {
             IdtManager {
                 state: IrqSpinLock::new(IdtState::default()),
                 stats: InterruptStatistics::new(),
@@ -187,6 +194,7 @@ impl IdtManager {
         syscall_handler: u64,
         isr0x82: u64,
     ) -> Result<(), &'static str> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             remap_pic();
         }
@@ -267,6 +275,7 @@ impl IdtManager {
 
         // 6. 加载 IDT 到 CPU
         #[cfg(target_arch = "x86_64")]
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             self.load_idt();
         }
@@ -401,6 +410,7 @@ impl IdtManager {
         };
         if !ioapic_handled {
             // Fallback to legacy PIC (8259A) for older systems
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 if irq < 8 {
                     let mask = port_inb(0x21) & !(1 << irq);
@@ -422,6 +432,7 @@ impl IdtManager {
             return;
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if irq < 8 {
                 let mask = port_inb(0x21) | (1 << irq);
@@ -439,6 +450,7 @@ impl IdtManager {
             return;
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let vector = (*frame).int_no as u8;
 
@@ -498,6 +510,7 @@ impl IdtManager {
                     fn scheduler_yield();
                 }
 
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     process_exit(*exit_code);
                     scheduler_yield();
@@ -510,6 +523,7 @@ impl IdtManager {
                     fn recovery_try_recover_from_idt() -> i32;
                 }
 
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     let result = recovery_try_recover_from_idt();
                     match result {
@@ -540,7 +554,7 @@ impl IdtManager {
         // 打印基本信息 (Phase 3 使用结构化日志)
         let _ = (vector, frame);
 
-        // TODO: 根据 vector 类型分发到专门的 handler
+        // TODO(TRACK-F38D98): 根据 vector 类型分发到专门的 handler
         match vector {
             0 => self.handle_division_by_zero(frame),
             13 => self.handle_gpf(frame),
@@ -563,6 +577,7 @@ impl IdtManager {
 
     /// Page Fault 处理 (集成 Demand Paging)
     fn handle_page_fault(&self, frame: &InterruptFrame) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let fault_addr = unsafe { frame.fault_address() };
         let error_flags = frame.error_code_flags();
         let error_code = frame.err_code;
@@ -638,6 +653,7 @@ impl IdtManager {
             extern "C" {
                 fn scheduler_yield();
             }
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 scheduler_yield();
             }
@@ -656,6 +672,7 @@ impl IdtManager {
             fn scheduler_yield();
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             process_exit(exit_code);
             scheduler_yield();
@@ -669,6 +686,7 @@ impl IdtManager {
             fn recovery_try_recover_from_idt() -> i32;
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let result = recovery_try_recover_from_idt();
             match result {
@@ -691,6 +709,7 @@ impl IdtManager {
     fn kernel_panic(&self, message: &str) {
         let _ = message;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             cli();
             halt_loop();
@@ -705,6 +724,7 @@ impl IdtManager {
         const MAX_FRAMES: usize = 10;
 
         while !rbp_ptr.is_null() && frame_count < MAX_FRAMES {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let rip_val = *rbp_ptr.offset(1);
                 if rip_val == 0 {
@@ -717,7 +737,7 @@ impl IdtManager {
                     "kernel"
                 };
 
-                // TODO: 使用 klog 替代 (Phase 3)
+                // TODO(TRACK-57C7C9): 使用 klog 替代 (Phase 3)
                 let _ = (frame_count, rip_val, mode, rbp_ptr);
 
                 rbp_ptr = *rbp_ptr as *const u64;
@@ -743,6 +763,7 @@ impl IdtManager {
             };
 
             if let Some(handler) = handler_opt {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     handler(frame);
                 }
@@ -784,6 +805,7 @@ impl IdtManager {
         };
         if !apic_handled {
             // Fallback to legacy PIC EOI for older systems
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 if irq >= 8 {
                     port_outb(0xA0, 0x20);
@@ -801,7 +823,7 @@ impl IdtManager {
         let nesting = self.nested_count.load(Ordering::Relaxed);
         let current_vec = self.current_vector.load(Ordering::Relaxed);
 
-        // TODO: 使用 klog 输出 (Phase 3)
+        // TODO(TRACK-B2082D): 使用 klog 输出 (Phase 3)
         let _ = (nesting, current_vec, &state.irq_descriptors);
     }
 
@@ -812,7 +834,7 @@ impl IdtManager {
 
     /// 打印统计信息
     pub fn print_statistics(&self) {
-        // TODO: 格式化输出统计 (Phase 3)
+        // TODO(TRACK-8F40F4): 格式化输出统计 (Phase 3)
         let _ = &self.stats;
     }
 }

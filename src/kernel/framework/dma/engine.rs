@@ -8,8 +8,7 @@ use super::*;
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 pub struct DmaEngine {
     initialized: AtomicBool,
     mappings: Mutex<Vec<DmaMapping>>,
@@ -96,6 +95,7 @@ impl DmaEngine {
         let virt = VirtAddr(phys.0 + KERNEL_BASE);
 
         // Zero the memory
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             ptr::write_bytes(virt.0 as *mut u8, 0, (pages * PAGE_SIZE) as usize);
         }
@@ -362,7 +362,7 @@ impl DmaEngine {
             // For now, use memory fence as x86_64 is mostly coherent
             core::sync::atomic::fence(Ordering::SeqCst);
             
-            // TODO: Use CLFLUSHOPT for better performance on newer CPUs
+            // TODO(TRACK-A99EBB): Use CLFLUSHOPT for better performance on newer CPUs
             // if cpu_has_clflushopt() {
             //     flush_cache_clflushopt(addr, size);
             // }
@@ -373,6 +373,7 @@ impl DmaEngine {
             // aarch64: Use cache maintenance instructions
             // DCCMVAC - Clean data cache to point of coherency
             // This ensures CPU writes are visible to DMA devices
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let start = addr.0 as usize;
                 let end = start + size;
@@ -419,6 +420,7 @@ impl DmaEngine {
         {
             // aarch64: Use DC IVAC instruction
             // This invalidates cache lines so CPU will read fresh data from memory
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let start = addr.0 as usize;
                 let end = start + size;
@@ -468,6 +470,7 @@ impl DmaEngine {
 static mut GLOBAL_DMA: DmaEngine = DmaEngine::new();
 
 pub fn get_dma() -> &'static DmaEngine {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { &GLOBAL_DMA }
 }
 
@@ -481,6 +484,7 @@ pub unsafe fn get_dma_mut() -> &'static mut DmaEngine {
 
 // Accessor used by FFI layer
 pub(crate) fn dma() -> &'static DmaEngine {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { &GLOBAL_DMA }
 }
 
@@ -538,6 +542,7 @@ pub fn submit_transfer(
             .is_ok()
     })?;
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let src_virt = ioremap(src.0, size)?;
         let dst_virt = ioremap(dst.0, size)?;
@@ -570,6 +575,7 @@ pub fn submit_transfer_async(
     Some(id)
 }
 
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn ioremap(phys: u64, size: usize) -> Option<u64> {
     dma().ioremap(PhysAddr(phys), size).map(|v| v.0)
 }

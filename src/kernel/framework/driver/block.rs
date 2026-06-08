@@ -18,8 +18,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ── BlockDevice Trait ──
 
 pub trait BlockDevice: Send + Sync {
@@ -100,7 +99,8 @@ pub fn safe_unregister(idx: usize) -> Option<Box<dyn BlockDevice>> {
             return None;
         }
         match reg[idx].take() {
-            Some(m) => m.into_inner(),
+            // SAFETY: 设备注册表按槽位互斥访问, 取出时槽位已置 None, 无并发持有。
+            Some(m) => unsafe { m.into_inner() },
             None => return None,
         }
     };
@@ -228,6 +228,7 @@ pub fn block_device_list() -> Vec<(usize, &'static str, u64)> {
         .enumerate()
         .map(|(i, d)| {
             let sectors = match d.block_ops() {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 Some(ops) => unsafe { (ops.total_sectors)(d.driver_data) },
                 None => 0,
             };

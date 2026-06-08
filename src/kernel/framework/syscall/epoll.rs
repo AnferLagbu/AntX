@@ -29,8 +29,7 @@
 #![allow(dead_code)]
 
 use alloc::vec::Vec;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
@@ -191,6 +190,7 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
             };
 
             let ev = if !event.is_null() {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe { core::ptr::read(event) }
             } else {
                 return Errno::EFAULT.as_ret();
@@ -238,7 +238,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
     }
 
     let epfd_id = epfd as u64;
-    let mut instances = EPOLL_INSTANCES.lock();
+    let instances = EPOLL_INSTANCES.lock();
 
     // 查找 epoll 实例
     let idx = match instances.iter().position(|i| i.id == epfd_id) {
@@ -248,7 +248,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
 
     // 扫描 interest_list, 检查哪些 fd 就绪
     // 当前简化实现: 轮询所有注册的 fd
-    // TODO: 集成 VFS poll 机制, 由驱动回调唤醒
+    // TODO(TRACK-9CD1ED): 集成 VFS poll 机制, 由驱动回调唤醒
     let mut ready_events = Vec::new();
 
     for item in &instances[idx].interest_list {
@@ -274,7 +274,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
     // 如果没有就绪事件且 timeout != 0
     if ready_events.is_empty() && timeout != 0 {
         // 简化: 非阻塞返回
-        // TODO: 阻塞等待, 使用 WaitQueue
+        // TODO(TRACK-2C209B): 阻塞等待, 使用 WaitQueue
         if timeout > 0 {
             // 等待 timeout 毫秒
             // 当前简化: 直接返回 0 (无事件)
@@ -303,7 +303,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
 /// 简化实现: 总是返回 EPOLLIN (可读).
 /// 真实实现需要调用 VFS poll 操作.
 fn check_fd_ready(_fd: i32, events: u32) -> u32 {
-    // TODO: 集成 VFS poll
+    // TODO(TRACK-81D068): 集成 VFS poll
     // 当前: 假设 pipe/socket 可读
     let mut revents = 0u32;
     if events & EPOLLIN != 0 {

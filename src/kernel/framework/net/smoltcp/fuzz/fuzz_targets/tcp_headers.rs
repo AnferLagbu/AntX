@@ -143,7 +143,9 @@ fuzz_target!(|data: &[u8]| {
         // when stack overflows.
         static mut TCP_SERVER_RX_DATA: [u8; 1024] = [0; 1024];
         static mut TCP_SERVER_TX_DATA: [u8; 1024] = [0; 1024];
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let tcp_rx_buffer = tcp::SocketBuffer::new(unsafe { &mut TCP_SERVER_RX_DATA[..] });
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let tcp_tx_buffer = tcp::SocketBuffer::new(unsafe { &mut TCP_SERVER_TX_DATA[..] });
         tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer)
     };
@@ -151,7 +153,9 @@ fuzz_target!(|data: &[u8]| {
     let client_socket = {
         static mut TCP_CLIENT_RX_DATA: [u8; 1024] = [0; 1024];
         static mut TCP_CLIENT_TX_DATA: [u8; 1024] = [0; 1024];
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let tcp_rx_buffer = tcp::SocketBuffer::new(unsafe { &mut TCP_CLIENT_RX_DATA[..] });
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let tcp_tx_buffer = tcp::SocketBuffer::new(unsafe { &mut TCP_CLIENT_TX_DATA[..] });
         tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer)
     };

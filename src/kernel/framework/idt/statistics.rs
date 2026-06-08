@@ -15,6 +15,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use super::types::*;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 /// 中断事件记录 (用于历史追踪)
 #[derive(Debug, Clone, Copy)]
 pub struct InterruptEvent {
@@ -139,6 +141,7 @@ impl DetailedStatistics {
         self.record_history(vector, frame.rip, is_user);
 
         // 更新时间戳
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let _ = crate::arch!(timestamp());
         }
@@ -192,6 +195,7 @@ impl DetailedStatistics {
     fn record_history(&self, vector: u8, rip: u64, is_user: bool) {
         let mut history = self.history.lock();
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let event = InterruptEvent {
                 timestamp: crate::arch!(timestamp()),
@@ -408,11 +412,11 @@ impl<T: Copy> Iterator for VecIntoIter<T> {
 }
 
 /// 全局统计实例 (使用 lazy 初始化避免 const fn 限制)
-static DETAILED_STATS: spin::Once<DetailedStatistics> = spin::Once::new();
+static DETAILED_STATS: OnceLock<DetailedStatistics> = OnceLock::new();
 
 /// 获取全局详细统计实例
 pub fn get_detailed_statistics() -> &'static DetailedStatistics {
-    DETAILED_STATS.call_once(|| {
+    DETAILED_STATS.get_or_init(|| {
         // 手动创建 InterruptHistory
         let history = InterruptHistory {
             events: [const {

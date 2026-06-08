@@ -24,6 +24,10 @@ use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_inter
 use core::cell::{Cell, UnsafeCell};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 const MAX_EARLY_ALLOCS: usize = 256;
 
 /// Maximum buddy order: 2^9 × 4 KB = 2 MB
@@ -576,6 +580,7 @@ impl PhysicalMemoryManager {
         let heads = self.buddy_heads_ptr();
         let node = pfn_to_virt(pfn) as *mut FreeNode;
         // Defensive: validate node is within physical RAM range
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let node_phys = unsafe { (node as u64).wrapping_sub(KERNEL_BASE) };
         let mem_size = self.mem_size.get();
         #[allow(clippy::absurd_extreme_comparisons)]
@@ -874,6 +879,7 @@ impl PhysicalMemoryManager {
 
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let a = (*self.early_allocs.get()).as_mut_ptr().add(idx);
                 (*a).addr = aligned;
@@ -895,6 +901,7 @@ impl PhysicalMemoryManager {
 
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let a = (*self.early_allocs.get()).as_mut_ptr().add(idx);
                 (*a).addr = aligned;
@@ -911,10 +918,10 @@ impl PhysicalMemoryManager {
 
 // ==================== Global singleton & init ====================
 
-static GLOBAL_PMM: spin::Once<PhysicalMemoryManager> = spin::Once::new();
+static GLOBAL_PMM: OnceLock<PhysicalMemoryManager> = OnceLock::new();
 
 pub fn pmm_init(mem_size: u64, kernel_end: u64) -> &'static PhysicalMemoryManager {
-    GLOBAL_PMM.call_once(|| {
+    GLOBAL_PMM.get_or_init(|| {
         let pmm = PhysicalMemoryManager::new();
         pmm.init(mem_size, kernel_end);
         pmm
@@ -942,7 +949,7 @@ struct PmmSnapshot {
     info: super::MemoryInfo,
 }
 
-static PMM_SNAPSHOT: spin::Mutex<Option<PmmSnapshot>> = spin::Mutex::new(None);
+static PMM_SNAPSHOT: IrqSpinLock<Option<PmmSnapshot>> = IrqSpinLock::new(None);
 
 pub fn pmm_barrier_capture() {
     let pmm = get_pmm();

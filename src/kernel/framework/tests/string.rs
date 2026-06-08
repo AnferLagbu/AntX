@@ -6,6 +6,7 @@ use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult}
 use crate::register_tests_inner;
 
 fn strlen_basic() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         assert_eq_test!(strlen(c"Hello".as_ptr() as *const i8), 5, "strlen Hello");
         assert_eq_test!(strlen(c"".as_ptr() as *const i8), 0, "strlen empty");
@@ -15,6 +16,7 @@ fn strlen_basic() -> TestResult {
 }
 
 fn strcmp_operations() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         assert_eq_test!(strcmp(c"test".as_ptr() as *const i8, c"test".as_ptr() as *const i8), 0, "equal");
         check!(strcmp(c"abc".as_ptr() as *const i8, c"abd".as_ptr() as *const i8) < 0, "less than");
@@ -24,6 +26,7 @@ fn strcmp_operations() -> TestResult {
 }
 
 fn strncmp_limit() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         assert_eq_test!(
             strncmp(c"abcdef".as_ptr() as *const i8, c"abcxyz".as_ptr() as *const i8, 3),
@@ -39,6 +42,7 @@ fn strncmp_limit() -> TestResult {
 }
 
 fn strcpy_and_strncpy() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let mut buffer = [0i8; 20];
         strcpy(buffer.as_mut_ptr(), c"Hello World".as_ptr() as *const i8);
@@ -53,6 +57,7 @@ fn strcpy_and_strncpy() -> TestResult {
 }
 
 fn strcat_basic() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let mut buffer = [0i8; 30];
         strcpy(buffer.as_mut_ptr(), c"Hello ".as_ptr() as *const i8);
@@ -63,6 +68,7 @@ fn strcat_basic() -> TestResult {
 }
 
 fn strchr_and_strrchr() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let s = b"Hello World\0";
         let result = strchr(s.as_ptr() as *const i8, 'o' as i32);
@@ -75,6 +81,7 @@ fn strchr_and_strrchr() -> TestResult {
 }
 
 fn strstr_basic() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let haystack = b"The quick brown fox jumps over the lazy dog\0";
         let result = strstr(haystack.as_ptr() as *const i8, c"brown fox".as_ptr() as *const i8);
@@ -88,6 +95,7 @@ fn strstr_basic() -> TestResult {
 }
 
 fn memcpy_and_memmove() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let mut dest = [0u8; 10];
         let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -113,6 +121,7 @@ fn memcpy_and_memmove() -> TestResult {
 }
 
 fn memset_operations() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let mut buffer = [0xABu8; 20];
         memset(buffer.as_mut_ptr(), 0x00, 20);
@@ -129,6 +138,7 @@ fn memset_operations() -> TestResult {
 }
 
 fn memcmp_basic() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let a = [1u8, 2, 3, 4, 5];
         let b = [1u8, 2, 3, 4, 5];
@@ -143,6 +153,7 @@ fn memcmp_basic() -> TestResult {
 }
 
 fn memchr_basic() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let data = [1, 2, 3, 4, 5, 3, 7, 8];
         let result = memchr(data.as_ptr(), 3, 8);
@@ -156,6 +167,7 @@ fn memchr_basic() -> TestResult {
 }
 
 fn secure_zero_basic() -> TestResult {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let mut secret = [0xDEu8, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
         secure_zero(secret.as_mut_ptr(), 6);

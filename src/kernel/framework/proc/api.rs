@@ -563,6 +563,7 @@ pub fn launch_first_user_process() -> ! {
     {
         let initramfs = include_bytes!("../../../../build/user/initramfs.cpio");
         if initramfs.len() > 0 {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             let result = unsafe {
                 crate::kernel::framework::fs::initramfs::unpack(
                     initramfs.as_ptr(),
@@ -888,6 +889,7 @@ pub fn proc_create_user(
     }
 
     let parent_pid = SCHEDULER.current().unwrap_or(0);
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let name_str = unsafe {
         // SAFETY: path is non-null C string from caller (C ABI contract).
         let cstr = core::ffi::CStr::from_ptr(path as *const core::ffi::c_char);
@@ -937,6 +939,7 @@ pub fn proc_create_user(
 
     if !argv.is_null() && argc > 0 {
         let envp: *const *const u8 = core::ptr::null();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             user_proc_setup_argv(child_pid, argv, argc, envp, 0);
         }
@@ -970,7 +973,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
 
     // 3. 从 PROCESS_TABLE 中移除旧 Process (但保留 PID 供新进程复用)
     //    注意: remove_and_free 会释放 Process 内存, 新 load_elf 会分配新 Process
-    //    TODO: 未来优化为原地替换地址空间, 不释放/重分配 Process 结构
+    //    TODO(TRACK-2F4B39): 未来优化为原地替换地址空间, 不释放/重分配 Process 结构
     PROCESS_TABLE.remove_and_free(current_pid);
 
     // 4. 加载新 ELF (使用 ASLR 随机化地址)
@@ -1348,7 +1351,7 @@ pub fn proc_setitimer_real(
         return -1;
     }
     let now = crate::kernel::framework::timer::get_ticks();
-    let mut result: i32 = 0;
+    let result: i32 = 0;
     PROCESS_TABLE.with_process(pid as Pid, |p| {
         // 旧值回填
         if !out_old_seconds.is_null() {

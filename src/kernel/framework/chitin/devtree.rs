@@ -28,8 +28,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::{chitin_register, ChitinProto, DeviceState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

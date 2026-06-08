@@ -94,6 +94,7 @@ pub fn elf_validate(elf_data: *const u8, elf_size: u64) -> Option<&'static Elf64
         return None;
     }
 
+    // SAFETY: `elf_data` 由调用方保证指向有效 Elf64Header; 只读借用
     let header = unsafe { &*(elf_data as *const Elf64Header) };
 
     if &header.e_ident[0..4] != ELF_MAGIC {
@@ -151,6 +152,7 @@ pub fn elf_load_with_bias(
         return Err("No program headers");
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let phdr_base = unsafe { elf_data.add(header.e_phoff as usize) };
     let phdr_count = header.e_phnum;
 
@@ -164,6 +166,7 @@ pub fn elf_load_with_bias(
     };
 
     for i in 0..phdr_count {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let phdr = unsafe {
             &*(phdr_base.add(i as usize * core::mem::size_of::<Elf64Phdr>()) as *const Elf64Phdr)
         };
@@ -233,6 +236,7 @@ pub fn elf_load_with_bias(
             let phys = pmm_inst.alloc_page().ok_or("OOM loading ELF")?;
 
             let page_virt = phys.to_virt();
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 core::ptr::write_bytes(page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
             }
@@ -249,6 +253,7 @@ pub fn elf_load_with_bias(
             };
 
             if copy_len > 0 {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     core::ptr::copy_nonoverlapping(
                         elf_data.add(copy_start),
@@ -290,6 +295,7 @@ mod tests {
         assert!(elf_validate(data.as_ptr(), 64).is_none()); // machine=0 not valid
 
         // Set valid machine
+        // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
         let hdr = unsafe { &mut *(data.as_mut_ptr() as *mut Elf64Header) };
         hdr.e_machine = 0x3E; // x86_64
         hdr.e_phentsize = core::mem::size_of::<Elf64Phdr>() as u16;

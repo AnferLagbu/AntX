@@ -77,7 +77,7 @@ pub fn sem_wait_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32>
     // sem.count 由另一个执行上下文（sem_post）修改，这是信号量同步原语
     #[allow(clippy::while_immutable_condition)]
     while sem.count <= 0 {
-        // TODO: 阻塞当前线程到 wait 队列
+        // TODO(TRACK-21BAF1): 阻塞当前线程到 wait 队列
         // 当前实现为忙等待 (spinlock 模式)
         core::hint::spin_loop();
     }

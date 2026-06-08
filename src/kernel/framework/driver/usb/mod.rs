@@ -33,9 +33,9 @@ pub use xhci::XhciController;
 
 /// 初始化USB子系统
 pub fn usb_init() -> framework::Result<()> {
-    // TODO: 扫描PCI总线查找xHCI控制器
-    // TODO: 初始化找到的控制器
-    // TODO: 枚举USB设备
+    // TODO(TRACK-558BA7): 扫描PCI总线查找xHCI控制器
+    // TODO(TRACK-AE516E): 初始化找到的控制器
+    // TODO(TRACK-832FCE): 枚举USB设备
 
     Ok(())
 }

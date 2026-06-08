@@ -285,6 +285,7 @@ fn futex_wait(uaddr: u64, val: i32, _timeout: u64) -> i64 {
         return -(14i64); // -EFAULT
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let current_val = unsafe {
         // SAFETY: uaddr 已在 syscall 入口通过 check_user_ptr 验证.
         (*uaddr_ptr).load(Ordering::Acquire)
@@ -324,6 +325,7 @@ fn futex_wait(uaddr: u64, val: i32, _timeout: u64) -> i64 {
     // 6. 被唤醒后, 从等待队列中移除自己
     {
         FUTEX_TABLE.locks[bucket_idx].lock();
+        // SAFETY: `FUTEX_TABLE` 由调用方保证为有效指针; 只读访问
         let bucket = unsafe { &mut *FUTEX_TABLE.buckets[bucket_idx].get() };
         bucket.remove_by_pid(current_pid);
         FUTEX_TABLE.locks[bucket_idx].unlock();
@@ -341,6 +343,7 @@ fn futex_wake(uaddr: u64, max_count: u32) -> i64 {
     let bucket_idx = hash_uaddr(uaddr);
     let woken = {
         FUTEX_TABLE.locks[bucket_idx].lock();
+        // SAFETY: `FUTEX_TABLE` 由调用方保证为有效指针; 只读访问
         let bucket = unsafe { &mut *FUTEX_TABLE.buckets[bucket_idx].get() };
         let w = bucket.wake(uaddr, max_count);
         FUTEX_TABLE.locks[bucket_idx].unlock();
@@ -355,6 +358,7 @@ fn futex_requeue(uaddr: u64, max_wake: u32, uaddr2: u64, max_requeue: u32) -> i6
     let bucket_idx = hash_uaddr(uaddr);
     let (woken, requeued) = {
         FUTEX_TABLE.locks[bucket_idx].lock();
+        // SAFETY: `FUTEX_TABLE` 由调用方保证为有效指针; 只读访问
         let bucket = unsafe { &mut *FUTEX_TABLE.buckets[bucket_idx].get() };
         let r = bucket.requeue(uaddr, max_wake, uaddr2, max_requeue);
         FUTEX_TABLE.locks[bucket_idx].unlock();

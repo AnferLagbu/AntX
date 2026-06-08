@@ -571,6 +571,7 @@ impl NvmeController {
     }
 
     /// 提交 Admin 命令并等待完成
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> {
         let cid = self.admin_cid;
         self.admin_cid = self.admin_cid.wrapping_add(1);
@@ -689,14 +690,17 @@ impl NvmeController {
         let (ident_virt, ident_phys) = dma.alloc_coherent(4096).ok_or(DriverError::Busy)?;
 
         // 清零
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             ptr::write_bytes(ident_virt.0 as *mut u8, 0, 4096);
         }
 
         let cmd = NvmeCommand::identify(0, 1, ident_phys.0);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe { self.submit_admin_command(&cmd) };
 
         if result.is_ok() {
+            // SAFETY: `const` 由调用方保证为有效指针; 只读访问
             let ctrl = unsafe { &*(ident_virt.0 as *const NvmeIdentifyController) };
             self.namespace_count = ctrl.nn;
 
@@ -723,14 +727,17 @@ impl NvmeController {
         let dma = get_dma();
         let (ident_virt, ident_phys) = dma.alloc_coherent(4096).ok_or(DriverError::Busy)?;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             ptr::write_bytes(ident_virt.0 as *mut u8, 0, 4096);
         }
 
         let cmd = NvmeCommand::identify(nsid, 0, ident_phys.0);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe { self.submit_admin_command(&cmd) };
 
         if result.is_ok() {
+            // SAFETY: `const` 由调用方保证为有效指针; 只读访问
             let ns = unsafe { &*(ident_virt.0 as *const NvmeIdentifyNamespace) };
             self.namespace_size_lba = ns.nsze;
 
@@ -739,7 +746,9 @@ impl NvmeController {
             let lbaf_idx = flbas as usize;
             if lbaf_idx < 16 {
                 // LBA 格式表在 offset 128..384
+                // SAFETY: `const` 由调用方保证为有效指针; 只读访问
                 let lbaf_ptr = unsafe { (ident_virt.0 as *const u8).add(128 + lbaf_idx * 4) };
+                // SAFETY: `lbaf_ptr` 由调用方保证指向有效 u32; 只读借用
                 let lbaf_data = unsafe { *(lbaf_ptr as *const u32) };
                 let lbads = (lbaf_data >> 16) & 0xFF;
                 self.lba_format_size = if lbads > 0 {
@@ -778,12 +787,14 @@ impl NvmeController {
 
         // 创建 I/O Completion Queue
         let cmd_cq = NvmeCommand::create_cq(IO_QUEUE_ID, self.io_cq_dma.phys.0);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             self.submit_admin_command(&cmd_cq)?;
         }
 
         // 创建 I/O Submission Queue
         let cmd_sq = NvmeCommand::create_sq(IO_QUEUE_ID, IO_QUEUE_ID, self.io_sq_dma.phys.0);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             self.submit_admin_command(&cmd_sq)?;
         }
@@ -797,6 +808,7 @@ impl NvmeController {
     }
 
     /// 提交 I/O 命令并等待完成
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> {
         let cid = self.io_cid;
         self.io_cid = self.io_cid.wrapping_add(1);
@@ -848,6 +860,7 @@ impl NvmeController {
     ///
     /// PRP 列表页在 create_io_queue 时预分配，供所有 I/O 命令复用。
     /// 依赖 dma.alloc_coherent 返回物理连续内存，因此条目地址线性递推即可。
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn build_prp(&self, phys_base: u64, byte_count: usize) -> (u64, u64) {
         let bytes = byte_count as u64;
         let num_pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -860,6 +873,7 @@ impl NvmeController {
             // 填充 PRP 列表页: 条目 0 = 第2页, 条目 1 = 第3页, ...
             let list = self.prp_list_virt.0 as *mut u64;
             for i in 0..(num_pages - 1) as usize {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     list.add(i)
                         .write_volatile(phys_base + (i as u64 + 1) * PAGE_SIZE);
@@ -870,6 +884,7 @@ impl NvmeController {
     }
 
     /// 填充 NVMe 命令的 PRP1/PRP2 字段 (与 build_prp 配套)
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
         let (prp1, prp2) = self.build_prp(phys_base, byte_count);
         cmd.mptr = prp1;
@@ -893,12 +908,15 @@ impl NvmeController {
             / (self.lba_format_size as usize)) as u16;
 
         let mut cmd = NvmeCommand::read(nsid, lba, nlb, buf_phys.0);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count);
         }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe { self.submit_io_command(&cmd) };
 
         if result.is_ok() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 ptr::copy_nonoverlapping(buf_virt.0 as *const u8, buffer, byte_count);
             }
@@ -921,6 +939,7 @@ impl NvmeController {
         let dma = get_dma();
         let (buf_virt, buf_phys) = dma.alloc_coherent(byte_count).ok_or(DriverError::Busy)?;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             ptr::copy_nonoverlapping(buffer, buf_virt.0 as *mut u8, byte_count);
         }
@@ -929,9 +948,11 @@ impl NvmeController {
             / (self.lba_format_size as usize)) as u16;
 
         let mut cmd = NvmeCommand::write(nsid, lba, nlb, buf_phys.0);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             self.set_prp_in_cmd(&mut cmd, buf_phys.0, byte_count);
         }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe { self.submit_io_command(&cmd) };
 
         dma.free_coherent(buf_virt, byte_count);

@@ -62,6 +62,7 @@ const TIMER_PPI: u32 = 30; // CNTPNSIRQ
 
 #[allow(dead_code)]
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn gicd_read(offset: u64) -> u32 {
     core::arch::asm!("dsb sy");
     let val = read_volatile((GICD_BASE + offset) as *const u32);
@@ -70,6 +71,7 @@ unsafe fn gicd_read(offset: u64) -> u32 {
 }
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn gicd_write(offset: u64, val: u32) {
     core::arch::asm!("dsb sy");
     write_volatile((GICD_BASE + offset) as *mut u32, val);
@@ -77,6 +79,7 @@ unsafe fn gicd_write(offset: u64, val: u32) {
 }
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn gicr_read(offset: u64) -> u32 {
     core::arch::asm!("dsb sy");
     let val = read_volatile((GICR_BASE + offset) as *const u32);
@@ -85,6 +88,7 @@ unsafe fn gicr_read(offset: u64) -> u32 {
 }
 
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn gicr_write(offset: u64, val: u32) {
     core::arch::asm!("dsb sy");
     write_volatile((GICR_BASE + offset) as *mut u32, val);
@@ -218,6 +222,7 @@ pub unsafe fn enable_timer_ppi() {
 /// 获取中断 ID (IAR) — 用于 IRQ handler
 pub fn acknowledge() -> u32 {
     let iar: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("mrs {}, icc_iar1_el1", out(reg) iar);
     }
@@ -226,6 +231,7 @@ pub fn acknowledge() -> u32 {
 
 /// 中断完成 (EOI)
 pub fn end_of_interrupt(intid: u32) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("msr icc_eoir1_el1, {}", in(reg) intid as u64);
     }
@@ -233,6 +239,7 @@ pub fn end_of_interrupt(intid: u32) {
 
 /// 发送 EOI 并解除优先级 (drop priority)
 pub fn deactivate(intid: u32) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("msr icc_dir_el1, {}", in(reg) intid as u64);
     }

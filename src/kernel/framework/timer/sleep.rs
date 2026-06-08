@@ -51,6 +51,7 @@ pub fn busy_wait_ns(ns: u64) {
     extern "C" {
         fn cpu_get_tsc_frequency() -> u64;
     }
+    // SAFETY: `cpu_get_tsc_frequency` 是有效的 C ABI 函数指针; 参数列表与声明一致
     let freq_hz = unsafe { cpu_get_tsc_frequency() };
 
     let target_cycles = if freq_hz > 0 {
@@ -178,6 +179,7 @@ pub fn timer_sleep(ms: u64) -> Result<(), i32> {
         return Ok(());
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         // 记录开始 tick
         let start_tick = get_ticks();
@@ -196,7 +198,7 @@ pub fn timer_sleep(ms: u64) -> Result<(), i32> {
             }
 
             // 尚未到期，让出 CPU
-            // TODO: 更好的做法是使用定时器等待队列
+            // TODO(TRACK-CDB9E5): 更好的做法是使用定时器等待队列
             scheduler_yield_ex();
 
             // 可选: 检查是否被信号唤醒
@@ -233,6 +235,7 @@ where
     if timeout_ms == 0 {
         // 无限等待
         while !condition() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 extern "C" {
                     fn scheduler_yield_ex();
@@ -257,6 +260,7 @@ where
             return Err(-1); // 超时
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             extern "C" {
                 fn scheduler_yield_ex();

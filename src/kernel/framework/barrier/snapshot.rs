@@ -4,6 +4,8 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 pub const MAX_DEVICE_SNAPSHOTS: usize = 16;
 pub const MAX_REGISTERS_PER_DEVICE: usize = 32;
 
@@ -276,8 +278,8 @@ impl<'a> Iterator for DeviceSnapshotIter<'a> {
     }
 }
 
-pub static DEVICE_SNAPSHOTS: spin::Mutex<DeviceSnapshotRegistry> =
-    spin::Mutex::new(DeviceSnapshotRegistry::new());
+pub static DEVICE_SNAPSHOTS: IrqSpinLock<DeviceSnapshotRegistry> =
+    IrqSpinLock::new(DeviceSnapshotRegistry::new());
 
 pub fn snapshot_register_device(
     device_id: u64,

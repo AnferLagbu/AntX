@@ -29,8 +29,7 @@ use super::framework::{inb, outb};
 use super::framework::{inw, outw};
 use super::framework::{DeviceInfo, DeviceType, DriverError, Result};
 use alloc::boxed::Box;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ============================================================================
 // ATA 硬件常量定义
 // ============================================================================
@@ -152,6 +151,7 @@ pub(crate) fn get_ctrl_base(drive: u8) -> u16 {
 
 /// ATA 延时函数 (读取状态寄存器 4 次)
 fn ata_delay(ctrl: u16) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         for _ in 0..4 {
             let _ = inb(ctrl);
@@ -168,6 +168,7 @@ fn wait_bsy(io: u16, ctrl: u16) -> Result<()> {
     let mut timeout = ATA_TIMEOUT;
 
     while timeout > 0 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let status = inb(io + ATA_STATUS);
             if status & ATA_STATUS_BSY == 0 {
@@ -186,6 +187,7 @@ fn wait_drq(io: u16, ctrl: u16) -> Result<()> {
     let mut timeout = ATA_TIMEOUT;
 
     while timeout > 0 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let status = inb(io + ATA_STATUS);
 
@@ -206,6 +208,7 @@ fn wait_drq(io: u16, ctrl: u16) -> Result<()> {
 
 /// 选择驱动器
 fn select_drive(io: u16, ctrl: u16, slave: bool) -> Result<()> {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         outb(io + ATA_DRIVE_HEAD, 0xA0 | ((slave as u8) << 4));
     }
@@ -223,6 +226,7 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
     }
 
     // 设置参数为 0 (用于 IDENTIFY)
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         outb(io + ATA_SECTOR_COUNT, 0);
         outb(io + ATA_SECTOR_NUM, 0);
@@ -235,6 +239,7 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
     ata_delay(ctrl);
 
     // 检查状态
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let status = inb(io + ATA_STATUS);
 
@@ -250,6 +255,7 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
     }
 
     // 检查错误
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let status = inb(io + ATA_STATUS);
         if status & ATA_STATUS_ERR != 0 {
@@ -264,6 +270,7 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
 
     // 读取 IDENTIFY 数据 (丢弃)
     for _ in 0..WORDS_PER_SECTOR {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let _ = inw(io + ATA_DATA);
         }
@@ -299,6 +306,7 @@ impl Driver for AtaController {
         }
 
         // === 检测 Primary 通道 ===
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // Software Reset
             outb(ATA_PRIMARY_CTRL, 0x04);
@@ -334,6 +342,7 @@ impl Driver for AtaController {
         }
 
         // === 检测 Secondary 通道 ===
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             outb(ATA_SECONDARY_CTRL, 0x04);
             ata_delay(ATA_SECONDARY_CTRL);
@@ -442,6 +451,7 @@ impl AtaController {
 
         select_drive(io, ctrl, slave)?;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 设置 LBA 地址
             outb(io + ATA_SECTOR_COUNT, 1); // 1 个扇区
@@ -463,6 +473,7 @@ impl AtaController {
         wait_drq(io, ctrl)?;
 
         // 读取数据 (512 字节 = 256 个 16-bit 字)
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             for i in 0..WORDS_PER_SECTOR {
                 let word = inw(io + ATA_DATA);
@@ -492,6 +503,7 @@ impl AtaController {
 
         select_drive(io, ctrl, slave)?;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 设置 LBA 地址
             outb(io + ATA_SECTOR_COUNT, 1);
@@ -513,6 +525,7 @@ impl AtaController {
         wait_drq(io, ctrl)?;
 
         // 写入数据
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             for i in 0..WORDS_PER_SECTOR {
                 let word = ((buffer[i * 2 + 1] as u16) << 8) | (buffer[i * 2] as u16);
@@ -521,6 +534,7 @@ impl AtaController {
         }
 
         // 刷新缓存
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             outb(io + ATA_COMMAND, ATA_CMD_FLUSH_CACHE);
             ata_delay(ctrl);
@@ -643,6 +657,7 @@ pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
             let mut buf = [0u8; 512];
             match controller.read_sector(drive, lba, &mut buf) {
                 Ok(()) => {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512);
                     }
@@ -666,6 +681,7 @@ pub extern "C" fn ata_write_sector(drive: u8, lba: u32, buffer: *const u8) -> i3
     match &*ATA_DEVICE.lock() {
         Some(controller) => {
             let mut buf = [0u8; 512];
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 core::ptr::copy_nonoverlapping(buffer, buf.as_mut_ptr(), 512);
             }

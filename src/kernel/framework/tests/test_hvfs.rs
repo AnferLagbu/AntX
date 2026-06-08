@@ -233,6 +233,7 @@ fn test_arc_insert_lookup() -> TestResult {
         Some(p) => p,
         None => return TestResult::Fail("should find inserted entry"),
     };
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let found = unsafe { core::slice::from_raw_parts(ptr, 16) };
     check!(found[0] == 0xAA, "data mismatch");
     TestResult::Pass

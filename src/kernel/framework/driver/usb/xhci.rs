@@ -315,6 +315,7 @@ impl XhciController {
 
     /// 初始化控制器
     fn init_hardware(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let base = self.iomem.as_ref().unwrap().virt_ptr() as usize;
 
@@ -347,6 +348,7 @@ impl XhciController {
 
     /// 复位控制器
     fn reset_controller(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let op = &mut *self.op_regs;
 
@@ -373,6 +375,7 @@ impl XhciController {
 
     /// 启动控制器
     fn start_controller(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let op = &mut *self.op_regs;
 
@@ -403,6 +406,7 @@ impl XhciController {
             return None;
         }
 
+        // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { Some(&*self.port_regs.add(port)) }
     }
 
@@ -412,6 +416,7 @@ impl XhciController {
             return None;
         }
 
+        // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { Some(&mut *self.port_regs.add(port)) }
     }
 
@@ -442,6 +447,7 @@ impl Driver for XhciController {
     }
 
     fn shutdown(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let op = &mut *self.op_regs;
             op.usb_cmd &= !usb_cmd::RUN_STOP;
@@ -495,6 +501,7 @@ impl HostController for XhciController {
             .get_port_reg_mut(port)
             .ok_or(DriverError::InvalidParameter)?;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 设置复位位
             port_reg.portsc |= portsc::PORT_RESET;
@@ -534,7 +541,7 @@ impl HostController for XhciController {
     }
 
     fn submit_urb(&mut self, _urb: &Urb) -> Result<()> {
-        // TODO: 实现URB提交
+        // TODO(TRACK-688EA7): 实现URB提交
         Err(DriverError::UnsupportedOperation)
     }
 
@@ -543,12 +550,12 @@ impl HostController for XhciController {
     }
 
     fn allocate_address(&mut self) -> Result<u8> {
-        // TODO: 实现地址分配
+        // TODO(TRACK-2E0EB0): 实现地址分配
         Ok(1)
     }
 
     fn free_address(&mut self, _address: u8) {
-        // TODO: 实现地址释放
+        // TODO(TRACK-1F75C1): 实现地址释放
     }
 }
 

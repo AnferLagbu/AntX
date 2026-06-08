@@ -24,7 +24,6 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use spin::Mutex;
 
 use crate::kernel::framework::fs::ramfs::ramfs::RamFsData;
 
@@ -146,17 +145,17 @@ impl FileDescriptor {
 
 /// RamFS 安全代理 (services 层)。
 ///
-/// 内部用 `spin::Mutex<RamFsData>` 串行化所有访问,
+/// 内部用 `IrqSpinLock<RamFsData>` 串行化所有访问,
 /// 提供 100% safe 的公共 API。
 pub struct SafeRamFs {
-    inner: Mutex<RamFsData>,
+    inner: crate::kernel::framework::sync::irq_spinlock::IrqSpinLock<RamFsData>,
 }
 
 impl SafeRamFs {
     /// 创建未挂载的 SafeRamFs
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(RamFsData::new()),
+            inner: crate::kernel::framework::sync::irq_spinlock::IrqSpinLock::new(RamFsData::new()),
         }
     }
 

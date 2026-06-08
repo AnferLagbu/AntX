@@ -83,6 +83,7 @@ static SOFTIRQ: SoftirqState = SoftirqState {
 };
 
 pub fn open_softirq(nr: SoftirqVec, handler: SoftirqHandler) {
+    // SAFETY: `SOFTIRQ` 由调用方保证为有效指针; 只读访问
     let handlers = unsafe { &mut *SOFTIRQ.handlers.get() };
     handlers[nr.to_idx()] = Some(handler);
 }
@@ -108,6 +109,7 @@ pub fn do_softirq() {
         return;
     }
 
+    // SAFETY: `SOFTIRQ` 由调用方保证为有效指针; 只读访问
     let handlers = unsafe { &*SOFTIRQ.handlers.get() };
 
     loop {

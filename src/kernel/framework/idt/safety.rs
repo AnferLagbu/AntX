@@ -80,6 +80,7 @@ pub unsafe fn enable_interrupts() {
 #[cfg(target_arch = "x86_64")]
 pub fn read_rflags() -> u64 {
     let rflags: u64;
+    // SAFETY: 内联汇编的寄存器约束与变量类型一致; 无内存副作用; 输出 reg 通过 out(reg) 绑定
     unsafe { core::arch::asm!("pushfq; pop {}", out(reg) rflags, options(nomem, nostack)) };
     rflags
 }
@@ -132,6 +133,7 @@ pub fn rdtsc() -> u64 {
 #[cfg(target_arch = "x86_64")]
 pub fn rdtsc_fence() -> u64 {
     let tsc: u64;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!(
             "lfence",
@@ -166,6 +168,7 @@ pub unsafe fn outb(port: u16, value: u8) {
 /// I/O 延时 (用于 PIC 初始化序列)
 #[inline(always)]
 pub fn io_wait() {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         outb(0x80, 0);
     }
@@ -186,6 +189,7 @@ pub unsafe fn halt() {
 #[inline(never)]
 pub fn halt_loop() -> ! {
     loop {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             halt();
         }
@@ -199,6 +203,7 @@ pub fn halt_loop() -> ! {
 #[cfg(target_arch = "x86_64")]
 pub fn save_frame_pointer() -> u64 {
     let rbp: u64;
+    // SAFETY: 内联汇编的寄存器约束与变量类型一致; 无内存副作用; 输出 reg 通过 out(reg) 绑定
     unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp, options(nomem, nostack)) };
     rbp
 }

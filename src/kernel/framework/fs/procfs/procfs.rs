@@ -1,6 +1,5 @@
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::mm::api as pmm_api;
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;

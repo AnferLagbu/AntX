@@ -13,6 +13,7 @@ const PSCI_VERSION: u32 = 0x84000000;
 /// x0 = function_id
 /// 返回: x0 = return value
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn smc(func: u32) -> i64 {
     let ret: i64;
     core::arch::asm!(
@@ -26,6 +27,7 @@ unsafe fn smc(func: u32) -> i64 {
 
 /// 检查 PSCI 版本。返回 (major, minor) 或 None。
 fn psci_version() -> Option<(u32, u32)> {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let ver = unsafe { smc(PSCI_VERSION) } as u64;
     if ver == u32::MAX as u64 {
         // PSCI not available
@@ -40,12 +42,14 @@ pub fn system_off() -> ! {
     // 尝试 PSCI
     match psci_version() {
         Some((_major, _minor)) => {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe { smc(PSCI_SYSTEM_OFF) };
         }
         None => {}
     }
 
     // PSCI 不可用时，触发异常 (通过写入零地址)
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("mov x0, #0; str x0, [x0]", options(nostack));
     }
@@ -56,12 +60,14 @@ pub fn system_off() -> ! {
 pub fn system_reset() -> ! {
     match psci_version() {
         Some((_major, _minor)) => {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe { smc(PSCI_SYSTEM_RESET) };
         }
         None => {}
     }
 
     // PSCI 不可用时，fallback
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("mov x0, #0; str x0, [x0]", options(nostack));
     }

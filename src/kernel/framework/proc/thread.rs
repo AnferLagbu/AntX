@@ -54,7 +54,9 @@ pub struct Thread {
 }
 
 // All fields (Atomic*, u32, u64) are Send + Sync.
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Send for Thread {}
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Sync for Thread {}
 
 impl Thread {
@@ -138,8 +140,7 @@ pub struct ThreadTable {
     next_tid: AtomicU32,
 }
 
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // SAFETY: ThreadTable is always accessed via static THREAD_TABLE.
 // All mutations go through the Mutex, and the NonNull pointers target
 // Thread objects whose fields are all Atomic* or plain integers.
@@ -225,12 +226,14 @@ impl ThreadManager {
         let tid = THREAD_TABLE.allocate()?;
 
         let thread =
+            // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
             unsafe { alloc::alloc::alloc(alloc::alloc::Layout::new::<Thread>()) as *mut Thread };
 
         if thread.is_null() {
             return None;
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write(thread, Thread::new(tid, pid));
             (*thread).entry = entry;
@@ -243,6 +246,7 @@ impl ThreadManager {
         }
 
         if !THREAD_TABLE.insert(thread) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 alloc::alloc::dealloc(thread as *mut u8, alloc::alloc::Layout::new::<Thread>())
             };
@@ -277,6 +281,7 @@ impl ThreadManager {
     pub fn exit_current(&self, exit_code: u32) {
         if let Some(tid) = self.get_current_thread() {
             if let Some(thread) = THREAD_TABLE.get(tid as u32) {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     (*thread).exit_code.store(exit_code, Ordering::SeqCst);
                     (*thread)

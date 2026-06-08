@@ -8,6 +8,10 @@
 //! at boot, then read-only). `MULTIBOOT_INFO_PTR` uses `spin::Mutex` since it
 //! is set before init and read during init.
 
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 pub mod multiboot2_fb;
@@ -95,10 +99,10 @@ struct MultibootPtr(#[allow(dead_code)] *const u8);
 unsafe impl Send for MultibootPtr {}
 unsafe impl Sync for MultibootPtr {}
 
-static BOOT_INFO: spin::Once<BootInfo> = spin::Once::new();
-static MULTIBOOT_INFO_PTR: spin::Mutex<MultibootPtr> =
-    spin::Mutex::new(MultibootPtr(core::ptr::null()));
-static MULTIBOOT_MAGIC: spin::Mutex<u32> = spin::Mutex::new(0);
+static BOOT_INFO: OnceLock<BootInfo> = OnceLock::new();
+static MULTIBOOT_INFO_PTR: IrqSpinLock<MultibootPtr> =
+    IrqSpinLock::new(MultibootPtr(core::ptr::null()));
+static MULTIBOOT_MAGIC: IrqSpinLock<u32> = IrqSpinLock::new(0);
 
 extern "C" {
     static _kernel_end: u8;
@@ -113,16 +117,19 @@ pub fn get_boot_info() -> &'static BootInfo {
 #[no_mangle]
 pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'J', options(nostack));
     }
     *MULTIBOOT_MAGIC.lock() = magic;
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'K', options(nostack));
     }
     *MULTIBOOT_INFO_PTR.lock() = MultibootPtr(ptr);
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'L', options(nostack));
     }
@@ -130,6 +137,7 @@ pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
 
 #[cfg(target_arch = "x86_64")]
 fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
+    // SAFETY: `ptr` 由调用方保证指向有效 Multiboot1Info; 只读借用
     let mbi = unsafe { &*(ptr as *const Multiboot1Info) };
     let mut mem_size: u64 = 128 * 1024 * 1024;
     let mut mmap_entries: usize = 0;
@@ -145,12 +153,14 @@ fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
 
         let mut current = mmap_start;
         while current < mmap_end {
+            // SAFETY: `current` 由调用方保证为有效指针; 只读访问
             let entry = unsafe { &*current };
             let end = entry.base_addr() + entry.length();
             if end > max_addr && entry.is_available() {
                 max_addr = end;
             }
             mmap_entries += 1;
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             current = unsafe {
                 (current as *const u8).add(entry.size as usize + 4) as *const MemoryMapEntry
             };
@@ -166,6 +176,7 @@ fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
 
 #[cfg(target_arch = "x86_64")]
 fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
+    // SAFETY: `ptr` 由调用方保证指向有效 u32; 只读借用
     let total_size = unsafe { *(ptr as *const u32) };
     let mut mem_size: u64 = 128 * 1024 * 1024;
     let mut mmap_entries: usize = 0;
@@ -174,8 +185,11 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
     let end = total_size as usize;
 
     while offset + 8 <= end {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let tag_ptr = unsafe { ptr.add(offset) };
+        // SAFETY: `tag_ptr` 由调用方保证指向有效 u32; 只读借用
         let tag_type = unsafe { *(tag_ptr as *const u32) };
+        // SAFETY: 指针由调用方保证有效, 偏移 1 不越界
         let tag_size = unsafe { *((tag_ptr as *const u32).add(1)) };
 
         if tag_type == 0 || tag_size == 0 {
@@ -184,30 +198,41 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
 
         match tag_type {
             4 => {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 let basic_ptr = unsafe { tag_ptr.add(8) };
+                // SAFETY: `basic_ptr` 由调用方保证指向有效 u32; 只读借用
                 let _mem_lower = unsafe { *(basic_ptr as *const u32) };
+                // SAFETY: 指针由调用方保证有效, 偏移 1 不越界
                 let mem_upper = unsafe { *((basic_ptr as *const u32).add(1)) };
                 mem_size = (mem_upper as u64 + 1024) * 1024;
             }
             6 => {
+                // SAFETY: `const` 由调用方保证为有效指针; 只读访问
                 let entry_size = unsafe { *(tag_ptr.add(8) as *const u32) };
+                // SAFETY: `const` 由调用方保证为有效指针; 只读访问
                 let _entry_version = unsafe { *((tag_ptr.add(8) as *const u32).add(1)) };
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 let entries_start = unsafe { tag_ptr.add(16) };
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 let entries_end = unsafe { tag_ptr.add(tag_size as usize) };
                 let mut max_addr: u64 = 0;
 
                 let mut pos = entries_start;
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 while unsafe { pos.add(entry_size as usize) <= entries_end } {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     let base = unsafe {
                         let lo = *(pos as *const u32);
                         let hi = *((pos as *const u32).add(1));
                         ((hi as u64) << 32) | (lo as u64)
                     };
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     let len = unsafe {
                         let lo = *((pos as *const u32).add(2));
                         let hi = *((pos as *const u32).add(3));
                         ((hi as u64) << 32) | (lo as u64)
                     };
+                    // SAFETY: 指针由调用方保证有效, 偏移 4 不越界
                     let mtype = unsafe { *((pos as *const u32).add(4)) };
 
                     if mtype == 1 {
@@ -217,6 +242,7 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
                         }
                     }
                     mmap_entries += 1;
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     pos = unsafe { pos.add(entry_size as usize) };
                 }
 
@@ -225,6 +251,7 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
                 }
             }
             8 => {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 multiboot2_fb::parse_framebuffer_tag(unsafe { tag_ptr.add(8) }, tag_size);
             }
             _ => {}
@@ -238,6 +265,7 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
 }
 
 pub fn init() -> BootInfo {
+    // SAFETY: `const` 由调用方保证为有效指针; 只读访问
     let kernel_end = unsafe { &_kernel_end as *const u8 as u64 };
 
     #[cfg(target_arch = "x86_64")]
@@ -283,7 +311,7 @@ pub fn init() -> BootInfo {
         mmap_entries,
     };
 
-    BOOT_INFO.call_once(|| info);
+    BOOT_INFO.get_or_init(|| info);
 
     info
 }

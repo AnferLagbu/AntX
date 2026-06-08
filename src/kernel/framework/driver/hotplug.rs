@@ -21,8 +21,7 @@
 use crate::kernel::framework::pci::hotplug::PcieHotplugSlot;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ── 事件类型 ──
 
 /// 总线类型

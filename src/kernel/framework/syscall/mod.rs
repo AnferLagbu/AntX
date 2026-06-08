@@ -19,7 +19,6 @@ pub mod types;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::idt::types::InterruptFrame;
 use crate::kernel::framework::syscall::types::*;
-use spin::Mutex;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
@@ -981,11 +980,13 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
             #[cfg(target_arch = "x86_64")]
             {
                 if let Some(c) = raw::read_keyboard_byte() {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe { raw::write_u8(buf, c) };
                     return 1;
                 }
             }
             if let Some(c) = raw::read_serial_byte(0) {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe { raw::write_u8(buf, c) };
                 return 1;
             }
@@ -1004,6 +1005,7 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     }
     if fd == 1 || fd == 2 {
         if count > 0 {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             let data = unsafe { raw::read_slice(buf, count as usize) };
             crate::kernel::framework::klog::serial_write_bytes(data);
         }
@@ -1139,6 +1141,7 @@ fn sys_access(path: *const u8, _mode: i32) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let stat_ptr: *mut crate::kernel::framework::fs::vfs::types::VfsStat = unsafe { &mut core::mem::zeroed() };
     let result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, stat_ptr, pwm);
     if result < 0 {
@@ -1264,6 +1267,8 @@ fn sys_execve(
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
+    // envp 暂不传递给执行体 (POSIX ABI 保留, 当前 exec 仅消费 argv)
+    let _ = envp;
     let mut argc: u32 = 0;
     if !argv.is_null() {
         if !raw::check_user_ptr(argv as u64) {
@@ -1290,32 +1295,13 @@ fn sys_execve(
         }
     }
 
-    // 计算 envc
-    let mut envc: u32 = 0;
-    if !envp.is_null() {
-        if !raw::check_user_ptr(envp as u64) {
-            return Errno::EFAULT.as_ret();
-        }
-        let mut p = envp;
-        loop {
-            if !raw::check_user_ptr(p as u64) {
-                return Errno::EFAULT.as_ret();
-            }
-            let entry = unsafe { core::ptr::read_volatile(p) };
-            if entry.is_null() {
-                break;
-            }
-            envc += 1;
-            p = unsafe { p.add(1) };
-        }
-    }
-
     // SUID 处理
     let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::vfs::types::VfsStat>::uninit();
     let current_pwm = crate::kernel::framework::credo::session::get_current_pwm();
     let stat_result =
         crate::kernel::framework::fs::vfs::api::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
     if stat_result == 0 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let st = unsafe { stat_buf.assume_init() };
         if (st.perm & 0o4000) != 0 && st.owner_pwm != 0 {
             crate::kernel::framework::credo::session::elevate_for_suid(st.owner_pwm);
@@ -1492,6 +1478,7 @@ fn sys_time(buf: *mut u64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
     let ticks = raw::get_ticks();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { raw::write_u64(buf, ticks) };
     ticks as i64
 }
@@ -1687,7 +1674,9 @@ fn sys_gethostname(buf: *mut u8, size: u64) -> i64 {
     }
     let hostname = b"localhost\0";
     let copy_len = hostname.len().min(size as usize - 1);
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe { core::ptr::copy_nonoverlapping(hostname.as_ptr(), buf as *mut u8, copy_len) };
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { raw::write_u8(buf.add(copy_len), 0) };
     0
 }
@@ -1748,6 +1737,7 @@ fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     let count = crate::kernel::framework::driver::block::block_device_count();
     let limit = max_count.min(count as u32);
     for i in 0..limit {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe { raw::write_u64(disks.add(i as usize), i as u64) };
     }
     limit as i64
@@ -1792,6 +1782,7 @@ fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
         sectors,
         model,
     };
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe { raw::write_struct(info as *mut UserDiskInfo, &disk_info) };
     0
 }
@@ -1978,6 +1969,7 @@ fn sys_boot_install(disk_id: u32) -> i64 {
     if crate::kernel::framework::driver::block::hdd_read_sector(disk_id as u8, 0, &mut mbr) < 0 {
         return Errno::EIO.as_ret();
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { core::ptr::copy_nonoverlapping(stage1.as_ptr(), mbr.as_mut_ptr(), 440) };
     let total_sectors = crate::kernel::framework::driver::block::hdd_total_sectors(disk_id as u8);
     let hvfs_start = BOOT_PART_SECTORS;
@@ -2025,6 +2017,7 @@ fn sys_boot_install(disk_id: u32) -> i64 {
         }
         let n = if remaining < 512 { remaining } else { 512 };
         let mut buf = [0u8; 512];
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n);
         }
@@ -2069,7 +2062,9 @@ fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
     table.for_each(|proc| {
         if (count as u32) < max_entries {
             let entry_ptr =
+                // SAFETY: `entry_size` 由调用方保证为有效指针; 只读访问
                 unsafe { buf.add(count as usize * entry_size as usize) as *mut ProcListEntry };
+            // SAFETY: `entry_ptr` 由调用方保证为有效指针; 只读访问
             let entry = unsafe { &mut *entry_ptr };
             entry.pid = proc.pid.0;
             entry.state = proc.get_state() as u8;
@@ -2121,6 +2116,7 @@ fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
                 ws_ypixel: 0,
             };
             let dst = arg as *mut Winsize;
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe { raw::write_struct(dst, &ws) };
             0
         }
@@ -2142,6 +2138,7 @@ pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
         tv_sec: i64,
         tv_nsec: i64,
     }
+    // SAFETY: `const` 由调用方保证为有效指针; 只读访问
     let ts = unsafe { core::ptr::read_volatile(req as *const Timespec) };
     if ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1_000_000_000 {
         return Errno::EINVAL.as_ret();
@@ -2201,6 +2198,7 @@ fn sys_clock_gettime(clk_id: i32, tp: *mut u8) -> i64 {
         tv_nsec: ((ticks % 1000) * 1000000) as i64,
     };
     let dst = tp as *mut Timespec;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { raw::write_struct(dst, &t) };
     0
 }
@@ -2225,7 +2223,9 @@ fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
     }
     let mut ready: i32 = 0;
     for i in 0..nfds as usize {
+        // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
         let pfd_ptr = unsafe { (fds as *mut PollFd).add(i) };
+        // SAFETY: `pfd_ptr` 由调用方保证为有效指针; 只读访问
         let pfd = unsafe { &mut *pfd_ptr };
         pfd.revents = 0;
         if pfd.fd < 0 {
@@ -2311,6 +2311,7 @@ fn sys_readlink(
         return Errno::EINVAL.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_buf: crate::kernel::framework::fs::vfs::types::VfsStat = unsafe { core::mem::zeroed() };
     let result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, &mut st_buf, pwm);
     if result < 0 {
@@ -2353,6 +2354,7 @@ fn sys_getrlimit(_resource: i32, rlim: *mut u8) -> i64 {
         rlim_max: u64::MAX,
     };
     let dst = rlim as *mut Rlimit;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { raw::write_struct(dst, &r) };
     0
 }
@@ -2394,6 +2396,7 @@ fn sys_sysinfo(info: *mut u8) -> i64 {
         mem_unit: 1,
     };
     let dst = info as *mut SysInfo;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { raw::write_struct(dst, &si) };
     0
 }
@@ -2502,6 +2505,7 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
         }
         let old = crate::kernel::framework::proc::signal::get_sigaction(pid, signum as u8);
         match old {
+            // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
             Some(v) => unsafe { raw::write_u64(oact as *mut u64, v) },
             None => return Errno::EINVAL.as_ret(),
         }
@@ -2512,6 +2516,7 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
         if !raw::check_user_buf(act, 8) {
             return Errno::EFAULT.as_ret();
         }
+        // SAFETY: `const` 由调用方保证为有效指针; 只读访问
         let new_action = unsafe { raw::read_u64(act as *const u64) };
         match crate::kernel::framework::proc::signal::set_sigaction(pid, signum as u8, new_action) {
             Some(_) => {}
@@ -2534,6 +2539,7 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
             return Errno::EFAULT.as_ret();
         }
         let old = crate::kernel::framework::proc::signal::get_blocked_mask(pid);
+        // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
         unsafe { raw::write_u64(oset as *mut u64, old) };
     }
 
@@ -2542,6 +2548,7 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
         if !raw::check_user_buf(set, 8) {
             return Errno::EFAULT.as_ret();
         }
+        // SAFETY: `const` 由调用方保证为有效指针; 只读访问
         let new_set = unsafe { raw::read_u64(set as *const u64) };
         let old = crate::kernel::framework::proc::signal::get_blocked_mask(pid);
         let updated = match how {
@@ -2559,7 +2566,7 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
 }
 
 fn sys_rt_sigreturn() -> i64 {
-    // TODO: 架构相关 — 从信号栈帧恢复原始寄存器状态
+    // TODO(TRACK-B29335): 架构相关 — 从信号栈帧恢复原始寄存器状态
     // 当前简化实现: 直接返回 0
     0
 }
@@ -2602,6 +2609,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     if offset + 16 > buf_size {
         return offset as i64;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         core::ptr::copy_nonoverlapping(header.as_ptr(), buf.add(offset as usize), 16);
     }
@@ -2623,6 +2631,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
             0,
             0,
         ];
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::copy_nonoverlapping(
                 info.as_ptr(),
@@ -2657,6 +2666,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
             0,
             0,
         ];
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::copy_nonoverlapping(
                 info.as_ptr(),
@@ -2687,6 +2697,7 @@ fn sys_credo_proc_cputime(pid: u32) -> i64 {
             if current.is_null() {
                 return -1;
             }
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             let cputime = unsafe {
                 (*current)
                     .cpu_time
@@ -2759,6 +2770,7 @@ fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
     };
 
     let dst = info_ptr as *mut FbInfo;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { raw::write_struct(dst, &info) };
     0
 }

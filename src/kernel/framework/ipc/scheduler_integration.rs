@@ -86,7 +86,7 @@ pub fn block_with_timeout(wait_queue: &mut WaitQueue, timeout_ms: u64) -> Result
         return block_current_thread(wait_queue, 0);
     }
 
-    // TODO: 实现基于定时器的超时等待
+    // TODO(TRACK-8C5FFB): 实现基于定时器的超时等待
     // 当前简化实现: 忙等待 + 定期检查
     let start_time = rdtsc();
     let timeout_ticks = ms_to_ticks(timeout_ms);

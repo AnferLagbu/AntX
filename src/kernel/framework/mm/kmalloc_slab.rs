@@ -44,6 +44,7 @@ pub fn slab_init() {
         
         match KmemCache::create(name, CACHE_SIZES[i]) {
             Ok(cache) => {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe { SLAB_CACHES[i] = Some(cache); }
                 success_count += 1;
             }
@@ -54,6 +55,7 @@ pub fn slab_init() {
                     name,
                     CACHE_SIZES[i]
                 );
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe { SLAB_CACHES[i] = None; }
             }
         }
@@ -102,6 +104,7 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
 
     if let Some(idx) = cache_index(size) {
         slab_lock();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe {
             match &mut SLAB_CACHES[idx] {
                 Some(cache) => cache.allocate(),
@@ -130,6 +133,7 @@ pub fn slab_kfree(ptr: *mut u8, size: usize) {
 
     if let Some(idx) = cache_index(size) {
         slab_lock();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             match &mut SLAB_CACHES[idx] {
                 Some(cache) => cache.deallocate(ptr),

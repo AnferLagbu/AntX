@@ -219,6 +219,7 @@ impl KmemCache {
         let new_slab = self.new_slab()?;
 
         // 将新 Slab 加入 free 链表 (单独的 unsafe 块)
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             (*new_slab).next = self.slabs_free;
             if !self.slabs_free.is_null() {
@@ -277,6 +278,7 @@ impl KmemCache {
             return; // 对象不属于此缓存
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let header = &*slab;
 
@@ -316,6 +318,7 @@ impl KmemCache {
         // 释放 full 链表中的所有 Slab
         let mut slab = self.slabs_full;
         while !slab.is_null() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let next = (*slab).next;
                 self.destroy_slab(slab);
@@ -326,6 +329,7 @@ impl KmemCache {
         // 释放 partial 链表中的所有 Slab
         slab = self.slabs_partial;
         while !slab.is_null() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let next = (*slab).next;
                 self.destroy_slab(slab);
@@ -336,6 +340,7 @@ impl KmemCache {
         // 释放 free 链表中的所有 Slab
         slab = self.slabs_free;
         while !slab.is_null() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let next = (*slab).next;
                 self.destroy_slab(slab);
@@ -355,6 +360,7 @@ impl KmemCache {
         let mut total_objects = 0u32;
         let mut active_objects = 0u32;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 遍历 full 链表
             let mut slab = self.slabs_full;
@@ -529,6 +535,7 @@ impl KmemCache {
 
         let mut slab = self.slabs_partial;
         while !slab.is_null() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let header = &*slab;
                 let start = header.start_addr as usize;
@@ -542,6 +549,7 @@ impl KmemCache {
 
         slab = self.slabs_full;
         while !slab.is_null() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let header = &*slab;
                 let start = header.start_addr as usize;
@@ -555,6 +563,7 @@ impl KmemCache {
 
         slab = self.slabs_free;
         while !slab.is_null() {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let header = &*slab;
                 let start = header.start_addr as usize;
@@ -580,6 +589,7 @@ impl KmemCache {
             return;
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if *head == slab {
                 // 移除的是头节点
@@ -613,6 +623,7 @@ impl KmemCache {
             return;
         }
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             (*slab).next = *head;
             (*slab).prev = core::ptr::null_mut();
@@ -691,6 +702,7 @@ static mut SLAB_INITIALIZED: bool = false;
 pub extern "C" fn slab_system_init() -> i32 {
     klog_slab!("[SLAB] Initializing Slab allocator...");
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         for (i, &cache_size) in GENERAL_CACHE_SIZES.iter().enumerate() {
             if let Ok(cache) = KmemCache::create("", cache_size) {
@@ -730,11 +742,13 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
         return core::ptr::null_mut();
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     if !unsafe { SLAB_INITIALIZED } {
         return core::ptr::null_mut();
     }
 
     match find_general_cache_index(size) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         Some(idx) => unsafe {
             if let Some(ref mut cache) = GENERAL_CACHES[idx] {
                 match cache.allocate() {
@@ -754,10 +768,12 @@ pub extern "C" fn slab_free(ptr: *mut u8) {
     if ptr.is_null() {
         return;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     if !unsafe { SLAB_INITIALIZED } {
         return;
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         for i in 0..GENERAL_CACHE_SIZES.len() {
             if let Some(ref mut cache) = GENERAL_CACHES[i] {
@@ -782,6 +798,7 @@ pub extern "C" fn slab_get_system_stats(
         return;
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let mut total = 0u64;
         let mut used = 0u64;
@@ -806,6 +823,7 @@ pub extern "C" fn slab_get_system_stats(
 pub extern "C" fn slab_dump_all_caches() {
     klog_slab!("[SLAB] === Slab Allocator Status ===");
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         for i in 0..GENERAL_CACHE_SIZES.len() {
             if let Some(ref cache) = GENERAL_CACHES[i] {

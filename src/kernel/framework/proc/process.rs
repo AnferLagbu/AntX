@@ -3,8 +3,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::scheduler::SchedPolicy;
 use super::types::*;
 use crate::kernel::framework::chitin::user_driver::chitin_process_cleanup;
@@ -84,6 +83,7 @@ pub fn kernel_stack_check_canary(stack_top: u64) -> bool {
     if stack_top < 8 {
         return true;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let canary_ptr = (stack_top - 8) as *const u64;
         if (canary_ptr as u64) < 0x1000 {
@@ -98,6 +98,7 @@ pub fn kernel_stack_write_canary(stack_top: u64) {
     if stack_top <= 8 {
         return;
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let canary_ptr = (stack_top - 8) as *mut u64;
         if (canary_ptr as u64) < 0x1000 {
@@ -264,6 +265,7 @@ impl Process {
 
     pub fn allocate_kernel_stack(&self) -> bool {
         const KERNEL_BASE: u64 = 0xFFFF800000000000;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let stack = pmm_alloc_pages((KERNEL_STACK_SIZE / 4096) as u64);
             if stack.is_null() {
@@ -279,6 +281,7 @@ impl Process {
     }
 
     pub fn allocate_user_space(&self) -> bool {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let cr3 = vmm_create_user_page_table();
             if cr3 == 0 {
@@ -424,6 +427,7 @@ impl Drop for Process {
     fn drop(&mut self) {
         let cr3 = self.cr3.load(Ordering::SeqCst);
         if cr3 != 0 {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 vmm_destroy_page_table(cr3);
             }

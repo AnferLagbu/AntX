@@ -1,6 +1,10 @@
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+
+use crate::kernel::framework::sync::once_lock::OnceLock;
 #[cfg(feature = "kernel_test")]
 pub mod arch;
 #[cfg(feature = "kernel_test")]
@@ -84,7 +88,7 @@ impl TestRegistry {
 }
 
 pub struct TestRunner {
-    registry: spin::Mutex<TestRegistry>,
+    registry: IrqSpinLock<TestRegistry>,
     pub passed: AtomicU32,
     pub failed: AtomicU32,
     pub skipped: AtomicU32,
@@ -93,7 +97,7 @@ pub struct TestRunner {
 impl TestRunner {
     pub const fn new() -> Self {
         Self {
-            registry: spin::Mutex::new(TestRegistry::new()),
+            registry: IrqSpinLock::new(TestRegistry::new()),
             passed: AtomicU32::new(0),
             failed: AtomicU32::new(0),
             skipped: AtomicU32::new(0),
@@ -184,6 +188,7 @@ impl TestRunner {
         serial_print(s);
         #[cfg(target_arch = "aarch64")]
         for &b in s {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 crate::kernel::framework::arch::aarch64::uart::putc(b);
             }
@@ -196,6 +201,7 @@ impl TestRunner {
         #[cfg(target_arch = "aarch64")]
         {
             if n == 0 {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     crate::kernel::framework::arch::aarch64::uart::putc(b'0');
                 }
@@ -210,6 +216,7 @@ impl TestRunner {
                 val /= 10;
             }
             for i in (0..pos).rev() {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     crate::kernel::framework::arch::aarch64::uart::putc(buf[i]);
                 }
@@ -220,12 +227,14 @@ impl TestRunner {
 
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
 
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_outb(port: u16, value: u8) {
     crate::arch!(outb(port, value));
 }
@@ -234,6 +243,7 @@ unsafe fn port_outb(port: u16, value: u8) {
 pub fn serial_print(s: &[u8]) {
     const COM1: u16 = 0x3F8;
     for &b in s {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             while (port_inb(COM1 + 5) & 0x20) == 0 {
                 core::hint::spin_loop();
@@ -241,6 +251,7 @@ pub fn serial_print(s: &[u8]) {
             port_outb(COM1, b);
         }
         if b == b'\n' {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 port_outb(COM1, b'\r');
             }
@@ -262,6 +273,7 @@ pub fn serial_print_num(mut n: u64) {
         n /= 10;
     }
     for i in (0..pos).rev() {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             const COM1: u16 = 0x3F8;
             while (port_inb(COM1 + 5) & 0x20) == 0 {
@@ -272,10 +284,10 @@ pub fn serial_print_num(mut n: u64) {
     }
 }
 
-static TEST_RUNNER: spin::Once<TestRunner> = spin::Once::new();
+static TEST_RUNNER: OnceLock<TestRunner> = OnceLock::new();
 
 pub fn runner() -> &'static TestRunner {
-    TEST_RUNNER.call_once(TestRunner::new)
+    TEST_RUNNER.get_or_init(TestRunner::new)
 }
 
 #[macro_export]
@@ -395,6 +407,7 @@ pub fn qemu_exit(success: bool) -> ! {
     #[cfg(target_arch = "x86_64")]
     {
         let exit_code = if success { 0x10 } else { 0x11 };
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             use core::arch::asm;
             asm!(

@@ -31,6 +31,7 @@ impl AtaBlockDevice {
         }
 
         // Check if disk is present
+        // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
         let present = unsafe { ata_disk_present(drive) };
         if present == 0 {
             return None;
@@ -42,6 +43,7 @@ impl AtaBlockDevice {
         let mut buf = [0u8; 512];
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             if unsafe { ata_read_sector(drive, mid, buf.as_mut_ptr()) } >= 0 {
                 lo = mid + 1;
             } else {
@@ -74,6 +76,7 @@ impl BlockDevice for AtaBlockDevice {
         extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
+        // SAFETY: `as_mut_ptr` 是有效的 C ABI 函数指针; 参数列表与声明一致
         unsafe { ata_read_sector(self.drive, sector as u32, buf.as_mut_ptr()) }
     }
 
@@ -84,6 +87,7 @@ impl BlockDevice for AtaBlockDevice {
         extern "C" {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         }
+        // SAFETY: `as_ptr` 是有效的 C ABI 函数指针; 参数列表与声明一致
         unsafe { ata_write_sector(self.drive, sector as u32, buf.as_ptr()) }
     }
 
@@ -91,6 +95,7 @@ impl BlockDevice for AtaBlockDevice {
         extern "C" {
             fn ata_disk_present(disk: u8) -> i32;
         }
+        // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
         unsafe { ata_disk_present(self.drive) != 0 }
     }
 

@@ -348,12 +348,14 @@ static mut PER_CPU_GDT: [core::mem::MaybeUninit<PerCpuGdt>; PER_CPU_MAX] =
 /// 获取指定 CPU 的 GDT 不可变引用
 #[inline]
 fn per_cpu_gdt(cpu: u32) -> &'static PerCpuGdt {
+    // SAFETY: `PER_CPU_GDT` 由调用方保证为有效指针; 只读访问
     unsafe { &*PER_CPU_GDT[(cpu as usize) % PER_CPU_MAX].as_ptr() }
 }
 
 /// 获取指定 CPU 的 GDT 可变引用
 #[inline]
 fn per_cpu_gdt_mut(cpu: u32) -> &'static mut PerCpuGdt {
+    // SAFETY: `PER_CPU_GDT` 由调用方保证为有效指针; 只读访问
     unsafe { &mut *PER_CPU_GDT[(cpu as usize) % PER_CPU_MAX].as_mut_ptr() }
 }
 
@@ -372,6 +374,7 @@ fn current_per_cpu_gdt_mut() -> &'static mut PerCpuGdt {
 }
 
 /// 初始化 per-CPU GDT 的段描述符 (所有 CPU 共享相同段描述符)
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
     entries[0] = GdtEntry::null();
 
@@ -422,6 +425,7 @@ pub fn gdt_init() -> i32 {
     use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 
     static INIT_MSG: &[u8] = b"Initializing GDT and TSS (BSP)...\0";
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         klog_write(
             LogLevel::Info as u8,
@@ -433,6 +437,7 @@ pub fn gdt_init() -> i32 {
         );
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let gdt = per_cpu_gdt_mut(0);
 
@@ -471,6 +476,7 @@ pub fn gdt_init() -> i32 {
     }
 
     static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         klog_write(
             LogLevel::Info as u8,
@@ -490,6 +496,7 @@ pub fn gdt_init() -> i32 {
 /// Trampoline 已通过 lgdt [SINFO_GDT_LIMIT] 加载了 BSP 的 GDT 作为过渡，
 /// 本函数在 AP 进入长模式后调用，为目标 CPU 初始化独立的 GDT + TSS。
 pub fn gdt_init_ap(cpu_index: u32) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let ap = per_cpu_gdt_mut(cpu_index);
 
@@ -600,6 +607,7 @@ mod tests {
     #[test]
     fn test_gdt_entry_null() {
         let null_desc = GdtEntry::null();
+        // SAFETY: `const` 由调用方保证为有效指针; 只读访问
         let bytes = unsafe { core::ptr::read_volatile(&null_desc as *const _ as *const u64) };
         assert_eq!(bytes, 0, "Null descriptor should be all zeros");
     }

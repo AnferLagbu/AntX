@@ -1,11 +1,11 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 extern "C" {
     fn klog_ffi_info(msg: *const u8);
 }
 
 fn log(s: &str) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         klog_ffi_info(s.as_ptr());
     }

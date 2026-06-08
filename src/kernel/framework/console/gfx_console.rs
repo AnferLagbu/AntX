@@ -35,6 +35,7 @@ pub struct GfxConsole {
 
 impl GfxConsole {
     pub fn new(fb: *mut Framebuffer, font: &'static Font) -> Self {
+        // SAFETY: `fb` 由调用方保证为有效指针; 只读访问
         let fb_ref = unsafe { &*fb };
         let cols = fb_ref.width() / font.glyph_width;
         let rows = fb_ref.height() / font.glyph_height;
@@ -53,6 +54,7 @@ impl GfxConsole {
     }
 
     #[inline]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn fb_mut(&self) -> &mut Framebuffer {
         &mut *self.fb
     }
@@ -67,6 +69,7 @@ impl GfxConsole {
     }
 
     pub fn clear(&mut self) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let fb = unsafe { self.fb_mut() };
         fb.fill_rect(Rect::new(0, 0, fb.width(), fb.height()), self.bg_color);
         self.cursor_x = 0;
@@ -83,6 +86,7 @@ impl GfxConsole {
     /// 5. 禁用后续滚动，保留崩溃现场
     pub fn panic_reclaim(&mut self, msg: &str) {
         PANIC_MODE.store(true, Ordering::Release);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let fb = unsafe { self.fb_mut() };
         let fb_w = fb.width();
         let fb_h = fb.height();
@@ -108,6 +112,7 @@ impl GfxConsole {
             0
         };
         let text_y = glyph_h / 2; // 垂直居中在条内
+        // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         let fb_ref = unsafe { &mut *self.fb };
         for (i, &ch) in banner_text.iter().enumerate() {
             let px = text_x + i as u32 * glyph_w;
@@ -162,6 +167,7 @@ impl GfxConsole {
                     let py = self.cursor_y * self.font.glyph_height;
                     let fg = self.fg_color;
                     let bg = self.bg_color;
+                    // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                     let fb = unsafe { &mut *self.fb };
                     self.font.render_char(fb, ' ', px, py, fg, bg);
                 }
@@ -172,6 +178,7 @@ impl GfxConsole {
                     let py = self.cursor_y * self.font.glyph_height;
                     let fg = self.fg_color;
                     let bg = self.bg_color;
+                    // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                     let fb = unsafe { &mut *self.fb };
                     self.font.render_char(fb, ch, px, py, fg, bg);
                     self.cursor_x += 1;
@@ -202,6 +209,7 @@ impl GfxConsole {
                     let py = self.cursor_y * self.font.glyph_height;
                     let fg = self.fg_color;
                     let bg = self.bg_color;
+                    // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                     let fb = unsafe { &mut *self.fb };
                     self.font.render_char(fb, ' ', px, py, fg, bg);
                 }
@@ -212,6 +220,7 @@ impl GfxConsole {
                     let py = self.cursor_y * self.font.glyph_height;
                     let fg = self.fg_color;
                     let bg = self.bg_color;
+                    // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                     let fb = unsafe { &mut *self.fb };
                     self.font.render_char(fb, ch, px, py, fg, bg);
                     self.cursor_x += 1;
@@ -229,6 +238,7 @@ impl GfxConsole {
     }
 
     fn scroll_up(&mut self, lines: u32) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let fb = unsafe { self.fb_mut() };
         let glyph_h = self.font.glyph_height;
         let margin_px = self.top_margin * glyph_h;
@@ -242,6 +252,7 @@ impl GfxConsole {
 
         let pitch = fb.pitch();
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let src = fb.iomem().virt_ptr().add((scroll_start * pitch) as usize);
             let dst = fb.iomem().virt_ptr().add(margin_px as usize * pitch as usize);

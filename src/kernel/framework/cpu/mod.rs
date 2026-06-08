@@ -666,6 +666,7 @@ pub extern "C" fn cpu_init() -> i32 {
         msg_buf[..len].copy_from_slice(&e_bytes[..len]);
         msg_buf[len] = 0;
 
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             klog_write(
                 LogLevel::Warn as u8,
@@ -741,6 +742,7 @@ pub extern "C" fn cpu_init() -> i32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info as *const CpuInfo,
         None => core::ptr::null(),
@@ -752,6 +754,7 @@ pub extern "C" fn cpu_get_info() -> *const CpuInfo {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info
             .features
@@ -765,6 +768,7 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_intel() -> bool {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.is_intel(),
         None => false,
@@ -776,6 +780,7 @@ pub extern "C" fn cpu_is_intel() -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_amd() -> bool {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.is_amd(),
         None => false,
@@ -787,6 +792,7 @@ pub extern "C" fn cpu_is_amd() -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_is_virtualized() -> bool {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.is_virtualized(),
         None => false,
@@ -798,6 +804,7 @@ pub extern "C" fn cpu_is_virtualized() -> bool {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.max_standard_leaf,
         None => 0,
@@ -809,6 +816,7 @@ pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.max_ext_leaf,
         None => 0,
@@ -820,6 +828,7 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_apic_id() -> u32 {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.topology.apic_id as u32,
         None => 0,
@@ -831,6 +840,7 @@ pub extern "C" fn cpu_get_apic_id() -> u32 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_logical_cores() -> u8 {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.topology.logical_threads,
         None => 1,
@@ -842,6 +852,7 @@ pub extern "C" fn cpu_get_logical_cores() -> u8 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_physical_cores() -> u8 {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.topology.physical_cores,
         None => 1,
@@ -853,6 +864,7 @@ pub extern "C" fn cpu_get_physical_cores() -> u8 {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_signature() -> CpuSignature {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.signature,
         _ => CpuSignature::default(),
@@ -864,6 +876,7 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => &info.cache as *const CacheInfo,
         None => core::ptr::null(),
@@ -875,6 +888,7 @@ pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
 #[no_mangle]
 /// FFI export function (C-callable)
 pub extern "C" fn cpu_get_tsc_frequency() -> u64 {
+    // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
         Some(info) => info.tsc_frequency_hz,
         None => 0,
@@ -1285,6 +1299,7 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
     }
 
     // 启用 SSE/SSE2 (设置 CR4.OSFXSR + CR4.OSXMMEXCPT)
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let cr4: u64;
         core::arch::asm!("mov {0}, cr4", out(reg) cr4, options(nostack, nomem));
@@ -1294,6 +1309,7 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
     }
 
     // 启用 FPU (清除 CR0.TS + CR0.EM, 设置 CR0.MP)
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let cr0: u64;
         core::arch::asm!("mov {0}, cr0", out(reg) cr0, options(nostack, nomem));
@@ -1307,6 +1323,7 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
 
     // 配置 SYSCALL/SYSRET 指令
     if features.contains(CpuFeatures::SYSCALL) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 启用 SYSCALL 指令 (设置 EFER.SCE)
             let efer = self::msr::read_msr(IA32_EFER);

@@ -3,6 +3,8 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use super::types::*;
 use super::undo_log::UndoLog;
 
+
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 pub struct RecoveryDomain {
     pub id: u64,
     state: AtomicU32,
@@ -14,8 +16,8 @@ pub struct RecoveryDomain {
     pub last_crash_fingerprint: AtomicU64,
     pub last_rollback_time: AtomicU64,
     pub backoff_until: AtomicU64,
-    pub depends_on: spin::Mutex<[Option<u64>; MAX_DOMAIN_DEPENDENCIES]>,
-    pub depended_by: spin::Mutex<[Option<u64>; MAX_DOMAIN_DEPENDENCIES]>,
+    pub depends_on: IrqSpinLock<[Option<u64>; MAX_DOMAIN_DEPENDENCIES]>,
+    pub depended_by: IrqSpinLock<[Option<u64>; MAX_DOMAIN_DEPENDENCIES]>,
     pub dom_cap_mask: AtomicU64,
     pub original_cap_mask: AtomicU64,
     pub cpu_quota_max: u64,
@@ -26,12 +28,14 @@ pub struct RecoveryDomain {
     pub proc_limit_current: AtomicU32,
     pub last_heartbeat: AtomicU64,
     pub heartbeat_max_gap: u64,
-    pub undo: spin::Mutex<UndoLog>,
-    pub capture_cb: spin::Mutex<Option<unsafe fn()>>,
-    pub rollback_cb: spin::Mutex<Option<unsafe fn() -> bool>>,
-    pub barrier_stack: spin::Mutex<[BarrierSnapshot; MAX_BARRIER_SNAPSHOTS]>,
+    pub undo: IrqSpinLock<UndoLog>,
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    pub capture_cb: IrqSpinLock<Option<unsafe fn()>>,
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    pub rollback_cb: IrqSpinLock<Option<unsafe fn() -> bool>>,
+    pub barrier_stack: IrqSpinLock<[BarrierSnapshot; MAX_BARRIER_SNAPSHOTS]>,
     pub barrier_stack_top: AtomicU32,
-    pub addr_ranges: spin::Mutex<[(u64, u64); MAX_ADDR_RANGES]>,
+    pub addr_ranges: IrqSpinLock<[(u64, u64); MAX_ADDR_RANGES]>,
     addr_range_count: AtomicU32,
 }
 
@@ -54,8 +58,8 @@ impl RecoveryDomain {
             last_crash_fingerprint: AtomicU64::new(0),
             last_rollback_time: AtomicU64::new(0),
             backoff_until: AtomicU64::new(0),
-            depends_on: spin::Mutex::new([None; MAX_DOMAIN_DEPENDENCIES]),
-            depended_by: spin::Mutex::new([None; MAX_DOMAIN_DEPENDENCIES]),
+            depends_on: IrqSpinLock::new([None; MAX_DOMAIN_DEPENDENCIES]),
+            depended_by: IrqSpinLock::new([None; MAX_DOMAIN_DEPENDENCIES]),
             dom_cap_mask: AtomicU64::new(u64::MAX),
             original_cap_mask: AtomicU64::new(u64::MAX),
             cpu_quota_max: 0,
@@ -66,10 +70,10 @@ impl RecoveryDomain {
             proc_limit_current: AtomicU32::new(0),
             last_heartbeat: AtomicU64::new(0),
             heartbeat_max_gap: 0,
-            undo: spin::Mutex::new(UndoLog::new()),
-            capture_cb: spin::Mutex::new(None),
-            rollback_cb: spin::Mutex::new(None),
-            barrier_stack: spin::Mutex::new(
+            undo: IrqSpinLock::new(UndoLog::new()),
+            capture_cb: IrqSpinLock::new(None),
+            rollback_cb: IrqSpinLock::new(None),
+            barrier_stack: IrqSpinLock::new(
                 [BarrierSnapshot {
                     generation: 0,
                     tick: 0,
@@ -77,7 +81,7 @@ impl RecoveryDomain {
                 }; MAX_BARRIER_SNAPSHOTS],
             ),
             barrier_stack_top: AtomicU32::new(0),
-            addr_ranges: spin::Mutex::new([(0, 0); MAX_ADDR_RANGES]),
+            addr_ranges: IrqSpinLock::new([(0, 0); MAX_ADDR_RANGES]),
             addr_range_count: AtomicU32::new(0),
         }
     }

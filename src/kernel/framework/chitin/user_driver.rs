@@ -353,6 +353,7 @@ pub fn user_driver_unbind(
     if mm.is_null() {
         return ERR_NOT_FOUND;
     }
+    // SAFETY: `mm` 由调用方保证为有效指针; 只读访问
     let mm_ref = unsafe { &*mm };
     match devtree_unbind_user_device(node_id, pid, pwm, mm_ref) {
         Ok(()) => 0,

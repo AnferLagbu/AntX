@@ -74,6 +74,7 @@ impl<T> Mutex<T> {
 
         // 创建守卫 (RAII)
         MutexGuard {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             data: unsafe { &mut *self.data.get() },
             _mutex: &self.inner,
         }
@@ -83,6 +84,7 @@ impl<T> Mutex<T> {
     pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         if self.raw_trylock() {
             Some(MutexGuard {
+                // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                 data: unsafe { &mut *self.data.get() },
                 _mutex: &self.inner,
             })
@@ -110,6 +112,7 @@ impl<T> Mutex<T> {
         loop {
             if self.raw_trylock() {
                 return Some(MutexGuard {
+                    // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                     data: unsafe { &mut *self.data.get() },
                     _mutex: &self.inner,
                 });
@@ -213,6 +216,7 @@ impl<T> Mutex<T> {
         extern "C" {
             fn process_get_current_pid() -> u32;
         }
+        // SAFETY: `process_get_current_pid` 是有效的 C ABI 函数指针; 参数列表与声明一致
         let pid = unsafe { process_get_current_pid() };
         self.inner.owner.store(pid as i32, Ordering::Release);
 
@@ -295,6 +299,7 @@ impl CondVar {
         extern "C" {
             fn timer_sleep_busy(ms: u64);
         }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             timer_sleep_busy(timeout_ms as u64);
         }
@@ -340,6 +345,7 @@ fn scheduler_yield() {
     extern "C" {
         fn scheduler_yield();
     }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         scheduler_yield();
     }

@@ -141,6 +141,7 @@ struct VgaFbInfo {
 
 /// 通过 Bochs DISPI 端口读取 VGA 帧缓冲分辨率
 fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_ID);
         let id = port_inw(VBE_DISPI_PORT_DATA);
@@ -347,12 +348,14 @@ pub fn display_init() -> framework::Result<()> {
 
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_outw(port: u16, val: u16) {
     core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
 }
 
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_inw(port: u16) -> u16 {
     let ret: u16;
     core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
@@ -360,9 +363,11 @@ unsafe fn port_inw(port: u16) -> u16 {
 }
 
 #[cfg(not(target_arch = "x86_64"))]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_outw(_port: u16, _val: u16) {}
 
 #[cfg(not(target_arch = "x86_64"))]
+// SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn port_inw(_port: u16) -> u16 {
     0
 }

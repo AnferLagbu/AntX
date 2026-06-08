@@ -50,7 +50,7 @@ pub const CLONE_CHILD_SETTID: u64 = 0x01000000;   // 写 TID 到 child tidptr
 /// `parent_tidptr`: 父进程 TID 指针
 /// `child_tidptr`: 子进程 TID 指针
 /// `tls`: TLS 地址
-pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, child_tidptr: u64, tls: u64) -> i64 {
+pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr: u64, tls: u64) -> i64 {
     let parent_pid = match SCHEDULER.current() {
         Some(p) => p,
         None => return Errno::ECHILD.as_ret(),
@@ -163,7 +163,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, child_tidptr:
         }
 
         // 如果指定了 tls, 修改 fs_base (通过 fs 段寄存器传递)
-        // TODO: x86_64 上 TLS 通常通过 arch_prctl(ARCH_SET_FS) 设置, 此处仅记录
+        // TODO(TRACK-FA10A1): x86_64 上 TLS 通常通过 arch_prctl(ARCH_SET_FS) 设置, 此处仅记录
         let _ = tls;
     }
 
@@ -172,6 +172,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, child_tidptr:
 
     // CLONE_PARENT_SETTID
     if flags & CLONE_PARENT_SETTID != 0 && parent_tidptr != 0 {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(parent_tidptr as *mut i32, child_pid as i32);
         }

@@ -343,6 +343,7 @@ pub fn k_realloc(ptr: *mut u8, size: usize) -> *mut u8 {
 ///
 #[no_mangle]
 pub fn kmalloc_init(start: u64, initial_size: u64) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         get_kmalloc_mut().init(VirtAddr(start), initial_size);
     }
@@ -400,6 +401,7 @@ pub fn kmalloc_stats(stats: *mut u8) {
 
     let heap_stats = get_kmalloc().get_stats();
     
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let stats_ptr = stats as *mut KmallocStats;
         (*stats_ptr).total_allocs = heap_stats.alloc_count;

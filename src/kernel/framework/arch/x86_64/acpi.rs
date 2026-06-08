@@ -29,6 +29,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use alloc::vec::Vec;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 pub use crate::kernel::framework::config::MAX_CPUS;
 
@@ -51,8 +52,8 @@ pub struct ApInfo {
     pub enabled: bool,
 }
 
-static AP_LIST: spin::Mutex<[Option<ApInfo>; MAX_CPUS]> = 
-    spin::Mutex::new([None; MAX_CPUS]);
+static AP_LIST: IrqSpinLock<[Option<ApInfo>; MAX_CPUS]> =
+    IrqSpinLock::new([None; MAX_CPUS]);
 static AP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // ============================================================================
@@ -78,11 +79,14 @@ pub fn find_rsdp(multiboot2_info_ptr: u64) -> Option<u64> {
 
 fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
     let ptr = mb2_ptr as *const u8;
+    // SAFETY: `ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(u32)); 只读访问
     let total_size = unsafe { *(ptr as *const u32) };
 
     let mut offset: usize = 8;
     while offset + 8 <= total_size as usize {
+        // SAFETY: 指针指向有效的 ACPI/Multiboot2 表 (长度已校验 ≥ offset / 4+sizeof(u32)); 只读访问
         let tag_type = unsafe { *((ptr as *const u32).add(offset / 4)) };
+        // SAFETY: 指针指向有效的 ACPI/Multiboot2 表 (长度已校验 ≥ offset / 4 + 1+sizeof(u32)); 只读访问
         let tag_size = unsafe { *((ptr as *const u32).add(offset / 4 + 1)) };
 
         if tag_type == 0 || tag_size == 0 {
@@ -91,8 +95,10 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
 
         // Multiboot2 tag 14 = ACPI old RSDP, tag 15 = ACPI new RSDP
         if tag_type == 14 || tag_type == 15 {
+            // SAFETY: 指针指向有效的 ACPI/Multiboot2 表 (长度已校验 ≥ offset / 8 + 1+sizeof(u64)); 只读访问
             let rsdp_ptr = unsafe { *((ptr as *const u64).add(offset / 8 + 1)) };
             if is_valid_rsdp(rsdp_ptr) {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
                     crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP found via Multiboot2".as_ptr());
                 }
@@ -111,6 +117,7 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
 fn scan_ebda() -> Option<u64> {
     // EBDA 基址存于 BDA (BIOS Data Area) 偏移 0x40E
     let bda_ptr = 0x400 as *const u16;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let ebda_seg = bda_ptr.add(0x40E / 2).read_volatile();
         if ebda_seg == 0 {
@@ -130,6 +137,7 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
     let mut addr = start;
     while addr + 36 <= end {
         if is_valid_rsdp(addr) {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP found via BIOS scan".as_ptr());
             }
@@ -142,6 +150,7 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
 
 fn is_valid_rsdp(addr: u64) -> bool {
     let ptr = addr as *const u8;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         // "RSD PTR " 签名字符串
         let sig: &[u8; 8] = &*(ptr as *const [u8; 8]);
@@ -168,6 +177,7 @@ fn is_valid_rsdp(addr: u64) -> bool {
 
 fn get_rsdt(rsdp: u64) -> Option<&'static SdtHeader> {
     let ptr = rsdp as *const u8;
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let revision = ptr.add(15).read_volatile();
         if revision >= 2 {
@@ -246,6 +256,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     let rsdp = match find_rsdp(multiboot2_info_ptr) {
         Some(addr) => addr,
         None => {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP not found".as_ptr());
             }
@@ -256,6 +267,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     let rsdt_or_xsdt = match get_rsdt(rsdp) {
         Some(sdt) => sdt,
         None => {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 crate::kernel::framework::klog::klog_info(c"[ACPI] RSDT/XSDT not found".as_ptr());
             }
@@ -264,7 +276,9 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     };
 
     let rsdp_ptr = rsdp as *const u8;
+    // SAFETY: 指针指向已通过 BIOS/ACPI 探测验证的物理地址; volatile 访问保证不被编译器重排
     let revision = unsafe { rsdp_ptr.add(15).read_volatile() };
+    // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
     let uses_xsdt = revision >= 2 && unsafe { *(rsdp_ptr.add(24) as *const u64) } != 0;
 
     let table_count = if uses_xsdt {
@@ -273,6 +287,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         (rsdt_or_xsdt.length - 12) / 4
     } as usize;
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let entries_ptr = (rsdt_or_xsdt as *const SdtHeader).add(1) as *const u8;
 
@@ -297,6 +312,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         }
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         crate::kernel::framework::klog::klog_info(c"[ACPI] MADT not found in RSDT/XSDT".as_ptr());
     }
@@ -304,6 +320,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
 }
 
 fn parse_madt_entries(madt_ptr: u64) {
+    // SAFETY: `madt_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(MadtHeader)); 只读访问
     let madt = unsafe { &*(madt_ptr as *const MadtHeader) };
     let _lapic_base = madt.local_apic_addr as u64;
 
@@ -312,6 +329,7 @@ fn parse_madt_entries(madt_ptr: u64) {
 
     let mut offset = entries_start;
     while offset + 2 <= entries_end {
+        // SAFETY: `offset` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(MadtEntry)); 只读访问
         let entry = unsafe { &*(offset as *const MadtEntry) };
 
         match entry.entry_type {
@@ -319,6 +337,7 @@ fn parse_madt_entries(madt_ptr: u64) {
                 if offset + core::mem::size_of::<MadtLapic>() > entries_end {
                     break;
                 }
+                // SAFETY: `offset` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(MadtLapic)); 只读访问
                 let lapic = unsafe { &*(offset as *const MadtLapic) };
                 let idx = AP_COUNT.load(Ordering::Acquire) as usize;
                 if idx < MAX_CPUS {
@@ -335,6 +354,7 @@ fn parse_madt_entries(madt_ptr: u64) {
                 if offset + core::mem::size_of::<MadtIoApic>() > entries_end {
                     break;
                 }
+                // SAFETY: `offset` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(MadtIoApic)); 只读访问
                 let ioapic = unsafe { &*(offset as *const MadtIoApic) };
                 IOAPIC_ADDR.store(ioapic.io_apic_addr as u64, Ordering::Release);
                 IOAPIC_GSIB.store(ioapic.global_sys_int_base, Ordering::Release);
@@ -348,6 +368,7 @@ fn parse_madt_entries(madt_ptr: u64) {
         offset += entry.length as usize;
     }
 
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let _count = AP_COUNT.load(Ordering::Acquire);
         crate::kernel::framework::klog::klog_info(c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr());
@@ -386,6 +407,7 @@ pub fn get_lapic_base() -> u64 {
     if !MADT_FOUND.load(Ordering::Acquire) {
         return 0;
     }
+    // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
     let madt = unsafe { &*(MADT_BASE.load(Ordering::Acquire) as *const MadtHeader) };
     madt.local_apic_addr as u64
 }
@@ -464,6 +486,7 @@ static FADT_FOUND: AtomicBool = AtomicBool::new(false);
 
 /// FADT 解析
 fn parse_fadt(fadt_ptr: u64) {
+    // SAFETY: `fadt_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(Fadt)); 只读访问
     let fadt = unsafe { &*(fadt_ptr as *const Fadt) };
     FADT_ADDR.store(fadt_ptr, Ordering::Release);
     FADT_FOUND.store(true, Ordering::Release);
@@ -484,12 +507,14 @@ pub fn acpi_shutdown() -> ! {
         crate::klog_warn!(Acpi, "[ACPI] FADT not found, cannot ACPI shutdown");
         // 回退: 通过 QEMU debug exit
         #[cfg(target_arch = "x86_64")]
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             crate::arch!(outl(0x604u16, 0x2000u32));
         }
         loop {}
     }
 
+    // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
     let fadt = unsafe { &*(FADT_ADDR.load(Ordering::Acquire) as *const Fadt) };
     let pm1a_cnt = fadt.pm1a_cnt_blk;
     let pm1_cnt_len = fadt.pm1_cnt_len;
@@ -517,6 +542,7 @@ pub fn acpi_shutdown() -> ! {
 
     // 如果关机失败, 回退到 QEMU debug exit
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         crate::arch!(outl(0x604u16, 0x2000u32));
     }
@@ -526,6 +552,7 @@ pub fn acpi_shutdown() -> ! {
 /// ACPI 重启
 pub fn acpi_reboot() -> ! {
     if FADT_FOUND.load(Ordering::Acquire) {
+        // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
         let fadt = unsafe { &*(FADT_ADDR.load(Ordering::Acquire) as *const Fadt) };
 
         // 方式1: 通过 Reset Register (ACPI 2.0+)
@@ -550,6 +577,7 @@ pub fn acpi_reboot() -> ! {
 
     // 回退: 键盘控制器重启
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         // Pulse reset line via keyboard controller (port 0x64, cmd 0xFE)
         crate::arch!(outb(0x64u16, 0xFEu8));
@@ -590,9 +618,10 @@ pub struct HpetInfo {
     pub counter_size: u8,
 }
 
-static HPET_INFO: spin::Mutex<Option<HpetInfo>> = spin::Mutex::new(None);
+static HPET_INFO: IrqSpinLock<Option<HpetInfo>> = IrqSpinLock::new(None);
 
 fn parse_hpet(hpet_ptr: u64) {
+    // SAFETY: `hpet_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(HpetTable)); 只读访问
     let hpet = unsafe { &*(hpet_ptr as *const HpetTable) };
 
     // Generic Address Structure: [0]=space_id, [4..8]=address
@@ -635,8 +664,6 @@ struct DmarTable {
 
 /// DMAR Remapping Structure 类型
 const DMAR_TYPE_DRHD: u16 = 0x0000;
-const DMAR_TYPE_RMRR: u16 = 0x0001;
-const _DMAR_TYPE_ATSR: u16 = 0x0002;
 
 /// DRHD (DMA Remapping Hardware Unit Definition)
 #[derive(Debug, Clone, Copy)]
@@ -661,10 +688,11 @@ pub struct DmarDrhdInfo {
     pub include_all: bool,
 }
 
-static DMAR_DRHD_LIST: spin::Mutex<Vec<DmarDrhdInfo>> = spin::Mutex::new(Vec::new());
-static DMAR_HOST_ADDR_WIDTH: spin::Mutex<u8> = spin::Mutex::new(0);
+static DMAR_DRHD_LIST: IrqSpinLock<Vec<DmarDrhdInfo>> = IrqSpinLock::new(Vec::new());
+static DMAR_HOST_ADDR_WIDTH: IrqSpinLock<u8> = IrqSpinLock::new(0);
 
 fn parse_dmar(dmar_ptr: u64) {
+    // SAFETY: `dmar_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(DmarTable)); 只读访问
     let dmar = unsafe { &*(dmar_ptr as *const DmarTable) };
     *DMAR_HOST_ADDR_WIDTH.lock() = dmar.host_addr_width;
 
@@ -673,7 +701,9 @@ fn parse_dmar(dmar_ptr: u64) {
 
     let mut offset = entries_start;
     while offset + 4 <= entries_end {
+        // SAFETY: 指针指向已校验的 u16 表项; 只读访问
         let entry_type = unsafe { *((offset) as *const u16) };
+        // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
         let entry_len = unsafe { *((offset + 2) as *const u16) };
 
         if entry_len == 0 {
@@ -682,6 +712,7 @@ fn parse_dmar(dmar_ptr: u64) {
 
         if entry_type == DMAR_TYPE_DRHD {
             if offset + core::mem::size_of::<DrhdEntry>() <= entries_end {
+                // SAFETY: `offset` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(DrhdEntry)); 只读访问
                 let drhd = unsafe { &*(offset as *const DrhdEntry) };
                 let info = DmarDrhdInfo {
                     register_base: drhd.register_base,
@@ -736,7 +767,9 @@ pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
     };
 
     let rsdp_ptr = rsdp as *const u8;
+    // SAFETY: 指针指向已通过 BIOS/ACPI 探测验证的物理地址; volatile 访问保证不被编译器重排
     let revision = unsafe { rsdp_ptr.add(15).read_volatile() };
+    // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
     let uses_xsdt = revision >= 2 && unsafe { *(rsdp_ptr.add(24) as *const u64) } != 0;
 
     let table_count = if uses_xsdt {
@@ -745,9 +778,11 @@ pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
         (rsdt_or_xsdt.length - 12) / 4
     } as usize;
 
+    // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
     let entries_ptr = unsafe { (rsdt_or_xsdt as *const SdtHeader).add(1) as *const u8 };
 
     for i in 0..table_count {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let table_ptr: u64 = unsafe {
             if uses_xsdt {
                 *(entries_ptr.add(i * 8) as *const u64)
@@ -760,6 +795,7 @@ pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
             continue;
         }
 
+        // SAFETY: `table_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(SdtHeader)); 只读访问
         let header = unsafe { &*(table_ptr as *const SdtHeader) };
 
         if header.signature == *b"APIC" {

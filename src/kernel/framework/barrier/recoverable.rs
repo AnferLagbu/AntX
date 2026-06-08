@@ -2,6 +2,7 @@ use core::sync::atomic::Ordering;
 
 use super::fault_inject::maybe_inject_fault;
 use super::undo_log::UndoLog;
+use crate::kernel::framework::sync::irq_spinlock::{IrqSpinLock, IrqSpinLockGuard};
 
 pub trait Snapshot: Copy + Sized {
     fn snapshot(&self) -> Self {
@@ -26,26 +27,27 @@ pub trait Recoverable {
 }
 
 pub struct RecoverableMutex<T: Snapshot + 'static> {
-    inner: spin::Mutex<T>,
+    inner: IrqSpinLock<T>,
     domain_id: u64,
 }
 
-// SAFETY: RecoverableMutex wraps spin::Mutex<T>, which provides mutual
-// exclusion. T: Send is required for cross-thread transfer; T: Sync is
-// required because &T can be shared after lock acquisition. The domain_id
-// is a plain u64 (Copy). No additional unsafety beyond what Mutex provides.
+// SAFETY: RecoverableMutex wraps IrqSpinLock<T>, which provides mutual
+// exclusion with IRQ disable. T: Send is required for cross-thread transfer;
+// T: Sync is required because &T can be shared after lock acquisition. The
+// domain_id is a plain u64 (Copy). No additional unsafety beyond what
+// IrqSpinLock provides.
 unsafe impl<T: Snapshot + Send> Send for RecoverableMutex<T> {}
 unsafe impl<T: Snapshot + Sync> Sync for RecoverableMutex<T> {}
 
 impl<T: Snapshot + 'static> RecoverableMutex<T> {
     pub const fn new(val: T, domain_id: u64) -> Self {
         Self {
-            inner: spin::Mutex::new(val),
+            inner: IrqSpinLock::new(val),
             domain_id,
         }
     }
 
-    pub fn lock(&self) -> spin::MutexGuard<'_, T> {
+    pub fn lock(&self) -> IrqSpinLockGuard<'_, T> {
         let guard = self.inner.lock();
         if self.domain_id != 0 {
             if let Some(dom) = super::RECOVERY_MANAGER.lock().find(self.domain_id) {
@@ -60,7 +62,7 @@ impl<T: Snapshot + 'static> RecoverableMutex<T> {
         guard
     }
 
-    pub fn lock_fast(&self) -> spin::MutexGuard<'_, T> {
+    pub fn lock_fast(&self) -> IrqSpinLockGuard<'_, T> {
         self.inner.lock()
     }
 }

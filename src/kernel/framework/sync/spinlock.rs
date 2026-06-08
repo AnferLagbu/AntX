@@ -34,7 +34,7 @@ pub struct SpinLock {
 
 impl SpinLock {
     /// 创建新的自旋锁
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             inner: SpinLockInner::new(),
         }
@@ -191,6 +191,7 @@ impl SpinLock {
         self.raw_lock();
 
         // 安全: 我们已持有锁，可以创建可变引用
+        // SAFETY: `data` 由调用方保证为有效指针; 只读访问
         let data_ref = unsafe { &mut *data.get() };
 
         SpinLockGuard {
@@ -238,6 +239,7 @@ impl SpinLock {
     #[cfg(target_arch = "x86_64")]
     fn debug_acquire(&mut self) {
         let rsp: u64;
+        // SAFETY: 内联汇编的寄存器约束与变量类型一致; 无内存副作用; 输出 reg 通过 out(reg) 绑定
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nostack, nomem)) };
         self.inner.owner = rsp as *const ();
         self.inner.acquire_time = crate::arch!(timestamp());
@@ -247,6 +249,7 @@ impl SpinLock {
     #[cfg(target_arch = "aarch64")]
     fn debug_acquire(&mut self) {
         let sp: u64;
+        // SAFETY: 内联汇编的寄存器约束与变量类型一致; 无内存副作用; 输出 reg 通过 out(reg) 绑定
         unsafe { core::arch::asm!("mov {}, sp", out(reg) sp, options(nostack, nomem)) };
         self.inner.owner = sp as *const ();
         self.inner.acquire_time = crate::arch!(timestamp());

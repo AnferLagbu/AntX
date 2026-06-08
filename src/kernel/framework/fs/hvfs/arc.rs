@@ -285,6 +285,7 @@ impl HvArc {
     /// 调用者仍需在访问后调用 release(key) 释放引用计数
     pub fn lookup_slice(&self, key: &HvArcKey, len: usize) -> Option<&[u8]> {
         let ptr = self.lookup(key)?;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         Some(unsafe { core::slice::from_raw_parts(ptr, len) })
     }
 

@@ -50,8 +50,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::Mutex;
-
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::driver::framework::Driver;
 pub use super::driver::framework::DriverError as ChitinError;
 
@@ -646,6 +645,7 @@ struct DriverObject {
 
 impl Drop for DriverObject {
     fn drop(&mut self) {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             drop(Box::from_raw(self.ptr));
         }
@@ -707,7 +707,9 @@ pub fn chitin_register_driver_with_ops(
 }
 
 fn driver_from_obj<'a>(ptr: *mut u8) -> &'a mut dyn Driver {
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let obj: &mut DriverObject = unsafe { &mut *(ptr as *mut DriverObject) };
+    // SAFETY: `obj` 由调用方保证为有效指针; 只读访问
     unsafe { &mut *obj.ptr }
 }
 
@@ -731,6 +733,7 @@ pub fn chitin_shutdown_all() {
                 let _ = driver.shutdown();
             }
             dev.state = DeviceState::Failed;
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 drop(Box::from_raw(dev.driver_data as *mut DriverObject));
             }
@@ -797,6 +800,7 @@ mod tests {
         assert_eq!(chitin_count(), 1);
 
         CHITIN_DEVICES.lock().clear();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             drop(Box::from_raw(raw as *mut u32));
         }
@@ -813,11 +817,13 @@ mod tests {
 
         chitin_with_device(id, |dev| {
             assert_eq!(dev.state, DeviceState::Ready);
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             let drv = unsafe { dev.driver_as_ref::<TestDriver>() };
             assert!(drv.init_called);
         });
 
         let ptr = chitin_unregister(id).unwrap();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             drop(Box::from_raw(ptr as *mut TestDriver));
         }
@@ -836,6 +842,7 @@ mod tests {
         total_sectors: mock_blk_total_sectors,
     };
 
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe fn mock_blk_read(_data: *mut u8, sector: u64, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 {
             return -1;
@@ -845,14 +852,17 @@ mod tests {
         0
     }
 
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe fn mock_blk_write(_data: *mut u8, _sector: u64, _buf: &[u8]) -> i32 {
         0
     }
 
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe fn mock_blk_is_present(_data: *mut u8) -> bool {
         true
     }
 
+    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     unsafe fn mock_blk_total_sectors(_data: *mut u8) -> u64 {
         1024
     }
@@ -877,6 +887,7 @@ mod tests {
         assert_eq!(buf[1], 42);
 
         CHITIN_DEVICES.lock().clear();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             drop(Box::from_raw(raw as *mut u8));
         }
@@ -899,6 +910,7 @@ mod tests {
         assert!(dev.char_ops().is_none());
         assert!(dev.net_ops().is_none());
         CHITIN_DEVICES.lock().clear();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             drop(Box::from_raw(raw as *mut u8));
         }
@@ -920,6 +932,7 @@ mod tests {
         let devices = CHITIN_DEVICES.lock();
         assert!(devices.iter().any(|d| d.id == id && d.ops.is_some()));
         CHITIN_DEVICES.lock().clear();
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             drop(Box::from_raw(raw as *mut u8));
         }

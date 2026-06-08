@@ -220,6 +220,7 @@ impl Default for TaskStateSegment {
 }
 
 pub fn tss_set_kernel_stack(rsp0: u64) {
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let tss = super::gdt::get_tss_mut();
         tss.set_kernel_stack(rsp0);
