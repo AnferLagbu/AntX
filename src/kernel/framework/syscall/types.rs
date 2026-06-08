@@ -394,6 +394,11 @@ pub const QX_TIMERFD_SETTIME: u64 = 629;
 pub const QX_TIMERFD_GETTIME: u64 = 630;
 // 631-639: reserved (msgqueue, shm, sem)
 
+// ---------- 640-649: inotify ----------
+pub const QX_INOTIFY_INIT1: u64 = 640;
+pub const QX_INOTIFY_ADD_WATCH: u64 = 641;
+pub const QX_INOTIFY_RM_WATCH: u64 = 642;
+
 // ---------- 700-709: 系统信息 ----------
 pub const QX_UNAME: u64 = 700;
 pub const QX_SYSINFO: u64 = 701;

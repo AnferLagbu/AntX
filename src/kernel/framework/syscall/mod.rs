@@ -890,6 +890,20 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"timerfd_gettime\0"
         ),
 
+        // ==================== inotify syscall (640+) ====================
+        QX_INOTIFY_INIT1 => dispatch!(
+            crate::kernel::framework::fs::vfs::inotify::sys_inotify_init1(a0 as i32),
+            b"inotify_init1\0"
+        ),
+        QX_INOTIFY_ADD_WATCH => dispatch!(
+            sys_inotify_add_watch(a0 as i64, a1 as u32, a2 as u32),
+            b"inotify_add_watch\0"
+        ),
+        QX_INOTIFY_RM_WATCH => dispatch!(
+            crate::kernel::framework::fs::vfs::inotify::sys_inotify_rm_watch(a0 as i64, a1 as i32),
+            b"inotify_rm_watch\0"
+        ),
+
         // ==================== Credo 私有 syscall (400+) ====================
         SYS_CREDO_LOGIN => dispatch!(
             sys_auth_login(
@@ -1079,6 +1093,10 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
         return crate::kernel::framework::syscall::timerfd::sys_timerfd_read(fd, buf as u64);
     }
+    // inotify read: fd ∈ [260, 268)
+    if crate::kernel::framework::fs::vfs::inotify::is_inotify_fd(fd) {
+        return crate::kernel::framework::fs::vfs::inotify::sys_inotify_read(fd as i64, buf, count as usize);
+    }
     crate::kernel::framework::fs::vfs::api::vfs_read(fd as u32, buf, count as u32) as i64
 }
 
@@ -1139,6 +1157,11 @@ fn sys_close(fd: i32) -> i64 {
     // timerfd close: fd ∈ [240, 256)
     if crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
         return crate::kernel::framework::syscall::timerfd::sys_timerfd_close(fd);
+    }
+    // inotify close: fd ∈ [260, 268)
+    if crate::kernel::framework::fs::vfs::inotify::is_inotify_fd(fd) {
+        crate::kernel::framework::fs::vfs::inotify::inotify_release(fd as i64);
+        return 0;
     }
     // 释放该 fd 持有的 flock 锁
     let pid = crate::kernel::framework::proc::api::process_get_current_pid();
@@ -2696,6 +2719,11 @@ fn sys_flock(fd: i32, operation: i32) -> i64 {
         FlockResult::NoSpace => Errno::ENOLCK.as_ret(),
         FlockResult::NotHeld => Errno::EINVAL.as_ret(),
     }
+}
+
+/// inotify_add_watch 辅助: 从路径参数解析 inode 号
+fn sys_inotify_add_watch(inotify_fd: i64, ino: u32, mask: u32) -> i64 {
+    crate::kernel::framework::fs::vfs::inotify::sys_inotify_add_watch(inotify_fd, ino, mask)
 }
 
 // ============================================================================

@@ -291,8 +291,11 @@ fn translate_linux(num: u64) -> u64 {
         284 => QX_EVENTFD,
         286 => QX_TIMERFD_SETTIME,
         287 => QX_TIMERFD_GETTIME,
+        288 => QX_INOTIFY_INIT1,
         289 => QX_SIGNALFD4,
         290 => QX_EVENTFD2,
+        29 => QX_INOTIFY_ADD_WATCH,
+        30 => QX_INOTIFY_RM_WATCH,
 
         _ => num, // 未识别: 透传, dispatch 走 ENOSYS
     }
@@ -410,6 +413,11 @@ fn translate_linux(num: u64) -> u64 {
         85 => QX_TIMERFD_CREATE,
         86 => QX_TIMERFD_SETTIME,
         87 => QX_TIMERFD_GETTIME,
+
+        // inotify
+        26 => QX_INOTIFY_INIT1,
+        27 => QX_INOTIFY_ADD_WATCH,
+        28 => QX_INOTIFY_RM_WATCH,
 
         // FD 操作
         23 => QX_DUP,

@@ -183,6 +183,10 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
                         if let Some(new_inode) = ramfs.create_file(parent_path, name, pwm) {
                             let file_type = ramfs.stat(new_inode).map(|s| s.file_type).unwrap_or(0);
                             VFS_MANAGER.set_fd(fd_idx, new_inode, 0, flags, pwm, file_type, path);
+                            // inotify: 父目录 IN_CREATE + 新文件 IN_OPEN
+                            let parent_ino = ramfs.resolve_path(parent_path).unwrap_or(0);
+                            super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, false);
+                            super::inotify::inotify_notify(new_inode, super::inotify::IN_OPEN, "", false);
                             fd_idx as i32
                         } else {
                             VFS_MANAGER.free_fd(fd_idx);
@@ -221,8 +225,25 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
         return -1;
     }
     // B2: 释放该 fd 关联 inode 的全部 pcache 缓存页, 避免内存泄漏
-    if let Some((node_id, _, _, _)) = get_fd_info(fd_idx) {
+    if let Some((node_id, _, _, _full_path)) = get_fd_info(fd_idx) {
         pcache::pcache_invalidate_inode(node_id);
+        // inotify: 文件关闭通知
+        let flags = {
+            let fd_table = VFS_MANAGER.fd_table.lock();
+            if (fd_idx_us) < VFS_MAX_FDS && fd_table[fd_idx_us].used {
+                fd_table[fd_idx_us].flags
+            } else {
+                0
+            }
+        };
+        let close_mask = if (flags & VfsOpenFlags::WRONLY.bits()) != 0
+            || (flags & VfsOpenFlags::RDWR.bits()) != 0
+        {
+            super::inotify::IN_CLOSE_WRITE
+        } else {
+            super::inotify::IN_CLOSE_NOWRITE
+        };
+        super::inotify::inotify_notify(node_id, close_mask, "", false);
     }
     VFS_MANAGER.free_fd(fd_idx_us);
     // C1: fd 关闭 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLHUP|EPOLLERR)
@@ -361,10 +382,15 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
         FsType::Unknown => -1,
     };
 
-    // 文件删除成功后, 释放该 inode 上的 POSIX 锁
+    // 文件删除成功后, 释放该 inode 上的 POSIX 锁 + inotify 通知
     if result == 0 {
         if let Some(ino) = ino_before {
             crate::kernel::framework::fs::vfs::flock::posix_lock_release_inode(ino);
+            // inotify: 父目录 IN_DELETE + 被删文件 IN_DELETE_SELF
+            let (parent_path, name) = split_parent_name(rel_path);
+            let parent_ino = resolve_path_to_ino(parent_path, fs_type).unwrap_or(0);
+            super::inotify::inotify_notify(parent_ino, super::inotify::IN_DELETE, name, false);
+            super::inotify::inotify_notify(ino, super::inotify::IN_DELETE_SELF, "", false);
         }
     }
 
@@ -397,7 +423,12 @@ pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     match fs_type {
         FsType::RamFs => {
             let mut ramfs = RAMFS_DATA.lock();
-            ramfs.truncate(_node_id, size, pwm)
+            let result = ramfs.truncate(_node_id, size, pwm);
+            if result == 0 {
+                // inotify: 文件属性/大小变化
+                super::inotify::inotify_notify(_node_id, super::inotify::IN_MODIFY, "", false);
+            }
+            result
         }
         FsType::HvFs | FsType::Unknown => -1,
     }
@@ -430,6 +461,8 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
             VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
             // C1: 写完成 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLOUT)
             fw_epoll::epoll_pwake(fd_idx as i32);
+            // inotify: 文件内容被修改
+            super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
             result
         }
         FsType::HvFs => {
@@ -460,7 +493,14 @@ pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     match fs_type {
         FsType::RamFs => {
             let mut ramfs = RAMFS_DATA.lock();
-            ramfs.mkdir(parent_path, name, pwm)
+            let result = ramfs.mkdir(parent_path, name, pwm);
+            if result == 0 {
+                // inotify: 父目录 IN_CREATE | IN_ISDIR
+                let parent_ino = ramfs.resolve_path(parent_path).unwrap_or(0);
+                drop(ramfs);
+                super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, true);
+            }
+            result
         }
         FsType::HvFs => {
             let hvfs = get_hvfs();

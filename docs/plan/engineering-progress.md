@@ -77,7 +77,7 @@
 | linuxulator 独立模块 | 已完成 | 2026-06-09 | framework/syscall/linuxulator.rs (替代 translate.rs), 编号翻译 + 参数转换接口 (LinuxArgs), 预留 at 系列路径拼接/结构体适配 | 双架构 0 error/0 warning, 三审计通过 |
 | dcache / icache | 已完成 | 2026-06-09 | framework/fs/vfs/dcache.rs (880+ 行): DCache (Robin Hood 开放寻址哈希) + ICache, 正缓存/负缓存/按 parent_ino 失效; services/fs/dcache.rs 安全封装; RamFs resolve_path 集成 dcache 快速路径 (Hit/Negative/Miss); create_file/mkdir/unlink/link/symlink 失效父目录 dcache; write/truncate 失效 icache; 修复预存问题: Mutex/RwLock/PiMutex ?Sized 字段顺序 (data 移至末尾) | 双架构 0 error/0 warning, 三审计通过, CI 4/4, host-tests 通过 |
 | 文件锁 (flock / POSIX locks) | 已完成 | 2026-06-09 | framework/fs/vfs/flock.rs (730+ 行): FlockTable (64 条目) + PosixLockTable (64 条目), flock (LOCK_SH/LOCK_EX/LOCK_UN/LOCK_NB) + POSIX record locks (F_SETLK/F_GETLK/F_RDLCK/F_WRLCK/F_UNLCK), 字节范围冲突检测, 锁升级/降级; services/fs/flock.rs 安全封装; QX_FLOCK=590 syscall + fcntl F_SETLK/F_GETLK 扩展; sys_close 释放 flock_release_fd, process_exit 释放 flock_release_pid + posix_lock_release_pid, vfs_unlink 释放 posix_lock_release_inode; linuxulator x86_64(73) + aarch64(32) 映射; 修复预存问题: QX_SETREGID 编号冲突 (合并到 QX_SETREUID), QX_FLOCK 插入导致 580-599 段重编号 | 双架构 0 error/0 warning, 三审计通过, CI 4/4, host-tests 通过 |
-| inotify 文件事件通知 | 未开始 | — | — | — |
+| inotify 文件事件通知 | 已完成 | 2026-06-09 | framework/fs/vfs/inotify.rs (590+ 行): InotifyInstance/WatchEntry/InotifyEvent, 环形事件队列, sys_inotify_init1/add_watch/rm_watch/read, inotify_notify 事件分发, inotify_release/inotify_fd_readable; services/fs/inotify.rs 安全封装; FD 空间 [260,268); QX_INOTIFY_INIT1=640/QX_INOTIFY_ADD_WATCH=641/QX_INOTIFY_RM_WATCH=642 syscall; linuxulator x86_64(288/29/30) + aarch64(26/27/28) 映射; VFS 集成: vfs_open(IN_CREATE+IN_OPEN), vfs_unlink(IN_DELETE+IN_DELETE_SELF), vfs_mkdir(IN_CREATE+IN_ISDIR), vfs_write(IN_MODIFY), vfs_truncate(IN_MODIFY), vfs_close(IN_CLOSE_WRITE/IN_CLOSE_NOWRITE); sys_read/sys_close inotify fd 路径; epoll_pwake 集成 | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过, CI 4/4 |
 | sendfile / splice 零拷贝 | 未开始 | — | — | — |
 | Resource Limits (rlimit) | 未开始 | — | — | — |
 | 进程组/会话/控制终端 | 未开始 | — | — | — |
@@ -160,3 +160,4 @@
 | 2026-06-09 | 创建工程进度跟踪文档 | — |
 | 2026-06-09 | P1 linuxulator 独立模块完成 (替代 translate.rs, 扩展为完整 Linux ABI 兼容层框架) | P1: linuxulator 已完成 |
 | 2026-06-09 | P1 dcache/icache 完成: Robin Hood 哈希缓存 + RamFs resolve_path 集成 + 6 处失效点; 修复 Mutex/RwLock/PiMutex ?Sized 编译错误 | P1: dcache/icache 已完成 |
+| 2026-06-09 | P1 inotify 文件事件通知完成: 3 个 syscall (init1/add_watch/rm_watch) + read 路径, FD 空间 [260,268), VFS 6 处事件触发, epoll 集成, linuxulator 双架构映射 | P1: inotify 已完成 |
