@@ -9,6 +9,15 @@
 ## [Unreleased]
 
 ### 新增
+- **P1 #3: Priority Inheritance Mutex (PI Mutex)** — `kernel::framework::sync::pi_mutex` (TCB) + `kernel::services::sync::pi_mutex` (safe API, 0 unsafe)
+  - 直接捐赠: 高优先级等待 → 低优先级持有者有效优先级被提升
+  - 多等待者取 max 优先级
+  - 释放时移交锁给最高优先级等待者 (FIFO 同优先级)
+  - 回调钩子: `set_donation_callback` / `set_revoke_callback` 供调度器集成
+  - 8 个 no_std 单元测试 (基本 lock / try_lock 失败 / 捐赠提升 / max / 移交 / 完全释放 / 重复 lock / 回调)
+  - DECISION-009 (v1 只支持直接捐赠) / DECISION-010 (不直接修改 Process, 通过回调) / DECISION-011 (自旋+yield 等待, 不入调度队列)
+  - 详见 [pi-mutex-design.md](docs/plan/pi-mutex-design.md)
+
 - **Phase C.3: Unix Domain Socket (UDS / AF_UNIX)** — `kernel::framework::net::unix` (TCB) + `kernel::services::net::unix` (safe API, 0 unsafe)
   - SOCK_STREAM: bind → listen → connect → accept → send/recv → close 完整生命周期
   - SOCK_DGRAM: bind → connect → sendto/recvfrom → close

@@ -34,6 +34,7 @@ pub mod test_hvfs_ext;
 pub mod test_ipc;
 pub mod test_mm;
 pub mod test_uds;
+pub mod test_pi_mutex;
 pub mod test_new_features;
 pub mod test_proc;
 pub mod test_pwm;
@@ -347,6 +348,7 @@ pub fn test_runner_init() {
     test_vfs::register_vfs_tests();
     test_ipc::register_ipc_tests();
     test_uds::register_uds_tests();
+    test_pi_mutex::register_pi_mutex_tests();
     test_devfs::register_devfs_tests();
     test_proc::register_proc_tests();
     test_new_features::register_new_tests();

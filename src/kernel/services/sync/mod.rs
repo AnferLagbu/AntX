@@ -60,6 +60,14 @@ pub use crate::kernel::framework::sync::types::RwLockReadGuard;
 /// 写锁 RAII 守卫
 pub use crate::kernel::framework::sync::types::RwLockWriteGuard;
 
+/// Priority Inheritance Mutex (Phase P1 #3)
+pub mod pi_mutex;
+
+pub use pi_mutex::{
+    PiMutex, PiMutexError, PiMutexResult,
+    lock as pi_lock, try_lock as pi_try_lock,
+};
+
 // ============================================================================
 // 中断控制 (用于 irqsave 风格的锁)
 // ============================================================================

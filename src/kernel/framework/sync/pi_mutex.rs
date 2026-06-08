@@ -273,7 +273,10 @@ impl<T: ?Sized> PiMutex<T> {
     }
 
     /// 释放锁 (由 PiMutexGuard::drop 自动调用)
-    fn unlock_internal(&self) {
+    ///
+    /// `pub(crate)` 以便 tests 模块直接验证状态机
+    /// (测试无需完整 lock 循环, 直接 drop 即可触发)
+    pub(crate) fn unlock_internal(&self) {
         let my_pid = current_pid();
         if self.inner.holder.load(Ordering::Acquire) != my_pid {
             // 双重释放 / 非持有者释放: 静默忽略 (v1)

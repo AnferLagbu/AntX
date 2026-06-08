@@ -272,9 +272,9 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 
 ## P1 级待办 (跨阶段, 按需穿插)
 
-- [ ] Unix Domain Socket (可提前到 Phase B)
+- [x] Unix Domain Socket (可提前到 Phase B) → 2026-06-08 完成 (Phase C.3)
 - [ ] Lockdep 死锁检测
-- [ ] Priority Inheritance Mutex
+- [x] Priority Inheritance Mutex → 2026-06-08 完成 (P1 #3)
 - [ ] eventfd / signalfd / timerfd
 - [ ] dcache / icache
 - [ ] 文件锁 (flock / POSIX locks)
