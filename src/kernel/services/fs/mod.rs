@@ -35,3 +35,4 @@ pub mod misc;
 pub mod dcache;
 pub mod flock;
 pub mod inotify;
+pub mod sendfile;

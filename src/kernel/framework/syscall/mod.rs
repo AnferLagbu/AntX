@@ -11,6 +11,7 @@ pub mod info;
 pub mod io;
 pub mod mmap;
 pub mod mprotect;
+pub mod sendfile;
 pub mod linuxulator;
 pub mod wait4;
 
@@ -902,6 +903,20 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         QX_INOTIFY_RM_WATCH => dispatch!(
             crate::kernel::framework::fs::vfs::inotify::sys_inotify_rm_watch(a0 as i64, a1 as i32),
             b"inotify_rm_watch\0"
+        ),
+
+        // ==================== sendfile / splice syscall (650+) ====================
+        QX_SENDFILE => dispatch!(
+            crate::kernel::framework::syscall::sendfile::sys_sendfile(
+                a0 as i32, a1 as i32, a2, a3 as usize
+            ),
+            b"sendfile\0"
+        ),
+        QX_SPLICE => dispatch!(
+            crate::kernel::framework::syscall::sendfile::sys_splice(
+                a0 as i32, a1, a2 as i32, a3, a4 as usize, a5 as u32
+            ),
+            b"splice\0"
         ),
 
         // ==================== Credo 私有 syscall (400+) ====================

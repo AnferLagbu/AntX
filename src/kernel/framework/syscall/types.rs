@@ -399,6 +399,10 @@ pub const QX_INOTIFY_INIT1: u64 = 640;
 pub const QX_INOTIFY_ADD_WATCH: u64 = 641;
 pub const QX_INOTIFY_RM_WATCH: u64 = 642;
 
+// ---------- 650-659: sendfile / splice ----------
+pub const QX_SENDFILE: u64 = 650;
+pub const QX_SPLICE: u64 = 651;
+
 // ---------- 700-709: 系统信息 ----------
 pub const QX_UNAME: u64 = 700;
 pub const QX_SYSINFO: u64 = 701;

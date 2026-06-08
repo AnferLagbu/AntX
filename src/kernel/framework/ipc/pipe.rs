@@ -12,6 +12,7 @@
 //! - FFI 函数通过 `RacyCell::get_mut()` 安全访问全局 IPC_NAMESPACE。
 
 use super::types::*;
+use super::IPC_NAMESPACE;
 use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::framework::proc::api::process_get_current_pid;
 
@@ -36,6 +37,12 @@ fn pipe_find_by_fd_index(namespace: &IpcNamespace, fd: i32) -> Option<usize> {
         }
     }
     None
+}
+
+/// 判断 fd 是否为 pipe fd (公开接口, 供 sendfile/splice 使用)
+pub fn is_pipe_fd(fd: i32) -> bool {
+    let ns = IPC_NAMESPACE.get_mut();
+    pipe_find_by_fd_index(ns, fd).is_some()
 }
 
 pub fn pipe_create_safe(

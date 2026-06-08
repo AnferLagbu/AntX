@@ -296,6 +296,8 @@ fn translate_linux(num: u64) -> u64 {
         290 => QX_EVENTFD2,
         29 => QX_INOTIFY_ADD_WATCH,
         30 => QX_INOTIFY_RM_WATCH,
+        40 => QX_SENDFILE,
+        76 => QX_SPLICE,
 
         _ => num, // 未识别: 透传, dispatch 走 ENOSYS
     }
@@ -418,6 +420,10 @@ fn translate_linux(num: u64) -> u64 {
         26 => QX_INOTIFY_INIT1,
         27 => QX_INOTIFY_ADD_WATCH,
         28 => QX_INOTIFY_RM_WATCH,
+
+        // sendfile / splice
+        71 => QX_SENDFILE,
+        76 => QX_SPLICE,
 
         // FD 操作
         23 => QX_DUP,
