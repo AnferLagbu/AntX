@@ -33,7 +33,7 @@ pub fn clone_syscall(
     }
 
     // child_stack 如果非零, 必须对齐到 16 字节 (x86_64 ABI)
-    if child_stack != 0 && child_stack % 16 != 0 {
+    if child_stack != 0 && !child_stack.is_multiple_of(16) {
         return Err(Errno::EINVAL);
     }
 

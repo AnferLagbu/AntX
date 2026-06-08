@@ -24,12 +24,17 @@ use core::sync::atomic::Ordering;
 
 use super::spinlock::{disable_interrupts, restore_interrupts};
 use super::types::*;
+#[cfg(debug_assertions)]
+use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
 /// 读写锁 (RwLock)
 pub struct RwLock<T: ?Sized> {
     /// 内部状态
     inner: RwLockInner,
-    /// 被保护的数据
+    /// Lockdep 锁类 ID (debug 模式下使用)
+    #[cfg(debug_assertions)]
+    lockdep_class: LockClassId,
+    /// 被保护的数据 (必须为最后一项, 以支持 ?Sized)
     data: core::cell::UnsafeCell<T>,
 }
 
@@ -45,7 +50,29 @@ impl<T> RwLock<T> {
         Self {
             inner: RwLockInner::new(),
             data: core::cell::UnsafeCell::new(data),
+            #[cfg(debug_assertions)]
+            lockdep_class: LockClassId::INVALID,
         }
+    }
+
+    /// 创建命名 RwLock (用于调试 + lockdep)
+    #[cfg(debug_assertions)]
+    pub fn named(name: &'static str, data: T) -> Self {
+        let class_id = lockdep::register_class(LockClassDesc {
+            name,
+            kind: LockKind::RwLock,
+        });
+        Self {
+            inner: RwLockInner::new(),
+            data: core::cell::UnsafeCell::new(data),
+            lockdep_class: class_id,
+        }
+    }
+
+    /// 创建命名 RwLock (release 模式: 忽略名称)
+    #[cfg(not(debug_assertions))]
+    pub fn named(_name: &'static str, data: T) -> Self {
+        Self::new(data)
     }
 
     // ========================================================================
@@ -84,6 +111,10 @@ impl<T> RwLock<T> {
     /// 通常通过 `RwLockReadGuard` 的 Drop 自动调用。
     /// 此方法用于需要手动控制的场景。
     pub fn raw_read_unlock(&self) {
+        // Lockdep: 通知读锁释放
+        #[cfg(debug_assertions)]
+        lockdep::release(self.lockdep_class);
+
         self.inner.lock.raw_lock();
 
         let prev = self.inner.readers.fetch_sub(1, Ordering::AcqRel);
@@ -126,6 +157,10 @@ impl<T> RwLock<T> {
 
     /// 释放写锁
     pub fn raw_write_unlock(&self) {
+        // Lockdep: 通知写锁释放
+        #[cfg(debug_assertions)]
+        lockdep::release(self.lockdep_class);
+
         self.inner.lock.raw_lock();
 
         let prev = self.inner.writer.swap(0, Ordering::AcqRel);
@@ -199,6 +234,11 @@ impl<T> RwLock<T> {
                 // 可以读取: 增加读者计数
                 self.inner.readers.fetch_add(1, Ordering::Release);
                 self.inner.lock.raw_unlock();
+
+                // Lockdep: 通知读锁获取
+                #[cfg(debug_assertions)]
+                lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
+
                 return;
             }
 
@@ -217,6 +257,11 @@ impl<T> RwLock<T> {
         {
             self.inner.readers.fetch_add(1, Ordering::Release);
             self.inner.lock.raw_unlock();
+
+            // Lockdep: 通知读锁获取
+            #[cfg(debug_assertions)]
+            lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
+
             true
         } else {
             self.inner.lock.raw_unlock();
@@ -241,6 +286,11 @@ impl<T> RwLock<T> {
                 self.inner.pending_writers.fetch_sub(1, Ordering::Release);
                 self.inner.writer.store(1, Ordering::Release);
                 self.inner.lock.raw_unlock();
+
+                // Lockdep: 通知写锁获取
+                #[cfg(debug_assertions)]
+                lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
+
                 return;
             }
 
@@ -259,6 +309,11 @@ impl<T> RwLock<T> {
         {
             self.inner.writer.store(1, Ordering::Release);
             self.inner.lock.raw_unlock();
+
+            // Lockdep: 通知写锁获取
+            #[cfg(debug_assertions)]
+            lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
+
             true
         } else {
             self.inner.lock.raw_unlock();

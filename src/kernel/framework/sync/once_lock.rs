@@ -71,7 +71,7 @@ impl InnerOnce {
             )
             .unwrap_or_else(|p| p);
         match prev {
-            DONE => return,
+            DONE => {}
             UNINITIALIZED => {
                 // 我们赢得了执行权
                 f();

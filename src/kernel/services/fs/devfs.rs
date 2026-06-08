@@ -184,7 +184,7 @@ static GLOBAL_DEVFS: Once<SafeDevFs> = Once::new();
 
 /// 初始化全局 DevFS
 pub fn init_global() {
-    GLOBAL_DEVFS.call_once(|| SafeDevFs::new());
+    GLOBAL_DEVFS.call_once(SafeDevFs::new);
 }
 
 /// 获取全局 DevFS 引用

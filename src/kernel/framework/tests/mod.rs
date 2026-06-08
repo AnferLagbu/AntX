@@ -386,6 +386,9 @@ pub fn test_runner_init() {
         crate::kernel::framework::mm::swap::register_swap_tests();
         crate::kernel::framework::pci::msi::register_msi_tests();
         crate::kernel::framework::syscall::epoll::register_epoll_tests();
+        crate::kernel::framework::syscall::eventfd::register_eventfd_tests();
+        crate::kernel::framework::syscall::signalfd::register_signalfd_tests();
+        crate::kernel::framework::syscall::timerfd::register_timerfd_tests();
     }
 
     let r = runner();

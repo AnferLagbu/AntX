@@ -61,8 +61,7 @@ pub fn raw_copy_in(ptr: u64, len: u32) -> Result<alloc::vec::Vec<u8>, Errno> {
     if ptr == 0 || !raw::check_user_buf(ptr, len as u64) {
         return Err(Errno::EFAULT);
     }
-    let mut buf = alloc::vec::Vec::with_capacity(len as usize);
-    buf.resize(len as usize, 0u8);
+    let mut buf = alloc::vec![0u8; len as usize];
     // SAFETY: ptr 由 check_user_buf 验证为可读 len 字节
     unsafe {
         core::ptr::copy_nonoverlapping(ptr as *const u8, buf.as_mut_ptr(), len as usize);

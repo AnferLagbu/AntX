@@ -46,7 +46,7 @@ pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
         return Err(Errno::EFAULT);
     }
     // mode 仅取低 6 位 (POSIX R|W|X|F)
-    if mode < 0 || mode > 0o7 {
+    if !(0..=0o7).contains(&mode) {
         return Err(Errno::EINVAL);
     }
     let pwm = current_pwm();

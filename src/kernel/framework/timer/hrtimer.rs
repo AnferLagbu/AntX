@@ -272,7 +272,7 @@ pub fn hrtimer_start(timer: &HrTimer, expiry_ns: u64) {
 
     // 移除同一 timer 的旧条目 (seq 不同则跳过)
     queue.retain(|entry| {
-        if entry.timer.as_ptr() as *const HrTimer == timer as *const HrTimer {
+        if core::ptr::eq(entry.timer.as_ptr(), timer) {
             // 同一个 timer, 检查 seq 是否匹配
             // SAFETY: `entry` 由调用方保证为有效指针; 只读访问
             let old_seq = unsafe { (*entry.timer.as_ptr()).queue_seq.load(Ordering::Acquire) };

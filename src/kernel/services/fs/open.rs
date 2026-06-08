@@ -97,7 +97,7 @@ pub fn open_syscall(path_ptr: u64, flags: i32, mode: i32) -> Result<usize, Errno
         return Err(Errno::EINVAL);
     }
     // mode 必须 < 0o7777 (suid/sgid/sticky 之外)
-    if (flags & O_CREAT) != 0 && (mode < 0 || mode > 0o7777) {
+    if (flags & O_CREAT) != 0 && !(0..=0o7777).contains(&mode) {
         return Err(Errno::EINVAL);
     }
     let pwm = current_pwm();

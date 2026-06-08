@@ -416,7 +416,7 @@ pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framewor
     use crate::kernel::framework::syscall::types::Errno;
 
     // 验证信号编号 (POSIX kill: 0 = 检查存在, 1..=31 = 标准信号)
-    if sig < 0 || sig > 31 {
+    if !(0..=31).contains(&sig) {
         return Err(Errno::EINVAL);
     }
     // 验证 pid 范围 (POSIX: pid 必须非 0, -1, <-1 之一; pid=0 合法)
@@ -438,7 +438,7 @@ pub fn rt_sigaction_syscall(
     use crate::kernel::framework::syscall::types::Errno;
 
     // 验证信号编号 (SIGKILL=9 和 SIGSTOP=19 不可捕获)
-    if signum < 1 || signum > 64 {
+    if !(1..=64).contains(&signum) {
         return Err(Errno::EINVAL);
     }
     if signum == 9 || signum == 19 {
@@ -460,7 +460,7 @@ pub fn rt_sigprocmask_syscall(
     use crate::kernel::framework::syscall::types::Errno;
 
     // 验证 how
-    if how < 0 || how > 2 {
+    if !(0..=2).contains(&how) {
         return Err(Errno::EINVAL);
     }
 

@@ -1,12 +1,19 @@
 // POSIX errno 命名约定 (EAGAIN/EACCES/...) — 全大写缩写是有意的
 #![allow(clippy::upper_case_acronyms)]
 
-/// Syscall 类型定义和常量 — POSIX 原生接口
+/// Syscall 类型定义和常量
 ///
-/// syscall 编号采用 POSIX 标准约定，Credo 私有 syscall 分配在 400+。
+/// 编号空间分配 (遵循 queenx-naming-standpoint.md):
+///   0-299   : 保留给未来 linuxulator (与 Linux 1:1 映射)
+///   300-399 : 保留
+///   400-499 : Credo 私有 syscall
+///   500-599 : 进程 / 内存 / 文件基础
+///   600-699 : 网络 / IPC
+///   700-799 : 设备 / 系统
+///   800-899 : 扩展
 
 pub const SYSCALL_INT: u8 = 0x80;
-pub const MAX_SYSCALLS: u64 = 512;
+pub const MAX_SYSCALLS: u64 = 800;
 
 // ==================== POSIX 标准 syscall 编号 ====================
 
@@ -195,6 +202,15 @@ pub const SYS_epoll_create: u64 = 213;
 pub const SYS_epoll_ctl: u64 = 233;
 pub const SYS_epoll_wait: u64 = 232;
 
+// eventfd / signalfd / timerfd (Linux x86_64 标准编号)
+pub const SYS_eventfd: u64 = 284;
+pub const SYS_eventfd2: u64 = 290;
+pub const SYS_signalfd: u64 = 282;
+pub const SYS_signalfd4: u64 = 289;
+pub const SYS_timerfd_create: u64 = 283;
+pub const SYS_timerfd_settime: u64 = 286;
+pub const SYS_timerfd_gettime: u64 = 287;
+
 // ==================== Credo 私有 syscall (400+ 不与 POSIX 冲突) ====================
 
 pub const SYS_CREDO_LOGIN: u64 = 400;
@@ -231,6 +247,176 @@ pub const SYS_CREDO_PROC_CPUTIME: u64 = 438;
 pub const SYS_FB_OPEN: u64 = 450;
 pub const SYS_FB_MMAP: u64 = 451;
 pub const SYS_FB_RELEASE: u64 = 452;
+
+// ============================================================================
+// QueenX 原生 syscall 编号 (500+)
+//
+// 遵循 queenx-naming-standpoint.md:
+//   500-599 : 进程 / 内存 / 文件基础
+//   600-699 : 网络 / IPC
+//   700-799 : 设备 / 系统
+//   800-899 : 扩展
+//
+// 编号原则:
+//   - 不抄任何 OS 编号
+//   - 按功能分区, 每区留扩展空间
+//   - 0-299 保留给未来 linuxulator (与 Linux 1:1 映射)
+// ============================================================================
+
+// ---------- 500-509: Core I/O ----------
+pub const QX_EXIT: u64 = 501;
+pub const QX_WRITE: u64 = 502;
+pub const QX_READ: u64 = 503;
+pub const QX_OPEN: u64 = 504;
+pub const QX_CLOSE: u64 = 505;
+pub const QX_STAT: u64 = 506;
+pub const QX_FSTAT: u64 = 507;
+pub const QX_LSTAT: u64 = 508;
+pub const QX_LSEEK: u64 = 509;
+
+// ---------- 510-519: 内存管理 ----------
+pub const QX_MMAP: u64 = 510;
+pub const QX_BRK: u64 = 511;
+pub const QX_MPROTECT: u64 = 512;
+pub const QX_MUNMAP: u64 = 513;
+pub const QX_MREMAP: u64 = 514;
+// 515-519: reserved (madvise, mlock, munlock, mlockall, munlockall)
+
+// ---------- 520-539: 进程管理 ----------
+pub const QX_GETPID: u64 = 520;
+pub const QX_FORK: u64 = 521;
+pub const QX_EXECVE: u64 = 522;
+pub const QX_CLONE: u64 = 523;
+pub const QX_WAIT4: u64 = 524;
+pub const QX_EXIT_GROUP: u64 = 525;
+pub const QX_GETPPID: u64 = 526;
+pub const QX_GETTID: u64 = 527;
+pub const QX_GETPGID: u64 = 528;
+pub const QX_SETPGID: u64 = 529;
+pub const QX_GETSID: u64 = 530;
+pub const QX_SETSID: u64 = 531;
+pub const QX_NICE: u64 = 532;
+pub const QX_SCHED_YIELD: u64 = 533;
+pub const QX_SCHED_SETAFFINITY: u64 = 534;
+pub const QX_SCHED_GETAFFINITY: u64 = 535;
+pub const QX_GETPRIORITY: u64 = 536;
+pub const QX_SETPRIORITY: u64 = 537;
+// 538-539: reserved
+
+// ---------- 540-559: 信号 ----------
+pub const QX_RT_SIGACTION: u64 = 540;
+pub const QX_RT_SIGPROCMASK: u64 = 541;
+pub const QX_RT_SIGRETURN: u64 = 542;
+pub const QX_KILL: u64 = 543;
+pub const QX_TGKILL: u64 = 544;
+// 545-559: reserved (tkill, sigaltstack, rt_sigsuspend, ...)
+pub const QX_TKILL: u64 = 545;
+
+// ---------- 560-579: 文件系统操作 ----------
+pub const QX_MKDIR: u64 = 560;
+pub const QX_RMDIR: u64 = 561;
+pub const QX_RENAME: u64 = 562;
+pub const QX_LINK: u64 = 563;
+pub const QX_UNLINK: u64 = 564;
+pub const QX_SYMLINK: u64 = 565;
+pub const QX_READLINK: u64 = 566;
+pub const QX_CHMOD: u64 = 567;
+pub const QX_FCHMOD: u64 = 568;
+pub const QX_CHOWN: u64 = 569;
+pub const QX_FCHOWN: u64 = 570;
+pub const QX_FCHMODAT: u64 = 570; // fchmodat 映射到 FCHOWN 空间, 实际由 dispatch 区分
+pub const QX_UMASK: u64 = 571;
+pub const QX_ACCESS: u64 = 572;
+pub const QX_TRUNCATE: u64 = 573;
+pub const QX_FTRUNCATE: u64 = 574;
+pub const QX_GETDENTS: u64 = 575;
+pub const QX_GETCWD: u64 = 576;
+pub const QX_CHDIR: u64 = 577;
+pub const QX_CREAT: u64 = 578;
+pub const QX_PIPE: u64 = 579;
+pub const QX_PIPE2: u64 = 579; // pipe2 映射到 PIPE, flags 差异由 libc 处理
+
+// ---------- 580-589: FD / 同步 / 挂载 ----------
+pub const QX_DUP: u64 = 580;
+pub const QX_DUP2: u64 = 581;
+pub const QX_DUP3: u64 = 581; // dup3 映射到 DUP2, flags 差异由 libc 处理
+pub const QX_FCNTL: u64 = 582;
+pub const QX_IOCTL: u64 = 583;
+pub const QX_SYNC: u64 = 584;
+pub const QX_FSYNC: u64 = 585;
+pub const QX_MOUNT: u64 = 586;
+pub const QX_UMOUNT2: u64 = 587;
+pub const QX_POLL: u64 = 588;
+pub const QX_SELECT: u64 = 589;
+
+// ---------- 590-599: 身份 + 文件锁 ----------
+pub const QX_FLOCK: u64 = 590;
+pub const QX_GETUID: u64 = 591;
+pub const QX_GETGID: u64 = 592;
+pub const QX_SETUID: u64 = 593;
+pub const QX_SETGID: u64 = 594;
+pub const QX_GETEUID: u64 = 595;
+pub const QX_GETEGID: u64 = 596;
+pub const QX_SETEUID: u64 = 597;
+pub const QX_SETEGID: u64 = 598;
+pub const QX_SETREUID: u64 = 599;
+// QX_SETREGID 映射到 QX_SETREUID, 由 dispatch 区分
+
+// ---------- 600-619: 网络 ----------
+pub const QX_SOCKET: u64 = 600;
+pub const QX_SOCKETPAIR: u64 = 600; // socketpair 映射到 SOCKET, 由 dispatch 区分
+pub const QX_BIND: u64 = 601;
+pub const QX_LISTEN: u64 = 602;
+pub const QX_ACCEPT: u64 = 603;
+pub const QX_CONNECT: u64 = 604;
+pub const QX_SENDTO: u64 = 605;
+pub const QX_RECVFROM: u64 = 606;
+pub const QX_SENDMSG: u64 = 607;
+pub const QX_RECVMSG: u64 = 608;
+pub const QX_SHUTDOWN: u64 = 609;
+pub const QX_SETSOCKOPT: u64 = 610;
+pub const QX_GETSOCKOPT: u64 = 611;
+pub const QX_GETSOCKNAME: u64 = 612;
+pub const QX_GETPEERNAME: u64 = 613;
+// 614-619: reserved (socketpair, ...)
+
+// ---------- 620-639: 同步 / IPC ----------
+pub const QX_FUTEX: u64 = 620;
+pub const QX_EPOLL_CREATE: u64 = 621;
+pub const QX_EPOLL_CTL: u64 = 622;
+pub const QX_EPOLL_WAIT: u64 = 623;
+pub const QX_EVENTFD: u64 = 624;
+pub const QX_EVENTFD2: u64 = 625;
+pub const QX_SIGNALFD: u64 = 626;
+pub const QX_SIGNALFD4: u64 = 627;
+pub const QX_TIMERFD_CREATE: u64 = 628;
+pub const QX_TIMERFD_SETTIME: u64 = 629;
+pub const QX_TIMERFD_GETTIME: u64 = 630;
+// 631-639: reserved (msgqueue, shm, sem)
+
+// ---------- 700-709: 系统信息 ----------
+pub const QX_UNAME: u64 = 700;
+pub const QX_SYSINFO: u64 = 701;
+pub const QX_GETRLIMIT: u64 = 702;
+// 703: reserved (setrlimit)
+pub const QX_GETRUSAGE: u64 = 704;
+
+// ---------- 710-719: 时间 ----------
+pub const QX_CLOCK_GETTIME: u64 = 710;
+pub const QX_GETTIMEOFDAY: u64 = 711;
+// 712: reserved (settimeofday)
+pub const QX_CLOCK_SETTIME: u64 = 712; // reserved
+pub const QX_NANOSLEEP: u64 = 713;
+pub const QX_ALARM: u64 = 714;
+pub const QX_GETITIMER: u64 = 715;
+pub const QX_SETITIMER: u64 = 716;
+pub const QX_TIME: u64 = 717;
+pub const QX_TIMES: u64 = 718;
+
+// ---------- 720-729: 设备 ----------
+pub const QX_FB_OPEN: u64 = 720;
+pub const QX_FB_MMAP: u64 = 721;
+pub const QX_FB_RELEASE: u64 = 722;
 
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 

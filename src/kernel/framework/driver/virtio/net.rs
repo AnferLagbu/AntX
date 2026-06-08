@@ -522,7 +522,10 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     let user_data = unsafe { UserReadPtr::new(data, len as usize) };
     dev.tx_dma_buf[hdr..total].copy_from_slice(&user_data.as_slice()[..total - hdr]);
     let phys = dev.tx_dma_buf.as_ptr() as u64;
+    #[cfg(target_arch = "x86_64")]
     let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
+    #[cfg(target_arch = "aarch64")]
+    let dma_phys = phys;
     match dev.send_packet(dma_phys, total as u32) {
         Ok(()) => 0,
         Err(()) => -1,

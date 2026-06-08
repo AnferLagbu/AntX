@@ -3,17 +3,29 @@ pub mod api;
 pub mod brk;
 pub mod clone;
 pub mod epoll;
+pub mod eventfd;
+pub mod signalfd;
+pub mod timerfd;
 pub mod futex;
 pub mod info;
 pub mod io;
 pub mod mmap;
 pub mod mprotect;
+pub mod linuxulator;
 pub mod wait4;
 
-/// Syscall 模块 — POSIX 原生系统调用分发
+/// Syscall 模块 — QueenX 原生系统调用分发
 ///
-/// POSIX 标准 syscall 编号 (0-399) + Credo 私有 syscall (400+).
-/// 内核能力层 (VFS/PWM/PROC/NET/MM) 不变，仅 syscall ABI 层替换。
+/// 编号空间 (遵循 queenx-naming-standpoint.md):
+///   0-299   : 保留给未来 linuxulator (与 Linux 1:1 映射)
+///   300-399 : 保留
+///   400-499 : Credo 私有 syscall
+///   500-599 : 进程 / 内存 / 文件基础 (QX_*)
+///   600-699 : 网络 / IPC (QX_*)
+///   700-799 : 设备 / 系统 (QX_*)
+///   800-899 : 扩展 (QX_*)
+///
+/// Linux 兼容二进制通过 linuxulator 模块将架构特定编号翻译为 QX_* 编号。
 pub mod types;
 
 #[cfg(target_arch = "x86_64")]
@@ -68,7 +80,8 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     let syscall_num = f.rax;
 
     // rt_sigreturn 特殊处理: 需要直接修改 frame, 不走正常 dispatch
-    if syscall_num == SYS_rt_sigreturn {
+    // 使用架构无关的翻译层判断
+    if linuxulator::is_rt_sigreturn(syscall_num) {
         // 从用户栈上的 SignalFrame 恢复寄存器
         // 布局: rsp+0=返回地址, rsp+8=SignalFrame
         let sigframe_ptr = (f.rsp + 8) as *const crate::kernel::framework::proc::signal::SignalFrame;
@@ -138,69 +151,72 @@ macro_rules! dispatch {
 ///
 /// Called from interrupt context (int 0x80). All register values come from the interrupted user context.
 pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
+    // 翻译 Linux 架构特定编号为 QueenX 原生编号
+    // QX_*/Credo/FB 编号直接透传
+    let num = linuxulator::translate_syscall(num);
     match num {
         // ==================== 文件 I/O ====================
-        SYS_read => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
-        SYS_write => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
-        SYS_open => dispatch!(
+        QX_READ => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
+        QX_WRITE => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
+        QX_OPEN => dispatch!(
             match crate::kernel::services::fs::open::open_syscall(a0, a1 as i32, a2 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"open\0"
         ),
-        SYS_close => dispatch!(
+        QX_CLOSE => dispatch!(
             match crate::kernel::services::fs::open::close_syscall(a0 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"close\0"
         ),
-        SYS_stat => dispatch!(
+        QX_STAT => dispatch!(
             match crate::kernel::services::fs::stat::stat_syscall(a0, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"stat\0"
         ),
-        SYS_fstat => dispatch!(
+        QX_FSTAT => dispatch!(
             match crate::kernel::services::fs::stat::fstat_syscall(a0 as i32, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"fstat\0"
         ),
-        SYS_lstat => dispatch!(
+        QX_LSTAT => dispatch!(
             match crate::kernel::services::fs::stat::lstat_syscall(a0, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"lstat\0"
         ),
-        SYS_poll => dispatch!(
+        QX_POLL => dispatch!(
             sys_poll(a0 as *mut u8, a1 as u32, a2 as i32),
             b"poll\0"
         ),
-        SYS_lseek => dispatch!(sys_lseek(a0 as i32, a1 as i64, a2 as i32), b"lseek\0"),
+        QX_LSEEK => dispatch!(sys_lseek(a0 as i32, a1 as i64, a2 as i32), b"lseek\0"),
 
         // ==================== 内存管理 ====================
-        SYS_mmap => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5), b"mmap\0"),
-        SYS_mprotect => dispatch!(
+        QX_MMAP => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5), b"mmap\0"),
+        QX_MPROTECT => dispatch!(
             match crate::kernel::services::mm::mprotect::mprotect_syscall(a0, a1, a2 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"mprotect\0"
         ),
-        SYS_munmap => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
-        SYS_brk => dispatch!(
+        QX_MUNMAP => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
+        QX_BRK => dispatch!(
             match crate::kernel::services::mm::brk::brk_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"brk\0"
         ),
-        SYS_mremap => {
+        QX_MREMAP => {
             // 从当前 task 取 MmStruct; 验证后委托 services/mm/mremap
             use crate::kernel::framework::mm::vma::get_current_mm;
             match get_current_mm() {
@@ -220,63 +236,63 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         }
 
         // ==================== 信号 ====================
-        SYS_rt_sigaction => dispatch!(
+        QX_RT_SIGACTION => dispatch!(
             match crate::kernel::services::proc::signal::rt_sigaction_syscall(a0 as i32, a1, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"rt_sigaction\0"
         ),
-        SYS_rt_sigprocmask => dispatch!(
+        QX_RT_SIGPROCMASK => dispatch!(
             match crate::kernel::services::proc::signal::rt_sigprocmask_syscall(a0 as i32, a1, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"rt_sigprocmask\0"
         ),
-        SYS_rt_sigreturn => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
+        QX_RT_SIGRETURN => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
 
         // ==================== 设备 ====================
-        SYS_ioctl => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
+        QX_IOCTL => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
 
         // ==================== 文件访问 ====================
-        SYS_access => dispatch!(
+        QX_ACCESS => dispatch!(
             match crate::kernel::services::fs::access::access_syscall(a0, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"access\0"
         ),
-        SYS_pipe => dispatch!(
+        QX_PIPE => dispatch!(
             match crate::kernel::services::fs::io::pipe_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"pipe\0"
         ),
-        SYS_select => dispatch!(
+        QX_SELECT => dispatch!(
             sys_poll(a0 as *mut u8, a1 as u32, a2 as i32),
             b"select\0"
         ),
-        SYS_sched_yield => dispatch!(sys_sched_yield(), b"sched_yield\0"),
-        SYS_sched_setaffinity => dispatch!(
+        QX_SCHED_YIELD => dispatch!(sys_sched_yield(), b"sched_yield\0"),
+        QX_SCHED_SETAFFINITY => dispatch!(
             sys_sched_setaffinity(a0 as i32, a1 as u32, a2),
             b"sched_setaffinity\0"
         ),
-        SYS_sched_getaffinity => dispatch!(
+        QX_SCHED_GETAFFINITY => dispatch!(
             sys_sched_getaffinity(a0 as i32, a1 as u32, a2),
             b"sched_getaffinity\0"
         ),
 
         // ==================== 文件描述符 ====================
-        SYS_dup => dispatch!(
+        QX_DUP => dispatch!(
             match crate::kernel::services::fs::io::dup_syscall(a0 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"dup\0"
         ),
-        SYS_dup2 => dispatch!(
+        QX_DUP2 => dispatch!(
             match crate::kernel::services::fs::io::dup2_syscall(a0 as i32, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -285,31 +301,31 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 进程优先级 ====================
-        SYS_nice => dispatch!(sys_nice(a0 as i32), b"nice\0"),
+        QX_NICE => dispatch!(sys_nice(a0 as i32), b"nice\0"),
 
         // ==================== 定时器 ====================
-        SYS_nanosleep => dispatch!(
+        QX_NANOSLEEP => dispatch!(
             match crate::kernel::services::proc::sleep::nanosleep_syscall(a0, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"nanosleep\0"
         ),
-        SYS_getitimer => dispatch!(
+        QX_GETITIMER => dispatch!(
             match crate::kernel::services::fs::misc::getitimer_syscall(a0 as i32, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getitimer\0"
         ),
-        SYS_alarm => dispatch!(
+        QX_ALARM => dispatch!(
             match crate::kernel::services::fs::misc::alarm_syscall(a0 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"alarm\0"
         ),
-        SYS_setitimer => dispatch!(
+        QX_SETITIMER => dispatch!(
             match crate::kernel::services::fs::misc::setitimer_syscall(a0 as i32, a1, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -318,55 +334,55 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 进程 ====================
-        SYS_getpid => dispatch!(
+        QX_GETPID => dispatch!(
             crate::kernel::services::proc::info::getpid_syscall() as i64,
             b"getpid\0"
         ),
-        SYS_getppid => dispatch!(
+        QX_GETPPID => dispatch!(
             crate::kernel::services::proc::info::getppid_syscall() as i64,
             b"getppid\0"
         ),
-        SYS_getpgid => dispatch!(
+        QX_GETPGID => dispatch!(
             match crate::kernel::services::proc::info::getpgid_syscall(a0 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getpgid\0"
         ),
-        SYS_setsid => dispatch!(
+        QX_SETSID => dispatch!(
             match crate::kernel::services::proc::session::setsid_syscall() {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"setsid\0"
         ),
-        SYS_getsid => dispatch!(
+        QX_GETSID => dispatch!(
             match crate::kernel::services::proc::session::getsid_syscall(a0 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getsid\0"
         ),
-        SYS_setpgid => dispatch!(
+        QX_SETPGID => dispatch!(
             match crate::kernel::services::proc::session::setpgid_syscall(a0 as i32, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"setpgid\0"
         ),
-        SYS_getpriority => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
-        SYS_setpriority => dispatch!(
+        QX_GETPRIORITY => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
+        QX_SETPRIORITY => dispatch!(
             sys_setpriority(a0 as i32, a1 as u32, a2 as i32),
             b"setpriority\0"
         ),
-        SYS_gettid => dispatch!(
+        QX_GETTID => dispatch!(
             crate::kernel::services::proc::info::gettid_syscall() as i64,
             b"gettid\0"
         ),
 
         // ==================== 网络 (services 代理) ====================
         #[cfg(feature = "net")]
-        SYS_socket => dispatch!(
+        QX_SOCKET => dispatch!(
             match crate::kernel::services::net::syscall::socket_syscall(a0 as i32, a1 as i32, a2 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -374,7 +390,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"socket\0"
         ),
         #[cfg(feature = "net")]
-        SYS_connect => dispatch!(
+        QX_CONNECT => dispatch!(
             match crate::kernel::services::net::syscall::connect_syscall(a0 as i32, a1, a2 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -382,7 +398,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"connect\0"
         ),
         #[cfg(feature = "net")]
-        SYS_accept => dispatch!(
+        QX_ACCEPT => dispatch!(
             match crate::kernel::services::net::syscall::accept_syscall(a0 as i32, a1, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -390,7 +406,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"accept\0"
         ),
         #[cfg(feature = "net")]
-        SYS_sendto => dispatch!(
+        QX_SENDTO => dispatch!(
             match crate::kernel::services::net::syscall::sendto_syscall(a0 as i32, a1, a2 as u32, a3 as i32, a4, a5 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -398,7 +414,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"sendto\0"
         ),
         #[cfg(feature = "net")]
-        SYS_recvfrom => dispatch!(
+        QX_RECVFROM => dispatch!(
             match crate::kernel::services::net::syscall::recvfrom_syscall(a0 as i32, a1, a2 as u32, a3 as i32, a4, a5) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -406,7 +422,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"recvfrom\0"
         ),
         #[cfg(feature = "net")]
-        SYS_shutdown => dispatch!(
+        QX_SHUTDOWN => dispatch!(
             match crate::kernel::services::net::syscall::shutdown_syscall(a0 as i32, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -414,7 +430,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"shutdown\0"
         ),
         #[cfg(feature = "net")]
-        SYS_bind => dispatch!(
+        QX_BIND => dispatch!(
             match crate::kernel::services::net::syscall::bind_syscall(a0 as i32, a1, a2 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -422,7 +438,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"bind\0"
         ),
         #[cfg(feature = "net")]
-        SYS_listen => dispatch!(
+        QX_LISTEN => dispatch!(
             match crate::kernel::services::net::syscall::listen_syscall(a0 as i32, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -430,7 +446,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"listen\0"
         ),
         #[cfg(feature = "net")]
-        SYS_sendmsg => dispatch!(
+        QX_SENDMSG => dispatch!(
             match crate::kernel::services::net::syscall::sendmsg_syscall(a0 as i32, a1, a2 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -438,7 +454,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"sendmsg\0"
         ),
         #[cfg(feature = "net")]
-        SYS_recvmsg => dispatch!(
+        QX_RECVMSG => dispatch!(
             match crate::kernel::services::net::syscall::recvmsg_syscall(a0 as i32, a1, a2 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -446,7 +462,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"recvmsg\0"
         ),
         #[cfg(feature = "net")]
-        SYS_setsockopt => dispatch!(
+        QX_SETSOCKOPT => dispatch!(
             match crate::kernel::services::net::syscall::setsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -454,7 +470,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"setsockopt\0"
         ),
         #[cfg(feature = "net")]
-        SYS_getsockopt => dispatch!(
+        QX_GETSOCKOPT => dispatch!(
             match crate::kernel::services::net::syscall::getsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -462,28 +478,28 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"getsockopt\0"
         ),
         #[cfg(feature = "net")]
-        SYS_getsockname => dispatch!(sys_getsockname(a0 as i32, a1, a2), b"getsockname\0"),
+        QX_GETSOCKNAME => dispatch!(sys_getsockname(a0 as i32, a1, a2), b"getsockname\0"),
         #[cfg(feature = "net")]
-        SYS_getpeername => dispatch!(sys_getpeername(a0 as i32, a1, a2), b"getpeername\0"),
+        QX_GETPEERNAME => dispatch!(sys_getpeername(a0 as i32, a1, a2), b"getpeername\0"),
         #[cfg(feature = "net")]
-        SYS_getrusage => dispatch!(sys_getrusage(a0 as i32, a1), b"getrusage\0"),
+        QX_GETRUSAGE => dispatch!(sys_getrusage(a0 as i32, a1), b"getrusage\0"),
         #[cfg(not(feature = "net"))]
-        SYS_socket | SYS_connect | SYS_accept | SYS_sendto | SYS_recvfrom | SYS_shutdown
-        | SYS_bind | SYS_listen | SYS_sendmsg | SYS_recvmsg | SYS_setsockopt | SYS_getsockopt
-        | SYS_getsockname | SYS_getpeername | SYS_getrusage => {
+        QX_SOCKET | QX_CONNECT | QX_ACCEPT | QX_SENDTO | QX_RECVFROM | QX_SHUTDOWN
+        | QX_BIND | QX_LISTEN | QX_SENDMSG | QX_RECVMSG | QX_SETSOCKOPT | QX_GETSOCKOPT
+        | QX_GETSOCKNAME | QX_GETPEERNAME | QX_GETRUSAGE => {
             dispatch!(Errno::ENOSYS.as_ret(), b"net_nosys\0")
         }
 
         // ==================== 进程创建 ====================
-        SYS_fork => dispatch!(sys_fork(), b"fork\0"),
-        SYS_clone => dispatch!(
+        QX_FORK => dispatch!(sys_fork(), b"fork\0"),
+        QX_CLONE => dispatch!(
             match crate::kernel::services::proc::clone::clone_syscall(a0, a1, a2, a3, a4) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"clone\0"
         ),
-        SYS_execve => dispatch!(
+        QX_EXECVE => dispatch!(
             crate::kernel::services::proc::execve::ExecveResult::from_ret(
                 sys_execve(
                     a0 as *const u8,
@@ -493,15 +509,15 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             ).as_ret(),
             b"execve\0"
         ),
-        SYS_exit => dispatch!(sys_exit(a0 as i32), b"exit\0"),
-        SYS_wait4 => dispatch!(
+        QX_EXIT => dispatch!(sys_exit(a0 as i32), b"exit\0"),
+        QX_WAIT4 => dispatch!(
             match crate::kernel::services::proc::wait4::wait4_syscall(a0 as i32, a1, a2 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"wait4\0"
         ),
-        SYS_kill => dispatch!(
+        QX_KILL => dispatch!(
             match crate::kernel::services::proc::signal::kill_syscall(a0 as i32, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -510,7 +526,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 系统信息 ====================
-        SYS_uname => dispatch!(
+        QX_UNAME => dispatch!(
             match crate::kernel::services::proc::info::uname_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -519,7 +535,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 文件描述符操作 ====================
-        SYS_fcntl => dispatch!(
+        QX_FCNTL => dispatch!(
             match crate::kernel::services::fs::io::fcntl_syscall(a0 as i32, a1 as i32, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -527,28 +543,33 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"fcntl\0"
         ),
 
+        QX_FLOCK => dispatch!(
+            sys_flock(a0 as i32, a1 as i32),
+            b"flock\0"
+        ),
+
         // ==================== 文件截断 ====================
-        SYS_truncate => dispatch!(
+        QX_TRUNCATE => dispatch!(
             sys_truncate(a0 as *const u8, a1 as i64),
             b"truncate\0"
         ),
-        SYS_ftruncate => dispatch!(sys_ftruncate(a0 as i32, a1 as i64), b"ftruncate\0"),
+        QX_FTRUNCATE => dispatch!(sys_ftruncate(a0 as i32, a1 as i64), b"ftruncate\0"),
 
         // ==================== 目录 ====================
-        SYS_getdents => dispatch!(
+        QX_GETDENTS => dispatch!(
             sys_getdents(a0 as i32, a1 as *mut u8, a2),
             b"getdents\0"
         ),
 
         // ==================== 路径 (services 代理) ====================
-        SYS_getcwd => dispatch!(
+        QX_GETCWD => dispatch!(
             match crate::kernel::services::fs::path::getcwd_syscall(a0, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getcwd\0"
         ),
-        SYS_chdir => dispatch!(
+        QX_CHDIR => dispatch!(
             match crate::kernel::services::fs::path::chdir_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -557,56 +578,56 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 文件操作 ====================
-        SYS_rename => dispatch!(
+        QX_RENAME => dispatch!(
             match crate::kernel::services::fs::misc::rename_syscall(a0, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"rename\0"
         ),
-        SYS_mkdir => dispatch!(
+        QX_MKDIR => dispatch!(
             match crate::kernel::services::fs::mode::mkdir_syscall(a0, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"mkdir\0"
         ),
-        SYS_rmdir => dispatch!(
+        QX_RMDIR => dispatch!(
             match crate::kernel::services::fs::mode::rmdir_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"rmdir\0"
         ),
-        SYS_creat => dispatch!(
+        QX_CREAT => dispatch!(
             match crate::kernel::services::fs::open::creat_syscall(a0, a2 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"creat\0"
         ),
-        SYS_link => dispatch!(
+        QX_LINK => dispatch!(
             match crate::kernel::services::fs::link::link_syscall(a0, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"link\0"
         ),
-        SYS_unlink => dispatch!(
+        QX_UNLINK => dispatch!(
             match crate::kernel::services::fs::access::unlink_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"unlink\0"
         ),
-        SYS_symlink => dispatch!(
+        QX_SYMLINK => dispatch!(
             match crate::kernel::services::fs::link::symlink_syscall(a0, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"symlink\0"
         ),
-        SYS_readlink => dispatch!(
+        QX_READLINK => dispatch!(
             match crate::kernel::services::fs::link::readlink_syscall(a0, a1, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -615,32 +636,32 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 文件权限 ====================
-        SYS_chmod => dispatch!(
+        QX_CHMOD => dispatch!(
             match crate::kernel::services::fs::mode::chmod_syscall(a0, a1 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"chmod\0"
         ),
-        SYS_fchmod => dispatch!(
+        QX_FCHMOD => dispatch!(
             match crate::kernel::services::fs::mode::fchmod_syscall(a0 as i32, a1 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"fchmod\0"
         ),
-        SYS_chown => dispatch!(
+        QX_CHOWN => dispatch!(
             sys_chown(a0 as *const u8, a1 as u32, a2 as u32),
             b"chown\0"
         ),
-        SYS_fchown => dispatch!(
+        QX_FCHOWN => dispatch!(
             match crate::kernel::services::fs::misc::fchown_syscall(a0 as i32, a1, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"fchown\0"
         ),
-        SYS_umask => dispatch!(
+        QX_UMASK => dispatch!(
             match crate::kernel::services::fs::mode::umask_syscall(a0 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -649,22 +670,22 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 时间 ====================
-        SYS_gettimeofday => dispatch!(
+        QX_GETTIMEOFDAY => dispatch!(
             match crate::kernel::services::proc::info::gettimeofday_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"gettimeofday\0"
         ),
-        SYS_getrlimit => dispatch!(
+        QX_GETRLIMIT => dispatch!(
             match crate::kernel::services::proc::rlimit::getrlimit_syscall(a0 as i32, a1) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getrlimit\0"
         ),
-        SYS_sysinfo => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
-        SYS_times => dispatch!(
+        QX_SYSINFO => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
+        QX_TIMES => dispatch!(
             match crate::kernel::services::fs::misc::times_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -673,100 +694,93 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 用户/组 (services 代理) ====================
-        SYS_getuid => dispatch!(
+        QX_GETUID => dispatch!(
             match crate::kernel::services::credo::uid::getuid_syscall() {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getuid\0"
         ),
-        SYS_getgid => dispatch!(
+        QX_GETGID => dispatch!(
             match crate::kernel::services::credo::uid::getgid_syscall() {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getgid\0"
         ),
-        SYS_setuid => dispatch!(
+        QX_SETUID => dispatch!(
             match crate::kernel::services::credo::uid::setuid_syscall(a0 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"setuid\0"
         ),
-        SYS_setgid => dispatch!(
+        QX_SETGID => dispatch!(
             match crate::kernel::services::credo::uid::setgid_syscall(a0 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"setgid\0"
         ),
-        SYS_geteuid => dispatch!(
+        QX_GETEUID => dispatch!(
             match crate::kernel::services::credo::uid::geteuid_syscall() {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"geteuid\0"
         ),
-        SYS_getegid => dispatch!(
+        QX_GETEGID => dispatch!(
             match crate::kernel::services::credo::uid::getegid_syscall() {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"getegid\0"
         ),
-        SYS_seteuid => dispatch!(
+        QX_SETEUID => dispatch!(
             match crate::kernel::services::credo::uid::seteuid_syscall(a0 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"seteuid\0"
         ),
-        SYS_setegid => dispatch!(
+        QX_SETEGID => dispatch!(
             match crate::kernel::services::credo::uid::setegid_syscall(a0 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"setegid\0"
         ),
-        SYS_setreuid => dispatch!(
+        QX_SETREUID => dispatch!(
             match crate::kernel::services::credo::uid::setreuid_syscall(a0 as u32, a1 as u32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"setreuid\0"
         ),
-        SYS_setregid => dispatch!(
-            match crate::kernel::services::credo::uid::setregid_syscall(a0 as u32, a1 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"setregid\0"
-        ),
 
         // ==================== 文件同步/挂载 ====================
-        SYS_sync => dispatch!(
+        QX_SYNC => dispatch!(
             match crate::kernel::services::fs::misc::sync_syscall() {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"sync\0"
         ),
-        SYS_fsync => dispatch!(
+        QX_FSYNC => dispatch!(
             match crate::kernel::services::fs::misc::fsync_syscall(a0 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"fsync\0"
         ),
-        SYS_mount => dispatch!(
+        QX_MOUNT => dispatch!(
             match crate::kernel::services::fs::mount::mount_syscall(a0, a1, a2) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"mount\0"
         ),
-        SYS_umount2 => dispatch!(
+        QX_UMOUNT2 => dispatch!(
             match crate::kernel::services::fs::mount::umount2_syscall(a0, a1 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
@@ -774,22 +788,22 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"umount2\0"
         ),
 
-        SYS_time => dispatch!(
+        QX_TIME => dispatch!(
             match crate::kernel::services::fs::misc::time_syscall(a0) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"time\0"
         ),
-        SYS_clock_gettime => dispatch!(
+        QX_CLOCK_GETTIME => dispatch!(
             sys_clock_gettime(a0 as i32, a1 as *mut u8),
             b"clock_gettime\0"
         ),
-        SYS_exit_group => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
-        SYS_tgkill => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
+        QX_EXIT_GROUP => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
+        QX_TGKILL => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
 
         // ==================== 同步 ====================
-        SYS_futex => dispatch!(
+        QX_FUTEX => dispatch!(
             match crate::kernel::services::sync::futex::futex_syscall(
                 a0, a1 as i32, a2 as i32, a3, 0,
             ) {
@@ -803,26 +817,77 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         ),
 
         // ==================== 事件轮询 ====================
-        SYS_epoll_create => dispatch!(
+        QX_EPOLL_CREATE => dispatch!(
             match crate::kernel::services::sync::epoll::epoll_create_syscall(a0 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"epoll_create\0"
         ),
-        SYS_epoll_ctl => dispatch!(
+        QX_EPOLL_CTL => dispatch!(
             match crate::kernel::services::sync::epoll::epoll_ctl_syscall(a0 as i64, a1 as i32, a2 as i32, a3) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"epoll_ctl\0"
         ),
-        SYS_epoll_wait => dispatch!(
+        QX_EPOLL_WAIT => dispatch!(
             match crate::kernel::services::sync::epoll::epoll_wait_syscall(a0 as i64, a1, a2 as i32, a3 as i32) {
                 Ok(v) => v as i64,
                 Err(e) => e.as_ret(),
             },
             b"epoll_wait\0"
+        ),
+
+        // ==================== eventfd / signalfd / timerfd ====================
+        QX_EVENTFD => dispatch!(
+            match crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"eventfd\0"
+        ),
+        QX_EVENTFD2 => dispatch!(
+            match crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"eventfd2\0"
+        ),
+        QX_SIGNALFD => dispatch!(
+            match crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"signalfd\0"
+        ),
+        QX_SIGNALFD4 => dispatch!(
+            match crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"signalfd4\0"
+        ),
+        QX_TIMERFD_CREATE => dispatch!(
+            match crate::kernel::services::sync::timerfd::timerfd_create_syscall(a0 as i32, a1 as i32) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"timerfd_create\0"
+        ),
+        QX_TIMERFD_SETTIME => dispatch!(
+            match crate::kernel::services::sync::timerfd::timerfd_settime_syscall(a0 as i32, a1 as i32, a2, a3) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"timerfd_settime\0"
+        ),
+        QX_TIMERFD_GETTIME => dispatch!(
+            match crate::kernel::services::sync::timerfd::timerfd_gettime_syscall(a0 as i32, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"timerfd_gettime\0"
         ),
 
         // ==================== Credo 私有 syscall (400+) ====================
@@ -1002,6 +1067,18 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
         }
         return 0;
     }
+    // eventfd read: fd ∈ [200, 216)
+    if crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
+        return crate::kernel::framework::syscall::eventfd::sys_eventfd_read(fd, buf as u64);
+    }
+    // signalfd read: fd ∈ [220, 236)
+    if crate::kernel::framework::syscall::signalfd::is_signalfd_fd(fd) {
+        return crate::kernel::framework::syscall::signalfd::sys_signalfd_read(fd, buf as u64);
+    }
+    // timerfd read: fd ∈ [240, 256)
+    if crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
+        return crate::kernel::framework::syscall::timerfd::sys_timerfd_read(fd, buf as u64);
+    }
     crate::kernel::framework::fs::vfs::api::vfs_read(fd as u32, buf, count as u32) as i64
 }
 
@@ -1020,6 +1097,15 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
         }
         return count as i64;
     }
+    // eventfd write: fd ∈ [200, 216), buf 指向 u64 值
+    if crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
+        if count < 8 {
+            return Errno::EINVAL.as_ret();
+        }
+        // SAFETY: buf 由 check_user_buf 验证, 读取 8 字节 u64
+        let value = unsafe { core::ptr::read(buf as *const u64) };
+        return crate::kernel::framework::syscall::eventfd::sys_eventfd_write(fd, value);
+    }
     crate::kernel::framework::fs::vfs::api::vfs_write(fd as u32, buf, count as u32) as i64
 }
 
@@ -1036,12 +1122,27 @@ fn sys_close(fd: i32) -> i64 {
         return Errno::EBADF.as_ret();
     }
     // UDS FD 范围 [100, 116) → 走 UDS close, 不进 VFS
-    if fd >= 100 && fd < 116 {
+    if (100..116).contains(&fd) {
         return match crate::kernel::services::net::unix::close(fd) {
             Ok(()) => 0,
             Err(e) => e.to_errno().as_ret(),
         };
     }
+    // eventfd close: fd ∈ [200, 216)
+    if crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
+        return crate::kernel::framework::syscall::eventfd::sys_eventfd_close(fd);
+    }
+    // signalfd close: fd ∈ [220, 236)
+    if crate::kernel::framework::syscall::signalfd::is_signalfd_fd(fd) {
+        return crate::kernel::framework::syscall::signalfd::sys_signalfd_close(fd);
+    }
+    // timerfd close: fd ∈ [240, 256)
+    if crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
+        return crate::kernel::framework::syscall::timerfd::sys_timerfd_close(fd);
+    }
+    // 释放该 fd 持有的 flock 锁
+    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    crate::kernel::framework::fs::vfs::flock::flock_release_fd(pid, fd);
     crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32) as i64
 }
 
@@ -2389,7 +2490,7 @@ const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
 
 pub fn sys_kill(pid: i32, sig: i32) -> i64 {
-    if sig < 0 || sig > 31 {
+    if !(0..=31).contains(&sig) {
         return Errno::EINVAL.as_ret();
     }
     // 解决 TRACK-315B7C: 移除 pid <= 0 阻塞, 接受 POSIX 4 种 pid 语义
@@ -2564,6 +2665,37 @@ fn sys_fsync(fd: i32) -> i64 {
     }
     crate::kernel::framework::fs::vfs::api::vfs_sync();
     0
+}
+
+// ============================================================================
+// flock — BSD 风格整文件锁
+// ============================================================================
+
+fn sys_flock(fd: i32, operation: i32) -> i64 {
+    use crate::kernel::framework::fs::vfs::flock::{sys_flock as do_flock, FlockResult};
+
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
+
+    // 获取 fd 对应的 inode 号
+    let ino = {
+        let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
+        if (fd as usize) >= crate::kernel::framework::fs::vfs::types::VFS_MAX_FDS || !fd_table[fd as usize].used {
+            return Errno::EBADF.as_ret();
+        }
+        fd_table[fd as usize].node_id
+    };
+
+    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+
+    match do_flock(fd, operation, pid, ino) {
+        FlockResult::Ok => 0,
+        FlockResult::WouldBlock => Errno::EAGAIN.as_ret(),
+        FlockResult::Invalid => Errno::EINVAL.as_ret(),
+        FlockResult::NoSpace => Errno::ENOLCK.as_ret(),
+        FlockResult::NotHeld => Errno::EINVAL.as_ret(),
+    }
 }
 
 // ============================================================================

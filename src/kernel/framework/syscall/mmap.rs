@@ -97,7 +97,7 @@ pub fn mmap_syscall(
     }
 
     // offset 必须页对齐
-    if offset % PAGE_SIZE != 0 {
+    if !offset.is_multiple_of(PAGE_SIZE) {
         return Err(Errno::EINVAL);
     }
 

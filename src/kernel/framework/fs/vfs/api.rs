@@ -97,6 +97,17 @@ fn split_parent_name(rel_path: &str) -> (&str, &str) {
     }
 }
 
+/// 解析相对路径到 inode 号 (用于 unlink 前获取 inode)
+fn resolve_path_to_ino(rel_path: &str, fs_type: FsType) -> Option<u32> {
+    match fs_type {
+        FsType::RamFs => {
+            let ramfs = RAMFS_DATA.lock();
+            ramfs.resolve_path(rel_path)
+        }
+        _ => None,
+    }
+}
+
 // ============================================================================
 // VFS 核心接口 (内部)
 // ============================================================================
@@ -244,8 +255,8 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
             // 条件: count ∈ [1, 16] 页 且 offset / count 均为 4KB 对齐
             let is_aligned_4k = (count as u64) >= PCACHE_FAST_MIN_BYTES as u64
                 && (count as u64) <= PCACHE_FAST_MAX_BYTES as u64
-                && (count as u64) % PAGE_SIZE == 0
-                && (offset as u64) % PAGE_SIZE == 0;
+                && (count as u64).is_multiple_of(PAGE_SIZE)
+                && (offset as u64).is_multiple_of(PAGE_SIZE);
 
             if is_aligned_4k {
                 let npages = (count as u64 / PAGE_SIZE) as usize;
@@ -334,7 +345,10 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    match fs_type {
+    // 在删除前获取 inode 号, 用于删除后释放 POSIX 锁
+    let ino_before = resolve_path_to_ino(rel_path, fs_type);
+
+    let result = match fs_type {
         FsType::RamFs => {
             let mut ramfs = RAMFS_DATA.lock();
             ramfs.unlink(rel_path, pwm)
@@ -345,7 +359,16 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
         }
 
         FsType::Unknown => -1,
+    };
+
+    // 文件删除成功后, 释放该 inode 上的 POSIX 锁
+    if result == 0 {
+        if let Some(ino) = ino_before {
+            crate::kernel::framework::fs::vfs::flock::posix_lock_release_inode(ino);
+        }
     }
+
+    result
 }
 // ============================================================================
 // link / symlink / readlink — 见 services/fs/link.rs, 在 ramfs/hvfs

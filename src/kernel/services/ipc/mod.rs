@@ -102,7 +102,7 @@ static GLOBAL_IPC: Once<IpcNamespaceRef> = Once::new();
 
 /// 初始化全局 IPC 命名空间
 pub fn init_global() {
-    GLOBAL_IPC.call_once(|| IpcNamespaceRef::new());
+    GLOBAL_IPC.call_once(IpcNamespaceRef::new);
 }
 
 /// 获取全局 IPC 引用

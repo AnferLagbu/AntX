@@ -22,6 +22,8 @@ use core::sync::atomic::{fence, Ordering};
 
 pub use super::types::IrqSaveFlags;
 use super::types::*;
+#[cfg(debug_assertions)]
+use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
 /// 自旋锁 (SpinLock)
 ///
@@ -30,6 +32,9 @@ use super::types::*;
 pub struct SpinLock {
     /// 内部状态
     inner: SpinLockInner,
+    /// Lockdep 锁类 ID (debug 模式下使用)
+    #[cfg(debug_assertions)]
+    lockdep_class: LockClassId,
 }
 
 impl SpinLock {
@@ -37,15 +42,30 @@ impl SpinLock {
     pub const fn new() -> Self {
         Self {
             inner: SpinLockInner::new(),
+            #[cfg(debug_assertions)]
+            lockdep_class: LockClassId::INVALID,
         }
     }
 
-    /// 创建命名自旋锁 (用于调试)
+    /// 创建命名自旋锁 (用于调试 + lockdep)
     #[cfg(debug_assertions)]
     pub fn named(name: &'static str) -> Self {
-        let mut lock = Self::new();
+        let class_id = lockdep::register_class(LockClassDesc {
+            name,
+            kind: LockKind::SpinLock,
+        });
+        let mut lock = Self {
+            inner: SpinLockInner::new(),
+            lockdep_class: class_id,
+        };
         lock.inner.name = name;
         lock
+    }
+
+    /// 创建命名自旋锁 (release 模式: 忽略名称)
+    #[cfg(not(debug_assertions))]
+    pub fn named(_name: &'static str) -> Self {
+        Self::new()
     }
 
     /// 获取锁 (阻塞直到成功)
@@ -61,6 +81,10 @@ impl SpinLock {
             .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
+            #[cfg(debug_assertions)]
+            self.debug_acquire();
+            #[cfg(debug_assertions)]
+            lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
             return; // 成功获取
         }
 
@@ -77,6 +101,8 @@ impl SpinLock {
 
         #[cfg(debug_assertions)]
         self.debug_acquire();
+        #[cfg(debug_assertions)]
+        lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
     }
 
     /// ✅ P1-8 修复: 带超时的锁获取 (防止死锁)
@@ -137,6 +163,9 @@ impl SpinLock {
     /// # Safety
     /// 调用者必须持有该锁
     pub fn raw_unlock(&self) {
+        #[cfg(debug_assertions)]
+        lockdep::release(self.lockdep_class);
+
         // 内存屏障: 确保所有写操作对其他 CPU 可见
         fence(Ordering::SeqCst);
 
@@ -158,6 +187,8 @@ impl SpinLock {
             Ok(_) => {
                 #[cfg(debug_assertions)]
                 self.debug_acquire();
+                #[cfg(debug_assertions)]
+                lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
                 TryLockResult::Acquired
             }
             Err(_) => TryLockResult::WouldBlock,

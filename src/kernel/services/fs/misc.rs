@@ -189,7 +189,7 @@ pub fn times_syscall(buf_ptr: u64) -> Result<usize, Errno> {
 /// Framekernel 实现 ITIMER_REAL (which==0); VIRTUAL/PROF (which==1/2) 返 ENOSYS;
 /// 其他 (which==3 保留) 返 EINVAL.
 pub fn getitimer_syscall(which: i32, value_ptr: u64) -> Result<usize, Errno> {
-    if which < 0 || which > 3 {
+    if !(0..=3).contains(&which) {
         return Err(Errno::EINVAL);
     }
     if value_ptr == 0 {
@@ -227,7 +227,7 @@ pub fn setitimer_syscall(
     new_ptr: u64,
     old_ptr: u64,
 ) -> Result<usize, Errno> {
-    if which < 0 || which > 3 {
+    if !(0..=3).contains(&which) {
         return Err(Errno::EINVAL);
     }
     if which != 0 {

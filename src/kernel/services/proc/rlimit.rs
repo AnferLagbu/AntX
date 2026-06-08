@@ -43,7 +43,7 @@ pub fn getrlimit_syscall(resource: i32, rlim_ptr: u64) -> Result<usize, Errno> {
         return Err(Errno::EINVAL);
     }
     // 资源类型范围: 0..=16 (POSIX RLIMIT_NLIMITS)
-    if resource < 0 || resource > 16 {
+    if !(0..=16).contains(&resource) {
         return Err(Errno::EINVAL);
     }
     // framework safe API: 写 rlim_cur/rlim_max 到 user buf, 内部已 check_user_buf

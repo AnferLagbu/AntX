@@ -162,3 +162,9 @@ pub type SyncResult<T> = Result<T, SyncError>;
 
 pub mod futex;
 pub mod epoll;
+pub mod eventfd;
+pub mod signalfd;
+pub mod timerfd;
+
+/// Lockdep — 运行时锁依赖检测器 (P1)
+pub mod lockdep;

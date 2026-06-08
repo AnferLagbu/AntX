@@ -153,7 +153,7 @@ static GLOBAL_PROCFS: Once<SafeProcFs> = Once::new();
 
 /// 初始化全局 ProcFS
 pub fn init_global() {
-    GLOBAL_PROCFS.call_once(|| SafeProcFs::new());
+    GLOBAL_PROCFS.call_once(SafeProcFs::new);
 }
 
 /// 获取全局 ProcFS 引用

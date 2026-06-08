@@ -236,17 +236,17 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 
 ## 待办
 
-### Phase A
-- [ ] A1: hrtimer 高精度定时器框架
-- [ ] A2: POSIX 信号投递 (send/deliver/sigreturn)
-- [ ] A3: execve + 用户态 ASLR
-- [ ] A4: initramfs + PID 1
+### Phase A — 已完成 (2026-06-08)
+- [x] A1: hrtimer 高精度定时器框架
+- [x] A2: POSIX 信号投递 (send/deliver/sigreturn)
+- [x] A3: execve + 用户态 ASLR
+- [x] A4: initramfs + PID 1
 
-### Phase B
-- [ ] B1: Futex (wait/wake/requeue)
-- [ ] B2: Page Cache + 文件 mmap (MAP_SHARED/MAP_PRIVATE)
-- [ ] B3: Swap / 页面回收 (kswapd + LRU)
-- [ ] B4: MSI/MSI-X + ACPI 完整解析
+### Phase B — 已完成 (2026-06-08)
+- [x] B1: Futex (wait/wake/requeue)
+- [x] B2: Page Cache + 文件 mmap (MAP_SHARED/MAP_PRIVATE)
+- [x] B3: Swap / 页面回收 (kswapd + LRU)
+- [x] B4: MSI/MSI-X + ACPI 完整解析
 
 ### Phase C
 - [x] C1: epoll
@@ -300,6 +300,7 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 
 ## 变更历史
 
+- 2026-06-09: 创建 [engineering-progress.md](engineering-progress.md) 工程进度跟踪文档; Phase A/B 待办标记为已完成
 - 2026-06-07: 初始版本
 
 ## Backlog: 过期 TODO 跟踪

@@ -408,6 +408,25 @@ pub fn epoll_pwake(fd: i32) {
 ///
 /// 与 user 事件掩码做 AND 运算, 只报告 user 关心的位.
 fn check_fd_ready(fd: i32, events: u32) -> u32 {
+    // 1. eventfd 空间 [200, 216)
+    if crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
+        let raw = crate::kernel::framework::syscall::eventfd::eventfd_poll_events(fd);
+        return raw & events;
+    }
+
+    // 2. signalfd 空间 [220, 236)
+    if crate::kernel::framework::syscall::signalfd::is_signalfd_fd(fd) {
+        let raw = crate::kernel::framework::syscall::signalfd::signalfd_poll_events(fd);
+        return raw & events;
+    }
+
+    // 3. timerfd 空间 [240, 256)
+    if crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
+        let raw = crate::kernel::framework::syscall::timerfd::timerfd_poll_events(fd);
+        return raw & events;
+    }
+
+    // 4. VFS fd 空间
     use crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER;
     use crate::kernel::framework::fs::vfs::types::VfsFileType;
 

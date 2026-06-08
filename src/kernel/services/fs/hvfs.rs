@@ -301,7 +301,7 @@ static GLOBAL_HVFS: Once<SafeHvFs> = Once::new();
 
 /// 初始化全局 HvFS
 pub fn init_global() {
-    GLOBAL_HVFS.call_once(|| SafeHvFs::new());
+    GLOBAL_HVFS.call_once(SafeHvFs::new);
 }
 
 /// 获取全局 HvFS 引用

@@ -67,7 +67,7 @@ pub enum ElfError {
 
 impl ElfError {
     /// 从内核返回的 `&'static str` 翻译为 `ElfError`
-    pub fn from_str(s: &'static str) -> Self {
+    pub fn from_kernel_str(s: &'static str) -> Self {
         match s {
             "Invalid ELF header" => Self::Truncated,
             "No program headers" => Self::NoLoadableSegment,
@@ -133,7 +133,7 @@ pub fn validate(elf_data: &[u8]) -> ElfResult<Elf64Header> {
 /// - 调用方保证 `mm` 在加载期间不被其他线程访问
 pub fn load(mm: &MmStruct, elf_data: &[u8]) -> ElfResult<ElfLoadResult> {
     proc_elf::elf_load(mm, elf_data.as_ptr(), elf_data.len() as u64)
-        .map_err(ElfError::from_str)
+        .map_err(ElfError::from_kernel_str)
 }
 
 // ============================================================================

@@ -185,7 +185,7 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
             Err(-2)
         };
     }
-    if sig < 1 || sig > 31 {
+    if !(1..=31).contains(&sig) {
         return Err(-1);
     }
 
@@ -266,7 +266,7 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
         };
     }
 
-    if sig < 1 || sig > 31 {
+    if !(1..=31).contains(&sig) {
         return Err(-1);
     }
 
@@ -280,6 +280,7 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
             let current = super::scheduler::SCHEDULER.current().unwrap_or(0);
             let current_pgid = PROCESS_TABLE
                 .get(current)
+                // SAFETY: PROCESS_TABLE 保证指针有效, 进程在表中期间不会释放; 只读 pgid
                 .map(|p| unsafe { (&*p).pgid.load(Ordering::SeqCst) })
                 .unwrap_or(0);
             let target_pgid = if current_pgid == 0 { current } else { current_pgid };
@@ -387,6 +388,7 @@ pub fn do_signal_default_action(pid: Pid, sig: u8) {
         }
         SignalDefaultAction::Stop => {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
+                // SAFETY: PROCESS_TABLE 保证指针有效, 进程在表中期间不会释放
                 let proc = unsafe { &*proc_ptr };
                 proc.state.store(ProcessState::Blocked as u32, Ordering::Release);
             }
@@ -437,11 +439,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
 
     let mut delivered = false;
 
-    loop {
-        let sig = match signal_pick_next(proc) {
-            Some(s) => s,
-            None => break,
-        };
+    while let Some(sig) = signal_pick_next(proc) {
 
         // 清除 pending 位
         proc.signal_pending_clear(1u64 << sig as u64);
@@ -575,7 +573,7 @@ pub fn set_blocked_mask(pid: Pid, mask: u64) {
 
 /// 获取进程的 sigaction 表项
 pub fn get_sigaction(pid: Pid, sig: u8) -> Option<u64> {
-    if sig < 1 || sig > 31 {
+    if !(1..=31).contains(&sig) {
         return None;
     }
     let proc_ptr = PROCESS_TABLE.get(pid)?;
@@ -587,7 +585,7 @@ pub fn get_sigaction(pid: Pid, sig: u8) -> Option<u64> {
 
 /// 设置进程的 sigaction 表项, 返回旧值
 pub fn set_sigaction(pid: Pid, sig: u8, action: u64) -> Option<u64> {
-    if sig < 1 || sig > 31 {
+    if !(1..=31).contains(&sig) {
         return None;
     }
     if is_uncatchable(sig) {

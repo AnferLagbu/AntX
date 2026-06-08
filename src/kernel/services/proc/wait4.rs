@@ -21,7 +21,7 @@ pub fn wait4_syscall(pid: i32, wstatus_ptr: u64, options: i32) -> Result<usize, 
     // 简化: -32768..=32767
     const PID_MAX: i32 = 0x7FFF;
     const PID_MIN: i32 = -0x8000;
-    if pid < PID_MIN || pid > PID_MAX {
+    if !(PID_MIN..=PID_MAX).contains(&pid) {
         return Err(Errno::EINVAL);
     }
 

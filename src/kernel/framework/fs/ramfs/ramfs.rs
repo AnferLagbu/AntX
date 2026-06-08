@@ -628,6 +628,22 @@ impl RamFsData {
                 continue;
             }
 
+            // dcache 快速路径: 先查缓存
+            match crate::kernel::framework::fs::vfs::dcache::dcache_lookup(current, component) {
+                crate::kernel::framework::fs::vfs::dcache::DCacheResult::Hit { ino, file_type: _ } => {
+                    // 缓存命中, 直接使用
+                    current = ino;
+                    continue;
+                }
+                crate::kernel::framework::fs::vfs::dcache::DCacheResult::Negative => {
+                    // 负缓存: 该路径确定不存在
+                    return None;
+                }
+                crate::kernel::framework::fs::vfs::dcache::DCacheResult::Miss => {
+                    // 缓存未命中, 回退到原始目录扫描
+                }
+            }
+
             let node = &self.nodes[current as usize];
 
             if node.file_type != VfsFileType::Dir as u8 {
@@ -659,12 +675,20 @@ impl RamFsData {
                     if name == component {
                         current = entry.node;
                         found = true;
+                        // 插入正缓存
+                        crate::kernel::framework::fs::vfs::dcache::dcache_insert(
+                            node.node_id, component, entry.node, entry.file_type,
+                        );
                         break;
                     }
                 }
             }
 
             if !found {
+                // 插入负缓存: 该 (parent, name) 不存在
+                crate::kernel::framework::fs::vfs::dcache::dcache_insert_negative(
+                    node.node_id, component,
+                );
                 return None;
             }
         }
@@ -882,6 +906,9 @@ impl RamFsData {
 
         self.nodes[node_id as usize].mtime = Self::get_time();
 
+        // 失效 icache (文件大小/修改时间已变化)
+        crate::kernel::framework::fs::vfs::dcache::icache_invalidate(node_id);
+
         bytes_written as i32
     }
 
@@ -1036,6 +1063,9 @@ impl RamFsData {
         node.size = new_size as u32;
         node.mtime = Self::get_time();
 
+        // 失效 icache (文件大小/修改时间已变化)
+        crate::kernel::framework::fs::vfs::dcache::icache_invalidate(node_id);
+
         0
     }
 
@@ -1101,6 +1131,11 @@ impl RamFsData {
             node.link_count = 0;
             node.owner_pwm = 0;
         }
+
+        // 失效父目录 dcache (目录内容已变化)
+        crate::kernel::framework::fs::vfs::dcache::dcache_invalidate_parent(parent_num);
+        // 失效被删 inode 的 icache
+        crate::kernel::framework::fs::vfs::dcache::icache_invalidate(node_id);
 
         0
     }
@@ -1171,6 +1206,9 @@ impl RamFsData {
         self.nodes[parent_num as usize].size += dirent_size as u32;
         self.nodes[parent_num as usize].link_count += 1;
         self.nodes[parent_num as usize].mtime = Self::get_time();
+
+        // 失效父目录 dcache (目录内容已变化)
+        crate::kernel::framework::fs::vfs::dcache::dcache_invalidate_parent(parent_num);
 
         Some(new_node_id)
     }
@@ -1277,6 +1315,9 @@ impl RamFsData {
         self.nodes[parent_num as usize].size += dirent_size as u32;
         self.nodes[parent_num as usize].link_count += 1;
         self.nodes[parent_num as usize].mtime = Self::get_time();
+
+        // 失效父目录 dcache (目录内容已变化)
+        crate::kernel::framework::fs::vfs::dcache::dcache_invalidate_parent(parent_num);
 
         0
     }
@@ -1464,6 +1505,9 @@ impl RamFsData {
         self.nodes[parent_node as usize].mtime = Self::get_time();
         self.nodes[target_node as usize].link_count += 1;
 
+        // 失效父目录 dcache (目录内容已变化)
+        crate::kernel::framework::fs::vfs::dcache::dcache_invalidate_parent(parent_node);
+
         0
     }
 
@@ -1562,6 +1606,10 @@ impl RamFsData {
         self.nodes[parent_num as usize].size += dirent_size as u32;
         self.nodes[parent_num as usize].link_count += 1;
         self.nodes[parent_num as usize].mtime = now;
+
+        // 失效父目录 dcache (目录内容已变化)
+        crate::kernel::framework::fs::vfs::dcache::dcache_invalidate_parent(parent_num);
+
         new_id as i32
     }
 

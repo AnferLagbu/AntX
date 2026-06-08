@@ -37,6 +37,8 @@ use crate::kernel::framework::sync::spinlock::{
     disable_interrupts, restore_interrupts, SpinLock,
 };
 use crate::kernel::framework::sync::types::IrqSaveFlags;
+#[cfg(debug_assertions)]
+use crate::kernel::framework::sync::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
 /// 中断安全自旋锁 (TCB)。
 ///
@@ -55,6 +57,9 @@ pub struct IrqSpinLock<T> {
     data: UnsafeCell<T>,
     /// 嵌套深度 (防止 lock 期间再 lock 时错误恢复 IF)
     depth: UnsafeCell<AtomicU32>,
+    /// Lockdep 锁类 ID (debug 模式下使用)
+    #[cfg(debug_assertions)]
+    lockdep_class: LockClassId,
 }
 
 // SAFETY: 中断屏蔽保证临界区原子性, T: Send 即可。
@@ -79,7 +84,30 @@ impl<T> IrqSpinLock<T> {
             lock: UnsafeCell::new(SpinLock::new()),
             data: UnsafeCell::new(data),
             depth: UnsafeCell::new(AtomicU32::new(0)),
+            #[cfg(debug_assertions)]
+            lockdep_class: LockClassId::INVALID,
         }
+    }
+
+    /// 创建命名 IrqSpinLock (用于调试 + lockdep)
+    #[cfg(debug_assertions)]
+    pub fn named(name: &'static str, data: T) -> Self {
+        let class_id = lockdep::register_class(LockClassDesc {
+            name,
+            kind: LockKind::IrqSpinLock,
+        });
+        Self {
+            lock: UnsafeCell::new(SpinLock::named(name)),
+            data: UnsafeCell::new(data),
+            depth: UnsafeCell::new(AtomicU32::new(0)),
+            lockdep_class: class_id,
+        }
+    }
+
+    /// 创建命名 IrqSpinLock (release 模式: 忽略名称)
+    #[cfg(not(debug_assertions))]
+    pub fn named(_name: &'static str, data: T) -> Self {
+        Self::new(data)
     }
 
     /// 获取锁并返回 RAII Guard, 持锁期间屏蔽中断。
@@ -92,11 +120,18 @@ impl<T> IrqSpinLock<T> {
         let data_ref = unsafe { &mut *self.data.get() };
         // SAFETY: 仅本线程访问 depth (cli 保证 ISR 不并发)。
         unsafe { &*self.depth.get() }.fetch_add(1, Ordering::Relaxed);
+
+        // Lockdep: 通知锁获取 (IrqSpinLock 始终在中断上下文安全)
+        #[cfg(debug_assertions)]
+        lockdep::acquire(self.lockdep_class, true);
+
         IrqSpinLockGuard {
             data: data_ref,
             lock_ptr: self.lock.get(),
             depth_ptr: self.depth.get(),
             prev_if: Some(prev),
+            #[cfg(debug_assertions)]
+            lockdep_class: self.lockdep_class,
         }
     }
 
@@ -136,6 +171,8 @@ impl<T> IrqSpinLock<T> {
             lock_ptr: inner_ptr,
             depth_ptr: self.depth.get(),
             prev_if: Some(prev),
+            #[cfg(debug_assertions)]
+            lockdep_class: self.lockdep_class,
         })
     }
 
@@ -159,6 +196,9 @@ pub struct IrqSpinLockGuard<'a, T> {
     depth_ptr: *mut AtomicU32,
     /// `lock()` 时保存的 IF 标志
     prev_if: Option<IrqSaveFlags>,
+    /// Lockdep 锁类 ID (debug 模式下使用)
+    #[cfg(debug_assertions)]
+    lockdep_class: LockClassId,
 }
 
 impl<'a, T> Deref for IrqSpinLockGuard<'a, T> {
@@ -176,6 +216,10 @@ impl<'a, T> DerefMut for IrqSpinLockGuard<'a, T> {
 
 impl<'a, T> Drop for IrqSpinLockGuard<'a, T> {
     fn drop(&mut self) {
+        // Lockdep: 通知锁释放
+        #[cfg(debug_assertions)]
+        lockdep::release(self.lockdep_class);
+
         // SAFETY: 持有 lock_ptr 上的锁, 任何其他访问者都被锁在外; cli 屏蔽中断。
         unsafe { &*self.lock_ptr }.raw_unlock();
         // SAFETY: 仅本线程访问 depth (cli 保证 ISR 不并发)。

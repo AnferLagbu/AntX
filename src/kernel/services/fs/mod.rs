@@ -32,3 +32,5 @@ pub mod open;
 pub mod link;
 pub mod mount;
 pub mod misc;
+pub mod dcache;
+pub mod flock;

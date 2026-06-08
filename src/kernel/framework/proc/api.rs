@@ -282,6 +282,10 @@ pub fn process_create(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
 pub fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid != 0 {
+        // 释放该进程持有的所有文件锁
+        crate::kernel::framework::fs::vfs::flock::flock_release_pid(current_pid);
+        crate::kernel::framework::fs::vfs::flock::posix_lock_release_pid(current_pid);
+
         let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
         if kernel_cr3 != 0 {
             // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
@@ -1390,9 +1394,7 @@ pub fn proc_getitimer_real(pid: u32, out_remaining_seconds: *mut u64) -> i32 {
     let now = crate::kernel::framework::timer::get_ticks();
     let res = PROCESS_TABLE.with_process(pid as Pid, |p| {
         let d = p.itimer_real_deadline.load(Ordering::SeqCst);
-        if d == 0 || hz == 0 {
-            0u64
-        } else if now >= d {
+        if d == 0 || hz == 0 || now >= d {
             0u64
         } else {
             (d - now) / hz
@@ -1469,10 +1471,9 @@ pub fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
                 )
             })
             .unwrap_or((0, 0))
-    } else if who == 1 {
-        (0, 0) // 子进程累加未实现, 写 0
     } else {
-        (0, 0) // RUSAGE_THREAD, 暂同 SELF
+        // who == 1 (子进程) 或 RUSAGE_THREAD, 暂未实现
+        (0, 0)
     };
     let ut_sec = (user / hz) as i64;
     let ut_usec = ((user % hz) * 1_000_000 / hz) as i64;

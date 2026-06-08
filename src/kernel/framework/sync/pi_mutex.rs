@@ -40,6 +40,8 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+#[cfg(debug_assertions)]
+use crate::kernel::framework::sync::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
 // ============================================================================
 // 常量
@@ -152,6 +154,10 @@ pub struct PiMutex<T: ?Sized> {
     inner: PiMutexInner,
     /// 初始持有者的 base_priority (用于解锁后通知撤销)
     holder_base_priority: AtomicU32,
+    /// Lockdep 锁类 ID (debug 模式下使用)
+    #[cfg(debug_assertions)]
+    lockdep_class: LockClassId,
+    /// 被保护的数据 (必须为最后一项, 以支持 ?Sized)
     data: UnsafeCell<T>,
 }
 
@@ -180,7 +186,30 @@ impl<T> PiMutex<T> {
             inner: PiMutexInner::new(),
             holder_base_priority: AtomicU32::new(0),
             data: UnsafeCell::new(data),
+            #[cfg(debug_assertions)]
+            lockdep_class: LockClassId::INVALID,
         }
+    }
+
+    /// 创建命名 PiMutex (用于调试 + lockdep)
+    #[cfg(debug_assertions)]
+    pub fn named(name: &'static str, data: T) -> Self {
+        let class_id = lockdep::register_class(LockClassDesc {
+            name,
+            kind: LockKind::PiMutex,
+        });
+        Self {
+            inner: PiMutexInner::new(),
+            holder_base_priority: AtomicU32::new(0),
+            data: UnsafeCell::new(data),
+            lockdep_class: class_id,
+        }
+    }
+
+    /// 创建命名 PiMutex (release 模式: 忽略名称)
+    #[cfg(not(debug_assertions))]
+    pub fn named(_name: &'static str, data: T) -> Self {
+        Self::new(data)
     }
 }
 
@@ -234,6 +263,11 @@ impl<T: ?Sized> PiMutex<T> {
             self.inner.holder.store(my_pid, Ordering::Release);
             self.inner.effective_priority.store(my_base_priority, Ordering::Release);
             self.holder_base_priority.store(my_base_priority, Ordering::Release);
+
+            // Lockdep: 通知锁获取
+            #[cfg(debug_assertions)]
+            lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
+
             return true;
         }
 
@@ -277,6 +311,10 @@ impl<T: ?Sized> PiMutex<T> {
     /// `pub(crate)` 以便 tests 模块直接验证状态机
     /// (测试无需完整 lock 循环, 直接 drop 即可触发)
     pub(crate) fn unlock_internal(&self) {
+        // Lockdep: 通知锁释放
+        #[cfg(debug_assertions)]
+        lockdep::release(self.lockdep_class);
+
         let my_pid = current_pid();
         if self.inner.holder.load(Ordering::Acquire) != my_pid {
             // 双重释放 / 非持有者释放: 静默忽略 (v1)

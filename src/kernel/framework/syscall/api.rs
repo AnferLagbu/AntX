@@ -1,7 +1,12 @@
 //! 系统调用 API 层
 //!
-//! POSIX + Credo 私有 syscall 的统一分发入口,
+//! QueenX 原生 syscall (QX_*) + Linux 兼容 (SYS_*) + Credo 私有 syscall 的统一分发入口,
 //! 用户态→内核态的唯一合法路径。
+//!
+//! ## 编号空间
+//! - 0-299   : Linux 兼容编号 (SYS_*), 由 linuxulator 模块翻译为 QX_*
+//! - 400-499 : Credo 私有 syscall
+//! - 500+    : QueenX 原生编号 (QX_*)
 //!
 //! ## 调用方契约
 //! - `boot::isr.asm` —— 中断/异常入口 (int 0x80 / syscall 指令)
@@ -12,6 +17,7 @@
 //!
 //! ## 内部接口
 //! - `types.rs` —— SyscallHandler 函数指针类型, Errno, syscall 编号常量
+//! - `linuxulator.rs` —— Linux ABI 兼容层 (编号翻译 + 参数转换)
 //! - `mmap.rs` —— mmap/munmap/mprotect 实现
 //! - `mod.rs` —— syscall_dispatch() 核心分发器 (所有 sys_* 实现)
 //!
@@ -29,7 +35,38 @@
 pub use super::types::{SyscallHandler, Errno};
 
 // ============================================================================
-// 契约常量: syscall 编号 (从 types.rs 继承, 在此声明以明确契约)
+// QueenX 原生 syscall 编号 (QX_*)
+// ============================================================================
+
+pub use super::types::{
+    QX_EXIT, QX_WRITE, QX_READ, QX_OPEN, QX_CLOSE, QX_STAT, QX_FSTAT, QX_LSTAT, QX_LSEEK,
+    QX_MMAP, QX_BRK, QX_MPROTECT, QX_MUNMAP, QX_MREMAP,
+    QX_GETPID, QX_FORK, QX_EXECVE, QX_CLONE, QX_WAIT4, QX_EXIT_GROUP,
+    QX_GETPPID, QX_GETTID, QX_GETPGID, QX_SETPGID, QX_GETSID, QX_SETSID,
+    QX_NICE, QX_SCHED_YIELD, QX_SCHED_SETAFFINITY, QX_SCHED_GETAFFINITY,
+    QX_GETPRIORITY, QX_SETPRIORITY,
+    QX_RT_SIGACTION, QX_RT_SIGPROCMASK, QX_RT_SIGRETURN, QX_KILL, QX_TGKILL,
+    QX_MKDIR, QX_RMDIR, QX_RENAME, QX_LINK, QX_UNLINK, QX_SYMLINK, QX_READLINK,
+    QX_CHMOD, QX_FCHMOD, QX_CHOWN, QX_FCHOWN, QX_UMASK, QX_ACCESS,
+    QX_TRUNCATE, QX_FTRUNCATE, QX_GETDENTS, QX_GETCWD, QX_CHDIR, QX_CREAT, QX_PIPE,
+    QX_DUP, QX_DUP2, QX_FCNTL, QX_FLOCK, QX_IOCTL, QX_SYNC, QX_FSYNC, QX_MOUNT, QX_UMOUNT2,
+    QX_POLL, QX_SELECT,
+    QX_GETUID, QX_GETGID, QX_SETUID, QX_SETGID, QX_GETEUID, QX_GETEGID,
+    QX_SETEUID, QX_SETEGID, QX_SETREUID,
+    QX_SOCKET, QX_BIND, QX_LISTEN, QX_ACCEPT, QX_CONNECT,
+    QX_SENDTO, QX_RECVFROM, QX_SENDMSG, QX_RECVMSG, QX_SHUTDOWN,
+    QX_SETSOCKOPT, QX_GETSOCKOPT, QX_GETSOCKNAME, QX_GETPEERNAME,
+    QX_FUTEX, QX_EPOLL_CREATE, QX_EPOLL_CTL, QX_EPOLL_WAIT,
+    QX_EVENTFD, QX_EVENTFD2, QX_SIGNALFD, QX_SIGNALFD4,
+    QX_TIMERFD_CREATE, QX_TIMERFD_SETTIME, QX_TIMERFD_GETTIME,
+    QX_UNAME, QX_SYSINFO, QX_GETRLIMIT, QX_GETRUSAGE,
+    QX_CLOCK_GETTIME, QX_GETTIMEOFDAY, QX_NANOSLEEP, QX_ALARM,
+    QX_GETITIMER, QX_SETITIMER, QX_TIME, QX_TIMES,
+    QX_FB_OPEN, QX_FB_MMAP, QX_FB_RELEASE,
+};
+
+// ============================================================================
+// Linux 兼容编号 (SYS_*) — 保留给 linuxulator, 由 linuxulator 模块翻译
 // ============================================================================
 
 pub const SYS_read: u64 = 0;
@@ -75,7 +112,7 @@ pub const SYS_exit_group: u64 = 231;
 pub const SYS_futex: u64 = 202;
 pub const SYS_clock_gettime: u64 = 228;
 pub const SYS_CREDO_BASE: u64 = 400;
-pub const MAX_SYSCALLS: u64 = 512;
+pub const MAX_SYSCALLS: u64 = 800;
 
 // ============================================================================
 // 契约: 注册机制

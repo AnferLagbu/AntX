@@ -20,6 +20,8 @@
 use core::sync::atomic::Ordering;
 
 use super::types::*;
+#[cfg(debug_assertions)]
+use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
 /// 睡眠锁 (Mutex)
 ///
@@ -28,7 +30,10 @@ use super::types::*;
 pub struct Mutex<T: ?Sized> {
     /// 内部状态
     inner: MutexInner,
-    /// 被保护的数据
+    /// Lockdep 锁类 ID (debug 模式下使用)
+    #[cfg(debug_assertions)]
+    lockdep_class: LockClassId,
+    /// 被保护的数据 (必须为最后一项, 以支持 ?Sized)
     data: core::cell::UnsafeCell<T>,
 }
 
@@ -46,7 +51,29 @@ impl<T> Mutex<T> {
         Self {
             inner: MutexInner::default(),
             data: core::cell::UnsafeCell::new(data),
+            #[cfg(debug_assertions)]
+            lockdep_class: LockClassId::INVALID,
         }
+    }
+
+    /// 创建命名 Mutex (用于调试 + lockdep)
+    #[cfg(debug_assertions)]
+    pub fn named(name: &'static str, data: T) -> Self {
+        let class_id = lockdep::register_class(LockClassDesc {
+            name,
+            kind: LockKind::Mutex,
+        });
+        Self {
+            inner: MutexInner::default(),
+            data: core::cell::UnsafeCell::new(data),
+            lockdep_class: class_id,
+        }
+    }
+
+    /// 创建命名 Mutex (release 模式: 忽略名称)
+    #[cfg(not(debug_assertions))]
+    pub fn named(_name: &'static str, data: T) -> Self {
+        Self::new(data)
     }
 
     /// 获取内部数据的不可变引用
@@ -187,6 +214,10 @@ impl<T> Mutex<T> {
 
     /// 原始释放锁
     fn raw_unlock(&self) {
+        // Lockdep: 通知锁释放
+        #[cfg(debug_assertions)]
+        lockdep::release(self.lockdep_class);
+
         self.inner.inner_spinlock.raw_lock();
 
         let depth = self.inner.depth.fetch_sub(1, Ordering::AcqRel);
@@ -225,6 +256,10 @@ impl<T> Mutex<T> {
 
         // 记录获取时间
         self.inner.acquire_time.store(rdtsc(), Ordering::Release);
+
+        // Lockdep: 通知锁获取
+        #[cfg(debug_assertions)]
+        lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
     }
 
     /// 检查锁是否被持有

@@ -115,6 +115,125 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
         }
         F_SETFL => 0,
         F_DUPFD => sys_dup2(fd, arg as i32),
+        // POSIX record locks (F_SETLK / F_GETLK / F_SETLKW)
+        5 | 6 | 7 => sys_fcntl_posix_lock(fd, cmd, arg),
         _ => Errno::EINVAL.as_ret(),
+    }
+}
+
+/// fcntl POSIX record lock 处理
+///
+/// `arg` 指向用户空间的 `flock` 结构体:
+///   l_type:  i16  (F_RDLCK=0, F_WRLCK=1, F_UNLCK=2)
+///   l_whence: i16 (0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)
+///   l_start: i64
+///   l_len:   i64  (0=到文件末尾)
+///   l_pid:   i32  (F_GETLK 返回冲突锁的 PID)
+fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
+    use crate::kernel::framework::fs::vfs::flock::{
+        sys_posix_lock, PosixLockResult, F_GETLK,
+    };
+
+    // flock 结构体布局 (与 Linux 兼容):
+    // offset 0:  l_type   i16
+    // offset 2:  l_whence i16
+    // offset 4:  l_start  i64
+    // offset 12: l_len    i64
+    // offset 20: l_pid    i32
+    const FLOCK_STRUCT_SIZE: usize = 24;
+
+    if arg == 0 || !crate::kernel::framework::syscall::raw::check_user_buf(arg, FLOCK_STRUCT_SIZE as u64) {
+        return Errno::EFAULT.as_ret();
+    }
+
+    // 读取用户空间 flock 结构体
+    // SAFETY: arg 已通过 check_user_buf 验证
+    let (l_type, l_whence, l_start, l_len) = unsafe {
+        let ptr = arg as *const u8;
+        let l_type = i16::from_ne_bytes([*ptr, *ptr.add(1)]);
+        let l_whence = i16::from_ne_bytes([*ptr.add(2), *ptr.add(3)]);
+        let l_start = i64::from_ne_bytes([
+            *ptr.add(4), *ptr.add(5), *ptr.add(6), *ptr.add(7),
+            *ptr.add(8), *ptr.add(9), *ptr.add(10), *ptr.add(11),
+        ]);
+        let l_len = i64::from_ne_bytes([
+            *ptr.add(12), *ptr.add(13), *ptr.add(14), *ptr.add(15),
+            *ptr.add(16), *ptr.add(17), *ptr.add(18), *ptr.add(19),
+        ]);
+        (l_type, l_whence, l_start, l_len)
+    };
+
+    // 验证 l_type
+    if !(0..=2).contains(&l_type) {
+        return Errno::EINVAL.as_ret();
+    }
+
+    // 获取 fd 对应的 inode 号
+    let ino = {
+        let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
+        if (fd as usize) >= crate::kernel::framework::fs::vfs::types::VFS_MAX_FDS || !fd_table[fd as usize].used {
+            return Errno::EBADF.as_ret();
+        }
+        fd_table[fd as usize].node_id
+    };
+
+    // 计算 l_start (基于 l_whence)
+    let start = match l_whence {
+        0 => l_start as u64, // SEEK_SET
+        1 => {
+            // SEEK_CUR: 当前 offset + l_start
+            let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
+            if (fd as usize) >= crate::kernel::framework::fs::vfs::types::VFS_MAX_FDS {
+                return Errno::EBADF.as_ret();
+            }
+            (fd_table[fd as usize].offset as i64 + l_start) as u64
+        }
+        2 => {
+            // SEEK_END: v1 简化, 不支持 (需要文件大小)
+            return Errno::EINVAL.as_ret();
+        }
+        _ => return Errno::EINVAL.as_ret(),
+    };
+
+    let len = if l_len < 0 {
+        // 负长度: 从 start 向前锁
+        // v1 简化: 不支持负长度
+        return Errno::EINVAL.as_ret();
+    } else if l_len == 0 {
+        0 // 到文件末尾
+    } else {
+        l_len as u64
+    };
+
+    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+
+    match sys_posix_lock(pid, ino, cmd, l_type as i32, start, len) {
+        Ok(None) => 0,
+        Ok(Some(conflict)) => {
+            if cmd == F_GETLK {
+                // F_GETLK: 写回冲突信息到用户空间
+                // SAFETY: arg 已通过 check_user_buf 验证
+                unsafe {
+                    let ptr = arg as *mut u8;
+                    // 设置 l_type 为冲突锁的类型
+                    let ct = conflict.lock_type as i16;
+                    *ptr = ct as u8;
+                    *ptr.add(1) = (ct >> 8) as u8;
+                    // 设置 l_pid 为冲突锁的 PID
+                    let cpid = conflict.pid as i32;
+                    *ptr.add(20) = cpid as u8;
+                    *ptr.add(21) = (cpid >> 8) as u8;
+                    *ptr.add(22) = (cpid >> 16) as u8;
+                    *ptr.add(23) = (cpid >> 24) as u8;
+                }
+                0
+            } else {
+                // F_SETLK / F_SETLKW: 锁被占用
+                Errno::EAGAIN.as_ret()
+            }
+        }
+        Err(PosixLockResult::Invalid) => Errno::EINVAL.as_ret(),
+        Err(PosixLockResult::NoSpace) => Errno::ENOLCK.as_ret(),
+        Err(PosixLockResult::WouldBlock) => Errno::EAGAIN.as_ret(),
     }
 }
