@@ -1,6 +1,10 @@
 pub mod driver;
 #[cfg(not(feature = "kernel_test"))]
 pub mod init;
+/// C5: 路由表管理
+pub mod route;
+/// C5: Netfilter 包过滤框架
+pub mod netfilter;
 #[cfg(not(feature = "kernel_test"))]
 pub mod smoltcp_impl;
 /// AF_UNIX 子系统 (Phase C.3)

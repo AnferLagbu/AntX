@@ -95,6 +95,8 @@ pub mod pci;
 pub mod iobuf;
 
 pub mod frame;
+/// C4: I/O 子系统 (io_uring)
+pub mod io;
 pub mod vmspace;
 pub mod usermode;
 pub mod userctx;

@@ -689,6 +689,19 @@ pub fn scheduler_tick() {
 pub fn scheduler_init() {
     super::scheduler::init();
     SCHEDULER_EX.init();
+    // D2: 初始化 cgroup 子系统
+    super::cgroup::cgroup_init();
+    // D3: 初始化 NUMA 拓扑 (UMA 回退, 后续接入 ACPI SRAT)
+    crate::kernel::framework::mm::numa::numa_init(
+        crate::kernel::framework::mm::api::pmm_get_total_pages() * 4096,
+        crate::kernel::framework::config::MAX_CPUS as u32,
+    );
+    // D4: 初始化 eBPF 子系统
+    crate::kernel::framework::debug::ebpf::bpf_init();
+    // D5: 初始化电源管理子系统
+    crate::kernel::framework::driver::power::pm_init(
+        crate::kernel::framework::config::MAX_CPUS as u32,
+    );
 }
 
 #[no_mangle]
@@ -1180,6 +1193,57 @@ pub fn sys_fork() -> Pid {
                 .with_process(parent_pid, |p| p.stack_canary.load(Ordering::SeqCst))
                 .unwrap_or(0);
             child.stack_canary.store(parent_canary, Ordering::SeqCst);
+        }
+        // C7: 继承父进程 Seccomp 过滤器 (fork 后子进程拥有独立副本)
+        {
+            let parent_seccomp = PROCESS_TABLE
+                .with_process(parent_pid, |p| {
+                    let mode = p.seccomp.get_mode();
+                    let no_new_privs = p.seccomp.is_no_new_privs();
+                    let filters = p.seccomp.filters.lock();
+                    (mode, no_new_privs, filters.clone())
+                })
+                .unwrap_or((crate::kernel::framework::proc::seccomp::SeccompMode::Disabled, false, alloc::vec::Vec::new()));
+            child.seccomp.mode.store(parent_seccomp.0 as u8, Ordering::SeqCst);
+            child.seccomp.no_new_privs.store(parent_seccomp.1 as u8, Ordering::SeqCst);
+            *child.seccomp.filters.lock() = parent_seccomp.2;
+        }
+        // D1: 继承父进程 Namespace 集合 (fork 默认共享)
+        {
+            let parent_ns = PROCESS_TABLE
+                .with_process(parent_pid, |p| {
+                    crate::kernel::framework::proc::namespace::NamespaceSet::fork_from(&p.namespaces.lock())
+                })
+                .unwrap_or_else(crate::kernel::framework::proc::namespace::NamespaceSet::new_init);
+            *child.namespaces.lock() = parent_ns;
+        }
+        // D2: 继承父进程 cgroup ID
+        {
+            let parent_cg = PROCESS_TABLE
+                .with_process(parent_pid, |p| p.cgroup_id.load(core::sync::atomic::Ordering::Acquire))
+                .unwrap_or(0);
+            child.cgroup_id.store(parent_cg, core::sync::atomic::Ordering::Release);
+            // 将子进程加入 cgroup 的进程列表
+            if crate::kernel::framework::proc::cgroup::cgroup_is_initialized() {
+                let sub = crate::kernel::framework::proc::cgroup::cgroup_subsystem();
+                if let Some(cg) = sub.find(parent_cg) {
+                    cg.attach_proc(child_pid);
+                }
+            }
+        }
+        // D3: 继承父进程 NUMA 策略
+        {
+            let parent_policy = PROCESS_TABLE
+                .with_process(parent_pid, |p| {
+                    let policy = p.numa_policy.lock();
+                    let mode = *policy.mode.lock();
+                    let mask = *policy.nodemask.lock();
+                    (mode, mask)
+                })
+                .unwrap_or((crate::kernel::framework::mm::numa::NumaPolicy::Default, 0));
+            let child_policy = child.numa_policy.lock();
+            *child_policy.mode.lock() = parent_policy.0;
+            *child_policy.nodemask.lock() = parent_policy.1;
         }
     }
 

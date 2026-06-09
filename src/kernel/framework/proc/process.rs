@@ -209,6 +209,31 @@ pub struct Process {
     /// 进程创建时由 [`crate::kernel::framework::proc::canary::generate_canary`]
     /// 初始化, fork 继承父进程.
     pub stack_canary: AtomicU64,
+
+    /// Per-process Seccomp 状态 (C7)
+    ///
+    /// 包含模式 (Disabled/Strict/Filter) + 过滤器链 + no_new_privs 位.
+    /// fork 继承全部过滤器; execve 保留.
+    pub seccomp: crate::kernel::framework::proc::seccomp::SeccompState,
+
+    /// Per-process Namespace 集合 (D1)
+    ///
+    /// 包含 UTS/IPC/PID/Mount/User/Net/Cgroup 七种 namespace.
+    /// fork 默认共享 (Arc::clone), CLONE_NEW* 创建新实例.
+    /// 通过 sys_unshare / sys_setns 运行时切换.
+    pub namespaces: spin::Mutex<crate::kernel::framework::proc::namespace::NamespaceSet>,
+
+    /// Per-process cgroup ID (D2)
+    ///
+    /// 进程所属 cgroup 的 ID, 默认 0 (根 cgroup).
+    /// fork 继承父进程的 cgroup; 可通过 sys_cgroup_attach 迁移.
+    pub cgroup_id: AtomicU64,
+
+    /// Per-process NUMA 内存策略 (D3)
+    ///
+    /// 控制进程的内存分配节点选择策略.
+    /// fork 继承父进程策略; 可通过 sys_set_mempolicy 修改.
+    pub numa_policy: spin::Mutex<crate::kernel::framework::mm::numa::NumaMempolicy>,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -288,6 +313,18 @@ impl Process {
             // P1 #14: 进程创建时分配独立 canary
             stack_canary: AtomicU64::new(
                 crate::kernel::framework::proc::canary::generate_canary(),
+            ),
+            // C7: Seccomp 默认 Disabled
+            seccomp: crate::kernel::framework::proc::seccomp::SeccompState::new(),
+            // D1: Namespace 默认 init namespace 集合
+            namespaces: spin::Mutex::new(
+                crate::kernel::framework::proc::namespace::NamespaceSet::new_init(),
+            ),
+            // D2: cgroup 默认根 cgroup (id=0)
+            cgroup_id: AtomicU64::new(0),
+            // D3: NUMA 策略默认 Default
+            numa_policy: spin::Mutex::new(
+                crate::kernel::framework::mm::numa::NumaMempolicy::new(),
             ),
         }
     }

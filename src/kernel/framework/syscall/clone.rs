@@ -43,6 +43,18 @@ pub const CLONE_PARENT_SETTID: u64 = 0x00100000;  // 写 TID 到 parent tidptr
 pub const CLONE_CHILD_CLEARTID: u64 = 0x00200000; // 子进程退出时清 tidptr
 pub const CLONE_CHILD_SETTID: u64 = 0x01000000;   // 写 TID 到 child tidptr
 
+/// Namespace 标志位 (D1)
+pub const CLONE_NEWNS: u64 = 0x00020000;      // Mount namespace
+pub const CLONE_NEWUTS: u64 = 0x04000000;     // UTS namespace
+pub const CLONE_NEWIPC: u64 = 0x08000000;     // IPC namespace
+pub const CLONE_NEWUSER: u64 = 0x10000000;    // User namespace
+pub const CLONE_NEWPID: u64 = 0x20000000;     // PID namespace
+pub const CLONE_NEWNET: u64 = 0x40000000;     // Network namespace
+pub const CLONE_NEWCGROUP: u64 = 0x02000000;  // Cgroup namespace
+/// 所有 CLONE_NEW* 掩码
+pub const CLONE_NEW_ALL: u64 =
+    CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP;
+
 /// clone 系统调用实现
 ///
 /// `flags`: 克隆标志 (CLONE_VM | CLONE_FS | ...)
@@ -77,6 +89,20 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
             unsafe {
                 core::ptr::write_volatile(parent_tidptr as *mut i32, child_pid as i32);
             }
+        }
+
+        // D1: CLONE_NEW* — 为子进程创建新 namespace
+        let new_ns_flags = flags & CLONE_NEW_ALL;
+        if new_ns_flags != 0 {
+            let _ = PROCESS_TABLE.with_process(child_pid, |p| {
+                let parent_ns = {
+                    // 子进程已通过 fork 继承了父进程的 namespace
+                    // 现在根据 CLONE_NEW* 创建新实例
+                    let current_ns = p.namespaces.lock();
+                    crate::kernel::framework::proc::namespace::NamespaceSet::clone_from(&current_ns, new_ns_flags)
+                };
+                *p.namespaces.lock() = parent_ns;
+            });
         }
 
         return child_pid as i64;

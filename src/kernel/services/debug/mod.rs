@@ -48,6 +48,9 @@ pub use crate::kernel::framework::debug::api::{TraceEvent, EVENT_SIZE, FTRACE_BU
 pub use crate::kernel::framework::debug::ftrace::fnv1a_32;
 pub use crate::kernel::framework::debug::kgdb::{KgdbRegs, KgdbSerial};
 
+/// D4: eBPF 安全封装
+pub mod ebpf;
+
 // ============================================================================
 // ftrace 接口
 // ============================================================================

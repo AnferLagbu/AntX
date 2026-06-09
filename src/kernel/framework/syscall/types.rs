@@ -480,6 +480,81 @@ pub const QX_FTRACE_STAT: u64 = 803;
 /// KGDB 主动断点 (用户态调试器触发)
 pub const QX_KGDB_ENTER: u64 = 804;
 
+// ==================== C7: Seccomp / prctl ====================
+
+/// seccomp — 安装 Seccomp 过滤器
+pub const QX_SECCOMP: u64 = 805;
+/// prctl — 进程控制 (Seccomp/no_new_privs 子集)
+pub const QX_PRCTL: u64 = 806;
+
+// ==================== C5: 路由表 ====================
+
+/// route_add — 添加路由条目
+pub const QX_ROUTE_ADD: u64 = 807;
+/// route_del — 删除路由条目
+pub const QX_ROUTE_DEL: u64 = 808;
+/// route_query — 查询路由 (最长前缀匹配)
+pub const QX_ROUTE_QUERY: u64 = 809;
+
+// ==================== C5: Netfilter ====================
+
+/// nf_add_rule — 添加 Netfilter 规则
+pub const QX_NF_ADD_RULE: u64 = 810;
+/// nf_del_rule — 删除 Netfilter 规则
+pub const QX_NF_DEL_RULE: u64 = 811;
+
+// ==================== C4: io_uring ====================
+
+/// io_uring_setup — 创建 io_uring 实例
+pub const QX_IO_URING_SETUP: u64 = 812;
+/// io_uring_enter — 提交/等待完成
+pub const QX_IO_URING_ENTER: u64 = 813;
+/// io_uring_register — 注册缓冲区/文件
+pub const QX_IO_URING_REGISTER: u64 = 814;
+/// io_uring_submit_sqe — 提交单个 SQE (简化版)
+pub const QX_IO_URING_SUBMIT: u64 = 815;
+
+// ==================== D1: Namespace ====================
+
+/// unshare — 取消共享指定 namespace
+pub const QX_UNSHARE: u64 = 820;
+/// setns — 切换到指定 namespace
+pub const QX_SETNS: u64 = 821;
+
+// ==================== D2: cgroup ====================
+
+/// cgroup_create — 创建子 cgroup
+pub const QX_CGROUP_CREATE: u64 = 830;
+/// cgroup_destroy — 删除 cgroup
+pub const QX_CGROUP_DESTROY: u64 = 831;
+/// cgroup_attach — 将进程迁移到 cgroup
+pub const QX_CGROUP_ATTACH: u64 = 832;
+/// cgroup_set_limit — 设置 cgroup 资源限制
+pub const QX_CGROUP_SET_LIMIT: u64 = 833;
+/// cgroup_get_stat — 获取 cgroup 统计信息
+pub const QX_CGROUP_GET_STAT: u64 = 834;
+
+// ==================== D3: NUMA ====================
+
+/// get_mempolicy — 获取 NUMA 内存策略
+pub const QX_GET_MEMPOLICY: u64 = 840;
+/// set_mempolicy — 设置 NUMA 内存策略
+pub const QX_SET_MEMPOLICY: u64 = 841;
+/// migrate_pages — 迁移进程页面到目标节点
+pub const QX_MIGRATE_PAGES: u64 = 842;
+/// getcpu — 获取当前 CPU 和 NUMA 节点
+pub const QX_GETCPU: u64 = 843;
+
+// ==================== D4: eBPF ====================
+
+/// bpf — BPF 系统调用多路复用
+pub const QX_BPF: u64 = 850;
+
+// ==================== D5: 电源管理 ====================
+
+/// pm — 电源管理系统调用
+pub const QX_PM: u64 = 860;
+
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

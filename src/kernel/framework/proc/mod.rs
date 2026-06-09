@@ -36,18 +36,23 @@
 #![allow(ambiguous_glob_reexports)]
 
 pub mod cfs;
+/// D2: cgroup 资源控制器
+pub mod cgroup;
 pub mod canary;
 pub mod coredump;
 pub mod cpu_queue;
 pub mod elf;
 pub mod api;
 pub mod madvise_mlock;
+/// D1: Linux 兼容 Namespace 框架
+pub mod namespace;
 pub mod oomd;
 pub mod posix_timer;
 pub mod process;
 pub mod rlimit;
 pub mod scheduler;
 pub mod scheduler_ex;
+pub mod seccomp;
 pub mod session;
 pub mod signal;
 pub mod thread;

@@ -16,3 +16,5 @@ pub mod mmap;
 pub mod mremap;
 pub mod brk;
 pub mod mprotect;
+/// D3: NUMA 安全封装
+pub mod numa;

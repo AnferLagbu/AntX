@@ -24,6 +24,8 @@ pub mod copy_user;
 pub mod cow;
 pub mod kmalloc;
 pub mod kmalloc_slab;
+/// D3: NUMA 拓扑感知与内存策略
+pub mod numa;
 pub mod pcache;
 pub mod page_fault;
 pub mod pressure;

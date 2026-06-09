@@ -780,6 +780,16 @@ impl Scheduler {
                 proc.exit_code.store(exit_code, Ordering::SeqCst);
                 let _ = proc.set_state_safe(ProcessState::Zombie);
                 self.dec_limit(pwm);
+
+                // D2: 进程退出时从 cgroup 移除
+                let cg_id = proc.cgroup_id.load(core::sync::atomic::Ordering::Acquire);
+                if crate::kernel::framework::proc::cgroup::cgroup_is_initialized() {
+                    let sub = crate::kernel::framework::proc::cgroup::cgroup_subsystem();
+                    if let Some(cg) = sub.find(cg_id) {
+                        cg.detach_proc(pid);
+                    }
+                }
+
                 proc.parent.map(|p| p.0)
             });
 

@@ -160,6 +160,13 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
     // 翻译 Linux 架构特定编号为 QueenX 原生编号
     // QX_*/Credo/FB 编号直接透传
     let num = linuxulator::translate_syscall(num);
+
+    // C7: Seccomp 过滤检查 (在 dispatch 之前)
+    let args = [a0, a1, a2, a3, a4, a5];
+    if let Some(ret) = crate::kernel::framework::proc::seccomp::seccomp_check(num, &args) {
+        return ret;
+    }
+
     match num {
         // ==================== 文件 I/O ====================
         QX_READ => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
@@ -361,6 +368,120 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         QX_KGDB_ENTER => dispatch!(
             crate::kernel::framework::syscall::ftrace_kgdb::sys_kgdb_enter(),
             b"kgdb_enter\0"
+        ),
+
+        // ==================== C7: Seccomp / prctl ====================
+        QX_SECCOMP => dispatch!(
+            crate::kernel::framework::proc::seccomp::sys_seccomp(a0 as u32, a1 as u32, a2),
+            b"seccomp\0"
+        ),
+        QX_PRCTL => dispatch!(
+            crate::kernel::framework::proc::seccomp::sys_prctl_prctl(a0 as i64, a1, a2, a3, a4),
+            b"prctl\0"
+        ),
+
+        // ==================== C5: 路由表 ====================
+        QX_ROUTE_ADD => dispatch!(
+            crate::kernel::framework::net::route::sys_route_add(a0, a1, a2),
+            b"route_add\0"
+        ),
+        QX_ROUTE_DEL => dispatch!(
+            crate::kernel::framework::net::route::sys_route_del(a0, a1, a2),
+            b"route_del\0"
+        ),
+        QX_ROUTE_QUERY => dispatch!(
+            crate::kernel::framework::net::route::sys_route_query(a0),
+            b"route_query\0"
+        ),
+
+        // ==================== C5: Netfilter ====================
+        QX_NF_ADD_RULE => dispatch!(
+            crate::kernel::framework::net::netfilter::sys_nf_add_rule(a0, a1, a2, a3, a4, a5),
+            b"nf_add_rule\0"
+        ),
+        QX_NF_DEL_RULE => dispatch!(
+            crate::kernel::framework::net::netfilter::sys_nf_del_rule(a0, a1),
+            b"nf_del_rule\0"
+        ),
+
+        // ==================== C4: io_uring ====================
+        QX_IO_URING_SETUP => dispatch!(
+            crate::kernel::framework::io::iouring::sys_io_uring_setup(a0),
+            b"io_uring_setup\0"
+        ),
+        QX_IO_URING_ENTER => dispatch!(
+            crate::kernel::framework::io::iouring::sys_io_uring_enter(a0, a1, a2),
+            b"io_uring_enter\0"
+        ),
+        QX_IO_URING_REGISTER => dispatch!(
+            crate::kernel::framework::io::iouring::sys_io_uring_register(a0, a1, a2, a3),
+            b"io_uring_register\0"
+        ),
+        QX_IO_URING_SUBMIT => dispatch!(
+            crate::kernel::framework::io::iouring::sys_io_uring_submit_sqe(a0, a1, a2, a3, a4, a5),
+            b"io_uring_submit\0"
+        ),
+
+        // ==================== D1: Namespace ====================
+        QX_UNSHARE => dispatch!(
+            crate::kernel::framework::proc::namespace::sys_unshare(a0),
+            b"unshare\0"
+        ),
+        QX_SETNS => dispatch!(
+            crate::kernel::framework::proc::namespace::sys_setns(a0, a1),
+            b"setns\0"
+        ),
+
+        // ==================== D2: cgroup ====================
+        QX_CGROUP_CREATE => dispatch!(
+            crate::kernel::framework::proc::cgroup::sys_cgroup_create(a0, a1, a2),
+            b"cgroup_create\0"
+        ),
+        QX_CGROUP_DESTROY => dispatch!(
+            crate::kernel::framework::proc::cgroup::sys_cgroup_destroy(a0),
+            b"cgroup_destroy\0"
+        ),
+        QX_CGROUP_ATTACH => dispatch!(
+            crate::kernel::framework::proc::cgroup::sys_cgroup_attach(a0, a1),
+            b"cgroup_attach\0"
+        ),
+        QX_CGROUP_SET_LIMIT => dispatch!(
+            crate::kernel::framework::proc::cgroup::sys_cgroup_set_limit(a0, a1, a2),
+            b"cgroup_set_limit\0"
+        ),
+        QX_CGROUP_GET_STAT => dispatch!(
+            crate::kernel::framework::proc::cgroup::sys_cgroup_get_stat(a0, a1),
+            b"cgroup_get_stat\0"
+        ),
+
+        // ==================== D3: NUMA ====================
+        QX_GET_MEMPOLICY => dispatch!(
+            crate::kernel::framework::mm::numa::sys_get_mempolicy(a0, a1),
+            b"get_mempolicy\0"
+        ),
+        QX_SET_MEMPOLICY => dispatch!(
+            crate::kernel::framework::mm::numa::sys_set_mempolicy(a0, a1),
+            b"set_mempolicy\0"
+        ),
+        QX_MIGRATE_PAGES => dispatch!(
+            crate::kernel::framework::mm::numa::sys_migrate_pages(a0),
+            b"migrate_pages\0"
+        ),
+        QX_GETCPU => dispatch!(
+            crate::kernel::framework::mm::numa::sys_getcpu(),
+            b"getcpu\0"
+        ),
+
+        // ==================== D4: eBPF ====================
+        QX_BPF => dispatch!(
+            crate::kernel::framework::debug::ebpf::sys_bpf(a0, a1, a2),
+            b"bpf\0"
+        ),
+
+        // ==================== D5: 电源管理 ====================
+        QX_PM => dispatch!(
+            crate::kernel::framework::driver::power::sys_pm(a0, a1, a2),
+            b"pm\0"
         ),
 
         // ==================== 文件访问 ====================

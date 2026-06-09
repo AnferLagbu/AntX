@@ -19,6 +19,8 @@
 #![allow(dead_code)]
 
 pub mod api;
+/// D4: eBPF 扩展包过滤器
+pub mod ebpf;
 pub mod ftrace;
 pub mod kgdb;
 pub mod ringbuf;

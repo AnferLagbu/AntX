@@ -278,8 +278,9 @@ fn translate_linux(num: u64) -> u64 {
         166 => QX_UMOUNT2,
 
         // 其他 POSIX
+        154 => QX_SETPGID,
         156 => QX_GETSID,
-        157 => QX_SETPGID,
+        157 => QX_PRCTL,
         186 => QX_GETTID,
         201 => QX_TIME,
         202 => QX_FUTEX,
@@ -325,6 +326,26 @@ fn translate_linux(num: u64) -> u64 {
         // P1 #14: 熵源 / Stack Canary
         //   getrandom=318 (Linux x86_64)
         318 => QX_GETRANDOM,
+
+        // C7: Seccomp
+        //   seccomp=317 (Linux x86_64)
+        317 => QX_SECCOMP,
+
+        // D1: Namespace
+        //   unshare=272, setns=308 (Linux x86_64)
+        272 => QX_UNSHARE,
+        308 => QX_SETNS,
+
+        // D3: NUMA
+        //   get_mempolicy=239, set_mempolicy=238, migrate_pages=256, getcpu=309 (Linux x86_64)
+        239 => QX_GET_MEMPOLICY,
+        238 => QX_SET_MEMPOLICY,
+        256 => QX_MIGRATE_PAGES,
+        309 => QX_GETCPU,
+
+        // D4: eBPF
+        //   bpf=321 (Linux x86_64)
+        321 => QX_BPF,
 
         _ => num, // 未识别: 透传, dispatch 走 ENOSYS
     }
@@ -476,6 +497,27 @@ fn translate_linux(num: u64) -> u64 {
         // P1 #14: 熵源 / Stack Canary
         //   getrandom=278 (Linux aarch64)
         278 => QX_GETRANDOM,
+
+        // C7: Seccomp / prctl
+        //   seccomp=277, prctl=167 (Linux aarch64)
+        277 => QX_SECCOMP,
+        167 => QX_PRCTL,
+
+        // D1: Namespace
+        //   unshare=97, setns=432 (Linux aarch64)
+        97 => QX_UNSHARE,
+        432 => QX_SETNS,
+
+        // D3: NUMA
+        //   get_mempolicy=236, set_mempolicy=237, migrate_pages=238, getcpu=168 (Linux aarch64)
+        236 => QX_GET_MEMPOLICY,
+        237 => QX_SET_MEMPOLICY,
+        238 => QX_MIGRATE_PAGES,
+        168 => QX_GETCPU,
+
+        // D4: eBPF
+        //   bpf=280 (Linux aarch64)
+        280 => QX_BPF,
 
         // FD 操作
         23 => QX_DUP,

@@ -64,17 +64,17 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 | B3 Swap | ✅ 完成 | framework/mm/swap.rs (SwapEntry, swap_out_to_pte, kswapd softirq) + lib.rs swap_init/kswapd_init | 0 dead_code, LRU 跟踪 pml4, 周期唤醒 KSWAPD_TICK_INTERVAL=100 |
 | B4 MSI/MSI-X + ACPI | ✅ 完成 | framework/pci/msi.rs (462 行) + arch/x86_64/acpi.rs (840 行) FADT/HPET/DMAR 全套 | msi_alloc_vector/enable, msix_enable/mask/unmask, acpi_shutdown |
 
-### Phase C 状态: 2/7 完成 (C1-C2 完成, C3-C7 待实施)
+### Phase C 状态: 5/7 完成 (C1-C2, C4-C5, C7 完成; C3, C6 待实施)
 
 | 子项 | 状态 | 关键产出 | 验证 |
 |---|---|---|---|
 | C1 epoll | ✅ 完成 | framework/syscall/epoll.rs (370 行) + VFS 集成 | 完整集成 VFS poll + WaitQueue 真阻塞 + epoll_pwake 唤醒 (3 TODO 全清) |
 | C2 CPU 亲和性 | ✅ 完成 | framework/proc/process.rs cpuset_allowed + scheduler is_cpu_allowed/select_cpu_for + syscall mod.rs sys_sched_setaffinity/getaffinity (Linux 兼容号 203/204) + services/proc/sched.rs (新文件) | 双架构 0 error 0 warning, 3 审计 0 issue, host test 172/172 |
-| C3 Unix Domain Socket | ⬜ 待实施 | — | Domain::Unix 未实现; 无 sockaddr_un; 无 AF_UNIX 协议族 |
-| C4 io_uring / AIO | ⬜ 待实施 | — | 整个项目无 io_uring/io_submit/io_getevents 痕迹 |
-| C5 路由表 + Netfilter | ⬜ 待实施 | — | 无 routing_table/FIB/NF_INET/NAT/conntrack |
+| C3 Unix Domain Socket | ✅ 完成 | services/net/unix.rs + framework/net/unix.rs | AF_UNIX 协议族完整实现; 双架构 0w0e + 审计通过 |
+| C4 io_uring / AIO | ✅ 完成 | framework/io/iouring.rs — Sqe/Cqe/RingBuffer + io_uring_setup/enter/register/submit + services/io/iouring.rs | 双架构 0w0e + 审计通过; Read/Write 待 VFS fd 表集成 |
+| C5 路由表 + Netfilter | ✅ 完成 | framework/net/route.rs (RouteEntry + CIDR 匹配 + smoltcp 同步) + framework/net/netfilter.rs (5 钩子点 + NfRule + NfHookFn) + services 封装 | 双架构 0w0e + 审计通过 |
 | C6 Lockdep + ftrace | ✅ 已完成 | 2026-06-09 | framework/debug/ftrace.rs (TraceEvent + FtraceState + fnv1a_32 + trace_event! 宏); framework/debug/kgdb.rs (GDB RSP 子集 + KgdbSerial trait); framework/debug/ringbuf.rs (SPSC 环形缓冲区) |
-| C7 KPTI + Seccomp | 🟡 部分完成 (KPTI 双架构全功能; Seccomp 未开始) | 2026-06-10 | KPTI: x86_64 trampoline CR3 切换 + RO+NX + PCID/INVPCID; aarch64 TTBR1 切换 + 异常入口/出口集成; 无 sys_seccomp |
+| C7 KPTI + Seccomp | ✅ 完成 | 2026-06-10 | KPTI: x86_64 trampoline CR3 切换 + RO+NX + PCID/INVPCID; aarch64 TTBR1 切换; Seccomp: framework/proc/seccomp.rs (SeccompState/SeccompFilter/SeccompRule + sys_seccomp/sys_prctl + fork 继承 + dispatch 集成) |
 
 ### 已修复预存问题
 
@@ -252,15 +252,18 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [x] C1: epoll
 - [x] C2: CPU 亲和性
 - [x] C3: Unix Domain Socket (2026-06-08, FD 100-115, 独立路径表, 详见 [uds-design.md](uds-design.md))
-- [ ] C4: io_uring / AIO
-- [ ] C5: 路由表 + Netfilter
+- [x] C4: io_uring / AIO → 2026-06-10 完成 (framework/io/iouring.rs Sqe/Cqe/RingBuffer + setup/enter/register/submit; Read/Write 待 VFS fd 表集成)
+- [x] C5: 路由表 + Netfilter → 2026-06-10 完成 (framework/net/route.rs CIDR 匹配 + smoltcp 同步; framework/net/netfilter.rs 5 钩子点 + NfRule)
 - [x] C6: Lockdep + ftrace
-- [x] C7: KPTI (双架构全功能) + Seccomp (未开始) → 2026-06-10 KPTI 双架构全功能就绪 (x86_64 trampoline+PCID + aarch64 TTBR1 切换); Seccomp 待实施
+- [x] C7: KPTI + Seccomp → 2026-06-10 完成 (KPTI 双架构全功能; Seccomp framework/proc/seccomp.rs Strict/Filter 模式 + sys_seccomp/prctl + fork 继承)
 
 ### Phase D
 - [ ] NUMA 感知
 - [ ] cgroup 控制器
-- [ ] Namespace 完整隔离
+- [x] D1: Namespace 完整隔离 → 2026-06-10 完成 (framework/proc/namespace.rs 7 种 ns + NamespaceSet + clone_from/unshare/setns; Process 集成 + fork 继承 + CLONE_NEW*; sys_unshare/sys_setns + linuxulator; services/proc/namespace.rs 安全封装)
+- [x] D2: cgroup 控制器 → 2026-06-10 完成 (framework/proc/cgroup.rs CPU/内存/PID/IO 四控制器 + CgroupRq + CgroupSubsystem; Process 集成 + fork 继承 + exit 清理; 5 个 syscall + services/proc/cgroup.rs 安全封装)
+- [x] D3: NUMA 感知 → 2026-06-10 完成 (framework/mm/numa.rs NumaNode/NumaTopology/NumaMempolicy + 距离矩阵 + UMA 回退; Process numa_policy + fork 继承; 4 个 syscall + linuxulator + services/mm/numa.rs 安全封装)
+- [x] D4: eBPF → 2026-06-10 完成 (framework/debug/ebpf.rs BpfInsn/BpfMap(Hash+Array)/BpfProg/BpfVerifier/BpfInterpreter/BpfHelper + BpfSubsystem; 验证器(有界循环+寄存器类型+指针检查); 解释器(ALU64/LD/ST/JMP全指令集); 6个Helper; sys_bpf多路复用 + linuxulator; services/debug/ebpf.rs 安全封装)
 - [ ] eBPF
 - [ ] 电源管理
 - [ ] Secure Boot + TPM

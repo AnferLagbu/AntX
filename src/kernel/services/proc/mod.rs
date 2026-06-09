@@ -28,8 +28,13 @@ pub mod clone;
 pub mod coredump;
 pub mod info;
 pub mod madvise_mlock;
+/// D1: Namespace 安全封装
+pub mod namespace;
+/// D2: cgroup 安全封装
+pub mod cgroup;
 pub mod rlimit;
 pub mod sched;
+pub mod seccomp;
 pub mod session;
 pub mod signal;
 pub mod sleep;
