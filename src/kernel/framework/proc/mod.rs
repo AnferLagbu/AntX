@@ -41,6 +41,7 @@ pub mod cpu_queue;
 pub mod elf;
 pub mod api;
 pub mod oomd;
+pub mod posix_timer;
 pub mod process;
 pub mod rlimit;
 pub mod scheduler;
@@ -55,6 +56,7 @@ pub mod user_proc;
 // USER_STACK_SIZE: types(usize) vs user_proc(u64)
 // init: scheduler vs user_proc
 pub use crate::kernel::framework::barrier::*;
+pub use posix_timer::*;
 pub use process::*;
 pub use scheduler::*;
 pub use scheduler_ex::*;

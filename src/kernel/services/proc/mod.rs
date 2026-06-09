@@ -33,6 +33,7 @@ pub mod signal;
 pub mod sleep;
 pub mod table;
 pub mod wait4;
+pub mod posix_timer;
 
 // ============================================================================
 // ID 与状态 (直接 re-export 内核强类型)

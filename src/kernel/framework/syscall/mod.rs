@@ -14,6 +14,7 @@ pub mod mmap;
 pub mod mprotect;
 pub mod sendfile;
 pub mod ftrace_kgdb;
+pub mod posix_timer;
 pub mod linuxulator;
 pub mod wait4;
 
@@ -274,6 +275,32 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         QX_FW_DETACH => dispatch!(
             crate::kernel::framework::syscall::firmware::sys_fw_detach(a0),
             b"fw_detach\0"
+        ),
+
+        // ==================== POSIX Timer (740-745) ====================
+        QX_TIMER_CREATE => dispatch!(
+            crate::kernel::framework::syscall::posix_timer::sys_timer_create(a0, a1, a2),
+            b"timer_create\0"
+        ),
+        QX_TIMER_SETTIME => dispatch!(
+            crate::kernel::framework::syscall::posix_timer::sys_timer_settime(a0, a1, a2, a3),
+            b"timer_settime\0"
+        ),
+        QX_TIMER_GETTIME => dispatch!(
+            crate::kernel::framework::syscall::posix_timer::sys_timer_gettime(a0, a1),
+            b"timer_gettime\0"
+        ),
+        QX_TIMER_DELETE => dispatch!(
+            crate::kernel::framework::syscall::posix_timer::sys_timer_delete(a0),
+            b"timer_delete\0"
+        ),
+        QX_TIMER_GETOVERRUN => dispatch!(
+            crate::kernel::framework::syscall::posix_timer::sys_timer_getoverrun(a0),
+            b"timer_getoverrun\0"
+        ),
+        QX_CLOCK_GETRES => dispatch!(
+            crate::kernel::framework::syscall::posix_timer::sys_clock_getres(a0, a1),
+            b"clock_getres\0"
         ),
 
         // ==================== 调试 / 跟踪 (800-809) ====================

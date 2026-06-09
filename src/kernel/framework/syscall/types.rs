@@ -434,6 +434,20 @@ pub const QX_FW_GET: u64 = 731;
 pub const QX_FW_GET_INFO: u64 = 732;
 pub const QX_FW_DETACH: u64 = 733;
 
+// ---------- 740-745: POSIX Timer ----------
+/// 创建 per-process 定时器 (timer_create)
+pub const QX_TIMER_CREATE: u64 = 740;
+/// 启动 / 调整 / 停止定时器 (timer_settime)
+pub const QX_TIMER_SETTIME: u64 = 741;
+/// 查询定时器剩余时间 (timer_gettime)
+pub const QX_TIMER_GETTIME: u64 = 742;
+/// 释放定时器 (timer_delete)
+pub const QX_TIMER_DELETE: u64 = 743;
+/// 返回补打次数 (timer_getoverrun)
+pub const QX_TIMER_GETOVERRUN: u64 = 744;
+/// 时钟分辨率 (clock_getres)
+pub const QX_CLOCK_GETRES: u64 = 745;
+
 // ---------- 800-809: 内核调试 / 跟踪 (ftrace / KGDB) ----------
 /// 启用 ftrace 全局开关
 pub const QX_FTRACE_ENABLE: u64 = 800;

@@ -305,6 +305,16 @@ fn translate_linux(num: u64) -> u64 {
         175 => QX_FW_LOAD,
         313 => QX_FW_GET,
 
+        // POSIX Timer: x86_64 Linux 编号
+        //   timer_create=222 timer_settime=223 timer_gettime=224
+        //   timer_delete=226 timer_getoverrun=227 clock_getres=229
+        222 => QX_TIMER_CREATE,
+        223 => QX_TIMER_SETTIME,
+        224 => QX_TIMER_GETTIME,
+        226 => QX_TIMER_DELETE,
+        227 => QX_TIMER_GETOVERRUN,
+        229 => QX_CLOCK_GETRES,
+
         _ => num, // 未识别: 透传, dispatch 走 ENOSYS
     }
 }
@@ -434,6 +444,16 @@ fn translate_linux(num: u64) -> u64 {
         // 设备固件加载: aarch64 init_module=271 finit_module=314
         271 => QX_FW_LOAD,
         314 => QX_FW_GET,
+
+        // POSIX Timer: aarch64 Linux 编号
+        //   timer_create=107 timer_settime=110 timer_gettime=108
+        //   timer_getoverrun=109 timer_delete=111 clock_getres=114
+        107 => QX_TIMER_CREATE,
+        108 => QX_TIMER_GETTIME,
+        109 => QX_TIMER_GETOVERRUN,
+        110 => QX_TIMER_SETTIME,
+        111 => QX_TIMER_DELETE,
+        114 => QX_CLOCK_GETRES,
 
         // FD 操作
         23 => QX_DUP,
