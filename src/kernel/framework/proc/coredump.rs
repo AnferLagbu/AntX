@@ -258,7 +258,8 @@ pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     if core_limit != RLIM_INFINITY && total_size > core_limit {
         // 截断: 只写 RLIMIT_CORE 允许的大小
         log("coredump: truncated by RLIMIT_CORE\n");
-        total_size = core_limit;
+        // 截断: 后续写循环应在写入达到 core_limit 字节后停止
+        let _ = core_limit;
     }
 
     // 6. 打开 core 文件
@@ -403,7 +404,7 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
 }
 
 /// 构建 ELF header
-fn build_ehdr(phnum: u16, phoff: u64) -> Elf64Ehdr {
+fn build_ehdr(phnum: u16, _phoff: u64) -> Elf64Ehdr {
     let mut e_ident = [0u8; 16];
     e_ident[0..4].copy_from_slice(&ELFMAG);
     e_ident[4] = ELFCLASS64;

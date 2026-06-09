@@ -434,6 +434,18 @@ pub const QX_FW_GET: u64 = 731;
 pub const QX_FW_GET_INFO: u64 = 732;
 pub const QX_FW_DETACH: u64 = 733;
 
+// ---------- 800-809: 内核调试 / 跟踪 (ftrace / KGDB) ----------
+/// 启用 ftrace 全局开关
+pub const QX_FTRACE_ENABLE: u64 = 800;
+/// 禁用 ftrace 全局开关
+pub const QX_FTRACE_DISABLE: u64 = 801;
+/// 从 ftrace ring buffer 读取一条事件到用户缓冲
+pub const QX_FTRACE_READ: u64 = 802;
+/// 查询 ftrace 状态 (event_count / overflow_count)
+pub const QX_FTRACE_STAT: u64 = 803;
+/// KGDB 主动断点 (用户态调试器触发)
+pub const QX_KGDB_ENTER: u64 = 804;
+
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

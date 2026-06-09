@@ -13,6 +13,7 @@ pub mod io;
 pub mod mmap;
 pub mod mprotect;
 pub mod sendfile;
+pub mod ftrace_kgdb;
 pub mod linuxulator;
 pub mod wait4;
 
@@ -273,6 +274,28 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         QX_FW_DETACH => dispatch!(
             crate::kernel::framework::syscall::firmware::sys_fw_detach(a0),
             b"fw_detach\0"
+        ),
+
+        // ==================== 调试 / 跟踪 (800-809) ====================
+        QX_FTRACE_ENABLE => dispatch!(
+            crate::kernel::framework::syscall::ftrace_kgdb::sys_ftrace_enable(),
+            b"ftrace_enable\0"
+        ),
+        QX_FTRACE_DISABLE => dispatch!(
+            crate::kernel::framework::syscall::ftrace_kgdb::sys_ftrace_disable(),
+            b"ftrace_disable\0"
+        ),
+        QX_FTRACE_READ => dispatch!(
+            crate::kernel::framework::syscall::ftrace_kgdb::sys_ftrace_read(a0),
+            b"ftrace_read\0"
+        ),
+        QX_FTRACE_STAT => dispatch!(
+            crate::kernel::framework::syscall::ftrace_kgdb::sys_ftrace_stat(a0),
+            b"ftrace_stat\0"
+        ),
+        QX_KGDB_ENTER => dispatch!(
+            crate::kernel::framework::syscall::ftrace_kgdb::sys_kgdb_enter(),
+            b"kgdb_enter\0"
         ),
 
         // ==================== 文件访问 ====================

@@ -536,7 +536,7 @@ pub fn get_foreground_pgid() -> u32 {
 /// tcsetpgrp — 设置前台进程组
 ///
 /// 仅控制终端所在会话的进程可调用
-pub fn sys_tcsetpgrp(fd: i32, pgid: i32) -> i64 {
+pub fn sys_tcsetpgrp(_fd: i32, pgid: i32) -> i64 {
     if pgid <= 0 {
         return -22; // -EINVAL
     }

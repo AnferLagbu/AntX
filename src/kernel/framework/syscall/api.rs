@@ -64,6 +64,8 @@ pub use super::types::{
     QX_CLOCK_GETTIME, QX_GETTIMEOFDAY, QX_NANOSLEEP, QX_ALARM,
     QX_GETITIMER, QX_SETITIMER, QX_TIME, QX_TIMES,
     QX_FB_OPEN, QX_FB_MMAP, QX_FB_RELEASE,
+    QX_FTRACE_ENABLE, QX_FTRACE_DISABLE, QX_FTRACE_READ, QX_FTRACE_STAT,
+    QX_KGDB_ENTER,
 };
 
 // ============================================================================

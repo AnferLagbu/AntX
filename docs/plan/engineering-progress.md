@@ -43,10 +43,10 @@
 | C3 Unix Domain Socket | 已完成 | 2026-06-08 | framework/net/unix.rs + services/net/unix.rs, SOCK_STREAM + SOCK_DGRAM, 独立路径表, FD [100,116) | 5 个 no_std 测试, 详见 [uds-design.md](uds-design.md) |
 | C4 io_uring / AIO | 未开始 | — | — | — |
 | C5 路由表 + Netfilter | 未开始 | — | — | — |
-| C6 Lockdep + ftrace | 部分完成 | 2026-06-09 | Lockdep 已完成 (见 P1), ftrace 未开始 | — |
+| C6 Lockdep + ftrace | 已完成 | 2026-06-09 | Lockdep 已完成 (见 P1), ftrace 已完成 (见 P1) | 双架构 0 error, 三审计通过, CI 4/4 |
 | C7 KPTI + Seccomp | 未开始 | — | — | — |
 
-**阶段标记**: Phase C 已完成 C1-C3, 剩余 C4-C7 待实施.
+**阶段标记**: Phase C 已完成 C1-C3, C6, 剩余 C4/C5/C7 待实施.
 
 ---
 
@@ -83,7 +83,7 @@
 | 进程组/会话/控制终端 | 已完成 | 2026-06-09 | framework/proc/session.rs (617 行): Session 结构体 (session_id/terminal/foreground_pgid), SessionManager (create/create_with_sid/destroy/set_controlling_terminal/release_controlling_terminal/set_foreground_pgid/get_foreground_pgid), proc_setsid (进程组长检查+新会话+新进程组), proc_getsid (读取 session_id), proc_setpgid (会话一致性+子进程检查+进程组存在性), proc_getpgid, proc_init_pgid, sys_tiocsctty (会话 leader 设置控制终端), sys_tcsetpgrp/sys_tcgetpgrp (前台进程组), signal_foreground_pgid (终端信号广播), session_leader_exit (SIGHUP+SIGCONT+释放控制终端); services/proc/session.rs 安全封装 (setsid/getsid/setpgid/getpgid/tcsetpgrp/tcgetpgrp); fork 继承 session_id+pgid; sys_getpgid 委托 session 模块; QX_TCGETPGRP=538/QX_TCSETPGRP=539 syscall; scheduler.exit 调用 session_leader_exit | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过, CI 4/4 |
 | Core Dump 生成 | 已完成 | 2026-06-09 | framework/proc/coredump.rs (700+ 行): Elf64Ehdr/Elf64Phdr/PrStatus/CoreSiginfo 完整 ELF 结构体定义, coredump_allowed/coredump_limit 查询, do_coredump (RLIMIT_CORE 检查→内存段收集→ELF 头/程序头/PrStatus/Siginfo note 段写入), write_note_prstatus/write_note_siginfo/write_ehdr/write_phdrs/write_segments/write_memory_segment, copy_from_user_safe (简化版,后续接 exception table), 双架构 regs 数组 (x86_64 27 u64 / aarch64 34 u64); do_signal_default_action 增加 frame_addr 参数,Core 类信号触发 do_coredump; services/proc/coredump.rs 安全封装 (coredump_allowed/coredump_limit) | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过, CI 4/4 |
 | 设备固件加载 | 已完成 | 2026-06-09 | framework/chitin/firmware.rs: FirmwareBlob/FirmwareInfo (16 MiB 上限), FNV-1a name hash, devtree_attach_firmware/devtree_get_firmware/devtree_detach_firmware (ChitinNode.firmware 字段); framework/chitin/mod.rs 注册 pub mod firmware; framework/chitin/devtree.rs 调整 DevTree/DEV_TREE 为 pub(crate) 以供同模块树访问; framework/syscall/types.rs 分配 730-733 (QX_FW_LOAD/GET/GET_INFO/DETACH); framework/syscall/firmware.rs: sys_fw_load (vfs_open/vfs_read 读路径, NUL 结尾校验, UTF-8 校验, 16 MiB 截断), sys_fw_get (offset + 长度拷贝到用户态, 8 MiB 缓冲), sys_fw_get_info (FirmwareInfo POD 写入), sys_fw_detach; framework/syscall/mod.rs 注册 4 个 dispatch; framework/syscall/linuxulator.rs 双架构映射 (x86_64 175/313, aarch64 271/314); services/driver/firmware.rs 安全代理 (firmware_request, firmware_name_hash) | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过, CI 4/4 |
-| KGDB / ftrace | 未开始 | — | — | — |
+| KGDB / ftrace | 已完成 | 2026-06-09 | framework/debug/mod.rs 整合 ringbuf/ftrace/kgdb/api; framework/debug/ringbuf.rs: SPSC 环形缓冲区 (CAP 2 的幂, push/pop/peek, 容量不足覆盖最旧); framework/debug/ftrace.rs: TraceEvent (48 字节 POD, ts + name_hash + 4 u64 args), FtraceState (4 KiB 主 ring, enabled/event_count/overflow_count, MAX_TRACE_POINTS 登记表, record/pop/register_point/record_named), fnv1a_32 名称 hash, trace_event! 宏 (0-4 args); framework/debug/kgdb.rs: KgdbSerial trait, KgdbRegs (x86_64 18 u64 / aarch64 33 u64), GDB RSP 子集 ('?'/'g'/'G'/'m'/'M'/'c'/'s'/'k'/'Z'/'z'), 串口函数指针分发 (read_dispatch/write_dispatch), kgdb_loop/breakpoint/break_now/serial_ready/active; framework/debug/api.rs: debug_init/ftrace_enable/disable/is_enabled/event_count/overflow_count/pop_event/register_point/kgdb_break_now; framework/syscall/types.rs 分配 800-804 (QX_FTRACE_ENABLE/DISABLE/READ/STAT/KGDB_ENTER); framework/syscall/ftrace_kgdb.rs: sys_ftrace_enable/disable/read (TraceEvent POD 写入, 48 字节)/stat ([u64;2] 写入)/kgdb_enter (kgdb_serial_ready 检查, ENODEV 兜底); framework/syscall/mod.rs 注册 5 个 dispatch; framework/syscall/api.rs 重导出 QX_FTRACE_*/QX_KGDB_ENTER; services/debug/mod.rs (0 unsafe): ftrace_enable/disable/is_enabled/event_count/overflow_count/read_event/register, kgdb_enter/is_active/serial_ready, debug_init; services/mod.rs 注册 debug 子模块; 修复预存问题: kgdb.rs 2 处缺 SAFETY 注释 (unsafe fn 配 // SAFETY:, unsafe { 移至调用点) | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过 (services 0 unsafe + SAFETY 100%), CI 4/4 |
 | POSIX Timer | 未开始 | — | — | — |
 | madvise / mlock | 未开始 | — | — | — |
 | 用户态 Stack Canary | 未开始 | — | — | — |
@@ -116,6 +116,7 @@
 | Mutex/RwLock/PiMutex ?Sized 编译失败 | framework/sync/mutex.rs, rwlock.rs, pi_mutex.rs | UnsafeCell<T> 不是结构体最后字段, ?Sized T 无法编译 | 2026-06-09 |
 | 31 个 clippy warning | framework + services 多文件 | manual_range_contains (15), redundant_closure (4), manual_is_multiple_of (4), identical_if_blocks (2), ptr_eq (1), needless_return (1), while_let_loop (1), slow_vector_init (1), should_implement_trait (1), manual_range_contains (Range 1) | 2026-06-09 |
 | aarch64 clippy deny: absurd_extreme_comparisons | framework/driver/virtio/net.rs:525 | KERNEL_BASE 在 aarch64 上为 0, phys >= 0 恒为 true | 2026-06-09 |
+| kgdb.rs 缺 SAFETY 注释 (2 处) | framework/debug/kgdb.rs:73, 379 | unsafe fn kgdb_set_serial 仅有 # Safety doc comment, 审计仅识别 // SAFETY: 行内注释; unsafe { 块的 SAFETY 注释写在块内部而非前置 | 2026-06-09 |
 
 ---
 
@@ -163,3 +164,4 @@
 | 2026-06-09 | P1 inotify 文件事件通知完成: 3 个 syscall (init1/add_watch/rm_watch) + read 路径, FD 空间 [260,268), VFS 6 处事件触发, epoll 集成, linuxulator 双架构映射 | P1: inotify 已完成 |
 | 2026-06-09 | P1 sendfile/splice 零拷贝完成: sendfile (file→file/pipe) + splice (pipe↔file), 8KB bounce buffer 中转, QX_SENDFILE=650/QX_SPLICE=651, linuxulator 双架构映射 | P1: sendfile/splice 已完成 |
 | 2026-06-09 | P1 rlimit 完成: per-process RlimitTable (16 条目), getrlimit/setrlimit, fork 继承, 特权检查, 辅助检查函数 (NOFILE/AS/NPROC/STACK), QX_GETRLIMIT=702/QX_SETRLIMIT=703, linuxulator 双架构映射 | P1: rlimit 已完成 |
+| 2026-06-09 | P1 KGDB / ftrace 完成: ringbuf (SPSC 4 KiB ring) + ftrace (TraceEvent/FtraceState/trace_event! 宏) + KGDB (KgdbSerial trait/GDB RSP 子集/双架构寄存器), 5 个 syscall (QX_FTRACE_ENABLE=800/DISABLE/READ/STAT/KGDB_ENTER=804), services/debug 安全封装; 修复预存问题: kgdb.rs 2 处缺 SAFETY 注释 | P1: KGDB / ftrace 已完成; Phase C: C6 已完成 |

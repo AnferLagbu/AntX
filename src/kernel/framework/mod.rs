@@ -79,6 +79,7 @@ pub mod chitin;
 pub mod barrier;
 pub mod console;
 pub mod klog;
+pub mod debug;
 pub mod config;
 pub mod smp;
 pub mod lib;

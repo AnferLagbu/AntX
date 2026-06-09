@@ -298,7 +298,7 @@ fn translate_linux(num: u64) -> u64 {
         29 => QX_INOTIFY_ADD_WATCH,
         30 => QX_INOTIFY_RM_WATCH,
         40 => QX_SENDFILE,
-        76 => QX_SPLICE,
+        275 => QX_SPLICE,
 
         // 设备固件加载: Linux 无直接对应, finit_module (313) 与 init_module (175)
         // 在 ABI 上是"用户态上传二进制到内核"的最接近语义, 兼容层复用
