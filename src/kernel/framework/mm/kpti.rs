@@ -35,7 +35,92 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::kernel::framework::mm::api::pmm_alloc_page;
-use crate::kernel::framework::mm::{PhysAddr, PAGE_SIZE};
+use crate::kernel::framework::mm::{PhysAddr, KERNEL_BASE, PAGE_SIZE};
+
+// ── PCID 常量 ─────────────────────────────────────────────────────
+// PCID (Process-Context Identifier) 占 CR3 低 12 位, 用于 TLB 标记.
+// 启用 PCID 后, CR3 切换不再隐式刷新全局 TLB, 改用 INVPCID 精确刷除.
+
+/// 内核页表 PCID
+pub const PCID_KERNEL: u64 = 1;
+/// 用户页表 PCID
+pub const PCID_USER: u64 = 2;
+
+/// INVPCID 指令类型: 按 PCID 刷新 TLB
+///
+/// 供 VMM 页表修改 (COW/mprotect) 后刷除特定 PCID 的 TLB 条目.
+#[allow(dead_code)]
+const INVPCID_TYPE_SINGLE: u64 = 0;
+/// INVPCID 指令类型: 刷新所有 TLB (包括 global 页)
+const INVPCID_TYPE_ALL_INCL_GLOBAL: u64 = 2;
+
+/// 执行 INVPCID 指令, 刷新指定 PCID 的 TLB 条目.
+///
+/// # Safety
+///
+/// 调用方保证 CPU 支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认).
+#[inline(always)]
+pub unsafe fn invpcid(pcid: u64, addr: u64, typ: u64) {
+    // INVPCID 描述符: 16 字节, [0:7] PCID, [8:15] 线性地址
+    // 在栈上构造描述符, 通过内存操作数传递给 INVPCID.
+    // INVPCID 格式: invpcid r64, m128 — 第二操作数必须是内存引用.
+    let desc: [u64; 2] = [pcid, addr];
+    // SAFETY: 调用方保证 CPU 支持 INVPCID; desc 在栈上有效, 16 字节对齐.
+    unsafe {
+        core::arch::asm!(
+            "invpcid {typ}, [{desc}]",
+            typ = in(reg) typ,
+            desc = in(reg) desc.as_ptr(),
+            options(nostack, preserves_flags, readonly),
+        );
+    }
+}
+
+/// 刷新所有 PCID 的 TLB 条目 (不含 global 页).
+///
+/// # Safety
+///
+/// 调用方保证 CPU 支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认).
+#[inline(always)]
+pub unsafe fn invpcid_flush_all() {
+    // SAFETY: 调用方保证 CPU 支持 INVPCID; type 2 刷新所有 TLB 条目是安全操作.
+    unsafe { invpcid(0, 0, INVPCID_TYPE_ALL_INCL_GLOBAL); }
+}
+
+/// CR3 值中嵌入 PCID: PML4 物理地址 | PCID.
+#[inline(always)]
+pub const fn cr3_with_pcid(pml4_phys: u64, pcid: u64) -> u64 {
+    (pml4_phys & 0x000FFFFFFFFFF000) | (pcid & 0xFFF)
+}
+
+/// 检查 CPU 是否支持 INVPCID.
+#[inline]
+pub fn has_invpcid() -> bool {
+    crate::kernel::framework::cpu::get_cpu_info()
+        .map(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::INVPCID))
+        .unwrap_or(false)
+}
+
+/// 检查 PCID 是否已启用 (CR4.PCIDE = 1).
+#[inline]
+pub fn pcid_is_enabled() -> bool {
+    let cr4: u64;
+    // SAFETY: 读取 CR4 是特权操作但无副作用, 仅检查 bit 17.
+    unsafe {
+        core::arch::asm!("mov {0}, cr4", out(reg) cr4, options(nostack, nomem));
+    }
+    (cr4 >> 17) & 1 == 1
+}
+
+// ── 链接脚本符号 (x86_64.ld) ──────────────────────────────────────
+// KPTI trampoline 代码范围: _kernel_text_start ~ _kpti_trampoline_end
+// 这些页在 USER_PML4 中需要保持可执行 (X), 其余代码页设为 NX.
+
+extern "C" {
+    static _kernel_text_start: u8;
+    static _kpti_trampoline_end: u8;
+    static _kernel_text_end: u8;
+}
 
 // ── 公共状态 ──────────────────────────────────────────────────────
 
@@ -175,7 +260,162 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
         }
     }
 
-    // 5. 公开状态
+    // 4.5 Trampoline 页权限加固: USER_PML4 高半区页表遍历
+    //
+    // 策略: 仅修改 .text 区域 (_kernel_text_start ~ _kernel_text_end) 的页,
+    // 数据页 (.rodata/.data/.bss) 保持原权限不变 (trampoline 需要读写 per-CPU 数据).
+    //
+    // .text 区域:
+    //   - Trampoline 代码页 (_kernel_text_start ~ _kpti_trampoline_end): RX (只读+可执行)
+    //   - 其余代码页: RO+NX (只读+不可执行)
+    //
+    // NX 位 (bit 63): 若设置, 页不可执行.
+    // W 位  (bit 1):  若清除, 页只读.
+    //
+    // SAFETY: user_pml4_virt 有效, 遍历只修改 USER_PML4 的 PTE, 不影响 KERNEL_PML4.
+    unsafe {
+        let tramp_start = core::ptr::addr_of!(_kernel_text_start) as u64;
+        let tramp_end = core::ptr::addr_of!(_kpti_trampoline_end) as u64;
+        let text_end = core::ptr::addr_of!(_kernel_text_end) as u64;
+
+        let pml4 = user_pml4_virt.0 as *mut u64;
+
+        for pml4_idx in 256u64..512 {
+            let pml4e = core::ptr::read_volatile(pml4.add(pml4_idx as usize));
+            if pml4e & 1 == 0 { continue; }
+
+            let pdpt_phys = pml4e & 0x000FFFFFFFFFF000;
+            let pdpt = (pdpt_phys + KERNEL_BASE) as *mut u64;
+
+            for pdpt_idx in 0u64..512 {
+                let pdpte = core::ptr::read_volatile(pdpt.add(pdpt_idx as usize));
+                if pdpte & 1 == 0 { continue; }
+                if pdpte & 0x80 != 0 {
+                    // 1 GiB 大页: 检查是否与 .text 区域重叠
+                    let page_start = (pml4_idx << 39) | (pdpt_idx << 30);
+                    let page_end = page_start + (1u64 << 30);
+                    if page_start >= text_end || page_end <= tramp_start { continue; }
+                    // 大页与 .text 重叠 — 设置 NX, 清除 W
+                    let mut new = pdpte | (1u64 << 63);
+                    new &= !0x2u64;
+                    if page_start < tramp_end && page_end > tramp_start {
+                        new &= !(1u64 << 63); // trampoline 保持可执行
+                    }
+                    if new != pdpte {
+                        core::ptr::write_volatile(pdpt.add(pdpt_idx as usize), new);
+                    }
+                    continue;
+                }
+
+                let pd_phys = pdpte & 0x000FFFFFFFFFF000;
+                let pd = (pd_phys + KERNEL_BASE) as *mut u64;
+
+                for pd_idx in 0u64..512 {
+                    let pde = core::ptr::read_volatile(pd.add(pd_idx as usize));
+                    if pde & 1 == 0 { continue; }
+                    if pde & 0x80 != 0 {
+                        // 2 MiB 大页
+                        let page_start = (pml4_idx << 39) | (pdpt_idx << 30) | (pd_idx << 21);
+                        let page_end = page_start + (1u64 << 21);
+                        if page_start >= text_end || page_end <= tramp_start { continue; }
+                        let mut new = pde | (1u64 << 63);
+                        new &= !0x2u64;
+                        if page_start < tramp_end && page_end > tramp_start {
+                            new &= !(1u64 << 63);
+                        }
+                        if new != pde {
+                            core::ptr::write_volatile(pd.add(pd_idx as usize), new);
+                        }
+                        continue;
+                    }
+
+                    let pt_phys = pde & 0x000FFFFFFFFFF000;
+                    let pt = (pt_phys + KERNEL_BASE) as *mut u64;
+
+                    for pt_idx in 0u64..512 {
+                        let pte = core::ptr::read_volatile(pt.add(pt_idx as usize));
+                        if pte & 1 == 0 { continue; }
+
+                        let page_start = (pml4_idx << 39) | (pdpt_idx << 30)
+                            | (pd_idx << 21) | (pt_idx << 12);
+                        let page_end = page_start + PAGE_SIZE as u64;
+
+                        // 跳过 .text 区域之外的页
+                        if page_start >= text_end || page_end <= tramp_start { continue; }
+
+                        let mut new = pte;
+                        new |= 1u64 << 63;  // NX: 代码页默认不可执行
+                        new &= !0x2u64;     // RO: 代码页只读
+
+                        // Trampoline 代码页: 恢复可执行
+                        if page_start < tramp_end && page_end > tramp_start {
+                            new &= !(1u64 << 63);
+                        }
+
+                        if new != pte {
+                            core::ptr::write_volatile(pt.add(pt_idx as usize), new);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. 启用 PCID (如果 CPU 支持 INVPCID)
+    //    CR4.PCIDE (bit 17) 启用后, CR3 低 12 位为 PCID 而非必须为 0.
+    //    启用条件: CPU 支持 INVPCID; 当前 CR3 低 12 位为 0 (硬件要求).
+    //    启用后, KPTI CR3 切换携带 PCID, TLB 条目按 PCID 隔离,
+    //    无需每次切换都全局刷新 TLB, 显著降低 KPTI 性能开销.
+    let pcid_enabled = if has_invpcid() {
+        // SAFETY: 读取 CR3 判断低 12 位是否为 0 (PCIDE 启用前提).
+        let cur_cr3: u64;
+        unsafe { core::arch::asm!("mov {0}, cr3", out(reg) cur_cr3, options(nostack, nomem)); }
+        if cur_cr3 & 0xFFF == 0 {
+            // SAFETY: CR4 写入仅在 boot 阶段, 设置 PCIDE 位.
+            unsafe {
+                let cr4: u64;
+                core::arch::asm!("mov {0}, cr4", out(reg) cr4, options(nostack, nomem));
+                core::arch::asm!(
+                    "mov cr4, {0}",
+                    in(reg) cr4 | (1u64 << 17),
+                    options(nostack, nomem, preserves_flags),
+                );
+            }
+            // 启用 PCIDE 后, mov cr3 不再隐式刷新 TLB.
+            // 做一次全局 TLB 刷新确保一致性, 然后重新加载 CR3 (带 PCID_KERNEL).
+            // SAFETY: INVPCID type 2 刷新所有 TLB 条目 (含 global 页).
+            unsafe { invpcid_flush_all(); }
+            // 重新加载 CR3 带 PCID_KERNEL
+            // SAFETY: kernel_pml4 来自 init 阶段的可信来源; PCIDE 已启用, CR3 低 12 位为 PCID.
+            let new_cr3 = cr3_with_pcid(kernel_pml4, PCID_KERNEL);
+            unsafe {
+                core::arch::asm!(
+                    "mov cr3, {0}",
+                    in(reg) new_cr3,
+                    options(nostack, preserves_flags),
+                );
+            }
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // 6. 更新所有 per-CPU SyscallPerCpu PML4 字段
+    //    汇编 entry/exit 从 [gs:KERNEL_PML4_OFF] / [gs:USER_PML4_OFF] 读取.
+    //    PCID 启用时, 值为 PML4_PHYS | PCID; 未启用时为纯 PML4 物理地址.
+    // SAFETY: boot 阶段独占写入, cpu_index 0..256 合法.
+    let kernel_cr3 = if pcid_enabled { cr3_with_pcid(kernel_pml4, PCID_KERNEL) } else { kernel_pml4 };
+    let user_cr3 = if pcid_enabled { cr3_with_pcid(user_pml4_phys, PCID_USER) } else { user_pml4_phys };
+    unsafe {
+        for cpu in 0..256u32 {
+            crate::kernel::framework::arch::x86_64::gdt::gdt_set_kpti_pml4(cpu, kernel_cr3, user_cr3);
+        }
+    }
+
+    // 7. 公开状态
     USER_PML4.store(user_pml4_phys, Ordering::Release);
     LAST_KERNEL_PML4.store(kernel_pml4, Ordering::Release);
     KPTI_READY.store(true, Ordering::Release);

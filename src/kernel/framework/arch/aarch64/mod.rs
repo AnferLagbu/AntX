@@ -230,6 +230,22 @@ impl MmuArch for Aarch64 {
 
     /// 进入 EL0 (eret)。
     fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
+        // KPTI: 首次进入 EL0 前, 切换 TTBR1_EL1 到 trampoline 页表.
+        // 用户态运行时 TTBR1 指向最小化页表, 减少内核地址泄露面.
+        // SAFETY: kpti_trampoline_ttbr1_or_kernel 返回有效物理地址;
+        // 若 KPTI 未激活则返回 kernel_ttbr1 (无实际切换效果).
+        unsafe {
+            let tramp = crate::kernel::framework::mm::kpti::kpti_trampoline_ttbr1_or_kernel(
+                crate::kernel::framework::mm::vmm::get_kernel_pml4(),
+            );
+            core::arch::asm!(
+                "dsb ish",
+                "msr ttbr1_el1, {0}",
+                "isb",
+                in(reg) tramp,
+            );
+        }
+
         let spsr: u64 = 0x0000;
         // SAFETY: 进入 EL0 标准序列 (msr sp_el0/elr_el1/spsr_el1 + eret)；
         // entry/stack/arg 由调用方提供合法用户态值；options(noreturn)。
@@ -251,6 +267,19 @@ impl MmuArch for Aarch64 {
 
     /// 返回 EL0 (eret)。
     fn return_to_user() {
+        // KPTI: 返回 EL0 前, 切换 TTBR1_EL1 到 trampoline 页表.
+        // SAFETY: 同 enter_user 中的 TTBR1 切换逻辑.
+        unsafe {
+            let tramp = crate::kernel::framework::mm::kpti::kpti_trampoline_ttbr1_or_kernel(
+                crate::kernel::framework::mm::vmm::get_kernel_pml4(),
+            );
+            core::arch::asm!(
+                "dsb ish",
+                "msr ttbr1_el1, {0}",
+                "isb",
+                in(reg) tramp,
+            );
+        }
         // SAFETY: eret 是 aarch64 标准异常返回指令；
         // options(noreturn) 标识函数不会返回。
         unsafe {

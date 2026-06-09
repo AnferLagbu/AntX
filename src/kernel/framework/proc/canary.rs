@@ -1,18 +1,42 @@
-//! 用户态 Stack Canary (P1 #14) — 最小 stub 版本
+//! 用户态 Stack Canary (P1 #14)
 //!
-//! 排查 aarch64 LLVM 22 codegen bug: 暂使用 stub 实现, 后续扩展时需要
-//! 重新评估 inline 链是否再次触发 aarch64 codegen bug.
+//! 双架构完整实现: `copy_to_user` 写用户内存,
+//! `PROCESS_TABLE.with_process` 读 per-process canary.
+//!
+//! ## 历史问题 (已修复)
+//!
+//! LLVM 22 aarch64 codegen bug 曾导致含 inline asm label 的函数被 inline
+//! 进大函数时触发 `invalid fixup for movz/movk`. 已通过将 `copy_user.rs`
+//! 中的 asm label 逻辑拆分到 `#[inline(never)]` 函数 (`setup_recovery` /
+//! `teardown_recovery`) 中解决, 阻止 inline chain 传播.
+
 use core::sync::atomic::{AtomicU64, Ordering};
+
+use crate::kernel::framework::mm::copy_user::{copy_to_user, is_user_buf};
+use crate::kernel::framework::proc::api::process_get_current_pid;
+use crate::kernel::framework::proc::process::PROCESS_TABLE;
 
 static ENTROPY_POOL: AtomicU64 = AtomicU64::new(0x1234_5678_DEAD_BEEFu64);
 static PER_PROC_SEED: AtomicU64 = AtomicU64::new(0x5A5A_5A5A_5A5A_5A5Au64);
 
+/// LFSR-64 推进一步并返回新值.
+///
+/// 多项式: x^64 + x^63 + x^61 + x^60 + 1 (最大周期 2^64 - 1).
+/// CAS 保证多核安全.
 pub fn next_random_u64() -> u64 {
-    ENTROPY_POOL.load(Ordering::Acquire)
+    loop {
+        let old = ENTROPY_POOL.load(Ordering::Acquire);
+        let bit = (old >> 63) ^ (old >> 62) ^ (old >> 60) ^ (old >> 59);
+        let new = (old << 1) | (bit & 1);
+        match ENTROPY_POOL.compare_exchange_weak(old, new, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return new,
+            Err(_) => continue,
+        }
+    }
 }
 
+/// 生成 8 字节 canary (低字节强制为 0, Linux/glibc 兼容).
 pub fn generate_canary() -> u64 {
-    // 占位实现: 取熵池高 7 字节, 低字节强制为 0 (Linux/glibc 兼容)
     next_random_u64() & 0xFFFF_FFFF_FFFF_FF00
 }
 
@@ -20,41 +44,59 @@ pub fn set_per_proc_seed(seed: u64) {
     PER_PROC_SEED.store(seed, Ordering::Release);
 }
 
-/// stub: 不真正写用户内存, 返回 0
+/// 从内核熵源填充用户 buffer.
 ///
-/// 完整实现 (`copy_to_user`) 在 aarch64 上触发 LLVM 22 codegen bug, 暂 stub.
-///
-/// TODO(TRACK-081BC6): 恢复真实实现. 详见 docs/plan/engineering-progress.md §五.1
-/// 和 docs/plan/kernel-roadmap.md §Backlog.
-/// - 移除 stub 行为
-/// - 实现: 检查 `check_user_buf(buf, len)` -> 生成随机字节 -> `copy_to_user`
-/// - 注意: 链路上 `copy_to_user` 含 inline asm, 必须 `#[inline(never)]` 或拆分函数
-pub fn get_random_bytes(_buf: u64, _len: usize) -> usize {
-    0
+/// 单次最大 256 字节. 返回实际写入字节数; 失败返回 0.
+pub fn get_random_bytes(buf: u64, len: usize) -> usize {
+    if len == 0 || len > 256 {
+        return 0;
+    }
+    if !is_user_buf(buf, len) {
+        return 0;
+    }
+    let mut random_bytes = [0u8; 256];
+    let mut i = 0;
+    while i + 8 <= len {
+        let val = next_random_u64();
+        random_bytes[i..i + 8].copy_from_slice(&val.to_le_bytes());
+        i += 8;
+    }
+    if i < len {
+        let val = next_random_u64();
+        random_bytes[i..len].copy_from_slice(&val.to_le_bytes()[..len - i]);
+    }
+    match copy_to_user(buf, &random_bytes[..len], len) {
+        Ok(n) => n,
+        Err(_) => 0,
+    }
 }
 
-/// stub: 不真正写用户内存, 返回 0
+/// 写 8 字节 canary 到用户 buffer.
 ///
-/// 完整实现 (`copy_to_user`) 在 aarch64 上触发 LLVM 22 codegen bug, 暂 stub.
-///
-/// TODO(TRACK-F0ED2E): 恢复真实实现. 详见 docs/plan/engineering-progress.md §五.1
-/// - 移除 stub 行为
-/// - 实现: `check_user_buf(buf, 8)` -> `process_get_current_canary` -> 8 字节
-///   LE 写入用户 buffer
-/// - `process_get_current_canary` 见下, 也需 `#[inline(never)]`
-pub fn write_canary_to_user(_buf: u64, _len: usize) -> i64 {
-    0
+/// 返回 0 (成功) / -1 (失败).
+pub fn write_canary_to_user(buf: u64, len: usize) -> i64 {
+    if len < 8 {
+        return -1;
+    }
+    if !is_user_buf(buf, 8) {
+        return -1;
+    }
+    let canary = process_get_current_canary();
+    let bytes = canary.to_le_bytes();
+    match copy_to_user(buf, &bytes, 8) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
 }
 
-/// stub: 返回熵池生成的 canary, 不读 `Process::stack_canary`
+/// 读取当前进程 per-process canary.
 ///
-/// 完整实现 (`PROCESS_TABLE.with_process` 闭包) 在 aarch64 上触发 LLVM 22
-/// codegen bug, 暂 stub. 实际安全语义在调用方 (services) 兜底.
-///
-/// TODO(TRACK-FA2B11): 恢复真实实现. 详见 docs/plan/engineering-progress.md §五.1
-/// - 移除 stub 行为
-/// - 实现: `let pid = process_get_current_pid(); PROCESS_TABLE.with_process(pid, |p| p.stack_canary.load(Acquire))`
-/// - 注意: `with_process` 闭包 inline 间接影响 inline asm 链, 必须 `#[inline(never)]`
+/// 从 `Process::stack_canary` (AtomicU64) 读取; 若进程不存在则
+/// 回退到 `generate_canary()`.
+#[inline(never)]
 pub fn process_get_current_canary() -> u64 {
-    generate_canary()
+    let pid = process_get_current_pid();
+    PROCESS_TABLE
+        .with_process(pid, |p| p.stack_canary.load(Ordering::Acquire))
+        .unwrap_or_else(generate_canary)
 }

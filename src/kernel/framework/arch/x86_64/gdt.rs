@@ -292,11 +292,19 @@ pub struct GdtPtr {
 
 /// Syscall 入口 per-CPU 数据 (通过 swapgs + GS 段访问)
 ///
-/// 布局: 汇编代码通过 `[gs:0]` 访问 `kernel_rsp`,
-/// 因此该字段必须位于结构体偏移 0 处。
+/// 布局: 汇编代码通过 `[gs:OFFSET]` 访问各字段,
+/// 因此字段顺序与偏移必须与 isr.asm 中的常量一致。
+///
+/// | 偏移 | 字段         | 汇编常量          |
+/// |------|-------------|-------------------|
+/// | 0    | kernel_rsp  | KERNEL_RSP_OFF    |
+/// | 8    | kernel_pml4 | KERNEL_PML4_OFF   |
+/// | 16   | user_pml4   | USER_PML4_OFF     |
 #[repr(C)]
 pub struct SyscallPerCpu {
     pub kernel_rsp: u64,
+    pub kernel_pml4: u64,
+    pub user_pml4: u64,
 }
 
 /// 每个 CPU 独立的 syscall 内核栈大小 (8KB)
@@ -324,7 +332,7 @@ impl PerCpuGdt {
             entries: [GdtEntry::null(); GDT_MAX_ENTRIES],
             ptr: GdtPtr { limit: 0, base: 0 },
             tss: super::tss::TaskStateSegment::zeroed(),
-            syscall: SyscallPerCpu { kernel_rsp: 0 },
+            syscall: SyscallPerCpu { kernel_rsp: 0, kernel_pml4: 0, user_pml4: 0 },
             syscall_stack: [0u8; PER_CPU_SYSCALL_STACK_SIZE],
             ist0: [0u8; PER_CPU_IST_SIZE],
             ist1: [0u8; PER_CPU_IST_SIZE],
@@ -470,6 +478,12 @@ pub fn gdt_init() -> i32 {
 
         gdt.syscall.kernel_rsp = gdt.syscall_stack.as_ptr() as u64 + gdt.syscall_stack.len() as u64;
 
+        // 读取当前 CR3 作为 PML4 初始值 (KPTI init 后会更新 user_pml4)
+        let current_cr3: u64;
+        core::arch::asm!("mov {}, cr3", out(reg) current_cr3, options(nomem, nostack));
+        gdt.syscall.kernel_pml4 = current_cr3;
+        gdt.syscall.user_pml4 = current_cr3;
+
         // IA32_KERNEL_GS_BASE — swapgs 时切换到该地址
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &gdt.syscall as *const _ as u64);
@@ -529,6 +543,12 @@ pub fn gdt_init_ap(cpu_index: u32) {
 
         ap.syscall.kernel_rsp = ap.syscall_stack.as_ptr() as u64 + ap.syscall_stack.len() as u64;
 
+        // 读取当前 CR3 作为 PML4 初始值 (KPTI init 后会更新 user_pml4)
+        let current_cr3: u64;
+        core::arch::asm!("mov {}, cr3", out(reg) current_cr3, options(nomem, nostack));
+        ap.syscall.kernel_pml4 = current_cr3;
+        ap.syscall.user_pml4 = current_cr3;
+
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
     }
@@ -558,6 +578,21 @@ pub fn get_gdt_ptr() -> &'static GdtPtr {
 #[inline]
 pub unsafe fn get_tss_mut() -> &'static mut super::tss::TaskStateSegment {
     &mut current_per_cpu_gdt_mut().tss
+}
+
+/// 更新指定 CPU 的 KPTI PML4 字段
+///
+/// KPTI init 完成后调用, 设置 `kernel_pml4` 和 `user_pml4`.
+/// PCID 启用时, 值为 PML4_PHYS | PCID; 未启用时为纯 PML4 物理地址.
+/// KPTI 未激活时 `user_pml4 == kernel_pml4`, 汇编中 `mov cr3` 无实际切换效果.
+///
+/// # Safety
+///
+/// 调用方保证: `cpu_index` 合法; 仅在 boot 阶段或所有 CPU 已停止调度时调用.
+pub unsafe fn gdt_set_kpti_pml4(cpu_index: u32, kernel_pml4: u64, user_pml4: u64) {
+    let gdt = per_cpu_gdt_mut(cpu_index);
+    gdt.syscall.kernel_pml4 = kernel_pml4;
+    gdt.syscall.user_pml4 = user_pml4;
 }
 
 // ============================================================================

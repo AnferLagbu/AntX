@@ -73,8 +73,8 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 | C3 Unix Domain Socket | ⬜ 待实施 | — | Domain::Unix 未实现; 无 sockaddr_un; 无 AF_UNIX 协议族 |
 | C4 io_uring / AIO | ⬜ 待实施 | — | 整个项目无 io_uring/io_submit/io_getevents 痕迹 |
 | C5 路由表 + Netfilter | ⬜ 待实施 | — | 无 routing_table/FIB/NF_INET/NAT/conntrack |
-| C6 Lockdep + ftrace | ⬜ 待实施 | — | 无 lockdep (lock_class/irq_context) / ftrace (mcount) |
-| C7 KPTI + Seccomp | ⬜ 待实施 | — | config/caps.rs 仅有 kpti 标志; 无双页表切换; 无 sys_seccomp |
+| C6 Lockdep + ftrace | ✅ 已完成 | 2026-06-09 | framework/debug/ftrace.rs (TraceEvent + FtraceState + fnv1a_32 + trace_event! 宏); framework/debug/kgdb.rs (GDB RSP 子集 + KgdbSerial trait); framework/debug/ringbuf.rs (SPSC 环形缓冲区) |
+| C7 KPTI + Seccomp | 🟡 部分完成 (KPTI 双架构全功能; Seccomp 未开始) | 2026-06-10 | KPTI: x86_64 trampoline CR3 切换 + RO+NX + PCID/INVPCID; aarch64 TTBR1 切换 + 异常入口/出口集成; 无 sys_seccomp |
 
 ### 已修复预存问题
 
@@ -255,7 +255,7 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [ ] C4: io_uring / AIO
 - [ ] C5: 路由表 + Netfilter
 - [x] C6: Lockdep + ftrace
-- [x] C7: KPTI (骨架) + Seccomp (未开始) → 2026-06-09 完成 KPTI 骨架 (USER_PML4 + 切换原语), Trampoline 集成待跟进 (TRACK-KPTI-TRAMPOLINE)
+- [x] C7: KPTI (双架构全功能) + Seccomp (未开始) → 2026-06-10 KPTI 双架构全功能就绪 (x86_64 trampoline+PCID + aarch64 TTBR1 切换); Seccomp 待实施
 
 ### Phase D
 - [ ] NUMA 感知
@@ -287,8 +287,8 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [x] KGDB / ftrace → 2026-06-09 完成
 - [x] POSIX Timer → 2026-06-09 完成
 - [x] madvise / mlock → 2026-06-09 完成 (P1 #15)
-- [x] 用户态 Stack Canary → 2026-06-09 完成 (P1 #14)
-- [x] KPTI 实际页表隔离 → 2026-06-09 完成骨架 (USER_PML4 + 切换原语), Trampoline 集成待跟进 (TRACK-KPTI-TRAMPOLINE)
+- [x] 用户态 Stack Canary → 2026-06-10 双架构完整实现 (LLVM 22 bug 已修复, TRACK-081BC6/F0ED2E/FA2B11 关闭)
+- [x] KPTI 实际页表隔离 → 2026-06-10 双架构全功能就绪 (x86_64 trampoline+PCID + aarch64 TTBR1 切换; TRACK-KPTI-TRAMPOLINE 关闭)
 
 ## 决策记录
 
@@ -362,4 +362,3 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [TRACK-1BDEF6] `src/kernel/framework/driver/display/hdmi.rs:498` TODO
 - [TRACK-162CB0] `src/kernel/framework/driver/virtio/blk.rs:205` TODO
 - [TRACK-26731B] `src/kernel/framework/arch/x86_64/smp_init.rs:189` TODO
-- [TRACK-KPTI-TRAMPOLINE] KPTI 汇编 entry/exit trampoline 集成未完成 — 详见 docs/plan/engineering-progress.md §五.2

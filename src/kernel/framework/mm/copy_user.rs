@@ -186,6 +186,67 @@ pub fn is_user_buf(ptr: u64, len: usize) -> bool {
     is_user_ptr(ptr) && end <= USER_ADDR_MAX
 }
 
+/// Set up exception recovery point and return old recovery.
+///
+/// Isolated into a `#[inline(never)]` function to prevent the inline asm
+/// from being inlined into large caller functions.
+///
+/// # Architecture notes
+///
+/// - **x86_64**: `lea` + label to get recovery address.
+/// - **aarch64**: `adr` (PC-relative, single instruction) to get recovery
+///   address. Avoids `movz`/`movk` pair which triggers LLVM 22 codegen bug
+///   (`invalid fixup for movz/movk`) when the label is far from the mov.
+///
+/// # Safety
+///
+/// Caller must ensure this is called in a context where exception recovery
+/// is meaningful (i.e., about to access user memory).
+#[inline(never)]
+unsafe fn setup_recovery() -> (u64, Option<u64>) {
+    clear_exception_flag();
+
+    let recovery_label: u64;
+    // SAFETY: inline asm 仅读取当前指令地址作为恢复点, 无副作用.
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!(
+        "9:",
+        "lea {recovery}, [rip + 8f]",
+        "8:",
+        recovery = out(reg) recovery_label,
+        options(nostack, pure, readonly),
+    );
+    // SAFETY: `adr` 是 PC-relative 单指令, 不触发 movz/movk fixup bug.
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!(
+        "adr {recovery}, 8f",
+        "8:",
+        recovery = out(reg) recovery_label,
+        options(nostack, pure, readonly),
+    );
+
+    let old_recovery = set_exception_recovery(recovery_label as u64);
+    (recovery_label, old_recovery)
+}
+
+/// Tear down exception recovery point, restoring old recovery if any.
+///
+/// Paired with `setup_recovery()`. Returns `true` if an exception occurred
+/// during the protected region.
+///
+/// # Safety
+///
+/// Caller must have called `setup_recovery()` beforehand.
+#[inline(never)]
+unsafe fn teardown_recovery(old_recovery: Option<u64>) -> bool {
+    if let Some(old) = old_recovery {
+        set_exception_recovery(old);
+    } else {
+        clear_exception_recovery();
+    }
+    exception_occurred()
+}
+
 /// Copy data from user space to kernel buffer
 ///
 /// # Safety
@@ -207,6 +268,7 @@ pub fn is_user_buf(ptr: u64, len: usize) -> bool {
 /// - Exception table mechanism (see exception_table_entry)
 /// - Page fault handler that checks exception table
 /// - Recovery point mechanism
+#[inline(never)]
 pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Result<usize, ()> {
     if len == 0 {
         return Ok(0);
@@ -225,30 +287,13 @@ pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Resul
         let src_ptr = user_src as *const u8;
         let dst_ptr = kernel_dst.as_mut_ptr();
 
-        clear_exception_flag();
-
-        let recovery_label: u64;
-        core::arch::asm!(
-            "9:",
-            "mov {tmp}, 8f",
-            "mov {recovery}, {tmp}",
-            "8:",
-            recovery = out(reg) recovery_label,
-            tmp = out(reg) _,
-            options(nostack, pure, readonly),
-        );
-
-        let old_recovery = set_exception_recovery(recovery_label as u64);
+        let (_recovery_label, old_recovery) = setup_recovery();
 
         core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, len);
 
-        if let Some(old) = old_recovery {
-            set_exception_recovery(old);
-        } else {
-            clear_exception_recovery();
-        }
+        let faulted = teardown_recovery(old_recovery);
 
-        if exception_occurred() {
+        if faulted {
             Err(())
         } else {
             Ok(len)
@@ -279,6 +324,7 @@ pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Resul
 /// - Exception table mechanism (see exception_table_entry)
 /// - Page fault handler that checks exception table
 /// - Recovery point mechanism
+#[inline(never)]
 pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usize, ()> {
     if len == 0 {
         return Ok(0);
@@ -297,30 +343,13 @@ pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usiz
         let src_ptr = kernel_src.as_ptr();
         let dst_ptr = user_dst as *mut u8;
 
-        clear_exception_flag();
-
-        let recovery_label: u64;
-        core::arch::asm!(
-            "9:",
-            "mov {tmp}, 8f",
-            "mov {recovery}, {tmp}",
-            "8:",
-            recovery = out(reg) recovery_label,
-            tmp = out(reg) _,
-            options(nostack, pure, readonly),
-        );
-
-        let old_recovery = set_exception_recovery(recovery_label as u64);
+        let (_recovery_label, old_recovery) = setup_recovery();
 
         core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, len);
 
-        if let Some(old) = old_recovery {
-            set_exception_recovery(old);
-        } else {
-            clear_exception_recovery();
-        }
+        let faulted = teardown_recovery(old_recovery);
 
-        if exception_occurred() {
+        if faulted {
             Err(())
         } else {
             Ok(len)
@@ -336,6 +365,7 @@ pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usiz
 ///
 /// - `Ok(string)`: The copied string (without null terminator)
 /// - `Err(())`: Invalid pointer, not null-terminated, or too long
+#[inline(never)]
 pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::string::String, ()> {
     if !is_user_ptr(user_str) {
         return Err(());
@@ -347,20 +377,7 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
     let result = unsafe {
         let ptr = user_str as *const u8;
 
-        clear_exception_flag();
-
-        let recovery_label: u64;
-        core::arch::asm!(
-            "9:",
-            "mov {tmp}, 8f",
-            "mov {recovery}, {tmp}",
-            "8:",
-            recovery = out(reg) recovery_label,
-            tmp = out(reg) _,
-            options(nostack, pure, readonly),
-        );
-
-        let old_recovery = set_exception_recovery(recovery_label as u64);
+        let (_recovery_label, old_recovery) = setup_recovery();
 
         for i in 0..max_len {
             let byte = core::ptr::read_volatile(ptr.add(i));
@@ -370,13 +387,9 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
             bytes.push(byte);
         }
 
-        if let Some(old) = old_recovery {
-            set_exception_recovery(old);
-        } else {
-            clear_exception_recovery();
-        }
+        let faulted = teardown_recovery(old_recovery);
 
-        if exception_occurred() || bytes.len() == max_len {
+        if faulted || bytes.len() == max_len {
             Err(())
         } else {
             alloc::string::String::from_utf8(bytes).map_err(|_| ())
@@ -392,6 +405,7 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
 ///
 /// - `Ok(cleared_len)`: Number of bytes cleared
 /// - `Err(())`: Invalid user pointer
+#[inline(never)]
 pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
     if len == 0 {
         return Ok(0);
@@ -405,30 +419,13 @@ pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
     let result = unsafe {
         let ptr = user_ptr as *mut u8;
 
-        clear_exception_flag();
-
-        let recovery_label: u64;
-        core::arch::asm!(
-            "9:",
-            "mov {tmp}, 8f",
-            "mov {recovery}, {tmp}",
-            "8:",
-            recovery = out(reg) recovery_label,
-            tmp = out(reg) _,
-            options(nostack, pure, readonly),
-        );
-
-        let old_recovery = set_exception_recovery(recovery_label as u64);
+        let (_recovery_label, old_recovery) = setup_recovery();
 
         core::ptr::write_bytes(ptr, 0, len);
 
-        if let Some(old) = old_recovery {
-            set_exception_recovery(old);
-        } else {
-            clear_exception_recovery();
-        }
+        let faulted = teardown_recovery(old_recovery);
 
-        if exception_occurred() {
+        if faulted {
             Err(())
         } else {
             Ok(len)
@@ -444,6 +441,7 @@ pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
 ///
 /// - `Ok(len)`: Length of string (excluding null terminator)
 /// - `Err(())`: Invalid pointer or not null-terminated within max_len
+#[inline(never)]
 pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
     if !is_user_ptr(user_str) {
         return Err(());
@@ -453,20 +451,7 @@ pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
     let result = unsafe {
         let ptr = user_str as *const u8;
 
-        clear_exception_flag();
-
-        let recovery_label: u64;
-        core::arch::asm!(
-            "9:",
-            "mov {tmp}, 8f",
-            "mov {recovery}, {tmp}",
-            "8:",
-            recovery = out(reg) recovery_label,
-            tmp = out(reg) _,
-            options(nostack, pure, readonly),
-        );
-
-        let old_recovery = set_exception_recovery(recovery_label as u64);
+        let (_recovery_label, old_recovery) = setup_recovery();
 
         let mut found_len = None;
         for i in 0..max_len {
@@ -477,13 +462,9 @@ pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
             }
         }
 
-        if let Some(old) = old_recovery {
-            set_exception_recovery(old);
-        } else {
-            clear_exception_recovery();
-        }
+        let faulted = teardown_recovery(old_recovery);
 
-        if exception_occurred() {
+        if faulted {
             Err(())
         } else if let Some(len) = found_len {
             Ok(len)

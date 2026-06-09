@@ -15,13 +15,6 @@
 //! - 用户指针必须合法 (`check_user_buf`)
 //! - `getrandom` 写用户 buffer, copy_to_user 异常路径被覆盖
 //! - `get_canary` 不写内存, 单纯返回 8 字节, 无内存风险
-//!
-//! ## 已知问题
-//!
-//! - 底层 `canary::get_random_bytes` / `canary::write_canary_to_user` /
-//!   `canary::process_get_current_canary` 在 aarch64 上因 LLVM 22 codegen
-//!   bug 暂被 stub 化, 因此 sys_getrandom 始终返回 0, sys_get_canary 始终
-//!   返回 0 但不写用户 buffer. 详见 TRACK-B16EAD.
 
 use crate::kernel::framework::proc::canary;
 

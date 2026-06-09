@@ -42,7 +42,26 @@ irq%1:
 %endmacro
 
 ; ── 通用入口: 保存寄存器 → exception_handler ────────────────────────────
+; 栈布局 (进入 isr_common 时):
+;   [rsp+0]  = int_no
+;   [rsp+8]  = err_code
+;   [rsp+16] = RIP      (CPU 推入)
+;   [rsp+24] = CS       (CPU 推入)
+;   [rsp+32] = RFLAGS   (CPU 推入)
+;   [rsp+40] = RSP      (CPU 推入)
+;   [rsp+48] = SS       (CPU 推入)
 isr_common:
+    ; ── KPTI: 如果来自用户态, 切换到内核页表 ──────────────────────
+    ; 检查栈上 CS: 用户代码段 = 0x23, 内核代码段 = 0x08
+    ; 来自用户态时 GS 仍为用户 GS, 需要 swapgs 才能读 per-CPU PML4
+    cmp word [rsp+24], 0x23
+    jne .isr_no_kpti_enter
+    swapgs
+    mov rax, [gs:KERNEL_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.isr_no_kpti_enter:
+
     push rax
     push rbx
     push rcx
@@ -78,6 +97,17 @@ isr_common:
     pop rbx
     pop rax
     add rsp, 16
+
+    ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
+    ; 恢复寄存器后栈布局同入口, CS 在 [rsp+24]
+    cmp word [rsp+24], 0x23
+    jne .isr_no_kpti_exit
+    swapgs
+    mov rax, [gs:USER_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.isr_no_kpti_exit:
+
     iretq
 
 ; ── SYSCALL 指令入口 (替代 int 0x80) ─────────────────────────────────────
@@ -92,13 +122,22 @@ isr_common:
 ; SMP 安全: 每个 CPU 有独立的 SyscallPerCpu 和内核栈,
 ; IA32_KERNEL_GS_BASE 在 gdt_init/gdt_init_ap 中分别设置。
 
-; SyscallPerCpu.kernel_rsp 在结构体中的偏移 (字段顺序保证)
-KERNEL_RSP_OFF equ 0
+; SyscallPerCpu 字段偏移 (与 gdt.rs SyscallPerCpu 结构体布局一致)
+KERNEL_RSP_OFF  equ 0
+KERNEL_PML4_OFF equ 8
+USER_PML4_OFF   equ 16
 
 global syscall_entry
 syscall_entry:
     swapgs
     xchg rsp, [gs:KERNEL_RSP_OFF]
+
+    ; ── KPTI: 切换到内核页表 ──────────────────────────────────────
+    ; swapgs 后 GS 指向 per-CPU SyscallPerCpu, [gs:KERNEL_PML4_OFF]
+    ; 含内核 PML4 物理地址. KPTI 未激活时 kernel_pml4 == user_pml4,
+    ; 此 mov cr3 无实际切换效果.
+    mov rax, [gs:KERNEL_PML4_OFF]
+    mov cr3, rax
 
     ; 构建 InterruptFrame (与 int 0x80 中断帧布局一致)
     push 0x1B                         ; SS = 用户数据段 (0x18|3)
@@ -154,11 +193,29 @@ syscall_entry:
     add rsp, 16                       ; 跳过 RSP + SS
 
     xchg rsp, [gs:KERNEL_RSP_OFF]     ; 恢复用户栈, 保存内核栈指针
+
+    ; ── KPTI: 切换到用户页表 ──────────────────────────────────────
+    ; sysretq 前 CR3 必须切回 USER_PML4, 否则用户态无法寻址.
+    ; xchg 后 CPU 在用户栈上, 用户栈在 USER_PML4 低半区可见.
+    ; per-CPU 数据在高半区, USER_PML4 已复制高半区, [gs:OFF] 仍可访问.
+    mov rax, [gs:USER_PML4_OFF]
+    mov cr3, rax
+
     swapgs                            ; 恢复用户 GS 段
     sysretq
 
 ; ── 通用入口: 保存寄存器 → irq_handler ──────────────────────────────────
+; 栈布局同 isr_common
 irq_common:
+    ; ── KPTI: 如果来自用户态, 切换到内核页表 ──────────────────────
+    cmp word [rsp+24], 0x23
+    jne .irq_no_kpti_enter
+    swapgs
+    mov rax, [gs:KERNEL_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.irq_no_kpti_enter:
+
     push rax
     push rbx
     push rcx
@@ -194,6 +251,16 @@ irq_common:
     pop rbx
     pop rax
     add rsp, 16
+
+    ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
+    cmp word [rsp+24], 0x23
+    jne .irq_no_kpti_exit
+    swapgs
+    mov rax, [gs:USER_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.irq_no_kpti_exit:
+
     iretq
 
 ; ── 实例化 ──────────────────────────────────────────────────────────────
@@ -255,6 +322,16 @@ syscall_handler:
     cli
     push 0
     push 0x80
+
+    ; ── KPTI: 如果来自用户态, 切换到内核页表 ──────────────────────
+    cmp word [rsp+24], 0x23
+    jne .syscall_handler_no_kpti_enter
+    swapgs
+    mov rax, [gs:KERNEL_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.syscall_handler_no_kpti_enter:
+
     push rax
     push rbx
     push rcx
@@ -291,6 +368,16 @@ syscall_handler:
     pop rbx
     pop rax
     add rsp, 16
+
+    ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
+    cmp word [rsp+24], 0x23
+    jne .syscall_handler_no_kpti_exit
+    swapgs
+    mov rax, [gs:USER_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.syscall_handler_no_kpti_exit:
+
     iretq
 
 global isr0x82
@@ -298,6 +385,16 @@ isr0x82:
     cli
     push 0
     push 0x82
+
+    ; ── KPTI: 如果来自用户态, 切换到内核页表 ──────────────────────
+    cmp word [rsp+24], 0x23
+    jne .isr0x82_no_kpti_enter
+    swapgs
+    mov rax, [gs:KERNEL_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.isr0x82_no_kpti_enter:
+
     push rax
     push rbx
     push rcx
@@ -334,4 +431,14 @@ isr0x82:
     pop rbx
     pop rax
     add rsp, 16
+
+    ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
+    cmp word [rsp+24], 0x23
+    jne .isr0x82_no_kpti_exit
+    swapgs
+    mov rax, [gs:USER_PML4_OFF]
+    mov cr3, rax
+    swapgs
+.isr0x82_no_kpti_exit:
+
     iretq

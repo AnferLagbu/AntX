@@ -257,6 +257,15 @@ impl Aarch64Vmm {
                 in(reg) current_l0,
             );
         }
+
+        // 初始化 KPTI: 创建 trampoline TTBR1 页表.
+        // 在用户态运行时, TTBR1_EL1 指向最小化页表 (仅含异常入口),
+        // 减少内核地址空间泄露面. 异常入口时切换回完整内核页表.
+        // SAFETY: current_l0 是刚写入 TTBR1_EL1 的有效页表物理地址;
+        // KPTI 全局状态在 boot 阶段被独占写入; PMM 已初始化.
+        unsafe {
+            super::kpti::kpti_init(current_l0);
+        }
     }
 
     // ─── Allocate a Page Table ───────────────────────────────────────

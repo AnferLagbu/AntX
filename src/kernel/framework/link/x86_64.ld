@@ -45,6 +45,10 @@ SECTIONS
     
     .text : AT(_kernel_text_lma) {
         _kernel_text_start = .;
+        *(.kpti_trampoline)
+        build/isr.o(.text .text.*)
+        . = ALIGN(16);
+        _kpti_trampoline_end = .;
         *(.text)
         *(.text.*)
         *(.trampoline)

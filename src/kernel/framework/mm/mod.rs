@@ -33,6 +33,9 @@ pub mod vma;
 
 #[cfg(target_arch = "x86_64")]
 pub mod kpti;
+#[cfg(target_arch = "aarch64")]
+#[path = "kpti_aarch64.rs"]
+pub mod kpti;
 
 // Re-export commonly used types
 pub use kmalloc::*;

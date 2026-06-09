@@ -219,6 +219,17 @@ handle_el0_sync:
     mrs  x1, sp_el0
     str  x1, [sp, #(8 * 33)]
 
+    // ── KPTI: 切换 TTBR1_EL1 到完整内核页表 ──────────────────────
+    // 从 EL0 进入时, TTBR1 可能指向 trampoline 页表.
+    // 读取 KERNEL_TTBR1 全局变量, 若非 0 则写入 TTBR1_EL1.
+    adrp x0, KERNEL_TTBR1
+    ldr  x0, [x0, #:lo12:KERNEL_TTBR1]
+    cbz  x0, 1f
+    dsb  ish
+    msr  ttbr1_el1, x0
+    isb
+1:
+
     // 检查 ESR_EL1.EC 判断异常类型
     mrs  x0, esr_el1
     lsr  x0, x0, #26        // EC = ESR[31:26]
@@ -229,6 +240,15 @@ handle_el0_sync:
     mov  x0, sp
     bl   sync_exception_handler
 
+    // ── KPTI: 切换 TTBR1_EL1 到 trampoline 页表 ──────────────────
+    // 返回 EL0 前, 读取 TRAMP_TTBR1, 若非 0 则写入 TTBR1_EL1.
+    adrp x0, TRAMP_TTBR1
+    ldr  x0, [x0, #:lo12:TRAMP_TTBR1]
+    cbz  x0, 2f
+    dsb  ish
+    msr  ttbr1_el1, x0
+    isb
+2:
     // 恢复上下文并返回 EL0
     ldr  x1, [sp, #(8 * 33)]
     msr  sp_el0, x1
@@ -262,6 +282,15 @@ handle_svc:
     // 把返回值存入帧内 x0
     str  x0, [sp, #(8 * 0)]
 
+    // ── KPTI: 切换 TTBR1_EL1 到 trampoline 页表 ──────────────────
+    // SVC 返回 EL0 前, 读取 TRAMP_TTBR1, 若非 0 则写入 TTBR1_EL1.
+    adrp x0, TRAMP_TTBR1
+    ldr  x0, [x0, #:lo12:TRAMP_TTBR1]
+    cbz  x0, 3f
+    dsb  ish
+    msr  ttbr1_el1, x0
+    isb
+3:
     ldr  x1, [sp, #(8 * 33)]
     msr  sp_el0, x1
     ldr  x30, [sp, #(8 * 30)]
@@ -307,9 +336,25 @@ handle_el0_irq:
     mrs  x1, sp_el0
     str  x1, [sp, #(8 * 33)]
 
+    // ── KPTI: 切换 TTBR1_EL1 到完整内核页表 ──────────────────────
+    adrp x0, KERNEL_TTBR1
+    ldr  x0, [x0, #:lo12:KERNEL_TTBR1]
+    cbz  x0, 4f
+    dsb  ish
+    msr  ttbr1_el1, x0
+    isb
+4:
     mov  x0, sp
     bl   irq_handler_el0
 
+    // ── KPTI: 切换 TTBR1_EL1 到 trampoline 页表 ──────────────────
+    adrp x0, TRAMP_TTBR1
+    ldr  x0, [x0, #:lo12:TRAMP_TTBR1]
+    cbz  x0, 5f
+    dsb  ish
+    msr  ttbr1_el1, x0
+    isb
+5:
     ldr  x1, [sp, #(8 * 33)]
     msr  sp_el0, x1
     ldr  x30, [sp, #(8 * 30)]
