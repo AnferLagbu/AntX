@@ -1174,6 +1174,13 @@ pub fn sys_fork() -> Pid {
         // 子进程继承父进程的 pgid (POSIX 语义)
         let effective_pgid = if parent_pgid == 0 { parent_pid } else { parent_pgid };
         child.pgid.store(effective_pgid, core::sync::atomic::Ordering::SeqCst);
+        // P1 #14: 继承父进程 stack canary (fork 后父子 canary 相同)
+        {
+            let parent_canary = PROCESS_TABLE
+                .with_process(parent_pid, |p| p.stack_canary.load(Ordering::SeqCst))
+                .unwrap_or(0);
+            child.stack_canary.store(parent_canary, Ordering::SeqCst);
+        }
     }
 
     // Add child to parent's children list

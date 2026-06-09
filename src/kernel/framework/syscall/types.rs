@@ -448,6 +448,26 @@ pub const QX_TIMER_GETOVERRUN: u64 = 744;
 /// 时钟分辨率 (clock_getres)
 pub const QX_CLOCK_GETRES: u64 = 745;
 
+// ---------- 746-747: 熵源 / Stack Canary (P1 #14) ----------
+/// 从内核熵源填充用户 buffer (Linux getrandom 兼容)
+pub const QX_GETRANDOM: u64 = 746;
+/// 读取当前进程 8 字节 stack canary (低字节恒为 0)
+pub const QX_GET_CANARY: u64 = 747;
+
+// ---------- 760-765: 内存建议与锁定 (madvise / mlock, P1 #15) ----------
+/// 设置内存区域访问模式建议 (madvise)
+pub const QX_MADVISE: u64 = 760;
+/// 锁定 [addr, addr+len) 物理页禁止换出 (mlock)
+pub const QX_MLOCK: u64 = 761;
+/// 解除锁定 (munlock)
+pub const QX_MUNLOCK: u64 = 762;
+/// 进程级锁定所有/未来映射 (mlockall)
+pub const QX_MLOCKALL: u64 = 763;
+/// 解除进程级所有锁定 (munlockall)
+pub const QX_MUNLOCKALL: u64 = 764;
+/// 查询每页驻留性 (mincore)
+pub const QX_MINCORE: u64 = 765;
+
 // ---------- 800-809: 内核调试 / 跟踪 (ftrace / KGDB) ----------
 /// 启用 ftrace 全局开关
 pub const QX_FTRACE_ENABLE: u64 = 800;

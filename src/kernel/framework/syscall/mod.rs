@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 pub mod api;
 pub mod brk;
+pub mod canary;
 pub mod clone;
 pub mod epoll;
 pub mod eventfd;
@@ -10,6 +11,7 @@ pub mod timerfd;
 pub mod futex;
 pub mod info;
 pub mod io;
+pub mod madvise_mlock;
 pub mod mmap;
 pub mod mprotect;
 pub mod sendfile;
@@ -301,6 +303,42 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         QX_CLOCK_GETRES => dispatch!(
             crate::kernel::framework::syscall::posix_timer::sys_clock_getres(a0, a1),
             b"clock_getres\0"
+        ),
+
+        // ==================== 熵源 / Stack Canary (746-747) ====================
+        QX_GETRANDOM => dispatch!(
+            crate::kernel::framework::syscall::canary::sys_getrandom(a0, a1, a2),
+            b"getrandom\0"
+        ),
+        QX_GET_CANARY => dispatch!(
+            crate::kernel::framework::syscall::canary::sys_get_canary(a0, a1),
+            b"get_canary\0"
+        ),
+
+        // ==================== 内存建议与锁定 (760-765, P1 #15) ====================
+        QX_MADVISE => dispatch!(
+            crate::kernel::framework::syscall::madvise_mlock::sys_madvise(a0, a1, a2),
+            b"madvise\0"
+        ),
+        QX_MLOCK => dispatch!(
+            crate::kernel::framework::syscall::madvise_mlock::sys_mlock(a0, a1),
+            b"mlock\0"
+        ),
+        QX_MUNLOCK => dispatch!(
+            crate::kernel::framework::syscall::madvise_mlock::sys_munlock(a0, a1),
+            b"munlock\0"
+        ),
+        QX_MLOCKALL => dispatch!(
+            crate::kernel::framework::syscall::madvise_mlock::sys_mlockall(a0),
+            b"mlockall\0"
+        ),
+        QX_MUNLOCKALL => dispatch!(
+            crate::kernel::framework::syscall::madvise_mlock::sys_munlockall(),
+            b"munlockall\0"
+        ),
+        QX_MINCORE => dispatch!(
+            crate::kernel::framework::syscall::madvise_mlock::sys_mincore(a0, a1, a2),
+            b"mincore\0"
         ),
 
         // ==================== 调试 / 跟踪 (800-809) ====================

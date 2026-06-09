@@ -111,8 +111,22 @@ pub fn swap_info() -> SwapInfo {
 /// 记录页面访问 (添加到 LRU active 链表)
 ///
 /// pml4 为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
-pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
-    fw_swap::lru_touch(pml4, virt_addr, phys_addr, dirty)
+/// `locked` 表示该页是否被 mlock 锁定, 由调用方根据 VMA vm_flags.MLOCKED 推导.
+pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
+    fw_swap::lru_touch(pml4, virt_addr, phys_addr, dirty, locked);
+}
+
+/// 标记某虚拟地址对应 LRU 条目为 mlock 锁定
+///
+/// 返回 true 表示 LRU 中存在该条目 (并已更新), false 表示该页未在 LRU 跟踪
+/// (尚未触达, locked 状态由 VMA vm_flags 承载).
+pub fn set_page_locked(virt_addr: u64, locked: bool) -> bool {
+    fw_swap::set_page_locked(virt_addr, locked)
+}
+
+/// 查询某虚拟地址对应 LRU 条目的 mlock 锁定状态
+pub fn is_page_locked(virt_addr: u64) -> Option<bool> {
+    fw_swap::is_page_locked(virt_addr)
 }
 
 /// 检测 PTE 是否为 swap entry

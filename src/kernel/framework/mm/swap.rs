@@ -272,6 +272,9 @@ struct LruEntry {
     dirty: bool,
     /// 是否被占用
     occupied: bool,
+    /// 是否被 mlock 锁定 (锁定页不参与 swap/reclaim, 跳过回收候选)
+    /// 设置时机: `set_page_locked()` 或 lru_touch 时由 vma_flags.MLOCKED 推导
+    locked: bool,
 }
 
 impl LruEntry {
@@ -282,6 +285,7 @@ impl LruEntry {
             phys_addr: 0,
             dirty: false,
             occupied: false,
+            locked: false,
         }
     }
 }
@@ -299,28 +303,35 @@ impl LruList {
     /// 添加页面到 active 链表 (页面被访问时调用)
     ///
     /// pml4 为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
-    fn add_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
+    /// locked 表示该页是否被 mlock 锁定, 由调用方根据 VMA vm_flags.MLOCKED 推导.
+    fn add_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
         // 先检查是否已在 inactive 链表中, 若是则提升
         for i in 0..LRU_CAPACITY {
             if self.inactive[i].occupied && self.inactive[i].virt_addr == virt_addr {
-                // 从 inactive 移除, 加入 active
-                let entry = self.inactive[i];
+                // 从 inactive 移除, 加入 active (保留 locked 标志)
+                let mut entry = self.inactive[i];
                 self.inactive[i] = LruEntry::empty();
                 self.inactive_count -= 1;
-                self.push_active(pml4, entry.virt_addr, entry.phys_addr, entry.dirty || dirty);
+                entry.locked = locked || entry.locked;
+                entry.dirty |= dirty;
+                self.push_active(entry.pml4, entry.virt_addr, entry.phys_addr, entry.dirty, entry.locked);
                 return;
             }
         }
 
         // 不在 inactive 中, 直接加入 active
-        self.push_active(pml4, virt_addr, phys_addr, dirty);
+        self.push_active(pml4, virt_addr, phys_addr, dirty, locked);
     }
 
-    fn push_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
+    fn push_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
         // 检查是否已在 active 中
         for i in 0..LRU_CAPACITY {
             if self.active[i].occupied && self.active[i].virt_addr == virt_addr {
                 self.active[i].dirty = dirty;
+                // locked 单调: 一旦锁定不可解除 (仅清 VMA flag 不影响 LRU 锁)
+                if locked {
+                    self.active[i].locked = true;
+                }
                 return;
             }
         }
@@ -339,6 +350,7 @@ impl LruList {
                     phys_addr,
                     dirty,
                     occupied: true,
+                    locked,
                 };
                 self.active_count += 1;
                 return;
@@ -357,9 +369,9 @@ impl LruList {
 
                 // inactive 满时丢弃最旧的
                 if self.inactive_count >= LRU_CAPACITY {
-                    // 移除最旧的 inactive 条目
+                    // 移除最旧的 inactive 条目 (跳过 locked 优先保护)
                     for j in 0..LRU_CAPACITY {
-                        if self.inactive[j].occupied {
+                        if self.inactive[j].occupied && !self.inactive[j].locked {
                             self.inactive[j] = LruEntry::empty();
                             self.inactive_count -= 1;
                             break;
@@ -381,13 +393,57 @@ impl LruList {
     }
 
     /// 从 inactive 链表获取回收候选
+    ///
+    /// **跳过 locked 页**: mlock 锁定的页保留在链表中, 不被回收.
+    /// 跳过后 inactive_count 不递减, 以便后续再考虑 (locked 状态未来会解除).
     fn get_victim(&mut self) -> Option<LruEntry> {
+        let mut scan_count = 0;
         for i in 0..LRU_CAPACITY {
-            if self.inactive[i].occupied {
+            scan_count += 1;
+            if self.inactive[i].occupied && !self.inactive[i].locked {
                 let entry = self.inactive[i];
                 self.inactive[i] = LruEntry::empty();
                 self.inactive_count -= 1;
                 return Some(entry);
+            }
+            if scan_count >= LRU_CAPACITY {
+                break;
+            }
+        }
+        // 所有 inactive 条目都 locked, 无法回收
+        None
+    }
+
+    /// 标记某虚拟地址对应的 LRU 条目为 locked (mlock)
+    ///
+    /// 用于 mlock 系统调用: 锁定 VMA 范围时遍历 VMA 内每个触达页.
+    /// 若该页未在 LRU 跟踪 (未被触达过), 跳过 — locked 状态由 VMA vm_flags 承载.
+    fn set_locked(&mut self, virt_addr: u64, locked: bool) -> bool {
+        for i in 0..LRU_CAPACITY {
+            if self.active[i].occupied && self.active[i].virt_addr == virt_addr {
+                self.active[i].locked = locked;
+                return true;
+            }
+        }
+        for i in 0..LRU_CAPACITY {
+            if self.inactive[i].occupied && self.inactive[i].virt_addr == virt_addr {
+                self.inactive[i].locked = locked;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 查询某虚拟地址的 LRU 锁定状态
+    fn is_locked(&self, virt_addr: u64) -> Option<bool> {
+        for i in 0..LRU_CAPACITY {
+            if self.active[i].occupied && self.active[i].virt_addr == virt_addr {
+                return Some(self.active[i].locked);
+            }
+        }
+        for i in 0..LRU_CAPACITY {
+            if self.inactive[i].occupied && self.inactive[i].virt_addr == virt_addr {
+                return Some(self.inactive[i].locked);
             }
         }
         None
@@ -587,12 +643,44 @@ pub fn pte_to_swap_entry(pte: u64) -> Option<SwapEntry> {
 /// 记录页面访问 (添加到 LRU active 链表)
 ///
 /// pml4 必须为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
-pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool) {
+/// `locked` 表示该页是否被 mlock 锁定 (由调用方根据 VMA vm_flags.MLOCKED 推导).
+pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
     SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let lru = unsafe { &mut *SWAP.lru.get() };
-    lru.add_active(pml4, virt_addr, phys_addr, dirty);
+    lru.add_active(pml4, virt_addr, phys_addr, dirty, locked);
     SWAP.lock.unlock();
+}
+
+/// 设置某虚拟地址对应 LRU 条目的 mlock 锁定状态
+///
+/// 返回 true 表示 LRU 中有该条目 (并已更新), false 表示该页未在 LRU 跟踪
+/// (尚未触达, locked 状态由 VMA vm_flags 承载, 触达时会通过 lru_touch 锁定).
+///
+/// # 用法
+///
+/// - `mlock` 系统调用: 对 VMA 内每页调用 `set_page_locked(virt, true)`
+/// - `munlock` 系统调用: 对 VMA 内每页调用 `set_page_locked(virt, false)`
+/// - 保留的 locked 状态对 get_victim 不可见, 不会被 swap-out
+pub fn set_page_locked(virt_addr: u64, locked: bool) -> bool {
+    SWAP.lock.lock();
+    // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
+    let lru = unsafe { &mut *SWAP.lru.get() };
+    let result = lru.set_locked(virt_addr, locked);
+    SWAP.lock.unlock();
+    result
+}
+
+/// 查询某虚拟地址对应 LRU 条目的 mlock 锁定状态
+///
+/// 返回 Some(true/false) 表示 LRU 中存在该条目, None 表示该页未在 LRU 跟踪.
+pub fn is_page_locked(virt_addr: u64) -> Option<bool> {
+    SWAP.lock.lock();
+    // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
+    let lru = unsafe { &*SWAP.lru.get() };
+    let result = lru.is_locked(virt_addr);
+    SWAP.lock.unlock();
+    result
 }
 
 /// 回收页面 (从 LRU inactive 链表选取并换出)

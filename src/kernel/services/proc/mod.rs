@@ -21,11 +21,13 @@
 //! 评估日期: 2026-06-04
 
 
+pub mod canary;
 pub mod elf;
 pub mod execve;
 pub mod clone;
 pub mod coredump;
 pub mod info;
+pub mod madvise_mlock;
 pub mod rlimit;
 pub mod sched;
 pub mod session;

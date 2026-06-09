@@ -16,9 +16,111 @@
 //! `Vma` 中的物理页映射感知与 PMM 协作。
 
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::*;
+
+/// VMA 行为属性标志 (与 PageFlags 区分: PageFlags 是硬件页表属性, VmFlags 是内核策略)
+///
+/// ## 设计
+///
+/// - 32 位位掩码, atomic 友好
+/// - 与 Linux `vm_flags` 同源, 但仅实现 QueenX 用到的子集
+/// - mlock 路径 (MADV_*) 与 fork 行为 (MADV_DONTFORK) 由 VmFlags 驱动
+/// - 与 PageFlags 解耦: mlock 不修改页表权限, 仅在内核策略路径被检查
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(transparent)]
+pub struct VmFlags(pub u32);
+
+impl VmFlags {
+    pub const EMPTY: Self = Self(0);
+
+    // ─── mlock 族 ────────────────────────────────────────────
+    /// `mlock`/`mlockall(MCL_CURRENT)` 锁定的页: 不参与 swap/reclaim
+    pub const MLOCKED: Self = Self(1 << 0);
+    /// `mlockall(MCL_FUTURE)` 设置: 此后 mmap/匿名页自动锁定
+    pub const LOCKED_FUTURE: Self = Self(1 << 1);
+    /// `mlockall(MCL_ONFAULT)` 设置: 触达时才锁定 (Linux 4.4+)
+    pub const LOCKED_ONFAULT: Self = Self(1 << 2);
+
+    // ─── madvise 族 ──────────────────────────────────────────
+    /// `MADV_DONTNEED`: 释放页 (下次 #PF 触发 zero-page 重新 alloc)
+    pub const MADV_DONTNEED: Self = Self(1 << 4);
+    /// `MADV_PAGEOUT`: 把不活跃页换出到 swap / 释放到 page cache
+    pub const MADV_PAGEOUT: Self = Self(1 << 5);
+    /// `MADV_FREE`: 仅清 PTE present 位 + 标记可释放, 不实际回收 (POSIX 2008)
+    pub const MADV_FREE: Self = Self(1 << 6);
+    /// `MADV_RANDOM`: 访问模式提示
+    pub const MADV_RANDOM: Self = Self(1 << 7);
+    /// `MADV_SEQUENTIAL`: 顺序读, 提前丢页
+    pub const MADV_SEQUENTIAL: Self = Self(1 << 8);
+    /// `MADV_WILLNEED`: 预读 (触发 readahead)
+    pub const MADV_WILLNEED: Self = Self(1 << 9);
+    /// `MADV_MERGEABLE`: 允许 KSM 合并同内容页
+    pub const MADV_MERGEABLE: Self = Self(1 << 10);
+    /// `MADV_UNMERGEABLE`: 禁止 KSM 合并
+    pub const MADV_UNMERGEABLE: Self = Self(1 << 11);
+    /// `MADV_HUGEPAGE`: 提示优先 THP 大页
+    pub const MADV_HUGEPAGE: Self = Self(1 << 12);
+    /// `MADV_NOHUGEPAGE`: 禁止 THP
+    pub const MADV_NOHUGEPAGE: Self = Self(1 << 13);
+    /// `MADV_DONTFORK`: fork 时不复制 (排空 mmap 区)
+    pub const MADV_DONTFORK: Self = Self(1 << 14);
+    /// `MADV_DOFORK`: 取消 DONTFORK
+    pub const MADV_DOFORK: Self = Self(1 << 15);
+    /// `MADV_POPULATE_READ`: 预触达读 (mmap_populate)
+    pub const MADV_POPULATE_READ: Self = Self(1 << 16);
+    /// `MADV_POPULATE_WRITE`: 预触达写
+    pub const MADV_POPULATE_WRITE: Self = Self(1 << 17);
+    /// `MADV_SOFT_OFFLINE`: 软下线 (poison page)
+    pub const MADV_SOFT_OFFLINE: Self = Self(1 << 18);
+    /// `MADV_COLD`: 标记冷 (Linux 5.15+)
+    pub const MADV_COLD: Self = Self(1 << 19);
+    /// 内部标记: PAGEOUT 完成 (回收路径)
+    pub const _PAGEOUT_DONE: Self = Self(1 << 20);
+    /// 内部标记: DONTNEED 完成 (回收路径)
+    pub const _DONTNEED_DONE: Self = Self(1 << 21);
+
+    #[inline]
+    pub const fn bits(&self) -> u32 {
+        self.0
+    }
+    #[inline]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+    #[inline]
+    pub const fn contains(self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
+    }
+    #[inline]
+    pub const fn insert(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    #[inline]
+    pub const fn remove(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
+    #[inline]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl core::ops::BitOr for VmFlags {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self { self.insert(rhs) }
+}
+impl core::ops::BitOrAssign for VmFlags {
+    fn bitor_assign(&mut self, rhs: Self) { self.0 |= rhs.0; }
+}
+impl core::ops::BitAnd for VmFlags {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self { Self(self.0 & rhs.0) }
+}
+impl core::ops::BitAndAssign for VmFlags {
+    fn bitand_assign(&mut self, rhs: Self) { self.0 &= rhs.0; }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -63,6 +165,8 @@ pub struct Vma {
     /// 文件映射: 创建该 VMA 的 pwm (用于 #PF 时 vfs_pread_inode 权限校验).
     /// 匿名/堆/栈/设备/保护 VMA 始终为 0.
     pub file_pwm: u64,
+    /// 内核策略标志 (madvice/mlock/fork 行为). 与 PageFlags 解耦.
+    pub vm_flags: VmFlags,
 }
 
 impl Vma {
@@ -76,6 +180,7 @@ impl Vma {
             inode_id: 0,
             shared: false,
             file_pwm: 0,
+            vm_flags: VmFlags::EMPTY,
         }
     }
 
@@ -89,6 +194,7 @@ impl Vma {
             inode_id: 0,
             shared: false,
             file_pwm: 0,
+            vm_flags: VmFlags::EMPTY,
         }
     }
 
@@ -115,6 +221,7 @@ impl Vma {
             inode_id,
             shared,
             file_pwm: pwm,
+            vm_flags: VmFlags::EMPTY,
         }
     }
 
@@ -137,6 +244,12 @@ impl Vma {
     pub fn is_stack(&self) -> bool {
         self.vma_type == VmaType::Stack
     }
+
+    /// VMA 是否被 mlock 锁定 (参与 swap/reclaim 跳过判断)
+    #[inline]
+    pub fn is_mlocked(&self) -> bool {
+        self.vm_flags.contains(VmFlags::MLOCKED)
+    }
 }
 
 pub struct MmStruct {
@@ -145,6 +258,11 @@ pub struct MmStruct {
     pub brk: AtomicUsize,
     pub start_stack: usize,
     pub mmap_base: usize,
+    /// 已锁定物理字节数 (mlock 累计). 用于 RLIMIT_MEMLOCK 校验.
+    /// 跨 fork 共享 (MmStruct 在 fork 中不复制, 见 sys_fork).
+    pub locked_vm: AtomicUsize,
+    /// 进程级 mlockall 标志 (MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT).
+    pub mlock_all_flags: AtomicU32,
 }
 
 impl MmStruct {
@@ -155,6 +273,8 @@ impl MmStruct {
             brk: AtomicUsize::new(0),
             start_stack: 0,
             mmap_base: 0,
+            locked_vm: AtomicUsize::new(0),
+            mlock_all_flags: AtomicU32::new(0),
         }
     }
 
@@ -351,6 +471,7 @@ impl MmStruct {
                     inode_id: vma.inode_id,
                     shared: vma.shared,
                     file_pwm: vma.file_pwm,
+                    vm_flags: vma.vm_flags,
                 });
             }
 
@@ -366,6 +487,7 @@ impl MmStruct {
                 inode_id: vma.inode_id,
                 shared: vma.shared,
                 file_pwm: vma.file_pwm,
+                vm_flags: vma.vm_flags,
             });
 
             // 后段: [end, vma.end)
@@ -379,6 +501,7 @@ impl MmStruct {
                     inode_id: vma.inode_id,
                     shared: vma.shared,
                     file_pwm: vma.file_pwm,
+                    vm_flags: vma.vm_flags,
                 });
             }
         }
@@ -514,6 +637,7 @@ impl MmStruct {
             inode_id: old_vma.inode_id,
             shared: old_vma.shared,
             file_pwm: old_vma.file_pwm,
+            vm_flags: old_vma.vm_flags,
         };
         self.insert_vma(new_vma).map_err(|_| Errno::ENOMEM)?;
         Ok(new_start)
@@ -541,6 +665,397 @@ impl MmStruct {
         }
 
         Ok(self.brk.load(Ordering::Acquire))
+    }
+
+    // ============================================================================
+    // madvise / mlock / mincore 接口 (P1 #15)
+    // ============================================================================
+
+    /// madvise: 对 [start, end) 范围设置 VmFlags hint
+    ///
+    /// 返回成功锁定的字节数 (用于 mlock/mlockall 累计)
+    /// 与 errno (MADV_* 实现细节见 Linux man).
+    pub fn madvise_range(&self, start: usize, len: usize, advice: u32) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+
+        if len == 0 {
+            return Err(Errno::EINVAL);
+        }
+
+        // advice → VmFlags bit
+        let flag = match advice {
+            4 => VmFlags::MADV_DONTNEED,
+            5 => VmFlags::MADV_PAGEOUT,
+            6 => VmFlags::MADV_FREE,
+            1 => VmFlags::MADV_RANDOM,
+            2 => VmFlags::MADV_SEQUENTIAL,
+            3 => VmFlags::MADV_WILLNEED,
+            7 => VmFlags::MADV_MERGEABLE,
+            8 => VmFlags::MADV_UNMERGEABLE,
+            14 => VmFlags::MADV_HUGEPAGE,
+            15 => VmFlags::MADV_NOHUGEPAGE,
+            10 => VmFlags::MADV_DONTFORK,
+            11 => VmFlags::MADV_DOFORK,
+            22 => VmFlags::MADV_POPULATE_READ,
+            23 => VmFlags::MADV_POPULATE_WRITE,
+            19 => VmFlags::MADV_SOFT_OFFLINE,
+            20 => VmFlags::MADV_COLD,
+            _ => return Err(Errno::EINVAL),
+        };
+
+        let end_addr = start.checked_add(len).ok_or(Errno::ENOMEM)?;
+        let end_addr = (end_addr + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
+
+        let mut vmas = self.vmas.lock();
+        let mut locked = 0usize;
+        let mut touched: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::new();
+
+        for vma in vmas.iter_mut() {
+            if vma.end <= start || vma.start >= end_addr {
+                continue;
+            }
+            // 只取重叠部分
+            let ovl_start = vma.start.max(start);
+            let ovl_end = vma.end.min(end_addr);
+
+            // 需要拆分时延后, 简化路径: 整 VMA 覆盖
+            if vma.start >= start && vma.end <= end_addr {
+                vma.vm_flags = vma.vm_flags.insert(flag);
+                locked += ovl_end - ovl_start;
+                touched.push((ovl_start, ovl_end));
+            }
+        }
+
+        // 跨 VMA 边界的部分: 单独拆分处理
+        let mut i = 0;
+        while i < vmas.len() {
+            let vma_start = vmas[i].start;
+            let vma_end = vmas[i].end;
+            if vma_end <= start || vma_start >= end_addr {
+                i += 1;
+                continue;
+            }
+            // 部分覆盖 [start, end) 范围, 拆分
+            let prefix_end = start.max(vma_start);
+            let suffix_start = end_addr.min(vma_end);
+            if vma_start < start {
+                // 拆分前缀 [vma_start, start)
+                let prefix = Vma {
+                    start: vma_start,
+                    end: start,
+                    flags: vmas[i].flags,
+                    vma_type: vmas[i].vma_type,
+                    offset: vmas[i].offset,
+                    inode_id: vmas[i].inode_id,
+                    shared: vmas[i].shared,
+                    file_pwm: vmas[i].file_pwm,
+                    vm_flags: vmas[i].vm_flags,
+                };
+                let new = Vma {
+                    start,
+                    end: vma_end,
+                    flags: vmas[i].flags,
+                    vma_type: vmas[i].vma_type,
+                    offset: vmas[i].offset + (start - vma_start) as u64,
+                    inode_id: vmas[i].inode_id,
+                    shared: vmas[i].shared,
+                    file_pwm: vmas[i].file_pwm,
+                    vm_flags: vmas[i].vm_flags.insert(flag),
+                };
+                vmas[i] = prefix;
+                vmas.insert(i + 1, new);
+                let ins_start = vmas[i + 1].start;
+                let ins_end = vmas[i + 1].end;
+                locked += ins_end - ins_start;
+                touched.push((ins_start, ins_end));
+                i += 2;
+            } else if vma_end > end_addr {
+                // 拆分后缀 [end_addr, vma_end)
+                let new = Vma {
+                    start: vma_start,
+                    end: end_addr,
+                    flags: vmas[i].flags,
+                    vma_type: vmas[i].vma_type,
+                    offset: vmas[i].offset,
+                    inode_id: vmas[i].inode_id,
+                    shared: vmas[i].shared,
+                    file_pwm: vmas[i].file_pwm,
+                    vm_flags: vmas[i].vm_flags.insert(flag),
+                };
+                let suffix = Vma {
+                    start: end_addr,
+                    end: vma_end,
+                    flags: vmas[i].flags,
+                    vma_type: vmas[i].vma_type,
+                    offset: vmas[i].offset + (end_addr - vma_start) as u64,
+                    inode_id: vmas[i].inode_id,
+                    shared: vmas[i].shared,
+                    file_pwm: vmas[i].file_pwm,
+                    vm_flags: vmas[i].vm_flags,
+                };
+                vmas[i] = new;
+                vmas.insert(i + 1, suffix);
+                let ins_start = vmas[i].start;
+                let ins_end = vmas[i].end;
+                locked += ins_end - ins_start;
+                touched.push((ins_start, ins_end));
+                i += 2;
+            } else {
+                i += 1;
+            }
+
+            // 避免前缀/后缀端点外溢
+            let _ = prefix_end;
+            let _ = suffix_start;
+        }
+        // PAGEOUT/DONTNEED 触发实际页面回收
+        if flag == VmFlags::MADV_PAGEOUT || flag == VmFlags::MADV_DONTNEED {
+            drop(vmas);
+            for (s, e) in touched {
+                self.madvise_evict_range(s, e, flag == VmFlags::MADV_DONTNEED)?;
+            }
+        }
+
+        Ok(locked)
+    }
+
+    /// madvise 触发的页面回收 (PAGEOUT 走 swap, DONTNEED 走 free)
+    ///
+    /// 仅回收 locked=false 的页 (受 VmFlags.MLOCKED 保护).
+    fn madvise_evict_range(&self, start: usize, end: usize, dontneed: bool) -> Result<(), crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+        use crate::kernel::framework::mm::swap;
+
+        // 检查 VMA 是否锁定
+        {
+            let vmas = self.vmas.lock();
+            for v in vmas.iter() {
+                if v.start <= start && v.end >= end && v.is_mlocked() {
+                    return Err(Errno::EAGAIN);
+                }
+            }
+        }
+
+        // 当前 LRU 没有 per-virt 跨 mm 区分, 简化:
+        // 触发 kswapd 周期回收
+        swap::kswapd_wakeup();
+
+        // 标记 _DONTNEED_DONE / _PAGEOUT_DONE 让后续回收路径知晓
+        let mut vmas = self.vmas.lock();
+        let flag = if dontneed { VmFlags::_DONTNEED_DONE } else { VmFlags::_PAGEOUT_DONE };
+        for v in vmas.iter_mut() {
+            if v.end <= start || v.start >= end {
+                continue;
+            }
+            v.vm_flags = v.vm_flags.insert(flag);
+        }
+        Ok(())
+    }
+
+    /// mlock: 锁定 [start, len) 范围 VMA
+    ///
+    /// 返回实际锁定的字节数. 受 RLIMIT_MEMLOCK 约束.
+    pub fn mlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+        use crate::kernel::framework::proc::rlimit;
+
+        if len == 0 {
+            return Err(Errno::EINVAL);
+        }
+
+        let end_addr = start.checked_add(len).ok_or(Errno::ENOMEM)?;
+        let end_addr = (end_addr + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
+
+        // 验证范围在 VMA 中
+        let mut total = 0usize;
+        {
+            let vmas = self.vmas.lock();
+            for v in vmas.iter() {
+                if v.end <= start || v.start >= end_addr {
+                    continue;
+                }
+                let ovl_start = v.start.max(start);
+                let ovl_end = v.end.min(end_addr);
+                total += ovl_end - ovl_start;
+            }
+        }
+
+        if total == 0 {
+            return Err(Errno::ENOMEM);
+        }
+
+        // RLIMIT_MEMLOCK 检查
+        let current = self.locked_vm.load(Ordering::Acquire);
+        if rlimit::check_memlock_exceeded(current as u64, total as u64) {
+            return Err(Errno::ENOMEM);
+        }
+
+        // 标记 VMA MLOCKED + 累计 locked_vm
+        let mut vmas = self.vmas.lock();
+        for v in vmas.iter_mut() {
+            if v.end <= start || v.start >= end_addr {
+                continue;
+            }
+            v.vm_flags = v.vm_flags.insert(VmFlags::MLOCKED);
+        }
+        self.locked_vm.fetch_add(total, Ordering::AcqRel);
+
+        // 对范围内已触达页设置 LRU locked
+        drop(vmas);
+        let page_size = PAGE_SIZE as usize;
+        let mut addr = start;
+        while addr < end_addr {
+            crate::kernel::framework::mm::swap::set_page_locked(addr as u64, true);
+            addr += page_size;
+        }
+
+        Ok(total)
+    }
+
+    /// munlock: 解锁 [start, len) 范围 VMA
+    pub fn munlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+
+        if len == 0 {
+            return Err(Errno::EINVAL);
+        }
+
+        let end_addr = start.checked_add(len).ok_or(Errno::ENOMEM)?;
+        let end_addr = (end_addr + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
+
+        let mut total = 0usize;
+        let mut vmas = self.vmas.lock();
+        for v in vmas.iter_mut() {
+            if v.end <= start || v.start >= end_addr {
+                continue;
+            }
+            v.vm_flags = v.vm_flags.remove(VmFlags::MLOCKED);
+            let ovl_start = v.start.max(start);
+            let ovl_end = v.end.min(end_addr);
+            total += ovl_end - ovl_start;
+        }
+        let _ = self.locked_vm.fetch_update(Ordering::AcqRel, Ordering::Acquire, |cur| {
+            Some(cur.saturating_sub(total))
+        });
+        drop(vmas);
+
+        let page_size = PAGE_SIZE as usize;
+        let mut addr = start;
+        while addr < end_addr {
+            crate::kernel::framework::mm::swap::set_page_locked(addr as u64, false);
+            addr += page_size;
+        }
+
+        Ok(total)
+    }
+
+    /// mlockall: 进程级 mlock
+    ///
+    /// `flags`: MCL_CURRENT=1, MCL_FUTURE=2, MCL_ONFAULT=4
+    /// 返回成功设置的标志位.
+    pub fn mlock_all(&self, flags: u32) -> Result<u32, crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+
+        const MCL_CURRENT: u32 = 1;
+        const MCL_FUTURE: u32 = 2;
+        const MCL_ONFAULT: u32 = 4;
+
+        if flags & !(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) != 0 {
+            return Err(Errno::EINVAL);
+        }
+
+        let mut applied = 0u32;
+        let mut vmas = self.vmas.lock();
+
+        if flags & MCL_CURRENT != 0 {
+            // 锁定所有现有 VMA
+            for v in vmas.iter_mut() {
+                if v.vma_type == VmaType::Guard || v.vma_type == VmaType::Device {
+                    continue;
+                }
+                v.vm_flags = v.vm_flags.insert(VmFlags::MLOCKED);
+            }
+            self.locked_vm.store(usize::MAX / 2, Ordering::Release); // 简化
+            applied |= MCL_CURRENT;
+        }
+
+        if flags & MCL_FUTURE != 0 {
+            // 后续 mmap 自动锁定: 在 MmStruct 中设置 LOCKED_FUTURE
+            self.mlock_all_flags.fetch_or(MCL_FUTURE, Ordering::AcqRel);
+            // 同步到所有现有 VMA 的 VmFlags (影响后续 #PF)
+            for v in vmas.iter_mut() {
+                v.vm_flags = v.vm_flags.insert(VmFlags::LOCKED_FUTURE);
+            }
+            applied |= MCL_FUTURE;
+        }
+
+        if flags & MCL_ONFAULT != 0 {
+            self.mlock_all_flags.fetch_or(MCL_ONFAULT, Ordering::AcqRel);
+            for v in vmas.iter_mut() {
+                v.vm_flags = v.vm_flags.insert(VmFlags::LOCKED_ONFAULT);
+            }
+            applied |= MCL_ONFAULT;
+        }
+
+        Ok(applied)
+    }
+
+    /// munlockall: 解除所有 mlock
+    pub fn munlock_all(&self) -> Result<(), crate::kernel::framework::syscall::types::Errno> {
+        let mut vmas = self.vmas.lock();
+        for v in vmas.iter_mut() {
+            v.vm_flags = v.vm_flags
+                .remove(VmFlags::MLOCKED)
+                .remove(VmFlags::LOCKED_FUTURE)
+                .remove(VmFlags::LOCKED_ONFAULT);
+        }
+        self.locked_vm.store(0, Ordering::Release);
+        self.mlock_all_flags.store(0, Ordering::Release);
+        Ok(())
+    }
+
+    /// mincore: 查询 [start, len) 范围每页是否驻留
+    ///
+    /// `out_vec`: 输出缓冲区, 每页 1 字节 (1=驻留, 0=未驻留)
+    /// 返回 0 成功, 否则 errno.
+    pub fn mincore_range(
+        &self,
+        start: usize,
+        len: usize,
+        out_vec: &mut [u8],
+    ) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+        use crate::kernel::framework::syscall::types::Errno;
+        use crate::kernel::framework::mm::VirtAddr;
+        use crate::kernel::framework::mm::vmm;
+
+        if len == 0 {
+            return Err(Errno::EINVAL);
+        }
+
+        let page_size = PAGE_SIZE as usize;
+        let n_pages = (len + page_size - 1) / page_size;
+        if out_vec.len() < n_pages {
+            return Err(Errno::ENOMEM);
+        }
+
+        let vmm_inst = vmm::get_vmm();
+        let pml4 = vmm::get_current_pml4();
+        let mut resident = 0usize;
+
+        for i in 0..n_pages {
+            let addr = start + i * page_size;
+            let pte = vmm_inst.get_pte_value(pml4, VirtAddr(addr as u64));
+            let present = match pte {
+                Some(p) => (p & 1) != 0,
+                None => false,
+            };
+            out_vec[i] = if present { 1 } else { 0 };
+            if present {
+                resident += 1;
+            }
+        }
+
+        Ok(resident)
     }
 }
 

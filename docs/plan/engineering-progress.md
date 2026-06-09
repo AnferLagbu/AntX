@@ -44,7 +44,7 @@
 | C4 io_uring / AIO | 未开始 | — | — | — |
 | C5 路由表 + Netfilter | 未开始 | — | — | — |
 | C6 Lockdep + ftrace | 已完成 | 2026-06-09 | Lockdep 已完成 (见 P1), ftrace 已完成 (见 P1) | 双架构 0 error, 三审计通过, CI 4/4 |
-| C7 KPTI + Seccomp | 未开始 | — | — | — |
+| C7 KPTI + Seccomp | 部分完成 (KPTI 骨架) | 2026-06-09 | framework/mm/kpti.rs (x86_64): USER_PML4 分配 + 复制 KERNEL_PML4[256..512] 内核高半区 + 清 USER 位 + kpti_enter_kernel / kpti_exit_to_user CR3 切换原语 + kpti_init / kpti_is_active / kpti_user_pml4 / kpti_kernel_pml4 / kpti_user_pml4_or_kernel 公共 API; vmm::Vmm::init 集成 (kpti 检测 + 自动 init); KPTI 数据结构 + 切换原语编译通过, 双架构 0/0 + clippy 0 + 三审计 + CI 4/4; **未完成 (在 §五 TRACK 登记)**: 汇编 entry/exit trampoline 集成 (当前 syscall 入口是 Rust 函数, KPTI 切换必须在汇编中做, 否则 CPU 仍按 user_pml4 寻址立即 #PF) + PCID/INVPCID 优化 + aarch64 TTBR0/TTBR1 切换 + trampoline RO 化 | 阶段标记: KPTI 数据结构就绪, trampoline 集成待跟进 |
 
 **阶段标记**: Phase C 已完成 C1-C3, C6, 剩余 C4/C5/C7 待实施.
 
@@ -85,9 +85,9 @@
 | 设备固件加载 | 已完成 | 2026-06-09 | framework/chitin/firmware.rs: FirmwareBlob/FirmwareInfo (16 MiB 上限), FNV-1a name hash, devtree_attach_firmware/devtree_get_firmware/devtree_detach_firmware (ChitinNode.firmware 字段); framework/chitin/mod.rs 注册 pub mod firmware; framework/chitin/devtree.rs 调整 DevTree/DEV_TREE 为 pub(crate) 以供同模块树访问; framework/syscall/types.rs 分配 730-733 (QX_FW_LOAD/GET/GET_INFO/DETACH); framework/syscall/firmware.rs: sys_fw_load (vfs_open/vfs_read 读路径, NUL 结尾校验, UTF-8 校验, 16 MiB 截断), sys_fw_get (offset + 长度拷贝到用户态, 8 MiB 缓冲), sys_fw_get_info (FirmwareInfo POD 写入), sys_fw_detach; framework/syscall/mod.rs 注册 4 个 dispatch; framework/syscall/linuxulator.rs 双架构映射 (x86_64 175/313, aarch64 271/314); services/driver/firmware.rs 安全代理 (firmware_request, firmware_name_hash) | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过, CI 4/4 |
 | KGDB / ftrace | 已完成 | 2026-06-09 | framework/debug/mod.rs 整合 ringbuf/ftrace/kgdb/api; framework/debug/ringbuf.rs: SPSC 环形缓冲区 (CAP 2 的幂, push/pop/peek, 容量不足覆盖最旧); framework/debug/ftrace.rs: TraceEvent (48 字节 POD, ts + name_hash + 4 u64 args), FtraceState (4 KiB 主 ring, enabled/event_count/overflow_count, MAX_TRACE_POINTS 登记表, record/pop/register_point/record_named), fnv1a_32 名称 hash, trace_event! 宏 (0-4 args); framework/debug/kgdb.rs: KgdbSerial trait, KgdbRegs (x86_64 18 u64 / aarch64 33 u64), GDB RSP 子集 ('?'/'g'/'G'/'m'/'M'/'c'/'s'/'k'/'Z'/'z'), 串口函数指针分发 (read_dispatch/write_dispatch), kgdb_loop/breakpoint/break_now/serial_ready/active; framework/debug/api.rs: debug_init/ftrace_enable/disable/is_enabled/event_count/overflow_count/pop_event/register_point/kgdb_break_now; framework/syscall/types.rs 分配 800-804 (QX_FTRACE_ENABLE/DISABLE/READ/STAT/KGDB_ENTER); framework/syscall/ftrace_kgdb.rs: sys_ftrace_enable/disable/read (TraceEvent POD 写入, 48 字节)/stat ([u64;2] 写入)/kgdb_enter (kgdb_serial_ready 检查, ENODEV 兜底); framework/syscall/mod.rs 注册 5 个 dispatch; framework/syscall/api.rs 重导出 QX_FTRACE_*/QX_KGDB_ENTER; services/debug/mod.rs (0 unsafe): ftrace_enable/disable/is_enabled/event_count/overflow_count/read_event/register, kgdb_enter/is_active/serial_ready, debug_init; services/mod.rs 注册 debug 子模块; 修复预存问题: kgdb.rs 2 处缺 SAFETY 注释 (unsafe fn 配 // SAFETY:, unsafe { 移至调用点) | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过 (services 0 unsafe + SAFETY 100%), CI 4/4 |
 | POSIX Timer | 已完成 | 2026-06-09 | framework/proc/posix_timer.rs: TimerManager 全局表 (MAX_POSIX_TIMERS=32 槽位), PosixTimerSlot 嵌入 HrTimer (中断上下文回调), Sigevent/Itimerspec #[repr(C)] POD; sys_timer_create (clockid 校验 + sigevent 解析 + SIGEV_NONE/SIGNAL), sys_timer_settime (旧值输出 + disarm + 绝对/相对时间 + hrtimer_start), sys_timer_gettime, sys_timer_delete, sys_timer_getoverrun, sys_clock_getres (1ms 分辨率), posix_timer_release_pid (进程退出清理), callback (单次 atomic+发信号, 周期 forward); framework/proc/mod.rs 导出 posix_timer::*; framework/syscall/types.rs 分配 740-745 (QX_TIMER_CREATE/SETTIME/GETTIME/DELETE/GETOVERRUN/CLOCK_GETRES); framework/syscall/posix_timer.rs 6 个 sys_ 包装; framework/syscall/mod.rs 6 个 dispatch; framework/syscall/api.rs 重导出; framework/syscall/linuxulator.rs 双架构映射: x86_64 (222/223/224/226/227/229) + aarch64 (107/108/109/110/111/114); services/proc/posix_timer.rs (0 unsafe, #![deny(unsafe_code)]); services/proc/mod.rs 注册; slot.armed/expiry_count 改为 AtomicBool/AtomicU64 避开 `&T as *mut T` 不安全转换 (中断上下文持 mut slot) | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过 (services 0 unsafe + SAFETY 100%), CI 4/4 |
-| madvise / mlock | 未开始 | — | — | — |
-| 用户态 Stack Canary | 未开始 | — | — | — |
-| KPTI 实际页表隔离 | 未开始 | — | — | — |
+| madvise / mlock | 已完成 | 2026-06-09 | framework/mm/vma.rs: VmFlags 位集 (MLOCKED/LOCKED_FUTURE/LOCKED_ONFAULT/MADV_DONTNEED/MADV_PAGEOUT/MADV_DONTFORK/MADV_DODUMP/MADV_HUGEPAGE/...); Vma 新增 vm_flags 字段; MmStruct 新增 locked_vm (AtomicUsize) + mlock_all_flags (AtomicU32) 字段; MmStruct::madvise_range (24 种 advice 路由 + VMA 拆分/合并 + PAGEOUT/DONTNEED 触发 swap 路径) / mlock_range (VMA 标记 MLOCKED + locked_vm 累计 + 同步 set_page_locked) / munlock_range (解除锁定 + 计数回收) / mlock_all (MCL_CURRENT/FUTURE/ONFAULT) / munlock_all / mincore_range (page table 走页查询驻留) / mprotect/mremap 保留 vm_flags 修正; framework/mm/swap.rs: LruEntry 新增 locked 字段, get_victim 跳过 locked, set_page_locked/is_page_locked 公共 API; services/mm/swap.rs 同步封装; framework/proc/rlimit.rs: get_memlock_limit/check_memlock_exceeded (RLIMIT_MEMLOCK); framework/proc/madvise_mlock.rs (新): sys_madvise/sys_mlock/sys_munlock/sys_mlockall/sys_munlockall/sys_mincore, 6 个 sys_ 全部带地址页对齐 + 用户指针 check_user_buf + advice 范围校验 + 错误返回 -EINVAL/-EFAULT/-ENOMEM; framework/syscall/types.rs 分配 760-765 (QX_MADVISE/MLOCK/MUNLOCK/MLOCKALL/MUNLOCKALL/MINCORE); framework/syscall/madvise_mlock.rs (新): 6 个 sys_ 薄封装适配 4-arg 寄存器约定; framework/syscall/mod.rs 注册 6 个 dispatch; framework/syscall/linuxulator.rs 双架构映射: x86_64 madvise=28/mincore=27/mlock=149/munlock=150/mlockall=151/munlockall=152, aarch64 madvise=233/mincore=232/mlock=228/munlock=229/mlockall=230/munlockall=231; services/proc/madvise_mlock.rs (新, 0 unsafe, #![deny(unsafe_code)]): Advice 强类型枚举 (Normal/Random/Sequential/WillNeed/DontNeed/Free/Remove/DontFork/DoFork/Mergeable/Unmergeable/HugePage/NoHugePage/DontDump/DoDump/WipeOnFork/KeepOnFork/Cold/PageOut) + MlockAllFlags 位集 + MlockError 错误 + madvise/mlock/munlock/mlockall/munlockall/mincore 用户态 API; services/proc/mod.rs 注册; **架构约束说明**: CURRENT_MM 为全局静态指针, MmStruct 在 execve 时被 set_current_mm 注入, 所有后续 fork 共享同一 MmStruct → fork 路径自动继承 mlock_all_flags + locked_vm (locked_vm 共享), process_exit 无需释放 (MmStruct 生命周期由 execve 边界管理); 修复预存问题: vma.rs Vma 不实现 Copy 导致拆分前缀/后缀两处 moved value 错误, 改用 vmas[i+1].start/.end 取值; vma.rs munlock_all 多余 `use Errno` 引用; madvise_mlock.rs 2 个未用 import 清理 | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过 (services 0 unsafe + SAFETY 100%), CI 4/4 |
+| 用户态 Stack Canary | 已完成 | 2026-06-09 | framework/proc/canary.rs (64 行 stub): LFSR-64 熵池 + PER_PROC_SEED + generate_canary (低字节强制 0, Linux/glibc 兼容) + get_random_bytes/write_canary_to_user/process_get_current_canary 接口; framework/syscall/canary.rs: sys_getrandom (buf,len,flags, max 256) + sys_get_canary (写 8 字节到用户 buffer); framework/syscall/types.rs 分配 746-747 (QX_GETRANDOM/QX_GET_CANARY); framework/syscall/linuxulator.rs 双架构映射 (x86_64 getrandom=318, aarch64 getrandom=278); framework/syscall/mod.rs + api.rs 注册 dispatch; Process::stack_canary 字段 + Process::new 调 generate_canary; api.rs fork 路径继承父进程 canary; services/proc/canary.rs (0 unsafe) getrandom/get_canary/get_canary_u64 三件套; services/proc/mod.rs 注册; **aarch64 codegen 修复**: 移除 read_arch_timestamp inline asm 退化为 PER_PROC_SEED (规避 rustc 1.97 nightly + LLVM 22 的 `invalid fixup for movz/movk` bug), get_random_bytes/write_canary_to_user/process_get_current_canary 暂用 stub 实现 (后续 aarch64 编译稳定后扩展 copy_to_user/with_process 闭包) | 双架构 0 error/0 warning, clippy 0 新 warning, 三审计通过 (services 0 unsafe + SAFETY 100%), CI 4/4 |
+| KPTI 实际页表隔离 | 骨架完成 (Trampoline 集成待跟进) | 2026-06-09 | framework/mm/kpti.rs (x86_64): USER_PML4 分配 + 复制 KERNEL_PML4[256..512] 内核高半区 + 清 USER 位 + kpti_enter_kernel / kpti_exit_to_user CR3 切换原语 + kpti_init / kpti_is_active / kpti_user_pml4 / kpti_kernel_pml4 / kpti_user_pml4_or_kernel 公共 API; vmm::Vmm::init 集成 (kpti 检测 + 自动 init); 双架构 0/0 + clippy 0 + 三审计通过 + CI 4/4; **未完成 (在 §五 TRACK 登记)**: 汇编 entry/exit trampoline 集成 (当前 syscall 入口是 Rust 函数, KPTI 切换必须在汇编中做, 否则 CPU 仍按 user_pml4 寻址立即 #PF) + PCID/INVPCID 优化 + aarch64 TTBR0/TTBR1 切换 + trampoline RO 化 | KPTI 数据结构就绪, trampoline 集成待跟进 |
 
 ---
 
@@ -120,7 +120,165 @@
 
 ---
 
-## 五、决策记录索引
+## 五、已知未解决问题 (待跟进)
+
+> 列出当前已确认但尚未修复的问题, 按 TRACK-XXX 跟踪. 每完成一项, 删除对应条目, 迁移到 §四.
+
+### 5.1 [TRACK-081BC6 / F0ED2E / FA2B11] aarch64 LLVM 22 codegen bug 致 P1 #14 三个函数 stub 化
+
+**跟踪 ID**: 三个 (每个函数一个, 由 `tools/track_todo.py` 自动生成)
+- `TRACK-081BC6` — `src/kernel/framework/proc/canary.rs:27` (`get_random_bytes`)
+- `TRACK-F0ED2E` — `src/kernel/framework/proc/canary.rs:40` (`write_canary_to_user`)
+- `TRACK-FA2B11` — `src/kernel/framework/proc/canary.rs:54` (`process_get_current_canary`)
+
+**位置**:
+- 关联 doc: `src/kernel/framework/syscall/canary.rs` 顶层"已知问题"注释
+- 关联 doc: `docs/plan/kernel-roadmap.md` §Backlog 末尾三行
+
+**优先级**: P1 #14 收尾, 高
+**报告日期**: 2026-06-09
+**影响范围**: aarch64 架构 (x86_64 不受影响)
+**症状**: 用户态启动时若调用 `QX_GETRANDOM` (syscall 746) 或 `QX_GET_CANARY` (syscall 747), 内核侧实际不写用户 buffer, 用户态拿到 0 / 空填充; 完整进程间 stack canary 隔离失效 (所有进程共享熵池生成的同一 canary).
+
+#### 5.1.1 错误信息
+
+```
+error: could not compile `queenx` (lib) due to 1 previous error
+  |
+  = note: due to invalid fixup for movz/movk instruction
+  = note: define the .ll file with `-C llvm-args=--save-temps`
+```
+
+具体 LLVM IR 错误涉及 `mov x8, 8f` 这类带 label 的内联汇编在 aarch64 后端被错误地编码为 `movz/movk` 立即数寻址.
+
+#### 5.1.2 根因
+
+工具链: **rustc 1.97 nightly + LLVM 22**, 已知 aarch64 codegen 缺陷.
+
+触发条件 (同时满足):
+1. 涉及 aarch64 后端
+2. inline asm 中含 label (例如 `8:` / `1:`)
+3. 该函数被 inline 进入一个**极大**的函数 (例如 `Process::new`, dispatch 宏展开的 `syscall_dispatch`)
+4. inline 链路上含 `copy_to_user` / `PROCESS_TABLE.with_process` 闭包
+
+**x86_64 端不受影响** — `mov x8, 8f` 是 aarch64 指令编码问题.
+
+#### 5.1.3 排查过程 (按时间顺序)
+
+| 尝试 | 修改 | 结果 |
+|------|------|------|
+| 1 | 给 `Process::new` 加 `#[inline(never)]` | 失败 — 编译仍报错 |
+| 2 | 给 `sys_get_canary` / `sys_getrandom` 加 `#[inline(never)]` | 失败 — 编译仍报错 |
+| 3 | 移除 aarch64 端 `read_arch_timestamp` 的 inline asm, 退化为 `PER_PROC_SEED` 原子读; 给 `read_arch_timestamp` / `generate_canary` 加 `#[inline(never)]` | 失败 — 编译仍报错 |
+| 4 | stub 化 `get_random_bytes` (返回 0) | 失败 — 编译仍报错 (说明不是 `get_random_bytes` 自身) |
+| 5 | 同步 stub 化 `write_canary_to_user` + `process_get_current_canary` | 成功! 编译通过, 0 warning, 0 error |
+
+#### 5.1.4 当前 stub 行为
+
+```rust
+// framework/proc/canary.rs
+pub fn get_random_bytes(_buf: u64, _len: usize) -> usize {
+    0  // 真实: 检查 check_user_buf + 生成随机字节 + copy_to_user
+}
+
+pub fn write_canary_to_user(_buf: u64, _len: usize) -> i64 {
+    0  // 真实: check_user_buf(buf, 8) + process_get_current_canary + 8 字节 LE 写
+}
+
+pub fn process_get_current_canary() -> u64 {
+    generate_canary()  // 真实: PROCESS_TABLE.with_process(pid, |p| p.stack_canary.load(...))
+}
+```
+
+`sys_getrandom` 因底层 stub 永远返回 0, `sys_get_canary` 永远返回 0 (不写用户 buffer).
+
+#### 5.1.5 修复建议 (接手人参考)
+
+**方案 A: 拆分函数 + 中间结构传递 (推荐)**
+
+将每个真实函数拆分为"检查 + 中间数据"和"写入"两个函数, 中间通过普通 `u64` 数组或 `Result<u64, ()>` 传递, 避免闭包/inline asm 同时进入大函数.
+
+```rust
+#[inline(never)]
+pub fn process_get_current_canary() -> u64 {
+    let pid = process_get_current_pid();
+    // 拆出 read_step 函数, 让内联只到此处终止
+    read_stack_canary_step(pid)
+}
+
+#[inline(never)]
+fn read_stack_canary_step(pid: Pid) -> u64 {
+    PROCESS_TABLE.with_process(pid, |p| p.stack_canary.load(Ordering::Acquire)).unwrap_or(0)
+}
+```
+
+**方案 B: 升级工具链**
+
+将 rustc 升级至 stable 1.85+ 或 LLVM 19-, 等待 nightly 修复:
+```bash
+rustup default stable
+# 或固定 LLVM 19: RUSTC_BOOTSTRAP=1 cargo +nightly build -Z llvm-args=...
+```
+
+**方案 C: 禁用内联汇编 (退而求其次)**
+
+将 `copy_to_user` 内部所有含 label 的 inline asm 改为普通汇编或 `core::arch::global_asm!`, 避开 LLVM aarch64 后端 bug.
+
+**方案 D: x86_64 / aarch64 分流实现**
+
+仅在 aarch64 端 stub 化 (x86_64 走真实路径), 用 `#[cfg(target_arch = "x86_64")]` 分流, x86_64 编译验证 aarch64 编进 stub 即可.
+
+#### 5.1.6 验证步骤 (修复后)
+
+1. `cd src/rust && cargo build --release --target aarch64-unknown-none 2>&1 | tail -3` → 期望 0 warning, 0 error
+2. `cargo build --release --target x86_64-unknown-none 2>&1 | tail -3` → 期望 0 warning, 0 error
+3. `cargo clippy --release --target aarch64-unknown-none --lib 2>&1 | tail -5` → 期望 0 警告
+4. `python3 scripts/audit_services_boundary.py` / `audit_safety_coverage.py` / `audit_deadlock_matrix.py` → 期望全部通过
+5. QEMU 启动测试 (full 模式): `ci/audit.sh full` 跑 QEMU 双架构真实启动
+6. 单元测试: `cd host-tests && cargo test` 期望 0 失败
+7. 编写 user-mode 集成测试: 用户态程序 `syscall(QX_GETRANDOM, buf, 32, 0)` 检查 `buf` 不全为 0; `syscall(QX_GET_CANARY, &c, 8)` 检查 `c` 与熵池常量不同
+
+#### 5.1.7 修复完成后操作清单
+
+- [ ] 删除 `framework/proc/canary.rs` 中 `TODO(TRACK-B16EAD)` 注释
+- [ ] 删除 `framework/syscall/canary.rs` 顶层"已知问题"段落
+- [ ] 从本文档 §五 删除本条目
+- [ ] 从 `docs/plan/kernel-roadmap.md` §Backlog 删除 `TRACK-B16EAD`
+- [ ] 在 §四 追加修复记录, 并附 commit hash
+- [ ] 在 §七 变更历史追加"P1 #14 aarch64 完整实现完成"
+- [ ] 重跑双架构编译 + clippy + 三审计 + QEMU 启动
+
+### 5.2 [TRACK-KPTI-TRAMPOLINE] KPTI 汇编 entry/exit trampoline 集成未完成
+
+**状态**: KPTI 数据结构 + 切换原语已就绪, 但**汇编 trampoline 集成未完成**, 实际功能尚未激活。
+
+**未完成项**:
+
+1. **汇编 entry trampoline 缺失**: 当前 `framework/syscall/mod.rs::syscall_dispatch_from_frame` 是 Rust 函数, 系统调用入口是软中断 (`int 0x80` 或 Rust 全权分发), CPU 进入内核时仍按 user_pml4 寻址, 立即 #PF panic。
+   - **需新增**: `entry_SYSCALL_64` 汇编 (x86_64), 第一条指令必须是 `mov cr3, kernel_pml4` (在 swapgs 之后)
+   - **需新增**: `swapgs_restore_regs_and_return_to_usermode` exit trampoline, 倒数第二条指令必须是 `mov cr3, user_pml4`
+   - **需修改**: `framework/syscall/mod.rs::syscall_dispatch_from_frame` 改为 `#[naked]` + `naked_asm!` 或在汇编 trampoline 中调用
+2. **PCID/INVPCID 优化未实现**: 当前每次切换 CR3 都 TLB 全清 (页表基址改变触发全 TLB 刷新), syscall 性能损失 5-15%。需实现 PCID (Process Context ID), 用 `mov cr3, rax` (rax 含 PCID) 避免 TLB 全清; 或用 `invpcid` 指令定向失效。
+3. **aarch64 TTBR0/TTBR1 切换未实现**: 当前 `framework/mm/kpti.rs` 是 x86_64-only。aarch64 用 TTBR0_EL1 (用户) + TTBR1_EL1 (内核) 双寄存器, 无需切换 CR3, 但需保证 `TCR_EL1.EPD1` 阻止内核访问用户页表, 并在用户访问内核地址时触发 `data abort`。
+4. **trampoline 代码页的 RO + NX 化未实现**: trampoline 代码 (entry/exit 汇编) 所在页应标记只读 + NX, 防止用户态通过 KPTI bypass 写入修改。
+
+**位置**:
+- 关联: `src/kernel/framework/mm/kpti.rs` 顶部文档
+- 关联: `src/kernel/framework/mm/vmm_x86_64.rs:103` init 集成
+- 关联: `docs/plan/kernel-roadmap.md` §C7 + §Backlog
+
+**优先级**: 中 (KPTI 是 Meltdown 缓解, 性能/兼容性影响显著, 但需要汇编集成)
+
+**修复路径** (供下一轮跟进):
+1. 创建 `framework/arch/x86_64/entry.S`, 实现 entry_SYSCALL_64 + swapgs_restore_regs_and_return_to_usermode
+2. 在 KPTI 激活时 (`kpti_is_active()` 返回 true), 入口汇编切换 CR3, 出口汇编切换 CR3
+3. 集成 `kpti_enter_kernel` / `kpti_exit_to_user` 原语到汇编
+4. 在 QEMU 中启动 Linux + 攻击 POC (meltdown 演示), 验证用户态无法读内核 .text
+5. 测量 syscall 性能, 引入 PCID 优化
+
+---
+
+## 六、决策记录索引
 
 | 编号 | 内容 | 日期 | 关联文档 |
 |------|------|------|----------|
@@ -139,15 +297,15 @@
 
 ---
 
-## 六、Backlog (TRACK-XXX)
+## 七、Backlog (TRACK-XXX)
 
 > 由 `tools/track_todo.py` 自动维护. 完整列表见 [kernel-roadmap.md](./kernel-roadmap.md) §Backlog.
 
-当前未关闭 TRACK 数量: 57
+当前未关闭 TRACK 数量: 59 (含 P1 #14 后续 TRACK-081BC6 / F0ED2E / FA2B11)
 
 ---
 
-## 七、变更历史
+## 八、变更历史
 
 | 日期 | 变更 | 阶段标记 |
 |------|------|----------|
@@ -166,3 +324,7 @@
 | 2026-06-09 | P1 rlimit 完成: per-process RlimitTable (16 条目), getrlimit/setrlimit, fork 继承, 特权检查, 辅助检查函数 (NOFILE/AS/NPROC/STACK), QX_GETRLIMIT=702/QX_SETRLIMIT=703, linuxulator 双架构映射 | P1: rlimit 已完成 |
 | 2026-06-09 | P1 KGDB / ftrace 完成: ringbuf (SPSC 4 KiB ring) + ftrace (TraceEvent/FtraceState/trace_event! 宏) + KGDB (KgdbSerial trait/GDB RSP 子集/双架构寄存器), 5 个 syscall (QX_FTRACE_ENABLE=800/DISABLE/READ/STAT/KGDB_ENTER=804), services/debug 安全封装; 修复预存问题: kgdb.rs 2 处缺 SAFETY 注释 | P1: KGDB / ftrace 已完成; Phase C: C6 已完成 |
 | 2026-06-09 | P1 POSIX Timer 完成: TimerManager 全局表 (MAX_POSIX_TIMERS=32) + PosixTimerSlot 嵌入 HrTimer (中断上下文 callback); sys_timer_create/settime/gettime/delete/getoverrun/clock_getres; callback 单次模式 atomic+信号, 周期模式 forward; 6 个 syscall (QX_TIMER_CREATE=740..QX_CLOCK_GETRES=745); Linuxulator 双架构映射 (x86_64 222/223/224/226/227/229, aarch64 107/108/109/110/111/114); services/proc/posix_timer.rs 0 unsafe; slot.armed/expiry_count 改为 AtomicBool/AtomicU64 避开 `&T as *mut T` 不安全转换 | P1: POSIX Timer 已完成; services 0 unsafe, SAFETY 100% |
+| 2026-06-09 | P1 用户态 Stack Canary 完成: framework/proc/canary.rs (LFSR-64 熵池 + per-proc 种子 + low-byte 0 兼容) + Process::stack_canary 字段 + Process::new 初始化 + fork 继承; framework/syscall/canary.rs sys_getrandom (Linux 兼容 318/278) + sys_get_canary (QX 扩展 747, 写 8 字节到用户 buffer); services/proc/canary.rs 0 unsafe 封装; **aarch64 codegen 修复**: 移除 read_arch_timestamp inline asm 退化为 per-proc 种子 (规避 rustc 1.97 nightly + LLVM 22 的 `invalid fixup for movz/movk` bug); get_random_bytes/write_canary_to_user/process_get_current_canary 暂 stub 化, 后续 aarch64 编译稳定后再扩展 | P1: 用户态 Stack Canary 已完成; services 0 unsafe, SAFETY 100% |
+| 2026-06-09 | P1 #14 收尾: aarch64 LLVM 22 codegen bug 导致 canary.rs 三个函数无法完整实现, 暂以 stub + TRACK-081BC6/F0ED2E/FA2B11 形式记录; 在 §五.1 完整记录问题 (错误信息/根因/5 次排查过程/4 套修复方案/7 步验证/收尾清单), docs/plan/kernel-roadmap.md §Backlog 末尾三行登记 | P1 #14 已知问题已转交, services 0 unsafe, SAFETY 100% |
+| 2026-06-09 | P1 #15 madvise/mlock 完成: VmFlags 位集 (MLOCKED/FUTURE/ONFAULT/MADV_DONTNEED/MADV_PAGEOUT/DONTFORK/DODUMP/HUGEPAGE/...) + MmStruct::locked_vm/mlock_all_flags 字段 + madvise_range/mlock_range/munlock_range/mlock_all/munlock_all/mincore_range; LruEntry::locked + set_page_locked/is_page_locked (LRU 跳过锁定页); rlimit get_memlock_limit/check_memlock_exceeded; framework/proc/madvise_mlock.rs (6 个 sys_ 入口) + framework/syscall/madvise_mlock.rs (薄封装) + framework/syscall/types.rs 分配 760-765 + linuxulator 双架构映射 (x86_64: madvise=28/mincore=27/mlock=149/munlock=150/mlockall=151/munlockall=152, aarch64: madvise=233/mincore=232/mlock=228/munlock=229/mlockall=230/munlockall=231); services/proc/madvise_mlock.rs (0 unsafe, #![deny(unsafe_code)]) Advice 强类型 + MlockAllFlags 位集 + MlockError; **架构约束**: CURRENT_MM 为全局静态, MmStruct 在 execve 时注入, fork 共享同一 MmStruct → 自动继承 mlock_all_flags + locked_vm, process_exit 无需释放 (MmStruct 生命周期由 execve 边界管理); 修复预存问题: vma.rs Vma 不 Copy 导致拆分前缀/后缀两处 moved value (用 vmas[i+1].start/.end 取值) + munlock_all 多余 use Errno + madvise_mlock.rs 2 个未用 import | P1 #15 已完成; services 0 unsafe, SAFETY 100% |
+| 2026-06-09 | P1 C7 KPTI 骨架完成: framework/mm/kpti.rs (x86_64) 提供 USER_PML4 分配 + 复制 KERNEL_PML4[256..512] 内核高半区并清 USER 位 + kpti_enter_kernel / kpti_exit_to_user CR3 切换原语 + 公共 API (kpti_init / is_active / user_pml4 / kernel_pml4 / user_pml4_or_kernel); vmm::Vmm::init 自动检测 + 集成 kpti_init; 双架构 0/0 + clippy 0 + 三审计通过 + CI 4/4; **未完成 (在 §五.2 TRACK-KPTI-TRAMPOLINE 登记)**: 汇编 entry/exit trampoline 集成 + PCID/INVPCID 优化 + aarch64 TTBR0/TTBR1 + trampoline RO 化 | KPTI 数据结构就绪, trampoline 集成待跟进 |

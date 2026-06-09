@@ -285,3 +285,24 @@ pub fn get_nofile_limit() -> u64 {
         rlimit_table.get(RLIMIT_NOFILE).map(|r| r.cur).unwrap_or(MAX_OPEN_FILES as u64)
     }).unwrap_or(MAX_OPEN_FILES as u64)
 }
+
+/// 获取当前进程的 RLIMIT_MEMLOCK (字节)
+pub fn get_memlock_limit() -> u64 {
+    let pid = process_get_current_pid();
+    let table = &PROCESS_TABLE;
+    table.with_process(pid, |proc| {
+        let rlimit_table = proc.rlimit_table.lock();
+        rlimit_table.get(RLIMIT_MEMLOCK).map(|r| r.cur).unwrap_or(64 * 1024)
+    }).unwrap_or(64 * 1024)
+}
+
+/// 检查 mlock 锁定字节数是否超 RLIMIT_MEMLOCK
+///
+/// 返回 true 表示超额, mlock 应失败.
+pub fn check_memlock_exceeded(current_locked: u64, additional_bytes: u64) -> bool {
+    let limit = get_memlock_limit();
+    if limit == RLIM_INFINITY {
+        return false;
+    }
+    current_locked.saturating_add(additional_bytes) > limit
+}

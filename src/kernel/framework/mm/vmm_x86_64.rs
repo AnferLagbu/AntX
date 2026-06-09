@@ -98,6 +98,15 @@ impl VirtualMemoryManager {
         KERNEL_PML4.store(cr3, Ordering::Release);
 
         super::api::kernel_pml4.store(cr3, Ordering::Release);
+
+        // P1 C7: KPTI 实际页表隔离 — 分配 USER_PML4, 复制内核高半区并清 USER 位
+        // 完整功能需要汇编 entry/exit trampoline, 见 kpti.rs 模块顶部文档
+        if !super::kpti::kpti_is_active()
+            && crate::kernel::framework::config::KernelCapabilities::detect().kpti
+        {
+            // SAFETY: KERNEL_PML4 已初始化, PMM 可用, KPTI 全局状态在 init 独占
+            unsafe { super::kpti::kpti_init(cr3); }
+        }
     }
 
     pub fn map_page(

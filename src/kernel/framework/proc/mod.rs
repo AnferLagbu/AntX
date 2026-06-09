@@ -36,10 +36,12 @@
 #![allow(ambiguous_glob_reexports)]
 
 pub mod cfs;
+pub mod canary;
 pub mod coredump;
 pub mod cpu_queue;
 pub mod elf;
 pub mod api;
+pub mod madvise_mlock;
 pub mod oomd;
 pub mod posix_timer;
 pub mod process;

@@ -201,6 +201,14 @@ pub struct Process {
 
     /// Per-process 资源限制表 (RLIMIT_*)
     pub rlimit_table: Mutex<RlimitTable>,
+
+    /// Per-process 8 字节 stack canary (P1 #14)
+    ///
+    /// 低字节恒为 0 (Linux/glibc 兼容). 用户态编译器
+    /// (`-fstack-protector`) 在 prologue 写入, epilogue 验证.
+    /// 进程创建时由 [`crate::kernel::framework::proc::canary::generate_canary`]
+    /// 初始化, fork 继承父进程.
+    pub stack_canary: AtomicU64,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -277,6 +285,10 @@ impl Process {
             sigaltstack_size: AtomicU64::new(0),
             sigaltstack_flags: AtomicU32::new(0),
             rlimit_table: Mutex::new(RlimitTable::new()),
+            // P1 #14: 进程创建时分配独立 canary
+            stack_canary: AtomicU64::new(
+                crate::kernel::framework::proc::canary::generate_canary(),
+            ),
         }
     }
 

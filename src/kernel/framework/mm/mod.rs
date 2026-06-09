@@ -31,6 +31,9 @@ pub mod slab;
 pub mod swap;
 pub mod vma;
 
+#[cfg(target_arch = "x86_64")]
+pub mod kpti;
+
 // Re-export commonly used types
 pub use kmalloc::*;
 pub use pmm::*;

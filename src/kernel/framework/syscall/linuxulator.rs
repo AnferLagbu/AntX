@@ -138,6 +138,14 @@ fn translate_linux(num: u64) -> u64 {
         11 => QX_MUNMAP,
         12 => QX_BRK,
         25 => QX_MREMAP,
+        // P1 #15: madvise/mlock/mlockall/mincore
+        //   madvise=28, mlock=149, munlock=150, mlockall=151, munlockall=152, mincore=27
+        27 => QX_MINCORE,
+        28 => QX_MADVISE,
+        149 => QX_MLOCK,
+        150 => QX_MUNLOCK,
+        151 => QX_MLOCKALL,
+        152 => QX_MUNLOCKALL,
 
         // 信号
         13 => QX_RT_SIGACTION,
@@ -314,6 +322,9 @@ fn translate_linux(num: u64) -> u64 {
         226 => QX_TIMER_DELETE,
         227 => QX_TIMER_GETOVERRUN,
         229 => QX_CLOCK_GETRES,
+        // P1 #14: 熵源 / Stack Canary
+        //   getrandom=318 (Linux x86_64)
+        318 => QX_GETRANDOM,
 
         _ => num, // 未识别: 透传, dispatch 走 ENOSYS
     }
@@ -339,6 +350,14 @@ fn translate_linux(num: u64) -> u64 {
         216 => QX_MREMAP,
         222 => QX_MMAP,
         226 => QX_MPROTECT,
+        // P1 #15: madvise/mlock/mlockall/mincore (aarch64 Linux 编号)
+        //   madvise=233, mlock=228, munlock=229, mlockall=230, munlockall=231, mincore=232
+        228 => QX_MLOCK,
+        229 => QX_MUNLOCK,
+        230 => QX_MLOCKALL,
+        231 => QX_MUNLOCKALL,
+        232 => QX_MINCORE,
+        233 => QX_MADVISE,
 
         // 信号
         129 => QX_KILL,
@@ -454,6 +473,9 @@ fn translate_linux(num: u64) -> u64 {
         110 => QX_TIMER_SETTIME,
         111 => QX_TIMER_DELETE,
         114 => QX_CLOCK_GETRES,
+        // P1 #14: 熵源 / Stack Canary
+        //   getrandom=278 (Linux aarch64)
+        278 => QX_GETRANDOM,
 
         // FD 操作
         23 => QX_DUP,

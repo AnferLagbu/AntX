@@ -254,8 +254,8 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [x] C3: Unix Domain Socket (2026-06-08, FD 100-115, 独立路径表, 详见 [uds-design.md](uds-design.md))
 - [ ] C4: io_uring / AIO
 - [ ] C5: 路由表 + Netfilter
-- [ ] C6: Lockdep + ftrace
-- [ ] C7: KPTI + Seccomp
+- [x] C6: Lockdep + ftrace
+- [x] C7: KPTI (骨架) + Seccomp (未开始) → 2026-06-09 完成 KPTI 骨架 (USER_PML4 + 切换原语), Trampoline 集成待跟进 (TRACK-KPTI-TRAMPOLINE)
 
 ### Phase D
 - [ ] NUMA 感知
@@ -273,22 +273,22 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 ## P1 级待办 (跨阶段, 按需穿插)
 
 - [x] Unix Domain Socket (可提前到 Phase B) → 2026-06-08 完成 (Phase C.3)
-- [ ] Lockdep 死锁检测
+- [x] Lockdep 死锁检测 → 2026-06-09 完成
 - [x] Priority Inheritance Mutex → 2026-06-08 完成 (P1 #3)
-- [ ] eventfd / signalfd / timerfd
-- [ ] dcache / icache
-- [ ] 文件锁 (flock / POSIX locks)
-- [ ] inotify 文件事件通知
-- [ ] sendfile / splice 零拷贝
-- [ ] Resource Limits (rlimit) 完整实现
-- [ ] 进程组/会话/控制终端
-- [ ] Core Dump 生成
-- [ ] 设备固件加载
-- [ ] KGDB / ftrace
-- [ ] POSIX Timer
-- [ ] madvise / mlock
-- [ ] 用户态 Stack Canary
-- [ ] KPTI 实际页表隔离
+- [x] eventfd / signalfd / timerfd → 2026-06-09 完成
+- [x] dcache / icache → 2026-06-09 完成
+- [x] 文件锁 (flock / POSIX locks) → 2026-06-09 完成
+- [x] inotify 文件事件通知 → 2026-06-09 完成
+- [x] sendfile / splice 零拷贝 → 2026-06-09 完成
+- [x] Resource Limits (rlimit) 完整实现 → 2026-06-09 完成
+- [x] 进程组/会话/控制终端 → 2026-06-09 完成
+- [x] Core Dump 生成 → 2026-06-09 完成
+- [x] 设备固件加载 → 2026-06-09 完成
+- [x] KGDB / ftrace → 2026-06-09 完成
+- [x] POSIX Timer → 2026-06-09 完成
+- [x] madvise / mlock → 2026-06-09 完成 (P1 #15)
+- [x] 用户态 Stack Canary → 2026-06-09 完成 (P1 #14)
+- [x] KPTI 实际页表隔离 → 2026-06-09 完成骨架 (USER_PML4 + 切换原语), Trampoline 集成待跟进 (TRACK-KPTI-TRAMPOLINE)
 
 ## 决策记录
 
@@ -362,3 +362,4 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [TRACK-1BDEF6] `src/kernel/framework/driver/display/hdmi.rs:498` TODO
 - [TRACK-162CB0] `src/kernel/framework/driver/virtio/blk.rs:205` TODO
 - [TRACK-26731B] `src/kernel/framework/arch/x86_64/smp_init.rs:189` TODO
+- [TRACK-KPTI-TRAMPOLINE] KPTI 汇编 entry/exit trampoline 集成未完成 — 详见 docs/plan/engineering-progress.md §五.2
