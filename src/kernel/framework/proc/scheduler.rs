@@ -772,6 +772,9 @@ impl Scheduler {
     pub fn exit(&self, exit_code: u32) {
         let per_cpu = per_cpu();
         if let Some(pid) = self.current() {
+            // 会话 leader 退出时释放控制终端
+            crate::kernel::framework::proc::session::session_leader_exit(pid);
+
             let parent_pid_opt = PROCESS_TABLE.with_process(pid, |proc| {
                 let pwm = proc.get_pwm();
                 proc.exit_code.store(exit_code, Ordering::SeqCst);

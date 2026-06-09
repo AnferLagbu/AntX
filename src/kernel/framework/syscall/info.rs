@@ -33,14 +33,7 @@ pub fn sys_getppid() -> i64 {
 ///
 /// 若 pid == 0, 返回当前进程的进程组.
 pub fn sys_getpgid(pid: i32) -> i64 {
-    if pid < 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    if pid == 0 {
-        return api::process_get_current_pid() as i64;
-    }
-    // 简化: 所有进程独立进程组 (返回自身 PID)
-    pid as i64
+    crate::kernel::framework::proc::session::proc_getpgid(pid)
 }
 
 // ============================================================================

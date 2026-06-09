@@ -301,7 +301,8 @@ pub const QX_SCHED_SETAFFINITY: u64 = 534;
 pub const QX_SCHED_GETAFFINITY: u64 = 535;
 pub const QX_GETPRIORITY: u64 = 536;
 pub const QX_SETPRIORITY: u64 = 537;
-// 538-539: reserved
+pub const QX_TCGETPGRP: u64 = 538;
+pub const QX_TCSETPGRP: u64 = 539;
 
 // ---------- 540-559: 信号 ----------
 pub const QX_RT_SIGACTION: u64 = 540;
@@ -407,7 +408,7 @@ pub const QX_SPLICE: u64 = 651;
 pub const QX_UNAME: u64 = 700;
 pub const QX_SYSINFO: u64 = 701;
 pub const QX_GETRLIMIT: u64 = 702;
-// 703: reserved (setrlimit)
+pub const QX_SETRLIMIT: u64 = 703;
 pub const QX_GETRUSAGE: u64 = 704;
 
 // ---------- 710-719: 时间 ----------
@@ -426,6 +427,12 @@ pub const QX_TIMES: u64 = 718;
 pub const QX_FB_OPEN: u64 = 720;
 pub const QX_FB_MMAP: u64 = 721;
 pub const QX_FB_RELEASE: u64 = 722;
+
+// ---------- 730-739: 设备固件加载 ----------
+pub const QX_FW_LOAD: u64 = 730;
+pub const QX_FW_GET: u64 = 731;
+pub const QX_FW_GET_INFO: u64 = 732;
+pub const QX_FW_DETACH: u64 = 733;
 
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 

@@ -91,6 +91,7 @@ pub struct ChitinNode {
     pub device_id: Option<u32>,
     pub state: DeviceState,
     pub user_mapped: Option<u32>,
+    pub firmware: Option<super::firmware::FirmwareBlob>,
 }
 
 impl ChitinNode {
@@ -106,6 +107,7 @@ impl ChitinNode {
             device_id: None,
             state: DeviceState::Uninit,
             user_mapped: None,
+            firmware: None,
         }
     }
 
@@ -134,11 +136,11 @@ unsafe impl Sync for ChitinNode {}
 static NEXT_NODE_ID: AtomicU32 = AtomicU32::new(1);
 static ROOT_NODE_ID: AtomicU32 = AtomicU32::new(0);
 
-struct DevTree {
-    nodes: Vec<ChitinNode>,
+pub(crate) struct DevTree {
+    pub(crate) nodes: Vec<ChitinNode>,
 }
 
-static DEV_TREE: Mutex<DevTree> = Mutex::new(DevTree { nodes: Vec::new() });
+pub(crate) static DEV_TREE: Mutex<DevTree> = Mutex::new(DevTree { nodes: Vec::new() });
 
 fn devtree_init_impl() {
     let mut tree = DEV_TREE.lock();

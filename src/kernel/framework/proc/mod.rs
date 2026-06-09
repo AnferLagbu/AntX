@@ -36,11 +36,13 @@
 #![allow(ambiguous_glob_reexports)]
 
 pub mod cfs;
+pub mod coredump;
 pub mod cpu_queue;
 pub mod elf;
 pub mod api;
 pub mod oomd;
 pub mod process;
+pub mod rlimit;
 pub mod scheduler;
 pub mod scheduler_ex;
 pub mod session;

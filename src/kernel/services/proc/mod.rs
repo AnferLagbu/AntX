@@ -24,6 +24,7 @@
 pub mod elf;
 pub mod execve;
 pub mod clone;
+pub mod coredump;
 pub mod info;
 pub mod rlimit;
 pub mod sched;

@@ -376,7 +376,7 @@ pub fn signal_pick_next(proc: &super::process::Process) -> Option<u8> {
 /// 执行信号的默认动作
 ///
 /// 在 do_signal_deliver 中, 当 sigaction 为 SIG_DFL 时调用.
-pub fn do_signal_default_action(pid: Pid, sig: u8) {
+pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
     match signal_default_action(sig) {
         SignalDefaultAction::Ign => {}
         SignalDefaultAction::Cont => {
@@ -393,7 +393,17 @@ pub fn do_signal_default_action(pid: Pid, sig: u8) {
                 proc.state.store(ProcessState::Blocked as u32, Ordering::Release);
             }
         }
-        SignalDefaultAction::Term | SignalDefaultAction::Core => {
+        SignalDefaultAction::Core => {
+            // 生成 core dump
+            super::coredump::do_coredump(pid, sig, frame_addr);
+            if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
+                // SAFETY: `proc_ptr` 由调用方保证为有效指针; 只读访问
+                let proc = unsafe { &*proc_ptr };
+                proc.exit_code.store((sig as u32) << 8 | 0x7f, Ordering::Release);
+                proc.state.store(ProcessState::Zombie as u32, Ordering::Release);
+            }
+        }
+        SignalDefaultAction::Term => {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
                 // SAFETY: `proc_ptr` 由调用方保证为有效指针; 只读访问
                 let proc = unsafe { &*proc_ptr };
@@ -452,7 +462,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
 
         match action {
             SIG_DFL => {
-                do_signal_default_action(pid, sig);
+                do_signal_default_action(pid, sig, frame as u64);
                 delivered = true;
                 // 如果进程被终止或停止, 不再投递更多信号
                 let state = proc.state.load(Ordering::Acquire);
@@ -481,7 +491,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                     user_rsp - total as u64
                 } else {
                     // 栈溢出, 执行默认动作
-                    do_signal_default_action(pid, sig);
+                    do_signal_default_action(pid, sig, frame as u64);
                     delivered = true;
                     break;
                 };

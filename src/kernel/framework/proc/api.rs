@@ -1152,6 +1152,30 @@ pub fn sys_fork() -> Pid {
     child.sched_policy.store(parent_sched_policy, Ordering::SeqCst);
     child.rt_priority.store(parent_rt_priority, Ordering::SeqCst);
 
+    // 继承父进程 rlimit 表
+    {
+        let parent_rlimit = PROCESS_TABLE
+            .with_process(parent_pid, |p| p.rlimit_table.lock().clone())
+            .unwrap_or_default();
+        *child.rlimit_table.lock() = parent_rlimit;
+    }
+
+    // 继承父进程 session_id 和 pgid
+    {
+        let (parent_sid, parent_pgid) = PROCESS_TABLE
+            .with_process(parent_pid, |p| {
+                (
+                    p.session_id.load(core::sync::atomic::Ordering::SeqCst),
+                    p.pgid.load(core::sync::atomic::Ordering::SeqCst),
+                )
+            })
+            .unwrap_or((0, 0));
+        child.session_id.store(parent_sid, core::sync::atomic::Ordering::SeqCst);
+        // 子进程继承父进程的 pgid (POSIX 语义)
+        let effective_pgid = if parent_pgid == 0 { parent_pid } else { parent_pgid };
+        child.pgid.store(effective_pgid, core::sync::atomic::Ordering::SeqCst);
+    }
+
     // Add child to parent's children list
     PROCESS_TABLE.with_process(parent_pid, |p| {
         p.children.lock().push(ProcessId(child_pid));

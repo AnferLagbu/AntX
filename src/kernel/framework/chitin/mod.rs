@@ -62,6 +62,7 @@ pub mod proto_char;
 pub mod proto_input;
 pub mod proto_net;
 pub mod user_driver;
+pub mod firmware;
 
 // ── 协议类型 ──
 

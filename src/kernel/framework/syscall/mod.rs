@@ -4,6 +4,7 @@ pub mod brk;
 pub mod clone;
 pub mod epoll;
 pub mod eventfd;
+pub mod firmware;
 pub mod signalfd;
 pub mod timerfd;
 pub mod futex;
@@ -256,6 +257,24 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         // ==================== 设备 ====================
         QX_IOCTL => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
 
+        // 730-733: 设备固件加载
+        QX_FW_LOAD => dispatch!(
+            crate::kernel::framework::syscall::firmware::sys_fw_load(a0, a1, a2, a3),
+            b"fw_load\0"
+        ),
+        QX_FW_GET => dispatch!(
+            crate::kernel::framework::syscall::firmware::sys_fw_get(a0, a1, a2, a3),
+            b"fw_get\0"
+        ),
+        QX_FW_GET_INFO => dispatch!(
+            crate::kernel::framework::syscall::firmware::sys_fw_get_info(a0, a1),
+            b"fw_get_info\0"
+        ),
+        QX_FW_DETACH => dispatch!(
+            crate::kernel::framework::syscall::firmware::sys_fw_detach(a0),
+            b"fw_detach\0"
+        ),
+
         // ==================== 文件访问 ====================
         QX_ACCESS => dispatch!(
             match crate::kernel::services::fs::access::access_syscall(a0, a1 as i32) {
@@ -375,6 +394,14 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
         QX_SETPRIORITY => dispatch!(
             sys_setpriority(a0 as i32, a1 as u32, a2 as i32),
             b"setpriority\0"
+        ),
+        QX_TCGETPGRP => dispatch!(
+            crate::kernel::framework::proc::session::sys_tcgetpgrp(a0 as i32),
+            b"tcgetpgrp\0"
+        ),
+        QX_TCSETPGRP => dispatch!(
+            crate::kernel::framework::proc::session::sys_tcsetpgrp(a0 as i32, a1 as i32),
+            b"tcsetpgrp\0"
         ),
         QX_GETTID => dispatch!(
             crate::kernel::services::proc::info::gettid_syscall() as i64,
@@ -679,11 +706,12 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"gettimeofday\0"
         ),
         QX_GETRLIMIT => dispatch!(
-            match crate::kernel::services::proc::rlimit::getrlimit_syscall(a0 as i32, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
+            crate::kernel::framework::proc::rlimit::sys_getrlimit(a0 as i32, a1),
             b"getrlimit\0"
+        ),
+        QX_SETRLIMIT => dispatch!(
+            crate::kernel::framework::proc::rlimit::sys_setrlimit(a0 as i32, a1),
+            b"setrlimit\0"
         ),
         QX_SYSINFO => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
         QX_TIMES => dispatch!(

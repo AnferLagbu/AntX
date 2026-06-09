@@ -5,6 +5,7 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全
+//! - 封装 framework::proc::rlimit 的 per-process 资源限制
 //!
 //! ## POSIX 资源类型
 //!
@@ -20,35 +21,35 @@
 //! RLIMIT_MEMLOCK  = 8   // 锁定内存
 //! RLIMIT_AS       = 9   // 地址空间
 //! ```
-//!
-//! ## Framekernel 简化
-//!
-//! 所有资源限制硬编码为 RLIM_INFINITY (u64::MAX), 仅支持查询, 不支持设置。
 
-use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+// Re-export framework 层的类型和常量
+pub use crate::kernel::framework::proc::rlimit::{
+    Rlimit, RlimitTable,
+    RLIMIT_CPU, RLIMIT_FSIZE, RLIMIT_DATA, RLIMIT_STACK, RLIMIT_CORE,
+    RLIMIT_RSS, RLIMIT_NPROC, RLIMIT_NOFILE, RLIMIT_MEMLOCK, RLIMIT_AS,
+    RLIMIT_LOCKS, RLIMIT_SIGPENDING, RLIMIT_MSGQUEUE, RLIMIT_NICE,
+    RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_NLIMITS,
+    RLIM_INFINITY,
+    check_nofile_exceeded, check_as_exceeded, check_nproc_exceeded,
+    get_stack_limit, get_nofile_limit,
+};
 
-/// POSIX RLIM_INFINITY
-pub const RLIM_INFINITY: u64 = u64::MAX;
-
-// ============================================================================
-// getrlimit
-// ============================================================================
-
-/// getrlimit(resource, rlim) — 取资源限制到用户缓冲
-///
-/// rlim 指向 `struct rlimit { rlim_cur: u64, rlim_max: u64 }`。
-pub fn getrlimit_syscall(resource: i32, rlim_ptr: u64) -> Result<usize, Errno> {
-    if rlim_ptr == 0 {
-        return Err(Errno::EINVAL);
+/// getrlimit — 获取资源限制 (委托 framework)
+pub fn getrlimit_syscall(resource: i32, rlim_ptr: u64) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    let ret = crate::kernel::framework::proc::rlimit::sys_getrlimit(resource, rlim_ptr);
+    if ret >= 0 {
+        Ok(0)
+    } else {
+        Err(crate::kernel::framework::syscall::types::Errno::from_ret(ret))
     }
-    // 资源类型范围: 0..=16 (POSIX RLIMIT_NLIMITS)
-    if !(0..=16).contains(&resource) {
-        return Err(Errno::EINVAL);
+}
+
+/// setrlimit — 设置资源限制 (委托 framework)
+pub fn setrlimit_syscall(resource: i32, rlim_ptr: u64) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    let ret = crate::kernel::framework::proc::rlimit::sys_setrlimit(resource, rlim_ptr);
+    if ret >= 0 {
+        Ok(0)
+    } else {
+        Err(crate::kernel::framework::syscall::types::Errno::from_ret(ret))
     }
-    // framework safe API: 写 rlim_cur/rlim_max 到 user buf, 内部已 check_user_buf
-    if !raw::write_rlimit_to_user(rlim_ptr, RLIM_INFINITY, RLIM_INFINITY) {
-        return Err(Errno::EFAULT);
-    }
-    Ok(0)
 }

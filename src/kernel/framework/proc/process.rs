@@ -5,6 +5,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::scheduler::SchedPolicy;
+use super::rlimit::RlimitTable;
 use super::types::*;
 use crate::kernel::framework::chitin::user_driver::chitin_process_cleanup;
 
@@ -197,6 +198,9 @@ pub struct Process {
     pub sigaltstack_addr: AtomicU64,
     pub sigaltstack_size: AtomicU64,
     pub sigaltstack_flags: AtomicU32, // SS_ONSTACK / SS_DISABLE
+
+    /// Per-process 资源限制表 (RLIMIT_*)
+    pub rlimit_table: Mutex<RlimitTable>,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -272,6 +276,7 @@ impl Process {
             sigaltstack_addr: AtomicU64::new(0),
             sigaltstack_size: AtomicU64::new(0),
             sigaltstack_flags: AtomicU32::new(0),
+            rlimit_table: Mutex::new(RlimitTable::new()),
         }
     }
 

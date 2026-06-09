@@ -56,3 +56,35 @@ pub fn setpgid_syscall(pid: i32, pgid: i32) -> Result<usize, Errno> {
     let r = fw::proc_setpgid(pid, pgid);
     if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
 }
+
+// ============================================================================
+// getpgid
+// ============================================================================
+
+/// getpgid(pid) — 取进程组 ID
+///
+/// - `pid == 0`: 当前进程
+/// - `pid < 0`:  EINVAL
+pub fn getpgid_syscall(pid: i32) -> Result<usize, Errno> {
+    if pid < 0 {
+        return Err(Errno::EINVAL);
+    }
+    let r = fw::proc_getpgid(pid);
+    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+}
+
+// ============================================================================
+// tcsetpgrp / tcgetpgrp
+// ============================================================================
+
+/// tcsetpgrp(fd, pgid) — 设置前台进程组
+pub fn tcsetpgrp_syscall(fd: i32, pgid: i32) -> Result<usize, Errno> {
+    let r = fw::sys_tcsetpgrp(fd, pgid);
+    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+}
+
+/// tcgetpgrp(fd) — 获取前台进程组
+pub fn tcgetpgrp_syscall(fd: i32) -> Result<usize, Errno> {
+    let r = fw::sys_tcgetpgrp(fd);
+    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+}

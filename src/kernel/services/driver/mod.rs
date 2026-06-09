@@ -36,6 +36,7 @@
 
 pub mod virtio;
 pub mod char;
+pub mod firmware;
 pub mod storage;
 pub mod usb;
 pub mod acpi;

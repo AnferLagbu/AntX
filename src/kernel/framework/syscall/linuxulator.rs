@@ -233,6 +233,7 @@ fn translate_linux(num: u64) -> u64 {
         // 时间
         96 => QX_GETTIMEOFDAY,
         97 => QX_GETRLIMIT,
+        160 => QX_SETRLIMIT,
         98 => QX_GETRUSAGE,
         99 => QX_SYSINFO,
 
@@ -298,6 +299,11 @@ fn translate_linux(num: u64) -> u64 {
         30 => QX_INOTIFY_RM_WATCH,
         40 => QX_SENDFILE,
         76 => QX_SPLICE,
+
+        // 设备固件加载: Linux 无直接对应, finit_module (313) 与 init_module (175)
+        // 在 ABI 上是"用户态上传二进制到内核"的最接近语义, 兼容层复用
+        175 => QX_FW_LOAD,
+        313 => QX_FW_GET,
 
         _ => num, // 未识别: 透传, dispatch 走 ENOSYS
     }
@@ -425,6 +431,10 @@ fn translate_linux(num: u64) -> u64 {
         71 => QX_SENDFILE,
         76 => QX_SPLICE,
 
+        // 设备固件加载: aarch64 init_module=271 finit_module=314
+        271 => QX_FW_LOAD,
+        314 => QX_FW_GET,
+
         // FD 操作
         23 => QX_DUP,
         24 => QX_DUP3,         // reserved
@@ -444,6 +454,7 @@ fn translate_linux(num: u64) -> u64 {
         // 系统信息
         160 => QX_UNAME,
         163 => QX_GETRLIMIT,
+        164 => QX_SETRLIMIT,
         165 => QX_GETRUSAGE,
         179 => QX_SYSINFO,
 
