@@ -1,7 +1,6 @@
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
-use crate::klog_error;
 
 use super::cfs::{
     calc_vruntime_delta, cfs_should_preempt, mlfq_level_to_nice, nice_to_weight, CfsRunQueue,
@@ -1112,7 +1111,7 @@ impl Scheduler {
                 if reap_count >= 16 {
                     break;
                 }
-                if let Some(proc) = PROCESS_TABLE.get(pid) {
+                if let Some(_proc) = PROCESS_TABLE.get(pid) {
                     let is_zombie = PROCESS_TABLE.with_process(pid, |p| {
                         if p.get_state() == ProcessState::Zombie {
                             let parent_alive = p.parent.map_or(true, |ppid| {

@@ -165,6 +165,7 @@ pub mod epoll;
 pub mod eventfd;
 pub mod signalfd;
 pub mod timerfd;
+pub mod irq_lock;
 
 /// Lockdep — 运行时锁依赖检测器 (P1)
 pub mod lockdep;
