@@ -1,7 +1,7 @@
-use crate::kernel::framework::fs::hvfs::bp::HvBlockPointer;
-use crate::kernel::framework::fs::hvfs::dmu::{HvObjSet, HvObjType};
-use crate::kernel::framework::fs::hvfs::zap::HvZap;
-use crate::kernel::framework::sync::mutex::Mutex;
+use crate::kernel::services::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::services::fs::hvfs::dmu::{HvObjSet, HvObjType};
+use crate::kernel::services::fs::hvfs::zap::HvZap;
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};

@@ -15,13 +15,13 @@
 //! ```
 
 use super::bp::HvBlockPointer;
-use crate::kernel::framework::sync::mutex::Mutex;
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::services::sync::once::OnceCell;
 pub const CAS_HASH_SIZE: usize = 32;
 pub type CasHash = [u8; CAS_HASH_SIZE];
 
@@ -121,7 +121,7 @@ impl CasIndex {
     }
 }
 
-static CAS_INDEX: OnceLock<CasIndex> = OnceLock::new();
+static CAS_INDEX: OnceCell<CasIndex> = OnceCell::new();
 
 pub fn get_cas() -> &'static CasIndex {
     CAS_INDEX.get_or_init(CasIndex::new)
@@ -180,7 +180,7 @@ pub fn cas_aware_write(data: &[u8], txg: u64, obj_id: u64) -> Option<super::bp::
 
     if let Some(existing) = cas.lookup(&hash) {
         cas.ref_inc(&hash);
-        crate::kernel::framework::fs::hvfs::zil::HvZilRecord::new_dedup_ref(
+        crate::kernel::services::fs::hvfs::zil::HvZilRecord::new_dedup_ref(
             txg,
             [
                 u64::from_be_bytes(hash[0..8].try_into().unwrap_or_else(|_| [0u8; 8])),

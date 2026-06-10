@@ -90,7 +90,7 @@ impl EarlyAlloc {
 // SAFETY: only accessed under the PMM lock; each free page provides 4096 B
 // of storage — we use the first 16 B for prev / next pointers.
 #[repr(C)]
-struct FreeNode {
+pub(crate) struct FreeNode {
     prev: *mut FreeNode,
     next: *mut FreeNode,
 }

@@ -1,5 +1,4 @@
 /// 字符串工具
-
 pub fn cmp(a: &[u8], b: &[u8]) -> i32 {
     let end = if a.len() < b.len() { a.len() } else { b.len() };
     for i in 0..end { let d = a[i] as i32 - b[i] as i32; if d != 0 { return d; } }

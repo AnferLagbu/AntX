@@ -52,7 +52,7 @@ fn find_byte(slice: &[u8], byte: u8, start: usize) -> Option<usize> {
     None
 }
 
-fn parse_single_segment(raw: &[u8]) -> Segment {
+fn parse_single_segment<'a>(raw: &'a [u8]) -> Segment<'a> {
     let mut seg = Segment {
         cmd_buf: [0u8; 256],
         cmd_len: 0,
@@ -180,7 +180,7 @@ pub fn execute_pipeline(input: &[u8]) {
 
     for i in 0..seg_count {
         let mut cur_pipe: [i32; 2] = [-1, -1];
-        let is_last = (i == seg_count - 1);
+        let is_last = i == seg_count - 1;
 
         if !is_last {
             if pipe_create(&mut cur_pipe) < 0 {

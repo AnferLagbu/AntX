@@ -1,7 +1,7 @@
-/// AntX 用户态运行时 — POSIX 原生系统调用层
-/// x86_64: syscall, rax=num, rdi=a1, rsi=a2, rdx=a3, r10=a4, r8=a5, rax=ret
-/// aarch64: svc #0, x0=num, x1-x4=args, x0=返回
-
+#![allow(non_upper_case_globals)]
+//! AntX 用户态运行时 — POSIX 原生系统调用层
+//! x86_64: syscall, rax=num, rdi=a1, rsi=a2, rdx=a3, r10=a4, r8=a5, rax=ret
+//! aarch64: svc #0, x0=num, x1-x4=args, x0=返回
 use core::arch::asm;
 
 // ============================================================
@@ -194,7 +194,7 @@ pub fn proc_list(buf: &mut [u8], max_entries: u32) -> i32  { unsafe { sys2(SYS_C
 
 pub fn disk_list(disks: &mut [u64]) -> i32                 { unsafe { sys2(SYS_CREDO_DISK_LIST, disks.as_mut_ptr() as u64, disks.len() as u64) as i32 } }
 pub fn disk_info(id: u32, info: &mut UserDiskInfo) -> i32  { unsafe { sys2(SYS_CREDO_DISK_INFO, id as u64, info as *mut UserDiskInfo as u64) as i32 } }
-pub fn disk_format(id: u32) -> i32                         { unsafe { sys2(SYS_CREDO_DISK_FORMAT, id as u64, b"hvfs\0".as_ptr() as u64) as i32 } }
+pub fn disk_format(id: u32) -> i32                         { unsafe { sys2(SYS_CREDO_DISK_FORMAT, id as u64, c"hvfs".as_ptr() as u64) as i32 } }
 pub fn disk_partition(id: u32, sectors: u64) -> i64        { unsafe { sys2(SYS_CREDO_DISK_PARTITION, id as u64, sectors) } }
 pub fn boot_install(id: u32) -> i64                        { unsafe { sys1(SYS_CREDO_DISK_INSTALL, id as u64) } }
 pub fn fat_format(id: u32) -> i64                          { unsafe { sys1(SYS_CREDO_FAT_FORMAT, id as u64) } }

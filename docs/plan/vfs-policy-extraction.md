@@ -340,7 +340,7 @@ match fs.fs_open(rel_path, flags, pwm) {
 
 ---
 
-### E6-6: HvFS unsafe 消除 (阶段 1: 序列化/反序列化 unsafe 消除) ✅
+### E6-6: HvFS unsafe 消除 + 迁移到 services ✅
 
 **复杂度**: 极高 | **必要性**: 中高 | **风险**: 中
 
@@ -378,19 +378,35 @@ HvFS 共 10 处 unsafe, 分布在 5 个文件:
 
 **消除结果**:
 - 反序列化: 5 处 unsafe → 0 unsafe ✅
-- 序列化: 4 处 `as_bytes` 保留 `from_raw_parts` (由 `IntoBytes` derive 编译期保证无 padding, 安全性等价)
-- ARC `lookup_slice`: 1 处保留 (框架层必要的裸指针封装, 不涉及磁盘格式)
-- **总计**: unsafe 从 10 处降至 5 处 (消除全部反序列化 unsafe)
+- 序列化: 4 处 `as_bytes` → 0 unsafe ✅ (derive `Immutable` + `zerocopy::IntoBytes::as_bytes()` safe 方法)
+- ARC `lookup_slice`: 1 处 → 封装到 `arc_safe::ptr_to_slice()` ✅ (框架层 safe API, 内部 unsafe 对外不可见)
+- **总计**: unsafe 从 10 处降至 1 处 (仅 `arc_safe.rs` 的 `from_raw_parts`, 框架层必要封装)
 
-#### 6.3 HvFS 迁移到 services (阶段 2: 待执行)
+**新增文件**:
+- `framework/fs/hvfs/arc_safe.rs` — ARC 缓存裸指针→切片的 safe 封装
 
-1. 将 `framework/fs/hvfs/` 整体 (18 文件, 6,154 行) 迁移到 `services/fs/hvfs/`
-2. 实现 `FileSystem` trait
-3. framework 层 re-export 公共类型
-4. 双架构编译 + 审计验证
+**新增 derive**:
+- `HvDva`/`HvBpProp`/`HvBlockPointer`/`HvUberblock`/`ZilBlockHeader`/`ZilBlockTrailer`: 增加 `Immutable` derive
+
+#### 6.3 HvFS 迁移到 services (阶段 2: 已完成 ✅)
+
+1. ~~将 `framework/fs/hvfs/` 整体 (18 文件, 6,154 行) 迁移到 `services/fs/hvfs/`~~ ✅
+2. ~~实现 `FileSystem` trait~~ ✅ (已在 hvfs.rs 中实现)
+3. ~~framework 层 re-export 公共类型~~ ✅
+4. ~~双架构编译 + 审计验证~~ ✅ (x86_64 + aarch64 0 error, 审计全通过)
+
+**迁移详情**:
+- 17 个业务文件从 `framework/fs/hvfs/` 迁移到 `services/fs/hvfs/`
+- framework 层仅保留 `arc_safe.rs` (unsafe 封装) 和 `mod.rs` (re-export)
+- use 路径修改: `framework::fs::hvfs::*` → `services::fs::hvfs::*`
+- 同步原语修改: `framework::sync::mutex::Mutex` → `services::sync::irq_lock::IrqSpinLock as Mutex`
+- 同步原语修改: `framework::sync::once_lock::OnceLock` → `services::sync::once::OnceCell`
+- 日志修改: `klog_info!` → `framework::klog::serial_write_bytes` (services 层 deny unsafe_code)
+- `arc_safe::ptr_to_slice` 保持 framework 层引用 (唯一 unsafe 封装)
+- 删除旧 `services/fs/hvfs.rs` 安全代理 (330 行, 迁移后不再需要)
 
 **前置依赖**: E6-4 (FileSystem trait) ✅
-**TCB 收益**: 阶段 1 消除 5 处 unsafe; 阶段 2 迁移后 -6,154 行
+**TCB 收益**: 阶段 1 消除 9 处 unsafe (10→1); 阶段 2 迁移后 -6,154 行 TCB
 
 ---
 
@@ -649,3 +665,4 @@ InitRamFS: 不迁移 (保留 framework, 是 VFS 调用者而非被分发对象)
 | 2026-06-10 | 追加 DevFS/ProcFS/InitRamFS 分析: E6-7 DevFS 迁移, E6-8 ProcFS 迁移, InitRamFS 不迁移; 更新依赖图与 TCB 收益 (总计 10,449 行) |
 | 2026-06-10 | 追加 E6-9: Chitin↔DevFS 联合与硬编码消除 (三阶段: 去硬编码→桥接→接入 VFS) |
 | 2026-06-10 | E6-6 阶段 1 完成: HvFS 序列化/反序列化 unsafe 消除 (5 处→0), zerocopy IntoBytes 编译期验证, 字段重排消除隐式 padding; 更新所有已完成任务标记 |
+| 2026-06-11 | E6-6 阶段 2 完成: HvFS 17 个文件从 framework 迁移到 services; framework 仅保留 arc_safe.rs + re-export; 同步原语迁移到 services 层; klog_info→serial_write_bytes; 双架构编译+审计通过 |

@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
 use crate::kernel::framework::driver::block;
-use crate::kernel::framework::fs::hvfs::arc::HvArc;
-use crate::kernel::framework::fs::hvfs::bp::*;
-use crate::kernel::framework::fs::hvfs::checksum::HvChecksum;
-use crate::kernel::framework::fs::hvfs::dva::HvDva;
-use crate::kernel::framework::fs::hvfs::metaslab::*;
-use crate::kernel::framework::fs::hvfs::vdev::*;
-use crate::kernel::framework::sync::mutex::Mutex;
+use crate::kernel::services::fs::hvfs::arc::HvArc;
+use crate::kernel::services::fs::hvfs::bp::*;
+use crate::kernel::services::fs::hvfs::checksum::HvChecksum;
+use crate::kernel::services::fs::hvfs::dva::HvDva;
+use crate::kernel::services::fs::hvfs::metaslab::*;
+use crate::kernel::services::fs::hvfs::vdev::*;
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
@@ -33,7 +33,7 @@ pub enum HvPoolState {
     ReadOnly = 5,
 }
 
-#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes, zerocopy::Immutable)]
 #[repr(C)]
 pub struct HvUberblock {
     pub txg: u64,
@@ -82,10 +82,9 @@ impl HvUberblock {
         ck.value == saved
     }
 
-    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
+    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
-        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>()) }
+        zerocopy::IntoBytes::as_bytes(self)
     }
 
     /// E6-6: safe 反序列化, 逐字段读取替代 unsafe read_unaligned

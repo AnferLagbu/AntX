@@ -134,6 +134,7 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
+        #[allow(dead_code)]
         pub fn is_null(self) -> bool {
             self.0.is_null()
         }

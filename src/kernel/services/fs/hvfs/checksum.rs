@@ -1,4 +1,4 @@
-use crate::kernel::framework::fs::hvfs::bp::HvCksumType;
+use crate::kernel::services::fs::hvfs::bp::HvCksumType;
 
 pub const HV_CKSUM_FLETCHER2: usize = 1;
 pub const HV_CKSUM_FLETCHER4: usize = 2;

@@ -1,25 +1,25 @@
 #![allow(dead_code)]
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::driver::block;
-use crate::kernel::framework::fs::hvfs::arc::{HvArcBufType, HvArcKey};
-use crate::kernel::framework::fs::hvfs::bp::*;
-use crate::kernel::framework::fs::hvfs::compress;
-use crate::kernel::framework::fs::hvfs::dataset::*;
-use crate::kernel::framework::fs::hvfs::dmu::*;
-use crate::kernel::framework::fs::hvfs::snapshot::*;
-use crate::kernel::framework::fs::hvfs::spa::*;
-use crate::kernel::framework::fs::hvfs::txg::*;
-use crate::kernel::framework::fs::hvfs::zil::*;
+use crate::kernel::services::fs::hvfs::arc::{HvArcBufType, HvArcKey};
+use crate::kernel::services::fs::hvfs::bp::*;
+use crate::kernel::services::fs::hvfs::compress;
+use crate::kernel::services::fs::hvfs::dataset::*;
+use crate::kernel::services::fs::hvfs::dmu::*;
+use crate::kernel::services::fs::hvfs::snapshot::*;
+use crate::kernel::services::fs::hvfs::spa::*;
+use crate::kernel::services::fs::hvfs::txg::*;
+use crate::kernel::services::fs::hvfs::zil::*;
 use crate::kernel::framework::fs::vfs::types::KernelError;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::services::sync::once::OnceCell;
 fn log(s: &str) {
-    // Framekernel P2.2.2: 使用 klog_info! 安全宏 (替代 extern "C" klog_ffi_info)
-    crate::klog_info!(FS, "{}", s);
+    // services 层不能使用 klog_info! (含 unsafe), 改用 safe 串口输出
+    crate::kernel::framework::klog::serial_write_bytes(s.as_bytes());
 }
 
 fn hvfs_save() {}
@@ -82,7 +82,7 @@ pub struct HvfsData {
 // SAFETY (Framekernel P2.2.2): HvfsData 全部字段 (Mutex<T>, Atomic*, HvSpa/HvZil/HvSnapshotManager)
 // 都自动实现 Send + Sync, 无需 unsafe impl。
 
-static HVFS_DATA: OnceLock<HvfsData> = OnceLock::new();
+static HVFS_DATA: OnceCell<HvfsData> = OnceCell::new();
 
 pub fn get_hvfs() -> &'static HvfsData {
     HVFS_DATA.get_or_init(|| HvfsData {
@@ -216,7 +216,7 @@ impl HvfsData {
                 // 其余磁盘也添加为 vdev
                 for (drive_id, part_start) in &discovered[1..] {
                     self.disk_drive.store(*drive_id, Ordering::Release);
-                    let mut vdev_cfg = crate::kernel::framework::fs::hvfs::vdev::HvVdevConfig::new_disk(
+                    let mut vdev_cfg = crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
                         *drive_id as u16,
                         "disk",
                         12,
@@ -238,7 +238,7 @@ impl HvfsData {
         } else {
             log("[HvFS] No disk, running in memory mode\n");
             self.spa
-                .add_vdev(crate::kernel::framework::fs::hvfs::vdev::HvVdevConfig::new_disk(
+                .add_vdev(crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
                     0, "ata0", 12,
                 ));
         }
@@ -309,7 +309,7 @@ impl HvfsData {
         log(")...\n");
         self.spa.disk_present.store(true, Ordering::Release);
         let mut vdev_cfg =
-            crate::kernel::framework::fs::hvfs::vdev::HvVdevConfig::new_disk(drive_id as u16, "disk", 12);
+            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(drive_id as u16, "disk", 12);
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -349,7 +349,7 @@ impl HvfsData {
         };
 
         let mut vdev_cfg =
-            crate::kernel::framework::fs::hvfs::vdev::HvVdevConfig::new_disk(drive as u16, "disk", 12);
+            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(drive as u16, "disk", 12);
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -374,7 +374,7 @@ impl HvfsData {
     pub fn hotplug_remove_disk(&self, drive: u8) -> bool {
         let mut vdevs = self.spa.vdevs.lock();
         if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == drive as u16) {
-            vdev.state = crate::kernel::framework::fs::hvfs::vdev::HvVdevState::Removed;
+            vdev.state = crate::kernel::services::fs::hvfs::vdev::HvVdevState::Removed;
             log(&alloc::format!(
                 "[HvFS] HOTPLUG: disk removed (drive={})\n",
                 drive
@@ -419,7 +419,7 @@ impl HvfsData {
         if last_ok > part_start {
             (last_ok as u64 - part_start as u64) * 512
         } else {
-            crate::kernel::framework::fs::hvfs::vdev::HvVdev::probe_disk_size(drive_id)
+            crate::kernel::services::fs::hvfs::vdev::HvVdev::probe_disk_size(drive_id)
         }
     }
 
@@ -450,7 +450,7 @@ impl HvfsData {
         self.spa.disk_present.store(true, Ordering::Release);
         self.mode.store(HvfsMode::Disk as u8, Ordering::Release);
         let mut vdev_cfg =
-            crate::kernel::framework::fs::hvfs::vdev::HvVdevConfig::new_disk(drive_id as u16, "disk", 12);
+            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(drive_id as u16, "disk", 12);
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);

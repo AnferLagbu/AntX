@@ -1,7 +1,7 @@
 pub const HV_DVA_MAX: usize = 2;
 pub const HV_BP_CHECKSUM_SIZE: usize = 32;
 
-#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes, zerocopy::Immutable)]
 #[repr(C)]
 pub struct HvDva {
     pub offset: u64,
@@ -109,7 +109,7 @@ impl HvCksumType {
     }
 }
 
-#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes, zerocopy::Immutable)]
 #[repr(C)]
 pub struct HvBpProp {
     pub logical_size: u32,
@@ -180,7 +180,7 @@ impl HvBpProp {
     }
 }
 
-#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes, zerocopy::Immutable)]
 #[repr(C)]
 pub struct HvBlockPointer {
     pub dva: [HvDva; HV_DVA_MAX],
@@ -245,12 +245,11 @@ impl HvBlockPointer {
         self.prop.level > 0 && !self.is_hole()
     }
 
-    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
+    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
     pub const BYTES: usize = core::mem::size_of::<Self>();
 
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
-        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, Self::BYTES) }
+        zerocopy::IntoBytes::as_bytes(self)
     }
 
     /// E6-6: safe 反序列化, 手动构建替代 unsafe copy_nonoverlapping

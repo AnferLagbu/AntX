@@ -568,7 +568,7 @@ impl FileSystem for DevfsData {
 
     fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<FsOpenResult> {
         match self.open(rel_path) {
-            Some((index, dev_type)) => Ok(FsOpenResult {
+            Some((index, _dev_type)) => Ok(FsOpenResult {
                 handle: index,
                 offset: 0,
                 file_type: 0, // 设备文件

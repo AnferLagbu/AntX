@@ -1,5 +1,5 @@
-use crate::kernel::framework::fs::hvfs::bp::HvBlockPointer;
-use crate::kernel::framework::sync::mutex::Mutex;
+use crate::kernel::services::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 

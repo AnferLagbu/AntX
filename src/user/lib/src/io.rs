@@ -1,5 +1,4 @@
 /// 控制台 I/O
-
 use crate::sys;
 
 pub fn print(s: &str)                           { sys::fs_write(1, s.as_bytes()); }
@@ -27,7 +26,7 @@ pub fn read_line(buf: &mut [u8]) -> usize {
         let mut c = 0u8; if sys::fs_read(0, core::slice::from_mut(&mut c)) <= 0 { continue; }
         if c == b'\n' { print("\n"); break; }
         else if c == 0x7F || c == 0x08 { if i > 0 { i -= 1; print("\x08 \x08"); } }
-        else if c >= b' ' && c <= b'~' { buf[i] = c; i += 1; print_char(c); }
+        else if (b' '..=b'~').contains(&c) { buf[i] = c; i += 1; print_char(c); }
     }
     if i < max { buf[i] = 0; } i
 }

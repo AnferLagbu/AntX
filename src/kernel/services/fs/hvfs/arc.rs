@@ -1,4 +1,4 @@
-use crate::kernel::framework::sync::mutex::Mutex;
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -281,12 +281,11 @@ impl HvArc {
         None
     }
 
-    /// Framekernel P2.2.2: 安全地获取缓存切片，封装 unsafe from_raw_parts
+    /// Framekernel P2.2.2: 安全地获取缓存切片，通过 framework arc_safe::ptr_to_slice 封装 unsafe
     /// 调用者仍需在访问后调用 release(key) 释放引用计数
     pub fn lookup_slice(&self, key: &HvArcKey, len: usize) -> Option<&[u8]> {
         let ptr = self.lookup(key)?;
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        Some(unsafe { core::slice::from_raw_parts(ptr, len) })
+        crate::kernel::framework::fs::hvfs::arc_safe::ptr_to_slice(ptr, len)
     }
 
     pub fn insert(&self, key: HvArcKey, data: &[u8], buf_type: HvArcBufType) -> Option<*const u8> {

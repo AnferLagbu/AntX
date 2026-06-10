@@ -1,5 +1,4 @@
 /// 系统命令: osinfo, host, ps, reboot, halt
-
 use userlib::{print, println};
 use userlib::sys::{gethostname, sethostname, reboot as sys_reboot};
 use core::fmt::Write;

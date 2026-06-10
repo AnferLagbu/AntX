@@ -48,7 +48,7 @@ const ZIL_RECORD_PAYLOAD: usize = 209;
 const _ASSERT_RECORD_FITS: () = assert!(ZIL_RECORD_PAYLOAD <= ZIL_RECORD_DISK_SIZE);
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes, zerocopy::Immutable)]
 pub struct ZilBlockHeader {
     pub magic: u32,
     pub version: u16,
@@ -65,7 +65,7 @@ pub struct ZilBlockHeader {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes, zerocopy::Immutable)]
 pub struct ZilBlockTrailer {
     pub tail_magic: u32,
     pub block_checksum: u32,
@@ -116,10 +116,9 @@ impl ZilBlockHeader {
         copy.header_checksum == self.header_checksum
     }
 
-    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
+    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
-        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>()) }
+        zerocopy::IntoBytes::as_bytes(self)
     }
 
     /// E6-6: safe 反序列化, 逐字段读取替代 unsafe 指针转换
@@ -161,10 +160,9 @@ impl ZilBlockTrailer {
         self.tail_magic == ZIL_TAIL_MAGIC
     }
 
-    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
+    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
-        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>()) }
+        zerocopy::IntoBytes::as_bytes(self)
     }
 }
 
