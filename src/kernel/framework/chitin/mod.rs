@@ -263,6 +263,29 @@ impl ChitinDevice {
 
 static NEXT_DEVICE_ID: AtomicU32 = AtomicU32::new(1);
 
+/// 设备注册回调 — 可由 DevFS 订阅, 自动创建设备节点
+/// E6-9b: Chitin→DevFS 桥接
+static DEVICE_REGISTER_CALLBACK: Mutex<Option<fn(&ChitinDevice)>> = Mutex::new(None);
+
+/// 设置设备注册回调 (由 DevFS 初始化时调用)
+pub fn chitin_set_register_callback(cb: fn(&ChitinDevice)) {
+    *DEVICE_REGISTER_CALLBACK.lock() = Some(cb);
+}
+
+/// 通知 DevFS 新设备已注册 (E6-9b)
+///
+/// 从 CHITIN_DEVICES 中获取最后注册的设备并调用回调。
+/// 这样避免 ChitinDevice 的 move 问题。
+fn notify_last_registered() {
+    let cb = DEVICE_REGISTER_CALLBACK.lock();
+    if let Some(f) = *cb {
+        let devices = CHITIN_DEVICES.lock();
+        if let Some(dev) = devices.last() {
+            f(dev);
+        }
+    }
+}
+
 pub static CHITIN_DEVICES: Mutex<Vec<ChitinDevice>> = Mutex::new(Vec::new());
 
 // ── 注册函数 ──
@@ -275,8 +298,7 @@ pub fn chitin_register(
     driver_data: *mut u8,
 ) -> u32 {
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
-    let mut devices = CHITIN_DEVICES.lock();
-    devices.push(ChitinDevice {
+    let dev = ChitinDevice {
         id,
         name,
         proto,
@@ -285,7 +307,13 @@ pub fn chitin_register(
         irq,
         driver_data,
         ops: None,
-    });
+    };
+    {
+        let mut devices = CHITIN_DEVICES.lock();
+        devices.push(dev);
+    }
+    // E6-9b: 通知 DevFS 创建设备节点 (从注册表获取引用)
+    notify_last_registered();
     id
 }
 
@@ -301,8 +329,7 @@ pub fn chitin_register_with_ops(
     ops: ChitinOps,
 ) -> u32 {
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
-    let mut devices = CHITIN_DEVICES.lock();
-    devices.push(ChitinDevice {
+    let dev = ChitinDevice {
         id,
         name,
         proto,
@@ -311,7 +338,12 @@ pub fn chitin_register_with_ops(
         irq,
         driver_data,
         ops: Some(ops),
-    });
+    };
+    {
+        let mut devices = CHITIN_DEVICES.lock();
+        devices.push(dev);
+    }
+    notify_last_registered();
     id
 }
 
@@ -327,9 +359,7 @@ pub fn chitin_register_block(
     driver_data: *mut u8,
 ) -> u32 {
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
-    let mut devices = CHITIN_DEVICES.lock();
-    let idx = devices.len() as u32;
-    devices.push(ChitinDevice {
+    let dev = ChitinDevice {
         id,
         name,
         proto: ChitinProto::Block,
@@ -338,7 +368,14 @@ pub fn chitin_register_block(
         irq,
         driver_data,
         ops: Some(ChitinOps::Block(blk_ops)),
-    });
+    };
+    let idx;
+    {
+        let mut devices = CHITIN_DEVICES.lock();
+        idx = devices.len() as u32;
+        devices.push(dev);
+    }
+    notify_last_registered();
     idx
 }
 
@@ -665,8 +702,7 @@ pub fn chitin_register_driver(
     let obj = Box::new(DriverObject { ptr: raw });
     let obj_ptr = Box::into_raw(obj) as *mut u8;
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
-    let mut devices = CHITIN_DEVICES.lock();
-    devices.push(ChitinDevice {
+    let dev = ChitinDevice {
         id,
         name,
         proto,
@@ -675,7 +711,12 @@ pub fn chitin_register_driver(
         irq,
         driver_data: obj_ptr,
         ops: None,
-    });
+    };
+    {
+        let mut devices = CHITIN_DEVICES.lock();
+        devices.push(dev);
+    }
+    notify_last_registered();
     id
 }
 
@@ -693,8 +734,7 @@ pub fn chitin_register_driver_with_ops(
     let obj = Box::new(DriverObject { ptr: raw });
     let obj_ptr = Box::into_raw(obj) as *mut u8;
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
-    let mut devices = CHITIN_DEVICES.lock();
-    devices.push(ChitinDevice {
+    let dev = ChitinDevice {
         id,
         name,
         proto,
@@ -703,7 +743,12 @@ pub fn chitin_register_driver_with_ops(
         irq,
         driver_data: obj_ptr,
         ops: Some(ops),
-    });
+    };
+    {
+        let mut devices = CHITIN_DEVICES.lock();
+        devices.push(dev);
+    }
+    notify_last_registered();
     id
 }
 

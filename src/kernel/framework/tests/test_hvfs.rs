@@ -75,16 +75,16 @@ fn test_spa_uberblock_null() -> TestResult {
 
 fn test_spa_uberblock_checksum() -> TestResult {
     let mut ub = HvUberblock {
-        magic: HV_SPA_MAGIC,
         txg: 1,
         root_bp: HvBlockPointer::null(),
         timestamp: 100,
         root_dataset_obj: 0,
         pool_guid: 0xABCD,
         checkpoint_txg: 0,
-        pwm_domain_id: 0,
-        _pad: [0; 6],
         checksum: [0; 4],
+        magic: HV_SPA_MAGIC,
+        pwm_domain_id: 0,
+        _pad: [0; 2],
     };
     ub.compute_checksum();
     check!(ub.verify_checksum(), "checksum should verify");

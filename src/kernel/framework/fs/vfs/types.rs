@@ -124,6 +124,7 @@ impl VfsSeekWhence {
 pub enum FsType {
     RamFs,
     HvFs,
+    DevFs,
     Unknown,
 }
 
@@ -132,6 +133,7 @@ impl FsType {
         match name {
             "ramfs" => FsType::RamFs,
             "hvfs" => FsType::HvFs,
+            "devfs" => FsType::DevFs,
             _ => FsType::Unknown,
         }
     }
@@ -140,6 +142,7 @@ impl FsType {
         match self {
             FsType::RamFs => "ramfs",
             FsType::HvFs => "hvfs",
+            FsType::DevFs => "devfs",
             FsType::Unknown => "unknown",
         }
     }
@@ -191,6 +194,16 @@ pub struct VfsDirEntry {
     pub name: [u8; VFS_MAX_NAME],
 }
 
+impl Default for VfsDirEntry {
+    fn default() -> Self {
+        Self {
+            node: 0,
+            file_type: 0,
+            name: [0u8; VFS_MAX_NAME],
+        }
+    }
+}
+
 impl VfsDirEntry {
     pub fn new() -> Self {
         Self {
@@ -214,5 +227,114 @@ impl VfsDirEntry {
             .position(|&b| b == 0)
             .unwrap_or(VFS_MAX_NAME);
         core::str::from_utf8(&self.name[..end]).unwrap_or("")
+    }
+}
+
+// ============================================================================
+// FileSystem trait — VFS 分发策略接口
+// ============================================================================
+//
+// E6-4: 将 api.rs 中 14+ 个 `match fs_type` 分发替换为 trait object 分发.
+// 新增文件系统只需实现本 trait, 无需修改 framework.
+//
+// 设计原则:
+// - 统一 RamFS (node_id) / HvFS (fd) 的差异: open 返回 FsOpenResult,
+//   内部不透明 handle 由各 FS 自行解释
+// - 所有方法接收 `&self` (非 `&mut self`), 内部可变性由各 FS 自行管理
+//   (RamFS 用内部 Mutex, HvFS 用内部原子操作)
+// - pwm 参数由 VFS 层传入, FS 实现负责权限检查
+
+/// `fs_open` 返回结果
+#[derive(Debug, Clone, Copy)]
+pub struct FsOpenResult {
+    /// FS 内部不透明 handle (RamFS 填 node_id, HvFS 填 fd)
+    pub handle: u32,
+    /// 文件初始偏移
+    pub offset: u64,
+    /// 文件类型 (VfsFileType::as_u8)
+    pub file_type: u8,
+}
+
+/// 文件系统策略接口 — services 层实现, framework 层调用
+///
+/// 所有方法返回 `KernelResult<T>`, 由 VFS api.rs 统一转为 i32 错误码.
+/// 新增文件系统只需实现本 trait 并注册到 VFS_MANAGER, 无需修改 framework.
+pub trait FileSystem: Send + Sync {
+    /// 文件系统名称 (如 "ramfs", "hvfs")
+    fn name(&self) -> &'static str;
+
+    // ---- 生命周期 ----
+
+    /// 初始化文件系统 (mount 前调用)
+    fn fs_init(&self) -> KernelResult<()>;
+    /// 挂载到指定路径
+    fn fs_mount(&self, path: &str) -> KernelResult<()>;
+
+    // ---- 文件操作 ----
+
+    /// 打开文件, 返回不透明 handle
+    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> KernelResult<FsOpenResult>;
+    /// 关闭文件
+    fn fs_close(&self, handle: u32) -> KernelResult<()>;
+    /// 读文件, 返回实际读取字节数
+    fn fs_read(&self, handle: u32, offset: u64, buf: &mut [u8], pwm: u64) -> KernelResult<usize>;
+    /// 写文件, 返回实际写入字节数
+    fn fs_write(&self, handle: u32, offset: u64, buf: &[u8], pwm: u64) -> KernelResult<usize>;
+
+    // ---- 元数据 ----
+
+    /// 获取文件属性
+    fn fs_stat(&self, rel_path: &str, pwm: u64) -> KernelResult<VfsStat>;
+    /// 修改文件权限
+    fn fs_chmod(&self, rel_path: &str, mode: u16, pwm: u64) -> KernelResult<()>;
+    /// 修改文件所有者
+    fn fs_chown(&self, rel_path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> KernelResult<()>;
+
+    // ---- 目录操作 ----
+
+    /// 创建目录
+    fn fs_mkdir(&self, rel_path: &str, pwm: u64) -> KernelResult<()>;
+    /// 删除文件
+    fn fs_unlink(&self, rel_path: &str, pwm: u64) -> KernelResult<()>;
+    /// 删除目录
+    fn fs_rmdir(&self, rel_path: &str, pwm: u64) -> KernelResult<()>;
+    /// 重命名
+    fn fs_rename(&self, old_path: &str, new_path: &str, pwm: u64) -> KernelResult<()>;
+    /// 读取目录项, 返回 true 表示还有更多项
+    fn fs_readdir(&self, handle: u32, offset: u64, entry: &mut VfsDirEntry) -> KernelResult<bool>;
+
+    // ---- 符号链接 ----
+
+    /// 创建符号链接
+    fn fs_symlink(&self, target: &str, link_path: &str, pwm: u64) -> KernelResult<()>;
+    /// 读取符号链接目标
+    fn fs_readlink(&self, rel_path: &str, buf: &mut [u8]) -> KernelResult<usize>;
+    /// 创建硬链接
+    fn fs_link(&self, old_path: &str, new_path: &str, pwm: u64) -> KernelResult<()>;
+
+    // ---- 扩展 (可选, 默认返回 NotSupported) ----
+
+    /// 截断文件
+    fn fs_truncate(&self, handle: u32, size: u64, pwm: u64) -> KernelResult<()> {
+        let _ = (handle, size, pwm);
+        Err(KernelError::NotSupported)
+    }
+
+    /// seek
+    fn fs_seek(&self, handle: u32, offset: i64, whence: VfsSeekWhence, current: u64) -> KernelResult<u64> {
+        let _ = (handle, offset, whence, current);
+        Err(KernelError::NotSupported)
+    }
+
+    /// 解析路径到内部 handle (用于 inotify/flock 等需要 inode 的场景)
+    fn fs_resolve_path(&self, rel_path: &str) -> Option<u32> {
+        let _ = rel_path;
+        None
+    }
+
+    /// 创建文件 (CREAT 语义)
+    fn fs_create(&self, parent_path: &str, name: &str, pwm: u64) -> KernelResult<FsOpenResult> {
+        let _ = (parent_path, name, pwm);
+        Err(KernelError::NotSupported)
     }
 }

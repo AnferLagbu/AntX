@@ -1,24 +1,26 @@
 pub const HV_DVA_MAX: usize = 2;
 pub const HV_BP_CHECKSUM_SIZE: usize = 32;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct HvDva {
-    pub vdev_id: u16,
     pub offset: u64,
     pub asize: u32,
-    pub gang: bool,
-    pub _pad: [u8; 3],
+    pub vdev_id: u16,
+    pub gang: u8,
+    pub _pad: [u8; 1],
 }
 
 impl HvDva {
+    pub const BYTES: usize = core::mem::size_of::<Self>();
+
     pub const fn null() -> Self {
         Self {
-            vdev_id: 0,
             offset: 0,
             asize: 0,
-            gang: false,
-            _pad: [0; 3],
+            vdev_id: 0,
+            gang: 0,
+            _pad: [0; 1],
         }
     }
 
@@ -31,14 +33,32 @@ impl HvDva {
             vdev_id,
             offset,
             asize,
-            gang: false,
-            _pad: [0; 3],
+            gang: 0,
+            _pad: [0; 1],
         }
     }
 
     pub fn with_gang(mut self) -> Self {
-        self.gang = true;
+        self.gang = 1;
         self
+    }
+
+    pub fn is_gang(&self) -> bool {
+        self.gang != 0
+    }
+
+    /// E6-6: safe 反序列化
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < Self::BYTES {
+            return None;
+        }
+        Some(Self {
+            offset: u64::from_le_bytes(bytes[0..8].try_into().ok()?),
+            asize: u32::from_le_bytes(bytes[8..12].try_into().ok()?),
+            vdev_id: u16::from_le_bytes(bytes[12..14].try_into().ok()?),
+            gang: bytes[14],
+            _pad: [bytes[15]],
+        })
     }
 }
 
@@ -89,35 +109,78 @@ impl HvCksumType {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct HvBpProp {
-    pub level: u8,
-    pub comp_type: HvCompType,
-    pub cksum_type: HvCksumType,
-    pub encrypted: bool,
-    pub byteorder: u8,
     pub logical_size: u32,
     pub physical_size: u32,
-    pub _pad: [u8; 4],
+    pub level: u8,
+    pub comp_type: u8,
+    pub cksum_type: u8,
+    pub encrypted: u8,
+    pub byteorder: u8,
+    pub _pad: [u8; 3],
 }
 
 impl HvBpProp {
+    pub const BYTES: usize = core::mem::size_of::<Self>();
+
     pub const fn default() -> Self {
         Self {
-            level: 0,
-            comp_type: HvCompType::Off,
-            cksum_type: HvCksumType::Fletcher4,
-            encrypted: false,
-            byteorder: 0,
             logical_size: 0,
             physical_size: 0,
-            _pad: [0; 4],
+            level: 0,
+            comp_type: HvCompType::Off as u8,
+            cksum_type: HvCksumType::Fletcher4 as u8,
+            encrypted: 0,
+            byteorder: 0,
+            _pad: [0; 3],
         }
+    }
+
+    pub fn comp_type(&self) -> HvCompType {
+        HvCompType::from_u8(self.comp_type)
+    }
+
+    pub fn cksum_type(&self) -> HvCksumType {
+        HvCksumType::from_u8(self.cksum_type)
+    }
+
+    pub fn set_comp_type(&mut self, v: HvCompType) {
+        self.comp_type = v as u8;
+    }
+
+    pub fn set_cksum_type(&mut self, v: HvCksumType) {
+        self.cksum_type = v as u8;
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        self.encrypted != 0
+    }
+
+    pub fn set_encrypted(&mut self, v: bool) {
+        self.encrypted = if v { 1 } else { 0 };
+    }
+
+    /// E6-6: safe 反序列化
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < Self::BYTES {
+            return None;
+        }
+        Some(Self {
+            logical_size: u32::from_le_bytes(bytes[0..4].try_into().ok()?),
+            physical_size: u32::from_le_bytes(bytes[4..8].try_into().ok()?),
+            level: bytes[8],
+            comp_type: bytes[9],
+            cksum_type: bytes[10],
+            encrypted: bytes[11],
+            byteorder: bytes[12],
+            _pad: [bytes[13], bytes[14], bytes[15]],
+        })
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct HvBlockPointer {
     pub dva: [HvDva; HV_DVA_MAX],
@@ -182,30 +245,36 @@ impl HvBlockPointer {
         self.prop.level > 0 && !self.is_hole()
     }
 
-    /// Framekernel P2.2.2: 安全地将 HvBlockPointer 转换为字节切片
-    /// SAFETY: HvBlockPointer 是 repr(C) 结构体，字段布局确定，无内部 padding 导致 UB
+    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
     pub const BYTES: usize = core::mem::size_of::<Self>();
 
     pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(self as *const Self as *const u8, Self::BYTES)
-        }
+        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
+        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, Self::BYTES) }
     }
 
-    /// Framekernel P2.2.2: 从字节切片安全地反序列化 HvBlockPointer
-    /// SAFETY: 已验证输入长度足够
+    /// E6-6: safe 反序列化, 手动构建替代 unsafe copy_nonoverlapping
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < Self::BYTES {
             return None;
         }
+        // 安全方式: 逐字段读取, 避免任何 unsafe
         let mut bp = Self::null();
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                bytes.as_ptr(),
-                &mut bp as *mut Self as *mut u8,
-                Self::BYTES,
-            );
+        let mut off = 0usize;
+        for i in 0..HV_DVA_MAX {
+            bp.dva[i] = HvDva::from_bytes(&bytes[off..off + HvDva::BYTES])?;
+            off += HvDva::BYTES;
         }
+        bp.prop = HvBpProp::from_bytes(&bytes[off..off + HvBpProp::BYTES])?;
+        off += HvBpProp::BYTES;
+        // checksum, birth_txg, fill, _pad 直接从字节切片读取
+        for i in 0..4 {
+            bp.checksum[i] = u64::from_le_bytes(bytes[off + i * 8..off + i * 8 + 8].try_into().ok()?);
+        }
+        off += 32;
+        bp.birth_txg = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);
+        off += 8;
+        bp.fill = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);
         Some(bp)
     }
 }

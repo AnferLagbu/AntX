@@ -1824,3 +1824,131 @@ impl HvfsData {
         (allocs, frees, reads, writes)
     }
 }
+
+// ============================================================================
+// E6-4: FileSystem trait 实现
+// ============================================================================
+
+impl crate::kernel::framework::fs::vfs::types::FileSystem for HvfsData {
+    fn name(&self) -> &'static str {
+        "hvfs"
+    }
+
+    fn fs_init(&self) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        if !self.is_initialized() {
+            self.init();
+        }
+        Ok(())
+    }
+
+    fn fs_mount(&self, _path: &str) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        if !self.is_initialized() {
+            self.init();
+        }
+        Ok(())
+    }
+
+    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<crate::kernel::framework::fs::vfs::types::FsOpenResult> {
+        match self.open(rel_path, flags, pwm) {
+            Ok(fd) => Ok(crate::kernel::framework::fs::vfs::types::FsOpenResult {
+                handle: fd as u32,
+                offset: 0,
+                file_type: 0,
+            }),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn fs_close(&self, handle: u32) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.close(handle);
+        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn fs_read(&self, handle: u32, offset: u64, buf: &mut [u8], _pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<usize> {
+        let _ = offset;
+        let result = self.read(handle, buf, buf.len() as u32);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn fs_write(&self, handle: u32, offset: u64, buf: &[u8], _pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<usize> {
+        let _ = offset;
+        let result = self.write(handle, buf, buf.len() as u32);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn fs_stat(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<crate::kernel::framework::fs::vfs::types::VfsStat> {
+        match self.stat(rel_path, pwm) {
+            Some(obj) => {
+                let mut st = crate::kernel::framework::fs::vfs::types::VfsStat::default();
+                st.node_id = obj.obj_id as u32;
+                st.mode = obj.pwm_perm;
+                st.size = obj.size as u32;
+                st.owner_pwm = obj.owner_pwm;
+                st.group_pwm = obj.group_pwm;
+                st.perm = obj.pwm_perm;
+                st.sensitivity = obj.sensitivity;
+                st.file_type = if obj.is_dir() {
+                    crate::kernel::framework::fs::vfs::types::VfsFileType::Dir.as_u8()
+                } else {
+                    crate::kernel::framework::fs::vfs::types::VfsFileType::File.as_u8()
+                };
+                Ok(st)
+            }
+            None => Err(KernelError::NotFound),
+        }
+    }
+
+    fn fs_chmod(&self, rel_path: &str, mode: u16, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.chmod(rel_path, mode, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::PermissionDenied) }
+    }
+
+    fn fs_chown(&self, rel_path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.chown_ext(rel_path, owner_pwm, group_pwm, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::PermissionDenied) }
+    }
+
+    fn fs_mkdir(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.mkdir(rel_path, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn fs_unlink(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.unlink(rel_path, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::NotFound) }
+    }
+
+    fn fs_rmdir(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.unlink(rel_path, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::NotFound) }
+    }
+
+    fn fs_rename(&self, old_path: &str, new_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.rename(old_path, new_path, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn fs_readdir(&self, _handle: u32, _offset: u64, _entry: &mut crate::kernel::framework::fs::vfs::types::VfsDirEntry) -> crate::kernel::framework::fs::vfs::types::KernelResult<bool> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_symlink(&self, target: &str, link_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.symlink(target, link_path, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn fs_readlink(&self, rel_path: &str, buf: &mut [u8]) -> crate::kernel::framework::fs::vfs::types::KernelResult<usize> {
+        let result = self.readlink(rel_path, buf, 0);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn fs_link(&self, old_path: &str, new_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let result = self.link(old_path, new_path, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn fs_seek(&self, handle: u32, offset: i64, whence: crate::kernel::framework::fs::vfs::types::VfsSeekWhence, _current: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<u64> {
+        let result = self.seek(handle, offset, whence as u32);
+        if result < 0 { Err(KernelError::InvalidArgument) } else { Ok(result as u64) }
+    }
+}

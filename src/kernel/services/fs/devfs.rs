@@ -1,22 +1,29 @@
 #![deny(unsafe_code)]
-//! @SAFE: 本文件不含 unsafe 代码。
+//! 设备文件系统 (DevFS) — services 层完整实现
 //!
-//! 设备文件系统 (DevFS) — services 层安全代理 (Phase 2.2.2)
-//!
-//! 在 `kernel/fs/devfs` 基础上提供 100% safe 的公共 API,
-//! 封装虚拟设备 (null/zero/console/tty/credo) 的注册与 IO。
+//! 从 framework/fs/devfs/devfs.rs 迁移而来. 0 unsafe, 纯策略.
 //!
 //! ## 设计原则
 //!
-//! - **零 unsafe**: 内部 `DevfsData` 已由 P2.2.3 标记为安全 (Send+Sync)
+//! - **零 unsafe**: 所有硬件交互通过 framework safe API
 //! - **类型安全**: 设备类型用 `DevKind` 枚举, 而非裸 `u8`
-//! - **薄包装**: 透传 register/unregister/open/read/write/readdir
-//! - **可替代**: 原 `kernel/fs/devfs/devfs.rs` 仍存在, 本文件是迁移目标
+//! - **完整实现**: 包含设备注册/IO/目录读取, 不再依赖 framework 实现
 //!
-//! 评估日期: 2026-06-04
-//! Phase 2.2.2 任务: 设备文件系统迁移
+//! 评估日期: 2026-06-10
+//! E6-7: DevFS 策略提取
 
-use crate::kernel::framework::fs::devfs::devfs::{DevfsData, DEVFS_MAX_NAME};
+use core::sync::atomic::{AtomicU32, Ordering};
+
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
+
+// ============================================================================
+// 常量
+// ============================================================================
+
+/// 最大设备数
+pub const DEVFS_MAX_DEVICES: usize = 16;
+/// 设备名最大长度
+pub const DEVFS_MAX_NAME: usize = 32;
 
 // ============================================================================
 // 设备类型
@@ -27,29 +34,341 @@ use crate::kernel::framework::fs::devfs::devfs::{DevfsData, DEVFS_MAX_NAME};
 #[repr(u8)]
 pub enum DevKind {
     /// 空设备 /dev/null
-    Null = 1,
+    Null = 0,
     /// 零字节源 /dev/zero
-    Zero = 2,
+    Zero = 1,
     /// 控制台 /dev/console
-    Console = 3,
+    Console = 2,
     /// TTY /dev/tty
-    Tty = 4,
+    Tty = 3,
     /// Credo 能力 (PWM) 接口 /dev/credo
-    Credo = 5,
+    Credo = 4,
+    /// 块设备 (如 /dev/sda)
+    Block = 5,
+    /// 字符设备 (如 /dev/serial0)
+    Char = 6,
+    /// 网络设备 (如 /dev/eth0)
+    Net = 7,
+    /// 输入设备 (如 /dev/input/kbd)
+    Input = 8,
 }
 
 impl DevKind {
     /// 从 `u8` 解析 (容忍未知值, 返回 `None`)
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
-            1 => Some(Self::Null),
-            2 => Some(Self::Zero),
-            3 => Some(Self::Console),
-            4 => Some(Self::Tty),
-            5 => Some(Self::Credo),
+            0 => Some(Self::Null),
+            1 => Some(Self::Zero),
+            2 => Some(Self::Console),
+            3 => Some(Self::Tty),
+            4 => Some(Self::Credo),
+            5 => Some(Self::Block),
+            6 => Some(Self::Char),
+            7 => Some(Self::Net),
+            8 => Some(Self::Input),
             _ => None,
         }
     }
+
+    /// 是否为虚拟设备 (内核内部实现)
+    pub fn is_virtual(&self) -> bool {
+        matches!(self, Self::Null | Self::Zero | Self::Console | Self::Tty | Self::Credo)
+    }
+
+    /// 是否为物理设备 (由 Chitin 驱动提供)
+    pub fn is_physical(&self) -> bool {
+        matches!(self, Self::Block | Self::Char | Self::Net | Self::Input)
+    }
+}
+
+// ============================================================================
+// 内部辅助
+// ============================================================================
+
+fn write_u32_dec(buf: &mut [u8], mut off: usize, mut val: u32) -> usize {
+    if val == 0 {
+        if off < buf.len() {
+            buf[off] = b'0';
+            off += 1;
+        }
+        return off;
+    }
+    let mut digits = [0u8; 10];
+    let mut i = 0;
+    while val > 0 {
+        digits[i] = b'0' + (val % 10) as u8;
+        val /= 10;
+        i += 1;
+    }
+    for j in (0..i).rev() {
+        if off < buf.len() {
+            buf[off] = digits[j];
+            off += 1;
+        }
+    }
+    off
+}
+
+// ============================================================================
+// 设备条目
+// ============================================================================
+
+/// 设备条目
+#[derive(Debug, Clone, Copy)]
+pub struct DevfsDevice {
+    pub name: [u8; DEVFS_MAX_NAME],
+    pub dev_type: u8,
+    pub used: bool,
+}
+
+impl DevfsDevice {
+    pub const fn new() -> Self {
+        Self {
+            name: [0; DEVFS_MAX_NAME],
+            dev_type: 0,
+            used: false,
+        }
+    }
+}
+
+// ============================================================================
+// DevfsData
+// ============================================================================
+
+/// DevFS 核心数据
+pub struct DevfsData {
+    devices: Mutex<[DevfsDevice; DEVFS_MAX_DEVICES]>,
+    device_count: AtomicU32,
+}
+
+// DevfsData 自动 Send + Sync: IrqSpinLock<T> (framework) 已实现 unsafe impl Send/Sync,
+// AtomicU32 也是 Send + Sync, 无需手动实现.
+
+impl DevfsData {
+    pub const fn new() -> Self {
+        Self {
+            devices: Mutex::new([const { DevfsDevice::new() }; DEVFS_MAX_DEVICES]),
+            device_count: AtomicU32::new(0),
+        }
+    }
+
+    fn set_name(device: &mut DevfsDevice, name: &str) {
+        let bytes = name.as_bytes();
+        let len = bytes.len().min(DEVFS_MAX_NAME - 1);
+        device.name[..len].copy_from_slice(&bytes[..len]);
+        device.name[len] = 0;
+    }
+
+    pub fn register_device(&self, name: &str, dev_type: u8) -> i32 {
+        let mut devices = self.devices.lock();
+        for device in devices.iter() {
+            if device.used {
+                let end = device
+                    .name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(DEVFS_MAX_NAME);
+                let existing = core::str::from_utf8(&device.name[..end]).unwrap_or("");
+                if existing == name {
+                    return -1;
+                }
+            }
+        }
+        for device in devices.iter_mut() {
+            if !device.used {
+                Self::set_name(device, name);
+                device.dev_type = dev_type;
+                device.used = true;
+                self.device_count.fetch_add(1, Ordering::SeqCst);
+                return 0;
+            }
+        }
+        -1
+    }
+
+    pub fn unregister_device(&self, name: &str) -> i32 {
+        let mut devices = self.devices.lock();
+        for device in devices.iter_mut() {
+            if device.used {
+                let end = device
+                    .name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(DEVFS_MAX_NAME);
+                let existing = core::str::from_utf8(&device.name[..end]).unwrap_or("");
+                if existing == name {
+                    device.used = false;
+                    device.dev_type = 0;
+                    self.device_count.fetch_sub(1, Ordering::SeqCst);
+                    return 0;
+                }
+            }
+        }
+        -1
+    }
+
+    pub fn mount(&self, _path: &str) -> i32 {
+        // E6-9a: 不再硬编码设备, 改为通过 register_device 注册
+        // 标准虚拟设备由启动流程显式调用 register_standard() 注册
+        self.device_count.store(0, Ordering::SeqCst);
+        0
+    }
+
+    pub fn open(&self, path: &str) -> Option<(u32, u8)> {
+        let dev_name = path.trim_start_matches('/');
+
+        let devices = self.devices.lock();
+        for device in devices.iter() {
+            if device.used {
+                let end = device
+                    .name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(DEVFS_MAX_NAME);
+                let name = core::str::from_utf8(&device.name[..end]).unwrap_or("");
+                if name == dev_name {
+                    return Some((device.dev_type as u32, device.dev_type));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn read(&self, dev_type: u8, buf: &mut [u8]) -> i32 {
+        match DevKind::from_u8(dev_type) {
+            Some(DevKind::Null) => 0,
+            Some(DevKind::Zero) => {
+                buf.fill(0);
+                buf.len() as i32
+            }
+            Some(DevKind::Console) | Some(DevKind::Tty) => 0,
+            Some(DevKind::Credo) => {
+                let pwm = crate::kernel::framework::credo::session::get_current_pwm();
+                let euid = crate::kernel::framework::credo::session::get_euid();
+                let uid = crate::kernel::framework::credo::session::get_current_uid();
+                if pwm != 0 {
+                    let mut off = 0;
+                    let blen = buf.len();
+                    if off < blen { buf[off] = b'O'; off += 1; }
+                    if off < blen { buf[off] = b'K'; off += 1; }
+                    if off < blen { buf[off] = b' '; off += 1; }
+                    for &b in b"pwm=0x" {
+                        if off < blen { buf[off] = b; off += 1; }
+                    }
+                    let hex = b"0123456789ABCDEF";
+                    for shift in (0..64).rev().step_by(4) {
+                        let nibble = ((pwm >> shift) & 0xF) as usize;
+                        if off < blen { buf[off] = hex[nibble]; off += 1; }
+                    }
+                    for &b in b" uid=" {
+                        if off < blen { buf[off] = b; off += 1; }
+                    }
+                    off = write_u32_dec(buf, off, uid);
+                    for &b in b" euid=" {
+                        if off < blen { buf[off] = b; off += 1; }
+                    }
+                    off = write_u32_dec(buf, off, euid);
+                    if off < blen { buf[off] = b'\n'; off += 1; }
+                    off as i32
+                } else {
+                    let msg = b"ERR not_authenticated\n";
+                    let len = msg.len().min(buf.len());
+                    buf[..len].copy_from_slice(&msg[..len]);
+                    len as i32
+                }
+            }
+            Some(DevKind::Block) | Some(DevKind::Char) | Some(DevKind::Net) | Some(DevKind::Input) => {
+                // E6-9a: 物理设备 I/O 路由待 E6-9b (Chitin 桥接) 实现
+                -1
+            }
+            None => -1,
+        }
+    }
+
+    pub fn write(&self, dev_type: u8, buf: &[u8]) -> i32 {
+        match DevKind::from_u8(dev_type) {
+            Some(DevKind::Null) | Some(DevKind::Zero) => buf.len() as i32,
+            Some(DevKind::Console) | Some(DevKind::Tty) => {
+                // services 层不能使用 klog_info! (含 unsafe), 改用 safe 串口输出
+                crate::kernel::framework::klog::serial_write_bytes(buf);
+                buf.len() as i32
+            }
+            Some(DevKind::Credo) => {
+                let input = core::str::from_utf8(buf).unwrap_or("");
+                let input = input.trim_end_matches(['\n', '\r', '\0']);
+                let mut parts = input.splitn(2, '\n');
+                let note = parts.next().unwrap_or("").trim();
+                let password = parts.next().unwrap_or("").trim();
+                if note.is_empty() || password.is_empty() {
+                    return -1;
+                }
+                match crate::kernel::framework::credo::session::login(note, password) {
+                    Ok(_pwm) => buf.len() as i32,
+                    Err(_) => -1,
+                }
+            }
+            Some(DevKind::Block) | Some(DevKind::Char) | Some(DevKind::Net) | Some(DevKind::Input) => {
+                // E6-9a: 物理设备 I/O 路由待 E6-9b (Chitin 桥接) 实现
+                -1
+            }
+            None => -1,
+        }
+    }
+
+    pub fn readdir(&self, index: usize) -> Option<([u8; 32], u8)> {
+        let devices = self.devices.lock();
+        let mut count = 0;
+
+        for device in devices.iter() {
+            if device.used {
+                if count == index {
+                    let mut name = [0u8; 32];
+                    let end = device.name.iter().position(|&b| b == 0).unwrap_or(32);
+                    name[..end].copy_from_slice(&device.name[..end]);
+                    return Some((name, device.dev_type));
+                }
+                count += 1;
+            }
+        }
+        None
+    }
+
+    pub fn device_count(&self) -> u32 {
+        self.device_count.load(Ordering::SeqCst)
+    }
+}
+
+// ============================================================================
+// 全局实例
+// ============================================================================
+
+/// 全局 DevFS 数据
+pub static DEVFS_DATA: DevfsData = DevfsData::new();
+
+/// 初始化全局 DevFS 并注册标准虚拟设备
+pub fn init() {
+    register_standard();
+}
+
+/// 初始化 DevFS 并订阅 Chitin 设备注册回调 (E6-9b)
+///
+/// Chitin 驱动注册新设备时, DevFS 自动创建对应设备节点。
+pub fn init_with_chitin_bridge() {
+    register_standard();
+    crate::kernel::framework::chitin::chitin_set_register_callback(on_chitin_device_registered);
+}
+
+/// Chitin 设备注册回调 — 自动创建 DevFS 设备节点 (E6-9b)
+fn on_chitin_device_registered(dev: &crate::kernel::framework::chitin::ChitinDevice) {
+    let kind = match dev.proto {
+        crate::kernel::framework::chitin::ChitinProto::Block => DevKind::Block,
+        crate::kernel::framework::chitin::ChitinProto::Char => DevKind::Char,
+        crate::kernel::framework::chitin::ChitinProto::Net => DevKind::Net,
+        crate::kernel::framework::chitin::ChitinProto::Input => DevKind::Input,
+        // Bus/Other 不创建 DevFS 节点
+        _ => return,
+    };
+    DEVFS_DATA.register_device(dev.name, kind as u8);
 }
 
 // ============================================================================
@@ -67,6 +386,7 @@ pub struct DevFile {
 
 impl DevFile {
     /// 设备名 (如 "null", "zero", "console")
+    /// 物理设备无固定名称, 返回 "device"
     pub fn name(&self) -> &'static str {
         match self.kind {
             DevKind::Null => "null",
@@ -74,6 +394,7 @@ impl DevFile {
             DevKind::Console => "console",
             DevKind::Tty => "tty",
             DevKind::Credo => "credo",
+            DevKind::Block | DevKind::Char | DevKind::Net | DevKind::Input => "device",
         }
     }
 }
@@ -91,14 +412,11 @@ impl SafeDevFs {
     /// 创建全局 DevFS 代理
     pub fn new() -> Self {
         Self {
-            inner: &crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA,
+            inner: &DEVFS_DATA,
         }
     }
 
     /// 注册设备
-    ///
-    /// # 返回
-    /// 成功: Ok(()) ; 失败: `FsError` (设备已存在/表满)
     pub fn register(&self, name: &str, kind: DevKind) -> Result<(), &'static str> {
         let rc = self.inner.register_device(name, kind as u8);
         match rc {
@@ -152,9 +470,6 @@ impl SafeDevFs {
     }
 
     /// 读目录项
-    ///
-    /// # 返回
-    /// 成功: `Some((name, kind))` ; 索引越界: `None`
     pub fn readdir(&self, index: usize) -> Option<(alloc::string::String, DevKind)> {
         let (raw_name, dev_type) = self.inner.readdir(index)?;
         let kind = DevKind::from_u8(dev_type)?;
@@ -176,7 +491,7 @@ impl Default for SafeDevFs {
 }
 
 // ============================================================================
-// 全局实例
+// 全局实例 (Once)
 // ============================================================================
 
 use spin::Once;
@@ -188,9 +503,6 @@ pub fn init_global() {
 }
 
 /// 获取全局 DevFS 引用
-///
-/// # Safety
-/// 调用前需保证 `init_global` 已执行
 pub fn global() -> &'static SafeDevFs {
     GLOBAL_DEVFS
         .get()
@@ -220,10 +532,144 @@ pub const fn max_name_len() -> usize {
 // 标准设备预注册
 // ============================================================================
 
-/// 注册所有标准设备 (null/zero/console/tty)
+/// 注册所有标准设备 (null/zero/console/tty/credo)
 pub fn register_standard() {
     let _ = register("null", DevKind::Null);
     let _ = register("zero", DevKind::Zero);
     let _ = register("console", DevKind::Console);
     let _ = register("tty", DevKind::Tty);
+    let _ = register("credo", DevKind::Credo);
+}
+
+// ============================================================================
+// FileSystem trait 实现 (E6-9c: VFS 分发接入)
+// ============================================================================
+
+use crate::kernel::framework::fs::vfs::types::{
+    FileSystem, FsOpenResult, KernelError, KernelResult, VfsDirEntry, VfsStat,
+};
+
+impl FileSystem for DevfsData {
+    fn name(&self) -> &'static str {
+        "devfs"
+    }
+
+    fn fs_init(&self) -> KernelResult<()> {
+        Ok(())
+    }
+
+    fn fs_mount(&self, path: &str) -> KernelResult<()> {
+        if self.mount(path) != 0 {
+            return Err(KernelError::IoError);
+        }
+        // E6-9a: mount 不再硬编码设备, 由 init() 或 init_with_chitin_bridge() 注册
+        Ok(())
+    }
+
+    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<FsOpenResult> {
+        match self.open(rel_path) {
+            Some((index, dev_type)) => Ok(FsOpenResult {
+                handle: index,
+                offset: 0,
+                file_type: 0, // 设备文件
+            }),
+            None => Err(KernelError::NotFound),
+        }
+    }
+
+    fn fs_close(&self, _handle: u32) -> KernelResult<()> {
+        Ok(())
+    }
+
+    fn fs_read(&self, _handle: u32, _offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        // DevFS read 需要 dev_type, handle 即为 dev_type
+        let result = self.read(_handle as u8, buf);
+        if result < 0 {
+            Err(KernelError::IoError)
+        } else {
+            Ok(result as usize)
+        }
+    }
+
+    fn fs_write(&self, _handle: u32, _offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let result = self.write(_handle as u8, buf);
+        if result < 0 {
+            Err(KernelError::IoError)
+        } else {
+            Ok(result as usize)
+        }
+    }
+
+    fn fs_stat(&self, rel_path: &str, _pwm: u64) -> KernelResult<VfsStat> {
+        match self.open(rel_path) {
+            Some((index, dev_type)) => Ok(VfsStat {
+                node_id: index,
+                mode: 0o20666, // 字符设备, rw-rw-rw-
+                size: 0,
+                uid: 0,
+                gid: 0,
+                atime: 0,
+                mtime: 0,
+                ctime: 0,
+                owner_pwm: 0,
+                group_pwm: 0,
+                perm: 0o666,
+                file_type: dev_type,
+                sensitivity: 0,
+            }),
+            None => Err(KernelError::NotFound),
+        }
+    }
+
+    fn fs_chmod(&self, _rel_path: &str, _mode: u16, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::PermissionDenied)
+    }
+
+    fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::PermissionDenied)
+    }
+
+    fn fs_mkdir(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_unlink(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::PermissionDenied)
+    }
+
+    fn fs_rmdir(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_rename(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_readdir(&self, _handle: u32, offset: u64, entry: &mut VfsDirEntry) -> KernelResult<bool> {
+        match self.readdir(offset as usize) {
+            Some((raw_name, dev_type)) => {
+                let end = raw_name.iter().position(|&b| b == 0).unwrap_or(raw_name.len());
+                let len = end.min(entry.name.len());
+                entry.name[..len].copy_from_slice(&raw_name[..len]);
+                // 剩余部分填零
+                entry.name[len..].fill(0);
+                entry.file_type = dev_type;
+                entry.node = offset as u32;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    fn fs_symlink(&self, _target: &str, _link_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_readlink(&self, _rel_path: &str, _buf: &mut [u8]) -> KernelResult<usize> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
 }

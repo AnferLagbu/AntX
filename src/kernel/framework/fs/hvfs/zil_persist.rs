@@ -48,7 +48,7 @@ const ZIL_RECORD_PAYLOAD: usize = 209;
 const _ASSERT_RECORD_FITS: () = assert!(ZIL_RECORD_PAYLOAD <= ZIL_RECORD_DISK_SIZE);
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
 pub struct ZilBlockHeader {
     pub magic: u32,
     pub version: u16,
@@ -65,7 +65,7 @@ pub struct ZilBlockHeader {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
 pub struct ZilBlockTrailer {
     pub tail_magic: u32,
     pub block_checksum: u32,
@@ -116,22 +116,36 @@ impl ZilBlockHeader {
         copy.header_checksum == self.header_checksum
     }
 
-    /// Framekernel P2.2.2: 安全地将 ZilBlockHeader 转换为字节切片
+    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: ZilBlockHeader 是 repr(C)，大小经编译期断言验证
-        unsafe {
-            core::slice::from_raw_parts(self as *const Self as *const u8, ZIL_HEADER_SIZE)
-        }
+        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
+        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>()) }
     }
 
-    /// Framekernel P2.2.2: 从 block 字节切片安全地获取 header 引用
-    /// SAFETY: 调用者需保证 block 包含有效的 ZilBlockHeader 数据
-    pub fn from_block(block: &[u8]) -> Option<&Self> {
-        if block.len() < ZIL_HEADER_SIZE {
+    /// E6-6: safe 反序列化, 逐字段读取替代 unsafe 指针转换
+    pub fn from_block(block: &[u8]) -> Option<Self> {
+        let size = core::mem::size_of::<Self>();
+        if block.len() < size {
             return None;
         }
-        // SAFETY: 已检查长度，ZilBlockHeader 是 repr(C)，对齐要求满足
-        Some(unsafe { &*(block.as_ptr() as *const ZilBlockHeader) })
+        Some(Self {
+            magic: u32::from_le_bytes(block[0..4].try_into().ok()?),
+            version: u16::from_le_bytes(block[4..6].try_into().ok()?),
+            flags: u16::from_le_bytes(block[6..8].try_into().ok()?),
+            txg: u64::from_le_bytes(block[8..16].try_into().ok()?),
+            seq_start: u64::from_le_bytes(block[16..24].try_into().ok()?),
+            record_count: u16::from_le_bytes(block[24..26].try_into().ok()?),
+            record_capacity: u16::from_le_bytes(block[26..28].try_into().ok()?),
+            total_size: u32::from_le_bytes(block[28..32].try_into().ok()?),
+            header_checksum: u32::from_le_bytes(block[32..36].try_into().ok()?),
+            data_checksum: u32::from_le_bytes(block[36..40].try_into().ok()?),
+            next_block: u64::from_le_bytes(block[40..48].try_into().ok()?),
+            padding: {
+                let mut p = [0u8; 16];
+                p.copy_from_slice(&block[48..64]);
+                p
+            },
+        })
     }
 }
 
@@ -147,12 +161,10 @@ impl ZilBlockTrailer {
         self.tail_magic == ZIL_TAIL_MAGIC
     }
 
-    /// Framekernel P2.2.2: 安全地将 ZilBlockTrailer 转换为字节切片
+    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: ZilBlockTrailer 是 repr(C)，大小经编译期断言验证
-        unsafe {
-            core::slice::from_raw_parts(self as *const Self as *const u8, ZIL_TRAILER_SIZE)
-        }
+        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
+        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>()) }
     }
 }
 

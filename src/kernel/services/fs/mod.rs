@@ -19,8 +19,10 @@
 //! 评估日期: 2026-06-04
 
 pub mod ramfs;
+pub mod ramfs_core;
 pub mod devfs;
 pub mod procfs;
+pub mod procfs_core;
 pub mod hvfs;
 pub mod sysfs;
 pub mod io;

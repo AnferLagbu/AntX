@@ -21,7 +21,9 @@
 use super::types::*;
 use super::vfs::VFS_MANAGER;
 use crate::kernel::framework::fs::hvfs::hvfs::get_hvfs;
-use crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA;
+use crate::kernel::framework::fs::ramfs::ramfs::{RAMFS_DATA, RamFsData};
+use crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA;
+use crate::kernel::services::fs::devfs::DevfsData;
 use crate::kernel::framework::mm::{pcache, PAGE_SIZE};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
 use crate::kernel::framework::lib::cstr::CStrExt;
@@ -97,17 +99,6 @@ fn split_parent_name(rel_path: &str) -> (&str, &str) {
     }
 }
 
-/// 解析相对路径到 inode 号 (用于 unlink 前获取 inode)
-fn resolve_path_to_ino(rel_path: &str, fs_type: FsType) -> Option<u32> {
-    match fs_type {
-        FsType::RamFs => {
-            let ramfs = RAMFS_DATA.lock();
-            ramfs.resolve_path(rel_path)
-        }
-        _ => None,
-    }
-}
-
 // ============================================================================
 // VFS 核心接口 (内部)
 // ============================================================================
@@ -138,11 +129,32 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
                 hvfs.init();
             }
         }
+        FsType::DevFs => {
+            // DevFS 初始化由 init()/init_with_chitin_bridge() 完成
+        }
 
         FsType::Unknown => return -1,
     }
 
-    VFS_MANAGER.mount(path, fs_name).as_i32()
+    // E6-4: 带 trait object 挂载
+    // SAFETY: RAMFS_DATA 和 HVFS_DATA 都是全局静态变量, 其内部数据的实际
+    // 生命周期为 'static. Mutex::lock() 返回的 MutexGuard 借用了 &'static Mutex,
+    // 因此通过 &*guard 获得的 &RamFsData 实际生命周期为 'static.
+    // 这里我们利用这一点将引用提升为 &'static 以存入 VfsMount.
+    let fs: &'static dyn FileSystem = match fs_type {
+        FsType::RamFs => {
+            let guard = RAMFS_DATA.lock();
+            // SAFETY: guard 借用 &'static Mutex<RamFsData>, &*guard 生命周期为 'static
+            unsafe { &*(&*guard as *const RamFsData) }
+        }
+        FsType::HvFs => get_hvfs(),
+        FsType::DevFs => {
+            // SAFETY: DEVFS_DATA 是全局静态变量, &DEVFS_DATA 生命周期为 'static
+            unsafe { &*(&DEVFS_DATA as *const DevfsData) }
+        }
+        _ => return VFS_MANAGER.mount(path, fs_name).as_i32(),
+    };
+    VFS_MANAGER.mount_with_fs(path, fs_name, fs).as_i32()
 }
 
 #[no_mangle]
@@ -156,65 +168,50 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    match fs_type {
-        FsType::RamFs => {
-            let fd_idx = match VFS_MANAGER.alloc_fd() {
-                Some(i) => i,
-                None => return -1,
-            };
-            let mut ramfs = RAMFS_DATA.lock();
-            match ramfs.open(rel_path, flags, pwm) {
-                Some((node_id, offset, file_type)) => {
-                    if (flags & VfsOpenFlags::TRUNC.bits()) != 0 {
-                        ramfs.truncate(node_id, 0, pwm);
+    // E6-4: trait object 分发 (优先于 fs_type match)
+    if let Some(fs) = fs_opt {
+        let fd_idx = match VFS_MANAGER.alloc_fd() {
+            Some(i) => i,
+            None => return -1,
+        };
+
+        match fs.fs_open(rel_path, flags, pwm) {
+            Ok(result) => {
+                VFS_MANAGER.set_fd(fd_idx, result.handle, result.offset, flags, pwm, result.file_type, path);
+                fd_idx as i32
+            }
+            Err(KernelError::NotFound) if (flags & VfsOpenFlags::CREAT.bits()) != 0 => {
+                // CREAT: 文件不存在, 尝试创建
+                let (parent_path, name) = split_parent_name(rel_path);
+                match fs.fs_create(parent_path, name, pwm) {
+                    Ok(create_result) => {
+                        VFS_MANAGER.set_fd(fd_idx, create_result.handle, create_result.offset, flags, pwm, create_result.file_type, path);
+                        // inotify: 父目录 IN_CREATE + 新文件 IN_OPEN
+                        let parent_ino = fs.fs_resolve_path(parent_path).unwrap_or(0);
+                        super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, false);
+                        super::inotify::inotify_notify(create_result.handle, super::inotify::IN_OPEN, "", false);
+                        fd_idx as i32
                     }
-                    VFS_MANAGER.set_fd(fd_idx, node_id, offset, flags, pwm, file_type, path);
-                    fd_idx as i32
-                }
-                None => {
-                    if (flags & VfsOpenFlags::CREAT.bits()) != 0 {
-                        let (parent_path, name) = split_parent_name(rel_path);
-                        if let Some(new_inode) = ramfs.create_file(parent_path, name, pwm) {
-                            let file_type = ramfs.stat(new_inode).map(|s| s.file_type).unwrap_or(0);
-                            VFS_MANAGER.set_fd(fd_idx, new_inode, 0, flags, pwm, file_type, path);
-                            // inotify: 父目录 IN_CREATE + 新文件 IN_OPEN
-                            let parent_ino = ramfs.resolve_path(parent_path).unwrap_or(0);
-                            super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, false);
-                            super::inotify::inotify_notify(new_inode, super::inotify::IN_OPEN, "", false);
-                            fd_idx as i32
-                        } else {
-                            VFS_MANAGER.free_fd(fd_idx);
-                            -1
-                        }
-                    } else {
+                    Err(_) => {
                         VFS_MANAGER.free_fd(fd_idx);
                         -1
                     }
                 }
             }
-        }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            match hvfs.open(rel_path, flags, pwm) {
-                Ok(hvfs_fd) => {
-                    let fd_idx = match VFS_MANAGER.alloc_fd() {
-                        Some(i) => i,
-                        None => return -1,
-                    };
-                    VFS_MANAGER.set_fd(fd_idx, hvfs_fd as u32, 0, flags, pwm, 0, path);
-                    fd_idx as i32
-                }
-                Err(e) => e.as_i32(),
+            Err(e) => {
+                VFS_MANAGER.free_fd(fd_idx);
+                e.as_i32()
             }
         }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除, 所有文件系统均通过 trait object 分发
+        KernelError::NotSupported.as_i32()
     }
 }
 
@@ -265,15 +262,16 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
 
-    let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
+    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
         Some(r) => r,
         None => return -1,
     };
 
-    match fs_type {
-        FsType::RamFs => {
-            // B2: 4KB 对齐 + 全部 pcache 命中 → 走 pcache 快路径
-            // 条件: count ∈ [1, 16] 页 且 offset / count 均为 4KB 对齐
+    // E6-4: trait object 分发 (优先于 fs_type match)
+    // 但 pcache 快路径仅 RamFS 支持, 需要特殊处理
+    if let Some(fs) = fs_opt {
+        // B2: RamFS pcache 快路径 (仅 RamFS + 4KB 对齐)
+        if fs.name() == "ramfs" {
             let is_aligned_4k = (count as u64) >= PCACHE_FAST_MIN_BYTES as u64
                 && (count as u64) <= PCACHE_FAST_MAX_BYTES as u64
                 && (count as u64).is_multiple_of(PAGE_SIZE)
@@ -283,7 +281,6 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
                 let npages = (count as u64 / PAGE_SIZE) as usize;
                 let first_pi = offset / PAGE_SIZE;
 
-                // 步骤1: 探测全部页是否在 pcache 中
                 let mut all_hit = true;
                 for i in 0..npages {
                     if pcache::pcache_lookup(node_id, first_pi + i as u64).is_none() {
@@ -293,7 +290,6 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
                 }
 
                 if all_hit {
-                    // 步骤2: 全部命中, 直接从 pcache 复制到用户 buf
                     let mut all_ok = true;
                     for i in 0..npages {
                         // SAFETY: 4KB 对齐保证 buf.add(i*PAGE_SIZE) 落在 [buf, buf+count) 内
@@ -314,20 +310,19 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
                     }
                 }
             }
-
-            // 慢速路径: 原 ramfs.read (不填 pcache; pcache 由 mmap 路径 / 显式预热填)
-            let mut ramfs = RAMFS_DATA.lock();
-            let mut new_offset = offset;
-            let result = ramfs.read(node_id, &mut new_offset, user_buf.as_mut_slice(), pwm);
-            VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
-            result
-        }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.read(node_id, user_buf.as_mut_slice(), count)
         }
 
-        FsType::Unknown => -1,
+        // 慢速路径: trait object 分发
+        match fs.fs_read(node_id, offset, user_buf.as_mut_slice(), pwm) {
+            Ok(n) => {
+                VFS_MANAGER.set_fd_offset(fd_idx as usize, offset + n as u64);
+                n as i32
+            }
+            Err(_) => -1,
+        }
+    } else {
+        // E6-5: fallback 已移除, 所有文件系统均通过 trait object 分发
+        KernelError::NotSupported.as_i32()
     }
 }
 
@@ -349,8 +344,8 @@ pub fn vfs_pread_inode(node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64)
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
     let mut user_buf = unsafe { UserWritePtr::new(dst.as_mut_ptr(), dst.len()) };
 
-    // B2: 当前 mmap prewarm 仅支持 RamFs (HvFs 后续集成)
-    let mut ramfs = RAMFS_DATA.lock();
+    // B2: mmap prewarm — 直接调用 RamFsData::read (RamFS 专用接口, 非 trait 分发)
+    let mut ramfs = crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA.lock();
     let mut offset = file_offset;
     ramfs.read(node_id, &mut offset, user_buf.as_mut_slice(), pwm)
 }
@@ -360,35 +355,39 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // 在删除前获取 inode 号, 用于删除后释放 POSIX 锁
-    let ino_before = resolve_path_to_ino(rel_path, fs_type);
+    let ino_before = if let Some(fs) = fs_opt {
+        fs.fs_resolve_path(rel_path)
+    } else {
+        None
+    };
 
-    let result = match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            ramfs.unlink(rel_path, pwm)
+    let result = if let Some(fs) = fs_opt {
+        match fs.fs_unlink(rel_path, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.unlink(rel_path, pwm)
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     };
 
     // 文件删除成功后, 释放该 inode 上的 POSIX 锁 + inotify 通知
     if result == 0 {
         if let Some(ino) = ino_before {
             crate::kernel::framework::fs::vfs::flock::posix_lock_release_inode(ino);
-            // inotify: 父目录 IN_DELETE + 被删文件 IN_DELETE_SELF
             let (parent_path, name) = split_parent_name(rel_path);
-            let parent_ino = resolve_path_to_ino(parent_path, fs_type).unwrap_or(0);
+            let parent_ino = if let Some(fs) = fs_opt {
+                fs.fs_resolve_path(parent_path).unwrap_or(0)
+            } else {
+                0
+            };
             super::inotify::inotify_notify(parent_ino, super::inotify::IN_DELETE, name, false);
             super::inotify::inotify_notify(ino, super::inotify::IN_DELETE_SELF, "", false);
         }
@@ -415,22 +414,23 @@ pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
         None => return -1,
     };
 
-    let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
+    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
         Some(r) => r,
         None => return -1,
     };
 
-    match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            let result = ramfs.truncate(_node_id, size, pwm);
-            if result == 0 {
-                // inotify: 文件属性/大小变化
+    // E6-4: trait object 分发
+    if let Some(fs) = fs_opt {
+        match fs.fs_truncate(_node_id, size, pwm) {
+            Ok(()) => {
                 super::inotify::inotify_notify(_node_id, super::inotify::IN_MODIFY, "", false);
+                0
             }
-            result
+            Err(_) => -1,
         }
-        FsType::HvFs | FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     }
 }
 
@@ -448,29 +448,25 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
 
-    let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
+    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
         Some(r) => r,
         None => return -1,
     };
 
-    match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            let mut offset = offset;
-            let result = ramfs.write(node_id, &mut offset, user_buf.as_slice(), pwm);
-            VFS_MANAGER.set_fd_offset(fd_idx as usize, offset);
-            // C1: 写完成 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLOUT)
-            fw_epoll::epoll_pwake(fd_idx as i32);
-            // inotify: 文件内容被修改
-            super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
-            result
+    // E6-4: trait object 分发 (优先于 fs_type match)
+    if let Some(fs) = fs_opt {
+        match fs.fs_write(node_id, offset, user_buf.as_slice(), pwm) {
+            Ok(n) => {
+                VFS_MANAGER.set_fd_offset(fd_idx as usize, offset + n as u64);
+                fw_epoll::epoll_pwake(fd_idx as i32);
+                super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
+                n as i32
+            }
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.write(node_id, user_buf.as_slice(), count)
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        KernelError::NotSupported.as_i32()
     }
 }
 
@@ -479,7 +475,7 @@ pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
     };
@@ -490,24 +486,19 @@ pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            let result = ramfs.mkdir(parent_path, name, pwm);
-            if result == 0 {
-                // inotify: 父目录 IN_CREATE | IN_ISDIR
-                let parent_ino = ramfs.resolve_path(parent_path).unwrap_or(0);
-                drop(ramfs);
+    // E6-4: trait object 分发
+    if let Some(fs) = fs_opt {
+        match fs.fs_mkdir(rel_path, pwm) {
+            Ok(()) => {
+                let parent_ino = fs.fs_resolve_path(parent_path).unwrap_or(0);
                 super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, true);
+                0
             }
-            result
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.mkdir(rel_path, pwm)
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     }
 }
 
@@ -516,34 +507,21 @@ pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            match ramfs.resolve_path(rel_path) {
-                Some(node_id) => {
-                    let stat = ramfs.stat(node_id);
-                    match stat {
-                        Some(s) if s.file_type == VfsFileType::Dir.as_u8() => {
-                            ramfs.truncate(node_id, 0, pwm)
-                        }
-                        _ => -1,
-                    }
-                }
-                None => -1,
-            }
+    // E6-4: trait object 分发
+    if let Some(fs) = fs_opt {
+        match fs.fs_rmdir(rel_path, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.unlink(rel_path, pwm)
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     }
 }
 
@@ -557,50 +535,24 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_ref = unsafe { UserRefMut::new(st) };
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    let result = match fs_type {
-        FsType::RamFs => {
-            let ramfs = RAMFS_DATA.lock();
-            match ramfs.resolve_path(rel_path) {
-                Some(node_id) => match ramfs.stat(node_id) {
-                    Some(stat) => {
-                        *st_ref.as_mut() = stat;
-                        0
-                    }
-                    None => -1,
-                },
-                None => -1,
+    // E6-4: trait object 分发
+    let result = if let Some(fs) = fs_opt {
+        match fs.fs_stat(rel_path, _pwm) {
+            Ok(stat) => {
+                *st_ref.as_mut() = stat;
+                0
             }
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            match hvfs.stat(rel_path, pwm) {
-                Some(obj) => {
-                    let r = st_ref.as_mut();
-                    r.node_id = obj.obj_id as u32;
-                    r.mode = obj.pwm_perm;
-                    r.size = obj.size as u32;
-                    r.owner_pwm = obj.owner_pwm;
-                    r.group_pwm = obj.group_pwm;
-                    r.perm = obj.pwm_perm;
-                    r.sensitivity = obj.sensitivity;
-                    r.file_type = if obj.is_dir() {
-                        VfsFileType::Dir.as_u8()
-                    } else {
-                        VfsFileType::File.as_u8()
-                    };
-                    0
-                }
-                None => -1,
-            }
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     };
 
     if result == 0 {
@@ -622,49 +574,35 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
         return -1;
     }
 
-    let (_node_id, offset, pwm, full_path) = match get_fd_info(fd) {
+    let (_node_id, offset, _pwm, full_path) = match get_fd_info(fd) {
         Some(info) => info,
         None => return -1,
     };
 
-    let (_, fs_type) = match VFS_MANAGER.resolve_mount(&full_path) {
+    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
         Some(r) => r,
         None => return -1,
     };
 
-    let dirent_size = core::mem::size_of::<crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry>() as u64;
-
-    match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            let mut dir_offset = offset;
-            let raw_size = dirent_size as usize;
-            let mut raw_buf = alloc::vec![0u8; raw_size];
-            let result = ramfs.read(_node_id, &mut dir_offset, &mut raw_buf, pwm);
-            let raw_entry = crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry::read_at(&raw_buf, 0);
-            if result <= 0 || raw_entry.node == 0 {
-                return 0;
+    // E6-4: trait object 分发
+    if let Some(fs) = fs_opt {
+        let mut dir_entry = VfsDirEntry::default();
+        match fs.fs_readdir(_node_id, offset, &mut dir_entry) {
+            Ok(has_more) => {
+                if !has_more {
+                    return 0;
+                }
+                // SAFETY: 调用方保证指针/类型有效
+                let mut entry_ref = unsafe { UserRefMut::new(entry) };
+                *entry_ref.as_mut() = dir_entry;
+                VFS_MANAGER.set_fd_offset(fd as usize, offset + core::mem::size_of::<crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry>() as u64);
+                1
             }
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            let mut entry_ref = unsafe { UserRefMut::new(entry) };
-            let e = entry_ref.as_mut();
-            e.node = raw_entry.node;
-            e.file_type = raw_entry.file_type;
-            let name_len = raw_entry
-                .name
-                .iter()
-                .position(|&b| b == 0)
-                .unwrap_or(VFS_MAX_NAME);
-            let copy_len = name_len.min(VFS_MAX_NAME);
-            e.name[..copy_len].copy_from_slice(&raw_entry.name[..copy_len]);
-            if name_len < VFS_MAX_NAME {
-                e.name[name_len] = 0;
-            }
-            VFS_MANAGER.set_fd_offset(fd as usize, dir_offset);
-            (raw_entry.node != 0) as i32
+            Err(_) => -1,
         }
-        FsType::HvFs => -1,
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     }
 }
 
@@ -938,23 +876,21 @@ pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            ramfs.chmod(rel_path, mode, pwm)
+    // E6-4: trait object 分发
+    if let Some(fs) = fs_opt {
+        match fs.fs_chmod(rel_path, mode, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.chmod(rel_path, mode, pwm)
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     }
 }
 
@@ -973,23 +909,21 @@ pub fn vfs_chown_ext(
     let path = ptr_to_str(path);
     let pwm = resolve_pwm(pwm);
 
-    let (mount_idx, fs_type) = match VFS_MANAGER.resolve_mount(path) {
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    match fs_type {
-        FsType::RamFs => {
-            let mut ramfs = RAMFS_DATA.lock();
-            ramfs.chown_ext(rel_path, owner_pwm, group_pwm, pwm)
+    // E6-4: trait object 分发
+    if let Some(fs) = fs_opt {
+        match fs.fs_chown(rel_path, owner_pwm, group_pwm, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.chown_ext(rel_path, owner_pwm, group_pwm, pwm)
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     }
 }
 
@@ -1003,22 +937,30 @@ pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
     if fd_usize >= 256 {
         return -9;
     }
-    let (used, node_id) = {
+    let (used, _node_id, full_path) = {
         let fd_table = VFS_MANAGER.fd_table.lock();
-        (fd_table[fd_usize].used, fd_table[fd_usize].node_id)
+        if fd_usize < fd_table.len() && fd_table[fd_usize].used {
+            (true, fd_table[fd_usize].node_id, alloc::string::String::from(fd_table[fd_usize].get_path()))
+        } else {
+            (false, 0, alloc::string::String::new())
+        }
     };
     if !used {
         return -9;
     }
-    let mut ramfs = RAMFS_DATA.lock();
-    if (node_id as usize) < ramfs.nodes.len() {
-        let node = &mut ramfs.nodes[node_id as usize];
-        if node.used {
-            node.perm = mode;
-            return 0;
+    // E6-5: 通过 trait object 分发
+    let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
+        Some(r) => r,
+        None => return -1,
+    };
+    if let Some(fs) = fs_opt {
+        match fs.fs_chmod(&full_path, mode, 0) {
+            Ok(()) => 0,
+            Err(_) => -1,
         }
+    } else {
+        -1
     }
-    -1
 }
 
 // ============================================================================
@@ -1031,31 +973,30 @@ pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     if fd_usize >= 256 {
         return -9;
     }
-    let (used, node_id) = {
+    let (used, _node_id, full_path) = {
         let fd_table = VFS_MANAGER.fd_table.lock();
-        (fd_table[fd_usize].used, fd_table[fd_usize].node_id)
+        if fd_usize < fd_table.len() && fd_table[fd_usize].used {
+            (true, fd_table[fd_usize].node_id, alloc::string::String::from(fd_table[fd_usize].get_path()))
+        } else {
+            (false, 0, alloc::string::String::new())
+        }
     };
     if !used {
         return -9;
     }
-    let mut ramfs = RAMFS_DATA.lock();
-    if (node_id as usize) >= ramfs.nodes.len() {
-        return -1;
+    // E6-5: 通过 trait object 分发
+    let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
+        Some(r) => r,
+        None => return -1,
+    };
+    if let Some(fs) = fs_opt {
+        match fs.fs_chown(&full_path, owner_pwm, group_pwm, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    } else {
+        -1
     }
-    let node = &mut ramfs.nodes[node_id as usize];
-    if !node.used {
-        return -1;
-    }
-    // 权限检查: 仅 level==0 可修改任意 owner, 否则仅同 owner 可改.
-    let level = crate::kernel::framework::credo::api::pwm_get_privilege_level(pwm);
-    if level != 0 && node.owner_pwm != pwm {
-        return -1;
-    }
-    node.owner_pwm = owner_pwm;
-    if group_pwm != 0 {
-        node.group_pwm = group_pwm;
-    }
-    0
 }
 
 #[no_mangle]
@@ -1064,8 +1005,7 @@ pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
 }
 
 /// link(oldpath, newpath) — 创建硬链接.
-/// 真实实现: 从 oldpath 解析出 target node, 在 newpath 父目录下建同名 dir entry,
-/// 共享同一 inode, link_count + 1.
+/// E6-5: 通过 trait object 分发
 #[no_mangle]
 pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(oldpath);
@@ -1074,39 +1014,23 @@ pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
         return -22;
     }
     let pwm_eff = resolve_pwm(pwm);
-    // 仅支持 ramfs
-    let mut ramfs = RAMFS_DATA.lock();
-    let target_node = match ramfs.resolve_path(old_path) {
-        Some(n) => n,
+
+    let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(old_path) {
+        Some(r) => r,
         None => return -2,
     };
-    if (target_node as usize) >= ramfs.nodes.len() {
-        return -22;
+    if let Some(fs) = fs_opt {
+        match fs.fs_link(old_path, new_path, pwm_eff) {
+            Ok(()) => 0,
+            Err(e) => e.as_i32(),
+        }
+    } else {
+        -1
     }
-    if !ramfs.nodes[target_node as usize].used {
-        return -2;
-    }
-    if ramfs.nodes[target_node as usize].file_type == VfsFileType::Dir as u8 {
-        return -1; // EPERM: 目录不允许硬链接
-    }
-    // 拆 newpath
-    let (parent_path, name) = match new_path.rfind('/') {
-        Some(0) => ("/", &new_path[1..]),
-        Some(pos) => (&new_path[..pos], &new_path[pos + 1..]),
-        None => ("/", new_path),
-    };
-    if name.is_empty() || name.contains('/') {
-        return -22;
-    }
-    let parent_num = match RAMFS_DATA.lock().resolve_path(parent_path) {
-        Some(n) => n,
-        None => return -2,
-    };
-    ramfs.link(parent_num, target_node, name, pwm_eff)
 }
 
 /// symlink(target, linkpath) — 创建符号链接.
-/// 真实实现: 在 linkpath 父目录下建 Symlink 类型新节点, target 存入 symlink_targets.
+/// E6-5: 通过 trait object 分发
 #[no_mangle]
 pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
     let tgt = ptr_to_str(target);
@@ -1115,21 +1039,23 @@ pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
         return -22;
     }
     let pwm_eff = resolve_pwm(pwm);
-    let (parent_path, name) = match link_path.rfind('/') {
-        Some(0) => ("/", &link_path[1..]),
-        Some(pos) => (&link_path[..pos], &link_path[pos + 1..]),
-        None => ("/", link_path),
+
+    let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(link_path) {
+        Some(r) => r,
+        None => return -2,
     };
-    if name.is_empty() || name.contains('/') {
-        return -22;
+    if let Some(fs) = fs_opt {
+        match fs.fs_symlink(tgt, link_path, pwm_eff) {
+            Ok(()) => 0,
+            Err(e) => e.as_i32(),
+        }
+    } else {
+        -1
     }
-    let mut ramfs = RAMFS_DATA.lock();
-    ramfs.symlink(tgt, parent_path, name, pwm_eff)
 }
 
 /// readlink(path, buf, bufsiz) — 读取符号链接目标.
-/// 真实实现: 解析 path, 若是 Symlink 则读 symlink_targets[node] 写入用户 buf.
-/// 写入不带 NUL 终止符, 返写入字节数.
+/// E6-5: 通过 trait object 分发
 #[no_mangle]
 pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
     let _ = pwm;
@@ -1140,14 +1066,21 @@ pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32
     if buf.is_null() || bufsiz == 0 {
         return -22;
     }
-    let node_id = match RAMFS_DATA.lock().resolve_path(p) {
-        Some(n) => n,
+
+    let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(p) {
+        Some(r) => r,
         None => return -2,
     };
-    let ramfs = RAMFS_DATA.lock();
-    // SAFETY: buf 经调用方校验, bufsiz 字节可写.
-    let slice = unsafe { core::slice::from_raw_parts_mut(buf, bufsiz as usize) };
-    ramfs.readlink(node_id, slice)
+    if let Some(fs) = fs_opt {
+        // SAFETY: buf 经调用方校验, bufsiz 字节可写.
+        let slice = unsafe { core::slice::from_raw_parts_mut(buf, bufsiz as usize) };
+        match fs.fs_readlink(p, slice) {
+            Ok(n) => n as i32,
+            Err(e) => e.as_i32(),
+        }
+    } else {
+        -1
+    }
 }
 
 #[no_mangle]
@@ -1156,38 +1089,32 @@ pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let new_path = ptr_to_str(new);
     let pwm = resolve_pwm(pwm);
 
-    let (old_mount_idx, old_fs_type) = match VFS_MANAGER.resolve_mount(old_path) {
+    let (old_mount_idx, _old_fs_type, old_fs_opt) = match VFS_MANAGER.resolve_mount_fs(old_path) {
         Some(r) => r,
         None => return -1,
     };
-    let (new_mount_idx, _new_fs_type) = match VFS_MANAGER.resolve_mount(new_path) {
+    let (new_mount_idx, _new_fs_type, _) = match VFS_MANAGER.resolve_mount_fs(new_path) {
         Some(r) => r,
         None => return -1,
     };
 
     // rename 跨卷不支持 (简化)
     if old_mount_idx != new_mount_idx {
-        return -22; // E_INVAL
+        return -22;
     }
 
     let old_rel = VFS_MANAGER.get_relative_path(old_path, old_mount_idx);
     let new_rel = VFS_MANAGER.get_relative_path(new_path, new_mount_idx);
 
-    match old_fs_type {
-        FsType::RamFs => {
-            // RamFS rename: unlink + link (简单实现)
-            let mut ramfs = RAMFS_DATA.lock();
-            // 遍历查找 node — RamFS 目录使用固定 parent_node
-            // 对于 RamFS 根目录, 直接使用 unlink + link
-            ramfs.unlink(old_rel, pwm);
-            ramfs.link(0, 0, new_rel, pwm) // parent=0, target=0 为占位
+    // E6-4: trait object 分发
+    if let Some(fs) = old_fs_opt {
+        match fs.fs_rename(old_rel, new_rel, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
         }
-        FsType::HvFs => {
-            let hvfs = get_hvfs();
-            hvfs.rename(old_rel, new_rel, pwm)
-        }
-
-        FsType::Unknown => -1,
+    } else {
+        // E6-5: fallback 已移除
+        -1
     }
 }
 
@@ -1222,31 +1149,28 @@ pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let fd_info = VFS_MANAGER.get_fd_info(fd as usize);
     let current_offset = fd_info.map(|(_, off, _)| off).unwrap_or(0);
 
-    let (_mount_idx, fs_type) =
-        match VFS_MANAGER.resolve_mount(VFS_MANAGER.fd_table.lock()[fd as usize].get_path()) {
-            Some(r) => r,
-            None => {
-                let hvfs = get_hvfs();
-                return hvfs.seek(fd, offset as i64, whence as u32) as i32;
-            }
-        };
+    let path = {
+        let fd_table = VFS_MANAGER.fd_table.lock();
+        alloc::string::String::from(fd_table[fd as usize].get_path())
+    };
+    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&path) {
+        Some(r) => r,
+        None => return KernelError::InvalidArgument.as_i32(),
+    };
 
-    match fs_type {
-        FsType::RamFs => {
-            let node_id = fd_info.map(|(ino, _, _)| ino).unwrap_or(0);
-            let ramfs = RAMFS_DATA.lock();
-            match ramfs.seek(node_id, current_offset, offset as i64, whence) {
-                Some(new_offset) => {
-                    VFS_MANAGER.set_fd_offset(fd as usize, new_offset);
-                    new_offset as i32
-                }
-                None => KernelError::InvalidArgument.as_i32(),
+    // E6-4: trait object 分发
+    if let Some(fs) = fs_opt {
+        let node_id = fd_info.map(|(ino, _, _)| ino).unwrap_or(0);
+        match fs.fs_seek(node_id, offset as i64, whence, current_offset) {
+            Ok(new_offset) => {
+                VFS_MANAGER.set_fd_offset(fd as usize, new_offset);
+                new_offset as i32
             }
+            Err(_) => KernelError::InvalidArgument.as_i32(),
         }
-        _ => {
-            let hvfs = get_hvfs();
-            hvfs.seek(fd, offset as i64, whence as u32) as i32
-        }
+    } else {
+        // E6-5: fallback 已移除
+        KernelError::InvalidArgument.as_i32()
     }
 }
 
@@ -1303,50 +1227,37 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
     if !used {
         return -9;
     }
-    let (node_id, _mount_idx) = {
+    let (_node_id, _mount_idx, full_path) = {
         let fd_table = VFS_MANAGER.fd_table.lock();
-        (fd_table[fd_usize].node_id, 0)
+        if fd_usize < fd_table.len() && fd_table[fd_usize].used {
+            (fd_table[fd_usize].node_id, 0, alloc::string::String::from(fd_table[fd_usize].get_path()))
+        } else {
+            (0, 0, alloc::string::String::new())
+        }
     };
     let _pwm = resolve_pwm(pwm);
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_ref = unsafe { UserRefMut::new(st) };
 
-    let result = {
-        let ramfs = RAMFS_DATA.lock();
-        match ramfs.stat(node_id) {
-            Some(stat) => {
-                *st_ref.as_mut() = stat;
-                0
-            }
-            None => {
-                let hvfs = get_hvfs();
-                let fd_table = VFS_MANAGER.fd_table.lock();
-                let path = fd_table[fd_usize].path;
-                let path_str = core::str::from_utf8(
-                    &path[..path.iter().position(|&b| b == 0).unwrap_or(256).min(256)],
-                )
-                .unwrap_or("");
-                match hvfs.stat(path_str, pwm) {
-                    Some(obj) => {
-                        let r = st_ref.as_mut();
-                        r.node_id = obj.obj_id as u32;
-                        r.mode = obj.pwm_perm;
-                        r.size = obj.size as u32;
-                        r.owner_pwm = obj.owner_pwm;
-                        r.group_pwm = obj.group_pwm;
-                        r.perm = obj.pwm_perm;
-                        r.sensitivity = obj.sensitivity;
-                        r.file_type = if obj.is_dir() {
-                            VfsFileType::Dir.as_u8()
-                        } else {
-                            VfsFileType::File.as_u8()
-                        };
-                        0
-                    }
-                    None => -1,
+    // E6-5: 通过 trait object 分发
+    let result = if !full_path.is_empty() {
+        let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
+            Some(r) => r,
+            None => return -1,
+        };
+        if let Some(fs) = fs_opt {
+            match fs.fs_stat(&full_path, _pwm) {
+                Ok(stat) => {
+                    *st_ref.as_mut() = stat;
+                    0
                 }
+                Err(_) => -1,
             }
+        } else {
+            -1
         }
+    } else {
+        -1
     };
 
     if result == 0 {

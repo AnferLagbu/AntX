@@ -1,14 +1,17 @@
 use super::check;
 use crate::kernel::framework::fs::devfs::devfs::{DEVFS_DATA, DEVFS_MAX_DEVICES};
+use crate::kernel::services::fs::devfs;
 use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
 fn test_devfs_mount() -> TestResult {
     let result = DEVFS_DATA.mount("/dev");
     check!(result == 0, "devfs mount failed");
+    // E6-9a: mount 不再硬编码设备, 需显式注册标准设备
+    devfs::register_standard();
     check!(
-        DEVFS_DATA.device_count() == 4,
-        "expected 4 default devices after mount"
+        DEVFS_DATA.device_count() == 5,
+        "expected 5 standard devices after register_standard"
     );
     TestResult::Pass
 }

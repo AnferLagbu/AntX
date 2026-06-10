@@ -33,34 +33,34 @@ pub enum HvPoolState {
     ReadOnly = 5,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct HvUberblock {
-    pub magic: u32,
     pub txg: u64,
     pub root_bp: HvBlockPointer,
     pub timestamp: u64,
     pub root_dataset_obj: u64,
     pub pool_guid: u64,
     pub checkpoint_txg: u64,
-    pub pwm_domain_id: u16,
-    pub _pad: [u8; 6],
     pub checksum: [u64; 4],
+    pub magic: u32,
+    pub pwm_domain_id: u16,
+    pub _pad: [u8; 2],
 }
 
 impl HvUberblock {
     pub const fn null() -> Self {
         Self {
-            magic: 0,
             txg: 0,
             root_bp: HvBlockPointer::null(),
             timestamp: 0,
             root_dataset_obj: 0,
             pool_guid: 0,
             checkpoint_txg: 0,
-            pwm_domain_id: 0,
-            _pad: [0; 6],
             checksum: [0; 4],
+            magic: 0,
+            pwm_domain_id: 0,
+            _pad: [0; 2],
         }
     }
 
@@ -82,21 +82,51 @@ impl HvUberblock {
         ck.value == saved
     }
 
-    /// Framekernel P2.2.2: 安全地将 HvUberblock 转换为字节切片
+    /// E6-6: 使用 IntoBytes derive 编译期验证无 padding, as_bytes 仍用 slice cast
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: HvUberblock is repr(C), layout well-defined
-        unsafe {
-            core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>())
-        }
+        // SAFETY: Self 是 repr(C) 且 IntoBytes derive 编译期保证无 padding
+        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, core::mem::size_of::<Self>()) }
     }
 
-    /// Framekernel P2.2.2: 从字节切片安全地反序列化 HvUberblock
-    /// SAFETY: 已验证输入长度足够；使用 read_unaligned 因为缓冲区可能不满足对齐要求
+    /// E6-6: safe 反序列化, 逐字段读取替代 unsafe read_unaligned
     pub fn from_bytes_unaligned(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < core::mem::size_of::<Self>() {
+        let size = core::mem::size_of::<Self>();
+        if bytes.len() < size {
             return None;
         }
-        Some(unsafe { core::ptr::read_unaligned(bytes.as_ptr() as *const HvUberblock) })
+        let mut off = 0usize;
+        let txg = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);
+        off += 8;
+        let root_bp = HvBlockPointer::from_bytes(&bytes[off..off + HvBlockPointer::BYTES])?;
+        off += HvBlockPointer::BYTES;
+        let timestamp = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);
+        off += 8;
+        let root_dataset_obj = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);
+        off += 8;
+        let pool_guid = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);
+        off += 8;
+        let checkpoint_txg = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);
+        off += 8;
+        let mut checksum = [0u64; 4];
+        for i in 0..4 {
+            checksum[i] = u64::from_le_bytes(bytes[off + i * 8..off + i * 8 + 8].try_into().ok()?);
+        }
+        off += 32;
+        let magic = u32::from_le_bytes(bytes[off..off + 4].try_into().ok()?);
+        off += 4;
+        let pwm_domain_id = u16::from_le_bytes(bytes[off..off + 2].try_into().ok()?);
+        Some(Self {
+            txg,
+            root_bp,
+            timestamp,
+            root_dataset_obj,
+            pool_guid,
+            checkpoint_txg,
+            checksum,
+            magic,
+            pwm_domain_id,
+            _pad: [0; 2],
+        })
     }
 }
 
@@ -302,8 +332,8 @@ impl HvSpa {
         let dva = HvDva::new(best_vdev_id, offset, rounded as u32);
         let mut bp = HvBlockPointer::null();
         bp.set_dva(0, dva);
-        bp.prop.cksum_type = kind;
-        bp.prop.comp_type = comp;
+        bp.prop.set_cksum_type(kind);
+        bp.prop.set_comp_type(comp);
         bp.prop.logical_size = size as u32;
         bp.prop.physical_size = rounded as u32;
         bp.set_birth(txg);

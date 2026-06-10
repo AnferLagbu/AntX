@@ -1,12 +1,14 @@
 use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
-use super::types::KernelError;
+use super::types::{KernelError, FileSystem};
 use super::types::*;
 
 pub struct VfsMount {
     pub path: [u8; VFS_MAX_PATH],
     fs_type: FsType,
+    /// E6-4: trait object 分发 (优先于 fs_type match)
+    fs: Option<&'static dyn FileSystem>,
     pub used: bool,
 }
 
@@ -15,6 +17,7 @@ impl Clone for VfsMount {
         Self {
             path: self.path,
             fs_type: self.fs_type,
+            fs: self.fs,
             used: self.used,
         }
     }
@@ -25,6 +28,7 @@ impl VfsMount {
         Self {
             path: [0; VFS_MAX_PATH],
             fs_type: FsType::Unknown,
+            fs: None,
             used: false,
         }
     }
@@ -55,6 +59,16 @@ impl VfsMount {
 
     pub fn get_fs_name(&self) -> &str {
         self.fs_type.as_str()
+    }
+
+    /// E6-4: 获取 trait object (优先于 fs_type match)
+    pub fn get_fs(&self) -> Option<&'static dyn FileSystem> {
+        self.fs
+    }
+
+    /// E6-4: 设置 trait object (注册文件系统时调用)
+    pub fn set_fs(&mut self, fs: &'static dyn FileSystem) {
+        self.fs = Some(fs);
     }
 }
 
@@ -119,6 +133,8 @@ pub struct ResolvedMount {
     pub mount_idx: usize,
     pub rel_path: &'static str,
     pub fs_type: FsType,
+    /// E6-4: trait object (优先于 fs_type)
+    pub fs: Option<&'static dyn FileSystem>,
 }
 
 pub struct VfsManager {
@@ -294,6 +310,23 @@ impl VfsManager {
         Some((mount_idx, fs_type))
     }
 
+    /// E6-4: 解析挂载点, 同时返回 trait object (优先于 fs_type)
+    pub fn resolve_mount_fs(&self, path: &str) -> Option<(usize, FsType, Option<&'static dyn FileSystem>)> {
+        let mount_idx = self.find_mount(path)?;
+        let (fs_type, fs) = {
+            let mounts = self.mounts.lock();
+            if mount_idx < VFS_MAX_MOUNTS && mounts[mount_idx].used {
+                (mounts[mount_idx].get_fs_type(), mounts[mount_idx].get_fs())
+            } else {
+                (FsType::Unknown, None)
+            }
+        };
+        if fs_type == FsType::Unknown && fs.is_none() {
+            return None;
+        }
+        Some((mount_idx, fs_type, fs))
+    }
+
     pub fn alloc_fd(&self) -> Option<usize> {
         let mut fd_table = self.fd_table.lock();
         for (i, fd) in fd_table.iter_mut().enumerate() {
@@ -370,6 +403,30 @@ impl VfsManager {
             if !mount.used {
                 mount.set_path(path);
                 mount.set_fs_type(fs_name);
+                mount.used = true;
+
+                return Ok(());
+            }
+        }
+
+        Err(KernelError::NoSpace)
+    }
+
+    /// E6-4: 带 trait object 的挂载 (优先于 fs_name match)
+    pub fn mount_with_fs(&self, path: &str, fs_name: &str, fs: &'static dyn FileSystem) -> Result<(), KernelError> {
+        let mut mounts = self.mounts.lock();
+
+        for mount in mounts.iter() {
+            if mount.used && mount.get_path() == path {
+                return Err(KernelError::AlreadyExists);
+            }
+        }
+
+        for mount in mounts.iter_mut() {
+            if !mount.used {
+                mount.set_path(path);
+                mount.set_fs_type(fs_name);
+                mount.set_fs(fs);
                 mount.used = true;
 
                 return Ok(());
