@@ -568,6 +568,26 @@ pub const QX_TPM: u64 = 871;
 /// cet — CET/Shadow Stack 系统调用
 pub const QX_CET: u64 = 880;
 
+// ==================== D8: Tickless (NO_HZ) ====================
+
+/// tickless — Tickless 系统调用
+pub const QX_TICKLESS: u64 = 881;
+
+// ==================== D9: NTP/PTP 时钟同步 ====================
+
+/// timesync — 时间同步系统调用
+pub const QX_TIMESYNC: u64 = 882;
+
+// ==================== D10: kexec ====================
+
+/// kexec — 直接内核引导系统调用
+pub const QX_KEXEC: u64 = 883;
+
+// ==================== D11: UEFI ====================
+
+/// uefi — UEFI 运行时服务系统调用
+pub const QX_UEFI: u64 = 884;
+
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -712,6 +712,16 @@ pub fn scheduler_init() {
     }
     // D7: 初始化 CET (Shadow Stack)
     crate::kernel::framework::arch::shadow_stack::cet_init();
+    // D8: 初始化 Tickless (NO_HZ)
+    crate::kernel::framework::timer::tickless::tickless_init(
+        crate::kernel::framework::config::MAX_CPUS as u32,
+    );
+    // D9: 初始化 NTP/PTP 时钟同步
+    crate::kernel::framework::timer::time_sync::timesync_init();
+    // D10: 初始化 kexec
+    crate::kernel::framework::driver::kexec::kexec_init();
+    // D11: 初始化 UEFI (0 = 无 UEFI 固件, 实际由 bootloader 传入)
+    crate::kernel::framework::driver::uefi::uefi_init(0);
 }
 
 #[no_mangle]

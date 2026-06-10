@@ -88,6 +88,10 @@ pub mod block;
 pub mod hotplug;
 /// D5: 电源管理 (CpuIdle/CpuFreq/Suspend)
 pub mod power;
+/// D10: kexec (直接内核引导)
+pub mod kexec;
+/// D11: UEFI 运行时服务
+pub mod uefi;
 
 // ============================================================================
 // 公共 API 导出 (便捷访问)

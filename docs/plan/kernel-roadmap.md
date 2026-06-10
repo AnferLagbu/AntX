@@ -267,14 +267,14 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [x] D5: 电源管理 → 2026-06-10 完成 (framework/driver/power.rs CpuIdle(C0-C3+per-CPU统计)+CpuFreq(DVFS+performance/powersave/ondemand governor)+Suspend/Resume(S3/S5+通知器链); sys_pm多路复用; services/driver/power.rs 安全封装)
 - [x] D6: Secure Boot + TPM → 2026-06-10 完成 (framework/credo/secure_boot.rs SecureBoot(PK/KEK/DB信任链+Ed25519验证)+TPM2.0(8个PCR+Extend/Seal/Unseal/Quote+软件模拟)+SHA-256; sys_secure_boot+sys_tpm; services/credo/secure_boot.rs 安全封装)
 - [x] D7: Shadow Stack (CET) → 2026-06-10 完成 (framework/arch/shadow_stack.rs CET检测+Shadow Stack分配/管理+CR4.CET/MSR配置(x86_64)+PAC/BTI(aarch64); sys_cet; services/proc/shadow_stack.rs 安全封装)
-- [ ] eBPF
-- [ ] 电源管理
-- [ ] Secure Boot + TPM
-- [ ] Shadow Stack (CET)
-- [ ] Tickless (NO_HZ)
-- [ ] NTP/PTP 时钟同步
-- [ ] kexec
-- [ ] UEFI 启动
+- [x] eBPF → D4 完成
+- [x] 电源管理 → D5 完成
+- [x] Secure Boot + TPM → D6 完成
+- [x] Shadow Stack (CET) → D7 完成
+- [x] Tickless (NO_HZ) → D8 完成
+- [x] NTP/PTP 时钟同步 → D9 完成
+- [x] kexec → D10 完成
+- [x] UEFI 启动 → D11 完成
 
 ## P1 级待办 (跨阶段, 按需穿插)
 

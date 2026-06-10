@@ -500,6 +500,30 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"cet\0"
         ),
 
+        // ==================== D8: Tickless (NO_HZ) ====================
+        QX_TICKLESS => dispatch!(
+            crate::kernel::framework::timer::tickless::sys_tickless(a0, a1, a2),
+            b"tickless\0"
+        ),
+
+        // ==================== D9: NTP/PTP 时钟同步 ====================
+        QX_TIMESYNC => dispatch!(
+            crate::kernel::framework::timer::time_sync::sys_timesync(a0, a1, a2),
+            b"timesync\0"
+        ),
+
+        // ==================== D10: kexec ====================
+        QX_KEXEC => dispatch!(
+            crate::kernel::framework::driver::kexec::sys_kexec(a0, a1, a2, a3),
+            b"kexec\0"
+        ),
+
+        // ==================== D11: UEFI ====================
+        QX_UEFI => dispatch!(
+            crate::kernel::framework::driver::uefi::sys_uefi(a0, a1, a2),
+            b"uefi\0"
+        ),
+
         // ==================== 文件访问 ====================
         QX_ACCESS => dispatch!(
             match crate::kernel::services::fs::access::access_syscall(a0, a1 as i32) {

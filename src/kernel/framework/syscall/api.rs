@@ -82,6 +82,10 @@ pub use super::types::{
     QX_PM,
     QX_SECURE_BOOT, QX_TPM,
     QX_CET,
+    QX_TICKLESS,
+    QX_TIMESYNC,
+    QX_KEXEC,
+    QX_UEFI,
 };
 
 // ============================================================================
