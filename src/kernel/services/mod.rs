@@ -101,6 +101,41 @@ pub mod debug;
 pub mod io;
 
 // ============================================================================
+// Services 层日志宏 — safe 封装, 无 unsafe 展开
+//
+// 用法与 framework 层 klog_info! 等一致, 但展开后只调用
+// framework::klog::log_info 等 safe 函数, 不含任何 unsafe 块。
+//
+// 示例:
+//   slog_info!(FS, "HvFS initialized: pool={}", name);
+//   slog_warn!(Kernel, "low memory: {} pages", free);
+//   slog_err!(Driver, "disk {} not found", id);
+// ============================================================================
+
+/// Services 层通用日志宏 — 指定级别与分类
+#[macro_export]
+macro_rules! slog {
+    ($lvl:ident, $cat:ident, $($arg:tt)*) => {
+        $crate::kernel::framework::klog::log(
+            $crate::kernel::framework::klog::LogLevel::$lvl,
+            $crate::kernel::framework::klog::LogCategory::$cat,
+            format_args!($($arg)*),
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! slog_info  { ($cat:ident, $($arg:tt)*) => { $crate::slog!(Info,  $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! slog_warn  { ($cat:ident, $($arg:tt)*) => { $crate::slog!(Warn,  $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! slog_err   { ($cat:ident, $($arg:tt)*) => { $crate::slog!(Error, $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! slog_debug { ($cat:ident, $($arg:tt)*) => { $crate::slog!(Debug, $cat, $($arg)*) }; }
+#[macro_export]
+macro_rules! slog_crit  { ($cat:ident, $($arg:tt)*) => { $crate::slog!(Crit,  $cat, $($arg)*) }; }
+
+// ============================================================================
 // CI 自检 (编译时)
 // ============================================================================
 

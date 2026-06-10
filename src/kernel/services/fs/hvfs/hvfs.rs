@@ -17,10 +17,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 
 use crate::kernel::services::sync::once::OnceCell;
-fn log(s: &str) {
-    // services 层不能使用 klog_info! (含 unsafe), 改用 safe 串口输出
-    crate::kernel::framework::klog::serial_write_bytes(s.as_bytes());
-}
 
 fn hvfs_save() {}
 fn hvfs_restore() {
@@ -33,10 +29,10 @@ fn hvfs_restore() {
     hvfs.current_dir.store(HV_DMU_OBJ_ROOT, Ordering::Release);
     hvfs.mounted.store(true, Ordering::Release);
     hvfs.initialized.store(true, Ordering::Release);
-    log("[HvFS] Recovery: domain restored\n");
+    crate::slog_info!(FS, "[HvFS] Recovery: domain restored");
 }
 fn hvfs_reset() {
-    log("[HvFS] Recovery: domain hard reset\n");
+    crate::slog_warn!(FS, "[HvFS] Recovery: domain hard reset");
 }
 
 pub const HVFS_MAX_FDS: usize = 256;
@@ -164,16 +160,13 @@ impl HvfsData {
                 };
             discovered.push((drive, part_start));
         }
-        log(&alloc::format!(
-            "[HvFS] scan: {} block device(s) in registry, {} drive(s) available\n",
-            block::block_device_count(),
-            discovered.len()
-        ));
+        crate::slog_info!(FS, "[HvFS] scan: {} block device(s) in registry, {} drive(s) available",
+            block::block_device_count(), discovered.len());
         discovered
     }
 
     pub fn init(&self) {
-        log("[HvFS] Initializing...\n");
+        crate::slog_info!(FS, "[HvFS] Initializing...");
 
         // Step 1: 扫描所有块设备, 发现 ANTX/HvFS 磁盘
         let discovered = self.scan_all_drives();
@@ -208,7 +201,7 @@ impl HvfsData {
 
             if !mounted_any {
                 // Step 3: 格式化第一个磁盘 (全新 HvFS)
-                log("[HvFS] No valid uberblock found, formatting first drive...\n");
+                crate::slog_warn!(FS, "[HvFS] No valid uberblock found, formatting first drive...");
                 let (drive_id, part_start) = discovered[0];
                 self.disk_drive.store(drive_id, Ordering::Release);
                 self.format_drive(drive_id, part_start);
@@ -231,12 +224,9 @@ impl HvfsData {
             self.disk_drive.store(discovered[0].0, Ordering::Release);
             self.partition_start
                 .store(discovered[0].1, Ordering::Release);
-            log("[HvFS] Initialized: pool=antx-pool (disk, ");
-            {
-                log(&alloc::format!("{} drive(s))\n", discovered.len()));
-            }
+            crate::slog_info!(FS, "[HvFS] Initialized: pool=antx-pool (disk, {} drive(s))", discovered.len());
         } else {
-            log("[HvFS] No disk, running in memory mode\n");
+            crate::slog_info!(FS, "[HvFS] No disk, running in memory mode");
             self.spa
                 .add_vdev(crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
                     0, "ata0", 12,
@@ -252,7 +242,7 @@ impl HvfsData {
             self.mode.store(HvfsMode::Memory as u8, Ordering::Release);
         }
         if !has_any_disk {
-            log("[HvFS] Initialized: pool=antx-pool (memory)\n");
+            crate::slog_info!(FS, "[HvFS] Initialized: pool=antx-pool (memory)");
         }
 
         crate::kernel::framework::barrier::recovery::recovery_domain_register(
@@ -295,7 +285,7 @@ impl HvfsData {
 
     pub fn format_drive(&self, drive_id: u8, part_start: u32) {
         if !block::hdd_is_present(drive_id) {
-            log("[HvFS] FORMAT: No disk present\n");
+            crate::slog_warn!(FS, "[HvFS] FORMAT: No disk present");
             self.spa.disk_present.store(false, Ordering::Release);
             self.spa.formatted.store(false, Ordering::Release);
             return;
@@ -305,8 +295,7 @@ impl HvfsData {
         self.spa
             .partition_start
             .store(part_start, Ordering::Release);
-        log("[HvFS] FORMAT: Writing fresh HvFS v2 to disk (partition @LBA ");
-        log(")...\n");
+        crate::slog_info!(FS, "[HvFS] FORMAT: Writing fresh HvFS v2 to disk (partition @LBA {})...", part_start);
         self.spa.disk_present.store(true, Ordering::Release);
         let mut vdev_cfg =
             crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(drive_id as u16, "disk", 12);
@@ -316,7 +305,7 @@ impl HvfsData {
         self.spa.formatted.store(true, Ordering::Release);
         self.mode.store(HvfsMode::Disk as u8, Ordering::Release);
         self.spa.write_uberblock_to_disk();
-        log("[HvFS] FORMAT: Complete\n");
+        crate::slog_info!(FS, "[HvFS] FORMAT: Complete");
     }
 
     /// 热插拔: 新磁盘插入后将其添加为 vdev。
@@ -325,7 +314,7 @@ impl HvfsData {
     /// 返回 true 表示成功添加。
     pub fn hotplug_add_disk(&self, drive: u8) -> bool {
         if !block::hdd_is_present(drive) {
-            log("[HvFS] HOTPLUG: drive not present, skip\n");
+            crate::slog_warn!(FS, "[HvFS] HOTPLUG: drive not present, skip");
             return false;
         }
 
@@ -333,7 +322,7 @@ impl HvfsData {
         {
             let discovered = self.drives_discovered.lock();
             if discovered.iter().any(|(d, _)| *d == drive) {
-                log("[HvFS] HOTPLUG: drive already known, skip\n");
+                crate::slog_info!(FS, "[HvFS] HOTPLUG: drive already known, skip");
                 return false;
             }
         }
@@ -359,10 +348,7 @@ impl HvfsData {
             list.push((drive, part_start));
         }
 
-        log(&alloc::format!(
-            "[HvFS] HOTPLUG: disk added (drive={})\n",
-            drive
-        ));
+        crate::slog_info!(FS, "[HvFS] HOTPLUG: disk added (drive={})", drive);
         true
     }
 
@@ -375,16 +361,10 @@ impl HvfsData {
         let mut vdevs = self.spa.vdevs.lock();
         if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == drive as u16) {
             vdev.state = crate::kernel::services::fs::hvfs::vdev::HvVdevState::Removed;
-            log(&alloc::format!(
-                "[HvFS] HOTPLUG: disk removed (drive={})\n",
-                drive
-            ));
+            crate::slog_info!(FS, "[HvFS] HOTPLUG: disk removed (drive={})", drive);
             return true;
         }
-        log(&alloc::format!(
-            "[HvFS] HOTPLUG: disk not found in vdevs (drive={})\n",
-            drive
-        ));
+        crate::slog_warn!(FS, "[HvFS] HOTPLUG: disk not found in vdevs (drive={})", drive);
         false
     }
 
@@ -431,16 +411,15 @@ impl HvfsData {
         self.spa
             .partition_start
             .store(part_start, Ordering::Release);
-        log("[HvFS] MOUNT: Reading uberblock from disk (partition @LBA ");
-        log(")...\n");
+        crate::slog_info!(FS, "[HvFS] MOUNT: Reading uberblock from disk (partition @LBA {})...", part_start);
         let ub = match self.spa.read_uberblock_from_disk() {
             Some(u) => u,
             None => {
-                log("[HvFS] MOUNT: No valid uberblock found\n");
+                crate::slog_warn!(FS, "[HvFS] MOUNT: No valid uberblock found");
                 return false;
             }
         };
-        log("[HvFS] MOUNT: Valid uberblock found (txg=");
+        crate::slog_info!(FS, "[HvFS] MOUNT: Valid uberblock found (txg={})", ub.txg);
         {
             let mut stored = self.spa.uberblock.lock();
             *stored = ub;
@@ -470,7 +449,7 @@ impl HvfsData {
             let root_bp = { self.spa.uberblock.lock().root_bp };
             if !root_bp.is_null() {
                 if self.deserialize_dataset_metadata(&root_bp) {
-                    log("[HvFS] MOUNT: Restored dataset from uberblock\n");
+                    crate::slog_info!(FS, "[HvFS] MOUNT: Restored dataset from uberblock");
                 } else {
                     let datasets = self.datasets.lock();
                     datasets[0].init(0);
@@ -487,8 +466,7 @@ impl HvfsData {
         self.spa
             .state
             .store(HvPoolState::Active as u8, Ordering::Release);
-        log("[HvFS] MOUNT: Ready (pool_guid=");
-        log(")\n");
+        crate::slog_info!(FS, "[HvFS] MOUNT: Ready (pool_guid={})", self.spa.config.lock().guid);
         true
     }
 
@@ -1333,7 +1311,7 @@ impl HvfsData {
         };
 
         if objects.len() > MAX_SERIALIZE_OBJECTS || dir_entries.len() > MAX_SERIALIZE_ENTRIES {
-            log("[HvFS] serialize: object/entry count exceeds safety limit\n");
+            crate::slog_err!(FS, "[HvFS] serialize: object/entry count exceeds safety limit");
             return None;
         }
 
@@ -1505,14 +1483,14 @@ impl HvfsData {
         };
 
         if obj_count > MAX_DESERIALIZE_OBJECTS || zap_count > MAX_DESERIALIZE_ENTRIES {
-            log("[HvFS] deserialize: count exceeds safety limit, possible corruption\n");
+            crate::slog_err!(FS, "[HvFS] deserialize: count exceeds safety limit, possible corruption");
             return false;
         }
 
         let expected_min =
             32u64 + obj_count as u64 * OBJ_RECORD_SIZE as u64 + zap_count as u64 * (2 + 8);
         if (buf.len() as u64) < expected_min {
-            log("[HvFS] deserialize: buffer too small for declared counts\n");
+            crate::slog_err!(FS, "[HvFS] deserialize: buffer too small for declared counts");
             return false;
         }
 
@@ -1645,7 +1623,7 @@ impl HvfsData {
                 };
                 off += 2;
                 if name_len > MAX_NAME_LEN {
-                    log("[HvFS] deserialize: name length exceeds limit, possible corruption\n");
+                    crate::slog_err!(FS, "[HvFS] deserialize: name length exceeds limit, possible corruption");
                     return false;
                 }
                 if off + name_len + 8 > buf.len() {

@@ -449,6 +449,41 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
 // 公共 API
 // ============================================================================
 
+/// Safe 日志入口 — 供 services 层调用, 无 unsafe 展开。
+///
+/// 将 `format_args!` 格式化到栈缓冲区后调用 `klog_output`,
+/// 整个调用链对调用方完全 safe。
+pub fn log(level: LogLevel, cat: LogCategory, args: core::fmt::Arguments<'_>) {
+    let mut w = KlogWriter::new();
+    let _ = core::fmt::Write::write_fmt(&mut w, args);
+    klog_output(level, cat, w.as_slice());
+}
+
+/// Safe 便捷函数: Info 级别
+pub fn log_info(cat: LogCategory, args: core::fmt::Arguments<'_>) {
+    log(LogLevel::Info, cat, args);
+}
+
+/// Safe 便捷函数: Warn 级别
+pub fn log_warn(cat: LogCategory, args: core::fmt::Arguments<'_>) {
+    log(LogLevel::Warn, cat, args);
+}
+
+/// Safe 便捷函数: Error 级别
+pub fn log_err(cat: LogCategory, args: core::fmt::Arguments<'_>) {
+    log(LogLevel::Error, cat, args);
+}
+
+/// Safe 便捷函数: Debug 级别
+pub fn log_debug(cat: LogCategory, args: core::fmt::Arguments<'_>) {
+    log(LogLevel::Debug, cat, args);
+}
+
+/// Safe 便捷函数: Crit 级别
+pub fn log_crit(cat: LogCategory, args: core::fmt::Arguments<'_>) {
+    log(LogLevel::Crit, cat, args);
+}
+
 pub fn klog_set_level(level: LogLevel) {
     MIN_LEVEL.store(level as u8, Ordering::Relaxed);
 }
