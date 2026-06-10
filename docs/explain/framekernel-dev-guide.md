@@ -23,6 +23,35 @@
 
 > **要 unsafe 吗? 要 → framework. 不要 → services.** 进一步: **涉及硬件/MMU/中断/上下文切换? → framework. 纯算法/策略/业务? → services.**
 
+### 资源分类判据 (星绽 ATC 2025)
+
+星绽论文 (ATC 2025, §4.2) 提供了更精确的判据: **按资源敏感性分类**.
+
+| 问题 | 判断 | 归属 |
+|------|------|------|
+| 该资源被篡改是否可导致内核内存安全违反 (UB)? | 是 → **敏感资源** | framework |
+| 该资源被篡改最坏仅导致逻辑错误 (功能异常)? | 是 → **非敏感资源** | services |
+
+**敏感资源示例**: 内核态 CPU 状态 (CR3/GDT/IDT)、内核页表项、内核堆元数据、APIC/IOMMU 寄存器.
+**非敏感资源示例**: 用户态 CPU 状态、用户内存页、外设寄存器 (通过 safe 代理)、调度策略、文件系统数据结构.
+
+**开发时的自检**: 写代码前问自己——"如果这段代码有 bug, 最坏后果是什么?" 如果是 UB (UAF/OOB/数据竞争), 那它必须在 framework; 如果只是功能错误 (返回错误码/调度不公平), 它可以放 services.
+
+### 6 安全不变式约束 (开发强制)
+
+[framekernel-nature.md](./framekernel-nature.md) 定义的 6 条安全不变式是 framework 代码的**硬约束**. 任何 framework 的 `unsafe` 块或 `pub` API 变更, 都必须确认不违反以下不变式:
+
+| # | 不变式 | 开发约束 |
+|---|--------|----------|
+| I1 | 内核态 CPU 状态不可被 services 篡改 | 新增寄存器操作必须在 `framework::arch` 内部, 不暴露 raw 访问 |
+| I2 | 内核内存不可被 services 非法访问 | 新增内存管理 API 必须返回强类型 (`Frame`, `&T`), 不返回裸指针 |
+| I3 | 用户态 CPU 状态只能通过 framework 安全入口修改 | 新增用户态交互必须走 `usermode`/`userctx` |
+| I4 | 用户内存只能通过 framework 安全代理访问 | 新增用户数据访问必须走 `copy_from_user`/`copy_to_user` |
+| I5 | 外设 MMIO/PIO 只能通过 framework 安全代理访问 | 新增设备驱动必须通过 `iomem`/`ioport` 代理 |
+| I6 | 外设 DMA 不可写入内核内存 | 新增 DMA 操作必须通过 `dma_buf` 并配置 IOMMU 映射 |
+
+**违反不变式的代码 = 审计拒收.**
+
 ### 决策流程
 
 ```
@@ -152,7 +181,83 @@ Q3. 现有 framework 公开 API 是否够用?
   - miri (unsafe 路径)
 ```
 
-### 场景 5: 重构 (内部结构调整, 不改 API)
+### 场景 5: Safe Policy Injection — 从 TCB 提取策略
+
+星绽论文 (ATC 2025, §4.3) 的核心开发模式: **将策略从 framework 提取到 services, 通过 trait 注入**.
+
+例: 将调度策略从 `framework/proc/scheduler_ex.rs` 提取到 services.
+
+```
+[现状] framework/proc/scheduler_ex.rs 含 74 行 unsafe, 混合了:
+  - 机制: 上下文切换原子操作, CPU 运行队列管理
+  - 策略: CFS 算法, 优先级计算, 时间片分配
+
+[步骤 1] framework 定义策略 trait
+  // framework/proc/sched_policy.rs (新增)
+  pub trait SchedPolicy: Send + Sync {
+      fn pick_next(&self, cpu: u32) -> Option<TaskId>;
+      fn enqueue(&self, cpu: u32, task: TaskId, flags: EnqueueFlags);
+      fn dequeue(&self, cpu: u32, task: TaskId);
+      fn task_tick(&self, cpu: u32, task: TaskId) -> SchedDecision;
+  }
+
+[步骤 2] framework 机制代码依赖 trait, 不依赖具体实现
+  // framework/proc/scheduler_ex.rs (修改)
+  // 删除 CFS 算法代码, 改为调用 self.policy.pick_next() 等
+  // unsafe 行数从 74 降至 ~20 (仅保留上下文切换)
+
+[步骤 3] services 实现策略
+  // services/proc/sched_cfs.rs (新增)
+  pub struct CfsScheduler { ... }
+  impl SchedPolicy for CfsScheduler { ... }
+
+[步骤 4] framework 提供注册 API
+  // framework/proc/mod.rs
+  pub fn register_sched_policy(policy: &'static dyn SchedPolicy) { ... }
+
+[步骤 5] services 在初始化时注入
+  // services/proc/mod.rs
+  framework::proc::register_sched_policy(&CfsScheduler::new());
+
+[验证]
+  - framework/proc/scheduler_ex.rs unsafe 行数下降
+  - TCB 占比下降
+  - 6 安全不变式仍然满足 (策略 bug 不影响内存安全)
+  - CI: 边界审计 + 编译 + 测试
+```
+
+**适用范围**: 任何"机制+策略"耦合的 framework 模块, 包括:
+- 调度器 → `SchedPolicy` trait
+- 帧分配器 → `FrameAlloc` trait
+- Slab 分配器 → `SlabPolicy` trait
+- 中断下半部 → `IrqHandler` trait
+
+**原则**: framework 只保留"必须 unsafe 才能完成"的机制, 策略全部提取到 services.
+
+### 场景 6: 非类型化内存 — UFrame/USegment 模式
+
+当 services 需要访问"外部可变内存" (用户空间映射的物理页、DMA 区域) 时, 必须使用非类型化内存抽象, 防止将可被外部修改的内存当作内核数据结构引用.
+
+```
+[错误做法] services 直接引用用户内存
+  let user_buf: &[u8] = unsafe { &*ptr };  // CI 拒收: 用户可随时修改, 违反 I4
+
+[正确做法 1] copy_from_user / copy_to_user (当前)
+  let mut buf = [0u8; 256];
+  framework::userptr::copy_from_user(user_ptr, &mut buf)?;
+
+[正确做法 2] UFrame 抽象 (未来引入)
+  let frame: UFrame = framework::frame::get_user_frame(addr);
+  let data: &[u8] = frame.read_pod()?;  // 只允许 POD 读取, 不能转 &'static
+  // frame.read_pod() 返回的引用有受限生命周期, 不会被缓存为内核引用
+```
+
+**开发约束**:
+- services **禁止**将用户内存/DMA 缓冲区转为 `&'static T` 或 `&'static mut T`
+- services **禁止**将用户内存/DMA 缓冲区存入内核数据结构作为长期引用
+- 所有外部可变内存的访问必须通过 `copy_from_user`/`copy_to_user` 或未来的 `UFrame`/`USegment`
+
+### 场景 7: 重构 (内部结构调整, 不改 API)
 
 例: 把 `framework/sync/` 11 个子模块物理上合并 (v2.22 已做过).
 
@@ -265,6 +370,54 @@ pub fn alloc_page_raw() -> *mut u8 { ... }  // 暴露裸指针给 services
   便于 [services/mod.rs:20-22](file:///home/anfer/Code/AntX/src/kernel/services/mod.rs#L20-L22) 规范的人工审计.
 - **跨 commit 改动两半**: 如果一个 PR 同时改 framework 和 services, 先合 framework 的 API 变更 (单独 commit), 再合 services 的对接. 避免"半生不熟"状态卡住其他开发者.
 - **删除 services 子模块前先审计**: 删一个 services 子模块前, 跑一次 `audit_services_boundary.py` 与 `check_tcb.sh` 确认无引用; 同时更新 docs/CHANGELOG.md 移除条目.
+
+### TCB 最小化指南 (星绽 ATC 2025)
+
+星绽论文实测 OSTD ~15,000 LoC (占内核 14%). AntX 当前 TCB 占比 129.7%, 远超标. 以下是降低 TCB 的开发指南:
+
+**1. 新增功能优先放 services**
+
+除非功能涉及 6 条安全不变式中的敏感资源, 否则一律放 services. 这是最有效的 TCB 控制手段.
+
+**2. 审查现有 framework 代码的策略部分**
+
+对每个 framework 子模块, 问: "这段代码中, 哪些是机制 (必须 unsafe), 哪些是策略 (可以 safe Rust)?"
+- 调度器: 上下文切换 = 机制, CFS 算法 = 策略
+- 帧分配器: 页表映射 = 机制, 伙伴系统 = 策略
+- 网络协议栈: 网卡寄存器操作 = 机制, TCP 状态机 = 策略
+
+策略部分应提取到 services, 通过 trait 注入.
+
+**3. 第三方库的 TCB 影响评估**
+
+引入第三方库到 framework 前, 评估:
+- 该库是否需要 unsafe? 如果不需要, 考虑放到 services.
+- 该库的代码量是否显著? 大型库 (如 smoltcp) 会显著增加 TCB.
+- 是否有更小的替代方案?
+
+**4. TCB 度量纳入 CI**
+
+每次 PR 都应报告 TCB 占比变化. 如果 PR 导致 TCB 占比上升, 需要在 PR 描述中说明原因, 并给出后续降低计划.
+
+**5. 逐步提取, 不做大爆炸重构**
+
+策略提取是渐进式工作, 每次提取一个子系统, 确保:
+- 提取前后功能不变 (测试通过)
+- 提取后 TCB 占比下降
+- 6 安全不变式仍然满足
+
+### 安全不变式自检清单
+
+每次修改 framework 代码时, 逐项确认:
+
+- [ ] **I1**: 本次修改是否暴露了新的内核态 CPU 状态操作给 services? → 不应暴露
+- [ ] **I2**: 本次修改是否让 services 能直接访问内核内存? → 不应允许
+- [ ] **I3**: 本次修改是否绕过了 usermode/userctx 进入用户态? → 不应绕过
+- [ ] **I4**: 本次修改是否让 services 能直接引用用户内存? → 不应允许
+- [ ] **I5**: 本次修改是否让 services 能直接操作设备寄存器? → 不应允许
+- [ ] **I6**: 本次修改是否让 DMA 能写入内核内存? → 不应允许
+
+**任何一项回答"是" = 本次修改违反安全不变式, 必须重新设计.**
 
 ---
 

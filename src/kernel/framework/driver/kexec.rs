@@ -366,9 +366,9 @@ impl KexecSubsystem {
             // SAFETY: 跳转到新内核入口
             unsafe {
                 core::arch::asm!(
-                    // 禁用 MMU (SCTLR_EL1.M=0)
+                    // 禁用 MMU (SCTLR_EL1.M=0, bit 1)
                     "mrs x1, sctlr_el1",
-                    "and x1, x1, #0xFFFFFFFD",
+                    "bic x1, x1, #2",
                     "msr sctlr_el1, x1",
                     "isb",
                     // 跳转

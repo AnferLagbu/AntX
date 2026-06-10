@@ -68,6 +68,96 @@ Asterinas 在 OSTD 文档中明确, framework 必须同时满足:
 3. **Minimalism (极小性)**: 能放在 services 层的就不放 framework.
 4. **Efficiency (效率)**: 安全 API 应是 zero-cost abstraction, 几乎无运行时开销.
 
+### 安全不变式 (6 Invariants)
+
+Asterinas 论文 (ATC 2025, §4) 定义了框内核 framework 必须维护的 6 条安全不变式. 这些不变式是 **Soundness 准则的形式化基础**——只要 framework 满足这 6 条, 则任何 safe Rust 客户端代码都不可能触发 UB:
+
+| # | 不变式 | 含义 | AntX 对应 |
+|---|--------|------|-----------|
+| I1 | **内核态 CPU 状态不可被 services 篡改** | CR3/GDT/IDT/MSR 等寄存器只能通过 framework safe API 修改 | `framework::arch` 内部, services 不可直接访问 |
+| I2 | **内核内存不可被 services 非法访问** | 内核页表项、内核堆元数据等由 framework 独占管理 | `framework::mm` + `framework::page_table` 内部 |
+| I3 | **用户态 CPU 状态只能通过 framework 安全入口修改** | 进入/退出用户态必须走 `usermode`/`userctx` | `framework::usermode` + `framework::userctx` |
+| I4 | **用户内存只能通过 framework 安全代理访问** | `copy_from_user`/`copy_to_user` 必须校验地址范围 | `framework::userptr` |
+| I5 | **外设 MMIO/PIO 只能通过 framework 安全代理访问** | 防止 services 直接写设备寄存器导致硬件状态不一致 | `framework::iomem` + `framework::ioport` |
+| I6 | **外设 DMA 不可写入内核内存** | IOMMU 配置确保设备只能 DMA 到允许的区域 | `framework::dma_buf` + IOMMU 映射 |
+
+**违反任何一条 = framework 的 safe API 不 Sound = 整个内核的内存安全保证失效.**
+
+### 资源分类: 敏感 vs 非敏感
+
+星绽论文 (ATC 2025, §4.2) 将内核管理的资源分为两类, 决定其归属:
+
+| 资源类别 | 定义 | 归属 | 示例 |
+|----------|------|------|------|
+| **敏感资源** | 被篡改可导致内核内存安全违反 | framework (TCB) | 内核态 CPU 状态、内核页表、APIC/IOMMU 寄存器、内核堆元数据 |
+| **非敏感资源** | 被篡改仅导致逻辑错误 (非 UB) | services (safe Rust) | 用户态 CPU 状态、用户内存页、外设寄存器 (通过 safe 代理)、调度策略 |
+
+关键洞察: **非敏感资源可以被 services 安全管理, 因为即使 services 有 bug, 最坏结果也是功能错误 (如进程调度不公平), 不会导致内存安全漏洞.**
+
+#### 非类型化内存: UFrame / USegment
+
+对于"外部可变内存" (用户空间映射的物理页、DMA 区域), 星绽引入两个关键抽象:
+
+- **UFrame**: 非类型化的物理页帧. services 可以读写其内容 (POD 类型), 但不能将其转为内核引用 (`&'static [u8]`), 防止用户空间通过写操作制造别名.
+- **USegment**: 非类型化的虚拟内存段. 同理, 只允许 POD 读写.
+
+这两个类型确保了 **Invariant I4** (用户内存安全访问) 在类型系统层面被强制——services 无法将"可能被用户空间修改的内存"当作内核数据结构引用.
+
+> **AntX 现状**: 尚未引入 UFrame/USegment 抽象, 用户内存通过 `framework::userptr` 的 `copy_from_user`/`copy_to_user` 保护. 未来应考虑引入以获得更强的类型级安全保证.
+
+### Safe Policy Injection (安全策略注入)
+
+星绽论文 (ATC 2025, §4.3) 的核心创新之一: **将策略从 TCB 中提取出来, 通过 trait 注入, 用 safe Rust 在 services 层实现**.
+
+传统内核中, 机制 (如何执行) 和策略 (执行什么) 耦合在一起. 框内核要求:
+
+| 组件 | 留在 framework (机制) | 提取到 services (策略) |
+|------|----------------------|----------------------|
+| 调度器 | 上下文切换原子操作、CPU 队列管理 | CFS 算法、优先级计算、时间片分配 |
+| 帧分配器 | 物理页引用计数、页表映射 | 伙伴系统/位图分配算法 |
+| Slab 分配器 | 内核堆元数据保护 | 对象缓存策略、slab 大小决策 |
+| 中断处理 | 中断控制器配置、上下文保存 | 中断处理策略 (下半部调度) |
+
+**实现方式**: framework 定义 trait (如 `FrameAlloc`, `SchedPolicy`), services 提供具体实现并通过 framework 的注册 API 注入. framework 的 safe API 保证: 即使策略实现有 bug, 也不会违反 6 条不变式.
+
+> **AntX 现状**: 调度策略 (`scheduler_ex.rs` 74 unsafe 行)、帧分配策略 (`pmm.rs`)、slab 策略 (`kmalloc.rs` 28 unsafe 行) 仍在 framework 内. 这是当前 TCB 占比偏高 (129.7%) 的主要原因. 应逐步提取.
+
+### OSTD 核心 API
+
+星绽 OSTD (OS framework) 对外暴露的核心安全 API 列表, 以及 AntX 的对应关系:
+
+| OSTD API | 职责 | AntX 对应 |
+|----------|------|-----------|
+| `UserMode` | 进入用户态执行 | `framework::usermode` |
+| `UserContext` | 用户态寄存器操纵 | `framework::userctx` |
+| `VmSpace` | 用户地址空间管理 | `framework::vmspace` |
+| `Task` | 内核任务抽象 | `framework::proc` |
+| `Frame` | 物理页帧 (引用计数) | `framework::frame` |
+| `IrqLine` | 中断线安全代理 | `framework::irqline` |
+| `IoMem` | MMIO 安全代理 | `framework::iomem` |
+| `IoPort` | PIO 安全代理 | `framework::ioport` |
+| `DmaCoherent` | 一致性 DMA 缓冲区 | `framework::dma_buf` |
+| `DmaStream` | 流式 DMA 映射 | `framework::dma_buf` |
+| `SpinLock` | 自旋锁 (TCB 内部) | `framework::sync` |
+| `Rcu` | 读-拷贝-更新 | `framework::sync::rcu` |
+| `CpuLocal` | 每 CPU 变量 | `framework::cpu_local` |
+
+### TCB 度量
+
+星绽论文实测: OSTD ~15,000 LoC, 约占内核总量 **14%**. 这是框内核"宏内核性能 + 微内核安全"承诺的量化基础.
+
+**AntX 当前度量** (CI 审计输出):
+- framework: ~181,148 行 (含 smoltcp 等第三方库)
+- services: ~17,645 行
+- TCB 占比: **129.7%** (审计警告 > 20%)
+
+TCB 占比远超标的原因:
+1. 策略代码未提取 (调度器、分配器)
+2. 第三方库 (smoltcp) 计入 framework
+3. 部分本应属 services 的功能 (如网络协议栈策略) 放在了 framework
+
+**目标**: 逐步将策略提取到 services, 使 TCB 占比降至 **< 30%**.
+
 ---
 
 ## 在 AntX/QueenX 的具体应用
