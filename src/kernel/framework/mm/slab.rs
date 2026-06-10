@@ -67,7 +67,7 @@ pub const GENERAL_CACHE_SIZES: [usize; SLAB_GENERAL_CACHE_NUM] =
 /// ```
 #[derive(Debug)]
 #[repr(C)]
-struct SlabHeader {
+pub(crate) struct SlabHeader {
     /// 对象区域起始地址 (相对于页面起始)
     start_addr: *mut u8,
 
@@ -97,6 +97,160 @@ impl Default for SlabHeader {
         }
     }
 }
+
+// === E4: Unsafe Concentration — raw sub-module ===
+//
+// All bare-pointer dereferences for slab internals are encapsulated here.
+pub(crate) mod raw {
+    use super::*;
+
+    /// Safe wrapper around a `*mut SlabHeader`.
+    ///
+    /// SAFETY invariant: the pointer points to a valid SlabHeader inside
+    /// a slab page, and the slab lock (or global lock) is held.
+    #[derive(Clone, Copy)]
+    pub struct SlabRef(*mut SlabHeader);
+
+    impl SlabRef {
+        /// # Safety
+        /// - `ptr` must point to a valid `SlabHeader`
+        /// - Appropriate lock must be held
+        #[inline(always)]
+        pub unsafe fn new_unchecked(ptr: *mut SlabHeader) -> Self {
+            Self(ptr)
+        }
+
+        #[inline(always)]
+        pub fn as_ptr(self) -> *mut SlabHeader {
+            self.0
+        }
+
+        #[inline(always)]
+        pub fn is_null(self) -> bool {
+            self.0.is_null()
+        }
+
+        #[inline(always)]
+        pub fn start_addr(&self) -> *mut u8 {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).start_addr }
+        }
+
+        #[inline(always)]
+        pub fn set_start_addr(&self, val: *mut u8) {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).start_addr = val; }
+        }
+
+        #[inline(always)]
+        pub fn obj_count(&self) -> u32 {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).obj_count }
+        }
+
+        #[inline(always)]
+        pub fn set_obj_count(&self, val: u32) {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).obj_count = val; }
+        }
+
+        #[inline(always)]
+        pub fn active_count(&self) -> u32 {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).active_count }
+        }
+
+        #[inline(always)]
+        pub fn set_active_count(&self, val: u32) {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).active_count = val; }
+        }
+
+        #[inline(always)]
+        pub fn is_full(&self) -> bool {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).is_full }
+        }
+
+        #[inline(always)]
+        pub fn set_is_full(&self, val: bool) {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).is_full = val; }
+        }
+
+        #[inline(always)]
+        pub fn prev(&self) -> *mut SlabHeader {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).prev }
+        }
+
+        #[inline(always)]
+        pub fn set_prev(&self, p: *mut SlabHeader) {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).prev = p; }
+        }
+
+        #[inline(always)]
+        pub fn next(&self) -> *mut SlabHeader {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).next }
+        }
+
+        #[inline(always)]
+        pub fn set_next(&self, p: *mut SlabHeader) {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { (*self.0).next = p; }
+        }
+
+        /// Write a default SlabHeader at this location.
+        #[inline(always)]
+        pub fn write_default(&self) {
+            // SAFETY: caller guarantees valid pointer
+            unsafe { *self.0 = SlabHeader::default(); }
+        }
+
+        /// Get the bitmap pointer for this slab.
+        /// Bitmap starts after the header + object area.
+        #[inline(always)]
+        pub fn bitmap_ptr(&self, object_size: usize) -> *mut u8 {
+            // SAFETY: caller guarantees valid pointer and correct object_size
+            unsafe {
+                let obj_area = (*self.0).start_addr;
+                obj_area.add((*self.0).obj_count as usize * object_size)
+            }
+        }
+
+        /// Get object pointer at given index.
+        #[inline(always)]
+        pub fn object_ptr(&self, idx: u32, object_size: usize) -> *mut u8 {
+            // SAFETY: caller guarantees valid pointer and idx < obj_count
+            unsafe {
+                (*self.0).start_addr.add(idx as usize * object_size)
+            }
+        }
+    }
+
+    /// Zero a memory region.
+    ///
+    /// # Safety
+    /// - `ptr` must point to a valid writable region of `len` bytes
+    #[inline(always)]
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+        core::ptr::write_bytes(ptr, 0, len);
+    }
+
+    /// Copy memory non-overlapping.
+    ///
+    /// # Safety
+    /// - src must be readable for `len` bytes
+    /// - dst must be writable for `len` bytes
+    #[inline(always)]
+    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
+        core::ptr::copy_nonoverlapping(src, dst, len);
+    }
+}
+
+use raw::SlabRef;
 
 /// 缓存描述符 (KmemCache)
 ///
@@ -218,16 +372,16 @@ impl KmemCache {
         self.cache_misses += 1;
         let new_slab = self.new_slab()?;
 
-        // 将新 Slab 加入 free 链表 (单独的 unsafe 块)
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            (*new_slab).next = self.slabs_free;
-            if !self.slabs_free.is_null() {
-                (*self.slabs_free).prev = new_slab;
-            }
-            self.slabs_free = new_slab;
-            self.slab_count += 1;
+        // 将新 Slab 加入 free 链表
+        // SAFETY: new_slab is a valid pointer from new_slab()
+        let ns = unsafe { SlabRef::new_unchecked(new_slab) };
+        ns.set_next(self.slabs_free);
+        if !self.slabs_free.is_null() {
+            let old = unsafe { SlabRef::new_unchecked(self.slabs_free) };
+            old.set_prev(new_slab);
         }
+        self.slabs_free = new_slab;
+        self.slab_count += 1;
 
         self.alloc_from_slab(new_slab)
     }
@@ -238,27 +392,23 @@ impl KmemCache {
 
         self.set_bit(slab, free_idx);
 
-        // SAFETY: slab is a valid pointer from new_slab (PMM-allocated page).
-        // We only modify active_count and is_full; list operations use static
-        // methods that handle their own safety.
-        unsafe {
-            let header = &*slab;
-            (*slab).active_count += 1;
+        // SAFETY: slab is a valid pointer from new_slab (PMM-allocated page)
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
+        sr.set_active_count(sr.active_count() + 1);
 
-            let obj_ptr = header.start_addr.add(free_idx as usize * self.object_size);
+        let obj_ptr = sr.object_ptr(free_idx, self.object_size);
 
-            if (*slab).active_count >= header.obj_count {
-                (*slab).is_full = true;
-                Self::list_remove(&mut self.slabs_partial, slab);
-                Self::list_remove(&mut self.slabs_free, slab);
-                Self::list_push_front(&mut self.slabs_full, slab);
-            } else if (*slab).active_count == 1 {
-                Self::list_remove(&mut self.slabs_free, slab);
-                Self::list_push_front(&mut self.slabs_partial, slab);
-            }
-
-            Some(obj_ptr)
+        if sr.active_count() >= sr.obj_count() {
+            sr.set_is_full(true);
+            Self::list_remove(&mut self.slabs_partial, slab);
+            Self::list_remove(&mut self.slabs_free, slab);
+            Self::list_push_front(&mut self.slabs_full, slab);
+        } else if sr.active_count() == 1 {
+            Self::list_remove(&mut self.slabs_free, slab);
+            Self::list_push_front(&mut self.slabs_partial, slab);
         }
+
+        Some(obj_ptr)
     }
 
     /// 释放对象回缓存
@@ -278,38 +428,35 @@ impl KmemCache {
             return; // 对象不属于此缓存
         }
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            let header = &*slab;
+        // SAFETY: slab was found by find_object_slab, guaranteed valid
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
 
-            // 计算对象索引
-            let obj_addr = obj as usize;
-            let start_addr = header.start_addr as usize;
-            let obj_idx = (obj_addr - start_addr) / self.object_size;
+        // 计算对象索引
+        let obj_addr = obj as usize;
+        let start_addr = sr.start_addr() as usize;
+        let obj_idx = (obj_addr - start_addr) / self.object_size;
 
-            if obj_idx >= header.obj_count as usize {
-                return; // 索引越界 (可能是无效指针)
-            }
+        if obj_idx >= sr.obj_count() as usize {
+            return; // 索引越界 (可能是无效指针)
+        }
 
-            // 清除位图中的标志位
-            self.clear_bit(slab, obj_idx as u32);
+        // 清除位图中的标志位
+        self.clear_bit(slab, obj_idx as u32);
 
-            // 更新计数
-            let header_mut = &mut *slab;
-            header_mut.active_count -= 1;
+        // 更新计数
+        sr.set_active_count(sr.active_count() - 1);
 
-            // 移动 Slab 到正确的链表
-            if header_mut.is_full {
-                // 从 full 移动到 partial
-                header_mut.is_full = false;
+        // 移动 Slab 到正确的链表
+        if sr.is_full() {
+            // 从 full 移动到 partial
+            sr.set_is_full(false);
 
-                Self::list_remove(&mut self.slabs_full, slab);
-                Self::list_push_front(&mut self.slabs_partial, slab);
-            } else if header_mut.active_count == 0 {
-                // 全部释放 → 从 partial 移动到 free
-                Self::list_remove(&mut self.slabs_partial, slab);
-                Self::list_push_front(&mut self.slabs_free, slab);
-            }
+            Self::list_remove(&mut self.slabs_full, slab);
+            Self::list_push_front(&mut self.slabs_partial, slab);
+        } else if sr.active_count() == 0 {
+            // 全部释放 → 从 partial 移动到 free
+            Self::list_remove(&mut self.slabs_partial, slab);
+            Self::list_push_front(&mut self.slabs_free, slab);
         }
     }
 
@@ -318,34 +465,28 @@ impl KmemCache {
         // 释放 full 链表中的所有 Slab
         let mut slab = self.slabs_full;
         while !slab.is_null() {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                let next = (*slab).next;
-                self.destroy_slab(slab);
-                slab = next;
-            }
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            let next = sr.next();
+            self.destroy_slab(slab);
+            slab = next;
         }
 
         // 释放 partial 链表中的所有 Slab
         slab = self.slabs_partial;
         while !slab.is_null() {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                let next = (*slab).next;
-                self.destroy_slab(slab);
-                slab = next;
-            }
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            let next = sr.next();
+            self.destroy_slab(slab);
+            slab = next;
         }
 
         // 释放 free 链表中的所有 Slab
         slab = self.slabs_free;
         while !slab.is_null() {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                let next = (*slab).next;
-                self.destroy_slab(slab);
-                slab = next;
-            }
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            let next = sr.next();
+            self.destroy_slab(slab);
+            slab = next;
         }
 
         // 重置状态
@@ -360,23 +501,22 @@ impl KmemCache {
         let mut total_objects = 0u32;
         let mut active_objects = 0u32;
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            // 遍历 full 链表
-            let mut slab = self.slabs_full;
-            while !slab.is_null() {
-                total_objects += (*slab).obj_count;
-                active_objects += (*slab).active_count;
-                slab = (*slab).next;
-            }
+        // 遍历 full 链表
+        let mut slab = self.slabs_full;
+        while !slab.is_null() {
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            total_objects += sr.obj_count();
+            active_objects += sr.active_count();
+            slab = sr.next();
+        }
 
-            // 遍历 partial 链表
-            slab = self.slabs_partial;
-            while !slab.is_null() {
-                total_objects += (*slab).obj_count;
-                active_objects += (*slab).active_count;
-                slab = (*slab).next;
-            }
+        // 遍历 partial 链表
+        slab = self.slabs_partial;
+        while !slab.is_null() {
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            total_objects += sr.obj_count();
+            active_objects += sr.active_count();
+            slab = sr.next();
         }
 
         CacheStats {
@@ -410,43 +550,37 @@ impl KmemCache {
 
         let slab = page as *mut SlabHeader;
 
-        // SAFETY: slab points to a PMM-allocated page; we write the header
-        // at the start, objects after it, and bitmap after objects.
-        // Boundary check ensures we do not overflow the page.
-        unsafe {
-            (*slab) = SlabHeader {
-                start_addr: page.add(core::mem::size_of::<SlabHeader>()) as *mut u8,
-                obj_count: self.objects_per_slab,
-                active_count: 0,
-                is_full: false,
-                prev: core::ptr::null_mut(),
-                next: core::ptr::null_mut(),
-            };
+        // SAFETY: slab points to a PMM-allocated page
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
+        sr.set_start_addr(unsafe { page.add(core::mem::size_of::<SlabHeader>()) } as *mut u8);
+        sr.set_obj_count(self.objects_per_slab);
+        sr.set_active_count(0);
+        sr.set_is_full(false);
+        sr.set_prev(core::ptr::null_mut());
+        sr.set_next(core::ptr::null_mut());
 
-            let bitmap_bytes = self.objects_per_slab.div_ceil(8);
-            let bitmap_start = (*slab)
-                .start_addr
-                .add(self.objects_per_slab as usize * self.object_size);
+        let bitmap_bytes = self.objects_per_slab.div_ceil(8);
+        let bitmap_start = sr.bitmap_ptr(self.object_size);
 
-            let bitmap_end = bitmap_start.add(bitmap_bytes as usize);
-            let page_end = page.add(SLAB_DEFAULT_SIZE) as *mut u8;
+        let bitmap_end = unsafe { bitmap_start.add(bitmap_bytes as usize) };
+        let page_end = unsafe { page.add(SLAB_DEFAULT_SIZE) } as *mut u8;
 
-            if bitmap_end > page_end {
-                extern "C" {
-                    fn pmm_free_pages(addr: *mut u8, count: u64);
-                }
-                // SAFETY: page was just allocated by pmm_alloc_pages above;
-                // we are freeing it on layout overflow before any use.
-                unsafe {
-                    pmm_free_pages(page, pages_needed as u64);
-                }
-                klog_slab!("[SLAB] new_slab: layout overflow (obj_size={}, obj_count={}, bitmap={}B), page={:?}",
-                    self.object_size, self.objects_per_slab, bitmap_bytes, page);
-                return None;
+        if bitmap_end > page_end {
+            extern "C" {
+                fn pmm_free_pages(addr: *mut u8, count: u64);
             }
+            // SAFETY: page was just allocated; freeing on layout overflow
+            unsafe {
+                pmm_free_pages(page, pages_needed as u64);
+            }
+            klog_slab!("[SLAB] new_slab: layout overflow (obj_size={}, obj_count={}, bitmap={}B), page={:?}",
+                self.object_size, self.objects_per_slab, bitmap_bytes, page);
+            return None;
+        }
 
-            // SAFETY: bitmap_start..bitmap_end is within the page (verified above).
-            core::ptr::write_bytes(bitmap_start, 0, bitmap_bytes as usize);
+        // SAFETY: bitmap_start..bitmap_end is within the page (verified above)
+        unsafe {
+            raw::zero_memory(bitmap_start, bitmap_bytes as usize);
         }
 
         Some(slab)
@@ -470,60 +604,49 @@ impl KmemCache {
     }
 
     fn find_free_bit(&self, slab: *mut SlabHeader) -> Option<u32> {
-        // SAFETY: slab is a valid pointer from new_slab; bitmap region
-        // was verified to be within page bounds during initialization.
-        unsafe {
-            let header = &*slab;
-            let bitmap_bytes = header.obj_count.div_ceil(8) as usize;
-            let bitmap_start = header
-                .start_addr
-                .add(header.obj_count as usize * self.object_size);
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
+        let bitmap_bytes = sr.obj_count().div_ceil(8) as usize;
+        let bitmap_start = sr.bitmap_ptr(self.object_size);
 
-            for byte_idx in 0..bitmap_bytes {
-                let byte = *bitmap_start.add(byte_idx);
-                if byte == 0xFF {
-                    continue;
-                }
-                let bit_idx = byte.trailing_ones();
-                let global_bit = byte_idx as u32 * 8 + bit_idx;
-                if global_bit < header.obj_count {
-                    return Some(global_bit);
-                }
+        for byte_idx in 0..bitmap_bytes {
+            // SAFETY: bitmap region verified during init
+            let byte = unsafe { *bitmap_start.add(byte_idx) };
+            if byte == 0xFF {
+                continue;
             }
-
-            None
+            let bit_idx = byte.trailing_ones();
+            let global_bit = byte_idx as u32 * 8 + bit_idx;
+            if global_bit < sr.obj_count() {
+                return Some(global_bit);
+            }
         }
+
+        None
     }
 
     fn set_bit(&self, slab: *mut SlabHeader, bit: u32) {
-        // SAFETY: slab is valid; bit < obj_count (ensured by find_free_bit);
-        // bitmap_start + byte_idx is within page bounds.
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
+        let bitmap_start = sr.bitmap_ptr(self.object_size);
+
+        let byte_idx = (bit / 8) as usize;
+        let bit_idx = bit % 8;
+
+        // SAFETY: bit < obj_count (ensured by find_free_bit)
         unsafe {
-            let header = &*slab;
-            let bitmap_start = header
-                .start_addr
-                .add(header.obj_count as usize * self.object_size);
-
-            let byte_idx = (bit / 8) as usize;
-            let bit_idx = bit % 8;
-
             let byte_ptr = bitmap_start.add(byte_idx);
             *byte_ptr |= 1 << bit_idx;
         }
     }
 
     fn clear_bit(&self, slab: *mut SlabHeader, bit: u32) {
-        // SAFETY: slab is valid; bit < obj_count (computed from obj address);
-        // bitmap_start + byte_idx is within page bounds.
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
+        let bitmap_start = sr.bitmap_ptr(self.object_size);
+
+        let byte_idx = (bit / 8) as usize;
+        let bit_idx = bit % 8;
+
+        // SAFETY: bit < obj_count (computed from obj address)
         unsafe {
-            let header = &*slab;
-            let bitmap_start = header
-                .start_addr
-                .add(header.obj_count as usize * self.object_size);
-
-            let byte_idx = (bit / 8) as usize;
-            let bit_idx = bit % 8;
-
             let byte_ptr = bitmap_start.add(byte_idx);
             *byte_ptr &= !(1 << bit_idx);
         }
@@ -535,44 +658,35 @@ impl KmemCache {
 
         let mut slab = self.slabs_partial;
         while !slab.is_null() {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                let header = &*slab;
-                let start = header.start_addr as usize;
-                let end = start + header.obj_count as usize * self.object_size;
-                if obj_addr >= start && obj_addr < end {
-                    return slab;
-                }
-                slab = (*slab).next;
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            let start = sr.start_addr() as usize;
+            let end = start + sr.obj_count() as usize * self.object_size;
+            if obj_addr >= start && obj_addr < end {
+                return slab;
             }
+            slab = sr.next();
         }
 
         slab = self.slabs_full;
         while !slab.is_null() {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                let header = &*slab;
-                let start = header.start_addr as usize;
-                let end = start + header.obj_count as usize * self.object_size;
-                if obj_addr >= start && obj_addr < end {
-                    return slab;
-                }
-                slab = (*slab).next;
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            let start = sr.start_addr() as usize;
+            let end = start + sr.obj_count() as usize * self.object_size;
+            if obj_addr >= start && obj_addr < end {
+                return slab;
             }
+            slab = sr.next();
         }
 
         slab = self.slabs_free;
         while !slab.is_null() {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                let header = &*slab;
-                let start = header.start_addr as usize;
-                let end = start + header.obj_count as usize * self.object_size;
-                if obj_addr >= start && obj_addr < end {
-                    return slab;
-                }
-                slab = (*slab).next;
+            let sr = unsafe { SlabRef::new_unchecked(slab) };
+            let start = sr.start_addr() as usize;
+            let end = start + sr.obj_count() as usize * self.object_size;
+            if obj_addr >= start && obj_addr < end {
+                return slab;
             }
+            slab = sr.next();
         }
 
         core::ptr::null_mut()
@@ -589,51 +703,49 @@ impl KmemCache {
             return;
         }
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            if *head == slab {
-                // 移除的是头节点
-                *head = (*slab).next;
-                if !(*head).is_null() {
-                    (**head).prev = core::ptr::null_mut();
-                }
-            } else {
-                // 移除的是中间或尾节点
-                if !(*slab).next.is_null() {
-                    (*(*slab).next).prev = (*slab).prev;
-                }
-                if !(*slab).prev.is_null() {
-                    (*(*slab).prev).next = (*slab).next;
-                }
-            }
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
 
-            (*slab).prev = core::ptr::null_mut();
-            (*slab).next = core::ptr::null_mut();
+        if *head == slab {
+            // 移除的是头节点
+            *head = sr.next();
+            if !head.is_null() {
+                let new_head = unsafe { SlabRef::new_unchecked(*head) };
+                new_head.set_prev(core::ptr::null_mut());
+            }
+        } else {
+            // 移除的是中间或尾节点
+            let next = sr.next();
+            let prev = sr.prev();
+            if !next.is_null() {
+                let n = unsafe { SlabRef::new_unchecked(next) };
+                n.set_prev(prev);
+            }
+            if !prev.is_null() {
+                let p = unsafe { SlabRef::new_unchecked(prev) };
+                p.set_next(next);
+            }
         }
+
+        sr.set_prev(core::ptr::null_mut());
+        sr.set_next(core::ptr::null_mut());
     }
 
-    /// ✅ 将节点插入到双向链表头部 (静态方法, 避免借用冲突)
-    ///
-    /// # Arguments
-    /// * `head` - 链表头指针的可变引用
-    /// * `slab` - 要插入的节点
     #[inline(always)]
     fn list_push_front(head: &mut *mut SlabHeader, slab: *mut SlabHeader) {
         if slab.is_null() {
             return;
         }
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            (*slab).next = *head;
-            (*slab).prev = core::ptr::null_mut();
+        let sr = unsafe { SlabRef::new_unchecked(slab) };
+        sr.set_next(*head);
+        sr.set_prev(core::ptr::null_mut());
 
-            if !(*head).is_null() {
-                (**head).prev = slab;
-            }
-
-            *head = slab;
+        if !head.is_null() {
+            let old_head = unsafe { SlabRef::new_unchecked(*head) };
+            old_head.set_prev(slab);
         }
+
+        *head = slab;
     }
 }
 

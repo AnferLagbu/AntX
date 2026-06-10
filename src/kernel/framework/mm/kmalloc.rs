@@ -94,6 +94,178 @@ impl HeapHeader {
     }
 }
 
+// === E4: Unsafe Concentration — raw sub-module ===
+//
+// All bare-pointer dereferences for heap header internals are
+// encapsulated here.  The outer `KernelHeap` methods call only safe
+// wrappers, keeping the allocation algorithm logic itself safe Rust.
+pub(crate) mod raw {
+    use super::*;
+
+    /// Safe wrapper around a `*mut HeapHeader`.
+    ///
+    /// SAFETY invariant: the pointer points to a valid HeapHeader inside
+    /// the heap region, and the heap lock is held.
+    #[derive(Clone, Copy)]
+    pub struct HeaderRef(*mut HeapHeader);
+
+    impl HeaderRef {
+        /// # Safety
+        /// - `ptr` must point to a valid `HeapHeader` in the heap
+        /// - Heap lock must be held for the duration of use
+        #[inline(always)]
+        pub unsafe fn new_unchecked(ptr: *mut HeapHeader) -> Self {
+            Self(ptr)
+        }
+
+        /// Construct from a data pointer returned by allocate.
+        ///
+        /// # Safety
+        /// - `data` must have been returned by a prior allocation
+        /// - Heap lock must be held
+        #[inline(always)]
+        pub unsafe fn from_data_ptr(data: *mut u8) -> Self {
+            Self(HeapHeader::from_data_ptr(data))
+        }
+
+        #[inline(always)]
+        pub fn as_ptr(self) -> *mut HeapHeader {
+            self.0
+        }
+
+        #[inline(always)]
+        pub fn is_null(self) -> bool {
+            self.0.is_null()
+        }
+
+        #[inline(always)]
+        pub fn size(&self) -> u64 {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).size }
+        }
+
+        #[inline(always)]
+        pub fn set_size(&self, val: u64) {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).size = val; }
+        }
+
+        #[inline(always)]
+        pub fn is_free(&self) -> bool {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).free }
+        }
+
+        #[inline(always)]
+        pub fn set_free(&self, val: bool) {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).free = val; }
+        }
+
+        #[inline(always)]
+        pub fn magic(&self) -> u32 {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).magic }
+        }
+
+        #[inline(always)]
+        pub fn next(&self) -> *mut HeapHeader {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).next }
+        }
+
+        #[inline(always)]
+        pub fn set_next(&self, p: *mut HeapHeader) {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).next = p; }
+        }
+
+        #[inline(always)]
+        pub fn prev(&self) -> *mut HeapHeader {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).prev }
+        }
+
+        #[inline(always)]
+        pub fn set_prev(&self, p: *mut HeapHeader) {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).prev = p; }
+        }
+
+        #[inline(always)]
+        pub fn data_ptr(&self) -> *mut u8 {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { (*self.0).data_ptr() }
+        }
+
+        /// Write a new HeapHeader value at this location.
+        #[inline(always)]
+        pub fn write(&self, val: HeapHeader) {
+            // SAFETY: caller guarantees valid pointer under heap lock
+            unsafe { *self.0 = val; }
+        }
+
+        /// Get the address of this header as a byte pointer.
+        #[inline(always)]
+        pub fn byte_ptr(self) -> *mut u8 {
+            self.0 as *mut u8
+        }
+
+        /// Compute the next adjacent header by byte offset.
+        #[inline(always)]
+        pub fn adjacent_next(&self, offset: usize) -> Self {
+            // SAFETY: caller guarantees offset stays within heap region
+            unsafe { Self::new_unchecked(self.byte_ptr().add(offset) as *mut HeapHeader) }
+        }
+    }
+
+    /// Safe wrapper for free_list_head access.
+    pub struct FreeListHeadRef<'a> {
+        ptr: &'a UnsafeCell<*mut HeapHeader>,
+    }
+
+    impl<'a> FreeListHeadRef<'a> {
+        #[inline(always)]
+        pub fn new(ptr: &'a UnsafeCell<*mut HeapHeader>) -> Self {
+            Self { ptr }
+        }
+
+        #[inline(always)]
+        pub fn get(&self) -> *mut HeapHeader {
+            // SAFETY: heap lock is held
+            unsafe { *self.ptr.get() }
+        }
+
+        #[inline(always)]
+        pub fn set(&self, val: *mut HeapHeader) {
+            // SAFETY: heap lock is held
+            unsafe { *self.ptr.get() = val; }
+        }
+    }
+
+    /// Zero a memory region.
+    ///
+    /// # Safety
+    /// - `ptr` must point to a valid writable region of `len` bytes
+    #[inline(always)]
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+        core::ptr::write_bytes(ptr, 0, len);
+    }
+
+    /// Copy memory non-overlapping.
+    ///
+    /// # Safety
+    /// - src must be readable for `len` bytes
+    /// - dst must be writable for `len` bytes
+    /// - regions must not overlap
+    #[inline(always)]
+    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
+        core::ptr::copy_nonoverlapping(src, dst, len);
+    }
+}
+
+use raw::{HeaderRef, FreeListHeadRef};
+
 /// Kernel Heap Allocator state
 pub struct KernelHeap {
     /// Start of heap region (virtual address)
@@ -164,14 +336,11 @@ impl KernelHeap {
 
         // SAFETY: caller (kmem_init) provides a valid mapped heap region of
         // size >= sizeof(HeapHeader); start is page-aligned and exclusive.
-        let header = unsafe { &mut *(start.0 as *mut HeapHeader) };
-        *header = HeapHeader::new(initial_size, true);
+        let header = unsafe { HeaderRef::new_unchecked(start.0 as *mut HeapHeader) };
+        header.write(HeapHeader::new(initial_size, true));
 
-        // SAFETY: free_list_head is a static AtomicPtr; storing the heap's
-        // first block pointer is always valid.
-        unsafe {
-            *self.free_list_head.get() = header;
-        }
+        let head = FreeListHeadRef::new(&self.free_list_head);
+        head.set(header.as_ptr());
 
         self.initialized.store(true, Ordering::Release);
 
@@ -248,33 +417,28 @@ impl KernelHeap {
             return;
         }
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        let header = unsafe { HeapHeader::from_data_ptr(ptr) };
+        // SAFETY: caller guarantees ptr was returned by a valid allocation
+        let header = unsafe { HeaderRef::from_data_ptr(ptr) };
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            let h = &*header;
-            if h.magic != HEAP_MAGIC {
-                serial_println!(
-                    "[Kmalloc] Error: Invalid magic (got 0x{:X}, expected 0x{:X})",
-                    h.magic,
-                    HEAP_MAGIC
-                );
-                self.release_lock();
-                return;
-            }
-
-            if h.free {
-                serial_println!("[Kmalloc] Warning: Double free detected");
-                self.release_lock();
-                return;
-            }
-
-            (*header).free = true;
+        if header.magic() != HEAP_MAGIC {
+            serial_println!(
+                "[Kmalloc] Error: Invalid magic (got 0x{:X}, expected 0x{:X})",
+                header.magic(),
+                HEAP_MAGIC
+            );
+            self.release_lock();
+            return;
         }
 
-        // SAFETY: `header` 由调用方保证为有效指针; 只读访问
-        let freed_size = unsafe { (*header).size };
+        if header.is_free() {
+            serial_println!("[Kmalloc] Warning: Double free detected");
+            self.release_lock();
+            return;
+        }
+
+        header.set_free(true);
+
+        let freed_size = header.size();
         self.free_count.fetch_add(1, Ordering::Relaxed);
         self.total_freed.fetch_add(freed_size, Ordering::Relaxed);
         self.current_usage.fetch_sub(freed_size, Ordering::Relaxed);
@@ -299,15 +463,13 @@ impl KernelHeap {
         self.acquire_lock();
 
         // SAFETY: ptr was returned by kmalloc; magic/size validated below
-        let header = unsafe { HeapHeader::from_data_ptr(ptr) };
-        // SAFETY: header is a valid *mut HeapHeader produced by from_data_ptr
-        let h = unsafe { &*header };
-        if h.magic != HEAP_MAGIC || h.free {
+        let header = unsafe { HeaderRef::from_data_ptr(ptr) };
+        if header.magic() != HEAP_MAGIC || header.is_free() {
             self.release_lock();
             return None;
         }
 
-        let old_data_size = (h.size - core::mem::size_of::<HeapHeader>() as u64) as usize;
+        let old_data_size = (header.size() - core::mem::size_of::<HeapHeader>() as u64) as usize;
         let new_aligned = align_up(size as u64, ALIGNMENT) as usize;
 
         if new_aligned <= old_data_size {
@@ -349,16 +511,12 @@ impl KernelHeap {
         // SAFETY: ptr is a valid pointer to old_data_size bytes; new_ptr is a
         // distinct allocation of the same size; regions cannot overlap.
         unsafe {
-            core::ptr::copy_nonoverlapping(ptr, new_ptr, old_data_size);
+            raw::copy_nonoverlapping(ptr, new_ptr, old_data_size);
         }
 
         // Deallocate old block inline while holding the lock
-        // SAFETY: header is a valid *mut HeapHeader (validated above)
-        unsafe {
-            (*header).free = true;
-        }
-        // SAFETY: header is a valid *mut HeapHeader, reading size is safe
-        let freed_size = unsafe { (*header).size };
+        header.set_free(true);
+        let freed_size = header.size();
         self.free_count.fetch_add(1, Ordering::Relaxed);
         self.total_freed.fetch_add(freed_size, Ordering::Relaxed);
         self.current_usage.fetch_sub(freed_size, Ordering::Relaxed);
@@ -412,43 +570,43 @@ impl KernelHeap {
         self.acquire_lock();
 
         let mut count = 0usize;
-        // SAFETY: free_list_head is a static AtomicPtr; reading it is safe
-        let mut current = unsafe { *self.free_list_head.get() };
+        let head = FreeListHeadRef::new(&self.free_list_head);
+        let mut current = head.get();
 
         while !current.is_null() {
             // SAFETY: current is a non-null *mut HeapHeader in the free list
-            unsafe {
-                let header = &*current;
+            let cur = unsafe { HeaderRef::new_unchecked(current) };
 
-                if header.magic != HEAP_MAGIC {
-                    serial_println!("[Kmalloc] Validate: Bad magic at {:p}", header);
+            if cur.magic() != HEAP_MAGIC {
+                serial_println!("[Kmalloc] Validate: Bad magic at {:p}", cur.as_ptr());
+                self.release_lock();
+                return false;
+            }
+
+            if !cur.is_free() {
+                serial_println!("[Kmalloc] Validate: Non-free block in free list");
+                self.release_lock();
+                return false;
+            }
+
+            let next_ptr = cur.next();
+            if !next_ptr.is_null() {
+                let next = unsafe { HeaderRef::new_unchecked(next_ptr) };
+                let next_prev = next.prev();
+                if !next_prev.is_null() && next_prev != current {
+                    serial_println!("[Kmalloc] Validate: Broken backward link");
                     self.release_lock();
                     return false;
                 }
+            }
 
-                if !header.free {
-                    serial_println!("[Kmalloc] Validate: Non-free block in free list");
-                    self.release_lock();
-                    return false;
-                }
+            count += 1;
+            current = next_ptr;
 
-                if !header.next.is_null() {
-                    let next_header = &*header.next;
-                    if !next_header.prev.is_null() && next_header.prev != current {
-                        serial_println!("[Kmalloc] Validate: Broken backward link");
-                        self.release_lock();
-                        return false;
-                    }
-                }
-
-                count += 1;
-                current = header.next;
-
-                if count > 10000 {
-                    serial_println!("[Kmalloc] Validate: Too many nodes (possible cycle)");
-                    self.release_lock();
-                    return false;
-                }
+            if count > 10000 {
+                serial_println!("[Kmalloc] Validate: Too many nodes (possible cycle)");
+                self.release_lock();
+                return false;
             }
         }
 
@@ -460,144 +618,129 @@ impl KernelHeap {
 
     /// First-fit allocation algorithm
     fn allocate_first_fit(&self, size: u64) -> Option<*mut u8> {
-        // SAFETY: free_list_head is a static AtomicPtr; reading it is safe
-        let mut current = unsafe { *self.free_list_head.get() };
+        let head = FreeListHeadRef::new(&self.free_list_head);
+        let mut current = head.get();
 
         while !current.is_null() {
             // SAFETY: current is a non-null *mut HeapHeader in the free list
-            unsafe {
-                let header = current;
-                let block_size = (*header).size;
+            let cur = unsafe { HeaderRef::new_unchecked(current) };
+            let block_size = cur.size();
 
-                if block_size >= size {
-                    if block_size
-                        >= size + MIN_BLOCK_SIZE + core::mem::size_of::<HeapHeader>() as u64
-                    {
-                        self.split_block(header, size);
-                    }
-
-                    (*header).free = false;
-                    self.remove_from_free_list(header);
-
-                    return Some((*header).data_ptr());
+            if block_size >= size {
+                if block_size
+                    >= size + MIN_BLOCK_SIZE + core::mem::size_of::<HeapHeader>() as u64
+                {
+                    self.split_block(cur, size);
                 }
 
-                current = (*header).next;
+                cur.set_free(false);
+                self.remove_from_free_list(cur);
+
+                return Some(cur.data_ptr());
             }
+
+            current = cur.next();
         }
 
         self.expand_heap(size)
     }
 
     /// Split a block into two parts
-    ///
-    /// # Safety
-    /// - `header` must be a valid *mut HeapHeader with at least `size` bytes
-    ///   of payload space
-    /// - The split point must be aligned to ALIGNMENT
-    unsafe fn split_block(&self, header: *mut HeapHeader, size: u64) {
-        let original_size = (*header).size;
+    fn split_block(&self, header: HeaderRef, size: u64) {
+        let original_size = header.size();
         let remaining = original_size - size;
 
-        // SAFETY: header + size is within the same allocation (size <= original_size)
-        let second_part = (header as *mut u8).add(size as usize) as *mut HeapHeader;
-        *second_part = HeapHeader::new(remaining, true);
+        let second_part = header.adjacent_next(size as usize);
+        second_part.write(HeapHeader::new(remaining, true));
 
-        (*header).size = size;
+        header.set_size(size);
 
-        // SAFETY: header is valid; we update linked list pointers in place.
-        if !(*header).next.is_null() {
-            (*second_part).next = (*header).next;
-            (*(*header).next).prev = second_part;
+        let header_next = header.next();
+        if !header_next.is_null() {
+            let hn = unsafe { HeaderRef::new_unchecked(header_next) };
+            hn.set_prev(second_part.as_ptr());
         }
-        (*second_part).prev = header;
-        (*header).next = second_part;
+        second_part.set_next(header_next);
+        second_part.set_prev(header.as_ptr());
+        header.set_next(second_part.as_ptr());
     }
 
     /// Coalesce adjacent free blocks
-    fn coalesce(&self, header: *mut HeapHeader) -> *mut HeapHeader {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            self.coalesce_forward(header);
-            self.coalesce_backward(header)
-        }
+    fn coalesce(&self, header: HeaderRef) -> HeaderRef {
+        self.coalesce_forward(header);
+        self.coalesce_backward(header)
     }
 
-    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    unsafe fn coalesce_forward(&self, header: *mut HeapHeader) {
-        let next_addr = (header as *mut u8).add((*header).size as usize) as *mut HeapHeader;
+    fn coalesce_forward(&self, header: HeaderRef) {
+        let next_addr = header.adjacent_next(header.size() as usize);
         let heap_end = self.heap_end.0 as *mut u8;
 
-        if (next_addr as *mut u8) < heap_end {
-            let next_header = &*next_addr;
-
-            if next_header.magic == HEAP_MAGIC && next_header.free {
+        if next_addr.byte_ptr() < heap_end {
+            if next_addr.magic() == HEAP_MAGIC && next_addr.is_free() {
                 self.remove_from_free_list(next_addr);
-                (*header).size += next_header.size;
+                header.set_size(header.size() + next_addr.size());
             }
         }
     }
 
-    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    unsafe fn coalesce_backward(&self, header: *mut HeapHeader) -> *mut HeapHeader {
-        let mut current = *self.free_list_head.get();
+    fn coalesce_backward(&self, header: HeaderRef) -> HeaderRef {
+        let head = FreeListHeadRef::new(&self.free_list_head);
+        let mut current = head.get();
 
         while !current.is_null() {
-            let candidate = current;
-            let candidate_end = (candidate as *mut u8).add((*candidate).size as usize);
+            // SAFETY: current is a valid node in the free list
+            let candidate = unsafe { HeaderRef::new_unchecked(current) };
+            let candidate_end = candidate.byte_ptr() as usize + candidate.size() as usize;
 
-            if candidate_end == (header as *mut u8) {
+            if candidate_end == header.byte_ptr() as usize {
                 self.remove_from_free_list(candidate);
-                (*candidate).size += (*header).size;
-                (*candidate).free = true;
+                candidate.set_size(candidate.size() + header.size());
+                candidate.set_free(true);
                 return candidate;
             }
 
-            current = (*candidate).next;
+            current = candidate.next();
         }
 
         header
     }
 
     /// Add a block to the free list
-    fn add_to_free_list(&self, header: *mut HeapHeader) {
-        // SAFETY: free_list_head is a static AtomicPtr; linked-list
-        // pointers of header are about to be overwritten with safe values.
-        unsafe {
-            let head_ptr = self.free_list_head.get();
+    fn add_to_free_list(&self, header: HeaderRef) {
+        let head = FreeListHeadRef::new(&self.free_list_head);
+        let head_ptr = head.get();
 
-            if !(*head_ptr).is_null() {
-                (*header).next = *head_ptr;
-                (*(*head_ptr)).prev = header;
-            } else {
-                (*header).next = core::ptr::null_mut();
-            }
-            (*header).prev = core::ptr::null_mut();
-            *head_ptr = header;
+        if !head_ptr.is_null() {
+            let old_head = unsafe { HeaderRef::new_unchecked(head_ptr) };
+            header.set_next(old_head.as_ptr());
+            old_head.set_prev(header.as_ptr());
+        } else {
+            header.set_next(core::ptr::null_mut());
         }
+        header.set_prev(core::ptr::null_mut());
+        head.set(header.as_ptr());
     }
 
     /// Remove a block from the free list
-    fn remove_from_free_list(&self, header: *mut HeapHeader) {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            let prev = (*header).prev;
-            let next = (*header).next;
-            let head_ptr = self.free_list_head.get();
+    fn remove_from_free_list(&self, header: HeaderRef) {
+        let prev = header.prev();
+        let next = header.next();
+        let head = FreeListHeadRef::new(&self.free_list_head);
 
-            if !prev.is_null() {
-                (*prev).next = next;
-            } else {
-                *head_ptr = next;
-            }
-
-            if !next.is_null() {
-                (*next).prev = prev;
-            }
-
-            (*header).next = core::ptr::null_mut();
-            (*header).prev = core::ptr::null_mut();
+        if !prev.is_null() {
+            let p = unsafe { HeaderRef::new_unchecked(prev) };
+            p.set_next(next);
+        } else {
+            head.set(next);
         }
+
+        if !next.is_null() {
+            let n = unsafe { HeaderRef::new_unchecked(next) };
+            n.set_prev(prev);
+        }
+
+        header.set_next(core::ptr::null_mut());
+        header.set_prev(core::ptr::null_mut());
     }
 
     /// Expand the heap by requesting more pages from VMM/PMM
@@ -636,10 +779,10 @@ impl KernelHeap {
 
         // SAFETY: new pages are mapped writable by vmm.map_page above;
         // new_start is the mapped region start, exclusive access held under lock.
-        let new_block = unsafe { &mut *(new_start.0 as *mut HeapHeader) };
-        *new_block = HeapHeader::new(expand_by, true);
+        let new_block = unsafe { HeaderRef::new_unchecked(new_start.0 as *mut HeapHeader) };
+        new_block.write(HeapHeader::new(expand_by, true));
 
-        self.add_to_free_list(new_block as *mut HeapHeader);
+        self.add_to_free_list(new_block);
 
         self.allocate_first_fit(size)
     }
@@ -659,10 +802,10 @@ impl KernelHeap {
 
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
-            // SAFETY: idx < MAX_EARLY_ALLOCS guards the bounds; writing to
-            // the early_allocs slot is a direct pointer write.
+            // SAFETY: idx < MAX_EARLY_ALLOCS guards the bounds
             unsafe {
                 let alloc_ptr = self.early_allocs.as_ptr().add(idx) as *mut EarlyHeapAlloc;
+                raw::zero_memory(alloc_ptr as *mut u8, core::mem::size_of::<EarlyHeapAlloc>());
                 (*alloc_ptr).ptr = ptr;
                 (*alloc_ptr).size = size;
             }
@@ -679,9 +822,9 @@ impl KernelHeap {
             let alloc = self.early_allocs[i];
 
             if let Some(new_ptr) = self.allocate_first_fit(alloc.size as u64) {
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+                // SAFETY: early alloc ptr is valid, new_ptr is a distinct allocation
                 unsafe {
-                    core::ptr::copy_nonoverlapping(alloc.ptr, new_ptr, alloc.size);
+                    raw::copy_nonoverlapping(alloc.ptr, new_ptr, alloc.size);
                 }
             }
         }

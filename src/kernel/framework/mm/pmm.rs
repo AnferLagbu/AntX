@@ -95,6 +95,209 @@ struct FreeNode {
     next: *mut FreeNode,
 }
 
+// === E3: Unsafe Concentration — raw sub-module ===
+//
+// All bare-pointer dereferences for buddy allocator internals are
+// encapsulated here.  The outer `PhysicalMemoryManager` methods call
+// only safe wrappers, keeping the buddy algorithm logic itself safe Rust.
+pub(crate) mod raw {
+    use super::*;
+
+    // ---- FreeNode safe wrapper ----
+    // SAFETY invariant: the pointer points to a valid FreeNode inside a
+    // free page within physical RAM, and the PMM lock is held.
+    #[derive(Clone, Copy)]
+    pub struct FreeNodeRef(*mut FreeNode);
+
+    impl FreeNodeRef {
+        /// # Safety
+        /// - `ptr` must point to a valid `FreeNode` inside a free page
+        /// - PMM lock must be held for the duration of use
+        #[inline(always)]
+        pub unsafe fn new_unchecked(ptr: *mut FreeNode) -> Self {
+            Self(ptr)
+        }
+
+        #[inline(always)]
+        #[allow(dead_code)]
+        pub fn is_null(self) -> bool {
+            self.0.is_null()
+        }
+
+        #[inline(always)]
+        #[allow(dead_code)]
+        pub fn as_ptr(self) -> *mut FreeNode {
+            self.0
+        }
+
+        #[inline(always)]
+        pub fn prev(&self) -> *mut FreeNode {
+            // SAFETY: caller guarantees valid pointer under PMM lock
+            unsafe { (*self.0).prev }
+        }
+
+        #[inline(always)]
+        pub fn next(&self) -> *mut FreeNode {
+            // SAFETY: caller guarantees valid pointer under PMM lock
+            unsafe { (*self.0).next }
+        }
+
+        #[inline(always)]
+        pub fn set_prev(&self, p: *mut FreeNode) {
+            // SAFETY: caller guarantees valid pointer under PMM lock
+            unsafe { (*self.0).prev = p; }
+        }
+
+        #[inline(always)]
+        pub fn set_next(&self, p: *mut FreeNode) {
+            // SAFETY: caller guarantees valid pointer under PMM lock
+            unsafe { (*self.0).next = p; }
+        }
+    }
+
+    // ---- Buddy metadata safe wrapper ----
+    // SAFETY invariant: meta pointer is valid after init_bitmap; idx < total_pages
+    pub struct MetaRef {
+        ptr: *mut u8,
+    }
+
+    impl MetaRef {
+        /// # Safety
+        /// - `ptr` must point to a valid buddy metadata array
+        /// - PMM lock must be held for the duration of use
+        #[inline(always)]
+        pub unsafe fn new_unchecked(ptr: *mut u8) -> Self {
+            Self { ptr }
+        }
+
+        #[inline(always)]
+        pub fn read(&self, idx: usize) -> u8 {
+            // SAFETY: caller guarantees idx < total_pages, ptr valid
+            unsafe { *self.ptr.add(idx) }
+        }
+
+        #[inline(always)]
+        pub fn write(&self, idx: usize, val: u8) {
+            // SAFETY: caller guarantees idx < total_pages, ptr valid
+            unsafe { *self.ptr.add(idx) = val; }
+        }
+    }
+
+    // ---- Bitmap safe wrapper ----
+    // SAFETY invariant: bitmap pointer is valid after init_bitmap; word < bitmap_size
+    pub struct BitmapRef {
+        ptr: NonNull<u32>,
+    }
+
+    impl BitmapRef {
+        #[inline(always)]
+        pub fn new(ptr: NonNull<u32>) -> Self {
+            Self { ptr }
+        }
+
+        #[inline(always)]
+        pub fn set_bit(&self, bit: usize, bitmap_size: usize) {
+            let word = bit / 32;
+            if word < bitmap_size {
+                // SAFETY: word < bitmap_size guarantees valid access
+                unsafe {
+                    let p = self.ptr.as_ptr().add(word) as *const AtomicU32;
+                    (*p).fetch_or(1u32 << (bit % 32), Ordering::Relaxed);
+                }
+            }
+        }
+
+        #[inline(always)]
+        pub fn clear_bit(&self, bit: usize, bitmap_size: usize) {
+            let word = bit / 32;
+            if word < bitmap_size {
+                // SAFETY: word < bitmap_size guarantees valid access
+                unsafe {
+                    let p = self.ptr.as_ptr().add(word) as *const AtomicU32;
+                    (*p).fetch_and(!(1u32 << (bit % 32)), Ordering::Relaxed);
+                }
+            }
+        }
+
+        #[inline(always)]
+        pub fn test_bit(&self, bit: usize, bitmap_size: usize) -> bool {
+            let word = bit / 32;
+            if word < bitmap_size {
+                // SAFETY: word < bitmap_size guarantees valid access
+                unsafe {
+                    let p = self.ptr.as_ptr().add(word) as *const AtomicU32;
+                    (*p).load(Ordering::Relaxed) & (1u32 << (bit % 32)) != 0
+                }
+            } else {
+                false
+            }
+        }
+
+        #[inline(always)]
+        pub fn count_free(&self, bitmap_size: usize) -> u64 {
+            let mut free: u64 = 0;
+            for w in 0..bitmap_size {
+                // SAFETY: w < bitmap_size guarantees valid access
+                unsafe {
+                    let p = self.ptr.as_ptr().add(w) as *const AtomicU32;
+                    free += (!(*p).load(Ordering::Relaxed)).count_ones() as u64;
+                }
+            }
+            free
+        }
+    }
+
+    // ---- Buddy heads safe wrapper ----
+    // SAFETY invariant: buddy_heads is only accessed under PMM lock
+    pub struct HeadsRef {
+        ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1],
+    }
+
+    impl HeadsRef {
+        /// # Safety
+        /// - `ptr` must point to the valid buddy_heads array
+        /// - PMM lock must be held for the duration of use
+        #[inline(always)]
+        pub unsafe fn new_unchecked(
+            ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1],
+        ) -> Self {
+            Self { ptr }
+        }
+
+        #[inline(always)]
+        pub fn head(&self, order: u8) -> *mut FreeNode {
+            // SAFETY: order <= MAX_BUDDY_ORDER, ptr valid under lock
+            unsafe { (*self.ptr)[order as usize] }
+        }
+
+        #[inline(always)]
+        pub fn set_head(&self, order: u8, node: *mut FreeNode) {
+            // SAFETY: order <= MAX_BUDDY_ORDER, ptr valid under lock
+            unsafe { (*self.ptr)[order as usize] = node; }
+        }
+    }
+
+    /// Zero a memory region.
+    ///
+    /// # Safety
+    /// - `ptr` must point to a valid writable region of `len` bytes
+    #[inline(always)]
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+        core::ptr::write_bytes(ptr, 0, len);
+    }
+
+    /// Fill a memory region with a byte value.
+    ///
+    /// # Safety
+    /// - `ptr` must point to a valid writable region of `len` bytes
+    #[inline(always)]
+    pub unsafe fn fill_memory(ptr: *mut u8, val: u8, len: usize) {
+        core::ptr::write_bytes(ptr, val, len);
+    }
+}
+
+use raw::{FreeNodeRef, MetaRef, BitmapRef, HeadsRef};
+
 pub struct PhysicalMemoryManager {
     // ---- Bitmap (reserved tracking + stats) ----
     bitmap: Cell<Option<NonNull<u32>>>,
@@ -200,7 +403,7 @@ impl PhysicalMemoryManager {
 
         // SAFETY: bitmap_virt is phys_to_virt(PM) + KERNEL_BASE — valid kernel VA
         unsafe {
-            core::ptr::write_bytes(bitmap_virt as *mut u8, 0, bitmap_bytes);
+            raw::zero_memory(bitmap_virt as *mut u8, bitmap_bytes);
         }
 
         self.bitmap
@@ -228,7 +431,7 @@ impl PhysicalMemoryManager {
 
         // SAFETY: buddy_meta_virt = buddy_meta_phys + KERNEL_BASE — valid kernel VA
         unsafe {
-            core::ptr::write_bytes(
+            raw::fill_memory(
                 buddy_meta_virt as *mut u8,
                 BUDDY_ALLOCATED,
                 buddy_meta_bytes,
@@ -447,45 +650,19 @@ impl PhysicalMemoryManager {
 
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
-            // SAFETY: bmp points to the bitmap (valid kernel VA from init).
-            // word index checked against bitmap_size.
-            // AtomicU32 operations are safe on properly aligned memory.
-            unsafe {
-                let word = bit / 32;
-                if word < self.bitmap_size.get() {
-                    let p = bmp.as_ptr().add(word) as *const AtomicU32;
-                    (*p).fetch_or(1u32 << (bit % 32), Ordering::Relaxed);
-                }
-            }
+            BitmapRef::new(bmp).set_bit(bit, self.bitmap_size.get());
         }
     }
 
     fn clear_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
-            // SAFETY: bitmap pointer valid; word index bounds-checked;
-            // AtomicU32 aligned access.
-            unsafe {
-                let word = bit / 32;
-                if word < self.bitmap_size.get() {
-                    let p = bmp.as_ptr().add(word) as *const AtomicU32;
-                    (*p).fetch_and(!(1u32 << (bit % 32)), Ordering::Relaxed);
-                }
-            }
+            BitmapRef::new(bmp).clear_bit(bit, self.bitmap_size.get());
         }
     }
 
     fn test_bit(&self, bit: usize) -> bool {
         if let Some(bmp) = self.bitmap.get() {
-            let word = bit / 32;
-            if word < self.bitmap_size.get() {
-                // SAFETY: bitmap pointer valid; word index checked; AtomicU32 load
-                unsafe {
-                    let p = bmp.as_ptr().add(word) as *const AtomicU32;
-                    (*p).load(Ordering::Relaxed) & (1u32 << (bit % 32)) != 0
-                }
-            } else {
-                false
-            }
+            BitmapRef::new(bmp).test_bit(bit, self.bitmap_size.get())
         } else {
             false
         }
@@ -493,22 +670,18 @@ impl PhysicalMemoryManager {
 
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
-        let mut free: u64 = 0;
-        if let Some(bmp) = self.bitmap.get() {
-            for w in 0..self.bitmap_size.get() {
-                // SAFETY: bmp points to valid bitmap; w < bitmap_size bounds-checked
-                unsafe {
-                    let p = bmp.as_ptr().add(w) as *const AtomicU32;
-                    free += (!(*p).load(Ordering::Relaxed)).count_ones() as u64;
-                }
-            }
-        }
+        let free = if let Some(bmp) = self.bitmap.get() {
+            BitmapRef::new(bmp).count_free(self.bitmap_size.get())
+        } else {
+            0
+        };
         // Clamp to total (bitmap may have extra bits beyond total_pages)
         let extra = (self.bitmap_size.get() * 32).saturating_sub(total) as u32;
         if extra > 0 {
-            free = free.saturating_sub(extra as u64);
+            free.saturating_sub(extra as u64)
+        } else {
+            free
         }
-        free
     }
 
     fn update_stats(&self) {
@@ -522,27 +695,28 @@ impl PhysicalMemoryManager {
     // ==================== Buddy allocator core ====================
 
     #[inline]
-    fn buddy_meta_ptr(&self) -> *mut u8 {
-        self.buddy_meta
-            .get()
-            .map(|n| n.as_ptr())
-            .unwrap_or_default()
+    fn buddy_meta_ref(&self) -> Option<MetaRef> {
+        self.buddy_meta.get().map(|n| {
+            // SAFETY: buddy_meta is set once in init_bitmap and read-only afterwards;
+            // PMM lock is held for all buddy operations.
+            unsafe { MetaRef::new_unchecked(n.as_ptr()) }
+        })
     }
 
     #[inline]
-    fn buddy_heads_ptr(&self) -> *mut *mut FreeNode {
-        // SAFETY: buddy_heads is UnsafeCell; accessed under bitmap lock;
+    fn buddy_heads_ref(&self) -> HeadsRef {
+        // SAFETY: buddy_heads is UnsafeCell; accessed under PMM lock;
         // pointer to the array is stable after init_bitmap.
-        unsafe { (*self.buddy_heads.get()).as_mut_ptr() }
+        unsafe { HeadsRef::new_unchecked(self.buddy_heads.get()) }
     }
 
     /// Try to merge freed page `pfn` at `order` with its buddy upwards.
     /// Returns (merged_pfn, final_order).
     fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
-        let meta = self.buddy_meta_ptr();
-        if meta.is_null() {
-            return (pfn, order);
-        }
+        let meta = match self.buddy_meta_ref() {
+            Some(m) => m,
+            None => return (pfn, order),
+        };
         let total = self.info.get().total_pages;
 
         while order < MAX_BUDDY_ORDER {
@@ -551,37 +725,29 @@ impl PhysicalMemoryManager {
                 break;
             }
 
-            // SAFETY: buddy_pfn is within valid range; meta array entry is 1 byte
-            let buddy_state = unsafe { *meta.add(buddy_pfn as usize) };
+            let buddy_state = meta.read(buddy_pfn as usize);
             if buddy_state != order {
                 break;
             }
 
             // Remove buddy from its free list
             self.buddy_list_remove(buddy_pfn, order);
-            // SAFETY: mark buddy as allocated in meta array
-            unsafe {
-                *meta.add(buddy_pfn as usize) = BUDDY_ALLOCATED;
-            }
+            meta.write(buddy_pfn as usize, BUDDY_ALLOCATED);
 
             pfn = core::cmp::min(pfn, buddy_pfn);
             order += 1;
         }
 
-        // SAFETY: write final order into meta array
-        unsafe {
-            *meta.add(pfn as usize) = order;
-        }
+        meta.write(pfn as usize, order);
         (pfn, order)
     }
 
     /// Remove a free block from its doubly-linked list.
     fn buddy_list_remove(&self, pfn: u64, order: u8) {
-        let heads = self.buddy_heads_ptr();
+        let heads = self.buddy_heads_ref();
         let node = pfn_to_virt(pfn) as *mut FreeNode;
         // Defensive: validate node is within physical RAM range
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        let node_phys = unsafe { (node as u64).wrapping_sub(KERNEL_BASE) };
+        let node_phys = (node as u64).wrapping_sub(KERNEL_BASE);
         let mem_size = self.mem_size.get();
         #[allow(clippy::absurd_extreme_comparisons)]
         if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
@@ -593,48 +759,51 @@ impl PhysicalMemoryManager {
             );
             return;
         }
-        // SAFETY: node is inside a valid free page
-        unsafe {
-            let prev = (*node).prev;
-            let next = (*node).next;
-            if !prev.is_null() {
-                (*prev).next = next;
-            } else {
-                *heads.add(order as usize) = next;
-            }
-            if !next.is_null() {
-                (*next).prev = prev;
-            }
+        // SAFETY: node is inside a valid free page, PMM lock held
+        let n = unsafe { FreeNodeRef::new_unchecked(node) };
+        let prev = n.prev();
+        let next = n.next();
+        if !prev.is_null() {
+            // SAFETY: prev is a valid FreeNode in the list
+            let p = unsafe { FreeNodeRef::new_unchecked(prev) };
+            p.set_next(next);
+        } else {
+            heads.set_head(order, next);
+        }
+        if !next.is_null() {
+            // SAFETY: next is a valid FreeNode in the list
+            let nx = unsafe { FreeNodeRef::new_unchecked(next) };
+            nx.set_prev(prev);
         }
     }
 
     /// Push a block onto the free list head.
     fn buddy_list_push(&self, pfn: u64, order: u8) {
-        let heads = self.buddy_heads_ptr();
+        let heads = self.buddy_heads_ref();
         let node = pfn_to_virt(pfn) as *mut FreeNode;
-        // SAFETY: free page is unused, we own the first 16 bytes
-        unsafe {
-            let old_head = *heads.add(order as usize);
-            (*node).prev = core::ptr::null_mut();
-            (*node).next = old_head;
-            if !old_head.is_null() {
-                (*old_head).prev = node;
-            }
-            *heads.add(order as usize) = node;
+        // SAFETY: free page is unused, we own the first 16 bytes, PMM lock held
+        let n = unsafe { FreeNodeRef::new_unchecked(node) };
+        let old_head = heads.head(order);
+        n.set_prev(core::ptr::null_mut());
+        n.set_next(old_head);
+        if !old_head.is_null() {
+            // SAFETY: old_head is a valid FreeNode in the list
+            let oh = unsafe { FreeNodeRef::new_unchecked(old_head) };
+            oh.set_prev(node);
         }
+        heads.set_head(order, node);
     }
 
     /// Pop a block from the free list head. Returns pfn.
     fn buddy_list_pop(&self, order: u8) -> Option<u64> {
-        let heads = self.buddy_heads_ptr();
-        // SAFETY: heads points to stable array of FreeNode pointers
-        let node = unsafe { *heads.add(order as usize) };
+        let heads = self.buddy_heads_ref();
+        let node = heads.head(order);
         if node.is_null() {
             return None;
         }
 
         // Defensive: validate node is within physical RAM range
-        let node_phys = unsafe { (node as u64).wrapping_sub(KERNEL_BASE) };
+        let node_phys = (node as u64).wrapping_sub(KERNEL_BASE);
         let mem_size = self.mem_size.get();
         #[allow(clippy::absurd_extreme_comparisons)]
         if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
@@ -646,15 +815,15 @@ impl PhysicalMemoryManager {
             return None;
         }
 
-        // SAFETY: node is a valid free page within physical RAM
         let pfn = phys_to_page(node_phys);
-        // SAFETY: updating doubly-linked list; node.next is valid or null
-        unsafe {
-            let next = (*node).next;
-            *heads.add(order as usize) = next;
-            if !next.is_null() {
-                (*next).prev = core::ptr::null_mut();
-            }
+        // SAFETY: node is a valid free page, PMM lock held
+        let n = unsafe { FreeNodeRef::new_unchecked(node) };
+        let next = n.next();
+        heads.set_head(order, next);
+        if !next.is_null() {
+            // SAFETY: next is a valid FreeNode in the list
+            let nx = unsafe { FreeNodeRef::new_unchecked(next) };
+            nx.set_prev(core::ptr::null_mut());
         }
         Some(pfn)
     }
@@ -668,9 +837,8 @@ impl PhysicalMemoryManager {
         // Find smallest available order >= requested
         let mut avail_order: Option<u8> = None;
         for o in order..=MAX_BUDDY_ORDER {
-            let heads = self.buddy_heads_ptr();
-            // SAFETY: heads array is valid; o in valid range
-            if unsafe { !(*heads.add(o as usize)).is_null() } {
+            let heads = self.buddy_heads_ref();
+            if !heads.head(o).is_null() {
                 avail_order = Some(o);
                 break;
             }
@@ -678,12 +846,12 @@ impl PhysicalMemoryManager {
         let alloc_order = avail_order?;
 
         let pfn = self.buddy_list_pop(alloc_order)?;
-        let meta = self.buddy_meta_ptr();
+        let meta = match self.buddy_meta_ref() {
+            Some(m) => m,
+            None => return None,
+        };
 
-        // SAFETY: mark as allocated in meta array
-        unsafe {
-            *meta.add(pfn as usize) = BUDDY_ALLOCATED;
-        }
+        meta.write(pfn as usize, BUDDY_ALLOCATED);
 
         // Split downward until we reach the requested order
         let cur_pfn = pfn;
@@ -692,15 +860,9 @@ impl PhysicalMemoryManager {
             cur_order -= 1;
             let buddy_pfn = cur_pfn + (1u64 << cur_order);
             self.buddy_list_push(buddy_pfn, cur_order);
-            // SAFETY: mark buddy as free at split order
-            unsafe {
-                *meta.add(buddy_pfn as usize) = cur_order;
-            }
+            meta.write(buddy_pfn as usize, cur_order);
         }
-        // SAFETY: mark final allocation in meta
-        unsafe {
-            *meta.add(cur_pfn as usize) = BUDDY_ALLOCATED;
-        }
+        meta.write(cur_pfn as usize, BUDDY_ALLOCATED);
 
         Some((cur_pfn, order))
     }
@@ -767,10 +929,10 @@ impl PhysicalMemoryManager {
 
     /// Scan all free pages (bits not set), coalesce into max-order buddy blocks.
     fn buddy_init_free_lists(&self, total_pages: usize) {
-        let meta = self.buddy_meta_ptr();
-        if meta.is_null() {
-            return;
-        }
+        let meta = match self.buddy_meta_ref() {
+            Some(m) => m,
+            None => return,
+        };
 
         let mut pfn = 0usize;
         while pfn < total_pages {
@@ -804,10 +966,7 @@ impl PhysicalMemoryManager {
                 }
                 let block_size = 1usize << order as usize;
 
-                // SAFETY: block is within free run and meta array bounds
-                unsafe {
-                    *meta.add(cur as usize) = order;
-                }
+                meta.write(cur as usize, order);
                 self.buddy_list_push(cur, order);
 
                 cur += block_size as u64;

@@ -11,6 +11,35 @@ use super::cfs::{
 use super::process::{Process, PROCESS_TABLE};
 use super::types::*;
 
+// === E2: Unsafe Concentration — raw sub-module ===
+//
+// FFI calls and per-CPU pointer dereferences that cannot be expressed
+// in safe Rust are encapsulated here.
+pub(crate) mod raw {
+    /// Update the per-CPU `current_process_ptr` used by assembly entry paths.
+    ///
+    /// # Safety
+    /// - `ptr` must be a valid `*const Process` or 0
+    #[inline(always)]
+    pub unsafe fn update_current_process_ptr(ptr: u64) {
+        extern "C" {
+            fn update_current_process_ptr(ptr: u64);
+        }
+        update_current_process_ptr(ptr);
+    }
+
+    /// Get a `&'static PerCpuSched` from an `Option` guard.
+    ///
+    /// # Safety
+    /// - `guard` must be `Some` and the pointer must remain valid for `'static`
+    #[inline(always)]
+    pub unsafe fn per_cpu_from_option<T>(guard: &Option<T>) -> &T {
+        guard.as_ref().unwrap_unchecked()
+    }
+}
+
+use raw::update_current_process_ptr;
+
 macro_rules! klog_sched_warn {
     ($($arg:tt)*) => {
         $crate::klog_ffi!(klog_ffi_warn, $($arg)*)
@@ -149,18 +178,11 @@ fn per_cpu() -> &'static PerCpuSched {
         }
     }
     let guard = PER_CPU_SCHED[idx].lock();
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    // SAFETY: guard is guaranteed Some after init_per_cpu_sched; pointer
+    // remains valid for the static lifetime of PER_CPU_SCHED entries.
     unsafe {
-        match guard.as_ref() {
-            Some(per_cpu) => {
-                let ptr = per_cpu as *const PerCpuSched;
-                &*ptr
-            }
-            None => {
-                klog_error!("[SCHED] Failed to get per-CPU scheduler for CPU {}", idx);
-                core::hint::unreachable_unchecked()
-            }
-        }
+        let per_cpu = raw::per_cpu_from_option(&guard);
+        &*(per_cpu as *const PerCpuSched)
     }
 }
 
@@ -175,10 +197,10 @@ fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
         }
     }
     let guard = PER_CPU_SCHED[idx].lock();
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    // SAFETY: same as per_cpu()
     unsafe {
-        let ptr = guard.as_ref().unwrap() as *const PerCpuSched;
-        &*ptr
+        let per_cpu = raw::per_cpu_from_option(&guard);
+        &*(per_cpu as *const PerCpuSched)
     }
 }
 
@@ -220,11 +242,8 @@ impl Scheduler {
             self.set_current(pid);
 
             if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+                // SAFETY: process_ptr is valid from PROCESS_TABLE.get()
                 unsafe {
-                    extern "C" {
-                        fn update_current_process_ptr(ptr: u64);
-                    }
                     update_current_process_ptr(process_ptr as u64);
                 }
             }
@@ -559,9 +578,9 @@ impl Scheduler {
             .store(next as u64, Ordering::SeqCst);
 
         if let Some(next_ptr_raw) = next_ptr {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: next_ptr_raw is valid from PROCESS_TABLE.get()
             unsafe {
-                crate::kernel::framework::proc::api::update_current_process_ptr(next_ptr_raw as u64);
+                update_current_process_ptr(next_ptr_raw as u64);
             }
         }
 
@@ -851,11 +870,8 @@ impl Scheduler {
         per_cpu().current.store(pid, Ordering::SeqCst);
 
         if let Some(process_ptr) = PROCESS_TABLE.get(pid) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: process_ptr is valid from PROCESS_TABLE.get()
             unsafe {
-                extern "C" {
-                    fn update_current_process_ptr(ptr: u64);
-                }
                 update_current_process_ptr(process_ptr as u64);
             }
         }
@@ -1068,22 +1084,19 @@ impl Scheduler {
                 if pid == self.current().unwrap_or(0) {
                     continue;
                 }
-                if let Some(proc) = PROCESS_TABLE.get(pid) {
-                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                    unsafe {
-                        let state = (*proc).get_state();
-                        if state == ProcessState::Blocked {
-                            let reason = (*proc).block_reason.load(Ordering::Relaxed);
-                            if reason == BlockReason::Sleeping as u32 {
-                                let until = (*proc).sleep_until.load(Ordering::SeqCst);
-                                if until > 0 && current_ticks >= until {
-                                    to_wake[wake_count] = pid;
-                                    wake_count += 1;
-                                }
+                PROCESS_TABLE.with_process(pid, |proc| {
+                    let state = proc.get_state();
+                    if state == ProcessState::Blocked {
+                        let reason = proc.block_reason.load(Ordering::Relaxed);
+                        if reason == BlockReason::Sleeping as u32 {
+                            let until = proc.sleep_until.load(Ordering::SeqCst);
+                            if until > 0 && current_ticks >= until {
+                                to_wake[wake_count] = pid;
+                                wake_count += 1;
                             }
                         }
                     }
-                }
+                });
             }
             for i in 0..wake_count {
                 self.unblock(to_wake[i]);
@@ -1100,30 +1113,29 @@ impl Scheduler {
                     break;
                 }
                 if let Some(proc) = PROCESS_TABLE.get(pid) {
-                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                    unsafe {
-                        if (*proc).get_state() == ProcessState::Zombie {
-                            let parent_alive = (*proc).parent.map_or(true, |ppid| {
-                                PROCESS_TABLE.get(ppid.0).map_or(false, |p| {
-                                    let s = (*p).get_state();
+                    let is_zombie = PROCESS_TABLE.with_process(pid, |p| {
+                        if p.get_state() == ProcessState::Zombie {
+                            let parent_alive = p.parent.map_or(true, |ppid| {
+                                PROCESS_TABLE.with_process(ppid.0, |pp| {
+                                    let s = pp.get_state();
                                     s != ProcessState::Zombie && s != ProcessState::Terminated
-                                })
+                                }).unwrap_or(false)
                             });
-                            if !parent_alive || (*proc).parent == Some(ProcessId(1)) {
-                                to_reap[reap_count] = pid;
-                                reap_count += 1;
-                            }
+                            !parent_alive || p.parent == Some(ProcessId(1))
+                        } else {
+                            false
                         }
+                    }).unwrap_or(false);
+                    if is_zombie {
+                        to_reap[reap_count] = pid;
+                        reap_count += 1;
                     }
                 }
             }
             for i in 0..reap_count {
-                if let Some(proc) = PROCESS_TABLE.get(to_reap[i]) {
-                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                    unsafe {
-                        let _ = (*proc).set_state_safe(ProcessState::Terminated);
-                    }
-                }
+                PROCESS_TABLE.with_process(to_reap[i], |p| {
+                    let _ = p.set_state_safe(ProcessState::Terminated);
+                });
                 PROCESS_TABLE.remove_and_free(to_reap[i]);
             }
         }
@@ -1154,16 +1166,10 @@ impl Scheduler {
     }
 
     pub fn set_sched_policy(&self, pid: Pid, policy: SchedPolicy, rt_priority: u8) -> bool {
-        if let Some(process) = PROCESS_TABLE.get(pid) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                (*process).set_sched_policy(policy);
-                (*process).set_rt_priority(rt_priority.min(RT_PRIORITY_MAX));
-            }
-            true
-        } else {
-            false
-        }
+        PROCESS_TABLE.with_process(pid, |proc| {
+            proc.set_sched_policy(policy);
+            proc.set_rt_priority(rt_priority.min(RT_PRIORITY_MAX));
+        }).is_some()
     }
 
     pub fn get_rt_count(&self) -> usize {

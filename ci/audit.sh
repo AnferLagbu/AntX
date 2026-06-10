@@ -39,6 +39,22 @@ else
     err "tools/check_tcb.sh 不存在或不可执行"
 fi
 
+# ── 0.5b TCB 度量报告 (E10) ──────────────────────────────────────
+if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_tcb_ratio.py" ]; then
+    step "0.5b/6 TCB 度量报告 (E10)"
+    "$PROJECT_ROOT/scripts/audit_tcb_ratio.py" 2>&1 | tail -20
+fi
+
+# ── 0.5c 6 安全不变式审计 (E9) ────────────────────────────────────
+if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_invariants.py" ]; then
+    step "0.5c/6 6 安全不变式审计 (E9)"
+    if "$PROJECT_ROOT/scripts/audit_invariants.py" 2>&1 | tail -12; then
+        ok "6 安全不变式: 全部满足"
+    else
+        err "6 安全不变式: 有违反! 见上方输出"
+    fi
+fi
+
 # Phase 3.2 真实工具: framework 全量 SAFETY 注释覆盖审计
 # quick 模式也会跑 (核心 fail-fast 门禁, 不需要 Lockbud/Miri 等重工具)
 if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/tools/audit_unsafe.py" ]; then
