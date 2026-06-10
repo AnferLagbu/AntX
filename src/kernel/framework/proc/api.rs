@@ -702,6 +702,16 @@ pub fn scheduler_init() {
     crate::kernel::framework::driver::power::pm_init(
         crate::kernel::framework::config::MAX_CPUS as u32,
     );
+    // D6: 初始化安全启动 + TPM
+    {
+        use crate::kernel::framework::credo::secure_boot::{secure_boot_init, tpm_init, Ed25519PubKey};
+        // 默认平台密钥 (全零, 开发阶段)
+        let default_pk = Ed25519PubKey::new([0u8; 32]);
+        secure_boot_init(default_pk);
+        tpm_init();
+    }
+    // D7: 初始化 CET (Shadow Stack)
+    crate::kernel::framework::arch::shadow_stack::cet_init();
 }
 
 #[no_mangle]

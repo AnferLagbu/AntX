@@ -23,6 +23,8 @@ pub mod audit;
 pub mod crypto;
 pub mod grants;
 pub mod identity;
+/// D6: 安全启动 + TPM 安全封装
+pub mod secure_boot;
 pub mod policy;
 pub mod sessions;
 pub mod uid;

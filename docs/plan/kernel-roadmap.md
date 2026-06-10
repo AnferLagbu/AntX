@@ -264,6 +264,9 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [x] D2: cgroup 控制器 → 2026-06-10 完成 (framework/proc/cgroup.rs CPU/内存/PID/IO 四控制器 + CgroupRq + CgroupSubsystem; Process 集成 + fork 继承 + exit 清理; 5 个 syscall + services/proc/cgroup.rs 安全封装)
 - [x] D3: NUMA 感知 → 2026-06-10 完成 (framework/mm/numa.rs NumaNode/NumaTopology/NumaMempolicy + 距离矩阵 + UMA 回退; Process numa_policy + fork 继承; 4 个 syscall + linuxulator + services/mm/numa.rs 安全封装)
 - [x] D4: eBPF → 2026-06-10 完成 (framework/debug/ebpf.rs BpfInsn/BpfMap(Hash+Array)/BpfProg/BpfVerifier/BpfInterpreter/BpfHelper + BpfSubsystem; 验证器(有界循环+寄存器类型+指针检查); 解释器(ALU64/LD/ST/JMP全指令集); 6个Helper; sys_bpf多路复用 + linuxulator; services/debug/ebpf.rs 安全封装)
+- [x] D5: 电源管理 → 2026-06-10 完成 (framework/driver/power.rs CpuIdle(C0-C3+per-CPU统计)+CpuFreq(DVFS+performance/powersave/ondemand governor)+Suspend/Resume(S3/S5+通知器链); sys_pm多路复用; services/driver/power.rs 安全封装)
+- [x] D6: Secure Boot + TPM → 2026-06-10 完成 (framework/credo/secure_boot.rs SecureBoot(PK/KEK/DB信任链+Ed25519验证)+TPM2.0(8个PCR+Extend/Seal/Unseal/Quote+软件模拟)+SHA-256; sys_secure_boot+sys_tpm; services/credo/secure_boot.rs 安全封装)
+- [x] D7: Shadow Stack (CET) → 2026-06-10 完成 (framework/arch/shadow_stack.rs CET检测+Shadow Stack分配/管理+CR4.CET/MSR配置(x86_64)+PAC/BTI(aarch64); sys_cet; services/proc/shadow_stack.rs 安全封装)
 - [ ] eBPF
 - [ ] 电源管理
 - [ ] Secure Boot + TPM

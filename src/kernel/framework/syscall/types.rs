@@ -555,6 +555,19 @@ pub const QX_BPF: u64 = 850;
 /// pm — 电源管理系统调用
 pub const QX_PM: u64 = 860;
 
+// ==================== D6: 安全启动 + TPM ====================
+
+/// secure_boot — 安全启动系统调用
+pub const QX_SECURE_BOOT: u64 = 870;
+
+/// tpm — TPM 系统调用
+pub const QX_TPM: u64 = 871;
+
+// ==================== D7: Shadow Stack (CET) ====================
+
+/// cet — CET/Shadow Stack 系统调用
+pub const QX_CET: u64 = 880;
+
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

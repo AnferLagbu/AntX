@@ -80,6 +80,8 @@ pub use super::types::{
     QX_GET_MEMPOLICY, QX_SET_MEMPOLICY, QX_MIGRATE_PAGES, QX_GETCPU,
     QX_BPF,
     QX_PM,
+    QX_SECURE_BOOT, QX_TPM,
+    QX_CET,
 };
 
 // ============================================================================

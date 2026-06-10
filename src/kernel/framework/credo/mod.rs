@@ -20,6 +20,8 @@ pub mod grant;
 pub mod identity;
 pub mod session;
 pub mod sha256;
+/// D6: 安全启动 + TPM 2.0
+pub mod secure_boot;
 pub mod storage;
 pub mod types;
 

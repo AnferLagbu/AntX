@@ -51,6 +51,9 @@ pub mod x86_64;
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 
+/// D7: Shadow Stack (CET) + 控制流完整性
+pub mod shadow_stack;
+
 // ============================================================================
 // Trait 定义 — 多子 trait + 超 trait (Phase 8: refactored from monolithic Arch)
 // ============================================================================

@@ -484,6 +484,22 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
             b"pm\0"
         ),
 
+        // ==================== D6: 安全启动 + TPM ====================
+        QX_SECURE_BOOT => dispatch!(
+            crate::kernel::framework::credo::secure_boot::sys_secure_boot(a0, a1, a2, a3),
+            b"secure_boot\0"
+        ),
+        QX_TPM => dispatch!(
+            crate::kernel::framework::credo::secure_boot::sys_tpm(a0, a1, a2, a3),
+            b"tpm\0"
+        ),
+
+        // ==================== D7: Shadow Stack (CET) ====================
+        QX_CET => dispatch!(
+            crate::kernel::framework::arch::shadow_stack::sys_cet(a0, a1, a2),
+            b"cet\0"
+        ),
+
         // ==================== 文件访问 ====================
         QX_ACCESS => dispatch!(
             match crate::kernel::services::fs::access::access_syscall(a0, a1 as i32) {

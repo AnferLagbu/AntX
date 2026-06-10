@@ -40,3 +40,5 @@ pub mod firmware;
 pub mod storage;
 pub mod usb;
 pub mod acpi;
+/// D5: 电源管理安全封装
+pub mod power;
