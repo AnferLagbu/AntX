@@ -47,9 +47,14 @@ pub const O_CLOEXEC: i32 = 0o2_000_000;
 // 内部辅助
 // ============================================================================
 
-fn current_pwm() -> u64 {
+/// 取当前进程凭证,无会话时直接返回 EACCES。
+///
+/// 历史警告: 此前在 `pwm == 0` 时替换为硬编码 `TEST_PWM` (魔法值),
+/// 实际会让所有未登录态调用落入 "匿名管理员" 路径,绕过访问控制。
+/// 现在严格走 session 模块,无会话即拒绝。
+fn current_pwm() -> Result<u64, Errno> {
     let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { 0x0020F45A8B978417 } else { pwm }
+    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
 }
 
 /// 验证 open flags 合法: 只接受低 3 位访问模式, 其他位 POSIX 定义.
@@ -100,7 +105,7 @@ pub fn open_syscall(path_ptr: u64, flags: i32, mode: i32) -> Result<usize, Errno
     if (flags & O_CREAT) != 0 && !(0..=0o7777).contains(&mode) {
         return Err(Errno::EINVAL);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let r = fw::vfs_open(path_ptr as *const u8, flags as u32, pwm);
     if r < 0 {
         Err(Errno::from_ret(r as i64))

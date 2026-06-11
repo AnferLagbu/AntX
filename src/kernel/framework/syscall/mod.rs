@@ -1536,7 +1536,9 @@ fn sys_mkdir(path: *const u8, _mode: i32) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    let pwm = if pwm == 0 { 0x0020F45A8B978417 } else { pwm };
+    if pwm == 0 {
+        return Errno::EACCES.as_ret();
+    }
     crate::kernel::framework::fs::vfs::api::vfs_mkdir(path, pwm) as i64
 }
 

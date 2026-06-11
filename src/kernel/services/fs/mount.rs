@@ -48,7 +48,7 @@ pub fn mount_syscall(
         return Err(Errno::EFAULT);
     }
 
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     if !credo::api::pwm_has_capability(pwm, 0, 0x01) {
         return Err(Errno::EACCES);
     }
@@ -78,7 +78,7 @@ pub fn umount2_syscall(target_ptr: u64, flags: i32) -> Result<usize, Errno> {
         return Err(Errno::EFAULT);
     }
 
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     if !credo::api::pwm_has_capability(pwm, 0, 0x01) {
         return Err(Errno::EACCES);
     }
@@ -95,7 +95,11 @@ pub fn umount2_syscall(target_ptr: u64, flags: i32) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-fn current_pwm() -> u64 {
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+///
+/// mount/umount2 在调用前还需 `pwm_has_capability(..., CAP_SYS_ADMIN)` 检查,
+/// 这里仅返回原始凭证,真正权限决策交给 capability 模块。
+fn current_pwm() -> Result<u64, Errno> {
     let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { 0x0020F45A8B978417 } else { pwm }
+    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
 }

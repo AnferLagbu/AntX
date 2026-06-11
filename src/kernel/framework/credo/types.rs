@@ -19,7 +19,6 @@ pub struct PwmId(pub u64);
 
 impl PwmId {
     pub const ZERO: PwmId = PwmId(0);
-    pub const TEST: PwmId = PwmId(0x0020F45A8B978417);
 
     pub fn is_valid(&self) -> bool {
         self.0 != 0

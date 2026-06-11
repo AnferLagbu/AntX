@@ -36,7 +36,7 @@ pub fn stat_syscall(path_ptr: u64, st_buf_ptr: u64) -> Result<usize, Errno> {
     if !raw::check_user_buf(st_buf_ptr, VFS_STAT_SIZE) {
         return Err(Errno::EFAULT);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     // framework safe API: 返回 VfsStat (无 raw pointer 跨边界)
     let stat = fw::vfs_stat_safe(path_ptr as *const u8, pwm).ok_or(Errno::EIO)?;
     // framework safe API: 写结构体到 user buf, 内部已 check_user_buf
@@ -72,7 +72,7 @@ pub fn fstat_syscall(fd: i32, st_buf_ptr: u64) -> Result<usize, Errno> {
     if !raw::check_user_buf(st_buf_ptr, VFS_STAT_SIZE) {
         return Err(Errno::EFAULT);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let stat = fw::vfs_fstat_safe(fd as u32, pwm).ok_or(Errno::EIO)?;
     if !raw::write_struct_to_user::<VfsStat>(st_buf_ptr, &stat) {
         return Err(Errno::EFAULT);
@@ -84,7 +84,8 @@ pub fn fstat_syscall(fd: i32, st_buf_ptr: u64) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-fn current_pwm() -> u64 {
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+fn current_pwm() -> Result<u64, Errno> {
     let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { 0x0020F45A8B978417 } else { pwm }
+    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
 }

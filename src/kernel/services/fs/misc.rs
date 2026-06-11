@@ -33,7 +33,7 @@ pub fn rename_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno
     if oldpath_ptr == newpath_ptr {
         return Err(Errno::EINVAL);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let r = fw::vfs_rename(
         oldpath_ptr as *const u8,
         newpath_ptr as *const u8,
@@ -103,7 +103,7 @@ pub fn fchown_syscall(fd: i32, owner: u64, group: u64) -> Result<usize, Errno> {
     if fd < 0 {
         return Err(Errno::EBADF);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let r = fw::vfs_fchown(fd as u32, owner, group, pwm);
     if r < 0 {
         Err(Errno::from_ret(r as i64))
@@ -285,9 +285,10 @@ pub fn alarm_syscall(seconds: u32) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-fn current_pwm() -> u64 {
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+fn current_pwm() -> Result<u64, Errno> {
     let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { 0x0020F45A8B978417 } else { pwm }
+    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
 }
 
 fn current_pid() -> u32 {

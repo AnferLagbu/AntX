@@ -60,8 +60,9 @@ pub fn fd_to_inode_id(fd: i32) -> u32 {
 ///
 /// `pwm` 为创建该映射的进程凭证. framework 层在 #PF 同步填 pcache 时
 /// 通过 `vfs_pread_inode(.., pwm)` 校验文件访问权限. 调用方应传入
-/// 进程当前凭证 (例如 `credo::pwm_get_current()`), 不传时退化为
-/// resolve_pwm(0) → TEST_PWM (仅 initramfs 场景安全).
+/// 进程当前凭证 (例如 `credo::pwm_get_current()`). 不传 (pwm==0) 时
+/// 表示"无会话",framework 层 ramfs.read 应当返回 EACCES —— 这是
+/// P0-I-29 修复的核心: 不再降级为隐式管理员.
 pub fn mmap_syscall(
     mm: &MmStruct,
     addr_hint: u64,

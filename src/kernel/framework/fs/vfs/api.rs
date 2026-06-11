@@ -47,7 +47,6 @@ pub trait Vfs: Send + Sync {
     fn unmount(&self) -> KernelResult<()>;
 }
 
-const TEST_PWM: u64 = 0x0020F45A8B978417;
 static RAMFS_MOUNTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// 兼容旧 `ptr_to_str(ptr)` 调用语义:
@@ -58,14 +57,6 @@ static RAMFS_MOUNTED: core::sync::atomic::AtomicBool = core::sync::atomic::Atomi
 /// 委托给统一抽象 [`CStrExt::as_kstr`],行为完全一致。
 fn ptr_to_str<'a>(ptr: *const u8) -> &'a str {
     ptr.as_kstr()
-}
-
-fn resolve_pwm(pwm: u64) -> u64 {
-    if pwm == 0 {
-        TEST_PWM
-    } else {
-        pwm
-    }
 }
 
 fn get_fd_info(fd_idx: u32) -> Option<(u32, u64, u64, alloc::string::String)> {
@@ -166,7 +157,6 @@ pub fn vfs_unmount_internal(path: *const u8) -> i32 {
 #[no_mangle]
 pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
 
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -335,12 +325,12 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 /// - `node_id`: ramfs 内部 inode 编号
 /// - `file_offset`: 文件内字节偏移 (调用方保证页对齐)
 /// - `dst`: 目标缓冲区 (长度由调用方提供, 通常为 PAGE_SIZE)
-/// - `pwm`: 权限字 (0 时使用 TEST_PWM)
+/// - `pwm`: 权限字; 由 `pwm_has_capability` / `check_privilege` 在内部做权限校验,
+///   0 表示无会话,framework 层 ramfs.read 应当返回 EACCES 而非降级为管理员。
 ///
 /// 返回: 实际读取字节数, 负数表示错误.
 #[no_mangle]
 pub fn vfs_pread_inode(node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
-    let pwm = resolve_pwm(pwm);
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
     let mut user_buf = unsafe { UserWritePtr::new(dst.as_mut_ptr(), dst.len()) };
 
@@ -353,8 +343,6 @@ pub fn vfs_pread_inode(node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64)
 #[no_mangle]
 pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
-
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
@@ -473,7 +461,6 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
 #[no_mangle]
 pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
 
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -505,8 +492,6 @@ pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
 #[no_mangle]
 pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
-
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
@@ -528,7 +513,7 @@ pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
 #[no_mangle]
 pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let _pwm = resolve_pwm(pwm);
+    let _pwm = pwm;
     if st.is_null() {
         return -1;
     }
@@ -543,7 +528,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
 
     // E6-4: trait object 分发
     let result = if let Some(fs) = fs_opt {
-        match fs.fs_stat(rel_path, _pwm) {
+        match fs.fs_stat(rel_path, pwm) {
             Ok(stat) => {
                 *st_ref.as_mut() = stat;
                 0
@@ -671,7 +656,6 @@ pub fn hvfs_set_disk_present_internal(present: bool) {
 #[no_mangle]
 pub fn hvfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
     let hvfs = get_hvfs();
     match hvfs.open(path, flags, pwm) {
         Ok(fd) => fd,
@@ -710,7 +694,6 @@ pub fn hvfs_write_internal(fd: u32, buf: *const u8, count: u32) -> i32 {
 #[no_mangle]
 pub fn hvfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
     let hvfs = get_hvfs();
     hvfs.mkdir(path, pwm)
 }
@@ -874,8 +857,6 @@ pub fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
 #[no_mangle]
 pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
-
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
@@ -907,8 +888,6 @@ pub fn vfs_chown_ext(
     pwm: u64,
 ) -> i32 {
     let path = ptr_to_str(path);
-    let pwm = resolve_pwm(pwm);
-
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
         None => return -1,
@@ -1013,7 +992,7 @@ pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
     if old_path.is_empty() || new_path.is_empty() {
         return -22;
     }
-    let pwm_eff = resolve_pwm(pwm);
+    let pwm_eff = pwm;
 
     let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(old_path) {
         Some(r) => r,
@@ -1038,7 +1017,7 @@ pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
     if tgt.is_empty() || link_path.is_empty() || tgt.len() >= 128 {
         return -22;
     }
-    let pwm_eff = resolve_pwm(pwm);
+    let pwm_eff = pwm;
 
     let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(link_path) {
         Some(r) => r,
@@ -1087,7 +1066,6 @@ pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32
 pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(old);
     let new_path = ptr_to_str(new);
-    let pwm = resolve_pwm(pwm);
 
     let (old_mount_idx, _old_fs_type, old_fs_opt) = match VFS_MANAGER.resolve_mount_fs(old_path) {
         Some(r) => r,
@@ -1235,7 +1213,6 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
             (0, 0, alloc::string::String::new())
         }
     };
-    let _pwm = resolve_pwm(pwm);
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_ref = unsafe { UserRefMut::new(st) };
 
@@ -1246,7 +1223,7 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
             None => return -1,
         };
         if let Some(fs) = fs_opt {
-            match fs.fs_stat(&full_path, _pwm) {
+            match fs.fs_stat(&full_path, pwm) {
                 Ok(stat) => {
                     *st_ref.as_mut() = stat;
                     0

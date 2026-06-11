@@ -27,7 +27,7 @@ pub fn link_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> 
     if !raw::check_user_ptr(newpath_ptr) {
         return Err(Errno::EFAULT);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let r = fw::vfs_link(
         oldpath_ptr as *const u8,
         newpath_ptr as *const u8,
@@ -55,7 +55,7 @@ pub fn symlink_syscall(target_ptr: u64, linkpath_ptr: u64) -> Result<usize, Errn
     if !raw::check_user_ptr(linkpath_ptr) {
         return Err(Errno::EFAULT);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let r = fw::vfs_symlink(
         target_ptr as *const u8,
         linkpath_ptr as *const u8,
@@ -86,7 +86,7 @@ pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usiz
     if !raw::check_user_buf(buf_ptr, bufsiz) {
         return Err(Errno::EFAULT);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let r = fw::vfs_readlink(
         path_ptr as *const u8,
         buf_ptr as *mut u8,
@@ -104,7 +104,8 @@ pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usiz
 // 内部辅助
 // ============================================================================
 
-fn current_pwm() -> u64 {
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+fn current_pwm() -> Result<u64, Errno> {
     let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { 0x0020F45A8B978417 } else { pwm }
+    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
 }

@@ -49,7 +49,7 @@ pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
     if !(0..=0o7).contains(&mode) {
         return Err(Errno::EINVAL);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     // 调用 vfs_stat_safe 验证存在性; 不需要 VfsStat 内容.
     let _stat = fw::vfs_stat_safe(path_ptr as *const u8, pwm).ok_or(Errno::EACCES)?;
     Ok(0)
@@ -80,7 +80,7 @@ pub fn unlink_syscall(path_ptr: u64) -> Result<usize, Errno> {
     if !raw::check_user_ptr(path_ptr) {
         return Err(Errno::EFAULT);
     }
-    let pwm = current_pwm();
+    let pwm = current_pwm()?;
     let r = fw::vfs_unlink(path_ptr as *const u8, pwm);
     if r < 0 {
         Err(Errno::from_ret(r as i64))
@@ -93,7 +93,8 @@ pub fn unlink_syscall(path_ptr: u64) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-fn current_pwm() -> u64 {
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+fn current_pwm() -> Result<u64, Errno> {
     let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { 0x0020F45A8B978417 } else { pwm }
+    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
 }

@@ -27,8 +27,12 @@ fn test_pwm_id_newtype() -> TestResult {
     check!(!zero.is_valid(), "zero PwmId should be invalid");
     check!(zero.as_u64() == 0, "ZERO as_u64 mismatch");
 
-    let test = PwmId::TEST;
-    check!(test.is_valid(), "TEST PwmId should be valid");
+    // 注意: 历史上此处使用 PwmId::TEST 验证 is_valid, 但 TEST 常量已被
+    // 移除 (P0-I-29d): 硬编码的"魔法值"权限字会绕过访问控制。
+    // 现在改用任意非零 PwmId 即可验证 is_valid 语义。
+    let arbitrary = PwmId(0xDEAD_BEEF_CAFE_F00D);
+    check!(arbitrary.is_valid(), "non-zero PwmId should be valid");
+    check!(arbitrary.as_u64() == 0xDEAD_BEEF_CAFE_F00D, "arbitrary as_u64 mismatch");
     TestResult::Pass
 }
 
