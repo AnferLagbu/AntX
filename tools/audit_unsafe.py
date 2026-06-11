@@ -2,8 +2,6 @@
 """
 AntX/QueenX Framework Unsafe 块 SAFETY 注释自动审计
 
-目的: Phase 3.2 SAFETY 注释审查 (framekernel-roadmap.md §3.2)
-
 扫描 framework/ 下所有 *.rs 文件, 列出每个 unsafe 引用位置 + 上方 5 行内
 是否含 SAFETY 注释, 输出一份诚实基线报告。
 
@@ -152,7 +150,7 @@ def print_summary(hits: List[UnsafeHit]) -> None:
     print(f"  SAFETY 注释覆盖:  {ok} / {total}  ({pct}%)")
     print(f"  缺 SAFETY:        {missing}")
     print()
-    print("  Phase 3.2 验收标准: 缺 SAFETY = 0")
+    print("  验收标准: 缺 SAFETY = 0")
     if missing == 0:
         print("  ✅ 全部已覆盖")
     else:

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # AntX/QueenX Framework Unsafe 块 SAFETY 注释自动审计
 #
-# 目的: Phase 3.2 SAFETY 注释审查 (framekernel-roadmap.md §3.2)
-#
 # 扫描 framework/ 下所有 *.rs 文件, 列出每个 unsafe 块的位置 + 上方 5 行内
 # 是否含 SAFETY 注释, 输出一份诚实基线报告。
 #
@@ -140,7 +138,7 @@ case "$MODE" in
         echo "  SAFETY 注释覆盖:  $ok / $total  ($(( ok * 100 / (total == 0 ? 1 : total) ))%)"
         echo "  缺 SAFETY:        $missing"
         echo ""
-        echo "  Phase 3.2 验收标准: 缺 SAFETY = 0"
+        echo "  验收标准: 缺 SAFETY = 0"
         if [ "$missing" -eq 0 ]; then
             echo "  ✅ 全部已覆盖"
         else

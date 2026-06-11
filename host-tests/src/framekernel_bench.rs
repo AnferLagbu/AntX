@@ -1,11 +1,11 @@
-//! Framekernel 微基准测试 (Phase 4.1 性能回归基线)
+//! Framekernel 微基准测试 (性能回归基线)
 //!
 //! ## 目标
 //! 测量 QueenX 框内核关键路径的纯算法性能, 建立可重复的回归基线.
 //! 所有实现都 host-runnable (std 可用), 与内核版本位一致, 便于:
 //! - CI 跑回归检查 (vs. baseline.json)
-//! - 优化前后对比 (Phase 4.1 闭环)
-//! - 论文性能数据采集 (Phase 4.3)
+//! - 优化前后对比
+//! - 论文性能数据采集
 //!
 //! ## 覆盖的热点路径
 //! 1. `page_flags_bench`: PageFlags 位运算 (PRESENT/WRITABLE/USER/NX)

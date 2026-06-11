@@ -1,4 +1,4 @@
-//! Framekernel Bench 编排器二进制 (Phase 4.1)
+//! Framekernel Bench 编排器二进制
 //!
 //! 运行 `framekernel_bench::run_all()` 并输出 JSON 到 stdout.
 //! stdout 格式 (单行, 便于管道):

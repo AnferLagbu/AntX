@@ -1,4 +1,4 @@
-//! DmaStream 端到端验证 (Phase 3.4)
+//! DmaStream 端到端验证
 //!
 //! 复刻 `src/kernel/framework/dma_buf.rs` 的 `DmaStream` 算法,
 //! 在 host 端用 std 模拟 Frame 依赖, 验证:

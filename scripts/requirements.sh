@@ -595,7 +595,7 @@ install_rust_toolchain() {
                 fi
 
                 # 询问是否安装 miri
-                if ask_yes_no "是否安装 miri (UB 检测, Phase 3.1)？" "y"; then
+                if ask_yes_no "是否安装 miri (UB 检测)？" "y"; then
                     rustup +nightly component add miri
                 fi
 
@@ -893,7 +893,7 @@ if [ "$SKIP_OPTIONAL" = false ]; then
         RECOMMENDED_TOTAL=$((RECOMMENDED_TOTAL + 2))
     fi
 
-    print_subsection "Miri UB 检测 (Phase 3.1 验证)"
+    print_subsection "Miri UB 检测"
     print_check "miri 组件"
     if has_cmd rustup && rustup +nightly component list 2>/dev/null | grep -q "^miri.*installed"; then
         print_ok
@@ -978,7 +978,7 @@ if [ "$SKIP_OPTIONAL" = false ] && [ "$SKIP_TESTS" = false ]; then
     print_subsection "宏/构建 辅助 (内核宏展开调试)"
     check_testing "cargo-expand (宏展开调试)" "cargo-expand" "cargo-expand"
 
-    print_subsection "内存/UB 验证 (Phase 3.1 严苛)"
+    print_subsection "内存/UB 验证 (严苛模式)"
     check_testing "miri (cargo 子命令, UB 检测)" "cargo-miri" "miri"
 
     print_subsection "Fuzzing 模糊测试 (smoltcp/fuzz 可选)"
@@ -1085,10 +1085,10 @@ if [ "$SKIP_OPTIONAL" = false ] && [ "$SKIP_PROJECT" = false ]; then
     echo -e "  ${BLUE}  缺失这些工具时 ci/audit.sh 会失败, 建议保留${NC}"
     echo -e "  ${BLUE}  可通过 --skip-project 跳过此节${NC}"
 
-    print_subsection "TCB 边界门禁 (Phase 0 门禁)"
+    print_subsection "TCB 边界门禁"
     check_project_tool "TCB 边界检查" "tools/check_tcb.sh"
 
-    print_subsection "SAFETY 注释审计 (Phase 3.2)"
+    print_subsection "SAFETY 注释审计"
     check_project_tool "framework/ SAFETY 审计 (Bash)" "tools/audit_unsafe.sh"
     check_project_tool "framework/ SAFETY 审计 (Python)" "tools/audit_unsafe.py"
 fi
@@ -1430,9 +1430,9 @@ fi
 
 if [ "$SKIP_OPTIONAL" = false ]; then
     if [ $RECOMMENDED_OK -eq $RECOMMENDED_TOTAL ] && [ $RECOMMENDED_TOTAL -gt 0 ]; then
-        echo -e "  ${GREEN}✓ 强烈推荐依赖已满足, Phase 3 验证工具齐备${NC}"
+        echo -e "  ${GREEN}✓ 强烈推荐依赖已满足, 验证工具齐备${NC}"
     else
-        echo -e "  ${YELLOW}△ 推荐依赖部分缺失, Phase 3.1 (Miri) / Phase 3.2 (SAFETY) 可能受限${NC}"
+        echo -e "  ${YELLOW}△ 推荐依赖部分缺失, Miri / SAFETY 审计可能受限${NC}"
     fi
 fi
 
@@ -1452,7 +1452,7 @@ echo "    make all                      # 完整编译 (x86_64)"
 echo "    make ARCH=aarch64 all         # aarch64 编译"
 echo "    make run                      # QEMU 启动"
 echo "    make run-iso                  # ISO 启动 (需 grub/xorriso)"
-echo "    make qemu-boot-test ARCH=all  # 双架构启动验证 (Phase 3.6)"
+echo "    make qemu-boot-test ARCH=all  # 双架构启动验证"
 echo ""
 echo -e "  ${BOLD}测试验证 (Makefile.ci + cargo):${NC}"
 echo "    make -f Makefile.ci ci                  # Full CI flow"
@@ -1462,12 +1462,12 @@ echo "    make -f Makefile.ci ci-cargo            # cargo check (x86_64 + aarch6
 echo "    make -f Makefile.ci ci-bench            # framekernel-bench + 回归检查"
 echo "    make -f Makefile.ci ci-test-host        # host-tests 全量 (Cargo 自动发现)"
 echo "    make test                                # test-host + test-unit"
-echo "    cargo +nightly miri test                # Miri UB 检测 (Phase 3.1)"
+echo "    cargo +nightly miri test                # Miri UB 检测"
 echo ""
 echo -e "  ${BOLD}代码质量 (cargo 子命令):${NC}"
 echo "    cargo clippy -- -D warnings             # clippy.toml deny all"
 echo "    cargo fmt --check                       # 格式门禁"
-echo "    cargo +nightly miri run --bin miri-runner  # Phase 3.1 严苛模式"
+echo "    cargo +nightly miri run --bin miri-runner  # 严苛模式"
 echo "    cargo deny check                        # deny.toml 许可证/漏洞/版本"
 echo "    cargo audit                             # RustSec 漏洞库"
 echo "    cargo llvm-cov test --html              # 覆盖率 HTML 报告"

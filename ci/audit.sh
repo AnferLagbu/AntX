@@ -55,17 +55,17 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_invar
     fi
 fi
 
-# Phase 3.2 真实工具: framework 全量 SAFETY 注释覆盖审计
+# framework 全量 SAFETY 注释覆盖审计
 # quick 模式也会跑 (核心 fail-fast 门禁, 不需要 Lockbud/Miri 等重工具)
 if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/tools/audit_unsafe.py" ]; then
-    step "0.5/6 Framework SAFETY 注释全量审计 (Phase 3.2)"
+    step "0.5/6 Framework SAFETY 注释全量审计"
     AUDIT_RESULT=$("$PROJECT_ROOT/tools/audit_unsafe.py" --summary 2>&1 || true)
     echo "$AUDIT_RESULT" | tail -12
     MISSING=$(echo "$AUDIT_RESULT" | grep -E "缺 SAFETY:" | head -1 | awk '{print $NF}')
     if [ -n "$MISSING" ] && [ "$MISSING" -eq 0 ]; then
-        ok "framework 100% SAFETY 覆盖 (Phase 3.2 达成)"
+        ok "framework 100% SAFETY 覆盖"
     elif [ -n "$MISSING" ]; then
-        err "framework 仍有 $MISSING 处缺 SAFETY 注释 (Phase 3.2 未达成)"
+        err "framework 仍有 $MISSING 处缺 SAFETY 注释"
     fi
 fi
 
@@ -154,9 +154,9 @@ else
 fi
 
 # ── 7. QEMU 真实启动测试 (full 模式) ──────────────────────────
-# Phase 3.6 门禁: 双架构内核必须在 QEMU 中真实启动通过
+# 双架构内核必须在 QEMU 中真实启动通过
 # 跳过条件: QEMU 二进制不可用 (e.g. CI 镜像未装 qemu-system-*)
-step "7/7 QEMU 双架构真实启动测试 (Phase 3.6 门禁)"
+step "7/7 QEMU 双架构真实启动测试"
 if [ "$MODE" = "full" ]; then
     if command -v qemu-system-x86_64 >/dev/null 2>&1 && command -v qemu-system-aarch64 >/dev/null 2>&1; then
         if "$PROJECT_ROOT/scripts/qemu_boot_test.sh" all 2>&1 | tail -6; then

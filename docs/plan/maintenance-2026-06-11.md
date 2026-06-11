@@ -659,7 +659,7 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ### [x] 预存 [低] framework SAFETY 注释覆盖 (33 处遗留)
 
-**来源**: Phase 3.2 验收门禁
+**来源**: SAFETY 注释审计门禁
 **根因**: framework 33 处 unsafe 缺 SAFETY 注释长期遗留, 阻塞 `bash ci/audit.sh` 通过.
 **关联文件**:
 - [src/kernel/framework/mm/frame.rs](../../src/kernel/framework/mm/frame.rs) (8)
@@ -674,13 +674,20 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 **验收**:
 - [x] 双架构 0w0e
 - [x] `python3 tools/audit_unsafe.py --missing-only` 输出 0
-- [x] `bash ci/audit.sh` EXIT 0 (Phase 3.2 达成)
+- [x] `bash ci/audit.sh` EXIT 0
 - [x] 316 host-tests 全 pass
 **完成记录**:
 - 日期: 2026-06-11
 - 独立 commit: `3c782fe` on `chore/safety-coverage-phase3.2`
 - 仅注释层, 无运行时行为变化
 - 编译产物字节级等价
+
+**关联清理 (同分支)**:
+- commit `pre-existing` 清理 audit/ci/scripts 中过期 `Phase 3.2` / `Phase 3.6` / `Phase 3.1` / `Phase 4.x` 引用
+  (项目采用 A/B/C/D 命名, 旧 1.x/2.x/3.x/4.x 是上一版本路线图残留)
+- 涉及: `tools/audit_unsafe.{py,sh}`, `ci/audit.sh`, `scripts/requirements.sh`, `Makefile`,
+  `host-tests/src/{framekernel_bench,dma_stream}.rs`, `host-tests/src/bin/framekernel_bench.rs`
+- 不动 services/ 与 framework/ 内 `Phase 2.x` 历史 module 注释 (属历史记录, 非过期引用)
 
 ---
 

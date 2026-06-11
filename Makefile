@@ -596,7 +596,7 @@ qemu-network:
 	@chmod +x scripts/qemu_debug.sh
 	@./scripts/qemu_debug.sh -k build/kernel.flat -n
 
-# QEMU 真实启动测试 (双架构 Phase 3.5/3.6 门禁)
+# QEMU 真实启动测试 (双架构门禁)
 # 用法: make qemu-boot-test [ARCH=x86_64|aarch64|all]
 qemu-boot-test:
 	@chmod +x scripts/qemu_boot_test.sh
