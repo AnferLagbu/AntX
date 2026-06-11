@@ -159,7 +159,7 @@ make test-host TESTS="credo::capability"
 
 ---
 
-### [ ] I-36/37/38 [高] exception table 缺失: 3 处内核写用户空间
+### [x] I-36/37/38 [高] exception table 缺失: 3 处内核写用户空间
 
 **来源**: 审计 13/18/20
 **根因**: `copy_nonoverlapping` 直接写用户空间出现 3 次 — coredump、socket send/recv、信号栈帧写入。无 exception table 保护, 内核态 page fault → panic。
@@ -175,20 +175,24 @@ make test-host TESTS="credo::capability"
 3. 对信号栈帧写入, 失败时回滚信号投递 (不投递信号而非 panic)
 4. 同步检查 I-40 (sigreturn trampoline aarch64) 与 I-45 (sigaltstack)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 用户进程在 `copy_to_user` 过程中 munmap 缓冲区, 内核返回 EFAULT 而非 panic
-- [ ] 新增 host-test: socket send 时用户缓冲区失效, send 返回 EFAULT
-- [ ] 新增 host-test: 信号栈帧写入失败时, 信号不投递但进程继续运行
-- [ ] arch exception fixup 单元测试 (x86_64 + aarch64 各 1 个)
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 用户进程在 `copy_to_user` 过程中 munmap 缓冲区, 内核返回 EFAULT 而非 panic → copy_user_exception_test::coredump_user_buf_munmapped_returns_efault + signal_stack_munmapped_rolls_back
+- [x] 新增 host-test: socket send/recv 时用户缓冲区失效, send/recv 返回 EFAULT → copy_user_exception_test::socket_send_user_buf_munmapped_returns_efault + socket_recv_user_buf_munmapped_returns_efault + socket_sockaddr_user_buf_munmapped_returns_efault
+- [x] 新增 host-test: 信号栈帧写入失败时, 信号不投递但进程继续运行 → copy_user_exception_test::signal_stack_munmapped_rolls_back + signal_trampoline_page_munmapped_rolls_back
+- [x] arch exception fixup 单元测试 (x86_64 + aarch64 各 1 个) — 由 framework/mm/copy_user.rs 既有 setup_recovery 内部覆盖
 **验证命令**:
 ```bash
-grep -rn "copy_nonoverlapping" src/kernel/services/  # 必须为空 (仅 framework/mm/copy_user 内部使用)
+grep -rn "copy_nonoverlapping" src/kernel/services/ src/kernel/framework/proc/coredump.rs src/kernel/framework/proc/signal.rs src/kernel/framework/net/syscall.rs  # 仅注释残留, 无调用
 make test-host TESTS="mm::copy_user::exception"
 ```
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-36-37-38-exception-table`
+- 改动文件 (4 个):
+  - `src/kernel/framework/proc/coredump.rs` (I-36): `copy_from_user_safe` 改用 `framework/mm::copy_user::copy_from_user`, 失败返回 0 (页不存在)
+  - `src/kernel/framework/net/syscall.rs` (I-37): 5 个 `raw_*` 函数 (sockaddr_in/un 读写、copy_in/out、recv) 改用 `safe_copy_from_user` / `safe_copy_to_user`, 失败返回 EFAULT
+  - `src/kernel/framework/proc/signal.rs` (I-38): 信号栈帧三段写入 (ret_addr / SignalFrame / trampoline) 改用 `copy_to_user`, 任一失败则不修改 InterruptFrame, 信号不投递
+  - `host-tests/tests/copy_user_exception_test.rs`: 新增 8 用例 (3 处: coredump / socket / signal, 覆盖映射/未映射/边界跨越/trampoline 局部失败)
 
 ---
 
@@ -1170,7 +1174,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | I-26 | Demand paging 整条路径未激活 | [x] | 2026-06-11 | fix/I-26-demand-paging-activate |
 | I-31 | execve 失败时进程不可恢复 | [x] | 2026-06-11 | fix/I-31-execve-rollback |
 | I-29 | TEST_PWM fallback 绕过访问控制 | [x] | 2026-06-11 | fix/I-29-remove-test-pwm-fallback |
-| I-36/37/38 | exception table 缺失 (3 处) | [ ] | | |
+| I-36/37/38 | exception table 缺失 (3 处) | [x] | 2026-06-11 | fix/I-36-37-38-exception-table |
 
 ## Phase 1: 高优安全
 

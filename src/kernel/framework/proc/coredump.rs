@@ -689,18 +689,19 @@ fn write_segment_data(
 /// 安全地从用户空间拷贝数据
 ///
 /// 返回实际拷贝的字节数 (0 表示页不存在)
+///
+/// P0-I-36 修复: 改用 framework/mm/copy_user 的异常表安全 copy_from_user.
 fn copy_from_user_safe(src: *const u8, len: usize, dst: &mut [u8]) -> usize {
     if src.is_null() || len == 0 || len > dst.len() {
         return 0;
     }
-    // SAFETY: 尝试读取用户空间, 如果页不存在会触发异常。
-    // 在内核中, 我们使用简化的拷贝: 直接 memcpy 并捕获可能的错误。
-    // 完整实现应使用 copy_from_user 带 exception table。
-    // 当前简化: 直接拷贝 (假设 CR3 已正确设置)
-    unsafe {
-        core::ptr::copy_nonoverlapping(src, dst.as_mut_ptr(), len);
+    // SAFETY: src 来自内核代码构造的进程 VMA 地址, 长度由调用方保证.
+    //          委托给异常表保护版 copy_from_user, 缺页时返回 Err 而非 panic.
+    let user_addr = src as u64;
+    match crate::kernel::framework::mm::copy_user::copy_from_user(dst, user_addr, len) {
+        Ok(n) => n,
+        Err(()) => 0,
     }
-    len
 }
 
 /// 写入字节到 fd

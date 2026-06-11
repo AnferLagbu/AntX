@@ -507,22 +507,39 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                     signum: sig as u64,
                 };
 
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                unsafe {
-                    let trampoline_start = frame_rsp + 8 + core::mem::size_of::<SignalFrame>() as u64;
+                // P0-I-38 修复: 信号栈帧写入走异常表保护版 copy_to_user,
+                // 用户栈任意一页失效 (munmap/越界) 时回滚信号投递
+                // (恢复原始栈指针 + 不修改 InterruptFrame), 进程继续运行.
+                let trampoline_start = frame_rsp + 8 + core::mem::size_of::<SignalFrame>() as u64;
+                let ret_addr_bytes = trampoline_start.to_ne_bytes();
+                let sigframe_bytes = unsafe {
+                    core::slice::from_raw_parts(
+                        &sigframe as *const SignalFrame as *const u8,
+                        core::mem::size_of::<SignalFrame>(),
+                    )
+                };
 
-                    // 写入返回地址 (指向 trampoline)
-                    core::ptr::write_unaligned(frame_rsp as *mut u64, trampoline_start);
+                let ok_ret = crate::kernel::framework::mm::copy_user::copy_to_user(
+                    frame_rsp,
+                    &ret_addr_bytes,
+                    8,
+                );
+                let ok_frame = crate::kernel::framework::mm::copy_user::copy_to_user(
+                    frame_rsp + 8,
+                    sigframe_bytes,
+                    core::mem::size_of::<SignalFrame>(),
+                );
+                let ok_trampoline = crate::kernel::framework::mm::copy_user::copy_to_user(
+                    trampoline_start,
+                    &SIGRETURN_TRAMPOLINE,
+                    SIGRETURN_TRAMPOLINE_SIZE,
+                );
 
-                    // 写入 SignalFrame
-                    core::ptr::write_unaligned((frame_rsp + 8) as *mut SignalFrame, sigframe);
-
-                    // 写入 trampoline 代码 (mov eax,15; syscall)
-                    core::ptr::copy_nonoverlapping(
-                        SIGRETURN_TRAMPOLINE.as_ptr(),
-                        trampoline_start as *mut u8,
-                        SIGRETURN_TRAMPOLINE_SIZE,
-                    );
+                if ok_ret.is_err() || ok_frame.is_err() || ok_trampoline.is_err() {
+                    // 栈帧写入失败 (用户栈 munmap/越界):
+                    // 不修改 InterruptFrame, 也不投递信号, 进程继续运行
+                    // 等待下次信号投递窗口.
+                    break;
                 }
 
                 // 修改 InterruptFrame: 跳转到 handler

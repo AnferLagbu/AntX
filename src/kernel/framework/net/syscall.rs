@@ -10,6 +10,7 @@
 use crate::kernel::framework::net_socket;
 use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::mm::copy_user::{copy_from_user as safe_copy_from_user, copy_to_user as safe_copy_to_user};
 
 use crate::kernel::services::net::socket::{SockAddrIn, SockType, Domain};
 
@@ -23,9 +24,10 @@ pub fn raw_read_sockaddr_in(ptr: u64) -> Result<SockAddrIn, Errno> {
         return Err(Errno::EFAULT);
     }
     let mut buf = [0u8; 8];
-    // SAFETY: ptr 由 check_user_buf 验证为可读 8 字节
-    unsafe {
-        core::ptr::copy_nonoverlapping(ptr as *const u8, buf.as_mut_ptr(), 8);
+    // P0-I-37 修复: 走异常表保护版 copy_from_user, 用户 munmap 缓冲区时
+    // 返回 EFAULT 而非 panic.
+    if safe_copy_from_user(&mut buf, ptr, 8).is_err() {
+        return Err(Errno::EFAULT);
     }
     let family = u16::from_be_bytes([buf[0], buf[1]]);
     if family != 2 {
@@ -46,9 +48,9 @@ pub fn raw_write_sockaddr_in(ptr: u64, addr: &SockAddrIn) -> Result<(), Errno> {
     out[0..2].copy_from_slice(&(2u16).to_be_bytes());
     out[2..4].copy_from_slice(&addr.port.to_be_bytes());
     out[4..8].copy_from_slice(&addr.ip);
-    // SAFETY: ptr 由 check_user_buf 验证为可写
-    unsafe {
-        core::ptr::copy_nonoverlapping(out.as_ptr(), ptr as *mut u8, 8);
+    // P0-I-37 修复: 走异常表保护版 copy_to_user
+    if safe_copy_to_user(ptr, &out, 8).is_err() {
+        return Err(Errno::EFAULT);
     }
     Ok(())
 }
@@ -62,9 +64,9 @@ pub fn raw_copy_in(ptr: u64, len: u32) -> Result<alloc::vec::Vec<u8>, Errno> {
         return Err(Errno::EFAULT);
     }
     let mut buf = alloc::vec![0u8; len as usize];
-    // SAFETY: ptr 由 check_user_buf 验证为可读 len 字节
-    unsafe {
-        core::ptr::copy_nonoverlapping(ptr as *const u8, buf.as_mut_ptr(), len as usize);
+    // P0-I-37 修复: 走异常表保护版
+    if safe_copy_from_user(&mut buf, ptr, len as usize).is_err() {
+        return Err(Errno::EFAULT);
     }
     Ok(buf)
 }
@@ -78,9 +80,9 @@ pub fn raw_copy_out(ptr: u64, len: u32, data: &[u8]) -> Result<u32, Errno> {
         return Err(Errno::EFAULT);
     }
     let n = data.len().min(len as usize);
-    // SAFETY: ptr 由 check_user_buf 验证为可写
-    unsafe {
-        core::ptr::copy_nonoverlapping(data.as_ptr(), ptr as *mut u8, n);
+    // P0-I-37 修复: 走异常表保护版
+    if safe_copy_to_user(ptr, &data[..n], n).is_err() {
+        return Err(Errno::EFAULT);
     }
     Ok(n as u32)
 }
@@ -130,11 +132,11 @@ pub fn raw_read_sockaddr_un(ptr: u64, addrlen: u32) -> Result<crate::kernel::ser
     if !raw::check_user_buf(ptr, addrlen as u64) {
         return Err(Errno::EFAULT);
     }
-    // SAFETY: ptr 由 check_user_buf 验证为可读 addrlen 字节
     let mut buf = [0u8; 110];
     let copy_len = (addrlen as usize).min(110);
-    unsafe {
-        core::ptr::copy_nonoverlapping(ptr as *const u8, buf.as_mut_ptr(), copy_len);
+    // P0-I-37 修复: 走异常表保护版
+    if safe_copy_from_user(&mut buf[..copy_len], ptr, copy_len).is_err() {
+        return Err(Errno::EFAULT);
     }
     // 校验 family = AF_UNIX = 1
     let family = u16::from_be_bytes([buf[0], buf[1]]);
@@ -174,14 +176,16 @@ pub fn raw_write_sockaddr_un(
     buf[0..2].copy_from_slice(&(1u16).to_be_bytes()); // AF_UNIX
     let n = addr.path_len as usize;
     buf[2..2 + n].copy_from_slice(&addr.path[..n]);
-    // SAFETY: ptr 由 check_user_buf 验证为可写 110 字节
-    unsafe {
-        core::ptr::copy_nonoverlapping(buf.as_ptr(), ptr as *mut u8, 110);
+    // P0-I-37 修复: 走异常表保护版
+    if safe_copy_to_user(ptr, &buf, 110).is_err() {
+        return Err(Errno::EFAULT);
     }
     // 写回 addrlen = 110
     let total = (n + 2) as u32;
-    // SAFETY: addrlen_ptr 由 check_user_buf 验证为可写 4 字节
-    unsafe { core::ptr::write_unaligned(addrlen_ptr as *mut u32, total); }
+    let total_bytes = total.to_ne_bytes();
+    if safe_copy_to_user(addrlen_ptr, &total_bytes, 4).is_err() {
+        return Err(Errno::EFAULT);
+    }
     Ok(())
 }
 
@@ -301,9 +305,9 @@ pub fn recvfrom_syscall(
     if n < 0 {
         return Errno::EAGAIN.as_ret();
     }
-    // SAFETY: buf_ptr 由 check_user_buf 验证为可写 n 字节
-    unsafe {
-        core::ptr::copy_nonoverlapping(stack_buf.as_ptr(), buf_ptr as *mut u8, n as usize);
+    // P0-I-37 修复: 走异常表保护版
+    if safe_copy_to_user(buf_ptr, &stack_buf[..n as usize], n as usize).is_err() {
+        return Errno::EFAULT.as_ret();
     }
     n as i64
 }
