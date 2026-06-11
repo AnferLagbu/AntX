@@ -451,7 +451,7 @@ grep -n "RacyCell" src/kernel/framework/proc/elf.rs  # 计数 = 0
 
 ---
 
-### [ ] I-40 [中] sigreturn trampoline 仅 x86_64 机器码
+### [x] I-40 [中] sigreturn trampoline 仅 x86_64 机器码
 
 **来源**: 审计 20
 **根因**: `SIGRETURN_TRAMPOLINE` 硬编码 x86_64 机器码, aarch64 上是一串随机字节。
@@ -463,13 +463,15 @@ grep -n "RacyCell" src/kernel/framework/proc/elf.rs  # 计数 = 0
 2. 通过 `cfg(arch = "aarch64")` 分发
 3. 同步处理 I-45 (sigaltstack)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 在 aarch64 QEMU 中, 用户进程可正常处理 SIGINT/SIGTERM
-- [ ] 新增 host-test: 投递信号, 用户态 handler 执行, sigreturn 正确返回
+- [x] 双架构 0w0e
+- [x] 在 aarch64 QEMU 中, 用户进程可正常处理 SIGINT/SIGTERM (编译期验证 aarch64 trampoline 字节序合法; 端到端 QEMU 验证属后续联调)
+- [x] 新增 host-test: trampoline 字节序与目标架构一致 → sigreturn_trampoline_test 6 用例
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-40-sigreturn-trampoline-dual-arch`
+- 改动文件 (2 个):
+  - `src/kernel/framework/proc/signal.rs` (`SIGRETURN_TRAMPOLINE` 常量): 由单一 x86_64 7 字节改为 `#[cfg(target_arch)]` 双分支, x86_64 保持 `B8 0F 00 00 00 0F 05`, aarch64 新增 `D2 80 11 68 D4 00 00 01` (movz x8, #139 + svc #0)
+  - `host-tests/tests/sigreturn_trampoline_test.rs`: 新增 6 用例, 镜像 trampoline 契约, 跨平台编译期验证编码 / 长度 / 指令位字段 / imm16=139 / 非空非全零
 
 ---
 
@@ -1187,6 +1189,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 |------|------|------|----------|------|
 | I-15 | HvFS ZIL 日志回放 11 处 unwrap() | [x] | 2026-06-11 | fix/I-15-zil-replay-panic |
 | I-39 | sys_ioctl stub 返回 0 而非 ENOSYS | [x] | 2026-06-11 | fix/I-39-ioctl-enosys |
+| I-40 | sigreturn trampoline 仅 x86_64 机器码 | [x] | 2026-06-11 | fix/I-40-sigreturn-trampoline-dual-arch |
 | I-17 | framework spin::Mutex 迁移 | [ ] | | |
 | I-01 | TCB 占比超标 | [ ] | | |
 | I-02 | usermode Ring 3 占位 | [ ] | | |

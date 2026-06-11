@@ -99,12 +99,23 @@ pub struct SignalFrame {
 
 /// sigreturn trampoline 代码
 ///
-/// x86_64 机器码:
-///   mov eax, 15       ; SYS_rt_sigreturn = 15 (x86_64)
-///   syscall            ; 系统调用
+/// # x86_64 机器码 (7 字节)
+/// `mov eax, 15` (SYS_rt_sigreturn = 15) + `syscall`:
+///   B8 0F 00 00 00     mov eax, 15
+///   0F 05              syscall
 ///
-/// 共 8 字节: B8 0F 00 00 00 0F 05
+/// # aarch64 机器码 (8 字节)
+/// `mov x8, #139` (SYS_rt_sigreturn = 139) + `svc #0`:
+///   D2 80 11 68        movz x8, #139
+///   D4 00 00 01        svc #0
+///
+/// P1-I-40 修复: 之前硬编码 x86_64 字节序, aarch64 上是随机指令
+/// (illegal instruction), 致所有 ARM 板信号投递失败. 改为 cfg 分发.
+#[cfg(target_arch = "x86_64")]
 pub const SIGRETURN_TRAMPOLINE: [u8; 7] = [0xB8, 0x0F, 0x00, 0x00, 0x00, 0x0F, 0x05];
+
+#[cfg(target_arch = "aarch64")]
+pub const SIGRETURN_TRAMPOLINE: [u8; 8] = [0xD2, 0x80, 0x11, 0x68, 0xD4, 0x00, 0x00, 0x01];
 
 /// sigreturn trampoline 大小
 pub const SIGRETURN_TRAMPOLINE_SIZE: usize = SIGRETURN_TRAMPOLINE.len();
