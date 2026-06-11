@@ -21,11 +21,11 @@
 //! `elf_data` 必须是有效的内核虚拟地址，指向完整 ELF 文件。
 //! 调用者负责保证 ELF 数据在加载期间不被修改。
 
+// P1-I-33: ELF 验证抽到 verify 子模块, 单一来源
+pub mod verify;
+
 use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::{PageFlags, VirtAddr, PAGE_SIZE};
-
-const ELF_MAGIC: &[u8; 4] = b"\x7FELF";
-const ELF_CLASS_64: u8 = 2;
 
 #[repr(C)]
 pub struct Elf64Header {
@@ -89,37 +89,13 @@ impl ElfLoadResult {
     }
 }
 
+// P1-I-33: 委托给 `verify::verify_elf` 单一来源
 pub fn elf_validate(elf_data: *const u8, elf_size: u64) -> Option<&'static Elf64Header> {
-    if elf_data.is_null() || elf_size < core::mem::size_of::<Elf64Header>() as u64 {
-        return None;
-    }
+    // SAFETY: 调用方保证 elf_data 有效, verify_elf 内部仅读借用
+    let _ = unsafe { verify::verify_elf(elf_data, elf_size) }.ok()?;
 
-    // SAFETY: `elf_data` 由调用方保证指向有效 Elf64Header; 只读借用
-    let header = unsafe { &*(elf_data as *const Elf64Header) };
-
-    if &header.e_ident[0..4] != ELF_MAGIC {
-        return None;
-    }
-    if header.e_ident[4] != ELF_CLASS_64 {
-        return None;
-    }
-    if header.e_machine != 0x3E && header.e_machine != 0xB7 {
-        return None;
-    }
-    if header.e_phentsize as usize != core::mem::size_of::<Elf64Phdr>() {
-        return None;
-    }
-    if header.e_phnum as usize > MAX_PHDR_COUNT {
-        return None;
-    }
-
-    let phdr_table_size = (header.e_phnum as u64).checked_mul(header.e_phentsize as u64)?;
-    let phdr_end = header.e_phoff.checked_add(phdr_table_size)?;
-    if phdr_end > elf_size {
-        return None;
-    }
-
-    Some(header)
+    // SAFETY: 已通过 verify_elf 校验
+    Some(unsafe { &*(elf_data as *const Elf64Header) })
 }
 
 pub fn elf_load(

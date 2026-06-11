@@ -47,10 +47,15 @@ def check_i2():
     """I2: services 不可直接访问内核内存 (裸指针解引用)"""
     # 真正的违反: services 中对裸指针的解引用 (*ptr).field
     # 合法: as *const u8 传参给 framework API (framework 负责安全校验)
+    # 合法: BTreeMap::entry(*hash) 等对普通引用的解引用 (无 unsafe 风险)
+    #
+    # 误报过滤: 排除方法实参位置 (`.entry(*hash)` `.or_insert(*x)`), 这些是对
+    # 普通引用 `&T` 的解引用拷贝, 不是裸指针解引用. 仅匹配表达式起首位置的
+    # `(*IDENT).` 才视为可疑.
     patterns = [
-        r'\(\*\w+\)\.',              # (*ptr).field — 裸指针解引用访问字段
-        r'\(\*mut\s+\w+\)\.',        # (*mut T).field
-        r'\(\*const\s+\w+\)\.',      # (*const T).field
+        r'(?<![\w.,(])\(\*\w+\)\.',        # (*ptr).field — 表达式起首, 非方法实参
+        r'\(\*mut\s+\w+\)\.',              # (*mut T).field
+        r'\(\*const\s+\w+\)\.',            # (*const T).field
     ]
     found = _scan_services(patterns, 'I2', exclude_patterns=[r'^\s*use\s+', r'^\s*//', r'^\s*//!'])
     return found

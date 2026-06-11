@@ -1101,38 +1101,30 @@ impl UserProcManager {
             return -1;
         }
 
-        // SAFETY: elf_data 区间已校验 (非空 + size >= header), 内部访问通过 raw 包装。
-            //
-            // ElfHeader = Elf64Header 重导出, 字段命名为 e_ident / e_machine / e_entry 等。
-            unsafe {
-                let header = elf_data as *const ElfHeader;
+        // P1-I-33: 委托给 elf::verify::verify_elf 单一来源, 避免解析方式不一致
+        //
+        // SAFETY: elf_data 区间已校验 (非空 + size >= header), verify_elf 内部仅读借用。
+        let verified = match unsafe { super::elf::verify::verify_elf(elf_data, elf_size) } {
+            Ok(v) => v,
+            Err(_) => return -1,
+        };
 
-                if (*header).e_ident[0] != 0x7F
-                    || (*header).e_ident[1] != b'E'
-                    || (*header).e_ident[2] != b'L'
-                    || (*header).e_ident[3] != b'F'
-                {
-                    return -1;
-                }
+        // SAFETY: verify_elf 已通过校验, header 引用安全
+        let header = unsafe { &*(elf_data as *const ElfHeader) };
 
-                // Accept ELF64 for both x86_64 (0x3E) and AArch64 (0xB7)
-                if (*header).e_ident[4] != 2
-                    || ((*header).e_machine != 0x3E && (*header).e_machine != 0xB7)
-                {
-                    return -1;
-                }
+        // PIE (ET_DYN) 支持: 检测 ELF 类型并计算 load_bias
+        let is_pie = verified.is_pie;
+        let load_bias: u64 = if is_pie {
+            crate::kernel::framework::config::aslr_pie_base()
+        } else {
+            0
+        };
+        let entry = verified.entry + load_bias;
 
-                // PIE (ET_DYN) 支持: 检测 ELF 类型并计算 load_bias
-                let is_pie = (*header).e_type == 3; // ET_DYN = 3
-                let load_bias: u64 = if is_pie {
-                    crate::kernel::framework::config::aslr_pie_base()
-                } else {
-                    0
-                };
-                let entry = (*header).e_entry + load_bias;
-
-                let info = UserProcInfo {
-                    entry,
+        // SAFETY: verify_elf 已通过校验, 后续 raw 指针访问 (header / phdr / 物理页) 集中此块
+        unsafe {
+            let info = UserProcInfo {
+                entry,
                 name: [0; 64],
                 code_size: 0,
                 code_data: core::ptr::null(),

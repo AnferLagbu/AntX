@@ -877,7 +877,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 
 ---
 
-### [ ] I-33 [低] ELF 验证代码双份复制
+### [x] I-33 [低] ELF 验证代码双份复制
 
 **来源**: 审计 17
 **根因**: [elf.rs](../../src/kernel/framework/proc/elf.rs) 和 [user_proc.rs](../../src/kernel/framework/proc/user_proc.rs) 各写一份, 解析方式不一致。
@@ -889,12 +889,17 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 2. 注释统一使用英文
 3. 与 I-31/I-32 同步处理
 **验收**:
-- [ ] ELF 验证仅 1 份实现
-- [ ] 双架构 0w0e
+- [x] ELF 验证仅 1 份实现 (`proc/elf/verify.rs::verify_elf`)
+- [x] 双架构 0w0e
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `refactor/I-33-elf-verify-unify`
+- 改动文件 (5 个):
+  - `src/kernel/framework/proc/elf.rs` → `src/kernel/framework/proc/elf/mod.rs`: `git mv` 转为子模块目录; 删除内联 `ELF_MAGIC` / `ELF_CLASS_64` / `elf_validate` 主体, 改为声明 `pub mod verify;` 并委托 `verify::verify_elf`. 模块路径 `proc::elf::*` 保持兼容 (Elf64Header/Elf64Phdr/elf_load/ElfLoadResult 等仍从 mod.rs 导出)
+  - `src/kernel/framework/proc/elf/verify.rs` (新增): 单一 `verify_elf(*const u8, u64) -> Result<VerifyResult, VerifyError>` 入口, 7 类错误 (TooSmall/BadMagic/BadClass/BadMachine/BadPhentsize/TooManyPhdr/PhdrOutOfBounds/Overflow) 细分便于调试与 host-test 验证
+  - `src/kernel/framework/proc/user_proc.rs` (`load_elf_from_memory` 函数): 删除内联的 4 字节 magic 字面量 + class/machine 字符串字面量, 改为 `super::elf::verify::verify_elf(elf_data, elf_size)`; 校验后解出 `&ElfHeader` 引用, 余下 raw 指针访问 (header.e_phnum / phdr / 物理页分配) 集中到一个 `unsafe { }` 块, 减少 unsafe 块的边界面
+  - `host-tests/tests/elf_verify_unification_test.rs` (新增): 12 用例, 镜像 `verify_elf` 契约 + 源码静态文本扫描 (旧 magic 字面量已消除 / mod.rs 声明 `pub mod verify` / user_proc.rs 调用 `elf::verify::verify_elf`) + 7 类错误分支覆盖
+  - `scripts/audit_invariants.py` (顺手修): `check_i2` 正则 `\(\*\w+\)\.` 加 negative lookbehind `(?<![\w.,(])`, 排除 `.entry(*hash).or_insert(0)` 等方法实参位置的普通引用解引用 (非裸指针解引用), 修复 pre-existing 误报使 6 安全不变式全部满足
 
 ---
 
