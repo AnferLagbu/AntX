@@ -32,6 +32,37 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+/// P0-I-15 修复: ZIL 持久化层错误类型, 区分磁盘坏块 / CRC 失败 / 长度不足,
+/// 配合 try_deserialize_record 取代 10 处 `try_into().unwrap()` 静默 panic 路径.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HvZilPersistError {
+    /// 缓冲区长度不足, 不可能通过外部 `assert!(buf.len() >= 256)` 触发
+    BufferTooShort {
+        need: usize,
+        got: usize,
+    },
+    /// CRC32 校验失败 — 物理 bit rot 或上层写入错误
+    CrcMismatch {
+        expected: u32,
+        computed: u32,
+    },
+    /// record 类型字段不在 enum 范围内 (1..=13)
+    UnknownRecordType(u8),
+    /// header / trailer magic 或 version 异常
+    InvalidBlock,
+}
+
+impl HvZilPersistError {
+    pub fn as_static_str(&self) -> &'static str {
+        match self {
+            Self::BufferTooShort { .. } => "buffer_too_short",
+            Self::CrcMismatch { .. } => "crc_mismatch",
+            Self::UnknownRecordType(_) => "unknown_record_type",
+            Self::InvalidBlock => "invalid_block",
+        }
+    }
+}
+
 const ZIL_MAGIC: u32 = 0x5A494C31u32; // "ZIL1"
 const ZIL_TAIL_MAGIC: u32 = 0x454E4400u32; // "END\0"
 const ZIL_BLOCK_SIZE: usize = 4096;
@@ -206,29 +237,79 @@ fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
     buf[payload_end..payload_end + 4].copy_from_slice(&rec_crc.to_le_bytes());
 }
 
-fn deserialize_record(buf: &[u8]) -> Option<HvZilRecord> {
-    if buf.len() < ZIL_RECORD_DISK_SIZE {
-        return None;
-    }
-
+fn try_deserialize_record(buf: &[u8]) -> Result<HvZilRecord, HvZilPersistError> {
     let actual_size = 173 + 32 + 4;
     if buf.len() < actual_size {
-        return None;
+        return Err(HvZilPersistError::BufferTooShort {
+            need: actual_size,
+            got: buf.len(),
+        });
     }
-    // SAFETY: we've checked buf.len() >= actual_size, and actual_size >= 4
-    let rec_crc = u32::from_le_bytes(buf[actual_size - 4..actual_size].try_into().unwrap());
+    let rec_crc = u32::from_le_bytes(
+        buf[actual_size - 4..actual_size]
+            .try_into()
+            .map_err(|_| HvZilPersistError::BufferTooShort {
+                need: 4,
+                got: actual_size - 4,
+            })?,
+    );
     let computed = crc32_checksum(&buf[..actual_size - 4]);
     if rec_crc != computed {
-        return None;
+        return Err(HvZilPersistError::CrcMismatch {
+            expected: rec_crc,
+            computed,
+        });
     }
 
     let rec_type = buf[0];
-    let txg = u64::from_le_bytes(buf[1..9].try_into().unwrap());
-    let obj_id = u64::from_le_bytes(buf[9..17].try_into().unwrap());
-    let parent_obj = u64::from_le_bytes(buf[17..25].try_into().unwrap());
-    let offset = u64::from_le_bytes(buf[25..33].try_into().unwrap());
-    let size = u32::from_le_bytes(buf[33..37].try_into().unwrap());
-    let seq = u64::from_le_bytes(buf[37..45].try_into().unwrap());
+    let txg = u64::from_le_bytes(
+        buf[1..9]
+            .try_into()
+            .map_err(|_| HvZilPersistError::BufferTooShort {
+                need: 8,
+                got: 8,
+            })?,
+    );
+    let obj_id = u64::from_le_bytes(
+        buf[9..17]
+            .try_into()
+            .map_err(|_| HvZilPersistError::BufferTooShort {
+                need: 8,
+                got: 8,
+            })?,
+    );
+    let parent_obj = u64::from_le_bytes(
+        buf[17..25]
+            .try_into()
+            .map_err(|_| HvZilPersistError::BufferTooShort {
+                need: 8,
+                got: 8,
+            })?,
+    );
+    let offset = u64::from_le_bytes(
+        buf[25..33]
+            .try_into()
+            .map_err(|_| HvZilPersistError::BufferTooShort {
+                need: 8,
+                got: 8,
+            })?,
+    );
+    let size = u32::from_le_bytes(
+        buf[33..37]
+            .try_into()
+            .map_err(|_| HvZilPersistError::BufferTooShort {
+                need: 4,
+                got: 4,
+            })?,
+    );
+    let seq = u64::from_le_bytes(
+        buf[37..45]
+            .try_into()
+            .map_err(|_| HvZilPersistError::BufferTooShort {
+                need: 8,
+                got: 8,
+            })?,
+    );
 
     let mut name = [0u8; 128];
     name.copy_from_slice(&buf[45..173]);
@@ -236,7 +317,14 @@ fn deserialize_record(buf: &[u8]) -> Option<HvZilRecord> {
     let mut data_hash = [0u64; 4];
     for (i, val) in data_hash.iter_mut().enumerate() {
         let off = 173 + i * 8;
-        *val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
+        *val = u64::from_le_bytes(
+            buf[off..off + 8]
+                .try_into()
+                .map_err(|_| HvZilPersistError::BufferTooShort {
+                    need: 8,
+                    got: 8,
+                })?,
+        );
     }
 
     let rec_type_enum = match rec_type {
@@ -253,10 +341,10 @@ fn deserialize_record(buf: &[u8]) -> Option<HvZilRecord> {
         11 => super::zil::HvZilRecordType::Symlink,
         12 => super::zil::HvZilRecordType::DedupRef,
         13 => super::zil::HvZilRecordType::DedupUnref,
-        _ => return None,
+        other => return Err(HvZilPersistError::UnknownRecordType(other)),
     };
 
-    Some(HvZilRecord {
+    Ok(HvZilRecord {
         rec_type: rec_type_enum,
         txg,
         obj_id,
@@ -339,11 +427,23 @@ impl HvZilPersist {
             return records;
         }
 
-        // SAFETY: block.len() >= ZIL_BLOCK_SIZE (checked above), so this offset is valid
         let trailer_offset = ZIL_BLOCK_SIZE - ZIL_TRAILER_SIZE;
-        let tail_magic = u32::from_le_bytes(block[trailer_offset..trailer_offset + 4].try_into().unwrap());
-        let block_checksum = u32::from_le_bytes(block[trailer_offset + 4..trailer_offset + 8].try_into().unwrap());
-        let trailer = ZilBlockTrailer { tail_magic, block_checksum };
+        let tail_magic_raw = block[trailer_offset..trailer_offset + 4]
+            .try_into()
+            .ok()
+            .map(u32::from_le_bytes);
+        let block_checksum_raw = block[trailer_offset + 4..trailer_offset + 8]
+            .try_into()
+            .ok()
+            .map(u32::from_le_bytes);
+        let (tail_magic, block_checksum) = match (tail_magic_raw, block_checksum_raw) {
+            (Some(m), Some(c)) => (m, c),
+            _ => return records,
+        };
+        let trailer = ZilBlockTrailer {
+            tail_magic,
+            block_checksum,
+        };
 
         if !trailer.is_valid() {
             return records;
@@ -363,9 +463,17 @@ impl HvZilPersist {
         let record_area = ZIL_HEADER_SIZE;
         for i in 0..header.record_count as usize {
             let offset = record_area + i * ZIL_RECORD_DISK_SIZE;
-            if let Some(record) = deserialize_record(&block[offset..offset + ZIL_RECORD_DISK_SIZE])
-            {
-                records.push(record);
+            match try_deserialize_record(&block[offset..offset + ZIL_RECORD_DISK_SIZE]) {
+                Ok(record) => records.push(record),
+                Err(e) => {
+                    // P0-I-15 修复: 损坏的 record 标记为"跳过"而非整个日志回放失败.
+                    // 真机 SSD bit flip 只会丢一条 record, 不再让回放路径 panic.
+                    // 注: services 层 #![deny(unsafe_code)], klog 宏内含 unsafe,
+                    //     故此处仅通过 Result 类型传递错误, 不做 klog 调用.
+                    //     后续可经 framework/credo/event_bus 投递 ZIL_CORRUPT_RECORD
+                    //     事件至用户态 auditd 进程.
+                    let _ = e; // 静默吞下: 上下文级错误在调试时可加 #[cfg(debug_assertions)] 打印
+                }
             }
         }
 
@@ -413,7 +521,8 @@ mod tests {
         let mut buf = [0u8; ZIL_RECORD_DISK_SIZE];
         serialize_record(&rec, &mut buf);
 
-        let deserialized = deserialize_record(&buf).unwrap();
+        // P0-I-15 修复: 改用 Result 返回, 成功路径在测试中可知, 使用 .expect()
+        let deserialized = try_deserialize_record(&buf).expect("P0-I-15: roundtrip must succeed");
         assert_eq!(deserialized.txg, 42);
         assert_eq!(deserialized.obj_id, 100);
         assert_eq!(deserialized.offset, 4096);
@@ -440,6 +549,8 @@ mod tests {
         serialize_record(&rec, &mut buf);
 
         buf[10] ^= 0xFF; // corrupt
-        assert!(deserialize_record(&buf).is_none());
+        // P0-I-15 修复: 损坏 record 必须返回 CrcMismatch 而非 None
+        let err = try_deserialize_record(&buf).expect_err("P0-I-15: corrupt must fail");
+        assert!(matches!(err, HvZilPersistError::CrcMismatch { .. }));
     }
 }

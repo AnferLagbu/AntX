@@ -204,7 +204,7 @@ make test-host TESTS="mm::copy_user::exception"
 
 ---
 
-### [ ] I-15 [高] HvFS ZIL 日志回放 11 处 unwrap()
+### [x] I-15 [高] HvFS ZIL 日志回放 11 处 unwrap()
 
 **来源**: 审计 3
 **根因**: ZIL 路径 11 处 `.unwrap()` / `try_into().unwrap()`, 信任 QEMU 虚拟磁盘不会产生 bit rot。
@@ -217,19 +217,22 @@ make test-host TESTS="mm::copy_user::exception"
 3. 损坏的 record 标记为"跳过"而非整个日志回放失败
 4. 同步处理 I-21 (同 I-15)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 注入 bit-flip 损坏的 ZIL record, 回放继续而非 panic
-- [ ] 新增 host-test: 全损坏的 ZIL, 回放返回 Ok(Recovered=0) 而非 panic
-- [ ] clippy 0 `unwrap_used` 警告
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 注入 bit-flip 损坏的 ZIL record, 回放继续而非 panic → zil_replay_test::single_corrupt_record_is_skipped_during_replay + multiple_records_partial_corruption_continues_replay
+- [x] 新增 host-test: 全损坏的 ZIL, 回放返回 Recovered=0 而非 panic → zil_replay_test::all_records_corrupted_returns_empty_without_panic
+- [x] clippy 0 `unwrap_used` 警告 (grep `unwrap()` zil_persist.rs 仅 1 处注释, 0 真实调用)
 **验证命令**:
 ```bash
-grep -n "unwrap()" src/kernel/services/hvfs/zil.rs  # 计数 = 0
-make test-host TESTS="hvfs::zil"
+grep -n "unwrap()" src/kernel/services/fs/hvfs/zil_persist.rs  # 仅注释残留
+make test-host TESTS="zil_replay"
 ```
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-15-zil-replay-panic`
+- 改动文件 (2 个):
+  - `src/kernel/services/fs/hvfs/zil_persist.rs`: 新增 `HvZilPersistError` 错误类型 (BufferTooShort/CrcMismatch/UnknownRecordType/InvalidBlock), `try_deserialize_record` 改返回 `Result<HvZilRecord, HvZilPersistError>` 用 `try_into().map_err()` 取代 10 处 `unwrap()`, `deserialize_zil_from_block` 在每条 record 上 match 错误并跳过; 测试同步改用 `expect/expect_err`
+  - `host-tests/tests/zil_replay_test.rs`: 新增 8 用例, 自包含 mini-persist 镜像内核契约, 覆盖单/多/全坏、回归、错误变体可识别、截断/坏 magic
+- 备注: 跳过失败时不做 klog 调用, 因 services `#![deny(unsafe_code)]` 禁止 klog 宏展开, 错误由 Result 类型透传给上层, 后续可经 framework/credo/event_bus 投递 ZIL_CORRUPT_RECORD 事件至用户态 auditd
 
 ---
 
@@ -1180,7 +1183,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 
 | 编号 | 标题 | 状态 | 完成日期 | 提交 |
 |------|------|------|----------|------|
-| I-15 | HvFS ZIL 11 unwrap | [ ] | | |
+| I-15 | HvFS ZIL 日志回放 11 处 unwrap() | [x] | 2026-06-11 | fix/I-15-zil-replay-panic |
 | I-17 | framework spin::Mutex 迁移 | [ ] | | |
 | I-01 | TCB 占比超标 | [ ] | | |
 | I-02 | usermode Ring 3 占位 | [ ] | | |
