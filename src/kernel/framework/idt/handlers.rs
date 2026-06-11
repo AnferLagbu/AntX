@@ -193,7 +193,27 @@ impl ExceptionHandler for PageFaultHandler {
             if crate::kernel::framework::proc::user_proc::try_expand_user_stack(fault_addr) {
                 return RecoveryAction::Recovered;
             }
+
+            // P0-I-26 修复: 栈扩展未命中时, 分发到 demand paging 完整路径
+            // (COW fork 写共享页 / mmap 文件缺页 / swap 换入 / 匿名页 demand),
+            // 此前 trait 路径直接 SIGKILL, 等于绕过了内核核心功能
+            let pf_info =
+                crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(
+                    fault_addr,
+                    // SAFETY: 调用方保证指针/类型有效
+                    unsafe { (*frame).err_code },
+                );
+            use crate::kernel::framework::mm::page_fault::PfResult;
             let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+            match crate::kernel::framework::mm::page_fault::handle_user_page_fault(pf_info) {
+                PfResult::Fixed => return RecoveryAction::Recovered,
+                PfResult::SignalSegv => return RecoveryAction::TerminateProcess(pid),
+                PfResult::SignalBus => return RecoveryAction::TerminateProcess(pid),
+                PfResult::Oom => return RecoveryAction::TerminateProcess(pid),
+                PfResult::Unhandled => {
+                    // demand paging 也未识别, 走原本的 SIGKILL 路径
+                }
+            }
             return RecoveryAction::TerminateProcess(pid);
         }
 

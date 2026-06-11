@@ -125,32 +125,19 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
         return handle_stack_expansion_simple(addr);
     }
 
-    handle_simple_fault(addr, &info)
-}
-
-fn handle_simple_fault(addr: usize, _info: &PageFaultInfo) -> PfResult {
-    let aligned = addr & !(PAGE_SIZE as usize - 1);
-
-    let pmm_inst = pmm::get_pmm();
-    let phys = match pmm_inst.alloc_page() {
-        Some(p) => p,
-        None => return PfResult::Oom,
-    };
-
-    let phys_virt = phys.to_virt();
-    // SAFETY: phys 由 PMM 分配, phys_to_virt 映射有效; 清零防止信息泄漏
-    unsafe {
-        core::ptr::write_bytes(phys_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
+    // P0-I-26 / B13-FL-01 修复: fallthrough 必须先查 VMA,
+    // 不再为任意用户地址隐式分配 RWX 零页 (read-only mmap 会被错误授予写权限)
+    let mm = super::vma::get_current_mm();
+    if let Some(mm) = mm {
+        if let Some(vma) = mm.find_vma(addr) {
+            if vma.is_guard() {
+                return PfResult::SignalSegv;
+            }
+            return handle_vma_fault_with_mm(mm, &vma, &info);
+        }
     }
 
-    let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
-    let vmm_inst = vmm::get_vmm();
-    let pml4 = vmm::get_current_pml4();
-
-    vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), phys, flags);
-
-    PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
-    PfResult::Fixed
+    PfResult::SignalSegv
 }
 
 fn handle_stack_expansion_simple(addr: usize) -> PfResult {
