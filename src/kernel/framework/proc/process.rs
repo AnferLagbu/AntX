@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::scheduler::SchedPolicy;
 use super::rlimit::RlimitTable;
@@ -180,6 +180,24 @@ pub struct Process {
     /// 控制进程的内存分配节点选择策略.
     /// fork 继承父进程策略; 可通过 sys_set_mempolicy 修改.
     pub numa_policy: Mutex<crate::kernel::framework::mm::numa::NumaMempolicy>,
+
+    /// Per-process 凭证会话上下文 (P2-I-30)
+    ///
+    /// 替代 `credo::session` 中 `static GLOBAL_SESSION` 的全局 UnsafeCell 单例.
+    /// 每个进程拥有独立的 `PwmContext` (uid/gid/euid/egid/saved_euid/saved_egid/
+    /// domain/elevation_granted_pwm). 在 SMP 下, 不同 CPU 上不同进程的会话
+    /// 上下文天然隔离, 杜绝身份/权限串台.
+    /// 进程退出时该字段随 Process 一起释放, 自动回收.
+    pub session: Mutex<crate::kernel::framework::credo::types::PwmContext>,
+
+    /// Per-process SUID 提权栈 (P2-I-30)
+    ///
+    /// `try_setuid` / `elevate_for_suid` 推送 `PwmContext` 快照;
+    /// `drop_elevation` 弹出. 栈深上限 8, 与原 `SessionManager` 保持一致.
+    pub session_elev_stack: Mutex<[crate::kernel::framework::credo::types::PwmContext; 8]>,
+
+    /// Per-process SUID 提权栈深度 (P2-I-30)
+    pub session_elev_depth: AtomicIsize,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -272,6 +290,15 @@ impl Process {
             numa_policy: Mutex::new(
                 crate::kernel::framework::mm::numa::NumaMempolicy::new(),
             ),
+            // P2-I-30: 进程级凭证会话上下文 (uid/gid/euid/egid/saved_*/domain)
+            session: Mutex::new(
+                crate::kernel::framework::credo::types::PwmContext::default(),
+            ),
+            // P2-I-30: SUID 提权栈 (深度 0, 容量 8)
+            session_elev_stack: Mutex::new(
+                [crate::kernel::framework::credo::types::PwmContext::default(); 8],
+            ),
+            session_elev_depth: AtomicIsize::new(0),
         }
     }
 

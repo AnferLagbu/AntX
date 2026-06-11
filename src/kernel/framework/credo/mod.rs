@@ -27,5 +27,4 @@ pub mod types;
 
 pub use audit::AuditLog;
 pub use identity::IdentityTable;
-pub use session::SessionManager;
 pub use types::*;

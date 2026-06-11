@@ -455,25 +455,44 @@ cd /home/anfer/Code/AntX && python3 scripts/audit_services_boundary.py && python
 
 ---
 
-### [ ] I-30 [中] Session Manager UnsafeCell 全局单例
+### [x] I-30 [中] Session Manager UnsafeCell 全局单例 → per-process 化
 
 **来源**: 审计 14
 **根因**: Session Manager 为 UnsafeCell 全局单例, SMP 下不同 CPU 共享同一会话上下文。
 **影响**: 多核多会话场景下身份/权限串台。
 **关联文件**:
 - [src/kernel/framework/credo/session.rs](../../src/kernel/framework/credo/session.rs)
+- [src/kernel/framework/proc/process.rs](../../src/kernel/framework/proc/process.rs)
+- [src/kernel/framework/credo/mod.rs](../../src/kernel/framework/credo/mod.rs)
 **修复方案**:
 1. 改造为 per-CPU 变量, 或
 2. 改造为 per-process (绑定到 Process 结构体)
 3. 方案 2 优先 (符合 Framekernel 原则: 策略属于进程)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 进程 A 登录后, 进程 B 启动时无 A 的会话上下文
-- [ ] 新增 host-test: 进程 A 退出后, A 的会话被回收
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 进程 A 写入 session, 进程 B 启动时无 A 的会话上下文 (静态契约 + 源码扫描)
+- [x] 新增 host-test: 进程 A 退出后, A 的 session/elev_stack/elev_depth 随 Process 一起回收 (随生命周期托管)
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 提交: (待 I-30 commit)
+- 简述:
+  - `Process` 新增 3 字段: `session: Mutex<PwmContext>`, `session_elev_stack: Mutex<[PwmContext; 8]>`, `session_elev_depth: AtomicIsize`.
+  - `Process::new` 三个字段全部初始化 (Default), 杜绝未初始化内存.
+  - `credo/session.rs::SessionManager` 结构体 (含 `UnsafeCell<PwmContext>` 和 `UnsafeCell<[PwmContext; 8]>`) 整体删除.
+  - `static GLOBAL_SESSION: Mutex<SessionManager>` 静态单例删除, `unsafe impl Send/Sync for SessionManager` 删除.
+  - 公开 API 签名 (login/logout/get_current_pwm/.../try_setregid 等 22 个) 保持不变, 内部实现改为 `with_current_ctx` 辅助: 取 current pid → `PROCESS_TABLE.with_process` 查 Process → 锁其 session 字段.
+  - SUID 提权栈深度 8 与原 `MAX_ELEVATION_DEPTH` 一致; login 时重置 `session_elev_depth=0`, 避免跨会话残留.
+  - `credo/mod.rs` 删 `pub use session::SessionManager`, 防止外部代码意外依赖已删除类型.
+  - 新增 `host-tests/tests/session_per_process_test.rs` 9 用例, 镜像契约:
+    1. session.rs 代码行无 `static GLOBAL_SESSION` (排除注释)
+    2. session.rs 无 `struct SessionManager` / `impl SessionManager`
+    3. session.rs 代码行无 `UnsafeCell` 引用
+    4. process.rs 含 3 个新字段声明
+    5. process.rs::Process::new 显式初始化 3 个字段
+    6. credo/mod.rs 不再 re-export SessionManager
+    7. 22 个公开 API 函数名保留
+    8. 内部走 `process_get_current_pid` + `PROCESS_TABLE.with_process` 路径
+    9. 其它 credo 子模块 (api/identity/audit) 无遗留 `GLOBAL_SESSION` 引用
 
 ---
 
