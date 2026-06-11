@@ -1314,13 +1314,15 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 |------|------|------|----------|------|
 | I-23 | PF trait + 直接方法双路径 | [-] | (随 I-26 合并) | |
 | I-27 | handle_simple_fault flags 硬编码 | [-] | (随 I-26 合并) | |
-| I-28 | kmalloc IRQ | [ ] | | |
-| I-30 | Session Manager 单例 | [ ] | | |
-| I-32 | ELF RacyCell | [ ] | | |
-| I-39 | sys_ioctl 返回 0 | [ ] | | |
-| I-40 | sigreturn aarch64 | [ ] | | |
-| I-41 | socket 自旋持锁 | [ ] | | |
-| I-45 | sigaltstack 未检查 | [ ] | | |
+| I-28 | kmalloc IRQ | [x] | (Phase 1) | |
+| I-30 | Session Manager 单例 | [x] | 2026-06-11 | refactor/I-30-session-per-process |
+| I-32 | ELF RacyCell | [x] | (Phase 1) | |
+| I-33 | ELF 验证双份 | [x] | 2026-06-11 | refactor/I-33-elf-verify-unify |
+| I-39 | sys_ioctl 返回 0 | [x] | 2026-06-11 | fix/I-39-ioctl-enosys |
+| I-40 | sigreturn aarch64 | [x] | (Phase 1) | |
+| I-41 | socket 自旋持锁 | [x] | 2026-06-11 | refactor/I-41-socket-wait-queue |
+| I-44 | net_save 实现 | [x] | 2026-06-11 | feature/P2-I-44-net-save |
+| I-45 | sigaltstack 未检查 | [x] | 2026-06-11 | fix/I-45-sigaltstack |
 
 ## Phase 3: 性能与架构
 
