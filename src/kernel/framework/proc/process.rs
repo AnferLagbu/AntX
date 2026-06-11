@@ -9,68 +9,14 @@ use super::rlimit::RlimitTable;
 use super::types::*;
 use crate::kernel::framework::chitin::user_driver::chitin_process_cleanup;
 
-const MAX_FDS_PER_PROCESS: usize = 64;
-
-#[derive(Debug)]
-pub struct FdTable {
-    entries: Mutex<[i32; MAX_FDS_PER_PROCESS]>,
-}
-
-impl FdTable {
-    pub const fn new() -> Self {
-        Self {
-            entries: Mutex::new([-1; MAX_FDS_PER_PROCESS]),
-        }
-    }
-
-    pub fn init(&self) {
-        let mut entries = self.entries.lock();
-        for e in entries.iter_mut() {
-            *e = -1;
-        }
-    }
-
-    /// ✅ 分配 per-process FD slot, 返回本地 fd 编号
-    pub fn alloc_fd(&self, global_fd: i32) -> Option<usize> {
-        let mut entries = self.entries.lock();
-        for i in 0..MAX_FDS_PER_PROCESS {
-            if entries[i] == -1 {
-                entries[i] = global_fd;
-                return Some(i);
-            }
-        }
-        None
-    }
-
-    /// ✅ 通过本地 fd 获取全局 FD 编号
-    pub fn get_global_fd(&self, local_fd: usize) -> Option<i32> {
-        let entries = self.entries.lock();
-        if local_fd < MAX_FDS_PER_PROCESS {
-            let gfd = entries[local_fd];
-            if gfd != -1 {
-                Some(gfd)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    /// ✅ 关闭本地 fd
-    pub fn close_fd(&self, local_fd: usize) -> bool {
-        if local_fd >= MAX_FDS_PER_PROCESS {
-            return false;
-        }
-        let mut entries = self.entries.lock();
-        if entries[local_fd] != -1 {
-            entries[local_fd] = -1;
-            true
-        } else {
-            false
-        }
-    }
-}
+// ============================================================================
+// 进程级 FD 分配策略 (P1-I-01 提取)
+// ============================================================================
+//
+// D8: FdTable 分配策略 (first-fit, 上限 64) 已提取到 services::proc::fd_table.
+// framework 仅保留 re-export, 避免大规模调用方修改.
+// 详见 [docs/plan/maintenance-2026-06-11.md] (P1-I-01).
+pub use crate::kernel::services::proc::fd_table::{FdTable, MAX_FDS_PER_PROCESS};
 
 extern "C" {
     fn pmm_alloc_pages(count: u64) -> *mut u8;

@@ -26,6 +26,8 @@ pub mod elf;
 pub mod execve;
 pub mod clone;
 pub mod coredump;
+/// D8: FD Table 分配策略 (first-fit, 上限 64)
+pub mod fd_table;
 pub mod info;
 pub mod madvise_mlock;
 /// D1: Namespace 安全封装
