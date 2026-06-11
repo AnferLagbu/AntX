@@ -198,6 +198,42 @@ pub unsafe fn poll_network() {
     let sockets = &mut *raw::socket_set();
     smoltcp_impl::poll_stack(nic, stack, sockets);
     raw::process_dhcp_events(sockets);
+
+    // P2-I-41: poll 完毕后通知所有 fd 的等待者, 让 sm_send/sm_recv
+    // (未来阻塞扩展点) 重新检查 socket 状态. try_wake 持锁时间 O(1).
+    use crate::kernel::framework::net::wait_queue::{WakeReason, SOCKET_WAIT_QUEUES};
+    for fd in 0..MAX_SM_FD {
+        if FD_TYPES[fd] == 0 {
+            continue;
+        }
+        // 用 smoltcp can_send / can_recv 推断 wake 原因. socket_set 访问
+        // 仍在 NET_LOCK 保护下 (try_wake 内部 lock 仅保护自身 pending 标记,
+        // 与 smoltcp 状态机无关).
+        let reason = if let Some(handle) = SOCKET_TABLE[fd] {
+            let can_read = match FD_TYPES[fd] {
+                1 => sockets.get::<tcp::Socket>(handle).can_recv(),
+                2 => sockets.get::<udp::Socket>(handle).can_recv(),
+                _ => false,
+            };
+            let can_write = match FD_TYPES[fd] {
+                1 => sockets.get::<tcp::Socket>(handle).can_send(),
+                2 => sockets.get::<udp::Socket>(handle).can_send(),
+                _ => false,
+            };
+            if can_read {
+                WakeReason::Readable
+            } else if can_write {
+                WakeReason::Writable
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+        if let Some(q) = SOCKET_WAIT_QUEUES.get(fd) {
+            q.try_wake(reason);
+        }
+    }
 }
 
 // ============================================================================
