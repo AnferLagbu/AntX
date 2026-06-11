@@ -1108,7 +1108,35 @@ pub fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
 
 #[no_mangle]
 pub fn vfs_sync() -> i32 {
-    hvfs_sync_internal()
+    // P3-I-18: 遍历所有挂载点, 通过 FileSystem trait 的 fs_sync 分发.
+    // 替换原 hvfs_sync_internal() 单 FS 写死的实现.
+    let mounts = VFS_MANAGER.mounts.lock();
+    let mut last_err: i32 = 0;
+    let mut synced: u32 = 0;
+    for i in 0..VFS_MAX_MOUNTS {
+        let m = &mounts[i];
+        if !m.used {
+            continue;
+        }
+        if let Some(fs) = m.get_fs() {
+            // SAFETY: 见本函数旧实现, fs_sync 不引用 raw pointer, 是
+            // 内部纯粹计算 (HvFS 走 txg commit). 互斥由 VFS_MANAGER 维护.
+            match fs.fs_sync() {
+                Ok(()) => {
+                    synced += 1;
+                }
+                Err(e) => {
+                    last_err = e.as_i32();
+                    // 继续遍历其它挂载点, 不因单个 FS 失败而中断
+                }
+            }
+        }
+    }
+    if synced == 0 {
+        // 没有任何挂载点: 仍然返回 0 保持兼容性 (老代码语义)
+        // 业务上 mount 0 个 FS 时 vfs_sync 是 no-op
+    }
+    last_err
 }
 
 #[no_mangle]

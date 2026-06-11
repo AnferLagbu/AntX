@@ -337,4 +337,11 @@ pub trait FileSystem: Send + Sync {
         let _ = (parent_path, name, pwm);
         Err(KernelError::NotSupported)
     }
+
+    /// 把文件系统内存态同步到底层 (例如 HvFS 的 txg commit).
+    /// 大多数 FS (RamFS/DevFS) 没有持久化, 默认实现为 Ok(()). 需要实际
+    /// 刷盘/事务提交的 FS (HvFS) 应当 override 本方法.
+    fn fs_sync(&self) -> KernelResult<()> {
+        Ok(())
+    }
 }

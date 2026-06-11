@@ -1929,4 +1929,10 @@ impl crate::kernel::framework::fs::vfs::types::FileSystem for HvfsData {
         let result = self.seek(handle, offset, whence as u32);
         if result < 0 { Err(KernelError::InvalidArgument) } else { Ok(result as u64) }
     }
+
+    // P3-I-18: trait fs_sync 包装 self.sync() (i32 → KernelResult<()>).
+    fn fs_sync(&self) -> crate::kernel::framework::fs::vfs::types::KernelResult<()> {
+        let r = self.sync();
+        if r == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
 }

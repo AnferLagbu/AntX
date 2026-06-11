@@ -630,7 +630,7 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-18 [中] FileSystem trait 缺少 fs_sync 方法
+### [x] I-18 [中] FileSystem trait 缺少 fs_sync 方法
 
 **来源**: 审计 11
 **根因**: `vfs_sync` 仅走 HvFS, 其他文件系统 (RamFS/DevFS) 无法响应 sync。
@@ -643,13 +643,17 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 2. `vfs_sync` 遍历所有挂载点分发
 3. RamFS/DevFS 默认实现为 Ok(())
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 挂载 RamFS+HvFS, vfs_sync 两者都被调用
-- [ ] `vfs_sync` 中无裸 `match fs_type`
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 挂载 RamFS+HvFS, vfs_sync 两者都被调用
+- [x] `vfs_sync` 中无裸 `match fs_type`
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- trait `FileSystem` 增加 `fn fs_sync(&self) -> KernelResult<()>` 默认 `Ok(())` (types.rs 末尾)
+- HvFS override: `self.sync() == 0 → Ok(())` 否则 `Err(IoError)` (hvfs.rs)
+- RamFS/DevFS 继承默认实现 (无持久化)
+- `vfs_sync` 改写: 遍历 `VFS_MANAGER.mounts` 表 → `m.get_fs().fs_sync()`, 单 FS 失败累加 `last_err` 不中断
+- 9 host-tests (fs_sync_trait_test.rs) 全通过
+- 提交: 见 git log (独立 commit on `feature/P3-I-18-fs-sync-trait`)
 
 ---
 
@@ -1322,13 +1326,14 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | I-40 | sigreturn aarch64 | [x] | (Phase 1) | |
 | I-41 | socket 自旋持锁 | [x] | 2026-06-11 | refactor/I-41-socket-wait-queue |
 | I-44 | net_save 实现 | [x] | 2026-06-11 | feature/P2-I-44-net-save |
+| I-18 | fs_sync trait | [x] | 2026-06-11 | feature/P3-I-18-fs-sync-trait |
 | I-45 | sigaltstack 未检查 | [x] | 2026-06-11 | fix/I-45-sigaltstack |
 
 ## Phase 3: 性能与架构
 
 | 编号 | 标题 | 状态 | 完成日期 | 提交 |
 |------|------|------|----------|------|
-| I-18 | fs_sync trait 方法 | [ ] | | |
+| I-18 | fs_sync trait 方法 | [x] | 2026-06-11 | feature/P3-I-18-fs-sync-trait |
 | I-19 | vfs_pread_inode trait 分发 | [ ] | | |
 | I-20 | 错误处理统一 | [ ] | | |
 | I-42 | virtio-blk 中断驱动 | [ ] | | |
