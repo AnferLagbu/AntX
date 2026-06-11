@@ -46,7 +46,8 @@ fn test_devfs_read_zero() -> TestResult {
 fn test_devfs_register_device() -> TestResult {
     let count_before = DEVFS_DATA.device_count();
     let result = DEVFS_DATA.register_device("testdev", 10);
-    check!(result == 0, "register_device should succeed");
+    // I-20: register_device 改 KernelResult, 0 → Ok(()), -1 → Err(_)
+    check!(result.is_ok(), "register_device should succeed");
     check!(
         DEVFS_DATA.device_count() == count_before + 1,
         "device count should increase"
@@ -59,10 +60,11 @@ fn test_devfs_register_device() -> TestResult {
 }
 
 fn test_devfs_unregister_device() -> TestResult {
-    DEVFS_DATA.register_device("tempdev", 20);
+    let _ = DEVFS_DATA.register_device("tempdev", 20);
     let count_before = DEVFS_DATA.device_count();
     let result = DEVFS_DATA.unregister_device("tempdev");
-    check!(result == 0, "unregister_device should succeed");
+    // I-20: unregister_device 改 KernelResult
+    check!(result.is_ok(), "unregister_device should succeed");
     check!(
         DEVFS_DATA.device_count() == count_before - 1,
         "device count should decrease"
@@ -75,14 +77,22 @@ fn test_devfs_unregister_device() -> TestResult {
 }
 
 fn test_devfs_register_duplicate() -> TestResult {
+    // I-20: 重复注册从 `== -1` 改为 AlreadyExists (KernelError 变体)
     let result = DEVFS_DATA.register_device("null", 0);
-    check!(result == -1, "registering duplicate should fail");
+    check!(
+        matches!(result, Err(crate::kernel::framework::fs::vfs::types::KernelError::AlreadyExists)),
+        "registering duplicate should return AlreadyExists"
+    );
     TestResult::Pass
 }
 
 fn test_devfs_unregister_nonexistent() -> TestResult {
+    // I-20: 注销不存在从 `== -1` 改为 NotFound
     let result = DEVFS_DATA.unregister_device("nonexistent_dev");
-    check!(result == -1, "unregistering nonexistent should fail");
+    check!(
+        matches!(result, Err(crate::kernel::framework::fs::vfs::types::KernelError::NotFound)),
+        "unregistering nonexistent should return NotFound"
+    );
     TestResult::Pass
 }
 

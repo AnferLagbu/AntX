@@ -1625,6 +1625,19 @@ impl FileSystem for RamFsData {
         }
     }
 
+    // P3-I-19: vfs_pread_inode trait 分发. 直接按 inode 寻址 (mmap prewarm).
+    // 与 fs_read 共用底层 ramfs.read, 差别仅在调用入口.
+    fn fs_pread_inode(&self, node_id: u32, offset: u64, buf: &mut [u8], pwm: u64) -> KernelResult<usize> {
+        let mut ramfs = RAMFS_DATA.lock();
+        let mut new_offset = offset;
+        let result = ramfs.read(node_id, &mut new_offset, buf, pwm);
+        if result < 0 {
+            Err(KernelError::IoError)
+        } else {
+            Ok(result as usize)
+        }
+    }
+
     fn fs_write(&self, handle: u32, offset: u64, buf: &[u8], pwm: u64) -> KernelResult<usize> {
         let mut ramfs = RAMFS_DATA.lock();
         let mut new_offset = offset;

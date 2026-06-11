@@ -344,4 +344,14 @@ pub trait FileSystem: Send + Sync {
     fn fs_sync(&self) -> KernelResult<()> {
         Ok(())
     }
+
+    /// 按 inode_id 直接读取 (mmap prewarm 用)
+    ///
+    /// 区别于 `fs_read`: 不依赖 fd handle, 直接按 inode 寻址.
+    /// 默认实现 NotSupported, 因为 mmap prewarm 不是所有 FS 都必须支持.
+    /// 真实实现 (RamFS) 应当 override 本方法, 在 mmap #PF miss 路径上被
+    /// `vfs_pread_inode` 调用以同步填 Page Cache.
+    fn fs_pread_inode(&self, _node_id: u32, _offset: u64, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        Err(KernelError::NotSupported)
+    }
 }

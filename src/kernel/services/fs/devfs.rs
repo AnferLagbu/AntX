@@ -159,7 +159,7 @@ impl DevfsData {
         device.name[len] = 0;
     }
 
-    pub fn register_device(&self, name: &str, dev_type: u8) -> i32 {
+    pub fn register_device(&self, name: &str, dev_type: u8) -> KernelResult<()> {
         let mut devices = self.devices.lock();
         for device in devices.iter() {
             if device.used {
@@ -170,7 +170,7 @@ impl DevfsData {
                     .unwrap_or(DEVFS_MAX_NAME);
                 let existing = core::str::from_utf8(&device.name[..end]).unwrap_or("");
                 if existing == name {
-                    return -1;
+                    return Err(KernelError::AlreadyExists);
                 }
             }
         }
@@ -180,13 +180,13 @@ impl DevfsData {
                 device.dev_type = dev_type;
                 device.used = true;
                 self.device_count.fetch_add(1, Ordering::SeqCst);
-                return 0;
+                return Ok(());
             }
         }
-        -1
+        Err(KernelError::NoSpace)
     }
 
-    pub fn unregister_device(&self, name: &str) -> i32 {
+    pub fn unregister_device(&self, name: &str) -> KernelResult<()> {
         let mut devices = self.devices.lock();
         for device in devices.iter_mut() {
             if device.used {
@@ -200,11 +200,11 @@ impl DevfsData {
                     device.used = false;
                     device.dev_type = 0;
                     self.device_count.fetch_sub(1, Ordering::SeqCst);
-                    return 0;
+                    return Ok(());
                 }
             }
         }
-        -1
+        Err(KernelError::NotFound)
     }
 
     pub fn mount(&self, _path: &str) -> i32 {
@@ -368,7 +368,9 @@ fn on_chitin_device_registered(dev: &crate::kernel::framework::chitin::ChitinDev
         // Bus/Other 不创建 DevFS 节点
         _ => return,
     };
-    DEVFS_DATA.register_device(dev.name, kind as u8);
+    // I-20: register_device 现在返回 KernelResult<()>, 失败仅记录
+    // (设备可能已存在, Chitin 重启场景), 不阻断 chitin 回调链.
+    let _ = DEVFS_DATA.register_device(dev.name, kind as u8);
 }
 
 // ============================================================================
@@ -417,23 +419,24 @@ impl SafeDevFs {
     }
 
     /// 注册设备
+    /// I-20: 内部 `register_device` 改 KernelResult 后, 错误码通过映射传播到
+    /// `&'static str` (保持 services 层公开 API 表面不变).
     pub fn register(&self, name: &str, kind: DevKind) -> Result<(), &'static str> {
-        let rc = self.inner.register_device(name, kind as u8);
-        match rc {
-            0 => Ok(()),
-            -17 => Err("device already exists"),
-            -28 => Err("devfs table full"),
-            _ => Err("register failed"),
+        match self.inner.register_device(name, kind as u8) {
+            Ok(()) => Ok(()),
+            Err(KernelError::AlreadyExists) => Err("device already exists"),
+            Err(KernelError::NoSpace) => Err("devfs table full"),
+            Err(_) => Err("register failed"),
         }
     }
 
     /// 注销设备
+    /// I-20: 同上, NotFound 直接映射为 `device not found`.
     pub fn unregister(&self, name: &str) -> Result<(), &'static str> {
-        let rc = self.inner.unregister_device(name);
-        if rc == 0 {
-            Ok(())
-        } else {
-            Err("device not found")
+        match self.inner.unregister_device(name) {
+            Ok(()) => Ok(()),
+            Err(KernelError::NotFound) => Err("device not found"),
+            Err(_) => Err("unregister failed"),
         }
     }
 

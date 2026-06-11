@@ -226,9 +226,12 @@ fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: u
             };
             // 同步从 vfs 读 4KB 文件数据填入 pcache
             // pwm 取自 Vma 记录的创建者凭证, 保证权限校验正确
+            // P3-I-19: 传入 mount_idx (vma.mount_idx, mmap 时记录的挂载点)
+            // 让 vfs_pread_inode 能走 FileSystem trait 分发而非硬编码 RamFS.
             let file_off = vma.offset + (aligned - vma.start) as u64;
             let mut page_buf = [0u8; PAGE_SIZE as usize];
             let n = crate::kernel::framework::fs::vfs::api::vfs_pread_inode(
+                vma.mount_idx,
                 vma.inode_id,
                 file_off,
                 &mut page_buf,

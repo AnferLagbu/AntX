@@ -19,6 +19,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::fs::vfs::types::{KernelError, KernelResult};
 // ── BlockDevice Trait ──
 
 pub trait BlockDevice: Send + Sync {
@@ -157,34 +158,40 @@ pub fn count() -> usize {
 
 // ── Multi-sector helper ──
 
-pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut [u8]) -> i32 {
+// I-20: read_sectors / write_sectors 改用 KernelResult<()>, 替代 C 风格 `return -1`.
+// 现在错误类型与项目其余模块统一 (KernelError::InvalidArgument / IoError),
+// 调用方能用 `?` 传播或 `.err()` 分类处理, 不再丢失错误上下文.
+// 由于 Chitin 是 I/O 主路径, 这两个函数当前没有调用者; 保留以便上层
+// `with_device` 风格的同步读写场景 (非中断上下文).
+
+pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut [u8]) -> KernelResult<()> {
     let need = (count as u64) * 512;
     if (buf.len() as u64) < need {
-        return -1;
+        return Err(KernelError::InvalidArgument);
     }
     let mut offset = 0usize;
     for i in 0..count {
-        if dev.blk_read(start + i as u64, &mut buf[offset..offset + 512]) < 0 {
-            return -1;
+        match dev.blk_read(start + i as u64, &mut buf[offset..offset + 512]) {
+            n if n >= 0 => offset += 512,
+            _ => return Err(KernelError::IoError),
         }
-        offset += 512;
     }
-    0
+    Ok(())
 }
 
-pub fn write_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &[u8]) -> i32 {
+pub fn write_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &[u8]) -> KernelResult<()> {
     let need = (count as u64) * 512;
     if (buf.len() as u64) < need {
-        return -1;
+        return Err(KernelError::InvalidArgument);
     }
     let mut offset = 0usize;
     for i in 0..count {
-        if dev.blk_write(start + i as u64, &buf[offset..offset + 512]) < 0 {
-            return -1;
+        match dev.blk_write(start + i as u64, &buf[offset..offset + 512]) {
+            n if n >= 0 => offset += 512,
+            _ => return Err(KernelError::IoError),
         }
-        offset += 512;
     }
-    0
+    Ok(())
 }
 
 // ── HvFS bridge (Chitin 代理) ──

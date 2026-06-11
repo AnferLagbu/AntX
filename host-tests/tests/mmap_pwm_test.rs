@@ -30,11 +30,27 @@ struct Vma {
     inode_id: u32,
     shared: bool,
     file_pwm: u64,
+    /// P3-I-19: 挂载点索引, 决定 #PF miss 时调哪个 FileSystem trait.
+    /// mock 中用 Option<usize> (与 queenx 一致), 匿名为 None.
+    mount_idx: Option<usize>,
     vma_type: VmaType,
 }
 
 impl Vma {
     fn file_backed(start: usize, end: usize, offset: u64, inode_id: u32, pwm: u64, shared: bool) -> Self {
+        // 默认挂载根 (RamFS, mount_idx = 0), 与 queenx mmap 退到根一致.
+        Self::file_backed_with_mount(start, end, offset, inode_id, pwm, shared, Some(0))
+    }
+
+    fn file_backed_with_mount(
+        start: usize,
+        end: usize,
+        offset: u64,
+        inode_id: u32,
+        pwm: u64,
+        shared: bool,
+        mount_idx: Option<usize>,
+    ) -> Self {
         Self {
             start,
             end,
@@ -42,6 +58,7 @@ impl Vma {
             inode_id,
             shared,
             file_pwm: pwm,
+            mount_idx,
             vma_type: VmaType::FileBacked,
         }
     }
@@ -54,6 +71,7 @@ impl Vma {
             inode_id: 0,
             shared: false,
             file_pwm: 0,
+            mount_idx: None,
             vma_type: VmaType::Anonymous,
         }
     }
@@ -147,4 +165,35 @@ fn mremap_preserves_file_pwm() {
     assert_eq!(v_new.file_pwm, pwm, "mremap 必须继承 file_pwm");
     assert_eq!(v_new.inode_id, 9);
     assert!(v_new.shared);
+}
+
+/// P3-I-19: file_backed 默认挂载到根 (RamFS, mount_idx = 0),
+/// 与 queenx mmap 退到根一致.
+#[test]
+fn file_backed_defaults_to_root_mount() {
+    let v = Vma::file_backed(0x30000, 0x34000, 0, 11, 0xAA, true);
+    assert_eq!(v.mount_idx, Some(0), "默认 mount_idx = 0 (RamFS)");
+}
+
+/// P3-I-19: 显式指定非根挂载 (例如 /dev 对应 DevFS), 必须原样保留.
+#[test]
+fn file_backed_with_explicit_mount() {
+    let v = Vma::file_backed_with_mount(0x30000, 0x34000, 0, 12, 0xBB, false, Some(1));
+    assert_eq!(v.mount_idx, Some(1), "非根挂载 mount_idx = 1 (DevFS)");
+    assert!(!v.shared);
+}
+
+/// P3-I-19: 匿名 VMA 不携带挂载点 (None, 无文件后端).
+#[test]
+fn anon_vma_has_no_mount() {
+    let v = Vma::new_anon(0x40000, 0x44000);
+    assert_eq!(v.mount_idx, None, "匿名 VMA mount_idx = None");
+}
+
+/// P3-I-19: clone 必须保留 mount_idx (fork 后 #PF miss 仍能正确派发).
+#[test]
+fn vma_clone_preserves_mount_idx() {
+    let v = Vma::file_backed_with_mount(0x50000, 0x54000, 0, 13, 0xCC, true, Some(2));
+    let c = v.clone();
+    assert_eq!(c.mount_idx, Some(2), "clone 必须保留 mount_idx");
 }

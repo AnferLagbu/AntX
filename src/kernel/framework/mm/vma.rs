@@ -165,6 +165,12 @@ pub struct Vma {
     /// 文件映射: 创建该 VMA 的 pwm (用于 #PF 时 vfs_pread_inode 权限校验).
     /// 匿名/堆/栈/设备/保护 VMA 始终为 0.
     pub file_pwm: u64,
+    /// 文件映射: 挂载点在 VFS_MANAGER.mounts 中的索引. None = 匿名 VMA
+    /// 或未注册挂载 (退到根). #PF miss 时由 page_fault 读此字段
+    /// 查 VFS_MANAGER.mounts[idx].fs trait object, 调对应 FileSystem 的
+    /// fs_pread_inode 完成 mmap prewarm. 用 usize 而非 &str 避免
+    /// 'static 借用 / 静态 buffer 泄漏的复杂度.
+    pub mount_idx: Option<usize>,
     /// 内核策略标志 (madvice/mlock/fork 行为). 与 PageFlags 解耦.
     pub vm_flags: VmFlags,
 }
@@ -180,6 +186,7 @@ impl Vma {
             inode_id: 0,
             shared: false,
             file_pwm: 0,
+            mount_idx: None,
             vm_flags: VmFlags::EMPTY,
         }
     }
@@ -194,6 +201,7 @@ impl Vma {
             inode_id: 0,
             shared: false,
             file_pwm: 0,
+            mount_idx: None,
             vm_flags: VmFlags::EMPTY,
         }
     }
@@ -201,8 +209,9 @@ impl Vma {
     /// 创建文件映射 VMA
     ///
     /// `pwm` 为创建该映射的进程凭证, #PF 同步填 pcache 时通过
-    /// `vfs_pread_inode(inode, off, dst, pwm)` 校验文件访问权限,
-    /// 避免越权读取其它用户文件.
+    /// `vfs_pread_inode(mount_idx, inode, off, dst, pwm)` 校验文件访问权限,
+    /// 避免越权读取其它用户文件. `mount_idx` 决定 #PF miss 时调哪个
+    /// FileSystem trait (例如 0 → RamFS, 1 → DevFS).
     pub fn file_backed(
         start: usize,
         end: usize,
@@ -211,6 +220,7 @@ impl Vma {
         inode_id: u32,
         pwm: u64,
         shared: bool,
+        mount_idx: Option<usize>,
     ) -> Self {
         Self {
             start,
@@ -221,6 +231,7 @@ impl Vma {
             inode_id,
             shared,
             file_pwm: pwm,
+            mount_idx,
             vm_flags: VmFlags::EMPTY,
         }
     }
@@ -471,6 +482,7 @@ impl MmStruct {
                     inode_id: vma.inode_id,
                     shared: vma.shared,
                     file_pwm: vma.file_pwm,
+                    mount_idx: vma.mount_idx,
                     vm_flags: vma.vm_flags,
                 });
             }
@@ -487,6 +499,7 @@ impl MmStruct {
                 inode_id: vma.inode_id,
                 shared: vma.shared,
                 file_pwm: vma.file_pwm,
+                mount_idx: vma.mount_idx,
                 vm_flags: vma.vm_flags,
             });
 
@@ -501,6 +514,7 @@ impl MmStruct {
                     inode_id: vma.inode_id,
                     shared: vma.shared,
                     file_pwm: vma.file_pwm,
+                    mount_idx: vma.mount_idx,
                     vm_flags: vma.vm_flags,
                 });
             }
@@ -637,6 +651,7 @@ impl MmStruct {
             inode_id: old_vma.inode_id,
             shared: old_vma.shared,
             file_pwm: old_vma.file_pwm,
+            mount_idx: old_vma.mount_idx,
             vm_flags: old_vma.vm_flags,
         };
         self.insert_vma(new_vma).map_err(|_| Errno::ENOMEM)?;
@@ -749,6 +764,7 @@ impl MmStruct {
                     inode_id: vmas[i].inode_id,
                     shared: vmas[i].shared,
                     file_pwm: vmas[i].file_pwm,
+                    mount_idx: vmas[i].mount_idx,
                     vm_flags: vmas[i].vm_flags,
                 };
                 let new = Vma {
@@ -760,6 +776,7 @@ impl MmStruct {
                     inode_id: vmas[i].inode_id,
                     shared: vmas[i].shared,
                     file_pwm: vmas[i].file_pwm,
+                    mount_idx: vmas[i].mount_idx,
                     vm_flags: vmas[i].vm_flags.insert(flag),
                 };
                 vmas[i] = prefix;
@@ -780,6 +797,7 @@ impl MmStruct {
                     inode_id: vmas[i].inode_id,
                     shared: vmas[i].shared,
                     file_pwm: vmas[i].file_pwm,
+                    mount_idx: vmas[i].mount_idx,
                     vm_flags: vmas[i].vm_flags.insert(flag),
                 };
                 let suffix = Vma {
@@ -791,6 +809,7 @@ impl MmStruct {
                     inode_id: vmas[i].inode_id,
                     shared: vmas[i].shared,
                     file_pwm: vmas[i].file_pwm,
+                    mount_idx: vmas[i].mount_idx,
                     vm_flags: vmas[i].vm_flags,
                 };
                 vmas[i] = new;

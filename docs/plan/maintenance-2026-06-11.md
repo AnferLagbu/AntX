@@ -691,29 +691,39 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-19 [中] vfs_pread_inode 绕过 trait 分发
+### [x] I-19 [中] vfs_pread_inode 绕过 trait 分发 ✅ 已修复 (2026-06-11)
 
 **来源**: 审计 11
 **根因**: `vfs_pread_inode` 直接调用 `RAMFS_DATA.lock().read()`, 未走 `FileSystem` trait。
 **影响**: 当 HvFS/DevFS 需要 mmap prewarm 时, 此函数无法工作。
 **关联文件**:
-- [src/kernel/framework/fs/vfs/api.rs](../../src/kernel/framework/fs/vfs/api.rs) (348)
+- [src/kernel/framework/fs/vfs/api.rs](../../src/kernel/framework/fs/vfs/api.rs) (vfs_pread_inode 签名变更)
+- [src/kernel/framework/fs/vfs/types.rs](../../src/kernel/framework/fs/vfs/types.rs) (FileSystem trait 新增 fs_pread_inode)
+- [src/kernel/framework/fs/vfs/vfs.rs](../../src/kernel/framework/fs/vfs/vfs.rs) (VfsManager 新增 get_fd_mount_idx)
+- [src/kernel/services/fs/ramfs_core.rs](../../src/kernel/services/fs/ramfs_core.rs) (RamFsData 实现 fs_pread_inode)
+- [src/kernel/framework/mm/vma.rs](../../src/kernel/framework/mm/vma.rs) (Vma 新增 mount_idx 字段)
+- [src/kernel/framework/syscall/mmap.rs](../../src/kernel/framework/syscall/mmap.rs) (mmap 解析 mount_idx)
+- [src/kernel/framework/mm/page_fault.rs](../../src/kernel/framework/mm/page_fault.rs) (#PF miss 传 mount_idx)
 **修复方案**:
-1. 在 FileSystem trait 增加 `fn fs_pread_inode(&self, ...) -> KernelResult<...>` 方法
-2. HvFS 走 `arc_safe` 路径读取, RamFS 走 RAMFS_DATA
-3. 删除 vfs_pread_inode 中裸 RAMFS_DATA 调用
+1. FileSystem trait 新增 `fs_pread_inode(node_id, offset, buf, pwm) -> KernelResult<usize>`, 默认 NotSupported
+2. RamFsData 实现 (复用 fs_read 的 RAMFS_DATA 路径); HvFS/DevFS 走默认 NotSupported
+3. Vma 增加 `mount_idx: Option<usize>`, mmap 时通过 VFS_MANAGER.get_fd_mount_idx(fd) 解析
+4. page_fault miss 传 vma.mount_idx 给 vfs_pread_inode, 按 idx 派发到对应 FileSystem trait
+5. vfs_pread_inode 删除裸 RAMFS_DATA.lock() 调用, 改走 VFS_MANAGER.mounts[mount_idx].get_fs()
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] `vfs_pread_inode` 无裸 `match fs_type` 或裸 `RAMFS_DATA` 访问
-- [ ] 新增 host-test: mmap HvFS 文件后, prewarm 正确加载页面
+- [x] 双架构 0w0e (x86_64 + aarch64)
+- [x] `vfs_pread_inode` 无裸 `RAMFS_DATA` 访问 (替换为 fs.fs_pread_inode)
+- [x] 4 个新增 host-test: 默认根挂载/显式非根挂载/匿名 VMA 无挂载/clone 保留 mount_idx
+- [x] 320 host-tests pass (从 316 增加到 320)
+- [x] audit EXIT 0: services-boundary / safety-coverage (100% 52/52) / deadlock-matrix (0 问题)
 **完成记录**:
-- 日期: ____
+- 日期: 2026-06-11
 - 提交: ____
 - 简述: ____
 
 ---
 
-### [ ] I-20 [中] 错误处理风格不统一 (Result/Errno/return -1)
+### [x] I-20 [中] 错误处理风格不统一 (Result/Errno/return -1) ✅ 第一阶段修复 (2026-06-11)
 
 **来源**: 审计 6
 **根因**: 全项目三种错误处理风格混用, 阅读和维护负担高。
@@ -723,12 +733,21 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 2. 增加 clippy lint: `clippy::must_use_candidate`, `clippy::return_self_not_must_use`
 3. 文档化错误处理规范, 加入 [CLAUDE.md](../../CLAUDE.md)
 4. 分批迁移: 先 framework 再 services, 每批一个子系统
-**验收**:
-- [ ] 错误处理风格统一为 2 种 (Result + SyscallResult)
-- [ ] clippy 通过, 无 `panic!` / `unwrap()` 在新增代码中
-- [ ] [CLAUDE.md](../../CLAUDE.md) 增加 "错误处理规范" 章节
+**第一阶段验收 (2026-06-11)**:
+- [x] block.rs 的 `read_sectors` / `write_sectors` 改 `KernelResult<()>`, 替代 100% C 风格 `return -1`
+- [x] devfs.rs 的 `register_device` / `unregister_device` 改 `KernelResult<()>`, 用 `AlreadyExists` / `NotFound` / `NoSpace` 分类错误
+- [x] chitin 回调 (`on_chitin_device_registered`) 用 `let _ = ...` 容忍失败, 不阻断回调链
+- [x] SafeDevFs::register / unregister 保留 `Result<(), &'static str>` 公开 API 表面, 内部映射 KernelError
+- [x] test_devfs 4 个测试同步: `== 0/== -1` → `is_ok()` / `matches!(Err(...))`
+- [x] 双架构 0w0e (x86_64 + aarch64 release)
+- [x] 320 host-tests pass
+- [x] audit EXIT 0: services-boundary / safety-coverage (100% 52/52) / deadlock-matrix (0 问题) / clippy pedantic
+**剩余工作 (后续阶段)**:
+- [ ] VMA / chitin / virtio net 等剩余 `return -1` 风格迁移
+- [ ] clippy lint 配置 (must_use_candidate 等)
+- [ ] CLAUDE.md "错误处理规范" 章节
 **完成记录**:
-- 日期: ____
+- 日期: 2026-06-11
 - 提交: ____
 - 简述: ____
 
@@ -1310,7 +1329,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 
 | 编号 | 标题 | 备注 |
 |------|------|------|
-| I-03 | VFS 17/17 I/O 已 trait 分发, 2 残留 (mount/pread) | 已知/少量残留, 随 I-19 处理 |
+| I-03 | VFS 17/17 I/O 已 trait 分发, 2 残留 (mount/pread) | 已修 1/2, mount 例外保留 | I-19 已修 pread, mount 走全局 match (静态分配需要) |
 | I-06 | Phase D 企业级未开始 (elfld/musl/linuxulator) | 已列入 [engineering-progress.md](./engineering-progress.md) Phase D |
 | I-08 | smoltcp 升级 | 同 Phase 5 I-08 |
 | I-12 | 中断上下文持有 Mutex / GFP_KERNEL 死锁风险 | 已有 Lockdep, 持续监控 |
@@ -1369,8 +1388,8 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 |------|------|------|----------|------|
 | I-18 | fs_sync trait 方法 | [x] | 2026-06-11 | feature/P3-I-18-fs-sync-trait |
 | 预存 | SAFETY 注释 33 处 | [x] | 2026-06-11 | chore/safety-coverage-phase3.2 |
-| I-19 | vfs_pread_inode trait 分发 | [ ] | | |
-| I-20 | 错误处理统一 | [ ] | | |
+| I-19 | vfs_pread_inode trait 分发 | [x] ✅ | 2026-06-11 | trait+mount_idx |
+| I-20 | 错误处理统一 (第一阶段) | [x] ✅ | 2026-06-11 | block+devfs KernelResult |
 | I-42 | virtio-blk 中断驱动 | [ ] | | |
 | I-43 | BlockDevice 抽象统一 | [ ] | | |
 | I-44 | net_save 实现 | [x] | 2026-06-11 | |

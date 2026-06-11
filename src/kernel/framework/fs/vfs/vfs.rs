@@ -383,6 +383,28 @@ impl VfsManager {
         }
     }
 
+    /// 通过 fd 查找其所属挂载点索引 (供 mmap 反查用)
+    ///
+    /// 与 `get_fd_info` 不同: 不返回 inode/offset/pwm, 而是把 fd 打开时
+    /// 的路径解析为挂载点. mmap 后续 #PF miss 需要该信息以决定
+    /// 调哪个 FileSystem trait 的 fs_pread_inode.
+    pub fn get_fd_mount_idx(&self, idx: usize) -> Option<usize> {
+        // 1. 在 fd_table 锁内拷贝路径 (避免借用锁的临时生命期)
+        let path_buf: [u8; VFS_MAX_PATH] = {
+            let fd_table = self.fd_table.lock();
+            if idx >= VFS_MAX_FDS || !fd_table[idx].used {
+                return None;
+            }
+            let mut buf = [0u8; VFS_MAX_PATH];
+            buf.copy_from_slice(&fd_table[idx].path);
+            buf
+        };
+        // 2. 锁释放后再解析挂载点 (find_mount 会自己加 mounts 锁)
+        let path_end = path_buf.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_PATH);
+        let path_str = core::str::from_utf8(&path_buf[..path_end]).unwrap_or("");
+        self.find_mount(path_str)
+    }
+
     pub fn set_fd_offset(&self, idx: usize, offset: u64) {
         let mut fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS {

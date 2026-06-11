@@ -330,14 +330,33 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 ///
 /// 返回: 实际读取字节数, 负数表示错误.
 #[no_mangle]
-pub fn vfs_pread_inode(node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
+pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
     let mut user_buf = unsafe { UserWritePtr::new(dst.as_mut_ptr(), dst.len()) };
 
-    // B2: mmap prewarm — 直接调用 RamFsData::read (RamFS 专用接口, 非 trait 分发)
-    let mut ramfs = crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA.lock();
-    let mut offset = file_offset;
-    ramfs.read(node_id, &mut offset, user_buf.as_mut_slice(), pwm)
+    // P3-I-19: 走 FileSystem trait 分发. 旧实现直接访问 RAMFS_DATA,
+    // 非 RamFS (HvFS/DevFS 等) 挂载 mmap 时无法工作. 现按 mount_idx
+    // 派发, 无挂载则返回 -1 (EIO). mmap prewarm 由 page_fault 传入
+    // vma.mount_idx (mmap 时已解析).
+    let mount_idx = match mount_idx {
+        Some(i) => i,
+        None => return -1,
+    };
+    let fs = {
+        let mounts = VFS_MANAGER.mounts.lock();
+        match mounts.get(mount_idx) {
+            Some(m) if m.used => m.get_fs(),
+            _ => return -1,
+        }
+    };
+    let fs = match fs {
+        Some(f) => f,
+        None => return -1,
+    };
+    match fs.fs_pread_inode(node_id, file_offset, user_buf.as_mut_slice(), pwm) {
+        Ok(n) => n as i32,
+        Err(_) => -1,
+    }
 }
 
 #[no_mangle]

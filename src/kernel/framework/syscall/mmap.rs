@@ -107,6 +107,11 @@ pub fn mmap_syscall(
         return Err(Errno::EBADF);
     }
 
+    // P3-I-19: 解析 fd 所属挂载点索引, 写入 VMA. #PF miss 时
+    // page_fault 读 vma.mount_idx, 走 VFS_MANAGER 派发到正确的 FS trait.
+    // mount 不被卸载则索引稳定, 不需要 'static 借用.
+    let mount_idx = fd_to_mount_idx(fd);
+
     let addr = find_or_allocate_addr(mm, addr_hint, len_aligned)?;
     let aligned_addr = addr & !(PAGE_SIZE as usize - 1);
 
@@ -126,6 +131,7 @@ pub fn mmap_syscall(
         inode_id,
         pwm,
         map_shared,
+        mount_idx,
     );
 
     match mm.insert_vma(vma) {
@@ -164,6 +170,15 @@ fn fd_to_inode_id(fd: i32) -> u32 {
     // TODO(TRACK-077F14): 从当前进程的 fdtable 获取 inode_id
     // 当前简化: fd + 1 作为 inode_id (0 表示无效)
     (fd as u32).wrapping_add(1)
+}
+
+/// P3-I-19: 通过 VFS_MANAGER 把 fd 反查为挂载点索引.
+/// mount 不被卸载则索引稳定, page_fault 时再用索引查 FileSystem trait.
+fn fd_to_mount_idx(fd: i32) -> Option<usize> {
+    if fd < 0 {
+        return None;
+    }
+    crate::kernel::framework::fs::vfs::VFS_MANAGER.get_fd_mount_idx(fd as usize)
 }
 
 #[inline]
