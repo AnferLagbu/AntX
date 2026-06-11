@@ -13,41 +13,55 @@
 //! - 返回时内核栈必须恢复到调用前状态。
 //! - 调用前必须调用 `VmSpace::activate()` 切换到正确的页表。
 
+use super::arch::Arch;
 use super::vmspace::VmSpace;
 use super::userctx::UserContext;
 
 /// 进入用户模式执行直到下一次陷入（syscall / interrupt / exception）。
 ///
-/// 返回 UserContext 携带返回时的用户态寄存器状态。
+/// 委托到 `Arch::enter_user` 触发硬件上下文切换:
+/// - x86_64: cli + 装载 ds/es/fs/gs + swapgs + iretq
+/// - aarch64: msr sp_el0/elr_el1/spsr_el1 + eret (EL0)
 ///
 /// # SAFETY
 /// - 必须在进程的内核栈上调用（非中断栈）。
 /// - 调用前必须调用 `vmspace.activate()` 切换到正确的页表。
-/// - 返回时内核栈恢复到调用前状态。
+/// - `ctx.rip` (x86_64) / `ctx.elr_el1` (aarch64) 必须指向合法用户态代码。
+/// - `ctx.rsp` / `ctx.sp_el0` 必须指向合法用户态栈。
+/// - `ctx.rdi` (x86_64) / `ctx.x0` (aarch64) 是用户态入口的第一个参数。
+/// - 此函数 `noreturn`: 仅在用户态下次陷入时返回 (经由 syscall/interrupt/exception 入口),
+///   不会以函数返回值方式返回。
 #[cfg(target_arch = "x86_64")]
-pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> UserContext {
-    // 实际实现在 Phase 1.3 (与 asm stub 对接) 完成。
-    // 当前占位：直接返回传入的 ctx（hello world 内核可先跑 busy-loop 用户态）。
+pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> ! {
     let _ = _vmspace;
-    // SAFETY: 此函数标记为 `unsafe fn`, 调用方必须保证:
-    //   1. `ctx` 指向的 `UserContext` 字段已正确初始化 (CS/rip, SS/rsp, RFLAGS 等)
-    //   2. 用户态代码页已映射到 `_vmspace` 的页表中, 权限正确
-    //   3. 内核态栈有效, iret/svc 不会跳到无效地址
-    // 当前占位实现仅做值传递, 不触发硬件切换, SAFETY 由调用方全权负责
-    // (Phase 1.3 真实实现将包含 swapgs + iret 指令, 须在 TCB 上下文).
-    *ctx
+    // SAFETY: 调用方契约已通过 VmSpace::activate() 切换页表, ctx 字段由
+    // `userctx::UserContext` 强制类型化保证布局正确. `X8664::enter_user`
+    // 内部执行 swapgs + 装载数据段 + iretq, 不会返回.
+    unsafe {
+        <crate::kernel::framework::arch::x86_64::X8664 as Arch>::enter_user(
+            ctx.rip as usize, // ELR/rip
+            ctx.rsp as usize, // stack pointer
+            ctx.rdi as usize, // arg0 (x86_64 calling convention)
+        )
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
 /// 进入用户模式 (aarch64 架构版)。
 ///
 /// # SAFETY
-/// 契约同 x86_64 版本: 调用方必须保证 ctx 有效, 用户态代码页已映射, 内核栈有效。
-/// 真实实现包含 `eret` 指令, 须在 TCB 上下文执行。
-pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> UserContext {
+/// 契约同 x86_64 版本; `Arch::enter_user` 内部执行 msr sp_el0/elr_el1/spsr_el1 + eret.
+pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> ! {
     let _ = _vmspace;
-    // SAFETY: 同 x86_64 版本的契约; aarch64 真实实现将包含 eret 指令, 由调用方保证上下文有效.
-    *ctx
+    // SAFETY: 同 x86_64 契约; aarch64 Aarch64::enter_user 设置 sp_el0 = sp,
+    // elr_el1 = entry, spsr_el1 = EL0 模式位后 eret, 不会返回.
+    unsafe {
+        <crate::kernel::framework::arch::aarch64::Aarch64 as Arch>::enter_user(
+            ctx.elr_el1 as usize, // ELR_EL1
+            ctx.sp_el0 as usize,  // SP_EL0
+            ctx.x0 as usize,      // arg0 (aarch64 calling convention)
+        )
+    }
 }
 
 /// 安全分发系统调用 (services 层入口)。
