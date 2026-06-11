@@ -506,25 +506,29 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-45 [中] 信号栈帧未检查 sigaltstack 替代栈
+### [x] I-45 [中] 信号栈帧未检查 sigaltstack 替代栈
 
 **来源**: 审计 20
 **根因**: `do_signal_deliver` 永远基于当前 RSP 算 frame_rsp。栈溢出 → 信号递送 → 写信号帧到已耗尽的栈 → double fault。
 **影响**: 信号机制在栈溢出场景下加速死亡。
 **关联文件**:
 - [src/kernel/framework/proc/signal.rs](../../src/kernel/framework/proc/signal.rs)
+- [src/kernel/framework/syscall/mod.rs](../../src/kernel/framework/syscall/mod.rs)
 **修复方案**:
 1. 检查进程是否设置 sigaltstack
 2. 设置了则用 `ss_sp + ss_size - frame_size` 作为 frame_rsp, 设置 `SA_ONSTACK` 标志
 3. 与 I-40 同步修复
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 进程注册 sigaltstack, 栈溢出时信号投递到替代栈
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 进程注册 sigaltstack, 栈溢出时信号投递到替代栈 (9 用例覆盖 use_alternate / SS_ONSTACK 重入防 / SS_DISABLE 回退 / 容量不足回退 / sigreturn 清标记)
 - [ ] 新增 host-test: 用户态调用 sigaltstack 系统调用, 内核正确记录
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-45-sigaltstack`
+- 改动文件 (3 个):
+  - `src/kernel/framework/proc/signal.rs`: `do_signal_deliver` 在算 frame_rsp 前先读 `proc.sigaltstack_addr / sigaltstack_size / sigaltstack_flags`, 满足 4 个 use_alternate 条件 (addr!=0, size>=frame, !SS_DISABLE, !SS_ONSTACK) 时使用 `ss_addr + ss_size - total` 作为替代栈顶, 并置位 SS_ONSTACK 防重入; 任何条件不满足时回退到原主栈逻辑
+  - `src/kernel/framework/syscall/mod.rs`: `sys_rt_sigreturn` 在恢复寄存器前清除 `SS_ONSTACK` 位 (保留 `SS_DISABLE`), 允许下一次信号再次落回替代栈
+  - `host-tests/tests/sigaltstack_test.rs`: 新增 9 用例, 镜像 sigaltstack 决策 + 源码静态文本扫描 (signal.rs 必含 use_alternate 决策 + 替代栈顶公式; syscall/mod.rs 必含清 SS_ONSTACK)
 
 ---
 
@@ -1198,6 +1202,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | I-40 | sigreturn trampoline 仅 x86_64 机器码 | [x] | 2026-06-11 | fix/I-40-sigreturn-trampoline-dual-arch |
 | I-32 | ELF loader RacyCell 静态分配器 | [x] | 2026-06-11 | fix/I-32-elf-loader-racy-cell |
 | I-28 | kmalloc/slab 自旋锁 disable IRQ | [x] | 2026-06-11 | fix/I-28-kmalloc-disable-irqs |
+| I-45 | 信号栈帧 sigaltstack 替代栈 | [x] | 2026-06-11 | fix/I-45-sigaltstack |
 | I-17 | framework spin::Mutex 迁移 | [ ] | | |
 | I-01 | TCB 占比超标 | [ ] | | |
 | I-02 | usermode Ring 3 占位 | [ ] | | |

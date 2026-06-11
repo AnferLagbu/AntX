@@ -498,7 +498,23 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                 //   frame_rsp+8: SignalFrame (保存原始寄存器)
                 //   frame_rsp+8+sizeof(SignalFrame): trampoline code (rt_sigreturn)
                 let total = 8 + core::mem::size_of::<SignalFrame>() + SIGRETURN_TRAMPOLINE_SIZE;
-                let frame_rsp = if user_rsp >= total as u64 {
+
+                // P1-I-45 修复: 检查 sigaltstack 替代栈.
+                // 若进程通过 sigaltstack 注册了替代栈, 且当前不在替代栈上 (SS_ONSTACK 未置位),
+                // 优先把信号帧写到替代栈顶部, 避免在主栈溢出场景下 double fault.
+                // POSIX SA_ONSTACK 语义.
+                let ss_addr = proc.sigaltstack_addr.load(Ordering::Acquire);
+                let ss_size = proc.sigaltstack_size.load(Ordering::Acquire);
+                let ss_flags = proc.sigaltstack_flags.load(Ordering::Acquire);
+                let use_alternate = ss_addr != 0
+                    && ss_size as usize >= total
+                    && (ss_flags & SS_DISABLE) == 0
+                    && (ss_flags & SS_ONSTACK) == 0;
+
+                let frame_rsp = if use_alternate {
+                    // 替代栈顶部向下分配
+                    ss_addr + ss_size - total as u64
+                } else if user_rsp >= total as u64 {
                     user_rsp - total as u64
                 } else {
                     // 栈溢出, 执行默认动作
@@ -506,6 +522,11 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                     delivered = true;
                     break;
                 };
+
+                // 标记替代栈为"正在使用", 防止信号重入再次落回主栈
+                if use_alternate {
+                    proc.sigaltstack_flags.store(ss_flags | SS_ONSTACK, Ordering::Release);
+                }
 
                 // 构建 SignalFrame (保存原始寄存器)
                 let sigframe = SignalFrame {

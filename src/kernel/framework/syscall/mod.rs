@@ -3129,6 +3129,18 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
 }
 
 fn sys_rt_sigreturn() -> i64 {
+    // P1-I-45 修复: sigreturn 时清除 SS_ONSTACK 标记, 允许下一次信号再次落回替代栈.
+    // 必须在恢复寄存器前清, 否则在主栈上再次触发的 SIGSEGV 又会写到已耗尽的替代栈.
+    if let Some(pid) = crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
+        if let Some(proc_ptr) = crate::kernel::framework::proc::process::PROCESS_TABLE.get(pid) {
+            // SAFETY: 进程在表中期间不会释放
+            let proc = unsafe { &*proc_ptr };
+            // 仅清除 SS_ONSTACK 位, 保留 SS_DISABLE
+            let flags = proc.sigaltstack_flags.load(Ordering::Acquire);
+            proc.sigaltstack_flags
+                .store(flags & !crate::kernel::framework::proc::signal::SS_ONSTACK, Ordering::Release);
+        }
+    }
     // TODO(TRACK-B29335): 架构相关 — 从信号栈帧恢复原始寄存器状态
     // 当前简化实现: 直接返回 0
     0
