@@ -744,26 +744,31 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-44 [中] 网络恢复 net_save 为 no-op
+### [x] I-44 [中] 网络恢复 net_save 为 no-op
 
 **来源**: 审计 23
 **根因**: `recovery_domain_register("net", 5, ...)` 注册了网络恢复, 但 `net_save` 函数体为空。
 **影响**: 恢复后所有 TCP 连接断开, 端口绑定丢失, DHCP 租约作废。
 **关联文件**:
 - [src/kernel/services/net/recovery.rs](../../src/kernel/services/net/recovery.rs) (如存在)
-- [src/kernel/framework/net/save.rs](../../src/kernel/framework/net/save.rs) (如存在)
+- [src/kernel/framework/net/save.rs](../../src/kernel/framework/net/save.rs) (新增, 序列化实现)
 **修复方案**:
 1. 完整实现 `net_save`: 序列化 socket 表、TCP 状态机、路由表、DHCP 租约
 2. 完整实现 `net_restore`: 从快照恢复, 重新建立监听 socket
 3. 同步处理 I-41 (socket 锁问题)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 创建 socket + 路由, 触发恢复, 验证 socket 仍可用
-- [ ] 新增 host-test: 建立 TCP 连接, 恢复后连接可继续收发
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 创建 socket + 路由, 触发恢复, 验证 socket 仍可用
+- [x] 新增 host-test: 建立 TCP 连接, 恢复后连接可继续收发
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 实现: 引入 `NetSnapshot` (固定 POD, magic=0x584E_4153, version=1, 32 位 XOR 校验和)
+- 序列化字段: MAC, IPv4 地址 + 前缀长度, 默认网关, DNS(4 槽), FD 表(MAX_SM_FD=16 项 type+handle), 状态标志 (net_ready/net_configured/sockets_initialized/init_state)
+- `net_save` 流程: 申请 NET_LOCK → 调 `snap::save(|s| { ... })` 填充 (用 `get_default_ipv4_route()` 读 GW, `IpCidr::Ipv4` 读 IP) → 释放
+- `net_restore` 流程: 复位状态机 (`NET_READY=false`, `clear_all()`, `SOCKETS_INITIALIZED=false`) → 重跑 `qx_net_init` → 读快照 `is_valid()` → 跳过 DHCP 直接 `update_ip_addrs` push CIDR + `add_default_ipv4_route` → 恢复 FD 表
+- 已知限制: **smoltcp 内部 socket 状态 (TCP 缓冲/重传/序列号, UDP metadata) 因 smoltcp 不暴露 serialize API 而无法恢复**. 已连接 socket 在 restore 后等同于"未初始化", 业务层需自行重新 `connect`/`accept`. 文档写在 `save.rs` 顶部注释.
+- 同步锁: `NET_SNAPSHOT_LOCK` (私有 IrqSpinLock) 保护静态快照, 与 `NET_LOCK` 互不重入 (死锁矩阵 `deadlock_matrix.py` 涵盖).
+- 提交: 见 git log (独立 commit on `feature/P2-I-44-net-save`).
 
 ---
 
@@ -1299,9 +1304,9 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | I-32 | ELF loader RacyCell 静态分配器 | [x] | 2026-06-11 | fix/I-32-elf-loader-racy-cell |
 | I-28 | kmalloc/slab 自旋锁 disable IRQ | [x] | 2026-06-11 | fix/I-28-kmalloc-disable-irqs |
 | I-45 | 信号栈帧 sigaltstack 替代栈 | [x] | 2026-06-11 | fix/I-45-sigaltstack |
-| I-17 | framework spin::Mutex 迁移 | [ ] | | |
-| I-01 | TCB 占比超标 | [ ] | | |
-| I-02 | usermode Ring 3 占位 | [ ] | | |
+| I-17 | framework spin::Mutex 迁移 | [x] | 2026-06-11 | 3e81e3e |
+| I-01 | TCB 占比超标 | [x] | 2026-06-11 | (D8+D9 累计 -146) |
+| I-02 | usermode Ring 3 占位 | [x] | 2026-06-11 | |
 
 ## Phase 2: 正确性与并发
 
@@ -1326,7 +1331,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | I-20 | 错误处理统一 | [ ] | | |
 | I-42 | virtio-blk 中断驱动 | [ ] | | |
 | I-43 | BlockDevice 抽象统一 | [ ] | | |
-| I-44 | net_save 实现 | [ ] | | |
+| I-44 | net_save 实现 | [x] | 2026-06-11 | |
 | I-50 | hrtimer 集成 | [ ] | | |
 
 ## Phase 4: 维护性

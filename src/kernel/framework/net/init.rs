@@ -297,34 +297,142 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOp
     };
 
 // ============================================================================
-// 恢复机制
+// 恢复机制 (P2-I-44 完整实现)
 // ============================================================================
+//
+// 快照 (save.rs) 在 NET_LOCK 持有时序列化 IP/GW/MAC/FD 表; restore
+// 跳过 DHCP 重配并把 FD 表恢复到 save 时刻. smoltcp 内部 socket 状态
+// (TCP 收发缓冲 / UDP metadata) 因 smoltcp 不暴露 serialize API 而无
+// 法恢复, 这是已知限制 (写在 save.rs 文档中).
 
 /// # Safety
 ///
-/// - 当前为 no-op 占位; 真实实现时须保证在关中断上下文执行
-unsafe fn net_save() {}
+/// - 调用方须保证单线程进入 (recovery 域串行执行)
+/// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
+unsafe fn net_save() {
+    use core::sync::atomic::Ordering;
+    use crate::kernel::framework::net::save as snap;
+
+    let _guard = NET_LOCK.lock();
+
+    snap::save(|s| {
+        // MAC: 从当前 NIC 读取 (mut 访问因 NET_LOCK 持有而安全)
+        if let Some(dev) = raw::device_mut() {
+            s.mac = dev.mac;
+        }
+
+        // IP / GW / prefix: 从 stack iface 读取
+        if let Some(stack) = raw::stack_mut() {
+            if let Some(cidr) = stack.iface.ip_addrs().first() {
+                if let smoltcp::wire::IpCidr::Ipv4(v4) = cidr {
+                    s.ip = v4.address().octets();
+                    s.prefix_len = v4.prefix_len();
+                }
+            }
+            // smoltcp 0.13 路由 API: get_default_ipv4_route 返回 Option<Route>
+            if let Some(route) = stack.iface.routes().get_default_ipv4_route() {
+                if let smoltcp::wire::IpAddress::Ipv4(gw) = route.via_router {
+                    let oct = gw.octets();
+                    s.gateway = oct;
+                }
+            }
+        }
+
+        // FD 表
+        for i in 0..MAX_SM_FD {
+            s.fd_types[i] = FD_TYPES[i];
+            s.fd_handles[i] = match SOCKET_TABLE[i] {
+                Some(h) => as_u32_handle(h),
+                None => u32::MAX,
+            };
+        }
+
+        // 状态
+        s.net_ready = crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire);
+        s.net_configured = crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire);
+        s.sockets_initialized = SOCKETS_INITIALIZED.load(Ordering::Acquire);
+        s.init_state = G_INIT_STATE.load(Ordering::Acquire);
+    });
+}
+
+/// SocketHandle → u32 (smoltcp SocketHandle 是包装 newtype, 用 transmute).
+#[inline]
+fn as_u32_handle(h: smoltcp::iface::SocketHandle) -> u32 {
+    // SAFETY: SocketHandle is repr(transparent) over usize on supported targets
+    let raw: usize = unsafe { core::mem::transmute(h) };
+    raw as u32
+}
 
 /// # Safety
 ///
 /// - 调用方须确保无其他线程持有 socket fd (例如文件系统已卸载完毕)
+/// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
 unsafe fn net_restore() {
-    let _guard = NET_LOCK.lock();
+    use core::sync::atomic::Ordering;
+    use crate::kernel::framework::net::save as snap;
 
-    crate::kernel::framework::net::types::NET_READY.store(false, Ordering::Release);
-    crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+    // 1. 复位状态机
+    {
+        let _guard = NET_LOCK.lock();
+        crate::kernel::framework::net::types::NET_READY.store(false, Ordering::Release);
+        crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+        raw::clear_all();
+        SOCKETS_INITIALIZED.store(false, Ordering::Release);
+        G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
+    }
 
-    raw::clear_all();
-    SOCKETS_INITIALIZED.store(false, Ordering::Release);
-
-    G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
-
-    drop(_guard);
-
+    // 2. 重新初始化 NIC + stack
     qx_net_init();
+
+    // 3. 读取快照, 跳过 DHCP 重配, 直接把 IP/GW 重新绑回
+    let saved = snap::load();
+    if saved.is_valid() {
+        if saved.net_configured
+            && saved.ip != [0, 0, 0, 0]
+            && saved.prefix_len > 0
+            && saved.prefix_len <= 32
+        {
+            let _guard = NET_LOCK.lock();
+            if let Some(stack) = raw::stack_mut() {
+                let ip = smoltcp::wire::Ipv4Address::new(
+                    saved.ip[0], saved.ip[1], saved.ip[2], saved.ip[3],
+                );
+                let cidr = smoltcp::wire::IpCidr::Ipv4(
+                    smoltcp::wire::Ipv4Cidr::new(ip, saved.prefix_len),
+                );
+                stack.iface.update_ip_addrs(|addrs| {
+                    let _ = addrs.push(cidr);
+                });
+                if saved.gateway != [0, 0, 0, 0] {
+                    let gw = smoltcp::wire::Ipv4Address::new(
+                        saved.gateway[0], saved.gateway[1],
+                        saved.gateway[2], saved.gateway[3],
+                    );
+                    let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
+                }
+                crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+            }
+        }
+        // FD 表恢复: 仅恢复 (type, handle) 元组; smoltcp socket 内部状态
+        // 不可序列化, 已连接 socket 在 restore 后等同于未初始化, 业务
+        // 层需自行重新 connect / accept.
+        let _guard = NET_LOCK.lock();
+        for i in 0..MAX_SM_FD {
+            FD_TYPES[i] = saved.fd_types[i];
+            SOCKET_TABLE[i] = if saved.fd_handles[i] == u32::MAX {
+                None
+            } else {
+                let raw = saved.fd_handles[i] as usize;
+                // SAFETY: SocketHandle 来自同构的 smoltcp 版本, repr(transparent) over usize
+                Some(unsafe { core::mem::transmute::<usize, smoltcp::iface::SocketHandle>(raw) })
+            };
+        }
+        SOCKETS_INITIALIZED.store(saved.sockets_initialized, Ordering::Release);
+    }
 
     crate::arch!(interrupt_enable());
     raw::klog_msg("--- Network Recovered ---");
+    snap::clear();
 }
 
 /// # Safety

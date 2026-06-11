@@ -11,6 +11,8 @@ pub mod smoltcp_impl;
 pub mod unix;
 /// P2-I-41: Socket WaitQueue 基础设施
 pub mod wait_queue;
+/// P2-I-44: 网络快照 (net_save / net_restore 完整实现)
+pub mod save;
 
 /// 网络子系统 Rust 模块
 ///
