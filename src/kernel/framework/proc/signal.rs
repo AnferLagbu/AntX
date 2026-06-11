@@ -544,6 +544,9 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                 // (恢复原始栈指针 + 不修改 InterruptFrame), 进程继续运行.
                 let trampoline_start = frame_rsp + 8 + core::mem::size_of::<SignalFrame>() as u64;
                 let ret_addr_bytes = trampoline_start.to_ne_bytes();
+                // SAFETY: sigframe 是本函数栈上的 SignalFrame, 引用有效; 长度 =
+                // size_of::<SignalFrame>(), 完全在 sigframe 内存范围内;
+                // from_raw_parts 仅借用字节视图供 copy_to_user 读取.
                 let sigframe_bytes = unsafe {
                     core::slice::from_raw_parts(
                         &sigframe as *const SignalFrame as *const u8,

@@ -31,6 +31,9 @@ use super::userctx::UserContext;
 /// - `ctx.rdi` (x86_64) / `ctx.x0` (aarch64) 是用户态入口的第一个参数。
 /// - 此函数 `noreturn`: 仅在用户态下次陷入时返回 (经由 syscall/interrupt/exception 入口),
 ///   不会以函数返回值方式返回。
+// SAFETY: 见上方文档约定. 此函数 noreturn, 必须满足: 内核栈调用 + 页表已切 +
+// ctx.{rip,rsp,rdi} (x86_64) / ctx.{elr_el1,sp_el0,x0} (aarch64) 指向合法用户态
+// 内存. 汇编入口 (iretq/eret) 不会返回.
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn enter_user_mode(_vmspace: &VmSpace, ctx: &UserContext) -> ! {
     let _ = _vmspace;

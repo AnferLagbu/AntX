@@ -125,8 +125,14 @@ impl UFrame {
 
         let mut val = core::mem::MaybeUninit::<T>::uninit();
         let dst =
+            // SAFETY: val 是 MaybeUninit::uninit(), 指针有效; 长度 size 由
+            // 上方 bounds check 保证; from_raw_parts_mut 仅借用指针供后续
+            // copy_from_user 填充, 不在 unsafe 块内读取, 不会读到未初始化数据.
             unsafe { core::slice::from_raw_parts_mut(val.as_mut_ptr() as *mut u8, size) };
         copy_from_user(dst, self.uaddr + offset as u64, size)?;
+        // SAFETY: copy_from_user 返回 Ok 表示 dst 已被初始化 size 字节 (T 是 Pod,
+        // POD 不要求位有效, 只要求位是有效的字节模式, 而 copy_from_user 写入是
+        // 完整 size 字节, 对齐由 Pod 约束保证).
         Ok(unsafe { val.assume_init() })
     }
 
@@ -142,6 +148,8 @@ impl UFrame {
         }
 
         let src =
+            // SAFETY: val 是 &T, 指针有效; size = size_of::<T>(), 完全在 val
+            // 内存范围内; from_raw_parts 仅借用字节视图供 copy_to_user 读取.
             unsafe { core::slice::from_raw_parts(val as *const T as *const u8, size) };
         copy_to_user(self.uaddr + offset as u64, src, size)?;
         Ok(())
@@ -232,8 +240,13 @@ impl USegment {
 
         let mut val = core::mem::MaybeUninit::<T>::uninit();
         let dst =
+            // SAFETY: val 是 MaybeUninit::uninit(), 指针有效; 长度 size 由
+            // 上方 bounds check 保证; from_raw_parts_mut 仅借用指针供后续
+            // copy_from_user 填充, 不在 unsafe 块内读取.
             unsafe { core::slice::from_raw_parts_mut(val.as_mut_ptr() as *mut u8, size) };
         copy_from_user(dst, self.base + offset as u64, size)?;
+        // SAFETY: copy_from_user 返回 Ok 表示 dst 已被初始化 size 字节,
+        // 满足 T: Pod 的位有效性要求.
         Ok(unsafe { val.assume_init() })
     }
 
@@ -248,6 +261,8 @@ impl USegment {
         }
 
         let src =
+            // SAFETY: val 是 &T, 指针有效; size = size_of::<T>(), 完全在 val
+            // 内存范围内; from_raw_parts 仅借用字节视图供 copy_to_user 读取.
             unsafe { core::slice::from_raw_parts(val as *const T as *const u8, size) };
         copy_to_user(self.base + offset as u64, src, size)?;
         Ok(())
@@ -329,6 +344,9 @@ mod tests {
         // offset + size > PAGE_SIZE should fail
         // We can't actually read (no user pages in unit test), but the
         // bounds check should reject it.
+        // SAFETY: 测试中构造虚拟 UFrame 不访问真实用户内存, 仅触发 bounds
+        // check 分支, read_pod 会在 offset=4090 立即返回 Err, 不会触碰
+        // 从_raw_parts_mut 创建的 dst slice.
         unsafe {
             let frame = UFrame::from_user_addr_unchecked(0x1000);
             // u64 at offset 4090 would need 8 bytes but only 6 remain
@@ -338,6 +356,7 @@ mod tests {
 
     #[test]
     fn test_usegment_offset_overflow() {
+        // SAFETY: 同 test_uframe_offset_overflow, 仅触发 bounds check 分支.
         unsafe {
             let seg = USegment::from_user_range_unchecked(0x1000, 16);
             // Read u64 at offset 12 would need 8 bytes but only 4 remain

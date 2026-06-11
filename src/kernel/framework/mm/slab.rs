@@ -465,6 +465,8 @@ impl KmemCache {
         // 释放 full 链表中的所有 Slab
         let mut slab = self.slabs_full;
         while !slab.is_null() {
+            // SAFETY: 循环条件 !is_null 保证 slab 指向合法 Slab 头; destroy
+            // 方法独占缓存, 无并发别名; SlabRef::new_unchecked 仅包装指针.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             let next = sr.next();
             self.destroy_slab(slab);
@@ -474,6 +476,7 @@ impl KmemCache {
         // 释放 partial 链表中的所有 Slab
         slab = self.slabs_partial;
         while !slab.is_null() {
+            // SAFETY: 同上, slab 由 slabs_partial 链表保证是合法 Slab 头.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             let next = sr.next();
             self.destroy_slab(slab);
@@ -483,6 +486,7 @@ impl KmemCache {
         // 释放 free 链表中的所有 Slab
         slab = self.slabs_free;
         while !slab.is_null() {
+            // SAFETY: 同上, slab 由 slabs_free 链表保证是合法 Slab 头.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             let next = sr.next();
             self.destroy_slab(slab);
@@ -504,6 +508,8 @@ impl KmemCache {
         // 遍历 full 链表
         let mut slab = self.slabs_full;
         while !slab.is_null() {
+            // SAFETY: 循环条件 !is_null 保证 slab 指向合法 Slab 头; get_stats
+            // 只读统计, 无并发修改; SlabRef::new_unchecked 仅包装指针.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             total_objects += sr.obj_count();
             active_objects += sr.active_count();
@@ -513,6 +519,7 @@ impl KmemCache {
         // 遍历 partial 链表
         slab = self.slabs_partial;
         while !slab.is_null() {
+            // SAFETY: 同上, slab 由 slabs_partial 链表保证是合法 Slab 头.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             total_objects += sr.obj_count();
             active_objects += sr.active_count();
@@ -552,6 +559,9 @@ impl KmemCache {
 
         // SAFETY: slab points to a PMM-allocated page
         let sr = unsafe { SlabRef::new_unchecked(slab) };
+        // SAFETY: page 是 pmm_alloc_pages 分配的页对齐指针; add 偏移在 page
+        // 范围内 (page 至少 SLAB_DEFAULT_SIZE 字节, header 后还有 bitmap 空间);
+        // 仅作指针运算, 后续 set_start_addr 只存储不读取.
         sr.set_start_addr(unsafe { page.add(core::mem::size_of::<SlabHeader>()) } as *mut u8);
         sr.set_obj_count(self.objects_per_slab);
         sr.set_active_count(0);
@@ -562,7 +572,11 @@ impl KmemCache {
         let bitmap_bytes = self.objects_per_slab.div_ceil(8);
         let bitmap_start = sr.bitmap_ptr(self.object_size);
 
+        // SAFETY: bitmap_start 由 sr.bitmap_ptr 计算, 落在 page 范围内;
+        // bitmap_bytes = obj_count/8 是字节目数, add 偏移在合法范围内;
+        // 仅作指针运算, 后续零内存操作前还有 bounds check.
         let bitmap_end = unsafe { bitmap_start.add(bitmap_bytes as usize) };
+        // SAFETY: 同上, page 是 PMM 分配指针, add 偏移在 page 范围内.
         let page_end = unsafe { page.add(SLAB_DEFAULT_SIZE) } as *mut u8;
 
         if bitmap_end > page_end {
@@ -604,12 +618,14 @@ impl KmemCache {
     }
 
     fn find_free_bit(&self, slab: *mut SlabHeader) -> Option<u32> {
+        // SAFETY: slab 来自 find_free_bit 调用方, 是合法 Slab 头; lock 持有中.
         let sr = unsafe { SlabRef::new_unchecked(slab) };
         let bitmap_bytes = sr.obj_count().div_ceil(8) as usize;
         let bitmap_start = sr.bitmap_ptr(self.object_size);
 
         for byte_idx in 0..bitmap_bytes {
-            // SAFETY: bitmap region verified during init
+            // SAFETY: bitmap region verified during init; byte_idx < bitmap_bytes
+            // 保证 add 落在 page 范围内, 读操作不会越界.
             let byte = unsafe { *bitmap_start.add(byte_idx) };
             if byte == 0xFF {
                 continue;
@@ -625,13 +641,16 @@ impl KmemCache {
     }
 
     fn set_bit(&self, slab: *mut SlabHeader, bit: u32) {
+        // SAFETY: slab 由调用者保证是合法 Slab 头 (来自 new_slab/alloc/free);
+        // SlabRef::new_unchecked 仅包装指针, 后续操作在 lock 持有中.
         let sr = unsafe { SlabRef::new_unchecked(slab) };
         let bitmap_start = sr.bitmap_ptr(self.object_size);
 
         let byte_idx = (bit / 8) as usize;
         let bit_idx = bit % 8;
 
-        // SAFETY: bit < obj_count (ensured by find_free_bit)
+        // SAFETY: bit < obj_count (ensured by find_free_bit); byte_idx = bit/8
+        // 落在 bitmap 范围内 (bitmap_bytes = obj_count.div_ceil(8)).
         unsafe {
             let byte_ptr = bitmap_start.add(byte_idx);
             *byte_ptr |= 1 << bit_idx;
@@ -639,13 +658,15 @@ impl KmemCache {
     }
 
     fn clear_bit(&self, slab: *mut SlabHeader, bit: u32) {
+        // SAFETY: 同 set_bit, slab 合法, lock 持有.
         let sr = unsafe { SlabRef::new_unchecked(slab) };
         let bitmap_start = sr.bitmap_ptr(self.object_size);
 
         let byte_idx = (bit / 8) as usize;
         let bit_idx = bit % 8;
 
-        // SAFETY: bit < obj_count (computed from obj address)
+        // SAFETY: bit < obj_count (computed from obj address); byte_idx 落
+        // 在 bitmap 范围内, 写操作不会越界.
         unsafe {
             let byte_ptr = bitmap_start.add(byte_idx);
             *byte_ptr &= !(1 << bit_idx);
@@ -658,6 +679,8 @@ impl KmemCache {
 
         let mut slab = self.slabs_partial;
         while !slab.is_null() {
+            // SAFETY: 循环条件 !is_null 保证 slab 指向合法 Slab 头 (链表项);
+            // 后续只读取 start_addr/obj_count/next 字段, 不修改.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             let start = sr.start_addr() as usize;
             let end = start + sr.obj_count() as usize * self.object_size;
@@ -669,6 +692,7 @@ impl KmemCache {
 
         slab = self.slabs_full;
         while !slab.is_null() {
+            // SAFETY: 同上, slab 来自 slabs_full 链表, 是合法 Slab 头.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             let start = sr.start_addr() as usize;
             let end = start + sr.obj_count() as usize * self.object_size;
@@ -680,6 +704,7 @@ impl KmemCache {
 
         slab = self.slabs_free;
         while !slab.is_null() {
+            // SAFETY: 同上, slab 来自 slabs_free 链表, 是合法 Slab 头.
             let sr = unsafe { SlabRef::new_unchecked(slab) };
             let start = sr.start_addr() as usize;
             let end = start + sr.obj_count() as usize * self.object_size;
@@ -703,12 +728,16 @@ impl KmemCache {
             return;
         }
 
+        // SAFETY: 入口处 !is_null 校验保证 slab 指向合法 Slab 头; 调用方
+        // 保证链表状态一致; SlabRef::new_unchecked 仅包装指针.
         let sr = unsafe { SlabRef::new_unchecked(slab) };
 
         if *head == slab {
             // 移除的是头节点
             *head = sr.next();
             if !head.is_null() {
+                // SAFETY: !is_null 分支保证 *head 指向合法 Slab 头 (即原
+                // 头节点的 next, 由 sr.next() 获得).
                 let new_head = unsafe { SlabRef::new_unchecked(*head) };
                 new_head.set_prev(core::ptr::null_mut());
             }
@@ -717,10 +746,12 @@ impl KmemCache {
             let next = sr.next();
             let prev = sr.prev();
             if !next.is_null() {
+                // SAFETY: next 由 sr.next() 获得, 非空即合法 Slab 头指针.
                 let n = unsafe { SlabRef::new_unchecked(next) };
                 n.set_prev(prev);
             }
             if !prev.is_null() {
+                // SAFETY: prev 由 sr.prev() 获得, 非空即合法 Slab 头指针.
                 let p = unsafe { SlabRef::new_unchecked(prev) };
                 p.set_next(next);
             }
@@ -736,11 +767,13 @@ impl KmemCache {
             return;
         }
 
+        // SAFETY: 入口处 !is_null 校验保证 slab 合法; SlabRef 仅包装指针.
         let sr = unsafe { SlabRef::new_unchecked(slab) };
         sr.set_next(*head);
         sr.set_prev(core::ptr::null_mut());
 
         if !head.is_null() {
+            // SAFETY: !is_null 分支说明 *head 指向已有 Slab 头, 合法.
             let old_head = unsafe { SlabRef::new_unchecked(*head) };
             old_head.set_prev(slab);
         }

@@ -598,6 +598,9 @@ impl KernelHeap {
 
             let next_ptr = cur.next();
             if !next_ptr.is_null() {
+                // SAFETY: 上方 !is_null 检查保证 next_ptr 来自已分配堆块; 堆锁
+                // 持有中 (validate 方法开头 lock); HeaderRef::new_unchecked 仅
+                // 包装指针, 不访问内存, 后续 .prev() 由 HeaderRef API 保证安全.
                 let next = unsafe { HeaderRef::new_unchecked(next_ptr) };
                 let next_prev = next.prev();
                 if !next_prev.is_null() && next_prev != current {
@@ -664,6 +667,9 @@ impl KernelHeap {
 
         let header_next = header.next();
         if !header_next.is_null() {
+            // SAFETY: header_next 由上方 header.next() 获得, header 是合法堆块
+            // 头 (由 split_block 调用者保证), header_next 非空说明其指向已分配
+            // 堆块, HeaderRef::new_unchecked 仅包装指针.
             let hn = unsafe { HeaderRef::new_unchecked(header_next) };
             hn.set_prev(second_part.as_ptr());
         }
@@ -718,6 +724,8 @@ impl KernelHeap {
         let head_ptr = head.get();
 
         if !head_ptr.is_null() {
+            // SAFETY: head_ptr 由 head.get() 返回, !is_null 分支说明 free_list_head
+            // 指向当前 free list 的头部 (合法堆块, 由 add_to_free_list 调用者保证).
             let old_head = unsafe { HeaderRef::new_unchecked(head_ptr) };
             header.set_next(old_head.as_ptr());
             old_head.set_prev(header.as_ptr());
@@ -735,6 +743,8 @@ impl KernelHeap {
         let head = FreeListHeadRef::new(&self.free_list_head);
 
         if !prev.is_null() {
+            // SAFETY: prev 由 header.prev() 返回, !is_null 分支说明 prev 指向
+            // free list 上的合法堆块 (remove_from_free_list 调用方持有堆锁).
             let p = unsafe { HeaderRef::new_unchecked(prev) };
             p.set_next(next);
         } else {
@@ -742,6 +752,7 @@ impl KernelHeap {
         }
 
         if !next.is_null() {
+            // SAFETY: 同上, next 来自 header.next(), 非空即合法堆块指针.
             let n = unsafe { HeaderRef::new_unchecked(next) };
             n.set_prev(prev);
         }
