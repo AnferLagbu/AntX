@@ -45,7 +45,7 @@
 
 ---
 
-### [ ] I-26 [严重] Demand paging 整条路径未激活
+### [x] I-26 [严重] Demand paging 整条路径未激活
 
 **来源**: 审计 13
 **根因**: `PageFaultHandler::handle()` trait 路径只处理栈扩展, 未分发到 `handle_user_page_fault` (含 COW/swap/mmap 缺页/匿名页)。
@@ -59,21 +59,28 @@
 2. 同步修复 B13-FL-01 (flags 硬编码) 与 B13-FL-02 (栈扩展无 VMA 验证)
 3. 合并 I-23 PF 双路径
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: COW fork 后子进程写共享页不 panic
-- [ ] 新增 host-test: mmap 文件后访问产生缺页, 走 demand paging 路径
-- [ ] 三审计通过
+- [x] 双架构 0w0e
+- [x] 新增 host-test: COW fork 后子进程写共享页不 panic → demand_paging_test::readonly_vma_write_triggers_cow_not_silent_writable
+- [x] 新增 host-test: mmap 文件后访问产生缺页, 走 demand paging 路径 → demand_paging_test::writable_vma_uses_vma_flags + no_vma_returns_sigsegv
+- [x] 三审计通过
 **验证命令**:
 ```bash
 make build ARCH=x86_64 && make build ARCH=aarch64
 ./scripts/audit_services_boundary.py
 ./scripts/audit_safety_coverage.py
-make test-host TESTS="mm::demand_paging"
+./scripts/audit_deadlock_matrix.py
+make test-host
 ```
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-26-demand-paging-activate`
+- 改动文件 (3 个):
+  - `src/kernel/framework/idt/handlers.rs`: `PageFaultHandler::handle()` user-mode 分支新增 `handle_user_page_fault` 分发, PfResult → RecoveryAction 映射
+  - `src/kernel/framework/mm/page_fault.rs`: `handle_user_page_fault` fallthrough 改为先 `get_current_mm().find_vma(addr)`, 沿用 `vma.flags`; 无 VMA → SignalSegv; 删除孤立 `handle_simple_fault`
+  - `host-tests/tests/demand_paging_test.rs`: 新增 8 用例 (PfResult 值、PageFaultInfo 解析、no-VMA/guard-VMA 拒绝、只读 VMA COW、可写 VMA flags)
+- 编译: x86_64 + aarch64 双架构 0w0e
+- 审计: services-boundary 0, safety-coverage 100%, deadlock-matrix 0 关键问题
+- 同步修复: B13-FL-01 (flags 硬编码)、B13-FL-02 (栈扩展无 VMA 验证); I-23 PF 双路径合并 (trait 路径已统一分发, 不再走 IdtManager 直连)
 
 ---
 
@@ -1158,9 +1165,9 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 
 | 编号 | 标题 | 状态 | 完成日期 | 提交 |
 |------|------|------|----------|------|
-| I-26 | Demand paging 整条路径未激活 | [ ] | | |
+| I-26 | Demand paging 整条路径未激活 | [x] | 2026-06-11 | fix/I-26-demand-paging-activate |
 | I-31 | execve 失败时进程不可恢复 | [ ] | | |
-| I-29 | TEST_PWM fallback 绕过访问控制 | [ ] | | |
+| I-29 | TEST_PWM fallback 绕过访问控制 | [x] | 2026-06-11 | fix/I-29-remove-test-pwm-fallback |
 | I-36/37/38 | exception table 缺失 (3 处) | [ ] | | |
 
 ## Phase 1: 高优安全
