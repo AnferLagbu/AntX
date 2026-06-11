@@ -35,7 +35,7 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -235,12 +235,12 @@ pub enum BpfMap {
     /// 哈希表: key → value
     Hash {
         def: BpfMapDef,
-        data: Mutex<BTreeMap<Vec<u8>, Vec<u8>>>,
+        data: IrqSpinLock<BTreeMap<Vec<u8>, Vec<u8>>>,
     },
     /// 数组: index → value
     Array {
         def: BpfMapDef,
-        data: Mutex<Vec<Option<Vec<u8>>>>,
+        data: IrqSpinLock<Vec<Option<Vec<u8>>>>,
     },
 }
 
@@ -255,14 +255,14 @@ impl BpfMap {
             BpfMapType::Hash | BpfMapType::PerCpuHash => {
                 Some(Self::Hash {
                     def,
-                    data: Mutex::new(BTreeMap::new()),
+                    data: IrqSpinLock::new(BTreeMap::new()),
                 })
             }
             BpfMapType::Array | BpfMapType::PerCpuArray => {
                 let data = (0..max_entries).map(|_| None).collect();
                 Some(Self::Array {
                     def,
-                    data: Mutex::new(data),
+                    data: IrqSpinLock::new(data),
                 })
             }
         }
@@ -1142,9 +1142,9 @@ impl BpfInterpreter {
 /// BPF 子系统 — 管理 Map 和程序的全局状态
 pub struct BpfSubsystem {
     /// Map FD → BpfMap
-    maps: Mutex<BTreeMap<u32, Arc<BpfMap>>>,
+    maps: IrqSpinLock<BTreeMap<u32, Arc<BpfMap>>>,
     /// 程序 FD → BpfProg
-    progs: Mutex<BTreeMap<u32, Arc<BpfProg>>>,
+    progs: IrqSpinLock<BTreeMap<u32, Arc<BpfProg>>>,
     /// 下一个 Map FD
     next_map_fd: AtomicU32,
     /// 下一个程序 FD
@@ -1156,8 +1156,8 @@ pub struct BpfSubsystem {
 impl BpfSubsystem {
     pub const fn new() -> Self {
         Self {
-            maps: Mutex::new(BTreeMap::new()),
-            progs: Mutex::new(BTreeMap::new()),
+            maps: IrqSpinLock::new(BTreeMap::new()),
+            progs: IrqSpinLock::new(BTreeMap::new()),
             next_map_fd: AtomicU32::new(1),
             next_prog_fd: AtomicU32::new(1),
             initialized: AtomicBool::new(false),

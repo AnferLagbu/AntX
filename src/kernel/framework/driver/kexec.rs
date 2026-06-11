@@ -32,7 +32,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
 
 use alloc::vec::Vec;
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -103,11 +103,11 @@ pub struct KexecSubsystem {
     /// 当前状态
     state: AtomicU32,
     /// 已加载的段
-    segments: Mutex<Vec<KexecSegment>>,
+    segments: IrqSpinLock<Vec<KexecSegment>>,
     /// 内核入口点
     entry_point: AtomicU64,
     /// 命令行
-    cmdline: Mutex<Vec<u8>>,
+    cmdline: IrqSpinLock<Vec<u8>>,
     /// 是否已初始化
     initialized: AtomicBool,
 }
@@ -116,9 +116,9 @@ impl KexecSubsystem {
     pub const fn new() -> Self {
         Self {
             state: AtomicU32::new(KexecState::Idle as u32),
-            segments: Mutex::new(Vec::new()),
+            segments: IrqSpinLock::new(Vec::new()),
             entry_point: AtomicU64::new(0),
-            cmdline: Mutex::new(Vec::new()),
+            cmdline: IrqSpinLock::new(Vec::new()),
             initialized: AtomicBool::new(false),
         }
     }

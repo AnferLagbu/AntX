@@ -35,7 +35,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use alloc::vec::Vec;
 
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -250,7 +250,7 @@ struct NfState {
     hook_counts: [AtomicUsize; NfHook::COUNT],
 }
 
-static NF_STATE: Mutex<NfState> = Mutex::new(NfState {
+static NF_STATE: IrqSpinLock<NfState> = IrqSpinLock::new(NfState {
     chains: [
         NfChain { rules: Vec::new(), hooks: Vec::new() },
         NfChain { rules: Vec::new(), hooks: Vec::new() },

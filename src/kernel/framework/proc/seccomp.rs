@@ -29,6 +29,7 @@
 //! - SECCOMP_RET_TRACE 暂不支持 (ptrace 依赖)
 
 use core::sync::atomic::{AtomicU8, Ordering};
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 use alloc::vec::Vec;
 
@@ -245,7 +246,7 @@ pub struct SeccompState {
     /// 当前模式
     pub mode: AtomicU8,
     /// 过滤器链 (最多 MAX_FILTERS 层)
-    pub filters: spin::Mutex<Vec<SeccompFilter>>,
+    pub filters: IrqSpinLock<Vec<SeccompFilter>>,
     /// no_new_privs 位 (一旦设置不可清除)
     pub no_new_privs: AtomicU8,
 }
@@ -255,7 +256,7 @@ impl SeccompState {
     pub fn new() -> Self {
         Self {
             mode: AtomicU8::new(SeccompMode::Disabled as u8),
-            filters: spin::Mutex::new(Vec::new()),
+            filters: IrqSpinLock::new(Vec::new()),
             no_new_privs: AtomicU8::new(0),
         }
     }

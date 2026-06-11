@@ -27,7 +27,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use alloc::vec::Vec;
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -228,7 +228,7 @@ pub enum VerifyResult {
 /// 安全启动子系统
 pub struct SecureBootSubsystem {
     /// 信任链 (从 PK → KEK → DB)
-    trust_chain: Mutex<Vec<TrustEntry>>,
+    trust_chain: IrqSpinLock<Vec<TrustEntry>>,
     /// 是否启用
     enabled: AtomicBool,
     /// 是否已锁定 (启动后锁定, 不可再添加密钥)
@@ -244,7 +244,7 @@ pub struct SecureBootSubsystem {
 impl SecureBootSubsystem {
     pub const fn new() -> Self {
         Self {
-            trust_chain: Mutex::new(Vec::new()),
+            trust_chain: IrqSpinLock::new(Vec::new()),
             enabled: AtomicBool::new(false),
             locked: AtomicBool::new(false),
             verify_fail_count: AtomicU32::new(0),
@@ -417,9 +417,9 @@ impl PcrIndex {
 /// TPM 2.0 子系统 (软件模拟)
 pub struct TpmSubsystem {
     /// PCR 寄存器
-    pcrs: Mutex<[[u8; SHA256_LEN]; PCR_COUNT]>,
+    pcrs: IrqSpinLock<[[u8; SHA256_LEN]; PCR_COUNT]>,
     /// PCR 扩展次数
-    pcr_extend_count: Mutex<[u32; PCR_COUNT]>,
+    pcr_extend_count: IrqSpinLock<[u32; PCR_COUNT]>,
     /// 是否已初始化
     initialized: AtomicBool,
     /// 是否为硬件 TPM
@@ -429,8 +429,8 @@ pub struct TpmSubsystem {
 impl TpmSubsystem {
     pub const fn new() -> Self {
         Self {
-            pcrs: Mutex::new([[0u8; SHA256_LEN]; PCR_COUNT]),
-            pcr_extend_count: Mutex::new([0u32; PCR_COUNT]),
+            pcrs: IrqSpinLock::new([[0u8; SHA256_LEN]; PCR_COUNT]),
+            pcr_extend_count: IrqSpinLock::new([0u32; PCR_COUNT]),
             initialized: AtomicBool::new(false),
             is_hardware: AtomicBool::new(false),
         }

@@ -221,7 +221,7 @@ pub struct Process {
     /// 包含 UTS/IPC/PID/Mount/User/Net/Cgroup 七种 namespace.
     /// fork 默认共享 (Arc::clone), CLONE_NEW* 创建新实例.
     /// 通过 sys_unshare / sys_setns 运行时切换.
-    pub namespaces: spin::Mutex<crate::kernel::framework::proc::namespace::NamespaceSet>,
+    pub namespaces: Mutex<crate::kernel::framework::proc::namespace::NamespaceSet>,
 
     /// Per-process cgroup ID (D2)
     ///
@@ -233,7 +233,7 @@ pub struct Process {
     ///
     /// 控制进程的内存分配节点选择策略.
     /// fork 继承父进程策略; 可通过 sys_set_mempolicy 修改.
-    pub numa_policy: spin::Mutex<crate::kernel::framework::mm::numa::NumaMempolicy>,
+    pub numa_policy: Mutex<crate::kernel::framework::mm::numa::NumaMempolicy>,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -317,13 +317,13 @@ impl Process {
             // C7: Seccomp 默认 Disabled
             seccomp: crate::kernel::framework::proc::seccomp::SeccompState::new(),
             // D1: Namespace 默认 init namespace 集合
-            namespaces: spin::Mutex::new(
+            namespaces: Mutex::new(
                 crate::kernel::framework::proc::namespace::NamespaceSet::new_init(),
             ),
             // D2: cgroup 默认根 cgroup (id=0)
             cgroup_id: AtomicU64::new(0),
             // D3: NUMA 策略默认 Default
-            numa_policy: spin::Mutex::new(
+            numa_policy: Mutex::new(
                 crate::kernel::framework::mm::numa::NumaMempolicy::new(),
             ),
         }

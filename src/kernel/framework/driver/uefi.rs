@@ -26,7 +26,7 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use alloc::vec;
 use alloc::vec::Vec;
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -196,11 +196,11 @@ pub struct UefiSubsystem {
     /// 系统表物理地址
     system_table_addr: AtomicU64,
     /// GOP 模式信息
-    gop_mode: Mutex<Option<EfiGopModeInfo>>,
+    gop_mode: IrqSpinLock<Option<EfiGopModeInfo>>,
     /// UEFI 变量存储 (软件模拟)
-    variables: Mutex<Vec<EfiVariable>>,
+    variables: IrqSpinLock<Vec<EfiVariable>>,
     /// 内存映射
-    memory_map: Mutex<Vec<EfiMemoryDescriptor>>,
+    memory_map: IrqSpinLock<Vec<EfiMemoryDescriptor>>,
     /// 是否已初始化
     initialized: AtomicBool,
     /// 是否有 UEFI 固件
@@ -211,9 +211,9 @@ impl UefiSubsystem {
     pub const fn new() -> Self {
         Self {
             system_table_addr: AtomicU64::new(0),
-            gop_mode: Mutex::new(None),
-            variables: Mutex::new(Vec::new()),
-            memory_map: Mutex::new(Vec::new()),
+            gop_mode: IrqSpinLock::new(None),
+            variables: IrqSpinLock::new(Vec::new()),
+            memory_map: IrqSpinLock::new(Vec::new()),
             initialized: AtomicBool::new(false),
             has_uefi: AtomicBool::new(false),
         }

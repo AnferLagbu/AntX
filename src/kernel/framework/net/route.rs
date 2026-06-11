@@ -92,13 +92,13 @@ pub struct RouteQueryResult {
 // 内核路由表 (独立于 smoltcp, 用于 syscall 查询)
 // ============================================================================
 
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 /// 内核路由表
 ///
 /// 维护一份内核级路由条目副本, 同时同步到 smoltcp Routes.
 /// smoltcp 负责实际数据包转发; 本表用于 syscall 查询和管理.
-static KERNEL_ROUTE_TABLE: Mutex<Vec<RouteEntry>> = Mutex::new(Vec::new());
+static KERNEL_ROUTE_TABLE: IrqSpinLock<Vec<RouteEntry>> = IrqSpinLock::new(Vec::new());
 
 // ============================================================================
 // 路由操作

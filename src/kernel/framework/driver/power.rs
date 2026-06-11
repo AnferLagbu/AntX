@@ -25,7 +25,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use alloc::vec;
 use alloc::vec::Vec;
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -164,7 +164,7 @@ impl CpuIdleStats {
 /// CPU 空闲驱动 — 选择并进入最优 C-state
 pub struct CpuIdleDriver {
     /// Per-CPU 空闲统计
-    per_cpu_stats: Mutex<Vec<CpuIdleStats>>,
+    per_cpu_stats: IrqSpinLock<Vec<CpuIdleStats>>,
     /// 全局最深 C-state 限制 (由 per_cpu_stats.max_cstate 实际控制)
     #[allow(dead_code)]
     global_max_cstate: AtomicU32,
@@ -175,7 +175,7 @@ pub struct CpuIdleDriver {
 impl CpuIdleDriver {
     pub const fn new() -> Self {
         Self {
-            per_cpu_stats: Mutex::new(Vec::new()),
+            per_cpu_stats: IrqSpinLock::new(Vec::new()),
             global_max_cstate: AtomicU32::new(CpuIdleState::C2DeepHalt as u32),
             enabled: AtomicBool::new(false),
         }
@@ -308,11 +308,11 @@ pub struct FreqLevel {
 /// CPU 频率驱动
 pub struct CpuFreqDriver {
     /// 可用频率等级表 (从高到低排序)
-    freq_table: Mutex<Vec<FreqLevel>>,
+    freq_table: IrqSpinLock<Vec<FreqLevel>>,
     /// Per-CPU 当前频率索引
-    per_cpu_freq_idx: Mutex<Vec<AtomicU32>>,
+    per_cpu_freq_idx: IrqSpinLock<Vec<AtomicU32>>,
     /// 当前 Governor
-    governor: Mutex<FreqGovernor>,
+    governor: IrqSpinLock<FreqGovernor>,
     /// Ondemand 参数: 升频阈值 (负载百分比)
     up_threshold: AtomicU32,
     /// Ondemand 参数: 降频阈值
@@ -324,9 +324,9 @@ pub struct CpuFreqDriver {
 impl CpuFreqDriver {
     pub const fn new() -> Self {
         Self {
-            freq_table: Mutex::new(Vec::new()),
-            per_cpu_freq_idx: Mutex::new(Vec::new()),
-            governor: Mutex::new(FreqGovernor::Performance),
+            freq_table: IrqSpinLock::new(Vec::new()),
+            per_cpu_freq_idx: IrqSpinLock::new(Vec::new()),
+            governor: IrqSpinLock::new(FreqGovernor::Performance),
             up_threshold: AtomicU32::new(80),
             down_threshold: AtomicU32::new(20),
             enabled: AtomicBool::new(false),
@@ -493,7 +493,7 @@ pub struct PmSubsystem {
     /// 当前系统电源状态
     state: AtomicU32,
     /// 挂起通知器列表
-    notifiers: Mutex<Vec<SuspendNotifier>>,
+    notifiers: IrqSpinLock<Vec<SuspendNotifier>>,
     /// CpuIdle 驱动
     pub cpuidle: CpuIdleDriver,
     /// CpuFreq 驱动
@@ -506,7 +506,7 @@ impl PmSubsystem {
     pub const fn new() -> Self {
         Self {
             state: AtomicU32::new(SystemPowerState::S0Working as u32),
-            notifiers: Mutex::new(Vec::new()),
+            notifiers: IrqSpinLock::new(Vec::new()),
             cpuidle: CpuIdleDriver::new(),
             cpufreq: CpuFreqDriver::new(),
             initialized: AtomicBool::new(false),

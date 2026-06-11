@@ -31,7 +31,7 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 use crate::kernel::framework::syscall::types::Errno;
 
@@ -120,9 +120,9 @@ pub struct UtsNamespace {
     /// 命名空间全局 ID (用于 /proc/pid/ns/uts)
     pub id: u64,
     /// 主机名 (Linux: nodename, 最长 64 字节)
-    pub nodename: Mutex<[u8; 65]>,
+    pub nodename: IrqSpinLock<[u8; 65]>,
     /// 域名 (Linux: domainname, 最长 64 字节)
-    pub domainname: Mutex<[u8; 65]>,
+    pub domainname: IrqSpinLock<[u8; 65]>,
 }
 
 impl UtsNamespace {
@@ -133,8 +133,8 @@ impl UtsNamespace {
         nodename[..default_name.len()].copy_from_slice(default_name);
         Self {
             id: alloc_ns_id(),
-            nodename: Mutex::new(nodename),
-            domainname: Mutex::new([0u8; 65]),
+            nodename: IrqSpinLock::new(nodename),
+            domainname: IrqSpinLock::new([0u8; 65]),
         }
     }
 
@@ -299,7 +299,7 @@ pub struct MountNamespace {
     /// 挂载点数量
     pub mount_count: AtomicU32,
     /// 根文件系统路径
-    pub root: Mutex<alloc::string::String>,
+    pub root: IrqSpinLock<alloc::string::String>,
 }
 
 impl MountNamespace {
@@ -307,7 +307,7 @@ impl MountNamespace {
         Self {
             id: alloc_ns_id(),
             mount_count: AtomicU32::new(0),
-            root: Mutex::new(alloc::string::String::from("/")),
+            root: IrqSpinLock::new(alloc::string::String::from("/")),
         }
     }
 
@@ -322,7 +322,7 @@ impl MountNamespace {
         let new = Self {
             id: alloc_ns_id(),
             mount_count: AtomicU32::new(parent.mount_count.load(Ordering::SeqCst)),
-            root: Mutex::new(parent.root.lock().clone()),
+            root: IrqSpinLock::new(parent.root.lock().clone()),
         };
         Arc::new(new)
     }
@@ -347,9 +347,9 @@ pub struct UserNamespace {
     /// 该 namespace 的拥有者 User namespace
     pub owner: Option<Arc<UserNamespace>>,
     /// namespace 内 root 的映射: (inner_start, outer_start, count)
-    pub uid_map: Mutex<Option<(u32, u32, u32)>>,
+    pub uid_map: IrqSpinLock<Option<(u32, u32, u32)>>,
     /// namespace 内 root group 的映射
-    pub gid_map: Mutex<Option<(u32, u32, u32)>>,
+    pub gid_map: IrqSpinLock<Option<(u32, u32, u32)>>,
     /// 嵌套层级
     level: AtomicU32,
 }
@@ -361,8 +361,8 @@ impl UserNamespace {
             id: alloc_ns_id(),
             parent: None,
             owner: None,
-            uid_map: Mutex::new(Some((0, 0, 65536))), // 默认 1:1 映射
-            gid_map: Mutex::new(Some((0, 0, 65536))),
+            uid_map: IrqSpinLock::new(Some((0, 0, 65536))), // 默认 1:1 映射
+            gid_map: IrqSpinLock::new(Some((0, 0, 65536))),
             level: AtomicU32::new(0),
         }
     }
@@ -374,8 +374,8 @@ impl UserNamespace {
             id: alloc_ns_id(),
             parent: Some(Arc::clone(parent)),
             owner: Some(Arc::clone(parent)),
-            uid_map: Mutex::new(None), // 新 namespace 需要显式写 uid_map
-            gid_map: Mutex::new(None),
+            uid_map: IrqSpinLock::new(None), // 新 namespace 需要显式写 uid_map
+            gid_map: IrqSpinLock::new(None),
             level: AtomicU32::new(parent_level + 1),
         }
     }
@@ -492,14 +492,14 @@ pub struct CgroupNamespace {
     /// 命名空间全局 ID
     pub id: u64,
     /// cgroup 根路径
-    pub root_path: Mutex<alloc::string::String>,
+    pub root_path: IrqSpinLock<alloc::string::String>,
 }
 
 impl CgroupNamespace {
     pub fn new() -> Self {
         Self {
             id: alloc_ns_id(),
-            root_path: Mutex::new(alloc::string::String::from("/")),
+            root_path: IrqSpinLock::new(alloc::string::String::from("/")),
         }
     }
 
@@ -510,7 +510,7 @@ impl CgroupNamespace {
     pub fn new_from(parent: &Arc<Self>) -> Arc<Self> {
         Arc::new(Self {
             id: alloc_ns_id(),
-            root_path: Mutex::new(parent.root_path.lock().clone()),
+            root_path: IrqSpinLock::new(parent.root_path.lock().clone()),
         })
     }
 }
@@ -747,7 +747,7 @@ impl NsRegistry {
 }
 
 /// 全局 namespace 注册表实例
-static NS_REGISTRY: Mutex<NsRegistry> = Mutex::new(NsRegistry::new());
+static NS_REGISTRY: IrqSpinLock<NsRegistry> = IrqSpinLock::new(NsRegistry::new());
 
 /// 注册 namespace 集合到全局注册表
 pub fn ns_register(ns_set: &NamespaceSet) {

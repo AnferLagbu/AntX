@@ -23,6 +23,7 @@
 //! 拓扑数据在 init 后只读, 策略通过 Mutex 保护.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -71,9 +72,9 @@ impl NumaPolicy {
 #[derive(Debug)]
 pub struct NumaMempolicy {
     /// 策略模式
-    pub mode: spin::Mutex<NumaPolicy>,
+    pub mode: IrqSpinLock<NumaPolicy>,
     /// 目标节点位掩码 (bit i = 使用 node i)
-    pub nodemask: spin::Mutex<u64>,
+    pub nodemask: IrqSpinLock<u64>,
     /// 交织分配下一个节点索引 (仅 Interleave 模式使用)
     pub interleave_next: AtomicU32,
 }
@@ -81,8 +82,8 @@ pub struct NumaMempolicy {
 impl NumaMempolicy {
     pub fn new() -> Self {
         Self {
-            mode: spin::Mutex::new(NumaPolicy::Default),
-            nodemask: spin::Mutex::new(0), // 0 = 无指定节点
+            mode: IrqSpinLock::new(NumaPolicy::Default),
+            nodemask: IrqSpinLock::new(0), // 0 = 无指定节点
             interleave_next: AtomicU32::new(0),
         }
     }
@@ -192,11 +193,11 @@ impl NumaNode {
 /// NUMA 拓扑管理器
 pub struct NumaTopology {
     /// 所有 NUMA 节点
-    nodes: spin::Mutex<Vec<Arc<NumaNode>>>,
+    nodes: IrqSpinLock<Vec<Arc<NumaNode>>>,
     /// 距离矩阵 [from][to] → SLIT 距离值
-    distance_matrix: spin::Mutex<[[u8; MAX_NUMA_NODES]; MAX_NUMA_NODES]>,
+    distance_matrix: IrqSpinLock<[[u8; MAX_NUMA_NODES]; MAX_NUMA_NODES]>,
     /// CPU → NUMA 节点映射
-    cpu_to_node: spin::Mutex<Vec<u32>>,
+    cpu_to_node: IrqSpinLock<Vec<u32>>,
     /// 节点数量
     num_nodes: AtomicU32,
     /// 是否已初始化
@@ -206,9 +207,9 @@ pub struct NumaTopology {
 impl NumaTopology {
     pub const fn new() -> Self {
         Self {
-            nodes: spin::Mutex::new(Vec::new()),
-            distance_matrix: spin::Mutex::new([[0u8; MAX_NUMA_NODES]; MAX_NUMA_NODES]),
-            cpu_to_node: spin::Mutex::new(Vec::new()),
+            nodes: IrqSpinLock::new(Vec::new()),
+            distance_matrix: IrqSpinLock::new([[0u8; MAX_NUMA_NODES]; MAX_NUMA_NODES]),
+            cpu_to_node: IrqSpinLock::new(Vec::new()),
             num_nodes: AtomicU32::new(0),
             initialized: AtomicBool::new(false),
         }

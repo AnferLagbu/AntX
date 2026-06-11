@@ -383,13 +383,13 @@ pub struct CgroupRq {
     /// 唯一 ID
     pub id: u64,
     /// cgroup 名称
-    pub name: Mutex<String>,
+    pub name: IrqSpinLock<String>,
     /// 父 cgroup ID (0 = root)
     pub parent_id: u64,
     /// 子 cgroup ID 列表
-    pub children: Mutex<Vec<u64>>,
+    pub children: IrqSpinLock<Vec<u64>>,
     /// 属于本 cgroup 的进程 PID 列表
-    pub procs: Mutex<Vec<Pid>>,
+    pub procs: IrqSpinLock<Vec<Pid>>,
     /// CPU 控制器
     pub cpu: CpuController,
     /// 内存控制器
@@ -401,17 +401,17 @@ pub struct CgroupRq {
 }
 
 // 使用 spin::Mutex 替代 std (与项目风格一致)
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 impl CgroupRq {
     /// 创建根 cgroup
     pub fn new_root() -> Self {
         Self {
             id: 0,
-            name: Mutex::new(String::from("/")),
+            name: IrqSpinLock::new(String::from("/")),
             parent_id: 0,
-            children: Mutex::new(Vec::new()),
-            procs: Mutex::new(Vec::new()),
+            children: IrqSpinLock::new(Vec::new()),
+            procs: IrqSpinLock::new(Vec::new()),
             cpu: CpuController::new(),
             memory: MemoryController::new(),
             pids: PidsController::new(),
@@ -423,10 +423,10 @@ impl CgroupRq {
     pub fn new_child(name: &str, parent_id: u64) -> Self {
         Self {
             id: alloc_cgroup_id(),
-            name: Mutex::new(String::from(name)),
+            name: IrqSpinLock::new(String::from(name)),
             parent_id,
-            children: Mutex::new(Vec::new()),
-            procs: Mutex::new(Vec::new()),
+            children: IrqSpinLock::new(Vec::new()),
+            procs: IrqSpinLock::new(Vec::new()),
             cpu: CpuController::new(),
             memory: MemoryController::new(),
             pids: PidsController::new(),
@@ -467,7 +467,7 @@ impl CgroupRq {
 /// 维护 cgroup 层级树, 提供 cgroup CRUD 和进程迁移.
 pub struct CgroupSubsystem {
     /// 所有 cgroup 实例 (id → Arc<CgroupRq>)
-    groups: Mutex<BTreeMap<u64, Arc<CgroupRq>>>,
+    groups: IrqSpinLock<BTreeMap<u64, Arc<CgroupRq>>>,
     /// 根 cgroup (id=0)
     root: Arc<CgroupRq>,
 }
@@ -480,7 +480,7 @@ impl CgroupSubsystem {
         groups.insert(0, Arc::clone(&root));
 
         Self {
-            groups: Mutex::new(groups),
+            groups: IrqSpinLock::new(groups),
             root,
         }
     }
@@ -621,16 +621,15 @@ pub enum Errno {
 // ============================================================================
 
 use core::sync::atomic::AtomicBool;
+use crate::kernel::framework::sync::once_lock::OnceLock;
 
 /// 全局 cgroup 子系统
-static CGROUP_SUBSYSTEM: spin::Once<CgroupSubsystem> = spin::Once::new();
+static CGROUP_SUBSYSTEM: OnceLock<CgroupSubsystem> = OnceLock::new();
 static CGROUP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// 初始化 cgroup 子系统
 pub fn cgroup_init() {
-    CGROUP_SUBSYSTEM.call_once(|| {
-        CgroupSubsystem::new()
-    });
+    CGROUP_SUBSYSTEM.get_or_init(CgroupSubsystem::new);
     CGROUP_INITIALIZED.store(true, Ordering::Release);
     crate::klog_ffi!(klog_ffi_info, "[CGROUP] subsystem initialized (root cgroup id=0)");
 }

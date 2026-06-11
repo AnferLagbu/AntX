@@ -236,7 +236,7 @@ make test-host TESTS="zil_replay"
 
 ---
 
-### [ ] I-17 [中] framework 15 模块使用第三方 spin::Mutex 不参与 Lockdep
+### [x] I-17 [中] framework 15 模块使用第三方 spin::Mutex 不参与 Lockdep
 
 **来源**: 审计 9
 **根因**: 15+ framework 模块用第三方 `spin::Mutex`, 不参与项目自研 Lockdep, 绕过死锁检测。
@@ -248,19 +248,31 @@ make test-host TESTS="zil_replay"
 1. 替换为项目自研 `framework::sync::SpinLock<T>` (已带 Lockdep 集成)
 2. 每个 `SpinLock::new` 调用点增加 `named!("xxx_lock")`
 3. 删除文件级 `#![allow(dead_code)]` 视情况移除
+
+**完成记录**:
+- ✅ 替换为 `framework::sync::irq_spinlock::IrqSpinLock` (Lockdep 集成版, 含 IRQ 上下文安全)
+- ✅ 16 个模块迁移: kexec, uefi, time_sync, tickless, shadow_stack, secure_boot, power, ebpf, cgroup, namespace, iouring, netfilter, route, numa, process, seccomp
+- ✅ cgroup 改用 `framework::sync::once_lock::OnceLock` (替代 `spin::Once`)
+- ✅ 添加 host-test: [host-tests/tests/framework_spinlock_migration_test.rs](../../host-tests/tests/framework_spinlock_migration_test.rs) (6/6 pass)
+- ✅ 静态契约测试: 禁止 `use spin::Mutex;` / `spin::Mutex<` / `spin::Once`
+- ✅ 双架构 0w0e, 三项审计全过
 **验收**:
-- [ ] 全 framework 模块 `use spin::Mutex` 计数 = 0
-- [ ] 自研 SpinLock 替换完毕
-- [ ] 三审计通过
-- [ ] 双架构 0w0e
+- [x] 全 framework 模块 `use spin::Mutex` 计数 = 0 (host-test 验证)
+- [x] 全 framework 模块 `spin::Mutex<` 内联 = 0
+- [x] 自研 IrqSpinLock 替换完毕 (16 模块)
+- [x] 三审计通过
+- [x] 双架构 0w0e (x86_64 + aarch64)
 **验证命令**:
 ```bash
-grep -rn "use spin::Mutex\|spin::Mutex::new" src/kernel/framework/  # 必须为空
+# 必须为空 (host-test 已自动验证)
+cd /home/anfer/Code/AntX/host-tests && cargo test --test framework_spinlock_migration_test
+# 三审计
+cd /home/anfer/Code/AntX && python3 scripts/audit_services_boundary.py && python3 scripts/audit_safety_coverage.py && python3 scripts/audit_deadlock_matrix.py
 ```
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 提交: (见 fix/I-17-spin-mutex-migration)
+- 简述: 16 模块 spin::Mutex → IrqSpinLock; cgroup spin::Once → OnceLock; 6/6 host-test pass.
 
 ---
 

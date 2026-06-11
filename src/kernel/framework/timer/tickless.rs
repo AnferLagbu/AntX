@@ -30,7 +30,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
 
 use alloc::vec::Vec;
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -116,7 +116,7 @@ impl TicklessCpuState {
 /// Tickless 子系统
 pub struct TicklessSubsystem {
     /// Per-CPU 状态
-    per_cpu: Mutex<Vec<TicklessCpuState>>,
+    per_cpu: IrqSpinLock<Vec<TicklessCpuState>>,
     /// 全局默认模式
     global_mode: AtomicU32,
     /// 是否已初始化
@@ -126,7 +126,7 @@ pub struct TicklessSubsystem {
 impl TicklessSubsystem {
     pub const fn new() -> Self {
         Self {
-            per_cpu: Mutex::new(Vec::new()),
+            per_cpu: IrqSpinLock::new(Vec::new()),
             global_mode: AtomicU32::new(TicklessMode::NoHzIdle as u32),
             initialized: AtomicBool::new(false),
         }

@@ -39,7 +39,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use alloc::vec::Vec;
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -153,9 +153,9 @@ pub struct CetCapabilities {
 /// CET 子系统
 pub struct CetSubsystem {
     /// 功能支持
-    caps: Mutex<CetCapabilities>,
+    caps: IrqSpinLock<CetCapabilities>,
     /// Per-CPU Shadow Stack (CPU ID → ShadowStack)
-    kernel_shadow_stacks: Mutex<Vec<ShadowStack>>,
+    kernel_shadow_stacks: IrqSpinLock<Vec<ShadowStack>>,
     /// 是否已初始化
     initialized: AtomicBool,
 }
@@ -163,14 +163,14 @@ pub struct CetSubsystem {
 impl CetSubsystem {
     pub const fn new() -> Self {
         Self {
-            caps: Mutex::new(CetCapabilities {
+            caps: IrqSpinLock::new(CetCapabilities {
                 shadow_stack: false,
                 ibt: false,
                 wrss: false,
                 shadow_stack_enabled: false,
                 ibt_enabled: false,
             }),
-            kernel_shadow_stacks: Mutex::new(Vec::new()),
+            kernel_shadow_stacks: IrqSpinLock::new(Vec::new()),
             initialized: AtomicBool::new(false),
         }
     }

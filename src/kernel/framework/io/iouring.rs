@@ -37,7 +37,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use alloc::vec::Vec;
 
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 use crate::kernel::framework::syscall::types::Errno;
 
@@ -234,9 +234,9 @@ pub struct IoUring {
     /// 队列深度
     pub ring_size: u32,
     /// 提交队列
-    pub sq: Mutex<RingBuffer<Sqe>>,
+    pub sq: IrqSpinLock<RingBuffer<Sqe>>,
     /// 完成队列
-    pub cq: Mutex<RingBuffer<Cqe>>,
+    pub cq: IrqSpinLock<RingBuffer<Cqe>>,
     /// 所属进程 PID
     pub owner_pid: u32,
     /// 标志位
@@ -249,8 +249,8 @@ impl IoUring {
         Self {
             id,
             ring_size,
-            sq: Mutex::new(RingBuffer::new(ring_size)),
-            cq: Mutex::new(RingBuffer::new(ring_size)),
+            sq: IrqSpinLock::new(RingBuffer::new(ring_size)),
+            cq: IrqSpinLock::new(RingBuffer::new(ring_size)),
             owner_pid,
             flags: AtomicU32::new(0),
         }
@@ -350,7 +350,7 @@ impl IoUring {
 // ============================================================================
 
 /// 全局 io_uring 实例表
-static URING_TABLE: Mutex<Vec<Option<IoUring>>> = Mutex::new(Vec::new());
+static URING_TABLE: IrqSpinLock<Vec<Option<IoUring>>> = IrqSpinLock::new(Vec::new());
 static NEXT_URING_ID: AtomicU32 = AtomicU32::new(0);
 
 /// 创建 io_uring 实例

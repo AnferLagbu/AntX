@@ -23,7 +23,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU32, Ordering};
 
-use spin::Mutex;
+use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -248,7 +248,7 @@ pub struct TimeSyncSubsystem {
     /// 时钟调整状态
     adj: ClockAdjState,
     /// NTP 服务器地址 (IPv4, 网络字节序)
-    ntp_server: Mutex<u32>,
+    ntp_server: IrqSpinLock<u32>,
     /// PTP 域号
     ptp_domain: AtomicU32,
     /// 是否已初始化
@@ -259,7 +259,7 @@ impl TimeSyncSubsystem {
     pub const fn new() -> Self {
         Self {
             adj: ClockAdjState::new(),
-            ntp_server: Mutex::new(0),
+            ntp_server: IrqSpinLock::new(0),
             ptp_domain: AtomicU32::new(0),
             initialized: AtomicBool::new(false),
         }
