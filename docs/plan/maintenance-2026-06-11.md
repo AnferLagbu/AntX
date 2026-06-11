@@ -657,6 +657,33 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
+### [x] 预存 [低] framework SAFETY 注释覆盖 (33 处遗留)
+
+**来源**: Phase 3.2 验收门禁
+**根因**: framework 33 处 unsafe 缺 SAFETY 注释长期遗留, 阻塞 `bash ci/audit.sh` 通过.
+**关联文件**:
+- [src/kernel/framework/mm/frame.rs](../../src/kernel/framework/mm/frame.rs) (8)
+- [src/kernel/framework/mm/kmalloc.rs](../../src/kernel/framework/mm/kmalloc.rs) (5)
+- [src/kernel/framework/mm/slab.rs](../../src/kernel/framework/mm/slab.rs) (18)
+- [src/kernel/framework/proc/signal.rs](../../src/kernel/framework/proc/signal.rs) (1)
+- [src/kernel/framework/usermode.rs](../../src/kernel/framework/usermode.rs) (1)
+**修复方案**:
+1. 每个 unsafe 块前加 `// SAFETY:` 注释, 引用来源 + 持有锁/不变量 + 后续操作
+2. `// SAFETY:` 行必须落在 audit 8 行扫描窗口内
+3. usermode.rs 同时保留 `/// # SAFETY` 文档章节 (双保险)
+**验收**:
+- [x] 双架构 0w0e
+- [x] `python3 tools/audit_unsafe.py --missing-only` 输出 0
+- [x] `bash ci/audit.sh` EXIT 0 (Phase 3.2 达成)
+- [x] 316 host-tests 全 pass
+**完成记录**:
+- 日期: 2026-06-11
+- 独立 commit: `3c782fe` on `chore/safety-coverage-phase3.2`
+- 仅注释层, 无运行时行为变化
+- 编译产物字节级等价
+
+---
+
 ### [ ] I-19 [中] vfs_pread_inode 绕过 trait 分发
 
 **来源**: 审计 11
@@ -1334,6 +1361,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | 编号 | 标题 | 状态 | 完成日期 | 提交 |
 |------|------|------|----------|------|
 | I-18 | fs_sync trait 方法 | [x] | 2026-06-11 | feature/P3-I-18-fs-sync-trait |
+| 预存 | SAFETY 注释 33 处 | [x] | 2026-06-11 | chore/safety-coverage-phase3.2 |
 | I-19 | vfs_pread_inode trait 分发 | [ ] | | |
 | I-20 | 错误处理统一 | [ ] | | |
 | I-42 | virtio-blk 中断驱动 | [ ] | | |
