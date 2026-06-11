@@ -51,7 +51,10 @@ mod capacity;
 mod caps;
 mod error;
 mod kaslr;
-mod memory;
+// I-预存: `framework::config::memory` 需要从外部测试模块访问, 之前设为私有导致
+// `tests::mod` 在 kernel_test build 下编译失败 (E0603). 改 `pub` 暴露给 `framework` 内的
+// 跨模块访问, 外部边界 (services) 通过 `framework::config::*` 公共 API 间接使用.
+pub mod memory;
 pub mod procfs;
 mod sched;
 mod slab;

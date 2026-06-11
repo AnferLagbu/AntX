@@ -148,12 +148,13 @@ impl Default for SafeProcFs {
 // 全局实例
 // ============================================================================
 
-use spin::Once;
-static GLOBAL_PROCFS: Once<SafeProcFs> = Once::new();
+// I-16: 替换 spin::Once → 项目自研 services::sync::once::OnceCell
+use crate::kernel::services::sync::once::OnceCell;
+static GLOBAL_PROCFS: OnceCell<SafeProcFs> = OnceCell::new();
 
 /// 初始化全局 ProcFS
 pub fn init_global() {
-    GLOBAL_PROCFS.call_once(SafeProcFs::new);
+    let _ = GLOBAL_PROCFS.get_or_init(SafeProcFs::new);
 }
 
 /// 获取全局 ProcFS 引用

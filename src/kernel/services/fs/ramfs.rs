@@ -384,15 +384,19 @@ impl Default for SafeRamFs {
 // 全局实例 (Phase 2.2.1 单 FS 演示)
 // ============================================================================
 
-use spin::Once;
+// I-16: 替换 spin::Once → 项目自研 services::sync::once::OnceCell
+use crate::kernel::services::sync::once::OnceCell;
 
-static GLOBAL_RAMFS: Once<SafeRamFs> = Once::new();
+static GLOBAL_RAMFS: OnceCell<SafeRamFs> = OnceCell::new();
 
 /// 初始化全局 RamFS
 pub fn init_global(mount_point: &str) -> FsResult<()> {
-    let fs = SafeRamFs::new();
-    fs.mount(mount_point)?;
-    GLOBAL_RAMFS.call_once(|| fs);
+    // 一旦已初始化, 跳过重复 mount. 闭包内失败传播给 caller (与原 spin::Once 行为一致)
+    if GLOBAL_RAMFS.get().is_none() {
+        let fs = SafeRamFs::new();
+        fs.mount(mount_point)?;
+        let _ = GLOBAL_RAMFS.get_or_init(|| fs);
+    }
     Ok(())
 }
 

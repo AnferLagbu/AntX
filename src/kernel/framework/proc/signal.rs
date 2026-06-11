@@ -775,7 +775,7 @@ fn test_kill_broadcast_pid_zero_group() -> crate::kernel::framework::tests::Test
 
 #[cfg(feature = "kernel_test")]
 fn test_kill_broadcast_pid_negative_all() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    use crate::kernel::framework::tests::{check, TestResult};
     // pid = -1: 广播到所有进程 (除 init).
     // host test 环境下进程表通常为空 -> Err(ESRCH)
     let res = do_signal_send_extended(-1, 9);

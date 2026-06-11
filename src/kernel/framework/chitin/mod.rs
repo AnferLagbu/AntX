@@ -351,6 +351,11 @@ pub fn chitin_register_with_ops(
 ///
 /// 同时提供 Driver trait 生命周期管理和 BlockOps I/O 能力。
 /// 返回设备在 CHITIN_DEVICES 中的索引 (用作 drive_id)。
+///
+/// I-43: 此函数是低层桥接, 驱动作者**不应**直接调用, 应使用
+/// `proto_block::register_block_device` (BlockDevice trait → BlockOps 桥接).
+/// 桥接保证: 驱动实现 `BlockDevice` trait, HvFS 通过 Chitin I/O 路径
+/// (chitin_blk_read/write) 访问, 单一入口, 无双重分发.
 pub fn chitin_register_block(
     name: &'static str,
     io_base: Option<u64>,

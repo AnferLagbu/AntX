@@ -97,12 +97,13 @@ pub struct SemHandle {
 // 全局命名空间
 // ============================================================================
 
-use spin::Once;
-static GLOBAL_IPC: Once<IpcNamespaceRef> = Once::new();
+// I-16: 替换 spin::Once → 项目自研 services::sync::once::OnceCell (统一 OnceCell 抽象, 不绕过框架同步层)
+use crate::kernel::services::sync::once::OnceCell;
+static GLOBAL_IPC: OnceCell<IpcNamespaceRef> = OnceCell::new();
 
 /// 初始化全局 IPC 命名空间
 pub fn init_global() {
-    GLOBAL_IPC.call_once(IpcNamespaceRef::new);
+    let _ = GLOBAL_IPC.get_or_init(IpcNamespaceRef::new);
 }
 
 /// 获取全局 IPC 引用

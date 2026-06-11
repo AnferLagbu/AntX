@@ -69,6 +69,26 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/tools/audit_unsafe.
     fi
 fi
 
+# I-43: 块设备抽象统一性 audit — 防驱动绕过 proto_block 桥接
+if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_block_registration.py" ]; then
+    step "0.5d/6 块设备单一桥接入口 (I-43)"
+    if "$PROJECT_ROOT/scripts/audit_block_registration.py" 2>&1 | tail -10; then
+        ok "I-43: 块设备驱动统一通过 proto_block::register_block_device"
+    else
+        err "I-43: 有块设备驱动绕过 proto_block 桥接! 见上方输出"
+    fi
+fi
+
+# I-16: services 层 OnceCell 抽象统一性 audit — 防 services 绕过 OnceCell 用 spin::Once
+if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_once_cell.py" ]; then
+    step "0.5e/6 services OnceCell 单一抽象 (I-16)"
+    if "$PROJECT_ROOT/scripts/audit_once_cell.py" 2>&1 | tail -8; then
+        ok "I-16: services 统一通过 sync::once::OnceCell"
+    else
+        err "I-16: 有 services 模块绕过 OnceCell 抽象用 spin::Once! 见上方输出"
+    fi
+fi
+
 # ── 1. 双架构 check ─────────────────────────────────────────────
 step "1/6 双架构 cargo check (x86_64 + aarch64)"
 pushd src/rust > /dev/null

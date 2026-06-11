@@ -328,9 +328,19 @@ mod tests {
         TestResult::Pass
     }
 
-    crate::register_tests_inner!(
-        test_sendfile_ebadf,
-        test_splice_einval_no_pipe,
-        test_splice_einval_bad_flags,
-    );
+    pub fn register_sendfile_tests() {
+        use crate::kernel::framework::tests::{runner, TestFn};
+        let r = runner();
+        r.register("syscall::sendfile", "ebadf", test_sendfile_ebadf as TestFn);
+        r.register(
+            "syscall::splice",
+            "einval_no_pipe",
+            test_splice_einval_no_pipe as TestFn,
+        );
+        r.register(
+            "syscall::splice",
+            "einval_bad_flags",
+            test_splice_einval_bad_flags as TestFn,
+        );
+    }
 }

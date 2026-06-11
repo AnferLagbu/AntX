@@ -28,10 +28,9 @@ use crate::kernel::framework::idt::types::InterruptFrame;
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
+    // I-50: hrtimer_run_queues 已在 on_timer_interrupt 内统一触发 (tick.rs),
+    // 此处不再显式调用, 避免重复处理 (hrtimer 自身有去重, 但统一入口更清晰).
     crate::kernel::framework::timer::on_timer_interrupt();
-
-    // 处理高精度定时器队列
-    crate::kernel::framework::timer::hrtimer::hrtimer_run_queues();
 
     #[cfg(not(feature = "kernel_test"))]
     {

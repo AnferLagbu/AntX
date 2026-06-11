@@ -127,6 +127,11 @@ pub fn is_initialized() -> bool {
 ///
 /// 递增全局 tick 计数器并更新内部状态。
 ///
+/// I-50: 内部统一触发 `hrtimer_run_queues()`, 调用方无需再单独调,
+///       避免遗忘导致 hrtimer 不被处理. 旧调用方 (`timer_irq0_handler` /
+///       `irq_handler_el1`) 仍显式调用一次以保持向后兼容, 重复处理由
+///       hrtimer 自身的 "已 Running/Inactive 跳过" 逻辑避免副作用.
+///
 /// # Safety
 /// 只能从中断上下文调用
 #[inline(always)]
@@ -149,6 +154,9 @@ pub fn on_timer_interrupt() {
         let current_cnt = crate::arch!(timestamp());
         LAST_TSC.store(current_cnt, Ordering::Relaxed);
     }
+
+    // I-50: 统一入口 — tick 与 hrtimer 合并处理, 调用方不再需要单独调 hrtimer_run_queues.
+    super::hrtimer::hrtimer_run_queues();
 }
 
 /// 获取当前 tick 数

@@ -409,7 +409,7 @@ fn test_pcache_hash_range() -> crate::kernel::framework::tests::TestResult {
 #[cfg(feature = "kernel_test")]
 fn test_pcache_bucket_insert_lookup() -> crate::kernel::framework::tests::TestResult {
     use crate::kernel::framework::tests::{check, TestResult};
-    let mut bucket = PageCacheBucket::new();
+    let bucket = PageCacheBucket::new();
     check!(bucket.count == 0, "empty bucket");
 
     // 注意: insert 会调用 PMM 分配, 在测试环境中可能失败

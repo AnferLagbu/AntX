@@ -18,7 +18,33 @@
 //! 评估日期: 2026-06-04
 
 use crate::kernel::framework::net_socket as fw_net_socket;
-use crate::kernel::framework::net;
+// I-预存 (kernel_test build): 同 net_socket.rs 处理 — 用 cfg-gate `use` 别名
+// + 桩模块, 让函数体保持 `init::*` 调用, 不扩散 cfg 到 fn body.
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::framework::net::init as init;
+
+// kernel_test 桩: 对齐真实 `net::init` 暴露的类型与函数签名.
+#[cfg(feature = "kernel_test")]
+mod init {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    pub enum InitState {
+        Uninitialized,
+        HardwareProbed,
+        InterfaceReady,
+        FullyInitialized,
+        Failed,
+    }
+    pub fn is_network_initialized() -> bool {
+        false
+    }
+    pub fn is_network_configured() -> bool {
+        false
+    }
+    pub fn get_init_state() -> InitState {
+        InitState::Uninitialized
+    }
+}
 
 pub mod netfilter;
 pub mod route;
@@ -94,14 +120,14 @@ pub enum InitState {
     Failed = 255,
 }
 
-impl From<net::init::InitState> for InitState {
-    fn from(s: net::init::InitState) -> Self {
+impl From<init::InitState> for InitState {
+    fn from(s: init::InitState) -> Self {
         match s {
-            net::init::InitState::Uninitialized => Self::Uninitialized,
-            net::init::InitState::HardwareProbed => Self::HardwareProbed,
-            net::init::InitState::InterfaceReady => Self::InterfaceReady,
-            net::init::InitState::FullyInitialized => Self::FullyInitialized,
-            net::init::InitState::Failed => Self::Failed,
+            init::InitState::Uninitialized => Self::Uninitialized,
+            init::InitState::HardwareProbed => Self::HardwareProbed,
+            init::InitState::InterfaceReady => Self::InterfaceReady,
+            init::InitState::FullyInitialized => Self::FullyInitialized,
+            init::InitState::Failed => Self::Failed,
         }
     }
 }
@@ -163,17 +189,17 @@ pub fn static_ip(cidr_str: &str, gw_str: &str) -> NetResult<()> {
 
 /// 网络是否已完全初始化
 pub fn is_initialized() -> bool {
-    net::init::is_network_initialized()
+    init::is_network_initialized()
 }
 
 /// 网络是否已完成 DHCP/Static IP 配置
 pub fn is_configured() -> bool {
-    net::init::is_network_configured()
+    init::is_network_configured()
 }
 
 /// 当前初始化状态
 pub fn state() -> InitState {
-    InitState::from(net::init::get_init_state())
+    InitState::from(init::get_init_state())
 }
 
 /// 重置网络状态 (恢复机制)

@@ -493,8 +493,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
         crate::kernel::framework::timer::on_timer_interrupt();
 
-        // 处理高精度定时器队列
-        crate::kernel::framework::timer::hrtimer::hrtimer_run_queues();
+        // I-50: hrtimer_run_queues 已在 on_timer_interrupt 内统一触发, 此处不再显式调用.
 
         // smoltcp: 始终轮询（DHCP 需要在 poll 中完成握手）
         #[cfg(not(feature = "kernel_test"))]

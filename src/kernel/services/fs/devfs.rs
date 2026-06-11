@@ -497,12 +497,13 @@ impl Default for SafeDevFs {
 // 全局实例 (Once)
 // ============================================================================
 
-use spin::Once;
-static GLOBAL_DEVFS: Once<SafeDevFs> = Once::new();
+// I-16: 替换 spin::Once → 项目自研 services::sync::once::OnceCell
+use crate::kernel::services::sync::once::OnceCell;
+static GLOBAL_DEVFS: OnceCell<SafeDevFs> = OnceCell::new();
 
 /// 初始化全局 DevFS
 pub fn init_global() {
-    GLOBAL_DEVFS.call_once(SafeDevFs::new);
+    let _ = GLOBAL_DEVFS.get_or_init(SafeDevFs::new);
 }
 
 /// 获取全局 DevFS 引用
