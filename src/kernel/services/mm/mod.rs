@@ -18,3 +18,5 @@ pub mod brk;
 pub mod mprotect;
 /// D3: NUMA 安全封装
 pub mod numa;
+/// D9: 内存压力策略 (阈值/分级/判定) — services 层
+pub mod memory_pressure;

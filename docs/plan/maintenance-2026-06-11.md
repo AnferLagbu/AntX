@@ -318,6 +318,36 @@ python3 scripts/audit_tcb_ratio.py
 python3 scripts/audit_services_boundary.py && python3 scripts/audit_safety_coverage.py && python3 scripts/audit_deadlock_matrix.py
 ```
 
+**完成记录 (D9 - MemoryPressure, 2026-06-11)**:
+- ✅ 提取 `framework::mm::pressure` → `services::mm::memory_pressure`
+- ✅ 机制 (framework): AtomicU8/AtomicU64 标准原语
+- ✅ 策略 (services, 0 unsafe): 4 级状态机 (Normal/Warning/Critical/Emergency) + 双重阈值 (绝对值 + 百分比) + set_thresholds 顺序校验
+- ✅ services 不含 klog_ffi (避免 unsafe 边界), 状态转换日志下放到 framework wrapper
+- ✅ framework 通过 `pub use ...::*` 保持 API 兼容
+- ✅ 添加 host-test: [host-tests/tests/memory_pressure_extraction_test.rs](../../host-tests/tests/memory_pressure_extraction_test.rs) (8/8 pass)
+- ✅ 静态契约测试: 验证 4 级枚举在 services, 阈值顺序校验, 必含 klog_ffi 排除
+- ✅ 双架构 0w0e, 三项审计全过
+- **数据**: framework/mm 11,753 → 11,647 (-106 LoC), services 28,339 → 28,486 (+147 LoC)
+- **累计 (D8 + D9)**: framework 172,344 → 172,198 (-146), services 28,234 → 28,486 (+252), self TCB 53.9% → 53.8%
+- **后续**: D10 slab 分配策略 / D11 网络策略 / D12 VFS 策略, 每次 1 commit
+**验收**:
+- [x] framework/mm/pressure.rs 不再定义 `pub enum MemoryPressure`
+- [x] services/mm/memory_pressure.rs `#![deny(unsafe_code)]`
+- [x] services 文件不含 `klog_ffi!`
+- [x] set_thresholds 验证 `warning > critical > emergency`
+- [x] 三审计全过
+- [x] 双架构 0w0e
+- [ ] 整体 self TCB 占比 < 30% (长期目标, 需多轮提取)
+**验证命令**:
+```bash
+# D9 验收
+cd /home/anfer/Code/AntX/host-tests && cargo test --test memory_pressure_extraction_test
+# TCB 度量
+python3 scripts/audit_tcb_ratio.py
+# 三审计
+python3 scripts/audit_services_boundary.py && python3 scripts/audit_safety_coverage.py && python3 scripts/audit_deadlock_matrix.py
+```
+
 ---
 
 ### [x] I-02 [高] usermode.rs Ring 3 切换占位实现
