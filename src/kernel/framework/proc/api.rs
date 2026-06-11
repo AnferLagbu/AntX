@@ -996,31 +996,31 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
         return -1;
     }
 
-    // 1. 切换到内核页表, 避免在销毁用户地址空间后访问已释放的页
+    let pwm = scheduler_get_current_pwm();
+
+    // P0-I-31 修复: 改造为 transactional 模式 — 先在副本上加载并验证新 ELF,
+    // 验证通过后再销毁旧进程. 旧版"先摧毁再加载"假设 ELF/FS/分配永不失败,
+    // 一旦失败调度器指向已释放 PID → panic (UAF).
+    //
+    // 阶段 1: 加载新 ELF (在 USER_PROC_MANAGER 内分配临时 UserProc/PID).
+    //         任一环节失败 → 返回 -1, 原进程完整保留.
+    let new_pid = user_proc_load_elf(path, pwm);
+    if new_pid < 0 {
+        return -1;
+    }
+
+    // 阶段 2: 新进程加载已成功, 现在可以安全地销毁旧进程.
     let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
     if kernel_cr3 != 0 {
         // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
         raw::switch_page_table(kernel_cr3);
     }
 
-    // 2. 销毁旧用户地址空间 (保留内核栈和 PID)
-    //    destroy_by_pid_no_kstack 仅销毁用户页表和 UserProcess 镜像,
-    //    保留内核栈供后续调度使用.
+    // 销毁旧用户地址空间 (保留内核栈与 PID 槽)
     USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
 
-    // 3. 从 PROCESS_TABLE 中移除旧 Process (但保留 PID 供新进程复用)
-    //    注意: remove_and_free 会释放 Process 内存, 新 load_elf 会分配新 Process
-    //    TODO(TRACK-2F4B39): 未来优化为原地替换地址空间, 不释放/重分配 Process 结构
+    // 从 PROCESS_TABLE 移除旧 Process (新 load_elf 已持有新 PID, 不再复用)
     PROCESS_TABLE.remove_and_free(current_pid);
-
-    // 4. 加载新 ELF (使用 ASLR 随机化地址)
-    let pwm = scheduler_get_current_pwm();
-    let new_pid = user_proc_load_elf(path, pwm);
-    if new_pid < 0 {
-        // 加载失败: 进程已销毁, 无法恢复 — 这是 execve 的标准语义:
-        // 如果 exec 失败且原进程已部分替换, 进程应终止
-        return -1;
-    }
 
     let new_pid_u32 = new_pid as u32;
 

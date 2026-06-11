@@ -84,7 +84,7 @@ make test-host
 
 ---
 
-### [ ] I-31 [严重] execve 失败时进程不可恢复
+### [x] I-31 [严重] execve 失败时进程不可恢复
 
 **来源**: 审计 17
 **根因**: `proc_exec_replace` 先摧毁旧进程再加载新 ELF, 假设磁盘 ELF 不会损坏、文件系统不会出错、内存不会分配失败。三个假设任一破裂, 调度器指向 freed PID → panic。
@@ -99,19 +99,21 @@ make test-host
 3. 同步修复 I-32 (RacyCell 静态分配器) 与 I-33 (ELF 验证双份)
 4. 同步修复 I-48 (pending signals 行为)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 注入 ELF 损坏, execve 失败后原进程仍可继续运行
-- [ ] 新增 host-test: 注入缺页/分配失败, execve 失败后 PID 仍可被 wait() 回收
-- [ ] Lockdep 通过 (无新死锁)
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 注入 ELF 损坏, execve 失败后原进程仍可继续运行 → exec_rollback_test::transactional_load_failure_preserves_original_process + transactional_keeps_process_invariant
+- [x] 新增 host-test: 注入缺页/分配失败, execve 失败后 PID 仍可被 wait() 回收 → exec_rollback_test::transactional_does_not_leak_failed_load
+- [x] Lockdep 通过 (无新死锁, 改造未引入新锁)
 **验证命令**:
 ```bash
 make build ARCH=x86_64 && make build ARCH=aarch64
 make test-host TESTS="exec::failure_rollback"
 ```
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-31-execve-rollback`
+- 改动文件 (2 个):
+  - `src/kernel/framework/proc/api.rs`: `proc_exec_replace` 调换顺序 — 先调用 `user_proc_load_elf` 加载并验证新 ELF, 任一环节失败 (vfs_stat/open/read/OOM/ELF 解析) 直接返回 -1, 原进程完整保留; 加载成功后才执行 `destroy_by_pid_no_kstack` + `remove_and_free` 销毁旧进程
+  - `host-tests/tests/exec_rollback_test.rs`: 新增 5 用例 (事务性: 加载失败原进程保留 / 加载成功 PID 替换 / 不泄漏半成品 / 多次 execve 不变量; 反向回归: 旧版 UAF 行为)
 
 ---
 
@@ -1166,7 +1168,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | 编号 | 标题 | 状态 | 完成日期 | 提交 |
 |------|------|------|----------|------|
 | I-26 | Demand paging 整条路径未激活 | [x] | 2026-06-11 | fix/I-26-demand-paging-activate |
-| I-31 | execve 失败时进程不可恢复 | [ ] | | |
+| I-31 | execve 失败时进程不可恢复 | [x] | 2026-06-11 | fix/I-31-execve-rollback |
 | I-29 | TEST_PWM fallback 绕过访问控制 | [x] | 2026-06-11 | fix/I-29-remove-test-pwm-fallback |
 | I-36/37/38 | exception table 缺失 (3 处) | [ ] | | |
 
