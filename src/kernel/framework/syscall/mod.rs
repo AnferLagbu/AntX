@@ -2646,7 +2646,10 @@ fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
             unsafe { raw::write_struct(dst, &ws) };
             0
         }
-        TCGETS => 0,
+        // P1-I-39 修复: TCGETS 之前返回 0 是 stub, 假装成功但不填充 termios,
+        // 致 isatty()/shell/ncurses 误判终端. 显式返回 ENOSYS 告知调用方未实现.
+        // 后续若要支持真实 termios 需增加 console driver + fd → tty 映射.
+        TCGETS => Errno::ENOSYS.as_ret(),
         _ => Errno::ENOTTY.as_ret(),
     }
 }

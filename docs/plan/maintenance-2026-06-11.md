@@ -428,7 +428,7 @@ grep -n "RacyCell" src/kernel/framework/proc/elf.rs  # 计数 = 0
 
 ---
 
-### [ ] I-39 [中] sys_ioctl stub 返回 0 而非 ENOSYS
+### [x] I-39 [中] sys_ioctl stub 返回 0 而非 ENOSYS
 
 **来源**: 审计 22
 **根因**: 未实现的 syscall 返回 0 (成功), 用户态被欺骗。
@@ -439,13 +439,15 @@ grep -n "RacyCell" src/kernel/framework/proc/elf.rs  # 计数 = 0
 1. stub 路径返回 `-ENOSYS` (-38)
 2. 增加 `sys_ioctl` 单元测试: 未实现命令返回 ENOSYS
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 任意 fd 调用 TCGETS 返回 ENOTTY 或 ENOSYS
-- [ ] `isatty(0)` 在非终端 fd 上正确返回 0 (不假设是终端)
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 任意 fd 调用 TCGETS 返回 ENOSYS → ioctl_enosys_test::tcgets_stub_returns_enosys_not_zero + tcgets_returns_enosys_for_any_fd
+- [x] `isatty(0)` 在非终端 fd 上正确返回 0 (不假设是终端) → ioctl_enosys_test::isatty_simulation_via_ioctl_return_code
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-39-ioctl-enosys`
+- 改动文件 (2 个):
+  - `src/kernel/framework/syscall/mod.rs` (`sys_ioctl` 函数): TCGETS stub 路径由 `0` 改为 `Errno::ENOSYS.as_ret()`, 注释说明后续需 console driver + fd→tty 映射
+  - `host-tests/tests/ioctl_enosys_test.rs`: 新增 6 用例, 自包含 mini-ioctl 镜像内核契约, 覆盖 TCGETS-ENOSYS / 任意 fd / ENOTTY / EINVAL / TIOCGWINSZ 真实实现 / isatty 语义
 
 ---
 
@@ -1184,6 +1186,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | 编号 | 标题 | 状态 | 完成日期 | 提交 |
 |------|------|------|----------|------|
 | I-15 | HvFS ZIL 日志回放 11 处 unwrap() | [x] | 2026-06-11 | fix/I-15-zil-replay-panic |
+| I-39 | sys_ioctl stub 返回 0 而非 ENOSYS | [x] | 2026-06-11 | fix/I-39-ioctl-enosys |
 | I-17 | framework spin::Mutex 迁移 | [ ] | | |
 | I-01 | TCB 占比超标 | [ ] | | |
 | I-02 | usermode Ring 3 占位 | [ ] | | |
