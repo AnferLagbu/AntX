@@ -1147,10 +1147,12 @@ impl UserProcManager {
             let proc_ref = UserProcRef::new_unchecked(proc);
             let cr3 = proc_ref.load_cr3();
 
-            // Use static array to avoid 8KB stack allocation
-            static ALLOCATED_PAGES: crate::kernel::framework::racy_cell::RacyCell<[u64; 1024]> =
-                crate::kernel::framework::racy_cell::RacyCell::new([0; 1024]);
-            let allocated_pages = ALLOCATED_PAGES.get_mut();
+            // P1-I-32 修复: 改用栈上局部数组, 消除 RacyCell 静态分配器在 SMP 下
+            // 多核 execve 并发的数据竞争. 8KB 临时缓冲在 USER_KSTACK_SIZE=16KB 上
+            // 安全 (剩余 8KB 仍够 syscall handler 路径), 退出函数后自动释放, 无锁.
+            // 仍按 phnum>256 截断保护, 单 PT_LOAD 段最大 1024 页.
+            let mut allocated_pages = [0u64; 1024];
+            let allocated_pages: &mut [u64] = &mut allocated_pages;
             let mut page_count: usize = 0;
 
             let phnum = (*header).e_phnum as usize;

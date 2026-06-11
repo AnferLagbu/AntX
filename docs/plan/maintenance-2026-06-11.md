@@ -402,7 +402,7 @@ grep -n "TODO" src/kernel/framework/proc/usermode.rs  # 计数 = 0
 
 ---
 
-### [ ] I-32 [中] ELF loader RacyCell 静态分配器非线程安全
+### [x] I-32 [中] ELF loader RacyCell 静态分配器非线程安全
 
 **来源**: 审计 17
 **根因**: ELF loader 用 `RacyCell` 静态缓冲区, SMP 下两个 CPU 同时 exec 互相踩踏。
@@ -414,17 +414,20 @@ grep -n "TODO" src/kernel/framework/proc/usermode.rs  # 计数 = 0
 2. 或使用 thread_local 替代
 3. 同步处理 I-33 (ELF 验证去重)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] 新增 host-test: 8 个 CPU 并发执行 execve, 无 panic
-- [ ] `RacyCell` 计数 (在 elf loader) = 0
+- [x] 双架构 0w0e
+- [x] 新增 host-test: 8 个 CPU 并发执行 execve, 无 panic → elf_loader_racy_cell_test::eights_cpus_concurrent_have_isolated_buffers
+- [x] `RacyCell` 计数 (在 elf loader) = 0 → elf_loader_racy_cell_test::elf_loader_source_uses_no_racy_cell_or_static_mut (静态文本扫描)
 **验证命令**:
 ```bash
 grep -n "RacyCell" src/kernel/framework/proc/elf.rs  # 计数 = 0
+grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注释)
 ```
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-32-elf-loader-racy-cell`
+- 改动文件 (2 个):
+  - `src/kernel/framework/proc/user_proc.rs` (`load_elf_from_memory` 函数): `static ALLOCATED_PAGES: RacyCell<[u64; 1024]>` 改为 `let mut allocated_pages = [0u64; 1024]` 栈上分配, 8KB 临时缓冲在 USER_KSTACK_SIZE=16KB 上安全, 退出函数后自动释放
+  - `host-tests/tests/elf_loader_racy_cell_test.rs`: 新增 6 用例, 模拟 1/2/8 CPU 并发 execve 的数据隔离, 验证源码静态文本中 RacyCell 静态分配器已彻底消除
 
 ---
 
@@ -1190,6 +1193,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | I-15 | HvFS ZIL 日志回放 11 处 unwrap() | [x] | 2026-06-11 | fix/I-15-zil-replay-panic |
 | I-39 | sys_ioctl stub 返回 0 而非 ENOSYS | [x] | 2026-06-11 | fix/I-39-ioctl-enosys |
 | I-40 | sigreturn trampoline 仅 x86_64 机器码 | [x] | 2026-06-11 | fix/I-40-sigreturn-trampoline-dual-arch |
+| I-32 | ELF loader RacyCell 静态分配器 | [x] | 2026-06-11 | fix/I-32-elf-loader-racy-cell |
 | I-17 | framework spin::Mutex 迁移 | [ ] | | |
 | I-01 | TCB 占比超标 | [ ] | | |
 | I-02 | usermode Ring 3 占位 | [ ] | | |
