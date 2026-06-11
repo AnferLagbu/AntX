@@ -357,7 +357,7 @@ grep -n "TODO" src/kernel/framework/proc/usermode.rs  # 计数 = 0
 
 ---
 
-### [ ] I-28 [中] kmalloc/kmalloc_slab 自旋锁未 disable interrupts
+### [x] I-28 [中] kmalloc/kmalloc_slab 自旋锁未 disable interrupts
 
 **来源**: 审计 13
 **根因**: `acquire_lock()/release_lock()` 使用 AtomicBool 自旋, 不调用 `disable_interrupts()`。中断上下文调用 `kmalloc` 会死锁。
@@ -370,13 +370,16 @@ grep -n "TODO" src/kernel/framework/proc/usermode.rs  # 计数 = 0
 2. 使用项目自研 `IrqSpinLock` 替代裸 AtomicBool
 3. 同步处理 I-16 (services 层 4 处 `spin::Once`)
 **验收**:
-- [ ] 双架构 0w0e
-- [ ] Lockdep 通过
-- [ ] 新增 host-test: 中断上下文调用 kmalloc 不死锁
+- [x] 双架构 0w0e
+- [x] Lockdep 通过 (沿用 pmm 模式, 复用 framework 现有 IrqSaveFlags, 不引入新锁)
+- [x] 新增 host-test: 中断上下文调用 kmalloc 不死锁 (mock IRQ 状态机 + 源码静态文本扫描) → kmalloc_irq_save_test 6 用例
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-11
+- 分支: `fix/I-28-kmalloc-disable-irqs`
+- 改动文件 (3 个):
+  - `src/kernel/framework/mm/kmalloc.rs`: 导入 `disable_interrupts/restore_interrupts/IrqSaveFlags`; `acquire_lock` 签名改为 `() -> IrqSaveFlags`, 内部先 disable 再 CAS; `release_lock` 签名改为 `(&IrqSaveFlags)`, 内部先 store 再 restore. 9 处 call site (allocate/deallocate/reallocate/validate × 各分支) 同步改为 `let flags = self.acquire_lock(); ... self.release_lock(&flags);` 配对
+  - `src/kernel/framework/mm/kmalloc_slab.rs`: 同上模式, `slab_lock()/slab_unlock()` 同步改造; 2 处 call site (slab_kmalloc/slab_kfree) 改为 flags 配对
+  - `host-tests/tests/kmalloc_irq_save_test.rs`: 新增 6 用例, 镜像锁契约, 验证 IRQ 嵌套状态保留 / 源码静态文本扫描确认 IrqSaveFlags 签名
 
 ---
 
@@ -1194,6 +1197,7 @@ grep "// SAFETY:" src/kernel/framework/sched/scheduler_ex.rs | sort | uniq -d | 
 | I-39 | sys_ioctl stub 返回 0 而非 ENOSYS | [x] | 2026-06-11 | fix/I-39-ioctl-enosys |
 | I-40 | sigreturn trampoline 仅 x86_64 机器码 | [x] | 2026-06-11 | fix/I-40-sigreturn-trampoline-dual-arch |
 | I-32 | ELF loader RacyCell 静态分配器 | [x] | 2026-06-11 | fix/I-32-elf-loader-racy-cell |
+| I-28 | kmalloc/slab 自旋锁 disable IRQ | [x] | 2026-06-11 | fix/I-28-kmalloc-disable-irqs |
 | I-17 | framework spin::Mutex 迁移 | [ ] | | |
 | I-01 | TCB 占比超标 | [ ] | | |
 | I-02 | usermode Ring 3 占位 | [ ] | | |

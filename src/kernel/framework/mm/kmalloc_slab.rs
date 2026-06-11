@@ -18,6 +18,10 @@ use super::slab::KmemCache;
 use core::sync::atomic::{AtomicBool, Ordering};
 use crate::klog_error;
 use crate::klog_info_simple;
+// P1-I-28 修复: slab 自旋锁在中断上下文会死锁, 仿 pmm.rs 模式 disable/restore IRQ.
+use crate::kernel::framework::sync::spinlock::{
+    disable_interrupts, restore_interrupts, IrqSaveFlags,
+};
 
 const CACHE_SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
 
@@ -83,18 +87,21 @@ fn cache_index(size: usize) -> Option<usize> {
 }
 
 #[inline(always)]
-fn slab_lock() {
+fn slab_lock() -> IrqSaveFlags {
+    let flags = disable_interrupts();
     while SLAB_LOCK
         .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_err()
     {
         core::hint::spin_loop();
     }
+    flags
 }
 
 #[inline(always)]
-fn slab_unlock() {
+fn slab_unlock(flags: &IrqSaveFlags) {
     SLAB_LOCK.store(false, Ordering::Release);
+    restore_interrupts(flags);
 }
 
 pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
@@ -103,7 +110,7 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
     }
 
     if let Some(idx) = cache_index(size) {
-        slab_lock();
+        let flags = slab_lock();
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let result = unsafe {
             match &mut SLAB_CACHES[idx] {
@@ -114,7 +121,7 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
                 }
             }
         };
-        slab_unlock();
+        slab_unlock(&flags);
         result
     } else {
         super::kmalloc::get_kmalloc().allocate(size)
@@ -132,7 +139,7 @@ pub fn slab_kfree(ptr: *mut u8, size: usize) {
     }
 
     if let Some(idx) = cache_index(size) {
-        slab_lock();
+        let flags = slab_lock();
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             match &mut SLAB_CACHES[idx] {
@@ -143,7 +150,7 @@ pub fn slab_kfree(ptr: *mut u8, size: usize) {
                 }
             }
         }
-        slab_unlock();
+        slab_unlock(&flags);
     } else {
         super::kmalloc::get_kmalloc().deallocate(ptr);
     }

@@ -16,6 +16,12 @@ macro_rules! serial_println {
 use super::*;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+// P1-I-28 修复: kmalloc 自旋锁在中断上下文会死锁 (同 CPU ISR 持锁 + 主线 spin)
+// 仿 pmm.rs 模式, acquire_lock 时 disable_interrupts, release_lock 时 restore.
+// 导入 framework/sync/spinlock 的 arch 无关原语, 避免直接 crate::arch!().
+use crate::kernel::framework::sync::spinlock::{
+    disable_interrupts, restore_interrupts, IrqSaveFlags,
+};
 
 /// Magic number for heap header validation
 const HEAP_MAGIC: u32 = 0xDEADBEEF;
@@ -364,7 +370,7 @@ impl KernelHeap {
         let total_size = aligned_size + core::mem::size_of::<HeapHeader>() as u64;
         let actual_size = total_size.max(MIN_BLOCK_SIZE);
 
-        self.acquire_lock();
+        let flags = self.acquire_lock();
 
         let result = if !self.initialized.load(Ordering::Acquire) {
             self.early_allocate(actual_size as usize)
@@ -393,12 +399,12 @@ impl KernelHeap {
                     }
                 }
 
-                self.release_lock();
+                self.release_lock(&flags);
                 Some(ptr)
             }
             None => {
                 self.failed_allocs.fetch_add(1, Ordering::Relaxed);
-                self.release_lock();
+                self.release_lock(&flags);
                 None
             }
         }
@@ -410,11 +416,11 @@ impl KernelHeap {
             return;
         }
 
-        self.acquire_lock();
+        let flags = self.acquire_lock();
 
         if !self.initialized.load(Ordering::Acquire) {
             serial_println!("[Kmalloc] Warning: Cannot free before initialization");
-            self.release_lock();
+            self.release_lock(&flags);
             return;
         }
 
@@ -427,13 +433,13 @@ impl KernelHeap {
                 header.magic(),
                 HEAP_MAGIC
             );
-            self.release_lock();
+            self.release_lock(&flags);
             return;
         }
 
         if header.is_free() {
             serial_println!("[Kmalloc] Warning: Double free detected");
-            self.release_lock();
+            self.release_lock(&flags);
             return;
         }
 
@@ -447,7 +453,7 @@ impl KernelHeap {
         let effective = self.coalesce(header);
         self.add_to_free_list(effective);
 
-        self.release_lock();
+        self.release_lock(&flags);
     }
 
     /// Reallocate memory block
@@ -461,12 +467,12 @@ impl KernelHeap {
             return self.allocate(size);
         }
 
-        self.acquire_lock();
+        let flags = self.acquire_lock();
 
         // SAFETY: ptr was returned by kmalloc; magic/size validated below
         let header = unsafe { HeaderRef::from_data_ptr(ptr) };
         if header.magic() != HEAP_MAGIC || header.is_free() {
-            self.release_lock();
+            self.release_lock(&flags);
             return None;
         }
 
@@ -474,7 +480,7 @@ impl KernelHeap {
         let new_aligned = align_up(size as u64, ALIGNMENT) as usize;
 
         if new_aligned <= old_data_size {
-            self.release_lock();
+            self.release_lock(&flags);
             return Some(ptr);
         }
 
@@ -504,7 +510,7 @@ impl KernelHeap {
                 p
             }
             None => {
-                self.release_lock();
+                self.release_lock(&flags);
                 return None;
             }
         };
@@ -524,7 +530,7 @@ impl KernelHeap {
         let effective = self.coalesce(header);
         self.add_to_free_list(effective);
 
-        self.release_lock();
+        self.release_lock(&flags);
         Some(new_ptr)
     }
 
@@ -568,7 +574,7 @@ impl KernelHeap {
             return true;
         }
 
-        self.acquire_lock();
+        let flags = self.acquire_lock();
 
         let mut count = 0usize;
         let head = FreeListHeadRef::new(&self.free_list_head);
@@ -580,13 +586,13 @@ impl KernelHeap {
 
             if cur.magic() != HEAP_MAGIC {
                 serial_println!("[Kmalloc] Validate: Bad magic at {:p}", cur.as_ptr());
-                self.release_lock();
+                self.release_lock(&flags);
                 return false;
             }
 
             if !cur.is_free() {
                 serial_println!("[Kmalloc] Validate: Non-free block in free list");
-                self.release_lock();
+                self.release_lock(&flags);
                 return false;
             }
 
@@ -596,7 +602,7 @@ impl KernelHeap {
                 let next_prev = next.prev();
                 if !next_prev.is_null() && next_prev != current {
                     serial_println!("[Kmalloc] Validate: Broken backward link");
-                    self.release_lock();
+                    self.release_lock(&flags);
                     return false;
                 }
             }
@@ -606,12 +612,12 @@ impl KernelHeap {
 
             if count > 10000 {
                 serial_println!("[Kmalloc] Validate: Too many nodes (possible cycle)");
-                self.release_lock();
+                self.release_lock(&flags);
                 return false;
             }
         }
 
-        self.release_lock();
+        self.release_lock(&flags);
         true
     }
 
@@ -832,7 +838,8 @@ impl KernelHeap {
     }
 
     #[inline(always)]
-    fn acquire_lock(&self) {
+    fn acquire_lock(&self) -> IrqSaveFlags {
+        let flags = disable_interrupts();
         while self
             .lock
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -840,11 +847,13 @@ impl KernelHeap {
         {
             core::hint::spin_loop();
         }
+        flags
     }
 
     #[inline(always)]
-    fn release_lock(&self) {
+    fn release_lock(&self, flags: &IrqSaveFlags) {
         self.lock.store(false, Ordering::Release);
+        restore_interrupts(flags);
     }
 }
 
