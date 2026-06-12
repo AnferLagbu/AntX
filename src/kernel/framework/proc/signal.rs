@@ -206,6 +206,16 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
     // SAFETY: PROCESS_TABLE.get() 返回有效指针, 进程在表中期间不会释放
     let proc = unsafe { &*proc_ptr };
 
+    // I-52: 显式检查 ProcessState, Zombie 状态不投递信号.
+    // 原因: Zombie 进程已不调度执行, 但其 task_struct 仍在表中 (等待 waitpid 回收).
+    // 此时投递信号: pending 位被设置但永远不被消费, 浪费资源; 对用户态也
+    // 无意义 (POSIX kill() 对 Zombie 行为未规定, Linux 选择 ESRCH).
+    // 选择: 与 Linux kill() 一致, 返回 -3 (ESRCH) 阻止投递.
+    let state = proc.state.load(Ordering::Acquire);
+    if state == ProcessState::Zombie as u32 {
+        return Err(-3);
+    }
+
     // SIGKILL/SIGSTOP 不可忽略, 直接设置 pending
     // 其他信号: 如果 handler 是 SIG_IGN 且不是不可捕获信号, 则忽略
     if !is_uncatchable(sig) {
@@ -219,7 +229,6 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
     proc.signal_pending_set(sig as u32);
 
     // 唤醒目标进程 (如果处于可中断睡眠)
-    let state = proc.state.load(Ordering::Acquire);
     if state == ProcessState::Blocked as u32 {
         proc.state.store(ProcessState::Ready as u32, Ordering::Release);
     }
@@ -343,12 +352,19 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
 }
 
 /// do_signal_send_inner — 单进程信号发送 (不检查 SIG_IGN, 适用于广播).
+///
+/// I-52: 与 do_signal_send 一致, Zombie 状态不投递 (返回 -3).
+/// 广播场景: 即使多数目标正常, 遇到 Zombie 也跳过, 不影响其他目标.
 fn do_signal_send_inner(pid: u32, sig: u8) -> Result<(), i32> {
     let proc_ptr = PROCESS_TABLE.get(pid).ok_or(-2)?;
     // SAFETY: 进程在表中期间不会释放
     let proc = unsafe { &*proc_ptr };
-    proc.signal_pending_set(sig as u32);
+    // I-52: 显式跳过 Zombie (与 do_signal_send 对齐)
     let state = proc.state.load(Ordering::Acquire);
+    if state == ProcessState::Zombie as u32 {
+        return Err(-3);
+    }
+    proc.signal_pending_set(sig as u32);
     if state == ProcessState::Blocked as u32 {
         proc.state.store(ProcessState::Ready as u32, Ordering::Release);
     }
@@ -660,6 +676,48 @@ pub fn set_sigaction(pid: Pid, sig: u8, action: u64) -> Option<u64> {
     let old = actions[(sig - 1) as usize];
     actions[(sig - 1) as usize] = action;
     Some(old)
+}
+
+// ============================================================================
+// I-48: execve 信号状态重置
+//
+// Linux execve(2) 信号语义 (man 2 execve):
+// 1. SA_RESETHAND 标志的 handler 在 exec 后重置为 SIG_DFL
+// 2. 进程挂起的标准信号 (1..=31) 通常被保留
+// 3. 实时信号 (SIGRTMIN..MAX) 也保留
+// 4. sigaction 表本身保留 (handler 函数指针, 但目标地址在旧地址空间,
+//    执行后即失效, 内核再投递时若仍指向旧地址需特殊处理)
+//
+// AntX 简化语义:
+// - execve 走 transactional 双进程替换 (proc_exec_replace):
+//   1. 阶段 1: 加载新 ELF → 全新 UserProc (新 PID, 全新 signal_pending=0,
+//      sigaction_table 全 SIG_DFL).
+//   2. 阶段 2: 销毁旧进程.
+// - 因此新进程天然不带旧进程的信号状态, 不需要"显式保留/重置".
+// - 本函数提供显式 hook, 未来如引入"同 PID 复用"或"sigaction 跨 exec 保留"
+//   即可在此实现, 保持调用点稳定.
+// ============================================================================
+
+/// I-48: 显式重置 execve 后进程的信号状态.
+///
+/// 当前实现为幂等 no-op (新进程已由 user_proc_load_elf 分配, 默认状态已正确).
+/// 函数存在是为 (1) 文档化语义, (2) 未来扩展的稳定 hook.
+pub fn reset_signal_state_on_exec(pid: Pid) {
+    let proc_ptr = match PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return,
+    };
+    // SAFETY: PROCESS_TABLE.get() 返回有效指针, 进程在表中期间不会释放
+    let proc = unsafe { &*proc_ptr };
+    // pending 清零 (理论上新进程已是 0, 此处显式确保)
+    proc.pending_signals.store(0, Ordering::Release);
+    // sigaction 表回到 SIG_DFL (0)
+    let mut table = proc.sigaction_table.lock();
+    for entry in table.iter_mut() {
+        *entry = 0;
+    }
+    // blocked mask 清零
+    proc.blocked_mask.store(0, Ordering::Release);
 }
 
 // ============================================================================

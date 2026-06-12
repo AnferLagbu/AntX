@@ -47,6 +47,51 @@ unsafe fn port_outb(port: u16, value: u8) {
     crate::arch!(outb(port, value));
 }
 
+// I-25: legacy 8259A PIC 假性 IRQ 计数 (仅 x86_64, APIC 路径下不递增).
+#[cfg(target_arch = "x86_64")]
+static SPURIOUS_IRQ_COUNT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// 读取 8259A 假性 IRQ 计数 (用于调试/procfs).
+#[cfg(target_arch = "x86_64")]
+pub fn spurious_irq_count() -> u64 {
+    SPURIOUS_IRQ_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// 8259A PIC 假性 IRQ 检测 (I-25).
+///
+/// 仅对 IRQ7 (master) / IRQ15 (slave) 进行检查; 其他 IRQ 返回 `None` 表示"非假性
+/// 候选, 直接进入正常路径". 真实判定通过 `OCW3 = 0x0B` 读 ISR 寄存器, 对应 bit
+/// 为 0 即为假性中断.
+///
+/// 返回 `Some(true)` = 假性 IRQ, 调用方应跳过 handler / softirq;
+/// 返回 `Some(false)` = 真实 IRQ, 进入正常路径;
+/// 返回 `None` = 非 IRQ7/IRQ15 候选, 跳过检测.
+#[cfg(target_arch = "x86_64")]
+fn detect_spurious_8259_irq(irq: u8) -> Option<bool> {
+    if irq != 7 && irq != 15 {
+        return None;
+    }
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    let isr = unsafe { read_8259_isr(irq >= 8) };
+    let bit = 1u8 << (if irq >= 8 { 7 } else { 7 }); // IRQ7 / IRQ15 都是 bit 7
+    Some(isr & bit == 0)
+}
+
+/// 读取 8259A 主/从 ISR (In-Service Register).
+/// 通过 OCW3 = 0x0B 触发读 ISR (vs IRR); 返回 8-bit 当前在服务中断位图.
+// SAFETY: 调用方保证指针/类型有效 (详见上下文) — 仅 I/O 端口读写, 不涉及指针解引用
+#[cfg(target_arch = "x86_64")]
+#[inline]
+unsafe fn read_8259_isr(slave: bool) -> u8 {
+    let cmd_port: u16 = if slave { 0xA0 } else { 0x20 };
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    unsafe {
+        port_outb(cmd_port, 0x0B);
+        port_inb(cmd_port)
+    }
+}
+
 /// I/O 等待
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -194,6 +239,23 @@ impl IdtManager {
         syscall_handler: u64,
         isr0x82: u64,
     ) -> Result<(), &'static str> {
+        // I-24: 启动顺序契约 — TSS init (set_ist[0..4]) 必须在 IDT init 之前完成.
+        // 校验关键 IST (0-3) 已填充非零栈顶, 避免 #DF/NMI/#PF/0x82 触发时切换到 0 栈顶.
+        // 注释格式: IDT IST=N → TSS ist[N-1]
+        //   #DF  (vec 8)  → IDT IST=1 → TSS ist[0]
+        //   NMI  (vec 2)  → IDT IST=2 → TSS ist[1]
+        //   #PF  (vec 14) → IDT IST=4 → TSS ist[3]
+        //   0x82 (恢复)   → IDT IST=3 → TSS ist[2]
+        #[cfg(target_arch = "x86_64")]
+        {
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            let tss = unsafe { crate::kernel::framework::arch::x86_64::gdt::get_tss_mut() };
+            if !tss.ist_validated() {
+                return Err("IDT init: TSS IST[0..3] not initialized (call set_ist first)");
+            }
+            crate::klog_info!(Kernel, "IDT init: TSS IST validated ok");
+        }
+
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             remap_pic();
@@ -218,28 +280,28 @@ impl IdtManager {
             );
         }
 
-        // 2a. 为关键异常设置 IST 专用栈
-        // Double Fault (#DF, vector 8) → IST0
+        // 2a. 为关键异常设置 IST 专用栈 (格式: IDT IST=N → TSS ist[N-1])
+        // Double Fault (#DF, vector 8) → IDT IST=1 → TSS ist[0]
         state.entries[8] = IdtEntry::new_with_ist(
             isr_table[8],
             GDT_KERNEL_CODE,
             IDT_TYPE_INTERRUPT,
-            1, // IST1 (TSS ist[0])
+            1, // IDT IST=1 → TSS ist[0]
         );
-        // NMI (vector 2) → IST1
+        // NMI (vector 2) → IDT IST=2 → TSS ist[1]
         state.entries[2] = IdtEntry::new_with_ist(
             isr_table[2],
             GDT_KERNEL_CODE,
             IDT_TYPE_INTERRUPT,
-            2, // IST2 (TSS ist[1])
+            2, // IDT IST=2 → TSS ist[1]
         );
-        // Page Fault (#PF, vector 14) → IST3
+        // Page Fault (#PF, vector 14) → IDT IST=4 → TSS ist[3]
         // 独立 IST 栈防止 COW/page fault 处理中的递归嵌套导致三重故障
         state.entries[14] = IdtEntry::new_with_ist(
             isr_table[14],
             GDT_KERNEL_CODE,
             IDT_TYPE_INTERRUPT,
-            4, // IST4 (TSS ist[3])
+            4, // IDT IST=4 → TSS ist[3]
         );
 
         // 3. 设置 IRQ 门描述符 (向量 32-47)
@@ -263,12 +325,12 @@ impl IdtManager {
             IDT_TYPE_TRAP | IDT_DPL_USER,
         );
 
-        // 5. 设置恢复中断 (int 0x82, barrier-stack) — 使用 IST2 专用栈
+        // 5. 设置恢复中断 (int 0x82, barrier-stack) → IDT IST=3 → TSS ist[2]
         state.entries[0x82] = IdtEntry::new_with_ist(
             isr0x82,
             GDT_KERNEL_CODE,
             IDT_TYPE_TRAP,
-            3, // IST3 (TSS ist[2])
+            3, // IDT IST=3 → TSS ist[2]
         );
 
         drop(state); // 释放锁，准备加载 IDT
@@ -751,6 +813,31 @@ impl IdtManager {
         let irq = vector - IRQ_BASE;
 
         if irq < 16 {
+            // I-25: legacy 8259A PIC 假性 IRQ 检测.
+            // IRQ7 (master) 与 IRQ15 (slave) 在级联时可能产生假性中断;
+            // 8259A 通过 OCW3=0x0B 读 ISR 寄存器确认: 若对应 bit 为 0 即为假性.
+            // 假性 IRQ 不应调用 handler, 也不计入 irq_counts 有效统计.
+            // - master 假性 (IRQ7): 无需 EOI (不发送 0x20, 否则会误清 pending IRQ)
+            // - slave 假性 (IRQ15): 仅向 master 发送 EOI (0x20), 不向 slave 发送 (0xA0)
+            #[cfg(target_arch = "x86_64")]
+            {
+                if let Some(spurious) = detect_spurious_8259_irq(irq) {
+                    if spurious {
+                        SPURIOUS_IRQ_COUNT.fetch_add(1, Ordering::Relaxed);
+                        if irq >= 8 {
+                            // slave 假性: 仅 EOI master, 避免误清 slave 上未决的
+                            // 真实 IRQ
+                            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+                            unsafe {
+                                port_outb(0x20, 0x20);
+                            }
+                        }
+                        // master 假性: 不发送 EOI; 两者均跳过 handler / softirq
+                        return;
+                    }
+                }
+            }
+
             self.stats.record_irq(irq);
 
             let handler_opt = {

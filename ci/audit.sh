@@ -89,6 +89,16 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_once_
     fi
 fi
 
+# I-07: C 风格命名残留 audit — 防 C 类型后缀/C 函数名混入 Rust 代码
+if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_c_naming.py" ]; then
+    step "0.5f/6 C 风格命名残留 (I-07)"
+    if "$PROJECT_ROOT/scripts/audit_c_naming.py" 2>&1 | tail -8; then
+        ok "I-07: 0 C 风格类型后缀, kmalloc/kfree 仅限 extern \"C\""
+    else
+        err "I-07: 有 C 风格命名残留! 见上方输出"
+    fi
+fi
+
 # ── 1. 双架构 check ─────────────────────────────────────────────
 step "1/6 双架构 cargo check (x86_64 + aarch64)"
 pushd src/rust > /dev/null

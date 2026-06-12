@@ -1033,6 +1033,12 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
         }
     }
 
+    // 5a. I-48: 显式重置新进程信号状态 (文档化 AntX execve 信号策略).
+    // AntX 采用双进程替换模型 (阶段 1 加载新 ELF → 新 PID 全新状态, 阶段 2
+    // 销毁旧进程), 新进程天然已无旧信号痕迹. 此处显式调用是为 (1) 未来若
+    // 引入 PID 复用可在 hook 注入逻辑, (2) 文档化"execve 后信号状态 = 默认".
+    crate::kernel::framework::proc::signal::reset_signal_state_on_exec(new_pid_u32);
+
     // 6. 同步当前进程信息
     if USER_PROC_MANAGER.get(new_pid_u32).is_some() {
         let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER

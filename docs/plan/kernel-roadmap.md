@@ -64,7 +64,7 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 | B3 Swap | ✅ 完成 | framework/mm/swap.rs (SwapEntry, swap_out_to_pte, kswapd softirq) + lib.rs swap_init/kswapd_init | 0 dead_code, LRU 跟踪 pml4, 周期唤醒 KSWAPD_TICK_INTERVAL=100 |
 | B4 MSI/MSI-X + ACPI | ✅ 完成 | framework/pci/msi.rs (462 行) + arch/x86_64/acpi.rs (840 行) FADT/HPET/DMAR 全套 | msi_alloc_vector/enable, msix_enable/mask/unmask, acpi_shutdown |
 
-### Phase C 状态: 5/7 完成 (C1-C2, C4-C5, C7 完成; C3, C6 待实施)
+### Phase C 状态: 7/7 完成 ✅ (2026-06-10)
 
 | 子项 | 状态 | 关键产出 | 验证 |
 |---|---|---|---|

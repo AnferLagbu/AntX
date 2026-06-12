@@ -188,6 +188,16 @@ impl TaskStateSegment {
         }
     }
 
+    /// I-24: 校验关键 IST 条目 (0-3) 已填充非零栈顶.
+    /// 启动顺序: GDT/TSS init → set_ist(0..4) → IDT init.
+    /// IDT init 调用此函数确保 #DF/NMI/#PF/0x82 中断时 IST 栈可用,
+    /// 避免 CPU 切换到未初始化的 0 栈顶触发三重故障.
+    #[inline]
+    pub fn ist_validated(&self) -> bool {
+        // IST 0-3: #DF, NMI, #PF, int 0x82
+        self.ist[0] != 0 && self.ist[1] != 0 && self.ist[2] != 0 && self.ist[3] != 0
+    }
+
     /// 启用 I/O 权限位图
     ///
     /// 设置 I/O 位图基址到 TSS 内部某处。
