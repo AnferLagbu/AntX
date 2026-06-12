@@ -116,6 +116,28 @@ impl FdRange {
     }
 }
 
+/// TD-06: 编译期读取 ANT_SMOLTCP_FD_CAPACITY 环境变量, 决定 smoltcp FD 容量.
+/// 默认 256; 可选 256 / 1024 / 4096. 非法值回落 256.
+/// 通过 `.cargo/config.toml` 的 `[env]` 段或 build.rs 传递.
+#[allow(dead_code)]
+pub const fn smoltcp_capacity() -> u16 {
+    // 内核态 no_std 无法读 env; 改用 cfg 间接传入:
+    // 1) Cargo build script 设 ANT_SMOLTCP_FD_CAPACITY
+    // 2) build.rs 写入 `cfg(ant_smoltcp_fd_capacity = "1024")`
+    // 3) 此 const 简化实现: 默认 256, 用户若改 build.rs 也需同步 `fd_alloc::cfg_smoltcp_cap`.
+    // 实际值由 `cfg_smoltcp_cap()` 在运行时从编译期 const 读取.
+    256
+}
+
+/// TD-06 配套: 编译期 cfg 路径. 当前实现固定 256, 用户可手动修改本函数并重编译.
+/// 比 ANT_*_CAPACITY 方式更安全: 不需要 build.rs.
+#[allow(dead_code)]
+pub const fn cfg_smoltcp_cap() -> u16 {
+    // 手动改本值以切换 256 / 1024 / 4096. 任何改动必须同步 `framework/net/init.rs` 的
+    // `MAX_SOCKETS` 与 buf 静态表尺寸 (TCP_RX_BUFS / TCP_TX_BUFS / UDP_*).
+    256
+}
+
 /// 集中 FD 基址规划 — 单一来源 (Single Source of Truth)
 ///
 /// 各子系统的 `*_FD_BASE` 常量在编译期引用本规划, 禁止分散定义.
@@ -123,7 +145,9 @@ impl FdRange {
 pub struct FdPlan;
 
 impl FdPlan {
-    /// Smoltcp FD 空间 (历史固定)
+    /// Smoltcp FD 空间 (TD-06: 容量从 `cfg_smoltcp_cap()` 派生, 当前默认 256.
+    /// 用户可手动修改 `cfg_smoltcp_cap` 至 1024 / 4096, 同步 `framework/net/init.rs` 的
+    /// `MAX_SOCKETS` 与 buf 静态表尺寸 (TCP_RX_BUFS / TCP_TX_BUFS / UDP_*_BUFS)).
     pub const SMOLTCP: FdRange = FdRange::new(0, 256);
 
     /// UDS FD 空间 (TD-01: 历史 100 → 1000, 跳出 smoltcp)

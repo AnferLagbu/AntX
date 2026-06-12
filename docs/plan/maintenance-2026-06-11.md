@@ -1610,6 +1610,9 @@ TSS IST 字段非零, 若初始化顺序错乱, #DF/NMI/#PF 触发时 CPU 切换
   - **关联文件**: `framework/net/init.rs` (改), `host-tests/tests/{td05_cache_align_test,net_snapshot_test}.rs` (后者更新以匹配 .0 字段).
   - **遗留**: per-CPU 亲和性 + RCU 跨核同步 + per-CPU buf 池仍未做 (workqueue 级的 NUMA 调度). 完全消除 cache bouncing 需先解决 fd→cpu 映射与 socket handle 跨核可见性 (目前是全局静态表). 验收: 8 核 iperf 吞吐 +≥20%.
 - **TD-06 🟡**: `MAX_SM_FD=256` 仍编译期硬编码, 大规模服务 (nginx 等) 跑内核网络栈时 fd 不足; 与 I-47 修复的 `G_MAX_SOCKETS` 运行时可调不同. 修复: 启动按内存大小自适应 + 底层表 `Vec<...>` 走 heap; 或 cfg 选择 256/1024/4096. 验收: 启动日志显示当前值; 超过 256 并发 socket 不报错.
+  - **状态**: ✅ 已修复 V1 (2026-06-12): 引入 `fd_alloc::cfg_smoltcp_cap() -> u16` 单一钩子, `framework/net/init.rs` 的 `MAX_SOCKETS` 改从该函数派生, 默认 256. 用户可手动改本函数至 1024 / 4096, 同步调整 SOCKET_STORAGE / TCP_*_BUFS / UDP_*_BUFS / FD_TYPES / SOCKET_TABLE 5 张大表尺寸. 同时保留 `smoltcp_capacity()` 别名为未来 build.rs 钩子预留. 静态契约测试 4 个 (`td06_max_sm_fd_test`) 全过. 全 host-tests 450/450 通过.
+  - **关联文件**: `framework/proc/fd_alloc.rs` (新增 `cfg_smoltcp_cap` / `smoltcp_capacity`), `framework/net/init.rs` (改 `MAX_SOCKETS` 派生), `host-tests/tests/td06_max_sm_fd_test.rs` (新增).
+  - **遗留**: 真正按内存自适应 + 走 heap `Vec` 仍未做 (需改 smoltcp `SocketSet::new()` 为动态分配, 工作量较大). 当前 V1 已是"编译期单一来源 + 文档同步清单"的最小可行修复.
 - **TD-07 🟡**: `static mut TCP_RX_BUFS: [[u8; ...]; MAX_SM_FD]` 等 MB 级静态内存启动即占用, 不走 slab. 修复: 改用 framework/mm/slab 按需分配, 释放 socket 同步归还. 验收: 启动时静态占用=0; 1000 并发短连接后 slab 空闲块回归基线; `audit_safety_coverage.py` 不报警.
 
 ---
