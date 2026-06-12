@@ -762,6 +762,9 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - 提交: ____
 - 简述: ____
 
+**遗留技术债 (衍生)**:
+- **TD-08 🟡**: `services/net/socket.rs` 的 `SocketError` 与 `services/net/unix.rs` 的 `UnixSocketError` 字段高度重叠 (BadFd/WouldBlock/NoMemory/Fault/InvalidArgument 等), 错误映射代码在 syscall 层重复. 修复: services 层抽 `KernelError` 统一枚举 + `#[from]` 转换; `SocketError`/`UnixSocketError` 转为薄包装或 type alias; 错误消息含子模块上下文. 验收: 字段数 ≤2 (仅保留子系统特有错误); 单一来源, 新增错误码无需改 2 处.
+
 ---
 
 ### [x] I-42 [中] virtio-blk 忙等自旋而非中断驱动 ✅ 第一阶段修复 (2026-06-11)
@@ -1045,6 +1048,9 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - 提交: ____
 - 简述: 通过 host-tests/src/hvfs/ 的 mock 数据结构 (HvDataset, HvZil, HvSnapshotManager, HvZap), 4 个 e2e 用例 (写入/快照/崩溃恢复/1000 文件扫描) 全部通过.
 
+**遗留技术债 (衍生)**:
+- **TD-03 🟠**: VFS 与 HvFS 各自维护独立 fd 表 (`VfsManager::alloc_fd` / `HvFs::alloc_fd`), 关闭路径缺原子回收, 易泄漏. 修复: services 层封装 `FileHandle` 含两侧引用, `Drop` 同时清理; 加锁顺序 进程 fd_table → VFS → HvFS; `audit_services_boundary.py` 增加同步不变量检查. 验收: 1000 次开/关 e2e 无 fd 泄漏.
+
 ---
 
 ### [x] I-10 [低] axsh 用户态 Shell 缺单元测试 ✅ 已修复 (2026-06-12)
@@ -1257,6 +1263,10 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - 日期: 2026-06-12
 - 提交: ____
 - 简述: 修复 UDS_FD_BASE 与 smoltcp 真实重叠 bug (100→1000), 修正 doc 错误, 加 3 个静态契约测试.
+
+**遗留技术债 (衍生)**:
+- **TD-01 🔴**: EFD_FD_BASE=200 / SFD_FD_BASE=220 / INOTIFY_FD_BASE 同样与 smoltcp `[0, 256)` 重叠, 进程级 `read/write` 分发不可靠. 需同样挪出 smoltcp 范围 (1100/1120/1140). 验收: 所有 `*_FD_BASE: i32` ≥ MAX_SM_FD=256; 测试同时打开 4 类 fd 无冲突.
+- **TD-02 🔴**: 全项目仍有 7 个独立 fd 分配器 (VFS/HvFS/UDS/smoltcp/EVENTFD/SIGNALFD/INOTIFY). 验收"仅 1 个 fd 分配器" 仍不满足. 修复路径: 抽 `FdAllocator` trait → 4 套集中实现 (VFS/HvFS/smoltcp/UDS) → EFD/SFD/INOTIFY 借用 smoltcp 槽位. 估算 3-5 天, 跨模块改造.
 
 ---
 
@@ -1583,6 +1593,12 @@ TSS IST 字段非零, 若初始化顺序错乱, #DF/NMI/#PF 触发时 CPU 切换
 - 提交: 未单独提交 (本批合并)
 - 简述: 编译期 8→256, 运行时 AtomicUsize 调参, sm_socket 入口限流 + 8 host-test
 
+**遗留技术债 (衍生)**:
+- **TD-04 🟠**: EFD/SFD 释放时立即回收槽位 (`eventfd.rs` L100-150 / `signalfd.rs` L100-180), 多核场景下: 核 A 释放 fd=200, 核 B 重新分配, A 的挂起 syscall 引用了 B 的数据. 修复: 释放进 `pending_free` 链表, 延迟 N tick 后才可被重新分配; alloc 优先从 pending_free 链表中已陈旧的槽位分配. 验收: 1000 次 alloc/free 跨 2 核, 无 stale fd; pending_free 链表有上限防泄漏.
+- **TD-05 🟠**: smoltcp 全局静态表 (`SOCKET_TABLE` / `FD_TYPES` / `TCP_RX_BUFS` 等 8 张大表) 无 NUMA 亲和性, 8 核以上系统 cache line bouncing 严重. 修复: per-CPU 元数据 + RCU 同步 handle 跨核; buf 改 per-CPU 池. 验收: 8 核 iperf 吞吐较当前 +≥20%; `audit_deadlock_matrix.py` 不报警.
+- **TD-06 🟡**: `MAX_SM_FD=256` 仍编译期硬编码, 大规模服务 (nginx 等) 跑内核网络栈时 fd 不足; 与 I-47 修复的 `G_MAX_SOCKETS` 运行时可调不同. 修复: 启动按内存大小自适应 + 底层表 `Vec<...>` 走 heap; 或 cfg 选择 256/1024/4096. 验收: 启动日志显示当前值; 超过 256 并发 socket 不报错.
+- **TD-07 🟡**: `static mut TCP_RX_BUFS: [[u8; ...]; MAX_SM_FD]` 等 MB 级静态内存启动即占用, 不走 slab. 修复: 改用 framework/mm/slab 按需分配, 释放 socket 同步归还. 验收: 启动时静态占用=0; 1000 并发短连接后 slab 空闲块回归基线; `audit_safety_coverage.py` 不报警.
+
 ---
 
 ### [x] I-48 [低] execve pending signals 行为依赖隐式约定 ✅ 已修复 (2026-06-12)
@@ -1859,5 +1875,32 @@ POSIX 未明确规定, Linux kill() 返回 ESRCH.
 | 日期 | 变更 | 维护人 |
 |------|------|--------|
 | 2026-06-11 | 初始创建, 基于 deep-audit-2026-06-11.md 54 项问题划分 6 阶段 | antx-audit |
-| | | |
-| | | |
+| 2026-06-12 | 52/52 全部清零, 衍生技术债 10 项已散落记录于各修复条目下 (TD-01~TD-10) | antx-audit |
+
+---
+
+# 附录: 跨切面技术债 (非单条目衍生)
+
+> 以下债务不直接由某一修复条目产生, 而是贯穿多个子系统的横向问题, 单列于此供审查员定位.
+
+### [ ] TD-09 🟡 klog 无 syslog/串口多后端统一抽象
+
+**关联文件**: `src/kernel/framework/klog/` (待查)
+**问题**: klog 各后端 (串口/网络/块设备) 配置散落在启动代码, 没有 syslog 协议, 远程日志收集困难; 日志级别/loglevel 运行时调整接口不统一.
+**修复**: 引入 `LogSink` trait, 各后端实现; klog 内部维护订阅者列表支持运行时增删; 加 syslog 协议兼容层 (UDP 514).
+**验收**:
+- [ ] 启动时通过配置选择日志后端
+- [ ] 运行时通过 /proc/sys/klog/sinks 接口增删
+- [ ] syslog 客户端能接收内核日志
+**完成记录**: ____
+
+### [ ] TD-10 🟡 进程/线程 CPU 时间统计不区分用户态/内核态
+
+**关联文件**: `src/kernel/framework/proc/` (待定位)
+**问题**: `task_struct` 累计 CPU 时间不分 user/kernel; 性能分析工具 (perf) 无法区分 syscall 开销 vs 实际用户计算; Linux 兼容的 `getrusage(RUSAGE_SELF)` 无法实现.
+**修复**: 增加 `utime`/`stime` 两个 u64 字段; syscall 入口记 stime 起点, sysret 出口累加差值; 中断/异常处理累加到 stime.
+**验收**:
+- [ ] `getrusage` 系统调用实现, 返回合理 utime/stime 比例
+- [ ] busy loop 测试: utime 应接近 100%
+- [ ] syscall 重测试: stime 应明显增加
+**完成记录**: ____
