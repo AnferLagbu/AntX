@@ -60,9 +60,12 @@ impl Cmd {
     pub fn get(&self, idx: usize) -> &[u8] {
         if idx >= self.n { return b""; }
         let start = self.offsets[idx];
-        let end = start + core::ffi::CStr::from_bytes_until_nul(&self.args[start..])
+        // I-10: 修复双重计数 bug — 旧代码 `start + len` 又被用于 `start..start+end`
+        // 切到 `start..start+len` 避免相对偏移再次相加, 否则 get(1) 跨过自身 NUL
+        // 把后续参数也吞进 slice. axsh dispatch 之前因此可能读到错位的参数.
+        let len = core::ffi::CStr::from_bytes_until_nul(&self.args[start..])
             .map(|c| c.to_bytes().len()).unwrap_or(0);
-        &self.args[start..start + end]
+        &self.args[start..start + len]
     }
 }
 

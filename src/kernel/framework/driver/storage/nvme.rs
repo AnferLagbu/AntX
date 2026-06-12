@@ -1,4 +1,6 @@
-#![allow(dead_code)]
+// I-49: 文件级 #![allow(dead_code)] 已移除. 启动路径 (storage::init) 通过
+// nvme_block::NvmeBlockDevice 调用本文件的 NVMe 控制器 API, 不再需要宽泛豁免.
+// 若有局部未使用项 (如保留作未来 API), 改为 #[allow(dead_code)] 单项标注 + 注释.
 //! NVMe 驱动 (NVMe Driver)
 //!
 //! 提供NVMe (Non-Volatile Memory Express) SSD支持：

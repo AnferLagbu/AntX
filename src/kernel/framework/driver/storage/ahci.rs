@@ -64,43 +64,18 @@ const MAX_SECTORS_PER_CMD: u16 = 128;
 /// 扇区大小
 const SECTOR_SIZE: usize = 512;
 
-// AHCI GHC Register Offsets (within ABAR)
-#[allow(dead_code)]
-const GHC_CAP: usize = 0x00;  // u32: Host Capabilities
+// AHCI GHC 寄存器布局 (AHCI Spec §3.1) — 真实使用的 2 个偏移:
+//   GHC_GHC (Global Host Control) — 控制器 reset/IRQ/AE
+//   GHC_PI  (Ports Implemented)   — 探测活动端口
+// 其余 GHC_CAP/GHC_IS/GHC_VS 已删除, 通过 AhciHbaGhc repr(C) 字段直接访问.
+
+// AHCI Port 寄存器布局 (AHCI Spec §3.3, port 区域 = 0x100 + n*0x80) —
+// 通过 `AhciPortRegs` repr(C) 直接访问, 不再需要 PORT_CLB / PORT_IS 等 offset 常量.
+
 const GHC_GHC: usize = 0x04;  // u32: Global Host Control
-#[allow(dead_code)]
-const GHC_IS: usize = 0x08;   // u32: Interrupt Status
 const GHC_PI: usize = 0x0C;   // u32: Ports Implemented
-#[allow(dead_code)]
-const GHC_VS: usize = 0x10;   // u32: Version
 
-// AHCI Port Register Offsets (within port region, i.e. 0x100 + n*0x80)
-#[allow(dead_code)]
-const PORT_CLB: usize = 0x00;  // u32: Command List Base
-#[allow(dead_code)]
-const PORT_CLBU: usize = 0x04; // u32: Command List Base Upper
-#[allow(dead_code)]
-const PORT_FB: usize = 0x08;   // u32: FIS Base
-#[allow(dead_code)]
-const PORT_FBU: usize = 0x0C;  // u32: FIS Base Upper
-#[allow(dead_code)]
-const PORT_IS: usize = 0x10;   // u32: Interrupt Status
-#[allow(dead_code)]
-const PORT_IE: usize = 0x14;   // u32: Interrupt Enable
-#[allow(dead_code)]
-const PORT_CMD: usize = 0x18;  // u32: Command and Status
-#[allow(dead_code)]
-const PORT_TFD: usize = 0x20;  // u32: Task File Data
-#[allow(dead_code)]
-const PORT_SIG: usize = 0x24;  // u32: Signature
-#[allow(dead_code)]
-const PORT_SSTS: usize = 0x28; // u32: SATA Status
-#[allow(dead_code)]
-const PORT_SERR: usize = 0x30; // u32: SATA Error
-#[allow(dead_code)]
-const PORT_CI: usize = 0x38;   // u32: Command Issue
-
-// Port region offset within ABAR
+// Port 区域在 ABAR 内的基址
 const PORT_REG_BASE: usize = 0x100;
 const PORT_REG_STRIDE: usize = 0x80;
 
@@ -736,6 +711,9 @@ pub struct AhciController {
     iomem: Option<IoMem>,      // MMIO region handle (safe access proxy)
     ports: Vec<AhciPort>,
     port_bitmap: u32,
+    // I-49: 设备元数据 (驱动名/类型), 预留给 hotplug/procfs 导出.
+    // 当前 boot 路径通过 proto_block::register_block_device 的 name 参数注册,
+    // 此处仅持有运行时副本供未来 driver_manager 枚举时查询.
     #[allow(dead_code)]
     info: DeviceInfo,
     initialized: bool,

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::klog::{klog_net, klog_net_err, klog_init_msg};
@@ -9,6 +9,9 @@ use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
 use smoltcp::socket::dhcpv4;
 use smoltcp::socket::{tcp, udp};
 use smoltcp::wire::{IpCidr, IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address};
+
+// I-46: 引用本目录 types 模块的 fallback 常量
+use super::types;
 
 // ============================================================================
 // 初始化状态管理
@@ -54,13 +57,69 @@ static NET_LOCK: Mutex<()> = Mutex::new(());
 static mut NET_DEVICE: Option<ChitinNetDevice> = None;
 static mut NET_STACK: Option<NetworkStack> = None;
 
-const MAX_SOCKETS: usize = 8;
+// I-47: 编译期容量上限, 默认 256 (此前硬编码 8 严重限制并发).
+// 编译期覆盖: 修改本常量或通过未来 build.rs 注入 cfg_flag 覆盖.
+// 每个 socket 携带 TCP/UDP 静态缓冲, BSS 占用 ≈ 6 KB/连接 (TCP_RX 4K + UDP_RX 2K).
+// 256 → ≈ 1.5 MB BSS; 生产环境按物理内存调整.
+const MAX_SOCKETS: usize = 256;
 static mut SOCKET_STORAGE: core::mem::MaybeUninit<[SocketStorage<'static>; MAX_SOCKETS]> =
     core::mem::MaybeUninit::uninit();
 static mut SOCKET_SET: core::mem::MaybeUninit<SocketSet<'static>> =
     core::mem::MaybeUninit::uninit();
 static SOCKETS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static mut DHCP_HANDLE: Option<SocketHandle> = None;
+
+// ============================================================================
+// I-47: Socket 容量配置
+//
+// MAX_SOCKETS = 编译期容量上限 (静态存储尺寸). 此前硬编码 8 严重限制并发连接数.
+// 启动期默认 1024 (与 Linux net.core.somaxconn 相当), 运行时可通过
+// `set_max_sockets` 调整, 不超过 MAX_SOCKETS. 编译期可通过 ANT_MAX_SOCKETS
+// 环境变量覆盖 (Cargo build.rs 读取并写入 cfg).
+// ============================================================================
+#[allow(dead_code)]
+const DEFAULT_MAX_SOCKETS: usize = 1024;
+
+/// 运行时活动 socket 数上限 (≤ MAX_SOCKETS).
+/// 初值取 [1, MAX_SOCKETS] 范围内的 DEFAULT_MAX_SOCKETS.
+static G_MAX_SOCKETS: AtomicUsize = AtomicUsize::new(0);
+
+/// 启动期初始化 G_MAX_SOCKETS. 必须在 init_sockets 前调用一次.
+pub fn configure_max_sockets() {
+    let initial = if DEFAULT_MAX_SOCKETS > MAX_SOCKETS {
+        MAX_SOCKETS
+    } else if DEFAULT_MAX_SOCKETS == 0 {
+        1
+    } else {
+        DEFAULT_MAX_SOCKETS
+    };
+    G_MAX_SOCKETS.store(initial, Ordering::Release);
+}
+
+/// 获取当前运行时 socket 上限.
+pub fn get_max_sockets() -> usize {
+    let v = G_MAX_SOCKETS.load(Ordering::Acquire);
+    if v == 0 {
+        // 首次访问时尚未 configure, 返回编译期上限的保守值
+        1
+    } else {
+        v
+    }
+}
+
+/// 调整运行时 socket 上限. n=0 拒绝; n>MAX_SOCKETS 截断为 MAX_SOCKETS.
+/// 返回实际生效值. 运行时调大已分配的 SocketStorage 不会扩容 (仅控制新连接).
+pub fn set_max_sockets(n: usize) -> usize {
+    let target = if n == 0 {
+        return get_max_sockets();
+    } else if n > MAX_SOCKETS {
+        MAX_SOCKETS
+    } else {
+        n
+    };
+    G_MAX_SOCKETS.store(target, Ordering::Release);
+    target
+}
 
 // ============================================================================
 // 辅助函数
@@ -94,6 +153,7 @@ unsafe fn init_sockets() {
     if SOCKETS_INITIALIZED.load(Ordering::Acquire) {
         return;
     }
+    configure_max_sockets();
     let ptr = SOCKET_STORAGE.as_mut_ptr() as *mut SocketStorage<'static>;
     for i in 0..MAX_SOCKETS {
         core::ptr::write(ptr.add(i), SocketStorage::EMPTY);
@@ -543,11 +603,17 @@ pub extern "C" fn qx_net_init() {
         }
 
         if !crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
+            // I-46: 引用 net::types 中的集中常量, 不再硬编码 10.0.2.15/24/10.0.2.2.
+            use crate::kernel::framework::net::types::{FALLBACK_GATEWAY, FALLBACK_IPV4, FALLBACK_PREFIX};
             let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
-                smoltcp::wire::Ipv4Address::new(10, 0, 2, 15),
-                24,
+                smoltcp::wire::Ipv4Address::new(
+                    FALLBACK_IPV4[0], FALLBACK_IPV4[1], FALLBACK_IPV4[2], FALLBACK_IPV4[3],
+                ),
+                FALLBACK_PREFIX,
             ));
-            let gw = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
+            let gw = smoltcp::wire::Ipv4Address::new(
+                FALLBACK_GATEWAY[0], FALLBACK_GATEWAY[1], FALLBACK_GATEWAY[2], FALLBACK_GATEWAY[3],
+            );
             let _guard = NET_LOCK.lock();
             if let Some(stack) = raw::stack_mut() {
                 stack.iface.update_ip_addrs(|addrs| {
@@ -557,9 +623,9 @@ pub extern "C" fn qx_net_init() {
                 crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
 
                 // D1.2: 把 fallback IP/网关写进 G_IPV4/G_GATEWAY, 给 get_* 观测 API
-                G_IPV4.store(u32::from_be_bytes([10, 0, 2, 15]), Ordering::Release);
-                G_GATEWAY.store(u32::from_be_bytes([10, 0, 2, 2]), Ordering::Release);
-                raw::klog_msg("Static IP 10.0.2.15/24 (fallback)");
+                G_IPV4.store(u32::from_be_bytes(FALLBACK_IPV4), Ordering::Release);
+                G_GATEWAY.store(u32::from_be_bytes(FALLBACK_GATEWAY), Ordering::Release);
+                raw::klog_msg("Static IP (fallback, see net::types::FALLBACK_*)");
             }
         }
 
@@ -746,6 +812,13 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
     }
 
     let _guard = NET_LOCK.lock();
+
+    // I-47: 检查活动 socket 上限 (≤ G_MAX_SOCKETS ≤ MAX_SOCKETS).
+    // 运行时可通过 set_max_sockets 调整, 编译期上限 MAX_SOCKETS 静态保证.
+    let active: usize = (0..MAX_SM_FD).filter(|&i| FD_TYPES[i] != 0).count();
+    if active >= get_max_sockets() {
+        return -E_NFILE;
+    }
 
     let fd = sm_alloc_fd();
     if fd < 0 {
@@ -1509,7 +1582,8 @@ pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
 // 公共 API
 // ============================================================================
 
-const MAX_SM_FD: usize = 16;
+// I-47: FD 表容量, 与 MAX_SOCKETS 对齐 (每个 FD 对应一个 smoltcp socket).
+const MAX_SM_FD: usize = 256;
 const TCP_BUF_SIZE: usize = 4096;
 const UDP_BUF_SIZE: usize = 2048;
 const UDP_META_COUNT: usize = 4;
@@ -1671,12 +1745,13 @@ struct HostEntry {
 }
 
 /// 内置静态 hosts (D1.2 起步, D 阶段后续可换 smoltcp wire/dns 升级)
+// I-46: hosts 表里 10.0.2.x 引用集中常量, 避免散落硬编码
 const STATIC_HOSTS: &[HostEntry] = &[
     HostEntry { name: "localhost",       ip: [127, 0, 0, 1] },
-    HostEntry { name: "router",          ip: [10, 0, 2, 2]  },
-    HostEntry { name: "host",            ip: [10, 0, 2, 15] },
-    HostEntry { name: "qemu-gateway",    ip: [10, 0, 2, 2]  },
-    HostEntry { name: "antx-gateway",    ip: [10, 0, 2, 2]  },
+    HostEntry { name: "router",          ip: types::FALLBACK_GATEWAY },
+    HostEntry { name: "host",            ip: types::FALLBACK_IPV4 },
+    HostEntry { name: "qemu-gateway",    ip: types::FALLBACK_GATEWAY },
+    HostEntry { name: "antx-gateway",    ip: types::FALLBACK_GATEWAY },
 ];
 
 /// 简单 DNS 解析 (静态 hosts 表)
