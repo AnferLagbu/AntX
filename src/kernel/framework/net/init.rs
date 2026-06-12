@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
@@ -839,30 +840,61 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
     let fd_idx = fd as usize;
 
     if domain == 2 && sock_type == 1 {
+        // TD-07: TCP RX/TX 缓冲走 slab, 不再静态 BSS 占用.
+        // SAFETY: k_malloc 在初始化后可用, 返回非空或 null. null 时立即归还 fd.
+        let rx_ptr = crate::kernel::framework::mm::api::k_malloc(TCP_BUF_SIZE);
+        if rx_ptr.is_null() {
+            return -E_NOMEM;
+        }
+        let tx_ptr = crate::kernel::framework::mm::api::k_malloc(TCP_BUF_SIZE);
+        if tx_ptr.is_null() {
+            crate::kernel::framework::mm::api::k_free(rx_ptr);
+            return -E_NOMEM;
+        }
+        // SAFETY: rx_ptr/tx_ptr 来自 k_malloc(TCP_BUF_SIZE), 长度合法, 唯一别名.
+        let rx_slice = unsafe { core::slice::from_raw_parts_mut(rx_ptr, TCP_BUF_SIZE) };
+        let tx_slice = unsafe { core::slice::from_raw_parts_mut(tx_ptr, TCP_BUF_SIZE) };
         let tcp_sock = tcp::Socket::new(
-            tcp::SocketBuffer::new(&mut TCP_RX_BUFS[fd_idx][..]),
-            tcp::SocketBuffer::new(&mut TCP_TX_BUFS[fd_idx][..]),
+            tcp::SocketBuffer::new(rx_slice),
+            tcp::SocketBuffer::new(tx_slice),
         );
         let sockets = &mut *socket_set();
         let handle = sockets.add(tcp_sock);
         SOCKET_TABLE.0[fd_idx] = Some(handle);
         FD_TYPES.0[fd_idx] = 1;
+        // TD-07: buf 指针记入静态表, close 时按指针归还 slab.
+        TCP_RX_BUFS[fd_idx] = rx_ptr;
+        TCP_TX_BUFS[fd_idx] = tx_ptr;
         fd
     } else if domain == 2 && sock_type == 2 {
+        // TD-07: UDP RX/TX 缓冲走 slab. metas 仍静态 (小, 16 KB).
+        let rx_ptr = crate::kernel::framework::mm::api::k_malloc(UDP_BUF_SIZE);
+        if rx_ptr.is_null() {
+            return -E_NOMEM;
+        }
+        let tx_ptr = crate::kernel::framework::mm::api::k_malloc(UDP_BUF_SIZE);
+        if tx_ptr.is_null() {
+            crate::kernel::framework::mm::api::k_free(rx_ptr);
+            return -E_NOMEM;
+        }
+        let rx_slice = unsafe { core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE) };
+        let tx_slice = unsafe { core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE) };
         let udp_sock = udp::Socket::new(
             udp::PacketBuffer::new(
                 &mut UDP_RX_METAS[fd_idx][..],
-                &mut UDP_RX_BUFS[fd_idx][..],
+                rx_slice,
             ),
             udp::PacketBuffer::new(
                 &mut UDP_TX_METAS[fd_idx][..],
-                &mut UDP_TX_BUFS[fd_idx][..],
+                tx_slice,
             ),
         );
         let sockets = &mut *socket_set();
         let handle = sockets.add(udp_sock);
         SOCKET_TABLE.0[fd_idx] = Some(handle);
         FD_TYPES.0[fd_idx] = 2;
+        UDP_RX_BUFS[fd_idx] = rx_ptr;
+        UDP_TX_BUFS[fd_idx] = tx_ptr;
         fd
     } else {
         -E_AFNOSUPPORT
@@ -1413,6 +1445,23 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     }
 
     sockets.remove(handle);
+    // TD-07: smoltcp socket 已 drop, buf 借用结束, 此时 k_free 安全.
+    if !TCP_RX_BUFS[fd as usize].is_null() {
+        crate::kernel::framework::mm::api::k_free(TCP_RX_BUFS[fd as usize]);
+        TCP_RX_BUFS[fd as usize] = core::ptr::null_mut();
+    }
+    if !TCP_TX_BUFS[fd as usize].is_null() {
+        crate::kernel::framework::mm::api::k_free(TCP_TX_BUFS[fd as usize]);
+        TCP_TX_BUFS[fd as usize] = core::ptr::null_mut();
+    }
+    if !UDP_RX_BUFS[fd as usize].is_null() {
+        crate::kernel::framework::mm::api::k_free(UDP_RX_BUFS[fd as usize]);
+        UDP_RX_BUFS[fd as usize] = core::ptr::null_mut();
+    }
+    if !UDP_TX_BUFS[fd as usize].is_null() {
+        crate::kernel::framework::mm::api::k_free(UDP_TX_BUFS[fd as usize]);
+        UDP_TX_BUFS[fd as usize] = core::ptr::null_mut();
+    }
     SOCKET_TABLE.0[fd as usize] = None;
     FD_TYPES.0[fd as usize] = 0;
     0
@@ -1619,16 +1668,21 @@ static mut SOCKET_TABLE: SOCKET_TABLE_T = Align64([None; MAX_SM_FD]);
 static mut FD_TYPES: FD_TYPES_T = Align64([0u8; MAX_SM_FD]);
 
 // TCP buffer storage (per fd)
-static mut TCP_RX_BUFS: [[u8; TCP_BUF_SIZE]; MAX_SM_FD] = [[0u8; TCP_BUF_SIZE]; MAX_SM_FD];
-static mut TCP_TX_BUFS: [[u8; TCP_BUF_SIZE]; MAX_SM_FD] = [[0u8; TCP_BUF_SIZE]; MAX_SM_FD];
+// TD-07: 由 4 张 [[u8; N]; MAX_SM_FD] 静态数组 (≈3 MB BSS) 改为 [*mut u8; MAX_SM_FD] 指针表.
+// 启动时 0 占用; socket alloc 时通过 `k_malloc` (slab) 申请; close 时 `k_free` 归还.
+// 省下的 3 MB BSS 改为按需占用, 与 smoltcp `MAX_SM_FD` 解耦 (见 TD-06).
+static mut TCP_RX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
+static mut TCP_TX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
 
-// UDP buffer storage (per fd)
+// UDP buffer storage (per fd) — 同样 TD-07 改造
+static mut UDP_RX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
+static mut UDP_TX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
+
+// UDP metas 仍保留静态 (16 KB, 256 × 4 × 16B, 不值得动); td 改 metas 走 heap 是 V2 任务.
 static mut UDP_RX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; MAX_SM_FD] =
     [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; MAX_SM_FD];
-static mut UDP_RX_BUFS: [[u8; UDP_BUF_SIZE]; MAX_SM_FD] = [[0u8; UDP_BUF_SIZE]; MAX_SM_FD];
 static mut UDP_TX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; MAX_SM_FD] =
     [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; MAX_SM_FD];
-static mut UDP_TX_BUFS: [[u8; UDP_BUF_SIZE]; MAX_SM_FD] = [[0u8; UDP_BUF_SIZE]; MAX_SM_FD];
 
 /// # Safety
 ///

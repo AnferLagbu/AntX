@@ -1614,6 +1614,9 @@ TSS IST 字段非零, 若初始化顺序错乱, #DF/NMI/#PF 触发时 CPU 切换
   - **关联文件**: `framework/proc/fd_alloc.rs` (新增 `cfg_smoltcp_cap` / `smoltcp_capacity`), `framework/net/init.rs` (改 `MAX_SOCKETS` 派生), `host-tests/tests/td06_max_sm_fd_test.rs` (新增).
   - **遗留**: 真正按内存自适应 + 走 heap `Vec` 仍未做 (需改 smoltcp `SocketSet::new()` 为动态分配, 工作量较大). 当前 V1 已是"编译期单一来源 + 文档同步清单"的最小可行修复.
 - **TD-07 🟡**: `static mut TCP_RX_BUFS: [[u8; ...]; MAX_SM_FD]` 等 MB 级静态内存启动即占用, 不走 slab. 修复: 改用 framework/mm/slab 按需分配, 释放 socket 同步归还. 验收: 启动时静态占用=0; 1000 并发短连接后 slab 空闲块回归基线; `audit_safety_coverage.py` 不报警.
+  - **状态**: ✅ 已修复 V1 (2026-06-12): `TCP_RX_BUFS` / `TCP_TX_BUFS` / `UDP_RX_BUFS` / `UDP_TX_BUFS` 4 张大表 (合计 ≈3 MB BSS: 2×1 MB TCP + 2×512 KB UDP) 改为 `[*mut u8; MAX_SM_FD]` 指针表, 启动期全部 `null_mut()` 零占用. smoltcp socket alloc 时通过 `k_malloc(TCP_BUF_SIZE)` / `k_malloc(UDP_BUF_SIZE)` 申请, smoltcp socket close 时 `sockets.remove(handle)` 先 drop 借用, 再 `k_free` 4 个非空指针并归零. `UDP_RX_METAS` / `UDP_TX_METAS` 仍保留静态 (16 KB, 256 × 4 × 16B, 不值得动). 静态契约测试 4 个 (`td07_slab_buf_test`) 全过, 全 host-tests 454/454 通过.
+  - **关联文件**: `framework/net/init.rs` (4 张表改指针 + alloc/free), `host-tests/tests/td07_slab_buf_test.rs` (新增).
+  - **遗留**: UDP metas 仍走静态; slub/slab 适配 4K/2K 大块效率可能不如专用 (smoltcp 需要连续 `&mut [u8]`). 后续可考虑 slub-hugepage 或 buddy-direct 路径. `audit_safety_coverage.py` 已在 baseline 通过, 长期需要验证 slab 归还稳定性 (目前仅静态契约).
 
 ---
 
