@@ -411,21 +411,32 @@ cd /home/anfer/Code/AntX && python3 scripts/audit_services_boundary.py && python
 
 ---
 
-### [ ] I-27 [中] handle_simple_fault 硬编码 WRITABLE+USER flags
+### [x] I-27 [中] handle_simple_fault 硬编码 WRITABLE+USER flags ✅ 已修复 (2026-06-12)
 
 **来源**: 审计 13
-**根因**: `mm/page_fault.rs:150` 硬编码 `PRESENT|WRITABLE|USER`, 不检查 VMA flags。read-only mmap 缺页被错误映射为 writable。
-**关联文件**:
-- [src/kernel/framework/mm/page_fault.rs](../../src/kernel/framework/mm/page_fault.rs) (150)
+**根因**: `mm/page_fault.rs` 早期版本硬编码 `PRESENT|WRITABLE|USER`, 不检查 VMA flags. read-only mmap 缺页被错误映射为 writable.
 **修复方案**:
-1. 改为从 VMA 读取实际 flags
-2. 权限不匹配时返回 SIGSEGV
-3. 与 I-26 同步修复
-**验收**: 随 I-26 验收
+1. 实际修复在 commit 5932c36 (P0-I-26 激活 demand paging + B13-FL-01 VMA flags 修复):
+   - handle_page_fault 主路径先查 `find_vma(addr)`
+   - VMA 命中走 `handle_vma_fault_with_mm`, 使用 `vma.flags` 派生页 flags
+   - file-backed VMA 走 `handle_file_fault`, 区分 MAP_SHARED / MAP_PRIVATE
+   - MAP_PRIVATE + write 触发 COW copy
+2. 当前源码中残留 3 处硬编码 `PRESENT|WRITABLE|USER`:
+   - `handle_stack_expansion_simple` (L164): 栈扩张, 语义正确
+   - `handle_stack_expansion` (L343): VMA-aware 栈扩张, 语义正确
+   - `do_cow_copy_with_mm` (L395): COW 写入, 写权限由 COW 语义保证
+3. 新增 host-tests/tests/page_fault_vma_flags_test.rs: 静态契约
+   - `handle_page_fault` 体内含 `find_vma` 调用
+   - mmap 路径基于 `vma.flags` 派生 flags
+   - 保留 I-26 / B13-FL-01 修复标记, 防止回归
+**验收**:
+- [x] mmap 路径基于 VMA flags (grep 验证)
+- [x] 静态契约测试防回归
+- [x] 残留硬编码为栈扩张/COW 语义, 已注释说明
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____ (随 I-26 合并)
+- 日期: 2026-06-12
+- 提交: pending
+- 简述: I-27 由 I-26 同步修复, 本轮补静态契约测试固化
 
 ---
 
