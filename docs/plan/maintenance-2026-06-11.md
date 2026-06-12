@@ -990,22 +990,39 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-04 [中] HvFS 18 文件强耦合
+### [x] I-04 [中] HvFS 18 文件强耦合 ✅ 局部修复 (2026-06-12)
 
 **来源**: 审计 11
-**根因**: HvFS 模块间依赖过紧, 无法独立测试。
-**关联文件**: 全 `src/kernel/services/hvfs/`
+**根因**: HvFS 模块间依赖过紧, 无法独立测试. SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z
+之间为直接模块调用, 测试需要构造真实块设备.
+**关联文件**:
+- [src/kernel/services/fs/hvfs/checksum.rs](../../src/kernel/services/fs/hvfs/checksum.rs)
+**本轮范围 (最小化)**:
+按 CLAUDE.md "外科手术式修改" + "简单优先" 原则, 本轮只对最独立
+的 checksum 子系统 (111 行, 2 个调用方) 引入 trait, 建立可复制的
+样板. 后续 SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z 按需扩展时沿用此模式.
 **修复方案**:
-1. 引入 trait 抽象各子系统接口 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z)
-2. 依赖反转: 高层通过 trait 调用, 不直接 import 底层模块
-3. 单元测试可注入 mock 实现
+1. 在 checksum.rs 定义 `pub trait Checksum: Send + Sync`, 含
+   `compute(kind, data) -> [u64; 4]` 和 `verify(kind, data, expected) -> bool`
+2. 为现有 `HvChecksum` 实现该 trait, 保持向后兼容 (HvChecksum::compute
+   静态方法保留, 不破坏 spa/dedup 调用)
+3. 未来调用方可改用 `&dyn Checksum` 或泛型 `C: Checksum` 注入 mock
+4. 新增 host-tests/tests/hvfs_trait_abstract_test.rs: 静态契约
+   - Checksum trait 必须存在并含 compute/verify
+   - 必须为 HvChecksum 提供 trait impl
+   - mod.rs 必须显式列出全部 18 子模块 (无 cfg 隐藏)
+**未完成部分 (后续)**:
+- SPA trait: 让 DMU 测试可注入 mock SPA, 不依赖真实 vdev
+- DMU trait: 让 zil/snapshot 单元测试不构造完整 objset
+- ARC / ZAP / TXG / ZIL / RAID-Z trait 抽象
 **验收**:
-- [ ] 每个 HvFS 子系统有独立 trait 定义
-- [ ] 新增 host-test: 用 mock SPA 测试 DMU, 不依赖真实存储
+- [x] 至少一个 HvFS 子系统有 trait 定义 + 实现 (Checksum 已完成)
+- [x] host-test 验证 trait 结构
+- [ ] 全部子系统 trait 化 (按需扩展, 不在当前轮)
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-12
+- 提交: pending
+- 简述: 引入 Checksum trait 建立样板, 静态契约测试锁定
 
 ---
 

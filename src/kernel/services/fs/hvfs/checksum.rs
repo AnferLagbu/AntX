@@ -4,6 +4,19 @@ pub const HV_CKSUM_FLETCHER2: usize = 1;
 pub const HV_CKSUM_FLETCHER4: usize = 2;
 pub const HV_CKSUM_SHA256: usize = 3;
 
+// I-04: 引入 `Checksum` trait, 让 spa/dedup 等调用方依赖抽象而非具体类型.
+// 这样单元测试可注入 mock 实现, 验证 DMU 在不真实存储上的逻辑.
+
+// SAFETY: 该 trait 在 no_std 内核环境下使用, 方法均无内存分配 / 阻塞,
+// 可在中断上下文调用. 实现方必须保证 `compute` 与 `verify` 对同一输入
+// 返回稳定结果 (无内部可变状态).
+pub trait Checksum: Send + Sync {
+    /// 给定算法类型与数据, 计算校验和
+    fn compute(&self, kind: HvCksumType, data: &[u8]) -> [u64; 4];
+    /// 验证 `expected` 与 `data` 在同一算法下结果是否一致
+    fn verify(&self, kind: HvCksumType, data: &[u8], expected: &[u64; 4]) -> bool;
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct HvChecksum {
     pub kind: HvCksumType,
@@ -107,5 +120,17 @@ impl HvChecksum {
         self.value[3] = u64::from_be_bytes(
             hash[24..32].try_into().unwrap_or_else(|_| [0u8; 8])
         );
+    }
+}
+
+// I-04: 为 HvChecksum 实现 Checksum trait, 使其成为 trait object / 泛型可注入.
+impl Checksum for HvChecksum {
+    fn compute(&self, kind: HvCksumType, data: &[u8]) -> [u64; 4] {
+        Self::compute(kind, data).value
+    }
+
+    fn verify(&self, kind: HvCksumType, data: &[u8], expected: &[u64; 4]) -> bool {
+        let computed = Self::compute(kind, data);
+        &computed.value == expected
     }
 }
