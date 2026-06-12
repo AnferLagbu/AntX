@@ -205,7 +205,11 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
             table.slots[i].pid = current_pid;
             SFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
-            let new_fd = SFD_FD_BASE + i as i32;
+            // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
+            let new_fd = crate::kernel::framework::proc::fd_alloc::fd_at(
+                crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd,
+                i,
+            );
             crate::klog_debug!(Sync, "[signalfd] Created fd={} pid={}", new_fd, current_pid);
             return new_fd as i64;
         }

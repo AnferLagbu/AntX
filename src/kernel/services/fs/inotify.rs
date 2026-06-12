@@ -228,7 +228,11 @@ impl InotifyInstance {
 
     /// 获取该实例的 fd
     fn fd(&self) -> i32 {
-        INOTIFY_FD_BASE + self.slot_idx as i32
+        // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
+        crate::kernel::framework::proc::fd_alloc::fd_at(
+            crate::kernel::framework::proc::fd_alloc::FdSubsystem::Inotify,
+            self.slot_idx as usize,
+        )
     }
 
     /// 入队一个事件, 队列满时丢弃最旧事件
@@ -510,8 +514,12 @@ pub fn inotify_notify(ino: u32, mask: u32, name: &str, is_dir: bool) {
         drop(instances);
         for i in 0..INOTIFY_MAX_INSTANCES {
             if notified_fds[i] {
+                // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
                 crate::kernel::framework::syscall::epoll::epoll_pwake(
-                    INOTIFY_FD_BASE + i as i32,
+                    crate::kernel::framework::proc::fd_alloc::fd_at(
+                        crate::kernel::framework::proc::fd_alloc::FdSubsystem::Inotify,
+                        i,
+                    ),
                 );
             }
         }

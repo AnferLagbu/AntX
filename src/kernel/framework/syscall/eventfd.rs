@@ -121,7 +121,11 @@ pub fn sys_eventfd(initval: u64, flags: i32) -> i64 {
             table.slots[i].semaphore = semaphore;
             EFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
-            let fd = EFD_FD_BASE + i as i32;
+            // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
+            let fd = crate::kernel::framework::proc::fd_alloc::fd_at(
+                crate::kernel::framework::proc::fd_alloc::FdSubsystem::EventFd,
+                i,
+            );
             crate::klog_debug!(Sync, "[eventfd] Created fd={} initval={} sem={}", fd, initval, semaphore);
             return fd as i64;
         }

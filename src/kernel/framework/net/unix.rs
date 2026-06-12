@@ -303,7 +303,11 @@ fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
 
 #[inline]
 fn idx_to_fd(idx: u8) -> i32 {
-    UDS_FD_BASE + idx as i32
+    // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
+    crate::kernel::framework::proc::fd_alloc::fd_at(
+        crate::kernel::framework::proc::fd_alloc::FdSubsystem::Uds,
+        idx as usize,
+    )
 }
 
 // ============================================================================

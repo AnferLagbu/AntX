@@ -246,3 +246,25 @@ pub fn verify_plan() {
         "FD 范围重叠违反 TD-02 不变量"
     );
 }
+
+// ============================================================================
+// V3 接口: fd_at / max_slots
+// ============================================================================
+
+/// 给定子系统 + slot 索引, 计算对应 FD 编号
+///
+/// V3 替代各子系统的 `*_FD_BASE + i as i32` 模式, 集中表达式, 避免分散的 `base + idx`.
+/// `const fn`, 可在静态表初始化与 `panic!` 等不可变上下文中使用.
+#[inline]
+pub const fn fd_at(sub: FdSubsystem, slot: usize) -> i32 {
+    FdPlan::range_for(sub).base + slot as i32
+}
+
+/// 给定子系统, 返回最大 slot 数 (用于 `for i in 0..max_slots(sub)` 替代硬编码 `MAX_xxx`)
+///
+/// V3 替代各子系统的 `EFD_MAX_SLOTS` / `SFD_MAX_SLOTS` / `MAX_UDS_FD` / `INOTIFY_MAX_INSTANCES` /
+/// smoltcp `MAX_SM_FD` 等容量常量, 集中表达式, 避免分散字面量.
+#[inline]
+pub const fn max_slots(sub: FdSubsystem) -> usize {
+    FdPlan::range_for(sub).capacity as usize
+}

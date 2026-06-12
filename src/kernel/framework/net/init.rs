@@ -1622,7 +1622,11 @@ static mut UDP_TX_BUFS: [[u8; UDP_BUF_SIZE]; MAX_SM_FD] = [[0u8; UDP_BUF_SIZE]; 
 unsafe fn sm_alloc_fd() -> i32 {
     for i in 0..MAX_SM_FD {
         if FD_TYPES[i] == 0 && SOCKET_TABLE[i].is_none() {
-            return i as i32;
+            // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
+            return crate::kernel::framework::proc::fd_alloc::fd_at(
+                crate::kernel::framework::proc::fd_alloc::FdSubsystem::Smoltcp,
+                i,
+            );
         }
     }
     -1

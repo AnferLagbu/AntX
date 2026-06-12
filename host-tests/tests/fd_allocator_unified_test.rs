@@ -124,3 +124,40 @@ fn test_v2_smoltcp_capacity_derived_from_fdplan() {
     assert!(src.contains("MAX_SM_FD: usize = crate::kernel::framework::proc::fd_alloc::FdPlan::SMOLTCP.capacity"),
         "MAX_SM_FD 必须从 FdPlan::SMOLTCP.capacity 派生 (TD-02 V2)");
 }
+
+#[test]
+fn test_v3_fd_at_helper_exposed() {
+    // TD-02 V3: fd_alloc 暴露 fd_at / max_slots 辅助, 集中 FD 计算
+    let src = read_fd_alloc();
+    assert!(src.contains("pub const fn fd_at"),
+        "必须暴露 fd_at(sub, slot) → i32 (TD-02 V3)");
+    assert!(src.contains("pub const fn max_slots"),
+        "必须暴露 max_slots(sub) → usize (TD-02 V3)");
+}
+
+#[test]
+fn test_v3_subsystems_use_fd_at_not_base_plus() {
+    // TD-02 V3: 各子系统的"base + i" 模式必须改走 fd_at(FdSubsystem::X, i)
+    // 5 个 FD 分配点:
+    //   1. unix.rs idx_to_fd
+    //   2. eventfd.rs sys_eventfd 内部
+    //   3. signalfd.rs sys_signalfd 内部
+    //   4. inotify.rs InotifyInstance::fd
+    //   5. inotify.rs 通知循环 epoll_pwake
+    //   6. init.rs sm_alloc_fd
+    let cases: &[(&str, &str)] = &[
+        ("src/kernel/framework/net/unix.rs",            "fd_at"),
+        ("src/kernel/framework/syscall/eventfd.rs",     "fd_at"),
+        ("src/kernel/framework/syscall/signalfd.rs",    "fd_at"),
+        ("src/kernel/services/fs/inotify.rs",          "fd_at"),
+        ("src/kernel/framework/net/init.rs",            "fd_at"),
+    ];
+    for (path, expected) in cases {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent().unwrap().join(path);
+        let src = fs::read_to_string(&p)
+            .unwrap_or_else(|_| panic!("读 {}", path));
+        assert!(src.contains(expected),
+            "{} 必须使用 {} (TD-02 V3)", path, expected);
+    }
+}
