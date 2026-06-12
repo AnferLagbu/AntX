@@ -1,15 +1,16 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
-#![feature(asm)]
+// I-09: 移除 `#![feature(asm)]`. nightly 1.97 中 `core::arch::asm!` 已稳定,
+// 源码中所有 asm 调用已走 `core::arch::asm!`, 顶层 feature gate 不再需要.
 // ============================================================================
 // ✅ 全局警告抑制配置 (内核开发环境特有)
 // ============================================================================
 
 //! 允许的警告类别 (符合 OS 内核开发最佳实践)
 
-// 0. 稳定特性使用 - asm 特性在 nightly 中稳定但标记为需要 feature
-#![allow(stable_features)] // 1个: asm 特性声明
+// I-09: 移除 `#![allow(stable_features)]` — 该 allow 仅用于 asm feature
+// 声明, 已一并移除, 不再有 unstable 特性走 stable 路径.
 
 // 1. 全局单例模式 - 内核中常见且必要
 #![allow(static_mut_refs)]

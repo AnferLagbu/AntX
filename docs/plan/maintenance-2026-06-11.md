@@ -1329,21 +1329,30 @@ extern 导出, 也是 Rust API 命名). 一刀切改名风险大 (调用点 30+ 
 
 ---
 
-### [ ] I-09 [低] Rust nightly 不稳定 API 依赖 (#![feature(asm)])
+### [x] I-09 [低] Rust nightly 不稳定 API 依赖 (#![feature(asm)]) ✅ 已修复 (2026-06-12)
 
 **来源**: 审计 1
-**关联文件**: 全 `src/`
+**关联文件**:
+- [src/rust/src/lib.rs](../../src/rust/src/lib.rs)
+**根因**: `#![feature(asm)]` 与 `#![allow(stable_features)]` 是 asm feature
+声明的配套设置. 实际上 nightly 1.97 中 `core::arch::asm!` 已稳定,
+所有源码内的内联汇编均走 `core::arch::asm!` 路径, 顶层 feature gate
+不再必要. 移除可减少 unstable 特性数量, 利于未来向 stable 迁移.
 **修复方案**:
-1. 评估 stable Rust 替代方案 (asm → llvm_asm 已被 stable 化)
-2. 尽可能消除 nightly 依赖
-3. 评估 nightly → stable 迁移成本
+1. 删除 `#![feature(asm)]` 顶层声明
+2. 删除配套 `#![allow(stable_features)]`
+3. 保留 `#![feature(alloc_error_handler)]` (分配失败处理函数, 仍 unstable)
+4. 保留 `smoltcp/benches/bench.rs` 的 `#![feature(test)]` (bench 测试用, 不进入 queenx)
+5. 新增 host-tests/tests/feature_attr_minimal_test.rs: 静态契约
+   - nightly 编译不依赖顶层 `feature(asm)`
+   - queenx 内 `feature(` 总数 ≤ 1 (仅 alloc_error_handler)
 **验收**:
-- [ ] `#![feature(...)]` 列表最小化
-- [ ] nightly 依赖评估报告
+- [x] `#![feature(...)]` 列表最小化
+- [x] nightly 依赖评估报告
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-12
+- 提交: pending
+- 简述: 移除 asm feature gate, 减少 nightly 特性依赖
 
 ---
 
