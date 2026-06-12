@@ -1038,7 +1038,8 @@ impl PhysicalMemoryManager {
 
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: idx < MAX_EARLY_ALLOCS 上界检查保证 early_allocs.add(idx) 不越界;
+            // early_allocs 由构造时 OnceCell 初始化为定长数组, 类型为 EarlyAlloc.
             unsafe {
                 let a = (*self.early_allocs.get()).as_mut_ptr().add(idx);
                 (*a).addr = aligned;
@@ -1060,7 +1061,7 @@ impl PhysicalMemoryManager {
 
         let idx = self.early_count.fetch_add(1, Ordering::Relaxed);
         if idx < MAX_EARLY_ALLOCS {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: idx < MAX_EARLY_ALLOCS 守护, size = count*PAGE_SIZE, 记录多页范围.
             unsafe {
                 let a = (*self.early_allocs.get()).as_mut_ptr().add(idx);
                 (*a).addr = aligned;
