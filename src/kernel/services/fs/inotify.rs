@@ -91,8 +91,9 @@ const INOTIFY_MAX_WATCHES: usize = 16;
 const INOTIFY_MAX_EVENTS: usize = 64;
 /// 文件名最大长度 (inotify_event.name)
 const INOTIFY_MAX_NAME: usize = 32;
-/// inotify FD 空间起始
-pub const INOTIFY_FD_BASE: i32 = 260;
+/// inotify FD 空间起始, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
+/// TD-01: 历史 260 紧贴 smoltcp 上界, 后续若 smoltcp 扩到 ≥ 260 会重叠, 已挪至 1140.
+pub const INOTIFY_FD_BASE: i32 = 1140;
 
 // ============================================================================
 // inotify 数据结构

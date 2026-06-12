@@ -1266,6 +1266,7 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 **遗留技术债 (衍生)**:
 - **TD-01 🔴**: EFD_FD_BASE=200 / SFD_FD_BASE=220 / INOTIFY_FD_BASE 同样与 smoltcp `[0, 256)` 重叠, 进程级 `read/write` 分发不可靠. 需同样挪出 smoltcp 范围 (1100/1120/1140). 验收: 所有 `*_FD_BASE: i32` ≥ MAX_SM_FD=256; 测试同时打开 4 类 fd 无冲突.
+  - **状态**: ✅ 已修复 (2026-06-12): EFD_FD_BASE 200→1100, SFD_FD_BASE 220→1120, INOTIFY_FD_BASE 260→1140. 静态契约测试扩展到 4 个子系统 (`fd_allocator_unify_test::test_fd_bases_in_smoltcp_safe_zone` 验证全部 ≥256 且互不重叠).
 - **TD-02 🔴**: 全项目仍有 7 个独立 fd 分配器 (VFS/HvFS/UDS/smoltcp/EVENTFD/SIGNALFD/INOTIFY). 验收"仅 1 个 fd 分配器" 仍不满足. 修复路径: 抽 `FdAllocator` trait → 4 套集中实现 (VFS/HvFS/smoltcp/UDS) → EFD/SFD/INOTIFY 借用 smoltcp 槽位. 估算 3-5 天, 跨模块改造.
 
 ---

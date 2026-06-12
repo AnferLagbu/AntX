@@ -11,7 +11,7 @@
 //!         ├── pid: u32          (绑定进程 PID)
 //!         └── used: bool
 //!
-//! FD 空间: [220, 220 + SFD_MAX_SLOTS)
+//! FD 空间: [1120, 1120 + SFD_MAX_SLOTS)
 //!
 //! read(fd): 检查当前进程 pending & sigmask, 取最低编号信号,
 //!           构造 signalfd_siginfo 写入用户空间, 消费该信号
@@ -39,7 +39,9 @@ use crate::kernel::framework::syscall::types::Errno;
 /// signalfd 最大实例数
 pub const SFD_MAX_SLOTS: usize = 16;
 /// FD 空间起始
-pub const SFD_FD_BASE: i32 = 220;
+/// FD 起点, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
+/// TD-01: 历史 220 与 smoltcp 范围重叠, 已挪至 1120.
+pub const SFD_FD_BASE: i32 = 1120;
 /// SFD_CLOEXEC
 pub const SFD_CLOEXEC: i32 = 0o2000000;
 /// SFD_NONBLOCK

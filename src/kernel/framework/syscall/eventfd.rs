@@ -11,7 +11,7 @@
 //!         ├── semaphore: bool  (EFD_SEMAPHORE 模式)
 //!         └── used: bool
 //!
-//! FD 空间: [200, 200 + EFD_MAX_SLOTS)
+//! FD 空间: [1100, 1100 + EFD_MAX_SLOTS)
 //!   fd 200 → slot 0, fd 201 → slot 1, ...
 //!
 //! read(fd):  semaphore=false → 返回 counter 并清零
@@ -42,7 +42,9 @@ use crate::kernel::framework::syscall::types::Errno;
 /// eventfd 最大实例数
 pub const EFD_MAX_SLOTS: usize = 16;
 /// FD 空间起始
-pub const EFD_FD_BASE: i32 = 200;
+/// FD 起点, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
+/// TD-01: 历史 200 与 smoltcp 范围重叠, 已挪至 1100.
+pub const EFD_FD_BASE: i32 = 1100;
 /// EFD_CLOEXEC (与 Linux 一致)
 pub const EFD_CLOEXEC: i32 = 0o2000000;
 /// EFD_NONBLOCK (与 Linux 一致)

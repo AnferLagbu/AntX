@@ -88,19 +88,19 @@ fn test_uds_doc_states_fd_range() {
 
 #[test]
 fn test_no_fd_base_collides_with_smoltcp() {
-    // 全项目所有 `*_FD_BASE: i32` 应 ≥ MAX_SM_FD, 避免与 smoltcp 共享
+    // TD-01: 所有 `*_FD_BASE: i32` 应 ≥ MAX_SM_FD, 避免与 smoltcp 共享
     let net = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent().unwrap().join(NET_INIT)).expect("读 init.rs");
     let sm_max = extract_const_usize(&net, "MAX_SM_FD").expect("MAX_SM_FD") as i32;
 
-    // 检查 4 个已知的子系统 FD base
+    // 4 个子系统 FD base
     let unix = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent().unwrap().join(UNIX_RS)).expect("读 unix.rs");
     let bases: &[(&str, &str)] = &[
         ("UDS_FD_BASE", UNIX_RS),
         ("EFD_FD_BASE", "src/kernel/framework/syscall/eventfd.rs"),
         ("SFD_FD_BASE", "src/kernel/framework/syscall/signalfd.rs"),
-        ("INOTIFY_FD_BASE", "src/kernel/framework/fs/vfs/inotify.rs"),
+        ("INOTIFY_FD_BASE", "src/kernel/services/fs/inotify.rs"),
     ];
 
     let mut bad: Vec<String> = Vec::new();
@@ -114,15 +114,84 @@ fn test_no_fd_base_collides_with_smoltcp() {
             }
         }
     }
-    // UDS 已修复; 其他 3 个本次范围外, 仅警告不强制
-    // 但 UDS 必须通过
-    let uds_base = extract_pub_const_i32(&unix, "UDS_FD_BASE").unwrap();
-    assert!(
-        uds_base >= sm_max,
-        "UDS_FD_BASE={} < MAX_SM_FD={} (I-51)",
-        uds_base, sm_max
-    );
-    if !bad.is_empty() {
-        println!("[I-51 note] 其他 FD base 与 smoltcp 重叠, 后续修复: {:?}", bad);
+    assert!(bad.is_empty(),
+        "TD-01: 全部 *FD_BASE 必须 ≥ MAX_SM_FD={}, 失败项: {:?}", sm_max, bad);
+
+    // 4 个子系统 FD base 互不重叠
+    let mut ranges: Vec<(&str, i32, i32)> = Vec::new();
+    for (name, path) in bases {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent().unwrap().join(path);
+        let src = fs::read_to_string(&p).unwrap_or_default();
+        let base = extract_pub_const_i32(&src, name).unwrap();
+        // 找同名文件的 *_MAX_SLOTS 或 *MAX_* 字段
+        let max = if let Some(m) = extract_const_usize(&src, "EFD_MAX_SLOTS") {
+            m as i32
+        } else if let Some(m) = extract_const_usize(&src, "SFD_MAX_SLOTS") {
+            m as i32
+        } else if let Some(m) = extract_const_usize(&src, "MAX_UDS_FD") {
+            m as i32
+        } else {
+            // INOTIFY 没显式 MAX, 取保守 16
+            16
+        };
+        ranges.push((name, base, base + max));
+    }
+    for i in 0..ranges.len() {
+        for j in (i + 1)..ranges.len() {
+            let (na, ba, ea) = ranges[i];
+            let (nb, bb, eb) = ranges[j];
+            assert!(ea <= bb || eb <= ba,
+                "FD 范围重叠: [{}, {}) ({}) vs [{}, {}) ({})",
+                ba, ea, na, bb, eb, nb);
+        }
+    }
+    let _ = unix; // suppress unused warning
+}
+
+#[test]
+fn test_fd_bases_in_smoltcp_safe_zone() {
+    // TD-01 + I-51: 4 个子系统 FD base 全部 ≥ 256 且彼此不重叠
+    // 集中验证 (避免上面的 extract_const_usize 跨文件歧义)
+    let uds = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join(UNIX_RS)).expect("unix.rs");
+    let efd = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join("src/kernel/framework/syscall/eventfd.rs")).expect("eventfd.rs");
+    let sfd = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join("src/kernel/framework/syscall/signalfd.rs")).expect("signalfd.rs");
+    let ino = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join("src/kernel/services/fs/inotify.rs")).expect("inotify.rs");
+
+    let uds_b = extract_pub_const_i32(&uds, "UDS_FD_BASE").unwrap();
+    let efd_b = extract_pub_const_i32(&efd, "EFD_FD_BASE").unwrap();
+    let sfd_b = extract_pub_const_i32(&sfd, "SFD_FD_BASE").unwrap();
+    let ino_b = extract_pub_const_i32(&ino, "INOTIFY_FD_BASE").unwrap();
+
+    let uds_m = extract_const_usize(&uds, "MAX_UDS_FD").unwrap() as i32;
+    let efd_m = extract_const_usize(&efd, "EFD_MAX_SLOTS").unwrap() as i32;
+    let sfd_m = extract_const_usize(&sfd, "SFD_MAX_SLOTS").unwrap() as i32;
+    // INOTIFY 没有显式 MAX_SLOTS, 取 INOTIFY_MAX_INSTANCES (实际为命名)
+    let ino_m = extract_const_usize(&ino, "INOTIFY_MAX_INSTANCES")
+        .or_else(|| extract_const_usize(&ino, "MAX_INSTANCES"))
+        .unwrap_or(16) as i32;
+
+    // 全部 ≥ 256 (smoltcp 上界)
+    for (n, b) in [("UDS", uds_b), ("EFD", efd_b), ("SFD", sfd_b), ("INOTIFY", ino_b)] {
+        assert!(b >= 256, "{} FD base {} < 256 (TD-01)", n, b);
+    }
+
+    // 验证范围 (用 Vec 排序后检查)
+    let mut ranges = vec![
+        ("UDS", uds_b, uds_b + uds_m),
+        ("EFD", efd_b, efd_b + efd_m),
+        ("SFD", sfd_b, sfd_b + sfd_m),
+        ("INOTIFY", ino_b, ino_b + ino_m),
+    ];
+    ranges.sort_by_key(|r| r.1);
+    for w in ranges.windows(2) {
+        let (na, _, ea) = w[0];
+        let (nb, bb, _) = w[1];
+        assert!(ea <= bb, "FD 范围重叠: {} 上界 {} > {} 起点 {}",
+            na, ea, nb, bb);
     }
 }
