@@ -8,7 +8,8 @@
 //!
 //! ## 关键不变量
 //!
-//! - FD 空间: `[UDS_FD_BASE, UDS_FD_BASE + MAX_UDS_FD)` = `[100, 116)`
+//! - FD 空间: `[UDS_FD_BASE, UDS_FD_BASE + MAX_UDS_FD)` = `[1000, 1016)`
+//! - I-51: 与 smoltcp (`[0, MAX_SM_FD=256)`) 不重叠 (历史 100 范围与 smoltcp 重叠, 已挪出)
 //! - 路径长度 ≤ `UNIX_PATH_MAX` = 108 (POSIX `sun_path` 上限)
 //! - 每个 STREAM 连接由两端 socket 共享: 写方向 `src.stream_buf → dst.stream_buf`
 //! - 每个 DGRAM socket 独立持有一个 `dgram_buf` (单消息排队)
@@ -33,8 +34,9 @@ use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 // 常量
 // ============================================================================
 
-/// FD 起点, 与 smoltcp (`0..16`) 与 VFS (`0..32`) 不重叠
-pub const UDS_FD_BASE: i32 = 100;
+/// FD 起点, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
+/// I-51: 历史 100 与 smoltcp 范围重叠, 已挪至 1000.
+pub const UDS_FD_BASE: i32 = 1000;
 
 /// 最大 UDS socket 数量
 pub const MAX_UDS_FD: usize = 16;

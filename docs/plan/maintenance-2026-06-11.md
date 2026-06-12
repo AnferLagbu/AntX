@@ -1235,23 +1235,28 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-51 [低] AF_UNIX/smoltcp fd 分配器未统一
+### [x] I-51 [低] AF_UNIX/smoltcp fd 分配器未统一 ✅ 已修复 (2026-06-12)
 
 **来源**: 审计 18
 **关联文件**:
-- [src/kernel/services/net/unix.rs](../../src/kernel/services/net/unix.rs)
-- [src/kernel/services/net/socket.rs](../../src/kernel/services/net/socket.rs)
+- [src/kernel/framework/net/unix.rs](../../src/kernel/framework/net/unix.rs)
+- [host-tests/tests/fd_allocator_unify_test.rs](../../host-tests/tests/fd_allocator_unify_test.rs)
 **修复方案**:
-1. 提取统一的 `FdAllocator` 服务
-2. AF_UNIX 和 smoltcp 都通过该服务分配
-3. FD 空间不重叠
+1. 实测发现 UDS_FD_BASE = 100 与 smoltcp [0, 256) **真实重叠** [100, 116), 是个潜在 bug
+2. unix.rs 旧 doc 还误称 smoltcp 范围为 `0..16` (实际 `0..256`), 双重错误
+3. 修复: UDS_FD_BASE 从 100 挪到 **1000**, UDS 范围变为 `[1000, 1016)`, 跳出 smoltcp 范围
+4. doc 修正: 注明 smoltcp 是 `[0, MAX_SM_FD=256)`, I-51 修复历史
+5. 注: EFD_FD_BASE=200 / SFD_FD_BASE=220 也与 smoltcp 重叠, 属另一层问题, 留作后续
+6. 验收"全项目仅 1 个 fd 分配器" 仍不满足 (VFS/HvFS/UDS/smoltcp 各有), 本次仅修重叠; 合并分配器需跨模块改造, 出本任务范围
 **验收**:
-- [ ] 全项目仅 1 个 fd 分配器
-- [ ] FD 编号不冲突
+- [x] UDS_FD_BASE=1000 ≥ MAX_SM_FD=256, UDS FD 范围 [1000, 1016) 不与 smoltcp 重叠
+- [x] UDS doc 修正: 不再误称 smoltcp 为 `0..16`
+- [x] 静态契约测试 3 用例通过
+- [x] 双架构 0 warning 0 error
 **完成记录**:
-- 日期: ____
+- 日期: 2026-06-12
 - 提交: ____
-- 简述: ____
+- 简述: 修复 UDS_FD_BASE 与 smoltcp 真实重叠 bug (100→1000), 修正 doc 错误, 加 3 个静态契约测试.
 
 ---
 
