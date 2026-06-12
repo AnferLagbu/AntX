@@ -674,6 +674,11 @@ pub enum Errno {
 }
 
 impl Errno {
+    /// 返回 POSIX errno 数值 (正整数)
+    pub const fn as_i32(self) -> i32 {
+        self as i32
+    }
+
     pub const fn as_ret(self) -> i64 {
         -(self as i64)
     }

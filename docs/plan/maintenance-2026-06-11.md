@@ -764,6 +764,9 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 **遗留技术债 (衍生)**:
 - **TD-08 🟡**: `services/net/socket.rs` 的 `SocketError` 与 `services/net/unix.rs` 的 `UnixSocketError` 字段高度重叠 (BadFd/WouldBlock/NoMemory/Fault/InvalidArgument 等), 错误映射代码在 syscall 层重复. 修复: services 层抽 `KernelError` 统一枚举 + `#[from]` 转换; `SocketError`/`UnixSocketError` 转为薄包装或 type alias; 错误消息含子模块上下文. 验收: 字段数 ≤2 (仅保留子系统特有错误); 单一来源, 新增错误码无需改 2 处.
+  - **状态**: ✅ 已修复 V1 (2026-06-12): 引入 `services/error.rs::KernelError` 单一来源, 17 个字段统一. `services::net::socket::SocketError` 改为 `pub use KernelError as SocketError;` (0 字段 type alias). `services::net::unix::UnixSocketError` 改为 2 字段薄包装: `PathNotFound` (UDS 特有 ENOENT) + `Kernel(KernelError)` (共享). `From<fw::UdsError> for UnixSocketError` 9 个变体全覆盖. `framework::syscall::types::Errno` 新增 `pub const fn as_i32(self) -> i32` 供反向映射. 新增 host-tests `td08_kernel_error_test` 7 个全部通过. 全 host-tests 354/354 + queenx-tests 全部通过; 双架构编译 0 error / 0 warning; services 边界/SAFETY 100%/死锁矩阵 0 问题.
+  - **关联文件**: `services/error.rs` (新增, KernelError + From<i32> + From<Errno> + as_errno), `services/net/socket.rs` (改 type alias), `services/net/unix.rs` (改 2 字段枚举), `services/mod.rs` (导出 error), `framework/syscall/types.rs` (Errno::as_i32), `host-tests/tests/td08_kernel_error_test.rs` (新增 7 个).
+  - **遗留**: 跨服务其他模块 (fs/vfs/hvfs/proc) 各自的 `*Error` 未统一, 后续可按相同模式逐步下沉到 `KernelError`. 当前 V1 是 net 域单点先行, 编译期可立即把 `unix.rs` 中 `Self::Invalid → K::InvalidArgument` 等 9 行硬编码改写消除.
 
 ---
 

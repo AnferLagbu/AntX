@@ -37,6 +37,9 @@
 /// 系统调用 — POSIX + Credo 分发 (通过 framework::UserContext)
 pub mod syscall;
 
+/// TD-08: services 层统一错误 (单一来源, SocketError/UnixSocketError 共享)
+pub mod error;
+
 /// 进程管理 — 调度 / 进程表 / ELF 加载
 pub mod proc;
 

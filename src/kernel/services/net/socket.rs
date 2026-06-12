@@ -27,67 +27,12 @@ use crate::kernel::framework::net_socket;
 // 错误
 // ============================================================================
 
-/// Socket 操作错误 (POSIX errno → 强类型)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SocketError {
-    /// 权限不足 (E_PERM=1)
-    PermissionDenied,
-    /// 文件描述符无效 (E_BADF=9)
-    BadFd,
-    /// 操作会阻塞 (E_AGAIN=11)
-    WouldBlock,
-    /// 内存不足 (E_NOMEM=12)
-    NoMemory,
-    /// 错误地址 (E_FAULT=14)
-    Fault,
-    /// 无效参数 (E_INVAL=22)
-    InvalidArgument,
-    /// 进程打开文件过多 (E_NFILE=23)
-    ProcessFileLimit,
-    /// 设备不存在 (E_NODEV=19)
-    NoDevice,
-    /// 操作不支持 (E_NOTSUPP=95)
-    NotSupported,
-    /// 地址族不支持 (E_AFNOSUPPORT=97)
-    AddrFamilyNotSupported,
-    /// 地址已被使用 (E_ADDRINUSE=98)
-    AddrInUse,
-    /// 地址不可用 (E_ADDRNOTAVAIL=99)
-    AddrNotAvailable,
-    /// 连接被重置 (E_CONNRESET=104)
-    ConnectionReset,
-    /// 未连接 (E_NOTCONN=107)
-    NotConnected,
-    /// 连接被拒绝 (E_CONNREFUSED=111)
-    ConnectionRefused,
-    /// 网络未初始化
-    NotReady,
-    /// 其他
-    Other(i32),
-}
-
-impl SocketError {
-    pub fn from_i32(rc: i32) -> Self {
-        match rc {
-            1 => Self::PermissionDenied,
-            9 => Self::BadFd,
-            11 => Self::WouldBlock,
-            12 => Self::NoMemory,
-            14 => Self::Fault,
-            19 => Self::NoDevice,
-            22 => Self::InvalidArgument,
-            23 => Self::ProcessFileLimit,
-            95 => Self::NotSupported,
-            97 => Self::AddrFamilyNotSupported,
-            98 => Self::AddrInUse,
-            99 => Self::AddrNotAvailable,
-            104 => Self::ConnectionReset,
-            107 => Self::NotConnected,
-            111 => Self::ConnectionRefused,
-            _ => Self::Other(rc),
-        }
-    }
-}
+/// Socket 错误 (TD-08: 改为统一 `KernelError` 的 type alias, 单一来源).
+///
+/// 历史: `SocketError` 自带 17 个字段 (与 `UnixSocketError` 高度重叠).
+/// 现在所有共享错误统一在 `services::error::KernelError`, `SocketError` 仅保留别名.
+/// 子系统特有错误 (无 — INET socket 全部错误都在 `KernelError`) 用 0 字段表达.
+pub use crate::kernel::services::error::KernelError as SocketError;
 
 /// services 层结果类型
 pub type SocketResult<T> = Result<T, SocketError>;

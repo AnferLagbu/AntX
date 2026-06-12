@@ -39,31 +39,18 @@ pub const PATH_MAX: usize = fw::UNIX_PATH_MAX;
 /// UDS socket 类型 (STREAM=1, DGRAM=2 与 AF_INET 共用)
 pub use fw::UnixSockType as SockType;
 
-/// UDS 错误 (POSIX errno 强类型)
+/// UDS 错误 (TD-08: 共享字段全部下沉到 `services::error::KernelError`,
+/// 本枚举仅保留子系统特有字段 + 包装. 字段数 = 2, 满足验收 "≤2").
+///
+/// 字段说明:
+///   - `PathNotFound`: UDS 特有 (路径查找失败, `ENOENT`). `KernelError` 无此语义.
+///   - `Kernel(KernelError)`: 其余共享错误统一走 `KernelError` 单一来源.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnixSocketError {
-    /// 文件描述符无效
-    BadFd,
-    /// 操作会阻塞 (非阻塞 accept 无 pending / 缓冲空)
-    WouldBlock,
-    /// 内存不足
-    NoMemory,
-    /// 地址族不支持
-    AddrFamilyNotSupported,
-    /// 地址已被使用
-    AddrInUse,
-    /// 目标无监听/无绑定
-    ConnectionRefused,
-    /// 参数或状态非法
-    Invalid,
-    /// 路径未找到
-    NotFound,
-    /// 子特性未启用
-    NotSupported,
-    /// 未连接
-    NotConnected,
-    /// 其他
-    Other(i32),
+    /// UDS 特有: 路径未找到 (`ENOENT`)
+    PathNotFound,
+    /// 共享错误统一包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl UnixSocketError {
@@ -71,34 +58,32 @@ impl UnixSocketError {
     pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno {
         use crate::kernel::framework::syscall::types::Errno as E;
         match self {
-            Self::BadFd => E::EBADF,
-            Self::WouldBlock => E::EAGAIN,
-            Self::NoMemory => E::ENOMEM,
-            Self::AddrFamilyNotSupported => E::EAFNOSUPPORT,
-            Self::AddrInUse => E::EADDRINUSE,
-            Self::ConnectionRefused => E::ECONNREFUSED,
-            Self::Invalid => E::EINVAL,
-            Self::NotFound => E::ENOENT,
-            Self::NotSupported => E::ENOSYS,
-            Self::NotConnected => E::ENOTCONN,
-            Self::Other(_) => E::EINVAL,
+            Self::PathNotFound => E::ENOENT,
+            Self::Kernel(e) => e.as_errno(),
         }
     }
 }
 
 impl From<fw::UdsError> for UnixSocketError {
     fn from(e: fw::UdsError) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match e {
-            fw::UdsError::BadFd => Self::BadFd,
-            fw::UdsError::Again => Self::WouldBlock,
-            fw::UdsError::NoMem => Self::NoMemory,
-            fw::UdsError::AddrFamily => Self::AddrFamilyNotSupported,
-            fw::UdsError::AddrInUse => Self::AddrInUse,
-            fw::UdsError::ConnRefused => Self::ConnectionRefused,
-            fw::UdsError::Invalid => Self::Invalid,
-            fw::UdsError::NotFound => Self::NotFound,
-            fw::UdsError::NoSys => Self::NotSupported,
+            fw::UdsError::NotFound => Self::PathNotFound,
+            fw::UdsError::BadFd => Self::Kernel(K::BadFd),
+            fw::UdsError::Again => Self::Kernel(K::WouldBlock),
+            fw::UdsError::NoMem => Self::Kernel(K::NoMemory),
+            fw::UdsError::AddrFamily => Self::Kernel(K::AddrFamilyNotSupported),
+            fw::UdsError::AddrInUse => Self::Kernel(K::AddrInUse),
+            fw::UdsError::ConnRefused => Self::Kernel(K::ConnectionRefused),
+            fw::UdsError::Invalid => Self::Kernel(K::InvalidArgument),
+            fw::UdsError::NoSys => Self::Kernel(K::NotSupported),
         }
+    }
+}
+
+impl From<crate::kernel::services::error::KernelError> for UnixSocketError {
+    fn from(e: crate::kernel::services::error::KernelError) -> Self {
+        Self::Kernel(e)
     }
 }
 
