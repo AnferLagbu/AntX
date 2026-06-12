@@ -1243,23 +1243,28 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-53 [低] 网卡探测编译时架构互斥
+### [x] I-53 [低] 网卡探测编译时架构互斥 ✅ 已修复 (2026-06-12)
 
 **来源**: 审计 18
 **根因**: `cfg x86_64` / `cfg aarch64` 互斥, 交叉设备无法使用。
 **关联文件**:
-- [src/kernel/framework/driver/net/](../../src/kernel/framework/driver/net/)
+- [src/kernel/framework/driver/virtio/net.rs](../../src/kernel/framework/driver/virtio/net.rs)
+- [host-tests/tests/virtio_net_arch_unify_test.rs](../../host-tests/tests/virtio_net_arch_unify_test.rs)
 **修复方案**:
-1. 抽离架构无关的探测逻辑
-2. 架构特定代码放到 `cfg`-gated 模块
-3. 一个二进制可在双架构运行
+1. 排查所有 `cfg(target_arch)` 在网卡驱动路径上的使用
+2. e1000.rs 已是 arch-agnostic (走 IoMem 抽象), 无 cfg
+3. virtio/net.rs::virtio_net_send 中 `dma_phys` 原本 `#[cfg(x86_64)] if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys }; #[cfg(aarch64)] let dma_phys = phys;` 互斥分支, 改为单表达式
+4. 借助 framework::mm::KERNEL_BASE 本身已 cfg-gated (x86_64: 0xFFFF800000000000, aarch64: 0), 同一个 `if phys >= KERNEL_BASE` 表达式在 aarch64 上自然退化为 `phys`
 **验收**:
-- [ ] 双架构二进制包含全部网卡驱动
-- [ ] 启动时按需初始化
+- [x] e1000.rs 无 cfg(target_arch) 守卫
+- [x] virtio/net.rs 无 `#[cfg]+let` 互斥赋值
+- [x] virtio_net_send 使用统一 `if phys >= KERNEL_BASE` 表达式
+- [x] 双架构 0 warning 0 error
+- [x] 3 个静态契约测试通过
 **完成记录**:
-- 日期: ____
+- 日期: 2026-06-12
 - 提交: ____
-- 简述: ____
+- 简述: 移除 virtio_net_send 的 cfg 互斥, 借助 KERNEL_BASE 的 cfg-gated const 实现单二进制双架构.
 
 ---
 

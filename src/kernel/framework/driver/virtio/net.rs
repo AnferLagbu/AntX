@@ -522,10 +522,13 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     let user_data = unsafe { UserReadPtr::new(data, len as usize) };
     dev.tx_dma_buf[hdr..total].copy_from_slice(&user_data.as_slice()[..total - hdr]);
     let phys = dev.tx_dma_buf.as_ptr() as u64;
-    #[cfg(target_arch = "x86_64")]
+    // I-53: 消除编译时架构互斥.
+    // KERNEL_BASE 由 framework::mm 在两个架构上 cfg-gated 定义:
+    //   x86_64: 0xFFFF800000000000 (内核高位映射, DMA 走物理低地址需回退)
+    //   aarch64: 0 (恒等映射, DMA 物理地址 = 虚拟地址)
+    // 同一个表达式 `if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys }`
+    // 在 aarch64 上退化为 `phys`, 等价于原 aarch64 分支; 不再需要 cfg 互斥.
     let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
-    #[cfg(target_arch = "aarch64")]
-    let dma_phys = phys;
     match dev.send_packet(dma_phys, total as u32) {
         Ok(()) => 0,
         Err(()) => -1,
