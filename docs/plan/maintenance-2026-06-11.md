@@ -1177,21 +1177,26 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-35 [低] MLFQ 与 CFS 并存, 调度器部分冗余
+### [x] I-35 [低] MLFQ 与 CFS 并存, 调度器部分冗余 ✅ 已修复 (2026-06-12)
 
 **来源**: 审计 15
 **关联文件**:
-- [src/kernel/framework/sched/mlfq.rs](../../src/kernel/framework/sched/mlfq.rs)
+- [src/kernel/framework/proc/scheduler.rs](../../src/kernel/framework/proc/scheduler.rs)
+- [host-tests/tests/scheduler_mlfq_retired_test.rs](../../host-tests/tests/scheduler_mlfq_retired_test.rs)
 **修复方案**:
-1. 删除 MLFQ (保留 CFS)
-2. 或在文档中明确两种调度器适用场景
+1. 排查发现一个 **真 bug**: `add_to_run_queue(pid)` 把 pid 推到 `queues[0]` (MLFQ level 0), 但 `schedule()` 严格按 DL → RT → CFS 顺序 pick, 只读 `cfs_rq`, 永远不读 `queues[]`. 历史上所有新创建的子进程都进了一个"孤儿队列".
+2. 修复: `add_to_run_queue` 重定向为 `self.cfs_enqueue(pid)`, 与 `add(pid)` 行为等价.
+3. 模块顶部新增 doc comment, 明确调度策略: DL (EDF+CBS) / RT (FIFO+RR) / CFS (vruntime 红黑树), MLFQ 标记"已退役", 仅 `queues[]` 数组与 `boost_priority` 保留作为 `has_runnable` 调试读.
 **验收**:
-- [ ] 调度器模块数 ≤ 2 (CFS + RT)
-- [ ] 文档明确调度策略选择
+- [x] `add_to_run_queue` 重定向到 `cfs_enqueue`
+- [x] doc 列出 DL/RT/CFS 三策略, 明确 MLFQ 退役
+- [x] `pick_cfs_task` 不再读 `queues[]`
+- [x] 静态契约测试 3 用例通过
+- [x] 双架构 0 warning 0 error
 **完成记录**:
-- 日期: ____
+- 日期: 2026-06-12
 - 提交: ____
-- 简述: ____
+- 简述: 修复孤儿队列 bug + 文档化 MLFQ 退役, 加 3 个静态契约测试.
 
 ---
 

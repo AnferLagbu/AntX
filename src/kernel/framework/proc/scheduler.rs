@@ -1,3 +1,25 @@
+//! # Framekernel 调度器
+//!
+//! ## 调度策略 (I-35: MLFQ 与 CFS 二选一)
+//!
+//! Framekernel 采用三类调度器并存的分层架构, **没有冗余**:
+//!
+//! | 策略 | SchedPolicy | 实现 | 适用进程 |
+//! |------|-------------|------|----------|
+//! | DL   | `Deadline`  | Earliest-Deadline-First (EDF) + CBS | SCHED_DEADLINE 实时 |
+//! | RT   | `Fifo`/`Rr` | 固定优先级 FIFO + 时间片 RR       | SCHED_FIFO/RR 实时 |
+//! | CFS  | `Normal`    | vruntime 红黑树 (Linux CFS 风格)  | SCHED_NORMAL 普通进程 |
+//!
+//! **MLFQ 已退役**: 历史上 MLFQ 的多级反馈队列 (level 0..3 + 时间片 [10,20,40,80] ms)
+//! 已完全被 CFS 取代 (注释中保留 "preserved from MLFQ" 仅为历史可追溯性).
+//! `add_to_run_queue` 路径已重定向到 `cfs_enqueue`; `queues[MLFQ_LEVELS]` 字段
+//! 与 `boost_priority` 保留仅作调试读 (`has_runnable`), 不再被任何调度决策读取.
+//!
+//! ## 调度决策链
+//!
+//! `schedule()` 严格按 DL → RT → CFS 顺序回退, 每个层级内部找不到可运行任务时
+//! 立即降级到下一层级, 与 Linux `pick_next_task` 行为一致.
+
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
@@ -862,7 +884,10 @@ impl Scheduler {
     }
 
     pub fn add_to_run_queue(&self, pid: Pid) {
-        per_cpu().queues[0].lock().push_back(pid);
+        // I-35: 重定向到 cfs_enqueue. 历史 MLFQ queues[0] 路径曾导致新进程
+        // 永远不会被 pick_cfs_task 选中 (调度器只读 cfs_rq, 不读 queues[]).
+        // 现在 add / add_to_run_queue 等价, 都走 vruntime 红黑树.
+        self.cfs_enqueue(pid);
     }
 
     pub fn set_current(&self, pid: Pid) {
