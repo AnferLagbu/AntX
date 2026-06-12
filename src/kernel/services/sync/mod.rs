@@ -141,20 +141,47 @@ pub fn scheduler_yield() {
 // 错误
 // ============================================================================
 
-/// 同步原语错误 (一般 trylock 失败专用)
+/// 同步原语错误 — TD-20: 收敛到 KernelError, 2 字段 sync 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `Deadlock`: 同线程重复 lock (POSIX EDEADLK=35 但语义不通用)
+///   - `Timeout`: 加锁超时 (POSIX ETIMEDOUT=110)
+///   - `Kernel(KernelError)`: 共享错误 (WouldBlock / Other) 走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncError {
-    /// 已被其他持有者锁住
-    WouldBlock,
     /// 死锁 (同线程重复 lock)
     Deadlock,
     /// 超时
     Timeout,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
+}
+
+impl SyncError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::Deadlock => E::EDEADLK,
+            Self::Timeout => E::ETIMEDOUT,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
+    pub fn from_i32(rc: i32) -> Self {
+        use crate::kernel::services::error::KernelError as K;
+        match rc {
+            -11 => Self::Kernel(K::WouldBlock),
+            -35 => Self::Deadlock,
+            -110 => Self::Timeout,
+            rc => Self::Kernel(K::Other(rc)),
+        }
+    }
 }
 
 pub type SyncResult<T> = Result<T, SyncError>;
+
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // Futex — 用户态同步原语

@@ -227,44 +227,57 @@ pub fn ct_eq_password(a: PasswordHash, b: PasswordHash) -> bool {
 // 持久化错误
 // ============================================================================
 
-/// 持久化错误
+/// 持久化错误 — TD-20: 收敛到 KernelError, 3 字段存储特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `BadMagic`: 数据库格式不匹配 (POSIX ENOEXEC=8, 但语义不通用)
+///   - `UnsupportedVersion`: 数据库版本不兼容 (POSIX EPROTO=71, 罕见)
+///   - `ChecksumMismatch`: CRC / 校验和不匹配
+///   - `Kernel(KernelError)`: 共享错误 (PathTooLong→NameTooLong / OpenFailed
+///     / IoFailed→Fault / Truncated / Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageError {
-    /// 路径过长
-    PathTooLong,
-    /// 文件打开失败
-    OpenFailed,
-    /// 文件读写失败
-    IoFailed,
     /// 数据库格式不匹配 (魔数错误)
     BadMagic,
     /// 数据库版本不兼容
     UnsupportedVersion,
-    /// 文件被截断
-    Truncated,
     /// CRC / 校验和不匹配
     ChecksumMismatch,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl StorageError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::BadMagic => E::ENOEXEC,
+            Self::UnsupportedVersion => E::EPROTO,
+            Self::ChecksumMismatch => E::EBADMSG,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     /// 从内核 `i32` 错误码翻译
     pub fn from_i32(code: i32) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match code {
-            -1 => Self::OpenFailed,
-            -2 => Self::PathTooLong,
-            -3 => Self::IoFailed,
+            -1 => Self::Kernel(K::Other(code)),
+            -2 => Self::Kernel(K::NameTooLong),
+            -3 => Self::Kernel(K::Fault),
             -4 => Self::BadMagic,
             -5 => Self::UnsupportedVersion,
-            -6 => Self::Truncated,
+            -6 => Self::Kernel(K::NoSuchProcess),
             -7 => Self::ChecksumMismatch,
-            other => Self::Other(other),
+            other => Self::Kernel(K::Other(other)),
         }
     }
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
+
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // 持久化 API
@@ -374,10 +387,10 @@ mod tests {
 
     #[test]
     fn storage_error_translation() {
-        assert_eq!(StorageError::from_i32(-1), StorageError::OpenFailed);
-        assert_eq!(StorageError::from_i32(-3), StorageError::IoFailed);
+        assert_eq!(StorageError::from_i32(-1), StorageError::Kernel(crate::kernel::services::error::KernelError::Other(-1)));
+        assert_eq!(StorageError::from_i32(-3), StorageError::Kernel(crate::kernel::services::error::KernelError::Fault));
         assert_eq!(StorageError::from_i32(-4), StorageError::BadMagic);
-        assert_eq!(StorageError::from_i32(0), StorageError::Other(0));
+        assert_eq!(StorageError::from_i32(0), StorageError::Kernel(crate::kernel::services::error::KernelError::Other(0)));
     }
 
     #[test]

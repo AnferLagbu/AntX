@@ -220,7 +220,16 @@ impl ProcfsData {
             return crate::kernel::framework::config::procfs::read_sys_config_json(buf) as i32;
         }
 
-        -1
+        // TD-09 V2: /proc/sys/klog/sinks — 运行时 sink 列表
+        if name == "sys/klog/sinks" {
+            return crate::kernel::services::klog::render_text(buf) as i32;
+        }
+        if name == "sys/klog/sinks.json" {
+            return crate::kernel::services::klog::render_json(buf) as i32;
+        }
+
+        // 未知 entry → ENOENT (VFS 边界约定, 不要返回裸 -1)
+        crate::kernel::framework::fs::vfs::types::KernelError::NotFound.as_i32()
     }
 
     pub fn readdir(&self, index: usize) -> Option<([u8; 32], u32, u8)> {

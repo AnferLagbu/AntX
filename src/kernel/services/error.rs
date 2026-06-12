@@ -16,6 +16,8 @@ use crate::kernel::framework::syscall::types::Errno;
 pub enum KernelError {
     /// 权限不足 (EPERM=1)
     PermissionDenied,
+    /// I/O 错误 (EIO=5)
+    Io,
     /// 文件/路径不存在 (ENOENT=2)
     FileNotFound,
     /// 资源/进程不存在 (ESRCH=3)
@@ -75,6 +77,7 @@ impl KernelError {
     pub const fn from_i32(rc: i32) -> Self {
         match rc {
             1 => Self::PermissionDenied,
+            5 => Self::Io,
             2 => Self::FileNotFound,
             3 => Self::NoSuchProcess,
             9 => Self::BadFd,
@@ -107,6 +110,7 @@ impl KernelError {
     pub const fn as_errno(self) -> Errno {
         match self {
             Self::PermissionDenied => Errno::EPERM,
+            Self::Io => Errno::EIO,
             Self::FileNotFound => Errno::ENOENT,
             Self::NoSuchProcess => Errno::ESRCH,
             Self::BadFd => Errno::EBADF,
@@ -147,6 +151,14 @@ impl From<KernelError> for i32 {
     fn from(e: KernelError) -> Self {
         e.as_errno().as_i32()
     }
+}
+
+/// VFS 风格返回: 负 errno (POSIX `-|errno|` 约定)
+///
+/// 用于替换裸 `return -1`, 让 VFS/syscall 边界传递的"错误"携带明确语义.
+/// 调用方可在 syscall handler 中通过 `-ret` 还原 errno.
+pub const fn as_vfs_ret(self) -> i32 {
+    -(self.as_errno().as_i32())
 }
 
 impl From<Errno> for KernelError {

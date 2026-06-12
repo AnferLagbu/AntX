@@ -49,29 +49,44 @@ impl DevTreeNodeId {
 // 设备树错误
 // ============================================================================
 
+/// 设备树错误 — TD-20: 收敛到 KernelError, 1 字段 DT 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `ParentNotFound`: 父节点不存在 (设备树构建期间强一致语义)
+///   - `Kernel(KernelError)`: 共享错误 (NotFound / InvalidArgument / Other)
+///     全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevTreeError {
-    /// 节点未找到
-    NotFound,
     /// 父节点不存在
     ParentNotFound,
-    /// 无效参数
-    InvalidArgument,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl DevTreeError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::ParentNotFound => E::ENODEV,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     pub fn from_i32(rc: i32) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match rc {
-            -2 => Self::NotFound,
-            -22 => Self::InvalidArgument,
-            _ => Self::Other(rc),
+            -2 => Self::Kernel(K::FileNotFound),
+            -22 => Self::Kernel(K::InvalidArgument),
+            -19 => Self::ParentNotFound,
+            rc => Self::Kernel(K::Other(rc)),
         }
     }
 }
 
 pub type DevTreeResult<T> = Result<T, DevTreeError>;
+
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // 节点查询
@@ -201,7 +216,7 @@ pub fn get_user_mapped(id: DevTreeNodeId) -> Option<u32> {
 /// - `driver_data`: 驱动私有数据指针 (由驱动维护)
 ///
 /// # 返回
-/// 成功返回 Chitin 设备 ID, 失败返回 `DevTreeError::NotFound`
+/// 成功返回 Chitin 设备 ID, 失败返回 `DevTreeError::Kernel(KernelError::FileNotFound)`
 pub fn bind_device(
     id: DevTreeNodeId,
     io_base: Option<u64>,
@@ -210,7 +225,7 @@ pub fn bind_device(
 ) -> DevTreeResult<u32> {
     match chitin::devtree::devtree_bind_device(id.0, io_base, irq, driver_data) {
         Some(dev_id) => Ok(dev_id),
-        None => Err(DevTreeError::NotFound),
+        None => Err(DevTreeError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
     }
 }
 

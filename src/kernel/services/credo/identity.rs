@@ -40,43 +40,57 @@ pub use super::policy::CapBits;
 // 错误类型
 // ============================================================================
 
-/// PWM 操作错误
+/// PWM 操作错误 — TD-20: 收敛到 KernelError, 3 字段 PWM 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `TableFull`: PWM 表已满 (POSIX EAGAIN, 但语义特化)
+///   - `InvalidPassword`: 密码错误 (POSIX EACCES, 但语义特化)
+///   - `WeakPassword`: 密码过短 / 不合法
+///   - `Kernel(KernelError)`: 共享错误 (NotFound / AlreadyExists /
+///     PermissionDenied / Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PwmError {
     /// 表已满
     TableFull,
-    /// PWM 不存在
-    NotFound,
-    /// 已存在同名 PWM
-    AlreadyExists,
     /// 密码错误
     InvalidPassword,
-    /// 权限不足
-    PermissionDenied,
     /// 密码过短 / 不合法
     WeakPassword,
-    /// 其他 (含 `as_i32() != 0` 的内核错误码)
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl PwmError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::TableFull => E::EAGAIN,
+            Self::InvalidPassword => E::EACCES,
+            Self::WeakPassword => E::EINVAL,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     /// 从内核 `i32` 错误码翻译
     pub fn from_i32(code: i32) -> Self {
-        // 0 是成功, 非 0 是错误 (按 credo::types::Error::as_i32() 约定)
+        use crate::kernel::services::error::KernelError as K;
         match code {
             -2 => Self::TableFull,
-            -3 => Self::NotFound,
-            -4 => Self::AlreadyExists,
+            -3 => Self::Kernel(K::FileNotFound),
+            -4 => Self::Kernel(K::AlreadyExists),
             -5 => Self::InvalidPassword,
-            -6 => Self::PermissionDenied,
+            -6 => Self::Kernel(K::PermissionDenied),
             -7 => Self::WeakPassword,
-            other if other != 0 => Self::Other(other),
-            _ => Self::Other(0),
+            other if other != 0 => Self::Kernel(K::Other(other)),
+            _ => Self::Kernel(K::Other(0)),
         }
     }
 }
 
 pub type PwmResult<T> = Result<T, PwmError>;
+
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // 初始化与发现
@@ -420,9 +434,9 @@ mod tests {
     #[test]
     fn error_from_i32() {
         assert_eq!(PwmError::from_i32(-2), PwmError::TableFull);
-        assert_eq!(PwmError::from_i32(-3), PwmError::NotFound);
-        assert_eq!(PwmError::from_i32(0), PwmError::Other(0));
-        assert_eq!(PwmError::from_i32(42), PwmError::Other(42));
+        assert_eq!(PwmError::from_i32(-3), PwmError::Kernel(crate::kernel::services::error::KernelError::FileNotFound));
+        assert_eq!(PwmError::from_i32(0), PwmError::Kernel(crate::kernel::services::error::KernelError::Other(0)));
+        assert_eq!(PwmError::from_i32(42), PwmError::Kernel(crate::kernel::services::error::KernelError::Other(42)));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::kernel::framework::driver::block;
+use crate::kernel::framework::fs::vfs::types::KernelError;
 use crate::kernel::services::fs::hvfs::arc::HvArc;
 use crate::kernel::services::fs::hvfs::bp::*;
 use crate::kernel::services::fs::hvfs::checksum::HvChecksum;
@@ -234,7 +235,7 @@ impl HvSpa {
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
         let drive = self.vdev_0_drive_id();
@@ -243,7 +244,7 @@ impl HvSpa {
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
         if buf.len() < 512 {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
         let drive = self.vdev_0_drive_id();

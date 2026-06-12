@@ -40,6 +40,13 @@ pub mod syscall;
 /// TD-08: services 层统一错误 (单一来源, SocketError/UnixSocketError 共享)
 pub mod error;
 
+/// klog 日志子系统 — sink 注册表的安全视图 (TD-09 V2 procfs 运行时管理)
+///
+/// 启动期注册: `klog::register_defaults()` 调用 framework::klog 注册默认 sink.
+/// 运行时查询: `klog::list_names()` / `klog::count()` / `klog::render_text()` /
+///             `klog::render_json()` 为 `/proc/sys/klog/sinks` 提供数据源.
+pub mod klog;
+
 /// 进程管理 — 调度 / 进程表 / ELF 加载
 pub mod proc;
 

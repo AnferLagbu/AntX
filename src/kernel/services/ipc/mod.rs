@@ -22,41 +22,47 @@ use crate::kernel::framework::ipc::sem;
 // 错误
 // ============================================================================
 
-/// IPC 错误 (强类型, 替代内核 `i32`)
+/// IPC 错误 — TD-20: 收敛到 KernelError, 1 字段 IPC 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `InvalidOp`: IPC 句柄类型不匹配 (写读端 / 读写端) 走 EBADF
+///   - `Kernel(KernelError)`: 共享错误 (NoResources→WouldBlock / BadFd /
+///     NotFound→NoSuchProcess / WouldBlock / PermissionDenied / InvalidArgument)
+///     全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpcError {
-    /// 表已满 / 资源耗尽
-    NoResources,
-    /// 无效文件描述符
-    BadFd,
     /// 无效操作 (写读端 / 读写端)
     InvalidOp,
-    /// 资源未找到
-    NotFound,
-    /// 操作会阻塞
-    WouldBlock,
-    /// 权限不足
-    PermissionDenied,
-    /// 无效参数
-    InvalidArgument,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl IpcError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::InvalidOp => E::EBADF,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     pub fn from_i32(rc: i32) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match rc {
-            -1 => Self::NoResources,
+            -1 => Self::Kernel(K::WouldBlock),
             -2 => Self::InvalidOp,
-            -3 => Self::NotFound,
-            -4 => Self::WouldBlock,
-            -13 => Self::PermissionDenied,
-            -22 => Self::InvalidArgument,
-            -9 | -77 => Self::BadFd,
-            rc => Self::Other(rc),
+            -3 => Self::Kernel(K::NoSuchProcess),
+            -4 => Self::Kernel(K::WouldBlock),
+            -9 | -77 => Self::Kernel(K::BadFd),
+            -13 => Self::Kernel(K::PermissionDenied),
+            -22 => Self::Kernel(K::InvalidArgument),
+            rc => Self::Kernel(K::Other(rc)),
         }
     }
 }
+
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // 句柄

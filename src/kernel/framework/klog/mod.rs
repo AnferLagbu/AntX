@@ -318,6 +318,22 @@ pub unsafe fn klog_sink_at(idx: usize) -> Option<&'static dyn LogSink> {
     }
 }
 
+/// 取出 idx 处的 sink 名称. 越界返回 `None`.
+///
+/// 名称所有权属于 sink 实现 (`'static str`). 名称存放在 sink 自身的 vtable
+/// 数据中, 只要 sink 仍注册, 名称引用就一直有效.
+///
+/// 这是一个**安全** API: 不需要 unsafe 块, 调用方在 services 层可放心使用.
+pub fn klog_sink_name_at(idx: usize) -> Option<&'static str> {
+    let n = LOG_SINK_COUNT.load(Ordering::SeqCst) as usize;
+    if idx >= n {
+        return None;
+    }
+    // SAFETY: idx < n, 满足 klog_sink_at 的契约; 仅取 name() 后立即丢弃 sink 引用.
+    let name = unsafe { klog_sink_at(idx) }.map(|s| s.name());
+    name
+}
+
 /// 广播字符串到所有已注册 sink. 空注册表时直接返回.
 pub fn klog_broadcast(s: &str) {
     let n = klog_sink_count();

@@ -111,7 +111,7 @@ impl SessionTable {
                 if s.pwm == pwm && matches!(s.state, SessionState::Active) {
                     count += 1;
                     if count >= per_pwm {
-                        return Err(SessionError::TooManySessions);
+                        return Err(SessionError::Kernel(crate::kernel::services::error::KernelError::WouldBlock));
                     }
                 }
             }
@@ -166,7 +166,7 @@ impl SessionTable {
                 }
             }
         }
-        Err(SessionError::NotFound)
+        Err(SessionError::Kernel(crate::kernel::services::error::KernelError::FileNotFound))
     }
 
     /// 结束会话
@@ -182,7 +182,7 @@ impl SessionTable {
                 }
             }
         }
-        Err(SessionError::NotFound)
+        Err(SessionError::Kernel(crate::kernel::services::error::KernelError::FileNotFound))
     }
 
     /// 强制结束某 PWM 的所有会话
@@ -230,13 +230,33 @@ impl SessionTable {
     }
 }
 
+/// Session 错误 — TD-20: 收敛到 KernelError, 2 字段 session 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `TableFull`: Session 表已满 (POSIX EAGAIN, 但语义特化)
+///   - `NotActive`: Session 状态非激活 (POSIX EINVAL, 但语义特化)
+///   - `Kernel(KernelError)`: 共享错误 (NotFound / TooManySessions→WouldBlock / Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionError {
     TableFull,
-    NotFound,
     NotActive,
-    TooManySessions,
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
+
+impl SessionError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::TableFull => E::EAGAIN,
+            Self::NotActive => E::EINVAL,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+}
+
+use crate::kernel::framework::syscall::types::Errno;
 
 /// 登录认证结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -300,7 +320,7 @@ impl<'a> SessionManager<'a> {
                     pid,
                 ) {
                     Ok(id) => id,
-                    Err(SessionError::TooManySessions) => {
+                    Err(SessionError::Kernel(crate::kernel::services::error::KernelError::WouldBlock)) => {
                         return LoginResult::Denied(LoginDeny::TooManySessions);
                     }
                     Err(SessionError::TableFull) => {
@@ -406,7 +426,7 @@ mod tests {
         }
         // 第 9 个应被拒
         let r = t.create(1, default_caps(), 100, 0, 0);
-        assert_eq!(r, Err(SessionError::TooManySessions));
+        assert_eq!(r, Err(SessionError::Kernel(crate::kernel::services::error::KernelError::WouldBlock)));
     }
 
     #[test]

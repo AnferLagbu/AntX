@@ -227,11 +227,31 @@ impl AuditLog {
     }
 }
 
+/// 审计错误 — TD-20: 收敛到 KernelError, 1 字段 audit 特有 + 1 共享包装 (预留).
+///
+/// 字段说明:
+///   - `Full`: 审计缓冲区已满 (理论上环形不会发生, 但保留)
+///   - `Kernel(KernelError)`: 共享错误 (预留扩展, 当前未使用)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditError {
     /// 缓冲区已满 (应该不会发生, 环形)
     Full,
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
+
+impl AuditError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::Full => E::ENOSPC,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+}
+
+use crate::kernel::framework::syscall::types::Errno;
 
 /// FNV-1a 64 位哈希 (services 层, 用于审计链)
 fn compute_hash(prev: u64, event: &AuditEvent) -> u64 {

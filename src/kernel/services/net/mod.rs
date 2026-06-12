@@ -73,37 +73,48 @@ pub use unix::{
 // 错误
 // ============================================================================
 
-/// 网络操作错误 (强类型, 替代内核 `i32`)
+/// 网络操作错误 — TD-20: 收敛到 KernelError, 1 字段 net 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `NotConfigured`: DHCP 未配置 (网络层语义, 不在 POSIX 通用集)
+///   - `Kernel(KernelError)`: 共享错误 (NotReady/InvalidArgument/NotFound/Io
+///     等) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetError {
-    /// 网络未就绪
-    NotReady,
     /// DHCP 未配置
     NotConfigured,
-    /// 参数无效
-    InvalidArgument,
-    /// 设备未找到
-    NotFound,
-    /// IO 失败
-    Io,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl NetError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::NotConfigured => E::ENETDOWN,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     pub fn from_i32(rc: i32) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match rc {
-            -1 => Self::NotReady,
-            -2 => Self::NotFound,
-            -5 => Self::Io,
-            -22 => Self::InvalidArgument,
-            _ => Self::Other(rc),
+            -1 => Self::Kernel(K::NotReady),
+            -2 => Self::Kernel(K::NoSuchProcess),
+            -5 => Self::Kernel(K::Fault),
+            -19 => Self::Kernel(K::NoDevice),
+            -22 => Self::Kernel(K::InvalidArgument),
+            -101 => Self::NotConfigured,
+            _ => Self::Kernel(K::Other(rc)),
         }
     }
 }
 
 /// services 层结果类型别名
 pub type NetResult<T> = Result<T, NetError>;
+
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // 状态

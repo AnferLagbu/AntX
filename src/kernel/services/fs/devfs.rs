@@ -300,11 +300,11 @@ impl DevfsData {
                 let note = parts.next().unwrap_or("").trim();
                 let password = parts.next().unwrap_or("").trim();
                 if note.is_empty() || password.is_empty() {
-                    return -1;
+                    return KernelError::InvalidArgument.as_i32();
                 }
                 match crate::kernel::framework::credo::session::login(note, password) {
                     Ok(_pwm) => buf.len() as i32,
-                    Err(_) => -1,
+                    Err(_) => KernelError::PermissionDenied.as_i32(),
                 }
             }
             Some(DevKind::Block) | Some(DevKind::Char) | Some(DevKind::Net) | Some(DevKind::Input) => {

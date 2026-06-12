@@ -42,46 +42,52 @@ pub use composite::{probe as composite_probe, probe_init as composite_probe_init
 // 错误
 // ============================================================================
 
-/// Chitin 操作错误 (强类型, 替代内核 `i32`)
+/// Chitin 操作错误 — TD-20: 收敛到 KernelError, 1 字段 chitin 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `WrongType`: 设备类型不匹配 (按类型查询时设备类型不符)
+///   - `Kernel(KernelError)`: 共享错误 (NotFound / AlreadyExists / Io→Fault /
+///     InvalidArgument / NoResources→WouldBlock / NotReady / PermissionDenied /
+///     Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChitinError {
-    /// 设备未找到
-    NotFound,
-    /// 设备已注册
-    AlreadyExists,
-    /// IO 失败
-    Io,
-    /// 无效参数
-    InvalidArgument,
-    /// 表已满
-    NoResources,
-    /// 设备未就绪
-    NotReady,
     /// 设备类型不匹配
     WrongType,
-    /// 权限不足
-    PermissionDenied,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl ChitinError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::WrongType => E::ENOTTY,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     pub fn from_i32(rc: i32) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match rc {
-            -2 => Self::NotFound,
-            -17 => Self::AlreadyExists,
-            -5 => Self::Io,
-            -22 => Self::InvalidArgument,
-            -28 => Self::NoResources,
-            -19 => Self::NotReady,
-            -1 => Self::Other(rc),
-            _ => Self::Other(rc),
+            -2 => Self::Kernel(K::FileNotFound),
+            -17 => Self::Kernel(K::AlreadyExists),
+            -5 => Self::Kernel(K::Fault),
+            -22 => Self::Kernel(K::InvalidArgument),
+            -28 => Self::Kernel(K::WouldBlock),
+            -19 => Self::Kernel(K::NoDevice),
+            -1 => Self::Kernel(K::Other(rc)),
+            -25 => Self::WrongType,
+            -13 => Self::Kernel(K::PermissionDenied),
+            _ => Self::Kernel(K::Other(rc)),
         }
     }
 }
 
 /// services 层结果类型别名
 pub type ChitinResult<T> = Result<T, ChitinError>;
+
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // 设备 ID
@@ -197,7 +203,7 @@ pub fn register(
     let leaked: &'static str = alloc::string::String::from(name).leak();
     let id = chitin::chitin_register(leaked, chitin_proto, None, None, driver_data);
     if id == u32::MAX {
-        Err(ChitinError::NoResources)
+        Err(ChitinError::Kernel(crate::kernel::services::error::KernelError::WouldBlock))
     } else {
         Ok(DeviceId(id))
     }

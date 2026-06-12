@@ -18,15 +18,20 @@ pub use fw::PiMutex;
 // 错误
 // ============================================================================
 
-/// PI Mutex 操作错误
+/// PI Mutex 操作错误 — TD-20: 收敛到 KernelError, 2 字段 PI 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `NotOwner`: 当前线程非持有者 (双重释放风险)
+///   - `Exhausted`: 资源耗尽 (无空闲槽位)
+///   - `Kernel(KernelError)`: 共享错误 (WouldBlock) 走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PiMutexError {
-    /// 操作会被阻塞 (try_lock 失败)
-    WouldBlock,
     /// 当前线程非持有者 (双重释放)
     NotOwner,
     /// 资源耗尽 (无空闲槽位)
     Exhausted,
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl PiMutexError {
@@ -34,9 +39,9 @@ impl PiMutexError {
     pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno {
         use crate::kernel::framework::syscall::types::Errno as E;
         match self {
-            Self::WouldBlock => E::EAGAIN,
             Self::NotOwner => E::EPERM,
             Self::Exhausted => E::ENOMEM,
+            Self::Kernel(e) => e.as_errno(),
         }
     }
 }
@@ -70,7 +75,7 @@ pub fn try_lock<T>(mutex: &PiMutex<T>, my_pid: u32, my_base_priority: u32) -> Pi
     if mutex.try_lock(my_pid, my_base_priority) {
         Ok(mutex.lock(my_pid, my_base_priority))
     } else {
-        Err(PiMutexError::WouldBlock)
+        Err(PiMutexError::Kernel(crate::kernel::services::error::KernelError::WouldBlock))
     }
 }
 

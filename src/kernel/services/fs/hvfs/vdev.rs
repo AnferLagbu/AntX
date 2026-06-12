@@ -1,4 +1,5 @@
 use crate::kernel::framework::driver::block;
+use crate::kernel::framework::fs::vfs::types::KernelError;
 use alloc::vec::Vec;
 
 pub const HV_VDEV_MAX: usize = 8;
@@ -172,7 +173,7 @@ impl HvVdev {
     pub fn read_sectors(&mut self, sector: u64, count: u32, buf: &mut [u8]) -> i32 {
         let need_bytes = (count as u64) * 512;
         if buf.len() < need_bytes as usize {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         let mut offset = 0usize;
         let mut sec = sector;
@@ -187,7 +188,7 @@ impl HvVdev {
                 &mut buf[offset..],
             );
             if result < 0 {
-                return -1;
+                return result;
             }
             sec += 1;
             offset += 512;
@@ -199,7 +200,7 @@ impl HvVdev {
     pub fn write_sectors(&mut self, sector: u64, count: u32, buf: &[u8]) -> i32 {
         let need_bytes = (count as u64) * 512;
         if buf.len() < need_bytes as usize {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         let mut offset = 0usize;
         let mut sec = sector;
@@ -214,7 +215,7 @@ impl HvVdev {
                 &buf[offset..],
             );
             if result < 0 {
-                return -1;
+                return result;
             }
             sec += 1;
             offset += 512;

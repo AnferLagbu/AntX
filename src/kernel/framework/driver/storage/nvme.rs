@@ -57,8 +57,11 @@ const MAX_SECTORS_PER_CMD: u16 = 128;
 
 // NVMe Controller Register Offsets (BAR0)
 const NVME_REG_CAP: usize = 0x00;    // u64: 控制器能力
+#[allow(dead_code)] // NVMe 规范 §3.1.2 — 启动时用于探测控制器版本 (待实现)
 const NVME_REG_VS: usize = 0x08;     // u32: 版本
+#[allow(dead_code)] // NVMe 规范 §3.1.6 — 中断屏蔽设置 (待实现 IRQ 路径)
 const NVME_REG_INTMS: usize = 0x0C;  // u32: 中断掩码设置
+#[allow(dead_code)] // NVMe 规范 §3.1.6 — 中断屏蔽清除 (待实现 IRQ 路径)
 const NVME_REG_INTMC: usize = 0x10;  // u32: 中断掩码清除
 const NVME_REG_CC: usize = 0x14;     // u32: 控制器配置
 const NVME_REG_CSTS: usize = 0x1C;   // u32: 控制器状态
@@ -395,6 +398,7 @@ impl NvmeQueuePair {
 struct QueueDma {
     virt: VirtAddr,
     phys: PhysAddr,
+    #[allow(dead_code)] // 区分 SQ/CQ — 预留作未来队列类型断言 (assert! / log)
     is_cq: bool,
     phase: u16, // CQ 阶段标记
 }
@@ -427,6 +431,7 @@ pub struct NvmeController {
     namespace_count: u32,
     namespace_size_lba: u64, // 命名空间大小 (LBA)
     lba_format_size: u16,    // LBA 格式字节数
+    #[allow(dead_code)] // 设备元数据 — 预留作 sysfs/procfs 暴露 / 驱动注册表
     info: DeviceInfo,
     initialized: bool,
 }

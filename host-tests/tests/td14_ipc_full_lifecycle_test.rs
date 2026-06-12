@@ -6,8 +6,8 @@
 //   - msgq 子系统至少有 msgq_create / msgq_send / msgq_recv / msgq_destroy 四个公开 fn
 //   - sem  子系统至少有 sem_create  / sem_wait  / sem_post  / sem_destroy 四个公开 fn
 //   - 顶层 free functions 同步存在
-//   - IpcError 包含 NoResources / BadFd / InvalidOp / NotFound / WouldBlock /
-//     PermissionDenied / InvalidArgument / Other(i32) 八种
+//   - IpcError 走 TD-08 薄包装: InvalidOp 域语义变体 + Kernel(KernelError) 共享包装
+//     (POSIX 兼容错误统一走 KernelError, 避免在 IpcError 内重复)
 //   - ShmHandle::from_id_and_addr / MsgqHandle::from / SemHandle::from 三个 ctor 都存在
 //   - 模块顶部 #![deny(unsafe_code)]
 //
@@ -68,34 +68,50 @@ fn test_sem_subsystem_full_lifecycle() {
 #[test]
 fn test_ipc_error_variants_complete() {
     let src = read_services_ipc();
-    for variant in &[
+    // TD-08 薄包装: 共享 POSIX 错误统一走 Kernel(KernelError),
+    // IpcError 只保留 IPC 域内独有且无法用 KernelError 表达的语义.
+    //
+    // 必须保留的域语义变体:
+    //   - InvalidOp: 操作对当前 IPC 资源类型不合法
+    //                (例如在 msgq 上调用 shm 专属 API, 跨子系统语义)
+    //
+    // 必须保留的包装变体:
+    //   - Kernel(crate::kernel::services::error::KernelError)
+    //     单一来源, 与 TD-20 错误统一测试保持一致.
+    let invalid_op_needles = [
+        "    InvalidOp,\n",
+        "        InvalidOp,\n",
+        "    InvalidOp ",
+    ];
+    assert!(
+        invalid_op_needles.iter().any(|n| src.contains(n)),
+        "IpcError 必须保留 InvalidOp 域语义变体 (TD-14 + TD-08 薄包装)"
+    );
+    assert!(
+        src.contains("Kernel(crate::kernel::services::error::KernelError)"),
+        "IpcError 必须以 Kernel(KernelError) 共享包装 (TD-08 薄包装)"
+    );
+    // 旧版 7 变体已废弃, 不得再出现在 IpcError 定义中.
+    for legacy in &[
         "NoResources",
         "BadFd",
-        "InvalidOp",
         "NotFound",
         "WouldBlock",
         "PermissionDenied",
         "InvalidArgument",
     ] {
-        // 多种缩进 (4/8 空格) 都接受
-        let needles = [
-            format!("    {},\n", variant),
-            format!("        {},\n", variant),
-            format!("    {} ", variant),
-            format!("        {} ", variant),
+        let defined_needles = [
+            format!("    {},\n", legacy),
+            format!("        {},\n", legacy),
+            format!("    {} ", legacy),
         ];
-        let found = needles.iter().any(|n| src.contains(n));
+        let defined = defined_needles.iter().any(|n| src.contains(n));
         assert!(
-            found,
-            "IpcError 必须有 {} 变体 (TD-14)",
-            variant
+            !defined,
+            "IpcError::{} 已被 TD-08 薄包装废弃, 改走 IpcError::Kernel(KernelError::...)",
+            legacy
         );
     }
-    // Other 变体必须带参数
-    assert!(
-        src.contains("Other(i32)"),
-        "IpcError 必须有 Other(i32) 兜底变体 (TD-14)"
-    );
 }
 
 #[test]

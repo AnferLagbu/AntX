@@ -883,16 +883,16 @@ impl RamFsData {
 
     pub fn truncate(&mut self, node_id: u32, new_size: u64, pwm: u64) -> i32 {
         if node_id as usize >= RAMFS_MAX_NODES {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
 
         {
             let node = &self.nodes[node_id as usize];
             if !node.used {
-                return -1;
+                return KernelError::NotFound.as_i32();
             }
             if !self.check_permission(node, pwm, FS_CAP_WRITE) {
-                return -1;
+                return KernelError::PermissionDenied.as_i32();
             }
         }
         let old_size = {
@@ -1040,16 +1040,16 @@ impl RamFsData {
     pub fn unlink(&mut self, path: &str, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
 
         {
             let node = &self.nodes[node_id as usize];
             if !node.used {
-                return -1;
+                return KernelError::NotFound.as_i32();
             }
             if !self.check_permission(node, pwm, FS_CAP_WRITE) {
-                return -1;
+                return KernelError::PermissionDenied.as_i32();
             }
         }
 
@@ -1065,7 +1065,7 @@ impl RamFsData {
 
         let parent_num = match self.resolve_path(parent_path) {
             Some(n) => n,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
 
         let parent_block = self.nodes[parent_num as usize].direct_blocks[0];
@@ -1171,33 +1171,33 @@ impl RamFsData {
 
     pub fn mkdir(&mut self, parent_path: &str, name: &str, pwm: u64) -> i32 {
         if name.is_empty() || name.contains('/') {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
 
         let parent_num = match self.resolve_path(parent_path) {
             Some(n) => n,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
 
         if parent_num as usize >= RAMFS_MAX_NODES {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
 
         if !self.nodes[parent_num as usize].used {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
 
         if self.nodes[parent_num as usize].file_type != VfsFileType::Dir as u8 {
-            return -1;
+            return KernelError::NotADirectory.as_i32();
         }
 
         if !self.check_permission(&self.nodes[parent_num as usize], pwm, FS_CAP_CREATE) {
-            return -1;
+            return KernelError::PermissionDenied.as_i32();
         }
 
         let parent_block = self.nodes[parent_num as usize].direct_blocks[0];
         if parent_block == u32::MAX {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
 
         let dirent_size = core::mem::size_of::<RamFsDirEntry>();
@@ -1215,19 +1215,19 @@ impl RamFsData {
                     .unwrap_or(VFS_MAX_NAME);
                 let existing_name = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
                 if existing_name == name {
-                    return -1;
+                    return KernelError::AlreadyExists.as_i32();
                 }
             }
         }
 
         let new_node_id = match self.alloc_node(VfsFileType::Dir as u8, pwm) {
             Some(n) => n,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
 
         let block = self.nodes[new_node_id as usize].direct_blocks[0];
         if block == u32::MAX {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
 
         let block_base = (block as usize) * RAMFS_BLOCK_SIZE;
@@ -1247,14 +1247,14 @@ impl RamFsData {
 
         let parent_block = self.nodes[parent_num as usize].direct_blocks[0];
         if parent_block == u32::MAX {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
 
         let num_entries = self.nodes[parent_num as usize].size as usize / dirent_size;
         let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
 
         if offset + dirent_size > self.data_area.len() {
-            return -1;
+            return KernelError::NoSpace.as_i32();
         }
 
         let mut entry = RamFsDirEntry::new();
@@ -1299,18 +1299,18 @@ impl RamFsData {
     pub fn chmod(&mut self, path: &str, mode: u16, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
 
         let node = &mut self.nodes[node_id as usize];
         if !node.used {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
 
         if node.owner_pwm != pwm {
             let level = pwm_api::pwm_get_privilege_level(pwm);
             if level != 0 {
-                return -1;
+                return KernelError::PermissionDenied.as_i32();
             }
         }
 
@@ -1326,17 +1326,17 @@ impl RamFsData {
     pub fn chown_ext(&mut self, path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
 
         let node = &mut self.nodes[node_id as usize];
         if !node.used {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
 
         let level = pwm_api::pwm_get_privilege_level(pwm);
         if level != 0 {
-            return -1;
+            return KernelError::PermissionDenied.as_i32();
         }
 
         node.owner_pwm = owner_pwm;
@@ -1398,22 +1398,22 @@ impl RamFsData {
 
     pub fn link(&mut self, parent_node: u32, target_node: u32, name: &str, _pwm: u64) -> i32 {
         if name.is_empty() || name.contains('/') {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         if parent_node as usize >= RAMFS_MAX_NODES || target_node as usize >= RAMFS_MAX_NODES {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         if !self.nodes[parent_node as usize].used || !self.nodes[target_node as usize].used {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
         if self.nodes[parent_node as usize].file_type != VfsFileType::Dir as u8 {
-            return -1;
+            return KernelError::NotADirectory.as_i32();
         }
 
         let parent = &self.nodes[parent_node as usize];
         let parent_block = parent.direct_blocks[0];
         if parent_block == u32::MAX {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
 
         let dirent_size = core::mem::size_of::<RamFsDirEntry>();
@@ -1430,14 +1430,14 @@ impl RamFsData {
                     .unwrap_or(VFS_MAX_NAME);
                 let existing = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
                 if existing == name {
-                    return -1;
+                    return KernelError::AlreadyExists.as_i32();
                 }
             }
         }
 
         let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;
         if offset + dirent_size > self.data_area.len() {
-            return -1;
+            return KernelError::NoSpace.as_i32();
         }
 
         let mut entry = RamFsDirEntry::new();
@@ -1464,28 +1464,28 @@ impl RamFsData {
         pwm: u64,
     ) -> i32 {
         if name.is_empty() || name.contains('/') {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         if target.is_empty() || target.len() >= 128 {
-            return -1;
+            return KernelError::NameTooLong.as_i32();
         }
         let parent_num = match self.resolve_path(parent_path) {
             Some(n) => n,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
         if parent_num as usize >= RAMFS_MAX_NODES || !self.nodes[parent_num as usize].used {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
         if self.nodes[parent_num as usize].file_type != VfsFileType::Dir as u8 {
-            return -1;
+            return KernelError::NotADirectory.as_i32();
         }
         if !self.check_permission(&self.nodes[parent_num as usize], pwm, FS_CAP_CREATE) {
-            return -1;
+            return KernelError::PermissionDenied.as_i32();
         }
 
         let parent_block = self.nodes[parent_num as usize].direct_blocks[0];
         if parent_block == u32::MAX {
-            return -1;
+            return KernelError::NotFound.as_i32();
         }
         let dirent_size = core::mem::size_of::<RamFsDirEntry>();
         let num_entries = self.nodes[parent_num as usize].size as usize / dirent_size;
@@ -1496,14 +1496,14 @@ impl RamFsData {
                 let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
                 let existing = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
                 if existing == name {
-                    return -1;
+                    return KernelError::AlreadyExists.as_i32();
                 }
             }
         }
 
         let new_id = match self.alloc_node(VfsFileType::Symlink as u8, pwm) {
             Some(id) => id,
-            None => return -1,
+            None => return KernelError::NotFound.as_i32(),
         };
         let now = Self::get_time();
         let target_bytes = target.as_bytes();
@@ -1531,7 +1531,7 @@ impl RamFsData {
             n.file_type = 0;
             n.link_count = 0;
             self.symlink_lens[new_id as usize] = 0;
-            return -1;
+            return KernelError::NoSpace.as_i32();
         }
         let mut entry = RamFsDirEntry::new();
         entry.node = new_id;
@@ -1550,15 +1550,15 @@ impl RamFsData {
 
     pub fn readlink(&self, node_id: u32, buf: &mut [u8]) -> i32 {
         if node_id as usize >= RAMFS_MAX_NODES {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         let node = &self.nodes[node_id as usize];
         if !node.used || node.file_type != VfsFileType::Symlink as u8 {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         let len = self.symlink_lens[node_id as usize] as usize;
         if len > buf.len() {
-            return -1;
+            return KernelError::NoSpace.as_i32();
         }
         buf[..len].copy_from_slice(&self.symlink_targets[node_id as usize][..len]);
         len as i32
