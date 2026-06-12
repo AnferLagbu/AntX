@@ -1,0 +1,248 @@
+//! # 全局统一 FD 分配器 (TD-02)
+//!
+//! ## 背景
+//!
+//! 历史 7 个独立 fd 分配器 (VFS/HvFS/UDS/smoltcp/EVENTFD/SIGNALFD/INOTIFY) 分散在 framework 与 services, 同一进程内可能拿到相同 fd 编号, 进程级 `read/write` 无法可靠分发.
+//! 2026-06-12 I-51 修复了 UDS 重叠; 2026-06-12 TD-01 修复了 EFD/SFD/INOTIFY 重叠. 本模块在基址层修复之上, 提供**单一入口**与**集中基址规划**.
+//!
+//! ## 范围
+//!
+//! 集中管理**用户态可见的全局 FD 编号**:
+//!
+//! | 子系统 | 起点 | 上限 | 容量 | 来源 |
+//! |--------|------|------|------|------|
+//! | Smoltcp | 0 | MAX_SM_FD | 256 | `framework/net/init.rs` |
+//! | Uds     | 1000 | UDS 范围 | 16 | `framework/net/unix.rs` |
+//! | EventFd | 1100 | EFD 范围 | 16 | `framework/syscall/eventfd.rs` |
+//! | SignalFd| 1120 | SFD 范围 | 16 | `framework/syscall/signalfd.rs` |
+//! | Inotify | 1140 | INOTIFY 范围 | 16 | `services/fs/inotify.rs` |
+//!
+//! **不包含** (这些是内部抽象, 不暴露给用户态, 不存在重叠问题):
+//! - `VfsManager::alloc_fd()` — VFS 内部 slot 索引
+//! - `HvFs::alloc_fd()` — HvFS 内部 slot 索引
+//! - `FdTable::alloc_fd()` — per-process 视图映射
+//!
+//! ## 架构
+//!
+//! ```text
+//! 用户态可见的全局 FD 编号
+//!   ↓
+//! FdSubsystem enum (5 个变体)  ← 用户必须显式声明
+//!   ↓
+//! FdPlan::range_for(sub)  ← 集中基址规划, 编译期 const
+//!   ↓
+//! alloc_fd / free_fd       ← 集中分配/释放, 静态契约测试守护
+//! ```
+//!
+//! ## SAFETY
+//!
+//! - 全局 `static mut` 槽位表, 单线程启动期 (Boot 阶段) 初始化后只读
+//! - 运行时 `alloc` / `free` 走 `Atomic` 原子位, 无锁
+//! - 调用方在中断上下文禁止使用 (会与进程上下文并发)
+//!
+//! ## 演进
+//!
+//! - V1 (当前): 仅规划基址, alloc/free 接口预留, 现有子系统未强制改用
+//! - V2 (下一批): 各子系统 sm_alloc_fd/efd_alloc 等统一改走 `alloc_fd(FdSubsystem::X)`
+
+#![allow(dead_code)] // V1 占位, 待 V2 接入
+
+// ============================================================================
+// 子系统枚举
+// ============================================================================
+
+/// 全局 FD 子系统标识
+///
+/// 与 `FdPlan::range_for` 一一对应. 新增子系统必须更新 `FdPlan::range_for` 与
+/// `count_subsystems` 计数.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum FdSubsystem {
+    /// smoltcp TCP/UDP socket
+    Smoltcp = 0,
+    /// AF_UNIX 域套接字
+    Uds = 1,
+    /// eventfd
+    EventFd = 2,
+    /// signalfd
+    SignalFd = 3,
+    /// inotify
+    Inotify = 4,
+}
+
+impl FdSubsystem {
+    /// 子系统数量 (用于范围表边界)
+    pub const COUNT: usize = 5;
+
+    /// 通过下标获取子系统 (用于 `for i in 0..COUNT { ... }`)
+    pub fn from_index(i: usize) -> Option<Self> {
+        match i {
+            0 => Some(Self::Smoltcp),
+            1 => Some(Self::Uds),
+            2 => Some(Self::EventFd),
+            3 => Some(Self::SignalFd),
+            4 => Some(Self::Inotify),
+            _ => None,
+        }
+    }
+}
+
+// ============================================================================
+// 集中基址规划
+// ============================================================================
+
+/// 子系统 FD 范围 (基址 + 容量)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FdRange {
+    pub base: i32,
+    pub capacity: u16,
+}
+
+impl FdRange {
+    pub const fn new(base: i32, capacity: u16) -> Self {
+        Self { base, capacity }
+    }
+
+    pub const fn end_exclusive(self) -> i32 {
+        self.base + self.capacity as i32
+    }
+
+    pub const fn contains(self, fd: i32) -> bool {
+        fd >= self.base && fd < self.end_exclusive()
+    }
+
+    pub const fn overlaps(self, other: Self) -> bool {
+        self.base < other.end_exclusive() && other.base < self.end_exclusive()
+    }
+}
+
+/// 集中 FD 基址规划 — 单一来源 (Single Source of Truth)
+///
+/// 各子系统的 `*_FD_BASE` 常量在编译期引用本规划, 禁止分散定义.
+/// 验收: 任意两个 FdRange 不重叠; 全部不与 smoltcp [0, 256) 重叠 (除 Smoltcp 自身).
+pub struct FdPlan;
+
+impl FdPlan {
+    /// Smoltcp FD 空间 (历史固定)
+    pub const SMOLTCP: FdRange = FdRange::new(0, 256);
+
+    /// UDS FD 空间 (TD-01: 历史 100 → 1000, 跳出 smoltcp)
+    pub const UDS: FdRange = FdRange::new(1000, 16);
+
+    /// EventFd FD 空间 (TD-01: 历史 200 → 1100)
+    pub const EVENT_FD: FdRange = FdRange::new(1100, 16);
+
+    /// SignalFd FD 空间 (TD-01: 历史 220 → 1120)
+    pub const SIGNAL_FD: FdRange = FdRange::new(1120, 16);
+
+    /// Inotify FD 空间 (TD-01: 历史 260 → 1140)
+    pub const INOTIFY: FdRange = FdRange::new(1140, 16);
+
+    /// 获取指定子系统的 FD 范围
+    pub const fn range_for(sub: FdSubsystem) -> FdRange {
+        match sub {
+            FdSubsystem::Smoltcp => Self::SMOLTCP,
+            FdSubsystem::Uds => Self::UDS,
+            FdSubsystem::EventFd => Self::EVENT_FD,
+            FdSubsystem::SignalFd => Self::SIGNAL_FD,
+            FdSubsystem::Inotify => Self::INOTIFY,
+        }
+    }
+
+    /// 全部 FD 范围 (用于启动期不变量校验)
+    pub const ALL: &'static [FdRange] = &[
+        Self::SMOLTCP,
+        Self::UDS,
+        Self::EVENT_FD,
+        Self::SIGNAL_FD,
+        Self::INOTIFY,
+    ];
+
+    /// 启动期不变量: 任意两个范围不重叠
+    ///
+    /// 编译期 const fn, 可在测试或启动代码中调用.
+    pub const fn ranges_non_overlapping() -> bool {
+        let all = Self::ALL;
+        let mut i = 0;
+        while i < all.len() {
+            let mut j = i + 1;
+            while j < all.len() {
+                if all[i].overlaps(all[j]) {
+                    // Smoltcp 与自身比较时 base == end_exclusive, 不会重叠
+                    // 但 Smoltcp 与其他 4 个范围不重叠 (其他 4 个 base ≥ 1000 ≥ 256)
+                    return false;
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+        true
+    }
+}
+
+// ============================================================================
+// V1 接口: alloc_fd / free_fd
+// ============================================================================
+//
+// 当前为占位实现, V2 接入实际子系统. 提供统一的形状, 静态契约测试可基于此构建.
+
+use core::sync::atomic::{AtomicI32, Ordering};
+
+/// 给定子系统分配一个全局 FD 编号
+///
+/// V1 简化: 在该子系统的 `FdRange` 内顺序扫描首个未占用位 (用 `AtomicI32` 表达).
+/// V2 改进: 各子系统自带静态槽位表, 此接口封装"哪个子系统的哪个槽位是空闲的"映射.
+pub fn alloc_fd(sub: FdSubsystem) -> Option<i32> {
+    let range = FdPlan::range_for(sub);
+    let counter = SUBSYSTEM_COUNTERS[sub as usize].fetch_add(1, Ordering::AcqRel);
+    let candidate = range.base + counter;
+    if candidate < range.end_exclusive() {
+        Some(candidate)
+    } else {
+        // 回滚
+        SUBSYSTEM_COUNTERS[sub as usize].fetch_sub(1, Ordering::AcqRel);
+        None
+    }
+}
+
+/// 释放一个 FD 编号
+///
+/// V1 简化: 仅校验 fd ∈ FdRange, 实际未回收 (V2 接入).
+pub fn free_fd(sub: FdSubsystem, fd: i32) -> bool {
+    FdPlan::range_for(sub).contains(fd)
+}
+
+/// 通过 FD 编号反查所属子系统
+///
+/// 用于 `sys_read/write` 分发: 给定进程可见的 fd, 找到对应子系统.
+pub fn subsystem_of(fd: i32) -> Option<FdSubsystem> {
+    let mut i = 0;
+    while i < FdSubsystem::COUNT {
+        let sub = FdSubsystem::from_index(i).unwrap();
+        if FdPlan::range_for(sub).contains(fd) {
+            return Some(sub);
+        }
+        i += 1;
+    }
+    None
+}
+
+// ============================================================================
+// V1 内部状态
+// ============================================================================
+
+/// 各子系统的分配计数器
+static SUBSYSTEM_COUNTERS: [AtomicI32; FdSubsystem::COUNT] =
+    [const { AtomicI32::new(0) }; FdSubsystem::COUNT];
+
+// ============================================================================
+// 启动期校验
+// ============================================================================
+
+/// 启动时调用, 校验 FdPlan 不变量. 不满足则 panic (不变量违反是编译/规划错误)
+pub fn verify_plan() {
+    assert!(
+        FdPlan::ranges_non_overlapping(),
+        "FD 范围重叠违反 TD-02 不变量"
+    );
+}

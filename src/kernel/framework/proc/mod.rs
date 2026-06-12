@@ -37,6 +37,8 @@
 
 pub mod cfs;
 /// D2: cgroup 资源控制器
+/// TD-02: 全局统一 FD 分配器与基址规划
+pub mod fd_alloc;
 pub mod cgroup;
 pub mod canary;
 pub mod coredump;
