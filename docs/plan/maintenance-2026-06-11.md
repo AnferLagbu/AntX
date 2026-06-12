@@ -1268,23 +1268,26 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
-### [ ] I-54 [低] services IPC 仅管道完成迁移, shm/msgq/sem 待迁移
+### [x] I-54 [低] services IPC 仅管道完成迁移, shm/msgq/sem 待迁移 ✅ 已修复 (2026-06-12)
 
 **来源**: 审计 22
 **关联文件**:
-- [src/kernel/services/ipc/](../../src/kernel/services/ipc/)
+- [src/kernel/services/ipc/mod.rs](../../src/kernel/services/ipc/mod.rs)
+- [host-tests/tests/services_ipc_complete_test.rs](../../host-tests/tests/services_ipc_complete_test.rs)
 **修复方案**:
-1. shm: 实现 shared memory 抽象
-2. msgq: 实现 System V 消息队列
-3. sem: 实现信号量
-4. 全部 0 unsafe
+1. 实测 `services/ipc/mod.rs` 已实现全部 4 子系统: pipe (close) + shm (create/attach/detach/destroy) + msgq (create/send/recv/destroy) + sem (create/wait/post/destroy)
+2. 模块顶部 `#![deny(unsafe_code)]`, 全文 0 个 unsafe 代码块
+3. 走 framework::ipc 的 safe 入口 (`*_safe` 系列) 调用底层
+4. 新增 `services_ipc_complete_test` 静态契约测试, 防止后续回归丢失子系统
 **验收**:
-- [ ] services/ipc 4 个子系统 (pipe/shm/msgq/sem) 全部完成
-- [ ] 0 unsafe 验证
+- [x] services/ipc 4 子系统 (pipe/shm/msgq/sem) 全部完成
+- [x] 0 unsafe 代码块 (deny 属性启用)
+- [x] 走 framework safe API
+- [x] 静态契约测试 3 用例通过
 **完成记录**:
-- 日期: ____
+- 日期: 2026-06-12
 - 提交: ____
-- 简述: ____
+- 简述: 经实测 services/ipc 已完成 4 子系统迁移; 加契约测试固化.
 
 ---
 
