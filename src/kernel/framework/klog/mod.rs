@@ -221,6 +221,133 @@ pub fn serial_write_bytes(data: &[u8]) {
 }
 
 // ============================================================================
+// TD-09: LogSink 抽象 — 支持多个输出后端 (串口/网络/块设备)
+// ============================================================================
+
+/// 日志输出后端 trait.
+///
+/// 所有 sink 必须实现: 名称 (调试用) + 字节写入 + 字符串写入.
+/// 字符串写入的默认实现是循环调用 `putc`, 多数后端可以重写以提高效率.
+pub trait LogSink: Sync {
+    /// 后端名, 用于 `/proc/sys/klog/sinks` 等接口.
+    fn name(&self) -> &'static str;
+    /// 写入单字节.
+    fn putc(&self, c: u8);
+    /// 写入字符串 (默认逐字节).
+    fn write_str(&self, s: &str) {
+        for &b in s.as_bytes() {
+            self.putc(b);
+        }
+    }
+    /// 写入字节流 (默认转 str 走 write_str; sink 可重写以避免 UTF-8 校验).
+    fn write_bytes(&self, b: &[u8]) {
+        if let Ok(s) = core::str::from_utf8(b) {
+            self.write_str(s);
+        }
+    }
+}
+
+/// 串口 sink — COM1 / aarch64 UART, 框架自带默认 sink.
+pub struct SerialSink;
+
+impl LogSink for SerialSink {
+    fn name(&self) -> &'static str { "serial" }
+    fn putc(&self, c: u8) { serial_putc_chained(c); }
+    fn write_str(&self, s: &str) { serial_write_bytes(s.as_bytes()); }
+    fn write_bytes(&self, b: &[u8]) { serial_write_bytes(b); }
+}
+
+/// TD-09: 全局 sink 注册表 (静态数组, 不依赖分配器).
+///
+/// 容量固定为 4, 超出时返回 None. 单核模型下无锁 (klog 路径在串口自旋保护).
+/// 增删接口在 services 层通过 `/proc/sys/klog/sinks` 暴露.
+pub const MAX_LOG_SINKS: usize = 4;
+
+// `*const dyn LogSink` 是宽指针 (含 vtable), 不能用 `core::ptr::null` 在 const 上下文构造.
+// 改用 `usize` 薄指针存储, 0 表示未注册, 重建时 union-cast 回去.
+#[repr(C)]
+#[derive(Copy, Clone)]
+union SinkPtr {
+    raw: usize,
+    fat: *const dyn LogSink,
+}
+const fn null_sink_ptr() -> SinkPtr { SinkPtr { raw: 0 } }
+const fn make_null_sinks() -> [SinkPtr; MAX_LOG_SINKS] {
+    [null_sink_ptr(), null_sink_ptr(), null_sink_ptr(), null_sink_ptr()]
+}
+static mut LOG_SINKS: [SinkPtr; MAX_LOG_SINKS] = make_null_sinks();
+static LOG_SINK_COUNT: AtomicU8 = AtomicU8::new(0);
+
+/// 注册 sink, 失败返回 `None` (已满).
+///
+/// # Safety
+/// `sink` 必须是 `'static` (其内部任何状态都不可被释放).
+pub unsafe fn klog_register_sink(sink: &'static dyn LogSink) -> Option<usize> {
+    let idx = LOG_SINK_COUNT.load(Ordering::SeqCst) as usize;
+    if idx >= MAX_LOG_SINKS {
+        return None;
+    }
+    // SAFETY: 独占注册路径, 容量未越界; SinkPtr 与 usize 布局一致.
+    let ptr = sink as *const dyn LogSink;
+    unsafe {
+        LOG_SINKS[idx] = SinkPtr { fat: ptr };
+    }
+    LOG_SINK_COUNT.store((idx + 1) as u8, Ordering::SeqCst);
+    Some(idx)
+}
+
+/// 列出已注册 sink 数量.
+pub fn klog_sink_count() -> usize {
+    LOG_SINK_COUNT.load(Ordering::SeqCst) as usize
+}
+
+/// 取出 idx 处的 sink 引用 (idx < count 时必非空).
+///
+/// # Safety
+/// 调用方必须保证 `idx < klog_sink_count()` 且 sink 仍 `'static` 有效.
+pub unsafe fn klog_sink_at(idx: usize) -> Option<&'static dyn LogSink> {
+    // SAFETY: 调用方保证 idx 有效.
+    let entry = unsafe { LOG_SINKS[idx] };
+    // SAFETY: SinkPtr 是 union, raw/fat 共享存储, 注册时写入 fat 有效.
+    let fat = unsafe { entry.fat };
+    if fat.is_null() {
+        None
+    } else {
+        // SAFETY: 注册时保证非空且 'static.
+        Some(unsafe { &*fat })
+    }
+}
+
+/// 广播字符串到所有已注册 sink. 空注册表时直接返回.
+pub fn klog_broadcast(s: &str) {
+    let n = klog_sink_count();
+    for i in 0..n {
+        // SAFETY: i < n 即 idx < count, 满足 klog_sink_at 的契约.
+        if let Some(sink) = unsafe { klog_sink_at(i) } {
+            sink.write_str(s);
+        }
+    }
+}
+
+/// 广播字节流到所有已注册 sink.
+pub fn klog_broadcast_bytes(b: &[u8]) {
+    let n = klog_sink_count();
+    for i in 0..n {
+        // SAFETY: i < n 即 idx < count, 满足 klog_sink_at 的契约.
+        if let Some(sink) = unsafe { klog_sink_at(i) } {
+            sink.write_bytes(b);
+        }
+    }
+}
+
+/// 启动时注册默认 sink (serial). 由 kernel 主入口调用.
+pub fn klog_register_defaults() {
+    static SERIAL: SerialSink = SerialSink;
+    // SAFETY: SERIAL 是 'static.
+    let _ = unsafe { klog_register_sink(&SERIAL) };
+}
+
+// ============================================================================
 // 环形缓冲区
 // ============================================================================
 
@@ -419,14 +546,16 @@ fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
 
     let saved_if = crate::arch!(interrupt_disable());
 
-    serial_write_bytes(ts);
-    serial_write_bytes(level.prefix());
-    serial_write_bytes(b" ");
-    serial_write_bytes(b"[");
-    serial_write_bytes(cat.name());
-    serial_write_bytes(b"] ");
-    serial_write_bytes(msg);
-    serial_newline();
+    // TD-09: 走 sink 抽象 (注册时已默认含 serial).
+    klog_broadcast_bytes(ts);
+    klog_broadcast_bytes(level.prefix());
+    klog_broadcast_bytes(b" ");
+    klog_broadcast_bytes(b"[");
+    klog_broadcast_bytes(cat.name());
+    klog_broadcast_bytes(b"] ");
+    klog_broadcast_bytes(msg);
+    // 换行: serial sink 已实现 \n → \r\n; 其他 sink 若需特殊处理, 可重写 write_bytes.
+    klog_broadcast_bytes(b"\n");
 
     crate::arch!(interrupt_restore(saved_if));
 

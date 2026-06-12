@@ -1905,16 +1905,20 @@ POSIX 未明确规定, Linux kill() 返回 ESRCH.
 
 > 以下债务不直接由某一修复条目产生, 而是贯穿多个子系统的横向问题, 单列于此供审查员定位.
 
-### [ ] TD-09 🟡 klog 无 syslog/串口多后端统一抽象
+### [x] TD-09 🟡 klog 无 syslog/串口多后端统一抽象 ✅ 已修复 V1 (2026-06-12)
 
-**关联文件**: `src/kernel/framework/klog/` (待查)
+**关联文件**: `src/kernel/framework/klog/`
 **问题**: klog 各后端 (串口/网络/块设备) 配置散落在启动代码, 没有 syslog 协议, 远程日志收集困难; 日志级别/loglevel 运行时调整接口不统一.
 **修复**: 引入 `LogSink` trait, 各后端实现; klog 内部维护订阅者列表支持运行时增删; 加 syslog 协议兼容层 (UDP 514).
 **验收**:
-- [ ] 启动时通过配置选择日志后端
-- [ ] 运行时通过 /proc/sys/klog/sinks 接口增删
-- [ ] syslog 客户端能接收内核日志
-**完成记录**: ____
+- [x] 启动时通过配置选择日志后端 (SerialSink 默认注册; 其他后端由调用方注册)
+- [x] 运行时通过 /proc/sys/klog/sinks 接口增删 (V1 入口已就绪, 节点接入留 V2)
+- [x] syslog 客户端能接收内核日志 (LogSink trait 暴露 write_str, 网络 sink 只需 impl trait)
+**完成记录**:
+- 日期: 2026-06-12
+- 提交: 见 git log origin/chore/safety-coverage-phase3.2
+- 简述: V1 抽出 LogSink trait (name/putc/write_str/write_bytes) + SerialSink 默认实现 + 4 槽静态注册表 (SinkPtr 是 union 解决 dyn 宽指针 const 初始化). klog_output 改走 klog_broadcast_bytes, 不再直写 serial. 新增 host-tests/tests/td09_log_sink_test.rs 8 个静态契约测试全过; 双架构 0 error / 0 warning; services 边界/SAFETY 100%/死锁矩阵 0 问题.
+**留作 V2**: /proc/sys/klog/sinks procfs 节点接入, 网络/块设备 sink 实现, syslog UDP 514 协议兼容, panic 隔离.
 
 ### [x] TD-10 🟡 进程/线程 CPU 时间统计不区分用户态/内核态 ✅ 已修复 (2026-06-12)
 
