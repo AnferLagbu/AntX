@@ -15,8 +15,10 @@
 //!
 //! ## 错误码映射
 //!
-//! 内核内部用 `KernelError` (`i32` 负数), services 层用 `FsError` (强类型枚举)
-//! 全部经 `Result<T, FsError>` 返回, 上层用 `?` / `match` 而非检查负数
+//! 内核内部用 `KernelError` (`i32` 负数), services 层用 `FsError` (3 字段薄包装 + 1 共享包装)
+//! 全部经 `Result<T, FsError>` 返回, 上层用 `?` / `match` 而非检查负数.
+//! TD-18 收敛: 共享 POSIX 错误 (FileNotFound/AlreadyExists/NoSpace/.../BadFd/...)
+//! 走 `FsError::Kernel(KernelError)`, 单一来源.
 //!
 //! 评估日期: 2026-06-04
 //! Phase 2.2.1 任务: 文件系统迁移
@@ -39,48 +41,47 @@ pub use crate::kernel::framework::fs::vfs::types::{
 // 错误类型
 // ============================================================================
 
-/// 文件系统错误 (services 层强类型版本)
+/// 文件系统错误 — TD-18: 收敛到 KernelError, 3 字段 FS 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `NotInitialized`: ramfs 初始化状态机专用 (FS 未挂载), 不在 POSIX 通用集.
+///   - `IoError`: FS 内部 I/O 错误聚合, 涵盖底层所有未分类硬件/校验失败.
+///   - `Overflow`: 文件偏移/大小算术溢出 (POSIX EOVERFLOW=75 但语义不通用).
+///   - `Kernel(KernelError)`: 共享错误 (FileNotFound/AlreadyExists/NoSpace/.../BadFd/...)
+///     统一走 `KernelError` 单一来源.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FsError {
-    NotFound,
-    AlreadyExists,
-    NoSpace,
-    PermissionDenied,
-    InvalidArgument,
+    /// FS 未初始化
     NotInitialized,
+    /// FS 内部 I/O 错误聚合
     IoError,
-    OutOfMemory,
-    Busy,
-    NotSupported,
-    NotADirectory,
-    IsDirectory,
-    ReadOnly,
+    /// 算术溢出 (偏移/大小)
     Overflow,
-    BadFileDescriptor,
-    NameTooLong,
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl FsError {
     /// 从内核原始 `i32` 错误码还原
     pub fn from_i32(code: i32) -> Self {
-        match code {
-            -2 => Self::NotFound,
-            -17 => Self::AlreadyExists,
-            -28 => Self::NoSpace,
-            -13 => Self::PermissionDenied,
-            -22 => Self::InvalidArgument,
-            -5 => Self::IoError,
-            -12 => Self::OutOfMemory,
-            -16 => Self::Busy,
-            -95 => Self::NotSupported,
-            -20 => Self::NotADirectory,
-            -21 => Self::IsDirectory,
-            -30 => Self::ReadOnly,
-            -75 => Self::Overflow,
-            -9 => Self::BadFileDescriptor, // 来自 -EBADFD (FS 内部)
-            -36 => Self::NameTooLong,       // 来自 -ENAMETOOLONG
-            _ => Self::IoError,
+        Self::Kernel(crate::kernel::services::error::KernelError::from_i32(code))
+    }
+
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno {
+        use crate::kernel::framework::syscall::types::Errno as E;
+        match self {
+            Self::NotInitialized => E::ENODEV,
+            Self::IoError => E::EIO,
+            Self::Overflow => E::EOVERFLOW,
+            Self::Kernel(e) => e.as_errno(),
         }
+    }
+}
+
+impl From<crate::kernel::services::error::KernelError> for FsError {
+    fn from(e: crate::kernel::services::error::KernelError) -> Self {
+        Self::Kernel(e)
     }
 }
 
@@ -181,7 +182,7 @@ impl SafeRamFs {
         let mut fs = self.inner.lock();
         match fs.open(path, raw_flags, pwm) {
             Some((node_id, _cap, _sens)) => Ok(FileDescriptor::new(node_id, raw_flags, pwm)),
-            None => Err(FsError::NotFound),
+            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
         }
     }
 
@@ -246,7 +247,7 @@ impl SafeRamFs {
                 fd.offset = new_off;
                 Ok(new_off)
             }
-            None => Err(FsError::InvalidArgument),
+            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument)),
         }
     }
 
@@ -255,7 +256,7 @@ impl SafeRamFs {
         let fs = self.inner.lock();
         match fs.get_file_size(fd.node_id) {
             Some(sz) => Ok(sz),
-            None => Err(FsError::NotFound),
+            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
         }
     }
 
@@ -264,7 +265,7 @@ impl SafeRamFs {
         let fs = self.inner.lock();
         match fs.stat(fd.node_id) {
             Some(st) => Ok(st),
-            None => Err(FsError::NotFound),
+            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
         }
     }
 
@@ -344,16 +345,16 @@ impl SafeRamFs {
         let fs = self.inner.lock();
         let node_id = match fs.resolve_path(path) {
             Some(id) => id,
-            None => return Err(FsError::NotFound),
+            None => return Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
         };
 
         // 通过 stat 验证是目录
         let st = match fs.stat(node_id) {
             Some(s) => s,
-            None => return Err(FsError::NotFound),
+            None => return Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
         };
         if VfsFileType::from_u8(st.file_type) != VfsFileType::Dir {
-            return Err(FsError::NotADirectory);
+            return Err(FsError::Kernel(crate::kernel::services::error::KernelError::NotADirectory));
         }
 
         // 扫描所有节点 (RamFs 当前未暴露 listdir API, 这里返回空 Vec)
@@ -460,14 +461,14 @@ pub fn split_path(path: &str) -> Option<(&str, &str)> {
 /// 辅助: 检查路径是否合法 (长度、字符)
 pub fn validate_path(path: &str) -> FsResult<String> {
     if path.is_empty() {
-        return Err(FsError::InvalidArgument);
+        return Err(FsError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));
     }
     if path.len() > VFS_MAX_PATH {
-        return Err(FsError::NameTooLong);
+        return Err(FsError::Kernel(crate::kernel::services::error::KernelError::NameTooLong));
     }
     // 简化校验: 不允许 NUL 字节
     if path.as_bytes().contains(&0) {
-        return Err(FsError::InvalidArgument);
+        return Err(FsError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));
     }
     Ok(String::from(path))
 }

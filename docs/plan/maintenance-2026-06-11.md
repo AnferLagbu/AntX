@@ -1369,6 +1369,34 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - 简述: 继 TD-08 net 域后, 进程域 signal 子系统的 5 字段 SignalError 收敛到 KernelError 0 字段 type alias, 新增 NoSuchProcess (ESRCH=3) 单一来源变体, 6 用例静态契约保护.
 
 ---
+### [x] TD-18 🟢 TD-08 V4 — services::fs::ramfs::FsError 收敛到 KernelError ✅ 已完成 (2026-06-12)
+
+**来源**: TD-08 遗留 (FsError 16 字段 POSIX 重合项未下沉)
+**关联文件**:
+- [src/kernel/services/fs/ramfs.rs](../../src/kernel/services/fs/ramfs.rs) (FsError 16 字段 enum → 3 FS 特有 + 1 共享包装)
+- [src/kernel/services/error.rs](../../src/kernel/services/error.rs) (新增 9 个 FS 特有 POSIX 变体 + from_i32/as_errno 双向映射)
+- [host-tests/tests/td18_fs_kernel_error_test.rs](../../host-tests/tests/td18_fs_kernel_error_test.rs) (新增 9 用例)
+
+**修复**:
+1. `services/error.rs::KernelError` 新增 9 个 FS 特有 POSIX 变体: `FileNotFound` (ENOENT=2) / `AlreadyExists` (EEXIST=17) / `Busy` (EBUSY=16) / `NotADirectory` (ENOTDIR=20) / `IsDirectory` (EISDIR=21) / `ReadOnlyFilesystem` (EROFS=30) / `NameTooLong` (ENAMETOOLONG=36) / `NoSpace` (ENOSPC=28) / `CrossDevice` (EXDEV=18), from_i32 与 as_errno 双向映射同步
+2. `services/fs/ramfs.rs` 顶部 16 字段 enum `FsError` (NotFound/AlreadyExists/NoSpace/PermissionDenied/InvalidArgument/NotInitialized/IoError/OutOfMemory/Busy/NotSupported/NotADirectory/IsDirectory/ReadOnly/Overflow/BadFileDescriptor/NameTooLong) 收敛为 3 FS 特有 (NotInitialized/IoError/Overflow) + 1 共享包装 `Kernel(KernelError)`
+3. 新增 `to_errno()` 方法, 4 变体 → POSIX Errno 双向映射全覆盖 (NotInitialized→ENODEV / IoError→EIO / Overflow→EOVERFLOW / Kernel(e)→e.as_errno())
+4. 新增 `From<KernelError> for FsError` 实现, 让 `?` 操作符自动包装
+5. `from_i32()` 改为薄壳: 直接委托给 `KernelError::from_i32(code)` 走 `Self::Kernel(...)` 包装
+6. 12 个错误返回点改写 (7×NotFound→Kernel::FileNotFound / 1×NotADirectory→Kernel::NotADirectory / 3×InvalidArgument→Kernel::InvalidArgument / 1×NameTooLong→Kernel::NameTooLong)
+7. 文档头部错误码映射段增补 "TD-18 收敛: 共享 POSIX 错误走 `FsError::Kernel(KernelError)`, 单一来源"
+8. 旧 13 个变体 (NotFound/AlreadyExists/NoSpace/PermissionDenied/InvalidArgument/OutOfMemory/Busy/NotSupported/NotADirectory/IsDirectory/ReadOnly/BadFileDescriptor/NameTooLong) 完全废弃
+
+**验收**:
+- [x] `grep -nE "FsError::(NotFound|AlreadyExists|NoSpace|PermissionDenied|InvalidArgument|OutOfMemory|Busy|NotSupported|NotADirectory|IsDirectory|ReadOnly|BadFileDescriptor|NameTooLong)\b"` 0 命中
+- [x] `FsError::Kernel(KernelError::...)` ≥ 10 处使用
+- [x] `FsError::from_i32` 委托给 `KernelError::from_i32`
+- [x] KernelError 9 个 FS 变体 + 9 个 errno 双向映射全覆盖
+- [x] td18 9/9 用例全过
+- [x] ci/audit.sh quick 0 错 (services 边界 0 / SAFETY 100% / 死锁 0 / clippy passed)
+- [x] 双架构 0/0
+- [x] host-tests 全 24 套 152 用例 0 失败
+
 ### [x] TD-17 🟢 TD-08 V3 — services::proc::table::TableError 收敛到 KernelError ✅ 已完成 (2026-06-12)
 
 **来源**: TD-08 遗留 (跨服务其他模块 *Error 未统一, 后续按相同模式逐步下沉到 KernelError)

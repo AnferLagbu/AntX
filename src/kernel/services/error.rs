@@ -16,6 +16,8 @@ use crate::kernel::framework::syscall::types::Errno;
 pub enum KernelError {
     /// 权限不足 (EPERM=1)
     PermissionDenied,
+    /// 文件/路径不存在 (ENOENT=2)
+    FileNotFound,
     /// 资源/进程不存在 (ESRCH=3)
     NoSuchProcess,
     /// 文件描述符无效 (EBADF=9)
@@ -48,6 +50,22 @@ pub enum KernelError {
     ConnectionRefused,
     /// 网络未初始化 (自定义, 非 POSIX)
     NotReady,
+    /// 文件已存在 (EEXIST=17)
+    AlreadyExists,
+    /// 设备或资源忙 (EBUSY=16)
+    Busy,
+    /// 不是目录 (ENOTDIR=20)
+    NotADirectory,
+    /// 是目录 (EISDIR=21)
+    IsDirectory,
+    /// 文件系统只读 (EROFS=30)
+    ReadOnlyFilesystem,
+    /// 文件名过长 (ENAMETOOLONG=36)
+    NameTooLong,
+    /// 设备空间不足 (ENOSPC=28)
+    NoSpace,
+    /// 跨设备链接 (EXDEV=18)
+    CrossDevice,
     /// 其他未分类
     Other(i32),
 }
@@ -57,14 +75,23 @@ impl KernelError {
     pub const fn from_i32(rc: i32) -> Self {
         match rc {
             1 => Self::PermissionDenied,
+            2 => Self::FileNotFound,
             3 => Self::NoSuchProcess,
             9 => Self::BadFd,
             11 => Self::WouldBlock,
             12 => Self::NoMemory,
             14 => Self::Fault,
+            16 => Self::Busy,
+            17 => Self::AlreadyExists,
+            18 => Self::CrossDevice,
             19 => Self::NoDevice,
+            20 => Self::NotADirectory,
+            21 => Self::IsDirectory,
             22 => Self::InvalidArgument,
             23 => Self::ProcessFileLimit,
+            28 => Self::NoSpace,
+            30 => Self::ReadOnlyFilesystem,
+            36 => Self::NameTooLong,
             95 => Self::NotSupported,
             97 => Self::AddrFamilyNotSupported,
             98 => Self::AddrInUse,
@@ -80,14 +107,23 @@ impl KernelError {
     pub const fn as_errno(self) -> Errno {
         match self {
             Self::PermissionDenied => Errno::EPERM,
+            Self::FileNotFound => Errno::ENOENT,
             Self::NoSuchProcess => Errno::ESRCH,
             Self::BadFd => Errno::EBADF,
             Self::WouldBlock => Errno::EAGAIN,
             Self::NoMemory => Errno::ENOMEM,
             Self::Fault => Errno::EFAULT,
+            Self::Busy => Errno::EBUSY,
+            Self::AlreadyExists => Errno::EEXIST,
+            Self::CrossDevice => Errno::EXDEV,
             Self::NoDevice => Errno::ENODEV,
+            Self::NotADirectory => Errno::ENOTDIR,
+            Self::IsDirectory => Errno::EISDIR,
             Self::InvalidArgument => Errno::EINVAL,
             Self::ProcessFileLimit => Errno::EMFILE,
+            Self::NoSpace => Errno::ENOSPC,
+            Self::ReadOnlyFilesystem => Errno::EROFS,
+            Self::NameTooLong => Errno::ENAMETOOLONG,
             Self::NotSupported => Errno::ENOSYS,
             Self::AddrFamilyNotSupported => Errno::EAFNOSUPPORT,
             Self::AddrInUse => Errno::EADDRINUSE,
