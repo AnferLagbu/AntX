@@ -211,28 +211,40 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     if fd_idx_us >= VFS_MAX_FDS {
         return -1;
     }
-    // B2: 释放该 fd 关联 inode 的全部 pcache 缓存页, 避免内存泄漏
-    if let Some((node_id, _, _, _full_path)) = get_fd_info(fd_idx) {
-        pcache::pcache_invalidate_inode(node_id);
-        // inotify: 文件关闭通知
-        let flags = {
-            let fd_table = VFS_MANAGER.fd_table.lock();
-            if (fd_idx_us) < VFS_MAX_FDS && fd_table[fd_idx_us].used {
-                fd_table[fd_idx_us].flags
-            } else {
-                0
-            }
-        };
-        let close_mask = if (flags & VfsOpenFlags::WRONLY.bits()) != 0
-            || (flags & VfsOpenFlags::RDWR.bits()) != 0
-        {
-            super::inotify::IN_CLOSE_WRITE
+    // TD-03: 原子 claim-and-clear — 同一把锁内同时快照 node_id/flags 并清 used,
+    // 避免双核同时 close 同一 fd 导致 pcache/inotify 二次触发.
+    let snapshot = {
+        let mut fd_table = VFS_MANAGER.fd_table.lock();
+        if !fd_table[fd_idx_us].used {
+            None // 已关闭或未使用, 直接返回 0
         } else {
-            super::inotify::IN_CLOSE_NOWRITE
-        };
-        super::inotify::inotify_notify(node_id, close_mask, "", false);
-    }
-    VFS_MANAGER.free_fd(fd_idx_us);
+            let snap = (
+                fd_table[fd_idx_us].node_id,
+                fd_table[fd_idx_us].flags,
+            );
+            // 在锁内清零 used 标志 — 后续 alloc 不会复用, 杜绝双 close 穿透
+            fd_table[fd_idx_us].used = false;
+            fd_table[fd_idx_us].fd = 0;
+            fd_table[fd_idx_us].node_id = 0;
+            fd_table[fd_idx_us].offset = 0;
+            Some(snap)
+        }
+    };
+    let (node_id, flags) = match snapshot {
+        Some(s) => s,
+        None => return 0,
+    };
+    // B2: 释放该 fd 关联 inode 的全部 pcache 缓存页, 避免内存泄漏
+    pcache::pcache_invalidate_inode(node_id);
+    // inotify: 文件关闭通知
+    let close_mask = if (flags & VfsOpenFlags::WRONLY.bits()) != 0
+        || (flags & VfsOpenFlags::RDWR.bits()) != 0
+    {
+        super::inotify::IN_CLOSE_WRITE
+    } else {
+        super::inotify::IN_CLOSE_NOWRITE
+    };
+    super::inotify::inotify_notify(node_id, close_mask, "", false);
     // C1: fd 关闭 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLHUP|EPOLLERR)
     fw_epoll::epoll_pwake(fd_idx as i32);
     0

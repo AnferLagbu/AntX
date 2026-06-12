@@ -573,13 +573,16 @@ impl HvfsData {
         if idx >= HVFS_MAX_FDS {
             return KernelError::InvalidArgument.as_i32();
         }
+        // TD-03: 原子 claim-and-clear — 锁内同时检查 used 并清零, 杜绝双 close 穿透
+        // 与 alloc_fd 之间的 TOCTOU 竞态.
         {
-            let fds = self.fds.lock();
+            let mut fds = self.fds.lock();
             if !fds[idx].used {
                 return KernelError::InvalidArgument.as_i32();
             }
+            fds[idx].used = false;
+            fds[idx].offset = 0;
         }
-        self.free_fd(idx);
         0
     }
 

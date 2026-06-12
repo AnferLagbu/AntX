@@ -1050,6 +1050,9 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 **遗留技术债 (衍生)**:
 - **TD-03 🟠**: VFS 与 HvFS 各自维护独立 fd 表 (`VfsManager::alloc_fd` / `HvFs::alloc_fd`), 关闭路径缺原子回收, 易泄漏. 修复: services 层封装 `FileHandle` 含两侧引用, `Drop` 同时清理; 加锁顺序 进程 fd_table → VFS → HvFS; `audit_services_boundary.py` 增加同步不变量检查. 验收: 1000 次开/关 e2e 无 fd 泄漏.
+  - **状态**: ✅ 关闭路径已修复 (2026-06-12): VFS `vfs_close_internal` 重写为原子 claim-and-clear — 单一锁内同时快照 node_id/flags 并清零, snapshot=None 时直接 return 0 跳过 pcache/inotify 副作用. HvFS `HvDmu::close` 同样升级为锁内 check-and-clear. 双核同时 close 同一 fd 不再触发 pcache/inotify 重复. 静态契约测试 3 个 (`td03_atomic_close_test`) 全过. 进程级 fd_table 合并 (顶层方案) 仍留作 V2 — 当前先保证关闭侧无 TOCTOU, 长期再加 进程 fd_table 统一视角.
+  - **关联文件**: `framework/fs/vfs/api.rs` (改), `services/fs/hvfs/hvfs.rs` (改), `host-tests/tests/td03_atomic_close_test.rs` (新增).
+  - **遗留**: VFS 与 HvFS 仍是两张独立 fd 表 (`VFS_MAX_FDS=32` + `HVFS_MAX_FDS=128`); 进程级 fd 视角未统一. 长期方案是引入进程 fd_table 统一视角 (类似 Linux `fdtable`), vfs_open / hvfs_open 都注册进该表. 验收: 进程能同时持有 vfs 与 hvfs fd, close 时两侧同步.
 
 ---
 
