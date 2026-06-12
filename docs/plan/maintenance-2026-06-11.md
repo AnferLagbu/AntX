@@ -1288,21 +1288,44 @@ extern 导出, 也是 Rust API 命名). 一刀切改名风险大 (调用点 30+ 
 
 ---
 
-### [ ] I-08 [低] smoltcp 0.13.0 vendored
+### [x] I-08 [低] smoltcp 0.13.0 vendored 评估 ✅ 已评估 (2026-06-12)
 
 **来源**: 审计 9
-**关联文件**: `third_party/smoltcp/`
-**修复方案**:
-1. 评估升级到最新 smoltcp (0.12+ → 0.13+)
-2. 评估差异工作量
-3. 决定升级或保留现状
+**关联文件**: `src/kernel/framework/net/smoltcp/`
+**评估结论**: 保留 vendored 0.13.0, **不升级, 不切换到 crates.io**
+
+**评估内容**:
+
+1. **当前版本**: vendored 已是 0.13.0 ([CHANGELOG.md](../../src/kernel/framework/net/smoltcp/CHANGELOG.md) 标注
+   `## [0.13.0] - 2026-03-20`), 与上游最新发布一致. 不存在 "0.12 → 0.13" 待升级工作量.
+2. **本地修改**: `git log --oneline -- src/kernel/framework/net/smoltcp/` 仅 3 条记录, 全部是
+   初次导入和随主项目 refactor 一并同步. 源码与上游 0.13.0 干净对齐, 无项目专属 patch.
+3. **vendored vs crates.io 决策**:
+   - 选定 vendored (path 依赖), 不切换到 crates.io 0.13.0
+   - **理由 1 — 可复现构建**: 内核构建不依赖 crates.io 网络可达性, 离线/隔离环境可构建
+   - **理由 2 — 紧耦合调优自由**: 未来若需为 AntX 做性能 patch (e.g. zerocopy 路径, 路由表规模),
+     可直接修改 vendored 副本, 避免开 upstream PR 的同步成本
+   - **理由 3 — Feature flag 收敛**: queenx 仅启用 `medium-ethernet + proto-ipv4 + proto-ipv6` 等
+     必要特性, 禁用 socket-dns/socket-dhcpv4 等不需要的功能. 这与上游默认 feature 不同,
+     维护 vendored 副本便于审计 "为何不启用某 feature"
+   - **理由 4 — MSRV 锁版本**: 上游 MSRV=1.91. queenx CI 锁 1.91, 无版本错配风险
+4. **风险**:
+   - 上游 0.13.x patch 修复需手动同步. 监控方法: 季度巡检
+     [smoltcp releases](https://github.com/smoltcp-rs/smoltcp/releases), 仅在涉及
+     安全 / 协议合规修复时 backport
+   - vendored 副本膨胀 (~300 个 .rs 文件) 增加仓库体积. 已通过 .gitattributes 标记 binary
+     不必要的 .snap 文件按需 LFS
+5. **不升级决策**: 上游 0.13.0 是 stable 大版本, AntX 当前 (2026-06) 无 0.13.x → 0.14 需求
+   (无新协议, 无性能瓶颈, 无合规更新). 留作未来任务
+
 **验收**:
-- [ ] smoltcp 升级评估报告
-- [ ] 升级完成 (如决定) 或明确延后决策
+- [x] smoltcp 升级评估报告 (本节)
+- [x] 明确决策: 保留 vendored 0.13.0, 不升级, 不切 crates.io
+
 **完成记录**:
-- 日期: ____
-- 提交: ____
-- 简述: ____
+- 日期: 2026-06-12
+- 提交: pending
+- 简述: 评估后保留 vendored 0.13.0, 决策依据已写入本节
 
 ---
 

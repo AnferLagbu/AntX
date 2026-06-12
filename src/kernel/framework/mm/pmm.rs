@@ -132,25 +132,25 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn prev(&self) -> *mut FreeNode {
-            // SAFETY: caller guarantees valid pointer under PMM lock
+            // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 读 prev 链指针 (PMM 锁持有)
             unsafe { (*self.0).prev }
         }
 
         #[inline(always)]
         pub fn next(&self) -> *mut FreeNode {
-            // SAFETY: caller guarantees valid pointer under PMM lock
+            // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 读 next 链指针 (PMM 锁持有)
             unsafe { (*self.0).next }
         }
 
         #[inline(always)]
         pub fn set_prev(&self, p: *mut FreeNode) {
-            // SAFETY: caller guarantees valid pointer under PMM lock
+            // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 写 prev 链指针 (PMM 锁持有)
             unsafe { (*self.0).prev = p; }
         }
 
         #[inline(always)]
         pub fn set_next(&self, p: *mut FreeNode) {
-            // SAFETY: caller guarantees valid pointer under PMM lock
+            // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 写 next 链指针 (PMM 锁持有)
             unsafe { (*self.0).next = p; }
         }
     }

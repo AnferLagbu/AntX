@@ -54,112 +54,112 @@ pub(crate) mod raw {
         /// 获取/设置 next 链指针
         #[inline(always)]
         pub fn next(&self) -> *mut Thread {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读 next 链指针 (Acquire 同步后续访问)
             unsafe { (*self.0).next.load(Ordering::Acquire) as *mut Thread }
         }
 
         #[inline(always)]
         pub fn set_next(&self, p: *mut Thread) {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 写 next 链指针 (Release 同步可见性)
             unsafe { (*self.0).next.store(p as u64, Ordering::Release) };
         }
 
         #[inline(always)]
         pub fn prev(&self) -> *mut Thread {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读 prev 链指针 (Acquire 同步后续访问)
             unsafe { (*self.0).prev.load(Ordering::Acquire) as *mut Thread }
         }
 
         #[inline(always)]
         pub fn set_prev(&self, p: *mut Thread) {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 写 prev 链指针 (Release 同步可见性)
             unsafe { (*self.0).prev.store(p as u64, Ordering::Release) };
         }
 
         /// 加载/存储/修改 调度状态字段
         #[inline(always)]
         pub fn get_state(&self) -> ThreadState {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, get_state 内部原子加载 state
             unsafe { (*self.0).get_state() }
         }
 
         #[inline(always)]
         pub fn set_state(&self, s: ThreadState) -> Result<(), &'static str> {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, set_state_safe 内部校验合法转换
             unsafe { (*self.0).set_state_safe(s) }
         }
 
         #[allow(dead_code)]
         #[inline(always)]
         pub fn load_state_raw(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 原子读 state.u32 表示
             unsafe { (*self.0).state.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_state(&self, v: u32) {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 原子写 state (调试/测试路径)
             unsafe { (*self.0).state.store(v, Ordering::SeqCst) };
         }
 
         #[inline(always)]
         pub fn priority_raw(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读 priority (Acquire 同步优先级变化)
             unsafe { (*self.0).priority.load(Ordering::Acquire) }
         }
 
         #[inline(always)]
         pub fn store_priority(&self, v: u32) {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 写 priority (SeqCst 跨 CPU 强一致)
             unsafe { (*self.0).priority.store(v, Ordering::SeqCst) };
         }
 
         #[allow(dead_code)]
         #[inline(always)]
         pub fn time_slice(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读时间片剩余
             unsafe { (*self.0).time_slice.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn fetch_sub_time_slice(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, RMW 减少时间片 (SeqCst 保证全局一致)
             unsafe { (*self.0).time_slice.fetch_sub(1, Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_time_slice(&self, v: u32) {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 重置时间片 (用于线程唤醒/优先级提升)
             unsafe { (*self.0).time_slice.store(v, Ordering::SeqCst) };
         }
 
         #[inline(always)]
         pub fn fetch_add_cpu_time(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, RMW 累计 CPU 时间 (调度统计)
             unsafe { (*self.0).cpu_time.fetch_add(1, Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn load_sleep_until(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读 sleep_until 截止时间戳
             unsafe { (*self.0).sleep_until.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_sleep_until(&self, v: u64) {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 写 sleep_until (用于睡眠/唤醒)
             unsafe { (*self.0).sleep_until.store(v, Ordering::SeqCst) };
         }
 
         #[inline(always)]
         pub fn kernel_stack(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读内核栈顶 (上下文切换关键)
             unsafe { (*self.0).kernel_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn context_ptr(&self) -> *mut super::super::types::ProcessContext {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读 context_ptr (上下文切换关键)
             unsafe {
                 (*self.0).context_ptr.load(Ordering::SeqCst) as *mut super::super::types::ProcessContext
             }
@@ -167,21 +167,21 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn tid(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 读 tid 不可变字段 (alloc 时已固化)
             unsafe { (*self.0).tid }
         }
 
         /// 检查线程是否可冻结 (不在 Running/Zombie 状态)
         #[inline(always)]
         pub fn can_freeze(&self) -> bool {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, can_freeze 内部读 state
             unsafe { (*self.0).can_freeze() }
         }
 
         /// 写入退出码
         #[inline(always)]
         pub fn store_exit_code(&self, code: u32) {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            // SAFETY: `self` 由 new_unchecked 保证有效, 写 exit_code 供父进程 waitpid 读取
             unsafe { (*self.0).exit_code.store(code, Ordering::SeqCst) };
         }
     }
@@ -272,7 +272,7 @@ impl RunQueue {
         if thread.is_null() {
             return false;
         }
-        // SAFETY: 调用方保证 thread 有效
+        // SAFETY: 调用方保证 thread 有效, push_back 串行
         let t = unsafe { ThreadRef::new_unchecked(thread) };
         let head_ptr = self.head.load(Ordering::Acquire) as *mut Thread;
         if head_ptr.is_null() {
@@ -471,7 +471,7 @@ impl SchedulerEx {
             return;
         }
 
-        // SAFETY: 调用方保证 thread 有效
+        // SAFETY: 调用方保证 thread 有效, push_back 串行
         let t = unsafe { ThreadRef::new_unchecked(thread) };
         let state = t.get_state();
         if state == ThreadState::Ready || state == ThreadState::Created {
@@ -624,7 +624,7 @@ impl SchedulerEx {
             return false;
         }
 
-        // SAFETY: 调用方保证 thread 有效
+        // SAFETY: 调用方保证 thread 有效, push_back 串行
         let t = unsafe { ThreadRef::new_unchecked(thread) };
         if !t.can_freeze() {
             return false;
@@ -647,7 +647,7 @@ impl SchedulerEx {
             return false;
         }
 
-        // SAFETY: 调用方保证 thread 有效
+        // SAFETY: 调用方保证 thread 有效, push_back 串行
         let t = unsafe { ThreadRef::new_unchecked(thread) };
         if t.get_state() != ThreadState::Frozen {
             return false;
@@ -840,7 +840,7 @@ mod tests {
         assert!(popped2.is_some());
         assert!(q.is_empty());
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: 测试分配由 make_test_thread 负责回收, 单线程测试无竞争
         unsafe {
             if let Some(p) = popped {
                 free_test_thread(p);
@@ -869,7 +869,7 @@ mod tests {
         // t1 and t3 should still be there
         let p1 = q.pop_front().unwrap();
         let p2 = q.pop_front().unwrap();
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: p1/p2 由 push_back 路径插入, pop_front 后未再被引用
         unsafe {
             free_test_thread(p1);
             free_test_thread(p2);
@@ -895,7 +895,7 @@ mod tests {
         assert_eq!(sched.run_queues[ThreadPriority::Idle as usize].len(), 1);
         assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 1);
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: t 由 make_test_thread 分配, 测试结束时无其他引用
         unsafe {
             free_test_thread(t);
         }
@@ -968,7 +968,7 @@ mod tests {
         assert_eq!(sched.run_queues[ThreadPriority::Normal as usize].len(), 1);
         assert_eq!(sched.frozen_queue.len(), 0);
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: t 经 freeze/thaw 往返后回到 ready 队列, 测试末释放
         unsafe {
             free_test_thread(t);
         }
@@ -992,7 +992,7 @@ mod tests {
 
         let ts = tr.time_slice();
         assert_eq!(ts, 5); // 10 - 5 = 5
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: t 由本测试 make_test_thread 分配, tick_accounting 不持有引用
         unsafe {
             free_test_thread(t);
         }
@@ -1013,7 +1013,7 @@ mod tests {
         sched.tick_accounting();
         assert_eq!(sched.need_reschedule.load(Ordering::SeqCst), 1);
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: t 经 push_back + tick_accounting 验证后, 测试末释放
         unsafe {
             free_test_thread(t);
         }
@@ -1038,7 +1038,7 @@ mod tests {
         // Should have switched to t (higher priority than idle)
         assert!(current != 0);
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: t/idle 在 schedule() 后未再被引用, 测试末释放
         unsafe {
             free_test_thread(t);
             free_test_thread(idle);
@@ -1053,7 +1053,7 @@ mod tests {
         sched.current.store(idle as u64, Ordering::SeqCst);
 
         let zombie = make_test_thread(99, 1, ThreadPriority::Low);
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: zombie 由 make_test_thread 分配, 直接原子写 state 模拟僵尸态
         unsafe {
             (*zombie)
                 .state
@@ -1065,7 +1065,7 @@ mod tests {
         // zombie was in queue[1=Low], should be empty after reap
         assert!(sched.run_queues[ThreadPriority::Low as usize].is_empty());
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: zombie 经 reap 后, idle 经 schedule 后, 测试末释放
         unsafe {
             free_test_thread(zombie);
             free_test_thread(idle);
@@ -1084,7 +1084,7 @@ mod tests {
         // Manually trigger boost
         sched.boost_all();
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: t1/t2 由本测试 make_test_thread 分配, boost_all 后读 priority 验证
         unsafe {
             assert_eq!(
                 (*t1).priority.load(Ordering::SeqCst),

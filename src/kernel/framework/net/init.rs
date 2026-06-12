@@ -306,7 +306,16 @@ pub unsafe fn poll_network() {
 /// - 依赖的 chitin/driver 框架 (`Driver::init`) 自身保证设备独占
 #[cfg(not(feature = "kernel_test"))]
 unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
-    #[cfg(target_arch = "x86_64")]
+    // I-53 修复: 去除编译时架构互斥, 双架构二进制按运行时探测顺序
+    // 尝试 e1000 (PCI 设备) 与 virtio-net (MMIO 设备). 两者驱动代码
+    // 均架构无关, 仅依赖 IoMem / PCI 抽象. QEMU 配置决定哪一个会成功.
+    //
+    // 探测顺序固定: e1000 -> virtio-net. 真实硬件 (e.g. PC 上) e1000
+    // 优先; QEMU virt 上 e1000 探测返回非 0 走 fallthrough 到 virtio.
+    //
+    // 失败: 全部探测返回非 0 / Box::into_raw 失败 / Driver::init 失败.
+
+    // 1) e1000 探测 (PCI 设备, 走 PCI 总线, 架构无关)
     {
         let probe_result = crate::kernel::framework::driver::net::e1000::e1000_probe();
         if probe_result == 0 {
@@ -323,7 +332,7 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
         }
     }
 
-    #[cfg(target_arch = "aarch64")]
+    // 2) virtio-net 探测 (MMIO 设备, 走 virtio 总线, 架构无关)
     {
         let probe_result = crate::kernel::framework::driver::virtio::net::virtio_net_probe();
         if probe_result == 0 {
