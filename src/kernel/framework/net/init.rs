@@ -263,19 +263,19 @@ pub unsafe fn poll_network() {
     // (未来阻塞扩展点) 重新检查 socket 状态. try_wake 持锁时间 O(1).
     use crate::kernel::framework::net::wait_queue::{WakeReason, SOCKET_WAIT_QUEUES};
     for fd in 0..MAX_SM_FD {
-        if FD_TYPES[fd] == 0 {
+        if FD_TYPES.0[fd] == 0 {
             continue;
         }
         // 用 smoltcp can_send / can_recv 推断 wake 原因. socket_set 访问
         // 仍在 NET_LOCK 保护下 (try_wake 内部 lock 仅保护自身 pending 标记,
         // 与 smoltcp 状态机无关).
-        let reason = if let Some(handle) = SOCKET_TABLE[fd] {
-            let can_read = match FD_TYPES[fd] {
+        let reason = if let Some(handle) = SOCKET_TABLE.0[fd] {
+            let can_read = match FD_TYPES.0[fd] {
                 1 => sockets.get::<tcp::Socket>(handle).can_recv(),
                 2 => sockets.get::<udp::Socket>(handle).can_recv(),
                 _ => false,
             };
-            let can_write = match FD_TYPES[fd] {
+            let can_write = match FD_TYPES.0[fd] {
                 1 => sockets.get::<tcp::Socket>(handle).can_send(),
                 2 => sockets.get::<udp::Socket>(handle).can_send(),
                 _ => false,
@@ -409,8 +409,8 @@ unsafe fn net_save() {
 
         // FD 表
         for i in 0..MAX_SM_FD {
-            s.fd_types[i] = FD_TYPES[i];
-            s.fd_handles[i] = match SOCKET_TABLE[i] {
+            s.fd_types[i] = FD_TYPES.0[i];
+            s.fd_handles[i] = match SOCKET_TABLE.0[i] {
                 Some(h) => as_u32_handle(h),
                 None => u32::MAX,
             };
@@ -487,8 +487,8 @@ unsafe fn net_restore() {
         // 层需自行重新 connect / accept.
         let _guard = NET_LOCK.lock();
         for i in 0..MAX_SM_FD {
-            FD_TYPES[i] = saved.fd_types[i];
-            SOCKET_TABLE[i] = if saved.fd_handles[i] == u32::MAX {
+            FD_TYPES.0[i] = saved.fd_types[i];
+            SOCKET_TABLE.0[i] = if saved.fd_handles[i] == u32::MAX {
                 None
             } else {
                 let raw = saved.fd_handles[i] as usize;
@@ -824,7 +824,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
 
     // I-47: 检查活动 socket 上限 (≤ G_MAX_SOCKETS ≤ MAX_SOCKETS).
     // 运行时可通过 set_max_sockets 调整, 编译期上限 MAX_SOCKETS 静态保证.
-    let active: usize = (0..MAX_SM_FD).filter(|&i| FD_TYPES[i] != 0).count();
+    let active: usize = (0..MAX_SM_FD).filter(|&i| FD_TYPES.0[i] != 0).count();
     if active >= get_max_sockets() {
         return -E_NFILE;
     }
@@ -842,8 +842,8 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
         );
         let sockets = &mut *socket_set();
         let handle = sockets.add(tcp_sock);
-        SOCKET_TABLE[fd_idx] = Some(handle);
-        FD_TYPES[fd_idx] = 1;
+        SOCKET_TABLE.0[fd_idx] = Some(handle);
+        FD_TYPES.0[fd_idx] = 1;
         fd
     } else if domain == 2 && sock_type == 2 {
         let udp_sock = udp::Socket::new(
@@ -858,8 +858,8 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
         );
         let sockets = &mut *socket_set();
         let handle = sockets.add(udp_sock);
-        SOCKET_TABLE[fd_idx] = Some(handle);
-        FD_TYPES[fd_idx] = 2;
+        SOCKET_TABLE.0[fd_idx] = Some(handle);
+        FD_TYPES.0[fd_idx] = 2;
         fd
     } else {
         -E_AFNOSUPPORT
@@ -909,17 +909,17 @@ unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
 pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
 
     let sockets = &mut *socket_set();
 
-    match FD_TYPES[fd as usize] {
+    match FD_TYPES.0[fd as usize] {
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
             let endpoint = match parse_ipv4_endpoint(addr) {
@@ -946,15 +946,15 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
 pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
 
-    if FD_TYPES[fd as usize] != 1 {
+    if FD_TYPES.0[fd as usize] != 1 {
         return -E_NOTSUPP;
     }
 
@@ -980,15 +980,15 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
 pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
 
-    if FD_TYPES[fd as usize] != 1 {
+    if FD_TYPES.0[fd as usize] != 1 {
         return -E_NOTSUPP;
     }
 
@@ -1011,10 +1011,10 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
 pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1028,7 +1028,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         None => return -E_INVAL,
     };
 
-    if FD_TYPES[fd as usize] != 1 {
+    if FD_TYPES.0[fd as usize] != 1 {
         return -E_NOTSUPP;
     }
 
@@ -1059,10 +1059,10 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
 pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1073,7 +1073,7 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
-    match FD_TYPES[fd as usize] {
+    match FD_TYPES.0[fd as usize] {
         1 => {
             let sock = sockets.get_mut::<tcp::Socket>(handle);
             match sock.send_slice(data) {
@@ -1099,10 +1099,10 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
 pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1113,7 +1113,7 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
-    match FD_TYPES[fd as usize] {
+    match FD_TYPES.0[fd as usize] {
         1 => {
             let sock = sockets.get_mut::<tcp::Socket>(handle);
             match sock.recv_slice(data) {
@@ -1154,10 +1154,10 @@ pub unsafe extern "C" fn sm_sendto(
 ) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1173,7 +1173,7 @@ pub unsafe extern "C" fn sm_sendto(
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
-    match FD_TYPES[fd as usize] {
+    match FD_TYPES.0[fd as usize] {
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
             match sock.send_slice(data, endpoint) {
@@ -1208,10 +1208,10 @@ pub unsafe extern "C" fn sm_recvfrom(
 ) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1222,7 +1222,7 @@ pub unsafe extern "C" fn sm_recvfrom(
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
-    match FD_TYPES[fd as usize] {
+    match FD_TYPES.0[fd as usize] {
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
             match sock.recv_slice(data) {
@@ -1258,7 +1258,7 @@ pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32
     if msg.is_null() {
         return -E_FAULT;
     }
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
     // 读 Msghdr
@@ -1320,7 +1320,7 @@ pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
     if msg.is_null() {
         return -E_FAULT;
     }
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
     let msg_iov_ptr = core::ptr::read_unaligned(msg.add(16) as *const u64);
@@ -1386,15 +1386,15 @@ pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
 pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
 
-    let stype = FD_TYPES[fd as usize];
+    let stype = FD_TYPES.0[fd as usize];
     let sockets = &mut *socket_set();
 
     match stype {
@@ -1410,8 +1410,8 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     }
 
     sockets.remove(handle);
-    SOCKET_TABLE[fd as usize] = None;
-    FD_TYPES[fd as usize] = 0;
+    SOCKET_TABLE.0[fd as usize] = None;
+    FD_TYPES.0[fd as usize] = 0;
     0
 }
 
@@ -1458,17 +1458,17 @@ pub unsafe extern "C" fn sm_getsockopt(
 pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
     if addr.is_null() || addrlen.is_null() {
         return -E_INVAL;
     }
-    let stype = FD_TYPES[fd as usize];
+    let stype = FD_TYPES.0[fd as usize];
     let sockets = &mut *socket_set();
 
     let endpoint_opt: Option<IpEndpoint> = match stype {
@@ -1521,17 +1521,17 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
 pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
     let _guard = NET_LOCK.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE[fd as usize] {
+    let handle = match SOCKET_TABLE.0[fd as usize] {
         Some(h) => h,
         None => return -E_BADF,
     };
     if addr.is_null() || addrlen.is_null() {
         return -E_INVAL;
     }
-    let stype = FD_TYPES[fd as usize];
+    let stype = FD_TYPES.0[fd as usize];
     let sockets = &mut *socket_set();
 
     let endpoint_opt: Option<IpEndpoint> = match stype {
@@ -1577,10 +1577,10 @@ pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
     process_dhcp_events(sockets);
 
     for i in 0..MAX_SM_FD {
-        if FD_TYPES[i] != 1 {
+        if FD_TYPES.0[i] != 1 {
             continue;
         }
-        if let Some(handle) = SOCKET_TABLE[i] {
+        if let Some(handle) = SOCKET_TABLE.0[i] {
             let _sock = sockets.get_mut::<tcp::Socket>(handle);
         }
     }
@@ -1598,10 +1598,22 @@ const TCP_BUF_SIZE: usize = 4096;
 const UDP_BUF_SIZE: usize = 2048;
 const UDP_META_COUNT: usize = 4;
 
-static mut SOCKET_TABLE: [Option<SocketHandle>; MAX_SM_FD] = [None; MAX_SM_FD];
+// TD-05: 8 张 smoltcp 大表, 小型热表按 64 字节 cache line 对齐, 减少多核 false sharing.
+// 大型 buffer (TCP/UDP buf) 单 fd 独占一整片区域, 默认不会被相邻 fd 抢用, 仅需保持页对齐即可.
+//
+// 实现方式: `#[repr(align(N))]` 不能直接用于 `static mut [T; N]`, 改用 `static mut W: Wrapper<T>`.
+#[repr(align(64))]
+struct Align64<T>(T);
 
-// Per-fd 类型标记: 0=free, 1=tcp, 2=udp
-static mut FD_TYPES: [u8; MAX_SM_FD] = [0u8; MAX_SM_FD];
+#[allow(non_camel_case_types)]
+type SOCKET_TABLE_T = Align64<[Option<SocketHandle>; MAX_SM_FD]>;
+#[allow(non_camel_case_types)]
+type FD_TYPES_T = Align64<[u8; MAX_SM_FD]>;
+
+static mut SOCKET_TABLE: SOCKET_TABLE_T = Align64([None; MAX_SM_FD]);
+// Per-fd 类型标记: 0=free, 1=tcp, 2=udp.
+// 64 字节对齐: 8 核机器下每核独立访问自己 fd 对应的 cache line, 不会因 1 字节写触发整行 invalidation.
+static mut FD_TYPES: FD_TYPES_T = Align64([0u8; MAX_SM_FD]);
 
 // TCP buffer storage (per fd)
 static mut TCP_RX_BUFS: [[u8; TCP_BUF_SIZE]; MAX_SM_FD] = [[0u8; TCP_BUF_SIZE]; MAX_SM_FD];
@@ -1621,7 +1633,7 @@ static mut UDP_TX_BUFS: [[u8; UDP_BUF_SIZE]; MAX_SM_FD] = [[0u8; UDP_BUF_SIZE]; 
 /// - 调用方须保证在持有 `SM_FD_TABLE_LOCK` 时调用
 unsafe fn sm_alloc_fd() -> i32 {
     for i in 0..MAX_SM_FD {
-        if FD_TYPES[i] == 0 && SOCKET_TABLE[i].is_none() {
+        if FD_TYPES.0[i] == 0 && SOCKET_TABLE.0[i].is_none() {
             // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
             return crate::kernel::framework::proc::fd_alloc::fd_at(
                 crate::kernel::framework::proc::fd_alloc::FdSubsystem::Smoltcp,

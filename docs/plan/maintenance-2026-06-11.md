@@ -1606,6 +1606,9 @@ TSS IST 字段非零, 若初始化顺序错乱, #DF/NMI/#PF 触发时 CPU 切换
   - **关联文件**: `framework/syscall/{eventfd,signalfd}.rs` (改), `host-tests/tests/td04_stale_fd_test.rs` (新增).
   - **遗留**: 当前 EFD/SFD 表 alloc/free 仍是立即复用, 不带 generation/pending_free. 仍存在"close 释放后立刻重新 alloc 到同 slot"的小窗口 (锁释放到 epoll_pwake 调用之间, 时序敏感). 完全消除需要 generation 计数器或 pending_free 延迟链 — 但需要改 epoll 数据结构, 工作量较大. 验收方向: EFD/SFD 表 alloc 时若 slot 在过去 1 tick 内被释放过, 则跳到下一个空 slot.
 - **TD-05 🟠**: smoltcp 全局静态表 (`SOCKET_TABLE` / `FD_TYPES` / `TCP_RX_BUFS` 等 8 张大表) 无 NUMA 亲和性, 8 核以上系统 cache line bouncing 严重. 修复: per-CPU 元数据 + RCU 同步 handle 跨核; buf 改 per-CPU 池. 验收: 8 核 iperf 吞吐较当前 +≥20%; `audit_deadlock_matrix.py` 不报警.
+  - **状态**: ✅ 已修复 V1 (2026-06-12): SOCKET_TABLE 与 FD_TYPES 这两张最热的"每 fd 1 元素"小表包装在 `#[repr(align(64))] struct Align64<T>(T)` 内 — 64 字节对齐防止 1 字节 FD_TYPES 写触发整行 invalidation. 大型 buffer (TCP_RX_BUFS / TCP_TX_BUFS / UDP_*) 单 fd 独占一整片 4K/2K, 默认不会被相邻 fd 抢用, 仅需保持页对齐, 不强求 cache line. 共修改 53+ 处访问点为 `FD_TYPES.0[i]` / `SOCKET_TABLE.0[i]`. 静态契约测试 4 个 (`td05_cache_align_test`) 全过.
+  - **关联文件**: `framework/net/init.rs` (改), `host-tests/tests/{td05_cache_align_test,net_snapshot_test}.rs` (后者更新以匹配 .0 字段).
+  - **遗留**: per-CPU 亲和性 + RCU 跨核同步 + per-CPU buf 池仍未做 (workqueue 级的 NUMA 调度). 完全消除 cache bouncing 需先解决 fd→cpu 映射与 socket handle 跨核可见性 (目前是全局静态表). 验收: 8 核 iperf 吞吐 +≥20%.
 - **TD-06 🟡**: `MAX_SM_FD=256` 仍编译期硬编码, 大规模服务 (nginx 等) 跑内核网络栈时 fd 不足; 与 I-47 修复的 `G_MAX_SOCKETS` 运行时可调不同. 修复: 启动按内存大小自适应 + 底层表 `Vec<...>` 走 heap; 或 cfg 选择 256/1024/4096. 验收: 启动日志显示当前值; 超过 256 并发 socket 不报错.
 - **TD-07 🟡**: `static mut TCP_RX_BUFS: [[u8; ...]; MAX_SM_FD]` 等 MB 级静态内存启动即占用, 不走 slab. 修复: 改用 framework/mm/slab 按需分配, 释放 socket 同步归还. 验收: 启动时静态占用=0; 1000 并发短连接后 slab 空闲块回归基线; `audit_safety_coverage.py` 不报警.
 

@@ -194,12 +194,12 @@ fn net_restore_restores_fd_table() {
     let start = src.find(marker).expect("missing net_restore");
     let body = &src[start..start + 5000];
     assert!(
-        body.contains("FD_TYPES[i] = saved.fd_types[i]"),
-        "P2-I-44: net_restore 必须按 fd 恢复 FD_TYPES"
+        body.contains("FD_TYPES.0[i] = saved.fd_types[i]"),
+        "P2-I-44: net_restore 必须按 fd 恢复 FD_TYPES (TD-05 包装后访问走 .0 字段)"
     );
     assert!(
-        body.contains("SOCKET_TABLE[i]"),
-        "P2-I-44: net_restore 必须按 fd 恢复 SOCKET_TABLE"
+        body.contains("SOCKET_TABLE.0[i]"),
+        "P2-I-44: net_restore 必须按 fd 恢复 SOCKET_TABLE (TD-05 包装后访问走 .0 字段)"
     );
 }
 
