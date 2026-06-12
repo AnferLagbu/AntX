@@ -90,3 +90,37 @@ fn test_fd_range_overlaps_helper() {
     assert!(src.contains("pub const fn end_exclusive"),
         "FdRange 必须暴露 end_exclusive (TD-02)");
 }
+
+#[test]
+fn test_v2_subsystems_reference_fdplan() {
+    // TD-02 V2: 4 个子系统的 *FD_BASE 常量必须从 FdPlan 派生, 不再硬编码字面量
+    let cases: &[(&str, &str, &str)] = &[
+        ("UDS_FD_BASE",       "src/kernel/framework/net/unix.rs",         "crate::kernel::framework::proc::fd_alloc::FdPlan::UDS.base"),
+        ("EFD_FD_BASE",       "src/kernel/framework/syscall/eventfd.rs",  "crate::kernel::framework::proc::fd_alloc::FdPlan::EVENT_FD.base"),
+        ("SFD_FD_BASE",       "src/kernel/framework/syscall/signalfd.rs", "crate::kernel::framework::proc::fd_alloc::FdPlan::SIGNAL_FD.base"),
+        ("INOTIFY_FD_BASE",   "src/kernel/services/fs/inotify.rs",       "crate::kernel::framework::proc::fd_alloc::FdPlan::INOTIFY.base"),
+    ];
+    for (const_name, rel_path, expected_ref) in cases {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent().unwrap().join(rel_path);
+        let src = fs::read_to_string(&p)
+            .unwrap_or_else(|_| panic!("读 {}", rel_path));
+        let needle = format!("pub const {}: i32 =", const_name);
+        let found = src.lines().any(|l| l.trim().starts_with(&needle));
+        assert!(found, "{} 定义缺失 in {}", const_name, rel_path);
+        assert!(src.contains(expected_ref),
+            "{} 必须引用 {} (TD-02 V2 单一来源), 实为: {}",
+            const_name, expected_ref,
+            src.lines().find(|l| l.trim().starts_with(&needle)).unwrap_or("?"));
+    }
+}
+
+#[test]
+fn test_v2_smoltcp_capacity_derived_from_fdplan() {
+    // TD-02 V2: smoltcp MAX_SM_FD 从 FdPlan::SMOLTCP.capacity 派生
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join("src/kernel/framework/net/init.rs");
+    let src = fs::read_to_string(&p).expect("读 init.rs");
+    assert!(src.contains("MAX_SM_FD: usize = crate::kernel::framework::proc::fd_alloc::FdPlan::SMOLTCP.capacity"),
+        "MAX_SM_FD 必须从 FdPlan::SMOLTCP.capacity 派生 (TD-02 V2)");
+}

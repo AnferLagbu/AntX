@@ -1592,7 +1592,8 @@ pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
 // ============================================================================
 
 // I-47: FD 表容量, 与 MAX_SOCKETS 对齐 (每个 FD 对应一个 smoltcp socket).
-const MAX_SM_FD: usize = 256;
+// TD-02: 基址与容量改由 `framework::proc::fd_alloc::FdPlan::SMOLTCP` 单一来源; 容量现从 FdRange.capacity 派生.
+const MAX_SM_FD: usize = crate::kernel::framework::proc::fd_alloc::FdPlan::SMOLTCP.capacity as usize;
 const TCP_BUF_SIZE: usize = 4096;
 const UDP_BUF_SIZE: usize = 2048;
 const UDP_META_COUNT: usize = 4;

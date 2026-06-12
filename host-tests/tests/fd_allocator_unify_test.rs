@@ -12,6 +12,7 @@ use std::path::Path;
 
 const UNIX_RS: &str = "src/kernel/framework/net/unix.rs";
 const NET_INIT: &str = "src/kernel/framework/net/init.rs";
+const FD_ALLOC_RS: &str = "src/kernel/framework/proc/fd_alloc.rs";
 
 /// 从源文件中提取 `pub const XXX: i32 = NNN;` 的整数值
 fn extract_pub_const_i32(src: &str, name: &str) -> Option<i32> {
@@ -20,8 +21,38 @@ fn extract_pub_const_i32(src: &str, name: &str) -> Option<i32> {
         let t = line.trim();
         if t.starts_with(&needle) {
             // 形如: pub const UDS_FD_BASE: i32 = 1000;
+            // 或:   pub const UDS_FD_BASE: i32 = ...fd_alloc::FdPlan::UDS.base;
             let rhs = t.split('=').nth(1)?.trim().trim_end_matches(';');
-            return rhs.parse::<i32>().ok();
+            // 字面量
+            if let Ok(v) = rhs.parse::<i32>() {
+                return Some(v);
+            }
+            // TD-02: const 表达式 (委托给 FdPlan) — 读 fd_alloc.rs 单一来源
+            for sub in &["UDS", "EVENT_FD", "SIGNAL_FD", "INOTIFY", "SMOLTCP"] {
+                if rhs.contains(&format!("FdPlan::{}.base", sub))
+                    || rhs.contains(&format!("FdPlan::{sub}.base"))
+                {
+                    return read_fdplan_base(sub);
+                }
+            }
+            return None;
+        }
+    }
+    None
+}
+
+/// 从 fd_alloc.rs 提取 FdPlan::<sub>.base 字面量
+fn read_fdplan_base(sub: &str) -> Option<i32> {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join(FD_ALLOC_RS);
+    let src = fs::read_to_string(&p).ok()?;
+    let needle = format!("{}: FdRange = FdRange::new(", sub);
+    for line in src.lines() {
+        let t = line.trim();
+        if t.contains(&needle) {
+            let after = t.split("FdRange::new(").nth(1)?;
+            let first = after.split(',').next()?.trim();
+            return first.parse::<i32>().ok();
         }
     }
     None
@@ -35,7 +66,33 @@ fn extract_const_usize(src: &str, name: &str) -> Option<usize> {
         let t = line.trim();
         if t.starts_with(&needle_pub) || t.starts_with(&needle_priv) {
             let rhs = t.split('=').nth(1)?.trim().trim_end_matches(';');
-            return rhs.parse::<usize>().ok();
+            if let Ok(v) = rhs.parse::<usize>() {
+                return Some(v);
+            }
+            // TD-02: const 表达式委托给 FdPlan (capacity.as usize)
+            for sub in &["UDS", "EVENT_FD", "SIGNAL_FD", "INOTIFY", "SMOLTCP"] {
+                if rhs.contains(&format!("FdPlan::{}.capacity", sub)) {
+                    return read_fdplan_capacity(sub);
+                }
+            }
+            return None;
+        }
+    }
+    None
+}
+
+/// 从 fd_alloc.rs 提取 FdPlan::<sub>.capacity 字面量
+fn read_fdplan_capacity(sub: &str) -> Option<usize> {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join(FD_ALLOC_RS);
+    let src = fs::read_to_string(&p).ok()?;
+    let needle = format!("{}: FdRange = FdRange::new(", sub);
+    for line in src.lines() {
+        let t = line.trim();
+        if t.contains(&needle) {
+            let after = t.split("FdRange::new(").nth(1)?;
+            let second = after.split(',').nth(1)?.trim().trim_end_matches(';').trim_end_matches(')');
+            return second.parse::<usize>().ok();
         }
     }
     None

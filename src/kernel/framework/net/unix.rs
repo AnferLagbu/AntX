@@ -35,8 +35,8 @@ use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 // ============================================================================
 
 /// FD 起点, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
-/// I-51: 历史 100 与 smoltcp 范围重叠, 已挪至 1000.
-pub const UDS_FD_BASE: i32 = 1000;
+/// TD-02: 基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::UDS` 单一来源, 不再硬编码.
+pub const UDS_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::UDS.base;
 
 /// 最大 UDS socket 数量
 pub const MAX_UDS_FD: usize = 16;

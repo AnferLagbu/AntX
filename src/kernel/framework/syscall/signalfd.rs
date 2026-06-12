@@ -39,9 +39,8 @@ use crate::kernel::framework::syscall::types::Errno;
 /// signalfd 最大实例数
 pub const SFD_MAX_SLOTS: usize = 16;
 /// FD 空间起始
-/// FD 起点, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
-/// TD-01: 历史 220 与 smoltcp 范围重叠, 已挪至 1120.
-pub const SFD_FD_BASE: i32 = 1120;
+/// TD-02: 基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::SIGNAL_FD` 单一来源, 不再硬编码.
+pub const SFD_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::SIGNAL_FD.base;
 /// SFD_CLOEXEC
 pub const SFD_CLOEXEC: i32 = 0o2000000;
 /// SFD_NONBLOCK

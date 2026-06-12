@@ -1268,8 +1268,9 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - **TD-01 🔴**: EFD_FD_BASE=200 / SFD_FD_BASE=220 / INOTIFY_FD_BASE 同样与 smoltcp `[0, 256)` 重叠, 进程级 `read/write` 分发不可靠. 需同样挪出 smoltcp 范围 (1100/1120/1140). 验收: 所有 `*_FD_BASE: i32` ≥ MAX_SM_FD=256; 测试同时打开 4 类 fd 无冲突.
   - **状态**: ✅ 已修复 (2026-06-12): EFD_FD_BASE 200→1100, SFD_FD_BASE 220→1120, INOTIFY_FD_BASE 260→1140. 静态契约测试扩展到 4 个子系统 (`fd_allocator_unify_test::test_fd_bases_in_smoltcp_safe_zone` 验证全部 ≥256 且互不重叠).
 - **TD-02 🔴**: 全项目仍有 7 个独立 fd 分配器 (VFS/HvFS/UDS/smoltcp/EVENTFD/SIGNALFD/INOTIFY). 验收"仅 1 个 fd 分配器" 仍不满足. 修复路径: 抽 `FdAllocator` trait → 4 套集中实现 (VFS/HvFS/smoltcp/UDS) → EFD/SFD/INOTIFY 借用 smoltcp 槽位. 估算 3-5 天, 跨模块改造.
-  - **状态**: 🚧 进行中 V1 (2026-06-12): 已落 `framework/proc/fd_alloc.rs` (~210 行), 含 `FdSubsystem` 枚举 (5 变体) + `FdRange`/`FdPlan` 集中基址规划 (单一来源) + `alloc_fd`/`free_fd`/`subsystem_of` 接口 + 启动期 `verify_plan` 校验. V2 接入现有子系统 (smoltcp/EFD/SFD/UDS/INOTIFY 改走集中接口) 留作下一批.
-  - **关联文件**: `framework/proc/fd_alloc.rs` (新增), `host-tests/tests/fd_allocator_unified_test.rs` (新增 5 测试).
+  - **状态**: ✅ 已完成 V1+V2 (2026-06-12): V1 落 `framework/proc/fd_alloc.rs` (~210 行), 含 `FdSubsystem` 枚举 (5 变体) + `FdRange`/`FdPlan` 集中基址规划 (单一来源) + `alloc_fd`/`free_fd`/`subsystem_of` 接口 + 启动期 `verify_plan` 校验. V2 把 5 个子系统的基址常量改写为 `FdPlan::*.base` 委托: `UDS_FD_BASE`/`EFD_FD_BASE`/`SFD_FD_BASE`/`INOTIFY_FD_BASE` + smoltcp `MAX_SM_FD`, 不再硬编码字面量, 验收"单一来源"满足. V3 (留待下批) 是 alloc/free 行为也走集中接口 (本批 V2 只动了"基址"层, call sites 未动).
+  - **关联文件**: `framework/proc/fd_alloc.rs` (新增), `framework/net/{unix,init}.rs` (改), `framework/syscall/{eventfd,signalfd}.rs` (改), `services/fs/inotify.rs` (改), `host-tests/tests/fd_allocator_unified_test.rs` (新增 7 测试).
+  - **遗留**: V3 — 各子系统 `sm_alloc_fd`/`efd_alloc`/`uds_alloc` 等仍用各自独立计数, 改走 `fd_alloc::alloc_fd(FdSubsystem::X)`. 验收: 删 5 个子系统的 `static NEXT_FD`/`next_fd` 等独立计数器, 静态契约测试扫描确认.
 
 ---
 

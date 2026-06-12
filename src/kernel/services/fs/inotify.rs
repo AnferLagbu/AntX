@@ -91,9 +91,8 @@ const INOTIFY_MAX_WATCHES: usize = 16;
 const INOTIFY_MAX_EVENTS: usize = 64;
 /// 文件名最大长度 (inotify_event.name)
 const INOTIFY_MAX_NAME: usize = 32;
-/// inotify FD 空间起始, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
-/// TD-01: 历史 260 紧贴 smoltcp 上界, 后续若 smoltcp 扩到 ≥ 260 会重叠, 已挪至 1140.
-pub const INOTIFY_FD_BASE: i32 = 1140;
+/// TD-02: 基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::INOTIFY` 单一来源, 不再硬编码.
+pub const INOTIFY_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::INOTIFY.base;
 
 // ============================================================================
 // inotify 数据结构
