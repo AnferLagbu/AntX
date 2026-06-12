@@ -8,7 +8,7 @@
 //!
 //! ## 关键不变量
 //!
-//! - FD 空间: `[UDS_FD_BASE, UDS_FD_BASE + MAX_UDS_FD)` = `[1000, 1016)`
+//! - FD 空间: 由 `fd_alloc::FdPlan::UDS` 集中规划 (基址 1000, 容量 16)
 //! - I-51: 与 smoltcp (`[0, MAX_SM_FD=256)`) 不重叠 (历史 100 范围与 smoltcp 重叠, 已挪出)
 //! - 路径长度 ≤ `UNIX_PATH_MAX` = 108 (POSIX `sun_path` 上限)
 //! - 每个 STREAM 连接由两端 socket 共享: 写方向 `src.stream_buf → dst.stream_buf`
@@ -293,12 +293,18 @@ fn alloc_socket_id() -> u32 {
 }
 
 /// FD ↔ 槽位索引转换
+///
+/// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 UDS_FD_BASE 字面量 +
+/// 减法边界检查. 错误返回 UdsError::BadFd.
 #[inline]
 fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
-    if fd < UDS_FD_BASE || fd >= UDS_FD_BASE + MAX_UDS_FD as i32 {
-        return Err(UdsError::BadFd);
+    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::Uds, slot)) => {
+            // MAX_UDS_FD = 16, 永远 u8 范围
+            Ok(slot as u8)
+        }
+        _ => Err(UdsError::BadFd),
     }
-    Ok((fd - UDS_FD_BASE) as u8)
 }
 
 #[inline]

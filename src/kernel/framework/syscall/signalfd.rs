@@ -182,9 +182,10 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
 
     let mut table = SFD_TABLE.lock();
 
-    if fd >= SFD_FD_BASE {
+    if let Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, idx)) =
+        crate::kernel::framework::proc::fd_alloc::idx_of(fd)
+    {
         // 修改已有实例
-        let idx = (fd - SFD_FD_BASE) as usize;
         if idx >= SFD_MAX_SLOTS || !table.slots[idx].used {
             return Errno::EBADF.as_ret();
         }
@@ -373,16 +374,26 @@ fn clear_process_pending(pid: u32, signo: u32) {
 // ============================================================================
 
 /// fd → 槽位索引
+///
+/// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 SFD_FD_BASE 字面量 +
+/// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
-    if fd < SFD_FD_BASE || fd >= SFD_FD_BASE + SFD_MAX_SLOTS as i32 {
-        return None;
+    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, slot)) => {
+            Some(slot)
+        }
+        _ => None,
     }
-    Some((fd - SFD_FD_BASE) as usize)
 }
 
 /// 检查 fd 是否属于 signalfd 空间
+///
+/// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 SFD_FD_BASE 字面量 + 算术.
 pub fn is_signalfd_fd(fd: i32) -> bool {
-    fd >= SFD_FD_BASE && fd < SFD_FD_BASE + SFD_MAX_SLOTS as i32
+    matches!(
+        crate::kernel::framework::proc::fd_alloc::idx_of(fd),
+        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, _))
+    )
 }
 
 // ============================================================================
@@ -434,7 +445,10 @@ fn test_signalfd_sigkill_filtered() -> crate::kernel::framework::tests::TestResu
     // 验证 SIGKILL 被过滤: 读取 slot 的 sigmask
     {
         let table = SFD_TABLE.lock();
-        let idx = (fd as i32 - SFD_FD_BASE) as usize;
+        let idx = match crate::kernel::framework::proc::fd_alloc::idx_of(fd as i32) {
+            Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, i)) => i,
+            _ => panic!("signalfd 测试期望 SignalFd 范围内 FD"),
+        };
         let slot_mask = table.slots[idx].sigmask;
         check!(slot_mask & (1u128 << 8) == 0, "SIGKILL filtered from mask");
         check!(slot_mask & (1u128 << 9) != 0, "SIGUSR1 still in mask");

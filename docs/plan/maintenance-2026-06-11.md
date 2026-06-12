@@ -1277,6 +1277,38 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
   - **状态**: ✅ 已完成 V1+V2+V3 (2026-06-12): V1 落 `framework/proc/fd_alloc.rs` (~230 行), 含 `FdSubsystem` (5 变体) + `FdRange`/`FdPlan` + `verify_plan`. V2 把 5 个子系统基址常量 (`UDS_FD_BASE`/`EFD_FD_BASE`/`SFD_FD_BASE`/`INOTIFY_FD_BASE`/smoltcp `MAX_SM_FD`) 改写为 `FdPlan::*.base/capacity` 委托. V3 加 `fd_at(sub, slot)` + `max_slots(sub)` 集中辅助, 把 6 处 `*_FD_BASE + i as i32` 模式全替换为 `fd_at(FdSubsystem::X, i)`, 验证 5 个子系统文件均引用 `fd_at`. 验收"单一 FD 计算入口"满足. 静态契约测试累计 13 个 (`fd_allocator_unify_test` 4 + `fd_allocator_unified_test` 9), 全过.
   - **关联文件**: `framework/proc/fd_alloc.rs` (新增 +30 行 V3), `framework/net/{unix,init}.rs` (改), `framework/syscall/{eventfd,signalfd}.rs` (改), `services/fs/inotify.rs` (改), `host-tests/tests/fd_allocator_unified_test.rs` (+2 V3 测试).
   - **遗留**: V4 — 当前 `*_FD_BASE` 字面量仍保留 (供 `fd_to_idx` 边界检查); 可继续 V4 把 `fd_to_idx` 改为 `fd_alloc::idx_of(fd)`, 完全消除子系统对基址字面量的本地引用. 验收: `grep -nE "UDS_FD_BASE \+|EFD_FD_BASE \+|SFD_FD_BASE \+|INOTIFY_FD_BASE \+"` 仅在 fd_alloc.rs 命中.
+  - **状态**: ✅ 已完成 V4 (2026-06-12, 见下).
+
+### [x] TD-15 🟢 TD-02 V4 — fd_to_idx 全迁移到 fd_alloc::idx_of (消除子系统基址字面量) ✅ 已完成 (2026-06-12)
+
+**关联文件**:
+- [src/kernel/framework/proc/fd_alloc.rs](../../src/kernel/framework/proc/fd_alloc.rs) (新增 V4 `idx_of` + TimerFd 子系统)
+- [src/kernel/framework/syscall/eventfd.rs](../../src/kernel/framework/syscall/eventfd.rs) (改 fd_to_idx / is_eventfd_fd)
+- [src/kernel/framework/syscall/signalfd.rs](../../src/kernel/framework/syscall/signalfd.rs) (改 fd_to_idx / is_signalfd_fd + sys_signalfd Update 分支 + 内核测试)
+- [src/kernel/framework/syscall/timerfd.rs](../../src/kernel/framework/syscall/timerfd.rs) (改 TFD_FD_BASE→FdPlan + fd_to_idx + sys_timerfd_create 分配路径)
+- [src/kernel/framework/net/unix.rs](../../src/kernel/framework/net/unix.rs) (改 fd_to_idx; doc 注释同步)
+- [host-tests/tests/td15_fd_idx_of_test.rs](../../host-tests/tests/td15_fd_idx_of_test.rs) (新增 6 用例)
+
+**修复**:
+1. **fd_alloc.rs 新增**:
+   - `FdSubsystem::TimerFd = 5` 变体 + `COUNT = 6` + `from_index` 同步
+   - `FdPlan::TIMER_FD: FdRange = FdRange::new(1160, 16)` (跳出 smoltcp [0,256), 旧 240 重叠)
+   - `range_for` / `ALL` 数组含 TimerFd
+   - **V4 接口**: `pub fn idx_of(fd: i32) -> Option<(FdSubsystem, usize)>` 通用反查
+2. **timerfd.rs**: `TFD_FD_BASE` 从字面量 `240` 改 `FdPlan::TIMER_FD.base`(1160); `sys_timerfd_create` 分配路径 `TFD_FD_BASE + i` 改 `fd_alloc::fd_at(TimerFd, i)`
+3. **eventfd / signalfd / unix**: 4 处 `fd_to_idx` 函数体 + 3 处 `is_xxx_fd` 函数 + 1 处 `sys_signalfd` Update 分支 + 1 处内核测试断言 全部改走 `fd_alloc::idx_of`, 配 match 臂过滤子系统. 任何 `*_FD_BASE ± 字面量` 本地算术全部清除.
+4. **unix.rs doc 注释** 同步: `[UDS_FD_BASE, UDS_FD_BASE + MAX_UDS_FD)` → `由 fd_alloc::FdPlan::UDS 集中规划 (基址 1000, 容量 16)`
+
+**验收**:
+- [x] `grep -nE "(EFD|SFD|TFD|UDS)_FD_BASE [+-]"` 0 命中 (本机扫 framework/)
+- [x] 4 子系统本地 fd_to_idx 全部调用 `fd_alloc::idx_of` (6 用例契约测试覆盖)
+- [x] TimerFd 纳入 FdPlan, COUNT 6, ranges_non_overlapping 启动期验证
+- [x] 双架构 0 error / 0 warning; ci/audit.sh quick 0 错
+- [x] host-tests 全过 (60 test groups, 累计含 td15 6 用例)
+**完成记录**:
+- 日期: 2026-06-12
+- 提交: 本次推送 (见 git log origin/chore/safety-coverage-phase3.2)
+- 简述: 5 个子系统 fd_to_idx/is_xxx_fd 全迁出本地基址字面量, 完全消除 grep 命中.
 
 ---
 

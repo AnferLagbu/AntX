@@ -286,16 +286,26 @@ pub fn eventfd_poll_events(fd: i32) -> u32 {
 // ============================================================================
 
 /// fd → 槽位索引
+///
+/// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 EFD_FD_BASE 字面量 +
+/// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
-    if fd < EFD_FD_BASE || fd >= EFD_FD_BASE + EFD_MAX_SLOTS as i32 {
-        return None;
+    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::EventFd, slot)) => {
+            Some(slot)
+        }
+        _ => None,
     }
-    Some((fd - EFD_FD_BASE) as usize)
 }
 
 /// 检查 fd 是否属于 eventfd 空间
+///
+/// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 EFD_FD_BASE 字面量 + 算术.
 pub fn is_eventfd_fd(fd: i32) -> bool {
-    fd >= EFD_FD_BASE && fd < EFD_FD_BASE + EFD_MAX_SLOTS as i32
+    matches!(
+        crate::kernel::framework::proc::fd_alloc::idx_of(fd),
+        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::EventFd, _))
+    )
 }
 
 // ============================================================================

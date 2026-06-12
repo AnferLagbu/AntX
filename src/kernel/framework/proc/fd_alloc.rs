@@ -68,11 +68,13 @@ pub enum FdSubsystem {
     SignalFd = 3,
     /// inotify
     Inotify = 4,
+    /// timerfd
+    TimerFd = 5,
 }
 
 impl FdSubsystem {
     /// 子系统数量 (用于范围表边界)
-    pub const COUNT: usize = 5;
+    pub const COUNT: usize = 6;
 
     /// 通过下标获取子系统 (用于 `for i in 0..COUNT { ... }`)
     pub fn from_index(i: usize) -> Option<Self> {
@@ -82,6 +84,7 @@ impl FdSubsystem {
             2 => Some(Self::EventFd),
             3 => Some(Self::SignalFd),
             4 => Some(Self::Inotify),
+            5 => Some(Self::TimerFd),
             _ => None,
         }
     }
@@ -162,6 +165,9 @@ impl FdPlan {
     /// Inotify FD 空间 (TD-01: 历史 260 → 1140)
     pub const INOTIFY: FdRange = FdRange::new(1140, 16);
 
+    /// TimerFd FD 空间 (TD-15: 历史 240 → 1160, 跳出 smoltcp [0, 256))
+    pub const TIMER_FD: FdRange = FdRange::new(1160, 16);
+
     /// 获取指定子系统的 FD 范围
     pub const fn range_for(sub: FdSubsystem) -> FdRange {
         match sub {
@@ -170,6 +176,7 @@ impl FdPlan {
             FdSubsystem::EventFd => Self::EVENT_FD,
             FdSubsystem::SignalFd => Self::SIGNAL_FD,
             FdSubsystem::Inotify => Self::INOTIFY,
+            FdSubsystem::TimerFd => Self::TIMER_FD,
         }
     }
 
@@ -180,6 +187,7 @@ impl FdPlan {
         Self::EVENT_FD,
         Self::SIGNAL_FD,
         Self::INOTIFY,
+        Self::TIMER_FD,
     ];
 
     /// 启动期不变量: 任意两个范围不重叠
@@ -291,4 +299,30 @@ pub const fn fd_at(sub: FdSubsystem, slot: usize) -> i32 {
 #[inline]
 pub const fn max_slots(sub: FdSubsystem) -> usize {
     FdPlan::range_for(sub).capacity as usize
+}
+
+// ============================================================================
+// V4 接口: idx_of
+// ============================================================================
+
+/// 给定 FD 编号, 反查所属子系统与 slot 索引
+///
+/// V4 替代各子系统的本地 `fd_to_idx` 函数 (`eventfd` / `signalfd` / `timerfd` /
+/// `unix`), 集中表达式. 子系统本地不再持有 `*_FD_BASE` 字面量 + 减法边界检查.
+///
+/// 返回 `Some((sub, slot))` 当 `fd ∈ FdPlan::range_for(sub)` 时, 否则 `None`.
+///
+/// 验收: 任意 `fd ∈ [base, base + capacity)` 都唯一映射到 `(sub, slot)`.
+#[inline]
+pub fn idx_of(fd: i32) -> Option<(FdSubsystem, usize)> {
+    let mut i = 0;
+    while i < FdSubsystem::COUNT {
+        let sub = FdSubsystem::from_index(i).unwrap();
+        let range = FdPlan::range_for(sub);
+        if range.contains(fd) {
+            return Some((sub, (fd - range.base) as usize));
+        }
+        i += 1;
+    }
+    None
 }

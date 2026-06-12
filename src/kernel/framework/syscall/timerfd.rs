@@ -42,8 +42,9 @@ use crate::kernel::framework::timer::hrtimer::{HrTimer, HrTimerRestart, hrtimer_
 
 /// timerfd 最大实例数
 pub const TFD_MAX_SLOTS: usize = 16;
-/// FD 空间起始
-pub const TFD_FD_BASE: i32 = 240;
+/// TD-15: FD 空间基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::TIMER_FD` 单一来源 (1160),
+/// 不再硬编码 240 (旧值与 smoltcp [0, 256) 重叠).
+pub const TFD_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::TIMER_FD.base;
 /// TFD_CLOEXEC
 pub const TFD_CLOEXEC: i32 = 0o2000000;
 /// TFD_NONBLOCK
@@ -158,7 +159,11 @@ pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
 
     for i in 0..TFD_MAX_SLOTS {
         if !table.slots[i].used {
-            let fd = TFD_FD_BASE + i as i32;
+            // TD-15: 走 fd_alloc::fd_at 集中计算 FD, 避免本地基址字面量
+            let fd = crate::kernel::framework::proc::fd_alloc::fd_at(
+                crate::kernel::framework::proc::fd_alloc::FdSubsystem::TimerFd,
+                i,
+            );
 
             table.slots[i].used = true;
             table.slots[i].fd = fd;
@@ -495,16 +500,26 @@ pub fn timerfd_poll_events(fd: i32) -> u32 {
 // ============================================================================
 
 /// fd → 槽位索引
+///
+/// TD-15: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 TFD_FD_BASE 字面量 +
+/// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
-    if fd < TFD_FD_BASE || fd >= TFD_FD_BASE + TFD_MAX_SLOTS as i32 {
-        return None;
+    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::TimerFd, slot)) => {
+            Some(slot)
+        }
+        _ => None,
     }
-    Some((fd - TFD_FD_BASE) as usize)
 }
 
 /// 检查 fd 是否属于 timerfd 空间
+///
+/// TD-15: 改走 `fd_alloc::idx_of`, 不再持有 TFD_FD_BASE 字面量 + 算术.
 pub fn is_timerfd_fd(fd: i32) -> bool {
-    fd >= TFD_FD_BASE && fd < TFD_FD_BASE + TFD_MAX_SLOTS as i32
+    matches!(
+        crate::kernel::framework::proc::fd_alloc::idx_of(fd),
+        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::TimerFd, _))
+    )
 }
 
 // ============================================================================
