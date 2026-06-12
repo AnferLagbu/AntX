@@ -157,6 +157,15 @@ macro_rules! dispatch {
 ///
 /// Called from interrupt context (int 0x80). All register values come from the interrupted user context.
 pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
+    // TD-10: 进入内核态, tick 期间 sys_time 累加.
+    crate::kernel::framework::proc::api::proc_set_in_kern(1);
+    let result = syscall_dispatch_impl(num, a0, a1, a2, a3, a4, a5);
+    // 出口恢复用户态, tick 期间 user_time 累加.
+    crate::kernel::framework::proc::api::proc_set_in_kern(0);
+    result
+}
+
+fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     // 翻译 Linux 架构特定编号为 QueenX 原生编号
     // QX_*/Credo/FB 编号直接透传
     let num = linuxulator::translate_syscall(num);

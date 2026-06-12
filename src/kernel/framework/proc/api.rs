@@ -161,6 +161,27 @@ pub(crate) mod raw {
 static CURRENT_PROCESS_PTR: AtomicU64 = AtomicU64::new(0);
 static INIT_PROCESS_CREATED: AtomicU32 = AtomicU32::new(0);
 
+/// TD-10: 当前 CPU 是否处于内核态 (syscall / 中断 / 异常).
+///
+/// - 0: 用户态 (正常运行)
+/// - 1: 内核态
+///
+/// 单一全局变量, 单核模型. 调度器每 tick 在 `tick_accounting` 读取,
+/// syscall dispatch 入口设 1, 出口设 0.
+static CURRENT_IN_KERN: AtomicU64 = AtomicU64::new(0);
+
+/// TD-10: 设置当前 CPU 是否处于内核态.
+#[no_mangle]
+pub fn proc_set_in_kern(v: u32) {
+    CURRENT_IN_KERN.store(v as u64, Ordering::SeqCst);
+}
+
+/// TD-10: 读取当前 CPU 是否处于内核态.
+#[no_mangle]
+pub fn proc_get_in_kern() -> u32 {
+    CURRENT_IN_KERN.load(Ordering::SeqCst) as u32
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct CProcess {
