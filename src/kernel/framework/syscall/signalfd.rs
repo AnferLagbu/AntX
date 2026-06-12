@@ -301,6 +301,12 @@ pub fn sys_signalfd_close(fd: i32) -> i64 {
     slot.pid = 0;
     SFD_COUNT.fetch_sub(1, Ordering::Relaxed);
 
+    drop(table);
+
+    // TD-04: 与 EFD 一致 — close 路径必须 epoll_pwake, 防止 epoll_wait 睡在已关闭 fd 上.
+    // 锁释放后再唤醒, waiter 检查 slot.used=false → 收到 EPOLLERR, 退出 epoll_wait.
+    crate::kernel::framework::syscall::epoll::epoll_pwake(fd);
+
     crate::klog_debug!(Sync, "[signalfd] Closed fd={}", fd);
     0
 }

@@ -1602,6 +1602,9 @@ TSS IST 字段非零, 若初始化顺序错乱, #DF/NMI/#PF 触发时 CPU 切换
 
 **遗留技术债 (衍生)**:
 - **TD-04 🟠**: EFD/SFD 释放时立即回收槽位 (`eventfd.rs` L100-150 / `signalfd.rs` L100-180), 多核场景下: 核 A 释放 fd=200, 核 B 重新分配, A 的挂起 syscall 引用了 B 的数据. 修复: 释放进 `pending_free` 链表, 延迟 N tick 后才可被重新分配; alloc 优先从 pending_free 链表中已陈旧的槽位分配. 验收: 1000 次 alloc/free 跨 2 核, 无 stale fd; pending_free 链表有上限防泄漏.
+  - **状态**: ✅ close 路径已修复 (2026-06-12): EFD `sys_eventfd_close` 与 SFD `sys_signalfd_close` 在释放表锁之后调用 `epoll_pwake(fd)`. 顺序敏感 — `drop(table)` 必须先, `epoll_pwake` 必须后, 这样被唤醒的 epoll_waiter 调用 `eventfd_poll_events` / `signalfd_poll_events` 时能观察到 `slot.used=false`, 拿到 `EPOLLERR` 退出 epoll_wait. 否则会出现: 进程 epoll_wait 在 fd=200 (eventfd) → close fd=200 → 新 eventfd 分配到 slot 0 (fd 复用了 200) → epoll_wait 永久睡眠, 唤醒后看到的是新 eventfd 的数据 (stale fd). 静态契约测试 3 个 (`td04_stale_fd_test`) 全过.
+  - **关联文件**: `framework/syscall/{eventfd,signalfd}.rs` (改), `host-tests/tests/td04_stale_fd_test.rs` (新增).
+  - **遗留**: 当前 EFD/SFD 表 alloc/free 仍是立即复用, 不带 generation/pending_free. 仍存在"close 释放后立刻重新 alloc 到同 slot"的小窗口 (锁释放到 epoll_pwake 调用之间, 时序敏感). 完全消除需要 generation 计数器或 pending_free 延迟链 — 但需要改 epoll 数据结构, 工作量较大. 验收方向: EFD/SFD 表 alloc 时若 slot 在过去 1 tick 内被释放过, 则跳到下一个空 slot.
 - **TD-05 🟠**: smoltcp 全局静态表 (`SOCKET_TABLE` / `FD_TYPES` / `TCP_RX_BUFS` 等 8 张大表) 无 NUMA 亲和性, 8 核以上系统 cache line bouncing 严重. 修复: per-CPU 元数据 + RCU 同步 handle 跨核; buf 改 per-CPU 池. 验收: 8 核 iperf 吞吐较当前 +≥20%; `audit_deadlock_matrix.py` 不报警.
 - **TD-06 🟡**: `MAX_SM_FD=256` 仍编译期硬编码, 大规模服务 (nginx 等) 跑内核网络栈时 fd 不足; 与 I-47 修复的 `G_MAX_SOCKETS` 运行时可调不同. 修复: 启动按内存大小自适应 + 底层表 `Vec<...>` 走 heap; 或 cfg 选择 256/1024/4096. 验收: 启动日志显示当前值; 超过 256 并发 socket 不报错.
 - **TD-07 🟡**: `static mut TCP_RX_BUFS: [[u8; ...]; MAX_SM_FD]` 等 MB 级静态内存启动即占用, 不走 slab. 修复: 改用 framework/mm/slab 按需分配, 释放 socket 同步归还. 验收: 启动时静态占用=0; 1000 并发短连接后 slab 空闲块回归基线; `audit_safety_coverage.py` 不报警.

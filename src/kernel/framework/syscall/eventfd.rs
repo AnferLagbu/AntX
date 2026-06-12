@@ -237,6 +237,13 @@ pub fn sys_eventfd_close(fd: i32) -> i64 {
     slot.semaphore = false;
     EFD_COUNT.fetch_sub(1, Ordering::Relaxed);
 
+    drop(table);
+
+    // TD-04: close 路径必须 epoll_pwake — 否则 epoll_wait 可能永远睡在已关闭 fd 上,
+    // 后续 slot 复用时看到的是新 eventfd 的事件, 进程侧拿到 stale fd 句柄.
+    // 必须在释放 EFD_TABLE 锁之后再唤醒, 让 epoll_waiter 看到 slot.used=false → EPOLLERR.
+    crate::kernel::framework::syscall::epoll::epoll_pwake(fd);
+
     crate::klog_debug!(Sync, "[eventfd] Closed fd={}", fd);
     0
 }
