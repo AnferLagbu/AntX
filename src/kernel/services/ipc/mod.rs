@@ -1,18 +1,17 @@
 #![deny(unsafe_code)]
-//! IPC — 进程间通信 (Phase 2.3 启动)
+//! IPC — 进程间通信
 //!
-//! ## 真实状态 (v2.6, 2026-06-04)
+//! ## 真实状态 (v2.7, 2026-06-12)
 //!
-//! 已完成 1/4 子系统迁移:
-//! - 管道 (pipe) — 完整 safe API, 通过 `IPC_NAMESPACE` 共享底层
+//! 全部 4 子系统已完成 services 层 safe 迁移 (I-54):
+//! - pipe — create/read/write/close
+//! - shm  — create/attach/detach/destroy
+//! - msgq — create/send/recv/destroy
+//! - sem  — create/wait/post/destroy
 //!
-//! 待迁移:
-//! - shm   (Phase 2.3.2)
-//! - msgq  (Phase 2.3.3)
-//! - sem   (Phase 2.3.4)
-//! - signal (Phase 2.3.5)
-//!
-//! 评估日期: 2026-06-04
+//! 全部走 `framework::ipc` 的 safe 入口 (`*_safe` 系列), 模块顶部
+//! `#![deny(unsafe_code)]` 拒绝任何 unsafe 块 (由 audit_services_boundary.py
+//! 强约束). 静态契约测试见 host-tests/tests/services_ipc_complete_test.rs.
 
 use crate::kernel::framework::ipc::pipe;
 use crate::kernel::framework::ipc::shm;

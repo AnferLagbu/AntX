@@ -1311,20 +1311,30 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 **关联文件**:
 - [src/kernel/services/ipc/mod.rs](../../src/kernel/services/ipc/mod.rs)
 - [host-tests/tests/services_ipc_complete_test.rs](../../host-tests/tests/services_ipc_complete_test.rs)
+- [host-tests/tests/td14_ipc_full_lifecycle_test.rs](../../host-tests/tests/td14_ipc_full_lifecycle_test.rs) (新增, 7 用例强化版)
 **修复方案**:
 1. 实测 `services/ipc/mod.rs` 已实现全部 4 子系统: pipe (close) + shm (create/attach/detach/destroy) + msgq (create/send/recv/destroy) + sem (create/wait/post/destroy)
 2. 模块顶部 `#![deny(unsafe_code)]`, 全文 0 个 unsafe 代码块
 3. 走 framework::ipc 的 safe 入口 (`*_safe` 系列) 调用底层
 4. 新增 `services_ipc_complete_test` 静态契约测试, 防止后续回归丢失子系统
+5. **TD-14 强化版**: 新增 `td14_ipc_full_lifecycle_test` 7 用例, 覆盖:
+   - shm/msgq/sem 三子系统公开 pub fn 完整生命周期
+   - IpcError 8 变体 (含 Other(i32)) 必现
+   - 三个 Handle ctor (ShmHandle::from_id_and_addr / MsgqHandle::from / SemHandle::from)
+   - doc 注释"已完成 1/4"或"待迁移:" 防回归
 **验收**:
 - [x] services/ipc 4 子系统 (pipe/shm/msgq/sem) 全部完成
 - [x] 0 unsafe 代码块 (deny 属性启用)
 - [x] 走 framework safe API
 - [x] 静态契约测试 3 用例通过
+- [x] TD-14 强化版 7 用例通过
+- [x] doc 注释反映 4/4 真实状态
+- [x] 双架构 0/0; ci/audit.sh quick 0 错
+- [x] host-tests 全过 (含 td14)
 **完成记录**:
 - 日期: 2026-06-12
-- 提交: ____
-- 简述: 经实测 services/ipc 已完成 4 子系统迁移; 加契约测试固化.
+- 提交: 本次推送 (见 git log origin/chore/safety-coverage-phase3.2)
+- 简述: 经实测 services/ipc 已完成 4 子系统迁移; 加契约测试固化; doc 注释同步更新 v2.6→v2.7.
 
 ---
 
