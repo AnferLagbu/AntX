@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 //! 信号系统 — services 层安全代理
 //!
-//! ## 状态 (v2.15, 2026-06-04)
+//! ## 状态 (v2.16, 2026-06-12)
 //!
 //! Phase 2.5 进程迁移 4/4 (signal):
 //! - [x] 强类型 `Signal` (POSIX 信号枚举 + 未知信号)
@@ -10,6 +10,7 @@
 //! - [x] 标准信号常量 (SIGHUP/SIGINT/SIGQUIT/SIGKILL/SIGSEGV/...)
 //! - [x] 位掩码操作 (block/unblock/test)
 //! - [x] `kill(pid, sig)` 顶层 API
+//! - [x] TD-16: `SignalError` 改为 `KernelError` 0 字段 type alias (单一错误源)
 //!
 //! ## 迁移方法
 //!
@@ -18,7 +19,7 @@
 //! 未来完整化信号子系统 (sigaction 表, 共享处理, sigaltstack) 时, 替换 `do_signal`
 //! 内部实现, services 层 API 保持稳定。
 //!
-//! 评估日期: 2026-06-04
+//! 评估日期: 2026-06-04, v2.16 更新: 2026-06-12
 
 
 // ============================================================================
@@ -261,20 +262,12 @@ impl SignalAction {
 // 信号错误
 // ============================================================================
 
-/// 信号错误
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SignalError {
-    /// 目标进程不存在
-    NoSuchProcess,
-    /// 权限不足
-    PermissionDenied,
-    /// 无效信号编号
-    InvalidSignal,
-    /// 进程已退出
-    ProcessExited,
-    /// 其他
-    Other(i32),
-}
+/// 信号错误 — TD-16: 改用 `KernelError` 单一来源, 0 字段 type alias.
+///
+/// 历史定义 (v2.15) 5 字段 (NoSuchProcess/PermissionDenied/InvalidSignal/
+/// ProcessExited/Other(i32)) 全部对应 `KernelError` 已覆盖的 POSIX 类别, 没有
+/// signal 子系统私有错误, 因此退化为 alias. 旧名保留以避免破坏外部引用.
+pub use crate::kernel::services::error::KernelError as SignalError;
 
 pub type SignalResult<T> = Result<T, SignalError>;
 
@@ -288,13 +281,14 @@ pub type SignalResult<T> = Result<T, SignalError>;
 pub fn send(pid: crate::kernel::framework::proc::types::Pid, sig: Signal) -> SignalResult<()> {
     if sig == Signal::NONE {
         // POSIX: kill(pid, 0) 仅检查进程存在, 不发送
-        return crate::kernel::services::proc::table::with(pid, |_p| ()).ok_or(SignalError::NoSuchProcess);
+        return crate::kernel::services::proc::table::with(pid, |_p| ())
+            .ok_or(SignalError::NoSuchProcess);
     }
     if sig.0 >= 64 {
-        return Err(SignalError::InvalidSignal);
+        return Err(SignalError::InvalidArgument);
     }
     crate::kernel::services::proc::table::signal_set(pid, sig.0 as u32)
-        .map_err(|_| SignalError::ProcessExited)
+        .map_err(|_| SignalError::NoSuchProcess)
 }
 
 /// 检查进程是否有信号待处理
@@ -305,7 +299,7 @@ pub fn pending(pid: crate::kernel::framework::proc::types::Pid) -> Option<u64> {
 /// 清除进程的信号位
 pub fn clear(pid: crate::kernel::framework::proc::types::Pid, mask: u64) -> SignalResult<()> {
     crate::kernel::services::proc::table::signal_clear(pid, mask)
-        .map_err(|_| SignalError::ProcessExited)
+        .map_err(|_| SignalError::NoSuchProcess)
 }
 
 // ============================================================================

@@ -16,6 +16,8 @@ use crate::kernel::framework::syscall::types::Errno;
 pub enum KernelError {
     /// 权限不足 (EPERM=1)
     PermissionDenied,
+    /// 资源/进程不存在 (ESRCH=3)
+    NoSuchProcess,
     /// 文件描述符无效 (EBADF=9)
     BadFd,
     /// 操作会阻塞 (EAGAIN=11)
@@ -55,6 +57,7 @@ impl KernelError {
     pub const fn from_i32(rc: i32) -> Self {
         match rc {
             1 => Self::PermissionDenied,
+            3 => Self::NoSuchProcess,
             9 => Self::BadFd,
             11 => Self::WouldBlock,
             12 => Self::NoMemory,
@@ -77,6 +80,7 @@ impl KernelError {
     pub const fn as_errno(self) -> Errno {
         match self {
             Self::PermissionDenied => Errno::EPERM,
+            Self::NoSuchProcess => Errno::ESRCH,
             Self::BadFd => Errno::EBADF,
             Self::WouldBlock => Errno::EAGAIN,
             Self::NoMemory => Errno::ENOMEM,

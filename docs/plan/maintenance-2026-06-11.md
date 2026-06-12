@@ -1337,6 +1337,39 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 
 ---
 
+### [x] TD-16 🟢 TD-08 V2 — services::proc::signal 错误类型收敛到 KernelError ✅ 已完成 (2026-06-12)
+
+**来源**: TD-08 遗留 (跨服务其他模块 *Error 未统一, 后续按相同模式逐步下沉到 KernelError)
+**关联文件**:
+- [src/kernel/services/proc/signal.rs](../../src/kernel/services/proc/signal.rs) (SignalError 5 字段 enum → 0 字段 type alias)
+- [src/kernel/services/error.rs](../../src/kernel/services/error.rs) (新增 NoSuchProcess ESRCH=3 变体 + from_i32/as_errno 双向映射)
+- [host-tests/tests/td16_signal_kernel_error_test.rs](../../host-tests/tests/td16_signal_kernel_error_test.rs) (新增 6 用例)
+
+**修复**:
+1. `services/error.rs::KernelError` 新增 `NoSuchProcess` 变体 (POSIX ESRCH=3), from_i32 与 as_errno 双向映射同步
+2. `services/proc/signal.rs` 顶部 5 字段 enum `SignalError` (NoSuchProcess/PermissionDenied/InvalidSignal/ProcessExited/Other(i32)) 退化为 `pub use crate::kernel::services::error::KernelError as SignalError;` (0 字段 alias)
+3. send() 4 个错误返回点改写:
+   - `NoSuchProcess` (进程不存在) — 复用 KernelError::NoSuchProcess
+   - `InvalidArgument` (sig.0 >= 64 无效信号编号) — 复用 KernelError::InvalidArgument
+   - `NoSuchProcess` (signal_set/clear 失败) — 复用 KernelError::NoSuchProcess
+4. clear() 1 个错误返回点同样改 NoSuchProcess
+5. 文档头部 v2.15 → v2.16, 增补 "[x] TD-16: SignalError 改为 KernelError 0 字段 type alias (单一错误源)"
+6. 外部引用兼容性: 旧名 SignalError 保留 (pub use 别名), 4 个使用点 (send/clear/kill_syscall/rt_sigaction_syscall/rt_sigprocmask_syscall) 零修改
+
+**验收**:
+- [x] `grep -nE "pub enum SignalError"` 0 命中
+- [x] `grep -nE "SignalError::(ProcessExited|InvalidSignal|PermissionDenied)"` 0 命中
+- [x] `SignalError::NoSuchProcess` 4 处全部改走 KernelError::NoSuchProcess
+- [x] `SignalError::InvalidArgument` 1 处改走 KernelError::InvalidArgument
+- [x] td16 6 用例全过; ci/audit.sh quick 0 错 (services 边界 0/SAFETY 100%/死锁 0/clippy passed)
+- [x] 双架构 0/0; host-tests 全过
+**完成记录**:
+- 日期: 2026-06-12
+- 提交: 本次推送 (见 git log origin/chore/safety-coverage-phase3.2)
+- 简述: 继 TD-08 net 域后, 进程域 signal 子系统的 5 字段 SignalError 收敛到 KernelError 0 字段 type alias, 新增 NoSuchProcess (ESRCH=3) 单一来源变体, 6 用例静态契约保护.
+
+---
+
 ### [x] I-54 [低] services IPC 仅管道完成迁移, shm/msgq/sem 待迁移 ✅ 已修复 (2026-06-12)
 
 **来源**: 审计 22
