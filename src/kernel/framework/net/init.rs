@@ -382,6 +382,8 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOp
 ///
 /// - 调用方须保证单线程进入 (recovery 域串行执行)
 /// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
+///
+/// SAFETY: 见上方 # Safety 章节, 调用方保证单线程 + 关中断; NET_LOCK 由本函数内部获取
 unsafe fn net_save() {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::net::save as snap;
@@ -440,6 +442,8 @@ fn as_u32_handle(h: smoltcp::iface::SocketHandle) -> u32 {
 ///
 /// - 调用方须确保无其他线程持有 socket fd (例如文件系统已卸载完毕)
 /// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
+///
+/// SAFETY: 见上方 # Safety 章节, 调用方保证 socket fd 已无人持有 + 关中断; NET_LOCK 由本函数内部获取
 unsafe fn net_restore() {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::net::save as snap;
@@ -877,7 +881,10 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
             crate::kernel::framework::mm::api::k_free(rx_ptr);
             return -E_NOMEM;
         }
+        // SAFETY: rx_ptr/tx_ptr 由 k_alloc 分配, 已 null 检查并保证 4K 对齐;
+        // UDP_BUF_SIZE 来自 cfg_smoltcp_cap, 适配 PacketBuffer 容量上限.
         let rx_slice = unsafe { core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE) };
+        // SAFETY: 同上, tx_ptr 由 k_alloc 分配, 已 null 检查.
         let tx_slice = unsafe { core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE) };
         let udp_sock = udp::Socket::new(
             udp::PacketBuffer::new(

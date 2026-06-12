@@ -23,6 +23,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::idt::IdtManager;
 use super::types::*;
+use crate::klog_err;
+use crate::klog_warn;
 
 /// 异常处理结果 (结构化错误处理)
 #[derive(Debug, Clone, PartialEq)]
@@ -357,8 +359,9 @@ impl GeneralProtectionFaultHandler {
             _ => "Unknown",
         };
 
-        // TODO(TRACK-D0E338): 使用 klog 输出详细信息 (当前为简化版)
-        let _ = (external, idt_flag, table_name, index);
+        // TD-11: klog 替代原 let _ = ...
+        klog_warn!(Kernel, "GPF external={} idt_flag={} table={} index={}",
+            external, idt_flag, table_name, index);
     }
 }
 
@@ -406,8 +409,8 @@ impl DoubleFaultHandler {
         let count = DOUBLE_FAULT_COUNT.load(Ordering::Relaxed);
         let nesting = IdtManager::instance().nested_count.load(Ordering::Relaxed);
 
-        // TODO(TRACK-2B4902): 使用 klog 输出上下文信息
-        let _ = (count, nesting);
+        // TD-11: klog 替代原 let _ = ...
+        klog_err!(Kernel, "DoubleFault count={} nesting={}", count, nesting);
     }
 }
 

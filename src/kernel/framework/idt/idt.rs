@@ -32,6 +32,8 @@ use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 
 use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::klog_err;
+use crate::klog_info;
 // 内联硬件操作函数 (避免跨模块导入问题)
 /// 从端口读字节
 #[inline(always)]
@@ -799,8 +801,9 @@ impl IdtManager {
                     "kernel"
                 };
 
-                // TODO(TRACK-57C7C9): 使用 klog 替代 (Phase 3)
-                let _ = (frame_count, rip_val, mode, rbp_ptr);
+                // TD-12: klog 替代原 let _ = ...
+                klog_err!(Kernel, "  #{:<2} rip=0x{:016x} mode={} rbp=0x{:p}",
+                    frame_count, rip_val, mode, rbp_ptr);
 
                 rbp_ptr = *rbp_ptr as *const u64;
                 frame_count += 1;
@@ -910,8 +913,9 @@ impl IdtManager {
         let nesting = self.nested_count.load(Ordering::Relaxed);
         let current_vec = self.current_vector.load(Ordering::Relaxed);
 
-        // TODO(TRACK-B2082D): 使用 klog 输出 (Phase 3)
-        let _ = (nesting, current_vec, &state.irq_descriptors);
+        // TD-12: klog 替代原 let _ = ...
+        klog_info!(Kernel, "IDT dump: nesting={} current_vec={} descriptors={}",
+            nesting, current_vec, state.irq_descriptors.len());
     }
 
     /// 获取中断计数
@@ -921,7 +925,23 @@ impl IdtManager {
 
     /// 打印统计信息
     pub fn print_statistics(&self) {
-        // TODO(TRACK-8F40F4): 格式化输出统计 (Phase 3)
-        let _ = &self.stats;
+        // TD-12: klog 格式化输出统计 (替换原 let _ = ...)
+        klog_info!(Kernel, "IDT statistics:");
+        for v in 0..32u8 {
+            let count = self.stats.exception_counts[v as usize].load(Ordering::Relaxed);
+            if count > 0 {
+                klog_info!(Kernel, "  exception[{}] = {}", v, count);
+            }
+        }
+        for i in 0..16u8 {
+            let count = self.stats.irq_counts[i as usize].load(Ordering::Relaxed);
+            if count > 0 {
+                klog_info!(Kernel, "  irq[{}] = {}", i, count);
+            }
+        }
+        let nested = self.stats.nested_interrupts.load(Ordering::Relaxed);
+        if nested > 0 {
+            klog_info!(Kernel, "  nested_interrupts = {}", nested);
+        }
     }
 }

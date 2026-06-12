@@ -94,6 +94,7 @@ pub mod time_sync;
 // ============================================================================
 // 公共 API 导出 (便捷访问)
 // ============================================================================
+use crate::klog_err;
 
 // --- 初始化和状态 ---
 
@@ -166,8 +167,8 @@ pub unsafe extern "C" fn timer_init_ffi() {
     match timer_init(DEFAULT_INTERRUPT_FREQ_HZ) {
         Ok(_) => {}
         Err(msg) => {
-            // TODO(TRACK-4D8B74): 使用 klog 记录错误
-            let _ = msg;
+            // TD-13: klog 替代原 let _ = msg
+            klog_err!(Timer, "timer_init failed: {}", msg);
         }
     }
 }

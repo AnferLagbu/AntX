@@ -1688,6 +1688,36 @@ POSIX 未明确规定, Linux kill() 返回 ESRCH.
 | I-21 | 同 I-15 | 已合并到 I-15 |
 | I-26 | 同 Phase 0 I-26 | 主项目追踪 |
 | I-31 | 同 Phase 0 I-31 | 主项目追踪 |
+| TD-11/12/13 | idt/timer 5 处 klog 替代占位 (Phase 3) | 已修复 (2026-06-12, 见下) |
+
+### [x] TD-11/12/13 🟢 idt/timer 5 处 klog 替代占位 (Phase 3) ✅ 已修复 (2026-06-12)
+
+**关联文件**: `src/kernel/framework/idt/{idt,handlers}.rs`、`src/kernel/framework/timer/mod.rs`、`src/kernel/framework/klog/mod.rs` (新增 Timer 类别)
+**问题**: TD-09 完成 klog sink 抽象后, 5 处 `TODO(TRACK-…): 使用 klog 替代/输出` 占位仍保留 `let _ = (…);` 形式, 实际不输出任何内容:
+- `idt/handlers.rs::print_detailed_gpf_info` (TRACK-D0E338)
+- `idt/handlers.rs::print_double_fault_context` (TRACK-2B4902)
+- `idt/idt.rs::print_stack_trace` (TRACK-57C7C9)
+- `idt/idt.rs::dump_state` (TRACK-B2082D)
+- `idt/idt.rs::print_statistics` (TRACK-8F40F4)
+- `timer/mod.rs::timer_init_ffi` 错误分支 (TRACK-4D8B74)
+**修复**:
+- `print_detailed_gpf_info` 改为 `klog_warn!(Kernel, "GPF external=… idt_flag=… table=… index=…")`
+- `print_double_fault_context` 改为 `klog_err!(Kernel, "DoubleFault count=… nesting=…")`
+- `print_stack_trace` 循环每帧 `klog_err!(Kernel, "  #{:<2} rip=0x… mode=… rbp=…")`
+- `dump_state` 改为 `klog_info!(Kernel, "IDT dump: nesting=… current_vec=… descriptors=…")`
+- `print_statistics` 改为遍历 `exception_counts[0..32]` / `irq_counts[0..16]`, 非零项逐行 `klog_info!`
+- `timer_init_ffi` 错误分支改为 `klog_err!(Timer, "timer_init failed: {}", msg)`
+- `LogCategory` 新增 `Timer = 14` 变体 + `name()` "TIMER" + 字节反查 `14 => LogCategory::Timer`
+- 顺手补 2 处 framework SAFETY 注释 (`net/init.rs` 的 `unsafe { core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE) }` 两条)
+**验收**:
+- [x] 5 处 `let _ = (…);` 占位全部清除
+- [x] `host-tests/tests/td11_12_13_klog_cleanup_test.rs` 7 个静态契约测试全过
+- [x] `tools/audit_unsafe.py` 缺 SAFETY = 0 (基线 2 → 0, 顺手补 2 处)
+- [x] 双架构 `cargo check` 0 error / 0 warning; `ci/audit.sh` quick 模式 0 错
+- [x] host-tests 累计 483/483 全过; queenx-tests 全过
+**完成记录**:
+- 日期: 2026-06-12
+- 提交: 本次推送 (见 git log origin/chore/safety-coverage-phase3.2)
 
 ---
 

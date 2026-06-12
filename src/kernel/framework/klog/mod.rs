@@ -436,6 +436,7 @@ pub enum LogCategory {
     Sync = 11,
     Swap = 12,
     Acpi = 13,
+    Timer = 14,
 }
 
 impl LogLevel {
@@ -468,6 +469,7 @@ impl LogCategory {
             LogCategory::Sync => b"SYNC",
             LogCategory::Swap => b"SWAP",
             LogCategory::Acpi => b"ACPI",
+            LogCategory::Timer => b"TIMER",
         }
     }
 }
@@ -685,6 +687,7 @@ pub unsafe extern "C" fn klog_write(
         11 => LogCategory::Sync,
         12 => LogCategory::Swap,
         13 => LogCategory::Acpi,
+        14 => LogCategory::Timer,
         _ => LogCategory::Kernel,
     };
 
