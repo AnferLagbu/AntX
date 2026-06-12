@@ -4,7 +4,7 @@
 //! 把 `kernel::process::ProcessTable` 的 `*mut Process` 裸指针接口
 //! 收敛到 `services::proc::table`, 用闭包 API (`with`/`with_mut`) 替代裸指针暴露。
 //!
-//! ## 状态 (v2.13, 2026-06-04)
+//! ## 状态 (v2.17, 2026-06-12)
 //!
 //! Phase 2.5 进程迁移 2/4 (进程表 CRUD):
 //! - [x] 强类型查询 (state / priority / policy / rt_priority / pwm)
@@ -14,13 +14,14 @@
 //! - [x] 全表遍历 (for_each 闭包形式)
 //! - [x] 移除 (remove_and_free)
 //! - [ ] 进程创建/析构 — 留待 Phase 2.5.3 (依赖 ELF 加载与 VmSpace)
+//! - [x] TD-17: `TableError` 5 字段 → 3 表特有 + 1 `Kernel(KernelError)` 共享包装
 //!
 //! ## 迁移方法
 //!
 //! 所有需要 `*mut Process` 的操作都收敛到 framework 层,
 //! services 层使用闭包 `with`/`with_mut` 访问, 借用检查器保证生命周期安全。
 //!
-//! 评估日期: 2026-06-04
+//! 评估日期: 2026-06-04, v2.17 更新: 2026-06-12
 
 use crate::kernel::framework::proc::process::{self, PROCESS_TABLE};
 use crate::kernel::framework::proc::types::ProcessState;
@@ -58,19 +59,41 @@ impl ProcessHandle {
 // 错误
 // ============================================================================
 
-/// 进程表错误
+/// 进程表错误 — TD-17: 收敛到 KernelError, 3 字段表特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `TableFull` / `RefCountUnderflow` / `InvalidStateTransition`: 表子系统特有,
+///     语义不在 `KernelError` 通用 POSIX 错误集内.
+///   - `Kernel(KernelError)`: 共享错误 (NoSuchProcess 等) 统一走 `KernelError` 单一来源.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableError {
-    /// 进程不存在
-    NotFound,
     /// 表已满 (无法分配新 PID)
     TableFull,
     /// 引用计数已为 0 (双重释放风险)
     RefCountUnderflow,
     /// 状态转换非法
     InvalidStateTransition,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
+}
+
+impl TableError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno {
+        use crate::kernel::framework::syscall::types::Errno as E;
+        match self {
+            Self::TableFull => E::EAGAIN,                // 表满, 资源暂时不可用
+            Self::RefCountUnderflow => E::EINVAL,        // 内部状态错误
+            Self::InvalidStateTransition => E::EINVAL,   // 非法状态转换
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+}
+
+impl From<crate::kernel::services::error::KernelError> for TableError {
+    fn from(e: crate::kernel::services::error::KernelError) -> Self {
+        Self::Kernel(e)
+    }
 }
 
 pub type TableResult<T> = Result<T, TableError>;
@@ -94,12 +117,12 @@ pub fn allocate_pid() -> TableResult<crate::kernel::framework::proc::types::Pid>
 
 /// 增加进程引用计数
 ///
-/// **返回**: 成功返回 (), 进程不存在返回 `NotFound`.
+/// **返回**: 成功返回 (), 进程不存在返回 `NoSuchProcess`.
 pub fn try_inc_ref(pid: crate::kernel::framework::proc::types::Pid) -> TableResult<()> {
     if PROCESS_TABLE.try_inc_ref(pid) {
         Ok(())
     } else {
-        Err(TableError::NotFound)
+        Err(crate::kernel::services::error::KernelError::NoSuchProcess.into())
     }
 }
 
@@ -145,7 +168,7 @@ pub fn get_state(pid: crate::kernel::framework::proc::types::Pid) -> Option<Proc
 /// 设置进程状态 (安全版本, 自动检查状态转换合法性)
 pub fn set_state(pid: crate::kernel::framework::proc::types::Pid, state: ProcessState) -> TableResult<()> {
     with_mut(pid, |p| p.set_state_safe(state))
-        .ok_or(TableError::NotFound)?
+        .ok_or(crate::kernel::services::error::KernelError::NoSuchProcess)?
         .map_err(|_| TableError::InvalidStateTransition)
 }
 

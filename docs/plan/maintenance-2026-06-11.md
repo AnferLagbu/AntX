@@ -1369,6 +1369,37 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - 简述: 继 TD-08 net 域后, 进程域 signal 子系统的 5 字段 SignalError 收敛到 KernelError 0 字段 type alias, 新增 NoSuchProcess (ESRCH=3) 单一来源变体, 6 用例静态契约保护.
 
 ---
+### [x] TD-17 🟢 TD-08 V3 — services::proc::table::TableError 收敛到 KernelError ✅ 已完成 (2026-06-12)
+
+**来源**: TD-08 遗留 (跨服务其他模块 *Error 未统一, 后续按相同模式逐步下沉到 KernelError)
+**关联文件**:
+- [src/kernel/services/proc/table.rs](../../src/kernel/services/proc/table.rs) (TableError 5 字段 enum → 3 表特有 + 1 Kernel 包装)
+- [host-tests/tests/td17_table_kernel_error_test.rs](../../host-tests/tests/td17_table_kernel_error_test.rs) (新增 7 用例)
+
+**修复**:
+1. `TableError` 由 5 字段 (NotFound/TableFull/RefCountUnderflow/InvalidStateTransition/Other(i32)) 收敛为 3 表特有 + 1 共享包装:
+   - 保留: `TableFull` (EAGAIN) / `RefCountUnderflow` (EINVAL) / `InvalidStateTransition` (EINVAL) — 表子系统特有语义
+   - 共享: `Kernel(KernelError)` 包装 (统一走 KernelError::as_errno)
+2. 新增 `to_errno()` 方法, 4 变体 → POSIX Errno 双向映射全覆盖
+3. 新增 `From<KernelError> for TableError` 实现, 让 `?` 操作符自动包装
+4. 2 个 `TableError::NotFound` 使用点 (try_inc_ref + set_state) 全部改走 `KernelError::NoSuchProcess.into()`
+5. 旧变体 `NotFound` / `Other(i32)` 完全废弃
+6. 文档头部 v2.13 → v2.17, 增补 "[x] TD-17: TableError 5 字段 → 3 表特有 + 1 Kernel(KernelError) 共享包装"
+
+**验收**:
+- [x] `grep "TableError::NotFound"` 0 命中
+- [x] `grep "TableError::Other"` 0 命中
+- [x] `TableError::Kernel(KernelError::NoSuchProcess)` 经 `.into()` 包装 2 处
+- [x] 3 表特有变体 + 1 Kernel 包装 = 4 字段
+- [x] to_errno 4 变体全覆盖
+- [x] td17 7 用例全过; ci/audit.sh quick 0 错 (services 边界 0/SAFETY 100%/死锁 0/clippy passed)
+- [x] 双架构 0/0; host-tests 全过 (62 groups)
+**完成记录**:
+- 日期: 2026-06-12
+- 提交: 本次推送 (见 git log origin/chore/safety-coverage-phase3.2)
+- 简述: 继 TD-16 signal 域后, 进程表子系统的 5 字段 TableError 收敛到 3 表特有 + 1 共享包装, From<KernelError> 自动包装, 7 用例静态契约保护.
+
+---
 
 ### [x] I-54 [低] services IPC 仅管道完成迁移, shm/msgq/sem 待迁移 ✅ 已修复 (2026-06-12)
 
