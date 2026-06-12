@@ -160,36 +160,41 @@ impl core::ops::BitOr for MlockAllFlags {
 // 错误
 // ============================================================================
 
-/// madvise/mlock 操作错误
+/// madvise/mlock 操作错误 — TD-19: 收敛到 KernelError, 1 字段 mlock 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `NotMapped`: 当前进程无 MmStruct (kernel thread 路径), 走 ESRCH
+///   - `Kernel(KernelError)`: 共享错误 (InvalidArgument/BadAddress/OutOfMemory/
+///     NoResources/PermissionDenied 等) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MlockError {
-    /// 地址未页对齐
-    InvalidArgument,
-    /// 地址不在用户态空间
-    BadAddress,
-    /// RLIMIT_MEMLOCK 超出
-    OutOfMemory,
-    /// 内核资源不足
-    NoResources,
-    /// 权限不足
-    PermissionDenied,
     /// 当前进程无 MmStruct (kernel thread 路径)
     NotMapped,
-    /// 其他 (-rc)
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl MlockError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::NotMapped => E::ESRCH,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     pub fn from_errno(e: Errno) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match e {
-            Errno::EINVAL => Self::InvalidArgument,
-            Errno::EFAULT => Self::BadAddress,
-            Errno::ENOMEM => Self::OutOfMemory,
-            Errno::ENOSPC => Self::OutOfMemory,
-            Errno::EAGAIN => Self::NoResources,
-            Errno::EPERM => Self::PermissionDenied,
+            Errno::EINVAL => Self::Kernel(K::InvalidArgument),
+            Errno::EFAULT => Self::Kernel(K::Fault),
+            Errno::ENOMEM => Self::Kernel(K::NoMemory),
+            Errno::ENOSPC => Self::Kernel(K::NoSpace),
+            Errno::EAGAIN => Self::Kernel(K::WouldBlock),
+            Errno::EPERM => Self::Kernel(K::PermissionDenied),
             Errno::ESRCH => Self::NotMapped,
-            _ => Self::Other(e.as_ret() as i32),
+            other => Self::Kernel(K::Other(other.as_ret() as i32)),
         }
     }
 }
@@ -272,7 +277,7 @@ pub fn munlockall() -> MlockResult<()> {
 pub fn mincore(addr: usize, len: usize, vec: &mut [u8]) -> MlockResult<()> {
     let expected_pages = (len + 4095) / 4096;
     if vec.len() < expected_pages {
-        return Err(MlockError::InvalidArgument);
+        return Err(MlockError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));
     }
     let rc = fw_ml::sys_mincore(addr as u64, len as u64, vec.as_mut_ptr() as u64);
     if rc == 0 {

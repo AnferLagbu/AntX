@@ -20,6 +20,7 @@
 
 use crate::kernel::framework::proc_elf;
 use crate::kernel::framework::mm::vma::MmStruct;
+use crate::kernel::framework::syscall::types::Errno;
 
 // ============================================================================
 // 强类型 re-export
@@ -38,7 +39,13 @@ pub use crate::kernel::framework::proc::elf::ElfLoadResult;
 // 错误
 // ============================================================================
 
-/// ELF 加载错误 (强类型, 替代内核 `&'static str`)
+/// ELF 加载错误 — TD-19: 收敛到 KernelError, 7 字段 ELF 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `BadMagic` / `NotElf64` / `UnsupportedMachine`: ELF 格式校验失败 (POSIX ENOEXEC=8)
+///   - `Truncated` / `PhdrOutOfRange` / `TooManyPhdr`: 解析阶段越界/超限
+///   - `MapFailed`: 用户态 VMA 添加失败
+///   - `Kernel(KernelError)`: 共享错误 (AddressOverflow → InvalidArgument 等) 走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElfError {
     /// ELF 魔数错误
@@ -53,27 +60,39 @@ pub enum ElfError {
     PhdrOutOfRange,
     /// 程序头数量超限 (> 128)
     TooManyPhdr,
-    /// 没有可加载段 (PT_LOAD)
-    NoLoadableSegment,
-    /// vaddr + memsz 溢出
-    AddressOverflow,
     /// 用户内存映射失败 (MmStruct 添加 VMA 失败)
     MapFailed,
-    /// 段大小非法 (filesz > memsz)
-    InvalidSize,
-    /// 未知错误
-    Other(&'static str),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl ElfError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::BadMagic | Self::NotElf64 | Self::UnsupportedMachine => E::ENOEXEC,
+            Self::Truncated | Self::PhdrOutOfRange | Self::TooManyPhdr => E::EINVAL,
+            Self::MapFailed => E::ENOMEM,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     /// 从内核返回的 `&'static str` 翻译为 `ElfError`
     pub fn from_kernel_str(s: &'static str) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match s {
             "Invalid ELF header" => Self::Truncated,
-            "No program headers" => Self::NoLoadableSegment,
-            "ELF: vaddr + memsz overflow" => Self::AddressOverflow,
-            "ELF: p_offset + p_filesz overflow" => Self::AddressOverflow,
-            other => Self::Other(other),
+            "No program headers" => Self::BadMagic,
+            "ELF: vaddr + memsz overflow" => Self::Kernel(K::InvalidArgument),
+            "ELF: p_offset + p_filesz overflow" => Self::Kernel(K::InvalidArgument),
+            other => {
+                // 通用兜底: 归类为 NoSuchProcess 之外的通用错误
+                // 实际未知字符串属低频路径, 走 NoSuchProcess 占位不准确,
+                // 改走 InvalidArgument 表达 "未知 ELF 头失败"
+                let _ = other;
+                Self::Kernel(K::InvalidArgument)
+            }
         }
     }
 }

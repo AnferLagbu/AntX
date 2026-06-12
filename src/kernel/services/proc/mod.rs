@@ -59,36 +59,45 @@ pub use crate::kernel::framework::proc::types::ProcessState;
 /// 进程优先级
 pub use crate::kernel::framework::proc::types::ProcessPriority;
 
+use crate::kernel::framework::syscall::types::Errno;
+
 // ============================================================================
 // 错误
 // ============================================================================
 
-/// 进程操作错误
+/// 进程操作错误 — TD-19: 收敛到 KernelError, 1 字段 proc 特有 + 1 共享包装.
+///
+/// 字段说明:
+///   - `Exited`: 进程已退出, 走 ESRCH (POSIX 中 ESRCH=3 兼含 "no such process" 语义)
+///   - `Kernel(KernelError)`: 共享错误 (NotFound → NoSuchProcess / PermissionDenied /
+///     NoResources → WouldBlock / InvalidArgument) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcError {
-    /// 进程不存在
-    NotFound,
-    /// 权限不足
-    PermissionDenied,
-    /// 资源耗尽 (PID 表满)
-    NoResources,
     /// 进程已退出
     Exited,
-    /// 无效参数
-    InvalidArgument,
-    /// 其他
-    Other(i32),
+    /// 共享 `KernelError` 包装
+    Kernel(crate::kernel::services::error::KernelError),
 }
 
 impl ProcError {
+    /// 映射为 POSIX errno
+    pub fn to_errno(self) -> Errno {
+        use Errno as E;
+        match self {
+            Self::Exited => E::ESRCH,
+            Self::Kernel(e) => e.as_errno(),
+        }
+    }
+
     pub fn from_i32(rc: i32) -> Self {
+        use crate::kernel::services::error::KernelError as K;
         match rc {
-            -1 => Self::NotFound,
-            -2 => Self::PermissionDenied,
-            -3 => Self::NoResources,
+            -1 => Self::Kernel(K::NoSuchProcess),
+            -2 => Self::Kernel(K::PermissionDenied),
+            -3 => Self::Kernel(K::WouldBlock),
             -4 => Self::Exited,
-            -22 => Self::InvalidArgument,
-            _ => Self::Other(rc),
+            -22 => Self::Kernel(K::InvalidArgument),
+            _ => Self::Kernel(K::Other(rc)),
         }
     }
 }

@@ -1369,6 +1369,45 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - 简述: 继 TD-08 net 域后, 进程域 signal 子系统的 5 字段 SignalError 收敛到 KernelError 0 字段 type alias, 新增 NoSuchProcess (ESRCH=3) 单一来源变体, 6 用例静态契约保护.
 
 ---
+### [x] TD-19 🟢 TD-08 V5 — services::proc::{ElfError,MlockError,ProcError} 收敛到 KernelError ✅ 已完成 (2026-06-12)
+
+**来源**: TD-08 遗留 (proc 域 3 个 *Error 类型 POSIX 重合项未下沉)
+**关联文件**:
+- [src/kernel/services/proc/elf.rs](../../src/kernel/services/proc/elf.rs) (ElfError 12 字段 → 7 ELF 特有 + 1 共享包装)
+- [src/kernel/services/proc/madvise_mlock.rs](../../src/kernel/services/proc/madvise_mlock.rs) (MlockError 7 字段 → 1 mlock 特有 + 1 共享包装)
+- [src/kernel/services/proc/mod.rs](../../src/kernel/services/proc/mod.rs) (ProcError 6 字段 → 1 proc 特有 + 1 共享包装)
+- [host-tests/tests/td19_proc_kernel_error_test.rs](../../host-tests/tests/td19_proc_kernel_error_test.rs) (新增 17 用例)
+
+**修复**:
+
+### ElfError (12 → 8 字段)
+1. 12 字段 enum (BadMagic/NotElf64/UnsupportedMachine/Truncated/PhdrOutOfRange/TooManyPhdr/NoLoadableSegment/AddressOverflow/MapFailed/InvalidSize/Other(&'static str)) 收敛为 7 ELF 特有 (BadMagic/NotElf64/UnsupportedMachine/Truncated/PhdrOutOfRange/TooManyPhdr/MapFailed) + 1 共享包装 `Kernel(KernelError)`
+2. 旧变体 NoLoadableSegment/AddressOverflow/InvalidSize/Other 完全废弃
+3. 新增 `to_errno()` 方法: BadMagic/NotElf64/UnsupportedMachine→ENOEXEC; Truncated/PhdrOutOfRange/TooManyPhdr→EINVAL; MapFailed→ENOMEM; Kernel(e)→e.as_errno()
+4. `from_kernel_str` 2 处溢出错误改走 `Self::Kernel(K::InvalidArgument)`, 未知字符串兜底走 Kernel(K::InvalidArgument)
+
+### MlockError (7 → 2 字段)
+1. 7 字段 enum (InvalidArgument/BadAddress/OutOfMemory/NoResources/PermissionDenied/NotMapped/Other(i32)) 收敛为 1 mlock 特有 (NotMapped) + 1 共享包装 `Kernel(KernelError)`
+2. 旧变体 InvalidArgument/BadAddress/OutOfMemory/NoResources/PermissionDenied/Other 完全废弃
+3. 新增 `to_errno()` 方法: NotMapped→ESRCH; Kernel(e)→e.as_errno()
+4. `from_errno` 6 个 errno 映射 (EINVAL/EFAULT/ENOMEM/ENOSPC/EAGAIN/EPERM) 全部改走 `Self::Kernel(K::...)` 包装
+5. mincore 1 个独立使用点改走 `MlockError::Kernel(K::InvalidArgument)`
+
+### ProcError (6 → 2 字段)
+1. 6 字段 enum (NotFound/PermissionDenied/NoResources/Exited/InvalidArgument/Other(i32)) 收敛为 1 proc 特有 (Exited) + 1 共享包装 `Kernel(KernelError)`
+2. 旧变体 NotFound/PermissionDenied/NoResources/InvalidArgument/Other 完全废弃
+3. 新增 `to_errno()` 方法: Exited→ESRCH; Kernel(e)→e.as_errno()
+4. `from_i32` 4 个 rc 映射 (-1/-2/-3/-22) 全部改走 `Self::Kernel(K::...)` 包装 (-1→K::NoSuchProcess)
+
+**验收**:
+- [x] `grep -nE "ElfError::(NoLoadableSegment|AddressOverflow|InvalidSize|Other)\b"` 0 命中
+- [x] `grep -nE "MlockError::(InvalidArgument|BadAddress|OutOfMemory|NoResources|PermissionDenied)\b"` 0 命中
+- [x] `grep -nE "ProcError::(NotFound|PermissionDenied|NoResources|InvalidArgument)\b"` 0 命中
+- [x] td19 17/17 用例全过
+- [x] ci/audit.sh quick 0 错 (services 边界 0 / SAFETY 100% / 死锁 0 / clippy passed)
+- [x] 双架构 0/0
+- [x] host-tests 全 64 套 535 用例 0 失败
+
 ### [x] TD-18 🟢 TD-08 V4 — services::fs::ramfs::FsError 收敛到 KernelError ✅ 已完成 (2026-06-12)
 
 **来源**: TD-08 遗留 (FsError 16 字段 POSIX 重合项未下沉)
