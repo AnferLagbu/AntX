@@ -1,14 +1,14 @@
-//! Kernel Heap Allocator (Kmalloc)
+//! 内核堆分配器 (Kmalloc)
 //!
-//! Provides dynamic memory allocation for the kernel using a first-fit algorithm.
-//! Features:
-//! - First-fit free list allocation
-//! - Block coalescing to reduce fragmentation
-//! - Automatic heap expansion via VMM/PMM
-//! - Early boot heap support
-//! - Memory statistics and debugging
+//! 为内核提供基于 first-fit 算法的动态内存分配.
+//! 特性:
+//! - First-fit 空闲链表分配
+//! - 块合并, 减少碎片
+//! - 通过 VMM/PMM 自动扩展堆
+//! - 早期引导阶段堆支持
+//! - 内存统计与调试
 
-/// Serial print macro (placeholder)
+/// 串口打印宏 (占位)
 macro_rules! serial_println {
     ($($arg:tt)*) => {};
 }
@@ -23,19 +23,19 @@ use crate::kernel::framework::sync::spinlock::{
     disable_interrupts, restore_interrupts, IrqSaveFlags,
 };
 
-/// Magic number for heap header validation
+/// 堆头校验魔数
 const HEAP_MAGIC: u32 = 0xDEADBEEF;
 
-/// Minimum block size (to fit header + some data)
+/// 最小块大小 (容纳头部 + 少量数据)
 const MIN_BLOCK_SIZE: u64 = 64;
 
-/// Alignment for allocations (must be power of 2)
+/// 分配对齐 (必须为 2 的幂)
 const ALIGNMENT: u64 = 16;
 
-/// Maximum early allocations to track
+/// 早期分配最大追踪数
 const MAX_EARLY_ALLOCS: usize = 128;
 
-/// Early allocation entry
+/// 早期分配条目
 #[derive(Clone, Copy)]
 struct EarlyHeapAlloc {
     ptr: *mut u8,
@@ -51,25 +51,25 @@ impl EarlyHeapAlloc {
     }
 }
 
-/// Heap header structure (matches C layout)
+/// 堆头结构 (与 C 布局一致)
 ///
-/// This structure is placed at the beginning of each allocated block,
-/// both in use and free blocks. For free blocks, it's part of a doubly-linked list.
+/// 该结构位于每个分配块起始, 已分配块和空闲块均含此结构.
+/// 空闲块中, 它还是双向链表的一部分.
 #[repr(C)]
 pub struct HeapHeader {
-    /// Size of this block (including header)
+    /// 本块大小 (含头部)
     size: u64,
 
-    /// Is this block free? (1 = free, 0 = allocated)
+    /// 本块是否空闲 (1=空闲, 0=已分配)
     free: bool,
 
-    /// Magic number for validation
+    /// 校验用魔数
     magic: u32,
 
-    /// Pointer to next free block (only valid if free)
+    /// 下一个空闲块指针 (仅在 free 时有效)
     next: *mut HeapHeader,
 
-    /// Pointer to previous free block (only valid if free)
+    /// 上一个空闲块指针 (仅在 free 时有效)
     prev: *mut HeapHeader,
 }
 
@@ -84,51 +84,49 @@ impl HeapHeader {
         }
     }
 
-    /// Get pointer to data area after this header
+    /// 获取本头部之后的数据区指针
     pub fn data_ptr(&self) -> *mut u8 {
-        // SAFETY: self is a valid reference to HeapHeader; adding size_of::<Self>()
-        // stays within the same allocation block (header is followed by data).
+        // SAFETY: self 是对 HeapHeader 的有效引用; 加上 size_of::<Self>()
+        // 仍在同一分配块内 (头部紧跟数据).
         unsafe { (self as *const Self as *mut u8).add(core::mem::size_of::<Self>()) }
     }
 
-    /// Get header from data pointer
+    /// 由数据指针取回头部
     ///
     /// # Safety
-    /// Caller must ensure `data` was returned by a valid allocation
+    /// 调用方须保证 `data` 由某次合法分配返回
     pub unsafe fn from_data_ptr(data: *mut u8) -> *mut Self {
         data.sub(core::mem::size_of::<Self>()) as *mut Self
     }
 }
 
-// === E4: Unsafe Concentration — raw sub-module ===
+// === E4: unsafe 集中 — 原始子模块 ===
 //
-// All bare-pointer dereferences for heap header internals are
-// encapsulated here.  The outer `KernelHeap` methods call only safe
-// wrappers, keeping the allocation algorithm logic itself safe Rust.
+// 所有针对堆头内部的裸指针解引用都在此处封装.
+// 外层 `KernelHeap` 方法只调用 safe 包装, 分配算法本身保持纯 safe Rust.
 pub(crate) mod raw {
     use super::*;
 
-    /// Safe wrapper around a `*mut HeapHeader`.
+    /// 对 `*mut HeapHeader` 的 safe 包装.
     ///
-    /// SAFETY invariant: the pointer points to a valid HeapHeader inside
-    /// the heap region, and the heap lock is held.
+    /// SAFETY 不变式: 指针指向堆内合法 HeapHeader, 且堆锁被持有.
     #[derive(Clone, Copy)]
     pub struct HeaderRef(*mut HeapHeader);
 
     impl HeaderRef {
         /// # Safety
-        /// - `ptr` must point to a valid `HeapHeader` in the heap
-        /// - Heap lock must be held for the duration of use
+        /// - `ptr` 必须指向堆中合法的 `HeapHeader`
+        /// - 使用期间必须持有堆锁
         #[inline(always)]
         pub unsafe fn new_unchecked(ptr: *mut HeapHeader) -> Self {
             Self(ptr)
         }
 
-        /// Construct from a data pointer returned by allocate.
+        /// 从 allocate 返回的数据指针构造.
         ///
         /// # Safety
-        /// - `data` must have been returned by a prior allocation
-        /// - Heap lock must be held
+        /// - `data` 必须由先前的分配返回
+        /// - 必须持有堆锁
         #[inline(always)]
         pub unsafe fn from_data_ptr(data: *mut u8) -> Self {
             Self(HeapHeader::from_data_ptr(data))
@@ -205,28 +203,28 @@ pub(crate) mod raw {
             unsafe { (*self.0).data_ptr() }
         }
 
-        /// Write a new HeapHeader value at this location.
+        /// 在本地址写入新的 HeapHeader 值.
         #[inline(always)]
         pub fn write(&self, val: HeapHeader) {
-            // SAFETY: caller guarantees valid pointer under heap lock
+            // SAFETY: 调用方保证指针合法, 且持锁
             unsafe { *self.0 = val; }
         }
 
-        /// Get the address of this header as a byte pointer.
+        /// 取得本头部的字节地址.
         #[inline(always)]
         pub fn byte_ptr(self) -> *mut u8 {
             self.0 as *mut u8
         }
 
-        /// Compute the next adjacent header by byte offset.
+        /// 通过字节偏移计算相邻的下一个头部.
         #[inline(always)]
         pub fn adjacent_next(&self, offset: usize) -> Self {
-            // SAFETY: caller guarantees offset stays within heap region
+            // SAFETY: 调用方保证偏移仍在堆区范围内
             unsafe { Self::new_unchecked(self.byte_ptr().add(offset) as *mut HeapHeader) }
         }
     }
 
-    /// Safe wrapper for free_list_head access.
+    /// free_list_head 访问的 safe 包装.
     pub struct FreeListHeadRef<'a> {
         ptr: &'a UnsafeCell<*mut HeapHeader>,
     }
@@ -239,32 +237,32 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn get(&self) -> *mut HeapHeader {
-            // SAFETY: heap lock is held
+            // SAFETY: 持有堆锁
             unsafe { *self.ptr.get() }
         }
 
         #[inline(always)]
         pub fn set(&self, val: *mut HeapHeader) {
-            // SAFETY: heap lock is held
+            // SAFETY: 持有堆锁
             unsafe { *self.ptr.get() = val; }
         }
     }
 
-    /// Zero a memory region.
+    /// 将一段内存清零.
     ///
     /// # Safety
-    /// - `ptr` must point to a valid writable region of `len` bytes
+    /// - `ptr` 必须指向 `len` 字节的合法可写区域
     #[inline(always)]
     pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
         core::ptr::write_bytes(ptr, 0, len);
     }
 
-    /// Copy memory non-overlapping.
+    /// 不重叠内存复制.
     ///
     /// # Safety
-    /// - src must be readable for `len` bytes
-    /// - dst must be writable for `len` bytes
-    /// - regions must not overlap
+    /// - src 必须可读 `len` 字节
+    /// - dst 必须可写 `len` 字节
+    /// - 两区不得重叠
     #[inline(always)]
     pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
         core::ptr::copy_nonoverlapping(src, dst, len);
@@ -273,36 +271,36 @@ pub(crate) mod raw {
 
 use raw::{HeaderRef, FreeListHeadRef};
 
-/// Kernel Heap Allocator state
+/// 内核堆分配器状态
 pub struct KernelHeap {
-    /// Start of heap region (virtual address)
+    /// 堆起始地址 (虚拟地址)
     heap_start: VirtAddr,
 
-    /// Current end of heap (virtual address)
+    /// 堆当前尾地址 (虚拟地址)
     heap_end: VirtAddr,
 
-    /// Head of free list
+    /// 空闲链表头
     free_list_head: UnsafeCell<*mut HeapHeader>,
 
-    /// Lock for thread safety
+    /// 线程安全锁
     lock: AtomicBool,
 
-    /// Is the heap initialized?
+    /// 堆是否已初始化?
     initialized: AtomicBool,
 
-    /// Early allocations before proper initialization
+    /// 正式初始化前的早期分配
     early_allocs: [EarlyHeapAlloc; MAX_EARLY_ALLOCS],
 
-    /// Number of early allocations
+    /// 早期分配计数
     early_count: AtomicUsize,
 
-    /// Early heap buffer (static buffer for pre-init allocations)
+    /// 早期堆缓冲区 (初始化前用于分配的静态缓冲区)
     early_buffer: [u8; EARLY_BUFFER_SIZE],
 
-    /// Current position in early buffer
+    /// 早期缓冲区当前分配位置
     early_pos: AtomicUsize,
 
-    /// Statistics
+    /// 统计
     total_allocated: AtomicU64,
     total_freed: AtomicU64,
     current_usage: AtomicU64,
@@ -341,8 +339,8 @@ impl KernelHeap {
         self.heap_start = start;
         self.heap_end = VirtAddr(start.0 + initial_size);
 
-        // SAFETY: caller (kmem_init) provides a valid mapped heap region of
-        // size >= sizeof(HeapHeader); start is page-aligned and exclusive.
+        // SAFETY: 调用方 (kmem_init) 提供的堆区已映射, 长度 >= sizeof(HeapHeader);
+        // 起始地址页对齐, 且在持锁状态下独占访问.
         let header = unsafe { HeaderRef::new_unchecked(start.0 as *mut HeapHeader) };
         header.write(HeapHeader::new(initial_size, true));
 
@@ -360,7 +358,7 @@ impl KernelHeap {
         self.process_early_allocations();
     }
 
-    /// Allocate memory from kernel heap
+    /// 从内核堆分配内存
     pub fn allocate(&self, size: usize) -> Option<*mut u8> {
         if size == 0 {
             return None;
@@ -410,7 +408,7 @@ impl KernelHeap {
         }
     }
 
-    /// Free memory previously allocated by k_malloc
+    /// 释放 k_malloc 之前分配的内存
     pub fn deallocate(&self, ptr: *mut u8) {
         if ptr.is_null() {
             return;
@@ -456,7 +454,7 @@ impl KernelHeap {
         self.release_lock(&flags);
     }
 
-    /// Reallocate memory block
+    /// 重新分配内存块
     pub fn reallocate(&self, ptr: *mut u8, size: usize) -> Option<*mut u8> {
         if size == 0 {
             self.deallocate(ptr);
@@ -484,8 +482,7 @@ impl KernelHeap {
             return Some(ptr);
         }
 
-        // Allocate new block while holding the lock to prevent
-        // ptr from being invalidated before copy completes
+        // 在持锁状态下分配新块, 防止 ptr 在复制完成前被释放
         let actual_size =
             (new_aligned as u64 + core::mem::size_of::<HeapHeader>() as u64).max(MIN_BLOCK_SIZE);
         let new_ptr = match self.allocate_first_fit(actual_size) {
@@ -515,13 +512,13 @@ impl KernelHeap {
             }
         };
 
-        // SAFETY: ptr is a valid pointer to old_data_size bytes; new_ptr is a
-        // distinct allocation of the same size; regions cannot overlap.
+        // SAFETY: ptr 是指向 old_data_size 字节的合法指针; new_ptr 是不重叠的
+        // 独立分配; 两区不可能重叠.
         unsafe {
             raw::copy_nonoverlapping(ptr, new_ptr, old_data_size);
         }
 
-        // Deallocate old block inline while holding the lock
+        // 在持锁状态下原地释放旧块
         header.set_free(true);
         let freed_size = header.size();
         self.free_count.fetch_add(1, Ordering::Relaxed);
@@ -549,7 +546,7 @@ impl KernelHeap {
         }
     }
 
-    /// Print heap statistics
+    /// 打印堆统计
     pub fn dump_stats(&self) {
         let _stats = self.get_stats();
         serial_println!("=== Kmalloc Statistics ===");
@@ -568,7 +565,7 @@ impl KernelHeap {
         serial_println!("=========================");
     }
 
-    /// Validate heap integrity (for debugging)
+    /// 校验堆完整性 (调试用)
     pub fn validate(&self) -> bool {
         if !self.initialized.load(Ordering::Acquire) {
             return true;
@@ -624,9 +621,9 @@ impl KernelHeap {
         true
     }
 
-    // ==================== Private Methods ====================
+    // ==================== 私有方法 ====================
 
-    /// First-fit allocation algorithm
+    /// First-fit 分配算法
     fn allocate_first_fit(&self, size: u64) -> Option<*mut u8> {
         let head = FreeListHeadRef::new(&self.free_list_head);
         let mut current = head.get();
@@ -655,7 +652,7 @@ impl KernelHeap {
         self.expand_heap(size)
     }
 
-    /// Split a block into two parts
+    /// 将一个块拆分为两个
     fn split_block(&self, header: HeaderRef, size: u64) {
         let original_size = header.size();
         let remaining = original_size - size;
@@ -678,7 +675,7 @@ impl KernelHeap {
         header.set_next(second_part.as_ptr());
     }
 
-    /// Coalesce adjacent free blocks
+    /// 合并相邻的空闲块
     fn coalesce(&self, header: HeaderRef) -> HeaderRef {
         self.coalesce_forward(header);
         self.coalesce_backward(header)
@@ -718,7 +715,7 @@ impl KernelHeap {
         header
     }
 
-    /// Add a block to the free list
+    /// 将块加入空闲链表
     fn add_to_free_list(&self, header: HeaderRef) {
         let head = FreeListHeadRef::new(&self.free_list_head);
         let head_ptr = head.get();
@@ -736,7 +733,7 @@ impl KernelHeap {
         head.set(header.as_ptr());
     }
 
-    /// Remove a block from the free list
+    /// 从空闲链表中移除块
     fn remove_from_free_list(&self, header: HeaderRef) {
         let prev = header.prev();
         let next = header.next();
@@ -761,7 +758,7 @@ impl KernelHeap {
         header.set_prev(core::ptr::null_mut());
     }
 
-    /// Expand the heap by requesting more pages from VMM/PMM
+    /// 通过 VMM/PMM 申请更多页来扩展堆
     fn expand_heap(&self, size: u64) -> Option<*mut u8> {
         let pages_needed = size.div_ceil(PAGE_SIZE);
         let expand_by = pages_needed * PAGE_SIZE;
@@ -795,8 +792,8 @@ impl KernelHeap {
             }
         }
 
-        // SAFETY: new pages are mapped writable by vmm.map_page above;
-        // new_start is the mapped region start, exclusive access held under lock.
+        // SAFETY: 上面 vmm.map_page 已将新页映射为可写;
+        // new_start 是已映射区的起始; 持锁状态下独占访问.
         let new_block = unsafe { HeaderRef::new_unchecked(new_start.0 as *mut HeapHeader) };
         new_block.write(HeapHeader::new(expand_by, true));
 
@@ -805,7 +802,7 @@ impl KernelHeap {
         self.allocate_first_fit(size)
     }
 
-    /// Early allocation (before heap initialization)
+    /// 早期分配 (堆初始化前)
     fn early_allocate(&self, size: usize) -> Option<*mut u8> {
         let current = self.early_pos.fetch_add(size, Ordering::Relaxed);
 
@@ -832,7 +829,7 @@ impl KernelHeap {
         Some(ptr)
     }
 
-    /// Process early allocations after proper initialization
+    /// 在正式初始化后处理早期分配
     fn process_early_allocations(&self) {
         let count = self.early_count.load(Ordering::Acquire);
 
@@ -868,7 +865,7 @@ impl KernelHeap {
     }
 }
 
-/// Heap statistics structure
+/// 堆统计结构
 #[derive(Debug, Clone, Copy)]
 pub struct HeapStats {
     pub heap_start: VirtAddr,
@@ -882,37 +879,37 @@ pub struct HeapStats {
     pub failed_allocs: u64,
 }
 
-// Global Kmalloc instance
+// 全局 Kmalloc 实例
 static mut GLOBAL_KMALLOC: KernelHeap = KernelHeap::new();
 
-/// Get reference to global Kmalloc instance
+/// 获取全局 Kmalloc 实例的引用
 ///
 /// # Safety
-/// GLOBAL_KMALLOC is a static initialized via `KernelHeap::new()` (const).
-/// Reading a static reference is always safe.
+/// GLOBAL_KMALLOC 是通过 `KernelHeap::new()` (const) 初始化的 static.
+/// 读取 static 引用始终是安全的.
 pub fn get_kmalloc() -> &'static KernelHeap {
-    // SAFETY: GLOBAL_KMALLOC is a static; the reference is valid for the
-    // program lifetime, no aliasing concerns for shared access.
+    // SAFETY: GLOBAL_KMALLOC 是 static; 引用在程序整个生命周期内有效,
+    // 共享访问不存在别名问题.
     unsafe { &GLOBAL_KMALLOC }
 }
 
-/// Get mutable reference to global Kmalloc instance (for init operations)
+/// 获取全局 Kmalloc 实例的可变引用 (用于初始化)
 ///
 /// # Safety
-/// Should only be called during kernel initialization
+/// 仅在内核初始化期间调用
 pub unsafe fn get_kmalloc_mut() -> &'static mut KernelHeap {
     &mut GLOBAL_KMALLOC
 }
 
-// ==================== Helper Functions ====================
+// ==================== 辅助函数 ====================
 
-/// Align value up to given alignment (must be power of 2)
+/// 将值向上对齐到指定对齐 (必须为 2 的幂)
 #[inline(always)]
 pub const fn align_up(value: u64, alignment: u64) -> u64 {
     (value + alignment - 1) & !(alignment - 1)
 }
 
-/// Align value down to given alignment (must be power of 2)
+/// 将值向下对齐到指定对齐 (必须为 2 的幂)
 #[inline(always)]
 pub const fn align_down(value: u64, alignment: u64) -> u64 {
     value & !(alignment - 1)

@@ -300,7 +300,7 @@ fn posix_timer_callback(timer: &HrTimer) -> HrTimerRestart {
 
 /// 创建 POSIX Timer
 ///
-/// `clockid`: CLOCK_REALTIME / CLOCK_MONOTONIC
+/// `clockid`: CLOCK_REALTIME / CLOCK_MONOTONIC  // 标准时钟 ID
 /// `sigev_ptr`: 用户态 sigevent 指针 (可为 null → SIGEV_NONE)
 /// `timer_id_ptr`: 输出 timer_id
 ///
@@ -418,7 +418,7 @@ pub fn sys_timer_settime(
         }
         v
     } else {
-        // new_value = NULL = disarm
+        // new_value = NULL = 撤防 (disarm)  // POSIX timer_settime 语义
         Itimerspec::zeroed()
     };
 

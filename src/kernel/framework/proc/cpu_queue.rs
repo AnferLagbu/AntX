@@ -29,7 +29,7 @@ pub struct CpuQueue {
     pub online: AtomicBool,
 }
 
-// All fields (AtomicU32, AtomicBool) auto-implement Send + Sync.
+// 所有字段 (AtomicU32, AtomicBool) 自动实现 Send + Sync.
 
 impl CpuQueue {
     pub const fn new() -> Self {
@@ -71,9 +71,9 @@ struct CpuQueues {
     queues: UnsafeCell<[CpuQueue; crate::kernel::framework::config::MAX_CPUS]>,
 }
 
-// SAFETY: CpuQueues wraps UnsafeCell<[CpuQueue; MAX_CPUS]>.
-// Each CpuQueue[i] is only accessed by CPU i (per-CPU data).
-// The caller must ensure CPU affinity when accessing queue entries.
+// SAFETY: CpuQueues 包装 UnsafeCell<[CpuQueue; MAX_CPUS]>.
+// 每个 CpuQueue[i] 仅由 CPU i 访问 (每 CPU 数据).
+// 调用方在访问队列条目时必须确保 CPU 亲和性.
 unsafe impl Sync for CpuQueues {}
 
 static CPU_QUEUES: CpuQueues = CpuQueues {

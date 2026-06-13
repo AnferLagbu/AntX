@@ -98,23 +98,23 @@ impl Default for SlabHeader {
     }
 }
 
-// === E4: Unsafe Concentration — raw sub-module ===
+// === E4: unsafe 集中化 — 裸指针子模块 ===
 //
-// All bare-pointer dereferences for slab internals are encapsulated here.
+// slab 内部涉及的所有裸指针解引用都封装在这里.
 pub(crate) mod raw {
     use super::*;
 
-    /// Safe wrapper around a `*mut SlabHeader`.
+    /// `*mut SlabHeader` 的 safe 包装器.
     ///
-    /// SAFETY invariant: the pointer points to a valid SlabHeader inside
-    /// a slab page, and the slab lock (or global lock) is held.
+    /// SAFETY 不变式: 指针指向 slab 页内合法的 SlabHeader,
+    /// 且 slab 锁 (或全局锁) 已持有.
     #[derive(Clone, Copy)]
     pub struct SlabRef(*mut SlabHeader);
 
     impl SlabRef {
         /// # Safety
-        /// - `ptr` must point to a valid `SlabHeader`
-        /// - Appropriate lock must be held
+        /// - `ptr` 必须指向合法的 `SlabHeader`
+        /// - 必须持有相应的锁
         #[inline(always)]
         pub unsafe fn new_unchecked(ptr: *mut SlabHeader) -> Self {
             Self(ptr)
@@ -198,52 +198,52 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn set_next(&self, p: *mut SlabHeader) {
-            // SAFETY: caller guarantees valid pointer
+            // SAFETY: 调用方保证指针合法
             unsafe { (*self.0).next = p; }
         }
 
-        /// Write a default SlabHeader at this location.
+        /// 在该位置写入默认的 SlabHeader.
         #[inline(always)]
         pub fn write_default(&self) {
-            // SAFETY: caller guarantees valid pointer
+            // SAFETY: 调用方保证指针合法
             unsafe { *self.0 = SlabHeader::default(); }
         }
 
-        /// Get the bitmap pointer for this slab.
-        /// Bitmap starts after the header + object area.
+        /// 获取该 slab 的 bitmap 指针.
+        /// Bitmap 起始于 header + 对象区之后.
         #[inline(always)]
         pub fn bitmap_ptr(&self, object_size: usize) -> *mut u8 {
-            // SAFETY: caller guarantees valid pointer and correct object_size
+            // SAFETY: 调用方保证指针合法且 object_size 正确
             unsafe {
                 let obj_area = (*self.0).start_addr;
                 obj_area.add((*self.0).obj_count as usize * object_size)
             }
         }
 
-        /// Get object pointer at given index.
+        /// 获取指定索引处的对象指针.
         #[inline(always)]
         pub fn object_ptr(&self, idx: u32, object_size: usize) -> *mut u8 {
-            // SAFETY: caller guarantees valid pointer and idx < obj_count
+            // SAFETY: 调用方保证指针合法且 idx < obj_count
             unsafe {
                 (*self.0).start_addr.add(idx as usize * object_size)
             }
         }
     }
 
-    /// Zero a memory region.
+    /// 清零一段内存.
     ///
     /// # Safety
-    /// - `ptr` must point to a valid writable region of `len` bytes
+    /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
     pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
         core::ptr::write_bytes(ptr, 0, len);
     }
 
-    /// Copy memory non-overlapping.
+    /// 不重叠地复制内存.
     ///
     /// # Safety
-    /// - src must be readable for `len` bytes
-    /// - dst must be writable for `len` bytes
+    /// - src 必须可读 `len` 字节
+    /// - dst 必须可写 `len` 字节
     #[inline(always)]
     pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
         core::ptr::copy_nonoverlapping(src, dst, len);
@@ -547,8 +547,7 @@ impl KmemCache {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
         let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
-        // SAFETY: pmm_alloc_pages returns either null (failure) or a valid
-        // page-aligned physical address mapped via KERNEL_BASE.
+        // SAFETY: pmm_alloc_pages 返回空 (失败) 或经 KERNEL_BASE 映射的合法页对齐物理地址
         let page = unsafe { pmm_alloc_pages(pages_needed as u64) };
 
         if page.is_null() {
@@ -605,9 +604,8 @@ impl KmemCache {
         if slab.is_null() {
             return;
         }
-        // SAFETY: slab was allocated by pmm_alloc_pages in new_slab;
-        // we free the same number of pages. Caller guarantees slab
-        // is no longer in any list and contains no active objects.
+        // SAFETY: slab 由 new_slab 中 pmm_alloc_pages 分配,
+        // 释放同等数量页. 调用方保证 slab 已不在任何链表中且不持有活动对象.
         unsafe {
             let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
             extern "C" {

@@ -156,17 +156,17 @@ pub unsafe fn init_distributor() {
 }
 
 /// 初始化 GICv3 Redistributor (当前 CPU):
-/// 1. Wake redistributor
-/// 2. Enable SGIs/PPIs for current core
+/// 1. 唤醒 redistributor
+/// 2. 为当前核启用 SGIs/PPIs
 ///
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化，GICR_BASE 已映射。
 pub unsafe fn init_redistributor() {
-    // 1. Wake redistributor
+    // 1. 唤醒 redistributor
     let waker = gicr_read(GICR_WAKER);
-    gicr_write(GICR_WAKER, waker & !(1 << 1)); // Clear ProcessorSleep (bit 1)
-                                               // Wait for ChildrenAsleep == 0
+    gicr_write(GICR_WAKER, waker & !(1 << 1)); // 清除 ProcessorSleep (bit 1)
+                                               // 等待 ChildrenAsleep == 0
     while gicr_read(GICR_WAKER) & (1 << 2) != 0 {
         core::hint::spin_loop();
     }
@@ -202,7 +202,7 @@ pub unsafe fn init_cpu_interface() {
     core::arch::asm!("msr icc_igrpen0_el1, {}", in(reg) 1u64);
     core::arch::asm!("msr icc_igrpen1_el1, {}", in(reg) 1u64);
 
-    // EOI mode: drop priority (ICC_CTLR_EL1.EOImode = 0)
+    // EOI 模式: 直接降优先级 (ICC_CTLR_EL1.EOImode = 0)
     let ctlr: u64;
     core::arch::asm!("mrs {}, icc_ctlr_el1", out(reg) ctlr);
     core::arch::asm!("msr icc_ctlr_el1, {}", in(reg) ctlr & !(1 << 1));

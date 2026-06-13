@@ -689,7 +689,7 @@ pub unsafe extern "C" fn memchr(
 ///
 /// # Safety
 ///
-/// `src` is a valid pointer to at least `max_len` bytes of readable memory.
+/// `src` 是合法指针, 至少指向 `max_len` 字节可读内存.
 pub unsafe extern "C" fn secure_zero(ptr: *mut u8, len: usize) {
     if ptr.is_null() || len == 0 {
         return;
@@ -738,8 +738,8 @@ pub fn safe_memset(buf: &mut [u8], val: u8, len: Option<usize>) {
 ///
 /// # Returns
 /// * `Ordering::Equal` - 相等
-/// * `Ordering::Less` - a < b
-/// * `Ordering::Greater` - a > b
+/// * `Ordering::Less` - a < b  // 标准比较结果枚举
+/// * `Ordering::Greater` - a > b  // 标准比较结果枚举
 pub fn safe_memcmp(a: &[u8], b: &[u8]) -> core::cmp::Ordering {
     let min_len = a.len().min(b.len());
 

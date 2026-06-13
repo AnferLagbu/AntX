@@ -12,7 +12,7 @@
 //! | aarch64| ECAM MMIO | 内存映射配置空间, 基址 `ECAM_BASE` |
 //!
 //! ECAM 将每个 (bus, device, function) 映射到 4KB 对齐的 MMIO 窗口:
-//!   `addr = ECAM_BASE + (bus << 20) | (dev << 15) | (func << 12) | offset`
+//!   `addr = ECAM_BASE + (bus << 20) | (dev << 15) | (func << 12) | offset`  // 地址换算公式
 //!
 //! QEMU virt aarch64: `ECAM_BASE = 0x3F000000` (无 highmem)
 //! 真实 ARM 服务器: 随平台变化 (由 DTB/ACPI 驱动)
@@ -489,8 +489,6 @@ pub fn init() -> usize {
     count
 }
 
-}
-
 /// 当 `pci::init()` 至少被调用过一次时返回 true.
 pub fn is_initialized() -> bool {
     PCI_INITIALIZED.load(core::sync::atomic::Ordering::SeqCst)
@@ -577,7 +575,7 @@ pub extern "C" fn pci_get_device_count() -> i32 {
     device_count() as i32
 }
 
-/// C FFI: read config word (for e1000 fallback compatibility)
+/// C FFI: 读取配置字 (供 e1000 兜底兼容使用)
 #[no_mangle]
 pub extern "C" fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
     read_config_word(bus, dev, func, offset)

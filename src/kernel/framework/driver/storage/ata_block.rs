@@ -30,14 +30,14 @@ impl AtaBlockDevice {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
 
-        // Check if disk is present
+        // 检查磁盘是否存在
         // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
         let present = unsafe { ata_disk_present(drive) };
         if present == 0 {
             return None;
         }
 
-        // Binary search for total sectors (same approach as HvFS probe_disk_size)
+        // 二分查找总扇区数 (与 HvFS probe_disk_size 同样的方法)
         let mut lo: u32 = 0;
         let mut hi: u32 = 0xFFFF;
         let mut buf = [0u8; 512];
@@ -62,9 +62,8 @@ impl AtaBlockDevice {
     }
 }
 
-// SAFETY: AtaBlockDevice wraps C FFI calls; ATA controller access is
-// mediated by the global ATA_DEVICE Mutex in ata.rs. BlockDevice trait
-// methods use internal locks or atomic operations for cross-CPU safety.
+// SAFETY: AtaBlockDevice 包装 C FFI 调用; ATA 控制器访问由 ata.rs 中的全局
+// ATA_DEVICE Mutex 串行化. BlockDevice trait 方法使用内部锁或原子操作保证跨 CPU 安全.
 unsafe impl Send for AtaBlockDevice {}
 unsafe impl Sync for AtaBlockDevice {}
 

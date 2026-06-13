@@ -4,22 +4,24 @@
 //! 每个异常类型有 4 个入口: 同异常级别使用 SP_EL0/SP_ELx, 不同异常级别使用 SP_EL0/SP_ELx。
 //!
 //! 向量表布局 (VBAR_EL1):
-//!   +0x000: Synchronous  EL1t  (current EL with SP_EL0)
-//!   +0x080: IRQ           EL1t
-//!   +0x100: FIQ           EL1t
-//!   +0x180: SError        EL1t
-//!   +0x200: Synchronous  EL1h  (current EL with SP_ELx)
-//!   +0x280: IRQ           EL1h
-//!   +0x300: FIQ           EL1h
-//!   +0x380: SError        EL1h
-//!   +0x400: Synchronous  EL0 in AArch64
-//!   +0x480: IRQ           EL0 in AArch64
-//!   +0x500: FIQ           EL0 in AArch64
-//!   +0x580: SError        EL0 in AArch64
-//!   +0x600: Synchronous  EL0 in AArch32
-//!   +0x680: IRQ           EL0 in AArch32
-//!   +0x700: FIQ           EL0 in AArch32
-//!   +0x780: SError        EL0 in AArch32
+//! | 偏移 | 类型 | 级别 | 说明 |
+//! |------|------|------|------|
+//! | +0x000 | Synchronous | EL1t | current EL, SP_EL0 |
+//! | +0x080 | IRQ | EL1t | — |
+//! | +0x100 | FIQ | EL1t | — |
+//! | +0x180 | SError | EL1t | — |
+//! | +0x200 | Synchronous | EL1h | current EL, SP_ELx |
+//! | +0x280 | IRQ | EL1h | — |
+//! | +0x300 | FIQ | EL1h | — |
+//! | +0x380 | SError | EL1h | — |
+//! | +0x400 | Synchronous | EL0 in AArch64 | — |
+//! | +0x480 | IRQ | EL0 in AArch64 | — |
+//! | +0x500 | FIQ | EL0 in AArch64 | — |
+//! | +0x580 | SError | EL0 in AArch64 | — |
+//! | +0x600 | Synchronous | EL0 in AArch32 | — |
+//! | +0x680 | IRQ | EL0 in AArch32 | — |
+//! | +0x700 | FIQ | EL0 in AArch32 | — |
+//! | +0x780 | SError | EL0 in AArch32 | — |
 
 use core::arch::global_asm;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -45,7 +47,7 @@ global_asm!(
 .global exception_vector_table
 exception_vector_table:
 
-// -------- EL1t: current EL with SP_EL0 --------
+// -------- EL1t: 当前 EL, 使用 SP_EL0 --------
 .balign 128
     b   unexpected_exception       // curr_el_sp0_sync
 .balign 128
@@ -89,7 +91,7 @@ exception_vector_table:
 // Handler code (位于向量表外部, 不受 128-byte 槽位限制)
 // ============================================================
 
-// -------- EL1h sync handler --------
+// -------- EL1h 同步异常处理 --------
 handle_el1h_sync:
     sub  sp, sp, #(8 * 35)
     stp  x0, x1, [sp, #(8 * 0)]
@@ -471,7 +473,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
     // GIC ACK + handle + EOI
     let intid = super::gic::acknowledge();
     if intid >= 1020 {
-        // Spurious interrupt, no EOI needed
+        // 伪中断, 无需 EOI
         return;
     }
 
@@ -533,7 +535,7 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     }
     let _ec = (esr >> 26) & 0x3F;
 
-    // Direct UART output to ensure we see sync exceptions
+    // 直接 UART 输出以确保能观察同步异常
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         super::uart::putc(b'S');
@@ -571,7 +573,7 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     }
 }
 
-/// Helper: output a u64 as hex via uart
+/// 辅助函数: 通过 UART 以十六进制输出 u64
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn exc_puthex(val: u64) {
     for shift in (0..16).rev() {

@@ -157,11 +157,11 @@ pub fn signal_default_action(sig: u8) -> SignalDefaultAction {
     match sig {
         // Ign: CHLD(17), URG(23)
         17 | 23 => SignalDefaultAction::Ign,
-        // Stop: STOP(19), TSTP(20), TTIN(21), TTOU(22)
+        // Stop: STOP(19), TSTP(20), TTIN(21), TTOU(22)  // 信号编号常量
         19 | 20 | 21 | 22 => SignalDefaultAction::Stop,
         // Cont: CONT(18)
         18 => SignalDefaultAction::Cont,
-        // Core: QUIT(3), ILL(4), ABRT(6), BUS(7), FPE(8), SEGV(11), SYS(31), XCPU(24), XFSZ(25)
+        // Core: QUIT(3), ILL(4), ABRT(6), BUS(7), FPE(8), SEGV(11), SYS(31), XCPU(24), XFSZ(25)  // 信号编号常量
         3 | 4 | 6 | 7 | 8 | 11 | 31 | 24 | 25 => SignalDefaultAction::Core,
         // Term: 其余所有信号
         _ => SignalDefaultAction::Term,
@@ -512,7 +512,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                 // 栈帧布局:
                 //   frame_rsp+0: 返回地址 (指向 trampoline, handler ret 时弹出)
                 //   frame_rsp+8: SignalFrame (保存原始寄存器)
-                //   frame_rsp+8+sizeof(SignalFrame): trampoline code (rt_sigreturn)
+                //   frame_rsp+8+sizeof(SignalFrame): trampoline code (rt_sigreturn)  // 信号 trampoline
                 let total = 8 + core::mem::size_of::<SignalFrame>() + SIGRETURN_TRAMPOLINE_SIZE;
 
                 // P1-I-45 修复: 检查 sigaltstack 替代栈.

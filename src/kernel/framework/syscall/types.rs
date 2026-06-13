@@ -310,7 +310,7 @@ pub const QX_RT_SIGPROCMASK: u64 = 541;
 pub const QX_RT_SIGRETURN: u64 = 542;
 pub const QX_KILL: u64 = 543;
 pub const QX_TGKILL: u64 = 544;
-// 545-559: reserved (tkill, sigaltstack, rt_sigsuspend, ...)
+// 545-559: 保留 (tkill, sigaltstack, rt_sigsuspend, ...)  // syscall 编号预留
 pub const QX_TKILL: u64 = 545;
 // P1-I-45: 接线 sigaltstack 替代栈系统调用
 pub const QX_SIGALTSTACK: u64 = 546;
@@ -381,7 +381,7 @@ pub const QX_SETSOCKOPT: u64 = 610;
 pub const QX_GETSOCKOPT: u64 = 611;
 pub const QX_GETSOCKNAME: u64 = 612;
 pub const QX_GETPEERNAME: u64 = 613;
-// 614-619: reserved (socketpair, ...)
+// 614-619: 保留 (socketpair, ...)  // syscall 编号预留
 
 // ---------- 620-639: 同步 / IPC ----------
 pub const QX_FUTEX: u64 = 620;
@@ -395,14 +395,14 @@ pub const QX_SIGNALFD4: u64 = 627;
 pub const QX_TIMERFD_CREATE: u64 = 628;
 pub const QX_TIMERFD_SETTIME: u64 = 629;
 pub const QX_TIMERFD_GETTIME: u64 = 630;
-// 631-639: reserved (msgqueue, shm, sem)
+// 631-639: 保留 (msgqueue, shm, sem)  // syscall 编号预留
 
 // ---------- 640-649: inotify ----------
 pub const QX_INOTIFY_INIT1: u64 = 640;
 pub const QX_INOTIFY_ADD_WATCH: u64 = 641;
 pub const QX_INOTIFY_RM_WATCH: u64 = 642;
 
-// ---------- 650-659: sendfile / splice ----------
+// ---------- 650-659: sendfile / splice ----------  // 高效拷贝/拼接 syscall
 pub const QX_SENDFILE: u64 = 650;
 pub const QX_SPLICE: u64 = 651;
 
@@ -416,7 +416,7 @@ pub const QX_GETRUSAGE: u64 = 704;
 // ---------- 710-719: 时间 ----------
 pub const QX_CLOCK_GETTIME: u64 = 710;
 pub const QX_GETTIMEOFDAY: u64 = 711;
-// 712: reserved (settimeofday)
+// 712: 保留 (settimeofday)  // syscall 编号预留
 pub const QX_CLOCK_SETTIME: u64 = 712; // reserved
 pub const QX_NANOSLEEP: u64 = 713;
 pub const QX_ALARM: u64 = 714;
@@ -570,7 +570,7 @@ pub const QX_TPM: u64 = 871;
 /// cet — CET/Shadow Stack 系统调用
 pub const QX_CET: u64 = 880;
 
-// ==================== D8: Tickless (NO_HZ) ====================
+// ==================== D8: Tickless (NO_HZ) ====================  // 动态时钟节拍模式
 
 /// tickless — Tickless 系统调用
 pub const QX_TICKLESS: u64 = 881;

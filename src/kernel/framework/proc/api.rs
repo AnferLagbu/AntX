@@ -509,12 +509,12 @@ pub fn user_proc_load_elf_from_memory(
     USER_PROC_MANAGER.load_elf_from_memory(elf_data, elf_size, pwm)
 }
 
-/// Set up argv/envp on user stack after ELF loading (for exec syscall)
+/// 在 ELF 加载完成后, 在用户栈上建立 argv/envp (供 exec 系统调用使用)
 #[no_mangle]
 ///
 /// # Safety
 ///
-/// `name` is a valid null-terminated C string. Process table has been initialized.
+/// `name` 是合法的 C 字符串 (以 NUL 结尾). 进程表已初始化.
 pub unsafe fn user_proc_setup_argv(
     pid: u32,
     argv: *const *const u8,
@@ -661,7 +661,7 @@ pub fn launch_first_user_process() -> ! {
             b"ramfs\0".as_ptr(),
         );
 
-        // On aarch64, init.bin is an AArch64 ELF binary built from src/user/
+        // 在 aarch64 上, init.bin 是由 src/user/ 编译出的 AArch64 ELF 二进制
         let bin = include_bytes!("../../../../build/user/init.bin");
         let bin_ptr = bin.as_ptr();
         let bin_size = bin.len() as u64;
@@ -976,7 +976,7 @@ pub fn proc_create_user(
         });
     }
 
-    // Initialize per-process fd_table
+    // 初始化每进程的 fd_table
     PROCESS_TABLE.with_process(child_pid, |proc| {
         proc.fd_table.init();
     });
@@ -1183,7 +1183,7 @@ pub fn sys_fork() -> Pid {
         return 0;
     }
 
-    // Clone parent name
+    // 克隆父进程名
     let name_str = PROCESS_TABLE
         .with_process(parent_pid, |p| {
             let name = p.name.lock();
@@ -1192,12 +1192,12 @@ pub fn sys_fork() -> Pid {
         .unwrap_or_default();
     let name_ref = name_str.as_str();
 
-    // Create child Process
+    // 创建子进程 Process
     // SAFETY: alloc_process 拥有 child 内存的所有权; 错误路径由 dealloc/drop 释放。
     let child_ptr = raw::alloc_process(child_pid, name_ref, Some(ProcessId(parent_pid)));
     let child = raw::process_ref_mut(child_ptr);
 
-    // Copy parent properties to child
+    // 复制父进程属性到子进程
     let (parent_pwm, parent_sched_policy, parent_rt_priority) = PROCESS_TABLE
         .with_process(parent_pid, |p| {
             (
@@ -1294,12 +1294,12 @@ pub fn sys_fork() -> Pid {
         }
     }
 
-    // Add child to parent's children list
+    // 将子进程加入父进程的子进程列表
     PROCESS_TABLE.with_process(parent_pid, |p| {
         p.children.lock().push(ProcessId(child_pid));
     });
 
-    // Allocate kernel stack for child
+    // 为子进程分配内核栈
     if !child.allocate_kernel_stack() {
         // SAFETY: child_ptr 来自 alloc_process, 需要释放。
         raw::drop_boxed_process(child_ptr);
@@ -1308,7 +1308,7 @@ pub fn sys_fork() -> Pid {
         return 0;
     }
 
-    // Copy parent's kernel stack contents to child's kernel stack
+    // 复制父进程内核栈内容到子进程
     {
         let parent_kstack = PROCESS_TABLE
             .with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
@@ -1320,7 +1320,7 @@ pub fn sys_fork() -> Pid {
         crate::kernel::framework::proc::process::kernel_stack_write_canary(child_kstack);
     }
 
-    // Copy parent's ProcessContext to child's, but set RAX=0 for child
+    // 复制父进程 ProcessContext 到子进程, 但把 RAX 置 0
     let parent_ctx = PROCESS_TABLE
         .with_process(parent_pid, |p| *p.context.lock())
         .unwrap();
@@ -1334,7 +1334,7 @@ pub fn sys_fork() -> Pid {
     // Register child in process table
     PROCESS_TABLE.insert(child as *const Process as *mut Process);
 
-    // Create UserProc for child
+    // 为子进程创建 UserProc
     if USER_PROC_MANAGER.get(parent_pid).is_some() {
         let clone_result = user_proc_clone(parent_pid, child_pid);
         if clone_result < 0 {
@@ -1586,17 +1586,18 @@ pub fn proc_check_itimer_real(pid: u32) -> i32 {
 ///   ru_stime: 进程内核态 CPU 时间 (sys_time jiffies -> sec/usec)
 ///   ru_maxrss 等其余字段写 0.
 /// 缓冲布局 (Linux x86_64):
-///   0  ru_utime.tv_sec   (i64)
-///   8  ru_utime.tv_usec  (i64)
-///  16  ru_stime.tv_sec   (i64)
-///  24  ru_stime.tv_usec  (i64)
-///  32+ 其他 16 个 long, 写 0.
+/// - 偏移 0:  `ru_utime.tv_sec`  (i64)
+/// - 偏移 8:  `ru_utime.tv_usec` (i64)
+/// - 偏移 16: `ru_stime.tv_sec`  (i64)
+/// - 偏移 24: `ru_stime.tv_usec` (i64)
+/// - 偏移 32 起: 其他 16 个 long, 写 0.
 #[no_mangle]
 pub fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
     if out.is_null() || out_len < 32 {
         return -1;
     }
     // who: 0=RUSAGE_SELF, 1=RUSAGE_CHILDREN, 2=RUSAGE_THREAD
+    // (值含义与 Linux 一致)
     if who != 0 && who != 1 && who != 2 {
         return -1;
     }

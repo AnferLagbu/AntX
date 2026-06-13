@@ -53,7 +53,7 @@ pub struct Thread {
     pub frozen_since: AtomicU64,
 }
 
-// All fields (Atomic*, u32, u64) are Send + Sync.
+// 所有字段 (Atomic*, u32, u64) 满足 Send + Sync.
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe impl Send for Thread {}
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -141,9 +141,9 @@ pub struct ThreadTable {
 }
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
-// SAFETY: ThreadTable is always accessed via static THREAD_TABLE.
-// All mutations go through the Mutex, and the NonNull pointers target
-// Thread objects whose fields are all Atomic* or plain integers.
+// SAFETY: ThreadTable 始终通过静态 THREAD_TABLE 访问.
+// 所有变更都走 Mutex, NonNull 指针指向的 Thread 对象
+// 字段均为 Atomic* 或普通整数.
 unsafe impl Send for ThreadTable {}
 unsafe impl Sync for ThreadTable {}
 
@@ -203,7 +203,7 @@ pub struct ThreadManager {
     thread_count: AtomicU32,
 }
 
-// All fields (AtomicU64, AtomicU32) auto-implement Send + Sync.
+// 所有字段 (AtomicU64, AtomicU32) 自动实现 Send + Sync.
 
 impl ThreadManager {
     pub const fn new() -> Self {

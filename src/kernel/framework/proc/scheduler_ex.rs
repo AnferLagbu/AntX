@@ -195,7 +195,7 @@ pub struct RunQueue {
     count: AtomicU32,
 }
 
-// All fields (AtomicU64, AtomicU32) auto-implement Send + Sync.
+// 所有字段 (AtomicU64, AtomicU32) 自动实现 Send + Sync.
 
 impl RunQueue {
     const fn new() -> Self {
@@ -417,7 +417,7 @@ pub struct SchedulerEx {
     pub is_frozen_global: AtomicBool,
 }
 
-// All fields (RunQueue with Atomic*, AtomicU64, AtomicBool, plain stats) auto-implement Send + Sync.
+// 所有字段 (RunQueue 包含 Atomic*, AtomicU64, AtomicBool, 普通统计) 自动实现 Send + Sync.
 
 impl SchedulerEx {
     pub const fn new() -> Self {
@@ -871,7 +871,7 @@ mod tests {
         assert!(q.remove(t2));
         assert_eq!(q.len(), 2);
 
-        // t1 and t3 should still be there
+        // t1 与 t3 应该仍在
         let p1 = q.pop_front().unwrap();
         let p2 = q.pop_front().unwrap();
         // SAFETY: p1/p2 由 push_back 路径插入, pop_front 后未再被引用
@@ -890,7 +890,7 @@ mod tests {
 
     #[test]
     fn test_scheduler_ex_add_thread() {
-        // Create a fresh scheduler instance for isolated testing
+        // 为隔离测试创建全新的调度器实例
         let sched = SchedulerEx::new();
         sched.init();
 
@@ -941,13 +941,13 @@ mod tests {
         // SAFETY: t 由 make_test_thread 分配, 立即构造 ThreadRef
         let tr = unsafe { ThreadRef::new_unchecked(t) };
         assert!(tr.set_state(ThreadState::Ready).is_err()); // Created → Ready
-                                                            // Reset to Created for fresh test
+                                                            // 重置为 Created 以进行新的测试
         tr.store_state(ThreadState::Created as u32);
-        assert!(tr.set_state(ThreadState::Ready).is_err()); // Actually Created → Ready should be OK
+        assert!(tr.set_state(ThreadState::Ready).is_err()); // 其实 Created → Ready 应该是 OK
 
-        // This test validates state machine
+        // 本测试验证状态机
         let states = tr.load_state_raw();
-        // Just verify state is set
+        // 仅验证状态已设置
         assert!(states > 0);
 
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -1040,7 +1040,7 @@ mod tests {
 
         sched.schedule();
         let current = sched.current.load(Ordering::SeqCst);
-        // Should have switched to t (higher priority than idle)
+        // 应该已切到 t (优先级高于 idle)
         assert!(current != 0);
 
         // SAFETY: t/idle 在 schedule() 后未再被引用, 测试末释放
@@ -1067,7 +1067,7 @@ mod tests {
         sched.run_queues[ThreadPriority::Low as usize].push_back(zombie);
 
         sched.schedule();
-        // zombie was in queue[1=Low], should be empty after reap
+        // zombie 原本在 queue[1=Low], reap 后应为空
         assert!(sched.run_queues[ThreadPriority::Low as usize].is_empty());
 
         // SAFETY: zombie 经 reap 后, idle 经 schedule 后, 测试末释放
@@ -1086,7 +1086,7 @@ mod tests {
         sched.run_queues[ThreadPriority::Low as usize].push_back(t1);
         sched.run_queues[ThreadPriority::Low as usize].push_back(t2);
 
-        // Manually trigger boost
+        // 手动触发提升
         sched.boost_all();
 
         // SAFETY: t1/t2 由本测试 make_test_thread 分配, boost_all 后读 priority 验证

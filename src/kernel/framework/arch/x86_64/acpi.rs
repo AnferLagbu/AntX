@@ -93,7 +93,7 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
             break;
         }
 
-        // Multiboot2 tag 14 = ACPI old RSDP, tag 15 = ACPI new RSDP
+        // Multiboot2 tag 14 = 旧版 ACPI RSDP, tag 15 = 新版 RSDP
         if tag_type == 14 || tag_type == 15 {
             // SAFETY: 指针指向有效的 ACPI/Multiboot2 表 (长度已校验 ≥ offset / 8 + 1+sizeof(u64)); 只读访问
             let rsdp_ptr = unsafe { *((ptr as *const u64).add(offset / 8 + 1)) };
@@ -107,7 +107,7 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
         }
 
         offset += tag_size as usize;
-        // Align to 8-byte boundary
+        // 对齐到 8 字节边界
         offset = (offset + 7) & !7;
     }
 
@@ -181,7 +181,7 @@ fn get_rsdt(rsdp: u64) -> Option<&'static SdtHeader> {
     unsafe {
         let revision = ptr.add(15).read_volatile();
         if revision >= 2 {
-            // XSDT (64-bit pointers, always in revision >= 2)
+            // XSDT (64 位指针, 仅在 revision >= 2 中出现)
             let xsdt_addr = *(ptr.add(24) as *const u64);
             if xsdt_addr != 0 {
                 return Some(&*(xsdt_addr as *const SdtHeader));
@@ -579,14 +579,14 @@ pub fn acpi_reboot() -> ! {
     #[cfg(target_arch = "x86_64")]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
-        // Pulse reset line via keyboard controller (port 0x64, cmd 0xFE)
+        // 通过键盘控制器脉冲 reset 线路 (端口 0x64, 命令 0xFE)
         crate::arch!(outb(0x64u16, 0xFEu8));
     }
     loop {}
 }
 
 // ============================================================================
-// HPET (High Precision Event Timer)
+// HPET (高精度事件定时器)
 // ============================================================================
 
 /// HPET 结构
@@ -624,7 +624,7 @@ fn parse_hpet(hpet_ptr: u64) {
     // SAFETY: `hpet_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(HpetTable)); 只读访问
     let hpet = unsafe { &*(hpet_ptr as *const HpetTable) };
 
-    // Generic Address Structure: [0]=space_id, [4..8]=address
+    // 通用地址结构: [0]=space_id, [4..8]=address
     let base_addr = u64::from_le_bytes([
         hpet.address[4], hpet.address[5], hpet.address[6], hpet.address[7],
         0, 0, 0, 0,
@@ -649,7 +649,7 @@ pub fn get_hpet_info() -> Option<HpetInfo> {
 }
 
 // ============================================================================
-// DMAR (DMA Remapping) — IOMMU VT-d
+// DMAR (DMA 重映射) — IOMMU VT-d
 // ============================================================================
 
 /// DMAR 表头
@@ -665,7 +665,7 @@ struct DmarTable {
 /// DMAR Remapping Structure 类型
 const DMAR_TYPE_DRHD: u16 = 0x0000;
 
-/// DRHD (DMA Remapping Hardware Unit Definition)
+/// DRHD (DMA 重映射硬件单元定义)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 struct DrhdEntry {

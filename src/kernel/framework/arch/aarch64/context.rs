@@ -9,9 +9,9 @@
 //!   +0x10: x21       +0x50: x26       +0x90: sp
 //!   +0x18: x22       +0x58: x27       +0x98: ttbr0_el1
 //!   +0x20: x23       +0x60: x28       +0xA0: spsr_el1
-//!   +0x28: rbx(unused/0)             +0xA8: elr_el1
-//!   +0x30: rbp(unused/0)             +0xB0: ss(unused/0)
-//!   +0x38: rax(unused/0)
+//!   +0x28: rbx(未用/0)               +0xA8: elr_el1
+//!   +0x30: rbp(未用/0)               +0xB0: ss(未用/0)
+//!   +0x38: rax(未用/0)
 
 use core::arch::global_asm;
 
@@ -24,7 +24,7 @@ global_asm!(
 .section .text.context_switch, "ax"
 .global context_switch_asm
 
-// void context_switch_asm(u64* prev, const u64* next);
+// 汇编函数签名: void context_switch_asm(u64* prev, const u64* next);
 // x0 = prev (save), x1 = next (restore)
 context_switch_asm:
     // 禁用中断 (DAIF set)
@@ -32,7 +32,7 @@ context_switch_asm:
 
     // === Save current context to [x0] ===
 
-    // Callee-saved GP registers
+    // 被调用方保存的 GP 寄存器
     str  x19, [x0, #0x00]
     str  x20, [x0, #0x08]
     str  x21, [x0, #0x10]
@@ -52,9 +52,9 @@ context_switch_asm:
     // Map aarch64 → x86_64 fields:
     // x19→r15(0)  x20→r14(8)  x21→r13(16)  x22→r12(24)
     // x23→rbx(32)  x24→rbp(40)  x25→rax(48)
-    // x26→rip(56)  x27→rsp(64)  x28→rflags(72)
+    // 寄存器对应: x26→rip(56)  x27→rsp(64)  x28→rflags(72)
     // x29→cr3(80)  x30→cs(88)  sp→ds(96)
-    // ttbr0→es(104)  spsr→fs(112)  elr→gs(120)  0→ss(128)
+    // 字段映射: ttbr0→es(104)  spsr→fs(112)  elr→gs(120)  0→ss(128)
 
     str  x19, [x0, #0]
     str  x20, [x0, #8]
@@ -68,7 +68,7 @@ context_switch_asm:
     str  x28, [x0, #72]
     str  x29, [x0, #80]
     str  x30, [x0, #88]
-    // Save SP (current stack pointer before function call)
+    // 保存 SP (函数调用前的当前栈指针)
     mov  x2, sp
     str  x2, [x0, #96]
 
@@ -82,7 +82,7 @@ context_switch_asm:
     // ss field (128): write 0
     str  xzr, [x0, #128]
 
-    // === Restore next context from [x1] ===
+    // === 从 [x1] 恢复下一个上下文 ===
     ldr  x19, [x1, #0]
     ldr  x20, [x1, #8]
     ldr  x21, [x1, #16]

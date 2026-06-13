@@ -56,9 +56,8 @@ impl CoreArch for X8664 {
     fn timestamp() -> u64 {
         let lo: u32;
         let hi: u32;
-        // SAFETY: rdtsc is a serializing instruction that writes EAX/EDX; we
-        // declare nostack/nomem/preserves_flags so the compiler does not
-        // reorder or spill state across it.
+        // SAFETY: rdtsc 是序列化指令, 写 EAX/EDX; 声明 nostack/nomem/preserves_flags
+        // 防止编译器在指令间重排或溢出状态.
         unsafe {
             core::arch::asm!(
                 "rdtsc",
@@ -73,8 +72,8 @@ impl CoreArch for X8664 {
     /// CPU 暂停等待中断 (hlt)。
     #[inline(always)]
     fn halt() {
-        // SAFETY: hlt halts the CPU until the next interrupt; it touches no
-        // memory or registers visible to Rust. nomem/nostack is correct.
+        // SAFETY: hlt 暂停 CPU 至下一次中断; 不触及 Rust 可见的内存或寄存器.
+        // nomem/nostack 标注正确.
         unsafe {
             core::arch::asm!("hlt", options(nomem, nostack));
         }
@@ -83,8 +82,7 @@ impl CoreArch for X8664 {
     /// 全内存屏障 (mfence)。
     #[inline(always)]
     fn fence() {
-        // SAFETY: mfence orders all loads/stores to memory; no register
-        // clobbers declared, preserves_flags is correct.
+        // SAFETY: mfence 排序所有 load/store; 未声明寄存器 clobber, preserves_flags 正确.
         unsafe {
             core::arch::asm!("mfence", options(nostack, preserves_flags));
         }
@@ -116,9 +114,8 @@ impl InterruptArch for X8664 {
     #[inline(always)]
     fn interrupt_disable() -> usize {
         let flags: u64;
-        // SAFETY: pushes RFLAGS, pops into a general-purpose register, then
-        // disables interrupts via cli. nomem/nostack/preserves_flags are all
-        // satisfied by the instruction sequence.
+        // SAFETY: pushfq 压入 RFLAGS, pop 弹出到通用寄存器, 然后 cli 关中断.
+        // nomem/nostack/preserves_flags 全部由该指令序列满足.
         unsafe {
             core::arch::asm!(
                 "pushfq",
@@ -135,8 +132,7 @@ impl InterruptArch for X8664 {
     #[inline(always)]
     fn interrupt_restore(flags: usize) {
         if (flags as u64) & (1 << 9) != 0 {
-            // SAFETY: sti enables interrupts; nomem/nostack holds, no
-            // observable side-effect on memory.
+            // SAFETY: sti 启用中断; nomem/nostack 成立, 对内存无可观察副作用.
             unsafe {
                 core::arch::asm!("sti", options(nomem, nostack));
             }
@@ -156,8 +152,8 @@ impl InterruptArch for X8664 {
     #[inline(always)]
     fn is_interrupt_enabled() -> bool {
         let flags: u64;
-        // SAFETY: pushfq/pop sequence only reads RFLAGS into a register;
-        // flags remain preserved for caller. No memory or stack touched.
+        // SAFETY: pushfq/pop 序列仅将 RFLAGS 读入寄存器; 对调用方 flags 保持不变.
+        // 不触及内存或栈.
         unsafe {
             core::arch::asm!(
                 "pushfq",
@@ -216,8 +212,7 @@ impl MmuArch for X8664 {
     /// 刷新全部 TLB (重载 CR3)。
     #[inline(always)]
     fn tlb_flush_all() {
-        // SAFETY: reading and re-writing CR3 forces a full TLB flush; the
-        // intermediate register use is a direct move between GPR and CR3.
+        // SAFETY: 读再写 CR3 触发完整 TLB 刷新; 中间寄存器使用是 GPR 与 CR3 间的直接搬运.
         unsafe {
             core::arch::asm!(
                 "mov rax, cr3",

@@ -636,18 +636,18 @@ use raw::UserProcRef;
 ///   信号/文件系统/会话等所有元数据, 由 `PROCESS_TABLE` 管理.
 /// - `UserProcess` (本结构, FFI 镜像) — 仅缓存进入 Ring 3 路径上**热访问**的
 ///   字段 (pid/pwm/cr3/kernel_stack/user_stack/state), 以及**独占**的 FFI 字段
-///   (entry/stack_bottom/create_time).
+///   (`entry`、`stack_bottom`、`create_time`).
 ///
 /// # 字段分类
 ///
 /// ## 共享字段 (与 `Process` 重叠, 同步方向: Process → UserProcess)
 ///
-/// - `pid`           ←→ `Process::pid`
-/// - `pwm`           ←→ `Process::pwm` (AtomicU64)
-/// - `cr3`           ←→ `Process::cr3` (AtomicU64)
-/// - `kernel_stack`  ←→ `Process::kernel_stack` (AtomicU64)
-/// - `user_stack`    ←→ `Process::user_stack` (AtomicU64)
-/// - `state`         ←→ `Process::state` (AtomicU32)
+/// - `pid`           对应 `Process::pid`
+/// - `pwm`           对应 `Process::pwm` (类型 `AtomicU64`)
+/// - `cr3`           对应 `Process::cr3` (类型 `AtomicU64`)
+/// - `kernel_stack`  对应 `Process::kernel_stack` (类型 `AtomicU64`)
+/// - `user_stack`    对应 `Process::user_stack` (类型 `AtomicU64`)
+/// - `state`         对应 `Process::state` (类型 `AtomicU32`)
 ///
 /// 共享字段在 `create()` 完成后即与 `Process` 镜像同步; 运行期状态变更
 /// 优先写 `Process`, 然后通过 `sync_from_process()` 推送到本镜像.
@@ -767,9 +767,9 @@ pub struct UserProcManager {
     processes: Mutex<alloc::collections::BTreeMap<u32, NonNull<UserProcess>>>,
 }
 
-// SAFETY: UserProcManager is always accessed via static USER_PROC_MANAGER.
-// All mutations go through the Mutex, and the NonNull pointers target
-// UserProcess objects whose fields are all Atomic* or plain integers.
+// SAFETY: UserProcManager 始终通过静态 USER_PROC_MANAGER 访问.
+// 所有变更都走 Mutex, NonNull 指针指向的 UserProcess 对象
+// 字段均为 Atomic* 或普通整数.
 unsafe impl Send for UserProcManager {}
 unsafe impl Sync for UserProcManager {}
 
@@ -784,8 +784,8 @@ impl UserProcManager {
     pub fn init(&self) {}
 
     fn destroy(&self, proc: NonNull<UserProcess>, keep_kstack: bool) {
-        // SAFETY: proc is a NonNull<UserProcess> that was allocated via kmalloc
-        // and inserted into the BTreeMap. It remains valid until destroyed.
+        // SAFETY: proc 是 NonNull<UserProcess>, 由 kmalloc 分配并插入
+        // BTreeMap, 在 destroy 前始终有效.
         let proc_ref = raw::deref_non_null(proc);
         let cr3 = proc_ref.cr3.load(Ordering::SeqCst);
         if cr3 != 0 {
@@ -836,9 +836,9 @@ impl UserProcManager {
     {
         let processes = self.processes.lock();
         processes.get(&pid).map(|ptr| {
-            // SAFETY: ptr is a NonNull<UserProcess> from the BTreeMap.
-            // The process lives for the lifetime of the manager; processes
-            // are never freed while the lock is held.
+            // SAFETY: ptr 来自 BTreeMap 中的 NonNull<UserProcess>.
+            // 进程存活于 manager 的整个生命周期; 持锁时
+            // 进程永不被释放.
             f(raw::deref_non_null(*ptr))
         })
     }
@@ -975,9 +975,9 @@ impl UserProcManager {
 
         crate::kernel::framework::cpu::arch::set_kernel_stack(kstack);
 
-        // On aarch64, TTBR0_EL1 must point to the user page table before
-        // entering EL0. The user L0 table has kernel identity-mapped entries
-        // copied, so kernel code and MMIO remain accessible after the switch.
+        // 在 aarch64 上, TTBR0_EL1 在进入 EL0 前必须指向用户页表.
+        // 用户 L0 表复制了内核恒等映射条目, 因此切换后
+        // 内核代码与 MMIO 仍可访问.
         #[cfg(target_arch = "aarch64")]
         {
             raw::vmm_switch_to_user(cr3);
@@ -989,12 +989,12 @@ impl UserProcManager {
         }
     }
 
-    /// Write argc/argv/envp to the user process stack
-    /// Returns the new stack pointer (RSP) after setup
+    /// 将 argc/argv/envp 写入用户进程栈
+    /// 返回设置后的新栈指针 (RSP)
     ///
     /// # Safety
     ///
-    /// `pid` corresponds to a live process. Process table lock must be held by caller.
+    /// `pid` 对应一个活动进程. 调用方必须持有进程表锁.
     pub unsafe fn setup_user_stack(
         &self,
         proc: *mut UserProcess,
@@ -1012,7 +1012,7 @@ impl UserProcManager {
         let stack_top = proc_ref.load_user_stack();
         let cr3 = proc_ref.load_cr3();
 
-        // Space needed: argc(8) + argv_ptrs(8*(argc+1)) + envp_ptrs(8*(envc+1)) + strings
+        // 所需空间: argc(8) + argv 指针(8*(argc+1)) + envp 指针(8*(envc+1)) + 字符串
         let mut string_bytes: usize = 0;
         let mut arg_lens: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
 
@@ -1037,7 +1037,7 @@ impl UserProcManager {
 
         let ptr_count = 1 + (argc + 1) + (envc + 1); // argc(1) + argv(n+1) + envp(m+1)
         let total = ptr_count * 8 + string_bytes;
-        // Ensure 16-byte alignment
+        // 确保 16 字节对齐
         let total = (total + 15) & !15;
 
         if total as u64 > stack_top - USER_STACK_TOP + USER_STACK_SIZE {
@@ -1047,22 +1047,22 @@ impl UserProcManager {
         let new_sp = stack_top - total as u64;
         let mut pos = new_sp as usize;
 
-        // Write argc
+        // 写入 argc
         let argc_off = pos;
         pos += 8;
-        // Skip argv ptrs (written after strings)
+        // 跳过 argv 指针 (在字符串写完之后回填)
         let argv_start_off = pos;
         pos += (argc + 1) * 8;
-        // Skip envp ptrs
+        // 跳过 envp 指针
         let envp_start_off = pos;
         pos += (envc + 1) * 8;
-        // String area starts here
+        // 字符串区起始
         let strings_off = pos;
 
         // Write argc
         raw::write_user_u64(cr3, argc_off, argc as u64);
 
-        // Write argv strings + pointers
+        // 写入 argv 字符串与指针
         let mut str_off = strings_off;
         for i in 0..argc {
             let abs_addr = str_off as u64;
@@ -1083,15 +1083,15 @@ impl UserProcManager {
                 str_off += l;
             }
         }
-        // argv NULL terminator
+        // argv 末尾 NULL 哨兵
         raw::write_user_u64(cr3, argv_start_off + argc * 8, 0u64);
 
-        // envp pointers (all NULL for now)
+        // envp 指针 (暂时全填 NULL)
         for i in 0..(envc + 1) {
             raw::write_user_u64(cr3, envp_start_off + i * 8, 0u64);
         }
 
-        // Update process stack pointer
+        // 更新进程栈指针
         proc_ref.store_user_stack(new_sp);
         new_sp
     }
@@ -1179,9 +1179,9 @@ impl UserProcManager {
                     }
                     let flags = flags.bits();
 
-                    // On aarch64, the 2MB BLOCK descriptors in L2_DEVICE cause
-                    // vmm_get_physical_in_table to return non-zero for unmapped
-                    // user addresses. Skip the reuse check and always allocate.
+                    // 在 aarch64 上, L2_DEVICE 中的 2MB BLOCK 描述符
+                    // 会让 vmm_get_physical_in_table 对未映射的用户地址
+                    // 返回非零. 跳过复用检查, 一律分配.
                     #[cfg(target_arch = "aarch64")]
                     let existing_phys: u64 = 0;
                     #[cfg(not(target_arch = "aarch64"))]
@@ -1201,7 +1201,7 @@ impl UserProcManager {
                             page_count += 1;
                         }
                     } else {
-                        // Reuse existing page, record it
+                        // 复用现有页, 记录下来
                         if page_count < 1024 {
                             allocated_pages[page_count] = existing_phys;
                             page_count += 1;

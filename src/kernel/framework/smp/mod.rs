@@ -1,6 +1,6 @@
 //! SMP (Symmetric Multi-Processing) Support
 //!
-//! Multi-processor initialization, IPI, and per-CPU state management.
+//! 多处理器初始化、IPI 与每 CPU 状态管理.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 

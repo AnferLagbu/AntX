@@ -1,6 +1,6 @@
 //! 内存管理层架构抽象封装
 //!
-//! Thin wrapper over `Arch` trait methods — MMU/TLB operations.
+//! 封装 `Arch` trait 方法 — MMU/TLB 操作.
 //! 所有与 MMU 相关的架构操作集中在此文件。
 //!
 //! ## Phase 1 状态

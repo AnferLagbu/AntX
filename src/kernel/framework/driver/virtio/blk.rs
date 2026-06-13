@@ -1,12 +1,11 @@
 #![allow(dead_code)]
-//! VirtIO Block Device Driver
+//! VirtIO 块设备驱动
 //!
-//! Implements the VirtIO Block Device specification (device ID 2).
-//! Uses the split virtqueue for I/O submission and completion.
+//! 实现 VirtIO 块设备规范 (设备 ID 2).
+//! 使用 split virtqueue 进行 I/O 提交与完成.
 //!
-//! Reads/writes a single 512-byte sector per request.
-//! For performance, this can be extended to use multi-sector requests
-//! and multiple outstanding I/Os.
+//! 每次请求读/写单个 512 字节扇区.
+//! 性能上可扩展为多扇区请求与多 outstanding I/O.
 
 use super::queue::VirtQueue;
 use super::{VirtioMmioDevice, VIRTIO_ID_BLOCK};
@@ -57,40 +56,40 @@ impl IoCompletion {
     }
 }
 
-/// VirtIO block request header (little-endian).
+/// VirtIO 块请求头 (小端).
 #[repr(C)]
 #[derive(Debug)]
 struct BlkRequest {
-    req_type: u32, // 0=read, 1=write
+    req_type: u32, // 0=读, 1=写
     reserved: u32,
-    sector: u64, // LBA (little-endian)
+    sector: u64, // LBA (小端)
 }
 
-/// VirtIO block request status byte (written by device after completion).
+/// VirtIO 块请求状态字节 (设备完成后写入).
 const VIRTIO_BLK_S_OK: u8 = 0;
 const VIRTIO_BLK_S_IOERR: u8 = 1;
 const VIRTIO_BLK_S_UNSUPP: u8 = 2;
 
-// Request types
-const VIRTIO_BLK_T_IN: u32 = 0; // read
-const VIRTIO_BLK_T_OUT: u32 = 1; // write
+// 请求类型
+const VIRTIO_BLK_T_IN: u32 = 0; // 读
+const VIRTIO_BLK_T_OUT: u32 = 1; // 写
 
-// Config space offsets (relative to 0x100)
+// 配置空间偏移 (相对于 0x100)
 const BLK_CONFIG_CAPACITY_LO: usize = 0x00;
 const BLK_CONFIG_CAPACITY_HI: usize = 0x04;
 
-/// A virtio-blk device with its virtqueue.
+/// 带 virtqueue 的 virtio-blk 设备.
 pub struct VirtioBlk {
-    /// MMIO device transport reference.
+    /// MMIO 设备传输引用.
     pub device: VirtioMmioDevice,
-    /// The single virtqueue used for I/O.
+    /// 用于 I/O 的单个 virtqueue.
     pub vq: VirtQueue,
-    /// Total capacity in 512-byte sectors (from config space).
+    /// 以 512 字节扇区为单位的总容量 (来自配置空间).
     pub capacity_sectors: u64,
-    /// DMA buffer for pending I/O requests (allocated from PMM).
+    /// 待处理 I/O 请求的 DMA 缓冲区 (从 PMM 分配).
     io_buffer: *mut u8,
     io_buffer_phys: u64,
-    /// Status byte for the last completed request.
+    /// 最近一次已完成请求的状态字节.
     status_byte: u8,
     /// I-42: I/O 完成事件. ISR 路径 signal, do_io 等待时检查.
     completion: IoCompletion,
@@ -98,23 +97,22 @@ pub struct VirtioBlk {
     irq_registered: bool,
 }
 
-// SAFETY: VirtioBlk uses DMA buffers from PMM; single-owner &mut self
-// access ensures no concurrent I/O on the same device. MMIO writes
-// use volatile + fence for cross-CPU visibility.
+// SAFETY: VirtioBlk 使用 PMM 分配的 DMA 缓冲区; 单一所有者 &mut self
+// 访问防止同一设备并发 I/O. MMIO 写使用 volatile + 屏障以保证跨 CPU 可见性.
 unsafe impl Send for VirtioBlk {}
 unsafe impl Sync for VirtioBlk {}
 
 impl VirtioBlk {
-    /// Create and initialize a virtio-blk driver instance.
+    /// 创建并初始化 virtio-blk 驱动实例.
     ///
     /// # Safety
-    /// `device` must have device_id == VIRTIO_ID_BLOCK.
+    /// `device` 必须具有 device_id == VIRTIO_ID_BLOCK.
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_BLOCK {
             return None;
         }
 
-        // Initialize the transport layer
+        // 初始化传输层
         if device.init().is_err() {
             klog_warn!(
                 Driver,
@@ -124,21 +122,21 @@ impl VirtioBlk {
             return None;
         }
 
-        // Allocate the virtqueue
-        let vq = VirtQueue::new(false)?; // x86_64 uses modern mode
+        // 分配 virtqueue
+        let vq = VirtQueue::new(false)?; // x86_64 使用现代模式
 
-        // Set up virtqueue 0 on the device
+        // 在设备上配置 virtqueue 0
         if device.setup_vq(0, &vq).is_err() {
             return None;
         }
 
-        // Set DRIVER_OK — device goes live after queue configuration
+        // 设置 DRIVER_OK — 队列配置完成后设备进入 live
         device.set_driver_ok();
 
-        // Read capacity from config space
+        // 从配置空间读取容量
         let capacity = device.read_config64(BLK_CONFIG_CAPACITY_LO);
 
-        // Allocate IO buffer: 512 bytes for sector data + request header + status byte
+        // 分配 IO 缓冲区: 512 字节扇区数据 + 请求头 + 状态字节
         let buf_size = 512 + core::mem::size_of::<BlkRequest>() + 1;
         let buf_pages = buf_size.div_ceil(4096);
         extern "C" {
@@ -176,7 +174,7 @@ impl VirtioBlk {
         })
     }
 
-    /// Read a single sector (512 bytes) into `buf`.
+    /// 读取单个扇区 (512 字节) 到 `buf`.
     pub fn read_sector(&mut self, lba: u64, buf: &mut [u8]) -> Result<(), ()> {
         if buf.len() < 512 {
             return Err(());
@@ -184,7 +182,7 @@ impl VirtioBlk {
         self.do_io(lba, VIRTIO_BLK_T_IN, buf)
     }
 
-    /// Write a single sector (512 bytes) from `buf`.
+    /// 从 `buf` 写入单个扇区 (512 字节).
     pub fn write_sector(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
         if buf.len() < 512 {
             return Err(());
@@ -225,47 +223,47 @@ impl VirtioBlk {
         Err("virtio-blk IRQ not implemented for aarch64")
     }
 
-    /// Execute a single-sector I/O request via the virtqueue.
+    /// 执行单扇区 I/O 请求 (经 virtqueue).
     ///
-    /// Uses chained descriptors:
-    ///   desc[0] = BlkRequest header (device-read)
-    ///   desc[1] = data buffer (device-read for IN, device-write for OUT)
-    ///   desc[2] = status byte (device-write)
+    /// 使用链式描述符:
+    ///   desc[0] = BlkRequest 头 (设备读)
+    ///   desc[1] = 数据缓冲区 (IN 时设备写, OUT 时设备读)
+    ///   desc[2] = 状态字节 (设备写)
     fn do_io(&mut self, lba: u64, req_type: u32, buf: &[u8]) -> Result<(), ()> {
-        // ── Build the request in the DMA buffer ──
+        // ── 在 DMA 缓冲区构造请求 ──
         let req_size = core::mem::size_of::<BlkRequest>();
         let data_offset = req_size;
         let status_offset = data_offset + 512;
 
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            // Fill request header
+            // 填充请求头
             let req = &mut *(self.io_buffer as *mut BlkRequest);
             req.req_type = req_type.to_le();
             req.reserved = 0;
             req.sector = lba.to_le();
 
-            // For writes, copy data into DMA buffer
+            // 写入时, 将数据复制到 DMA 缓冲区
             if req_type == VIRTIO_BLK_T_OUT {
                 let dst = self.io_buffer.add(data_offset);
                 core::ptr::copy_nonoverlapping(buf.as_ptr(), dst, buf.len().min(512));
             }
         }
 
-        // ── Prepare descriptor chain ──
+        // ── 准备描述符链 ──
         let desc_req = self
             .vq
-            .prepare_desc(self.io_buffer_phys, req_size as u32, false); // device reads header
+            .prepare_desc(self.io_buffer_phys, req_size as u32, false); // 设备读头
         let desc_data = self.vq.prepare_desc(
             self.io_buffer_phys + data_offset as u64,
             512,
             req_type == VIRTIO_BLK_T_IN,
-        ); // IN=device writes
+        ); // IN=设备写
         let desc_status = self
             .vq
-            .prepare_desc(self.io_buffer_phys + status_offset as u64, 1, true); // device writes status
+            .prepare_desc(self.io_buffer_phys + status_offset as u64, 1, true); // 设备写状态
 
-        // Link the chain: req → data → status
+        // 链接链: req → data → status
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             (*self.vq.desc.add(desc_req as usize)).flags |= super::queue::VQ_DESC_F_NEXT;
@@ -280,18 +278,18 @@ impl VirtioBlk {
         self.vq.submit(desc_req);
         self.vq.commit_and_kick();
 
-        // Ensure writes are visible before notifying the device
+        // 通知设备前确保写可见
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
         self.device.notify(0);
 
-        // ── Wait for completion (I-42: 事件驱动) ──
+        // ── 等待完成 (I-42: 事件驱动) ──
         //
         // 原实现: 紧接 `pop_used()` 自旋, 长时间空转浪费 CPU, 单核可能活锁.
         // 新实现: 优先等 `completion.done`, 由 `virtio_blk_irq_handler` ISR signal;
         //        若 irq_registered=false (测试/未注册) 或等不到 (timeout 退路),
         //        才进入原 pop_used spin-loop.
         //
-        // I-42 timeout: bound ~10ms 等待 ISR, 之后降级为直接 pop_used.
+        // I-42 timeout: 限制 ~10ms 等待 ISR, 之后降级为直接 pop_used.
         // 10ms 是 HDD 平均寻道时间, 在此期间 CPU 几乎零开销.
         if self.irq_registered {
             const EVENT_WAIT_BOUND: u32 = 10_000_000; // ~10ms @ 1 GHz spin_loop()
@@ -310,12 +308,12 @@ impl VirtioBlk {
             }
         }
 
-        // ── Drain used ring ──
+        // ── 排空 used ring ──
         // IRQ 路径下 `completion` 已 set, 这里一次 pop_used 就拿到结果;
         // poll 退路下走原 spin loop.
         loop {
             if let Some((_id, _len)) = self.vq.pop_used() {
-                // Check status byte
+                // 检查状态字节
                 // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                 let status = unsafe { *self.io_buffer.add(status_offset) };
                 self.vq.reclaim_desc(desc_status);
@@ -326,7 +324,7 @@ impl VirtioBlk {
                     return Err(());
                 }
 
-                // For reads, copy data from DMA buffer to user buffer
+                // 读操作: 将数据从 DMA 缓冲区复制到用户缓冲区
                 if req_type == VIRTIO_BLK_T_IN {
                     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     let src = unsafe { self.io_buffer.add(data_offset) };
@@ -338,7 +336,7 @@ impl VirtioBlk {
 
                 return Ok(());
             }
-            // spin-wait with a hint (仅在 IRQ 模式下不会到这里, 因 completion.is_done
+            // 自旋等待, 带 hint (仅在 IRQ 模式下不会到这里, 因 completion.is_done
             // 为 true 时 pop_used 必成功; poll 退路或未注册 IRQ 才走此分支).
             core::hint::spin_loop();
         }
@@ -357,7 +355,7 @@ impl VirtioBlk {
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn virtio_blk_irq_handler(_frame: *mut InterruptFrame) {
-    // Acknowledge interrupt at device level by writing ISR status.
+    // 通过写 ISR 状态在设备层确认中断.
     // 简化处理: 仅 signal 全局事件; 真正的设备 ISR acknowledge 由 IDT 层 EOI 完成.
     // 设备上下文寄存器写入留作后续优化 (避免重复触发).
     // SAFETY: 静态指针由 bind_virtio_blk_completion 在 enable_irq 前设置一次,
@@ -379,13 +377,13 @@ pub fn bind_virtio_blk_completion(c: &IoCompletion) {
     }
 }
 
-/// Check if a device ID indicates a block device.
+/// 检查设备 ID 是否表示块设备.
 #[inline]
 pub fn is_block_device(device_id: u32) -> bool {
     device_id == VIRTIO_ID_BLOCK
 }
 
-// ── BlockDevice trait implementation ──
+// ── BlockDevice trait 实现 ──
 
 impl BlockDevice for VirtioBlk {
     fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {

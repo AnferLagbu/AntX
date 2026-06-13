@@ -115,7 +115,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
         }
         F_SETFL => 0,
         F_DUPFD => sys_dup2(fd, arg as i32),
-        // POSIX record locks (F_SETLK / F_GETLK / F_SETLKW)
+        // POSIX record locks (F_SETLK / F_GETLK / F_SETLKW)  // fcntl 文件锁命令
         5 | 6 | 7 => sys_fcntl_posix_lock(fd, cmd, arg),
         _ => Errno::EINVAL.as_ret(),
     }
@@ -124,8 +124,8 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
 /// fcntl POSIX record lock 处理
 ///
 /// `arg` 指向用户空间的 `flock` 结构体:
-///   l_type:  i16  (F_RDLCK=0, F_WRLCK=1, F_UNLCK=2)
-///   l_whence: i16 (0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)
+///   l_type:  i16  (F_RDLCK=0, F_WRLCK=1, F_UNLCK=2)  // 锁类型
+///   l_whence: i16 (0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)  // 偏移基准
 ///   l_start: i64
 ///   l_len:   i64  (0=到文件末尾)
 ///   l_pid:   i32  (F_GETLK 返回冲突锁的 PID)

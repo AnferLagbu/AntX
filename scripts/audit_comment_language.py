@@ -61,6 +61,12 @@ ALLOWED_ENGLISH_TERMS = frozenset({
     "MMIO", "DMA", "PCID", "INVPCID", "KPTI", "SMEP", "SMAP", "NX",
     "SCTLR", "TCR", "TTBR", "TTBR0", "TTBR1", "ESR", "ELR", "SPSR", "FAR",
     "HPET", "ACPI", "MSI", "MSIX", "PVH", "PV", "KVM",
+    # rusage / 资源使用常量 (Linux/POSIX)
+    "RUSAGE_SELF", "RUSAGE_CHILDREN", "RUSAGE_THREAD",
+    "ru_utime", "ru_stime", "ru_maxrss", "ru_minflt", "ru_majflt",
+    "ru_inblock", "ru_oublock", "ru_nvcsw", "ru_nivcsw", "ru_ixrss",
+    "ru_idrss", "ru_isrss", "ru_msgsnd", "ru_msgrcv", "ru_nsignals",
+    "tv_sec", "tv_usec",
     # 错误码
     "ENOENT", "EINVAL", "EAGAIN", "EBUSY", "EFAULT", "ENOSPC", "ENOMEM",
     "EACCES", "EEXIST", "ENOTDIR", "EISDIR", "EROFS", "ENOSYS", "EPERM",
@@ -96,6 +102,12 @@ ALLOWED_ENGLISH_TERMS = frozenset({
     "namespaces", "pwm", "PWM", "credo", "Credo", "sched", "Scheduler",
     "schedule", "scheduler", "tickless", "shadow", "secure_boot",
     "iopl", "ioperm", "io_uring", "iovec",
+    # 扩展 syscall 名称 (linuxulator 表中纯标识符引用)
+    "mlock", "mlockall", "munlock", "munlockall", "mincore",
+    "timer_create", "timer_settime", "timer_gettime", "timer_delete",
+    "timer_getoverrun", "clock_getres", "clock_gettime",
+    "unshare", "setns", "get_mempolicy", "set_mempolicy",
+    "migrate_pages", "getcpu", "brk", "mremap",
     # 常用英文技术词
     "TODO", "FIXME", "XXX", "NOTE", "HACK", "BUG", "WARNING", "WARN",
     "unsafe", "SAFETY", "default", "Default", "kernel", "Kernel",
@@ -298,6 +310,9 @@ def is_register_doc(text: str) -> bool:
         # 进一步过滤: 必须含 bit 或 @ 或括号包裹
         if re.search(r"(\bbit\b|@|\(|\))", body, re.IGNORECASE):
             return True
+    # 位位置标注 (bits NN-MM / bit NN / [NN:MM])
+    if re.search(r"(\bbit[s]?\s+\d|\[\d+:\d+\])", body, re.IGNORECASE):
+        return True
     # 偏移量标注 `0xNN`
     if re.search(r"offset\s+0x[0-9A-Fa-f]+", body):
         return True
@@ -316,6 +331,24 @@ def is_code_example(text: str) -> bool:
     return len(matches) >= 2
 
 
+def is_markdown_table(text: str) -> bool:
+    """检测是否为 Markdown 表格行 (| col | col | ... |).
+
+    用途: 模块级文档中的 ASCII/Markdown 寄存器表格, 本身是数据呈现
+    形式而非自然语言段落, 不应被视作英文段落违规.
+    """
+    # 兼容 /// / //! / // / * / /* 等注释前缀
+    body = re.sub(r"^\s*(?://{1,3})?!?\s*", "", text)
+    body = re.sub(r"\*/$", "", body).strip()
+    # 表格行: 以 | 开头, 含 2+ 个 | 分隔符
+    if body.startswith("|") and body.endswith("|") and body.count("|") >= 4:
+        return True
+    # 表格分隔行: |---|---|---|
+    if re.match(r"^\|[\s\-:|]+\|$", body):
+        return True
+    return False
+
+
 def is_allowed_term(word: str) -> bool:
     """判断英文单词是否在例外清单中."""
     return word in ALLOWED_ENGLISH_TERMS
@@ -328,6 +361,11 @@ def detect_violation(comment_text: str) -> tuple[bool, str]:
     """
     stripped = comment_text.strip()
     if not stripped:
+        return False, ""
+
+    # SPDX License 标识 (必须保留, 国际通用)
+    spdx_body = re.sub(r"^\s*(?:///?|\*|/\*)", "", stripped).strip()
+    if spdx_body.startswith("SPDX-License-Identifier:"):
         return False, ""
 
     # 短注释 (< 4 字符) 跳过
@@ -346,8 +384,8 @@ def detect_violation(comment_text: str) -> tuple[bool, str]:
     if is_register_doc(stripped):
         return False, ""
 
-    # SPDX License 标识符豁免 (标准法律标识, 不可改)
-    if re.match(r"^\s*SPDX-License-Identifier\s*:", stripped, re.IGNORECASE):
+    # Markdown 表格行豁免 (模块文档中的寄存器布局表)
+    if is_markdown_table(stripped):
         return False, ""
 
     # 代码示例豁免 (文档中嵌入的 Rust/C 代码块)

@@ -68,7 +68,7 @@ static mut TTBR1_L1: AlignedPageTable = AlignedPageTable([0; 512]);
 ///   L0[0] → L1_IDMAP
 ///   
 /// L1[0] → L2_DEVICE (2MB 粒度, 全部 Device memory — QEMU virt 低 1GB 无 DRAM)
-/// L1[1] → 1GB block: PA 0x40000000 (DRAM, kernel @ 0x40080000, Normal memory)
+/// L1[1] → 1GB 块: PA 0x40000000 (DRAM, kernel @ 0x40080000, Normal 内存)
 ///
 /// 所有映射均为 EL1 RW。
 ///
@@ -98,15 +98,15 @@ pub unsafe fn init() {
         L2_DEVICE.0[i] = pa | PT_TYPE_BLOCK | PT_AF | PT_ATTR_DEVICE | PT_AP_EL1_RW;
     }
 
-    // L1[1]: VA 1-2GB → PA 1-2GB (DRAM, kernel @ 0x40080000, Normal memory)
+    // L1[1]: VA 1-2GB → PA 1-2GB (DRAM, kernel @ 0x40080000, Normal 内存)
     L1_IDMAP.0[1] = 0x40000000 | PT_TYPE_BLOCK | PT_AF | PT_ATTR_NORMAL | PT_AP_EL1_RW;
 
     // 设置 TTBR0_EL1
     set_ttbr0(L0_TABLE.0.as_ptr() as u64);
 
     // 设置 TCR_EL1 (Translation Control Register)
-    // T0SZ=16 (48-bit IPA for TTBR0), T1SZ=16 (48-bit IPA for TTBR1)
-    // 4KB granule (TG0=00, TG1=10), Inner Shareable, Normal cacheable
+    // T0SZ=16 (TTBR0 用 48-bit IPA), T1SZ=16 (TTBR1 用 48-bit IPA)
+    // 4KB 颗粒 (TG0=00, TG1=10), 内部共享, Normal 可缓存
     #[allow(clippy::identity_op)]
     let tcr: u64 = 16u64 // T0SZ: 64 - 48 = 16
                   | (16u64 << 16)   // T1SZ: 64 - 48 = 16
@@ -121,10 +121,10 @@ pub unsafe fn init() {
     set_tcr(tcr);
 
     // 设置 MAIR_EL1 (Memory Attribute Indirection Register)
-    // PT_ATTR_NORMAL = (0b0100<<2)|(0b0100<<8) → AttrIndx=4
-    // PT_ATTR_DEVICE = (0b0000<<2)|(0b0000<<8) → AttrIndx=0
-    // MAIR[0] = 0x44 (Device-nGnRnE, for PT_ATTR_DEVICE)
-    // MAIR[4] = 0xFF (Normal IWBWA OWBWA, for PT_ATTR_NORMAL)
+    // 定义: PT_ATTR_NORMAL = (0b0100<<2)|(0b0100<<8) → AttrIndx=4
+    // 定义: PT_ATTR_DEVICE = (0b0000<<2)|(0b0000<<8) → AttrIndx=0
+    // MAIR[0] = 0x44 (Device-nGnRnE, 对应 PT_ATTR_DEVICE)
+    // MAIR[4] = 0xFF (Normal IWBWA OWBWA, 对应 PT_ATTR_NORMAL)
     let mair: u64 = 0x44                     // Attr0: Device
                    | (0xFFu64 << 32); // Attr4: Normal
     set_mair(mair);
@@ -152,7 +152,7 @@ pub unsafe fn init() {
 ///
 /// TTBR1 页表层级:
 ///   TTBR1_L0[511] → TTBR1_L1
-///   TTBR1_L1[i]  → 2MB block mapping (i * 2MB → i * 2MB physical)
+///   TTBR1_L1[i]  → 2MB 块映射 (i * 2MB → i * 2MB 物理)
 #[allow(clippy::identity_op)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn init_kernel_ttbr1() {

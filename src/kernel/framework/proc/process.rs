@@ -218,7 +218,7 @@ pub struct Process {
 // 3. 不存在内部可变性导致的未同步修改
 // 4. 调度器在切换进程时通过 scheduler_lock 保护整个 ProcessTable
 //
-// All fields (Mutex<T>, Atomic*, u32, u64, bool, Option<ProcessId>) auto-implement Send + Sync.
+// 所有字段 (Mutex<T>, Atomic*, u32, u64, bool, Option<ProcessId>) 自动 Send+Sync.
 
 impl Process {
     pub fn new(pid: Pid, name: &str, parent: Option<ProcessId>) -> Self {
@@ -310,8 +310,8 @@ impl Process {
             if stack.is_null() {
                 return false;
             }
-            // Convert physical address to higher-half virtual address so that
-            // TSS RSP0 is accessible when the user page table is loaded.
+            // 将物理地址转换为高半段虚拟地址, 以便在用户页表加载时
+            // 仍能访问 TSS RSP0.
             let stack_top = stack as u64 + KERNEL_BASE + KERNEL_STACK_SIZE as u64;
             self.kernel_stack.store(stack_top, Ordering::SeqCst);
             kernel_stack_write_canary(stack_top);
@@ -369,11 +369,6 @@ impl Process {
 
         // 执行状态转换
         self.state.store(new_state as u32, Ordering::Release);
-
-        // ✅ 审计日志 (调试模式) - 已禁用: no_std 环境
-        // #[cfg(debug_assertions)]
-        // eprintln!("[PROCESS] PID={} {}→{}",
-        //           self.pid.0, current.name(), new_state.name());
 
         Ok(())
     }
@@ -479,10 +474,10 @@ pub struct ProcessTable {
     next_pid: AtomicU32,
 }
 
-// SAFETY: ProcessTable is always accessed via static PROCESS_TABLE.
-// Process fields are all Mutex/Atomic*/plain integers, making Process Send+Sync.
-// NonNull<Process> does not auto-impl Send+Sync in nightly 1.97, hence the explicit impl.
-// All mutations go through the Mutex.
+// SAFETY: ProcessTable 始终通过静态 PROCESS_TABLE 访问.
+// Process 字段全是 Mutex/Atomic*/普通整数, Process 自动 Send+Sync.
+// NonNull<Process> 在 nightly 1.97 不会自动 Send+Sync, 因此显式 impl.
+// 所有变更都通过 Mutex 进行.
 unsafe impl Send for ProcessTable {}
 unsafe impl Sync for ProcessTable {}
 
@@ -556,7 +551,7 @@ impl ProcessTable {
         match table[pid as usize] {
             Some(mut nn) => {
                 // SAFETY: nn is a valid NonNull pointer inserted by insert().
-                // Mutex lock guarantees exclusive access.
+                // Mutex 锁保证独占访问.
                 let proc_ref = unsafe { nn.as_mut() };
                 Some(f(proc_ref))
             }
@@ -591,8 +586,7 @@ impl ProcessTable {
                 if prev == 0 {
                     table[pid as usize] = None;
                     drop(table);
-                    // SAFETY: nn was allocated via Box::into_raw, and we hold
-                    // the only reference (ref_count reached 0).
+                    // SAFETY: nn 由 Box::into_raw 分配, 且我们持有唯一引用 (ref_count 归零).
                     unsafe {
                         let boxed = Box::from_raw(nn.as_ptr());
                         drop(boxed);
@@ -626,14 +620,13 @@ impl ProcessTable {
         match table[pid as usize] {
             Some(nn) => {
                 // SAFETY: nn is a valid NonNull pointer inserted by insert().
-                // Mutex lock guarantees exclusive access.
+                // Mutex 锁保证独占访问.
                 let proc = unsafe { nn.as_ref() };
                 let prev = proc.dec_ref();
                 if prev == 0 && proc.pending_free.load(Ordering::Acquire) {
                     table[pid as usize] = None;
                     drop(table);
-                    // SAFETY: nn was allocated via Box::into_raw, and we hold
-                    // the only reference (ref_count reached 0).
+                    // SAFETY: nn 由 Box::into_raw 分配, 且我们持有唯一引用 (ref_count 归零).
                     unsafe {
                         let boxed = Box::from_raw(nn.as_ptr());
                         drop(boxed);
@@ -667,9 +660,8 @@ struct ProcSnapshot {
     slots: [Option<NonNull<Process>>; MAX_PROCESSES],
 }
 
-// SAFETY: ProcSnapshot is a snapshot of the process table. It contains
-// NonNull<Process> pointers which are valid until the snapshot is discarded.
-// Accessed only under PROC_SNAPSHOT Mutex.
+// SAFETY: ProcSnapshot 是进程表的快照. 它包含的 NonNull<Process>
+// 指针在快照丢弃前一直有效. 仅在 PROC_SNAPSHOT Mutex 保护下访问.
 unsafe impl Send for ProcSnapshot {}
 unsafe impl Sync for ProcSnapshot {}
 

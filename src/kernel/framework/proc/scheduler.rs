@@ -32,15 +32,15 @@ use super::cfs::{
 use super::process::{Process, PROCESS_TABLE};
 use super::types::*;
 
-// === E2: Unsafe Concentration — raw sub-module ===
+// === E2: unsafe 集中化 — 裸子模块 ===
 //
-// FFI calls and per-CPU pointer dereferences that cannot be expressed
-// in safe Rust are encapsulated here.
+// FFI 调用与每 CPU 指针解引用无法在 safe Rust 中表达,
+// 在此集中封装.
 pub(crate) mod raw {
-    /// Update the per-CPU `current_process_ptr` used by assembly entry paths.
+    /// 更新每 CPU 的 `current_process_ptr`, 供汇编入口路径使用.
     ///
     /// # Safety
-    /// - `ptr` must be a valid `*const Process` or 0
+    /// - `ptr` 必须是合法的 `*const Process` 或 0
     #[inline(always)]
     pub unsafe fn update_current_process_ptr(ptr: u64) {
         extern "C" {
@@ -49,10 +49,10 @@ pub(crate) mod raw {
         update_current_process_ptr(ptr);
     }
 
-    /// Get a `&'static PerCpuSched` from an `Option` guard.
+    /// 从 `Option` 守护对象得到 `&'static PerCpuSched`.
     ///
     /// # Safety
-    /// - `guard` must be `Some` and the pointer must remain valid for `'static`
+    /// - `guard` 必须为 `Some` 且指针在 `'static` 内保持有效
     #[inline(always)]
     pub unsafe fn per_cpu_from_option<T>(guard: &Option<T>) -> &T {
         guard.as_ref().unwrap_unchecked()
@@ -156,7 +156,7 @@ struct PerCpuSched {
     fifo_watchdog: AtomicU64,
 }
 
-// All fields (Mutex<VecDeque<Pid>>, Mutex<CfsRunQueue>, Mutex<DlRunQueue>, Atomic*) auto-implement Send + Sync.
+// 所有字段 (Mutex<VecDeque<Pid>>, Mutex<CfsRunQueue>, Mutex<DlRunQueue>, Atomic*) 自动实现 Send + Sync.
 
 static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; crate::kernel::framework::config::MAX_CPUS] =
     [const { Mutex::new(None) }; crate::kernel::framework::config::MAX_CPUS];
@@ -199,8 +199,8 @@ fn per_cpu() -> &'static PerCpuSched {
         }
     }
     let guard = PER_CPU_SCHED[idx].lock();
-    // SAFETY: guard is guaranteed Some after init_per_cpu_sched; pointer
-    // remains valid for the static lifetime of PER_CPU_SCHED entries.
+    // SAFETY: init_per_cpu_sched 之后 guard 必为 Some; 指针在 PER_CPU_SCHED
+    // 静态生命周期内保持有效.
     unsafe {
         let per_cpu = raw::per_cpu_from_option(&guard);
         &*(per_cpu as *const PerCpuSched)
@@ -325,7 +325,7 @@ impl Scheduler {
         self.cfs_enqueue(pid);
     }
 
-    /// Set nice value and update the process's CFS weight.
+    /// 设置 nice 值并更新进程的 CFS 权重.
     pub fn set_nice(&self, pid: Pid, nice: i8) {
         PROCESS_TABLE.with_process(pid, |proc| {
             let clamped = nice.clamp(-20, 19);
@@ -335,7 +335,7 @@ impl Scheduler {
         });
     }
 
-    /// Enqueue a process into the CFS run queue.
+    /// 将进程入队 CFS 运行队列.
     fn cfs_enqueue(&self, pid: Pid) {
         let per_cpu = per_cpu();
         let vr = PROCESS_TABLE.with_process(pid, |p| {
@@ -351,7 +351,7 @@ impl Scheduler {
         }
     }
 
-    /// Set SCHED_DEADLINE parameters for a process.
+    /// 为进程设置 SCHED_DEADLINE 参数.
     pub fn set_deadline_params(&self, pid: Pid, params: DeadlineParams) -> bool {
         if !params.is_valid() {
             return false;
@@ -404,7 +404,7 @@ impl Scheduler {
         }
     }
 
-    /// Pick a deadline task (EDF — earliest absolute deadline first).
+    /// 选取一个 deadline 任务 (EDF —— 绝对 deadline 最早者优先).
     fn pick_deadline_task(&self) -> Option<Pid> {
         let per_cpu = per_cpu();
         let mut dl_rq = per_cpu.dl_rq.lock();
@@ -424,9 +424,9 @@ impl Scheduler {
                     per_cpu.dl_running.store(true, Ordering::SeqCst);
                     Some(pid)
                 } else {
-                    // pick_next() removed the task from the tree but
-                    // preserved nr_running (same as CfsRunQueue).
-                    // reinsert() puts it back without touching counters.
+                    // pick_next() 已从树中移除任务, 但
+                    // 保留 nr_running (与 CfsRunQueue 相同).
+                    // reinsert() 把它放回去, 不修改计数器.
                     dl_rq.reinsert(pid, dl_abs);
                     per_cpu.dl_running.store(false, Ordering::SeqCst);
                     None
@@ -439,7 +439,7 @@ impl Scheduler {
         }
     }
 
-    /// Pick a CFS task (minimum vruntime).
+    /// 选取一个 CFS 任务 (vruntime 最小者).
     fn pick_cfs_task(&self) -> Option<Pid> {
         let per_cpu = per_cpu();
         let mut cfs_rq = per_cpu.cfs_rq.lock();
@@ -468,9 +468,8 @@ impl Scheduler {
                     });
                     Some(pid)
                 } else {
-                    // Task was removed from tree by pick_next() but is not
-                    // schedulable (blocked/zombie/wrong policy). Re-insert
-                    // it to avoid silently losing the task.
+                    // 任务已被 pick_next() 从树中移除, 但不可调度
+                    // (阻塞/僵尸/策略错). 重新插入以避免静默丢失.
                     cfs_rq.update_curr(pid, vr);
                     None
                 }
@@ -487,7 +486,7 @@ impl Scheduler {
 
         let mut next_pid = self.pick_deadline_task();
 
-        // 2. RT (FIFO/RR) — preserved from MLFQ
+        // 2. RT (FIFO/RR) —— 从 MLFQ 保留
         if next_pid.is_none() {
             per_cpu.dl_running.store(false, Ordering::SeqCst);
 
@@ -541,12 +540,12 @@ impl Scheduler {
             }
         }
 
-        // 3. CFS (vruntime minimum) — replaces MLFQ for SCHED_NORMAL
+        // 3. CFS (vruntime 最小) —— 取代 MLFQ 用于 SCHED_NORMAL
         if next_pid.is_none() {
             next_pid = self.pick_cfs_task();
         }
 
-        // 4. Load balance if nothing found locally
+        // 4. 本地无候选时进行负载均衡
         if next_pid.is_none() && crate::kernel::framework::smp::is_enabled() {
             self.load_balance();
             next_pid = self.pick_cfs_task();
@@ -609,7 +608,7 @@ impl Scheduler {
             super::user_proc::USER_PROC_MANAGER.set_current(Some(user_proc));
         }
 
-        // Re-enqueue the previous task
+        // 重新入队上一个任务
         if let Some(ref _prev_proc) = prev_ptr {
             let was_dl = per_cpu.dl_running.load(Ordering::SeqCst);
             let was_rt = per_cpu.rt_running.load(Ordering::SeqCst);
@@ -618,10 +617,9 @@ impl Scheduler {
                 let dl_info =
                     PROCESS_TABLE.with_process(current_pid, |p| p.dl_abs.load(Ordering::Acquire));
                 if let Some(dl_abs) = dl_info {
-                    // pick_next() preserved nr_running (same as CFS).
-                    // reinsert() puts the task back into the tree
-                    // without touching counters — the task was already
-                    // counted at initial enqueue.
+                    // pick_next() 保留了 nr_running (与 CFS 相同).
+                    // reinsert() 把任务放回树, 不修改计数器
+                    // —— 任务在最初入队时已计入.
                     per_cpu.dl_rq.lock().reinsert(current_pid, dl_abs);
                 }
             } else if was_rt {
@@ -682,14 +680,14 @@ impl Scheduler {
         });
 
         let next_ctx_ptr = next_ptr.map_or(core::ptr::null(), |p| {
-            // SAFETY: next_ptr comes from PROCESS_TABLE.get() which returns a valid
-            // pointer to a live Process. We only read the context field address.
+            // SAFETY: next_ptr 来自 PROCESS_TABLE.get(), 它返回指向活动
+            // Process 的合法指针. 这里只读取 context 字段地址.
             unsafe { &raw const (*p).context as *const Mutex<ProcessContext> }
         });
 
         if !prev_ctx_ptr.is_null() {
-            // SAFETY: Both pointers are valid and derived from live Process entries
-            // in the PROCESS_TABLE. context_switch saves/restores register state.
+            // SAFETY: 两指针均派生自 PROCESS_TABLE 中活动的 Process 条目,
+            // 合法有效. context_switch 保存/恢复寄存器状态.
             unsafe {
                 let mut prev_ctx = (*prev_ctx_ptr).lock();
                 let next_ctx = (*next_ctx_ptr).lock();
@@ -924,7 +922,7 @@ impl Scheduler {
         false
     }
 
-    /// Convenience: check if any runnable task exists (level 0 queues).
+    /// 便捷: 检查是否存在任意可运行任务 (level 0 队列).
     pub fn has_any_runnable(&self) -> bool {
         self.has_runnable()
     }
@@ -970,13 +968,13 @@ impl Scheduler {
             crate::kernel::framework::mm::swap::kswapd_wakeup();
         }
 
-        // Periodic CFS boost — prevent vruntime starvation
+        // 周期性 CFS 提升 —— 防止 vruntime 饥饿
         if new_tick.is_multiple_of(CFS_BOOST_INTERVAL_TICKS) {
             let mut cfs_rq = per_cpu.cfs_rq.lock();
             cfs_rq.boost_all_vruntime();
         }
 
-        // Periodic MLFQ boost — migrate long-wait tasks to level 0
+        // 周期性 MLFQ 提升 —— 长时间等待的任务迁回 level 0
         if new_tick.is_multiple_of(SCHED_BOOST_INTERVAL) {
             self.boost_priority();
         }
@@ -993,7 +991,7 @@ impl Scheduler {
                 }
             }
 
-            // Tick accounting: per-policy time tracking
+            // Tick 计数: 按策略的时间跟踪
             let is_dl = per_cpu.dl_running.load(Ordering::SeqCst);
 
             if is_dl {
@@ -1051,15 +1049,15 @@ impl Scheduler {
                     }
                 }
             } else if current_pid != 0 {
-                // CFS — time slice and vruntime-based preemption.
+                // CFS —— 时间片与基于 vruntime 的抢占.
                 let old_remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
                 if old_remaining == 1 {
                     per_cpu.need_reschedule.store(true, Ordering::SeqCst);
                 }
 
-                // IMPORTANT: Do NOT re-insert the running task into the tree here.
-                // The running task stays out of the tree; it will be re-enqueued
-                // only when it stops running (in schedule's re-enqueue path).
+                // 重要: 不要在此把运行中任务重新插入树.
+                // 运行中任务保持在树外, 仅在停止运行时
+                // (schedule 的重新入队路径) 才会被重新入队.
                 let (should_preempt, should_yield) = {
                     let cfs_rq = per_cpu.cfs_rq.lock();
                     let vr = PROCESS_TABLE
@@ -1096,7 +1094,7 @@ impl Scheduler {
             }
         }
 
-        // Sleep wakeup scan
+        // 睡眠唤醒扫描
         {
             let current_ticks = new_tick;
             let mut to_wake: [Pid; 8] = [0; 8];
@@ -1164,7 +1162,7 @@ impl Scheduler {
             }
         }
 
-        // Periodic load balance
+        // 周期性负载均衡
         if new_tick.is_multiple_of(64) {
             let local_load = self.total_runnable_for(crate::kernel::framework::smp::get_current_cpu());
             if local_load < 2 {
@@ -1262,7 +1260,7 @@ impl Scheduler {
         for level in 0..MLFQ_LEVELS {
             count += sched.queues[level].lock().len();
         }
-        // Count running task
+        // 统计运行中的任务
         if sched.current.load(Ordering::SeqCst) != 0 {
             count += 1;
         }
@@ -1298,12 +1296,12 @@ impl Scheduler {
             }
         }
 
-        // Check if the busiest CPU has significantly more load (weight-based)
+        // 检查最忙 CPU 是否显著更忙 (按权重)
         if max_weight < local_weight.saturating_add(LOAD_BALANCE_THRESHOLD) {
             return;
         }
 
-        // Steal tasks from busiest CPU
+        // 从最忙 CPU 偷取任务
         let mut tasks_to_migrate: [Pid; 4] = [0; 4];
         let mut count = 0;
         {
@@ -1353,7 +1351,7 @@ impl Scheduler {
         }
     }
 
-    /// Set CPU quota for a PWM. Caller must hold SYSTEM_CAP_QUOTA_ADMIN.
+    /// 为 PWM 设置 CPU 配额. 调用方必须持有 SYSTEM_CAP_QUOTA_ADMIN.
     pub fn set_quota(&self, pwm: u64, max_runtime: u64, period: u64) {
         let mut quotas = self.quotas.lock();
         let now = TICK_COUNT.load(Ordering::SeqCst);
@@ -1411,7 +1409,7 @@ impl Scheduler {
         }
     }
 
-    /// Decrement proc count when a process exits (called from exit())
+    /// 进程退出时递减进程计数 (由 exit() 调用)
     fn dec_limit(&self, pwm: u64) {
         if pwm == 0 {
             return;

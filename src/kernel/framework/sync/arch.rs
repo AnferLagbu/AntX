@@ -1,6 +1,6 @@
 //! 同步原语层面架构抽象封装
 //!
-//! Thin wrapper over `Arch` trait methods — synchronization primitives.
+//! 对 `Arch` trait 方法的薄封装 — 同步原语.
 //! 所有与架构相关的同步操作集中在此文件。
 //!
 //! ## Phase 1 状态

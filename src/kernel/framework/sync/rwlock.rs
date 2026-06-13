@@ -38,9 +38,8 @@ pub struct RwLock<T: ?Sized> {
     data: core::cell::UnsafeCell<T>,
 }
 
-// SAFETY: RwLock provides exclusive write access and shared read access
-// through its internal spinlock-protected state machine.
-// UnsafeCell provides interior mutability; access is gated by lock acquisition.
+// SAFETY: RwLock 通过内部自旋锁保护的状态机提供独占写访问与共享读访问.
+// UnsafeCell 提供内部可变性, 访问受锁获取门控.
 unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
 unsafe impl<T: ?Sized + Send> Sync for RwLock<T> {}
 

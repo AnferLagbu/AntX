@@ -38,7 +38,7 @@ use crate::kernel::framework::proc::posix_timer as ptimer;
 // sys_timer_create
 // ============================================================================
 
-/// `sys_timer_create(clockid, sigev_ptr, timer_id_ptr) -> 0/-errno`
+/// `sys_timer_create(clockid, sigev_ptr, timer_id_ptr) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_timer_create(a0: u64, a1: u64, a2: u64) -> i64 {
     ptimer::sys_timer_create(a0 as i32, a1, a2)
 }
@@ -47,7 +47,7 @@ pub fn sys_timer_create(a0: u64, a1: u64, a2: u64) -> i64 {
 // sys_timer_settime
 // ============================================================================
 
-/// `sys_timer_settime(timer_id, flags, new_value_ptr, old_value_ptr) -> 0/-errno`
+/// `sys_timer_settime(timer_id, flags, new_value_ptr, old_value_ptr) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_timer_settime(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     ptimer::sys_timer_settime(a0 as i32, a1 as i32, a2, a3)
 }
@@ -56,7 +56,7 @@ pub fn sys_timer_settime(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 // sys_timer_gettime
 // ============================================================================
 
-/// `sys_timer_gettime(timer_id, curr_value_ptr) -> 0/-errno`
+/// `sys_timer_gettime(timer_id, curr_value_ptr) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_timer_gettime(a0: u64, a1: u64) -> i64 {
     ptimer::sys_timer_gettime(a0 as i32, a1)
 }
@@ -65,7 +65,7 @@ pub fn sys_timer_gettime(a0: u64, a1: u64) -> i64 {
 // sys_timer_delete
 // ============================================================================
 
-/// `sys_timer_delete(timer_id) -> 0/-errno`
+/// `sys_timer_delete(timer_id) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_timer_delete(a0: u64) -> i64 {
     ptimer::sys_timer_delete(a0 as i32)
 }
@@ -74,7 +74,7 @@ pub fn sys_timer_delete(a0: u64) -> i64 {
 // sys_timer_getoverrun
 // ============================================================================
 
-/// `sys_timer_getoverrun(timer_id) -> overrun / -errno`
+/// `sys_timer_getoverrun(timer_id) -> overrun / -errno`  // POSIX 函数签名
 pub fn sys_timer_getoverrun(a0: u64) -> i64 {
     ptimer::sys_timer_getoverrun(a0 as i32)
 }
@@ -83,7 +83,7 @@ pub fn sys_timer_getoverrun(a0: u64) -> i64 {
 // sys_clock_getres
 // ============================================================================
 
-/// `sys_clock_getres(clockid, res_ptr) -> 0/-errno`
+/// `sys_clock_getres(clockid, res_ptr) -> 0/-errno`  // POSIX 函数签名
 ///
 /// res_ptr 可为 NULL (仅做时钟存在性检查)。
 pub fn sys_clock_getres(a0: u64, a1: u64) -> i64 {

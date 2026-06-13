@@ -413,7 +413,7 @@ impl MmStruct {
             cursor = vma.end;
         }
 
-        // TASK_SIZE: user address space upper bound for 64-bit
+        // TASK_SIZE: 64 位用户地址空间上限
         let task_size: usize = 0x0000_7FFF_FFFF_F000;
 
         if cursor + size <= task_size {
@@ -658,9 +658,9 @@ impl MmStruct {
         Ok(new_start)
     }
 
-    /// 设置堆边界
+    /// 设置 brk 终点.
     ///
-    /// Uses AtomicUsize for brk/start_brk for lock-free thread-safe access.
+    /// brk/start_brk 使用 AtomicUsize 实现无锁线程安全访问.
     pub fn set_brk(&self, new_brk: usize) -> Result<usize, &'static str> {
         let page_aligned = (new_brk + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
 
@@ -970,7 +970,7 @@ impl MmStruct {
 
     /// mlockall: 进程级 mlock
     ///
-    /// `flags`: MCL_CURRENT=1, MCL_FUTURE=2, MCL_ONFAULT=4
+    /// `flags` 取值: MCL_CURRENT=1, MCL_FUTURE=2, MCL_ONFAULT=4.
     /// 返回成功设置的标志位.
     pub fn mlock_all(&self, flags: u32) -> Result<u32, crate::kernel::framework::syscall::types::Errno> {
         use crate::kernel::framework::syscall::types::Errno;
@@ -1078,11 +1078,10 @@ impl MmStruct {
     }
 }
 
-// SAFETY: MmStruct uses Mutex for Vec<Vma> and AtomicUsize for brk/start_brk.
-// All mutable fields go through proper synchronization primitives.
-// start_stack/mmap_base are read-only after init.
-// Cross-thread shared access is safe because all mutations are internally
-// synchronized via atomic operations and locks.
+// SAFETY: MmStruct 对 Vec<Vma> 使用 Mutex, brk/start_brk 使用 AtomicUsize.
+// 所有可变字段都经过适当的同步原语.
+// start_stack/mmap_base 在 init 后只读.
+// 跨线程共享访问是安全的, 因为所有变更都通过原子操作与锁在内部同步.
 unsafe impl Send for MmStruct {}
 unsafe impl Sync for MmStruct {}
 

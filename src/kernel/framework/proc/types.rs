@@ -10,9 +10,9 @@ pub struct ThreadId(pub Tid);
 /// ✅ 优化后的进程状态模型 (七状态完整实现)
 ///
 /// 状态生命周期:
-/// Created → Ready → Running ↔ Blocked
+/// Created → Ready → Running ↔ Blocked  // 进程状态机
 ///                  ↓         ↓
-///                Frozen   Zombie → Terminated
+///                Frozen   Zombie → Terminated  // 终止分支
 ///
 /// 每个状态的含义:
 /// - Created:    PCB 已分配, 资源初始化中 (尚未可运行)

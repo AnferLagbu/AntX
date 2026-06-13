@@ -547,7 +547,7 @@ impl AhciPort {
             core::mem::size_of::<H2dFis>(),
         );
 
-        // Copy FIS to command table (CFIS is at offset 0)
+        // 复制 FIS 到命令表 (CFIS 位于偏移 0)
         ptr::copy_nonoverlapping(fis_bytes.as_ptr(), cmd_table as *mut u8, fis_bytes.len());
 
         // 设置 PRDT entry 0
@@ -697,8 +697,8 @@ impl Drop for AhciPort {
     }
 }
 
-// SAFETY: AhciController uses MMIO registers via volatile access.
-// Global AHCI_CONTROLLERS Mutex protects concurrent cross-CPU mutation.
+// SAFETY: AhciController 通过 volatile 访问 MMIO 寄存器.
+// 全局 AHCI_CONTROLLERS Mutex 防止并发跨 CPU 变更.
 unsafe impl Send for AhciController {}
 unsafe impl Sync for AhciController {}
 
@@ -770,8 +770,8 @@ impl AhciController {
                 continue;
             }
 
-            // SAFETY: IoMem ensures the MMIO region is validly mapped.
-            // The port register offset is within the BAR.
+            // SAFETY: IoMem 确保 MMIO 区域已正确映射.
+            // 端口寄存器偏移在 BAR 范围内.
             let port_regs = unsafe {
                 let base = iomem.virt_ptr();
                 base.add(PORT_REG_BASE + i * PORT_REG_STRIDE) as *mut AhciPortRegs

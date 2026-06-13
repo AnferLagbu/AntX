@@ -88,8 +88,7 @@ impl BlockDevice for NvmeBlockDevice {
     }
 }
 
-// SAFETY: NvmeBlockDevice accesses controllers through the global
-// NVME_CONTROLLERS Mutex. All mutable state is protected by lock
-// acquisition. Safe for SMP cross-CPU access.
+// SAFETY: NvmeBlockDevice 通过全局 NVME_CONTROLLERS Mutex 访问控制器.
+// 所有可变状态受锁获取保护. 跨 CPU SMP 访问安全.
 unsafe impl Send for NvmeBlockDevice {}
 unsafe impl Sync for NvmeBlockDevice {}

@@ -1,17 +1,17 @@
-//! Physical Memory Manager (PMM) — Buddy Allocator
+//! 物理内存管理器 (PMM) — Buddy 分配器
 //!
-//! Manages physical memory pages using a buddy allocator with O(1)
-//! free-list operations and O(log n) merge-on-free.
+//! 使用 buddy 分配器管理物理内存页, 提供 O(1) 空闲链表操作
+//! 以及 O(log n) 释放合并.
 //!
-//! # Design
-//! - Orders 0–9 (4 KB – 2 MB contiguous blocks).
-//! - Early (linear) allocator until the buddy metadata is carved out.
-//! - Bitmap retained for reserved-page tracking and statistics.
-//! - Doubly-linked intrusive free lists (prev/next stored in free pages).
-//! - Buddy-merge uses per-page order metadata for O(1) buddy checks.
+//! # 设计
+//! - 阶数 0–9 (4 KB – 2 MB 连续块).
+//! - Buddy 元数据建立前使用早期 (线性) 分配器.
+//! - 保留位图用于 reserved 页跟踪和统计.
+//! - 双向链表的侵入式空闲链表 (prev/next 存放在空闲页内).
+//! - Buddy 合并使用按页的阶数元数据, 实现 O(1) 伙伴检查.
 //!
-//! # Safety
-//! All mutations happen under an internal `AtomicBool` spinlock.
+//! # 安全
+//! 所有修改都在内部 `AtomicBool` 自旋锁下进行.
 
 macro_rules! klog_pmm {
     ($($arg:tt)*) => {
@@ -30,14 +30,14 @@ use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 use crate::kernel::framework::sync::once_lock::OnceLock;
 const MAX_EARLY_ALLOCS: usize = 256;
 
-/// Maximum buddy order: 2^9 × 4 KB = 2 MB
+/// 最大 buddy 阶数: 2^9 × 4 KB = 2 MB
 const MAX_BUDDY_ORDER: u8 = 9;
-/// Sentinel value in buddy_meta: page is allocated / not a free-list head
+/// buddy_meta 中的哨兵值: 页面已分配 / 不是空闲链表头
 const BUDDY_ALLOCATED: u8 = 0xFF;
 
-/// Physical RAM base address
-/// x86_64: 0 (multiboot-provided physical memory starts at 0)
-/// aarch64: 0x40000000 (QEMU virt machine RAM base)
+/// 物理 RAM 基地址
+/// x86_64: 0 (multiboot 给出的物理内存从 0 开始)
+/// aarch64: 0x40000000 (QEMU virt 机器 RAM 基址)
 #[cfg(target_arch = "x86_64")]
 const RAM_BASE: u64 = 0;
 #[cfg(target_arch = "aarch64")]
@@ -58,14 +58,13 @@ fn pfn_to_virt(pfn: u64) -> *mut u8 {
     (page_to_phys(pfn) + KERNEL_BASE) as *mut u8
 }
 
-/// Round count up to the next power of two → buddy order
+/// 将页数向上取整到 2 的幂 → 对应 buddy 阶数
 #[inline]
 fn count_to_order(count: usize) -> u8 {
     if count <= 1 {
         return 0;
     }
-    // ceil(log2(count)) = floor(log2(count - 1)) + 1
-    // = BITS - (count - 1).leading_zeros()
+    // 阶数 = ceil(log2(count)) = floor(log2(count-1)) + 1 = BITS - (count-1).leading_zeros()
     let order = (usize::BITS - (count - 1).leading_zeros()) as u8;
     if order > MAX_BUDDY_ORDER {
         MAX_BUDDY_ORDER
@@ -86,33 +85,33 @@ impl EarlyAlloc {
     }
 }
 
-// ---- Intrusive doubly-linked free node stored inside free pages ----
-// SAFETY: only accessed under the PMM lock; each free page provides 4096 B
-// of storage — we use the first 16 B for prev / next pointers.
+// ---- 侵入式双向空闲链表节点, 存放在空闲页内 ----
+// SAFETY: 仅在 PMM 锁保护下访问; 每个空闲页提供 4096 字节
+// 存储空间, 我们用前 16 字节存放 prev/next 指针.
 #[repr(C)]
 pub(crate) struct FreeNode {
     prev: *mut FreeNode,
     next: *mut FreeNode,
 }
 
-// === E3: Unsafe Concentration — raw sub-module ===
+// === E3: unsafe 集中化 — 裸指针子模块 ===
 //
-// All bare-pointer dereferences for buddy allocator internals are
-// encapsulated here.  The outer `PhysicalMemoryManager` methods call
-// only safe wrappers, keeping the buddy algorithm logic itself safe Rust.
+// buddy 分配器内部涉及的所有裸指针解引用都
+// 封装在这里.  外层 `PhysicalMemoryManager` 方法只调用
+// safe 包装器, 使 buddy 分配算法本身保持 safe Rust.
 pub(crate) mod raw {
     use super::*;
 
-    // ---- FreeNode safe wrapper ----
-    // SAFETY invariant: the pointer points to a valid FreeNode inside a
-    // free page within physical RAM, and the PMM lock is held.
+    // ---- FreeNode safe 包装器 ----
+    // SAFETY 不变式: 指针指向物理 RAM 内空闲页中的合法 FreeNode,
+    // 且 PMM 锁已持有.
     #[derive(Clone, Copy)]
     pub struct FreeNodeRef(*mut FreeNode);
 
     impl FreeNodeRef {
         /// # Safety
-        /// - `ptr` must point to a valid `FreeNode` inside a free page
-        /// - PMM lock must be held for the duration of use
+        /// - `ptr` 必须指向空闲页内合法的 `FreeNode`
+        /// - 使用期间必须持有 PMM 锁
         #[inline(always)]
         pub unsafe fn new_unchecked(ptr: *mut FreeNode) -> Self {
             Self(ptr)
@@ -155,16 +154,16 @@ pub(crate) mod raw {
         }
     }
 
-    // ---- Buddy metadata safe wrapper ----
-    // SAFETY invariant: meta pointer is valid after init_bitmap; idx < total_pages
+    // ---- Buddy 元数据 safe 包装器 ----
+    // SAFETY 不变式: meta 指针在 init_bitmap 后有效; idx < total_pages
     pub struct MetaRef {
         ptr: *mut u8,
     }
 
     impl MetaRef {
         /// # Safety
-        /// - `ptr` must point to a valid buddy metadata array
-        /// - PMM lock must be held for the duration of use
+        /// - `ptr` 必须指向合法的 buddy 元数据数组
+        /// - 使用期间必须持有 PMM 锁
         #[inline(always)]
         pub unsafe fn new_unchecked(ptr: *mut u8) -> Self {
             Self { ptr }
@@ -172,19 +171,19 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn read(&self, idx: usize) -> u8 {
-            // SAFETY: caller guarantees idx < total_pages, ptr valid
+            // SAFETY: 调用方保证 idx < total_pages, ptr 合法
             unsafe { *self.ptr.add(idx) }
         }
 
         #[inline(always)]
         pub fn write(&self, idx: usize, val: u8) {
-            // SAFETY: caller guarantees idx < total_pages, ptr valid
+            // SAFETY: 调用方保证 idx < total_pages, ptr 合法
             unsafe { *self.ptr.add(idx) = val; }
         }
     }
 
-    // ---- Bitmap safe wrapper ----
-    // SAFETY invariant: bitmap pointer is valid after init_bitmap; word < bitmap_size
+    // ---- Bitmap safe 包装器 ----
+    // SAFETY 不变式: bitmap 指针在 init_bitmap 后有效; word < bitmap_size
     pub struct BitmapRef {
         ptr: NonNull<u32>,
     }
@@ -247,16 +246,16 @@ pub(crate) mod raw {
         }
     }
 
-    // ---- Buddy heads safe wrapper ----
-    // SAFETY invariant: buddy_heads is only accessed under PMM lock
+    // ---- Buddy heads safe 包装器 ----
+    // SAFETY 不变式: buddy_heads 仅在 PMM 锁保护下访问
     pub struct HeadsRef {
         ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1],
     }
 
     impl HeadsRef {
         /// # Safety
-        /// - `ptr` must point to the valid buddy_heads array
-        /// - PMM lock must be held for the duration of use
+        /// - `ptr` 必须指向合法的 buddy_heads 数组
+        /// - 使用期间必须持有 PMM 锁
         #[inline(always)]
         pub unsafe fn new_unchecked(
             ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1],
@@ -272,24 +271,24 @@ pub(crate) mod raw {
 
         #[inline(always)]
         pub fn set_head(&self, order: u8, node: *mut FreeNode) {
-            // SAFETY: order <= MAX_BUDDY_ORDER, ptr valid under lock
+            // SAFETY: order <= MAX_BUDDY_ORDER, ptr 持锁时合法
             unsafe { (*self.ptr)[order as usize] = node; }
         }
     }
 
-    /// Zero a memory region.
+    /// 清零一段内存.
     ///
     /// # Safety
-    /// - `ptr` must point to a valid writable region of `len` bytes
+    /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
     pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
         core::ptr::write_bytes(ptr, 0, len);
     }
 
-    /// Fill a memory region with a byte value.
+    /// 用指定字节值填充一段内存.
     ///
     /// # Safety
-    /// - `ptr` must point to a valid writable region of `len` bytes
+    /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
     pub unsafe fn fill_memory(ptr: *mut u8, val: u8, len: usize) {
         core::ptr::write_bytes(ptr, val, len);
@@ -299,37 +298,36 @@ pub(crate) mod raw {
 use raw::{FreeNodeRef, MetaRef, BitmapRef, HeadsRef};
 
 pub struct PhysicalMemoryManager {
-    // ---- Bitmap (reserved tracking + stats) ----
+    // ---- Bitmap (reserved 跟踪 + 统计) ----
     bitmap: Cell<Option<NonNull<u32>>>,
     bitmap_size: Cell<usize>,
     mem_size: Cell<u64>,
     kernel_end: Cell<u64>,
     info: Cell<MemoryInfo>,
-    // ---- Lock & lifecycle ----
+    // ---- 锁与生命周期 ----
     lock: AtomicBool,
     initialized: AtomicBool,
     buddy_ready: AtomicBool,
-    // ---- Early (linear) allocator ----
+    // ---- 早期 (线性) 分配器 ----
     early_allocs: UnsafeCell<[EarlyAlloc; MAX_EARLY_ALLOCS]>,
     early_count: AtomicUsize,
     early_current: AtomicU64,
-    // ---- Statistics ----
+    // ---- 统计 ----
     total_allocs: AtomicU64,
     total_frees: AtomicU64,
     failed_allocs: AtomicU64,
-    // ---- Buddy allocator ----
-    /// Per-page order metadata: 0xFF = allocated, 0..9 = order of free block head
+    // ---- Buddy 分配器 ----
+    /// 按页阶数元数据: 0xFF = 已分配, 0..9 = 空闲块头阶数
     buddy_meta: Cell<Option<NonNull<u8>>>,
-    /// Doubly-linked free list heads, one per order
+    /// 双向链表空闲块头, 每个阶数一个
     buddy_heads: UnsafeCell<[*mut FreeNode; MAX_BUDDY_ORDER as usize + 1]>,
 }
 
-// SAFETY: PhysicalMemoryManager uses Cell/UnsafeCell for interior mutability.
-// All public mutations go through pmm_alloc_pages/pmm_free_pages which
-// acquire the internal lock (AtomicBool spinlock). The lock ensures
-// mutual exclusion, so concurrent access from multiple threads is safe.
-// buddy_heads is only accessed under the lock; bitmap/buddy_meta are
-// set once during init and read-only afterwards.
+// SAFETY: PhysicalMemoryManager 使用 Cell/UnsafeCell 实现内部可变性.
+// 所有公开修改都通过 pmm_alloc_pages/pmm_free_pages 进行, 它们
+// 获取内部锁 (AtomicBool 自旋锁). 锁保证互斥, 多线程并发访问安全.
+// buddy_heads 仅在持锁时访问; bitmap/buddy_meta 仅在初始化时设置,
+// 之后只读.
 unsafe impl Sync for PhysicalMemoryManager {}
 unsafe impl Send for PhysicalMemoryManager {}
 
@@ -355,7 +353,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    // ==================== Public API (unchanged) ====================
+    // ==================== 公开 API (不变) ====================
 
     pub fn init(&self, mem_size: u64, kernel_end: u64) {
         self.mem_size.set(mem_size);
@@ -416,20 +414,20 @@ impl PhysicalMemoryManager {
             });
         self.bitmap_size.set(bitmap_words);
 
-        // ---- Buddy metadata placement (right after bitmap, page-aligned) ----
+        // ---- Buddy 元数据布局 (位于 bitmap 之后, 页对齐) ----
         let buddy_meta_bytes = total_pages;
         let buddy_meta_phys =
             (bitmap_aligned + bitmap_bytes as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let buddy_meta_virt = buddy_meta_phys + KERNEL_BASE;
         let buddy_meta_pages = buddy_meta_bytes.div_ceil(PAGE_SIZE as usize) as u64;
 
-        // Update early_current past the buddy metadata
+        // 将 early_current 推过 buddy 元数据
         self.early_current.store(
             buddy_meta_phys + buddy_meta_pages * PAGE_SIZE + PAGE_SIZE,
             Ordering::Relaxed,
         );
 
-        // SAFETY: buddy_meta_virt = buddy_meta_phys + KERNEL_BASE — valid kernel VA
+        // SAFETY: buddy_meta_virt = buddy_meta_phys + KERNEL_BASE — 合法的内核 VA
         unsafe {
             raw::fill_memory(
                 buddy_meta_virt as *mut u8,
@@ -446,7 +444,7 @@ impl PhysicalMemoryManager {
             buddy_meta_virt
         );
 
-        // ---- Mark reserved regions in bitmap ----
+        // ---- 在 bitmap 中标记 reserved 区 ----
         let kernel_end_val = self.kernel_end.get();
         let kernel_pages = phys_to_page(kernel_end_val + PAGE_SIZE - 1) as usize;
         let reserved_pages = (reserved_aligned / PAGE_SIZE) as usize;
@@ -455,23 +453,23 @@ impl PhysicalMemoryManager {
             self.set_bit(i);
         }
         if total_pages > 0 {
-            self.set_bit(0); // page 0 must never be handed out
+            self.set_bit(0); // page 0 永远不能被分配出去
         }
 
-        // Mark bitmap pages as used
+        // 标记 bitmap 页已用
         let bmp_start_page = phys_to_page(bitmap_aligned) as usize;
         let bmp_pages = (bitmap_bytes as u64).div_ceil(PAGE_SIZE) as usize;
         for i in bmp_start_page..(bmp_start_page + bmp_pages).min(total_pages) {
             self.set_bit(i);
         }
 
-        // Mark buddy-meta pages as used
+        // 标记 buddy-meta 页已用
         let bm_start_page = phys_to_page(buddy_meta_phys) as usize;
         for i in bm_start_page..(bm_start_page + buddy_meta_pages as usize).min(total_pages) {
             self.set_bit(i);
         }
 
-        // ---- Build buddy free lists from free bitmap pages ----
+        // ---- 从空闲 bitmap 页构建 buddy 空闲链表 ----
         self.buddy_init_free_lists(total_pages);
 
         self.buddy_ready.store(true, Ordering::Release);
@@ -621,12 +619,12 @@ impl PhysicalMemoryManager {
         klog_pmm!("===================");
     }
 
-    // ==================== Lock helpers ====================
+    // ==================== 锁辅助函数 ====================
 
-    /// Acquire the PMM lock with interrupt disabling (SMP-safe).
+    /// 获取 PMM 锁, 同时禁用中断 (SMP 安全).
     ///
-    /// Disables interrupts to prevent deadlock when an interrupt handler
-    /// running on the same CPU attempts to allocate memory.
+    /// 禁用中断是为了避免当运行在同一 CPU 的中断处理程序
+    /// 尝试分配内存时形成死锁.
     #[inline(always)]
     fn acquire_lock(&self) -> IrqSaveFlags {
         let flags = disable_interrupts();
@@ -646,7 +644,7 @@ impl PhysicalMemoryManager {
         restore_interrupts(flags);
     }
 
-    // ==================== Bitmap helpers (stats + reserved) ====================
+    // ==================== Bitmap 辅助函数 (统计 + reserved) ====================
 
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
@@ -675,7 +673,7 @@ impl PhysicalMemoryManager {
         } else {
             0
         };
-        // Clamp to total (bitmap may have extra bits beyond total_pages)
+        // 截断到 total (bitmap 在 total_pages 之外可能还有剩余位)
         let extra = (self.bitmap_size.get() * 32).saturating_sub(total) as u32;
         if extra > 0 {
             free.saturating_sub(extra as u64)
@@ -692,26 +690,26 @@ impl PhysicalMemoryManager {
         self.info.set(info);
     }
 
-    // ==================== Buddy allocator core ====================
+    // ==================== Buddy 分配器核心 ====================
 
     #[inline]
     fn buddy_meta_ref(&self) -> Option<MetaRef> {
         self.buddy_meta.get().map(|n| {
-            // SAFETY: buddy_meta is set once in init_bitmap and read-only afterwards;
-            // PMM lock is held for all buddy operations.
+            // SAFETY: buddy_meta 在 init_bitmap 中设置一次, 此后只读;
+            // 所有 buddy 操作都持有 PMM 锁.
             unsafe { MetaRef::new_unchecked(n.as_ptr()) }
         })
     }
 
     #[inline]
     fn buddy_heads_ref(&self) -> HeadsRef {
-        // SAFETY: buddy_heads is UnsafeCell; accessed under PMM lock;
-        // pointer to the array is stable after init_bitmap.
+        // SAFETY: buddy_heads 是 UnsafeCell; 在 PMM 锁保护下访问;
+        // init_bitmap 之后数组指针稳定.
         unsafe { HeadsRef::new_unchecked(self.buddy_heads.get()) }
     }
 
-    /// Try to merge freed page `pfn` at `order` with its buddy upwards.
-    /// Returns (merged_pfn, final_order).
+    /// 尝试将 `order` 处释放的 `pfn` 与其上方的 buddy 合并.
+    /// 返回 (merged_pfn, final_order).
     fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
@@ -730,7 +728,7 @@ impl PhysicalMemoryManager {
                 break;
             }
 
-            // Remove buddy from its free list
+            // 从空闲链表中移除 buddy
             self.buddy_list_remove(buddy_pfn, order);
             meta.write(buddy_pfn as usize, BUDDY_ALLOCATED);
 
@@ -742,11 +740,11 @@ impl PhysicalMemoryManager {
         (pfn, order)
     }
 
-    /// Remove a free block from its doubly-linked list.
+    /// 从双向链表中移除一个空闲块.
     fn buddy_list_remove(&self, pfn: u64, order: u8) {
         let heads = self.buddy_heads_ref();
         let node = pfn_to_virt(pfn) as *mut FreeNode;
-        // Defensive: validate node is within physical RAM range
+        // 防御性: 校验 node 是否在物理 RAM 范围内
         let node_phys = (node as u64).wrapping_sub(KERNEL_BASE);
         let mem_size = self.mem_size.get();
         #[allow(clippy::absurd_extreme_comparisons)]
@@ -777,24 +775,24 @@ impl PhysicalMemoryManager {
         }
     }
 
-    /// Push a block onto the free list head.
+    /// 将一个块压入空闲链表头.
     fn buddy_list_push(&self, pfn: u64, order: u8) {
         let heads = self.buddy_heads_ref();
         let node = pfn_to_virt(pfn) as *mut FreeNode;
-        // SAFETY: free page is unused, we own the first 16 bytes, PMM lock held
+        // SAFETY: 空闲页未被使用, 我们拥有其前 16 字节, PMM 锁已持有
         let n = unsafe { FreeNodeRef::new_unchecked(node) };
         let old_head = heads.head(order);
         n.set_prev(core::ptr::null_mut());
         n.set_next(old_head);
         if !old_head.is_null() {
-            // SAFETY: old_head is a valid FreeNode in the list
+            // SAFETY: old_head 是链表中合法的 FreeNode
             let oh = unsafe { FreeNodeRef::new_unchecked(old_head) };
             oh.set_prev(node);
         }
         heads.set_head(order, node);
     }
 
-    /// Pop a block from the free list head. Returns pfn.
+    /// 从空闲链表头弹出一个块, 返回 pfn.
     fn buddy_list_pop(&self, order: u8) -> Option<u64> {
         let heads = self.buddy_heads_ref();
         let node = heads.head(order);
@@ -802,7 +800,7 @@ impl PhysicalMemoryManager {
             return None;
         }
 
-        // Defensive: validate node is within physical RAM range
+        // 防御性: 校验 node 是否在物理 RAM 范围内
         let node_phys = (node as u64).wrapping_sub(KERNEL_BASE);
         let mem_size = self.mem_size.get();
         #[allow(clippy::absurd_extreme_comparisons)]
@@ -828,13 +826,13 @@ impl PhysicalMemoryManager {
         Some(pfn)
     }
 
-    /// Core allocation at the given order.
+    /// 指定阶数执行核心分配.
     fn buddy_alloc(&self, order: u8) -> Option<(u64, u8)> {
         if order > MAX_BUDDY_ORDER {
             return None;
         }
 
-        // Find smallest available order >= requested
+        // 寻找 >= 请求阶数的最小可用阶
         let mut avail_order: Option<u8> = None;
         for o in order..=MAX_BUDDY_ORDER {
             let heads = self.buddy_heads_ref();
@@ -853,7 +851,7 @@ impl PhysicalMemoryManager {
 
         meta.write(pfn as usize, BUDDY_ALLOCATED);
 
-        // Split downward until we reach the requested order
+        // 向下分裂, 直至达到请求阶数
         let cur_pfn = pfn;
         let mut cur_order = alloc_order;
         while cur_order > order {
@@ -867,7 +865,7 @@ impl PhysicalMemoryManager {
         Some((cur_pfn, order))
     }
 
-    /// Main do_alloc: handles early alloc vs buddy.
+    /// 主 do_alloc: 处理早期分配与 buddy 分配.
     fn do_alloc(&self, order: u8) -> Option<PhysAddr> {
         if !self.initialized.load(Ordering::Acquire) {
             return if order == 0 {
@@ -878,7 +876,7 @@ impl PhysicalMemoryManager {
         }
 
         if !self.buddy_ready.load(Ordering::Acquire) {
-            // Between init and buddy_ready: fallback to bitmap scan
+            // init 完成但 buddy 还未就绪: 回退到 bitmap 扫描
             let count = 1usize << order as usize;
             return self.alloc_from_bitmap_fallback(count);
         }
@@ -891,7 +889,7 @@ impl PhysicalMemoryManager {
         Some(PhysAddr(addr))
     }
 
-    /// Main do_free: handles buddy or bitmap free.
+    /// 主 do_free: 处理 buddy 或 bitmap 释放.
     fn do_free(&self, addr: PhysAddr, order: u8) {
         if !self.initialized.load(Ordering::Acquire) {
             klog_pmm!("[PMM] Warn: free before bitmap init at 0x{:X}", addr.0);
@@ -922,12 +920,12 @@ impl PhysicalMemoryManager {
             self.clear_bit(pfn as usize + i);
         }
 
-        // Merge and push onto free list
+        // 合并并压入空闲链表
         let (merged_pfn, merged_order) = self.buddy_try_merge(pfn, order);
         self.buddy_list_push(merged_pfn, merged_order);
     }
 
-    /// Scan all free pages (bits not set), coalesce into max-order buddy blocks.
+    /// 扫描所有空闲页 (位未置位), 合并为最大阶的 buddy 块.
     fn buddy_init_free_lists(&self, total_pages: usize) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
@@ -941,21 +939,21 @@ impl PhysicalMemoryManager {
                 continue;
             }
 
-            // Find contiguous free run
+            // 寻找连续空闲段
             let run_start = pfn;
             while pfn < total_pages && !self.test_bit(pfn) {
                 pfn += 1;
             }
             let run_len = pfn - run_start;
 
-            // Coalesce into max-order buddy blocks
+            // 合并为最大阶 buddy 块
             let mut cur = run_start as u64;
             let mut remaining = run_len;
             while remaining > 0 {
-                // Largest power-of-two ≤ remaining, aligned to its own size
+                // ≤ remaining 的最大 2 的幂, 对齐到自身大小
                 let max_order = (usize::BITS - 1 - (remaining - 1).leading_zeros())
                     .min(MAX_BUDDY_ORDER as u32) as u8;
-                // Find largest order where cur is naturally aligned AND 2^order ≤ remaining
+                // 寻找 cur 自然对齐 且 2^order ≤ remaining 的最大阶
                 let mut order = max_order;
                 while order > 0 {
                     let size = 1usize << order as usize;
@@ -975,11 +973,11 @@ impl PhysicalMemoryManager {
         }
     }
 
-    /// Direct aligned alloc for 1GB pages (beyond buddy range).
+    /// 1GB 页直接对齐分配 (超出 buddy 范围).
     fn buddy_direct_alloc_aligned(&self, count: usize, alignment: u64) -> Option<PhysAddr> {
         let total = self.info.get().total_pages as usize;
         let align_pages = (alignment / PAGE_SIZE) as usize;
-        let mut i = align_pages; // skip page 0
+        let mut i = align_pages; // 跳过 page 0
         while i + count <= total {
             if i.is_multiple_of(align_pages) {
                 let mut ok = true;
@@ -1001,7 +999,7 @@ impl PhysicalMemoryManager {
         None
     }
 
-    /// Fallback bitmap scan (used between init and buddy_ready, or when buddy disabled).
+    /// 回退 bitmap 扫描 (在 init 完成但 buddy 还未就绪, 或 buddy 关闭时使用).
     fn alloc_from_bitmap_fallback(&self, count: usize) -> Option<PhysAddr> {
         let total = self.info.get().total_pages as usize;
         for i in 0..total {
@@ -1028,7 +1026,7 @@ impl PhysicalMemoryManager {
         None
     }
 
-    // ==================== Early allocator (pre-bitmap) ====================
+    // ==================== 早期分配器 (bitmap 之前) ====================
 
     fn early_alloc_single(&self) -> Option<PhysAddr> {
         let current = self.early_current.fetch_add(PAGE_SIZE, Ordering::Relaxed);
@@ -1076,7 +1074,7 @@ impl PhysicalMemoryManager {
     }
 }
 
-// ==================== Global singleton & init ====================
+// ==================== 全局单例与初始化 ====================
 
 static GLOBAL_PMM: OnceLock<PhysicalMemoryManager> = OnceLock::new();
 
@@ -1099,7 +1097,7 @@ pub fn get_pmm() -> &'static PhysicalMemoryManager {
     GLOBAL_PMM.get().expect("[PMM] accessed before init")
 }
 
-// ==================== Barrier / Recovery ====================
+// ==================== 屏障与回滚 ====================
 
 #[derive(Clone, Copy)]
 struct PmmSnapshot {

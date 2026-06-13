@@ -39,9 +39,9 @@ pub struct RecoveryDomain {
     addr_range_count: AtomicU32,
 }
 
-// SAFETY: RecoveryDomain uses AtomicU32/AtomicU64 for state and
-// spin::Mutex for addr_ranges. All mutable access is either atomic
-// or protected by the Mutex. No UnsafeCell without synchronization.
+// SAFETY: RecoveryDomain 对状态使用 AtomicU32/AtomicU64,
+// 对 addr_ranges 使用 spin::Mutex. 所有可变访问要么是原子的,
+// 要么由 Mutex 保护. 不存在无同步的 UnsafeCell.
 unsafe impl Send for RecoveryDomain {}
 unsafe impl Sync for RecoveryDomain {}
 

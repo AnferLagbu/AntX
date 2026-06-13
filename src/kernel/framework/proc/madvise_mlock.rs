@@ -64,7 +64,7 @@ pub const MCL_ONFAULT: u32 = 4;
 // madvise
 // ============================================================================
 
-/// `sys_madvise(addr, len, advice) -> 0/-errno`
+/// `sys_madvise(addr, len, advice) -> 0/-errno`  // POSIX 函数签名
 ///
 /// `addr` 必须页对齐; `len` 向上页对齐
 pub fn sys_madvise(addr: u64, len: u64, advice: u32) -> i64 {
@@ -110,7 +110,7 @@ const PAGE_SIZE: u64 = 4096;
 // mlock
 // ============================================================================
 
-/// `sys_mlock(addr, len) -> 0/-errno`
+/// `sys_mlock(addr, len) -> 0/-errno`  // POSIX 函数签名
 ///
 /// 锁定 [addr, addr+len) 物理页, 禁止被 swap/reclaim.
 pub fn sys_mlock(addr: u64, len: u64) -> i64 {
@@ -139,7 +139,7 @@ pub fn sys_mlock(addr: u64, len: u64) -> i64 {
 // munlock
 // ============================================================================
 
-/// `sys_munlock(addr, len) -> 0/-errno`
+/// `sys_munlock(addr, len) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_munlock(addr: u64, len: u64) -> i64 {
     use crate::kernel::framework::syscall::types::Errno;
 
@@ -166,7 +166,7 @@ pub fn sys_munlock(addr: u64, len: u64) -> i64 {
 // mlockall
 // ============================================================================
 
-/// `sys_mlockall(flags) -> 0/-errno`
+/// `sys_mlockall(flags) -> 0/-errno`  // POSIX 函数签名
 ///
 /// flags: MCL_CURRENT=1, MCL_FUTURE=2, MCL_ONFAULT=4 (可位或)
 pub fn sys_mlockall(flags: u32) -> i64 {
@@ -187,7 +187,7 @@ pub fn sys_mlockall(flags: u32) -> i64 {
 // munlockall
 // ============================================================================
 
-/// `sys_munlockall() -> 0/-errno`
+/// `sys_munlockall() -> 0/-errno`  // POSIX 函数签名
 pub fn sys_munlockall() -> i64 {
     use crate::kernel::framework::syscall::types::Errno;
 
@@ -206,7 +206,7 @@ pub fn sys_munlockall() -> i64 {
 // mincore
 // ============================================================================
 
-/// `sys_mincore(addr, len, vec_ptr) -> 0/-errno`
+/// `sys_mincore(addr, len, vec_ptr) -> 0/-errno`  // POSIX 函数签名
 ///
 /// `vec_ptr` 至少 len/page_size 字节长, 每字节 1 = 驻留, 0 = 未驻留
 pub fn sys_mincore(addr: u64, len: u64, vec_ptr: u64) -> i64 {

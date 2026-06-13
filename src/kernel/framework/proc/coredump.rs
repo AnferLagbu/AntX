@@ -562,9 +562,9 @@ fn fill_regs_from_frame(prstatus: &mut PrStatus, frame_addr: u64) {
     // cs ss gs fs ... (简化: 填 0)
     // 但实际 Linux 只用 27 个 u64, 顺序如下:
     // 0: r15, 1: r14, 2: r13, 3: r12, 4: rbp, 5: rbx, 6: r11, 7: r10,
-    // 8: r9, 9: r8, 10: rax, 11: rcx, 12: rdx, 13: rsi, 14: rdi,
-    // 15: orig_rax, 16: rip, 17: cs, 18: rflags, 19: rsp, 20: ss,
-    // 21: fs_base, 22: gs_base, 23: ds, 24: es, 25: fs, 26: gs
+    // 8: r9, 9: r8, 10: rax, 11: rcx, 12: rdx, 13: rsi, 14: rdi,  // GPR 序号与名称
+    // 15: orig_rax, 16: rip, 17: cs, 18: rflags, 19: rsp, 20: ss,  // 段/CS/RIP 序号
+    // 21: fs_base, 22: gs_base, 23: ds, 24: es, 25: fs, 26: gs  // 段基址/段选择子
     let regs = &mut prstatus.regs;
     regs[0] = frame.r15;
     regs[1] = frame.r14;

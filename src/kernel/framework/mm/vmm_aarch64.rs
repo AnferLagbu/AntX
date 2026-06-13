@@ -1,15 +1,15 @@
-//! AArch64 Virtual Memory Manager
+//! AArch64 虚拟内存管理器
 //!
-//! Implements the same FFI interface as x86_64 vmm.rs, providing:
-//! - Kernel high-half page table (TTBR1_EL1) management
-//! - User space page table (TTBR0_EL1) creation/mapping
-//! - Page table walk/clone/destroy
+//! 实现与 x86_64 vmm.rs 相同的 FFI 接口, 提供:
+//! - 内核高半区页表 (TTBR1_EL1) 管理
+//! - 用户空间页表 (TTBR0_EL1) 创建/映射
+//! - 页表遍历/克隆/销毁
 //!
-//! Architecture: ARMv8-A 4KB granule, 48-bit VA
-//! - TTBR0_EL1: User space  (0x0000_0000_0000_0000 .. 0x0000_FFFF_FFFF_FFFF)
-//! - TTBR1_EL1: Kernel space (0xFFFF_0000_0000_0000 .. 0xFFFF_FFFF_FFFF_FFFF)
+//! 架构: ARMv8-A 4KB granule, 48-bit VA
+//! - TTBR0_EL1: 用户空间 (0x0000_0000_0000_0000 .. 0x0000_FFFF_FFFF_FFFF)
+//! - TTBR1_EL1: 内核空间 (0xFFFF_0000_0000_0000 .. 0xFFFF_FFFF_FFFF_FFFF)
 //!
-//! Page table levels: L0 (512GB) → L1 (1GB) → L2 (2MB) → L3 (4KB)
+//! 页表级: L0 (512GB) → L1 (1GB) → L2 (2MB) → L3 (4KB)
 
 use super::*;
 use core::ptr;
@@ -23,16 +23,16 @@ fn phys_to_virt(phys: u64) -> u64 {
     phys + super::KERNEL_BASE
 }
 
-// ─── ARM Descriptor Constants ────────────────────────────────────────
+// ─── ARM 描述符常量 ────────────────────────────────────────
 
-/// Descriptor types
+/// 描述符类型
 #[allow(dead_code)]
 const DESC_VALID: u64 = 1 << 0;
-const DESC_TYPE_TABLE: u64 = 0b11; // Table descriptor (L0/L1/L2)
-const DESC_TYPE_BLOCK: u64 = 0b01; // Block descriptor (L1/L2)
-const DESC_TYPE_PAGE: u64 = 0b11; // Page descriptor (L3, same bits as TABLE)
+const DESC_TYPE_TABLE: u64 = 0b11; // 表描述符 (L0/L1/L2)
+const DESC_TYPE_BLOCK: u64 = 0b01; // 块描述符 (L1/L2)
+const DESC_TYPE_PAGE: u64 = 0b11; // 页描述符 (L3, 与 TABLE 位相同)
 
-/// Memory attribute indices (matching MAIR_EL1 setup in mmu.rs)
+/// 内存属性索引 (与 mmu.rs 中 MAIR_EL1 设定对应)
 #[allow(dead_code)]
 const MAIR_DEVICE_nGnRnE: u64 = 0; // Device memory
 const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
@@ -40,28 +40,28 @@ const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
 const MAIR_NORMAL_NC: u64 = 2; // Normal non-cacheable
 const MAIR_USER_NORMAL: u64 = 4; // Normal WBWA for user pages
 
-/// Access Permission bits [7:6] in descriptor
-const AP_EL1_RW: u64 = 0 << 6; // EL1 read/write, EL0 no access
-const AP_BOTH_RW: u64 = 1 << 6; // EL1 read/write, EL0 read/write
-const AP_EL1_RO: u64 = 2 << 6; // EL1 read-only, EL0 no access
-const AP_BOTH_RO: u64 = 3 << 6; // EL1 read-only, EL0 read-only
+/// 访问权限位 [7:6] (描述符中)
+const AP_EL1_RW: u64 = 0 << 6; // EL1 读写, EL0 不可访问
+const AP_BOTH_RW: u64 = 1 << 6; // EL1 读写, EL0 读写
+const AP_EL1_RO: u64 = 2 << 6; // EL1 只读, EL0 不可访问
+const AP_BOTH_RO: u64 = 3 << 6; // EL1 只读, EL0 只读
 
-/// Attribute index shift (bits [4:2])
+/// 属性索引移位 (位 [4:2])
 const ATTR_SHIFT: u64 = 2;
 
-/// Access flag (bit 10)
+/// 访问标志 (位 10)
 const AF: u64 = 1 << 10;
 
-/// Execute never bits
-const UXN: u64 = 1 << 54; // Unprivileged Execute Never (EL0)
-const PXN: u64 = 1 << 53; // Privileged Execute Never (EL1)
+/// XN (Execute Never) 位
+const UXN: u64 = 1 << 54; // EL0 不可执行
+const PXN: u64 = 1 << 53; // EL1 不可执行
 
-/// Stage 1 shareability (bit 8 for inner, bit 9 for outer) — not strictly needed for stage 1
+/// Stage 1 共享性 (位 8 内, 位 9 外) — Stage 1 不严格需要
 
-/// Page table entry count per level
+/// 每级页表项数
 const TABLE_ENTRIES: usize = 512;
 
-// ─── Address Extraction Macros ───────────────────────────────────────
+// ─── 地址提取宏 ───────────────────────────────────────
 
 #[inline(always)]
 fn l0_index(vaddr: u64) -> usize {
@@ -88,9 +88,9 @@ fn is_kernel_addr(vaddr: u64) -> bool {
     vaddr >= 0xFFFF_0000_0000_0000
 }
 
-// ─── Page Flag Translation (x86 → ARM) ──────────────────────────────
+// ─── 页标志转换 (x86 → ARM) ──────────────────────────────
 
-/// Translate x86-style page flags to an ARM L3 page descriptor (4KB page)
+/// 将 x86 风格页标志转换为 ARM L3 页描述符 (4KB 页)
 fn page_flags_to_descriptor(flags: u64, paddr: u64) -> u64 {
     let mut desc = paddr & 0x0000_FFFF_FFFF_F000; // Output address [47:12]
     desc |= DESC_TYPE_PAGE; // bits [1:0] = 0b11
@@ -129,7 +129,7 @@ fn page_flags_to_descriptor(flags: u64, paddr: u64) -> u64 {
     desc
 }
 
-/// Translate x86 flags to an ARM L1/L2 block descriptor (1GB/2MB block)
+/// 将 x86 风格页标志转换为 ARM L1/L2 块描述符 (1GB/2MB 块)
 fn block_flags_to_descriptor(flags: u64, paddr: u64, _level: u8, output_mask: u64) -> u64 {
     let mut desc = paddr & output_mask;
     desc |= DESC_TYPE_BLOCK;
@@ -166,7 +166,7 @@ fn block_flags_to_descriptor(flags: u64, paddr: u64, _level: u8, output_mask: u6
     desc
 }
 
-/// Create a table descriptor pointing to next-level table
+/// 创建指向下一级表的表描述符
 fn table_descriptor(next_table_paddr: u64) -> u64 {
     (next_table_paddr & 0x0000_FFFF_FFFF_F000) | DESC_TYPE_TABLE
 }
@@ -222,16 +222,16 @@ impl Aarch64Vmm {
         restore_interrupts(flags);
     }
 
-    // ─── Initialization ──────────────────────────────────────────────
+    // ─── 初始化 ──────────────────────────────────────────────
 
-    /// Initialize kernel high-half page tables (TTBR1_EL1).
-    /// Does NOT replace the existing identity mapping set up by mmu.rs.
+    /// 初始化内核高半区页表 (TTBR1_EL1).
+    /// 不替换 mmu.rs 已建立的低半区恒等映射.
     pub fn init(&self) {
-        // The kernel MMU identity mapping is already set up by mmu::init().
-        // We keep it for low-level access (MMIO, etc.) and set up a proper
-        // high-half kernel mapping in TTBR1_EL1 for general use.
+        // 内核 MMU 恒等映射已由 mmu::init() 建立.
+        // 我们保留它用于低层访问 (MMIO 等), 并在 TTBR1_EL1 中建立
+        // 规范的高半区内核映射以供常规使用.
 
-        // Read current TTBR0_EL1 (which points to our L0 table from mmu.rs)
+        // 读取当前 TTBR0_EL1 (指向 mmu.rs 建立的 L0 表)
         let current_l0: u64;
         // SAFETY: mrs ttbr0_el1 是系统寄存器读取指令，无副作用；
         // 声明 options(nomem, preserves_flags) 防止编译器重排。
@@ -239,9 +239,9 @@ impl Aarch64Vmm {
             core::arch::asm!("mrs {}, ttbr0_el1", out(reg) current_l0);
         }
 
-        // Store the kernel L0 address
-        // We reuse the existing page tables for now.
-        // In a more complete implementation, we'd create separate kernel tables.
+        // 存储内核 L0 地址
+        // 暂复用现有页表.
+        // 完整实现中应创建独立的内核表.
         let kernel_l0_ptr = &raw const self.kernel_l0 as *mut u64;
         // SAFETY: kernel_l0_ptr 指向 self.kernel_l0 (类型对齐的 u64)；
         // write_volatile 防止编译器优化掉对页表硬件的写。
@@ -249,7 +249,7 @@ impl Aarch64Vmm {
             ptr::write_volatile(kernel_l0_ptr, current_l0);
         }
 
-        // Ensure TTBR1_EL1 points to the same tables (for high-half access)
+        // 确保 TTBR1_EL1 指向同一张表 (用于高半区访问)
         unsafe {
             core::arch::asm!(
                 "msr ttbr1_el1, {}",
@@ -396,17 +396,15 @@ impl Aarch64Vmm {
     }
 
     pub fn split_2mb_page(&self, _virt: u64) -> Result<(), &'static str> {
-        // On aarch64, L2 blocks (2MB) are the default for block mappings.
-        // We don't need to split them — we can always allocate L3 tables
-        // and use 4KB pages directly.
-        // This function exists for x86 compatibility.
+        // 在 aarch64 上, L2 块 (2MB) 是块映射的默认.
+        // 无需拆分 — 可直接分配 L3 表并使用 4KB 页.
+        // 此函数仅为与 x86 兼容而保留.
         Ok(())
     }
 
-    // ─── Page Table Walk / Map ───────────────────────────────────────
+    // ─── 页表遍历 / 映射 ───────────────────────────────────────
 
-    /// Walk the page table starting at `root_paddr`, creating intermediate
-    /// levels as needed, and set the final page descriptor.
+    /// 从 `root_paddr` 遍历页表, 按需创建中间级, 设置最终页描述符.
     pub fn map_page_in_table(
         &self,
         root_paddr: u64,
@@ -521,22 +519,20 @@ impl Aarch64Vmm {
         }
         let l3_idx = l3_index(vaddr);
 
-        // Clear the L3 page descriptor
+        // 清除 L3 页描述符
         // SAFETY: l3 是已验证的 L3 页表基地址；l3_idx < 512。
         unsafe {
             ptr::write_volatile(l3.add(l3_idx), 0);
         }
 
-        // TLB invalidate — must precede any page-table-page free so that
-        // speculative walks cannot land on freed physical memory.
+        // TLB 失效 — 必须在释放页表页前执行, 以避免投机性遍历落入已释放物理页.
         // SAFETY: 标准 TLB 失效序列；vaddr 是有效内核虚拟地址。
         unsafe {
             core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
         }
 
-        // Recursively free empty intermediate page-table pages to avoid
-        // leaking memory between unmap operations (destroy_page_table only
-        // runs at process teardown).
+        // 递归释放空的中间页表页, 避免 unmap 间内存泄漏
+        // (destroy_page_table 仅在进程销毁时执行).
         if self.is_table_empty(l3) {
             // SAFETY: 读取/清除 L2 中指向 L3 的表项；l2_idx < 512。
             let l3_paddr = unsafe {
@@ -582,7 +578,7 @@ impl Aarch64Vmm {
         self.release_lock(&_lock_flags);
     }
 
-    /// Returns true when all 512 entries of a page-table page are zero.
+    /// 当一个页表页的全部 512 项均为 0 时返回 true.
     fn is_table_empty(&self, table: *mut u64) -> bool {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -595,8 +591,8 @@ impl Aarch64Vmm {
         true
     }
 
-    /// Walk a table entry to the next level (read-only, no allocation).
-    /// Returns null if the entry is not a valid table descriptor.
+    /// 遍历表项到下一级 (只读, 不分配).
+    /// 若该表项不是合法的表描述符则返回 null.
     fn get_next_level(&self, table: *mut u64, idx: usize) -> *mut u64 {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -610,18 +606,17 @@ impl Aarch64Vmm {
         }
     }
 
-    // ─── User Page Table Operations ──────────────────────────────────
+    // ─── 用户页表操作 ──────────────────────────────────
 
     pub fn create_user_page_table(&self) -> Option<u64> {
-        // Allocate a clean L0 table for user space (TTBR0_EL1)
+        // 为用户空间 (TTBR0_EL1) 分配一张干净的 L0 表
         let user_l0 = self.alloc_table()?;
 
-        // Allocate a new L1 table for user-space entries.
-        // Do NOT share L1_IDMAP/L2_DEVICE with the kernel — those tables
-        // use Device memory attributes for MMIO regions and are not suitable
-        // for user code execution.  Sharing them would also cause the user
-        // page table modifications (e.g. replacing a 2MB BLOCK with a TABLE
-        // descriptor) to corrupt the kernel's identity mapping.
+        // 为用户空间项分配新的 L1 表.
+        // 不与内核共享 L1_IDMAP/L2_DEVICE — 这些表对 MMIO 区使用
+        // Device 内存属性, 不适合用户代码执行. 共享它们也会导致
+        // 用户页表修改 (例如把 2MB BLOCK 替换为 TABLE 描述符) 破坏
+        // 内核恒等映射.
         let user_l1 = match self.alloc_table() {
             Some(t) => t,
             None => {
@@ -636,16 +631,15 @@ impl Aarch64Vmm {
 
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            // L0[0] → new user L1 table (clean, no shared tables)
+            // L0[0] → 新的用户 L1 表 (干净, 不共享)
             ptr::write_volatile(user_l0_ptr.add(0), user_l1_desc);
 
-            // Copy TTBR1 entries from kernel L0 (indices 256..511).
-            // These cover the high-half kernel address space
+            // 从内核 L0 复制 TTBR1 项 (索引 256..511).
+            // 它们覆盖高半区内核地址空间
             // (0xFFFF_0000_0000_0000 .. 0xFFFF_FFFF_FFFF_FFFF).
-            // After switching TTBR0_EL1 to the user page table, kernel code
-            // must remain reachable via TTBR1_EL1 — the TTBR1 entries ensure
-            // the kernel's own page tables are still accessible for exception
-            // handling and other kernel-mode operations.
+            // 切换 TTBR0_EL1 到用户页表后, 内核代码必须仍可通过
+            // TTBR1_EL1 访问 — TTBR1 项保证内核自身页表仍可用于
+            // 异常处理与其他内核态操作.
             for i in 256..TABLE_ENTRIES {
                 let entry = ptr::read_volatile(kernel_l0.add(i));
                 ptr::write_volatile(user_l0_ptr.add(i), entry);
@@ -656,22 +650,19 @@ impl Aarch64Vmm {
     }
 
     pub fn ensure_pml4_user(&self, _virt: u64) {
-        // On aarch64, kernel and user tables are separate (TTBR0 vs TTBR1).
-        // We don't need a USER bit on kernel entries — user accesses go
-        // through TTBR0, kernel through TTBR1.
-        // This is a no-op for aarch64.
+        // 在 aarch64 上, 内核与用户表是分离的 (TTBR0 vs TTBR1).
+        // 内核表项无需 USER 位 — 用户访问走 TTBR0, 内核走 TTBR1.
+        // 对 aarch64 而言此函数为空操作.
     }
 
     pub fn ensure_path_user(&self, virt: u64) {
-        // On aarch64, this is only relevant if the path is in the user
-        // page table. Since user tables are in TTBR0 and naturally
-        // user-accessible, we just need to ensure all intermediate table
-        // descriptors are present (which map_page_in_table already does).
+        // 在 aarch64 上, 仅当路径位于用户页表才相关.
+        // 由于用户表在 TTBR0 且天然用户可访问, 只需确保所有
+        // 中间表描述符存在 (map_page_in_table 已处理).
         if is_kernel_addr(virt) {
-            // No need for USER flag on kernel pages
+            // 内核页无需 USER 标志
         }
-        // For user-space addresses in user tables, ensure entries are valid
-        // (already done by map_page_in_table)
+        // 用户表中的用户空间地址, 已在 map_page_in_table 中保证项合法
     }
 
     pub fn switch_page_table(&self, ttbr0: u64) {
@@ -900,7 +891,7 @@ impl Aarch64Vmm {
     }
 }
 
-// ─── Global VMM Instance ─────────────────────────────────────────────
+// ─── 全局 VMM 实例 ─────────────────────────────────────────────
 
 static GLOBAL_VMM: OnceLock<Aarch64Vmm> = OnceLock::new();
 

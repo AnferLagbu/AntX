@@ -18,7 +18,7 @@ use crate::kernel::framework::proc::madvise_mlock as ml;
 // sys_madvise
 // ============================================================================
 
-/// `sys_madvise(addr, len, advice) -> 0/-errno`
+/// `sys_madvise(addr, len, advice) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_madvise(a0: u64, a1: u64, a2: u64) -> i64 {
     ml::sys_madvise(a0, a1, a2 as u32)
 }
@@ -27,7 +27,7 @@ pub fn sys_madvise(a0: u64, a1: u64, a2: u64) -> i64 {
 // sys_mlock
 // ============================================================================
 
-/// `sys_mlock(addr, len) -> 0/-errno`
+/// `sys_mlock(addr, len) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_mlock(a0: u64, a1: u64) -> i64 {
     ml::sys_mlock(a0, a1)
 }
@@ -36,7 +36,7 @@ pub fn sys_mlock(a0: u64, a1: u64) -> i64 {
 // sys_munlock
 // ============================================================================
 
-/// `sys_munlock(addr, len) -> 0/-errno`
+/// `sys_munlock(addr, len) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_munlock(a0: u64, a1: u64) -> i64 {
     ml::sys_munlock(a0, a1)
 }
@@ -45,7 +45,7 @@ pub fn sys_munlock(a0: u64, a1: u64) -> i64 {
 // sys_mlockall
 // ============================================================================
 
-/// `sys_mlockall(flags) -> 0/-errno`
+/// `sys_mlockall(flags) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_mlockall(a0: u64) -> i64 {
     ml::sys_mlockall(a0 as u32)
 }
@@ -54,7 +54,7 @@ pub fn sys_mlockall(a0: u64) -> i64 {
 // sys_munlockall
 // ============================================================================
 
-/// `sys_munlockall() -> 0/-errno`
+/// `sys_munlockall() -> 0/-errno`  // POSIX 函数签名
 pub fn sys_munlockall() -> i64 {
     ml::sys_munlockall()
 }
@@ -63,7 +63,7 @@ pub fn sys_munlockall() -> i64 {
 // sys_mincore
 // ============================================================================
 
-/// `sys_mincore(addr, len, vec_ptr) -> 0/-errno`
+/// `sys_mincore(addr, len, vec_ptr) -> 0/-errno`  // POSIX 函数签名
 pub fn sys_mincore(a0: u64, a1: u64, a2: u64) -> i64 {
     ml::sys_mincore(a0, a1, a2)
 }

@@ -1,27 +1,25 @@
-//! UFrame / USegment — Type-safe user-memory frame abstraction
+//! UFrame / USegment — 类型安全的用户内存帧抽象
 //!
-//! Provides type-level safety guarantees for user-space memory access,
-//! strengthening Invariant I4 (kernel must not dereference user pointers
-//! without validation).
+//! 为用户空间内存访问提供类型层安全保证,
+//! 强化不变式 I4 (内核解引用用户指针前必须验证).
 //!
-//! # Design
+//! # 设计
 //!
-//! - `UFrame`: Represents a single user physical frame (4KB). Access is
-//!   restricted to `read_pod` / `write_pod` which copy POD types in/out
-//!   without exposing long-lived references to user memory.
+//! - `UFrame`: 表示单个用户物理帧 (4KB). 访问被限制在
+//!   `read_pod` / `write_pod` 上, 它们按字节复制 POD 类型进出,
+//!   不暴露对用户内存的长期引用.
 //!
-//! - `USegment`: Represents a contiguous range of user virtual memory.
-//!   Provides `read_bytes` / `write_bytes` with bounded copies.
+//! - `USegment`: 表示连续的用户虚拟内存区间.
+//!   提供 `read_bytes` / `write_bytes` 进行有界复制.
 //!
-//! - `Pod` trait: Marks Plain Old Data types that can be safely copied
-//!   byte-by-byte (no pointers, no interior mutability, no Drop side effects).
+//! - `Pod` trait: 标记可按字节安全复制的 Plain Old Data 类型
+//!   (无指针, 无内部可变性, 无 Drop 副作用).
 //!
-//! # Safety Invariants
+//! # 安全不变式
 //!
-//! - UFrame/USegment never expose `&[u8]` or `&mut [u8]` pointing to user
-//!   memory — all access goes through bounded copy operations.
-//! - Pod types cannot contain pointers into kernel memory, preventing
-//!   accidental kernel address leakage to user space.
+//! - UFrame/USegment 永不允许暴露指向用户内存的 `&[u8]` 或 `&mut [u8]`
+//!   —— 所有访问都通过有界复制操作.
+//! - Pod 类型不得包含指向内核内存的指针, 防止内核地址意外泄漏到用户空间.
 
 use super::*;
 use super::copy_user::{copy_from_user, copy_to_user, is_user_ptr, is_user_buf};
@@ -30,24 +28,24 @@ use super::copy_user::{copy_from_user, copy_to_user, is_user_ptr, is_user_buf};
 // Pod trait
 // ---------------------------------------------------------------------------
 
-/// Marker trait for Plain Old Data types.
+/// POD (Plain Old Data) 类型的标记 trait.
 ///
-/// A `Pod` type can be safely copied byte-by-byte between kernel and user
-/// memory. Types implementing `Pod` must satisfy:
+/// `Pod` 类型可按字节在内核与用户内存之间安全复制.
+/// 实现 `Pod` 的类型必须满足:
 ///
-/// 1. No pointers (raw or references) — prevents kernel address leakage
-/// 2. No interior mutability (Cell, RefCell, AtomicXxx) — prevents TOCTOU
-/// 3. No `Drop` side effects — value is purely bitwise
-/// 4. `Copy` — value semantics only
+/// 1. 无指针 (裸指针或引用) —— 防止内核地址泄漏
+/// 2. 无内部可变性 (Cell, RefCell, AtomicXxx) —— 防止 TOCTOU
+/// 3. 无 `Drop` 副作用 —— 值是纯位级语义
+/// 4. `Copy` —— 仅值语义
 ///
 /// # Safety
 ///
-/// Implementing this trait is safe because the compiler enforces `Copy`.
-/// However, the implementer must ensure no pointer fields exist. This is
-/// checked by the `pod_assertions` test below.
+/// 实现该 trait 是安全的, 因为编译器会强制 `Copy`.
+/// 但实现者必须保证不存在指针字段. 这一点
+/// 由下面的 `pod_assertions` 测试验证.
 pub trait Pod: Copy {}
 
-// Implement Pod for common primitive types
+// 为常见原始类型实现 Pod
 impl Pod for u8 {}
 impl Pod for u16 {}
 impl Pod for u32 {}
@@ -60,39 +58,37 @@ impl Pod for i64 {}
 impl Pod for isize {}
 impl Pod for bool {}
 
-// Implement Pod for arrays of Pod types
+// 为 Pod 类型的数组实现 Pod
 impl<const N: usize, T: Pod> Pod for [T; N] {}
 
 // ---------------------------------------------------------------------------
-// UFrame — single user physical frame
+// UFrame — 单个用户物理帧
 // ---------------------------------------------------------------------------
 
-/// A single user physical frame (4KB page).
+/// 单个用户物理帧 (4KB 页).
 ///
-/// `UFrame` encapsulates a page-frame number (PFN) and provides safe
-/// read/write access to the frame's contents via `Pod` types. It never
-/// exposes a direct reference to user memory.
+/// `UFrame` 封装一个页帧号 (PFN), 通过 `Pod` 类型
+/// 提供对帧内容的读写访问. 永不允许直接暴露对用户内存的引用.
 ///
-/// # Lifecycle
+/// # 生命周期
 ///
-/// A `UFrame` is created from a validated user virtual address. The caller
-/// must ensure the underlying page remains mapped for the lifetime of the
-/// `UFrame`.
+/// `UFrame` 由经过验证的用户虚拟地址创建.
+/// 调用方必须保证底层页在 `UFrame` 生命周期内保持映射.
 ///
-/// # Invariant I4
+/// # 不变式 I4
 ///
-/// By restricting access to `read_pod`/`write_pod`, `UFrame` ensures that
-/// the kernel never holds a long-lived reference to user memory, preventing
-/// TOCTOU attacks where user modifies memory after kernel validation.
+/// 通过将访问限制在 `read_pod`/`write_pod` 上,
+/// `UFrame` 确保内核不会持有对用户内存的长期引用,
+/// 防止内核验证后用户修改内存的 TOCTOU 攻击.
 pub struct UFrame {
-    /// User virtual address of the frame (page-aligned)
+    /// 帧的用户虚拟地址 (页对齐)
     uaddr: u64,
 }
 
 impl UFrame {
-    /// Create a `UFrame` from a user virtual address.
+    /// 从用户虚拟地址创建 `UFrame`.
     ///
-    /// Returns `None` if the address is not in user space or not page-aligned.
+    /// 当地址不在用户空间或未页对齐时返回 `None`.
     #[inline]
     pub fn from_user_addr(addr: u64) -> Option<Self> {
         if !is_user_ptr(addr) || !addr.is_multiple_of(PAGE_SIZE) {
@@ -101,21 +97,21 @@ impl UFrame {
         Some(Self { uaddr: addr })
     }
 
-    /// Create a `UFrame` without validation.
+    /// 不经校验创建 `UFrame`.
     ///
     /// # Safety
     ///
-    /// - `addr` must be a valid, page-aligned user virtual address
-    /// - The underlying page must remain mapped for the lifetime of this `UFrame`
+    /// - `addr` 必须是合法的、页对齐的用户虚拟地址
+    /// - 底层页在该 `UFrame` 生命周期内必须保持映射
     #[inline]
     pub unsafe fn from_user_addr_unchecked(addr: u64) -> Self {
         Self { uaddr: addr }
     }
 
-    /// Read a POD value from a specific offset within the frame.
+    /// 从帧内指定偏移读取一个 POD 值.
     ///
-    /// The offset + size_of::<T>() must not exceed PAGE_SIZE.
-    /// Returns `Err(())` on page fault or invalid offset.
+    /// offset + size_of::<T>() 不得超过 PAGE_SIZE.
+    /// 页错误或偏移非法时返回 `Err(())`.
     #[inline]
     pub fn read_pod<T: Pod>(&self, offset: usize) -> Result<T, ()> {
         let size = core::mem::size_of::<T>();
@@ -136,10 +132,10 @@ impl UFrame {
         Ok(unsafe { val.assume_init() })
     }
 
-    /// Write a POD value to a specific offset within the frame.
+    /// 将一个 POD 值写入帧内指定偏移.
     ///
-    /// The offset + size_of::<T>() must not exceed PAGE_SIZE.
-    /// Returns `Err(())` on page fault or invalid offset.
+    /// offset + size_of::<T>() 不得超过 PAGE_SIZE.
+    /// 页错误或偏移非法时返回 `Err(())`.
     #[inline]
     pub fn write_pod<T: Pod>(&self, offset: usize, val: &T) -> Result<(), ()> {
         let size = core::mem::size_of::<T>();
@@ -155,10 +151,10 @@ impl UFrame {
         Ok(())
     }
 
-    /// Read a byte slice from the frame.
+    /// 从帧读取一段字节切片.
     ///
-    /// `offset + buf.len()` must not exceed PAGE_SIZE.
-    /// Returns the number of bytes actually copied.
+    /// `offset + buf.len()` 不得超过 PAGE_SIZE.
+    /// 返回实际复制的字节数.
     #[inline]
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<usize, ()> {
         if offset.saturating_add(buf.len()) > PAGE_SIZE as usize {
@@ -167,10 +163,10 @@ impl UFrame {
         copy_from_user(buf, self.uaddr + offset as u64, buf.len())
     }
 
-    /// Write a byte slice to the frame.
+    /// 向帧写入一段字节切片.
     ///
-    /// `offset + data.len()` must not exceed PAGE_SIZE.
-    /// Returns the number of bytes actually copied.
+    /// `offset + data.len()` 不得超过 PAGE_SIZE.
+    /// 返回实际复制的字节数.
     #[inline]
     pub fn write_bytes(&self, offset: usize, data: &[u8]) -> Result<usize, ()> {
         if offset.saturating_add(data.len()) > PAGE_SIZE as usize {
@@ -179,7 +175,7 @@ impl UFrame {
         copy_to_user(self.uaddr + offset as u64, data, data.len())
     }
 
-    /// Return the user virtual address of this frame.
+    /// 返回该帧的用户虚拟地址.
     #[inline]
     pub fn user_addr(&self) -> u64 {
         self.uaddr
@@ -187,28 +183,28 @@ impl UFrame {
 }
 
 // ---------------------------------------------------------------------------
-// USegment — contiguous user virtual memory range
+// USegment — 连续的用户虚拟内存区间
 // ---------------------------------------------------------------------------
 
-/// A contiguous range of user virtual memory.
+/// 一段连续的用户虚拟内存.
 ///
-/// Unlike `UFrame`, `USegment` can span multiple pages and arbitrary
-/// byte ranges. Access is restricted to bounded copy operations.
+/// 与 `UFrame` 不同, `USegment` 可跨多页, 字节范围任意.
+/// 访问被限制在有界复制操作上.
 ///
-/// # Invariant I4
+/// # 不变式 I4
 ///
-/// Same as `UFrame`: never exposes a reference to user memory.
+/// 与 `UFrame` 一致: 永不允许暴露对用户内存的引用.
 pub struct USegment {
-    /// Base user virtual address
+    /// 起始用户虚拟地址
     base: u64,
-    /// Length in bytes
+    /// 字节长度
     len: usize,
 }
 
 impl USegment {
-    /// Create a `USegment` from a user address and length.
+    /// 从用户地址与长度创建 `USegment`.
     ///
-    /// Returns `None` if the range is not entirely in user space.
+    /// 区间不完全位于用户空间时返回 `None`.
     #[inline]
     pub fn from_user_range(addr: u64, len: usize) -> Option<Self> {
         if !is_user_buf(addr, len) {
@@ -217,20 +213,20 @@ impl USegment {
         Some(Self { base: addr, len })
     }
 
-    /// Create a `USegment` without validation.
+    /// 不经校验创建 `USegment`.
     ///
     /// # Safety
     ///
-    /// - `[addr, addr+len)` must be valid, mapped, user-accessible memory
-    /// - The mapping must remain valid for the lifetime of this `USegment`
+    /// - `[addr, addr+len)` 必须是合法的、已映射的、用户可访问的内存
+    /// - 映射在该 `USegment` 生命周期内必须保持有效
     #[inline]
     pub unsafe fn from_user_range_unchecked(addr: u64, len: usize) -> Self {
         Self { base: addr, len }
     }
 
-    /// Read a POD value from a specific offset within the segment.
+    /// 从段内指定偏移读取一个 POD 值.
     ///
-    /// Returns `Err(())` on page fault or out-of-bounds offset.
+    /// 页错误或偏移越界时返回 `Err(())`.
     #[inline]
     pub fn read_pod<T: Pod>(&self, offset: usize) -> Result<T, ()> {
         let size = core::mem::size_of::<T>();
@@ -250,9 +246,9 @@ impl USegment {
         Ok(unsafe { val.assume_init() })
     }
 
-    /// Write a POD value to a specific offset within the segment.
+    /// 将一个 POD 值写入段内指定偏移.
     ///
-    /// Returns `Err(())` on page fault or out-of-bounds offset.
+    /// 页错误或偏移越界时返回 `Err(())`.
     #[inline]
     pub fn write_pod<T: Pod>(&self, offset: usize, val: &T) -> Result<(), ()> {
         let size = core::mem::size_of::<T>();
@@ -268,9 +264,9 @@ impl USegment {
         Ok(())
     }
 
-    /// Read bytes from the segment into a kernel buffer.
+    /// 从段读取字节到内核缓冲区.
     ///
-    /// Returns the number of bytes actually copied.
+    /// 返回实际复制的字节数.
     #[inline]
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<usize, ()> {
         let max_len = self.len.saturating_sub(offset);
@@ -281,9 +277,9 @@ impl USegment {
         copy_from_user(&mut buf[..copy_len], self.base + offset as u64, copy_len)
     }
 
-    /// Write bytes from a kernel buffer to the segment.
+    /// 将内核缓冲区字节写入段.
     ///
-    /// Returns the number of bytes actually copied.
+    /// 返回实际复制的字节数.
     #[inline]
     pub fn write_bytes(&self, offset: usize, data: &[u8]) -> Result<usize, ()> {
         let max_len = self.len.saturating_sub(offset);
@@ -294,19 +290,19 @@ impl USegment {
         copy_to_user(self.base + offset as u64, &data[..copy_len], copy_len)
     }
 
-    /// Return the base user virtual address.
+    /// 返回起始用户虚拟地址.
     #[inline]
     pub fn base(&self) -> u64 {
         self.base
     }
 
-    /// Return the length in bytes.
+    /// 返回字节长度.
     #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    /// Return true if the segment has zero length.
+    /// 段长度为零时返回 true.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
@@ -314,7 +310,7 @@ impl USegment {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// 测试
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -323,33 +319,33 @@ mod tests {
 
     #[test]
     fn test_uframe_rejects_kernel_addr() {
-        // Kernel-space address should be rejected
+        // 内核空间地址应被拒绝
         assert!(UFrame::from_user_addr(0xFFFF800000000000).is_none());
     }
 
     #[test]
     fn test_uframe_rejects_misaligned() {
-        // Non-page-aligned user address should be rejected
+        // 未页对齐的用户地址应被拒绝
         assert!(UFrame::from_user_addr(0x1001).is_none());
     }
 
     #[test]
     fn test_usegment_rejects_kernel_range() {
-        // Kernel-space range should be rejected
+        // 内核空间区间应被拒绝
         assert!(USegment::from_user_range(0xFFFF800000000000, 4096).is_none());
     }
 
     #[test]
     fn test_uframe_offset_overflow() {
-        // offset + size > PAGE_SIZE should fail
-        // We can't actually read (no user pages in unit test), but the
-        // bounds check should reject it.
+        // offset + size > PAGE_SIZE 时应失败
+        // 单元测试中无法真正读取 (无用户页), 但
+        // 边界检查应当拒绝.
         // SAFETY: 测试中构造虚拟 UFrame 不访问真实用户内存, 仅触发 bounds
         // check 分支, read_pod 会在 offset=4090 立即返回 Err, 不会触碰
         // 从_raw_parts_mut 创建的 dst slice.
         unsafe {
             let frame = UFrame::from_user_addr_unchecked(0x1000);
-            // u64 at offset 4090 would need 8 bytes but only 6 remain
+            // 偏移 4090 处读 u64 需要 8 字节, 但仅剩 6 字节
             assert!(frame.read_pod::<u64>(4090).is_err());
         }
     }
@@ -359,7 +355,7 @@ mod tests {
         // SAFETY: 同 test_uframe_offset_overflow, 仅触发 bounds check 分支.
         unsafe {
             let seg = USegment::from_user_range_unchecked(0x1000, 16);
-            // Read u64 at offset 12 would need 8 bytes but only 4 remain
+            // 偏移 12 处读 u64 需要 8 字节, 但仅剩 4 字节
             assert!(seg.read_pod::<u64>(12).is_err());
         }
     }

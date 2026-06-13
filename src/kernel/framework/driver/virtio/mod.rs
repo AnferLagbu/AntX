@@ -1,10 +1,10 @@
 #![allow(dead_code)]
-//! VirtIO MMIO Transport Layer
+//! VirtIO MMIO 传输层
 //!
-//! Implements VirtIO 1.0 MMIO transport for device discovery and setup.
-//! Used on QEMU virt platform (aarch64 and x86_64 with -M virt).
+//! 实现 VirtIO 1.0 MMIO 传输, 用于设备发现与初始化.
+//! 在 QEMU virt 平台 (aarch64 与 x86_64 -M virt) 上使用.
 //!
-//! MMIO Register Layout (each device occupies a 0x200-byte region):
+//! MMIO 寄存器布局 (每个设备占据 0x200 字节区域):
 //!
 //! | Offset | Name            | Width | Description                       |
 //! |--------|-----------------|-------|-----------------------------------|
@@ -33,8 +33,8 @@
 //! | 0x0fc  | ConfigGeneration| R     | Config change counter             |
 //! | 0x100+ | Config          | RW    | Device-specific configuration     |
 //!
-//! QEMU virt aarch64 places virtio-mmio devices starting at 0x0a000000,
-//! with each device at a 0x200-byte stride.
+//! QEMU virt aarch64 将 virtio-mmio 设备放置在 0x0a000000 起始地址,
+//! 每个设备之间步长 0x200 字节.
 
 pub mod blk;
 pub mod net;
@@ -75,7 +75,7 @@ const QUEUE_DEVICE_HIGH: usize = 0x0a4;
 
 const VIRTIO_MAGIC: u32 = 0x74726976;
 
-// ── Device status bits ──
+// ── 设备状态位 ──
 
 const STATUS_ACKNOWLEDGE: u32 = 1;
 const STATUS_DRIVER: u32 = 2;
@@ -92,59 +92,59 @@ pub const VIRTIO_ID_GPU: u32 = 16;
 
 // ── MMIO region ──
 
-/// Base address of virtio-mmio region on QEMU virt (aarch64).
-/// On x86_64 with QEMU microvm, this may differ.
+/// QEMU virt (aarch64) 上 virtio-mmio 区域的基地址.
+/// 在 x86_64 QEMU microvm 上可能不同.
 pub const VIRTIO_MMIO_BASE: u64 = 0x0a00_0000;
-/// Stride between virtio-mmio devices (0x200 bytes).
+/// virtio-mmio 设备之间的步长 (0x200 字节).
 pub const VIRTIO_MMIO_STRIDE: u64 = 0x200;
-/// Maximum number of virtio-mmio devices to probe.
+/// 要探测的 virtio-mmio 设备最大数量.
 pub const VIRTIO_MMIO_MAX_DEVICES: u32 = 32;
 
 // ── Feature bits ──
 
-/// General feature: VIRTIO_F_VERSION_1 (must be acknowledged for spec compliance)
+/// 通用特性: VIRTIO_F_VERSION_1 (必须确认以符合规范)
 pub const VIRTIO_F_VERSION_1: u64 = 1 << 32;
 
-/// A discovered virtio device via MMIO transport.
+/// 通过 MMIO 传输发现的 virtio 设备.
 pub struct VirtioMmioDevice {
-    /// MMIO region handle (safe access proxy).
+    /// MMIO 区域句柄 (安全访问代理).
     pub iomem: IoMem,
-    /// Device ID (e.g. 2 for block device).
+    /// 设备 ID (如 2 表示块设备).
     pub device_id: u32,
-    /// Number of virtqueues the device supports.
-    /// For block devices, typically 1.
+    /// 设备支持的 virtqueue 数量.
+    /// 块设备通常为 1.
     pub queue_count: u32,
 }
 
 impl VirtioMmioDevice {
-    /// Read a 32-bit register from the device's MMIO space.
+    /// 从设备的 MMIO 空间读取 32 位寄存器.
     #[inline(always)]
     fn read32(&self, offset: usize) -> u32 {
         self.iomem.read_u32(offset)
     }
 
-    /// Write a 32-bit register to the device's MMIO space.
+    /// 向设备的 MMIO 空间写入 32 位寄存器.
     #[inline(always)]
     fn write32(&self, offset: usize, val: u32) {
         self.iomem.write_u32(offset, val);
     }
 
-    /// Read a 64-bit value split across Low/High registers.
+    /// 读取跨 Low/High 寄存器的 64 位值.
     fn read64(&self, low_off: usize, high_off: usize) -> u64 {
         let lo = self.read32(low_off) as u64;
         let hi = self.read32(high_off) as u64;
         lo | (hi << 32)
     }
 
-    /// Write a 64-bit value split across Low/High registers.
+    /// 写入跨 Low/High 寄存器的 64 位值.
     fn write64(&self, low_off: usize, high_off: usize, val: u64) {
         self.write32(low_off, (val & 0xFFFF_FFFF) as u32);
         self.write32(high_off, (val >> 32) as u32);
     }
 
-    /// Probe whether the device at the given MMIO base is a valid virtio device.
+    /// 探测给定 MMIO 基址的设备是否为合法的 virtio 设备.
     pub fn probe(mmio_base: u64) -> Option<Self> {
-        // Create IoMem for the MMIO region (0x200 per device)
+        // 为 MMIO 区域创建 IoMem (每个设备 0x200 字节)
         let iomem = match IoMem::from_pci_bar(PhysAddr::new(mmio_base), 0x200, "virtio-mmio") {
             Ok(m) => m,
             Err(_) => return None,
@@ -156,14 +156,14 @@ impl VirtioMmioDevice {
         }
 
         let version = iomem.read_u32(VERSION);
-        // QEMU virt uses VirtIO 1.0 (version 2) or transitional (version 1)
+        // QEMU virt 使用 VirtIO 1.0 (version 2) 或过渡版 (version 1)
         if version != 1 && version != 2 {
             return None;
         }
 
         let device_id = iomem.read_u32(DEVICE_ID);
         if device_id == 0 {
-            return None; // No device attached to this slot
+            return None; // 此槽位无设备
         }
 
         let vendor_id = iomem.read_u32(VENDOR_ID);
@@ -193,7 +193,7 @@ impl VirtioMmioDevice {
     pub fn init(&self) -> Result<(), ()> {
         // Step 1: Reset
         self.write32(STATUS, 0);
-        // Ensure device observes reset
+        // 确保设备观察到重置
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
         // Step 2: ACKNOWLEDGE
@@ -202,14 +202,14 @@ impl VirtioMmioDevice {
         // Step 3: DRIVER
         self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
 
-        // Step 4: Feature negotiation
-        // Read device features
+        // Step 4: 特性协商
+        // 读取设备特性
         self.write32(DEVICE_FEATURES_SEL, 0);
         let _dev_features_lo = self.read32(DEVICE_FEATURES);
         self.write32(DEVICE_FEATURES_SEL, 1);
         let _dev_features_hi = self.read32(DEVICE_FEATURES);
 
-        // Acknowledge VIRTIO_F_VERSION_1
+        // 确认 VIRTIO_F_VERSION_1
         self.write32(DRIVER_FEATURES_SEL, 1);
         self.write32(DRIVER_FEATURES, (VIRTIO_F_VERSION_1 >> 32) as u32);
         self.write32(DRIVER_FEATURES_SEL, 0);
@@ -221,7 +221,7 @@ impl VirtioMmioDevice {
             STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK,
         );
 
-        // Verify FEATURES_OK was accepted
+        // 验证 FEATURES_OK 已被接受
         let status = self.read32(STATUS);
         if status & STATUS_FEATURES_OK == 0 {
             klog_warn!(
@@ -235,7 +235,7 @@ impl VirtioMmioDevice {
         Ok(())
     }
 
-    /// Set DRIVER_OK (device goes live). Must be called after all virtqueues are configured.
+    /// 设置 DRIVER_OK (设备进入 live). 必须在所有 virtqueue 配置完成后调用.
     pub fn set_driver_ok(&self) {
         self.write32(
             STATUS,
@@ -243,12 +243,12 @@ impl VirtioMmioDevice {
         );
     }
 
-    /// Configure a virtqueue on this device.
+    /// 在此设备上配置 virtqueue.
     pub fn setup_vq(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
-        // Select the virtqueue
+        // 选中 virtqueue
         self.write32(QUEUE_SEL, vq_index as u32);
 
-        // Check max queue size
+        // 检查最大队列大小
         let max_size = self.read32(QUEUE_NUM_MAX);
         if vq.queue_size as u32 > max_size {
             klog_warn!(
@@ -269,7 +269,7 @@ impl VirtioMmioDevice {
             vq.desc_paddr()
         );
 
-        // Set physical addresses of the three ring parts
+        // 设置三段 ring 的物理地址
         self.write64(QUEUE_DESC_LOW, QUEUE_DESC_HIGH, vq.desc_paddr());
         klog_info!(Driver, "virtio: vq{} desc written", vq_index);
         self.write64(QUEUE_DRIVER_LOW, QUEUE_DRIVER_HIGH, vq.avail_paddr());
@@ -284,8 +284,8 @@ impl VirtioMmioDevice {
         Ok(())
     }
 
-    /// Configure a virtqueue using legacy QueuePFN interface (VirtIO 0.9.5).
-    /// Used when VIRTIO_F_VERSION_1 is NOT negotiated (transitional/legacy devices).
+    /// 使用传统 QueuePFN 接口配置 virtqueue (VirtIO 0.9.5).
+    /// 当 VIRTIO_F_VERSION_1 未协商时使用 (传统/旧版设备).
     pub fn setup_vq_legacy(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
         self.write32(QUEUE_SEL, vq_index as u32);
 
@@ -301,8 +301,8 @@ impl VirtioMmioDevice {
 
         self.write32(QUEUE_NUM, vq.queue_size as u32);
 
-        // Legacy: write guest-physical page number of the queue
-        // The queue (desc + avail + used) is laid out contiguously within one page
+        // 传统: 写队列的客户机物理页号
+        // 队列 (desc + avail + used) 在单页内连续布局
         let pfn = (vq.desc_paddr() >> 12) as u32;
         self.write32(QUEUE_PFN, pfn);
 
@@ -316,12 +316,12 @@ impl VirtioMmioDevice {
         Ok(())
     }
 
-    /// Notify the device that new descriptors are available on a virtqueue.
+    /// 通知设备新的描述符已在 virtqueue 上可用.
     pub fn notify(&self, vq_index: u16) {
         self.write32(QUEUE_NOTIFY, vq_index as u32);
     }
 
-    /// Read from device-specific config space (offset relative to 0x100).
+    /// 从设备特定配置空间读取 (偏移相对于 0x100).
     pub fn read_config32(&self, offset: usize) -> u32 {
         self.read32(0x100 + offset)
     }
@@ -331,14 +331,14 @@ impl VirtioMmioDevice {
     }
 }
 
-/// Scan the virtio-mmio region for devices.
-/// Returns a Vec of discovered devices.
+/// 扫描 virtio-mmio 区域中的设备.
+/// 返回已发现设备的 Vec.
 pub fn probe_all() -> alloc::vec::Vec<VirtioMmioDevice> {
     let mut devices = alloc::vec::Vec::new();
 
-    // Check if the virtio-mmio region is accessible before probing.
-    // On platforms without virtio-mmio (e.g. QEMU x86_64 with pc machine type),
-    // the first read will return 0xFFFFFFFF or cause a fault.
+    // 探测前检查 virtio-mmio 区域是否可访问.
+    // 在没有 virtio-mmio 的平台上 (如 QEMU x86_64 pc 机型),
+    // 第一次读将返回 0xFFFFFFFF 或导致错误.
     for i in 0..VIRTIO_MMIO_MAX_DEVICES {
         let base = VIRTIO_MMIO_BASE + (i as u64) * VIRTIO_MMIO_STRIDE;
         if let Some(dev) = VirtioMmioDevice::probe(base) {

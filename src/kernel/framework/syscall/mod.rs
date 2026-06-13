@@ -56,7 +56,7 @@ pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
 ///
 /// # Safety
 ///
-/// Caller is in kernel context. `ptr` is a validated user-space pointer.
+/// 调用者处于内核上下文. `ptr` 是已校验的用户态指针.
 pub unsafe extern "C" fn syscall_init() {
     // SAFETY: klog_write 是 C-ABI 日志函数；byte string literal 是 'static
     // 字节切片，传递给 C 时按指针 + 长度使用。
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn syscall_init() {
 ///
 /// # Safety
 ///
-/// Caller is in kernel context. `ptr` is a validated user-space string pointer.
+/// 调用者处于内核上下文. `ptr` 是已校验的用户态字符串指针.
 pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) {
     if frame.is_null() {
         return;
@@ -155,7 +155,7 @@ macro_rules! dispatch {
 ///
 /// # Safety
 ///
-/// Called from interrupt context (int 0x80). All register values come from the interrupted user context.
+/// 从中断上下文 (int 0x80) 调用. 所有寄存器值来自被打断的用户上下文.
 pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     // TD-10: 进入内核态, tick 期间 sys_time 累加.
     crate::kernel::framework::proc::api::proc_set_in_kern(1);
@@ -517,7 +517,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             b"cet\0"
         ),
 
-        // ==================== D8: Tickless (NO_HZ) ====================
+        // ==================== D8: Tickless (NO_HZ) ====================  // 动态时钟节拍模式
         QX_TICKLESS => dispatch!(
             crate::kernel::framework::timer::tickless::sys_tickless(a0, a1, a2),
             b"tickless\0"
@@ -1199,7 +1199,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             b"inotify_rm_watch\0"
         ),
 
-        // ==================== sendfile / splice syscall (650+) ====================
+        // ==================== sendfile / splice syscall (650+) ====================  // 高效文件传输
         QX_SENDFILE => dispatch!(
             crate::kernel::framework::syscall::sendfile::sys_sendfile(
                 a0 as i32, a1 as i32, a2, a3 as usize

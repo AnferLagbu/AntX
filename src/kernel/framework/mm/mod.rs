@@ -1,8 +1,7 @@
-//! Memory Management Subsystem
+//! 内存管理子系统
 //!
-//! Rust rewrite of kernel/mm (PMM, VMM, Kmalloc)
-//! Provides physical memory management, virtual memory mapping,
-//! and kernel heap allocation with memory safety guarantees.
+//! kernel/mm 的 Rust 重写 (PMM, VMM, Kmalloc)
+//! 提供物理内存管理、虚拟内存映射以及内核堆分配, 附带内存安全保证.
 
 extern crate alloc;
 
@@ -40,7 +39,7 @@ pub mod kpti;
 #[path = "kpti_aarch64.rs"]
 pub mod kpti;
 
-// Re-export commonly used types
+// 重新导出常用类型
 pub use kmalloc::*;
 pub use pmm::*;
 pub use vmm::*;
@@ -51,23 +50,23 @@ pub use crate::kernel::framework::config::{
     HUGE_PAGE_1G_SHIFT,
 };
 
-/// Memory layout constants
-/// x86_64: high-half mapping (0xFFFF_8000_0000_0000)
-/// aarch64: identity-mapped (PA=VA in low 2GB)
+/// 内存布局常量
+/// x86_64: 高半核映射 (0xFFFF_8000_0000_0000)
+/// aarch64: 直接恒等映射 (PA=VA, 低 2GB)
 #[cfg(target_arch = "x86_64")]
 pub const KERNEL_BASE: u64 = 0xFFFF800000000000u64;
 #[cfg(target_arch = "aarch64")]
 pub const KERNEL_BASE: u64 = 0;
 pub const PHYSICAL_BASE: u64 = 0x0000000000000000u64;
 
-/// Page table entry flags (matching C definitions)
+/// 页表项标志 (与 C 定义一致)
 pub const PAGE_PRESENT: u64 = 1 << 0;
 pub const PAGE_WRITABLE: u64 = 1 << 1;
 pub const PAGE_USER: u64 = 1 << 2;
 pub const PAGE_HUGE: u64 = 1 << 7; // Huge page flag
 pub const PAGE_NX: u64 = 1u64 << 63;
 
-/// Helper macros for page table indexing
+/// 页表索引辅助宏
 #[inline(always)]
 pub const fn pml4_index(addr: u64) -> usize {
     ((addr >> 39) & 0x1FF) as usize
@@ -88,13 +87,13 @@ pub const fn pt_index(addr: u64) -> usize {
     ((addr >> 12) & 0x1FF) as usize
 }
 
-/// Convert physical address to virtual address (kernel space)
+/// 物理地址转虚拟地址 (内核空间)
 #[inline(always)]
 pub const fn phys_to_virt(phys: u64) -> u64 {
     phys + KERNEL_BASE
 }
 
-/// Convert virtual address to physical address (kernel space)
+/// 虚拟地址转物理地址 (内核空间)
 #[inline(always)]
 pub const fn virt_to_phys(virt: u64) -> u64 {
     virt - KERNEL_BASE
@@ -126,14 +125,14 @@ impl PageSize {
         }
     }
 
-    /// Check if address is properly aligned for this page size
+    /// 检查地址是否按当前页大小正确对齐
     pub fn is_aligned(&self, addr: u64) -> bool {
         let mask = self.size() - 1;
         (addr & mask) == 0
     }
 }
 
-/// Memory information structure (matching C struct)
+/// 内存信息结构 (与 C 结构体一致)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct MemoryInfo {
@@ -178,25 +177,25 @@ impl PhysAddr {
         self.0
     }
 
-    /// Align up to page boundary
+    /// 向上对齐到页边界
     #[inline(always)]
     pub fn align_up(&self, align: u64) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
-    /// Align down to page boundary
+    /// 向下对齐到页边界
     #[inline(always)]
     pub fn align_down(&self, align: u64) -> Self {
         Self(self.0 & !(align - 1))
     }
 
-    /// Convert to virtual address in kernel space
+    /// 转为内核空间虚拟地址
     pub fn to_virt(&self) -> VirtAddr {
         VirtAddr(phys_to_virt(self.0))
     }
 }
 
-/// Virtual address wrapper for type safety
+/// 虚拟地址 (类型安全包装)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VirtAddr(pub u64);
 
@@ -209,45 +208,45 @@ impl VirtAddr {
         self.0
     }
 
-    /// Align up to page boundary
+    /// 向上对齐到页边界
     #[inline(always)]
     pub fn align_up(&self, align: u64) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
-    /// Align down to page boundary
+    /// 向下对齐到页边界
     #[inline(always)]
     pub fn align_down(&self, align: u64) -> Self {
         Self(self.0 & !(align - 1))
     }
 
-    /// Convert to physical address (assumes kernel space)
+    /// 转为物理地址 (假定为内核空间)
     pub fn to_phys(&self) -> PhysAddr {
         PhysAddr(virt_to_phys(self.0))
     }
 
-    /// Get PML4 index for this address
+    /// 获取该地址的 PML4 索引
     pub fn pml4_idx(&self) -> usize {
         pml4_index(self.0)
     }
 
-    /// Get PDPT index for this address
+    /// 获取该地址的 PDPT 索引
     pub fn pdpt_idx(&self) -> usize {
         pdpt_index(self.0)
     }
 
-    /// Get PD index for this address
+    /// 获取该地址的 PD 索引
     pub fn pd_idx(&self) -> usize {
         pd_index(self.0)
     }
 
-    /// Get PT index for this address
+    /// 获取该地址的 PT 索引
     pub fn pt_idx(&self) -> usize {
         pt_index(self.0)
     }
 }
 
-// Page table entry flags (bitflags style)
+// 页表项标志 (bitflags 风格)
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct PageFlags: u64 {
@@ -270,7 +269,7 @@ impl Default for PageFlags {
     }
 }
 
-/// Page Table Entry structure (matches C bitfield layout)
+/// 页表项结构 (与 C 位域布局一致)
 #[repr(C)]
 pub struct PageTableEntry {
     bits: AtomicU64,
@@ -283,7 +282,7 @@ impl PageTableEntry {
         }
     }
 
-    /// Create from raw value
+    /// 从裸值创建
     pub fn from_value(value: u64) -> Self {
         Self {
             bits: AtomicU64::new(value),

@@ -797,7 +797,7 @@ pub extern "C" fn qx_socket_register_syscalls() -> i32 {
 // Socket 公共 API
 // ============================================================================
 
-// POSIX errno constants (i32)
+// POSIX errno 常量 (i32)
 const E_PERM: i32 = 1;
 const E_NOENT: i32 = 2;
 const E_INTR: i32 = 4;
@@ -1124,8 +1124,8 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
             }
         }
         2 => {
-            // UDP without destination: depends on socket being "connected" (bound via endpoint)
-            // For simplicity, return ENOTCONN; use sendto instead
+            // UDP 无目的地址: 依赖 socket 已 "连接" (经 endpoint 绑定)
+            // 简化处理, 返回 ENOTCONN; 请改用 sendto
             -E_NOTCONN
         }
         _ => -E_NOTSUPP,

@@ -1,6 +1,6 @@
 //! 设备固件加载 — 系统调用实现
 //!
-//! - `sys_fw_load(node_id, path_ptr, path_len, version)`
+//! - `sys_fw_load(node_id, path_ptr, path_len, version)`  // 函数原型
 //!   从用户态路径读取文件, 附着到 ChitinNode.firmware
 //! - `sys_fw_get_info(node_id, info_ptr)` — 拷贝 FirmwareInfo 到用户态
 //! - `sys_fw_get(node_id, buf_ptr, buf_len, offset)` — 按 offset 拷贝到用户态缓冲
@@ -99,7 +99,7 @@ fn read_path_data(path: &[u8]) -> Result<Vec<u8>, i64> {
 
 /// sys_fw_load: 从用户态路径读取并附着固件到 node
 ///
-/// a0=node_id, a1=path_ptr, a2=path_len, a3=version
+/// a0=node_id, a1=path_ptr, a2=path_len, a3=version  // 寄存器约定
 pub fn sys_fw_load(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     let node_id = a0 as u32;
     let path_len = a2 as usize;
@@ -179,7 +179,7 @@ pub fn sys_fw_get_info(a0: u64, a1: u64) -> i64 {
 
 /// sys_fw_get: 按 offset 拷贝固件到用户态 buf
 ///
-/// a0=node_id, a1=buf_ptr, a2=buf_len, a3=offset
+/// a0=node_id, a1=buf_ptr, a2=buf_len, a3=offset  // 寄存器约定
 ///
 /// 返回值: 实际拷贝字节数; 失败: 负 errno / FW_ERR_*
 pub fn sys_fw_get(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {

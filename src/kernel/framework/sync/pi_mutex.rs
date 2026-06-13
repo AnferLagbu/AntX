@@ -149,7 +149,7 @@ impl PiMutexInner {
 // PiMutex 公开类型
 // ============================================================================
 
-/// Priority Inheritance Mutex
+/// 优先级继承互斥锁
 pub struct PiMutex<T: ?Sized> {
     inner: PiMutexInner,
     /// 初始持有者的 base_priority (用于解锁后通知撤销)

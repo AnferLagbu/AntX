@@ -25,8 +25,8 @@ use crate::kernel::framework::sync::spinlock::{
 
 const CACHE_SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
 
-/// Slab caches array - using Option to safely handle initialization failures
-/// None indicates that cache creation failed and should not be used
+/// Slab 缓存数组 - 用 Option 安全处理初始化失败
+/// None 表示缓存创建失败, 不应使用
 static mut SLAB_CACHES: [Option<KmemCache>; 8] = [None, None, None, None, None, None, None, None];
 static SLAB_LOCK: AtomicBool = AtomicBool::new(false);
 static SLAB_READY: AtomicBool = AtomicBool::new(false);
@@ -116,7 +116,7 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
             match &mut SLAB_CACHES[idx] {
                 Some(cache) => cache.allocate(),
                 None => {
-                    // Cache creation failed, fall back to heap allocator
+                    // 缓存创建失败, 回退到堆分配器
                     super::kmalloc::get_kmalloc().allocate(size)
                 }
             }
@@ -145,7 +145,7 @@ pub fn slab_kfree(ptr: *mut u8, size: usize) {
             match &mut SLAB_CACHES[idx] {
                 Some(cache) => cache.deallocate(ptr),
                 None => {
-                    // Cache creation failed, use heap deallocator
+                    // 缓存创建失败, 使用堆释放器
                     super::kmalloc::get_kmalloc().deallocate(ptr);
                 }
             }

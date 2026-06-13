@@ -285,7 +285,7 @@ fn test_cpio_parse_minimal() -> crate::kernel::framework::tests::TestResult {
     // 构造一个最小的 cpio 归档: 一个空目录 + TRAILER
     let mut archive = [0u8; 256];
 
-    // Header for directory "test" (namesize=5, mode=0o040755, filesize=0)
+    // 目录 "test" 的 Header (namesize=5, mode=0o040755, filesize=0)
     let header = &mut archive[0..110];
     header[0..6].copy_from_slice(b"070701"); // magic
     header[6..14].copy_from_slice(b"00000000"); // ino
@@ -305,7 +305,7 @@ fn test_cpio_parse_minimal() -> crate::kernel::framework::tests::TestResult {
     // Filename "test\0"
     archive[110..115].copy_from_slice(b"test\0");
 
-    // TRAILER entry at offset 116 (aligned to 4 = 116)
+    // TRAILER 条目位于偏移 116 (按 4 字节对齐: 110 + 5 + 1 = 116)
     let trailer_offset = align4(110 + 5); // = 116
     let trailer = &mut archive[trailer_offset..trailer_offset + 110];
     trailer[0..6].copy_from_slice(b"070701");

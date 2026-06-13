@@ -779,7 +779,7 @@ impl BpfHelper {
                 }
             }
             helper_id::MAP_UPDATE_ELEM => {
-                // r1 = map_fd, r2 = key_ptr, r3 = value_ptr, r4 = flags
+                // 寄存器分配: r1=map_fd, r2=key_ptr, r3=value_ptr, r4=flags
                 let map_fd = r1 as u32;
                 if let Some(map) = maps.get(&map_fd) {
                     let key_size = map.def().key_size as usize;
@@ -1363,7 +1363,7 @@ pub fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
         }
         1 => {
             // BPF_MAP_LOOKUP_ELEM
-            // attr: [map_fd:u32, key_ptr:u64, value_ptr:u64]
+            // attr 布局: [map_fd:u32, key_ptr:u64, value_ptr:u64]
             if size < 20 || attr == 0 {
                 return -(22i64);
             }
@@ -1407,7 +1407,7 @@ pub fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
         }
         2 => {
             // BPF_MAP_UPDATE_ELEM
-            // attr: [map_fd:u32, key_ptr:u64, value_ptr:u64, flags:u64]
+            // attr 布局: [map_fd:u32, key_ptr:u64, value_ptr:u64, flags:u64]
             if size < 28 || attr == 0 {
                 return -(22i64);
             }
@@ -1459,7 +1459,7 @@ pub fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
         }
         5 => {
             // BPF_PROG_LOAD
-            // attr: [prog_type:u32, insn_cnt:u32, insns_ptr:u64, name:u64]
+            // attr 布局: [prog_type:u32, insn_cnt:u32, insns_ptr:u64, name:u64]
             if size < 24 || attr == 0 {
                 return -(22i64);
             }

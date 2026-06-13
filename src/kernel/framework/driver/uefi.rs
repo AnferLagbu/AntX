@@ -468,7 +468,7 @@ pub fn uefi_is_initialized() -> bool {
 ///   2 = delete_variable(名称指针, GUID 指针)
 ///   3 = get_time() → ns (纳秒)
 ///   4 = set_time(ns: a1)
-///   5 = get_gop_mode() → fb_base
+///   5 = get_gop_mode() → fb_base  // 帧缓冲基址
 ///   6 = list_variables() → count
 ///   7 = has_uefi() → bool
 ///   8 = is_initialized() → bool

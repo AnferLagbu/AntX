@@ -1,44 +1,43 @@
-//! Virtual Memory Manager (VMM)
+//! 虚拟内存管理器 (VMM)
 //!
-//! Manages virtual memory mapping using 4-level page tables (x86_64).
-//! Provides:
-//! - Virtual to physical address translation
-//! - Page table creation and management
-//! - User space page tables
-//! - Huge page support (2MB, 1GB)
-//! - Memory protection and access control
+//! 使用 4 级页表 (x86_64) 管理虚拟内存映射.
+//! 提供:
+//! - 虚实地址转换
+//! - 页表创建与管理
+//! - 用户空间页表
+//! - 大页支持 (2MB, 1GB)
+//! - 内存保护与访问控制
 //!
 //! ## SAFETY
 //!
-//! Interior mutability for `user_tables` is achieved via `UnsafeCell`
-//! protected by an internal `AtomicBool` spinlock (`VMM_LOCK`).
-//! All mutations occur under the lock, making `unsafe impl Sync` sound.
+//! `user_tables` 的内部可变性通过 `UnsafeCell` 实现,
+//! 由内部 `AtomicBool` 自旋锁 (`VMM_LOCK`) 保护.
+//! 所有变更都在锁内进行, 确保 `unsafe impl Sync` 的正确性.
 //!
-//! ### Key invariants (all `unsafe` blocks depend on these):
+//! ### 关键不变式 (所有 `unsafe` 块都依赖):
 //!
-//! 1. **KERNEL_PML4**: Written once in `init()`, read-only afterwards (Release/Acquire).
-//! 2. **VMM_LOCK**: All page table modifications and UserPageTable mutations are serialized.
-//! 3. **PhysAddr → VirtAddr**: `phys_to_virt(pa) = pa + KERNEL_BASE` → valid kernel VA
-//!    because the kernel identity-maps all physical memory at `KERNEL_BASE`.
-//! 4. **PMM allocation**: Returned physical addresses are always page-aligned and valid.
-//! 5. **Page table pointers**: Every pointer derived from `PhysAddr::to_virt()` points to
-//!    a full 4KB page allocated by PMM, making all 512-entry traversals safe.
-//! 6. **Present bit guards**: Before dereferencing any table entry as a pointer to the
-//!    next level, we check `entry & 1 != 0`.
-//! 7. **Deadlock prevention**: `acquire_lock` panics on recursive acquisition in debug
-//!    builds via `VMM_LOCK_RECURSIVE`, preventing SMP deadlocks before they occur.
+//! 1. **KERNEL_PML4**: 在 `init()` 中写入一次, 之后只读 (Release/Acquire).
+//! 2. **VMM_LOCK**: 所有页表修改与 UserPageTable 变更都串行化.
+//! 3. **PhysAddr → VirtAddr**: `phys_to_virt(pa) = pa + KERNEL_BASE` 是合法内核 VA,
+//!    因为内核在 `KERNEL_BASE` 处恒等映射所有物理内存.
+//! 4. **PMM 分配**: 返回的物理地址总是页对齐且合法.
+//! 5. **页表指针**: 任何从 `PhysAddr::to_virt()` 派生的指针都指向 PMM 分配的
+//!    完整 4KB 页, 所有 512 项遍历都安全.
+//! 6. **存在位保护**: 将表项解引用为下一级指针前, 检查 `entry & 1 != 0`.
+//! 7. **死锁防止**: `acquire_lock` 在调试构建中通过 `VMM_LOCK_RECURSIVE`
+//!    对递归获取直接 panic, 在死锁发生前阻止.
 //!
-//! ## Lock ordering
+//! ## 锁顺序
 //!
-//! **VMM_LOCK must never be held while acquiring VMA_LOCK (MmStruct::vmas).**
-//! This prevents the ABBA deadlock:
-//!   Thread A: VMM_LOCK → VMA_LOCK
-//!   Thread B: VMA_LOCK → VMM_LOCK (happens in MmStruct::remove_range)
+//! **VMM_LOCK 绝不能在持有时再去获取 VMA_LOCK (MmStruct::vmas).**
+//! 这避免了 ABBA 死锁:
+//!   线程 A: VMM_LOCK → VMA_LOCK
+//!   线程 B: VMA_LOCK → VMM_LOCK (在 MmStruct::remove_range 中)
 //!
-//! All callers obey this rule:
-//! - `user_driver.rs`: VMM ops (map/unmap) → release VMM_LOCK → VMA ops (insert/remove)
-//! - `page_fault.rs`: VMA lookup (find_vma) → release VMA_LOCK → VMM ops (map_page)
-//! - `MmStruct::remove_range`: VMA_LOCK held → VMM_LOCK acquired (reverse order safe)
+//! 所有调用方遵守该规则:
+//! - `user_driver.rs`: VMM 操作 (map/unmap) → 释放 VMM_LOCK → VMA 操作 (insert/remove)
+//! - `page_fault.rs`: VMA 查找 (find_vma) → 释放 VMA_LOCK → VMM 操作 (map_page)
+//! - `MmStruct::remove_range`: 持有 VMA_LOCK → 获取 VMM_LOCK (反向顺序安全)
 
 use super::*;
 use core::cell::UnsafeCell;
@@ -72,7 +71,7 @@ pub struct VirtualMemoryManager {
 }
 
 // SAFETY: VMM_LOCK serializes all writes to user_tables (via UnsafeCell).
-// Atomic counters use Relaxed ordering (single-writer under lock).
+// 原子计数器使用 Relaxed 顺序 (锁内单写者).
 unsafe impl Sync for VirtualMemoryManager {}
 
 impl VirtualMemoryManager {
@@ -190,7 +189,7 @@ impl VirtualMemoryManager {
             }
 
             if pdpte.is_huge() {
-                // 1GB page: clear the PDPT entry directly
+                // 1GB 页: 直接清空 PDPT 项
                 (*pdpt.add(virt.pdpt_idx())).set_value(0);
                 self.flush_tlb(virt.0);
             } else {
@@ -311,8 +310,7 @@ impl VirtualMemoryManager {
         // SAFETY: pml4 is a valid PML4 physical address; phys_to_virt gives kernel VA
         let pml4_virt = PhysAddr(pml4).to_virt();
 
-        // SAFETY: Read-only page table walk. volatile reads for correctness under
-        // concurrent hardware page walker updates (A/D bits).
+        // SAFETY: 只读页表遍历. 在并发硬件页表遍历 (A/D 位) 下使用 volatile 读取保证正确性.
         unsafe {
             let pml4_raw = pml4_virt.0 as *const u64;
             let pml4e = pml4_raw.add(virt.pml4_idx()).read_volatile();
@@ -471,8 +469,8 @@ impl VirtualMemoryManager {
         // SAFETY: kernel_pml4 valid (set in init), phys_to_virt valid
         let kernel_pml4_virt = PhysAddr(kernel_pml4).to_virt();
 
-        // SAFETY: Copy kernel-space entries (256..511) into user PML4.
-        // Both src and dst are valid page-aligned kernel VAs.
+        // SAFETY: 将内核空间项 (256..511) 复制到用户 PML4.
+        // src 与 dst 都是合法的页对齐内核 VA.
         unsafe {
             let src = kernel_pml4_virt.0 as *const u64;
             let dst = pml4_virt.0 as *mut u64;
@@ -481,7 +479,7 @@ impl VirtualMemoryManager {
 
             crate::arch!(tlb_flush_page(dst.add(256) as usize));
 
-            // Verify copy by reading back entry 256
+            // 通过回读项 256 验证复制
             let e256_src = src.add(256).read_volatile();
             let e256_dst = dst.add(256).read_volatile();
             if e256_src != e256_dst || (e256_src & 1) == 0 {
@@ -518,10 +516,11 @@ impl VirtualMemoryManager {
         // SAFETY: pml4 is a valid PML4 address; VMM_LOCK held
         let pml4_virt = PhysAddr(pml4).to_virt();
 
-        // SAFETY: Full 4-level page table walk with creation.
-        // VMM_LOCK serializes all PT modifications.
+        // SAFETY: 完整 4 级页表遍历与按需创建.
+        // VMM_LOCK 串行化所有页表修改.
         unsafe {
             let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
+
 
             let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() {
@@ -568,8 +567,8 @@ impl VirtualMemoryManager {
         // SAFETY: pml4 = process CR3 value. phys_to_virt gives valid kernel VA.
         let pml4_virt = PhysAddr(pml4).to_virt();
 
-        // SAFETY: Read-only page table walk with present-bit guards at each level.
-        // VMM_LOCK serializes all PT modifications.
+        // SAFETY: 各级带存在位保护的只读页表遍历.
+        // VMM_LOCK 串行化所有页表修改.
         unsafe {
             let pml4_tbl = pml4_virt.0 as *mut PageTableEntry;
 
@@ -591,7 +590,7 @@ impl VirtualMemoryManager {
             }
 
             if pdpte.is_huge() {
-                // 1GB page: clear the PDPT entry directly
+                // 1GB 页: 直接清空 PDPT 项
                 (*pdpt.add(virt.pdpt_idx())).set_value(0);
                 self.flush_tlb(virt.0);
             } else {
@@ -605,7 +604,7 @@ impl VirtualMemoryManager {
                 }
 
                 if pde.is_huge() {
-                    // 2MB page: clear the PDE entry directly
+                    // 2MB 页: 直接清空 PDE 项
                     (*pd.add(virt.pd_idx())).set_value(0);
                     self.flush_tlb(virt.0);
                 } else {
@@ -615,7 +614,7 @@ impl VirtualMemoryManager {
                     (*pt.add(pt_idx)).set_value(0);
                     self.flush_tlb(virt.0);
 
-                    // Recursively free empty intermediate page tables
+                    // 递归释放空的中间页表
                     if self.is_table_empty(pt) {
                         let pt_phys = pde.frame().as_u64();
                         (*pd.add(virt.pd_idx())).set_value(0);
@@ -652,8 +651,8 @@ impl VirtualMemoryManager {
         // SAFETY: pml4 valid; VMM_LOCK held
         let pml4_virt = PhysAddr(pml4).to_virt();
 
-        // SAFETY: Walk all 4 levels freeing page tables.
-        // Only user-space entries (0..255); kernel entries are shared.
+        // SAFETY: 遍历 4 级释放页表.
+        // 仅用户空间项 (0..255); 内核项共享.
         unsafe {
             let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
 
@@ -718,7 +717,7 @@ impl VirtualMemoryManager {
         )
     }
 
-    // ==================== Private Methods ====================
+    // ==================== 私有方法 ====================
 
     fn map_page_internal(
         &self,
@@ -845,13 +844,13 @@ impl VirtualMemoryManager {
         create: bool,
         huge_step: u64,
     ) -> *mut PageTableEntry {
-        // SAFETY: caller guarantees `entry` points to a valid PageTableEntry within a
-        // page table page allocated by PMM. Dereference is bounds-checked by 512-entry table size.
+        // SAFETY: 调用方保证 `entry` 指向 PMM 分配的页表页内合法 PageTableEntry.
+        // 解引用通过 512 项表大小做边界检查.
         let e = &*entry;
 
         if e.is_present() && !e.is_huge() {
-            // SAFETY: Present && !huge → frame bits contain a valid physical address
-            // pointing to the next-level table. phys_to_virt gives a valid kernel VA.
+            // SAFETY: Present && !huge → frame 位是合法的下一级表物理地址.
+            // phys_to_virt 给出合法内核 VA.
             e.frame().to_virt().0 as *mut PageTableEntry
         } else if create {
             let pmm = get_pmm();
@@ -862,7 +861,7 @@ impl VirtualMemoryManager {
                 core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
 
                 if e.is_huge() {
-                    // Splitting a huge page: populate 512 4KB entries from the huge frame
+                    // 拆分巨页: 从巨页帧填充 512 个 4KB 项
                     let huge_frame = e.frame();
                     let huge_flags = e.flags();
                     let step = if huge_step > 0 { huge_step } else { 4096 };
@@ -899,8 +898,8 @@ impl VirtualMemoryManager {
             let pml4_virt = PhysAddr(pml4_base).to_virt();
             let v = VirtAddr(virt);
 
-            // SAFETY: Splitting a 2MB huge page into 512 4KB pages.
-            // VMM_LOCK held; all page table modifications are serialized.
+            // SAFETY: 将 2MB 巨页拆分为 512 个 4KB 页.
+            // VMM_LOCK 已持有, 所有页表修改串行化.
             unsafe {
                 let pml4 = pml4_virt.0 as *mut PageTableEntry;
                 let pdpt = self.get_or_create_table_entry(pml4.add(v.pml4_idx()), false, 0);
@@ -983,8 +982,8 @@ impl VirtualMemoryManager {
         let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
 
-        // SAFETY: Traversing PML4 → PDPT → PD, setting USER at each level.
-        // Present-bit guards at each step. Indices computed from VA bits.
+        // SAFETY: 遍历 PML4 → PDPT → PD, 各级设 USER 位.
+        // 各级都有存在位保护. 索引由 VA 位计算.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
 
@@ -1063,7 +1062,7 @@ impl VirtualMemoryManager {
 
             let mut child_pml4e = parent_pml4e;
             child_pml4e = (child_pml4e & 0xFFF) | (child_pdpt_phys.as_u64() & 0x000FFFFFFFFFF000);
-            // SAFETY: child_pml4_base is a valid 4KB PML4 page; volatile write for TLB coherency
+            // SAFETY: child_pml4_base 是合法的 4KB PML4 页; volatile 写以保证 TLB 一致性
             unsafe {
                 child_pml4_base.add(i as usize).write_volatile(child_pml4e);
             }
@@ -1109,7 +1108,7 @@ impl VirtualMemoryManager {
                     }
 
                     if (parent_pde & 0x80) != 0 {
-                        // Deep copy 2MB huge page
+                        // 深拷贝 2MB 巨页
                         let huge_phys = pmm.alloc_pages(512)?;
                         let huge_virt = PhysAddr(huge_phys.as_u64()).to_virt().0;
                         // SAFETY: parent_huge is valid 2MB kernel VA

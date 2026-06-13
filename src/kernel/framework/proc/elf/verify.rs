@@ -47,13 +47,13 @@ pub const ET_DYN: u16 = 3;
 ///
 /// ## 校验项
 ///
-/// 1. `elf_data != null && elf_size >= sizeof(Elf64Header)`
-/// 2. `e_ident[0..4] == b"\x7FELF"`
-/// 3. `e_ident[4] == 2` (ELFCLASS64)
-/// 4. `e_machine ∈ {0x3E, 0xB7}` (x86_64 / aarch64)
-/// 5. `e_phentsize == sizeof(Elf64Phdr)` (56)
-/// 6. `e_phnum <= MAX_PHDR_COUNT` (128)
-/// 7. `e_phoff + e_phnum * e_phentsize <= elf_size` (PHDR 表不越界)
+/// 1. `elf_data != null && elf_size >= sizeof(Elf64Header)`  // 缓冲长度检查
+/// 2. `e_ident[0..4] == b"\x7FELF"`  // ELF 文件魔数
+/// 3. `e_ident[4] == 2` (ELFCLASS64)  // 64 位 ELF
+/// 4. `e_machine ∈ {0x3E, 0xB7}` (x86_64 / aarch64)  // 目标架构
+/// 5. `e_phentsize == sizeof(Elf64Phdr)` (56)  // PHDR 项大小
+/// 6. `e_phnum <= MAX_PHDR_COUNT` (128)  // PHDR 数量上限
+/// 7. `e_phoff + e_phnum * e_phentsize <= elf_size` (PHDR 表不越界)  // 边界
 ///
 /// ## SAFETY
 ///
@@ -87,7 +87,7 @@ pub unsafe fn verify_elf(elf_data: *const u8, elf_size: u64) -> Result<VerifyRes
     if header.e_phnum as usize > MAX_PHDR_COUNT {
         return Err(VerifyError::TooManyPhdr);
     }
-    // phdr table bounds
+    // phdr 表边界检查
     let phdr_table_size = (header.e_phnum as u64)
         .checked_mul(header.e_phentsize as u64)
         .ok_or(VerifyError::Overflow)?;

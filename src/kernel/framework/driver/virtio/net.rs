@@ -1,14 +1,14 @@
 #![allow(dead_code)]
-//! VirtIO Network Device Driver (设备 ID 1)
+//! VirtIO 网络设备驱动 (设备 ID 1)
 //!
-//! Implements the VirtIO Network Device specification.
-//! Uses 2 split virtqueues:
-//!   - Queue 0: Receive (RX) — device writes received packets
-//!   - Queue 1: Transmit (TX) — driver writes packets to send
+//! 实现 VirtIO 网络设备规范.
+//! 使用 2 个 split virtqueue:
+//!   - 队列 0: 接收 (RX) — 设备写入收到的包
+//!   - 队列 1: 发送 (TX) — 驱动写入要发送的包
 //!
-//! Config space (offset 0x100):
-//!   - 0x00: mac[6] (MAC address, if VIRTIO_NET_F_MAC is set)
-//!   - 0x06: status (u16, if VIRTIO_NET_F_STATUS is set)
+//! 配置空间 (偏移 0x100):
+//!   - 0x00: mac[6] (MAC 地址, 当 VIRTIO_NET_F_MAC 被设置时)
+//!   - 0x06: status (u16, 当 VIRTIO_NET_F_STATUS 被设置时)
 
 use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
@@ -26,13 +26,13 @@ use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 const VIRTIO_NET_F_MAC: u64 = 1 << 5;
 const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
 
-// ── VirtIO Net Header (always 12 bytes) ──
-// Both legacy and v1 headers are identical in Linux/QEMU:
-// flags(1) + gso_type(1) + hdr_len(2) + gso_size(2) + csum_start(2) + csum_offset(2) + num_buffers(2) = 12
+// ── VirtIO Net 头 (固定 12 字节) ──
+// 旧版与 v1 头在 Linux/QEMU 中完全相同:
+// flags(1) + gso_type(1) + hdr_len(2) + gso_size(2) + csum_start(2) + csum_offset(2) + num_buffers(2) = 12  // 字段布局
 
-/// virtio_net_hdr — header before every TX/RX packet.
-/// Both legacy and VERSION_1 use the same 12-byte layout.
-/// `num_buffers` is only meaningful when VIRTIO_NET_F_MRG_RXBUF is negotiated.
+/// virtio_net_hdr — 每个 TX/RX 包前的头.
+/// 旧版与 VERSION_1 都使用相同的 12 字节布局.
+/// `num_buffers` 仅在协商 VIRTIO_NET_F_MRG_RXBUF 时才有意义.
 #[repr(C)]
 struct VirtioNetHdr {
     flags: u8,
@@ -44,59 +44,59 @@ struct VirtioNetHdr {
     num_buffers: u16,
 }
 
-/// Size of virtio_net_hdr (12 bytes).
+/// virtio_net_hdr 大小 (12 字节).
 const NET_HDR_SIZE: usize = core::mem::size_of::<VirtioNetHdr>();
 
-// ── Config space offsets (relative to 0x100) ──
+// ── 配置空间偏移 (相对于 0x100) ──
 
-const NET_CONFIG_MAC: usize = 0x00; // 6 bytes
-const NET_CONFIG_STATUS: usize = 0x06; // 2 bytes
+const NET_CONFIG_MAC: usize = 0x00; // 6 字节
+const NET_CONFIG_STATUS: usize = 0x06; // 2 字节
 
-// ── RX buffer constants ──
+// ── RX 缓冲常量 ──
 
 const RX_BUFFER_SIZE: usize = 2048;
 
-// ── QEMU virt: virtio-net MMIO base ──
+// ── QEMU virt: virtio-net MMIO 基址 ──
 
-/// QEMU virt aarch64 places virtio-net at 0x0a000000 (first device).
-/// The virtio-net device ID is 1, so probe_all() will find it.
+/// QEMU virt aarch64 将 virtio-net 放在 0x0a000000 (第一个设备).
+/// virtio-net 设备 ID 为 1, probe_all() 将发现它.
 const VIRTIO_NET_MMIO_BASE_HINT: u64 = 0x0a00_0000;
 
-/// A virtio-net device with its virtqueues.
+/// 带 virtqueue 的 virtio-net 设备.
 pub struct VirtioNet {
-    /// MMIO device transport reference.
+    /// MMIO 设备传输引用.
     pub device: VirtioMmioDevice,
-    /// RX virtqueue (queue 0).
+    /// RX virtqueue (队列 0).
     pub rx_vq: VirtQueue,
-    /// TX virtqueue (queue 1).
+    /// TX virtqueue (队列 1).
     pub tx_vq: VirtQueue,
-    /// MAC address from config space.
+    /// 配置空间中的 MAC 地址.
     pub mac: [u8; 6],
-    /// Link status from config space (1 = up).
+    /// 配置空间中的链路状态 (1 = up).
     pub link_up: bool,
-    /// RX buffer memory (allocated from PMM).
+    /// RX 缓冲区内存 (从 PMM 分配).
     rx_buffers: [*mut u8; VQ_SIZE as usize],
-    /// RX buffer physical addresses.
+    /// RX 缓冲区物理地址.
     rx_buffers_phys: [u64; VQ_SIZE as usize],
-    /// Net header size: 10 (modern VERSION_1) or 12 (legacy).
+    /// 头大小: 10 (现代 VERSION_1) 或 12 (旧版).
     pub hdr_size: usize,
-    /// Statistics.
+    /// 统计.
     pub tx_count: u64,
     pub rx_count: u64,
-    /// TX DMA 缓冲区 (12-byte header + 2048-byte frame)
+    /// TX DMA 缓冲区 (12 字节头 + 2048 字节帧)
     tx_dma_buf: [u8; NET_HDR_SIZE + 2048],
 }
 
-// SAFETY: IoMem is Send+Sync; VirtQueue is Send+Sync; DMA buffers via PMM
-// with single-owner &mut self access ensure no concurrent I/O on same device.
-// SAFETY: VirtualNet is Send+Sync because all its fields are Send+Sync.
+// SAFETY: IoMem 是 Send+Sync; VirtQueue 是 Send+Sync; DMA 缓冲区经 PMM 分配
+// 采用单一所有者 &mut self 访问, 防止同一设备并发 I/O.
+// SAFETY: VirtualNet 是 Send+Sync 因为其所有字段都是 Send+Sync.
 unsafe impl Send for VirtioNet {}
 unsafe impl Sync for VirtioNet {}
 
 impl VirtioNet {
-    /// Create and initialize a virtio-net driver instance.
+    /// 创建并初始化 virtio-net 驱动实例.
     ///
-    /// Caller must ensure `device` has device_id == VIRTIO_ID_NET.
+    /// 调用者必须保证 `device` 的 device_id == VIRTIO_ID_NET.
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_NET {
             return None;
@@ -108,7 +108,7 @@ impl VirtioNet {
             device.iomem.phys().as_u64()
         );
 
-        // Read device version to determine legacy vs modern
+        // 读取设备版本以判断传统/现代模式
         let version = device.read32(super::VERSION);
         let is_legacy = version == 1; // 1=transitional, 2=modern-only
         klog_info!(
@@ -127,13 +127,13 @@ impl VirtioNet {
             use super::STATUS_DRIVER;
             use super::STATUS_FEATURES_OK;
 
-            // Reset + ACKNOWLEDGE + DRIVER
+            // 重置 + ACKNOWLEDGE + DRIVER
             device.write32(STATUS, 0);
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
             device.write32(STATUS, STATUS_ACKNOWLEDGE);
             device.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
 
-            // Read device features
+            // 读取设备特性
             device.write32(super::DEVICE_FEATURES_SEL, 1);
             let dev_feat_hi = device.read32(super::DEVICE_FEATURES);
             device.write32(super::DEVICE_FEATURES_SEL, 0);
@@ -144,7 +144,7 @@ impl VirtioNet {
             let has_v1 = (dev_features & super::VIRTIO_F_VERSION_1) != 0;
 
             if !is_legacy || has_v1 {
-                // Modern mode: negotiate VIRTIO_F_VERSION_1 + VIRTIO_NET_F_MAC
+                // 现代模式: 协商 VIRTIO_F_VERSION_1 + VIRTIO_NET_F_MAC
                 negotiated_v1 = true;
                 hdr_size = NET_HDR_SIZE;
                 let feat = super::VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC;
@@ -157,7 +157,7 @@ impl VirtioNet {
                     "virtio-net: negotiating modern features (VERSION_1)"
                 );
             } else {
-                // Legacy mode: only VIRTIO_NET_F_MAC
+                // 传统模式: 仅 VIRTIO_NET_F_MAC
                 negotiated_v1 = false;
                 hdr_size = NET_HDR_SIZE;
                 device.write32(super::DRIVER_FEATURES_SEL, 1);
@@ -179,7 +179,7 @@ impl VirtioNet {
             }
         }
 
-        // Read MAC address from config space
+        // 从配置空间读取 MAC 地址
         let mut mac: [u8; 6] = [0; 6];
         for i in 0..6 {
             mac[i] = (device.read_config32(NET_CONFIG_MAC + (i & !3)) >> ((i & 3) * 8)) as u8;
@@ -196,7 +196,7 @@ impl VirtioNet {
             mac[5]
         );
 
-        // Read link status
+        // 读取链路状态
         let link_status = device.read_config32(NET_CONFIG_STATUS) as u16;
         let link_up = (link_status & 1) != 0;
         klog_info!(
@@ -205,7 +205,7 @@ impl VirtioNet {
             if link_up { "up" } else { "down" }
         );
 
-        // Queue layout: modern=sequential, legacy=page-aligned used ring
+        // 队列布局: 现代=顺序, 传统=页对齐 used ring
         let vq_legacy = !negotiated_v1;
 
         klog_info!(
@@ -214,7 +214,7 @@ impl VirtioNet {
             vq_legacy
         );
 
-        // Allocate RX virtqueue (queue 0)
+        // 分配 RX virtqueue (队列 0)
         let rx_vq = VirtQueue::new(vq_legacy)?;
         klog_info!(Driver, "virtio-net: RX vq allocated, setting up...");
         if vq_legacy {
@@ -230,7 +230,7 @@ impl VirtioNet {
         }
         klog_info!(Driver, "virtio-net: RX vq ready");
 
-        // Allocate TX virtqueue (queue 1)
+        // 分配 TX virtqueue (队列 1)
         klog_info!(Driver, "virtio-net: allocating TX vq");
         let tx_vq = VirtQueue::new(vq_legacy)?;
         klog_info!(Driver, "virtio-net: TX vq allocated, setting up...");
@@ -246,7 +246,7 @@ impl VirtioNet {
             }
         }
 
-        // Set DRIVER_OK — device goes live after queue configuration
+        // 设置 DRIVER_OK — 队列配置完成后设备进入 live
         device.set_driver_ok();
 
         let mut net = VirtioNet {
@@ -263,20 +263,20 @@ impl VirtioNet {
             tx_dma_buf: [0u8; NET_HDR_SIZE + 2048],
         };
 
-        // Pre-fill RX queue with empty buffers
+        // 用空缓冲区预填 RX 队列
         net.refill_rx();
 
         Some(net)
     }
 
-    /// Fill the RX virtqueue with empty buffers for the device to write into.
+    /// 用空缓冲区填充 RX virtqueue, 供设备写入.
     fn refill_rx(&mut self) {
         for i in 0..VQ_SIZE as usize {
             if !self.rx_buffers[i].is_null() {
-                continue; // Already filled
+                continue; // 已填充
             }
 
-            // Allocate a buffer for this RX slot
+            // 为该 RX 槽位分配缓冲区
             let pages = RX_BUFFER_SIZE.div_ceil(4096);
             extern "C" {
                 fn pmm_alloc_pages(count: u64) -> *mut u8;
@@ -293,39 +293,39 @@ impl VirtioNet {
             self.rx_buffers[i] = buf_virt;
             self.rx_buffers_phys[i] = buf_phys;
 
-            // Prepare descriptor: device writes to this buffer
+            // 准备描述符: 设备写入该缓冲区
             let desc_idx = self
                 .rx_vq
                 .prepare_desc(buf_phys, RX_BUFFER_SIZE as u32, true);
             self.rx_vq.submit(desc_idx);
         }
 
-        // Kick the device to let it start using these buffers
+        // 通知设备开始使用这些缓冲区
         self.rx_vq.commit_and_kick();
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
         self.device.notify(0);
     }
 
-    /// Send a packet through the TX virtqueue.
+    /// 通过 TX virtqueue 发送一个包.
     ///
-    /// `data` points to the packet buffer (physically contiguous).
-    /// `len` is the packet length.
+    /// `data` 指向包缓冲区 (物理连续).
+    /// `len` 为包长度.
     pub fn send_packet(&mut self, data_phys: u64, len: u32) -> Result<(), ()> {
         if len == 0 || len > 65535 {
             return Err(());
         }
 
-        // Prepare a single TX descriptor (device reads from this buffer)
+        // 准备单个 TX 描述符 (设备从该缓冲区读)
         let desc_idx = self.tx_vq.prepare_desc(data_phys, len, false);
 
-        // Submit and kick
+        // 提交并通知
         self.tx_vq.submit(desc_idx);
         self.tx_vq.commit_and_kick();
 
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
         self.device.notify(1);
 
-        // Poll for TX completion with MMIO reads to force VM exits
+        // 轮询等待 TX 完成, 通过 MMIO 读强制 VM exit
         for _ in 0..100000 {
             if let Some((_id, _len)) = self.tx_vq.pop_used() {
                 self.tx_vq.reclaim_desc(desc_idx);
@@ -348,8 +348,8 @@ impl VirtioNet {
         Err(())
     }
 
-    /// Poll the RX queue for received packets.
-    /// Returns number of packets processed.
+    /// 轮询 RX 队列处理收到的包.
+    /// 返回已处理的包数.
     pub fn poll_rx(&mut self) -> usize {
         let mut processed = 0;
 
@@ -386,7 +386,7 @@ impl VirtioNet {
             }
         }
 
-        // Kick if we recycled any buffers
+        // 如果回收了缓冲区则通知设备
         if processed > 0 {
             self.rx_vq.commit_and_kick();
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
@@ -396,8 +396,8 @@ impl VirtioNet {
         processed
     }
 
-    /// Try to receive a single packet into the provided buffer.
-    /// Returns Some(len) on success, None if no packet available.
+    /// 尝试接收一个包到提供的缓冲区.
+    /// 成功返回 Some(len), 无包则返回 None.
     pub fn try_receive(&mut self, buffer: &mut [u8]) -> Option<usize> {
         let result = self.rx_vq.pop_used()?;
         let (desc_idx, len) = result;
@@ -447,10 +447,10 @@ impl VirtioNet {
         Some(copy_len)
     }
 
-    /// Process any used descriptors for RX reclamation without processing data.
-    /// Used for interrupt-driven polling.
+    /// 处理 RX 回收用的已使用描述符, 不解析数据.
+    /// 用于中断驱动轮询.
     pub fn handle_interrupt(&self) {
-        // Read and clear interrupt status
+        // 读取并清除中断状态
         self.device.write32(super::INTERRUPT_ACK, self.device.read32(super::INTERRUPT_STATUS));
     }
 }
@@ -465,19 +465,19 @@ pub(crate) fn take_device() -> Option<Box<VirtioNet>> {
     VIRTIO_NET_DEVICE.lock().take()
 }
 
-/// C FFI: probe for virtio-net device. Returns 0 on success, -1 on failure.
+/// C FFI: 探测 virtio-net 设备. 成功返回 0, 失败返回 -1.
 #[no_mangle]
 ///
 /// # Safety
 ///
-/// Device has been initialized and `DESC_POOL` contains valid descriptors.
+/// 设备已完成初始化, `DESC_POOL` 包含有效描述符.
 pub unsafe extern "C" fn virtio_net_probe() -> i32 {
     probe()
 }
 
-/// Probe for a virtio-net device and create a global instance.
+/// 探测 virtio-net 设备并创建全局实例.
 ///
-/// Returns 0 on success, -1 on failure.
+/// 成功返回 0, 失败返回 -1.
 pub fn probe() -> i32 {
     let devices = super::probe_all();
     for dev in devices {

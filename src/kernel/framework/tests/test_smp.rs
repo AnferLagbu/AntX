@@ -160,7 +160,7 @@ fn test_boost_priority_no_panic() -> TestResult {
 }
 
 // ============================================================
-// Process Exit — CR3 Safety (Regression Test)
+// 进程退出 — CR3 安全性 (回归测试)
 // ============================================================
 
 fn test_kernel_pml4_exists() -> TestResult {
@@ -192,7 +192,7 @@ fn test_user_proc_manager_destroy_no_kstack() -> TestResult {
 }
 
 // ============================================================
-// Softirq — Registration & Vector
+// Softirq — 注册与向量 (Registration & Vector)
 // ============================================================
 
 fn test_softirq_vec_enum_values() -> TestResult {

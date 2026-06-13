@@ -40,8 +40,8 @@
 //!
 //! ## 参考
 //!
-//! - Linux kernel lockdep (Documentation/locking/lockdep-design.txt)
-//! - FreeBSD witness (sys/kern/subr_witness.c)
+//! - Linux kernel lockdep (Documentation/locking/lockdep-design.txt)  // 参考文献链接
+//! - FreeBSD witness (sys/kern/subr_witness.c)  // 参考文献链接
 
 // ============================================================================
 // 日志输出 (使用项目 klog 宏)

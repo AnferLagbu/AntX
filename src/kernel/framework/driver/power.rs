@@ -673,11 +673,11 @@ pub fn pm_is_initialized() -> bool {
 /// `a0`: cmd
 ///   0 = suspend(目标状态: a1)
 ///   1 = get_state() → 当前状态
-///   2 = set_governor(governor: a1)
+///   2 = set_governor(governor: a1)  // governor 为调频策略名
 ///   3 = get_governor() → 当前 governor
 ///   4 = set_max_cstate(cpu: a1, max: a2)
 ///   5 = get_freq(cpu: a1) → 频率 MHz
-///   6 = set_freq(cpu: a1, target_mhz: a2)
+///   6 = set_freq(cpu: a1, target_mhz: a2)  // 设置目标频率
 #[no_mangle]
 pub fn sys_pm(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !pm_is_initialized() {

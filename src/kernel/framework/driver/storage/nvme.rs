@@ -55,7 +55,7 @@ const SECTOR_SIZE: usize = 512;
 /// 最大扇区数 (128 sectors = 64KB, 单次命令)
 const MAX_SECTORS_PER_CMD: u16 = 128;
 
-// NVMe Controller Register Offsets (BAR0)
+// NVMe 控制器寄存器偏移 (BAR0)  // 硬件寄存器描述
 const NVME_REG_CAP: usize = 0x00;    // u64: 控制器能力
 #[allow(dead_code)] // NVMe 规范 §3.1.2 — 启动时用于探测控制器版本 (待实现)
 const NVME_REG_VS: usize = 0x08;     // u32: 版本
@@ -974,8 +974,8 @@ impl NvmeController {
     }
 }
 
-// SAFETY: NvmeController uses MMIO registers via volatile access.
-// Global NVME_CONTROLLERS Mutex protects concurrent cross-CPU mutation.
+// SAFETY: NvmeController 通过 volatile 访问 MMIO 寄存器.
+// 全局 NVME_CONTROLLERS Mutex 防止并发跨 CPU 变更.
 unsafe impl Send for NvmeController {}
 unsafe impl Sync for NvmeController {}
 
@@ -992,7 +992,7 @@ impl Driver for NvmeController {
     }
 
     fn init(&mut self) -> Result<()> {
-        // Ensure init_controller is separate from the full init flow
+        // 确保 init_controller 与完整 init 流程分离
         self.init_controller()?;
         self.identify_controller()?;
 
@@ -1001,7 +1001,7 @@ impl Driver for NvmeController {
             self.identify_namespace(1)?;
         }
 
-        // Create I/O queue pair
+        // 创建 I/O 队列对
         self.create_io_queue()?;
 
         self.initialized = true;
