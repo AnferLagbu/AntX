@@ -7,7 +7,7 @@
 //! - [x] socket/bind/listen/accept/connect (TCP 客户端/服务器)
 //! - [x] send/recv (TCP 字节流)
 //! - [x] sendto/recvfrom (UDP 数据报)
-//! - [x] close/setsockopt/getsockopt
+//! - [x] 关闭/设置选项/获取选项 (close/setsockopt/getsockopt)
 //! - [x] poll_sockets
 //!
 //! ## 迁移方法

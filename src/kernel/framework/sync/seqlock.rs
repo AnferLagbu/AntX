@@ -1,14 +1,14 @@
-//! SeqLock — Sequence Lock
+//! SeqLock — 顺序锁
 //!
-//! A lock primitive optimized for read-mostly-write-rarely scenarios.
-//! Readers never block writers; writers mutually exclude each other.
+//! 一种针对"读多写少"场景优化的锁原语.
+//! 读者永不阻塞写者; 写者之间相互排斥.
 //!
-//! # When to use
-//! - Interrupt statistics (read every timer tick, write on IRQ)
-//! - Performance counters (read frequently, write rarely)
-//! - Any data where stale reads are acceptable but torn reads are not
+//! # 适用场景
+//! - 中断统计 (每个时钟 tick 读取, IRQ 时写入)
+//! - 性能计数器 (频繁读, 极少写)
+//! - 任何允许读到陈旧值但不容许读到撕裂数据的场景
 //!
-//! # Algorithm
+//! # 算法
 //! ```text
 //! Writer:  sequence++ → write data → sequence++
 //! Reader:  do {
@@ -20,9 +20,9 @@
 //! ```
 //!
 //! # Safety
-//! `UnsafeCell<T>` provides interior mutability. Writer-side safety is
-//! ensured by `AtomicUsize sequence` (odd = writing). `unsafe impl Sync`
-//! is sound because all writes occur under the sequence lock.
+//! `UnsafeCell<T>` 提供内部可变性. 写者侧安全性由
+//! `AtomicUsize sequence` (奇数=正在写) 保证. `unsafe impl Sync`
+//! 是 sound 的, 因为所有写操作都在顺序锁保护下进行.
 
 use core::cell::UnsafeCell;
 use core::sync::atomic::{compiler_fence, AtomicUsize, Ordering};

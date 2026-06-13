@@ -45,11 +45,11 @@ const HEADER_MAGIC: u32 = 0xC0FFEE01;
 /// 与文件头注释中的 `0xEE_FF_C0_01_00_00_00_00` 完全对应, 即便没有 `fill(0)` 也安全。
 const TAIL_MAGIC: [u8; 8] = [0xEE, 0xFF, 0xC0, 0x01, 0x00, 0x00, 0x00, 0x00];
 
-/// Global "boot image" — populated once by `init()`.
+/// 全局 "启动镜像" —— 由 `init()` 一次性填充.
 pub static BOOT_IMAGE: IrqSpinLock<[u8; ENCODED_LEN]> =
     IrqSpinLock::new([0u8; ENCODED_LEN]);
 
-/// Pack a `u32` into the buffer at `offset` (little-endian).
+/// 将 `u32` 以小端序打包到缓冲区 `offset` 处.
 #[inline]
 fn pack_u32(buf: &mut [u8], offset: usize, v: u32) {
     if offset + 4 > buf.len() {
@@ -61,7 +61,7 @@ fn pack_u32(buf: &mut [u8], offset: usize, v: u32) {
     buf[offset + 3] = ((v >> 24) & 0xFF) as u8;
 }
 
-/// Pack a `u64` into the buffer at `offset` (little-endian).
+/// 将 `u64` 以小端序打包到缓冲区 `offset` 处.
 #[inline]
 fn pack_u64(buf: &mut [u8], offset: usize, v: u64) {
     if offset + 8 > buf.len() {
@@ -89,9 +89,9 @@ fn pack_u16(buf: &mut [u8], offset: usize, v: u16) {
     buf[offset + 1] = ((v >> 8) & 0xFF) as u8;
 }
 
-/// Encode the current `ConfigSummary` into the global boot_image buffer.
+/// 将当前 `ConfigSummary` 编码到全局 boot_image 缓冲区.
 ///
-/// **调用语义**: 在 `config::init()` 末尾调用一次, 单线程上下文。
+/// **调用语义**: 在 `config::init()` 末尾调用一次, 单线程上下文.
 pub fn encode_boot_image() {
     let s = get_config_summary();
     let caps = s.capabilities;
@@ -172,7 +172,7 @@ pub fn read_boot_image() -> [u8; ENCODED_LEN] {
     *BOOT_IMAGE.lock()
 }
 
-/// Number of bytes occupied by the encoded image.
+/// 编码后的镜像占用字节数.
 pub const fn encoded_len() -> usize {
     ENCODED_LEN
 }

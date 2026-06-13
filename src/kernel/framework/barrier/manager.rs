@@ -104,7 +104,7 @@ impl RecoveryManager {
                     dom.push_barrier_snapshot(current_tick);
                     raw::invoke_capture_cb(*dom.capture_cb.lock());
                 }
-                // Health monitoring: escalate to BSR if heartbeat lost
+                // 健康监测: 心跳丢失则升级为 BSR
                 if !dom.check_health(current_tick) {
                     let gap =
                         current_tick.saturating_sub(dom.last_heartbeat.load(Ordering::SeqCst));

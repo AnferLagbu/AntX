@@ -11,7 +11,7 @@
 //! - [x] atomic — 原子操作 re-export
 //! - [x] seqlock / rcu / arch — 顺序锁/RCU/arch 内存屏障 re-export
 //! - [x] smp barriers — `smp_wmb` / `smp_rmb` / `smp_mb` 跨 CPU 内存屏障
-//! - [x] irq control — `disable_interrupts` / `restore_interrupts` / `scheduler_yield`
+//! - [x] irq 控制 — `disable_interrupts` / `restore_interrupts` / `scheduler_yield`
 //!
 //! ## 迁移方法
 //!
@@ -60,7 +60,7 @@ pub use crate::kernel::framework::sync::types::RwLockReadGuard;
 /// 写锁 RAII 守卫
 pub use crate::kernel::framework::sync::types::RwLockWriteGuard;
 
-/// Priority Inheritance Mutex (Phase P1 #3)
+/// 优先级继承互斥锁 (Phase P1 #3)
 pub mod pi_mutex;
 
 pub use pi_mutex::{

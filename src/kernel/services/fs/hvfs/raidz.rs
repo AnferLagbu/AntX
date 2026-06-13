@@ -250,12 +250,12 @@ impl HvRaidzMap {
                 for (j, &col) in failed_cols.iter().enumerate() {
                     if col < self.nparity {
                         let p = col;
-                        // Row i, parity p: Vandermonde coefficient α^(p*data_cols + i).
+                        // 第 i 行, 校验列 p: Vandermonde 系数 α^(p*data_cols + i).
                         row[nfailed + j] = GF_EXP[(p * data_cols + i) % 255];
                     } else {
                         let d_col = col - self.nparity;
-                        // Row i, data column d_col: coefficient α^(d_col).
-                        // (p=0, so the parity multiplier term vanishes.)
+                        // 第 i 行, 数据列 d_col: 系数 α^(d_col).
+                        // (p=0, 故校验乘子项为零.)
                         row[nfailed + j] = GF_EXP[d_col % 255];
                     }
                 }

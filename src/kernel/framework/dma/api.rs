@@ -10,8 +10,8 @@
 //! - `fs::hvfs` —— HvFS 页缓存直接 I/O (通过 DMA 绕过 CPU)
 //!
 //! ## 内部接口
-//! - `mod.rs` —— DmaMapping, DmaTransfer, DmaScatterList
-//! - `engine.rs` —— DmaEngine 实现
+//! - `mod.rs` —— 公开类型: `DmaMapping`, `DmaTransfer`, `DmaScatterList`
+//! - `engine.rs` —— `DmaEngine` 实现
 //!
 //! ## 安全约束
 //! - DmaTransfer.callback 函数指针在 ISR 上下文调用, 不得持有锁或 sleep

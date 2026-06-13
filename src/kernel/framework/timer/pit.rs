@@ -51,8 +51,8 @@ pub const PIT_MIN_COUNT: u16 = 0x0001;
 ///
 /// 当前使用: SELECT_CHANNEL_0, LATCH_COUNT, LO_HI, MODE_2_RATE_GENERATOR
 /// 规范定义的其余模式供参考:
-///   SELECT_CHANNEL_{1,2}, READ_BACK_COMMAND, LOW/HIGH_BYTE_ONLY,
-///   MODE_{0,1,3,4,5}, BCD_MODE
+///   SELECT_CHANNEL_{1,2}、READ_BACK_COMMAND、LOW/HIGH_BYTE_ONLY、
+///   MODE_{0,1,3,4,5}、BCD_MODE
 mod control_word {
     pub const SELECT_CHANNEL_0: u8 = 0x00;
     pub const LATCH_COUNT: u8 = 0x00;

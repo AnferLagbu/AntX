@@ -68,7 +68,7 @@ pub fn get_framebuffer_info() -> Option<&'static FramebufferInfo> {
 ///   u32  framebuffer_width
 ///   u32  framebuffer_height
 ///   u8   framebuffer_bpp
-///   u8   framebuffer_type    (0=indexed, 1=RGB, 2=text)
+///   u8   framebuffer_type    (0=索引色, 1=RGB, 2=文本)
 ///   u16  reserved
 ///   — 若 type==1 (RGB):
 ///   u8   red_field_position

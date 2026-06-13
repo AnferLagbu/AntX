@@ -5,11 +5,11 @@
 /// Default Slab cache size (4 KiB = one page).
 pub const SLAB_DEFAULT_SIZE: usize = 4096;
 
-/// Minimum Slab object size (bytes).
+/// Slab 对象最小尺寸 (字节).
 pub const SLAB_MIN_OBJECT_SIZE: usize = 16;
 
-/// Maximum Slab object size (bytes).
+/// Slab 对象最大尺寸 (字节).
 pub const SLAB_MAX_OBJECT_SIZE: usize = 2048;
 
-/// Number of general-purpose Slab caches.
+/// 通用 Slab 缓存数量.
 pub const SLAB_GENERAL_CACHE_NUM: usize = 8;

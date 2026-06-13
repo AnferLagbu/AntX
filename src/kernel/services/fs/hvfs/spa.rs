@@ -219,7 +219,7 @@ impl HvSpa {
         h | 1
     }
 
-    /// Get the drive ID of the first vdev (or 0 if no vdevs)
+    /// 获取第一个 vdev 的磁盘 ID (无 vdev 时返回 0)
     fn vdev_0_drive_id(&self) -> u8 {
         self.vdevs
             .lock()

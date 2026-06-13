@@ -96,7 +96,7 @@ pub fn strlen_safe(s: &[i8]) -> usize {
 ///
 /// # Safety
 ///
-/// `src` is a valid pointer to a null-terminated C string. `dst` has at least `max_len` bytes of writable memory.
+/// `src` 是指向以 NUL 结尾的 C 字符串的有效指针. `dst` 至少有 `max_len` 字节可写内存.
 pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
     if s1.is_null() || s2.is_null() {
         if s1.is_null() && s2.is_null() {
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
 ///
 /// # Safety
 ///
-/// Both `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions may not overlap.
+/// `src` 与 `dst` 均为有效指针. `dst` 至少有 `n` 字节可写内存. 两个区域不可重叠.
 pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 {
     if n == 0 {
         return 0;
@@ -308,7 +308,7 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
 ///
 /// # Safety
 ///
-/// `ptr` is a valid pointer. If `n` is nonzero, at least `n` bytes starting from `ptr` are readable.
+/// `ptr` 是有效指针. 若 `n` 非零, 则从 `ptr` 起至少有 `n` 字节可读.
 pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -344,7 +344,7 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
 ///
 /// # Safety
 ///
-/// `a` and `b` are valid pointers. At least `n` bytes from each are readable.
+/// `a` 与 `b` 均为有效指针. 各自至少有 `n` 字节可读.
 pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -389,7 +389,7 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
 ///
 /// # Safety
 ///
-/// `ptr` is a valid pointer. `value` will be written to `n` consecutive bytes starting from `ptr`.
+/// `ptr` 是有效指针. `value` 将被写入从 `ptr` 起 `n` 个连续字节.
 pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8 {
     if haystack.is_null() {
         return core::ptr::null_mut();
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn memcpy(
 ///
 /// # Safety
 ///
-/// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions may overlap.
+/// `src` 与 `dst` 均为有效指针. `dst` 至少有 `n` 字节可写内存. 两个区域可重叠.
 pub unsafe extern "C" fn memmove(
     dest: *mut u8,
     src: *const u8,
@@ -530,7 +530,7 @@ pub unsafe extern "C" fn memmove(
 ///
 /// # Safety
 ///
-/// `src` and `dst` are valid pointers. `dst` has at least `n` bytes of writable memory. Regions must not overlap.
+/// `src` 与 `dst` 均为有效指针. `dst` 至少有 `n` 字节可写内存. 两个区域不可重叠.
 pub unsafe extern "C" fn memset(
     s: *mut u8,
     c: i32,
@@ -566,7 +566,7 @@ pub unsafe extern "C" fn memset(
 ///
 /// # Safety
 ///
-/// `src` is a valid pointer to at least `n` bytes of readable memory.
+/// `src` 是指向至少有 `n` 字节可读内存的有效指针.
 pub unsafe extern "C" fn memset_optimized(
     s: *mut u8,
     c: i32,
@@ -606,7 +606,7 @@ pub unsafe extern "C" fn memset_optimized(
 ///
 /// # Safety
 ///
-/// `dst` is a valid pointer to at least `n` bytes of writable memory. `value` fits in `u8`.
+/// `dst` 是指向至少有 `n` 字节可写内存的有效指针. `value` 须能放入 `u8`.
 pub unsafe extern "C" fn memcmp(
     s1: *const u8,
     s2: *const u8,
@@ -651,7 +651,7 @@ pub unsafe extern "C" fn memcmp(
 ///
 /// # Safety
 ///
-/// `src` is a valid pointer to a null-terminated C string.
+/// `src` 是指向以 NUL 结尾的 C 字符串的有效指针.
 pub unsafe extern "C" fn memchr(
     s: *const u8,
     c: i32,

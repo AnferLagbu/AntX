@@ -283,7 +283,7 @@ impl IdtManager {
         }
 
         // 2a. 为关键异常设置 IST 专用栈 (格式: IDT IST=N → TSS ist[N-1])
-        // Double Fault (#DF, vector 8) → IDT IST=1 → TSS ist[0]
+        // Double Fault (#DF, 向量 8) → IDT IST=1 → TSS ist[0]
         state.entries[8] = IdtEntry::new_with_ist(
             isr_table[8],
             GDT_KERNEL_CODE,
@@ -297,7 +297,7 @@ impl IdtManager {
             IDT_TYPE_INTERRUPT,
             2, // IDT IST=2 → TSS ist[1]
         );
-        // Page Fault (#PF, vector 14) → IDT IST=4 → TSS ist[3]
+        // Page Fault (#PF, 向量 14) → IDT IST=4 → TSS ist[3]
         // 独立 IST 栈防止 COW/page fault 处理中的递归嵌套导致三重故障
         state.entries[14] = IdtEntry::new_with_ist(
             isr_table[14],
@@ -473,7 +473,7 @@ impl IdtManager {
             }
         };
         if !ioapic_handled {
-            // Fallback to legacy PIC (8259A) for older systems
+            // 兜底: 对老式系统回退到传统 PIC (8259A)
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 if irq < 8 {
@@ -894,7 +894,7 @@ impl IdtManager {
             }
         };
         if !apic_handled {
-            // Fallback to legacy PIC EOI for older systems
+            // 兜底: 对老式系统回退到传统 PIC EOI
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 if irq >= 8 {

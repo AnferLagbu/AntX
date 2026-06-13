@@ -72,8 +72,8 @@ pub fn timer_init(frequency_hz: u32) -> Result<u32, &'static str> {
     let actual_freq = super::pit::pit_init(frequency_hz)?;
     #[cfg(target_arch = "aarch64")]
     let actual_freq = {
-        // ARM Generic Timer already initialized by arch/aarch64/timer::init().
-        // We use the requested frequency for tick bookkeeping only.
+        // ARM 通用定时器已由 arch/aarch64/timer::init() 完成初始化.
+        // 此处仅用请求频率作 tick 簿记.
         frequency_hz
     };
 

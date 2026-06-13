@@ -1,24 +1,23 @@
 #![allow(dead_code)]
-//! PCI Bus Subsystem (Rust rewrite)
+//! PCI 总线子系统 (Rust 重写)
 //!
-//! Replaces the C implementation at src/driver/pci.c.
-//! Provides PCI configuration space access, bus scanning,
-//! BAR parsing, device enumeration, and driver matching.
+//! 取代 `src/driver/pci.c` 中的 C 实现.
+//! 提供 PCI 配置空间访问、总线扫描、BAR 解析、设备枚举与驱动匹配.
 //!
-//! ## Config Access Mechanisms
+//! ## 配置空间访问机制
 //!
-//! | Arch   | Mechanism | Details |
-//! |--------|-----------|---------|
-//! | x86_64 | Port I/O  | 0xCF8 (addr) / 0xCFC (data) |
-//! | aarch64| ECAM MMIO | Memory-mapped config space at ECAM_BASE |
+//! | 架构   | 机制      | 细节 |
+//! |--------|-----------|------|
+//! | x86_64 | 端口 I/O  | 0xCF8 (地址) / 0xCFC (数据) |
+//! | aarch64| ECAM MMIO | 内存映射配置空间, 基址 `ECAM_BASE` |
 //!
-//! ECAM maps each (bus, device, function) to a 4KB-aligned MMIO window:
-//!   addr = ECAM_BASE + (bus << 20) | (dev << 15) | (func << 12) | offset
+//! ECAM 将每个 (bus, device, function) 映射到 4KB 对齐的 MMIO 窗口:
+//!   `addr = ECAM_BASE + (bus << 20) | (dev << 15) | (func << 12) | offset`
 //!
-//! QEMU virt aarch64: ECAM_BASE = 0x3F000000 (without highmem)
-//! Real ARM servers: varies by platform (DTB/ACPI driven)
+//! QEMU virt aarch64: `ECAM_BASE = 0x3F000000` (无 highmem)
+//! 真实 ARM 服务器: 随平台变化 (由 DTB/ACPI 驱动)
 //!
-//! ## Architecture
+//! ## 架构
 //!
 //! ```text
 //! pci_init() → pci_scan_all_buses(None)
@@ -30,12 +29,11 @@
 //!               → if multifunction: for fn in 1..8: check
 //! ```
 //!
-//! ## e1000 independence
+//! ## e1000 独立
 //!
-//! The e1000 driver performs its own direct PCI scanning (via 0xCF8/0xCFC)
-//! and does NOT use this module's device list. This is intentional: e1000
-//! requires special MMIO page table setup that is tightly coupled to its probe.
-//! See src/net/driver/e1000.c → e1000_probe().
+//! e1000 驱动自行执行 PCI 扫描 (经 0xCF8/0xCFC), 不复用本模块的设备列表.
+//! 这是有意为之: e1000 需要特殊的 MMIO 页表设置, 与其 probe 紧耦合.
+//! 详见 `src/net/driver/e1000.c` → `e1000_probe()`.
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
@@ -45,7 +43,7 @@ pub mod api;
 pub mod hotplug;
 pub mod msi;
 
-// ── Port I/O primitives (x86_64 only) ──
+// ── 端口 I/O 原语 (仅 x86_64) ──
 
 #[cfg(target_arch = "x86_64")]
 mod port_io {
@@ -97,9 +95,9 @@ const PCI_CONFIG_ADDR: u16 = 0xCF8;
 #[cfg(target_arch = "x86_64")]
 const PCI_CONFIG_DATA: u16 = 0xCFC;
 
-/// ECAM base address for aarch64.
-/// QEMU virt aarch64 (without highmem): 0x3F000000
-/// This value MUST be kept in sync with the MMU identity mapping.
+/// aarch64 下的 ECAM 基址.
+/// QEMU virt aarch64 (无 highmem): 0x3F000000
+/// 该值必须与 MMU identity 映射保持同步.
 #[cfg(target_arch = "aarch64")]
 const ECAM_BASE: u64 = 0x3F00_0000;
 
@@ -107,7 +105,7 @@ const PCI_MAX_BUS: u8 = 255;
 const PCI_MAX_DEV: u8 = 32;
 const PCI_MAX_FUNC: u8 = 8;
 
-// Vendor/Device location
+// 厂商/设备 ID 字段偏移
 const REG_VENDOR_ID: u8 = 0x00;
 const REG_DEVICE_ID: u8 = 0x02;
 const REG_COMMAND: u8 = 0x04;
@@ -191,9 +189,9 @@ pub struct PciDevice {
 static DEVICE_LIST: Mutex<Vec<PciDevice>> = Mutex::new(Vec::new());
 static PCI_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
-// ── Config space access ──
+// ── 配置空间访问 ──
 
-/// Compute ECAM MMIO address for a given (bus, device, function, offset).
+/// 计算给定 (bus, device, function, offset) 对应的 ECAM MMIO 地址.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 fn ecam_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u64 {
@@ -204,7 +202,7 @@ fn ecam_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u64 {
         | (offset as u64 & 0xFFF)
 }
 
-/// Compute x86 port I/O config address.
+/// 计算 x86 端口 I/O 配置空间地址.
 #[cfg(target_arch = "x86_64")]
 fn make_config_addr(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     0x8000_0000u32
@@ -355,10 +353,10 @@ fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
             continue;
         }
 
-        // Write all-ones to determine size
+        // 写全 1 以确定 BAR 尺寸
         write_config_dword(bus, dev, func, offset, 0xFFFF_FFFF);
         let size_mask = read_config_dword(bus, dev, func, offset);
-        // Restore original
+        // 恢复原值
         write_config_dword(bus, dev, func, offset, bar_lo);
 
         if bar_lo & 1 != 0 {
@@ -373,7 +371,7 @@ fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
             bars[count].prefetchable = (bar_lo >> 3) & 1 != 0;
 
             if mem_type == 0x02 {
-                // 64-bit BAR: consumes two slots
+                // 64 位 BAR: 占用两个槽位
                 bars[count].is_64bit = true;
                 let bar_hi = read_config_dword(bus, dev, func, offset + 4);
                 bars[count].base_addr = ((bar_lo & !0x0Fu32) as u64) | ((bar_hi as u64) << 32);
@@ -491,7 +489,9 @@ pub fn init() -> usize {
     count
 }
 
-/// Returns true if `pci::init()` has been called at least once.
+}
+
+/// 当 `pci::init()` 至少被调用过一次时返回 true.
 pub fn is_initialized() -> bool {
     PCI_INITIALIZED.load(core::sync::atomic::Ordering::SeqCst)
 }
@@ -554,9 +554,9 @@ impl fmt::Display for PciDevice {
 
 // ── C FFI ──
 
-/// C FFI: Rust PCI init. Returns 0 on success.
-/// Called from kernel_main() instead of the C pci_init().
-/// The C pci_init() is kept in pci.c for the test suite only.
+/// C FFI: Rust PCI 初始化. 成功返回 0.
+/// 由 `kernel_main()` 调用, 替代原 C `pci_init()`.
+/// 原 C 版 `pci_init()` 保留在 `pci.c` 中, 仅供测试套件使用.
 #[no_mangle]
 pub extern "C" fn pci_rust_init() -> i32 {
     let count = init();

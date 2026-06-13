@@ -1,4 +1,4 @@
-//! MSI/MSI-X — PCI Message Signaled Interrupts
+//! MSI/MSI-X — PCI 消息信号中断
 //!
 //! 实现 MSI 和 MSI-X 中断机制, 替代传统 INTx 引脚中断.
 //!
@@ -203,7 +203,7 @@ pub fn msi_enable(dev: &pci::PciDevice) -> Option<MsiConfig> {
     let msg_addr: u32 = 0; // ARM GIC ITS: 后续集成
 
     // 配置 Message Data
-    // x86_64: [7:0] = Vector, [10:8] = Delivery Mode (000=fixed), [14:13] = Trigger Mode
+    // x86_64: [7:0] = Vector, [10:8] = Delivery Mode (000=fixed), [14:13] = 触发模式
     let msg_data = vector as u32;
 
     // 写入 Message Address (低32位)
@@ -258,7 +258,7 @@ pub fn msi_disable(dev: &pci::PciDevice, config: &MsiConfig) {
 /// - Offset 0: Message Address (低32位)
 /// - Offset 4: Message Upper Address (高32位)
 /// - Offset 8: Message Data (32位)
-/// - Offset 12: Vector Control (32-bit, bit 0 = mask)
+/// - Offset 12: Vector Control (32 位, bit 0 = mask)
 #[repr(C)]
 struct MsixTableEntry {
     msg_addr_lo: u32,

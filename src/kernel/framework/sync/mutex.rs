@@ -37,11 +37,10 @@ pub struct Mutex<T: ?Sized> {
     data: core::cell::UnsafeCell<T>,
 }
 
-// SAFETY: Mutex provides mutual exclusion through its internal spinlock.
-// UnsafeCell provides interior mutability; access to T is gated by lock
-// acquisition. T: Send is required because ownership can transfer between
-// threads via lock/unlock. T: Sync is guaranteed because only one thread
-// can hold the lock at a time, providing exclusive access.
+// SAFETY: Mutex 通过内部自旋锁提供互斥.
+// UnsafeCell 提供内部可变性; 对 T 的访问受锁获取约束.
+// 要求 T: Send 是因为所有权可通过 lock/unlock 在线程间转移.
+// T: Sync 自动满足, 因为同一时刻仅一个线程可持有锁, 提供排他访问.
 unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
 unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 

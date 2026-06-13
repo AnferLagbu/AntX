@@ -813,7 +813,7 @@ impl HvfsData {
         }
 
         obj.pwm_perm = mode;
-        // Framekernel P2.2.2: safe timestamp
+        // Framekernel P2.2.2: 安全时间戳
         obj.ctime = crate::arch!(timestamp());
         obj.dirty = true;
 
@@ -856,7 +856,7 @@ impl HvfsData {
         if group_pwm != 0 {
             obj.group_pwm = group_pwm;
         }
-        // Framekernel P2.2.2: safe timestamp
+        // Framekernel P2.2.2: 安全时间戳
         obj.ctime = crate::arch!(timestamp());
         obj.dirty = true;
 

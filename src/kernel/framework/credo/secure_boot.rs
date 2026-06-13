@@ -460,7 +460,7 @@ impl TpmSubsystem {
 
     /// 扩展 PCR (Extend)
     ///
-    /// new_pcr = SHA256(old_pcr || data)
+    /// 公式: 新值 = SHA256(旧值 || 数据)
     pub fn extend(&self, pcr_idx: PcrIndex, data: &[u8]) -> bool {
         if !self.initialized.load(Ordering::Acquire) {
             return false;
@@ -624,7 +624,7 @@ pub fn tpm_is_initialized() -> bool {
 ///   0 = verify_image(image_ptr: a1, image_len: a2, sig_ptr: a3) → 结果
 ///   1 = is_enabled() → bool
 ///   2 = is_locked() → bool
-///   3 = stats() → (ok_count << 32 | fail_count)
+///   3 = stats() → (ok_count 位于高 32 位 | fail_count 位于低 32 位)
 #[no_mangle]
 pub fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     match cmd {
@@ -663,11 +663,11 @@ pub fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 /// sys_tpm — TPM 系统调用
 ///
 /// `a0`: cmd
-///   0 = extend(pcr_idx: a1, data_ptr: a2, data_len: a3) → bool
-///   1 = read_pcr(pcr_idx: a1) → u64 (哈希前8字节)
-///   2 = seal(data_ptr: a1, data_len: a2, pcr_mask: a3) → fd
+///   0 = extend(pcr 索引: a1, 数据指针: a2, 数据长度: a3) → bool
+///   1 = read_pcr(pcr 索引: a1) → u64 (哈希前8字节)
+///   2 = seal(数据指针: a1, 数据长度: a2, pcr 掩码: a3) → fd
 ///   3 = unseal(fd: a1) → bool (简化)
-///   4 = quote(pcr_mask: a1, nonce_ptr: a2, nonce_len: a3) → hash前8字节
+///   4 = quote(pcr 掩码: a1, nonce 指针: a2, nonce 长度: a3) → 哈希前8字节
 ///   5 = is_initialized() → bool
 #[no_mangle]
 pub fn sys_tpm(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {

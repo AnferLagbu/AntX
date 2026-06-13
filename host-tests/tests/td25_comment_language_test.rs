@@ -255,3 +255,158 @@ fn test_audit_script_executable() {
         stdout, stderr
     );
 }
+
+// ── 9. POSIX 签名引用豁免 ──────────────────────────────────
+//
+// 项目规范: `/// POSIX `func(args)` 形式的单行签名引用, 等价于
+// "标准函数原型引用", 豁免. 这是 net_socket.rs 等文件批量英文注释的
+// 真实来源, 误判为违规会污染信号.
+
+#[test]
+fn test_posix_signature_passes() {
+    let files = &[(
+        "socket.rs",
+        "/// POSIX `bind(fd, addr, addrlen)`\n\
+         pub fn bind() {}\n\
+         \n\
+         /// POSIX `listen(fd, backlog)`\n\
+         pub fn listen() {}\n",
+    )];
+    let (code, stdout, stderr) = run_audit_on_fixture(files);
+    assert_eq!(
+        code, 0,
+        "POSIX 签名引用应 PASSED, stdout={}, stderr={}",
+        stdout, stderr
+    );
+}
+
+#[test]
+fn test_bare_signature_passes() {
+    // 无 POSIX 前缀的纯签名引用 (services/net/syscall.rs 常见)
+    let files = &[(
+        "net.rs",
+        "/// sendto(fd, buf, len, flags, dest_addr, addrlen)\n\
+         pub fn sendto() {}\n\
+         \n\
+         /// recvfrom(fd, buf, len, flags, src_addr, addrlen)\n\
+         pub fn recvfrom() {}\n\
+         \n\
+         /// bind(fd, addr, addrlen)\n\
+         pub fn bind() {}\n",
+    )];
+    let (code, stdout, stderr) = run_audit_on_fixture(files);
+    assert_eq!(
+        code, 0,
+        "纯签名引用应 PASSED, stdout={}, stderr={}",
+        stdout, stderr
+    );
+}
+
+#[test]
+fn test_bare_signature_with_narrative_violates() {
+    // 签名引用 + 叙述文字, 仍违规 (因为整行不只是签名)
+    let files = &[(
+        "net.rs",
+        "/// sendto(fd, buf, len, flags) and the kernel needs to dispatch\n\
+         pub fn sendto() {}\n",
+    )];
+    let (code, _stdout, _stderr) = run_audit_on_fixture(files);
+    assert_eq!(code, 1, "签名引用 + 叙述文字应报违规");
+}
+
+#[test]
+fn test_non_posix_paragraph_still_violates() {
+    // 没有 `POSIX` 标记 + 没有反引号函数名 = 真违规, 豁免规则不适用
+    let files = &[(
+        "doc.rs",
+        "/// This is a long English paragraph about the function design\n\
+         /// and its rationale for the system architecture.\n\
+         pub fn f() {}\n",
+    )];
+    let (code, _stdout, _stderr) = run_audit_on_fixture(files);
+    assert_eq!(code, 1, "非 POSIX 纯英文段落应报违规");
+}
+
+#[test]
+fn test_posix_marker_without_backtick_still_violates() {
+    // 有 POSIX 标记但无反引号函数名 = 叙述性段落, 仍违规
+    let files = &[(
+        "doc.rs",
+        "/// POSIX compliance is required for all the system calls\n\
+         /// and the interface must follow the standard convention.\n\
+         pub fn f() {}\n",
+    )];
+    let (code, _stdout, _stderr) = run_audit_on_fixture(files);
+    assert_eq!(code, 1, "POSIX 叙述性段落应报违规 (无反引号函数名)");
+}
+
+// ── 10. 代码示例豁免 ──────────────────────────────────
+//
+// 文档注释中嵌入的代码块 (如 `//! let new_value = Itimerspec { ... }`)
+// 是 Rust/C 代码片段, 不是英文叙述. posix_timer.rs 的示例就属于此类.
+
+#[test]
+fn test_rust_code_example_passes() {
+    let files = &[(
+        "doc.rs",
+        "//! use crate::kernel::services::proc::posix_timer;\n\
+         //! let new_value = Itimerspec { it_interval_sec: 1, it_interval_nsec: 0 };\n\
+         //! posix_timer::timer_settime(id, 0, Some(&new_value), None);\n\
+         pub fn f() {}\n",
+    )];
+    let (code, stdout, stderr) = run_audit_on_fixture(files);
+    assert_eq!(
+        code, 0,
+        "Rust 代码示例应 PASSED, stdout={}, stderr={}",
+        stdout, stderr
+    );
+}
+
+#[test]
+fn test_doc_code_block_skipped() {
+    // 文档注释中的 ```rust 代码块 (含英文行) 不应被审计
+    let files = &[(
+        "mutex.rs",
+        "/// # Example\n\
+         /// ```rust,ignore\n\
+         /// let mutex = Mutex::new(false);\n\
+         /// *mutex.get_mut() = true;\n\
+         /// ```\n\
+         pub struct Mutex;\n",
+    )];
+    let (code, stdout, stderr) = run_audit_on_fixture(files);
+    assert_eq!(
+        code, 0,
+        "文档代码块内英文应被豁免, stdout={}, stderr={}",
+        stdout, stderr
+    );
+}
+
+#[test]
+fn test_c_code_example_passes() {
+    let files = &[(
+        "doc.rs",
+        "/// struct itimerspec new_val = { .it_interval = {1, 0}, .it_value = {1, 0} };\n\
+         /// syscall(QX_TIMER_SETTIME, id, 0, &new_val, NULL);\n\
+         pub fn f() {}\n",
+    )];
+    let (code, stdout, stderr) = run_audit_on_fixture(files);
+    assert_eq!(
+        code, 0,
+        "C 代码示例应 PASSED, stdout={}, stderr={}",
+        stdout, stderr
+    );
+}
+
+#[test]
+fn test_low_marker_density_still_violates() {
+    // 只有 1 个代码标记 (1 个 `;`), 视为叙述性段落
+    let files = &[(
+        "doc.rs",
+        "/// This is some English text; more English words here\n\
+         /// and even more English content for the documentation.\n\
+         pub fn f() {}\n",
+    )];
+    let (code, _stdout, _stderr) = run_audit_on_fixture(files);
+    assert_eq!(code, 1, "低密度代码标记段落应报违规 (仅 1 个分号)");
+}

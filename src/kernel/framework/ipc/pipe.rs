@@ -231,8 +231,8 @@ pub unsafe fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
 
     match pipe_create_safe(ns, next_id, current_pid) {
         Ok((rfd, wfd)) => {
-            // SAFETY: pipefd is validated non-null above; caller guarantees
-            // it points to at least 2 valid i32 values in user memory.
+            // SAFETY: pipefd 已校验非空; 调用方保证其指向用户态内存中
+            // 至少 2 个有效的 i32 值.
             let mut fds = unsafe { UserRefMut::<[i32; 2]>::new(pipefd as *mut [i32; 2]) };
             let arr = fds.as_mut();
             arr[0] = rfd;
@@ -255,8 +255,8 @@ pub unsafe fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
     }
 
     let ns = super::IPC_NAMESPACE.get_mut();
-    // SAFETY: buf is validated non-null above; caller guarantees it points
-    // to at least count valid bytes in user memory.
+    // SAFETY: buf 已校验非空; 调用方保证其指向用户态内存中
+    // 至少 `count` 个有效字节.
     let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
     match pipe_read_safe(ns, fd, user_buf.as_mut_slice(), count) {
         Ok(n) => n as i32,
@@ -276,8 +276,8 @@ pub unsafe fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
     }
 
     let ns = super::IPC_NAMESPACE.get_mut();
-    // SAFETY: buf is validated non-null above; caller guarantees it points
-    // to at least count valid bytes in user memory.
+    // SAFETY: buf 已校验非空; 调用方保证其指向用户态内存中
+    // 至少 `count` 个有效字节.
     let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
     match pipe_write_safe(ns, fd, user_buf.as_slice(), count) {
         Ok(n) => n as i32,

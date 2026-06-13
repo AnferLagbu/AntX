@@ -1,7 +1,7 @@
-//! Credo v1 Persistent Storage
+//! Credo v1 持久化存储
 //!
-//! Binary format v5: header + entries, stored at /pwm.db
-//! Migration from v4 format supported.
+//! 二进制格式 v5: 头部 + 条目, 存储路径 `/pwm.db`.
+//! 支持从 v4 格式迁移.
 
 use super::identity;
 use super::types::*;

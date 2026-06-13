@@ -1,12 +1,11 @@
-//! Block Device Abstraction Layer
+//! 块设备抽象层
 //!
-//! Provides a unified `BlockDevice` trait implemented by all storage drivers
-//! (ATA, AHCI, NVMe, virtio-blk).
+//! 提供统一的 `BlockDevice` trait, 由所有存储驱动 (ATA, AHCI, NVMe, virtio-blk) 实现.
 //!
 //! ## Chitin 统一架构
 //!
-//! Chitin 是唯一的设备驱动框架。块设备通过 `proto_block::register_block_device`
-//! 注册到 Chitin, HvFS 通过 `chitin_blk_read/write` 直接 I/O。
+//! Chitin 是唯一的设备驱动框架. 块设备通过 `proto_block::register_block_device`
+//! 注册到 Chitin, HvFS 通过 `chitin_blk_read/write` 直接 I/O.
 //!
 //! 本模块保留:
 //! - `BlockDevice` trait: 驱动实现接口
@@ -29,10 +28,10 @@ pub trait BlockDevice: Send + Sync {
     fn blk_total_sectors(&self) -> u64;
 }
 
-// ── SMP Safety Infrastructure ──
+// ── SMP 安全基础设施 ──
 //
-// 保留 REGISTRY 用于 safe_unregister 的设备移除协议。
-// I/O 主路径已迁移至 Chitin (chitin_blk_read/write)。
+// 保留 REGISTRY 用于 safe_unregister 的设备移除协议.
+// I/O 主路径已迁移至 Chitin (chitin_blk_read/write).
 
 static REGISTRY: Mutex<Vec<Option<Mutex<Box<dyn BlockDevice>>>>> = Mutex::new(Vec::new());
 static DEVICE_NAMES: Mutex<Vec<Option<&'static str>>> = Mutex::new(Vec::new());
@@ -156,7 +155,7 @@ pub fn count() -> usize {
     REGISTRY.lock().len()
 }
 
-// ── Multi-sector helper ──
+// ── 多扇区辅助函数 ──
 
 // I-20: read_sectors / write_sectors 改用 KernelResult<()>, 替代 C 风格 `return -1`.
 // 现在错误类型与项目其余模块统一 (KernelError::InvalidArgument / IoError),

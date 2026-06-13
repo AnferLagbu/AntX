@@ -185,13 +185,12 @@ impl DynIpcNamespace {
 
         let mut cur = mq.head;
         while let Some(msg_nn) = cur {
-            // SAFETY: msg_nn is a valid pointer from a Box<Message> allocated
-            // via Box::into_raw. The message linked list is only mutated while
-            // holding msg_queues lock.
+            // SAFETY: msg_nn 是经 Box::into_raw 分配的 Box<Message> 派生出的有效指针.
+            // 消息链表只在持有 msg_queues 锁时被修改.
             let msg_ref = unsafe { MessageRef::from_non_null(msg_nn) };
             cur = msg_ref.next();
-            // SAFETY: msg_nn was allocated by Box::into_raw; we re-create the
-            // Box here to drop it, freeing the memory.
+            // SAFETY: msg_nn 由 Box::into_raw 分配, 此处重新构造 Box 以
+            // drop 释放内存.
             msg_ref.free();
         }
 
@@ -247,9 +246,8 @@ impl DynIpcNamespace {
 static DYN_IPC: RacyCell<Option<DynIpcNamespace>> = RacyCell::new(None);
 
 fn dyn_ipc_init_impl() {
-    // SAFETY: single-threaded boot path; one-time initialization.
-    // RacyCell::get_mut() is safe — callers guarantee exclusive access
-    // during boot before any concurrent access.
+    // SAFETY: 单线程启动路径; 一次性初始化.
+    // RacyCell::get_mut() 在此安全, 因启动期在并发访问前, 调用方保证独占访问.
     *DYN_IPC.get_mut() = Some(DynIpcNamespace::new());
 }
 

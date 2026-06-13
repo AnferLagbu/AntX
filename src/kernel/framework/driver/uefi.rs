@@ -463,10 +463,10 @@ pub fn uefi_is_initialized() -> bool {
 /// sys_uefi — UEFI 系统调用
 ///
 /// `a0`: cmd
-///   0 = get_variable(name_ptr: a1, guid_ptr: a2) → (attrs, data_ptr)
-///   1 = set_variable(name_ptr: a1, guid_ptr: a2, attrs: a3, data_ptr: a4, data_size: a5)
-///   2 = delete_variable(name_ptr: a1, guid_ptr: a2)
-///   3 = get_time() → ns
+///   0 = get_variable(名称指针, GUID 指针) → (属性, 数据指针)
+///   1 = set_variable(名称指针, GUID 指针, 属性, 数据指针, 数据长度)
+///   2 = delete_variable(名称指针, GUID 指针)
+///   3 = get_time() → ns (纳秒)
 ///   4 = set_time(ns: a1)
 ///   5 = get_gop_mode() → fb_base
 ///   6 = list_variables() → count

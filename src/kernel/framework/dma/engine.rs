@@ -1,8 +1,8 @@
-//! DMA Engine core implementation
+//! DMA Engine 核心实现
 //!
-//! Manages coherent DMA allocations, streaming mappings,
-//! scatter-gather lists, and MMIO (ioremap) mapping.
-//! Uses PhysAddr/VirtAddr type safety and lock-free atomics.
+//! 管理一致性 DMA 分配、流式映射、散聚表 (scatter-gather)
+//! 以及 MMIO (ioremap) 映射.
+//! 采用 `PhysAddr`/`VirtAddr` 类型安全与无锁原子变量.
 
 use super::*;
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
@@ -16,8 +16,8 @@ pub struct DmaEngine {
     mmio_regions: Mutex<Vec<(VirtAddr, PhysAddr, usize)>>,
 }
 
-// SAFETY: DmaEngine uses Mutex for mappings/mmio_regions and AtomicBool
-// for initialized. DmaStats is plain Copy. No UnsafeCell without synchronization.
+// SAFETY: DmaEngine 对 mappings/mmio_regions 使用 Mutex, 对 initialized 使用 AtomicBool.
+// DmaStats 仅为普通 Copy 类型. 不存在未配同步原语的 UnsafeCell.
 unsafe impl Send for DmaEngine {}
 unsafe impl Sync for DmaEngine {}
 
@@ -47,7 +47,7 @@ impl DmaEngine {
 
         let mut mappings = self.mappings.lock();
 
-        // Drop all coherent mappings which release their pages
+        // 释放所有一致性映射并回收其页面
         for m in mappings.drain(..) {
             if m.is_coherent {
                 let pages = (m.size as u64).div_ceil(PAGE_SIZE);
@@ -55,7 +55,7 @@ impl DmaEngine {
             }
         }
 
-        // Clear mmio regions
+        // 清空 MMIO 映射区
         let mut regions = self.mmio_regions.lock();
         for (virt, _phys, size) in regions.drain(..) {
             let pages = (size as u64).div_ceil(PAGE_SIZE);
@@ -74,8 +74,8 @@ impl DmaEngine {
 
     // =============== Coherent DMA Memory ===============
 
-    /// Allocate physically contiguous DMA-coherent memory.
-    /// Returns (cpu_virt_addr, dma_phys_addr).
+    /// 分配物理上连续的 DMA 一致性内存.
+    /// 返回 `(cpu_virt_addr, dma_phys_addr)`.
     pub fn alloc_coherent(&self, size: usize) -> Option<(VirtAddr, PhysAddr)> {
         if size == 0 || !self.initialized.load(Ordering::Acquire) {
             return None;
@@ -91,16 +91,16 @@ impl DmaEngine {
             }
         };
 
-        // Convert physical to kernel virtual (direct-map region)
+        // 将物理地址转换为内核虚拟地址 (direct-map 区)
         let virt = VirtAddr(phys.0 + KERNEL_BASE);
 
-        // Zero the memory
+        // 清零内存
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             ptr::write_bytes(virt.0 as *mut u8, 0, (pages * PAGE_SIZE) as usize);
         }
-        
-        // Ensure zeroing is visible to device
+
+        // 确保清零对设备可见
         self.cache_flush(virt, size);
 
         self.stats.total_allocations.fetch_add(1, Ordering::Relaxed);
@@ -111,7 +111,7 @@ impl DmaEngine {
             .current_bytes_used
             .fetch_add(size as u64, Ordering::Relaxed);
 
-        // Track this allocation
+        // 记录本次分配
         self.mappings.lock().push(DmaMapping {
             cpu_addr: virt,
             dma_addr: phys,
@@ -125,7 +125,7 @@ impl DmaEngine {
         Some((virt, phys))
     }
 
-    /// Free coherent DMA memory
+    /// 释放 DMA 一致性内存
     pub fn free_coherent(&self, cpu_addr: VirtAddr, size: usize) {
         if size == 0 || cpu_addr.0 == 0 || !self.initialized.load(Ordering::Acquire) {
             return;
@@ -156,7 +156,7 @@ impl DmaEngine {
         }
     }
 
-    /// Get the device (physical) DMA address for a CPU virtual address
+    /// 获取 CPU 虚拟地址对应的设备 (物理) DMA 地址
     pub fn device_address(&self, cpu_addr: VirtAddr) -> Option<PhysAddr> {
         if cpu_addr.0 == 0 {
             return None;
@@ -166,8 +166,8 @@ impl DmaEngine {
 
     // =============== ioremap (MMIO) ===============
 
-    /// Map physical MMIO region into kernel virtual address space.
-    /// Uses uncacheable (UC) mapping suitable for device registers.
+    /// 将物理 MMIO 区映射到内核虚拟地址空间.
+    /// 采用不可缓存 (UC) 映射, 适合设备寄存器访问.
     pub fn ioremap(&self, phys_addr: PhysAddr, size: usize) -> Option<VirtAddr> {
         if phys_addr.0 == 0 || size == 0 || !self.initialized.load(Ordering::Acquire) {
             return None;
@@ -199,7 +199,7 @@ impl DmaEngine {
         Some(virt)
     }
 
-    /// Unmap MMIO region
+    /// 解除 MMIO 区映射
     pub fn iounmap(&self, virt_addr: VirtAddr, size: usize) {
         if virt_addr.0 == 0 || size == 0 {
             return;
@@ -214,9 +214,9 @@ impl DmaEngine {
         regions.retain(|(v, _, _)| *v != virt_addr);
     }
 
-    // =============== Streaming DMA Mappings ===============
+    // =============== 流式 DMA 映射 ===============
 
-    /// Map an existing kernel buffer for DMA
+    /// 将已有内核缓冲区映射为 DMA 缓冲区
     pub fn map_single(
         &self,
         buffer: VirtAddr,
@@ -241,7 +241,7 @@ impl DmaEngine {
             is_mapped: true,
         };
 
-        // Sync before giving to device
+        // 交给设备前同步
         if matches!(direction, DmaDirection::ToDevice) {
             Self::barrier_device();
         }
@@ -255,7 +255,7 @@ impl DmaEngine {
             .current_in_use
             .store(mapping_count, Ordering::Relaxed);
 
-        // Update max concurrent
+        // 更新最大并发数
         let mut max = self.stats.max_concurrent.load(Ordering::Relaxed);
         while mapping_count > max {
             match self.stats.max_concurrent.compare_exchange_weak(
@@ -269,11 +269,11 @@ impl DmaEngine {
             }
         }
 
-        // Return a pointer that can be passed to C — use the Vec's internal pointer
+        // 返回可传给 C 的指针 — 使用 Vec 内部指针
         Some(&mappings[idx] as *const DmaMapping)
     }
 
-    /// Unmap a streaming DMA mapping
+    /// 解除流式 DMA 映射
     pub fn unmap_single(&self, mapping: &DmaMapping) {
         if !mapping.is_mapped || !self.initialized.load(Ordering::Acquire) {
             return;
@@ -287,25 +287,25 @@ impl DmaEngine {
         self.stats.current_in_use.store(count, Ordering::Relaxed);
     }
 
-    // =============== Cache Synchronization ===============
+    // =============== 缓存同步 ===============
 
-    /// Sync for device access (CPU → Device)
+    /// 为设备访问同步 (CPU → Device)
     pub fn sync_for_device(&self, _mapping: &DmaMapping, _offset: usize, _size: usize) {
         Self::barrier_device();
     }
 
-    /// Sync for CPU access (Device → CPU)
+    /// 为 CPU 访问同步 (Device → CPU)
     pub fn sync_for_cpu(&self, _mapping: &DmaMapping, _offset: usize, _size: usize) {
         Self::barrier_cpu();
     }
 
-    /// Bidirectional sync
+    /// 双向同步
     pub fn sync_both(&self, mapping: &DmaMapping, offset: usize, size: usize) {
         self.sync_for_device(mapping, offset, size);
         self.sync_for_cpu(mapping, offset, size);
     }
 
-    // =============== Scatter-Gather ===============
+    // =============== 散聚表 (Scatter-Gather) ===============
 
     pub fn sg_init(&self, sglist: &mut DmaScatterList) {
         sglist.entry_count = 0;
@@ -338,7 +338,7 @@ impl DmaEngine {
         sglist.total_length
     }
 
-    // =============== Statistics ===============
+    // =============== 统计 ===============
 
     pub fn get_stats(&self) -> DmaPoolStats {
         self.stats.snapshot()
@@ -348,103 +348,103 @@ impl DmaEngine {
         self.stats.reset();
     }
 
-    // =============== Private Helpers ===============
+    // =============== 私有辅助函数 ===============
 
-    /// Flush CPU cache to ensure DMA coherency
-    /// This is architecture-specific and critical for non-coherent DMA
+    /// 刷新 CPU 缓存以确保 DMA 一致性.
+    /// 该函数与架构相关, 对非一致性 DMA 至关重要.
     #[inline(always)]
     #[allow(unused_variables)]
     fn cache_flush(&self, addr: VirtAddr, size: usize) {
-        // Architecture-specific cache flush
+        // 架构相关缓存刷新
         #[cfg(target_arch = "x86_64")]
         {
-            // x86_64: Use CLFLUSH instruction if available
-            // For now, use memory fence as x86_64 is mostly coherent
+            // x86_64: 若可用则使用 CLFLUSH 指令
+            // 当前使用内存栅栏, 因为 x86_64 多数情况下已一致
             core::sync::atomic::fence(Ordering::SeqCst);
-            
-            // TODO(TRACK-A99EBB): Use CLFLUSHOPT for better performance on newer CPUs
+
+            // TODO(TRACK-A99EBB): 在较新 CPU 上使用 CLFLUSHOPT 以获取更好性能
             // if cpu_has_clflushopt() {
             //     flush_cache_clflushopt(addr, size);
             // }
         }
-        
+
         #[cfg(target_arch = "aarch64")]
         {
-            // aarch64: Use cache maintenance instructions
-            // DCCMVAC - Clean data cache to point of coherency
-            // This ensures CPU writes are visible to DMA devices
+            // aarch64: 使用缓存维护指令
+            // DCCMVAC — 按虚拟地址清理数据缓存至一致性点
+            // 确保 CPU 写入对 DMA 设备可见
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let start = addr.0 as usize;
                 let end = start + size;
-                let cache_line_size = 64; // Typical cache line size
-                
-                // Align start address down to cache line boundary
+                let cache_line_size = 64; // 典型缓存行大小
+
+                // 将起始地址向下对齐到缓存行边界
                 let aligned_start = start & !(cache_line_size - 1);
-                
+
                 for offset in (aligned_start..end).step_by(cache_line_size) {
-                    // Data Cache Clean by Virtual Address to Point of Coherency
-                    // dc cvac: Writes dirty cache lines to memory
+                    // DCCVAC — 按虚拟地址将数据缓存清理至一致性点
+                    // dc cvac: 将脏缓存行写回内存
                     core::arch::asm!(
                         "dc cvac, {addr}",
                         addr = in(reg) offset,
                         options(nostack, nomem),
                     );
                 }
-                
-                // Data Synchronization Barrier
-                // Ensures all cache maintenance completes before continuing
+
+                // 数据同步屏障
+                // 确保所有缓存维护操作完成后再继续
                 core::arch::asm!("dsb sy", options(nostack, nomem));
             }
         }
-        
+
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
-            // Other architectures: assume coherent or use fence
+            // 其他架构: 假设一致性, 或退化为栅栏
             core::sync::atomic::fence(Ordering::SeqCst);
         }
     }
 
-    /// Invalidate CPU cache before DMA read
-    /// This ensures CPU will see device's writes
+    /// 在 DMA 读之前失效 CPU 缓存.
+    /// 确保 CPU 能看到设备的写入.
     #[inline(always)]
     #[allow(unused_variables)]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]
         {
-            // x86_64: Cache is typically coherent, just need fence
+            // x86_64: 缓存通常一致, 只需栅栏
             core::sync::atomic::fence(Ordering::SeqCst);
         }
-        
+
         #[cfg(target_arch = "aarch64")]
         {
-            // aarch64: Use DC IVAC instruction
-            // This invalidates cache lines so CPU will read fresh data from memory
+            // aarch64: 使用 DC IVAC 指令
+            // 失效缓存行, 以便 CPU 从内存读入最新数据
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
                 let start = addr.0 as usize;
                 let end = start + size;
                 let cache_line_size = 64;
-                
-                // Align start address down to cache line boundary
+
+                // 将起始地址向下对齐到缓存行边界
                 let aligned_start = start & !(cache_line_size - 1);
-                
+
                 for offset in (aligned_start..end).step_by(cache_line_size) {
-                    // Data Cache Invalidate by Virtual Address to Point of Coherency
-                    // dc ivac: Invalidates cache lines, forcing next read from memory
+                    // DCIVAC — 按虚拟地址将数据缓存失效至一致性点
+                    // dc ivac: 失效缓存行, 强制下次读从内存加载
                     core::arch::asm!(
                         "dc ivac, {addr}",
                         addr = in(reg) offset,
                         options(nostack, nomem),
                     );
                 }
-                
-                // Data Synchronization Barrier
-                // Ensures all cache invalidation completes before continuing
+
+                // 数据同步屏障
+                // 确保所有缓存失效操作完成后再继续
                 core::arch::asm!("dsb sy", options(nostack, nomem));
             }
         }
-        
+
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
             core::sync::atomic::fence(Ordering::SeqCst);
@@ -453,20 +453,20 @@ impl DmaEngine {
 
     #[inline(always)]
     fn barrier_device() {
-        // sfence: ensure all stores are visible before DMA
+        // sfence: 确保所有 store 在 DMA 之前可见
         crate::arch!(fence_w());
         core::sync::atomic::fence(Ordering::SeqCst);
     }
 
     #[inline(always)]
     fn barrier_cpu() {
-        // lfence: ensure all loads reflect DMA writes
+        // lfence: 确保所有 load 反映 DMA 写入
         crate::arch!(fence_r());
         core::sync::atomic::fence(Ordering::SeqCst);
     }
 }
 
-// Global DMA Engine instance
+// 全局 DMA Engine 实例
 static mut GLOBAL_DMA: DmaEngine = DmaEngine::new();
 
 pub fn get_dma() -> &'static DmaEngine {
@@ -474,21 +474,20 @@ pub fn get_dma() -> &'static DmaEngine {
     unsafe { &GLOBAL_DMA }
 }
 
-///
 /// # Safety
 ///
-/// Called during initialization before DMA subsystem is live. Caller ensures `count` > 0.
+/// 在 DMA 子系统尚未生效前的初始化阶段调用. 调用方保证 `count` > 0.
 pub unsafe fn get_dma_mut() -> &'static mut DmaEngine {
     &mut GLOBAL_DMA
 }
 
-// Accessor used by FFI layer
+/// FFI 层使用的访问器
 pub(crate) fn dma() -> &'static DmaEngine {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { &GLOBAL_DMA }
 }
 
-// =============== DMA Transfer Engine ===============
+// =============== DMA 传输引擎 ===============
 
 #[repr(C)]
 pub struct DmaTransfer {

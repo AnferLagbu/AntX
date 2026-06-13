@@ -172,13 +172,12 @@ pub trait SystemArch {
 // ── Arch: 超 trait (委托模式) ─────────────────────────────────────────
 
 /// 完整架构能力 — 要求所有子 trait。
-///
 /// 每个方法有默认实现，委托到对应的子 trait:
-/// - `CoreArch` → cpu_id, timestamp, halt, fence, fence_w
-/// - `InterruptArch` → interrupt_disable/enable/restore/is_enabled, send_ipi, broadcast_ipi
-/// - `MmuArch` → tlb_flush_page/all, read/write_page_table_base, read_fault_address,
-///                context_switch, enter_user, return_to_user
-/// - `SystemArch` → outb/inb/outl/inl, shutdown, reboot
+/// - `CoreArch` → CPU 标识/时间戳/停机/内存栅栏
+/// - `InterruptArch` → 中断禁用/使能/恢复/查询, 发送/广播 IPI
+/// - `MmuArch` → 单页/全表 TLB 刷新, 读写页表基址, 读故障地址,
+///                上下文切换, 进出用户态
+/// - `SystemArch` → 端口 IO 字节/双字, 关机, 重启
 ///
 /// 新架构移植时，实现子 trait 后加 `impl Arch for MyArch {}` 即可获得完整接口。
 pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
@@ -311,8 +310,8 @@ pub type CurrentArch = aarch64::Aarch64;
 ///
 /// # 展开示例
 ///
-/// `arch!(tlb_flush_all())` 展开为:
-/// `<CurrentArch as Arch>::tlb_flush_all()`
+/// `arch!(tlb_flush_all())` 展开为对当前架构的 `tlb_flush_all` 方法调用,
+/// 形如 `<CurrentArch as Arch>::tlb_flush_all()`.
 #[macro_export]
 macro_rules! arch {
     ($method:ident ( $($arg:expr),* $(,)? )) => {

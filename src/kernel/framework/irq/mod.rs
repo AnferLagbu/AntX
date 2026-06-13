@@ -74,9 +74,9 @@ struct SoftirqState {
     running: AtomicBool,
 }
 
-// SAFETY: SoftirqState uses AtomicU64/AtomicBool for pending/running.
-// handlers (UnsafeCell) is only modified during registration (boot time)
-// and read during softirq processing (interrupt context, single-threaded).
+// SAFETY: SoftirqState 的 pending/running 使用 AtomicU64/AtomicBool.
+// handlers (UnsafeCell) 仅在注册期 (启动期) 修改,
+// 在 softirq 处理期 (中断上下文, 单线程) 读取.
 unsafe impl Sync for SoftirqState {}
 
 static SOFTIRQ: SoftirqState = SoftirqState {
@@ -150,7 +150,7 @@ pub fn pending_softirq() -> bool {
 
 #[no_mangle]
 pub extern "C" fn softirq_init() {
-    // Default: no handlers registered. Subsystems call open_softirq() at init.
+    // 默认无注册处理器. 子系统在初始化时调用 `open_softirq()`.
 }
 
 #[no_mangle]

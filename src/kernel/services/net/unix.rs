@@ -9,11 +9,11 @@
 //!
 //! ## 范围 (Phase C.3 v1)
 //!
-//! - [x] SOCK_STREAM: bind/listen/accept/connect/send/recv/close
-//! - [x] SOCK_DGRAM: bind/connect/sendto/recvfrom/close
+//! - [x] SOCK_STREAM: 绑定/监听/接受/连接/发送/接收/关闭
+//! - [x] SOCK_DGRAM: 绑定/连接/发到/收自/关闭
 //! - [x] 路径绑定 (独立路径表, 不进 VFS inode)
 //! - [ ] 阻塞语义 (v1 退化为 `WouldBlock`)
-//! - [ ] SCM_RIGHTS / SCM_CRED (v2)
+//! - [ ] SCM_RIGHTS / SCM_CRED 凭证传递 (v2)
 //!
 //! ## 评估日期
 //!

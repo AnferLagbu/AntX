@@ -17,9 +17,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 // 输出格式: <ts_s>.<ts_us> [LEVEL] [CATEGORY] message\n
 //
 // 使用方式:
-//   klog!(Info, Boot, "QueenX starting...");
-//   klog_warn!(Kernel, "warning message");
-//   klog_err!(Driver, "driver error: {}", code);
+//   klog!(Info, Boot, "AntX 启动中...");
+//   klog_warn!(Kernel, "告警信息");
+//   klog_err!(Driver, "驱动错误: {}", code);
 // ============================================================================
 
 pub const KLOG_BUF: usize = 256;
@@ -190,7 +190,7 @@ mod serial_impl {
     use crate::kernel::framework::arch::aarch64::uart;
 
     pub fn serial_init() {
-        // UART already initialized in entry.rs
+        // UART 已在 entry.rs 中初始化
     }
 
     pub fn serial_putc(c: u8) {
@@ -654,7 +654,7 @@ pub fn klog_get_level() -> LogLevel {
 ///
 /// # Safety
 ///
-/// Must be called exactly once before any logging. Caller ensures serial hardware is present.
+/// 在任何日志记录前必须且只能调用一次. 调用方保证串口硬件就绪.
 pub unsafe extern "C" fn klog_init() {
     serial_impl::serial_init();
     KLOG_INIT.store(true, Ordering::Release);
@@ -665,7 +665,7 @@ pub unsafe extern "C" fn klog_init() {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_write(
     level: u8,
     cat: u8,
@@ -721,7 +721,7 @@ pub unsafe extern "C" fn klog_write(
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
     if msg.is_null() {
         return;
@@ -734,7 +734,7 @@ pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
     if msg.is_null() {
         return;
@@ -747,7 +747,7 @@ pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
     if msg.is_null() {
         return;
@@ -760,7 +760,7 @@ pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_net(fmt: *const u8) {
     if fmt.is_null() {
         return;
@@ -773,7 +773,7 @@ pub unsafe extern "C" fn klog_net(fmt: *const u8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_net_err(fmt: *const u8) {
     if fmt.is_null() {
         return;
@@ -786,7 +786,7 @@ pub unsafe extern "C" fn klog_net_err(fmt: *const u8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
     if fmt.is_null() {
         return;
@@ -799,7 +799,7 @@ pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
     if fmt.is_null() {
         return;
@@ -812,7 +812,7 @@ pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
     if fmt.is_null() {
         return;
@@ -825,7 +825,7 @@ pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
 ///
 /// # Safety
 ///
-/// `msg`/`fmt` is a valid pointer to a null-terminated C string in kernel-accessible memory.
+/// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
 pub unsafe extern "C" fn klog_info(fmt: *const i8) {
     if fmt.is_null() {
         return;

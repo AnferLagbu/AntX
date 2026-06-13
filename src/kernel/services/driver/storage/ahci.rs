@@ -43,7 +43,7 @@ use crate::kernel::framework::mm::PhysAddr;
 
 /// Host Capabilities (R)
 pub const GHC_CAP: usize = 0x00;
-/// Global Host Control (RW)
+/// 全局主控控制 (RW)
 pub const GHC_GHC: usize = 0x04;
 /// Interrupt Status (R)
 pub const GHC_IS: usize = 0x08;
@@ -90,13 +90,13 @@ pub const PxSNTF: usize = 0x3C;  // SATA Notification
 
 // ── PxCMD 寄存器位 ──
 
-/// Start (PxCMD.ST)
+/// 启动 (PxCMD.ST)
 pub const PxCMD_ST: u32 = 1 << 0;
-/// FIS Receive Enable (PxCMD.FRE)
+/// FIS 接收使能 (PxCMD.FRE)
 pub const PxCMD_FRE: u32 = 1 << 4;
-/// FIS Receive Running (PxCMD.FR)
+/// FIS 接收进行中 (PxCMD.FR)
 pub const PxCMD_FR: u32 = 1 << 14;
-/// Command List Running (PxCMD.CR)
+/// 命令列表进行中 (PxCMD.CR)
 pub const PxCMD_CR: u32 = 1 << 15;
 
 // ── PxTFD 寄存器位 ──
@@ -159,10 +159,10 @@ impl AhciDeviceKind {
 /// AHCI 端口 SATA 状态 (PxSSTS) 解析
 #[derive(Debug, Clone, Copy)]
 pub struct SataStatus {
-    /// Device Detection (PxSSTS[3:0])
+    /// 设备检测 (PxSSTS[3:0])
     /// 0=未连接, 1=已连接但未建立通信, 3=建立通信, 4=离线
     pub device_detection: u8,
-    /// Interface Speed (PxSSTS[7:4])
+    /// 接口速度 (PxSSTS[7:4])
     pub interface_speed: u8,
 }
 

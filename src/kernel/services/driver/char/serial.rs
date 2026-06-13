@@ -81,7 +81,7 @@ const BAUD_115200: u16 = 1;
 pub const LCR_DLAB: u8 = 0x80;
 /// 启用 FIFO, 清空缓冲
 pub const FCR_ENABLE_FIFO: u8 = 0xC1;
-/// Data Terminal Ready
+/// 数据终端就绪
 pub const MCR_DTR: u8 = 0x01;
 /// Request To Send
 pub const MCR_RTS: u8 = 0x02;
@@ -280,9 +280,9 @@ impl SerialPort {
     /// - `Some(SerialPort)`: 初始化成功
     /// - `None`: 端口已被占用 (IoPort 别名检测失败)
     pub fn new(com: ComPort, config: SerialConfig) -> Option<Self> {
-        // SAFETY: COM1-COM4 base addresses are standard PC serial port mappings.
-        // IoPort::new checks for port range validity; alias detection prevents
-        // multiple registrations of the same port.
+        // SAFETY: COM1-COM4 基址是标准 PC 串口映射.
+        // IoPort::new 会校验端口范围; 别名检测可避免
+        // 同一端口的多次注册.
         let port = IoPort::new_safe(com.base(), COM_PORT_COUNT, "serial").ok()?;
 
         let mut s = Self { port, com, config };

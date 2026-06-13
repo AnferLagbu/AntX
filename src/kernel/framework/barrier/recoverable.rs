@@ -31,11 +31,9 @@ pub struct RecoverableMutex<T: Snapshot + 'static> {
     domain_id: u64,
 }
 
-// SAFETY: RecoverableMutex wraps IrqSpinLock<T>, which provides mutual
-// exclusion with IRQ disable. T: Send is required for cross-thread transfer;
-// T: Sync is required because &T can be shared after lock acquisition. The
-// domain_id is a plain u64 (Copy). No additional unsafety beyond what
-// IrqSpinLock provides.
+// SAFETY: RecoverableMutex 包装 IrqSpinLock<T>, 提供互斥且关中断.
+// T: Send 是跨线程转移所需; T: Sync 是因为锁获取后 &T 可共享.
+// domain_id 为普通 u64 (Copy). 除 IrqSpinLock 提供的保证外, 不引入额外不安全.
 unsafe impl<T: Snapshot + Send> Send for RecoverableMutex<T> {}
 unsafe impl<T: Snapshot + Sync> Sync for RecoverableMutex<T> {}
 

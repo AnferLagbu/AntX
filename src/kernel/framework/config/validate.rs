@@ -9,9 +9,9 @@ use super::memory::{
 };
 use super::slab::SLAB_DEFAULT_SIZE;
 
-/// Validate CPU configuration.
+/// 校验 CPU 配置.
 ///
-/// 检查: 实际 CPU 数是否超出 `MAX_CPUS`。
+/// 检查: 实际 CPU 数是否超出 `MAX_CPUS`.
 pub fn validate_cpu_config() -> Result<(), ConfigError> {
     let cpu_count = crate::kernel::framework::smp::get_cpu_count();
 
@@ -25,7 +25,7 @@ pub fn validate_cpu_config() -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Validate memory layout consistency.
+/// 校验内存布局一致性.
 ///
 /// 检查:
 /// 1. `PAGE_SIZE` 是 2 的幂
@@ -63,9 +63,9 @@ pub fn validate_memory_config() -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Validate interrupt configuration.
+/// 校验中断配置.
 ///
-/// 检查: x86_64 下 APIC 或 IOAPIC 至少一个已初始化。
+/// 检查: x86_64 下 APIC 或 IOAPIC 至少一个已初始化.
 /// aarch64 下 GIC 失败已在 arch 层 panic, 此处仅做软校验。
 pub fn validate_interrupt_config() -> Result<(), ConfigError> {
     #[cfg(target_arch = "x86_64")]
@@ -125,9 +125,9 @@ pub fn validate_network_subsystem() -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Validate all driver configurations.
+/// 校验所有驱动配置.
 ///
-/// 软检查 (不 panic): 报告所有未初始化子系统, 但不阻断启动。
+/// 软检查 (不 panic): 报告所有未初始化子系统, 但不阻断启动.
 /// 设计动机: 嵌入式环境可能故意不启用某些子系统 (例如无 PCI 总线),
 /// 严格校验会误报。
 pub fn validate_drivers() -> u32 {
@@ -152,10 +152,10 @@ pub fn validate_drivers() -> u32 {
     errors
 }
 
-/// Validate all system configuration.
+/// 校验所有系统配置.
 ///
-/// Called early in the boot process. In `debug_assertions` builds,
-/// a CPU count overflow **panics**; otherwise errors are logged.
+/// 在启动早期调用. 在 `debug_assertions` 构建中,
+/// CPU 数溢出将 **panic**; 否则仅记录错误.
 pub fn validate_system_config() -> u32 {
     let mut errors = 0u32;
 

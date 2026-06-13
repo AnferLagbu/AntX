@@ -1,7 +1,7 @@
-//! Credo v1 Type Definitions
+//! Credo v1 类型定义
 //!
-//! Core data structures for the Credo privilege model.
-//! Domain Identity (DID) + capability matrix + identity entry + audit types.
+//! Credo 权限模型的核心数据结构.
+//! 域身份 (DID) + 能力矩阵 + 身份条目 + 审计类型.
 //! Credo: 密码决定身份 | 无预设特权 | 能力来自授予
 
 use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};

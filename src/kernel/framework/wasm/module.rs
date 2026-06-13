@@ -1,8 +1,8 @@
 //! WASM 二进制格式解析器
 //!
-//! 解析 WASM 1.0 二进制格式的 11 个标准 Section:
-//! - Type, Import, Function, Table, Memory, Global
-//! - Export, Start, Element, Code, Data
+//! 解析 WASM 1.0 二进制格式的 11 个标准段 (Section):
+//! - 类型 (Type)、导入 (Import)、函数 (Function)、表格 (Table)、内存 (Memory)、全局 (Global)
+//! - 导出 (Export)、启动 (Start)、元素 (Element)、代码 (Code)、数据 (Data)
 
 use alloc::vec::Vec;
 

@@ -1,6 +1,6 @@
 //! Credo v1 Identity & Capability System
 //!
-//! Domain Identity (DID) + capability matrix + session management + audit.
+//! 域身份 (DID) + 能力矩阵 + 会话管理 + 审计.
 //! Credo: 密码决定身份 | 能力来自授予 | POSIX DAC + 能力双路径
 
 #[macro_export]

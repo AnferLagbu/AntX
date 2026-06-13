@@ -1,11 +1,11 @@
 #![allow(dead_code)]
-//! DMA Engine Subsystem (Rust rewrite)
+//! DMA Engine 子系统 (Rust 重写)
 //!
-//! Provides coherent DMA memory management, ioremap for MMIO,
-//! streaming DMA mappings, and memory barrier operations.
+//! 提供一致性 DMA 内存管理、MMIO 的 ioremap、流式 DMA 映射
+//! 以及内存屏障操作.
 //!
-//! Replaces the C implementation at src/kernel/dma.c
-//! with type-safe PhysAddr/VirtAddr and lock-free statistics.
+//! 取代 `src/kernel/dma.c` 中的 C 实现, 采用类型安全的
+//! `PhysAddr`/`VirtAddr` 与无锁统计.
 
 extern crate alloc;
 
@@ -57,7 +57,7 @@ pub struct DmaMapping {
     pub is_mapped: bool,
 }
 
-/// Scatter-gather list entry
+/// 散聚表 (scatter-gather) 列表条目
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct DmaScatterEntry {
@@ -66,7 +66,7 @@ pub struct DmaScatterEntry {
     pub page_addr: usize,
 }
 
-/// Scatter-gather list
+/// 散聚表 (scatter-gather) 列表
 #[derive(Debug)]
 #[repr(C)]
 pub struct DmaScatterList {
@@ -91,10 +91,10 @@ impl DmaScatterList {
     }
 }
 
-/// Transfer completion callback type
+/// 传输完成回调类型
 pub type DmaCallback = fn(*mut u8, i32);
 
-/// DMA transfer request (opaque — C side uses pointer)
+/// DMA 传输请求 (opaque — C 端使用指针)
 #[derive(Debug)]
 pub struct DmaTransfer {
     pub src_addr: u64,
@@ -123,7 +123,7 @@ pub struct DmaPoolStats {
     pub current_bytes_used: u64,
 }
 
-/// Lock-free statistics counters
+/// 无锁统计计数器
 pub struct DmaStats {
     pub total_allocations: AtomicU64,
     pub total_frees: AtomicU64,
@@ -178,7 +178,7 @@ impl DmaStats {
     }
 }
 
-/// Calculate physical address from virtual (via page table walk)
+/// 从虚拟地址计算物理地址 (经页表走查)
 #[inline]
 fn virt_to_phys(virt: *const u8) -> u64 {
     if virt.is_null() {
@@ -200,5 +200,5 @@ fn alloc_mmio_virt(size: usize) -> VirtAddr {
     VirtAddr(addr)
 }
 
-// Re-export engine types
+// 重导出 engine 类型
 pub use engine::get_dma;

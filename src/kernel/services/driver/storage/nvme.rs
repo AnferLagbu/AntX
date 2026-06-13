@@ -80,7 +80,7 @@ pub const CSTS_NSSRO: u32 = 1 << 4;
 
 // ── 队列 ID ──
 
-/// Admin Submission/Completion Queue ID
+/// Admin 提交/完成队列 ID
 pub const ADMIN_QID: u16 = 0;
 /// 第一个 I/O Queue ID
 pub const IO_QID_BASE: u16 = 1;
@@ -104,9 +104,9 @@ pub const CQ_SIZE_BYTES: u32 = 64 * 16;
 pub const OP_ADMIN_GET_LOG_PAGE: u8 = 0x02;
 /// Admin Identify
 pub const OP_ADMIN_IDENTIFY: u8 = 0x06;
-/// Admin Create I/O Completion Queue
+/// Admin 创建 I/O 完成队列
 pub const OP_ADMIN_CREATE_IOCQ: u8 = 0x05;
-/// Admin Create I/O Submission Queue
+/// Admin 创建 I/O 提交队列
 pub const OP_ADMIN_CREATE_IOSQ: u8 = 0x01;
 /// Admin Delete I/O CQ
 pub const OP_ADMIN_DELETE_IOCQ: u8 = 0x09;
@@ -120,11 +120,11 @@ pub const OP_IO_WRITE: u8 = 0x01;
 /// I/O Flush
 pub const OP_IO_FLUSH: u8 = 0x00;
 
-// ── Identify CNS (Controller or Namespace) ──
+// ── Identify CNS (控制器或命名空间) ──
 
-/// Identify Controller
+/// Identify 控制器
 pub const IDENTIFY_CNS_CONTROLLER: u8 = 0x01;
-/// Identify Namespace
+/// Identify 命名空间
 pub const IDENTIFY_CNS_NAMESPACE: u8 = 0x00;
 
 // ============================================================================
@@ -134,13 +134,13 @@ pub const IDENTIFY_CNS_NAMESPACE: u8 = 0x00;
 /// 控制器状态 (CSTS) 解析
 #[derive(Debug, Clone, Copy)]
 pub struct ControllerStatus {
-    /// Ready
+    /// 控制器就绪
     pub ready: bool,
-    /// Controller Fatal Status
+    /// 控制器致命错误状态
     pub fatal: bool,
-    /// Shutdown Status (0=normal, 1=shutdown proceeding, 2=shutdown complete)
+    /// 关机状态 (0=正常, 1=关机进行中, 2=关机完成)
     pub shutdown: u8,
-    /// NVM Subsystem Reset Occurred
+    /// NVM 子系统复位已发生
     pub nssro: bool,
 }
 
@@ -317,7 +317,7 @@ impl NvmeController {
 
     /// 写 AQA (Admin Queue Attributes)
     ///
-    /// ASQS @ bit 0-15, ACQS @ bit 16-31
+    /// ASQS 在 bit 0-15, ACQS 在 bit 16-31
     pub fn set_aqa(&self, asqs: u16, acqs: u16) {
         let val = (asqs as u32) | ((acqs as u32) << 16);
         self.write32(NVME_REG_AQA, val);
@@ -339,7 +339,7 @@ impl NvmeController {
     ///
     /// # 参数
     /// - `queue_id`: 队列 ID
-    /// - `is_completion`: true=CQ head doorbell, false=SQ tail doorbell
+    /// - `is_completion`: true=CQ 头部门铃, false=SQ 尾部门铃
     /// - `value`: 32-bit 门铃值
     pub fn write_doorbell(&self, queue_id: u16, is_completion: bool, value: u32) {
         let dstrd = self.capabilities().doorbell_stride as u16;

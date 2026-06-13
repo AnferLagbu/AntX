@@ -1,8 +1,8 @@
 //! Unix Domain Socket (AF_UNIX) 子系统测试 — Phase C.3
 //!
 //! 覆盖 UDS 状态机的关键路径:
-//! - SOCK_STREAM: bind → listen → connect → accept → send/recv → close
-//! - SOCK_DGRAM: bind → connect → sendto/recvfrom → close
+//! - 流式套接字: 绑定 → 监听 → 连接 → 接收 → 收发 → 关闭
+//! - 数据报套接字: 绑定 → 连接 → 发送/接收 → 关闭
 //! - 路径冲突 → EADDRINUSE
 //! - 接受空队列 → EAGAIN
 //! - 关闭 listener 同步取消 pending client

@@ -390,8 +390,8 @@ pub fn devtree_probe_composites() -> usize {
             composite_type.display_name().to_lowercase(),
             created
         );
-        // The Chitin register API requires &'static str device names.
-        // This is a bounded allocation — one per composite device at init time.
+        // Chitin register API 要求设备名为 `&'static str`.
+        // 这是有界分配 —— 初始化时每个复合设备一份.
         let name_leaked: &'static str = dev_name.leak();
 
         let composite = match CompositeBlockDevice::new(composite_type, &child_drives, stripe_size)

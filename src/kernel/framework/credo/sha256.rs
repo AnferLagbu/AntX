@@ -1,11 +1,11 @@
-//! SHA-256 Hash Implementation
+//! SHA-256 哈希实现
 //!
-//! Pure Rust implementation of SHA-256 for password hashing.
-//! Matches the C implementation in pwm.c for compatibility.
+//! 用于口令哈希的纯 Rust 实现.
+//! 与 `pwm.c` 中的 C 实现保持一致, 以保证兼容性.
 
 use super::PWM_HASH_LEN;
 
-/// SHA-256 round constants (first 32 bits of fractional parts of cube roots of first 64 primes)
+/// SHA-256 轮常量 (前 64 个素数立方根小数部分的前 32 位)
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -17,22 +17,22 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-/// Initial hash values (first 32 bits of fractional parts of square roots of first 8 primes)
+/// 初始哈希值 (前 8 个素数平方根小数部分的前 32 位)
 const INITIAL_STATE: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ];
 
-/// Right rotate operation
+/// 右旋运算
 #[inline(always)]
 fn rotr(x: u32, n: u32) -> u32 {
     x.rotate_right(n)
 }
 
-/// Process a single 512-bit block
+/// 处理单个 512 位块
 fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
     let mut w = [0u32; 64];
 
-    // Prepare message schedule
+    // 准备消息调度
     for i in 0..16 {
         w[i] = ((block[i * 4] as u32) << 24)
             | ((block[i * 4 + 1] as u32) << 16)
@@ -49,7 +49,7 @@ fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
             .wrapping_add(s1);
     }
 
-    // Initialize working variables
+    // 初始化工作变量
     let mut a = state[0];
     let mut b = state[1];
     let mut c = state[2];
@@ -59,7 +59,7 @@ fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
     let mut g = state[6];
     let mut h = state[7];
 
-    // Compression function
+    // 压缩函数
     for i in 0..64 {
         let s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
         let ch = (e & f) ^ ((!e) & g);
@@ -83,7 +83,7 @@ fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
         a = t1.wrapping_add(t2);
     }
 
-    // Add compressed chunk to current hash value
+    // 累加压缩结果到当前哈希值
     state[0] = state[0].wrapping_add(a);
     state[1] = state[1].wrapping_add(b);
     state[2] = state[2].wrapping_add(c);
@@ -94,18 +94,18 @@ fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
     state[7] = state[7].wrapping_add(h);
 }
 
-/// Compute SHA-256 hash of data
+/// 计算数据的 SHA-256 哈希
 ///
-/// # Arguments
-/// * `data` - Input data to hash
+/// # 参数
+/// * `data` - 待哈希的输入数据
 ///
-/// # Returns
-/// 32-byte hash array
+/// # 返回
+/// 32 字节哈希数组
 pub fn sha256(data: &[u8]) -> [u8; PWM_HASH_LEN] {
     let mut state = INITIAL_STATE;
     let len = data.len();
 
-    // Process complete blocks
+    // 处理完整块
     let mut i = 0;
     while i + 64 <= len {
         let mut block = [0u8; 64];
@@ -114,32 +114,32 @@ pub fn sha256(data: &[u8]) -> [u8; PWM_HASH_LEN] {
         i += 64;
     }
 
-    // Handle remaining bytes with padding
+    // 处理剩余字节与填充
     let remaining = len - i;
     let mut block = [0u8; 64];
 
-    // Copy remaining data
+    // 复制剩余数据
     if remaining > 0 {
         block[..remaining].copy_from_slice(&data[i..i + remaining]);
     }
 
-    // Append padding bit
+    // 追加填充位
     block[remaining] = 0x80;
 
-    // If remaining data is too large for length field, process this block
+    // 若剩余数据已超长度字段空间, 需先处理本块
     if remaining >= 56 {
         sha256_transform(&mut state, &block);
-        block = [0u8; 64]; // New block for length
+        block = [0u8; 64]; // 新块用于存放长度
     }
 
-    // Append original message length in bits (big-endian)
+    // 追加原始消息长度 (比特, 大端序)
     let bit_len = (len as u64) * 8;
     block[56..64].copy_from_slice(&bit_len.to_be_bytes());
 
-    // Final block
+    // 最终块
     sha256_transform(&mut state, &block);
 
-    // Produce final hash value (big-endian)
+    // 生成最终哈希值 (大端序)
     let mut hash = [0u8; PWM_HASH_LEN];
     for j in 0..8 {
         hash[j * 4] = (state[j] >> 24) as u8;

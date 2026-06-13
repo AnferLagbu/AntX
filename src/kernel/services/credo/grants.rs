@@ -444,7 +444,7 @@ mod tests {
         let mut to = make_matrix();
         from.set(CapDomain::FS, CapBits(0xFF)).unwrap();
         let mut eng = DelegationEngine::new(&mut table, &policy);
-        // expires_tick (50) <= current_tick (100)
+        // 过期刻度 (50) <= 当前刻度 (100)
         let r = eng.delegate(&from, &mut to, 1, 2, CapDomain::FS, CapBits(0b1000), 100, 50, false);
         assert_eq!(r, DelegationResult::Denied(DelegationDeny::InvalidExpiry));
     }

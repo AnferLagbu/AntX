@@ -203,10 +203,9 @@ pub struct ChitinDevice {
     pub ops: Option<ChitinOps>,
 }
 
-// SAFETY: ChitinDevice contains a raw pointer (driver_data) that does not
-// own memory — it is managed externally by the driver. All other fields are
-// Copy types or Option wrappers. Mutation is protected by the device tree
-// lock. The pointer is only dereferenced under the driver's own lock.
+// SAFETY: ChitinDevice 含一个原始指针 (`driver_data`), 其不
+// 拥有内存 —— 内存由驱动方自行管理. 其它字段均为 Copy 类型或
+// Option 包装. 写操作由设备树锁保护. 该指针仅在驱动自身锁内解引用.
 unsafe impl Send for ChitinDevice {}
 unsafe impl Sync for ChitinDevice {}
 
@@ -215,8 +214,8 @@ impl ChitinDevice {
     ///
     /// # Safety
     ///
-    /// `self.driver_data` was set by the driver during probe. Caller must ensure
-    /// that `T` matches the concrete type originally stored via `set_driver_data`.
+    /// `self.driver_data` 由驱动在 probe 阶段设置. 调用方必须保证
+    /// `T` 与 `set_driver_data` 写入时的具体类型一致.
     pub unsafe fn driver_as_mut<T>(&self) -> &mut T {
         &mut *(self.driver_data as *mut T)
     }
@@ -225,8 +224,8 @@ impl ChitinDevice {
     ///
     /// # Safety
     ///
-    /// `self.driver_data` was set by the driver during probe. Caller must ensure
-    /// that `T` matches the concrete type originally stored via `set_driver_data`.
+    /// `self.driver_data` 由驱动在 probe 阶段设置. 调用方必须保证
+    /// `T` 与 `set_driver_data` 写入时的具体类型一致.
     pub unsafe fn driver_as_ref<T>(&self) -> &T {
         &*(self.driver_data as *const T)
     }

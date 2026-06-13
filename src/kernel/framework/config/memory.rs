@@ -6,7 +6,7 @@
 // 页大小
 // ============================================================================
 
-/// Page size in bytes (4 KiB). Must be a power of two.
+/// 页面大小 (字节, 4 KiB). 必须是 2 的幂.
 pub const PAGE_SIZE: u64 = 4096;
 
 /// `log2(PAGE_SIZE)`. 编译期保证为 12。
@@ -28,22 +28,22 @@ pub const HUGE_PAGE_1G_SHIFT: u64 = 30;
 // 用户态栈
 // ============================================================================
 
-/// User-space stack initial size (bytes).
+/// 用户态栈初始大小 (字节).
 pub const USER_STACK_SIZE: u64 = 65536;
 
-/// Stack guard region (bytes) to catch overflow.
+/// 栈保护区域 (字节), 用于捕获栈溢出.
 pub const USER_STACK_GUARD: u64 = 4096;
 
-/// Top of user stack (mappable address).
+/// 用户栈顶 (可映射地址).
 pub const USER_STACK_TOP: u64 = 0x7FFFFFFFE000;
 
-/// Kernel stack for user processes (bytes).
+/// 用户进程的内核栈大小 (字节).
 pub const USER_KSTACK_SIZE: u64 = 16384;
 
-/// Maximum auto-expand size of user stack.
+/// 用户栈的最大自动扩展大小.
 pub const USER_STACK_MAX_SIZE: u64 = 8 * 1024 * 1024;
 
-/// Default load address for user ELF binaries (non-PIE, ET_EXEC).
+/// 用户 ELF 可执行文件的默认加载地址 (非 PIE, ET_EXEC).
 pub const USER_CODE_BASE: u64 = 0x400000;
 
 // ============================================================================
@@ -104,24 +104,18 @@ pub fn aslr_stack_top() -> u64 {
 }
 
 /// 生成带 ASLR 随机偏移的 mmap 基址.
-///
-/// mmap_base = USER_MMAP_BASE - aslr_random_offset(ASLR_MMAP_BITS)
 #[inline]
 pub fn aslr_mmap_base() -> u64 {
     USER_MMAP_BASE - aslr_random_offset(ASLR_MMAP_BITS)
 }
 
 /// 生成带 ASLR 随机偏移的堆基址.
-///
-/// heap_base = USER_HEAP_BASE + aslr_random_offset(ASLR_HEAP_BITS)
 #[inline]
 pub fn aslr_heap_base() -> u64 {
     USER_HEAP_BASE + aslr_random_offset(ASLR_HEAP_BITS)
 }
 
 /// 生成带 ASLR 随机偏移的 PIE 加载基址.
-///
-/// pie_base = USER_PIE_BASE + aslr_random_offset(ASLR_PIE_BITS)
 #[inline]
 pub fn aslr_pie_base() -> u64 {
     USER_PIE_BASE + aslr_random_offset(ASLR_PIE_BITS)

@@ -1,7 +1,7 @@
 //! CPU 层面架构抽象封装
 //!
-//! Thin wrapper over `Arch` trait methods — CPU-level operations.
-//! 所有对 `Arch` trait 的调用集中在此文件，方便未来多架构移植。
+//! `Arch` trait 方法的薄封装, 用于 CPU 级操作.
+//! 所有对 `Arch` trait 的调用集中在此文件，方便未来多架构移植.
 //!
 //! ## Phase 1 状态
 //! - [x] `cpu_id()` — 获取当前 CPU ID

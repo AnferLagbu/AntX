@@ -4,18 +4,18 @@
 //! 等价于 POSIX IPC 函数族 + System V 信号量/消息队列。
 //!
 //! ## 调用方契约
-//! - `syscall::mod` —— sys_pipe / sys_shmget / sys_msgget / sys_semget / sys_kill
+//! - `syscall::mod` —— 管道/共享内存/消息队列/信号量/信号系统调用入口
 //! - `proc::api` —— 进程 fork/exec 时继承/清理 IPC 资源
 //! - `ipc::scheduler_integration` —— 阻塞/唤醒与调度器交互
 //!
 //! ## 内部接口
-//! - `pipe.rs` —— pipe_create_safe / pipe_close_safe / pipe_read_safe / pipe_write_safe
-//! - `shm.rs` —— shm_create_safe / shm_attach_safe / shm_detach_safe / shm_destroy_safe
-//! - `msgq.rs` —— msgq_create_safe / msgq_send_safe / msgq_recv_safe
-//! - `sem.rs` —— sem_create_safe / sem_wait_safe / sem_post_safe
-//! - `signal.rs` —— signal_send_safe / signal_register_safe
+//! - `pipe.rs` —— 管道安全创建/关闭/读写
+//! - `shm.rs` —— 共享内存安全创建/附加/分离/销毁
+//! - `msgq.rs` —— 消息队列安全创建/发送/接收
+//! - `sem.rs` —— 信号量安全创建/等待/唤醒
+//! - `signal.rs` —— 信号安全发送/注册
 //! - `types.rs` —— Pipe, ShmSegment, MsgQueue, Semaphore, SignalAction
-//! - `scheduler_integration.rs` —— block_current_thread / wake_one_thread / wake_all_threads
+//! - `scheduler_integration.rs` —— 阻塞/唤醒/全部唤醒线程
 //!
 //! ## 安全约束
 //! - 所有 _safe 函数接收 &mut IpcNamespace, 调用方负责命名空间生命周期

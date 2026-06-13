@@ -50,28 +50,28 @@ pub const CAP_HCSPARAMS2: usize = 0x08;
 pub const CAP_HCSPARAMS3: usize = 0x0C;
 /// Capability Parameters 1
 pub const CAP_HCCPARAMS1: usize = 0x10;
-/// Doorbell Offset
+/// 门铃偏移
 pub const CAP_DBOFF: usize = 0x14;
-/// Runtime Register Space Offset
+/// 运行时寄存器空间偏移
 pub const CAP_RTSOFF: usize = 0x18;
-/// Capability Parameters 2
+/// 能力参数 2
 pub const CAP_HCCPARAMS2: usize = 0x1C;
 
 // ── Operational 寄存器偏移 (相对 OpBase, OpBase = CAPLENGTH 字节) ──
 
-/// USB Command
+/// USB 命令
 pub const OP_USBCMD: usize = 0x00;
-/// USB Status
+/// USB 状态
 pub const OP_USBSTS: usize = 0x04;
-/// Page Size
+/// 页面大小
 pub const OP_PAGESIZE: usize = 0x08;
-/// Device Notification Control
+/// 设备通知控制
 pub const OP_DNCTRL: usize = 0x14;
-/// Command Ring Control
+/// 命令环控制
 pub const OP_CRCR: usize = 0x18;
-/// Device Context Base Address Array Pointer
+/// 设备上下文基址数组指针
 pub const OP_DCBAAP: usize = 0x30;
-/// Configure
+/// 配置寄存器
 pub const OP_CONFIG: usize = 0x38;
 
 /// 端口 1 状态与控制寄存器 (n=0..MaxPorts-1)
@@ -80,59 +80,59 @@ pub const OP_PORTSC_STRIDE: usize = 0x10;
 
 // ── USBCMD 位 ──
 
-/// Run/Stop
+/// 运行/停止
 pub const USBCMD_RUN_STOP: u32 = 1 << 0;
-/// Host Controller Reset
+/// 主控复位
 pub const USBCMD_HC_RESET: u32 = 1 << 1;
-/// Interrupt Enable
+/// 中断使能
 pub const USBCMD_INTR_ENABLE: u32 = 1 << 2;
-/// Host System Error Enable
+/// 主系统错误使能
 pub const USBCMD_HSE_ENABLE: u32 = 1 << 3;
-/// Light Host Controller Reset
+/// 轻量级主控复位
 pub const USBCMD_LHCRST: u32 = 1 << 7;
-/// Controller Save State
+/// 控制器保存状态
 pub const USBCMD_CSS: u32 = 1 << 8;
-/// Controller Restore State
+/// 控制器恢复状态
 pub const USBCMD_CRS: u32 = 1 << 9;
-/// Enable Wrap Event
+/// 启用环绕事件
 pub const USBCMD_EWE: u32 = 1 << 10;
-/// Enable U3 MFINDEX Stop
+/// 启用 U3 MFINDEX 停止
 pub const USBCMD_EU3S: u32 = 1 << 11;
 
 // ── USBSTS 位 ──
 
-/// Host Controller Halted
+/// 主控已停止
 pub const USBSTS_HC_HALTED: u32 = 1 << 0;
-/// Host Controller Reset Complete
+/// 主控复位完成
 pub const USBSTS_HC_RESET_COMPLETE: u32 = 1 << 1;
-/// Event Ring Not Empty
+/// 事件环非空
 pub const USBSTS_EVENT_RING_NOT_EMPTY: u32 = 1 << 2;
-/// Interrupt Pending
+/// 中断挂起
 pub const USBSTS_INTR_PENDING: u32 = 1 << 3;
-/// Host System Error
+/// 主系统错误
 pub const USBSTS_HOST_SYSTEM_ERROR: u32 = 1 << 4;
-/// Event Counter Overflow
+/// 事件计数器溢出
 pub const USBSTS_EVENT_COUNTER_OVERFLOW: u32 = 1 << 5;
-/// Port Change Detect
+/// 端口变更检测
 pub const USBSTS_PORT_CHANGE_DETECT: u32 = 1 << 6;
 
 // ── PORTSC 位 ──
 
-/// Current Connect Status
+/// 当前连接状态
 pub const PORTSC_CCS: u32 = 1 << 0;
-/// Port Enabled
+/// 端口使能
 pub const PORTSC_PED: u32 = 1 << 1;
-/// Port Reset
+/// 端口复位
 pub const PORTSC_PR: u32 = 1 << 4;
-/// Port Power
+/// 端口上电
 pub const PORTSC_PP: u32 = 1 << 9;
-/// Connect Status Change
+/// 连接状态变更
 pub const PORTSC_CSC: u32 = 1 << 16;
-/// Port Enabled/Disabled Change
+/// 端口使能/禁用变更
 pub const PORTSC_PEC: u32 = 1 << 17;
-/// Over-current Change
+/// 过流变更
 pub const PORTSC_OCC: u32 = 1 << 19;
-/// Reset Change
+/// 复位变更
 pub const PORTSC_RC: u32 = 1 << 21;
 
 // ── PORTSC 速度 (PORTSC[10:13]) ──
@@ -140,29 +140,29 @@ pub const PORTSC_RC: u32 = 1 << 21;
 pub const PORTSC_SPEED_MASK: u32 = 0xF << 10;
 pub const PORTSC_SPEED_SHIFT: u32 = 10;
 
-/// Full Speed (12 Mbps)
+/// 全速 (12 Mbps)
 pub const SPEED_FULL: u8 = 1;
-/// Low Speed (1.5 Mbps)
+/// 低速 (1.5 Mbps)
 pub const SPEED_LOW: u8 = 2;
-/// High Speed (480 Mbps)
+/// 高速 (480 Mbps)
 pub const SPEED_HIGH: u8 = 3;
-/// Super Speed (5 Gbps)
+/// 超速 (5 Gbps)
 pub const SPEED_SUPER: u8 = 4;
-/// Super Speed Plus (10 Gbps)
+/// 超速+ (10 Gbps)
 pub const SPEED_SUPER_PLUS: u8 = 5;
 
 // ============================================================================
 // 解析类型
 // ============================================================================
 
-/// Structural Parameters 1 解析
+/// 结构参数 1 解析
 #[derive(Debug, Clone, Copy)]
 pub struct StructuralParams1 {
-    /// Max Device Slots (HCSPARAMS1[3:0] - 1)
+    /// 最大设备槽位数 (HCSPARAMS1[3:0] - 1)
     pub max_device_slots: u8,
-    /// Max Interrupters (HCSPARAMS1[18:8] - 1)
+    /// 最大中断器数 (HCSPARAMS1[18:8] - 1)
     pub max_interrupters: u16,
-    /// Max Ports (HCSPARAMS1[31:24] - 1)
+    /// 最大端口数 (HCSPARAMS1[31:24] - 1)
     pub max_ports: u8,
 }
 

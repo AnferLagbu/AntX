@@ -72,9 +72,9 @@ const ZIL_RECORD_DISK_SIZE: usize = 256;
 const ZIL_MAX_RECORDS_PER_BLOCK: usize =
     (ZIL_BLOCK_SIZE - ZIL_HEADER_SIZE - ZIL_TRAILER_SIZE) / ZIL_RECORD_DISK_SIZE;
 
-/// Actual bytes written to disk per record:
-///    rec_type(1) + txg(8) + obj_id(8) + parent_obj(8) + offset(8) + size(4)
-///  + seq(8) + name(128) + data_hash(32) + record_crc(4) = 209
+/// 每条记录实际写入磁盘的字节布局:
+///    记录类型(1) + 事务组(8) + 对象 ID(8) + 父对象(8) + 偏移(8) + 大小(4)
+///  + 序号(8) + 名称(128) + 数据哈希(32) + 记录 CRC(4) = 209
 const ZIL_RECORD_PAYLOAD: usize = 209;
 const _ASSERT_RECORD_FITS: () = assert!(ZIL_RECORD_PAYLOAD <= ZIL_RECORD_DISK_SIZE);
 
@@ -227,7 +227,7 @@ fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
     buf[33..37].copy_from_slice(&record.size.to_le_bytes());
     buf[37..45].copy_from_slice(&record.seq.to_le_bytes());
     buf[45..173].copy_from_slice(&record.name);
-    // Convert [u64; 4] to bytes safely
+    // 将 [u64; 4] 安全地转换为字节序列
     for (i, val) in record.data_hash.iter().enumerate() {
         let off = 173 + i * 8;
         buf[off..off + 8].copy_from_slice(&val.to_le_bytes());
@@ -486,7 +486,7 @@ impl HvZilPersist {
     }
 }
 
-/// Public CRC32 wrapper for testing
+/// 公开的 CRC32 包装, 用于单元测试
 pub fn crc32_test_wrapper(data: &[u8]) -> u32 {
     crc32_checksum(data)
 }

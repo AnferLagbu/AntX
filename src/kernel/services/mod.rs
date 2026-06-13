@@ -117,9 +117,9 @@ pub mod io;
 // framework::klog::log_info 等 safe 函数, 不含任何 unsafe 块。
 //
 // 示例:
-//   slog_info!(FS, "HvFS initialized: pool={}", name);
-//   slog_warn!(Kernel, "low memory: {} pages", free);
-//   slog_err!(Driver, "disk {} not found", id);
+//   slog_info!(FS, "HvFS 已初始化: pool={}", name);
+//   slog_warn!(Kernel, "内存不足: 剩余 {} 页", free);
+//   slog_err!(Driver, "未找到磁盘 {}", id);
 // ============================================================================
 
 /// Services 层通用日志宏 — 指定级别与分类

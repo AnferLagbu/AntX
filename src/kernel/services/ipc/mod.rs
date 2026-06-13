@@ -4,10 +4,10 @@
 //! ## 真实状态 (v2.7, 2026-06-12)
 //!
 //! 全部 4 子系统已完成 services 层 safe 迁移 (I-54):
-//! - pipe — create/read/write/close
-//! - shm  — create/attach/detach/destroy
-//! - msgq — create/send/recv/destroy
-//! - sem  — create/wait/post/destroy
+//! - pipe — 创建/读取/写入/关闭
+//! - shm  — 创建/附加/分离/销毁
+//! - msgq — 创建/发送/接收/销毁
+//! - sem  — 创建/等待/唤醒/销毁
 //!
 //! 全部走 `framework::ipc` 的 safe 入口 (`*_safe` 系列), 模块顶部
 //! `#![deny(unsafe_code)]` 拒绝任何 unsafe 块 (由 audit_services_boundary.py
@@ -27,8 +27,7 @@ use crate::kernel::framework::ipc::sem;
 /// 字段说明:
 ///   - `InvalidOp`: IPC 句柄类型不匹配 (写读端 / 读写端) 走 EBADF
 ///   - `Kernel(KernelError)`: 共享错误 (NoResources→WouldBlock / BadFd /
-///     NotFound→NoSuchProcess / WouldBlock / PermissionDenied / InvalidArgument)
-///     全部走单一来源
+///     未找到→无此进程 / 会阻塞 / 权限不足 / 参数非法) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpcError {
     /// 无效操作 (写读端 / 读写端)

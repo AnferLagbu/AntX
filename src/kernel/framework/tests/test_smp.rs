@@ -68,7 +68,7 @@ fn test_per_cpu_rt_count() -> TestResult {
 }
 
 // ============================================================
-// MLFQ — Algorithm Invariants
+// MLFQ — 算法不变量
 // ============================================================
 
 fn test_sched_policy_from_u32() -> TestResult {
@@ -111,7 +111,7 @@ fn test_sched_limit_init() -> TestResult {
 }
 
 // ============================================================
-// RT Scheduling — Policy Switching
+// RT 调度 — 策略切换
 // ============================================================
 
 fn test_rt_policy_switching_self() -> TestResult {
@@ -144,7 +144,7 @@ fn test_rt_invalid_pid() -> TestResult {
 }
 
 // ============================================================
-// Load Balancing — Fundamentals
+// 负载均衡 — 基础
 // ============================================================
 
 fn test_load_balance_no_panic() -> TestResult {

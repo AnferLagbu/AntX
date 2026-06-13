@@ -61,8 +61,8 @@ impl PerCpuRcu {
     }
 }
 
-// SAFETY: PerCpuRcu accessed only via interrupt-disabled paths;
-// UnsafeCell provides interior mutability for callback lists.
+// SAFETY: PerCpuRcu 仅在关中断路径下访问;
+// UnsafeCell 为回调链表提供内部可变性.
 unsafe impl Sync for PerCpuRcu {}
 
 const GP_IDLE: u32 = 0;
@@ -73,9 +73,8 @@ struct RcuGlobal {
     data: UnsafeCell<[PerCpuRcu; crate::kernel::framework::config::MAX_CPUS]>,
 }
 
-// SAFETY: Each PerCpuRcu[i] is normally accessed only by CPU i.
-// For synchronize_rcu(), cross-CPU reads of nesting/gp_state use
-// atomic operations which are safe.
+// SAFETY: 每个 PerCpuRcu[i] 通常仅由 CPU i 访问.
+// 对于 synchronize_rcu(), 跨 CPU 读取 nesting/gp_state 使用原子操作, 安全.
 unsafe impl Sync for RcuGlobal {}
 
 static RCU_GLOBAL: RcuGlobal = RcuGlobal {

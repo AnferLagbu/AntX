@@ -2,7 +2,7 @@
 //!
 //! ## 设计
 //!
-//! ### x86_64: Intel CET (Control-flow Enforcement Technology)
+//! ### x86_64: Intel CET (控制流强制技术, Control-flow Enforcement Technology)
 //!
 //! 1. **Shadow Stack**: 函数返回地址的影子副本, RET 时校验一致性
 //!    - CR4.CET = 1 启用 CET
@@ -14,7 +14,7 @@
 //! 2. **IBT (Indirect Branch Tracking)**: 间接跳转目标必须有 ENDBR64
 //!    - 通过 IA32_S_CET/IA32_U_CET 的 IBT 位启用
 //!
-//! ### aarch64: PAC (Pointer Authentication) + BTI (Branch Target Identification)
+//! ### aarch64: PAC (指针认证, Pointer Authentication) + BTI (分支目标识别, Branch Target Identification)
 //!
 //! 1. **PAC**: 对返回地址和函数指针签名/验证
 //!    - PACIASP/AUTIASP 指令
@@ -154,7 +154,7 @@ pub struct CetCapabilities {
 pub struct CetSubsystem {
     /// 功能支持
     caps: IrqSpinLock<CetCapabilities>,
-    /// Per-CPU Shadow Stack (CPU ID → ShadowStack)
+    /// Per-CPU Shadow Stack (CPU ID → ShadowStack 实例)
     kernel_shadow_stacks: IrqSpinLock<Vec<ShadowStack>>,
     /// 是否已初始化
     initialized: AtomicBool,
@@ -256,8 +256,8 @@ impl CetSubsystem {
             }
 
             // 2. 配置 IA32_S_CET: 启用 Shadow Stack + WRSS
-            //    Bit 0 = SH_STK_EN (Shadow Stack Enable)
-            //    Bit 1 = WR_SHSTK_EN (WRSS Enable)
+            //    Bit 0 = SH_STK_EN (Shadow Stack 启用)
+            //    Bit 1 = WR_SHSTK_EN (WRSS 启用)
             let s_cet_val: u64 = 0x3; // SH_STK_EN | WR_SHSTK_EN
             // SAFETY: 写入 IA32_S_CET MSR 配置内核态 CET
             unsafe {
@@ -431,7 +431,7 @@ pub fn cet_is_initialized() -> bool {
 /// `a0`: cmd
 ///   0 = capabilities() → 功能标志
 ///   1 = create_user_shadow_stack(size: a1) → SSP
-///   2 = is_initialized() → bool
+///   2 = is_initialized() → 返回 bool, 是否已初始化
 #[no_mangle]
 pub fn sys_cet(cmd: u64, a1: u64, _a2: u64) -> i64 {
     match cmd {

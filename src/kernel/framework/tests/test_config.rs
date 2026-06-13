@@ -140,7 +140,7 @@ fn test_validate_cross_module_consistency() -> TestResult {
 }
 
 // ============================================================================
-// ConfigSummary / KernelCapabilities
+// ConfigSummary / KernelCapabilities (配置摘要 / 内核能力)
 // ============================================================================
 
 fn test_config_summary_values() -> TestResult {

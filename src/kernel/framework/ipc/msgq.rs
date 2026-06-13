@@ -35,8 +35,7 @@ pub(crate) mod raw {
         /// - 内部 unsafe: 在 `raw` 子模块内已声明 `from_non_null` 边界
         /// - 调用方只需保证 `nn` 是 Some (从 mq.head/mq.tail 取出)
         pub(crate) fn from_some(nn: NonNull<Message>) -> Self {
-            // SAFETY: nn is from Option::unwrap on a queue field that was
-            // populated by allocate_message (intrusive list invariant).
+            // SAFETY: nn 来自 `Option::unwrap` (字段由 `allocate_message` 填充, 满足侵入式链表不变量).
             unsafe { Self::from_non_null(nn) }
         }
 
@@ -195,8 +194,8 @@ pub fn msgq_send_safe(
         None => return Err(-4),
     };
 
-    // SAFETY: msg was just allocated by allocate_message and is non-null;
-    // it will be freed by msgq_recv_safe or msgq_destroy_safe.
+    // SAFETY: msg 刚由 `allocate_message` 分配, 非空, 后续由
+    // `msgq_recv_safe` 或 `msgq_destroy_safe` 释放.
     let msg_ref = msg_nn.as_mut();
     msg_ref.type_ = type_;
     msg_ref.sender = current_pid as u64;
@@ -365,7 +364,7 @@ pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -
         Some(user_data)
     };
 
-    // Convert UserReadPtr to Option<&[u8]> for the safe API
+    // 将 `UserReadPtr` 转换为 `Option<&[u8]>` 以适配 safe API
     let data_slice = slice.as_ref().map(|u| u.as_slice());
 
     match msgq_send_safe(ns, id, type_, data_slice, size as usize, pid) {

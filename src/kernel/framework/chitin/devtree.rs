@@ -128,8 +128,8 @@ impl ChitinNode {
     }
 }
 
-// SAFETY: ChitinNode access is serialized by DEV_TREE lock (Mutex).
-// UnsafeCell is not needed because we use Mutex-protected collections.
+// SAFETY: ChitinNode 访问由 DEV_TREE 锁 (Mutex) 串行化.
+// 无需 UnsafeCell, 因为我们已用 Mutex 保护的集合.
 unsafe impl Send for ChitinNode {}
 unsafe impl Sync for ChitinNode {}
 
@@ -370,15 +370,15 @@ pub fn devtree_create_node(
     let name_str = if name.is_null() {
         "unknown"
     } else {
-        // SAFETY: name is a C string from FFI; callers guarantee it's null-terminated
-        // and valid for the duration of this function.
+        // SAFETY: name 来自 FFI 的 C 字符串; 调用方保证其以 NUL 结尾,
+        // 且在函数执行期间持续有效.
         unsafe {
             let bytes = core::ffi::CStr::from_ptr(name as *const core::ffi::c_char);
             bytes.to_str().unwrap_or("unknown")
         }
     };
 
-    // Leak the string to make it 'static — fine for kernel device names
+    // 泄漏字符串以获得 `'static` 生命周期 —— 内核设备名采用此做法.
     let static_name: &'static str = name_str;
 
     let proto = match proto {

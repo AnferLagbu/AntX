@@ -6,34 +6,34 @@
 // CPU / 中断容量
 // ============================================================================
 
-/// Maximum number of CPUs supported by the kernel.
-/// 用于 `static [T; MAX_CPUS]` 类 per-CPU 数组。
+/// 内核支持的最大 CPU 数.
+/// 用于 `static [T; MAX_CPUS]` 类 per-CPU 数组.
 pub const MAX_CPUS: usize = 1024;
 
-/// Maximum IRQ number supported.
+/// 支持的最大 IRQ 号.
 pub const MAX_IRQS: usize = 256;
 
 // ============================================================================
 // 进程 / 线程容量
 // ============================================================================
 
-/// Maximum number of processes system-wide.
+/// 全系统最大进程数.
 ///
-/// 权威: `proc::process::ProcessTable` 的数组大小, 决定 PID 空间。
+/// 权威: `proc::process::ProcessTable` 的数组大小, 决定 PID 空间.
 pub const MAX_PROCESSES: usize = 256;
 
-/// Maximum number of threads system-wide.
+/// 全系统最大线程数.
 pub const MAX_THREADS: usize = 128;
 
-/// Maximum number of threads per single process.
+/// 单个进程的最大线程数.
 pub const MAX_THREADS_PER_PROCESS: usize = 16;
 
 // ============================================================================
 // 文件 / 会话容量
 // ============================================================================
 
-/// Maximum number of file descriptors per process.
+/// 单个进程的最大文件描述符数.
 pub const MAX_OPEN_FILES: usize = 32;
 
-/// Maximum number of login sessions.
+/// 最大登录会话数.
 pub const MAX_SESSIONS: usize = 16;

@@ -116,13 +116,13 @@ impl HvVdev {
             return 0;
         }
 
-        // Use BlockDevice's total_sectors if available (avoids binary search)
+        // 优先采用 BlockDevice 的 total_sectors (避免二分查找)
         let from_registry = block::hdd_total_sectors(drive);
         if from_registry > 0 {
             return from_registry * 512;
         }
 
-        // Fallback: binary search for highest readable sector
+        // 回退方案: 二分查找最高可读扇区
         let mut lo: u32 = 0;
         let mut hi: u32 = 0xFFFF;
         let mut buf = [0u8; 512];

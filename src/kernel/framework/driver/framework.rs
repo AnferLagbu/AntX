@@ -30,7 +30,7 @@
 ///
 /// # Safety
 ///
-/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
+/// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn outb(port: u16, value: u8) {
     crate::arch!(outb(port, value));
 }
@@ -40,7 +40,7 @@ pub unsafe fn outb(port: u16, value: u8) {
 ///
 /// # Safety
 ///
-/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
+/// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
@@ -51,7 +51,7 @@ pub unsafe fn inb(port: u16) -> u8 {
 ///
 /// # Safety
 ///
-/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
+/// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn outw(port: u16, value: u16) {
     core::arch::asm!(
         "out dx, ax",
@@ -67,7 +67,7 @@ pub unsafe fn outw(port: u16, value: u16) {
 ///
 /// # Safety
 ///
-/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
+/// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn inw(port: u16) -> u16 {
     let value: u16;
     core::arch::asm!(
@@ -84,7 +84,7 @@ pub unsafe fn inw(port: u16) -> u16 {
 ///
 /// # Safety
 ///
-/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
+/// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn outl(port: u16, value: u32) {
     crate::arch!(outl(port, value));
 }
@@ -94,7 +94,7 @@ pub unsafe fn outl(port: u16, value: u32) {
 ///
 /// # Safety
 ///
-/// `port` is a valid I/O port address accessible from the current privilege level (Ring 0).
+/// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn inl(port: u16) -> u32 {
     crate::arch!(inl(port))
 }

@@ -150,9 +150,9 @@ impl SpinLock {
             core::hint::spin_loop();
         }
 
-        // 超时: 记录警告 (调试模式) - 已禁用: no_std 环境
+        // 超时: 记录警告 (调试模式) — 已禁用: no_std 环境
         // #[cfg(debug_assertions)]
-        // eprintln!("[SPINLOCK] WARNING: Lock '{}' timed out after {} spins",
+        // eprintln!("[SPINLOCK] 警告: 锁 '{}' 自旋 {} 次后超时",
         //           self.inner.name.unwrap_or("unnamed"), max_spins);
 
         TryLockResult::WouldBlock

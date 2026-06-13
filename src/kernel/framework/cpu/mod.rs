@@ -188,7 +188,7 @@ bitflags::bitflags! {
         const MONITOR     = 1 << 35;
         /// VMX (Intel VT-x 虚拟化) 支持
         const VMX         = 1 << 37;
-        /// SMX (Intel Safer Mode Extensions)
+        /// SMX (Intel 安全模式扩展)
         const SMX         = 1 << 38;
         const EST         = 1 << 39;
         const TM2         = 1 << 40;
@@ -569,8 +569,8 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
     if !CPU_INFO_INIT.load(Ordering::Acquire) {
         return None;
     }
-    // SAFETY: CPU_INFO_INIT Acquire load guarantees CPU_INFO is initialized
-    // before this read; CPU_INFO is a 'static with valid MaybeUninit layout.
+    // SAFETY: CPU_INFO_INIT 的 Acquire 加载保证 CPU_INFO 在本读取前已初始化;
+    // CPU_INFO 是 'static 静态量, 拥有合法的 MaybeUninit 内存布局.
     unsafe { CPU_INFO.as_ref() }
 }
 
@@ -596,17 +596,17 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 /// * Err(&str) - 错误描述 (通常不会失败)
 ///
 /// # Safety
-/// 此函数执行内联汇编和 MSR 写入, 必须在特权级(Ring 0)调用。
-/// FFI export function (C-callable)
+/// 此函数执行内联汇编和 MSR 写入, 必须在特权级(Ring 0)调用.
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn cpu_init() -> i32 {
     use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 
     static INIT_MSG: &[u8] = b"Initializing QX AMD64 CPU driver...\0";
-    // SAFETY: FFI logging call; INIT_MSG is a static byte slice with a trailing
-    // NUL and the C-side klog_write reads it as a C string.
+    // SAFETY: FFI 日志调用; INIT_MSG 是带尾部 NUL 的静态字节切片,
+    // C 端 klog_write 按 C 字符串读取.
     unsafe {
         klog_write(
             LogLevel::Info as u8,
@@ -702,9 +702,9 @@ pub extern "C" fn cpu_init() -> i32 {
         return -1;
     }
 
-    // SAFETY: CPU_INFO is a 'static MaybeUninit<Option<CpuInfo>>; we just
-    // set CPU_INFO_INIT to true (synchronized with the AcqRel swap), so all
-    // subsequent readers will see the initialized value.
+    // SAFETY: CPU_INFO 是 'static MaybeUninit<Option<CpuInfo>>; 刚把
+    // CPU_INFO_INIT 置 true (与 AcqRel 交换配对), 之后所有读取者将看到
+    // 已初始化的值.
     unsafe {
         CPU_INFO = Some(info);
     }
@@ -738,9 +738,9 @@ pub extern "C" fn cpu_init() -> i32 {
 /// # Returns
 /// * 非 NULL - 指向全局 CpuInfo 的指针
 /// * NULL - 未初始化
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -750,9 +750,9 @@ pub extern "C" fn cpu_get_info() -> *const CpuInfo {
 }
 
 /// 检查 CPU 是否支持指定特性 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -764,9 +764,9 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 }
 
 /// 检查是否为 Intel CPU (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_intel() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -776,9 +776,9 @@ pub extern "C" fn cpu_is_intel() -> bool {
 }
 
 /// 检查是否为 AMD CPU (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_amd() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -788,9 +788,9 @@ pub extern "C" fn cpu_is_amd() -> bool {
 }
 
 /// 检查是否在虚拟化环境中 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_virtualized() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -800,9 +800,9 @@ pub extern "C" fn cpu_is_virtualized() -> bool {
 }
 
 /// 获取最大标准 CPUID leaf 号 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -812,9 +812,9 @@ pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
 }
 
 /// 获取最大扩展 CPUID leaf 号 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -824,9 +824,9 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 }
 
 /// 获取 APIC ID (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_apic_id() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -836,9 +836,9 @@ pub extern "C" fn cpu_get_apic_id() -> u32 {
 }
 
 /// 获取逻辑线程数 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_logical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -848,9 +848,9 @@ pub extern "C" fn cpu_get_logical_cores() -> u8 {
 }
 
 /// 获取物理核心数 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_physical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -860,9 +860,9 @@ pub extern "C" fn cpu_get_physical_cores() -> u8 {
 }
 
 /// 获取 CPU 签名 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_signature() -> CpuSignature {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -872,9 +872,9 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 }
 
 /// 获取缓存信息指针 (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -884,9 +884,9 @@ pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
 }
 
 /// 获取 TSC 频率 (Hz) (FFI兼容)
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 #[no_mangle]
-/// FFI export function (C-callable)
+/// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_tsc_frequency() -> u64 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match unsafe { CPU_INFO.as_ref() } {
@@ -1182,7 +1182,7 @@ fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: C
     }
     // AMD: 使用扩展缓存信息 (Leaf 80000005/6)
     else if vendor == CpuVendor::Amd && max_ext >= 0x8000_0006 {
-        // L1 Data/Instruction (Leaf 80000005)
+        // L1 数据/指令缓存 (Leaf 80000005)
         let (_, _, ecx_l1, edx_l1) = cpuid::cpuid(0x8000_0005, 0);
         cache_out.l1d_size = (ecx_l1 >> 24) * 1024; // KB → Bytes
         cache_out.l1i_size = (edx_l1 >> 24) * 1024;
@@ -1227,7 +1227,7 @@ fn detect_topology(
     topo_out.hyperthreading_enabled =
         feat.contains(CpuFeatures::HTT) && topo_out.logical_threads > 1;
 
-    // Intel: Extended Topology Leaf (0xB)
+    // Intel: 扩展拓扑 Leaf (0xB)
     if vendor == CpuVendor::Intel && max_std >= 0xB {
         let (_, ebx, ecx, _) = cpuid::cpuid(0xB, 0);
 
@@ -1329,13 +1329,13 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
             let efer = self::msr::read_msr(IA32_EFER);
             self::msr::write_msr(IA32_EFER, efer | EFER_SCE);
 
-            // STAR: [63:48] = SYSRET user base (0x10), [47:32] = SYSCALL kernel CS (0x08)
-            // SYSCALL: CS = 0x08 (kernel code), SS = 0x10 (kernel data)
-            // SYSRET:  CS = (0x10+16)|3 = 0x23 (user code), SS = 0x10+8 = 0x18 (user data)
+            // STAR: [63:48] = SYSRET 用户基址 (0x10), [47:32] = SYSCALL 内核 CS (0x08)
+            // SYSCALL: CS = 0x08 (内核代码), SS = 0x10 (内核数据)
+            // SYSRET:  CS = (0x10+16)|3 = 0x23 (用户代码), SS = 0x10+8 = 0x18 (用户数据)
             let star = (0x10u64 << 48) | (0x08u64 << 32);
             self::msr::write_msr(IA32_STAR, star);
 
-            // LSTAR: 64-bit syscall entry point
+            // LSTAR: 64 位 syscall 入口点
             self::msr::write_msr(IA32_LSTAR, syscall_entry as *const () as u64);
 
             // SFMASK: 进入内核时清除 IF (bit 9) 以禁用中断
@@ -1355,7 +1355,7 @@ fn calibrate_tsc(max_std: u32, vendor: CpuVendor) -> u64 {
         let (eax, ebx, ecx, _) = cpuid::cpuid(0x15, 0);
 
         if eax != 0 && ebx != 0 && ecx != 0 {
-            // TSC freq = (crystal_freq * ebx) / eax
+            // TSC 频率 = (crystal_freq * ebx) / eax
             // crystal_freq 通常需要额外查询, 这里简化处理
             let estimated = ((ecx as u64) * (ebx as u64)) / (eax as u64);
             if estimated > 0 {

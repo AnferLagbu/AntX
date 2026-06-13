@@ -1,31 +1,31 @@
-//! Configuration validation result types
+//! 配置校验结果类型
 
 use core::fmt;
 
-/// Configuration validation result.
+/// 配置校验结果.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigError {
-    /// Detected CPU count exceeds `MAX_CPUS`.
+    /// 检测到的 CPU 数超过 `MAX_CPUS`.
     CpuCountExceedsMax { actual: u32, max: usize },
-    /// Memory layout inconsistency (e.g. PAGE_SIZE not power of 2).
+    /// 内存布局不一致 (例如 PAGE_SIZE 不是 2 的幂).
     MemoryLayoutInvalid,
-    /// Detected IRQ controller (APIC/IOAPIC/PIC) is not initialized.
+    /// 检测到的中断控制器 (APIC/IOAPIC/PIC) 未初始化.
     IrqControllerUnavailable,
-    /// Cross-module constant conflict.
+    /// 跨模块常量冲突.
     InconsistentConstant {
         name: &'static str,
         lhs: u64,
         rhs: u64,
     },
-    /// Driver-specific configuration is invalid.
+    /// 驱动特定配置非法.
     DriverConfigInvalid(&'static str),
-    /// Slab default size is not power of two.
+    /// Slab 默认大小不是 2 的幂.
     SlabNotPowerOfTwo,
-    /// Slab default size is not aligned to page size.
+    /// Slab 默认大小未与页大小对齐.
     SlabMisaligned,
-    /// Slab default size exceeds a sane upper bound.
+    /// Slab 默认大小超过合理上限.
     SlabTooLarge,
-    /// Stack size is not a multiple of page size.
+    /// 栈大小不是页大小的整数倍.
     StackMisaligned,
 }
 

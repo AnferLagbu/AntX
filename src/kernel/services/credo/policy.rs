@@ -229,7 +229,7 @@ impl CapabilityMatrix for InMemoryMatrix {
 ///
 /// 系统保留的最低能力:
 /// - FS: READ | EXEC
-/// - PROC: FORK | EXEC
+/// - PROC: 派生 (FORK) | 执行 (EXEC)
 /// - USER_MGMT: LIST
 pub const VIABLE_FLOOR: [u64; CAP_DOMAINS] = {
     let mut f = [0u64; CAP_DOMAINS];
@@ -387,7 +387,7 @@ mod tests {
         let m = make_matrix();
         m.set(CapDomain::FS, CapBits(0xFF)).unwrap();
         let p = PolicyEngine::new();
-        // FS floor = READ | EXEC = 0b0101
+        // FS 底限 = READ | EXEC = 0b0101
         // 试图"撤销" 0b0101 应被 FloorProtected 拒绝
         // 实际语义: check(FS, required=0b0101) — 但 required=owned ⊆ owned 总是 true
         // 我们要求 required 包含 floor bits → 拒绝

@@ -671,7 +671,7 @@ pub fn pm_is_initialized() -> bool {
 /// sys_pm — 电源管理系统调用
 ///
 /// `a0`: cmd
-///   0 = suspend(target_state: a1)
+///   0 = suspend(目标状态: a1)
 ///   1 = get_state() → 当前状态
 ///   2 = set_governor(governor: a1)
 ///   3 = get_governor() → 当前 governor

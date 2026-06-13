@@ -119,8 +119,8 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     let median_cycles = measurements[SAMPLE_COUNT / 2];
 
     // 计算 TSC 频率
-    // TSC_Hz = cycles / seconds = cycles / (ticks / PIT_FREQ)
-    // TSC_MHz = TSC_Hz / 1_000_000
+    // 公式: TSC_Hz = cycles / seconds = cycles / (ticks / PIT_FREQ)
+    // 公式: TSC_MHz = TSC_Hz / 1_000_000
 
     let total_ns = (target_ticks * 1_000_000_000u64) / pit_freq;
     if total_ns == 0 {
@@ -239,7 +239,7 @@ pub fn tsc_to_nanoseconds(cycles: u64) -> Option<u64> {
         return None;
     }
 
-    // ns = cycles * 1_000_000_000 / freq_hz
+    // 公式: ns = cycles * 1_000_000_000 / freq_hz
     Some((cycles * 1_000_000_000u64) / freq_hz)
 }
 
@@ -261,7 +261,7 @@ pub fn nanoseconds_to_tsc(ns: u64) -> Option<u64> {
         return None;
     }
 
-    // cycles = ns * freq_hz / 1_000_000_000
+    // 公式: cycles = ns * freq_hz / 1_000_000_000
     Some((ns * freq_hz) / 1_000_000_000u64)
 }
 

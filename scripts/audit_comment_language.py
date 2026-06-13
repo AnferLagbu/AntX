@@ -232,7 +232,88 @@ ALLOWED_ENGLISH_TERMS = frozenset({
     "memfd", "memfd_create", "userfaultfd", "uffd",
     "pidfd", "pidfd_open", "pidfd_send_signal", "pidfd_getfd",
     "io_pgetevents", "io_uring_prep_",
+    # POSIX socket API 参数名 (在 /// POSIX 签名引用中常见, 非解释性文字)
+    "addr", "addrlen", "backlog", "dest_addr", "src_addr",
+    "optname", "optval", "optlen", "getsockname", "getpeername",
+    "accept", "accept4", "shutdown", "sockatmark",
 })
+
+
+def is_posix_signature_ref(text: str) -> bool:
+    """检测是否为 POSIX 签名引用 (整行只是 `/// POSIX `func(args) 形式).
+
+    这类注释是"标准函数原型引用", 等同于 SAFETY/TODO 短引用豁免.
+    例: `/// POSIX `bind(fd, addr, addrlen)`` (单行, 含 `POSIX` + 反引号函数名)
+
+    也接受不带 POSIX 前缀但形式相同的: `/// sendto(fd, buf, len, flags, ...)`
+    (常见于 services/net/syscall.rs 等纯签名引用).
+    """
+    body = re.sub(r"^\s*(?:///?|\*|/\*)", "", text).strip()
+    # 必须是单行 (不允许折行), 长度 < 120
+    if "\n" in text or len(body) >= 120:
+        return False
+    # 形式 1: POSIX/Linux/QEMU/Susv/SVID 起头 + 反引号函数名 (签名引用)
+    if re.match(r"^(POSIX|Linux|Susv|SVID|QEMU|RFC|man\s*page)\b", body, re.IGNORECASE) and "`" in body:
+        return True
+    # 形式 2: 纯函数签名引用 (无 POSIX 前缀, 常见于 net/socket.rs 系列)
+    #   `identifier(args, args)` 形式, 单行, 长度 < 80
+    #   整行只含标识符/逗号/空格/反引号/数字
+    if len(body) < 80:
+        # 必须是 `word(...)` 形式, 整行不出现叙述性英文单词
+        m = re.match(r"^`?(\w+)`?\s*\(([^)]*)\)\s*`?$", body)
+        if m:
+            fn_name, args = m.group(1), m.group(2)
+            # 函数名必须是合法标识符 (至少 2 字符, 首字母小写)
+            if len(fn_name) >= 2 and fn_name[0].islower() and fn_name.replace("_", "").isalnum():
+                # 参数列表必须是简单标识符 (小写/下划线/逗号/空格/数字, 无叙述词)
+                if re.match(r"^[\w,\s&*_]*$", args):
+                    return True
+    return False
+
+
+# 代码示例特征: 注释中含一定密度的代码结构标记
+# 命中 2+ 个即视为代码示例 (如 `let x = Itimerspec { ... }`)
+CODE_MARKERS = re.compile(r"(::|;|=>|\bstruct\s|\blet\b|\buse\b|\bsyscall\(|::\s*\w+\s*\()")
+
+
+def is_register_doc(text: str) -> bool:
+    """检测是否为硬件寄存器文档注释 (常见于 driver/storage/, driver/virtio/).
+
+    模式:
+      - `/// Name (R|RW|WO|W1C, u8|u16|u32|u64)` 寄存器访问类型
+      - `/// Name (REG.FIELD)`                     寄存器位段引用
+      - `/// Name (REG.FIELD, N-bit @ bit K)`     位位置标注
+      - `/// Name (offset 0xNN)`                   偏移量标注
+
+    这些是"硬件规范引用", 等价于 POSIX 签名引用豁免.
+    """
+    body = re.sub(r"^\s*(?:///?|\*|/\*)", "", text).strip()
+    if len(body) >= 100:
+        return False
+    # 寄存器访问类型 + 位宽
+    if re.search(r"\(\s*(R|RW|WO|W1C|RWC|RW1C)\s*,\s*u(8|16|32|64)\s*\)", body, re.IGNORECASE):
+        return True
+    # 寄存器位段引用 (REG.FIELD, N-bit @ bit K)
+    if re.search(r"\b[A-Z][A-Z0-9_]+\.[A-Z][A-Z0-9_]*\b", body):
+        # 进一步过滤: 必须含 bit 或 @ 或括号包裹
+        if re.search(r"(\bbit\b|@|\(|\))", body, re.IGNORECASE):
+            return True
+    # 偏移量标注 `0xNN`
+    if re.search(r"offset\s+0x[0-9A-Fa-f]+", body):
+        return True
+    return False
+
+
+def is_code_example(text: str) -> bool:
+    """检测是否为代码示例 (含 Rust 关键字/Rust 路径/C 风格结构).
+
+    用途: 文档注释中嵌入的代码块 (如 `//! let new_value = Itimerspec { ... }`)
+    不应被误判为英文段落. 命中 2+ 个代码结构标记即视为代码示例.
+    """
+    body = re.sub(r"^\s*(?:///?|\*|/\*)", "", text).strip()
+    # 代码示例必有结构符号密度
+    matches = CODE_MARKERS.findall(body)
+    return len(matches) >= 2
 
 
 def is_allowed_term(word: str) -> bool:
@@ -255,6 +336,22 @@ def detect_violation(comment_text: str) -> tuple[bool, str]:
 
     # SAFETY/TODO 短引用注释豁免 (常引用上游文档/标准, < 80 字符)
     if is_safety_or_todo_short_ref(stripped):
+        return False, ""
+
+    # POSIX/Linux 签名引用豁免 (单行, 反引号函数名, 等价于标准引用)
+    if is_posix_signature_ref(stripped):
+        return False, ""
+
+    # 硬件寄存器文档豁免 (单行, 含访问类型或位段引用)
+    if is_register_doc(stripped):
+        return False, ""
+
+    # SPDX License 标识符豁免 (标准法律标识, 不可改)
+    if re.match(r"^\s*SPDX-License-Identifier\s*:", stripped, re.IGNORECASE):
+        return False, ""
+
+    # 代码示例豁免 (文档中嵌入的 Rust/C 代码块)
+    if is_code_example(stripped):
         return False, ""
 
     has_cjk = bool(HAS_CJK.search(stripped))
@@ -294,8 +391,21 @@ def iter_comments(rs_file: Path) -> Iterator[tuple[int, str]]:
         return
 
     in_block_comment = False
+    in_doc_code_block = False  # 文档注释中的 ```text / ```rust / ```c 等代码块
     for lineno, line in enumerate(content.splitlines(), start=1):
         stripped = line.lstrip()
+        # 检测文档代码块 ``` (开/关). 兼容 `/// ```rust` / `//! ```text` 形式
+        # 注释前缀支持 `///` / `//!` / `//` 三种
+        code_fence_match = (
+            re.match(r"^(?://{1,2}!?)\s*```", stripped) is not None
+            or stripped.startswith("```")
+        )
+        if code_fence_match:
+            in_doc_code_block = not in_doc_code_block
+            continue
+        if in_doc_code_block:
+            # 代码块内不审计 (ASCII art 表格, 寄存器布局等)
+            continue
         if in_block_comment:
             # 块注释结束: 找 */
             end_idx = stripped.find("*/")
@@ -316,9 +426,8 @@ def iter_comments(rs_file: Path) -> Iterator[tuple[int, str]]:
         if stripped.startswith("//"):
             yield lineno, stripped
             continue
-        if stripped.startswith("*") and not stripped.startswith("*/"):
-            yield lineno, stripped
-            continue
+        # 仅在处于块注释内时, 才是注释行 (修复: Rust 解引用 `*list = ...` 不应被误判)
+        # 块注释内的 `*` 是装饰字符, 如 `/*\n * comment\n */`
 
 
 def main() -> int:

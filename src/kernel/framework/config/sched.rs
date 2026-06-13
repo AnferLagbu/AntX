@@ -4,49 +4,49 @@
 // CFS (Completely Fair Scheduler) 常量
 // ============================================================================
 
-/// CFS target latency in scheduler ticks.
+/// CFS 目标延迟 (调度器 tick 数).
 pub const CFS_TARGET_LATENCY: u64 = 60;
 
-/// CFS minimum granularity in scheduler ticks.
+/// CFS 最小粒度 (调度器 tick 数).
 pub const CFS_MIN_GRANULARITY: u64 = 8;
 
-/// CFS boost interval in scheduler ticks.
+/// CFS 提升检查间隔 (调度器 tick 数).
 pub const CFS_BOOST_INTERVAL: u64 = 1000;
 
-/// Default nice-0 weight in CFS.
+/// CFS 默认 nice=0 任务的权重.
 pub const CFS_NICE0_WEIGHT: u64 = 1024;
 
 // ============================================================================
-// Deadline Scheduling (EDF + CBS)
+// 截止期调度 (EDF + CBS)
 // ============================================================================
 
-/// Deadline scheduler minimum runtime in ticks.
+/// Deadline 调度器最小运行时间 (tick 数).
 pub const CFS_DL_MIN_RUNTIME: u64 = 1;
 
-/// Deadline scheduler minimum period in ticks.
+/// Deadline 调度器最小周期 (tick 数).
 pub const CFS_DL_MIN_PERIOD: u64 = 10;
 
-/// Deadline scheduler max utilization percent.
+/// Deadline 调度器最大利用率 (百分比).
 pub const CFS_DL_MAX_UTILIZATION_PCT: u64 = 95;
 
 // ============================================================================
 // 通用调度器常量
 // ============================================================================
 
-/// Scheduler level 0 quantum (highest priority, real-time).
+/// 调度级别 0 量子 (最高优先级, 实时).
 pub const SCHED_LEVEL_0_QUANTUM: u32 = 80;
 
-/// Scheduler level 1 quantum.
+/// 调度级别 1 量子.
 pub const SCHED_LEVEL_1_QUANTUM: u32 = 60;
 
-/// Scheduler level 2 quantum.
+/// 调度级别 2 量子.
 pub const SCHED_LEVEL_2_QUANTUM: u32 = 40;
 
-/// Scheduler level 3 quantum (lowest priority, idle).
+/// 调度级别 3 量子 (最低优先级, idle).
 pub const SCHED_LEVEL_3_QUANTUM: u32 = 20;
 
-/// Scheduler boost check interval (ticks).
+/// 调度器提升检查间隔 (tick 数).
 pub const SCHED_BOOST_INTERVAL: u64 = 1000;
 
-/// Real-time scheduler watchdog timeout (ticks).
+/// 实时调度器看门狗超时 (tick 数).
 pub const SCHED_RT_WATCHDOG_TICKS: u64 = 500;

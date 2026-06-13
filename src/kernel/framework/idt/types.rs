@@ -506,7 +506,7 @@ mod tests {
         let user_frame = InterruptFrame::new_test_frame(14, 0x400000, 0x23);
         assert!(user_frame.is_user_mode());
 
-        // Anomalous case: kernel CS but user RIP
+        // 异常情况: 内核 CS 但用户态 RIP
         let anomalous_frame = InterruptFrame::new_test_frame(0, 0x1221d7, 0x08);
         assert!(anomalous_frame.is_user_mode()); // RIP-based detection kicks in
     }

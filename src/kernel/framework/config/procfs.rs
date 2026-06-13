@@ -17,19 +17,19 @@
 
 use super::caps::get_config_summary;
 
-/// Text format selector for `/proc/sys/config` reads.
+/// `/proc/sys/config` 读取时的文本格式选择器.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigFormat {
-    /// 人类可读纯文本 (klog 风格)。
+    /// 人类可读纯文本 (klog 风格).
     Text,
-    /// 严格 RFC 8259 JSON, 字段顺序固定以保证可读性。
+    /// 严格 RFC 8259 JSON, 字段顺序固定以保证可读性.
     Json,
 }
 
-/// Parse a procfs entry name to a `ConfigFormat`.
+/// 将 procfs 条目名解析为 `ConfigFormat`.
 ///
-/// 规则: 文件名以 `.json` 结尾 → JSON; 否则 → Text。**调用方在 `mount`
-/// 时按需注册两个条目**。
+/// 规则: 文件名以 `.json` 结尾 → JSON; 否则 → Text. **调用方在 `mount`
+/// 时按需注册两个条目**.
 pub fn parse_format(name: &str) -> ConfigFormat {
     if name.ends_with(".json") {
         ConfigFormat::Json
@@ -38,20 +38,20 @@ pub fn parse_format(name: &str) -> ConfigFormat {
     }
 }
 
-/// Generate text content for `/proc/sys/config`.
+/// 生成 `/proc/sys/config` 的文本内容.
 ///
-/// Returns the number of bytes written into `buf`.
+/// 返回写入 `buf` 的字节数.
 ///
 /// **安全要点**: 写指针不超过 `buf.len()`, 不依赖全局 alloc
-/// (在无 alloc 上下文中也可安全调用)。
+/// (在无 alloc 上下文中也可安全调用).
 pub fn read_sys_config(buf: &mut [u8]) -> usize {
     write_text(buf)
 }
 
-/// Generate JSON content for `/proc/sys/config.json`.
+/// 生成 `/proc/sys/config.json` 的 JSON 内容.
 ///
 /// 输出与 text 模式字段**一一对应** (除 `format_version` 标识), 便于监控
-/// 系统 `jq` 抽取。
+/// 系统 `jq` 抽取.
 pub fn read_sys_config_json(buf: &mut [u8]) -> usize {
     write_json(buf)
 }

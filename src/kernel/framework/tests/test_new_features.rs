@@ -2,7 +2,7 @@ use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult}
 use crate::register_tests_inner;
 
 // ============================================================
-// Page Fault / Demand Paging
+// 缺页异常 / 按需分页
 // ============================================================
 
 fn test_pf_info_from_error_code() -> TestResult {
@@ -142,7 +142,7 @@ fn test_elf_valid_minimal() -> TestResult {
 
 fn test_rcu_read_lock_unlock() -> TestResult {
     crate::kernel::framework::sync::rcu::rcu_read_lock();
-    // In single-core context, nesting should be 1
+    // 单核上下文中嵌套层数应为 1
     crate::kernel::framework::sync::rcu::rcu_read_unlock();
     TestResult::Pass
 }
@@ -156,7 +156,7 @@ fn test_rcu_nested_locks() -> TestResult {
 }
 
 // ============================================================
-// Chitin Device Tree
+// Chitin 设备树
 // ============================================================
 
 fn test_devtree_create_node() -> TestResult {
@@ -198,7 +198,7 @@ fn test_devtree_set_compatible() -> TestResult {
 }
 
 // ============================================================
-// Kmalloc-Slab integration
+// Kmalloc-Slab 集成
 // ============================================================
 
 fn test_slab_cache_index_selection() -> TestResult {
@@ -207,7 +207,7 @@ fn test_slab_cache_index_selection() -> TestResult {
     let p1 = kmalloc_slab::slab_kmalloc(8);
     let p2 = kmalloc_slab::slab_kmalloc(32);
     let p3 = kmalloc_slab::slab_kmalloc(4096);
-    // Large alloc goes to heap
+    // 大块分配走堆
     if let Some(p) = p1 {
         kmalloc_slab::slab_kfree(p, 8);
     }
@@ -225,7 +225,7 @@ fn test_slab_cache_index_selection() -> TestResult {
 // ============================================================
 
 fn test_zil_crc32_deterministic() -> TestResult {
-    // CRC32 is defined in zil_persist.rs; test via roundtrip
+    // CRC32 在 zil_persist.rs 中定义; 通过 roundtrip 测试
     let data = b"Hello, ZIL!";
     let c1 = crate::kernel::framework::fs::hvfs::zil_persist::crc32_test_wrapper(data);
     let c2 = crate::kernel::framework::fs::hvfs::zil_persist::crc32_test_wrapper(data);
@@ -241,7 +241,7 @@ fn test_zil_crc32_deterministic() -> TestResult {
 fn test_prot_to_vma_flags() -> TestResult {
     use crate::kernel::framework::mm::PageFlags;
 
-    // We can't call prot_to_vma_flags directly (private), but test basic flag semantics
+    // prot_to_vma_flags 是私有的, 无法直接调用, 此处仅测试基础标志语义
     let r = PageFlags::PRESENT | PageFlags::USER;
     check!(r.contains(PageFlags::PRESENT), "PROT_READ has PRESENT");
     check!(r.contains(PageFlags::USER), "PROT_READ has USER");

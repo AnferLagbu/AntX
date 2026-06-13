@@ -47,7 +47,7 @@ pub mod seqlock;
 pub mod spinlock;
 pub mod types;
 
-/// Priority Inheritance Mutex (P1 #3, DECISION-009/010/011)
+/// 优先级继承互斥锁 (P1 #3, DECISION-009/010/011)
 pub mod pi_mutex;
 
 // ============================================================================

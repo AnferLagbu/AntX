@@ -1,6 +1,6 @@
-//! System Configuration Center
+//! 系统配置中心
 //!
-//! AntX 内核的 **统一配置中心 + 启动自检中心**。
+//! AntX 内核的 **统一配置中心 + 启动自检中心**.
 //!
 //! ## 职责
 //!
@@ -193,10 +193,10 @@ fn on_off(b: bool) -> &'static str {
 // 入口
 // ============================================================================
 
-/// Initialize configuration validation and emit boot summary.
+/// 初始化配置校验并输出启动摘要.
 ///
-/// Should be called as the first action in `kernel_main`, before
-/// any subsystem that depends on `MAX_CPUS`/`MAX_PROCESSES`/etc.
+/// 应作为 `kernel_main` 的第一动作调用, 早于任何依赖
+/// `MAX_CPUS`/`MAX_PROCESSES`/等常量的子系统.
 pub fn init() {
     use crate::klog_info;
 

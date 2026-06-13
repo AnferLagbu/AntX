@@ -38,7 +38,7 @@ pub const KASLR_MAX_OFFSET: u64 = 0x4000_0000;
 /// 在启动早期应被设置为一个对齐到 `KASLR_ALIGN` 的非零值.
 pub static KASLR_BASE_OFFSET: AtomicU64 = AtomicU64::new(KASLR_DEFAULT_OFFSET);
 
-/// Set the runtime KASLR base offset (called by bootloader/entry).
+/// 设置运行时 KASLR 基址偏移 (由 bootloader/entry 调用).
 ///
 /// 写指针不要求互斥 (AtomicU64 自然线程安全); 但只在启动极早期调用一次,
 /// 之后多核并发读.
@@ -46,18 +46,18 @@ pub fn set_kaslr_offset(offset: u64) {
     KASLR_BASE_OFFSET.store(offset, Ordering::Release);
 }
 
-/// Get the current KASLR base offset.
+/// 获取当前 KASLR 基址偏移.
 pub fn get_kaslr_offset() -> u64 {
     KASLR_BASE_OFFSET.load(Ordering::Acquire)
 }
 
-/// Check whether `offset` satisfies KASLR alignment requirement.
+/// 检查 `offset` 是否满足 KASLR 对齐要求.
 #[inline]
 pub fn is_aligned(offset: u64) -> bool {
     (offset & (KASLR_ALIGN - 1)) == 0
 }
 
-/// Validate KASLR runtime state against configuration.
+/// 校验运行时 KASLR 状态与配置的一致性.
 ///
 /// 启动期自检:
 /// - 当 `KASLR_ENABLED = true` 时, 实际偏移必须**非零**

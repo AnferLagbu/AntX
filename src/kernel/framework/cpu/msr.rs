@@ -54,8 +54,8 @@ pub unsafe fn write_msr(msr: u32, value: u64) {
 ///
 /// # Safety
 ///
-/// `msr` is a valid Model-Specific Register index. Invalid indices may cause #GP fault.
-/// `low` and `high` are valid, writable pointers.
+/// `msr` 是合法的 MSR 索引. 非法索引将触发 #GP 异常.
+/// `low` 和 `high` 是合法可写指针.
 pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -> i32 {
     if low.is_null() || high.is_null() {
         return -1;
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -
 ///
 /// # Safety
 ///
-/// `msr` is a valid Model-Specific Register index. Invalid indices may cause #GP fault.
+/// `msr` 是合法的 MSR 索引. 非法索引将触发 #GP 异常.
 pub unsafe extern "C" fn cpu_write_msr(msr: u32, low: u32, high: u32) -> i32 {
     write_msr(msr, ((high as u64) << 32) | (low as u64));
     0
@@ -84,7 +84,7 @@ pub unsafe extern "C" fn cpu_write_msr(msr: u32, low: u32, high: u32) -> i32 {
 ///
 /// # Safety
 ///
-/// `msr` is a valid Model-Specific Register index. Invalid indices may cause #GP fault.
+/// `msr` 是合法的 MSR 索引. 非法索引将触发 #GP 异常.
 pub unsafe extern "C" fn cpu_read_msr64(msr: u32) -> u64 {
     read_msr(msr)
 }
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn cpu_read_msr64(msr: u32) -> u64 {
 ///
 /// # Safety
 ///
-/// `msr` is a valid Model-Specific Register index. Invalid indices may cause #GP fault.
+/// `msr` 是合法的 MSR 索引. 非法索引将触发 #GP 异常.
 pub unsafe extern "C" fn cpu_write_msr64(msr: u32, value: u64) -> i32 {
     write_msr(msr, value);
     0

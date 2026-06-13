@@ -1,12 +1,12 @@
-//! Boot Information Module
+//! 启动信息模块
 //!
-//! Parses Multiboot1 and Multiboot2 information to obtain memory map and
-//! other boot parameters.
+//! 解析 Multiboot1 与 Multiboot2 启动信息, 获取内存映射
+//! 与其他启动参数.
 //!
 //! # Safety
-//! Interior mutability for `BOOT_INFO` is achieved via `spin::Once` (write-once
-//! at boot, then read-only). `MULTIBOOT_INFO_PTR` uses `spin::Mutex` since it
-//! is set before init and read during init.
+//! `BOOT_INFO` 的内部可变性通过 `spin::Once` 实现 (启动期写入一次,
+//! 之后只读). `MULTIBOOT_INFO_PTR` 使用 `spin::Mutex`, 因为它在 init
+//! 之前设置, 在 init 期间读取.
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
@@ -93,9 +93,8 @@ impl BootInfo {
 }
 
 struct MultibootPtr(#[allow(dead_code)] *const u8);
-// SAFETY: MultibootPtr wraps a raw pointer to boot info data that is
-// set once during early boot and read-only afterwards. Access is
-// protected by MULTIBOOT_INFO_PTR Mutex.
+// SAFETY: MultibootPtr 包装一个指向启动信息数据的裸指针, 启动早期写入
+// 一次, 之后只读. 访问受 MULTIBOOT_INFO_PTR Mutex 保护.
 unsafe impl Send for MultibootPtr {}
 unsafe impl Sync for MultibootPtr {}
 
@@ -296,8 +295,8 @@ pub fn init() -> BootInfo {
 
     #[cfg(target_arch = "aarch64")]
     let (mem_size, mmap_entries) = {
-        // On QEMU virt machine, default to 512MB.
-        // Can be overridden by AARCH64_MEM_SIZE environment/build variable.
+        // QEMU virt 平台默认 512MB.
+        // 可通过 `AARCH64_MEM_SIZE` 环境/构建变量覆盖.
         let ms: u64 = option_env!("AARCH64_MEM_MB")
             .and_then(|s| s.parse::<u64>().ok())
             .map(|mb| mb * 1024 * 1024)

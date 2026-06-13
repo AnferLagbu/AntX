@@ -71,13 +71,13 @@ pub const STATUS: usize = 0x070;
 pub const QUEUE_DESC_LOW: usize = 0x080;
 /// QueueDescHigh: 描述符表 phys [63:32]
 pub const QUEUE_DESC_HIGH: usize = 0x084;
-/// QueueDriverLow: available ring phys [31:0]
+/// QueueDriverLow: available ring 物理地址 [31:0]
 pub const QUEUE_DRIVER_LOW: usize = 0x090;
-/// QueueDriverHigh: available ring phys [63:32]
+/// QueueDriverHigh: available ring 物理地址 [63:32]
 pub const QUEUE_DRIVER_HIGH: usize = 0x094;
-/// QueueDeviceLow: used ring phys [31:0]
+/// QueueDeviceLow: used ring 物理地址 [31:0]
 pub const QUEUE_DEVICE_LOW: usize = 0x0a0;
-/// QueueDeviceHigh: used ring phys [63:32]
+/// QueueDeviceHigh: used ring 物理地址 [63:32]
 pub const QUEUE_DEVICE_HIGH: usize = 0x0a4;
 /// ConfigGeneration: 配置变更计数器
 pub const CONFIG_GENERATION: usize = 0x0fc;
@@ -119,7 +119,7 @@ pub const VIRTIO_MMIO_DEVICE_SIZE: usize = 0x200;
 
 // ── Magic 常量 ──
 
-/// VirtIO MMIO Magic Value
+/// VirtIO MMIO Magic Value (0x7472_6976 = "virt" 小端序)
 pub const VIRTIO_MAGIC: u32 = 0x7472_6976;
 
 // ── 特性位 ──

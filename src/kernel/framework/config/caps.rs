@@ -9,7 +9,7 @@ use super::capacity::{MAX_CPUS, MAX_IRQS, MAX_PROCESSES, MAX_THREADS};
 use super::kaslr::get_kaslr_offset;
 use super::memory::PAGE_SIZE;
 
-/// Configuration summary structure.
+/// 配置摘要结构.
 #[derive(Debug, Clone, Copy)]
 pub struct ConfigSummary {
     pub max_cpus: usize,
@@ -25,23 +25,23 @@ pub struct ConfigSummary {
     pub capabilities: KernelCapabilities,
 }
 
-/// Compile-time + runtime capability flags.
+/// 编译期 + 运行时能力标志.
 #[derive(Debug, Clone, Copy)]
 pub struct KernelCapabilities {
-    /// SMP enabled at compile time.
+    /// 编译期启用了 SMP.
     pub smp: bool,
-    /// Preempt-RT kernel.
+    /// Preempt-RT 内核.
     pub preempt: bool,
-    /// Kernel address-space layout randomization.
+    /// 内核地址空间布局随机化.
     pub kaslr: bool,
-    /// x86_64 KPTI mitigation.
+    /// x86_64 KPTI 缓解措施.
     pub kpti: bool,
-    /// AntX Barrier subsystem compiled in.
+    /// AntX Barrier 子系统已编译入.
     pub barrier: bool,
 }
 
 impl KernelCapabilities {
-    /// Detect capabilities from compile-time `cfg` flags.
+    /// 从编译期 `cfg` 标志检测能力.
     pub const fn detect() -> Self {
         Self {
             smp: cfg!(feature = "smp"),
@@ -53,7 +53,7 @@ impl KernelCapabilities {
     }
 }
 
-/// Get configuration summary for debugging.
+/// 获取配置摘要用于调试.
 pub fn get_config_summary() -> ConfigSummary {
     ConfigSummary {
         max_cpus: MAX_CPUS,

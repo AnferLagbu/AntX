@@ -462,15 +462,15 @@ pub fn timesync_is_initialized() -> bool {
 ///
 /// `a0`: cmd
 ///   0 = adj_freq(ppb: a1 as i64)
-///   1 = adj_time(offset_ns: a1 as i64)
-///   2 = set_time(time_ns: a1)
+///   1 = adj_time(偏移纳秒数: a1 as i64)
+///   2 = set_time(时间纳秒数: a1)
 ///   3 = set_ntp_server(addr: a1 as u32)
 ///   4 = get_ntp_server() → addr
-///   5 = get_sync_status() → (synced<<48 | count<<16 | freq_adj)
+///   5 = get_sync_status() → (synced 位于位 48, count 位于位 16, freq_adj 低 16 位)
 ///   6 = get_adjusted_time() → ns
 ///   7 = set_ptp_domain(domain: a1 as u8)
 ///   8 = apply_ntp_result(offset_ns: a1, delay_ns: a2) — 简化接口
-///   9 = is_initialized() → bool
+///   9 = is_initialized() → bool (是否已初始化)
 #[no_mangle]
 pub fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !timesync_is_initialized() && cmd != 9 {

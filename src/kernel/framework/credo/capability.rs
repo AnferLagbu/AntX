@@ -1,6 +1,6 @@
-//! PWM v5 Capability Definitions
+//! PWM v5 能力定义
 //!
-//! 16 domain × 64 bit capability matrix + viable floor.
+//! 16 域 × 64 位能力矩阵 + 能力底限 (viable floor).
 
 pub const SYS_CAP_ALL: u64 = 0xFFFFFFFFFFFFFFFF;
 
