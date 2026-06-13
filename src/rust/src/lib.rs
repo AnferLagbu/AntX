@@ -103,6 +103,9 @@
 // 41. Clippy: doc_lazy_continuation / doc_overindented_list_items — 内核文档风格
 #![allow(clippy::doc_lazy_continuation)]
 #![allow(clippy::doc_overindented_list_items)]
+// 42. Clippy: must_use_candidate — 内核内部 API 大量返回 Result/Option, 全标注 #[must_use] 会增加 200+ 行噪音
+//     重要公共 API 在函数定义处已加 #[must_use]; 内部 helper 不强制
+#![allow(clippy::must_use_candidate)]
 
 extern crate alloc;
 

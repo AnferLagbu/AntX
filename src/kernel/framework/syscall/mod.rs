@@ -273,6 +273,14 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             b"rt_sigprocmask\0"
         ),
         QX_RT_SIGRETURN => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
+        // P1-I-45: 替代栈注册/查询系统调用
+        QX_SIGALTSTACK => dispatch!(
+            match crate::kernel::services::proc::signal::sigaltstack_syscall(a0, a1) {
+                Ok(v) => v as i64,
+                Err(e) => e.as_ret(),
+            },
+            b"sigaltstack\0"
+        ),
 
         // ==================== 设备 ====================
         QX_IOCTL => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
@@ -3152,6 +3160,88 @@ fn sys_rt_sigreturn() -> i64 {
     }
     // TODO(TRACK-B29335): 架构相关 — 从信号栈帧恢复原始寄存器状态
     // 当前简化实现: 直接返回 0
+    0
+}
+
+// ============================================================================
+// P1-I-45: sigaltstack 系统调用 (替代栈注册/查询)
+// ============================================================================
+//
+// 用户态传入 stack_t { ss_sp, ss_flags, ss_size }.
+// - ss_flags & SS_DISABLE: 禁用替代栈 (清空 addr/size, 保留原 SS_ONSTACK 状态)
+//
+//   注: POSIX 规定当 SS_DISABLE 置位时, ss_sp/ss_size 被忽略.
+// - 否则: 把 ss_sp/ss_size 写入进程 sigaltstack_* 字段, 同时清除 SS_ONSTACK
+//   (回到主栈后才允许再次落回替代栈).
+//
+// 读取时 (old_ss 不为 0): 返回当前 addr/size/flags, 转换 SS_ONSTACK 为
+// SS_ONSTACK (POSIX 要求返回时如实反映替代栈状态), 并把 SS_DISABLE 透传.
+//
+// 用户缓冲有效性: ostack/ss 都走 raw::check_user_buf, 长度 24 (3*u64).
+fn sys_sigaltstack(ss: u64, old_ss: u64) -> i64 {
+    use core::sync::atomic::Ordering;
+    use crate::kernel::framework::proc::signal::{SS_DISABLE, SS_ONSTACK};
+
+    let pid = match crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
+        Some(p) => p,
+        None => return Errno::ESRCH.as_ret(),
+    };
+
+    let proc_ptr = match crate::kernel::framework::proc::process::PROCESS_TABLE.get(pid) {
+        Some(p) => p,
+        None => return Errno::ESRCH.as_ret(),
+    };
+
+    // SAFETY: PROCESS_TABLE.get() 返回有效指针, 进程在表中期间不会释放
+    let proc = unsafe { &*proc_ptr };
+
+    // 返回旧值
+    if old_ss != 0 {
+        if !raw::check_user_buf(old_ss, 24) {
+            return Errno::EFAULT.as_ret();
+        }
+        let cur_addr = proc.sigaltstack_addr.load(Ordering::Acquire);
+        let cur_size = proc.sigaltstack_size.load(Ordering::Acquire);
+        let cur_flags = proc.sigaltstack_flags.load(Ordering::Acquire);
+        // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
+        unsafe {
+            raw::write_u64(old_ss as *mut u64, cur_addr);
+            raw::write_u64((old_ss + 8) as *mut u64, cur_flags as u64);
+            raw::write_u64((old_ss + 16) as *mut u64, cur_size);
+        }
+    }
+
+    // 设置新值
+    if ss != 0 {
+        if !raw::check_user_buf(ss, 24) {
+            return Errno::EFAULT.as_ret();
+        }
+        // SAFETY: `const` 由调用方保证为有效指针; 只读访问
+        let new_addr = unsafe { raw::read_u64(ss as *const u64) };
+        let new_flags_in = unsafe { raw::read_u64((ss + 8) as *const u64) } as u32;
+        let new_size = unsafe { raw::read_u64((ss + 16) as *const u64) };
+
+        if (new_flags_in & SS_DISABLE) != 0 {
+            // 禁用替代栈: 保留 SS_ONSTACK 状态 (POSIX 允许在替代栈上
+            // 执行 sigaltstack(SS_DISABLE) 仅是标记期望, 不主动解套
+            // 当前执行), 但清空 addr/size.
+            proc.sigaltstack_addr.store(0, Ordering::Release);
+            proc.sigaltstack_size.store(0, Ordering::Release);
+            // 保留 SS_ONSTACK 位, 置位 SS_DISABLE
+            let cur = proc.sigaltstack_flags.load(Ordering::Acquire);
+            proc.sigaltstack_flags.store(cur | SS_DISABLE, Ordering::Release);
+        } else {
+            // 启用替代栈: 写入 addr/size, 清除 SS_ONSTACK 与 SS_DISABLE
+            // (回到主栈, 允许下次信号再次落回替代栈)
+            proc.sigaltstack_addr.store(new_addr, Ordering::Release);
+            proc.sigaltstack_size.store(new_size, Ordering::Release);
+            // 保留未识别位, 但清 ONSTACK / DISABLE
+            let cur = proc.sigaltstack_flags.load(Ordering::Acquire);
+            proc.sigaltstack_flags
+                .store(cur & !(SS_ONSTACK | SS_DISABLE), Ordering::Release);
+        }
+    }
+
     0
 }
 

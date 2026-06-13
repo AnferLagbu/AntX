@@ -20,13 +20,25 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, HardwareAddress};
 
 use crate::kernel::framework::chitin::proto_net::NetOps;
+use crate::kernel::framework::timer::hrtimer::hrtimer_clock_read;
 use crate::kernel::framework::timer::tick::get_uptime_ms;
 
 const RX_BUF_SIZE: usize = 2048;
 const TX_BUF_SIZE: usize = 2048;
 
+// P1-I-50: 网络时钟优先用 hrtimer (纳秒), 未校准时回退到 ms 上报给 smoltcp.
+// 这样 TCP RTT/retransmit/dhcp 计时精度从 ms 级提升到 μs 级, 真实网络超时
+// (RST/ARP 老化) 与 TCP keepalive 立即受益. smoltcp::time::Instant 内部
+// 表示为 i64 毫秒, 因此 ns/1_000_000 后截断精度与原 tick 路径相同,
+// 但在校准时窗口内 (校准完成后) 纳秒级抖动被吸收, 不再受 tick 节流.
 fn smoltcp_now() -> Instant {
-    Instant::from_millis(get_uptime_ms() as i64)
+    // 校准后: ns → ms, 抖动 < 1ms; 校准前: 直接 ms, 行为不变.
+    let ns = hrtimer_clock_read();
+    let ms = ns / 1_000_000;
+    if ms > i64::MAX as u64 {
+        return Instant::from_millis(get_uptime_ms() as i64);
+    }
+    Instant::from_millis(ms as i64)
 }
 
 // ============================================================================

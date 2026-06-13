@@ -273,6 +273,68 @@ impl ExceptionHandler for PageFaultHandler {
     }
 }
 
+/// Invalid Opcode 处理器 (#UD, Vector 6)
+///
+/// 行为契约:
+/// - User-mode #UD (非法指令 / 未实现 SIMD 等): 投递 SIGILL (signal 4),
+///   跳过该指令 (UD2 最短 2 字节), 用户态注册的 handler 接管或 SIG_DFL Core+退出.
+/// - Kernel-mode #UD: 视为内核 bug, 立即 panic (含 RIP/vector 信息).
+pub struct InvalidOpcodeHandler;
+
+impl ExceptionHandler for InvalidOpcodeHandler {
+    fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
+        let is_user = unsafe { (*frame).is_user_mode() };
+        // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
+        let rip = unsafe { (*frame).rip };
+
+        if is_user {
+            // 投递 SIGILL = 4. do_signal_send 操作进程 pending_signals,
+            // 不会在 IDT 路径内尝试切栈/修改用户态寄存器, 真正的 sigframe
+            // 构造由 syscall/iret 返回前的 do_signal_deliver 统一完成.
+            let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+            if pid != 0 {
+                let _ = crate::kernel::framework::proc::signal::do_signal_send(pid, 4);
+            }
+            // 跳过该非法指令 (UD2 最短 2 字节, 未编码指令也按 2 字节步进,
+            // 避免立即重新触发 #UD; 真实 handler 通过 sigreturn 即可接管控制流).
+            // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
+            unsafe {
+                (*frame).rip = rip.wrapping_add(2);
+            }
+            RecoveryAction::Recovered
+        } else {
+            // 内核态 #UD = 内核代码非法指令, 立即 panic 留现场.
+            RecoveryAction::Panic(PanicInfo::new(
+                "Invalid Opcode in kernel mode",
+                6,
+                rip,
+            ))
+        }
+    }
+
+    fn severity(&self) -> Severity {
+        #[cfg(target_arch = "x86_64")]
+        if is_currently_user_mode() {
+            Severity::Error
+        } else {
+            Severity::Fatal
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            Severity::Error
+        }
+    }
+
+    fn category(&self) -> ExceptionCategory {
+        ExceptionCategory::Protection
+    }
+
+    fn name(&self) -> &'static str {
+        "Invalid Opcode"
+    }
+}
+
 /// Page Fault 分析结果
 #[derive(Debug, Clone, Copy)]
 pub struct PageFaultAnalysis {
@@ -460,12 +522,14 @@ fn is_currently_user_mode() -> bool {
 /// 异常分发器 (工厂模式 - 返回静态引用以避免 Box 分配)
 pub fn create_handler(vector: u8) -> &'static dyn ExceptionHandler {
     static DIV_ZERO: DivisionByZeroHandler = DivisionByZeroHandler;
+    static INVALID_OPCODE: InvalidOpcodeHandler = InvalidOpcodeHandler;
     static PAGE_FAULT: PageFaultHandler = PageFaultHandler;
     static GPF: GeneralProtectionFaultHandler = GeneralProtectionFaultHandler;
     static DOUBLE_FAULT: DoubleFaultHandler = DoubleFaultHandler;
 
     match vector {
         0 => &DIV_ZERO,
+        6 => &INVALID_OPCODE,
         14 => &PAGE_FAULT,
         13 => &GPF,
         8 => &DOUBLE_FAULT,

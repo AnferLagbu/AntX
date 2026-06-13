@@ -183,3 +183,8 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
 pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
     super::sys_rt_sigprocmask(how, set, oset)
 }
+
+/// P1-I-45: sigaltstack 系统调用实现 (TCB: 替代栈注册/查询)
+pub fn sys_sigaltstack(ss: u64, old_ss: u64) -> i64 {
+    super::sys_sigaltstack(ss, old_ss)
+}

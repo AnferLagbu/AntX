@@ -51,6 +51,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::fs::vfs::types::KernelError;
 use super::driver::framework::Driver;
 pub use super::driver::framework::DriverError as ChitinError;
 
@@ -356,6 +357,7 @@ pub fn chitin_register_with_ops(
 /// `proto_block::register_block_device` (BlockDevice trait → BlockOps 桥接).
 /// 桥接保证: 驱动实现 `BlockDevice` trait, HvFS 通过 Chitin I/O 路径
 /// (chitin_blk_read/write) 访问, 单一入口, 无双重分发.
+#[doc(hidden)]
 pub fn chitin_register_block(
     name: &'static str,
     io_base: Option<u64>,
@@ -485,48 +487,50 @@ pub fn chitin_set_state(id: u32, state: DeviceState) {
 ///
 /// `drive` 是设备在 CHITIN_DEVICES 中的索引 (与旧 block::REGISTRY 索引兼容)。
 /// 仅对 `ChitinProto::Block` 且携带 `BlockOps` 的设备有效。
+///
+/// 返回值遵循 POSIX 约定: `0` = 成功, `-errno` = 失败 (与 `framework::fs::vfs::types::KernelError` 对齐)。
 pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
     if buf.len() < 512 {
-        return -1;
+        return KernelError::InvalidArgument.as_i32();
     }
     let devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
     if idx >= devices.len() {
-        return -1;
+        return KernelError::IoError.as_i32();
     }
     let dev = &devices[idx];
     if dev.proto != ChitinProto::Block {
-        return -1;
+        return KernelError::IoError.as_i32();
     }
     if dev.state != DeviceState::Ready {
-        return -1;
+        return KernelError::Busy.as_i32();
     }
     match dev.block_ops() {
         Some(ops) => ops.read_sector(dev.driver_data, sector, buf),
-        None => -1,
+        None => KernelError::NotSupported.as_i32(),
     }
 }
 
 /// 通过 Chitin 写入块设备扇区
 pub fn chitin_blk_write(drive: u8, sector: u64, buf: &[u8]) -> i32 {
     if buf.len() < 512 {
-        return -1;
+        return KernelError::InvalidArgument.as_i32();
     }
     let devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
     if idx >= devices.len() {
-        return -1;
+        return KernelError::IoError.as_i32();
     }
     let dev = &devices[idx];
     if dev.proto != ChitinProto::Block {
-        return -1;
+        return KernelError::IoError.as_i32();
     }
     if dev.state != DeviceState::Ready {
-        return -1;
+        return KernelError::Busy.as_i32();
     }
     match dev.block_ops() {
         Some(ops) => ops.write_sector(dev.driver_data, sector, buf),
-        None => -1,
+        None => KernelError::NotSupported.as_i32(),
     }
 }
 

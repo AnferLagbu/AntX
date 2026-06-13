@@ -147,23 +147,19 @@ impl From<i32> for KernelError {
     }
 }
 
-impl From<KernelError> for i32 {
-    fn from(e: KernelError) -> Self {
-        e.as_errno().as_i32()
-    }
-}
-
-/// VFS 风格返回: 负 errno (POSIX `-|errno|` 约定)
-///
-/// 用于替换裸 `return -1`, 让 VFS/syscall 边界传递的"错误"携带明确语义.
-/// 调用方可在 syscall handler 中通过 `-ret` 还原 errno.
-pub const fn as_vfs_ret(self) -> i32 {
-    -(self.as_errno().as_i32())
-}
-
 impl From<Errno> for KernelError {
     fn from(e: Errno) -> Self {
         Self::from_i32(e.as_i32())
+    }
+}
+
+impl KernelError {
+    /// VFS 风格返回: 负 errno (POSIX `-|errno|` 约定)
+    ///
+    /// 用于替换裸 `return -1`, 让 VFS/syscall 边界传递的"错误"携带明确语义.
+    /// 调用方可在 syscall handler 中通过 `-ret` 还原 errno.
+    pub const fn as_vfs_ret(self) -> i32 {
+        -(self.as_errno().as_i32())
     }
 }
 

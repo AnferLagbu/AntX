@@ -14,6 +14,7 @@ use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::fs::vfs::types::KernelError;
 use crate::klog_err;
 use crate::klog_error;
 use crate::klog_info;
@@ -513,7 +514,7 @@ pub fn probe() -> i32 {
 // ============================================================================
 
 pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
-    if driver_data.is_null() || data.is_null() || len == 0 { return -1; }
+    if driver_data.is_null() || data.is_null() || len == 0 { return KernelError::InvalidArgument.as_i32(); }
     // SAFETY: driver_data 由 Chitin 注册时设置, data 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut VirtioNet) };
     let hdr = dev.hdr_size;
@@ -531,12 +532,12 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
     match dev.send_packet(dma_phys, total as u32) {
         Ok(()) => 0,
-        Err(()) => -1,
+        Err(()) => KernelError::IoError.as_i32(),
     }
 }
 
 pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
-    if driver_data.is_null() || buf.is_null() { return -1; }
+    if driver_data.is_null() || buf.is_null() { return KernelError::InvalidArgument.as_i32(); }
     // SAFETY: driver_data 由 Chitin 注册时设置, buf 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut VirtioNet) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };

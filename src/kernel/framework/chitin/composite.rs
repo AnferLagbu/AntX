@@ -5,6 +5,7 @@ use crate::kernel::framework::chitin::{
     chitin_find_by_id, chitin_find_by_name, ChitinProto,
 };
 use crate::kernel::framework::driver::block::BlockDevice;
+use crate::kernel::framework::fs::vfs::types::KernelError;
 use crate::klog_info;
 use crate::klog_warn;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -139,10 +140,10 @@ impl BlockDevice for CompositeBlockDevice {
     fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {
         let num_sectors = (buf.len() / 512) as u64;
         if num_sectors == 0 {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         if sector + num_sectors > self.total_sectors {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
 
         match self.device_type {
@@ -155,7 +156,7 @@ impl BlockDevice for CompositeBlockDevice {
                             return ret;
                         }
                     } else {
-                        return -1;
+                        return KernelError::InvalidArgument.as_i32();
                     }
                 }
                 0
@@ -178,7 +179,7 @@ impl BlockDevice for CompositeBlockDevice {
                         }
                     }
                     if !ok {
-                        return -1;
+                        return KernelError::IoError.as_i32();
                     }
                 }
                 0
@@ -189,10 +190,10 @@ impl BlockDevice for CompositeBlockDevice {
     fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32 {
         let num_sectors = (buf.len() / 512) as u64;
         if num_sectors == 0 {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
         if sector + num_sectors > self.total_sectors {
-            return -1;
+            return KernelError::InvalidArgument.as_i32();
         }
 
         match self.device_type {
@@ -205,7 +206,7 @@ impl BlockDevice for CompositeBlockDevice {
                             return ret;
                         }
                     } else {
-                        return -1;
+                        return KernelError::InvalidArgument.as_i32();
                     }
                 }
                 0

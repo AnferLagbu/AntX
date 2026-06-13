@@ -312,6 +312,8 @@ pub const QX_KILL: u64 = 543;
 pub const QX_TGKILL: u64 = 544;
 // 545-559: reserved (tkill, sigaltstack, rt_sigsuspend, ...)
 pub const QX_TKILL: u64 = 545;
+// P1-I-45: 接线 sigaltstack 替代栈系统调用
+pub const QX_SIGALTSTACK: u64 = 546;
 
 // ---------- 560-579: 文件系统操作 ----------
 pub const QX_MKDIR: u64 = 560;

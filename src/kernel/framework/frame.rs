@@ -56,7 +56,7 @@ impl Frame {
         self.phys
     }
 
-    /// Buddy order (0 = 4KB, 9 = 2MB)
+    /// Buddy 阶数 (0 = 4KB, 9 = 2MB)
     #[inline(always)]
     pub fn order(&self) -> u8 {
         self.order

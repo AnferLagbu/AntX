@@ -19,6 +19,8 @@ pub enum KernelError {
     IsDirectory,
     ReadOnly,
     Overflow,
+    /// 文件名过长 (ENAMETOOLONG=36)
+    NameTooLong,
 }
 
 impl KernelError {
@@ -38,6 +40,7 @@ impl KernelError {
             Self::IsDirectory => -21,
             Self::ReadOnly => -30,
             Self::Overflow => -75,
+            Self::NameTooLong => -36,
         }
     }
 }

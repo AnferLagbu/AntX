@@ -129,7 +129,7 @@ impl VmSpace {
             return Err("vaddr outside user address space");
         }
         let vmm = get_vmm();
-        // Find current mapping, then re-map with new flags.
+        // 查找当前映射, 然后用新 flags 重新映射.
         if let Some(old_phys) = vmm.get_physical_in_pml4(self.pt_root.as_u64(), vaddr) {
             // SAFETY: Unmap then re-map atomically (lock is held within VMM).
             unsafe {

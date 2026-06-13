@@ -461,3 +461,19 @@ pub fn rt_sigprocmask_syscall(
     let ret = crate::kernel::framework::syscall::api::sys_rt_sigprocmask(how, set, oset);
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
 }
+
+/// P1-I-45: sigaltstack 系统调用安全代理
+///
+/// 验证: 调用方身份 (current pid 必然存在) + 委托到 framework `sys_sigaltstack`.
+///
+/// 注: `ss` 与 `old_ss` 的合法性 (用户缓冲可读/可写) 由 framework 侧
+/// `raw::check_user_buf` 再次校验, services 层不重复检查.
+pub fn sigaltstack_syscall(
+    ss: u64,
+    old_ss: u64,
+) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    use crate::kernel::framework::syscall::types::Errno;
+
+    let ret = crate::kernel::framework::syscall::api::sys_sigaltstack(ss, old_ss);
+    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+}

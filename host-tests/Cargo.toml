@@ -12,6 +12,7 @@ authors = ["Anfer"]
 # - tests/hvfs_test.rs     — HvFS 综合端到端 (CRUD/seek/error/advanced/FD)
 # - tests/hvfs_persist.rs  — HvFS 内存持久化往返
 # - tests/stress_test.rs   — HvFS 压力 (CAS/ZAP/ZIL 各 100~256 循环)
+# - tests/td25_comment_language_test.rs — 注释语言一致性 audit 契约 (TD-24, 8 用例)
 # - tests/common/mod.rs    — 共享 helper 占位 (Rust 官方测试组织标准 §tests/common/)
 #
 # 单元测试 (unit tests) 内联于 src/*.rs 的 #[cfg(test)] mod tests:
