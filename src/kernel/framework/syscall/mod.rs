@@ -1,3 +1,4 @@
+// 系统调用分发模块: 大量桩函数待 services 层逐步接入后启用, 保留文件级 allow。
 #![allow(dead_code)]
 pub mod api;
 pub mod brk;

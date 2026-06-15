@@ -14,10 +14,13 @@
 //! └── joystick.rs # 游戏手柄 (未来)
 //! ```
 
+#[cfg(target_arch = "x86_64")]
 pub mod keyboard;
 
+#[cfg(target_arch = "x86_64")]
 pub use keyboard::KeyboardDriver;
 
+#[cfg(target_arch = "x86_64")]
 pub fn input_init() {
     keyboard::keyboard_init();
     crate::kernel::framework::chitin::chitin_register_driver(
@@ -28,3 +31,7 @@ pub fn input_init() {
         alloc::boxed::Box::new(keyboard::KeyboardDriver::new()),
     );
 }
+
+/// AArch64 输入初始化 (暂无 PS/2 设备)。
+#[cfg(not(target_arch = "x86_64"))]
+pub fn input_init() {}

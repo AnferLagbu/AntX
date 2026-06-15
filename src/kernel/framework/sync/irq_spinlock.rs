@@ -26,8 +26,6 @@
 //! - `UnsafeCell<T>` 用于保护被守卫的数据
 //! - 嵌套深度计数器: 防止 lock 期间再 lock 时错误恢复 IF
 
-#![allow(dead_code)]
-
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::ops::{Deref, DerefMut};

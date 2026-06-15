@@ -35,6 +35,9 @@
 //! - `data` 指向有效的 cpio 归档数据
 //! - `len` 是归档的完整长度
 
+// initramfs 实现占位, 待 VFS 集成后启用。
+// 保留文件级 allow: CpioEntry/CpioHeader 等内部类型和 unpack 等函数
+// 待 VFS 根文件系统挂载路径启用后使用, 逐项标注会淹没代码。
 #![allow(dead_code)]
 
 use core::cmp;

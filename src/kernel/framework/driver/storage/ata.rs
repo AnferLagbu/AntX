@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! ATA/IDE 磁盘驱动 (Rust 安全重写)
 //!
 //! 提供对 ATA (Advanced Technology Attachment) 硬盘的底层控制：
@@ -45,6 +44,7 @@ pub(crate) const ATA_SECONDARY_CTRL: u16 = 0x376;
 
 /// I/O 寄存器偏移量
 const ATA_DATA: u16 = 0; // 数据寄存器 (16位)
+#[allow(dead_code)] // 规范定义, 待 ATA 错误诊断路径启用后使用。
 const ATA_ERROR: u16 = 1; // 错误寄存器
 const ATA_SECTOR_COUNT: u16 = 2; // 扇区计数
 const ATA_SECTOR_NUM: u16 = 3; // 扇区号 (LBA 0-7)
@@ -55,15 +55,21 @@ const ATA_STATUS: u16 = 7; // 状态寄存器
 const ATA_COMMAND: u16 = 7; // 命令寄存器
 
 /// 控制寄存器偏移量
+#[allow(dead_code)] // 规范定义, 待 ATA 软复位/轮询路径启用后使用。
 const ATA_CTRL_ALT_STATUS: u8 = 0; // 替代状态
 
 /// 状态寄存器标志位
 const ATA_STATUS_BSY: u8 = 0x80; // Busy
+#[allow(dead_code)] // 规范定义, 待 ATA 状态机诊断启用后使用。
 const ATA_STATUS_DRDY: u8 = 0x40; // Drive Ready
+#[allow(dead_code)]
 const ATA_STATUS_DF: u8 = 0x20; // Device Fault
+#[allow(dead_code)]
 const ATA_STATUS_DSC: u8 = 0x10; // Seek Complete
 const ATA_STATUS_DRQ: u8 = 0x08; // Data Request
+#[allow(dead_code)] // 规范定义, 待 ATA 状态机诊断启用后使用。
 const ATA_STATUS_CORR: u8 = 0x04; // Corrected Data
+#[allow(dead_code)]
 const ATA_STATUS_IDX: u8 = 0x02; // Index
 const ATA_STATUS_ERR: u8 = 0x01; // Error
 
@@ -79,6 +85,7 @@ const ATA_TIMEOUT: u32 = 100000;
 /// 成功和错误码
 const ATA_SUCCESS: i32 = 0;
 const ATA_ERR: i32 = -1;
+#[allow(dead_code)] // 规范定义, 待 ATA 超时重试路径启用后使用。
 const ATA_TIMEOUT_ERR: i32 = -2;
 const ATA_NO_DISK: i32 = -3;
 

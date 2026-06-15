@@ -105,6 +105,7 @@ pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as Drive
 pub use bus::pci;
 
 // --- 字符设备导出 ---
+#[cfg(target_arch = "x86_64")]
 pub use char::{
     BaudRate, Color, DataBits, ParityMode, SerialConfig, SerialPort, StopBits, TextAttribute,
     VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH,
@@ -113,6 +114,7 @@ pub use char::{
 pub use char::pl011::Pl011Driver;
 
 // --- 输入设备导出 ---
+#[cfg(target_arch = "x86_64")]
 pub use input::keyboard;
 
 // --- 存储设备导出 ---
@@ -121,6 +123,7 @@ pub use storage::{
 };
 
 // 为了向后兼容，保留一些直接导入
+#[cfg(target_arch = "x86_64")]
 pub use storage::ata::{AtaController, AtaDevice};
 
 // ============================================================================

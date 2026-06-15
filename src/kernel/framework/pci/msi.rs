@@ -44,6 +44,9 @@
 //! - PCI 配置空间访问使用 MMIO/Port I/O (unsafe)
 //! - MSI-X Table/PBA 通过 MMIO 访问 (需要映射)
 
+// MSI-X 实现占位, 待中断路由重构后启用。
+// 保留文件级 allow: MsiCapability/MsixTable 等内部类型和
+// msi_alloc_vector/msix_enable 等函数待中断路由重构后使用, 逐项标注会淹没代码。
 #![allow(dead_code)]
 
 use core::sync::atomic::{AtomicU32, Ordering};

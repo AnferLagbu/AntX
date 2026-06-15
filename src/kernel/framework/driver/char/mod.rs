@@ -15,6 +15,7 @@
 //! ```
 
 pub mod serial;
+#[cfg(target_arch = "x86_64")]
 pub mod vga;
 
 #[cfg(target_arch = "aarch64")]
@@ -23,6 +24,7 @@ pub mod pl011;
 // 导出常用类型
 pub use serial::{BaudRate, DataBits, ParityMode, SerialConfig, SerialPort, StopBits};
 
+#[cfg(target_arch = "x86_64")]
 pub use vga::{Color, TextAttribute, VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH};
 
 // ============================================================================

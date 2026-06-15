@@ -45,7 +45,10 @@
 //! - V1 (当前): 仅规划基址, alloc/free 接口预留, 现有子系统未强制改用
 //! - V2 (下一批): 各子系统 sm_alloc_fd/efd_alloc 等统一改走 `alloc_fd(FdSubsystem::X)`
 
-#![allow(dead_code)] // V1 占位, 待 V2 接入
+// V1 占位, 待 V2 接入后移除。
+// 保留文件级 allow: FdSubsystem/FdPlan 等类型和 alloc_fd/free_fd 等函数
+// 待各子系统统一改走此分配器后启用, 逐项标注会淹没代码。
+#![allow(dead_code)]
 
 // ============================================================================
 // 子系统枚举

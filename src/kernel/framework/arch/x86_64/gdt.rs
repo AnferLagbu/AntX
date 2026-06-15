@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! 全局描述符表 (Global Descriptor Table, GDT) - x86_64 实现
 //!
 //! ## 功能概览
@@ -327,6 +326,9 @@ struct PerCpuGdt {
 }
 
 impl PerCpuGdt {
+    // per-CPU 初始化预留: 当前通过 per_cpu_gdt_mut 直接构造,
+    // 待 GDT 动态分配重构后启用。
+    #[allow(dead_code)]
     const fn new() -> Self {
         Self {
             entries: [GdtEntry::null(); GDT_MAX_ENTRIES],

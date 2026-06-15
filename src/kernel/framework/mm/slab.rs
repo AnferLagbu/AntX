@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Slab 分配器 (Slab Allocator) - Rust 完整实现
 //!
 //! ## 功能概览
@@ -121,11 +120,13 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
+        #[allow(dead_code)] // 待 slab 调试路径启用后使用。
         pub fn as_ptr(self) -> *mut SlabHeader {
             self.0
         }
 
         #[inline(always)]
+        #[allow(dead_code)]
         pub fn is_null(self) -> bool {
             self.0.is_null()
         }
@@ -204,6 +205,7 @@ pub(crate) mod raw {
 
         /// 在该位置写入默认的 SlabHeader.
         #[inline(always)]
+        #[allow(dead_code)] // 待 slab 初始化路径完善后使用。
         pub fn write_default(&self) {
             // SAFETY: 调用方保证指针合法
             unsafe { *self.0 = SlabHeader::default(); }
@@ -245,6 +247,7 @@ pub(crate) mod raw {
     /// - src 必须可读 `len` 字节
     /// - dst 必须可写 `len` 字节
     #[inline(always)]
+    #[allow(dead_code)] // 待 slab 数据搬移路径启用后使用。
     pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
         core::ptr::copy_nonoverlapping(src, dst, len);
     }

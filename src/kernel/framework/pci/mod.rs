@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! PCI 总线子系统 (Rust 重写)
 //!
 //! 取代 `src/driver/pci.c` 中的 C 实现.
@@ -49,6 +48,7 @@ pub mod msi;
 mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    #[allow(dead_code)] // 待 PCI 配置空间 8 位 I/O 启用后使用。
     pub unsafe fn outb(port: u16, val: u8) {
         crate::arch!(outb(port, val));
     }
@@ -56,6 +56,7 @@ mod port_io {
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    #[allow(dead_code)] // 待 PCI 配置空间 16 位 I/O 启用后使用。
     pub unsafe fn outw(port: u16, val: u16) {
         core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
     }
@@ -68,6 +69,7 @@ mod port_io {
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    #[allow(dead_code)] // 待 PCI 配置空间 8 位读取启用后使用。
     pub unsafe fn inb(port: u16) -> u8 {
         crate::arch!(inb(port))
     }
@@ -75,6 +77,7 @@ mod port_io {
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    #[allow(dead_code)] // 待 PCI 配置空间 16 位读取启用后使用。
     pub unsafe fn inw(port: u16) -> u16 {
         let ret: u16;
         core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
@@ -111,6 +114,7 @@ const REG_DEVICE_ID: u8 = 0x02;
 const REG_COMMAND: u8 = 0x04;
 const REG_STATUS: u8 = 0x06;
 const REG_REVISION_ID: u8 = 0x08;
+#[allow(dead_code)] // 规范定义, 待 PCI 子类编程接口查询启用后使用。
 const REG_CLASS_CODE: u8 = 0x0B;
 const REG_HEADER_TYPE: u8 = 0x0E;
 const REG_BAR0: u8 = 0x10;

@@ -26,6 +26,9 @@
 //!
 //! 2026-06-08, 关联 DECISION-006/007/008
 
+// Unix socket 实现占位, 待 VFS socket 层集成后启用。
+// 保留文件级 allow: UdsSocket/UdsState 等内部类型和 12 个 uds_* 函数
+// 待 services 层安全封装接入后启用, 逐项标注会淹没代码。
 #![allow(dead_code)]
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;

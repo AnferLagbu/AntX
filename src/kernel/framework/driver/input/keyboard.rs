@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! PS/2 键盘驱动 (Rust 安全重写)
 //!
 //! 提供对 PS/2 兼容键盘的完整支持：
@@ -35,12 +34,16 @@ const PS2_CMD_PORT: u16 = 0x64;
 /// 状态寄存器标志位
 const PS2_STATUS_OUTPUT_FULL: u8 = 0x01; // 输出缓冲区满
 const PS2_STATUS_INPUT_FULL: u8 = 0x02; // 输入缓冲区满
+#[allow(dead_code)] // 规范定义, 待 PS/2 控制器诊断启用后使用。
 const PS2_STATUS_SYSTEM: u8 = 0x04; // 系统标志
 
 /// 键盘命令
 const KB_CMD_SET_LED: u8 = 0xED; // 设置 LED
+#[allow(dead_code)] // 规范定义, 待键盘诊断/扫描码集切换启用后使用。
 const KB_CMD_ECHO: u8 = 0xEE; // Echo
+#[allow(dead_code)]
 const KB_CMD_SCANCODE: u8 = 0xF0; // 获取/设置扫描码集
+#[allow(dead_code)]
 const KB_CMD_IDENTIFY: u8 = 0xF2; // Identify Keyboard
 
 /// LED 标志位
@@ -130,7 +133,8 @@ pub enum SpecialKey {
     F12,
 }
 
-/// 特殊按键 scancode 映射
+/// 特殊按键 scancode 映射 (待输入子系统完整集成后启用)。
+#[allow(dead_code)]
 pub(crate) fn get_special_key(scancode: u8) -> SpecialKey {
     match scancode {
         0x0D => SpecialKey::Enter,
@@ -334,7 +338,8 @@ fn wait_output_buffer_full() -> bool {
     false
 }
 
-/// 向 PS/2 控制器发送命令
+/// 向 PS/2 控制器发送命令 (待键盘热插拔/重置特性启用后使用)。
+#[allow(dead_code)]
 fn ps2_send_command(cmd: u8) -> Result<()> {
     wait_input_buffer_empty();
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)

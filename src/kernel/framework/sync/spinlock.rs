@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! # 自旋锁 (SpinLock) 实现
 //!
 //! 高效的忙等待锁，基于原子交换指令 (xchg)。
@@ -320,6 +319,9 @@ pub fn restore_interrupts(flags: &IrqSaveFlags) {
 }
 
 /// 启用中断
+///
+/// 当前无调用方; 保留供中断管理 API 补全 (与 disable/restore 对称)。
+#[allow(dead_code)]
 fn enable_interrupts() {
     crate::arch!(interrupt_enable());
 }

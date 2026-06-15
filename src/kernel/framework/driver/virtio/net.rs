@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! VirtIO 网络设备驱动 (设备 ID 1)
 //!
 //! 实现 VirtIO 网络设备规范.
@@ -24,6 +23,7 @@ use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ── Feature bits ──
 
 const VIRTIO_NET_F_MAC: u64 = 1 << 5;
+#[allow(dead_code)] // 规范定义, 待链路状态检测启用后使用。
 const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
 
 // ── VirtIO Net 头 (固定 12 字节) ──
@@ -60,6 +60,7 @@ const RX_BUFFER_SIZE: usize = 2048;
 
 /// QEMU virt aarch64 将 virtio-net 放在 0x0a000000 (第一个设备).
 /// virtio-net 设备 ID 为 1, probe_all() 将发现它.
+#[allow(dead_code)] // 预留提示值, 待多 NIC 探测策略启用后使用。
 const VIRTIO_NET_MMIO_BASE_HINT: u64 = 0x0a00_0000;
 
 /// 带 virtqueue 的 virtio-net 设备.

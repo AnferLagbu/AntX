@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! 显示子系统 (Display Subsystem)
 //!
 //! 提供完整的显示支持：
@@ -110,26 +109,37 @@ fn infer_pixel_format(bpp: u8, red_pos: u8, green_pos: u8, blue_pos: u8) -> Pixe
 }
 
 // ============================================================================
-// PCI VGA 帧缓冲探测（QEMU -kernel 启动时的回退方案）
+// PCI VGA 帧缓冲探测（QEMU -kernel 启动时的回退方案, x86_64 专用）
 // ============================================================================
 
-/// Bochs VBE DISPI MMIO 寄存器偏移（相对于 BAR0）
+#[cfg(target_arch = "x86_64")]
+/// Bochs VBE DISPI MMIO 寄存器偏移（相对于 BAR0）, 待 MMIO 模式启用后使用。
+#[allow(dead_code)]
 const VBE_DISPI_MMIO_BASE: u64 = 0x500;
 
 /// Bochs VBE DISPI 端口 I/O 地址
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_PORT_INDEX: u16 = 0x01CE;
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_PORT_DATA: u16 = 0x01CF;
 
 /// Bochs VBE DISPI 寄存器索引
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_INDEX_ID: u16 = 0;
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_INDEX_XRES: u16 = 1;
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_INDEX_YRES: u16 = 2;
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_INDEX_BPP: u16 = 3;
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_INDEX_ENABLE: u16 = 4;
 
 /// Bochs VBE DISPI ID 值
+#[cfg(target_arch = "x86_64")]
 const VBE_DISPI_ID5: u16 = 0xB0C5;
 
+#[cfg(target_arch = "x86_64")]
 #[derive(Debug, Clone, Copy)]
 struct VgaFbInfo {
     addr: u64,
@@ -140,6 +150,7 @@ struct VgaFbInfo {
 }
 
 /// 通过 Bochs DISPI 端口读取 VGA 帧缓冲分辨率
+#[cfg(target_arch = "x86_64")]
 fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -168,6 +179,7 @@ fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
 }
 
 /// 通过 PCI 探测 VGA 设备 BAR0 获取帧缓冲信息
+#[cfg(target_arch = "x86_64")]
 fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
     let devices = crate::kernel::framework::pci::find_by_class(crate::kernel::framework::pci::CLASS_DISPLAY);
     for dev in &devices {
@@ -343,7 +355,7 @@ pub fn display_init() -> framework::Result<()> {
 }
 
 // ============================================================================
-// 端口 I/O 辅助函数
+// 端口 I/O 辅助函数 (x86_64 专用)
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
@@ -360,14 +372,4 @@ unsafe fn port_inw(port: u16) -> u16 {
     let ret: u16;
     core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
     ret
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-// SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn port_outw(_port: u16, _val: u16) {}
-
-#[cfg(not(target_arch = "x86_64"))]
-// SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn port_inw(_port: u16) -> u16 {
-    0
 }

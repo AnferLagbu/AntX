@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use super::framebuffer::{Color, Framebuffer};
 
 /// 内嵌的 8x16 位图字体 (256 字形, 每字形 16 字节)
@@ -7,6 +5,7 @@ const FONT8X16_DATA: &[u8] = include_bytes!("assets/font8x16.raw");
 
 const GLYPH_WIDTH: u32 = 8;
 const GLYPH_HEIGHT: u32 = 16;
+#[allow(dead_code)] // 规范定义, 待字体度量查询 API 启用后使用。
 const GLYPH_BYTES: u32 = 16;
 
 pub struct Font {

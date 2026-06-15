@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! xHCI 主机控制器驱动 (xHCI Host Controller Driver)
 //!
 //! 实现USB 3.0 xHCI (eXtensible Host Controller Interface) 规范：
@@ -167,8 +166,10 @@ mod usb_sts {
 /// - PORT_TEST [28:31]
 mod portsc {
     pub const CURRENT_CONNECT_STATUS: u32 = 1 << 0;
+    #[allow(dead_code)] // 规范定义, 待端口使能/禁用变更中断处理启用后使用。
     pub const PORT_ENABLED: u32 = 1 << 1;
     pub const PORT_RESET: u32 = 1 << 4;
+    #[allow(dead_code)] // 规范定义, 待端口电源管理启用后使用。
     pub const PORT_POWER: u32 = 1 << 9;
 }
 
@@ -292,7 +293,8 @@ pub struct XhciController {
     num_ports: usize,
     /// 插槽数量
     num_slots: usize,
-    /// 设备信息
+    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
+    #[allow(dead_code)]
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
@@ -420,6 +422,8 @@ impl XhciController {
         unsafe { Some(&mut *self.port_regs.add(port)) }
     }
 
+    /// 端点错误恢复 (待 USB 错误恢复路径启用后使用)。
+    #[allow(dead_code)]
     fn recover_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         let _ = (slot_id, ep_id);
         self.reset_controller()?;

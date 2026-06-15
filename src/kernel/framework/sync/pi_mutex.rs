@@ -31,8 +31,6 @@
 //!
 //! 2026-06-08, 关联 DECISION-009/010/011
 
-#![allow(dead_code)]
-
 extern crate alloc;
 
 use alloc::collections::VecDeque;
@@ -47,8 +45,8 @@ use crate::kernel::framework::sync::lockdep::{self, LockClassId, LockClassDesc, 
 // 常量
 // ============================================================================
 
-/// 等待队列初始容量
-const WAITERS_INIT_CAP: usize = 8;
+// 预留常量, 待 PiMutex 等待队列改为预分配后启用。
+// const 等待队列初始容量: usize = 8;
 
 /// PID 0 = 无效/空闲 (与 Process::None 约定)
 pub const PID_NONE: u32 = 0;

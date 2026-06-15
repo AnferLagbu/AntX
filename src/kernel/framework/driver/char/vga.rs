@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! VGA 文本模式驱动 (VGA Text Mode Driver)
 //!
 //! 提供对 VGA 文本模式显示的完整支持：
@@ -48,6 +47,7 @@ pub const VGA_BUFFER_SIZE: usize = SCREEN_WIDTH * SCREEN_HEIGHT * 2;
 
 /// CRT 控制器端口
 const VGA_CTRL_REGISTER: u16 = 0x3D4;
+#[allow(dead_code)] // 规范定义, 待 VGA 索引寄存器写入启用后使用。
 const VGA_DATA_REGISTER: u16 = 0x3D5;
 
 /// 光标位置寄存器
@@ -192,7 +192,8 @@ pub struct VgaDriver {
     cursor_y: usize,
     /// 当前文本属性
     attribute: TextAttribute,
-    /// 设备信息
+    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
+    #[allow(dead_code)]
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,

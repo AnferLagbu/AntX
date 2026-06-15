@@ -27,8 +27,6 @@
 //! services::sync::once::Once              ← 纯 safe, 简单闭包一次性
 //! ```
 
-#![allow(dead_code)]
-
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};

@@ -407,7 +407,9 @@ impl DmaEngine {
 
     /// 在 DMA 读之前失效 CPU 缓存.
     /// 确保 CPU 能看到设备的写入.
+    /// 待流式 DMA 读取路径启用后使用。
     #[inline(always)]
+    #[allow(dead_code)]
     #[allow(unused_variables)]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]

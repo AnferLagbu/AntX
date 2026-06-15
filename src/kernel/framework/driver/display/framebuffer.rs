@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Framebuffer 驱动 (Framebuffer Driver)
 //!
 //! 提供直接帧缓冲访问和图形绘制功能：
@@ -240,7 +239,8 @@ pub struct Framebuffer {
     format: PixelFormat,
     /// 每像素字节数
     bpp: usize,
-    /// 设备信息
+    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
+    #[allow(dead_code)]
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,

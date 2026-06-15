@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! # IDT 核心管理器
 //!
 //! 全局中断描述符表管理，提供线程安全的 IDT 操作接口。
@@ -141,17 +140,20 @@ fn halt_loop() -> ! {
     }
 }
 
-/// 检查指针是否为 null 或无效
+/// 检查指针是否为 null 或无效 (待 IDT 诊断路径启用后使用)。
+#[allow(dead_code)]
 fn is_null_or_invalid(ptr: u64) -> bool {
     ptr == 0 || ptr < 0x1000
 }
 
-/// 验证 user 地址
+/// 验证 user 地址 (待 IDT 诊断路径启用后使用)。
+#[allow(dead_code)]
 fn is_valid_user_address(addr: u64) -> bool {
     addr > 0xFFFF && addr < 0xFFFFFFFF80000000
 }
 
-/// 验证 kernel 地址
+/// 验证 kernel 地址 (待 IDT 诊断路径启用后使用)。
+#[allow(dead_code)]
 fn is_valid_kernel_address(addr: u64) -> bool {
     addr >= 0xFFFFFFFF80000000
 }
@@ -611,7 +613,8 @@ impl IdtManager {
         }
     }
 
-    /// 默认异常处理 (临时实现，Phase 2.2 完善)
+    /// 默认异常处理 (临时实现，Phase 2.2 完善, 待异常分发重构后启用)。
+    #[allow(dead_code)]
     fn default_exception_handler(&self, frame: &InterruptFrame) {
         let vector = frame.int_no as u8;
 

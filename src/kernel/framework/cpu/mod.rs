@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! QX (QueenX) AMD64 CPU 驱动核心 - Rust 完整实现
 //!
 //! ## 功能概览
@@ -47,10 +46,12 @@ pub mod tsc;
 // 常量定义 (编译时常量)
 // ============================================================================
 
-/// 最大 CPUID leaf 号
+/// 最大 CPUID leaf 号 (待 CPU 特性探测扩展启用后使用)。
+#[allow(dead_code)]
 const MAX_CPUID_LEAF_STANDARD: u32 = 0x0F;
 
-/// 扩展 CPUID leaf 起始值
+/// 扩展 CPUID leaf 起始值 (x86_64 专用)
+#[cfg(target_arch = "x86_64")]
 const CPUID_LEAF_EXT_BASE: u32 = 0x8000_0000;
 
 /// 厂商字符串长度 (12字节)
@@ -659,6 +660,7 @@ pub extern "C" fn cpu_init() -> i32 {
 
     // Step 6: 初始化 MSR (可选, 可能失败于虚拟机)
     if let Err(e) = init_msr(&info.features) {
+        #[allow(dead_code)] // 待 MSR 初始化失败路径完善后使用。
         static WARN_MSG: &[u8] = b"MSR init failed (expected in VMs): \0";
         let mut msg_buf = [0u8; 128];
         let e_bytes = e.as_bytes();
@@ -1276,16 +1278,22 @@ fn detect_topology(
 }
 
 /// IA32_EFER MSR 地址
+#[cfg(target_arch = "x86_64")]
 const IA32_EFER: u32 = 0xC0000080;
 /// IA32_EFER.SCE — 启用 SYSCALL/SYSRET 指令
+#[cfg(target_arch = "x86_64")]
 const EFER_SCE: u64 = 1 << 0;
 /// IA32_STAR — SYSCALL 目标 CS/SS 和 SYSRET 基址
+#[cfg(target_arch = "x86_64")]
 const IA32_STAR: u32 = 0xC0000081;
 /// IA32_LSTAR — SYSCALL 入口点 (64-bit 模式)
+#[cfg(target_arch = "x86_64")]
 const IA32_LSTAR: u32 = 0xC0000082;
 /// IA32_SFMASK — SYSCALL 期间清零的标志位
+#[cfg(target_arch = "x86_64")]
 const IA32_SFMASK: u32 = 0xC0000084;
 
+#[cfg(target_arch = "x86_64")]
 extern "C" {
     fn syscall_entry();
 }

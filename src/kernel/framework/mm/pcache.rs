@@ -19,6 +19,9 @@
 //! - 缓存页由 PMM 分配, 通过 KERNEL_BASE 映射访问
 //! - 脏页写回由文件系统负责 (当前阶段仅标记)
 
+// 页缓存实现占位, 待文件系统写回路径启用后使用。
+// 保留文件级 allow: PageCacheEntry/PageCacheTable 等内部类型和
+// 查找/插入/脏页标记等函数待 VFS 写回路径启用后使用, 逐项标注会淹没代码。
 #![allow(dead_code)]
 
 use core::sync::atomic::{AtomicBool, Ordering};

@@ -17,7 +17,9 @@
 
 pub mod ahci;
 pub mod ahci_block;
+#[cfg(target_arch = "x86_64")]
 pub mod ata;
+#[cfg(target_arch = "x86_64")]
 pub mod ata_block;
 pub mod nvme;
 pub mod nvme_block;

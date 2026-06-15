@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::process::{FdTable, Process, PROCESS_TABLE};
 use super::types::{ProcessContext, ProcessId, ProcessPriority, ProcessState};
 use alloc::string::String;
@@ -24,8 +23,10 @@ extern "C" {
     fn vmm_create_user_page_table() -> u64;
     fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
     fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
+    #[allow(dead_code)] // 待大页分裂路径启用后使用。
     fn vmm_split_2mb_page(vaddr: u64) -> i32;
     fn vmm_ensure_path_user(vaddr: u64);
+    #[allow(dead_code)] // 待进程切换路径启用后使用。
     fn vmm_switch_page_table(table: u64);
     fn vmm_destroy_page_table(cr3: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
@@ -153,8 +154,9 @@ pub(crate) mod raw {
             }
         }
 
-        /// 访问 create_time 字段 (读写)
+        /// 访问 create_time 字段 (读写, 待进程统计路径启用后使用)。
         #[inline(always)]
+        #[allow(dead_code)]
         pub fn create_time(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).create_time }
@@ -240,6 +242,7 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
+        #[allow(dead_code)] // 待进程状态查询路径启用后使用。
         pub fn load_state(&self) -> u32 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).state.load(Ordering::SeqCst) }
@@ -264,9 +267,8 @@ pub(crate) mod raw {
     }
 
     /// 获取当前活跃进程 (current: AtomicU64 → NonNull→ ref)。
-    ///
-    /// # Safety (内部)
-    /// - 必须持有 USER_PROC_MANAGER 锁或保证 current 不会并发改变。
+    /// 待进程调度器完整集成后启用。
+    #[allow(dead_code)]
     pub fn current_proc() -> Option<UserProcRef> {
         let cur = USER_PROC_MANAGER.current.load(Ordering::SeqCst);
         if cur == 0 {
@@ -277,6 +279,7 @@ pub(crate) mod raw {
         }
     }
 
+    #[allow(dead_code)] // 待进程调度器完整集成后启用。
     pub fn set_current_ref(r: Option<UserProcRef>) {
         if let Some(p) = r {
             USER_PROC_MANAGER
@@ -331,17 +334,16 @@ pub(crate) mod raw {
         unsafe { pmm_alloc_pages(count) }
     }
 
-    /// 释放多页连续物理页。
-    ///
-    /// # Safety (内部)
-    /// - `pages` 必须为 `alloc_phys_pages` 返回的合法物理页基址。
+    /// 释放多页连续物理页 (待批量页释放路径启用后使用)。
+    #[allow(dead_code)]
     pub fn free_phys_pages(pages: *mut u8, count: u64) {
         for i in 0..count {
             raw::free_phys_page((pages as u64 + i * PAGE_SIZE) as *mut u8);
         }
     }
 
-    /// 分配一页物理页 (单页)。
+    /// 分配一页物理页 (单页, 待单页分配路径启用后使用)。
+    #[allow(dead_code)]
     pub fn alloc_phys_page() -> *mut u8 {
         // SAFETY: 物理页分配, 调用方负责所有权。
         unsafe { pmm_alloc_page() }
@@ -446,18 +448,21 @@ pub(crate) mod raw {
         page
     }
 
-    /// 物理页 → 内核可写指针 (用于代码段 chunk 复制)。
+    /// 物理页 → 内核可写指针 (用于代码段 chunk 复制, 待 ELF 加载路径完善后使用)。
+    #[allow(dead_code)]
     pub fn phys_to_kern_mut(phys: u64, off: u64) -> *mut u8 {
         (phys + KERNEL_BASE + off) as *mut u8
     }
 
-    /// ELF 文件指针 + 偏移。
+    /// ELF 文件指针 + 偏移 (待 ELF 加载路径完善后使用)。
+    #[allow(dead_code)]
     pub fn elf_ptr_at(elf_data: *const u8, off: usize) -> *const u8 {
         // SAFETY: 调用方保证 off 在 elf_size 范围内。
         unsafe { elf_data.add(off) }
     }
 
-    /// 切换到用户页表 (aarch64 用户态进入前)。
+    /// 切换到用户页表 (aarch64 用户态进入前, 待 aarch64 进程切换启用后使用)。
+    #[allow(dead_code)]
     pub fn vmm_switch_to_user(cr3: u64) {
         // SAFETY: cr3 来自 user proc 的 cr3 字段, 已由 vmm_create_user_page_table 创建。
         unsafe { vmm_switch_page_table(cr3) }

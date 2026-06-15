@@ -1,3 +1,6 @@
+// 网络子系统初始化占位, 待 smoltcp 集成完成后启用。
+// 保留文件级 allow: InitState/NetStatus 等内部类型和大量初始化函数
+// 待网络栈端到端路径启用后使用, 逐项标注会淹没代码。
 #![allow(dead_code)]
 
 use core::ptr::null_mut;

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! 显示控制器抽象层 (Display Controller Abstraction)
 //!
 //! 提供统一的显示控制器接口：
@@ -184,7 +183,8 @@ pub struct DisplayManager {
     active_monitor: Option<usize>,
     /// 主显示器索引
     primary_monitor: Option<usize>,
-    /// 设备信息
+    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
+    #[allow(dead_code)]
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,

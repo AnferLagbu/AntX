@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! VirtIO 块设备驱动
 //!
 //! 实现 VirtIO 块设备规范 (设备 ID 2).
@@ -107,7 +106,9 @@ struct BlkRequest {
 
 /// VirtIO 块请求状态字节 (设备完成后写入).
 const VIRTIO_BLK_S_OK: u8 = 0;
+#[allow(dead_code)] // 规范定义, 待 I/O 错误处理路径启用后使用。
 const VIRTIO_BLK_S_IOERR: u8 = 1;
+#[allow(dead_code)] // 规范定义, 待不支持的请求类型处理启用后使用。
 const VIRTIO_BLK_S_UNSUPP: u8 = 2;
 
 // 请求类型
@@ -116,6 +117,7 @@ const VIRTIO_BLK_T_OUT: u32 = 1; // 写
 
 // 配置空间偏移 (相对于 0x100)
 const BLK_CONFIG_CAPACITY_LO: usize = 0x00;
+#[allow(dead_code)] // 规范定义, 待 >2TB 块设备容量查询启用后使用。
 const BLK_CONFIG_CAPACITY_HI: usize = 0x04;
 
 /// 带 virtqueue 的 virtio-blk 设备.
@@ -130,6 +132,7 @@ pub struct VirtioBlk {
     io_buffer: *mut u8,
     io_buffer_phys: u64,
     /// 最近一次已完成请求的状态字节.
+    #[allow(dead_code)] // 待 I/O 错误处理路径启用后读取。
     status_byte: u8,
     /// I-42: 多 outstanding I/O 完成事件数组. ISR 按 token signal, do_io 等待指定 token.
     completion: IoCompletionArray,

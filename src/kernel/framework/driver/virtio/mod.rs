@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! VirtIO MMIO 传输层
 //!
 //! 实现 VirtIO 1.0 MMIO 传输, 用于设备发现与初始化.
@@ -81,7 +80,9 @@ const STATUS_ACKNOWLEDGE: u32 = 1;
 const STATUS_DRIVER: u32 = 2;
 const STATUS_DRIVER_OK: u32 = 4;
 const STATUS_FEATURES_OK: u32 = 8;
+#[allow(dead_code)] // 规范定义, 待设备重置恢复路径启用后使用。
 const STATUS_NEEDS_RESET: u32 = 0x40;
+#[allow(dead_code)] // 规范定义, 待设备故障诊断路径启用后使用。
 const STATUS_FAILED: u32 = 0x80;
 
 // ── Device IDs ──

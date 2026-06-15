@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! ELF64 程序加载器
 //!
 //! 解析 ELF64 可执行文件, 创建 VMA 映射, 为 exec/load 提供统一入口。
@@ -58,13 +57,15 @@ pub struct Elf64Phdr {
 }
 
 const PT_LOAD: u32 = 1;
+#[allow(dead_code)] // 规范定义, 待 GNU_STACK 段处理启用后使用。
 const PT_GNU_STACK: u32 = 0x6474E551;
 const PF_X: u32 = 1;
 const PF_W: u32 = 2;
 const PF_R: u32 = 4;
 const MAX_PHDR_COUNT: usize = 128;
 
-/// ET_EXEC: 固定地址可执行文件
+/// ET_EXEC: 固定地址可执行文件 (待非 PIE 加载路径启用后使用)。
+#[allow(dead_code)]
 const ET_EXEC: u16 = 2;
 /// ET_DYN: 共享对象 / PIE 可执行文件
 const ET_DYN: u16 = 3;

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! DMA Engine 子系统 (Rust 重写)
 //!
 //! 提供一致性 DMA 内存管理、MMIO 的 ioremap、流式 DMA 映射
@@ -178,8 +177,9 @@ impl DmaStats {
     }
 }
 
-/// 从虚拟地址计算物理地址 (经页表走查)
+/// 从虚拟地址计算物理地址 (经页表走查, 待流式 DMA 映射启用后使用)。
 #[inline]
+#[allow(dead_code)]
 fn virt_to_phys(virt: *const u8) -> u64 {
     if virt.is_null() {
         return 0;

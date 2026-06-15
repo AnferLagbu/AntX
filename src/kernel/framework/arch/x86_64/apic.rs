@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Local APIC (高级可编程中断控制器) 驱动
 //!
 //! x86_64 Local APIC: 每 CPU 中断控制、定时器与 IPI。
@@ -14,8 +13,12 @@ const APIC_VERSION: u32 = 0x030;
 const APIC_TPR: u32 = 0x080;
 const APIC_EOI: u32 = 0x0B0;
 const APIC_SVR: u32 = 0x0F0;
+// APIC ISR/TMR/IRR 寄存器组: 规范定义, 待中断调试/IRQ 亲和性特性启用后使用。
+#[allow(dead_code)]
 const APIC_ISR_BASE: u32 = 0x100;
+#[allow(dead_code)]
 const APIC_TMR_BASE: u32 = 0x180;
+#[allow(dead_code)]
 const APIC_IRR_BASE: u32 = 0x200;
 const APIC_ESR: u32 = 0x280;
 const APIC_ICR_LOW: u32 = 0x300;
@@ -33,13 +36,20 @@ const APIC_TIMER_DCR: u32 = 0x3E0;
 const SVR_ENABLE: u32 = 1 << 8;
 const LVT_MASK: u32 = 1 << 16;
 const LVT_TIMER_PERIODIC: u32 = 1 << 17;
+// LVT 投递模式: 规范定义, 待 SMI/NMI 中断路由特性启用后使用。
+#[allow(dead_code)]
 const LVT_DELIVERY_FIXED: u32 = 0x000;
+#[allow(dead_code)]
 const LVT_DELIVERY_SMI: u32 = 0x200;
+#[allow(dead_code)]
 const LVT_DELIVERY_NMI: u32 = 0x400;
 const LVT_DELIVERY_EXTINT: u32 = 0x700;
 
 const ICR_ASSERT: u64 = 1 << 14;
+// ICR 模式位: 规范定义, 待 IPI 广播/电平触发特性启用后使用。
+#[allow(dead_code)]
 const ICR_LEVEL: u64 = 1 << 15;
+#[allow(dead_code)]
 const ICR_BROADCAST: u64 = 1 << 19;
 const ICR_ALL_EXCLUDE_SELF: u64 = 1 << 18 | 1 << 19;
 

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! 串口驱动 (Rust 安全重写)
 //!
 //! 提供对 PC 标准 COM 端口的完整支持：
@@ -58,6 +57,7 @@ const UART_LSR: u16 = 5; // 线路状态寄存器
 /// LSR 标志位
 const LSR_DATA_READY: u8 = 0x01; // 数据可读
 const LSR_TRANSMIT_EMPTY: u8 = 0x20; // 发送保持寄存器空
+#[allow(dead_code)] // 规范定义, 待串口流控特性启用后使用。
 const LSR_TRANSMIT_IDLE: u8 = 0x40; // 发送器空闲
 
 /// FCR 命令
@@ -238,6 +238,8 @@ impl<T: Default + Copy> RingBuffer<T> {
         self.count == 0
     }
 
+    /// 缓冲区是否已满 (待串口流控启用后使用)。
+    #[allow(dead_code)]
     pub(crate) fn is_full(&self) -> bool {
         self.count >= SERIAL_BUFFER_SIZE
     }

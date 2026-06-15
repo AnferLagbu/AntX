@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! RecoveryDomain Trait — 子系统级崩溃恢复接口
 //!
 //! 将"域"的概念推广到子系统级: 文件系统、网络栈、驱动各为一个 recovery domain。
@@ -43,6 +42,7 @@ pub trait RecoverableDomain: Send + Sync {
 
 pub(crate) struct RegisteredDomain {
     id: DomainId,
+    #[allow(dead_code)] // 待域诊断/日志路径启用后读取。
     name: String,
     deps: &'static [DomainId],
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -55,8 +55,11 @@ pub(crate) struct RegisteredDomain {
 
 impl RegisteredDomain {}
 
+#[allow(dead_code)] // 占位桩, 待域持久化路径启用后使用。
 fn save_stub() {}
+#[allow(dead_code)]
 fn restore_stub() {}
+#[allow(dead_code)]
 fn reset_stub() {}
 
 pub struct RecoveryRegistry {
