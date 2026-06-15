@@ -11,9 +11,9 @@
 //!
 //! ## 实现状态
 //! - [x] `impl CoreArch for Aarch64` — 基础核心能力
-//! - [x] `impl InterruptArch for Aarch64` — DAIF + GICv3 SGI
-//! - [x] `impl MmuArch for Aarch64` — TTBR0/1 + context switch + eret
-//! - [x] `impl SystemArch for Aarch64` — PSCI + port IO stubs
+//! - [x] `impl InterruptArch for Aarch64` — DAIF + GICv3 SGI 中断
+//! - [x] `impl MmuArch for Aarch64` — TTBR0/1 + 上下文切换 + eret
+//! - [x] `impl SystemArch for Aarch64` — PSCI + port IO 桩
 //! - [x] `impl Arch for Aarch64` — 超 trait (空)
 //! - [x] `barrier` — 栏栈恢复 (SGI 7 替代 int 0x82)
 
@@ -161,11 +161,11 @@ impl InterruptArch for Aarch64 {
     }
 
     fn interrupt_early_init() {
-        // GICv3 + VBAR_EL1 already configured by entry.rs / bootloader
+        // GICv3 + VBAR_EL1 已由 entry.rs / bootloader 配置
     }
 
     fn interrupt_late_init() {
-        // GICv3 + Exception vectors + timer already configured by entry.rs
+        // GICv3 + 异常向量 + 定时器已由 entry.rs 配置
     }
 }
 

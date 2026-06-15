@@ -162,7 +162,7 @@ pub use hrtimer::{
 ///
 /// # Safety
 ///
-/// Only called from the timer interrupt handler. Interrupts are disabled.
+/// 仅从定时器中断处理程序调用。中断已禁用。
 pub unsafe extern "C" fn timer_init_ffi() {
     match timer_init(DEFAULT_INTERRUPT_FREQ_HZ) {
         Ok(_) => {}

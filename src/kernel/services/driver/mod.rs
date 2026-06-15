@@ -11,7 +11,7 @@
 //! - [kernel/driver/char/](file:///home/anfer/Code/AntX/src/kernel/driver/char/) — 字符设备 (vga/serial/pl011) → Phase 2.1.5
 //! - [kernel/driver/display/](file:///home/anfer/Code/AntX/src/kernel/driver/display/) — 显示 (framebuffer/HDMI/DP) → Phase 2.1.5
 //! - [kernel/driver/storage/](file:///home/anfer/Code/AntX/src/kernel/driver/storage/) — 存储 (ATA/AHCI/NVMe) → Phase 2.1.3/2.1.4
-//! - [kernel/driver/usb/](file:///home/anfer/Code/AntX/src/kernel/driver/usb/) — USB (xHCI) → Phase 2.1.6
+//! - [kernel/driver/usb/](file:///home/anfer/Code/AntX/src/kernel/driver/usb/) — USB (xHCI 控制器) → Phase 2.1.6
 //!
 //! ## 迁移路径
 //!

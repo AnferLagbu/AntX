@@ -154,8 +154,8 @@ struct VfsSnapshot {
     next_fd: u32,
 }
 
-// All fields (Mutex<T>, AtomicU32) automatically implement Send + Sync
-// because T: Send for all inner types ([VfsMount; N], [VfsFile; N], [u8; N], bool, Option<VfsSnapshot>).
+// 所有字段 (Mutex<T>, AtomicU32) 自动实现 Send + Sync
+// 因为 T: Send 对所有内部类型成立 ([VfsMount; N], [VfsFile; N], [u8; N], bool, Option<VfsSnapshot>)。
 
 impl VfsManager {
     pub const fn new() -> Self {

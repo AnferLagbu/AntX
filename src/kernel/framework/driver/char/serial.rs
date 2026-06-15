@@ -685,7 +685,7 @@ pub extern "C" fn serial_has_data(com: i32) -> bool {
 ///
 /// # Safety
 ///
-/// Serial port has been initialized via `serial_init()`. Only valid in kernel context.
+/// 串口已通过 `serial_init()` 初始化。仅在内核上下文中有效。
 pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) {
     let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
     for &b in bytes {

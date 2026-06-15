@@ -1,4 +1,4 @@
-//! SMP (Symmetric Multi-Processing) Support
+//! SMP (对称多处理) 支持
 //!
 //! 多处理器初始化、IPI 与每 CPU 状态管理.
 

@@ -1,4 +1,4 @@
-//! # Barrier Hard Reset (BHR)
+//! # 栏硬重置 (BHR — Barrier Hard Reset)
 //!
 //! Layer 3 恢复：完全从硬件层面重置
 

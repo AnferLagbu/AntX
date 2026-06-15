@@ -145,7 +145,7 @@ impl RecoveryManager {
                         return;
                     }
                 }
-                // Reset CPU quota per period
+                // 每个周期重置 CPU 配额
                 if dom.cpu_quota_period > 0 && current_tick.is_multiple_of(dom.cpu_quota_period) {
                     dom.reset_quota();
                 }

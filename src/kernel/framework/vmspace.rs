@@ -77,8 +77,8 @@ impl VmSpace {
             return Err("vaddr outside user address space");
         }
         let vmm = get_vmm();
-        // SAFETY: Internal vmm call, pt_root is valid for this VmSpace lifetime.
-        // map_page_in_table operates on a specific PML4 (user page table), safe from services.
+        // SAFETY: 内部 vmm 调用, pt_root 在此 VmSpace 生命周期内有效。
+        // map_page_in_table 操作指定 PML4 (用户页表), services 层安全。
         unsafe {
             vmm.map_page_in_table(self.pt_root.as_u64(), vaddr, frame.phys(), flags);
         }

@@ -411,7 +411,7 @@ pub unsafe fn ipc_msgq_recv(
         Some(out)
     };
 
-    // Convert framework wrappers to safe Rust types
+    // 将 framework 包装器转换为安全 Rust 类型
     let type_ref = type_opt.as_mut().map(|u| u.as_mut());
     let data_ref = data_opt.as_mut().map(|u| u.as_mut_slice());
     let size_ref = size_opt.as_mut().map(|u| u.as_mut());

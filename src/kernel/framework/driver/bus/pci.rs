@@ -78,6 +78,6 @@ pub fn pci_device_count() -> usize {
     crate::kernel::framework::pci::device_count()
 }
 
-// Note: pci_read_config_word / pci_write_config_word C FFI symbols
-// are provided by `kernel::pci::mod` (`#[no_mangle] pub extern "C"`).
-// Re-exporting them here would cause duplicate symbols.
+// 注意: pci_read_config_word / pci_write_config_word C FFI 符号
+// 由 `kernel::pci::mod` 提供 (`#[no_mangle] pub extern "C"`)。
+// 在此重导出会导致符号重复。

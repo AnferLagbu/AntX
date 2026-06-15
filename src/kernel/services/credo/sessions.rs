@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(m.get(CapDomain::NET), Some(CapBits::NONE));
     }
 
-    // Suppress unused warning for InMemoryMatrix import
+    // 抑制 InMemoryMatrix 导入的未使用告警
     #[allow(dead_code)]
     fn _unused() {
         let _ = InMemoryMatrix::new();

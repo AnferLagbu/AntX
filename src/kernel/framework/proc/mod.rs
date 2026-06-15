@@ -62,7 +62,7 @@ pub mod types;
 pub mod user_proc;
 
 // LATER(polish): 用显式导入替代 glob re-export 消除歧义
-// USER_STACK_SIZE: types(usize) vs user_proc(u64)
+// USER_STACK_SIZE: types(usize) 对比 user_proc(u64)
 // init: scheduler vs user_proc
 pub use crate::kernel::framework::barrier::*;
 pub use posix_timer::*;

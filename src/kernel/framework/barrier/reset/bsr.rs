@@ -1,4 +1,4 @@
-//! # Barrier Soft Reset (BSR)
+//! # 栏软重置 (BSR — Barrier Soft Reset)
 //!
 //! Layer 2 恢复：回滚到初始栏并重置设备
 

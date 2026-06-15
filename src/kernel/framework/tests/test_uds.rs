@@ -85,7 +85,7 @@ fn test_uds_stream_echo() -> TestResult {
     TestResult::Pass
 }
 
-/// DGRAM: bind → connect → sendto/recvfrom
+/// DGRAM: bind → connect → sendto/recvfrom 流程
 fn test_uds_dgram_echo() -> TestResult {
     use uds::UnixSockType;
     uds::uds_reset_for_test();

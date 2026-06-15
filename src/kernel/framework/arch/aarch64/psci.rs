@@ -1,4 +1,4 @@
-//! PSCI (Power State Coordination Interface)
+//! PSCI (Power State Coordination Interface) — 电源状态协调接口
 //!
 //! ARM 电源管理标准接口，通过 SMC/HVC 调用实现关机/重启。
 //! QEMU virt 机器使用 PSCI v0.2+。

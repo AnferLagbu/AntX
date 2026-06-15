@@ -3,7 +3,7 @@
 //! 基于 smoltcp 协议栈的网络初始化和 Socket 操作入口。
 //!
 //! ## 调用方契约
-//! - `syscall::mod` —— sys_socket/sys_connect/sys_accept/sys_sendto/sys_recvfrom
+//! - `syscall::mod` —— sys_socket/sys_connect/sys_accept/sys_sendto/sys_recvfrom 系统调用
 //! - `proc::api` —— 进程创建/销毁时关联 socket fd
 //! - `chitin::proto_net` —— 网卡设备注册/注销
 //! - `barrier::recovery` —— 网络子系统纳入恢复域

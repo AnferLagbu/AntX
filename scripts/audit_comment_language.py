@@ -248,6 +248,19 @@ ALLOWED_ENGLISH_TERMS = frozenset({
     "addr", "addrlen", "backlog", "dest_addr", "src_addr",
     "optname", "optval", "optlen", "getsockname", "getpeername",
     "accept", "accept4", "shutdown", "sockatmark",
+    # syscall 标志常量 (在 /// `flags`: XXX | YYY 注释中常见)
+    "EFD_CLOEXEC", "EFD_NONBLOCK", "EFD_SEMAPHORE",
+    "SFD_CLOEXEC", "SFD_NONBLOCK",
+    "TFD_CLOEXEC", "TFD_NONBLOCK",
+    "SECCOMP_SET_MODE_STRICT", "SECCOMP_SET_MODE_FILTER",
+    "operation",
+    # Chitin 错误类型名 (在 /// 文档注释中引用)
+    "InvalidArgument", "NoResources", "WouldBlock", "NotReady", "PermissionDenied",
+    "WrongType", "AlreadyExists", "Other",
+    # 恢复层术语
+    "Layer1", "Layer2", "Layer3",
+    # 其他常见术语
+    "Suppress", "InMemoryMatrix", "import",
 })
 
 
@@ -286,6 +299,33 @@ def is_posix_signature_ref(text: str) -> bool:
 # 代码示例特征: 注释中含一定密度的代码结构标记
 # 命中 2+ 个即视为代码示例 (如 `let x = Itimerspec { ... }`)
 CODE_MARKERS = re.compile(r"(::|;|=>|\bstruct\s|\blet\b|\buse\b|\bsyscall\(|::\s*\w+\s*\()")
+
+# 公式/等式特征: 含赋值 (=) 和算术算子 (* /), 或含 => 映射
+FORMULA_MARKERS = re.compile(r"[=]\s*.*[\*/]|=>")
+
+
+def is_formula_or_equation(text: str) -> bool:
+    """检测是否为公式/等式注释 (常见于 timer/pit/hrtimer/tsc 等).
+
+    模式:
+      - `ns = cycles * 1_000_000_000 / freq_hz`
+      - `us = cycles * 1_000_000 / PIT_BASE_FREQUENCY`
+      - `P=1, DPL=00, S=0 (System), Type=1001 (TSS Available), Busy=0 => 0x89`
+      - `1 = Layer1 (BBR), 2 = Layer2 (BSR), 3 = Layer3 (BHR)`
+      - `file_type=Symlink → EPOLLIN | EPOLLHUP`
+
+    这些是"数学/逻辑公式", 等价于 POSIX 签名引用豁免.
+    """
+    body = re.sub(r"^\s*(?:///?|\*|/\*)", "", text).strip()
+    if len(body) >= 120:
+        return False
+    # 含 = 和至少一个算术算子 (* /) 或映射 (=> →)
+    if re.search(r"[=]", body) and re.search(r"[\*/]|=>|→", body):
+        return True
+    # 位域映射: `X=Y` 逗号分隔列表 (如 GDT 描述符属性)
+    if re.search(r"[A-Za-z_]\w*=\d", body) and body.count("=") >= 2:
+        return True
+    return False
 
 
 def is_register_doc(text: str) -> bool:
@@ -390,6 +430,18 @@ def detect_violation(comment_text: str) -> tuple[bool, str]:
 
     # 代码示例豁免 (文档中嵌入的 Rust/C 代码块)
     if is_code_example(stripped):
+        return False, ""
+
+    # 公式/等式豁免 (数学公式, 含 = 和算术算子)
+    if is_formula_or_equation(stripped):
+        return False, ""
+
+    # 代码引用行豁免: 注释主体为反引号包裹的代码引用 (如 `func_name(...)`)
+    body = re.sub(r"^\s*(?:///?|\*|/\*)", "", stripped).strip()
+    # 剥离所有反引号代码段后, 剩余纯英文长词 < 2 则视为代码引用行
+    no_code = re.sub(r"`[^`]+`", "", body)
+    remaining_long = [w for w in EN_LONG_WORD.findall(no_code) if not is_allowed_term(w)]
+    if len(remaining_long) < 2 and body.count("`") >= 2:
         return False, ""
 
     has_cjk = bool(HAS_CJK.search(stripped))

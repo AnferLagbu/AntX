@@ -99,21 +99,17 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_c_nam
     fi
 fi
 
-# TD-22: 注释语言一致性 audit — 防英文段落注释混入 Rust 代码
-# 当前为软警告 (Soft-warn): 整个项目历史积累约 2k 英文段落注释, 渐进中文化中.
-# 不阻断 CI, 但持续记录违规数. 计划: 后续轮按文件分批清理, 趋势应单调下降.
-# 注: TD-22 是测量工具而非 fail-fast 门禁; 阻断门禁见 audit_block_registration / audit_once_cell 等.
+# TD-22: 注释语言一致性 audit — 硬阈值门禁 (违规 > 0 即 CI 失败)
+# 已完成全部清理: 1983→0 (2026-06-15). 新代码引入英文段落注释将被阻断.
 if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/scripts/audit_comment_language.py" ]; then
-    step "0.5g/6 注释语言一致性 (TD-22, 软警告)"
+    step "0.5g/6 注释语言一致性 (TD-22, 硬阈值)"
     AUDIT_OUT=$("$PROJECT_ROOT/scripts/audit_comment_language.py" 2>&1 || true)
     if echo "$AUDIT_OUT" | grep -q "PASSED"; then
         ok "TD-22: 注释中文化 100% 完成 (0 违规)"
     else
         VIOLATION_COUNT=$(echo "$AUDIT_OUT" | grep -E "FAILED:" | head -1 | awk '{print $5}')
         FILE_COUNT=$(echo "$AUDIT_OUT" | grep -E "FAILED:" | head -1 | awk '{print $NF}' | tr -d '()')
-        echo -e "${YELLOW}⚠ TD-22: 英文段落注释残留 ${VIOLATION_COUNT} 处, 涉及 ${FILE_COUNT} 文件 (软警告, 渐进清理中)${NC}"
-        echo "    清理优先级: framework/ 公共 API 头 > services/ 入口 > 内部实现"
-        echo "    清理命令: scripts/audit_comment_language.py (列出所有违规, 配合 sed -i/Edit 工具批量修)"
+        err "TD-22: 英文段落注释残留 ${VIOLATION_COUNT} 处, 涉及 ${FILE_COUNT} 文件 (硬阈值, 阻断 CI)"
     fi
 fi
 

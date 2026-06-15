@@ -1,7 +1,7 @@
 #![allow(dead_code)]
-//! Local APIC (Advanced Programmable Interrupt Controller) Driver
+//! Local APIC (高级可编程中断控制器) 驱动
 //!
-//! x86_64 Local APIC for per-CPU interrupt control, timer, and IPI.
+//! x86_64 Local APIC: 每 CPU 中断控制、定时器与 IPI。
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 

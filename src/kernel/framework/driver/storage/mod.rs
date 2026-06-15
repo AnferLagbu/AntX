@@ -22,7 +22,7 @@ pub mod ata_block;
 pub mod nvme;
 pub mod nvme_block;
 
-// Re-export key types for driver/mod.rs convenience
+// 为 driver/mod.rs 方便而重导出关键类型
 pub use ahci::{AhciController, AhciPort, AtaCommand, H2dFis};
 pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 

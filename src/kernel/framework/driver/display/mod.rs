@@ -292,7 +292,7 @@ pub fn display_init() -> framework::Result<()> {
 
     let format = infer_pixel_format(bpp, 16, 8, 0);
 
-    // SAFETY: framebuffer physical address from bootloader, identity-mapped by map_framebuffer
+    // SAFETY: 帧缓冲物理地址来自 bootloader, 由 map_framebuffer 恒等映射
     let fb_iomem = unsafe {
         IoMem::new(PhysAddr(fb_addr), fb_size as usize, "fb")
             .map_err(|_| DriverError::HardwareError)?

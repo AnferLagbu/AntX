@@ -222,7 +222,7 @@ extern "C" {
     fn keyboard_read_char() -> i32;
     
     // PIT 函数
-    // fn pit_init(freq: u32) -> u32;
+    // fn pit_init(freq: u32) -> u32;  // 已弃用, 使用 hrtimer
     // fn pit_delay_ms(ms: u32);
 }
 

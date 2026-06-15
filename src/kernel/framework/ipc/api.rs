@@ -14,7 +14,7 @@
 //! - `msgq.rs` —— 消息队列安全创建/发送/接收
 //! - `sem.rs` —— 信号量安全创建/等待/唤醒
 //! - `signal.rs` —— 信号安全发送/注册
-//! - `types.rs` —— Pipe, ShmSegment, MsgQueue, Semaphore, SignalAction
+//! - `types.rs` —— Pipe/ShmSegment/MsgQueue/Semaphore/SignalAction 类型定义
 //! - `scheduler_integration.rs` —— 阻塞/唤醒/全部唤醒线程
 //!
 //! ## 安全约束

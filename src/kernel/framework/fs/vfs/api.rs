@@ -1096,7 +1096,7 @@ pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
             return -1;
         }
     } else if fs_type_str == "ramfs" || fs_type_str == "RamFS" {
-        // RamFS doesn't need formatting, it's always in-memory
+        // RamFS 无需格式化, 始终为内存文件系统
         return 0;
     }
 

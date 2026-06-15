@@ -11,7 +11,7 @@
 //! - `driver::usb::xhci` —— XHCI USB 控制器初始化
 //!
 //! ## 内部接口
-//! - `mod.rs` —— read/write_config_byte/word/dword, pci_scan_all_buses, probe_device
+//! - `mod.rs` —— read/write_config_byte/word/dword, pci_scan_all_buses, probe_device 等接口
 //! - `hotplug.rs` —— PCIe 热插拔支持
 //!
 //! ## 安全约束

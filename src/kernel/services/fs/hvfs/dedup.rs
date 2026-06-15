@@ -173,7 +173,7 @@ pub fn sha256_matches(data: &[u8], expected: &CasHash) -> bool {
     sha256(data) == *expected
 }
 
-/// CAS-aware write: compute SHA256, check dedup index, ref or allocate
+/// CAS 感知写入: 计算 SHA256, 检查去重索引, 引用已有块或分配新块
 pub fn cas_aware_write(data: &[u8], txg: u64, obj_id: u64) -> Option<super::bp::HvBlockPointer> {
     let hash = sha256(data);
     let cas = get_cas();

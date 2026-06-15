@@ -220,7 +220,7 @@ fn test_procfs_read_sys_config_zero_size() -> TestResult {
 // ConfigError Display (演进 7: 负面 / 错误消息测试)
 // ============================================================================
 
-/// Helper: format `ConfigError` to a fixed buffer and return the resulting String.
+/// 辅助函数: 将 `ConfigError` 格式化到固定缓冲区并返回结果 String。
 fn format_error(e: ConfigError) -> alloc::string::String {
     use core::fmt::Write;
     let mut s = alloc::string::String::new();

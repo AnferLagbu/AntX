@@ -1,4 +1,4 @@
-//! Futex — Fast Userspace Mutex
+//! Futex — 快速用户空间互斥锁
 //!
 //! 实现 Linux 风格的 futex 系统调用, 支持用户态高效同步原语.
 //!

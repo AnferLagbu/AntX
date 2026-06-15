@@ -565,7 +565,7 @@ pub fn get_table() -> &'static IdentityTable {
 ///
 /// # Safety
 ///
-/// Caller holds the identity table lock. `pwm` is a valid PWID present in the table.
+/// 调用者持有身份表锁。`pwm` 是表中存在的有效 PWID。
 pub unsafe fn get_table_mut() -> &'static mut IdentityTable {
     raw::get_table_mut()
 }

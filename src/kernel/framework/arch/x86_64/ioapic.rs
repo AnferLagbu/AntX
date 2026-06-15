@@ -1,7 +1,7 @@
 #![allow(dead_code)]
-//! IOAPIC (I/O Advanced Programmable Interrupt Controller) Driver
+//! IOAPIC (I/O 高级可编程中断控制器) 驱动
 //!
-//! Routes external hardware interrupts to specific CPU cores.
+//! 将外部硬件中断路由到指定 CPU 核心。
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 

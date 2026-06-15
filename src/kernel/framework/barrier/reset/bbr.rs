@@ -1,4 +1,4 @@
-//! # Barrier Base Recovery (BBR)
+//! # 栏基恢复 (BBR — Barrier Base Recovery)
 //!
 //! Layer 1 恢复：模块级回滚
 //!

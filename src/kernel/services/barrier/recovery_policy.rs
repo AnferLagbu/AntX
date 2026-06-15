@@ -53,7 +53,7 @@ pub enum RecoveryAction {
 impl RecoveryAction {
     /// 转为 framework::barrier::reset::RecoveryLayer
     pub fn to_framework_layer(self) -> Option<u32> {
-        // 1 = Layer1 (BBR), 2 = Layer2 (BSR), 3 = Layer3 (BHR)
+        // 1 = Layer1 (BBR 栏基), 2 = Layer2 (BSR 栏软), 3 = Layer3 (BHR 栏硬)
         match self {
             Self::BarrierBaseRecovery => Some(1),
             Self::BarrierSoftReset => Some(2),

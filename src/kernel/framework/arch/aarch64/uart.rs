@@ -86,7 +86,7 @@ pub unsafe fn init() {
 /// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
 pub unsafe fn putc(c: u8) {
-    // Wait for TX FIFO not full
+    // 等待 TX FIFO 非满
     while read(UARTFR) & UARTFR_TXFF != 0 {
         core::hint::spin_loop();
     }
@@ -100,7 +100,7 @@ pub unsafe fn putc(c: u8) {
 /// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
 pub unsafe fn getc() -> u8 {
-    // Wait for RX FIFO not empty
+    // 等待 RX FIFO 非空
     while read(UARTFR) & UARTFR_RXFE != 0 {
         core::hint::spin_loop();
     }

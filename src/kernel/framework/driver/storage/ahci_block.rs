@@ -160,8 +160,7 @@ impl BlockDevice for AhciBlockDevice {
     }
 }
 
-// SAFETY: AhciBlockDevice accesses controllers through the global
-// AHCI_CONTROLLERS Mutex. All mutable state is protected by lock
-// acquisition. Safe for SMP cross-CPU access.
+// SAFETY: AhciBlockDevice 通过全局 AHCI_CONTROLLERS Mutex 访问控制器。
+// 所有可变状态受锁获取保护。SMP 跨 CPU 访问安全。
 unsafe impl Send for AhciBlockDevice {}
 unsafe impl Sync for AhciBlockDevice {}

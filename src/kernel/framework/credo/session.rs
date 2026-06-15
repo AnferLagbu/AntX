@@ -298,7 +298,7 @@ pub fn has_elevation_authority(target_pwm: u64) -> bool {
 }
 
 // ============================================================================
-// POSIX setuid / setgid / setreuid / setregid
+// POSIX setuid / setgid / setreuid / setregid 系列调用
 // ============================================================================
 
 pub fn try_setuid(target_uid: u32) -> bool {

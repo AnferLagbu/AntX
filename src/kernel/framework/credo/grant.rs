@@ -16,8 +16,7 @@ fn unlock_grants() {
     GRANT_LOCK.store(false, Ordering::Release);
 }
 
-// SAFETY: Only accessed under GRANT_LOCK. Raw pointer access avoids
-// the UB of multiple &mut references from static mut.
+// SAFETY: 仅在 GRANT_LOCK 保护下访问。裸指针访问避免 static mut 的多重 &mut 引用 UB。
 static mut GRANT_RECORDS: [GrantRecord; MAX_GRANT_RECORDS] =
     [GrantRecord::EMPTY; MAX_GRANT_RECORDS];
 

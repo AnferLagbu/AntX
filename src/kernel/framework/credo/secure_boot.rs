@@ -668,7 +668,7 @@ pub fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 ///   2 = seal(数据指针: a1, 数据长度: a2, pcr 掩码: a3) → fd
 ///   3 = unseal(fd: a1) → bool (简化)
 ///   4 = quote(pcr 掩码: a1, nonce 指针: a2, nonce 长度: a3) → 哈希前8字节
-///   5 = is_initialized() → bool
+///   5 = is_initialized() → 是否已初始化
 #[no_mangle]
 pub fn sys_tpm(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !tpm_is_initialized() && cmd != 5 {

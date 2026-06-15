@@ -471,7 +471,7 @@ pub fn uefi_is_initialized() -> bool {
 ///   5 = get_gop_mode() → fb_base  // 帧缓冲基址
 ///   6 = list_variables() → count
 ///   7 = has_uefi() → bool
-///   8 = is_initialized() → bool
+///   8 = is_initialized() → 是否已初始化
 #[no_mangle]
 pub fn sys_uefi(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !uefi_is_initialized() && cmd != 8 {

@@ -21,7 +21,7 @@ use super::userctx::UserContext;
 ///
 /// 委托到 `Arch::enter_user` 触发硬件上下文切换:
 /// - x86_64: cli + 装载 ds/es/fs/gs + swapgs + iretq
-/// - aarch64: msr sp_el0/elr_el1/spsr_el1 + eret (EL0)
+/// - aarch64: msr sp_el0/elr_el1/spsr_el1 + eret (EL0 用户态)
 ///
 /// # SAFETY
 /// - 必须在进程的内核栈上调用（非中断栈）。

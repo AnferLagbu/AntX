@@ -1056,7 +1056,7 @@ static mut KALLOC_OFF: usize = 0;
 ///
 /// # Safety
 ///
-/// `reg` is a valid MMIO register offset within the BAR0 region. The device has been probed and MMIO region mapped.
+/// `reg` 是 BAR0 区域内的有效 MMIO 寄存器偏移。设备已探测且 MMIO 区域已映射。
 pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };

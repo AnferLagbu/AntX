@@ -25,8 +25,8 @@ pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Res
     let thread_addr = thread_get_current();
 
     if thread_addr != 0 {
-        // Thread IDs are stored as u32 in WaitQueueItem; the u64 returned
-        // by thread_get_current fits in u32 for all valid thread IDs.
+        // WaitQueueItem 中线程 ID 以 u32 存储; thread_get_current 返回的 u64
+        // 对所有有效线程 ID 均可安全截断为 u32。
         let tid = thread_addr as u32;
 
         // 创建等待项并加入队列

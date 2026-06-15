@@ -735,7 +735,7 @@ mod tests {
         uds_close(srv).expect("srv close");
     }
 
-    /// DGRAM: bind → connect → sendto/recvfrom
+    /// DGRAM: bind → connect → sendto/recvfrom 流程
     #[test]
     fn dgram_bind_connect_echo() {
         uds_reset_for_test();

@@ -463,7 +463,7 @@ impl KeyboardDriver {
         // 处理修饰键
         match key_code {
             0x2A | 0x36 => {
-                // Left/Right Shift
+                // 左/右 Shift 键
                 if pressed {
                     if key_code == 0x2A {
                         self.modifiers.left_shift = true;

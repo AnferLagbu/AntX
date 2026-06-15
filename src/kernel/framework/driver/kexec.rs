@@ -427,7 +427,7 @@ pub fn kexec_is_initialized() -> bool {
 ///   4 = cancel()
 ///   5 = get_state() → state
 ///   6 = get_segment_count() → count
-///   7 = is_initialized() → bool
+///   7 = is_initialized() → 是否已初始化
 #[no_mangle]
 pub fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !kexec_is_initialized() && cmd != 7 {
