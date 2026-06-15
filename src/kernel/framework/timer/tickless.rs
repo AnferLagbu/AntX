@@ -266,7 +266,7 @@ impl TicklessSubsystem {
 
     /// 设置 tick 频率
     pub fn set_hz(&self, cpu_id: u32, hz: u32) -> bool {
-        if hz < MIN_HZ || hz > MAX_HZ {
+        if !(MIN_HZ..=MAX_HZ).contains(&hz) {
             return false;
         }
         let per_cpu = self.per_cpu.lock();

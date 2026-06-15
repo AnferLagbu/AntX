@@ -529,6 +529,9 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     //   aarch64: 0 (恒等映射, DMA 物理地址 = 虚拟地址)
     // 同一个表达式 `if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys }`
     // 在 aarch64 上退化为 `phys`, 等价于原 aarch64 分支; 不再需要 cfg 互斥.
+    // SAFETY: aarch64 上 KERNEL_BASE=0, `phys >= 0` 对 u64 恒真, clippy
+    // absurd_extreme_comparisons 可安全抑制 — 语义等价于直接取 phys.
+    #[allow(clippy::absurd_extreme_comparisons)]
     let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
     match dev.send_packet(dma_phys, total as u32) {
         Ok(()) => 0,

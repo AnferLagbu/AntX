@@ -571,7 +571,7 @@ impl CgroupSubsystem {
         // 先从旧 cgroup 移除 (遍历查找)
         {
             let groups = self.groups.lock();
-            for (_, cg) in groups.iter() {
+            for cg in groups.values() {
                 let procs = cg.procs.lock();
                 if procs.contains(&pid) {
                     drop(procs);
@@ -592,7 +592,7 @@ impl CgroupSubsystem {
     /// 获取进程所属 cgroup
     pub fn cgroup_of(&self, pid: Pid) -> Option<Arc<CgroupRq>> {
         let groups = self.groups.lock();
-        for (_, cg) in groups.iter() {
+        for cg in groups.values() {
             if cg.procs.lock().contains(&pid) {
                 return Some(Arc::clone(cg));
             }
@@ -607,6 +607,7 @@ impl CgroupSubsystem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum Errno {
     EPERM = 1,
     ENOENT = 2,

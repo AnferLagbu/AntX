@@ -69,7 +69,7 @@ impl EfiTime {
         let m = self.month as u64;
         let d = self.day as u64;
         let leap_years = (y - 1) / 4 - (y - 1) / 100 + (y - 1) / 400;
-        let is_leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+        let is_leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
         let extra = if is_leap && m > 2 { 1 } else { 0 };
         let days = y * 365 + leap_years + days_before_month.get(m as usize - 1).unwrap_or(&0) + d + extra;
         // 1970-01-01 基准
@@ -431,7 +431,7 @@ impl UefiSubsystem {
 }
 
 fn is_leap_year(year: u16) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
 }
 
 // ============================================================================

@@ -1147,7 +1147,7 @@ impl UserProcManager {
             let allocated_pages: &mut [u64] = &mut allocated_pages;
             let mut page_count: usize = 0;
 
-            let phnum = (*header).e_phnum as usize;
+            let phnum = header.e_phnum as usize;
             if phnum > 256 {
                 self.destroy_raw(proc, false);
                 return -1;
@@ -1155,7 +1155,7 @@ impl UserProcManager {
 
             for i in 0..phnum {
                 let phdr_size = core::mem::size_of::<ElfPhdr>() as u64;
-                let phdr_offset = (*header).e_phoff + (i as u64) * (*header).e_phentsize as u64;
+                let phdr_offset = header.e_phoff + (i as u64) * header.e_phentsize as u64;
                 if phdr_offset + phdr_size > elf_size {
                     self.destroy_raw(proc, false);
                     return -1;

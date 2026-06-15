@@ -48,7 +48,7 @@ where
     }
     PROCESS_TABLE.with_process(pid, |p| {
         let mut guard = p.session.lock();
-        f(&mut *guard)
+        f(&mut guard)
     })
 }
 

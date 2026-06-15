@@ -271,7 +271,7 @@ impl CetSubsystem {
                 "[CET] kernel shadow stack enabled (CR4.CET=1, S_CET=0x{:x})",
                 s_cet_val
             );
-            return true;
+            true
         }
 
         #[cfg(target_arch = "aarch64")]

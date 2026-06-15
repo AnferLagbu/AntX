@@ -293,12 +293,7 @@ impl IoUring {
     /// 取出 SQE, 执行操作, 推送 CQE.
     pub fn process_pending(&self) -> u32 {
         let mut processed = 0u32;
-        loop {
-            let sqe = match self.consume_sqe() {
-                Some(s) => s,
-                None => break,
-            };
-
+        while let Some(sqe) = self.consume_sqe() {
             let result = self.execute_op(&sqe);
             let cqe = Cqe {
                 user_data: sqe.user_data,

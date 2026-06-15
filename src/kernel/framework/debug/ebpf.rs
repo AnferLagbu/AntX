@@ -629,7 +629,7 @@ impl BpfVerifier {
                             alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
                         );
                     }
-                    regs[dst] = regs[src].clone();
+                    regs[dst] = regs[src];
                 } else {
                     // 其他 ALU: 结果是标量
                     regs[dst] = RegState::scalar();

@@ -76,7 +76,7 @@ fn detect_spurious_8259_irq(irq: u8) -> Option<bool> {
     }
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let isr = unsafe { read_8259_isr(irq >= 8) };
-    let bit = 1u8 << (if irq >= 8 { 7 } else { 7 }); // IRQ7 / IRQ15 都是 bit 7
+    let bit = 1u8 << 7; // IRQ7 / IRQ15 都是 bit 7
     Some(isr & bit == 0)
 }
 

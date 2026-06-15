@@ -190,11 +190,11 @@ impl Ed25519PubKey {
 #[repr(u32)]
 pub enum TrustRole {
     /// 平台密钥 (PK) — 信任链根
-    PlatformKey = 0,
+    Platform = 0,
     /// 密钥交换密钥 (KEK) — 签名其他密钥
-    KeyExchangeKey = 1,
+    KeyExchange = 1,
     /// 镜像签名密钥 (DB) — 签名内核/模块
-    ImageSigningKey = 2,
+    ImageSigning = 2,
 }
 
 /// 信任链条目
@@ -260,7 +260,7 @@ impl SecureBootSubsystem {
         }
         // 插入平台密钥 (自签名, 信任链根)
         let pk_entry = TrustEntry {
-            role: TrustRole::PlatformKey,
+            role: TrustRole::Platform,
             pubkey: platform_key,
             signature: [0u8; ED25519_SIG_LEN],
             signer_idx: None, // PK 自签
@@ -291,7 +291,7 @@ impl SecureBootSubsystem {
             if !signer.pubkey.verify(pubkey_bytes, &entry.signature) {
                 return VerifyResult::InvalidSignature;
             }
-        } else if entry.role != TrustRole::PlatformKey {
+        } else if entry.role != TrustRole::Platform {
             // 只有 PK 可以自签
             return VerifyResult::ChainBroken;
         }
@@ -308,19 +308,19 @@ impl SecureBootSubsystem {
         // 查找 DB 角色的密钥
         let db_keys: Vec<&TrustEntry> = chain
             .iter()
-            .filter(|e| e.role == TrustRole::ImageSigningKey)
+            .filter(|e| e.role == TrustRole::ImageSigning)
             .collect();
         if db_keys.is_empty() {
             // 回退: 用 KEK 验证
             let kek_keys: Vec<&TrustEntry> = chain
                 .iter()
-                .filter(|e| e.role == TrustRole::KeyExchangeKey)
+                .filter(|e| e.role == TrustRole::KeyExchange)
                 .collect();
             if kek_keys.is_empty() {
                 // 最后回退: 用 PK 验证
                 let pk_keys: Vec<&TrustEntry> = chain
                     .iter()
-                    .filter(|e| e.role == TrustRole::PlatformKey)
+                    .filter(|e| e.role == TrustRole::Platform)
                     .collect();
                 for pk in pk_keys {
                     if pk.pubkey.verify(image, signature) {

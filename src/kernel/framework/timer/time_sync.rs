@@ -352,7 +352,7 @@ impl TimeSyncSubsystem {
 
         // 频率补偿: elapsed * freq_adj / 1e9
         let last_sync = self.adj.last_sync_time.load(Ordering::Acquire);
-        let elapsed = if raw_ns > last_sync { raw_ns - last_sync } else { 0 };
+        let elapsed = raw_ns.saturating_sub(last_sync);
         let freq_compensation = (elapsed as i64 * freq) / 1_000_000_000;
 
         let total_adj = offset + freq_compensation;

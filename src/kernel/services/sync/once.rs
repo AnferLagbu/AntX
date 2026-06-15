@@ -71,7 +71,7 @@ impl Once {
         // 慢路径: 获取锁, 二次检查。
         let _guard = self.lock.lock();
         match self.state.load(Ordering::Acquire) {
-            DONE => return,
+            DONE => (),
             UNINITIALIZED => {
                 self.state.store(IN_PROGRESS, Ordering::Release);
                 // drop guard 临时, 让其他等待者能进入 (但 state 已是 IN_PROGRESS, 不会重复执行)

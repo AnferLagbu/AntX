@@ -1860,18 +1860,20 @@ impl crate::kernel::framework::fs::vfs::types::FileSystem for HvfsData {
     fn fs_stat(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::vfs::types::KernelResult<crate::kernel::framework::fs::vfs::types::VfsStat> {
         match self.stat(rel_path, pwm) {
             Some(obj) => {
-                let mut st = crate::kernel::framework::fs::vfs::types::VfsStat::default();
-                st.node_id = obj.obj_id as u32;
-                st.mode = obj.pwm_perm;
-                st.size = obj.size as u32;
-                st.owner_pwm = obj.owner_pwm;
-                st.group_pwm = obj.group_pwm;
-                st.perm = obj.pwm_perm;
-                st.sensitivity = obj.sensitivity;
-                st.file_type = if obj.is_dir() {
-                    crate::kernel::framework::fs::vfs::types::VfsFileType::Dir.as_u8()
-                } else {
-                    crate::kernel::framework::fs::vfs::types::VfsFileType::File.as_u8()
+                let st = crate::kernel::framework::fs::vfs::types::VfsStat {
+                    node_id: obj.obj_id as u32,
+                    mode: obj.pwm_perm,
+                    size: obj.size as u32,
+                    owner_pwm: obj.owner_pwm,
+                    group_pwm: obj.group_pwm,
+                    perm: obj.pwm_perm,
+                    sensitivity: obj.sensitivity,
+                    file_type: if obj.is_dir() {
+                        crate::kernel::framework::fs::vfs::types::VfsFileType::Dir.as_u8()
+                    } else {
+                        crate::kernel::framework::fs::vfs::types::VfsFileType::File.as_u8()
+                    },
+                    ..Default::default()
                 };
                 Ok(st)
             }
