@@ -109,7 +109,21 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
         }
     }
 
-    // COW: 写已存在但只读的页
+    // P0-I-26 / B13-FL-01 修复: 先查 VMA, 确认地址合法性后再处理 COW.
+    // 若 COW 路径先于 VMA 查找, 已 munmap 但 PTE 未刷新的地址会被错误地
+    // 授予 WRITABLE 权限 (延迟 TLB 刷新场景下存在安全风险).
+    let mm = super::vma::get_current_mm();
+    if let Some(mm) = mm {
+        if let Some(vma) = mm.find_vma(addr) {
+            if vma.is_guard() {
+                return PfResult::SignalSegv;
+            }
+            return handle_vma_fault_with_mm(mm, &vma, &info);
+        }
+    }
+
+    // COW: 写已存在但只读的页 (VMA 未覆盖的 fallback 路径,
+    // 例如 fork 后子进程写 COW 页但 VMA 尚未同步)
     if info.write && info.present {
         let pml4 = vmm::get_current_pml4();
         return match super::cow::cow_handle_fault(pml4, info.fault_addr) {
@@ -123,18 +137,6 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
 
     if info.user && is_stack_expansion_candidate(addr) {
         return handle_stack_expansion_simple(addr);
-    }
-
-    // P0-I-26 / B13-FL-01 修复: fallthrough 必须先查 VMA,
-    // 不再为任意用户地址隐式分配 RWX 零页 (read-only mmap 会被错误授予写权限)
-    let mm = super::vma::get_current_mm();
-    if let Some(mm) = mm {
-        if let Some(vma) = mm.find_vma(addr) {
-            if vma.is_guard() {
-                return PfResult::SignalSegv;
-            }
-            return handle_vma_fault_with_mm(mm, &vma, &info);
-        }
     }
 
     PfResult::SignalSegv
@@ -355,9 +357,13 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
         flags,
         VmaType::Stack,
     );
-    // LATER: 栈扩展 VMA 插入失败时页面已映射但无 VMA 跟踪,
-    // 当前忽略返回值是权衡 (不会崩溃但 VMA 不完整)
-    let _ = mm.insert_vma(stack_vma);
+    if mm.insert_vma(stack_vma).is_err() {
+        // insert_vma 失败: unmap 刚映射的页面并释放物理页, 防止无 VMA 跟踪的
+        // 孤儿映射 (后续 munmap/mprotect 无法覆盖此区域)
+        vmm_inst.unmap_page_in_table(vmm::get_current_pml4(), VirtAddr(page_aligned as u64));
+        pmm_inst.free_page(phys);
+        return PfResult::Oom;
+    }
 
     PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed

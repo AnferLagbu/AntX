@@ -79,6 +79,8 @@ impl MemoryPressure {
 // ============================================================================
 
 static CURRENT_PRESSURE: AtomicU8 = AtomicU8::new(MemoryPressure::Normal as u8);
+/// 上一次压力级别 (由 update_pressure 在 swap 后写入)
+static PREV_PRESSURE: AtomicU8 = AtomicU8::new(MemoryPressure::Normal as u8);
 static FREE_PAGES_THRESHOLD_WARNING: AtomicU64 = AtomicU64::new(256);
 static FREE_PAGES_THRESHOLD_CRITICAL: AtomicU64 = AtomicU64::new(64);
 static FREE_PAGES_THRESHOLD_EMERGENCY: AtomicU64 = AtomicU64::new(16);
@@ -125,15 +127,14 @@ pub fn update_pressure(free_pages: u64, total_pages: u64) -> MemoryPressure {
     };
 
     let prev = CURRENT_PRESSURE.swap(new_pressure as u8, Ordering::SeqCst);
-    let _prev_pressure = MemoryPressure::from_u8(prev);
+    PREV_PRESSURE.store(prev, Ordering::SeqCst);
 
     new_pressure
 }
 
 /// 读取上一次压力级别 (供 wrapper 做日志比较, 避免在 services 层使用 klog_ffi).
 pub fn previous_pressure() -> MemoryPressure {
-    // 实际 prev 已被 swap 覆盖, 出于接口稳定, 提供当前级别即可
-    current_pressure()
+    MemoryPressure::from_u8(PREV_PRESSURE.load(Ordering::SeqCst))
 }
 
 pub fn is_pressure_critical() -> bool {

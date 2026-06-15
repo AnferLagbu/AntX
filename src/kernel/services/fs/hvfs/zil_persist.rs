@@ -468,11 +468,12 @@ impl HvZilPersist {
                 Err(e) => {
                     // P0-I-15 修复: 损坏的 record 标记为"跳过"而非整个日志回放失败.
                     // 真机 SSD bit flip 只会丢一条 record, 不再让回放路径 panic.
-                    // 注: services 层 #![deny(unsafe_code)], klog 宏内含 unsafe,
-                    //     故此处仅通过 Result 类型传递错误, 不做 klog 调用.
-                    //     后续可经 framework/credo/event_bus 投递 ZIL_CORRUPT_RECORD
-                    //     事件至用户态 auditd 进程.
-                    let _ = e; // 静默吞下: 上下文级错误在调试时可加 #[cfg(debug_assertions)] 打印
+                    // 可观测性: debug 构建下输出日志, release 构建静默跳过 (性能优先).
+                    #[cfg(debug_assertions)]
+                    {
+                        crate::slog_warn!(FS, "ZIL 回放: 跳过损坏 record (index={}, err={:?})", i, e);
+                    }
+                    let _ = e;
                 }
             }
         }

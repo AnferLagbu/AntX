@@ -861,6 +861,66 @@ impl UserProcManager {
         }
     }
 
+    /// 替换进程的用户地址空间 (execve 路径).
+    ///
+    /// 销毁旧页表和用户栈物理页, 然后将 CR3/entry/user_stack/stack_bottom
+    /// 更新为新值. 不移除 BTreeMap 条目, 不释放内核栈, 不改变 PID —
+    /// 保持 POSIX execve 语义 (PID 不变).
+    pub fn replace_user_space(
+        &self,
+        pid: u32,
+        new_cr3: u64,
+        new_entry: u64,
+        new_user_stack: u64,
+        new_stack_bottom: u64,
+    ) {
+        let proc = match self.processes.lock().get(&pid).copied() {
+            Some(p) => p,
+            None => return,
+        };
+        // SAFETY: proc 来自 BTreeMap 中的 NonNull, 进程存活期间有效.
+        let proc_ref = unsafe { UserProcRef::new_unchecked(proc.as_ptr()) };
+
+        // 1. 销毁旧用户页表
+        let old_cr3 = proc_ref.load_cr3();
+        if old_cr3 != 0 {
+            // 释放旧用户栈物理页 (必须在销毁页表前完成, 否则无法翻译虚拟地址)
+            let old_stack_bottom = proc_ref.load_stack_bottom();
+            if old_stack_bottom != 0 {
+                for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
+                    let svirt = old_stack_bottom + i * PAGE_SIZE;
+                    let phys = raw::virt_to_phys(old_cr3, svirt);
+                    if phys != 0 {
+                        raw::free_phys_page(phys as *mut u8);
+                    }
+                }
+            }
+            raw::destroy_user_page_table(old_cr3);
+        }
+
+        // 2. 更新为新的地址空间
+        proc_ref.store_cr3(new_cr3);
+        proc_ref.set_entry(new_entry);
+        proc_ref.store_user_stack(new_user_stack);
+        proc_ref.store_stack_bottom(new_stack_bottom);
+
+        // 3. 同步到权威 Process 结构
+        // SAFETY: proc 来自 BTreeMap 中的 NonNull<UserProcess>, 其 process 字段
+        // 指向 PROCESS_TABLE 中有效的 Process, 在进程存活期间有效.
+        let kproc = unsafe { (*proc.as_ptr()).process.as_ptr() };
+        // SAFETY: kproc 来自 UserProcess::process NonNull 字段, 在进程存活期间有效.
+        unsafe {
+            (*kproc).cr3.store(new_cr3, Ordering::SeqCst);
+            (*kproc).user_stack.store(new_user_stack, Ordering::SeqCst);
+        }
+    }
+
+    /// 从管理器中移除进程索引但不释放任何资源.
+    /// 用于 execve: 新进程资源已转移到旧 PID, 仅需移除索引条目.
+    pub fn detach_by_pid(&self, pid: u32) {
+        self.processes.lock().remove(&pid);
+    }
+
     pub fn create(&self, info: &UserProcInfo, pwm: u64) -> Option<*mut UserProcess> {
         // ✅ 单源真相: 优先分配权威 Process, 再分配 UserProcess 镜像并关联.
         //    此顺序保证 UserProcess::process NonNull 字段构造时即指向有效 Process.

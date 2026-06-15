@@ -1019,67 +1019,81 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
 
     let pwm = scheduler_get_current_pwm();
 
-    // P0-I-31 修复: 改造为 transactional 模式 — 先在副本上加载并验证新 ELF,
-    // 验证通过后再销毁旧进程. 旧版"先摧毁再加载"假设 ELF/FS/分配永不失败,
-    // 一旦失败调度器指向已释放 PID → panic (UAF).
+    // P0-I-31 修复: transactional execve — 先在临时进程中加载并验证新 ELF,
+    // 验证通过后将新地址空间转移到当前 PID, 保持 POSIX execve 语义 (PID 不变).
     //
-    // 阶段 1: 加载新 ELF (在 USER_PROC_MANAGER 内分配临时 UserProc/PID).
+    // 旧版"先摧毁再加载"假设 ELF/FS/分配永不失败, 一旦失败调度器指向
+    // 已释放 PID → panic (UAF). 此前修复改为"双进程替换"但引入 PID 变更,
+    // 违反 POSIX execve 语义 (父进程 wait() 匹配失败).
+    //
+    // 阶段 1: 加载新 ELF (分配临时 UserProc/PID).
     //         任一环节失败 → 返回 -1, 原进程完整保留.
     let new_pid = user_proc_load_elf(path, pwm);
     if new_pid < 0 {
         return -1;
     }
 
-    // 阶段 2: 新进程加载已成功, 现在可以安全地销毁旧进程.
+    let new_pid_u32 = new_pid as u32;
+
+    // 阶段 2: 读取新进程的地址空间信息 (CR3/entry/stack)
+    let new_addr_space = USER_PROC_MANAGER.with_process(new_pid_u32, |proc| {
+        (
+            proc.cr3.load(Ordering::SeqCst),
+            proc.entry,
+            proc.user_stack.load(Ordering::SeqCst),
+            proc.stack_bottom.load(Ordering::SeqCst),
+        )
+    });
+
+    let (new_cr3, new_entry, new_user_stack, new_stack_bottom) = match new_addr_space {
+        Some(info) => info,
+        None => {
+            // 新进程加载成功但无法读取, 清理并失败
+            USER_PROC_MANAGER.destroy_by_pid(new_pid_u32);
+            PROCESS_TABLE.remove_and_free(new_pid_u32);
+            return -1;
+        }
+    };
+
+    // 阶段 3: 切换到内核页表, 替换当前进程的用户地址空间
     let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
     if kernel_cr3 != 0 {
         // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
         raw::switch_page_table(kernel_cr3);
     }
 
-    // 销毁旧用户地址空间 (保留内核栈与 PID 槽)
-    USER_PROC_MANAGER.destroy_by_pid_no_kstack(current_pid);
+    // 原子替换: 销毁旧用户空间 + 更新为新地址空间, PID 不变
+    USER_PROC_MANAGER.replace_user_space(
+        current_pid,
+        new_cr3,
+        new_entry,
+        new_user_stack,
+        new_stack_bottom,
+    );
 
-    // 从 PROCESS_TABLE 移除旧 Process (新 load_elf 已持有新 PID, 不再复用)
-    PROCESS_TABLE.remove_and_free(current_pid);
-
-    let new_pid_u32 = new_pid as u32;
+    // 阶段 4: 移除临时新进程 (资源已转移到当前 PID, 仅移除索引)
+    USER_PROC_MANAGER.detach_by_pid(new_pid_u32);
+    PROCESS_TABLE.remove_and_free(new_pid_u32);
 
     // 5. 设置 argv/envp
     if !argv.is_null() && argc > 0 {
         let envp: *const *const u8 = core::ptr::null();
         // SAFETY: argv 来自 C ABI 调用方, 由本函数 C ABI contract 保证。
         unsafe {
-            user_proc_setup_argv(new_pid_u32, argv, argc, envp, 0);
+            user_proc_setup_argv(current_pid, argv, argc, envp, 0);
         }
     }
 
-    // 5a. I-48: 显式重置新进程信号状态 (文档化 AntX execve 信号策略).
-    // AntX 采用双进程替换模型 (阶段 1 加载新 ELF → 新 PID 全新状态, 阶段 2
-    // 销毁旧进程), 新进程天然已无旧信号痕迹. 此处显式调用是为 (1) 未来若
-    // 引入 PID 复用可在 hook 注入逻辑, (2) 文档化"execve 后信号状态 = 默认".
-    crate::kernel::framework::proc::signal::reset_signal_state_on_exec(new_pid_u32);
+    // 5a. I-48: 重置信号状态 (execve 后信号处理 = 默认)
+    crate::kernel::framework::proc::signal::reset_signal_state_on_exec(current_pid);
 
     // 6. 同步当前进程信息
-    if USER_PROC_MANAGER.get(new_pid_u32).is_some() {
-        let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER
-            .with_process(new_pid_u32, |proc| {
-                (
-                    proc.pid as u64,
-                    proc.pwm.load(Ordering::SeqCst),
-                    proc.state.load(Ordering::SeqCst),
-                )
-            })
-            .unwrap_or((0, 0, 0));
-        C_CURRENT_PROCESS.map_mut(|p| {
-            p.pid = pid_val;
-            p.pwm = pwm_val;
-            p.state = state_val;
-        });
-    }
+    C_CURRENT_PROCESS.map_mut(|p| {
+        p.pid = current_pid as u64;
+    });
 
-    // 7. 进入新进程
-    user_proc_enter_by_pid(new_pid_u32);
+    // 7. 进入当前 PID (使用新地址空间)
+    user_proc_enter_by_pid(current_pid);
     0
 }
 
