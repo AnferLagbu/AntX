@@ -492,14 +492,12 @@ pub extern "C" fn kernel_init() {
         crate::klog_boot_info!("UDS subsystem initialized");
 
         // 10. Network (smoltcp + 网卡驱动)
-        // x86_64: E1000 PCI 网卡驱动
-        // aarch64: virtio-net MMIO 网卡驱动
         {
             crate::kernel::framework::net::init::qx_net_init();
             crate::klog_boot_info!("Network subsystem initialized");
         }
 
-        // 10-10.6. Driver subsystem init (VGA, serial, keyboard, PCI, storage, display, USB)
+        // 10-10.6. Driver subsystem init
         crate::kernel::framework::driver::init_all();
         crate::klog_boot_info!("Driver subsystem initialized");
         {

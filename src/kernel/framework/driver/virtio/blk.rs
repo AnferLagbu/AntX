@@ -21,38 +21,78 @@ use crate::kernel::framework::idt::types::InterruptFrame;
 // 暴露为 pub const 让 boot/PCI 探测代码能改写.
 pub const DEFAULT_VIRTIO_BLK_IRQ: u8 = 11;
 
-// I-42: 全局 ISR → device 完成事件绑定指针.
-// 单实例场景下, 一个静态指针足够; 多实例时应替换为 IRQ 索引到设备的查表.
+// I-42: 全局 ISR → device 查表, 支持多实例.
+// 每个 IRQ 号最多映射一个 virtio-blk 设备实例.
+// 当前 IDT 框架 register_irq 限制 IRQ < 16, 注册表大小与之对齐.
 #[cfg(target_arch = "x86_64")]
-static mut VIRTIO_BLK_COMPLETION_PTR: *const IoCompletion = core::ptr::null();
+const MAX_VIRTIO_BLK_IRQS: usize = 16;
+
+/// I-42: 设备注册表条目: completion 数组 + 设备 MMIO 引用.
+/// ISR 通过 IRQ 号索引到此条目, signal 完成事件并 ACK 设备.
+#[cfg(target_arch = "x86_64")]
+struct VirtioBlkRegistryEntry {
+    completion: *const IoCompletionArray,
+    device: *const VirtioBlk,
+}
+
+/// I-42: 全局设备注册表, IRQ 号 → 设备实例映射.
+/// enable_irq() 注册, ISR 查表. 替代原先的单静态指针.
+#[cfg(target_arch = "x86_64")]
+static mut VIRTIO_BLK_REGISTRY: [Option<VirtioBlkRegistryEntry>; MAX_VIRTIO_BLK_IRQS] = {
+    const NONE: Option<VirtioBlkRegistryEntry> = None;
+    [NONE; MAX_VIRTIO_BLK_IRQS]
+};
 
 // I-42: 轻量级 I/O 完成事件, 替代原 do_io 内的 `loop { pop_used(); spin_loop() }` 忙等.
 // 由 ISR (`virtio_blk_irq_handler`) 在设备通知 used ring 有新条目时 signal,
 // do_io 在等待时只 spin_loop 检查此 flag, 避免无限空转.
-// 当前 single-owner 同步语义下, 每设备一个事件足够; 后续多 outstanding I/O 时
-// 应改为按 request token 索引的 event 数组, 但本 fix 不阻塞 (do_io 仍串行).
+// I-42: 多 outstanding I/O 完成事件数组, 按 request token (descriptor head index) 索引.
+// 每个 token 对应一个 AtomicBool, ISR 根据 used ring entry 的 id 字段派发到对应 slot.
+// 当前 do_io 仍串行 (每次只用 token 0), 但数据结构已支持并发提交.
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// 单次 I/O 完成事件
-pub struct IoCompletion {
-    done: AtomicBool,
+/// VirtQueue 最大深度 (与 queue.rs VQ_SIZE 一致)
+const VIRTIO_BLK_MAX_TOKENS: usize = 32;
+
+/// 多 outstanding I/O 完成事件数组
+pub struct IoCompletionArray {
+    slots: [AtomicBool; VIRTIO_BLK_MAX_TOKENS],
 }
 
-impl IoCompletion {
+impl IoCompletionArray {
+    /// 创建全 false 的完成事件数组
     pub const fn new() -> Self {
-        Self { done: AtomicBool::new(false) }
+        // AtomicBool 不支持 const fn 数组初始化, 用 core::mem::zeroed
+        // SAFETY: AtomicBool 的零值等价于 AtomicBool::new(false)
+        Self {
+            slots: [const { AtomicBool::new(false) }; VIRTIO_BLK_MAX_TOKENS],
+        }
     }
-    /// ISR 路径: 标记 I/O 完成
-    pub fn signal(&self) {
-        self.done.store(true, Ordering::Release);
+    /// ISR 路径: 标记指定 token 的 I/O 完成
+    pub fn signal(&self, token: usize) {
+        if token < VIRTIO_BLK_MAX_TOKENS {
+            self.slots[token].store(true, Ordering::Release);
+        }
     }
-    /// 等待者: 是否有完成
-    pub fn is_done(&self) -> bool {
-        self.done.load(Ordering::Acquire)
+    /// 等待者: 检查指定 token 是否完成
+    pub fn is_done(&self, token: usize) -> bool {
+        if token < VIRTIO_BLK_MAX_TOKENS {
+            self.slots[token].load(Ordering::Acquire)
+        } else {
+            false
+        }
     }
-    /// 提交新一轮 I/O 前重置
-    pub fn reset(&self) {
-        self.done.store(false, Ordering::Release);
+    /// 提交新一轮 I/O 前重置指定 token
+    pub fn reset(&self, token: usize) {
+        if token < VIRTIO_BLK_MAX_TOKENS {
+            self.slots[token].store(false, Ordering::Release);
+        }
+    }
+    /// ISR 路径: 信号所有未完成 token (用于 ISR 无法确定 token 的退路场景)
+    pub fn signal_all(&self) {
+        for slot in &self.slots {
+            slot.store(true, Ordering::Release);
+        }
     }
 }
 
@@ -91,8 +131,8 @@ pub struct VirtioBlk {
     io_buffer_phys: u64,
     /// 最近一次已完成请求的状态字节.
     status_byte: u8,
-    /// I-42: I/O 完成事件. ISR 路径 signal, do_io 等待时检查.
-    completion: IoCompletion,
+    /// I-42: 多 outstanding I/O 完成事件数组. ISR 按 token signal, do_io 等待指定 token.
+    completion: IoCompletionArray,
     /// I-42: IRQ 是否已注册到 IDT. true = 走事件驱动, false = 退到原 spin-loop.
     irq_registered: bool,
 }
@@ -169,7 +209,7 @@ impl VirtioBlk {
             io_buffer: buf_virt,
             io_buffer_phys: buf_phys,
             status_byte: VIRTIO_BLK_S_OK,
-            completion: IoCompletion::new(),
+            completion: IoCompletionArray::new(),
             irq_registered: false,
         })
     }
@@ -201,19 +241,19 @@ impl VirtioBlk {
         if self.irq_registered {
             return Ok(());
         }
-        // 先绑定 ISR 目标 (此设备的 completion 引用), 再注册 handler,
-        // 保证 ISR 触发时指针已非空.
-        bind_virtio_blk_completion(&self.completion);
+        let irq = DEFAULT_VIRTIO_BLK_IRQ;
+        // 注册到全局设备注册表 (IRQ → completion + device), ISR 查表使用.
+        register_virtio_blk_device(irq as usize, &self.completion, self);
         let manager = IdtManager::instance();
         manager.register_irq(
-            DEFAULT_VIRTIO_BLK_IRQ,
+            irq,
             virtio_blk_irq_handler,
             "virtio-blk",
             0, // flags
         )?;
-        manager.enable_irq(DEFAULT_VIRTIO_BLK_IRQ);
+        manager.enable_irq(irq);
         self.irq_registered = true;
-        klog_info!(Driver, "virtio-blk IRQ {} registered", DEFAULT_VIRTIO_BLK_IRQ);
+        klog_info!(Driver, "virtio-blk IRQ {} registered", irq);
         Ok(())
     }
 
@@ -273,8 +313,9 @@ impl VirtioBlk {
         }
 
         // ── Submit and kick ──
-        // I-42: 重置完成事件, 提交后才不会误判上一次完成的残留信号.
-        self.completion.reset();
+        // I-42: 重置此 token 的完成事件, 提交后才不会误判上一次完成的残留信号.
+        let token = desc_req as usize;
+        self.completion.reset(token);
         self.vq.submit(desc_req);
         self.vq.commit_and_kick();
 
@@ -294,16 +335,17 @@ impl VirtioBlk {
         if self.irq_registered {
             const EVENT_WAIT_BOUND: u32 = 10_000_000; // ~10ms @ 1 GHz spin_loop()
             let mut spins: u32 = 0;
-            while !self.completion.is_done() && spins < EVENT_WAIT_BOUND {
+            while !self.completion.is_done(token) && spins < EVENT_WAIT_BOUND {
                 core::hint::spin_loop();
                 spins = spins.saturating_add(1);
             }
-            if !self.completion.is_done() {
+            if !self.completion.is_done(token) {
                 // 退路: IRQ 未触发 (设备异常), 转 spin-loop 直接 drain used ring.
                 klog_warn!(
                     Driver,
-                    "virtio-blk completion timeout after {} spins, falling back to poll",
-                    spins
+                    "virtio-blk completion timeout after {} spins (token={}), falling back to poll",
+                    spins,
+                    token
                 );
             }
         }
@@ -347,33 +389,51 @@ impl VirtioBlk {
 //
 // ISR 不做 pop_used, 因为设备可能在事件产生后才把 status byte 写入 DMA,
 // 而 do_io 接下来会自己 pop. 这里只把 "有完成" 这件事广播给等待者.
-// 多 outstanding I/O 场景下, 此处应根据 used ring entry 索引派发到
-// 不同的 request token, 当前每设备串行 I/O, 一个 flag 足够.
 //
-// 当前全局仅支持一个 virtio-blk 实例; 后续多实例时应改为设备注册表索引
-// (类似 chitin_dev IRQ dispatch), 本 fix 不阻塞 (单实例场景).
+// 当前 IDT 框架的 IRQ handler 签名不传 IRQ 号, 因此 ISR 遍历注册表
+// 查找已注册设备. 由于注册表最多 16 项且通常仅 1 个设备, 遍历开销可忽略.
+// 多实例限制: 同一时刻只能有一个 virtio-blk 设备的 ISR 被分发到此函数,
+// 因为 IDT 按 IRQ 号分发, 每个 IRQ 有独立的 handler 槽位.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub extern "C" fn virtio_blk_irq_handler(_frame: *mut InterruptFrame) {
-    // 通过写 ISR 状态在设备层确认中断.
-    // 简化处理: 仅 signal 全局事件; 真正的设备 ISR acknowledge 由 IDT 层 EOI 完成.
-    // 设备上下文寄存器写入留作后续优化 (避免重复触发).
-    // SAFETY: 静态指针由 bind_virtio_blk_completion 在 enable_irq 前设置一次,
-    //         ISR 内仅原子读 done 字段, 不会与 do_io 写形成数据竞争.
+pub extern "C" fn virtio_blk_irq_handler(frame: *mut InterruptFrame) {
+    // SAFETY: 注册表由 enable_irq() 在启动时单线程写入, ISR 只读, 无数据竞争.
     unsafe {
-        if !VIRTIO_BLK_COMPLETION_PTR.is_null() {
-            (*VIRTIO_BLK_COMPLETION_PTR).signal();
+        for i in 0..MAX_VIRTIO_BLK_IRQS {
+            if let Some(ref entry) = VIRTIO_BLK_REGISTRY[i] {
+                // signal 完成事件
+                if !entry.completion.is_null() {
+                    (*entry.completion).signal_all();
+                }
+                // ACK 设备中断 (VirtIO MMIO 规范要求)
+                if !entry.device.is_null() {
+                    (*entry.device).device.ack_interrupt();
+                }
+                return;
+            }
         }
     }
+    // 未找到注册设备 — 不应发生, 记录告警
+    klog_warn!(Driver, "virtio-blk ISR fired but no device registered");
+    let _ = frame; // 抑制未使用参数告警
 }
 
-// I-42: 暴露给 enable_irq() 绑定 ISR 目标 completion 指针.
-// 注册到 IDT 前必须调用, ISR 才能找到正确的完成事件.
+// I-42: 注册设备到全局注册表 (IRQ → completion + device).
+// enable_irq() 调用, ISR 查表使用.
 #[cfg(target_arch = "x86_64")]
-pub fn bind_virtio_blk_completion(c: &IoCompletion) {
-    // SAFETY: c 的生命周期 >= 设备生命周期, ISR 仅读 done 字段 (atomic).
+pub fn register_virtio_blk_device(irq: usize, completion: &IoCompletionArray, device: &VirtioBlk) {
+    // SAFETY: 启动阶段单线程调用, 无并发风险.
+    //         completion 指针: IoCompletionArray 是 VirtioBlk 的字段, 生命周期与 VirtioBlk 绑定.
+    //         device 指针: VirtioBlk 由 storage_init 创建后通过 register_block_device 传入
+    //         Chitin, Chitin 将其 Box 化并持有至系统关闭, 故 device 指针在注册期间始终有效.
+    //         若未来 Chitin 支持设备热拔插, 需在注销时同步清除注册表条目.
     unsafe {
-        VIRTIO_BLK_COMPLETION_PTR = c as *const IoCompletion;
+        if irq < MAX_VIRTIO_BLK_IRQS {
+            VIRTIO_BLK_REGISTRY[irq] = Some(VirtioBlkRegistryEntry {
+                completion: completion as *const IoCompletionArray,
+                device: device as *const VirtioBlk,
+            });
+        }
     }
 }
 

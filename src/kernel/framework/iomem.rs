@@ -17,9 +17,8 @@ use core::fmt;
 use core::ptr::NonNull;
 
 use crate::kernel::framework::mm::{PhysAddr, phys_to_virt};
-
-
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::klog_warn;
 /// MMIO 别名注册表, 防止同一物理区域被多次映射。
 /// 使用 spin::Mutex (已在内核中广泛使用) 保证线程安全。
 static ALIAS_REGISTRY: IrqSpinLock<AliasRegistry> = IrqSpinLock::new(AliasRegistry::new());
@@ -125,9 +124,40 @@ impl IoMem {
         if bar_phys.as_u64() == 0 {
             return Err("IoMem: PCI BAR is zero (device not configured)");
         }
+
+        // 确保 MMIO 物理地址在内核页表中有映射.
+        // boot.asm 仅映射前 1GB 物理内存到高半区, PCI BAR 地址 (如 0xfebc0000)
+        // 可能超出此范围, 需要动态映射.
+        Self::ensure_mmio_mapped(bar_phys.as_u64(), len);
+
         // SAFETY: PCI BAR 地址由 PCI 枚举保证为有效 MMIO 区域,
-        // 且 identity-mapped 内核中 phys 可直接转为 virt。
+        // 且 ensure_mmio_mapped 已保证页表映射存在.
         unsafe { Self::new(bar_phys, len, name) }
+    }
+
+    /// 确保 MMIO 物理地址范围在内核页表中有映射.
+    /// 使用 2MB 大页映射, 覆盖 [phys, phys + len) 所在的所有 2MB 页.
+    /// 如果映射已存在 (同一 2MB 页), map_huge_page 会安全地跳过或覆盖.
+    fn ensure_mmio_mapped(phys: u64, len: usize) {
+        use crate::kernel::framework::mm::vmm::get_vmm;
+        use crate::kernel::framework::mm::{VirtAddr, PageFlags, PageSize};
+
+        let vmm = get_vmm();
+        let page_2m: u64 = 0x200000;
+        let start_page = phys & !(page_2m - 1);
+        let end = phys + len as u64;
+        let end_page = (end + page_2m - 1) & !(page_2m - 1);
+
+        let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::GLOBAL;
+
+        let mut pa = start_page;
+        while pa < end_page {
+            let va = phys_to_virt(pa);
+            if let Err(e) = vmm.map_huge_page(VirtAddr(va), PhysAddr(pa), flags, PageSize::Size2M) {
+                klog_warn!(Driver, "IoMem: failed to map MMIO 2MB page va={:#x} pa={:#x}: {}", va, pa, e);
+            }
+            pa += page_2m;
+        }
     }
 
     #[inline(always)] pub fn phys(&self) -> PhysAddr { self.phys_base }

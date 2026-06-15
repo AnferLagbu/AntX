@@ -30,7 +30,6 @@ use alloc::vec::Vec;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::framework::{self, Driver};
 use crate::klog_info;
-#[cfg(target_arch = "x86_64")]
 use crate::klog_warn;
 
 /// PCI 存储控制器类码
@@ -323,7 +322,11 @@ pub fn storage_init() -> framework::Result<()> {
 
     for dev in devices {
         if dev.device_id == VIRTIO_ID_BLOCK {
-            if let Some(blk) = virtio::blk::VirtioBlk::new(dev) {
+            if let Some(mut blk) = virtio::blk::VirtioBlk::new(dev) {
+                // I-42: 尝试注册 IRQ 中断驱动路径; 失败时退到 spin-loop 轮询.
+                if let Err(e) = blk.enable_irq() {
+                    klog_warn!(Driver, "virtio-blk: IRQ registration failed: {}, using poll mode", e);
+                }
                 let blk_name = alloc::format!("virtio-blk{}", blk_count);
                 let name_leaked: &'static str = blk_name.leak();
                 let mmio_base = blk.device.iomem.phys().as_u64();

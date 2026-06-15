@@ -329,6 +329,13 @@ impl VirtioMmioDevice {
     pub fn read_config64(&self, offset: usize) -> u64 {
         self.read64(0x100 + offset, 0x100 + offset + 4)
     }
+
+    /// I-42: 读取中断状态并写 ACK 寄存器 (VirtIO MMIO 规范要求).
+    /// 驱动必须在处理完中断后调用此方法, 否则设备不会产生新中断.
+    pub fn ack_interrupt(&self) {
+        let status = self.read32(INTERRUPT_STATUS);
+        self.write32(INTERRUPT_ACK, status);
+    }
 }
 
 /// 扫描 virtio-mmio 区域中的设备.

@@ -792,9 +792,9 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 **剩余工作 (后续阶段)**:
 - [ ] 实测 virtio-blk I/O 中断路径 (需 QEMU + virtio 设备, 当前无 host-test 硬件)
 - [ ] 性能: 4K 写延迟 < 100μs (待 QEMU e2e 验证)
-- [ ] 多 outstanding I/O: completion 改为按 request token 索引的 event 数组
-- [ ] 多实例支持: VIRTIO_BLK_COMPLETION_PTR 改为 (irq → device) 查表
-- [ ] 设备 ISR acknowledge (写 MMIO ISR status 寄存器, 避免重入)
+- [x] 多 outstanding I/O: completion 改为按 request token 索引的 event 数组
+- [x] 多实例支持: VIRTIO_BLK_COMPLETION_PTR 改为 (irq → device) 查表
+- [x] 设备 ISR acknowledge (写 MMIO ISR status 寄存器, 避免重入)
 **完成记录**:
 - 日期: 2026-06-11
 - 提交: ____
@@ -833,7 +833,7 @@ grep -n "RacyCell" src/kernel/framework/proc/user_proc.rs  # 计数 = 0 (仅注�
 - [x] I-43 补: `chitin_register_block` 标 `#[doc(hidden)]`, rustdoc 不导出, 文档层强化 "内部桥接" 语义 (CI build 后仅定义点 + 桥接函数被引用)
 **剩余工作 (后续阶段)**:
 - [ ] 如未来真出现外部 C-ABI 驱动需求, BlockOps 表的 thunk 才是必须的; 当前内核全部为内部 trait dispatch, 可在后续"移除 BlockOps" 优化中彻底消除 thunk
-- [ ] 添加 host-test 验证: 实现一个 mock BlockDevice + 注册 + chitin_blk_read 成功 (已有 mock_blk tests, 见 chitin/mod.rs:917-958)
+- [x] 添加 host-test 验证: 实现一个 mock BlockDevice + 注册 + chitin_blk_read 成功 (host-tests/tests/i43_block_bridge_test.rs, 4 项静态契约验证)
 **完成记录**:
 - 日期: 2026-06-11
 - 提交: ____

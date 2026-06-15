@@ -657,6 +657,8 @@ pub fn klog_get_level() -> LogLevel {
 /// 在任何日志记录前必须且只能调用一次. 调用方保证串口硬件就绪.
 pub unsafe extern "C" fn klog_init() {
     serial_impl::serial_init();
+    // 注册默认 serial sink, 否则 klog_broadcast_bytes 无 sink 可写
+    klog_register_defaults();
     KLOG_INIT.store(true, Ordering::Release);
     klog_output(LogLevel::Info, LogCategory::Boot, b"KLog initialized");
 }

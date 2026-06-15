@@ -28,6 +28,30 @@
 
 ---
 
+## 二-B、2026-06-15 续接工作
+
+| 任务 | 起点 | 终点 | 状态 |
+|------|------|------|------|
+| 注释语言审计 70→0 (TD-22 第二阶段) | 70 违规 | 0 违规 (CI 硬阈值) | ✅ |
+| I-42-1: 设备 ISR acknowledge | 无 ACK, 中断重入 | ack_interrupt() + MMIO ACK | ✅ |
+| I-42-2: 多 outstanding I/O | 单 IoCompletion flag | IoCompletionArray 32-slot | ✅ |
+| I-42-3: 多实例支持 | 单静态指针 | VIRTIO_BLK_REGISTRY[256] 查表 | ✅ |
+| I-43: BlockOps host-test | 无 host-test | 4 项静态契约验证 | ✅ |
+
+**关键改动文件**:
+- `src/kernel/framework/driver/virtio/blk.rs`: ISR acknowledge + IoCompletionArray + IRQ→device 注册表
+- `src/kernel/framework/driver/virtio/mod.rs`: ack_interrupt() 方法
+- `host-tests/tests/i43_block_bridge_test.rs`: 新增 I-43 host-test
+- `scripts/audit_comment_language.py`: 公式/代码引用豁免
+- `ci/audit.sh`: 注释语言审计改为硬阈值
+
+**仍待完成**:
+- 实测 virtio-blk I/O 中断路径 (需 QEMU + virtio 设备)
+- 性能: 4K 写延迟 < 100μs (待 QEMU e2e 验证)
+- BlockOps thunk 移除优化 (未来需求)
+
+---
+
 ## 三、关键发现 (接手必读)
 
 ### 3.1 文档-现实偏离: 19 个分支"标完成"但"未合并"
@@ -54,8 +78,8 @@
 
 **30 < 100**: 当前处于合规状态, 但软告警机制是**临时过渡**, 不是终态. 接手者应:
 1. ~~优先把违规数清到 < 30~~ ✅ 已完成 (2026-06-15)
-2. 移除 `ci/audit.sh` 中的软告警逻辑
-3. 改为硬阈值 (违规 > 0 即失败)
+2. ~~移除 `ci/audit.sh` 中的软告警逻辑~~ ✅ 已完成 (2026-06-15)
+3. ~~改为硬阈值 (违规 > 0 即失败)~~ ✅ 已完成 (2026-06-15)
 
 ### 3.3 注释语言审计的豁免规则已复杂化
 
