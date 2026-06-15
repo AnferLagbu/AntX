@@ -36,6 +36,8 @@ pub mod namespace;
 pub mod cgroup;
 pub mod rlimit;
 pub mod sched;
+/// D3: CFS 调度策略 (权重表 + vruntime + 时间片 + CFS/DL 运行队列)
+pub mod sched_policy;
 pub mod seccomp;
 pub mod session;
 pub mod signal;

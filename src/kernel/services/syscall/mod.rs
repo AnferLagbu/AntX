@@ -18,6 +18,13 @@
 //! 3. 强类型 `SyscallResult<T>` 替代 `i64` 返回码 (POSIX 风格: 负数 = -errno)
 //!
 //! 评估日期: 2026-06-04
+//!
+//! ## T5-2 迁移记录
+//!
+//! linuxulator (编号翻译表 + 参数转换) 已于 2026-06-16 从
+//! framework/syscall/linuxulator.rs 迁移到本目录 linuxulator.rs.
+
+pub mod linuxulator;
 
 use crate::kernel::framework::syscall_init as fw_syscall_init;
 use crate::kernel::framework::userctx::UserContext;

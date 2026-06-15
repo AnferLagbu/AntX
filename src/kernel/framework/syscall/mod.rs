@@ -637,24 +637,15 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             b"getpgid\0"
         ),
         QX_SETSID => dispatch!(
-            match crate::kernel::services::proc::session::setsid_syscall() {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
+            crate::kernel::services::proc::session::proc_setsid(),
             b"setsid\0"
         ),
         QX_GETSID => dispatch!(
-            match crate::kernel::services::proc::session::getsid_syscall(a0 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
+            crate::kernel::services::proc::session::proc_getsid(a0 as i32),
             b"getsid\0"
         ),
         QX_SETPGID => dispatch!(
-            match crate::kernel::services::proc::session::setpgid_syscall(a0 as i32, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
+            crate::kernel::services::proc::session::proc_setpgid(a0 as i32, a1 as i32),
             b"setpgid\0"
         ),
         QX_GETPRIORITY => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
