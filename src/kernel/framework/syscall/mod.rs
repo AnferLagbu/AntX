@@ -38,10 +38,13 @@ pub mod wait4;
 ///   800-899 : 扩展 (QX_*)
 ///
 /// Linux 兼容二进制通过 linuxulator 模块将架构特定编号翻译为 QX_* 编号。
+
+// 公共接口 re-export — 避免跨子系统直接访问内部子模块
+pub use epoll::{EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLRDHUP, epoll_pwake};
 pub mod types;
 
 #[cfg(target_arch = "x86_64")]
-use crate::kernel::framework::idt::types::InterruptFrame;
+use crate::kernel::framework::idt::InterruptFrame;
 use crate::kernel::framework::syscall::types::*;
 use core::sync::atomic::Ordering;
 
@@ -3333,27 +3336,12 @@ fn sys_credo_proc_cputime(pid: u32) -> i64 {
     } else {
         pid
     };
-    use crate::kernel::framework::proc::process::PROCESS_TABLE;
-    use crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX;
-    match PROCESS_TABLE.get(target_pid) {
-        Some(_) => {
-            let current = SCHEDULER_EX
-                .current
-                .load(core::sync::atomic::Ordering::Acquire)
-                as *mut crate::kernel::framework::proc::thread::Thread;
-            if current.is_null() {
-                return -1;
-            }
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            let cputime = unsafe {
-                (*current)
-                    .cpu_time
-                    .load(core::sync::atomic::Ordering::Acquire)
-            };
-            cputime as i64
-        }
-        None => Errno::ESRCH.as_ret(),
+    use crate::kernel::framework::proc::api::{process_exists, scheduler_current_cputime};
+    if !process_exists(target_pid) {
+        return Errno::ESRCH.as_ret();
     }
+    let cputime = scheduler_current_cputime();
+    cputime as i64
 }
 
 // ============================================================================

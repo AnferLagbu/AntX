@@ -17,7 +17,7 @@ use crate::kernel::framework::chitin::firmware::{
     fnv1a_32, FirmwareInfo, MAX_FIRMWARE_SIZE, FW_ERR_IO, FW_ERR_NOT_FOUND,
     FW_ERR_TOO_LARGE,
 };
-use crate::kernel::framework::fs::vfs::api::{vfs_open, vfs_read};
+use crate::kernel::framework::fs::vfs::{vfs_open, vfs_read};
 use crate::kernel::framework::syscall::raw as raw_sync;
 use alloc::vec::Vec;
 use core::ptr;

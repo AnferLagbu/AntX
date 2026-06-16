@@ -24,7 +24,7 @@
 //! # Safety
 //! 此模块直接操作 VGA 显存和硬件端口。
 
-use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::ioport::IoPort;
 use crate::kernel::framework::mm::PhysAddr;
@@ -212,7 +212,7 @@ impl Driver for VgaDriver {
         DeviceType::Char
     }
 
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self) -> DriverResult<()> {
         // 初始化 VGA 显存 IoMem
         // SAFETY: 0xB8000 是 VGA 标准显存物理地址, 内核 identity-map 后可直接访问
         self.iomem = Some(unsafe {
@@ -235,7 +235,7 @@ impl Driver for VgaDriver {
         Ok(())
     }
 
-    fn shutdown(&mut self) -> Result<()> {
+    fn shutdown(&mut self) -> DriverResult<()> {
         self.initialized = false;
         Ok(())
     }

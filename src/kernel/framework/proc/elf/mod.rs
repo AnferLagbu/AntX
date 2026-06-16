@@ -23,7 +23,7 @@
 // P1-I-33: ELF 验证抽到 verify 子模块, 单一来源
 pub mod verify;
 
-use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::api::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::{PageFlags, VirtAddr, PAGE_SIZE};
 
 #[repr(C)]

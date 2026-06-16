@@ -242,7 +242,7 @@ pub fn sys_eventfd_close(fd: i32) -> i64 {
     // TD-04: close 路径必须 epoll_pwake — 否则 epoll_wait 可能永远睡在已关闭 fd 上,
     // 后续 slot 复用时看到的是新 eventfd 的事件, 进程侧拿到 stale fd 句柄.
     // 必须在释放 EFD_TABLE 锁之后再唤醒, 让 epoll_waiter 看到 slot.used=false → EPOLLERR.
-    crate::kernel::framework::syscall::epoll::epoll_pwake(fd);
+    crate::kernel::framework::syscall::epoll_pwake(fd);
 
     crate::klog_debug!(Sync, "[eventfd] Closed fd={}", fd);
     0
@@ -256,7 +256,7 @@ pub fn sys_eventfd_close(fd: i32) -> i64 {
 ///
 /// 返回 EPOLLIN (可读) / EPOLLOUT (可写) 事件掩码
 pub fn eventfd_poll_events(fd: i32) -> u32 {
-    use crate::kernel::framework::syscall::epoll::{EPOLLIN, EPOLLOUT, EPOLLERR};
+    use crate::kernel::framework::syscall::{EPOLLIN, EPOLLOUT, EPOLLERR};
 
     let idx = match fd_to_idx(fd) {
         Some(i) => i,
@@ -380,7 +380,7 @@ fn test_eventfd_semaphore() -> crate::kernel::framework::tests::TestResult {
 #[cfg(feature = "kernel_test")]
 fn test_eventfd_poll() -> crate::kernel::framework::tests::TestResult {
     use crate::kernel::framework::tests::{check, TestResult};
-    use crate::kernel::framework::syscall::epoll::{EPOLLIN, EPOLLOUT};
+    use crate::kernel::framework::syscall::{EPOLLIN, EPOLLOUT};
 
     let fd = sys_eventfd(0, 0);
     check!(fd >= 200, "eventfd for poll ok");

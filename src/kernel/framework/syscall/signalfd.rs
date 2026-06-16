@@ -316,7 +316,7 @@ pub fn sys_signalfd_close(fd: i32) -> i64 {
 ///
 /// 返回 EPOLLIN (有待处理信号) 或 0
 pub fn signalfd_poll_events(fd: i32) -> u32 {
-    use crate::kernel::framework::syscall::epoll::{EPOLLIN, EPOLLERR};
+    use crate::kernel::framework::syscall::{EPOLLIN, EPOLLERR};
 
     let idx = match fd_to_idx(fd) {
         Some(i) => i,

@@ -8,7 +8,6 @@
 
 extern crate alloc;
 
-use crate::kernel::framework::mm::pmm::get_pmm;
 use crate::kernel::framework::mm::vmm::get_vmm;
 use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
 use core::ptr::{self};

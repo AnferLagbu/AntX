@@ -20,8 +20,8 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, HardwareAddress};
 
 use crate::kernel::framework::chitin::proto_net::NetOps;
-use crate::kernel::framework::timer::hrtimer::hrtimer_clock_read;
-use crate::kernel::framework::timer::tick::get_uptime_ms;
+use crate::kernel::framework::timer::hrtimer_clock_read;
+use crate::kernel::framework::timer::get_uptime_ms;
 
 const RX_BUF_SIZE: usize = 2048;
 const TX_BUF_SIZE: usize = 2048;

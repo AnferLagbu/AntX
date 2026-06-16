@@ -28,7 +28,7 @@
 //! # Safety
 //! 此模块直接操作串口硬件端口。
 
-use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
 use crate::kernel::framework::ioport::IoPort;
 
 // ============================================================================
@@ -212,7 +212,7 @@ impl<T: Default + Copy> Default for RingBuffer<T> {
 }
 
 impl<T: Default + Copy> RingBuffer<T> {
-    pub(crate) fn push(&mut self, item: T) -> Result<()> {
+    pub(crate) fn push(&mut self, item: T) -> DriverResult<()> {
         if self.count >= SERIAL_BUFFER_SIZE {
             return Err(DriverError::Busy);
         }
@@ -333,7 +333,7 @@ impl Driver for SerialPort {
         DeviceType::Char
     }
 
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self) -> DriverResult<()> {
         let io = self.io.as_ref().ok_or(DriverError::HardwareError)?;
 
         // 1. 禁用所有中断
@@ -364,7 +364,7 @@ impl Driver for SerialPort {
         Ok(())
     }
 
-    fn shutdown(&mut self) -> Result<()> {
+    fn shutdown(&mut self) -> DriverResult<()> {
         // 禁用所有中断
         if let Some(io) = &self.io {
             io.write_u8(UART_IER, 0x00);
@@ -436,7 +436,7 @@ impl SerialPort {
     ///
     /// # Arguments
     /// * `byte` - 要发送的字节
-    pub fn send_byte(&mut self, byte: u8) -> Result<()> {
+    pub fn send_byte(&mut self, byte: u8) -> DriverResult<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
         }
@@ -455,7 +455,7 @@ impl SerialPort {
     ///
     /// # Arguments
     /// * `s` - 要发送的字符串切片
-    pub fn send_string(&mut self, s: &[u8]) -> Result<usize> {
+    pub fn send_string(&mut self, s: &[u8]) -> DriverResult<usize> {
         for &byte in s {
             self.send_byte(byte)?;
         }
@@ -560,7 +560,7 @@ impl SerialPort {
     }
 
     /// 更新配置并重新初始化
-    pub fn reconfigure(&mut self, new_config: SerialConfig) -> Result<()> {
+    pub fn reconfigure(&mut self, new_config: SerialConfig) -> DriverResult<()> {
         self.config = new_config;
         self.init()
     }

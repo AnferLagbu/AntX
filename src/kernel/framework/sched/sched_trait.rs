@@ -16,7 +16,7 @@
 use core::fmt;
 use core::sync::atomic::Ordering;
 
-use crate::kernel::framework::proc::process::Process;
+use crate::kernel::framework::proc::Process;
 use crate::kernel::framework::proc::types::{Pid, BlockReason};
 
 // ============================================================================

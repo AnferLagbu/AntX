@@ -108,6 +108,11 @@ pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as Drive
 // --- 块设备导出 ---
 pub use block::{BlockDevice, block_device_count, block_device_state, block_device_name, block_device_info, block_device_list};
 
+// --- 显示设备导出 ---
+pub use display::font::Font;
+pub use display::framebuffer::{Color, Framebuffer, Rect, colors};
+pub use display::{get_framebuffer, display_init};
+
 // --- 总线驱动导出 ---
 #[cfg(target_arch = "x86_64")]
 pub use bus::pci;
@@ -115,9 +120,11 @@ pub use bus::pci;
 // --- 字符设备导出 ---
 #[cfg(target_arch = "x86_64")]
 pub use char::{
-    BaudRate, Color, DataBits, ParityMode, SerialConfig, SerialPort, StopBits, TextAttribute,
+    BaudRate, DataBits, ParityMode, SerialConfig, SerialPort, StopBits, TextAttribute,
     VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH,
 };
+#[cfg(target_arch = "x86_64")]
+pub use char::vga::Color as VgaColor;
 #[cfg(target_arch = "aarch64")]
 pub use char::pl011::Pl011Driver;
 

@@ -19,7 +19,7 @@
 //! 此模块直接操作 PS/2 控制器硬件。
 
 use crate::kernel::framework::driver::framework::{inb, outb};
-use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
 use alloc::boxed::Box;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ============================================================================
@@ -257,7 +257,7 @@ impl Default for KeyboardBuffer {
 }
 
 impl KeyboardBuffer {
-    pub(crate) fn push(&mut self, byte: u8) -> Result<()> {
+    pub(crate) fn push(&mut self, byte: u8) -> DriverResult<()> {
         if self.count >= KEYBOARD_BUFFER_SIZE {
             return Err(DriverError::Busy);
         }
@@ -340,7 +340,7 @@ fn wait_output_buffer_full() -> bool {
 
 /// 向 PS/2 控制器发送命令 (待键盘热插拔/重置特性启用后使用)。
 #[allow(dead_code)]
-fn ps2_send_command(cmd: u8) -> Result<()> {
+fn ps2_send_command(cmd: u8) -> DriverResult<()> {
     wait_input_buffer_empty();
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -350,7 +350,7 @@ fn ps2_send_command(cmd: u8) -> Result<()> {
 }
 
 /// 向键盘发送数据
-fn keyboard_send_data(data: u8) -> Result<()> {
+fn keyboard_send_data(data: u8) -> DriverResult<()> {
     wait_input_buffer_empty();
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -395,7 +395,7 @@ impl Driver for KeyboardDriver {
         DeviceType::Input
     }
 
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self) -> DriverResult<()> {
         // 1. 清空输出缓冲区
         let _ = keyboard_read_data();
 
@@ -409,7 +409,7 @@ impl Driver for KeyboardDriver {
         Ok(())
     }
 
-    fn shutdown(&mut self) -> Result<()> {
+    fn shutdown(&mut self) -> DriverResult<()> {
         self.initialized = false;
         Ok(())
     }
@@ -560,7 +560,7 @@ impl KeyboardDriver {
     /// # Returns
     /// * `Ok(usize)` - 实际读取的字符数 (不含换行符)
     /// * `Err(DriverError)` - 错误
-    pub fn read_line(&mut self, buffer: &mut [u8], max_len: usize) -> Result<usize> {
+    pub fn read_line(&mut self, buffer: &mut [u8], max_len: usize) -> DriverResult<usize> {
         let mut count: usize = 0;
 
         loop {

@@ -10,4 +10,5 @@ pub use vfs::*;
 
 // 公共接口 re-export — 避免跨子系统直接访问内部子模块
 pub use inotify::{sys_inotify_init1, sys_inotify_add_watch, sys_inotify_rm_watch, sys_inotify_read, is_inotify_fd, inotify_release};
-pub use flock::{flock_release_fd, sys_flock, FlockResult};
+pub use flock::{flock_release_fd, sys_flock, FlockResult, sys_posix_lock, PosixLockResult, PosixLockConflict, F_GETLK, F_SETLK, F_SETLKW};
+pub use api::{vfs_open, vfs_read, vfs_write, vfs_close, vfs_stat, vfs_fstat, vfs_seek, vfs_readdir, vfs_dup, vfs_dup2, vfs_read_internal, vfs_write_internal};

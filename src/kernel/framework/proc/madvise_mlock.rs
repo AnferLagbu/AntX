@@ -22,7 +22,7 @@
 //! - mlockall(MCL_CURRENT) 对 Guard/Device VMA 跳过
 //! - 全程在 MmStruct.vmas 锁内进行 VMA 状态修改, 避免竞态
 
-use crate::kernel::framework::mm::vma::get_current_mm;
+use crate::kernel::framework::mm::api::vma_get_current_mm;
 
 // ============================================================================
 // madvise advice → Linux 内核常量
@@ -89,7 +89,7 @@ pub fn sys_madvise(addr: u64, len: u64, advice: u32) -> i64 {
         return 0;
     }
 
-    let mm = match get_current_mm() {
+    let mm = match vma_get_current_mm() {
         Some(m) => m,
         None => return Errno::EFAULT.as_ret(),
     };
@@ -124,7 +124,7 @@ pub fn sys_mlock(addr: u64, len: u64) -> i64 {
     }
     let len_usize = len as usize;
 
-    let mm = match get_current_mm() {
+    let mm = match vma_get_current_mm() {
         Some(m) => m,
         None => return Errno::EFAULT.as_ret(),
     };
@@ -151,7 +151,7 @@ pub fn sys_munlock(addr: u64, len: u64) -> i64 {
     }
     let len_usize = len as usize;
 
-    let mm = match get_current_mm() {
+    let mm = match vma_get_current_mm() {
         Some(m) => m,
         None => return Errno::EFAULT.as_ret(),
     };
@@ -172,7 +172,7 @@ pub fn sys_munlock(addr: u64, len: u64) -> i64 {
 pub fn sys_mlockall(flags: u32) -> i64 {
     use crate::kernel::framework::errno::Errno;
 
-    let mm = match get_current_mm() {
+    let mm = match vma_get_current_mm() {
         Some(m) => m,
         None => return Errno::EFAULT.as_ret(),
     };
@@ -191,7 +191,7 @@ pub fn sys_mlockall(flags: u32) -> i64 {
 pub fn sys_munlockall() -> i64 {
     use crate::kernel::framework::errno::Errno;
 
-    let mm = match get_current_mm() {
+    let mm = match vma_get_current_mm() {
         Some(m) => m,
         None => return Errno::EFAULT.as_ret(),
     };
@@ -234,7 +234,7 @@ pub fn sys_mincore(addr: u64, len: u64, vec_ptr: u64) -> i64 {
         return Errno::EFAULT.as_ret();
     }
 
-    let mm = match get_current_mm() {
+    let mm = match vma_get_current_mm() {
         Some(m) => m,
         None => return Errno::EFAULT.as_ret(),
     };

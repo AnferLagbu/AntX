@@ -300,6 +300,21 @@ pub fn process_get_pwm(pid: u32) -> Option<u64> {
     PROCESS_TABLE.with_process(pid, |proc| proc.get_pwm())
 }
 
+/// 获取当前调度线程的 CPU 时间 (纳秒).
+///
+/// 返回 0 表示无法获取.
+pub fn scheduler_current_cputime() -> u64 {
+    let current = SCHEDULER_EX
+        .current
+        .load(core::sync::atomic::Ordering::Acquire)
+        as *mut super::thread::Thread;
+    if current.is_null() {
+        return 0;
+    }
+    // SAFETY: current 是调度器维护的有效线程指针
+    unsafe { (*current).cpu_time.load(core::sync::atomic::Ordering::Acquire) }
+}
+
 /// 设置进程的信号 pending 位.
 ///
 /// 调用方必须先调用 `process_try_inc_ref(pid)` 成功后再调用此函数,

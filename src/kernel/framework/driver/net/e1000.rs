@@ -3,7 +3,7 @@ use core::sync::atomic::AtomicU32;
 
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::driver::DriverError;
-use crate::kernel::framework::driver::{DeviceType, Driver, DriverDriverResult};
+use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
 // I-预存: `iomem` 模块无 cfg gate (见 framework::iomem.rs), IoMem 在两种 build 都可用.
 // 之前误打 cfg, 改成无条件导入.
 use crate::kernel::framework::iomem::IoMem;

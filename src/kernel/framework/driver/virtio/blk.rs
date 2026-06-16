@@ -14,7 +14,7 @@ use crate::klog_info;
 use crate::klog_warn;
 
 #[cfg(target_arch = "x86_64")]
-use crate::kernel::framework::idt::types::InterruptFrame;
+use crate::kernel::framework::idt::InterruptFrame;
 
 // I-42: virtio-blk 默认 IRQ 号 (QEMU virt 机器分配, 启动探测时由设备配置覆盖).
 // 暴露为 pub const 让 boot/PCI 探测代码能改写.

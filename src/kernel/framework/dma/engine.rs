@@ -5,6 +5,7 @@
 //! 采用 `PhysAddr`/`VirtAddr` 类型安全与无锁原子变量.
 
 use super::*;
+use crate::kernel::framework::mm::api::{pmm_alloc_pages_phys, pmm_free_pages_phys};
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -51,7 +52,7 @@ impl DmaEngine {
         for m in mappings.drain(..) {
             if m.is_coherent {
                 let pages = (m.size as u64).div_ceil(PAGE_SIZE);
-                get_pmm().free_pages(m.dma_addr, pages as usize);
+                pmm_free_pages_phys(m.dma_addr, pages as usize);
             }
         }
 
@@ -83,7 +84,7 @@ impl DmaEngine {
 
         let pages = (size as u64).div_ceil(PAGE_SIZE);
 
-        let phys = match get_pmm().alloc_pages(pages as usize) {
+        let phys = match pmm_alloc_pages_phys(pages as usize) {
             Some(p) => p,
             None => {
                 self.stats.coherence_fails.fetch_add(1, Ordering::Relaxed);
@@ -141,7 +142,7 @@ impl DmaEngine {
         let pages = (size as u64).div_ceil(PAGE_SIZE);
 
         if let Some(phys) = phys_addr {
-            get_pmm().free_pages(phys, pages as usize);
+            pmm_free_pages_phys(phys, pages as usize);
         }
 
         mappings.retain(|m| m.cpu_addr != cpu_addr);

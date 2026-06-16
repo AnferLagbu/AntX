@@ -24,10 +24,9 @@
 //! - 内存读取通过物理页映射, 需确保 CR3 有效
 
 use core::sync::atomic::Ordering;
-use crate::kernel::framework::proc::api::process_get_current_pid;
-use crate::kernel::framework::proc::process::PROCESS_TABLE;
+use crate::kernel::framework::proc::api::{process_get_current_pid, process_with};
 use crate::kernel::framework::proc::rlimit::{RLIMIT_CORE, RLIM_INFINITY};
-use crate::kernel::framework::mm::vma;
+use crate::kernel::framework::mm::api;
 use crate::kernel::framework::mm::{PageFlags, PAGE_SIZE};
 
 extern "C" {
@@ -216,8 +215,7 @@ struct CoreSegment {
 /// - `false`: core dump 失败 (RLIMIT_CORE=0, 磁盘满等)
 pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     // 1. 检查 RLIMIT_CORE
-    let core_limit = PROCESS_TABLE
-        .with_process(pid, |p| {
+    let core_limit = process_with(pid, |p| {
             let table = p.rlimit_table.lock();
             table.get(RLIMIT_CORE).map(|r| r.cur).unwrap_or(0)
         })
@@ -358,8 +356,7 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
     let mut segments = alloc::vec::Vec::new();
 
     // 获取进程的 CR3 (页表基址)
-    let cr3 = PROCESS_TABLE
-        .with_process(pid, |p| p.cr3.load(Ordering::SeqCst))
+    let cr3 = process_with(pid, |p| p.cr3.load(Ordering::SeqCst))
         .unwrap_or(0);
 
     if cr3 == 0 {
@@ -368,7 +365,7 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
 
     // 获取当前进程的 VMA 列表
     // SAFETY: get_current_mm 返回的 MmStruct 指针在进程存活期间有效
-    let mm = vma::get_current_mm();
+    let mm = api::vma_get_current_mm();
     if let Some(mm) = mm {
         let vmas = mm.vmas.lock();
         for vma in vmas.iter() {
@@ -486,7 +483,7 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
     prstatus.pr_pid = pid as i32;
 
     // 填充进程信息
-    PROCESS_TABLE.with_process(pid, |p| {
+    process_with(pid, |p| {
         prstatus.pr_ppid = p.parent.map(|pp| pp.0 as i32).unwrap_or(0);
         prstatus.pr_pgrp = p.pgid.load(Ordering::SeqCst) as i32;
         prstatus.pr_sid = p.session_id.load(Ordering::SeqCst) as i32;
@@ -728,8 +725,7 @@ pub fn coredump_allowed() -> bool {
     if pid == 0 {
         return false;
     }
-    PROCESS_TABLE
-        .with_process(pid, |p| {
+    process_with(pid, |p| {
             let table = p.rlimit_table.lock();
             table.get(RLIMIT_CORE).map(|r| r.cur > 0).unwrap_or(false)
         })
@@ -742,8 +738,7 @@ pub fn coredump_limit() -> u64 {
     if pid == 0 {
         return 0;
     }
-    PROCESS_TABLE
-        .with_process(pid, |p| {
+    process_with(pid, |p| {
             let table = p.rlimit_table.lock();
             table.get(RLIMIT_CORE).map(|r| r.cur).unwrap_or(0)
         })

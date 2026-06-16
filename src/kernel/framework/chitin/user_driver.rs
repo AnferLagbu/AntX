@@ -8,7 +8,7 @@ use crate::kernel::framework::credo::capability::{
 };
 use crate::kernel::framework::credo::engine;
 use crate::kernel::framework::credo::types::{CapBits, CapDomain};
-use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::api::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::vmm::get_vmm;
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::kernel::framework::proc::api::{process_dec_ref, process_exists, process_get_cr3, process_get_pwm, process_try_inc_ref};

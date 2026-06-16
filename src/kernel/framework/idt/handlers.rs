@@ -205,9 +205,9 @@ impl ExceptionHandler for PageFaultHandler {
                     // SAFETY: 调用方保证指针/类型有效
                     unsafe { (*frame).err_code },
                 );
-            use crate::kernel::framework::mm::page_fault::PfResult;
+            use crate::kernel::framework::mm::api::PfResult;
             let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-            match crate::kernel::framework::mm::page_fault::handle_user_page_fault(pf_info) {
+            match crate::kernel::framework::mm::api::handle_user_page_fault(pf_info) {
                 PfResult::Fixed => return RecoveryAction::Recovered,
                 PfResult::SignalSegv => return RecoveryAction::TerminateProcess(pid),
                 PfResult::SignalBus => return RecoveryAction::TerminateProcess(pid),

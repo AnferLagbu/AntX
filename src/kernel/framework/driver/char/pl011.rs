@@ -27,7 +27,7 @@
 
 use crate::kernel::framework::arch::aarch64::uart;
 use crate::kernel::framework::chitin::proto_char::CharOps;
-use crate::kernel::framework::driver::{DeviceType, Driver, Result};
+use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
 
 /// PL011 UART 字符设备驱动 (单例)
 ///
@@ -85,7 +85,7 @@ impl Driver for Pl011Driver {
         DeviceType::Char
     }
 
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self) -> DriverResult<()> {
         if self.is_hw_enabled() {
             self.initialized = true;
             return Ok(());
@@ -99,7 +99,7 @@ impl Driver for Pl011Driver {
         Ok(())
     }
 
-    fn shutdown(&mut self) -> Result<()> {
+    fn shutdown(&mut self) -> DriverResult<()> {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(
@@ -115,7 +115,7 @@ impl Driver for Pl011Driver {
         self.initialized
     }
 
-    fn reset(&mut self) -> Result<()> {
+    fn reset(&mut self) -> DriverResult<()> {
         self.shutdown()?;
         self.init()
     }

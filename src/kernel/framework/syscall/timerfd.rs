@@ -34,7 +34,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::types::Errno;
-use crate::kernel::framework::timer::hrtimer::{HrTimer, HrTimerRestart, hrtimer_start, hrtimer_cancel, hrtimer_clock_read};
+use crate::kernel::framework::timer::{HrTimer, HrTimerRestart, hrtimer_start, hrtimer_cancel, hrtimer_clock_read};
 
 // ============================================================================
 // 常量
@@ -474,7 +474,7 @@ fn timerfd_callback(timer: &HrTimer) -> HrTimerRestart {
 ///
 /// 返回 EPOLLIN (有到期事件) 或 0
 pub fn timerfd_poll_events(fd: i32) -> u32 {
-    use crate::kernel::framework::syscall::epoll::{EPOLLIN, EPOLLERR};
+    use crate::kernel::framework::syscall::{EPOLLIN, EPOLLERR};
 
     let idx = match fd_to_idx(fd) {
         Some(i) => i,

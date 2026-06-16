@@ -22,7 +22,7 @@
 //! - 所有 fd 验证在操作前完成
 //! - offset 更新在传输成功后
 
-use crate::kernel::framework::fs::vfs::api;
+use crate::kernel::framework::fs::vfs as vfs_api;
 use crate::kernel::framework::fs::vfs::VFS_MAX_FDS;
 use crate::kernel::framework::fs::vfs::VFS_MANAGER;
 use crate::kernel::framework::ipc::pipe as ipc_pipe;
@@ -135,7 +135,7 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset_ptr: u64, count: usize) -> i
         // 1. 从 in_fd 读取到 bounce buffer
         // 临时设置 in_fd 的 offset
         VFS_MANAGER.set_fd_offset(in_fd as usize, offset);
-        let nread = api::vfs_read_internal(in_fd as u32, bounce.as_mut_ptr(), chunk as u32);
+        let nread = vfs_api::vfs_read_internal(in_fd as u32, bounce.as_mut_ptr(), chunk as u32);
         if nread <= 0 {
             break; // EOF 或错误
         }
@@ -143,7 +143,7 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset_ptr: u64, count: usize) -> i
 
         // 2. 从 bounce buffer 写入 out_fd
         let nwritten = if out_is_vfs {
-            api::vfs_write_internal(out_fd as u32, bounce.as_ptr(), nread as u32)
+            vfs_api::vfs_write_internal(out_fd as u32, bounce.as_ptr(), nread as u32)
         } else {
             // pipe 写端
             let ns = IPC_NAMESPACE.get_mut();
@@ -257,7 +257,7 @@ pub fn sys_splice(
             }
         } else {
             // VFS 文件读取
-            api::vfs_read_internal(fd_in as u32, bounce.as_mut_ptr(), chunk as u32)
+            vfs_api::vfs_read_internal(fd_in as u32, bounce.as_mut_ptr(), chunk as u32)
         };
 
         if nread <= 0 {
@@ -273,7 +273,7 @@ pub fn sys_splice(
                 Err(_) => -1,
             }
         } else {
-            api::vfs_write_internal(fd_out as u32, bounce.as_ptr(), nread as u32)
+            vfs_api::vfs_write_internal(fd_out as u32, bounce.as_ptr(), nread as u32)
         };
 
         if nwritten <= 0 {

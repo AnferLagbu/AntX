@@ -111,12 +111,12 @@ INTERNAL_PATTERNS = [
     r'framework::syscall::ftrace_kgdb',
     r'framework::syscall::posix_timer',
     r'framework::syscall::canary',
-    # fs 内部
-    r'framework::fs::vfs',
+    # fs 内部 — vfs 是 fs 的公共子模块入口, 不标记为内部
+    # fs::vfs::api, fs::vfs::flock, fs::vfs::inotify 等更深层路径由 vfs/mod.rs re-export
     r'framework::fs::ramfs',
     r'framework::fs::devfs',
     r'framework::fs::procfs',
-    # driver 内部
+    # driver 内部 — framework 和 block 已在 driver/mod.rs re-export 为公共 API
     r'framework::driver::display',
     r'framework::driver::storage',
     r'framework::driver::char',
@@ -127,8 +127,6 @@ INTERNAL_PATTERNS = [
     r'framework::driver::power',
     r'framework::driver::uefi',
     r'framework::driver::kexec',
-    r'framework::driver::framework',
-    r'framework::driver::block',
     r'framework::driver::hotplug',
     # sync 内部 (已在 audit_services_boundary.py 覆盖, 此处补充 framework 内部)
     r'framework::sync::raw',
@@ -142,14 +140,13 @@ INTERNAL_PATTERNS = [
     r'framework::net::save',
     # timer 内部
     r'framework::timer::calibration',
-    r'framework::timer::hrtimer',
+    # timer 内部 — hrtimer 已在 timer/mod.rs re-export
     r'framework::timer::pit',
     r'framework::timer::sleep',
-    # idt 内部
+    # idt 内部 — IdtManager 和 InterruptFrame 已在 idt/mod.rs re-export
     r'framework::idt::statistics',
     r'framework::idt::handlers',
     r'framework::idt::safety',
-    r'framework::idt::IdtManager',
     r'framework::idt::types',
 ]
 
@@ -247,7 +244,8 @@ def check_internal_access(base, layer_name):
                             if pattern in import_path:
                                 # 排除自身模块的内部访问
                                 # e.g. framework::mm::pmm 被 framework/mm/ 内部使用是允许的
-                                target_mod = pattern.split('::')[2] if '::' in pattern else ''
+                                # pattern 格式: framework::proc::process → 子系统是 proc (index 1)
+                                target_mod = pattern.split('::')[1] if '::' in pattern else ''
                                 if target_mod == mod:
                                     continue
                                 issues.append({

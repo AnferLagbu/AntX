@@ -20,7 +20,7 @@
 //! ```
 
 #[cfg(target_arch = "x86_64")]
-use crate::kernel::framework::idt::types::InterruptFrame;
+use crate::kernel::framework::idt::InterruptFrame;
 
 
 /// Timer IRQ0 中断处理程序 (仅 x86_64)

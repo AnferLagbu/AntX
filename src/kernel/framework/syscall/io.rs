@@ -5,7 +5,7 @@
 //! - dup / dup2 / dup3: 文件描述符复制
 //! - fcntl: 文件控制
 
-use crate::kernel::framework::fs::vfs::api;
+use crate::kernel::framework::fs::vfs as vfs_api;
 use crate::kernel::framework::ipc::pipe as ipc_pipe;
 use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::types::Errno;
@@ -48,7 +48,7 @@ pub fn sys_dup(oldfd: i32) -> i64 {
     if oldfd < 0 {
         return Errno::EBADF.as_ret();
     }
-    api::vfs_dup(oldfd as u32) as i64
+    vfs_api::vfs_dup(oldfd as u32) as i64
 }
 
 /// dup2 — 复制文件描述符到 newfd
@@ -61,7 +61,7 @@ pub fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
     if oldfd == newfd {
         return newfd as i64;
     }
-    let result = api::vfs_dup2(oldfd as u32, newfd as u32);
+    let result = vfs_api::vfs_dup2(oldfd as u32, newfd as u32);
     if result < 0 {
         return Errno::EBADF.as_ret();
     }
@@ -80,7 +80,7 @@ pub fn sys_dup3(oldfd: i32, newfd: i32, flags: i32) -> i64 {
     }
     // flags 当前被忽略 (未实现 O_CLOEXEC 处理)
     let _ = flags;
-    let result = api::vfs_dup2(oldfd as u32, newfd as u32);
+    let result = vfs_api::vfs_dup2(oldfd as u32, newfd as u32);
     if result < 0 {
         return Errno::EBADF.as_ret();
     }
@@ -130,7 +130,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
 ///   l_len:   i64  (0=到文件末尾)
 ///   l_pid:   i32  (F_GETLK 返回冲突锁的 PID)
 fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
-    use crate::kernel::framework::fs::vfs::flock::{
+    use crate::kernel::framework::fs::vfs::{
         sys_posix_lock, PosixLockResult, F_GETLK,
     };
 
