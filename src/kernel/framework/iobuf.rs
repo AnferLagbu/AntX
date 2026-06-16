@@ -25,7 +25,7 @@
 
 use crate::kernel::framework::config::PAGE_SIZE;
 use crate::kernel::framework::mm::phys_to_virt;
-use crate::kernel::framework::syscall::raw;
+use crate::kernel::framework::mm::api::{pmm_alloc_pages, pmm_free_pages};
 
 /// 内核态 I/O 临时区域 (RAII).
 ///
@@ -60,7 +60,7 @@ impl IobRegion {
             // 4MB 上限保护, 防止恶意/错误请求耗尽物理页
             return None;
         }
-        let phys = raw::alloc_pages(pages);
+        let phys = pmm_alloc_pages(pages as usize);
         if phys.is_null() {
             return None;
         }
@@ -110,7 +110,7 @@ impl Drop for IobRegion {
             // 更简洁: 提供 vaddr_to_phys helper.
             let hhdm_offset = phys_to_virt(0);
             let phys = (self.vaddr as u64).wrapping_sub(hhdm_offset);
-            raw::free_pages(phys as *mut u8, self.pages);
+            pmm_free_pages(phys as *mut u8, self.pages as usize);
         }
     }
 }

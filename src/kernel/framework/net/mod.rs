@@ -1,3 +1,10 @@
+//! 网络子系统
+//!
+//! ## 依赖声明
+//!
+//! framework 内部依赖: sync, syscall, driver
+//! services 依赖: services::net (安全代理)
+
 pub mod driver;
 #[cfg(not(feature = "kernel_test"))]
 pub mod init;

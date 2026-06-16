@@ -7,7 +7,7 @@
 
 #![cfg(target_arch = "x86_64")]
 
-use crate::kernel::framework::driver::framework::{DeviceType, Driver, DriverError};
+use crate::kernel::framework::driver::{DeviceType, Driver, DriverError};
 use crate::klog_info;
 
 struct PciBusDriver;

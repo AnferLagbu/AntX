@@ -4,6 +4,11 @@
 //! 历史: v2.21 分为新 API (OnceLock/OnceCell/IrqSpinLock) + 原 TCB 内部实现,
 //!       v2.22 已将后者全量吸收合并, 11 个子模块物理上统一在 `framework/sync/`.
 //!
+//! ## 依赖声明
+//!
+//! framework 内部依赖: arch, syscall (仅 lockdep)
+//! services 依赖: services::sync (安全代理)
+//!
 //! ## 架构定位
 //!
 //! ```text

@@ -2,14 +2,14 @@
 //!
 //! 服务于 services::net::syscall 调用的 raw unsafe 桥接。
 //! 实际完成:
-//! - 用户空间数据 copy-in/copy-out (依赖 raw::check_user_buf)
+//! - 用户空间数据 copy-in/copy-out (依赖 userptr::validate_user_buf)
 //! - 调 smoltcp 协议栈 (framework::net::init::sm_*)
 //!
 //! services 层通过 framework 层接口访问,本模块是 services/net/syscall.rs 的 TCB 后端.
 
 use crate::kernel::framework::net_socket;
-use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::userptr;
+use crate::kernel::framework::errno::Errno;
 use crate::kernel::framework::mm::copy_user::{copy_from_user as safe_copy_from_user, copy_to_user as safe_copy_to_user};
 
 use crate::kernel::services::net::socket::{SockAddrIn, SockType, Domain};
@@ -20,7 +20,7 @@ use crate::kernel::services::net::socket::{SockAddrIn, SockType, Domain};
 
 /// 从用户空间读 8 字节 sockaddr_in,返回 (SockAddrIn, Errno)
 pub fn raw_read_sockaddr_in(ptr: u64) -> Result<SockAddrIn, Errno> {
-    if ptr == 0 || !raw::check_user_buf(ptr, 8) {
+    if ptr == 0 || !userptr::validate_user_buf(ptr, 8) {
         return Err(Errno::EFAULT);
     }
     let mut buf = [0u8; 8];
@@ -41,7 +41,7 @@ pub fn raw_read_sockaddr_in(ptr: u64) -> Result<SockAddrIn, Errno> {
 
 /// 向用户空间写 8 字节 sockaddr_in
 pub fn raw_write_sockaddr_in(ptr: u64, addr: &SockAddrIn) -> Result<(), Errno> {
-    if ptr == 0 || !raw::check_user_buf(ptr, 8) {
+    if ptr == 0 || !userptr::validate_user_buf(ptr, 8) {
         return Err(Errno::EFAULT);
     }
     let mut out = [0u8; 8];
@@ -60,7 +60,7 @@ pub fn raw_copy_in(ptr: u64, len: u32) -> Result<alloc::vec::Vec<u8>, Errno> {
     if len == 0 {
         return Ok(alloc::vec::Vec::new());
     }
-    if ptr == 0 || !raw::check_user_buf(ptr, len as u64) {
+    if ptr == 0 || !userptr::validate_user_buf(ptr, len as u64) {
         return Err(Errno::EFAULT);
     }
     let mut buf = alloc::vec![0u8; len as usize];
@@ -76,7 +76,7 @@ pub fn raw_copy_out(ptr: u64, len: u32, data: &[u8]) -> Result<u32, Errno> {
     if len == 0 {
         return Ok(0);
     }
-    if ptr == 0 || !raw::check_user_buf(ptr, len as u64) {
+    if ptr == 0 || !userptr::validate_user_buf(ptr, len as u64) {
         return Err(Errno::EFAULT);
     }
     let n = data.len().min(len as usize);
@@ -89,7 +89,7 @@ pub fn raw_copy_out(ptr: u64, len: u32, data: &[u8]) -> Result<u32, Errno> {
 
 /// 读取 4 字节 u32
 pub fn raw_read_u32(ptr: u64) -> Result<u32, Errno> {
-    if ptr == 0 || !raw::check_user_buf(ptr, 4) {
+    if ptr == 0 || !userptr::validate_user_buf(ptr, 4) {
         return Err(Errno::EFAULT);
     }
     // SAFETY: ptr 由 check_user_buf 验证为可读 4 字节
@@ -99,7 +99,7 @@ pub fn raw_read_u32(ptr: u64) -> Result<u32, Errno> {
 
 /// 写入 4 字节 u32
 pub fn raw_write_u32(ptr: u64, v: u32) -> Result<(), Errno> {
-    if ptr == 0 || !raw::check_user_buf(ptr, 4) {
+    if ptr == 0 || !userptr::validate_user_buf(ptr, 4) {
         return Err(Errno::EFAULT);
     }
     // SAFETY: ptr 由 check_user_buf 验证为可写
@@ -113,7 +113,7 @@ pub fn raw_write_u32(ptr: u64, v: u32) -> Result<(), Errno> {
 
 /// 从用户指针读 2 字节 sun_family (大端 u16)
 pub fn raw_read_sun_family(ptr: u64) -> Result<u16, Errno> {
-    if ptr == 0 || !raw::check_user_buf(ptr, 2) {
+    if ptr == 0 || !userptr::validate_user_buf(ptr, 2) {
         return Err(Errno::EFAULT);
     }
     // SAFETY: ptr 由 check_user_buf 验证为可读 2 字节
@@ -129,7 +129,7 @@ pub fn raw_read_sockaddr_un(ptr: u64, addrlen: u32) -> Result<crate::kernel::ser
     if ptr == 0 || addrlen < 2 {
         return Err(Errno::EFAULT);
     }
-    if !raw::check_user_buf(ptr, addrlen as u64) {
+    if !userptr::validate_user_buf(ptr, addrlen as u64) {
         return Err(Errno::EFAULT);
     }
     let mut buf = [0u8; 110];
@@ -166,10 +166,10 @@ pub fn raw_write_sockaddr_un(
     if ptr == 0 || addrlen_ptr == 0 {
         return Err(Errno::EFAULT);
     }
-    if !raw::check_user_buf(ptr, 110) {
+    if !userptr::validate_user_buf(ptr, 110) {
         return Err(Errno::EFAULT);
     }
-    if !raw::check_user_buf(addrlen_ptr, 4) {
+    if !userptr::validate_user_buf(addrlen_ptr, 4) {
         return Err(Errno::EFAULT);
     }
     let mut buf = [0u8; 110];
@@ -296,7 +296,7 @@ pub fn recvfrom_syscall(
 ) -> i64 {
     if fd < 0 { return Errno::EBADF.as_ret(); }
     if buf_ptr == 0 || len == 0 { return Errno::EFAULT.as_ret(); }
-    if !raw::check_user_buf(buf_ptr, len as u64) { return Errno::EFAULT.as_ret(); }
+    if !userptr::validate_user_buf(buf_ptr, len as u64) { return Errno::EFAULT.as_ret(); }
     // 在栈上准备临时缓冲
     const MAX: usize = 4096;
     let want = (len as usize).min(MAX);

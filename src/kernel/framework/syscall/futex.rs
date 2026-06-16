@@ -27,8 +27,6 @@
 use core::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 
-use crate::kernel::framework::proc::scheduler::SCHEDULER;
-
 // ============================================================================
 // Futex 操作码 (与 Linux 兼容)
 // ============================================================================
@@ -301,7 +299,7 @@ fn futex_wait(uaddr: u64, val: i32, _timeout: u64) -> i64 {
     }
 
     // 3. 获取当前 PID
-    let current_pid = SCHEDULER.current().unwrap_or(0);
+    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
     if current_pid == 0 {
         return -(22i64); // -EINVAL
     }

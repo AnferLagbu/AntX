@@ -1383,6 +1383,14 @@ pub static USER_PROC_MANAGER: UserProcManager = UserProcManager::new();
 
 pub fn init() {
     USER_PROC_MANAGER.init();
+
+    // 注册 memlock 限制查询回调, 解耦 mm→proc 依赖
+    // SAFETY: get_memlock_limit 是 'static 函数指针, 在内核运行期间始终有效.
+    unsafe {
+        crate::kernel::framework::rlimit_query::register_memlock_limit(
+            crate::kernel::framework::proc::rlimit::get_memlock_limit,
+        );
+    }
 }
 
 /// 分配一个新的 PID（供 sys_fork 使用）

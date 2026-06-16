@@ -185,10 +185,10 @@ impl HotplugManager {
             .collect();
         drop(slots);
 
-        let blk_count = crate::kernel::framework::driver::block::block_device_count();
+        let blk_count = crate::kernel::framework::driver::block_device_count();
         let mut blk_states: Vec<BlockDeviceState> = Vec::new();
         for d in 0..blk_count as u8 {
-            let (present, removing, io_count) = crate::kernel::framework::driver::block::block_device_state(d);
+            let (present, removing, io_count) = crate::kernel::framework::driver::block_device_state(d);
             blk_states.push(BlockDeviceState {
                 drive: d,
                 present,

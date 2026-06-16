@@ -1,4 +1,9 @@
 // 系统调用分发模块: 大量桩函数待 services 层逐步接入后启用, 保留文件级 allow。
+//
+// ## 依赖声明
+//
+// framework 内部依赖: proc, mm, fs, sync, net, driver, timer, tests, credo, ipc, chitin, barrier
+// services 依赖: services::syscall (安全代理)
 #![allow(dead_code)]
 pub mod api;
 pub mod brk;
@@ -43,14 +48,11 @@ use core::sync::atomic::Ordering;
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
 pub fn validate_user_ptr(ptr: u64) -> bool {
-    ptr > 0 && ptr < USER_ADDR_MAX
+    crate::kernel::framework::userptr::validate_user_ptr(ptr)
 }
 
 pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
-    if len == 0 {
-        return true;
-    }
-    validate_user_ptr(ptr) && ptr + len <= USER_ADDR_MAX
+    crate::kernel::framework::userptr::validate_user_buf(ptr, len)
 }
 
 #[no_mangle]
@@ -69,6 +71,14 @@ pub unsafe extern "C" fn syscall_init() {
             core::ptr::null(),
             0,
             b"POSIX syscall subsystem ready".as_ptr(),
+        );
+    }
+
+    // 注册 epoll 的 fd 关闭通知回调, 解耦 fs→syscall 依赖
+    // SAFETY: epoll_pwake 是 'static 函数指针, 在内核运行期间始终有效.
+    unsafe {
+        crate::kernel::framework::fd_notify::register_pwake(
+            crate::kernel::framework::syscall::epoll::epoll_pwake,
         );
     }
 }
@@ -91,7 +101,7 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     if linuxulator::is_rt_sigreturn(syscall_num) {
         // 从用户栈上的 SignalFrame 恢复寄存器
         // 布局: rsp+0=返回地址, rsp+8=SignalFrame
-        let sigframe_ptr = (f.rsp + 8) as *const crate::kernel::framework::proc::signal::SignalFrame;
+        let sigframe_ptr = (f.rsp + 8) as *const crate::kernel::framework::proc::SignalFrame;
         if !sigframe_ptr.is_null() {
             let sigframe = core::ptr::read_unaligned(sigframe_ptr);
             f.r15 = sigframe.r15;
@@ -130,7 +140,7 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
 
     // 返回用户态前检查待投递信号
     // SAFETY: frame 有效, 当前在当前 CPU 的 syscall 上下文
-    crate::kernel::framework::proc::signal::do_signal_deliver(frame);
+    crate::kernel::framework::proc::do_signal_deliver(frame);
 }
 
 macro_rules! dispatch {
@@ -241,8 +251,8 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
         QX_MREMAP => {
             // 从当前 task 取 MmStruct; 验证后委托 services/mm/mremap
-            use crate::kernel::framework::mm::vma::get_current_mm;
-            match get_current_mm() {
+            use crate::kernel::framework::mm::api::vma_get_current_mm;
+            match vma_get_current_mm() {
                 Some(mm) => {
                     dispatch!(
                         match crate::kernel::services::mm::mremap::mremap_syscall(
@@ -1179,7 +1189,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== inotify syscall (640+) ====================
         QX_INOTIFY_INIT1 => dispatch!(
-            crate::kernel::framework::fs::vfs::inotify::sys_inotify_init1(a0 as i32),
+            crate::kernel::framework::fs::vfs::sys_inotify_init1(a0 as i32),
             b"inotify_init1\0"
         ),
         QX_INOTIFY_ADD_WATCH => dispatch!(
@@ -1187,7 +1197,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             b"inotify_add_watch\0"
         ),
         QX_INOTIFY_RM_WATCH => dispatch!(
-            crate::kernel::framework::fs::vfs::inotify::sys_inotify_rm_watch(a0 as i64, a1 as i32),
+            crate::kernel::framework::fs::vfs::sys_inotify_rm_watch(a0 as i64, a1 as i32),
             b"inotify_rm_watch\0"
         ),
 
@@ -1395,8 +1405,8 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
         return crate::kernel::framework::syscall::timerfd::sys_timerfd_read(fd, buf as u64);
     }
     // inotify read: fd ∈ [260, 268)
-    if crate::kernel::framework::fs::vfs::inotify::is_inotify_fd(fd) {
-        return crate::kernel::framework::fs::vfs::inotify::sys_inotify_read(fd as i64, buf, count as usize);
+    if crate::kernel::framework::fs::vfs::is_inotify_fd(fd) {
+        return crate::kernel::framework::fs::vfs::sys_inotify_read(fd as i64, buf, count as usize);
     }
     crate::kernel::framework::fs::vfs::api::vfs_read(fd as u32, buf, count as u32) as i64
 }
@@ -1460,13 +1470,13 @@ fn sys_close(fd: i32) -> i64 {
         return crate::kernel::framework::syscall::timerfd::sys_timerfd_close(fd);
     }
     // inotify close: fd ∈ [260, 268)
-    if crate::kernel::framework::fs::vfs::inotify::is_inotify_fd(fd) {
-        crate::kernel::framework::fs::vfs::inotify::inotify_release(fd as i64);
+    if crate::kernel::framework::fs::vfs::is_inotify_fd(fd) {
+        crate::kernel::framework::fs::vfs::inotify_release(fd as i64);
         return 0;
     }
     // 释放该 fd 持有的 flock 锁
     let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-    crate::kernel::framework::fs::vfs::flock::flock_release_fd(pid, fd);
+    crate::kernel::framework::fs::vfs::flock_release_fd(pid, fd);
     crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32) as i64
 }
 
@@ -1477,7 +1487,7 @@ fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
     if st_buf.is_null()
         || !raw::check_user_buf(
             st_buf as u64,
-            core::mem::size_of::<crate::kernel::framework::fs::vfs::types::VfsStat>() as u64,
+            core::mem::size_of::<crate::kernel::framework::fs::vfs::VfsStat>() as u64,
         )
     {
         return Errno::EFAULT.as_ret();
@@ -1485,7 +1495,7 @@ fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
     crate::kernel::framework::fs::vfs::api::vfs_stat(
         path,
-        st_buf as *mut crate::kernel::framework::fs::vfs::types::VfsStat,
+        st_buf as *mut crate::kernel::framework::fs::vfs::VfsStat,
         pwm,
     ) as i64
 }
@@ -1494,7 +1504,7 @@ fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
     if st_buf.is_null()
         || !raw::check_user_buf(
             st_buf as u64,
-            core::mem::size_of::<crate::kernel::framework::fs::vfs::types::VfsStat>() as u64,
+            core::mem::size_of::<crate::kernel::framework::fs::vfs::VfsStat>() as u64,
         )
     {
         return Errno::EFAULT.as_ret();
@@ -1502,7 +1512,7 @@ fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
     crate::kernel::framework::fs::vfs::api::vfs_fstat(
         fd as u32,
-        st_buf as *mut crate::kernel::framework::fs::vfs::types::VfsStat,
+        st_buf as *mut crate::kernel::framework::fs::vfs::VfsStat,
         pwm,
     ) as i64
 }
@@ -1514,7 +1524,7 @@ fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
 fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
     crate::kernel::framework::fs::vfs::api::vfs_readdir(
         fd as u32,
-        buf as *mut crate::kernel::framework::fs::vfs::types::VfsDirEntry,
+        buf as *mut crate::kernel::framework::fs::vfs::VfsDirEntry,
     ) as i64
 }
 
@@ -1585,7 +1595,7 @@ fn sys_access(path: *const u8, _mode: i32) -> i64 {
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    let stat_ptr: *mut crate::kernel::framework::fs::vfs::types::VfsStat = unsafe { &mut core::mem::zeroed() };
+    let stat_ptr: *mut crate::kernel::framework::fs::vfs::VfsStat = unsafe { &mut core::mem::zeroed() };
     let result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, stat_ptr, pwm);
     if result < 0 {
         return result as i64;
@@ -1667,13 +1677,10 @@ fn sys_getpriority(which: i32, who: u32) -> i64 {
     } else {
         who
     };
-    use crate::kernel::framework::proc::process::PROCESS_TABLE;
-    let proc = match PROCESS_TABLE.get(pid) {
+    let pri = match crate::kernel::framework::proc::api::process_with(pid, |p| p.get_priority()) {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),
     };
-    // SAFETY: proc 是 NonNull<Process>，get() 已检查 pid 范围与有效性。
-    let pri = unsafe { (*proc).get_priority() };
     priority_to_nice(pri) as i64
 }
 
@@ -1687,15 +1694,11 @@ fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
     } else {
         who
     };
-    use crate::kernel::framework::proc::process::PROCESS_TABLE;
-    let proc = match PROCESS_TABLE.get(pid) {
-        Some(p) => p,
-        None => return Errno::ESRCH.as_ret(),
-    };
     let new_pri = nice_to_priority(clamped);
-    // SAFETY: proc 是 NonNull<Process>，set_priority 修改 Process 内部状态。
-    unsafe { (*proc).set_priority(new_pri) };
-    0
+    match crate::kernel::framework::proc::api::process_with_mut(pid, |p| p.set_priority(new_pri)) {
+        Some(_) => 0,
+        None => Errno::ESRCH.as_ret(),
+    }
 }
 
 fn sys_fork() -> i64 {
@@ -1739,7 +1742,7 @@ fn sys_execve(
     }
 
     // SUID 处理
-    let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::vfs::types::VfsStat>::uninit();
+    let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::vfs::VfsStat>::uninit();
     let current_pwm = crate::kernel::framework::credo::session::get_current_pwm();
     let stat_result =
         crate::kernel::framework::fs::vfs::api::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
@@ -1871,7 +1874,7 @@ fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -
         return Errno::EACCES.as_ret();
     }
 
-    let mm = match crate::kernel::framework::mm::vma::get_current_mm() {
+    let mm = match crate::kernel::framework::mm::api::vma_get_current_mm() {
         Some(m) => m,
         None => {
             let pages = size.div_ceil(4096);
@@ -1897,7 +1900,7 @@ fn sys_munmap(addr: u64, size: u64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    let mm = match crate::kernel::framework::mm::vma::get_current_mm() {
+    let mm = match crate::kernel::framework::mm::api::vma_get_current_mm() {
         Some(m) => m,
         None => {
             let pages = size.div_ceil(4096);
@@ -1955,9 +1958,7 @@ pub fn sys_sched_setaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
 
     // 解析 pid (0 = 当前进程)
     let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::scheduler::SCHEDULER
-            .current()
-            .unwrap_or(0)
+        crate::kernel::framework::proc::api::process_get_current_pid()
     } else if pid > 0 {
         pid as u32
     } else {
@@ -1969,8 +1970,7 @@ pub fn sys_sched_setaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
     }
 
     // 写入 Process.cpuset_allowed
-    let ok = crate::kernel::framework::proc::process::PROCESS_TABLE
-        .with_process(target_pid, |p| {
+    let ok = crate::kernel::framework::proc::api::process_with_mut(target_pid, |p| {
             p.cpuset_allowed.store(mask, Ordering::Release);
         })
         .is_some();
@@ -1997,9 +1997,7 @@ pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
     }
 
     let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::scheduler::SCHEDULER
-            .current()
-            .unwrap_or(0)
+        crate::kernel::framework::proc::api::process_get_current_pid()
     } else if pid > 0 {
         pid as u32
     } else {
@@ -2010,8 +2008,7 @@ pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
         return Errno::ESRCH.as_ret();
     }
 
-    let mask = crate::kernel::framework::proc::process::PROCESS_TABLE
-        .with_process(target_pid, |p| p.cpuset_allowed.load(Ordering::Acquire))
+    let mask = crate::kernel::framework::proc::api::process_with(target_pid, |p| p.cpuset_allowed.load(Ordering::Acquire))
         .unwrap_or(u64::MAX);
 
     if !raw::write_u64_to_user(mask_ptr, mask) {
@@ -2593,8 +2590,7 @@ fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
     }
     let entry_size = core::mem::size_of::<ProcListEntry>() as u32;
     let mut count: i32 = 0;
-    let table = &crate::kernel::framework::proc::process::PROCESS_TABLE;
-    table.for_each(|proc| {
+    crate::kernel::framework::proc::api::process_for_each(|proc| {
         if (count as u32) < max_entries {
             let entry_ptr =
                 // SAFETY: `entry_size` 由调用方保证为有效指针; 只读访问
@@ -2770,7 +2766,7 @@ fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
             continue;
         }
         if pfd.events & POLLIN != 0 {
-            let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
+            let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
             if (pfd.fd as usize) < 256 && fd_table[pfd.fd as usize].used {
                 pfd.revents |= POLLIN;
                 ready += 1;
@@ -2824,7 +2820,7 @@ pub fn sys_kill(pid: i32, sig: i32) -> i64 {
     }
     // 解决 TRACK-315B7C: 移除 pid <= 0 阻塞, 接受 POSIX 4 种 pid 语义
     // (pid>0 单进程, pid=0 同组, pid=-1 全部, pid<-1 |pid| 组).
-    match crate::kernel::framework::proc::signal::do_signal_send_extended(pid, sig as u8) {
+    match crate::kernel::framework::proc::do_signal_send_extended(pid, sig as u8) {
         Ok(_) => 0,
         Err(-1) => Errno::EINVAL.as_ret(),
         Err(-2) => Errno::ESRCH.as_ret(),
@@ -2848,7 +2844,7 @@ fn sys_readlink(
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    let mut st_buf: crate::kernel::framework::fs::vfs::types::VfsStat = unsafe { core::mem::zeroed() };
+    let mut st_buf: crate::kernel::framework::fs::vfs::VfsStat = unsafe { core::mem::zeroed() };
     let result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, &mut st_buf, pwm);
     if result < 0 {
         return Errno::ENOENT.as_ret();
@@ -3001,7 +2997,7 @@ fn sys_fsync(fd: i32) -> i64 {
 // ============================================================================
 
 fn sys_flock(fd: i32, operation: i32) -> i64 {
-    use crate::kernel::framework::fs::vfs::flock::{sys_flock as do_flock, FlockResult};
+    use crate::kernel::framework::fs::vfs::{sys_flock as do_flock, FlockResult};
 
     if fd < 0 {
         return Errno::EBADF.as_ret();
@@ -3009,8 +3005,8 @@ fn sys_flock(fd: i32, operation: i32) -> i64 {
 
     // 获取 fd 对应的 inode 号
     let ino = {
-        let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
-        if (fd as usize) >= crate::kernel::framework::fs::vfs::types::VFS_MAX_FDS || !fd_table[fd as usize].used {
+        let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
+        if (fd as usize) >= crate::kernel::framework::fs::vfs::VFS_MAX_FDS || !fd_table[fd as usize].used {
             return Errno::EBADF.as_ret();
         }
         fd_table[fd as usize].node_id
@@ -3029,7 +3025,7 @@ fn sys_flock(fd: i32, operation: i32) -> i64 {
 
 /// inotify_add_watch 辅助: 从路径参数解析 inode 号
 fn sys_inotify_add_watch(inotify_fd: i64, ino: u32, mask: u32) -> i64 {
-    crate::kernel::framework::fs::vfs::inotify::sys_inotify_add_watch(inotify_fd, ino, mask)
+    crate::kernel::framework::fs::vfs::sys_inotify_add_watch(inotify_fd, ino, mask)
 }
 
 // ============================================================================
@@ -3065,9 +3061,9 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    let pid = match crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
-        Some(p) => p,
-        None => return Errno::ESRCH.as_ret(),
+    let pid = match crate::kernel::framework::proc::api::process_get_current_pid() {
+        0 => return Errno::ESRCH.as_ret(),
+        p => p,
     };
 
     // 读取旧值
@@ -3075,7 +3071,7 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
         if !raw::check_user_buf(oact, 8) {
             return Errno::EFAULT.as_ret();
         }
-        let old = crate::kernel::framework::proc::signal::get_sigaction(pid, signum as u8);
+        let old = crate::kernel::framework::proc::get_sigaction(pid, signum as u8);
         match old {
             // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
             Some(v) => unsafe { raw::write_u64(oact as *mut u64, v) },
@@ -3090,7 +3086,7 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
         }
         // SAFETY: `const` 由调用方保证为有效指针; 只读访问
         let new_action = unsafe { raw::read_u64(act as *const u64) };
-        match crate::kernel::framework::proc::signal::set_sigaction(pid, signum as u8, new_action) {
+        match crate::kernel::framework::proc::set_sigaction(pid, signum as u8, new_action) {
             Some(_) => {}
             None => return Errno::EINVAL.as_ret(), // SIGKILL/SIGSTOP
         }
@@ -3100,9 +3096,9 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
 }
 
 pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
-    let pid = match crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
-        Some(p) => p,
-        None => return Errno::ESRCH.as_ret(),
+    let pid = match crate::kernel::framework::proc::api::process_get_current_pid() {
+        0 => return Errno::ESRCH.as_ret(),
+        p => p,
     };
 
     // 返回旧屏蔽字
@@ -3110,7 +3106,7 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
         if !raw::check_user_buf(oset, 8) {
             return Errno::EFAULT.as_ret();
         }
-        let old = crate::kernel::framework::proc::signal::get_blocked_mask(pid);
+        let old = crate::kernel::framework::proc::get_blocked_mask(pid);
         // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
         unsafe { raw::write_u64(oset as *mut u64, old) };
     }
@@ -3122,7 +3118,7 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
         }
         // SAFETY: `const` 由调用方保证为有效指针; 只读访问
         let new_set = unsafe { raw::read_u64(set as *const u64) };
-        let old = crate::kernel::framework::proc::signal::get_blocked_mask(pid);
+        let old = crate::kernel::framework::proc::get_blocked_mask(pid);
         let updated = match how {
             SIG_BLOCK => old | new_set,
             SIG_UNBLOCK => old & !new_set,
@@ -3131,7 +3127,7 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
         };
         // SIGKILL/SIGSTOP 不可屏蔽
         let updated = updated & !((1u64 << 9) | (1u64 << 19));
-        crate::kernel::framework::proc::signal::set_blocked_mask(pid, updated);
+        crate::kernel::framework::proc::set_blocked_mask(pid, updated);
     }
 
     0
@@ -3140,15 +3136,12 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
 fn sys_rt_sigreturn() -> i64 {
     // P1-I-45 修复: sigreturn 时清除 SS_ONSTACK 标记, 允许下一次信号再次落回替代栈.
     // 必须在恢复寄存器前清, 否则在主栈上再次触发的 SIGSEGV 又会写到已耗尽的替代栈.
-    if let Some(pid) = crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
-        if let Some(proc_ptr) = crate::kernel::framework::proc::process::PROCESS_TABLE.get(pid) {
-            // SAFETY: 进程在表中期间不会释放
-            let proc = unsafe { &*proc_ptr };
-            // 仅清除 SS_ONSTACK 位, 保留 SS_DISABLE
+    if let Some(pid) = Some(crate::kernel::framework::proc::api::process_get_current_pid()).filter(|&p| p != 0) {
+        crate::kernel::framework::proc::api::process_with_mut(pid, |proc| {
             let flags = proc.sigaltstack_flags.load(Ordering::Acquire);
             proc.sigaltstack_flags
-                .store(flags & !crate::kernel::framework::proc::signal::SS_ONSTACK, Ordering::Release);
-        }
+                .store(flags & !crate::kernel::framework::proc::SS_ONSTACK, Ordering::Release);
+        });
     }
     // TODO(TRACK-B29335): 架构相关 — 从信号栈帧恢复原始寄存器状态
     // 当前简化实现: 直接返回 0
@@ -3172,69 +3165,57 @@ fn sys_rt_sigreturn() -> i64 {
 // 用户缓冲有效性: ostack/ss 都走 raw::check_user_buf, 长度 24 (3*u64).
 fn sys_sigaltstack(ss: u64, old_ss: u64) -> i64 {
     use core::sync::atomic::Ordering;
-    use crate::kernel::framework::proc::signal::{SS_DISABLE, SS_ONSTACK};
+    use crate::kernel::framework::proc::{SS_DISABLE, SS_ONSTACK};
 
-    let pid = match crate::kernel::framework::proc::scheduler::SCHEDULER.current() {
-        Some(p) => p,
-        None => return Errno::ESRCH.as_ret(),
+    let pid = match crate::kernel::framework::proc::api::process_get_current_pid() {
+        0 => return Errno::ESRCH.as_ret(),
+        p => p,
     };
 
-    let proc_ptr = match crate::kernel::framework::proc::process::PROCESS_TABLE.get(pid) {
-        Some(p) => p,
-        None => return Errno::ESRCH.as_ret(),
-    };
-
-    // SAFETY: PROCESS_TABLE.get() 返回有效指针, 进程在表中期间不会释放
-    let proc = unsafe { &*proc_ptr };
-
-    // 返回旧值
-    if old_ss != 0 {
-        if !raw::check_user_buf(old_ss, 24) {
-            return Errno::EFAULT.as_ret();
+    let result = crate::kernel::framework::proc::api::process_with_mut(pid, |proc| {
+        // 返回旧值
+        if old_ss != 0 {
+            if !raw::check_user_buf(old_ss, 24) {
+                return Errno::EFAULT.as_ret();
+            }
+            let cur_addr = proc.sigaltstack_addr.load(Ordering::Acquire);
+            let cur_size = proc.sigaltstack_size.load(Ordering::Acquire);
+            let cur_flags = proc.sigaltstack_flags.load(Ordering::Acquire);
+            // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
+            unsafe {
+                raw::write_u64(old_ss as *mut u64, cur_addr);
+                raw::write_u64((old_ss + 8) as *mut u64, cur_flags as u64);
+                raw::write_u64((old_ss + 16) as *mut u64, cur_size);
+            }
         }
-        let cur_addr = proc.sigaltstack_addr.load(Ordering::Acquire);
-        let cur_size = proc.sigaltstack_size.load(Ordering::Acquire);
-        let cur_flags = proc.sigaltstack_flags.load(Ordering::Acquire);
-        // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-        unsafe {
-            raw::write_u64(old_ss as *mut u64, cur_addr);
-            raw::write_u64((old_ss + 8) as *mut u64, cur_flags as u64);
-            raw::write_u64((old_ss + 16) as *mut u64, cur_size);
-        }
-    }
 
-    // 设置新值
-    if ss != 0 {
-        if !raw::check_user_buf(ss, 24) {
-            return Errno::EFAULT.as_ret();
-        }
-        // SAFETY: `const` 由调用方保证为有效指针; 只读访问
-        let new_addr = unsafe { raw::read_u64(ss as *const u64) };
-        let new_flags_in = unsafe { raw::read_u64((ss + 8) as *const u64) } as u32;
-        let new_size = unsafe { raw::read_u64((ss + 16) as *const u64) };
+        // 设置新值
+        if ss != 0 {
+            if !raw::check_user_buf(ss, 24) {
+                return Errno::EFAULT.as_ret();
+            }
+            // SAFETY: `const` 由调用方保证为有效指针; 只读访问
+            let new_addr = unsafe { raw::read_u64(ss as *const u64) };
+            let new_flags_in = unsafe { raw::read_u64((ss + 8) as *const u64) } as u32;
+            let new_size = unsafe { raw::read_u64((ss + 16) as *const u64) };
 
-        if (new_flags_in & SS_DISABLE) != 0 {
-            // 禁用替代栈: 保留 SS_ONSTACK 状态 (POSIX 允许在替代栈上
-            // 执行 sigaltstack(SS_DISABLE) 仅是标记期望, 不主动解套
-            // 当前执行), 但清空 addr/size.
-            proc.sigaltstack_addr.store(0, Ordering::Release);
-            proc.sigaltstack_size.store(0, Ordering::Release);
-            // 保留 SS_ONSTACK 位, 置位 SS_DISABLE
-            let cur = proc.sigaltstack_flags.load(Ordering::Acquire);
-            proc.sigaltstack_flags.store(cur | SS_DISABLE, Ordering::Release);
-        } else {
-            // 启用替代栈: 写入 addr/size, 清除 SS_ONSTACK 与 SS_DISABLE
-            // (回到主栈, 允许下次信号再次落回替代栈)
-            proc.sigaltstack_addr.store(new_addr, Ordering::Release);
-            proc.sigaltstack_size.store(new_size, Ordering::Release);
-            // 保留未识别位, 但清 ONSTACK / DISABLE
-            let cur = proc.sigaltstack_flags.load(Ordering::Acquire);
-            proc.sigaltstack_flags
-                .store(cur & !(SS_ONSTACK | SS_DISABLE), Ordering::Release);
+            if (new_flags_in & SS_DISABLE) != 0 {
+                proc.sigaltstack_addr.store(0, Ordering::Release);
+                proc.sigaltstack_size.store(0, Ordering::Release);
+                let cur = proc.sigaltstack_flags.load(Ordering::Acquire);
+                proc.sigaltstack_flags.store(cur | SS_DISABLE, Ordering::Release);
+            } else {
+                proc.sigaltstack_addr.store(new_addr, Ordering::Release);
+                proc.sigaltstack_size.store(new_size, Ordering::Release);
+                let cur = proc.sigaltstack_flags.load(Ordering::Acquire);
+                proc.sigaltstack_flags
+                    .store(cur & !(SS_ONSTACK | SS_DISABLE), Ordering::Release);
+            }
         }
-    }
+        0i64
+    });
 
-    0
+    result.unwrap_or_else(|| Errno::ESRCH.as_ret())
 }
 
 // ============================================================================
@@ -3565,7 +3546,7 @@ pub(crate) mod raw {
 
     /// 校验用户缓冲区 [ptr, ptr+len) 是否完全在用户空间
     pub fn check_user_buf(ptr: u64, len: u64) -> bool {
-        super::validate_user_buf(ptr, len)
+        crate::kernel::framework::userptr::validate_user_buf(ptr, len)
     }
 
     // ============= 用户态读写助手（unsafe 集中点） =============
@@ -3757,20 +3738,15 @@ pub(crate) mod raw {
     // ============= 物理内存分配 =============
 
     /// 分配 count 个连续物理页。
-    /// # Safety
-    /// FFI 调用，返回的指针是物理地址（需 HHDM 转换）。
+    /// 委托到 mm::api::pmm_alloc_pages.
     pub fn alloc_pages(count: u64) -> *mut u8 {
-        // SAFETY: pmm_alloc_pages 是 C-ABI 物理页分配器，count 个连续
-        // 4KiB 页的分配请求；若失败返回 null。
-        unsafe { pmm_alloc_pages(count) }
+        crate::kernel::framework::mm::api::pmm_alloc_pages(count as usize)
     }
 
     /// 释放 count 个连续物理页。
-    /// # Safety
-    /// FFI 调用，addr 必须是 alloc_pages 返回的同一基址。
+    /// 委托到 mm::api::pmm_free_pages.
     pub fn free_pages(addr: *mut u8, count: u64) {
-        // SAFETY: 调用方已验证 addr 是先前 alloc_pages 的返回值且未释放。
-        unsafe { pmm_free_pages(addr, count) }
+        crate::kernel::framework::mm::api::pmm_free_pages(addr, count as usize)
     }
 
     // ============= 时间 =============

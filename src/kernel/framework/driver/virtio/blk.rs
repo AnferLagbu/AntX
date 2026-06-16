@@ -8,7 +8,7 @@
 
 use super::queue::VirtQueue;
 use super::{VirtioMmioDevice, VIRTIO_ID_BLOCK};
-use crate::kernel::framework::driver::block::BlockDevice;
+use crate::kernel::framework::driver::BlockDevice;
 use crate::kernel::framework::mm::KERNEL_BASE;
 use crate::klog_info;
 use crate::klog_warn;

@@ -28,7 +28,7 @@
 //! # Safety
 //! 此模块直接操作串口硬件端口。
 
-use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::framework::ioport::IoPort;
 
 // ============================================================================

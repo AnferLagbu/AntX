@@ -11,10 +11,9 @@ use crate::kernel::framework::credo::types::{CapBits, CapDomain};
 use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::vmm::get_vmm;
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};
-use crate::kernel::framework::proc::process::PROCESS_TABLE;
+use crate::kernel::framework::proc::api::{process_dec_ref, process_exists, process_get_cr3, process_get_pwm, process_try_inc_ref};
 use crate::klog_info;
 use crate::klog_warn;
-use core::sync::atomic::Ordering;
 
 const MAX_MMIO_SIZE: usize = 256 * 1024 * 1024;
 
@@ -58,7 +57,7 @@ pub fn devtree_bind_user_device(
         return Err(UserDriverError::new(ERR_NOT_AUTHORIZED));
     }
 
-    if PROCESS_TABLE.get(pid).is_none() {
+    if !process_exists(pid) {
         return Err(UserDriverError::new(ERR_NOT_FOUND));
     }
 
@@ -122,14 +121,14 @@ pub fn devtree_unbind_user_device(
 
     if !device_ranges.is_empty() {
         let cr3 = {
-            if !PROCESS_TABLE.try_inc_ref(pid) {
+            if !process_try_inc_ref(pid) {
                 devtree_clear_user_mapped(node_id);
                 return Err(UserDriverError::new(ERR_NOT_FOUND));
             }
-            match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
-                Some(c) if c != 0 => c,
-                _ => {
-                    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+            match process_get_cr3(pid) {
+                Some(c) => c,
+                None => {
+                    process_dec_ref(pid);
                     devtree_clear_user_mapped(node_id);
                     return Err(UserDriverError::new(ERR_NOT_FOUND));
                 }
@@ -145,7 +144,7 @@ pub fn devtree_unbind_user_device(
             }
         }
 
-        PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+        process_dec_ref(pid);
 
         for (start, end) in &device_ranges {
             mm.remove_range(*start, *end);
@@ -208,13 +207,13 @@ pub fn devtree_map_user_device(
         PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER | PageFlags::CACHE_DISABLE;
 
     let cr3 = {
-        if !PROCESS_TABLE.try_inc_ref(pid) {
+        if !process_try_inc_ref(pid) {
             return Err(UserDriverError::new(ERR_NOT_FOUND));
         }
-        match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
+        match process_get_cr3(pid) {
             Some(c) if c != 0 => c,
             _ => {
-                PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+                process_dec_ref(pid);
                 return Err(UserDriverError::new(ERR_NOT_FOUND));
             }
         }
@@ -238,11 +237,11 @@ pub fn devtree_map_user_device(
             let unmap_virt = VirtAddr((map_base + i * PAGE_SIZE as usize) as u64);
             vmm.unmap_page_in_table(cr3, unmap_virt);
         }
-        PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+        process_dec_ref(pid);
         return Err(UserDriverError::new(ERR_OOM));
     }
 
-    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+    process_dec_ref(pid);
 
     klog_info!(
         Driver,
@@ -288,13 +287,13 @@ pub fn devtree_unmap_user_device(
     }
 
     let cr3 = {
-        if !PROCESS_TABLE.try_inc_ref(pid) {
+        if !process_try_inc_ref(pid) {
             return Err(UserDriverError::new(ERR_NOT_FOUND));
         }
-        match PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst)) {
+        match process_get_cr3(pid) {
             Some(c) if c != 0 => c,
             _ => {
-                PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+                process_dec_ref(pid);
                 return Err(UserDriverError::new(ERR_NOT_FOUND));
             }
         }
@@ -310,7 +309,7 @@ pub fn devtree_unmap_user_device(
 
     devtree_clear_user_mapped(node_id);
 
-    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+    process_dec_ref(pid);
 
     Ok(())
 }
@@ -321,7 +320,7 @@ pub fn chitin_forward_irq(node_id: NodeId) -> bool {
         None => return false,
     };
 
-    let pwm = match PROCESS_TABLE.with_process(pid, |proc| proc.get_pwm()) {
+    let pwm = match process_get_pwm(pid) {
         Some(p) => p,
         None => return false,
     };
@@ -366,20 +365,18 @@ pub fn user_driver_unbind(
 /// 信号将在返回用户空间时由信号分发框架处理。
 #[no_mangle]
 pub extern "C" fn process_signal_pending_set(pid: u32, sig: u32) {
-    if !PROCESS_TABLE.try_inc_ref(pid) {
+    if !process_try_inc_ref(pid) {
         return;
     }
-    PROCESS_TABLE.with_process_mut(pid, |proc| {
-        proc.signal_pending_set(sig);
-    });
-    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+    crate::kernel::framework::proc::api::process_signal_pending_set(pid, sig);
+    process_dec_ref(pid);
 }
 
 /// 进程退出时清理所有 Chitin 设备绑定
 /// 遍历设备树, 清除该进程在所有节点上的 user_mapped 标记,
 /// 防止残留标记导致设备节点永远无法被其他进程重新绑定
 #[no_mangle]
-pub extern "C" fn chitin_process_cleanup(pid: u32) {
+pub fn chitin_process_cleanup(pid: u32) {
     devtree_clear_user_mapped_by_pid(pid);
 }
 

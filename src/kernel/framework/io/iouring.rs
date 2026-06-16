@@ -39,7 +39,7 @@ use alloc::vec::Vec;
 
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::errno::Errno;
 
 // ============================================================================
 // 常量

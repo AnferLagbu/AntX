@@ -197,7 +197,7 @@ pub fn storage_init() -> framework::Result<()> {
     // Step 3.5: 将 ATA 磁盘注册到 Chitin (唯一注册入口)
     {
         use crate::kernel::framework::chitin::proto_block;
-        use crate::kernel::framework::driver::block::BlockDevice;
+        use crate::kernel::framework::driver::BlockDevice;
         use crate::kernel::framework::driver::storage::ata_block::AtaBlockDevice;
         for drive in 0..4u8 {
             if let Some(dev) = AtaBlockDevice::new(drive) {
@@ -223,7 +223,7 @@ pub fn storage_init() -> framework::Result<()> {
     // Step 3.6: 将 AHCI 端口注册到 Chitin (唯一注册入口)
     {
         use crate::kernel::framework::chitin::proto_block;
-        use crate::kernel::framework::driver::block::BlockDevice;
+        use crate::kernel::framework::driver::BlockDevice;
         use crate::kernel::framework::driver::storage::ahci_block::AhciBlockDevice;
 
         let mut ahci_ports: Vec<(usize, usize)> = Vec::new();
@@ -262,7 +262,7 @@ pub fn storage_init() -> framework::Result<()> {
     // Step 3.7: 将 NVMe 命名空间注册到 Chitin (唯一注册入口)
     {
         use crate::kernel::framework::chitin::proto_block;
-        use crate::kernel::framework::driver::block::BlockDevice;
+        use crate::kernel::framework::driver::BlockDevice;
         use crate::kernel::framework::driver::storage::nvme_block::NvmeBlockDevice;
 
         let mut nvme_ns: Vec<(usize, u32)> = Vec::new();

@@ -121,3 +121,18 @@ pub mod syscall_init;
 pub mod prelude;
 
 pub mod racy_cell;
+
+/// POSIX Errno 统一入口 (消除子系统对 syscall 的 Errno 依赖)
+pub mod errno;
+
+/// fd 关闭通知接口 (消除 fs 对 syscall::epoll 的直接依赖)
+pub mod fd_notify;
+
+/// 资源限制查询接口 (消除 mm 对 proc::rlimit 的直接依赖)
+pub mod rlimit_query;
+
+/// 全局 tick 查询接口 (消除 barrier 对 proc::scheduler 的直接依赖)
+pub mod tick_query;
+
+/// 进程退出清理回调接口 (消除 proc 对 chitin::user_driver 的直接依赖)
+pub mod process_cleanup;

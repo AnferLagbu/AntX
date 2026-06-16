@@ -183,3 +183,59 @@ impl<T> UserRefMut<T> {
         self.ptr.is_null()
     }
 }
+
+// ============================================================================
+// 用户指针验证 — 从 syscall::raw 提取到统一入口
+// ============================================================================
+
+/// 用户态地址最大值 (规范形式)
+const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_F000;
+
+/// 验证单个用户态指针是否在合法范围.
+#[inline]
+pub fn validate_user_ptr(ptr: u64) -> bool {
+    ptr > 0 && ptr < USER_ADDR_MAX
+}
+
+/// 验证用户态缓冲区 [ptr, ptr+len) 是否完全在用户空间.
+#[inline]
+pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
+    if len == 0 {
+        return true;
+    }
+    validate_user_ptr(ptr) && ptr + len <= USER_ADDR_MAX
+}
+
+/// Safe 包装: 向用户空间写入一个 Copy 结构体.
+///
+/// 内部先 `validate_user_buf` 验证, 再 `ptr::write_unaligned` 写入.
+pub fn write_struct_to_user<T: Copy>(dst_ptr: u64, src: &T) -> bool {
+    if dst_ptr == 0 {
+        return false;
+    }
+    let size = core::mem::size_of::<T>() as u64;
+    if !validate_user_buf(dst_ptr, size) {
+        return false;
+    }
+    // SAFETY: validate_user_buf 已验证 dst_ptr 指向的 user 缓冲
+    // 至少有 size_of::<T>() 字节可写, 且 src 持有有效 T 值.
+    unsafe { core::ptr::write_unaligned(dst_ptr as *mut T, *src) };
+    true
+}
+
+/// Safe 包装: 从用户空间读取一个 Copy 结构体.
+///
+/// 内部先 `validate_user_buf` 验证, 再 `ptr::read_unaligned` 读取.
+pub fn read_struct_from_user<T: Copy>(src_ptr: u64, dst: &mut T) -> bool {
+    if src_ptr == 0 {
+        return false;
+    }
+    let size = core::mem::size_of::<T>() as u64;
+    if !validate_user_buf(src_ptr, size) {
+        return false;
+    }
+    // SAFETY: validate_user_buf 已验证 src_ptr 指向的 user 缓冲
+    // 至少有 size_of::<T>() 字节可读.
+    *dst = unsafe { core::ptr::read_unaligned(src_ptr as *const T) };
+    true
+}

@@ -2,6 +2,11 @@
 //!
 //! kernel/mm 的 Rust 重写 (PMM, VMM, Kmalloc)
 //! 提供物理内存管理、虚拟内存映射以及内核堆分配, 附带内存安全保证.
+//!
+//! ## 依赖声明
+//!
+//! framework 内部依赖: sync, syscall, proc, tests
+//! services 依赖: services::mm (安全代理)
 
 extern crate alloc;
 

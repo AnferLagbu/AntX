@@ -2,8 +2,8 @@
 use core::sync::atomic::AtomicU32;
 
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::driver::framework::DriverError;
-use crate::kernel::framework::driver::framework::{DeviceType, Driver, Result};
+use crate::kernel::framework::driver::DriverError;
+use crate::kernel::framework::driver::{DeviceType, Driver, DriverDriverResult};
 // I-预存: `iomem` 模块无 cfg gate (见 framework::iomem.rs), IoMem 在两种 build 都可用.
 // 之前误打 cfg, 改成无条件导入.
 use crate::kernel::framework::iomem::IoMem;
@@ -148,7 +148,7 @@ pub struct E1000Device {
     rx_count: u64,
     isr_count: u64,
     link_change_count: u64,
-    info: crate::kernel::framework::driver::framework::DeviceInfo,
+    info: crate::kernel::framework::driver::DeviceInfo,
     initialized: bool,
 }
 
@@ -171,7 +171,7 @@ impl Default for E1000Device {
             rx_count: 0,
             isr_count: 0,
             link_change_count: 0,
-            info: crate::kernel::framework::driver::framework::DeviceInfo::new(
+            info: crate::kernel::framework::driver::DeviceInfo::new(
                 "Intel E1000",
                 DeviceType::Network,
             ),
@@ -250,7 +250,7 @@ fn read_mac_address(dev: &mut E1000Device) {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-fn setup_descriptor_rings(dev: &mut E1000Device) -> Result<()> {
+fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
     extern "C" {
         fn kmalloc_align(size: u64, align: u64) -> *mut u8;
     }
@@ -368,7 +368,7 @@ impl Driver for E1000Device {
     }
 
     #[cfg(not(feature = "kernel_test"))]
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self) -> DriverResult<()> {
         if self.iomem.is_none() {
             return Err(DriverError::NotInitialized);
         }
@@ -490,12 +490,12 @@ impl Driver for E1000Device {
     }
 
     #[cfg(feature = "kernel_test")]
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self) -> DriverResult<()> {
         self.initialized = true;
         Ok(())
     }
 
-    fn shutdown(&mut self) -> Result<()> {
+    fn shutdown(&mut self) -> DriverResult<()> {
         if !self.initialized || self.iomem.is_none() {
             self.initialized = false;
             return Ok(());
@@ -533,7 +533,7 @@ impl E1000Device {
     }
 
     #[cfg(not(feature = "kernel_test"))]
-    pub fn probe(&mut self) -> Result<()> {
+    pub fn probe(&mut self) -> DriverResult<()> {
         extern "C" {
             fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16;
             fn pci_read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32;
@@ -635,7 +635,7 @@ impl E1000Device {
     }
 
     #[cfg(not(feature = "kernel_test"))]
-    pub fn send_packet(&mut self, data: &[u8]) -> Result<usize> {
+    pub fn send_packet(&mut self, data: &[u8]) -> DriverResult<usize> {
         if !self.is_ready() {
             return Err(DriverError::NotInitialized);
         }
@@ -850,7 +850,7 @@ impl E1000Device {
         )
     }
 
-    pub fn get_info(&self) -> &crate::kernel::framework::driver::framework::DeviceInfo {
+    pub fn get_info(&self) -> &crate::kernel::framework::driver::DeviceInfo {
         &self.info
     }
 }

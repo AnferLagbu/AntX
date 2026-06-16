@@ -306,7 +306,7 @@ fn posix_timer_callback(timer: &HrTimer) -> HrTimerRestart {
 ///
 /// 返回 0 = 成功, 负数 = errno
 pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 {
-    use crate::kernel::framework::syscall::types::Errno;
+    use crate::kernel::framework::errno::Errno;
 
     if clockid != CLOCK_REALTIME && clockid != CLOCK_MONOTONIC {
         return Errno::EINVAL.as_ret();
@@ -314,7 +314,7 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
     if timer_id_ptr == 0 {
         return Errno::EFAULT.as_ret();
     }
-    if !crate::kernel::framework::syscall::raw::check_user_buf(
+    if !crate::kernel::framework::userptr::validate_user_buf(
         timer_id_ptr,
         core::mem::size_of::<i32>() as u64,
     ) {
@@ -324,7 +324,7 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
     // 解析 sigevent
     let mut sigev = Sigevent::default();
     if sigev_ptr != 0 {
-        if !crate::kernel::framework::syscall::raw::check_user_buf(
+        if !crate::kernel::framework::userptr::validate_user_buf(
             sigev_ptr,
             core::mem::size_of::<Sigevent>() as u64,
         ) {
@@ -398,8 +398,8 @@ pub fn sys_timer_settime(
     new_value_ptr: u64,
     old_value_ptr: u64,
 ) -> i64 {
-    use crate::kernel::framework::syscall::raw;
-    use crate::kernel::framework::syscall::types::Errno;
+    use crate::kernel::framework::userptr;
+    use crate::kernel::framework::errno::Errno;
 
     let idx = match id_to_idx(timer_id) {
         Some(i) => i,
@@ -413,7 +413,7 @@ pub fn sys_timer_settime(
     // 读取新值
     let new_value = if new_value_ptr != 0 {
         let mut v = Itimerspec::zeroed();
-        if !raw::read_struct_from_user(new_value_ptr, &mut v) {
+        if !userptr::read_struct_from_user(new_value_ptr, &mut v) {
             return Errno::EFAULT.as_ret();
         }
         v
@@ -447,7 +447,7 @@ pub fn sys_timer_settime(
             it_value_sec: (remaining_ns / 1_000_000_000) as i64,
             it_value_nsec: (remaining_ns % 1_000_000_000) as i64,
         };
-        if !raw::write_struct_to_user(old_value_ptr, &old) {
+        if !userptr::write_struct_to_user(old_value_ptr, &old) {
             return Errno::EFAULT.as_ret();
         }
     }
@@ -495,8 +495,8 @@ pub fn sys_timer_settime(
 
 /// timer_gettime — 获取 timer 状态 (剩余时间 + interval)
 pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
-    use crate::kernel::framework::syscall::raw;
-    use crate::kernel::framework::syscall::types::Errno;
+    use crate::kernel::framework::userptr;
+    use crate::kernel::framework::errno::Errno;
 
     let idx = match id_to_idx(timer_id) {
         Some(i) => i,
@@ -526,7 +526,7 @@ pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
         it_value_sec: (remaining_ns / 1_000_000_000) as i64,
         it_value_nsec: (remaining_ns % 1_000_000_000) as i64,
     };
-    if !raw::write_struct_to_user(curr_value_ptr, &curr) {
+    if !userptr::write_struct_to_user(curr_value_ptr, &curr) {
         return Errno::EFAULT.as_ret();
     }
     0
@@ -534,7 +534,7 @@ pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
 
 /// timer_delete — 释放 timer
 pub fn sys_timer_delete(timer_id: i32) -> i64 {
-    use crate::kernel::framework::syscall::types::Errno;
+    use crate::kernel::framework::errno::Errno;
 
     let idx = match id_to_idx(timer_id) {
         Some(i) => i,
@@ -568,7 +568,7 @@ pub fn sys_timer_delete(timer_id: i32) -> i64 {
 /// POSIX 语义: overrun = (实际到期次数) - 1 (正常情况下一次)。
 /// 当前实现: 总是返回 0 (我们没有维护 read 标记, 单次信号模式够用)。
 pub fn sys_timer_getoverrun(timer_id: i32) -> i64 {
-    use crate::kernel::framework::syscall::types::Errno;
+    use crate::kernel::framework::errno::Errno;
 
     let idx = match id_to_idx(timer_id) {
         Some(i) => i,
@@ -590,8 +590,8 @@ pub fn sys_timer_getoverrun(timer_id: i32) -> i64 {
 /// QueenX 内置两种时钟: CLOCK_REALTIME (TICK 精度) / CLOCK_MONOTONIC (TICK 精度)
 /// 分辨率 = 1 tick = 1ms (hrtimer 配置, 暂以 1ms 作为标称分辨率)。
 pub fn sys_clock_getres(clockid: i32, res_ptr: u64) -> i64 {
-    use crate::kernel::framework::syscall::raw;
-    use crate::kernel::framework::syscall::types::Errno;
+    use crate::kernel::framework::userptr;
+    use crate::kernel::framework::errno::Errno;
 
     if clockid != CLOCK_REALTIME && clockid != CLOCK_MONOTONIC {
         return Errno::EINVAL.as_ret();
@@ -608,7 +608,7 @@ pub fn sys_clock_getres(clockid: i32, res_ptr: u64) -> i64 {
         it_value_sec: 0,
         it_value_nsec: 1_000_000,
     };
-    if !raw::write_struct_to_user(res_ptr, &res) {
+    if !userptr::write_struct_to_user(res_ptr, &res) {
         return Errno::EFAULT.as_ret();
     }
     0

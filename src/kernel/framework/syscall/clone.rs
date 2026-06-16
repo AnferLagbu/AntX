@@ -24,8 +24,6 @@
 use crate::kernel::framework::proc::api;
 use crate::kernel::framework::proc::api::raw;
 use crate::kernel::framework::proc::types::ProcessState;
-use crate::kernel::framework::proc::process::{PROCESS_TABLE};
-use crate::kernel::framework::proc::scheduler::SCHEDULER;
 use crate::kernel::framework::syscall::types::Errno;
 
 use core::sync::atomic::Ordering;
@@ -63,9 +61,9 @@ pub const CLONE_NEW_ALL: u64 =
 /// `child_tidptr`: 子进程 TID 指针
 /// `tls`: TLS 地址
 pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr: u64, tls: u64) -> i64 {
-    let parent_pid = match SCHEDULER.current() {
-        Some(p) => p,
-        None => return Errno::ECHILD.as_ret(),
+    let parent_pid = match api::process_get_current_pid() {
+        0 => return Errno::ECHILD.as_ret(),
+        p => p,
     };
 
     // 如果没有 CLONE_VM, 行为等同于 fork
@@ -77,7 +75,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
 
         // 如果指定了 child_stack, 修改子进程的 RSP
         if child_stack != 0 {
-            let _ = PROCESS_TABLE.with_process(child_pid, |p| {
+            let _ = api::process_with_mut(child_pid, |p| {
                 let mut ctx = p.context.lock();
                 ctx.rsp = child_stack;
             });
@@ -94,7 +92,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
         // D1: CLONE_NEW* — 为子进程创建新 namespace
         let new_ns_flags = flags & CLONE_NEW_ALL;
         if new_ns_flags != 0 {
-            let _ = PROCESS_TABLE.with_process(child_pid, |p| {
+            let _ = api::process_with_mut(child_pid, |p| {
                 let parent_ns = {
                     // 子进程已通过 fork 继承了父进程的 namespace
                     // 现在根据 CLONE_NEW* 创建新实例
@@ -109,8 +107,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     }
 
     // CLONE_VM: 共享地址空间 (创建线程)
-    let parent_cr3 = PROCESS_TABLE
-        .with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst))
+    let parent_cr3 = api::process_with(parent_pid, |p| p.cr3.load(Ordering::SeqCst))
         .unwrap_or(0);
     if parent_cr3 == 0 {
         return Errno::ENOMEM.as_ret();
@@ -123,8 +120,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     }
 
     // 克隆父进程名称
-    let name_str = PROCESS_TABLE
-        .with_process(parent_pid, |p| {
+    let name_str = api::process_with(parent_pid, |p| {
             let name = p.name.lock();
             alloc::string::String::clone(&*name)
         })
@@ -138,8 +134,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     child.cr3.store(parent_cr3, Ordering::SeqCst);
 
     // 复制父进程属性
-    let (parent_pwm, parent_sched_policy, parent_rt_priority) = PROCESS_TABLE
-        .with_process(parent_pid, |p| {
+    let (parent_pwm, parent_sched_policy, parent_rt_priority) = api::process_with(parent_pid, |p| {
             (
                 p.pwm.load(Ordering::SeqCst),
                 p.sched_policy.load(Ordering::SeqCst),
@@ -152,7 +147,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     child.rt_priority.store(parent_rt_priority, Ordering::SeqCst);
 
     // 添加到父进程的子进程列表
-    PROCESS_TABLE.with_process(parent_pid, |p| {
+    api::process_with_mut(parent_pid, |p| {
         p.children.lock().push(crate::kernel::framework::proc::types::ProcessId(child_pid));
     });
 
@@ -164,18 +159,16 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
 
     // 复制父进程的内核栈
     {
-        let parent_kstack = PROCESS_TABLE
-            .with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
+        let parent_kstack = api::process_with(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
             .unwrap_or(0);
         let child_kstack = child.kernel_stack.load(Ordering::SeqCst);
         let stack_size: usize = 65536;
         raw::copy_kstack(child_kstack, parent_kstack, stack_size);
-        crate::kernel::framework::proc::process::kernel_stack_write_canary(child_kstack);
+        api::kernel_stack_write_canary(child_kstack);
     }
 
     // 复制上下文, 修改 RAX=0 (子进程返回 0)
-    let parent_ctx = PROCESS_TABLE
-        .with_process(parent_pid, |p| *p.context.lock())
+    let parent_ctx = api::process_with(parent_pid, |p| *p.context.lock())
         .unwrap();
     {
         let mut child_ctx = child.context.lock();
@@ -194,7 +187,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     }
 
     // 注册到进程表
-    PROCESS_TABLE.insert(child as *const crate::kernel::framework::proc::process::Process as *mut crate::kernel::framework::proc::process::Process);
+    api::process_insert(child as *const crate::kernel::framework::proc::process::Process as *mut crate::kernel::framework::proc::process::Process);
 
     // CLONE_PARENT_SETTID
     if flags & CLONE_PARENT_SETTID != 0 && parent_tidptr != 0 {
@@ -206,7 +199,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
 
     // 添加到调度器
     let _ = child.set_state_safe(ProcessState::Ready);
-    SCHEDULER.add_to_run_queue(child_pid);
+    api::scheduler_add_to_run_queue(child_pid);
 
     crate::klog_debug!(Process, "[clone] parent={} child={} flags=0x{:X} (CLONE_VM)", parent_pid, child_pid, flags);
 

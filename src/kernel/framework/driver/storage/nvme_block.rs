@@ -3,7 +3,7 @@
 //! 将 NVMe 命名空间封装为标准的 BlockDevice trait 实现，
 //! 使 HvFS 等多磁盘文件系统可以通过统一接口访问 NVMe 磁盘。
 
-use crate::kernel::framework::driver::block::BlockDevice;
+use crate::kernel::framework::driver::BlockDevice;
 
 use super::NVME_CONTROLLERS;
 

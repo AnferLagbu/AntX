@@ -106,7 +106,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
         F_GETFD => 0,
         F_SETFD => 0,
         F_GETFL => {
-            let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
+            let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
             if (fd as usize) < 256 && fd_table[fd as usize].used {
                 fd_table[fd as usize].flags as i64
             } else {
@@ -170,8 +170,8 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
 
     // 获取 fd 对应的 inode 号
     let ino = {
-        let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
-        if (fd as usize) >= crate::kernel::framework::fs::vfs::types::VFS_MAX_FDS || !fd_table[fd as usize].used {
+        let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
+        if (fd as usize) >= crate::kernel::framework::fs::vfs::VFS_MAX_FDS || !fd_table[fd as usize].used {
             return Errno::EBADF.as_ret();
         }
         fd_table[fd as usize].node_id
@@ -182,8 +182,8 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
         0 => l_start as u64, // SEEK_SET
         1 => {
             // SEEK_CUR: 当前 offset + l_start
-            let fd_table = crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER.fd_table.lock();
-            if (fd as usize) >= crate::kernel::framework::fs::vfs::types::VFS_MAX_FDS {
+            let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
+            if (fd as usize) >= crate::kernel::framework::fs::vfs::VFS_MAX_FDS {
                 return Errno::EBADF.as_ret();
             }
             (fd_table[fd as usize].offset as i64 + l_start) as u64

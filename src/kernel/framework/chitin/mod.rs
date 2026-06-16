@@ -65,6 +65,21 @@ pub mod proto_net;
 pub mod user_driver;
 pub mod firmware;
 
+// ── BlockDevice Trait (设备框架层定义, driver::block re-export) ──
+
+/// 块设备统一接口, 由所有存储驱动实现.
+///
+/// 定义在 chitin (设备框架) 而非 driver (具体驱动), 因为:
+/// - chitin 是设备框架, 负责定义设备协议
+/// - driver 是具体驱动实现, 实现 chitin 定义的 trait
+/// - 消除 chitin→driver 循环依赖
+pub trait BlockDevice: Send + Sync {
+    fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32;
+    fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32;
+    fn blk_is_present(&self) -> bool;
+    fn blk_total_sectors(&self) -> u64;
+}
+
 // ── 协议类型 ──
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -768,6 +783,14 @@ fn driver_from_obj<'a>(ptr: *mut u8) -> &'a mut dyn Driver {
 }
 
 pub fn chitin_init_all() {
+    // 注册进程退出清理回调, 解耦 proc→chitin 依赖
+    // SAFETY: chitin_process_cleanup 是 'static 函数指针, 在内核运行期间始终有效.
+    unsafe {
+        crate::kernel::framework::process_cleanup::register_process_cleanup(
+            crate::kernel::framework::chitin::user_driver::chitin_process_cleanup,
+        );
+    }
+
     let mut devices = CHITIN_DEVICES.lock();
     for dev in devices.iter_mut() {
         if dev.state == DeviceState::Uninit && !dev.driver_data.is_null() {

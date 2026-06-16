@@ -9,7 +9,7 @@
 use core::sync::atomic::Ordering;
 
 use crate::kernel::framework::net::types::NET_CONFIGURED;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::errno::Errno;
 
 // ============================================================================
 // re-export services 层类型与函数

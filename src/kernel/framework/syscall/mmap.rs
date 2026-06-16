@@ -22,7 +22,7 @@
 //! ```
 
 use super::types::*;
-use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::api::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::{PageFlags as VmaFlags, PAGE_SIZE};
 
 // ============================================================================

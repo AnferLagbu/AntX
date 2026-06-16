@@ -27,7 +27,7 @@ use crate::kernel::services::fs::devfs::DevfsData;
 use crate::kernel::framework::mm::{pcache, PAGE_SIZE};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
 use crate::kernel::framework::lib::cstr::CStrExt;
-use crate::kernel::framework::syscall::epoll as fw_epoll;
+use crate::kernel::framework::fd_notify;
 
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)
 const PCACHE_FAST_MAX_BYTES: usize = 64 * 1024;
@@ -246,7 +246,7 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     };
     super::inotify::inotify_notify(node_id, close_mask, "", false);
     // C1: fd 关闭 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLHUP|EPOLLERR)
-    fw_epoll::epoll_pwake(fd_idx as i32);
+    fd_notify::notify_fd_close(fd_idx as i32);
     0
 }
 
@@ -477,7 +477,7 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
         match fs.fs_write(node_id, offset, user_buf.as_slice(), pwm) {
             Ok(n) => {
                 VFS_MANAGER.set_fd_offset(fd_idx as usize, offset + n as u64);
-                fw_epoll::epoll_pwake(fd_idx as i32);
+                fd_notify::notify_fd_close(fd_idx as i32);
                 super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
                 n as i32
             }

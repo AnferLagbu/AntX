@@ -173,9 +173,7 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
     let sigmask = sigmask & !((1u128 << 8) | (1u128 << 18));
 
     // 获取当前 PID
-    let current_pid = crate::kernel::framework::proc::scheduler::SCHEDULER
-        .current()
-        .unwrap_or(0) as u32;
+    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
     if current_pid == 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -233,9 +231,7 @@ pub fn sys_signalfd_read(fd: i32, buf: u64) -> i64 {
         None => return Errno::EBADF.as_ret(),
     };
 
-    let current_pid = crate::kernel::framework::proc::scheduler::SCHEDULER
-        .current()
-        .unwrap_or(0) as u32;
+    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
     if current_pid == 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -327,9 +323,7 @@ pub fn signalfd_poll_events(fd: i32) -> u32 {
         None => return EPOLLERR,
     };
 
-    let current_pid = crate::kernel::framework::proc::scheduler::SCHEDULER
-        .current()
-        .unwrap_or(0) as u32;
+    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
 
     let table = SFD_TABLE.lock();
     let slot = &table.slots[idx];
@@ -352,19 +346,14 @@ pub fn signalfd_poll_events(fd: i32) -> u32 {
 
 /// 获取进程 pending 信号位图
 fn get_process_pending(pid: u32) -> u128 {
-    use crate::kernel::framework::proc::process::PROCESS_TABLE;
-
-    PROCESS_TABLE
-        .with_process(pid as u32, |proc| proc.signal_pending_get() as u128)
+    crate::kernel::framework::proc::api::process_with(pid, |proc| proc.signal_pending_get() as u128)
         .unwrap_or(0)
 }
 
 /// 清除进程指定信号的 pending 位
 fn clear_process_pending(pid: u32, signo: u32) {
-    use crate::kernel::framework::proc::process::PROCESS_TABLE;
-
     let bit = 1u64 << (signo - 1);
-    PROCESS_TABLE.with_process(pid as u32, |proc| {
+    crate::kernel::framework::proc::api::process_with_mut(pid, |proc| {
         proc.signal_pending_clear(bit);
     });
 }

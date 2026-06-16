@@ -23,8 +23,8 @@ pub use crate::kernel::services::proc::rlimit::{
 
 use crate::kernel::framework::proc::api::process_get_current_pid;
 use crate::kernel::framework::proc::process::PROCESS_TABLE;
-use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::userptr;
+use crate::kernel::framework::errno::Errno;
 
 // ============================================================================
 // 系统调用实现 (含 unsafe 用户指针操作, 必须留在 framework)
@@ -53,8 +53,13 @@ pub fn sys_getrlimit(resource: i32, rlim_ptr: u64) -> i64 {
         None => return Errno::ESRCH.as_ret(),
     };
 
-    if !raw::write_rlimit_to_user(rlim_ptr, rlim.cur, rlim.max) {
+    if !userptr::validate_user_buf(rlim_ptr, 16) {
         return Errno::EFAULT.as_ret();
+    }
+    // SAFETY: rlim_ptr 已验证 16 字节可写
+    unsafe {
+        core::ptr::write_volatile(rlim_ptr as *mut u64, rlim.cur);
+        core::ptr::write_volatile((rlim_ptr as *mut u64).add(1), rlim.max);
     }
     0
 }
@@ -72,7 +77,7 @@ pub fn sys_setrlimit(resource: i32, rlim_ptr: u64) -> i64 {
     }
 
     // 从用户空间读取 rlim_cur 和 rlim_max
-    if !raw::check_user_buf(rlim_ptr, 16) {
+    if !userptr::validate_user_buf(rlim_ptr, 16) {
         return Errno::EFAULT.as_ret();
     }
     // SAFETY: rlim_ptr 已验证可读, 16 字节

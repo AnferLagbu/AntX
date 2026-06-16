@@ -23,8 +23,8 @@
 //! - offset 更新在传输成功后
 
 use crate::kernel::framework::fs::vfs::api;
-use crate::kernel::framework::fs::vfs::types::VFS_MAX_FDS;
-use crate::kernel::framework::fs::vfs::vfs::VFS_MANAGER;
+use crate::kernel::framework::fs::vfs::VFS_MAX_FDS;
+use crate::kernel::framework::fs::vfs::VFS_MANAGER;
 use crate::kernel::framework::ipc::pipe as ipc_pipe;
 use crate::kernel::framework::ipc::IPC_NAMESPACE;
 use crate::kernel::framework::syscall::types::Errno;

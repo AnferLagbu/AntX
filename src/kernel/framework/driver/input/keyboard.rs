@@ -19,7 +19,7 @@
 //! 此模块直接操作 PS/2 控制器硬件。
 
 use crate::kernel::framework::driver::framework::{inb, outb};
-use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use alloc::boxed::Box;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 // ============================================================================

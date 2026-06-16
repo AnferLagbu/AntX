@@ -416,3 +416,17 @@ pub fn kmalloc_stats(stats: *mut u8) {
 pub fn kmalloc_dump() {
     get_kmalloc().dump_stats();
 }
+
+// ============================================================
+// VMA 公共接口
+// ============================================================
+
+/// 获取当前进程的内存描述符.
+///
+/// 通过公共 api 层访问, 避免直接引用 `mm::vma::get_current_mm`.
+pub fn vma_get_current_mm() -> Option<&'static super::vma::MmStruct> {
+    super::vma::get_current_mm()
+}
+
+// VMA 类型 re-export — 避免跨子系统直接引用 mm::vma 内部类型
+pub use super::vma::{MmStruct, Vma, VmaType};

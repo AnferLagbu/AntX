@@ -2,6 +2,11 @@
 //!
 //! 唯一允许 `unsafe` 的进程管理底层实现。对应 `services/proc/` 安全代理。
 //!
+//! ## 依赖声明
+//!
+//! framework 内部依赖: mm, sync, syscall, config, idt, sched, barrier, tests
+//! services 依赖: services::proc (安全代理)
+//!
 //! ## 架构
 //!
 //! ```text
@@ -65,11 +70,13 @@ pub mod user_proc;
 // USER_STACK_SIZE: types(usize) 对比 user_proc(u64)
 // init: scheduler vs user_proc
 pub use crate::kernel::framework::barrier::*;
+pub use canary::*;
 pub use posix_timer::*;
 pub use process::*;
 pub use scheduler::*;
 pub use scheduler_ex::*;
 pub use session::*;
+pub use signal::*;
 pub use thread::*;
 pub use types::*;
 pub use user_proc::*;

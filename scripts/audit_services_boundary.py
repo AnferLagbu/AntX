@@ -309,6 +309,95 @@ def generate_report(issues, file_count):
     return '\n'.join(report)
 
 
+def check_services_inter_module_deps():
+    """检查 services 子模块间的依赖合理性."""
+    issues = []
+    modules = []
+
+    for d in sorted(BASE.iterdir()):
+        if d.is_dir() and (d / 'mod.rs').exists():
+            modules.append(d.name)
+
+    # services 子模块间允许的依赖 (白名单)
+    # 格式: (源, 目标) → 允许
+    ALLOWED_INTER_DEPS = {
+        # fs 依赖 sync 是合理的 (锁原语)
+        ('fs', 'sync'),
+        # proc 依赖 sync 是合理的
+        ('proc', 'sync'),
+        # net 依赖 sync 是合理的
+        ('net', 'sync'),
+        # driver 依赖 sync 是合理的
+        ('driver', 'sync'),
+        # ipc 依赖 sync 是合理的
+        ('ipc', 'sync'),
+        # credo 依赖 sync 是合理的
+        ('credo', 'sync'),
+        # mm 依赖 sync 是合理的
+        ('mm', 'sync'),
+        # chitin 依赖 sync 是合理的
+        ('chitin', 'sync'),
+        # barrier 依赖 sync 是合理的
+        ('barrier', 'sync'),
+        # storage 依赖 sync 是合理的
+        ('storage', 'sync'),
+        # io 依赖 sync 是合理的
+        ('io', 'sync'),
+        # debug 依赖 sync 是合理的
+        ('debug', 'sync'),
+        # syscall 依赖 sync 是合理的
+        ('syscall', 'sync'),
+        # proc 依赖 config 是合理的
+        ('proc', 'config'),
+        # mm 依赖 config 是合理的
+        ('mm', 'config'),
+        # fs 依赖 config 是合理的
+        ('fs', 'config'),
+        # ipc 依赖 proc 是合理的 (进程间通信)
+        ('ipc', 'proc'),
+        # fs 依赖 credo 是合理的 (权限检查)
+        ('fs', 'credo'),
+        # driver 依赖 mm 是合理的 (DMA 映射)
+        ('driver', 'mm'),
+        # driver 依赖 config 是合理的
+        ('driver', 'config'),
+        # barrier 依赖 credo 是合理的 (故障恢复权限检查)
+        ('barrier', 'credo'),
+    }
+
+    for mod in modules:
+        mod_dir = BASE / mod
+        for rs_file in sorted(mod_dir.rglob('*.rs')):
+            try:
+                with open(rs_file, 'r', encoding='utf-8', errors='replace') as f:
+                    for lineno, line in enumerate(f, 1):
+                        stripped = line.strip()
+                        if stripped.startswith('//') or stripped.startswith('/*'):
+                            continue
+                        m = re.match(r'^\s*use\s+(.*?);', line)
+                        if not m:
+                            continue
+                        import_path = m.group(1)
+                        for other_mod in modules:
+                            if other_mod == mod:
+                                continue
+                            pattern = f'services::{other_mod}'
+                            if pattern in import_path:
+                                if (mod, other_mod) not in ALLOWED_INTER_DEPS:
+                                    issues.append({
+                                        'file': str(rs_file),
+                                        'line': lineno,
+                                        'severity': 'MEDIUM',
+                                        'type': 'UNLISTED_INTER_MODULE_DEP',
+                                        'message': f'services::{mod} 依赖 services::{other_mod} 未在白名单中, 需审查合理性',
+                                        'code': line.strip()[:200],
+                                    })
+            except Exception:
+                continue
+
+    return issues
+
+
 def main():
     if not BASE.exists():
         print(f'ERROR: {BASE} not found', file=sys.stderr)
@@ -316,6 +405,11 @@ def main():
 
     print(f'扫描 {BASE} ...')
     issues, file_count = scan_directory(BASE)
+
+    # 新增: services 子模块间依赖合理性检查
+    inter_issues = check_services_inter_module_deps()
+    issues.extend(inter_issues)
+
     report = generate_report(issues, file_count)
     print(report)
 

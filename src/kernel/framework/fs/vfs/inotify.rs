@@ -9,7 +9,7 @@
 //! - 迁移到: services/fs/inotify.rs (策略逻辑, 0 unsafe)
 //! - 保留在 framework: sys_inotify_read (用户缓冲区写入, 需要 unsafe)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::errno::Errno;
 
 // Re-export 所有公共类型与函数
 pub use crate::kernel::services::fs::inotify::{

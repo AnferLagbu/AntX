@@ -27,7 +27,7 @@
 
 use crate::kernel::framework::arch::aarch64::uart;
 use crate::kernel::framework::chitin::proto_char::CharOps;
-use crate::kernel::framework::driver::framework::{DeviceType, Driver, Result};
+use crate::kernel::framework::driver::{DeviceType, Driver, Result};
 
 /// PL011 UART 字符设备驱动 (单例)
 ///

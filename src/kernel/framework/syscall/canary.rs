@@ -16,7 +16,7 @@
 //! - `getrandom` 写用户 buffer, copy_to_user 异常路径被覆盖
 //! - `get_canary` 不写内存, 单纯返回 8 字节, 无内存风险
 
-use crate::kernel::framework::proc::canary;
+use crate::kernel::framework::proc;
 
 /// `getrandom(buf, buflen, flags)` — 熵源读取
 ///
@@ -32,7 +32,7 @@ use crate::kernel::framework::proc::canary;
 pub fn sys_getrandom(arg0: u64, arg1: u64, _arg2: u64) -> i64 {
     let buf = arg0;
     let len = arg1 as usize;
-    canary::get_random_bytes(buf, len) as i64
+    proc::get_random_bytes(buf, len) as i64
 }
 
 /// `get_canary(buf, buflen)` — 读取当前进程 8 字节 stack canary, 写入用户 buffer
@@ -61,5 +61,5 @@ pub fn sys_getrandom(arg0: u64, arg1: u64, _arg2: u64) -> i64 {
 /// 的 aarch64 codegen bug. 阻止内联后, 整个链路隔离到独立 codegen 单元.
 #[inline(never)]
 pub fn sys_get_canary(arg0: u64, arg1: u64) -> i64 {
-    canary::write_canary_to_user(arg0, arg1 as usize)
+    proc::write_canary_to_user(arg0, arg1 as usize)
 }

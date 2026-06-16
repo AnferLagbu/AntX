@@ -7,26 +7,23 @@
 //! Chitin 是唯一的设备驱动框架. 块设备通过 `proto_block::register_block_device`
 //! 注册到 Chitin, HvFS 通过 `chitin_blk_read/write` 直接 I/O.
 //!
+//! `BlockDevice` trait 定义在 chitin (设备框架) 中, 本模块 re-export 保持兼容.
 //! 本模块保留:
-//! - `BlockDevice` trait: 驱动实现接口
+//! - `BlockDevice` re-export: 保持调用方路径兼容
 //! - `hdd_*` 函数: 向后兼容的 Chitin 代理
 //! - SMP 安全基础设施: 用于 `safe_unregister`
 //!
-//! `REGISTRY` 仅在 `safe_unregister` 需要时使用, 不再是 I/O 主路径。
+//! `REGISTRY` 仅在 `safe_unregister` 需要时使用, 不再是 I/O 主路径.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
-use crate::kernel::framework::fs::vfs::types::{KernelError, KernelResult};
-// ── BlockDevice Trait ──
+use crate::kernel::framework::fs::vfs::{KernelError, KernelResult};
 
-pub trait BlockDevice: Send + Sync {
-    fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32;
-    fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32;
-    fn blk_is_present(&self) -> bool;
-    fn blk_total_sectors(&self) -> u64;
-}
+// ── BlockDevice Trait (定义在 chitin, 此处 re-export) ──
+
+pub use crate::kernel::framework::chitin::BlockDevice;
 
 // ── SMP 安全基础设施 ──
 //

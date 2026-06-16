@@ -268,6 +268,116 @@ pub fn process_get_current_pid() -> u32 {
     SCHEDULER.current().unwrap_or(0)
 }
 
+/// 检查指定 PID 的进程是否存在.
+#[inline]
+pub fn process_exists(pid: u32) -> bool {
+    PROCESS_TABLE.get(pid).is_some()
+}
+
+/// 尝试增加进程引用计数, 返回是否成功.
+#[inline]
+pub fn process_try_inc_ref(pid: u32) -> bool {
+    PROCESS_TABLE.try_inc_ref(pid)
+}
+
+/// 减少进程引用计数, 若计数归零则释放.
+#[inline]
+pub fn process_dec_ref(pid: u32) {
+    PROCESS_TABLE.dec_ref_and_maybe_free(pid);
+}
+
+/// 在持有引用期间读取进程的 CR3 页表基址, 返回 None 表示进程不存在或 cr3 为 0.
+///
+/// 调用方必须先调用 `process_try_inc_ref(pid)` 成功后再调用此函数,
+/// 使用完毕后调用 `process_dec_ref(pid)`.
+pub fn process_get_cr3(pid: u32) -> Option<u64> {
+    PROCESS_TABLE.with_process(pid, |proc| proc.cr3.load(Ordering::SeqCst))
+        .filter(|&c| c != 0)
+}
+
+/// 读取进程的 PWM (凭证标识), 返回 None 表示进程不存在.
+pub fn process_get_pwm(pid: u32) -> Option<u64> {
+    PROCESS_TABLE.with_process(pid, |proc| proc.get_pwm())
+}
+
+/// 设置进程的信号 pending 位.
+///
+/// 调用方必须先调用 `process_try_inc_ref(pid)` 成功后再调用此函数,
+/// 使用完毕后调用 `process_dec_ref(pid)`.
+pub fn process_signal_pending_set(pid: u32, sig: u32) {
+    PROCESS_TABLE.with_process_mut(pid, |proc| {
+        proc.signal_pending_set(sig);
+    });
+}
+
+/// 对指定进程执行只读闭包操作, 返回闭包结果.
+///
+/// 通过公共 api 层访问进程, 避免直接引用 `proc::process::PROCESS_TABLE`.
+/// 返回 None 表示进程不存在.
+pub fn process_with<F, R>(pid: u32, f: F) -> Option<R>
+where
+    F: FnOnce(&super::process::Process) -> R,
+{
+    PROCESS_TABLE.with_process(pid, f)
+}
+
+/// 对指定进程执行可变闭包操作, 返回闭包结果.
+///
+/// 返回 None 表示进程不存在.
+pub fn process_with_mut<F, R>(pid: u32, f: F) -> Option<R>
+where
+    F: FnOnce(&mut super::process::Process) -> R,
+{
+    PROCESS_TABLE.with_process_mut(pid, f)
+}
+
+/// 遍历所有进程, 对每个进程执行闭包.
+///
+/// 闭包返回 false 时停止遍历.
+pub fn process_for_each<F>(f: F)
+where
+    F: FnMut(&super::process::Process) -> bool,
+{
+    PROCESS_TABLE.for_each(f);
+}
+
+/// 获取进程的原始指针 (用于需要直接访问进程的场景).
+///
+/// 返回 None 表示进程不存在.
+/// 调用方必须确保进程在访问期间不会被释放.
+pub fn process_get_raw(pid: u32) -> Option<*const super::process::Process> {
+    PROCESS_TABLE.get(pid).map(|p| p as *const _)
+}
+
+/// 释放子进程 PCB (wait4 回收).
+///
+/// 仅在进程状态为 Zombie 时调用.
+pub fn process_remove_and_free(pid: u32) {
+    PROCESS_TABLE.remove_and_free(pid);
+}
+
+/// 将进程注册到进程表.
+///
+/// 用于 clone 等需要手动创建进程后注册的场景.
+pub fn process_insert(process: *mut super::process::Process) -> bool {
+    PROCESS_TABLE.insert(process)
+}
+
+/// 写入内核栈金丝雀值.
+pub fn kernel_stack_write_canary(stack_top: u64) {
+    super::process::kernel_stack_write_canary(stack_top);
+}
+
+/// 解除进程阻塞 (加入就绪队列).
+pub fn scheduler_unblock(pid: u32) {
+    SCHEDULER.unblock(pid);
+}
+
+/// 将进程加入就绪队列.
+pub fn scheduler_add_to_run_queue(pid: u32) {
+    SCHEDULER.add_to_run_queue(pid);
+}
+
 #[no_mangle]
 pub fn process_get_by_pid(_pid: u32) -> u64 {
     if _pid as u64 == C_CURRENT_PROCESS.map(|p| p.pid) {
@@ -710,6 +820,14 @@ pub fn scheduler_tick() {
 pub fn scheduler_init() {
     super::scheduler::init();
     SCHEDULER_EX.init();
+
+    // 注册 tick 查询回调, 解耦 barrier→proc::scheduler 依赖
+    // SAFETY: get_tick 是 'static 函数指针, 在内核运行期间始终有效.
+    unsafe {
+        crate::kernel::framework::tick_query::register_tick_query(
+            crate::kernel::framework::proc::scheduler::get_tick,
+        );
+    }
     // D2: 初始化 cgroup 子系统
     super::cgroup::cgroup_init();
     // D3: 初始化 NUMA 拓扑 (UMA 回退, 后续接入 ACPI SRAT)
@@ -723,14 +841,8 @@ pub fn scheduler_init() {
     crate::kernel::framework::driver::power::pm_init(
         crate::kernel::framework::config::MAX_CPUS as u32,
     );
-    // D6: 初始化安全启动 + TPM
-    {
-        use crate::kernel::framework::credo::secure_boot::{secure_boot_init, tpm_init, Ed25519PubKey};
-        // 默认平台密钥 (全零, 开发阶段)
-        let default_pk = Ed25519PubKey::new([0u8; 32]);
-        secure_boot_init(default_pk);
-        tpm_init();
-    }
+    // D6: 初始化安全启动 + TPM (移至 credo_init, 消除 proc→credo 依赖)
+    crate::kernel::framework::credo::credo_init();
     // D7: 初始化 CET (Shadow Stack)
     crate::kernel::framework::arch::shadow_stack::cet_init();
     // D8: 初始化 Tickless (NO_HZ)

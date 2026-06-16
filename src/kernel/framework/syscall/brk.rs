@@ -6,7 +6,7 @@
 use core::sync::atomic::AtomicU64;
 
 use crate::kernel::framework::syscall::types::Errno;
-use crate::kernel::framework::mm::vma;
+use crate::kernel::framework::mm::api;
 
 /// 用户空间最大地址
 #[cfg(target_arch = "x86_64")]
@@ -27,7 +27,7 @@ static BRK: AtomicU64 = AtomicU64::new(0x400000 + 65536);
 pub fn sys_brk(addr: u64) -> i64 {
     if addr == 0 {
         // 返回当前 brk (VMA 优先)
-        if let Some(mm) = vma::get_current_mm() {
+        if let Some(mm) = api::vma_get_current_mm() {
             return mm.brk.load(core::sync::atomic::Ordering::Acquire) as i64;
         }
         return BRK.load(core::sync::atomic::Ordering::SeqCst) as i64;
@@ -38,7 +38,7 @@ pub fn sys_brk(addr: u64) -> i64 {
     }
 
     // VMA 路径: 通过 MmStruct 扩展/收缩堆
-    if let Some(mm) = vma::get_current_mm() {
+    if let Some(mm) = api::vma_get_current_mm() {
         match mm.set_brk(addr as usize) {
             Ok(new_brk) => return new_brk as i64,
             Err(_) => return Errno::ENOMEM.as_ret(),

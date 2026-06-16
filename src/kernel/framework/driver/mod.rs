@@ -9,6 +9,11 @@
 //! - **显示设备**: HDMI、DisplayPort等显示接口
 //! - **USB设备**: USB主机控制器和设备
 //!
+//! ## 依赖声明
+//!
+//! framework 内部依赖: sync, mm, io, chitin, pci, net, timer, tests
+//! services 依赖: services::driver (安全代理)
+//!
 //! ## 架构设计
 //!
 //! ```text
@@ -99,6 +104,9 @@ pub mod uefi;
 
 // --- 框架导出 ---
 pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as DriverResult};
+
+// --- 块设备导出 ---
+pub use block::{BlockDevice, block_device_count, block_device_state, block_device_name, block_device_info, block_device_list};
 
 // --- 总线驱动导出 ---
 #[cfg(target_arch = "x86_64")]

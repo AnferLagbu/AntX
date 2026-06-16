@@ -113,6 +113,12 @@ const MAX_LIMITS: usize = 32;
 
 pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// 获取当前全局 tick 计数 (供 tick_query 注册回调使用).
+#[inline]
+pub fn get_tick() -> u64 {
+    TICK_COUNT.load(Ordering::SeqCst)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedPolicy {
     Normal = 0,

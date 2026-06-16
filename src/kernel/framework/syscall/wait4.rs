@@ -21,9 +21,7 @@
 //! 非阻塞模式 (WNOHANG) 通过 SCHEDULER.block + 调度器轮询实现.
 
 use crate::kernel::framework::proc::api;
-use crate::kernel::framework::proc::process::PROCESS_TABLE;
 use crate::kernel::framework::proc::types::ProcessState;
-use crate::kernel::framework::proc::scheduler;
 use crate::kernel::framework::syscall::types::Errno;
 use crate::kernel::framework::syscall::raw;
 
@@ -38,7 +36,7 @@ pub const WCONTINUED: i32 = 0x8;
 ///
 /// 返回子进程 PID, 或错误 (ECHILD/EINTR).
 pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
-    let current_pid = scheduler::SCHEDULER.current().unwrap_or(0);
+    let current_pid = api::process_get_current_pid();
     if current_pid == 0 {
         return Errno::ECHILD.as_ret();
     }
@@ -68,14 +66,12 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
     };
 
     // 检查子进程是否已退出
-    let state = PROCESS_TABLE
-        .with_process(child_pid, |p| p.get_state())
+    let state = api::process_with(child_pid, |p| p.get_state())
         .unwrap_or(ProcessState::Terminated);
 
     if state == ProcessState::Zombie {
         // 子进程已退出, 收集状态
-        let exit_code = PROCESS_TABLE
-            .with_process(child_pid, |p| p.exit_code.load(Ordering::SeqCst))
+        let exit_code = api::process_with(child_pid, |p| p.exit_code.load(Ordering::SeqCst))
             .unwrap_or(0);
 
         // 写入 wstatus (WIFEXITED | exit_code << 8)
@@ -88,7 +84,7 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
         }
 
         // 释放子进程 PCB
-        PROCESS_TABLE.remove_and_free(child_pid);
+        api::process_remove_and_free(child_pid);
         return child_pid as i64;
     }
 
@@ -105,14 +101,12 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
 ///
 /// 根据 pid 参数匹配, 返回 PID 或 None.
 fn find_waitable_child(parent_pid: u32, target_pid: i32) -> Option<u32> {
-    let children = PROCESS_TABLE
-        .with_process(parent_pid, |p| p.children.lock().clone())
+    let children = api::process_with(parent_pid, |p| p.children.lock().clone())
         .unwrap_or_default();
 
     for &child in children.iter() {
         let child_pid = child.0;
-        let state = PROCESS_TABLE
-            .with_process(child_pid, |p| p.get_state())
+        let state = api::process_with(child_pid, |p| p.get_state())
             .unwrap_or(ProcessState::Terminated);
 
         // 只匹配未结束的子进程 (或 Zombie 用于收割)

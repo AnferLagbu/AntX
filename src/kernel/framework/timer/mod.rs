@@ -7,7 +7,10 @@
 //! - **高精度计时**: 基于 TSC 的纳秒级测量
 //! - **HrTimer**: 纳秒级高精度定时器框架
 //!
-//! ## 架构设计
+//! ## 依赖声明
+//!
+//! framework 内部依赖: sync, tests, idt, proc, irq
+//! services 依赖: 无直接 services 代理
 //!
 //! ```text
 //! Timer Subsystem

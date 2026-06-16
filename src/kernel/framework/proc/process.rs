@@ -7,7 +7,6 @@ use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use super::scheduler::SchedPolicy;
 use super::rlimit::RlimitTable;
 use super::types::*;
-use crate::kernel::framework::chitin::user_driver::chitin_process_cleanup;
 
 // ============================================================================
 // 进程级 FD 分配策略 (P1-I-01 提取)
@@ -572,7 +571,7 @@ impl ProcessTable {
     /// 由最后的 dec_ref_and_maybe_free 调用完成实际释放。
     /// 全程持有 table lock 以防止与 dec_ref_and_maybe_free 竞争。
     pub fn remove_and_free(&self, pid: Pid) {
-        chitin_process_cleanup(pid);
+        crate::kernel::framework::process_cleanup::notify_process_exit(pid);
         let mut table = self.processes.lock();
         if pid as usize >= MAX_PROCESSES {
             return;

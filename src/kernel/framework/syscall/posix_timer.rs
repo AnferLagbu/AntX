@@ -32,7 +32,7 @@
 //! - timer_id 用 `slot_index + 1` (1-based), 0 保留为无效
 //! - 进程退出时由 `posix_timer_release_pid` 释放全部 timer
 
-use crate::kernel::framework::proc::posix_timer as ptimer;
+use crate::kernel::framework::proc as ptimer;
 
 // ============================================================================
 // sys_timer_create
