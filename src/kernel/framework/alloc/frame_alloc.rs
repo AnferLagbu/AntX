@@ -50,10 +50,10 @@ pub struct BuddyFrameAlloc;
 
 impl FrameAlloc for BuddyFrameAlloc {
     fn alloc(&self, order: u8) -> Option<Frame> {
-        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
+        use crate::kernel::framework::mm::api;
         if order == 0 {
-            let phys = pmm.alloc_page()?;
-            // SAFETY: pmm.alloc_page() guarantees unique ownership.
+            let phys = api::pmm_alloc_page_phys()?;
+            // SAFETY: pmm_alloc_page_phys() guarantees unique ownership.
             unsafe { Some(Frame::from_raw(phys, 0)) }
         } else {
             let count = 1 << order;
@@ -62,7 +62,7 @@ impl FrameAlloc for BuddyFrameAlloc {
     }
 
     fn alloc_pages(&self, count: usize) -> Option<Frame> {
-        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
+        use crate::kernel::framework::mm::api;
         let order = if count <= 1 {
             0u8
         } else if count <= 512 {
@@ -70,35 +70,35 @@ impl FrameAlloc for BuddyFrameAlloc {
         } else {
             return None;
         };
-        let phys = pmm.alloc_pages(count)?;
-        // SAFETY: pmm.alloc_pages() guarantees unique ownership.
+        let phys = api::pmm_alloc_pages_phys(count)?;
+        // SAFETY: pmm_alloc_pages_phys() guarantees unique ownership.
         unsafe { Some(Frame::from_raw(phys, order)) }
     }
 
     fn alloc_huge(&self, size: PageSize) -> Option<Frame> {
-        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
-        let phys = pmm.alloc_huge_page(size)?;
+        use crate::kernel::framework::mm::api;
+        let phys = api::pmm_alloc_huge_page_phys(size)?;
         let order = match size {
             PageSize::Size2M => 9u8,
             PageSize::Size1G => 18u8,
             _ => 0u8,
         };
-        // SAFETY: pmm.alloc_huge_page() guarantees unique ownership.
+        // SAFETY: pmm_alloc_huge_page_phys() guarantees unique ownership.
         unsafe { Some(Frame::from_raw(phys, order)) }
     }
 
     fn free(&self, frame: Frame) {
-        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
+        use crate::kernel::framework::mm::api;
         if frame.dec_ref() {
-            pmm.free_page(frame.phys());
+            api::pmm_free_page_phys(frame.phys());
         }
     }
 
     fn free_pages(&self) -> u64 {
-        crate::kernel::framework::mm::pmm::get_pmm().get_free_pages()
+        crate::kernel::framework::mm::api::pmm_get_free_pages()
     }
 
     fn total_pages(&self) -> u64 {
-        crate::kernel::framework::mm::pmm::get_pmm().get_total_pages()
+        crate::kernel::framework::mm::api::pmm_get_total_pages()
     }
 }

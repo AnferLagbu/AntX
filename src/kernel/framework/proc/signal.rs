@@ -460,7 +460,7 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
 ///
 /// - frame 指针必须有效且指向当前 CPU 的中断帧
 /// - 仅在返回用户态前调用 (中断上下文或系统调用出口)
-pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::InterruptFrame) -> bool {
+pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFrame) -> bool {
     let pid = match super::scheduler::SCHEDULER.current() {
         Some(p) => p,
         None => return false,
@@ -570,17 +570,17 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::types::Inter
                     )
                 };
 
-                let ok_ret = crate::kernel::framework::mm::copy_user::copy_to_user(
+                let ok_ret = crate::kernel::framework::mm::api::copy_to_user(
                     frame_rsp,
                     &ret_addr_bytes,
                     8,
                 );
-                let ok_frame = crate::kernel::framework::mm::copy_user::copy_to_user(
+                let ok_frame = crate::kernel::framework::mm::api::copy_to_user(
                     frame_rsp + 8,
                     sigframe_bytes,
                     core::mem::size_of::<SignalFrame>(),
                 );
-                let ok_trampoline = crate::kernel::framework::mm::copy_user::copy_to_user(
+                let ok_trampoline = crate::kernel::framework::mm::api::copy_to_user(
                     trampoline_start,
                     &SIGRETURN_TRAMPOLINE,
                     SIGRETURN_TRAMPOLINE_SIZE,

@@ -585,7 +585,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     }
 
     let mut st: crate::kernel::framework::fs::vfs::types::VfsStat = crate::kernel::framework::fs::vfs::types::VfsStat::default();
-    let stat_result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, &mut st, pwm);
+    let stat_result = crate::kernel::framework::fs::vfs::vfs_stat(path, &mut st, pwm);
     if stat_result < 0 {
         return -1;
     }
@@ -595,7 +595,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let fd = crate::kernel::framework::fs::vfs::api::vfs_open(path, 0, pwm);
+    let fd = crate::kernel::framework::fs::vfs::vfs_open(path, 0, pwm);
     if fd < 0 {
         return -1;
     }
@@ -603,14 +603,14 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     let pages = file_size.div_ceil(4096u64) as usize;
     let buffer = pmm_alloc_pages(pages);
     if buffer.is_null() {
-        crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32);
+        crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
         return -1;
     }
 
     let bytes_read =
-        crate::kernel::framework::fs::vfs::api::vfs_read(fd as u32, buffer as *mut u8, file_size as u32);
+        crate::kernel::framework::fs::vfs::vfs_read(fd as u32, buffer as *mut u8, file_size as u32);
 
-    crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32);
+    crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
 
     if bytes_read <= 0 {
         pmm_free_pages(buffer, pages);
@@ -697,7 +697,7 @@ pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
     // 1. 挂载 ramfs 为根文件系统
-    let mount_result = crate::kernel::framework::fs::vfs::api::vfs_mount(
+    let mount_result = crate::kernel::framework::fs::vfs::vfs_mount(
         b"/\0".as_ptr(),
         b"ramfs\0".as_ptr(),
     );
@@ -781,7 +781,7 @@ pub fn launch_first_user_process() -> ! {
     #[cfg(target_arch = "aarch64")]
     {
         // 挂载 ramfs
-        let _ = crate::kernel::framework::fs::vfs::api::vfs_mount(
+        let _ = crate::kernel::framework::fs::vfs::vfs_mount(
             b"/\0".as_ptr(),
             b"ramfs\0".as_ptr(),
         );
@@ -840,7 +840,7 @@ pub fn scheduler_init() {
     // SAFETY: get_tick 是 'static 函数指针, 在内核运行期间始终有效.
     unsafe {
         crate::kernel::framework::tick_query::register_tick_query(
-            crate::kernel::framework::proc::scheduler::get_tick,
+            crate::kernel::framework::proc::get_tick,
         );
     }
     // D2: 初始化 cgroup 子系统
@@ -1458,7 +1458,7 @@ pub fn sys_fork() -> Pid {
         let stack_size: usize = 65536;
         // SAFETY: parent_kstack 与 child_kstack 都是已分配的内核栈, 区间不重叠。
         raw::copy_kstack(child_kstack, parent_kstack, stack_size);
-        crate::kernel::framework::proc::process::kernel_stack_write_canary(child_kstack);
+        crate::kernel::framework::proc::kernel_stack_write_canary(child_kstack);
     }
 
     // 复制父进程 ProcessContext 到子进程, 但把 RAX 置 0

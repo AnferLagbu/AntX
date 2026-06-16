@@ -106,12 +106,12 @@ pub mod uefi;
 pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as DriverResult};
 
 // --- 块设备导出 ---
-pub use block::{BlockDevice, block_device_count, block_device_state, block_device_name, block_device_info, block_device_list};
+pub use block::{BlockDevice, block_device_count, block_device_state, block_device_name, block_device_info, block_device_list, hdd_read_sector, hdd_write_sector, hdd_is_present, hdd_total_sectors};
 
 // --- 显示设备导出 ---
 pub use display::font::Font;
 pub use display::framebuffer::{Color, Framebuffer, Rect, colors};
-pub use display::{get_framebuffer, display_init};
+pub use display::{get_framebuffer, display_init, FB_PHYS_ADDR, FB_PHYS_SIZE};
 
 // --- 总线驱动导出 ---
 #[cfg(target_arch = "x86_64")]

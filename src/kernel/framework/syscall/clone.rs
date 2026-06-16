@@ -187,7 +187,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     }
 
     // 注册到进程表
-    api::process_insert(child as *const crate::kernel::framework::proc::process::Process as *mut crate::kernel::framework::proc::process::Process);
+    api::process_insert(child as *const crate::kernel::framework::proc::Process as *mut crate::kernel::framework::proc::Process);
 
     // CLONE_PARENT_SETTID
     if flags & CLONE_PARENT_SETTID != 0 && parent_tidptr != 0 {

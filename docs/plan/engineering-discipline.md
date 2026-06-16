@@ -13,7 +13,7 @@
 | 起始日期 | 2026-06-16 |
 | 当前 TCB 比率 | 47.8% |
 | 初始 framework 跨模块引用 | 402 处 |
-| 当前 framework 跨模块引用 | 348 处 (↓ 13.4%) |
+| 当前 framework 跨模块引用 | 352 处 (↓ 12.4%) |
 | 初始 services→framework 依赖 | 215 处 |
 | 当前 services→framework 依赖 | 215 处 |
 | 初始双向依赖 (循环) | 16 对 |
@@ -330,3 +330,4 @@
 | 2026-06-16 | 阶段 3 深度推进: proc→syscall 完全消除 (17→0), fs→syscall 完全消除 (2→0), mm→proc 消除 (1→0), chitin↔driver 消除, barrier→proc 消除; 新增 userptr/fd_notify/rlimit_query/tick_query 解耦模块; 审计脚本区分允许/禁止紧耦合 | AI |
 | 2026-06-16 | 阶段 3 完成: chitin↔proc 消除 (process_cleanup 回调 + proc::api 公共接口), credo↔proc 归入允许紧耦合 + 移出 secure_boot 初始化, tests 循环依赖归入允许紧耦合; 禁止的循环依赖 0 对 (↓100%); 内部访问违规 125 处待治理 | AI |
 | 2026-06-16 | 阶段 3.5 完成: 内部访问违规 133→0 (↓100%). 新增 mm::api re-export (vma/copy_user/pressure/page_fault/pmm_phys), proc::api 新增 (process_exists/scheduler_current_cputime), syscall/mod.rs re-export (epoll 常量/epoll_pwake), proc/mod.rs re-export (madvise_mlock), fs/vfs/mod.rs re-export (api/flock/posix_lock), driver/mod.rs re-export (display/block), timer/mod.rs re-export (hrtimer/get_uptime_ms), idt/mod.rs re-export (is_null_or_invalid). 审计脚本修正: 排除 tests 白盒测试, 移除已 re-export 的内部模式. 跨模块引用 402→348 (↓13.4%) | AI |
+| 2026-06-17 | 质量维护深化: 全面扫描并消除残留内部访问. 修复 coredump/signal/rlimit→mm::copy_user/vma/PROCESS_TABLE, syscall→driver::block/display, chitin/net→driver::framework, proc/elf/oomd→mm::pmm, timer/irq/arch→proc::scheduler, idt→mm::page_fault, barrier→timer::tick. 新增 mm::api (vma_set_current_mm/pmm_alloc_page_phys/pmm_free_page_phys/pmm_alloc_huge_page_phys), driver/mod.rs re-export (hdd_*/FB_PHYS_*), proc/mod.rs re-export (init_cpu_queue). 跨模块引用 402→352 (↓12.4%). 双架构编译+clippy+四项审计全部通过 | AI |

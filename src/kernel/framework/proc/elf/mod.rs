@@ -209,8 +209,7 @@ pub fn elf_load_with_bias(
         let mut cur = vaddr_start;
 
         while cur < vaddr_end as u64 {
-            let pmm_inst = crate::kernel::framework::mm::pmm::get_pmm();
-            let phys = pmm_inst.alloc_page().ok_or("OOM loading ELF")?;
+            let phys = crate::kernel::framework::mm::api::pmm_alloc_page_phys().ok_or("OOM loading ELF")?;
 
             let page_virt = phys.to_virt();
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -248,7 +247,7 @@ pub fn elf_load_with_bias(
     result.brk_base = (max_vaddr + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
 
     // 连接 MmStruct 到当前进程
-    crate::kernel::framework::mm::vma::set_current_mm(mm as *const MmStruct);
+    crate::kernel::framework::mm::api::vma_set_current_mm(mm as *const MmStruct);
 
     Ok(result)
 }

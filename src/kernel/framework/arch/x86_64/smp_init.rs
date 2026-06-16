@@ -238,9 +238,9 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     crate::kernel::framework::smp::register_cpu(lapic_id);
 
-    crate::kernel::framework::proc::cpu_queue::init_cpu_queue(cpu_index, 0);
+    crate::kernel::framework::proc::init_cpu_queue(cpu_index, 0);
 
-    crate::kernel::framework::proc::scheduler::init_per_cpu_sched(cpu_index);
+    crate::kernel::framework::proc::init_per_cpu_sched(cpu_index);
 
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {

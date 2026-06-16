@@ -70,7 +70,7 @@ pub fn execute(panic_info: &core::panic::PanicInfo<'_>) -> RecoveryResult {
 
     crate::klog_crit!(Kernel, "[BBR] Barrier Base Recovery initiated");
 
-    let tick = crate::kernel::framework::timer::tick::get_ticks();
+    let tick = crate::kernel::framework::timer::get_ticks();
     let fingerprint = compute_fingerprint(panic_info);
 
     if let Some(domain_id) = locate_domain_from_panic(panic_info) {

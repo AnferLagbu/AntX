@@ -180,7 +180,7 @@ pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str>
 
     // 确保根目录存在
     let pwm = 0; // 内核权限
-    let _ = crate::kernel::framework::fs::vfs::api::vfs_mkdir(b"/\0".as_ptr(), pwm);
+    let _ = crate::kernel::framework::fs::vfs::vfs_mkdir(b"/\0".as_ptr(), pwm);
 
     while offset < data_slice.len() {
         let (entry, next_offset) = match parse_next_entry(data_slice, offset) {
@@ -204,34 +204,34 @@ pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str>
         match file_type {
             CPIO_S_IFDIR => {
                 // 创建目录
-                let _ = crate::kernel::framework::fs::vfs::api::vfs_mkdir(
+                let _ = crate::kernel::framework::fs::vfs::vfs_mkdir(
                     path_buf.as_ptr(),
                     pwm,
                 );
             }
             CPIO_S_IFREG => {
                 // 创建文件并写入数据
-                let fd = crate::kernel::framework::fs::vfs::api::vfs_open(
+                let fd = crate::kernel::framework::fs::vfs::vfs_open(
                     path_buf.as_ptr(),
                     0x41, // O_WRONLY | O_CREAT
                     pwm,
                 );
                 if fd >= 0 {
                     if !entry.data.is_empty() {
-                        crate::kernel::framework::fs::vfs::api::vfs_write(
+                        crate::kernel::framework::fs::vfs::vfs_write(
                             fd as u32,
                             entry.data.as_ptr(),
                             entry.data.len() as u32,
                         );
                     }
-                    crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32);
+                    crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
                 }
             }
             CPIO_S_IFLNK => {
                 // 符号链接: entry.data 是链接目标
                 // 真实实现: 在 linkpath 父目录下建 Symlink 类型新节点.
                 if !entry.data.is_empty() {
-                    crate::kernel::framework::fs::vfs::api::vfs_symlink(
+                    crate::kernel::framework::fs::vfs::vfs_symlink(
                         entry.data.as_ptr(),
                         path_buf.as_ptr(),
                         pwm,

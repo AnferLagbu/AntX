@@ -50,9 +50,8 @@ impl OomDaemon {
         }
         self.last_check.store(tick, Ordering::Relaxed);
 
-        let pmm = crate::kernel::framework::mm::pmm::get_pmm();
-        let free_pages = pmm.get_free_pages();
-        let total_pages = pmm.get_total_pages();
+        let free_pages = mm_api::pmm_get_free_pages();
+        let total_pages = mm_api::pmm_get_total_pages();
 
         let p = mm_api::update_pressure(free_pages, total_pages);
 

@@ -81,5 +81,8 @@ pub use thread::*;
 pub use types::*;
 pub use user_proc::*;
 
+// cpu_queue 公共接口 re-export — 避免跨子系统直接访问 proc::cpu_queue 内部
+pub use cpu_queue::init_cpu_queue;
+
 // madvise_mlock 公共接口 re-export — 避免跨子系统直接访问 proc::madvise_mlock 内部
 pub use madvise_mlock::{sys_madvise, sys_mlock, sys_munlock, sys_mlockall, sys_munlockall, sys_mincore};

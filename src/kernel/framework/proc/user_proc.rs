@@ -571,7 +571,7 @@ pub(crate) mod raw {
         kstack: u64,
         ustack: u64,
     ) {
-        use crate::kernel::framework::proc::scheduler::SchedPolicy;
+        use crate::kernel::framework::proc::SchedPolicy;
         // SAFETY: kproc_ptr 来自 alloc_kernel_process, 已清零, 字段可被 ptr::write 覆盖。
         unsafe {
             core::ptr::write(&mut (*kproc_ptr).pid, ProcessId(pid));
@@ -986,7 +986,7 @@ impl UserProcManager {
         }
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
         proc.store_kernel_stack(kstack_top);
-        crate::kernel::framework::proc::process::kernel_stack_write_canary(kstack_top);
+        crate::kernel::framework::proc::kernel_stack_write_canary(kstack_top);
 
         // ✅ PID 分配延后到所有内存/页表/栈资源就绪后:
         //   避免 `alloc_kernel_process` 或 `alloc_user_process` 失败时, 已分配

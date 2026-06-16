@@ -651,25 +651,25 @@ impl IdtManager {
 
         if frame.is_user_mode() {
             // 尝试 Demand Paging
-            let pf_info = crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(
+            let pf_info = crate::kernel::framework::mm::api::PageFaultInfo::from_error_code(
                 fault_addr, error_code,
             );
 
-            match crate::kernel::framework::mm::page_fault::handle_user_page_fault(pf_info) {
-                crate::kernel::framework::mm::page_fault::PfResult::Fixed => return,
-                crate::kernel::framework::mm::page_fault::PfResult::SignalSegv => {
+            match crate::kernel::framework::mm::api::handle_user_page_fault(pf_info) {
+                crate::kernel::framework::mm::api::PfResult::Fixed => return,
+                crate::kernel::framework::mm::api::PfResult::SignalSegv => {
                     self.terminate_user_process(frame, 11); // SIGSEGV
                     return;
                 }
-                crate::kernel::framework::mm::page_fault::PfResult::SignalBus => {
+                crate::kernel::framework::mm::api::PfResult::SignalBus => {
                     self.terminate_user_process(frame, 7); // SIGBUS
                     return;
                 }
-                crate::kernel::framework::mm::page_fault::PfResult::Oom => {
+                crate::kernel::framework::mm::api::PfResult::Oom => {
                     self.terminate_user_process(frame, 9); // SIGKILL (OOM)
                     return;
                 }
-                crate::kernel::framework::mm::page_fault::PfResult::Unhandled => {
+                crate::kernel::framework::mm::api::PfResult::Unhandled => {
                     // 回退到原有逻辑
                 }
             }

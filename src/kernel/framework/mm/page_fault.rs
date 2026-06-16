@@ -232,7 +232,7 @@ fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: u
             // 让 vfs_pread_inode 能走 FileSystem trait 分发而非硬编码 RamFS.
             let file_off = vma.offset + (aligned - vma.start) as u64;
             let mut page_buf = [0u8; PAGE_SIZE as usize];
-            let n = crate::kernel::framework::fs::vfs::api::vfs_pread_inode(
+            let n = crate::kernel::framework::fs::vfs::vfs_pread_inode(
                 vma.mount_idx,
                 vma.inode_id,
                 file_off,

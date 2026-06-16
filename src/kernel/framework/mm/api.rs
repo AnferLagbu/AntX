@@ -119,6 +119,18 @@ pub fn pmm_free_pages(addr: *mut u8, count: usize) {
     }
 }
 
+/// 分配单个 4KB 页, 返回物理地址.
+///
+/// 供需要 `PhysAddr` 类型安全的调用方使用.
+pub fn pmm_alloc_page_phys() -> Option<super::PhysAddr> {
+    get_pmm().alloc_page()
+}
+
+/// 释放单个页 (物理地址).
+pub fn pmm_free_page_phys(addr: super::PhysAddr) {
+    get_pmm().free_page(addr);
+}
+
 /// 分配多个连续页, 返回物理地址.
 ///
 /// 供需要 `PhysAddr` 类型安全的调用方使用.
@@ -129,6 +141,11 @@ pub fn pmm_alloc_pages_phys(count: usize) -> Option<super::PhysAddr> {
 /// 释放多个连续页 (物理地址).
 pub fn pmm_free_pages_phys(addr: super::PhysAddr, count: usize) {
     get_pmm().free_pages(addr, count);
+}
+
+/// 分配一个大页 (2MB 或 1GB), 返回物理地址.
+pub fn pmm_alloc_huge_page_phys(size_type: super::PageSize) -> Option<super::PhysAddr> {
+    get_pmm().alloc_huge_page(size_type)
 }
 
 /// 打印 PMM 统计信息
@@ -442,6 +459,13 @@ pub fn vma_get_current_mm() -> Option<&'static super::vma::MmStruct> {
 
 // VMA 类型 re-export — 避免跨子系统直接引用 mm::vma 内部类型
 pub use super::vma::{MmStruct, Vma, VmaType};
+
+/// 设置当前进程的内存描述符.
+///
+/// 通过公共 api 层访问, 避免直接引用 `mm::vma::set_current_mm`.
+pub fn vma_set_current_mm(mm: *const super::vma::MmStruct) {
+    super::vma::set_current_mm(mm)
+}
 
 // copy_user re-export — 避免跨子系统直接引用 mm::copy_user 内部
 pub use super::copy_user::{copy_to_user, copy_from_user, is_user_buf};

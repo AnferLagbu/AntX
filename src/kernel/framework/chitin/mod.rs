@@ -52,8 +52,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
 use crate::kernel::framework::fs::vfs::types::KernelError;
-use super::driver::framework::Driver;
-pub use super::driver::framework::DriverError as ChitinError;
+use super::driver::Driver;
 
 // ── 协议模块 ──
 pub mod composite;
@@ -105,15 +104,15 @@ impl ChitinProto {
     }
 }
 
-impl From<super::driver::framework::DeviceType> for ChitinProto {
-    fn from(dt: super::driver::framework::DeviceType) -> Self {
+impl From<super::driver::DeviceType> for ChitinProto {
+    fn from(dt: super::driver::DeviceType) -> Self {
         match dt {
-            super::driver::framework::DeviceType::Block => ChitinProto::Block,
-            super::driver::framework::DeviceType::Char => ChitinProto::Char,
-            super::driver::framework::DeviceType::Network => ChitinProto::Net,
-            super::driver::framework::DeviceType::Input => ChitinProto::Input,
-            super::driver::framework::DeviceType::Bus => ChitinProto::Bus,
-            super::driver::framework::DeviceType::Other => ChitinProto::Other,
+            super::driver::DeviceType::Block => ChitinProto::Block,
+            super::driver::DeviceType::Char => ChitinProto::Char,
+            super::driver::DeviceType::Network => ChitinProto::Net,
+            super::driver::DeviceType::Input => ChitinProto::Input,
+            super::driver::DeviceType::Bus => ChitinProto::Bus,
+            super::driver::DeviceType::Other => ChitinProto::Other,
         }
     }
 }
@@ -827,7 +826,7 @@ pub fn chitin_device_list() -> Vec<(u32, &'static str, ChitinProto, DeviceState)
 
 #[cfg(test)]
 mod tests {
-    use super::super::driver::framework::DriverError;
+    use super::super::driver::DriverError;
     use super::*;
 
     struct TestDriver {
@@ -839,8 +838,8 @@ mod tests {
         fn name(&self) -> &'static str {
             self.name
         }
-        fn device_type(&self) -> super::super::driver::framework::DeviceType {
-            super::super::driver::framework::DeviceType::Other
+        fn device_type(&self) -> super::super::driver::DeviceType {
+            super::super::driver::DeviceType::Other
         }
 
         fn init(&mut self) -> core::result::Result<(), DriverError> {

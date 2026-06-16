@@ -13,7 +13,7 @@
 //!
 //! 评估日期: 2026-06-04
 
-use crate::kernel::framework::mm::vma::MmStruct;
+use crate::kernel::framework::mm::api::MmStruct;
 use crate::kernel::framework::proc;
 
 // ============================================================================

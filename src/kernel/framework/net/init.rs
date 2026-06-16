@@ -327,7 +327,7 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
         let probe_result = crate::kernel::framework::driver::net::e1000::e1000_probe();
         if probe_result == 0 {
             let mut dev = crate::kernel::framework::driver::net::e1000::take_device()?;
-            if crate::kernel::framework::driver::framework::Driver::init(&mut *dev).is_err() {
+            if crate::kernel::framework::driver::Driver::init(&mut *dev).is_err() {
                 raw::klog_err("e1000: hardware init failed");
                 return None;
             }

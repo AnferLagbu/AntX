@@ -51,7 +51,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::proc::signal::do_signal_send;
 use crate::kernel::framework::proc::types::Pid;
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
-use crate::kernel::framework::timer::hrtimer::{
+use crate::kernel::framework::timer::{
     hrtimer_cancel, hrtimer_clock_read, hrtimer_start, HrTimer, HrTimerRestart,
 };
 
@@ -348,7 +348,7 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
     }
 
     // 当前进程 pid
-    let current_pid = crate::kernel::framework::proc::scheduler::SCHEDULER
+    let current_pid = crate::kernel::framework::proc::SCHEDULER
         .current()
         .unwrap_or(0);
 

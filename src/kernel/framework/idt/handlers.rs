@@ -200,7 +200,7 @@ impl ExceptionHandler for PageFaultHandler {
             // (COW fork 写共享页 / mmap 文件缺页 / swap 换入 / 匿名页 demand),
             // 此前 trait 路径直接 SIGKILL, 等于绕过了内核核心功能
             let pf_info =
-                crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(
+                crate::kernel::framework::mm::api::PageFaultInfo::from_error_code(
                     fault_addr,
                     // SAFETY: 调用方保证指针/类型有效
                     unsafe { (*frame).err_code },

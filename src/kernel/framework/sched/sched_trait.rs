@@ -170,46 +170,46 @@ pub struct QueenXScheduler;
 
 impl Scheduler for QueenXScheduler {
     fn enqueue(&self, pid: Pid) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.add(pid);
+        crate::kernel::framework::proc::SCHEDULER.add(pid);
     }
 
     fn enqueue_with_priority(&self, pid: Pid, level: usize) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.add_with_priority(pid, level);
+        crate::kernel::framework::proc::SCHEDULER.add_with_priority(pid, level);
     }
 
     fn set_nice(&self, pid: Pid, nice: i8) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.set_nice(pid, nice);
+        crate::kernel::framework::proc::SCHEDULER.set_nice(pid, nice);
     }
 
     fn schedule(&self) -> Option<Pid> {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.schedule()
+        crate::kernel::framework::proc::SCHEDULER.schedule()
     }
 
     fn current(&self) -> Option<Pid> {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.current()
+        crate::kernel::framework::proc::SCHEDULER.current()
     }
 
     fn block_current(&self, reason: BlockReason) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.block(reason);
+        crate::kernel::framework::proc::SCHEDULER.block(reason);
     }
 
     fn unblock(&self, pid: Pid) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.unblock(pid);
+        crate::kernel::framework::proc::SCHEDULER.unblock(pid);
     }
 
     fn exit_current(&self, exit_code: u32) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.exit(exit_code);
+        crate::kernel::framework::proc::SCHEDULER.exit(exit_code);
     }
 
     fn yield_current(&self) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.yield_current();
+        crate::kernel::framework::proc::SCHEDULER.yield_current();
     }
 
     fn set_need_reschedule(&self) {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.set_need_reschedule();
+        crate::kernel::framework::proc::SCHEDULER.set_need_reschedule();
     }
 
     fn has_runnable(&self) -> bool {
-        crate::kernel::framework::proc::scheduler::SCHEDULER.has_any_runnable()
+        crate::kernel::framework::proc::SCHEDULER.has_any_runnable()
     }
 }

@@ -1411,7 +1411,7 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if crate::kernel::framework::fs::vfs::is_inotify_fd(fd) {
         return crate::kernel::framework::fs::vfs::sys_inotify_read(fd as i64, buf, count as usize);
     }
-    crate::kernel::framework::fs::vfs::api::vfs_read(fd as u32, buf, count as u32) as i64
+    crate::kernel::framework::fs::vfs::vfs_read(fd as u32, buf, count as u32) as i64
 }
 
 fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
@@ -1438,7 +1438,7 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
         let value = unsafe { core::ptr::read(buf as *const u64) };
         return crate::kernel::framework::syscall::eventfd::sys_eventfd_write(fd, value);
     }
-    crate::kernel::framework::fs::vfs::api::vfs_write(fd as u32, buf, count as u32) as i64
+    crate::kernel::framework::fs::vfs::vfs_write(fd as u32, buf, count as u32) as i64
 }
 
 fn sys_open(path: *const u8, flags: i32, _mode: i32) -> i64 {
@@ -1446,7 +1446,7 @@ fn sys_open(path: *const u8, flags: i32, _mode: i32) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_open(path, flags as u32, pwm) as i64
+    crate::kernel::framework::fs::vfs::vfs_open(path, flags as u32, pwm) as i64
 }
 
 fn sys_close(fd: i32) -> i64 {
@@ -1480,7 +1480,7 @@ fn sys_close(fd: i32) -> i64 {
     // 释放该 fd 持有的 flock 锁
     let pid = crate::kernel::framework::proc::api::process_get_current_pid();
     crate::kernel::framework::fs::vfs::flock_release_fd(pid, fd);
-    crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32) as i64
+    crate::kernel::framework::fs::vfs::vfs_close(fd as u32) as i64
 }
 
 fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
@@ -1496,7 +1496,7 @@ fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_stat(
+    crate::kernel::framework::fs::vfs::vfs_stat(
         path,
         st_buf as *mut crate::kernel::framework::fs::vfs::VfsStat,
         pwm,
@@ -1513,7 +1513,7 @@ fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_fstat(
+    crate::kernel::framework::fs::vfs::vfs_fstat(
         fd as u32,
         st_buf as *mut crate::kernel::framework::fs::vfs::VfsStat,
         pwm,
@@ -1521,11 +1521,11 @@ fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
 }
 
 fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
-    crate::kernel::framework::fs::vfs::api::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
+    crate::kernel::framework::fs::vfs::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
 }
 
 fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
-    crate::kernel::framework::fs::vfs::api::vfs_readdir(
+    crate::kernel::framework::fs::vfs::vfs_readdir(
         fd as u32,
         buf as *mut crate::kernel::framework::fs::vfs::VfsDirEntry,
     ) as i64
@@ -1542,14 +1542,14 @@ fn sys_getcwd(buf: *mut u8, size: u64) -> i64 {
     if !raw::check_user_buf(buf as u64, size) {
         return Errno::EFAULT.as_ret();
     }
-    crate::kernel::framework::fs::vfs::api::vfs_get_cwd(buf, size as u32) as i64
+    crate::kernel::framework::fs::vfs::vfs_get_cwd(buf, size as u32) as i64
 }
 
 fn sys_chdir(path: *const u8) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    crate::kernel::framework::fs::vfs::api::vfs_set_cwd(path);
+    crate::kernel::framework::fs::vfs::vfs_set_cwd(path);
     0
 }
 
@@ -1561,7 +1561,7 @@ fn sys_mkdir(path: *const u8, _mode: i32) -> i64 {
     if pwm == 0 {
         return Errno::EACCES.as_ret();
     }
-    crate::kernel::framework::fs::vfs::api::vfs_mkdir(path, pwm) as i64
+    crate::kernel::framework::fs::vfs::vfs_mkdir(path, pwm) as i64
 }
 
 fn sys_rmdir(path: *const u8) -> i64 {
@@ -1569,7 +1569,7 @@ fn sys_rmdir(path: *const u8) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_rmdir(path, pwm) as i64
+    crate::kernel::framework::fs::vfs::vfs_rmdir(path, pwm) as i64
 }
 
 fn sys_unlink(path: *const u8) -> i64 {
@@ -1577,7 +1577,7 @@ fn sys_unlink(path: *const u8) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_unlink(path, pwm) as i64
+    crate::kernel::framework::fs::vfs::vfs_unlink(path, pwm) as i64
 }
 
 fn sys_rename(old: *const u8, new: *const u8) -> i64 {
@@ -1589,7 +1589,7 @@ fn sys_rename(old: *const u8, new: *const u8) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_rename(old, new, pwm) as i64
+    crate::kernel::framework::fs::vfs::vfs_rename(old, new, pwm) as i64
 }
 
 fn sys_access(path: *const u8, _mode: i32) -> i64 {
@@ -1599,7 +1599,7 @@ fn sys_access(path: *const u8, _mode: i32) -> i64 {
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let stat_ptr: *mut crate::kernel::framework::fs::vfs::VfsStat = unsafe { &mut core::mem::zeroed() };
-    let result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, stat_ptr, pwm);
+    let result = crate::kernel::framework::fs::vfs::vfs_stat(path, stat_ptr, pwm);
     if result < 0 {
         return result as i64;
     }
@@ -1607,7 +1607,7 @@ fn sys_access(path: *const u8, _mode: i32) -> i64 {
 }
 
 fn sys_sync() -> i64 {
-    crate::kernel::framework::fs::vfs::api::vfs_sync() as i64
+    crate::kernel::framework::fs::vfs::vfs_sync() as i64
 }
 
 fn sys_mount(
@@ -1621,7 +1621,7 @@ fn sys_mount(
     if fstype.is_null() {
         return Errno::EINVAL.as_ret();
     }
-    crate::kernel::framework::fs::vfs::api::vfs_mount(target, fstype) as i64
+    crate::kernel::framework::fs::vfs::vfs_mount(target, fstype) as i64
 }
 
 // ============================================================================
@@ -1748,7 +1748,7 @@ fn sys_execve(
     let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::vfs::VfsStat>::uninit();
     let current_pwm = crate::kernel::framework::credo::session::get_current_pwm();
     let stat_result =
-        crate::kernel::framework::fs::vfs::api::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
+        crate::kernel::framework::fs::vfs::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
     if stat_result == 0 {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let st = unsafe { stat_buf.assume_init() };
@@ -2269,7 +2269,7 @@ fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
     if disks.is_null() || max_count == 0 {
         return Errno::EINVAL.as_ret();
     }
-    let count = crate::kernel::framework::driver::block::block_device_count();
+    let count = crate::kernel::framework::driver::block_device_count();
     let limit = max_count.min(count as u32);
     for i in 0..limit {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -2283,13 +2283,13 @@ fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
     if info.is_null() {
         return Errno::EINVAL.as_ret();
     }
-    let present = if crate::kernel::framework::driver::block::hdd_is_present(disk_id as u8) {
+    let present = if crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
         1u32
     } else {
         0u32
     };
     let sectors = if present != 0 {
-        crate::kernel::framework::driver::block::hdd_total_sectors(disk_id as u8) as u32
+        crate::kernel::framework::driver::hdd_total_sectors(disk_id as u8) as u32
     } else {
         0
     };
@@ -2331,7 +2331,7 @@ fn sys_disk_format(disk_id: u32, fstype: *const u8) -> i64 {
     if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
     }
-    if !crate::kernel::framework::driver::block::hdd_is_present(disk_id as u8) {
+    if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
         return Errno::ENOENT.as_ret();
     }
     let hvfs_start_lba: u32 = 18432;
@@ -2342,7 +2342,7 @@ fn sys_disk_format(disk_id: u32, fstype: *const u8) -> i64 {
     sector_buf[3] = 0x53;
     sector_buf[8] = 0x02;
     sector_buf[9] = 0x00;
-    if crate::kernel::framework::driver::block::hdd_write_sector(
+    if crate::kernel::framework::driver::hdd_write_sector(
         disk_id as u8,
         hvfs_start_lba as u64,
         &sector_buf,
@@ -2373,7 +2373,7 @@ fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
     }
-    if !crate::kernel::framework::driver::block::hdd_is_present(disk_id as u8) {
+    if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
         return Errno::ENOENT.as_ret();
     }
     let hvfs_start = BOOT_PART_SECTORS;
@@ -2398,7 +2398,7 @@ fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55;
     mbr[511] = 0xAA;
-    if crate::kernel::framework::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
+    if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
         return Errno::EIO.as_ret();
     }
     0
@@ -2410,7 +2410,7 @@ fn sys_fat_format(disk_id: u32) -> i64 {
     if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
     }
-    if !crate::kernel::framework::driver::block::hdd_is_present(disk_id as u8) {
+    if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
         return Errno::ENOENT.as_ret();
     }
     let fat_start_lba: u32 = 2048;
@@ -2445,7 +2445,7 @@ fn sys_fat_format(disk_id: u32) -> i64 {
     bpb[38] = 0x29;
     bpb[510] = 0x55;
     bpb[511] = 0xAA;
-    if crate::kernel::framework::driver::block::hdd_write_sector(disk_id as u8, fat_start_lba as u64, &bpb) < 0
+    if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, fat_start_lba as u64, &bpb) < 0
     {
         return Errno::EIO.as_ret();
     }
@@ -2457,14 +2457,14 @@ fn sys_fat_format(disk_id: u32) -> i64 {
     fat_sector[3] = 0xFF;
     for i in 0..num_fats {
         let lba = fat_begin + i as u32 * sectors_per_fat as u32;
-        if crate::kernel::framework::driver::block::hdd_write_sector(disk_id as u8, lba as u64, &fat_sector)
+        if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, lba as u64, &fat_sector)
             < 0
         {
             return Errno::EIO.as_ret();
         }
         let zero = [0u8; 512];
         for s in 1..sectors_per_fat as u32 {
-            if crate::kernel::framework::driver::block::hdd_write_sector(
+            if crate::kernel::framework::driver::hdd_write_sector(
                 disk_id as u8,
                 (lba + s) as u64,
                 &zero,
@@ -2478,7 +2478,7 @@ fn sys_fat_format(disk_id: u32) -> i64 {
     let root_dir_sectors = (root_entries as u32 * 32).div_ceil(512);
     let zero = [0u8; 512];
     for s in 0..root_dir_sectors {
-        if crate::kernel::framework::driver::block::hdd_write_sector(
+        if crate::kernel::framework::driver::hdd_write_sector(
             disk_id as u8,
             (root_dir_lba + s) as u64,
             &zero,
@@ -2497,16 +2497,16 @@ fn sys_boot_install(disk_id: u32) -> i64 {
         return Errno::EACCES.as_ret();
     }
     let stage1 = include_bytes!("../../../../build/stage1.bin");
-    if !crate::kernel::framework::driver::block::hdd_is_present(disk_id as u8) {
+    if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
         return Errno::ENOENT.as_ret();
     }
     let mut mbr = [0u8; 512];
-    if crate::kernel::framework::driver::block::hdd_read_sector(disk_id as u8, 0, &mut mbr) < 0 {
+    if crate::kernel::framework::driver::hdd_read_sector(disk_id as u8, 0, &mut mbr) < 0 {
         return Errno::EIO.as_ret();
     }
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe { core::ptr::copy_nonoverlapping(stage1.as_ptr(), mbr.as_mut_ptr(), 440) };
-    let total_sectors = crate::kernel::framework::driver::block::hdd_total_sectors(disk_id as u8);
+    let total_sectors = crate::kernel::framework::driver::hdd_total_sectors(disk_id as u8);
     let hvfs_start = BOOT_PART_SECTORS;
     let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
         total_sectors - hvfs_start as u64
@@ -2528,7 +2528,7 @@ fn sys_boot_install(disk_id: u32) -> i64 {
     write_le32(&mut mbr, 474, hvfs_len);
     mbr[510] = 0x55;
     mbr[511] = 0xAA;
-    if crate::kernel::framework::driver::block::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
+    if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
         return Errno::EIO.as_ret();
     }
     let kernel_ptr = raw::kernel_start_ptr();
@@ -2556,7 +2556,7 @@ fn sys_boot_install(disk_id: u32) -> i64 {
         unsafe {
             core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n);
         }
-        if crate::kernel::framework::driver::block::hdd_write_sector(disk_id as u8, (1 + s) as u64, &buf) < 0 {
+        if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, (1 + s) as u64, &buf) < 0 {
             return Errno::EIO.as_ret();
         }
     }
@@ -2568,7 +2568,7 @@ fn sys_boot_install(disk_id: u32) -> i64 {
     write_le32(&mut cfg, 4, BOOT_PART_SECTORS);
     cfg[510] = 0x55;
     cfg[511] = 0xAA;
-    crate::kernel::framework::driver::block::hdd_write_sector(disk_id as u8, 2046, &cfg);
+    crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, 2046, &cfg);
     0
 }
 
@@ -2691,9 +2691,9 @@ pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
     // 长延时 (>= 1ms): 使用调度器阻塞睡眠
     if total_ns < 1_000_000 {
         // 忙等: 使用 hrtimer 时钟源精确等待
-        let start = crate::kernel::framework::timer::hrtimer::hrtimer_clock_read();
+        let start = crate::kernel::framework::timer::hrtimer_clock_read();
         let target = start + total_ns;
-        while crate::kernel::framework::timer::hrtimer::hrtimer_clock_read() < target {
+        while crate::kernel::framework::timer::hrtimer_clock_read() < target {
             core::hint::spin_loop();
         }
     } else {
@@ -2792,11 +2792,11 @@ fn sys_chmod(path: *const u8, mode: u32) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_chmod(path, mode as u16, pwm) as i64
+    crate::kernel::framework::fs::vfs::vfs_chmod(path, mode as u16, pwm) as i64
 }
 
 fn sys_fchmod(fd: i32, mode: u32) -> i64 {
-    crate::kernel::framework::fs::vfs::api::vfs_fchmod(fd as u32, mode as u16) as i64
+    crate::kernel::framework::fs::vfs::vfs_fchmod(fd as u32, mode as u16) as i64
 }
 
 fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
@@ -2807,7 +2807,7 @@ fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
     let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
     let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::api::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
+    crate::kernel::framework::fs::vfs::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
 }
 
 // ============================================================================
@@ -2848,7 +2848,7 @@ fn sys_readlink(
     let pwm = crate::kernel::framework::credo::api::pwm_get_current();
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_buf: crate::kernel::framework::fs::vfs::VfsStat = unsafe { core::mem::zeroed() };
-    let result = crate::kernel::framework::fs::vfs::api::vfs_stat(path, &mut st_buf, pwm);
+    let result = crate::kernel::framework::fs::vfs::vfs_stat(path, &mut st_buf, pwm);
     if result < 0 {
         return Errno::ENOENT.as_ret();
     }
@@ -2944,7 +2944,7 @@ fn sys_truncate(path: *const u8, length: i64) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) || length < 0 {
         return Errno::EINVAL.as_ret();
     }
-    let fd = crate::kernel::framework::fs::vfs::api::vfs_open(
+    let fd = crate::kernel::framework::fs::vfs::vfs_open(
         path,
         0o2,
         crate::kernel::framework::credo::api::pwm_get_current(),
@@ -2952,8 +2952,8 @@ fn sys_truncate(path: *const u8, length: i64) -> i64 {
     if fd < 0 {
         return Errno::ENOENT.as_ret();
     }
-    let result = crate::kernel::framework::fs::vfs::api::vfs_truncate_internal(fd as u32, length as u64);
-    crate::kernel::framework::fs::vfs::api::vfs_close(fd as u32);
+    let result = crate::kernel::framework::fs::vfs::vfs_truncate_internal(fd as u32, length as u64);
+    crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
     if result < 0 {
         Errno::EIO.as_ret()
     } else {
@@ -2965,7 +2965,7 @@ fn sys_ftruncate(fd: i32, length: i64) -> i64 {
     if fd < 0 || length < 0 {
         return Errno::EINVAL.as_ret();
     }
-    let result = crate::kernel::framework::fs::vfs::api::vfs_truncate_internal(fd as u32, length as u64);
+    let result = crate::kernel::framework::fs::vfs::vfs_truncate_internal(fd as u32, length as u64);
     if result < 0 {
         Errno::EIO.as_ret()
     } else {
@@ -2991,7 +2991,7 @@ fn sys_fsync(fd: i32) -> i64 {
     if fd < 0 {
         return Errno::EBADF.as_ret();
     }
-    crate::kernel::framework::fs::vfs::api::vfs_sync();
+    crate::kernel::framework::fs::vfs::vfs_sync();
     0
 }
 
@@ -3376,15 +3376,15 @@ fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
     }
 
     let fb_addr =
-        crate::kernel::framework::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
+        crate::kernel::framework::driver::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
     if fb_addr == 0 {
         return Errno::ENODEV.as_ret();
     }
 
     let fb_size =
-        crate::kernel::framework::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
+        crate::kernel::framework::driver::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
 
-    let (width, height, pitch, bpp) = match crate::kernel::framework::driver::display::get_framebuffer() {
+    let (width, height, pitch, bpp) = match crate::kernel::framework::driver::get_framebuffer() {
         Some(fb) => (
             fb.width(),
             fb.height(),
@@ -3419,13 +3419,13 @@ fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
     }
 
     let fb_phys =
-        crate::kernel::framework::driver::display::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
+        crate::kernel::framework::driver::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
     if fb_phys == 0 {
         return Errno::ENODEV.as_ret();
     }
 
     let fb_total =
-        crate::kernel::framework::driver::display::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
+        crate::kernel::framework::driver::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
     if size > fb_total {
         return Errno::EINVAL.as_ret();
     }

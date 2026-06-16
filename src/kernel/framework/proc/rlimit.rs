@@ -21,8 +21,7 @@ pub use crate::kernel::services::proc::rlimit::{
     get_memlock_limit, check_memlock_exceeded,
 };
 
-use crate::kernel::framework::proc::api::process_get_current_pid;
-use crate::kernel::framework::proc::process::PROCESS_TABLE;
+use crate::kernel::framework::proc::api::{process_get_current_pid, process_with};
 use crate::kernel::framework::userptr;
 use crate::kernel::framework::errno::Errno;
 
@@ -43,8 +42,7 @@ pub fn sys_getrlimit(resource: i32, rlim_ptr: u64) -> i64 {
     }
 
     let pid = process_get_current_pid();
-    let table = &PROCESS_TABLE;
-    let rlim = match table.with_process(pid, |proc| {
+    let rlim = match process_with(pid, |proc| {
         let rlimit_table = proc.rlimit_table.lock();
         rlimit_table.get(resource as usize)
     }) {
@@ -89,8 +87,7 @@ pub fn sys_setrlimit(resource: i32, rlim_ptr: u64) -> i64 {
     let pid = process_get_current_pid();
     let is_privileged = pid == 1;
 
-    let table = &PROCESS_TABLE;
-    match table.with_process(pid, |proc| {
+    match process_with(pid, |proc| {
         let mut rlimit_table = proc.rlimit_table.lock();
         rlimit_table.set(resource as usize, cur, max, is_privileged)
     }) {
