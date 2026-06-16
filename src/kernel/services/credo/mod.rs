@@ -20,6 +20,8 @@
 //! 本文件不含 `unsafe`. 所有硬件交互通过 `framework::credo` 的安全 API.
 
 pub mod audit;
+/// T6-8: PWM 能力常量定义 (原 framework/credo/capability.rs)
+pub mod capability;
 pub mod crypto;
 pub mod grants;
 pub mod identity;
@@ -27,6 +29,10 @@ pub mod identity;
 pub mod secure_boot;
 pub mod policy;
 pub mod sessions;
+/// T6-8: SHA-256 哈希实现 (原 framework/credo/sha256.rs)
+pub mod sha256;
+/// T6-7: Credo 类型定义 (原 framework/credo/types.rs)
+pub mod types;
 pub mod uid;
 
 pub use audit::{AuditEvent, AuditEventKind, AuditLog, HashChainNode, AUDIT_BUFFER_SIZE};

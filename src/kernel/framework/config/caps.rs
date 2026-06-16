@@ -1,57 +1,17 @@
-//! 调试摘要与运行时能力查询
+//! 调试摘要与运行时能力查询 — framework 层 re-export + 运行时函数
 //!
-//! `ConfigSummary` 汇总当前内核容量与运行时检测的能力位, 用于:
-//! - `init()` 中的 ASCII 表格打印
-//! - procfs `/sys/config` 读取
-//! - 调试器命令 (若启用)
+//! ## T6-9 迁移记录
+//!
+//! 类型定义 (ConfigSummary, KernelCapabilities, detect())
+//! 已于 2026-06-16 迁移到 services::config::caps.
+//! 本文件仅保留运行时查询函数 + re-export 保持调用方兼容.
 
 use super::capacity::{MAX_CPUS, MAX_IRQS, MAX_PROCESSES, MAX_THREADS};
 use super::kaslr::get_kaslr_offset;
 use super::memory::PAGE_SIZE;
 
-/// 配置摘要结构.
-#[derive(Debug, Clone, Copy)]
-pub struct ConfigSummary {
-    pub max_cpus: usize,
-    pub actual_cpus: u32,
-    pub max_irqs: usize,
-    pub max_processes: usize,
-    pub max_threads: usize,
-    pub apic_enabled: bool,
-    pub ioapic_enabled: bool,
-    pub page_size: u64,
-    /// 演进 9: 运行时 KASLR 偏移 (由 bootloader/entry 设置).
-    pub kaslr_offset: u64,
-    pub capabilities: KernelCapabilities,
-}
-
-/// 编译期 + 运行时能力标志.
-#[derive(Debug, Clone, Copy)]
-pub struct KernelCapabilities {
-    /// 编译期启用了 SMP.
-    pub smp: bool,
-    /// Preempt-RT 内核.
-    pub preempt: bool,
-    /// 内核地址空间布局随机化.
-    pub kaslr: bool,
-    /// x86_64 KPTI 缓解措施.
-    pub kpti: bool,
-    /// AntX Barrier 子系统已编译入.
-    pub barrier: bool,
-}
-
-impl KernelCapabilities {
-    /// 从编译期 `cfg` 标志检测能力.
-    pub const fn detect() -> Self {
-        Self {
-            smp: cfg!(feature = "smp"),
-            preempt: cfg!(feature = "preempt"),
-            kaslr: cfg!(feature = "kaslr"),
-            kpti: cfg!(target_arch = "x86_64"),
-            barrier: cfg!(feature = "barrier"),
-        }
-    }
-}
+// re-export services 层类型
+pub use crate::kernel::services::config::caps::{ConfigSummary, KernelCapabilities};
 
 /// 获取配置摘要用于调试.
 pub fn get_config_summary() -> ConfigSummary {

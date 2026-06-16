@@ -1,15 +1,9 @@
-//! Slab 分配器配置常量
+//! Slab 分配器配置常量 — framework 层 re-export
 //!
-//! `mm::slab` 通过 `pub use` 引用本模块, 避免重复定义。
+//! ## T6-9 迁移记录
+//!
+//! 纯常量定义
+//! 已于 2026-06-16 迁移到 services::config::slab.
+//! 本文件仅 re-export 保持调用方兼容.
 
-/// Default Slab cache size (4 KiB = one page).
-pub const SLAB_DEFAULT_SIZE: usize = 4096;
-
-/// Slab 对象最小尺寸 (字节).
-pub const SLAB_MIN_OBJECT_SIZE: usize = 16;
-
-/// Slab 对象最大尺寸 (字节).
-pub const SLAB_MAX_OBJECT_SIZE: usize = 2048;
-
-/// 通用 Slab 缓存数量.
-pub const SLAB_GENERAL_CACHE_NUM: usize = 8;
+pub use crate::kernel::services::config::slab::*;

@@ -28,37 +28,40 @@
 // 强类型 re-export
 // ============================================================================
 
+/// T6-9: 同步原语类型定义 (原 framework/sync/types.rs)
+pub mod types;
+
 /// 锁状态枚举
-pub use crate::kernel::framework::sync::types::LockState;
+pub use types::LockState;
 
 /// `try_lock` 结果
-pub use crate::kernel::framework::sync::types::TryLockResult;
+pub use types::TryLockResult;
 
 /// 自旋锁内核表示 (FFI 桥接用, 一般不直接访问)
-pub use crate::kernel::framework::sync::types::{SpinLockInner, MutexInner, RwLockInner, CondVarInner};
+pub use types::{SpinLockInner, MutexInner, RwLockInner, CondVarInner};
 
 /// 中断保存标志
-pub use crate::kernel::framework::sync::types::IrqSaveFlags;
+pub use types::IrqSaveFlags;
 
 /// 锁统计信息 (仅 `lock_stats` feature 启用时可用)
 #[cfg(feature = "lock_stats")]
-pub use crate::kernel::framework::sync::types::LockStatistics;
+pub use types::LockStatistics;
 
 // ============================================================================
 // RAII Guard (类型安全, 替代裸 lock/unlock 配对)
 // ============================================================================
 
 /// 自旋锁 RAII 守卫 (`&mut T` 借用于锁内, 析构自动释放)
-pub use crate::kernel::framework::sync::types::SpinLockGuard;
+pub use types::SpinLockGuard;
 
 /// 互斥锁 RAII 守卫
-pub use crate::kernel::framework::sync::types::MutexGuard;
+pub use types::MutexGuard;
 
 /// 读锁 RAII 守卫
-pub use crate::kernel::framework::sync::types::RwLockReadGuard;
+pub use types::RwLockReadGuard;
 
 /// 写锁 RAII 守卫
-pub use crate::kernel::framework::sync::types::RwLockWriteGuard;
+pub use types::RwLockWriteGuard;
 
 /// 优先级继承互斥锁 (Phase P1 #3)
 pub mod pi_mutex;

@@ -25,6 +25,7 @@
 //! framework/syscall/linuxulator.rs 迁移到本目录 linuxulator.rs.
 
 pub mod linuxulator;
+pub mod types;
 
 use crate::kernel::framework::syscall_init as fw_syscall_init;
 use crate::kernel::framework::userctx::UserContext;
@@ -36,7 +37,7 @@ use crate::kernel::framework::syscall;
 // ============================================================================
 
 /// POSIX errno 错误码
-pub use syscall::types::Errno;
+pub use types::Errno;
 
 /// Syscall 编号 (新类型, 替代裸 u64)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

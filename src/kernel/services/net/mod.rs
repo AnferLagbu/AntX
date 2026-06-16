@@ -50,6 +50,10 @@ pub mod netfilter;
 pub mod route;
 pub mod socket;
 pub mod syscall;
+/// T6-9: 网络子系统公共类型 (原 framework/net/types.rs)
+pub mod types;
+/// T6-9: Socket 等待队列 (原 framework/net/wait_queue.rs)
+pub mod wait_queue;
 pub mod unix;
 
 pub use socket::{

@@ -110,6 +110,12 @@ pub mod debug;
 /// 本模块提供 services 层的安全抽象 (0 unsafe)。
 pub mod io;
 
+/// T6-9: 内核配置常量 (原 framework/config/).
+/// 纯常量与类型定义, 0 unsafe.
+pub mod config;
+/// T6-9: 用户态 CPU 寄存器快照 (原 framework/userctx.rs)
+pub mod userctx;
+
 // ============================================================================
 // Services 层日志宏 — safe 封装, 无 unsafe 展开
 //

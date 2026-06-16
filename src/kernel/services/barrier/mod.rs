@@ -27,6 +27,8 @@ pub mod audit_export;
 pub mod cascade;
 pub mod health_monitor;
 pub mod recovery_policy;
+/// T6-6: 恢复配置与类型定义 (原 framework/barrier/reset/config.rs)
+pub mod reset_config;
 
 pub use attribution::{
     AddrRange, CrossLayerHandler, DomainFailureRecord, FaultAttribution, FaultAttributor,

@@ -28,6 +28,8 @@ pub mod clone;
 pub mod coredump;
 /// D8: FD Table 分配策略 (first-fit, 上限 64)
 pub mod fd_table;
+/// TD-02: 全局统一 FD 分配器 (范围规划 + 分配/释放/反查)
+pub mod fd_alloc;
 pub mod info;
 pub mod madvise_mlock;
 /// D1: Namespace 安全封装
@@ -43,23 +45,24 @@ pub mod session;
 pub mod signal;
 pub mod sleep;
 pub mod table;
+pub mod types;
 pub mod wait4;
 pub mod posix_timer;
 /// D7: Shadow Stack (CET) 安全封装
 pub mod shadow_stack;
 
 // ============================================================================
-// ID 与状态 (直接 re-export 内核强类型)
+// ID 与状态 (直接 re-export 本地 types 模块)
 // ============================================================================
 
 /// 进程 ID (新类型, 替代裸 `u32`)
-pub use crate::kernel::framework::proc::types::{Pid, Tid, ProcessId, ThreadId};
+pub use types::{Pid, Tid, ProcessId, ThreadId};
 
 /// 进程状态 (七状态模型)
-pub use crate::kernel::framework::proc::types::ProcessState;
+pub use types::ProcessState;
 
 /// 进程优先级
-pub use crate::kernel::framework::proc::types::ProcessPriority;
+pub use types::ProcessPriority;
 
 use crate::kernel::framework::syscall::types::Errno;
 

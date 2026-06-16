@@ -16,7 +16,7 @@
 use crate::kernel::framework::ipc::pipe;
 use crate::kernel::framework::ipc::shm;
 use crate::kernel::framework::ipc::msgq;
-use crate::kernel::framework::ipc::sem;
+// T6-9: sem 已迁移到 services 本地 (原 framework/ipc/sem.rs)
 
 // ============================================================================
 // 错误
@@ -67,8 +67,20 @@ use crate::kernel::framework::syscall::types::Errno;
 // 句柄
 // ============================================================================
 
+// ============================================================================
+// 类型 (从本地 types 模块 re-export)
+// ============================================================================
+
+pub mod types;
+/// T6-9: 信号量实现 (原 framework/ipc/sem.rs)
+pub mod sem;
+/// T6-9: 信号机制实现 (原 framework/ipc/signal.rs)
+pub mod signal;
+/// T6-9: 调度器集成 (原 framework/ipc/scheduler_integration.rs)
+pub mod scheduler_integration;
+
 /// IPC 资源 ID (services 层视图, 内核 `IpcId = u32` 的包装)
-pub type IpcId = u32;
+pub use types::IpcId;
 
 /// 管道文件描述符
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
