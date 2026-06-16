@@ -3,7 +3,8 @@ use crate::kernel::framework::driver::char::serial::{
     COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE,
 };
 use crate::kernel::framework::driver::framework::Driver;
-use crate::kernel::framework::driver::framework::{DeviceInfo, DeviceType, DriverError, Result};
+
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, DriverError, Result};
 use crate::kernel::framework::driver::input::keyboard::{
     get_special_key, KeyboardBuffer, KeyboardDriver, ModifierState, SpecialKey, KB_LED_CAPS_LOCK,
     KB_LED_NUM_LOCK, SCANCODE_TABLE, SHIFT_TABLE,

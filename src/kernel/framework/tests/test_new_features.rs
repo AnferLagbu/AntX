@@ -311,7 +311,7 @@ fn test_dyn_ipc_sem_create() -> TestResult {
 // ============================================================
 
 fn test_vma_creation() -> TestResult {
-    use crate::kernel::framework::mm::vma::{Vma, VmaType};
+    use crate::kernel::framework::mm::api::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vma = Vma::new(0x400000, 0x401000, flags, VmaType::Anonymous);
@@ -323,7 +323,7 @@ fn test_vma_creation() -> TestResult {
 }
 
 fn test_mm_struct_operations() -> TestResult {
-    use crate::kernel::framework::mm::vma::{MmStruct, Vma, VmaType};
+    use crate::kernel::framework::mm::api::{MmStruct, Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
     let mm = MmStruct::new();
     let flags = PageFlags::PRESENT | PageFlags::USER;
@@ -345,7 +345,7 @@ fn test_mm_struct_operations() -> TestResult {
 }
 
 fn test_vma_stack_guard() -> TestResult {
-    use crate::kernel::framework::mm::vma::{Vma, VmaType};
+    use crate::kernel::framework::mm::api::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
     let guard = Vma::new(0x700000, 0x701000, PageFlags::empty(), VmaType::Guard);
     check!(guard.is_guard(), "is_guard");

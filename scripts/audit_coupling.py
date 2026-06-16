@@ -248,6 +248,9 @@ def check_internal_access(base, layer_name):
                                 target_mod = pattern.split('::')[1] if '::' in pattern else ''
                                 if target_mod == mod:
                                     continue
+                                # 排除 tests 目录 — 白盒测试允许直接访问内部实现
+                                if mod == 'tests':
+                                    continue
                                 issues.append({
                                     'file': str(rs_file.relative_to(Path('src/kernel'))),
                                     'line': lineno,

@@ -3,11 +3,11 @@ use crate::kernel::framework::idt::handlers::{
     ExceptionHandler, ExceptionStatisticsCollector, FaultCause, Mode, PageFaultHandler, PanicInfo,
     RecoveryAction, Severity,
 };
-use crate::kernel::framework::idt::safety::{
+use crate::kernel::framework::idt::{
     is_null_or_invalid, is_valid_kernel_address, is_valid_user_address, CpuFeatures,
 };
-use crate::kernel::framework::idt::statistics::DetailedStatistics;
-use crate::kernel::framework::idt::types::{
+use crate::kernel::framework::idt::DetailedStatistics;
+use crate::kernel::framework::idt::{
     get_exception_name, get_irq_name, ErrorFlags, IdtEntry, IdtPtr, InterruptFrame,
     InterruptStatistics, GDT_KERNEL_CODE, IDT_ENTRIES, IDT_TYPE_INTERRUPT, IRQ_BASE,
 };
