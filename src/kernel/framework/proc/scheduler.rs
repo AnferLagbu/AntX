@@ -22,7 +22,7 @@
 
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 
 use super::cfs::{
     calc_vruntime_delta, cfs_should_preempt, mlfq_level_to_nice, nice_to_weight, CfsRunQueue,

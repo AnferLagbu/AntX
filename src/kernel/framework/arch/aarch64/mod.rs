@@ -236,7 +236,7 @@ impl MmuArch for Aarch64 {
         // 若 KPTI 未激活则返回 kernel_ttbr1 (无实际切换效果).
         unsafe {
             let tramp = crate::kernel::framework::mm::kpti::kpti_trampoline_ttbr1_or_kernel(
-                crate::kernel::framework::mm::vmm::get_kernel_pml4(),
+                crate::kernel::framework::mm::get_kernel_pml4(),
             );
             core::arch::asm!(
                 "dsb ish",
@@ -271,7 +271,7 @@ impl MmuArch for Aarch64 {
         // SAFETY: 同 enter_user 中的 TTBR1 切换逻辑.
         unsafe {
             let tramp = crate::kernel::framework::mm::kpti::kpti_trampoline_ttbr1_or_kernel(
-                crate::kernel::framework::mm::vmm::get_kernel_pml4(),
+                crate::kernel::framework::mm::get_kernel_pml4(),
             );
             core::arch::asm!(
                 "dsb ish",

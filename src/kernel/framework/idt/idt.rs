@@ -27,10 +27,10 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use super::handlers::*;
 use super::statistics::*;
 use super::types::*;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::framework::sync::OnceLock;
 use crate::klog_err;
 use crate::klog_info;
 // 内联硬件操作函数 (避免跨模块导入问题)

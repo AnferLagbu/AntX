@@ -4,7 +4,7 @@ use super::domain::RecoveryDomain;
 use super::types::*;
 
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 pub static ROLLBACK_LOG: IrqSpinLock<[Option<RollbackEvent>; MAX_ROLLBACK_LOG]> =
     IrqSpinLock::new([None; MAX_ROLLBACK_LOG]);
 static ROLLBACK_LOG_IDX: AtomicU32 = AtomicU32::new(0);

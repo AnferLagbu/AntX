@@ -21,7 +21,7 @@
 use crate::kernel::framework::driver::framework::{inb, outb};
 use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
 use alloc::boxed::Box;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ============================================================================
 // 硬件常量定义
 // ============================================================================

@@ -6,7 +6,7 @@
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::klog::{klog_net, klog_net_err, klog_init_msg};
 use crate::kernel::framework::net::smoltcp_impl::{self, ChitinNetDevice, NetworkStack};
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};

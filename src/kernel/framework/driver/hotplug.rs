@@ -18,10 +18,10 @@
 //!
 //! 不使用中断线程, 采用轮询模式 (在调度器 idle loop 中调用 poll)。
 
-use crate::kernel::framework::pci::hotplug::PcieHotplugSlot;
+use crate::kernel::framework::pci::PcieHotplugSlot;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ── 事件类型 ──
 
 /// 总线类型
@@ -95,7 +95,7 @@ impl HotplugManager {
 
         #[cfg(target_arch = "x86_64")]
         {
-            let found = crate::kernel::framework::pci::hotplug::scan_hotplug_slots();
+            let found = crate::kernel::framework::pci::scan_hotplug_slots();
             if !found.is_empty() {
                 crate::klog_info!(Driver, "hotplug: {} PCIe slot(s) found", found.len());
             }

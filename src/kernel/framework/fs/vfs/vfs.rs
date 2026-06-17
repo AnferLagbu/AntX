@@ -1,6 +1,6 @@
 use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use super::types::{KernelError, FileSystem};
 use super::types::*;
 

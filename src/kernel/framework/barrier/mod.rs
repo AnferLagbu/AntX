@@ -46,7 +46,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 pub mod api;
 pub mod domain;
 pub mod fault_inject;

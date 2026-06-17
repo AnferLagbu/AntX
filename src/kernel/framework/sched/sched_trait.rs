@@ -17,7 +17,7 @@ use core::fmt;
 use core::sync::atomic::Ordering;
 
 use crate::kernel::framework::proc::Process;
-use crate::kernel::framework::proc::types::{Pid, BlockReason};
+use crate::kernel::framework::proc::{Pid, BlockReason};
 
 // ============================================================================
 // Task 抽象 — 进程/线程控制块安全句柄

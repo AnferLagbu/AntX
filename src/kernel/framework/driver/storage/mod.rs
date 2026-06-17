@@ -29,7 +29,7 @@ pub use ahci::{AhciController, AhciPort, AtaCommand, H2dFis};
 pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 
 use alloc::vec::Vec;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use super::framework::{self, Driver};
 use crate::klog_info;
 use crate::klog_warn;

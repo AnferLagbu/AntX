@@ -38,7 +38,7 @@
 use super::caps::get_config_summary;
 
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 const ENCODED_LEN: usize = 64;
 const HEADER_MAGIC: u32 = 0xC0FFEE01;
 /// 8 字节尾部 magic: 前 4 字节为可识别签名, 后 4 字节保留 0 (用于 8 字节对齐)

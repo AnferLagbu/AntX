@@ -4,7 +4,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[cfg(target_arch = "x86_64")]
 const KERNEL_BASE: u64 = 0xFFFF800000000000;
 #[cfg(target_arch = "aarch64")]

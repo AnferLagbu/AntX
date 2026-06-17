@@ -4,7 +4,7 @@ use crate::kernel::framework::chitin::{
     chitin_blk_is_present, chitin_blk_read, chitin_blk_total_sectors, chitin_blk_write,
     chitin_find_by_id, chitin_find_by_name, ChitinProto, BlockDevice,
 };
-use crate::kernel::framework::fs::vfs::types::KernelError;
+use crate::kernel::framework::fs::vfs::KernelError;
 use crate::klog_info;
 use crate::klog_warn;
 use core::sync::atomic::{AtomicU32, Ordering};

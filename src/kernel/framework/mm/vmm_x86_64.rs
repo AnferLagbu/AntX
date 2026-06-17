@@ -46,7 +46,7 @@ use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
 
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::framework::sync::OnceLock;
 static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 static VMM_LOCK: AtomicBool = AtomicBool::new(false);

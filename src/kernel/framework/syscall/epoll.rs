@@ -39,7 +39,7 @@
 //! - 阻塞在 epoll_wait 中调用 SCHEDULER.yield_to_wait, 无需额外锁保护
 
 use alloc::vec::Vec;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::types::Errno;
 use crate::kernel::framework::ipc::types::{WaitQueue, WaitQueueItem};
 

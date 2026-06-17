@@ -13,10 +13,10 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::types::*;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::framework::sync::OnceLock;
 /// 中断事件记录 (用于历史追踪)
 #[derive(Debug, Clone, Copy)]
 pub struct InterruptEvent {

@@ -17,7 +17,7 @@ use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::framework::proc::api::process_get_current_pid;
 
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 static PIPE_LOCK: IrqSpinLock<()> = IrqSpinLock::new(());
 
 fn pipe_find_free_index(namespace: &IpcNamespace) -> Option<usize> {

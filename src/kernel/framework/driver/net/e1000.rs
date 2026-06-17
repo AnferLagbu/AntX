@@ -22,7 +22,7 @@ use crate::klog_warn;
 #[cfg(not(feature = "kernel_test"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[cfg(not(feature = "kernel_test"))]
 // POLL_COUNT: 预留统计计数器, 待网络性能监控特性启用后使用。
 #[allow(dead_code)]

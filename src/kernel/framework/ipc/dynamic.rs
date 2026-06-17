@@ -18,7 +18,7 @@
 //! 新代码使用 `DynIpcNamespace`，通过 FFI 桥接暴露给 C。
 
 use alloc::vec::Vec;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use super::types::*;
 
 /// === Message 原始指针特权封装 (Framekernel 模式) ===

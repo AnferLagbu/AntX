@@ -25,9 +25,9 @@ use core::cell::{Cell, UnsafeCell};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::framework::sync::OnceLock;
 const MAX_EARLY_ALLOCS: usize = 256;
 
 /// 最大 buddy 阶数: 2^9 × 4 KB = 2 MB

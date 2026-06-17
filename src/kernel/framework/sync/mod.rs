@@ -77,13 +77,19 @@ pub mod lockdep;
 
 use core::sync::atomic::Ordering;
 
-// 导入 spinlock 模块的中断控制函数
-use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_interrupts};
-// 导入 IrqSaveFlags 类型
-use crate::kernel::framework::sync::types::IrqSaveFlags;
-
 /// 重新导出类型
-pub use types::{MutexInner, RwLockInner, SpinLockGuard, SpinLockInner};
+pub use types::{MutexInner, RwLockInner, SpinLockInner};
+
+// ============================================================================
+// 公共 API 导出 (便捷访问)
+// ============================================================================
+pub use irq_spinlock::IrqSpinLock;
+pub use once_lock::OnceLock;
+pub use spinlock::{SpinLock, disable_interrupts, restore_interrupts};
+pub use mutex::Mutex;
+pub use rwlock::RwLock;
+pub use rcu::{rcu_read_lock, rcu_read_unlock, rcu_dereference, rcu_assign_pointer, synchronize_rcu, call_rcu};
+pub use types::{IrqSaveFlags, MutexGuard, SpinLockGuard, RwLockReadGuard, RwLockWriteGuard};
 
 // ============================================================================
 // FFI 接口层 (C ↔ Rust 桥接)

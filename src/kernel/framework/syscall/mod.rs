@@ -1635,28 +1635,28 @@ fn sys_sched_yield() -> i64 {
 
 const PRIO_PROCESS: i32 = 0;
 
-fn nice_to_priority(nice: i32) -> crate::kernel::framework::proc::types::ProcessPriority {
+fn nice_to_priority(nice: i32) -> crate::kernel::framework::proc::ProcessPriority {
     let clamped = nice.clamp(-20, 19);
     if clamped < -10 {
-        crate::kernel::framework::proc::types::ProcessPriority::RealTime
+        crate::kernel::framework::proc::ProcessPriority::RealTime
     } else if clamped < 0 {
-        crate::kernel::framework::proc::types::ProcessPriority::High
+        crate::kernel::framework::proc::ProcessPriority::High
     } else if clamped < 10 {
-        crate::kernel::framework::proc::types::ProcessPriority::Normal
+        crate::kernel::framework::proc::ProcessPriority::Normal
     } else if clamped < 19 {
-        crate::kernel::framework::proc::types::ProcessPriority::Low
+        crate::kernel::framework::proc::ProcessPriority::Low
     } else {
-        crate::kernel::framework::proc::types::ProcessPriority::Idle
+        crate::kernel::framework::proc::ProcessPriority::Idle
     }
 }
 
-fn priority_to_nice(p: crate::kernel::framework::proc::types::ProcessPriority) -> i32 {
+fn priority_to_nice(p: crate::kernel::framework::proc::ProcessPriority) -> i32 {
     match p {
-        crate::kernel::framework::proc::types::ProcessPriority::RealTime => -20,
-        crate::kernel::framework::proc::types::ProcessPriority::High => -10,
-        crate::kernel::framework::proc::types::ProcessPriority::Normal => 0,
-        crate::kernel::framework::proc::types::ProcessPriority::Low => 10,
-        crate::kernel::framework::proc::types::ProcessPriority::Idle => 19,
+        crate::kernel::framework::proc::ProcessPriority::RealTime => -20,
+        crate::kernel::framework::proc::ProcessPriority::High => -10,
+        crate::kernel::framework::proc::ProcessPriority::Normal => 0,
+        crate::kernel::framework::proc::ProcessPriority::Low => 10,
+        crate::kernel::framework::proc::ProcessPriority::Idle => 19,
     }
 }
 
@@ -3436,7 +3436,7 @@ fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
         return Errno::ENODEV.as_ret();
     }
 
-    let vmm = crate::kernel::framework::mm::vmm::get_vmm();
+    let vmm = crate::kernel::framework::mm::get_vmm();
     let flags = crate::kernel::framework::mm::PageFlags::PRESENT
         | crate::kernel::framework::mm::PageFlags::WRITABLE
         | crate::kernel::framework::mm::PageFlags::USER

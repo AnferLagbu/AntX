@@ -30,7 +30,7 @@
 //! NVMe驱动涉及PCIe配置、MMIO寄存器和DMA操作。
 
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
-use crate::kernel::framework::dma::engine::get_dma;
+use crate::kernel::framework::dma::get_dma;
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
 use crate::klog_info;

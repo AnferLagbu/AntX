@@ -17,7 +17,7 @@
 
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use super::*;
 
 /// VMA 行为属性标志 (与 PageFlags 区分: PageFlags 是硬件页表属性, VmFlags 是内核策略)

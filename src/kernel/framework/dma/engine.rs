@@ -9,7 +9,7 @@ use crate::kernel::framework::mm::api::{pmm_alloc_pages_phys, pmm_free_pages_phy
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 pub struct DmaEngine {
     initialized: AtomicBool,
     mappings: Mutex<Vec<DmaMapping>>,

@@ -8,10 +8,10 @@
 //! 之后只读). `MULTIBOOT_INFO_PTR` 使用 `spin::Mutex`, 因为它在 init
 //! 之前设置, 在 init 期间读取.
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::framework::sync::OnceLock;
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 pub mod multiboot2_fb;

@@ -37,7 +37,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use alloc::vec::Vec;
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 use crate::kernel::framework::errno::Errno;
 

@@ -28,7 +28,7 @@ use super::framework::{inb, outb};
 use super::framework::{inw, outw};
 use super::framework::{DeviceInfo, DeviceType, DriverError, Result};
 use alloc::boxed::Box;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ============================================================================
 // ATA 硬件常量定义
 // ============================================================================

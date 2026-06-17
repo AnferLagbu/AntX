@@ -50,8 +50,8 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
-use crate::kernel::framework::fs::vfs::types::KernelError;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::fs::vfs::KernelError;
 use super::driver::Driver;
 
 // ── 协议模块 ──
@@ -501,7 +501,7 @@ pub fn chitin_set_state(id: u32, state: DeviceState) {
 /// `drive` 是设备在 CHITIN_DEVICES 中的索引 (与旧 block::REGISTRY 索引兼容)。
 /// 仅对 `ChitinProto::Block` 且携带 `BlockOps` 的设备有效。
 ///
-/// 返回值遵循 POSIX 约定: `0` = 成功, `-errno` = 失败 (与 `framework::fs::vfs::types::KernelError` 对齐)。
+/// 返回值遵循 POSIX 约定: `0` = 成功, `-errno` = 失败 (与 `framework::fs::vfs::KernelError` 对齐)。
 pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
     if buf.len() < 512 {
         return KernelError::InvalidArgument.as_i32();

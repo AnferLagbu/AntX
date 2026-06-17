@@ -17,7 +17,7 @@ use core::fmt;
 use core::ptr::NonNull;
 
 use crate::kernel::framework::mm::{PhysAddr, phys_to_virt};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 use crate::klog_warn;
 /// MMIO 别名注册表, 防止同一物理区域被多次映射。
 /// 使用 spin::Mutex (已在内核中广泛使用) 保证线程安全。
@@ -139,7 +139,7 @@ impl IoMem {
     /// 使用 2MB 大页映射, 覆盖 [phys, phys + len) 所在的所有 2MB 页.
     /// 如果映射已存在 (同一 2MB 页), map_huge_page 会安全地跳过或覆盖.
     fn ensure_mmio_mapped(phys: u64, len: usize) {
-        use crate::kernel::framework::mm::vmm::get_vmm;
+        use crate::kernel::framework::mm::get_vmm;
         use crate::kernel::framework::mm::{VirtAddr, PageFlags, PageSize};
 
         let vmm = get_vmm();

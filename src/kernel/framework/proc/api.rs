@@ -429,10 +429,10 @@ pub fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid != 0 {
         // 释放该进程持有的所有文件锁
-        crate::kernel::framework::fs::vfs::flock::flock_release_pid(current_pid);
-        crate::kernel::framework::fs::vfs::flock::posix_lock_release_pid(current_pid);
+        crate::kernel::framework::fs::vfs::flock_release_pid(current_pid);
+        crate::kernel::framework::fs::vfs::posix_lock_release_pid(current_pid);
 
-        let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
+        let kernel_cr3 = crate::kernel::framework::mm::get_kernel_pml4();
         if kernel_cr3 != 0 {
             // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
             raw::switch_page_table(kernel_cr3);
@@ -584,7 +584,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let mut st: crate::kernel::framework::fs::vfs::types::VfsStat = crate::kernel::framework::fs::vfs::types::VfsStat::default();
+    let mut st: crate::kernel::framework::fs::vfs::VfsStat = crate::kernel::framework::fs::vfs::VfsStat::default();
     let stat_result = crate::kernel::framework::fs::vfs::vfs_stat(path, &mut st, pwm);
     if stat_result < 0 {
         return -1;
@@ -1183,7 +1183,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
     };
 
     // 阶段 3: 切换到内核页表, 替换当前进程的用户地址空间
-    let kernel_cr3 = crate::kernel::framework::mm::vmm::get_kernel_pml4();
+    let kernel_cr3 = crate::kernel::framework::mm::get_kernel_pml4();
     if kernel_cr3 != 0 {
         // SAFETY: kernel_cr3 是从 vmm::get_kernel_pml4() 获取的合法页表。
         raw::switch_page_table(kernel_cr3);

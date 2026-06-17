@@ -202,8 +202,8 @@ pub fn elf_load_with_bias(
         mm.insert_vma(vma).map_err(|_| "VMA insertion failed")?;
 
         // 复制段数据到物理页
-        let vmm_inst = crate::kernel::framework::mm::vmm::get_vmm();
-        let pml4 = crate::kernel::framework::mm::vmm::get_current_pml4();
+        let vmm_inst = crate::kernel::framework::mm::get_vmm();
+        let pml4 = crate::kernel::framework::mm::get_current_pml4();
 
         let file_end = file_offset + filesz;
         let mut cur = vaddr_start;

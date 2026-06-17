@@ -140,7 +140,7 @@ pub struct ThreadTable {
     next_tid: AtomicU32,
 }
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // SAFETY: ThreadTable 始终通过静态 THREAD_TABLE 访问.
 // 所有变更都走 Mutex, NonNull 指针指向的 Thread 对象
 // 字段均为 Atomic* 或普通整数.

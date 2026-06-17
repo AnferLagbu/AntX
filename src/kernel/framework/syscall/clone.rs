@@ -23,7 +23,7 @@
 
 use crate::kernel::framework::proc::api;
 use crate::kernel::framework::proc::api::raw;
-use crate::kernel::framework::proc::types::ProcessState;
+use crate::kernel::framework::proc::ProcessState;
 use crate::kernel::framework::syscall::types::Errno;
 
 use core::sync::atomic::Ordering;
@@ -127,7 +127,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
         .unwrap_or_default();
 
     // 创建子进程 (共享 CR3, 不 COW)
-    let child_ptr = raw::alloc_process(child_pid, name_str.as_str(), Some(crate::kernel::framework::proc::types::ProcessId(parent_pid)));
+    let child_ptr = raw::alloc_process(child_pid, name_str.as_str(), Some(crate::kernel::framework::proc::ProcessId(parent_pid)));
     let child = raw::process_ref_mut(child_ptr);
 
     // 共享地址空间: 子进程使用父进程的 CR3
@@ -148,7 +148,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
 
     // 添加到父进程的子进程列表
     api::process_with_mut(parent_pid, |p| {
-        p.children.lock().push(crate::kernel::framework::proc::types::ProcessId(child_pid));
+        p.children.lock().push(crate::kernel::framework::proc::ProcessId(child_pid));
     });
 
     // 分配内核栈

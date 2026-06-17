@@ -86,3 +86,6 @@ pub use cpu_queue::init_cpu_queue;
 
 // madvise_mlock 公共接口 re-export — 避免跨子系统直接访问 proc::madvise_mlock 内部
 pub use madvise_mlock::{sys_madvise, sys_mlock, sys_munlock, sys_mlockall, sys_munlockall, sys_mincore};
+
+// elf 公共接口 re-export — 避免跨子系统直接访问 proc::elf 内部
+pub use elf::{Elf64Header, Elf64Phdr, ElfLoadResult, elf_validate, elf_load};

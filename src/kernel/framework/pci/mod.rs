@@ -35,7 +35,7 @@
 //! 详见 `src/net/driver/e1000.c` → `e1000_probe()`.
 
 use alloc::vec::Vec;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use core::fmt;
 
 pub mod api;
@@ -537,6 +537,11 @@ pub fn find_device(vendor_id: u16, device_id: u16) -> Option<PciDevice> {
 pub fn device_count() -> usize {
     DEVICE_LIST.lock().len()
 }
+
+// ============================================================================
+// 公共 API 导出 (便捷访问)
+// ============================================================================
+pub use hotplug::{PcieHotplugSlot, scan_hotplug_slots};
 
 impl fmt::Display for PciDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

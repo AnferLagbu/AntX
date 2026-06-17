@@ -25,7 +25,7 @@ use super::vmm;
 use super::*;
 
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 static COW_REFS: IrqSpinLock<Option<BTreeMap<u64, u32>>> = IrqSpinLock::new(None);
 
 pub fn cow_init() {

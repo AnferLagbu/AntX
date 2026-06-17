@@ -144,7 +144,7 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
     let stack_top = per_cpu.stack.as_ptr() as u64 + AP_STACK_SIZE as u64;
     AP_PER_CPU[cpu_index as usize] = Some(alloc::boxed::Box::into_raw(per_cpu));
 
-    let cr3_val = crate::kernel::framework::mm::vmm::get_kernel_pml4();
+    let cr3_val = crate::kernel::framework::mm::get_kernel_pml4();
     let gdt_ptr = super::gdt::get_gdt_ptr();
     let entry_addr = ap_entry as *const () as u64;
 

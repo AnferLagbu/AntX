@@ -25,9 +25,9 @@ use crate::kernel::framework::proc;
 /// # Safety
 ///
 /// `data` 必须为至少 64 字节的有效切片, 调用期间不释放。
-pub fn elf_validate(data: *const u8, len: u64) -> Option<&'static proc::elf::Elf64Header> {
+pub fn elf_validate(data: *const u8, len: u64) -> Option<&'static proc::Elf64Header> {
     // SAFETY: data 由调用方保证有效, elf_validate 内部检查长度
-    unsafe { proc::elf::elf_validate(data, len) }
+    unsafe { proc::elf_validate(data, len) }
 }
 
 // ============================================================================
@@ -45,7 +45,7 @@ pub fn elf_load(
     mm: &MmStruct,
     data: *const u8,
     len: u64,
-) -> Result<proc::elf::ElfLoadResult, &'static str> {
+) -> Result<proc::ElfLoadResult, &'static str> {
     // SAFETY: 切片借用保证 data 在 load 期间有效; mm 唯一借用保证无并发
-    unsafe { proc::elf::elf_load(mm, data, len) }
+    unsafe { proc::elf_load(mm, data, len) }
 }

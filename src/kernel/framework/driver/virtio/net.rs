@@ -13,13 +13,13 @@ use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 use crate::kernel::framework::mm::KERNEL_BASE;
-use crate::kernel::framework::fs::vfs::types::KernelError;
+use crate::kernel::framework::fs::vfs::KernelError;
 use crate::klog_err;
 use crate::klog_error;
 use crate::klog_info;
 use crate::klog_warn;
 use alloc::boxed::Box;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ── Feature bits ──
 
 const VIRTIO_NET_F_MAC: u64 = 1 << 5;

@@ -21,7 +21,7 @@
 //! 非阻塞模式 (WNOHANG) 通过 SCHEDULER.block + 调度器轮询实现.
 
 use crate::kernel::framework::proc::api;
-use crate::kernel::framework::proc::types::ProcessState;
+use crate::kernel::framework::proc::ProcessState;
 use crate::kernel::framework::syscall::types::Errno;
 use crate::kernel::framework::syscall::raw;
 

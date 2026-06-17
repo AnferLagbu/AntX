@@ -32,7 +32,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::types::Errno;
 use crate::kernel::framework::timer::{HrTimer, HrTimerRestart, hrtimer_start, hrtimer_cancel, hrtimer_clock_read};
 

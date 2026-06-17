@@ -23,7 +23,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU32, Ordering};
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
 // 常量

@@ -4,7 +4,7 @@ use super::config::RecoveryLayer;
 use super::config::RecoveryResult;
 
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 pub const MAX_AUDIT_ENTRIES: usize = 16;
 
 #[derive(Debug)]
