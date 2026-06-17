@@ -65,8 +65,8 @@ fn fd_table_services_uses_framework_irq_spinlock() {
     // P1-I-01 验收: services 可使用 framework 提供的 safe API (IrqSpinLock)
     let src = services_fd_table_rs();
     assert!(
-        src.contains("use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock"),
-        "P1-I-01: FdTable 应使用 framework::sync::irq_spinlock::IrqSpinLock"
+        src.contains("use crate::kernel::framework::sync::IrqSpinLock"),
+        "P1-I-01: FdTable 应使用 framework::sync::IrqSpinLock"
     );
 }
 

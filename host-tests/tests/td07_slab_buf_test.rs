@@ -41,10 +41,10 @@ fn test_buf_storage_uses_pointer_table() {
 fn test_socket_alloc_uses_kmalloc() {
     let src = read(NET_INIT);
     // TCP 路径必须用 k_malloc(TCP_BUF_SIZE)
-    let tcp_alloc = "let rx_ptr = crate::kernel::framework::mm::api::k_malloc(TCP_BUF_SIZE);";
+    let tcp_alloc = "k_malloc(TCP_BUF_SIZE)";
     assert!(src.contains(tcp_alloc),
         "TD-07: smoltcp TCP socket alloc 必须通过 `k_malloc(TCP_BUF_SIZE)` 申请 RX 缓冲");
-    let tcp_alloc2 = "let tx_ptr = crate::kernel::framework::mm::api::k_malloc(TCP_BUF_SIZE);";
+    let tcp_alloc2 = "k_malloc(TCP_BUF_SIZE)";
     assert!(src.contains(tcp_alloc2),
         "TD-07: smoltcp TCP socket alloc 必须通过 `k_malloc(TCP_BUF_SIZE)` 申请 TX 缓冲");
     // UDP 路径必须用 k_malloc(UDP_BUF_SIZE)

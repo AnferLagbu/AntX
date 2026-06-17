@@ -75,7 +75,8 @@ fn fs_error_preserves_three_fs_specific_variants() {
 fn to_errno_method_present() {
     let src = read(RAMFS_RS);
     assert!(
-        src.contains("pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno"),
+        src.contains("pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno")
+            || src.contains("pub fn to_errno(self) -> crate::kernel::framework::syscall::Errno"),
         "FsError 必须有 to_errno() 方法 (4 变体全覆盖)"
     );
     let to_errno_block_start = src.find("pub fn to_errno(self)").expect("to_errno 存在");

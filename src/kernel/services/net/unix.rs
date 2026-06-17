@@ -16,7 +16,7 @@ use crate::kernel::framework::syscall::Errno;
 // ============================================================================
 
 /// FD 起点, 位于 smoltcp FD 空间 (`[0, 256)`) 之后, 与之不重叠.
-pub const UDS_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::UDS.base;
+pub const UDS_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::UDS.base;
 
 /// 最大 UDS socket 数量
 pub const MAX_UDS_FD: usize = 16;
@@ -229,8 +229,8 @@ fn alloc_socket_id() -> u32 {
 
 #[inline]
 fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
-    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::Uds, slot)) => {
+    match crate::kernel::framework::proc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::FdSubsystem::Uds, slot)) => {
             Ok(slot as u8)
         }
         _ => Err(UdsError::BadFd),
@@ -239,8 +239,8 @@ fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
 
 #[inline]
 fn idx_to_fd(idx: u8) -> i32 {
-    crate::kernel::framework::proc::fd_alloc::fd_at(
-        crate::kernel::framework::proc::fd_alloc::FdSubsystem::Uds,
+    crate::kernel::framework::proc::fd_at(
+        crate::kernel::framework::proc::FdSubsystem::Uds,
         idx as usize,
     )
 }

@@ -93,13 +93,15 @@ fn test_kernel_error_posix_round_trip() {
 fn test_from_uds_error_covers_all_variants() {
     let src = read(NET_UNIX);
     // 验证 UdsError 9 个变体都有对应分支
+    // UdsError 已迁移到 services 本地, 可用 fw:: 或直接 UdsError:: 前缀
     for variant in [
         "BadFd", "Again", "NoMem", "AddrFamily", "AddrInUse",
         "ConnRefused", "Invalid", "NotFound", "NoSys",
     ] {
         assert!(
-            src.contains(&format!("fw::UdsError::{} =>", variant)),
-            "必须覆盖 fw::UdsError::{}",
+            src.contains(&format!("fw::UdsError::{} =>", variant))
+            || src.contains(&format!("UdsError::{} =>", variant)),
+            "必须覆盖 UdsError::{}",
             variant
         );
     }

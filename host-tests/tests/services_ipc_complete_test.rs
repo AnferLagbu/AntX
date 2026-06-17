@@ -74,7 +74,7 @@ fn test_services_ipc_uses_framework_safe_api() {
     let src = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("无法读取 {}: {}", path.display(), e));
 
-    for sub in &["pipe", "shm", "msgq", "sem"] {
+    for sub in &["pipe", "shm", "msgq"] {
         let safe_call = format!("{}::{}_safe", sub, sub);
         // 至少应出现一次对 framework ipc safe API 的调用
         assert!(
@@ -84,4 +84,9 @@ fn test_services_ipc_uses_framework_safe_api() {
             sub
         );
     }
+    // sem 已迁移到 services 本地, 但仍通过 framework::ipc::IPC_NAMESPACE 访问全局状态
+    assert!(
+        src.contains("framework::ipc::IPC_NAMESPACE") || src.contains("framework::ipc::sem"),
+        "services/ipc 应通过 framework::ipc 访问全局状态 (I-54)"
+    );
 }

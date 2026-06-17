@@ -138,7 +138,8 @@ fn kmalloc_source_uses_irq_save_flags_signature() {
     );
     // 必须导入 disable_interrupts / restore_interrupts
     assert!(
-        source.contains("use crate::kernel::framework::sync::spinlock::")
+        (source.contains("use crate::kernel::framework::sync::spinlock::")
+            || source.contains("use crate::kernel::framework::sync::"))
             && source.contains("disable_interrupts")
             && source.contains("restore_interrupts"),
         "P1-I-28: kmalloc.rs 必须导入 disable/restore 中断原语"

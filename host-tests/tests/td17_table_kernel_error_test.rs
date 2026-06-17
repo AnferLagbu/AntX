@@ -66,7 +66,8 @@ fn table_error_preserves_three_table_specific_variants() {
 fn to_errno_method_present() {
     let src = read(TABLE_RS);
     assert!(
-        src.contains("pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno"),
+        src.contains("pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno")
+            || src.contains("pub fn to_errno(self) -> crate::kernel::framework::syscall::Errno"),
         "TableError 必须有 to_errno() 方法 (4 变体全覆盖)"
     );
     // to_errno 必须处理 4 个变体

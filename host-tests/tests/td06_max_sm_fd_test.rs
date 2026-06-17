@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::Path;
 
-const FD_ALLOC: &str = "src/kernel/framework/proc/fd_alloc.rs";
+const FD_ALLOC: &str = "src/kernel/services/proc/fd_alloc.rs";
 const NET_INIT: &str = "src/kernel/framework/net/init.rs";
 
 fn read(path: &str) -> String {
@@ -32,8 +32,10 @@ fn test_cfg_smoltcp_cap_exists() {
 fn test_max_sockets_uses_cfg_smoltcp_cap() {
     let src = read(NET_INIT);
     // 验: MAX_SOCKETS 必须从 cfg_smoltcp_cap 派生, 不再硬编码 256
-    assert!(src.contains("const MAX_SOCKETS: usize = crate::kernel::framework::proc::fd_alloc::cfg_smoltcp_cap() as usize"),
-        "TD-06: MAX_SOCKETS 必须从 fd_alloc::cfg_smoltcp_cap() 派生");
+    assert!(src.contains("const MAX_SOCKETS: usize = crate::kernel::services::proc::cfg_smoltcp_cap() as usize")
+            || src.contains("const MAX_SOCKETS: usize = crate::kernel::framework::proc::fd_alloc::cfg_smoltcp_cap() as usize")
+            || src.contains("const MAX_SOCKETS: usize = crate::kernel::framework::proc::cfg_smoltcp_cap() as usize"),
+        "TD-06: MAX_SOCKETS 必须从 cfg_smoltcp_cap() 派生");
     // 验: 注释必须提示用户改本值后须同步 8 张大表
     assert!(src.contains("SOCKET_STORAGE / TCP_*_BUFS"),
         "TD-06: 注释必须列出所有需要同步尺寸的表 (SOCKET_STORAGE + TCP_*_BUFS + ...)");
@@ -43,7 +45,9 @@ fn test_max_sockets_uses_cfg_smoltcp_cap() {
 fn test_max_sm_fd_derives_from_fdplan() {
     let src = read(NET_INIT);
     // MAX_SM_FD 必须仍从 FdPlan::SMOLTCP.capacity 派生 (TD-02 V3)
-    assert!(src.contains("const MAX_SM_FD: usize = crate::kernel::framework::proc::fd_alloc::FdPlan::SMOLTCP.capacity as usize"),
+    assert!(src.contains("const MAX_SM_FD: usize = crate::kernel::framework::proc::fd_alloc::FdPlan::SMOLTCP.capacity as usize")
+            || src.contains("const MAX_SM_FD: usize = crate::kernel::framework::proc::FdPlan::SMOLTCP.capacity as usize")
+            || src.contains("const MAX_SM_FD: usize = crate::kernel::services::proc::FdPlan::SMOLTCP.capacity as usize"),
         "TD-06: MAX_SM_FD 必须仍从 FdPlan::SMOLTCP.capacity 派生 (TD-02 V3 一致性)");
 }
 

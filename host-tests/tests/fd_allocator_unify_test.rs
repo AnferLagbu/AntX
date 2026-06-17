@@ -10,9 +10,9 @@
 use std::fs;
 use std::path::Path;
 
-const UNIX_RS: &str = "src/kernel/framework/net/unix.rs";
+const UNIX_RS: &str = "src/kernel/services/net/unix.rs";
 const NET_INIT: &str = "src/kernel/framework/net/init.rs";
-const FD_ALLOC_RS: &str = "src/kernel/framework/proc/fd_alloc.rs";
+const FD_ALLOC_RS: &str = "src/kernel/services/proc/fd_alloc.rs";
 
 /// 从源文件中提取 `pub const XXX: i32 = NNN;` 的整数值
 fn extract_pub_const_i32(src: &str, name: &str) -> Option<i32> {

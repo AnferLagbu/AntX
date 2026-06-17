@@ -91,8 +91,8 @@ const INOTIFY_MAX_WATCHES: usize = 16;
 const INOTIFY_MAX_EVENTS: usize = 64;
 /// 文件名最大长度 (inotify_event.name)
 const INOTIFY_MAX_NAME: usize = 32;
-/// TD-02: 基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::INOTIFY` 单一来源, 不再硬编码.
-pub const INOTIFY_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::INOTIFY.base;
+/// TD-02: 基址来源已迁移至 `framework::proc::FdPlan::INOTIFY` 单一来源, 不再硬编码.
+pub const INOTIFY_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::INOTIFY.base;
 
 // ============================================================================
 // inotify 数据结构
@@ -229,8 +229,8 @@ impl InotifyInstance {
     /// 获取该实例的 fd
     fn fd(&self) -> i32 {
         // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-        crate::kernel::framework::proc::fd_alloc::fd_at(
-            crate::kernel::framework::proc::fd_alloc::FdSubsystem::Inotify,
+        crate::kernel::framework::proc::fd_at(
+            crate::kernel::framework::proc::FdSubsystem::Inotify,
             self.slot_idx as usize,
         )
     }
@@ -516,8 +516,8 @@ pub fn inotify_notify(ino: u32, mask: u32, name: &str, is_dir: bool) {
             if notified_fds[i] {
                 // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
                 crate::kernel::framework::syscall::epoll::epoll_pwake(
-                    crate::kernel::framework::proc::fd_alloc::fd_at(
-                        crate::kernel::framework::proc::fd_alloc::FdSubsystem::Inotify,
+                    crate::kernel::framework::proc::fd_at(
+                        crate::kernel::framework::proc::FdSubsystem::Inotify,
                         i,
                     ),
                 );

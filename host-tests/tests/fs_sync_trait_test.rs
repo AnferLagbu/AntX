@@ -24,7 +24,7 @@ fn read_src(rel: &str) -> String {
 
 #[test]
 fn trait_has_fs_sync_default() {
-    let src = read_src("src/kernel/framework/fs/vfs/types.rs");
+    let src = read_src("src/kernel/services/fs/vfs_types.rs");
     let required = [
         "fn fs_sync(&self) -> KernelResult<()>",
         "fn fs_sync(&self) -> crate::kernel::framework::fs::vfs::types::KernelResult<()>",
@@ -48,7 +48,7 @@ fn trait_has_fs_sync_default() {
 fn hvfs_overrides_fs_sync() {
     let src = read_src("src/kernel/services/fs/hvfs/hvfs.rs");
     let impl_block = src
-        .rsplit_once("impl crate::kernel::framework::fs::vfs::types::FileSystem for HvfsData")
+        .rsplit_once("impl crate::kernel::framework::fs::FileSystem for HvfsData")
         .map(|(_, b)| b)
         .unwrap_or("");
     assert!(
@@ -163,7 +163,7 @@ fn no_naked_match_fs_type_in_vfs_sync() {
 
 #[test]
 fn trait_object_method_signature() {
-    let src = read_src("src/kernel/framework/fs/vfs/types.rs");
+    let src = read_src("src/kernel/services/fs/vfs_types.rs");
     // 简化版: 验证 trait 块里有 fs_sync + KernelResult<()> 两关键词同时出现
     let trait_block = src
         .split_once("pub trait FileSystem: Send + Sync")
@@ -181,7 +181,7 @@ fn trait_object_method_signature() {
 fn hvfs_sync_returns_ioerror_on_nonzero() {
     let src = read_src("src/kernel/services/fs/hvfs/hvfs.rs");
     let impl_block = src
-        .rsplit_once("impl crate::kernel::framework::fs::vfs::types::FileSystem for HvfsData")
+        .rsplit_once("impl crate::kernel::framework::fs::FileSystem for HvfsData")
         .map(|(_, b)| b)
         .unwrap_or("");
     // r == 0 → Ok(()); != 0 → Err(IoError)

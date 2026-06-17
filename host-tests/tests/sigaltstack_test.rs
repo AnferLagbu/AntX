@@ -164,6 +164,7 @@ fn source_syscall_clears_onstack_on_sigreturn() {
     // 必须清 SS_ONSTACK
     assert!(
         rt_sigreturn_body.contains("!crate::kernel::framework::proc::signal::SS_ONSTACK")
+            || rt_sigreturn_body.contains("!crate::kernel::framework::proc::SS_ONSTACK")
             || rt_sigreturn_body.contains("!SS_ONSTACK"),
         "P1-I-45: sys_rt_sigreturn 必须清除 SS_ONSTACK 标记"
     );

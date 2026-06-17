@@ -13,11 +13,11 @@
 use std::fs;
 use std::path::Path;
 
-const FD_ALLOC: &str = "src/kernel/framework/proc/fd_alloc.rs";
+const FD_ALLOC: &str = "src/kernel/services/proc/fd_alloc.rs";
 const EVENTFD: &str = "src/kernel/framework/syscall/eventfd.rs";
 const SIGNALFD: &str = "src/kernel/framework/syscall/signalfd.rs";
 const TIMERFD: &str = "src/kernel/framework/syscall/timerfd.rs";
-const UNIX: &str = "src/kernel/framework/net/unix.rs";
+const UNIX: &str = "src/kernel/services/net/unix.rs";
 
 fn read(p: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -118,8 +118,8 @@ fn test_subsystem_local_fd_to_idx_uses_idx_of() {
         }
         let body = &src[body_start..body_end];
         assert!(
-            body.contains("fd_alloc::idx_of"),
-            "{}: fd_to_idx 体内必须调用 fd_alloc::idx_of (TD-15)",
+            body.contains("fd_alloc::idx_of") || body.contains("proc::idx_of"),
+            "{}: fd_to_idx 体内必须调用 idx_of (TD-15)",
             path
         );
     }

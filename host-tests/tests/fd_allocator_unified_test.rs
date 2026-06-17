@@ -95,10 +95,10 @@ fn test_fd_range_overlaps_helper() {
 fn test_v2_subsystems_reference_fdplan() {
     // TD-02 V2: 4 个子系统的 *FD_BASE 常量必须从 FdPlan 派生, 不再硬编码字面量
     let cases: &[(&str, &str, &str)] = &[
-        ("UDS_FD_BASE",       "src/kernel/services/net/unix.rs",              "crate::kernel::framework::proc::fd_alloc::FdPlan::UDS.base"),
-        ("EFD_FD_BASE",       "src/kernel/framework/syscall/eventfd.rs",  "crate::kernel::framework::proc::fd_alloc::FdPlan::EVENT_FD.base"),
-        ("SFD_FD_BASE",       "src/kernel/framework/syscall/signalfd.rs", "crate::kernel::framework::proc::fd_alloc::FdPlan::SIGNAL_FD.base"),
-        ("INOTIFY_FD_BASE",   "src/kernel/services/fs/inotify.rs",       "crate::kernel::framework::proc::fd_alloc::FdPlan::INOTIFY.base"),
+        ("UDS_FD_BASE",       "src/kernel/services/net/unix.rs",              "crate::kernel::framework::proc::FdPlan::UDS.base"),
+        ("EFD_FD_BASE",       "src/kernel/framework/syscall/eventfd.rs",  "crate::kernel::framework::proc::FdPlan::EVENT_FD.base"),
+        ("SFD_FD_BASE",       "src/kernel/framework/syscall/signalfd.rs", "crate::kernel::framework::proc::FdPlan::SIGNAL_FD.base"),
+        ("INOTIFY_FD_BASE",   "src/kernel/services/fs/inotify.rs",       "crate::kernel::framework::proc::FdPlan::INOTIFY.base"),
     ];
     for (const_name, rel_path, expected_ref) in cases {
         let p = Path::new(env!("CARGO_MANIFEST_DIR"))

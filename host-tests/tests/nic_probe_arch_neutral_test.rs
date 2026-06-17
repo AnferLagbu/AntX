@@ -53,7 +53,7 @@ fn test_nic_probe_all_no_arch_mutex() {
     }
 
     // 同时验证关键驱动探测函数调用都在 nic_probe_all 中存在
-    assert!(body.contains("e1000::e1000_probe"),
+    assert!(body.contains("e1000_probe"),
         "nic_probe_all 缺失 e1000 探测调用 (I-53)");
     assert!(body.contains("virtio_net_probe"),
         "nic_probe_all 缺失 virtio-net 探测调用 (I-53)");
