@@ -73,7 +73,10 @@ static FS_BACKEND: crate::kernel::framework::sync::OnceLock<&'static dyn FsBacke
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
 pub fn register_fs_backend(policy: &'static dyn FsBackend) -> Result<(), &'static dyn FsBackend> {
-    FS_BACKEND.set(policy).map_err(|e| e)
+    match FS_BACKEND.set(policy) {
+        Ok(()) => Ok(()),
+        Err(existing) => Err(existing),
+    }
 }
 
 /// 获取当前注册的 VFS 后端决策策略 (未注册时返回内建回退)

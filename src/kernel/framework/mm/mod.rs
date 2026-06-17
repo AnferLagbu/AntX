@@ -39,6 +39,8 @@ pub mod swap;
 pub mod vma;
 /// T-02: 物理页帧分配决策 trait
 pub mod alloc_trait;
+/// L-03: 机制 API 集中导出 — 供 services 层策略实现调用
+pub mod mechanism;
 
 #[cfg(target_arch = "x86_64")]
 pub mod kpti;
@@ -84,6 +86,9 @@ pub use alloc_trait::{FrameAllocDecision, FallbackAllocPolicy, AllocContext, All
 
 // cow 公共接口 re-export — 避免跨子系统直接访问 mm::cow 内部
 pub use cow::{cow_init, cow_ref_count, cow_inc_ref, cow_dec_ref};
+
+// mechanism 模块供 services 层通过 framework::mm::mechanism::* 访问机制 API
+// 不使用 glob re-export 因与现有 api re-export 产生歧义
 
 /// Page size and huge-page constants (统一从 config.rs 引用)
 pub use crate::kernel::framework::config::{

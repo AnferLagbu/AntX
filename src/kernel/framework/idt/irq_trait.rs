@@ -104,7 +104,10 @@ static IRQ_DECISION: crate::kernel::framework::sync::OnceLock<&'static dyn IrqDe
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
 pub fn register_irq_decision(policy: &'static dyn IrqDecision) -> Result<(), &'static dyn IrqDecision> {
-    IRQ_DECISION.set(policy).map_err(|e| e)
+    match IRQ_DECISION.set(policy) {
+        Ok(()) => Ok(()),
+        Err(existing) => Err(existing),
+    }
 }
 
 /// 获取当前注册的中断处理决策策略 (未注册时返回内建回退)

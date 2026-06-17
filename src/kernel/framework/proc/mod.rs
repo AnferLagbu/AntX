@@ -51,6 +51,8 @@ pub mod cpu_queue;
 pub mod elf;
 pub mod api;
 pub mod madvise_mlock;
+/// L-02: 机制 API 集中导出 — 供 services 层策略实现调用
+pub mod mechanism;
 /// D1: Linux 兼容 Namespace 框架
 pub mod namespace;
 pub mod oomd;
@@ -114,3 +116,6 @@ pub use cgroup::{sys_cgroup_create, sys_cgroup_destroy, sys_cgroup_attach, sys_c
 
 // sched_trait 公共接口 re-export — T-01 策略-机制分离
 pub use sched_trait::{SchedDecision, FallbackMlfqPolicy, register_sched_decision, current_sched_decision};
+
+// mechanism 模块供 services 层通过 framework::proc::mechanism::* 访问机制 API
+// 不使用 glob re-export 因与现有 api re-export 产生歧义

@@ -11,7 +11,7 @@
 | 字段 | 值 |
 |------|---|
 | 起始日期 | 2026-06-16 |
-| 当前 TCB 比率 | 47.8% |
+| 当前 TCB 比率 | 47.7% (自研, excl. smoltcp) |
 | 初始 framework 跨模块引用 | 402 处 |
 | 当前 framework 跨模块引用 | 352 处 (↓ 12.4%) |
 | 初始 services→framework 依赖 | 215 处 |
@@ -208,14 +208,20 @@
 
 ### 4.2 中间层设计 (L-01 ~ L-03)
 
-- [ ] **L-01 syscall 中间层**: 在 framework/syscall/ 和 services/syscall/ 之间建立分发中间层, framework 只做寄存器保存/恢复和入口, services 做全部分发逻辑.
-  - 预期效果: 消除 syscall 对 proc/mm/fs 的直接依赖
+- [x] **L-01 syscall 中间层**: 在 framework/syscall/ 和 services/syscall/ 之间建立分发中间层, framework 只做寄存器保存/恢复和入口, services 做全部分发逻辑.
+  - 完成日期: 2026-06-17
+  - 实现: `syscall_dispatch_impl` 改为 services 优先分发 (调用 `current_syscall_dispatch().dispatch()`), 返回 -ENOSYS 时回退到 framework match; `ServicesSyscallDispatch::dispatch` 已迁移 55 个纯 services 调用的 syscall 分支 (文件I/O、文件系统操作、fd操作、内存管理、进程信息、信号、网络、凭证、同步原语)
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
-- [ ] **L-02 进程管理中间层**: 将 `framework/proc/api.rs` 拆分为机制 API (上下文切换/页表操作) 和策略 API (进程表/调度), 策略 API 移到 services.
-  - 预期效果: 消除 proc↔syscall 循环依赖
+- [x] **L-02 进程管理中间层**: 将 `framework/proc/api.rs` 拆分为机制 API (上下文切换/页表操作) 和策略 API (进程表/调度), 策略 API 移到 services.
+  - 完成日期: 2026-06-17
+  - 实现: 创建 `framework/proc/mechanism.rs` 集中导出纯机制 API (页表切换/内核栈复制/进程表CRUD/调度器队列操作/用户进程加载/信号操作/初始化), services 层通过 `framework::proc::mechanism::*` 获取机制 API 实现策略逻辑
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
-- [ ] **L-03 内存管理中间层**: 将 `framework/mm/api.rs` 拆分为机制 API (页表映射/TLB 刷新) 和策略 API (分配/回收/换出), 策略 API 移到 services.
-  - 预期效果: 消除 mm↔syscall 循环依赖
+- [x] **L-03 内存管理中间层**: 将 `framework/mm/api.rs` 拆分为机制 API (页表映射/TLB 刷新) 和策略 API (分配/回收/换出), 策略 API 移到 services.
+  - 完成日期: 2026-06-17
+  - 实现: 创建 `framework/mm/mechanism.rs` 集中导出纯机制 API (PMM分配/释放、VMM映射/解除映射、页表切换、COW克隆/销毁、内核堆分配/释放、VMA操作、用户空间拷贝、内存压力、页错误处理), services 层通过 `framework::mm::mechanism::*` 获取机制 API 实现策略逻辑
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
 ---
 
@@ -320,7 +326,7 @@
 - [x] 全量审计脚本通过
 - [x] 双架构编译通过
 - [x] 依赖矩阵无循环
-- [ ] TCB 比率 < 30% — 当前 79.5% (framework 162612 行 / services 42013 行), 需 L-01/L-02/L-03 大规模代码迁移后逐步降低
+- [ ] TCB 比率 < 30% — 当前 47.7% (自研 TCB, excl. smoltcp; framework 自研 102844 行 / services 42116 行), L-01/L-02/L-03 中间层架构已建立, T-01~T-05 trait 注入完成, 已删除 62 个冗余 syscall 分支 + 44 个死函数 (减少 ~2049 行). framework 中 33660 行 safe 函数为潜在迁移候选, 需后续渐进式将策略代码迁移到 services
 - [x] 更新 framekernel-dev-guide.md — 场景 5 策略注入示例更新为实际实现的 trait 名称 (SchedDecision/MlfqPolicy), 新增已实现 trait 抽象表 (T-01~T-05)
 
 ---

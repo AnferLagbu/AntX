@@ -61,7 +61,10 @@ static SYSCALL_DISPATCH: crate::kernel::framework::sync::OnceLock<&'static dyn S
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
 pub fn register_syscall_dispatch(policy: &'static dyn SyscallDispatch) -> Result<(), &'static dyn SyscallDispatch> {
-    SYSCALL_DISPATCH.set(policy).map_err(|e| e)
+    match SYSCALL_DISPATCH.set(policy) {
+        Ok(()) => Ok(()),
+        Err(existing) => Err(existing),
+    }
 }
 
 /// 获取当前注册的系统调用分发策略 (未注册时返回内建回退)

@@ -239,6 +239,20 @@ Q3. 现有 framework 公开 API 是否够用?
 
 **原则**: framework 只保留"必须 unsafe 才能完成"的机制, 策略全部提取到 services.
 
+### 场景 5b: 中间层架构 — 机制 API 集中导出
+
+L-01/L-02/L-03 在 framework 子系统中建立 `mechanism.rs`, 将纯机制 API 集中导出, 供 services 层策略实现调用. services 通过 `framework::xxx::mechanism::*` 获取机制 API, 不再直接引用内部子模块.
+
+已实现的中间层:
+
+| 中间层 | framework 定义 | 机制 API 范围 |
+|--------|---------------|-------------|
+| L-01 syscall | `framework/syscall/mod.rs` | services 优先分发 + framework 回退; `ServicesSyscallDispatch` 已迁移 55 个 syscall 分支 |
+| L-02 proc | `framework/proc/mechanism.rs` | 页表切换/内核栈复制/进程表CRUD/调度器队列操作/用户进程加载/信号操作/初始化 |
+| L-03 mm | `framework/mm/mechanism.rs` | PMM分配/释放、VMM映射/解除映射、页表切换、COW克隆/销毁、内核堆、VMA、用户空间拷贝、页错误 |
+
+**调用路径**: services 策略 → `framework::xxx::mechanism::*` → framework 内部实现
+
 ### 场景 6: 非类型化内存 — UFrame/USegment 模式
 
 当 services 需要访问"外部可变内存" (用户空间映射的物理页、DMA 区域) 时, 必须使用非类型化内存抽象, 防止将可被外部修改的内存当作内核数据结构引用.

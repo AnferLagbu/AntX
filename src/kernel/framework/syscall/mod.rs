@@ -198,45 +198,18 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         return ret;
     }
 
+    // L-01: 优先委托 services 层策略分发
+    // services 可处理已迁移的 syscall; 返回 -ENOSYS (38) 表示未处理
+    let svc_ret = dispatch_trait::current_syscall_dispatch().dispatch(num, args);
+    if svc_ret != -38 {
+        return svc_ret;
+    }
+
+    // framework 回退: 处理尚未迁移到 services 的 syscall
     match num {
         // ==================== 文件 I/O ====================
         QX_READ => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
         QX_WRITE => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
-        QX_OPEN => dispatch!(
-            match crate::kernel::services::fs::open::open_syscall(a0, a1 as i32, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"open\0"
-        ),
-        QX_CLOSE => dispatch!(
-            match crate::kernel::services::fs::open::close_syscall(a0 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"close\0"
-        ),
-        QX_STAT => dispatch!(
-            match crate::kernel::services::fs::stat::stat_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"stat\0"
-        ),
-        QX_FSTAT => dispatch!(
-            match crate::kernel::services::fs::stat::fstat_syscall(a0 as i32, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"fstat\0"
-        ),
-        QX_LSTAT => dispatch!(
-            match crate::kernel::services::fs::stat::lstat_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"lstat\0"
-        ),
         QX_POLL => dispatch!(
             sys_poll(a0 as *mut u8, a1 as u32, a2 as i32),
             b"poll\0"
@@ -245,21 +218,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== 内存管理 ====================
         QX_MMAP => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5), b"mmap\0"),
-        QX_MPROTECT => dispatch!(
-            match crate::kernel::services::mm::mprotect::mprotect_syscall(a0, a1, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"mprotect\0"
-        ),
         QX_MUNMAP => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
-        QX_BRK => dispatch!(
-            match crate::kernel::services::mm::brk::brk_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"brk\0"
-        ),
         QX_MREMAP => {
             // 从当前 task 取 MmStruct; 验证后委托 services/mm/mremap
             use crate::kernel::framework::mm::vma_get_current_mm;
@@ -280,29 +239,8 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         }
 
         // ==================== 信号 ====================
-        QX_RT_SIGACTION => dispatch!(
-            match crate::kernel::services::proc::signal::rt_sigaction_syscall(a0 as i32, a1, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"rt_sigaction\0"
-        ),
-        QX_RT_SIGPROCMASK => dispatch!(
-            match crate::kernel::services::proc::signal::rt_sigprocmask_syscall(a0 as i32, a1, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"rt_sigprocmask\0"
-        ),
         QX_RT_SIGRETURN => dispatch!(sys_rt_sigreturn(), b"rt_sigreturn\0"),
         // P1-I-45: 替代栈注册/查询系统调用
-        QX_SIGALTSTACK => dispatch!(
-            match crate::kernel::services::proc::signal::sigaltstack_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"sigaltstack\0"
-        ),
 
         // ==================== 设备 ====================
         QX_IOCTL => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
@@ -564,20 +502,6 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 文件访问 ====================
-        QX_ACCESS => dispatch!(
-            match crate::kernel::services::fs::access::access_syscall(a0, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"access\0"
-        ),
-        QX_PIPE => dispatch!(
-            match crate::kernel::services::fs::io::pipe_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"pipe\0"
-        ),
         QX_SELECT => dispatch!(
             sys_poll(a0 as *mut u8, a1 as u32, a2 as i32),
             b"select\0"
@@ -593,20 +517,6 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 文件描述符 ====================
-        QX_DUP => dispatch!(
-            match crate::kernel::services::fs::io::dup_syscall(a0 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"dup\0"
-        ),
-        QX_DUP2 => dispatch!(
-            match crate::kernel::services::fs::io::dup2_syscall(a0 as i32, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"dup2\0"
-        ),
 
         // ==================== 进程优先级 ====================
         QX_NICE => dispatch!(sys_nice(a0 as i32), b"nice\0"),
@@ -642,33 +552,6 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 进程 ====================
-        QX_GETPID => dispatch!(
-            crate::kernel::services::proc::info::getpid_syscall() as i64,
-            b"getpid\0"
-        ),
-        QX_GETPPID => dispatch!(
-            crate::kernel::services::proc::info::getppid_syscall() as i64,
-            b"getppid\0"
-        ),
-        QX_GETPGID => dispatch!(
-            match crate::kernel::services::proc::info::getpgid_syscall(a0 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"getpgid\0"
-        ),
-        QX_SETSID => dispatch!(
-            crate::kernel::services::proc::session::proc_setsid(),
-            b"setsid\0"
-        ),
-        QX_GETSID => dispatch!(
-            crate::kernel::services::proc::session::proc_getsid(a0 as i32),
-            b"getsid\0"
-        ),
-        QX_SETPGID => dispatch!(
-            crate::kernel::services::proc::session::proc_setpgid(a0 as i32, a1 as i32),
-            b"setpgid\0"
-        ),
         QX_GETPRIORITY => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
         QX_SETPRIORITY => dispatch!(
             sys_setpriority(a0 as i32, a1 as u32, a2 as i32),
@@ -682,108 +565,20 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             crate::kernel::framework::proc::session::sys_tcsetpgrp(a0 as i32, a1 as i32),
             b"tcsetpgrp\0"
         ),
-        QX_GETTID => dispatch!(
-            crate::kernel::services::proc::info::gettid_syscall() as i64,
-            b"gettid\0"
-        ),
 
         // ==================== 网络 (services 代理) ====================
         #[cfg(feature = "net")]
-        QX_SOCKET => dispatch!(
-            match crate::kernel::services::net::syscall::socket_syscall(a0 as i32, a1 as i32, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"socket\0"
-        ),
         #[cfg(feature = "net")]
-        QX_CONNECT => dispatch!(
-            match crate::kernel::services::net::syscall::connect_syscall(a0 as i32, a1, a2 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"connect\0"
-        ),
         #[cfg(feature = "net")]
-        QX_ACCEPT => dispatch!(
-            match crate::kernel::services::net::syscall::accept_syscall(a0 as i32, a1, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"accept\0"
-        ),
         #[cfg(feature = "net")]
-        QX_SENDTO => dispatch!(
-            match crate::kernel::services::net::syscall::sendto_syscall(a0 as i32, a1, a2 as u32, a3 as i32, a4, a5 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"sendto\0"
-        ),
         #[cfg(feature = "net")]
-        QX_RECVFROM => dispatch!(
-            match crate::kernel::services::net::syscall::recvfrom_syscall(a0 as i32, a1, a2 as u32, a3 as i32, a4, a5) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"recvfrom\0"
-        ),
         #[cfg(feature = "net")]
-        QX_SHUTDOWN => dispatch!(
-            match crate::kernel::services::net::syscall::shutdown_syscall(a0 as i32, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"shutdown\0"
-        ),
         #[cfg(feature = "net")]
-        QX_BIND => dispatch!(
-            match crate::kernel::services::net::syscall::bind_syscall(a0 as i32, a1, a2 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"bind\0"
-        ),
         #[cfg(feature = "net")]
-        QX_LISTEN => dispatch!(
-            match crate::kernel::services::net::syscall::listen_syscall(a0 as i32, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"listen\0"
-        ),
         #[cfg(feature = "net")]
-        QX_SENDMSG => dispatch!(
-            match crate::kernel::services::net::syscall::sendmsg_syscall(a0 as i32, a1, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"sendmsg\0"
-        ),
         #[cfg(feature = "net")]
-        QX_RECVMSG => dispatch!(
-            match crate::kernel::services::net::syscall::recvmsg_syscall(a0 as i32, a1, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"recvmsg\0"
-        ),
         #[cfg(feature = "net")]
-        QX_SETSOCKOPT => dispatch!(
-            match crate::kernel::services::net::syscall::setsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"setsockopt\0"
-        ),
         #[cfg(feature = "net")]
-        QX_GETSOCKOPT => dispatch!(
-            match crate::kernel::services::net::syscall::getsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"getsockopt\0"
-        ),
         #[cfg(feature = "net")]
         QX_GETSOCKNAME => dispatch!(sys_getsockname(a0 as i32, a1, a2), b"getsockname\0"),
         #[cfg(feature = "net")]
@@ -824,13 +619,6 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             },
             b"wait4\0"
         ),
-        QX_KILL => dispatch!(
-            match crate::kernel::services::proc::signal::kill_syscall(a0 as i32, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"kill\0"
-        ),
 
         // ==================== 系统信息 ====================
         QX_UNAME => dispatch!(
@@ -842,13 +630,6 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 文件描述符操作 ====================
-        QX_FCNTL => dispatch!(
-            match crate::kernel::services::fs::io::fcntl_syscall(a0 as i32, a1 as i32, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"fcntl\0"
-        ),
 
         QX_FLOCK => dispatch!(
             sys_flock(a0 as i32, a1 as i32),
@@ -869,50 +650,8 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 路径 (services 代理) ====================
-        QX_GETCWD => dispatch!(
-            match crate::kernel::services::fs::path::getcwd_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"getcwd\0"
-        ),
-        QX_CHDIR => dispatch!(
-            match crate::kernel::services::fs::path::chdir_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"chdir\0"
-        ),
 
         // ==================== 文件操作 ====================
-        QX_RENAME => dispatch!(
-            match crate::kernel::services::fs::misc::rename_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"rename\0"
-        ),
-        QX_MKDIR => dispatch!(
-            match crate::kernel::services::fs::mode::mkdir_syscall(a0, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"mkdir\0"
-        ),
-        QX_RMDIR => dispatch!(
-            match crate::kernel::services::fs::mode::rmdir_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"rmdir\0"
-        ),
-        QX_CREAT => dispatch!(
-            match crate::kernel::services::fs::open::creat_syscall(a0, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"creat\0"
-        ),
         QX_LINK => dispatch!(
             match crate::kernel::services::fs::link::link_syscall(a0, a1) {
                 Ok(v) => v as i64,
@@ -920,60 +659,11 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             },
             b"link\0"
         ),
-        QX_UNLINK => dispatch!(
-            match crate::kernel::services::fs::access::unlink_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"unlink\0"
-        ),
-        QX_SYMLINK => dispatch!(
-            match crate::kernel::services::fs::link::symlink_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"symlink\0"
-        ),
-        QX_READLINK => dispatch!(
-            match crate::kernel::services::fs::link::readlink_syscall(a0, a1, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"readlink\0"
-        ),
 
         // ==================== 文件权限 ====================
-        QX_CHMOD => dispatch!(
-            match crate::kernel::services::fs::mode::chmod_syscall(a0, a1 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"chmod\0"
-        ),
-        QX_FCHMOD => dispatch!(
-            match crate::kernel::services::fs::mode::fchmod_syscall(a0 as i32, a1 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"fchmod\0"
-        ),
         QX_CHOWN => dispatch!(
             sys_chown(a0 as *const u8, a1 as u32, a2 as u32),
             b"chown\0"
-        ),
-        QX_FCHOWN => dispatch!(
-            match crate::kernel::services::fs::misc::fchown_syscall(a0 as i32, a1, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"fchown\0"
-        ),
-        QX_UMASK => dispatch!(
-            match crate::kernel::services::fs::mode::umask_syscall(a0 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"umask\0"
         ),
 
         // ==================== 时间 ====================
@@ -1002,99 +692,8 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 用户/组 (services 代理) ====================
-        QX_GETUID => dispatch!(
-            match crate::kernel::services::credo::uid::getuid_syscall() {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"getuid\0"
-        ),
-        QX_GETGID => dispatch!(
-            match crate::kernel::services::credo::uid::getgid_syscall() {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"getgid\0"
-        ),
-        QX_SETUID => dispatch!(
-            match crate::kernel::services::credo::uid::setuid_syscall(a0 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"setuid\0"
-        ),
-        QX_SETGID => dispatch!(
-            match crate::kernel::services::credo::uid::setgid_syscall(a0 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"setgid\0"
-        ),
-        QX_GETEUID => dispatch!(
-            match crate::kernel::services::credo::uid::geteuid_syscall() {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"geteuid\0"
-        ),
-        QX_GETEGID => dispatch!(
-            match crate::kernel::services::credo::uid::getegid_syscall() {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"getegid\0"
-        ),
-        QX_SETEUID => dispatch!(
-            match crate::kernel::services::credo::uid::seteuid_syscall(a0 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"seteuid\0"
-        ),
-        QX_SETEGID => dispatch!(
-            match crate::kernel::services::credo::uid::setegid_syscall(a0 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"setegid\0"
-        ),
-        QX_SETREUID => dispatch!(
-            match crate::kernel::services::credo::uid::setreuid_syscall(a0 as u32, a1 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"setreuid\0"
-        ),
 
         // ==================== 文件同步/挂载 ====================
-        QX_SYNC => dispatch!(
-            match crate::kernel::services::fs::misc::sync_syscall() {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"sync\0"
-        ),
-        QX_FSYNC => dispatch!(
-            match crate::kernel::services::fs::misc::fsync_syscall(a0 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"fsync\0"
-        ),
-        QX_MOUNT => dispatch!(
-            match crate::kernel::services::fs::mount::mount_syscall(a0, a1, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"mount\0"
-        ),
-        QX_UMOUNT2 => dispatch!(
-            match crate::kernel::services::fs::mount::umount2_syscall(a0, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"umount2\0"
-        ),
 
         QX_TIME => dispatch!(
             match crate::kernel::services::fs::misc::time_syscall(a0) {
@@ -1111,18 +710,6 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         QX_TGKILL => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
 
         // ==================== 同步 ====================
-        QX_FUTEX => dispatch!(
-            match crate::kernel::services::sync::futex::futex_syscall(
-                a0, a1 as i32, a2 as i32, a3, 0,
-            ) {
-                Ok(crate::kernel::services::sync::futex::FutexResult::Woken) => 0,
-                Ok(crate::kernel::services::sync::futex::FutexResult::WokenCount(n)) => n as i64,
-                Ok(crate::kernel::services::sync::futex::FutexResult::Requeued { woken, .. }) => woken as i64,
-                Ok(crate::kernel::services::sync::futex::FutexResult::Pending) => 0,
-                Err(e) => e.as_ret(),
-            },
-            b"futex\0"
-        ),
 
         // ==================== 事件轮询 ====================
         QX_EPOLL_CREATE => dispatch!(
@@ -1356,8 +943,8 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         SYS_FB_MMAP => dispatch!(sys_fb_mmap(a0, a1, a2), b"fb_mmap\0"),
         SYS_FB_RELEASE => dispatch!(sys_fb_release(a0), b"fb_release\0"),
 
-        // T-03: 未匹配的 syscall 编号委托给 services 层策略
-        _ => dispatch_trait::current_syscall_dispatch().dispatch(num, args),
+        // 未匹配的 syscall 编号 — framework 和 services 均未处理
+        _ => Errno::ENOSYS.as_ret(),
     }
 }
 
@@ -1443,85 +1030,6 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     crate::kernel::framework::fs::vfs_write(fd as u32, buf, count as u32) as i64
 }
 
-fn sys_open(path: *const u8, flags: i32, _mode: i32) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_open(path, flags as u32, pwm) as i64
-}
-
-fn sys_close(fd: i32) -> i64 {
-    if fd < 0 {
-        return Errno::EBADF.as_ret();
-    }
-    // UDS FD 范围 [100, 116) → 走 UDS close, 不进 VFS
-    if (100..116).contains(&fd) {
-        return match crate::kernel::services::net::unix::close(fd) {
-            Ok(()) => 0,
-            Err(e) => e.to_errno().as_ret(),
-        };
-    }
-    // eventfd close: fd ∈ [200, 216)
-    if crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
-        return crate::kernel::framework::syscall::eventfd::sys_eventfd_close(fd);
-    }
-    // signalfd close: fd ∈ [220, 236)
-    if crate::kernel::framework::syscall::signalfd::is_signalfd_fd(fd) {
-        return crate::kernel::framework::syscall::signalfd::sys_signalfd_close(fd);
-    }
-    // timerfd close: fd ∈ [240, 256)
-    if crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
-        return crate::kernel::framework::syscall::timerfd::sys_timerfd_close(fd);
-    }
-    // inotify close: fd ∈ [260, 268)
-    if crate::kernel::framework::fs::is_inotify_fd(fd) {
-        crate::kernel::framework::fs::inotify_release(fd as i64);
-        return 0;
-    }
-    // 释放该 fd 持有的 flock 锁
-    let pid = crate::kernel::framework::proc::process_get_current_pid();
-    crate::kernel::framework::fs::flock_release_fd(pid, fd);
-    crate::kernel::framework::fs::vfs_close(fd as u32) as i64
-}
-
-fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    if st_buf.is_null()
-        || !raw::check_user_buf(
-            st_buf as u64,
-            core::mem::size_of::<crate::kernel::framework::fs::VfsStat>() as u64,
-        )
-    {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_stat(
-        path,
-        st_buf as *mut crate::kernel::framework::fs::VfsStat,
-        pwm,
-    ) as i64
-}
-
-fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
-    if st_buf.is_null()
-        || !raw::check_user_buf(
-            st_buf as u64,
-            core::mem::size_of::<crate::kernel::framework::fs::VfsStat>() as u64,
-        )
-    {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_fstat(
-        fd as u32,
-        st_buf as *mut crate::kernel::framework::fs::VfsStat,
-        pwm,
-    ) as i64
-}
-
 fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
     crate::kernel::framework::fs::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
 }
@@ -1536,95 +1044,6 @@ fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
 // ============================================================================
 // 目录/文件操作
 // ============================================================================
-
-fn sys_getcwd(buf: *mut u8, size: u64) -> i64 {
-    if buf.is_null() || size == 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    if !raw::check_user_buf(buf as u64, size) {
-        return Errno::EFAULT.as_ret();
-    }
-    crate::kernel::framework::fs::vfs_get_cwd(buf, size as u32) as i64
-}
-
-fn sys_chdir(path: *const u8) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    crate::kernel::framework::fs::vfs_set_cwd(path);
-    0
-}
-
-fn sys_mkdir(path: *const u8, _mode: i32) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if pwm == 0 {
-        return Errno::EACCES.as_ret();
-    }
-    crate::kernel::framework::fs::vfs_mkdir(path, pwm) as i64
-}
-
-fn sys_rmdir(path: *const u8) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_rmdir(path, pwm) as i64
-}
-
-fn sys_unlink(path: *const u8) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_unlink(path, pwm) as i64
-}
-
-fn sys_rename(old: *const u8, new: *const u8) -> i64 {
-    if old.is_null()
-        || new.is_null()
-        || !raw::check_user_ptr(old as u64)
-        || !raw::check_user_ptr(new as u64)
-    {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_rename(old, new, pwm) as i64
-}
-
-fn sys_access(path: *const u8, _mode: i32) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    let stat_ptr: *mut crate::kernel::framework::fs::VfsStat = unsafe { &mut core::mem::zeroed() };
-    let result = crate::kernel::framework::fs::vfs_stat(path, stat_ptr, pwm);
-    if result < 0 {
-        return result as i64;
-    }
-    0
-}
-
-fn sys_sync() -> i64 {
-    crate::kernel::framework::fs::vfs_sync() as i64
-}
-
-fn sys_mount(
-    _source: *const u8,
-    target: *const u8,
-    fstype: *const u8,
-) -> i64 {
-    if target.is_null() || !raw::check_user_ptr(target as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    if fstype.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    crate::kernel::framework::fs::vfs_mount(target, fstype) as i64
-}
 
 // ============================================================================
 // 进程 — fork / execve / exit / wait
@@ -1775,81 +1194,6 @@ fn sys_exit(status: i32) -> i64 {
 // ============================================================================
 // 用户/组 — getuid / getgid / geteuid / getegid
 // ============================================================================
-
-fn sys_getuid() -> i64 {
-    crate::kernel::framework::credo::get_current_uid() as i64
-}
-
-fn sys_getgid() -> i64 {
-    crate::kernel::framework::credo::get_current_gid() as i64
-}
-
-fn sys_geteuid() -> i64 {
-    crate::kernel::framework::credo::get_euid() as i64
-}
-
-fn sys_getegid() -> i64 {
-    crate::kernel::framework::credo::get_egid() as i64
-}
-
-fn sys_setuid(uid: u32) -> i64 {
-    if uid == crate::kernel::framework::credo::get_current_uid()
-        || uid == crate::kernel::framework::credo::get_euid()
-        || uid == crate::kernel::framework::credo::get_saved_euid()
-    {
-        return 0;
-    }
-    if crate::kernel::framework::credo::try_setuid(uid) {
-        return 0;
-    }
-    Errno::EPERM.as_ret()
-}
-
-fn sys_setgid(gid: u32) -> i64 {
-    if gid == crate::kernel::framework::credo::get_current_gid()
-        || gid == crate::kernel::framework::credo::get_egid()
-        || gid == crate::kernel::framework::credo::get_saved_egid()
-    {
-        return 0;
-    }
-    if crate::kernel::framework::credo::try_setgid(gid) {
-        return 0;
-    }
-    Errno::EPERM.as_ret()
-}
-
-fn sys_seteuid(euid: u32) -> i64 {
-    if euid == crate::kernel::framework::credo::get_current_uid()
-        || euid == crate::kernel::framework::credo::get_euid()
-        || euid == crate::kernel::framework::credo::get_saved_euid()
-    {
-        return 0;
-    }
-    if crate::kernel::framework::credo::try_seteuid(euid) {
-        return 0;
-    }
-    Errno::EPERM.as_ret()
-}
-
-fn sys_setegid(egid: u32) -> i64 {
-    if egid == crate::kernel::framework::credo::get_current_gid()
-        || egid == crate::kernel::framework::credo::get_egid()
-        || egid == crate::kernel::framework::credo::get_saved_egid()
-    {
-        return 0;
-    }
-    if crate::kernel::framework::credo::try_setegid(egid) {
-        return 0;
-    }
-    Errno::EPERM.as_ret()
-}
-
-fn sys_setreuid(ruid: u32, euid: u32) -> i64 {
-    if crate::kernel::framework::credo::try_setreuid(ruid, euid) {
-        return 0;
-    }
-    Errno::EPERM.as_ret()
-}
 
 fn sys_setregid(rgid: u32, egid: u32) -> i64 {
     if crate::kernel::framework::credo::try_setregid(rgid, egid) {
@@ -2025,75 +1369,17 @@ pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
 }
 
 #[cfg(feature = "net")]
-fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 2, 0x01) {
-        return Errno::EACCES.as_ret();
-    }
-    raw::sm_socket_call(domain, sock_type, protocol) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_bind(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
-    raw::sm_bind_call(sockfd, addr as *const u8, addrlen) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_listen(sockfd: i32, backlog: i32) -> i64 {
-    raw::sm_listen_call(sockfd, backlog) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_accept(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    raw::sm_accept_call(sockfd, addr as *mut u8, addrlen as *mut u32) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_connect(sockfd: i32, addr: u64, addrlen: u32) -> i64 {
-    raw::sm_connect_call(sockfd, addr as *const u8, addrlen) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_sendto(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
-    raw::sm_send_call(sockfd, buf as *const u8, len, flags) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_recvfrom(sockfd: i32, buf: u64, len: u32, flags: i32) -> i64 {
-    raw::sm_recv_call(sockfd, buf as *mut u8, len, flags) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_shutdown(sockfd: i32, _how: i32) -> i64 {
-    raw::sm_close_call(sockfd) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_sendmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
-    Errno::ENOSYS.as_ret()
-}
-
 #[cfg(feature = "net")]
-fn sys_recvmsg(_sockfd: i32, _msg: u64, _flags: i32) -> i64 {
-    Errno::ENOSYS.as_ret()
-}
-
 #[cfg(feature = "net")]
-fn sys_setsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u32) -> i64 {
-    raw::sm_setsockopt_call(sockfd, level, optname, optval as *const u8, optlen) as i64
-}
-
 #[cfg(feature = "net")]
-fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: u64, optlen: u64) -> i64 {
-    raw::sm_getsockopt_call(
-        sockfd,
-        level,
-        optname,
-        optval as *mut u8,
-        optlen as *mut u32,
-    ) as i64
-}
-
 #[cfg(feature = "net")]
 fn sys_getsockname(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     raw::sm_getsockname_call(sockfd, addr, addrlen) as i64
@@ -2107,16 +1393,6 @@ fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
 fn sys_getrusage(who: i32, rusage: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
     crate::kernel::framework::proc::proc_get_rusage(pid, who, rusage as *mut u8, 144) as i64
-}
-
-#[cfg(feature = "net")]
-fn sys_sendmsg(fd: i32, msg: u64, flags: i32) -> i64 {
-    raw::sm_sendmsg_call(fd, msg, flags) as i64
-}
-
-#[cfg(feature = "net")]
-fn sys_recvmsg(fd: i32, msg: u64, flags: i32) -> i64 {
-    raw::sm_recvmsg_call(fd, msg, flags) as i64
 }
 
 // ============================================================================
@@ -2789,18 +2065,6 @@ fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
 // chmod / fchmod / chown
 // ============================================================================
 
-fn sys_chmod(path: *const u8, mode: u32) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_chmod(path, mode as u16, pwm) as i64
-}
-
-fn sys_fchmod(fd: i32, mode: u32) -> i64 {
-    crate::kernel::framework::fs::vfs_fchmod(fd as u32, mode as u16) as i64
-}
-
 fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
@@ -2839,38 +2103,9 @@ pub fn sys_kill(pid: i32, sig: i32) -> i64 {
 // 注: HvFS 当前不支持符号链接, 返回 EINVAL 提示调用者此路径非符号链接。
 // ============================================================================
 
-fn sys_readlink(
-    path: *const u8,
-    buf: *mut u8,
-    bufsiz: u64,
-) -> i64 {
-    if path.is_null() || buf.is_null() || bufsiz == 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    let mut st_buf: crate::kernel::framework::fs::VfsStat = unsafe { core::mem::zeroed() };
-    let result = crate::kernel::framework::fs::vfs_stat(path, &mut st_buf, pwm);
-    if result < 0 {
-        return Errno::ENOENT.as_ret();
-    }
-    Errno::EINVAL.as_ret()
-}
-
 // ============================================================================
 // umount2
 // ============================================================================
-
-fn sys_umount2(target: *const u8, _flags: i32) -> i64 {
-    if target.is_null() || !raw::check_user_ptr(target as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 0, 0x01) {
-        return Errno::EACCES.as_ret();
-    }
-    0
-}
 
 // ============================================================================
 // getrlimit / sysinfo
@@ -2979,23 +2214,9 @@ fn sys_ftruncate(fd: i32, length: i64) -> i64 {
 // umask — 文件创建模式掩码
 // ============================================================================
 
-fn sys_umask(mask: u32) -> i64 {
-    static UMASK: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0o22);
-    let old = UMASK.swap(mask & 0o777, core::sync::atomic::Ordering::SeqCst);
-    old as i64
-}
-
 // ============================================================================
 // 文件同步 — fsync
 // ============================================================================
-
-fn sys_fsync(fd: i32) -> i64 {
-    if fd < 0 {
-        return Errno::EBADF.as_ret();
-    }
-    crate::kernel::framework::fs::vfs_sync();
-    0
-}
 
 // ============================================================================
 // flock — BSD 风格整文件锁
@@ -3036,12 +2257,6 @@ fn sys_inotify_add_watch(inotify_fd: i64, ino: u32, mask: u32) -> i64 {
 // ============================================================================
 // 进程组/会话 — getpgid / setsid
 // ============================================================================
-
-fn sys_setsid() -> i64 {
-    let pid = crate::kernel::framework::proc::process_get_current_pid();
-    pid as i64
-}
-
 
 // ============================================================================
 // tgkill — 向指定线程发送信号
@@ -3168,6 +2383,8 @@ fn sys_rt_sigreturn() -> i64 {
 // SS_ONSTACK (POSIX 要求返回时如实反映替代栈状态), 并把 SS_DISABLE 透传.
 //
 // 用户缓冲有效性: ostack/ss 都走 raw::check_user_buf, 长度 24 (3*u64).
+// ============================================================================
+
 fn sys_sigaltstack(ss: u64, old_ss: u64) -> i64 {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::proc::{SS_DISABLE, SS_ONSTACK};

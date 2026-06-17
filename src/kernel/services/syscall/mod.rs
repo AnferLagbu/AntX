@@ -276,14 +276,116 @@ use crate::kernel::framework::syscall::dispatch_trait::{SyscallDispatch, registe
 
 /// services 层系统调用分发策略
 ///
-/// 处理 framework match 中未覆盖的 syscall 编号.
-/// 当前返回 -ENOSYS (功能未实现), 未来可扩展为动态注册表.
+/// L-01: 已从 framework 迁移的 syscall 分支在此分发.
+/// 返回 -ENOSYS (-38) 表示未处理, framework 回退处理.
 pub struct ServicesSyscallDispatch;
 
+/// 将 services 层 Result 转为 i64 返回码
+#[inline]
+fn as_ret(r: Result<usize, Errno>) -> i64 {
+    match r {
+        Ok(v) => v as i64,
+        Err(e) => e.as_ret(),
+    }
+}
+
 impl SyscallDispatch for ServicesSyscallDispatch {
-    fn dispatch(&self, _num: u64, _args: [u64; 6]) -> i64 {
-        // ENOSYS = 38, 返回 -38
-        -38
+    fn dispatch(&self, num: u64, args: [u64; 6]) -> i64 {
+        use crate::kernel::services::syscall::types::*;
+        let [a0, a1, a2, a3, a4, _a5] = args;
+
+        match num {
+            // ==================== 文件 I/O (已迁移) ====================
+            QX_OPEN => as_ret(crate::kernel::services::fs::open::open_syscall(a0, a1 as i32, a2 as i32)),
+            QX_CLOSE => as_ret(crate::kernel::services::fs::open::close_syscall(a0 as i32)),
+            QX_STAT => as_ret(crate::kernel::services::fs::stat::stat_syscall(a0, a1)),
+            QX_FSTAT => as_ret(crate::kernel::services::fs::stat::fstat_syscall(a0 as i32, a1)),
+            QX_LSTAT => as_ret(crate::kernel::services::fs::stat::lstat_syscall(a0, a1)),
+            QX_CREAT => as_ret(crate::kernel::services::fs::open::creat_syscall(a0, a2 as i32)),
+
+            // ==================== 文件系统操作 (已迁移) ====================
+            QX_MKDIR => as_ret(crate::kernel::services::fs::mode::mkdir_syscall(a0, a1 as i32)),
+            QX_RMDIR => as_ret(crate::kernel::services::fs::mode::rmdir_syscall(a0)),
+            QX_CHMOD => as_ret(crate::kernel::services::fs::mode::chmod_syscall(a0, a1 as u32)),
+            QX_FCHMOD => as_ret(crate::kernel::services::fs::mode::fchmod_syscall(a0 as i32, a1 as u32)),
+            QX_UMASK => as_ret(crate::kernel::services::fs::mode::umask_syscall(a0 as u32)),
+            QX_ACCESS => as_ret(crate::kernel::services::fs::access::access_syscall(a0, a1 as i32)),
+            QX_UNLINK => as_ret(crate::kernel::services::fs::access::unlink_syscall(a0)),
+            QX_RENAME => as_ret(crate::kernel::services::fs::misc::rename_syscall(a0, a1)),
+            QX_SYMLINK => as_ret(crate::kernel::services::fs::link::symlink_syscall(a0, a1)),
+            QX_READLINK => as_ret(crate::kernel::services::fs::link::readlink_syscall(a0, a1, a2)),
+            QX_FCHOWN => as_ret(crate::kernel::services::fs::misc::fchown_syscall(a0 as i32, a1, a2)),
+            QX_SYNC => as_ret(crate::kernel::services::fs::misc::sync_syscall()),
+            QX_FSYNC => as_ret(crate::kernel::services::fs::misc::fsync_syscall(a0 as i32)),
+            QX_MOUNT => as_ret(crate::kernel::services::fs::mount::mount_syscall(a0, a1, a2)),
+            QX_UMOUNT2 => as_ret(crate::kernel::services::fs::mount::umount2_syscall(a0, a1 as i32)),
+            QX_GETCWD => as_ret(crate::kernel::services::fs::path::getcwd_syscall(a0, a1)),
+            QX_CHDIR => as_ret(crate::kernel::services::fs::path::chdir_syscall(a0)),
+
+            // ==================== 文件描述符操作 (已迁移) ====================
+            QX_PIPE => as_ret(crate::kernel::services::fs::io::pipe_syscall(a0)),
+            QX_DUP => as_ret(crate::kernel::services::fs::io::dup_syscall(a0 as i32)),
+            QX_DUP2 => as_ret(crate::kernel::services::fs::io::dup2_syscall(a0 as i32, a1 as i32)),
+            QX_FCNTL => as_ret(crate::kernel::services::fs::io::fcntl_syscall(a0 as i32, a1 as i32, a2)),
+
+            // ==================== 内存管理 (已迁移) ====================
+            QX_MPROTECT => as_ret(crate::kernel::services::mm::mprotect::mprotect_syscall(a0, a1, a2 as i32)),
+            QX_BRK => as_ret(crate::kernel::services::mm::brk::brk_syscall(a0)),
+
+            // ==================== 进程信息 (已迁移) ====================
+            QX_GETPID => crate::kernel::services::proc::info::getpid_syscall() as i64,
+            QX_GETPPID => crate::kernel::services::proc::info::getppid_syscall() as i64,
+            QX_GETPGID => as_ret(crate::kernel::services::proc::info::getpgid_syscall(a0 as i32)),
+            QX_GETTID => crate::kernel::services::proc::info::gettid_syscall() as i64,
+            QX_SETSID => crate::kernel::services::proc::session::proc_setsid(),
+            QX_GETSID => crate::kernel::services::proc::session::proc_getsid(a0 as i32),
+            QX_SETPGID => crate::kernel::services::proc::session::proc_setpgid(a0 as i32, a1 as i32),
+
+            // ==================== 信号 (已迁移) ====================
+            QX_RT_SIGACTION => as_ret(crate::kernel::services::proc::signal::rt_sigaction_syscall(a0 as i32, a1, a2)),
+            QX_RT_SIGPROCMASK => as_ret(crate::kernel::services::proc::signal::rt_sigprocmask_syscall(a0 as i32, a1, a2)),
+            QX_SIGALTSTACK => as_ret(crate::kernel::services::proc::signal::sigaltstack_syscall(a0, a1)),
+            QX_KILL => as_ret(crate::kernel::services::proc::signal::kill_syscall(a0 as i32, a1 as i32)),
+
+            // ==================== 网络 (已迁移) ====================
+            QX_SOCKET => as_ret(crate::kernel::services::net::syscall::socket_syscall(a0 as i32, a1 as i32, a2 as i32)),
+            QX_CONNECT => as_ret(crate::kernel::services::net::syscall::connect_syscall(a0 as i32, a1, a2 as u32)),
+            QX_ACCEPT => as_ret(crate::kernel::services::net::syscall::accept_syscall(a0 as i32, a1, a2)),
+            QX_SENDTO => as_ret(crate::kernel::services::net::syscall::sendto_syscall(a0 as i32, a1, a2 as u32, a3 as i32, args[4], args[5] as u32)),
+            QX_RECVFROM => as_ret(crate::kernel::services::net::syscall::recvfrom_syscall(a0 as i32, a1, a2 as u32, a3 as i32, args[4], args[5])),
+            QX_SHUTDOWN => as_ret(crate::kernel::services::net::syscall::shutdown_syscall(a0 as i32, a1 as i32)),
+            QX_BIND => as_ret(crate::kernel::services::net::syscall::bind_syscall(a0 as i32, a1, a2 as u32)),
+            QX_LISTEN => as_ret(crate::kernel::services::net::syscall::listen_syscall(a0 as i32, a1 as i32)),
+            QX_SENDMSG => as_ret(crate::kernel::services::net::syscall::sendmsg_syscall(a0 as i32, a1, a2 as i32)),
+            QX_RECVMSG => as_ret(crate::kernel::services::net::syscall::recvmsg_syscall(a0 as i32, a1, a2 as i32)),
+            QX_SETSOCKOPT => as_ret(crate::kernel::services::net::syscall::setsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4 as u32)),
+            QX_GETSOCKOPT => as_ret(crate::kernel::services::net::syscall::getsockopt_syscall(a0 as i32, a1 as i32, a2 as i32, a3, a4)),
+
+            // ==================== 凭证 (已迁移) ====================
+            QX_GETUID => as_ret(crate::kernel::services::credo::uid::getuid_syscall()),
+            QX_GETGID => as_ret(crate::kernel::services::credo::uid::getgid_syscall()),
+            QX_SETUID => as_ret(crate::kernel::services::credo::uid::setuid_syscall(a0 as u32)),
+            QX_SETGID => as_ret(crate::kernel::services::credo::uid::setgid_syscall(a0 as u32)),
+            QX_GETEUID => as_ret(crate::kernel::services::credo::uid::geteuid_syscall()),
+            QX_GETEGID => as_ret(crate::kernel::services::credo::uid::getegid_syscall()),
+            QX_SETEUID => as_ret(crate::kernel::services::credo::uid::seteuid_syscall(a0 as u32)),
+            QX_SETEGID => as_ret(crate::kernel::services::credo::uid::setegid_syscall(a0 as u32)),
+            QX_SETREUID => as_ret(crate::kernel::services::credo::uid::setreuid_syscall(a0 as u32, a1 as u32)),
+
+            // ==================== 同步原语 (已迁移) ====================
+            QX_FUTEX => {
+                match crate::kernel::services::sync::futex::futex_syscall(a0, a1 as i32, a2 as i32, a3, a4 as u32) {
+                    Ok(crate::kernel::services::sync::futex::FutexResult::Woken) => 0,
+                    Ok(crate::kernel::services::sync::futex::FutexResult::WokenCount(n)) => n as i64,
+                    Ok(crate::kernel::services::sync::futex::FutexResult::Requeued { woken, .. }) => woken as i64,
+                    Ok(crate::kernel::services::sync::futex::FutexResult::Pending) => 0,
+                    Err(e) => e.as_ret(),
+                }
+            }
+
+            // 未迁移的 syscall — 返回 -ENOSYS 让 framework 回退处理
+            _ => -38,
+        }
     }
 }
 

@@ -94,7 +94,10 @@ static SCHED_DECISION: OnceLock<&'static dyn SchedDecision> = OnceLock::new();
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
 pub fn register_sched_decision(policy: &'static dyn SchedDecision) -> Result<(), &'static dyn SchedDecision> {
-    SCHED_DECISION.set(policy).map_err(|e| e)
+    match SCHED_DECISION.set(policy) {
+        Ok(()) => Ok(()),
+        Err(existing) => Err(existing),
+    }
 }
 
 /// 获取当前注册的调度决策策略 (未注册时返回内建回退)
