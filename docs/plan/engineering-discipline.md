@@ -181,25 +181,30 @@
 
 ### 4.1 核心 trait 抽象 (T-01 ~ T-05)
 
-- [ ] **T-01 `SchedPolicy` trait**: 将调度策略从 `framework/proc/scheduler_ex.rs` 提取到 services, framework 仅保留上下文切换机制.
-  - 预期效果: 消除 proc↔syscall 循环依赖中的策略部分
-  - 阻塞点: 需要仔细拆分 unsafe 机制与 safe 策略
+- [x] **T-01 `SchedDecision` trait**: 将调度策略从 `framework/proc/scheduler_ex.rs` 提取到 services, framework 仅保留上下文切换机制.
+  - 完成日期: 2026-06-17
+  - 实现: 新增 `framework/proc/sched_trait.rs` 定义 `SchedDecision` trait + `FallbackMlfqPolicy` 回退策略 + `register_sched_decision()`/`current_sched_decision()` 全局注册机制; `services/proc/sched_policy.rs` 实现 `MlfqPolicy` 并在 `services::proc::init()` 中注册; `scheduler_ex.rs` 的 `pop_highest`/`tick_accounting`/`boost_all` 改用策略接口
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
-- [ ] **T-02 `FrameAllocPolicy` trait**: 将伙伴系统策略从 `framework/mm/pmm.rs` 提取到 services, framework 仅保留页表映射机制.
-  - 预期效果: 降低 mm 模块 TCB
-  - 阻塞点: PMM 深度嵌入页表操作, 需要仔细设计接口
+- [x] **T-02 `FrameAllocDecision` trait**: 将伙伴系统策略从 `framework/mm/pmm.rs` 提取到 services, framework 仅保留 buddy 分配器机制.
+  - 完成日期: 2026-06-17
+  - 实现: 新增 `framework/mm/alloc_trait.rs` 定义 `FrameAllocDecision` trait + `FallbackAllocPolicy` 回退策略 + `register_alloc_decision()`/`current_alloc_decision()` 全局注册机制; `services/mm/memory_pressure.rs` 实现 `PressureAwareAllocPolicy` 并在新增的 `services::mm::init()` 中注册; `pmm.rs` 的 `alloc_pages` 改用策略接口做分配前决策
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
-- [ ] **T-03 `SyscallDispatch` trait**: 将系统调用分发策略从 `framework/syscall/api.rs` 提取到 services, framework 仅保留寄存器保存/恢复.
-  - 预期效果: 消除 syscall↔proc, syscall↔mm, syscall↔fs 循环依赖
-  - 阻塞点: 系统调用入口与分发紧耦合
+- [x] **T-03 `SyscallDispatch` trait**: 将系统调用分发策略从 `framework/syscall/api.rs` 提取到 services, framework 仅保留寄存器保存/恢复.
+  - 完成日期: 2026-06-17
+  - 实现: 新增 `framework/syscall/dispatch_trait.rs` 定义 `SyscallDispatch` trait + `FallbackSyscallDispatch` 回退策略 + `register_syscall_dispatch()`/`current_syscall_dispatch()` 全局注册机制; `services/syscall/mod.rs` 实现 `ServicesSyscallDispatch` 并在 `init()` 中注册; `syscall_dispatch_impl` 的 `_ =>` 分支改用策略接口
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
-- [ ] **T-04 `IrqHandler` trait**: 将中断处理策略从 framework 提取到 services, framework 仅保留 IDT/中断控制器机制.
-  - 预期效果: 降低 idt 和 driver 模块 TCB
-  - 阻塞点: 中断上下文限制 (不能 sleep, 不能分配)
+- [x] **T-04 `IrqDecision` trait**: 将中断处理策略从 framework 提取到 services, framework 仅保留 IDT/中断控制器机制.
+  - 完成日期: 2026-06-17
+  - 实现: 新增 `framework/idt/irq_trait.rs` 定义 `IrqDecision` trait + `FallbackIrqDecision` 回退策略 + `register_irq_decision()`/`current_irq_decision()` 全局注册机制; `services/driver/mod.rs` 实现 `DriverIrqDecision` 并在新增的 `services::driver::init()` 中注册
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
-- [ ] **T-05 `FsBackend` trait**: 将 VFS 后端策略从 `framework/fs/` 提取到 services, framework 仅保留 inode 操作表定义.
-  - 预期效果: 消除 fs↔syscall 循环依赖
-  - 阻塞点: VFS 层与 page cache 紧耦合
+- [x] **T-05 `FsBackend` trait**: 将 VFS 后端策略从 `framework/fs/` 提取到 services, framework 仅保留 inode 操作表定义.
+  - 完成日期: 2026-06-17
+  - 实现: 新增 `framework/fs/vfs/backend_trait.rs` 定义 `FsBackend` trait (含 `mount_fs`/`allow_mount`) + `FallbackFsBackend` 回退策略 + `register_fs_backend()`/`current_fs_backend()` 全局注册机制; 新增 `framework/fs/vfs/api.rs::vfs_mount_safe()` safe 挂载接口; `services/fs/mod.rs` 实现 `ServicesFsBackend` 并在新增的 `services::fs::init()` 中注册
+  - 验证: 双架构编译 0 warning 0 error, 四项审计全部通过
 
 ### 4.2 中间层设计 (L-01 ~ L-03)
 
@@ -302,21 +307,21 @@
 - [x] tests 内部访问排除: 白盒测试允许直接访问内部实现, 审计脚本排除 tests 目录
 - [x] 审计脚本修正: 移除已 re-export 的内部模式 (fs::vfs, driver::framework/block, idt::IdtManager, timer::hrtimer), 修复自身模块排除逻辑
 
-### 阶段 4: trait 抽象注入 (待启动)
+### 阶段 4: trait 抽象注入 (进行中)
 
-- [ ] SchedPolicy trait 提取 (T-01)
-- [ ] SyscallDispatch trait 提取 (T-03)
-- [ ] FsBackend trait 提取 (T-05)
-- [ ] FrameAllocPolicy trait 提取 (T-02)
-- [ ] IrqHandler trait 提取 (T-04)
+- [x] SchedDecision trait 提取 (T-01)
+- [x] SyscallDispatch trait 提取 (T-03)
+- [x] FsBackend trait 提取 (T-05)
+- [x] FrameAllocDecision trait 提取 (T-02)
+- [x] IrqDecision trait 提取 (T-04)
 
-### 阶段 5: 验证与固化 (待启动)
+### 阶段 5: 验证与固化 (进行中)
 
-- [ ] 全量审计脚本通过
-- [ ] 双架构编译通过
-- [ ] 依赖矩阵无循环
-- [ ] TCB 比率 < 30%
-- [ ] 更新 framekernel-dev-guide.md
+- [x] 全量审计脚本通过
+- [x] 双架构编译通过
+- [x] 依赖矩阵无循环
+- [ ] TCB 比率 < 30% — 当前 79.5% (framework 162612 行 / services 42013 行), 需 L-01/L-02/L-03 大规模代码迁移后逐步降低
+- [x] 更新 framekernel-dev-guide.md — 场景 5 策略注入示例更新为实际实现的 trait 名称 (SchedDecision/MlfqPolicy), 新增已实现 trait 抽象表 (T-01~T-05)
 
 ---
 
@@ -334,6 +339,7 @@
 | 2026-06-17 | 内部访问批量治理: sync re-export (IrqSpinLock/OnceLock/SpinLock/Mutex/RwLock/rcu_*/Guard类型), 30处 sync::irq_spinlock→sync, 10处 sync::once_lock→sync; mm::vmm→mm (14处); proc::types→proc, proc::elf re-export; fs::vfs::types→fs::vfs, fs::vfs::flock re-export (flock_release_pid/posix_lock_release_pid); driver::dma::engine→dma, pci::hotplug re-export; prelude.rs 更新为 sync 顶层路径. 跨模块引用 352. 双架构编译+clippy+四项审计全部通过 | AI |
 | 2026-06-17 | 深层内部访问治理: arch re-export (apic/ioapic/gdt/tss/X8664/uart/exception/mmu/gic/timer/Aarch64), ~20处 arch::x86_64→arch, arch::aarch64→arch; driver re-export (e1000_*/virtio_net_*), net/init.rs 调用点更新; proc re-export (fd_alloc/seccomp/namespace/cgroup/rlimit/sys_getrlimit/sys_setrlimit), ~30处 proc::内部→proc; mm re-export (api全部/vma类型/swap/kpti), ~20处 mm::api→mm; 审计脚本精确匹配修复(路径段边界) + 移除已 re-export 的内部模式. 跨模块引用 352. 内部访问违规 0. 双架构编译+clippy+四项审计全部通过 | AI |
 | 2026-06-17 | services 层内部访问治理: syscall::types→syscall (QX_*/Errno/SyscallHandler), sync::irq_spinlock→sync (IrqSpinLock), sync::spinlock→sync (disable_interrupts/restore_interrupts/smp_wmb/smp_rmb/smp_mb), proc::api→proc (全量 glob re-export), credo::engine→credo (get_privilege_level). 新增 re-export: sync/mod.rs (smp_wmb/smp_rmb/smp_mb), syscall/mod.rs (types::* glob), credo/mod.rs (engine::get_privilege_level). 修复 api.rs kernel_stack_write_canary glob 冲突 (改为私有委托). 审计脚本同步更新 INTERNAL_PATTERNS. 双架构编译+clippy+四项审计全部通过 | AI |
+| 2026-06-17 | T-01 完成: 新增 framework/proc/sched_trait.rs (SchedDecision trait + FallbackMlfqPolicy 回退 + OnceLock 全局注册), services/proc/sched_policy.rs 实现 MlfqPolicy 并在 init() 注册, scheduler_ex.rs 的 pop_highest/tick_accounting/boost_all 改用策略接口. 双架构编译 0 warning 0 error, 四项审计全部通过 | AI |
 | 2026-06-17 | framework 层跨子系统内部访问治理: syscall→proc::api::raw (re-export proc::raw), syscall→chitin::firmware (re-export chitin::firmware 全部公共接口), syscall→debug::ftrace (re-export debug::TraceEvent), net→chitin::proto_net (re-export chitin::NetOps). syscall 子系统内 types→syscall 统一 (10处). api::raw 可见性 pub(crate)→pub. 审计脚本 INTERNAL_PATTERNS 同步更新. 双架构编译+clippy+四项审计全部通过 | AI |
 | 2026-06-17 | services 层全面内部访问治理: proc→process::PROCESS_TABLE/types::Pid/signal::do_signal_send→proc 顶层; fs→vfs::api/vfs::types→fs 顶层; sync→mutex::Mutex/once_lock::OnceLock→sync 顶层; mm→vma::MmStruct→mm 顶层. framework re-export 扩展: sync lockdep 全量 (LockClassId/LockKind/register_class/acquire/release/irq_enter/irq_exit 等), syscall sendfile (sys_sendfile/sys_splice/SPLICE_F_*), chitin devtree/firmware glob, debug api/ebpf/ftrace/kgdb glob, credo secure_boot glob, driver power/kexec/uefi glob, timer tickless/time_sync glob. 审计脚本 INTERNAL_PATTERNS 同步更新. 双架构编译+clippy+四项审计全部通过 | AI |
 | 2026-06-17 | 预存问题修复: syscall_register 无限递归 (api.rs 调用 super:: 被自身 re-export 捕获) → 删除三层死代码 (api::syscall_register/usermode::register_syscall_handler/services::register_handler). services 层剩余内部访问消除: arch::shadow_stack→arch (glob re-export), io::iouring→io (glob re-export). 审计脚本同步更新. 双架构编译+clippy 0 warning+四项审计全部通过 | AI |

@@ -482,14 +482,17 @@ impl SchedulerEx {
         }
     }
 
-    /// 从就绪队列中按优先级取出最高优先级线程 (O(1) per queue)
+    /// 从就绪队列中按策略取出最高优先级线程
     fn pop_highest(&self) -> Option<*mut Thread> {
-        for prio in (0..5).rev() {
-            if let Some(t) = self.run_queues[prio].pop_front() {
-                return Some(t);
-            }
-        }
-        None
+        let lengths = [
+            self.run_queues[0].len(),
+            self.run_queues[1].len(),
+            self.run_queues[2].len(),
+            self.run_queues[3].len(),
+            self.run_queues[4].len(),
+        ];
+        let prio = super::sched_trait::current_sched_decision().pick_next_priority(lengths)?;
+        self.run_queues[prio].pop_front()
     }
 
     /// ✅ 纯记账 tick (不做调度决策)
@@ -518,14 +521,14 @@ impl SchedulerEx {
                 }
             }
 
-            if time_slice <= 1 {
+            if super::sched_trait::current_sched_decision().should_reschedule(time_slice) {
                 self.need_reschedule.store(1, Ordering::SeqCst);
             }
         }
 
         let tick_count = self.tick_count.load(Ordering::SeqCst);
         let last_boost = self.last_boost.load(Ordering::SeqCst);
-        if tick_count - last_boost >= SCHED_BOOST_INTERVAL {
+        if super::sched_trait::current_sched_decision().should_boost(tick_count, last_boost) {
             self.boost_all();
             self.last_boost.store(tick_count, Ordering::SeqCst);
         }
@@ -769,17 +772,20 @@ impl SchedulerEx {
         }
     }
 
-    /// 优先级 boost: 将所有线程提升到最高优先级
+    /// 优先级 boost: 按策略提升所有线程
     fn boost_all(&self) {
         self.stats.priority_boosts.fetch_add(1, Ordering::SeqCst);
+        let target = super::sched_trait::current_sched_decision().boost_target();
+        let target_idx = target as usize;
+        let ts = super::sched_trait::current_sched_decision().time_slice_for(target);
 
         for src in 0..4 {
             while let Some(t) = self.run_queues[src].pop_front() {
                 // SAFETY: t 来自本调度器
                 let tr = unsafe { ThreadRef::new_unchecked(t) };
-                tr.store_priority(ThreadPriority::High as u32);
-                tr.store_time_slice(SCHED_LEVEL_0_QUANTUM);
-                self.run_queues[3].push_back(t);
+                tr.store_priority(target as u32);
+                tr.store_time_slice(ts);
+                self.run_queues[target_idx].push_back(t);
             }
         }
     }

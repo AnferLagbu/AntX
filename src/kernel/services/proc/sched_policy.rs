@@ -337,3 +337,65 @@ pub fn cfs_should_preempt(curr_vruntime: u64, min_vruntime: u64, weight: u64) ->
     };
     curr_vruntime.saturating_sub(min_vruntime) > threshold
 }
+
+// ============================================================================
+// T-01: MLFQ 调度策略实现 — services 层策略主体
+// ============================================================================
+
+use crate::kernel::framework::proc::sched_trait::SchedDecision;
+use crate::kernel::framework::proc::types::ThreadPriority;
+
+/// MLFQ 调度策略 — services 层安全实现
+///
+/// 策略决策 (优先级选择、boost 触发、时间片计算) 全部在此.
+/// framework 层的 SchedulerEx 仅保留 RunQueue 操作和上下文切换机制.
+///
+/// ## 设计
+///
+/// - 默认行为与原 FallbackMlfqPolicy 一致 (高→低扫描)
+/// - 可通过替换此 struct 自定义调度行为 (如 CFS 集成、实时增强)
+/// - 在 `services::proc::init()` 中通过 `register_sched_policy()` 注册
+pub struct MlfqPolicy;
+
+impl SchedDecision for MlfqPolicy {
+    fn pick_next_priority(&self, queue_lengths: [u32; 5]) -> Option<usize> {
+        // 从高到低优先级扫描, 与原 scheduler_ex 行为一致
+        for prio in (0..5).rev() {
+            if queue_lengths[prio] > 0 {
+                return Some(prio);
+            }
+        }
+        None
+    }
+
+    fn should_boost(&self, tick_count: u64, last_boost: u64) -> bool {
+        tick_count.saturating_sub(last_boost) >= CFS_BOOST_INTERVAL_TICKS
+    }
+
+    fn boost_target(&self) -> ThreadPriority {
+        ThreadPriority::High
+    }
+
+    fn time_slice_for(&self, priority: ThreadPriority) -> u32 {
+        use crate::kernel::framework::config::*;
+        match priority {
+            ThreadPriority::Realtime => SCHED_LEVEL_0_QUANTUM,
+            ThreadPriority::High => SCHED_LEVEL_1_QUANTUM,
+            ThreadPriority::Normal => SCHED_LEVEL_2_QUANTUM,
+            ThreadPriority::Low => SCHED_LEVEL_3_QUANTUM,
+            ThreadPriority::Idle => u32::MAX,
+        }
+    }
+
+    fn should_reschedule(&self, time_slice_remaining: u32) -> bool {
+        time_slice_remaining <= 1
+    }
+}
+
+/// 注册 MLFQ 调度策略到 framework
+///
+/// 由 `services::proc::init()` 调用. 只能注册一次.
+pub fn register_mlfq_policy() -> Result<(), ()> {
+    static POLICY: MlfqPolicy = MlfqPolicy;
+    crate::kernel::framework::proc::register_sched_decision(&POLICY).map_err(|_| ())
+}

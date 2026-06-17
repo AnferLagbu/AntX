@@ -519,6 +519,28 @@ impl PhysicalMemoryManager {
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
 
+        // T-02: 分配前策略决策
+        let ctx = super::alloc_trait::AllocContext {
+            requested_pages: npages,
+            free_pages: self.count_free_pages(),
+            total_pages: self.info.get().total_pages as u64,
+            pressure_level: 0,
+            preferred_node: None,
+        };
+        match super::alloc_trait::current_alloc_decision().decide_alloc(ctx) {
+            super::alloc_trait::AllocDecision::Allow => {}
+            super::alloc_trait::AllocDecision::Deny => {
+                self.failed_allocs.fetch_add(1, Ordering::Relaxed);
+                return None;
+            }
+            super::alloc_trait::AllocDecision::RetryAfterReclaim => {
+                // 策略建议回收后重试, 但 PMM 不执行回收, 直接失败
+                // services 层的 OOMD 会在上层处理回收逻辑
+                self.failed_allocs.fetch_add(1, Ordering::Relaxed);
+                return None;
+            }
+        }
+
         let flags = self.acquire_lock();
         let result = self.do_alloc(order);
         match result {

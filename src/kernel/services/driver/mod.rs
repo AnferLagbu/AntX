@@ -50,3 +50,43 @@ pub mod time_sync;
 pub mod kexec;
 /// D11: UEFI 安全封装
 pub mod uefi;
+
+// ============================================================================
+// T-04: 中断处理决策策略
+// ============================================================================
+
+use crate::kernel::framework::idt::irq_trait::{IrqDecision, IrqContext, SoftirqContext, register_irq_decision};
+
+/// 驱动层中断处理决策策略
+///
+/// - 共享 IRQ: 按注册顺序选择 handler (先注册先服务)
+/// - Softirq: 按固定优先级 (High > Timer > NetRx > NetTx > Block > Tasklet > Sched > Kswapd)
+/// - ksoftirqd: 超过 10 次循环后唤醒
+pub struct DriverIrqDecision;
+
+impl IrqDecision for DriverIrqDecision {
+    fn select_handler_index(&self, _ctx: IrqContext) -> usize {
+        // 先注册先服务
+        0
+    }
+
+    fn softirq_priority_mask(&self, ctx: SoftirqContext) -> u64 {
+        // 返回最高优先级位
+        if ctx.pending_mask == 0 {
+            0
+        } else {
+            1u64 << (63 - ctx.pending_mask.leading_zeros())
+        }
+    }
+
+    fn should_wake_ksoftirqd(&self, loop_count: u32) -> bool {
+        loop_count > 10
+    }
+}
+
+/// services::driver 初始化 — 注册策略到 framework
+pub fn init() {
+    // T-04: 注册驱动层中断处理决策策略
+    static POLICY: DriverIrqDecision = DriverIrqDecision;
+    let _ = register_irq_decision(&POLICY);
+}

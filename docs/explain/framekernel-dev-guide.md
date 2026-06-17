@@ -193,31 +193,32 @@ Q3. 现有 framework 公开 API 是否够用?
   - 策略: CFS 算法, 优先级计算, 时间片分配
 
 [步骤 1] framework 定义策略 trait
-  // framework/proc/sched_policy.rs (新增)
-  pub trait SchedPolicy: Send + Sync {
-      fn pick_next(&self, cpu: u32) -> Option<TaskId>;
-      fn enqueue(&self, cpu: u32, task: TaskId, flags: EnqueueFlags);
-      fn dequeue(&self, cpu: u32, task: TaskId);
-      fn task_tick(&self, cpu: u32, task: TaskId) -> SchedDecision;
+  // framework/proc/sched_trait.rs (新增)
+  pub trait SchedDecision: Send + Sync {
+      fn pick_next_priority(&self, queue_lengths: [u32; 5]) -> Option<usize>;
+      fn should_boost(&self, tick_count: u64, last_boost: u64) -> bool;
+      fn boost_target(&self) -> ThreadPriority;
+      fn time_slice_for(&self, priority: ThreadPriority) -> u32;
+      fn should_reschedule(&self, time_slice_remaining: u32) -> bool;
   }
 
 [步骤 2] framework 机制代码依赖 trait, 不依赖具体实现
   // framework/proc/scheduler_ex.rs (修改)
-  // 删除 CFS 算法代码, 改为调用 self.policy.pick_next() 等
+  // 删除 MLFQ 算法代码, 改为调用 current_sched_decision() 等
   // unsafe 行数从 74 降至 ~20 (仅保留上下文切换)
 
 [步骤 3] services 实现策略
-  // services/proc/sched_cfs.rs (新增)
-  pub struct CfsScheduler { ... }
-  impl SchedPolicy for CfsScheduler { ... }
+  // services/proc/sched_policy.rs (新增)
+  pub struct MlfqPolicy;
+  impl SchedDecision for MlfqPolicy { ... }
 
 [步骤 4] framework 提供注册 API
-  // framework/proc/mod.rs
-  pub fn register_sched_policy(policy: &'static dyn SchedPolicy) { ... }
+  // framework/proc/sched_trait.rs
+  pub fn register_sched_decision(policy: &'static dyn SchedDecision) { ... }
 
 [步骤 5] services 在初始化时注入
   // services/proc/mod.rs
-  framework::proc::register_sched_policy(&CfsScheduler::new());
+  framework::proc::register_sched_decision(&MlfqPolicy);
 
 [验证]
   - framework/proc/scheduler_ex.rs unsafe 行数下降
@@ -226,11 +227,15 @@ Q3. 现有 framework 公开 API 是否够用?
   - CI: 边界审计 + 编译 + 测试
 ```
 
-**适用范围**: 任何"机制+策略"耦合的 framework 模块, 包括:
-- 调度器 → `SchedPolicy` trait
-- 帧分配器 → `FrameAlloc` trait
-- Slab 分配器 → `SlabPolicy` trait
-- 中断下半部 → `IrqHandler` trait
+**适用范围**: 任何"机制+策略"耦合的 framework 模块. 已实现的 trait 抽象:
+
+| trait | framework 定义 | services 实现 | 注册函数 |
+|-------|---------------|--------------|---------|
+| `SchedDecision` | `framework/proc/sched_trait.rs` | `services/proc/sched_policy.rs` (`MlfqPolicy`) | `register_sched_decision()` |
+| `FrameAllocDecision` | `framework/mm/alloc_trait.rs` | `services/mm/memory_pressure.rs` (`PressureAwareAllocPolicy`) | `register_alloc_decision()` |
+| `SyscallDispatch` | `framework/syscall/dispatch_trait.rs` | `services/syscall/mod.rs` (`ServicesSyscallDispatch`) | `register_syscall_dispatch()` |
+| `IrqDecision` | `framework/idt/irq_trait.rs` | `services/driver/mod.rs` (`DriverIrqDecision`) | `register_irq_decision()` |
+| `FsBackend` | `framework/fs/vfs/backend_trait.rs` | `services/fs/mod.rs` (`ServicesFsBackend`) | `register_fs_backend()` |
 
 **原则**: framework 只保留"必须 unsafe 才能完成"的机制, 策略全部提取到 services.
 

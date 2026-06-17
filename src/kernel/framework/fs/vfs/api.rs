@@ -677,6 +677,21 @@ pub fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
     vfs_mount_internal(path, fs_name)
 }
 
+/// T-05: safe 挂载接口 — services 层策略调用
+///
+/// 接受 Rust 字符串切片, 返回 i32 错误码 (0=成功, 负数=errno).
+/// SAFETY: 内部将 &str 转为 null 终止的 C 字符串后调用 vfs_mount_internal.
+pub fn vfs_mount_safe(path: &str, fs_name: &str) -> i32 {
+    // 构造 null 终止的 C 字符串
+    let mut path_buf = alloc::vec::Vec::with_capacity(path.len() + 1);
+    path_buf.extend_from_slice(path.as_bytes());
+    path_buf.push(0);
+    let mut fs_buf = alloc::vec::Vec::with_capacity(fs_name.len() + 1);
+    fs_buf.extend_from_slice(fs_name.as_bytes());
+    fs_buf.push(0);
+    vfs_mount_internal(path_buf.as_ptr(), fs_buf.as_ptr())
+}
+
 #[no_mangle]
 pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
     if path.is_null() {

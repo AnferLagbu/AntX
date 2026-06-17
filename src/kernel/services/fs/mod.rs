@@ -40,3 +40,40 @@ pub mod dcache;
 pub mod flock;
 pub mod inotify;
 pub mod sendfile;
+
+// ============================================================================
+// T-05: VFS 后端决策策略
+// ============================================================================
+
+use crate::kernel::framework::fs::vfs::backend_trait::{FsBackend, register_fs_backend};
+use crate::kernel::services::fs::vfs_types::KernelError;
+use crate::kernel::framework::fs::vfs::api as vfs_api;
+
+/// services 层 VFS 后端决策策略
+///
+/// 维护文件系统注册表, 根据 fs_type 名称选择挂载方式.
+/// 挂载权限: 当前允许所有挂载请求 (未来可扩展为权限检查).
+pub struct ServicesFsBackend;
+
+impl FsBackend for ServicesFsBackend {
+    fn mount_fs(&self, fs_name: &str, path: &str) -> Result<(), KernelError> {
+        // services 根据 fs_name 选择挂载方式并调用 framework safe API
+        let rc = vfs_api::vfs_mount_safe(path, fs_name);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(KernelError::IoError)
+        }
+    }
+
+    fn allow_mount(&self, _path: &str, _fs_name: &str) -> bool {
+        // 当前允许所有挂载; 未来可按路径/fs_type 做权限检查
+        true
+    }
+}
+
+/// services::fs 初始化 — 注册策略到 framework
+pub fn init() {
+    static POLICY: ServicesFsBackend = ServicesFsBackend;
+    let _ = register_fs_backend(&POLICY);
+}

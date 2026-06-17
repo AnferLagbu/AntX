@@ -25,6 +25,8 @@ pub mod ftrace_kgdb;
 pub mod posix_timer;
 pub mod linuxulator;
 pub mod wait4;
+/// T-03: 系统调用分发决策 trait
+pub mod dispatch_trait;
 
 /// Syscall 模块 — QueenX 原生系统调用分发
 ///
@@ -44,6 +46,9 @@ pub use epoll::{EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLRDHUP, epoll_pwake};
 pub use types::{Errno, SyscallHandler};
 pub use types::*;
 pub use sendfile::{sys_sendfile, sys_splice, SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT};
+
+// dispatch_trait 公共接口 re-export — T-03 策略-机制分离
+pub use dispatch_trait::{SyscallDispatch, FallbackSyscallDispatch, register_syscall_dispatch, current_syscall_dispatch};
 pub mod types;
 
 #[cfg(target_arch = "x86_64")]
@@ -1351,7 +1356,8 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         SYS_FB_MMAP => dispatch!(sys_fb_mmap(a0, a1, a2), b"fb_mmap\0"),
         SYS_FB_RELEASE => dispatch!(sys_fb_release(a0), b"fb_release\0"),
 
-        _ => Errno::ENOSYS.as_ret(),
+        // T-03: 未匹配的 syscall 编号委托给 services 层策略
+        _ => dispatch_trait::current_syscall_dispatch().dispatch(num, args),
     }
 }
 

@@ -37,6 +37,8 @@ pub mod pressure;
 pub mod slab;
 pub mod swap;
 pub mod vma;
+/// T-02: 物理页帧分配决策 trait
+pub mod alloc_trait;
 
 #[cfg(target_arch = "x86_64")]
 pub mod kpti;
@@ -76,6 +78,9 @@ pub use swap::{kswapd_wakeup, set_page_locked};
 // kpti 公共接口 re-export — 避免跨子系统直接访问 mm::kpti 内部
 #[cfg(target_arch = "aarch64")]
 pub use kpti::kpti_trampoline_ttbr1_or_kernel;
+
+// alloc_trait 公共接口 re-export — T-02 策略-机制分离
+pub use alloc_trait::{FrameAllocDecision, FallbackAllocPolicy, AllocContext, AllocDecision, register_alloc_decision, current_alloc_decision};
 
 // cow 公共接口 re-export — 避免跨子系统直接访问 mm::cow 内部
 pub use cow::{cow_init, cow_ref_count, cow_inc_ref, cow_dec_ref};

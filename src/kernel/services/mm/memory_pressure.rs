@@ -144,3 +144,65 @@ pub fn is_pressure_critical() -> bool {
 pub fn is_pressure_emergency() -> bool {
     current_pressure().is_emergency()
 }
+
+// ============================================================================
+// T-02: 压力感知分配策略 — services 层策略主体
+// ============================================================================
+
+use crate::kernel::framework::mm::alloc_trait::{FrameAllocDecision, AllocContext, AllocDecision};
+
+/// 压力感知分配策略 — services 层安全实现
+///
+/// 根据内存压力级别决定是否允许分配:
+/// - Normal/Warning: 允许
+/// - Critical: 仅允许小分配 (< 4 页)
+/// - Emergency: 拒绝所有分配, 建议回收后重试
+///
+/// 在 `services::mm::init()` 中通过 `register_alloc_decision()` 注册.
+pub struct PressureAwareAllocPolicy;
+
+impl FrameAllocDecision for PressureAwareAllocPolicy {
+    fn decide_alloc(&self, ctx: AllocContext) -> AllocDecision {
+        let pressure = current_pressure();
+        match pressure {
+            MemoryPressure::Normal | MemoryPressure::Warning => AllocDecision::Allow,
+            MemoryPressure::Critical => {
+                // 严重压力下仅允许小分配
+                if ctx.requested_pages <= 4 {
+                    AllocDecision::Allow
+                } else {
+                    AllocDecision::Deny
+                }
+            }
+            MemoryPressure::Emergency => AllocDecision::RetryAfterReclaim,
+        }
+    }
+
+    fn on_alloc_failed(&self, ctx: AllocContext) -> AllocDecision {
+        let pressure = current_pressure();
+        match pressure {
+            MemoryPressure::Emergency => AllocDecision::RetryAfterReclaim,
+            _ => {
+                // 非紧急压力下分配失败, 建议回收后重试一次
+                if ctx.free_pages < ctx.requested_pages as u64 {
+                    AllocDecision::RetryAfterReclaim
+                } else {
+                    AllocDecision::Deny
+                }
+            }
+        }
+    }
+
+    fn select_numa_node(&self, _ctx: AllocContext) -> Option<u8> {
+        // 当前单节点系统, 不做 NUMA 选择
+        None
+    }
+}
+
+/// 注册压力感知分配策略到 framework
+///
+/// 由 `services::mm::init()` 调用. 只能注册一次.
+pub fn register_pressure_aware_policy() -> Result<(), ()> {
+    static POLICY: PressureAwareAllocPolicy = PressureAwareAllocPolicy;
+    crate::kernel::framework::mm::register_alloc_decision(&POLICY).map_err(|_| ())
+}

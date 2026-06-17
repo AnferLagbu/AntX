@@ -57,6 +57,7 @@ pub mod oomd;
 pub mod posix_timer;
 pub mod process;
 pub mod rlimit;
+pub mod sched_trait;
 pub mod scheduler;
 pub mod scheduler_ex;
 pub mod seccomp;
@@ -110,3 +111,6 @@ pub use namespace::{sys_unshare, sys_setns, NamespaceSet};
 
 // cgroup 公共接口 re-export — 避免跨子系统直接访问 proc::cgroup 内部
 pub use cgroup::{sys_cgroup_create, sys_cgroup_destroy, sys_cgroup_attach, sys_cgroup_set_limit, sys_cgroup_get_stat, cgroup_is_initialized, cgroup_subsystem};
+
+// sched_trait 公共接口 re-export — T-01 策略-机制分离
+pub use sched_trait::{SchedDecision, FallbackMlfqPolicy, register_sched_decision, current_sched_decision};

@@ -49,6 +49,8 @@
 // 子模块声明
 pub mod handlers; // Phase 3: 异常处理器实现
 pub mod idt; // Phase 2: 核心管理器
+/// T-04: 中断处理决策 trait
+pub mod irq_trait;
 pub mod safety;
 pub mod statistics;
 pub mod types; // Phase 3: 统计与 JSON 导出
@@ -91,6 +93,9 @@ pub use handlers::{
 
 // Phase 3: 统计模块导出
 pub use statistics::{get_detailed_statistics, DetailedStatistics, InterruptEvent};
+
+// irq_trait 公共接口 re-export — T-04 策略-机制分离
+pub use irq_trait::{IrqDecision, FallbackIrqDecision, IrqContext, SoftirqContext, register_irq_decision, current_irq_decision};
 
 /// 全局 IDT 管理器实例 (Phase 2 已实现)
 pub static IDT_MANAGER: () = ();

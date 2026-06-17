@@ -1,0 +1,86 @@
+//! VFS 后端决策 trait — 策略-机制分离接口
+//!
+//! T-05: VFS 后端选择策略 (根据 fs_type 选择挂载方式) 由 services 实现,
+//! framework 仅保留挂载点管理、inode 操作表定义等机制.
+//!
+//! ## 设计
+//!
+//! - trait 定义在 framework (引用 framework/services 共享类型)
+//! - 实现在 services (100% safe Rust, `#![deny(unsafe_code)]`)
+//! - framework 提供默认回退策略 (`FallbackFsBackend`), 早期启动阶段使用
+//! - services 在 `init()` 中通过 `register_fs_backend()` 注册自己的策略实现
+//!
+//! ## 策略边界
+//!
+//! framework 保留 (机制):
+//! - 挂载点查找 (最长前缀匹配)
+//! - VfsMount 数据结构管理
+//! - fd 分配与偏移管理
+//! - dcache / inotify / flock 机制
+//!
+//! services 实现 (策略):
+//! - 根据 fs_type 名称选择挂载方式 (trait object 或字符串匹配)
+//! - 挂载权限检查
+//! - 文件系统注册表管理
+
+use crate::kernel::services::fs::vfs_types::KernelError;
+
+/// 文件系统后端决策接口 — services 实现, framework 调用
+///
+/// 所有方法均为纯决策逻辑, 不涉及硬件操作或 unsafe.
+pub trait FsBackend: Send + Sync {
+    /// 挂载文件系统到指定路径
+    ///
+    /// services 根据 fs_name 查找对应的 FileSystem 实现,
+    /// 然后调用 framework 的 mount API 完成挂载.
+    /// 对于可获取 `&'static dyn FileSystem` 的后端, 调用 `mount_with_fs`;
+    /// 对于需要内部同步的后端 (如 Mutex 保护的), 调用 `vfs_mount`.
+    fn mount_fs(&self, fs_name: &str, path: &str) -> Result<(), KernelError>;
+
+    /// 是否允许挂载到指定路径
+    ///
+    /// services 可实现权限检查 (如只允许 root 挂载到 /).
+    fn allow_mount(&self, path: &str, fs_name: &str) -> bool;
+}
+
+// ============================================================================
+// 默认回退策略 (早期启动阶段, services 尚未注册时使用)
+// ============================================================================
+
+/// 框架内建回退策略 — 无任何文件系统实现, 拒绝所有挂载
+///
+/// 在 services 注册策略之前, VFS 使用此策略.
+/// 早期启动阶段无文件系统可用, 所有挂载请求被拒绝.
+pub struct FallbackFsBackend;
+
+impl FsBackend for FallbackFsBackend {
+    fn mount_fs(&self, _fs_name: &str, _path: &str) -> Result<(), KernelError> {
+        Err(KernelError::NotInitialized)
+    }
+
+    fn allow_mount(&self, _path: &str, _fs_name: &str) -> bool {
+        false
+    }
+}
+
+static FALLBACK_BACKEND: FallbackFsBackend = FallbackFsBackend;
+
+/// 全局策略注册表 — services 通过 `register_fs_backend` 注册
+static FS_BACKEND: crate::kernel::framework::sync::OnceLock<&'static dyn FsBackend> =
+    crate::kernel::framework::sync::OnceLock::new();
+
+/// 注册 VFS 后端决策策略 (由 services::fs::init 调用)
+///
+/// 只能注册一次; 重复注册返回 `Err`.
+pub fn register_fs_backend(policy: &'static dyn FsBackend) -> Result<(), &'static dyn FsBackend> {
+    FS_BACKEND.set(policy).map_err(|e| e)
+}
+
+/// 获取当前注册的 VFS 后端决策策略 (未注册时返回内建回退)
+#[inline]
+pub fn current_fs_backend() -> &'static dyn FsBackend {
+    match FS_BACKEND.get() {
+        Some(&p) => p,
+        None => &FALLBACK_BACKEND,
+    }
+}

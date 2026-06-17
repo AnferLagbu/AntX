@@ -264,6 +264,33 @@ pub type SyscallHandler = fn(u64, u64, u64, u64) -> i64;
 /// 初始化 syscall 子系统
 pub fn init() {
     fw_syscall_init::syscall_init();
+    // T-03: 注册 services 层系统调用分发策略
+    let _ = register_services_dispatch();
+}
+
+// ============================================================================
+// T-03: services 层系统调用分发策略
+// ============================================================================
+
+use crate::kernel::framework::syscall::dispatch_trait::{SyscallDispatch, register_syscall_dispatch};
+
+/// services 层系统调用分发策略
+///
+/// 处理 framework match 中未覆盖的 syscall 编号.
+/// 当前返回 -ENOSYS (功能未实现), 未来可扩展为动态注册表.
+pub struct ServicesSyscallDispatch;
+
+impl SyscallDispatch for ServicesSyscallDispatch {
+    fn dispatch(&self, _num: u64, _args: [u64; 6]) -> i64 {
+        // ENOSYS = 38, 返回 -38
+        -38
+    }
+}
+
+/// 注册 services 层分发策略到 framework
+fn register_services_dispatch() -> Result<(), ()> {
+    static POLICY: ServicesSyscallDispatch = ServicesSyscallDispatch;
+    register_syscall_dispatch(&POLICY).map_err(|_| ())
 }
 
 // ============================================================================

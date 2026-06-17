@@ -67,6 +67,9 @@ pub use types::ProcessPriority;
 // fd_alloc 公共接口 re-export — 避免跨层直接访问 services::proc::fd_alloc 内部
 pub use fd_alloc::cfg_smoltcp_cap;
 
+// sched_policy 公共接口 re-export — T-01 策略-机制分离
+pub use sched_policy::{MlfqPolicy, register_mlfq_policy};
+
 // namespace 公共接口 re-export — 避免跨层直接访问 services::proc::namespace 内部
 pub use namespace::NamespaceSet;
 
@@ -129,6 +132,9 @@ pub type ProcResult<T> = Result<T, ProcError>;
 ///
 /// 由启动期 `kernel::init` 调用一次。
 pub fn init() {
+    // T-01: 注册 services 层调度策略 (在 framework 调度器初始化之前)
+    let _ = sched_policy::register_mlfq_policy();
+
     crate::kernel::framework::proc::thread::init();
     crate::kernel::framework::proc::scheduler::init();
     crate::kernel::framework::proc::scheduler_ex::init();
