@@ -6,7 +6,7 @@ use core::sync::atomic::Ordering;
 
 use super::audit;
 use super::config::{self, RecoveryLayer, RecoveryResult};
-use crate::kernel::framework::barrier::types::DomainState;
+use crate::kernel::framework::barrier::DomainState;
 use crate::kernel::framework::barrier::PANIC_FLAG;
 use crate::kernel::framework::barrier::RECOVERY_MANAGER;
 

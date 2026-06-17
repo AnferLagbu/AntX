@@ -43,7 +43,7 @@ use super::identity;
 use super::session;
 use super::storage;
 use super::types::*;
-use crate::kernel::framework::lib::cstr::CStrExt;
+use crate::kernel::framework::lib::CStrExt;
 
 macro_rules! klog_pwm {
     ($($arg:tt)*) => {

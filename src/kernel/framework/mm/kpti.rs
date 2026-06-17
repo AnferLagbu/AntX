@@ -34,7 +34,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::kernel::framework::mm::api::pmm_alloc_page;
+use crate::kernel::framework::mm::pmm_alloc_page;
 use crate::kernel::framework::mm::{PhysAddr, KERNEL_BASE, PAGE_SIZE};
 
 // ── PCID 常量 ─────────────────────────────────────────────────────

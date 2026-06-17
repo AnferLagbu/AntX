@@ -26,7 +26,7 @@ use crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA;
 use crate::kernel::services::fs::devfs::DevfsData;
 use crate::kernel::framework::mm::{pcache, PAGE_SIZE};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
-use crate::kernel::framework::lib::cstr::CStrExt;
+use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::fd_notify;
 
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)

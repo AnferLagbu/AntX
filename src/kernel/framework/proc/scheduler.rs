@@ -944,7 +944,7 @@ impl Scheduler {
     pub fn tick(&self, cpu_id: usize) {
         // SMP: 禁用中断保护整个 tick 临界区
         // 防止非中断上下文的 schedule() 调用与 timer ISR 的 tick() 并发修改 per-CPU 状态
-        let flags = crate::kernel::framework::sync::spinlock::disable_interrupts();
+        let flags = crate::kernel::framework::sync::disable_interrupts();
 
         let new_tick = TICK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
         let per_cpu = per_cpu_for(cpu_id as u32);
@@ -1180,7 +1180,7 @@ impl Scheduler {
             self.schedule();
         }
 
-        crate::kernel::framework::sync::spinlock::restore_interrupts(&flags);
+        crate::kernel::framework::sync::restore_interrupts(&flags);
     }
 
     pub fn boost_priority(&self) {

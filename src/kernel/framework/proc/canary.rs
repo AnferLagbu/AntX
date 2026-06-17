@@ -12,9 +12,8 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::kernel::framework::mm::api;
-use crate::kernel::framework::proc::api::process_get_current_pid;
-use crate::kernel::framework::proc::api::process_with;
+use crate::kernel::framework::mm;
+use crate::kernel::framework::proc::{process_get_current_pid, process_with};
 
 static ENTROPY_POOL: AtomicU64 = AtomicU64::new(0x1234_5678_DEAD_BEEFu64);
 static PER_PROC_SEED: AtomicU64 = AtomicU64::new(0x5A5A_5A5A_5A5A_5A5Au64);
@@ -51,7 +50,7 @@ pub fn get_random_bytes(buf: u64, len: usize) -> usize {
     if len == 0 || len > 256 {
         return 0;
     }
-    if !api::is_user_buf(buf, len) {
+    if !mm::is_user_buf(buf, len) {
         return 0;
     }
     let mut random_bytes = [0u8; 256];
@@ -65,7 +64,7 @@ pub fn get_random_bytes(buf: u64, len: usize) -> usize {
         let val = next_random_u64();
         random_bytes[i..len].copy_from_slice(&val.to_le_bytes()[..len - i]);
     }
-    match api::copy_to_user(buf, &random_bytes[..len], len) {
+    match mm::copy_to_user(buf, &random_bytes[..len], len) {
         Ok(n) => n,
         Err(_) => 0,
     }
@@ -78,12 +77,12 @@ pub fn write_canary_to_user(buf: u64, len: usize) -> i64 {
     if len < 8 {
         return -1;
     }
-    if !api::is_user_buf(buf, 8) {
+    if !mm::is_user_buf(buf, 8) {
         return -1;
     }
     let canary = process_get_current_canary();
     let bytes = canary.to_le_bytes();
-    match api::copy_to_user(buf, &bytes, 8) {
+    match mm::copy_to_user(buf, &bytes, 8) {
         Ok(_) => 0,
         Err(_) => -1,
     }

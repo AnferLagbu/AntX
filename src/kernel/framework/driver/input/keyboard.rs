@@ -18,7 +18,7 @@
 //! # Safety
 //! 此模块直接操作 PS/2 控制器硬件。
 
-use crate::kernel::framework::driver::framework::{inb, outb};
+use crate::kernel::framework::driver::{inb, outb};
 use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
 use alloc::boxed::Box;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
@@ -803,7 +803,7 @@ mod tests {
 // InputOps 桥接 — 供 Chitin 统一输入设备 I/O
 // ============================================================================
 
-use crate::kernel::framework::chitin::proto_input::InputOps;
+use crate::kernel::framework::chitin::InputOps;
 
 extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
     if driver_data.is_null() { return core::ptr::null(); }

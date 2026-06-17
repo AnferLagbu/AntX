@@ -275,7 +275,7 @@ impl Process {
             rlimit_table: Mutex::new(RlimitTable::new()),
             // P1 #14: 进程创建时分配独立 canary
             stack_canary: AtomicU64::new(
-                crate::kernel::framework::proc::canary::generate_canary(),
+                crate::kernel::framework::proc::generate_canary(),
             ),
             // C7: Seccomp 默认 Disabled
             seccomp: crate::kernel::framework::proc::seccomp::SeccompState::new(),

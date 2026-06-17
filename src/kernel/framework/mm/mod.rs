@@ -473,7 +473,7 @@ impl Default for PageTableEntry {
 /// G1 阶段暂不配置 Write-Combining 缓存模式 (通过 PAT)，
 /// 这不会阻止像素正常显示；WC 优化将在 G3 阶段添加。
 pub fn map_framebuffer(phys_addr: u64, size: u64) -> *mut u8 {
-    use crate::kernel::framework::mm::vmm::get_vmm;
+    use crate::kernel::framework::mm::get_vmm;
 
     let vmm = get_vmm();
 

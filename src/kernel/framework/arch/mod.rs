@@ -82,6 +82,9 @@ pub use aarch64::timer;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::Aarch64;
 
+// shadow_stack 公共接口 re-export — 避免跨子系统直接访问 arch::shadow_stack 内部
+pub use shadow_stack::*;
+
 // ============================================================================
 // Trait 定义 — 多子 trait + 超 trait (Phase 8: refactored from monolithic Arch)
 // ============================================================================

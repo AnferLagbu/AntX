@@ -103,7 +103,7 @@ pub mod uefi;
 // ============================================================================
 
 // --- 框架导出 ---
-pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as DriverResult};
+pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as DriverResult, inb, outb};
 
 // --- 块设备导出 ---
 pub use block::{BlockDevice, block_device_count, block_device_state, block_device_name, block_device_info, block_device_list, hdd_read_sector, hdd_write_sector, hdd_is_present, hdd_total_sectors};
@@ -143,7 +143,14 @@ pub use storage::{
 
 // 为了向后兼容，保留一些直接导入
 #[cfg(target_arch = "x86_64")]
-pub use storage::ata::{AtaController, AtaDevice};
+pub use storage::ata::{AtaController, AtaDevice, get_io_base, get_ctrl_base, ATA_PRIMARY_IO, ATA_PRIMARY_CTRL, ATA_SECONDARY_IO, ATA_SECONDARY_CTRL, MAX_ATA_DEVICES, WORDS_PER_SECTOR};
+
+// --- serial 内部细节 re-export (供测试使用) ---
+#[cfg(target_arch = "x86_64")]
+pub use char::serial::{RingBuffer, COM1_BASE, COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE};
+
+// --- e1000 内部细节 re-export (供测试使用) ---
+pub use net::e1000::{virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_TX_RING_SIZE};
 
 // --- power/kexec/uefi 公共接口 re-export ---
 pub use power::*;

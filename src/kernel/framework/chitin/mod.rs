@@ -61,6 +61,8 @@ pub mod proto_block;
 
 // devtree 公共接口 re-export — 避免跨子系统直接访问 chitin::devtree 内部
 pub use devtree::*;
+// devtree 内部接口 re-export (pub(crate), 供同 crate 测试使用)
+pub(crate) use devtree::devtree_create_node_impl;
 pub mod proto_char;
 pub mod proto_input;
 pub mod proto_net;
@@ -74,6 +76,13 @@ pub use firmware::*;
 
 // proto_net 公共接口 re-export — 避免跨子系统直接访问 chitin::proto_net 内部
 pub use proto_net::NetOps;
+
+// proto_char/proto_input 公共接口 re-export — 避免跨子系统直接访问 chitin::proto_char/proto_input 内部
+pub use proto_char::CharOps;
+pub use proto_input::InputOps;
+
+// proto_block 公共接口 re-export — 避免跨子系统直接访问 chitin::proto_block 内部
+pub use proto_block::{register_block_device, register_block_device_with_ops, register_block_raw};
 pub mod firmware;
 
 // ── BlockDevice Trait (设备框架层定义, driver::block re-export) ──

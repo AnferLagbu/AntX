@@ -1,12 +1,6 @@
-use crate::kernel::framework::sync::atomic::{
+use crate::kernel::framework::sync::{
     atomic_add, atomic_cmpxchg, atomic_dec, atomic_inc, atomic_read, atomic_set, atomic_sub,
-    AtomicBool,
-};
-use crate::kernel::framework::sync::mutex::{CondVar, Mutex};
-use crate::kernel::framework::sync::rwlock::RwLock;
-use crate::kernel::framework::sync::seqlock::SeqLock;
-use crate::kernel::framework::sync::spinlock::SpinLock;
-use crate::kernel::framework::sync::types::{
+    AtomicBool, CondVar, Mutex, RwLock, SeqLock, SpinLock,
     IrqSaveFlags, MutexInner, RwLockInner, SpinLockInner, TryLockResult,
 };
 use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};

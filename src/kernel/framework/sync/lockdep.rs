@@ -58,7 +58,7 @@ macro_rules! lockdep_log {
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
 // 常量

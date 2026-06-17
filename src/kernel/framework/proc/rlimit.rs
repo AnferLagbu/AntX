@@ -21,7 +21,7 @@ pub use crate::kernel::services::proc::rlimit::{
     get_memlock_limit, check_memlock_exceeded,
 };
 
-use crate::kernel::framework::proc::api::{process_get_current_pid, process_with};
+use crate::kernel::framework::proc::{process_get_current_pid, process_with};
 use crate::kernel::framework::userptr;
 use crate::kernel::framework::errno::Errno;
 

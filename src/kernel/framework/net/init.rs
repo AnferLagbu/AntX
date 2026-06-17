@@ -8,14 +8,14 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize
 
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::klog::{klog_net, klog_net_err, klog_init_msg};
-use crate::kernel::framework::net::smoltcp_impl::{self, ChitinNetDevice, NetworkStack};
+use crate::kernel::framework::net::{ChitinNetDevice, NetworkStack};
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
 use smoltcp::socket::dhcpv4;
 use smoltcp::socket::{tcp, udp};
 use smoltcp::wire::{IpCidr, IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address};
 
 // I-46: 引用本目录 types 模块的 fallback 常量
-use super::types;
+use crate::kernel::framework::net as types;
 
 // ============================================================================
 // 初始化状态管理
@@ -203,7 +203,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
                 });
                 let _ = stack.iface.routes_mut().remove_default_ipv4_route();
             }
-            crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+            crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
             raw::klog_msg("DHCP deconfigured");
         }
         Some(dhcpv4::Event::Configured(config)) => {
@@ -227,7 +227,7 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
                     G_DNS[i].store(u32::from_be_bytes(dns.octets()), Ordering::Release);
                 }
             }
-            crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+            crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
             raw::klog_msg("DHCP configured");
         }
     }
@@ -263,12 +263,12 @@ pub unsafe fn poll_network() {
         None => return,
     };
     let sockets = &mut *raw::socket_set();
-    smoltcp_impl::poll_stack(nic, stack, sockets);
+    crate::kernel::framework::net::poll_stack(nic, stack, sockets);
     raw::process_dhcp_events(sockets);
 
     // P2-I-41: poll 完毕后通知所有 fd 的等待者, 让 sm_send/sm_recv
     // (未来阻塞扩展点) 重新检查 socket 状态. try_wake 持锁时间 O(1).
-    use crate::kernel::framework::net::wait_queue::{WakeReason, SOCKET_WAIT_QUEUES};
+    use crate::kernel::framework::net::{WakeReason, SOCKET_WAIT_QUEUES};
     for fd in 0..MAX_SM_FD {
         if FD_TYPES.0[fd] == 0 {
             continue;
@@ -356,16 +356,16 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-static E1000_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOps =
-    crate::kernel::framework::chitin::proto_net::NetOps {
+static E1000_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
+    crate::kernel::framework::chitin::NetOps {
         send: crate::kernel::framework::driver::e1000_net_send,
         try_receive: crate::kernel::framework::driver::e1000_net_recv,
         get_mac: crate::kernel::framework::driver::e1000_net_get_mac,
         handle_irq: Some(crate::kernel::framework::driver::e1000_net_irq),
     };
 
-static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOps =
-    crate::kernel::framework::chitin::proto_net::NetOps {
+static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
+    crate::kernel::framework::chitin::NetOps {
         send: crate::kernel::framework::driver::virtio_net_send,
         try_receive: crate::kernel::framework::driver::virtio_net_recv,
         get_mac: crate::kernel::framework::driver::virtio_net_get_mac,
@@ -426,8 +426,8 @@ unsafe fn net_save() {
         }
 
         // 状态
-        s.net_ready = crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire);
-        s.net_configured = crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire);
+        s.net_ready = crate::kernel::framework::net::NET_READY.load(Ordering::Acquire);
+        s.net_configured = crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire);
         s.sockets_initialized = SOCKETS_INITIALIZED.load(Ordering::Acquire);
         s.init_state = G_INIT_STATE.load(Ordering::Acquire);
     });
@@ -454,8 +454,8 @@ unsafe fn net_restore() {
     // 1. 复位状态机
     {
         let _guard = NET_LOCK.lock();
-        crate::kernel::framework::net::types::NET_READY.store(false, Ordering::Release);
-        crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+        crate::kernel::framework::net::NET_READY.store(false, Ordering::Release);
+        crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
         raw::clear_all();
         SOCKETS_INITIALIZED.store(false, Ordering::Release);
         G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
@@ -490,7 +490,7 @@ unsafe fn net_restore() {
                     );
                     let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
                 }
-                crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+                crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
             }
         }
         // FD 表恢复: 仅恢复 (type, handle) 元组; smoltcp socket 内部状态
@@ -521,8 +521,8 @@ unsafe fn net_restore() {
 unsafe fn net_reset() {
     let _guard = NET_LOCK.lock();
 
-    crate::kernel::framework::net::types::NET_READY.store(false, Ordering::Release);
-    crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+    crate::kernel::framework::net::NET_READY.store(false, Ordering::Release);
+    crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
 
     raw::clear_all();
     SOCKETS_INITIALIZED.store(false, Ordering::Release);
@@ -577,7 +577,7 @@ pub extern "C" fn qx_net_init() {
         raw::klog_msg("Step2: init device hardware");
 
         let mac = nic.mac;
-        let stack = smoltcp_impl::init_stack(&mut nic, mac);
+        let stack = crate::kernel::framework::net::init_stack(&mut nic, mac);
 
         {
             let _guard = NET_LOCK.lock();
@@ -602,7 +602,7 @@ pub extern "C" fn qx_net_init() {
             raw::set_dhcp_handle(Some(handle));
         }
 
-        crate::kernel::framework::net::types::NET_READY.store(true, Ordering::Release);
+        crate::kernel::framework::net::NET_READY.store(true, Ordering::Release);
 
         if transition_state(InitState::InterfaceReady, InitState::FullyInitialized).is_err() {
             set_failed();
@@ -616,13 +616,13 @@ pub extern "C" fn qx_net_init() {
             for _ in 0..50000 {
                 core::hint::spin_loop();
             }
-            if crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
+            if crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire) {
                 raw::klog_msg("DHCP: lease acquired");
                 break;
             }
         }
 
-        if !crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
+        if !crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire) {
             // I-46: 引用 net::types 中的集中常量, 不再硬编码 10.0.2.15/24/10.0.2.2.
             use crate::kernel::framework::net::types::{FALLBACK_GATEWAY, FALLBACK_IPV4, FALLBACK_PREFIX};
             let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
@@ -640,7 +640,7 @@ pub extern "C" fn qx_net_init() {
                     let _ = addrs.push(cidr);
                 });
                 let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
-                crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+                crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
 
                 // D1.2: 把 fallback IP/网关写进 G_IPV4/G_GATEWAY, 给 get_* 观测 API
                 G_IPV4.store(u32::from_be_bytes(FALLBACK_IPV4), Ordering::Release);
@@ -683,7 +683,7 @@ pub extern "C" fn qx_net_init() {
 /// `NET_READY` 由网络栈在链路就绪后置位。
 #[no_mangle]
 pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
-    if !crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire) {
+    if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
         return -1;
     }
     poll_network();
@@ -701,7 +701,7 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
 /// - 调用方保证 NET 已初始化。
 #[no_mangle]
 pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 {
-    if !crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire) {
+    if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
         return -1;
     }
 
@@ -781,7 +781,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
     });
     let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
 
-    crate::kernel::framework::net::types::NET_CONFIGURED.store(true, Ordering::Release);
+    crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
 
     raw::klog_msg("Static IP configured");
     0
@@ -1064,7 +1064,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         None => return -E_BADF,
     };
 
-    if !crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire) {
+    if !crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire) {
         return -E_NODEV;
     }
 
@@ -1712,11 +1712,11 @@ unsafe fn sm_alloc_fd() -> i32 {
 }
 
 pub fn is_network_initialized() -> bool {
-    crate::kernel::framework::net::types::NET_READY.load(Ordering::Acquire)
+    crate::kernel::framework::net::NET_READY.load(Ordering::Acquire)
 }
 
 pub fn is_network_configured() -> bool {
-    crate::kernel::framework::net::types::NET_CONFIGURED.load(Ordering::Acquire)
+    crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire)
 }
 
 pub fn get_init_state() -> InitState {
@@ -1761,7 +1761,7 @@ impl NetStatus {
             ipv4,
             gateway,
             dns,
-            dhcp_configured: crate::kernel::framework::net::types::NET_CONFIGURED
+            dhcp_configured: crate::kernel::framework::net::NET_CONFIGURED
                 .load(Ordering::Acquire),
         }
     }
@@ -1907,7 +1907,7 @@ pub fn shutdown_network() {
     G_DNS[0].store(0, Ordering::Release);
     G_DNS[1].store(0, Ordering::Release);
     G_DNS[2].store(0, Ordering::Release);
-    crate::kernel::framework::net::types::NET_CONFIGURED.store(false, Ordering::Release);
+    crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
     raw::klog_msg("Network shutdown");
 }

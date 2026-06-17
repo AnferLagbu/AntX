@@ -26,7 +26,7 @@
 //! 本驱动的 `init()` 会检测此状态，避免重复初始化。
 
 use crate::kernel::framework::arch::uart;
-use crate::kernel::framework::chitin::proto_char::CharOps;
+use crate::kernel::framework::chitin::CharOps;
 use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
 
 /// PL011 UART 字符设备驱动 (单例)

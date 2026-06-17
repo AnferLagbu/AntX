@@ -160,7 +160,7 @@ fn test_rcu_nested_locks() -> TestResult {
 // ============================================================
 
 fn test_devtree_create_node() -> TestResult {
-    let node_id = crate::kernel::framework::chitin::devtree::devtree_create_node_impl(
+    let node_id = crate::kernel::framework::chitin::devtree_create_node_impl(
         "test_device",
         crate::kernel::framework::chitin::ChitinProto::Other,
         None,
@@ -168,7 +168,7 @@ fn test_devtree_create_node() -> TestResult {
     match node_id {
         Some(id) => {
             check!(id > 0, "node id positive");
-            let node = crate::kernel::framework::chitin::devtree::devtree_get_node(id);
+            let node = crate::kernel::framework::chitin::devtree_get_node(id);
             check!(node.is_some(), "can get node");
         }
         None => {
@@ -180,7 +180,7 @@ fn test_devtree_create_node() -> TestResult {
 
 fn test_devtree_set_compatible() -> TestResult {
     use alloc::vec;
-    let node_id = crate::kernel::framework::chitin::devtree::devtree_create_node_impl(
+    let node_id = crate::kernel::framework::chitin::devtree_create_node_impl(
         "compat_device",
         crate::kernel::framework::chitin::ChitinProto::Other,
         None,
@@ -188,8 +188,8 @@ fn test_devtree_set_compatible() -> TestResult {
     match node_id {
         Some(id) => {
             let compat = vec!["test,device"];
-            crate::kernel::framework::chitin::devtree::devtree_set_compatible(id, compat);
-            let found = crate::kernel::framework::chitin::devtree::devtree_find_compatible("test,device");
+            crate::kernel::framework::chitin::devtree_set_compatible(id, compat);
+            let found = crate::kernel::framework::chitin::devtree_find_compatible("test,device");
             check!(found.is_some(), "find by compatible");
         }
         None => {}

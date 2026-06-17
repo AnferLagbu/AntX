@@ -28,9 +28,9 @@ use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[allow(dead_code)]
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
-pub(crate) const E1000_TX_RING_SIZE: usize = 64;
-pub(crate) const E1000_RX_RING_SIZE: usize = 128;
-pub(crate) const E1000_RX_BUFFER_SIZE: usize = 2048;
+pub const E1000_TX_RING_SIZE: usize = 64;
+pub const E1000_RX_RING_SIZE: usize = 128;
+pub const E1000_RX_BUFFER_SIZE: usize = 2048;
 const E1000_TIMEOUT: u32 = 100000;
 
 const E1000_CTRL: u32 = 0x0000;
@@ -100,7 +100,7 @@ const E1000_RAH_AV: u32 = 1 << 31;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct E1000TxDesc {
+pub struct E1000TxDesc {
     addr: u64,
     length: u16,
     cso: u8,
@@ -112,7 +112,7 @@ pub(crate) struct E1000TxDesc {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct E1000RxDesc {
+pub struct E1000RxDesc {
     addr: u64,
     length: u16,
     checksum: u16,
@@ -349,7 +349,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
     Ok(())
 }
 
-pub(crate) fn virt_to_phys(virt: u64) -> u64 {
+pub fn virt_to_phys(virt: u64) -> u64 {
     const KERNEL_VMA_BASE: u64 = 0xFFFF800000000000;
     if virt >= KERNEL_VMA_BASE {
         virt - KERNEL_VMA_BASE
@@ -931,8 +931,8 @@ pub extern "C" fn e1000_probe() -> i32 {
         match dev.probe() {
             Ok(()) => {
                 let raw_ptr: *mut E1000Device = &mut *dev;
-                static E1000_NET_OPS: crate::kernel::framework::chitin::proto_net::NetOps =
-                    crate::kernel::framework::chitin::proto_net::NetOps {
+                static E1000_NET_OPS: crate::kernel::framework::chitin::NetOps =
+                    crate::kernel::framework::chitin::NetOps {
                         send: e1000_net_send,
                         try_receive: e1000_net_recv,
                         get_mac: e1000_net_get_mac,

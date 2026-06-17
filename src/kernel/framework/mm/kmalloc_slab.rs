@@ -19,7 +19,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use crate::klog_error;
 use crate::klog_info_simple;
 // P1-I-28 修复: slab 自旋锁在中断上下文会死锁, 仿 pmm.rs 模式 disable/restore IRQ.
-use crate::kernel::framework::sync::spinlock::{
+use crate::kernel::framework::sync::{
     disable_interrupts, restore_interrupts, IrqSaveFlags,
 };
 

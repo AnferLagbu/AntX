@@ -1,5 +1,4 @@
-use crate::kernel::framework::chitin::devtree::{devtree_children, devtree_get_node, devtree_walk};
-use crate::kernel::framework::chitin::proto_block;
+use crate::kernel::framework::chitin::{devtree_children, devtree_get_node, devtree_walk, register_block_device};
 use crate::kernel::framework::chitin::{
     chitin_blk_is_present, chitin_blk_read, chitin_blk_total_sectors, chitin_blk_write,
     chitin_find_by_id, chitin_find_by_name, ChitinProto, BlockDevice,

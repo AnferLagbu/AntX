@@ -35,7 +35,7 @@ use super::thread::THREAD_MANAGER;
 use super::types::*;
 use super::user_proc::{user_proc_clone, USER_PROC_MANAGER};
 pub use super::user_proc::proc_alloc_pid;
-use crate::kernel::framework::lib::cstr::CStrExt;
+use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::klog::klog_ffi_info;
 use crate::kernel::framework::mm::{
     pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
@@ -1216,7 +1216,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
     }
 
     // 5a. I-48: 重置信号状态 (execve 后信号处理 = 默认)
-    crate::kernel::framework::proc::signal::reset_signal_state_on_exec(current_pid);
+    crate::kernel::framework::proc::reset_signal_state_on_exec(current_pid);
 
     // 6. 同步当前进程信息
     C_CURRENT_PROCESS.map_mut(|p| {
@@ -1621,7 +1621,7 @@ pub fn proc_check_alarm(pid: u32) -> i32 {
         .unwrap_or(false);
     if triggered {
         // 14 = SIGALRM
-        let _ = crate::kernel::framework::proc::signal::do_signal_send(pid as Pid, 14);
+        let _ = crate::kernel::framework::proc::do_signal_send(pid as Pid, 14);
         1
     } else {
         0
@@ -1718,7 +1718,7 @@ pub fn proc_check_itimer_real(pid: u32) -> i32 {
         }
     });
     if triggered {
-        let _ = crate::kernel::framework::proc::signal::do_signal_send(pid as Pid, 14);
+        let _ = crate::kernel::framework::proc::do_signal_send(pid as Pid, 14);
         1
     } else {
         0

@@ -139,6 +139,7 @@ pub fn ipc_init() {
 
 pub use types::{
     IpcId, IpcType, Message, MsgQueue, Pipe, Semaphore, ShmSegment, SignalAction, SignalNum,
+    WaitQueue, WaitQueueItem,
 };
 
 // 调度器集成功能导出

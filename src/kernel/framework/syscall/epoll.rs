@@ -41,7 +41,7 @@
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::Errno;
-use crate::kernel::framework::ipc::types::{WaitQueue, WaitQueueItem};
+use crate::kernel::framework::ipc::{WaitQueue, WaitQueueItem};
 
 // ============================================================================
 // epoll 常量

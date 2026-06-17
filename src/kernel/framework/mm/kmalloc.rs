@@ -19,7 +19,7 @@ use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 // P1-I-28 修复: kmalloc 自旋锁在中断上下文会死锁 (同 CPU ISR 持锁 + 主线 spin)
 // 仿 pmm.rs 模式, acquire_lock 时 disable_interrupts, release_lock 时 restore.
 // 导入 framework/sync/spinlock 的 arch 无关原语, 避免直接 crate::arch!().
-use crate::kernel::framework::sync::spinlock::{
+use crate::kernel::framework::sync::{
     disable_interrupts, restore_interrupts, IrqSaveFlags,
 };
 

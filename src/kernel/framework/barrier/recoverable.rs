@@ -2,7 +2,7 @@ use core::sync::atomic::Ordering;
 
 use super::fault_inject::maybe_inject_fault;
 use super::undo_log::UndoLog;
-use crate::kernel::framework::sync::irq_spinlock::{IrqSpinLock, IrqSpinLockGuard};
+use crate::kernel::framework::sync::{IrqSpinLock, IrqSpinLockGuard};
 
 pub trait Snapshot: Copy + Sized {
     fn snapshot(&self) -> Self {

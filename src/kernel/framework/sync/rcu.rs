@@ -225,7 +225,7 @@ pub unsafe fn call_rcu(head: *mut RcuHead, func: unsafe fn(*mut RcuHead)) {
     }
 
     let data = current_rcu();
-    let flags = crate::kernel::framework::sync::spinlock::disable_interrupts();
+    let flags = crate::kernel::framework::sync::disable_interrupts();
 
     // SAFETY: Interrupts disabled — callback list manipulation is atomic
     let tail = unsafe { *data.callback_tail.get() };
@@ -248,7 +248,7 @@ pub unsafe fn call_rcu(head: *mut RcuHead, func: unsafe fn(*mut RcuHead)) {
     data.callback_count.fetch_add(1, Ordering::Relaxed);
     data.need_callback_process.store(true, Ordering::Release);
 
-    crate::kernel::framework::sync::spinlock::restore_interrupts(&flags);
+    crate::kernel::framework::sync::restore_interrupts(&flags);
 
     crate::kernel::framework::irq::raise_softirq(crate::kernel::framework::irq::SoftirqVec::High);
 }
@@ -266,7 +266,7 @@ pub fn process_callbacks() {
         return;
     }
 
-    let flags = crate::kernel::framework::sync::spinlock::disable_interrupts();
+    let flags = crate::kernel::framework::sync::disable_interrupts();
 
     // SAFETY: Interrupts disabled — exclusive access to callback list
     let head = unsafe { *data.callbacks.get() };
@@ -278,7 +278,7 @@ pub fn process_callbacks() {
     data.callback_count.store(0, Ordering::Relaxed);
     data.need_callback_process.store(false, Ordering::Release);
 
-    crate::kernel::framework::sync::spinlock::restore_interrupts(&flags);
+    crate::kernel::framework::sync::restore_interrupts(&flags);
 
     let mut cur = head;
     while !cur.is_null() {
@@ -325,7 +325,7 @@ pub fn rcu_process_all_callbacks() {
         if data.need_callback_process.load(Ordering::Acquire) {
             // 使用 IPI 或直接处理 — 简化实现: 直接处理
             // 注意: 在单核或特定场景下可行; 完整实现需 IPI
-            let flags = crate::kernel::framework::sync::spinlock::disable_interrupts();
+            let flags = crate::kernel::framework::sync::disable_interrupts();
             // SAFETY: `data` 由调用方保证为有效指针; 只读访问
             let head = unsafe { *data.callbacks.get() };
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -335,7 +335,7 @@ pub fn rcu_process_all_callbacks() {
             }
             data.callback_count.store(0, Ordering::Relaxed);
             data.need_callback_process.store(false, Ordering::Release);
-            crate::kernel::framework::sync::spinlock::restore_interrupts(&flags);
+            crate::kernel::framework::sync::restore_interrupts(&flags);
 
             let mut cur = head;
             while !cur.is_null() {

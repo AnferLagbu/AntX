@@ -21,7 +21,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::kernel::framework::mm::api::pmm_alloc_page;
+use crate::kernel::framework::mm::pmm_alloc_page;
 use crate::kernel::framework::mm::PAGE_SIZE;
 
 // ── 公共状态 ──────────────────────────────────────────────────────

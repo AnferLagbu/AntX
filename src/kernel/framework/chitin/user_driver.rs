@@ -1,13 +1,13 @@
-use crate::kernel::framework::chitin::devtree::{
+use crate::kernel::framework::chitin::{
     devtree_clear_user_mapped, devtree_clear_user_mapped_by_pid, devtree_get_node,
     devtree_get_user_mapped, devtree_set_user_mapped, NodeId, PropertyValue,
 };
 use crate::kernel::framework::chitin::{ChitinProto, DeviceState};
-use crate::kernel::framework::credo::capability::{
+use crate::kernel::framework::credo::{
     CAP_DOMAIN_DEVICE, DEVICE_CAP_BIND, DEVICE_CAP_IRQ, DEVICE_CAP_MMIO,
 };
 use crate::kernel::framework::credo::engine;
-use crate::kernel::framework::credo::types::{CapBits, CapDomain};
+use crate::kernel::framework::credo::{CapBits, CapDomain};
 use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::get_vmm;
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};

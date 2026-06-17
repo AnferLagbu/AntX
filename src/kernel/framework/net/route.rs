@@ -8,7 +8,7 @@
 
 use core::sync::atomic::Ordering;
 
-use crate::kernel::framework::net::types::NET_CONFIGURED;
+use crate::kernel::framework::net::NET_CONFIGURED;
 use crate::kernel::framework::errno::Errno;
 
 // ============================================================================
@@ -34,7 +34,7 @@ pub fn sync_route_to_smoltcp(entry: &RouteEntry) -> Result<(), Errno> {
     #[cfg(not(feature = "kernel_test"))]
     {
         use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
-        use crate::kernel::framework::net::init::raw;
+        use crate::kernel::framework::net::raw;
 
         let stack = match raw::stack_mut() {
             Some(s) => s,
@@ -72,7 +72,7 @@ pub fn rebuild_smoltcp_routes(table: &[RouteEntry]) {
     #[cfg(not(feature = "kernel_test"))]
     {
         use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
-        use crate::kernel::framework::net::init::raw;
+        use crate::kernel::framework::net::raw;
 
         if !NET_CONFIGURED.load(Ordering::Acquire) {
             return;

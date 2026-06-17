@@ -48,8 +48,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use crate::kernel::framework::proc::signal::do_signal_send;
-use crate::kernel::framework::proc::types::Pid;
+use crate::kernel::framework::proc::{do_signal_send, Pid};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::timer::{
     hrtimer_cancel, hrtimer_clock_read, hrtimer_start, HrTimer, HrTimerRestart,

@@ -37,9 +37,9 @@ use alloc::collections::VecDeque;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 #[cfg(debug_assertions)]
-use crate::kernel::framework::sync::lockdep::{self, LockClassId, LockClassDesc, LockKind};
+use crate::kernel::framework::sync::{LockClassId, LockClassDesc, LockKind};
 
 // ============================================================================
 // 常量
@@ -192,7 +192,7 @@ impl<T> PiMutex<T> {
     /// 创建命名 PiMutex (用于调试 + lockdep)
     #[cfg(debug_assertions)]
     pub fn named(name: &'static str, data: T) -> Self {
-        let class_id = lockdep::register_class(LockClassDesc {
+        let class_id = crate::kernel::framework::sync::register_class(LockClassDesc {
             name,
             kind: LockKind::PiMutex,
         });
@@ -264,7 +264,7 @@ impl<T: ?Sized> PiMutex<T> {
 
             // Lockdep: 通知锁获取
             #[cfg(debug_assertions)]
-            lockdep::acquire(self.lockdep_class, lockdep::in_irq_context());
+            crate::kernel::framework::sync::acquire(self.lockdep_class, crate::kernel::framework::sync::in_irq_context());
 
             return true;
         }
@@ -311,7 +311,7 @@ impl<T: ?Sized> PiMutex<T> {
     pub(crate) fn unlock_internal(&self) {
         // Lockdep: 通知锁释放
         #[cfg(debug_assertions)]
-        lockdep::release(self.lockdep_class);
+        crate::kernel::framework::sync::release(self.lockdep_class);
 
         let my_pid = current_pid();
         if self.inner.holder.load(Ordering::Acquire) != my_pid {

@@ -36,13 +36,13 @@ use crate::kernel::framework::ioport::IoPort;
 // ============================================================================
 
 /// COM 端口基址
-pub(crate) const COM1_BASE: u16 = 0x3F8;
-pub(crate) const COM2_BASE: u16 = 0x2F8;
+pub const COM1_BASE: u16 = 0x3F8;
+pub const COM2_BASE: u16 = 0x2F8;
 const COM3_BASE: u16 = 0x3E8;
 const COM4_BASE: u16 = 0x2E8;
 
 /// 最大支持的 COM 端口数量
-pub(crate) const MAX_COM_PORTS: usize = 4;
+pub const MAX_COM_PORTS: usize = 4;
 
 /// UART 寄存器偏移量
 const UART_RBR: u16 = 0; // 接收缓冲寄存器 (只读)
@@ -79,7 +79,7 @@ const BAUD_57600: u16 = 2;
 const BAUD_115200: u16 = 1;
 
 /// 缓冲区大小
-pub(crate) const SERIAL_BUFFER_SIZE: usize = 256;
+pub const SERIAL_BUFFER_SIZE: usize = 256;
 
 // ============================================================================
 // 配置结构体
@@ -193,7 +193,7 @@ impl ParityMode {
 // 环形缓冲区
 // ============================================================================
 
-pub(crate) struct RingBuffer<T> {
+pub struct RingBuffer<T> {
     buffer: [T; SERIAL_BUFFER_SIZE],
     head: usize,
     tail: usize,
@@ -803,7 +803,7 @@ mod tests {
 // CharOps 桥接 — 供 Chitin 统一字符设备 I/O
 // ============================================================================
 
-use crate::kernel::framework::chitin::proto_char::CharOps;
+use crate::kernel::framework::chitin::CharOps;
 
 extern "C" fn serial_char_write(driver_data: *mut u8, buf: *const u8, len: usize) -> usize {
     if driver_data.is_null() || buf.is_null() { return 0; }

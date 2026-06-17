@@ -1,5 +1,5 @@
 use crate::kernel::framework::driver::{DeviceType, Driver};
-use crate::kernel::framework::driver::net::e1000::{
+use crate::kernel::framework::driver::{
     virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE,
     E1000_TX_RING_SIZE,
 };

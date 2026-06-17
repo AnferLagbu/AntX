@@ -45,7 +45,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 
 use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE, pmm, vmm};
-use crate::kernel::framework::mm::page_fault::PfResult;
+use crate::kernel::framework::mm::PfResult;
 use crate::kernel::framework::irq::{self, SoftirqVec};
 
 // ============================================================================

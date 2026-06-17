@@ -24,9 +24,8 @@
 //! - 内存读取通过物理页映射, 需确保 CR3 有效
 
 use core::sync::atomic::Ordering;
-use crate::kernel::framework::proc::api::{process_get_current_pid, process_with};
-use crate::kernel::framework::proc::rlimit::{RLIMIT_CORE, RLIM_INFINITY};
-use crate::kernel::framework::mm::api;
+use crate::kernel::framework::proc::{process_get_current_pid, process_with, RLIMIT_CORE, RLIM_INFINITY};
+use crate::kernel::framework::mm;
 use crate::kernel::framework::mm::{PageFlags, PAGE_SIZE};
 
 extern "C" {
@@ -365,7 +364,7 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
 
     // 获取当前进程的 VMA 列表
     // SAFETY: get_current_mm 返回的 MmStruct 指针在进程存活期间有效
-    let mm = api::vma_get_current_mm();
+    let mm = mm::vma_get_current_mm();
     if let Some(mm) = mm {
         let vmas = mm.vmas.lock();
         for vma in vmas.iter() {

@@ -43,7 +43,7 @@ use super::*;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
-use crate::kernel::framework::sync::spinlock::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+use crate::kernel::framework::sync::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 
 
 use crate::kernel::framework::sync::OnceLock;

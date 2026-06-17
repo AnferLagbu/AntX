@@ -4,12 +4,12 @@
 //! 封装 `framework::io::iouring` 的安全 API.
 
 // 重导出强类型
-pub use crate::kernel::framework::io::iouring::{
+pub use crate::kernel::framework::io::{
     IoOpCode, Sqe, Cqe, IoUring, RingBuffer,
     MAX_URING_INSTANCES, DEFAULT_RING_SIZE,
 };
 
-use crate::kernel::framework::io::iouring::{
+use crate::kernel::framework::io::{
     io_uring_setup, io_uring_destroy, io_uring_submit, io_uring_enter, io_uring_reap,
 };
 use crate::kernel::framework::syscall::Errno;

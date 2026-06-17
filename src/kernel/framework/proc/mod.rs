@@ -100,7 +100,7 @@ pub use madvise_mlock::{sys_madvise, sys_mlock, sys_munlock, sys_mlockall, sys_m
 pub use elf::{Elf64Header, Elf64Phdr, ElfLoadResult, elf_validate, elf_load};
 
 // rlimit 公共接口显式 re-export — glob re-export 可能被遮蔽
-pub use rlimit::{sys_getrlimit, sys_setrlimit};
+pub use rlimit::{sys_getrlimit, sys_setrlimit, RLIMIT_CORE, RLIM_INFINITY};
 
 // seccomp 公共接口 re-export — 避免跨子系统直接访问 proc::seccomp 内部
 pub use seccomp::{seccomp_check, sys_seccomp, sys_prctl_prctl};

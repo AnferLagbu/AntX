@@ -107,11 +107,12 @@ INTERNAL_PATTERNS = [
     r'framework::idt::handlers',
     r'framework::idt::safety',
     r'framework::idt::types',
-    # arch 内部 — apic/ioapic/gdt/tss/uart/exception/mmu/gic/timer/X8664/Aarch64 已 re-export
+    # arch 内部 — apic/ioapic/gdt/tss/uart/exception/mmu/gic/timer/X8664/Aarch64/shadow_stack 已 re-export
     # credo 内部 — api/session/engine/secure_boot 已 glob re-export
     # debug 内部 — api/ebpf/ftrace/kgdb 已 glob re-export
     # chitin 内部 — composite/firmware/proto_net/devtree 已 glob re-export
     # cpu 内部 — tsc 已 re-export (read_tsc/read_tsc_serialized/cycles_to_nanoseconds)
+    # io 内部 — iouring 已 glob re-export
 ]
 
 
