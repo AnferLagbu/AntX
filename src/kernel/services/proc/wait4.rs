@@ -11,7 +11,7 @@
 //! - services 层验证 pid 范围/options 合法
 //! - 进程表操作和阻塞委托给 framework 层 (TCB)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// wait4 安全代理
 ///

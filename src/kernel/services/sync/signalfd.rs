@@ -12,7 +12,7 @@
 //! - 原始指针 (`mask_ptr` / `buf`) 委托给 framework 层
 //!   (指针合法性由 syscall 入口 check_user_ptr 保证)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// SFD_NONBLOCK 标志
 pub const SFD_NONBLOCK: i32 = crate::kernel::framework::syscall::signalfd::SFD_NONBLOCK;

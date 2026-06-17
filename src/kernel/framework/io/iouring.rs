@@ -464,7 +464,7 @@ pub fn io_uring_reap(id: u32) -> Option<Cqe> {
 /// - 成功: uring ID (非负)
 /// - 失败: 负 errno
 pub fn sys_io_uring_setup(entries: u64) -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
     match io_uring_setup(entries as u32, pid as u32) {
         Ok(id) => id as i64,
         Err(e) => -(e as i64),

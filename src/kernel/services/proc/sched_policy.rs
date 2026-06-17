@@ -10,7 +10,7 @@
 use alloc::collections::BTreeMap;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::kernel::framework::proc::types::Pid;
+use crate::kernel::framework::proc::Pid;
 
 // ============================================================================
 // CFS Constants

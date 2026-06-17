@@ -12,7 +12,7 @@
 //! Chitin 框架 (chitin_char_read / chitin_char_write)
 //!   └── CharOps { read, write }
 //!         └── Pl011Driver::read_byte / write_byte
-//!               └── arch::aarch64::uart (底层 MMIO 硬件访问)
+//!               └── arch::uart (底层 MMIO 硬件访问)
 //! ```
 //!
 //! ## 设计约束
@@ -25,7 +25,7 @@
 //! [arch::uart::init] 提前初始化以支持早期控制台输出。
 //! 本驱动的 `init()` 会检测此状态，避免重复初始化。
 
-use crate::kernel::framework::arch::aarch64::uart;
+use crate::kernel::framework::arch::uart;
 use crate::kernel::framework::chitin::proto_char::CharOps;
 use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
 

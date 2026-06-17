@@ -84,8 +84,29 @@ pub use user_proc::*;
 // cpu_queue 公共接口 re-export — 避免跨子系统直接访问 proc::cpu_queue 内部
 pub use cpu_queue::init_cpu_queue;
 
+// api 公共接口 re-export — 避免跨子系统直接访问 proc::api 内部
+pub use api::*;
+
+// api::raw 公共接口 re-export — 避免跨子系统直接访问 proc::api::raw 内部
+pub use api::raw;
+
+// fd_alloc 公共接口 re-export — 避免跨子系统直接访问 proc::fd_alloc 内部
+pub use fd_alloc::{FdPlan, FdSubsystem, fd_at, idx_of};
+
 // madvise_mlock 公共接口 re-export — 避免跨子系统直接访问 proc::madvise_mlock 内部
 pub use madvise_mlock::{sys_madvise, sys_mlock, sys_munlock, sys_mlockall, sys_munlockall, sys_mincore};
 
 // elf 公共接口 re-export — 避免跨子系统直接访问 proc::elf 内部
 pub use elf::{Elf64Header, Elf64Phdr, ElfLoadResult, elf_validate, elf_load};
+
+// rlimit 公共接口显式 re-export — glob re-export 可能被遮蔽
+pub use rlimit::{sys_getrlimit, sys_setrlimit};
+
+// seccomp 公共接口 re-export — 避免跨子系统直接访问 proc::seccomp 内部
+pub use seccomp::{seccomp_check, sys_seccomp, sys_prctl_prctl};
+
+// namespace 公共接口 re-export — 避免跨子系统直接访问 proc::namespace 内部
+pub use namespace::{sys_unshare, sys_setns};
+
+// cgroup 公共接口 re-export — 避免跨子系统直接访问 proc::cgroup 内部
+pub use cgroup::{sys_cgroup_create, sys_cgroup_destroy, sys_cgroup_attach, sys_cgroup_set_limit, sys_cgroup_get_stat};

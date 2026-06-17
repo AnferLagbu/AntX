@@ -43,7 +43,7 @@
 //! 两者底层共用 hrtimer, 但用户态交互方式不同。
 
 // Re-export framework 层的类型和常量
-pub use crate::kernel::framework::proc::posix_timer::{
+pub use crate::kernel::framework::proc::{
     Itimerspec, Sigevent,
     CLOCK_MONOTONIC, CLOCK_REALTIME,
     SIGEV_NONE, SIGEV_SIGNAL,

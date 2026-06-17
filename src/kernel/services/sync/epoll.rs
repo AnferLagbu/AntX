@@ -12,7 +12,7 @@
 //! - 原始指针 (`*const EpollEvent` / `*mut EpollEvent`) 委托给 framework 层
 //!   (指针合法性由 syscall 入口 check_user_ptr 保证)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// epoll_create 安全代理
 ///

@@ -64,7 +64,7 @@ pub use types::ProcessState;
 /// 进程优先级
 pub use types::ProcessPriority;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 错误
@@ -133,7 +133,7 @@ pub fn init() {
 ///
 /// 由 SMP 启动代码在每个 CPU 上调用一次。
 pub fn init_per_cpu(cpu_id: u32) {
-    crate::kernel::framework::proc::scheduler::init_per_cpu_sched(cpu_id);
+    crate::kernel::framework::proc::init_per_cpu_sched(cpu_id);
 }
 
 // ============================================================================
@@ -142,14 +142,14 @@ pub fn init_per_cpu(cpu_id: u32) {
 
 /// 调度器是否已就绪
 pub fn scheduler_ready() -> bool {
-    crate::kernel::framework::proc::scheduler::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire)
+    crate::kernel::framework::proc::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire)
 }
 
 /// 触发调度 (在 timer tick 或阻塞唤醒后调用)
 ///
 /// 由架构中断处理代码调用。
 pub fn schedule() {
-    crate::kernel::framework::proc::scheduler::SCHEDULER.schedule();
+    crate::kernel::framework::proc::SCHEDULER.schedule();
 }
 
 // ============================================================================

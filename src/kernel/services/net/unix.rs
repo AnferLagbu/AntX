@@ -8,8 +8,8 @@
 //! 纯策略代码 (socket CRUD + 路径绑定 + STREAM/DGRAM 数据传输), 0 unsafe.
 //! framework 仅保留 re-export.
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::sync::IrqSpinLock;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 常量

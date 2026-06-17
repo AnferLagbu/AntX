@@ -19,7 +19,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::kernel::framework::cpu::tsc::{read_tsc, read_tsc_serialized};
+use crate::kernel::framework::cpu::{read_tsc, read_tsc_serialized};
 
 // ============================================================================
 // 全局状态

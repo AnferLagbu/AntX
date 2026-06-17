@@ -13,9 +13,9 @@
 //! - [unlink_syscall] 解除链接 (删除文件)
 
 use crate::kernel::framework::credo;
-use crate::kernel::framework::fs::vfs::api as fw;
+use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 权限位

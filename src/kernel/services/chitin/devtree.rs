@@ -24,7 +24,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use crate::kernel::framework::chitin;
-pub use crate::kernel::framework::chitin::devtree::{
+pub use crate::kernel::framework::chitin::{
     ChitinNode, NodeId, Property, PropertyValue,
 };
 
@@ -86,7 +86,7 @@ impl DevTreeError {
 
 pub type DevTreeResult<T> = Result<T, DevTreeError>;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 节点查询

@@ -19,21 +19,21 @@
 //! 评估日期: 2026-06-04
 
 use crate::kernel::framework::proc_elf;
-use crate::kernel::framework::mm::vma::MmStruct;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::mm::MmStruct;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 强类型 re-export
 // ============================================================================
 
 /// ELF 64 字节头 (与 Linux ELF64 布局一致, 64 字节)
-pub use crate::kernel::framework::proc::elf::Elf64Header;
+pub use crate::kernel::framework::proc::Elf64Header;
 
 /// ELF 64 程序头 (56 字节)
-pub use crate::kernel::framework::proc::elf::Elf64Phdr;
+pub use crate::kernel::framework::proc::Elf64Phdr;
 
 /// ELF 加载结果 (entry / phdr_addr / phdr_count / brk / stack_top)
-pub use crate::kernel::framework::proc::elf::ElfLoadResult;
+pub use crate::kernel::framework::proc::ElfLoadResult;
 
 // ============================================================================
 // 错误

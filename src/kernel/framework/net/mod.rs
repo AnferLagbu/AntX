@@ -60,3 +60,4 @@ pub mod syscall;
 // ============================================================================
 
 pub use types::*;
+pub use init::poll_network;

@@ -257,15 +257,6 @@ pub fn dispatch_from_ctx_typed(ctx: &UserContext) -> SyscallResult<u64> {
 /// Syscall 处理器类型 (C ABI: 4 参, 返回 i64)
 pub type SyscallHandler = fn(u64, u64, u64, u64) -> i64;
 
-/// 注册 syscall 处理器
-///
-/// **安全约束**:
-/// - 仅在启动阶段单线程调用
-/// - `num` 不可与已有注册冲突
-pub fn register_handler(num: SyscallNumber, handler: SyscallHandler) {
-    usermode::register_syscall_handler(num.0, handler)
-}
-
 // ============================================================================
 // 初始化
 // ============================================================================

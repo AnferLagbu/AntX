@@ -9,7 +9,7 @@
 //! - 查询 init 启动状态 (0=未启动, 1=initramfs 解压, 2=加载, 3=Ring 3)
 //! - 提供类型安全的常量供其他服务引用
 //!
-//! ## 启动流程 (由 framework::proc::api::launch_first_user_process 内部驱动)
+//! ## 启动流程 (由 framework::proc::launch_first_user_process 内部驱动)
 //!
 //! 1. 挂载 ramfs 为 `/`
 //! 2. 解压 initramfs cpio 到 ramfs (feature = "initramfs")
@@ -36,7 +36,7 @@ pub const INIT_STATUS_RUNNING: u32 = 3;
 /// 查询 init 启动状态
 #[inline]
 pub fn init_launch_status() -> u32 {
-    crate::kernel::framework::proc::api::init_launch_status()
+    crate::kernel::framework::proc::init_launch_status()
 }
 
 /// init 是否已运行 (>= 3 表示已进入 Ring 3)

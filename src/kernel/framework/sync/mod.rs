@@ -85,11 +85,15 @@ pub use types::{MutexInner, RwLockInner, SpinLockInner};
 // ============================================================================
 pub use irq_spinlock::IrqSpinLock;
 pub use once_lock::OnceLock;
-pub use spinlock::{SpinLock, disable_interrupts, restore_interrupts};
+pub use spinlock::{SpinLock, disable_interrupts, restore_interrupts, smp_wmb, smp_rmb, smp_mb};
 pub use mutex::Mutex;
 pub use rwlock::RwLock;
 pub use rcu::{rcu_read_lock, rcu_read_unlock, rcu_dereference, rcu_assign_pointer, synchronize_rcu, call_rcu};
 pub use types::{IrqSaveFlags, MutexGuard, SpinLockGuard, RwLockReadGuard, RwLockWriteGuard};
+
+// lockdep 公共接口 re-export — 避免跨子系统直接访问 sync::lockdep 内部
+pub use lockdep::{LockClassId, LockClassDesc, LockKind, register_class, acquire, release, irq_enter, irq_exit,
+    in_irq_context, held_depth, num_classes, num_violations, deadlock_detected, dump_state};
 
 // ============================================================================
 // FFI 接口层 (C ↔ Rust 桥接)

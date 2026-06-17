@@ -22,7 +22,7 @@
 
 use crate::kernel::framework::proc::api;
 use crate::kernel::framework::proc::ProcessState;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::syscall::raw;
 
 use core::sync::atomic::Ordering;

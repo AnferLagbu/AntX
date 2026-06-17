@@ -10,7 +10,7 @@
 //! - services 层验证标量参数 (Timespec 字段合法性)
 //! - 原始指针解引用委托给 framework 层 (指针合法性由 syscall 入口保证)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// nanosleep 安全代理
 ///

@@ -52,49 +52,23 @@ ALLOWED_TIGHT_COUPLING = {
 # 如果 A 直接 use B::internal_submodule (而非 B::api / B::types / B::mod),
 # 则视为违规
 INTERNAL_PATTERNS = [
-    # mm 内部
-    r'framework::mm::pmm',
+    # mm 内部 — api/vma/swap/kpti/page_fault/pressure/copy_user/pmm 已在 mm/mod.rs re-export
     r'framework::mm::vmm_x86_64',
     r'framework::mm::vmm_aarch64',
-    r'framework::mm::vma',
     r'framework::mm::slab',
     r'framework::mm::frame',
-    r'framework::mm::kmalloc',
     r'framework::mm::kmalloc_slab',
     r'framework::mm::cow',
-    r'framework::mm::swap',
     r'framework::mm::pcache',
-    r'framework::mm::copy_user',
-    r'framework::mm::kpti',
     r'framework::mm::kpti_aarch64',
-    r'framework::mm::page_fault',
     r'framework::mm::numa',
-    r'framework::mm::pressure',
     r'framework::mm::arch',
-    # proc 内部
-    r'framework::proc::process',
-    r'framework::proc::thread',
-    r'framework::proc::scheduler',
-    r'framework::proc::scheduler_ex',
-    r'framework::proc::signal',
-    r'framework::proc::posix_timer',
+    # proc 内部 — api/signal/rlimit/fd_alloc/seccomp/namespace/cgroup/elf/madvise_mlock/cpu_queue/session/thread/scheduler/scheduler_ex/process/canary/posix_timer/user_proc 已 re-export
     r'framework::proc::coredump',
-    r'framework::proc::cpu_queue',
-    r'framework::proc::rlimit',
-    r'framework::proc::user_proc',
-    r'framework::proc::madvise_mlock',
-    r'framework::proc::canary',
-    r'framework::proc::elf',
     r'framework::proc::oomd',
     r'framework::proc::cfs',
-    r'framework::proc::seccomp',
-    r'framework::proc::cgroup',
-    r'framework::proc::session',
-    r'framework::proc::namespace',
-    r'framework::proc::fd_alloc',
-    # syscall 内部
+    # syscall 内部 — types/epoll/api 已 re-export
     r'framework::syscall::futex',
-    r'framework::syscall::epoll',
     r'framework::syscall::eventfd',
     r'framework::syscall::timerfd',
     r'framework::syscall::signalfd',
@@ -111,43 +85,33 @@ INTERNAL_PATTERNS = [
     r'framework::syscall::ftrace_kgdb',
     r'framework::syscall::posix_timer',
     r'framework::syscall::canary',
+    r'framework::syscall::raw',
     # fs 内部 — vfs 是 fs 的公共子模块入口, 不标记为内部
-    # fs::vfs::api, fs::vfs::flock, fs::vfs::inotify 等更深层路径由 vfs/mod.rs re-export
     r'framework::fs::ramfs',
     r'framework::fs::devfs',
     r'framework::fs::procfs',
-    # driver 内部 — framework 和 block 已在 driver/mod.rs re-export 为公共 API
-    r'framework::driver::display',
-    r'framework::driver::storage',
-    r'framework::driver::char',
-    r'framework::driver::net',
-    r'framework::driver::input',
+    # driver 内部 — net/virtio/display/storage/char/input/power/kexec/uefi 已在 driver/mod.rs glob re-export
     r'framework::driver::usb',
-    r'framework::driver::virtio',
-    r'framework::driver::power',
-    r'framework::driver::uefi',
-    r'framework::driver::kexec',
-    r'framework::driver::hotplug',
-    # sync 内部 (已在 audit_services_boundary.py 覆盖, 此处补充 framework 内部)
+    # sync 内部 — spinlock/irq_spinlock/lockdep 已 re-export
     r'framework::sync::raw',
     r'framework::sync::arch',
     r'framework::sync::seqlock::raw',
     r'framework::sync::rcu::raw',
-    # net 内部
+    # net 内部 — init 已 re-export (poll_network)
     r'framework::net::smoltcp_impl',
     r'framework::net::smoltcp',
-    r'framework::net::init',
     r'framework::net::save',
-    # timer 内部
-    r'framework::timer::calibration',
-    # timer 内部 — hrtimer 已在 timer/mod.rs re-export
-    r'framework::timer::pit',
-    r'framework::timer::sleep',
-    # idt 内部 — IdtManager 和 InterruptFrame 已在 idt/mod.rs re-export
+    # timer 内部 — tick/calibration/tickless/time_sync/hrtimer/sleep/pit 已 glob re-export
+    # idt 内部
     r'framework::idt::statistics',
     r'framework::idt::handlers',
     r'framework::idt::safety',
     r'framework::idt::types',
+    # arch 内部 — apic/ioapic/gdt/tss/uart/exception/mmu/gic/timer/X8664/Aarch64 已 re-export
+    # credo 内部 — api/session/engine/secure_boot 已 glob re-export
+    # debug 内部 — api/ebpf/ftrace/kgdb 已 glob re-export
+    # chitin 内部 — composite/firmware/proto_net/devtree 已 glob re-export
+    # cpu 内部 — tsc 已 re-export (read_tsc/read_tsc_serialized/cycles_to_nanoseconds)
 ]
 
 
@@ -241,7 +205,15 @@ def check_internal_access(base, layer_name):
                         import_path = m.group(1)
 
                         for pattern in INTERNAL_PATTERNS:
+                            # 精确匹配: pattern 必须是完整路径段, 避免 framework::mm::vma 误匹配
+                            # framework::mm::vma_get_current_mm (vma 是 vma_get 的前缀但不是路径段)
+                            # 在 pattern 后追加 :: 或匹配到路径末尾
                             if pattern in import_path:
+                                # 验证 pattern 后面要么是 :: 要么是路径结束
+                                idx = import_path.find(pattern)
+                                end = idx + len(pattern)
+                                if end < len(import_path) and import_path[end:end+2] != '::':
+                                    continue
                                 # 排除自身模块的内部访问
                                 # e.g. framework::mm::pmm 被 framework/mm/ 内部使用是允许的
                                 # pattern 格式: framework::proc::process → 子系统是 proc (index 1)

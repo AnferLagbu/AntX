@@ -8,9 +8,9 @@
 //! - 委托 framework/fs/vfs::api 完成真实现 (ramfs.link / ramfs.symlink / ramfs.readlink)
 
 use crate::kernel::framework::credo;
-use crate::kernel::framework::fs::vfs::api as fw;
+use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // link

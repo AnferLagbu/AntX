@@ -41,11 +41,14 @@ pub mod wait4;
 
 // 公共接口 re-export — 避免跨子系统直接访问内部子模块
 pub use epoll::{EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLRDHUP, epoll_pwake};
+pub use types::{Errno, SyscallHandler};
+pub use types::*;
+pub use sendfile::{sys_sendfile, sys_splice, SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT};
 pub mod types;
 
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::idt::InterruptFrame;
-use crate::kernel::framework::syscall::types::*;
+// types 已通过 pub use types::* re-export, 此处不再 use
 use core::sync::atomic::Ordering;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
@@ -172,10 +175,10 @@ macro_rules! dispatch {
 /// 从中断上下文 (int 0x80) 调用. 所有寄存器值来自被打断的用户上下文.
 pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     // TD-10: 进入内核态, tick 期间 sys_time 累加.
-    crate::kernel::framework::proc::api::proc_set_in_kern(1);
+    crate::kernel::framework::proc::proc_set_in_kern(1);
     let result = syscall_dispatch_impl(num, a0, a1, a2, a3, a4, a5);
     // 出口恢复用户态, tick 期间 user_time 累加.
-    crate::kernel::framework::proc::api::proc_set_in_kern(0);
+    crate::kernel::framework::proc::proc_set_in_kern(0);
     result
 }
 
@@ -186,7 +189,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
     // C7: Seccomp 过滤检查 (在 dispatch 之前)
     let args = [a0, a1, a2, a3, a4, a5];
-    if let Some(ret) = crate::kernel::framework::proc::seccomp::seccomp_check(num, &args) {
+    if let Some(ret) = crate::kernel::framework::proc::seccomp_check(num, &args) {
         return ret;
     }
 
@@ -254,7 +257,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
         QX_MREMAP => {
             // 从当前 task 取 MmStruct; 验证后委托 services/mm/mremap
-            use crate::kernel::framework::mm::api::vma_get_current_mm;
+            use crate::kernel::framework::mm::vma_get_current_mm;
             match vma_get_current_mm() {
                 Some(mm) => {
                     dispatch!(
@@ -403,11 +406,11 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== C7: Seccomp / prctl ====================
         QX_SECCOMP => dispatch!(
-            crate::kernel::framework::proc::seccomp::sys_seccomp(a0 as u32, a1 as u32, a2),
+            crate::kernel::framework::proc::sys_seccomp(a0 as u32, a1 as u32, a2),
             b"seccomp\0"
         ),
         QX_PRCTL => dispatch!(
-            crate::kernel::framework::proc::seccomp::sys_prctl_prctl(a0 as i64, a1, a2, a3, a4),
+            crate::kernel::framework::proc::sys_prctl_prctl(a0 as i64, a1, a2, a3, a4),
             b"prctl\0"
         ),
 
@@ -455,33 +458,33 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== D1: Namespace ====================
         QX_UNSHARE => dispatch!(
-            crate::kernel::framework::proc::namespace::sys_unshare(a0),
+            crate::kernel::framework::proc::sys_unshare(a0),
             b"unshare\0"
         ),
         QX_SETNS => dispatch!(
-            crate::kernel::framework::proc::namespace::sys_setns(a0, a1),
+            crate::kernel::framework::proc::sys_setns(a0, a1),
             b"setns\0"
         ),
 
         // ==================== D2: cgroup ====================
         QX_CGROUP_CREATE => dispatch!(
-            crate::kernel::framework::proc::cgroup::sys_cgroup_create(a0, a1, a2),
+            crate::kernel::framework::proc::sys_cgroup_create(a0, a1, a2),
             b"cgroup_create\0"
         ),
         QX_CGROUP_DESTROY => dispatch!(
-            crate::kernel::framework::proc::cgroup::sys_cgroup_destroy(a0),
+            crate::kernel::framework::proc::sys_cgroup_destroy(a0),
             b"cgroup_destroy\0"
         ),
         QX_CGROUP_ATTACH => dispatch!(
-            crate::kernel::framework::proc::cgroup::sys_cgroup_attach(a0, a1),
+            crate::kernel::framework::proc::sys_cgroup_attach(a0, a1),
             b"cgroup_attach\0"
         ),
         QX_CGROUP_SET_LIMIT => dispatch!(
-            crate::kernel::framework::proc::cgroup::sys_cgroup_set_limit(a0, a1, a2),
+            crate::kernel::framework::proc::sys_cgroup_set_limit(a0, a1, a2),
             b"cgroup_set_limit\0"
         ),
         QX_CGROUP_GET_STAT => dispatch!(
-            crate::kernel::framework::proc::cgroup::sys_cgroup_get_stat(a0, a1),
+            crate::kernel::framework::proc::sys_cgroup_get_stat(a0, a1),
             b"cgroup_get_stat\0"
         ),
 
@@ -505,23 +508,23 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== D4: eBPF ====================
         QX_BPF => dispatch!(
-            crate::kernel::framework::debug::ebpf::sys_bpf(a0, a1, a2),
+            crate::kernel::framework::debug::sys_bpf(a0, a1, a2),
             b"bpf\0"
         ),
 
         // ==================== D5: 电源管理 ====================
         QX_PM => dispatch!(
-            crate::kernel::framework::driver::power::sys_pm(a0, a1, a2),
+            crate::kernel::framework::driver::sys_pm(a0, a1, a2),
             b"pm\0"
         ),
 
         // ==================== D6: 安全启动 + TPM ====================
         QX_SECURE_BOOT => dispatch!(
-            crate::kernel::framework::credo::secure_boot::sys_secure_boot(a0, a1, a2, a3),
+            crate::kernel::framework::credo::sys_secure_boot(a0, a1, a2, a3),
             b"secure_boot\0"
         ),
         QX_TPM => dispatch!(
-            crate::kernel::framework::credo::secure_boot::sys_tpm(a0, a1, a2, a3),
+            crate::kernel::framework::credo::sys_tpm(a0, a1, a2, a3),
             b"tpm\0"
         ),
 
@@ -533,25 +536,25 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== D8: Tickless (NO_HZ) ====================  // 动态时钟节拍模式
         QX_TICKLESS => dispatch!(
-            crate::kernel::framework::timer::tickless::sys_tickless(a0, a1, a2),
+            crate::kernel::framework::timer::sys_tickless(a0, a1, a2),
             b"tickless\0"
         ),
 
         // ==================== D9: NTP/PTP 时钟同步 ====================
         QX_TIMESYNC => dispatch!(
-            crate::kernel::framework::timer::time_sync::sys_timesync(a0, a1, a2),
+            crate::kernel::framework::timer::sys_timesync(a0, a1, a2),
             b"timesync\0"
         ),
 
         // ==================== D10: kexec ====================
         QX_KEXEC => dispatch!(
-            crate::kernel::framework::driver::kexec::sys_kexec(a0, a1, a2, a3),
+            crate::kernel::framework::driver::sys_kexec(a0, a1, a2, a3),
             b"kexec\0"
         ),
 
         // ==================== D11: UEFI ====================
         QX_UEFI => dispatch!(
-            crate::kernel::framework::driver::uefi::sys_uefi(a0, a1, a2),
+            crate::kernel::framework::driver::sys_uefi(a0, a1, a2),
             b"uefi\0"
         ),
 
@@ -977,11 +980,11 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             b"gettimeofday\0"
         ),
         QX_GETRLIMIT => dispatch!(
-            crate::kernel::framework::proc::rlimit::sys_getrlimit(a0 as i32, a1),
+            crate::kernel::framework::proc::sys_getrlimit(a0 as i32, a1),
             b"getrlimit\0"
         ),
         QX_SETRLIMIT => dispatch!(
-            crate::kernel::framework::proc::rlimit::sys_setrlimit(a0 as i32, a1),
+            crate::kernel::framework::proc::sys_setrlimit(a0 as i32, a1),
             b"setrlimit\0"
         ),
         QX_SYSINFO => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
@@ -1192,7 +1195,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== inotify syscall (640+) ====================
         QX_INOTIFY_INIT1 => dispatch!(
-            crate::kernel::framework::fs::vfs::sys_inotify_init1(a0 as i32),
+            crate::kernel::framework::fs::sys_inotify_init1(a0 as i32),
             b"inotify_init1\0"
         ),
         QX_INOTIFY_ADD_WATCH => dispatch!(
@@ -1200,7 +1203,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             b"inotify_add_watch\0"
         ),
         QX_INOTIFY_RM_WATCH => dispatch!(
-            crate::kernel::framework::fs::vfs::sys_inotify_rm_watch(a0 as i64, a1 as i32),
+            crate::kernel::framework::fs::sys_inotify_rm_watch(a0 as i64, a1 as i32),
             b"inotify_rm_watch\0"
         ),
 
@@ -1353,14 +1356,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 }
 
 #[no_mangle]
-///
-/// # Safety
-///
-/// 动态注册 syscall 处理器的入口,被 asm stub 间接调用。`_handler` 是
-/// Rust 函数指针 (`fn(u64, u64, u64, u64) -> i64`),**不是** C ABI 类型,
-/// 因此函数本身必须用 `extern "Rust"` 标记,否则编译器会报
-/// `improper_ctypes_definitions`。
-pub unsafe extern "Rust" fn syscall_register(_num: u64, _handler: SyscallHandler) {}
+// 此处保留 #[no_mangle] 符号由 api.rs 的实现提供.
 
 // ============================================================================
 // 文件 I/O — read / write / open / close
@@ -1408,10 +1404,10 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
         return crate::kernel::framework::syscall::timerfd::sys_timerfd_read(fd, buf as u64);
     }
     // inotify read: fd ∈ [260, 268)
-    if crate::kernel::framework::fs::vfs::is_inotify_fd(fd) {
-        return crate::kernel::framework::fs::vfs::sys_inotify_read(fd as i64, buf, count as usize);
+    if crate::kernel::framework::fs::is_inotify_fd(fd) {
+        return crate::kernel::framework::fs::sys_inotify_read(fd as i64, buf, count as usize);
     }
-    crate::kernel::framework::fs::vfs::vfs_read(fd as u32, buf, count as u32) as i64
+    crate::kernel::framework::fs::vfs_read(fd as u32, buf, count as u32) as i64
 }
 
 fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
@@ -1438,15 +1434,15 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
         let value = unsafe { core::ptr::read(buf as *const u64) };
         return crate::kernel::framework::syscall::eventfd::sys_eventfd_write(fd, value);
     }
-    crate::kernel::framework::fs::vfs::vfs_write(fd as u32, buf, count as u32) as i64
+    crate::kernel::framework::fs::vfs_write(fd as u32, buf, count as u32) as i64
 }
 
 fn sys_open(path: *const u8, flags: i32, _mode: i32) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_open(path, flags as u32, pwm) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_open(path, flags as u32, pwm) as i64
 }
 
 fn sys_close(fd: i32) -> i64 {
@@ -1473,14 +1469,14 @@ fn sys_close(fd: i32) -> i64 {
         return crate::kernel::framework::syscall::timerfd::sys_timerfd_close(fd);
     }
     // inotify close: fd ∈ [260, 268)
-    if crate::kernel::framework::fs::vfs::is_inotify_fd(fd) {
-        crate::kernel::framework::fs::vfs::inotify_release(fd as i64);
+    if crate::kernel::framework::fs::is_inotify_fd(fd) {
+        crate::kernel::framework::fs::inotify_release(fd as i64);
         return 0;
     }
     // 释放该 fd 持有的 flock 锁
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-    crate::kernel::framework::fs::vfs::flock_release_fd(pid, fd);
-    crate::kernel::framework::fs::vfs::vfs_close(fd as u32) as i64
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
+    crate::kernel::framework::fs::flock_release_fd(pid, fd);
+    crate::kernel::framework::fs::vfs_close(fd as u32) as i64
 }
 
 fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
@@ -1490,15 +1486,15 @@ fn sys_stat(path: *const u8, st_buf: *mut u8) -> i64 {
     if st_buf.is_null()
         || !raw::check_user_buf(
             st_buf as u64,
-            core::mem::size_of::<crate::kernel::framework::fs::vfs::VfsStat>() as u64,
+            core::mem::size_of::<crate::kernel::framework::fs::VfsStat>() as u64,
         )
     {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_stat(
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_stat(
         path,
-        st_buf as *mut crate::kernel::framework::fs::vfs::VfsStat,
+        st_buf as *mut crate::kernel::framework::fs::VfsStat,
         pwm,
     ) as i64
 }
@@ -1507,27 +1503,27 @@ fn sys_fstat(fd: i32, st_buf: *mut u8) -> i64 {
     if st_buf.is_null()
         || !raw::check_user_buf(
             st_buf as u64,
-            core::mem::size_of::<crate::kernel::framework::fs::vfs::VfsStat>() as u64,
+            core::mem::size_of::<crate::kernel::framework::fs::VfsStat>() as u64,
         )
     {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_fstat(
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_fstat(
         fd as u32,
-        st_buf as *mut crate::kernel::framework::fs::vfs::VfsStat,
+        st_buf as *mut crate::kernel::framework::fs::VfsStat,
         pwm,
     ) as i64
 }
 
 fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
-    crate::kernel::framework::fs::vfs::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
+    crate::kernel::framework::fs::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
 }
 
 fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
-    crate::kernel::framework::fs::vfs::vfs_readdir(
+    crate::kernel::framework::fs::vfs_readdir(
         fd as u32,
-        buf as *mut crate::kernel::framework::fs::vfs::VfsDirEntry,
+        buf as *mut crate::kernel::framework::fs::VfsDirEntry,
     ) as i64
 }
 
@@ -1542,14 +1538,14 @@ fn sys_getcwd(buf: *mut u8, size: u64) -> i64 {
     if !raw::check_user_buf(buf as u64, size) {
         return Errno::EFAULT.as_ret();
     }
-    crate::kernel::framework::fs::vfs::vfs_get_cwd(buf, size as u32) as i64
+    crate::kernel::framework::fs::vfs_get_cwd(buf, size as u32) as i64
 }
 
 fn sys_chdir(path: *const u8) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    crate::kernel::framework::fs::vfs::vfs_set_cwd(path);
+    crate::kernel::framework::fs::vfs_set_cwd(path);
     0
 }
 
@@ -1557,27 +1553,27 @@ fn sys_mkdir(path: *const u8, _mode: i32) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
     if pwm == 0 {
         return Errno::EACCES.as_ret();
     }
-    crate::kernel::framework::fs::vfs::vfs_mkdir(path, pwm) as i64
+    crate::kernel::framework::fs::vfs_mkdir(path, pwm) as i64
 }
 
 fn sys_rmdir(path: *const u8) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_rmdir(path, pwm) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_rmdir(path, pwm) as i64
 }
 
 fn sys_unlink(path: *const u8) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_unlink(path, pwm) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_unlink(path, pwm) as i64
 }
 
 fn sys_rename(old: *const u8, new: *const u8) -> i64 {
@@ -1588,18 +1584,18 @@ fn sys_rename(old: *const u8, new: *const u8) -> i64 {
     {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_rename(old, new, pwm) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_rename(old, new, pwm) as i64
 }
 
 fn sys_access(path: *const u8, _mode: i32) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    let stat_ptr: *mut crate::kernel::framework::fs::vfs::VfsStat = unsafe { &mut core::mem::zeroed() };
-    let result = crate::kernel::framework::fs::vfs::vfs_stat(path, stat_ptr, pwm);
+    let stat_ptr: *mut crate::kernel::framework::fs::VfsStat = unsafe { &mut core::mem::zeroed() };
+    let result = crate::kernel::framework::fs::vfs_stat(path, stat_ptr, pwm);
     if result < 0 {
         return result as i64;
     }
@@ -1607,7 +1603,7 @@ fn sys_access(path: *const u8, _mode: i32) -> i64 {
 }
 
 fn sys_sync() -> i64 {
-    crate::kernel::framework::fs::vfs::vfs_sync() as i64
+    crate::kernel::framework::fs::vfs_sync() as i64
 }
 
 fn sys_mount(
@@ -1621,7 +1617,7 @@ fn sys_mount(
     if fstype.is_null() {
         return Errno::EINVAL.as_ret();
     }
-    crate::kernel::framework::fs::vfs::vfs_mount(target, fstype) as i64
+    crate::kernel::framework::fs::vfs_mount(target, fstype) as i64
 }
 
 // ============================================================================
@@ -1629,7 +1625,7 @@ fn sys_mount(
 // ============================================================================
 
 fn sys_sched_yield() -> i64 {
-    crate::kernel::framework::proc::api::scheduler_yield();
+    crate::kernel::framework::proc::scheduler_yield();
     0
 }
 
@@ -1661,7 +1657,7 @@ fn priority_to_nice(p: crate::kernel::framework::proc::ProcessPriority) -> i32 {
 }
 
 fn sys_nice(inc: i32) -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
     // SAFETY: sys_getpriority 是 libc 兼容的 FFI；传入有效 PRIO_PROCESS
     // 常量与进程 pid (由 process_get_current_pid 返回)。
     let current_nice = unsafe { sys_getpriority(PRIO_PROCESS, pid) as i32 };
@@ -1676,11 +1672,11 @@ fn sys_getpriority(which: i32, who: u32) -> i64 {
         return Errno::EINVAL.as_ret();
     }
     let pid = if who == 0 {
-        crate::kernel::framework::proc::api::process_get_current_pid()
+        crate::kernel::framework::proc::process_get_current_pid()
     } else {
         who
     };
-    let pri = match crate::kernel::framework::proc::api::process_with(pid, |p| p.get_priority()) {
+    let pri = match crate::kernel::framework::proc::process_with(pid, |p| p.get_priority()) {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),
     };
@@ -1693,19 +1689,19 @@ fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
     }
     let clamped = prio.clamp(-20, 19);
     let pid = if who == 0 {
-        crate::kernel::framework::proc::api::process_get_current_pid()
+        crate::kernel::framework::proc::process_get_current_pid()
     } else {
         who
     };
     let new_pri = nice_to_priority(clamped);
-    match crate::kernel::framework::proc::api::process_with_mut(pid, |p| p.set_priority(new_pri)) {
+    match crate::kernel::framework::proc::process_with_mut(pid, |p| p.set_priority(new_pri)) {
         Some(_) => 0,
         None => Errno::ESRCH.as_ret(),
     }
 }
 
 fn sys_fork() -> i64 {
-    crate::kernel::framework::proc::api::sys_fork() as i64
+    crate::kernel::framework::proc::sys_fork() as i64
 }
 
 fn sys_execve(
@@ -1745,19 +1741,19 @@ fn sys_execve(
     }
 
     // SUID 处理
-    let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::vfs::VfsStat>::uninit();
-    let current_pwm = crate::kernel::framework::credo::session::get_current_pwm();
+    let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::VfsStat>::uninit();
+    let current_pwm = crate::kernel::framework::credo::get_current_pwm();
     let stat_result =
-        crate::kernel::framework::fs::vfs::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
+        crate::kernel::framework::fs::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
     if stat_result == 0 {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let st = unsafe { stat_buf.assume_init() };
         if (st.perm & 0o4000) != 0 && st.owner_pwm != 0 {
-            crate::kernel::framework::credo::session::elevate_for_suid(st.owner_pwm);
+            crate::kernel::framework::credo::elevate_for_suid(st.owner_pwm);
         }
     }
 
-    let result = crate::kernel::framework::proc::api::proc_exec_replace(path, argv, argc);
+    let result = crate::kernel::framework::proc::proc_exec_replace(path, argv, argc);
     if result < 0 {
         Errno::ENOENT.as_ret()
     } else {
@@ -1766,7 +1762,7 @@ fn sys_execve(
 }
 
 fn sys_exit(status: i32) -> i64 {
-    crate::kernel::framework::proc::api::process_exit(status as u32);
+    crate::kernel::framework::proc::process_exit(status as u32);
     0
 }
 
@@ -1775,82 +1771,82 @@ fn sys_exit(status: i32) -> i64 {
 // ============================================================================
 
 fn sys_getuid() -> i64 {
-    crate::kernel::framework::credo::session::get_current_uid() as i64
+    crate::kernel::framework::credo::get_current_uid() as i64
 }
 
 fn sys_getgid() -> i64 {
-    crate::kernel::framework::credo::session::get_current_gid() as i64
+    crate::kernel::framework::credo::get_current_gid() as i64
 }
 
 fn sys_geteuid() -> i64 {
-    crate::kernel::framework::credo::session::get_euid() as i64
+    crate::kernel::framework::credo::get_euid() as i64
 }
 
 fn sys_getegid() -> i64 {
-    crate::kernel::framework::credo::session::get_egid() as i64
+    crate::kernel::framework::credo::get_egid() as i64
 }
 
 fn sys_setuid(uid: u32) -> i64 {
-    if uid == crate::kernel::framework::credo::session::get_current_uid()
-        || uid == crate::kernel::framework::credo::session::get_euid()
-        || uid == crate::kernel::framework::credo::session::get_saved_euid()
+    if uid == crate::kernel::framework::credo::get_current_uid()
+        || uid == crate::kernel::framework::credo::get_euid()
+        || uid == crate::kernel::framework::credo::get_saved_euid()
     {
         return 0;
     }
-    if crate::kernel::framework::credo::session::try_setuid(uid) {
+    if crate::kernel::framework::credo::try_setuid(uid) {
         return 0;
     }
     Errno::EPERM.as_ret()
 }
 
 fn sys_setgid(gid: u32) -> i64 {
-    if gid == crate::kernel::framework::credo::session::get_current_gid()
-        || gid == crate::kernel::framework::credo::session::get_egid()
-        || gid == crate::kernel::framework::credo::session::get_saved_egid()
+    if gid == crate::kernel::framework::credo::get_current_gid()
+        || gid == crate::kernel::framework::credo::get_egid()
+        || gid == crate::kernel::framework::credo::get_saved_egid()
     {
         return 0;
     }
-    if crate::kernel::framework::credo::session::try_setgid(gid) {
+    if crate::kernel::framework::credo::try_setgid(gid) {
         return 0;
     }
     Errno::EPERM.as_ret()
 }
 
 fn sys_seteuid(euid: u32) -> i64 {
-    if euid == crate::kernel::framework::credo::session::get_current_uid()
-        || euid == crate::kernel::framework::credo::session::get_euid()
-        || euid == crate::kernel::framework::credo::session::get_saved_euid()
+    if euid == crate::kernel::framework::credo::get_current_uid()
+        || euid == crate::kernel::framework::credo::get_euid()
+        || euid == crate::kernel::framework::credo::get_saved_euid()
     {
         return 0;
     }
-    if crate::kernel::framework::credo::session::try_seteuid(euid) {
+    if crate::kernel::framework::credo::try_seteuid(euid) {
         return 0;
     }
     Errno::EPERM.as_ret()
 }
 
 fn sys_setegid(egid: u32) -> i64 {
-    if egid == crate::kernel::framework::credo::session::get_current_gid()
-        || egid == crate::kernel::framework::credo::session::get_egid()
-        || egid == crate::kernel::framework::credo::session::get_saved_egid()
+    if egid == crate::kernel::framework::credo::get_current_gid()
+        || egid == crate::kernel::framework::credo::get_egid()
+        || egid == crate::kernel::framework::credo::get_saved_egid()
     {
         return 0;
     }
-    if crate::kernel::framework::credo::session::try_setegid(egid) {
+    if crate::kernel::framework::credo::try_setegid(egid) {
         return 0;
     }
     Errno::EPERM.as_ret()
 }
 
 fn sys_setreuid(ruid: u32, euid: u32) -> i64 {
-    if crate::kernel::framework::credo::session::try_setreuid(ruid, euid) {
+    if crate::kernel::framework::credo::try_setreuid(ruid, euid) {
         return 0;
     }
     Errno::EPERM.as_ret()
 }
 
 fn sys_setregid(rgid: u32, egid: u32) -> i64 {
-    if crate::kernel::framework::credo::session::try_setregid(rgid, egid) {
+    if crate::kernel::framework::credo::try_setregid(rgid, egid) {
         return 0;
     }
     Errno::EPERM.as_ret()
@@ -1872,12 +1868,12 @@ fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -
     if size == 0 {
         return Errno::EINVAL.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 7, 0x01) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 7, 0x01) {
         return Errno::EACCES.as_ret();
     }
 
-    let mm = match crate::kernel::framework::mm::api::vma_get_current_mm() {
+    let mm = match crate::kernel::framework::mm::vma_get_current_mm() {
         Some(m) => m,
         None => {
             let pages = size.div_ceil(4096);
@@ -1903,7 +1899,7 @@ fn sys_munmap(addr: u64, size: u64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    let mm = match crate::kernel::framework::mm::api::vma_get_current_mm() {
+    let mm = match crate::kernel::framework::mm::vma_get_current_mm() {
         Some(m) => m,
         None => {
             let pages = size.div_ceil(4096);
@@ -1961,7 +1957,7 @@ pub fn sys_sched_setaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
 
     // 解析 pid (0 = 当前进程)
     let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::api::process_get_current_pid()
+        crate::kernel::framework::proc::process_get_current_pid()
     } else if pid > 0 {
         pid as u32
     } else {
@@ -1973,7 +1969,7 @@ pub fn sys_sched_setaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
     }
 
     // 写入 Process.cpuset_allowed
-    let ok = crate::kernel::framework::proc::api::process_with_mut(target_pid, |p| {
+    let ok = crate::kernel::framework::proc::process_with_mut(target_pid, |p| {
             p.cpuset_allowed.store(mask, Ordering::Release);
         })
         .is_some();
@@ -2000,7 +1996,7 @@ pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
     }
 
     let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::api::process_get_current_pid()
+        crate::kernel::framework::proc::process_get_current_pid()
     } else if pid > 0 {
         pid as u32
     } else {
@@ -2011,7 +2007,7 @@ pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
         return Errno::ESRCH.as_ret();
     }
 
-    let mask = crate::kernel::framework::proc::api::process_with(target_pid, |p| p.cpuset_allowed.load(Ordering::Acquire))
+    let mask = crate::kernel::framework::proc::process_with(target_pid, |p| p.cpuset_allowed.load(Ordering::Acquire))
         .unwrap_or(u64::MAX);
 
     if !raw::write_u64_to_user(mask_ptr, mask) {
@@ -2024,8 +2020,8 @@ pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
 
 #[cfg(feature = "net")]
 fn sys_socket(domain: i32, sock_type: i32, protocol: i32) -> i64 {
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 2, 0x01) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 2, 0x01) {
         return Errno::EACCES.as_ret();
     }
     raw::sm_socket_call(domain, sock_type, protocol) as i64
@@ -2103,8 +2099,8 @@ fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
 }
 
 fn sys_getrusage(who: i32, rusage: u64) -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-    crate::kernel::framework::proc::api::proc_get_rusage(pid, who, rusage as *mut u8, 144) as i64
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
+    crate::kernel::framework::proc::proc_get_rusage(pid, who, rusage as *mut u8, 144) as i64
 }
 
 #[cfg(feature = "net")]
@@ -2125,11 +2121,11 @@ fn sys_auth_login(
     password: *const u8,
     note: *const u8,
 ) -> i64 {
-    crate::kernel::framework::credo::api::pwm_login(note, password)
+    crate::kernel::framework::credo::pwm_login(note, password)
 }
 
 fn sys_auth_logout() -> i64 {
-    crate::kernel::framework::credo::api::pwm_logout();
+    crate::kernel::framework::credo::pwm_logout();
     0
 }
 
@@ -2138,48 +2134,48 @@ fn sys_auth_create(
     note: *const u8,
     _level: u8,
 ) -> i64 {
-    let creator = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::credo::api::pwm_create(password, note, creator)
+    let creator = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::credo::pwm_create(password, note, creator)
 }
 
 fn sys_auth_delete(target: u64) -> i64 {
-    crate::kernel::framework::credo::api::pwm_delete(target) as i64
+    crate::kernel::framework::credo::pwm_delete(target) as i64
 }
 
 fn sys_auth_info(target: u64) -> i64 {
-    crate::kernel::framework::credo::api::pwm_get_privilege_level(target) as i64
+    crate::kernel::framework::credo::pwm_get_privilege_level(target) as i64
 }
 
 fn sys_auth_changepw(
     old_pw: *const u8,
     new_pw: *const u8,
 ) -> i64 {
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::credo::api::pwm_change_password(pwm, old_pw, new_pw) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::credo::pwm_change_password(pwm, old_pw, new_pw) as i64
 }
 
 fn sys_auth_verify(password: *const u8) -> i64 {
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::credo::api::pwm_verify_password(pwm, password) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::credo::pwm_verify_password(pwm, password) as i64
 }
 
 fn sys_auth_create_first(password: *const u8) -> i64 {
     if password.is_null() {
         return Errno::EINVAL.as_ret();
     }
-    crate::kernel::framework::credo::api::pwm_create_first_identity(password)
+    crate::kernel::framework::credo::pwm_create_first_identity(password)
 }
 
 fn sys_auth_grant(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::framework::credo::api::pwm_grant(grantor, grantee, domain, caps) as i64
+    crate::kernel::framework::credo::pwm_grant(grantor, grantee, domain, caps) as i64
 }
 
 fn sys_auth_revoke(revoker: u64, target: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::framework::credo::api::pwm_revoke(revoker, target, domain, caps) as i64
+    crate::kernel::framework::credo::pwm_revoke(revoker, target, domain, caps) as i64
 }
 
 fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
-    if crate::kernel::framework::credo::api::pwm_has_capability(pwm, domain, required) {
+    if crate::kernel::framework::credo::pwm_has_capability(pwm, domain, required) {
         1
     } else {
         0
@@ -2187,16 +2183,16 @@ fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
 }
 
 fn sys_auth_get_caps(pwm: u64, domain: u16) -> i64 {
-    crate::kernel::framework::credo::api::pwm_get_capability_raw(pwm, domain) as i64
+    crate::kernel::framework::credo::pwm_get_capability_raw(pwm, domain) as i64
 }
 
 fn sys_pwm_get() -> i64 {
-    crate::kernel::framework::credo::api::pwm_get_current() as i64
+    crate::kernel::framework::credo::pwm_get_current() as i64
 }
 
 fn sys_pwm_set(pwm: u64) -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-    crate::kernel::framework::proc::api::proc_set_pwm(pid, pwm) as i64
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
+    crate::kernel::framework::proc::proc_set_pwm(pid, pwm) as i64
 }
 
 // ============================================================================
@@ -2220,16 +2216,16 @@ fn sys_sethostname(name: *const u8, len: u64) -> i64 {
     if name.is_null() || len == 0 || len > 63 {
         return Errno::EINVAL.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 0, 9) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 0, 9) {
         return Errno::EACCES.as_ret();
     }
     0
 }
 
 fn sys_reboot(cmd: i32) -> i64 {
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 0, 0x01) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 0, 0x01) {
         return Errno::EACCES.as_ret();
     }
     // SAFETY: 已在调用方通过 PWM CAP 检查, 重启为合法操作。
@@ -2250,7 +2246,7 @@ fn sys_reboot(cmd: i32) -> i64 {
 fn sys_boot_check(check_type: i32) -> i64 {
     match check_type {
         0 => {
-            if crate::kernel::framework::credo::api::pwm_any_identity_exists() {
+            if crate::kernel::framework::credo::pwm_any_identity_exists() {
                 1
             } else {
                 0
@@ -2327,8 +2323,8 @@ fn sys_disk_format(disk_id: u32, fstype: *const u8) -> i64 {
     if fstype.is_null() {
         return Errno::EINVAL.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 4, 0) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
     }
     if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
@@ -2369,8 +2365,8 @@ const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 4, 0) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
     }
     if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
@@ -2406,8 +2402,8 @@ fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 fn sys_fat_format(disk_id: u32) -> i64 {
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 4, 0) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
     }
     if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
@@ -2492,8 +2488,8 @@ fn sys_fat_format(disk_id: u32) -> i64 {
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 fn sys_boot_install(disk_id: u32) -> i64 {
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 4, 0) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
         return Errno::EACCES.as_ret();
     }
     let stage1 = include_bytes!("../../../../build/stage1.bin");
@@ -2593,7 +2589,7 @@ fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
     }
     let entry_size = core::mem::size_of::<ProcListEntry>() as u32;
     let mut count: i32 = 0;
-    crate::kernel::framework::proc::api::process_for_each(|proc| {
+    crate::kernel::framework::proc::process_for_each(|proc| {
         if (count as u32) < max_entries {
             let entry_ptr =
                 // SAFETY: `entry_size` 由调用方保证为有效指针; 只读访问
@@ -2619,7 +2615,7 @@ fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
 }
 
 fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
-    crate::kernel::framework::proc::api::proc_set_priority(pid, priority) as i64
+    crate::kernel::framework::proc::proc_set_priority(pid, priority) as i64
 }
 
 // ============================================================================
@@ -2769,7 +2765,7 @@ fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
             continue;
         }
         if pfd.events & POLLIN != 0 {
-            let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
+            let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
             if (pfd.fd as usize) < 256 && fd_table[pfd.fd as usize].used {
                 pfd.revents |= POLLIN;
                 ready += 1;
@@ -2791,12 +2787,12 @@ fn sys_chmod(path: *const u8, mode: u32) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_chmod(path, mode as u16, pwm) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_chmod(path, mode as u16, pwm) as i64
 }
 
 fn sys_fchmod(fd: i32, mode: u32) -> i64 {
-    crate::kernel::framework::fs::vfs::vfs_fchmod(fd as u32, mode as u16) as i64
+    crate::kernel::framework::fs::vfs_fchmod(fd as u32, mode as u16) as i64
 }
 
 fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
@@ -2806,8 +2802,8 @@ fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
     let tbl = crate::kernel::framework::credo::identity::get_table();
     let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
     let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    crate::kernel::framework::fs::vfs::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    crate::kernel::framework::fs::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
 }
 
 // ============================================================================
@@ -2845,10 +2841,10 @@ fn sys_readlink(
     if path.is_null() || buf.is_null() || bufsiz == 0 {
         return Errno::EINVAL.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    let mut st_buf: crate::kernel::framework::fs::vfs::VfsStat = unsafe { core::mem::zeroed() };
-    let result = crate::kernel::framework::fs::vfs::vfs_stat(path, &mut st_buf, pwm);
+    let mut st_buf: crate::kernel::framework::fs::VfsStat = unsafe { core::mem::zeroed() };
+    let result = crate::kernel::framework::fs::vfs_stat(path, &mut st_buf, pwm);
     if result < 0 {
         return Errno::ENOENT.as_ret();
     }
@@ -2863,8 +2859,8 @@ fn sys_umount2(target: *const u8, _flags: i32) -> i64 {
     if target.is_null() || !raw::check_user_ptr(target as u64) {
         return Errno::EFAULT.as_ret();
     }
-    let pwm = crate::kernel::framework::credo::api::pwm_get_current();
-    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 0, 0x01) {
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 0, 0x01) {
         return Errno::EACCES.as_ret();
     }
     0
@@ -2944,16 +2940,16 @@ fn sys_truncate(path: *const u8, length: i64) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) || length < 0 {
         return Errno::EINVAL.as_ret();
     }
-    let fd = crate::kernel::framework::fs::vfs::vfs_open(
+    let fd = crate::kernel::framework::fs::vfs_open(
         path,
         0o2,
-        crate::kernel::framework::credo::api::pwm_get_current(),
+        crate::kernel::framework::credo::pwm_get_current(),
     );
     if fd < 0 {
         return Errno::ENOENT.as_ret();
     }
-    let result = crate::kernel::framework::fs::vfs::vfs_truncate_internal(fd as u32, length as u64);
-    crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
+    let result = crate::kernel::framework::fs::vfs_truncate_internal(fd as u32, length as u64);
+    crate::kernel::framework::fs::vfs_close(fd as u32);
     if result < 0 {
         Errno::EIO.as_ret()
     } else {
@@ -2965,7 +2961,7 @@ fn sys_ftruncate(fd: i32, length: i64) -> i64 {
     if fd < 0 || length < 0 {
         return Errno::EINVAL.as_ret();
     }
-    let result = crate::kernel::framework::fs::vfs::vfs_truncate_internal(fd as u32, length as u64);
+    let result = crate::kernel::framework::fs::vfs_truncate_internal(fd as u32, length as u64);
     if result < 0 {
         Errno::EIO.as_ret()
     } else {
@@ -2991,7 +2987,7 @@ fn sys_fsync(fd: i32) -> i64 {
     if fd < 0 {
         return Errno::EBADF.as_ret();
     }
-    crate::kernel::framework::fs::vfs::vfs_sync();
+    crate::kernel::framework::fs::vfs_sync();
     0
 }
 
@@ -3000,7 +2996,7 @@ fn sys_fsync(fd: i32) -> i64 {
 // ============================================================================
 
 fn sys_flock(fd: i32, operation: i32) -> i64 {
-    use crate::kernel::framework::fs::vfs::{sys_flock as do_flock, FlockResult};
+    use crate::kernel::framework::fs::{sys_flock as do_flock, FlockResult};
 
     if fd < 0 {
         return Errno::EBADF.as_ret();
@@ -3008,14 +3004,14 @@ fn sys_flock(fd: i32, operation: i32) -> i64 {
 
     // 获取 fd 对应的 inode 号
     let ino = {
-        let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
-        if (fd as usize) >= crate::kernel::framework::fs::vfs::VFS_MAX_FDS || !fd_table[fd as usize].used {
+        let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
+        if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS || !fd_table[fd as usize].used {
             return Errno::EBADF.as_ret();
         }
         fd_table[fd as usize].node_id
     };
 
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
 
     match do_flock(fd, operation, pid, ino) {
         FlockResult::Ok => 0,
@@ -3028,7 +3024,7 @@ fn sys_flock(fd: i32, operation: i32) -> i64 {
 
 /// inotify_add_watch 辅助: 从路径参数解析 inode 号
 fn sys_inotify_add_watch(inotify_fd: i64, ino: u32, mask: u32) -> i64 {
-    crate::kernel::framework::fs::vfs::sys_inotify_add_watch(inotify_fd, ino, mask)
+    crate::kernel::framework::fs::sys_inotify_add_watch(inotify_fd, ino, mask)
 }
 
 // ============================================================================
@@ -3036,7 +3032,7 @@ fn sys_inotify_add_watch(inotify_fd: i64, ino: u32, mask: u32) -> i64 {
 // ============================================================================
 
 fn sys_setsid() -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
     pid as i64
 }
 
@@ -3064,7 +3060,7 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    let pid = match crate::kernel::framework::proc::api::process_get_current_pid() {
+    let pid = match crate::kernel::framework::proc::process_get_current_pid() {
         0 => return Errno::ESRCH.as_ret(),
         p => p,
     };
@@ -3099,7 +3095,7 @@ pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
 }
 
 pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
-    let pid = match crate::kernel::framework::proc::api::process_get_current_pid() {
+    let pid = match crate::kernel::framework::proc::process_get_current_pid() {
         0 => return Errno::ESRCH.as_ret(),
         p => p,
     };
@@ -3139,8 +3135,8 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
 fn sys_rt_sigreturn() -> i64 {
     // P1-I-45 修复: sigreturn 时清除 SS_ONSTACK 标记, 允许下一次信号再次落回替代栈.
     // 必须在恢复寄存器前清, 否则在主栈上再次触发的 SIGSEGV 又会写到已耗尽的替代栈.
-    if let Some(pid) = Some(crate::kernel::framework::proc::api::process_get_current_pid()).filter(|&p| p != 0) {
-        crate::kernel::framework::proc::api::process_with_mut(pid, |proc| {
+    if let Some(pid) = Some(crate::kernel::framework::proc::process_get_current_pid()).filter(|&p| p != 0) {
+        crate::kernel::framework::proc::process_with_mut(pid, |proc| {
             let flags = proc.sigaltstack_flags.load(Ordering::Acquire);
             proc.sigaltstack_flags
                 .store(flags & !crate::kernel::framework::proc::SS_ONSTACK, Ordering::Release);
@@ -3170,12 +3166,12 @@ fn sys_sigaltstack(ss: u64, old_ss: u64) -> i64 {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::proc::{SS_DISABLE, SS_ONSTACK};
 
-    let pid = match crate::kernel::framework::proc::api::process_get_current_pid() {
+    let pid = match crate::kernel::framework::proc::process_get_current_pid() {
         0 => return Errno::ESRCH.as_ret(),
         p => p,
     };
 
-    let result = crate::kernel::framework::proc::api::process_with_mut(pid, |proc| {
+    let result = crate::kernel::framework::proc::process_with_mut(pid, |proc| {
         // 返回旧值
         if old_ss != 0 {
             if !raw::check_user_buf(old_ss, 24) {
@@ -3332,11 +3328,11 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
 
 fn sys_credo_proc_cputime(pid: u32) -> i64 {
     let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::api::process_get_current_pid()
+        crate::kernel::framework::proc::process_get_current_pid()
     } else {
         pid
     };
-    use crate::kernel::framework::proc::api::{process_exists, scheduler_current_cputime};
+    use crate::kernel::framework::proc::{process_exists, scheduler_current_cputime};
     if !process_exists(target_pid) {
         return Errno::ESRCH.as_ret();
     }
@@ -3728,13 +3724,13 @@ pub(crate) mod raw {
     /// 分配 count 个连续物理页。
     /// 委托到 mm::api::pmm_alloc_pages.
     pub fn alloc_pages(count: u64) -> *mut u8 {
-        crate::kernel::framework::mm::api::pmm_alloc_pages(count as usize)
+        crate::kernel::framework::mm::pmm_alloc_pages(count as usize)
     }
 
     /// 释放 count 个连续物理页。
     /// 委托到 mm::api::pmm_free_pages.
     pub fn free_pages(addr: *mut u8, count: u64) {
-        crate::kernel::framework::mm::api::pmm_free_pages(addr, count as usize)
+        crate::kernel::framework::mm::pmm_free_pages(addr, count as usize)
     }
 
     // ============= 时间 =============

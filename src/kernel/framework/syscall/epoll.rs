@@ -40,7 +40,7 @@
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::ipc::types::{WaitQueue, WaitQueueItem};
 
 // ============================================================================
@@ -284,7 +284,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
     if ready_events.is_empty() && timeout != 0 {
         // 完整实现: 挂入 epfd 等待队列, 调度让出
         // epoll_pwake 会在 fd 状态变化时唤醒
-        let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
+        let current_pid = crate::kernel::framework::proc::process_get_current_pid();
 
         if current_pid != 0 && timeout == -1 {
             // 1. 挂入 wait_queue (持锁, 避免与 epoll_pwake 竞态)
@@ -293,7 +293,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
             drop(instances);
 
             // 3. 阻塞当前线程 + 触发调度
-            crate::kernel::framework::proc::api::process_block(current_pid);
+            crate::kernel::framework::proc::process_block(current_pid);
 
             // 4. 被唤醒: 重新加锁扫描
             let instances = EPOLL_INSTANCES.lock();
@@ -385,7 +385,7 @@ pub fn epoll_pwake(fd: i32) {
         // 唤醒 wait_queue 中的所有等待者
         while let Some(item) = instances[i].wait_queue.wake_one() {
             // 唤醒线程: 加入就绪队列
-            crate::kernel::framework::proc::api::scheduler_unblock(item.tid);
+            crate::kernel::framework::proc::scheduler_unblock(item.tid);
         }
     }
 }
@@ -424,8 +424,8 @@ fn check_fd_ready(fd: i32, events: u32) -> u32 {
     }
 
     // 4. VFS fd 空间
-    use crate::kernel::framework::fs::vfs::VFS_MANAGER;
-    use crate::kernel::framework::fs::vfs::VfsFileType;
+    use crate::kernel::framework::fs::VFS_MANAGER;
+    use crate::kernel::framework::fs::VfsFileType;
 
     // 查询 VFS 真实状态
     let (valid, file_type) = {

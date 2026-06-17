@@ -11,8 +11,8 @@
 //! - 参数验证与类型转换
 
 use crate::kernel::framework::syscall::mmap as fw_mmap;
-use crate::kernel::framework::syscall::types::Errno;
-use crate::kernel::framework::mm::vma::MmStruct;
+use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::mm::MmStruct;
 
 // ============================================================================
 // mmap 标志位 re-export

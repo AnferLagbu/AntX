@@ -15,9 +15,9 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::kernel::framework::proc::types::Pid;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
-use crate::kernel::framework::sync::once_lock::OnceLock;
+use crate::kernel::framework::proc::Pid;
+use crate::kernel::framework::sync::IrqSpinLock;
+use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::klog::serial_write_bytes;
 
 // ============================================================================

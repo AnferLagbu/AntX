@@ -17,7 +17,7 @@
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::driver::block as blk;
 
 /// credo disk 域 = 4 (PWM domain 4 = storage 域)

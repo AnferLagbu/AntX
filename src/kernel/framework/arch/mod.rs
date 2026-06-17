@@ -55,6 +55,34 @@ pub mod aarch64;
 pub mod shadow_stack;
 
 // ============================================================================
+// 公共 API 导出 (便捷访问) — 避免跨子系统直接访问 arch 内部子模块
+// ============================================================================
+
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::apic;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::ioapic;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::gdt;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::tss;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::X8664;
+
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::uart;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::exception;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::mmu;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::gic;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::timer;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::Aarch64;
+
+// ============================================================================
 // Trait 定义 — 多子 trait + 超 trait (Phase 8: refactored from monolithic Arch)
 // ============================================================================
 

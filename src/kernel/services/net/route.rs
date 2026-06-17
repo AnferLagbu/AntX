@@ -11,8 +11,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::sync::IrqSpinLock;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 常量

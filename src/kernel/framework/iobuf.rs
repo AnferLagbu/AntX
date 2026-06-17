@@ -25,7 +25,7 @@
 
 use crate::kernel::framework::config::PAGE_SIZE;
 use crate::kernel::framework::mm::phys_to_virt;
-use crate::kernel::framework::mm::api::{pmm_alloc_pages, pmm_free_pages};
+use crate::kernel::framework::mm::{pmm_alloc_pages, pmm_free_pages};
 
 /// 内核态 I/O 临时区域 (RAII).
 ///

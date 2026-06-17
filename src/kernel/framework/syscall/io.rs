@@ -8,7 +8,7 @@
 use crate::kernel::framework::fs::vfs as vfs_api;
 use crate::kernel::framework::ipc::pipe as ipc_pipe;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 管道
@@ -106,7 +106,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
         F_GETFD => 0,
         F_SETFD => 0,
         F_GETFL => {
-            let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
+            let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
             if (fd as usize) < 256 && fd_table[fd as usize].used {
                 fd_table[fd as usize].flags as i64
             } else {
@@ -130,7 +130,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
 ///   l_len:   i64  (0=到文件末尾)
 ///   l_pid:   i32  (F_GETLK 返回冲突锁的 PID)
 fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
-    use crate::kernel::framework::fs::vfs::{
+    use crate::kernel::framework::fs::{
         sys_posix_lock, PosixLockResult, F_GETLK,
     };
 
@@ -170,8 +170,8 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
 
     // 获取 fd 对应的 inode 号
     let ino = {
-        let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
-        if (fd as usize) >= crate::kernel::framework::fs::vfs::VFS_MAX_FDS || !fd_table[fd as usize].used {
+        let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
+        if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS || !fd_table[fd as usize].used {
             return Errno::EBADF.as_ret();
         }
         fd_table[fd as usize].node_id
@@ -182,8 +182,8 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
         0 => l_start as u64, // SEEK_SET
         1 => {
             // SEEK_CUR: 当前 offset + l_start
-            let fd_table = crate::kernel::framework::fs::vfs::VFS_MANAGER.fd_table.lock();
-            if (fd as usize) >= crate::kernel::framework::fs::vfs::VFS_MAX_FDS {
+            let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
+            if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS {
                 return Errno::EBADF.as_ret();
             }
             (fd_table[fd as usize].offset as i64 + l_start) as u64
@@ -205,7 +205,7 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
         l_len as u64
     };
 
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
 
     match sys_posix_lock(pid, ino, cmd, l_type as i32, start, len) {
         Ok(None) => 0,

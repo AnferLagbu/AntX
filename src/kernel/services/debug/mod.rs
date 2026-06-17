@@ -44,9 +44,9 @@
 //! - `kgdb_enter` 在用户态串口未注册时返回 false (而非阻塞)
 
 // Re-export 关键类型
-pub use crate::kernel::framework::debug::api::{TraceEvent, EVENT_SIZE, FTRACE_BUF_CAP};
-pub use crate::kernel::framework::debug::ftrace::fnv1a_32;
-pub use crate::kernel::framework::debug::kgdb::{KgdbRegs, KgdbSerial};
+pub use crate::kernel::framework::debug::{TraceEvent, EVENT_SIZE, FTRACE_BUF_CAP};
+pub use crate::kernel::framework::debug::fnv1a_32;
+pub use crate::kernel::framework::debug::{KgdbRegs, KgdbSerial};
 
 /// D4: eBPF 安全封装
 pub mod ebpf;
@@ -67,27 +67,27 @@ pub fn ftrace_disable() {
 
 /// 查询 ftrace 启用状态
 pub fn ftrace_is_enabled() -> bool {
-    crate::kernel::framework::debug::api::ftrace_is_enabled()
+    crate::kernel::framework::debug::ftrace_is_enabled()
 }
 
 /// 累计事件计数
 pub fn ftrace_event_count() -> u64 {
-    crate::kernel::framework::debug::api::ftrace_event_count()
+    crate::kernel::framework::debug::ftrace_event_count()
 }
 
 /// 累计溢出计数
 pub fn ftrace_overflow_count() -> u64 {
-    crate::kernel::framework::debug::api::ftrace_overflow_count()
+    crate::kernel::framework::debug::ftrace_overflow_count()
 }
 
 /// 弹出一条事件 (None = 空)
 pub fn ftrace_read_event() -> Option<TraceEvent> {
-    crate::kernel::framework::debug::api::ftrace_pop_event()
+    crate::kernel::framework::debug::ftrace_pop_event()
 }
 
 /// 注册一个跟踪点 (按名称字符串)
 pub fn ftrace_register(name: &'static str) -> bool {
-    crate::kernel::framework::debug::api::ftrace_register_point(fnv1a_32(name.as_bytes()))
+    crate::kernel::framework::debug::ftrace_register_point(fnv1a_32(name.as_bytes()))
 }
 
 // ============================================================================
@@ -104,12 +104,12 @@ pub fn kgdb_enter() -> bool {
 
 /// 当前是否在 KGDB 主循环中
 pub fn kgdb_is_active() -> bool {
-    crate::kernel::framework::debug::api::kgdb_active()
+    crate::kernel::framework::debug::kgdb_active()
 }
 
 /// 串口是否已注册到 KGDB
 pub fn kgdb_serial_ready() -> bool {
-    crate::kernel::framework::debug::api::kgdb_serial_ready()
+    crate::kernel::framework::debug::kgdb_serial_ready()
 }
 
 // ============================================================================
@@ -118,7 +118,7 @@ pub fn kgdb_serial_ready() -> bool {
 
 /// 初始化 debug 子系统
 pub fn debug_init() {
-    crate::kernel::framework::debug::api::debug_init();
+    crate::kernel::framework::debug::debug_init();
 }
 
 // ============================================================================

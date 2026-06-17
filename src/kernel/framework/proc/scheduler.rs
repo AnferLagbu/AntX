@@ -971,7 +971,7 @@ impl Scheduler {
         // Periodic kswapd wakeup — 每 100 ticks 唤醒一次内存回收
         // (B3 完整实现: kswapd 走 softirq 路径, 由 scheduler tick 周期驱动)
         if new_tick.is_multiple_of(KSWAPD_TICK_INTERVAL) {
-            crate::kernel::framework::mm::swap::kswapd_wakeup();
+            crate::kernel::framework::mm::kswapd_wakeup();
         }
 
         // 周期性 CFS 提升 —— 防止 vruntime 饥饿

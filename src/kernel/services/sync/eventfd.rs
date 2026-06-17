@@ -13,7 +13,7 @@
 //! - 原始指针 (`buf`) 委托给 framework 层
 //!   (指针合法性由 syscall 入口 check_user_ptr 保证)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// EFD_SEMAPHORE 标志
 pub const EFD_SEMAPHORE: i32 = crate::kernel::framework::syscall::eventfd::EFD_SEMAPHORE;

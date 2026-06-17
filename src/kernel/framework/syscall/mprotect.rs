@@ -16,7 +16,7 @@
 //! - 操作页表需要 VMM 锁 + TLB flush
 
 use crate::kernel::framework::mm::{PageFlags, vma};
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// PROT 常量
 pub const PROT_NONE: i32 = 0x0;

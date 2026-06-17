@@ -18,7 +18,7 @@
 //! - EAGAIN: WAIT 时 *uaddr != expected
 //! - ETIMEDOUT: WAIT 超时
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // futex op 常量 (与 Linux 兼容)

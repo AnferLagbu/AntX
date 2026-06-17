@@ -128,6 +128,10 @@ pub use char::vga::Color as VgaColor;
 #[cfg(target_arch = "aarch64")]
 pub use char::pl011::Pl011Driver;
 
+// --- 网络设备导出 ---
+pub use net::e1000::{e1000_probe, e1000_net_send, e1000_net_recv, e1000_net_get_mac, e1000_net_irq, take_device as e1000_take_device};
+pub use virtio::net::{virtio_net_probe, virtio_net_send, virtio_net_recv, virtio_net_get_mac, virtio_net_irq, take_device as virtio_net_take_device};
+
 // --- 输入设备导出 ---
 #[cfg(target_arch = "x86_64")]
 pub use input::keyboard;
@@ -140,6 +144,11 @@ pub use storage::{
 // 为了向后兼容，保留一些直接导入
 #[cfg(target_arch = "x86_64")]
 pub use storage::ata::{AtaController, AtaDevice};
+
+// --- power/kexec/uefi 公共接口 re-export ---
+pub use power::*;
+pub use kexec::*;
+pub use uefi::*;
 
 // ============================================================================
 // 初始化函数
@@ -174,7 +183,7 @@ pub fn init_all() {
 
     hotplug::hotplug_init();
 
-    let _ = crate::kernel::framework::chitin::composite::devtree_probe_composites();
+    let _ = crate::kernel::framework::chitin::devtree_probe_composites();
 }
 
 /// 关闭所有设备驱动

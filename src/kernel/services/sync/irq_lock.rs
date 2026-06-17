@@ -10,7 +10,7 @@
 //! | 临界区开销 | 低 | 中 (save/restore IF) |
 //!
 //! ## @SAFE
-//! 本文件不含 `unsafe`. 内部委托 `framework::sync::irq_spinlock::IrqSpinLock` (TCB)。
+//! 本文件不含 `unsafe`. 内部委托 `framework::sync::IrqSpinLock` (TCB)。
 //!
 //! ## 使用约束
 //!
@@ -27,7 +27,7 @@
 #![allow(dead_code)]
 
 /// 中断安全自旋锁 (类型别名, 指向 framework 提供的 TCB 实现)。
-pub type IrqSpinLock<T> = crate::kernel::framework::sync::irq_spinlock::IrqSpinLock<T>;
+pub type IrqSpinLock<T> = crate::kernel::framework::sync::IrqSpinLock<T>;
 
 // ============================================================================
 // 单元自检

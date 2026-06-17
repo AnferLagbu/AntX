@@ -9,7 +9,7 @@
 //! 日志使用 framework::klog::serial_write_bytes (safe API).
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -347,8 +347,8 @@ pub fn numa_is_initialized() -> bool {
 
 /// sys_get_mempolicy — 获取当前 NUMA 内存策略
 pub fn sys_get_mempolicy(_mode_ptr: u64, _nodemask_ptr: u64) -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-    let result = crate::kernel::framework::proc::process::PROCESS_TABLE
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
+    let result = crate::kernel::framework::proc::PROCESS_TABLE
         .with_process(pid, |p| {
             let policy = p.numa_policy.lock();
             let mode = *policy.mode.lock() as u8;
@@ -375,8 +375,8 @@ pub fn sys_set_mempolicy(mode: u64, nodemask: u64) -> i64 {
         return -(22i64);
     }
 
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-    let result = crate::kernel::framework::proc::process::PROCESS_TABLE
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
+    let result = crate::kernel::framework::proc::PROCESS_TABLE
         .with_process(pid, |p| {
             let policy = p.numa_policy.lock();
             *policy.mode.lock() = policy_mode;

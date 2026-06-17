@@ -79,12 +79,12 @@ pub use pi_mutex::{
 ///
 /// **调用方约束**: 必须在中断上下文或单 CPU 上下文调用, 配对使用 `restore_interrupts`.
 pub fn disable_interrupts() -> IrqSaveFlags {
-    crate::kernel::framework::sync::spinlock::disable_interrupts()
+    crate::kernel::framework::sync::disable_interrupts()
 }
 
 /// 恢复中断到指定 flags
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
-    crate::kernel::framework::sync::spinlock::restore_interrupts(flags)
+    crate::kernel::framework::sync::restore_interrupts(flags)
 }
 
 /// 中断禁用 RAII 守卫 (析构时自动恢复中断)
@@ -113,17 +113,17 @@ impl Drop for IrqDisabled {
 
 /// 写内存屏障 (跨 CPU 顺序)
 pub fn smp_wmb() {
-    crate::kernel::framework::sync::spinlock::smp_wmb();
+    crate::kernel::framework::sync::smp_wmb();
 }
 
 /// 读内存屏障
 pub fn smp_rmb() {
-    crate::kernel::framework::sync::spinlock::smp_rmb();
+    crate::kernel::framework::sync::smp_rmb();
 }
 
 /// 读写全屏障
 pub fn smp_mb() {
-    crate::kernel::framework::sync::spinlock::smp_mb();
+    crate::kernel::framework::sync::smp_mb();
 }
 
 // ============================================================================
@@ -132,12 +132,12 @@ pub fn smp_mb() {
 
 /// 当前进程 PID (0 表示内核线程 / 启动期)
 pub fn current_pid() -> u32 {
-    crate::kernel::framework::proc::api::process_get_current_pid()
+    crate::kernel::framework::proc::process_get_current_pid()
 }
 
 /// 主动让出 CPU
 pub fn scheduler_yield() {
-    crate::kernel::framework::proc::api::scheduler_yield();
+    crate::kernel::framework::proc::scheduler_yield();
 }
 
 // ============================================================================
@@ -184,7 +184,7 @@ impl SyncError {
 
 pub type SyncResult<T> = Result<T, SyncError>;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // Futex — 用户态同步原语

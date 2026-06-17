@@ -277,7 +277,7 @@ impl StorageError {
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 持久化 API

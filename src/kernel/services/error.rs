@@ -7,7 +7,7 @@
 //   - `services::net::unix::UnixSocketError` 仅保留子系统特有字段 (PathNotFound) + `Kernel(KernelError)` 包装
 //   - `From<fw::UdsError>` / `From<i32>` / `to_errno` 单一来源
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// services 层统一错误 (POSIX errno → 强类型).
 ///

@@ -5,7 +5,7 @@
 
 use core::sync::atomic::AtomicU64;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::mm::api;
 
 /// 用户空间最大地址

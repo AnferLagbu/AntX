@@ -14,10 +14,10 @@
 //! - [fstat_syscall] 按 FD 查询
 
 use crate::kernel::framework::credo;
-use crate::kernel::framework::fs::vfs::api as fw;
-use crate::kernel::framework::fs::vfs::types::VfsStat;
+use crate::kernel::framework::fs::api as fw;
+use crate::kernel::framework::fs::VfsStat;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 const VFS_STAT_SIZE: u64 = core::mem::size_of::<VfsStat>() as u64;
 

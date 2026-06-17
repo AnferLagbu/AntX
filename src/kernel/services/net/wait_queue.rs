@@ -36,7 +36,7 @@
 // ## 与 Framekernel 安全契约
 //
 // 不破坏任何既有边界; 只在 framework/net/ 内部新增, 不跨层.
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Socket 状态变化原因 (用于 wake 路径)

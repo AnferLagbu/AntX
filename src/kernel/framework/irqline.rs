@@ -58,7 +58,7 @@ impl IrqLine {
     /// 启用该中断线 (unmask)
     #[cfg(target_arch = "x86_64")]
     pub fn enable(&self) {
-        crate::kernel::framework::arch::x86_64::ioapic::unmask_irq(self.irq as u8);
+        crate::kernel::framework::arch::ioapic::unmask_irq(self.irq as u8);
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -69,7 +69,7 @@ impl IrqLine {
     /// 禁用该中断线 (mask)
     #[cfg(target_arch = "x86_64")]
     pub fn disable(&self) {
-        crate::kernel::framework::arch::x86_64::ioapic::mask_irq(self.irq as u8);
+        crate::kernel::framework::arch::ioapic::mask_irq(self.irq as u8);
     }
 
     #[cfg(target_arch = "aarch64")]

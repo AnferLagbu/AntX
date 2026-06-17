@@ -411,7 +411,7 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     let user_cr3 = if pcid_enabled { cr3_with_pcid(user_pml4_phys, PCID_USER) } else { user_pml4_phys };
     unsafe {
         for cpu in 0..256u32 {
-            crate::kernel::framework::arch::x86_64::gdt::gdt_set_kpti_pml4(cpu, kernel_cr3, user_cr3);
+            crate::kernel::framework::arch::gdt::gdt_set_kpti_pml4(cpu, kernel_cr3, user_cr3);
         }
     }
 

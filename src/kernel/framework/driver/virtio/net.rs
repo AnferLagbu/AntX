@@ -13,7 +13,7 @@ use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 use crate::kernel::framework::mm::KERNEL_BASE;
-use crate::kernel::framework::fs::vfs::KernelError;
+use crate::kernel::framework::fs::KernelError;
 use crate::klog_err;
 use crate::klog_error;
 use crate::klog_info;
@@ -462,7 +462,7 @@ impl VirtioNet {
 
 static VIRTIO_NET_DEVICE: Mutex<Option<Box<VirtioNet>>> = Mutex::new(None);
 
-pub(crate) fn take_device() -> Option<Box<VirtioNet>> {
+pub fn take_device() -> Option<Box<VirtioNet>> {
     VIRTIO_NET_DEVICE.lock().take()
 }
 

@@ -37,7 +37,7 @@
 //! - 进程退出时由 framework::proc::vma::MmStruct::release 释放所有锁定
 
 use crate::kernel::framework::proc::madvise_mlock as fw_ml;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // Advice 枚举

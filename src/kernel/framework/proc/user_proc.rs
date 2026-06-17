@@ -528,7 +528,7 @@ pub(crate) mod raw {
         // SAFETY: kproc_ptr 来自 alloc_kernel_process (基于 alloc_zeroed -> kmalloc).
         //         调用方保证此后不再访问该指针.
         unsafe {
-            crate::kernel::framework::mm::api::kfree(kproc_ptr as *mut u8);
+            crate::kernel::framework::mm::kfree(kproc_ptr as *mut u8);
         }
     }
 
@@ -545,7 +545,7 @@ pub(crate) mod raw {
         // SAFETY: proc_ptr 来自 alloc_user_process (基于 alloc_zeroed -> kmalloc).
         //         调用方保证此后不再访问该指针.
         unsafe {
-            crate::kernel::framework::mm::api::kfree(proc_ptr as *mut u8);
+            crate::kernel::framework::mm::kfree(proc_ptr as *mut u8);
         }
     }
 

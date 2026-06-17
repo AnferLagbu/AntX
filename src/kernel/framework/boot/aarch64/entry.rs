@@ -9,7 +9,7 @@
 //!   6. Timer 初始化
 //!   7. 跳转 kernel_init()
 
-use crate::kernel::framework::arch::aarch64::uart;
+use crate::kernel::framework::arch::uart;
 
 // ============================================================================
 // 启动入口
@@ -38,20 +38,20 @@ pub unsafe extern "C" fn entry() -> ! {
 
     // 3. 初始化 MMU (identity mapping + TTBR1)
     uart::puts("[BOOT] Initializing MMU...");
-    crate::kernel::framework::arch::aarch64::mmu::init();
+    crate::kernel::framework::arch::mmu::init();
 
     // 4. 初始化异常向量表
     uart::puts("[BOOT] Setting up exception vectors...");
-    crate::kernel::framework::arch::aarch64::exception::init();
+    crate::kernel::framework::arch::exception::init();
 
     // 5. 初始化 GICv3
     uart::puts("[BOOT] Initializing GICv3...");
-    crate::kernel::framework::arch::aarch64::gic::init();
+    crate::kernel::framework::arch::gic::init();
 
     // 6. 初始化定时器 (仅配置, 不启用 — 稍后在 kernel_init 中启用)
     uart::puts("[BOOT] Initializing timer...");
-    let (_freq, interval) = crate::kernel::framework::arch::aarch64::timer::init_deferred();
-    crate::kernel::framework::arch::aarch64::exception::TIMER_INTERVAL_TICKS
+    let (_freq, interval) = crate::kernel::framework::arch::timer::init_deferred();
+    crate::kernel::framework::arch::exception::TIMER_INTERVAL_TICKS
         .store(interval, core::sync::atomic::Ordering::Relaxed);
 
     // 7. 跳转统一内核入口

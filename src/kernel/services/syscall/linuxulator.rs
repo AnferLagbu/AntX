@@ -48,7 +48,7 @@
 //! - 模块化: linuxulator 可选, 卸载后 QueenX 仍独立运行
 //! - 不假装自己是 Linux: 也不假装不是
 
-use crate::kernel::framework::syscall::types::*;
+use crate::kernel::framework::syscall::*;
 
 // ============================================================================
 // 第一层: 编号翻译

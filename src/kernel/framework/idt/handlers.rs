@@ -200,14 +200,14 @@ impl ExceptionHandler for PageFaultHandler {
             // (COW fork 写共享页 / mmap 文件缺页 / swap 换入 / 匿名页 demand),
             // 此前 trait 路径直接 SIGKILL, 等于绕过了内核核心功能
             let pf_info =
-                crate::kernel::framework::mm::api::PageFaultInfo::from_error_code(
+                crate::kernel::framework::mm::PageFaultInfo::from_error_code(
                     fault_addr,
                     // SAFETY: 调用方保证指针/类型有效
                     unsafe { (*frame).err_code },
                 );
-            use crate::kernel::framework::mm::api::PfResult;
-            let pid = crate::kernel::framework::proc::api::process_get_current_pid();
-            match crate::kernel::framework::mm::api::handle_user_page_fault(pf_info) {
+            use crate::kernel::framework::mm::PfResult;
+            let pid = crate::kernel::framework::proc::process_get_current_pid();
+            match crate::kernel::framework::mm::handle_user_page_fault(pf_info) {
                 PfResult::Fixed => return RecoveryAction::Recovered,
                 PfResult::SignalSegv => return RecoveryAction::TerminateProcess(pid),
                 PfResult::SignalBus => return RecoveryAction::TerminateProcess(pid),
@@ -292,9 +292,9 @@ impl ExceptionHandler for InvalidOpcodeHandler {
             // 投递 SIGILL = 4. do_signal_send 操作进程 pending_signals,
             // 不会在 IDT 路径内尝试切栈/修改用户态寄存器, 真正的 sigframe
             // 构造由 syscall/iret 返回前的 do_signal_deliver 统一完成.
-            let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+            let pid = crate::kernel::framework::proc::process_get_current_pid();
             if pid != 0 {
-                let _ = crate::kernel::framework::proc::signal::do_signal_send(pid, 4);
+                let _ = crate::kernel::framework::proc::do_signal_send(pid, 4);
             }
             // 跳过该非法指令 (UD2 最短 2 字节, 未编码指令也按 2 字节步进,
             // 避免立即重新触发 #UD; 真实 handler 通过 sigreturn 即可接管控制流).

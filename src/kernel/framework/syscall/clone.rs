@@ -22,9 +22,9 @@
 //! - 栈指针必须指向用户空间
 
 use crate::kernel::framework::proc::api;
-use crate::kernel::framework::proc::api::raw;
+use crate::kernel::framework::proc::raw;
 use crate::kernel::framework::proc::ProcessState;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 use core::sync::atomic::Ordering;
 
@@ -97,7 +97,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
                     // 子进程已通过 fork 继承了父进程的 namespace
                     // 现在根据 CLONE_NEW* 创建新实例
                     let current_ns = p.namespaces.lock();
-                    crate::kernel::framework::proc::namespace::NamespaceSet::clone_from(&current_ns, new_ns_flags)
+                    crate::kernel::services::proc::namespace::NamespaceSet::clone_from(&current_ns, new_ns_flags)
                 };
                 *p.namespaces.lock() = parent_ns;
             });
@@ -164,7 +164,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
         let child_kstack = child.kernel_stack.load(Ordering::SeqCst);
         let stack_size: usize = 65536;
         raw::copy_kstack(child_kstack, parent_kstack, stack_size);
-        api::kernel_stack_write_canary(child_kstack);
+        crate::kernel::framework::proc::kernel_stack_write_canary(child_kstack);
     }
 
     // 复制上下文, 修改 RAX=0 (子进程返回 0)

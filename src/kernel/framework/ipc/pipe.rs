@@ -14,7 +14,7 @@
 use super::types::*;
 use super::IPC_NAMESPACE;
 use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
-use crate::kernel::framework::proc::api::process_get_current_pid;
+use crate::kernel::framework::proc::process_get_current_pid;
 
 
 use crate::kernel::framework::sync::IrqSpinLock;

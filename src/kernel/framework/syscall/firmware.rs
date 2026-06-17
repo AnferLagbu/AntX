@@ -12,12 +12,12 @@
 //! - 路径最长 4096 字节, 超过返回 -EINVAL
 //! - 读取走 services/fs::open + framework/io::vfs_read
 
-use crate::kernel::framework::chitin::firmware::{
+use crate::kernel::framework::chitin::{
     devtree_attach_firmware, devtree_detach_firmware, devtree_get_firmware,
     fnv1a_32, FirmwareInfo, MAX_FIRMWARE_SIZE, FW_ERR_IO, FW_ERR_NOT_FOUND,
     FW_ERR_TOO_LARGE,
 };
-use crate::kernel::framework::fs::vfs::{vfs_open, vfs_read};
+use crate::kernel::framework::fs::{vfs_open, vfs_read};
 use crate::kernel::framework::syscall::raw as raw_sync;
 use alloc::vec::Vec;
 use core::ptr;
@@ -62,7 +62,7 @@ unsafe fn write_user_bytes(ptr: u64, data: &[u8]) -> bool {
 
 /// 打开文件并读取全部内容 (上限 MAX_FIRMWARE_SIZE)
 ///
-/// 使用 framework::fs::vfs::api::vfs_open / vfs_read
+/// 使用 framework::fs::api::vfs_open / vfs_read
 fn read_path_data(path: &[u8]) -> Result<Vec<u8>, i64> {
     // 路径必须为 C 字符串 (NUL 结尾); 检查并补齐 NUL
     let mut path_z: Vec<u8> = path.to_vec();

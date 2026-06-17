@@ -14,7 +14,7 @@
 //! - 原始指针 (`new_value_ptr` / `old_value_ptr` / `curr_value_ptr` / `buf`)
 //!   委托给 framework 层 (指针合法性由 syscall 入口 check_user_ptr 保证)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// TFD_CLOEXEC 标志
 pub const TFD_CLOEXEC: i32 = crate::kernel::framework::syscall::timerfd::TFD_CLOEXEC;

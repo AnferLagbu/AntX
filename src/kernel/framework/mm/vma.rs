@@ -429,7 +429,7 @@ impl MmStruct {
     /// 2. 必要时拆分 VMA (前后部分保持原权限)
     /// 3. 修改目标部分的 VMA flags 和页表权限
     /// 4. flush TLB
-    pub fn mprotect(&self, start: usize, len: usize, new_flags: PageFlags) -> Result<(), crate::kernel::framework::syscall::types::Errno> {
+    pub fn mprotect(&self, start: usize, len: usize, new_flags: PageFlags) -> Result<(), crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         if len == 0 {
@@ -575,7 +575,7 @@ impl MmStruct {
         old_size: usize,
         new_size: usize,
         flags: i32,
-    ) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    ) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         // Linux mremap flags (仅 MAYMOVE = 1; MREMAP_FIXED = 2 由 glibc 模拟, 不支持)
@@ -690,7 +690,7 @@ impl MmStruct {
     ///
     /// 返回成功锁定的字节数 (用于 mlock/mlockall 累计)
     /// 与 errno (MADV_* 实现细节见 Linux man).
-    pub fn madvise_range(&self, start: usize, len: usize, advice: u32) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    pub fn madvise_range(&self, start: usize, len: usize, advice: u32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         if len == 0 {
@@ -841,7 +841,7 @@ impl MmStruct {
     /// madvise 触发的页面回收 (PAGEOUT 走 swap, DONTNEED 走 free)
     ///
     /// 仅回收 locked=false 的页 (受 VmFlags.MLOCKED 保护).
-    fn madvise_evict_range(&self, start: usize, end: usize, dontneed: bool) -> Result<(), crate::kernel::framework::syscall::types::Errno> {
+    fn madvise_evict_range(&self, start: usize, end: usize, dontneed: bool) -> Result<(), crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
         use crate::kernel::framework::mm::swap;
 
@@ -874,7 +874,7 @@ impl MmStruct {
     /// mlock: 锁定 [start, len) 范围 VMA
     ///
     /// 返回实际锁定的字节数. 受 RLIMIT_MEMLOCK 约束.
-    pub fn mlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    pub fn mlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
         use crate::kernel::framework::rlimit_query;
 
@@ -932,7 +932,7 @@ impl MmStruct {
     }
 
     /// munlock: 解锁 [start, len) 范围 VMA
-    pub fn munlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    pub fn munlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         if len == 0 {
@@ -972,7 +972,7 @@ impl MmStruct {
     ///
     /// `flags` 取值: MCL_CURRENT=1, MCL_FUTURE=2, MCL_ONFAULT=4.
     /// 返回成功设置的标志位.
-    pub fn mlock_all(&self, flags: u32) -> Result<u32, crate::kernel::framework::syscall::types::Errno> {
+    pub fn mlock_all(&self, flags: u32) -> Result<u32, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         const MCL_CURRENT: u32 = 1;
@@ -1020,7 +1020,7 @@ impl MmStruct {
     }
 
     /// munlockall: 解除所有 mlock
-    pub fn munlock_all(&self) -> Result<(), crate::kernel::framework::syscall::types::Errno> {
+    pub fn munlock_all(&self) -> Result<(), crate::kernel::framework::syscall::Errno> {
         let mut vmas = self.vmas.lock();
         for v in vmas.iter_mut() {
             v.vm_flags = v.vm_flags
@@ -1042,7 +1042,7 @@ impl MmStruct {
         start: usize,
         len: usize,
         out_vec: &mut [u8],
-    ) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
+    ) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
         use crate::kernel::framework::mm::VirtAddr;
         use crate::kernel::framework::mm::vmm;

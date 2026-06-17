@@ -49,6 +49,34 @@ pub use kmalloc::*;
 pub use pmm::*;
 pub use vmm::*;
 
+// api 公共接口 re-export — 避免跨子系统直接访问 mm::api 内部
+// 注意: 不使用 glob re-export 因与 vmm::* 有名称冲突 (vmm_init 等)
+pub use api::{
+    KmallocStats,
+    pmm_init, pmm_init_bitmap,
+    pmm_alloc_page, pmm_free_page, pmm_alloc_pages, pmm_free_pages,
+    pmm_alloc_page_phys, pmm_free_page_phys, pmm_alloc_pages_phys, pmm_free_pages_phys,
+    pmm_alloc_huge_page_phys, pmm_alloc_huge_page, pmm_free_huge_page,
+    pmm_is_aligned_for_huge, pmm_get_free_pages, pmm_get_total_pages, pmm_get_used_pages,
+    pmm_dump_stats,
+    vma_get_current_mm, vma_set_current_mm,
+    vmm_clone_user_page_table_cow, vmm_destroy_page_table, vmm_switch_page_table,
+    copy_to_user, copy_from_user, is_user_buf,
+    update_pressure, MemoryPressure,
+    PfResult, PageFaultInfo, handle_page_fault, handle_user_page_fault,
+    k_malloc, k_free, kfree, kmalloc_stats,
+};
+
+// vma 公共类型 re-export — 避免跨子系统直接访问 mm::vma 内部
+pub use vma::{MmStruct, Vma, VmaType};
+
+// swap 公共接口 re-export — 避免跨子系统直接访问 mm::swap 内部
+pub use swap::{kswapd_wakeup, set_page_locked};
+
+// kpti 公共接口 re-export — 避免跨子系统直接访问 mm::kpti 内部
+#[cfg(target_arch = "aarch64")]
+pub use kpti::kpti_trampoline_ttbr1_or_kernel;
+
 /// Page size and huge-page constants (统一从 config.rs 引用)
 pub use crate::kernel::framework::config::{
     PAGE_SIZE, PAGE_SHIFT, HUGE_PAGE_2M_SIZE, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT,

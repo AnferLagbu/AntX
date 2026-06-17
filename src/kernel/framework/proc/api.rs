@@ -37,7 +37,7 @@ use super::user_proc::{user_proc_clone, USER_PROC_MANAGER};
 pub use super::user_proc::proc_alloc_pid;
 use crate::kernel::framework::lib::cstr::CStrExt;
 use crate::kernel::framework::klog::klog_ffi_info;
-use crate::kernel::framework::mm::api::{
+use crate::kernel::framework::mm::{
     pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
     vmm_switch_page_table,
 };
@@ -48,7 +48,7 @@ use crate::kernel::framework::timer::timer_get_ticks;
 // 本子模块包含所有与 C ABI、裸指针 (进程表 entry) 以及 extern "C" FFI 交互
 // 的 `unsafe` 代码。本模块的其余部分 (`api.rs` 顶层) 保持 100% 安全 Rust,
 // 通过 `raw::*` 安全函数访问底层功能。
-pub(crate) mod raw {
+pub mod raw {
     use super::*;
 
     /// 从裸指针读取 `&Process`。
@@ -379,7 +379,11 @@ pub fn process_insert(process: *mut super::process::Process) -> bool {
 }
 
 /// 写入内核栈金丝雀值.
-pub fn kernel_stack_write_canary(stack_top: u64) {
+/// NOTE: 此函数在 process.rs 中也有定义, 通过 process::* glob re-export.
+/// 此处保留以保持 api 兼容性, 但 proc/mod.rs 的 glob re-export 会产生歧义.
+/// 调用方应使用 process::kernel_stack_write_canary 或通过 proc::kernel_stack_write_canary.
+#[allow(dead_code)]
+fn kernel_stack_write_canary_delegated(stack_top: u64) {
     super::process::kernel_stack_write_canary(stack_top);
 }
 
@@ -429,8 +433,8 @@ pub fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid != 0 {
         // 释放该进程持有的所有文件锁
-        crate::kernel::framework::fs::vfs::flock_release_pid(current_pid);
-        crate::kernel::framework::fs::vfs::posix_lock_release_pid(current_pid);
+        crate::kernel::framework::fs::flock_release_pid(current_pid);
+        crate::kernel::framework::fs::posix_lock_release_pid(current_pid);
 
         let kernel_cr3 = crate::kernel::framework::mm::get_kernel_pml4();
         if kernel_cr3 != 0 {
@@ -584,8 +588,8 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let mut st: crate::kernel::framework::fs::vfs::VfsStat = crate::kernel::framework::fs::vfs::VfsStat::default();
-    let stat_result = crate::kernel::framework::fs::vfs::vfs_stat(path, &mut st, pwm);
+    let mut st: crate::kernel::framework::fs::VfsStat = crate::kernel::framework::fs::VfsStat::default();
+    let stat_result = crate::kernel::framework::fs::vfs_stat(path, &mut st, pwm);
     if stat_result < 0 {
         return -1;
     }
@@ -595,7 +599,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let fd = crate::kernel::framework::fs::vfs::vfs_open(path, 0, pwm);
+    let fd = crate::kernel::framework::fs::vfs_open(path, 0, pwm);
     if fd < 0 {
         return -1;
     }
@@ -603,14 +607,14 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     let pages = file_size.div_ceil(4096u64) as usize;
     let buffer = pmm_alloc_pages(pages);
     if buffer.is_null() {
-        crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
+        crate::kernel::framework::fs::vfs_close(fd as u32);
         return -1;
     }
 
     let bytes_read =
-        crate::kernel::framework::fs::vfs::vfs_read(fd as u32, buffer as *mut u8, file_size as u32);
+        crate::kernel::framework::fs::vfs_read(fd as u32, buffer as *mut u8, file_size as u32);
 
-    crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
+    crate::kernel::framework::fs::vfs_close(fd as u32);
 
     if bytes_read <= 0 {
         pmm_free_pages(buffer, pages);
@@ -697,7 +701,7 @@ pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
     // 1. 挂载 ramfs 为根文件系统
-    let mount_result = crate::kernel::framework::fs::vfs::vfs_mount(
+    let mount_result = crate::kernel::framework::fs::vfs_mount(
         b"/\0".as_ptr(),
         b"ramfs\0".as_ptr(),
     );
@@ -781,7 +785,7 @@ pub fn launch_first_user_process() -> ! {
     #[cfg(target_arch = "aarch64")]
     {
         // 挂载 ramfs
-        let _ = crate::kernel::framework::fs::vfs::vfs_mount(
+        let _ = crate::kernel::framework::fs::vfs_mount(
             b"/\0".as_ptr(),
             b"ramfs\0".as_ptr(),
         );
@@ -847,13 +851,13 @@ pub fn scheduler_init() {
     super::cgroup::cgroup_init();
     // D3: 初始化 NUMA 拓扑 (UMA 回退, 后续接入 ACPI SRAT)
     crate::kernel::framework::mm::numa::numa_init(
-        crate::kernel::framework::mm::api::pmm_get_total_pages() * 4096,
+        crate::kernel::framework::mm::pmm_get_total_pages() * 4096,
         crate::kernel::framework::config::MAX_CPUS as u32,
     );
     // D4: 初始化 eBPF 子系统
-    crate::kernel::framework::debug::ebpf::bpf_init();
+    crate::kernel::framework::debug::bpf_init();
     // D5: 初始化电源管理子系统
-    crate::kernel::framework::driver::power::pm_init(
+    crate::kernel::framework::driver::pm_init(
         crate::kernel::framework::config::MAX_CPUS as u32,
     );
     // D6: 初始化安全启动 + TPM (移至 credo_init, 消除 proc→credo 依赖)
@@ -861,15 +865,15 @@ pub fn scheduler_init() {
     // D7: 初始化 CET (Shadow Stack)
     crate::kernel::framework::arch::shadow_stack::cet_init();
     // D8: 初始化 Tickless (NO_HZ)
-    crate::kernel::framework::timer::tickless::tickless_init(
+    crate::kernel::framework::timer::tickless_init(
         crate::kernel::framework::config::MAX_CPUS as u32,
     );
     // D9: 初始化 NTP/PTP 时钟同步
-    crate::kernel::framework::timer::time_sync::timesync_init();
+    crate::kernel::framework::timer::timesync_init();
     // D10: 初始化 kexec
-    crate::kernel::framework::driver::kexec::kexec_init();
+    crate::kernel::framework::driver::kexec_init();
     // D11: 初始化 UEFI (0 = 无 UEFI 固件, 实际由 bootloader 传入)
-    crate::kernel::framework::driver::uefi::uefi_init(0);
+    crate::kernel::framework::driver::uefi_init(0);
 }
 
 #[no_mangle]

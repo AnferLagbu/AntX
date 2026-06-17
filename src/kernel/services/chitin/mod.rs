@@ -87,7 +87,7 @@ impl ChitinError {
 /// services 层结果类型别名
 pub type ChitinResult<T> = Result<T, ChitinError>;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 设备 ID

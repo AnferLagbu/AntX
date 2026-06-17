@@ -256,7 +256,7 @@ impl SessionError {
     }
 }
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// 登录认证结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

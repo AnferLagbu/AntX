@@ -51,17 +51,29 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::fs::vfs::KernelError;
+use crate::kernel::framework::fs::KernelError;
 use super::driver::Driver;
 
 // ── 协议模块 ──
 pub mod composite;
 pub mod devtree;
 pub mod proto_block;
+
+// devtree 公共接口 re-export — 避免跨子系统直接访问 chitin::devtree 内部
+pub use devtree::*;
 pub mod proto_char;
 pub mod proto_input;
 pub mod proto_net;
 pub mod user_driver;
+
+// composite 公共接口 re-export — 避免跨子系统直接访问 chitin::composite 内部
+pub use composite::devtree_probe_composites;
+
+// firmware 公共接口 re-export — 避免跨子系统直接访问 chitin::firmware 内部
+pub use firmware::*;
+
+// proto_net 公共接口 re-export — 避免跨子系统直接访问 chitin::proto_net 内部
+pub use proto_net::NetOps;
 pub mod firmware;
 
 // ── BlockDevice Trait (设备框架层定义, driver::block re-export) ──
@@ -501,7 +513,7 @@ pub fn chitin_set_state(id: u32, state: DeviceState) {
 /// `drive` 是设备在 CHITIN_DEVICES 中的索引 (与旧 block::REGISTRY 索引兼容)。
 /// 仅对 `ChitinProto::Block` 且携带 `BlockOps` 的设备有效。
 ///
-/// 返回值遵循 POSIX 约定: `0` = 成功, `-errno` = 失败 (与 `framework::fs::vfs::KernelError` 对齐)。
+/// 返回值遵循 POSIX 约定: `0` = 成功, `-errno` = 失败 (与 `framework::fs::KernelError` 对齐)。
 pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
     if buf.len() < 512 {
         return KernelError::InvalidArgument.as_i32();

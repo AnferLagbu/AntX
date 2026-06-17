@@ -570,17 +570,17 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
                     )
                 };
 
-                let ok_ret = crate::kernel::framework::mm::api::copy_to_user(
+                let ok_ret = crate::kernel::framework::mm::copy_to_user(
                     frame_rsp,
                     &ret_addr_bytes,
                     8,
                 );
-                let ok_frame = crate::kernel::framework::mm::api::copy_to_user(
+                let ok_frame = crate::kernel::framework::mm::copy_to_user(
                     frame_rsp + 8,
                     sigframe_bytes,
                     core::mem::size_of::<SignalFrame>(),
                 );
-                let ok_trampoline = crate::kernel::framework::mm::api::copy_to_user(
+                let ok_trampoline = crate::kernel::framework::mm::copy_to_user(
                     trampoline_start,
                     &SIGRETURN_TRAMPOLINE,
                     SIGRETURN_TRAMPOLINE_SIZE,

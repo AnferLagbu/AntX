@@ -70,8 +70,8 @@ pub fn validate_memory_config() -> Result<(), ConfigError> {
 pub fn validate_interrupt_config() -> Result<(), ConfigError> {
     #[cfg(target_arch = "x86_64")]
     {
-        let apic_ok = crate::kernel::framework::arch::x86_64::apic::is_initialized();
-        let ioapic_ok = crate::kernel::framework::arch::x86_64::ioapic::is_initialized();
+        let apic_ok = crate::kernel::framework::arch::apic::is_initialized();
+        let ioapic_ok = crate::kernel::framework::arch::ioapic::is_initialized();
         if !apic_ok && !ioapic_ok {
             return Err(ConfigError::IrqControllerUnavailable);
         }

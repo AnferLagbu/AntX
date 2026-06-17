@@ -30,7 +30,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 常量
@@ -39,8 +39,8 @@ use crate::kernel::framework::syscall::types::Errno;
 /// signalfd 最大实例数
 pub const SFD_MAX_SLOTS: usize = 16;
 /// FD 空间起始
-/// TD-02: 基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::SIGNAL_FD` 单一来源, 不再硬编码.
-pub const SFD_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::SIGNAL_FD.base;
+/// TD-02: 基址来源已迁移至 `framework::proc::FdPlan::SIGNAL_FD` 单一来源, 不再硬编码.
+pub const SFD_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::SIGNAL_FD.base;
 /// SFD_CLOEXEC
 pub const SFD_CLOEXEC: i32 = 0o2000000;
 /// SFD_NONBLOCK
@@ -173,15 +173,15 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
     let sigmask = sigmask & !((1u128 << 8) | (1u128 << 18));
 
     // 获取当前 PID
-    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let current_pid = crate::kernel::framework::proc::process_get_current_pid();
     if current_pid == 0 {
         return Errno::EINVAL.as_ret();
     }
 
     let mut table = SFD_TABLE.lock();
 
-    if let Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, idx)) =
-        crate::kernel::framework::proc::fd_alloc::idx_of(fd)
+    if let Some((crate::kernel::framework::proc::FdSubsystem::SignalFd, idx)) =
+        crate::kernel::framework::proc::idx_of(fd)
     {
         // 修改已有实例
         if idx >= SFD_MAX_SLOTS || !table.slots[idx].used {
@@ -205,8 +205,8 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
             SFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
             // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-            let new_fd = crate::kernel::framework::proc::fd_alloc::fd_at(
-                crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd,
+            let new_fd = crate::kernel::framework::proc::fd_at(
+                crate::kernel::framework::proc::FdSubsystem::SignalFd,
                 i,
             );
             crate::klog_debug!(Sync, "[signalfd] Created fd={} pid={}", new_fd, current_pid);
@@ -231,7 +231,7 @@ pub fn sys_signalfd_read(fd: i32, buf: u64) -> i64 {
         None => return Errno::EBADF.as_ret(),
     };
 
-    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let current_pid = crate::kernel::framework::proc::process_get_current_pid();
     if current_pid == 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -323,7 +323,7 @@ pub fn signalfd_poll_events(fd: i32) -> u32 {
         None => return EPOLLERR,
     };
 
-    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let current_pid = crate::kernel::framework::proc::process_get_current_pid();
 
     let table = SFD_TABLE.lock();
     let slot = &table.slots[idx];
@@ -346,14 +346,14 @@ pub fn signalfd_poll_events(fd: i32) -> u32 {
 
 /// 获取进程 pending 信号位图
 fn get_process_pending(pid: u32) -> u128 {
-    crate::kernel::framework::proc::api::process_with(pid, |proc| proc.signal_pending_get() as u128)
+    crate::kernel::framework::proc::process_with(pid, |proc| proc.signal_pending_get() as u128)
         .unwrap_or(0)
 }
 
 /// 清除进程指定信号的 pending 位
 fn clear_process_pending(pid: u32, signo: u32) {
     let bit = 1u64 << (signo - 1);
-    crate::kernel::framework::proc::api::process_with_mut(pid, |proc| {
+    crate::kernel::framework::proc::process_with_mut(pid, |proc| {
         proc.signal_pending_clear(bit);
     });
 }
@@ -367,8 +367,8 @@ fn clear_process_pending(pid: u32, signo: u32) {
 /// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 SFD_FD_BASE 字面量 +
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
-    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, slot)) => {
+    match crate::kernel::framework::proc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::FdSubsystem::SignalFd, slot)) => {
             Some(slot)
         }
         _ => None,
@@ -380,8 +380,8 @@ fn fd_to_idx(fd: i32) -> Option<usize> {
 /// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 SFD_FD_BASE 字面量 + 算术.
 pub fn is_signalfd_fd(fd: i32) -> bool {
     matches!(
-        crate::kernel::framework::proc::fd_alloc::idx_of(fd),
-        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, _))
+        crate::kernel::framework::proc::idx_of(fd),
+        Some((crate::kernel::framework::proc::FdSubsystem::SignalFd, _))
     )
 }
 
@@ -434,8 +434,8 @@ fn test_signalfd_sigkill_filtered() -> crate::kernel::framework::tests::TestResu
     // 验证 SIGKILL 被过滤: 读取 slot 的 sigmask
     {
         let table = SFD_TABLE.lock();
-        let idx = match crate::kernel::framework::proc::fd_alloc::idx_of(fd as i32) {
-            Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::SignalFd, i)) => i,
+        let idx = match crate::kernel::framework::proc::idx_of(fd as i32) {
+            Some((crate::kernel::framework::proc::FdSubsystem::SignalFd, i)) => i,
             _ => panic!("signalfd 测试期望 SignalFd 范围内 FD"),
         };
         let slot_mask = table.slots[idx].sigmask;

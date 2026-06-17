@@ -278,7 +278,7 @@ pub type SignalResult<T> = Result<T, SignalError>;
 /// 向指定进程发送信号
 ///
 /// **实现**: 设置 `signal_pending` 位, 由内核在返回用户态前检查并分发
-pub fn send(pid: crate::kernel::framework::proc::types::Pid, sig: Signal) -> SignalResult<()> {
+pub fn send(pid: crate::kernel::framework::proc::Pid, sig: Signal) -> SignalResult<()> {
     if sig == Signal::NONE {
         // POSIX: kill(pid, 0) 仅检查进程存在, 不发送
         return crate::kernel::services::proc::table::with(pid, |_p| ())
@@ -292,12 +292,12 @@ pub fn send(pid: crate::kernel::framework::proc::types::Pid, sig: Signal) -> Sig
 }
 
 /// 检查进程是否有信号待处理
-pub fn pending(pid: crate::kernel::framework::proc::types::Pid) -> Option<u64> {
+pub fn pending(pid: crate::kernel::framework::proc::Pid) -> Option<u64> {
     crate::kernel::services::proc::table::signal_get(pid)
 }
 
 /// 清除进程的信号位
-pub fn clear(pid: crate::kernel::framework::proc::types::Pid, mask: u64) -> SignalResult<()> {
+pub fn clear(pid: crate::kernel::framework::proc::Pid, mask: u64) -> SignalResult<()> {
     crate::kernel::services::proc::table::signal_clear(pid, mask)
         .map_err(|_| SignalError::NoSuchProcess)
 }
@@ -307,22 +307,22 @@ pub fn clear(pid: crate::kernel::framework::proc::types::Pid, mask: u64) -> Sign
 // ============================================================================
 
 /// 终止进程 (等价 kill(pid, SIGKILL))
-pub fn kill(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
+pub fn kill(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Kill))
 }
 
 /// 中断进程 (等价 kill(pid, SIGINT))
-pub fn interrupt(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
+pub fn interrupt(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Int))
 }
 
 /// 停止进程 (等价 kill(pid, SIGSTOP))
-pub fn stop(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
+pub fn stop(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Stop))
 }
 
 /// 唤醒已停止的进程 (等价 kill(pid, SIGCONT))
-pub fn cont(pid: crate::kernel::framework::proc::types::Pid) -> SignalResult<()> {
+pub fn cont(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Cont))
 }
 
@@ -406,8 +406,8 @@ mod tests {
 ///
 /// 验证: 信号编号 0..=31, 目标 pid 接受 POSIX 4 种语义 (pid>0 单进程,
 ///        pid=0 同进程组, pid=-1 全部, pid<-1 |pid| 进程组).
-pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
-    use crate::kernel::framework::syscall::types::Errno;
+pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
+    use crate::kernel::framework::syscall::Errno;
 
     // 验证信号编号 (POSIX kill: 0 = 检查存在, 1..=31 = 标准信号)
     if !(0..=31).contains(&sig) {
@@ -428,8 +428,8 @@ pub fn rt_sigaction_syscall(
     signum: i32,
     act: u64,
     oact: u64,
-) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
-    use crate::kernel::framework::syscall::types::Errno;
+) -> Result<usize, crate::kernel::framework::syscall::Errno> {
+    use crate::kernel::framework::syscall::Errno;
 
     // 验证信号编号 (SIGKILL=9 和 SIGSTOP=19 不可捕获)
     if !(1..=64).contains(&signum) {
@@ -450,8 +450,8 @@ pub fn rt_sigprocmask_syscall(
     how: i32,
     set: u64,
     oset: u64,
-) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
-    use crate::kernel::framework::syscall::types::Errno;
+) -> Result<usize, crate::kernel::framework::syscall::Errno> {
+    use crate::kernel::framework::syscall::Errno;
 
     // 验证 how
     if !(0..=2).contains(&how) {
@@ -471,8 +471,8 @@ pub fn rt_sigprocmask_syscall(
 pub fn sigaltstack_syscall(
     ss: u64,
     old_ss: u64,
-) -> Result<usize, crate::kernel::framework::syscall::types::Errno> {
-    use crate::kernel::framework::syscall::types::Errno;
+) -> Result<usize, crate::kernel::framework::syscall::Errno> {
+    use crate::kernel::framework::syscall::Errno;
 
     let ret = crate::kernel::framework::syscall::api::sys_sigaltstack(ss, old_ss);
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }

@@ -235,7 +235,7 @@ impl MmuArch for Aarch64 {
         // SAFETY: kpti_trampoline_ttbr1_or_kernel 返回有效物理地址;
         // 若 KPTI 未激活则返回 kernel_ttbr1 (无实际切换效果).
         unsafe {
-            let tramp = crate::kernel::framework::mm::kpti::kpti_trampoline_ttbr1_or_kernel(
+            let tramp = crate::kernel::framework::mm::kpti_trampoline_ttbr1_or_kernel(
                 crate::kernel::framework::mm::get_kernel_pml4(),
             );
             core::arch::asm!(
@@ -270,7 +270,7 @@ impl MmuArch for Aarch64 {
         // KPTI: 返回 EL0 前, 切换 TTBR1_EL1 到 trampoline 页表.
         // SAFETY: 同 enter_user 中的 TTBR1 切换逻辑.
         unsafe {
-            let tramp = crate::kernel::framework::mm::kpti::kpti_trampoline_ttbr1_or_kernel(
+            let tramp = crate::kernel::framework::mm::kpti_trampoline_ttbr1_or_kernel(
                 crate::kernel::framework::mm::get_kernel_pml4(),
             );
             core::arch::asm!(

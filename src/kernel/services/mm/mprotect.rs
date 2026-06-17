@@ -11,7 +11,7 @@
 //! - services 层验证标量参数
 //! - 页表修改委托给 framework 层 (TCB 操作)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// mprotect 安全代理
 ///

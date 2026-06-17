@@ -24,9 +24,9 @@
 //! - RLIMIT_STACK 默认 8MB
 
 use crate::kernel::framework::config::{MAX_OPEN_FILES, MAX_PROCESSES};
-use crate::kernel::framework::proc::api::process_get_current_pid;
-use crate::kernel::framework::proc::process::PROCESS_TABLE;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::proc::process_get_current_pid;
+use crate::kernel::framework::proc::PROCESS_TABLE;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // POSIX 资源类型常量

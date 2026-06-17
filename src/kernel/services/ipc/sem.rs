@@ -12,7 +12,7 @@
 //! 功能等价于 POSIX semaphores
 
 use super::types::*;
-use crate::kernel::framework::proc::api::process_get_current_pid;
+use crate::kernel::framework::proc::process_get_current_pid;
 
 /// 查找空闲信号量槽位
 fn sem_find_free(namespace: &mut IpcNamespace) -> Option<&mut Semaphore> {

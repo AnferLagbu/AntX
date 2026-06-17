@@ -29,6 +29,18 @@ pub use audit::AuditLog;
 pub use identity::IdentityTable;
 pub use types::*;
 
+// api 公共接口 re-export — 避免跨子系统直接访问 credo::api 内部
+pub use api::*;
+
+// session 公共接口 re-export — 避免跨子系统直接访问 credo::session 内部
+pub use session::*;
+
+// engine 公共接口 re-export — 避免跨子系统直接访问 credo::engine 内部
+pub use engine::get_privilege_level;
+
+// secure_boot 公共接口 re-export — 避免跨子系统直接访问 credo::secure_boot 内部
+pub use secure_boot::*;
+
 /// Credo 子系统初始化 — 安全启动 + TPM.
 ///
 /// 从 scheduler_init 中分离, 消除 proc→credo 的初始化依赖.

@@ -253,7 +253,7 @@ impl IdtManager {
         #[cfg(target_arch = "x86_64")]
         {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            let tss = unsafe { crate::kernel::framework::arch::x86_64::gdt::get_tss_mut() };
+            let tss = unsafe { crate::kernel::framework::arch::gdt::get_tss_mut() };
             if !tss.ist_validated() {
                 return Err("IDT init: TSS IST[0..3] not initialized (call set_ist first)");
             }
@@ -462,8 +462,8 @@ impl IdtManager {
         let ioapic_handled = {
             #[cfg(target_arch = "x86_64")]
             {
-                if crate::kernel::framework::arch::x86_64::ioapic::is_initialized() {
-                    crate::kernel::framework::arch::x86_64::ioapic::unmask_irq(irq);
+                if crate::kernel::framework::arch::ioapic::is_initialized() {
+                    crate::kernel::framework::arch::ioapic::unmask_irq(irq);
                     true
                 } else {
                     false
@@ -651,25 +651,25 @@ impl IdtManager {
 
         if frame.is_user_mode() {
             // 尝试 Demand Paging
-            let pf_info = crate::kernel::framework::mm::api::PageFaultInfo::from_error_code(
+            let pf_info = crate::kernel::framework::mm::PageFaultInfo::from_error_code(
                 fault_addr, error_code,
             );
 
-            match crate::kernel::framework::mm::api::handle_user_page_fault(pf_info) {
-                crate::kernel::framework::mm::api::PfResult::Fixed => return,
-                crate::kernel::framework::mm::api::PfResult::SignalSegv => {
+            match crate::kernel::framework::mm::handle_user_page_fault(pf_info) {
+                crate::kernel::framework::mm::PfResult::Fixed => return,
+                crate::kernel::framework::mm::PfResult::SignalSegv => {
                     self.terminate_user_process(frame, 11); // SIGSEGV
                     return;
                 }
-                crate::kernel::framework::mm::api::PfResult::SignalBus => {
+                crate::kernel::framework::mm::PfResult::SignalBus => {
                     self.terminate_user_process(frame, 7); // SIGBUS
                     return;
                 }
-                crate::kernel::framework::mm::api::PfResult::Oom => {
+                crate::kernel::framework::mm::PfResult::Oom => {
                     self.terminate_user_process(frame, 9); // SIGKILL (OOM)
                     return;
                 }
-                crate::kernel::framework::mm::api::PfResult::Unhandled => {
+                crate::kernel::framework::mm::PfResult::Unhandled => {
                     // 回退到原有逻辑
                 }
             }
@@ -872,7 +872,7 @@ impl IdtManager {
                 let f = &*frame;
                 // 仅在返回用户态时检查 (CS 低2位=3 表示用户态)
                 if f.cs & 0x3 == 0x3 {
-                    crate::kernel::framework::proc::signal::do_signal_deliver(frame);
+                    crate::kernel::framework::proc::do_signal_deliver(frame);
                 }
             }
         }
@@ -884,8 +884,8 @@ impl IdtManager {
         let apic_handled = {
             #[cfg(target_arch = "x86_64")]
             {
-                if crate::kernel::framework::arch::x86_64::apic::is_initialized() {
-                    crate::kernel::framework::arch::x86_64::apic::eoi();
+                if crate::kernel::framework::arch::apic::is_initialized() {
+                    crate::kernel::framework::arch::apic::eoi();
                     true
                 } else {
                     false

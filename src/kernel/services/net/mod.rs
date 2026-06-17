@@ -118,7 +118,7 @@ impl NetError {
 /// services 层结果类型别名
 pub type NetResult<T> = Result<T, NetError>;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 状态

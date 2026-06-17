@@ -7,7 +7,7 @@
 //! framework 层转为 re-export 层.
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::mm::api as pmm_api;
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;
@@ -229,7 +229,7 @@ impl ProcfsData {
         }
 
         // 未知 entry → ENOENT (VFS 边界约定, 不要返回裸 -1)
-        crate::kernel::framework::fs::vfs::types::KernelError::NotFound.as_i32()
+        crate::kernel::framework::fs::KernelError::NotFound.as_i32()
     }
 
     pub fn readdir(&self, index: usize) -> Option<([u8; 32], u32, u8)> {

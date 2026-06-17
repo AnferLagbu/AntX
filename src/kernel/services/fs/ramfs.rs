@@ -33,7 +33,7 @@ use crate::kernel::services::fs::ramfs_core::RamFsData;
 pub const RAMFS_BLOCK_SIZE: usize = 4096;
 pub const RAMFS_MAX_NODES: usize = 256;
 pub const RAMFS_MAX_BLOCKS: usize = 2048;
-pub use crate::kernel::framework::fs::vfs::types::{
+pub use crate::kernel::framework::fs::{
     VfsDirEntry, VfsFileType, VfsOpenFlags, VfsSeekWhence, VfsStat, VFS_MAX_NAME, VFS_MAX_PATH,
 };
 
@@ -68,8 +68,8 @@ impl FsError {
     }
 
     /// 映射为 POSIX errno
-    pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno {
-        use crate::kernel::framework::syscall::types::Errno as E;
+    pub fn to_errno(self) -> crate::kernel::framework::syscall::Errno {
+        use crate::kernel::framework::syscall::Errno as E;
         match self {
             Self::NotInitialized => E::ENODEV,
             Self::IoError => E::EIO,
@@ -149,14 +149,14 @@ impl FileDescriptor {
 /// 内部用 `IrqSpinLock<RamFsData>` 串行化所有访问,
 /// 提供 100% safe 的公共 API。
 pub struct SafeRamFs {
-    inner: crate::kernel::framework::sync::irq_spinlock::IrqSpinLock<RamFsData>,
+    inner: crate::kernel::framework::sync::IrqSpinLock<RamFsData>,
 }
 
 impl SafeRamFs {
     /// 创建未挂载的 SafeRamFs
     pub fn new() -> Self {
         Self {
-            inner: crate::kernel::framework::sync::irq_spinlock::IrqSpinLock::new(RamFsData::new()),
+            inner: crate::kernel::framework::sync::IrqSpinLock::new(RamFsData::new()),
         }
     }
 

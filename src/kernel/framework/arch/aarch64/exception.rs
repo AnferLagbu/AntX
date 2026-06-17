@@ -501,7 +501,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
         #[cfg(not(feature = "kernel_test"))]
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            crate::kernel::framework::net::init::poll_network();
+            crate::kernel::framework::net::poll_network();
         }
 
         // 仅当 scheduler 已初始化时触发调度
@@ -638,7 +638,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         #[cfg(not(feature = "kernel_test"))]
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            crate::kernel::framework::net::init::poll_network();
+            crate::kernel::framework::net::poll_network();
         }
 
         // 仅当 scheduler 已初始化时触发调度

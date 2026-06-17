@@ -36,8 +36,8 @@ pub enum PiMutexError {
 
 impl PiMutexError {
     /// 映射为 POSIX errno
-    pub fn to_errno(self) -> crate::kernel::framework::syscall::types::Errno {
-        use crate::kernel::framework::syscall::types::Errno as E;
+    pub fn to_errno(self) -> crate::kernel::framework::syscall::Errno {
+        use crate::kernel::framework::syscall::Errno as E;
         match self {
             Self::NotOwner => E::EPERM,
             Self::Exhausted => E::ENOMEM,

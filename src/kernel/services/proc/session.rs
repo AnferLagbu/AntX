@@ -17,9 +17,9 @@
 
 use core::sync::atomic::Ordering;
 use crate::kernel::framework::config::MAX_SESSIONS;
-use crate::kernel::framework::proc::api::process_get_current_pid;
-use crate::kernel::framework::proc::process::PROCESS_TABLE;
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock as Mutex;
+use crate::kernel::framework::proc::process_get_current_pid;
+use crate::kernel::framework::proc::PROCESS_TABLE;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::klog::serial_write_bytes;
 
 fn log(s: &str) {
@@ -528,7 +528,7 @@ pub fn signal_foreground_pgid(sig: u8) {
     if pgid == 0 {
         return;
     }
-    crate::kernel::framework::proc::signal::do_signal_send_extended(-(pgid as i32), sig).ok();
+    crate::kernel::framework::proc::do_signal_send_extended(-(pgid as i32), sig).ok();
 }
 
 /// 会话 leader 退出时释放控制终端
@@ -543,8 +543,8 @@ pub fn session_leader_exit(pid: u32) {
 
     let fg_pgid = SESSION_MANAGER.get_foreground_pgid(sid);
     if fg_pgid != 0 {
-        crate::kernel::framework::proc::signal::do_signal_send_extended(-(fg_pgid as i32), 1).ok();
-        crate::kernel::framework::proc::signal::do_signal_send_extended(-(fg_pgid as i32), 18).ok();
+        crate::kernel::framework::proc::do_signal_send_extended(-(fg_pgid as i32), 1).ok();
+        crate::kernel::framework::proc::do_signal_send_extended(-(fg_pgid as i32), 18).ok();
     }
 
     SESSION_MANAGER.release_controlling_terminal(sid);

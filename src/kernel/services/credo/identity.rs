@@ -90,7 +90,7 @@ impl PwmError {
 
 pub type PwmResult<T> = Result<T, PwmError>;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 初始化与发现

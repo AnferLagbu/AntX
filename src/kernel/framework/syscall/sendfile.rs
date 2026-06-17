@@ -23,11 +23,11 @@
 //! - offset 更新在传输成功后
 
 use crate::kernel::framework::fs::vfs as vfs_api;
-use crate::kernel::framework::fs::vfs::VFS_MAX_FDS;
-use crate::kernel::framework::fs::vfs::VFS_MANAGER;
+use crate::kernel::framework::fs::VFS_MAX_FDS;
+use crate::kernel::framework::fs::VFS_MANAGER;
 use crate::kernel::framework::ipc::pipe as ipc_pipe;
 use crate::kernel::framework::ipc::IPC_NAMESPACE;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// sendfile 传输的 bounce buffer 大小 (8KB)
 const BOUNCE_SIZE: usize = 8192;
@@ -64,7 +64,7 @@ fn is_vfs_file_fd(fd: i32) -> bool {
     if (240..256).contains(&fd) {
         return false; // timerfd
     }
-    if crate::kernel::framework::fs::vfs::inotify::is_inotify_fd(fd) {
+    if crate::kernel::framework::fs::inotify::is_inotify_fd(fd) {
         return false;
     }
     // 检查 VFS fd_table

@@ -8,15 +8,15 @@
 //! 纯策略代码 (过滤器 + 规则匹配 + syscall), 0 unsafe.
 
 use core::sync::atomic::{AtomicU8, Ordering};
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 use alloc::vec::Vec;
 
-use crate::kernel::framework::proc::api::process_get_current_pid;
-use crate::kernel::framework::proc::process::PROCESS_TABLE;
-use crate::kernel::framework::proc::signal::do_signal_send;
-use crate::kernel::framework::proc::types::Pid;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::proc::process_get_current_pid;
+use crate::kernel::framework::proc::PROCESS_TABLE;
+use crate::kernel::framework::proc::do_signal_send;
+use crate::kernel::framework::proc::Pid;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 常量

@@ -303,18 +303,18 @@ impl TicklessSubsystem {
         {
             // 使用 LAPIC Timer one-shot 模式
             // SAFETY: LAPIC timer 编程是标准操作
-            let timer_hz = crate::kernel::framework::arch::x86_64::apic::get_timer_hz();
+            let timer_hz = crate::kernel::framework::arch::apic::get_timer_hz();
             if timer_hz == 0 {
                 return;
             }
             let count = ((delta_ns * timer_hz) / 1_000_000_000) as u32;
             if count > 0 {
-                crate::kernel::framework::arch::x86_64::apic::init_timer(
+                crate::kernel::framework::arch::apic::init_timer(
                     0x20, // IRQ0 vector
                     false, // one-shot
                     16,    // divisor
                 );
-                crate::kernel::framework::arch::x86_64::apic::set_timer_count(count);
+                crate::kernel::framework::arch::apic::set_timer_count(count);
             }
         }
         #[cfg(target_arch = "aarch64")]
@@ -329,17 +329,17 @@ impl TicklessSubsystem {
         #[cfg(target_arch = "x86_64")]
         {
             // SAFETY: LAPIC timer 周期模式编程
-            let timer_hz = crate::kernel::framework::arch::x86_64::apic::get_timer_hz();
+            let timer_hz = crate::kernel::framework::arch::apic::get_timer_hz();
             if timer_hz == 0 {
                 return;
             }
             let count = (timer_hz / hz as u64) as u32;
-            crate::kernel::framework::arch::x86_64::apic::init_timer(
+            crate::kernel::framework::arch::apic::init_timer(
                 0x20,
                 true, // periodic
                 16,
             );
-            crate::kernel::framework::arch::x86_64::apic::set_timer_count(count);
+            crate::kernel::framework::arch::apic::set_timer_count(count);
         }
         #[cfg(target_arch = "aarch64")]
         {

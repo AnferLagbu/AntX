@@ -174,7 +174,7 @@ impl FutexBucket {
         for slot in self.waiters.iter_mut() {
             if slot.is_occupied() && slot.uaddr == uaddr && !slot.woken {
                 slot.woken = true;
-                crate::kernel::framework::proc::api::process_unblock(slot.pid);
+                crate::kernel::framework::proc::process_unblock(slot.pid);
                 woken += 1;
                 if woken >= max_count {
                     break;
@@ -203,7 +203,7 @@ impl FutexBucket {
 
             if woken < max_wake {
                 slot.woken = true;
-                crate::kernel::framework::proc::api::process_unblock(slot.pid);
+                crate::kernel::framework::proc::process_unblock(slot.pid);
                 woken += 1;
             } else if requeued < max_requeue {
                 slot.uaddr = uaddr2;
@@ -299,7 +299,7 @@ fn futex_wait(uaddr: u64, val: i32, _timeout: u64) -> i64 {
     }
 
     // 3. 获取当前 PID
-    let current_pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let current_pid = crate::kernel::framework::proc::process_get_current_pid();
     if current_pid == 0 {
         return -(22i64); // -EINVAL
     }
@@ -322,7 +322,7 @@ fn futex_wait(uaddr: u64, val: i32, _timeout: u64) -> i64 {
     }
 
     // 5. 阻塞当前线程
-    crate::kernel::framework::proc::api::process_block(current_pid);
+    crate::kernel::framework::proc::process_block(current_pid);
 
     // 6. 被唤醒后, 从等待队列中移除自己
     {

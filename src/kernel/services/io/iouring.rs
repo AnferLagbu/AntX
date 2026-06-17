@@ -12,7 +12,7 @@ pub use crate::kernel::framework::io::iouring::{
 use crate::kernel::framework::io::iouring::{
     io_uring_setup, io_uring_destroy, io_uring_submit, io_uring_enter, io_uring_reap,
 };
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// 创建 io_uring 实例 (安全封装)
 pub fn setup(entries: u32, owner_pid: u32) -> Result<u32, Errno> {

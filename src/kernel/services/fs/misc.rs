@@ -10,10 +10,10 @@
 //! - time 需校验 buf 长度 (8 字节)
 
 use crate::kernel::framework::credo;
-use crate::kernel::framework::fs::vfs::api as fw;
+use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::proc::api as proc_fw;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // rename

@@ -12,7 +12,7 @@
 //! | Emergency | SIGTERM → 最大 RSS 进程, 5s 后 SIGKILL |
 
 use super::scheduler::TICK_COUNT;
-use crate::kernel::framework::mm::api::{self as mm_api};
+use crate::kernel::framework::mm::{self as mm_api};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 const OOMD_CHECK_INTERVAL: u64 = 100;

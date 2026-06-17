@@ -22,7 +22,7 @@
 //! - mlockall(MCL_CURRENT) 对 Guard/Device VMA 跳过
 //! - 全程在 MmStruct.vmas 锁内进行 VMA 状态修改, 避免竞态
 
-use crate::kernel::framework::mm::api::vma_get_current_mm;
+use crate::kernel::framework::mm::vma_get_current_mm;
 
 // ============================================================================
 // madvise advice → Linux 内核常量

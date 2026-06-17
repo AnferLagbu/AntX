@@ -32,7 +32,7 @@ pub fn get_config_summary() -> ConfigSummary {
 /// 跨架构安全: 在 x86_64 上查 APIC 状态, 其他架构默认 false。
 #[cfg(target_arch = "x86_64")]
 fn apic_initialized() -> bool {
-    crate::kernel::framework::arch::x86_64::apic::is_initialized()
+    crate::kernel::framework::arch::apic::is_initialized()
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -42,7 +42,7 @@ fn apic_initialized() -> bool {
 
 #[cfg(target_arch = "x86_64")]
 fn ioapic_initialized() -> bool {
-    crate::kernel::framework::arch::x86_64::ioapic::is_initialized()
+    crate::kernel::framework::arch::ioapic::is_initialized()
 }
 
 #[cfg(not(target_arch = "x86_64"))]

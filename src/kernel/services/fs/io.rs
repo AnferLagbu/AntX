@@ -12,7 +12,7 @@
 //! - services 层: 验证参数类型/范围,委托 framework 实现
 //! - framework 层: 实际访问 VFS / 创建内核对象
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// pipe 系统调用安全代理
 ///

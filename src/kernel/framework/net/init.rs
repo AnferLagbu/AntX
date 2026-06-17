@@ -68,7 +68,7 @@ static mut NET_STACK: Option<NetworkStack> = None;
 // TD-06: 编译期容量从 `fd_alloc::cfg_smoltcp_cap()` 派生, 默认 256, 用户可手动
 // 切换至 1024 / 4096. 改本值后须同步 SOCKET_STORAGE / TCP_*_BUFS / UDP_*_BUFS /
 // FD_TYPES / SOCKET_TABLE 的所有 8 张大表尺寸, 否则全表越界.
-const MAX_SOCKETS: usize = crate::kernel::framework::proc::fd_alloc::cfg_smoltcp_cap() as usize;
+const MAX_SOCKETS: usize = crate::kernel::services::proc::fd_alloc::cfg_smoltcp_cap() as usize;
 static mut SOCKET_STORAGE: core::mem::MaybeUninit<[SocketStorage<'static>; MAX_SOCKETS]> =
     core::mem::MaybeUninit::uninit();
 static mut SOCKET_SET: core::mem::MaybeUninit<SocketSet<'static>> =
@@ -324,9 +324,9 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
 
     // 1) e1000 探测 (PCI 设备, 走 PCI 总线, 架构无关)
     {
-        let probe_result = crate::kernel::framework::driver::net::e1000::e1000_probe();
+        let probe_result = crate::kernel::framework::driver::e1000_probe();
         if probe_result == 0 {
-            let mut dev = crate::kernel::framework::driver::net::e1000::take_device()?;
+            let mut dev = crate::kernel::framework::driver::e1000_take_device()?;
             if crate::kernel::framework::driver::Driver::init(&mut *dev).is_err() {
                 raw::klog_err("e1000: hardware init failed");
                 return None;
@@ -341,9 +341,9 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
 
     // 2) virtio-net 探测 (MMIO 设备, 走 virtio 总线, 架构无关)
     {
-        let probe_result = crate::kernel::framework::driver::virtio::net::virtio_net_probe();
+        let probe_result = crate::kernel::framework::driver::virtio_net_probe();
         if probe_result == 0 {
-            let dev = crate::kernel::framework::driver::virtio::net::take_device()?;
+            let dev = crate::kernel::framework::driver::virtio_net_take_device()?;
             let mac = dev.mac;
             let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
             let nic = ChitinNetDevice::new(&VIRTIO_NET_OPS_STATIC, raw_ptr, mac);
@@ -358,18 +358,18 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
 #[cfg(not(feature = "kernel_test"))]
 static E1000_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOps =
     crate::kernel::framework::chitin::proto_net::NetOps {
-        send: crate::kernel::framework::driver::net::e1000::e1000_net_send,
-        try_receive: crate::kernel::framework::driver::net::e1000::e1000_net_recv,
-        get_mac: crate::kernel::framework::driver::net::e1000::e1000_net_get_mac,
-        handle_irq: Some(crate::kernel::framework::driver::net::e1000::e1000_net_irq),
+        send: crate::kernel::framework::driver::e1000_net_send,
+        try_receive: crate::kernel::framework::driver::e1000_net_recv,
+        get_mac: crate::kernel::framework::driver::e1000_net_get_mac,
+        handle_irq: Some(crate::kernel::framework::driver::e1000_net_irq),
     };
 
 static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::proto_net::NetOps =
     crate::kernel::framework::chitin::proto_net::NetOps {
-        send: crate::kernel::framework::driver::virtio::net::virtio_net_send,
-        try_receive: crate::kernel::framework::driver::virtio::net::virtio_net_recv,
-        get_mac: crate::kernel::framework::driver::virtio::net::virtio_net_get_mac,
-        handle_irq: Some(crate::kernel::framework::driver::virtio::net::virtio_net_irq),
+        send: crate::kernel::framework::driver::virtio_net_send,
+        try_receive: crate::kernel::framework::driver::virtio_net_recv,
+        get_mac: crate::kernel::framework::driver::virtio_net_get_mac,
+        handle_irq: Some(crate::kernel::framework::driver::virtio_net_irq),
     };
 
 // ============================================================================
@@ -849,13 +849,13 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
     if domain == 2 && sock_type == 1 {
         // TD-07: TCP RX/TX 缓冲走 slab, 不再静态 BSS 占用.
         // SAFETY: k_malloc 在初始化后可用, 返回非空或 null. null 时立即归还 fd.
-        let rx_ptr = crate::kernel::framework::mm::api::k_malloc(TCP_BUF_SIZE);
+        let rx_ptr = crate::kernel::framework::mm::k_malloc(TCP_BUF_SIZE);
         if rx_ptr.is_null() {
             return -E_NOMEM;
         }
-        let tx_ptr = crate::kernel::framework::mm::api::k_malloc(TCP_BUF_SIZE);
+        let tx_ptr = crate::kernel::framework::mm::k_malloc(TCP_BUF_SIZE);
         if tx_ptr.is_null() {
-            crate::kernel::framework::mm::api::k_free(rx_ptr);
+            crate::kernel::framework::mm::k_free(rx_ptr);
             return -E_NOMEM;
         }
         // SAFETY: rx_ptr/tx_ptr 来自 k_malloc(TCP_BUF_SIZE), 长度合法, 唯一别名.
@@ -875,13 +875,13 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
         fd
     } else if domain == 2 && sock_type == 2 {
         // TD-07: UDP RX/TX 缓冲走 slab. metas 仍静态 (小, 16 KB).
-        let rx_ptr = crate::kernel::framework::mm::api::k_malloc(UDP_BUF_SIZE);
+        let rx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
         if rx_ptr.is_null() {
             return -E_NOMEM;
         }
-        let tx_ptr = crate::kernel::framework::mm::api::k_malloc(UDP_BUF_SIZE);
+        let tx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
         if tx_ptr.is_null() {
-            crate::kernel::framework::mm::api::k_free(rx_ptr);
+            crate::kernel::framework::mm::k_free(rx_ptr);
             return -E_NOMEM;
         }
         // SAFETY: rx_ptr/tx_ptr 由 k_alloc 分配, 已 null 检查并保证 4K 对齐;
@@ -1457,19 +1457,19 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     sockets.remove(handle);
     // TD-07: smoltcp socket 已 drop, buf 借用结束, 此时 k_free 安全.
     if !TCP_RX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::api::k_free(TCP_RX_BUFS[fd as usize]);
+        crate::kernel::framework::mm::k_free(TCP_RX_BUFS[fd as usize]);
         TCP_RX_BUFS[fd as usize] = core::ptr::null_mut();
     }
     if !TCP_TX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::api::k_free(TCP_TX_BUFS[fd as usize]);
+        crate::kernel::framework::mm::k_free(TCP_TX_BUFS[fd as usize]);
         TCP_TX_BUFS[fd as usize] = core::ptr::null_mut();
     }
     if !UDP_RX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::api::k_free(UDP_RX_BUFS[fd as usize]);
+        crate::kernel::framework::mm::k_free(UDP_RX_BUFS[fd as usize]);
         UDP_RX_BUFS[fd as usize] = core::ptr::null_mut();
     }
     if !UDP_TX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::api::k_free(UDP_TX_BUFS[fd as usize]);
+        crate::kernel::framework::mm::k_free(UDP_TX_BUFS[fd as usize]);
         UDP_TX_BUFS[fd as usize] = core::ptr::null_mut();
     }
     SOCKET_TABLE.0[fd as usize] = None;
@@ -1654,8 +1654,8 @@ pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
 // ============================================================================
 
 // I-47: FD 表容量, 与 MAX_SOCKETS 对齐 (每个 FD 对应一个 smoltcp socket).
-// TD-02: 基址与容量改由 `framework::proc::fd_alloc::FdPlan::SMOLTCP` 单一来源; 容量现从 FdRange.capacity 派生.
-const MAX_SM_FD: usize = crate::kernel::framework::proc::fd_alloc::FdPlan::SMOLTCP.capacity as usize;
+// TD-02: 基址与容量改由 `framework::proc::FdPlan::SMOLTCP` 单一来源; 容量现从 FdRange.capacity 派生.
+const MAX_SM_FD: usize = crate::kernel::framework::proc::FdPlan::SMOLTCP.capacity as usize;
 const TCP_BUF_SIZE: usize = 4096;
 const UDP_BUF_SIZE: usize = 2048;
 const UDP_META_COUNT: usize = 4;
@@ -1702,8 +1702,8 @@ unsafe fn sm_alloc_fd() -> i32 {
     for i in 0..MAX_SM_FD {
         if FD_TYPES.0[i] == 0 && SOCKET_TABLE.0[i].is_none() {
             // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-            return crate::kernel::framework::proc::fd_alloc::fd_at(
-                crate::kernel::framework::proc::fd_alloc::FdSubsystem::Smoltcp,
+            return crate::kernel::framework::proc::fd_at(
+                crate::kernel::framework::proc::FdSubsystem::Smoltcp,
                 i,
             );
         }

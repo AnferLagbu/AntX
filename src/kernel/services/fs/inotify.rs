@@ -25,7 +25,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 use core::sync::atomic::Ordering;
 
 // ============================================================================

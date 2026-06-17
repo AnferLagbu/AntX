@@ -20,7 +20,7 @@
 //!
 //! services 层仅做参数类型转换和错误码封装.
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // execve 安全 API

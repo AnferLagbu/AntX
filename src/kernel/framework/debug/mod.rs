@@ -20,9 +20,19 @@
 // 保留文件级 allow: ebpf 子模块大量内部类型和函数待调试路径启用后使用。
 #![allow(dead_code)]
 
+// ebpf 公共接口 re-export — 避免跨子系统直接访问 debug::ebpf 内部
+pub use ebpf::sys_bpf;
+pub use ebpf::bpf_init;
+
 pub mod api;
 /// D4: eBPF 扩展包过滤器
 pub mod ebpf;
 pub mod ftrace;
 pub mod kgdb;
 pub mod ringbuf;
+
+// 子模块公共接口 re-export — 避免跨子系统直接访问 debug 内部子模块
+pub use api::*;
+pub use ftrace::*;
+pub use kgdb::*;
+pub use ebpf::*;

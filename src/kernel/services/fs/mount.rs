@@ -14,9 +14,9 @@
 //! - [umount2_syscall] target 必须非空, 需 CAP_SYS_ADMIN
 
 use crate::kernel::framework::credo;
-use crate::kernel::framework::fs::vfs::api as fw;
+use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // mount

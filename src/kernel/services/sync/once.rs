@@ -30,7 +30,7 @@
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use crate::kernel::framework::sync::mutex::Mutex;
+use crate::kernel::framework::sync::Mutex;
 
 // ============================================================================
 // Once — 一次性闭包执行 (纯 safe, 内部用 Mutex 串行化)
@@ -114,7 +114,7 @@ impl Default for Once {
 /// ## @SAFE
 /// 本类型**不含 unsafe 代码** — 内部实现全部委托 `framework::sync::once_lock::OnceLock`。
 /// 使用本类型无需任何 `unsafe` 块。
-pub type OnceCell<T> = crate::kernel::framework::sync::once_lock::OnceLock<T>;
+pub type OnceCell<T> = crate::kernel::framework::sync::OnceLock<T>;
 
 // ============================================================================
 // 单元自检

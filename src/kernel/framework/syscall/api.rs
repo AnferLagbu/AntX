@@ -137,23 +137,6 @@ pub const SYS_clock_gettime: u64 = 228;
 pub const SYS_CREDO_BASE: u64 = 400;
 pub const MAX_SYSCALLS: u64 = 800;
 
-// ============================================================================
-// 契约: 注册机制
-// ============================================================================
-
-/// 动态注册 syscall 处理器。
-///
-/// # 安全约束
-/// - 仅在启动阶段单线程调用
-/// - `num` 不可与已有注册冲突
-/// - `handler` 必须在中断上下文可调用 (无 sleep / 无 lock 等待)
-///
-/// # Safety
-/// 调用方确保 num 合法且 handler 在中断上下文安全。
-pub unsafe fn syscall_register(num: u64, handler: SyscallHandler) {
-    unsafe { super::syscall_register(num, handler) }
-}
-
 /// 验证用户态指针是否在合法范围内
 pub fn validate_user_ptr(ptr: u64) -> bool {
     super::validate_user_ptr(ptr)

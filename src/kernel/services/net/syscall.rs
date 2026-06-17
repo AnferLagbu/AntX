@@ -12,7 +12,7 @@
 //! - 本模块 syscall 入口 API (i32, u64 用户指针, u32 长度)
 
 use crate::kernel::framework::net::syscall as fw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::syscall::raw;
 use super::unix as uds;
 

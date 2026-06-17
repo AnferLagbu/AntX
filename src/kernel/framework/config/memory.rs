@@ -25,7 +25,7 @@ pub use crate::kernel::services::config::memory::*;
 /// 页对齐的随机偏移 (字节)
 #[inline]
 pub fn aslr_random_offset(bits: u64) -> u64 {
-    let tsc = crate::kernel::framework::cpu::tsc::read_tsc();
+    let tsc = crate::kernel::framework::cpu::read_tsc();
     let mask = (1u64 << bits) - 1;
     (tsc & mask) * PAGE_SIZE
 }

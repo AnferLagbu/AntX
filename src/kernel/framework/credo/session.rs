@@ -20,7 +20,7 @@
 //         `Mutex<...>` 字段提供内部可变性.
 use super::identity;
 use super::types::*;
-use crate::kernel::framework::proc::api::process_get_current_pid;
+use crate::kernel::framework::proc::process_get_current_pid;
 use crate::kernel::framework::proc::PROCESS_TABLE;
 use core::sync::atomic::Ordering;
 

@@ -7,7 +7,7 @@
 
 use crate::kernel::framework::proc::api;
 use crate::kernel::framework::syscall::raw;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 进程/线程 ID

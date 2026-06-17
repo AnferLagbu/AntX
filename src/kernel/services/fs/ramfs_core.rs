@@ -18,8 +18,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use crate::kernel::framework::credo::api as pwm_api;
-use crate::kernel::framework::fs::vfs::types::KernelError;
-use crate::kernel::framework::fs::vfs::types::*;
+use crate::kernel::framework::fs::KernelError;
+use crate::kernel::framework::fs::*;
 use crate::kernel::services::fs::dcache;
 
 const RAMFS_MAX_NODES: usize = 256;

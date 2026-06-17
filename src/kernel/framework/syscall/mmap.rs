@@ -22,7 +22,7 @@
 //! ```
 
 use super::types::*;
-use crate::kernel::framework::mm::api::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::{PageFlags as VmaFlags, PAGE_SIZE};
 
 // ============================================================================
@@ -178,7 +178,7 @@ fn fd_to_mount_idx(fd: i32) -> Option<usize> {
     if fd < 0 {
         return None;
     }
-    crate::kernel::framework::fs::vfs::VFS_MANAGER.get_fd_mount_idx(fd as usize)
+    crate::kernel::framework::fs::VFS_MANAGER.get_fd_mount_idx(fd as usize)
 }
 
 #[inline]

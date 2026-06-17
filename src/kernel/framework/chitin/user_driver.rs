@@ -8,10 +8,10 @@ use crate::kernel::framework::credo::capability::{
 };
 use crate::kernel::framework::credo::engine;
 use crate::kernel::framework::credo::types::{CapBits, CapDomain};
-use crate::kernel::framework::mm::api::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
 use crate::kernel::framework::mm::get_vmm;
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr, PAGE_SIZE};
-use crate::kernel::framework::proc::api::{process_dec_ref, process_exists, process_get_cr3, process_get_pwm, process_try_inc_ref};
+use crate::kernel::framework::proc::{process_dec_ref, process_exists, process_get_cr3, process_get_pwm, process_try_inc_ref};
 use crate::klog_info;
 use crate::klog_warn;
 
@@ -368,7 +368,7 @@ pub extern "C" fn process_signal_pending_set(pid: u32, sig: u32) {
     if !process_try_inc_ref(pid) {
         return;
     }
-    crate::kernel::framework::proc::api::process_signal_pending_set(pid, sig);
+    crate::kernel::framework::proc::process_signal_pending_set(pid, sig);
     process_dec_ref(pid);
 }
 

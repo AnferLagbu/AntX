@@ -13,7 +13,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
 // 常量

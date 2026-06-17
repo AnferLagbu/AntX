@@ -33,9 +33,9 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 常量
@@ -714,9 +714,9 @@ pub fn ns_register(ns_set: &NamespaceSet) {
 
 /// sys_unshare — 取消共享指定 namespace
 pub fn sys_unshare(flags: u64) -> i64 {
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
 
-    let result = crate::kernel::framework::proc::process::PROCESS_TABLE
+    let result = crate::kernel::framework::proc::PROCESS_TABLE
         .with_process_mut(pid, |p| {
             p.namespaces.lock().unshare(flags)
         });
@@ -746,9 +746,9 @@ pub fn sys_setns(ns_type: u64, target_ns_id: u64) -> i64 {
         }
     };
 
-    let pid = crate::kernel::framework::proc::api::process_get_current_pid();
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
 
-    let result = crate::kernel::framework::proc::process::PROCESS_TABLE
+    let result = crate::kernel::framework::proc::PROCESS_TABLE
         .with_process_mut(pid, |p| {
             p.namespaces.lock().setns_by_type(ns_t, target_ns_id)
         });

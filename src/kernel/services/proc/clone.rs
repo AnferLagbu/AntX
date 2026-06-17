@@ -11,7 +11,7 @@
 //! - services 层验证标量参数和标志组合
 //! - 页表/进程操作委托给 framework 层 (TCB)
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// clone 安全代理
 ///

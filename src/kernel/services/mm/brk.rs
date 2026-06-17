@@ -14,7 +14,7 @@
 //! brk 的核心逻辑 (VMA 扩展/收缩, 页表更新) 在 framework TCB 中执行.
 //! services 层仅做参数验证和错误码封装.
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// 用户空间最大地址 (x86_64: 0x7FFF_FFFF_FFFF)
 #[cfg(target_arch = "x86_64")]

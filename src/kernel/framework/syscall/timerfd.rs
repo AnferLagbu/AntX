@@ -33,7 +33,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::timer::{HrTimer, HrTimerRestart, hrtimer_start, hrtimer_cancel, hrtimer_clock_read};
 
 // ============================================================================
@@ -42,9 +42,9 @@ use crate::kernel::framework::timer::{HrTimer, HrTimerRestart, hrtimer_start, hr
 
 /// timerfd 最大实例数
 pub const TFD_MAX_SLOTS: usize = 16;
-/// TD-15: FD 空间基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::TIMER_FD` 单一来源 (1160),
+/// TD-15: FD 空间基址来源已迁移至 `framework::proc::FdPlan::TIMER_FD` 单一来源 (1160),
 /// 不再硬编码 240 (旧值与 smoltcp [0, 256) 重叠).
-pub const TFD_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::TIMER_FD.base;
+pub const TFD_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::TIMER_FD.base;
 /// TFD_CLOEXEC
 pub const TFD_CLOEXEC: i32 = 0o2000000;
 /// TFD_NONBLOCK
@@ -160,8 +160,8 @@ pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
     for i in 0..TFD_MAX_SLOTS {
         if !table.slots[i].used {
             // TD-15: 走 fd_alloc::fd_at 集中计算 FD, 避免本地基址字面量
-            let fd = crate::kernel::framework::proc::fd_alloc::fd_at(
-                crate::kernel::framework::proc::fd_alloc::FdSubsystem::TimerFd,
+            let fd = crate::kernel::framework::proc::fd_at(
+                crate::kernel::framework::proc::FdSubsystem::TimerFd,
                 i,
             );
 
@@ -504,8 +504,8 @@ pub fn timerfd_poll_events(fd: i32) -> u32 {
 /// TD-15: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 TFD_FD_BASE 字面量 +
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
-    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::TimerFd, slot)) => {
+    match crate::kernel::framework::proc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::FdSubsystem::TimerFd, slot)) => {
             Some(slot)
         }
         _ => None,
@@ -517,8 +517,8 @@ fn fd_to_idx(fd: i32) -> Option<usize> {
 /// TD-15: 改走 `fd_alloc::idx_of`, 不再持有 TFD_FD_BASE 字面量 + 算术.
 pub fn is_timerfd_fd(fd: i32) -> bool {
     matches!(
-        crate::kernel::framework::proc::fd_alloc::idx_of(fd),
-        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::TimerFd, _))
+        crate::kernel::framework::proc::idx_of(fd),
+        Some((crate::kernel::framework::proc::FdSubsystem::TimerFd, _))
     )
 }
 

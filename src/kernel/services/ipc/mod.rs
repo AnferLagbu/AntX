@@ -61,7 +61,7 @@ impl IpcError {
     }
 }
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 句柄

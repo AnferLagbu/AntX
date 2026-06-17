@@ -39,7 +39,7 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
             // smoltcp: 始终轮询
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
-                crate::kernel::framework::net::init::poll_network();
+                crate::kernel::framework::net::poll_network();
             }
         }
     }

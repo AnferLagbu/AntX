@@ -10,7 +10,7 @@
 use crate::kernel::framework::net_socket;
 use crate::kernel::framework::userptr;
 use crate::kernel::framework::errno::Errno;
-use crate::kernel::framework::mm::api::{copy_from_user as safe_copy_from_user, copy_to_user as safe_copy_to_user};
+use crate::kernel::framework::mm::{copy_from_user as safe_copy_from_user, copy_to_user as safe_copy_to_user};
 
 use crate::kernel::services::net::socket::{SockAddrIn, SockType, Domain};
 

@@ -151,6 +151,10 @@ pub use hrtimer::{
     HrTimer, HrTimerRestart, HrTimerState,
 };
 
+// tickless/time_sync 公共接口 re-export — 避免跨子系统直接访问 timer 内部子模块
+pub use tickless::*;
+pub use time_sync::*;
+
 // ============================================================================
 // FFI 兼容层 (C 接口)
 // ============================================================================

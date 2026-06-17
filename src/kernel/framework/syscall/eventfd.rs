@@ -33,7 +33,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 常量
@@ -41,8 +41,8 @@ use crate::kernel::framework::syscall::types::Errno;
 
 /// eventfd 最大实例数
 pub const EFD_MAX_SLOTS: usize = 16;
-/// TD-02: 基址来源已迁移至 `framework::proc::fd_alloc::FdPlan::EVENT_FD` 单一来源, 不再硬编码.
-pub const EFD_FD_BASE: i32 = crate::kernel::framework::proc::fd_alloc::FdPlan::EVENT_FD.base;
+/// TD-02: 基址来源已迁移至 `framework::proc::FdPlan::EVENT_FD` 单一来源, 不再硬编码.
+pub const EFD_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::EVENT_FD.base;
 /// EFD_CLOEXEC (与 Linux 一致)
 pub const EFD_CLOEXEC: i32 = 0o2000000;
 /// EFD_NONBLOCK (与 Linux 一致)
@@ -122,8 +122,8 @@ pub fn sys_eventfd(initval: u64, flags: i32) -> i64 {
             EFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
             // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-            let fd = crate::kernel::framework::proc::fd_alloc::fd_at(
-                crate::kernel::framework::proc::fd_alloc::FdSubsystem::EventFd,
+            let fd = crate::kernel::framework::proc::fd_at(
+                crate::kernel::framework::proc::FdSubsystem::EventFd,
                 i,
             );
             crate::klog_debug!(Sync, "[eventfd] Created fd={} initval={} sem={}", fd, initval, semaphore);
@@ -290,8 +290,8 @@ pub fn eventfd_poll_events(fd: i32) -> u32 {
 /// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 EFD_FD_BASE 字面量 +
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
-    match crate::kernel::framework::proc::fd_alloc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::EventFd, slot)) => {
+    match crate::kernel::framework::proc::idx_of(fd) {
+        Some((crate::kernel::framework::proc::FdSubsystem::EventFd, slot)) => {
             Some(slot)
         }
         _ => None,
@@ -303,8 +303,8 @@ fn fd_to_idx(fd: i32) -> Option<usize> {
 /// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 EFD_FD_BASE 字面量 + 算术.
 pub fn is_eventfd_fd(fd: i32) -> bool {
     matches!(
-        crate::kernel::framework::proc::fd_alloc::idx_of(fd),
-        Some((crate::kernel::framework::proc::fd_alloc::FdSubsystem::EventFd, _))
+        crate::kernel::framework::proc::idx_of(fd),
+        Some((crate::kernel::framework::proc::FdSubsystem::EventFd, _))
     )
 }
 

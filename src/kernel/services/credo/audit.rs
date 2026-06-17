@@ -251,7 +251,7 @@ impl AuditError {
     }
 }
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 /// FNV-1a 64 位哈希 (services 层, 用于审计链)
 fn compute_hash(prev: u64, event: &AuditEvent) -> u64 {

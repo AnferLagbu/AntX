@@ -13,7 +13,7 @@
 //! - uname: 系统信息
 //! - gettimeofday: 时钟
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 进程/线程 ID

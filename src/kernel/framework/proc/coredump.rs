@@ -263,7 +263,7 @@ pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     // 6. 打开 core 文件
     let core_path = build_core_path(pid);
     let open_flags = 0x0002 /* O_WRONLY */ | 0x0100 /* O_CREAT */ | 0x0200 /* O_TRUNC */;
-    let fd = crate::kernel::framework::fs::vfs::vfs_open(
+    let fd = crate::kernel::framework::fs::vfs_open(
         core_path.as_ptr(),
         open_flags,
         0, // pwm = 0 (内核权限)
@@ -305,7 +305,7 @@ pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
         let mut zoff = 0u64;
         while zoff < pad {
             let n = core::cmp::min(pad - zoff, 16);
-            crate::kernel::framework::fs::vfs::vfs_write(fd, zeros.as_ptr(), n as u32);
+            crate::kernel::framework::fs::vfs_write(fd, zeros.as_ptr(), n as u32);
             zoff += n;
         }
         offset = note_end;
@@ -317,7 +317,7 @@ pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     }
 
     // 11. 关闭文件
-    crate::kernel::framework::fs::vfs::vfs_close(fd);
+    crate::kernel::framework::fs::vfs_close(fd);
 
     log("coredump: written ");
     log_num(offset);
@@ -468,7 +468,7 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
 
     // Note name (对齐到 4 字节)
     let name_aligned = (NOTE_NAME.len() as u64 + 3) & !3;
-    crate::kernel::framework::fs::vfs::vfs_write(
+    crate::kernel::framework::fs::vfs_write(
         fd,
         NOTE_NAME.as_ptr(),
         name_aligned as u32,
@@ -499,7 +499,7 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
     let desc_aligned = (prstatus_size as u64 + 3) & !3;
     // SAFETY: PrStatus 是 POD 结构体, 可以按字节写入
     unsafe {
-        crate::kernel::framework::fs::vfs::vfs_write(
+        crate::kernel::framework::fs::vfs_write(
             fd,
             &prstatus as *const PrStatus as *const u8,
             prstatus_size,
@@ -520,7 +520,7 @@ fn write_note_siginfo(fd: u32, sig: u8, offset: &mut u64) {
     write_bytes(fd, &note, offset);
 
     let name_aligned = (NOTE_NAME.len() as u64 + 3) & !3;
-    crate::kernel::framework::fs::vfs::vfs_write(
+    crate::kernel::framework::fs::vfs_write(
         fd,
         NOTE_NAME.as_ptr(),
         name_aligned as u32,
@@ -536,7 +536,7 @@ fn write_note_siginfo(fd: u32, sig: u8, offset: &mut u64) {
     let desc_aligned = (siginfo_size as u64 + 3) & !3;
     // SAFETY: CoreSiginfo 是 POD 结构体
     unsafe {
-        crate::kernel::framework::fs::vfs::vfs_write(
+        crate::kernel::framework::fs::vfs_write(
             fd,
             &si as *const CoreSiginfo as *const u8,
             siginfo_size,
@@ -594,7 +594,7 @@ fn fill_regs_from_frame(prstatus: &mut PrStatus, frame_addr: u64) {
         return;
     }
     // SAFETY: frame_addr 由调用方保证为有效的 ExceptionFrame 指针
-    let frame = unsafe { &*(frame_addr as *const crate::kernel::framework::arch::aarch64::exception::ExceptionFrame) };
+    let frame = unsafe { &*(frame_addr as *const crate::kernel::framework::arch::exception::ExceptionFrame) };
 
     let regs = &mut prstatus.regs;
     regs[0] = frame.x0;
@@ -662,7 +662,7 @@ fn write_segment_data(
         let readable = copy_from_user_safe(src, chunk_size as usize, &mut buf);
 
         if readable > 0 {
-            crate::kernel::framework::fs::vfs::vfs_write(
+            crate::kernel::framework::fs::vfs_write(
                 fd,
                 buf.as_ptr(),
                 readable as u32,
@@ -670,7 +670,7 @@ fn write_segment_data(
         } else {
             // 页不存在, 写零
             let zeros = [0u8; 4096];
-            crate::kernel::framework::fs::vfs::vfs_write(
+            crate::kernel::framework::fs::vfs_write(
                 fd,
                 zeros.as_ptr(),
                 chunk_size as u32,
@@ -695,7 +695,7 @@ fn copy_from_user_safe(src: *const u8, len: usize, dst: &mut [u8]) -> usize {
     // SAFETY: src 来自内核代码构造的进程 VMA 地址, 长度由调用方保证.
     //          委托给异常表保护版 copy_from_user, 缺页时返回 Err 而非 panic.
     let user_addr = src as u64;
-    match crate::kernel::framework::mm::api::copy_from_user(dst, user_addr, len) {
+    match crate::kernel::framework::mm::copy_from_user(dst, user_addr, len) {
         Ok(n) => n,
         Err(()) => 0,
     }
@@ -706,7 +706,7 @@ fn write_bytes<T>(fd: u32, data: &T, offset: &mut u64) {
     let size = core::mem::size_of::<T>();
     // SAFETY: T 是 POD 结构体, 可以按字节写入
     unsafe {
-        crate::kernel::framework::fs::vfs::vfs_write(
+        crate::kernel::framework::fs::vfs_write(
             fd,
             data as *const T as *const u8,
             size as u32,

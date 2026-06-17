@@ -5,7 +5,7 @@
 //! 采用 `PhysAddr`/`VirtAddr` 类型安全与无锁原子变量.
 
 use super::*;
-use crate::kernel::framework::mm::api::{pmm_alloc_pages_phys, pmm_free_pages_phys};
+use crate::kernel::framework::mm::{pmm_alloc_pages_phys, pmm_free_pages_phys};
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};

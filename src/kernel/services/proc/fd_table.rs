@@ -17,7 +17,7 @@
 //! - TCB 减面: [docs/plan/maintenance-2026-06-11.md](../../../../../../docs/plan/maintenance-2026-06-11.md) I-01
 //! - 移出: framework::proc::process::FdTable (2026-06-11)
 
-use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 /// 每进程 FD 表上限
 ///

@@ -549,7 +549,7 @@ pub fn register_standard() {
 // FileSystem trait 实现 (E6-9c: VFS 分发接入)
 // ============================================================================
 
-use crate::kernel::framework::fs::vfs::types::{
+use crate::kernel::framework::fs::{
     FileSystem, FsOpenResult, KernelError, KernelResult, VfsDirEntry, VfsStat,
 };
 

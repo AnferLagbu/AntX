@@ -186,7 +186,7 @@ mod serial_impl {
 
 #[cfg(target_arch = "aarch64")]
 mod serial_impl {
-    use crate::kernel::framework::arch::aarch64::uart;
+    use crate::kernel::framework::arch::uart;
 
     pub fn serial_init() {
         // UART 已在 entry.rs 中初始化

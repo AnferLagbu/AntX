@@ -19,7 +19,7 @@ use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, HardwareAddress};
 
-use crate::kernel::framework::chitin::proto_net::NetOps;
+use crate::kernel::framework::chitin::NetOps;
 use crate::kernel::framework::timer::hrtimer_clock_read;
 use crate::kernel::framework::timer::get_uptime_ms;
 

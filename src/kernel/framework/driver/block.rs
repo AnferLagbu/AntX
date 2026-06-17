@@ -19,7 +19,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::fs::vfs::{KernelError, KernelResult};
+use crate::kernel::framework::fs::{KernelError, KernelResult};
 
 // ── BlockDevice Trait (定义在 chitin, 此处 re-export) ──
 

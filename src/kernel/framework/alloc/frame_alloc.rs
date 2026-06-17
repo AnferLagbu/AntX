@@ -95,10 +95,10 @@ impl FrameAlloc for BuddyFrameAlloc {
     }
 
     fn free_pages(&self) -> u64 {
-        crate::kernel::framework::mm::api::pmm_get_free_pages()
+        crate::kernel::framework::mm::pmm_get_free_pages()
     }
 
     fn total_pages(&self) -> u64 {
-        crate::kernel::framework::mm::api::pmm_get_total_pages()
+        crate::kernel::framework::mm::pmm_get_total_pages()
     }
 }
