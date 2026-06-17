@@ -506,8 +506,8 @@ impl SchedulerEx {
 
             // TD-10: 按 in_kern 状态记账到 user_time / sys_time.
             // user_time 持续累加, sys_time 仅在 syscall 期间累加.
-            let in_kern = crate::kernel::framework::proc::api::proc_get_in_kern();
-            crate::kernel::framework::proc::api::proc_account_tick(in_kern);
+            let in_kern = crate::kernel::framework::proc::proc_get_in_kern();
+            crate::kernel::framework::proc::proc_account_tick(in_kern);
 
             let sleep_until = thread.load_sleep_until();
             if sleep_until != 0 {

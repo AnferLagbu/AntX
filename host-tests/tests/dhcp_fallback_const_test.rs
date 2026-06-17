@@ -10,7 +10,7 @@
 
 use std::fs;
 
-const TYPES_RS: &str = "../src/kernel/framework/net/types.rs";
+const TYPES_RS: &str = "../src/kernel/services/net/types.rs";
 const INIT_RS: &str = "../src/kernel/framework/net/init.rs";
 
 fn read(path: &str) -> String {

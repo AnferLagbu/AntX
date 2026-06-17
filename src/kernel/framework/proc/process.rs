@@ -159,14 +159,14 @@ pub struct Process {
     ///
     /// 包含模式 (Disabled/Strict/Filter) + 过滤器链 + no_new_privs 位.
     /// fork 继承全部过滤器; execve 保留.
-    pub seccomp: crate::kernel::framework::proc::seccomp::SeccompState,
+    pub seccomp: crate::kernel::framework::proc::SeccompState,
 
     /// Per-process Namespace 集合 (D1)
     ///
     /// 包含 UTS/IPC/PID/Mount/User/Net/Cgroup 七种 namespace.
     /// fork 默认共享 (Arc::clone), CLONE_NEW* 创建新实例.
     /// 通过 sys_unshare / sys_setns 运行时切换.
-    pub namespaces: Mutex<crate::kernel::framework::proc::namespace::NamespaceSet>,
+    pub namespaces: Mutex<crate::kernel::framework::proc::NamespaceSet>,
 
     /// Per-process cgroup ID (D2)
     ///
@@ -278,10 +278,10 @@ impl Process {
                 crate::kernel::framework::proc::generate_canary(),
             ),
             // C7: Seccomp 默认 Disabled
-            seccomp: crate::kernel::framework::proc::seccomp::SeccompState::new(),
+            seccomp: crate::kernel::framework::proc::SeccompState::new(),
             // D1: Namespace 默认 init namespace 集合
             namespaces: Mutex::new(
-                crate::kernel::framework::proc::namespace::NamespaceSet::new_init(),
+                crate::kernel::framework::proc::NamespaceSet::new_init(),
             ),
             // D2: cgroup 默认根 cgroup (id=0)
             cgroup_id: AtomicU64::new(0),

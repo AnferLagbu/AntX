@@ -68,7 +68,7 @@ static mut NET_STACK: Option<NetworkStack> = None;
 // TD-06: 编译期容量从 `fd_alloc::cfg_smoltcp_cap()` 派生, 默认 256, 用户可手动
 // 切换至 1024 / 4096. 改本值后须同步 SOCKET_STORAGE / TCP_*_BUFS / UDP_*_BUFS /
 // FD_TYPES / SOCKET_TABLE 的所有 8 张大表尺寸, 否则全表越界.
-const MAX_SOCKETS: usize = crate::kernel::services::proc::fd_alloc::cfg_smoltcp_cap() as usize;
+const MAX_SOCKETS: usize = crate::kernel::services::proc::cfg_smoltcp_cap() as usize;
 static mut SOCKET_STORAGE: core::mem::MaybeUninit<[SocketStorage<'static>; MAX_SOCKETS]> =
     core::mem::MaybeUninit::uninit();
 static mut SOCKET_SET: core::mem::MaybeUninit<SocketSet<'static>> =

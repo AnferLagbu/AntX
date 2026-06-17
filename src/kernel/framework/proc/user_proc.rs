@@ -1388,7 +1388,7 @@ pub fn init() {
     // SAFETY: get_memlock_limit 是 'static 函数指针, 在内核运行期间始终有效.
     unsafe {
         crate::kernel::framework::rlimit_query::register_memlock_limit(
-            crate::kernel::framework::proc::rlimit::get_memlock_limit,
+            crate::kernel::framework::proc::get_memlock_limit,
         );
     }
 }

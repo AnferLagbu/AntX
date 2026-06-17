@@ -100,13 +100,13 @@ pub use madvise_mlock::{sys_madvise, sys_mlock, sys_munlock, sys_mlockall, sys_m
 pub use elf::{Elf64Header, Elf64Phdr, ElfLoadResult, elf_validate, elf_load};
 
 // rlimit 公共接口显式 re-export — glob re-export 可能被遮蔽
-pub use rlimit::{sys_getrlimit, sys_setrlimit, RLIMIT_CORE, RLIM_INFINITY};
+pub use rlimit::{sys_getrlimit, sys_setrlimit, RLIMIT_CORE, RLIM_INFINITY, get_memlock_limit};
 
 // seccomp 公共接口 re-export — 避免跨子系统直接访问 proc::seccomp 内部
-pub use seccomp::{seccomp_check, sys_seccomp, sys_prctl_prctl};
+pub use seccomp::{seccomp_check, sys_seccomp, sys_prctl_prctl, SeccompMode, SeccompState};
 
 // namespace 公共接口 re-export — 避免跨子系统直接访问 proc::namespace 内部
-pub use namespace::{sys_unshare, sys_setns};
+pub use namespace::{sys_unshare, sys_setns, NamespaceSet};
 
 // cgroup 公共接口 re-export — 避免跨子系统直接访问 proc::cgroup 内部
-pub use cgroup::{sys_cgroup_create, sys_cgroup_destroy, sys_cgroup_attach, sys_cgroup_set_limit, sys_cgroup_get_stat};
+pub use cgroup::{sys_cgroup_create, sys_cgroup_destroy, sys_cgroup_attach, sys_cgroup_set_limit, sys_cgroup_get_stat, cgroup_is_initialized, cgroup_subsystem};

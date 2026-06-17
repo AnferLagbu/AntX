@@ -406,7 +406,7 @@ pub fn devtree_probe_composites() -> usize {
         };
 
         let total_mb = composite.total_sectors / 2048;
-        proto_block::register_block_device(name_leaked, composite, None);
+        register_block_device(name_leaked, composite, None);
 
         klog_info!(
             Driver,

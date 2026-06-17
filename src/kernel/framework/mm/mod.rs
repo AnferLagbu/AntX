@@ -77,6 +77,9 @@ pub use swap::{kswapd_wakeup, set_page_locked};
 #[cfg(target_arch = "aarch64")]
 pub use kpti::kpti_trampoline_ttbr1_or_kernel;
 
+// cow 公共接口 re-export — 避免跨子系统直接访问 mm::cow 内部
+pub use cow::{cow_init, cow_ref_count, cow_inc_ref, cow_dec_ref};
+
 /// Page size and huge-page constants (统一从 config.rs 引用)
 pub use crate::kernel::framework::config::{
     PAGE_SIZE, PAGE_SHIFT, HUGE_PAGE_2M_SIZE, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT,

@@ -1395,7 +1395,7 @@ pub fn sys_fork() -> Pid {
                     let filters = p.seccomp.filters.lock();
                     (mode, no_new_privs, filters.clone())
                 })
-                .unwrap_or((crate::kernel::framework::proc::seccomp::SeccompMode::Disabled, false, alloc::vec::Vec::new()));
+                .unwrap_or((crate::kernel::framework::proc::SeccompMode::Disabled, false, alloc::vec::Vec::new()));
             child.seccomp.mode.store(parent_seccomp.0 as u8, Ordering::SeqCst);
             child.seccomp.no_new_privs.store(parent_seccomp.1 as u8, Ordering::SeqCst);
             *child.seccomp.filters.lock() = parent_seccomp.2;
@@ -1404,9 +1404,9 @@ pub fn sys_fork() -> Pid {
         {
             let parent_ns = PROCESS_TABLE
                 .with_process(parent_pid, |p| {
-                    crate::kernel::framework::proc::namespace::NamespaceSet::fork_from(&p.namespaces.lock())
+                    crate::kernel::framework::proc::NamespaceSet::fork_from(&p.namespaces.lock())
                 })
-                .unwrap_or_else(crate::kernel::framework::proc::namespace::NamespaceSet::new_init);
+                .unwrap_or_else(crate::kernel::framework::proc::NamespaceSet::new_init);
             *child.namespaces.lock() = parent_ns;
         }
         // D2: 继承父进程 cgroup ID
@@ -1416,8 +1416,8 @@ pub fn sys_fork() -> Pid {
                 .unwrap_or(0);
             child.cgroup_id.store(parent_cg, core::sync::atomic::Ordering::Release);
             // 将子进程加入 cgroup 的进程列表
-            if crate::kernel::framework::proc::cgroup::cgroup_is_initialized() {
-                let sub = crate::kernel::framework::proc::cgroup::cgroup_subsystem();
+            if crate::kernel::framework::proc::cgroup_is_initialized() {
+                let sub = crate::kernel::framework::proc::cgroup_subsystem();
                 if let Some(cg) = sub.find(parent_cg) {
                     cg.attach_proc(child_pid);
                 }

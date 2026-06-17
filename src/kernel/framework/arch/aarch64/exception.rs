@@ -489,7 +489,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
                 Boot,
                 "TIMER IRQ (EL0) count={} ready={}",
                 el0count,
-                crate::kernel::framework::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+                crate::kernel::framework::net::NET_READY.load(core::sync::atomic::Ordering::Acquire)
             );
         }
 
@@ -628,7 +628,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
                 Boot,
                 "TIMER IRQ count={} ready={}",
                 tcount,
-                crate::kernel::framework::net::types::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+                crate::kernel::framework::net::NET_READY.load(core::sync::atomic::Ordering::Acquire)
             );
         }
 

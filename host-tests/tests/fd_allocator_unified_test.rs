@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::Path;
 
-const FD_ALLOC_RS: &str = "src/kernel/framework/proc/fd_alloc.rs";
+const FD_ALLOC_RS: &str = "src/kernel/services/proc/fd_alloc.rs";
 
 fn read_fd_alloc() -> String {
     fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -95,7 +95,7 @@ fn test_fd_range_overlaps_helper() {
 fn test_v2_subsystems_reference_fdplan() {
     // TD-02 V2: 4 个子系统的 *FD_BASE 常量必须从 FdPlan 派生, 不再硬编码字面量
     let cases: &[(&str, &str, &str)] = &[
-        ("UDS_FD_BASE",       "src/kernel/framework/net/unix.rs",         "crate::kernel::framework::proc::fd_alloc::FdPlan::UDS.base"),
+        ("UDS_FD_BASE",       "src/kernel/services/net/unix.rs",              "crate::kernel::framework::proc::fd_alloc::FdPlan::UDS.base"),
         ("EFD_FD_BASE",       "src/kernel/framework/syscall/eventfd.rs",  "crate::kernel::framework::proc::fd_alloc::FdPlan::EVENT_FD.base"),
         ("SFD_FD_BASE",       "src/kernel/framework/syscall/signalfd.rs", "crate::kernel::framework::proc::fd_alloc::FdPlan::SIGNAL_FD.base"),
         ("INOTIFY_FD_BASE",   "src/kernel/services/fs/inotify.rs",       "crate::kernel::framework::proc::fd_alloc::FdPlan::INOTIFY.base"),
@@ -121,8 +121,8 @@ fn test_v2_smoltcp_capacity_derived_from_fdplan() {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent().unwrap().join("src/kernel/framework/net/init.rs");
     let src = fs::read_to_string(&p).expect("读 init.rs");
-    assert!(src.contains("MAX_SM_FD: usize = crate::kernel::framework::proc::fd_alloc::FdPlan::SMOLTCP.capacity"),
-        "MAX_SM_FD 必须从 FdPlan::SMOLTCP.capacity 派生 (TD-02 V2)");
+    assert!(src.contains("MAX_SM_FD: usize = crate::kernel::framework::proc::FdPlan::SMOLTCP.capacity"),
+        "MAX_SM_FD 必须从 proc::FdPlan::SMOLTCP.capacity 派生 (TD-02 V2)");
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn test_v3_subsystems_use_fd_at_not_base_plus() {
     //   5. inotify.rs 通知循环 epoll_pwake
     //   6. init.rs sm_alloc_fd
     let cases: &[(&str, &str)] = &[
-        ("src/kernel/framework/net/unix.rs",            "fd_at"),
+        ("src/kernel/services/net/unix.rs",              "fd_at"),
         ("src/kernel/framework/syscall/eventfd.rs",     "fd_at"),
         ("src/kernel/framework/syscall/signalfd.rs",    "fd_at"),
         ("src/kernel/services/fs/inotify.rs",          "fd_at"),

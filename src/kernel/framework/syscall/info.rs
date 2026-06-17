@@ -33,7 +33,7 @@ pub fn sys_getppid() -> i64 {
 ///
 /// 若 pid == 0, 返回当前进程的进程组.
 pub fn sys_getpgid(pid: i32) -> i64 {
-    crate::kernel::framework::proc::session::proc_getpgid(pid)
+    crate::kernel::framework::proc::proc_getpgid(pid)
 }
 
 // ============================================================================

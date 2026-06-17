@@ -32,7 +32,7 @@ fn test_smp_cpu_online() -> TestResult {
 // ============================================================
 
 fn test_per_cpu_sched_init() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER_READY;
+    use crate::kernel::framework::proc::SCHEDULER_READY;
     check!(
         SCHEDULER_READY.load(Ordering::Acquire),
         "scheduler initialized"
@@ -41,19 +41,19 @@ fn test_per_cpu_sched_init() -> TestResult {
 }
 
 fn test_per_cpu_current_valid() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     let _current = SCHEDULER.current();
     TestResult::Pass
 }
 
 fn test_per_cpu_has_runnable() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     let _runnable = SCHEDULER.has_any_runnable();
     TestResult::Pass
 }
 
 fn test_per_cpu_time_slice_positive() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     let slice = SCHEDULER.get_time_slice();
     check!(slice > 0, "time slice > 0");
     check!(slice <= 80, "time slice within quantum range");
@@ -61,7 +61,7 @@ fn test_per_cpu_time_slice_positive() -> TestResult {
 }
 
 fn test_per_cpu_rt_count() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     let count = SCHEDULER.get_rt_count();
     check!(count <= 256, "RT task count bounded");
     TestResult::Pass
@@ -72,7 +72,7 @@ fn test_per_cpu_rt_count() -> TestResult {
 // ============================================================
 
 fn test_sched_policy_from_u32() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SchedPolicy;
+    use crate::kernel::framework::proc::SchedPolicy;
 
     assert_eq_test!(SchedPolicy::from_u32(0), SchedPolicy::Normal, "0 → Normal");
     assert_eq_test!(SchedPolicy::from_u32(1), SchedPolicy::Fifo, "1 → Fifo");
@@ -87,7 +87,7 @@ fn test_sched_policy_from_u32() -> TestResult {
 }
 
 fn test_sched_policy_discriminant() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SchedPolicy;
+    use crate::kernel::framework::proc::SchedPolicy;
     check!(SchedPolicy::Normal as u32 == 0, "Normal=0");
     check!(SchedPolicy::Fifo as u32 == 1, "Fifo=1");
     check!(SchedPolicy::Rr as u32 == 2, "Rr=2");
@@ -96,7 +96,7 @@ fn test_sched_policy_discriminant() -> TestResult {
 }
 
 fn test_sched_quota_operations() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     let test_pwm: u64 = 0xDEAD0000;
     SCHEDULER.set_quota(test_pwm, 100_000_000, 1_000_000_000);
     SCHEDULER.remove_quota(test_pwm);
@@ -104,7 +104,7 @@ fn test_sched_quota_operations() -> TestResult {
 }
 
 fn test_sched_limit_init() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     SCHEDULER.set_limit(0x100001, 5);
     SCHEDULER.remove_quota(0x100001);
     TestResult::Pass
@@ -115,8 +115,8 @@ fn test_sched_limit_init() -> TestResult {
 // ============================================================
 
 fn test_rt_policy_switching_self() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SchedPolicy;
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SchedPolicy;
+    use crate::kernel::framework::proc::SCHEDULER;
 
     let pid = SCHEDULER.current().unwrap_or(0);
     if pid == 0 {
@@ -135,8 +135,8 @@ fn test_rt_policy_switching_self() -> TestResult {
 }
 
 fn test_rt_invalid_pid() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SchedPolicy;
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SchedPolicy;
+    use crate::kernel::framework::proc::SCHEDULER;
 
     let result = SCHEDULER.set_sched_policy(0xFFFFFFFF, SchedPolicy::Fifo, 50);
     check!(!result, "invalid PID must fail");
@@ -148,13 +148,13 @@ fn test_rt_invalid_pid() -> TestResult {
 // ============================================================
 
 fn test_load_balance_no_panic() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     SCHEDULER.load_balance();
     TestResult::Pass
 }
 
 fn test_boost_priority_no_panic() -> TestResult {
-    use crate::kernel::framework::proc::scheduler::SCHEDULER;
+    use crate::kernel::framework::proc::SCHEDULER;
     SCHEDULER.boost_priority();
     TestResult::Pass
 }

@@ -316,7 +316,7 @@ impl Scheduler {
         }
 
         // 初始化进程组 ID (POSIX: 新进程默认自成一组, pgid = pid)
-        crate::kernel::framework::proc::session::proc_init_pgid(pid);
+        crate::kernel::framework::proc::proc_init_pgid(pid);
 
         Some(pid)
     }
@@ -817,7 +817,7 @@ impl Scheduler {
         let per_cpu = per_cpu();
         if let Some(pid) = self.current() {
             // 会话 leader 退出时释放控制终端
-            crate::kernel::framework::proc::session::session_leader_exit(pid);
+            crate::kernel::framework::proc::session_leader_exit(pid);
 
             let parent_pid_opt = PROCESS_TABLE.with_process(pid, |proc| {
                 let pwm = proc.get_pwm();
@@ -827,8 +827,8 @@ impl Scheduler {
 
                 // D2: 进程退出时从 cgroup 移除
                 let cg_id = proc.cgroup_id.load(core::sync::atomic::Ordering::Acquire);
-                if crate::kernel::framework::proc::cgroup::cgroup_is_initialized() {
-                    let sub = crate::kernel::framework::proc::cgroup::cgroup_subsystem();
+                if crate::kernel::framework::proc::cgroup_is_initialized() {
+                    let sub = crate::kernel::framework::proc::cgroup_subsystem();
                     if let Some(cg) = sub.find(cg_id) {
                         cg.detach_proc(pid);
                     }
@@ -966,7 +966,7 @@ impl Scheduler {
         }
 
         crate::kernel::framework::proc::oomd::OOMD.tick();
-        crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX.tick_accounting();
+        crate::kernel::framework::proc::SCHEDULER_EX.tick_accounting();
 
         // Periodic kswapd wakeup — 每 100 ticks 唤醒一次内存回收
         // (B3 完整实现: kswapd 走 softirq 路径, 由 scheduler tick 周期驱动)

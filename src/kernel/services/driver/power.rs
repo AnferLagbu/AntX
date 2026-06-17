@@ -514,8 +514,8 @@ impl PmSubsystem {
 
 /// sys_pm — 电源管理系统调用 (策略分发)
 ///
-/// `cmd`: 0=suspend, 1=get_state, 2=set_governor, 3=get_governor,
-///        4=set_max_cstate, 5=get_freq, 6=set_freq
+/// `cmd`: 0=挂起, 1=获取状态, 2=设置调速器, 3=获取调速器,
+///        4=设置最大C态, 5=获取频率, 6=设置频率
 pub fn sys_pm_dispatch(pm: &PmSubsystem, cmd: u64, a1: u64, a2: u64) -> i64 {
     if !pm.initialized.load(Ordering::Acquire) {
         return -(11i64);

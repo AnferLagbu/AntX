@@ -88,7 +88,6 @@ pub use irq_spinlock::IrqSpinLockGuard;
 pub use once_lock::OnceLock;
 pub use spinlock::{SpinLock, disable_interrupts, restore_interrupts, smp_wmb, smp_rmb, smp_mb};
 pub use mutex::Mutex;
-pub use mutex::CondVar;
 pub use rwlock::RwLock;
 pub use seqlock::SeqLock;
 pub use atomic::{atomic_add, atomic_cmpxchg, atomic_dec, atomic_inc, atomic_read, atomic_set, atomic_sub, AtomicBool};

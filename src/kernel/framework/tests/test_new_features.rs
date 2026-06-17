@@ -46,42 +46,42 @@ fn test_cow_frame_key_alignment() -> TestResult {
 }
 
 fn test_cow_ref_init() -> TestResult {
-    crate::kernel::framework::mm::cow::cow_init();
-    let count = crate::kernel::framework::mm::cow::cow_ref_count(0x1000);
+    crate::kernel::framework::mm::cow_init();
+    let count = crate::kernel::framework::mm::cow_ref_count(0x1000);
     assert_eq_test!(count, 0, "initially zero");
     TestResult::Pass
 }
 
 fn test_cow_ref_inc_dec() -> TestResult {
-    crate::kernel::framework::mm::cow::cow_init();
+    crate::kernel::framework::mm::cow_init();
     let phys = 0x5000u64;
 
-    crate::kernel::framework::mm::cow::cow_inc_ref(phys);
+    crate::kernel::framework::mm::cow_inc_ref(phys);
     assert_eq_test!(
-        crate::kernel::framework::mm::cow::cow_ref_count(phys),
+        crate::kernel::framework::mm::cow_ref_count(phys),
         1,
         "after inc=1"
     );
 
-    crate::kernel::framework::mm::cow::cow_inc_ref(phys);
+    crate::kernel::framework::mm::cow_inc_ref(phys);
     assert_eq_test!(
-        crate::kernel::framework::mm::cow::cow_ref_count(phys),
+        crate::kernel::framework::mm::cow_ref_count(phys),
         2,
         "after inc=2"
     );
 
-    let should_free = crate::kernel::framework::mm::cow::cow_dec_ref(phys);
+    let should_free = crate::kernel::framework::mm::cow_dec_ref(phys);
     check!(!should_free, "dec to 1 should not free");
     assert_eq_test!(
-        crate::kernel::framework::mm::cow::cow_ref_count(phys),
+        crate::kernel::framework::mm::cow_ref_count(phys),
         1,
         "after dec=1"
     );
 
-    let should_free = crate::kernel::framework::mm::cow::cow_dec_ref(phys);
+    let should_free = crate::kernel::framework::mm::cow_dec_ref(phys);
     check!(should_free, "dec to 0 should free");
     assert_eq_test!(
-        crate::kernel::framework::mm::cow::cow_ref_count(phys),
+        crate::kernel::framework::mm::cow_ref_count(phys),
         0,
         "after dec=0"
     );
@@ -93,34 +93,34 @@ fn test_cow_ref_inc_dec() -> TestResult {
 // ============================================================
 
 fn test_elf64_header_sizes() -> TestResult {
-    use crate::kernel::framework::proc::elf::Elf64Header;
-    use crate::kernel::framework::proc::elf::Elf64Phdr;
+    use crate::kernel::framework::proc::Elf64Header;
+    use crate::kernel::framework::proc::Elf64Phdr;
     assert_eq_test!(core::mem::size_of::<Elf64Header>(), 64, "header size");
     assert_eq_test!(core::mem::size_of::<Elf64Phdr>(), 56, "phdr size");
     TestResult::Pass
 }
 
 fn test_elf_validation_null() -> TestResult {
-    let result = crate::kernel::framework::proc::elf::elf_validate(core::ptr::null(), 64);
+    let result = crate::kernel::framework::proc::elf_validate(core::ptr::null(), 64);
     check!(result.is_none(), "null pointer rejected");
     TestResult::Pass
 }
 
 fn test_elf_validation_small() -> TestResult {
-    let result = crate::kernel::framework::proc::elf::elf_validate(&0u8 as *const u8, 10);
+    let result = crate::kernel::framework::proc::elf_validate(&0u8 as *const u8, 10);
     check!(result.is_none(), "too small rejected");
     TestResult::Pass
 }
 
 fn test_elf_magic_rejected() -> TestResult {
     let data = [0u8; 64];
-    let result = crate::kernel::framework::proc::elf::elf_validate(data.as_ptr(), 64);
+    let result = crate::kernel::framework::proc::elf_validate(data.as_ptr(), 64);
     check!(result.is_none(), "bad magic rejected");
     TestResult::Pass
 }
 
 fn test_elf_valid_minimal() -> TestResult {
-    use crate::kernel::framework::proc::elf::Elf64Header;
+    use crate::kernel::framework::proc::Elf64Header;
     let data = [0u8; 80]; // header + some room
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let hdr = unsafe { &mut *(data.as_ptr() as *mut Elf64Header) };
@@ -131,7 +131,7 @@ fn test_elf_valid_minimal() -> TestResult {
     hdr.e_ident[4] = 2; // ELFCLASS64
     hdr.e_machine = 0x3E; // x86_64
     hdr.e_phentsize = 56; // sizeof(Elf64Phdr)
-    let result = crate::kernel::framework::proc::elf::elf_validate(data.as_ptr(), 80);
+    let result = crate::kernel::framework::proc::elf_validate(data.as_ptr(), 80);
     check!(result.is_some(), "valid elf accepted");
     TestResult::Pass
 }
@@ -311,7 +311,7 @@ fn test_dyn_ipc_sem_create() -> TestResult {
 // ============================================================
 
 fn test_vma_creation() -> TestResult {
-    use crate::kernel::framework::mm::api::{Vma, VmaType};
+    use crate::kernel::framework::mm::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vma = Vma::new(0x400000, 0x401000, flags, VmaType::Anonymous);
@@ -323,7 +323,7 @@ fn test_vma_creation() -> TestResult {
 }
 
 fn test_mm_struct_operations() -> TestResult {
-    use crate::kernel::framework::mm::api::{MmStruct, Vma, VmaType};
+    use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
     let mm = MmStruct::new();
     let flags = PageFlags::PRESENT | PageFlags::USER;
@@ -345,7 +345,7 @@ fn test_mm_struct_operations() -> TestResult {
 }
 
 fn test_vma_stack_guard() -> TestResult {
-    use crate::kernel::framework::mm::api::{Vma, VmaType};
+    use crate::kernel::framework::mm::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
     let guard = Vma::new(0x700000, 0x701000, PageFlags::empty(), VmaType::Guard);
     check!(guard.is_guard(), "is_guard");

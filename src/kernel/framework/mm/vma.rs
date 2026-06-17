@@ -924,7 +924,7 @@ impl MmStruct {
         let page_size = PAGE_SIZE as usize;
         let mut addr = start;
         while addr < end_addr {
-            crate::kernel::framework::mm::swap::set_page_locked(addr as u64, true);
+            crate::kernel::framework::mm::set_page_locked(addr as u64, true);
             addr += page_size;
         }
 
@@ -961,7 +961,7 @@ impl MmStruct {
         let page_size = PAGE_SIZE as usize;
         let mut addr = start;
         while addr < end_addr {
-            crate::kernel::framework::mm::swap::set_page_locked(addr as u64, false);
+            crate::kernel::framework::mm::set_page_locked(addr as u64, false);
             addr += page_size;
         }
 

@@ -192,7 +192,7 @@ impl ExceptionHandler for PageFaultHandler {
 
         // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         if unsafe { (*frame).is_user_mode() } {
-            if crate::kernel::framework::proc::user_proc::try_expand_user_stack(fault_addr) {
+            if crate::kernel::framework::proc::try_expand_user_stack(fault_addr) {
                 return RecoveryAction::Recovered;
             }
 

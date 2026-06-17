@@ -97,7 +97,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
                     // 子进程已通过 fork 继承了父进程的 namespace
                     // 现在根据 CLONE_NEW* 创建新实例
                     let current_ns = p.namespaces.lock();
-                    crate::kernel::services::proc::namespace::NamespaceSet::clone_from(&current_ns, new_ns_flags)
+                    crate::kernel::services::proc::NamespaceSet::clone_from(&current_ns, new_ns_flags)
                 };
                 *p.namespaces.lock() = parent_ns;
             });

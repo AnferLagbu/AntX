@@ -8,7 +8,7 @@
 //! 纯类型定义 (值类型/操作码/模块结构/运行时类型), 0 unsafe.
 //! framework 仅保留 re-export.
 //!
-//! WebAssembly 1.0 Core Specification
+//! WebAssembly 1.0 核心规范
 //!
 //! 定义 WASM 虚拟机的核心数据类型:
 //! - 值类型 (i32, i64, f32, f64)

@@ -1,6 +1,5 @@
-use crate::kernel::framework::proc::scheduler_ex::{SchedulerEx, ThreadState};
-use crate::kernel::framework::proc::thread::Thread;
-use crate::kernel::framework::proc::types::{
+use crate::kernel::framework::proc::{SchedulerEx, ThreadState, Thread};
+use crate::kernel::framework::proc::{
     ThreadPriority, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM,
     SCHED_LEVEL_3_QUANTUM,
 };

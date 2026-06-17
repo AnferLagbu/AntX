@@ -63,4 +63,4 @@ pub use types::*;
 pub use init::poll_network;
 pub use wait_queue::*;
 pub use smoltcp_impl::{ChitinNetDevice, NetworkStack, init_stack, poll_stack};
-pub use init::raw;
+pub(crate) use init::raw;
