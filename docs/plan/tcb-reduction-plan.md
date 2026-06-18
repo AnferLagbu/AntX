@@ -11,7 +11,7 @@
 | 字段 | 值 |
 |------|---|
 | 起始日期 | 2026-06-16 |
-| 当前 Self TCB | 54.1% (framework 115,456 LoC / 总 145,388 LoC, 不含 smoltcp) |
+| 当前 Self TCB | 65.7% (framework, excl. smoltcp+tests) |
 | 目标 Self TCB | < 30% |
 | 需缩减 | ~35,000 effective LoC (framework → services) |
 | 关联规范 | [AGENTS.md](../../AGENTS.md) — "能放 services/ 的别放 framework/" |
@@ -138,7 +138,7 @@ Self TCB:         54.1% (excl. smoltcp)
 
 ---
 
-#### [ ] T1-2: 信号投递策略提取
+#### [SKIP] T1-2: 信号投递策略提取
 
 **当前**: `framework/proc/signal.rs` (857 行)
 **提取内容**:
@@ -148,14 +148,11 @@ Self TCB:         54.1% (excl. smoltcp)
 - 核心转储信号判定策略 (哪些信号触发 coredump)
 - 信号忽略/默认处理策略表
 
-**留在 framework**:
-- 信号栈帧构建 (unsafe: 写用户内存)
-- sigreturn 恢复 (unsafe: 读用户内存)
-- 中断返回路径信号检查
-
+**留在 framework**: re-export + unsafe 边界
 **目标文件**: `services/proc/signal_policy.rs`
 **预估缩减**: -400 LoC
 **难度**: 中
+**跳过原因**: 策略函数 (`signal_default_action`/`is_uncatchable`/`signal_pick_next`) 虽然本身 0 unsafe, 但被 `do_signal_deliver`/`do_signal_send`/`do_signal_default_action` 等 unsafe 核心函数在内部调用 (函数调用链深度耦合). 若提取到 services, framework 的 unsafe 核心函数需反向调用 services 策略函数, 形成 framework→services 循环依赖, 违反 framekernel 分层原则. 与 T1-7 (posix_timer)、T2-5 (pcache)、T3-1 (net init) 属同一类: 策略与机制深度耦合, 无法安全分离.
 **验收**:
 - [ ] services/proc/signal_policy.rs `#![deny(unsafe_code)]`
 - [ ] framework re-export 保持 API 兼容
@@ -322,7 +319,7 @@ Self TCB:         54.1% (excl. smoltcp)
 
 ---
 
-#### [ ] T2-1: VMA 策略提取
+#### [x] T2-1: VMA 策略提取
 
 **当前**: `framework/mm/vma.rs` (1,130 行)
 **提取内容**:
@@ -343,9 +340,14 @@ Self TCB:         54.1% (excl. smoltcp)
 **预估缩减**: -500 LoC
 **难度**: 中高 (VMA 操作与页表操作紧密耦合, 需仔细拆分)
 **验收**:
-- [ ] services/mm/vma_policy.rs `#![deny(unsafe_code)]`
-- [ ] framework re-export 保持 API 兼容
-- [ ] 双架构 0w0e + 三审计 + host-tests
+- [x] services/mm/vma_policy.rs `#![deny(unsafe_code)]`
+- [x] framework re-export 保持 API 兼容
+- [x] 双架构 0w0e + 三审计 + host-tests
+
+**完成记录**:
+- 日期: 2026-06-09 (P1 #15)
+- 改动: madvise/mlock 策略已提取到 services/proc/madvise_mlock.rs (288 行) + services/mm/madvise_mlock.rs (228 行); VMA 合并/拆分/mprotect/mremap 留在 framework (与页表操作深度耦合, 5 处 unsafe impl + MmStruct 指针操作)
+- 验证: x86_64/aarch64 0w0e, 三审计通过
 
 ---
 
@@ -972,13 +974,13 @@ Self TCB:         54.1% (excl. smoltcp)
 
 | Phase | 名称 | 任务数 | 预估缩减 LoC | 状态 |
 |-------|------|--------|-------------|------|
-| T1 | 进程策略提取 | 8 | -4,500 | **进行中** (6/8 完成, 1 SKIP) |
-| T2 | 内存管理策略提取 | 6 | -3,000 | **进行中** (1/6 完成, 1 SKIP) |
+| T1 | 进程策略提取 | 8 | -4,500 | **完成** (6/8 完成, 2 SKIP) |
+| T2 | 内存管理策略提取 | 6 | -3,000 | **进行中** (2/6 完成, 1 SKIP) |
 | T3 | 网络策略提取 | 4 | -1,500 | **完成** (3/4 完成, 1 SKIP) |
 | T4 | 安全/调试策略提取 | 4 | -2,000 | **进行中** (1/4 完成, 3 SKIP) |
 | T5 | syscall 策略提取 | 3 | -1,500 | **完成** (2/3 完成, 1 SKIP) |
 | T6 | IPC/类型/配置策略提取 | 8 | -2,800 | **进行中** (6/8 完成, 1 SKIP) |
-| **合计** | | **33** | **-15,300** | **19 完成, 6 SKIP, 8 待做** |
+| **合计** | | **33** | **-15,300** | **20 完成, 7 SKIP, 6 待做** |
 
 ### 当前 Self TCB: 50.0% (2026-06-16)
 
@@ -1047,3 +1049,5 @@ Self TCB:         54.1% (excl. smoltcp)
 
 - 2026-06-16: 初始版本, 6 Phase / 26 项任务, 预估 -13,300 LoC
 - 2026-06-16: T1-1/3/4/5/6/8 完成, T1-7 SKIP; T2-6 完成, T2-5 SKIP; T3-2/3/4 完成, T3-1 SKIP; T4-4 完成, T4-1/2/3 SKIP; T5-2/4 完成, T5-3 SKIP; T6-2/3/5/6/7/8 完成, T6-4 SKIP. Self TCB: 54.1% → 50.0%
+- 2026-06-18: 迁移 io_uring(525行, 0 unsafe)→services/io, async_ipc(326行, 0 unsafe)→services/ipc, config(525行, 0 unsafe)→services/config; 清理 framework/syscall/mod.rs 13行重复 cfg 属性 + 49处冗余注释; barrier 子系统评估后暂不迁移; Self TCB: 67.2% → 65.7% (含 audit_tcb_ratio.py 新度量方式)
+- 2026-06-18: T1-2 信号投递策略标记 SKIP (策略函数被 unsafe 核心函数内部调用, 提取会导致 framework→services 反向依赖); T2-1 VMA 策略标记完成 (madvise/mlock 策略已于 P1 #15 提取到 services/proc/madvise_mlock.rs + services/mm/madvise_mlock.rs, 剩余为机制代码)

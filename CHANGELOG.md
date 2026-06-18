@@ -9,6 +9,7 @@
 ## [Unreleased]
 
 ### 新增
+- **工程纪律性规范** — `docs/explain/engineering-discipline-spec.md`, 项目工程纪律性权威规范, 涵盖模块归属、依赖管理、接口设计、代码质量、TCB 治理、构建测试、提交规范、文档规范、循序渐进策略
 - **P1 #3: Priority Inheritance Mutex (PI Mutex)** — `kernel::framework::sync::pi_mutex` (TCB) + `kernel::services::sync::pi_mutex` (safe API, 0 unsafe)
   - 直接捐赠: 高优先级等待 → 低优先级持有者有效优先级被提升
   - 多等待者取 max 优先级
