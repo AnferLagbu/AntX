@@ -9,6 +9,7 @@
 ## [Unreleased]
 
 ### 新增
+- **TD-22 注释语言审计: services 迁移记录豁免** — `scripts/audit_comment_language.py` 新增 `is_migration_note` 规则, 覆盖 `// 已迁移到 services: sys_xxx, sys_yyy, ...` 多行列表 (含续行状态机) + `//! 依赖 framework safe API (..._safe)` 模式. 6 个回归测试通过 (`scripts/tests/test_audit_comment_language.py`), 重新达成"0 违规"硬阈值. 解决 2026-06-18 实际回归的 3 处违规: `src/kernel/services/ipc/async_ipc.rs:14` + `src/kernel/framework/syscall/mod.rs:752, 765`
 - **工程纪律性规范** — `docs/explain/engineering-discipline-spec.md`, 项目工程纪律性权威规范, 涵盖模块归属、依赖管理、接口设计、代码质量、TCB 治理、构建测试、提交规范、文档规范、循序渐进策略
 - **P1 #3: Priority Inheritance Mutex (PI Mutex)** — `kernel::framework::sync::pi_mutex` (TCB) + `kernel::services::sync::pi_mutex` (safe API, 0 unsafe)
   - 直接捐赠: 高优先级等待 → 低优先级持有者有效优先级被提升
@@ -27,6 +28,9 @@
   - 5 个 no_std 单元测试 (stream echo / dgram echo / EADDRINUSE / EAGAIN / listener cancel)
   - 6 个 syscalls (socket/bind/listen/accept/connect/sendto/recvfrom) 按 `sun_family` + FD 范围分流到 UDS 或 smoltcp
   - DECISION-006 (UDS 不入 VFS inode) / DECISION-007 (DGRAM 单消息排队) / DECISION-008 (阻塞退化为 EAGAIN)
+
+### 修复
+- **host-test 预存问题: `irq_spinlock_adopted_in_migrated_files` 与 io/iouring.rs 迁移后状态不一致** — `framework/io/iouring.rs` 已于 2026-06-18 迁移到 services 层, framework 仅 re-export, 不再直接导入 IrqSpinLock. 从 host-test 期望列表中移除 `io/iouring.rs` (与 cgroup/namespace/seccomp 一致), 72 个 host-test 套件全部通过
 
 ---
 

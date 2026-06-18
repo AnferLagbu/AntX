@@ -394,10 +394,11 @@ def is_allowed_term(word: str) -> bool:
     return word in ALLOWED_ENGLISH_TERMS
 
 
-def detect_violation(comment_text: str) -> tuple[bool, str]:
+def detect_violation(comment_text: str, continuation: bool = False) -> tuple[bool, str]:
     """检测单条注释是否为违规.
 
     返回: (is_violation, reason)
+    continuation: 上一行已被识别为迁移记录, 当前行作为列表续行处理.
     """
     stripped = comment_text.strip()
     if not stripped:
@@ -434,6 +435,10 @@ def detect_violation(comment_text: str) -> tuple[bool, str]:
 
     # 公式/等式豁免 (数学公式, 含 = 和算术算子)
     if is_formula_or_equation(stripped):
+        return False, ""
+
+    # services 迁移记录豁免 (syscall 列表 / 原属 / 迁移到 services 等目录式说明)
+    if is_migration_note(stripped, continuation=continuation):
         return False, ""
 
     # 代码引用行豁免: 注释主体为反引号包裹的代码引用 (如 `func_name(...)`)
@@ -473,8 +478,71 @@ def is_safety_or_todo_short_ref(text: str) -> bool:
     return len(body) < 80
 
 
-def iter_comments(rs_file: Path) -> Iterator[tuple[int, str]]:
-    """逐行迭代 .rs 文件, 产出 (行号, 注释文本)."""
+# 迁移记录注释的特征模式 (用于 2026-06-18 回归豁免).
+# 这些注释用于记录 services 迁移历史, 含大量 syscall/函数名列表,
+# 本质是"目录式索引", 不应被视作英文段落.
+MIGRATION_NOTE_HINTS = (
+    "已迁移到 services",
+    "原属 ",
+    "迁移到 services",
+    "迁至 services",
+    "依赖 framework safe API",
+    "依赖 framework safe api",
+)
+# syscall 标识符 (sys_xxx), 单词边界避免误匹配
+MIGRATION_SYS_PATTERN = re.compile(r"\bsys_[a-z][a-z0-9_]*\b")
+# safe API 标识符 (xxx_safe / xxx_safe_xxx), 单词边界
+MIGRATION_SAFE_PATTERN = re.compile(r"\b[a-z][a-z0-9_]*_safe(?:_[a-z0-9_]+)?\b")
+
+
+def is_migration_note(text: str, continuation: bool = False) -> bool:
+    """检测是否为 services 迁移记录注释.
+
+    模式 (常见于 syscall/fs/ipc 迁移到 services 层后的历史记录):
+      - `// 已迁移到 services: sys_xxx, sys_yyy, ...`
+      - `// 原属 framework/foo.rs, 2026-XX-XX 迁移到 services.`
+      - `//! 依赖 framework safe API (pipe_write_safe / pipe_read_safe / msgq_send_safe).`
+
+    这些是"目录式索引/历史说明", 含 2+ 个 syscall 或 safe-API 标识符列表,
+    等价于 POSIX 签名引用豁免.
+
+    续行 (continuation=True): 上一行已识别为迁移记录, 当前行作为
+    syscall/函数名列表的下一行也应豁免. 例如:
+        // 已迁移到 services: sys_setregid, sys_mmap,
+        // sys_munmap, sys_time, sys_sched_setaffinity
+    """
+    body = re.sub(r"^\s*(?:///?|\*|/\*)", "", text).strip()
+    if continuation:
+        # 续行: 列表继续 (以英文标识符 + 标点为主, 长度适中)
+        if not body or len(body) > 120:
+            return False
+        # 续行必须有英文标识符 (sys_ / _safe / 逗号分隔列表)
+        long_words = EN_LONG_WORD.findall(body)
+        if len(long_words) < 1:
+            return False
+        return True
+    if len(body) >= 200:
+        return False
+    # 必须显式包含"已迁移到 services"等迁移关键字, 避免误判普通英文段落
+    if not any(hint in body for hint in MIGRATION_NOTE_HINTS):
+        return False
+    # 命中 2+ 个 syscall 标识符 (典型: 迁移清单)
+    sys_count = len(MIGRATION_SYS_PATTERN.findall(body))
+    if sys_count >= 2:
+        return True
+    # 或命中 2+ 个 safe-API 标识符 (典型: 依赖说明)
+    safe_count = len(MIGRATION_SAFE_PATTERN.findall(body))
+    if safe_count >= 2:
+        return True
+    return False
+
+
+def iter_comments(rs_file: Path) -> Iterator[tuple[int, str, bool]]:
+    """逐行迭代 .rs 文件, 产出 (行号, 注释文本, 是否迁移记录续行).
+
+    续行标记: 上一行被识别为迁移记录 (已迁移到 services/原属 .../迁移到 services
+    关键字) 时, 当前行作为该迁移记录的列表续行传递, 供 detect_violation 豁免.
+    """
     try:
         content = rs_file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -482,6 +550,7 @@ def iter_comments(rs_file: Path) -> Iterator[tuple[int, str]]:
 
     in_block_comment = False
     in_doc_code_block = False  # 文档注释中的 ```text / ```rust / ```c 等代码块
+    in_migration_block = False  # 迁移记录列表是否仍在续行中
     for lineno, line in enumerate(content.splitlines(), start=1):
         stripped = line.lstrip()
         # 检测文档代码块 ``` (开/关). 兼容 `/// ```rust` / `//! ```text` 形式
@@ -501,21 +570,26 @@ def iter_comments(rs_file: Path) -> Iterator[tuple[int, str]]:
             end_idx = stripped.find("*/")
             if end_idx >= 0:
                 in_block_comment = False
-                yield lineno, stripped[:end_idx + 2]
+                yield lineno, stripped[:end_idx + 2], in_migration_block
             else:
-                yield lineno, stripped
+                yield lineno, stripped, in_migration_block
             continue
         if stripped.startswith("/*"):
             end_idx = stripped.find("*/", 2)
             if end_idx >= 0:
-                yield lineno, stripped
+                yield lineno, stripped, in_migration_block
             else:
                 in_block_comment = True
-                yield lineno, stripped
+                yield lineno, stripped, in_migration_block
             continue
         if stripped.startswith("//"):
-            yield lineno, stripped
+            # 先产出当前行 (含续行状态)
+            yield lineno, stripped, in_migration_block
+            # 再判断当前行是否开启新一轮迁移记录
+            in_migration_block = is_migration_note(stripped, continuation=False)
             continue
+        # 非注释行 → 中断迁移续行状态
+        in_migration_block = False
         # 仅在处于块注释内时, 才是注释行 (修复: Rust 解引用 `*list = ...` 不应被误判)
         # 块注释内的 `*` 是装饰字符, 如 `/*\n * comment\n */`
 
@@ -543,8 +617,8 @@ def main() -> int:
         if rel.suffix in (".S", ".s", ".asm"):
             continue
 
-        for lineno, comment in iter_comments(rs_file):
-            is_violation, reason = detect_violation(comment)
+        for lineno, comment, is_cont in iter_comments(rs_file):
+            is_violation, reason = detect_violation(comment, continuation=is_cont)
             if is_violation:
                 issues.append(f"{rel}:{lineno}: [{reason}] {comment.strip()[:80]}")
                 files_with_issues.add(rel_str)

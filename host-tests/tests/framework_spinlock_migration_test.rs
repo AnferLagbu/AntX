@@ -106,9 +106,8 @@ fn irq_spinlock_adopted_in_migrated_files() {
         "arch/shadow_stack.rs",
         "credo/secure_boot.rs",
         "debug/ebpf.rs",
-        "io/iouring.rs",
         "proc/process.rs",
-        // cgroup/namespace/seccomp 已迁移到 services 层, framework 仅 re-export
+        // cgroup/namespace/seccomp/io_uring 已迁移到 services 层, framework 仅 re-export
         // driver/power.rs, mm/numa.rs 不使用 IrqSpinLock
     ];
     for f in files {

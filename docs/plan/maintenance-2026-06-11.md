@@ -2192,6 +2192,8 @@ POSIX 未明确规定, Linux kill() 返回 ESRCH.
 - 简述: 第一阶段清理 70→30. 新增公式豁免 + 代码引用行豁免; 翻译 40 处英文注释.
 - 日期: 2026-06-15
 - 简述: 第二阶段清理 30→0. 补充白名单术语 + 翻译 26 处英文注释. 593 个 .rs 文件 0 违规.
+- 日期: 2026-06-18
+- 简述: 增补 `is_migration_note` 豁免规则 — 覆盖 `// 已迁移到 services: sys_xxx, sys_yyy, ...` 多行列表 (含续行状态机) + `//! 依赖 framework safe API (..._safe)` 模式. 解决 3 处回归: `src/kernel/services/ipc/async_ipc.rs:14` + `src/kernel/framework/syscall/mod.rs:752, 765`. 新增 6 个回归测试 (`scripts/tests/test_audit_comment_language.py`). 651 个 .rs 文件 0 违规. 同步修复 host-test 预存问题: `irq_spinlock_adopted_in_migrated_files` 期望列表移除 `io/iouring.rs` (2026-06-18 已迁 services, framework 仅 re-export). 72 个 host-test 套件 0 failed.
 
 ---
 
