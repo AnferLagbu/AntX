@@ -11,7 +11,7 @@
 | 字段 | 值 |
 |------|---|
 | 起始日期 | 2026-06-16 |
-| 当前 TCB 比率 | 47.7% (自研, excl. smoltcp) |
+| 当前 TCB 比率 | 65.7% (自研, excl. smoltcp+tests) |
 | 初始 framework 跨模块引用 | 402 处 |
 | 当前 framework 跨模块引用 | 352 处 (↓ 12.4%) |
 | 初始 services→framework 依赖 | 215 处 |
@@ -326,7 +326,7 @@
 - [x] 全量审计脚本通过
 - [x] 双架构编译通过
 - [x] 依赖矩阵无循环
-- [ ] TCB 比率 < 30% — 当前 47.7% (自研 TCB, excl. smoltcp; framework 自研 102844 行 / services 42116 行), L-01/L-02/L-03 中间层架构已建立, T-01~T-05 trait 注入完成, 已删除 62 个冗余 syscall 分支 + 44 个死函数 (减少 ~2049 行). framework 中 33660 行 safe 函数为潜在迁移候选, 需后续渐进式将策略代码迁移到 services
+- [ ] TCB 比率 < 30% — 当前 65.7% (自研 TCB, excl. smoltcp+tests). 2026-06-18 进展: T1-2 信号投递策略评估后 SKIP (策略与机制深度耦合, 提取会导致反向依赖); T2-1 VMA 策略标记完成 (madvise/mlock 已于 P1 #15 提取). 剩余候选: PMM policy(T2-2, 33 unsafe), slab policy(T2-3, 58 unsafe), swap policy(T2-4, 14 unsafe), syscall dispatch(T5-1, 80 unsafe), IPC msgq(T6-1, 18 unsafe) — 均涉及深度 unsafe 耦合, 需更激进架构重构
 - [x] 更新 framekernel-dev-guide.md — 场景 5 策略注入示例更新为实际实现的 trait 名称 (SchedDecision/MlfqPolicy), 新增已实现 trait 抽象表 (T-01~T-05)
 
 ---
@@ -350,3 +350,7 @@
 | 2026-06-17 | services 层全面内部访问治理: proc→process::PROCESS_TABLE/types::Pid/signal::do_signal_send→proc 顶层; fs→vfs::api/vfs::types→fs 顶层; sync→mutex::Mutex/once_lock::OnceLock→sync 顶层; mm→vma::MmStruct→mm 顶层. framework re-export 扩展: sync lockdep 全量 (LockClassId/LockKind/register_class/acquire/release/irq_enter/irq_exit 等), syscall sendfile (sys_sendfile/sys_splice/SPLICE_F_*), chitin devtree/firmware glob, debug api/ebpf/ftrace/kgdb glob, credo secure_boot glob, driver power/kexec/uefi glob, timer tickless/time_sync glob. 审计脚本 INTERNAL_PATTERNS 同步更新. 双架构编译+clippy+四项审计全部通过 | AI |
 | 2026-06-17 | 预存问题修复: syscall_register 无限递归 (api.rs 调用 super:: 被自身 re-export 捕获) → 删除三层死代码 (api::syscall_register/usermode::register_syscall_handler/services::register_handler). services 层剩余内部访问消除: arch::shadow_stack→arch (glob re-export), io::iouring→io (glob re-export). 审计脚本同步更新. 双架构编译+clippy 0 warning+四项审计全部通过 | AI |
 | 2026-06-17 | framework 层跨子系统内部访问消除: mm→sync::spinlock (5处: vmm_x86_64/vmm_aarch64/pmm/kmalloc/kmalloc_slab) 改用 sync 顶层; mm→mm::api (kpti/kpti_aarch64) 改用 mm 顶层; mm→mm::page_fault (swap) 改用 mm 顶层; proc→lib::cstr (api) 改用 lib 顶层; fs→lib::cstr (vfs/api) 改用 lib 顶层; mm→mm::vmm (mod.rs map_framebuffer) 改用 mm 顶层. 双架构编译+clippy 0 warning+四项审计全部通过 | AI |
+| 2026-06-18 | TCB 缩减进展: 迁移 io_uring(525行, 0 unsafe)→services/io, async_ipc(326行, 0 unsafe)→services/ipc, config(525行, 0 unsafe)→services/config; 清理 framework/syscall/mod.rs 13行重复 #[cfg(feature="net")] 属性 + 49处冗余"已迁移"注释精简; barrier 子系统评估后暂不迁移 (snapshot/bbr/audit/parallel 深度依赖 RECOVERY_MANAGER/DomainState); TCB 67.2%→65.7%; 双架构 0w0e + 三审计通过 | AI |
+| 2026-06-18 | TCB 候选评估: T1-2 信号投递策略 SKIP (策略函数被 unsafe 核心函数内部调用, 提取导致反向依赖); T2-1 VMA 策略完成 (madvise/mlock 已于 P1 #15 提取); T2-2/T2-3/T2-4/T5-1/T6-1 评估: 均涉及深度 unsafe 耦合 (33/58/14/80/18 处 unsafe), 需更激进架构重构. tcb-reduction-plan.md 同步更新 (20完成/7SKIP/6待做) | AI |
+| 2026-06-18 | 新增工程纪律性规范: `docs/explain/engineering-discipline-spec.md` — 模块归属/依赖管理/接口设计/代码质量/TCB治理/构建测试/提交规范/文档规范/循序渐进策略. framekernel-dev-guide.md 交叉引用更新. CHANGELOG.md 记录 | AI |
+| 2026-06-18 | 工程纪律性规范扩充: 新增 §5 中断上下文纪律、§6 并发与原子操作纪律、§7 资源生命周期纪律、§8 多架构兼容纪律、§9 启动顺序依赖纪律、§10 安全不变式自检、§11 性能热路径纪律. 提交检查清单扩展为 16 项 (基础/耦合/内核安全/多架构) | AI |

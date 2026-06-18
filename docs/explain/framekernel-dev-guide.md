@@ -444,6 +444,7 @@ pub fn alloc_page_raw() -> *mut u8 { ... }  // 暴露裸指针给 services
 
 - 依赖:
   - [framekernel-nature.md](./framekernel-nature.md) — 框内核定义与原理, 必读背景.
+  - [engineering-discipline-spec.md](./engineering-discipline-spec.md) — 工程纪律性规范, 权威规则定义.
   - [docs/README.md](../README.md) — 文档格式规范.
   - [src/kernel/framework/mod.rs](file:///home/anfer/Code/AntX/src/kernel/framework/mod.rs) — framework 入口与 SAFETY 规范.
   - [src/kernel/services/mod.rs](file:///home/anfer/Code/AntX/src/kernel/services/mod.rs) — services 入口与 Safe Rust 契约.
