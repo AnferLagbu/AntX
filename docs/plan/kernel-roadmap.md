@@ -258,8 +258,8 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [x] C7: KPTI + Seccomp → 2026-06-10 完成 (KPTI 双架构全功能; Seccomp framework/proc/seccomp.rs Strict/Filter 模式 + sys_seccomp/prctl + fork 继承)
 
 ### Phase D
-- [ ] NUMA 感知
-- [ ] cgroup 控制器
+- [x] D2: cgroup 控制器 → 2026-06-10 完成 (见 D2 详细行)
+- [x] D3: NUMA 感知 → 2026-06-10 完成 (见 D3 详细行)
 - [x] D1: Namespace 完整隔离 → 2026-06-10 完成 (framework/proc/namespace.rs 7 种 ns + NamespaceSet + clone_from/unshare/setns; Process 集成 + fork 继承 + CLONE_NEW*; sys_unshare/sys_setns + linuxulator; services/proc/namespace.rs 安全封装)
 - [x] D2: cgroup 控制器 → 2026-06-10 完成 (framework/proc/cgroup.rs CPU/内存/PID/IO 四控制器 + CgroupRq + CgroupSubsystem; Process 集成 + fork 继承 + exit 清理; 5 个 syscall + services/proc/cgroup.rs 安全封装)
 - [x] D3: NUMA 感知 → 2026-06-10 完成 (framework/mm/numa.rs NumaNode/NumaTopology/NumaMempolicy + 距离矩阵 + UMA 回退; Process numa_policy + fork 继承; 4 个 syscall + linuxulator + services/mm/numa.rs 安全封装)
