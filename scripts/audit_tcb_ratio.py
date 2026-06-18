@@ -22,10 +22,27 @@ TARGET_DIR = BASE / 'target' / 'audit'
 TCB_TARGET_RATIO = 30.0  # 目标: TCB 占比 < 30%
 
 
-def count_loc(directory: Path) -> int:
+def _should_exclude(rs: Path) -> bool:
+    """判断文件是否应排除出 TCB 统计 (测试代码、第三方库)"""
+    parts = rs.relative_to(BASE).parts
+    # framework/tests/ — 测试代码不参与运行时执行, 不是 TCB
+    if 'tests' in parts:
+        idx = parts.index('tests')
+        # framework/tests/ 下的测试文件
+        if idx > 0 and parts[idx - 1] == 'framework':
+            return True
+    # smoltcp 由单独逻辑排除
+    if 'smoltcp' in parts:
+        return True
+    return False
+
+
+def count_loc(directory: Path, apply_exclusions: bool = True) -> int:
     """统计 .rs 文件行数 (不含空行和纯注释行)"""
     total = 0
     for rs in directory.rglob('*.rs'):
+        if apply_exclusions and _should_exclude(rs):
+            continue
         with open(rs, 'r', encoding='utf-8', errors='replace') as f:
             for line in f:
                 stripped = line.strip()
@@ -34,19 +51,23 @@ def count_loc(directory: Path) -> int:
     return total
 
 
-def count_loc_raw(directory: Path) -> int:
+def count_loc_raw(directory: Path, apply_exclusions: bool = True) -> int:
     """统计 .rs 文件总行数 (含空行和注释)"""
     total = 0
     for rs in directory.rglob('*.rs'):
+        if apply_exclusions and _should_exclude(rs):
+            continue
         with open(rs, 'r', encoding='utf-8', errors='replace') as f:
             total += sum(1 for _ in f)
     return total
 
 
-def count_unsafe(directory: Path) -> int:
+def count_unsafe(directory: Path, apply_exclusions: bool = True) -> int:
     """统计 unsafe 行数 (不含注释、#![deny] 等)"""
     count = 0
     for rs in directory.rglob('*.rs'):
+        if apply_exclusions and _should_exclude(rs):
+            continue
         with open(rs, 'r', encoding='utf-8', errors='replace') as f:
             for line in f:
                 stripped = line.strip()
@@ -60,10 +81,12 @@ def count_unsafe(directory: Path) -> int:
     return count
 
 
-def count_pub_fn(directory: Path) -> int:
+def count_pub_fn(directory: Path, apply_exclusions: bool = True) -> int:
     """统计 pub fn 数量"""
     count = 0
     for rs in directory.rglob('*.rs'):
+        if apply_exclusions and _should_exclude(rs):
+            continue
         with open(rs, 'r', encoding='utf-8', errors='replace') as f:
             for line in f:
                 if 'pub fn ' in line or 'pub async fn ' in line:
@@ -75,7 +98,7 @@ def module_breakdown(directory: Path) -> dict:
     """按子目录统计"""
     result = {}
     for subdir in sorted(directory.iterdir()):
-        if subdir.is_dir() and subdir.name != 'smoltcp':
+        if subdir.is_dir() and subdir.name not in ('smoltcp', 'tests'):
             loc = count_loc_raw(subdir)
             unsafe = count_unsafe(subdir)
             if loc > 0:
@@ -88,9 +111,17 @@ def module_breakdown(directory: Path) -> dict:
     if smoltcp.is_dir():
         # smoltcp 是第三方库, 不计入自研 TCB
         result['smoltcp (3rd-party)'] = {
-            'loc': count_loc_raw(smoltcp),
-            'unsafe': count_unsafe(smoltcp),
+            'loc': count_loc_raw(smoltcp, apply_exclusions=False),
+            'unsafe': count_unsafe(smoltcp, apply_exclusions=False),
             'note': 'third-party, excluded from self-developed TCB',
+        }
+    # tests 单独统计
+    tests = directory / 'tests'
+    if tests.is_dir():
+        result['tests (excluded)'] = {
+            'loc': count_loc_raw(tests, apply_exclusions=False),
+            'unsafe': count_unsafe(tests, apply_exclusions=False),
+            'note': 'test code, excluded from TCB (not runtime)',
         }
     return result
 
@@ -108,12 +139,17 @@ def main():
     total_loc = fw_loc + sv_loc
     tcb_ratio = (fw_loc / total_loc * 100) if total_loc > 0 else 0
 
-    # smoltcp 排除后的自研 TCB
+    # smoltcp / tests 排除后的自研 TCB
+    # count_loc / count_loc_raw 已通过 _should_exclude 排除 smoltcp 和 tests,
+    # fw_loc 即为自研非测试 effective 行数
     smoltcp_dir = FRAMEWORK / 'net' / 'smoltcp'
-    smoltcp_loc = count_loc_raw(smoltcp_dir) if smoltcp_dir.is_dir() else 0
-    smoltcp_loc_eff = count_loc(smoltcp_dir) if smoltcp_dir.is_dir() else 0
-    self_fw_loc_raw = fw_loc_raw - smoltcp_loc
-    self_fw_loc = fw_loc - smoltcp_loc_eff
+    smoltcp_loc = count_loc_raw(smoltcp_dir, apply_exclusions=False) if smoltcp_dir.is_dir() else 0
+    smoltcp_loc_eff = count_loc(smoltcp_dir, apply_exclusions=False) if smoltcp_dir.is_dir() else 0
+    tests_dir = FRAMEWORK / 'tests'
+    tests_loc = count_loc_raw(tests_dir, apply_exclusions=False) if tests_dir.is_dir() else 0
+    tests_loc_eff = count_loc(tests_dir, apply_exclusions=False) if tests_dir.is_dir() else 0
+    self_fw_loc_raw = fw_loc_raw  # 已排除 smoltcp + tests
+    self_fw_loc = fw_loc          # 已排除 smoltcp + tests
     self_tcb_ratio = (self_fw_loc / total_loc * 100) if total_loc > 0 else 0
 
     # 模块级分解
@@ -136,9 +172,13 @@ def main():
             'modules': sv_modules,
         },
         'tcb_ratio': round(tcb_ratio, 1),
-        'self_developed_tcb_ratio': round(self_tcb_ratio, 1),
         'target_ratio': TCB_TARGET_RATIO,
-        'status': 'PASS' if self_tcb_ratio < TCB_TARGET_RATIO else 'EXCEEDED',
+        'status': 'PASS' if tcb_ratio < TCB_TARGET_RATIO else 'EXCEEDED',
+        'exclusions': {
+            'smoltcp_loc': smoltcp_loc,
+            'tests_loc': tests_loc,
+            'note': 'smoltcp (3rd-party) and tests (non-runtime) excluded from TCB',
+        },
     }
 
     # 输出
@@ -148,11 +188,11 @@ def main():
     print(f"  framework:  {fw_loc_raw:>10,} LoC (raw), {fw_loc:>10,} (effective)")
     print(f"  services:   {sv_loc_raw:>10,} LoC (raw), {sv_loc:>10,} (effective)")
     print(f"  smoltcp:    {smoltcp_loc:>10,} LoC (3rd-party, excluded from self-TCB)")
-    print(f"  self-fw:    {self_fw_loc_raw:>10,} LoC (raw, excluding smoltcp)")
+    print(f"  tests:      {tests_loc:>10,} LoC (test code, excluded from TCB)")
+    print(f"  self-fw:    {self_fw_loc_raw:>10,} LoC (raw, excl. smoltcp+tests)")
     print(f"  unsafe:     {fw_unsafe:>10,} lines (framework), {sv_unsafe:>5,} (services)")
     print(f"  pub fn:     {fw_pub_fn:>10,} (framework), {sv_pub_fn:>5,} (services)")
-    print(f"  TCB ratio:  {tcb_ratio:>10.1f}% (incl. smoltcp)")
-    print(f"  Self TCB:   {self_tcb_ratio:>10.1f}% (excl. smoltcp)")
+    print(f"  TCB ratio:  {tcb_ratio:>10.1f}% (excl. smoltcp+tests)")
     print(f"  Target:     <{TCB_TARGET_RATIO:.0f}%")
     print(f"  Status:     {report['status']}")
     print("=" * 70)
@@ -172,8 +212,8 @@ def main():
     print(f"\nJSON report: {json_path}")
 
     # 退出码
-    if self_tcb_ratio >= TCB_TARGET_RATIO:
-        print(f"\n⚠  TCB ratio ({self_tcb_ratio:.1f}%) exceeds target (<{TCB_TARGET_RATIO:.0f}%)")
+    if tcb_ratio >= TCB_TARGET_RATIO:
+        print(f"\n⚠  TCB ratio ({tcb_ratio:.1f}%) exceeds target (<{TCB_TARGET_RATIO:.0f}%)")
         # 不以超标退出, 仅警告
         # sys.exit(1)
 

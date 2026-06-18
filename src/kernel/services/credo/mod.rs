@@ -29,6 +29,8 @@ pub mod identity;
 pub mod secure_boot;
 pub mod policy;
 pub mod sessions;
+/// Credo 认证策略 — PWM 登录/登出/创建/删除/验证/授权
+pub mod auth;
 /// T6-8: SHA-256 哈希实现 (原 framework/credo/sha256.rs)
 pub mod sha256;
 /// T6-7: Credo 类型定义 (原 framework/credo/types.rs)

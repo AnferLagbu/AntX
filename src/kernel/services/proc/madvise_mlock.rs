@@ -209,7 +209,7 @@ pub type MlockResult<T> = Result<T, MlockError>;
 ///
 /// 返回 0 = 成功, MlockError 表示失败原因
 pub fn madvise(addr: usize, len: usize, advice: Advice) -> MlockResult<()> {
-    let rc = fw_ml::sys_madvise(addr as u64, len as u64, advice.as_u32());
+    let rc = fw_ml::sys_madvise(addr as u64, len as u64, advice.as_u32() as u64);
     if rc == 0 {
         Ok(())
     } else {
@@ -249,7 +249,7 @@ pub fn munlock(addr: usize, len: usize) -> MlockResult<()> {
 
 /// 进程级锁定 (MCL_CURRENT 锁现有 / MCL_FUTURE 锁未来)
 pub fn mlockall(flags: MlockAllFlags) -> MlockResult<()> {
-    let rc = fw_ml::sys_mlockall(flags.bits());
+    let rc = fw_ml::sys_mlockall(flags.bits() as u64);
     if rc == 0 {
         Ok(())
     } else {

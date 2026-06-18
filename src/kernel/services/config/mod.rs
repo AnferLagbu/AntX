@@ -22,6 +22,12 @@ pub mod kaslr;
 pub mod caps;
 /// 内存布局常量 (原 framework/config/memory.rs)
 pub mod memory;
+/// /proc/sys/config 接口 (原 framework/config/procfs.rs)
+pub mod procfs;
+/// ConfigSummary 启动期编码 (原 framework/config/boot_image.rs)
+pub mod boot_image;
+/// 启动自检 (原 framework/config/validate.rs)
+pub mod validate;
 
 pub use error::ConfigError;
 pub use sched::*;

@@ -292,7 +292,7 @@ fn as_ret(r: Result<usize, Errno>) -> i64 {
 impl SyscallDispatch for ServicesSyscallDispatch {
     fn dispatch(&self, num: u64, args: [u64; 6]) -> i64 {
         use crate::kernel::services::syscall::types::*;
-        let [a0, a1, a2, a3, a4, _a5] = args;
+        let [a0, a1, a2, a3, a4, a5] = args;
 
         match num {
             // ==================== 文件 I/O (已迁移) ====================
@@ -371,6 +371,22 @@ impl SyscallDispatch for ServicesSyscallDispatch {
             QX_SETEUID => as_ret(crate::kernel::services::credo::uid::seteuid_syscall(a0 as u32)),
             QX_SETEGID => as_ret(crate::kernel::services::credo::uid::setegid_syscall(a0 as u32)),
             QX_SETREUID => as_ret(crate::kernel::services::credo::uid::setreuid_syscall(a0 as u32, a1 as u32)),
+            // QX_SETREGID 与 QX_SETREUID 共享编号 599, 由 framework 回退处理
+
+            // ==================== 进程优先级 (已迁移) ====================
+            QX_NICE => crate::kernel::services::proc::priority::nice_syscall(a0 as i32),
+            QX_GETPRIORITY => crate::kernel::services::proc::priority::getpriority_syscall(a0 as i32, a1 as u32),
+            QX_SETPRIORITY => crate::kernel::services::proc::priority::setpriority_syscall(a0 as i32, a1 as u32, a2 as i32),
+
+            // ==================== CPU 亲和性 (已迁移) ====================
+            QX_SCHED_SETAFFINITY => crate::kernel::services::proc::affinity::sched_setaffinity_syscall(a0 as i32, a1 as u32, a2),
+            QX_SCHED_GETAFFINITY => crate::kernel::services::proc::affinity::sched_getaffinity_syscall(a0 as i32, a1 as u32, a2),
+
+            // ==================== 进程生命周期 (已迁移) ====================
+            QX_FORK => crate::kernel::services::proc::lifecycle::fork_syscall(),
+            QX_EXIT => crate::kernel::services::proc::lifecycle::exit_syscall(a0 as i32),
+            QX_EXIT_GROUP => crate::kernel::services::proc::lifecycle::exit_syscall(a0 as i32),
+            QX_SCHED_YIELD => crate::kernel::services::proc::lifecycle::sched_yield_syscall(),
 
             // ==================== 同步原语 (已迁移) ====================
             QX_FUTEX => {
@@ -382,6 +398,118 @@ impl SyscallDispatch for ServicesSyscallDispatch {
                     Err(e) => e.as_ret(),
                 }
             }
+
+            // ==================== 系统信息 (已迁移) ====================
+            QX_GETRUSAGE => crate::kernel::services::proc::sysinfo::getrusage_syscall(a0 as i32, a1),
+            QX_SYSINFO => crate::kernel::services::proc::sysinfo::sysinfo_syscall(a0),
+            QX_GETRLIMIT => crate::kernel::services::proc::sysinfo::getrlimit_syscall(a0 as i32, a1),
+            QX_CLOCK_GETTIME => crate::kernel::services::fs::file_ops::clock_gettime_syscall(a0 as i32, a1),
+
+            // ==================== 文件操作 (已迁移) ====================
+            QX_IOCTL => crate::kernel::services::fs::file_ops::ioctl_syscall(a0 as i32, a1, a2),
+            QX_POLL => crate::kernel::services::fs::file_ops::poll_syscall(a0, a1 as u32, a2 as i32),
+            QX_SELECT => crate::kernel::services::fs::file_ops::poll_syscall(a0, a1 as u32, a2 as i32),
+            QX_CHOWN => crate::kernel::services::fs::file_ops::chown_syscall(a0, a1 as u32, a2 as u32),
+            QX_TRUNCATE => crate::kernel::services::fs::file_ops::truncate_syscall(a0, a1 as i64),
+            QX_FTRUNCATE => crate::kernel::services::fs::file_ops::ftruncate_syscall(a0 as i32, a1 as i64),
+            QX_FLOCK => crate::kernel::services::fs::file_ops::flock_syscall(a0 as i32, a1 as i32),
+            QX_LSEEK => crate::kernel::services::fs::dir_ops::lseek_syscall(a0 as i32, a1 as i64, a2 as i32),
+            QX_GETDENTS => crate::kernel::services::fs::dir_ops::getdents_syscall(a0 as i32, a1, a2),
+
+            // ==================== inotify (已迁移) ====================
+            QX_INOTIFY_INIT1 => crate::kernel::services::fs::inotify::sys_inotify_init1(a0 as i32),
+            QX_INOTIFY_ADD_WATCH => crate::kernel::services::fs::inotify::sys_inotify_add_watch(a0 as i64, a1 as u32, a2 as u32),
+            QX_INOTIFY_RM_WATCH => crate::kernel::services::fs::inotify::sys_inotify_rm_watch(a0 as i64, a1 as i32),
+
+            // ==================== 内存建议与锁定 (已迁移) ====================
+            QX_MMAP => crate::kernel::services::mm::mmap::mmap_syscall_entry(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5),
+            QX_MUNMAP => crate::kernel::services::mm::mmap::munmap_syscall_entry(a0, a1),
+            QX_MADVISE => crate::kernel::services::mm::madvise_mlock::sys_madvise(a0, a1, a2),
+            QX_MLOCK => crate::kernel::services::mm::madvise_mlock::sys_mlock(a0, a1),
+            QX_MUNLOCK => crate::kernel::services::mm::madvise_mlock::sys_munlock(a0, a1),
+            QX_MLOCKALL => crate::kernel::services::mm::madvise_mlock::sys_mlockall(a0),
+            QX_MUNLOCKALL => crate::kernel::services::mm::madvise_mlock::sys_munlockall(),
+            QX_MINCORE => crate::kernel::services::mm::madvise_mlock::sys_mincore(a0, a1, a2),
+
+            // ==================== 定时器 (已迁移) ====================
+            QX_NANOSLEEP => as_ret(crate::kernel::services::proc::sleep::nanosleep_syscall(a0, a1)),
+            QX_GETITIMER => as_ret(crate::kernel::services::fs::misc::getitimer_syscall(a0 as i32, a1)),
+            QX_ALARM => as_ret(crate::kernel::services::fs::misc::alarm_syscall(a0 as u32)),
+            QX_SETITIMER => as_ret(crate::kernel::services::fs::misc::setitimer_syscall(a0 as i32, a1, a2)),
+
+            // ==================== 进程创建/等待 (已迁移) ====================
+            QX_CLONE => as_ret(crate::kernel::services::proc::clone::clone_syscall(a0, a1, a2, a3, a4)),
+            QX_WAIT4 => as_ret(crate::kernel::services::proc::wait4::wait4_syscall(a0 as i32, a1, a2 as i32)),
+
+            // ==================== 系统信息 (已迁移) ====================
+            QX_UNAME => as_ret(crate::kernel::services::proc::info::uname_syscall(a0)),
+            QX_GETTIMEOFDAY => as_ret(crate::kernel::services::proc::info::gettimeofday_syscall(a0)),
+
+            // ==================== 文件操作 (已迁移) ====================
+            QX_LINK => as_ret(crate::kernel::services::fs::link::link_syscall(a0, a1)),
+            QX_TIMES => as_ret(crate::kernel::services::fs::misc::times_syscall(a0)),
+            QX_TIME => as_ret(crate::kernel::services::fs::misc::time_syscall(a0)),
+
+            // ==================== 事件轮询 (已迁移) ====================
+            QX_EPOLL_CREATE => as_ret(crate::kernel::services::sync::epoll::epoll_create_syscall(a0 as i32)),
+            QX_EPOLL_CTL => as_ret(crate::kernel::services::sync::epoll::epoll_ctl_syscall(a0 as i64, a1 as i32, a2 as i32, a3)),
+            QX_EPOLL_WAIT => as_ret(crate::kernel::services::sync::epoll::epoll_wait_syscall(a0 as i64, a1, a2 as i32, a3 as i32)),
+
+            // ==================== eventfd / signalfd / timerfd (已迁移) ====================
+            QX_EVENTFD => as_ret(crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32)),
+            QX_EVENTFD2 => as_ret(crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32)),
+            QX_SIGNALFD => as_ret(crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32)),
+            QX_SIGNALFD4 => as_ret(crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32)),
+            QX_TIMERFD_CREATE => as_ret(crate::kernel::services::sync::timerfd::timerfd_create_syscall(a0 as i32, a1 as i32)),
+            QX_TIMERFD_SETTIME => as_ret(crate::kernel::services::sync::timerfd::timerfd_settime_syscall(a0 as i32, a1 as i32, a2, a3)),
+            QX_TIMERFD_GETTIME => as_ret(crate::kernel::services::sync::timerfd::timerfd_gettime_syscall(a0 as i32, a1)),
+
+            // ==================== Credo 私有 syscall (已迁移) ====================
+            SYS_CREDO_LOGIN => crate::kernel::services::credo::auth::auth_login_syscall(a0, a1),
+            SYS_CREDO_LOGOUT => crate::kernel::services::credo::auth::auth_logout_syscall(),
+            SYS_CREDO_CREATE_IDENTITY => crate::kernel::services::credo::auth::auth_create_syscall(a0, a1, a2 as u8),
+            SYS_CREDO_DELETE_IDENTITY => crate::kernel::services::credo::auth::auth_delete_syscall(a0),
+            SYS_CREDO_IDENTITY_INFO => crate::kernel::services::credo::auth::auth_info_syscall(a0),
+            SYS_CREDO_CHANGE_PASSWORD => crate::kernel::services::credo::auth::auth_changepw_syscall(a0, a1),
+            SYS_CREDO_VERIFY_PASSWORD => crate::kernel::services::credo::auth::auth_verify_syscall(a0),
+            SYS_CREDO_CREATE_FIRST => crate::kernel::services::credo::auth::auth_create_first_syscall(a0),
+            SYS_CREDO_GRANT => crate::kernel::services::credo::auth::auth_grant_syscall(a0, a1, a2 as u16, a3),
+            SYS_CREDO_REVOKE => crate::kernel::services::credo::auth::auth_revoke_syscall(a0, a1, a2 as u16, a3),
+            SYS_CREDO_CHECK_CAP => crate::kernel::services::credo::auth::auth_check_cap_syscall(a0, a1 as u16, a2),
+            SYS_CREDO_GET_CAPS => crate::kernel::services::credo::auth::auth_get_caps_syscall(a0, a1 as u16),
+            SYS_CREDO_GET_PWM => crate::kernel::services::credo::auth::pwm_get_syscall(),
+            SYS_CREDO_SET_PWM => crate::kernel::services::credo::auth::pwm_set_syscall(a0),
+            SYS_CREDO_GETHOSTNAME => crate::kernel::services::proc::sysinfo::gethostname_syscall(a0, a1),
+            SYS_CREDO_SETHOSTNAME => crate::kernel::services::proc::sysinfo::sethostname_syscall(a0, a1),
+            SYS_CREDO_BOOT_CHECK => crate::kernel::services::proc::sysinfo::boot_check_syscall(a0 as i32),
+            SYS_CREDO_PROC_LIST => crate::kernel::services::proc::proc_mgmt::proc_list_syscall(a0, a1 as u32),
+            SYS_CREDO_PROC_SETPRI => crate::kernel::services::proc::proc_mgmt::proc_setpri_syscall(a0 as u32, a1 as u32),
+            SYS_CREDO_PROC_CPUTIME => crate::kernel::services::proc::proc_mgmt::credo_proc_cputime_syscall(a0 as u32),
+            SYS_CREDO_PROC_SLEEP => {
+                let ns = a0 * 1_000_000;
+                as_ret(crate::kernel::services::proc::sleep::nanosleep_syscall(ns, a1))
+            }
+
+            SYS_CREDO_REBOOT => crate::kernel::services::proc::sysinfo::reboot_syscall(a0 as i32),
+
+            // ==================== 存储设备 (已迁移) ====================
+            SYS_CREDO_DISK_LIST => as_ret(crate::kernel::services::storage::disk::disk_list(a0, a1 as u32).map(|n| n as usize)),
+            SYS_CREDO_DISK_INFO => match crate::kernel::services::storage::disk::disk_info(a0 as u32, a1) {
+                Ok(()) => 0,
+                Err(e) => e.as_ret(),
+            },
+            SYS_CREDO_DISK_FORMAT => match crate::kernel::services::storage::disk::disk_format(a0 as u32, a1) {
+                Ok(()) => 0,
+                Err(e) => e.as_ret(),
+            },
+            SYS_CREDO_DISK_PARTITION => match crate::kernel::services::storage::disk::disk_partition(a0 as u32, a1) {
+                Ok(()) => 0,
+                Err(e) => e.as_ret(),
+            },
+            SYS_CREDO_FAT_FORMAT => match crate::kernel::services::storage::disk::fat_format(a0 as u32) {
+                Ok(()) => 0,
+                Err(e) => e.as_ret(),
+            },
 
             // 未迁移的 syscall — 返回 -ENOSYS 让 framework 回退处理
             _ => -38,

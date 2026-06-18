@@ -1,0 +1,173 @@
+//! 启动自检: 验证常量自洽性、内存布局、中断控制器 — services 层策略实现
+//!
+//! ## 迁移记录
+//!
+//! 策略代码于 2026-06-17 从 framework::config::validate 迁移至此。
+//! framework 层仅保留 re-export 保持调用方兼容。
+
+use crate::kernel::framework::config::ConfigError;
+use crate::kernel::framework::config::{
+    HUGE_PAGE_2M_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, USER_CODE_BASE, USER_STACK_GUARD,
+    USER_STACK_SIZE, USER_STACK_TOP, SLAB_DEFAULT_SIZE, MAX_CPUS,
+};
+use crate::slog_err;
+
+/// 校验 CPU 配置.
+pub fn validate_cpu_config() -> Result<(), ConfigError> {
+    let cpu_count = crate::kernel::framework::smp::get_cpu_count();
+
+    if cpu_count as usize > MAX_CPUS {
+        return Err(ConfigError::CpuCountExceedsMax {
+            actual: cpu_count,
+            max: MAX_CPUS,
+        });
+    }
+
+    Ok(())
+}
+
+/// 校验内存布局一致性.
+pub fn validate_memory_config() -> Result<(), ConfigError> {
+    if PAGE_SIZE == 0 || (PAGE_SIZE & (PAGE_SIZE - 1)) != 0 {
+        return Err(ConfigError::MemoryLayoutInvalid);
+    }
+
+    if !(SLAB_DEFAULT_SIZE as u64).is_multiple_of(PAGE_SIZE) {
+        return Err(ConfigError::MemoryLayoutInvalid);
+    }
+
+    if USER_STACK_SIZE < PAGE_SIZE {
+        return Err(ConfigError::MemoryLayoutInvalid);
+    }
+    if USER_STACK_GUARD > 16 * 1024 * 1024 {
+        return Err(ConfigError::MemoryLayoutInvalid);
+    }
+
+    if USER_STACK_TOP <= USER_CODE_BASE + HUGE_PAGE_2M_SIZE {
+        return Err(ConfigError::MemoryLayoutInvalid);
+    }
+
+    if (KERNEL_STACK_SIZE as u64) < PAGE_SIZE {
+        return Err(ConfigError::MemoryLayoutInvalid);
+    }
+
+    Ok(())
+}
+
+/// 校验中断配置.
+pub fn validate_interrupt_config() -> Result<(), ConfigError> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let apic_ok = crate::kernel::framework::arch::apic::is_initialized();
+        let ioapic_ok = crate::kernel::framework::arch::ioapic::is_initialized();
+        if !apic_ok && !ioapic_ok {
+            return Err(ConfigError::IrqControllerUnavailable);
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        // GIC 初始化失败已经在 arch 层 panic, 此处只需做软校验
+    }
+
+    Ok(())
+}
+
+/// 跨模块一致性校验.
+pub fn validate_cross_module_consistency() -> Result<(), ConfigError> {
+    Ok(())
+}
+
+/// 验证 PCI 子系统已初始化.
+pub fn validate_pci_subsystem() -> Result<(), ConfigError> {
+    if !crate::kernel::framework::pci::is_initialized() {
+        return Err(ConfigError::DriverConfigInvalid("pci"));
+    }
+    Ok(())
+}
+
+/// 验证网络子系统配置一致性.
+pub fn validate_network_subsystem() -> Result<(), ConfigError> {
+    Ok(())
+}
+
+/// 校验所有驱动配置.
+pub fn validate_drivers() -> u32 {
+    let mut errors = 0u32;
+
+    match validate_pci_subsystem() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+        }
+    }
+
+    match validate_network_subsystem() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+        }
+    }
+
+    errors
+}
+
+/// 校验所有系统配置.
+pub fn validate_system_config() -> u32 {
+    let mut errors = 0u32;
+
+    match validate_cpu_config() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+            #[cfg(debug_assertions)]
+            if let ConfigError::CpuCountExceedsMax { actual, max } = e {
+                panic!(
+                    "CONFIG: CPU count {} exceeds MAX_CPUS {}. \
+                     Increase MAX_CPUS in kernel/config/capacity.rs",
+                    actual, max
+                );
+            }
+        }
+    }
+
+    match validate_memory_config() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+        }
+    }
+
+    match validate_interrupt_config() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+        }
+    }
+
+    match validate_cross_module_consistency() {
+        Ok(()) => {}
+        Err(e) => {
+            errors += 1;
+            log_config_error(&e);
+        }
+    }
+
+    // KASLR 偏移自检
+    if let Err(msg) = crate::kernel::framework::config::validate_kaslr_offset() {
+        errors += 1;
+        slog_err!(Boot, "CONFIG: KASLR: {}", msg);
+    }
+
+    errors
+}
+
+#[inline]
+fn log_config_error(e: &ConfigError) {
+    slog_err!(Boot, "CONFIG: {}", e);
+}

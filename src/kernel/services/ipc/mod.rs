@@ -78,6 +78,9 @@ pub mod sem;
 pub mod signal;
 /// T6-9: 调度器集成 (原 framework/ipc/scheduler_integration.rs)
 pub mod scheduler_integration;
+/// 异步 IPC 基础设施 (原 framework/ipc/async_ipc.rs, 2026-06-18 迁移)
+#[cfg(feature = "async")]
+pub mod async_ipc;
 
 /// IPC 资源 ID (services 层视图, 内核 `IpcId = u32` 的包装)
 pub use types::IpcId;

@@ -210,15 +210,10 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         // ==================== 文件 I/O ====================
         QX_READ => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
         QX_WRITE => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
-        QX_POLL => dispatch!(
-            sys_poll(a0 as *mut u8, a1 as u32, a2 as i32),
-            b"poll\0"
-        ),
-        QX_LSEEK => dispatch!(sys_lseek(a0 as i32, a1 as i64, a2 as i32), b"lseek\0"),
+        // 已迁移: QX_POLL, QX_LSEEK
 
         // ==================== 内存管理 ====================
-        QX_MMAP => dispatch!(sys_mmap(a0, a1, a2 as i32, a3 as i32, a4 as i32, a5), b"mmap\0"),
-        QX_MUNMAP => dispatch!(sys_munmap(a0, a1), b"munmap\0"),
+        // 已迁移: QX_MMAP, QX_MUNMAP
         QX_MREMAP => {
             // 从当前 task 取 MmStruct; 验证后委托 services/mm/mremap
             use crate::kernel::framework::mm::vma_get_current_mm;
@@ -243,7 +238,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         // P1-I-45: 替代栈注册/查询系统调用
 
         // ==================== 设备 ====================
-        QX_IOCTL => dispatch!(sys_ioctl(a0 as i32, a1, a2), b"ioctl\0"),
+        // 已迁移: QX_IOCTL
 
         // 730-733: 设备固件加载
         QX_FW_LOAD => dispatch!(
@@ -300,30 +295,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 内存建议与锁定 (760-765, P1 #15) ====================
-        QX_MADVISE => dispatch!(
-            crate::kernel::framework::syscall::madvise_mlock::sys_madvise(a0, a1, a2),
-            b"madvise\0"
-        ),
-        QX_MLOCK => dispatch!(
-            crate::kernel::framework::syscall::madvise_mlock::sys_mlock(a0, a1),
-            b"mlock\0"
-        ),
-        QX_MUNLOCK => dispatch!(
-            crate::kernel::framework::syscall::madvise_mlock::sys_munlock(a0, a1),
-            b"munlock\0"
-        ),
-        QX_MLOCKALL => dispatch!(
-            crate::kernel::framework::syscall::madvise_mlock::sys_mlockall(a0),
-            b"mlockall\0"
-        ),
-        QX_MUNLOCKALL => dispatch!(
-            crate::kernel::framework::syscall::madvise_mlock::sys_munlockall(),
-            b"munlockall\0"
-        ),
-        QX_MINCORE => dispatch!(
-            crate::kernel::framework::syscall::madvise_mlock::sys_mincore(a0, a1, a2),
-            b"mincore\0"
-        ),
+        // 已迁移: QX_MADVISE, QX_MLOCK, QX_MUNLOCK, QX_MLOCKALL, QX_MUNLOCKALL, QX_MINCORE
 
         // ==================== 调试 / 跟踪 (800-809) ====================
         QX_FTRACE_ENABLE => dispatch!(
@@ -502,61 +474,15 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== 文件访问 ====================
-        QX_SELECT => dispatch!(
-            sys_poll(a0 as *mut u8, a1 as u32, a2 as i32),
-            b"select\0"
-        ),
-        QX_SCHED_YIELD => dispatch!(sys_sched_yield(), b"sched_yield\0"),
-        QX_SCHED_SETAFFINITY => dispatch!(
-            sys_sched_setaffinity(a0 as i32, a1 as u32, a2),
-            b"sched_setaffinity\0"
-        ),
-        QX_SCHED_GETAFFINITY => dispatch!(
-            sys_sched_getaffinity(a0 as i32, a1 as u32, a2),
-            b"sched_getaffinity\0"
-        ),
+        // 已迁移: QX_SELECT, QX_SCHED_YIELD, QX_SCHED_SETAFFINITY, QX_SCHED_GETAFFINITY
 
         // ==================== 文件描述符 ====================
 
-        // ==================== 进程优先级 ====================
-        QX_NICE => dispatch!(sys_nice(a0 as i32), b"nice\0"),
+        // 已迁移: 进程优先级 (getpriority/setpriority)
 
-        // ==================== 定时器 ====================
-        QX_NANOSLEEP => dispatch!(
-            match crate::kernel::services::proc::sleep::nanosleep_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"nanosleep\0"
-        ),
-        QX_GETITIMER => dispatch!(
-            match crate::kernel::services::fs::misc::getitimer_syscall(a0 as i32, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"getitimer\0"
-        ),
-        QX_ALARM => dispatch!(
-            match crate::kernel::services::fs::misc::alarm_syscall(a0 as u32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"alarm\0"
-        ),
-        QX_SETITIMER => dispatch!(
-            match crate::kernel::services::fs::misc::setitimer_syscall(a0 as i32, a1, a2) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"setitimer\0"
-        ),
+        // 已迁移: QX_NANOSLEEP, QX_GETITIMER, QX_ALARM, QX_SETITIMER
 
-        // ==================== 进程 ====================
-        QX_GETPRIORITY => dispatch!(sys_getpriority(a0 as i32, a1 as u32), b"getpriority\0"),
-        QX_SETPRIORITY => dispatch!(
-            sys_setpriority(a0 as i32, a1 as u32, a2 as i32),
-            b"setpriority\0"
-        ),
+        // ==================== 进程 (getpriority/setpriority 已迁移到 services) ====================
         QX_TCGETPGRP => dispatch!(
             crate::kernel::framework::proc::session::sys_tcgetpgrp(a0 as i32),
             b"tcgetpgrp\0"
@@ -568,39 +494,19 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
         // ==================== 网络 (services 代理) ====================
         #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
-        #[cfg(feature = "net")]
         QX_GETSOCKNAME => dispatch!(sys_getsockname(a0 as i32, a1, a2), b"getsockname\0"),
         #[cfg(feature = "net")]
         QX_GETPEERNAME => dispatch!(sys_getpeername(a0 as i32, a1, a2), b"getpeername\0"),
-        #[cfg(feature = "net")]
-        QX_GETRUSAGE => dispatch!(sys_getrusage(a0 as i32, a1), b"getrusage\0"),
+        // 已迁移: QX_GETRUSAGE
         #[cfg(not(feature = "net"))]
         QX_SOCKET | QX_CONNECT | QX_ACCEPT | QX_SENDTO | QX_RECVFROM | QX_SHUTDOWN
         | QX_BIND | QX_LISTEN | QX_SENDMSG | QX_RECVMSG | QX_SETSOCKOPT | QX_GETSOCKOPT
-        | QX_GETSOCKNAME | QX_GETPEERNAME | QX_GETRUSAGE => {
+        | QX_GETSOCKNAME | QX_GETPEERNAME => {
             dispatch!(Errno::ENOSYS.as_ret(), b"net_nosys\0")
         }
 
         // ==================== 进程创建 ====================
-        QX_FORK => dispatch!(sys_fork(), b"fork\0"),
-        QX_CLONE => dispatch!(
-            match crate::kernel::services::proc::clone::clone_syscall(a0, a1, a2, a3, a4) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"clone\0"
-        ),
+        // 已迁移: QX_FORK, QX_CLONE
         QX_EXECVE => dispatch!(
             crate::kernel::services::proc::execve::ExecveResult::from_ret(
                 sys_execve(
@@ -611,193 +517,51 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
             ).as_ret(),
             b"execve\0"
         ),
-        QX_EXIT => dispatch!(sys_exit(a0 as i32), b"exit\0"),
-        QX_WAIT4 => dispatch!(
-            match crate::kernel::services::proc::wait4::wait4_syscall(a0 as i32, a1, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"wait4\0"
-        ),
+        // 已迁移: QX_EXIT, QX_WAIT4
 
         // ==================== 系统信息 ====================
-        QX_UNAME => dispatch!(
-            match crate::kernel::services::proc::info::uname_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"uname\0"
-        ),
+        // 已迁移: QX_UNAME, QX_GETTIMEOFDAY
 
         // ==================== 文件描述符操作 ====================
 
-        QX_FLOCK => dispatch!(
-            sys_flock(a0 as i32, a1 as i32),
-            b"flock\0"
-        ),
+        // 已迁移: QX_FLOCK
 
-        // ==================== 文件截断 ====================
-        QX_TRUNCATE => dispatch!(
-            sys_truncate(a0 as *const u8, a1 as i64),
-            b"truncate\0"
-        ),
-        QX_FTRUNCATE => dispatch!(sys_ftruncate(a0 as i32, a1 as i64), b"ftruncate\0"),
+        // 已迁移: QX_TRUNCATE, QX_FTRUNCATE
 
-        // ==================== 目录 ====================
-        QX_GETDENTS => dispatch!(
-            sys_getdents(a0 as i32, a1 as *mut u8, a2),
-            b"getdents\0"
-        ),
+        // 已迁移: QX_GETDENTS
 
         // ==================== 路径 (services 代理) ====================
 
         // ==================== 文件操作 ====================
-        QX_LINK => dispatch!(
-            match crate::kernel::services::fs::link::link_syscall(a0, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"link\0"
-        ),
+        // 已迁移: QX_LINK
 
         // ==================== 文件权限 ====================
-        QX_CHOWN => dispatch!(
-            sys_chown(a0 as *const u8, a1 as u32, a2 as u32),
-            b"chown\0"
-        ),
+        // 已迁移: QX_CHOWN
 
         // ==================== 时间 ====================
-        QX_GETTIMEOFDAY => dispatch!(
-            match crate::kernel::services::proc::info::gettimeofday_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"gettimeofday\0"
-        ),
-        QX_GETRLIMIT => dispatch!(
-            crate::kernel::framework::proc::sys_getrlimit(a0 as i32, a1),
-            b"getrlimit\0"
-        ),
+        // 已迁移: QX_GETTIMEOFDAY, QX_GETRLIMIT
         QX_SETRLIMIT => dispatch!(
             crate::kernel::framework::proc::sys_setrlimit(a0 as i32, a1),
             b"setrlimit\0"
         ),
-        QX_SYSINFO => dispatch!(sys_sysinfo(a0 as *mut u8), b"sysinfo\0"),
-        QX_TIMES => dispatch!(
-            match crate::kernel::services::fs::misc::times_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"times\0"
-        ),
+        // 已迁移: QX_SYSINFO, QX_TIMES
 
         // ==================== 用户/组 (services 代理) ====================
 
         // ==================== 文件同步/挂载 ====================
 
-        QX_TIME => dispatch!(
-            match crate::kernel::services::fs::misc::time_syscall(a0) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"time\0"
-        ),
-        QX_CLOCK_GETTIME => dispatch!(
-            sys_clock_gettime(a0 as i32, a1 as *mut u8),
-            b"clock_gettime\0"
-        ),
-        QX_EXIT_GROUP => dispatch!(sys_exit(a0 as i32), b"exit_group\0"),
+        // 已迁移: QX_TIME, QX_CLOCK_GETTIME, QX_EXIT_GROUP
         QX_TGKILL => dispatch!(sys_tgkill(a0 as i32, a1 as i32, a2 as i32), b"tgkill\0"),
 
         // ==================== 同步 ====================
 
         // ==================== 事件轮询 ====================
-        QX_EPOLL_CREATE => dispatch!(
-            match crate::kernel::services::sync::epoll::epoll_create_syscall(a0 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"epoll_create\0"
-        ),
-        QX_EPOLL_CTL => dispatch!(
-            match crate::kernel::services::sync::epoll::epoll_ctl_syscall(a0 as i64, a1 as i32, a2 as i32, a3) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"epoll_ctl\0"
-        ),
-        QX_EPOLL_WAIT => dispatch!(
-            match crate::kernel::services::sync::epoll::epoll_wait_syscall(a0 as i64, a1, a2 as i32, a3 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"epoll_wait\0"
-        ),
+        // 已迁移: QX_EPOLL_CREATE, QX_EPOLL_CTL, QX_EPOLL_WAIT
 
         // ==================== eventfd / signalfd / timerfd ====================
-        QX_EVENTFD => dispatch!(
-            match crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"eventfd\0"
-        ),
-        QX_EVENTFD2 => dispatch!(
-            match crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"eventfd2\0"
-        ),
-        QX_SIGNALFD => dispatch!(
-            match crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"signalfd\0"
-        ),
-        QX_SIGNALFD4 => dispatch!(
-            match crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"signalfd4\0"
-        ),
-        QX_TIMERFD_CREATE => dispatch!(
-            match crate::kernel::services::sync::timerfd::timerfd_create_syscall(a0 as i32, a1 as i32) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"timerfd_create\0"
-        ),
-        QX_TIMERFD_SETTIME => dispatch!(
-            match crate::kernel::services::sync::timerfd::timerfd_settime_syscall(a0 as i32, a1 as i32, a2, a3) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"timerfd_settime\0"
-        ),
-        QX_TIMERFD_GETTIME => dispatch!(
-            match crate::kernel::services::sync::timerfd::timerfd_gettime_syscall(a0 as i32, a1) {
-                Ok(v) => v as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"timerfd_gettime\0"
-        ),
+        // 已迁移: QX_EVENTFD, QX_EVENTFD2, QX_SIGNALFD, QX_SIGNALFD4, QX_TIMERFD_CREATE, QX_TIMERFD_SETTIME, QX_TIMERFD_GETTIME
 
-        // ==================== inotify syscall (640+) ====================
-        QX_INOTIFY_INIT1 => dispatch!(
-            crate::kernel::framework::fs::sys_inotify_init1(a0 as i32),
-            b"inotify_init1\0"
-        ),
-        QX_INOTIFY_ADD_WATCH => dispatch!(
-            sys_inotify_add_watch(a0 as i64, a1 as u32, a2 as u32),
-            b"inotify_add_watch\0"
-        ),
-        QX_INOTIFY_RM_WATCH => dispatch!(
-            crate::kernel::framework::fs::sys_inotify_rm_watch(a0 as i64, a1 as i32),
-            b"inotify_rm_watch\0"
-        ),
+        // 已迁移: inotify syscall (640+)
 
         // ==================== sendfile / splice syscall (650+) ====================  // 高效文件传输
         QX_SENDFILE => dispatch!(
@@ -814,129 +578,20 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== Credo 私有 syscall (400+) ====================
-        SYS_CREDO_LOGIN => dispatch!(
-            sys_auth_login(
-                a0 as *const u8,
-                a1 as *const u8
-            ),
-            b"credo_login\0"
-        ),
-        SYS_CREDO_LOGOUT => dispatch!(sys_auth_logout(), b"credo_logout\0"),
-        SYS_CREDO_CREATE_IDENTITY => dispatch!(
-            sys_auth_create(
-                a0 as *const u8,
-                a1 as *const u8,
-                a2 as u8
-            ),
-            b"credo_create\0"
-        ),
-        SYS_CREDO_DELETE_IDENTITY => dispatch!(sys_auth_delete(a0), b"credo_delete\0"),
-        SYS_CREDO_IDENTITY_INFO => dispatch!(sys_auth_info(a0), b"credo_info\0"),
-        SYS_CREDO_CHANGE_PASSWORD => dispatch!(
-            sys_auth_changepw(
-                a0 as *const u8,
-                a1 as *const u8
-            ),
-            b"credo_chpw\0"
-        ),
-        SYS_CREDO_VERIFY_PASSWORD => dispatch!(
-            sys_auth_verify(a0 as *const u8),
-            b"credo_verify\0"
-        ),
-        SYS_CREDO_CREATE_FIRST => dispatch!(
-            sys_auth_create_first(a0 as *const u8),
-            b"credo_first\0"
-        ),
-        SYS_CREDO_GRANT => dispatch!(sys_auth_grant(a0, a1, a2 as u16, a3), b"credo_grant\0"),
-        SYS_CREDO_REVOKE => dispatch!(sys_auth_revoke(a0, a1, a2 as u16, a3), b"credo_revoke\0"),
-        SYS_CREDO_CHECK_CAP => {
-            dispatch!(sys_auth_check_cap(a0, a1 as u16, a2), b"credo_checkcap\0")
-        }
-        SYS_CREDO_GET_CAPS => dispatch!(sys_auth_get_caps(a0, a1 as u16), b"credo_getcaps\0"),
-        SYS_CREDO_GET_PWM => dispatch!(sys_pwm_get(), b"credo_getpwm\0"),
-        SYS_CREDO_SET_PWM => dispatch!(sys_pwm_set(a0), b"credo_setpwm\0"),
+        // 已迁移: SYS_CREDO_LOGIN ~ SYS_CREDO_SET_PWM, SYS_CREDO_DISK_LIST/INFO/FORMAT/PARTITION/FAT_FORMAT
 
-        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_LIST => dispatch!(
-            match crate::kernel::services::storage::disk::disk_list(a0, a1 as u32) {
-                Ok(n) => n as i64,
-                Err(e) => e.as_ret(),
-            },
-            b"credo_disklist\0"
-        ),
-        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_INFO => {
-            dispatch!(
-                match crate::kernel::services::storage::disk::disk_info(a0 as u32, a1) {
-                    Ok(()) => 0,
-                    Err(e) => e.as_ret(),
-                },
-                b"credo_diskinfo\0"
-            )
-        }
-        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_FORMAT => dispatch!(
-            match crate::kernel::services::storage::disk::disk_format(a0 as u32, a1) {
-                Ok(()) => 0,
-                Err(e) => e.as_ret(),
-            },
-            b"credo_diskfmt\0"
-        ),
-        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_DISK_PARTITION => {
-            dispatch!(
-                match crate::kernel::services::storage::disk::disk_partition(a0 as u32, a1) {
-                    Ok(()) => 0,
-                    Err(e) => e.as_ret(),
-                },
-                b"credo_diskpart\0"
-            )
-        }
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         SYS_CREDO_DISK_INSTALL => dispatch!(sys_boot_install(a0 as u32), b"credo_diskinst\0"),
-        #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-        SYS_CREDO_FAT_FORMAT => dispatch!(
-            match crate::kernel::services::storage::disk::fat_format(a0 as u32) {
-                Ok(()) => 0,
-                Err(e) => e.as_ret(),
-            },
-            b"credo_fatfmt\0"
-        ),
 
         #[cfg(feature = "kernel_test")]
-        SYS_CREDO_DISK_LIST
-        | SYS_CREDO_DISK_INFO
-        | SYS_CREDO_DISK_FORMAT
-        | SYS_CREDO_DISK_PARTITION
-        | SYS_CREDO_DISK_INSTALL
-        | SYS_CREDO_FAT_FORMAT => dispatch!(Errno::ENOSYS.as_ret(), b"credo_disk_nosys\0"),
+        SYS_CREDO_DISK_INSTALL => dispatch!(Errno::ENOSYS.as_ret(), b"credo_disk_nosys\0"),
 
-        SYS_CREDO_PROC_LIST => {
-            dispatch!(sys_proc_list(a0 as *mut u8, a1 as u32), b"credo_proclist\0")
-        }
-        SYS_CREDO_PROC_SETPRI => {
-            dispatch!(sys_proc_setpri(a0 as u32, a1 as u32), b"credo_procpri\0")
-        }
-        SYS_CREDO_PROC_SLEEP => {
-            let ms = a0;
-            let ns = ms * 1_000_000;
-            dispatch!(sys_nanosleep(ns, a1), b"credo_procsleep\0")
-        }
-        SYS_CREDO_GETHOSTNAME => dispatch!(
-            sys_gethostname(a0 as *mut u8, a1),
-            b"credo_gethost\0"
-        ),
-        SYS_CREDO_SETHOSTNAME => dispatch!(
-            sys_sethostname(a0 as *const u8, a1),
-            b"credo_sethost\0"
-        ),
-        SYS_CREDO_BOOT_CHECK => dispatch!(sys_boot_check(a0 as i32), b"credo_bootchk\0"),
-        SYS_CREDO_REBOOT => dispatch!(sys_reboot(a0 as i32), b"credo_reboot\0"),
+        // 已迁移: SYS_CREDO_PROC_LIST, SYS_CREDO_PROC_SETPRI, SYS_CREDO_PROC_CPUTIME, SYS_CREDO_PROC_SLEEP
+        // 已迁移: SYS_CREDO_GETHOSTNAME, SYS_CREDO_SETHOSTNAME, SYS_CREDO_BOOT_CHECK, SYS_CREDO_REBOOT
         SYS_CREDO_HOTPLUG_STATUS => dispatch!(
             sys_hotplug_status(a0 as *mut u8, a1 as u32),
             b"credo_hotplug_status\0"
         ),
-        SYS_CREDO_PROC_CPUTIME => dispatch!(sys_credo_proc_cputime(a0 as u32), b"credo_cputime\0"),
 
         // ==================== 帧缓冲设备 ====================
         SYS_FB_OPEN => dispatch!(sys_fb_open(a0, a1), b"fb_open\0"),
@@ -1030,104 +685,11 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     crate::kernel::framework::fs::vfs_write(fd as u32, buf, count as u32) as i64
 }
 
-fn sys_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
-    crate::kernel::framework::fs::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
-}
-
-fn sys_getdents(fd: i32, buf: *mut u8, _count: u64) -> i64 {
-    crate::kernel::framework::fs::vfs_readdir(
-        fd as u32,
-        buf as *mut crate::kernel::framework::fs::VfsDirEntry,
-    ) as i64
-}
-
 // ============================================================================
 // 目录/文件操作
 // ============================================================================
 
-// ============================================================================
-// 进程 — fork / execve / exit / wait
-// ============================================================================
-
-fn sys_sched_yield() -> i64 {
-    crate::kernel::framework::proc::scheduler_yield();
-    0
-}
-
-const PRIO_PROCESS: i32 = 0;
-
-fn nice_to_priority(nice: i32) -> crate::kernel::framework::proc::ProcessPriority {
-    let clamped = nice.clamp(-20, 19);
-    if clamped < -10 {
-        crate::kernel::framework::proc::ProcessPriority::RealTime
-    } else if clamped < 0 {
-        crate::kernel::framework::proc::ProcessPriority::High
-    } else if clamped < 10 {
-        crate::kernel::framework::proc::ProcessPriority::Normal
-    } else if clamped < 19 {
-        crate::kernel::framework::proc::ProcessPriority::Low
-    } else {
-        crate::kernel::framework::proc::ProcessPriority::Idle
-    }
-}
-
-fn priority_to_nice(p: crate::kernel::framework::proc::ProcessPriority) -> i32 {
-    match p {
-        crate::kernel::framework::proc::ProcessPriority::RealTime => -20,
-        crate::kernel::framework::proc::ProcessPriority::High => -10,
-        crate::kernel::framework::proc::ProcessPriority::Normal => 0,
-        crate::kernel::framework::proc::ProcessPriority::Low => 10,
-        crate::kernel::framework::proc::ProcessPriority::Idle => 19,
-    }
-}
-
-fn sys_nice(inc: i32) -> i64 {
-    let pid = crate::kernel::framework::proc::process_get_current_pid();
-    // SAFETY: sys_getpriority 是 libc 兼容的 FFI；传入有效 PRIO_PROCESS
-    // 常量与进程 pid (由 process_get_current_pid 返回)。
-    let current_nice = unsafe { sys_getpriority(PRIO_PROCESS, pid) as i32 };
-    let new_nice = (current_nice + inc).clamp(-20, 19);
-    // SAFETY: sys_setpriority 是 libc 兼容的 FFI；new_nice 在合法范围 [-20, 19]。
-    unsafe { sys_setpriority(PRIO_PROCESS, pid, new_nice) };
-    new_nice as i64
-}
-
-fn sys_getpriority(which: i32, who: u32) -> i64 {
-    if which != PRIO_PROCESS {
-        return Errno::EINVAL.as_ret();
-    }
-    let pid = if who == 0 {
-        crate::kernel::framework::proc::process_get_current_pid()
-    } else {
-        who
-    };
-    let pri = match crate::kernel::framework::proc::process_with(pid, |p| p.get_priority()) {
-        Some(p) => p,
-        None => return Errno::ESRCH.as_ret(),
-    };
-    priority_to_nice(pri) as i64
-}
-
-fn sys_setpriority(which: i32, who: u32, prio: i32) -> i64 {
-    if which != PRIO_PROCESS {
-        return Errno::EINVAL.as_ret();
-    }
-    let clamped = prio.clamp(-20, 19);
-    let pid = if who == 0 {
-        crate::kernel::framework::proc::process_get_current_pid()
-    } else {
-        who
-    };
-    let new_pri = nice_to_priority(clamped);
-    match crate::kernel::framework::proc::process_with_mut(pid, |p| p.set_priority(new_pri)) {
-        Some(_) => 0,
-        None => Errno::ESRCH.as_ret(),
-    }
-}
-
-fn sys_fork() -> i64 {
-    crate::kernel::framework::proc::sys_fork() as i64
-}
+// 已迁移到 services: nice_to_priority, priority_to_nice, sys_nice, sys_getpriority, sys_setpriority
 
 fn sys_execve(
     path: *const u8,
@@ -1186,200 +748,9 @@ fn sys_execve(
     }
 }
 
-fn sys_exit(status: i32) -> i64 {
-    crate::kernel::framework::proc::process_exit(status as u32);
-    0
-}
+// 已迁移到 services: sys_setregid, sys_mmap, sys_munmap, sys_time,
+// sys_sched_setaffinity, sys_sched_getaffinity
 
-// ============================================================================
-// 用户/组 — getuid / getgid / geteuid / getegid
-// ============================================================================
-
-fn sys_setregid(rgid: u32, egid: u32) -> i64 {
-    if crate::kernel::framework::credo::try_setregid(rgid, egid) {
-        return 0;
-    }
-    Errno::EPERM.as_ret()
-}
-
-// ============================================================================
-// 管道 — pipe / dup / dup2
-// ============================================================================
-
-fn _unused_sys_pipe_marker() {}
-fn _unused_sys_dup_marker() {}
-fn _unused_sys_dup2_marker() {}
-
-// ============================================================================
-// 内存 — brk / mmap / munmap
-// ============================================================================
-
-fn sys_mmap(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -> i64 {
-    if size == 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 7, 0x01) {
-        return Errno::EACCES.as_ret();
-    }
-
-    let mm = match crate::kernel::framework::mm::vma_get_current_mm() {
-        Some(m) => m,
-        None => {
-            let pages = size.div_ceil(4096);
-            let ptr = raw::alloc_pages(pages);
-            return if ptr.is_null() {
-                Errno::ENOMEM.as_ret()
-            } else {
-                ptr as i64
-            };
-        }
-    };
-
-    // 通过 services 层代理: VFS 交互 (fd→inode_id) 在 services 层完成
-    // 透传进程当前 pwm, Vma 记录后由 #PF miss 路径用于 vfs_pread_inode 权限校验
-    match crate::kernel::services::mm::mmap::mmap_syscall(mm, addr, size, prot, flags, fd, offset, pwm) {
-        Ok(a) => a as i64,
-        Err(e) => e.as_ret(),
-    }
-}
-
-fn sys_munmap(addr: u64, size: u64) -> i64 {
-    if addr == 0 || size == 0 {
-        return Errno::EINVAL.as_ret();
-    }
-
-    let mm = match crate::kernel::framework::mm::vma_get_current_mm() {
-        Some(m) => m,
-        None => {
-            let pages = size.div_ceil(4096);
-            raw::free_pages(addr as *mut u8, pages);
-            return 0;
-        }
-    };
-
-    match crate::kernel::services::mm::mmap::munmap_syscall(mm, addr, size) {
-        Ok(()) => 0,
-        Err(e) => e.as_ret(),
-    }
-}
-
-
-// ============================================================================
-// 时间 — time
-// ============================================================================
-
-fn sys_time(buf: *mut u64) -> i64 {
-    if buf.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    let ticks = raw::get_ticks();
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe { raw::write_u64(buf, ticks) };
-    ticks as i64
-}
-
-// ============================================================================
-// 网络 — socket / bind / listen / accept / connect / sendto / recvfrom / shutdown
-// ============================================================================
-
-/// C2: sched_setaffinity — 设置进程的 CPU 亲和性掩码
-///
-/// Linux 兼容 ABI: `sched_setaffinity(pid, cpusetsize, mask)`
-///   - `pid == 0` 表示当前进程
-///   - `cpusetsize` 必须 >= 8 (u64 掩码大小)
-///   - `mask` 用户空间指针, 指向 64-bit 位图
-///
-/// 返回 0 成功, 负值 -errno 失败
-pub fn sys_sched_setaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
-    if cpusetsize < 8 {
-        return Errno::EINVAL.as_ret();
-    }
-    if mask_ptr == 0 || !validate_user_buf(mask_ptr, 8) {
-        return Errno::EFAULT.as_ret();
-    }
-
-    // 读 user 空间 mask
-    let mask = match raw::read_u64_from_user(mask_ptr) {
-        Some(v) => v,
-        None => return Errno::EFAULT.as_ret(),
-    };
-
-    // 解析 pid (0 = 当前进程)
-    let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::process_get_current_pid()
-    } else if pid > 0 {
-        pid as u32
-    } else {
-        return Errno::EINVAL.as_ret();
-    };
-
-    if target_pid == 0 {
-        return Errno::ESRCH.as_ret();
-    }
-
-    // 写入 Process.cpuset_allowed
-    let ok = crate::kernel::framework::proc::process_with_mut(target_pid, |p| {
-            p.cpuset_allowed.store(mask, Ordering::Release);
-        })
-        .is_some();
-
-    if !ok {
-        return Errno::ESRCH.as_ret();
-    }
-
-    crate::klog_debug!(Sync, "[sched] setaffinity pid={} mask=0x{:X}", target_pid, mask);
-    0
-}
-
-/// C2: sched_getaffinity — 获取进程的 CPU 亲和性掩码
-///
-/// Linux 兼容 ABI: `sched_getaffinity(pid, cpusetsize, mask)`
-///
-/// 返回写入的字节数 (8) 成功, 负值 -errno 失败
-pub fn sys_sched_getaffinity(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i64 {
-    if cpusetsize < 8 {
-        return Errno::EINVAL.as_ret();
-    }
-    if mask_ptr == 0 || !validate_user_buf(mask_ptr, 8) {
-        return Errno::EFAULT.as_ret();
-    }
-
-    let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::process_get_current_pid()
-    } else if pid > 0 {
-        pid as u32
-    } else {
-        return Errno::EINVAL.as_ret();
-    };
-
-    if target_pid == 0 {
-        return Errno::ESRCH.as_ret();
-    }
-
-    let mask = crate::kernel::framework::proc::process_with(target_pid, |p| p.cpuset_allowed.load(Ordering::Acquire))
-        .unwrap_or(u64::MAX);
-
-    if !raw::write_u64_to_user(mask_ptr, mask) {
-        return Errno::EFAULT.as_ret();
-    }
-
-    crate::klog_debug!(Sync, "[sched] getaffinity pid={} mask=0x{:X}", target_pid, mask);
-    8 // 返回写入字节数 (Linux 兼容)
-}
-
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
-#[cfg(feature = "net")]
 #[cfg(feature = "net")]
 fn sys_getsockname(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     raw::sm_getsockname_call(sockfd, addr, addrlen) as i64
@@ -1390,246 +761,8 @@ fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     raw::sm_getpeername_call(sockfd, addr, addrlen) as i64
 }
 
-fn sys_getrusage(who: i32, rusage: u64) -> i64 {
-    let pid = crate::kernel::framework::proc::process_get_current_pid();
-    crate::kernel::framework::proc::proc_get_rusage(pid, who, rusage as *mut u8, 144) as i64
-}
-
-// ============================================================================
-// PWM 认证/权限 (Credo 私有 syscall)
-// ============================================================================
-
-fn sys_auth_login(
-    password: *const u8,
-    note: *const u8,
-) -> i64 {
-    crate::kernel::framework::credo::pwm_login(note, password)
-}
-
-fn sys_auth_logout() -> i64 {
-    crate::kernel::framework::credo::pwm_logout();
-    0
-}
-
-fn sys_auth_create(
-    password: *const u8,
-    note: *const u8,
-    _level: u8,
-) -> i64 {
-    let creator = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::credo::pwm_create(password, note, creator)
-}
-
-fn sys_auth_delete(target: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_delete(target) as i64
-}
-
-fn sys_auth_info(target: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_get_privilege_level(target) as i64
-}
-
-fn sys_auth_changepw(
-    old_pw: *const u8,
-    new_pw: *const u8,
-) -> i64 {
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::credo::pwm_change_password(pwm, old_pw, new_pw) as i64
-}
-
-fn sys_auth_verify(password: *const u8) -> i64 {
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::credo::pwm_verify_password(pwm, password) as i64
-}
-
-fn sys_auth_create_first(password: *const u8) -> i64 {
-    if password.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    crate::kernel::framework::credo::pwm_create_first_identity(password)
-}
-
-fn sys_auth_grant(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_grant(grantor, grantee, domain, caps) as i64
-}
-
-fn sys_auth_revoke(revoker: u64, target: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_revoke(revoker, target, domain, caps) as i64
-}
-
-fn sys_auth_check_cap(pwm: u64, domain: u16, required: u64) -> i64 {
-    if crate::kernel::framework::credo::pwm_has_capability(pwm, domain, required) {
-        1
-    } else {
-        0
-    }
-}
-
-fn sys_auth_get_caps(pwm: u64, domain: u16) -> i64 {
-    crate::kernel::framework::credo::pwm_get_capability_raw(pwm, domain) as i64
-}
-
-fn sys_pwm_get() -> i64 {
-    crate::kernel::framework::credo::pwm_get_current() as i64
-}
-
-fn sys_pwm_set(pwm: u64) -> i64 {
-    let pid = crate::kernel::framework::proc::process_get_current_pid();
-    crate::kernel::framework::proc::proc_set_pwm(pid, pwm) as i64
-}
-
-// ============================================================================
-// 系统信息 / 环境 (Credo 私有 syscall)
-// ============================================================================
-
-fn sys_gethostname(buf: *mut u8, size: u64) -> i64 {
-    if buf.is_null() || size == 0 || !raw::check_user_buf(buf as u64, size) {
-        return Errno::EFAULT.as_ret();
-    }
-    let hostname = b"localhost\0";
-    let copy_len = hostname.len().min(size as usize - 1);
-    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    unsafe { core::ptr::copy_nonoverlapping(hostname.as_ptr(), buf as *mut u8, copy_len) };
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe { raw::write_u8(buf.add(copy_len), 0) };
-    0
-}
-
-fn sys_sethostname(name: *const u8, len: u64) -> i64 {
-    if name.is_null() || len == 0 || len > 63 {
-        return Errno::EINVAL.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 0, 9) {
-        return Errno::EACCES.as_ret();
-    }
-    0
-}
-
-fn sys_reboot(cmd: i32) -> i64 {
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 0, 0x01) {
-        return Errno::EACCES.as_ret();
-    }
-    // SAFETY: 已在调用方通过 PWM CAP 检查, 重启为合法操作。
-    match cmd {
-        0 => loop {},
-        1 => match () {
-            #[cfg(target_arch = "x86_64")]
-            () => unsafe { raw::reboot_via_idt() },
-            #[cfg(target_arch = "aarch64")]
-            () => unsafe { raw::reboot_via_psci() },
-            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-            () => loop {},
-        },
-        _ => Errno::EINVAL.as_ret(),
-    }
-}
-
-fn sys_boot_check(check_type: i32) -> i64 {
-    match check_type {
-        0 => {
-            if crate::kernel::framework::credo::pwm_any_identity_exists() {
-                1
-            } else {
-                0
-            }
-        }
-        _ => -1,
-    }
-}
-
-// ============================================================================
-// 磁盘管理 (Credo 私有 syscall) — 通过 BlockDevice 注册表统一访问
-// ============================================================================
-
-#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-fn sys_disk_list(disks: *mut u64, max_count: u32) -> i64 {
-    if disks.is_null() || max_count == 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    let count = crate::kernel::framework::driver::block_device_count();
-    let limit = max_count.min(count as u32);
-    for i in 0..limit {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe { raw::write_u64(disks.add(i as usize), i as u64) };
-    }
-    limit as i64
-}
-
-#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-fn sys_disk_info(disk_id: u32, info: *mut u8) -> i64 {
-    if info.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    let present = if crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
-        1u32
-    } else {
-        0u32
-    };
-    let sectors = if present != 0 {
-        crate::kernel::framework::driver::hdd_total_sectors(disk_id as u8) as u32
-    } else {
-        0
-    };
-    let model_bytes = b"Block Dev";
-    let mut model = [0u8; 64];
-    let copy_len = if model_bytes.len() < 63 {
-        model_bytes.len()
-    } else {
-        63
-    };
-    model[..copy_len].copy_from_slice(&model_bytes[..copy_len]);
-    #[repr(C)]
-    #[derive(Copy, Clone)]
-    struct UserDiskInfo {
-        disk_id: u32,
-        present: u32,
-        total_sectors: u32,
-        sectors: u32,
-        model: [u8; 64],
-    }
-    let disk_info = UserDiskInfo {
-        disk_id,
-        present,
-        total_sectors: sectors,
-        sectors,
-        model,
-    };
-    // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    unsafe { raw::write_struct(info as *mut UserDiskInfo, &disk_info) };
-    0
-}
-
-#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-fn sys_disk_format(disk_id: u32, fstype: *const u8) -> i64 {
-    if fstype.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
-        return Errno::EACCES.as_ret();
-    }
-    if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
-        return Errno::ENOENT.as_ret();
-    }
-    let hvfs_start_lba: u32 = 18432;
-    let mut sector_buf = [0u8; 512];
-    sector_buf[0] = 0x48;
-    sector_buf[1] = 0x56;
-    sector_buf[2] = 0x46;
-    sector_buf[3] = 0x53;
-    sector_buf[8] = 0x02;
-    sector_buf[9] = 0x00;
-    if crate::kernel::framework::driver::hdd_write_sector(
-        disk_id as u8,
-        hvfs_start_lba as u64,
-        &sector_buf,
-    ) < 0
-    {
-        return Errno::EIO.as_ret();
-    }
-    0
-}
+// 已迁移到 services: sys_getrusage, sys_auth_*, sys_pwm_*, sys_gethostname,
+// sys_sethostname, sys_boot_check, sys_reboot, sys_disk_list/info/format/partition/fat_format
 
 fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
     buf[offset] = val as u8;
@@ -1644,129 +777,6 @@ fn write_le16(buf: &mut [u8], offset: usize, val: u16) {
 }
 
 const BOOT_PART_SECTORS: u32 = 16384;
-
-#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-fn sys_disk_partition(disk_id: u32, total_sectors: u64) -> i64 {
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
-        return Errno::EACCES.as_ret();
-    }
-    if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
-        return Errno::ENOENT.as_ret();
-    }
-    let hvfs_start = BOOT_PART_SECTORS;
-    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
-        total_sectors - hvfs_start as u64
-    } else {
-        0xFFFFFFFFu64
-    };
-    let mut mbr = [0u8; 512];
-    write_le32(&mut mbr, 446, 0x00000800);
-    write_le32(&mut mbr, 450, 0x06FEFFFF);
-    write_le32(&mut mbr, 454, 64u32);
-    write_le32(&mut mbr, 458, BOOT_PART_SECTORS - 64);
-    write_le32(&mut mbr, 462, hvfs_start);
-    write_le32(&mut mbr, 466, 0x83FEFFFF);
-    let hvfs_len = if hvfs_sectors > 0xFFFFFFFF {
-        0xFFFFFFFFu32
-    } else {
-        hvfs_sectors as u32
-    };
-    write_le32(&mut mbr, 470, hvfs_start);
-    write_le32(&mut mbr, 474, hvfs_len);
-    mbr[510] = 0x55;
-    mbr[511] = 0xAA;
-    if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, 0, &mbr) < 0 {
-        return Errno::EIO.as_ret();
-    }
-    0
-}
-
-#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-fn sys_fat_format(disk_id: u32) -> i64 {
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
-        return Errno::EACCES.as_ret();
-    }
-    if !crate::kernel::framework::driver::hdd_is_present(disk_id as u8) {
-        return Errno::ENOENT.as_ret();
-    }
-    let fat_start_lba: u32 = 2048;
-    let total_sectors: u16 = BOOT_PART_SECTORS as u16 - 64;
-    let sectors_per_cluster: u8 = 8;
-    let reserved_sectors: u16 = 1;
-    let num_fats: u8 = 2;
-    let root_entries: u16 = 512;
-    let sectors_per_fat: u16 =
-        ((total_sectors as u32 - 1 - 32) / (sectors_per_cluster as u32 * 256 + 2) + 1) as u16;
-    let mut bpb = [0u8; 512];
-    bpb[0] = 0xEB;
-    bpb[1] = 0x3C;
-    bpb[2] = 0x90;
-    bpb[3] = b'A';
-    bpb[4] = b'N';
-    bpb[5] = b'T';
-    bpb[6] = b'X';
-    bpb[7] = b'B';
-    bpb[8] = b'O';
-    bpb[9] = b'O';
-    bpb[10] = b'T';
-    write_le16(&mut bpb, 11, 512);
-    bpb[13] = sectors_per_cluster;
-    write_le16(&mut bpb, 14, reserved_sectors);
-    bpb[16] = num_fats;
-    write_le16(&mut bpb, 17, root_entries);
-    write_le16(&mut bpb, 19, total_sectors);
-    bpb[21] = 0xF8;
-    write_le16(&mut bpb, 22, sectors_per_fat);
-    bpb[36] = 0x80;
-    bpb[38] = 0x29;
-    bpb[510] = 0x55;
-    bpb[511] = 0xAA;
-    if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, fat_start_lba as u64, &bpb) < 0
-    {
-        return Errno::EIO.as_ret();
-    }
-    let fat_begin = fat_start_lba + reserved_sectors as u32;
-    let mut fat_sector = [0u8; 512];
-    fat_sector[0] = 0xF8;
-    fat_sector[1] = 0xFF;
-    fat_sector[2] = 0xFF;
-    fat_sector[3] = 0xFF;
-    for i in 0..num_fats {
-        let lba = fat_begin + i as u32 * sectors_per_fat as u32;
-        if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, lba as u64, &fat_sector)
-            < 0
-        {
-            return Errno::EIO.as_ret();
-        }
-        let zero = [0u8; 512];
-        for s in 1..sectors_per_fat as u32 {
-            if crate::kernel::framework::driver::hdd_write_sector(
-                disk_id as u8,
-                (lba + s) as u64,
-                &zero,
-            ) < 0
-            {
-                return Errno::EIO.as_ret();
-            }
-        }
-    }
-    let root_dir_lba = fat_begin + num_fats as u32 * sectors_per_fat as u32;
-    let root_dir_sectors = (root_entries as u32 * 32).div_ceil(512);
-    let zero = [0u8; 512];
-    for s in 0..root_dir_sectors {
-        if crate::kernel::framework::driver::hdd_write_sector(
-            disk_id as u8,
-            (root_dir_lba + s) as u64,
-            &zero,
-        ) < 0
-        {
-            return Errno::EIO.as_ret();
-        }
-    }
-    0
-}
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 fn sys_boot_install(disk_id: u32) -> i64 {
@@ -1850,99 +860,7 @@ fn sys_boot_install(disk_id: u32) -> i64 {
     0
 }
 
-// ============================================================================
-// 进程列表 (Credo 私有 syscall)
-// ============================================================================
-
-#[repr(C)]
-struct ProcListEntry {
-    pid: u32,
-    state: u8,
-    _pad: [u8; 3],
-    pwm: u64,
-    priority: u32,
-    _pad2: u32,
-    name: [u8; 48],
-}
-
-fn sys_proc_list(buf: *mut u8, max_entries: u32) -> i64 {
-    if buf.is_null() || !raw::check_user_ptr(buf as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let entry_size = core::mem::size_of::<ProcListEntry>() as u32;
-    let mut count: i32 = 0;
-    crate::kernel::framework::proc::process_for_each(|proc| {
-        if (count as u32) < max_entries {
-            let entry_ptr =
-                // SAFETY: `entry_size` 由调用方保证为有效指针; 只读访问
-                unsafe { buf.add(count as usize * entry_size as usize) as *mut ProcListEntry };
-            // SAFETY: `entry_ptr` 由调用方保证为有效指针; 只读访问
-            let entry = unsafe { &mut *entry_ptr };
-            entry.pid = proc.pid.0;
-            entry.state = proc.get_state() as u8;
-            entry._pad = [0u8; 3];
-            entry.pwm = proc.get_pwm();
-            entry.priority = proc.get_priority() as u32;
-            entry._pad2 = 0;
-            let name = proc.name.lock();
-            let name_bytes = name.as_bytes();
-            let len = name_bytes.len().min(47);
-            entry.name[..len].copy_from_slice(&name_bytes[..len]);
-            entry.name[len] = 0;
-            count += 1;
-        }
-        true
-    });
-    count as i64
-}
-
-fn sys_proc_setpri(pid: u32, priority: u32) -> i64 {
-    crate::kernel::framework::proc::proc_set_priority(pid, priority) as i64
-}
-
-// ============================================================================
-// ioctl — 设备 I/O 控制
-// ============================================================================
-
-const TIOCGWINSZ: u64 = 0x5413;
-const TCGETS: u64 = 0x5401;
-
-fn sys_ioctl(_fd: i32, request: u64, arg: u64) -> i64 {
-    if arg == 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    match request {
-        TIOCGWINSZ => {
-            #[repr(C)]
-            #[derive(Copy, Clone)]
-            struct Winsize {
-                ws_row: u16,
-                ws_col: u16,
-                ws_xpixel: u16,
-                ws_ypixel: u16,
-            }
-            let ws = Winsize {
-                ws_row: 25,
-                ws_col: 80,
-                ws_xpixel: 0,
-                ws_ypixel: 0,
-            };
-            let dst = arg as *mut Winsize;
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe { raw::write_struct(dst, &ws) };
-            0
-        }
-        // P1-I-39 修复: TCGETS 之前返回 0 是 stub, 假装成功但不填充 termios,
-        // 致 isatty()/shell/ncurses 误判终端. 显式返回 ENOSYS 告知调用方未实现.
-        // 后续若要支持真实 termios 需增加 console driver + fd → tty 映射.
-        TCGETS => Errno::ENOSYS.as_ret(),
-        _ => Errno::ENOTTY.as_ret(),
-    }
-}
-
-// ============================================================================
-// nanosleep — 高精度睡眠 (基于 ticks, 1ms 粒度)
-// ============================================================================
+// 已迁移到 services: sys_proc_list, sys_proc_setpri, ProcListEntry, sys_ioctl
 
 pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
     if req == 0 || !raw::check_user_ptr(req) {
@@ -1987,98 +905,7 @@ pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
     0
 }
 
-// ============================================================================
-// gettimeofday / clock_gettime
-// ============================================================================
-
-const CLOCK_REALTIME: i32 = 0;
-const CLOCK_MONOTONIC: i32 = 1;
-
-fn sys_clock_gettime(clk_id: i32, tp: *mut u8) -> i64 {
-    if tp.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    if clk_id != CLOCK_REALTIME && clk_id != CLOCK_MONOTONIC {
-        return Errno::EINVAL.as_ret();
-    }
-    #[repr(C)]
-    #[derive(Copy, Clone)]
-    struct Timespec {
-        tv_sec: i64,
-        tv_nsec: i64,
-    }
-    let ticks = raw::get_ticks();
-    let t = Timespec {
-        tv_sec: (ticks / 1000) as i64,
-        tv_nsec: ((ticks % 1000) * 1000000) as i64,
-    };
-    let dst = tp as *mut Timespec;
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe { raw::write_struct(dst, &t) };
-    0
-}
-
-// ============================================================================
-// poll — 基础轮询框架
-// ============================================================================
-
-const POLLIN: i16 = 1;
-const POLLOUT: i16 = 4;
-
-fn sys_poll(fds: *mut u8, nfds: u32, _timeout: i32) -> i64 {
-    if fds.is_null() || nfds == 0 {
-        return 0;
-    }
-    #[repr(C)]
-    #[derive(Copy, Clone)]
-    struct PollFd {
-        fd: i32,
-        events: i16,
-        revents: i16,
-    }
-    let mut ready: i32 = 0;
-    for i in 0..nfds as usize {
-        // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-        let pfd_ptr = unsafe { (fds as *mut PollFd).add(i) };
-        // SAFETY: `pfd_ptr` 由调用方保证为有效指针; 只读访问
-        let pfd = unsafe { &mut *pfd_ptr };
-        pfd.revents = 0;
-        if pfd.fd < 0 {
-            continue;
-        }
-        if pfd.events & POLLIN != 0 {
-            let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
-            if (pfd.fd as usize) < 256 && fd_table[pfd.fd as usize].used {
-                pfd.revents |= POLLIN;
-                ready += 1;
-            }
-        }
-        if pfd.events & POLLOUT != 0 {
-            pfd.revents |= POLLOUT;
-            ready += 1;
-        }
-    }
-    ready as i64
-}
-
-// ============================================================================
-// chmod / fchmod / chown
-// ============================================================================
-
-fn sys_chown(path: *const u8, uid: u32, gid: u32) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) {
-        return Errno::EFAULT.as_ret();
-    }
-    let tbl = crate::kernel::framework::credo::identity::get_table();
-    let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
-    let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
-    let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
-}
-
-// ============================================================================
-// kill — 信号发送
-// ============================================================================
+// 已迁移到 services: sys_clock_gettime, sys_poll, sys_chown
 
 const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
@@ -2097,178 +924,13 @@ pub fn sys_kill(pid: i32, sig: i32) -> i64 {
     }
 }
 
-// ============================================================================
-// readlink — 读取符号链接的目标路径
-//
-// 注: HvFS 当前不支持符号链接, 返回 EINVAL 提示调用者此路径非符号链接。
-// ============================================================================
-
-// ============================================================================
-// umount2
-// ============================================================================
-
-// ============================================================================
-// getrlimit / sysinfo
-// ============================================================================
-
-fn sys_getrlimit(_resource: i32, rlim: *mut u8) -> i64 {
-    if rlim.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    #[repr(C)]
-    #[derive(Copy, Clone)]
-    struct Rlimit {
-        rlim_cur: u64,
-        rlim_max: u64,
-    }
-    let r = Rlimit {
-        rlim_cur: u64::MAX,
-        rlim_max: u64::MAX,
-    };
-    let dst = rlim as *mut Rlimit;
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe { raw::write_struct(dst, &r) };
-    0
-}
-
-fn sys_sysinfo(info: *mut u8) -> i64 {
-    if info.is_null() {
-        return Errno::EINVAL.as_ret();
-    }
-    #[repr(C)]
-    #[derive(Copy, Clone)]
-    struct SysInfo {
-        uptime: i64,
-        loads: [u64; 3],
-        totalram: u64,
-        freeram: u64,
-        sharedram: u64,
-        bufferram: u64,
-        totalswap: u64,
-        freeswap: u64,
-        procs: u16,
-        _pad: [u8; 6],
-        totalhigh: u64,
-        freehigh: u64,
-        mem_unit: u32,
-    }
-    let si = SysInfo {
-        uptime: (raw::get_ticks() / 1000) as i64,
-        loads: [0, 0, 0],
-        totalram: 128 * 1024 * 1024,
-        freeram: 97 * 1024 * 1024,
-        sharedram: 0,
-        bufferram: 0,
-        totalswap: 0,
-        freeswap: 0,
-        procs: 1,
-        _pad: [0u8; 6],
-        totalhigh: 0,
-        freehigh: 0,
-        mem_unit: 1,
-    };
-    let dst = info as *mut SysInfo;
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe { raw::write_struct(dst, &si) };
-    0
-}
-
-// ============================================================================
-// 文件截断 — truncate / ftruncate
-// ============================================================================
-
-fn sys_truncate(path: *const u8, length: i64) -> i64 {
-    if path.is_null() || !raw::check_user_ptr(path as u64) || length < 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    let fd = crate::kernel::framework::fs::vfs_open(
-        path,
-        0o2,
-        crate::kernel::framework::credo::pwm_get_current(),
-    );
-    if fd < 0 {
-        return Errno::ENOENT.as_ret();
-    }
-    let result = crate::kernel::framework::fs::vfs_truncate_internal(fd as u32, length as u64);
-    crate::kernel::framework::fs::vfs_close(fd as u32);
-    if result < 0 {
-        Errno::EIO.as_ret()
-    } else {
-        0
-    }
-}
-
-fn sys_ftruncate(fd: i32, length: i64) -> i64 {
-    if fd < 0 || length < 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    let result = crate::kernel::framework::fs::vfs_truncate_internal(fd as u32, length as u64);
-    if result < 0 {
-        Errno::EIO.as_ret()
-    } else {
-        0
-    }
-}
-
-// ============================================================================
-// umask — 文件创建模式掩码
-// ============================================================================
-
-// ============================================================================
-// 文件同步 — fsync
-// ============================================================================
-
-// ============================================================================
-// flock — BSD 风格整文件锁
-// ============================================================================
-
-fn sys_flock(fd: i32, operation: i32) -> i64 {
-    use crate::kernel::framework::fs::{sys_flock as do_flock, FlockResult};
-
-    if fd < 0 {
-        return Errno::EBADF.as_ret();
-    }
-
-    // 获取 fd 对应的 inode 号
-    let ino = {
-        let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
-        if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS || !fd_table[fd as usize].used {
-            return Errno::EBADF.as_ret();
-        }
-        fd_table[fd as usize].node_id
-    };
-
-    let pid = crate::kernel::framework::proc::process_get_current_pid();
-
-    match do_flock(fd, operation, pid, ino) {
-        FlockResult::Ok => 0,
-        FlockResult::WouldBlock => Errno::EAGAIN.as_ret(),
-        FlockResult::Invalid => Errno::EINVAL.as_ret(),
-        FlockResult::NoSpace => Errno::ENOLCK.as_ret(),
-        FlockResult::NotHeld => Errno::EINVAL.as_ret(),
-    }
-}
-
-/// inotify_add_watch 辅助: 从路径参数解析 inode 号
-fn sys_inotify_add_watch(inotify_fd: i64, ino: u32, mask: u32) -> i64 {
-    crate::kernel::framework::fs::sys_inotify_add_watch(inotify_fd, ino, mask)
-}
-
-// ============================================================================
-// 进程组/会话 — getpgid / setsid
-// ============================================================================
-
-// ============================================================================
-// tgkill — 向指定线程发送信号
-// ============================================================================
+// 已迁移到 services: readlink, umount2, getrlimit, sysinfo, truncate, ftruncate, flock, sys_inotify_add_watch
 
 fn sys_tgkill(_tgid: i32, tid: i32, sig: i32) -> i64 {
     sys_kill(tid, sig)
 }
 
-// ============================================================================
 // 信号框架 — rt_sigaction / rt_sigprocmask / rt_sigreturn
-// ============================================================================
 
 const SIG_DFL_SYSCALL: u64 = 0;
 const SIG_IGN_SYSCALL: u64 = 1;
@@ -2549,19 +1211,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     offset as i64
 }
 
-fn sys_credo_proc_cputime(pid: u32) -> i64 {
-    let target_pid = if pid == 0 {
-        crate::kernel::framework::proc::process_get_current_pid()
-    } else {
-        pid
-    };
-    use crate::kernel::framework::proc::{process_exists, scheduler_current_cputime};
-    if !process_exists(target_pid) {
-        return Errno::ESRCH.as_ret();
-    }
-    let cputime = scheduler_current_cputime();
-    cputime as i64
-}
+// 已迁移到 services: sys_credo_proc_cputime
 
 // ============================================================================
 // 帧缓冲设备 — fb_open / fb_mmap / fb_release

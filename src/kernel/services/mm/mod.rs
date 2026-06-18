@@ -16,6 +16,8 @@ pub mod mmap;
 pub mod mremap;
 pub mod brk;
 pub mod mprotect;
+/// madvise / mlock / mincore 系统调用策略
+pub mod madvise_mlock;
 /// D3: NUMA 安全封装
 pub mod numa;
 /// D9: 内存压力策略 (阈值/分级/判定) — services 层

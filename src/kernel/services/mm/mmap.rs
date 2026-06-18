@@ -1,21 +1,25 @@
 #![deny(unsafe_code)]
-//! mmap — services 层安全代理
+//! mmap/munmap/mprotect 系统调用实现 — services 层策略主体
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::syscall::mmap。
+//!
+//! ## 迁移记录
+//!
+//! 策略代码于 2026-06-17 从 framework::syscall::mmap 迁移至此。
+//! framework 层仅保留 re-export 保持调用方兼容。
 //!
 //! ## 职责
 //!
-//! - 提供类型安全的 mmap/munmap API
+//! - mmap/munmap/mprotect 策略逻辑 (参数验证、VMA 创建决策)
 //! - VFS 交互: fd → inode_id 解析 (属于 services 层职责)
-//! - 参数验证与类型转换
+//! - 文件映射 Page Cache 引用释放
 
-use crate::kernel::framework::syscall::mmap as fw_mmap;
 use crate::kernel::framework::syscall::Errno;
-use crate::kernel::framework::mm::MmStruct;
+use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
+use crate::kernel::framework::mm::{PageFlags as VmaFlags, PAGE_SIZE};
 
 // ============================================================================
-// mmap 标志位 re-export
+// mmap 标志位
 // ============================================================================
 
 /// MAP_SHARED: 写入回写文件
@@ -27,6 +31,8 @@ pub const MAP_ANONYMOUS: i32 = 0x20;
 /// MAP_FIXED: 强制使用指定地址
 pub const MAP_FIXED: i32 = 0x10;
 
+pub const SYS_MMAP_FLAGS: u64 = 0;
+
 // ============================================================================
 // VFS 交互 (services 层职责)
 // ============================================================================
@@ -34,35 +40,28 @@ pub const MAP_FIXED: i32 = 0x10;
 /// 从 fd 获取 inode_id
 ///
 /// 通过进程文件描述符表查找对应的 inode 编号.
-/// 此函数属于 services 层, 因为它涉及 VFS fdtable 查找,
-/// 而 VFS 是 services 层管理的资源.
-///
-/// 当前简化实现: fd 直接映射为 inode_id + 1 (避免 0).
-/// 后续集成完整 VFS fdtable 后替换.
+/// 此函数属于 services 层, 因为它涉及 VFS fdtable 查找.
 pub fn fd_to_inode_id(fd: i32) -> u32 {
     if fd < 0 {
         return 0;
     }
     // TODO(TRACK-5B3EBC): 从当前进程的 fdtable 获取 inode_id
-    // 当前简化: fd + 1 作为 inode_id (0 表示无效)
     (fd as u32).wrapping_add(1)
 }
 
+/// 通过 VFS_MANAGER 把 fd 反查为挂载点索引.
+pub fn fd_to_mount_idx(fd: i32) -> Option<usize> {
+    if fd < 0 {
+        return None;
+    }
+    crate::kernel::framework::fs::VFS_MANAGER.get_fd_mount_idx(fd as usize)
+}
+
 // ============================================================================
-// mmap 安全 API
+// mmap 策略实现
 // ============================================================================
 
-/// mmap 系统调用安全代理
-///
-/// 参数验证 + VFS 交互 + 委托 framework 层.
-///
-/// ## pwm 桥接
-///
-/// `pwm` 为创建该映射的进程凭证. framework 层在 #PF 同步填 pcache 时
-/// 通过 `vfs_pread_inode(.., pwm)` 校验文件访问权限. 调用方应传入
-/// 进程当前凭证 (例如 `credo::pwm_get_current()`). 不传 (pwm==0) 时
-/// 表示"无会话",framework 层 ramfs.read 应当返回 EACCES —— 这是
-/// P0-I-29 修复的核心: 不再降级为隐式管理员.
+#[inline]
 pub fn mmap_syscall(
     mm: &MmStruct,
     addr_hint: u64,
@@ -73,38 +72,266 @@ pub fn mmap_syscall(
     offset: u64,
     pwm: u64,
 ) -> Result<usize, Errno> {
-    // 参数验证
     if length == 0 {
         return Err(Errno::EINVAL);
     }
 
+    let len_aligned = ((length as usize) + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
+
+    let page_flags = prot_to_vma_flags(prot);
+
+    let map_private = (flags & MAP_PRIVATE) != 0;
+    let map_shared = (flags & MAP_SHARED) != 0;
     let map_anonymous = (flags & MAP_ANONYMOUS) != 0;
 
-    // 文件映射: 在 services 层解析 fd → inode_id
-    if !map_anonymous && fd >= 0 {
-        let inode_id = fd_to_inode_id(fd);
-        if inode_id == 0 {
-            return Err(Errno::EBADF);
-        }
-        // inode_id 已在 services 层解析, framework 层直接使用
+    if map_shared && map_private {
+        return Err(Errno::EINVAL);
+    }
+    if !map_shared && !map_private {
+        return Err(Errno::EINVAL);
     }
 
-    // 委托 framework 层执行底层映射, 透传 pwm
-    fw_mmap::mmap_syscall(mm, addr_hint, length, prot, flags, fd, offset, pwm)
+    // ── 匿名映射 ──
+    if map_anonymous {
+        let addr = find_or_allocate_addr(mm, addr_hint, len_aligned)?;
+        let aligned_addr = addr & !(PAGE_SIZE as usize - 1);
+
+        let final_flags = page_flags | VmaFlags::PRESENT;
+        let vma = Vma::new(
+            aligned_addr,
+            aligned_addr + len_aligned,
+            final_flags,
+            VmaType::Anonymous,
+        );
+        match mm.insert_vma(vma) {
+            Ok(()) => {}
+            Err(_) => return Err(Errno::ENOMEM),
+        }
+
+        return Ok(aligned_addr);
+    }
+
+    // ── 文件映射 ──
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+
+    if !offset.is_multiple_of(PAGE_SIZE) {
+        return Err(Errno::EINVAL);
+    }
+
+    let inode_id = fd_to_inode_id(fd);
+    if inode_id == 0 {
+        return Err(Errno::EBADF);
+    }
+
+    let mount_idx = fd_to_mount_idx(fd);
+
+    let addr = find_or_allocate_addr(mm, addr_hint, len_aligned)?;
+    let aligned_addr = addr & !(PAGE_SIZE as usize - 1);
+
+    let final_flags = if map_shared {
+        page_flags | VmaFlags::PRESENT
+    } else {
+        (page_flags | VmaFlags::PRESENT) & !VmaFlags::WRITABLE
+    };
+
+    let vma = Vma::file_backed(
+        aligned_addr,
+        aligned_addr + len_aligned,
+        final_flags,
+        offset,
+        inode_id,
+        pwm,
+        map_shared,
+        mount_idx,
+    );
+
+    match mm.insert_vma(vma) {
+        Ok(()) => {}
+        Err(_) => return Err(Errno::ENOMEM),
+    }
+
+    Ok(aligned_addr)
 }
 
-/// munmap 系统调用安全代理
+/// 查找或分配映射地址
+fn find_or_allocate_addr(mm: &MmStruct, addr_hint: u64, len_aligned: usize) -> Result<usize, Errno> {
+    if addr_hint != 0 && addr_hint < 0x0000_7FFF_FFFF_F000 {
+        Ok(addr_hint as usize)
+    } else {
+        match mm.find_free_range(len_aligned) {
+            Some(a) => Ok(a),
+            None => Err(Errno::ENOMEM),
+        }
+    }
+}
+
+// ============================================================================
+// munmap 策略实现
+// ============================================================================
+
+#[inline]
 pub fn munmap_syscall(mm: &MmStruct, addr: u64, length: u64) -> Result<(), Errno> {
     if addr == 0 || length == 0 {
         return Err(Errno::EINVAL);
     }
-    fw_mmap::munmap_syscall(mm, addr, length)
+
+    let start = addr as usize;
+    let end = start + length as usize;
+
+    release_file_pages(mm, start, end);
+
+    mm.remove_range(start, end);
+    Ok(())
 }
 
-/// mprotect 系统调用安全代理
+/// 释放文件映射区域的 Page Cache 引用
+fn release_file_pages(mm: &MmStruct, start: usize, end: usize) {
+    let vmas = mm.vmas.lock();
+    for vma in vmas.iter() {
+        if vma.vma_type != VmaType::FileBacked || vma.inode_id == 0 {
+            continue;
+        }
+        if vma.start >= end || vma.end <= start {
+            continue;
+        }
+
+        let overlap_start = vma.start.max(start);
+        let overlap_end = vma.end.min(end);
+
+        let mut addr = overlap_start;
+        while addr < overlap_end {
+            let page_index = ((addr - vma.start) as u64 + vma.offset) / PAGE_SIZE;
+            crate::kernel::framework::mm::pcache::pcache_put(vma.inode_id, page_index);
+            addr += PAGE_SIZE as usize;
+        }
+    }
+}
+
+// ============================================================================
+// mprotect 策略实现
+// ============================================================================
+
+#[inline]
 pub fn mprotect_syscall(mm: &MmStruct, addr: u64, length: u64, prot: i32) -> Result<(), Errno> {
     if addr == 0 || length == 0 {
         return Err(Errno::EINVAL);
     }
-    fw_mmap::mprotect_syscall(mm, addr, length, prot)
+
+    let start = addr as usize;
+    let end = start + length as usize;
+    let new_flags = prot_to_vma_flags(prot);
+
+    let mut vmas = mm.vmas.lock();
+    for vma in vmas.iter_mut() {
+        if vma.start < end && vma.end > start {
+            vma.flags = (vma.flags & VmaFlags::empty()) | new_flags;
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+
+fn prot_to_vma_flags(prot: i32) -> VmaFlags {
+    let mut flags = VmaFlags::USER;
+
+    if prot & 0x01 != 0 {
+        flags |= VmaFlags::PRESENT;
+    }
+    if prot & 0x02 != 0 {
+        flags |= VmaFlags::WRITABLE;
+    }
+    if prot & 0x04 == 0 {
+        flags |= VmaFlags::NX;
+    }
+
+    flags
+}
+
+// ============================================================================
+// syscall 入口 — 从 framework::syscall::sys_mmap/sys_munmap 迁移的策略层
+// ============================================================================
+
+/// mmap syscall 策略入口
+pub fn mmap_syscall_entry(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -> i64 {
+    if size == 0 {
+        return Errno::EINVAL.as_ret();
+    }
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(pwm, 7, 0x01) {
+        return Errno::EACCES.as_ret();
+    }
+
+    // 无 mm 时走裸页分配路径
+    if let Some(ptr) = crate::kernel::framework::syscall::api::mmap_get_mm_or_alloc(size) {
+        return ptr as i64;
+    }
+
+    // 有 mm 时走 VMA 路径
+    let mm = match crate::kernel::framework::mm::vma_get_current_mm() {
+        Some(m) => m,
+        None => return Errno::ENOMEM.as_ret(),
+    };
+
+    match mmap_syscall(mm, addr, size, prot, flags, fd, offset, pwm) {
+        Ok(a) => a as i64,
+        Err(e) => e.as_ret(),
+    }
+}
+
+/// munmap syscall 策略入口
+pub fn munmap_syscall_entry(addr: u64, size: u64) -> i64 {
+    if addr == 0 || size == 0 {
+        return Errno::EINVAL.as_ret();
+    }
+
+    // 无 mm 时走裸页释放路径
+    if crate::kernel::framework::mm::vma_get_current_mm().is_none() {
+        crate::kernel::framework::syscall::api::munmap_free_pages(addr, size);
+        return 0;
+    }
+
+    let mm = match crate::kernel::framework::mm::vma_get_current_mm() {
+        Some(m) => m,
+        None => return Errno::ENOMEM.as_ret(),
+    };
+
+    match munmap_syscall(mm, addr, size) {
+        Ok(()) => 0,
+        Err(e) => e.as_ret(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prot_to_flags() {
+        let r = prot_to_vma_flags(0x01);
+        assert!(r.contains(VmaFlags::PRESENT));
+        assert!(!r.contains(VmaFlags::WRITABLE));
+        assert!(r.contains(VmaFlags::USER));
+
+        let rw = prot_to_vma_flags(0x03);
+        assert!(rw.contains(VmaFlags::PRESENT));
+        assert!(rw.contains(VmaFlags::WRITABLE));
+
+        let rwx = prot_to_vma_flags(0x07);
+        assert!(rwx.contains(VmaFlags::PRESENT));
+        assert!(rwx.contains(VmaFlags::WRITABLE));
+        assert!(!rwx.contains(VmaFlags::NX));
+    }
+
+    #[test]
+    fn test_mmap_flags_constants() {
+        assert_eq!(MAP_SHARED, 0x01);
+        assert_eq!(MAP_PRIVATE, 0x02);
+        assert_eq!(MAP_ANONYMOUS, 0x20);
+    }
 }

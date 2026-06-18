@@ -40,6 +40,12 @@ pub mod dcache;
 pub mod flock;
 pub mod inotify;
 pub mod sendfile;
+/// 文件操作策略 — ioctl / clock_gettime / poll / chown / truncate / flock
+pub mod file_ops;
+/// 目录与定位操作策略 — lseek / getdents
+pub mod dir_ops;
+/// VFS 管理器 (挂载表 + FD 表 + 路径解析)
+pub mod vfs_manager;
 
 // ============================================================================
 // T-05: VFS 后端决策策略

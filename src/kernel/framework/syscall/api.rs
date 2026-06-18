@@ -147,6 +147,36 @@ pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
     super::validate_user_buf(ptr, len)
 }
 
+/// 安全写入 u64 到用户空间指针 (先校验后写入)
+pub fn write_u64_to_user(ptr: u64, val: u64) -> bool {
+    super::raw::write_u64_to_user(ptr, val)
+}
+
+/// 安全从用户空间指针读取 u64 (先校验后读取)
+pub fn read_u64_from_user(ptr: u64) -> Option<u64> {
+    super::raw::read_u64_from_user(ptr)
+}
+
+/// 安全写入结构体到用户空间指针 (先校验后写入)
+pub fn write_struct_to_user<T: Copy>(ptr: u64, src: &T) -> bool {
+    super::raw::write_struct_to_user(ptr, src)
+}
+
+/// 安全从用户空间指针读取结构体 (先校验后读取)
+pub fn read_struct_from_user<T: Copy>(ptr: u64, dst: &mut T) -> bool {
+    super::raw::read_struct_from_user(ptr, dst)
+}
+
+/// 安全写入 rlimit (两个 u64) 到用户空间指针
+pub fn write_rlimit_to_user(ptr: u64, cur: u64, max: u64) -> bool {
+    super::raw::write_rlimit_to_user(ptr, cur, max)
+}
+
+/// 获取系统 ticks 计数 (ms 精度)
+pub fn get_ticks() -> u64 {
+    super::raw::get_ticks()
+}
+
 /// nanosleep 系统调用实现 (TCB: 操作 hrtimer + 调度器)
 pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
     super::sys_nanosleep(req, rem)
@@ -170,4 +200,36 @@ pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
 /// P1-I-45: sigaltstack 系统调用实现 (TCB: 替代栈注册/查询)
 pub fn sys_sigaltstack(ss: u64, old_ss: u64) -> i64 {
     super::sys_sigaltstack(ss, old_ss)
+}
+
+/// reboot 机制: cmd=0 停机, cmd=1 重启 (TCB: 操作 IDT/PSCI)
+pub fn reboot_mechanism(cmd: i32) -> i64 {
+    match cmd {
+        0 => loop {},
+        1 => match () {
+            #[cfg(target_arch = "x86_64")]
+            () => unsafe { super::raw::reboot_via_idt() },
+            #[cfg(target_arch = "aarch64")]
+            () => unsafe { super::raw::reboot_via_psci() },
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+            () => loop {},
+        },
+        _ => crate::kernel::framework::syscall::Errno::EINVAL.as_ret(),
+    }
+}
+
+/// mmap 机制: 获取当前进程 mm 或分配裸页 (TCB: 操作页分配器)
+pub fn mmap_get_mm_or_alloc(size: u64) -> Option<*mut u8> {
+    if crate::kernel::framework::mm::vma_get_current_mm().is_some() {
+        return None; // 有 mm, 走 VMA 路径
+    }
+    let pages = size.div_ceil(4096);
+    let ptr = unsafe { super::raw::alloc_pages(pages) };
+    if ptr.is_null() { None } else { Some(ptr) }
+}
+
+/// munmap 机制: 无 mm 时释放裸页 (TCB: 操作页分配器)
+pub fn munmap_free_pages(addr: u64, size: u64) {
+    let pages = size.div_ceil(4096);
+    unsafe { super::raw::free_pages(addr as *mut u8, pages) }
 }

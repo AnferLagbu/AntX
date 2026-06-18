@@ -50,6 +50,18 @@ pub mod wait4;
 pub mod posix_timer;
 /// D7: Shadow Stack (CET) 安全封装
 pub mod shadow_stack;
+/// OOMD — 内存不足守护进程策略
+pub mod oomd;
+/// 进程优先级策略 — nice / getpriority / setpriority
+pub mod priority;
+/// CPU 亲和性策略 — sched_setaffinity / sched_getaffinity
+pub mod affinity;
+/// 系统信息策略 — getrusage / sysinfo / getrlimit / hostname / boot_check
+pub mod sysinfo;
+/// 进程管理策略 — proc_list / proc_setpri / credo_proc_cputime
+pub mod proc_mgmt;
+/// 进程生命周期策略 — fork / exit / sched_yield
+pub mod lifecycle;
 
 // ============================================================================
 // ID 与状态 (直接 re-export 本地 types 模块)
