@@ -467,7 +467,110 @@
 
 ---
 
-## 六、TRACK 标记项 (DRIVER-*)
+### [ ] DOC-5: engineering-progress.md E6 VFS 策略提取状态更新
+
+**当前**: `engineering-progress.md` §二 E6 行标"进行中 (2/9)"，实际所有 E6 子项 (E6-1~E6-9) 均已完成
+
+**方案**: 更新为"已完成 (9/9)"，补全完成日期与关键产出
+
+**验收**:
+- [ ] E6 行状态与实际一致
+- [ ] 变更历史追加条目
+
+---
+
+### [ ] DOC-6: pi-mutex-design.md 状态更新
+
+**当前**: 标记"待实施 (P1 插班 #3)"，实际 PI Mutex 已于 2026-06-08 完成
+
+**方案**: 更新状态为"已完成 (2026-06-08)"，补全实际产出摘要
+
+**验收**:
+- [ ] 状态标记与实际一致
+
+---
+
+### [ ] DOC-7: uds-design.md 状态更新
+
+**当前**: 标记"待实施 (Phase C.3)"，实际 UDS 已于 2026-06-08 完成
+
+**方案**: 更新状态为"已完成 (2026-06-08)"，补全实际产出摘要
+
+**验收**:
+- [ ] 状态标记与实际一致
+
+---
+
+## 六、旧维护文档遗留未完成项 (LEGACY-*)
+
+> 以下项目来自 maintenance-2026-06-11.md 中 `[ ]` 未闭合项，经源码验证后纳入。
+
+### [ ] LEGACY-1: 用户态进程可正常运行 axsh
+
+**来源**: maintenance-2026-06-11.md I-29 验收清单
+**当前**: 用户态 Ring 3 切换已实现，但 axsh 集成运行尚未验证
+
+**验收**:
+- [ ] QEMU 启动后 axsh 可正常执行基本命令
+- [ ] 双架构验证
+
+---
+
+### [ ] LEGACY-2: Socket 并发性能测试
+
+**来源**: maintenance-2026-06-11.md I-42 验收清单
+**当前**: SocketWaitQueue 基础设施已实现，但性能测试未补
+
+**验收**:
+- [ ] 单核 1000 个并发 send 延迟 < 1ms (QEMU 环境验证)
+
+---
+
+### [ ] LEGACY-3: virtio-blk I/O 中断路径实测
+
+**来源**: maintenance-2026-06-11.md I-43 验收清单 + delivery-summary-2026-06-13.md
+**当前**: ISR acknowledge + IoCompletionArray + 多实例已实现，但未在 QEMU + virtio 设备上实测
+
+**验收**:
+- [ ] QEMU virtio-blk I/O 中断路径实测通过
+- [ ] 4K 写延迟 < 100μs (QEMU 环境)
+
+---
+
+### [ ] LEGACY-4: BlockOps thunk 移除优化
+
+**来源**: maintenance-2026-06-11.md I-43 剩余工作
+**当前**: 内核全部为内部 trait dispatch，BlockOps thunk 可在未来移除
+
+**验收**:
+- [ ] 评估是否可移除 BlockOps thunk
+- [ ] 若可移除，完成移除并补测试
+
+---
+
+### [ ] LEGACY-5: HvFS 全部子系统 trait 化
+
+**来源**: maintenance-2026-06-11.md I-04 验收清单
+**当前**: 仅 Checksum trait 已完成，其余子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 待按需扩展
+
+**验收**:
+- [ ] 至少再完成 1 个子系统 trait 化 (如 SPA 或 DMU)
+- [ ] host-test 验证
+
+---
+
+### [ ] LEGACY-6: sysctl 框架实现
+
+**来源**: maintenance-2026-06-11.md I-46 验收清单
+**当前**: 运行时调参 API 已有 (AtomicUsize)，但无 sysctl 框架
+
+**验收**:
+- [ ] 评估 sysctl 框架需求范围
+- [ ] 若本期实施，完成基础 sysctl 注册/读取/修改 API
+
+---
+
+## 七、TRACK 标记项 (DRIVER-*)
 
 > 以下为 USB/Display 驱动占位 TODO，当前标记为"保留占位"。维护周期应评估是否可推进。
 
@@ -507,7 +610,7 @@
 
 ---
 
-## 七、执行分组
+## 八、执行分组
 
 ### 第 1 组 — 硬编码常量统一 (低风险，高收益)
 
