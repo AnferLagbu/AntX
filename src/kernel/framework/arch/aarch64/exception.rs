@@ -451,6 +451,26 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     let syscall_num = frame.x0;
+
+    // rt_sigreturn 特殊处理: 需要直接修改 frame, 不走正常 dispatch.
+    // aarch64 信号投递 (do_signal_deliver) 尚未实现, 此拦截为预留.
+    // 当信号投递实现后, 从用户栈读取 Aarch64SignalFrame 并恢复 x0-x30/elr/spsr/sp.
+    if crate::kernel::framework::syscall::linuxulator::is_rt_sigreturn(syscall_num) {
+        // 清除 SS_ONSTACK 标记
+        if let Some(pid) = Some(crate::kernel::framework::proc::process_get_current_pid()).filter(|&p| p != 0) {
+            crate::kernel::framework::proc::process_with_mut(pid, |proc| {
+                use core::sync::atomic::Ordering;
+                let flags = proc.sigaltstack_flags.load(Ordering::Acquire);
+                proc.sigaltstack_flags.store(
+                    flags & !crate::kernel::framework::proc::SS_ONSTACK,
+                    Ordering::Release,
+                );
+            });
+        }
+        // sigreturn 不返回值, 保持 x0 原值
+        return frame.x0;
+    }
+
     let arg0 = frame.x1;
     let arg1 = frame.x2;
     let arg2 = frame.x3;

@@ -314,17 +314,6 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 > 由 `tools/track_todo.py` 自动维护. 每条 `TRACK-XXX` 唯一对应一处未完成项.
 > 修复后删除对应行, 并清掉源码中 `TODO(TRACK-XXX)` 标记.
 
-- [TRACK-CCB422] `src/kernel/framework/dma_buf.rs:181` TODO
-- [TRACK-D64319] `src/kernel/framework/dma_buf.rs:206` TODO
-- [TRACK-5B3EBC] `src/kernel/services/mm/mmap.rs:48` TODO
-- [TRACK-2CED20] `src/kernel/framework/idt/mod.rs:252` TODO
-- [TRACK-F38D98] `src/kernel/framework/idt/idt.rs:624` TODO
-- [TRACK-A99EBB] `src/kernel/framework/dma/engine.rs:366` TODO
-- [TRACK-82FEA0] `src/kernel/framework/mm/vmm_aarch64.rs:393` TODO
-- [TRACK-A589E3] `src/kernel/framework/mm/vmm_aarch64.rs:395` TODO
-- [TRACK-B29335] `src/kernel/framework/syscall/mod.rs:1028` TODO
-- [TRACK-FA10A1] `src/kernel/framework/syscall/clone.rs:185` TODO
-- [TRACK-CDB9E5] `src/kernel/framework/timer/sleep.rs:201` TODO
 - [TRACK-558BA7] `src/kernel/framework/driver/usb/mod.rs:36` TODO
 - [TRACK-AE516E] `src/kernel/framework/driver/usb/mod.rs:37` TODO
 - [TRACK-832FCE] `src/kernel/framework/driver/usb/mod.rs:38` TODO
@@ -339,4 +328,3 @@ AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件
 - [TRACK-CD5DA5] `src/kernel/framework/driver/display/hdmi.rs:440` TODO
 - [TRACK-7CCB60] `src/kernel/framework/driver/display/hdmi.rs:454` TODO
 - [TRACK-1BDEF6] `src/kernel/framework/driver/display/hdmi.rs:501` TODO
-- [TRACK-26731B] `src/kernel/framework/arch/x86_64/smp_init.rs:189` TODO

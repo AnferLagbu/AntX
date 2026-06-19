@@ -179,9 +179,52 @@ pub fn timer_sleep(ms: u64) -> Result<(), i32> {
         return Ok(());
     }
 
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    // 使用 hrtimer + scheduler block/unblock 替代忙等 yield:
+    // 1. 设置 hrtimer 到期回调唤醒当前进程
+    // 2. 阻塞当前进程并让出 CPU
+    // 3. hrtimer 到期时回调 unblock 唤醒进程
+    let pid = crate::kernel::framework::proc::process_get_current_pid();
+    if pid == 0 {
+        // idle/内核线程回退到 yield 循环
+        return timer_sleep_yield(ms);
+    }
+
+    // 记录待唤醒 pid 供回调使用
+    SLEEP_WAKE_PID.store(pid, core::sync::atomic::Ordering::Relaxed);
+
+    // 在栈上创建 HrTimer, 回调唤醒当前进程
+    let mut timer = crate::kernel::framework::timer::HrTimer::uninit();
+    timer.init(sleep_timer_callback);
+
+    let delay_ns = ms * 1_000_000;
+    crate::kernel::framework::timer::hrtimer_start_rel(&timer, delay_ns);
+
+    // 阻塞当前进程
+    crate::kernel::framework::proc::scheduler_block(
+        crate::kernel::framework::proc::BlockReason::Sleeping,
+    );
+
+    // 被唤醒后取消可能残留的 timer
+    crate::kernel::framework::timer::hrtimer_cancel(&timer);
+
+    Ok(())
+}
+
+/// 待唤醒的进程 PID (供 hrtimer 回调使用)
+static SLEEP_WAKE_PID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// hrtimer 回调: 唤醒被 timer_sleep 阻塞的进程
+fn sleep_timer_callback(_timer: &crate::kernel::framework::timer::HrTimer) -> crate::kernel::framework::timer::HrTimerRestart {
+    let pid = SLEEP_WAKE_PID.load(core::sync::atomic::Ordering::Relaxed);
+    if pid != 0 {
+        crate::kernel::framework::proc::scheduler_unblock(pid);
+    }
+    crate::kernel::framework::timer::HrTimerRestart::OneShot
+}
+
+/// yield 循环回退实现 (idle/内核线程或 hrtimer 不可用时)
+fn timer_sleep_yield(ms: u64) -> Result<(), i32> {
     unsafe {
-        // 记录开始 tick
         let start_tick = get_ticks();
         let target_ticks = ms_to_ticks(ms);
 
@@ -190,21 +233,11 @@ pub fn timer_sleep(ms: u64) -> Result<(), i32> {
         }
 
         loop {
-            // 检查是否达到目标时间
             let elapsed = get_ticks().saturating_sub(start_tick);
-
             if elapsed >= target_ticks {
-                return Ok(()); // 时间到，返回
+                return Ok(());
             }
-
-            // 尚未到期，让出 CPU
-            // TODO(TRACK-CDB9E5): 更好的做法是使用定时器等待队列
             scheduler_yield_ex();
-
-            // 可选: 检查是否被信号唤醒
-            // if check_pending_signals() {
-            //     return Err(-1);  // 被信号中断
-            // }
         }
     }
 }

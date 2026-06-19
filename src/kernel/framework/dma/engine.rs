@@ -359,14 +359,34 @@ impl DmaEngine {
         // 架构相关缓存刷新
         #[cfg(target_arch = "x86_64")]
         {
-            // x86_64: 若可用则使用 CLFLUSH 指令
-            // 当前使用内存栅栏, 因为 x86_64 多数情况下已一致
-            core::sync::atomic::fence(Ordering::SeqCst);
-
-            // TODO(TRACK-A99EBB): 在较新 CPU 上使用 CLFLUSHOPT 以获取更好性能
-            // if cpu_has_clflushopt() {
-            //     flush_cache_clflushopt(addr, size);
-            // }
+            // x86_64: 多数平台 DMA 一致, 使用内存栅栏即可.
+            // 对非一致性设备, 按 cache line 刷写:
+            // - CLFLUSHOPT (Leaf 7 EBX bit 23): 可乱序执行, 性能更优
+            // - CLFLUSH (Leaf 1 EDX bit 19): 串行化, 兼容性好
+            let need_flush = false; // TODO: 由 DmaStream 的 coherent 属性决定
+            if need_flush {
+                let cache_line = 64u64;
+                let start = addr.0 & !(cache_line - 1);
+                let end = addr.0 + size as u64;
+                let has_clflushopt = crate::kernel::framework::cpu::get_cpu_info()
+                    .map(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::CLFLUSHOPT))
+                    .unwrap_or(false);
+                let mut line = start;
+                while line < end {
+                    if has_clflushopt {
+                        // SAFETY: CLFLUSHOPT 按 cache line 刷写, 不破坏缓存一致性.
+                        // 输入地址已对齐到 cache line 边界.
+                        unsafe { core::arch::asm!("clflushopt [{}]", in(reg) line); }
+                    } else {
+                        // SAFETY: CLFLUSH 串行化刷写, 兼容旧 CPU.
+                        unsafe { core::arch::asm!("clflush [{}]", in(reg) line); }
+                    }
+                    line += cache_line;
+                }
+                core::sync::atomic::fence(Ordering::SeqCst);
+            } else {
+                core::sync::atomic::fence(Ordering::SeqCst);
+            }
         }
 
         #[cfg(target_arch = "aarch64")]

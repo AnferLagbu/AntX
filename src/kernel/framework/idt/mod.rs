@@ -124,6 +124,8 @@ pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn idt_init() -> i32 {
+    use crate::klog_error;
+
     let manager = IdtManager::instance();
 
     // 获取 ISR 地址表 (从 isr.asm 导出的符号, 使用 fn 指针)
@@ -249,8 +251,7 @@ pub extern "C" fn idt_init() -> i32 {
         ) {
             Ok(()) => MODULE_INIT_SUCCESS,
             Err(msg) => {
-                // TODO(TRACK-2CED20): 使用 klog 记录错误 (Phase 3)
-                let _ = msg;
+                klog_error!("IDT init failed: {}", msg);
                 MODULE_INIT_FAILURE
             }
         }

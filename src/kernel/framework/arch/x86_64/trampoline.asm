@@ -37,7 +37,7 @@ ap_trampoline_16:
 ; ── 对齐填充 ───────────────────────────────────────────────────────────
 times 6 db 0
 
-; ── ApStartupInfo (repr(C, packed), 50 bytes) ──────────────────────────
+; ── ApStartupInfo (repr(C, packed), 54 bytes) ──────────────────────────
 ; 对应 sptr (startup info pointer) = 0x8008
 ; CR3 (offset +0):
 times 8 db 0
@@ -55,7 +55,9 @@ dd 0
 dd 0
 ; cpu_idx (offset +42, 4 bytes):
 dd 0
-; _pad (offset +46, 4 bytes):
+; done (offset +46, 4 bytes): AP 初始化完成后置 1
+dd 0
+; _pad (offset +50, 4 bytes):
 dd 0
 
 ; ── ApStartupInfo 基址 (BSP 写入 / AP 读取) ────────────────────────────

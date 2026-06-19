@@ -621,7 +621,6 @@ impl IdtManager {
         // 打印基本信息 (Phase 3 使用结构化日志)
         let _ = (vector, frame);
 
-        // TODO(TRACK-F38D98): 根据 vector 类型分发到专门的 handler
         match vector {
             0 => self.handle_division_by_zero(frame),
             13 => self.handle_gpf(frame),

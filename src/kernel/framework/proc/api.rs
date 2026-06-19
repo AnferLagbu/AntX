@@ -392,6 +392,11 @@ pub fn scheduler_unblock(pid: u32) {
     SCHEDULER.unblock(pid);
 }
 
+/// 阻塞当前进程并让出 CPU.
+pub fn scheduler_block(reason: super::types::BlockReason) {
+    SCHEDULER.block(reason);
+}
+
 /// 将进程加入就绪队列.
 pub fn scheduler_add_to_run_queue(pid: u32) {
     SCHEDULER.add_to_run_queue(pid);

@@ -172,13 +172,24 @@ impl DmaStream {
                     || self.sync_state == SyncState::BidirInProgress
                 {
                     self.sync_state = SyncState::DeviceReady;
-                    // 实际 aarch64: DC CVAU on cpu_addr..cpu_addr+size
+                    // aarch64: DC CVAU on cpu_addr..cpu_addr+size
                     #[cfg(target_arch = "aarch64")]
                     {
-                        // SAFETY: ARCH-specific cache maintenance for DMA.
-                        // 对 cpu_addr..cpu_addr+size 范围执行 DC CVAU
-                        // 防止 CPU cache 与设备 DMA 视图不一致
-                        // TODO(TRACK-CCB422): Phase 2 — integrate with aarch64 cache ops
+                        // SAFETY: DC CVAU 按 cache line 遍历, 将脏数据写回主存,
+                        // 确保设备 DMA 读取时看到 CPU 最新写入.
+                        // cpu_addr 是 DmaStream 持有的有效虚拟地址, size 已校验.
+                        let start = self.cpu_addr.as_ptr() as u64;
+                        let end = start + self.size as u64;
+                        const CACHE_LINE: u64 = 64;
+                        let mut addr = start & !(CACHE_LINE - 1);
+                        while addr < end {
+                            // SAFETY: dc cvau 是 aarch64 标准 cache 维护指令,
+                            // 输入地址已对齐到 cache line, 无副作用.
+                            unsafe { core::arch::asm!("dc cvau, {}", in(reg) addr); }
+                            addr += CACHE_LINE;
+                        }
+                        // SAFETY: dsb ish 是数据同步屏障, 确保 cache 维护完成.
+                        unsafe { core::arch::asm!("dsb ish"); }
                     }
                     Ok(())
                 } else {
@@ -202,8 +213,21 @@ impl DmaStream {
                     self.sync_state = SyncState::CpuReady;
                     #[cfg(target_arch = "aarch64")]
                     {
-                        // SAFETY: ARCH-specific cache maintenance.
-                        // TODO(TRACK-D64319): Phase 2 — integrate with aarch64 cache ops
+                        // SAFETY: DC IVAU 按 cache line 遍历, 使 CPU cache 行无效,
+                        // 确保后续 CPU 读取从主存获取设备写入的数据.
+                        // cpu_addr 是 DmaStream 持有的有效虚拟地址, size 已校验.
+                        let start = self.cpu_addr.as_ptr() as u64;
+                        let end = start + self.size as u64;
+                        const CACHE_LINE: u64 = 64;
+                        let mut addr = start & !(CACHE_LINE - 1);
+                        while addr < end {
+                            // SAFETY: dc ivau 是 aarch64 标准 cache 维护指令,
+                            // 输入地址已对齐到 cache line, 无副作用.
+                            unsafe { core::arch::asm!("dc ivau, {}", in(reg) addr); }
+                            addr += CACHE_LINE;
+                        }
+                        // SAFETY: dsb ish 是数据同步屏障, 确保 cache 维护完成.
+                        unsafe { core::arch::asm!("dsb ish"); }
                     }
                     Ok(())
                 } else {

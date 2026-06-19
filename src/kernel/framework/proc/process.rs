@@ -197,6 +197,12 @@ pub struct Process {
 
     /// Per-process SUID 提权栈深度 (P2-I-30)
     pub session_elev_depth: AtomicIsize,
+
+    /// Per-process TLS 基址 (x86_64: MSR_FS_BASE, aarch64: tpidr_el0)
+    ///
+    /// clone(CLONE_SETTLS) 设置, 上下文切换时恢复到对应系统寄存器.
+    /// 0 表示未设置.
+    pub tls_base: AtomicU64,
 }
 
 // ✅ P0-5 修复: 添加详细的安全性不变性注释
@@ -298,6 +304,7 @@ impl Process {
                 [crate::kernel::framework::credo::types::PwmContext::default(); 8],
             ),
             session_elev_depth: AtomicIsize::new(0),
+            tls_base: AtomicU64::new(0),
         }
     }
 

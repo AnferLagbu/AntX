@@ -254,6 +254,8 @@ bitflags::bitflags! {
         const ADX         = 1 << 108;
         const AVX512IFMA  = 1 << 109;
         const CLWB        = 1 << 110;
+        /// CLFLUSHOPT (优化缓存行刷写) 支持 — CPUID Leaf 7 EBX bit 23
+        const CLFLUSHOPT  = 1 << 115;
         const AVX512CD    = 1 << 111;
         /// SHA (SHA-1/SHA-256) 指令
         const SHA         = 1 << 112;
@@ -1129,6 +1131,9 @@ fn collect_features(
         }
         if ebx & (1 << 24) != 0 {
             feat.insert(CpuFeatures::CLWB);
+        }
+        if ebx & (1 << 23) != 0 {
+            feat.insert(CpuFeatures::CLFLUSHOPT);
         }
         if ebx & (1 << 29) != 0 {
             feat.insert(CpuFeatures::SHA);

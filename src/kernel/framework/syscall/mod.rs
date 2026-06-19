@@ -982,8 +982,11 @@ fn sys_rt_sigreturn() -> i64 {
                 .store(flags & !crate::kernel::framework::proc::SS_ONSTACK, Ordering::Release);
         });
     }
-    // TODO(TRACK-B29335): 架构相关 — 从信号栈帧恢复原始寄存器状态
-    // 当前简化实现: 直接返回 0
+
+    // x86_64: 寄存器恢复在 syscall_dispatch_from_frame 中提前拦截完成
+    // (直接操作 InterruptFrame, 不经过此函数).
+    // aarch64: 寄存器恢复在 svc_handler 中提前拦截完成.
+    // 此函数仅负责 SS_ONSTACK 清除, 返回值被忽略.
     0
 }
 

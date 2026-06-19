@@ -45,8 +45,10 @@ pub fn fd_to_inode_id(fd: i32) -> u32 {
     if fd < 0 {
         return 0;
     }
-    // TODO(TRACK-5B3EBC): 从当前进程的 fdtable 获取 inode_id
-    (fd as u32).wrapping_add(1)
+    crate::kernel::framework::fs::VFS_MANAGER
+        .get_fd_info(fd as usize)
+        .map(|(node_id, _, _)| node_id)
+        .unwrap_or(0)
 }
 
 /// 通过 VFS_MANAGER 把 fd 反查为挂载点索引.

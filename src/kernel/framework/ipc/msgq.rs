@@ -33,8 +33,9 @@ pub mod raw {
     impl MessageRef {
         /// 构造一个 `MessageRef` (内部 unsafe 边界)
         ///
-        /// # Safety (内部)
-        /// - `nn` 必须为 `allocate_message` 返回的有效 NonNull。
+        /// # Safety
+        ///
+        /// `nn` 必须为 `allocate_message` 返回的有效 NonNull。
         pub unsafe fn from_non_null(nn: NonNull<Message>) -> Self {
             Self(nn)
         }
@@ -70,14 +71,14 @@ pub mod raw {
 
         /// 获取 &Message 引用
         #[inline(always)]
-        pub fn as_ref(&self) -> &Message {
+        pub fn get(&self) -> &Message {
             // SAFETY: self 指向有效 Message。
             unsafe { &*self.0.as_ptr() }
         }
 
         /// 获取 &mut Message 引用
         #[inline(always)]
-        pub fn as_mut(&self) -> &mut Message {
+        pub fn get_mut(&self) -> &mut Message {
             // SAFETY: self 指向有效 Message, &mut 保证独占。
             unsafe { &mut *self.0.as_ptr() }
         }

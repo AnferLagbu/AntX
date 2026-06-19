@@ -30,6 +30,8 @@ struct ApStartupInfo {
     lapic_id: u32,
     ready: u32,
     cpu_index: u32,
+    /// AP 初始化完成标志: AP 在 gdt_init_ap 完成后置 1
+    done: u32,
     _pad: u32,
 }
 
@@ -157,6 +159,7 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
     (*info).lapic_id = lapic_id;
     (*info).ready = 0;
     (*info).cpu_index = cpu_index;
+    (*info).done = 0;
 
     core::arch::asm!("sfence", options(nomem, nostack));
 
@@ -180,13 +183,13 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
     }
 
     if timeout > 0 {
-        // AP 已就绪，等待 ap_entry 完成 (最多 50ms)
+        // AP 已就绪，等待 ap_entry 完成 per-CPU GDT+TSS 初始化
+        let done_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 46) as *const u32;
         let mut wait = AP_ENTRY_TIMEOUT_LOOPS;
         while wait > 0 {
-            // ap_entry 最后调用 gdt_init_ap 完成 per-CPU GDT+TSS 初始化。
-            // 额外的等待确保 ap_entry 初始化完成。
-            //
-            // TODO(TRACK-26731B): 替换为 per-CPU 完成标志 (如 ApStartupInfo.done)
+            if core::ptr::read_volatile(done_ptr) != 0 {
+                break;
+            }
             timer_udelay(READY_POLL_US);
             wait -= 1;
         }
@@ -235,6 +238,12 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
     super::apic::init();
 
     super::gdt::gdt_init_ap(cpu_index);
+
+    // 通知 BSP: AP 初始化完成
+    unsafe {
+        let done_ptr = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 46) as *mut u32;
+        core::ptr::write_volatile(done_ptr, 1);
+    }
 
     crate::kernel::framework::smp::register_cpu(lapic_id);
 

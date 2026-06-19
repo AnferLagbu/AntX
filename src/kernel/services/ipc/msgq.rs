@@ -80,7 +80,7 @@ pub fn msgq_send_safe(
 
     // SAFETY: msg 刚由 `allocate` 分配, 非空, 后续由
     // `msgq_recv_safe` 或 `msgq_destroy_safe` 释放.
-    let msg_ref = msg_nn.as_mut();
+    let msg_ref = msg_nn.get_mut();
     msg_ref.type_ = type_;
     msg_ref.sender = current_pid as u64;
     msg_ref.size = size as u64;
@@ -142,10 +142,10 @@ pub fn msgq_recv_safe(
     mq.count -= 1;
 
     // 通过 MessageRef 安全读取字段
-    let read_size = msg_ref.as_ref().size as usize;
-    let msg_type = msg_ref.as_ref().type_;
-    let msg_data = msg_ref.as_ref().data;
-    let msg_size = msg_ref.as_ref().size;
+    let read_size = msg_ref.get().size as usize;
+    let msg_type = msg_ref.get().type_;
+    let msg_data = msg_ref.get().data;
+    let msg_size = msg_ref.get().size;
 
     if let Some(t) = type_out {
         *t = msg_type;

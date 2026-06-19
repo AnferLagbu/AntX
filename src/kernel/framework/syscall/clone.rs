@@ -181,9 +181,12 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
             child_ctx.rsp = child_stack;
         }
 
-        // 如果指定了 tls, 修改 fs_base (通过 fs 段寄存器传递)
-        // TODO(TRACK-FA10A1): x86_64 上 TLS 通常通过 arch_prctl(ARCH_SET_FS) 设置, 此处仅记录
-        let _ = tls;
+        // CLONE_SETTLS: 设置子进程 TLS 基址
+        // x86_64: 写入 Process.tls_base, 上下文切换时恢复到 MSR_FS_BASE
+        // aarch64: 恢复到 tpidr_el0
+        if tls != 0 {
+            child.tls_base.store(tls, core::sync::atomic::Ordering::Release);
+        }
     }
 
     // 注册到进程表
