@@ -6,6 +6,7 @@ use crate::kernel::framework::idt::handlers::{
 use crate::kernel::framework::idt::{
     is_null_or_invalid, is_valid_kernel_address, is_valid_user_address, CpuFeatures,
 };
+use crate::kernel::framework::mm::{KERNEL_BASE, KERNEL_TEXT_BASE};
 use crate::kernel::framework::idt::DetailedStatistics;
 use crate::kernel::framework::idt::{
     get_exception_name, get_irq_name, ErrorFlags, IdtEntry, IdtPtr, InterruptFrame,
@@ -25,7 +26,7 @@ fn interrupt_frame_size() -> TestResult {
 }
 
 fn user_mode_detection() -> TestResult {
-    let kernel_frame = InterruptFrame::new_test_frame(14, 0xFFFFFFFF80000000, 0x08);
+    let kernel_frame = InterruptFrame::new_test_frame(14, KERNEL_TEXT_BASE, 0x08);
     check!(
         !kernel_frame.is_user_mode(),
         "kernel CS should be kernel mode"
@@ -315,11 +316,11 @@ fn address_validation() -> TestResult {
     check!(!is_null_or_invalid(0x1000), "0x1000 is valid");
     check!(is_valid_user_address(0x400000), "0x400000 is user");
     check!(
-        !is_valid_user_address(0xFFFF800000000000),
+        !is_valid_user_address(KERNEL_BASE),
         "kernel is not user"
     );
     check!(
-        is_valid_kernel_address(0xFFFFFFFF80000000),
+        is_valid_kernel_address(KERNEL_TEXT_BASE),
         "kernel addr is valid"
     );
     check!(!is_valid_kernel_address(0x400000), "user is not kernel");

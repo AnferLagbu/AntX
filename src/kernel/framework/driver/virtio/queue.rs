@@ -7,7 +7,7 @@
 //!
 //! 内存布局遵循 VirtIO 1.0 规范第 2.6 节 "Split Virtqueues".
 
-use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
 
 /// virtqueue 项最大数量 (必须为 2 的幂).
 pub const VQ_SIZE: u16 = 32;
@@ -97,13 +97,13 @@ impl VirtQueue {
         let desc_off = 0usize;
         let avail_off = desc_off + desc_size;
         let used_off = if legacy {
-            4096 // 旧版: used ring 必须页对齐 (QEMU 使用 VIRTIO_PCI_VRING_ALIGN)
+            PAGE_SIZE as usize // 旧版: used ring 必须页对齐 (QEMU 使用 VIRTIO_PCI_VRING_ALIGN)
         } else {
             align_up(avail_off + avail_size, 4)
         };
-        let total_size = align_up(used_off + used_size, 4096);
+        let total_size = align_up(used_off + used_size, PAGE_SIZE as usize);
 
-        let pages = total_size.div_ceil(4096);
+        let pages = total_size.div_ceil(PAGE_SIZE as usize);
         extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }

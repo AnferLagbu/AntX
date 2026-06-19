@@ -167,7 +167,7 @@ impl SwapArea {
         self.initialized = true;
         crate::klog_info!(Swap, "[SWAP] Initialized: {} slots ({} MB)",
             SWAP_MAX_SLOTS,
-            SWAP_MAX_SLOTS * 4096 / (1024 * 1024));
+            SWAP_MAX_SLOTS * PAGE_SIZE as usize / (1024 * 1024));
         true
     }
 

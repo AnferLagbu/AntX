@@ -120,6 +120,19 @@ pub const KERNEL_BASE: u64 = 0xFFFF800000000000u64;
 pub const KERNEL_BASE: u64 = 0;
 pub const PHYSICAL_BASE: u64 = 0x0000000000000000u64;
 
+/// 缓存行大小 (字节). x86_64 与 aarch64 通用值为 64.
+/// 用于 DMA 缓存刷写对齐、false sharing 避免等场景.
+pub const CACHE_LINE_SIZE: u64 = 64;
+
+/// 内核文本段基址 (符号地址).
+/// x86_64: 高半核最高 2GB 区域 (-2GB 符号地址), 用于内核代码绝对寻址
+///   和 RIP/地址分类 (内核文本段 vs 直接映射区).
+/// aarch64: 恒等映射, 内核文本段基址由 bootloader 决定 (典型 0x40080000).
+#[cfg(target_arch = "x86_64")]
+pub const KERNEL_TEXT_BASE: u64 = 0xFFFFFFFF80000000;
+#[cfg(target_arch = "aarch64")]
+pub const KERNEL_TEXT_BASE: u64 = 0x40080000;
+
 /// 页表项标志 (与 C 定义一致)
 pub const PAGE_PRESENT: u64 = 1 << 0;
 pub const PAGE_WRITABLE: u64 = 1 << 1;

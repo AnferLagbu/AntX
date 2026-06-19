@@ -227,7 +227,7 @@ pub fn mmap_get_mm_or_alloc(size: u64) -> Option<*mut u8> {
     if crate::kernel::framework::mm::vma_get_current_mm().is_some() {
         return None; // 有 mm, 走 VMA 路径
     }
-    let pages = size.div_ceil(4096);
+    let pages = size.div_ceil(crate::kernel::framework::mm::PAGE_SIZE);
     // SAFETY: alloc_pages 在无 mm 时由 mmap 路径调用,
     // pages 由 size 向上取整计算, 不会溢出
     let ptr = unsafe { super::raw::alloc_pages(pages) };
@@ -236,7 +236,7 @@ pub fn mmap_get_mm_or_alloc(size: u64) -> Option<*mut u8> {
 
 /// munmap 机制: 无 mm 时释放裸页 (TCB: 操作页分配器)
 pub fn munmap_free_pages(addr: u64, size: u64) {
-    let pages = size.div_ceil(4096);
+    let pages = size.div_ceil(crate::kernel::framework::mm::PAGE_SIZE);
     // SAFETY: free_pages 在无 mm 时由 munmap 路径调用,
     // addr 来自之前的 alloc_pages 返回值, pages 计算与分配时一致
     unsafe { super::raw::free_pages(addr as *mut u8, pages) }

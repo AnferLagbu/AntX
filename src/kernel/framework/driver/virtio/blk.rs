@@ -9,7 +9,7 @@
 use super::queue::VirtQueue;
 use super::{VirtioMmioDevice, VIRTIO_ID_BLOCK};
 use crate::kernel::framework::driver::BlockDevice;
-use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
 use crate::klog_info;
 use crate::klog_warn;
 
@@ -181,7 +181,7 @@ impl VirtioBlk {
 
         // 分配 IO 缓冲区: 512 字节扇区数据 + 请求头 + 状态字节
         let buf_size = 512 + core::mem::size_of::<BlkRequest>() + 1;
-        let buf_pages = buf_size.div_ceil(4096);
+        let buf_pages = buf_size.div_ceil(PAGE_SIZE as usize);
         extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }

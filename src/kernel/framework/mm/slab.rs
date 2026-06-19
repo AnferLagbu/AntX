@@ -254,6 +254,7 @@ pub(crate) mod raw {
 }
 
 use raw::SlabRef;
+use super::PAGE_SIZE;
 
 /// 缓存描述符 (KmemCache)
 ///
@@ -546,7 +547,7 @@ impl KmemCache {
         extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
-        let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
+        let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(PAGE_SIZE as usize);
         // SAFETY: pmm_alloc_pages 返回空 (失败) 或经 KERNEL_BASE 映射的合法页对齐物理地址
         let page = unsafe { pmm_alloc_pages(pages_needed as u64) };
 
@@ -607,7 +608,7 @@ impl KmemCache {
         // SAFETY: slab 由 new_slab 中 pmm_alloc_pages 分配,
         // 释放同等数量页. 调用方保证 slab 已不在任何链表中且不持有活动对象.
         unsafe {
-            let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(4096);
+            let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(PAGE_SIZE as usize);
             extern "C" {
                 fn pmm_free_pages(addr: *mut u8, count: u64);
             }

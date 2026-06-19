@@ -239,7 +239,8 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     super::gdt::gdt_init_ap(cpu_index);
 
-    // 通知 BSP: AP 初始化完成
+    // SAFETY: TRAMPOLINE_BASE + AP_INFO_OFFSET + 46 是 AP 握手内存布局中
+    // 预留的 done 标志位, BSP 已映射该物理页, 写入对齐 u32 安全.
     unsafe {
         let done_ptr = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 46) as *mut u32;
         core::ptr::write_volatile(done_ptr, 1);

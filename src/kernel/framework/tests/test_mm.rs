@@ -105,7 +105,7 @@ fn test_address_translation() -> TestResult {
 }
 
 fn test_page_index_helpers() -> TestResult {
-    let addr: u64 = 0xFFFF800000000000 | (1u64 << 39) | (2u64 << 30) | (3u64 << 21) | (4u64 << 12);
+    let addr: u64 = KERNEL_BASE | (1u64 << 39) | (2u64 << 30) | (3u64 << 21) | (4u64 << 12);
     let pml4 = pml4_index(addr);
     let pdpt = pdpt_index(addr);
     let pd = pd_index(addr);

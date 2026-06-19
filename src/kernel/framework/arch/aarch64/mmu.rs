@@ -27,9 +27,6 @@ const PT_AP_EL1_RW: u64 = 0 << 6; // EL1 read/write
 #[allow(dead_code)]
 const PT_AP_ALL_RW: u64 = 1 << 6; // EL1+EL0 read/write
 
-/// 页粒度
-#[allow(dead_code)]
-const PAGE_SIZE: u64 = 4096;
 const L2_BLOCK_SIZE: u64 = 0x200000; // 2MB (L2 block at 4KB granule)
 
 // ============================================================================

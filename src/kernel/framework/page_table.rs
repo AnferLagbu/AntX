@@ -16,7 +16,9 @@
 //! - 不修改页表, 纯只读验证。
 //! - 可在每次 map/unmap 后调用 (性能敏感路径用 feature gate)。
 
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PageFlags, get_vmm};
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PageFlags, get_vmm, PAGE_SIZE};
+#[cfg(target_arch = "x86_64")]
+use crate::kernel::framework::mm::KERNEL_BASE;
 
 /// 检查虚拟地址是否在用户地址空间内。
 ///
@@ -26,7 +28,7 @@ use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PageFlags, get_vmm};
 #[cfg(target_arch = "x86_64")]
 pub fn check_user_boundary(vaddr: VirtAddr, flags: PageFlags) {
     let va = vaddr.as_u64();
-    if va >= 0xFFFF800000000000 {
+    if va >= KERNEL_BASE {
         debug_assert!(
             !flags.contains(PageFlags::USER),
             "PageTableChecker: kernel address 0x{:x} must not have PAGE_USER flag",
@@ -88,7 +90,7 @@ pub fn verify_kernel_code_protection(kernel_text_start: VirtAddr, kernel_text_en
                 addr
             );
         }
-        addr += 4096;
+        addr += PAGE_SIZE as u64;
     }
 }
 

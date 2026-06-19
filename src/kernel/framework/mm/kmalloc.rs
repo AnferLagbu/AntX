@@ -310,7 +310,7 @@ pub struct KernelHeap {
     failed_allocs: AtomicU64,
 }
 
-const EARLY_BUFFER_SIZE: usize = 4096;
+const EARLY_BUFFER_SIZE: usize = PAGE_SIZE as usize;
 
 impl KernelHeap {
     pub const fn new() -> Self {

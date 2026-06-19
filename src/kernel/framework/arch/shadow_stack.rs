@@ -40,13 +40,14 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock;
+use crate::kernel::framework::mm::PAGE_SIZE;
 
 // ============================================================================
 // 常量
 // ============================================================================
 
-/// Shadow Stack 页大小 (4KB)
-pub const SHADOW_STACK_PAGE_SIZE: usize = 4096;
+/// Shadow Stack 页大小
+pub const SHADOW_STACK_PAGE_SIZE: usize = PAGE_SIZE as usize;
 /// Shadow Stack 默认大小 (64KB)
 pub const SHADOW_STACK_DEFAULT_SIZE: usize = 64 * 1024;
 /// Shadow Stack 对齐

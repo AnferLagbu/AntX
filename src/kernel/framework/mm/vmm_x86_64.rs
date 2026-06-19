@@ -864,7 +864,7 @@ impl VirtualMemoryManager {
                     // 拆分巨页: 从巨页帧填充 512 个 4KB 项
                     let huge_frame = e.frame();
                     let huge_flags = e.flags();
-                    let step = if huge_step > 0 { huge_step } else { 4096 };
+                    let step = if huge_step > 0 { huge_step } else { PAGE_SIZE as u64 };
                     for i in 0..512 {
                         // SAFETY: pt points to a full 4KB page; add(i) stays within bounds
                         let pte = &mut *pt.add(i);
@@ -934,7 +934,7 @@ impl VirtualMemoryManager {
                 for i in 0..512 {
                     // SAFETY: pt is a full 4KB PT page; add(i) stays in bounds
                     let pte = &mut *pt.add(i);
-                    pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * 4096));
+                    pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * PAGE_SIZE as u64));
                     pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
                     pte.set_present(true);
                 }

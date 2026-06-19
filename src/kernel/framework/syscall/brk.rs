@@ -6,7 +6,7 @@
 use core::sync::atomic::AtomicU64;
 
 use crate::kernel::framework::syscall::Errno;
-use crate::kernel::framework::mm::api;
+use crate::kernel::framework::mm::{api, PAGE_SIZE};
 
 /// 用户空间最大地址
 #[cfg(target_arch = "x86_64")]
@@ -49,7 +49,7 @@ pub fn sys_brk(addr: u64) -> i64 {
     let current = BRK.load(core::sync::atomic::Ordering::SeqCst);
     if addr > current {
         let extra = addr - current;
-        let pages = extra.div_ceil(4096);
+        let pages = extra.div_ceil(PAGE_SIZE);
         let ptr = crate::kernel::framework::syscall::raw::alloc_pages(pages);
         if ptr.is_null() {
             return Errno::ENOMEM.as_ret();

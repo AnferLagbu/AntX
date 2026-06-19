@@ -484,9 +484,9 @@ mod tests {
 
     #[test]
     fn test_user_buf_validation() {
-        assert!(is_user_buf(0x1000, 4096));
+        assert!(is_user_buf(0x1000, PAGE_SIZE as usize));
         assert!(is_user_buf(0x1000, 0));
-        assert!(!is_user_buf(0, 4096));
+        assert!(!is_user_buf(0, PAGE_SIZE as usize));
         assert!(!is_user_buf(0x7FFF_FFFF_F000 - 100, 200));
     }
 
@@ -576,7 +576,7 @@ mod tests {
         assert!(!is_user_ptr(USER_ADDR_MAX));
         assert!(!is_user_ptr(USER_ADDR_MAX + 1));
         
-        assert!(is_user_buf(USER_ADDR_MAX - 4096, 4096));
+        assert!(is_user_buf(USER_ADDR_MAX - PAGE_SIZE as usize, PAGE_SIZE as usize));
         assert!(!is_user_buf(USER_ADDR_MAX - 100, 200));
     }
 }

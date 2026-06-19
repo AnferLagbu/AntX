@@ -224,6 +224,8 @@ fn sleep_timer_callback(_timer: &crate::kernel::framework::timer::HrTimer) -> cr
 
 /// yield 循环回退实现 (idle/内核线程或 hrtimer 不可用时)
 fn timer_sleep_yield(ms: u64) -> Result<(), i32> {
+    // SAFETY: get_ticks() 读取全局原子计数器, scheduler_yield_ex() 是
+    // 正常的调度器让出函数; 均可在进程上下文安全调用.
     unsafe {
         let start_tick = get_ticks();
         let target_ticks = ms_to_ticks(ms);

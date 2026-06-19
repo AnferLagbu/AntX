@@ -7,6 +7,7 @@ use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
 // I-预存: `iomem` 模块无 cfg gate (见 framework::iomem.rs), IoMem 在两种 build 都可用.
 // 之前误打 cfg, 改成无条件导入.
 use crate::kernel::framework::iomem::IoMem;
+use crate::kernel::framework::mm::KERNEL_BASE;
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 #[cfg(not(feature = "kernel_test"))]
@@ -350,9 +351,8 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
 }
 
 pub fn virt_to_phys(virt: u64) -> u64 {
-    const KERNEL_VMA_BASE: u64 = 0xFFFF800000000000;
-    if virt >= KERNEL_VMA_BASE {
-        virt - KERNEL_VMA_BASE
+    if virt >= KERNEL_BASE {
+        virt - KERNEL_BASE
     } else {
         virt
     }
@@ -1109,7 +1109,7 @@ mod tests {
 
     #[test]
     fn test_virt_to_phys_conversion() {
-        let high_addr: u64 = 0xFFFF800000000000;
+        let high_addr: u64 = KERNEL_BASE;
         assert_eq!(virt_to_phys(high_addr), 0);
         assert_eq!(virt_to_phys(0x12345678), 0x12345678);
     }

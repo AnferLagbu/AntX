@@ -23,6 +23,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::idt::IdtManager;
 use super::types::*;
+use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
 use crate::klog_err;
 use crate::klog_warn;
 
@@ -229,7 +230,7 @@ impl ExceptionHandler for PageFaultHandler {
                     return RecoveryAction::Recovered;
                 }
 
-                if fault_addr > 0xFFFF && fault_addr < 0xFFFFFFFF80000000 {
+                if fault_addr > 0xFFFF && fault_addr < KERNEL_TEXT_BASE {
                     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         (*frame).rsp += 8;

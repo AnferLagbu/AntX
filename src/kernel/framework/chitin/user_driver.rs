@@ -185,7 +185,7 @@ pub fn devtree_map_user_device(
     let size: u64 = match node.get_prop("size") {
         Some(PropertyValue::U64(sz)) => *sz,
         Some(PropertyValue::U32(sz)) => *sz as u64,
-        _ => 4096,
+        _ => PAGE_SIZE,
     };
 
     if size == 0 || phys_addr == 0 {

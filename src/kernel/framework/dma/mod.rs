@@ -9,7 +9,7 @@
 extern crate alloc;
 
 use crate::kernel::framework::mm::get_vmm;
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr, KERNEL_BASE, CACHE_LINE_SIZE, PAGE_SIZE};
 use core::ptr::{self};
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -20,10 +20,6 @@ pub mod engine;
 pub const DMA_MAX_MAPPINGS: usize = 256;
 pub const DMA_MAX_SCATTER_ENTRIES: usize = 64;
 pub const MMIO_VIRT_BASE: u64 = 0xFFFF900000000000;
-
-// Page helpers
-const PAGE_SIZE: u64 = 4096;
-const KERNEL_BASE: u64 = 0xFFFF800000000000;
 
 /// DMA transfer direction
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -365,7 +365,7 @@ impl DmaEngine {
             // - CLFLUSH (Leaf 1 EDX bit 19): 串行化, 兼容性好
             let need_flush = false; // TODO: 由 DmaStream 的 coherent 属性决定
             if need_flush {
-                let cache_line = 64u64;
+                let cache_line = CACHE_LINE_SIZE;
                 let start = addr.0 & !(cache_line - 1);
                 let end = addr.0 + size as u64;
                 let has_clflushopt = crate::kernel::framework::cpu::get_cpu_info()
@@ -398,7 +398,7 @@ impl DmaEngine {
             unsafe {
                 let start = addr.0 as usize;
                 let end = start + size;
-                let cache_line_size = 64; // 典型缓存行大小
+                let cache_line_size = CACHE_LINE_SIZE as usize; // 典型缓存行大小
 
                 // 将起始地址向下对齐到缓存行边界
                 let aligned_start = start & !(cache_line_size - 1);
@@ -447,9 +447,7 @@ impl DmaEngine {
             unsafe {
                 let start = addr.0 as usize;
                 let end = start + size;
-                let cache_line_size = 64;
-
-                // 将起始地址向下对齐到缓存行边界
+                let cache_line_size = CACHE_LINE_SIZE as usize;
                 let aligned_start = start & !(cache_line_size - 1);
 
                 for offset in (aligned_start..end).step_by(cache_line_size) {

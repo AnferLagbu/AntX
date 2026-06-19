@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn test_uframe_rejects_kernel_addr() {
         // 内核空间地址应被拒绝
-        assert!(UFrame::from_user_addr(0xFFFF800000000000).is_none());
+        assert!(UFrame::from_user_addr(KERNEL_BASE).is_none());
     }
 
     #[test]
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn test_usegment_rejects_kernel_range() {
         // 内核空间区间应被拒绝
-        assert!(USegment::from_user_range(0xFFFF800000000000, 4096).is_none());
+        assert!(USegment::from_user_range(KERNEL_BASE, PAGE_SIZE as usize).is_none());
     }
 
     #[test]

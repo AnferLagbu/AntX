@@ -3,6 +3,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use super::scheduler::SchedPolicy;
 use super::rlimit::RlimitTable;
@@ -309,10 +310,9 @@ impl Process {
     }
 
     pub fn allocate_kernel_stack(&self) -> bool {
-        const KERNEL_BASE: u64 = 0xFFFF800000000000;
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            let stack = pmm_alloc_pages((KERNEL_STACK_SIZE / 4096) as u64);
+            let stack = pmm_alloc_pages((KERNEL_STACK_SIZE / PAGE_SIZE as usize) as u64);
             if stack.is_null() {
                 return false;
             }

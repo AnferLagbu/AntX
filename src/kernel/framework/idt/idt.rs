@@ -31,6 +31,7 @@ use crate::kernel::framework::sync::IrqSpinLock;
 
 
 use crate::kernel::framework::sync::OnceLock;
+use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
 use crate::klog_err;
 use crate::klog_info;
 // 内联硬件操作函数 (避免跨模块导入问题)
@@ -149,13 +150,13 @@ fn is_null_or_invalid(ptr: u64) -> bool {
 /// 验证 user 地址 (待 IDT 诊断路径启用后使用)。
 #[allow(dead_code)]
 fn is_valid_user_address(addr: u64) -> bool {
-    addr > 0xFFFF && addr < 0xFFFFFFFF80000000
+    addr > 0xFFFF && addr < KERNEL_TEXT_BASE
 }
 
 /// 验证 kernel 地址 (待 IDT 诊断路径启用后使用)。
 #[allow(dead_code)]
 fn is_valid_kernel_address(addr: u64) -> bool {
-    addr >= 0xFFFFFFFF80000000
+    addr >= KERNEL_TEXT_BASE
 }
 
 /// IDT 状态 (受 Mutex 保护)
@@ -797,7 +798,7 @@ impl IdtManager {
                     break;
                 }
 
-                let mode = if rip_val < 0xFFFFFFFF80000000 && rip_val > 0xFFFF {
+                let mode = if rip_val < KERNEL_TEXT_BASE && rip_val > 0xFFFF {
                     "user"
                 } else {
                     "kernel"

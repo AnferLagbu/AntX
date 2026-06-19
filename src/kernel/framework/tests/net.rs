@@ -1,5 +1,7 @@
 use crate::kernel::framework::driver::{DeviceType, Driver};
+use crate::kernel::framework::mm::KERNEL_BASE;
 use crate::kernel::framework::driver::{
+
     virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE,
     E1000_TX_RING_SIZE,
 };
@@ -30,7 +32,7 @@ fn net_e1000_descriptor_sizes() -> TestResult {
 }
 
 fn net_virt_to_phys() -> TestResult {
-    let high_addr: u64 = 0xFFFF800000000000;
+    let high_addr: u64 = KERNEL_BASE;
     assert_eq_test!(virt_to_phys(high_addr), 0, "high addr maps to 0");
     assert_eq_test!(virt_to_phys(0x12345678), 0x12345678, "low addr identity");
     TestResult::Pass

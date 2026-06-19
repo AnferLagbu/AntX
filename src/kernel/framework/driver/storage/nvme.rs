@@ -32,7 +32,7 @@
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::framework::dma::get_dma;
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::klog_info;
 use core::ptr;
 
@@ -49,7 +49,6 @@ const CQ_ENTRY_SIZE: usize = 16; // 完成队列条目大小
 const SQ_SIZE: usize = QUEUE_DEPTH * SQ_ENTRY_SIZE;
 const CQ_SIZE: usize = QUEUE_DEPTH * CQ_ENTRY_SIZE;
 
-const PAGE_SIZE: u64 = 4096;
 const SECTOR_SIZE: usize = 512;
 
 /// 最大扇区数 (128 sectors = 64KB, 单次命令)
@@ -694,12 +693,12 @@ impl NvmeController {
     /// 识别控制器
     pub fn identify_controller(&mut self) -> Result<()> {
         let dma = get_dma();
-        let (ident_virt, ident_phys) = dma.alloc_coherent(4096).ok_or(DriverError::Busy)?;
+        let (ident_virt, ident_phys) = dma.alloc_coherent(PAGE_SIZE as usize).ok_or(DriverError::Busy)?;
 
         // 清零
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            ptr::write_bytes(ident_virt.0 as *mut u8, 0, 4096);
+            ptr::write_bytes(ident_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
         }
 
         let cmd = NvmeCommand::identify(0, 1, ident_phys.0);
@@ -725,18 +724,18 @@ impl NvmeController {
             );
         }
 
-        dma.free_coherent(ident_virt, 4096);
+        dma.free_coherent(ident_virt, PAGE_SIZE as usize);
         result.map(|_| ())
     }
 
     /// 识别命名空间
     pub fn identify_namespace(&mut self, nsid: u32) -> Result<()> {
         let dma = get_dma();
-        let (ident_virt, ident_phys) = dma.alloc_coherent(4096).ok_or(DriverError::Busy)?;
+        let (ident_virt, ident_phys) = dma.alloc_coherent(PAGE_SIZE as usize).ok_or(DriverError::Busy)?;
 
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            ptr::write_bytes(ident_virt.0 as *mut u8, 0, 4096);
+            ptr::write_bytes(ident_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
         }
 
         let cmd = NvmeCommand::identify(nsid, 0, ident_phys.0);
@@ -774,7 +773,7 @@ impl NvmeController {
             );
         }
 
-        dma.free_coherent(ident_virt, 4096);
+        dma.free_coherent(ident_virt, PAGE_SIZE as usize);
         result.map(|_| ())
     }
 

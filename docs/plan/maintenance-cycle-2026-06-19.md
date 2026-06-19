@@ -32,7 +32,7 @@
 
 > **原则**: 所有魔术数字必须有语义常量名，所有重复定义必须统一到权威来源。
 
-### [ ] HARD-1: KERNEL_BASE 重复定义消除
+### [x] HARD-1: KERNEL_BASE 重复定义消除
 
 **当前**: `0xFFFF800000000000` 在 4 处独立定义
 - `framework/mm/mod.rs:118` — 权威定义
@@ -43,8 +43,10 @@
 **方案**: 删除 3 处重复定义，统一引用 `framework::mm::KERNEL_BASE`。若跨模块引用不便，在 `framework::config` 中 re-export。
 
 **验收**:
-- [ ] `grep -rn '0xFFFF800000000000' src/kernel/` 仅剩 `mm/mod.rs` 权威定义
-- [ ] 双架构 0w0e + 三审计通过
+- [x] `grep -rn '0xFFFF800000000000' src/kernel/` 仅剩 `mm/mod.rs` 权威定义
+- [x] 双架构 0w0e + 三审计通过
+
+**完成记录** (2026-06-19): 消除 4 处重复定义 + 6 处魔术数字，统一引用 `framework::mm::KERNEL_BASE`。
 
 ---
 
@@ -115,7 +117,7 @@
 
 ---
 
-### [ ] HARD-6: KERNEL_TEXT_BASE 提取
+### [x] HARD-6: KERNEL_TEXT_BASE 提取
 
 **当前**: `0xFFFFFFFF80000000` 在 4+ 处硬编码
 - `framework/idt/idt.rs:152,158,800`
@@ -126,8 +128,10 @@
 **方案**: 在 `framework::config` 中定义 `pub const KERNEL_TEXT_BASE: u64 = 0xFFFFFFFF80000000;`
 
 **验收**:
-- [ ] `0xFFFFFFFF80000000` 仅 1 处权威定义
-- [ ] 双架构 0w0e + 三审计通过
+- [x] `0xFFFFFFFF80000000` 仅 1 处权威定义
+- [x] 双架构 0w0e + 三审计通过
+
+**完成记录** (2026-06-19): 新增 KERNEL_TEXT_BASE 于 framework/mm/mod.rs (cfg-gated: x86_64=0xFFFFFFFF80000000, aarch64=0x40080000)，替换 idt/ 中 7 处硬编码。
 
 ---
 

@@ -438,10 +438,10 @@ mod tests {
 
     #[test]
     fn test_stack_expansion_candidate() {
-        let inside = (USER_STACK_TOP - 4096) as usize;
+        let inside = (USER_STACK_TOP - PAGE_SIZE) as usize;
         assert!(is_stack_expansion_candidate(inside));
 
-        let outside = (USER_STACK_TOP - USER_STACK_DEFAULT_SIZE - 4096) as usize;
+        let outside = (USER_STACK_TOP - USER_STACK_DEFAULT_SIZE - PAGE_SIZE) as usize;
         assert!(!is_stack_expansion_candidate(outside));
 
         assert!(!is_stack_expansion_candidate(0x1000));

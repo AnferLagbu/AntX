@@ -30,7 +30,7 @@
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::framework::dma::get_dma;
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::klog_info;
 use crate::klog_warn;
 use alloc::vec::Vec;
@@ -52,8 +52,8 @@ const CMD_HEADER_SIZE: usize = 32;
 /// 命令列表总大小
 const CMD_LIST_SIZE: usize = CMD_SLOTS * CMD_HEADER_SIZE;
 
-/// FIS接收缓冲区大小
-const FIS_BUFFER_SIZE: usize = 4096;
+/// FIS接收缓冲区大小 (一页)
+const FIS_BUFFER_SIZE: usize = PAGE_SIZE as usize;
 
 /// 命令表大小 (CFIS + ACMD + PRDT)
 const CMD_TABLE_SIZE: usize = 256;

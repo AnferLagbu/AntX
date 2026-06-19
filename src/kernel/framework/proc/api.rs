@@ -856,7 +856,7 @@ pub fn scheduler_init() {
     super::cgroup::cgroup_init();
     // D3: 初始化 NUMA 拓扑 (UMA 回退, 后续接入 ACPI SRAT)
     crate::kernel::framework::mm::numa::numa_init(
-        crate::kernel::framework::mm::pmm_get_total_pages() * 4096,
+        crate::kernel::framework::mm::pmm_get_total_pages() * crate::kernel::framework::mm::PAGE_SIZE,
         crate::kernel::framework::config::MAX_CPUS as u32,
     );
     // D4: 初始化 eBPF 子系统

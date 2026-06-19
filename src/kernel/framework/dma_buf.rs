@@ -22,6 +22,10 @@ use core::ptr::NonNull;
 
 use crate::kernel::framework::mm::PhysAddr;
 
+#[cfg(target_arch = "aarch64")]
+use crate::kernel::framework::mm::CACHE_LINE_SIZE;
+use crate::kernel::framework::mm::PAGE_SIZE;
+
 use super::frame::Frame;
 
 /// DMA 传输方向
@@ -64,7 +68,7 @@ pub enum DmaError {
 }
 
 /// 典型设备 DMA 对齐要求 (4 KiB 页对齐)
-pub const DMA_ALIGNMENT: u64 = 4096;
+pub const DMA_ALIGNMENT: u64 = PAGE_SIZE;
 /// 最大单次 DMA 大小 (256 MiB, 防止物理内存耗尽)
 pub const DMA_MAX_SIZE: u64 = 256 * 1024 * 1024;
 
@@ -172,7 +176,7 @@ impl DmaStream {
                     || self.sync_state == SyncState::BidirInProgress
                 {
                     self.sync_state = SyncState::DeviceReady;
-                    // aarch64: DC CVAU on cpu_addr..cpu_addr+size
+                    // aarch64: 对 cpu_addr..cpu_addr+size 执行 DC CVAU (清理数据缓存到统一点)
                     #[cfg(target_arch = "aarch64")]
                     {
                         // SAFETY: DC CVAU 按 cache line 遍历, 将脏数据写回主存,
@@ -180,13 +184,12 @@ impl DmaStream {
                         // cpu_addr 是 DmaStream 持有的有效虚拟地址, size 已校验.
                         let start = self.cpu_addr.as_ptr() as u64;
                         let end = start + self.size as u64;
-                        const CACHE_LINE: u64 = 64;
-                        let mut addr = start & !(CACHE_LINE - 1);
+                        let mut addr = start & !(CACHE_LINE_SIZE - 1);
                         while addr < end {
                             // SAFETY: dc cvau 是 aarch64 标准 cache 维护指令,
                             // 输入地址已对齐到 cache line, 无副作用.
                             unsafe { core::arch::asm!("dc cvau, {}", in(reg) addr); }
-                            addr += CACHE_LINE;
+                            addr += CACHE_LINE_SIZE;
                         }
                         // SAFETY: dsb ish 是数据同步屏障, 确保 cache 维护完成.
                         unsafe { core::arch::asm!("dsb ish"); }
@@ -218,13 +221,12 @@ impl DmaStream {
                         // cpu_addr 是 DmaStream 持有的有效虚拟地址, size 已校验.
                         let start = self.cpu_addr.as_ptr() as u64;
                         let end = start + self.size as u64;
-                        const CACHE_LINE: u64 = 64;
-                        let mut addr = start & !(CACHE_LINE - 1);
+                        let mut addr = start & !(CACHE_LINE_SIZE - 1);
                         while addr < end {
                             // SAFETY: dc ivau 是 aarch64 标准 cache 维护指令,
                             // 输入地址已对齐到 cache line, 无副作用.
                             unsafe { core::arch::asm!("dc ivau, {}", in(reg) addr); }
-                            addr += CACHE_LINE;
+                            addr += CACHE_LINE_SIZE;
                         }
                         // SAFETY: dsb ish 是数据同步屏障, 确保 cache 维护完成.
                         unsafe { core::arch::asm!("dsb ish"); }

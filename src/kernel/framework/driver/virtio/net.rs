@@ -12,7 +12,7 @@
 use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
-use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
 use crate::kernel::framework::fs::KernelError;
 use crate::klog_err;
 use crate::klog_error;
@@ -278,7 +278,7 @@ impl VirtioNet {
             }
 
             // 为该 RX 槽位分配缓冲区
-            let pages = RX_BUFFER_SIZE.div_ceil(4096);
+            let pages = RX_BUFFER_SIZE.div_ceil(PAGE_SIZE as usize);
             extern "C" {
                 fn pmm_alloc_pages(count: u64) -> *mut u8;
             }

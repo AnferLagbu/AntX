@@ -3,6 +3,10 @@
 //! 提供对 x86-64 底层硬件寄存器的安全访问接口。
 //! 封装内联汇编，提供类型安全的 API。
 
+use crate::kernel::framework::mm::KERNEL_BASE;
+#[cfg(test)]
+use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
+
 /// CPU 特性检测结果
 #[derive(Debug, Clone)]
 pub struct CpuFeatures {
@@ -227,7 +231,7 @@ pub fn is_null_or_invalid(ptr: u64) -> bool {
 /// `true` 如果地址在合法的用户空间范围内
 #[inline]
 pub fn is_valid_user_address(addr: u64) -> bool {
-    addr > 0xFFFF && addr < 0xFFFF800000000000
+    addr > 0xFFFF && addr < KERNEL_BASE
 }
 
 /// 验证内核态地址范围
@@ -239,7 +243,7 @@ pub fn is_valid_user_address(addr: u64) -> bool {
 /// `true` 如果地址在内核空间范围内
 #[inline]
 pub fn is_valid_kernel_address(addr: u64) -> bool {
-    addr >= 0xFFFF800000000000
+    addr >= KERNEL_BASE
 }
 
 #[cfg(test)]
@@ -277,9 +281,9 @@ mod tests {
         assert!(!is_null_or_invalid(0x1000));
 
         assert!(is_valid_user_address(0x400000)); // 典型 user 地址
-        assert!(!is_valid_user_address(0xFFFF800000000000)); // kernel 地址
+        assert!(!is_valid_user_address(KERNEL_BASE)); // kernel 地址
 
-        assert!(is_valid_kernel_address(0xFFFFFFFF80000000));
+        assert!(is_valid_kernel_address(KERNEL_TEXT_BASE));
         assert!(!is_valid_kernel_address(0x400000));
     }
 }

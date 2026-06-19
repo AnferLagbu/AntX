@@ -19,6 +19,7 @@
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::mm::PAGE_SIZE;
 use super::types::*;
 
 /// === Message 原始指针特权封装 (Framekernel 模式) ===
@@ -121,7 +122,7 @@ impl DynIpcNamespace {
             return Err(-1);
         }
 
-        let pages = (size as usize).div_ceil(4096);
+        let pages = (size as usize).div_ceil(PAGE_SIZE as usize);
         let phys = crate::kernel::framework::mm::pmm_alloc_pages(pages);
         if phys.is_null() {
             return Err(-3);
@@ -147,7 +148,7 @@ impl DynIpcNamespace {
         let mut segs = self.shm_segs.lock();
         let pos = segs.iter().position(|s| s.id == id).ok_or(-1)?;
         let seg = segs.remove(pos);
-        let pages = (seg.size as usize).div_ceil(4096);
+        let pages = (seg.size as usize).div_ceil(PAGE_SIZE as usize);
         crate::kernel::framework::mm::pmm_free_pages(seg.phys_addr as *mut u8, pages);
         Ok(())
     }
