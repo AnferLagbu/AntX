@@ -208,8 +208,12 @@ pub fn reboot_mechanism(cmd: i32) -> i64 {
         0 => loop {},
         1 => match () {
             #[cfg(target_arch = "x86_64")]
+            // SAFETY: reboot_via_idt 仅在 x86_64 停机/重启路径调用,
+            // 此时无其他线程运行, IDT 操作安全
             () => unsafe { super::raw::reboot_via_idt() },
             #[cfg(target_arch = "aarch64")]
+            // SAFETY: reboot_via_psci 仅在 aarch64 停机/重启路径调用,
+            // PSCI SMC 调用由固件保证幂等
             () => unsafe { super::raw::reboot_via_psci() },
             #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
             () => loop {},
@@ -224,6 +228,8 @@ pub fn mmap_get_mm_or_alloc(size: u64) -> Option<*mut u8> {
         return None; // 有 mm, 走 VMA 路径
     }
     let pages = size.div_ceil(4096);
+    // SAFETY: alloc_pages 在无 mm 时由 mmap 路径调用,
+    // pages 由 size 向上取整计算, 不会溢出
     let ptr = unsafe { super::raw::alloc_pages(pages) };
     if ptr.is_null() { None } else { Some(ptr) }
 }
@@ -231,5 +237,51 @@ pub fn mmap_get_mm_or_alloc(size: u64) -> Option<*mut u8> {
 /// munmap 机制: 无 mm 时释放裸页 (TCB: 操作页分配器)
 pub fn munmap_free_pages(addr: u64, size: u64) {
     let pages = size.div_ceil(4096);
+    // SAFETY: free_pages 在无 mm 时由 munmap 路径调用,
+    // addr 来自之前的 alloc_pages 返回值, pages 计算与分配时一致
     unsafe { super::raw::free_pages(addr as *mut u8, pages) }
+}
+
+// ==================== POSIX Timer 机制 ====================
+
+/// POSIX Timer: 创建 per-process 定时器
+pub fn sys_timer_create(clockid: u64, sigev_ptr: u64, timer_id_ptr: u64) -> i64 {
+    super::posix_timer::sys_timer_create(clockid, sigev_ptr, timer_id_ptr)
+}
+
+/// POSIX Timer: 启动/调整/停止定时器
+pub fn sys_timer_settime(timer_id: u64, flags: u64, new_value_ptr: u64, old_value_ptr: u64) -> i64 {
+    super::posix_timer::sys_timer_settime(timer_id, flags, new_value_ptr, old_value_ptr)
+}
+
+/// POSIX Timer: 查询剩余时间和间隔
+pub fn sys_timer_gettime(timer_id: u64, curr_value_ptr: u64) -> i64 {
+    super::posix_timer::sys_timer_gettime(timer_id, curr_value_ptr)
+}
+
+/// POSIX Timer: 释放定时器
+pub fn sys_timer_delete(timer_id: u64) -> i64 {
+    super::posix_timer::sys_timer_delete(timer_id)
+}
+
+/// POSIX Timer: 返回上次 read 之后补打的次数
+pub fn sys_timer_getoverrun(timer_id: u64) -> i64 {
+    super::posix_timer::sys_timer_getoverrun(timer_id)
+}
+
+/// POSIX Timer: 时钟分辨率
+pub fn sys_clock_getres(clockid: u64, res_ptr: u64) -> i64 {
+    super::posix_timer::sys_clock_getres(clockid, res_ptr)
+}
+
+// ==================== 熵源 / Stack Canary 机制 ====================
+
+/// 从内核熵源填充用户 buffer
+pub fn sys_getrandom(buf: u64, buflen: u64, flags: u64) -> i64 {
+    super::canary::sys_getrandom(buf, buflen, flags)
+}
+
+/// 读取当前进程 8 字节 stack canary
+pub fn sys_get_canary(buf: u64, buflen: u64) -> i64 {
+    super::canary::sys_get_canary(buf, buflen)
 }

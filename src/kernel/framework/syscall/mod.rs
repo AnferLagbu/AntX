@@ -259,40 +259,11 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== POSIX Timer (740-745) ====================
-        QX_TIMER_CREATE => dispatch!(
-            crate::kernel::framework::syscall::posix_timer::sys_timer_create(a0, a1, a2),
-            b"timer_create\0"
-        ),
-        QX_TIMER_SETTIME => dispatch!(
-            crate::kernel::framework::syscall::posix_timer::sys_timer_settime(a0, a1, a2, a3),
-            b"timer_settime\0"
-        ),
-        QX_TIMER_GETTIME => dispatch!(
-            crate::kernel::framework::syscall::posix_timer::sys_timer_gettime(a0, a1),
-            b"timer_gettime\0"
-        ),
-        QX_TIMER_DELETE => dispatch!(
-            crate::kernel::framework::syscall::posix_timer::sys_timer_delete(a0),
-            b"timer_delete\0"
-        ),
-        QX_TIMER_GETOVERRUN => dispatch!(
-            crate::kernel::framework::syscall::posix_timer::sys_timer_getoverrun(a0),
-            b"timer_getoverrun\0"
-        ),
-        QX_CLOCK_GETRES => dispatch!(
-            crate::kernel::framework::syscall::posix_timer::sys_clock_getres(a0, a1),
-            b"clock_getres\0"
-        ),
+        // 已迁移: QX_TIMER_CREATE, QX_TIMER_SETTIME, QX_TIMER_GETTIME, QX_TIMER_DELETE,
+        //         QX_TIMER_GETOVERRUN, QX_CLOCK_GETRES (T5-1 → 服务层系统调用分发)
 
         // ==================== 熵源 / Stack Canary (746-747) ====================
-        QX_GETRANDOM => dispatch!(
-            crate::kernel::framework::syscall::canary::sys_getrandom(a0, a1, a2),
-            b"getrandom\0"
-        ),
-        QX_GET_CANARY => dispatch!(
-            crate::kernel::framework::syscall::canary::sys_get_canary(a0, a1),
-            b"get_canary\0"
-        ),
+        // 已迁移: QX_GETRANDOM, QX_GET_CANARY (T5-1 → 服务层系统调用分发)
 
         // ==================== 内存建议与锁定 (760-765, P1 #15) ====================
         // 已迁移: QX_MADVISE, QX_MLOCK, QX_MUNLOCK, QX_MLOCKALL, QX_MUNLOCKALL, QX_MINCORE
@@ -404,22 +375,8 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         ),
 
         // ==================== D3: NUMA ====================
-        QX_GET_MEMPOLICY => dispatch!(
-            crate::kernel::framework::mm::numa::sys_get_mempolicy(a0, a1),
-            b"get_mempolicy\0"
-        ),
-        QX_SET_MEMPOLICY => dispatch!(
-            crate::kernel::framework::mm::numa::sys_set_mempolicy(a0, a1),
-            b"set_mempolicy\0"
-        ),
-        QX_MIGRATE_PAGES => dispatch!(
-            crate::kernel::framework::mm::numa::sys_migrate_pages(a0),
-            b"migrate_pages\0"
-        ),
-        QX_GETCPU => dispatch!(
-            crate::kernel::framework::mm::numa::sys_getcpu(),
-            b"getcpu\0"
-        ),
+        // 已迁移: QX_GET_MEMPOLICY, QX_SET_MEMPOLICY, QX_MIGRATE_PAGES, QX_GETCPU
+        //         (T5-1 → 服务层系统调用分发)
 
         // ==================== D4: eBPF ====================
         QX_BPF => dispatch!(

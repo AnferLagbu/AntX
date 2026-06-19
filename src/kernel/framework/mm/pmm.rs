@@ -59,18 +59,12 @@ fn pfn_to_virt(pfn: u64) -> *mut u8 {
 }
 
 /// 将页数向上取整到 2 的幂 → 对应 buddy 阶数
+///
+/// T2-2: 策略已提取到 pmm_trait::PmmPolicy, 本函数保留为内部快捷路径
+/// (直接调用 current_pmm_policy().count_to_order()).
 #[inline]
 fn count_to_order(count: usize) -> u8 {
-    if count <= 1 {
-        return 0;
-    }
-    // 阶数 = ceil(log2(count)) = floor(log2(count-1)) + 1 = BITS - (count-1).leading_zeros()
-    let order = (usize::BITS - (count - 1).leading_zeros()) as u8;
-    if order > MAX_BUDDY_ORDER {
-        MAX_BUDDY_ORDER
-    } else {
-        order
-    }
+    super::pmm_trait::current_pmm_policy().count_to_order(count, MAX_BUDDY_ORDER)
 }
 
 #[derive(Clone, Copy)]

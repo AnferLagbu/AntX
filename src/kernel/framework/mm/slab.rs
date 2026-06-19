@@ -309,15 +309,11 @@ impl KmemCache {
     /// * Ok(KmemCache) - 成功创建
     /// * Err(&str) - 错误描述 (大小无效等)
     pub fn create(name: &'static str, object_size: usize) -> Result<Self, &'static str> {
-        if object_size == 0 {
-            return Err("Object size cannot be zero");
-        }
+        // T2-3: 大小规范化委托给 SlabPolicy
+        let effective_size = super::slab_trait::current_slab_policy()
+            .normalize_object_size(object_size)
+            .ok_or("Invalid object size (zero or exceeds maximum)")?;
 
-        if object_size > SLAB_MAX_OBJECT_SIZE {
-            return Err("Object size exceeds maximum");
-        }
-
-        let effective_size = object_size.max(SLAB_MIN_OBJECT_SIZE);
         let objects_per_slab = Self::calculate_objects_per_slab(effective_size);
 
         Ok(Self {
@@ -336,14 +332,15 @@ impl KmemCache {
     }
 
     /// 计算每个 Slab 可容纳的对象数
+    ///
+    /// T2-3: 策略已提取到 slab_trait::SlabPolicy, 本函数保留为内部快捷路径
+    /// (直接调用 current_slab_policy().calculate_objects_per_slab()).
     fn calculate_objects_per_slab(object_size: usize) -> u32 {
-        let usable_space = SLAB_DEFAULT_SIZE - core::mem::size_of::<SlabHeader>();
-
-        let estimated_objects = usable_space / object_size;
-        let bitmap_bytes = estimated_objects.div_ceil(8);
-        let actual_usable = usable_space - bitmap_bytes;
-
-        (actual_usable / object_size) as u32
+        super::slab_trait::current_slab_policy().calculate_objects_per_slab(
+            SLAB_DEFAULT_SIZE,
+            core::mem::size_of::<SlabHeader>(),
+            object_size,
+        )
     }
 
     pub fn active_objects(&self) -> u64 {
@@ -863,13 +860,11 @@ pub extern "C" fn slab_system_init() -> i32 {
 }
 
 /// 根据请求大小查找合适的通用缓存索引
+///
+/// T2-3: 策略已提取到 slab_trait::SlabPolicy, 本函数保留为内部快捷路径
+/// (直接调用 current_slab_policy().find_cache_index()).
 pub(crate) fn find_general_cache_index(size: usize) -> Option<usize> {
-    for (i, &cache_size) in GENERAL_CACHE_SIZES.iter().enumerate() {
-        if size <= cache_size {
-            return Some(i);
-        }
-    }
-    None
+    super::slab_trait::current_slab_policy().find_cache_index(size, &GENERAL_CACHE_SIZES)
 }
 
 /// 通用分配接口 (FFI 兼容)

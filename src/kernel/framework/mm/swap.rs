@@ -336,8 +336,8 @@ impl LruList {
             }
         }
 
-        // active 满, 将最旧的降级到 inactive
-        if self.active_count >= LRU_CAPACITY {
+        // T2-4: 降级决策委托给 SwapPolicy
+        if super::swap_trait::current_swap_policy().should_demote_active(self.active_count, LRU_CAPACITY) {
             self.demote_oldest();
         }
 
@@ -367,8 +367,8 @@ impl LruList {
                 self.active[i] = LruEntry::empty();
                 self.active_count -= 1;
 
-                // inactive 满时丢弃最旧的
-                if self.inactive_count >= LRU_CAPACITY {
+                // T2-4: inactive 满时丢弃决策委托给 SwapPolicy
+                if super::swap_trait::current_swap_policy().should_evict_inactive(self.inactive_count, LRU_CAPACITY) {
                     // 移除最旧的 inactive 条目 (跳过 locked 优先保护)
                     for j in 0..LRU_CAPACITY {
                         if self.inactive[j].occupied && !self.inactive[j].locked {
@@ -394,24 +394,31 @@ impl LruList {
 
     /// 从 inactive 链表获取回收候选
     ///
+    /// T2-4: 选择策略委托给 SwapPolicy::select_victim.
     /// **跳过 locked 页**: mlock 锁定的页保留在链表中, 不被回收.
-    /// 跳过后 inactive_count 不递减, 以便后续再考虑 (locked 状态未来会解除).
     fn get_victim(&mut self) -> Option<LruEntry> {
-        let mut scan_count = 0;
-        for i in 0..LRU_CAPACITY {
-            scan_count += 1;
-            if self.inactive[i].occupied && !self.inactive[i].locked {
-                let entry = self.inactive[i];
-                self.inactive[i] = LruEntry::empty();
-                self.inactive_count -= 1;
-                return Some(entry);
+        // 构建候选视图供策略决策
+        let candidates: [Option<super::swap_trait::LruPageInfo>; LRU_CAPACITY] = {
+            let mut arr = [None; LRU_CAPACITY];
+            for i in 0..LRU_CAPACITY {
+                if self.inactive[i].occupied {
+                    arr[i] = Some(super::swap_trait::LruPageInfo {
+                        pml4: self.inactive[i].pml4,
+                        virt_addr: self.inactive[i].virt_addr,
+                        phys_addr: self.inactive[i].phys_addr,
+                        dirty: self.inactive[i].dirty,
+                        locked: self.inactive[i].locked,
+                    });
+                }
             }
-            if scan_count >= LRU_CAPACITY {
-                break;
-            }
-        }
-        // 所有 inactive 条目都 locked, 无法回收
-        None
+            arr
+        };
+
+        let idx = super::swap_trait::current_swap_policy().select_victim(&candidates)?;
+        let entry = self.inactive[idx];
+        self.inactive[idx] = LruEntry::empty();
+        self.inactive_count -= 1;
+        Some(entry)
     }
 
     /// 标记某虚拟地址对应的 LRU 条目为 locked (mlock)
@@ -819,8 +826,25 @@ fn kswapd_softirq_handler() {
     // 原子清除 pending 标志
     KSWAPD_PENDING.store(false, Ordering::Release);
 
-    const RECLAIM_BATCH: u32 = 8;
-    let reclaimed = reclaim_pages(RECLAIM_BATCH);
+    // T2-4: 回收批量大小委托给 SwapPolicy
+    let ctx = {
+        SWAP.lock.lock();
+        // SAFETY: SWAP.lock 已加锁, area 和 lru 的内部可变性受锁保护
+        let area = unsafe { &*SWAP.area.get() };
+        let lru = unsafe { &*SWAP.lru.get() };
+        super::swap_trait::SwapPolicyContext {
+            total_slots: SWAP_MAX_SLOTS as u64,
+            used_slots: area.used_count,
+            active_count: lru.active_count,
+            inactive_count: lru.inactive_count,
+            free_pages: pmm::get_pmm().get_free_pages(),
+            total_pages: pmm::get_pmm().get_total_pages(),
+        }
+    };
+    SWAP.lock.unlock();
+
+    let batch = super::swap_trait::current_swap_policy().reclaim_batch_size(ctx);
+    let reclaimed = reclaim_pages(batch);
     if reclaimed > 0 {
         crate::klog_debug!(Swap, "[KSWAPD] softirq reclaimed {} pages", reclaimed);
     }
@@ -838,11 +862,35 @@ pub fn kswapd_init() {
 ///
 /// 由 scheduler.tick 周期调用, 或 pressure 跃迁调用.
 /// 重复唤醒是幂等的 (raise_softirq 仅设置 pending bit).
+///
+/// T2-4: 触发条件委托给 SwapPolicy::should_wakeup_kswapd.
 pub fn kswapd_wakeup() {
     // 快速路径: 若已 pending, 不重复触发
     if KSWAPD_PENDING.load(Ordering::Acquire) {
         return;
     }
+
+    // 策略决策: 是否应该唤醒
+    let ctx = {
+        SWAP.lock.lock();
+        // SAFETY: SWAP.lock 已加锁, area 和 lru 的内部可变性受锁保护
+        let area = unsafe { &*SWAP.area.get() };
+        let lru = unsafe { &*SWAP.lru.get() };
+        super::swap_trait::SwapPolicyContext {
+            total_slots: SWAP_MAX_SLOTS as u64,
+            used_slots: area.used_count,
+            active_count: lru.active_count,
+            inactive_count: lru.inactive_count,
+            free_pages: pmm::get_pmm().get_free_pages(),
+            total_pages: pmm::get_pmm().get_total_pages(),
+        }
+    };
+    SWAP.lock.unlock();
+
+    if !super::swap_trait::current_swap_policy().should_wakeup_kswapd(ctx) {
+        return;
+    }
+
     KSWAPD_PENDING.store(true, Ordering::Release);
     irq::raise_softirq(SoftirqVec::Kswapd);
 }

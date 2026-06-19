@@ -39,6 +39,12 @@ pub mod swap;
 pub mod vma;
 /// T-02: 物理页帧分配决策 trait
 pub mod alloc_trait;
+/// T2-2: PMM 策略决策 trait (阶数选择/碎片化/水位线)
+pub mod pmm_trait;
+/// T2-3: Slab 策略决策 trait (缓存大小选择/对象数计算/分配优先级)
+pub mod slab_trait;
+/// T2-4: Swap 策略决策 trait (LRU 管理/回收决策/kswapd 触发)
+pub mod swap_trait;
 /// L-03: 机制 API 集中导出 — 供 services 层策略实现调用
 pub mod mechanism;
 
@@ -83,6 +89,15 @@ pub use kpti::kpti_trampoline_ttbr1_or_kernel;
 
 // alloc_trait 公共接口 re-export — T-02 策略-机制分离
 pub use alloc_trait::{FrameAllocDecision, FallbackAllocPolicy, AllocContext, AllocDecision, register_alloc_decision, current_alloc_decision};
+
+// pmm_trait 公共接口 re-export — T2-2 PMM 策略-机制分离
+pub use pmm_trait::{PmmPolicy, FallbackPmmPolicy, PmmPolicyContext, Watermarks, register_pmm_policy, current_pmm_policy};
+
+// slab_trait 公共接口 re-export — T2-3 Slab 策略-机制分离
+pub use slab_trait::{SlabPolicy, FallbackSlabPolicy, SlabPolicyContext, SlabAllocSource, register_slab_policy, current_slab_policy};
+
+// swap_trait 公共接口 re-export — T2-4 Swap 策略-机制分离
+pub use swap_trait::{SwapPolicy, FallbackSwapPolicy, SwapPolicyContext, LruPageInfo, register_swap_policy, current_swap_policy};
 
 // cow 公共接口 re-export — 避免跨子系统直接访问 mm::cow 内部
 pub use cow::{cow_init, cow_ref_count, cow_inc_ref, cow_dec_ref};

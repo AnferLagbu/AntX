@@ -78,12 +78,8 @@ pub fn slab_init() {
 }
 
 fn cache_index(size: usize) -> Option<usize> {
-    for i in 0..CACHE_SIZES.len() {
-        if size <= CACHE_SIZES[i] {
-            return Some(i);
-        }
-    }
-    None
+    // T2-3: 委托给 SlabPolicy::find_cache_index
+    super::slab_trait::current_slab_policy().find_cache_index(size, &super::slab::GENERAL_CACHE_SIZES)
 }
 
 #[inline(always)]

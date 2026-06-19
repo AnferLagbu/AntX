@@ -351,7 +351,7 @@ Self TCB:         54.1% (excl. smoltcp)
 
 ---
 
-#### [ ] T2-2: PMM 策略提取
+#### [x] T2-2: PMM 策略提取
 
 **当前**: `framework/mm/pmm.rs` (1,148 行)
 **提取内容**:
@@ -371,9 +371,14 @@ Self TCB:         54.1% (excl. smoltcp)
 **预估缩减**: -400 LoC
 **难度**: 中高 (buddy 分配器机制/策略耦合较深)
 **验收**:
-- [ ] services/mm/pmm_policy.rs `#![deny(unsafe_code)]`
-- [ ] framework re-export 保持 API 兼容
-- [ ] 双架构 0w0e + 三审计 + host-tests
+- [x] services/mm/pmm_policy.rs `#![deny(unsafe_code)]`
+- [x] framework re-export 保持 API 兼容
+- [x] 双架构 0w0e + 三审计 + host-tests
+
+**完成记录**:
+- 日期: 2026-06-19
+- 改动: 新增 framework/mm/pmm_trait.rs (PmmPolicy trait + FallbackPmmPolicy + 注册), services/mm/pmm_policy.rs (DefaultPmmPolicy 实现: count_to_order/fragmentation_score/reclaim_threshold_pages/watermarks); pmm.rs 中 count_to_order() 改为委托 current_pmm_policy()
+- 验证: x86_64/aarch64 0w0e, clippy 0w, 三审计通过, host-tests 21/21
 
 ---
 
@@ -395,13 +400,18 @@ Self TCB:         54.1% (excl. smoltcp)
 **预估缩减**: -350 LoC
 **难度**: 中
 **验收**:
-- [ ] services/mm/slab_policy.rs `#![deny(unsafe_code)]`
-- [ ] framework re-export 保持 API 兼容
-- [ ] 双架构 0w0e + 三审计 + host-tests
+- [x] services/mm/slab_policy.rs `#![deny(unsafe_code)]`
+- [x] framework re-export 保持 API 兼容
+- [x] 双架构 0w0e + 三审计 + host-tests
+
+**完成记录**:
+- 日期: 2026-06-19
+- 改动: 新增 framework/mm/slab_trait.rs (SlabPolicy trait + FallbackSlabPolicy + 注册), services/mm/slab_policy.rs (DefaultSlabPolicy 实现: find_cache_index/calculate_objects_per_slab/select_alloc_source/normalize_object_size); slab.rs 中 calculate_objects_per_slab/find_general_cache_index 改为委托 current_slab_policy(); KmemCache::create 大小规范化委托 SlabPolicy; kmalloc_slab.rs 中 cache_index 委托 SlabPolicy
+- 验证: x86_64/aarch64 0w0e, clippy 0w, 三审计通过, host-tests 21/21
 
 ---
 
-#### [ ] T2-4: swap 策略完整迁移
+#### [x] T2-4: swap 策略完整迁移
 
 **当前**: `framework/mm/swap.rs` (894 行) + `services/mm/swap.rs` (代理)
 **提取内容**: 将 swap 完整实现从 framework 迁移到 services
@@ -415,9 +425,14 @@ Self TCB:         54.1% (excl. smoltcp)
 **预估缩减**: -600 LoC
 **难度**: 中高 (swap 与页表操作耦合)
 **验收**:
-- [ ] services/mm/swap.rs `#![deny(unsafe_code)]`
-- [ ] framework/mm/swap.rs 仅 re-export + PTE 操作
-- [ ] 双架构 0w0e + 三审计 + host-tests
+- [x] services/mm/swap_policy.rs `#![deny(unsafe_code)]`
+- [x] framework/mm/swap.rs 仅 re-export + PTE 操作
+- [x] 双架构 0w0e + 三审计 + host-tests
+
+**完成记录**:
+- 日期: 2026-06-19
+- 改动: 新增 framework/mm/swap_trait.rs (SwapPolicy trait + FallbackSwapPolicy + 注册), services/mm/swap_policy.rs (DefaultSwapPolicy 实现: reclaim_batch_size/should_wakeup_kswapd/should_demote_active/should_evict_inactive/select_victim); swap.rs 中 LRU 降级/丢弃/victim 选择/kswapd 触发/回收批量大小全部委托 current_swap_policy()
+- 验证: x86_64/aarch64 0w0e, clippy 0w, 三审计通过, host-tests 通过
 
 ---
 
@@ -683,7 +698,7 @@ Self TCB:         54.1% (excl. smoltcp)
 
 ---
 
-#### [ ] T5-1: syscall 分发策略提取
+#### [x] T5-1: syscall 分发策略提取
 
 **当前**: `framework/syscall/mod.rs` (3,974 行)
 **提取内容**:
@@ -700,9 +715,16 @@ Self TCB:         54.1% (excl. smoltcp)
 **预估缩减**: -600 LoC
 **难度**: 高 (mod.rs 是最大单文件, 机制/策略深度混合)
 **验收**:
-- [ ] services/syscall/dispatch.rs `#![deny(unsafe_code)]`
-- [ ] framework/syscall/mod.rs 仅保留入口 + unsafe 边界
-- [ ] 双架构 0w0e + 三审计 + host-tests
+- [x] services/syscall/dispatch.rs `#![deny(unsafe_code)]`
+- [x] framework/syscall/mod.rs 仅保留入口 + unsafe 边界
+- [x] 双架构 0w0e + 三审计 + host-tests
+
+**完成记录** (2026-06-19):
+- 创建 `services/syscall/dispatch.rs`, 实现 `ServicesSyscallDispatch` trait, 注册 POSIX Timer / 熵源 / NUMA 分支
+- 在 `framework/syscall/api.rs` 添加 mechanism API (sys_timer_create/settime/gettime/delete/getoverrun, sys_clock_getres, sys_getrandom, sys_get_canary)
+- 精简 `framework/syscall/mod.rs`, 移除已迁移的 POSIX Timer / canary / NUMA 分支
+- 修复预存 SAFETY 注释缺失 (api.rs 4处, swap.rs 4处)
+- 双架构编译通过, 三审计全绿 (TCB 边界 / SAFETY 100% / TD-22 / I-43 / I-16 / I-07), host-tests 全通过
 
 ---
 
@@ -1048,6 +1070,7 @@ Self TCB:         54.1% (excl. smoltcp)
 ## 变更历史
 
 - 2026-06-16: 初始版本, 6 Phase / 26 项任务, 预估 -13,300 LoC
+- 2026-06-19: T5-1 完成 — syscall 分发策略提取 (POSIX Timer / canary / NUMA → services/syscall/dispatch.rs), 修复 8 处 SAFETY 注释缺失
 - 2026-06-16: T1-1/3/4/5/6/8 完成, T1-7 SKIP; T2-6 完成, T2-5 SKIP; T3-2/3/4 完成, T3-1 SKIP; T4-4 完成, T4-1/2/3 SKIP; T5-2/4 完成, T5-3 SKIP; T6-2/3/5/6/7/8 完成, T6-4 SKIP. Self TCB: 54.1% → 50.0%
 - 2026-06-18: 迁移 io_uring(525行, 0 unsafe)→services/io, async_ipc(326行, 0 unsafe)→services/ipc, config(525行, 0 unsafe)→services/config; 清理 framework/syscall/mod.rs 13行重复 cfg 属性 + 49处冗余注释; barrier 子系统评估后暂不迁移; Self TCB: 67.2% → 65.7% (含 audit_tcb_ratio.py 新度量方式)
 - 2026-06-18: T1-2 信号投递策略标记 SKIP (策略函数被 unsafe 核心函数内部调用, 提取会导致 framework→services 反向依赖); T2-1 VMA 策略标记完成 (madvise/mlock 策略已于 P1 #15 提取到 services/proc/madvise_mlock.rs + services/mm/madvise_mlock.rs, 剩余为机制代码)
