@@ -1,0 +1,203 @@
+#![deny(unsafe_code)]
+//! 管道策略 — T6-1 从 framework/ipc/pipe.rs 提取
+//!
+//! 纯策略逻辑: 槽位查找、环形缓冲区读写、fd 管理、读者/写者计数.
+//! 自旋锁操作通过 framework::sync::IrqSpinLock 机制完成.
+
+use crate::kernel::framework::ipc::types::*;
+use crate::kernel::framework::sync::IrqSpinLock;
+
+/// 管道全局自旋锁 (framework 机制, 短临界区)
+static PIPE_LOCK: IrqSpinLock<()> = IrqSpinLock::new(());
+
+pub fn pipe_find_free_index(namespace: &IpcNamespace) -> Option<usize> {
+    for i in 0..IPC_MAX_PIPES {
+        if namespace.pipes[i].id == 0 {
+            return Some(i);
+        }
+    }
+    None
+}
+
+pub fn pipe_find_by_fd_index(namespace: &IpcNamespace, fd: i32) -> Option<usize> {
+    for i in 0..IPC_MAX_PIPES {
+        let pipe = &namespace.pipes[i];
+        if pipe.id != 0 && (pipe.read_fd == fd || pipe.write_fd == fd) {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// 判断 fd 是否为 pipe fd (公开接口, 供 sendfile/splice 使用)
+pub fn is_pipe_fd(fd: i32) -> bool {
+    let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
+    pipe_find_by_fd_index(ns, fd).is_some()
+}
+
+pub fn pipe_create_safe(
+    namespace: &mut IpcNamespace,
+    next_id: &mut IpcId,
+    current_pid: u32,
+) -> Result<(i32, i32), i32> {
+    let _lock = PIPE_LOCK.lock();
+
+    let idx = match pipe_find_free_index(namespace) {
+        Some(i) => i,
+        None => return Err(-1),
+    };
+
+    let pipe = &mut namespace.pipes[idx];
+
+    pipe.id = *next_id;
+    *next_id += 1;
+
+    pipe.buffer = [0u8; PIPE_BUFFER_SIZE];
+    pipe.read_pos = 0;
+    pipe.write_pos = 0;
+    pipe.count = 0;
+
+    pipe.read_pid = current_pid;
+    pipe.write_pid = current_pid;
+
+    pipe.read_fd = (pipe.id * 2) as i32;
+    pipe.write_fd = (pipe.id * 2 + 1) as i32;
+
+    pipe.readers = 1;
+    pipe.writers = 1;
+    pipe.flags = 0;
+
+    pipe.read_wait.init();
+    pipe.write_wait.init();
+
+    Ok((pipe.read_fd, pipe.write_fd))
+}
+
+pub fn pipe_read_safe(
+    namespace: &mut IpcNamespace,
+    fd: i32,
+    buf: &mut [u8],
+    count: u32,
+) -> Result<u32, i32> {
+    if count == 0 {
+        return Ok(0);
+    }
+
+    let _lock = PIPE_LOCK.lock();
+
+    let idx = match pipe_find_by_fd_index(namespace, fd) {
+        Some(i) => i,
+        None => return Err(-1),
+    };
+
+    let pipe = &mut namespace.pipes[idx];
+
+    if fd != pipe.read_fd {
+        return Err(-2);
+    }
+
+    let mut read_count: u32 = 0;
+
+    while read_count < count {
+        if pipe.count == 0 {
+            if pipe.writers == 0 {
+                break;
+            }
+            if read_count > 0 {
+                break;
+            }
+            return Err(-4);
+        }
+
+        buf[read_count as usize] = pipe.buffer[pipe.read_pos as usize];
+        pipe.read_pos = (pipe.read_pos + 1) % PIPE_BUFFER_SIZE as u32;
+        pipe.count -= 1;
+        read_count += 1;
+
+        if pipe.write_wait.count() > 0 {
+            pipe.write_wait.wake_one();
+        }
+    }
+
+    Ok(read_count)
+}
+
+pub fn pipe_write_safe(
+    namespace: &mut IpcNamespace,
+    fd: i32,
+    buf: &[u8],
+    count: u32,
+) -> Result<u32, i32> {
+    if count == 0 {
+        return Ok(0);
+    }
+
+    let _lock = PIPE_LOCK.lock();
+
+    let idx = match pipe_find_by_fd_index(namespace, fd) {
+        Some(i) => i,
+        None => return Err(-1),
+    };
+
+    let pipe = &mut namespace.pipes[idx];
+
+    if fd != pipe.write_fd {
+        return Err(-2);
+    }
+
+    if pipe.readers == 0 {
+        return Err(-3);
+    }
+
+    let mut written: u32 = 0;
+
+    while written < count {
+        if pipe.count >= PIPE_BUFFER_SIZE as u32 {
+            return Err(-4);
+        }
+
+        pipe.buffer[pipe.write_pos as usize] = buf[written as usize];
+        pipe.write_pos = (pipe.write_pos + 1) % PIPE_BUFFER_SIZE as u32;
+        pipe.count += 1;
+        written += 1;
+
+        if pipe.read_wait.count() > 0 {
+            pipe.read_wait.wake_one();
+        }
+    }
+
+    Ok(written)
+}
+
+pub fn pipe_close_safe(namespace: &mut IpcNamespace, fd: i32) -> Result<(), i32> {
+    let _lock = PIPE_LOCK.lock();
+
+    let idx = match pipe_find_by_fd_index(namespace, fd) {
+        Some(i) => i,
+        None => return Err(-1),
+    };
+
+    let pipe = &mut namespace.pipes[idx];
+
+    if fd == pipe.read_fd {
+        pipe.readers -= 1;
+        pipe.read_fd = 0;
+        if pipe.readers == 0 {
+            pipe.write_wait.wake_all();
+        }
+    } else if fd == pipe.write_fd {
+        pipe.writers -= 1;
+        pipe.write_fd = 0;
+        if pipe.writers == 0 {
+            pipe.read_wait.wake_all();
+        }
+    }
+
+    if pipe.readers == 0 && pipe.writers == 0 {
+        pipe.id = 0;
+        pipe.read_fd = 0;
+        pipe.write_fd = 0;
+    }
+
+    Ok(())
+}

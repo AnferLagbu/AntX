@@ -8,6 +8,9 @@
 
 use super::types::*;
 use super::*;
+// T6-1: pipe/shm/msgq 策略函数已迁移到 services
+use crate::kernel::services::ipc::{pipe, shm, msgq};
+use crate::kernel::services::ipc::types::PIPE_BUFFER_SIZE;
 
 // ============================================================================
 // 压力测试
@@ -36,29 +39,26 @@ mod stress_tests {
 
             // 写入
             assert!(
-                pipe::pipe_write_safe(&mut ns, wfd, data.as_ptr(), data.len()).is_ok(),
+                pipe::pipe_write_safe(&mut ns, wfd, data.as_bytes(), data.len() as u32).is_ok(),
                 "Write failed at iteration {}",
                 i
             );
 
             // 读取
             let mut buf = [0u8; 64];
-            let mut bytes_read: u64 = 0;
 
             assert!(
                 pipe::pipe_read_safe(
                     &mut ns,
                     rfd,
-                    buf.as_mut_ptr(),
-                    buf.len(),
-                    Some(&mut bytes_read)
+                    &mut buf,
+                    data.len() as u32
                 )
                 .is_ok(),
                 "Read failed at iteration {}",
                 i
             );
 
-            assert_eq!(bytes_read, data.len());
             assert_eq!(&buf[..data.len()], data.as_bytes());
         }
 
@@ -168,7 +168,7 @@ mod stress_tests {
         sem::sem_destroy_safe(&mut ns, id).unwrap();
     }
 
-    /// 测试管道大数据传输 (接近 PIPE_BUF_SIZE)
+    /// 测试管道大数据传输 (接近 PIPE_BUFFER_SIZE)
     #[test]
     fn test_pipe_large_data_transfer() {
         let mut ns = create_test_namespace();
@@ -178,26 +178,24 @@ mod stress_tests {
         let (rfd, wfd) = pipe::pipe_create_safe(&mut ns, &mut next_id, pid).unwrap();
 
         // 创建接近最大大小的数据块
-        let large_data = vec![0xABu8; PIPE_BUF_SIZE - 1];
+        let large_data = vec![0xABu8; PIPE_BUFFER_SIZE - 1];
 
         // 写入大块数据
         let written =
-            pipe::pipe_write_safe(&mut ns, wfd, large_data.as_ptr(), large_data.len()).unwrap();
-        assert_eq!(written, large_data.len());
+            pipe::pipe_write_safe(&mut ns, wfd, &large_data, large_data.len() as u32).unwrap();
+        assert_eq!(written as usize, large_data.len());
 
         // 读取并验证
-        let mut buf = [0u8; PIPE_BUF_SIZE];
-        let mut bytes_read: u64 = 0;
-        pipe::pipe_read_safe(
+        let mut buf = [0u8; PIPE_BUFFER_SIZE];
+        let nread = pipe::pipe_read_safe(
             &mut ns,
             rfd,
-            buf.as_mut_ptr(),
-            buf.len(),
-            Some(&mut bytes_read),
+            &mut buf,
+            large_data.len() as u32,
         )
         .unwrap();
 
-        assert_eq!(bytes_read, large_data.len() as u64);
+        assert_eq!(nread as usize, large_data.len());
         assert_eq!(&buf[..large_data.len()], large_data.as_slice());
 
         // 清理
@@ -225,7 +223,7 @@ mod boundary_tests {
         let (rfd, wfd) = pipe::pipe_create_safe(&mut ns, &mut next_id, pid).unwrap();
 
         // 写入 0 字节
-        let result = pipe::pipe_write_safe(&mut ns, wfd, core::ptr::null(), 0);
+        let result = pipe::pipe_write_safe(&mut ns, wfd, &[], 0);
         assert!(result.is_ok() || result.unwrap_err() == -1); // 允许成功或错误
 
         // 清理
@@ -282,8 +280,8 @@ mod boundary_tests {
         let pid: u32 = 1200;
 
         // 管道操作使用无效 ID
-        assert!(pipe::pipe_write_safe(&mut ns, invalid_id, core::ptr::null(), 0).is_err());
-        assert!(pipe::pipe_read_safe(&mut ns, invalid_id, core::ptr::null_mut(), 0, None).is_err());
+        assert!(pipe::pipe_write_safe(&mut ns, invalid_id, &[], 0).is_err());
+        assert!(pipe::pipe_read_safe(&mut ns, invalid_id, &mut [], 0).is_err());
         assert!(pipe::pipe_close_safe(&mut ns, invalid_id).is_err());
 
         // 共享内存操作使用无效 ID

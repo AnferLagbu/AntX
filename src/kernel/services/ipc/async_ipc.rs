@@ -25,10 +25,11 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-use crate::kernel::framework::ipc::msgq;
-use crate::kernel::framework::ipc::pipe;
 use crate::kernel::framework::ipc::types::*;
 use crate::kernel::framework::ipc::IPC_NAMESPACE;
+// T6-1: 策略函数已迁移到 services 本地
+use super::msgq;
+use super::pipe;
 
 use super::types::IpcId;
 

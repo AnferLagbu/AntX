@@ -382,7 +382,7 @@ Self TCB:         54.1% (excl. smoltcp)
 
 ---
 
-#### [ ] T2-3: slab 策略提取
+#### [x] T2-3: slab 策略提取
 
 **当前**: `framework/mm/slab.rs` (1,044 行) + `framework/mm/kmalloc_slab.rs` (172 行)
 **提取内容**:
@@ -808,23 +808,25 @@ Self TCB:         54.1% (excl. smoltcp)
 
 ---
 
-#### [ ] T6-1: IPC 策略提取 (msgq/shm/sem)
+#### [X] T6-1: IPC 策略提取 (msgq/shm/pipe)
 
-**当前**: `framework/ipc/` (msgq.rs 432 行 + shm.rs + sem.rs + types.rs 483 行)
+**当前**: `framework/ipc/` (msgq.rs + shm.rs + pipe.rs + types.rs)
 **提取内容**:
 - 消息队列管理策略 (msgq 创建/发送/接收/销毁)
 - 共享内存管理策略 (shm attach/detach/权限)
-- 信号量策略 (sem 操作/undo)
+- 管道管理策略 (pipe 创建/读写/关闭)
 - IPC 命名空间策略
 
 **留在 framework**:
 - copy_from/to_user (消息/数据拷贝)
 - 页表操作 (shm 映射)
 - 锁操作
+- raw::MessageRef (侵入式链表 unsafe 封装)
+- FFI 边界函数 (委托 services)
 
-**目标文件**: `services/ipc/` (新模块)
-**预估缩减**: -800 LoC
-**难度**: 中高 (IPC 与进程/内存管理交叉)
+**目标文件**: `services/ipc/` (msgq.rs, shm.rs, pipe.rs)
+**完成日期**: 2026-06-19
+**验证**: 双架构编译 0 warning 0 error, 三审计通过, host-tests 通过
 **验收**:
 - [ ] services/ipc/*.rs `#![deny(unsafe_code)]`
 - [ ] framework/ipc/ 仅保留 unsafe 边界

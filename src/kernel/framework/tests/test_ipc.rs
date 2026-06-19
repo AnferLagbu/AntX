@@ -1,6 +1,8 @@
 use super::check;
 use crate::kernel::framework::ipc::types::*;
-use crate::kernel::framework::ipc::{pipe, sem, shm};
+use crate::kernel::framework::ipc::{sem};
+// T6-1: pipe/shm 策略函数已迁移到 services
+use crate::kernel::services::ipc::{pipe, shm};
 use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 

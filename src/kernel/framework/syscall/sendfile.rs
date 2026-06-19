@@ -26,6 +26,7 @@ use crate::kernel::framework::fs::vfs as vfs_api;
 use crate::kernel::framework::fs::VFS_MAX_FDS;
 use crate::kernel::framework::fs::VFS_MANAGER;
 use crate::kernel::framework::ipc::pipe as ipc_pipe;
+use crate::kernel::services::ipc::pipe as svc_pipe;
 use crate::kernel::framework::ipc::IPC_NAMESPACE;
 use crate::kernel::framework::syscall::Errno;
 
@@ -147,7 +148,7 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset_ptr: u64, count: usize) -> i
         } else {
             // pipe 写端
             let ns = IPC_NAMESPACE.get_mut();
-            match ipc_pipe::pipe_write_safe(ns, out_fd, &bounce[..nread_usize], nread as u32) {
+            match svc_pipe::pipe_write_safe(ns, out_fd, &bounce[..nread_usize], nread as u32) {
                 Ok(n) => n as i32,
                 Err(_) => -1,
             }
@@ -251,7 +252,7 @@ pub fn sys_splice(
         // 1. 从 fd_in 读取到 bounce buffer
         let nread = if in_is_pipe {
             let ns = IPC_NAMESPACE.get_mut();
-            match ipc_pipe::pipe_read_safe(ns, fd_in, &mut bounce[..chunk], chunk as u32) {
+            match svc_pipe::pipe_read_safe(ns, fd_in, &mut bounce[..chunk], chunk as u32) {
                 Ok(n) => n as i32,
                 Err(_) => -1,
             }
@@ -268,7 +269,7 @@ pub fn sys_splice(
         // 2. 从 bounce buffer 写入 fd_out
         let nwritten = if out_is_pipe {
             let ns = IPC_NAMESPACE.get_mut();
-            match ipc_pipe::pipe_write_safe(ns, fd_out, &bounce[..nread_usize], nread as u32) {
+            match svc_pipe::pipe_write_safe(ns, fd_out, &bounce[..nread_usize], nread as u32) {
                 Ok(n) => n as i32,
                 Err(_) => -1,
             }
