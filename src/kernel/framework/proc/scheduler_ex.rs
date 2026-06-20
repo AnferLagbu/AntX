@@ -39,13 +39,13 @@ pub(crate) mod raw {
             Self(ptr)
         }
 
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待调度器诊断路径启用后使用。
         #[inline(always)]
         pub fn as_ptr(self) -> *mut Thread {
             self.0
         }
 
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待调度器诊断路径启用后使用。
         #[inline(always)]
         pub fn is_null(self) -> bool {
             self.0.is_null()
@@ -89,7 +89,7 @@ pub(crate) mod raw {
             unsafe { (*self.0).set_state_safe(s) }
         }
 
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待调度器调试路径启用后使用。
         #[inline(always)]
         pub fn load_state_raw(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 原子读 state.u32 表示
@@ -114,7 +114,7 @@ pub(crate) mod raw {
             unsafe { (*self.0).priority.store(v, Ordering::SeqCst) };
         }
 
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待调度器调试路径启用后使用。
         #[inline(always)]
         pub fn time_slice(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读时间片剩余

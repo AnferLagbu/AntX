@@ -55,11 +55,11 @@ pub(crate) struct RegisteredDomain {
 
 impl RegisteredDomain {}
 
-#[allow(dead_code)] // 占位桩, 待域持久化路径启用后使用。
+#[allow(dead_code)] // 占位桩, 待域持久化保存路径启用后使用。
 fn save_stub() {}
-#[allow(dead_code)]
+#[allow(dead_code)] // 占位桩, 待域持久化恢复路径启用后使用。
 fn restore_stub() {}
-#[allow(dead_code)]
+#[allow(dead_code)] // 占位桩, 待域持久化重置路径启用后使用。
 fn reset_stub() {}
 
 pub struct RecoveryRegistry {

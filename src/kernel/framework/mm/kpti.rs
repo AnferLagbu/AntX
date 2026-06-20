@@ -49,7 +49,7 @@ pub const PCID_USER: u64 = 2;
 /// INVPCID 指令类型: 按 PCID 刷新 TLB
 ///
 /// 供 VMM 页表修改 (COW/mprotect) 后刷除特定 PCID 的 TLB 条目.
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 VMM COW/mprotect TLB 刷新路径启用后使用。
 const INVPCID_TYPE_SINGLE: u64 = 0;
 /// INVPCID 指令类型: 刷新所有 TLB (包括 global 页)
 const INVPCID_TYPE_ALL_INCL_GLOBAL: u64 = 2;
@@ -227,6 +227,8 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     // 1. 分配 USER_PML4 物理页
     let user_pml4_phys = pmm_alloc_page() as u64;
     if user_pml4_phys == 0 {
+        // 不可恢复: KPTI 初始化需要 USER_PML4 页, 分配失败意味着内存耗尽,
+        // 内核无法安全进入用户态, 只能停机
         panic!("[KPTI] failed to allocate USER_PML4 page");
     }
     let user_pml4_virt = PhysAddr(user_pml4_phys).to_virt();

@@ -84,7 +84,7 @@ static mut DHCP_HANDLE: Option<SocketHandle> = None;
 // `set_max_sockets` 调整, 不超过 MAX_SOCKETS. 编译期可通过 ANT_MAX_SOCKETS
 // 环境变量覆盖 (Cargo build.rs 读取并写入 cfg).
 // ============================================================================
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 socket 容量动态调整路径启用后使用。
 const DEFAULT_MAX_SOCKETS: usize = 1024;
 
 /// 运行时活动 socket 数上限 (≤ MAX_SOCKETS).

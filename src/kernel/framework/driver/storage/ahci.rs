@@ -698,8 +698,9 @@ impl Drop for AhciPort {
 }
 
 // SAFETY: AhciController 通过 volatile 访问 MMIO 寄存器.
-// 全局 AHCI_CONTROLLERS Mutex 防止并发跨 CPU 变更.
+// SAFETY: AhciController 含 MMIO 裸指针, 全局 AHCI_CONTROLLERS Mutex 防止并发跨 CPU 变更.
 unsafe impl Send for AhciController {}
+// SAFETY: 同上, Mutex 保证并发安全.
 unsafe impl Sync for AhciController {}
 
 // ============================================================================
@@ -714,7 +715,7 @@ pub struct AhciController {
     // I-49: 设备元数据 (驱动名/类型), 预留给 hotplug/procfs 导出.
     // 当前 boot 路径通过 proto_block::register_block_device 的 name 参数注册,
     // 此处仅持有运行时副本供未来 driver_manager 枚举时查询.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 hotplug/procfs 驱动元数据导出启用后使用。
     info: DeviceInfo,
     initialized: bool,
 }

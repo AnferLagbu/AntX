@@ -407,7 +407,7 @@ pub const STANDARD_VIDEO_MODES: &[VideoMode] = &[
 /// HDMI 控制器驱动
 pub struct HdmiController {
     /// MMIO基地址 (待 HDMI MMIO 寄存器访问启用后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 HDMI MMIO 寄存器访问启用后使用。
     mmio_base: usize,
     /// EDID数据
     edid: Option<Edid>,
@@ -416,7 +416,7 @@ pub struct HdmiController {
     /// 是否连接显示器
     connected: bool,
     /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,

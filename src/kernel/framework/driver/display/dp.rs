@@ -181,7 +181,7 @@ pub struct AuxTransaction {
 /// DisplayPort 控制器驱动
 pub struct DpController {
     /// MMIO基地址 (待 DP MMIO 寄存器访问启用后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 DP MMIO 寄存器访问启用后使用。
     mmio_base: usize,
     /// DPCD数据
     dpcd: Option<Dpcd>,
@@ -194,7 +194,7 @@ pub struct DpController {
     /// 是否连接显示器
     connected: bool,
     /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,

@@ -37,6 +37,7 @@ use super::user_proc::{user_proc_clone, USER_PROC_MANAGER};
 pub use super::user_proc::proc_alloc_pid;
 use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::klog::klog_ffi_info;
+use crate::klog_error;
 use crate::kernel::framework::mm::{
     pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
     vmm_switch_page_table,
@@ -88,7 +89,7 @@ pub mod raw {
     ///
     /// # Safety (内部)
     /// - `ptr` 必须由 `alloc_process` 产生且未被释放。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待进程动态释放路径启用后使用。
     pub fn dealloc_process(ptr: *mut Process) {
         if !ptr.is_null() {
             // SAFETY: alloc/dealloc 配对。
@@ -382,7 +383,7 @@ pub fn process_insert(process: *mut super::process::Process) -> bool {
 /// NOTE: 此函数在 process.rs 中也有定义, 通过 process::* glob re-export.
 /// 此处保留以保持 api 兼容性, 但 proc/mod.rs 的 glob re-export 会产生歧义.
 /// 调用方应使用 process::kernel_stack_write_canary 或通过 proc::kernel_stack_write_canary.
-#[allow(dead_code)]
+#[allow(dead_code)] // 保留以保持 API 兼容性, 实际调用方使用 process::* 路径。
 fn kernel_stack_write_canary_delegated(stack_top: u64) {
     super::process::kernel_stack_write_canary(stack_top);
 }

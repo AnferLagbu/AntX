@@ -974,8 +974,9 @@ impl NvmeController {
 }
 
 // SAFETY: NvmeController 通过 volatile 访问 MMIO 寄存器.
-// 全局 NVME_CONTROLLERS Mutex 防止并发跨 CPU 变更.
+// SAFETY: NvmeController 含 MMIO 裸指针, 全局 NVME_CONTROLLERS Mutex 防止并发跨 CPU 变更.
 unsafe impl Send for NvmeController {}
+// SAFETY: 同上, Mutex 保证并发安全.
 unsafe impl Sync for NvmeController {}
 
 // ============================================================================

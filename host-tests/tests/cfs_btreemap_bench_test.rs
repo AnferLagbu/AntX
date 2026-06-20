@@ -76,7 +76,7 @@ fn test_i34_deferred_with_rationale() {
     // intrusive RB tree 实现工作量大, 风险高, 须先有 perf 数据支撑.
     let plan_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent().unwrap()
-        .join("docs/plan/maintenance-2026-06-11.md");
+        .join("docs/plan/archive/maintenance-2026-06-11.md");
     let plan = std::fs::read_to_string(&plan_path)
         .expect("无法读取 maintenance plan");
     let i34_section: String = plan

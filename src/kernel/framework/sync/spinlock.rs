@@ -289,6 +289,7 @@ impl SpinLock {
     #[cfg(debug_assertions)]
     pub fn assert_held(&self) {
         if !self.is_locked() {
+            // 不可恢复: 自旋锁断言失败意味着代码逻辑错误, 继续执行会导致数据竞争
             panic!("SPINLOCK ASSERTION FAILED: lock not held");
         }
     }
@@ -321,7 +322,7 @@ pub fn restore_interrupts(flags: &IrqSaveFlags) {
 /// 启用中断
 ///
 /// 当前无调用方; 保留供中断管理 API 补全 (与 disable/restore 对称)。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待中断管理 API 补全后启用。
 fn enable_interrupts() {
     crate::arch!(interrupt_enable());
 }

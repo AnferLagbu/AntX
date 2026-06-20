@@ -240,7 +240,7 @@ pub struct Framebuffer {
     /// 每像素字节数
     bpp: usize,
     /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,

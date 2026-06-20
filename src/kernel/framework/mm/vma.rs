@@ -1081,8 +1081,9 @@ impl MmStruct {
 // SAFETY: MmStruct 对 Vec<Vma> 使用 Mutex, brk/start_brk 使用 AtomicUsize.
 // 所有可变字段都经过适当的同步原语.
 // start_stack/mmap_base 在 init 后只读.
-// 跨线程共享访问是安全的, 因为所有变更都通过原子操作与锁在内部同步.
+// SAFETY: MmStruct 含裸指针, 但跨线程共享访问是安全的, 因为所有变更都通过原子操作与锁在内部同步.
 unsafe impl Send for MmStruct {}
+// SAFETY: 同上, 原子操作与锁保证并发安全.
 unsafe impl Sync for MmStruct {}
 
 static mut CURRENT_MM: *const MmStruct = core::ptr::null();

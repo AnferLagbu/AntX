@@ -125,6 +125,8 @@ pub fn validate_system_config() -> u32 {
             log_config_error(&e);
             #[cfg(debug_assertions)]
             if let ConfigError::CpuCountExceedsMax { actual, max } = e {
+                // 不可恢复: CPU 数量超过 MAX_CPUS 是配置错误, release 模式下仅 log,
+                // debug 模式下必须停机以强制修正容量参数
                 panic!(
                     "CONFIG: CPU count {} exceeds MAX_CPUS {}. \
                      Increase MAX_CPUS in kernel/config/capacity.rs",

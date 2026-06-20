@@ -78,8 +78,9 @@ pub struct VirtQueue {
 
 // SAFETY: VirtQueue 裸指针指向 PMM 分配的 DMA 页.
 // 每个设备实例拥有自己的 virtqueue. 描述符操作使用 volatile 访问与内存屏障.
-// 跨 CPU 安全性由单一所有者 &mut self 访问或外部锁保证.
+// SAFETY: VirtQueue 含 MMIO 裸指针, 跨 CPU 安全性由单一所有者 &mut self 访问或外部锁保证.
 unsafe impl Send for VirtQueue {}
+// SAFETY: 同上, &mut self 或外部锁保证并发安全.
 unsafe impl Sync for VirtQueue {}
 
 impl VirtQueue {

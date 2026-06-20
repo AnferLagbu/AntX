@@ -294,7 +294,7 @@ pub struct XhciController {
     /// 插槽数量
     num_slots: usize,
     /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
@@ -424,7 +424,7 @@ impl XhciController {
     }
 
     /// 端点错误恢复 (待 USB 错误恢复路径启用后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 USB 错误恢复路径启用后使用。
     fn recover_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         let _ = (slot_id, ep_id);
         self.reset_controller()?;

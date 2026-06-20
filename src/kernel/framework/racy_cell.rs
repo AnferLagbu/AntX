@@ -57,7 +57,7 @@ impl<T> RacyCell<T> {
     /// 获取可变引用
     ///
     /// 调用方必须保证独占访问。单线程上下文或外部同步保证。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 RacyCell 可变访问路径启用后使用。
     pub fn get_mut(&self) -> &mut T {
         // SAFETY: RacyCell 的 Sync 实现由调用方通过外部同步保证。
         // 在单线程或持有锁的上下文中调用是安全的。
@@ -86,7 +86,7 @@ impl<T> RacyCell<T> {
     /// # Safety
     ///
     /// 调用方必须保证独占写入。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 RacyCell 写入路径启用后使用。
     pub unsafe fn write(&self, val: T) {
         // SAFETY: `core::ptr::write` 是未对齐的 memcpy, 不读旧值 (避免 drop);
         // 调用方必须保证: 1) 当前无其他线程读/写, 2) 目标地址 valid for writes,

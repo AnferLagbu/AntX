@@ -81,7 +81,7 @@ pub trait CStrExt {
     /// - 非 UTF-8 → `None`
     ///
     /// 用于"显式区分空指针与正常空串"的场景。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待内核 C 字符串 Option 路径启用后使用。
     fn as_kstr_opt(&self) -> Option<&'static str>;
 }
 

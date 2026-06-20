@@ -18,8 +18,10 @@ pub struct DmaEngine {
 }
 
 // SAFETY: DmaEngine 对 mappings/mmio_regions 使用 Mutex, 对 initialized 使用 AtomicBool.
-// DmaStats 仅为普通 Copy 类型. 不存在未配同步原语的 UnsafeCell.
+// SAFETY: DmaEngine 含 UnsafeCell, 但所有可变访问通过自身锁保护.
+//         DmaStats 仅为普通 Copy 类型. 不存在未配同步原语的 UnsafeCell.
 unsafe impl Send for DmaEngine {}
+// SAFETY: 同上, 锁保护并发访问.
 unsafe impl Sync for DmaEngine {}
 
 impl DmaEngine {
@@ -430,7 +432,7 @@ impl DmaEngine {
     /// 确保 CPU 能看到设备的写入.
     /// 待流式 DMA 读取路径启用后使用。
     #[inline(always)]
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待流式 DMA 读取路径启用后使用。
     #[allow(unused_variables)]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]

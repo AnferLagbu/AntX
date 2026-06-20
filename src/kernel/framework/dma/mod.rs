@@ -174,7 +174,7 @@ impl DmaStats {
 
 /// 从虚拟地址计算物理地址 (经页表走查, 待流式 DMA 映射启用后使用)。
 #[inline]
-#[allow(dead_code)]
+#[allow(dead_code)] // 待流式 DMA 映射启用后使用。
 fn virt_to_phys(virt: *const u8) -> u64 {
     if virt.is_null() {
         return 0;

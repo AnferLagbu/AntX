@@ -52,7 +52,7 @@ pub use tsc::{read_tsc, read_tsc_serialized, cycles_to_nanoseconds};
 // ============================================================================
 
 /// 最大 CPUID leaf 号 (待 CPU 特性探测扩展启用后使用)。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 CPU 特性探测扩展启用后使用。
 const MAX_CPUID_LEAF_STANDARD: u32 = 0x0F;
 
 /// 扩展 CPUID leaf 起始值 (x86_64 专用)

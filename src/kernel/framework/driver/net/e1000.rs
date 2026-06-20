@@ -26,7 +26,7 @@ use alloc::boxed::Box;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[cfg(not(feature = "kernel_test"))]
 // POLL_COUNT: 预留统计计数器, 待网络性能监控特性启用后使用。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待网络性能监控特性启用后使用。
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
 pub const E1000_TX_RING_SIZE: usize = 64;
@@ -50,11 +50,11 @@ const E1000_STATUS_SPEED_1000: u32 = 2 << 6;
 const E1000_STATUS_SPEED_100: u32 = 1 << 6;
 
 // EEPROM 寄存器: 规范定义, 待 e1000-real-hw feature 启用后使用。
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 e1000-real-hw EEPROM 读取启用后使用。
 const E1000_EERD: u32 = 0x0014;
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 e1000-real-hw EEPROM 读取启用后使用。
 const E1000_EERD_START: u32 = 1 << 0;
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 e1000-real-hw EEPROM 读取启用后使用。
 const E1000_EERD_DONE: u32 = 1 << 4;
 
 const E1000_RCTL: u32 = 0x0100;
@@ -1043,8 +1043,10 @@ pub extern "C" fn e1000_dump_stats() {
 
 // SAFETY: 单核内核, E1000 操作序列化在 Mutex 后
 #[cfg(not(feature = "kernel_test"))]
+// SAFETY: E1000Device 含 MMIO 裸指针, 但所有访问通过自身锁保护, 无锁外可变状态.
 unsafe impl Send for E1000Device {}
 #[cfg(not(feature = "kernel_test"))]
+// SAFETY: 同上, 外部锁保证并发安全.
 unsafe impl Sync for E1000Device {}
 
 #[cfg(not(feature = "kernel_test"))]

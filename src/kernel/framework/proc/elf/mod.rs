@@ -65,7 +65,7 @@ const PF_R: u32 = 4;
 const MAX_PHDR_COUNT: usize = 128;
 
 /// ET_EXEC: 固定地址可执行文件 (待非 PIE 加载路径启用后使用)。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待非 PIE 加载路径启用后使用。
 const ET_EXEC: u16 = 2;
 /// ET_DYN: 共享对象 / PIE 可执行文件
 const ET_DYN: u16 = 3;

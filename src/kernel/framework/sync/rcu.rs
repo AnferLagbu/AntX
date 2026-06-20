@@ -62,7 +62,7 @@ impl PerCpuRcu {
 }
 
 // SAFETY: PerCpuRcu 仅在关中断路径下访问;
-// UnsafeCell 为回调链表提供内部可变性.
+// SAFETY: PerCpuRcu 含 UnsafeCell, 但仅由对应 CPU 访问, UnsafeCell 为回调链表提供内部可变性.
 unsafe impl Sync for PerCpuRcu {}
 
 const GP_IDLE: u32 = 0;
@@ -74,7 +74,7 @@ struct RcuGlobal {
 }
 
 // SAFETY: 每个 PerCpuRcu[i] 通常仅由 CPU i 访问.
-// 对于 synchronize_rcu(), 跨 CPU 读取 nesting/gp_state 使用原子操作, 安全.
+// SAFETY: RcuGlobal 含 UnsafeCell, 但对于 synchronize_rcu(), 跨 CPU 读取 nesting/gp_state 使用原子操作, 安全.
 unsafe impl Sync for RcuGlobal {}
 
 static RCU_GLOBAL: RcuGlobal = RcuGlobal {

@@ -232,8 +232,9 @@ struct FutexHashTable {
 }
 
 // SAFETY: FutexHashTable 的每个桶由独立的 SimpleSpinLock 保护,
-// 不同桶可以并发访问. 同一桶内的访问通过 lock/unlock 序列化.
+// SAFETY: FutexHashTable 含 UnsafeCell, 但不同桶可以并发访问, 同一桶内的访问通过 lock/unlock 序列化.
 unsafe impl Sync for FutexHashTable {}
+// SAFETY: 同上, 桶级锁保证并发安全.
 unsafe impl Send for FutexHashTable {}
 
 static FUTEX_TABLE: FutexHashTable = FutexHashTable {

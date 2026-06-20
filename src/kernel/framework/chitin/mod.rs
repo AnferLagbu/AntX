@@ -240,8 +240,10 @@ pub struct ChitinDevice {
 
 // SAFETY: ChitinDevice 含一个原始指针 (`driver_data`), 其不
 // 拥有内存 —— 内存由驱动方自行管理. 其它字段均为 Copy 类型或
-// Option 包装. 写操作由设备树锁保护. 该指针仅在驱动自身锁内解引用.
+// SAFETY: ChitinDevice 含裸指针, 但通过 Option 包装, 写操作由设备树锁保护.
+//         该指针仅在驱动自身锁内解引用.
 unsafe impl Send for ChitinDevice {}
+// SAFETY: 同上, 设备树锁保护并发访问.
 unsafe impl Sync for ChitinDevice {}
 
 impl ChitinDevice {

@@ -24,7 +24,7 @@ const PT_AF: u64 = 1 << 10; // Access Flag
 const PT_ATTR_NORMAL: u64 = (0b0100 << 2) | (0b0100 << 8); // Normal memory, Inner/Outer WBWA
 const PT_ATTR_DEVICE: u64 = 0; // Device-nGnRnE memory (AttrIndx=0, MAIR[0]=0x44)
 const PT_AP_EL1_RW: u64 = 0 << 6; // EL1 read/write
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 ARM 用户态页映射路径启用后使用。
 const PT_AP_ALL_RW: u64 = 1 << 6; // EL1+EL0 read/write
 
 const L2_BLOCK_SIZE: u64 = 0x200000; // 2MB (L2 block at 4KB granule)

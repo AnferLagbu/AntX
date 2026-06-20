@@ -254,6 +254,7 @@ impl fmt::Display for DmaStream {
 }
 
 // SAFETY: DmaStream 持有独立的 Frame 和 DMA 映射, Send/Sync 安全。
-// 状态机通过 &mut self 排他访问, 避免数据竞争。
+// SAFETY: DmaStream 含裸指针, 但所有可变访问通过 &mut self 排他访问, 避免数据竞争.
 unsafe impl Send for DmaStream {}
+// SAFETY: 同上, &mut self 保证排他访问.
 unsafe impl Sync for DmaStream {}

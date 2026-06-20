@@ -116,7 +116,7 @@ pub(crate) mod raw {
             Self(ptr)
         }
 
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待进程诊断路径启用后使用。
         #[inline(always)]
         pub fn as_ptr(self) -> *mut UserProcess {
             self.0
@@ -154,7 +154,7 @@ pub(crate) mod raw {
 
         /// 访问 create_time 字段 (读写, 待进程统计路径启用后使用)。
         #[inline(always)]
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待进程统计路径启用后使用。
         pub fn create_time(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).create_time }
@@ -266,7 +266,7 @@ pub(crate) mod raw {
 
     /// 获取当前活跃进程 (current: AtomicU64 → NonNull→ ref)。
     /// 待进程调度器完整集成后启用。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待进程调度器完整集成后启用。
     pub fn current_proc() -> Option<UserProcRef> {
         let cur = USER_PROC_MANAGER.current.load(Ordering::SeqCst);
         if cur == 0 {
@@ -333,7 +333,7 @@ pub(crate) mod raw {
     }
 
     /// 释放多页连续物理页 (待批量页释放路径启用后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待批量页释放路径启用后使用。
     pub fn free_phys_pages(pages: *mut u8, count: u64) {
         for i in 0..count {
             raw::free_phys_page((pages as u64 + i * PAGE_SIZE) as *mut u8);
@@ -341,7 +341,7 @@ pub(crate) mod raw {
     }
 
     /// 分配一页物理页 (单页, 待单页分配路径启用后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待单页分配路径启用后使用。
     pub fn alloc_phys_page() -> *mut u8 {
         // SAFETY: 物理页分配, 调用方负责所有权。
         unsafe { pmm_alloc_page() }
@@ -447,20 +447,20 @@ pub(crate) mod raw {
     }
 
     /// 物理页 → 内核可写指针 (用于代码段 chunk 复制, 待 ELF 加载路径完善后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 ELF 加载路径完善后使用。
     pub fn phys_to_kern_mut(phys: u64, off: u64) -> *mut u8 {
         (phys + KERNEL_BASE + off) as *mut u8
     }
 
     /// ELF 文件指针 + 偏移 (待 ELF 加载路径完善后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 ELF 加载路径完善后使用。
     pub fn elf_ptr_at(elf_data: *const u8, off: usize) -> *const u8 {
         // SAFETY: 调用方保证 off 在 elf_size 范围内。
         unsafe { elf_data.add(off) }
     }
 
     /// 切换到用户页表 (aarch64 用户态进入前, 待 aarch64 进程切换启用后使用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 aarch64 进程切换启用后使用。
     pub fn vmm_switch_to_user(cr3: u64) {
         // SAFETY: cr3 来自 user proc 的 cr3 字段, 已由 vmm_create_user_page_table 创建。
         unsafe { vmm_switch_page_table(cr3) }
@@ -672,8 +672,11 @@ use raw::UserProcRef;
 // SAFETY: UserProcess::process 字段存储 NonNull<Process> 句柄, 不持有所有权.
 //         共享字段 (pid/pwm/cr3/kstack/ustack/state) 均为 Atomic* 或 u32, 满足 Send.
 //         FFI 独占字段 (entry/stack_bottom/create_time) 均为 u64, 满足 Send.
+// SAFETY: UserProcess 含裸指针, 但所有可变访问通过 USER_PROC_MANAGER 锁保护;
+//         裸指针仅在锁内解引用, 不会跨线程无锁访问.
 //         综合: UserProcess 可在线程间安全转移.
 unsafe impl Send for UserProcess {}
+// SAFETY: 同上, Sync 安全性由外部锁保证.
 unsafe impl Sync for UserProcess {}
 #[repr(C)]
 pub struct UserProcess {
@@ -772,8 +775,10 @@ pub struct UserProcManager {
 
 // SAFETY: UserProcManager 始终通过静态 USER_PROC_MANAGER 访问.
 // 所有变更都走 Mutex, NonNull 指针指向的 UserProcess 对象
-// 字段均为 Atomic* 或普通整数.
+// SAFETY: UserProcManager 含裸指针 HashMap, 但所有访问通过自身 Mutex 保护.
+//         字段均为 Atomic* 或普通整数.
 unsafe impl Send for UserProcManager {}
+// SAFETY: 同上, 外部锁保证并发安全.
 unsafe impl Sync for UserProcManager {}
 
 impl UserProcManager {

@@ -328,7 +328,7 @@ struct PerCpuGdt {
 impl PerCpuGdt {
     // per-CPU 初始化预留: 当前通过 per_cpu_gdt_mut 直接构造,
     // 待 GDT 动态分配重构后启用。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 GDT 动态分配重构后启用。
     const fn new() -> Self {
         Self {
             entries: [GdtEntry::null(); GDT_MAX_ENTRIES],

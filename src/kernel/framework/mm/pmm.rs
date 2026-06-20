@@ -112,13 +112,13 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待 PMM 调试/诊断路径启用后使用。
         pub fn is_null(self) -> bool {
             self.0.is_null()
         }
 
         #[inline(always)]
-        #[allow(dead_code)]
+        #[allow(dead_code)] // 待 PMM 调试/诊断路径启用后使用。
         pub fn as_ptr(self) -> *mut FreeNode {
             self.0
         }
@@ -321,8 +321,9 @@ pub struct PhysicalMemoryManager {
 // 所有公开修改都通过 pmm_alloc_pages/pmm_free_pages 进行, 它们
 // 获取内部锁 (AtomicBool 自旋锁). 锁保证互斥, 多线程并发访问安全.
 // buddy_heads 仅在持锁时访问; bitmap/buddy_meta 仅在初始化时设置,
-// 之后只读.
+// SAFETY: PhysicalMemoryManager 含 UnsafeCell, 但初始化完成后只读.
 unsafe impl Sync for PhysicalMemoryManager {}
+// SAFETY: 同上, 初始化后只读, 无并发写风险.
 unsafe impl Send for PhysicalMemoryManager {}
 
 impl PhysicalMemoryManager {

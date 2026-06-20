@@ -141,8 +141,10 @@ pub struct VirtioBlk {
 }
 
 // SAFETY: VirtioBlk 使用 PMM 分配的 DMA 缓冲区; 单一所有者 &mut self
-// 访问防止同一设备并发 I/O. MMIO 写使用 volatile + 屏障以保证跨 CPU 可见性.
+// SAFETY: VirtioBlk 含 MMIO 裸指针, 但 &mut self 访问防止同一设备并发 I/O.
+//         MMIO 写使用 volatile + 屏障以保证跨 CPU 可见性.
 unsafe impl Send for VirtioBlk {}
+// SAFETY: 同上, &mut self 保证排他访问.
 unsafe impl Sync for VirtioBlk {}
 
 impl VirtioBlk {

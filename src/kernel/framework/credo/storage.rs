@@ -379,7 +379,7 @@ pub(crate) mod raw {
     }
 
     /// 安全访问 identity 表 (读视图)
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 Credo 存储身份查询路径启用后使用。
     pub fn table() -> &'static super::identity::IdentityTable {
         super::identity::raw::get_table()
     }

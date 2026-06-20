@@ -132,6 +132,8 @@ pub unsafe fn kpti_init(kernel_ttbr1: u64) {
     // 1. 分配 trampoline L0 页表
     let tramp_l0_phys = pmm_alloc_page() as u64;
     if tramp_l0_phys == 0 {
+        // 不可恢复: KPTI 初始化需要 trampoline L0 页表, 分配失败意味着内存耗尽,
+        // 内核无法安全进入用户态, 只能停机
         panic!("[KPTI] failed to allocate trampoline L0 page");
     }
 

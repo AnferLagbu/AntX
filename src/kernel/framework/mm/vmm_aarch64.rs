@@ -26,17 +26,17 @@ fn phys_to_virt(phys: u64) -> u64 {
 // ─── ARM 描述符常量 ────────────────────────────────────────
 
 /// 描述符类型
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 ARM 页表诊断路径启用后使用。
 const DESC_VALID: u64 = 1 << 0;
 const DESC_TYPE_TABLE: u64 = 0b11; // 表描述符 (L0/L1/L2)
 const DESC_TYPE_BLOCK: u64 = 0b01; // 块描述符 (L1/L2)
 const DESC_TYPE_PAGE: u64 = 0b11; // 页描述符 (L3, 与 TABLE 位相同)
 
 /// 内存属性索引 (与 mmu.rs 中 MAIR_EL1 设定对应)
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 ARM 设备内存映射路径启用后使用。
 const MAIR_DEVICE_nGnRnE: u64 = 0; // Device memory
 const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 ARM 非缓存内存映射路径启用后使用。
 const MAIR_NORMAL_NC: u64 = 2; // Normal non-cacheable
 const MAIR_USER_NORMAL: u64 = 4; // Normal WBWA for user pages
 
@@ -182,7 +182,7 @@ pub struct Aarch64Vmm {
     /// Physical address of kernel L0 table (for TTBR1_EL1)
     kernel_l0: u64,
     /// User page table counter
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 KPTI 用户页表管理路径启用后使用。
     next_table_id: core::sync::atomic::AtomicU64,
 }
 
@@ -206,6 +206,7 @@ impl Aarch64Vmm {
         #[cfg(debug_assertions)]
         {
             if VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed) {
+                // 不可恢复: VMM_LOCK 递归获取意味着死锁, 继续执行只会挂起系统
                 panic!("VMM_LOCK: recursive acquisition detected (deadlock)");
             }
         }

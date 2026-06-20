@@ -54,8 +54,7 @@ macro_rules! lockdep_log {
     };
 }
 
-#[allow(dead_code)]
-
+#[allow(dead_code)] // 待 lockdep 完整启用后使用。
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock;
@@ -416,7 +415,7 @@ impl HeldLockStack {
     }
 
     /// 检查是否在中断上下文中持有锁
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 lockdep 中断安全检测启用后使用。
     fn any_in_irq(&self) -> bool {
         self.entries[..self.depth].iter().any(|e| e.in_irq)
     }

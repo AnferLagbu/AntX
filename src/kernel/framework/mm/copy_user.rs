@@ -84,6 +84,8 @@ fn current_cpu_id() -> usize {
     #[cfg(debug_assertions)]
     {
         if cpu >= max_cpus {
+            // 不可恢复: CPU ID 超过 MAX_CPUS 是配置错误, release 模式下取模降级,
+            // debug 模式下必须停机以暴露问题
             panic!(
                 "CPU ID {} exceeds MAX_CPUS ({}). Increase MAX_CPUS or reduce CPU count!",
                 cpu, max_cpus

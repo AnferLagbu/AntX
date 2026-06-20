@@ -20,37 +20,37 @@ const GICR_SGI_BASE: u64 = 0x080B_0000;
 
 /// GICD 寄存器偏移
 const GICD_CTLR: u64 = 0x0000; // Distributor Control
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GIC 中断类型探测启用后使用。
 const GICD_TYPER: u64 = 0x0008; // Type
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GIC 实现者 ID 查询启用后使用。
 const GICD_IIDR: u64 = 0x000C; // Implementer ID
 const GICD_IGROUPR: u64 = 0x0080; // Interrupt Group (0-31)
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GIC 中断 Set-Enable 启用后使用。
 const GICD_ISENABLER: u64 = 0x0100; // Interrupt Set-Enable (0-31)
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GIC 中断 Set-Pending 启用后使用。
 const GICD_ISPENDR: u64 = 0x0200; // Interrupt Set-Pending
 const GICD_IPRIORITYR: u64 = 0x0400; // Interrupt Priority (8-bit each)
 const GICD_ITARGETSR: u64 = 0x0800; // Interrupt Target
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GIC 中断配置 (level/edge) 启用后使用。
 const GICD_ICFGR: u64 = 0x0C00; // Interrupt Configuration (level/edge)
 
 /// GICR 寄存器偏移 (SGI + PPI)
 const GICR_CTLR: u64 = 0x0000; // Redistributor Control
 const GICR_WAKER: u64 = 0x0014; // Wake
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GICR SGI/PPI 分组启用后使用。
 const GICR_IGROUPR0: u64 = 0x0080; // Group for SGIs/PPIs
 pub const GICR_ISENABLER0: u64 = 0x0100; // Enable for SGIs/PPIs
 const GICR_IPRIORITYR: u64 = 0x0400; // Priority for SGIs/PPIs
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GICR PPI 配置启用后使用。
 const GICR_ICFGR1: u64 = 0x0C04; // Configuration for PPIs
 
 /// CPU Interface 寄存器 (系统寄存器, ICC_*)
 /// 通过 MRS/MSR 访问
 
 // SPIs 范围
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GIC 中断号范围校验启用后使用。
 const PPI_BASE: u32 = 16;
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 GIC 中断号范围校验启用后使用。
 const SPI_BASE: u32 = 32;
 
 /// ARM 架构定时器 PPI (Non-secure Physical Timer)
@@ -60,7 +60,7 @@ const TIMER_PPI: u32 = 30; // CNTPNSIRQ
 // 寄存器读写辅助
 // ============================================================================
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 GICD 寄存器诊断读取路径启用后使用。
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn gicd_read(offset: u64) -> u32 {

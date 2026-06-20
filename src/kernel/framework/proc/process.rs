@@ -483,8 +483,9 @@ pub struct ProcessTable {
 // SAFETY: ProcessTable 始终通过静态 PROCESS_TABLE 访问.
 // Process 字段全是 Mutex/Atomic*/普通整数, Process 自动 Send+Sync.
 // NonNull<Process> 在 nightly 1.97 不会自动 Send+Sync, 因此显式 impl.
-// 所有变更都通过 Mutex 进行.
+// SAFETY: ProcessTable 含裸指针 HashMap, 但所有变更都通过 Mutex 进行.
 unsafe impl Send for ProcessTable {}
+// SAFETY: 同上, Mutex 保证并发安全.
 unsafe impl Sync for ProcessTable {}
 
 impl ProcessTable {
@@ -667,8 +668,10 @@ struct ProcSnapshot {
 }
 
 // SAFETY: ProcSnapshot 是进程表的快照. 它包含的 NonNull<Process>
-// 指针在快照丢弃前一直有效. 仅在 PROC_SNAPSHOT Mutex 保护下访问.
+// SAFETY: ProcSnapshot 含裸指针切片, 但指针在快照丢弃前一直有效.
+//         仅在 PROC_SNAPSHOT Mutex 保护下访问.
 unsafe impl Send for ProcSnapshot {}
+// SAFETY: 同上, Mutex 保护并发访问.
 unsafe impl Sync for ProcSnapshot {}
 
 static PROC_SNAPSHOT: Mutex<Option<ProcSnapshot>> = Mutex::new(None);

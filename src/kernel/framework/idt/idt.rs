@@ -142,19 +142,19 @@ fn halt_loop() -> ! {
 }
 
 /// 检查指针是否为 null 或无效 (待 IDT 诊断路径启用后使用)。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 IDT 诊断路径启用后使用。
 fn is_null_or_invalid(ptr: u64) -> bool {
     ptr == 0 || ptr < 0x1000
 }
 
 /// 验证 user 地址 (待 IDT 诊断路径启用后使用)。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 IDT 诊断路径启用后使用。
 fn is_valid_user_address(addr: u64) -> bool {
     addr > USER_ADDR_MIN && addr < KERNEL_TEXT_BASE
 }
 
 /// 验证 kernel 地址 (待 IDT 诊断路径启用后使用)。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 IDT 诊断路径启用后使用。
 fn is_valid_kernel_address(addr: u64) -> bool {
     addr >= KERNEL_TEXT_BASE
 }
@@ -615,7 +615,7 @@ impl IdtManager {
     }
 
     /// 默认异常处理 (临时实现，Phase 2.2 完善, 待异常分发重构后启用)。
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待异常分发重构后启用。
     fn default_exception_handler(&self, frame: &InterruptFrame) {
         let vector = frame.int_no as u8;
 

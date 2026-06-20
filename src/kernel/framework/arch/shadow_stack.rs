@@ -59,15 +59,15 @@ mod x86_msrs {
     /// CR4 第23位 = CET 启用
     pub const CR4_CET_BIT: u64 = 1 << 23;
     /// IA32_U_CET: 用户态 CET 配置
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待用户态 Shadow Stack 启用后使用。
     pub const IA32_U_CET: u32 = 0x6A0;
     /// IA32_S_CET: 内核态 CET 配置
     pub const IA32_S_CET: u32 = 0x6A2;
     /// IA32_PL3_SSP: 用户态 Shadow Stack 指针
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待用户态 Shadow Stack 启用后使用。
     pub const IA32_PL3_SSP: u32 = 0x6A4;
     /// IA32_INTERRUPT_SSP_TABLE: 中断 Shadow Stack 表
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待中断 Shadow Stack 切换启用后使用。
     pub const IA32_INTERRUPT_SSP_TABLE: u32 = 0x6A8;
     /// IA32_PL0_SSP: 内核态 Shadow Stack 指针
     pub const IA32_PL0_SSP: u32 = 0x6A5;

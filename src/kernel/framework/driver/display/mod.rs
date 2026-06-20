@@ -114,7 +114,7 @@ fn infer_pixel_format(bpp: u8, red_pos: u8, green_pos: u8, blue_pos: u8) -> Pixe
 
 #[cfg(target_arch = "x86_64")]
 /// Bochs VBE DISPI MMIO 寄存器偏移（相对于 BAR0）, 待 MMIO 模式启用后使用。
-#[allow(dead_code)]
+#[allow(dead_code)] // 待 Bochs VBE MMIO 模式启用后使用。
 const VBE_DISPI_MMIO_BASE: u64 = 0x500;
 
 /// Bochs VBE DISPI 端口 I/O 地址

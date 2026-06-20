@@ -71,7 +71,7 @@ pub struct VirtualMemoryManager {
 }
 
 // SAFETY: VMM_LOCK serializes all writes to user_tables (via UnsafeCell).
-// 原子计数器使用 Relaxed 顺序 (锁内单写者).
+// SAFETY: VMM_LOCK 自旋锁保护所有可变状态, 原子计数器使用 Relaxed 顺序 (锁内单写者).
 unsafe impl Sync for VirtualMemoryManager {}
 
 impl VirtualMemoryManager {
@@ -1209,6 +1209,7 @@ impl VirtualMemoryManager {
         #[cfg(debug_assertions)]
         {
             if VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed) {
+                // 不可恢复: VMM_LOCK 递归获取意味着死锁, 继续执行只会挂起系统
                 panic!("VMM_LOCK: recursive acquisition detected (deadlock)");
             }
         }

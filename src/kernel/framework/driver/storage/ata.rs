@@ -62,14 +62,14 @@ const ATA_CTRL_ALT_STATUS: u8 = 0; // 替代状态
 const ATA_STATUS_BSY: u8 = 0x80; // Busy
 #[allow(dead_code)] // 规范定义, 待 ATA 状态机诊断启用后使用。
 const ATA_STATUS_DRDY: u8 = 0x40; // Drive Ready
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 ATA 设备故障诊断启用后使用。
 const ATA_STATUS_DF: u8 = 0x20; // Device Fault
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 ATA 寻道完成检测启用后使用。
 const ATA_STATUS_DSC: u8 = 0x10; // Seek Complete
 const ATA_STATUS_DRQ: u8 = 0x08; // Data Request
 #[allow(dead_code)] // 规范定义, 待 ATA 状态机诊断启用后使用。
 const ATA_STATUS_CORR: u8 = 0x04; // Corrected Data
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待 ATA 索引标记诊断启用后使用。
 const ATA_STATUS_IDX: u8 = 0x02; // Index
 const ATA_STATUS_ERR: u8 = 0x01; // Error
 
