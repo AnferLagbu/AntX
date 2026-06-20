@@ -297,7 +297,7 @@ impl IoUring {
         match opcode {
             IoOpCode::Nop => 0,
             IoOpCode::Read | IoOpCode::Write | IoOpCode::Fsync => {
-                // TODO: 集成 VFS fd 表, 通过 fd 查找文件并执行 I/O
+                // TODO(TRACK-8B9CBC): 集成 VFS fd 表, 通过 fd 查找文件并执行 I/O
                 // 当前返回 ENOSYS, 待 VFS fd 表统一后实现
                 -(Errno::ENOSYS as i32)
             }
@@ -305,11 +305,11 @@ impl IoUring {
             | IoOpCode::Connect
             | IoOpCode::Send
             | IoOpCode::Recv => {
-                // TODO: 实现网络异步操作
+                // TODO(TRACK-9CADCD): 实现网络异步操作
                 -(Errno::ENOSYS as i32)
             }
             IoOpCode::Timeout => {
-                // TODO: 实现超时等待
+                // TODO(TRACK-ADBECDE): 实现超时等待
                 -(Errno::ENOSYS as i32)
             }
         }
@@ -450,7 +450,7 @@ pub fn sys_io_uring_enter(id: u64, to_submit: u64, min_complete: u64) -> i64 {
 
 /// sys_io_uring_register — 注册缓冲区/文件 (当前桩实现)
 pub fn sys_io_uring_register(_id: u64, _opcode: u64, _arg: u64, _nr_args: u64) -> i64 {
-    // TODO: 实现缓冲区注册 / 文件注册
+    // TODO(TRACK-BECFEF): 实现缓冲区注册 / 文件注册
     -(Errno::ENOSYS as i64)
 }
 

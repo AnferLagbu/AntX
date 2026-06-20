@@ -287,7 +287,7 @@
 
 ---
 
-### [ ] QUAL-5: services 层 #[allow(dead_code)] 审查
+### [x] QUAL-5: services 层 #[allow(dead_code)] 审查
 
 **当前**: services 层 13 处 `#[allow(dead_code)]`
 - `services/ipc/mod.rs` (11) — IPC Phase N 占位函数
@@ -450,7 +450,7 @@
 
 ---
 
-### [ ] DOC-3: engineering-discipline.md TCB 比率注释更新
+### [x] DOC-3: engineering-discipline.md TCB 比率注释更新
 
 **当前**: TCB 比率注释仍写 65.7%，且列出的"剩余候选" (T2-2/T2-3/T2-4/T5-1/T6-1) 已全部完成
 

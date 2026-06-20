@@ -390,15 +390,15 @@ pub fn sem_destroy(s: SemHandle) -> Result<(), IpcError> {
 /// 共享内存子模块 (别名, 弃用, 使用顶层 `shm_*` 函数)
 #[deprecated(note = "use top-level shm_create / shm_attach / shm_detach / shm_destroy")]
 pub mod shm_mod {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn create(_size: usize) -> Result<super::ShmHandle, super::IpcError> {
         super::shm_create(0, _size)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn attach(_id: u32) -> Result<super::ShmHandle, super::IpcError> {
         super::shm_attach(_id, 0)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn destroy(_id: u32) -> Result<(), super::IpcError> {
         super::shm_destroy(_id)
     }
@@ -407,19 +407,19 @@ pub mod shm_mod {
 /// 消息队列子模块 (别名, 弃用, 使用顶层 `msgq_*` 函数)
 #[deprecated(note = "use top-level msgq_create / msgq_send / msgq_recv / msgq_destroy")]
 pub mod msgq_mod {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn create() -> Result<super::MsgqHandle, super::IpcError> {
         super::msgq_create(0)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn send(_q: super::MsgqHandle, _data: &[u8]) -> Result<(), super::IpcError> {
         super::msgq_send(_q, _data, 0)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn recv(_q: super::MsgqHandle, _buf: &mut [u8]) -> Result<usize, super::IpcError> {
         super::msgq_recv(_q, _buf)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn destroy(_q: super::MsgqHandle) -> Result<(), super::IpcError> {
         super::msgq_destroy(_q)
     }
@@ -428,19 +428,19 @@ pub mod msgq_mod {
 /// 信号量子模块 (别名, 弃用, 使用顶层 `sem_*` 函数)
 #[deprecated(note = "use top-level sem_create / sem_wait / sem_post / sem_destroy")]
 pub mod sem_mod {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn create(_initial: u32) -> Result<super::SemHandle, super::IpcError> {
         super::sem_create(_initial, u32::MAX, 0)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn wait(_s: super::SemHandle) -> Result<(), super::IpcError> {
         super::sem_wait(_s)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn post(_s: super::SemHandle) -> Result<(), super::IpcError> {
         super::sem_post(_s)
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deprecated 别名, 待下个维护周期删除
     pub fn destroy(_s: super::SemHandle) -> Result<(), super::IpcError> {
         super::sem_destroy(_s)
     }

@@ -290,7 +290,7 @@ impl CetSubsystem {
     /// 为 CPU 分配内核 Shadow Stack
     pub fn alloc_kernel_shadow_stack(&self, cpu_id: u32) -> Option<u64> {
         // 分配 Shadow Stack 内存 (简化: 使用物理页)
-        // TODO: 使用 PMM 分配实际物理页
+        // TODO(TRACK-4C9A12): 使用 PMM 分配实际物理页
         // 当前: 仅记录描述符, 不分配实际内存
         let ss = ShadowStack::new(0, SHADOW_STACK_DEFAULT_SIZE as u64);
         let ssp = ss.get_ssp();
@@ -322,7 +322,7 @@ impl CetSubsystem {
             return None;
         }
         let actual_size = if size == 0 { SHADOW_STACK_DEFAULT_SIZE } else { size };
-        // TODO: 分配用户态 Shadow Stack 物理页
+        // TODO(TRACK-5D8B23): 分配用户态 Shadow Stack 物理页
         // 当前: 返回描述符, base=0 表示未实际分配
         Some(ShadowStack::new(0, actual_size as u64))
     }
@@ -395,7 +395,7 @@ impl CetSubsystem {
         // SAFETY: 写入 CR4 可能触发 #GP 如果位不被支持
         // 使用 #GP 捕获来检测支持
         // 简化: 直接尝试, 失败则回退
-        // TODO: 使用 #GP 异常处理来安全检测
+        // TODO(TRACK-6E7C34): 使用 #GP 异常处理来安全检测
         unsafe { core::arch::asm!("mov cr4, {}", in(reg) value, options(nomem, nostack)) };
         true // 如果执行到这里说明成功
     }

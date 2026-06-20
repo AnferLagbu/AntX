@@ -224,7 +224,7 @@ impl TicklessSubsystem {
     fn get_next_timer_expiry(&self, _cpu_id: u32) -> u64 {
         // 查询 hrtimer 子系统的下一个到期时间
         // 简化: 返回 0 (无定时器)
-        // TODO: 集成 hrtimer 获取最近到期时间
+        // TODO(TRACK-3C4D67): 集成 hrtimer 获取最近到期时间
         0
     }
 

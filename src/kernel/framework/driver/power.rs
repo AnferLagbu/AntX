@@ -141,7 +141,7 @@ pub fn pm_suspend(target: SystemPowerState) -> i64 {
 
 /// 架构相关: 挂起到内存
 fn arch_suspend_to_ram() {
-    // TODO: 实现真正的 S3 挂起
+    // TODO(TRACK-6F7A9A): 实现真正的 S3 挂起
     crate::klog_ffi!(
         klog_ffi_info,
         "[PM] S3: entering halt loop (placeholder)"

@@ -359,7 +359,7 @@ impl super::policy::CapabilityMatrix for InMemoryCaps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::policy::InMemoryMatrix;
+
 
     fn default_caps() -> [CapBits; CAP_DOMAINS] {
         [CapBits(0); CAP_DOMAINS]
@@ -481,9 +481,4 @@ mod tests {
         assert_eq!(m.get(CapDomain::NET), Some(CapBits::NONE));
     }
 
-    // 抑制 InMemoryMatrix 导入的未使用告警
-    #[allow(dead_code)]
-    fn _unused() {
-        let _ = InMemoryMatrix::new();
-    }
 }

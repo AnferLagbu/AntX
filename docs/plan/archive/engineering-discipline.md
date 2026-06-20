@@ -11,7 +11,7 @@
 | 字段 | 值 |
 |------|---|
 | 起始日期 | 2026-06-16 |
-| 当前 TCB 比率 | 65.7% (自研, excl. smoltcp+tests) |
+| 当前 TCB 比率 | 50.0% (自研, excl. smoltcp+tests) |
 | 初始 framework 跨模块引用 | 402 处 |
 | 当前 framework 跨模块引用 | 352 处 (↓ 12.4%) |
 | 初始 services→framework 依赖 | 215 处 |
@@ -326,7 +326,7 @@
 - [x] 全量审计脚本通过
 - [x] 双架构编译通过
 - [x] 依赖矩阵无循环
-- [ ] TCB 比率 < 30% — 当前 65.7% (自研 TCB, excl. smoltcp+tests). 2026-06-18 进展: T1-2 信号投递策略评估后 SKIP (策略与机制深度耦合, 提取会导致反向依赖); T2-1 VMA 策略标记完成 (madvise/mlock 已于 P1 #15 提取). 剩余候选: PMM policy(T2-2, 33 unsafe), slab policy(T2-3, 58 unsafe), swap policy(T2-4, 14 unsafe), syscall dispatch(T5-1, 80 unsafe), IPC msgq(T6-1, 18 unsafe) — 均涉及深度 unsafe 耦合, 需更激进架构重构
+- [ ] TCB 比率 < 30% — 当前 50.0% (自研 TCB, excl. smoltcp+tests). 2026-06-19 进展: T2-2/T2-3/T2-4/T5-1/T6-1 已全部完成 (通过 trait 注入模式解耦 unsafe); T1-2/T1-7/T2-5/T3-1/T4-1~3/T5-3 评估后 SKIP (策略与机制深度耦合). 剩余候选: signal policy(T1-2), posix_timer(T1-7), pcache(T2-5), net init(T3-1), credo/eBPF(T4-1~3), epoll(T5-3) — 均涉及深度 unsafe 耦合, 需更激进架构重构
 - [x] 更新 framekernel-dev-guide.md — 场景 5 策略注入示例更新为实际实现的 trait 名称 (SchedDecision/MlfqPolicy), 新增已实现 trait 抽象表 (T-01~T-05)
 
 ---

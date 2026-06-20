@@ -133,7 +133,7 @@ impl FdRange {
 /// TD-06: 编译期读取 ANT_SMOLTCP_FD_CAPACITY 环境变量, 决定 smoltcp FD 容量.
 /// 默认 256; 可选 256 / 1024 / 4096. 非法值回落 256.
 /// 通过 `.cargo/config.toml` 的 `[env]` 段或 build.rs 传递.
-#[allow(dead_code)]
+#[allow(dead_code)] // TD-06 配套: 编译期容量常量, 待 smoltcp FD 容量配置路径启用后使用。
 pub const fn smoltcp_capacity() -> u16 {
     // 内核态 no_std 无法读 env; 改用 cfg 间接传入:
     // 1) Cargo build script 设 ANT_SMOLTCP_FD_CAPACITY
@@ -145,7 +145,7 @@ pub const fn smoltcp_capacity() -> u16 {
 
 /// TD-06 配套: 编译期 cfg 路径. 当前实现固定 256, 用户可手动修改本函数并重编译.
 /// 比 ANT_*_CAPACITY 方式更安全: 不需要 build.rs.
-#[allow(dead_code)]
+#[allow(dead_code)] // TD-06 配套: 编译期 cfg 路径, 待 smoltcp FD 容量配置路径启用后使用。
 pub const fn cfg_smoltcp_cap() -> u16 {
     // 手动改本值以切换 256 / 1024 / 4096. 任何改动必须同步 `framework/net/init.rs` 的
     // `MAX_SOCKETS` 与 buf 静态表尺寸 (TCP_RX_BUFS / TCP_TX_BUFS / UDP_*).

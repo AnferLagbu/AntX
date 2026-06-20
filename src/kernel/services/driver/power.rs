@@ -137,7 +137,7 @@ pub struct CpuIdleDriver {
     /// Per-CPU 空闲统计
     pub per_cpu_stats: IrqSpinLock<Vec<CpuIdleStats>>,
     /// 全局最深 C-state 限制
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 待 C-state 策略路径启用后使用。
     pub global_max_cstate: AtomicU32,
     /// 是否启用 idle governor
     pub enabled: AtomicBool,
@@ -319,7 +319,7 @@ impl CpuFreqDriver {
             return false;
         }
         indices[cpu_id as usize].store(best_idx as u32, Ordering::Release);
-        // TODO: 实际写 MSR/寄存器调整频率和电压 (委托 framework)
+        // TODO(TRACK-7A3B01): 实际写 MSR/寄存器调整频率和电压 (委托 framework)
         true
     }
 

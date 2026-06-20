@@ -206,7 +206,7 @@ pub fn parse_return(rc: i64) -> SyscallResult<u64> {
 // 用户态指针验证
 // ============================================================================
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 规范定义, 待用户态地址范围校验路径启用后使用。
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
 /// 验证用户态指针

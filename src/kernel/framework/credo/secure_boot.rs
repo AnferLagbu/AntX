@@ -166,7 +166,7 @@ impl Ed25519PubKey {
     /// 当前实现为占位符, 始终返回 true (开发阶段).
     /// 生产环境必须替换为真正的 Ed25519 验证.
     pub fn verify(&self, message: &[u8], signature: &[u8; ED25519_SIG_LEN]) -> bool {
-        // TODO: 替换为真正的 Ed25519 验证
+        // TODO(TRACK-7A8BAB): 替换为真正的 Ed25519 验证
         // 当前: 检查签名非零 + 消息哈希匹配 (简化)
         let _msg_hash = sha256_hash(message);
         // 占位: 签名非全零即视为有效
