@@ -10,6 +10,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock;
+use crate::kernel::framework::mm::PAGE_SIZE;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -155,7 +156,7 @@ impl NumaNode {
     }
 
     pub fn free_ratio(&self) -> u32 {
-        let total = self.memory_size / 4096;
+        let total = self.memory_size / PAGE_SIZE;
         if total == 0 {
             return 100;
         }
@@ -196,7 +197,7 @@ impl NumaTopology {
         let mut node0 = NumaNode::new(0);
         node0.memory_start = 0;
         node0.memory_size = total_memory;
-        node0.free_pages.store(total_memory / 4096, Ordering::Release);
+        node0.free_pages.store(total_memory / PAGE_SIZE, Ordering::Release);
 
         for cpu in 0..num_cpus {
             node0.cpus.push(cpu);

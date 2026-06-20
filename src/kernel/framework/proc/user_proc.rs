@@ -6,6 +6,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::mm::KERNEL_BASE;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::klog_error;
 
 #[no_mangle]
 pub static user_entry_cr3: AtomicU64 = AtomicU64::new(0);
@@ -922,7 +923,8 @@ impl UserProcManager {
         // ✅ 单源真相: 优先分配权威 Process, 再分配 UserProcess 镜像并关联.
         //    此顺序保证 UserProcess::process NonNull 字段构造时即指向有效 Process.
         let kproc_ptr = raw::alloc_kernel_process()?;
-        let kproc_nn = NonNull::new(kproc_ptr).unwrap();
+        // SAFETY: alloc_kernel_process 成功时保证返回非空指针
+        let kproc_nn = NonNull::new(kproc_ptr)?;
 
         // 分配并清零 UserProcess 内存, 关联权威 Process 句柄
         let proc_ptr = raw::alloc_user_process(kproc_nn)?;
@@ -998,7 +1000,7 @@ impl UserProcManager {
 
         self.processes
             .lock()
-            .insert(pid, NonNull::new(proc_ptr).unwrap());
+            .insert(pid, NonNull::new(proc_ptr)?);
 
         // 在权威 Process 上写入基本字段 (与 UserProcess 镜像共享字段保持一致).
         raw::init_kernel_process_fields(
@@ -1441,7 +1443,13 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         USER_PROC_MANAGER
             .processes
             .lock()
-            .insert(child_pid, NonNull::new(child_up).unwrap());
+            .insert(child_pid, match NonNull::new(child_up) {
+                Some(nn) => nn,
+                None => {
+                    klog_error!("user_proc_clone: 子进程指针为空");
+                    return -1;
+                }
+            });
     }
 
     0

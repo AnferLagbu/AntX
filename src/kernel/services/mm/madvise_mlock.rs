@@ -17,6 +17,7 @@
 
 use crate::kernel::framework::mm::vma_get_current_mm;
 use crate::kernel::framework::mm::copy_user::copy_to_user;
+use crate::kernel::framework::mm::PAGE_SIZE;
 use crate::kernel::framework::userptr;
 use crate::kernel::framework::errno::Errno;
 
@@ -54,8 +55,6 @@ pub const MADV_POPULATE_WRITE: u32 = 23;
 pub const MCL_CURRENT: u32 = 1;
 pub const MCL_FUTURE: u32 = 2;
 pub const MCL_ONFAULT: u32 = 4;
-
-const PAGE_SIZE: u64 = 4096;
 
 // ============================================================================
 // madvise

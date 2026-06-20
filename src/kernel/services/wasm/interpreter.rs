@@ -347,7 +347,7 @@ impl Interpreter {
 
         while self.call_stack.last().is_some() {
             let opcode = {
-                let frame = self.call_stack.last().unwrap();
+                let frame = self.call_stack.last().expect("wasm: call_stack 非空 (while is_some 守护)");
                 if frame.pc >= frame.code.len() {
                     self.call_stack.pop();
                     continue;

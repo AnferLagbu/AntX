@@ -30,6 +30,9 @@
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::framework::driver::virtio::{
+    VIRTIO_MMIO_BASE, VIRTIO_MMIO_STRIDE, VIRTIO_MMIO_MAX_DEVICES,
+};
 
 // ── MMIO 寄存器偏移 (与 VirtIO 1.0 规范一致) ──
 
@@ -106,14 +109,8 @@ pub const DEVICE_ID_BLOCK: u32 = 2;
 /// VirtIO GPU 设备 ID
 pub const DEVICE_ID_GPU: u32 = 16;
 
-// ── MMIO 区域常量 ──
+// ── MMIO 区域常量 (来自 framework) ──
 
-/// QEMU virt virtio-mmio 区域基地址 (aarch64 virt 平台)
-pub const VIRTIO_MMIO_BASE: u64 = 0x0a00_0000;
-/// virtio-mmio 设备步长 (0x200 字节)
-pub const VIRTIO_MMIO_STRIDE: u64 = 0x200;
-/// 最大探测设备数
-pub const VIRTIO_MMIO_MAX_DEVICES: u32 = 32;
 /// 单设备 MMIO 区域大小
 pub const VIRTIO_MMIO_DEVICE_SIZE: usize = 0x200;
 

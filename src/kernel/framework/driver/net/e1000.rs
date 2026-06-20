@@ -195,7 +195,7 @@ impl Default for E1000Device {
 #[cfg(not(feature = "e1000-real-hw"))]
 #[allow(dead_code)] // QEMU 路径下 read_mac_address 直接硬编码 MAC, 不调用本函数。
 fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
-    let iomem = dev.iomem.as_ref().unwrap();
+    let iomem = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
     // QEMU 兼容路径: 跳过 EERD 访问, 立即返回空值. 让 read_mac_address 走默认 MAC.
     let _ = iomem;
     let _ = addr;
@@ -205,7 +205,7 @@ fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
 /// 真实硬件 EERD 读取路径. 由 `e1000-real-hw` feature 启用.
 #[cfg(feature = "e1000-real-hw")]
 fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
-    let iomem = dev.iomem.as_ref().unwrap();
+    let iomem = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
     // SAFETY: iomem 由 IoMem 抽象提供, 写 32 位寄存器的边界 + 对齐检查在 IoMem::write_u32 内部完成.
     iomem.write_u32(E1000_EERD as usize, ((addr as u32) << 2) | E1000_EERD_START);
     let mut timeout: u32 = 0;
@@ -277,7 +277,7 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
     dev.tx_tail = 0;
     dev.tx_descs = Some(tx_descs);
 
-    let iomem = dev.iomem.as_ref().unwrap();
+    let iomem = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
     {
         let tx_phys = virt_to_phys(tx_ptr as u64);
         klog_debug!(
@@ -374,7 +374,7 @@ impl Driver for E1000Device {
         }
 
         {
-            let iomem = self.iomem.as_ref().unwrap();
+            let iomem = self.iomem.as_ref().expect("e1000: iomem 未初始化");
 
             iomem.write_u32(E1000_CTRL as usize, E1000_CTRL_RST);
             for _ in 0..100000 {
@@ -432,7 +432,7 @@ impl Driver for E1000Device {
 
         setup_descriptor_rings(self)?;
 
-        let iomem = self.iomem.as_ref().unwrap();
+        let iomem = self.iomem.as_ref().expect("e1000: iomem 未初始化");
         let tctl = E1000_TCTL_EN | E1000_TCTL_PSP | E1000_TCTL_COLD_FD | E1000_TCTL_CT_FD;
         iomem.write_u32(E1000_TCTL as usize, tctl);
 
@@ -501,7 +501,7 @@ impl Driver for E1000Device {
             return Ok(());
         }
         {
-            let iomem = self.iomem.as_ref().unwrap();
+            let iomem = self.iomem.as_ref().expect("e1000: iomem 未初始化");
             let mut ctrl = iomem.read_u32(E1000_CTRL as usize);
             ctrl &= !(E1000_CTRL_SLU | E1000_CTRL_FD);
             iomem.write_u32(E1000_CTRL as usize, ctrl);
@@ -671,7 +671,7 @@ impl E1000Device {
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
         self.tx_tail = (tail + 1) % E1000_TX_RING_SIZE;
-        self.iomem.as_ref().unwrap().write_u32(E1000_TDT as usize, self.tx_tail as u32);
+        self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_TDT as usize, self.tx_tail as u32);
 
         self.tx_count += 1;
         Ok(total_len)
@@ -691,7 +691,7 @@ impl E1000Device {
         let mut processed = 0u32;
 
         loop {
-            let rdh = self.iomem.as_ref().unwrap().read_u32(E1000_RDH as usize) as usize;
+            let rdh = self.iomem.as_ref().expect("e1000: iomem 未初始化").read_u32(E1000_RDH as usize) as usize;
             if self.rx_tail == rdh {
                 break;
             }
@@ -733,7 +733,7 @@ impl E1000Device {
             let prev = self.rx_tail;
             self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
 
-            self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, prev as u32);
+            self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_RDT as usize, prev as u32);
         }
 
         if processed > 0 {
@@ -755,7 +755,7 @@ impl E1000Device {
         let rx_descs = self.rx_descs?;
 
         loop {
-            let rdh = self.iomem.as_ref().unwrap().read_u32(E1000_RDH as usize) as usize;
+            let rdh = self.iomem.as_ref().expect("e1000: iomem 未初始化").read_u32(E1000_RDH as usize) as usize;
             if self.rx_tail == rdh {
                 return None;
             }
@@ -782,7 +782,7 @@ impl E1000Device {
                 desc.status = 0;
                 let prev = self.rx_tail;
                 self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-                self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, prev as u32);
+                self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_RDT as usize, prev as u32);
                 continue;
             }
 
@@ -803,7 +803,7 @@ impl E1000Device {
 
             let prev = self.rx_tail;
             self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-            self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, prev as u32);
+            self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_RDT as usize, prev as u32);
 
             return Some(copy_len);
         }
@@ -817,7 +817,7 @@ impl E1000Device {
             return;
         }
 
-        let icr = self.iomem.as_ref().unwrap().read_u32(E1000_ICR as usize);
+        let icr = self.iomem.as_ref().expect("e1000: iomem 未初始化").read_u32(E1000_ICR as usize);
         if icr == 0 {
             return;
         }

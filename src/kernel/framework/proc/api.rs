@@ -1471,9 +1471,18 @@ pub fn sys_fork() -> Pid {
     }
 
     // 复制父进程 ProcessContext 到子进程, 但把 RAX 置 0
-    let parent_ctx = PROCESS_TABLE
+    let parent_ctx = match PROCESS_TABLE
         .with_process(parent_pid, |p| *p.context.lock())
-        .unwrap();
+    {
+        Some(ctx) => ctx,
+        None => {
+            // SAFETY: fork 时父进程必然存在; 若不存在则为严重内部错误
+            klog_error!("fork: 父进程 {} 在 PROCESS_TABLE 中未找到", parent_pid);
+            raw::drop_boxed_process(child_ptr);
+            raw::destroy_user_page_table(child_cr3);
+            return 0;
+        }
+    };
     {
         let mut child_ctx = child.context.lock();
         *child_ctx = parent_ctx;

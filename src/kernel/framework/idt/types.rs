@@ -4,7 +4,7 @@
 //! 所有布局与 C 版本 [idt.h](../../../include/idt.h) 完全兼容，
 //! 使用 `#[repr(C, packed)]` 确保内存布局一致。
 
-use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
+use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_MIN};
 
 /// IDT 条目总数 (Intel 64-bit)
 pub const IDT_ENTRIES: usize = 256;
@@ -117,7 +117,7 @@ impl InterruptFrame {
     #[inline(always)]
     pub fn is_user_mode(&self) -> bool {
         let cs_check = (self.cs & 0x03) == 3;
-        let rip_check = self.rip < KERNEL_TEXT_BASE && self.rip > 0xFFFF;
+        let rip_check = self.rip < KERNEL_TEXT_BASE && self.rip > USER_ADDR_MIN;
         cs_check || rip_check
     }
 

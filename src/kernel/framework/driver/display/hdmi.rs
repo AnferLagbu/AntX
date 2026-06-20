@@ -489,7 +489,8 @@ impl HdmiController {
         let edid = Edid::parse(&edid_data)?;
         self.edid = Some(edid);
 
-        Ok(self.edid.as_ref().unwrap())
+        // SAFETY: 刚在上面设为 Some, 不会为 None
+        Ok(self.edid.as_ref().expect("hdmi: edid 刚已设为 Some"))
     }
 
     /// 设置视频模式

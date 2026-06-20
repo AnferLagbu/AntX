@@ -319,7 +319,8 @@ impl XhciController {
     fn init_hardware(&mut self) -> Result<()> {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            let base = self.iomem.as_ref().unwrap().virt_ptr() as usize;
+            let iomem = self.iomem.as_ref().ok_or(DriverError::NotInitialized)?;
+            let base = iomem.virt_ptr() as usize;
 
             // 设置能力寄存器指针
             self.cap_regs = base as *const XhciCapabilityRegisters;

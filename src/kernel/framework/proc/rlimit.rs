@@ -80,8 +80,9 @@ pub fn sys_setrlimit(resource: i32, rlim_ptr: u64) -> i64 {
     }
     // SAFETY: rlim_ptr 已验证可读, 16 字节
     let bytes: [u8; 16] = unsafe { core::ptr::read(rlim_ptr as *const [u8; 16]) };
-    let cur = u64::from_ne_bytes(bytes[0..8].try_into().unwrap());
-    let max = u64::from_ne_bytes(bytes[8..16].try_into().unwrap());
+    // SAFETY: bytes[0..8] 和 bytes[8..16] 各为 8 字节, try_into 不可能失败
+    let cur = u64::from_ne_bytes(bytes[0..8].try_into().expect("rlimit: 长度不为 8"));
+    let max = u64::from_ne_bytes(bytes[8..16].try_into().expect("rlimit: 长度不为 8"));
 
     // 判断特权: pid=1 (init) 视为特权进程
     let pid = process_get_current_pid();

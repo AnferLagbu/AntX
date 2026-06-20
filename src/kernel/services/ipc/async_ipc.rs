@@ -325,7 +325,8 @@ where
         }
 
         if self.timeout_ms > 0 {
-            let elapsed = rdtsc() - self.start_time.unwrap();
+            // SAFETY: timeout_ms > 0 分支上方已设置 start_time
+            let elapsed = rdtsc() - self.start_time.expect("async_ipc: start_time 未初始化");
             if elapsed >= ms_to_ticks(self.timeout_ms) {
                 return Poll::Ready(Err(-1));
             }

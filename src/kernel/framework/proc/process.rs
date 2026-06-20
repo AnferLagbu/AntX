@@ -3,7 +3,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE, USER_ADDR_FLOOR};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use super::scheduler::SchedPolicy;
 use super::rlimit::RlimitTable;
@@ -33,7 +33,7 @@ pub fn kernel_stack_check_canary(stack_top: u64) -> bool {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let canary_ptr = (stack_top - 8) as *const u64;
-        if (canary_ptr as u64) < 0x1000 {
+        if (canary_ptr as u64) < USER_ADDR_FLOOR {
             return true;
         }
         let value = core::ptr::read_volatile(canary_ptr);
@@ -48,7 +48,7 @@ pub fn kernel_stack_write_canary(stack_top: u64) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let canary_ptr = (stack_top - 8) as *mut u64;
-        if (canary_ptr as u64) < 0x1000 {
+        if (canary_ptr as u64) < USER_ADDR_FLOOR {
             return;
         }
         core::ptr::write_volatile(canary_ptr, KERNEL_STACK_CANARY);

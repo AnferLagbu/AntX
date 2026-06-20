@@ -98,7 +98,8 @@ pub fn msgq_send_safe(
         mq.head = Some(msg_nn.as_non_null());
         mq.tail = Some(msg_nn.as_non_null());
     } else {
-        let tail_nn = mq.tail.unwrap();
+        // SAFETY: else 分支保证 mq.tail 为 Some
+        let tail_nn = mq.tail.expect("msgq: tail 应为 Some");
         let tail_ref = MessageRef::from_some(tail_nn);
         tail_ref.set_next(Some(msg_nn.as_non_null()));
         mq.tail = Some(msg_nn.as_non_null());
@@ -132,7 +133,8 @@ pub fn msgq_recv_safe(
     }
 
     // 出队 (头删法)
-    let msg_nn = mq.head.unwrap();
+    // SAFETY: 上方已检查 mq.head 为 Some
+    let msg_nn = mq.head.expect("msgq: head 应为 Some");
     let msg_ref = MessageRef::from_some(msg_nn);
     mq.head = msg_ref.next();
 

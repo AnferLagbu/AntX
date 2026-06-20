@@ -3,7 +3,7 @@
 //! 提供对 x86-64 底层硬件寄存器的安全访问接口。
 //! 封装内联汇编，提供类型安全的 API。
 
-use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::{KERNEL_BASE, USER_ADDR_MIN};
 #[cfg(test)]
 use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
 
@@ -231,7 +231,7 @@ pub fn is_null_or_invalid(ptr: u64) -> bool {
 /// `true` 如果地址在合法的用户空间范围内
 #[inline]
 pub fn is_valid_user_address(addr: u64) -> bool {
-    addr > 0xFFFF && addr < KERNEL_BASE
+    addr > USER_ADDR_MIN && addr < KERNEL_BASE
 }
 
 /// 验证内核态地址范围

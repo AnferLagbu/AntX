@@ -333,7 +333,8 @@ impl<T: ?Sized> PiMutex<T> {
             }
             match best_idx {
                 Some(idx) => {
-                    let entry = waiters.remove(idx).unwrap();
+                    // SAFETY: best_idx 为 Some 时 waiters[best_idx] 必然存在
+                    let entry = waiters.remove(idx).expect("pi_mutex: waiters 索引无效");
                     (entry.pid, entry.base_priority)
                 }
                 None => {

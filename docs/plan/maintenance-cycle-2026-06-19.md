@@ -103,7 +103,7 @@
 
 ---
 
-### [ ] HARD-5: VIRTIO_MMIO_BASE 重复定义统一
+### [x] HARD-5: VIRTIO_MMIO_BASE 重复定义统一
 
 **当前**: `0x0a00_0000` 在 2 处定义
 - `framework/driver/virtio/mod.rs:98`
@@ -135,15 +135,17 @@
 
 ---
 
-### [ ] HARD-7: 空指针阈值语义化
+### [x] HARD-7: 空指针阈值语义化
 
 **当前**: `0x1000` 作为空指针/低地址阈值在 `framework/proc/process.rs:35,50` 使用
 
-**方案**: 定义 `pub const NULL_PAGE_LIMIT: u64 = 0x1000;` 或类似语义常量
+**方案**: 定义 `pub const USER_ADDR_FLOOR: u64 = 0x1000;` 和 `pub const USER_ADDR_MIN: u64 = 0xFFFF;` 语义常量
 
 **验收**:
-- [ ] 相关位置使用语义常量
-- [ ] 双架构 0w0e + 三审计通过
+- [x] 相关位置使用语义常量
+- [x] 双架构 0w0e + 三审计通过
+
+**完成记录** (2026-06-19): 新增 USER_ADDR_FLOOR (0x1000) + USER_ADDR_MIN (0xFFFF) 于 framework/mm/mod.rs, 替换 idt/ 5处 + proc/process.rs 2处硬编码。
 
 ---
 

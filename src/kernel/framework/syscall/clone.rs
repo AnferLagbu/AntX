@@ -168,8 +168,13 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     }
 
     // 复制上下文, 修改 RAX=0 (子进程返回 0)
-    let parent_ctx = api::process_with(parent_pid, |p| *p.context.lock())
-        .unwrap();
+    let parent_ctx = match api::process_with(parent_pid, |p| *p.context.lock()) {
+        Some(ctx) => ctx,
+        None => {
+            crate::klog_error!("clone: 父进程 {} 在进程表中未找到", parent_pid);
+            return Errno::ESRCH.as_ret();
+        }
+    };
     {
         let mut child_ctx = child.context.lock();
         *child_ctx = parent_ctx;

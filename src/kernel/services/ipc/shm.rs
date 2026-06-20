@@ -5,6 +5,7 @@
 //! 物理页分配/释放通过 framework::mm 机制 API 完成.
 
 use crate::kernel::framework::ipc::types::*;
+use crate::kernel::framework::mm::PAGE_SIZE;
 
 /// 查找空闲共享内存段槽位
 pub fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&mut ShmSegment> {
@@ -36,7 +37,7 @@ pub fn shm_create_safe(
     };
 
     // 计算需要的页数并分配物理内存 (委托 framework 机制)
-    let pages = size.div_ceil(4096);
+    let pages = size.div_ceil(PAGE_SIZE);
     let phys = crate::kernel::framework::mm::pmm_alloc_pages(pages as usize);
     if phys.is_null() {
         return Err(-3);
@@ -127,7 +128,7 @@ pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
     }
 
     // 释放物理页 (委托 framework 机制)
-    let pages = shm.size.div_ceil(4096);
+    let pages = shm.size.div_ceil(PAGE_SIZE);
     crate::kernel::framework::mm::pmm_free_pages(shm.phys_addr as *mut u8, pages as usize);
 
     // 清理结构体

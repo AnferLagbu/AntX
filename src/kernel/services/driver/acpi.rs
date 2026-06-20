@@ -3,7 +3,7 @@
 //! ACPI 电源管理 — services 层安全代理
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::arch::x86_64::acpi。
+//! 所有 unsafe 操作已委托至 framework::arch::acpi。
 //!
 //! ## 职责
 //!
@@ -22,13 +22,13 @@
 /// 是否找到 RSDP (Root System Description Pointer)
 #[inline]
 pub fn has_rsdp() -> bool {
-    crate::kernel::framework::arch::x86_64::acpi::find_rsdp(0).is_some()
+    crate::kernel::framework::arch::acpi::find_rsdp(0).is_some()
 }
 
 /// 是否解析过 MADT (Multiple APIC Description Table)
 #[inline]
 pub fn has_madt() -> bool {
-    crate::kernel::framework::arch::x86_64::acpi::has_madt()
+    crate::kernel::framework::arch::acpi::has_madt()
 }
 
 /// 是否解析过 FADT (电源管理)
@@ -42,7 +42,7 @@ pub fn has_fadt() -> bool {
 /// 是否解析过 HPET (高精度事件定时器)
 #[inline]
 pub fn has_hpet() -> bool {
-    crate::kernel::framework::arch::x86_64::acpi::get_hpet_info().is_some()
+    crate::kernel::framework::arch::acpi::get_hpet_info().is_some()
 }
 
 /// 是否解析过 DMAR (IOMMU DRHD)
@@ -59,25 +59,25 @@ pub fn has_dmar() -> bool {
 /// 获取 AP (Application Processor) 数量
 #[inline]
 pub fn ap_count() -> u32 {
-    crate::kernel::framework::arch::x86_64::acpi::get_ap_count()
+    crate::kernel::framework::arch::acpi::get_ap_count()
 }
 
 /// LAPIC 基址
 #[inline]
 pub fn lapic_base() -> u64 {
-    crate::kernel::framework::arch::x86_64::acpi::get_lapic_base()
+    crate::kernel::framework::arch::acpi::get_lapic_base()
 }
 
 /// IOAPIC 基址
 #[inline]
 pub fn ioapic_addr() -> u64 {
-    crate::kernel::framework::arch::x86_64::acpi::get_ioapic_addr()
+    crate::kernel::framework::arch::acpi::get_ioapic_addr()
 }
 
 /// IOAPIC 全局系统中断基址
 #[inline]
 pub fn ioapic_gsib() -> u32 {
-    crate::kernel::framework::arch::x86_64::acpi::get_ioapic_gsib()
+    crate::kernel::framework::arch::acpi::get_ioapic_gsib()
 }
 
 // ============================================================================
@@ -96,7 +96,7 @@ pub struct HpetInfoSafe {
 /// 获取 HPET 信息 (safe 拷贝)
 #[inline]
 pub fn hpet_info() -> Option<HpetInfoSafe> {
-    crate::kernel::framework::arch::x86_64::acpi::get_hpet_info().map(|info| HpetInfoSafe {
+    crate::kernel::framework::arch::acpi::get_hpet_info().map(|info| HpetInfoSafe {
         base_addr: info.base_addr,
         hpet_number: info.hpet_number,
         comparator_count: info.comparator_count,
@@ -142,12 +142,12 @@ pub fn msi_free_vector(vector: u8) {
 ///
 /// 写 PM1a_CNT S5 位后将不可恢复地停止系统.
 pub fn acpi_shutdown() -> ! {
-    crate::kernel::framework::arch::x86_64::acpi::acpi_shutdown()
+    crate::kernel::framework::arch::acpi::acpi_shutdown()
 }
 
 /// ACPI 重启
 pub fn acpi_reboot() -> ! {
-    crate::kernel::framework::arch::x86_64::acpi::acpi_reboot()
+    crate::kernel::framework::arch::acpi::acpi_reboot()
 }
 
 // ============================================================================

@@ -63,6 +63,8 @@ pub use x86_64::apic;
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::ioapic;
 #[cfg(target_arch = "x86_64")]
+pub use x86_64::acpi;
+#[cfg(target_arch = "x86_64")]
 pub use x86_64::gdt;
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::tss;

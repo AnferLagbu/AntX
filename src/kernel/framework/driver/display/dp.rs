@@ -266,7 +266,8 @@ impl DpController {
         let dpcd = Dpcd::parse(&data)?;
         self.dpcd = Some(dpcd);
 
-        Ok(self.dpcd.as_ref().unwrap())
+        // SAFETY: 刚在上面设为 Some, 不会为 None
+        Ok(self.dpcd.as_ref().expect("dp: dpcd 刚已设为 Some"))
     }
 
     /// 链路训练

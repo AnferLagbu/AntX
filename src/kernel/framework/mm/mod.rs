@@ -120,6 +120,23 @@ pub const KERNEL_BASE: u64 = 0xFFFF800000000000u64;
 pub const KERNEL_BASE: u64 = 0;
 pub const PHYSICAL_BASE: u64 = 0x0000000000000000u64;
 
+/// 用户空间低地址保护阈值.
+/// 低于此地址的指针视为空指针/不可解引用区域, 用于 canary 校验、
+/// 地址合法性检查等场景.
+/// x86_64: Linux 习惯 0x1000 (4 KiB), 覆盖 NULL 页 + 少量保留区.
+/// aarch64: 同 0x1000.
+pub const USER_ADDR_FLOOR: u64 = 0x1000;
+
+/// 用户空间低地址上限 (x86_64 兼容阈值).
+/// 低于此地址的 RIP/故障地址视为空指针区域, 用于异常处理中的
+/// 地址分类 (空指针解引用 vs 用户有效地址).
+/// x86_64: 0xFFFF (覆盖 null descriptor + 低 64 KiB 保留区).
+/// aarch64: 0xFFFF (与 x86_64 一致).
+#[cfg(target_arch = "x86_64")]
+pub const USER_ADDR_MIN: u64 = 0xFFFF;
+#[cfg(target_arch = "aarch64")]
+pub const USER_ADDR_MIN: u64 = 0xFFFF;
+
 /// 缓存行大小 (字节). x86_64 与 aarch64 通用值为 64.
 /// 用于 DMA 缓存刷写对齐、false sharing 避免等场景.
 pub const CACHE_LINE_SIZE: u64 = 64;

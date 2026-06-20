@@ -276,7 +276,7 @@ impl VgaDriver {
         // SAFETY: IoMem 保证 0xB8000 开始的 VGA_BUFFER_SIZE 字节已正确映射
         unsafe {
             core::slice::from_raw_parts(
-                self.iomem.as_ref().unwrap().virt_ptr() as *const u16,
+                self.iomem.as_ref().expect("vga: iomem 在 new() 中初始化").virt_ptr() as *const u16,
                 SCREEN_WIDTH * SCREEN_HEIGHT,
             )
         }
@@ -287,7 +287,7 @@ impl VgaDriver {
         // SAFETY: IoMem 保证 0xB8000 开始的 VGA_BUFFER_SIZE 字节已正确映射
         unsafe {
             core::slice::from_raw_parts_mut(
-                self.iomem.as_ref().unwrap().virt_ptr() as *mut u16,
+                self.iomem.as_ref().expect("vga: iomem 在 new() 中初始化").virt_ptr() as *mut u16,
                 SCREEN_WIDTH * SCREEN_HEIGHT,
             )
         }

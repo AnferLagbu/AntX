@@ -37,6 +37,7 @@
 //! - 进程退出时由 framework::proc::vma::MmStruct::release 释放所有锁定
 
 use crate::kernel::framework::proc::madvise_mlock as fw_ml;
+use crate::kernel::framework::mm::PAGE_SIZE;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -275,7 +276,7 @@ pub fn munlockall() -> MlockResult<()> {
 ///
 /// `vec` 长度必须 >= len / page_size, 每字节 1=驻留 0=未驻留
 pub fn mincore(addr: usize, len: usize, vec: &mut [u8]) -> MlockResult<()> {
-    let expected_pages = (len + 4095) / 4096;
+    let expected_pages = (len + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
     if vec.len() < expected_pages {
         return Err(MlockError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));
     }
