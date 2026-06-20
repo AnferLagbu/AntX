@@ -124,6 +124,9 @@ static GLOBAL_IPC: OnceCell<IpcNamespaceRef> = OnceCell::new();
 /// 初始化全局 IPC 命名空间
 pub fn init_global() {
     let _ = GLOBAL_IPC.get_or_init(IpcNamespaceRef::new);
+
+    // T1-2: 注册 services 层信号决策策略
+    signal::init_signal_decision();
 }
 
 /// 获取全局 IPC 引用

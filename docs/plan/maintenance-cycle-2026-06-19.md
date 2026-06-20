@@ -329,7 +329,7 @@
 
 > 以下项目在 TCB 缩减工程中标记 SKIP，现重新评估是否有条件推进。
 
-### [ ] REVAL-1: T1-2 信号投递策略提取 (原 SKIP)
+### [x] REVAL-1: T1-2 信号投递策略提取 (原 SKIP)
 
 **原 SKIP 原因**: 策略函数被 unsafe 核心函数内部调用，提取会导致 framework→services 反向依赖
 
@@ -374,7 +374,7 @@
 
 ---
 
-### [ ] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP)
+### [x] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP)
 
 **原 SKIP 原因**: 含 55 处 unsafe (smoltcp Interface/MMIO/DMA/中断)
 

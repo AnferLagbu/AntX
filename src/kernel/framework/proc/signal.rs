@@ -153,24 +153,17 @@ pub enum SignalDefaultAction {
 }
 
 /// 获取标准信号的默认动作
+///
+/// 委托到 `SignalDecision` trait, services 可覆盖策略.
 pub fn signal_default_action(sig: u8) -> SignalDefaultAction {
-    match sig {
-        // Ign: CHLD(17), URG(23)
-        17 | 23 => SignalDefaultAction::Ign,
-        // Stop: STOP(19), TSTP(20), TTIN(21), TTOU(22)  // 信号编号常量
-        19 | 20 | 21 | 22 => SignalDefaultAction::Stop,
-        // Cont: CONT(18)
-        18 => SignalDefaultAction::Cont,
-        // Core: QUIT(3), ILL(4), ABRT(6), BUS(7), FPE(8), SEGV(11), SYS(31), XCPU(24), XFSZ(25)  // 信号编号常量
-        3 | 4 | 6 | 7 | 8 | 11 | 31 | 24 | 25 => SignalDefaultAction::Core,
-        // Term: 其余所有信号
-        _ => SignalDefaultAction::Term,
-    }
+    super::signal_trait::current_signal_decision().default_action(sig)
 }
 
 /// 信号是否不可捕获/屏蔽
+///
+/// 委托到 `SignalDecision` trait, services 可覆盖策略.
 pub fn is_uncatchable(sig: u8) -> bool {
-    sig == 9 || sig == 19 // SIGKILL, SIGSTOP
+    super::signal_trait::current_signal_decision().is_uncatchable(sig)
 }
 
 // ============================================================================
@@ -377,7 +370,7 @@ fn do_signal_send_inner(pid: u32, sig: u8) -> Result<(), i32> {
 
 /// 选择下一个待投递的信号
 ///
-/// 从 pending & ~blocked 中选择编号最小的信号 (标准信号按编号优先)
+/// 从 pending & ~blocked 中选择, 委托到 `SignalDecision` trait.
 ///
 /// # Returns
 /// - `Some(sig)`: 待投递的信号编号 (1..=31)
@@ -387,17 +380,7 @@ pub fn signal_pick_next(proc: &super::process::Process) -> Option<u8> {
     let blocked = proc.blocked_mask.load(Ordering::Acquire);
     let deliverable = pending & !blocked;
 
-    if deliverable == 0 {
-        return None;
-    }
-
-    // 找最低位的 1 (信号编号 = bit position)
-    // bit 0 = sig 1 (SIGHUP), bit 1 = sig 2 (SIGINT), ...
-    let sig_bit = deliverable.trailing_zeros() as u8;
-    if sig_bit == 0 || sig_bit > 31 {
-        return None;
-    }
-    Some(sig_bit)
+    super::signal_trait::current_signal_decision().pick_next_signal(deliverable)
 }
 
 /// 执行信号的默认动作
