@@ -1,4 +1,5 @@
 use crate::kernel::services::fs::hvfs::bp::*;
+use crate::kernel::services::fs::hvfs::spa::HV_POOL_BLOCK_SIZE;
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -71,7 +72,7 @@ impl HvDmuObject {
         Self {
             obj_id,
             obj_type: HvObjType::File,
-            block_size: 4096,
+            block_size: HV_POOL_BLOCK_SIZE as u32,
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),
@@ -96,7 +97,7 @@ impl HvDmuObject {
         Self {
             obj_id,
             obj_type: HvObjType::Dir,
-            block_size: 4096,
+            block_size: HV_POOL_BLOCK_SIZE as u32,
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),
@@ -121,7 +122,7 @@ impl HvDmuObject {
         Self {
             obj_id,
             obj_type: HvObjType::Zap,
-            block_size: 4096,
+            block_size: HV_POOL_BLOCK_SIZE as u32,
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),
@@ -146,7 +147,7 @@ impl HvDmuObject {
         Self {
             obj_id,
             obj_type: HvObjType::Symlink,
-            block_size: 4096,
+            block_size: HV_POOL_BLOCK_SIZE as u32,
             nblocks: 0,
             size: 0,
             bp: HvBlockPointer::null(),

@@ -1,10 +1,11 @@
 use crate::kernel::services::fs::hvfs::bp::HvBlockPointer;
+use crate::kernel::services::fs::hvfs::spa::HV_POOL_BLOCK_SIZE;
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub const HV_ZIL_MAX_RECORDS: usize = 1024;
-pub const HV_ZIL_BLOCK_SIZE: usize = 4096;
+pub const HV_ZIL_BLOCK_SIZE: usize = HV_POOL_BLOCK_SIZE as usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

@@ -828,9 +828,9 @@ Self TCB:         54.1% (excl. smoltcp)
 **完成日期**: 2026-06-19
 **验证**: 双架构编译 0 warning 0 error, 三审计通过, host-tests 通过
 **验收**:
-- [ ] services/ipc/*.rs `#![deny(unsafe_code)]`
-- [ ] framework/ipc/ 仅保留 unsafe 边界
-- [ ] 双架构 0w0e + 三审计 + host-tests
+- [x] services/ipc/*.rs `#![deny(unsafe_code)]`
+- [x] framework/ipc/ 仅保留 unsafe 边界
+- [x] 双架构 0w0e + 三审计 + host-tests
 
 ---
 
@@ -1001,7 +1001,7 @@ Self TCB:         54.1% (excl. smoltcp)
 | T1 | 进程策略提取 | 8 | -4,500 | **完成** (6/8 完成, 2 SKIP) |
 | T2 | 内存管理策略提取 | 6 | -3,000 | **完成** (5/6 完成, 1 SKIP) |
 | T3 | 网络策略提取 | 4 | -1,500 | **完成** (3/4 完成, 1 SKIP) |
-| T4 | 安全/调试策略提取 | 4 | -2,000 | **进行中** (1/4 完成, 3 SKIP) |
+| T4 | 安全/调试策略提取 | 4 | -2,000 | **完成** (1/4 完成, 3 SKIP) |
 | T5 | syscall 策略提取 | 3 | -1,500 | **完成** (3/3 完成, 1 SKIP) |
 | T6 | IPC/类型/配置策略提取 | 8 | -2,800 | **完成** (7/8 完成, 1 SKIP) |
 | **合计** | | **33** | **-15,300** | **25 完成, 7 SKIP, 1 待做** |

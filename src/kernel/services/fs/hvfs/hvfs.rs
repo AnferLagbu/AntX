@@ -614,11 +614,11 @@ impl HvfsData {
         if to_read == 0 {
             return 0;
         }
-        let block_offset = (offset / 4096) * 4096;
+        let block_offset = (offset / HV_POOL_BLOCK_SIZE) * HV_POOL_BLOCK_SIZE;
         let block_key = HvArcKey::new(0, (obj_id << 40) | block_offset, obj.birth_txg);
-        if let Some(data) = self.spa.arc.lookup_slice(&block_key, 4096) {
+        if let Some(data) = self.spa.arc.lookup_slice(&block_key, HV_POOL_BLOCK_SIZE as usize) {
             let start = (offset - block_offset) as usize;
-            let end = (start + to_read).min(4096);
+            let end = (start + to_read).min(HV_POOL_BLOCK_SIZE as usize);
             buf[..end - start].copy_from_slice(&data[start..end]);
             self.spa.arc.release(&block_key);
         } else if self.is_disk_mode() && !obj.bp.is_null() {
@@ -692,7 +692,7 @@ impl HvfsData {
         // Framekernel P2.2.2: 使用 safe timestamp() 替代 extern "C" timer_get_ticks
         obj.mtime = crate::arch!(timestamp());
         if !self.is_disk_mode() {
-            let block_offset = (offset / 4096) * 4096;
+            let block_offset = (offset / HV_POOL_BLOCK_SIZE) * HV_POOL_BLOCK_SIZE;
             let arc_key = HvArcKey::new(0, (obj_id << 40) | block_offset, txg);
             self.spa
                 .arc
@@ -1592,7 +1592,7 @@ impl HvfsData {
                 let obj = HvDmuObject {
                     obj_id,
                     obj_type,
-                    block_size: 4096,
+                    block_size: HV_POOL_BLOCK_SIZE as u32,
                     nblocks,
                     size,
                     bp: bp_val,

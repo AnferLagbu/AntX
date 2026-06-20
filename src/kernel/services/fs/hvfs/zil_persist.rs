@@ -28,6 +28,7 @@
 //! ```
 
 use super::zil::{HvZil, HvZilRecord};
+use super::spa::HV_POOL_BLOCK_SIZE;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -65,7 +66,7 @@ impl HvZilPersistError {
 
 const ZIL_MAGIC: u32 = 0x5A494C31u32; // "ZIL1"
 const ZIL_TAIL_MAGIC: u32 = 0x454E4400u32; // "END\0"
-const ZIL_BLOCK_SIZE: usize = 4096;
+const ZIL_BLOCK_SIZE: usize = HV_POOL_BLOCK_SIZE as usize;
 const ZIL_HEADER_SIZE: usize = 64;
 const ZIL_TRAILER_SIZE: usize = 8;
 const ZIL_RECORD_DISK_SIZE: usize = 256;

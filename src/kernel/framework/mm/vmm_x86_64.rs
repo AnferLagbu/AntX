@@ -528,13 +528,13 @@ impl VirtualMemoryManager {
                 return;
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
+            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
             if pd.is_null() {
                 self.release_lock(&_flags);
                 return;
             }
 
-            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, 0x1000);
+            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, PAGE_SIZE);
             if pt.is_null() {
                 self.release_lock(&_flags);
                 return;
@@ -742,12 +742,12 @@ impl VirtualMemoryManager {
                 return Err("Failed to allocate PDPT");
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
+            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
             if pd.is_null() {
                 return Err("Failed to allocate PD");
             }
 
-            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, 0x1000);
+            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, PAGE_SIZE);
             if pt.is_null() {
                 return Err("Failed to allocate PT");
             }
@@ -784,7 +784,7 @@ impl VirtualMemoryManager {
                 return Err("Failed to allocate PDPT");
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, 0x200000);
+            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
             if pd.is_null() {
                 return Err("Failed to allocate PD");
             }

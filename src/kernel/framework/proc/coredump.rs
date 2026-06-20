@@ -668,7 +668,7 @@ fn write_segment_data(
             );
         } else {
             // 页不存在, 写零
-            let zeros = [0u8; 4096];
+            let zeros = [0u8; PAGE_SIZE as usize];
             crate::kernel::framework::fs::vfs_write(
                 fd,
                 zeros.as_ptr(),

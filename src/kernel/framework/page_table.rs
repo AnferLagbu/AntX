@@ -78,7 +78,7 @@ pub fn verify_mapping(vaddr: VirtAddr, expected_phys: PhysAddr) {
 /// 内核镜像保护: 确保内核代码段不可写。
 pub fn verify_kernel_code_protection(kernel_text_start: VirtAddr, kernel_text_end: VirtAddr) {
     let vmm = get_vmm();
-    let mut addr = kernel_text_start.as_u64() & !0xFFF;
+    let mut addr = kernel_text_start.as_u64() & !(PAGE_SIZE - 1);
     let end = kernel_text_end.as_u64();
     while addr < end {
         if let Some(phys) = vmm.get_physical(VirtAddr(addr)) {

@@ -30,6 +30,8 @@ pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+#[cfg(target_arch = "x86_64")]
+use crate::kernel::framework::mm::PAGE_SIZE;
 use super::framework::{self, Driver};
 use crate::klog_info;
 use crate::klog_warn;
@@ -86,7 +88,7 @@ pub fn storage_init() -> framework::Result<()> {
                     continue;
                 }
 
-                let mmio_base = (bar as usize) & !0xFFF; // 掩码低12位 (BAR类型/可预取位)
+                let mmio_base = (bar as usize) & !(PAGE_SIZE as usize - 1); // 掩码低12位 (BAR类型/可预取位)
                 klog_info!(
                     Driver,
                     "AHCI: found at {:02X}:{:02X}.{}, BAR5=0x{:X}",
@@ -137,7 +139,7 @@ pub fn storage_init() -> framework::Result<()> {
                     continue;
                 }
 
-                let mmio_base = (bar as usize) & !0xFFF;
+                let mmio_base = (bar as usize) & !(PAGE_SIZE as usize - 1);
                 klog_info!(
                     Driver,
                     "NVMe: found at {:02X}:{:02X}.{}, BAR0=0x{:X}",

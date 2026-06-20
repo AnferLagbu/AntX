@@ -361,7 +361,7 @@ pub(crate) mod raw {
     pub fn write_user_byte(cr3: u64, off: usize, v: u8) {
         // SAFETY: vmm_get_physical_in_table 保证返回的物理页对应 vaddr, KERNEL_BASE 偏移后内核可访问。
         unsafe {
-            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
+            let phys = vmm_get_physical_in_table(cr3, off as u64 & !(PAGE_SIZE - 1));
             if phys != 0 {
                 let addr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u8;
                 *addr = v;
@@ -373,7 +373,7 @@ pub(crate) mod raw {
     pub fn write_user_u64(cr3: u64, off: usize, v: u64) {
         // SAFETY: vmm_get_physical_in_table 保证返回的物理页对应 vaddr, KERNEL_BASE 偏移后内核可访问。
         unsafe {
-            let phys = vmm_get_physical_in_table(cr3, off as u64 & !0xFFF);
+            let phys = vmm_get_physical_in_table(cr3, off as u64 & !(PAGE_SIZE - 1));
             if phys != 0 {
                 let ptr = (phys + KERNEL_BASE + (off as u64 & 0xFFF)) as *mut u64;
                 core::ptr::write_unaligned(ptr, v);
@@ -1235,8 +1235,8 @@ impl UserProcManager {
                     continue;
                 }
 
-                let vaddr_start = ((*phdr).p_vaddr + load_bias) & !0xFFF;
-                let vaddr_end = ((*phdr).p_vaddr + (*phdr).p_memsz + load_bias + 0xFFF) & !0xFFF;
+                let vaddr_start = ((*phdr).p_vaddr + load_bias) & !(PAGE_SIZE - 1);
+                let vaddr_end = ((*phdr).p_vaddr + (*phdr).p_memsz + load_bias + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1);
                 let num_pages = (vaddr_end - vaddr_start) / PAGE_SIZE;
 
                 for j in 0..num_pages {

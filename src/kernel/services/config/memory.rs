@@ -38,7 +38,7 @@ pub const HUGE_PAGE_1G_SHIFT: u64 = 30;
 pub const USER_STACK_SIZE: u64 = 65536;
 
 /// 栈保护区域 (字节), 用于捕获栈溢出.
-pub const USER_STACK_GUARD: u64 = 4096;
+pub const USER_STACK_GUARD: u64 = PAGE_SIZE;
 
 /// 用户栈顶 (可映射地址).
 pub const USER_STACK_TOP: u64 = 0x7FFFFFFFE000;

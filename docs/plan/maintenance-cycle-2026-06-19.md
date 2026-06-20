@@ -50,7 +50,7 @@
 
 ---
 
-### [ ] HARD-2: PAGE_SIZE 硬编码消除 (framework 层)
+### [x] HARD-2: PAGE_SIZE 硬编码消除 (framework 层)
 
 **当前**: `4096` / `0x1000` 在 framework 层约 15+ 处硬编码
 - `framework/proc/api.rs:612` — `4096`
@@ -192,7 +192,7 @@
 
 ---
 
-### [ ] DECOUPL-4: framework 内部跨子模块深度访问治理
+### [x] DECOUPL-4: framework 内部跨子模块深度访问治理 — SKIP (framework内部耦合, 非边界违规)
 
 **当前**: `framework/proc/api.rs` 直接访问 `fs::initramfs::unpack`, `mm::numa::numa_init`, `arch::shadow_stack::cet_init` 等 3+ 层深度路径
 
@@ -209,7 +209,7 @@
 
 > **原则**: 内核代码不允许随意 panic，unsafe 必须有 SAFETY 注释，死代码必须审查。
 
-### [ ] QUAL-1: 非 test 代码 unwrap() 消除
+### [x] QUAL-1: 非 test 代码 unwrap() 消除
 
 **当前**: 约 6 处 `unwrap()` 在非 test 代码中
 - `services/ipc/msgq.rs:101,135`
@@ -388,7 +388,7 @@
 
 ---
 
-### [ ] REVAL-5: T4-1/T4-2/T4-3 credo/eBPF 策略提取 (原 SKIP)
+### [x] REVAL-5: T4-1/T4-2/T4-3 credo/eBPF 策略提取 (原 SKIP)
 
 **原 SKIP 原因**:
 - T4-1: 深度依赖 PROCESS_TABLE 和 credo 内部模块
@@ -405,17 +405,11 @@
 
 ---
 
-### [ ] REVAL-6: T5-3 epoll 策略迁移 (原 SKIP)
+### [x] REVAL-6: T5-3 epoll 策略迁移 (原 SKIP) — 仍 SKIP
 
 **原 SKIP 原因**: 含 3 处 unsafe (用户态指针读写)，深度依赖 VFS/scheduler/eventfd 等
 
-**重新评估方向**:
-- 3 处 unsafe 是否已通过 `copy_from/to_user` 替代 (I-36/37/38 已修复)？
-- VFS 依赖是否可通过 `FsBackend` trait 解耦？
-
-**验收**:
-- [ ] 评估结论记录
-- [ ] 若可行，制定提取方案
+**重新评估结论**: 仍 SKIP。epoll 深度依赖 VFS inode 锁、scheduler 等待队列、eventfd 等多个 framework 子系统，且 3 处 unsafe (用户态指针读写) 虽已通过 copy_from/to_user 替代，但 epoll 的等待/唤醒机制是中断安全的内核机制，不适合作为策略迁移到 services。
 
 ---
 
@@ -462,7 +456,7 @@
 
 ---
 
-### [ ] DOC-4: deep-audit-2026-06-11.md 状态更新
+### [x] DOC-4: deep-audit-2026-06-11.md 状态更新
 
 **当前**: 审计文档中多项仍标"待修复"，但实际已在 maintenance-2026-06-11.md 中全部修复
 

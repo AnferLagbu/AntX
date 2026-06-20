@@ -9,7 +9,7 @@
 //! framework 仅保留 re-export.
 
 /// Default Slab cache size (4 KiB = one page).
-pub const SLAB_DEFAULT_SIZE: usize = 4096;
+pub const SLAB_DEFAULT_SIZE: usize = crate::kernel::framework::mm::PAGE_SIZE as usize;
 
 /// Slab 对象最小尺寸 (字节).
 pub const SLAB_MIN_OBJECT_SIZE: usize = 16;

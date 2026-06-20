@@ -415,7 +415,9 @@ impl VgaDriver {
     #[cfg(target_arch = "x86_64")]
     fn update_hardware_cursor(&mut self) {
         let pos = (self.cursor_y * SCREEN_WIDTH + self.cursor_x) as u16;
-        let port = self.vga_port.as_ref().unwrap();
+        let Some(port) = self.vga_port.as_ref() else {
+            return;
+        };
 
         // 正确访问模式: 先写索引到 address port (offset 0), 再写到 data port (offset 1)
         port.write_u8(0, VGA_CURSOR_LOW);
@@ -427,7 +429,9 @@ impl VgaDriver {
     /// 启用/禁用光标
     #[cfg(target_arch = "x86_64")]
     pub fn enable_cursor(&mut self, enable: bool) {
-        let port = self.vga_port.as_ref().unwrap();
+        let Some(port) = self.vga_port.as_ref() else {
+            return;
+        };
 
         // 选择光标起始寄存器 (寄存器索引 0x0A)
         // 正确访问模式: 先写索引到 address port (offset 0), 再读/写到 data port (offset 1)

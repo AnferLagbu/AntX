@@ -24,7 +24,7 @@ use crate::kernel::services::fs::dcache;
 
 const RAMFS_MAX_NODES: usize = 256;
 const RAMFS_MAX_BLOCKS: usize = 2048;
-const RAMFS_BLOCK_SIZE: usize = 4096;
+const RAMFS_BLOCK_SIZE: usize = crate::kernel::framework::mm::PAGE_SIZE as usize;
 const RAMFS_MAX_ACES: usize = 128;
 
 const DIRECT_BLOCKS: usize = 12;

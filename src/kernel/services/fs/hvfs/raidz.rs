@@ -1,5 +1,6 @@
 use alloc::vec;
 use alloc::vec::Vec;
+use crate::kernel::services::fs::hvfs::spa::HV_POOL_BLOCK_SIZE;
 
 pub const HV_RAIDZ_MIN_COLS: usize = 2;
 pub const HV_RAIDZ_MAX_COLS: usize = 16;
@@ -180,7 +181,7 @@ impl HvRaidzMap {
     }
 
     pub fn generate_parity(&mut self, data: &[u8]) -> Vec<Vec<u8>> {
-        let unit_size = 4096;
+        let unit_size = HV_POOL_BLOCK_SIZE as usize;
         let data_cols = self.data_cols();
         if data_cols == 0 {
             return Vec::new();
@@ -235,7 +236,7 @@ impl HvRaidzMap {
             return Some(result);
         }
 
-        let unit_size = 4096;
+        let unit_size = HV_POOL_BLOCK_SIZE as usize;
         let data_cols = self.data_cols();
         let total_units = parity_data
             .get(self.nparity)
@@ -326,7 +327,7 @@ impl HvRaidzMap {
     }
 
     pub fn verify_parity(&self, parity_data: &[Vec<u8>]) -> bool {
-        let unit_size = 4096;
+        let unit_size = HV_POOL_BLOCK_SIZE as usize;
         let data_cols = self.data_cols();
         if parity_data.len() < self.ncols {
             return false;

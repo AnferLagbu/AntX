@@ -1271,13 +1271,13 @@ fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
         | crate::kernel::framework::mm::PageFlags::USER
         | crate::kernel::framework::mm::PageFlags::WRITE_THROUGH;
 
-    let phys_page_aligned = fb_phys & !0xFFF;
+    let phys_page_aligned = fb_phys & !(crate::kernel::framework::mm::PAGE_SIZE - 1);
     let offset = fb_phys - phys_page_aligned;
-    let pages = (size + offset).div_ceil(0x1000);
+    let pages = (size + offset).div_ceil(crate::kernel::framework::mm::PAGE_SIZE);
 
     for i in 0..pages {
-        let pa = crate::kernel::framework::mm::PhysAddr(phys_page_aligned + i * 0x1000);
-        let va = crate::kernel::framework::mm::VirtAddr(target_vaddr + i * 0x1000);
+        let pa = crate::kernel::framework::mm::PhysAddr(phys_page_aligned + i * crate::kernel::framework::mm::PAGE_SIZE);
+        let va = crate::kernel::framework::mm::VirtAddr(target_vaddr + i * crate::kernel::framework::mm::PAGE_SIZE);
         vmm.map_page_in_table(cr3, va, pa, flags);
     }
 

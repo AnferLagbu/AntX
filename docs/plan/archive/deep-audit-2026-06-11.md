@@ -891,32 +891,32 @@ let allocated_pages = ALLOCATED_PAGES.get_mut();
 | I-12 | 中 | 安全检查 | 中断上下文持有 Mutex / GFP_KERNEL 分配的死锁风险 | 审计4 | 已有 Lockdep |
 | I-13 | 中 | 功能缺失 | 用户态 ASLR 随机源基于 TSC 而非硬件随机数 | 审计9 | 待评估 |
 | I-14 | 低 | 文档一致 | Roadmap Phase C 状态标记与实际有偏差 | 审计7 | 待修正 |
-| I-15 | 高 | 健壮性 | HvFS ZIL 日志回放路径 11 处 `.unwrap()` 可致内核 panic | 审计3 | 待修复 |
+| I-15 | 高 | 健壮性 | HvFS ZIL 日志回放路径 11 处 `.unwrap()` 可致内核 panic | 审计3 | 已修复(P0) |
 | I-16 | 中 | 架构合规 | services 层 4 处 `spin::Once` 绕过框架同步层 | 审计9 | 待迁移 |
 | I-17 | 中 | 架构合规 | framework 15 模块使用第三方 `spin::Mutex` 不参与 Lockdep | 审计9 | 待迁移 |
 | I-18 | 中 | 架构设计 | `FileSystem` trait 缺少 `fs_sync` 方法, `vfs_sync` 仅走 HvFS | 审计11 | 待扩展 |
-| I-19 | 中 | 架构设计 | `vfs_pread_inode` 直接调用 RamFS 绕过 trait 分发 | 审计11 | 待修复 |
+| I-19 | 中 | 架构设计 | `vfs_pread_inode` 直接调用 RamFS 绕过 trait 分发 | 审计11 | 已修复(P3) |
 | I-20 | 中 | 错误处理 | 全项目错误处理风格不统一 (Result/Errno/return -1 混用) | 审计6 | 待统一 |
-| I-21 | 高 | 健壮性 | 同 I-15 (ZIL unwrap) | 审计3 | 同 I-15 |
+| I-21 | 高 | 健壮性 | 同 I-15 (ZIL unwrap) | 审计3 | 已修复(P0) |
 | I-22 | 低 | 代码质量 | 15 个 `hvfs_*_internal` 函数无调用方 | 审计11 | 待清理 |
 | I-23 | 中 | 正确性 | Page Fault 存在 trait + 直接方法双路径, demand paging 未生效 | 审计12 | 待合并 |
 | I-24 | 低 | 初始化 | IDT IST 栈使用前未验证 TSS 填充, 依赖初始化顺序 | 审计12 | 待加固 |
-| I-25 | 低 | 正确性 | legacy PIC 假性 IRQ7/IRQ15 未检测, 噪声计入统计 | 审计12 | 待修复 |
-| I-26 | 严重 | 正确性 | Demand paging (COW/swap/mmap缺页) 整条路径未激活, PF handler 仅支持栈扩展 | 审计13 | 待修复 |
-| I-27 | 中 | 正确性 | `handle_simple_fault` 硬编码 WRITABLE+USER flags 不检查 VMA 权限 | 审计13 | 待修复 |
-| I-28 | 中 | 并发安全 | kmalloc/kmalloc_slab 自旋锁未 disable interrupts, 中断上下文可能死锁 | 审计13 | 待修复 |
+| I-25 | 低 | 正确性 | legacy PIC 假性 IRQ7/IRQ15 未检测, 噪声计入统计 | 审计12 | 已修复 |
+| I-26 | 严重 | 正确性 | Demand paging (COW/swap/mmap缺页) 整条路径未激活, PF handler 仅支持栈扩展 | 审计13 | 已修复(P0) |
+| I-27 | 中 | 正确性 | `handle_simple_fault` 硬编码 WRITABLE+USER flags 不检查 VMA 权限 | 审计13 | 已修复(P0) |
+| I-28 | 中 | 并发安全 | kmalloc/kmalloc_slab 自旋锁未 disable interrupts, 中断上下文可能死锁 | 审计13 | 已修复(P1) |
 | I-29 | 高 | 安全 | 10 处 TEST_PWM fallback (hardcoded `0x0020F45A8B978417`) 绕过未登录时的访问控制 | 审计14 | 待移除 |
 | I-30 | 中 | 架构 | Session Manager 为 UnsafeCell 全局单例, SMP 下不同 CPU 共享同一会话上下文 | 审计14 | 待重构 |
-| I-31 | 严重 | 正确性 | execve 失败时进程已销毁无法恢复, 调度器指向 freed PID → panic/UB | 审计17 | 待修复 |
-| I-32 | 中 | 并发安全 | ELF loader RacyCell 静态分配器非线程安全, SMP 并发 exec 存在数据竞争 | 审计17 | 待修复 |
+| I-31 | 严重 | 正确性 | execve 失败时进程已销毁无法恢复, 调度器指向 freed PID → panic/UB | 审计17 | 已修复(P0) |
+| I-32 | 中 | 并发安全 | ELF loader RacyCell 静态分配器非线程安全, SMP 并发 exec 存在数据竞争 | 审计17 | 已修复(P1) |
 | I-33 | 低 | 可维护 | ELF 验证代码双份复制 (elf.rs + user_proc.rs), 解析逻辑不一致 | 审计17 | 待统一 |
 | I-34 | 低 | 可维护 | CFS BTreeMap 代替 RB tree, 有高频 alloc/dealloc 开销 | 审计15 | 可延后 |
 | I-35 | 低 | 可维护 | MLFQ 队列与 CFS 并存, 调度器部分冗余 | 审计15 | 可清理 |
-| I-36 | 高 | 正确性 | 信号投递/socket 数据复制 3 处路径使用 copy_nonoverlapping 无 exception table 保护, 内核态 page fault → panic | 审计20/18/13 | 待修复 |
-| I-37 | 高 | 正确性 | 同 I-36 关联: sm_send/sm_recv socket 路径 copy_nonoverlapping | 审计18 | 同 I-36 |
-| I-38 | 高 | 正确性 | 同 I-36 关联: do_signal_deliver 信号栈帧写入 ptr::write_unaligned | 审计20 | 同 I-36 |
-| I-39 | 中 | 正确性 | sys_ioctl stub 返回 0 而非 ENOSYS, 用户态被欺骗误认为操作成功 | 审计22 | 待修复 |
-| I-40 | 中 | 正确性 | sigreturn trampoline 仅 x86_64 机器码, aarch64 上信号投递失败 | 审计20 | 待修复 |
+| I-36 | 高 | 正确性 | 信号投递/socket 数据复制 3 处路径使用 copy_nonoverlapping 无 exception table 保护, 内核态 page fault → panic | 审计20/18/13 | 已修复(P0) |
+| I-37 | 高 | 正确性 | 同 I-36 关联: sm_send/sm_recv socket 路径 copy_nonoverlapping | 审计18 | 已修复(P0) |
+| I-38 | 高 | 正确性 | 同 I-36 关联: do_signal_deliver 信号栈帧写入 ptr::write_unaligned | 审计20 | 已修复(P0) |
+| I-39 | 中 | 正确性 | sys_ioctl stub 返回 0 而非 ENOSYS, 用户态被欺骗误认为操作成功 | 审计22 | 已修复 |
+| I-40 | 中 | 正确性 | sigreturn trampoline 仅 x86_64 机器码, aarch64 上信号投递失败 | 审计20 | 已修复(P1) |
 | I-41 | 中 | 并发 | 网络 poll_network 持 NET_LOCK 在 ISR 中调用 try_lock 正确, 但 sm_send/sm_recv 持锁自旋阻塞 socket → ISR 抢不到锁导致数据包丢弃 | 审计18/23 | 待优化 |
 | I-42 | 中 | 性能 | virtio-blk I/O 完成使用忙等自旋而非中断驱动, 单核可能活锁 | 审计19 | 待实现 |
 | I-43 | 中 | 架构 | 块设备存在 BlockDevice trait 和 Chitin proto_block 双重抽象路径, HvFS 绕过 trait 导致新驱动无法使用 | 审计23 | 待统一 |

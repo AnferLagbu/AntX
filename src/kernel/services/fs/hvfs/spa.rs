@@ -153,7 +153,7 @@ impl HvSpaConfig {
             name: n,
             guid: 0,
             ashift: 12,
-            block_size: 4096,
+            block_size: HV_POOL_BLOCK_SIZE as u32,
             max_vdevs: 8,
             readonly: false,
         }

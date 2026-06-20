@@ -30,7 +30,7 @@ use alloc::vec::Vec;
 use crate::kernel::services::fs::ramfs_core::RamFsData;
 
 // services 层透出的常量 (镜像 kernel/fs/ramfs/ramfs.rs 内部常量)
-pub const RAMFS_BLOCK_SIZE: usize = 4096;
+pub const RAMFS_BLOCK_SIZE: usize = crate::kernel::framework::mm::PAGE_SIZE as usize;
 pub const RAMFS_MAX_NODES: usize = 256;
 pub const RAMFS_MAX_BLOCKS: usize = 2048;
 pub use crate::kernel::framework::fs::{
