@@ -3,6 +3,12 @@
 ;
 ; 为 IDT 初始化提供 32 ISR + 16 IRQ + syscall + recovery 入口。
 ; 栈帧布局与 InterruptFrame #[repr(C, packed)] 一致。
+;
+; ⚠ 教训 (TRACK-INIT-RING3): 绝对禁止在任何入口点 (syscall_entry,
+; isr_common, irq_common) 的寄存器保存 (push) 之前插入修改通用寄存器
+; 的调试代码 (如 out 0xe9, al)。入口点寄存器承载调用约定约定的值
+; (syscall 号、异常码、中断向量), 修改即破坏, 不可恢复。
+; 若需调试入口到达, 使用不修改寄存器的机制 (如内存写、LAPIC 调试)。
 ; =============================================================================
 
 BITS 64
@@ -131,6 +137,15 @@ USER_PML4_OFF   equ 16
 
 global syscall_entry
 syscall_entry:
+    ; ═══════════════════════════════════════════════════════════════════
+    ; 教训 (TRACK-INIT-RING3): 入口处绝对禁止修改任何通用寄存器
+    ; 在 push/pop 保存上下文之前. 此前曾在此处插入调试代码
+    ;   mov al, 0x53          ; 'S' → 破坏 RAX 低字节
+    ;   out 0xe9, al
+    ; 导致 RAX 中的 syscall 号被覆盖 (write=1 → 0x53=83=mkdir),
+    ; 使 write syscall 被误判为 mkdir, 且因 mkdir 恰好也是 83
+    ; 而未被发现. 入口点修改寄存器 = 破坏调用约定 = 不可恢复.
+    ; ═══════════════════════════════════════════════════════════════════
     swapgs
     xchg rsp, [gs:KERNEL_RSP_OFF]
 

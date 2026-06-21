@@ -352,7 +352,7 @@ impl MmuArch for X8664 {
                 "mov es, cx",
                 "mov fs, cx",
                 "mov gs, cx",
-                // 注意: 此处不可 swapgs!
+                // ⚠ 教训 (TRACK-INIT-RING3): 此处不可 swapgs!
                 //
                 // 本内核的 GS 约定与 Linux 不同:
                 //   IA32_GS_BASE      = 0 (从不显式设置)
@@ -364,6 +364,8 @@ impl MmuArch for X8664 {
                 // 若在此 swapgs, 会将 per_cpu_addr 交换到 GS_BASE,
                 // 导致 syscall_entry 的 swapgs 将其换回 KERNEL_GS_BASE,
                 // 使 GS_BASE=0, [gs:0x0] 访问地址 0 → page fault.
+                // 此前曾在此处错误地插入了 swapgs, 导致 iretq 后
+                // 第一个 syscall 即触发 page fault.
                 "push {user_ds}",              // SS
                 "push r13",                    // RSP (stack)
                 "push {rflags_if}",            // RFLAGS
