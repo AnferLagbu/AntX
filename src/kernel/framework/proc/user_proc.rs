@@ -1036,7 +1036,6 @@ impl UserProcManager {
         let kstack = proc_ref.load_kernel_stack();
         let rip_val = proc_ref.entry();
         let rsp_val = proc_ref.load_user_stack();
-        #[cfg(target_arch = "aarch64")]
         let cr3 = proc_ref.load_cr3();
         let _ss_val = GDT_USER_DATA | 0x03;
         let _cs_val = GDT_USER_CODE | 0x03;
@@ -1044,17 +1043,285 @@ impl UserProcManager {
 
         crate::kernel::framework::cpu::arch::set_kernel_stack(kstack);
 
-        // 在 aarch64 上, TTBR0_EL1 在进入 EL0 前必须指向用户页表.
-        // 用户 L0 表复制了内核恒等映射条目, 因此切换后
-        // 内核代码与 MMIO 仍可访问.
-        #[cfg(target_arch = "aarch64")]
+        // 更新 per-CPU 用户页表 CR3, 使 syscall/中断返回用户态时
+        // 从 [gs:USER_PML4_OFF] 读取到正确的进程用户页表.
+        // SAFETY: cr3 是当前进程的有效用户页表 PML4 物理地址;
+        // 当前在调度器上下文, 独占访问 per-CPU 数据.
+        unsafe {
+            crate::kernel::framework::arch::gdt::gdt_set_user_cr3(cr3);
+        }
+
+        // 将 RSP0 栈页映射到用户页表 (添加 USER 位).
+        // 用户态中断触发时 CPU 从 TSS 读取 RSP0 并切换到该栈,
+        // 但内核大页映射没有 USER 位, 需要显式映射为 USER 可访问.
         {
-            raw::vmm_switch_to_user(cr3);
+            let rsp0_page = kstack & !(0x1000 - 1);
+            let rsp0_phys = rsp0_page - crate::kernel::framework::mm::KERNEL_BASE as u64;
+            crate::kernel::framework::mm::get_vmm().map_page_in_table(
+                cr3,
+                crate::kernel::framework::mm::VirtAddr(rsp0_page),
+                crate::kernel::framework::mm::PhysAddr(rsp0_phys),
+                crate::kernel::framework::mm::PageFlags::PRESENT
+                    | crate::kernel::framework::mm::PageFlags::WRITABLE
+                    | crate::kernel::framework::mm::PageFlags::USER,
+            );
+        }
+
+        // 验证 TSS.RSP0 已设置
+        let tss_rsp0 = crate::kernel::framework::arch::x86_64::tss::tss_get_kernel_stack();
+
+        // 读取 GDTR 获取 GDT 基地址
+        // sgdt 存储 2 字节 limit + 8 字节 base (在 64 位模式下)
+        let gdt_base: u64;
+        unsafe {
+            let mut gdtr_buf: [u8; 10] = core::mem::zeroed();
+            core::arch::asm!("sgdt [{}]", in(reg) gdtr_buf.as_mut_ptr() as u64, options(nostack));
+            gdt_base = u64::from_le_bytes(gdtr_buf[2..10].try_into().unwrap());
+        }
+
+        crate::klog_boot_info!(
+            "[USER] enter_user: rip={:#x}, rsp={:#x}, cr3={:#x}, kstack={:#x}, tss_rsp0={:#x}, gdt_base={:#x}",
+            rip_val, rsp_val, cr3, kstack, tss_rsp0, gdt_base
+        );
+
+        // 读取 GDT 中 TSS 描述符 (entry 5 和 6)
+        let gdt_entries: [u64; 2];
+        unsafe {
+            let ptr = (gdt_base + 5 * 8) as *const u64;
+            gdt_entries = [core::ptr::read_volatile(ptr), core::ptr::read_volatile(ptr.add(1))];
+        }
+        crate::klog_boot_info!(
+            "[USER] TSS desc: low={:#x}, high={:#x}",
+            gdt_entries[0], gdt_entries[1]
+        );
+
+        // 直接读取 TSS 结构的原始字节验证 RSP0
+        let tss_base = crate::kernel::framework::arch::gdt::get_tss_base();
+        let tss_rsp0_raw: u64;
+        unsafe {
+            // RSP0 在 TSS offset 0x04
+            core::arch::asm!("mov {}, [{} + 4]", out(reg) tss_rsp0_raw, in(reg) tss_base, options(nostack, readonly));
+        }
+        crate::klog_boot_info!(
+            "[USER] TSS base={:#x}, rsp0_raw={:#x}, rsp0_api={:#x}",
+            tss_base, tss_rsp0_raw, tss_rsp0
+        );
+
+        // 读取 TR (Task Register) 验证 TSS 选择子
+        let tr: u16;
+        unsafe { core::arch::asm!("str {}", out(reg) tr, options(nostack, nomem)); }
+        crate::klog_boot_info!("[USER] TR selector={:#x}", tr);
+
+        // 验证用户页表中 GDT/TSS 页的映射
+        // 临时切换到用户页表，读取 GDT 页的第一个 PTE
+        {
+            let gdt_page = gdt_base & !(0x1000 - 1);
+            let pml4_idx = (gdt_page >> 39) & 0x1FF;
+            let pdpt_idx = (gdt_page >> 30) & 0x1FF;
+            let pd_idx = (gdt_page >> 21) & 0x1FF;
+            let pt_idx = (gdt_page >> 12) & 0x1FF;
+
+            // 读取用户页表 PML4 条目
+            let user_pml4_phys = cr3 & !0xFFF;
+            let pml4_virt = user_pml4_phys | 0xFFFF800000000000u64;
+            let pml4_entry: u64;
+            unsafe {
+                let ptr = (pml4_virt + pml4_idx * 8) as *const u64;
+                pml4_entry = core::ptr::read_volatile(ptr);
+            }
+
+            let pdpt_phys = pml4_entry & !0xFFF;
+            let pdpt_virt = pdpt_phys | 0xFFFF800000000000u64;
+            let pdpt_entry: u64;
+            unsafe {
+                let ptr = (pdpt_virt + pdpt_idx * 8) as *const u64;
+                pdpt_entry = core::ptr::read_volatile(ptr);
+            }
+
+            let pd_phys = pdpt_entry & !0xFFF;
+            let pd_virt = pd_phys | 0xFFFF800000000000u64;
+            let pd_entry: u64;
+            unsafe {
+                let ptr = (pd_virt + pd_idx * 8) as *const u64;
+                pd_entry = core::ptr::read_volatile(ptr);
+            }
+
+            let pt_phys = pd_entry & !0xFFF;
+            let pt_virt = pt_phys | 0xFFFF800000000000u64;
+            let pt_entry: u64;
+            unsafe {
+                let ptr = (pt_virt + pt_idx * 8) as *const u64;
+                pt_entry = core::ptr::read_volatile(ptr);
+            }
+
+            crate::klog_boot_info!(
+                "[USER] User PT walk for GDT page {:#x}: pml4e={:#x} pdpte={:#x} pde={:#x} pte={:#x}",
+                gdt_page, pml4_entry, pdpt_entry, pd_entry, pt_entry
+            );
+
+            // 同样检查 TSS 页
+            let tss_page = tss_base & !(0x1000 - 1);
+            let tss_pt_idx = (tss_page >> 12) & 0x1FF;
+            let tss_pt_entry: u64;
+            unsafe {
+                let ptr = (pt_virt + tss_pt_idx * 8) as *const u64;
+                tss_pt_entry = core::ptr::read_volatile(ptr);
+            }
+            crate::klog_boot_info!(
+                "[USER] User PT walk for TSS page {:#x}: pte={:#x}",
+                tss_page, tss_pt_entry
+            );
+
+            // 检查 IDT 页的映射
+            let idt_base: u64;
+            unsafe {
+                let mut idt_buf: [u8; 10] = core::mem::zeroed();
+                core::arch::asm!("sidt [{}]", in(reg) idt_buf.as_mut_ptr() as u64, options(nostack));
+                idt_base = u64::from_le_bytes(idt_buf[2..10].try_into().unwrap());
+            }
+            let idt_page = idt_base & !(0x1000 - 1);
+            let idt_pml4_idx = (idt_page >> 39) & 0x1FF;
+            let idt_pdpt_idx = (idt_page >> 30) & 0x1FF;
+            let idt_pd_idx = (idt_page >> 21) & 0x1FF;
+            let idt_pt_idx = (idt_page >> 12) & 0x1FF;
+            let idt_pml4_entry: u64;
+            unsafe {
+                let ptr = (pml4_virt + idt_pml4_idx * 8) as *const u64;
+                idt_pml4_entry = core::ptr::read_volatile(ptr);
+            }
+            let idt_pdpt_phys = idt_pml4_entry & !0xFFF;
+            let idt_pdpt_virt = idt_pdpt_phys | 0xFFFF800000000000u64;
+            let idt_pdpt_entry: u64;
+            unsafe {
+                let ptr = (idt_pdpt_virt + idt_pdpt_idx * 8) as *const u64;
+                idt_pdpt_entry = core::ptr::read_volatile(ptr);
+            }
+            let idt_pd_phys = idt_pdpt_entry & !0xFFF;
+            let idt_pd_virt = idt_pd_phys | 0xFFFF800000000000u64;
+            let idt_pd_entry: u64;
+            unsafe {
+                let ptr = (idt_pd_virt + idt_pd_idx * 8) as *const u64;
+                idt_pd_entry = core::ptr::read_volatile(ptr);
+            }
+            let idt_pt_phys = idt_pd_entry & !0xFFF;
+            let idt_pt_virt = idt_pt_phys | 0xFFFF800000000000u64;
+            let idt_pt_entry: u64;
+            unsafe {
+                let ptr = (idt_pt_virt + idt_pt_idx * 8) as *const u64;
+                idt_pt_entry = core::ptr::read_volatile(ptr);
+            }
+        crate::klog_boot_info!(
+            "[USER] IDT base={:#x}, page={:#x}, pml4e={:#x} pdpte={:#x} pde={:#x} pte={:#x}",
+            idt_base, idt_page, idt_pml4_entry, idt_pdpt_entry, idt_pd_entry, idt_pt_entry
+            );
+
+            // 读取 TSS 结构的前 16 字节验证布局
+            let tss_raw: [u64; 2];
+            unsafe {
+                let ptr = tss_base as *const u64;
+                tss_raw = [core::ptr::read_volatile(ptr), core::ptr::read_volatile(ptr.add(1))];
+            }
+            crate::klog_boot_info!(
+                "[USER] TSS raw at {:#x}: [{:#x}, {:#x}]",
+                tss_base, tss_raw[0], tss_raw[1]
+            );
+
+            // 从 GDT TSS 描述符中解码 TSS base，与 get_tss_base() 比较
+            let tss_desc_low: u64;
+            let tss_desc_high: u64;
+            unsafe {
+                let ptr = (gdt_base + 5 * 8) as *const u64;
+                tss_desc_low = core::ptr::read_volatile(ptr);
+                tss_desc_high = core::ptr::read_volatile(ptr.add(1));
+            }
+            // 解码 64-bit TSS 描述符 base:
+            // byte 2-3 (bits 16-31): base[0:15]
+            // byte 4   (bits 32-39): base[16:23]
+            // byte 7   (bits 56-63): base[24:31]
+            // high[0:31]: base[32:63]
+            let desc_base_lo = (tss_desc_low >> 16) & 0xFFFF; // base[0:15]
+            let desc_base_mid = (tss_desc_low >> 32) & 0xFF;  // base[16:23]
+            let desc_base_hi = (tss_desc_low >> 56) & 0xFF;   // base[24:31]
+            let desc_base_upper = tss_desc_high & 0xFFFFFFFF;  // base[32:63]
+            let desc_base = desc_base_lo | (desc_base_mid << 16) | (desc_base_hi << 24) | (desc_base_upper << 32);
+            crate::klog_boot_info!(
+                "[USER] TSS desc: low={:#x} high={:#x}, desc_base={:#x} vs tss_base={:#x}",
+                tss_desc_low, tss_desc_high, desc_base, tss_base
+            );
+
+            // 检查 RSP0 栈页在用户页表中的映射
+            let rsp0_page = tss_rsp0 & !(0x1000 - 1);
+            let rsp0_pml4_idx = (rsp0_page >> 39) & 0x1FF;
+            let rsp0_pdpt_idx = (rsp0_page >> 30) & 0x1FF;
+            let rsp0_pd_idx = (rsp0_page >> 21) & 0x1FF;
+            let rsp0_pt_idx = (rsp0_page >> 12) & 0x1FF;
+            let rsp0_pml4_entry: u64;
+            unsafe {
+                let ptr = (pml4_virt + rsp0_pml4_idx * 8) as *const u64;
+                rsp0_pml4_entry = core::ptr::read_volatile(ptr);
+            }
+            let rsp0_pdpt_phys = rsp0_pml4_entry & !0xFFF;
+            let rsp0_pdpt_virt = rsp0_pdpt_phys | 0xFFFF800000000000u64;
+            let rsp0_pdpt_entry: u64;
+            unsafe {
+                let ptr = (rsp0_pdpt_virt + rsp0_pdpt_idx * 8) as *const u64;
+                rsp0_pdpt_entry = core::ptr::read_volatile(ptr);
+            }
+            let rsp0_pd_phys = rsp0_pdpt_entry & !0xFFF;
+            let rsp0_pd_virt = rsp0_pd_phys | 0xFFFF800000000000u64;
+            let rsp0_pd_entry: u64;
+            unsafe {
+                let ptr = (rsp0_pd_virt + rsp0_pd_idx * 8) as *const u64;
+                rsp0_pd_entry = core::ptr::read_volatile(ptr);
+            }
+            let rsp0_pt_phys = rsp0_pd_entry & !0xFFF;
+            let rsp0_pt_virt = rsp0_pt_phys | 0xFFFF800000000000u64;
+            let rsp0_pt_entry: u64;
+            unsafe {
+                let ptr = (rsp0_pt_virt + rsp0_pt_idx * 8) as *const u64;
+                rsp0_pt_entry = core::ptr::read_volatile(ptr);
+            }
+            crate::klog_boot_info!(
+                "[USER] RSP0 stack page {:#x}: pml4e={:#x} pdpte={:#x} pde={:#x} pte={:#x}",
+                rsp0_page, rsp0_pml4_entry, rsp0_pdpt_entry, rsp0_pd_entry, rsp0_pt_entry
+            );
+        }
+
+        // CR3 切换在 enter_user 的内联汇编中完成 (iretq 之前),
+        // 避免在 Rust 函数中切换 CR3 后, 后续指令在低地址无法执行.
+
+        // 验证 enter_user 传入的 CR3 值
+        crate::klog_boot_info!(
+            "[USER] enter_user args: entry={:#x}, stack={:#x}, cr3={:#x}, kstack={:#x}",
+            rip_val, rsp_val, cr3, kstack
+        );
+
+        // 验证 GDT 中用户段描述符
+        {
+            // SGDT 将 10 字节写入内存: 2 字节 limit + 8 字节 base
+            let mut gdt_ptr: [u64; 2] = [0; 2];
+            unsafe {
+                core::arch::asm!("sgdt [{}]", in(reg) &mut gdt_ptr, options(nostack, nomem));
+            }
+            let gdt_base = gdt_ptr[1];
+            // 读取 GDT 中索引 4 (user code, selector 0x20) 和索引 5 (user data, selector 0x28)
+            let gdt_virt = gdt_base | 0xFFFF800000000000u64;
+            unsafe {
+                let uc_low = core::ptr::read_volatile((gdt_virt + 4 * 8) as *const u64);
+                let uc_high = core::ptr::read_volatile((gdt_virt + 4 * 8 + 8) as *const u64);
+                let ud_low = core::ptr::read_volatile((gdt_virt + 5 * 8) as *const u64);
+                let ud_high = core::ptr::read_volatile((gdt_virt + 5 * 8 + 8) as *const u64);
+                crate::klog_boot_info!(
+                    "[USER] GDT user_code desc: low={:#x} high={:#x}, user_data desc: low={:#x} high={:#x}",
+                    uc_low, uc_high, ud_low, ud_high
+                );
+            }
         }
 
         // SAFETY: enter_user 是平台特定的 arch 入口, 不会返回, 由调用方保证上下文有效。
+        // user_cr3 传入用户页表物理地址, 由 enter_user 汇编在 iretq 前切换.
         unsafe {
-            crate::arch!(enter_user(rip_val as usize, rsp_val as usize, 0));
+            crate::arch!(enter_user(rip_val as usize, rsp_val as usize, 0, cr3, kstack));
         }
     }
 
@@ -1314,6 +1581,16 @@ impl UserProcManager {
             }
 
             proc_ref.set_entry(entry);
+
+            // DEBUG: 验证入口地址在用户页表中是否映射成功
+            {
+                let phys = crate::kernel::framework::mm::api::vmm_get_physical_in_table(cr3, entry);
+                let phys_kern = crate::kernel::framework::mm::api::vmm_get_physical(entry);
+                crate::kernel::framework::klog::log_info(
+                    crate::kernel::framework::klog::LogCategory::Boot,
+                    format_args!("[USER] ELF loaded: entry=0x{:x}, cr3=0x{:x}, user_phys=0x{:x}, kern_phys=0x{:x}", entry, cr3, phys, phys_kern),
+                );
+            }
 
             proc_ref.pid() as i32
         }

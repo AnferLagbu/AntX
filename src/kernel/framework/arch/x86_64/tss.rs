@@ -237,6 +237,14 @@ pub fn tss_set_kernel_stack(rsp0: u64) {
     }
 }
 
+pub fn tss_get_kernel_stack() -> u64 {
+    // SAFETY: 只读访问 TSS
+    unsafe {
+        let tss = super::gdt::get_tss_mut();
+        tss.get_kernel_stack()
+    }
+}
+
 // ============================================================================
 // 单元测试
 // ============================================================================

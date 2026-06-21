@@ -175,7 +175,9 @@ pub trait MmuArch {
     /// `from` 和 `to` 必须指向有效的 ProcessContext 内存。
     fn context_switch(from: *mut u8, to: *const u8);
     /// 进入用户态执行 (sysret / eret)，此函数不会返回。
-    fn enter_user(entry: usize, stack: usize, arg: usize) -> !;
+    /// `user_cr3` 为用户页表物理地址, 在 iretq 前切换 CR3.
+    /// `kstack` 为进程内核栈顶 (高半部分地址), CR3 切换前先切到该栈.
+    fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> !;
     /// 从内核态返回到用户态 (iretq / eret)。
     fn return_to_user();
 }
@@ -279,8 +281,8 @@ pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
     fn context_switch(from: *mut u8, to: *const u8) {
         <Self as MmuArch>::context_switch(from, to);
     }
-    fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
-        <Self as MmuArch>::enter_user(entry, stack, arg)
+    fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> ! {
+        <Self as MmuArch>::enter_user(entry, stack, arg, user_cr3, kstack)
     }
     fn return_to_user() {
         <Self as MmuArch>::return_to_user();

@@ -475,7 +475,12 @@ impl VirtualMemoryManager {
             let src = kernel_pml4_virt.0 as *const u64;
             let dst = pml4_virt.0 as *mut u64;
 
+            // 复制高半部分 (内核空间: PML4[256..511])
             core::ptr::copy_nonoverlapping(src.add(256), dst.add(256), 256);
+
+            // 低半部分 (PML4[0..256]) 保持全零:
+            // enter_user 在高半部分内核地址中切换 CR3, 不依赖低半部分映射.
+            // 用户进程的 ELF 段由加载器按需映射, 不应继承内核恒等映射.
 
             crate::arch!(tlb_flush_page(dst.add(256) as usize));
 
@@ -502,6 +507,92 @@ impl VirtualMemoryManager {
         }
 
         self.release_lock(&_flags);
+
+        // 映射 GDT / IDT / TSS 所在的低半部分页到用户页表.
+        // iretq 和段寄存器加载需要访问 GDT, 中断入口需要 IDT,
+        // 用户态中断触发时 CPU 需要从 TSS 读取 RSP0/IST 栈指针.
+        // 这些结构体位于低半部分物理内存, 用户页表不继承恒等映射,
+        // 因此必须显式映射.
+        // 注意: 必须在 release_lock 之后调用, 因为 map_page_in_table 内部也会获取锁.
+        {
+            let sgdt = crate::kernel::framework::arch::gdt::get_gdt_ptr();
+            let gdt_start = sgdt.base as u64 & !(PAGE_SIZE as u64 - 1);
+            let gdt_end = (sgdt.base as u64 + sgdt.limit as u64 + PAGE_SIZE as u64) & !(PAGE_SIZE as u64 - 1);
+
+            // 同时用 sgdt 指令读取实际 GDTR 值进行对比
+            let actual_gdt_base: u64;
+            unsafe {
+                let mut buf: [u8; 10] = core::mem::zeroed();
+                core::arch::asm!("sgdt [{}]", in(reg) buf.as_mut_ptr() as u64, options(nostack));
+                actual_gdt_base = u64::from_le_bytes(buf[2..10].try_into().unwrap());
+            }
+            crate::klog_boot_info!(
+                "[VMM] GDT ptr base={:#x} vs sgdt base={:#x}",
+                sgdt.base as u64, actual_gdt_base
+            );
+
+            // 读取 IDT 基地址和限制 (sidt 指令)
+            let idt_base: u64;
+            let idt_limit: u16;
+            unsafe {
+                core::arch::asm!("sub rsp, 10", "sidt [rsp]", "mov rax, [rsp + 2]", "movzx cx, [rsp]", "add rsp, 10", out("rax") idt_base, out("cx") idt_limit);
+            }
+            let idt_start = idt_base & !(PAGE_SIZE as u64 - 1);
+            let idt_end = (idt_base + idt_limit as u64 + 1 + PAGE_SIZE as u64 - 1) & !(PAGE_SIZE as u64 - 1);
+
+            // 读取 TSS 基地址 (从 GDT TSS 描述符)
+            let tss_start = crate::kernel::framework::arch::gdt::get_tss_base() & !(PAGE_SIZE as u64 - 1);
+            // TSS 结构约 128 字节, 最多跨 2 页
+            let tss_end = tss_start + 2 * PAGE_SIZE as u64;
+
+            // 收集需要映射的低半部分页 (去重)
+            let mut pages = [0u64; 16];
+            let mut count = 0;
+            let ranges: [(u64, u64); 3] = [(gdt_start, gdt_end), (idt_start, idt_end), (tss_start, tss_end)];
+
+            crate::klog_boot_info!(
+                "[VMM] GDT/IDT/TSS mapping: gdt={:#x}-{:#x}, idt={:#x}-{:#x}, tss={:#x}-{:#x}",
+                gdt_start, gdt_end, idt_start, idt_end, tss_start, tss_end
+            );
+
+            for &(start, end) in &ranges {
+                let mut addr = start;
+                while addr < end {
+                    if !pages[..count].contains(&addr) {
+                        if count < pages.len() {
+                            pages[count] = addr;
+                            count += 1;
+                        }
+                    }
+                    addr += PAGE_SIZE as u64;
+                }
+            }
+
+            for &page_phys in &pages[..count] {
+                self.map_page_in_table(
+                    pml4_phys.as_u64(),
+                    VirtAddr(page_phys),
+                    PhysAddr(page_phys),
+                    PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER,
+                );
+            }
+
+            // 映射内核栈页 (TSS.RSP0) 到用户页表.
+            // 注意: RSP0 在 create_user_page_table 调用时可能尚未设置,
+            // 实际映射在 enter_user 的 set_kernel_stack 之后完成.
+            // 这里仅做尝试, 如果 RSP0 为 0 则跳过.
+            let rsp0 = crate::kernel::framework::arch::tss::tss_get_kernel_stack();
+            if rsp0 != 0 {
+                let rsp0_page = rsp0 & !(PAGE_SIZE as u64 - 1);
+                let rsp0_phys = rsp0_page - crate::kernel::framework::mm::KERNEL_BASE as u64;
+                self.map_page_in_table(
+                    pml4_phys.as_u64(),
+                    VirtAddr(rsp0_page),
+                    PhysAddr(rsp0_phys),
+                    PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER,
+                );
+            }
+        }
 
         Some(pml4_phys.as_u64())
     }
@@ -536,6 +627,10 @@ impl VirtualMemoryManager {
 
             let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, PAGE_SIZE);
             if pt.is_null() {
+                crate::klog_boot_info!(
+                    "[VMM] map_page_in_table: failed to get/create PT for {:#x}",
+                    virt.0
+                );
                 self.release_lock(&_flags);
                 return;
             }

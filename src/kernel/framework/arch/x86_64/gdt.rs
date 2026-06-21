@@ -480,15 +480,28 @@ pub fn gdt_init() -> i32 {
 
         gdt.syscall.kernel_rsp = gdt.syscall_stack.as_ptr() as u64 + gdt.syscall_stack.len() as u64;
 
-        // 读取当前 CR3 作为 PML4 初始值 (KPTI init 后会更新 user_pml4)
-        let current_cr3: u64;
-        core::arch::asm!("mov {}, cr3", out(reg) current_cr3, options(nomem, nostack));
-        gdt.syscall.kernel_pml4 = current_cr3;
-        gdt.syscall.user_pml4 = current_cr3;
+        // 读取当前 CR3 作为 PML4 初始值
+        // KPTI 激活后, kernel_pml4/user_pml4 已由 kpti_init 通过
+        // gdt_set_kpti_pml4 正确设置 (含 PCID 编码), 不应覆盖.
+        // 仅在 KPTI 未激活时用当前 CR3 初始化.
+        if !crate::kernel::framework::mm::kpti::kpti_is_active() {
+            let current_cr3: u64;
+            core::arch::asm!("mov {}, cr3", out(reg) current_cr3, options(nomem, nostack));
+            gdt.syscall.kernel_pml4 = current_cr3;
+            gdt.syscall.user_pml4 = current_cr3;
+        }
 
         // IA32_KERNEL_GS_BASE — swapgs 时切换到该地址
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &gdt.syscall as *const _ as u64);
+
+        crate::klog_boot_info!(
+            "[GDT] syscall base={:#x}, kernel_rsp={:#x}, kernel_pml4={:#x}, user_pml4={:#x}",
+            &gdt.syscall as *const _ as u64,
+            gdt.syscall.kernel_rsp,
+            gdt.syscall.kernel_pml4,
+            gdt.syscall.user_pml4,
+        );
     }
 
     static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
@@ -545,11 +558,16 @@ pub fn gdt_init_ap(cpu_index: u32) {
 
         ap.syscall.kernel_rsp = ap.syscall_stack.as_ptr() as u64 + ap.syscall_stack.len() as u64;
 
-        // 读取当前 CR3 作为 PML4 初始值 (KPTI init 后会更新 user_pml4)
-        let current_cr3: u64;
-        core::arch::asm!("mov {}, cr3", out(reg) current_cr3, options(nomem, nostack));
-        ap.syscall.kernel_pml4 = current_cr3;
-        ap.syscall.user_pml4 = current_cr3;
+        // 读取当前 CR3 作为 PML4 初始值
+        // KPTI 激活后, kernel_pml4/user_pml4 已由 kpti_init 通过
+        // gdt_set_kpti_pml4 正确设置 (含 PCID 编码), 不应覆盖.
+        // 仅在 KPTI 未激活时用当前 CR3 初始化.
+        if !crate::kernel::framework::mm::kpti::kpti_is_active() {
+            let current_cr3: u64;
+            core::arch::asm!("mov {}, cr3", out(reg) current_cr3, options(nomem, nostack));
+            ap.syscall.kernel_pml4 = current_cr3;
+            ap.syscall.user_pml4 = current_cr3;
+        }
 
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
@@ -582,6 +600,15 @@ pub unsafe fn get_tss_mut() -> &'static mut super::tss::TaskStateSegment {
     &mut current_per_cpu_gdt_mut().tss
 }
 
+/// 获取当前 CPU 的 TSS 线性地址 (用于 KPTI 用户页表映射)
+///
+/// 用户态中断触发时 CPU 需要从 TSS 读取 RSP0/IST 栈指针,
+/// 用户页表必须映射 TSS 所在的页面.
+#[inline]
+pub fn get_tss_base() -> u64 {
+    &per_cpu_gdt(0).tss as *const _ as u64
+}
+
 /// 更新指定 CPU 的 KPTI PML4 字段
 ///
 /// KPTI init 完成后调用, 设置 `kernel_pml4` 和 `user_pml4`.
@@ -595,6 +622,22 @@ pub unsafe fn gdt_set_kpti_pml4(cpu_index: u32, kernel_pml4: u64, user_pml4: u64
     let gdt = per_cpu_gdt_mut(cpu_index);
     gdt.syscall.kernel_pml4 = kernel_pml4;
     gdt.syscall.user_pml4 = user_pml4;
+}
+
+/// 更新当前 CPU 的 per-CPU 用户页表 CR3 值 ([gs:USER_PML4_OFF]).
+///
+/// 每个用户进程有独立的用户页表, syscall/中断返回用户态时
+/// 从 [gs:USER_PML4_OFF] 读取 CR3, 因此必须在进入用户态前
+/// 将当前进程的用户页表物理地址写入该字段.
+///
+/// # Safety
+///
+/// 调用方保证: `user_cr3` 是有效的用户页表 PML4 物理地址;
+/// 仅在当前 CPU 独占访问时调用 (中断上下文或调度器持锁).
+#[inline]
+pub unsafe fn gdt_set_user_cr3(user_cr3: u64) {
+    let gdt = current_per_cpu_gdt_mut();
+    gdt.syscall.user_pml4 = user_cr3;
 }
 
 // ============================================================================

@@ -707,10 +707,12 @@ pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
     // 1. 挂载 ramfs 为根文件系统
+    crate::klog_boot_info!("[USER] Mounting ramfs...");
     let mount_result = crate::kernel::framework::fs::vfs_mount(
         b"/\0".as_ptr(),
         b"ramfs\0".as_ptr(),
     );
+    crate::klog_boot_info!("[USER] ramfs mount result={}", mount_result);
     if mount_result < 0 {
         crate::klog_boot_info!("[USER] Warning: ramfs mount on / failed ({})", mount_result);
     }
@@ -758,6 +760,39 @@ pub fn launch_first_user_process() -> ! {
         }
 
         // 回退: 直接加载内嵌的 init.bin
+        let bin = include_bytes!("../../../../build/user/init.bin");
+        let bin_ptr = bin.as_ptr();
+        let bin_size = bin.len() as u64;
+
+        if bin_size == 0 {
+            crate::klog_err!(Boot, "[USER] init binary is empty");
+            crate::kernel::framework::tests::qemu_exit(false);
+        }
+
+        let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
+        if pid <= 0 {
+            crate::klog_err!(Boot, "[USER] Failed to load init ELF, pid={}", pid);
+            crate::kernel::framework::tests::qemu_exit(false);
+        }
+
+        let pid_u32 = pid as u32;
+
+        C_CURRENT_PROCESS.map_mut(|p| {
+            p.pid = pid_u32 as u64;
+            p.pwm = 0;
+            p.state = 2;
+            p.parent_pid = 1;
+        });
+
+        SCHEDULER.add(pid_u32);
+
+        crate::klog_boot_info!("[USER] Entering Ring 3 (init pid={})...", pid_u32);
+        user_proc_enter_by_pid(pid_u32);
+    }
+
+    #[cfg(all(target_arch = "x86_64", not(feature = "initramfs")))]
+    {
+        // 无 initramfs 时, 直接加载内嵌的 init.bin
         let bin = include_bytes!("../../../../build/user/init.bin");
         let bin_ptr = bin.as_ptr();
         let bin_size = bin.len() as u64;

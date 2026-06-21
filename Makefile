@@ -131,7 +131,7 @@ user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) 
 
 $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF):
 	@echo "Building Rust user programs..."
-	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib" cargo build --release --target $(RUST_TARGET)
+	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib -C link-arg=-no-pie" cargo build --release --target $(RUST_TARGET)
 
 build/user/init.bin: $(USER_INIT_ELF)
 	@mkdir -p build/user

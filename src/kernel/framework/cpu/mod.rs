@@ -1353,8 +1353,10 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
             let star = (0x10u64 << 48) | (0x08u64 << 32);
             self::msr::write_msr(IA32_STAR, star);
 
-            // LSTAR: 64 位 syscall 入口点
-            self::msr::write_msr(IA32_LSTAR, syscall_entry as *const () as u64);
+            // LSTAR: 64 位 syscall 入口点 (高半部分地址, KPTI 用户页表只映射高半区)
+            let entry_addr = syscall_entry as *const () as u64;
+            let entry_hi = entry_addr + crate::kernel::framework::mm::KERNEL_BASE as u64;
+            self::msr::write_msr(IA32_LSTAR, entry_hi);
 
             // SFMASK: 进入内核时清除 IF (bit 9) 以禁用中断
             const SFMASK_IF: u64 = 1 << 9;

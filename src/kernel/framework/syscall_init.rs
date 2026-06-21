@@ -15,4 +15,6 @@ use crate::kernel::framework::syscall;
 pub fn syscall_init() {
     // SAFETY: klog_write 是 C-ABI 日志函数; 启动阶段单线程
     unsafe { syscall::syscall_init() }
+    // 注册 services 层系统调用分发策略
+    crate::kernel::services::syscall::init();
 }

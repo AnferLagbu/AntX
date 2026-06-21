@@ -56,6 +56,10 @@ isr_common:
     ; 来自用户态时 GS 仍为用户 GS, 需要 swapgs 才能读 per-CPU PML4
     cmp word [rsp+24], 0x23
     jne .isr_no_kpti_enter
+    ; DEBUG: 确认从用户态进入异常
+    mov dx, 0xe9
+    mov al, 0x49                ; 'I'
+    out dx, al
     swapgs
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
@@ -99,8 +103,10 @@ isr_common:
     add rsp, 16
 
     ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
-    ; 恢复寄存器后栈布局同入口, CS 在 [rsp+24]
-    cmp word [rsp+24], 0x23
+    ; add rsp, 16 后栈布局: [rsp+0]=RIP, [rsp+8]=CS, [rsp+16]=RFLAGS
+    ; CS 在 [rsp+8], 不是 [rsp+24] (入口时 CS 在 [rsp+24] 是因为
+    ; ISR stub 推入了 int_no+err_code, 但 add rsp,16 已跳过它们)
+    cmp word [rsp+8], 0x23
     jne .isr_no_kpti_exit
     swapgs
     mov rax, [gs:USER_PML4_OFF]
@@ -117,7 +123,7 @@ isr_common:
 ;   3. swapgs → GS 指向 per-CPU SyscallPerCpu 数据
 ;   4. xchg rsp, [gs:0] → 切换到该 CPU 独占的内核栈, 用户 RSP 存入 per-CPU
 ;   5. 构建 InterruptFrame, 调用 syscall_dispatch_from_frame
-;   6. sysretq 返回用户态
+;   6. iretq 返回用户态
 ;
 ; SMP 安全: 每个 CPU 有独立的 SyscallPerCpu 和内核栈,
 ; IA32_KERNEL_GS_BASE 在 gdt_init/gdt_init_ap 中分别设置。
@@ -130,7 +136,14 @@ USER_PML4_OFF   equ 16
 global syscall_entry
 syscall_entry:
     swapgs
+    ; DEBUG: 确认 syscall 入口被到达
+    mov dx, 0xe9
+    mov al, 0x53                ; 'S'
+    out dx, al
     xchg rsp, [gs:KERNEL_RSP_OFF]
+
+    ; ── 保存 RAX (含 syscall 号), 因为后续 KPTI 切换会破坏 RAX ──
+    push rax
 
     ; ── KPTI: 切换到内核页表 ──────────────────────────────────────
     ; swapgs 后 GS 指向 per-CPU SyscallPerCpu, [gs:KERNEL_PML4_OFF]
@@ -138,6 +151,9 @@ syscall_entry:
     ; 此 mov cr3 无实际切换效果.
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
+
+    ; 恢复 RAX (syscall 号)
+    pop rax
 
     ; 构建 InterruptFrame (与 int 0x80 中断帧布局一致)
     push 0x1B                         ; SS = 用户数据段 (0x18|3)
@@ -167,7 +183,15 @@ syscall_entry:
 
     mov rdi, rsp
     cld
+    ; DEBUG: 确认进入 dispatch
+    mov dx, 0xe9
+    mov al, 0x44                ; 'D'
+    out dx, al
     call syscall_dispatch_from_frame
+    ; DEBUG: 确认 dispatch 返回
+    mov dx, 0xe9
+    mov al, 0x52                ; 'R'
+    out dx, al
 
     pop r15
     pop r14
@@ -187,22 +211,28 @@ syscall_entry:
 
     add rsp, 16                       ; 跳过 int_no + err_code
 
-    pop rcx                           ; 用户 RIP
-    add rsp, 8                        ; 跳过 CS
-    pop r11                           ; 用户 RFLAGS
-    add rsp, 16                       ; 跳过 RSP + SS
+    ; ── 返回路径: 使用 iretq 代替 sysretq ──────────────────────────
+    ; 栈上已有完整的 iretq 帧: RIP, CS, RFLAGS, RSP, SS
+    ; 不需要 xchg rsp 切换到用户栈 (iretq 从栈上读取 RSP),
+    ; 避免在 Ring 0 使用用户栈时被中断导致中断帧推入用户栈.
+    ;
+    ; 栈布局 (add rsp, 16 后):
+    ;   [rsp+0]  = RIP   (用户返回地址)
+    ;   [rsp+8]  = CS    (0x23, 用户代码段)
+    ;   [rsp+16] = RFLAGS
+    ;   [rsp+24] = RSP   (用户栈)
+    ;   [rsp+32] = SS    (0x1B, 用户数据段)
 
-    xchg rsp, [gs:KERNEL_RSP_OFF]     ; 恢复用户栈, 保存内核栈指针
+    cli                                ; 禁用中断: KPTI 切换 CR3 期间不可中断
 
     ; ── KPTI: 切换到用户页表 ──────────────────────────────────────
-    ; sysretq 前 CR3 必须切回 USER_PML4, 否则用户态无法寻址.
-    ; xchg 后 CPU 在用户栈上, 用户栈在 USER_PML4 低半区可见.
-    ; per-CPU 数据在高半区, USER_PML4 已复制高半区, [gs:OFF] 仍可访问.
+    ; iretq 前 CR3 必须切回 USER_PML4, 否则用户态无法寻址.
+    ; 当前在内核栈上, [gs:OFF] 可安全访问.
     mov rax, [gs:USER_PML4_OFF]
     mov cr3, rax
 
     swapgs                            ; 恢复用户 GS 段
-    sysretq
+    iretq
 
 ; ── 通用入口: 保存寄存器 → irq_handler ──────────────────────────────────
 ; 栈布局同 isr_common
@@ -210,6 +240,10 @@ irq_common:
     ; ── KPTI: 如果来自用户态, 切换到内核页表 ──────────────────────
     cmp word [rsp+24], 0x23
     jne .irq_no_kpti_enter
+    ; DEBUG: 确认从用户态进入 IRQ
+    mov dx, 0xe9
+    mov al, 0x51                ; 'Q'
+    out dx, al
     swapgs
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
@@ -253,7 +287,10 @@ irq_common:
     add rsp, 16
 
     ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
-    cmp word [rsp+24], 0x23
+    ; add rsp, 16 后栈布局: [rsp+0]=RIP, [rsp+8]=CS, [rsp+16]=RFLAGS
+    ; CS 在 [rsp+8], 不是 [rsp+24] (入口时 CS 在 [rsp+24] 是因为
+    ; ISR stub 推入了 int_no+err_code, 但 add rsp,16 已跳过它们)
+    cmp word [rsp+8], 0x23
     jne .irq_no_kpti_exit
     swapgs
     mov rax, [gs:USER_PML4_OFF]
@@ -370,7 +407,9 @@ syscall_handler:
     add rsp, 16
 
     ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
-    cmp word [rsp+24], 0x23
+    ; add rsp, 16 后栈布局: [rsp+0]=RIP, [rsp+8]=CS, [rsp+16]=RFLAGS
+    ; CS 在 [rsp+8], 不是 [rsp+24]
+    cmp word [rsp+8], 0x23
     jne .syscall_handler_no_kpti_exit
     swapgs
     mov rax, [gs:USER_PML4_OFF]
@@ -433,7 +472,9 @@ isr0x82:
     add rsp, 16
 
     ; ── KPTI: 如果返回用户态, 切换到用户页表 ──────────────────────
-    cmp word [rsp+24], 0x23
+    ; add rsp, 16 后栈布局: [rsp+0]=RIP, [rsp+8]=CS, [rsp+16]=RFLAGS
+    ; CS 在 [rsp+8], 不是 [rsp+24]
+    cmp word [rsp+8], 0x23
     jne .isr0x82_no_kpti_exit
     swapgs
     mov rax, [gs:USER_PML4_OFF]

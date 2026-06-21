@@ -147,6 +147,8 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     let a4 = f.r8;
     let a5 = f.r9;
     let result = syscall_dispatch(syscall_num, a0, a1, a2, a3, a4, a5);
+    // DEBUG: 打印 syscall 号和返回值
+    crate::klog_boot_info!("[SYSCALL] num={} ret={}", syscall_num, result);
     f.rax = result as u64;
 
     // 返回用户态前检查待投递信号
@@ -190,7 +192,10 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     // 翻译 Linux 架构特定编号为 QueenX 原生编号
     // QX_*/Credo/FB 编号直接透传
-    let num = linuxulator::translate_syscall(num);
+    let translated = linuxulator::translate_syscall(num);
+    // DEBUG
+    crate::klog_boot_info!("[SYSCALL-DISPATCH] raw={} translated={}", num, translated);
+    let num = translated;
 
     // C7: Seccomp 过滤检查 (在 dispatch 之前)
     let args = [a0, a1, a2, a3, a4, a5];

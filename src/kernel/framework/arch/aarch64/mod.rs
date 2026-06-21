@@ -229,15 +229,19 @@ impl MmuArch for Aarch64 {
     }
 
     /// 进入 EL0 (eret)。
-    fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
+    fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, _kstack: u64) -> ! {
         // KPTI: 首次进入 EL0 前, 切换 TTBR1_EL1 到 trampoline 页表.
         // 用户态运行时 TTBR1 指向最小化页表, 减少内核地址泄露面.
         // SAFETY: kpti_trampoline_ttbr1_or_kernel 返回有效物理地址;
         // 若 KPTI 未激活则返回 kernel_ttbr1 (无实际切换效果).
         unsafe {
-            let tramp = crate::kernel::framework::mm::kpti_trampoline_ttbr1_or_kernel(
-                crate::kernel::framework::mm::get_kernel_pml4(),
-            );
+            let tramp = if user_cr3 != 0 {
+                user_cr3
+            } else {
+                crate::kernel::framework::mm::kpti_trampoline_ttbr1_or_kernel(
+                    crate::kernel::framework::mm::get_kernel_pml4(),
+                )
+            };
             core::arch::asm!(
                 "dsb ish",
                 "msr ttbr1_el1, {0}",

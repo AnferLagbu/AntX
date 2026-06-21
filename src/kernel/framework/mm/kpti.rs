@@ -411,6 +411,12 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     // SAFETY: boot 阶段独占写入, cpu_index 0..256 合法.
     let kernel_cr3 = if pcid_enabled { cr3_with_pcid(kernel_pml4, PCID_KERNEL) } else { kernel_pml4 };
     let user_cr3 = if pcid_enabled { cr3_with_pcid(user_pml4_phys, PCID_USER) } else { user_pml4_phys };
+
+    crate::klog_boot_info!(
+        "[KPTI] kpti_init: kernel_pml4={:#x}, user_pml4_phys={:#x}, pcid={}, kernel_cr3={:#x}, user_cr3={:#x}",
+        kernel_pml4, user_pml4_phys, pcid_enabled, kernel_cr3, user_cr3
+    );
+
     unsafe {
         for cpu in 0..256u32 {
             crate::kernel::framework::arch::gdt::gdt_set_kpti_pml4(cpu, kernel_cr3, user_cr3);

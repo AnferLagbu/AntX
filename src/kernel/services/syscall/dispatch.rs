@@ -303,5 +303,10 @@ impl SyscallDispatch for ServicesSyscallDispatch {
 /// 注册 services 层分发策略到 framework
 pub fn register_services_dispatch() -> Result<(), ()> {
     static POLICY: ServicesSyscallDispatch = ServicesSyscallDispatch;
-    register_syscall_dispatch(&POLICY).map_err(|_| ())
+    let r = register_syscall_dispatch(&POLICY);
+    crate::kernel::framework::klog::log_info(
+        crate::kernel::framework::klog::LogCategory::Boot,
+        format_args!("[SYSCALL] register_services_dispatch result={}", if r.is_ok() { "OK" } else { "ERR" }),
+    );
+    r.map_err(|_| ())
 }

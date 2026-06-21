@@ -612,6 +612,14 @@ impl Scheduler {
 
         if let Some(user_proc) = super::user_proc::USER_PROC_MANAGER.get(next) {
             super::user_proc::USER_PROC_MANAGER.set_current(Some(user_proc));
+            // 更新 per-CPU 用户页表 CR3, 使 syscall/中断返回用户态时
+            // 从 [gs:USER_PML4_OFF] 读取到正确的进程用户页表.
+            // SAFETY: user_proc 来自 PROCESS_TABLE, cr3 字段有效;
+            // 当前在调度器持锁上下文, 独占访问 per-CPU 数据.
+            unsafe {
+                let user_cr3 = (*user_proc).cr3.load(Ordering::SeqCst);
+                crate::kernel::framework::arch::gdt::gdt_set_user_cr3(user_cr3);
+            }
         }
 
         // 重新入队上一个任务

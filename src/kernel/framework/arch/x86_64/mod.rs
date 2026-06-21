@@ -184,7 +184,42 @@ impl InterruptArch for X8664 {
     }
 
     fn interrupt_late_init() {
+        // cpu_init 必须在 gdt_init 之前调用:
+        // kpti_init 依赖 has_invpcid() → get_cpu_info() → cpu_init
+        crate::kernel::framework::cpu::cpu_init();
+
         crate::kernel::framework::arch::x86_64::gdt::gdt_init();
+
+        // 配置 SYSCALL/SYSRET 指令
+        // 设置 EFER.SCE, STAR, LSTAR (高半部分地址), SFMASK
+        #[cfg(target_arch = "x86_64")]
+        {
+            const IA32_EFER: u32 = 0xC0000080;
+            const IA32_STAR: u32 = 0xC0000081;
+            const IA32_LSTAR: u32 = 0xC0000082;
+            const IA32_SFMASK: u32 = 0xC0000084;
+            const EFER_SCE: u64 = 1 << 0;
+
+            // SAFETY: MSR 写入在 boot 阶段单线程执行
+            unsafe {
+                let efer = crate::kernel::framework::cpu::msr::read_msr(IA32_EFER);
+                crate::kernel::framework::cpu::msr::write_msr(IA32_EFER, efer | EFER_SCE);
+
+                // STAR: [63:48] = SYSRET CS base (0x10), [47:32] = SYSCALL CS base (0x08)
+                let star = (0x10u64 << 48) | (0x08u64 << 32);
+                crate::kernel::framework::cpu::msr::write_msr(IA32_STAR, star);
+
+                // LSTAR: syscall 入口点 (高半部分地址, KPTI 用户页表只映射高半区)
+                extern "C" { fn syscall_entry(); }
+                let entry_hi = syscall_entry as *const () as u64
+                    + crate::kernel::framework::mm::KERNEL_BASE as u64;
+                crate::kernel::framework::cpu::msr::write_msr(IA32_LSTAR, entry_hi);
+
+                // SFMASK: 进入内核时清除 IF
+                crate::kernel::framework::cpu::msr::write_msr(IA32_SFMASK, 1 << 9);
+            }
+        }
+
         crate::kernel::framework::idt::idt_init();
         crate::kernel::framework::arch::x86_64::apic::apic_init();
         crate::kernel::framework::smp::init();
@@ -280,27 +315,74 @@ impl MmuArch for X8664 {
 
     /// 进入用户态 (iretq)。
     #[inline(always)]
-    fn enter_user(entry: usize, stack: usize, arg: usize) -> ! {
+    fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> ! {
         const USER_DS: u64 = 0x1B;
         const USER_CS: u64 = 0x23;
         const RFLAGS_IF: u64 = 0x202;
+        // KERNEL_BASE 高半部分偏移, 用于将低半部分地址转换为高半部分地址.
+        const KBASE_HI: u64 = 0xFFFF800000000000u64;
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // SAFETY: 调用方保证 entry/stack/user_cr3/kstack 有效.
+        // 策略:
+        // 1. 先切换到进程内核栈 (kstack, 高半部分地址)
+        // 2. 跳转到高半部分地址执行
+        // 3. 在高半部分切换 CR3 到用户页表
+        // 4. 加载段寄存器 + iretq
+        // 这样 CR3 切换后, 栈和指令都在高半部分, 用户页表有高半部分映射.
+        //
+        // 仅使用 callee-saved 寄存器 (r12-r15) 传递关键参数,
+        // 避免编译器寄存器分配冲突导致参数错位 (之前 in("r11") user_cr3
+        // 被编译器重映射为 rdx 导致 CR3 写入错误值).
+        // 常量通过 const 操作数传递, 由汇编器直接编码为立即数.
         unsafe {
             core::arch::asm!(
                 "cli",
-                "mov ds, ax",
-                "mov es, ax",
-                "mov fs, ax",
-                "mov gs, ax",
-                "push rax", "push rdx", "push r8", "push r9", "push r10",
+                // 切换到进程内核栈 (高半部分地址)
+                "mov rsp, r14",
+                // 计算高半部分地址并跳转
+                "lea rax, [rip + 2f]",
+                "mov rcx, {kbase_hi}",
+                "add rax, rcx",
+                "jmp rax",
+                "2:",
+                // --- 以下在高半部分执行 ---
+                "mov cr3, r15",                // 切换到用户页表
+                "mov ecx, {user_ds}",
+                "mov ds, cx",
+                "mov es, cx",
+                "mov fs, cx",
+                "mov gs, cx",
+                // 注意: 此处不可 swapgs!
+                //
+                // 本内核的 GS 约定与 Linux 不同:
+                //   IA32_GS_BASE      = 0 (从不显式设置)
+                //   IA32_KERNEL_GS_BASE = per_cpu_addr (gdt_init 设置)
+                //
+                // 内核态常态: GS_BASE=0, KERNEL_GS_BASE=per_cpu_addr
+                // 访问 per-CPU: swapgs → gs:offset → swapgs
+                //
+                // 若在此 swapgs, 会将 per_cpu_addr 交换到 GS_BASE,
+                // 导致 syscall_entry 的 swapgs 将其换回 KERNEL_GS_BASE,
+                // 使 GS_BASE=0, [gs:0x0] 访问地址 0 → page fault.
+                "push {user_ds}",              // SS
+                "push r13",                    // RSP (stack)
+                "push {rflags_if}",            // RFLAGS
+                "push {user_cs}",              // CS
+                "push r12",                    // RIP (entry)
+                // DEBUG: 确认 iretq 前执行流到达此处
+                "mov dx, 0xe9",
+                "mov al, 0x45",                // 'E'
+                "out dx, al",
                 "iretq",
-                in("rax") USER_DS,
-                in("rdx") stack,
-                in("r8") RFLAGS_IF,
-                in("r9") USER_CS,
-                in("r10") entry,
+                in("r12") entry,
+                in("r13") stack,
+                in("r14") kstack,
+                in("r15") user_cr3,
                 in("rdi") arg,
+                kbase_hi = const KBASE_HI,
+                user_ds = const USER_DS,
+                user_cs = const USER_CS,
+                rflags_if = const RFLAGS_IF,
                 options(noreturn)
             );
         }

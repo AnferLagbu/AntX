@@ -184,10 +184,18 @@ pub extern "C" fn idt_init() -> i32 {
 
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
+        // KPTI: x86_64 上 ISR stub 由链接器分配在低半部分地址,
+        // 但用户页表只映射了高半部分内核空间. 中断在用户态触发时,
+        // CPU 从 IDT 取 handler 地址并跳转, 必须是高半部分地址.
+        // aarch64 不需要此偏移 (KERNEL_BASE=0).
         macro_rules! addr {
-            ($f:ident) => {
-                ($f as *const ()) as usize as u64
-            };
+            ($f:ident) => {{
+                let lo = ($f as *const ()) as usize as u64;
+                #[cfg(target_arch = "x86_64")]
+                { lo + crate::kernel::framework::mm::KERNEL_BASE }
+                #[cfg(not(target_arch = "x86_64"))]
+                { lo }
+            }};
         }
         let isr_table: [u64; 32] = [
             addr!(isr0),

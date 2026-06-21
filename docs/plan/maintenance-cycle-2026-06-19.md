@@ -89,7 +89,7 @@
 
 ---
 
-### [ ] HARD-4: Cache line size 提取为公共常量
+### [x] HARD-4: Cache line size 提取为公共常量
 
 **当前**: `64` 在 3 个文件中硬编码
 - `framework/dma_buf.rs:183,221`
@@ -98,8 +98,10 @@
 **方案**: `cpu::CpuInfo` 已有 `cache_line_size` 字段。在 `framework::config` 中定义 `pub const CACHE_LINE_SIZE: usize = 64;` (默认值)，运行时可通过 CpuInfo 覆盖。
 
 **验收**:
-- [ ] DMA 相关代码使用 `config::CACHE_LINE_SIZE` 而非裸 `64`
-- [ ] 双架构 0w0e + 三审计通过
+- [x] DMA 相关代码使用 `config::CACHE_LINE_SIZE` 而非裸 `64`
+- [x] 双架构 0w0e + 三审计通过
+
+**完成记录** (2026-06-19): `CACHE_LINE_SIZE` 已在 `framework/mm/mod.rs:142` 定义为 `pub const CACHE_LINE_SIZE: u64 = 64;`，`dma_buf.rs` 和 `dma/engine.rs` 均已引用该常量。
 
 ---
 
@@ -255,13 +257,13 @@
 **方案**: 逐一审查，补全 `// SAFETY:` 注释，说明为何跨线程共享安全。
 
 **验收**:
-- [ ] 所有 `unsafe impl Send/Sync` 有 SAFETY 注释
-- [ ] `audit_safety_coverage.py` 通过 (100%)
-- [ ] 双架构 0w0e + 三审计通过
+- [x] 所有 `unsafe impl Send/Sync` 有 SAFETY 注释
+- [x] `audit_safety_coverage.py` 通过 (100%)
+- [x] 双架构 0w0e + 三审计通过
 
 ---
 
-### [ ] QUAL-4: framework 层 #[allow(dead_code)] 审查
+### [x] QUAL-4: framework 层 #[allow(dead_code)] 审查
 
 **当前**: framework 层 27 处 `#[allow(dead_code)]`
 - `framework/proc/api.rs` (2)
@@ -486,7 +488,7 @@
 **方案**: 更新状态为"已完成 (2026-06-08)"，补全实际产出摘要
 
 **验收**:
-- [ ] 状态标记与实际一致
+- [x] 状态标记与实际一致
 
 ---
 
@@ -497,7 +499,7 @@
 **方案**: 更新状态为"已完成 (2026-06-08)"，补全实际产出摘要
 
 **验收**:
-- [ ] 状态标记与实际一致
+- [x] 状态标记与实际一致
 
 ---
 
