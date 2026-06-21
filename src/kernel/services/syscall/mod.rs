@@ -28,7 +28,6 @@ pub mod dispatch;
 pub mod linuxulator;
 pub mod types;
 
-use crate::kernel::framework::syscall_init as fw_syscall_init;
 use crate::kernel::framework::userctx::UserContext;
 use crate::kernel::framework::usermode;
 use crate::kernel::framework::syscall;
@@ -262,9 +261,11 @@ pub type SyscallHandler = fn(u64, u64, u64, u64) -> i64;
 // 初始化
 // ============================================================================
 
-/// 初始化 syscall 子系统
+/// 初始化 syscall 子系统 (仅注册 services 层分发策略)
+///
+/// 注意: framework 层 MSR/LSTAR 配置由 `framework::syscall_init::syscall_init()` 单独完成,
+/// 此函数仅注册 services 层系统调用分发策略, 不再回调 framework 以避免循环依赖。
 pub fn init() {
-    fw_syscall_init::syscall_init();
     // T-03: 注册 services 层系统调用分发策略
     let _ = dispatch::register_services_dispatch();
 }

@@ -618,7 +618,9 @@ impl Scheduler {
             // 当前在调度器持锁上下文, 独占访问 per-CPU 数据.
             unsafe {
                 let user_cr3 = (*user_proc).cr3.load(Ordering::SeqCst);
+                #[cfg(target_arch = "x86_64")]
                 crate::kernel::framework::arch::gdt::gdt_set_user_cr3(user_cr3);
+                let _ = user_cr3;
             }
         }
 

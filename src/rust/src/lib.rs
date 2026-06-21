@@ -564,6 +564,13 @@ pub extern "C" fn kernel_init() {
 
         crate::klog_boot_info!("QueenX initialized, entering user mode...");
 
+        // 11. Syscall 子系统初始化 (必须在 interrupt_late_init 之后, launch_first_user_process 之前)
+        // 11a. framework 层: MSR/STAR/LSTAR 配置 + epoll 回调注册
+        crate::kernel::framework::syscall_init::syscall_init();
+        // 11b. services 层: 系统调用分发策略注册
+        crate::kernel::services::syscall::init();
+        crate::klog_boot_info!("Syscall subsystem ready");
+
         // 12. Launch first user process
         unsafe {
             crate::kernel::framework::proc::api::launch_first_user_process();

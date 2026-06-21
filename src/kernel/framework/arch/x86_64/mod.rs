@@ -369,10 +369,6 @@ impl MmuArch for X8664 {
                 "push {rflags_if}",            // RFLAGS
                 "push {user_cs}",              // CS
                 "push r12",                    // RIP (entry)
-                // DEBUG: 确认 iretq 前执行流到达此处
-                "mov dx, 0xe9",
-                "mov al, 0x45",                // 'E'
-                "out dx, al",
                 "iretq",
                 in("r12") entry,
                 in("r13") stack,

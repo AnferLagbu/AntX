@@ -56,10 +56,6 @@ isr_common:
     ; 来自用户态时 GS 仍为用户 GS, 需要 swapgs 才能读 per-CPU PML4
     cmp word [rsp+24], 0x23
     jne .isr_no_kpti_enter
-    ; DEBUG: 确认从用户态进入异常
-    mov dx, 0xe9
-    mov al, 0x49                ; 'I'
-    out dx, al
     swapgs
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
@@ -136,10 +132,6 @@ USER_PML4_OFF   equ 16
 global syscall_entry
 syscall_entry:
     swapgs
-    ; DEBUG: 确认 syscall 入口被到达
-    mov dx, 0xe9
-    mov al, 0x53                ; 'S'
-    out dx, al
     xchg rsp, [gs:KERNEL_RSP_OFF]
 
     ; ── 保存 RAX (含 syscall 号), 因为后续 KPTI 切换会破坏 RAX ──
@@ -183,15 +175,7 @@ syscall_entry:
 
     mov rdi, rsp
     cld
-    ; DEBUG: 确认进入 dispatch
-    mov dx, 0xe9
-    mov al, 0x44                ; 'D'
-    out dx, al
     call syscall_dispatch_from_frame
-    ; DEBUG: 确认 dispatch 返回
-    mov dx, 0xe9
-    mov al, 0x52                ; 'R'
-    out dx, al
 
     pop r15
     pop r14
@@ -240,10 +224,6 @@ irq_common:
     ; ── KPTI: 如果来自用户态, 切换到内核页表 ──────────────────────
     cmp word [rsp+24], 0x23
     jne .irq_no_kpti_enter
-    ; DEBUG: 确认从用户态进入 IRQ
-    mov dx, 0xe9
-    mov al, 0x51                ; 'Q'
-    out dx, al
     swapgs
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax

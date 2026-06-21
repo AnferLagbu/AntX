@@ -345,3 +345,74 @@ rustup default stable
 | 2026-06-10 | C 系列 (C4/C5/C7) 剩余工程完成: **C7 Seccomp** — framework/proc/seccomp.rs (SeccompMode/SeccompAction/SeccompRule/SeccompFilter/SeccompState + seccomp_check + sys_seccomp/sys_prctl + fork 继承 + linuxulator 双架构映射) + services/proc/seccomp.rs (0 unsafe); **C5 路由表** — framework/net/route.rs (RouteEntry + KERNEL_ROUTE_TABLE + CIDR 最长前缀匹配 + smoltcp Routes 同步 + sys_route_add/del/query) + services/net/route.rs (0 unsafe); **C5 Netfilter** — framework/net/netfilter.rs (NfHook 5 钩子点 + NfVerdict + NfRule CIDR/端口/协议匹配 + NfChain + NF_STATE + nf_hook/nf_add_rule/nf_register_hook + sys_nf_add_rule/del_rule) + services/net/netfilter.rs (0 unsafe); **C4 io_uring** — framework/io/iouring.rs (IoOpCode + Sqe/Cqe + RingBuffer<T> + IoUring 实例 + URING_TABLE + sys_io_uring_setup/enter/register/submit_sqe) + services/io/iouring.rs (0 unsafe); framework/io/mod.rs 新模块; syscall/types.rs 分配 812-815; 双架构 0w0e + 审计通过 | Phase C 全部完成 (C1-C7) |
 | 2026-06-18 | TCB 缩减工程进展: 迁移 io_uring(525行, 0 unsafe)→services/io, async_ipc(326行, 0 unsafe)→services/ipc, config(525行, 0 unsafe)→services/config; 清理 framework/syscall/mod.rs 13行重复 #[cfg(feature="net")] 属性 + 49处冗余"已迁移"注释精简为紧凑格式; barrier 子系统评估后暂不迁移 (snapshot/bbr/audit/parallel 深度依赖 RECOVERY_MANAGER/DomainState); TCB 67.2%→65.7%; 双架构 0w0e + 三审计通过 | TCB 缩减持续进行 |
 | 2026-06-18 | TCB 候选评估完成: T1-2 信号投递策略 SKIP (策略函数被 unsafe 核心函数内部调用, 提取导致 framework→services 反向依赖); T2-1 VMA 策略完成 (madvise/mlock 已于 P1 #15 提取到 services); T2-2/T2-3/T2-4/T5-1/T6-1 确认均涉及深度 unsafe 耦合无法分离. tcb-reduction-plan 更新: 20完成/7SKIP/6待做 | TCB 策略提取评估完成 |
+| 2026-06-21 | **init 进程 Ring 3 调试工程 (进行中)**: 修复 3 个阻塞性 bug 后 init 进程成功进入 Ring 3 并发出 syscall, 但 `write` syscall (raw=1) 未到达 `syscall_dispatch_impl`, 导致 init 无输出. 详见下方 §五.3 TRACK-INIT-RING3 | init 进程可进入 Ring 3, write syscall 路径待修复 |
+
+---
+
+## 五、已知问题跟踪
+
+### 1. aarch64 LLVM 22 Codegen Bug (TRACK-081BC6/F0ED2E/FA2B11)
+
+**状态**: 已修复 (2026-06-10)
+
+LLVM 22 nightly 对 aarch64 `movz`/`movk` 指令生成无效 fixup, 导致含 inline asm label 的函数编译失败. 修复: `adr` (PC-relative) 替代 `mov`+label; `setup_recovery`/`teardown_recovery` 拆分为 `#[inline(never)]`.
+
+### 2. KPTI Trampoline 集成 (TRACK-KPTI-TRAMPOLINE)
+
+**状态**: 已完成 (2026-06-10)
+
+x86_64 全功能: syscall/IRQ/exception 入口 CR3 切换 + trampoline RO+NX + PCID/INVPCID. aarch64 全功能: TTBR1 切换 + exception/SVC 入口集成.
+
+### 3. init 进程 Ring 3 输出缺失 (TRACK-INIT-RING3)
+
+**状态**: 进行中 (2026-06-21)
+
+#### 问题描述
+init 进程 (PID 2) 成功进入 Ring 3, `mkdir` syscall (Linux raw=83 → QX_MKDIR=560) 正常到达内核并返回 -13 (EACCES), 但 `write` syscall (Linux raw=1 → QX_WRITE=502) **完全未到达 `syscall_dispatch_impl`**, 导致 `println!` 无输出.
+
+#### 已修复的 Bug (3 项)
+
+| # | Bug | 根因 | 修复 | 涉及文件 |
+|---|-----|------|------|----------|
+| 1 | `enter_user` 中错误的 `swapgs` | 在 `iretq` 前 swapgs 导致 GS_BASE 与 KERNEL_GS_BASE 互换, 中断入口 swapgs 后 GS_BASE=0 | 删除 `enter_user` 中的 `swapgs`; kernel 使用 IA32_KERNEL_GS_BASE 存 per-CPU 数据, swapgs 仅在 syscall/IRQ 入口使用 | `framework/arch/x86_64/mod.rs` |
+| 2 | `syscall_entry` 中 RAX 被 KPTI CR3 切换破坏 | `mov rax, [gs:KERNEL_PML4_OFF]; mov cr3, rax` 覆盖了 RAX 中的 syscall 号 | KPTI 切换前 `push rax`, 切换后 `pop rax` 恢复 syscall 号 | `framework/boot/isr.asm` |
+| 3 | syscall 子系统初始化缺失 + 循环依赖 | `framework::syscall_init::syscall_init()` 未被 `kernel_init` 调用; 旧实现中 framework 调 services, services 又回调 framework | 拆分为两阶段: framework (MSR/STAR/LSTAR) + services (dispatch 注册), 在 `kernel_init` 中顺序调用 | `framework/syscall_init.rs`, `services/syscall/mod.rs`, `rust/src/lib.rs` |
+
+#### 当前症状与证据
+
+1. **串口日志**: `SYSCALL-DISPATCH raw=83 translated=560` 反复出现 (init 安装向导循环调用 mkdir), **无 raw=1 的任何记录**
+2. **QEMU 调试**: `syscall_entry` 汇编入口的 `out 0xe9, 'S'` 调试输出**仅出现在 mkdir 时**, write syscall 时无 'S' 输出
+3. **syscall 指令本身正常**: mkdir (raw=83) 能成功触发 `syscall` → `syscall_entry` → `syscall_dispatch_impl` 全路径
+4. **framework 回退**: `QX_WRITE` 在 framework 回退中已实现 (`sys_write` 对 fd=1/2 调用 `serial_write_bytes`), 但 write syscall 根本未到达此处
+
+#### 待排查方向
+
+| # | 方向 | 具体检查 | 优先级 |
+|---|------|----------|--------|
+| A | **用户态 sys_write 包装** | 检查 `src/user/lib/src/sys.rs` 中 `fs_write`/`SYS_write` 定义, 确认 `sys3` 宏是否正确设置 RAX=1 并执行 `syscall` 指令 | 高 |
+| B | **用户态 println! 实现** | 检查 `src/user/lib/src/` 中 `println!`/`print!` 宏展开, 确认是否调用 `fs_write(1, ...)` 还是其他输出路径 | 高 |
+| C | **init 进程 _start 入口** | 检查 init 的 C runtime 入口 (`_start`), 确认是否正确调用 `main` 而非在入口处崩溃 | 高 |
+| D | **syscall 指令触发条件** | 在 QEMU 中设断点 `syscall_entry`, 观察 write 路径是否执行到 `syscall` 指令; 检查 RAX 是否为 1 | 中 |
+| E | **用户态页表映射** | 检查 init 进程的用户态页表是否正确映射了 user lib 代码段 (含 sys_write/syscall 指令) | 中 |
+| F | **SIGILL/SIGSEGV 静默吞没** | 如果 `syscall` 指令在用户态触发异常 (如未映射代码页), 可能被信号处理静默吞没, 需检查异常日志 | 低 |
+
+#### 关键代码位置
+
+- **syscall 汇编入口**: `src/kernel/framework/boot/isr.asm` — `syscall_entry`
+- **syscall Rust 分发**: `src/kernel/framework/syscall/mod.rs` — `syscall_dispatch_impl`
+- **sys_write 实现**: `src/kernel/framework/syscall/mod.rs:623` — `fn sys_write`
+- **用户态 syscall 包装**: `src/user/lib/src/sys.rs` — `fs_write`/`sys3`
+- **init 进程**: `src/user/init/src/main.rs`
+- **用户态 lib 入口**: `src/user/lib/src/` — `_start`/`println!`
+- **enter_user**: `src/kernel/framework/arch/x86_64/mod.rs` — `enter_user`
+- **进程切换**: `src/kernel/framework/proc/user_proc.rs` — `UserProcRunner::enter`
+- **STAR/LSTAR MSR**: `src/kernel/framework/syscall_init.rs`
+- **services dispatch 注册**: `src/kernel/services/syscall/dispatch.rs`
+
+#### 调试日志 (待清理)
+
+以下调试输出已添加但应在问题解决后清理:
+- `isr.asm`: `out 0xe9, 'S'` (syscall 入口)
+- `syscall/mod.rs`: `klog_boot_info!("[SYSCALL-DISPATCH] raw={} translated={}")`
+- `user_proc.rs`: `klog_boot_info!("[USER] enter: ...")`
+- `arch/x86_64/mod.rs`: `out 0xe9, 'E'` (enter_user)
