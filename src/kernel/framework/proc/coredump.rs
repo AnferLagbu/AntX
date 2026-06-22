@@ -657,7 +657,7 @@ fn write_segment_data(
         // 简化实现: 使用当前 CR3 (假设是目标进程, 因为 coredump 在信号投递时调用)
         let src = addr as *const u8;
         // 尝试读取, 如果页不存在则写零
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; PAGE_SIZE as usize];
         let readable = copy_from_user_safe(src, chunk_size as usize, &mut buf);
 
         if readable > 0 {

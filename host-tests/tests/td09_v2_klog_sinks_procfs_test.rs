@@ -121,8 +121,8 @@ fn framework_klog_has_safe_name_at() {
 fn render_text_contains_header_and_count() {
     let src = read(KLOG_SERVICES_RS);
     let body = body_after(&src, "pub fn render_text");
-    assert!(body.contains("AntX klog sinks"),
-        "render_text 必须含 'AntX klog sinks' 头");
+    assert!(body.contains("QueenX klog sinks"),
+        "render_text 必须含 'QueenX klog sinks' 头 (内核项目标识)");
     assert!(body.contains("count: "),
         "render_text 必须含 'count: ' 字段");
     assert!(body.contains(": "),

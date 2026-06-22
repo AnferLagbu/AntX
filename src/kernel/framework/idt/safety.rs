@@ -3,7 +3,11 @@
 //! 提供对 x86-64 底层硬件寄存器的安全访问接口。
 //! 封装内联汇编，提供类型安全的 API。
 
-use crate::kernel::framework::mm::{KERNEL_BASE, USER_ADDR_MIN};
+// USER_ADDR_FLOOR: 仅 `is_null_or_invalid` 使用, 该函数在非 test 构建中无人调用
+// (见 idt/idt.rs:146 与 idt/idt.rs:687, 后者由 #[allow(dead_code)] 的 default_exception_handler 间接覆盖)
+// 在 test 构建中本函数被使用, 故这里添加 `#[allow(unused_imports)]` 避免非 test 构建误报.
+#[allow(unused_imports)]
+use crate::kernel::framework::mm::{KERNEL_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
 #[cfg(test)]
 use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
 

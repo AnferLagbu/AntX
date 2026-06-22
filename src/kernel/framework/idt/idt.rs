@@ -31,7 +31,7 @@ use crate::kernel::framework::sync::IrqSpinLock;
 
 
 use crate::kernel::framework::sync::OnceLock;
-use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_MIN};
+use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
 use crate::klog_err;
 use crate::klog_info;
 // 内联硬件操作函数 (避免跨模块导入问题)
@@ -144,7 +144,7 @@ fn halt_loop() -> ! {
 /// 检查指针是否为 null 或无效 (待 IDT 诊断路径启用后使用)。
 #[allow(dead_code)] // 待 IDT 诊断路径启用后使用。
 fn is_null_or_invalid(ptr: u64) -> bool {
-    ptr == 0 || ptr < 0x1000
+    ptr == 0 || ptr < USER_ADDR_FLOOR
 }
 
 /// 验证 user 地址 (待 IDT 诊断路径启用后使用)。

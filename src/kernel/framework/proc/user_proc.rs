@@ -1057,7 +1057,7 @@ impl UserProcManager {
         // 用户态中断触发时 CPU 从 TSS 读取 RSP0 并切换到该栈,
         // 但内核大页映射没有 USER 位, 需要显式映射为 USER 可访问.
         {
-            let rsp0_page = kstack & !(0x1000 - 1);
+            let rsp0_page = kstack & !(PAGE_SIZE - 1);
             let rsp0_phys = rsp0_page - crate::kernel::framework::mm::KERNEL_BASE as u64;
             crate::kernel::framework::mm::get_vmm().map_page_in_table(
                 cr3,

@@ -23,7 +23,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::idt::IdtManager;
 use super::types::*;
-use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_MIN};
+use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
 use crate::klog_err;
 use crate::klog_warn;
 
@@ -222,7 +222,7 @@ impl ExceptionHandler for PageFaultHandler {
 
         match analysis.cause {
             FaultCause::PageNotPresent => {
-                if fault_addr == 0 || fault_addr < 0x1000 {
+                if fault_addr == 0 || fault_addr < USER_ADDR_FLOOR {
                     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     unsafe {
                         (*frame).rip += 2;

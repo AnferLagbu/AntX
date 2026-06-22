@@ -40,7 +40,7 @@ use crate::kernel::framework::klog::klog_ffi_info;
 use crate::klog_error;
 use crate::kernel::framework::mm::{
     pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
-    vmm_switch_page_table,
+    vmm_switch_page_table, PAGE_SIZE,
 };
 use crate::kernel::framework::timer::timer_get_ticks;
 
@@ -610,7 +610,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let pages = file_size.div_ceil(4096u64) as usize;
+    let pages = file_size.div_ceil(PAGE_SIZE) as usize;
     let buffer = pmm_alloc_pages(pages);
     if buffer.is_null() {
         crate::kernel::framework::fs::vfs_close(fd as u32);
