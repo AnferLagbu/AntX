@@ -72,7 +72,7 @@ pub fn sys_uname(buf: u64) -> i64 {
     copy_str(&mut uts.sysname, b"AntX");
     copy_str(&mut uts.nodename, b"antx-node");
     copy_str(&mut uts.release, b"0.1.0");
-    copy_str(&mut uts.version, b"AntX 0.1.0 (queenx)");
+    copy_str(&mut uts.version, b"QueenX 0.1.0 (queenx)");
     #[cfg(target_arch = "x86_64")]
     copy_str(&mut uts.machine, b"x86_64");
     #[cfg(target_arch = "aarch64")]

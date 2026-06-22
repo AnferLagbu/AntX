@@ -148,7 +148,7 @@ pub fn render_text(buf: &mut [u8]) -> usize {
         *p += len;
     };
 
-    push_str(buf, &mut pos, "AntX klog sinks\n");
+    push_str(buf, &mut pos, "QueenX klog sinks\n");
     push_str(buf, &mut pos, "===============\n");
     push_str(buf, &mut pos, "count: ");
     push_usize(buf, &mut pos, n);

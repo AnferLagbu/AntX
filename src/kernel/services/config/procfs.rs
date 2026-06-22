@@ -181,7 +181,7 @@ fn write_json(buf: &mut [u8]) -> usize {
     push_str(buf, &mut pos, "{");
     push_field_str(buf, &mut pos, "format_version", "1");
     push_str(buf, &mut pos, ",");
-    push_field_str(buf, &mut pos, "kernel", "AntX");
+    push_field_str(buf, &mut pos, "kernel", "QueenX");
     push_str(buf, &mut pos, ",");
     push_field_num(buf, &mut pos, "max_cpus", s.max_cpus as u64);
     push_str(buf, &mut pos, ",");
