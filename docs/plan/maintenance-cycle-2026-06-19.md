@@ -529,7 +529,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP)
+### [ ] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP) — **未完成, 等 smoltcp 0.12**
 
 **原 SKIP 原因**: 含 55 处 unsafe (smoltcp Interface/MMIO/DMA/中断)
 
@@ -550,7 +550,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] REVAL-5: T4-1/T4-2/T4-3 credo/eBPF 策略提取 (原 SKIP)
+### [ ] REVAL-5: T4-1/T4-2/T4-3 credo/eBPF 策略提取 (原 SKIP) — **未完成, T4-1/2 留 Phase D, T4-3 留 Phase E**
 
 **原 SKIP 原因**:
 - T4-1: 深度依赖 PROCESS_TABLE 和 credo 内部模块
@@ -574,7 +574,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] REVAL-6: T5-3 epoll 策略迁移 (原 SKIP) — 仍 SKIP
+### [ ] REVAL-6: T5-3 epoll 策略迁移 (原 SKIP) — **未完成, 仍 SKIP**
 
 **原 SKIP 原因**: 含 3 处 unsafe (用户态指针读写)，深度依赖 VFS/scheduler/eventfd 等
 
@@ -701,7 +701,7 @@ pub use x86_64::ioapic;
 
 > 以下项目来自 maintenance-2026-06-11.md 中 `[ ]` 未闭合项，经源码验证后纳入。
 
-### [x] LEGACY-1: 用户态进程可正常运行 axsh — DEFERRED (留待 QEMU 真机测试)
+### [x] LEGACY-1: 用户态进程可正常运行 axsh — **x86_64 已 QEMU 真机验证, aarch64 待环境就绪**
 
 **来源**: maintenance-2026-06-11.md I-29 验收清单
 **当前**: 用户态 Ring 3 切换已实现，但 axsh 集成运行尚未验证
@@ -724,7 +724,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] LEGACY-2: Socket 并发性能测试 — DEFERRED (留待性能优化 phase)
+### [ ] LEGACY-2: Socket 并发性能测试 — **未完成 (DEFERRED 到 Phase E)**
 
 **来源**: maintenance-2026-06-11.md I-42 验收清单
 **当前**: SocketWaitQueue 基础设施已实现，但性能测试未补
@@ -739,7 +739,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] LEGACY-3: virtio-blk I/O 中断路径实测 — DEFERRED (留待 QEMU 真机测试)
+### [ ] LEGACY-3: virtio-blk I/O 中断路径实测 — **未完成 (DEFERRED 到 Phase E)**
 
 **来源**: maintenance-2026-06-11.md I-43 验收清单 + delivery-summary-2026-06-13.md
 **当前**: ISR acknowledge + IoCompletionArray + 多实例已实现，但未在 QEMU + virtio 设备上实测
@@ -756,7 +756,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] LEGACY-4: BlockOps thunk 移除优化 — DEFERRED (留待 chitin 重构)
+### [ ] LEGACY-4: BlockOps thunk 移除优化 — **未完成 (DEFERRED 到 Phase E)**
 
 **来源**: maintenance-2026-06-11.md I-43 剩余工作
 **当前**: 内核全部为内部 trait dispatch，BlockOps thunk 可在未来移除
@@ -772,7 +772,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] LEGACY-5: HvFS 全部子系统 trait 化 — DEFERRED (按需扩展)
+### [ ] LEGACY-5: HvFS 全部子系统 trait 化 — **未完成 (按需扩展, 当前 Checksum 已 [x])**
 
 **来源**: maintenance-2026-06-11.md I-04 验收清单
 **当前**: 仅 Checksum trait 已完成，其余子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 待按需扩展
@@ -790,7 +790,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] LEGACY-6: sysctl 框架实现 — DEFERRED (Phase D 范围)
+### [x] LEGACY-6: sysctl 框架实现 — **已实装 services/config/sysctl.rs (314 行)**
 
 **来源**: maintenance-2026-06-11.md I-46 验收清单
 **当前**: 运行时调参 API 已有 (AtomicUsize)，但无 sysctl 框架
@@ -815,7 +815,7 @@ pub use x86_64::ioapic;
 
 > 以下为 USB/Display 驱动占位 TODO，当前标记为"保留占位"。维护周期应评估是否可推进。
 
-### [x] DRIVER-1: USB 驱动占位评估 — 保留占位 (Phase E 范围)
+### [ ] DRIVER-1: USB 驱动占位评估 — **未完成 (保留占位, Phase E 范围)**
 
 **当前**: 6 处 TRACK 标记
 - `TRACK-558BA7`: 扫描 PCI 总线查找 xHCI 控制器
@@ -841,7 +841,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [x] DRIVER-2: Display 驱动占位评估 — 保留占位 (Phase E 范围)
+### [ ] DRIVER-2: Display 驱动占位评估 — **未完成 (保留占位, Phase E 范围)**
 
 **当前**: 8 处 TRACK 标记
 - `TRACK-599EDA`: 读取 HPD 引脚状态 (DP)
@@ -943,10 +943,70 @@ pub use x86_64::ioapic;
 
 ---
 
+## 九、未完成任务权威清单 (2026-06-22 终审)
+
+> **重要**: SKIP / DEFERRED 状态**算未完成**。本节是工程交接时的必读索引。
+
+### 9.1 当前 `[ ]` 状态任务 (9 项 — 全部 DEFERRED 到 Phase D/E)
+
+| # | 任务 ID | 任务 | 真实状态 | 解除阻塞条件 | 估算工作量 |
+|---|---------|------|----------|--------------|------------|
+| 1 | **REVAL-4** | T3-1 网络初始化策略提取 | 等 smoltcp 0.12 (Q4 2026) | smoltcp 0.12 发布 | ~3 月 |
+| 2 | **REVAL-5 T4-1** | credo PROCESS_TABLE → `OnceLock<Mutex<>>` | PwmEntry 混合 Atomic+非 Atomic 字段, 需全 Atomic 化 | ① 重构 PwmEntry; ② ~30 个调用方 API 适配 | ~2 周 |
+| 3 | **REVAL-5 T4-2** | credo 能力矩阵 → `OnceLock<Mutex<>>` | 同 T4-1, 涉及 `CapabilityMatrix` 字段 | 同 T4-1 | ~1 周 |
+| 4 | **REVAL-5 T4-3** | eBPF 验证器 → services | 解释器 (`BpfInterpreter`) 重构同步 | 重构 eBPF 解释器 | ~1 月 |
+| 5 | **REVAL-6** | T5-3 epoll 策略迁移 | 1048 行 epoll.rs 深度依赖 VFS/scheduler/eventfd, 中断安全机制 | ① epoll 与 framework 解除深度耦合; ② 重写 eventfd 桥接 | ~1 月 |
+| 6 | **LEGACY-2** | Socket 1000 并发 send 延迟 < 1ms | 需 micro-bench 集成 | ① `framekernel-bench` 集成 Socket 路径; ② QEMU + 高并发负载 | ~3 天 |
+| 7 | **LEGACY-3** | virtio-blk 4K 写延迟 < 100μs | 需专门 benchmark 工具 | ① virtio-blk I/O micro-bench; ② QEMU virtio-blk 设备 | ~1 周 |
+| 8 | **LEGACY-4** | BlockOps thunk 移除 | 需 xHCI Mass Storage 完成 BlockDevice trait 迁移 | 与 DRIVER-1 USB xHCI 同步推进 | ~1 月 |
+| 9 | **LEGACY-5** | HvFS 全部子系统 trait 化 (除 Checksum) | 7 个子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 按需扩展 | 触发条件: zil/snapshot 单元测试需脱离真实 vdev | ~1 月 (触发后) |
+| 10 | **DRIVER-1** | USB 驱动 (xHCI) | 6 处 TRACK 占位, 协议栈 ~3000 行 | ① QEMU `-device qemu-xhci` 测试; ② USB 设备透传 | ~1-2 月 |
+| 11 | **DRIVER-2** | Display 驱动 (DP/HDMI) | 8 处 TRACK 占位, 协议栈 ~1500 行 | ① QEMU `-device virtio-vga`; ② EDID 注入 | ~1-2 月 |
+
+### 9.2 [x] 但实质仅做文档/评估的任务 (16 项)
+
+> 这 16 项**不算未完成**, 但实际仅做了"扫描 + 评估报告", 未产生代码改动或测试验证。
+
+| 任务 ID | 任务 | 实际做了 |
+|---------|------|----------|
+| HARD-1 | KERNEL_BASE 重复定义消除 | 验证已修复 |
+| HARD-4 | Cache line size 提取 | 验证已就位 |
+| HARD-5 | VIRTIO_MMIO_BASE 统一 | 文档验收 |
+| HARD-6 | KERNEL_TEXT_BASE 提取 | 验证已就位 |
+| HARD-7 | 空指针阈值语义化 | 验证已就位 |
+| DECOUPL-1/2/3 | services→framework 边界 | 验证 re-export 已生效 |
+| QUAL-1~6 | 代码质量审查 | 扫描 + 文档 |
+| REVAL-1 | 信号投递策略提取 | **已实装** `StandardSignalPolicy` + `init()` 注册 |
+| REVAL-2 | posix_timer 策略迁移 | **已迁移** (6 个 syscall 在 services/proc/posix_timer.rs) |
+| REVAL-3 | pcache 策略提取 | **评估完成** (无 LRU 链表, 无 trait 价值) |
+| DOC-1~7 | 文档状态对齐 | 文档更新 |
+| LEGACY-1 | axsh QEMU 真机测试 | **x86_64 已实测** 0.20s 到 Ring 3; aarch64 待环境就绪 |
+| LEGACY-6 | sysctl 框架 | **已实装** services/config/sysctl.rs (314 行) |
+
+### 9.3 [x] 实际改代码的任务 (5 项)
+
+| 任务 ID | 改动文件 | 代码量 |
+|---------|----------|--------|
+| **HARD-2** | framework/proc/{api,user_proc,coredump}.rs + idt/{safety,idt,handlers}.rs | 6 处 0x1000/4096 → PAGE_SIZE/USER_ADDR_FLOOR |
+| **HARD-3** | services 7+ 文件 + 修 td09 预存问题 | 1 处 AntX→QueenX 修复 |
+| **REVAL-1** | services/proc/signal.rs + mod.rs | StandardSignalPolicy + register |
+| **DECOUPL-4** | framework/mm/mod.rs + framework/fs/mod.rs + framework/proc/api.rs | 2 re-export + 3 调用更新 |
+| **LEGACY-6** | services/config/sysctl.rs (新建) | 314 行 sysctl 框架 |
+
+### 9.4 交接清单 (Phase D/E 推进时)
+
+1. **优先低工作量高收益**: REVAL-5 T4-1 (credo PROCESS_TABLE) → 解除 ~50 行 unsafe
+2. **优先性能验证**: LEGACY-2 (Socket 1000 并发) → 主机端可做
+3. **优先功能补全**: LEGACY-5 HvFS DMU trait (有具体触发条件时启动)
+4. **大工作量任务**: DRIVER-1/2, REVAL-4, LEGACY-4 — 需要完整 phase 周期, 至少 1 个月
+
+---
+
 ## 变更历史
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-22 | **§九 未完成任务权威清单新增** — SKIP/DEFERRED 算未完成, 9 项 `[ ]` 任务全部 DEFERRED 到 Phase D/E, 已记录在 §9.1 |
 | 2026-06-22 | **第 10 批 (重审 SKIP 任务)**: 实际实施 4 项, 评估完成 8 项. (1) REVAL-1: services 端 StandardSignalPolicy 已实装, init() 注册; (2) DECOUPL-4: framework/mm/f numa_init + fs/unpack + arch/cet_init 顶层 re-export 落地, proc/api.rs 3 处 3 层 → 2 层; (3) LEGACY-6: 新增 services/config/sysctl.rs 314 行 (0 unsafe, 3 种类型, IrqSpinLock 保护); (4) LEGACY-1: QEMU x86_64 真机启动实测 0.20s 到 Ring 3 + AntX Installation Wizard 显示. REVAL-2/3/5: SKIP 评估正确 (PwmEntry 混合字段/无 LRU 链表/调用方契约). 其余 SKIP (REVAL-4/6, LEGACY-3/4/5, DRIVER-1/2) 工作量超出本维护周期 |
 | 2026-06-22 | **第 9 批 (4 项)**: REVAL-6 (epoll 仍 SKIP 维持现状) + DOC-3 (engineering-discipline 50.0% + 新候选列表) + DOC-4 (deep-audit 全部 50 项已修复) + HARD-5 (VIRTIO_MMIO_BASE 验收闭合) 全部 [x] |
 | 2026-06-22 | **第 8 批 (3 项)**: QUAL-5 (services 13 处占位全部带注释, 阶段占位保留) + REVAL-1 (信号投递仍 SKIP, 中断路径高频) + REVAL-4 (网络初始化留 Phase E 等 smoltcp 0.12) + REVAL-5 (T4-1/2 留 Phase D, T4-3 验证器留 Phase E) 全部 [x] |
