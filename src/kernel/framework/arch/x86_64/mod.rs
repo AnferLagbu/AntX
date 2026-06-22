@@ -334,6 +334,7 @@ impl MmuArch for X8664 {
         // 避免编译器寄存器分配冲突导致参数错位 (之前 in("r11") user_cr3
         // 被编译器重映射为 rdx 导致 CR3 写入错误值).
         // 常量通过 const 操作数传递, 由汇编器直接编码为立即数.
+        // SAFETY: 见上方完整注释 — 调用方保证 entry/stack/user_cr3/kstack 有效.
         unsafe {
             core::arch::asm!(
                 "cli",

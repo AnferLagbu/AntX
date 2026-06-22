@@ -521,6 +521,7 @@ impl VirtualMemoryManager {
 
             // 同时用 sgdt 指令读取实际 GDTR 值进行对比
             let actual_gdt_base: u64;
+            // SAFETY: sgdt 是特权指令, 仅读取 GDTR 到栈上缓冲区, 不修改任何状态.
             unsafe {
                 let mut buf: [u8; 10] = core::mem::zeroed();
                 core::arch::asm!("sgdt [{}]", in(reg) buf.as_mut_ptr() as u64, options(nostack));
@@ -534,6 +535,8 @@ impl VirtualMemoryManager {
             // 读取 IDT 基地址和限制 (sidt 指令)
             let idt_base: u64;
             let idt_limit: u16;
+            // SAFETY: sidt 是特权指令, 仅读取 IDTR 到栈上, 不修改任何状态.
+            // sub rsp,10 / add rsp,10 保护红区.
             unsafe {
                 core::arch::asm!("sub rsp, 10", "sidt [rsp]", "mov rax, [rsp + 2]", "movzx cx, [rsp]", "add rsp, 10", out("rax") idt_base, out("cx") idt_limit);
             }

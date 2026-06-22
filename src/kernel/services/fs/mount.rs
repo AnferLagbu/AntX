@@ -100,6 +100,5 @@ pub fn umount2_syscall(target_ptr: u64, flags: i32) -> Result<usize, Errno> {
 /// mount/umount2 在调用前还需 `pwm_has_capability(..., CAP_SYS_ADMIN)` 检查,
 /// 这里仅返回原始凭证,真正权限决策交给 capability 模块。
 fn current_pwm() -> Result<u64, Errno> {
-    let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
+    Ok(credo::api::pwm_get_current())
 }

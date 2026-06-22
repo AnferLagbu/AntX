@@ -5,7 +5,9 @@ use crate::sys::{O_CREAT, O_RDONLY, O_WRONLY};
 pub fn file_open(path: &[u8], flags: i32) -> i32 {
     let mut p = [0u8; 256]; let len = core::cmp::min(path.len(), 255);
     p[..len].copy_from_slice(&path[..len]); p[len] = 0;
-    sys::fs_open(&p[..len + 1], flags, 0o644)
+    // mode 仅在 O_CREAT 时有效, 其他情况传 0 (POSIX 语义)
+    let mode = if (flags & O_CREAT) != 0 { 0o644 } else { 0 };
+    sys::fs_open(&p[..len + 1], flags, mode)
 }
 
 pub fn file_copy(src_path: &[u8], dst_path: &[u8]) -> bool {

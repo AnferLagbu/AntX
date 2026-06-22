@@ -85,7 +85,7 @@ fn write_text(buf: &mut [u8]) -> usize {
         push_str(dst, p, if val { "yes" } else { "no" });
     };
 
-    push_str(buf, &mut pos, "AntX Kernel Configuration\n");
+    push_str(buf, &mut pos, "QueenX Configuration\n");
     push_str(buf, &mut pos, "==========================\n");
     push_str(buf, &mut pos, "max_cpus:        ");
     push_usize(buf, &mut pos, s.max_cpus);

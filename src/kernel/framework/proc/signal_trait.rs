@@ -45,15 +45,15 @@ pub struct FallbackSignalPolicy;
 impl SignalDecision for FallbackSignalPolicy {
     fn default_action(&self, sig: u8) -> SignalDefaultAction {
         match sig {
-            // Ign: CHLD(17), URG(23)
+            // 忽略: CHLD(17), URG(23)
             17 | 23 => SignalDefaultAction::Ign,
-            // Stop: STOP(19), TSTP(20), TTIN(21), TTOU(22)
+            // 停止: STOP(19), TSTP(20), TTIN(21), TTOU(22)
             19 | 20 | 21 | 22 => SignalDefaultAction::Stop,
-            // Cont: CONT(18)
+            // 继续: CONT(18)
             18 => SignalDefaultAction::Cont,
-            // Core: QUIT(3), ILL(4), ABRT(6), BUS(7), FPE(8), SEGV(11), SYS(31), XCPU(24), XFSZ(25)
+            // 核心转储: QUIT(3), ILL(4), ABRT(6), BUS(7), FPE(8), SEGV(11), SYS(31), XCPU(24), XFSZ(25)
             3 | 4 | 6 | 7 | 8 | 11 | 31 | 24 | 25 => SignalDefaultAction::Core,
-            // Term: 其余所有信号
+            // 终止: 其余所有信号
             _ => SignalDefaultAction::Term,
         }
     }

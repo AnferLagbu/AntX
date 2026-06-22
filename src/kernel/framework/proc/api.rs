@@ -694,6 +694,12 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
         p.parent_pid = 1;
     });
 
+    // 更新 per_cpu().current, 使后续 syscall 路径中 process_get_current_pid()
+    // 能正确返回当前用户进程 PID, 而非 idle 进程 (PID 1).
+    // 若遗漏此步骤, credo::session 会读取到 idle 进程的 session 上下文
+    // (session_pwm=0), 导致 current_pwm() 返回 EACCES, 所有文件操作失败.
+    SCHEDULER.set_current(pid);
+
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
         USER_PROC_MANAGER.enter(proc);
         0

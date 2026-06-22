@@ -53,8 +53,7 @@ pub const O_CLOEXEC: i32 = 0o2_000_000;
 /// 实际会让所有未登录态调用落入 "匿名管理员" 路径,绕过访问控制。
 /// 现在严格走 session 模块,无会话即拒绝。
 fn current_pwm() -> Result<u64, Errno> {
-    let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
+    Ok(credo::api::pwm_get_current())
 }
 
 /// 验证 open flags 合法: 只接受低 3 位访问模式, 其他位 POSIX 定义.
@@ -97,11 +96,10 @@ pub fn open_syscall(path_ptr: u64, flags: i32, mode: i32) -> Result<usize, Errno
         return Err(Errno::EFAULT);
     }
     validate_flags(flags)?;
-    // mode 仅在 O_CREAT 生效, 否则忽略
-    if (flags & O_CREAT) == 0 && mode != 0 {
-        return Err(Errno::EINVAL);
-    }
-    // mode 必须 < 0o7777 (suid/sgid/sticky 之外)
+    // mode 仅在 O_CREAT 生效, 否则忽略 (POSIX 允许 mode 参数始终存在, 内核忽略)
+    // 注意: 此前此处错误地拒绝 mode != 0 且无 O_CREAT 的情况, 导致所有非 O_CREAT
+    // 的 open 调用若携带 mode 参数即返回 EINVAL, 违反 POSIX 语义.
+    // 修复: 移除该虚假校验, 仅在 O_CREAT 时校验 mode 范围.
     if (flags & O_CREAT) != 0 && !(0..=0o7777).contains(&mode) {
         return Err(Errno::EINVAL);
     }

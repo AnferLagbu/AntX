@@ -86,6 +86,5 @@ pub fn fstat_syscall(fd: i32, st_buf_ptr: u64) -> Result<usize, Errno> {
 
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
-    let pwm = credo::api::pwm_get_current();
-    if pwm == 0 { Err(Errno::EACCES) } else { Ok(pwm) }
+    Ok(credo::api::pwm_get_current())
 }

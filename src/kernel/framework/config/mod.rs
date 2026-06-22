@@ -1,6 +1,6 @@
 //! 系统配置中心
 //!
-//! AntX 内核的 **统一配置中心 + 启动自检中心**.
+//! QueenX 内核的 **统一配置中心 + 启动自检中心**.
 //!
 //! ## 职责
 //!
@@ -124,7 +124,7 @@ pub fn print_config_table() {
     let caps = s.capabilities;
 
     klog_info!(Boot, "+----------------------------------------------------+");
-    klog_info!(Boot, "|          AntX Kernel Configuration                 |");
+    klog_info!(Boot, "|          QueenX Configuration                      |");
     klog_info!(Boot, "+-------------------------+--------------------------+");
     klog_info!(
         Boot,
@@ -203,7 +203,7 @@ pub fn init() {
     let summary = get_config_summary();
     let caps = summary.capabilities;
 
-    klog_info!(Boot, "==== AntX Kernel Configuration ====");
+    klog_info!(Boot, "==== QueenX Configuration ====");
     klog_info!(
         Boot,
         "  CPUs:    {} / {}",

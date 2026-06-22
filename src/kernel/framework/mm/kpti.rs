@@ -417,6 +417,8 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
         kernel_pml4, user_pml4_phys, pcid_enabled, kernel_cr3, user_cr3
     );
 
+    // SAFETY: boot 阶段单 CPU 执行, kernel_cr3/user_cr3 是合法 PML4 物理地址,
+    // gdt_set_kpti_pml4 是安全的 FFI 调用, cpu 索引 0..256 合法.
     unsafe {
         for cpu in 0..256u32 {
             crate::kernel::framework::arch::gdt::gdt_set_kpti_pml4(cpu, kernel_cr3, user_cr3);

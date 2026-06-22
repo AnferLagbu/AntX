@@ -227,8 +227,14 @@ syscall_entry:
     ; ── KPTI: 切换到用户页表 ──────────────────────────────────────
     ; iretq 前 CR3 必须切回 USER_PML4, 否则用户态无法寻址.
     ; 当前在内核栈上, [gs:OFF] 可安全访问.
+    ;
+    ; 教训: mov cr3, rax 会覆盖 RAX, 入口路径有 push/pop rax 保护,
+    ; 但退出路径此前遗漏了该保护, 导致所有 syscall 返回值被用户页表
+    ; 物理地址覆盖, 表现为用户态看到随机的 "成功" 返回值.
+    push rax                           ; 保护 syscall 返回值
     mov rax, [gs:USER_PML4_OFF]
     mov cr3, rax
+    pop rax                            ; 恢复 syscall 返回值
 
     swapgs                            ; 恢复用户 GS 段
     iretq
