@@ -529,7 +529,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [ ] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP) — **未完成, 等 smoltcp 0.12**
+### [ ] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP) — **未完成, 与 smoltcp 版本无关**
 
 **原 SKIP 原因**: 含 55 处 unsafe (smoltcp Interface/MMIO/DMA/中断)
 
@@ -541,12 +541,14 @@ pub use x86_64::ioapic;
 - [x] 评估结论记录
 - [x] 若可行，制定提取方案
 
-**评估结论** (2026-06-22): **部分可推进, 但需重写 smoltcp 接口层**. 详细分析:
-1. 55 处 unsafe 中, 38 处集中在 smoltcp `Interface::new()` / `Interface::poll()` / `Socket::new()` 等接口初始化, 与 smoltcp 3rd-party 类型深度绑定
-2. DHCP 客户端策略 (DHCPC state machine) 可独立提取, 但需要将 `DhcpConfig` 数据结构从 `framework/net/dhcp.rs` 移到 `services/net/dhcp_policy.rs`
-3. 协议栈初始化顺序 (e1000 init → smoltcp Interface → DHCP → Sockets) 可用配置表 `pub const INIT_ORDER: &[InitStep]` 表达, 但 InitStep 内部仍调用 framework unsafe
-4. 边际收益: TCB 减少 ~200 行 (DHCP 策略 + 顺序表), 但需要新增 100+ 行配置表转换代码
-5. 决策: 留待 smoltcp 内部抽象成熟后 (smoltcp 0.12 计划 2026 Q4 发布), 在 Phase E 统一推进
+**评估结论** (2026-06-22 修正): **部分可推进, 与 smoltcp 版本无关**. 详细分析:
+1. **重要修正**: 项目当前使用 **smoltcp 0.13.0** (vendored, `framework/net/smoltcp/Cargo.toml:3` 验证), 不是"等 0.12"。smoltcp 0.12 早已发布, 0.13.0 是当前 vendored 版本
+2. 55 处 unsafe 中, 38 处集中在 smoltcp `Interface::new()` / `Interface::poll()` / `Socket::new()` 等接口初始化, 与 smoltcp 3rd-party 类型深度绑定 (与版本无关)
+3. DHCP 客户端策略 (DHCPC state machine) 可独立提取, 但需要将 `DhcpConfig` 数据结构从 `framework/net/dhcp.rs` 移到 `services/net/dhcp_policy.rs`
+4. 协议栈初始化顺序 (e1000 init → smoltcp Interface → DHCP → Sockets) 可用配置表 `pub const INIT_ORDER: &[InitStep]` 表达, 但 InitStep 内部仍调用 framework unsafe
+5. 边际收益: TCB 减少 ~200 行 (DHCP 策略 + 顺序表), 但需要新增 100+ 行配置表转换代码
+6. **真正 SKIP 原因**: 与 smoltcp 版本号无关, 是因为 smoltcp Interface API 设计本身是 3rd-party 类型深度绑定。提取需要重写为 trait 抽象 (与 smoltcp 哪个版本无关)
+7. 决策: 留待 Phase E, 提取的边际收益 (TCB 减少 ~200 行) 远小于新 trait 抽象复杂度
 
 ---
 
@@ -951,7 +953,7 @@ pub use x86_64::ioapic;
 
 | # | 任务 ID | 任务 | 真实状态 | 解除阻塞条件 | 估算工作量 |
 |---|---------|------|----------|--------------|------------|
-| 1 | **REVAL-4** | T3-1 网络初始化策略提取 | 等 smoltcp 0.12 (Q4 2026) | smoltcp 0.12 发布 | ~3 月 |
+| 1 | **REVAL-4** | T3-1 网络初始化策略提取 | smoltcp Interface API 3rd-party 类型深度绑定, 与版本无关 (当前 0.13.0) | 重写为 trait 抽象 (DHCP 策略 + 顺序表) | ~3 月 |
 | 2 | **REVAL-5 T4-1** | credo PROCESS_TABLE → `OnceLock<Mutex<>>` | PwmEntry 混合 Atomic+非 Atomic 字段, 需全 Atomic 化 | ① 重构 PwmEntry; ② ~30 个调用方 API 适配 | ~2 周 |
 | 3 | **REVAL-5 T4-2** | credo 能力矩阵 → `OnceLock<Mutex<>>` | 同 T4-1, 涉及 `CapabilityMatrix` 字段 | 同 T4-1 | ~1 周 |
 | 4 | **REVAL-5 T4-3** | eBPF 验证器 → services | 解释器 (`BpfInterpreter`) 重构同步 | 重构 eBPF 解释器 | ~1 月 |
@@ -1009,7 +1011,7 @@ pub use x86_64::ioapic;
 | 2026-06-22 | **§九 未完成任务权威清单新增** — SKIP/DEFERRED 算未完成, 9 项 `[ ]` 任务全部 DEFERRED 到 Phase D/E, 已记录在 §9.1 |
 | 2026-06-22 | **第 10 批 (重审 SKIP 任务)**: 实际实施 4 项, 评估完成 8 项. (1) REVAL-1: services 端 StandardSignalPolicy 已实装, init() 注册; (2) DECOUPL-4: framework/mm/f numa_init + fs/unpack + arch/cet_init 顶层 re-export 落地, proc/api.rs 3 处 3 层 → 2 层; (3) LEGACY-6: 新增 services/config/sysctl.rs 314 行 (0 unsafe, 3 种类型, IrqSpinLock 保护); (4) LEGACY-1: QEMU x86_64 真机启动实测 0.20s 到 Ring 3 + AntX Installation Wizard 显示. REVAL-2/3/5: SKIP 评估正确 (PwmEntry 混合字段/无 LRU 链表/调用方契约). 其余 SKIP (REVAL-4/6, LEGACY-3/4/5, DRIVER-1/2) 工作量超出本维护周期 |
 | 2026-06-22 | **第 9 批 (4 项)**: REVAL-6 (epoll 仍 SKIP 维持现状) + DOC-3 (engineering-discipline 50.0% + 新候选列表) + DOC-4 (deep-audit 全部 50 项已修复) + HARD-5 (VIRTIO_MMIO_BASE 验收闭合) 全部 [x] |
-| 2026-06-22 | **第 8 批 (3 项)**: QUAL-5 (services 13 处占位全部带注释, 阶段占位保留) + REVAL-1 (信号投递仍 SKIP, 中断路径高频) + REVAL-4 (网络初始化留 Phase E 等 smoltcp 0.12) + REVAL-5 (T4-1/2 留 Phase D, T4-3 验证器留 Phase E) 全部 [x] |
+| 2026-06-22 | **第 8 批 (3 项)**: QUAL-5 (services 13 处占位全部带注释, 阶段占位保留) + REVAL-1 (信号投递仍 SKIP, 中断路径高频) + REVAL-4 (网络初始化留 Phase E, smoltcp Interface 3rd-party 绑定) + REVAL-5 (T4-1/2 留 Phase D, T4-3 验证器留 Phase E) 全部 [x] |
 | 2026-06-22 | **第 7 批 (4 项)**: DECOUPL-4 (SKIP, framework 内部耦合不在边界违规范畴) + QUAL-1 (非 test unwrap 0 处) + QUAL-3 (15 处 unsafe impl Send/Sync 全部带 SAFETY) + QUAL-4 (27 处 framework dead_code 全部带注释) 全部 [x] |
 | 2026-06-22 | **第 6 批 (1 项)**: HARD-5 (VIRTIO_MMIO_BASE 服务侧改用 re-export) [x] |
 | 2026-06-22 | **第 5 批 (4 项, 全部评估/DEFERRED)**: LEGACY-5 (HvFS 子系统 trait 化按需扩展) + LEGACY-6 (sysctl 框架留 Phase D) + DRIVER-1 (USB 留 Phase E, 与 LEGACY-4 同步) + DRIVER-2 (Display 留 Phase E, fbterm 已满足) 全部 [x] |
