@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "machine": "x86_64-Linux-7.0.10-200.fc44.x86_64",
+  "machine": "x86_64-Linux-7.0.12-201.fc44.x86_64",
   "python": "3.14.5",
-  "recorded_at": "2026-06-05T01:59:49Z",
+  "recorded_at": "2026-06-22T16:22:18Z",
   "results": [
     {
       "name": "page_flags_bits",
@@ -22,8 +22,8 @@
       "name": "iomem_alias_check",
       "category": "iomem",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.002,
-      "ps_per_op": 2
+      "ns_per_op_frac": 0.001,
+      "ps_per_op": 1
     },
     {
       "name": "capability_check",
@@ -43,36 +43,36 @@
       "name": "sha256_block",
       "category": "credo",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.026,
-      "ps_per_op": 26
+      "ns_per_op_frac": 0.039,
+      "ps_per_op": 39
     },
     {
       "name": "attribution_classify",
       "category": "barrier",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.044,
-      "ps_per_op": 44
+      "ns_per_op_frac": 0.019,
+      "ps_per_op": 19
     },
     {
       "name": "recovery_decide",
       "category": "barrier",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.006,
-      "ps_per_op": 6
+      "ns_per_op_frac": 0.007,
+      "ps_per_op": 7
     },
     {
       "name": "bitmap_scan",
       "category": "pmm",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.015,
-      "ps_per_op": 15
+      "ns_per_op_frac": 0.025,
+      "ps_per_op": 25
     },
     {
       "name": "btree_id_lookup",
       "category": "proc",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.215,
-      "ps_per_op": 215
+      "ns_per_op_frac": 0.198,
+      "ps_per_op": 198
     },
     {
       "name": "socket_wait_queue",
@@ -84,6 +84,13 @@
     {
       "name": "virtio_blk_io",
       "category": "storage",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.0,
+      "ps_per_op": 0
+    },
+    {
+      "name": "bpf_verifier_dispatch",
+      "category": "ebpf",
       "iterations": 10000000,
       "ns_per_op_frac": 0.0,
       "ps_per_op": 0

@@ -498,7 +498,7 @@ pub fn btree_id_lookup_bench(iters: u64) -> u128 {
 // 单次循环 = 1 个 fd 上的 1 次 send/wake 对应操作.
 // 验收: 1000 个并发 send 路径平均延迟 < 1μs (QEMU 环境 1000 < 1ms 目标换算).
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::Mutex as StdMutex;
 
 /// 与 framework/net/socket WaitQueue 等价的 host-only 简化版
@@ -716,6 +716,125 @@ pub fn virtio_blk_io_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / total_ops
 }
 
+// ============================================================================
+// EBPF-3: BpfVerifier trait dispatch Mock + bench
+// ============================================================================
+//
+// T4-3 framekernel 设计: framework 通过 `&dyn BpfVerifier` 动态分派
+// 调用 services 注册的 verifier. 此 mock 复现该机制, 在 host 端验证:
+//   1. trait 动态分派可工作 (`&dyn BpfVerifier::verify`)
+//   2. 安全默认行为: 未注册 verifier → prog_load 拒绝所有
+//   3. 注册后 prog_load 走 verifier 验证路径
+//   4. 测量动态分派的 throughput (vs. 静态分派 / 直接调用)
+
+/// Mock BPF 程序 (host-only, 不依赖 no_std services)
+#[derive(Clone, Debug)]
+pub struct MockBpfProg {
+    pub insn_cnt: u32,
+}
+
+impl MockBpfProg {
+    pub fn new(insn_cnt: u32) -> Self {
+        Self { insn_cnt }
+    }
+}
+
+/// 验证结果 (复现 framework::debug::VerifyResult)
+#[derive(Debug, PartialEq, Eq)]
+pub enum VerifyResult {
+    Ok,
+    Err(Vec<u8>),
+}
+
+/// BpfVerifier trait (host-only mock, 与 services::debug::ebpf_verifier::BpfVerifier 同构)
+pub trait BpfVerifier: Sync + Send {
+    fn verify(&self, prog: &MockBpfProg) -> VerifyResult;
+}
+
+/// Mock verifier: 根据构造参数决定全部 accept 或全部 reject
+pub struct MockBpfVerifier {
+    accept: bool,
+}
+
+impl MockBpfVerifier {
+    pub const fn new(accept: bool) -> Self {
+        Self { accept }
+    }
+}
+
+impl BpfVerifier for MockBpfVerifier {
+    fn verify(&self, prog: &MockBpfProg) -> VerifyResult {
+        if prog.insn_cnt == 0 {
+            return VerifyResult::Err(b"empty program".to_vec());
+        }
+        if self.accept {
+            VerifyResult::Ok
+        } else {
+            VerifyResult::Err(b"mock reject".to_vec())
+        }
+    }
+}
+
+/// Mock BpfSubsystem (复现 framework::debug::BpfSubsystem 的核心机制)
+pub struct MockBpfSubsystem {
+    verifier: std::sync::Mutex<Option<&'static dyn BpfVerifier>>,
+    next_prog_fd: AtomicI64,
+}
+
+impl MockBpfSubsystem {
+    pub const fn new() -> Self {
+        Self {
+            verifier: std::sync::Mutex::new(None),
+            next_prog_fd: AtomicI64::new(1),
+        }
+    }
+    /// T4-3: 注册 verifier (framekernel 动态分派接口)
+    pub fn set_verifier(&self, v: &'static dyn BpfVerifier) {
+        *self.verifier.lock().unwrap() = Some(v);
+    }
+    /// T4-3: 模拟 prog_load, 走 verifier 验证
+    /// - 未注册: 返回 -1 (EPERM, 安全默认)
+    /// - 注册后: 走 verifier 验证, 成功返回 fd
+    pub fn prog_load(&self, prog: MockBpfProg) -> i64 {
+        let slot = self.verifier.lock().unwrap();
+        let v = match *slot {
+            Some(v) => v,
+            None => return -1, // EPERM
+        };
+        match v.verify(&prog) {
+            VerifyResult::Ok => self.next_prog_fd.fetch_add(1, Ordering::AcqRel),
+            VerifyResult::Err(_) => -22, // EINVAL
+        }
+    }
+}
+
+/// bench: 测量 `&dyn BpfVerifier::verify` 动态分派 throughput
+///
+/// 1000 op = 1000 次 verifier.verify 调用. 1 op 包含:
+/// - 构造 MockBpfProg
+/// - 通过 `&dyn BpfVerifier` 间接调用 verify
+/// - 匹配 VerifyResult
+pub fn bpf_verifier_dispatch_bench(iters: u64) -> u128 {
+    static VERIFIER: MockBpfVerifier = MockBpfVerifier::new(true);
+    let v: &'static dyn BpfVerifier = &VERIFIER;
+    let start = Instant::now();
+    let mut sink: u32 = 0;
+    for _ in 0..iters {
+        let prog = MockBpfProg::new(8);
+        let r = v.verify(&prog);
+        // 读取结果, 防止编译器优化掉整条路径
+        sink ^= match r {
+            VerifyResult::Ok => 1,
+            VerifyResult::Err(_) => 0,
+        };
+    }
+    let elapsed = start.elapsed().as_nanos();
+    // 防御性: 防止编译器优化掉 sink
+    std::hint::black_box(sink);
+    // 1 op = 1 次 verify 调用
+    elapsed.saturating_mul(1_000) / (iters as u128)
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -793,6 +912,9 @@ pub fn run_all() -> BenchReport {
         socket_wait_queue_bench(10_000)));
     results.push(measure("virtio_blk_io", "storage", 10_000, ||
         virtio_blk_io_bench(10_000)));
+    // EBPF-3: eBPF verifier trait dispatch bench
+    results.push(measure("bpf_verifier_dispatch", "ebpf", 100_000, ||
+        bpf_verifier_dispatch_bench(100_000)));
     BenchReport { version: 1, results }
 }
 
@@ -956,5 +1078,50 @@ mod tests {
     fn test_virtio_blk_bench_runs() {
         // smoke: 调用一次小迭代 bench 确保不 panic
         let _ = virtio_blk_io_bench(10);
+    }
+
+    // ====== EBPF-3: BpfVerifier trait dispatch Mock + bench ======
+    // 与 T4-3 framekernel 范式对齐: services 提供 verifier 实现, framework
+    // 通过 `&dyn BpfVerifier` 动态分派. host-tests 用 mock 模拟 trait 契约.
+
+    #[test]
+    fn test_bpf_verifier_mock_trait_dispatch() {
+        // 关键: 验证 `&dyn BpfVerifier` 动态分派机制可工作
+        let v: &dyn BpfVerifier = &MockBpfVerifier::new(true);
+        let prog = MockBpfProg::new(8);
+        assert!(matches!(v.verify(&prog), VerifyResult::Ok));
+    }
+
+    #[test]
+    fn test_bpf_verifier_reject() {
+        // reject 模式: 验证拒绝路径
+        let v: &dyn BpfVerifier = &MockBpfVerifier::new(false);
+        let prog = MockBpfProg::new(8);
+        assert!(matches!(v.verify(&prog), VerifyResult::Err(_)));
+    }
+
+    #[test]
+    fn test_bpf_verifier_safety_default_no_verifier() {
+        // 安全默认: 未注册 verifier 时, prog_load 拒绝所有
+        // (framekernel 设计, 拒绝 = 安全默认)
+        let subsys = MockBpfSubsystem::new();
+        let result = subsys.prog_load(MockBpfProg::new(4));
+        assert_eq!(result, -1); // EPERM: no verifier registered
+    }
+
+    #[test]
+    fn test_bpf_verifier_set_then_load() {
+        // 注册后 prog_load 走 verifier
+        static VERIFIER: MockBpfVerifier = MockBpfVerifier::new(true);
+        let subsys = MockBpfSubsystem::new();
+        subsys.set_verifier(&VERIFIER);
+        let result = subsys.prog_load(MockBpfProg::new(4));
+        assert_eq!(result, 1); // fd = 1
+    }
+
+    #[test]
+    fn test_bpf_verifier_bench_runs() {
+        // smoke: 调用一次小迭代 bench
+        let _ = bpf_verifier_dispatch_bench(100);
     }
 }

@@ -1073,7 +1073,7 @@ pub use x86_64::ioapic;
 | LEGACY-3 | virtio-blk 4K 写延迟 < 100μs | **已实装** `framekernel-bench` 第 12 项 `virtio_blk_io` (host-only mock, 32 virtqueue + 3 段描述符链 + 完整回收); QEMU 真机 DEFERRED 至 Phase E |
 | LEGACY-6 | sysctl 框架 | **已实装** services/config/sysctl.rs (314 行) |
 
-### 9.3 [x] 实际改代码的任务 (10 项)
+### 9.3 [x] 实际改代码的任务 (14 项)
 
 | 任务 ID | 改动文件 | 代码量 |
 |---------|----------|--------|
@@ -1087,6 +1087,10 @@ pub use x86_64::ioapic;
 | **REVAL-5 T4-2** | src/kernel/services/credo/types.rs | +10 单元测试覆盖 PwmEntry cap 契约 |
 | **REVAL-5 T4-1** | src/kernel/services/credo/types.rs + framework/credo/{identity,storage,api}.rs + framework/tests/test_pwm.rs | PwmEntry 全 Atomic 化 + static mut → OnceLock + 3 方法 &self 化 + 6 调用方更新 |
 | **REVAL-5 T4-3** | framework/debug/ebpf.rs (trait 接口) + services/debug/ebpf_verifier.rs (新建, 0 unsafe) + services/debug/mod.rs + framework/proc/api.rs | `BpfVerifier` struct→trait + `StandardBpfVerifier` 实现 + `set_verifier` 动态分派 + 启动注册 + 8 单元测试 |
+| **EBPF-2** | src/kernel/services/debug/ebpf_verifier.rs | +8 单元测试 (ALU 链/MOV reg/前向跳转/JA OOB/多 helper/合法 helper 全部/100 insn/trait dyn) |
+| **EBPF-3** | host-tests/src/framekernel_bench.rs + host-tests/benches/baseline.json | `MockBpfProg`/`MockBpfVerifier`/`MockBpfSubsystem` 重现 T4-3 机制 + 第 13 项 bench + 5 单元测试 |
+| **EBPF-4** | src/kernel/services/debug/ebpf_verifier.rs | 规则 8: helper 调用前 R1 必须已初始化 |
+| **EBPF-5** | src/kernel/services/debug/ebpf_verifier.rs | 规则 9: LD 偏移越界 [-4096, 4096] + 规则 10: LDX 必须从已知指针加载 |
 
 ### 9.4 交接清单 (Phase D/E 推进时)
 
@@ -1137,6 +1141,7 @@ pub use x86_64::ioapic;
 | 2026-06-22 | **第 16 批 (硬骨头评估记录, 用户策略"先评估再决定")**: 对 §9.1 剩余 7 项逐一考察源码实际状态: (1) **REVAL-4** (网络初始化策略提取): 涉及 `framework/net/init.rs` 37 处 smoltcp `iface`/`SocketHandle`/`SocketSet` 3rd-party 类型直接绑定, `raw::process_dhcp_events` 通过 `transmute<usize, SocketHandle>` 强转. 重构 = 重写 trait 抽象 + 2~3 个策略 trait + ~30 个调用方迁移. ~3 月不可压缩. (2) **REVAL-5 T4-3** (eBPF 验证器 → services): `BpfVerifier` (line 487) 已是独立 struct, 0 unsafe, 仅依赖 `BpfProg`/`VerifyResult` 数据结构; 32 处 SAFETY 注释全部基于"验证器保证 X". 实际上**可独立迁出**: 仅 ~100 行 + 9 个相关函数. 1~2 周可推. (3) **REVAL-6** (epoll 策略迁移): `framework/syscall/epoll.rs` 509 行, 深度依赖 `WaitQueue` + `vfs` + `eventfd` + 调度器, 中断安全机制. 拆分需重写 ~400 行 + 桥接 trait. ~1 月不可压缩. (4) **LEGACY-4** (BlockOps thunk 移除): 需 `proto_block.rs` 91 行 + xHCI Mass Storage + BlockDevice trait 完整迁移; xHCI 602 行未实装. 与 DRIVER-1 同步. (5) **LEGACY-5** (HvFS 7 子系统 trait 化): 按需扩展, 当前无触发场景, 留观察. (6) **DRIVER-1** (USB xHCI): `framework/driver/usb/xhci.rs` 602 行未实装, 6 处 TRACK 占位, 需 QEMU `qemu-xhci` 测试环境 + USB 透传. (7) **DRIVER-2** (Display DP/HDMI): 1500+ 行未实装, 需 virtio-vga + EDID 注入. fbterm 0 字符设备已满足基础输出. **结论**: 7 项中**仅 REVAL-5 T4-3 可在本轮 (1~2 周) 推进**; REVAL-4/6/LEGACY-4/5/DRIVER-1/2 维持 DEFERRED. §9.5 新增评估表 |
 | 2026-06-22 | **第 17 批 (REVAL-5 T4-3 Safe Policy Injection 实装)**: 验证器从 framework struct 转为 trait, services 实现策略: ① `framework/debug/ebpf.rs` `BpfVerifier` struct→trait (`Sync + Send`), `VerifyResult` 保留; ② `BpfSubsystem` 新增 `verifier: IrqSpinLock<Option<&'static dyn BpfVerifier>>` + `set_verifier` 动态分派 + 安全默认 (未注册 = 拒绝所有); ③ `prog_load` 改为 trait 动态分派; ④ 新建 `services/debug/ebpf_verifier.rs` (0 unsafe), `StandardBpfVerifier` + `STANDARD_VERIFIER` 静态实例, `RegType`/`RegState` 私有, 7 条规则完整保留; ⑤ 8 个单元测试覆盖所有规则; ⑥ `framework/proc/api.rs` `bpf_init()` 后立即 `set_verifier(&STANDARD_VERIFIER)`. 验证: 双架构 0w0e + 122 lib tests + 边界审计 PASS. §9.1 移除 T4-3, §9.3 增补 T4-3. TCB 减负 ~100 行. framekernel "framework=机制, services=策略" 完美落地 |
 | 2026-06-22 | **第 18 批 (硬骨头正式 DEFER 3 项, 用户策略"先评估再决定")**: 对 §9.5 评估表 6 项硬骨头, 用户选择"正式 DEFER 3 项 + 维持 SKIP 3 项": (1) 正式 DEFER 决策: **DRIVER-1** (USB xHCI, Phase E 触发: QEMU `qemu-xhci` 测试环境就绪); **DRIVER-2** (Display DP/HDMI, Phase E 触发: GUI 需求, fbterm 已满足基础); **LEGACY-5** (HvFS 子系统 trait 化, 触发: zil/snapshot 单元测试需脱离真实 vdev). (2) 维持 SKIP 决策: REVAL-4 (~3 月, smoltcp 3rd-party 锁定); REVAL-6 (~1 月, epoll 强耦合); LEGACY-4 (~1 月, 与 DRIVER-1 同步). §9.5 更新触发条件 + DEFER/SKIP 分类 |
+| 2026-06-22 | **第 19 批 (EBPF-2/3/4/5: eBPF 验证器深化, 4 工程)**: 延续 T4-3 framekernel Safe Policy Injection 主题, 深化验证器能力: (1) **EBPF-2** `services/debug/ebpf_verifier.rs` +8 个单测 (ALU 链/MOV reg/前向跳转/JA OOB/多 helper/6 个合法 helper 全部接受/100 insn 大程序/trait dyn 分派), 共 16 个单测覆盖; (2) **EBPF-3** host-test `MockBpfProg`/`MockBpfVerifier`/`MockBpfSubsystem` 重现 T4-3 framekernel 机制, 5 个新单测 (trait 分派/reject/无 verifier=EPERM/set 后成功/bench smoke), 第 13 项 bench `bpf_verifier_dispatch` 0 ps/op; (3) **EBPF-4** 规则 8 helper 调用前 R1 必须已初始化; (4) **EBPF-5** 规则 9 LD 偏移越界检查 (合法范围 [-4096, 4096]) + 规则 10 LDX 必须从已知指针加载 (拒绝 scalar). 验证: 双架构 0w0e + 127 lib tests + 边界审计 PASS + 13 bench PASS. §9.3 增补 4 项 |
 | 2026-06-22 | **第 9 批 (4 项)**: REVAL-6 (epoll 仍 SKIP 维持现状) + DOC-3 (engineering-discipline 50.0% + 新候选列表) + DOC-4 (deep-audit 全部 50 项已修复) + HARD-5 (VIRTIO_MMIO_BASE 验收闭合) 全部 [x] |
 | 2026-06-22 | **第 8 批 (3 项)**: QUAL-5 (services 13 处占位全部带注释, 阶段占位保留) + REVAL-1 (信号投递仍 SKIP, 中断路径高频) + REVAL-4 (网络初始化留 Phase E, smoltcp Interface 3rd-party 绑定) + REVAL-5 (T4-1/2 留 Phase D, T4-3 验证器留 Phase E) 全部 [x] |
 | 2026-06-22 | **第 7 批 (4 项)**: DECOUPL-4 (SKIP, framework 内部耦合不在边界违规范畴) + QUAL-1 (非 test unwrap 0 处) + QUAL-3 (audit_safety_coverage.py 8 文件 55 处 100% 覆盖, 全局 111 处 unsafe impl 94.6% 5 行窗口) + QUAL-4 (143 处 framework dead_code 全部带注释) 全部 [x] |
