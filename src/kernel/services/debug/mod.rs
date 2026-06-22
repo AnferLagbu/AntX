@@ -51,6 +51,12 @@ pub use crate::kernel::framework::debug::{KgdbRegs, KgdbSerial};
 /// D4: eBPF 安全封装
 pub mod ebpf;
 
+/// T4-3: eBPF 验证器策略 (Safe Policy Injection)
+///
+/// 实现 `framework::debug::BpfVerifier` trait, 提供标准验证策略.
+/// 本模块 0 unsafe, 全部策略逻辑由 services 拥有.
+pub mod ebpf_verifier;
+
 // ============================================================================
 // ftrace 接口
 // ============================================================================

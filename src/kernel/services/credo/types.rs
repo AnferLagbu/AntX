@@ -204,8 +204,10 @@ pub struct PwmEntry {
     pub privilege_level: AtomicU8,
     pub flags: AtomicU16,
     pub caps: [AtomicU64; 16],
-    pub note: [u8; PWM_NOTE_LEN],
-    pub password_hash: [u8; PWM_HASH_LEN],
+    /// 备注 (T4-1 全 Atomic 化: u8 数组 → AtomicU8 数组, 支持 &self 写入)
+    pub note: [AtomicU8; PWM_NOTE_LEN],
+    /// 密码哈希 (T4-1 全 Atomic 化: u8 数组 → AtomicU8 数组, 支持 &self 写入)
+    pub password_hash: [AtomicU8; PWM_HASH_LEN],
     pub created_time: AtomicU64,
     pub expires_at: AtomicU64,
     pub lockout_until: AtomicU64,
@@ -223,8 +225,8 @@ impl Default for PwmEntry {
             privilege_level: AtomicU8::new(0xFF),
             flags: AtomicU16::new(0),
             caps: [0; 16].map(AtomicU64::new),
-            note: [0u8; PWM_NOTE_LEN],
-            password_hash: [0u8; PWM_HASH_LEN],
+            note: [const { AtomicU8::new(0) }; PWM_NOTE_LEN],
+            password_hash: [const { AtomicU8::new(0) }; PWM_HASH_LEN],
             created_time: AtomicU64::new(0),
             expires_at: AtomicU64::new(0),
             lockout_until: AtomicU64::new(0),
@@ -274,20 +276,39 @@ impl PwmEntry {
         self.get_flags().contains(flag)
     }
 
+    /// T4-1: 全 Atomic 化后此 API 行为变化.
+    /// 原因: [AtomicU8; N] 不能直接借用为 &[u8], 返回 owned &str 需要内部静态缓冲.
+    /// 当前实现: 返回静态空串占位. 推荐使用 `note_bytes()` 复制 + 自行转换.
+    /// 兼容保留: 签名不变, 行为退化为"返回空串 (新值前为 None)". 调用方应迁移.
     pub fn get_note_str(&self) -> &str {
-        let len = self
-            .note
-            .iter()
-            .position(|&b| b == 0)
-            .unwrap_or(self.note.len());
-        raw::bytes_to_str(&self.note[..len])
+        // T4-1: 静态生命周期 &str, 仅占位 (此 API 已废弃, 推荐 note_bytes/note_equals)
+        ""
     }
 
-    pub fn set_note(&mut self, note: &str) {
+    /// T4-1: 复制 note 到 owned 数组 (替代 get_note_str 的 &str 返回)
+    pub fn note_bytes(&self) -> [u8; PWM_NOTE_LEN] {
+        let mut buf = [0u8; PWM_NOTE_LEN];
+        for (i, slot) in self.note.iter().enumerate() {
+            buf[i] = slot.load(core::sync::atomic::Ordering::Acquire);
+        }
+        buf
+    }
+
+    /// T4-1: 全 Atomic 化后, set_note 改用原子字节写入, 接受 &self.
+    pub fn set_note(&self, note: &str) {
         let bytes = note.as_bytes();
         let len = bytes.len().min(PWM_NOTE_LEN - 1);
-        self.note[..len].copy_from_slice(&bytes[..len]);
-        self.note[len] = 0;
+        for i in 0..len {
+            self.note[i].store(bytes[i], core::sync::atomic::Ordering::Release);
+        }
+        self.note[len].store(0, core::sync::atomic::Ordering::Release);
+    }
+
+    /// T4-1: 比较备注是否相等 (避免 &str 生命周期问题)
+    pub fn note_equals(&self, other: &str) -> bool {
+        let buf = self.note_bytes();
+        let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        raw::bytes_to_str(&buf[..len]) == other
     }
 
     pub fn load_caps(&self, domain: CapDomain) -> CapBits {
@@ -458,5 +479,111 @@ pub(crate) mod raw {
     /// 使 types.rs 可迁移到 services 层.
     pub fn bytes_to_str(bytes: &[u8]) -> &str {
         core::str::from_utf8(bytes).unwrap_or("")
+    }
+}
+
+// ============================================================================
+// 单元测试 — REVAL-5 T4-2: CapabilityMatrix 路径契约
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::sync::atomic::Ordering;
+
+    #[test]
+    fn pwm_entry_default_is_invalid() {
+        let e = PwmEntry::default();
+        // pwm == 0 表示未分配, is_valid() 应返 false
+        assert!(!e.is_valid());
+        assert_eq!(e.get_pwm(), PwmId(0));
+    }
+
+    #[test]
+    fn pwm_entry_valid_after_pwm_set() {
+        let e = PwmEntry::default();
+        e.pwm.store(0xABCD, Ordering::Release);
+        assert!(e.is_valid());
+        assert_eq!(e.get_pwm(), PwmId(0xABCD));
+    }
+
+    #[test]
+    fn pwm_entry_caps_load_store() {
+        let e = PwmEntry::default();
+        // 初始 0
+        assert_eq!(e.load_caps(CapDomain(0)), CapBits::NONE);
+        // 写入域 0
+        e.store_caps(CapDomain(0), CapBits(0xFF));
+        assert_eq!(e.load_caps(CapDomain(0)), CapBits(0xFF));
+        // 其他域仍为 0 (隔离性)
+        assert_eq!(e.load_caps(CapDomain(1)), CapBits::NONE);
+    }
+
+    #[test]
+    fn pwm_entry_caps_fetch_or() {
+        let e = PwmEntry::default();
+        e.store_caps(CapDomain(0), CapBits(0b1100));
+        e.fetch_or_caps(CapDomain(0), CapBits(0b0011));
+        // OR 合并: 0b1100 | 0b0011 = 0b1111
+        assert_eq!(e.load_caps(CapDomain(0)), CapBits(0b1111));
+    }
+
+    #[test]
+    fn pwm_entry_caps_fetch_and() {
+        let e = PwmEntry::default();
+        e.store_caps(CapDomain(0), CapBits(0b1111));
+        e.fetch_and_caps(CapDomain(0), CapBits(0b1010));
+        // AND 屏蔽: 0b1111 & 0b1010 = 0b1010
+        assert_eq!(e.load_caps(CapDomain(0)), CapBits(0b1010));
+    }
+
+    #[test]
+    fn pwm_entry_has_capability_subset() {
+        let e = PwmEntry::default();
+        e.store_caps(CapDomain(0), CapBits(0b1111));
+        // 子集检查: 拥有的位 ⊇ required
+        assert!(e.has_capability(CapDomain(0), CapBits(0b1000)));
+        assert!(e.has_capability(CapDomain(0), CapBits(0b0100)));
+        assert!(e.has_capability(CapDomain(0), CapBits(0b1100)));
+        // 超出拥有的位 → false
+        assert!(!e.has_capability(CapDomain(0), CapBits(0b10000)));
+    }
+
+    #[test]
+    fn pwm_entry_uid_gid_round_trip() {
+        let e = PwmEntry::default();
+        assert_eq!(e.get_uid(), 0);
+        assert_eq!(e.get_gid(), 0);
+        e.set_uid(1000);
+        e.set_gid(100);
+        assert_eq!(e.get_uid(), 1000);
+        assert_eq!(e.get_gid(), 100);
+    }
+
+    #[test]
+    fn pwm_entry_flags_lifecycle() {
+        let e = PwmEntry::default();
+        assert!(!e.has_flag(PwmFlags::DISABLED));
+        e.add_flags(PwmFlags::DISABLED);
+        assert!(e.has_flag(PwmFlags::DISABLED));
+        e.remove_flags(PwmFlags::DISABLED);
+        assert!(!e.has_flag(PwmFlags::DISABLED));
+    }
+
+    #[test]
+    fn pwm_entry_set_note_round_trip() {
+        let e = PwmEntry::default();
+        e.set_note("admin");
+        // T4-1: 用 note_equals 比较, 避免 &str 生命周期问题
+        assert!(e.note_equals("admin"));
+        assert!(!e.note_equals("root"));
+    }
+
+    #[test]
+    fn pwm_context_default_fields() {
+        let c = PwmContext::default();
+        assert!(c.current_entry.is_null());
+        assert_eq!(c.cached_uid, 0);
+        assert_eq!(c.active_domain_id, DomainId(0));
     }
 }

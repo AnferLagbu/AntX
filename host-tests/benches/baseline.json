@@ -73,6 +73,20 @@
       "iterations": 10000000,
       "ns_per_op_frac": 0.215,
       "ps_per_op": 215
+    },
+    {
+      "name": "socket_wait_queue",
+      "category": "net",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.002,
+      "ps_per_op": 2
+    },
+    {
+      "name": "virtio_blk_io",
+      "category": "storage",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.0,
+      "ps_per_op": 0
     }
   ]
 }

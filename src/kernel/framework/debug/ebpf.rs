@@ -427,260 +427,40 @@ impl BpfProg {
 }
 
 // ============================================================================
-// BPF 验证器
+// BPF 验证器 — Safe Policy Injection 接口 (T4-3)
 // ============================================================================
+//
+// Framekernel 设计: framework 提供 trait (机制接口), services 提供实现 (策略).
+// 验证逻辑 (`RegType`/`RegState`/逐条规则) 在 services/debug/ebpf_verifier.rs,
+// framework 仅持有 trait 接口 + VerifyResult 错误类型 + 动态分派 (BpfSubsystem).
 
-/// 验证器寄存器状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RegType {
-    /// 未初始化
-    NotInit,
-    /// 未知标量值
-    Scalar,
-    /// 指向 Map key 的指针
-    MapKey,
-    /// 指向 Map value 的指针
-    MapValue,
-    /// 指向栈的指针
-    StackPtr,
-    /// 指向上下文的指针
-    CtxPtr,
-}
-
-/// 验证器寄存器状态
-#[derive(Debug, Clone, Copy)]
-struct RegState {
-    r#type: RegType,
-    /// 标量值范围 (简化: 仅追踪是否已知为 0)
-    is_zero: bool,
-}
-
-impl RegState {
-    fn new() -> Self {
-        Self { r#type: RegType::NotInit, is_zero: false }
-    }
-    fn scalar() -> Self {
-        Self { r#type: RegType::Scalar, is_zero: false }
-    }
-    fn scalar_zero() -> Self {
-        Self { r#type: RegType::Scalar, is_zero: true }
-    }
-}
-
-/// 验证结果
+/// 验证结果 (T4-3: 仍定义在 framework, 作为 trait 接口的契约类型)
 #[derive(Debug)]
 pub enum VerifyResult {
     Ok,
     Err(Vec<u8>),
 }
 
-/// eBPF 验证器
+/// eBPF 验证器 trait (T4-3: 从 struct 转为 trait)
 ///
-/// 简化验证策略:
-/// 1. 检查指令数量 ≤ BPF_MAX_INSNS
-/// 2. 检查寄存器编号 < 11
-/// 3. 检查跳转目标在范围内
-/// 4. 检查无无限循环 (回边检测)
-/// 5. 检查程序以 EXIT 结尾
-/// 6. 检查 R1-R5 调用前类型正确
-/// 7. 检查 R10 只读
-pub struct BpfVerifier;
-
-impl BpfVerifier {
+/// # Framekernel 设计
+///
+/// - **framework (本模块)**: 定义 trait 接口, 不包含任何策略细节
+/// - **services (`services::debug::ebpf_verifier`)**: 实现具体策略
+///   (如 `StandardBpfVerifier`), 0 unsafe
+///
+/// # 注册流程
+///
+/// 1. framework 在 BpfSubsystem 中持有 `Option<&'static dyn BpfVerifier>`
+/// 2. services 在启动时调用 `BpfSubsystem::set_verifier(&STANDARD_VERIFIER)`
+/// 3. `prog_load` 通过动态分派调用注册的 verifier
+///
+/// # 默认行为
+///
+/// 若未注册 verifier, `prog_load` 默认拒绝所有程序 (拒绝 = 安全默认).
+pub trait BpfVerifier: Sync + Send {
     /// 验证 BPF 程序
-    pub fn verify(prog: &BpfProg) -> VerifyResult {
-        if prog.insn_cnt == 0 {
-            return VerifyResult::Err(b"empty program".to_vec());
-        }
-        if prog.insn_cnt > BPF_MAX_INSNS {
-            return VerifyResult::Err(b"program too large".to_vec());
-        }
-
-        // 规则 5: 最后一条指令必须是 EXIT
-        if let Some(last) = prog.insns.last() {
-            if last.op != opcode::JMP | opcode::EXIT {
-                return VerifyResult::Err(b"program must end with EXIT".to_vec());
-            }
-        }
-
-        // 初始化寄存器状态
-        let mut regs = [RegState::new(); BPF_REG_NUM];
-        // R1 = ctx 指针, R10 = 栈帧指针
-        regs[reg::R1] = RegState { r#type: RegType::CtxPtr, is_zero: false };
-        regs[reg::R10] = RegState { r#type: RegType::StackPtr, is_zero: false };
-
-        // 逐条验证
-        let mut visited = [false; BPF_MAX_INSNS as usize];
-        let mut path_depth: u32 = 0;
-        for (pc, insn) in prog.insns.iter().enumerate() {
-            if pc >= BPF_MAX_INSNS as usize {
-                break;
-            }
-            visited[pc] = true;
-
-            // 规则 2: 寄存器编号检查
-            let dst = insn.dst() as usize;
-            let src = insn.src() as usize;
-            if dst >= BPF_REG_NUM || src >= BPF_REG_NUM {
-                return VerifyResult::Err(alloc::format!(
-                    "invalid register at pc={}: dst={} src={}", pc, dst, src
-                ).into_bytes());
-            }
-
-            // 规则 7: R10 只读
-            if dst == reg::R10 && insn.class() != opcode::ALU && insn.class() != opcode::ALU64
-                && insn.class() != opcode::JMP && insn.class() != opcode::JMP32
-            {
-                // ST/STX 到 R10 非法
-                if insn.class() == opcode::ST || insn.class() == opcode::STX {
-                    return VerifyResult::Err(
-                        alloc::format!("write to R10 (frame pointer) at pc={}", pc).into_bytes()
-                    );
-                }
-            }
-
-            let class = insn.class();
-
-            // 跳转目标检查
-            if class == opcode::JMP || class == opcode::JMP32 {
-                let op_low = insn.op & 0xf0;
-                if op_low == opcode::JA {
-                    // 无条件跳转
-                    let target = pc as i64 + 1 + insn.off as i64;
-                    if target < 0 || target as usize >= prog.insn_cnt as usize {
-                        return VerifyResult::Err(
-                            alloc::format!("jump out of bounds at pc={}: target={}", pc, target).into_bytes()
-                        );
-                    }
-                    // 规则 4: 回边检测 (简化: 禁止向后跳转)
-                    if target < pc as i64 {
-                        path_depth += 1;
-                        if path_depth > BPF_MAX_PATH_DEPTH {
-                            return VerifyResult::Err(
-                                alloc::format!("too many backward jumps at pc={}", pc).into_bytes()
-                            );
-                        }
-                    }
-                } else if op_low == opcode::CALL {
-                    // Helper 调用: 检查 imm 在合法范围
-                    let helper_id = insn.imm as u32;
-                    if !BpfHelper::is_valid(helper_id) {
-                        return VerifyResult::Err(
-                            alloc::format!("unknown helper {} at pc={}", helper_id, pc).into_bytes()
-                        );
-                    }
-                    // R0 = 返回值 (标量), R1-R5 被调用消耗
-                    regs[reg::R0] = RegState::scalar();
-                } else if op_low != opcode::EXIT {
-                    // 条件跳转
-                    let target = pc as i64 + 1 + insn.off as i64;
-                    if target < 0 || target as usize >= prog.insn_cnt as usize {
-                        return VerifyResult::Err(
-                            alloc::format!("conditional jump OOB at pc={}: target={}", pc, target).into_bytes()
-                        );
-                    }
-                    if target < pc as i64 {
-                        path_depth += 1;
-                        if path_depth > BPF_MAX_PATH_DEPTH {
-                            return VerifyResult::Err(
-                                alloc::format!("too many backward jumps at pc={}", pc).into_bytes()
-                            );
-                        }
-                    }
-                }
-
-                // 条件跳转: 更新寄存器类型
-                if op_low != opcode::JA && op_low != opcode::CALL && op_low != opcode::EXIT {
-                    // 比较操作: 两个操作数都应该是已初始化的
-                    if insn.op & opcode::X != 0 {
-                        if regs[src].r#type == RegType::NotInit {
-                            return VerifyResult::Err(
-                                alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
-                            );
-                        }
-                    }
-                    if regs[dst].r#type == RegType::NotInit {
-                        return VerifyResult::Err(
-                            alloc::format!("use of uninitialized R{} at pc={}", dst, pc).into_bytes()
-                        );
-                    }
-                }
-            }
-
-            // ALU 操作: 更新目标寄存器
-            if class == opcode::ALU || class == opcode::ALU64 {
-                if regs[dst].r#type == RegType::NotInit {
-                    return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{} at pc={}", dst, pc).into_bytes()
-                    );
-                }
-                // MOV immediate: 目标变为标量
-                let op_low = insn.op & 0xf0;
-                if op_low == opcode::MOV {
-                    regs[dst] = if insn.imm == 0 {
-                        RegState::scalar_zero()
-                    } else {
-                        RegState::scalar()
-                    };
-                } else if op_low == opcode::MOV && (insn.op & opcode::X) != 0 {
-                    // MOV reg: 复制源类型
-                    if regs[src].r#type == RegType::NotInit {
-                        return VerifyResult::Err(
-                            alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
-                        );
-                    }
-                    regs[dst] = regs[src];
-                } else {
-                    // 其他 ALU: 结果是标量
-                    regs[dst] = RegState::scalar();
-                }
-            }
-
-            // LD: 加载到寄存器
-            if class == opcode::LD {
-                regs[dst] = RegState::scalar();
-            }
-            if class == opcode::LDX {
-                if regs[src].r#type == RegType::NotInit {
-                    return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
-                    );
-                }
-                regs[dst] = RegState::scalar();
-            }
-
-            // ST/STX: 存储操作, 检查目标指针
-            if class == opcode::ST || class == opcode::STX {
-                if regs[dst].r#type == RegType::NotInit {
-                    return VerifyResult::Err(
-                        alloc::format!("store to uninitialized R{} at pc={}", dst, pc).into_bytes()
-                    );
-                }
-                // 只允许写入 MapValue/StackPtr/CtxPtr
-                match regs[dst].r#type {
-                    RegType::MapValue | RegType::StackPtr => {}
-                    RegType::CtxPtr => {
-                        // 上下文写入: 仅允许特定偏移 (简化: 允许)
-                    }
-                    _ => {
-                        return VerifyResult::Err(
-                            alloc::format!(
-                                "store to invalid pointer type {:?} at pc={}",
-                                regs[dst].r#type, pc
-                            ).into_bytes()
-                        );
-                    }
-                }
-                if class == opcode::STX && regs[src].r#type == RegType::NotInit {
-                    return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
-                    );
-                }
-            }
-        }
-
-        VerifyResult::Ok
-    }
+    fn verify(&self, prog: &BpfProg) -> VerifyResult;
 }
 
 // ============================================================================
@@ -1151,6 +931,9 @@ pub struct BpfSubsystem {
     next_prog_fd: AtomicU32,
     /// 是否已初始化
     initialized: AtomicBool,
+    /// T4-3: 已注册的 verifier (None = 拒绝所有, 安全默认)
+    /// 使用 IrqSpinLock<Option<&'static dyn BpfVerifier>>, 支持运行时注册/查询
+    verifier: IrqSpinLock<Option<&'static dyn BpfVerifier>>,
 }
 
 impl BpfSubsystem {
@@ -1161,7 +944,37 @@ impl BpfSubsystem {
             next_map_fd: AtomicU32::new(1),
             next_prog_fd: AtomicU32::new(1),
             initialized: AtomicBool::new(false),
+            // T4-3: 默认无 verifier, 拒绝所有程序
+            verifier: IrqSpinLock::new(None),
         }
+    }
+
+    /// T4-3: 注册 verifier (服务层在启动时调用)
+    ///
+    /// # Framekernel 契约
+    ///
+    /// - 仅 services 层应调用此函数
+    /// - 注册后, 所有 `prog_load` 调用通过动态分派到注册的 verifier
+    /// - 重复注册: 覆盖前一个 (警告日志)
+    pub fn set_verifier(&self, v: &'static dyn BpfVerifier) {
+        let mut slot = self.verifier.lock();
+        if slot.is_some() {
+            crate::klog_ffi!(
+                klog_ffi_warn,
+                "[BPF] verifier replaced (T4-3: dynamic policy injection)"
+            );
+        }
+        *slot = Some(v);
+        crate::klog_ffi!(
+            klog_ffi_info,
+            "[BPF] verifier registered"
+        );
+    }
+
+    /// T4-3: 获取已注册的 verifier (用于测试)
+    #[allow(dead_code)]
+    pub fn verifier(&self) -> Option<&'static dyn BpfVerifier> {
+        *self.verifier.lock()
     }
 
     /// 初始化 BPF 子系统
@@ -1207,8 +1020,24 @@ impl BpfSubsystem {
     ) -> i64 {
         let prog = BpfProg::new(prog_type, insns);
 
-        // 验证
-        match BpfVerifier::verify(&prog) {
+        // T4-3: 验证通过动态分派到注册的 verifier
+        // 安全默认: 未注册时拒绝所有程序
+        let verifier_slot = self.verifier.lock();
+        let verifier = match *verifier_slot {
+            Some(v) => v,
+            None => {
+                drop(verifier_slot);
+                crate::klog_ffi!(
+                    klog_ffi_warn,
+                    "[BPF] no verifier registered, rejecting all programs"
+                );
+                return -(1i64); // EPERM
+            }
+        };
+        let result = verifier.verify(&prog);
+        drop(verifier_slot);
+
+        match result {
             VerifyResult::Ok => {
                 prog.verified.store(true, Ordering::Release);
             }

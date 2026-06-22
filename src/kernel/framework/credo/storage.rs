@@ -98,10 +98,15 @@ fn serialize(entry: &PwmEntry, buf: &mut [u8], p: &mut usize) {
     for i in 0..16 {
         w64(buf, p, entry.caps[i].load(Ordering::Acquire));
     }
-    buf[*p..*p + PWM_NOTE_LEN].copy_from_slice(&entry.note);
-    *p += PWM_NOTE_LEN;
-    buf[*p..*p + PWM_HASH_LEN].copy_from_slice(&entry.password_hash);
-    *p += PWM_HASH_LEN;
+    // T4-1: 原子读取 note 和 password_hash (避免 &mut)
+    for i in 0..PWM_NOTE_LEN {
+        buf[*p] = entry.note[i].load(Ordering::Acquire);
+        *p += 1;
+    }
+    for i in 0..PWM_HASH_LEN {
+        buf[*p] = entry.password_hash[i].load(Ordering::Acquire);
+        *p += 1;
+    }
     w64(buf, p, entry.created_time.load(Ordering::Acquire));
     w64(buf, p, entry.expires_at.load(Ordering::Acquire));
 }
@@ -249,7 +254,7 @@ pub fn load_database() -> i32 {
         return -1;
     }
 
-    let t = raw::table_mut();
+    let t = super::identity::get_table();
     let mut p: usize = 0;
 
     if vmaj < 5 {
@@ -276,7 +281,8 @@ pub fn load_database() -> i32 {
 
             for i in 0..MAX_PWM_ENTRIES {
                 if !t.entries[i].is_valid() {
-                    let e = &mut t.entries[i];
+                    // T4-1: &t.entries[i] + 原子写入 (替代 &mut)
+                    let e = &t.entries[i];
                     e.pwm.store(pwm, Ordering::Release);
                     e.creator_pwm.store(0, Ordering::Release);
                     e.privilege_level.store(level, Ordering::Release);
@@ -286,9 +292,15 @@ pub fn load_database() -> i32 {
                     }
                     let note_trunc = note.len().min(PWM_NOTE_LEN);
                     let zero_pos = note_trunc.min(PWM_NOTE_LEN - 1);
-                    e.note[..zero_pos].copy_from_slice(&note[..zero_pos]);
-                    e.note[zero_pos] = 0;
-                    e.password_hash[..PWM_HASH_LEN].copy_from_slice(&h);
+                    // T4-1: 原子写入 note
+                    for i in 0..zero_pos {
+                        e.note[i].store(note[i], Ordering::Release);
+                    }
+                    e.note[zero_pos].store(0, Ordering::Release);
+                    // T4-1: 原子写入 password_hash
+                    for i in 0..PWM_HASH_LEN {
+                        e.password_hash[i].store(h[i], Ordering::Release);
+                    }
                     e.created_time.store(created, Ordering::Release);
                     e.expires_at.store(expires, Ordering::Release);
                     t.count.fetch_add(1, Ordering::Relaxed);
@@ -312,7 +324,8 @@ pub fn load_database() -> i32 {
             {
                 for i in 0..MAX_PWM_ENTRIES {
                     if !t.entries[i].is_valid() {
-                        let e = &mut t.entries[i];
+                        // T4-1: &t.entries[i] + 原子写入 (替代 &mut)
+                        let e = &t.entries[i];
                         e.pwm.store(pwm, Ordering::Release);
                         e.creator_pwm.store(creator_pwm, Ordering::Release);
                         e.privilege_level.store(privilege_level, Ordering::Release);
@@ -320,8 +333,13 @@ pub fn load_database() -> i32 {
                         for j in 0..16 {
                             e.caps[j].store(caps[j], Ordering::Release);
                         }
-                        e.note[..PWM_NOTE_LEN].copy_from_slice(&note[..PWM_NOTE_LEN]);
-                        e.password_hash[..PWM_HASH_LEN].copy_from_slice(&h);
+                        // T4-1: 原子写入 note + password_hash
+                        for i in 0..PWM_NOTE_LEN {
+                            e.note[i].store(note[i], Ordering::Release);
+                        }
+                        for i in 0..PWM_HASH_LEN {
+                            e.password_hash[i].store(h[i], Ordering::Release);
+                        }
                         e.created_time.store(created, Ordering::Release);
                         e.expires_at.store(expires, Ordering::Release);
                         t.count.fetch_add(1, Ordering::Relaxed);
@@ -381,11 +399,10 @@ pub(crate) mod raw {
     /// 安全访问 identity 表 (读视图)
     #[allow(dead_code)] // 待 Credo 存储身份查询路径启用后使用。
     pub fn table() -> &'static super::identity::IdentityTable {
-        super::identity::raw::get_table()
+        super::identity::get_table()
     }
 
-    /// 安全访问 identity 表 (写视图, 外部互斥)
-    pub fn table_mut() -> &'static mut super::identity::IdentityTable {
-        super::identity::raw::get_table_mut()
-    }
+    // T4-1: table_mut 已彻底删除.
+    // 原因: 全 Atomic 化后所有变更走 &self, 无需 &mut 全局引用.
+    // 此前 &mut self 的方法 (create, change_password, bootstrap) 已改为 &self.
 }

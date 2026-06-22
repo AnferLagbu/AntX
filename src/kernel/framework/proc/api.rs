@@ -905,6 +905,10 @@ pub fn scheduler_init() {
     );
     // D4: 初始化 eBPF 子系统
     crate::kernel::framework::debug::bpf_init();
+    // T4-3: 注册标准 BPF 验证器 (Safe Policy Injection)
+    crate::kernel::framework::debug::bpf_subsystem().set_verifier(
+        &crate::kernel::services::debug::ebpf_verifier::STANDARD_VERIFIER
+    );
     // D5: 初始化电源管理子系统
     crate::kernel::framework::driver::pm_init(
         crate::kernel::framework::config::MAX_CPUS as u32,

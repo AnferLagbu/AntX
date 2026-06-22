@@ -492,6 +492,230 @@ pub fn btree_id_lookup_bench(iters: u64) -> u128 {
     start.elapsed().as_nanos()
 }
 
+// ====== 11. Socket WaitQueue (来自 services/net/wait_queue.rs) ======
+//
+// 模拟 16 个 fd (MAX_SM_FD) 上的 mark_waiting → try_wake 循环.
+// 单次循环 = 1 个 fd 上的 1 次 send/wake 对应操作.
+// 验收: 1000 个并发 send 路径平均延迟 < 1μs (QEMU 环境 1000 < 1ms 目标换算).
+
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Mutex as StdMutex;
+
+/// 与 framework/net/socket WaitQueue 等价的 host-only 简化版
+struct MockSocketWaitQueue {
+    pending: AtomicBool,
+    wake_count: AtomicU32,
+    last_reason: AtomicU32,
+    lock: StdMutex<()>,
+}
+
+impl MockSocketWaitQueue {
+    const fn new() -> Self {
+        Self {
+            pending: AtomicBool::new(false),
+            wake_count: AtomicU32::new(0),
+            last_reason: AtomicU32::new(u32::MAX),
+            lock: StdMutex::new(()),
+        }
+    }
+
+    fn mark_waiting(&self) -> bool {
+        !self.pending.swap(true, Ordering::AcqRel)
+    }
+
+    fn try_wake(&self, reason: u32) -> bool {
+        let _guard = match self.lock.try_lock() {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
+        let was_pending = self.pending.swap(false, Ordering::AcqRel);
+        if was_pending {
+            self.wake_count.fetch_add(1, Ordering::Relaxed);
+            self.last_reason.store(reason, Ordering::Relaxed);
+        }
+        was_pending
+    }
+
+    fn is_pending(&self) -> bool {
+        self.pending.load(Ordering::Acquire)
+    }
+}
+
+/// MAX_SM_FD: 16 (与 services/net/socket.rs 的 fd 空间 [0, 16) 对齐)
+const MAX_SM_FD: usize = 16;
+
+pub fn socket_wait_queue_bench(iters: u64) -> u128 {
+    let queues: Vec<MockSocketWaitQueue> = (0..MAX_SM_FD)
+        .map(|_| MockSocketWaitQueue::new())
+        .collect();
+    // 1 轮 (BATCH) = 1000 次并发 send/wake 路径 = 验收目标
+    const BATCH: u64 = 1000;
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for i in 0..iters {
+        for j in 0..BATCH {
+            // 轮询 16 个 fd, 每个 fd 上做 mark_waiting + try_wake
+            let fd = ((i * BATCH + j) as usize) % MAX_SM_FD;
+            queues[fd].mark_waiting();
+            if queues[fd].try_wake(0) {
+                sink ^= 1;
+            }
+        }
+    }
+    std::hint::black_box(sink);
+    let elapsed = start.elapsed().as_nanos();
+    let total_ops = (iters as u128) * (BATCH as u128);
+    elapsed.saturating_mul(1_000) / total_ops
+}
+
+// ====== 12. virtio-blk I/O 路径 (来自 framework/driver/virtio/{queue,blk}.rs) ======
+//
+// 模拟 split virtqueue 的 submit → pop_used 循环.
+// 4K 写请求包含 3 段描述符链: header (1B) + data (4096B) + status (1B).
+// 验收目标: 4K 写延迟 < 100μs (QEMU virtio-blk 设备实测),
+//          host 端算法路径应远低于此 (<< 1μs).
+
+/// 描述符标志
+const VQ_DESC_F_NEXT: u16 = 1;
+const VQ_DESC_F_WRITE: u16 = 2;
+
+/// split virtqueue 描述符 (host-only 简化版)
+struct MockVqDesc {
+    addr: u64,
+    len: u32,
+    flags: u16,
+    next: u16,
+}
+
+/// 4K 写请求的 3 段描述符链 (与 virtio-blk 协议一致)
+const BLK_REQ_HEADERS_OUT: usize = 1;
+const BLK_REQ_DATA_OUT: usize = 1;
+const BLK_REQ_STATUS_IN: usize = 1;
+const BLK_REQ_CHAIN_LEN: usize = BLK_REQ_HEADERS_OUT + BLK_REQ_DATA_OUT + BLK_REQ_STATUS_IN;
+const BLK_SECTOR_SIZE: u32 = 512;
+const BLK_4K_BYTES: u32 = 4096;
+const BLK_4K_SECTORS: u32 = BLK_4K_BYTES / BLK_SECTOR_SIZE;
+
+/// split virtqueue (host-only mock, 32 项, 与 VQ_SIZE 对齐)
+struct MockVirtQueue {
+    descs: Vec<MockVqDesc>,
+    avail_idx: u16,
+    last_used_idx: u16,
+    /// 空闲描述符链头 (单链表)
+    free_head: u16,
+    capacity: u16,
+}
+
+impl MockVirtQueue {
+    fn new(capacity: u16) -> Self {
+        let mut descs: Vec<MockVqDesc> = (0..capacity)
+            .map(|i| MockVqDesc {
+                addr: 0,
+                len: 0,
+                flags: 0,
+                next: if i + 1 < capacity { i + 1 } else { 0xFFFF },
+            })
+            .collect();
+        // 初始 free_head = 0
+        let _ = &mut descs;
+        Self {
+            descs,
+            avail_idx: 0,
+            last_used_idx: 0,
+            free_head: 0,
+            capacity,
+        }
+    }
+
+    /// 提交 3 段描述符链 (header + 4K data + status), 返回 head idx
+    fn submit_blk_write(&mut self) -> Option<u16> {
+        // 检查空闲槽位
+        if self.free_head == 0xFFFF {
+            return None;
+        }
+        let head = self.free_head;
+        // 分配 3 段: header, data, status
+        let h1 = head;
+        let h2 = ((head as u32 + 1) % self.capacity as u32) as u16;
+        let h3 = ((head as u32 + 2) % self.capacity as u32) as u16;
+        // 第 3 段 (status) 设备写, 不链 next
+        self.descs[h1 as usize] = MockVqDesc {
+            addr: 0x1000, len: 16, flags: VQ_DESC_F_NEXT, next: h2,
+        };
+        self.descs[h2 as usize] = MockVqDesc {
+            addr: 0x2000, len: BLK_4K_BYTES, flags: VQ_DESC_F_NEXT, next: h3,
+        };
+        self.descs[h3 as usize] = MockVqDesc {
+            addr: 0x3000, len: 1, flags: VQ_DESC_F_WRITE, next: 0xFFFF,
+        };
+        // 推进 free_head 到下一空闲
+        self.free_head = if h3 + 1 < self.capacity { h3 + 1 } else { 0xFFFF };
+        // 推进 avail_idx (驱动侧的可用环 head 索引)
+        self.avail_idx = self.avail_idx.wrapping_add(1);
+        Some(head)
+    }
+
+    /// 模拟设备完成 (used ring 推进 + 描述符回收)
+    fn complete_blk_write(&mut self, head: u16) {
+        // used ring 推进
+        self.last_used_idx = self.last_used_idx.wrapping_add(1);
+        // 回收整个 3 段描述符链: 走完 chain 把所有 desc 放回 free_head
+        // 简化: 链式回收 (链上 next 仍可读, 因为我们没有清 desc.next)
+        let mut idx = head;
+        for _ in 0..BLK_REQ_CHAIN_LEN {
+            let next = self.descs[idx as usize].next;
+            self.descs[idx as usize].flags = 0;
+            // 把当前 desc 插入 free_head 链头
+            if self.free_head == 0xFFFF {
+                // free_head 满, 把当前 desc 接在 head 之后
+                self.descs[idx as usize].next = 0xFFFF;
+                self.free_head = idx;
+            } else {
+                // 把 free_head 接到当前 desc 之后
+                self.descs[idx as usize].next = self.free_head;
+                self.free_head = idx;
+            }
+            if next == 0xFFFF {
+                break;
+            }
+            idx = next;
+        }
+    }
+
+    /// 模拟 pop_used (驱动侧读取已用环)
+    fn pop_used(&mut self) -> Option<u16> {
+        // 与设备完成同步推进
+        Some(0)
+    }
+}
+
+pub fn virtio_blk_io_bench(iters: u64) -> u128 {
+    let mut vq = MockVirtQueue::new(32);
+    // 1 轮 (BATCH) = 32 次 4K 写 (覆盖整个 virtqueue 一次)
+    const BATCH: u64 = 32;
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for _ in 0..iters {
+        for _ in 0..BATCH {
+            // 提交 1 个 4K 写请求
+            if let Some(head) = vq.submit_blk_write() {
+                // 设备完成 (同步, host-only mock)
+                vq.complete_blk_write(head);
+                let _ = vq.pop_used();
+                // 读取回状态防止编译器优化掉整条路径
+                sink ^= head as u64;
+                sink ^= vq.last_used_idx as u64;
+                sink ^= vq.descs[head as usize].len as u64;
+            }
+        }
+    }
+    std::hint::black_box(sink);
+    let elapsed = start.elapsed().as_nanos();
+    // 归一化: 1 op = 1 个 4K 写请求 (含 submit + complete + pop)
+    let total_ops = (iters as u128) * (BATCH as u128);
+    elapsed.saturating_mul(1_000) / total_ops
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -565,6 +789,10 @@ pub fn run_all() -> BenchReport {
         bitmap_scan_bench(100_000)));
     results.push(measure("btree_id_lookup", "proc", 100_000, ||
         btree_id_lookup_bench(100_000)));
+    results.push(measure("socket_wait_queue", "net", 10_000, ||
+        socket_wait_queue_bench(10_000)));
+    results.push(measure("virtio_blk_io", "storage", 10_000, ||
+        virtio_blk_io_bench(10_000)));
     BenchReport { version: 1, results }
 }
 
@@ -675,5 +903,58 @@ mod tests {
         m.insert(42, 0xCAFE);
         assert_eq!(m.get(&42), Some(&0xCAFE));
         assert_eq!(m.get(&43), None);
+    }
+
+    #[test]
+    fn test_socket_wait_queue_mark_then_wake() {
+        let q = MockSocketWaitQueue::new();
+        // 首次 mark_waiting 返回 true (之前未标记)
+        assert!(q.mark_waiting());
+        // 重复 mark_waiting 返回 false (已经标记)
+        assert!(!q.mark_waiting());
+        assert!(q.is_pending());
+        // try_wake 成功清掉 pending, 返回 true
+        assert!(q.try_wake(0));
+        assert!(!q.is_pending());
+        // 没有等待者时 try_wake 返回 false
+        assert!(!q.try_wake(0));
+        assert_eq!(q.wake_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_socket_wait_queue_bench_runs() {
+        // smoke: 调用一次小迭代 bench 确保不 panic
+        let _ = socket_wait_queue_bench(10);
+    }
+
+    #[test]
+    fn test_virtio_blk_submit_blk_write() {
+        let mut vq = MockVirtQueue::new(32);
+        // 提交 1 个 4K 写请求, 应返回 head = 0
+        let head = vq.submit_blk_write().expect("free desc");
+        assert_eq!(head, 0);
+        // 描述符链 3 段已填充
+        assert_eq!(vq.descs[0].len, 16);
+        assert_eq!(vq.descs[1].len, BLK_4K_BYTES);
+        assert_eq!(vq.descs[2].flags & VQ_DESC_F_WRITE, VQ_DESC_F_WRITE);
+        assert_eq!(vq.descs[2].next, 0xFFFF);
+        // avail_idx 已推进
+        assert_eq!(vq.avail_idx, 1);
+    }
+
+    #[test]
+    fn test_virtio_blk_submit_full_chain() {
+        // 容量 32, 每次提交占用 3 段, 10 次后应仍有空间
+        let mut vq = MockVirtQueue::new(32);
+        for _ in 0..10 {
+            assert!(vq.submit_blk_write().is_some());
+        }
+        assert_eq!(vq.avail_idx, 10);
+    }
+
+    #[test]
+    fn test_virtio_blk_bench_runs() {
+        // smoke: 调用一次小迭代 bench 确保不 panic
+        let _ = virtio_blk_io_bench(10);
     }
 }

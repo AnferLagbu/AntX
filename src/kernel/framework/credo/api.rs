@@ -66,7 +66,7 @@ pub fn pwm_init() {
     {
         return;
     }
-    let t = identity::raw::get_table_mut();
+    let t = identity::get_table();
     t.init();
     klog_pwm!("PWM v5 initialized");
 }
@@ -84,7 +84,7 @@ pub fn pwm_any_identity_exists() -> bool {
 #[no_mangle]
 pub fn pwm_try_genesis(password: *const u8) -> i64 {
     let pwd = password.as_kstr();
-    match identity::raw::get_table_mut().bootstrap(pwd, "root") {
+    match identity::get_table().bootstrap(pwd, "root") {
         Ok(pwm) => pwm as i64,
         Err(e) => e.as_i32() as i64,
     }
@@ -98,7 +98,7 @@ pub fn pwm_create(
 ) -> i64 {
     let pwd = password.as_kstr();
     let nte = note.as_kstr();
-    match identity::raw::get_table_mut().create(pwd, nte, creator_pwm) {
+    match identity::get_table().create(pwd, nte, creator_pwm) {
         Ok(pwm) => pwm as i64,
         Err(e) => e.as_i32() as i64,
     }
@@ -145,7 +145,7 @@ pub fn pwm_change_password(
 ) -> i32 {
     let o = old.as_kstr();
     let n = new.as_kstr();
-    match identity::raw::get_table_mut().change_password(pwm, o, n) {
+    match identity::get_table().change_password(pwm, o, n) {
         Ok(()) => 0,
         Err(e) => e.as_i32(),
     }
@@ -172,7 +172,7 @@ pub fn pwm_has_cap_raw(pwm: u64, domain: u16, _cap_bit: u8) -> u64 {
 #[no_mangle]
 pub fn pwm_create_first_identity(password: *const u8) -> i64 {
     let pwd = password.as_kstr();
-    match identity::raw::get_table_mut().bootstrap(pwd, "root") {
+    match identity::get_table().bootstrap(pwd, "root") {
         Ok(pwm) => pwm as i64,
         Err(e) => e.as_i32() as i64,
     }

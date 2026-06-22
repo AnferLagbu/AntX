@@ -84,8 +84,9 @@ impl IdentityTable {
                 AtomicU64::new(0),
                 AtomicU64::new(0),
             ],
-            note: [0u8; PWM_NOTE_LEN],
-            password_hash: [0u8; PWM_HASH_LEN],
+            // T4-1: 全 Atomic 化 (与 services/credo/types.rs 对齐)
+            note: [const { AtomicU8::new(0) }; PWM_NOTE_LEN],
+            password_hash: [const { AtomicU8::new(0) }; PWM_HASH_LEN],
             created_time: AtomicU64::new(0),
             expires_at: AtomicU64::new(0),
             lockout_until: AtomicU64::new(0),
@@ -192,7 +193,7 @@ impl IdentityTable {
             if !entry.is_valid() {
                 continue;
             }
-            if entry.get_note_str() == note {
+            if entry.note_equals(note) {
                 return Some(entry);
             }
         }
@@ -204,15 +205,23 @@ impl IdentityTable {
             Some(e) => e,
             None => return false,
         };
-        let stored = &entry.password_hash;
-        let salt: [u8; PWM_SALT_LEN] = stored[PWM_DIGEST_LEN..PWM_HASH_LEN]
-            .try_into()
-            .unwrap_or([0u8; PWM_SALT_LEN]);
+        // T4-1: 原子读取 password_hash 中的 salt 部分 (PWM_DIGEST_LEN..PWM_HASH_LEN)
+        let mut salt = [0u8; PWM_SALT_LEN];
+        for i in 0..PWM_SALT_LEN {
+            salt[i] = entry.password_hash[PWM_DIGEST_LEN + i].load(Ordering::Acquire);
+        }
         let computed = hash_with_salt(password, &salt);
-        constant_time_eq(&computed, &stored[..PWM_DIGEST_LEN])
+        // T4-1: 原子读取 stored digest 与 computed 比较
+        let mut stored_digest = [0u8; PWM_DIGEST_LEN];
+        for i in 0..PWM_DIGEST_LEN {
+            stored_digest[i] = entry.password_hash[i].load(Ordering::Acquire);
+        }
+        constant_time_eq(&computed, &stored_digest)
     }
 
-    pub fn create(&mut self, password: &str, note: &str, creator_pwm: u64) -> Result<u64, PwmError> {
+    /// T4-1: 全 Atomic 化后, create 改用 &self (替代 &mut self)
+    /// 注: 调用方必须保证并发安全 (create 内已有 self.acquire/release 锁)
+    pub fn create(&self, password: &str, note: &str, creator_pwm: u64) -> Result<u64, PwmError> {
         let privilege_level = if creator_pwm == 0 {
             0u8
         } else {
@@ -253,7 +262,8 @@ impl IdentityTable {
             }
         };
 
-        let entry = &mut self.entries[slot];
+        // T4-1: 通过 &self.entries[slot] + 原子写入
+        let entry = &self.entries[slot];
         entry.pwm.store(pwm, Ordering::Release);
         entry.creator_pwm.store(creator_pwm, Ordering::Release);
         entry
@@ -263,14 +273,22 @@ impl IdentityTable {
 
         let salt = csprng::generate_salt();
         let digest = hash_with_salt(password, &salt);
-        entry.password_hash[..PWM_DIGEST_LEN].copy_from_slice(&digest);
-        entry.password_hash[PWM_DIGEST_LEN..PWM_DIGEST_LEN + PWM_SALT_LEN].copy_from_slice(&salt);
+        // T4-1: 原子写入 password_hash (digest 32 字节 + salt 16 字节)
+        for i in 0..PWM_DIGEST_LEN {
+            entry.password_hash[i].store(digest[i], Ordering::Release);
+        }
+        for i in 0..PWM_SALT_LEN {
+            entry.password_hash[PWM_DIGEST_LEN + i].store(salt[i], Ordering::Release);
+        }
 
         {
+            // T4-1: 原子写入 note
             let note_bytes = note.as_bytes();
             let len = note_bytes.len().min(PWM_NOTE_LEN - 1);
-            entry.note[..len].copy_from_slice(&note_bytes[..len]);
-            entry.note[len] = 0;
+            for i in 0..len {
+                entry.note[i].store(note_bytes[i], Ordering::Release);
+            }
+            entry.note[len].store(0, Ordering::Release);
         }
 
         for i in 0..16 {
@@ -452,7 +470,8 @@ impl IdentityTable {
         Ok(())
     }
 
-    pub fn bootstrap(&mut self, password: &str, note: &str) -> Result<u64, PwmError> {
+    /// T4-1: 全 Atomic 化后, bootstrap 改用 &self (create 已为 &self)
+    pub fn bootstrap(&self, password: &str, note: &str) -> Result<u64, PwmError> {
         bootstrap::generate_first_token();
 
         let pwm = self.create(password, note, 0)?;
@@ -509,15 +528,22 @@ impl IdentityTable {
         Ok(())
     }
 
-    pub fn change_password(&mut self, pwm: u64, old: &str, new: &str) -> Result<(), PwmError> {
+    /// T4-1: 全 Atomic 化后, change_password 改用 &self + 原子字节写入
+    /// (替代原 &mut self + copy_from_slice, 后者要求 PwmEntry 字段非 Atomic)
+    pub fn change_password(&self, pwm: u64, old: &str, new: &str) -> Result<(), PwmError> {
         if !self.verify_password(pwm, old) {
             return Err(PwmError::PasswordIncorrect);
         }
-        let entry = self.find_mut(pwm).ok_or(PwmError::NotFound)?;
+        let entry = self.find(pwm).ok_or(PwmError::NotFound)?;
         let salt = csprng::generate_salt();
         let digest = hash_with_salt(new, &salt);
-        entry.password_hash[..PWM_DIGEST_LEN].copy_from_slice(&digest);
-        entry.password_hash[PWM_DIGEST_LEN..PWM_DIGEST_LEN + PWM_SALT_LEN].copy_from_slice(&salt);
+        // T4-1: 原子写入 digest (32 字节) + salt (16 字节)
+        for i in 0..PWM_DIGEST_LEN {
+            entry.password_hash[i].store(digest[i], Ordering::Release);
+        }
+        for i in 0..PWM_SALT_LEN {
+            entry.password_hash[PWM_DIGEST_LEN + i].store(salt[i], Ordering::Release);
+        }
         self.set_modified();
         Ok(())
     }
@@ -556,46 +582,48 @@ impl IdentityTable {
     }
 }
 
-// SAFETY: IdentityTable::new() 是 const fn, 但 PwmEntry 含非 Atomic 字段
+// ============================================================================
+// T4-1 全 Atomic 重构完成 — static mut GLOBAL_TABLE 替换为 OnceLock
+// ============================================================================
+//
+// 此前约束: IdentityTable::new() 是 const fn, 但 PwmEntry 含非 Atomic 字段
 // (note/password_hash) 需要 &mut 写入, 而 `static` + addr_of_mut! 被 Rust 借用
-// 检查禁止 (E0596). 真实可行的零 unsafe 改造需要重写 PwmEntry 为全 Atomic,
-// 引入 OnceLock<Mutex<>> 包装 — 涉及 ~30 个调用方 API 变更, 超出本维护周期.
-// 当前 static mut + addr_of!/addr_of_mut! 模式已通过 `raw` 子模块集中访问.
-static mut GLOBAL_TABLE: IdentityTable = IdentityTable::new();
+// 检查禁止 (E0596). 当前方案: PwmEntry 全字段 Atomic 化
+// (note: [AtomicU8; N], password_hash: [AtomicU8; N]), 所有方法改 &self,
+// IdentityTable 整体可被 OnceLock 安全持有, 无需 unsafe.
+//
+// 旧版 raw 子模块 (addr_of!/addr_of_mut!) 保留兼容性, 但已不推荐使用.
+static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<IdentityTable> =
+    crate::kernel::framework::sync::OnceLock::new();
 
+/// 获取全局身份表 (T4-1: OnceLock 包装, 自动初始化, 0 unsafe)
 pub fn get_table() -> &'static IdentityTable {
-    raw::get_table()
+    GLOBAL_TABLE.get_or_init(IdentityTable::new)
 }
 
 ///
 /// # Safety
 ///
-/// 调用者持有身份表锁。`pwm` 是表中存在的有效 PWID。
-pub unsafe fn get_table_mut() -> &'static mut IdentityTable {
-    raw::get_table_mut()
-}
+/// **T4-1 已废弃**: 全 Atomic 化后, 所有变更操作改用 &self + 原子写入,
+// T4-1: get_table_mut 已彻底删除.
+// 原因: 全 Atomic 化后, 所有变更操作改用 &self + 原子写入, 无需 &mut 全局引用.
+// 此前 &mut self 的方法 (create, change_password, bootstrap) 已改为 &self.
+// 唯一外部兼容函数 storage::table_mut() 返回 &IdentityTable (非 &mut), 走 get_table().
 
 // ============================================================================
 // 特权子模块 (Framekernel raw): 集中 GLOBAL_TABLE 访问
 // ============================================================================
 
-pub(crate) mod raw {
-    use super::*;
-
-    /// 安全读取 GLOBAL_TABLE (返回不可变引用, 内部访问为 aliasing 安全)
-    /// 因为 IdentityTable 内部全是 AtomicXxx, 不可变引用是安全的。
-    pub fn get_table() -> &'static IdentityTable {
-        // SAFETY: IdentityTable 内部字段全为 AtomicXxx, 不可变借用安全;
-        // 调用方契约持有表读锁或单线程上下文。
-        unsafe { &*core::ptr::addr_of!(GLOBAL_TABLE) }
-    }
-
-    /// 可变访问 (调用方必须持有表锁)
-    pub fn get_table_mut() -> &'static mut IdentityTable {
-        // SAFETY: 调用方契约持有表写锁, 保证唯一 &mut。
-        unsafe { &mut *core::ptr::addr_of_mut!(GLOBAL_TABLE) }
-    }
-}
+// ============================================================================
+// T4-1: raw 子模块已废弃
+// ============================================================================
+//
+// 此前使用 `static mut GLOBAL_TABLE` + `addr_of!/addr_of_mut!` 模式,
+// 通过 `raw` 子模块集中 unsafe 访问. T4-1 全 Atomic 化后, GLOBAL_TABLE
+// 已改为 `OnceLock<IdentityTable>`, 所有变更走 &self + 原子写入,
+// 无需 `addr_of!` / `addr_of_mut!`. raw 子模块移除.
+//
+// 历史保留: 此前 raw 子模块实现见 git log, 此处仅作迁移说明.
 
 pub fn find(pwm: u64) -> Option<&'static PwmEntry> {
     get_table().find(pwm)

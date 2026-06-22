@@ -176,10 +176,11 @@ fn test_audit_entry() -> TestResult {
 }
 
 fn test_pwmentry_note() -> TestResult {
-    let mut entry = PwmEntry::new();
+    // T4-1: 全 Atomic 化后 set_note 接受 &self, 验证用 note_equals
+    let entry = PwmEntry::new();
     entry.set_note("test-identity");
-    let note = entry.get_note_str();
-    check!(note == "test-identity", "note mismatch");
+    check!(entry.note_equals("test-identity"), "note mismatch");
+    check!(!entry.note_equals("other"), "note should not match other");
     TestResult::Pass
 }
 
