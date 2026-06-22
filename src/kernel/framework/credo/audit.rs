@@ -70,6 +70,8 @@ impl AuditLog {
     }
 }
 
+// SAFETY: 仅在 audit 子系统串行访问下使用, AuditLog 内部使用 fetch_add 计数
+// 多核写不同 idx 不会数据竞争. 集中在此处访问以隔离 static mut 范围.
 pub(crate) static mut GLOBAL_AUDIT: AuditLog = AuditLog::new();
 
 pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {

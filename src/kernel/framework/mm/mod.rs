@@ -102,6 +102,9 @@ pub use swap_trait::{SwapPolicy, FallbackSwapPolicy, SwapPolicyContext, LruPageI
 // cow 公共接口 re-export — 避免跨子系统直接访问 mm::cow 内部
 pub use cow::{cow_init, cow_ref_count, cow_inc_ref, cow_dec_ref};
 
+// DECOUPL-4: 顶层 re-export NUMA 初始化入口, 避免 framework 内部 3+ 层深度访问
+pub use numa::numa_init;
+
 // mechanism 模块供 services 层通过 framework::mm::mechanism::* 访问机制 API
 // 不使用 glob re-export 因与现有 api re-export 产生歧义
 

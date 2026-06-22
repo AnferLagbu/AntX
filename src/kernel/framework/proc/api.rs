@@ -733,7 +733,8 @@ pub fn launch_first_user_process() -> ! {
         if initramfs.len() > 0 {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             let result = unsafe {
-                crate::kernel::framework::fs::initramfs::unpack(
+                // DECOUPL-4: 使用 framework::fs::unpack 顶层路径 (替代 fs::initramfs::unpack)
+                crate::kernel::framework::fs::unpack(
                     initramfs.as_ptr(),
                     initramfs.len(),
                 )
@@ -897,7 +898,8 @@ pub fn scheduler_init() {
     // D2: 初始化 cgroup 子系统
     super::cgroup::cgroup_init();
     // D3: 初始化 NUMA 拓扑 (UMA 回退, 后续接入 ACPI SRAT)
-    crate::kernel::framework::mm::numa::numa_init(
+    // DECOUPL-4: 使用 framework::mm::numa_init 顶层路径 (替代 mm::numa::numa_init)
+    crate::kernel::framework::mm::numa_init(
         crate::kernel::framework::mm::pmm_get_total_pages() * crate::kernel::framework::mm::PAGE_SIZE,
         crate::kernel::framework::config::MAX_CPUS as u32,
     );
@@ -910,7 +912,8 @@ pub fn scheduler_init() {
     // D6: 初始化安全启动 + TPM (移至 credo_init, 消除 proc→credo 依赖)
     crate::kernel::framework::credo::credo_init();
     // D7: 初始化 CET (Shadow Stack)
-    crate::kernel::framework::arch::shadow_stack::cet_init();
+    // DECOUPL-4: 改用 framework::arch::cet_init 顶层路径 (由 arch 已有 re-export 提供)
+    crate::kernel::framework::arch::cet_init();
     // D8: 初始化 Tickless (NO_HZ)
     crate::kernel::framework::timer::tickless_init(
         crate::kernel::framework::config::MAX_CPUS as u32,

@@ -24,6 +24,8 @@ pub mod caps;
 pub mod memory;
 /// /proc/sys/config 接口 (原 framework/config/procfs.rs)
 pub mod procfs;
+/// LEGACY-6: 运行时 sysctl 框架
+pub mod sysctl;
 /// ConfigSummary 启动期编码 (原 framework/config/boot_image.rs)
 pub mod boot_image;
 /// 启动自检 (原 framework/config/validate.rs)

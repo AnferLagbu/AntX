@@ -13,3 +13,6 @@ pub mod ramfs;
 pub mod vfs;
 
 pub use vfs::*;
+
+// DECOUPL-4: 顶层 re-export initramfs unpack 入口, 避免 framework 内部 3+ 层深度访问
+pub use initramfs::unpack;

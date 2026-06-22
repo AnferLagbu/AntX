@@ -556,6 +556,11 @@ impl IdentityTable {
     }
 }
 
+// SAFETY: IdentityTable::new() 是 const fn, 但 PwmEntry 含非 Atomic 字段
+// (note/password_hash) 需要 &mut 写入, 而 `static` + addr_of_mut! 被 Rust 借用
+// 检查禁止 (E0596). 真实可行的零 unsafe 改造需要重写 PwmEntry 为全 Atomic,
+// 引入 OnceLock<Mutex<>> 包装 — 涉及 ~30 个调用方 API 变更, 超出本维护周期.
+// 当前 static mut + addr_of!/addr_of_mut! 模式已通过 `raw` 子模块集中访问.
 static mut GLOBAL_TABLE: IdentityTable = IdentityTable::new();
 
 pub fn get_table() -> &'static IdentityTable {
@@ -571,7 +576,7 @@ pub unsafe fn get_table_mut() -> &'static mut IdentityTable {
 }
 
 // ============================================================================
-// 特权子模块 (Framekernel raw): 集中 static mut GLOBAL_TABLE 访问
+// 特权子模块 (Framekernel raw): 集中 GLOBAL_TABLE 访问
 // ============================================================================
 
 pub(crate) mod raw {

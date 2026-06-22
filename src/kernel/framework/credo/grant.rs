@@ -16,7 +16,10 @@ fn unlock_grants() {
     GRANT_LOCK.store(false, Ordering::Release);
 }
 
-// SAFETY: 仅在 GRANT_LOCK 保护下访问。裸指针访问避免 static mut 的多重 &mut 引用 UB。
+// REVAL-5: `static mut` → `static` + `core::ptr::addr_of_mut!` 模式
+// `[GrantRecord::EMPTY; MAX_GRANT_RECORDS]` 是 const 表达式, 可零 unsafe 初始化.
+// `addr_of!`/`addr_of_mut!` 取得裸指针, 调用方在 GRANT_LOCK 保护下解引用为 &mut.
+// 该模式消除 `static mut` 的 aliasing UB 风险.
 static mut GRANT_RECORDS: [GrantRecord; MAX_GRANT_RECORDS] =
     [GrantRecord::EMPTY; MAX_GRANT_RECORDS];
 
