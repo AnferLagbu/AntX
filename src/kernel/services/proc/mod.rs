@@ -146,6 +146,8 @@ pub type ProcResult<T> = Result<T, ProcError>;
 pub fn init() {
     // T-01: 注册 services 层调度策略 (在 framework 调度器初始化之前)
     let _ = sched_policy::register_mlfq_policy();
+    // REVAL-1: 注册 services 层信号策略
+    let _ = signal::register_standard_signal_policy();
 
     crate::kernel::framework::proc::thread::init();
     crate::kernel::framework::proc::scheduler::init();

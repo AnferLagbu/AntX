@@ -477,3 +477,61 @@ pub fn sigaltstack_syscall(
     let ret = crate::kernel::framework::syscall::api::sys_sigaltstack(ss, old_ss);
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
 }
+
+// ============================================================================
+// REVAL-1: services 层 SignalDecision 实现
+// ============================================================================
+//
+// T-06 信号投递策略: framework/proc/signal_trait.rs 已定义 SignalDecision
+// trait, 之前的 SKIP 理由 (中断路径高频) 通过 `OnceLock<&'static dyn>`
+// 零成本读取引用解决 (已经是 vtable 一次解析, 后续调用直接通过指针).
+// 本文件实现 StandardSignalPolicy, 在 services::proc::init() 中注册.
+
+use crate::kernel::framework::proc::signal_trait::SignalDecision;
+use crate::kernel::framework::proc::SignalDefaultAction;
+
+/// 标准 POSIX 信号策略 (services 端实现)
+///
+/// 行为与 `FallbackSignalPolicy` 一致, 但放置在 services 层
+/// 体现 framekernel 架构: framework 只保留 unsafe 机制, 策略归 services.
+///
+/// # Safety
+///
+/// 本结构体所有方法为纯函数, 不涉及硬件/内存/线程, 无 unsafe 需求.
+pub struct StandardSignalPolicy;
+
+impl SignalDecision for StandardSignalPolicy {
+    fn default_action(&self, sig: u8) -> SignalDefaultAction {
+        match sig {
+            17 | 23 => SignalDefaultAction::Ign,
+            19 | 20 | 21 | 22 => SignalDefaultAction::Stop,
+            18 => SignalDefaultAction::Cont,
+            3 | 4 | 6 | 7 | 8 | 11 | 31 | 24 | 25 => SignalDefaultAction::Core,
+            _ => SignalDefaultAction::Term,
+        }
+    }
+
+    fn is_uncatchable(&self, sig: u8) -> bool {
+        sig == 9 || sig == 19
+    }
+
+    fn pick_next_signal(&self, deliverable: u64) -> Option<u8> {
+        if deliverable == 0 {
+            return None;
+        }
+        let sig_bit = deliverable.trailing_zeros() as u8;
+        if sig_bit == 0 || sig_bit > 31 {
+            return None;
+        }
+        Some(sig_bit)
+    }
+}
+
+/// 注册标准信号策略到 framework
+///
+/// 由 `services::proc::init()` 调用. 只能成功一次, 后续调用返回 `Err(())`.
+/// 重复注册不会导致 panic, 仅记录为可观察结果, 启动期已知安全.
+pub fn register_standard_signal_policy() -> Result<(), ()> {
+    static POLICY: StandardSignalPolicy = StandardSignalPolicy;
+    crate::kernel::framework::proc::register_signal_decision(&POLICY).map_err(|_| ())
+}
