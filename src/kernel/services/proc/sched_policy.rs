@@ -399,3 +399,212 @@ pub fn register_mlfq_policy() -> Result<(), ()> {
     static POLICY: MlfqPolicy = MlfqPolicy;
     crate::kernel::framework::proc::register_sched_decision(&POLICY).map_err(|_| ())
 }
+
+// ============================================================================
+// 单元测试 — 调度策略契约
+// ============================================================================
+//
+// 覆盖:
+// - nice_to_weight / weight_to_nice: NICE 双向转换 (含 -20..19 边界 + clamp)
+// - mlfq_level_to_nice: MLFQ 层级 → nice
+// - DeadlineParams: is_valid + utilization_pct
+// - CfsRunQueue: enqueue/dequeue/pick_next + 时间片计算
+// - MlfqPolicy: time_slice + should_reschedule
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 1. nice_to_weight: -20..19 全范围
+    #[test]
+    fn test_sched_nice_to_weight() {
+        // nice=-20 → 88761 (NICE_TO_WEIGHT[0])
+        assert_eq!(nice_to_weight(-20), 88761);
+        // nice=0 → 1024 (NICE_TO_WEIGHT[20])
+        assert_eq!(nice_to_weight(0), 1024);
+        // nice=19 → 15 (NICE_TO_WEIGHT[39])
+        assert_eq!(nice_to_weight(19), 15);
+        // 越界 clamp: -100 → -20
+        assert_eq!(nice_to_weight(-100), 88761);
+        // 越界 clamp: 100 → 19
+        assert_eq!(nice_to_weight(100), 15);
+        // 边界: i8 最小/最大
+        assert_eq!(nice_to_weight(i8::MIN), 88761);
+        assert_eq!(nice_to_weight(i8::MAX), 15);
+    }
+
+    /// 2. weight_to_nice: 反向转换
+    #[test]
+    fn test_sched_weight_to_nice() {
+        // 88761 → -20 (NICE_TO_WEIGHT[0])
+        assert_eq!(weight_to_nice(88761), -20);
+        // 1024 → 0 (精确)
+        assert_eq!(weight_to_nice(1024), 0);
+        // 15 → 19
+        assert_eq!(weight_to_nice(15), 19);
+        // 越界: >= 88761 → -20
+        assert_eq!(weight_to_nice(100000), -20);
+        assert_eq!(weight_to_nice(u64::MAX), -20);
+        // 越界: <= 15 → 19
+        assert_eq!(weight_to_nice(10), 19);
+        assert_eq!(weight_to_nice(0), 19);
+        // 近似匹配: 找最接近
+        let nice = weight_to_nice(5000);
+        // 5000 在 NICE_TO_WEIGHT 中无精确匹配, 应返回最近 nice
+        assert!(nice >= -20 && nice <= 19);
+    }
+
+    /// 3. mlfq_level_to_nice
+    #[test]
+    fn test_sched_mlfq_level_to_nice() {
+        assert_eq!(mlfq_level_to_nice(0), -10);
+        assert_eq!(mlfq_level_to_nice(1), -4);
+        assert_eq!(mlfq_level_to_nice(2), 0);
+        assert_eq!(mlfq_level_to_nice(3), 8);
+        assert_eq!(mlfq_level_to_nice(4), 0);  // 默认 fallback
+        assert_eq!(mlfq_level_to_nice(99), 0);
+    }
+
+    /// 4. DeadlineParams: is_valid 边界
+    #[test]
+    fn test_sched_deadline_is_valid() {
+        // 默认: 全 0 → invalid
+        assert!(!DeadlineParams::new().is_valid());
+        // runtime < MIN → invalid
+        let mut p = DeadlineParams { runtime: 1, deadline: 100, period: 100 };
+        assert!(!p.is_valid());
+        // runtime >= MIN, deadline >= runtime, period >= deadline, period >= MIN_PERIOD → valid
+        p.runtime = DL_MIN_RUNTIME_TICKS;
+        assert!(p.is_valid());
+        // period < MIN_PERIOD → invalid
+        p.period = 1;
+        assert!(!p.is_valid());
+        // period < deadline → invalid
+        p.period = 50;
+        p.deadline = 100;
+        assert!(!p.is_valid());
+    }
+
+    /// 5. DeadlineParams: utilization_pct
+    #[test]
+    fn test_sched_deadline_utilization() {
+        assert_eq!(DeadlineParams::new().utilization_pct(), 0);  // period=0 → 0
+        let p = DeadlineParams { runtime: 50, deadline: 100, period: 100 };
+        assert_eq!(p.utilization_pct(), 50);  // 50/100 * 100 = 50%
+        let p = DeadlineParams { runtime: 100, deadline: 100, period: 100 };
+        assert_eq!(p.utilization_pct(), 100);  // 100%
+    }
+
+    /// 6. CfsRunQueue: enqueue/pick_next/dequeue
+    #[test]
+    fn test_sched_cfs_basic_ops() {
+        let mut q = CfsRunQueue::new();
+        assert!(q.is_empty());
+        // enqueue 3 个进程
+        q.enqueue(1, 100, 1024);
+        q.enqueue(2, 50, 1024);
+        q.enqueue(3, 200, 1024);
+        assert_eq!(q.nr_running, 3);
+        // pick_next: 最小 vruntime 是 50 (PID 2)
+        let (pid, vr) = q.pick_next().unwrap();
+        assert_eq!(pid, 2);
+        assert_eq!(vr, 50);
+        assert_eq!(q.nr_running, 2);
+        // pick_next: 下一个是 100 (PID 1)
+        let (pid, vr) = q.pick_next().unwrap();
+        assert_eq!(pid, 1);
+        assert_eq!(vr, 100);
+        // pick_next: 最后一个是 200 (PID 3)
+        let (pid, vr) = q.pick_next().unwrap();
+        assert_eq!(pid, 3);
+        assert_eq!(vr, 200);
+        // 空队列
+        assert!(q.pick_next().is_none());
+    }
+
+    /// 7. CfsRunQueue: calc_time_slice (权重比例)
+    #[test]
+    fn test_sched_cfs_time_slice() {
+        let q = CfsRunQueue::new();
+        // total=0 → 返回 MIN_GRANULARITY (避免除零)
+        assert_eq!(q.calc_time_slice(1024), MIN_GRANULARITY_TICKS);
+        // weight=0 → MIN_GRANULARITY (避免除零)
+        let mut q = CfsRunQueue::new();
+        q.enqueue(1, 0, 1024);
+        assert_eq!(q.calc_time_slice(0), MIN_GRANULARITY_TICKS);
+        // 单进程 (total=1024, weight=1024) → TARGET_LATENCY
+        let q = CfsRunQueue::new();
+        // 直接设置 total_weight
+        q.total_weight.store(1024, Ordering::Release);
+        assert_eq!(q.calc_time_slice(1024), TARGET_LATENCY_TICKS);
+        // 2 进程 (total=2048, weight=1024) → TARGET/2
+        let q = CfsRunQueue::new();
+        q.total_weight.store(2048, Ordering::Release);
+        assert_eq!(q.calc_time_slice(1024), TARGET_LATENCY_TICKS / 2);
+    }
+
+    /// 8. CfsRunQueue: enqueue 时 vruntime 自动对齐到 min_vruntime
+    #[test]
+    fn test_sched_cfs_min_vruntime_alignment() {
+        let mut q = CfsRunQueue::new();
+        // 先 enqueue 1 个, vruntime=100
+        q.enqueue(1, 100, 1024);
+        // min_vruntime = 100
+        assert_eq!(q.min_vruntime.load(Ordering::Acquire), 100);
+        // 再 enqueue 1 个, vruntime=50 (小于 min)
+        q.enqueue(2, 50, 1024);
+        // 应被提升到 100 (max(50, 100))
+        assert_eq!(q.min_vruntime.load(Ordering::Acquire), 100);
+        // 实际入队位置: (100, 2)
+        let (pid, vr) = q.pick_next().unwrap();
+        assert_eq!(pid, 1);
+        assert_eq!(vr, 100);
+        let (pid, vr) = q.pick_next().unwrap();
+        assert_eq!(pid, 2);
+        assert_eq!(vr, 100);
+    }
+
+    /// 9. MlfqPolicy: time_slice (4 级 MLFQ)
+    #[test]
+    fn test_sched_mlfq_time_slice() {
+        let p = MlfqPolicy;
+        assert_eq!(p.time_slice(ThreadPriority::Realtime), SCHED_LEVEL_0_QUANTUM);
+        assert_eq!(p.time_slice(ThreadPriority::High), SCHED_LEVEL_1_QUANTUM);
+        assert_eq!(p.time_slice(ThreadPriority::Normal), SCHED_LEVEL_2_QUANTUM);
+        assert_eq!(p.time_slice(ThreadPriority::Low), SCHED_LEVEL_3_QUANTUM);
+        assert_eq!(p.time_slice(ThreadPriority::Idle), u32::MAX);
+    }
+
+    /// 10. MlfqPolicy: should_reschedule
+    #[test]
+    fn test_sched_mlfq_should_reschedule() {
+        let p = MlfqPolicy;
+        // 剩余时间片 > 1 → 不重调度
+        assert!(!p.should_reschedule(10));
+        assert!(!p.should_reschedule(2));
+        // 剩余时间片 <= 1 → 应重调度
+        assert!(p.should_reschedule(1));
+        assert!(p.should_reschedule(0));
+    }
+
+    /// 11. integration: 完整调度循环
+    #[test]
+    fn test_sched_cfs_full_cycle() {
+        let mut q = CfsRunQueue::new();
+        // 加入 4 个进程, 不同 vruntime + weight
+        q.enqueue(10, 100, 1024);
+        q.enqueue(20, 50, 2048);   // 更高权重
+        q.enqueue(30, 150, 1024);
+        q.enqueue(40, 80, 1024);
+        // 按 vruntime 顺序调度
+        let (pid, _) = q.pick_next().unwrap();
+        assert_eq!(pid, 20);  // vruntime=50
+        let (pid, _) = q.pick_next().unwrap();
+        assert_eq!(pid, 40);  // vruntime=80
+        let (pid, _) = q.pick_next().unwrap();
+        assert_eq!(pid, 10);  // vruntime=100
+        let (pid, _) = q.pick_next().unwrap();
+        assert_eq!(pid, 30);  // vruntime=150
+        assert!(q.is_empty());
+    }
+}

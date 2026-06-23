@@ -91,3 +91,124 @@ pub fn register_default_pmm_policy() -> Result<(), ()> {
     static POLICY: DefaultPmmPolicy = DefaultPmmPolicy;
     crate::kernel::framework::mm::register_pmm_policy(&POLICY).map_err(|_| ())
 }
+
+// ============================================================================
+// 单元测试 — PMM 策略契约
+// ============================================================================
+//
+// 验证 DefaultPmmPolicy 的 4 个核心方法:
+// - count_to_order: 阶数选择 (边界 + 0)
+// - fragmentation_score: 碎片化评分 (0/0.5/1.0/0.7 权重)
+// - reclaim_threshold_pages: 回收阈值 (10% + 64 页最小)
+// - watermarks: 三级水位线 (min/low/high 比例)
+//
+// 这些都是纯函数, 无状态依赖, 0 unsafe, 适合 unit test.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::framework::mm::pmm_trait::PmmPolicyContext;
+
+    /// 1. count_to_order: 边界 (0, 1, 2, 3, 4, 8, 16) + max_order 截断
+    #[test]
+    fn test_pmm_count_to_order_boundaries() {
+        let policy = DefaultPmmPolicy;
+        // count=0 / 1 → order 0 (最小)
+        assert_eq!(policy.count_to_order(0, 9), 0);
+        assert_eq!(policy.count_to_order(1, 9), 0);
+        // 2 → 1, 4 → 2, 8 → 3, 16 → 4
+        assert_eq!(policy.count_to_order(2, 9), 1);
+        assert_eq!(policy.count_to_order(3, 9), 2);  // 向上取整 (3-1=2, log2=1, +1=2)
+        assert_eq!(policy.count_to_order(4, 9), 2);
+        assert_eq!(policy.count_to_order(8, 9), 3);
+        assert_eq!(policy.count_to_order(9, 9), 4);
+        assert_eq!(policy.count_to_order(16, 9), 4);
+        assert_eq!(policy.count_to_order(1024, 9), 10);  // 1024=2^10, 但 max_order=9
+        // 截断: count 超出 max_order → 返回 max_order
+        assert_eq!(policy.count_to_order(2048, 9), 9);
+        assert_eq!(policy.count_to_order(1 << 20, 9), 9);
+    }
+
+    /// 2. fragmentation_score: 0% / 50% / 100% 空闲 + 0 / 50% / 100% 失败率
+    #[test]
+    fn test_pmm_fragmentation_score_basic() {
+        let policy = DefaultPmmPolicy;
+        // total=0 边界: 立即返回 0
+        let ctx = PmmPolicyContext { total_pages: 0, free_pages: 0, total_allocs: 0, failed_allocs: 0 };
+        assert_eq!(policy.fragmentation_score(ctx), 0.0);
+        // 100% 空闲, 0 失败: (1-1)*0.7 + 0*0.3 = 0
+        let ctx = PmmPolicyContext { total_pages: 100, free_pages: 100, total_allocs: 50, failed_allocs: 0 };
+        assert_eq!(policy.fragmentation_score(ctx), 0.0);
+        // 0% 空闲, 0 失败: (1-0)*0.7 + 0*0.3 = 0.7
+        let ctx = PmmPolicyContext { total_pages: 100, free_pages: 0, total_allocs: 50, failed_allocs: 0 };
+        assert!((policy.fragmentation_score(ctx) - 0.7).abs() < 1e-9);
+        // 50% 空闲, 0 失败: (1-0.5)*0.7 + 0*0.3 = 0.35
+        let ctx = PmmPolicyContext { total_pages: 100, free_pages: 50, total_allocs: 50, failed_allocs: 0 };
+        assert!((policy.fragmentation_score(ctx) - 0.35).abs() < 1e-9);
+    }
+
+    /// 3. fragmentation_score: 失败率贡献 (权重 0.3)
+    #[test]
+    fn test_pmm_fragmentation_score_fail_ratio() {
+        let policy = DefaultPmmPolicy;
+        // 100% 空闲, 50% 失败: 0*0.7 + 0.5*0.3 = 0.15
+        let ctx = PmmPolicyContext { total_pages: 100, free_pages: 100, total_allocs: 100, failed_allocs: 50 };
+        assert!((policy.fragmentation_score(ctx) - 0.15).abs() < 1e-9);
+        // 0% 空闲, 100% 失败: 0.7*0.7 + 1.0*0.3 = 0.49 + 0.3 = 0.79
+        let ctx = PmmPolicyContext { total_pages: 100, free_pages: 0, total_allocs: 100, failed_allocs: 100 };
+        assert!((policy.fragmentation_score(ctx) - 0.79).abs() < 1e-9);
+        // total_allocs=0 时 fail_ratio=0 (避免除零)
+        let ctx = PmmPolicyContext { total_pages: 100, free_pages: 0, total_allocs: 0, failed_allocs: 0 };
+        assert!((policy.fragmentation_score(ctx) - 0.7).abs() < 1e-9);
+    }
+
+    /// 4. reclaim_threshold_pages: 10% 公式 + 64 页最小值
+    #[test]
+    fn test_pmm_reclaim_threshold() {
+        let policy = DefaultPmmPolicy;
+        // 小总量: 10% 不足 64, 取最小 64
+        assert_eq!(policy.reclaim_threshold_pages(0), 64);   // 0%*X = 0 → max(0, 64) = 64
+        assert_eq!(policy.reclaim_threshold_pages(100), 64);  // 10%*100=10 → max(10, 64) = 64
+        assert_eq!(policy.reclaim_threshold_pages(640), 64);  // 10%*640=64 → max(64, 64) = 64
+        // 大总量: 10% 超过 64, 取 10%
+        assert_eq!(policy.reclaim_threshold_pages(1000), 100);  // 10%*1000=100
+        assert_eq!(policy.reclaim_threshold_pages(10000), 1000);
+        assert_eq!(policy.reclaim_threshold_pages(1 << 20), 104857);  // ~104857 页 (~100 MB)
+    }
+
+    /// 5. watermarks: min/low/high 比例 + 16 页最小
+    #[test]
+    fn test_pmm_watermarks_basic() {
+        let policy = DefaultPmmPolicy;
+        // 小总量: min 受最小值 16 约束
+        let w = policy.watermarks(0);
+        assert_eq!(w.min, 16);
+        assert_eq!(w.low, 24);  // 16 * 3 / 2 = 24
+        assert_eq!(w.high, 32); // 16 * 2 = 32
+        // 1000 页: min = 1000 * 125 / 10000 = 12 → max(12, 16) = 16
+        let w = policy.watermarks(1000);
+        assert_eq!(w.min, 16);
+        // 10000 页: min = 10000 * 125 / 10000 = 125
+        let w = policy.watermarks(10000);
+        assert_eq!(w.min, 125);
+        assert_eq!(w.low, 187); // 125 * 3 / 2 = 187
+        assert_eq!(w.high, 250); // 125 * 2 = 250
+        // 不变量: high >= low >= min
+        let w = policy.watermarks(100000);
+        assert!(w.high >= w.low);
+        assert!(w.low >= w.min);
+    }
+
+    /// 6. integration: 模拟 PMM 压力场景, 验证策略响应
+    #[test]
+    fn test_pmm_policy_under_pressure() {
+        let policy = DefaultPmmPolicy;
+        // 高碎片化 (0 空闲, 100% 失败) → 评分接近 1
+        let ctx = PmmPolicyContext { total_pages: 1024, free_pages: 0, total_allocs: 1000, failed_allocs: 1000 };
+        let score = policy.fragmentation_score(ctx);
+        assert!(score > 0.7, "高压力下应返回高碎片化评分 (got {})", score);
+        // 回收阈值应被触发: free=0 < threshold=102 (10%*1024)
+        let threshold = policy.reclaim_threshold_pages(1024);
+        assert_eq!(threshold, 102);
+    }
+}
