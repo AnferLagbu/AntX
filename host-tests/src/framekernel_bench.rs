@@ -1821,6 +1821,241 @@ pub fn spa_dispatch_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / iters as u128
 }
 
+// ============================================================================
+// LEGACY-5.7: RaidzEngine trait dispatch bench + Mock
+// ============================================================================
+//
+// 模拟 StandardRaidz 行为: ncols/data_cols/parity_cols/max_failures.
+
+/// host-only RAID-Z 等级 (与 kernel enum 对齐)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MockRaidzLevel {
+    Single = 0,
+    RaidZ1 = 1,
+    RaidZ2 = 2,
+    RaidZ3 = 3,
+    Mirror = 4,
+}
+
+impl MockRaidzLevel {
+    pub fn parity_cols(&self) -> usize {
+        match self {
+            Self::Single => 0,
+            Self::RaidZ1 => 1,
+            Self::RaidZ2 => 2,
+            Self::RaidZ3 => 3,
+            Self::Mirror => 0,
+        }
+    }
+    pub fn max_failures(&self) -> usize {
+        match self {
+            Self::Single => 0,
+            Self::RaidZ1 => 1,
+            Self::RaidZ2 => 2,
+            Self::RaidZ3 => 3,
+            Self::Mirror => 1,
+        }
+    }
+}
+
+/// host-only RaidzEngine trait
+pub trait HostRaidzEngine: Send + Sync {
+    fn level(&self) -> MockRaidzLevel;
+    fn ncols(&self) -> usize;
+    fn data_cols(&self) -> usize;
+    fn parity_cols(&self) -> usize;
+    fn max_failures(&self) -> usize;
+    fn ashift(&self) -> u8;
+    fn is_single(&self) -> bool;
+    fn is_mirror(&self) -> bool;
+}
+
+/// host-only StandardRaidz
+pub struct StandardHostRaidz {
+    pub level: MockRaidzLevel,
+    pub ncols: usize,
+    pub ashift: u8,
+}
+
+impl StandardHostRaidz {
+    pub fn new(level: MockRaidzLevel, ncols: usize, ashift: u8) -> Self {
+        Self { level, ncols, ashift }
+    }
+}
+
+impl HostRaidzEngine for StandardHostRaidz {
+    fn level(&self) -> MockRaidzLevel { self.level }
+    fn ncols(&self) -> usize { self.ncols }
+    fn data_cols(&self) -> usize { self.ncols - self.level.parity_cols() }
+    fn parity_cols(&self) -> usize { self.level.parity_cols() }
+    fn max_failures(&self) -> usize { self.level.max_failures() }
+    fn ashift(&self) -> u8 { self.ashift }
+    fn is_single(&self) -> bool { self.level == MockRaidzLevel::Single }
+    fn is_mirror(&self) -> bool { self.level == MockRaidzLevel::Mirror }
+}
+
+/// bench: RAID-Z trait dispatch throughput
+pub fn raidz_dispatch_bench(iters: u64) -> u128 {
+    let r: Box<dyn HostRaidzEngine> = Box::new(StandardHostRaidz::new(
+        MockRaidzLevel::RaidZ1, 3, 9
+    ));
+    // 预热
+    for _ in 0..1000 {
+        let _ = r.ncols();
+    }
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for it in 0..iters {
+        match it & 0x3 {
+            0 => sink = sink.wrapping_add(r.ncols() as u64),
+            1 => sink = sink.wrapping_add(r.parity_cols() as u64),
+            2 => sink = sink.wrapping_add(r.max_failures() as u64),
+            _ => sink = sink.wrapping_add(r.ashift() as u64),
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
+// ============================================================================
+// LEGACY-5.8: ArcCache trait dispatch bench + Mock
+// ============================================================================
+//
+// 模拟 StandardArc 行为: lookup/insert + hit/miss 计数.
+
+/// host-only ARC key
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MockArcKey {
+    pub vdev_id: u16,
+    pub offset: u64,
+    pub birth_txg: u64,
+}
+
+/// host-only ArcCache trait
+pub trait HostArcCache: Send + Sync {
+    fn init(&self, max_size: usize);
+    fn is_initialized(&self) -> bool;
+    fn lookup(&self, key: MockArcKey) -> bool;
+    fn insert(&self, key: MockArcKey, data: &[u8]) -> bool;
+    fn release(&self, key: MockArcKey);
+    fn current_size(&self) -> u64;
+    fn max_size(&self) -> u64;
+    fn hit_count(&self) -> u64;
+    fn miss_count(&self) -> u64;
+    fn evict_count(&self) -> u64;
+    fn hit_rate(&self) -> f64;
+}
+
+/// host-only StandardArc (Mutex<HashMap>)
+pub struct StandardHostArc {
+    pub state: std::sync::Mutex<ArcState>,
+}
+
+pub struct ArcState {
+    pub map: HashMap<MockArcKey, Vec<u8>>,
+    pub max: usize,
+    pub initialized: bool,
+    pub hits: u64,
+    pub misses: u64,
+    pub evicts: u64,
+}
+
+impl StandardHostArc {
+    pub fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(ArcState {
+                map: HashMap::new(),
+                max: 0,
+                initialized: false,
+                hits: 0,
+                misses: 0,
+                evicts: 0,
+            }),
+        }
+    }
+}
+
+impl HostArcCache for StandardHostArc {
+    fn init(&self, max_size: usize) {
+        let mut s = self.state.lock().unwrap();
+        s.max = max_size;
+        s.map.clear();
+        s.hits = 0;
+        s.misses = 0;
+        s.evicts = 0;
+        s.initialized = true;
+    }
+    fn is_initialized(&self) -> bool { self.state.lock().unwrap().initialized }
+    fn lookup(&self, key: MockArcKey) -> bool {
+        let mut s = self.state.lock().unwrap();
+        if s.map.contains_key(&key) {
+            s.hits += 1;
+            true
+        } else {
+            s.misses += 1;
+            false
+        }
+    }
+    fn insert(&self, key: MockArcKey, data: &[u8]) -> bool {
+        let mut s = self.state.lock().unwrap();
+        if s.map.len() >= s.max && !s.map.contains_key(&key) {
+            // 简化淘汰: 移除第一个 (FIFO)
+            if let Some(first) = s.map.keys().next().cloned() {
+                s.map.remove(&first);
+            }
+            s.evicts += 1;
+        }
+        s.map.insert(key, data.to_vec());
+        true
+    }
+    fn release(&self, _key: MockArcKey) {}
+    fn current_size(&self) -> u64 { self.state.lock().unwrap().map.len() as u64 }
+    fn max_size(&self) -> u64 { self.state.lock().unwrap().max as u64 }
+    fn hit_count(&self) -> u64 { self.state.lock().unwrap().hits }
+    fn miss_count(&self) -> u64 { self.state.lock().unwrap().misses }
+    fn evict_count(&self) -> u64 { self.state.lock().unwrap().evicts }
+    fn hit_rate(&self) -> f64 {
+        let s = self.state.lock().unwrap();
+        let total = s.hits + s.misses;
+        if total > 0 { s.hits as f64 / total as f64 } else { 0.0 }
+    }
+}
+
+/// bench: ARC trait dispatch throughput
+pub fn arc_dispatch_bench(iters: u64) -> u128 {
+    let arc: Box<dyn HostArcCache> = Box::new(StandardHostArc::new());
+    arc.init(100);
+    // 预热
+    for i in 0..1000 {
+        let k = MockArcKey { vdev_id: 0, offset: i, birth_txg: 0 };
+        arc.insert(k, &[0u8; 16]);
+    }
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        let k = MockArcKey { vdev_id: 0, offset: r & 0xFF, birth_txg: 0 };
+        if r & 0x3 == 0 {
+            // lookup
+            if arc.lookup(k) {
+                sink = sink.wrapping_add(1);
+            }
+        } else if r & 0x3 == 1 {
+            // insert
+            arc.insert(k, &[0u8; 16]);
+        } else if r & 0x3 == 2 {
+            // hit_count
+            sink = sink.wrapping_add(arc.hit_count());
+        } else {
+            // current_size
+            sink = sink.wrapping_add(arc.current_size());
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -1922,6 +2157,12 @@ pub fn run_all() -> BenchReport {
     // LEGACY-5.5: SPA trait dispatch bench
     results.push(measure("spa_dispatch", "hvfs", 100_000, ||
         spa_dispatch_bench(100_000)));
+    // LEGACY-5.7: RAID-Z trait dispatch bench
+    results.push(measure("raidz_dispatch", "hvfs", 100_000, ||
+        raidz_dispatch_bench(100_000)));
+    // LEGACY-5.8: ARC trait dispatch bench
+    results.push(measure("arc_dispatch", "hvfs", 100_000, ||
+        arc_dispatch_bench(100_000)));
     BenchReport { version: 1, results }
 }
 
@@ -2530,5 +2771,105 @@ mod tests {
     #[test]
     fn test_spa_bench_runs() {
         let _ = spa_dispatch_bench(100);
+    }
+
+    // ====== LEGACY-5.7: RaidzEngine trait 单元测试 ======
+
+    #[test]
+    fn test_raidz_levels() {
+        let r: Box<dyn HostRaidzEngine> = Box::new(StandardHostRaidz::new(
+            MockRaidzLevel::RaidZ1, 3, 9
+        ));
+        assert_eq!(r.ncols(), 3);
+        assert_eq!(r.parity_cols(), 1);
+        assert_eq!(r.data_cols(), 2);
+        assert_eq!(r.max_failures(), 1);
+    }
+
+    #[test]
+    fn test_raidz_z2() {
+        let r: Box<dyn HostRaidzEngine> = Box::new(StandardHostRaidz::new(
+            MockRaidzLevel::RaidZ2, 5, 12
+        ));
+        assert_eq!(r.parity_cols(), 2);
+        assert_eq!(r.data_cols(), 3);
+        assert_eq!(r.max_failures(), 2);
+        assert_eq!(r.ashift(), 12);
+    }
+
+    #[test]
+    fn test_raidz_mirror_flags() {
+        let m: Box<dyn HostRaidzEngine> = Box::new(StandardHostRaidz::new(
+            MockRaidzLevel::Mirror, 2, 9
+        ));
+        assert!(m.is_mirror());
+        assert!(!m.is_single());
+
+        let s: Box<dyn HostRaidzEngine> = Box::new(StandardHostRaidz::new(
+            MockRaidzLevel::Single, 1, 9
+        ));
+        assert!(s.is_single());
+        assert!(!s.is_mirror());
+    }
+
+    #[test]
+    fn test_raidz_bench_runs() {
+        let _ = raidz_dispatch_bench(100);
+    }
+
+    // ====== LEGACY-5.8: ArcCache trait 单元测试 ======
+
+    #[test]
+    fn test_arc_uninitialized_mock() {
+        let arc: Box<dyn HostArcCache> = Box::new(StandardHostArc::new());
+        assert!(!arc.is_initialized());
+    }
+
+    #[test]
+    fn test_arc_lookup_miss_hit() {
+        let arc: Box<dyn HostArcCache> = Box::new(StandardHostArc::new());
+        arc.init(10);
+        let k = MockArcKey { vdev_id: 0, offset: 0, birth_txg: 0 };
+        // 首次 lookup → miss
+        assert!(!arc.lookup(k));
+        assert_eq!(arc.miss_count(), 1);
+        // insert
+        arc.insert(k, &[1u8; 16]);
+        // 二次 lookup → hit
+        assert!(arc.lookup(k));
+        assert_eq!(arc.hit_count(), 1);
+    }
+
+    #[test]
+    fn test_arc_capacity_eviction() {
+        let arc: Box<dyn HostArcCache> = Box::new(StandardHostArc::new());
+        arc.init(3);
+        for i in 0..5 {
+            let k = MockArcKey { vdev_id: 0, offset: i, birth_txg: 0 };
+            arc.insert(k, &[0u8; 16]);
+        }
+        assert!(arc.evict_count() > 0);
+        // current_size <= max
+        assert!(arc.current_size() <= 3);
+    }
+
+    #[test]
+    fn test_arc_hit_rate() {
+        let arc: Box<dyn HostArcCache> = Box::new(StandardHostArc::new());
+        arc.init(10);
+        let k = MockArcKey { vdev_id: 0, offset: 0, birth_txg: 0 };
+        arc.insert(k, &[0u8; 16]);
+        // 2 hit + 2 miss
+        arc.lookup(k);
+        arc.lookup(k);
+        arc.lookup(MockArcKey { vdev_id: 0, offset: 99, birth_txg: 0 });
+        arc.lookup(MockArcKey { vdev_id: 0, offset: 100, birth_txg: 0 });
+        // hit_rate = 2/4 = 0.5
+        assert!((arc.hit_rate() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_arc_bench_runs() {
+        let _ = arc_dispatch_bench(100);
     }
 }

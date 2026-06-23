@@ -450,4 +450,42 @@ impl HvArc {
     pub fn is_initialized(&self) -> bool {
         self.initialized.load(Ordering::Acquire)
     }
+
+    // ====== LEGACY-5.8: Public accessors for ArcCache trait ======
+    // 允许 arc_trait.rs 读取 stats 字段, 不暴露字段本身
+
+    /// 当前缓存总大小
+    pub fn current_size(&self) -> u64 {
+        self.stats.size.load(Ordering::Acquire)
+    }
+
+    /// MRU 列表大小
+    pub fn mru_size(&self) -> u64 {
+        self.stats.mru_size.load(Ordering::Acquire)
+    }
+
+    /// MFU 列表大小
+    pub fn mfu_size(&self) -> u64 {
+        self.stats.mfu_size.load(Ordering::Acquire)
+    }
+
+    /// 命中次数
+    pub fn hit_count(&self) -> u64 {
+        self.stats.hits.load(Ordering::Acquire)
+    }
+
+    /// 未命中次数
+    pub fn miss_count(&self) -> u64 {
+        self.stats.misses.load(Ordering::Acquire)
+    }
+
+    /// 淘汰次数
+    pub fn evict_count(&self) -> u64 {
+        self.stats.evicts.load(Ordering::Acquire)
+    }
+
+    /// 最大容量
+    pub fn max_size(&self) -> u64 {
+        self.inner.lock().max_size as u64
+    }
 }
