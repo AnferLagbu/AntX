@@ -43,8 +43,8 @@ pub fn register_block_device(
 /// 适用于需要自定义 I/O 路径的块设备驱动, 或尚未迁移到 `BlockDevice` trait
 /// 的旧驱动. 新代码请使用 `register_block_device`.
 #[deprecated(
-    since = "T-4.1 (2026-06-22)",
-    note = "请使用 `register_block_device` + `impl BlockDevice`. BlockOps thunk 路径已废弃."
+    since = "0.1.0",
+    note = "请使用 `register_block_device` + `impl BlockDevice`. BlockOps thunk 路径已废弃. (Phase E 待移除, 跟踪: LEGACY-4)"
 )]
 pub fn register_block_device_with_ops(
     name: &'static str,
@@ -58,8 +58,8 @@ pub fn register_block_device_with_ops(
 
 /// 注册块设备到 Chitin (使用 ChitinOps 枚举) — **遗留 API, 不推荐**
 #[deprecated(
-    since = "T-4.1 (2026-06-22)",
-    note = "请使用 `register_block_device` + `impl BlockDevice`."
+    since = "0.1.0",
+    note = "请使用 `register_block_device` + `impl BlockDevice`. (Phase E 待移除, 跟踪: LEGACY-4)"
 )]
 pub fn register_block_raw(
     name: &'static str,

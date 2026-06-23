@@ -115,26 +115,31 @@ fn test_block_drivers_use_register_block_device() {
 
 #[test]
 fn test_block_ops_thunk_signature_matches_trait() {
-    // 验证 proto_block.rs 中的 thunk 函数签名与 BlockDevice trait 一致
+    // 验证 proto_block.rs 走 BlockDevice trait 路径 (无 thunk)。
+    //
+    // 历史: LEGACY-4.2 已于 maintenance-2026-06-11 周期删除 4 个 thunk
+    // (blk_read_thunk/write_thunk/is_present_thunk/total_sectors_thunk),
+    // 全部迁移到 BlockDevice trait + chitin 桥接。
+    // 本测试现在反向验证: proto_block.rs 中**不应**再出现 thunk 函数定义。
     let path = Path::new(KERNEL_DIR).join("framework/chitin/proto_block.rs");
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read {} failed: {}", path.display(), e));
 
     assert!(
-        content.contains("blk_read_thunk(data: *mut u8, sector: u64, buf: *mut u8) -> i32"),
-        "blk_read_thunk 签名不匹配"
+        !content.contains("blk_read_thunk"),
+        "blk_read_thunk 应已删除 (LEGACY-4.2), 但 proto_block.rs 仍存在"
     );
     assert!(
-        content.contains("blk_write_thunk(data: *mut u8, sector: u64, buf: *const u8) -> i32"),
-        "blk_write_thunk 签名不匹配"
+        !content.contains("blk_write_thunk"),
+        "blk_write_thunk 应已删除 (LEGACY-4.2), 但 proto_block.rs 仍存在"
     );
     assert!(
-        content.contains("blk_is_present_thunk(data: *mut u8) -> bool"),
-        "blk_is_present_thunk 签名不匹配"
+        !content.contains("blk_is_present_thunk"),
+        "blk_is_present_thunk 应已删除 (LEGACY-4.2), 但 proto_block.rs 仍存在"
     );
     assert!(
-        content.contains("blk_total_sectors_thunk(data: *mut u8) -> u64"),
-        "blk_total_sectors_thunk 签名不匹配"
+        !content.contains("blk_total_sectors_thunk"),
+        "blk_total_sectors_thunk 应已删除 (LEGACY-4.2), 但 proto_block.rs 仍存在"
     );
 }
 

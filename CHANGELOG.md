@@ -9,6 +9,26 @@
 ## [Unreleased]
 
 ### 新增
+- **DISPLAY-2.1 HDMI HPD 真实读取** — `src/kernel/framework/driver/display/hdmi.rs` (接手人实装, 2026-06-23)
+  - `HdmiController` 字段 `mmio_base: usize` → `iomem: Option<IoMem>` + `hpd_reg_offset: usize`
+  - 新增 `HPD_STATUS_REG_OFFSET = 0x038` (带 Intel IGP +0xC8 / AMD DCN +0x5E 厂商偏移参考注释) + `HPD_STATUS_BIT = 0x01`
+  - 新增 `unsafe fn new_with_iomem(iomem, hpd_reg_offset)` + `new_with_default_hpd(iomem)` 真实硬件构造函数
+  - `detect_hot_plug()` 真实实现: IoMem 路径 `read_u8(hpd_reg_offset) & HPD_STATUS_BIT`; None 路径 fallback 返回 `true` (兼容 QEMU/Bochs)
+  - 删除 `// TODO(TRACK-CD5DA5)` 注释
+  - 新增单元测试 `test_hpd_fallback_returns_true_when_no_iomem`
+- **DISPLAY-2.2 HDMI I2C/DDC EDID 真实读取** — `src/kernel/framework/driver/display/hdmi.rs` (接手人实装, 2026-06-23)
+  - 新增 DDC I2C bitbang 协议层: 5 个 `unsafe fn` 原语 (`ddc_delay`/`ddc_set_sda_scl`/`ddc_i2c_start`/`ddc_i2c_stop`/`ddc_i2c_write_byte`/`ddc_i2c_read_byte`) + 1 个 `unsafe fn read_edid_block_via_ddc` 完成 START → 0xA0 → offset → REPEATED_START → 0xA1 → 128 bytes → STOP 事务
+  - 新增 `fill_mock_edid()`: 无硬件/DDC 失败 fallback, 校验和正确
+  - `read_edid()` 重写为 3 路径: IoMem Some → DDC 真实读 (block 0 + 可选 block 1); DDC 失败 → mock; IoMem None → mock
+  - 删除 `// TODO(TRACK-7CCB60)` 注释
+  - 新增 3 个单元测试: `test_fill_mock_edid_checksum_valid` / `test_read_edid_fallback_when_no_iomem` / `test_read_edid_without_hpd_returns_device_not_found`
+  - 厂商偏移参考注释: Intel IGP GMBus 16-bit 端口 I/O / AMD DCN DDI 控制器 / 通用 SoC 8-bit bitbang / QEMU Bochs 无 DDC
+
+### 修复
+- **DISPLAY-2.1 关联预存问题修复** (CLAUDE.md 预存问题即修规则, 接手人同步修复)
+  - `host-tests/tests/i43_block_bridge_test.rs::test_block_ops_thunk_signature_matches_trait` 反转断言: LEGACY-4.2 已删除 4 个 thunk, 测试现在反向验证 thunk 不应再出现
+  - `src/kernel/framework/chitin/proto_block.rs` 2 处 `#[deprecated(since = "T-4.1 (2026-06-22)")]` → `since = "0.1.0"` (semver 合规, clippy 0 error)
+
 - **TD-22 注释语言审计: services 迁移记录豁免** — `scripts/audit_comment_language.py` 新增 `is_migration_note` 规则, 覆盖 `// 已迁移到 services: sys_xxx, sys_yyy, ...` 多行列表 (含续行状态机) + `//! 依赖 framework safe API (..._safe)` 模式. 6 个回归测试通过 (`scripts/tests/test_audit_comment_language.py`), 重新达成"0 违规"硬阈值. 解决 2026-06-18 实际回归的 3 处违规: `src/kernel/services/ipc/async_ipc.rs:14` + `src/kernel/framework/syscall/mod.rs:752, 765`
 - **Phase D 路线图文档同步: 关闭 NUMA 感知 / cgroup 控制器 两行冗余占位** — `docs/plan/kernel-roadmap.md:261-262` 标记为 `[x]` 并指向 D2/D3 详细行 (实际 2026-06-10 已闭环, 源码: `framework/{proc/cgroup,mm/numa}.rs` + `services/{proc/cgroup,mm/numa}.rs` 均存在). 修复"路线图 Phase 闭环 ≠ 源代码 TRACK 关闭"另一表现 (D1/D2/D3 在详细行已标 [x], 但 Phase D 待办区占位行未同步)
 - **TRACK-XXX Backlog 批量同步 (47 条修改, 28 删 + 19 修 + 7 保留)** — `docs/plan/kernel-roadmap.md` 末尾 Backlog 段 (54 项) 大量陈旧: 28 项源码已闭环 (TRACK ID 在源码中已不存在, 由历史 commit 移除), 19 项行号错位 (roadmap 引用旧行号, 实际行号因新提交漂移 1~9 行), 7 项真实存在 (USB xHCI/SMP/aarch64 cache/DMA 硬件底层, 保留)

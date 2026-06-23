@@ -1233,6 +1233,191 @@ pub use x86_64::ioapic;
 | 🥉 | **DRIVER-1 USB xHCI** (完整新做) | 10-12 周 | 大协议栈, 需 QEMU xHCI 镜像 |
 | ⏸ | **REVAL-4 smoltcp** (搁置) | ~3 月 | 等用户方案 + smoltcp 1.0 |
 
+---
+
+## 十、2026-06-23 接手人考察与分组推进计划
+
+> **接手人**: 新交接者（首次接手）
+> **任务来源**: §9.1 真实未完成 3 项 (REVAL-4 / DRIVER-1 / DRIVER-2)
+> **接手人原则**: 质量优先，速度不重要；严格遵循 §9.4.4 推进顺序建议
+> **分组约定**: 每四项一组工程 (后续小节 §10.1-§10.X)
+> **标记约定**: 每完成一项在对应位置将 `[ ]` 改为 `[x]`，补全"完成记录"
+> **验证门槛**: 双架构 0w0e + clippy 0 warning + 三审计通过 + host-tests 通过
+
+### 10.0 考察结论 (2026-06-23 接手人第一轮实地核查)
+
+#### 10.0.1 DRIVER-2 Display 实地状态（与文档 §9.1 / §9.4.3 对比）
+
+| 文件 | 文档估行数 | 实际行数 | 实际 TODO 数 | 实际状态 |
+|------|-----------|---------|------------|---------|
+| `framework/driver/display/mod.rs` | 375 | 375 | 0 | ✅ 完整 |
+| `framework/driver/display/framebuffer.rs` | 782 | 782 | 0 | ✅ 完整 |
+| `framework/driver/display/hdmi.rs` | 658 | 658 | 3 (CD5DA5 / 7CCB60 / 1BDEF6) | ⚠️ HPD/EDID/寄存器全 stub |
+| `framework/driver/display/dp.rs` | 464 | 464 | 5 (599EDA / B61830 / 9B691E / 0350FE / 3C1169) | ⚠️ HPD/AUX/链路训练全 stub |
+| `framework/driver/display/controller.rs` | 478 | 478 | 0 | ✅ 完整 |
+| `framework/driver/display/font.rs` | 133 | 133 | 0 | ✅ 完整 |
+| `framework/driver/display/self_test.rs` | 210 | 210 | 0 | ✅ 完整 |
+
+**核查要点**:
+- `hdmi.rs:439-443` `detect_hot_plug()` 当前**直接返回 `true` 不读寄存器**
+- `hdmi.rs:454-490` `read_edid()` 当前**填充模拟数据**, 不走 I2C/DDC
+- `hdmi.rs:511-518` `set_video_mode()` 当前**仅记录 mode, 不写寄存器**
+- `dp.rs:219-223` 同 hdmi 模式
+- `dp.rs:225-260` `aux_read`/`aux_write` 返回**硬编码 DPCD**
+- `dp.rs:317-333` `training_phase1/2` 仅设置训练模式, 不轮询 LANE0_1_STATUS / LANE_ALIGN_STATUS_UPDATED
+
+**结论**: 与文档 §9.4.3 一致：物理层 8 处 TRACK 全部为硬件真实交互 stub，**DRIVER-2 实际完成 ~85%**，需补 6-8 周。
+
+#### 10.0.2 DRIVER-1 USB 实地状态（与文档 §9.1 / §9.4.2 对比）
+
+| 文件 | 文档估行数 | 实际行数 | 实际 TODO 数 | 实际状态 |
+|------|-----------|---------|------------|---------|
+| `framework/driver/usb/mod.rs` | 43 | 43 | 3 (558BA7 / AE516E / 832FCE) | ⚠️ usb_init() 全 stub |
+| `framework/driver/usb/usb_core.rs` | 656 | 656 | 0 | ✅ 描述符 + URB + 设备管理 |
+| `framework/driver/usb/xhci.rs` | 602 | 602 | 3 (688EA7 / 2E0EB0 / 1F75C1) | ⚠️ URB/地址管理 stub |
+| `framework/driver/usb/hid.rs` | 0 | 0 | 0 | ❌ **未创建** |
+| `framework/driver/usb/mass_storage.rs` | 0 | 0 | 0 | ❌ **未创建** |
+
+**核查要点**:
+- `usb/mod.rs:38-44` `usb_init()` 当前**仅返回 Ok(()) 不做实际初始化**
+- `xhci.rs:548-553` `submit_urb()` 当前**返回 UnsupportedOperation**
+- `xhci.rs:555-557` `cancel_urb()` 当前**返回 UnsupportedOperation**
+- `xhci.rs:559-561` `allocate_address()` 当前**硬编码返回 1**
+- `xhci.rs:563-565` `free_address()` 当前**空函数**
+- `hid.rs` / `mass_storage.rs` 文件**完全未创建**, 需 2500-3500 行新增
+
+**结论**: 与文档 §9.4.2 一致：DRIVER-1 实际完成 ~50%, 需 10-12 周。
+
+#### 10.0.3 REVAL-4 smoltcp 实地状态（用户主动搁置）
+
+**核查**:
+- `framework/net/init.rs` 2133 行（与文档一致）
+- smoltcp 版本 0.13.0 vendored（`framework/net/smoltcp/Cargo.toml:3`）
+- 第 21 批考察拆 3 子任务（4.1 DHCP 策略 ~1 周 / 4.2 snap transmute ~3 天 / 4.3 smoltcp trait ~3 月）
+
+**用户决策**: "smoltcp 任务搁置思考, 先做剩余任务工程考察分析, 不实现代码"（[Unreleased] §9.4.4）
+
+**结论**: 本轮**仅维护现状**, 不实装代码。下一轮启动条件（任一触发）:
+- 用户完成"完美稳健方案"思考
+- smoltcp 1.0 上游 major 升级
+- 多网卡 / IPv6 支持需求
+
+### 10.1 工程分组推进计划 (2026-06-23 接手)
+
+> 严格按 §9.4.4 优先级顺序: DRIVER-2 → DRIVER-1 → REVAL-4
+> 每组 4 项或更少（避免单组过载），按依赖关系编排
+
+#### 第 1 组 — DRIVER-2 Display HDMI 物理层补完 (性价比最高, ~1-2 周)
+
+**目标**: 消除 `hdmi.rs` 3 处 TRACK + `dp.rs` 1 处 HPD TRACK (短期最易)
+
+| # | 任务 ID | 任务 | 工作量 | 验收 |
+|---|---------|------|--------|------|
+| 1 | **DISPLAY-2.1** | HDMI HPD 真实读取 (`hdmi.rs:439-443` TRACK-CD5DA5) | 1 天 | [x] |
+| 2 | **DISPLAY-2.2** | HDMI I2C/DDC EDID 真实读取 (`hdmi.rs:454-490` TRACK-7CCB60) | 3 天 | [x] |
+| 3 | **DISPLAY-2.3** | HDMI 控制器寄存器配置 (`hdmi.rs:511-518` TRACK-1BDEF6) | 1 周 | [ ] |
+| 4 | **DISPLAY-2.4** | DP HPD 真实读取 (`dp.rs:219-223` TRACK-599EDA) | 1 天 | [ ] |
+
+**DISPLAY-2.1 完成记录** (2026-06-23 接手人实装):
+- **变更**:
+  - `src/kernel/framework/driver/display/hdmi.rs`:
+    - 新增 `HPD_STATUS_REG_OFFSET = 0x038` 与 `HPD_STATUS_BIT = 0x01` 常量 (带厂商偏移参考注释: Intel IGP +0xC8, AMD DCN +0x5E)
+    - 新增 `use crate::kernel::framework::iomem::IoMem` 导入
+    - `HdmiController` 字段 `mmio_base: usize` → `iomem: Option<IoMem>` + `hpd_reg_offset: usize`
+    - 新增 `unsafe fn new_with_iomem(iomem, hpd_reg_offset)` + `new_with_default_hpd(iomem)` 真实硬件构造函数
+    - `detect_hot_plug()` 真实实现: IoMem 路径读 `read_u8(hpd_reg_offset) & HPD_STATUS_BIT`; None 路径 fallback 返回 `true` (兼容 QEMU/Bochs)
+    - 删除 `// TODO(TRACK-CD5DA5)` 注释
+    - 新增单元测试 `test_hpd_fallback_returns_true_when_no_iomem`
+  - `host-tests/tests/i43_block_bridge_test.rs` (预存问题修复, CLAUDE.md 规则):
+    - `test_block_ops_thunk_signature_matches_trait` 反转断言: LEGACY-4.2 已删除 4 个 thunk, 测试现在验证 thunk 不应再出现
+  - `src/kernel/framework/chitin/proto_block.rs` (预存问题修复, CLAUDE.md 规则):
+    - 2 处 `#[deprecated(since = "T-4.1 (2026-06-22)")]` → `since = "0.1.0"` (semver 合规)
+- **验证**:
+  - x86_64 `cargo build --release`: 0 error, 12 warnings (全部预存, 无 hdmi.rs 相关)
+  - aarch64 `cargo build --release`: 0 error, 12 warnings (同 x86_64)
+  - `cargo clippy`: 0 error (修复 2 处预存), 15 warnings (预存, 无 hdmi.rs 相关)
+  - 三审计: services-boundary 0/0, safety-coverage 55/55 (100%), deadlock-matrix 0/0
+  - host-tests: 72/72 PASS (修复 1 处预存失败 `test_block_ops_thunk_signature_matches_trait`)
+- **TCB 影响**: hdmi.rs 中 1 处 `unsafe` (IoMem::read_u8 调用, 边界由 IoMem::check_offset 保障, 调用方在 `new_with_iomem` 时保证 offset 落在范围内)
+
+**DISPLAY-2.2 完成记录** (2026-06-23 接手人实装):
+- **变更** (消除 `hdmi.rs:454-490` TRACK-7CCB60, 新增 ~210 行):
+  - 新增 DDC/I2C 常量: `DDC_DEFAULT_CTRL_REG = 0x050`, `DDC_DEFAULT_STATUS_REG = 0x054`, `DDC_SDA_OUT_BIT/SCL_OUT_BIT/SDA_IN_BIT = 0x01/0x02/0x01`, `DDC_EDID_ADDR_WRITE/READ = 0xA0/0xA1`, `DDC_I2C_DELAY_ITERS = 50`
+  - 新增 DDC I2C bitbang 原语 (5 个 `unsafe fn`):
+    - `ddc_delay()`: spin_loop 短延时 (~1-2 µs)
+    - `ddc_set_sda_scl()`: 同时设置 SDA/SCL 输出
+    - `ddc_i2c_start()` / `ddc_i2c_stop()`: I2C 启动/停止条件
+    - `ddc_i2c_write_byte()`: 写 1 字节并采样 ACK
+    - `ddc_i2c_read_byte()`: 读 1 字节并发送 ACK/NACK
+  - 新增 `fill_mock_edid()`: 从原 read_edid mock 数据提取, 校验和正确
+  - 新增 `read_edid_block_via_ddc()`: 完整 DDC I2C 事务 (START → 0xA0 → offset → REPEATED_START → 0xA1 → 128 字节 → STOP)
+  - `read_edid()` 重写为 3 路径: IoMem Some → DDC 真实读 (block 0 + block 1 if extension flag); DDC 失败 → fallback mock; IoMem None → fallback mock
+  - 新增 3 个单元测试: `test_fill_mock_edid_checksum_valid`, `test_read_edid_fallback_when_no_iomem`, `test_read_edid_without_hpd_returns_device_not_found`
+  - 删除 `// TODO(TRACK-7CCB60)` 注释
+- **验证**:
+  - x86_64 / aarch64 `cargo build --release`: 0 error / 12 pre-existing warnings
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72/72 PASS
+- **TCB 影响**: hdmi.rs 新增 5 处 `unsafe` (DDC I2C 原语), 均调用 IoMem::write_u8/read_u8; 边界由 IoMem::check_offset 保障, 调用方保证 ctrl/status 偏移在 IoMem 范围内
+
+**第 1 组开始日期**: 2026-06-23
+**第 1 组完成日期**: TBD
+**依赖**: 无前置
+**回退条件**: 若 HDMI 寄存器访问在 QEMU 中不可用，回退到"QEMU virtio-vga 测试通过"最小化方案
+
+#### 第 2 组 — DRIVER-2 Display DP 链路训练 (~4-6 周)
+
+| # | 任务 ID | 任务 | 工作量 | 验收 |
+|---|---------|------|--------|------|
+| 5 | **DISPLAY-2.5** | DP AUX 真实通道 (`dp.rs:225-260` TRACK-B61830 / 9B691E) | 1 周 | [ ] |
+| 6 | **DISPLAY-2.6** | DP 链路训练 phase1 (`dp.rs:317-333` TRACK-0350FE) | 1 周 | [ ] |
+| 7 | **DISPLAY-2.7** | DP 链路训练 phase2 (`dp.rs:325-333` TRACK-3C1169) | 1 周 | [ ] |
+| 8 | **DISPLAY-2.8** | 视频时序参数化 (替代硬编码 1920x1080) | 1 周 | [ ] |
+
+**第 2 组依赖**: 第 1 组 [x]
+**第 2 组开始日期**: TBD (第 1 组完成后)
+
+#### 第 3 组 — DRIVER-1 USB xHCI 基础 (~4-6 周)
+
+| # | 任务 ID | 任务 | 工作量 | 验收 |
+|---|---------|------|--------|------|
+| 9 | **USB-1.1** | xHCI 寄存器操作 (init/reset/start) | 3 天 | [ ] |
+| 10 | **USB-1.2** | PCI 扫描 + 控制器发现 (`usb/mod.rs:38` TRACK-558BA7) | 1 周 | [ ] |
+| 11 | **USB-1.3** | URB 提交骨架 (`xhci.rs:548-553` TRACK-688EA7) | 1 周 | [ ] |
+| 12 | **USB-1.4** | 设备地址分配/释放 (`xhci.rs:559-565` TRACK-2E0EB0 / 1F75C1) | 1 周 | [ ] |
+
+**第 3 组依赖**: 第 2 组 [x]（硬件栈经验可复用）
+**第 3 组开始日期**: TBD (第 2 组完成后)
+
+#### 第 4 组 — DRIVER-1 USB xHCI 设备层 (~6 周)
+
+| # | 任务 ID | 任务 | 工作量 | 验收 |
+|---|---------|------|--------|------|
+| 13 | **USB-1.5** | Command Ring + Event Ring | 2 周 | [ ] |
+| 14 | **USB-1.6** | 设备枚举 (Descriptor 读 + Configure) (`usb/mod.rs:40` TRACK-832FCE) | 2 周 | [ ] |
+| 15 | **USB-1.7** | HID 类驱动创建 (`usb/hid.rs` 新建) | 1 周 | [ ] |
+| 16 | **USB-1.8** | Mass Storage 类驱动创建 (`usb/mass_storage.rs` 新建) | 1 周 | [ ] |
+
+**第 4 组依赖**: 第 3 组 [x]
+**第 4 组开始日期**: TBD (第 3 组完成后)
+
+#### 第 5 组 — REVAL-4 smoltcp（搁置, 仅评估）
+
+| # | 任务 ID | 任务 | 状态 |
+|---|---------|------|------|
+| 17 | **REVAL-4.1** | smoltcp 4.1+4.2 子任务评估 (DHCP 策略 + snap transmute) | 评估 / 搁置 |
+| 18 | **REVAL-4.2** | smoltcp 4.3 抽象 trait 化评估 (Interface/SocketSet) | 评估 / 搁置 |
+
+**第 5 组状态**: 等待用户决策 + smoltcp 1.0 上游升级
+
+#### 接手人总体时间线（预计）
+
+```
+第 1 组 (1-2 周) → 第 2 组 (4-6 周) → 第 3 组 (4-6 周) → 第 4 组 (6 周)
+─────────────────────────────────────────────────────────────────────
+合计: ~16-20 周 (4-5 月)
+```
+
 ### 9.5 硬骨头评估表 (2026-06-22 第 16 批 → 第 18 批正式 DEFER 3 项)
 
 > 用户策略: "先评估再决定". 本表记录 6 项硬骨头的源码实际状态评估结论 + 触发条件 + 估算工作量.
