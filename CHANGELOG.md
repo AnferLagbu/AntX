@@ -23,6 +23,14 @@
   - 删除 `// TODO(TRACK-7CCB60)` 注释
   - 新增 3 个单元测试: `test_fill_mock_edid_checksum_valid` / `test_read_edid_fallback_when_no_iomem` / `test_read_edid_without_hpd_returns_device_not_found`
   - 厂商偏移参考注释: Intel IGP GMBus 16-bit 端口 I/O / AMD DCN DDI 控制器 / 通用 SoC 8-bit bitbang / QEMU Bochs 无 DDC
+- **DISPLAY-2.4 DP HPD 真实读取** — `src/kernel/framework/driver/display/dp.rs` (接手人实装, 2026-06-23, 镜像 DISPLAY-2.1 HDMI HPD 模式)
+  - `DpController` 字段 `mmio_base: usize` → `iomem: Option<IoMem>` + `hpd_reg_offset: usize`
+  - 新增 `DP_HPD_REG_OFFSET = 0x040` (独立 DP chip 默认) + `DP_HPD_STATUS_BIT = 0x01`
+  - 新增 `unsafe fn new_with_iomem(iomem, hpd_reg_offset)` + `new_with_default_hpd(iomem)` 真实硬件构造函数
+  - `detect_hot_plug()` 真实实现: IoMem 路径 `read_u8(hpd_reg_offset) & DP_HPD_STATUS_BIT`; None 路径 fallback 返回 `true`
+  - 删除 `// TODO(TRACK-599EDA)` 注释
+  - 新增单元测试 `test_dp_hpd_fallback_returns_true_when_no_iomem`
+  - 厂商差异注释: Intel IGP/AMD DCN 共享 HDMI HPD 寄存器, 调用方应显式传入与 HDMI 相同偏移
 
 ### 修复
 - **DISPLAY-2.1 关联预存问题修复** (CLAUDE.md 预存问题即修规则, 接手人同步修复)

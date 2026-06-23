@@ -1316,7 +1316,7 @@ pub use x86_64::ioapic;
 | 1 | **DISPLAY-2.1** | HDMI HPD 真实读取 (`hdmi.rs:439-443` TRACK-CD5DA5) | 1 天 | [x] |
 | 2 | **DISPLAY-2.2** | HDMI I2C/DDC EDID 真实读取 (`hdmi.rs:454-490` TRACK-7CCB60) | 3 天 | [x] |
 | 3 | **DISPLAY-2.3** | HDMI 控制器寄存器配置 (`hdmi.rs:511-518` TRACK-1BDEF6) | 1 周 | [ ] |
-| 4 | **DISPLAY-2.4** | DP HPD 真实读取 (`dp.rs:219-223` TRACK-599EDA) | 1 天 | [ ] |
+| 4 | **DISPLAY-2.4** | DP HPD 真实读取 (`dp.rs:219-223` TRACK-599EDA) | 1 天 | [x] |
 
 **DISPLAY-2.1 完成记录** (2026-06-23 接手人实装):
 - **变更**:
@@ -1359,6 +1359,23 @@ pub use x86_64::ioapic;
   - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
   - host-tests: 72/72 PASS
 - **TCB 影响**: hdmi.rs 新增 5 处 `unsafe` (DDC I2C 原语), 均调用 IoMem::write_u8/read_u8; 边界由 IoMem::check_offset 保障, 调用方保证 ctrl/status 偏移在 IoMem 范围内
+
+**DISPLAY-2.4 完成记录** (2026-06-23 接手人实装):
+- **变更** (消除 `dp.rs:219-223` TRACK-599EDA, 镜像 HDMI HPD 模式):
+  - `src/kernel/framework/driver/display/dp.rs`:
+    - 新增 `DP_HPD_REG_OFFSET = 0x040` 与 `DP_HPD_STATUS_BIT = 0x01` 常量 (带 Intel IGP/AMD DCN 共享 HPD 注释)
+    - 新增 `use crate::kernel::framework::iomem::IoMem` 导入
+    - `DpController` 字段 `mmio_base: usize` → `iomem: Option<IoMem>` + `hpd_reg_offset: usize`
+    - 新增 `unsafe fn new_with_iomem(iomem, hpd_reg_offset)` + `new_with_default_hpd(iomem)` 真实硬件构造函数
+    - `detect_hot_plug()` 真实实现: IoMem 路径读 `read_u8(hpd_reg_offset) & DP_HPD_STATUS_BIT`; None 路径 fallback 返回 `true`
+    - 删除 `// TODO(TRACK-599EDA)` 注释
+    - 新增单元测试 `test_dp_hpd_fallback_returns_true_when_no_iomem`
+- **验证**:
+  - x86_64 / aarch64 `cargo build --release`: 0 error / 12 pre-existing warnings (无 dp.rs 相关新增)
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72/72 PASS
+- **TCB 影响**: dp.rs 中 1 处 `unsafe` (IoMem::read_u8 调用, 同 hdmi.rs 模式)
+- **设计取舍**: DP HPD 默认偏移 0x040 (假设独立 DP chip); Intel/AMD 共享 HPD 控制器需通过 `new_with_iomem` 显式指定与 HDMI 相同偏移
 
 **第 1 组开始日期**: 2026-06-23
 **第 1 组完成日期**: TBD

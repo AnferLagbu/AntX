@@ -20,6 +20,7 @@
 //! DisplayPort驱动涉及高速串行通信和链路训练。
 
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
+use crate::kernel::framework::iomem::IoMem;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -36,6 +37,20 @@ mod aux_address {
     pub const LINK_BW_SET: u16 = 0x0100;
     pub const LANE_COUNT_SET: u16 = 0x0101;
 }
+
+/// DP HPD (Hot Plug Detect) 状态寄存器偏移。
+///
+/// 厂商差异:
+/// - Intel IGP: 与 HDMI 共享 HPD 寄存器 (MMIO +0xC8 bit 0-3), 调用方应传入与 HDMI 相同偏移
+/// - AMD DCN: 与 HDMI 类似, 通常共享 HPD 控制器
+/// - 独立 DP 控制器 (e.g. 板载 DP chip): 单独的 HPD GPIO/状态寄存器, 默认偏移 0x040
+///
+/// 本实装默认偏移 0x040, 假设 DP 控制器为独立 chip;
+/// 与 HDMI 共享 HPD 的厂商应通过 [`DpController::new_with_iomem`] 显式指定偏移。
+const DP_HPD_REG_OFFSET: usize = 0x040;
+
+/// DP HPD 状态位 (bit 0)
+const DP_HPD_STATUS_BIT: u8 = 0x01;
 
 /// 链路速率
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,9 +195,16 @@ pub struct AuxTransaction {
 
 /// DisplayPort 控制器驱动
 pub struct DpController {
-    /// MMIO基地址 (待 DP MMIO 寄存器访问启用后使用)。
-    #[allow(dead_code)] // 待 DP MMIO 寄存器访问启用后使用。
-    mmio_base: usize,
+    /// MMIO 句柄 (Option, 在无硬件/虚拟化环境为 None)。
+    ///
+    /// - `Some(iomem)`: 真实硬件路径, 通过 MMIO 寄存器读取 HPD 状态。
+    /// - `None`: 无硬件路径 (QEMU/QEMU+bochs-vbe), HPD 检测走 fallback
+    ///   (假设已连接), 仅用于开发环境。
+    iomem: Option<IoMem>,
+    /// HPD 寄存器偏移 (相对 `iomem` 基地址)。
+    /// 不同厂商 DP 控制器偏移量不同; 默认 0x040 (假设独立 DP chip),
+    /// 调用方可通过 [`DpController::new_with_iomem`] 指定自家硬件偏移。
+    hpd_reg_offset: usize,
     /// DPCD数据
     dpcd: Option<Dpcd>,
     /// 当前链路速率
@@ -201,10 +223,17 @@ pub struct DpController {
 }
 
 impl DpController {
-    /// 创建新的DisplayPort控制器实例
-    pub fn new(mmio_base: usize) -> Self {
+    /// 创建 DisplayPort 控制器实例 (无硬件 fallback 模式)。
+    ///
+    /// 此模式 `detect_hot_plug` 直接返回 `true` (假设已连接),
+    /// 用于 QEMU/QEMU+bochs-vbe 等无真实 DP 控制器的开发环境。
+    /// 真实硬件环境请使用 [`DpController::new_with_iomem`].
+    pub fn new(mmio_base_unused: usize) -> Self {
+        // 参数保留以兼容旧调用方; iomem 路径走 fallback。
+        let _ = mmio_base_unused;
         Self {
-            mmio_base,
+            iomem: None,
+            hpd_reg_offset: DP_HPD_REG_OFFSET,
             dpcd: None,
             current_link_rate: None,
             current_lane_count: None,
@@ -215,11 +244,54 @@ impl DpController {
         }
     }
 
-    /// 检测热插拔
+    /// 创建 DisplayPort 控制器实例 (真实硬件模式)。
+    ///
+    /// # Safety
+    ///
+    /// - `iomem` 必须指向有效 DP 控制器 MMIO 区域;
+    /// - 调用方负责 `iomem` 的生命周期管理 (在 `DpController` 存活期间不得释放);
+    /// - `hpd_reg_offset + 1` 必须落在 `iomem` 范围内。
+    pub unsafe fn new_with_iomem(
+        iomem: IoMem,
+        hpd_reg_offset: usize,
+    ) -> Self {
+        Self {
+            iomem: Some(iomem),
+            hpd_reg_offset,
+            dpcd: None,
+            current_link_rate: None,
+            current_lane_count: None,
+            training_state: TrainingState::Disabled,
+            connected: false,
+            info: DeviceInfo::new("displayport", DeviceType::Other),
+            initialized: false,
+        }
+    }
+
+    /// 创建 DisplayPort 控制器实例 (真实硬件, 使用默认 HPD 寄存器偏移)。
+    ///
+    /// # Safety
+    ///
+    /// 同 [`DpController::new_with_iomem`], 默认偏移见 [`DP_HPD_REG_OFFSET`].
+    pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self {
+        Self::new_with_iomem(iomem, DP_HPD_REG_OFFSET)
+    }
+
+    /// 检测热插拔。
+    ///
+    /// 真实硬件: 从 MMIO 读 `hpd_reg_offset` 寄存器, bit 0 == 1 表示已连接。
+    /// 无硬件 fallback: 返回 `true` (兼容 QEMU + Bochs DISPI 开发环境)。
     pub fn detect_hot_plug(&mut self) -> bool {
-        // TODO(TRACK-599EDA): 读取HPD引脚状态
-        self.connected = true;
-        self.connected
+        let hpd = if let Some(iomem) = &self.iomem {
+            // SAFETY: `new_with_iomem` 构造时调用方已保证
+            // `hpd_reg_offset + 1 <= iomem.len()`, 读 1 字节落在 IoMem 边界内。
+            unsafe { iomem.read_u8(self.hpd_reg_offset) & DP_HPD_STATUS_BIT != 0 }
+        } else {
+            // 无硬件 fallback: 假设已连接 (兼容 QEMU Bochs DISPI 开发环境)。
+            true
+        };
+        self.connected = hpd;
+        hpd
     }
 
     /// AUX通道读操作
@@ -441,6 +513,14 @@ mod tests {
         assert!(!ctrl.is_ready());
         assert!(!ctrl.connected);
         assert_eq!(ctrl.training_state, TrainingState::Disabled);
+    }
+
+    #[test]
+    fn test_dp_hpd_fallback_returns_true_when_no_iomem() {
+        // 无硬件 fallback 模式: detect_hot_plug 必须返回 true (兼容 QEMU/Bochs)。
+        let mut ctrl = DpController::new(0xFE000000);
+        assert!(ctrl.detect_hot_plug(), "无 IoMem 时 fallback 必须返回 true");
+        assert!(ctrl.connected);
     }
 
     #[test]
