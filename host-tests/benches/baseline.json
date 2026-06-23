@@ -2,7 +2,7 @@
   "version": 1,
   "machine": "x86_64-Linux-7.0.12-201.fc44.x86_64",
   "python": "3.14.5",
-  "recorded_at": "2026-06-22T23:47:53Z",
+  "recorded_at": "2026-06-23T02:20:33Z",
   "results": [
     {
       "name": "page_flags_bits",
@@ -57,8 +57,8 @@
       "name": "recovery_decide",
       "category": "barrier",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.006,
-      "ps_per_op": 6
+      "ns_per_op_frac": 0.004,
+      "ps_per_op": 4
     },
     {
       "name": "bitmap_scan",
@@ -71,8 +71,8 @@
       "name": "btree_id_lookup",
       "category": "proc",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.116,
-      "ps_per_op": 116
+      "ns_per_op_frac": 0.13,
+      "ps_per_op": 130
     },
     {
       "name": "socket_wait_queue",
@@ -98,6 +98,13 @@
     {
       "name": "sysctl_rw",
       "category": "config",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.002,
+      "ps_per_op": 2
+    },
+    {
+      "name": "blk_dev_dispatch",
+      "category": "block",
       "iterations": 10000000,
       "ns_per_op_frac": 0.002,
       "ps_per_op": 2

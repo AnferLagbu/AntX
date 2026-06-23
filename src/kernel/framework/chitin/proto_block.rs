@@ -1,58 +1,31 @@
 //! 几丁质块设备协议 (Chitin Block Protocol)
 //!
-//! 块设备 I/O 函数指针表与便捷注册。
+//! 块设备注册路径 — 简化为 1 个 trait, 0 thunk, 0 BlockOps.
 //!
-//! Chitin 是唯一的设备驱动框架, 块设备通过 `BlockOps` 提供四个
-//! 函数指针 (read/write/is_present/total_sectors), HvFS 等子系统
-//! 通过 `chitin_blk_read/write` 直接 I/O, 无需中间注册表。
+//! T-4.1 (LEGACY-4): 旧路径 (4 个 extern "C" thunk + BlockOps 函数指针表 + Box<Box>)
+//! 已被 trait dispatch 完全替代. 现在 `chitin_blk_read/write` 直接调用
+//! `&mut dyn BlockDevice::blk_read/blk_write`, 0 unsafe, 0 间接调用.
+//!
+//! 旧 `BlockOps`/`block_device_with_ops`/`register_block_raw` API **保留**
+//! 以支持尚未迁移的自定义驱动, 但新代码应使用 `register_block_device` +
+//! `impl BlockDevice` 即可.
 
 use crate::kernel::framework::chitin::{
-    box_to_raw, chitin_register_block, chitin_register_with_ops, BlockOps, ChitinOps, ChitinProto, BlockDevice,
-};
-use alloc::boxed::Box;
-
-extern "C" fn blk_read_thunk(data: *mut u8, sector: u64, buf: *mut u8) -> i32 {
-    if data.is_null() || buf.is_null() { return -1; }
-    // SAFETY: 由 Chitin BlockOps 契约保证 data 指向有效 Box<dyn BlockDevice>,
-    // buf 至少 512 字节可写。
-    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
-    let slice = unsafe { core::slice::from_raw_parts_mut(buf, 512) };
-    dev.blk_read(sector, slice)
-}
-
-extern "C" fn blk_write_thunk(data: *mut u8, sector: u64, buf: *const u8) -> i32 {
-    if data.is_null() || buf.is_null() { return -1; }
-    // SAFETY: 由 Chitin BlockOps 契约保证 data/buf 有效, 调用期间 buf 借用。
-    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
-    let slice = unsafe { core::slice::from_raw_parts(buf, 512) };
-    dev.blk_write(sector, slice)
-}
-
-extern "C" fn blk_is_present_thunk(data: *mut u8) -> bool {
-    if data.is_null() { return false; }
-    // SAFETY: data 有效, 由驱动注册时设置。
-    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
-    dev.blk_is_present()
-}
-
-extern "C" fn blk_total_sectors_thunk(data: *mut u8) -> u64 {
-    if data.is_null() { return 0; }
-    // SAFETY: data 有效, 由驱动注册时设置。
-    let dev: &mut Box<dyn BlockDevice> = unsafe { &mut *(data as *mut Box<dyn BlockDevice>) };
-    dev.blk_total_sectors()
-}
-
-static BLOCK_DEVICE_OPS: BlockOps = BlockOps {
-    read: blk_read_thunk,
-    write: blk_write_thunk,
-    is_present: blk_is_present_thunk,
-    total_sectors: blk_total_sectors_thunk,
+    chitin_register_block, chitin_register_with_ops, BlockOps, ChitinOps, ChitinProto, BlockDevice,
 };
 
-/// 注册块设备到 Chitin (唯一注册入口)
+/// 注册块设备到 Chitin (推荐入口, T-4.1 新版)
 ///
-/// 自动将 `BlockDevice` trait 方法桥接为 `BlockOps` 函数指针表,
-/// 使 HvFS 可通过 `chitin_blk_read/write` 直接 I/O。
+/// 直接传 `&'static mut dyn BlockDevice`, 0 thunk, 0 BlockOps:
+/// - `chitin_blk_read/write` 直接 trait dispatch
+/// - 无 extern "C" 间接调用
+/// - 编译期类型安全
+///
+/// # 内存
+///
+/// `dev: impl BlockDevice + 'static` 会被 `Box::leak` 为静态内存, 由 Chitin 全权管理.
+/// 这意味着注册的块设备**永不释放** (适用 OS 生命周期). 如需动态卸载, 请
+/// 显式管理并使用 chitin_unregister + drop.
 ///
 /// 返回设备在 CHITIN_DEVICES 中的索引 (用作 drive_id)。
 pub fn register_block_device(
@@ -60,15 +33,19 @@ pub fn register_block_device(
     dev: impl BlockDevice + 'static,
     io_base: Option<u64>,
 ) -> u32 {
-    let bdev: alloc::boxed::Box<dyn BlockDevice> = alloc::boxed::Box::new(dev);
-    let boxed: alloc::boxed::Box<Box<dyn BlockDevice>> = alloc::boxed::Box::new(bdev);
-    let raw = box_to_raw(boxed);
-    chitin_register_block(name, io_base, None, &BLOCK_DEVICE_OPS, raw)
+    // T-4.1: Box::leak → &'static mut dyn BlockDevice, 走新注册路径
+    let leaked: &'static mut (dyn BlockDevice) = alloc::boxed::Box::leak(alloc::boxed::Box::new(dev));
+    crate::kernel::framework::chitin::chitin_register_block_dev(name, io_base, None, leaked)
 }
 
-/// 注册块设备 (使用自定义 BlockOps)
+/// 注册块设备 (使用自定义 BlockOps) — **遗留 API, 不推荐**
 ///
-/// 适用于需要自定义 I/O 路径的块设备驱动。
+/// 适用于需要自定义 I/O 路径的块设备驱动, 或尚未迁移到 `BlockDevice` trait
+/// 的旧驱动. 新代码请使用 `register_block_device`.
+#[deprecated(
+    since = "T-4.1 (2026-06-22)",
+    note = "请使用 `register_block_device` + `impl BlockDevice`. BlockOps thunk 路径已废弃."
+)]
 pub fn register_block_device_with_ops(
     name: &'static str,
     io_base: Option<u64>,
@@ -79,7 +56,11 @@ pub fn register_block_device_with_ops(
     chitin_register_block(name, io_base, irq, ops, driver_data)
 }
 
-/// 注册块设备到 Chitin (使用 ChitinOps 枚举)
+/// 注册块设备到 Chitin (使用 ChitinOps 枚举) — **遗留 API, 不推荐**
+#[deprecated(
+    since = "T-4.1 (2026-06-22)",
+    note = "请使用 `register_block_device` + `impl BlockDevice`."
+)]
 pub fn register_block_raw(
     name: &'static str,
     io_base: Option<u64>,

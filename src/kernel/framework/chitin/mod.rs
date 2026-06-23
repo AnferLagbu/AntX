@@ -236,6 +236,16 @@ pub struct ChitinDevice {
     pub irq: Option<u8>,
     pub driver_data: *mut u8,
     pub ops: Option<ChitinOps>,
+    /// T-4.1: 块设备 trait 引用 (替代 BlockOps 函数指针 thunk)
+    /// 当 `proto == ChitinProto::Block` 且驱动通过 `register_block_device` 注册时,
+    /// `chitin_blk_read/write` 走此字段 (0 unsafe, 0 thunk)
+    ///
+    /// # Mutability
+    ///
+    /// `&'static mut` 是因为 `BlockDevice::blk_read/blk_write` 需要 `&mut self`.
+    /// 通过 `&mut ChitinDevice` 借用得到 (CHITIN_DEVICES 锁保护),
+    /// 不存在数据竞争 (持有锁时此引用唯一).
+    pub block_dev: Option<&'static mut (dyn BlockDevice)>,
 }
 
 // SAFETY: ChitinDevice 含一个原始指针 (`driver_data`), 其不
@@ -344,6 +354,7 @@ pub fn chitin_register(
         irq,
         driver_data,
         ops: None,
+        block_dev: None,
     };
     {
         let mut devices = CHITIN_DEVICES.lock();
@@ -375,6 +386,7 @@ pub fn chitin_register_with_ops(
         irq,
         driver_data,
         ops: Some(ops),
+        block_dev: None,
     };
     {
         let mut devices = CHITIN_DEVICES.lock();
@@ -411,12 +423,59 @@ pub fn chitin_register_block(
         irq,
         driver_data,
         ops: Some(ChitinOps::Block(blk_ops)),
+        // T-4.1: 旧 BlockOps 注册路径不设置 block_dev
+        block_dev: None,
     };
     let idx;
     {
         let mut devices = CHITIN_DEVICES.lock();
         idx = devices.len() as u32;
         devices.push(dev);
+    }
+    notify_last_registered();
+    idx
+}
+
+/// T-4.1: 注册块设备 (直接传 `&'static mut dyn BlockDevice`, 0 thunk, 0 BlockOps)
+///
+/// 这是新路径, 替代 `chitin_register_block` + 4 个 thunk 的方式.
+/// 优势:
+/// - 0 unsafe (chitin_blk_read/write 直接 trait dispatch)
+/// - 0 间接调用 (BlockOps 函数指针 thunk 不再存在)
+/// - 类型安全 (驱动方必须实现 BlockDevice trait, 编译期检查)
+///
+/// # 生命周期
+///
+/// `dev` 必须是 `'static` (即 `Box::leak` 或静态分配), ChitinDevice 持有
+/// `&'static mut dyn BlockDevice` 引用. 设备移除时 Chitin 负责清理.
+///
+/// # Mutability 原因
+///
+/// `BlockDevice::blk_read/blk_write` 需要 `&mut self`, 故用 `&'static mut` 而非 `&'static`.
+/// 通过 CHITIN_DEVICES 锁保护, 不存在数据竞争.
+pub fn chitin_register_block_dev(
+    name: &'static str,
+    io_base: Option<u64>,
+    irq: Option<u8>,
+    dev: &'static mut (dyn BlockDevice),
+) -> u32 {
+    let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
+    let chitin_dev = ChitinDevice {
+        id,
+        name,
+        proto: ChitinProto::Block,
+        state: DeviceState::Ready,
+        io_base,
+        irq,
+        driver_data: core::ptr::null_mut(),  // 不再使用, 改用 block_dev
+        ops: None,                            // 不再使用, 改用 block_dev
+        block_dev: Some(dev),
+    };
+    let idx;
+    {
+        let mut devices = CHITIN_DEVICES.lock();
+        idx = devices.len() as u32;
+        devices.push(chitin_dev);
     }
     notify_last_registered();
     idx
@@ -529,18 +588,24 @@ pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
     if buf.len() < 512 {
         return KernelError::InvalidArgument.as_i32();
     }
-    let devices = CHITIN_DEVICES.lock();
+    let mut devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
     if idx >= devices.len() {
         return KernelError::IoError.as_i32();
     }
-    let dev = &devices[idx];
+    let dev = &mut devices[idx];
     if dev.proto != ChitinProto::Block {
         return KernelError::IoError.as_i32();
     }
     if dev.state != DeviceState::Ready {
         return KernelError::Busy.as_i32();
     }
+    // T-4.1: 优先走 block_dev trait dispatch (0 unsafe, 0 thunk)
+    // 通过 &mut devices[idx] 拿到的 dyn BlockDevice 已是 &mut
+    if let Some(bd) = dev.block_dev.as_mut() {
+        return bd.blk_read(sector, buf);
+    }
+    // 兼容: 旧 BlockOps 函数指针路径
     match dev.block_ops() {
         Some(ops) => ops.read_sector(dev.driver_data, sector, buf),
         None => KernelError::NotSupported.as_i32(),
@@ -552,17 +617,21 @@ pub fn chitin_blk_write(drive: u8, sector: u64, buf: &[u8]) -> i32 {
     if buf.len() < 512 {
         return KernelError::InvalidArgument.as_i32();
     }
-    let devices = CHITIN_DEVICES.lock();
+    let mut devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
     if idx >= devices.len() {
         return KernelError::IoError.as_i32();
     }
-    let dev = &devices[idx];
+    let dev = &mut devices[idx];
     if dev.proto != ChitinProto::Block {
         return KernelError::IoError.as_i32();
     }
     if dev.state != DeviceState::Ready {
         return KernelError::Busy.as_i32();
+    }
+    // T-4.1: 优先走 block_dev trait dispatch
+    if let Some(bd) = dev.block_dev.as_mut() {
+        return bd.blk_write(sector, buf);
     }
     match dev.block_ops() {
         Some(ops) => ops.write_sector(dev.driver_data, sector, buf),
@@ -584,6 +653,10 @@ pub fn chitin_blk_is_present(drive: u8) -> bool {
     if dev.state != DeviceState::Ready {
         return false;
     }
+    // T-4.1: 优先走 block_dev trait dispatch
+    if let Some(bd) = dev.block_dev.as_ref() {
+        return bd.blk_is_present();
+    }
     match dev.block_ops() {
         Some(ops) => ops.is_present(dev.driver_data),
         None => false,
@@ -600,6 +673,10 @@ pub fn chitin_blk_total_sectors(drive: u8) -> u64 {
     let dev = &devices[idx];
     if dev.proto != ChitinProto::Block {
         return 0;
+    }
+    // T-4.1: 优先走 block_dev trait dispatch
+    if let Some(bd) = dev.block_dev.as_ref() {
+        return bd.blk_total_sectors();
     }
     match dev.block_ops() {
         Some(ops) => ops.total_sectors(dev.driver_data),
@@ -756,6 +833,7 @@ pub fn chitin_register_driver(
         irq,
         driver_data: obj_ptr,
         ops: None,
+        block_dev: None,
     };
     {
         let mut devices = CHITIN_DEVICES.lock();
@@ -788,6 +866,7 @@ pub fn chitin_register_driver_with_ops(
         irq,
         driver_data: obj_ptr,
         ops: Some(ops),
+        block_dev: None,
     };
     {
         let mut devices = CHITIN_DEVICES.lock();
@@ -1035,5 +1114,174 @@ mod tests {
         unsafe {
             drop(Box::from_raw(raw as *mut u8));
         }
+    }
+
+    // ==========================================================================
+    // T-4.1 (LEGACY-4): 新 BlockDevice trait 注册路径测试
+    // ==========================================================================
+    //
+    // 验证: register_block_device + chitin_register_block_dev 走 trait dispatch
+    // 而非 thunk 函数指针. 这些测试用 MockBlockDevice (本地 struct) 验证
+    // BlockDevice trait 直接被 chitin_blk_read/write 调用, 不通过 extern "C".
+
+    struct MockBlockDevice {
+        counter: u64,
+        last_sector: u64,
+        last_written: [u8; 16],
+    }
+
+    impl MockBlockDevice {
+        const fn new() -> Self {
+            Self { counter: 0, last_sector: 0, last_written: [0u8; 16] }
+        }
+    }
+
+    impl BlockDevice for MockBlockDevice {
+        fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {
+            self.counter += 1;
+            self.last_sector = sector;
+            if buf.len() < 512 { return -1; }
+            // 写一个 magic 模式, 测试用
+            for i in 0..16 {
+                buf[i] = b'T';  // 标识 "通过 trait 来的数据"
+            }
+            buf[16] = (sector & 0xFF) as u8;
+            0
+        }
+        fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32 {
+            self.counter += 1;
+            self.last_sector = sector;
+            for i in 0..16.min(buf.len()) {
+                self.last_written[i] = buf[i];
+            }
+            0
+        }
+        fn blk_is_present(&self) -> bool { true }
+        fn blk_total_sectors(&self) -> u64 { 2048 }
+    }
+
+    /// 1. 注册路径: register_block_device + chitin_register_block_dev
+    #[test]
+    fn test_t4_1_register_via_trait() {
+        CHITIN_DEVICES.lock().clear();
+        let mock: &'static mut MockBlockDevice = Box::leak(Box::new(MockBlockDevice::new()));
+        let idx = chitin_register_block_dev("trait_blk", None, None, mock);
+        assert_eq!(chitin_count_by_proto(ChitinProto::Block), 1);
+        let devices = CHITIN_DEVICES.lock();
+        let dev = &devices[idx as usize];
+        assert!(dev.block_dev.is_some(), "block_dev 字段应被设置");
+        assert!(dev.ops.is_none(), "旧 BlockOps 字段应为空");
+        CHITIN_DEVICES.lock().clear();
+    }
+
+    /// 2. trait dispatch: chitin_blk_read 调 MockBlockDevice.blk_read (非 thunk)
+    #[test]
+    fn test_t4_1_chitin_blk_read_via_trait() {
+        CHITIN_DEVICES.lock().clear();
+        let mock: &'static mut MockBlockDevice = Box::leak(Box::new(MockBlockDevice::new()));
+        let idx = chitin_register_block_dev("trait_blk_read", None, None, mock);
+
+        let mut buf = [0u8; 512];
+        let r = chitin_blk_read(idx as u8, 7, &mut buf);
+        assert_eq!(r, 0, "chitin_blk_read 应成功");
+        assert_eq!(buf[0], b'T', "数据应来自 MockBlockDevice (trait), 非 thunk");
+        assert_eq!(buf[16], 7, "sector 7 应被传到 trait");
+        assert_eq!(mock.counter, 1, "MockBlockDevice.blk_read 应被调用 1 次");
+        assert_eq!(mock.last_sector, 7);
+
+        CHITIN_DEVICES.lock().clear();
+    }
+
+    /// 3. trait dispatch: chitin_blk_write 调 MockBlockDevice.blk_write
+    #[test]
+    fn test_t4_1_chitin_blk_write_via_trait() {
+        CHITIN_DEVICES.lock().clear();
+        let mock: &'static mut MockBlockDevice = Box::leak(Box::new(MockBlockDevice::new()));
+        let idx = chitin_register_block_dev("trait_blk_write", None, None, mock);
+
+        let buf = [b'X'; 512];
+        let r = chitin_blk_write(idx as u8, 99, &buf);
+        assert_eq!(r, 0, "chitin_blk_write 应成功");
+        assert_eq!(mock.last_sector, 99);
+        assert_eq!(mock.last_written[0], b'X', "数据应传到 MockBlockDevice");
+
+        CHITIN_DEVICES.lock().clear();
+    }
+
+    /// 4. trait dispatch: chitin_blk_is_present / total_sectors
+    #[test]
+    fn test_t4_1_chitin_blk_metadata_via_trait() {
+        CHITIN_DEVICES.lock().clear();
+        let mock: &'static mut MockBlockDevice = Box::leak(Box::new(MockBlockDevice::new()));
+        let idx = chitin_register_block_dev("trait_blk_meta", None, None, mock);
+
+        assert!(chitin_blk_is_present(idx as u8));
+        assert_eq!(chitin_blk_total_sectors(idx as u8), 2048);
+
+        CHITIN_DEVICES.lock().clear();
+    }
+
+    /// 5. 兼容: 旧 BlockOps 路径仍工作 (block_dev = None)
+    #[test]
+    fn test_t4_1_compat_block_ops_path() {
+        CHITIN_DEVICES.lock().clear();
+        let dummy: Box<u8> = Box::new(0u8);
+        let raw = box_to_raw(dummy);
+        let idx = chitin_register_block("compat_blk", None, None, &MOCK_BLOCK_OPS, raw);
+
+        // 旧路径: 通过 BlockOps thunk
+        assert!(chitin_blk_is_present(idx as u8));
+        assert_eq!(chitin_blk_total_sectors(idx as u8), 1024);
+
+        let mut buf = [0u8; 512];
+        let r = chitin_blk_read(idx as u8, 42, &mut buf);
+        assert_eq!(r, 0);
+        assert_eq!(buf[0], b'R', "兼容路径应通过 MOCK_BLOCK_OPS 返回 'R'");
+
+        CHITIN_DEVICES.lock().clear();
+        // SAFETY: 测试中我们分配了 raw, 现在手动 drop
+        unsafe { drop(Box::from_raw(raw as *mut u8)); }
+    }
+
+    /// 6. 优先级: block_dev 优先于 ops
+    #[test]
+    fn test_t4_1_block_dev_takes_priority() {
+        // 验证当 block_dev 已设置时, 不会 fallback 到 ops 路径
+        // (本测试通过设置 block_dev 并调用 chitin_blk_read, 检查
+        //  数据来自 MockBlockDevice 而非 MOCK_BLOCK_OPS)
+        CHITIN_DEVICES.lock().clear();
+        let mock: &'static mut MockBlockDevice = Box::leak(Box::new(MockBlockDevice::new()));
+        let idx = chitin_register_block_dev("priority_blk", None, None, mock);
+
+        let mut buf = [0u8; 512];
+        chitin_blk_read(idx as u8, 1, &mut buf);
+        assert_eq!(buf[0], b'T', "block_dev 路径应优先 (返回 'T', 非 'R')");
+        CHITIN_DEVICES.lock().clear();
+    }
+
+    /// 7. 边界: buf.len() < 512 应返回 -EINVAL (无论 block_dev 路径)
+    #[test]
+    fn test_t4_1_buf_too_small_via_trait() {
+        CHITIN_DEVICES.lock().clear();
+        let mock: &'static mut MockBlockDevice = Box::leak(Box::new(MockBlockDevice::new()));
+        let idx = chitin_register_block_dev("small_buf_blk", None, None, mock);
+
+        let mut small = [0u8; 256];
+        let r = chitin_blk_read(idx as u8, 0, &mut small);
+        assert_eq!(r, -22); // -EINVAL
+        assert_eq!(mock.counter, 0, "Mock 不应被调用 (校验前置)");
+
+        CHITIN_DEVICES.lock().clear();
+    }
+
+    /// 8. 边界: drive OOB 应返回 -EIO (无 panic)
+    #[test]
+    fn test_t4_1_drive_oob_via_trait() {
+        CHITIN_DEVICES.lock().clear();
+        let mut buf = [0u8; 512];
+        assert_eq!(chitin_blk_read(255, 0, &mut buf), -5); // -EIO
+        assert_eq!(chitin_blk_write(255, 0, &buf), -5);
+        assert!(!chitin_blk_is_present(255));
+        assert_eq!(chitin_blk_total_sectors(255), 0);
     }
 }

@@ -1023,6 +1023,131 @@ pub fn sysctl_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / (iters as u128 * BATCH as u128)
 }
 
+// ============================================================================
+// T-4.1 (LEGACY-4): BlockDevice trait dispatch bench + Mock
+// ============================================================================
+//
+// 验证 chitin_blk_read/write 走 BlockDevice trait dispatch (0 thunk).
+// 由于 chitin::chitin_blk_read/write 是 no_std, host-tests 用 Mock 复现:
+//   - MockBlockDevice: 实现本地 BlockDevice trait, 模拟真实块设备
+//   - MockChitinDevice: 模拟 chitin 表, 持有 dyn BlockDevice, 提供 read/write API
+//   - bench: 测量 trait dispatch 路径的吞吐
+
+/// host-only BlockDevice trait (与 kernel::framework::chitin::BlockDevice 等价)
+pub trait HostBlockDevice: Send + Sync {
+    fn blk_read(&self, sector: u64, buf: &mut [u8]) -> i32;
+    fn blk_write(&self, sector: u64, buf: &[u8]) -> i32;
+    fn blk_is_present(&self) -> bool { true }
+    fn blk_total_sectors(&self) -> u64 { u64::MAX }
+}
+
+/// Mock 块设备, 模拟 virtio-blk 行为
+pub struct MockBlockDevice {
+    /// 内部存储 (按 sector 索引, 0-1023 扇区)
+    storage: StdMutex<Vec<[u8; 512]>>,
+    read_count: std::sync::atomic::AtomicU64,
+    write_count: std::sync::atomic::AtomicU64,
+}
+
+impl MockBlockDevice {
+    pub fn new(capacity_sectors: usize) -> Self {
+        Self {
+            storage: StdMutex::new(
+                (0..capacity_sectors)
+                    .map(|i| {
+                        let mut s = [0u8; 512];
+                        s[0] = (i & 0xFF) as u8;
+                        s[1] = ((i >> 8) & 0xFF) as u8;
+                        s
+                    })
+                    .collect()
+            ),
+            read_count: std::sync::atomic::AtomicU64::new(0),
+            write_count: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    pub fn read_count(&self) -> u64 {
+        self.read_count.load(std::sync::atomic::Ordering::Acquire)
+    }
+    pub fn write_count(&self) -> u64 {
+        self.write_count.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+impl HostBlockDevice for MockBlockDevice {
+    fn blk_read(&self, sector: u64, buf: &mut [u8]) -> i32 {
+        if buf.len() < 512 { return -1; }
+        self.read_count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let s = sector as usize;
+        let storage = self.storage.lock().unwrap();
+        if s >= storage.len() { return -5; }
+        buf.copy_from_slice(&storage[s]);
+        0
+    }
+    fn blk_write(&self, sector: u64, buf: &[u8]) -> i32 {
+        if buf.len() < 512 { return -1; }
+        self.write_count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let s = sector as usize;
+        let mut storage = self.storage.lock().unwrap();
+        if s >= storage.len() { return -5; }
+        storage[s].copy_from_slice(&buf[..512]);
+        0
+    }
+}
+
+/// Mock chitin_blk_read/write 路径 (trait dispatch)
+pub struct MockChitinDevice {
+    block_dev: Box<dyn HostBlockDevice>,
+}
+
+impl MockChitinDevice {
+    pub fn new(dev: Box<dyn HostBlockDevice>) -> Self {
+        Self { block_dev: dev }
+    }
+    pub fn blk_read(&self, sector: u64, buf: &mut [u8]) -> i32 {
+        if buf.len() < 512 { return -1; }
+        self.block_dev.blk_read(sector, buf)
+    }
+    pub fn blk_write(&self, sector: u64, buf: &[u8]) -> i32 {
+        if buf.len() < 512 { return -1; }
+        self.block_dev.blk_write(sector, buf)
+    }
+    pub fn blk_is_present(&self) -> bool {
+        self.block_dev.blk_is_present()
+    }
+    pub fn blk_total_sectors(&self) -> u64 {
+        self.block_dev.blk_total_sectors()
+    }
+}
+
+/// bench: T-4.1 trait dispatch 路径 throughput
+pub fn blk_dev_dispatch_bench(iters: u64) -> u128 {
+    let dev: Box<dyn HostBlockDevice> = Box::new(MockBlockDevice::new(1024));
+    let chitin = MockChitinDevice::new(dev);
+
+    // 预热 (避免首次调用路径开销污染)
+    for _ in 0..100 {
+        let mut buf = [0u8; 512];
+        chitin.blk_read(0, &mut buf);
+    }
+
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    let mut buf = [0u8; 512];
+    for r in 0..iters {
+        // 1 轮: 1 读 + 1 写 (16 扇区 旋转)
+        let sector = (r & 0xF) as u64;
+        let _ = chitin.blk_read(sector, &mut buf);
+        sink ^= u64::from(buf[0]) | (u64::from(buf[1]) << 8);
+        let _ = chitin.blk_write(sector, &buf);
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    // 1 op = 1 读 + 1 写 = 2 实际 ops
+    elapsed.saturating_mul(1_000) / (iters as u128 * 2)
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -1106,6 +1231,9 @@ pub fn run_all() -> BenchReport {
     // SYSCTL-2: sysctl register/write bench
     results.push(measure("sysctl_rw", "config", 10_000, ||
         sysctl_bench(10_000)));
+    // T-4.1: BlockDevice trait dispatch bench (LEGACY-4 验证)
+    results.push(measure("blk_dev_dispatch", "block", 100_000, ||
+        blk_dev_dispatch_bench(100_000)));
     BenchReport { version: 1, results }
 }
 
@@ -1342,5 +1470,57 @@ mod tests {
     #[test]
     fn test_mock_sysctl_bench_runs() {
         let _ = sysctl_bench(10);
+    }
+
+    // ====== T-4.1 (LEGACY-4): BlockDevice trait dispatch 单元测试 ======
+
+    #[test]
+    fn test_mock_blk_dev_read_write() {
+        let dev = MockBlockDevice::new(16);
+        let chitin = MockChitinDevice::new(Box::new(dev));
+        let mut buf = [0u8; 512];
+        // 读 sector 0
+        assert_eq!(chitin.blk_read(0, &mut buf), 0);
+        assert_eq!(buf[0], 0);
+        // 写 sector 1
+        let mut wbuf = [0xAB; 512];
+        assert_eq!(chitin.blk_write(1, &wbuf), 0);
+        // 再读 sector 1
+        let mut rbuf = [0u8; 512];
+        assert_eq!(chitin.blk_read(1, &mut rbuf), 0);
+        assert_eq!(rbuf[0], 0xAB);
+    }
+
+    #[test]
+    fn test_mock_blk_dev_oob() {
+        let dev = MockBlockDevice::new(4);
+        let chitin = MockChitinDevice::new(Box::new(dev));
+        let mut buf = [0u8; 512];
+        // 越界 sector 100 应返回 -EIO
+        assert_eq!(chitin.blk_read(100, &mut buf), -5);
+        assert_eq!(chitin.blk_write(100, &buf), -5);
+    }
+
+    #[test]
+    fn test_mock_blk_dev_buf_too_small() {
+        let dev = MockBlockDevice::new(4);
+        let chitin = MockChitinDevice::new(Box::new(dev));
+        let mut small = [0u8; 256];
+        // buf.len() < 512 应返回 -1
+        assert_eq!(chitin.blk_read(0, &mut small), -1);
+    }
+
+    #[test]
+    fn test_mock_blk_dev_metadata() {
+        let dev = MockBlockDevice::new(64);
+        let chitin = MockChitinDevice::new(Box::new(dev));
+        assert!(chitin.blk_is_present());
+        assert_eq!(chitin.blk_total_sectors(), u64::MAX);
+    }
+
+    #[test]
+    fn test_blk_dev_dispatch_bench_runs() {
+        // smoke test
+        let _ = blk_dev_dispatch_bench(100);
     }
 }

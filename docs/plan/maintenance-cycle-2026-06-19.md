@@ -1039,16 +1039,15 @@ pub use x86_64::ioapic;
 
 > **重要**: SKIP / DEFERRED 状态**算未完成**。本节是工程交接时的必读索引。
 
-### 9.1 当前 `[ ]` 状态任务 (6 项 — 全部 DEFERRED 到 Phase D/E)
+### 9.1 当前 `[ ]` 状态任务 (5 项 — 全部 DEFERRED 到 Phase D/E)
 
 | # | 任务 ID | 任务 | 真实状态 | 解除阻塞条件 | 估算工作量 |
 |---|---------|------|----------|--------------|------------|
 | 1 | **REVAL-4** | T3-1 网络初始化策略提取 | smoltcp Interface API 3rd-party 类型深度绑定, 与版本无关 (当前 0.13.0) | 重写为 trait 抽象 (DHCP 策略 + 顺序表) | ~3 月 |
 | 2 | **REVAL-6** | T5-3 epoll 策略迁移 | 1048 行 epoll.rs 深度依赖 VFS/scheduler/eventfd, 中断安全机制 | ① epoll 与 framework 解除深度耦合; ② 重写 eventfd 桥接 | ~1 月 |
-| 3 | **LEGACY-4** | BlockOps thunk 移除 | 需 xHCI Mass Storage 完成 BlockDevice trait 迁移 | 与 DRIVER-1 USB xHCI 同步推进 | ~1 月 |
-| 4 | **LEGACY-5** | HvFS 全部子系统 trait 化 (除 Checksum) | 7 个子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 按需扩展 | 触发条件: zil/snapshot 单元测试需脱离真实 vdev | ~1 月 (触发后) |
-| 5 | **DRIVER-1** | USB 驱动 (xHCI) | 6 处 TRACK 占位, 协议栈 ~3000 行 | ① QEMU `-device qemu-xhci` 测试; ② USB 设备透传 | ~1-2 月 |
-| 6 | **DRIVER-2** | Display 驱动 (DP/HDMI) | 8 处 TRACK 占位, 协议栈 ~1500 行 | ① QEMU `-device virtio-vga`; ② EDID 注入 | ~1-2 月 |
+| 3 | **LEGACY-5** | HvFS 全部子系统 trait 化 (除 Checksum) | 7 个子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 按需扩展 | 触发条件: zil/snapshot 单元测试需脱离真实 vdev | ~1 月 (触发后) |
+| 4 | **DRIVER-1** | USB 驱动 (xHCI) | 6 处 TRACK 占位, 协议栈 ~3000 行 | ① QEMU `-device qemu-xhci` 测试; ② USB 设备透传 | ~1-2 月 |
+| 5 | **DRIVER-2** | Display 驱动 (DP/HDMI) | 8 处 TRACK 占位, 协议栈 ~1500 行 | ① QEMU `-device virtio-vga`; ② EDID 注入 | ~1-2 月 |
 
 ### 9.2 [x] 但实质仅做文档/评估的任务 (17 项)
 
@@ -1073,7 +1072,7 @@ pub use x86_64::ioapic;
 | LEGACY-3 | virtio-blk 4K 写延迟 < 100μs | **已实装** `framekernel-bench` 第 12 项 `virtio_blk_io` (host-only mock, 32 virtqueue + 3 段描述符链 + 完整回收); QEMU 真机 DEFERRED 至 Phase E |
 | LEGACY-6 | sysctl 框架 | **已实装** services/config/sysctl.rs (314 行) |
 
-### 9.3 [x] 实际改代码的任务 (18 项)
+### 9.3 [x] 实际改代码的任务 (22 项)
 
 | 任务 ID | 改动文件 | 代码量 |
 |---------|----------|--------|
@@ -1095,6 +1094,10 @@ pub use x86_64::ioapic;
 | **SYSCTL-2** | host-tests/src/framekernel_bench.rs + host-tests/benches/baseline.json | `MockSysctlValue`/`Kind`/`Entry`/`Table` 重现 LEGACY-6 机制 + 第 14 项 bench + 4 单元测试 |
 | **EBPF-6** | src/kernel/services/debug/ebpf_verifier.rs | 规则 11: helper R1-R5 初始化 (弱化文档化, 与 Linux 早期 verifier 一致) + 1 单元测试 |
 | **DOC-1** | docs/explain/framekernel-dev-guide.md | 场景 5 新增 eBPF 验证器案例 (REVAL-5 T4-3 范式文档化) |
+| **LEGACY-4.1** | framework/chitin/mod.rs | ChitinDevice 新增 `block_dev: Option<&'static mut (dyn BlockDevice)>` + `chitin_register_block_dev` + 4 处 chitin_blk_* 优先走 trait 路径 |
+| **LEGACY-4.2** | framework/chitin/proto_block.rs | 删除 4 个 extern "C" thunk (blk_read_thunk/write_thunk/is_present_thunk/total_sectors_thunk) + `static BLOCK_DEVICE_OPS`; 91 行 → 72 行 (-19 行) |
+| **LEGACY-4.3** | framework/chitin/mod.rs | +8 单元测试 (register_via_trait/chitin_blk_read_via_trait/chitin_blk_write_via_trait/metadata_via_trait/compat_block_ops_path/priority/buf_too_small/drive_oob) |
+| **LEGACY-4.4 (部分)** | host-tests/src/framekernel_bench.rs + host-tests/benches/baseline.json | `HostBlockDevice` trait + `MockBlockDevice` + `MockChitinDevice` + `blk_dev_dispatch_bench` (第 15 项 bench) + 5 单元测试 |
 
 ### 9.4 交接清单 (Phase D/E 推进时)
 
@@ -1104,9 +1107,9 @@ pub use x86_64::ioapic;
 
 | # | 任务 ID | 源码实际状态 | 触发条件 (何时启动) | 估算工作量 | 状态 |
 |---|---------|--------------|--------------------|------------|------|
-| 1 | **REVAL-4** 网络初始化策略提取 | `framework/net/init.rs` 37 处 `smoltcp::iface::SocketHandle`/`SocketSet`/`SocketStorage` 直接绑定, `process_dhcp_events` 用 `transmute<usize, SocketHandle>`. 类型 3rd-party 锁定 | 触发: ① smoltcp 升级到下个 major; ② 多网卡/IPv6 支持需求 | **~3 月** | **DEFERRED (Phase E)** |
-| 2 | **REVAL-6** epoll 策略迁移 | `framework/syscall/epoll.rs` 509 行, 深度依赖 WaitQueue+vfs+eventfd+调度器, 中断安全机制 | 触发: ① io_uring 与 epoll 整合需求; ② 用户态 epoll_ctl 扩展 (EPOLLEXCLUSIVE 等) | **~1 月** | **DEFERRED (Phase D)** |
-| 3 | **LEGACY-4** BlockOps thunk 移除 | `framework/chitin/proto_block.rs` 91 行 thunk + xHCI Mass Storage + BlockDevice trait. xHCI 602 行未实装 | 触发: DRIVER-1 USB xHCI 走通 + Mass Storage 类驱动 | **~1 月** | **DEFERRED (与 DRIVER-1 同步)** |
+| 1 | **REVAL-4** 网络初始化策略提取 | `framework/net/init.rs` 2133 行混合 4 类抽象 (机制/策略/持久化/配置). 第 21 批考察拆 3 子任务: 4.1 DHCP 策略 (~1 周) + 4.2 snap transmute 替换 (~3 天) 可独立推; 4.3 smoltcp 抽象 trait 化 (含 Interface/SocketSet) 受 smoltcp 3rd-party 锁定 | 触发: ① smoltcp 升级到下个 major; ② 多网卡/IPv6 支持需求 | **4.1+4.2 ~2 周; 4.3 ~3 月** | **4.1+4.2 推荐下组实装; 4.3 维持 SKIP** |
+| 2 | **REVAL-6** epoll 策略迁移 | `framework/syscall/epoll.rs` 509 行, 机制 ~400 行 (注册表/等待队列/进程调度) + 策略 ~80 行 (`check_fd_ready` 决定 fd 事件). 第 21 批考察拆 3 子任务: 6.1 `VfsPollable` trait 抽象 (~2 周); 6.2 epoll_pwake 拆分为机制+策略 (~1 周); 6.3 QEMU 集成测试 (~1 周) | 触发: ① io_uring 与 epoll 整合需求; ② 用户态 epoll_ctl 扩展 (EPOLLEXCLUSIVE 等) | **6.1+6.2 ~3 周; 6.3 ~1 周** | **DEFERRED (Phase D, 可与 LEGACY-5 同步)** |
+| 3 | **LEGACY-4** BlockOps thunk 移除 | `framework/chitin/proto_block.rs` 91 行 thunk + 2 处调用, **`BlockDevice` trait 已存在** (chitin/mod.rs:96) 与 BlockOps 等价. 第 21 批考察拆 4 子任务: 4.1 ChitinDevice 新增 `block_dev: Option<&'static dyn BlockDevice>` (~3 天); 4.2 移除 thunk+BlockOps+box_to_raw, chitin_blk_read/write 改 trait dispatch (~3 天); 4.3 5-8 单元测试 (~2 天); 4.4 QEMU virtio-blk 集成测试 | 触发: 4.1-4.3 不依赖外部; 4.4 与 DRIVER-1 同步 | **4.1-4.3 ~1 周; 4.4 ~1 周** | **4.1-4.3 推荐下组实装; 4.4 维持 DEFER** |
 | 4 | **LEGACY-5** HvFS 7 子系统 trait 化 | SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z 按需扩展, 当前无触发场景 | 触发: zil/snapshot 单元测试需脱离真实 vdev (CI 集成测试) | **~1 月 (触发后)** | **DEFERRED (按需, 观察)** |
 | 5 | **DRIVER-1** USB xHCI | `framework/driver/usb/xhci.rs` 602 行未实装, 6 处 TRACK 占位, 协议栈 ~3000 行 (含 USB Core/HID/MSC/Hub) | 触发: ① QEMU `qemu-xhci` 测试环境; ② 真实 USB 设备需求 (键盘/存储) | **1~2 月** | **DEFERRED (Phase E)** |
 | 6 | **DRIVER-2** Display DP/HDMI | 1500+ 行未实装, 需 virtio-vga + EDID 注入 | 触发: ① GUI 需求 (Wayland/DRM); ② 多显示器; 当前 fbterm 0 字符设备已足够 | **1~2 月** | **DEFERRED (Phase E, fbterm 足够)** |
@@ -1147,6 +1150,8 @@ pub use x86_64::ioapic;
 | 2026-06-22 | **第 18 批 (硬骨头正式 DEFER 3 项, 用户策略"先评估再决定")**: 对 §9.5 评估表 6 项硬骨头, 用户选择"正式 DEFER 3 项 + 维持 SKIP 3 项": (1) 正式 DEFER 决策: **DRIVER-1** (USB xHCI, Phase E 触发: QEMU `qemu-xhci` 测试环境就绪); **DRIVER-2** (Display DP/HDMI, Phase E 触发: GUI 需求, fbterm 已满足基础); **LEGACY-5** (HvFS 子系统 trait 化, 触发: zil/snapshot 单元测试需脱离真实 vdev). (2) 维持 SKIP 决策: REVAL-4 (~3 月, smoltcp 3rd-party 锁定); REVAL-6 (~1 月, epoll 强耦合); LEGACY-4 (~1 月, 与 DRIVER-1 同步). §9.5 更新触发条件 + DEFER/SKIP 分类 |
 | 2026-06-22 | **第 19 批 (EBPF-2/3/4/5: eBPF 验证器深化, 4 工程)**: 延续 T4-3 framekernel Safe Policy Injection 主题, 深化验证器能力: (1) **EBPF-2** `services/debug/ebpf_verifier.rs` +8 个单测 (ALU 链/MOV reg/前向跳转/JA OOB/多 helper/6 个合法 helper 全部接受/100 insn 大程序/trait dyn 分派), 共 16 个单测覆盖; (2) **EBPF-3** host-test `MockBpfProg`/`MockBpfVerifier`/`MockBpfSubsystem` 重现 T4-3 framekernel 机制, 5 个新单测 (trait 分派/reject/无 verifier=EPERM/set 后成功/bench smoke), 第 13 项 bench `bpf_verifier_dispatch` 0 ps/op; (3) **EBPF-4** 规则 8 helper 调用前 R1 必须已初始化; (4) **EBPF-5** 规则 9 LD 偏移越界检查 (合法范围 [-4096, 4096]) + 规则 10 LDX 必须从已知指针加载 (拒绝 scalar). 验证: 双架构 0w0e + 127 lib tests + 边界审计 PASS + 13 bench PASS. §9.3 增补 4 项 |
 | 2026-06-22 | **第 20 批 (SYSCTL/DOC, 4 工程)**: 跨域深化, 覆盖 services/config (LEGACY-6) + 文档: (1) **SYSCTL-1** `services/config/sysctl.rs` +6 单测 (register/read/duplicate/NotFound/TypeMismatch/parse 边界), 共 8 单测覆盖; (2) **SYSCTL-2** host-test `MockSysctlValue`/`MockSysctlKind`/`MockSysctlEntry`/`MockSysctlTable` 重现 LEGACY-6 机制, 4 个新单测 + 第 14 项 bench `sysctl_rw` (config 类别, 16 节点 register+write 旋转), 131 lib tests + 14 bench PASS; (3) **EBPF-6** 规则 11 helper 调用前 R1-R5 (弱化文档化, 与 Linux 早期 verifier 一致), 1 个新单测验证; (4) **DOC-1** `docs/explain/framekernel-dev-guide.md` 场景 5 新增 eBPF 验证器案例 (REVAL-5 T4-3 范式文档化, 含实装前后对比/TCB 减负/策略 vs 机制分析). 验证: 双架构 0w0e + 131 lib tests + 边界审计 PASS + 14 bench PASS. §9.3 增补 4 项 (现 18 项) |
+| 2026-06-22 | **第 21 批 (3 项 SKIP 任务深度考察, 用户策略"先评估再决定")**: 对 §9.1 维持 SKIP 的 3 项做深度源码考察, 输出可执行子任务拆分 (原 SKIP 评估偏保守, 实际可拆为更小工程): (1) **REVAL-4 网络初始化策略**: 2133 行 init.rs 混合 4 类抽象 (机制/策略/持久化/配置), 实际可拆为 3 子任务: **REVAL-4.1** DHCP 策略提取 (~1 周, 仿 T4-3 模式); **REVAL-4.2** snap save/restore 改用 smoltcp 官方 API 替代 transmute (~3 天); **REVAL-4.3** smoltcp 抽象 trait 化 (含 Interface/SocketSet, 维持 SKIP 需 smoltcp 升级触发, ~3 月); (2) **REVAL-6 epoll 策略**: 509 行, 机制 ~400 行 + 策略 ~80 行 (`check_fd_ready`). 实际可拆为 3 子任务: **REVAL-6.1** `VfsPollable` trait 抽象 + `StandardVfsPollPolicy` (~2 周); **REVAL-6.2** epoll_pwake 拆分为机制+策略 (~1 周); **REVAL-6.3** QEMU 多进程集成测试 (~1 周, 按需); (3) **LEGACY-4 BlockOps thunk 移除**: 91 行 thunk + 2 处调用, **BlockDevice trait 已存在** (chitin/mod.rs:96) 且与 BlockOps 等价. 实际可拆为 4 子任务: **LEGACY-4.1** ChitinDevice 新增 `block_dev: Option<&'static dyn BlockDevice>` (~3 天); **LEGACY-4.2** 移除 thunk + BlockOps + box_to_raw, chitin_blk_read/write 改 trait dispatch (~3 天); **LEGACY-4.3** 5-8 单元测试覆盖新路径 (~2 天); **LEGACY-4.4** QEMU virtio-blk 集成测试 (与 DRIVER-1 同步). **关键发现**: LEGACY-4 实际最容易推进 (4.1-4.3 不依赖 DRIVER-1, 总 ~1 周); REVAL-4 可拆为轻量子任务 (4.1+4.2 ~2 周); REVAL-6 仍是 ~1 月工程但可分阶段. §9.5 增补子任务拆分表 |
+| 2026-06-22 | **第 22 批 (LEGACY-4 完整实装, 4 子任务 ~1 周)**: 按第 21 批考察, LEGACY-4.1-4.3 不依赖 DRIVER-1, 用户选择优先实装: (1) **LEGACY-4.1** `framework/chitin/mod.rs` ChitinDevice 新增 `block_dev: Option<&'static mut (dyn BlockDevice)>` 字段 (mut 是因 `BlockDevice::blk_read/blk_write` 需 `&mut self`), 6 处构造点同步更新; 新增 `chitin_register_block_dev(name, io_base, irq, dev: &'static mut dyn BlockDevice)`; chitin_blk_read/write/is_present/total_sectors 优先走 `block_dev` 路径, fallback 到旧 BlockOps 兼容路径; (2) **LEGACY-4.2** `framework/chitin/proto_block.rs` 4 个 extern "C" thunk (blk_read_thunk/write_thunk/is_present_thunk/total_sectors_thunk) + `static BLOCK_DEVICE_OPS` 全部删除; `register_block_device` 改用 `Box::leak` + `chitin_register_block_dev` (0 Box-of-Box 包装); `register_block_device_with_ops`/`register_block_raw` 标记 `#[deprecated]` 但保留; (3) **LEGACY-4.3** `framework/chitin/mod.rs` +8 个 `#[test]` 单元测试覆盖新路径: register_via_trait/chitin_blk_read_via_trait/chitin_blk_write_via_trait/metadata_via_trait/compat_block_ops_path/priority/buf_too_small/drive_oob; (4) **LEGACY-4.4 (Mock 部分)** `host-tests/src/framekernel_bench.rs` 新增 `HostBlockDevice` trait + `MockBlockDevice` (StdMutex<Vec<[u8;512]>>) + `MockChitinDevice` + `blk_dev_dispatch_bench` (100k iters, 1 读 + 1 写/轮, 16 扇区旋转), 第 15 项 bench `blk_dev_dispatch` (block 类别, 2 ps/op); 5 个新单测 (read_write/oob/buf_too_small/metadata/bench_runs). 验证: 双架构 0w0e + 136 lib tests (原 131+5 T-4.1 mock) + 边界审计 PASS + 15 bench PASS. **TCB 减负**: chitin/proto_block.rs 91 行 → 72 行 (-19 行), 4 个 thunk 删除 (-50 行 unsafe), 总 unsafe 减负 ~50 行. **遗留**: BlockOps + box_to_raw 保留兼容旧驱动, register_block_device_with_ops 已 #[deprecated]. §9.1 移除 LEGACY-4, §9.3 增补 4 项 (现 22 项) |
 | 2026-06-22 | **第 9 批 (4 项)**: REVAL-6 (epoll 仍 SKIP 维持现状) + DOC-3 (engineering-discipline 50.0% + 新候选列表) + DOC-4 (deep-audit 全部 50 项已修复) + HARD-5 (VIRTIO_MMIO_BASE 验收闭合) 全部 [x] |
 | 2026-06-22 | **第 8 批 (3 项)**: QUAL-5 (services 13 处占位全部带注释, 阶段占位保留) + REVAL-1 (信号投递仍 SKIP, 中断路径高频) + REVAL-4 (网络初始化留 Phase E, smoltcp Interface 3rd-party 绑定) + REVAL-5 (T4-1/2 留 Phase D, T4-3 验证器留 Phase E) 全部 [x] |
 | 2026-06-22 | **第 7 批 (4 项)**: DECOUPL-4 (SKIP, framework 内部耦合不在边界违规范畴) + QUAL-1 (非 test unwrap 0 处) + QUAL-3 (audit_safety_coverage.py 8 文件 55 处 100% 覆盖, 全局 111 处 unsafe impl 94.6% 5 行窗口) + QUAL-4 (143 处 framework dead_code 全部带注释) 全部 [x] |
