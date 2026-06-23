@@ -91,6 +91,64 @@ const HDMI_PCLK_MUL_REG_OFFSET: usize = 0x060;
 const HDMI_PCLK_DIV_REG_OFFSET: usize = 0x064;
 
 // ============================================================================
+// HDMI 时序参数配置
+// ============================================================================
+//
+// HDMI 控制器时序寄存器 (16-bit, 每项占 2 字节偏移):
+// - H_TOTAL: 总水平像素 (active + blanking)
+// - H_ACTIVE: 水平有效像素
+// - H_SYNC_OFFSET: 水平同步信号前沿 (从 blanking 开始到 sync 起始)
+// - H_SYNC_PW: 水平同步脉冲宽度
+// - V_TOTAL: 总垂直行数 (active + blanking)
+// - V_ACTIVE: 垂直有效行数
+// - V_SYNC_OFFSET: 垂直同步信号前沿
+// - V_SYNC_PW: 垂直同步脉冲宽度
+//
+// 厂商差异:
+// - Intel IGP (HSW/SKL): 每项占 4 字节, 需用 32-bit 写入
+// - AMD DCN: DENTIST_HWITCH_H_TOTAL 等分散寄存器
+// - 通用 SoC: 通常 16-bit 紧凑排列
+// - QEMU Bochs DISPI: 使用 VBE index/data port I/O, 不走 MMIO
+
+/// H_TOTAL 寄存器偏移 (16-bit, 2 字节连续)。
+const HDMI_H_TOTAL_REG_OFFSET: usize = 0x068;
+/// H_ACTIVE 寄存器偏移 (16-bit)。
+const HDMI_H_ACTIVE_REG_OFFSET: usize = 0x06A;
+/// V_TOTAL 寄存器偏移 (16-bit)。
+const HDMI_V_TOTAL_REG_OFFSET: usize = 0x06C;
+/// V_ACTIVE 寄存器偏移 (16-bit)。
+const HDMI_V_ACTIVE_REG_OFFSET: usize = 0x06E;
+/// H_SYNC_OFFSET 寄存器偏移 (16-bit)。
+const HDMI_H_SYNC_OFFSET_REG_OFFSET: usize = 0x070;
+/// H_SYNC_PW 寄存器偏移 (16-bit)。
+const HDMI_H_SYNC_PW_REG_OFFSET: usize = 0x072;
+/// V_SYNC_OFFSET 寄存器偏移 (16-bit)。
+const HDMI_V_SYNC_OFFSET_REG_OFFSET: usize = 0x074;
+/// V_SYNC_PW 寄存器偏移 (16-bit)。
+const HDMI_V_SYNC_PW_REG_OFFSET: usize = 0x076;
+
+/// HDMI 时序参数 (从 VideoMode 派生)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoTiming {
+    /// 水平有效像素数 (= width)
+    pub h_active: u16,
+    /// 水平总像素数 (active + blanking)
+    pub h_total: u16,
+    /// 水平同步信号前沿 (像素数)
+    pub h_sync_offset: u16,
+    /// 水平同步脉冲宽度 (像素数)
+    pub h_sync_pulse_width: u16,
+    /// 垂直有效行数 (= height)
+    pub v_active: u16,
+    /// 垂直总行数 (active + blanking)
+    pub v_total: u16,
+    /// 垂直同步信号前沿 (行数)
+    pub v_sync_offset: u16,
+    /// 垂直同步脉冲宽度 (行数)
+    pub v_sync_pulse_width: u16,
+}
+
+// ============================================================================
 // DDC (Display Data Channel) — HDMI I2C 主机
 // ============================================================================
 //
@@ -780,6 +838,118 @@ unsafe fn configure_hdmi_pixel_clock(
 }
 
 // ============================================================================
+// HDMI 时序参数辅助函数
+// ============================================================================
+
+/// 从 VideoMode 派生时序参数 (简化公式)。
+///
+/// 公式:
+/// - `v_blank = max(1, v_active * 5 / 100)` (5% 垂直 blanking)
+/// - `v_total = v_active + v_blank`
+/// - `h_total = pixel_clock_hz / v_total / refresh_rate` (反推)
+/// - `h_blank = h_total - h_active`
+/// - `h_sync_offset = h_blank / 4` (典型 25% 前沿)
+/// - `h_sync_pulse_width = h_blank / 8` (典型 12.5% 脉冲)
+/// - `v_sync_offset = 1` (典型 1 行前沿)
+/// - `v_sync_pulse_width = 3` (典型 3 行脉冲)
+///
+/// 与 VESA DMT 标准值的偏差:
+/// - 1920x1080@60Hz: 本公式得到 v_total=1134 (DMT=1125), h_total≈2182 (DMT=2200)
+/// - 误差 < 5%, 对真实显示器可能需要精确 DMT lookup (后续可扩展)
+///
+/// 对于 refresh_rate == 0 或 pixel_clock_khz == 0 的边界情况, 使用 fallback
+/// (v_total = v_active + 50, h_total = h_active + 200)。
+fn derive_video_timing(mode: &VideoMode) -> VideoTiming {
+    let v_active = mode.height;
+    let h_active = mode.width;
+
+    // 派生 v_total
+    let v_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
+        // 典型 V blanking = 5% V active
+        let v_blank = ((v_active as u32) * 5 / 100).max(1);
+        (v_active as u32 + v_blank) as u16
+    } else {
+        // fallback
+        v_active + 50
+    };
+
+    // 派生 h_total = pixel_clock_hz / v_total / refresh_rate
+    let h_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
+        let h_total_u32 = (mode.pixel_clock_khz * 1000)
+            / ((v_total as u32) * (mode.refresh_rate as u32));
+        // 强制 h_total >= h_active + 1 (至少 1 像素 blanking)
+        h_total_u32.max((h_active as u32) + 1) as u16
+    } else {
+        h_active + 200
+    };
+
+    let h_blank = h_total.saturating_sub(h_active);
+
+    // Sync 偏移和脉冲宽度
+    let h_sync_offset = h_blank / 4;
+    let h_sync_pulse_width = (h_blank / 8).max(1);
+    let v_sync_offset: u16 = 1;
+    let v_sync_pulse_width: u16 = 3;
+
+    VideoTiming {
+        h_active,
+        h_total,
+        h_sync_offset,
+        h_sync_pulse_width,
+        v_active,
+        v_total,
+        v_sync_offset,
+        v_sync_pulse_width,
+    }
+}
+
+/// 写入 16-bit 时序寄存器 (低字节 + 高字节)。
+///
+/// # Safety
+/// 调用方必须保证 `reg_offset + 2 <= iomem.len()` (2 字节连续写入)。
+#[inline]
+unsafe fn write_timing_register_u16(iomem: &IoMem, reg_offset: usize, value: u16) {
+    iomem.write_u8(reg_offset, (value & 0xFF) as u8);
+    iomem.write_u8(reg_offset + 1, ((value >> 8) & 0xFF) as u8);
+}
+
+/// 配置 HDMI 时序参数 (8 个 16-bit 寄存器)。
+///
+/// 写入顺序: H_TOTAL → H_ACTIVE → V_TOTAL → V_ACTIVE →
+/// H_SYNC_OFFSET → H_SYNC_PW → V_SYNC_OFFSET → V_SYNC_PW
+///
+/// # Safety
+/// 调用方必须保证:
+/// - `iomem` 已映射到有效 HDMI 控制器 MMIO 区域
+/// - `HDMI_V_SYNC_PW_REG_OFFSET + 2 <= iomem.len()` (最后一个寄存器结束)
+unsafe fn configure_hdmi_timing(iomem: &IoMem, timing: &VideoTiming) {
+    write_timing_register_u16(iomem, HDMI_H_TOTAL_REG_OFFSET, timing.h_total);
+    write_timing_register_u16(iomem, HDMI_H_ACTIVE_REG_OFFSET, timing.h_active);
+    write_timing_register_u16(iomem, HDMI_V_TOTAL_REG_OFFSET, timing.v_total);
+    write_timing_register_u16(iomem, HDMI_V_ACTIVE_REG_OFFSET, timing.v_active);
+    write_timing_register_u16(
+        iomem,
+        HDMI_H_SYNC_OFFSET_REG_OFFSET,
+        timing.h_sync_offset,
+    );
+    write_timing_register_u16(
+        iomem,
+        HDMI_H_SYNC_PW_REG_OFFSET,
+        timing.h_sync_pulse_width,
+    );
+    write_timing_register_u16(
+        iomem,
+        HDMI_V_SYNC_OFFSET_REG_OFFSET,
+        timing.v_sync_offset,
+    );
+    write_timing_register_u16(
+        iomem,
+        HDMI_V_SYNC_PW_REG_OFFSET,
+        timing.v_sync_pulse_width,
+    );
+}
+
+// ============================================================================
 // HDMI 控制器
 // ============================================================================
 
@@ -986,8 +1156,21 @@ impl HdmiController {
             }
         }
 
-        // TODO(TRACK-1BDEF6): 第 2-3 步 (DISPLAY-2.3b / 2.3c)
-        // 2. 配置时序参数 (H/V total/active)
+        // DISPLAY-2.3b: 第 2 步 - 配置时序参数
+        //
+        // 从 mode 派生完整 VideoTiming (H/V total/active/sync), 写入 8 个 16-bit 寄存器.
+        // 与第 1 步相同的 fallback 策略: 无 IoMem 时跳过硬件写入.
+        let timing = derive_video_timing(&mode);
+        if let Some(iomem) = &self.iomem {
+            // SAFETY: 时序寄存器最后一项 (V_SYNC_PW) offset = 0x076, 写入 2 字节
+            // 需 0x078 <= iomem.len(); 调用方通过 new_with_iomem* 构造时需保证 IoMem
+            // 范围 >= 0x078 (本实装默认要求所有时序寄存器都有效).
+            unsafe {
+                configure_hdmi_timing(iomem, &timing);
+            }
+        }
+
+        // TODO(TRACK-1BDEF6): 第 3 步 (DISPLAY-2.3c)
         // 3. 设置同步信号极性 + TMDS 输出使能
 
         self.current_mode = Some(mode);
@@ -1244,5 +1427,77 @@ mod tests {
         };
         let result = ctrl.set_video_mode(mode);
         assert!(matches!(result, Err(DriverError::DeviceNotFound)));
+    }
+
+    #[test]
+    fn test_derive_video_timing_1080p60() {
+        // 1920x1080@60Hz 时序派生: v_total ≈ 1134, h_total ≈ 2182.
+        let mode = VideoMode {
+            width: 1920,
+            height: 1080,
+            refresh_rate: 60,
+            pixel_clock_khz: 148_500,
+            flags: VideoModeFlags::default(),
+        };
+        let t = derive_video_timing(&mode);
+        assert_eq!(t.h_active, 1920);
+        assert_eq!(t.v_active, 1080);
+        // v_total = 1080 + 54 (5%) = 1134
+        assert_eq!(t.v_total, 1134, "v_total 必须 = v_active + 5%");
+        // h_total = 148500000 / 1134 / 60 ≈ 2182
+        assert!(t.h_total >= 2000 && t.h_total <= 2300,
+                "h_total 必须在合理范围 (2000-2300): actual={}", t.h_total);
+        // h_sync_offset ≈ h_blank / 4
+        assert!(t.h_sync_offset > 0);
+        assert!(t.h_sync_pulse_width > 0);
+        assert_eq!(t.v_sync_offset, 1);
+        assert_eq!(t.v_sync_pulse_width, 3);
+    }
+
+    #[test]
+    fn test_derive_video_timing_4k60() {
+        // 3840x2160@60Hz 时序派生 (594 MHz pixel clock).
+        let mode = VideoMode {
+            width: 3840,
+            height: 2160,
+            refresh_rate: 60,
+            pixel_clock_khz: 594_000,
+            flags: VideoModeFlags::default(),
+        };
+        let t = derive_video_timing(&mode);
+        assert_eq!(t.h_active, 3840);
+        assert_eq!(t.v_active, 2160);
+        assert_eq!(t.v_total, 2268, "v_total = 2160 + 5%");
+        // h_total ≈ 594000000 / 2268 / 60 ≈ 4365
+        assert!(t.h_total >= 4000 && t.h_total <= 4500,
+                "h_total 必须在合理范围 (4000-4500): actual={}", t.h_total);
+    }
+
+    #[test]
+    fn test_derive_video_timing_zero_refresh_rate_fallback() {
+        // 边界: refresh_rate = 0 必须走 fallback (h_total = h_active + 200, v_total = v_active + 50).
+        let mode = VideoMode {
+            width: 800,
+            height: 600,
+            refresh_rate: 0,
+            pixel_clock_khz: 0,
+            flags: VideoModeFlags::default(),
+        };
+        let t = derive_video_timing(&mode);
+        assert_eq!(t.h_total, 1000, "fallback h_total = h_active + 200");
+        assert_eq!(t.v_total, 650, "fallback v_total = v_active + 50");
+        assert_eq!(t.h_active, 800);
+        assert_eq!(t.v_active, 600);
+    }
+
+    #[test]
+    fn test_video_timing_struct_equality() {
+        // VideoTiming 派生 Debug/Clone/Copy/PartialEq/Eq.
+        let t1 = VideoTiming {
+            h_active: 1920, h_total: 2200, h_sync_offset: 88, h_sync_pulse_width: 44,
+            v_active: 1080, v_total: 1125, v_sync_offset: 4, v_sync_pulse_width: 5,
+        };
+        let t2 = t1; // Copy
+        assert_eq!(t1, t2);
     }
 }

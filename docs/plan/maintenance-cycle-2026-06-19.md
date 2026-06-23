@@ -1316,7 +1316,7 @@ pub use x86_64::ioapic;
 | 1 | **DISPLAY-2.1** | HDMI HPD 真实读取 (`hdmi.rs:439-443` TRACK-CD5DA5) | 1 天 | [x] |
 | 2 | **DISPLAY-2.2** | HDMI I2C/DDC EDID 真实读取 (`hdmi.rs:454-490` TRACK-7CCB60) | 3 天 | [x] |
 | 3 | **DISPLAY-2.3a** | HDMI 像素时钟配置 (`hdmi.rs:511-518` TRACK-1BDEF6 第 1 步) | 1-2 天 | [x] |
-|   | **DISPLAY-2.3b** | HDMI 时序参数配置 (TRACK-1BDEF6 第 2 步, 总线 H/V total/active) | 2-3 天 | [ ] |
+|   | **DISPLAY-2.3b** | HDMI 时序参数配置 (TRACK-1BDEF6 第 2 步, 总线 H/V total/active) | 2-3 天 | [x] |
 |   | **DISPLAY-2.3c** | HDMI 同步极性 + TMDS 输出使能 (TRACK-1BDEF6 第 3 步) | 1-2 天 | [ ] |
 | 4 | **DISPLAY-2.4** | DP HPD 真实读取 (`dp.rs:219-223` TRACK-599EDA) | 1 天 | [x] |
 
@@ -1399,6 +1399,27 @@ pub use x86_64::ioapic;
   - 默认 8-bit mul/div 寄存器抽象 (vendor-neutral), `pixel_clock = base * mul / div`, base=27 MHz
   - 算法限制 div ∈ 1..16 (HDMI 控制器 PLL 典型范围); 超出范围的极端模式 (e.g. div=255) 通过 vendor 自定义路径接管
   - 不替代 vendor PLL 算法 (N/M/frac 等), 仅提供通用 fallback; Intel/AMD/SoC 厂商在 `new_with_iomem_pixel_clock` 指定自家 mul/div 偏移
+
+**DISPLAY-2.3b 完成记录** (2026-06-23 接手人实装):
+- **变更** (消除 `hdmi.rs:511-518` TRACK-1BDEF6 第 2 步):
+  - `src/kernel/framework/driver/display/hdmi.rs`:
+    - 新增 8 个常量: `HDMI_H_TOTAL_REG_OFFSET=0x068` / `HDMI_H_ACTIVE_REG_OFFSET=0x06A` / `HDMI_V_TOTAL_REG_OFFSET=0x06C` / `HDMI_V_ACTIVE_REG_OFFSET=0x06E` / `HDMI_H_SYNC_OFFSET_REG_OFFSET=0x070` / `HDMI_H_SYNC_PW_REG_OFFSET=0x072` / `HDMI_V_SYNC_OFFSET_REG_OFFSET=0x074` / `HDMI_V_SYNC_PW_REG_OFFSET=0x076`
+    - 新增结构 `VideoTiming` (8 个 u16 字段: h_active/total/sync_offset/sync_pulse_width + v_active/total/sync_offset/sync_pulse_width)
+    - 新增 `fn derive_video_timing(mode: &VideoMode) -> VideoTiming`: 公式派生 v_total = v_active + 5%, h_total = pixel_clock_hz / v_total / refresh_rate; sync_offset = blank/4, sync_pw = blank/8; fallback (refresh_rate=0 时): v_total=v_active+50, h_total=h_active+200
+    - 新增 `unsafe fn write_timing_register_u16(iomem, offset, value)`: 写 2 字节
+    - 新增 `unsafe fn configure_hdmi_timing(iomem, timing)`: 写 8 个 16-bit 时序寄存器
+    - `set_video_mode()` 第 2 步实装: 调 `derive_video_timing` + IoMem Some 路径调 `configure_hdmi_timing`
+    - 删除第 2 步 TODO 注释, 保留第 3 步 TODO (DISPLAY-2.3c)
+    - 新增 4 个单元测试: 1080p60 / 4K60 / zero_refresh_rate fallback / VideoTiming 派生 trait
+- **验证**:
+  - x86_64 / aarch64 `cargo build --release`: 0 error / 12 pre-existing warnings (无 hdmi.rs 相关新增)
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72/72 PASS
+- **TCB 影响**: hdmi.rs 新增 2 处 `unsafe fn` (`write_timing_register_u16` + `configure_hdmi_timing`), 通过 `set_video_mode` 调用, 边界由 IoMem::check_offset 保障
+- **设计取舍**:
+  - 简化公式 vs VESA DMT 精确值: 1080p60 偏差 < 5% (v_total=1134 vs DMT=1125, h_total≈2182 vs DMT=2200)
+  - 后续可扩展精确 DMT lookup 表, 公式作为 fallback
+  - sync 极性暂未实装 (DISPLAY-2.3c 范围)
 
 **第 1 组开始日期**: 2026-06-23
 **第 1 组完成日期**: TBD

@@ -40,6 +40,14 @@
   - `set_video_mode()` 第 1 步实装 (IoMem 路径), fallback 路径保留; 第 2-3 步 TODO 保留 (DISPLAY-2.3b/2.3c)
   - 新增 5 个单元测试: 1080p60 精确匹配 / 4K30 误差 < 1% / 除零防护 / set_video_mode fallback / set_video_mode 未连接返回错误
   - 厂商注释: Intel IGP DPLL / AMD DCN DENTIST / Synopsys DesignWare phy_clock+tmds_clock / QEMU Bochs 无 pclk 寄存器
+- **DISPLAY-2.3b HDMI 时序参数配置** — `src/kernel/framework/driver/display/hdmi.rs` (接手人实装, 2026-06-23, 消除 TRACK-1BDEF6 第 2 步)
+  - 新增 8 个 16-bit 时序寄存器偏移常量: `HDMI_H_TOTAL/ACTIVE`/`V_TOTAL/ACTIVE`/`H_SYNC_OFFSET/PW`/`V_SYNC_OFFSET/PW` (0x068-0x077)
+  - 新增 `VideoTiming` 结构 (8 u16 字段)
+  - 新增 `derive_video_timing()` 公式派生: v_total = v_active + 5%, h_total = pixel_clock_hz / v_total / refresh_rate, sync_offset = blank/4, sync_pw = blank/8
+  - 新增 `write_timing_register_u16()` + `configure_hdmi_timing()` 写 8 个 16-bit 寄存器
+  - `set_video_mode()` 第 2 步实装 (IoMem 路径), fallback 保留; 第 3 步 TODO 保留 (DISPLAY-2.3c)
+  - 新增 4 个单元测试: 1080p60 / 4K60 / refresh_rate=0 fallback / VideoTiming trait 派生
+  - 简化公式 vs VESA DMT: 1080p60 偏差 < 5% (v_total=1134 vs DMT=1125), 后续可扩展 DMT lookup
 
 ### 修复
 - **DISPLAY-2.1 关联预存问题修复** (CLAUDE.md 预存问题即修规则, 接手人同步修复)
