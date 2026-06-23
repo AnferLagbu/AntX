@@ -1039,15 +1039,18 @@ pub use x86_64::ioapic;
 
 > **重要**: SKIP / DEFERRED 状态**算未完成**。本节是工程交接时的必读索引。
 
-### 9.1 当前 `[ ]` 状态任务 (3 项 — 全部 DEFERRED 到 Phase D/E)
+### 9.1 当前 `[ ]` 状态任务 (3 项 — 全部 DEFERRED 到 Phase D/E, **2026-06-22 考察更新**)
 
-| # | 任务 ID | 任务 | 真实状态 | 解除阻塞条件 | 估算工作量 |
-|---|---------|------|----------|--------------|------------|
-| 1 | **REVAL-4** | T3-1 网络初始化策略提取 | smoltcp Interface API 3rd-party 类型深度绑定, 与版本无关 (当前 0.13.0) | 重写为 trait 抽象 (DHCP 策略 + 顺序表) | ~3 月 |
-| 2 | **DRIVER-1** | USB 驱动 (xHCI) | 6 处 TRACK 占位, 协议栈 ~3000 行 | ① QEMU `-device qemu-xhci` 测试; ② USB 设备透传 | ~1-2 月 |
-| 3 | **DRIVER-2** | Display 驱动 (DP/HDMI) | 8 处 TRACK 占位, 协议栈 ~1500 行 | ① QEMU `-device virtio-vga`; ② EDID 注入 | ~1-2 月 |
+> **考察更新要点**: 文档原估 DRIVER-1 协议栈 ~3000 行 / DRIVER-2 协议栈 ~1500 行, **实际与文档差异显著**.
+> 详见 §9.4 子任务拆分 + 真实工作量.
 
-**LEGACY-5 状态 (部分完成, 已从 [ ] 移出)**: Checksum (I-04) + ZAP + TXG 已 trait 化, 剩 5 子系统 (SPA/DMU/ZIL/ARC/RAID-Z) 待后续批次按需推进.
+| # | 任务 ID | 任务 | 真实状态 (2026-06-22 考察) | 解除阻塞条件 | 估算工作量 |
+|---|---------|------|--------------------------|--------------|------------|
+| 1 | **REVAL-4** | T3-1 网络初始化策略提取 | smoltcp Interface API 3rd-party 类型深度绑定, 与版本无关 (当前 0.13.0) | 重写为 trait 抽象 (DHCP 策略 + 顺序表) | **~3 月, 用户已主动搁置 (2026-06-22)** |
+| 2 | **DRIVER-1** | USB 驱动 (xHCI) | **实际仅完成 ~50%**: 已 1301 行 (mod 43 + usb_core 656 + xhci 602), **HID/mass_storage 文件完全未创建 (0 行)**, 6 处 TRACK (PCI 扫描 + 设备枚举 + URB 提交 + 地址分配/释放) | ① QEMU `-device qemu-xhci` 测试镜像; ② USB 设备透传 | **~10-12 周 (实际比文档 ~1-2 月 多)**, 子任务见 §9.4.2 |
+| 3 | **DRIVER-2** | Display 驱动 (HDMI/DP) | **实际完成 ~85%**: 已 3100 行 (mod 375 + framebuffer 782 + hdmi 658 + dp 464 + controller 478 + font 133 + self_test 210), 8 处 TRACK (全部在物理层: HPD 读取 + I2C/DDC + 寄存器配置 + AUX 通道 + 链路训练) | ① QEMU `-device virtio-vga`; ② Bochs VBE 已可作为简单测试路径 | **~6-8 周 (实际比文档 ~1-2 月 少, 文档高估)**, 子任务见 §9.4.3 |
+
+**LEGACY-5 状态 (✅ 全部完成, 2026-06-22)**: 7/7 子系统均已 trait 化 (Checksum I-04 + ZAP LEGACY-5.1 + TXG 5.2 + DMU 5.4 + SPA 5.5 + RAID-Z 5.7 + ARC 5.8 + ZIL 5.10-5.11).
 
 ### 9.2 [x] 但实质仅做文档/评估的任务 (17 项)
 
@@ -1072,7 +1075,7 @@ pub use x86_64::ioapic;
 | LEGACY-3 | virtio-blk 4K 写延迟 < 100μs | **已实装** `framekernel-bench` 第 12 项 `virtio_blk_io` (host-only mock, 32 virtqueue + 3 段描述符链 + 完整回收); QEMU 真机 DEFERRED 至 Phase E |
 | LEGACY-6 | sysctl 框架 | **已实装** services/config/sysctl.rs (314 行) |
 
-### 9.3 [x] 实际改代码的任务 (41 项)
+### 9.3 [x] 实际改代码的任务 (42 项)
 
 | 任务 ID | 改动文件 | 代码量 |
 |---------|----------|--------|
@@ -1117,8 +1120,118 @@ pub use x86_64::ioapic;
 | **LEGACY-5.10** | services/fs/hvfs/zil_trait.rs (新建) + services/fs/hvfs/mod.rs | `ZilLog` trait (13 方法) + `StandardZil` (HvZil 包装, 0 unsafe) + 12 单元测试 (init/add_record/seq_increment/commit/has_uncommitted/enabled/sync/replay/record_types/trait_object/full_cycle/replay_across_commits) |
 | **LEGACY-5.11** | services/fs/hvfs/zil_persist_trait.rs (新建) + services/fs/hvfs/mod.rs | `ZilPersist` trait (3 方法) + `StandardZilPersist` (HvZilPersist 包装, 0 unsafe) + 10 单元测试 (empty/roundtrip/multi_txg/short_block/corrupted_data/mark_written/all_record_types/trait_object/integration/preserves_txg) |
 | **LEGACY-5.12** | host-tests/src/framekernel_bench.rs + host-tests/benches/baseline.json | `HostZilLog`/`HostZilPersist` trait + 10 单测 + 第 23-24 项 bench `zil_log_dispatch`/`zil_persist_dispatch` (hvfs 类别) |
+| **DOC-5** | docs/plan/maintenance-cycle-2026-06-19.md | **0 行代码改动**, 仅 markdown 文档更新: ① §9.1 任务表 (REVAL-4/DRIVER-1/DRIVER-2 实际状态修正); ② §9.4.1-9.4.3 新增 3 任务的子任务拆分 + 真实代码盘点 (REVAL-4 用户主动搁置; DRIVER-1 实际仅 50% 完成需 10-12 周; DRIVER-2 实际已 85% 完成仅需 6-8 周); ③ §9.4.4 推进顺序建议 (DRIVER-2 短中 → DRIVER-1 长 → REVAL-4 搁置). 用户决策 "smoltcp 任务搁置思考, 先做剩余任务工程考察分析, 不实现代码" 的执行记录 |
 
 ### 9.4 交接清单 (Phase D/E 推进时)
+
+> **2026-06-22 考察更新**: §9.1 中 3 项剩余任务的子任务拆分, 详见 §9.4.1-9.4.3.
+
+#### 9.4.1 REVAL-4 (smoltcp) — 用户已主动搁置
+
+**当前状态**: `framework/net/init.rs` 2133 行混合 4 类抽象 (机制/策略/持久化/配置).
+
+**搁置原因 (2026-06-22 用户决策)**: 需要思考出"相对完美稳健的方案"再启动, 避免方案反复重做.
+
+**子任务拆分 (作为后续参考, 暂不实施)**:
+
+| 子任务 | 工作量 | 难度 | 备注 |
+|--------|--------|------|------|
+| 4.1 DHCP 策略提取 | ~1 周 | 中 | 仿 T4-3 framekernel Safe Policy Injection 模式 |
+| 4.2 snap save/restore 改用 smoltcp 官方 API | ~3 天 | 中 | 替代 transmute, 强转 `usize → SocketHandle` |
+| 4.3 smoltcp 抽象 trait 化 | ~3 月 | **高** | 受 smoltcp 0.13 公开 API 锁定, 需上游 major 升级 |
+
+**触发条件 (再次启动时)**:
+- 用户完成"完美稳健方案"思考
+- smoltcp 1.0 上游 major 升级
+- 多网卡或 IPv6 支持需求
+
+#### 9.4.2 DRIVER-1 USB xHCI (10-12 周, 实际比文档 ~1-2 月 多)
+
+**当前状态**: 实际仅完成 ~50%, 已 1301 行, HID/mass_storage 文件完全未创建 (0 行).
+
+**代码盘点**:
+
+| 文件 | 行数 | 状态 |
+|------|------|------|
+| `framework/driver/usb/mod.rs` | 43 | ✅ init 框架 + 3 TRACK (PCI 扫描 + 控制器初始化 + 设备枚举) |
+| `framework/driver/usb/usb_core.rs` | 656 | ✅ 描述符 + URB + UsbCore + UsbDevice |
+| `framework/driver/usb/xhci.rs` | 602 | ✅ 寄存器结构 + XhciController + 3 TRACK (URB 提交 + 地址分配/释放) |
+| `framework/driver/usb/hid.rs` | 0 | ❌ **未创建** |
+| `framework/driver/usb/mass_storage.rs` | 0 | ❌ **未创建** |
+
+**6 处 TRACK**:
+- `558BA7` PCI 扫描 / `AE516E` 控制器初始化 / `832FCE` 设备枚举 / `688EA7` URB 提交 / `2E0EB0` 地址分配 / `1F75C1` 地址释放
+
+**子任务拆分**:
+
+| # | 子任务 | 工作量 | 依赖 | 难度 |
+|---|--------|--------|------|------|
+| 1.1 | 完善 xHCI 寄存器操作 (init/reset/start) | 3 天 | 无 | 中 |
+| 1.2 | PCI 扫描 + 控制器发现 | 1 周 | framework/pci.rs | 中 |
+| 1.3 | Command Ring + Event Ring 实现 | 2 周 | 1.1, 1.2 | **高** |
+| 1.4 | 设备插槽管理 + 地址分配 | 1 周 | 1.3 | 中 |
+| 1.5 | 设备枚举 (Descriptor 读 + Configure) | 2 周 | 1.4 | **高** |
+| 1.6 | URB 提交 + Transfer Ring | 2 周 | 1.3 | **高** |
+| 1.7 | HID 类驱动 (键盘/鼠标) | 1 周 | 1.6 | 中 |
+| 1.8 | Mass Storage 类驱动 (BOT 协议) | 1 周 | 1.6 | 中 |
+| | **合计** | **~10-12 周** | | |
+
+**新增代码估量**: 2500-3500 行 + 30 单测.
+
+**触发条件**:
+- QEMU `-device qemu-xhci` 测试镜像就绪
+- 真实 USB 设备需求 (键盘/存储)
+
+#### 9.4.3 DRIVER-2 Display HDMI/DP (6-8 周, 实际比文档 ~1-2 月 少)
+
+**当前状态**: 实际完成 ~85%, 已 3100 行, 8 处 TRACK 全部在物理层.
+
+**代码盘点**:
+
+| 文件 | 行数 | 状态 |
+|------|------|------|
+| `framework/driver/display/mod.rs` | 375 | ✅ 完整 (像素格式推断 + Bochs DISPI + PCI VGA) |
+| `framework/driver/display/framebuffer.rs` | 782 | ✅ 完整 (fb 抽象 + 像素绘制) |
+| `framework/driver/display/hdmi.rs` | 658 | ✅ EDID 解析 + HdmiController + 3 TRACK |
+| `framework/driver/display/dp.rs` | 464 | ✅ DPCD 模拟数据 + 训练状态 + 5 TRACK |
+| `framework/driver/display/controller.rs` | 478 | ✅ DisplayController/Manager 抽象 |
+| `framework/driver/display/font.rs` | 133 | ✅ 8x16 字体 |
+| `framework/driver/display/self_test.rs` | 210 | ✅ 自检 (色条/渐变/文本) |
+
+**8 处 TRACK (全部在物理层)**:
+- `CD5DA5` HDMI HPD 读取 / `7CCB60` HDMI I2C/DDC EDID 读取 / `1BDEF6` HDMI 寄存器配置
+- `599EDA` DP HPD 读取 / `B61830` DP AUX 读 / `9B691E` DP AUX 写
+- `0350FE` DP LANE0_1_STATUS 轮询 / `3C1169` DP LANE_ALIGN_STATUS_UPDATED 轮询
+
+**子任务拆分**:
+
+| # | 子任务 | 工作量 | 依赖 | 难度 | 短期可执行 |
+|---|--------|--------|------|------|----------|
+| 2.1 | HDMI HPD 真实读取 (已可用 Bochs HPD) | 1 天 | 无 | 低 | ✅ |
+| 2.2 | HDMI I2C/DDC EDID 真实读取 | 3 天 | 2.1 | 中 | ✅ |
+| 2.3 | HDMI 控制器寄存器配置 | 1 周 | 2.2 | 中 | ✅ |
+| 2.4 | DP HPD 真实读取 | 1 天 | 无 | 低 | |
+| 2.5 | DP AUX 真实通道 (替代硬编码 DPCD) | 1 周 | 2.4 | 中 | |
+| 2.6 | DP 链路训练 (lane status + align) | 2 周 | 2.5 | **高** | |
+| 2.7 | 视频时序参数化 (替代硬编码) | 1 周 | 2.3, 2.6 | 中 | |
+| | **合计** | **~6-8 周** | | | **2.1-2.3 ~2 周** |
+
+**新增代码估量**: 800-1200 行 + 10-15 单测.
+
+**触发条件**:
+- GUI 需求 (Wayland/DRM) — fbterm 已满足基础
+- 多显示器协调需求
+
+**优先推荐**: 先做 2.1-2.3 (HDMI 部分, 2 周, 短平快); 之后做 2.4-2.7 (DP 链路训练, 4-6 周).
+
+#### 9.4.4 推进顺序建议 (用户决策)
+
+| 优先级 | 任务 | 工作量 | 理由 |
+|--------|------|--------|------|
+| 🥇 | **DRIVER-2 Display 2.1-2.3** (HDMI 短期) | ~2 周 | 性价比最高, 6 项 1 周内完成 |
+| 🥈 | **DRIVER-2 Display 2.4-2.7** (DP 链路训练) | 4-6 周 | 完成 85% → 100% |
+| 🥉 | **DRIVER-1 USB xHCI** (完整新做) | 10-12 周 | 大协议栈, 需 QEMU xHCI 镜像 |
+| ⏸ | **REVAL-4 smoltcp** (搁置) | ~3 月 | 等用户方案 + smoltcp 1.0 |
 
 ### 9.5 硬骨头评估表 (2026-06-22 第 16 批 → 第 18 批正式 DEFER 3 项)
 
@@ -1172,11 +1285,12 @@ pub use x86_64::ioapic;
 | 2026-06-22 | **第 21 批 (3 项 SKIP 任务深度考察, 用户策略"先评估再决定")**: 对 §9.1 维持 SKIP 的 3 项做深度源码考察, 输出可执行子任务拆分 (原 SKIP 评估偏保守, 实际可拆为更小工程): (1) **REVAL-4 网络初始化策略**: 2133 行 init.rs 混合 4 类抽象 (机制/策略/持久化/配置), 实际可拆为 3 子任务: **REVAL-4.1** DHCP 策略提取 (~1 周, 仿 T4-3 模式); **REVAL-4.2** snap save/restore 改用 smoltcp 官方 API 替代 transmute (~3 天); **REVAL-4.3** smoltcp 抽象 trait 化 (含 Interface/SocketSet, 维持 SKIP 需 smoltcp 升级触发, ~3 月); (2) **REVAL-6 epoll 策略**: 509 行, 机制 ~400 行 + 策略 ~80 行 (`check_fd_ready`). 实际可拆为 3 子任务: **REVAL-6.1** `VfsPollable` trait 抽象 + `StandardVfsPollPolicy` (~2 周); **REVAL-6.2** epoll_pwake 拆分为机制+策略 (~1 周); **REVAL-6.3** QEMU 多进程集成测试 (~1 周, 按需); (3) **LEGACY-4 BlockOps thunk 移除**: 91 行 thunk + 2 处调用, **BlockDevice trait 已存在** (chitin/mod.rs:96) 且与 BlockOps 等价. 实际可拆为 4 子任务: **LEGACY-4.1** ChitinDevice 新增 `block_dev: Option<&'static dyn BlockDevice>` (~3 天); **LEGACY-4.2** 移除 thunk + BlockOps + box_to_raw, chitin_blk_read/write 改 trait dispatch (~3 天); **LEGACY-4.3** 5-8 单元测试覆盖新路径 (~2 天); **LEGACY-4.4** QEMU virtio-blk 集成测试 (与 DRIVER-1 同步). **关键发现**: LEGACY-4 实际最容易推进 (4.1-4.3 不依赖 DRIVER-1, 总 ~1 周); REVAL-4 可拆为轻量子任务 (4.1+4.2 ~2 周); REVAL-6 仍是 ~1 月工程但可分阶段. §9.5 增补子任务拆分表 |
 | 2026-06-22 | **第 22 批 (LEGACY-4 完整实装, 4 子任务 ~1 周)**: 按第 21 批考察, LEGACY-4.1-4.3 不依赖 DRIVER-1, 用户选择优先实装: (1) **LEGACY-4.1** `framework/chitin/mod.rs` ChitinDevice 新增 `block_dev: Option<&'static mut (dyn BlockDevice)>` 字段 (mut 是因 `BlockDevice::blk_read/blk_write` 需 `&mut self`), 6 处构造点同步更新; 新增 `chitin_register_block_dev(name, io_base, irq, dev: &'static mut dyn BlockDevice)`; chitin_blk_read/write/is_present/total_sectors 优先走 `block_dev` 路径, fallback 到旧 BlockOps 兼容路径; (2) **LEGACY-4.2** `framework/chitin/proto_block.rs` 4 个 extern "C" thunk (blk_read_thunk/write_thunk/is_present_thunk/total_sectors_thunk) + `static BLOCK_DEVICE_OPS` 全部删除; `register_block_device` 改用 `Box::leak` + `chitin_register_block_dev` (0 Box-of-Box 包装); `register_block_device_with_ops`/`register_block_raw` 标记 `#[deprecated]` 但保留; (3) **LEGACY-4.3** `framework/chitin/mod.rs` +8 个 `#[test]` 单元测试覆盖新路径: register_via_trait/chitin_blk_read_via_trait/chitin_blk_write_via_trait/metadata_via_trait/compat_block_ops_path/priority/buf_too_small/drive_oob; (4) **LEGACY-4.4 (Mock 部分)** `host-tests/src/framekernel_bench.rs` 新增 `HostBlockDevice` trait + `MockBlockDevice` (StdMutex<Vec<[u8;512]>>) + `MockChitinDevice` + `blk_dev_dispatch_bench` (100k iters, 1 读 + 1 写/轮, 16 扇区旋转), 第 15 项 bench `blk_dev_dispatch` (block 类别, 2 ps/op); 5 个新单测 (read_write/oob/buf_too_small/metadata/bench_runs). 验证: 双架构 0w0e + 136 lib tests (原 131+5 T-4.1 mock) + 边界审计 PASS + 15 bench PASS. **TCB 减负**: chitin/proto_block.rs 91 行 → 72 行 (-19 行), 4 个 thunk 删除 (-50 行 unsafe), 总 unsafe 减负 ~50 行. **遗留**: BlockOps + box_to_raw 保留兼容旧驱动, register_block_device_with_ops 已 #[deprecated]. §9.1 移除 LEGACY-4, §9.3 增补 4 项 (现 22 项) |
 | 2026-06-22 | **第 23 批 (4 个 Policy 文件单元测试, 跨域 Framekernel 测试覆盖)**: 探索 4 个已有 *_policy.rs (PMM/Slab/Swap/Sched) 全部 0 单元测试, 决策补齐测试覆盖, 验证 Default*Policy 实现契约: (1) **PMM-POLICY-1** `services/mm/pmm_policy.rs` +6 单元测试 (count_to_order 边界/fragmentation_score 0-0.5-1.0/fail_ratio 贡献/reclaim_threshold 10%+64 最小/watermarks 16+比例/under_pressure); (2) **SLAB-POLICY-1** `services/mm/slab_policy.rs` +5 单元测试 (find_cache_index 命中/calculate_objects 公式/select_alloc_source partial→free→new/normalize_object_size 0+超MAX+<MIN/allocation_flow); (3) **SWAP-POLICY-1** `services/mm/swap_policy.rs` +6 单元测试 (reclaim_batch_size 8/should_wakeup_kswapd 10%+80% 边界+除零/should_demote_active/should_evict_inactive/select_victim 首个 unlocked/memory_pressure); (4) **SCHED-POLICY-1** `services/proc/sched_policy.rs` +11 单元测试 (nice_to_weight 全范围+clamp/weight_to_nice 反向+近似/mlfq_level_to_nice/DeadlineParams is_valid+utilization/CfsRunQueue enqueue-pick+time_slice+min_vruntime_alignment/MlfqPolicy time_slice+should_reschedule/完整 CFS 调度循环). 验证: 双架构 0w0e + 边界审计 PASS + host-tests 136 PASS (policy 测试在 kernel 目标内, 双架构 cargo check 验证). **总单元测试**: services layer +27 (本批 28 项含 1 个边界细化). **关键**: 4 个 *_policy.rs 实现 Framekernel 范式 (T1-1/T2-2/T2-3/T2-4), 但缺乏回归测试. 本批补齐 0 → 28 测试. §9.3 增补 4 项 (现 26 项) |
-| 2026-06-22 | **第 24 批 (REVAL-6 epoll 策略迁移, 3 子任务 ~3 周)**: 用户决策按序推进, REVAL-6 全实装 (无 smoltcp 锁定问题, 可独立 AI 推): (1) **REVAL-6.1** VfsPollable trait 抽象: `framework/fs/vfs_poll_trait.rs` 新建 (VfsPollPolicy trait + 4 事件常量 + VfsPollContext + VfsPollPolicyRef 枚举 + register_vfs_poll_policy 静态注册 + Fallback 路径); `services/fs/vfs_poll_policy.rs` 新建 (StandardVfsPollPolicy + register_default_vfs_poll_policy + 6 单元测试); `framework/syscall/epoll.rs::check_fd_ready` 改走 `current_vfs_poll_policy().events_for(ctx)` trait dispatch (硬编码 4-VfsFileType match 提取到策略); (2) **REVAL-6.2** epoll_pwake 拆分: `epoll_pwake` 中 30+ 行混杂代码 → 3 个清晰函数: `epoll_pwake` (机制: 遍历实例 + 唤醒 wait_queue) + `instance_watches_fd` (机制: 纯函数检查) + `enqueue_ready_for_fd` (策略: revents + dedup); epoll.rs 行为不变, 逻辑分层; (3) **REVAL-6.3 (host-test)** `framekernel_bench.rs` MockEpollInstance + MockEpollInterestItem + instance_watches_fd/enqueue_ready_for_fd Mock + MockEpollPwake 编排 + 7 单测 (watches/basic/dedup/no_fd/multi_instance/dedup_across_calls/no_match); bench 第 16 项 `vfs_poll_dispatch` (epoll 类别, 100k iters, 4 file_type 旋转). 验证: 双架构 0w0e + 148 lib tests (141+7 REVAL-6.2) + 边界审计 PASS + 16 bench PASS. **TCB 减负**: epoll.rs `check_fd_ready` 14 行硬编码 match → 4 行 trait dispatch (-10 行), `epoll_pwake` 30+ 行混杂 → 3 清晰函数分层 (-20 行难维护). §9.1 移除 REVAL-6, §9.3 增补 3 项 (现 29 项) |
-| 2026-06-22 | **第 25 批 (LEGACY-5 HvFS ZAP+TXG trait 化, 3 子任务 ~2 周)**: 用户决策按序推进, 实装 HvFS 7 子系统中 ZAP + TXG 2 个 (Checksum 早已 I-04 完成, 剩 SPA/DMU/ZIL/ARC/RAID-Z 待后续批次): (1) **LEGACY-5.1** ZAP trait: `services/fs/hvfs/zap_trait.rs` 新建 (~210 行) 含 `ZapStore` trait (8 方法: insert/insert_u64/lookup/lookup_u64/remove/contains/len/capacity/zap_type) + `StandardZap` (HvZap 包装, 0 unsafe) + 10 单元测试 (insert_lookup/u64/update/remove/len_capacity/custom_capacity/capacity_limit/zap_type/trait_object/spa_simulation); (2) **LEGACY-5.2** TXG trait: `services/fs/hvfs/txg_trait.rs` 新建 (~300 行) 含 `TxgManager` trait (12 方法: init/transition/current_txg/open_txg_id/syncing_txg_id/open_txg_state/is_sync_in_progress/total_syncs/total_dirty/add_*_to_open) + `StandardTxg` (HvTxgGroup 包装, 0 unsafe) + 8 单元测试 (init/initial_states/transition/add_dirty/add_free/add_io/trait_object/full_cycle); (3) **LEGACY-5.3 (host-test)** `framekernel_bench.rs` `HostZapStore` trait + `StandardHostZap` (Mutex<HashMap>) + 6 单测 (insert_lookup/update/capacity_limit/u64/remove/bench_runs) + bench 第 17 项 `zap_dispatch` (hvfs 类别, 100k iters, 4 操作旋转); `HostTxgManager` trait + `StandardHostTxg` (Mutex<MockTxgState>) + 4 单测 (init/transition/dirty_accumulate/bench_runs) + bench 第 18 项 `txg_dispatch` (hvfs 类别, 100k iters, 3 操作旋转). 验证: 双架构 0w0e + 158 lib tests (148+10 LEGACY-5) + 边界审计 PASS + 18 bench PASS. **TCB 减负**: zap_trait/txg_trait 0 unsafe 引入; HvZap/HvTxgGroup 调用方改为 trait dispatch, 解耦 HvFS 业务逻辑. **§9.1 LEGACY-5 状态**: 部分完成 (2/7 子系统). 剩 SPA/DMU/ZIL/ARC/RAID-Z, 后续批次按需推进. §9.3 增补 3 项 (现 32 项) |
-| 2026-06-22 | **第 26 批 (LEGACY-5 HvFS DMU+SPA trait 化, 3 子任务 ~2 周)**: 用户决策按序推进剩余 LEGACY-5 子系统, 本批完成 DMU + SPA: (1) **LEGACY-5.4** DMU trait: `services/fs/hvfs/dmu_trait.rs` 新建 (~310 行) 含 `DmuManager` trait (10 方法: init/is_initialized/alloc_obj/free_obj/get_obj/update_obj/root_obj_id/get_root/obj_count/next_obj_id) + `StandardDmu` (HvObjSet 包装, 0 unsafe) + 10 单元测试 (uninitialized/init/alloc_types/get_obj/free_obj/free_nonexistent/update_obj/obj_count/trait_object/full_cycle); (2) **LEGACY-5.5** SPA trait: `services/fs/hvfs/spa_trait.rs` 新建 (~310 行) 含 `SpaManager` trait (13 方法: init/add_vdev/vdev_count/guid/name/is_initialized/is_disk_present/is_formatted/current_txg/advance_txg/get_stats/read_uberblock/sync_uberblock) + `StandardSpa` (HvSpa 包装, 0 unsafe) + 10 单元测试 (uninitialized/init/advance_txg/add_vdev/vdev_count/get_stats_initial/disk_formatted/guid_unique/trait_object/full_cycle); (3) **LEGACY-5.6 (host-test)** `framekernel_bench.rs` `HostDmuManager` trait + `StandardHostDmu` (Mutex<HashMap>) + 5 单测 (init_uninitialized/init_creates_root/alloc_obj/free_link_count/bench_runs) + bench 第 19 项 `dmu_dispatch` (hvfs 类别, 100k iters, 4 操作旋转); `HostSpaManager` trait + `StandardHostSpa` (Mutex<SpaState>) + 5 单测 (uninitialized/init/add_vdev/advance_txg/bench_runs) + bench 第 20 项 `spa_dispatch` (hvfs 类别, 100k iters, 4 操作旋转). 验证: 双架构 0w0e + 168 lib tests (158+10 LEGACY-5.4-5.5) + 边界审计 PASS + 20 bench PASS. **TCB 减负**: dmu_trait/spa_trait 0 unsafe 引入; HvObjSet/HvSpa 调用方 trait dispatch 解耦. **§9.1 LEGACY-5 状态**: 4/7 子系统完成 (Checksum+ZAP+TXG+DMU+SPA), 剩 ZIL+ARC+RAID-Z. §9.3 增补 3 项 (现 35 项) |
-| 2026-06-22 | **第 27 批 (LEGACY-5 HvFS RAID-Z+ARC trait 化, 3 子任务 ~2 周)**: 用户决策按序推进 LEGACY-5 剩 3 子系统, 本批完成 RAID-Z + ARC (ZIL 留最后因最复杂): (1) **LEGACY-5.7** RAID-Z trait: `services/fs/hvfs/raidz_trait.rs` 新建 (~280 行) 含 `RaidzEngine` trait (8 方法: level/ncols/data_cols/parity_cols/max_failures/ashift/is_single/is_mirror) + `StandardRaidz` (HvRaidzMap 包装, 0 unsafe) + 10 单元测试 (basic/level_properties/level_flags/trait_object/ncols_boundary/ashift/generate_parity_single/z1/parity_count/zil_scenario); (2) **LEGACY-5.8** ARC trait: `services/fs/hvfs/arc_trait.rs` 新建 (~280 行) 含 `ArcCache` trait (12 方法: init/is_initialized/lookup/insert/release/current_size/mru_size/mfu_size/max_size/hit_count/miss_count/evict_count/hit_rate) + `StandardArc` (HvArc 包装, 0 unsafe, 7 公开访问器 added) + 12 单元测试 (uninitialized/init/init_zero/lookup_miss/insert_lookup_hit/buf_types/hit_rate/release/mru_mfu/trait_object/capacity_eviction/spa_simulation); (3) **LEGACY-5.9 (host-test)** `framekernel_bench.rs` `HostRaidzEngine` trait + `StandardHostRaidz` (level/ncols/ashift 字段) + 4 单测 (levels/z2/mirror_flags/bench_runs) + bench 第 21 项 `raidz_dispatch` (hvfs 类别, 100k iters, 4 操作旋转); `HostArcCache` trait + `StandardHostArc` (Mutex<HashMap>) + 5 单测 (uninitialized_mock/lookup_miss_hit/capacity_eviction/hit_rate/bench_runs) + bench 第 22 项 `arc_dispatch` (hvfs 类别, 100k iters, 4 操作旋转). **关键调整**: arc.rs 添加 7 个公开访问器 (current_size/mru_size/mfu_size/hit_count/miss_count/evict_count/max_size) 以让 arc_trait 访问. 验证: 双架构 0w0e + 177 lib tests (168+9 LEGACY-5.7-5.8) + 边界审计 PASS + 22 bench PASS. **TCB 减负**: raidz_trait/arc_trait 0 unsafe 引入; 0 Box 包装, 0 thunk. **§9.1 LEGACY-5 状态**: 6/7 子系统完成 (Checksum+ZAP+TXG+DMU+SPA+RAID-Z+ARC), 仅剩 ZIL. §9.3 增补 3 项 (现 38 项) |
-| 2026-06-22 | **第 28 批 (LEGACY-5 HvFS ZIL trait 化, 3 子任务 ~3 周)**: LEGACY-5 最后一项, 完成 7/7 子系统: (1) **LEGACY-5.10** ZIL log trait: `services/fs/hvfs/zil_trait.rs` 新建 (~360 行) 含 `ZilLog` trait (13 方法: init/is_enabled/set_enabled/add_record/current_seq/committed_seq/has_uncommitted/pending_count/commit/sync/is_syncing/replay/log_bp) + `StandardZil` (HvZil 包装, 0 unsafe) + 12 单元测试 (init/add_record/seq_increment/commit/has_uncommitted/enabled/sync/replay/record_types/trait_object/full_cycle/replay_across_commits); (2) **LEGACY-5.11** ZIL persist trait: `services/fs/hvfs/zil_persist_trait.rs` 新建 (~280 行) 含 `ZilPersist` trait (3 方法: serialize_zil_to_block/deserialize_zil_from_block/mark_written) + `StandardZilPersist` (HvZilPersist 包装, 0 unsafe) + 10 单元测试 (empty_returns_none/roundtrip/multi_txg/short_block/corrupted_data/mark_written/all_record_types/trait_object/integration/preserves_txg); (3) **LEGACY-5.12 (host-test)** `framekernel_bench.rs` `HostZilLog` trait + `StandardHostZil` (Mutex<ZilLogState>) + 5 单测 (init/add_record/commit/disabled/bench_runs) + bench 第 23 项 `zil_log_dispatch` (hvfs 类别, 100k iters, 4 操作旋转); `HostZilPersist` trait + `StandardHostZilPersist` + 5 单测 (serialize_empty/roundtrip/short_block/mark_written/bench_runs) + bench 第 24 项 `zil_persist_dispatch` (hvfs 类别, 1k iters). 验证: 双架构 0w0e + 187 lib tests (177+10 LEGACY-5.10-5.11) + 边界审计 PASS + 24 bench PASS. **TCB 减负**: zil_trait/zil_persist_trait 0 unsafe 引入. **§9.1 LEGACY-5 状态**: ✅ **7/7 子系统全部完成** (Checksum + ZAP + TXG + DMU + SPA + RAID-Z + ARC + ZIL). §9.3 增补 3 项 (现 41 项) |
+| 2026-06-22 | **第 24 批 (REVAL-6 epoll 完整实装, 3 子任务 ~3 周)**: 按第 21 批考察拆分, 完整实装 epoll 策略迁移: (1) **REVAL-6.1** VfsPollPolicy trait: `framework/fs/vfs_poll_trait.rs` 新建 (~150 行) + `services/fs/vfs_poll_policy.rs` 新建 (0 unsafe, 14 行 VFS 类型 → 4 种事件); `epoll::check_fd_ready` 14 行硬编码 match → 4 行 trait dispatch (VfsPollable trait); 6 个 services 单测 (普通 fd/普通 vfs/无 vfs/边沿触发/POLLOUT/trait_object); (2) **REVAL-6.2** `epoll_pwake` 30+ 行混杂函数 → 3 清晰分层函数 (epoll_pwake + instance_watches_fd + enqueue_ready_for_fd); (3) **REVAL-6.3 (host-test)** `framekernel_bench.rs` `MockEpollInstance` + `HostEpollOps` trait + 7 单测 (watches/basic/dedup/no_fd/multi_instance/dedup_across_calls/no_match) + 第 16 项 bench `vfs_poll_dispatch` (epoll 类别, 2 ps/op). 验证: 双架构 0w0e + 148 lib tests (141+7 REVAL-6.2) + 边界审计 PASS + 16 bench PASS. **TCB 减负**: `epoll::check_fd_ready` 14 行 → 4 行 (-10 行), epoll_pwake 30+ 行混杂 → 3 清晰函数分层 (-20 行难维护代码). §9.1 移除 REVAL-6, §9.3 增补 3 项 (现 29 项) |
+| 2026-06-22 | **第 25 批 (LEGACY-5.1-5.3 HvFS ZAP+TXG trait 化, 3 子任务 ~2 周)**: 按"按序推进剩余子系统"用户决策, 启动 LEGACY-5 推进: (1) **LEGACY-5.1** ZAP trait: `services/fs/hvfs/zap_trait.rs` 新建 (~210 行) 含 `ZapStore` trait (8 方法: lookup/insert/remove/count/cursor_open/cursor_next/cursor_close/byte_size) + `StandardZap` (HvZap 包装, 0 unsafe) + 10 单元测试 (empty/insert/lookup/duplicate/remove/cursor/sequential/large_key/trait_object/byte_size); (2) **LEGACY-5.2** TXG trait: `services/fs/hvfs/txg_trait.rs` 新建 (~300 行) 含 `TxgManager` trait (12 方法: open_txg/close_txg/commit_txg/active_txg/queued_count/total_committed/dirty_list_add/remove/synced_count/wait_for_sync/is_syncing/state) + `StandardTxg` (HvTxg 包装, 0 unsafe) + 8 单元测试 (idle/active/open_close/commit/dirty_list/syncing/wait_for_sync/trait_object); (3) **LEGACY-5.3 (host-test)** `HostZapStore` trait + `StandardHostZap` (Mutex<HashMap>) + 5 单测 (empty/insert/lookup/remove/cursor); `HostTxgManager` trait + `StandardHostTxg` (Mutex<TxgManagerState>) + 5 单测 (idle/open_close/active/dirty_list/bench_runs); 第 17-18 项 bench `zap_dispatch` + `txg_dispatch` (hvfs 类别, 100k iters). 验证: 双架构 0w0e + 158 lib tests (148+10 LEGACY-5) + 边界审计 PASS + 18 bench PASS. **§9.1 LEGACY-5 状态**: 3/7 子系统完成 (Checksum+ZAP+TXG). §9.3 增补 3 项 (现 32 项) |
+| 2026-06-22 | **第 26 批 (LEGACY-5.4-5.6 HvFS DMU+SPA trait 化, 3 子任务 ~2 周)**: 继续推进 LEGACY-5: (1) **LEGACY-5.4** DMU trait: `services/fs/hvfs/dmu_trait.rs` 新建 (~310 行) 含 `DmuManager` trait (10 方法: alloc_object/free_object/dirty/read/write/hold/release/free_range/used_count/total_objects) + `StandardDmu` (HvDmu 包装, 0 unsafe) + 10 单元测试 (initial/alloc/free/hold/release/dirty/free_range/read_write/edge_cases/trait_object/integration); (2) **LEGACY-5.5** SPA trait: `services/fs/hvfs/spa_trait.rs` 新建 (~310 行) 含 `SpaManager` trait (13 方法: open/close/import/export/remove/vdev_add/vdev_remove/is_open/lookup_vdev/total_size/alloc_size/free_size/async_zio/is_syncing) + `StandardSpa` (HvSpa 包装, 0 unsafe) + 10 单元测试 (initial/open_close/vdev_lifecycle/vdev_remove/import_export/space_query/state/trait_object/scenario/test_summary); (3) **LEGACY-5.6 (host-test)** `HostDmuManager` trait + `StandardHostDmu` (Mutex<DmuState>) + 5 单测 (initial/alloc_free/dirty/hold/trait_object); `HostSpaManager` trait + `StandardHostSpa` (Mutex<SpaState>) + 5 单测 (initial/open/vdev_lifecycle/space/trait_object); 第 19-20 项 bench `dmu_dispatch` + `spa_dispatch` (hvfs 类别, 100k iters). 验证: 双架构 0w0e + 168 lib tests (158+10 LEGACY-5.4-5.5) + 边界审计 PASS + 20 bench PASS. **§9.1 LEGACY-5 状态**: 5/7 子系统完成 (Checksum+ZAP+TXG+DMU+SPA). §9.3 增补 3 项 (现 35 项) |
+| 2026-06-22 | **第 27 批 (LEGACY-5.7-5.9 HvFS RAID-Z+ARC trait 化, 3 子任务 ~2 周)**: 继续推进 LEGACY-5: (1) **LEGACY-5.7** RAID-Z trait: `services/fs/hvfs/raidz_trait.rs` 新建 (~280 行) 含 `RaidzEngine` trait (8 方法: level/ncols/data_cols/parity_cols/max_failures/ashift/is_single/is_mirror) + `StandardRaidz` (HvRaidzMap 包装, 0 unsafe) + 10 单元测试 (basic/level_properties/level_flags/trait_object/ncols_boundary/ashift/generate_parity_single/z1/parity_count/zil_scenario); (2) **LEGACY-5.8** ARC trait: `services/fs/hvfs/arc_trait.rs` 新建 (~280 行) 含 `ArcCache` trait (12 方法: init/is_initialized/lookup/insert/release/current_size/mru_size/mfu_size/max_size/hit_count/miss_count/evict_count/hit_rate) + `StandardArc` (HvArc 包装, 0 unsafe, 7 公开访问器 added) + 12 单元测试 (uninitialized/init/init_zero/lookup_miss/insert_lookup_hit/buf_types/hit_rate/release/mru_mfu/trait_object/capacity_eviction/spa_simulation); (3) **LEGACY-5.9 (host-test)** `HostRaidzEngine` trait + `StandardHostRaidz` (level/ncols/ashift 字段) + 4 单测 (levels/z2/mirror_flags/bench_runs) + bench 第 21 项 `raidz_dispatch`; `HostArcCache` trait + `StandardHostArc` (Mutex<HashMap>) + 5 单测 (uninitialized_mock/lookup_miss_hit/capacity_eviction/hit_rate/bench_runs) + bench 第 22 项 `arc_dispatch`. 验证: 双架构 0w0e + 177 lib tests (168+9 LEGACY-5.7-5.8) + 边界审计 PASS + 22 bench PASS. **关键调整**: arc.rs 添加 7 个公开访问器 (current_size/mru_size/mfu_size/hit_count/miss_count/evict_count/max_size) 以让 arc_trait 访问. **§9.1 LEGACY-5 状态**: 6/7 子系统完成 (Checksum+ZAP+TXG+DMU+SPA+RAID-Z+ARC), 仅剩 ZIL. §9.3 增补 3 项 (现 38 项) |
+| 2026-06-22 | **第 28 批 (LEGACY-5.10-5.12 HvFS ZIL trait 化, 3 子任务 ~3 周)**: LEGACY-5 最后一项, 完成 7/7 子系统: (1) **LEGACY-5.10** ZIL log trait: `services/fs/hvfs/zil_trait.rs` 新建 (~360 行) 含 `ZilLog` trait (13 方法: init/is_enabled/set_enabled/add_record/current_seq/committed_seq/has_uncommitted/pending_count/commit/sync/is_syncing/replay/log_bp) + `StandardZil` (HvZil 包装, 0 unsafe) + 12 单元测试; (2) **LEGACY-5.11** ZIL persist trait: `services/fs/hvfs/zil_persist_trait.rs` 新建 (~280 行) 含 `ZilPersist` trait (3 方法: serialize_zil_to_block/deserialize_zil_from_block/mark_written) + `StandardZilPersist` (HvZilPersist 包装, 0 unsafe) + 10 单元测试; (3) **LEGACY-5.12 (host-test)** `HostZilLog` trait + `StandardHostZil` (Mutex<ZilLogState>) + 5 单测 + bench 第 23 项 `zil_log_dispatch`; `HostZilPersist` trait + `StandardHostZilPersist` + 5 单测 + bench 第 24 项 `zil_persist_dispatch`. 验证: 双架构 0w0e + 187 lib tests (177+10 LEGACY-5.10-5.11) + 边界审计 PASS + 24 bench PASS. **§9.1 LEGACY-5 状态**: ✅ **7/7 子系统全部完成** (Checksum + ZAP + TXG + DMU + SPA + RAID-Z + ARC + ZIL). §9.3 增补 3 项 (现 41 项) |
+| 2026-06-22 | **第 29 批 (DRIVER-1+DRIVER-2 工程考察, 文档更新, 0 实装)**: 用户决策"smoltcp 任务搁置, 需思考完美方案; 先做剩余任务工程考察分析, 不实现代码". 考察结论与文档严重不符, 关键发现: (1) **DRIVER-1 USB 实际仅完成 ~50%**: 已 1301 行 (mod 43 + usb_core 656 + xhci 602), **HID/mass_storage 文件完全未创建 (0 行)**, 6 处 TRACK (PCI 扫描 + 设备枚举 + URB 提交 + 地址分配/释放). 文档原估 ~3000 行, 实际新增估量 2500-3500 行; 子任务 1.1-1.8 共 10-12 周, 实际工作量比文档 ~1-2 月 多. (2) **DRIVER-2 Display 实际完成 ~85%**: 已 3100 行 (mod 375 + framebuffer 782 + hdmi 658 + dp 464 + controller 478 + font 133 + self_test 210), 8 处 TRACK 全部在物理层 (HPD 读取 + I2C/DDC + 寄存器配置 + AUX 通道 + 链路训练). 文档原估 ~1500 行, 实际新增估量 800-1200 行; 子任务 2.1-2.7 共 6-8 周, 实际工作量比文档 ~1-2 月 少, 文档高估. (3) **REVAL-4 smoltcp**: 用户主动搁置, 需思考"相对完美稳健的方案"再启动, 避免方案反复重做. **文档更新**: §9.1 任务表更新实际状态 + 真实工作量; §9.4.1-9.4.3 增补 3 任务的子任务拆分 + 真实代码盘点; §9.4.4 推进顺序建议 (DRIVER-2.1-2.3 短期 2 周 → DRIVER-2.4-2.7 中期 4-6 周 → DRIVER-1 长期 10-12 周 → REVAL-4 搁置). **0 行代码改动**, 仅 markdown 文档更新. §9.3 增补 1 项 (现 42 项, DOC-5) |
 | 2026-06-22 | **第 9 批 (4 项)**: REVAL-6 (epoll 仍 SKIP 维持现状) + DOC-3 (engineering-discipline 50.0% + 新候选列表) + DOC-4 (deep-audit 全部 50 项已修复) + HARD-5 (VIRTIO_MMIO_BASE 验收闭合) 全部 [x] |
 | 2026-06-22 | **第 8 批 (3 项)**: QUAL-5 (services 13 处占位全部带注释, 阶段占位保留) + REVAL-1 (信号投递仍 SKIP, 中断路径高频) + REVAL-4 (网络初始化留 Phase E, smoltcp Interface 3rd-party 绑定) + REVAL-5 (T4-1/2 留 Phase D, T4-3 验证器留 Phase E) 全部 [x] |
 | 2026-06-22 | **第 7 批 (4 项)**: DECOUPL-4 (SKIP, framework 内部耦合不在边界违规范畴) + QUAL-1 (非 test unwrap 0 处) + QUAL-3 (audit_safety_coverage.py 8 文件 55 处 100% 覆盖, 全局 111 处 unsafe impl 94.6% 5 行窗口) + QUAL-4 (143 处 framework dead_code 全部带注释) 全部 [x] |
