@@ -1560,6 +1560,267 @@ pub fn txg_dispatch_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / iters as u128
 }
 
+// ============================================================================
+// LEGACY-5.4: DmuManager trait dispatch bench + Mock
+// ============================================================================
+//
+// 模拟 StandardDmu 行为: alloc_obj/get_obj/free_obj/obj_count.
+
+/// host-only DMU 对象快照
+#[derive(Debug, Clone)]
+pub struct MockDmuObject {
+    pub obj_id: u64,
+    pub obj_type: u8,  // 0=None, 1=File, 2=Dir, ...
+    pub used: bool,
+    pub link_count: u32,
+}
+
+/// host-only DmuManager trait
+pub trait HostDmuManager: Send + Sync {
+    fn init(&self, owner_pwm: u64);
+    fn is_initialized(&self) -> bool;
+    fn alloc_obj(&self, obj_type: u8, owner_pwm: u64) -> Option<u64>;
+    fn free_obj(&self, obj_id: u64) -> bool;
+    fn get_obj(&self, obj_id: u64) -> Option<MockDmuObject>;
+    fn update_obj(&self, obj: MockDmuObject) -> bool;
+    fn root_obj_id(&self) -> u64;
+    fn get_root(&self) -> Option<MockDmuObject>;
+    fn obj_count(&self) -> u64;
+    fn next_obj_id(&self) -> u64;
+}
+
+/// host-only StandardDmu (Mutex<Vec<MockDmuObject>>)
+pub struct StandardHostDmu {
+    pub state: std::sync::Mutex<DmuState>,
+}
+
+pub struct DmuState {
+    pub objects: HashMap<u64, MockDmuObject>,
+    pub next_id: u64,
+    pub initialized: bool,
+    pub root_id: u64,
+}
+
+impl StandardHostDmu {
+    pub fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(DmuState {
+                objects: HashMap::new(),
+                next_id: 3,  // 0=NUM, 1=META, 2=ROOT
+                initialized: false,
+                root_id: 2,
+            }),
+        }
+    }
+}
+
+impl HostDmuManager for StandardHostDmu {
+    fn init(&self, _owner_pwm: u64) {
+        let mut s = self.state.lock().unwrap();
+        s.objects.clear();
+        s.initialized = true;
+        s.root_id = 2;
+        s.next_id = 3;
+        // 模拟 init 创建 root + meta
+        s.objects.insert(1, MockDmuObject { obj_id: 1, obj_type: 4, used: true, link_count: 1 });
+        s.objects.insert(2, MockDmuObject { obj_id: 2, obj_type: 2, used: true, link_count: 1 });
+    }
+    fn is_initialized(&self) -> bool { self.state.lock().unwrap().initialized }
+    fn alloc_obj(&self, obj_type: u8, _owner_pwm: u64) -> Option<u64> {
+        let mut s = self.state.lock().unwrap();
+        let id = s.next_id;
+        s.next_id += 1;
+        s.objects.insert(id, MockDmuObject {
+            obj_id: id, obj_type, used: true, link_count: 1,
+        });
+        Some(id)
+    }
+    fn free_obj(&self, obj_id: u64) -> bool {
+        let mut s = self.state.lock().unwrap();
+        if let Some(obj) = s.objects.get_mut(&obj_id) {
+            obj.link_count = obj.link_count.saturating_sub(1);
+            if obj.link_count == 0 {
+                obj.used = false;
+            }
+            true
+        } else {
+            false
+        }
+    }
+    fn get_obj(&self, obj_id: u64) -> Option<MockDmuObject> {
+        self.state.lock().unwrap().objects.get(&obj_id).filter(|o| o.used).cloned()
+    }
+    fn update_obj(&self, obj: MockDmuObject) -> bool {
+        let mut s = self.state.lock().unwrap();
+        if s.objects.contains_key(&obj.obj_id) {
+            s.objects.insert(obj.obj_id, obj);
+            true
+        } else {
+            false
+        }
+    }
+    fn root_obj_id(&self) -> u64 { self.state.lock().unwrap().root_id }
+    fn get_root(&self) -> Option<MockDmuObject> {
+        let s = self.state.lock().unwrap();
+        s.objects.get(&s.root_id).cloned()
+    }
+    fn obj_count(&self) -> u64 {
+        self.state.lock().unwrap().objects.values().filter(|o| o.used).count() as u64
+    }
+    fn next_obj_id(&self) -> u64 { self.state.lock().unwrap().next_id }
+}
+
+/// bench: DMU trait dispatch throughput
+pub fn dmu_dispatch_bench(iters: u64) -> u128 {
+    let dmu: Box<dyn HostDmuManager> = Box::new(StandardHostDmu::new());
+    dmu.init(0x100);
+    // 预热: alloc 1000
+    for _ in 0..1000 {
+        dmu.alloc_obj(1, 0x100);
+    }
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        if r & 0x3 == 0 {
+            // alloc File
+            if let Some(id) = dmu.alloc_obj(1, 0x100) {
+                sink = sink.wrapping_add(id);
+            }
+        } else if r & 0x3 == 1 {
+            // get_obj
+            if let Some(obj) = dmu.get_obj(2) {
+                sink = sink.wrapping_add(obj.obj_id);
+            }
+        } else if r & 0x3 == 2 {
+            // obj_count
+            sink = sink.wrapping_add(dmu.obj_count());
+        } else {
+            // get_root
+            if let Some(root) = dmu.get_root() {
+                sink = sink.wrapping_add(root.obj_id);
+            }
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
+// ============================================================================
+// LEGACY-5.5: SpaManager trait dispatch bench + Mock
+// ============================================================================
+//
+// 模拟 StandardSpa 行为: init/add_vdev/advance_txg/get_stats.
+
+/// host-only SPA 状态
+pub struct SpaState {
+    pub name: String,
+    pub guid: u64,
+    pub vdevs: Vec<u32>,  // vdev_id list
+    pub initialized: bool,
+    pub current_txg: u64,
+    pub alloc_count: u64,
+    pub free_count: u64,
+    pub read_count: u64,
+    pub write_count: u64,
+}
+
+/// host-only SpaManager trait
+pub trait HostSpaManager: Send + Sync {
+    fn init(&self, name: &str);
+    fn add_vdev(&self, vdev_id: u32) -> bool;
+    fn vdev_count(&self) -> usize;
+    fn guid(&self) -> u64;
+    fn is_initialized(&self) -> bool;
+    fn current_txg(&self) -> u64;
+    fn advance_txg(&self) -> u64;
+    fn get_stats(&self) -> (u64, u64, u64, u64, u64);
+}
+
+/// host-only StandardSpa (Mutex<SpaState>)
+pub struct StandardHostSpa {
+    pub state: std::sync::Mutex<SpaState>,
+}
+
+impl StandardHostSpa {
+    pub fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(SpaState {
+                name: String::new(),
+                guid: 0,
+                vdevs: Vec::new(),
+                initialized: false,
+                current_txg: 0,
+                alloc_count: 0,
+                free_count: 0,
+                read_count: 0,
+                write_count: 0,
+            }),
+        }
+    }
+}
+
+impl HostSpaManager for StandardHostSpa {
+    fn init(&self, name: &str) {
+        let mut s = self.state.lock().unwrap();
+        s.name = name.to_string();
+        s.guid = 0x12345678 + name.len() as u64;
+        s.initialized = true;
+        s.current_txg = 1;
+    }
+    fn add_vdev(&self, vdev_id: u32) -> bool {
+        let mut s = self.state.lock().unwrap();
+        if s.vdevs.contains(&vdev_id) {
+            return false;
+        }
+        s.vdevs.push(vdev_id);
+        true
+    }
+    fn vdev_count(&self) -> usize { self.state.lock().unwrap().vdevs.len() }
+    fn guid(&self) -> u64 { self.state.lock().unwrap().guid }
+    fn is_initialized(&self) -> bool { self.state.lock().unwrap().initialized }
+    fn current_txg(&self) -> u64 { self.state.lock().unwrap().current_txg }
+    fn advance_txg(&self) -> u64 {
+        let mut s = self.state.lock().unwrap();
+        s.current_txg += 1;
+        s.current_txg
+    }
+    fn get_stats(&self) -> (u64, u64, u64, u64, u64) {
+        let s = self.state.lock().unwrap();
+        (s.alloc_count, s.free_count, s.read_count, s.write_count, s.current_txg)
+    }
+}
+
+/// bench: SPA trait dispatch throughput
+pub fn spa_dispatch_bench(iters: u64) -> u128 {
+    let spa: Box<dyn HostSpaManager> = Box::new(StandardHostSpa::new());
+    spa.init("bench");
+    // 预热: add_vdev 1000
+    for i in 0..1000 {
+        spa.add_vdev(i);
+    }
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        if r & 0x7 == 0 {
+            // advance_txg (稀有)
+            sink = sink.wrapping_add(spa.advance_txg());
+        } else if r & 0x3 == 1 {
+            // current_txg
+            sink = sink.wrapping_add(spa.current_txg());
+        } else if r & 0x3 == 2 {
+            // vdev_count
+            sink = sink.wrapping_add(spa.vdev_count() as u64);
+        } else {
+            // guid
+            sink = sink.wrapping_add(spa.guid());
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -1655,6 +1916,12 @@ pub fn run_all() -> BenchReport {
     // LEGACY-5.2: TXG trait dispatch bench
     results.push(measure("txg_dispatch", "hvfs", 100_000, ||
         txg_dispatch_bench(100_000)));
+    // LEGACY-5.4: DMU trait dispatch bench
+    results.push(measure("dmu_dispatch", "hvfs", 100_000, ||
+        dmu_dispatch_bench(100_000)));
+    // LEGACY-5.5: SPA trait dispatch bench
+    results.push(measure("spa_dispatch", "hvfs", 100_000, ||
+        spa_dispatch_bench(100_000)));
     BenchReport { version: 1, results }
 }
 
@@ -2174,5 +2441,94 @@ mod tests {
     #[test]
     fn test_txg_bench_runs() {
         let _ = txg_dispatch_bench(100);
+    }
+
+    // ====== LEGACY-5.4: DmuManager trait 单元测试 ======
+
+    #[test]
+    fn test_dmu_init_uninitialized() {
+        let dmu: Box<dyn HostDmuManager> = Box::new(StandardHostDmu::new());
+        assert!(!dmu.is_initialized());
+        assert_eq!(dmu.obj_count(), 0);
+    }
+
+    #[test]
+    fn test_dmu_init_creates_root() {
+        let dmu: Box<dyn HostDmuManager> = Box::new(StandardHostDmu::new());
+        dmu.init(0x100);
+        assert!(dmu.is_initialized());
+        // init 后有 root + meta = 2 个对象
+        assert_eq!(dmu.obj_count(), 2);
+    }
+
+    #[test]
+    fn test_dmu_alloc_obj() {
+        let dmu: Box<dyn HostDmuManager> = Box::new(StandardHostDmu::new());
+        dmu.init(0x100);
+        let f = dmu.alloc_obj(1, 0x100).unwrap();  // 1 = File
+        assert!(f >= 3);
+        let obj = dmu.get_obj(f).unwrap();
+        assert_eq!(obj.obj_type, 1);
+    }
+
+    #[test]
+    fn test_dmu_free_link_count() {
+        let dmu: Box<dyn HostDmuManager> = Box::new(StandardHostDmu::new());
+        dmu.init(0x100);
+        let f = dmu.alloc_obj(1, 0x100).unwrap();
+        let obj = dmu.get_obj(f).unwrap();
+        assert_eq!(obj.link_count, 1);
+        dmu.free_obj(f);
+        let obj2 = dmu.get_obj(f);
+        assert!(obj2.is_none(), "link_count=0 后 used=false");
+    }
+
+    #[test]
+    fn test_dmu_bench_runs() {
+        let _ = dmu_dispatch_bench(100);
+    }
+
+    // ====== LEGACY-5.5: SpaManager trait 单元测试 ======
+
+    #[test]
+    fn test_spa_uninitialized() {
+        let spa: Box<dyn HostSpaManager> = Box::new(StandardHostSpa::new());
+        assert!(!spa.is_initialized());
+        assert_eq!(spa.vdev_count(), 0);
+    }
+
+    #[test]
+    fn test_spa_init() {
+        let spa: Box<dyn HostSpaManager> = Box::new(StandardHostSpa::new());
+        spa.init("tank");
+        assert!(spa.is_initialized());
+        assert_eq!(spa.current_txg(), 1);
+        assert_ne!(spa.guid(), 0);
+    }
+
+    #[test]
+    fn test_spa_add_vdev() {
+        let spa: Box<dyn HostSpaManager> = Box::new(StandardHostSpa::new());
+        spa.init("tank");
+        assert!(spa.add_vdev(0));
+        assert!(spa.add_vdev(1));
+        assert_eq!(spa.vdev_count(), 2);
+        // 重复添加 → false
+        assert!(!spa.add_vdev(0));
+    }
+
+    #[test]
+    fn test_spa_advance_txg() {
+        let spa: Box<dyn HostSpaManager> = Box::new(StandardHostSpa::new());
+        spa.init("tank");
+        let t1 = spa.advance_txg();
+        let t2 = spa.advance_txg();
+        assert!(t2 > t1);
+        assert_eq!(spa.current_txg(), t2);
+    }
+
+    #[test]
+    fn test_spa_bench_runs() {
+        let _ = spa_dispatch_bench(100);
     }
 }
