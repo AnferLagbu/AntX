@@ -1315,7 +1315,9 @@ pub use x86_64::ioapic;
 |---|---------|------|--------|------|
 | 1 | **DISPLAY-2.1** | HDMI HPD 真实读取 (`hdmi.rs:439-443` TRACK-CD5DA5) | 1 天 | [x] |
 | 2 | **DISPLAY-2.2** | HDMI I2C/DDC EDID 真实读取 (`hdmi.rs:454-490` TRACK-7CCB60) | 3 天 | [x] |
-| 3 | **DISPLAY-2.3** | HDMI 控制器寄存器配置 (`hdmi.rs:511-518` TRACK-1BDEF6) | 1 周 | [ ] |
+| 3 | **DISPLAY-2.3a** | HDMI 像素时钟配置 (`hdmi.rs:511-518` TRACK-1BDEF6 第 1 步) | 1-2 天 | [x] |
+|   | **DISPLAY-2.3b** | HDMI 时序参数配置 (TRACK-1BDEF6 第 2 步, 总线 H/V total/active) | 2-3 天 | [ ] |
+|   | **DISPLAY-2.3c** | HDMI 同步极性 + TMDS 输出使能 (TRACK-1BDEF6 第 3 步) | 1-2 天 | [ ] |
 | 4 | **DISPLAY-2.4** | DP HPD 真实读取 (`dp.rs:219-223` TRACK-599EDA) | 1 天 | [x] |
 
 **DISPLAY-2.1 完成记录** (2026-06-23 接手人实装):
@@ -1376,6 +1378,27 @@ pub use x86_64::ioapic;
   - host-tests: 72/72 PASS
 - **TCB 影响**: dp.rs 中 1 处 `unsafe` (IoMem::read_u8 调用, 同 hdmi.rs 模式)
 - **设计取舍**: DP HPD 默认偏移 0x040 (假设独立 DP chip); Intel/AMD 共享 HPD 控制器需通过 `new_with_iomem` 显式指定与 HDMI 相同偏移
+
+**DISPLAY-2.3a 完成记录** (2026-06-23 接手人实装):
+- **变更** (消除 `hdmi.rs:511-518` TRACK-1BDEF6 第 1 步):
+  - `src/kernel/framework/driver/display/hdmi.rs`:
+    - 新增常量 `HDMI_PCLK_BASE_KHZ = 27_000` (HDMI 规范标准 27 MHz 参考), `HDMI_PCLK_MUL_REG_OFFSET = 0x060`, `HDMI_PCLK_DIV_REG_OFFSET = 0x064`
+    - `HdmiController` 新增字段 `pclk_mul_reg_offset: usize` + `pclk_div_reg_offset: usize`
+    - 新增构造函数 `new_with_iomem_pixel_clock(iomem, hpd_off, pclk_mul_off, pclk_div_off)` (vendor 自定义 mul/div 偏移)
+    - 新增 `fn compute_pixel_clock_mul_div(target_khz, base_khz) -> (u8, u8)`: 贪心搜索 div ∈ 1..16, 找最小 |base*mul/div - target| 的 (mul, div) 对; 1080p60 (148.5 MHz) 精确得到 (11, 2)
+    - 新增 `unsafe fn configure_hdmi_pixel_clock(iomem, mul_off, div_off, target_khz)`: 调 compute + 写 2 个寄存器
+    - `set_video_mode()` 第 1 步实装: IoMem Some → 调 `configure_hdmi_pixel_clock`; None → fallback 仅记录 mode
+    - 删除第 1 步 TODO 注释, 保留第 2-3 步 TODO (DISPLAY-2.3b/2.3c)
+    - 新增 5 个单元测试: `test_compute_pixel_clock_mul_div_1080p60` (精确匹配) / `test_compute_pixel_clock_mul_div_4k30` (误差 < 1%) / `test_compute_pixel_clock_mul_div_zero_target` (除零防护) / `test_set_video_mode_fallback_no_iomem` / `test_set_video_mode_without_hpd_returns_device_not_found`
+- **验证**:
+  - x86_64 / aarch64 `cargo build --release`: 0 error / 12 pre-existing warnings (无 hdmi.rs 相关新增)
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72/72 PASS
+- **TCB 影响**: hdmi.rs 新增 1 处 `unsafe` (`configure_hdmi_pixel_clock` 写 2 字节, 边界由 `new_with_iomem_pixel_clock` 调用方保证)
+- **设计取舍**:
+  - 默认 8-bit mul/div 寄存器抽象 (vendor-neutral), `pixel_clock = base * mul / div`, base=27 MHz
+  - 算法限制 div ∈ 1..16 (HDMI 控制器 PLL 典型范围); 超出范围的极端模式 (e.g. div=255) 通过 vendor 自定义路径接管
+  - 不替代 vendor PLL 算法 (N/M/frac 等), 仅提供通用 fallback; Intel/AMD/SoC 厂商在 `new_with_iomem_pixel_clock` 指定自家 mul/div 偏移
 
 **第 1 组开始日期**: 2026-06-23
 **第 1 组完成日期**: TBD

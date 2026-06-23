@@ -31,6 +31,15 @@
   - 删除 `// TODO(TRACK-599EDA)` 注释
   - 新增单元测试 `test_dp_hpd_fallback_returns_true_when_no_iomem`
   - 厂商差异注释: Intel IGP/AMD DCN 共享 HDMI HPD 寄存器, 调用方应显式传入与 HDMI 相同偏移
+- **DISPLAY-2.3a HDMI 像素时钟配置** — `src/kernel/framework/driver/display/hdmi.rs` (接手人实装, 2026-06-23, 消除 TRACK-1BDEF6 第 1 步)
+  - 新增常量 `HDMI_PCLK_BASE_KHZ = 27_000` / `HDMI_PCLK_MUL_REG_OFFSET = 0x060` / `HDMI_PCLK_DIV_REG_OFFSET = 0x064`
+  - `HdmiController` 新增字段 `pclk_mul_reg_offset` + `pclk_div_reg_offset`
+  - 新增构造函数 `new_with_iomem_pixel_clock()` (vendor 自定义 mul/div 偏移)
+  - 新增 `compute_pixel_clock_mul_div()` 贪心搜索算法 (div ∈ 1..16): 1080p60 148.5 MHz / 27 MHz 精确得到 (mul=11, div=2)
+  - 新增 `configure_hdmi_pixel_clock()` 真实硬件路径: 计算 mul/div + 写 2 字节寄存器
+  - `set_video_mode()` 第 1 步实装 (IoMem 路径), fallback 路径保留; 第 2-3 步 TODO 保留 (DISPLAY-2.3b/2.3c)
+  - 新增 5 个单元测试: 1080p60 精确匹配 / 4K30 误差 < 1% / 除零防护 / set_video_mode fallback / set_video_mode 未连接返回错误
+  - 厂商注释: Intel IGP DPLL / AMD DCN DENTIST / Synopsys DesignWare phy_clock+tmds_clock / QEMU Bochs 无 pclk 寄存器
 
 ### 修复
 - **DISPLAY-2.1 关联预存问题修复** (CLAUDE.md 预存问题即修规则, 接手人同步修复)

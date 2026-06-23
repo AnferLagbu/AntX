@@ -52,6 +52,45 @@ const HPD_STATUS_REG_OFFSET: usize = 0x038;
 const HPD_STATUS_BIT: u8 = 0x01;
 
 // ============================================================================
+// HDMI 像素时钟配置
+// ============================================================================
+//
+// HDMI 像素时钟 (TMDS clock) 由 HDMI 控制器内部 PLL 从参考时钟派生.
+// 不同厂商 PLL 接口差异极大:
+//
+// - Intel IGP (IBX/HSW/SKL): DPLL (Display PLL) 通过 PCH transcoder, 内部 MMIO 寄存器
+// - AMD DCN: DENTIST clock generator + DISPCLK
+// - Synopsys DesignWare HDMI: phy_clock + tmds_clock 寄存器
+// - QEMU Bochs DISPI: 不使用像素时钟寄存器 (走 index/data port I/O)
+//
+// 本实装采用 vendor-neutral 乘法/除法寄存器抽象 (mul/div pair):
+// `pixel_clock = pclk_base_khz * mul / div`
+//
+// 其中:
+// - `HDMI_PCLK_BASE_KHZ`: 参考时钟 (默认 27000 kHz = 27 MHz, HDMI 规范标准)
+// - mul / div: 8-bit 整数, 0 视作 1 (避免除零)
+//
+// 实际厂商硬件可通过 [`HdmiController::new_with_iomem_pixel_clock`] 指定自家
+// base/mul/div 寄存器偏移 (如有不同), 或完全绕过本抽象直接配置 PLL.
+
+/// HDMI 像素时钟基础参考频率 (kHz)。
+///
+/// 27 MHz 是 HDMI 规范标准参考时钟 (BCH / TCLK);
+/// 部分硬件 (e.g. AMD) 使用 100 MHz 参考, 此时通过 [`HdmiController::new_with_iomem_pixel_clock`]
+/// 指定自定义 base 寄存器即可。
+const HDMI_PCLK_BASE_KHZ: u32 = 27_000;
+
+/// HDMI 像素时钟乘法寄存器默认偏移 (8-bit)。
+///
+/// 实际写入值 = `mul` (1..=255, 0 视作 1)。
+const HDMI_PCLK_MUL_REG_OFFSET: usize = 0x060;
+
+/// HDMI 像素时钟除法寄存器默认偏移 (8-bit)。
+///
+/// 实际写入值 = `div` (1..=255, 0 视作 1)。
+const HDMI_PCLK_DIV_REG_OFFSET: usize = 0x064;
+
+// ============================================================================
 // DDC (Display Data Channel) — HDMI I2C 主机
 // ============================================================================
 //
@@ -672,6 +711,75 @@ unsafe fn read_edid_block_via_ddc(
 }
 
 // ============================================================================
+// HDMI 像素时钟辅助函数
+// ============================================================================
+
+/// 从目标像素时钟 (kHz) 计算 mul/div 寄存器值。
+///
+/// 给定参考时钟 `base_khz`, 寻找满足 `base * mul / div ≈ target_khz` 的
+/// 8-bit mul/div 对 (mul, div ∈ 1..=255).
+///
+/// 算法: 贪心搜索 `div ∈ 1..=16` (HDMI 控制器 PLL 典型范围), 选取
+/// |base * mul / div - target| 最小的 (mul, div) 对.
+///
+/// 返回 `(mul, div)`; 写入寄存器时 mul/div == 0 视作 1.
+///
+/// # 示例
+///
+/// - target=148500 kHz (1080p60), base=27000 kHz:
+///   - div=1: mul=6 → 162000 kHz (误差 13500)
+///   - div=2: mul=11 → 148500 kHz (误差 0) ✓
+///   返回 (11, 2)。
+///
+/// 这是 HDMI 控制器最常用的 PLL 配置; 真实硬件如需更精确算法 (e.g. N/M/frac)
+/// 应通过 vendor 自定义路径接管, 不走本函数。
+fn compute_pixel_clock_mul_div(target_khz: u32, base_khz: u32) -> (u8, u8) {
+    if target_khz == 0 || base_khz == 0 {
+        return (1, 1);
+    }
+    let mut best = (1u8, 1u8);
+    let mut best_err: u32 = u32::MAX;
+    for div in 1u32..=16 {
+        // mul = round(target * div / base), 避免溢出
+        let mul = target_khz
+            .saturating_mul(div)
+            .saturating_add(base_khz / 2)
+            / base_khz;
+        if (1..=255).contains(&mul) {
+            let actual = base_khz * mul / div;
+            let err = actual.abs_diff(target_khz);
+            if err < best_err {
+                best_err = err;
+                best = (mul as u8, div as u8);
+                if err == 0 {
+                    break; // 找到精确匹配, 提前退出
+                }
+            }
+        }
+    }
+    best
+}
+
+/// 配置 HDMI 像素时钟 PLL (mul/div 寄存器)。
+///
+/// 计算 `mul = round(target / base)` 并写入对应寄存器.
+///
+/// # Safety
+/// 调用方必须保证:
+/// - `iomem` 已映射到有效 HDMI 控制器 MMIO 区域
+/// - `pclk_mul_reg_offset + 1 <= iomem.len()` 且 `pclk_div_reg_offset + 1 <= iomem.len()`
+unsafe fn configure_hdmi_pixel_clock(
+    iomem: &IoMem,
+    pclk_mul_reg_offset: usize,
+    pclk_div_reg_offset: usize,
+    target_khz: u32,
+) {
+    let (mul, div) = compute_pixel_clock_mul_div(target_khz, HDMI_PCLK_BASE_KHZ);
+    iomem.write_u8(pclk_mul_reg_offset, mul);
+    iomem.write_u8(pclk_div_reg_offset, div);
+}
+
+// ============================================================================
 // HDMI 控制器
 // ============================================================================
 
@@ -687,6 +795,10 @@ pub struct HdmiController {
     /// 不同厂商 HDMI 控制器偏移量不同; 默认使用通用 DDC 偏移, 调用方可通过
     /// `new_with_iomem_offset` 指定自家硬件偏移。
     hpd_reg_offset: usize,
+    /// 像素时钟乘法寄存器偏移 (8-bit)。
+    pclk_mul_reg_offset: usize,
+    /// 像素时钟除法寄存器偏移 (8-bit)。
+    pclk_div_reg_offset: usize,
     /// EDID数据
     edid: Option<Edid>,
     /// 当前视频模式
@@ -712,6 +824,8 @@ impl HdmiController {
         Self {
             iomem: None,
             hpd_reg_offset: HPD_STATUS_REG_OFFSET,
+            pclk_mul_reg_offset: HDMI_PCLK_MUL_REG_OFFSET,
+            pclk_div_reg_offset: HDMI_PCLK_DIV_REG_OFFSET,
             edid: None,
             current_mode: None,
             connected: false,
@@ -734,6 +848,8 @@ impl HdmiController {
         Self {
             iomem: Some(iomem),
             hpd_reg_offset,
+            pclk_mul_reg_offset: HDMI_PCLK_MUL_REG_OFFSET,
+            pclk_div_reg_offset: HDMI_PCLK_DIV_REG_OFFSET,
             edid: None,
             current_mode: None,
             connected: false,
@@ -749,6 +865,34 @@ impl HdmiController {
     /// 同 [`HdmiController::new_with_iomem`], 默认偏移见 [`HPD_STATUS_REG_OFFSET`].
     pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self {
         Self::new_with_iomem(iomem, HPD_STATUS_REG_OFFSET)
+    }
+
+    /// 创建 HDMI 控制器实例 (真实硬件, 含自定义像素时钟寄存器偏移)。
+    ///
+    /// 用于厂商硬件 mul/div 寄存器偏移与默认不同的情况 (e.g. AMD DCN
+    /// 使用 DISPCLK 而非独立 mul/div pair).
+    ///
+    /// # Safety
+    ///
+    /// 同 [`HdmiController::new_with_iomem`], 额外要求:
+    /// - `pclk_mul_reg_offset + 1 <= iomem.len()` 且 `pclk_div_reg_offset + 1 <= iomem.len()`
+    pub unsafe fn new_with_iomem_pixel_clock(
+        iomem: IoMem,
+        hpd_reg_offset: usize,
+        pclk_mul_reg_offset: usize,
+        pclk_div_reg_offset: usize,
+    ) -> Self {
+        Self {
+            iomem: Some(iomem),
+            hpd_reg_offset,
+            pclk_mul_reg_offset,
+            pclk_div_reg_offset,
+            edid: None,
+            current_mode: None,
+            connected: false,
+            info: DeviceInfo::new("hdmi", DeviceType::Other),
+            initialized: false,
+        }
     }
 
     /// 检测热插拔。
@@ -824,10 +968,27 @@ impl HdmiController {
             return Err(DriverError::DeviceNotFound);
         }
 
-        // TODO(TRACK-1BDEF6): 配置HDMI控制器寄存器
-        // 1. 设置像素时钟
-        // 2. 配置时序参数
-        // 3. 设置同步信号极性
+        // DISPLAY-2.3a: 第 1 步 - 设置像素时钟
+        //
+        // IoMem Some → 真实硬件路径: 写入 mul/div 寄存器配置 PLL
+        // IoMem None → QEMU/Bochs fallback: 仅记录 mode, 不写寄存器
+        if let Some(iomem) = &self.iomem {
+            // SAFETY: `new_with_iomem` / `new_with_iomem_pixel_clock` 构造时调用方
+            // 已保证 `pclk_mul_reg_offset + 1 <= iomem.len()` 且
+            // `pclk_div_reg_offset + 1 <= iomem.len()`, 写 1 字节落在 IoMem 边界内.
+            unsafe {
+                configure_hdmi_pixel_clock(
+                    iomem,
+                    self.pclk_mul_reg_offset,
+                    self.pclk_div_reg_offset,
+                    mode.pixel_clock_khz,
+                );
+            }
+        }
+
+        // TODO(TRACK-1BDEF6): 第 2-3 步 (DISPLAY-2.3b / 2.3c)
+        // 2. 配置时序参数 (H/V total/active)
+        // 3. 设置同步信号极性 + TMDS 输出使能
 
         self.current_mode = Some(mode);
         Ok(())
@@ -1019,6 +1180,69 @@ mod tests {
         let mut ctrl = HdmiController::new(0xFE000000);
         // 不调用 detect_hot_plug, connected 保持 false
         let result = ctrl.read_edid();
+        assert!(matches!(result, Err(DriverError::DeviceNotFound)));
+    }
+
+    #[test]
+    fn test_compute_pixel_clock_mul_div_1080p60() {
+        // 1080p60 像素时钟 = 148500 kHz, base = 27000 kHz.
+        // 期望: mul=11, div=2 (精确匹配, 0 误差).
+        let (mul, div) = compute_pixel_clock_mul_div(148_500, 27_000);
+        assert_eq!((mul, div), (11, 2), "1080p60 mul/div 必须精确");
+        let actual = 27_000 * mul as u32 / div as u32;
+        assert_eq!(actual, 148_500, "实际像素时钟必须精确匹配");
+    }
+
+    #[test]
+    fn test_compute_pixel_clock_mul_div_4k30() {
+        // 4K30 (3840x2160@30) 像素时钟 ≈ 297000 kHz, base = 27000 kHz.
+        // 期望: mul=11, div=1 (297000 kHz) 或 mul=22, div=2 (同).
+        let (mul, div) = compute_pixel_clock_mul_div(297_000, 27_000);
+        let actual = 27_000 * mul as u32 / div as u32;
+        // 误差必须 < 1% (2970 kHz).
+        let err = actual.abs_diff(297_000);
+        assert!(err < 2970, "4K30 像素时钟误差必须 < 1%: actual={}, err={}", actual, err);
+    }
+
+    #[test]
+    fn test_compute_pixel_clock_mul_div_zero_target() {
+        // 边界: target = 0 或 base = 0 必须返回 (1, 1) (避免除零).
+        assert_eq!(compute_pixel_clock_mul_div(0, 27_000), (1, 1));
+        assert_eq!(compute_pixel_clock_mul_div(148_500, 0), (1, 1));
+        assert_eq!(compute_pixel_clock_mul_div(0, 0), (1, 1));
+    }
+
+    #[test]
+    fn test_set_video_mode_fallback_no_iomem() {
+        // 无 IoMem fallback: set_video_mode 不写寄存器, 仅记录 mode.
+        let mut ctrl = HdmiController::new(0xFE000000);
+        ctrl.detect_hot_plug();
+        let mode = VideoMode {
+            width: 1920,
+            height: 1080,
+            refresh_rate: 60,
+            pixel_clock_khz: 148_500,
+            flags: VideoModeFlags::default(),
+        };
+        ctrl.set_video_mode(mode).expect("fallback 必须成功");
+        let current = ctrl.get_current_mode().expect("mode 必须已记录");
+        assert_eq!(current.width, 1920);
+        assert_eq!(current.height, 1080);
+        assert_eq!(current.pixel_clock_khz, 148_500);
+    }
+
+    #[test]
+    fn test_set_video_mode_without_hpd_returns_device_not_found() {
+        // 未检测 HPD 时 set_video_mode 应返回 DeviceNotFound.
+        let mut ctrl = HdmiController::new(0xFE000000);
+        let mode = VideoMode {
+            width: 1920,
+            height: 1080,
+            refresh_rate: 60,
+            pixel_clock_khz: 148_500,
+            flags: VideoModeFlags::default(),
+        };
+        let result = ctrl.set_video_mode(mode);
         assert!(matches!(result, Err(DriverError::DeviceNotFound)));
     }
 }
