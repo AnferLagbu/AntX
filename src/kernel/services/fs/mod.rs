@@ -22,6 +22,7 @@ pub mod ramfs;
 pub mod ramfs_core;
 /// T6-9: VFS 公共类型 (原 framework/fs/vfs/types.rs)
 pub mod vfs_types;
+pub mod vfs_poll_policy;
 pub mod devfs;
 pub mod procfs;
 pub mod procfs_core;

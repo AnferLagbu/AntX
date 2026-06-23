@@ -42,6 +42,10 @@ use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::ipc::{WaitQueue, WaitQueueItem};
+use crate::kernel::framework::fs::vfs_poll_trait::{
+    VfsPollContext, current_vfs_poll_policy, VfsPollPolicyRef,
+    EPOLLIN as EPOLLIN_RE, EPOLLOUT as EPOLLOUT_RE, EPOLLHUP as EPOLLHUP_RE, EPOLLERR as EPOLLERR_RE,
+};
 
 // ============================================================================
 // epoll 常量
@@ -341,6 +345,17 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
 /// 复杂度 O(N×M), N = epoll 实例数, M = 每个实例的 interest_list 大小.
 /// 单实例 fd 数量受 maxevents 限制, 性能可接受.
 ///
+/// # REVAL-6.2 拆分
+///
+/// epoll_pwake 本身是**机制** (机制层职责):
+/// - 遍历所有 epoll 实例
+/// - 找到包含 fd 的实例
+/// - 唤醒 wait_queue 中的等待者
+///
+/// 策略层职责 (抽到 `enqueue_ready_for_fd`):
+/// - 决策 revents (复用 `check_fd_ready`)
+/// - 决策 dedup (避免 ready_list 重复)
+///
 /// # Safety
 ///
 /// - 必须在持有 fd_table 锁的 VFS 路径外调用 (避免锁顺序倒置)
@@ -349,45 +364,61 @@ pub fn epoll_pwake(fd: i32) {
     let mut instances = EPOLL_INSTANCES.lock();
 
     for i in 0..instances.len() {
-        // 检查 interest_list 是否包含该 fd
-        let mut fd_found = false;
-        for item in &instances[i].interest_list {
-            if item.fd == fd {
-                fd_found = true;
-                break;
-            }
-        }
-        if !fd_found {
+        // 机制: 检查 interest_list 是否包含该 fd
+        if !instance_watches_fd(&instances[i], fd) {
             continue;
         }
 
-        // 重新扫描, 把该 fd 就绪事件加入 ready_list
-        let item_count = instances[i].interest_list.len();
-        for j in 0..item_count {
-            if instances[i].interest_list[j].fd == fd {
-                let events = instances[i].interest_list[j].events;
-                let data = instances[i].interest_list[j].data;
-                let revents = check_fd_ready(fd, events);
-                if revents != 0 {
-                    // 避免重复添加: 检查 ready_list
-                    let already = instances[i].ready_list.iter().any(|e| e.data == data);
-                    if !already {
-                        instances[i].ready_list.push(EpollEvent {
-                            events: revents,
-                            data,
-                        });
-                    }
-                }
-                break;
-            }
-        }
+        // 策略: 把该 fd 就绪事件加入 ready_list (revents + dedup)
+        enqueue_ready_for_fd(&mut instances[i], fd);
 
-        // 唤醒 wait_queue 中的所有等待者
+        // 机制: 唤醒 wait_queue 中的所有等待者
         while let Some(item) = instances[i].wait_queue.wake_one() {
-            // 唤醒线程: 加入就绪队列
             crate::kernel::framework::proc::scheduler_unblock(item.tid);
         }
     }
+}
+
+/// 机制: 检查 epoll 实例是否在监控指定 fd
+///
+/// REVAL-6.2: 从 epoll_pwake 提取, 保持纯函数特性 (0 unsafe, 无副作用).
+#[inline]
+fn instance_watches_fd(instance: &EpollInstance, fd: i32) -> bool {
+    instance.interest_list.iter().any(|item| item.fd == fd)
+}
+
+/// 策略: 把 fd 的就绪事件加入 epoll 实例的 ready_list
+///
+/// REVAL-6.2: 从 epoll_pwake 提取, 封装:
+/// - revents 计算 (走 check_fd_ready → VfsPollPolicy)
+/// - dedup 检查 (避免同一 fd 重复入队, 与 edge-trigger 配合)
+/// - 一次性 (oneshot) 标记
+///
+/// 返回: 是否成功入队 (true = 新增, false = 重复跳过)
+fn enqueue_ready_for_fd(instance: &mut EpollInstance, fd: i32) -> bool {
+    // 找到该 fd 在 interest_list 中的位置
+    let pos = match instance.interest_list.iter().position(|item| item.fd == fd) {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let events = instance.interest_list[pos].events;
+    let data = instance.interest_list[pos].data;
+
+    // 策略 1: 决策 revents (委托 VfsPollPolicy)
+    let revents = check_fd_ready(fd, events);
+    if revents == 0 {
+        return false;
+    }
+
+    // 策略 2: dedup (避免 ready_list 重复)
+    if instance.ready_list.iter().any(|e| e.data == data) {
+        return false;
+    }
+
+    // 入队
+    instance.ready_list.push(EpollEvent { events: revents, data });
+    true
 }
 
 // ============================================================================
@@ -396,12 +427,13 @@ pub fn epoll_pwake(fd: i32) {
 
 /// 检查 fd 是否就绪 (完整集成 VFS)
 ///
-/// 根据 fd 的 file_type 推断真实事件, 不再返回伪就绪.
-///   * 无效 fd             → EPOLLERR | EPOLLHUP
-///   * file_type=File/Empty → EPOLLIN | EPOLLOUT (ramfs 内存常驻)
-///   * file_type=Dir        → EPOLLIN (读目录项)
-///   * file_type=Dev        → EPOLLHUP (设备节点无可读字节流, 需驱动层注册)
-///   * file_type=Symlink    → EPOLLIN | EPOLLHUP
+/// REVAL-6.1: 4 种 VFS file_type → events 位映射改走 `VfsPollPolicy` trait dispatch
+/// (services/fs/vfs_poll_policy.rs 的 `StandardVfsPollPolicy`).
+/// 未注册策略时使用 `VfsPollPolicyRef::Fallback` 行为, 与原硬编码一致.
+///
+/// 仍然在 framework 处理 (因为这些是 syscall 层的特殊 fd):
+///   - eventfd/signalfd/timerfd: 框架内部状态
+///   - VFS fd: 委托给 VfsPollPolicy
 ///
 /// 与 user 事件掩码做 AND 运算, 只报告 user 关心的位.
 fn check_fd_ready(fd: i32, events: u32) -> u32 {
@@ -423,7 +455,7 @@ fn check_fd_ready(fd: i32, events: u32) -> u32 {
         return raw & events;
     }
 
-    // 4. VFS fd 空间
+    // 4. VFS fd 空间 — REVAL-6.1: 委托给 VfsPollPolicy
     use crate::kernel::framework::fs::VFS_MANAGER;
     use crate::kernel::framework::fs::VfsFileType;
 
@@ -438,17 +470,12 @@ fn check_fd_ready(fd: i32, events: u32) -> u32 {
         }
     };
 
-    // 无效 fd: 报告错误 + 挂断
-    let raw_revents = if !valid {
-        EPOLLERR | EPOLLHUP
-    } else {
-        match VfsFileType::from_u8(file_type) {
-            VfsFileType::File => EPOLLIN | EPOLLOUT,
-            VfsFileType::Dir => EPOLLIN,
-            VfsFileType::Dev => EPOLLHUP,
-            VfsFileType::Symlink => EPOLLIN | EPOLLHUP,
-        }
+    // REVAL-6.1: 通过 VfsPollPolicy trait dispatch 决策
+    let ctx = VfsPollContext {
+        valid,
+        file_type: VfsFileType::from_u8(file_type),
     };
+    let raw_revents = current_vfs_poll_policy().events_for(ctx);
 
     // 只报告 user 关心的位
     raw_revents & events

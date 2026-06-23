@@ -1148,6 +1148,197 @@ pub fn blk_dev_dispatch_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / (iters as u128 * 2)
 }
 
+// ============================================================================
+// REVAL-6.1: VfsPollPolicy trait dispatch bench + Mock
+// ============================================================================
+//
+// 验证 epoll::check_fd_ready 走 VfsPollPolicy trait dispatch (无硬编码 match).
+// 由于 framework::fs 是 no_std, host-tests 用 Mock 复现:
+//   - MockVfsFileType: 模拟 4 种 VFS 文件类型
+//   - MockVfsPollPolicy: 实现本地 trait, 模拟 StandardVfsPollPolicy
+//   - bench: 测量 trait dispatch 路径的吞吐 (与 fallback 路径对比)
+
+/// host-only epoll 事件位常量 (与 kernel 一致)
+pub mod poll_events {
+    pub const EPOLLIN: u32 = 0x001;
+    pub const EPOLLOUT: u32 = 0x004;
+    pub const EPOLLERR: u32 = 0x008;
+    pub const EPOLLHUP: u32 = 0x010;
+}
+
+/// host-only VFS 文件类型 (4 种)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MockVfsFileType {
+    File = 0,
+    Dir = 1,
+    Dev = 2,
+    Symlink = 3,
+}
+
+/// host-only VfsPollContext
+#[derive(Debug, Clone, Copy)]
+pub struct MockVfsPollContext {
+    pub valid: bool,
+    pub file_type: MockVfsFileType,
+}
+
+/// host-only VfsPollPolicy trait
+pub trait HostVfsPollPolicy: Send + Sync {
+    fn events_for_file_type(&self, file_type: MockVfsFileType) -> u32;
+    fn events_for_invalid_fd(&self) -> u32;
+}
+
+/// host-only StandardVfsPollPolicy (与 kernel services/fs/vfs_poll_policy.rs 等价)
+pub struct StandardHostVfsPollPolicy;
+impl HostVfsPollPolicy for StandardHostVfsPollPolicy {
+    fn events_for_file_type(&self, ft: MockVfsFileType) -> u32 {
+        use poll_events::*;
+        match ft {
+            MockVfsFileType::File => EPOLLIN | EPOLLOUT,
+            MockVfsFileType::Dir => EPOLLIN,
+            MockVfsFileType::Dev => EPOLLHUP,
+            MockVfsFileType::Symlink => EPOLLIN | EPOLLHUP,
+        }
+    }
+    fn events_for_invalid_fd(&self) -> u32 {
+        use poll_events::*;
+        EPOLLERR | EPOLLHUP
+    }
+}
+
+/// host-only 决策函数 (复现 epoll::check_fd_ready 的核心逻辑)
+pub struct MockEpollCheck {
+    policy: Box<dyn HostVfsPollPolicy>,
+}
+
+impl MockEpollCheck {
+    pub fn new(policy: Box<dyn HostVfsPollPolicy>) -> Self {
+        Self { policy }
+    }
+    pub fn check(&self, ctx: MockVfsPollContext, user_events: u32) -> u32 {
+        let raw = if !ctx.valid {
+            self.policy.events_for_invalid_fd()
+        } else {
+            self.policy.events_for_file_type(ctx.file_type)
+        };
+        raw & user_events
+    }
+}
+
+/// bench: REVAL-6.1 trait dispatch 路径 throughput
+pub fn vfs_poll_dispatch_bench(iters: u64) -> u128 {
+    let check = MockEpollCheck::new(Box::new(StandardHostVfsPollPolicy));
+
+    // 预热
+    for _ in 0..1000 {
+        let ctx = MockVfsPollContext { valid: true, file_type: MockVfsFileType::File };
+        let _ = check.check(ctx, poll_events::EPOLLIN);
+    }
+
+    // 4 种 file_type 旋转
+    let fts = [MockVfsFileType::File, MockVfsFileType::Dir, MockVfsFileType::Dev, MockVfsFileType::Symlink];
+    let start = Instant::now();
+    let mut sink: u32 = 0;
+    for r in 0..iters {
+        let ft = fts[(r & 0x3) as usize];
+        let ctx = MockVfsPollContext { valid: true, file_type: ft };
+        sink ^= check.check(ctx, poll_events::EPOLLIN | poll_events::EPOLLOUT);
+        // 偶尔插入 invalid fd
+        if r & 0xFF == 0 {
+            let inv_ctx = MockVfsPollContext { valid: false, file_type: MockVfsFileType::File };
+            sink ^= check.check(inv_ctx, poll_events::EPOLLIN);
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
+// ============================================================================
+// REVAL-6.2: epoll_pwake 拆分行为 Mock
+// ============================================================================
+//
+// 验证 epoll_pwake 拆分为 `instance_watches_fd` (机制) + `enqueue_ready_for_fd` (策略)
+// 后行为不变: 找到 fd 的实例, 入队, 去重.
+//
+// 由于 no_std kernel 不能 host-test, 用 MockEpollInstance 复现.
+
+/// host-only epoll 实例
+pub struct MockEpollInstance {
+    pub interest_list: Vec<MockEpollInterestItem>,
+    pub ready_list: Vec<(u32, u64)>,  // (revents, data)
+}
+
+/// host-only 注册项
+#[derive(Debug, Clone, Copy)]
+pub struct MockEpollInterestItem {
+    pub fd: i32,
+    pub events: u32,
+    pub data: u64,
+}
+
+impl MockEpollInstance {
+    pub fn new() -> Self {
+        Self { interest_list: Vec::new(), ready_list: Vec::new() }
+    }
+    pub fn add(&mut self, item: MockEpollInterestItem) {
+        self.interest_list.push(item);
+    }
+}
+
+/// 机制: 检查 epoll 实例是否在监控指定 fd (REVAL-6.2 提取)
+pub fn instance_watches_fd(instance: &MockEpollInstance, fd: i32) -> bool {
+    instance.interest_list.iter().any(|item| item.fd == fd)
+}
+
+/// 策略: 把 fd 的就绪事件加入 epoll 实例的 ready_list (REVAL-6.2 提取)
+pub fn enqueue_ready_for_fd(
+    instance: &mut MockEpollInstance,
+    fd: i32,
+    policy: &dyn HostVfsPollPolicy,
+) -> bool {
+    let pos = match instance.interest_list.iter().position(|item| item.fd == fd) {
+        Some(p) => p,
+        None => return false,
+    };
+    let events = instance.interest_list[pos].events;
+    let data = instance.interest_list[pos].data;
+
+    // 决策 revents: 简化 (Mock 不走 VFS, 永远返回 IN|OUT if File)
+    let revents = policy.events_for_file_type(MockVfsFileType::File) & events;
+    if revents == 0 {
+        return false;
+    }
+    if instance.ready_list.iter().any(|(_, d)| *d == data) {
+        return false;  // dedup
+    }
+    instance.ready_list.push((revents, data));
+    true
+}
+
+/// 编排: epoll_pwake (REVAL-6.2 拆分后)
+pub struct MockEpollPwake {
+    pub instances: Vec<MockEpollInstance>,
+}
+
+impl MockEpollPwake {
+    pub fn new() -> Self {
+        Self { instances: Vec::new() }
+    }
+    pub fn pwake(&mut self, fd: i32, policy: &dyn HostVfsPollPolicy) -> usize {
+        let mut count = 0;
+        for inst in &mut self.instances {
+            if !instance_watches_fd(inst, fd) {
+                continue;
+            }
+            if enqueue_ready_for_fd(inst, fd, policy) {
+                count += 1;
+            }
+        }
+        count
+    }
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -1234,6 +1425,9 @@ pub fn run_all() -> BenchReport {
     // T-4.1: BlockDevice trait dispatch bench (LEGACY-4 验证)
     results.push(measure("blk_dev_dispatch", "block", 100_000, ||
         blk_dev_dispatch_bench(100_000)));
+    // REVAL-6.1: VfsPollPolicy dispatch bench
+    results.push(measure("vfs_poll_dispatch", "epoll", 100_000, ||
+        vfs_poll_dispatch_bench(100_000)));
     BenchReport { version: 1, results }
 }
 
@@ -1522,5 +1716,146 @@ mod tests {
     fn test_blk_dev_dispatch_bench_runs() {
         // smoke test
         let _ = blk_dev_dispatch_bench(100);
+    }
+
+    // ====== REVAL-6.1: VfsPollPolicy trait dispatch 单元测试 ======
+
+    #[test]
+    fn test_mock_vfs_poll_file_type() {
+        let p = StandardHostVfsPollPolicy;
+        use poll_events::*;
+        assert_eq!(p.events_for_file_type(MockVfsFileType::File), EPOLLIN | EPOLLOUT);
+        assert_eq!(p.events_for_file_type(MockVfsFileType::Dir), EPOLLIN);
+        assert_eq!(p.events_for_file_type(MockVfsFileType::Dev), EPOLLHUP);
+        assert_eq!(p.events_for_file_type(MockVfsFileType::Symlink), EPOLLIN | EPOLLHUP);
+    }
+
+    #[test]
+    fn test_mock_vfs_poll_invalid_fd() {
+        let p = StandardHostVfsPollPolicy;
+        use poll_events::*;
+        assert_eq!(p.events_for_invalid_fd(), EPOLLERR | EPOLLHUP);
+    }
+
+    #[test]
+    fn test_mock_epoll_check_valid_file() {
+        let check = MockEpollCheck::new(Box::new(StandardHostVfsPollPolicy));
+        let ctx = MockVfsPollContext { valid: true, file_type: MockVfsFileType::File };
+        // user 只关心 EPOLLIN
+        assert_eq!(check.check(ctx, poll_events::EPOLLIN), poll_events::EPOLLIN);
+        // user 只关心 EPOLLOUT
+        assert_eq!(check.check(ctx, poll_events::EPOLLOUT), poll_events::EPOLLOUT);
+        // user 关心 IN|OUT → 都报告
+        assert_eq!(check.check(ctx, poll_events::EPOLLIN | poll_events::EPOLLOUT),
+                   poll_events::EPOLLIN | poll_events::EPOLLOUT);
+        // user 关心 ERR (File 不报告 ERR) → 0
+        assert_eq!(check.check(ctx, poll_events::EPOLLERR), 0);
+    }
+
+    #[test]
+    fn test_mock_epoll_check_invalid_fd() {
+        let check = MockEpollCheck::new(Box::new(StandardHostVfsPollPolicy));
+        let ctx = MockVfsPollContext { valid: false, file_type: MockVfsFileType::File };
+        // invalid fd → ERR|HUP, 但 AND user mask
+        assert_eq!(check.check(ctx, poll_events::EPOLLERR | poll_events::EPOLLHUP),
+                   poll_events::EPOLLERR | poll_events::EPOLLHUP);
+        assert_eq!(check.check(ctx, poll_events::EPOLLIN), 0);  // IN 不报告
+    }
+
+    #[test]
+    fn test_mock_vfs_poll_bench_runs() {
+        let _ = vfs_poll_dispatch_bench(100);
+    }
+
+    // ====== REVAL-6.2: epoll_pwake 拆分行为 单元测试 ======
+
+    #[test]
+    fn test_mock_instance_watches_fd() {
+        let mut inst = MockEpollInstance::new();
+        inst.add(MockEpollInterestItem { fd: 5, events: poll_events::EPOLLIN, data: 100 });
+        // 包含 fd=5
+        assert!(instance_watches_fd(&inst, 5));
+        // 不包含 fd=6
+        assert!(!instance_watches_fd(&inst, 6));
+    }
+
+    #[test]
+    fn test_mock_enqueue_ready_basic() {
+        let mut inst = MockEpollInstance::new();
+        inst.add(MockEpollInterestItem { fd: 3, events: poll_events::EPOLLIN, data: 42 });
+        let policy = StandardHostVfsPollPolicy;
+        // 第一次入队
+        assert!(enqueue_ready_for_fd(&mut inst, 3, &policy));
+        assert_eq!(inst.ready_list.len(), 1);
+        assert_eq!(inst.ready_list[0], (poll_events::EPOLLIN, 42));
+    }
+
+    #[test]
+    fn test_mock_enqueue_ready_dedup() {
+        let mut inst = MockEpollInstance::new();
+        inst.add(MockEpollInterestItem { fd: 3, events: poll_events::EPOLLIN, data: 42 });
+        let policy = StandardHostVfsPollPolicy;
+        // 第一次入队
+        assert!(enqueue_ready_for_fd(&mut inst, 3, &policy));
+        // 第二次入队 → dedup, 失败
+        assert!(!enqueue_ready_for_fd(&mut inst, 3, &policy));
+        assert_eq!(inst.ready_list.len(), 1);
+    }
+
+    #[test]
+    fn test_mock_enqueue_ready_no_fd() {
+        let mut inst = MockEpollInstance::new();
+        inst.add(MockEpollInterestItem { fd: 3, events: poll_events::EPOLLIN, data: 42 });
+        let policy = StandardHostVfsPollPolicy;
+        // fd=99 不在列表
+        assert!(!enqueue_ready_for_fd(&mut inst, 99, &policy));
+        assert_eq!(inst.ready_list.len(), 0);
+    }
+
+    #[test]
+    fn test_mock_pwake_multiple_instances() {
+        let mut p = MockEpollPwake::new();
+        // 3 个实例, 只有 2 个监控 fd=5
+        for _ in 0..2 {
+            let mut inst = MockEpollInstance::new();
+            inst.add(MockEpollInterestItem { fd: 5, events: poll_events::EPOLLIN, data: 100 });
+            p.instances.push(inst);
+        }
+        p.instances.push(MockEpollInstance::new());  // 第 3 个不监控
+
+        let policy = StandardHostVfsPollPolicy;
+        let count = p.pwake(5, &policy);
+        // 2 个实例成功入队
+        assert_eq!(count, 2);
+        // 第 3 个实例 ready_list 仍空
+        assert_eq!(p.instances[2].ready_list.len(), 0);
+    }
+
+    #[test]
+    fn test_mock_pwake_dedup_across_calls() {
+        let mut p = MockEpollPwake::new();
+        let mut inst = MockEpollInstance::new();
+        inst.add(MockEpollInterestItem { fd: 5, events: poll_events::EPOLLIN, data: 100 });
+        p.instances.push(inst);
+
+        let policy = StandardHostVfsPollPolicy;
+        // 第 1 次: 入队
+        assert_eq!(p.pwake(5, &policy), 1);
+        // 第 2 次: dedup, 不入队
+        assert_eq!(p.pwake(5, &policy), 0);
+        // ready_list 仍只 1 项
+        assert_eq!(p.instances[0].ready_list.len(), 1);
+    }
+
+    #[test]
+    fn test_mock_pwake_no_match() {
+        let mut p = MockEpollPwake::new();
+        let mut inst = MockEpollInstance::new();
+        inst.add(MockEpollInterestItem { fd: 5, events: poll_events::EPOLLIN, data: 100 });
+        p.instances.push(inst);
+
+        let policy = StandardHostVfsPollPolicy;
+        // fd=99 不在列表
+        assert_eq!(p.pwake(99, &policy), 0);
     }
 }

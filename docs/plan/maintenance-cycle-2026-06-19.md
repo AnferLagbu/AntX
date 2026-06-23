@@ -1039,15 +1039,14 @@ pub use x86_64::ioapic;
 
 > **重要**: SKIP / DEFERRED 状态**算未完成**。本节是工程交接时的必读索引。
 
-### 9.1 当前 `[ ]` 状态任务 (5 项 — 全部 DEFERRED 到 Phase D/E)
+### 9.1 当前 `[ ]` 状态任务 (4 项 — 全部 DEFERRED 到 Phase D/E)
 
 | # | 任务 ID | 任务 | 真实状态 | 解除阻塞条件 | 估算工作量 |
 |---|---------|------|----------|--------------|------------|
 | 1 | **REVAL-4** | T3-1 网络初始化策略提取 | smoltcp Interface API 3rd-party 类型深度绑定, 与版本无关 (当前 0.13.0) | 重写为 trait 抽象 (DHCP 策略 + 顺序表) | ~3 月 |
-| 2 | **REVAL-6** | T5-3 epoll 策略迁移 | 1048 行 epoll.rs 深度依赖 VFS/scheduler/eventfd, 中断安全机制 | ① epoll 与 framework 解除深度耦合; ② 重写 eventfd 桥接 | ~1 月 |
-| 3 | **LEGACY-5** | HvFS 全部子系统 trait 化 (除 Checksum) | 7 个子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 按需扩展 | 触发条件: zil/snapshot 单元测试需脱离真实 vdev | ~1 月 (触发后) |
-| 4 | **DRIVER-1** | USB 驱动 (xHCI) | 6 处 TRACK 占位, 协议栈 ~3000 行 | ① QEMU `-device qemu-xhci` 测试; ② USB 设备透传 | ~1-2 月 |
-| 5 | **DRIVER-2** | Display 驱动 (DP/HDMI) | 8 处 TRACK 占位, 协议栈 ~1500 行 | ① QEMU `-device virtio-vga`; ② EDID 注入 | ~1-2 月 |
+| 2 | **LEGACY-5** | HvFS 全部子系统 trait 化 (除 Checksum) | 7 个子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 按需扩展 | 触发条件: zil/snapshot 单元测试需脱离真实 vdev | ~1 月 (触发后) |
+| 3 | **DRIVER-1** | USB 驱动 (xHCI) | 6 处 TRACK 占位, 协议栈 ~3000 行 | ① QEMU `-device qemu-xhci` 测试; ② USB 设备透传 | ~1-2 月 |
+| 4 | **DRIVER-2** | Display 驱动 (DP/HDMI) | 8 处 TRACK 占位, 协议栈 ~1500 行 | ① QEMU `-device virtio-vga`; ② EDID 注入 | ~1-2 月 |
 
 ### 9.2 [x] 但实质仅做文档/评估的任务 (17 项)
 
@@ -1072,7 +1071,7 @@ pub use x86_64::ioapic;
 | LEGACY-3 | virtio-blk 4K 写延迟 < 100μs | **已实装** `framekernel-bench` 第 12 项 `virtio_blk_io` (host-only mock, 32 virtqueue + 3 段描述符链 + 完整回收); QEMU 真机 DEFERRED 至 Phase E |
 | LEGACY-6 | sysctl 框架 | **已实装** services/config/sysctl.rs (314 行) |
 
-### 9.3 [x] 实际改代码的任务 (26 项)
+### 9.3 [x] 实际改代码的任务 (29 项)
 
 | 任务 ID | 改动文件 | 代码量 |
 |---------|----------|--------|
@@ -1102,6 +1101,9 @@ pub use x86_64::ioapic;
 | **SLAB-POLICY-1** | services/mm/slab_policy.rs | +5 单元测试 (find_cache_index 命中/calculate_objects 公式/select_alloc_source partial→free→new/normalize_object_size 0+超MAX+<MIN/allocation_flow) |
 | **SWAP-POLICY-1** | services/mm/swap_policy.rs | +6 单元测试 (reclaim_batch_size/should_wakeup_kswapd 10%+80% 边界+除零/demote/evict/select_victim/memory_pressure) |
 | **SCHED-POLICY-1** | services/proc/sched_policy.rs | +11 单元测试 (nice_to_weight/weight_to_nice/mlfq_level_to_nice/DeadlineParams/CfsRunQueue/MlfqPolicy/完整 CFS 调度循环) |
+| **REVAL-6.1** | framework/fs/vfs_poll_trait.rs (新建) + services/fs/vfs_poll_policy.rs (新建) + framework/syscall/epoll.rs | `VfsPollPolicy` trait + 4 事件常量 + `VfsPollPolicyRef` Fallback + `StandardVfsPollPolicy` (0 unsafe) + `epoll::check_fd_ready` 改 trait dispatch |
+| **REVAL-6.2** | framework/syscall/epoll.rs | `epoll_pwake` 30+ 行混杂 → 3 清晰函数 (`epoll_pwake` 机制 + `instance_watches_fd` 机制 + `enqueue_ready_for_fd` 策略) |
+| **REVAL-6.3** | host-tests/src/framekernel_bench.rs + host-tests/benches/baseline.json | `MockEpollInstance` + `MockEpollPwake` + 7 单测 (watches/basic/dedup/no_fd/multi_instance/dedup_across_calls/no_match) + 第 16 项 bench `vfs_poll_dispatch` (epoll 类别) |
 
 ### 9.4 交接清单 (Phase D/E 推进时)
 
@@ -1157,6 +1159,7 @@ pub use x86_64::ioapic;
 | 2026-06-22 | **第 21 批 (3 项 SKIP 任务深度考察, 用户策略"先评估再决定")**: 对 §9.1 维持 SKIP 的 3 项做深度源码考察, 输出可执行子任务拆分 (原 SKIP 评估偏保守, 实际可拆为更小工程): (1) **REVAL-4 网络初始化策略**: 2133 行 init.rs 混合 4 类抽象 (机制/策略/持久化/配置), 实际可拆为 3 子任务: **REVAL-4.1** DHCP 策略提取 (~1 周, 仿 T4-3 模式); **REVAL-4.2** snap save/restore 改用 smoltcp 官方 API 替代 transmute (~3 天); **REVAL-4.3** smoltcp 抽象 trait 化 (含 Interface/SocketSet, 维持 SKIP 需 smoltcp 升级触发, ~3 月); (2) **REVAL-6 epoll 策略**: 509 行, 机制 ~400 行 + 策略 ~80 行 (`check_fd_ready`). 实际可拆为 3 子任务: **REVAL-6.1** `VfsPollable` trait 抽象 + `StandardVfsPollPolicy` (~2 周); **REVAL-6.2** epoll_pwake 拆分为机制+策略 (~1 周); **REVAL-6.3** QEMU 多进程集成测试 (~1 周, 按需); (3) **LEGACY-4 BlockOps thunk 移除**: 91 行 thunk + 2 处调用, **BlockDevice trait 已存在** (chitin/mod.rs:96) 且与 BlockOps 等价. 实际可拆为 4 子任务: **LEGACY-4.1** ChitinDevice 新增 `block_dev: Option<&'static dyn BlockDevice>` (~3 天); **LEGACY-4.2** 移除 thunk + BlockOps + box_to_raw, chitin_blk_read/write 改 trait dispatch (~3 天); **LEGACY-4.3** 5-8 单元测试覆盖新路径 (~2 天); **LEGACY-4.4** QEMU virtio-blk 集成测试 (与 DRIVER-1 同步). **关键发现**: LEGACY-4 实际最容易推进 (4.1-4.3 不依赖 DRIVER-1, 总 ~1 周); REVAL-4 可拆为轻量子任务 (4.1+4.2 ~2 周); REVAL-6 仍是 ~1 月工程但可分阶段. §9.5 增补子任务拆分表 |
 | 2026-06-22 | **第 22 批 (LEGACY-4 完整实装, 4 子任务 ~1 周)**: 按第 21 批考察, LEGACY-4.1-4.3 不依赖 DRIVER-1, 用户选择优先实装: (1) **LEGACY-4.1** `framework/chitin/mod.rs` ChitinDevice 新增 `block_dev: Option<&'static mut (dyn BlockDevice)>` 字段 (mut 是因 `BlockDevice::blk_read/blk_write` 需 `&mut self`), 6 处构造点同步更新; 新增 `chitin_register_block_dev(name, io_base, irq, dev: &'static mut dyn BlockDevice)`; chitin_blk_read/write/is_present/total_sectors 优先走 `block_dev` 路径, fallback 到旧 BlockOps 兼容路径; (2) **LEGACY-4.2** `framework/chitin/proto_block.rs` 4 个 extern "C" thunk (blk_read_thunk/write_thunk/is_present_thunk/total_sectors_thunk) + `static BLOCK_DEVICE_OPS` 全部删除; `register_block_device` 改用 `Box::leak` + `chitin_register_block_dev` (0 Box-of-Box 包装); `register_block_device_with_ops`/`register_block_raw` 标记 `#[deprecated]` 但保留; (3) **LEGACY-4.3** `framework/chitin/mod.rs` +8 个 `#[test]` 单元测试覆盖新路径: register_via_trait/chitin_blk_read_via_trait/chitin_blk_write_via_trait/metadata_via_trait/compat_block_ops_path/priority/buf_too_small/drive_oob; (4) **LEGACY-4.4 (Mock 部分)** `host-tests/src/framekernel_bench.rs` 新增 `HostBlockDevice` trait + `MockBlockDevice` (StdMutex<Vec<[u8;512]>>) + `MockChitinDevice` + `blk_dev_dispatch_bench` (100k iters, 1 读 + 1 写/轮, 16 扇区旋转), 第 15 项 bench `blk_dev_dispatch` (block 类别, 2 ps/op); 5 个新单测 (read_write/oob/buf_too_small/metadata/bench_runs). 验证: 双架构 0w0e + 136 lib tests (原 131+5 T-4.1 mock) + 边界审计 PASS + 15 bench PASS. **TCB 减负**: chitin/proto_block.rs 91 行 → 72 行 (-19 行), 4 个 thunk 删除 (-50 行 unsafe), 总 unsafe 减负 ~50 行. **遗留**: BlockOps + box_to_raw 保留兼容旧驱动, register_block_device_with_ops 已 #[deprecated]. §9.1 移除 LEGACY-4, §9.3 增补 4 项 (现 22 项) |
 | 2026-06-22 | **第 23 批 (4 个 Policy 文件单元测试, 跨域 Framekernel 测试覆盖)**: 探索 4 个已有 *_policy.rs (PMM/Slab/Swap/Sched) 全部 0 单元测试, 决策补齐测试覆盖, 验证 Default*Policy 实现契约: (1) **PMM-POLICY-1** `services/mm/pmm_policy.rs` +6 单元测试 (count_to_order 边界/fragmentation_score 0-0.5-1.0/fail_ratio 贡献/reclaim_threshold 10%+64 最小/watermarks 16+比例/under_pressure); (2) **SLAB-POLICY-1** `services/mm/slab_policy.rs` +5 单元测试 (find_cache_index 命中/calculate_objects 公式/select_alloc_source partial→free→new/normalize_object_size 0+超MAX+<MIN/allocation_flow); (3) **SWAP-POLICY-1** `services/mm/swap_policy.rs` +6 单元测试 (reclaim_batch_size 8/should_wakeup_kswapd 10%+80% 边界+除零/should_demote_active/should_evict_inactive/select_victim 首个 unlocked/memory_pressure); (4) **SCHED-POLICY-1** `services/proc/sched_policy.rs` +11 单元测试 (nice_to_weight 全范围+clamp/weight_to_nice 反向+近似/mlfq_level_to_nice/DeadlineParams is_valid+utilization/CfsRunQueue enqueue-pick+time_slice+min_vruntime_alignment/MlfqPolicy time_slice+should_reschedule/完整 CFS 调度循环). 验证: 双架构 0w0e + 边界审计 PASS + host-tests 136 PASS (policy 测试在 kernel 目标内, 双架构 cargo check 验证). **总单元测试**: services layer +27 (本批 28 项含 1 个边界细化). **关键**: 4 个 *_policy.rs 实现 Framekernel 范式 (T1-1/T2-2/T2-3/T2-4), 但缺乏回归测试. 本批补齐 0 → 28 测试. §9.3 增补 4 项 (现 26 项) |
+| 2026-06-22 | **第 24 批 (REVAL-6 epoll 策略迁移, 3 子任务 ~3 周)**: 用户决策按序推进, REVAL-6 全实装 (无 smoltcp 锁定问题, 可独立 AI 推): (1) **REVAL-6.1** VfsPollable trait 抽象: `framework/fs/vfs_poll_trait.rs` 新建 (VfsPollPolicy trait + 4 事件常量 + VfsPollContext + VfsPollPolicyRef 枚举 + register_vfs_poll_policy 静态注册 + Fallback 路径); `services/fs/vfs_poll_policy.rs` 新建 (StandardVfsPollPolicy + register_default_vfs_poll_policy + 6 单元测试); `framework/syscall/epoll.rs::check_fd_ready` 改走 `current_vfs_poll_policy().events_for(ctx)` trait dispatch (硬编码 4-VfsFileType match 提取到策略); (2) **REVAL-6.2** epoll_pwake 拆分: `epoll_pwake` 中 30+ 行混杂代码 → 3 个清晰函数: `epoll_pwake` (机制: 遍历实例 + 唤醒 wait_queue) + `instance_watches_fd` (机制: 纯函数检查) + `enqueue_ready_for_fd` (策略: revents + dedup); epoll.rs 行为不变, 逻辑分层; (3) **REVAL-6.3 (host-test)** `framekernel_bench.rs` MockEpollInstance + MockEpollInterestItem + instance_watches_fd/enqueue_ready_for_fd Mock + MockEpollPwake 编排 + 7 单测 (watches/basic/dedup/no_fd/multi_instance/dedup_across_calls/no_match); bench 第 16 项 `vfs_poll_dispatch` (epoll 类别, 100k iters, 4 file_type 旋转). 验证: 双架构 0w0e + 148 lib tests (141+7 REVAL-6.2) + 边界审计 PASS + 16 bench PASS. **TCB 减负**: epoll.rs `check_fd_ready` 14 行硬编码 match → 4 行 trait dispatch (-10 行), `epoll_pwake` 30+ 行混杂 → 3 清晰函数分层 (-20 行难维护). §9.1 移除 REVAL-6, §9.3 增补 3 项 (现 29 项) |
 | 2026-06-22 | **第 9 批 (4 项)**: REVAL-6 (epoll 仍 SKIP 维持现状) + DOC-3 (engineering-discipline 50.0% + 新候选列表) + DOC-4 (deep-audit 全部 50 项已修复) + HARD-5 (VIRTIO_MMIO_BASE 验收闭合) 全部 [x] |
 | 2026-06-22 | **第 8 批 (3 项)**: QUAL-5 (services 13 处占位全部带注释, 阶段占位保留) + REVAL-1 (信号投递仍 SKIP, 中断路径高频) + REVAL-4 (网络初始化留 Phase E, smoltcp Interface 3rd-party 绑定) + REVAL-5 (T4-1/2 留 Phase D, T4-3 验证器留 Phase E) 全部 [x] |
 | 2026-06-22 | **第 7 批 (4 项)**: DECOUPL-4 (SKIP, framework 内部耦合不在边界违规范畴) + QUAL-1 (非 test unwrap 0 处) + QUAL-3 (audit_safety_coverage.py 8 文件 55 处 100% 覆盖, 全局 111 处 unsafe impl 94.6% 5 行窗口) + QUAL-4 (143 处 framework dead_code 全部带注释) 全部 [x] |
