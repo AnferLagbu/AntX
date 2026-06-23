@@ -835,6 +835,194 @@ pub fn bpf_verifier_dispatch_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / (iters as u128)
 }
 
+// ============================================================================
+// SYSCTL-2: sysctl register/write bench
+// ============================================================================
+//
+// LEGACY-6 引入 services/config/sysctl.rs (314 行, 0 unsafe, IrqSpinLock + 原子).
+// 由于 services 是 no_std, host-tests 用 Mock 复现等价机制:
+//   - MockSysctlTable: 32 槽位 Option<entry>, 与 services 数组布局一致
+//   - MockSysctlEntry: name + value (i64/u64/bool)
+//   - 锁语义: 用 std::sync::Mutex 模拟 IrqSpinLock (host 不存在中断上下文)
+//   - register / read / write 路径与 services 1:1 对应
+//
+// 性能含义: register + write 路径 lock + lookup + write, 测算法层开销.
+
+/// Mock sysctl 值类型
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MockSysctlValue {
+    Int(i64),
+    UInt(u64),
+    Bool(bool),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MockSysctlKind {
+    Int,
+    UInt,
+    Bool,
+}
+
+pub struct MockSysctlEntry {
+    pub name: &'static str,
+    pub kind: MockSysctlKind,
+    pub int_val: i64,
+    pub uint_val: u64,
+    pub bool_val: bool,
+}
+
+impl MockSysctlEntry {
+    pub const fn new(name: &'static str, kind: MockSysctlKind, val: MockSysctlValue) -> Self {
+        let (int_v, uint_v, bool_v) = match val {
+            MockSysctlValue::Int(v) => (v, 0, false),
+            MockSysctlValue::UInt(v) => (0, v, false),
+            MockSysctlValue::Bool(v) => (0, 0, v),
+        };
+        Self { name, kind, int_val: int_v, uint_val: uint_v, bool_val: bool_v }
+    }
+
+    pub fn read(&self) -> MockSysctlValue {
+        match self.kind {
+            MockSysctlKind::Int => MockSysctlValue::Int(self.int_val),
+            MockSysctlKind::UInt => MockSysctlValue::UInt(self.uint_val),
+            MockSysctlKind::Bool => MockSysctlValue::Bool(self.bool_val),
+        }
+    }
+
+    pub fn write(&mut self, val: MockSysctlValue) -> Result<(), ()> {
+        let k = match val {
+            MockSysctlValue::Int(_) => MockSysctlKind::Int,
+            MockSysctlValue::UInt(_) => MockSysctlKind::UInt,
+            MockSysctlValue::Bool(_) => MockSysctlKind::Bool,
+        };
+        if k != self.kind { return Err(()); }
+        match val {
+            MockSysctlValue::Int(v) => self.int_val = v,
+            MockSysctlValue::UInt(v) => self.uint_val = v,
+            MockSysctlValue::Bool(v) => self.bool_val = v,
+        }
+        Ok(())
+    }
+}
+
+const MOCK_SYSCTL_SLOTS: usize = 32;
+
+pub struct MockSysctlTable {
+    slots: StdMutex<[Option<MockSysctlEntry>; MOCK_SYSCTL_SLOTS]>,
+}
+
+impl MockSysctlTable {
+    pub const fn new() -> Self {
+        // 用 const { None } 数组初始化 (Rust 1.79+)
+        Self {
+            slots: StdMutex::new([const { None }; MOCK_SYSCTL_SLOTS]),
+        }
+    }
+
+    pub fn register(
+        &self,
+        name: &'static str,
+        kind: MockSysctlKind,
+        val: MockSysctlValue,
+    ) -> Result<(), ()> {
+        let mut g = self.slots.lock().unwrap();
+        // 重复检测
+        for s in g.iter() {
+            if let Some(e) = s {
+                if e.name == name { return Err(()); }
+            }
+        }
+        // 找一个空槽
+        for s in g.iter_mut() {
+            if s.is_none() {
+                *s = Some(MockSysctlEntry::new(name, kind, val));
+                return Ok(());
+            }
+        }
+        Err(())
+    }
+
+    pub fn write(&self, name: &str, val: MockSysctlValue) -> Result<(), ()> {
+        let mut g = self.slots.lock().unwrap();
+        for s in g.iter_mut() {
+            if let Some(e) = s {
+                if e.name == name { return e.write(val); }
+            }
+        }
+        Err(())
+    }
+
+    pub fn read(&self, name: &str) -> Option<MockSysctlValue> {
+        let g = self.slots.lock().unwrap();
+        for s in g.iter() {
+            if let Some(e) = s {
+                if e.name == name { return Some(e.read()); }
+            }
+        }
+        None
+    }
+}
+
+/// bench: sysctl register + write 吞吐量
+///
+/// 1 轮 (BATCH) = 16 次 write (启动期 register 在 r==0 完成)
+/// 模拟"启动期注册 + 运行时调参"工作负载
+pub fn sysctl_bench(iters: u64) -> u128 {
+    let table = MockSysctlTable::new();
+    const NODES: usize = 16;
+    const BATCH: u64 = 16;
+
+    // 准备静态名称池 (一次性)
+    use std::sync::OnceLock;
+    static NAMES: OnceLock<Vec<&'static str>> = OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        (0..NODES)
+            .map(|i| Box::leak(format!("sysctl.bench.{}", i).into_boxed_str())
+                as &'static str)
+            .collect()
+    });
+
+    // 启动期: 注册 16 个节点
+    for i in 0..NODES {
+        let kind = match i % 3 {
+            0 => MockSysctlKind::Int,
+            1 => MockSysctlKind::UInt,
+            _ => MockSysctlKind::Bool,
+        };
+        let val = match kind {
+            MockSysctlKind::Int => MockSysctlValue::Int(i as i64),
+            MockSysctlKind::UInt => MockSysctlValue::UInt(i as u64),
+            MockSysctlKind::Bool => MockSysctlValue::Bool(i % 2 == 0),
+        };
+        let _ = table.register(names[i], kind, val);
+    }
+
+    // 主体: 旋转 write 不同节点
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        for i in 0..BATCH {
+            let idx = (i as usize) % NODES;
+            let kind = match idx % 3 {
+                0 => MockSysctlKind::Int,
+                1 => MockSysctlKind::UInt,
+                _ => MockSysctlKind::Bool,
+            };
+            let val = match kind {
+                MockSysctlKind::Int => MockSysctlValue::Int(i as i64 + (r as i64) * 1000),
+                MockSysctlKind::UInt => MockSysctlValue::UInt(i as u64 + r * 1000),
+                MockSysctlKind::Bool => MockSysctlValue::Bool(r % 2 == 0),
+            };
+            let _ = table.write(names[idx], val);
+            sink ^= idx as u64;
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    // 1 op = 1 次 write
+    elapsed.saturating_mul(1_000) / (iters as u128 * BATCH as u128)
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -915,6 +1103,9 @@ pub fn run_all() -> BenchReport {
     // EBPF-3: eBPF verifier trait dispatch bench
     results.push(measure("bpf_verifier_dispatch", "ebpf", 100_000, ||
         bpf_verifier_dispatch_bench(100_000)));
+    // SYSCTL-2: sysctl register/write bench
+    results.push(measure("sysctl_rw", "config", 10_000, ||
+        sysctl_bench(10_000)));
     BenchReport { version: 1, results }
 }
 
@@ -1123,5 +1314,33 @@ mod tests {
     fn test_bpf_verifier_bench_runs() {
         // smoke: 调用一次小迭代 bench
         let _ = bpf_verifier_dispatch_bench(100);
+    }
+
+    // ====== SYSCTL-2: MockSysctl 单元测试 ======
+
+    #[test]
+    fn test_mock_sysctl_register_and_read() {
+        let t = MockSysctlTable::new();
+        assert!(t.register("a", MockSysctlKind::Int, MockSysctlValue::Int(42)).is_ok());
+        assert_eq!(t.read("a"), Some(MockSysctlValue::Int(42)));
+    }
+
+    #[test]
+    fn test_mock_sysctl_write_type_mismatch() {
+        let t = MockSysctlTable::new();
+        assert!(t.register("a", MockSysctlKind::Int, MockSysctlValue::Int(0)).is_ok());
+        // 写 Bool 到 Int 节点
+        assert!(t.write("a", MockSysctlValue::Bool(true)).is_err());
+    }
+
+    #[test]
+    fn test_mock_sysctl_read_not_found() {
+        let t = MockSysctlTable::new();
+        assert_eq!(t.read("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_mock_sysctl_bench_runs() {
+        let _ = sysctl_bench(10);
     }
 }

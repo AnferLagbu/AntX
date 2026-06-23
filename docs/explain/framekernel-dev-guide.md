@@ -239,6 +239,52 @@ Q3. 现有 framework 公开 API 是否够用?
 
 **原则**: framework 只保留"必须 unsafe 才能完成"的机制, 策略全部提取到 services.
 
+#### 案例: eBPF 验证器 (REVAL-5 T4-3, 2026-06-22)
+
+eBPF 验证器是 Safe Policy Injection 的典型案例, 与上面的 SchedDecision 一样:
+- **机制 (framework)**: `BpfSubsystem` 持有字节码容器 + 解释器 (32 处 unsafe 访存)
+- **策略 (services)**: 验证规则 (指令数/寄存器 OOB/EXIT 结尾/回边深度/LD 边界/LDX 指针类型/helper 类型)
+
+**实装前后对比**:
+```
+[实装前] BpfVerifier 是 framework struct, ~150 行 0 unsafe 策略逻辑留在 framework
+[实装后]
+  framework/debug/ebpf.rs:
+    pub trait BpfVerifier: Sync + Send {
+        fn verify(&self, prog: &BpfProg) -> VerifyResult;
+    }
+    pub struct BpfSubsystem { verifier: IrqSpinLock<Option<&'static dyn BpfVerifier>>, ... }
+    impl BpfSubsystem {
+        pub fn set_verifier(&self, v: &'static dyn BpfVerifier) { ... }
+        pub fn prog_load(...) -> i64 {
+            // 安全默认: 未注册 verifier → 拒绝所有
+            let v = self.verifier.lock().clone()?;
+            v.verify(&prog) // 动态分派
+        }
+    }
+  services/debug/ebpf_verifier.rs (新建, 0 unsafe):
+    pub struct StandardBpfVerifier;
+    pub static STANDARD_VERIFIER: StandardBpfVerifier = StandardBpfVerifier;
+    impl BpfVerifier for StandardBpfVerifier { fn verify(...) -> VerifyResult { ... } }
+  framework/proc/api.rs 启动时注册:
+    bpf_init();
+    bpf_subsystem().set_verifier(&STANDARD_VERIFIER);
+```
+
+**TCB 减负**:
+- 验证器逻辑 ~150 行 0 unsafe 从 framework 移至 services
+- 解释器 (32 处 unsafe 访存) 留在 framework (属机制层)
+
+**为什么 verifier 是策略而非机制**:
+1. "什么程序可以接受"是业务决策, 不同 OS 政策不同
+2. 验证器不直接操作硬件, 不需要 unsafe
+3. 验证规则可以热更新 (可注入不同的 verifier 实例)
+
+**对 framekernel 范式的价值**:
+- 完美示范 "framework=机制, services=策略" 的清晰边界
+- 解释器 (BpfInterpreter) 32 处 unsafe 全部依赖验证器输出, 通过 trait 契约解耦
+- 测试友好: 8 + 8 = 16 个单元测试覆盖在 services, 5 个 host-test mock 覆盖 trait 动态分派
+
 ### 场景 5b: 中间层架构 — 机制 API 集中导出
 
 L-01/L-02/L-03 在 framework 子系统中建立 `mechanism.rs`, 将纯机制 API 集中导出, 供 services 层策略实现调用. services 通过 `framework::xxx::mechanism::*` 获取机制 API, 不再直接引用内部子模块.

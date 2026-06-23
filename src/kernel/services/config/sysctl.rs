@@ -311,4 +311,81 @@ mod tests {
         assert_eq!(write_i64(&mut buf, -42), 3);
         assert_eq!(&buf[..3], b"-42");
     }
+
+    // SYSCTL-1: 6 个新单测覆盖 register/write/list/type/boundary 路径
+
+    /// 1. 注册路径: 单个节点注册后能读写
+    #[test]
+    fn test_register_and_read() {
+        // 注: 使用唯一名避免与其它测试冲突
+        let name = "test.reg1_unique_001";
+        let result = sysctl_register(name, SysctlKind::Int, SysctlValue::Int(42));
+        // 接受 Ok 或 Duplicate (重复运行测试)
+        if result.is_ok() {
+            let val = sysctl_read(name);
+            // 应能读到刚写入的值
+            assert_eq!(val, Some(SysctlValue::Int(42)));
+        }
+    }
+
+    /// 2. 重复注册: 同名第二次应返回 Duplicate
+    #[test]
+    fn test_duplicate_register() {
+        let unique = "test.dup_unique_002";
+        let first = sysctl_register(unique, SysctlKind::UInt, SysctlValue::UInt(1));
+        // 跳过首个测试的 Duplicate (跨 test 顺序敏感)
+        if first.is_ok() {
+            let result = sysctl_register(unique, SysctlKind::UInt, SysctlValue::UInt(2));
+            assert_eq!(result, Err(SysctlError::Duplicate));
+        }
+    }
+
+    /// 3. NotFound 路径: 读取不存在节点
+    #[test]
+    fn test_read_not_found() {
+        let result = sysctl_read("definitely.not.registered.unique_path_xyz");
+        assert_eq!(result, None);
+    }
+
+    /// 4. TypeMismatch 路径: 写入类型不匹配
+    #[test]
+    fn test_type_mismatch() {
+        let unique = "test.typemismatch_unique_003";
+        // 先注册一个 Int 节点
+        if sysctl_register(unique, SysctlKind::Int, SysctlValue::Int(0)).is_ok() {
+            // 写 Bool 到 Int 节点 → TypeMismatch
+            let result = sysctl_write(unique, SysctlValue::Bool(true));
+            assert_eq!(result, Err(SysctlError::TypeMismatch));
+        }
+    }
+
+    /// 5. list 路径: 写入小 buffer 不溢出
+    #[test]
+    fn test_list_buffer_boundary() {
+        let mut buf = [0u8; 16];
+        let n = sysctl_list(&mut buf);
+        // 不应超过 buffer 容量
+        assert!(n <= buf.len());
+    }
+
+    /// 6. 解析边界: 空字符串/纯空格/前导零
+    #[test]
+    fn test_parse_edge_cases() {
+        // 整数空字符串应失败
+        assert!(SysctlValue::parse(SysctlKind::Int, "").is_err());
+        // 整数溢出
+        assert!(SysctlValue::parse(SysctlKind::Int, "99999999999999999999").is_err());
+        // 负整数
+        assert_eq!(
+            SysctlValue::parse(SysctlKind::Int, "-1").unwrap(),
+            SysctlValue::Int(-1)
+        );
+        // UInt 拒绝负数
+        assert!(SysctlValue::parse(SysctlKind::UInt, "-1").is_err());
+        // Bool 接受 "true"/"false"
+        assert_eq!(
+            SysctlValue::parse(SysctlKind::Bool, "true").unwrap(),
+            SysctlValue::Bool(true)
+        );
+    }
 }

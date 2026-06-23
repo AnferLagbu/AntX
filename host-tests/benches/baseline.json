@@ -2,7 +2,7 @@
   "version": 1,
   "machine": "x86_64-Linux-7.0.12-201.fc44.x86_64",
   "python": "3.14.5",
-  "recorded_at": "2026-06-22T16:22:18Z",
+  "recorded_at": "2026-06-22T23:47:53Z",
   "results": [
     {
       "name": "page_flags_bits",
@@ -43,36 +43,36 @@
       "name": "sha256_block",
       "category": "credo",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.039,
-      "ps_per_op": 39
+      "ns_per_op_frac": 0.022,
+      "ps_per_op": 22
     },
     {
       "name": "attribution_classify",
       "category": "barrier",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.019,
-      "ps_per_op": 19
+      "ns_per_op_frac": 0.01,
+      "ps_per_op": 10
     },
     {
       "name": "recovery_decide",
       "category": "barrier",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.007,
-      "ps_per_op": 7
+      "ns_per_op_frac": 0.006,
+      "ps_per_op": 6
     },
     {
       "name": "bitmap_scan",
       "category": "pmm",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.025,
-      "ps_per_op": 25
+      "ns_per_op_frac": 0.011,
+      "ps_per_op": 11
     },
     {
       "name": "btree_id_lookup",
       "category": "proc",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.198,
-      "ps_per_op": 198
+      "ns_per_op_frac": 0.116,
+      "ps_per_op": 116
     },
     {
       "name": "socket_wait_queue",
@@ -94,6 +94,13 @@
       "iterations": 10000000,
       "ns_per_op_frac": 0.0,
       "ps_per_op": 0
+    },
+    {
+      "name": "sysctl_rw",
+      "category": "config",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.002,
+      "ps_per_op": 2
     }
   ]
 }
