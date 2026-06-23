@@ -2,7 +2,7 @@
   "version": 1,
   "machine": "x86_64-Linux-7.0.12-201.fc44.x86_64",
   "python": "3.14.5",
-  "recorded_at": "2026-06-23T03:06:54Z",
+  "recorded_at": "2026-06-23T07:23:50Z",
   "results": [
     {
       "name": "page_flags_bits",
@@ -43,8 +43,8 @@
       "name": "sha256_block",
       "category": "credo",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.023,
-      "ps_per_op": 23
+      "ns_per_op_frac": 0.022,
+      "ps_per_op": 22
     },
     {
       "name": "attribution_classify",
@@ -57,22 +57,22 @@
       "name": "recovery_decide",
       "category": "barrier",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.007,
-      "ps_per_op": 7
+      "ns_per_op_frac": 0.003,
+      "ps_per_op": 3
     },
     {
       "name": "bitmap_scan",
       "category": "pmm",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.01,
-      "ps_per_op": 10
+      "ns_per_op_frac": 0.011,
+      "ps_per_op": 11
     },
     {
       "name": "btree_id_lookup",
       "category": "proc",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.107,
-      "ps_per_op": 107
+      "ns_per_op_frac": 0.128,
+      "ps_per_op": 128
     },
     {
       "name": "socket_wait_queue",
@@ -99,8 +99,8 @@
       "name": "sysctl_rw",
       "category": "config",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.002,
-      "ps_per_op": 2
+      "ns_per_op_frac": 0.003,
+      "ps_per_op": 3
     },
     {
       "name": "blk_dev_dispatch",
@@ -112,6 +112,20 @@
     {
       "name": "vfs_poll_dispatch",
       "category": "epoll",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.0,
+      "ps_per_op": 0
+    },
+    {
+      "name": "zap_dispatch",
+      "category": "hvfs",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.009,
+      "ps_per_op": 9
+    },
+    {
+      "name": "txg_dispatch",
+      "category": "hvfs",
       "iterations": 10000000,
       "ns_per_op_frac": 0.0,
       "ps_per_op": 0

@@ -1339,6 +1339,227 @@ impl MockEpollPwake {
     }
 }
 
+// ============================================================================
+// LEGACY-5.1: ZapStore trait dispatch bench + Mock
+// ============================================================================
+//
+// 验证 ZAP 走 trait dispatch (与 LEGACY-4 BlockDevice, REVAL-6.1 VfsPollPolicy 范式一致).
+// 模拟 StandardZap 行为: insert/lookup/remove.
+
+use std::collections::HashMap;
+
+/// host-only ZapStore trait
+pub trait HostZapStore: Send + Sync {
+    fn insert(&self, name: &str, value: &[u8]) -> bool;
+    fn insert_u64(&self, name: &str, value: u64) -> bool;
+    fn lookup(&self, name: &str) -> Option<Vec<u8>>;
+    fn lookup_u64(&self, name: &str) -> Option<u64>;
+    fn remove(&self, name: &str) -> bool;
+    fn contains(&self, name: &str) -> bool;
+    fn len(&self) -> usize;
+    fn capacity(&self) -> usize;
+}
+
+/// host-only StandardZap (Mutex<HashMap>)
+pub struct StandardHostZap {
+    pub map: std::sync::Mutex<(HashMap<String, Vec<u8>>, usize)>,
+}
+
+impl StandardHostZap {
+    pub fn new() -> Self {
+        Self {
+            map: std::sync::Mutex::new((HashMap::new(), 256)),
+        }
+    }
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            map: std::sync::Mutex::new((HashMap::new(), cap)),
+        }
+    }
+}
+
+impl HostZapStore for StandardHostZap {
+    fn insert(&self, name: &str, value: &[u8]) -> bool {
+        let mut g = self.map.lock().unwrap();
+        if g.0.len() >= g.1 && !g.0.contains_key(name) {
+            return false;
+        }
+        g.0.insert(name.to_string(), value.to_vec());
+        true
+    }
+    fn insert_u64(&self, name: &str, value: u64) -> bool {
+        self.insert(name, &value.to_le_bytes())
+    }
+    fn lookup(&self, name: &str) -> Option<Vec<u8>> {
+        self.map.lock().unwrap().0.get(name).cloned()
+    }
+    fn lookup_u64(&self, name: &str) -> Option<u64> {
+        self.lookup(name).map(|v| {
+            let mut arr = [0u8; 8];
+            arr.copy_from_slice(&v[..8.min(v.len())]);
+            u64::from_le_bytes(arr)
+        })
+    }
+    fn remove(&self, name: &str) -> bool {
+        self.map.lock().unwrap().0.remove(name).is_some()
+    }
+    fn contains(&self, name: &str) -> bool {
+        self.map.lock().unwrap().0.contains_key(name)
+    }
+    fn len(&self) -> usize {
+        self.map.lock().unwrap().0.len()
+    }
+    fn capacity(&self) -> usize {
+        self.map.lock().unwrap().1
+    }
+}
+
+/// bench: ZAP trait dispatch throughput
+pub fn zap_dispatch_bench(iters: u64) -> u128 {
+    let zap: Box<dyn HostZapStore> = Box::new(StandardHostZap::new());
+    // 预热
+    for i in 0..1000 {
+        zap.insert_u64(&format!("warmup_{}", i), i);
+    }
+    // bench: insert + lookup + remove 旋转
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        let key = format!("k_{}", r & 0xFFF);
+        if r & 0x3 == 0 {
+            // insert
+            let _ = zap.insert_u64(&key, r);
+        } else if r & 0x3 == 1 {
+            // lookup
+            if let Some(v) = zap.lookup_u64(&key) {
+                sink = sink.wrapping_add(v);
+            }
+        } else if r & 0x3 == 2 {
+            // insert raw
+            let _ = zap.insert(&key, &r.to_le_bytes());
+        } else {
+            // contains
+            if zap.contains(&key) {
+                sink = sink.wrapping_add(1);
+            }
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
+// ============================================================================
+// LEGACY-5.2: TxgManager trait dispatch bench + Mock
+// ============================================================================
+//
+// 模拟 StandardTxg 行为: init/transition/add_dirty_to_open/current_txg.
+
+/// host-only TXG 状态机快照
+#[derive(Debug, Clone)]
+pub struct MockTxgState {
+    pub open_id: u64,
+    pub syncing_id: u64,
+    pub current: u64,
+    pub total_syncs: u64,
+    pub total_dirty: u64,
+}
+
+/// host-only TxgManager trait
+pub trait HostTxgManager: Send + Sync {
+    fn init(&mut self, start_txg: u64);
+    fn transition(&mut self) -> u64;
+    fn current_txg(&self) -> u64;
+    fn open_txg_id(&self) -> u64;
+    fn syncing_txg_id(&self) -> u64;
+    fn is_sync_in_progress(&self) -> bool;
+    fn total_syncs(&self) -> u64;
+    fn total_dirty(&self) -> u64;
+    fn add_dirty_to_open(&mut self, dummy: u64);
+    fn add_free_to_open(&mut self, dummy: u64);
+    fn add_io_to_open(&mut self, dummy: u64);
+}
+
+/// host-only StandardTxg (Mutex<MockTxgState>)
+pub struct StandardHostTxg {
+    pub state: std::sync::Mutex<MockTxgState>,
+}
+
+impl StandardHostTxg {
+    pub fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(MockTxgState {
+                open_id: 0,
+                syncing_id: 0,
+                current: 0,
+                total_syncs: 0,
+                total_dirty: 0,
+            }),
+        }
+    }
+}
+
+impl HostTxgManager for StandardHostTxg {
+    fn init(&mut self, start_txg: u64) {
+        let mut s = self.state.lock().unwrap();
+        s.open_id = start_txg;
+        s.syncing_id = start_txg + 2;
+        s.current = start_txg;
+        s.total_syncs = 0;
+        s.total_dirty = 0;
+    }
+    fn transition(&mut self) -> u64 {
+        let mut s = self.state.lock().unwrap();
+        s.open_id += 3;
+        s.syncing_id += 3;
+        s.current += 3;
+        s.total_syncs += 1;
+        s.current
+    }
+    fn current_txg(&self) -> u64 { self.state.lock().unwrap().current }
+    fn open_txg_id(&self) -> u64 { self.state.lock().unwrap().open_id }
+    fn syncing_txg_id(&self) -> u64 { self.state.lock().unwrap().syncing_id }
+    fn is_sync_in_progress(&self) -> bool {
+        self.state.lock().unwrap().total_syncs > 0
+    }
+    fn total_syncs(&self) -> u64 { self.state.lock().unwrap().total_syncs }
+    fn total_dirty(&self) -> u64 { self.state.lock().unwrap().total_dirty }
+    fn add_dirty_to_open(&mut self, _dummy: u64) {
+        self.state.lock().unwrap().total_dirty += 1;
+    }
+    fn add_free_to_open(&mut self, _dummy: u64) {}
+    fn add_io_to_open(&mut self, _dummy: u64) {}
+}
+
+/// bench: TXG trait dispatch throughput
+pub fn txg_dispatch_bench(iters: u64) -> u128 {
+    let mut txg: Box<dyn HostTxgManager> = Box::new(StandardHostTxg::new());
+    txg.init(1);
+    // 预热
+    for i in 0..1000 {
+        txg.add_dirty_to_open(i);
+    }
+    // bench: add_dirty + transition 旋转
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        if r & 0x7 == 0 {
+            // transition (稀有)
+            let id = txg.transition();
+            sink = sink.wrapping_add(id);
+        } else if r & 0x3 == 1 {
+            // current_txg
+            sink = sink.wrapping_add(txg.current_txg());
+        } else {
+            // add_dirty_to_open
+            txg.add_dirty_to_open(r);
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -1428,6 +1649,12 @@ pub fn run_all() -> BenchReport {
     // REVAL-6.1: VfsPollPolicy dispatch bench
     results.push(measure("vfs_poll_dispatch", "epoll", 100_000, ||
         vfs_poll_dispatch_bench(100_000)));
+    // LEGACY-5.1: ZAP trait dispatch bench
+    results.push(measure("zap_dispatch", "hvfs", 100_000, ||
+        zap_dispatch_bench(100_000)));
+    // LEGACY-5.2: TXG trait dispatch bench
+    results.push(measure("txg_dispatch", "hvfs", 100_000, ||
+        txg_dispatch_bench(100_000)));
     BenchReport { version: 1, results }
 }
 
@@ -1857,5 +2084,95 @@ mod tests {
         let policy = StandardHostVfsPollPolicy;
         // fd=99 不在列表
         assert_eq!(p.pwake(99, &policy), 0);
+    }
+
+    // ====== LEGACY-5.1: ZapStore trait 单元测试 ======
+
+    #[test]
+    fn test_zap_insert_lookup() {
+        let zap: Box<dyn HostZapStore> = Box::new(StandardHostZap::new());
+        assert!(zap.insert("a", b"1"));
+        assert_eq!(zap.lookup("a"), Some(b"1".to_vec()));
+        assert_eq!(zap.lookup("nokey"), None);
+    }
+
+    #[test]
+    fn test_zap_update() {
+        let zap: Box<dyn HostZapStore> = Box::new(StandardHostZap::new());
+        assert!(zap.insert("k", b"v1"));
+        assert!(zap.insert("k", b"v2"));
+        assert_eq!(zap.lookup("k"), Some(b"v2".to_vec()));
+    }
+
+    #[test]
+    fn test_zap_capacity_limit() {
+        let zap: Box<dyn HostZapStore> = Box::new(StandardHostZap::with_capacity(2));
+        assert!(zap.insert("a", b"1"));
+        assert!(zap.insert("b", b"2"));
+        // 容量满 + 新键 → false
+        assert!(!zap.insert("c", b"3"));
+        // 容量满 + 旧键 (更新) → true
+        assert!(zap.insert("a", b"x"));
+        assert_eq!(zap.len(), 2);
+    }
+
+    #[test]
+    fn test_zap_u64() {
+        let zap: Box<dyn HostZapStore> = Box::new(StandardHostZap::new());
+        assert!(zap.insert_u64("count", 42));
+        assert_eq!(zap.lookup_u64("count"), Some(42));
+    }
+
+    #[test]
+    fn test_zap_remove() {
+        let zap: Box<dyn HostZapStore> = Box::new(StandardHostZap::new());
+        zap.insert("a", b"1");
+        assert!(zap.contains("a"));
+        assert!(zap.remove("a"));
+        assert!(!zap.contains("a"));
+        assert!(!zap.remove("a"));
+    }
+
+    #[test]
+    fn test_zap_bench_runs() {
+        let _ = zap_dispatch_bench(100);
+    }
+
+    // ====== LEGACY-5.2: TxgManager trait 单元测试 ======
+
+    #[test]
+    fn test_txg_init() {
+        let mut txg: Box<dyn HostTxgManager> = Box::new(StandardHostTxg::new());
+        txg.init(1);
+        assert_eq!(txg.current_txg(), 1);
+        assert_eq!(txg.open_txg_id(), 1);
+        assert_eq!(txg.syncing_txg_id(), 3);
+        assert_eq!(txg.total_syncs(), 0);
+    }
+
+    #[test]
+    fn test_txg_transition() {
+        let mut txg: Box<dyn HostTxgManager> = Box::new(StandardHostTxg::new());
+        txg.init(1);
+        let old = txg.current_txg();
+        let new = txg.transition();
+        assert!(new > old);
+        assert_eq!(txg.total_syncs(), 1);
+        assert!(txg.is_sync_in_progress());
+    }
+
+    #[test]
+    fn test_txg_dirty_accumulate() {
+        let mut txg: Box<dyn HostTxgManager> = Box::new(StandardHostTxg::new());
+        txg.init(1);
+        for _ in 0..5 {
+            txg.add_dirty_to_open(0);
+        }
+        assert_eq!(txg.total_dirty(), 5);
+    }
+
+    #[test]
+    fn test_txg_bench_runs() {
+        let _ = txg_dispatch_bench(100);
     }
 }
