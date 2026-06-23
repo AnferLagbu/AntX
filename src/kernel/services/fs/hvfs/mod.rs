@@ -27,3 +27,5 @@ pub mod zap;
 pub mod zap_trait;
 pub mod zil;
 pub mod zil_persist;
+pub mod zil_persist_trait;
+pub mod zil_trait;

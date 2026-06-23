@@ -2,7 +2,7 @@
   "version": 1,
   "machine": "x86_64-Linux-7.0.12-201.fc44.x86_64",
   "python": "3.14.5",
-  "recorded_at": "2026-06-23T07:48:13Z",
+  "recorded_at": "2026-06-23T07:57:00Z",
   "results": [
     {
       "name": "page_flags_bits",
@@ -64,15 +64,15 @@
       "name": "bitmap_scan",
       "category": "pmm",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.01,
-      "ps_per_op": 10
+      "ns_per_op_frac": 0.011,
+      "ps_per_op": 11
     },
     {
       "name": "btree_id_lookup",
       "category": "proc",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.103,
-      "ps_per_op": 103
+      "ns_per_op_frac": 0.115,
+      "ps_per_op": 115
     },
     {
       "name": "socket_wait_queue",
@@ -134,8 +134,8 @@
       "name": "dmu_dispatch",
       "category": "hvfs",
       "iterations": 10000000,
-      "ns_per_op_frac": 0.508,
-      "ps_per_op": 508
+      "ns_per_op_frac": 0.511,
+      "ps_per_op": 511
     },
     {
       "name": "spa_dispatch",
@@ -157,6 +157,20 @@
       "iterations": 10000000,
       "ns_per_op_frac": 0.003,
       "ps_per_op": 3
+    },
+    {
+      "name": "zil_log_dispatch",
+      "category": "hvfs",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.001,
+      "ps_per_op": 1
+    },
+    {
+      "name": "zil_persist_dispatch",
+      "category": "hvfs",
+      "iterations": 10000000,
+      "ns_per_op_frac": 0.0,
+      "ps_per_op": 0
     }
   ]
 }

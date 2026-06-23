@@ -2056,6 +2056,215 @@ pub fn arc_dispatch_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / iters as u128
 }
 
+// ============================================================================
+// LEGACY-5.10: ZilLog trait dispatch bench + Mock
+// ============================================================================
+//
+// 模拟 StandardZil 行为: add_record/current_seq/pending_count/commit.
+
+/// host-only ZIL record snapshot
+#[derive(Debug, Clone, Copy)]
+pub struct MockZilRecord {
+    pub txg: u64,
+    pub obj_id: u64,
+    pub offset: u64,
+    pub size: u32,
+    pub seq: u64,
+}
+
+/// host-only ZilLog trait
+pub trait HostZilLog: Send + Sync {
+    fn init(&self);
+    fn is_enabled(&self) -> bool;
+    fn set_enabled(&self, enabled: bool);
+    fn add_record(&self, rec: MockZilRecord);
+    fn current_seq(&self) -> u64;
+    fn committed_seq(&self) -> u64;
+    fn has_uncommitted(&self) -> bool;
+    fn pending_count(&self) -> usize;
+    fn commit(&self, txg: u64);
+    fn sync(&self, txg: u64);
+}
+
+/// host-only StandardZil (Mutex<Vec<MockZilRecord>>)
+pub struct StandardHostZil {
+    pub state: std::sync::Mutex<ZilLogState>,
+}
+
+pub struct ZilLogState {
+    pub records: Vec<MockZilRecord>,
+    pub committed_seq: u64,
+    pub current_seq: u64,
+    pub enabled: bool,
+}
+
+impl StandardHostZil {
+    pub fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(ZilLogState {
+                records: Vec::new(),
+                committed_seq: 0,
+                current_seq: 0,
+                enabled: true,
+            }),
+        }
+    }
+}
+
+impl HostZilLog for StandardHostZil {
+    fn init(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.records.clear();
+        s.committed_seq = 0;
+        s.current_seq = 0;
+        s.enabled = true;
+    }
+    fn is_enabled(&self) -> bool { self.state.lock().unwrap().enabled }
+    fn set_enabled(&self, enabled: bool) { self.state.lock().unwrap().enabled = enabled; }
+    fn add_record(&self, rec: MockZilRecord) {
+        let mut s = self.state.lock().unwrap();
+        if !s.enabled { return; }
+        let mut r = rec;
+        r.seq = s.current_seq + 1;
+        s.current_seq = r.seq;
+        s.records.push(r);
+    }
+    fn current_seq(&self) -> u64 { self.state.lock().unwrap().current_seq }
+    fn committed_seq(&self) -> u64 { self.state.lock().unwrap().committed_seq }
+    fn has_uncommitted(&self) -> bool {
+        let s = self.state.lock().unwrap();
+        s.current_seq > s.committed_seq
+    }
+    fn pending_count(&self) -> usize { self.state.lock().unwrap().records.len() }
+    fn commit(&self, txg: u64) {
+        let mut s = self.state.lock().unwrap();
+        let mut max_seq = 0u64;
+        s.records.retain(|r| {
+            if r.txg <= txg {
+                max_seq = max_seq.max(r.seq);
+                false
+            } else { true }
+        });
+        s.committed_seq = max_seq;
+    }
+    fn sync(&self, txg: u64) {
+        self.commit(txg);
+    }
+}
+
+/// bench: ZIL log trait dispatch throughput
+pub fn zil_log_dispatch_bench(iters: u64) -> u128 {
+    let zil: Box<dyn HostZilLog> = Box::new(StandardHostZil::new());
+    zil.init();
+    // 预热
+    for i in 0..1000 {
+        zil.add_record(MockZilRecord { txg: 1, obj_id: 100, offset: i, size: 4096, seq: 0 });
+    }
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        if r & 0x7 == 0 {
+            // commit (稀有)
+            zil.commit((r & 0x3) + 1);
+        } else if r & 0x3 == 1 {
+            // current_seq
+            sink = sink.wrapping_add(zil.current_seq());
+        } else if r & 0x3 == 2 {
+            // pending_count
+            sink = sink.wrapping_add(zil.pending_count() as u64);
+        } else {
+            // add_record
+            zil.add_record(MockZilRecord { txg: 1, obj_id: 100, offset: r, size: 4096, seq: 0 });
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
+// ============================================================================
+// LEGACY-5.11: ZilPersist trait dispatch bench + Mock
+// ============================================================================
+//
+// 模拟 StandardZilPersist 行为: serialize/deserialize.
+
+/// host-only ZilPersist trait
+pub trait HostZilPersist: Send + Sync {
+    fn serialize(&self, count: usize) -> Option<Vec<u8>>;
+    fn deserialize(&self, block: &[u8]) -> usize;
+    fn mark_written(&self);
+}
+
+/// host-only StandardZilPersist (Mutex<MockZilPersistState>)
+pub struct StandardHostZilPersist {
+    pub written: std::sync::Mutex<bool>,
+}
+
+pub struct MockZilPersistState {
+    pub written: bool,
+}
+
+impl StandardHostZilPersist {
+    pub fn new() -> Self {
+        Self { written: std::sync::Mutex::new(false) }
+    }
+}
+
+impl HostZilPersist for StandardHostZilPersist {
+    /// 模拟 serialize: 生成 8KB 块
+    fn serialize(&self, count: usize) -> Option<Vec<u8>> {
+        if count == 0 { return None; }
+        let block = vec![0xAA; 8192];
+        // 头 4 字节记录 count (模拟)
+        let mut block = block;
+        if count <= u32::MAX as usize {
+            let n = count as u32;
+            block[0..4].copy_from_slice(&n.to_le_bytes());
+        }
+        Some(block)
+    }
+    /// 模拟 deserialize: 从块读取 count
+    fn deserialize(&self, block: &[u8]) -> usize {
+        if block.len() < 4 { return 0; }
+        let n = u32::from_le_bytes(block[0..4].try_into().unwrap_or([0; 4]));
+        n as usize
+    }
+    fn mark_written(&self) {
+        *self.written.lock().unwrap() = true;
+    }
+}
+
+/// bench: ZIL persist trait dispatch throughput
+pub fn zil_persist_dispatch_bench(iters: u64) -> u128 {
+    let persist: Box<dyn HostZilPersist> = Box::new(StandardHostZilPersist::new());
+    // 预热: serialize + deserialize
+    let block = persist.serialize(10);
+    if let Some(b) = &block {
+        let _ = persist.deserialize(b);
+    }
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for r in 0..iters {
+        if r & 0x3 == 0 {
+            // serialize
+            if let Some(b) = persist.serialize((r & 0xF) as usize + 1) {
+                sink = sink.wrapping_add(b.len() as u64);
+            }
+        } else if r & 0x3 == 1 {
+            // deserialize
+            if let Some(b) = &block {
+                sink = sink.wrapping_add(persist.deserialize(b) as u64);
+            }
+        } else {
+            // mark_written
+            persist.mark_written();
+        }
+    }
+    let elapsed = start.elapsed().as_nanos();
+    std::hint::black_box(sink);
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -2163,6 +2372,12 @@ pub fn run_all() -> BenchReport {
     // LEGACY-5.8: ARC trait dispatch bench
     results.push(measure("arc_dispatch", "hvfs", 100_000, ||
         arc_dispatch_bench(100_000)));
+    // LEGACY-5.10: ZIL log trait dispatch bench
+    results.push(measure("zil_log_dispatch", "hvfs", 100_000, ||
+        zil_log_dispatch_bench(100_000)));
+    // LEGACY-5.11: ZIL persist trait dispatch bench
+    results.push(measure("zil_persist_dispatch", "hvfs", 1_000, ||
+        zil_persist_dispatch_bench(1_000)));
     BenchReport { version: 1, results }
 }
 
@@ -2871,5 +3086,98 @@ mod tests {
     #[test]
     fn test_arc_bench_runs() {
         let _ = arc_dispatch_bench(100);
+    }
+
+    // ====== LEGACY-5.10: ZilLog trait 单元测试 ======
+
+    #[test]
+    fn test_zil_log_init() {
+        let zil: Box<dyn HostZilLog> = Box::new(StandardHostZil::new());
+        zil.init();
+        assert!(zil.is_enabled());
+        assert_eq!(zil.current_seq(), 0);
+        assert_eq!(zil.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_zil_log_add_record() {
+        let zil: Box<dyn HostZilLog> = Box::new(StandardHostZil::new());
+        zil.init();
+        zil.add_record(MockZilRecord { txg: 1, obj_id: 100, offset: 0, size: 4096, seq: 0 });
+        assert_eq!(zil.current_seq(), 1);
+        assert_eq!(zil.pending_count(), 1);
+        assert!(zil.has_uncommitted());
+    }
+
+    #[test]
+    fn test_zil_log_commit() {
+        let zil: Box<dyn HostZilLog> = Box::new(StandardHostZil::new());
+        zil.init();
+        zil.add_record(MockZilRecord { txg: 1, obj_id: 100, offset: 0, size: 4096, seq: 0 });
+        zil.add_record(MockZilRecord { txg: 2, obj_id: 100, offset: 0, size: 4096, seq: 0 });
+        zil.add_record(MockZilRecord { txg: 3, obj_id: 100, offset: 0, size: 4096, seq: 0 });
+        // commit txg=2 → 保留 txg=3
+        zil.commit(2);
+        assert_eq!(zil.pending_count(), 1);
+        // committed_seq 是被移除记录的最大 seq
+        // seq=1 (txg=1) + seq=2 (txg=2) 被移除 → max = 2
+        assert_eq!(zil.committed_seq(), 2);
+    }
+
+    #[test]
+    fn test_zil_log_disabled() {
+        let zil: Box<dyn HostZilLog> = Box::new(StandardHostZil::new());
+        zil.init();
+        zil.set_enabled(false);
+        zil.add_record(MockZilRecord { txg: 1, obj_id: 100, offset: 0, size: 4096, seq: 0 });
+        // disable 后 add_record 不应分配 seq
+        assert_eq!(zil.current_seq(), 0);
+        assert_eq!(zil.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_zil_bench_runs() {
+        let _ = zil_log_dispatch_bench(100);
+    }
+
+    // ====== LEGACY-5.11: ZilPersist trait 单元测试 ======
+
+    #[test]
+    fn test_zil_persist_serialize_empty() {
+        let persist: Box<dyn HostZilPersist> = Box::new(StandardHostZilPersist::new());
+        let result = persist.serialize(0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_zil_persist_roundtrip() {
+        let persist: Box<dyn HostZilPersist> = Box::new(StandardHostZilPersist::new());
+        // serialize 10 条
+        let block = persist.serialize(10);
+        assert!(block.is_some());
+        let block = block.unwrap();
+        // deserialize → 10
+        let count = persist.deserialize(&block);
+        assert_eq!(count, 10);
+    }
+
+    #[test]
+    fn test_zil_persist_short_block() {
+        let persist: Box<dyn HostZilPersist> = Box::new(StandardHostZilPersist::new());
+        let count = persist.deserialize(&[]);
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_zil_persist_mark_written() {
+        let persist: Box<dyn HostZilPersist> = Box::new(StandardHostZilPersist::new());
+        persist.mark_written();
+        // 幂等
+        persist.mark_written();
+    }
+
+    #[test]
+    fn test_zil_persist_bench_runs() {
+        let _ = zil_persist_dispatch_bench(100);
     }
 }
