@@ -48,6 +48,12 @@
   - `set_video_mode()` 第 2 步实装 (IoMem 路径), fallback 保留; 第 3 步 TODO 保留 (DISPLAY-2.3c)
   - 新增 4 个单元测试: 1080p60 / 4K60 / refresh_rate=0 fallback / VideoTiming trait 派生
   - 简化公式 vs VESA DMT: 1080p60 偏差 < 5% (v_total=1134 vs DMT=1125), 后续可扩展 DMT lookup
+- **DISPLAY-2.3c HDMI 同步极性 + TMDS 输出使能** — `src/kernel/framework/driver/display/hdmi.rs` (接手人实装, 2026-06-23, 消除 TRACK-1BDEF6 第 3 步, **第 1 组最后一项**)
+  - 新增常量 `HDMI_SYNC_POL_REG_OFFSET=0x078` + `HDMI_SYNC_POL_H_BIT/V_BIT=0x01/0x02` + `HDMI_TMDS_ENABLE_REG_OFFSET=0x079` + `HDMI_TMDS_ENABLE_BIT=0x01`
+  - 新增 `configure_hdmi_sync_polarity()` + `enable_hdmi_tmds_output()` + `disable_hdmi_tmds_output()` (3 unsafe fn)
+  - `set_video_mode()` 第 3 步实装 (IoMem 路径); 删除全部 3 步 TODO 注释 (TRACK-1BDEF6 完全消除)
+  - 新增 2 个单元测试: 默认 negative sync / 老式 CEA positive sync
+  - 调用顺序强制: pixel clock → timing → sync polarity → TMDS enable
 
 ### 修复
 - **DISPLAY-2.1 关联预存问题修复** (CLAUDE.md 预存问题即修规则, 接手人同步修复)
