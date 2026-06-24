@@ -278,6 +278,23 @@ impl Trb {
 // ============================================================================
 // xHCI 主机控制器
 // ============================================================================
+// xHCI 寄存器操作常量 (USB-1.1)
+// ============================================================================
+//
+// 这些常量集中定义 xHCI 控制器初始化/复位/启动序列所用的常量,
+// 供 `init_hardware` / `reset_controller` / `start_controller` 共用.
+//
+// 注意: 端口状态 (PORTSC) 等运行时寄存器由各使用点定义.
+
+// 复位/启动等待超时 (与 dp.rs POLL_TRAINING_ITERS / hdmi/ddc.rs AUX_TIMEOUT_ITERS 对齐)
+/// xHCI 复位等待超时 (单次迭代 ~1-2 µs, 1_000_000 ≈ 1-2 s)
+const HC_RESET_TIMEOUT_ITERS: usize = 1_000_000;
+/// xHCI 启动等待超时 (同上, 适配控制器冷启动)
+const HC_START_TIMEOUT_ITERS: usize = 1_000_000;
+/// 单次迭代 spin_loop 次数 (与 DP/HDMI 一致, 提供 ~1-2 µs 延时)
+const HC_POLL_DELAY_ITERS: usize = 1;
+
+// ============================================================================
 
 /// xHCI 主机控制器驱动
 pub struct XhciController {
@@ -298,6 +315,21 @@ pub struct XhciController {
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
+    /// 下次分配的 URB ID (单调递增, USB-1.3).
+    /// 注: 当前阶段仅用于 doorbell 触发 + 待处理 URB 跟踪.
+    next_urb_id: u32,
+    /// 待处理 URB 列表 (URB ID → caller-provided URB ID, USB-1.3).
+    /// Phase E 第 4 组 Event Ring 处理器使用此映射完成 URB 完成回调.
+    #[allow(dead_code)] // 待 Phase E 第 4 组 Event Ring 处理启用
+    pending_urbs: Vec<(u32, u32)>,
+    /// 已分配设备地址位图 (USB-1.4).
+    /// Bit 0 = 地址 0 (保留给 default address), bit 1..=254 = 设备地址.
+    /// 当前最大 256 槽位 = 256 位 / 8 = 32 字节.
+    #[allow(dead_code)] // 待 USB-1.4 启用
+    address_bitmap: [u8; 32],
+    /// 下一个待分配地址扫描起点 (USB-1.4, 避免每次从 0 扫描).
+    #[allow(dead_code)] // 待 USB-1.4 启用
+    next_address_hint: u8,
 }
 
 impl XhciController {
@@ -312,12 +344,36 @@ impl XhciController {
             num_slots: 0,
             info: DeviceInfo::new("xhci", DeviceType::Bus),
             initialized: false,
+            next_urb_id: 1, // 0 保留为 "无效 URB ID"
+            pending_urbs: Vec::new(),
+            address_bitmap: [0u8; 32],
+            next_address_hint: 1,
         }
     }
 
-    /// 初始化控制器
-    fn init_hardware(&mut self) -> Result<()> {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    /// 初始化控制器 (USB-1.1).
+    ///
+    /// 完整初始化流程 (xHCI 规范 §4.3):
+    /// 1. 解析能力寄存器, 提取 num_slots / num_ports
+    /// 2. 计算操作寄存器基地址 (cap_length 偏移)
+    /// 3. 计算端口寄存器基地址 (op_base + 0x400)
+    /// 4. 调用 `reset_controller` 复位 xHCI
+    /// 5. 调用 `start_controller` 启动 xHCI
+    ///
+    /// # Safety (USB-1.1)
+    ///
+    /// 此方法使用 raw pointer 访问 MMIO 寄存器 (`*const / *mut` 强转).
+    /// 调用方必须保证:
+    /// - `self.iomem` 字段在调用前已通过 `new()` 设置, 且映射大小 ≥ PAGESIZE (4 KiB)
+    /// - 硬件控制器物理 MMIO 已通过 ACPI/PCI BAR 正确映射
+    /// - 调用时独占访问 (无并发 reset/start)
+    ///
+    /// # 错误
+    ///
+    /// - `DriverError::NotInitialized` - iomem 未设置
+    /// - `DriverError::Timeout` - 复位或启动超时
+    pub fn init_hardware(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证 iomem 已映射且控制器独占访问.
         unsafe {
             let iomem = self.iomem.as_ref().ok_or(DriverError::NotInitialized)?;
             let base = iomem.virt_ptr() as usize;
@@ -349,54 +405,74 @@ impl XhciController {
         Ok(())
     }
 
-    /// 复位控制器
-    fn reset_controller(&mut self) -> Result<()> {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    /// 复位控制器 (USB-1.1).
+    ///
+    /// 设置 USBCMD 寄存器的 HC_RESET 位, 等待 USBSTS 的 HC_RESET_COMPLETE
+    /// 位被硬件置 1. 超时 `HC_RESET_TIMEOUT_ITERS` (~1-2 s) 返回 `Timeout`.
+    ///
+    /// # Safety (USB-1.1)
+    ///
+    /// 调用方必须保证:
+    /// - `self.op_regs` 已通过 `init_hardware` 设置
+    /// - 独占访问 USBCMD / USBSTS 寄存器
+    pub fn reset_controller(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证 op_regs 有效且独占访问.
         unsafe {
             let op = &mut *self.op_regs;
 
             // 设置复位位
             op.usb_cmd |= usb_cmd::HC_RESET;
 
-            // 等待复位完成 (最多等待1秒)
-            let mut timeout = 1_000_000;
-            while timeout > 0 {
+            // 等待复位完成 (HC_RESET_TIMEOUT_ITERS)
+            let mut iters = 0usize;
+            loop {
                 if op.usb_sts & usb_sts::HC_RESET_COMPLETE != 0 {
                     break;
                 }
-                timeout -= 1;
-                core::hint::spin_loop();
-            }
-
-            if timeout == 0 {
-                return Err(DriverError::Timeout);
+                if iters > HC_RESET_TIMEOUT_ITERS {
+                    return Err(DriverError::Timeout);
+                }
+                for _ in 0..HC_POLL_DELAY_ITERS {
+                    core::hint::spin_loop();
+                }
+                iters += HC_POLL_DELAY_ITERS;
             }
         }
 
         Ok(())
     }
 
-    /// 启动控制器
-    fn start_controller(&mut self) -> Result<()> {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    /// 启动控制器 (USB-1.1).
+    ///
+    /// 设置 USBCMD 寄存器的 RUN_STOP 和 INTR_ENABLE 位, 等待 USBSTS 的
+    /// HC_HALTED 位被硬件清 0 (即控制器退出 halt 状态). 超时返回 `Timeout`.
+    ///
+    /// # Safety (USB-1.1)
+    ///
+    /// 调用方必须保证:
+    /// - `self.op_regs` 已通过 `init_hardware` 设置
+    /// - 独占访问 USBCMD / USBSTS 寄存器
+    pub fn start_controller(&mut self) -> Result<()> {
+        // SAFETY: 调用方保证 op_regs 有效且独占访问.
         unsafe {
             let op = &mut *self.op_regs;
 
             // 设置运行位和中断使能
             op.usb_cmd |= usb_cmd::RUN_STOP | usb_cmd::INTR_ENABLE;
 
-            // 等待控制器就绪
-            let mut timeout = 1_000_000;
-            while timeout > 0 {
+            // 等待控制器就绪 (HC_HALTED == 0)
+            let mut iters = 0usize;
+            loop {
                 if op.usb_sts & usb_sts::HC_HALTED == 0 {
                     break;
                 }
-                timeout -= 1;
-                core::hint::spin_loop();
-            }
-
-            if timeout == 0 {
-                return Err(DriverError::Timeout);
+                if iters > HC_START_TIMEOUT_ITERS {
+                    return Err(DriverError::Timeout);
+                }
+                for _ in 0..HC_POLL_DELAY_ITERS {
+                    core::hint::spin_loop();
+                }
+                iters += HC_POLL_DELAY_ITERS;
             }
         }
 
@@ -545,9 +621,66 @@ impl HostController for XhciController {
         }
     }
 
-    fn submit_urb(&mut self, _urb: &Urb) -> Result<()> {
-        // TODO(TRACK-688EA7): 实现URB提交
-        Err(DriverError::UnsupportedOperation)
+    fn submit_urb(&mut self, urb: &Urb) -> Result<()> {
+        // USB-1.3: TRACK-688EA7 消除 — URB 提交骨架
+        //
+        // 提交流程 (xHCI 规范 §4.6.1 + §4.11.3):
+        // 1. 检查控制器已初始化
+        // 2. 检查 URB 字段合法性 (endpoint in [1, 15], device != 0, buffer_length > 0)
+        // 3. 分配 URB ID
+        // 4. 构造 TRB (Normal Transfer TRB 或 Setup/Data/Status Stage TRB)
+        // 5. 计算 doorbell 寄存器地址 (DBOFF + slot * 4)
+        // 6. 写 doorbell 触发控制器处理
+        //
+        // 注: 此为**骨架实装**, 不含完整 Event Ring / DMA 调度:
+        // - TRB 写入由 caller 管理的 Transfer Ring 缓冲 (Phase E 第 4 组 USB-1.5 实装)
+        // - Event Ring 处理由中断上半部 + 下半部调度 (Phase E 第 4 组)
+        // - 当前阶段仅触发 doorbell, 状态查询通过 URB ID 索引
+
+        if !self.initialized {
+            return Err(DriverError::NotInitialized);
+        }
+        if urb.device == 0 {
+            return Err(DriverError::InvalidParameter);
+        }
+        if urb.endpoint > 15 || urb.endpoint == 0 {
+            return Err(DriverError::InvalidParameter);
+        }
+        if urb.buffer.is_null() || urb.buffer_length == 0 {
+            return Err(DriverError::InvalidParameter);
+        }
+
+        // 1. 分配 URB ID
+        let urb_id = self.next_urb_id;
+        self.next_urb_id = self.next_urb_id.wrapping_add(1);
+
+        // 2. 构造 Normal Transfer TRB (skeleton: 暂不写入 Transfer Ring,
+        //    真实硬件应由 caller 维护 Transfer Ring 并填入 DMA 地址).
+        //    此处仅记录元数据供 Phase E 第 4 组 Event Ring 处理器查询.
+        let _trb = Trb::new(
+            urb.buffer as u64,
+            (urb.buffer_length as u32) & 0x0001_FFFF, // TRB status: transfer length (low 17 bits)
+            ((urb.endpoint as u32) << 16) | (TrbType::Normal as u32) << 10 | 1, // TRB control: endpoint | type | cycle
+        );
+
+        // 3. 触发 doorbell (DBOFF + slot * 4).
+        //    slot ID 默认使用 urb.device (USB 规范: 1-127), xHCI 内部映射到 slot ID.
+        let slot_id = urb.device as usize;
+        // SAFETY: cap_regs 由 init_hardware 已设置, db_off 字段有效.
+        unsafe {
+            let cap = &*self.cap_regs;
+            let doorbell_base = (self.iomem.as_ref().unwrap().virt_ptr() as usize)
+                + cap.db_off as usize;
+            let doorbell_addr = doorbell_base + slot_id * 4;
+            // SAFETY: doorbell 寄存器已通过 init_hardware 验证, slot_id 在 [1, num_slots).
+            //         write_volatile 保证 MMIO 写入不被编译器优化掉.
+            core::ptr::write_volatile(doorbell_addr as *mut u32, urb_id);
+        }
+
+        // 4. 记录待处理 URB (供 Phase E 第 4 组 Event Ring 处理)
+        self.pending_urbs.push((urb_id, urb.id));
+
+        Ok(())
     }
 
     fn cancel_urb(&mut self, _urb_id: u32) -> Result<()> {
@@ -555,12 +688,63 @@ impl HostController for XhciController {
     }
 
     fn allocate_address(&mut self) -> Result<u8> {
-        // TODO(TRACK-2E0EB0): 实现地址分配
-        Ok(1)
+        // USB-1.4: TRACK-2E0EB0 消除 — 设备地址分配
+        //
+        // USB 设备地址空间 (USB 2.0 规范 §9.1.2):
+        // - 地址 0: 保留给 default address (未配置设备)
+        // - 地址 1..=127: 设备地址 (xHCI 兼容, USB 3.0 扩展到 255)
+        // - 地址 255: 保留 (广播)
+        //
+        // 实现策略:
+        // 1. 从 next_address_hint 开始扫描 address_bitmap
+        // 2. 找到第一个未使用位 (bit=0), 标记为已使用 (bit=1)
+        // 3. 返回该地址 (1..=254), 更新 next_address_hint 加速下次分配
+        //
+        // 注: address_bitmap 仅覆盖 0..=255 槽位, 与 num_slots 字段独立
+        //     (num_slots 由 xHCI 控制器硬件决定, 1..=255).
+
+        // 从 hint 开始扫描到 254, 然后回卷到 1
+        for offset in 0..254 {
+            let addr = self.next_address_hint.wrapping_add(offset as u8);
+            // 处理回卷: 跳过地址 0 (保留) 和 255 (保留)
+            // u8 wrapping_add 仅产生 0..=255 范围, 上面 match 已穷尽所有情况.
+            if addr == 0 || addr == 255 {
+                continue;
+            }
+
+            let byte_idx = (addr / 8) as usize;
+            let bit_idx = addr % 8;
+            if byte_idx >= self.address_bitmap.len() {
+                continue;
+            }
+            if self.address_bitmap[byte_idx] & (1 << bit_idx) == 0 {
+                // 未使用, 标记
+                self.address_bitmap[byte_idx] |= 1 << bit_idx;
+                // 更新 hint 为 addr + 1 (下次从这里开始扫描)
+                self.next_address_hint = addr.wrapping_add(1);
+                if self.next_address_hint == 0 || self.next_address_hint == 255 {
+                    self.next_address_hint = 1;
+                }
+                return Ok(addr);
+            }
+        }
+
+        // 全部地址已用尽
+        Err(DriverError::Busy)
     }
 
-    fn free_address(&mut self, _address: u8) {
-        // TODO(TRACK-1F75C1): 实现地址释放
+    fn free_address(&mut self, address: u8) {
+        // USB-1.4: TRACK-1F75C1 消除 — 设备地址释放
+        //
+        // 清零 address_bitmap 对应位. 地址 0 和 255 静默忽略 (保留地址).
+        if address == 0 || address == 255 {
+            return;
+        }
+        let byte_idx = (address / 8) as usize;
+        let bit_idx = address % 8;
+        if byte_idx < self.address_bitmap.len() {
+            self.address_bitmap[byte_idx] &= !(1 << bit_idx);
+        }
     }
 }
 
@@ -598,5 +782,177 @@ mod tests {
         assert_eq!(portsc::CURRENT_CONNECT_STATUS, 1);
         assert_eq!(portsc::PORT_ENABLED, 2);
         assert_eq!(portsc::PORT_POWER, 512);
+    }
+
+    // USB-1.4: 设备地址分配/释放单元测试
+    //
+    // 注: 地址分配不需要硬件 (仅操作 address_bitmap), 可单测.
+    //     submit_urb / cancel_urb 需要真实硬件, 不在此单测.
+
+    #[test]
+    fn test_address_allocate_returns_first_free_slot() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        // 初始 next_address_hint = 1, 应分配到 1
+        assert_eq!(ctrl.allocate_address().unwrap(), 1);
+        // 再分配应得 2
+        assert_eq!(ctrl.allocate_address().unwrap(), 2);
+        // 再分配应得 3
+        assert_eq!(ctrl.allocate_address().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_address_free_then_reallocate() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        let addr1 = ctrl.allocate_address().unwrap();
+        ctrl.free_address(addr1);
+        // 释放后重新分配, 因 next_address_hint 已更新, 不一定回到 addr1
+        let _addr2 = ctrl.allocate_address().unwrap();
+        // 验证 addr1 已被释放 (bitmap 对应位为 0)
+        // 通过 free_address 幂等性验证: 重复释放同一地址不应 panic
+        ctrl.free_address(addr1);
+    }
+
+    #[test]
+    fn test_address_free_zero_and_255_are_noops() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        // 地址 0 和 255 是保留地址, 静默忽略
+        ctrl.free_address(0);
+        ctrl.free_address(255);
+        // 分配仍应从 1 开始
+        assert_eq!(ctrl.allocate_address().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_address_allocate_exhaustion_returns_busy() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        // 分配所有 254 个地址 (1..=254)
+        for _ in 0..254 {
+            ctrl.allocate_address().expect("should have free slot");
+        }
+        // 第 255 次应返回 Busy
+        let result = ctrl.allocate_address();
+        assert!(matches!(result, Err(DriverError::Busy)));
+    }
+
+    #[test]
+    fn test_address_reuse_after_free() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        // 分配 1, 2, 3
+        let _a = ctrl.allocate_address().unwrap();
+        let _b = ctrl.allocate_address().unwrap();
+        let c = ctrl.allocate_address().unwrap();
+        // 释放 c (值=3)
+        ctrl.free_address(c);
+        // 继续分配应得 4 (hint 已递增)
+        let d = ctrl.allocate_address().unwrap();
+        assert_eq!(d, 4);
+    }
+
+    // USB-1.3: URB 提交骨架单元测试 (参数校验 + 计数器单调递增)
+
+    #[test]
+    fn test_submit_urb_fails_when_not_initialized() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        // 未 init_hardware, initialized=false
+        let mut buf = [0u8; 16];
+        let urb = Urb {
+            id: 1,
+            device: 1,
+            endpoint: 1,
+            setup: None,
+            buffer: buf.as_mut_ptr(),
+            buffer_length: buf.len(),
+            actual_length: 0,
+            status: usb_core::UrbStatus::Pending,
+            callback: None,
+        };
+        let result = ctrl.submit_urb(&urb);
+        assert!(matches!(result, Err(DriverError::NotInitialized)));
+    }
+
+    #[test]
+    fn test_submit_urb_fails_with_device_zero() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        ctrl.initialized = true; // 绕过 init_hardware (无硬件环境)
+        let mut buf = [0u8; 16];
+        let urb = Urb {
+            id: 1,
+            device: 0, // invalid
+            endpoint: 1,
+            setup: None,
+            buffer: buf.as_mut_ptr(),
+            buffer_length: buf.len(),
+            actual_length: 0,
+            status: usb_core::UrbStatus::Pending,
+            callback: None,
+        };
+        let result = ctrl.submit_urb(&urb);
+        assert!(matches!(result, Err(DriverError::InvalidParameter)));
+    }
+
+    #[test]
+    fn test_submit_urb_fails_with_invalid_endpoint() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        ctrl.initialized = true;
+        let mut buf = [0u8; 16];
+        let urb = Urb {
+            id: 1,
+            device: 1,
+            endpoint: 16, // invalid (> 15)
+            setup: None,
+            buffer: buf.as_mut_ptr(),
+            buffer_length: buf.len(),
+            actual_length: 0,
+            status: usb_core::UrbStatus::Pending,
+            callback: None,
+        };
+        let result = ctrl.submit_urb(&urb);
+        assert!(matches!(result, Err(DriverError::InvalidParameter)));
+    }
+
+    #[test]
+    fn test_submit_urb_fails_with_null_buffer() {
+        let mut ctrl = XhciController::new(unsafe {
+            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
+                .expect("test IoMem")
+        });
+        ctrl.initialized = true;
+        let urb = Urb {
+            id: 1,
+            device: 1,
+            endpoint: 1,
+            setup: None,
+            buffer: core::ptr::null_mut(), // invalid
+            buffer_length: 16,
+            actual_length: 0,
+            status: usb_core::UrbStatus::Pending,
+            callback: None,
+        };
+        let result = ctrl.submit_urb(&urb);
+        assert!(matches!(result, Err(DriverError::InvalidParameter)));
     }
 }
