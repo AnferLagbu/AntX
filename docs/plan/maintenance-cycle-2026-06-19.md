@@ -1751,11 +1751,36 @@ pub unsafe fn new_with_iomem(iomem: IoMem, hpd_reg_offset: usize) -> Self {
 
 #### P0 (必修)
 
-| ID | 项 | 原因 |
-|----|----|------|
-| P0-1 | 修复 kernel_test 编译错误 | 单元测试无法运行 |
-| P0-2 | 文档化 IoMem 最小大小 (≥ 0x07A) | 隐式约定风险 |
-| P0-3 | 时序公式精度扩展 (DMT lookup) | 真实显示器兼容性 |
+| ID | 项 | 原因 | 状态 |
+|----|----|------|------|
+| P0-1 | 修复 kernel_test 编译错误 | 单元测试无法运行 | [x] (2026-06-23, 见下方完成记录) |
+| P0-2 | 文档化 IoMem 最小大小 (≥ 0x07A) | 隐式约定风险 | [ ] |
+| P0-3 | 时序公式精度扩展 (DMT lookup) | 真实显示器兼容性 | [ ] |
+
+**P0-1 完成记录** (2026-06-23 接手人修复 6 个预存编译错误):
+- **变更**:
+  - `src/kernel/framework/driver/mod.rs`: 给 3 处 e1000 re-export (`e1000_probe` 等函数 / `e1000_take_device` / `virt_to_phys` 等内部类型) 加 `#[cfg(not(feature = "kernel_test"))]` 守卫 (e1000.rs 内部函数本就 gate, 此处必须同步)
+  - `src/kernel/framework/net/mod.rs`: 给 3 处 `init::` / `smoltcp_impl::` re-export 加 `#[cfg(not(feature = "kernel_test"))]` 守卫 (net/mod.rs:6/12 模块本就 gate)
+  - `src/kernel/framework/sync/mod.rs`: 删除 stub `pub struct CondVar { _padding: [u8; 64] }` + 3 个 stub `extern "C" fn cond_init/cond_signal/cond_broadcast` (无任何调用方, 与 `mutex::CondVar` 冲突), 新增 `pub use mutex::CondVar;` re-export
+  - `src/kernel/framework/tests/driver.rs`: `Result` → `DriverResult` (2 处 import + 2 处类型)
+  - `src/kernel/framework/tests/net.rs`: 整个文件加 `#[cfg(not(feature = "kernel_test"))]` 守卫 (e1000 内部测试需真实 PCI, 无法在 kernel_test host 模拟下运行), `register_tests()` 提供 kernel_test 空版本 + 普通版本双实现
+- **根因**:
+  - **错误 1-3** (e1000 6 个未解析符号): `e1000.rs` 中 `e1000_probe` 等受 `#[cfg(not(kernel_test))]` 守卫 (kernel_test 无 PCI), 但 `driver/mod.rs` re-export 无 gate → kernel_test build 失败
+  - **错误 4-6** (init/smoltcp_impl): `net/mod.rs` 中 `init`/`smoltcp_impl` 模块 `#[cfg(not(kernel_test))]`, 但 re-export 无 gate
+  - **错误 7** (CondVar::new): `sync::CondVar` (stub) 与 `sync::mutex::CondVar` (有 new()) 冲突, 测试导入的是 stub
+  - **错误 8-9** (Result 类型): `Result` 从 driver re-export 失败 (实际只有 `DriverResult` 别名), 测试改名为 `DriverResult`
+  - **错误 10** (net.rs 测试): 同错误 1-3, e1000 内部类型不可见
+- **验证**:
+  - `cargo build --release --target x86_64-unknown-none --features kernel_test`: ✅ 0 error (从 6 error → 0 error)
+  - `cargo build --release --target x86_64-unknown-none` (无 feature): ✅ 0 error / 12 warnings (无新增)
+  - `cargo build --release --target aarch64-unknown-none`: ✅ 0 error / 12 warnings (无新增)
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72 test groups, 705 测试 0 failed
+- **TCB 影响**: 删除 3 处 `extern "C" fn cond_*` stub (无调用方, 死代码), 删除 1 处 stub `CondVar` 结构, 新增 1 行 `pub use mutex::CondVar;`
+- **设计取舍**:
+  - stub CondVar 完全删除 (非保留 deprecated): 0 调用方 + 与真实 CondVar 冲突 + 删除降低 TCB 体积
+  - e1000 re-export 用 cfg gate (非 #[allow(unused_imports)]): 编译期确保 kernel_test 下符号不可见时也不引用
+  - tests/net.rs 整个文件 gate: e1000 真实硬件测试无 host 模拟 fallback, 不如直接跳过; 真实硬件测试建议 QEMU + e1000 emulation
 
 #### P1 (推荐)
 

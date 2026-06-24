@@ -4,7 +4,7 @@ use crate::kernel::framework::driver::{
 };
 use crate::kernel::framework::driver::Driver;
 
-use crate::kernel::framework::driver::{DeviceInfo, DeviceType, DriverError, Result};
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, DriverError, DriverResult};
 use crate::kernel::framework::driver::keyboard::{
     get_special_key, KeyboardBuffer, KeyboardDriver, ModifierState, SpecialKey, KB_LED_CAPS_LOCK,
     KB_LED_NUM_LOCK, SCANCODE_TABLE, SHIFT_TABLE,
@@ -66,10 +66,10 @@ fn driver_device_info_builder() -> TestResult {
 }
 
 fn driver_result_type() -> TestResult {
-    fn returns_ok() -> Result<u32> {
+    fn returns_ok() -> DriverResult<u32> {
         Ok(42)
     }
-    fn returns_err() -> Result<u32> {
+    fn returns_err() -> DriverResult<u32> {
         Err(DriverError::DeviceNotFound)
     }
     check!(returns_ok().is_ok(), "ok is ok");

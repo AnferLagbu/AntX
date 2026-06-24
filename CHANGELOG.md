@@ -54,6 +54,16 @@
   - `set_video_mode()` 第 3 步实装 (IoMem 路径); 删除全部 3 步 TODO 注释 (TRACK-1BDEF6 完全消除)
   - 新增 2 个单元测试: 默认 negative sync / 老式 CEA positive sync
   - 调用顺序强制: pixel clock → timing → sync polarity → TMDS enable
+- **P0-1 kernel_test 编译错误修复** (接手人修复 6 个预存编译错误, 2026-06-23)
+  - `src/kernel/framework/driver/mod.rs`: 给 3 处 e1000 re-export 加 `#[cfg(not(feature = "kernel_test"))]` 守卫 (e1000.rs 内部本就 gate)
+  - `src/kernel/framework/net/mod.rs`: 给 3 处 `init::` / `smoltcp_impl::` re-export 加 cfg gate (net/mod.rs 模块本就 gate)
+  - `src/kernel/framework/sync/mod.rs`: 删除 stub `CondVar` 结构 + 3 个 stub `extern "C" fn cond_*` (无任何调用方), `pub use mutex::CondVar;` re-export
+  - `src/kernel/framework/tests/driver.rs`: `Result` → `DriverResult` (2 处 import + 2 处类型)
+  - `src/kernel/framework/tests/net.rs`: 整个文件加 cfg 守卫 (e1000 内部测试需真实 PCI), `register_tests()` 提供双版本 (kernel_test 空 + 普通版)
+  - 编译错误: 6 error → 0 error (kernel_test feature)
+  - 标准编译: 0 新 warning (x86_64 + aarch64)
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72 test groups, 705 测试 0 failed
 
 ### 修复
 - **DISPLAY-2.1 关联预存问题修复** (CLAUDE.md 预存问题即修规则, 接手人同步修复)

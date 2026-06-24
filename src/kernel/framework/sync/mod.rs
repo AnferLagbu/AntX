@@ -537,32 +537,17 @@ pub extern "C" fn mutex_lock_timeout(m: *const MutexInner, _timeout_ms: u64) -> 
 }
 
 // ============================================================================
-// 条件变量桩函数 (简化实现)
+// 条件变量 re-export (P0-1 修复)
 // ============================================================================
+//
+// 历史: 此前模块自带 `CondVar` 占位结构 (#[repr(C)] 64 字节 padding) + 3 个
+// extern "C" stub (cond_init/cond_signal/cond_broadcast), 无任何调用方,
+// 与 `mutex::CondVar` (带 new() 实现) 冲突.
+//
+// 修复: 删除 stub 结构与 stub 函数, re-export `mutex::CondVar` 作为正式实现.
+// 这样 `sync::CondVar` 解析到真实 Rust 实现, 测试 `CondVar::new()` 可用.
 
-/// 条件变量结构 (简化)
-#[repr(C)]
-pub struct CondVar {
-    _padding: [u8; 64], // 占位符，保持与 C 版本兼容
-}
-
-/// 初始化条件变量
-#[no_mangle]
-pub extern "C" fn cond_init(_cond: *mut CondVar) -> i32 {
-    0 // 成功
-}
-
-/// 发送信号唤醒一个等待者
-#[no_mangle]
-pub extern "C" fn cond_signal(_cond: *mut CondVar) -> i32 {
-    0 // 成功
-}
-
-/// 广播唤醒所有等待者
-#[no_mangle]
-pub extern "C" fn cond_broadcast(_cond: *mut CondVar) -> i32 {
-    0 // 成功
-}
+pub use mutex::CondVar;
 
 // ============================================================================
 // 辅助函数声明

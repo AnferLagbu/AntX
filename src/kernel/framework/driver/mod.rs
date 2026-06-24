@@ -129,7 +129,12 @@ pub use char::vga::Color as VgaColor;
 pub use char::pl011::Pl011Driver;
 
 // --- 网络设备导出 ---
+// e1000 内部函数 (`e1000_probe` 等) 在 e1000.rs 中以
+// `#[cfg(not(feature = "kernel_test"))]` 守卫 (kernel_test 无 PCI 总线);
+// 此处 re-export 必须同步 gate, 否则 kernel_test build 失败 (P0-1 修复).
+#[cfg(not(feature = "kernel_test"))]
 pub use net::e1000::{e1000_probe, e1000_net_send, e1000_net_recv, e1000_net_get_mac, e1000_net_irq, take_device as e1000_take_device};
+#[cfg(not(feature = "kernel_test"))]
 pub use virtio::net::{virtio_net_probe, virtio_net_send, virtio_net_recv, virtio_net_get_mac, virtio_net_irq, take_device as virtio_net_take_device};
 
 // --- 输入设备导出 ---
@@ -150,6 +155,7 @@ pub use storage::ata::{AtaController, AtaDevice, get_io_base, get_ctrl_base, ATA
 pub use char::serial::{RingBuffer, COM1_BASE, COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE};
 
 // --- e1000 内部细节 re-export (供测试使用) ---
+#[cfg(not(feature = "kernel_test"))]
 pub use net::e1000::{virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_TX_RING_SIZE};
 
 // --- power/kexec/uefi 公共接口 re-export ---

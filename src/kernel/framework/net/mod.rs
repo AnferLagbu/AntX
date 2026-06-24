@@ -60,7 +60,12 @@ pub mod syscall;
 // ============================================================================
 
 pub use types::*;
-pub use init::poll_network;
 pub use wait_queue::*;
+// init/smoltcp_impl 模块在 `#[cfg(not(feature = "kernel_test"))]` 守卫下;
+// 此处 re-export 必须同步 gate, 否则 kernel_test build 失败 (P0-1 修复).
+#[cfg(not(feature = "kernel_test"))]
+pub use init::poll_network;
+#[cfg(not(feature = "kernel_test"))]
 pub use smoltcp_impl::{ChitinNetDevice, NetworkStack, init_stack, poll_stack};
+#[cfg(not(feature = "kernel_test"))]
 pub(crate) use init::raw;
