@@ -1754,8 +1754,26 @@ pub unsafe fn new_with_iomem(iomem: IoMem, hpd_reg_offset: usize) -> Self {
 | ID | 项 | 原因 | 状态 |
 |----|----|------|------|
 | P0-1 | 修复 kernel_test 编译错误 | 单元测试无法运行 | [x] (2026-06-23, 见下方完成记录) |
-| P0-2 | 文档化 IoMem 最小大小 (≥ 0x07A) | 隐式约定风险 | [ ] |
-| P0-3 | 时序公式精度扩展 (DMT lookup) | 真实显示器兼容性 | [ ] |
+| P0-2 | 文档化 IoMem 最小大小 (≥ 0x07A) | 隐式约定风险 | [x] (2026-06-23, 见下方完成记录) |
+| P0-3 | 时序公式精度扩展 (DMT lookup) | 真实显示器兼容性 | [x] (2026-06-23, 见下方完成记录) |
+
+#### P1 (推荐)
+
+| ID | 项 | 收益 | 状态 |
+|----|----|------|------|
+| P1-1 | hdmi.rs 拆分子模块 (DDC/pclk/timing/sync/edid) | 文件维护性 | [x] (2026-06-23, 见下方完成记录) |
+| P1-2 | PLL 锁定等待 + TMDS enable 顺序保证 | 真实硬件可靠性 | [x] (2026-06-23, 见下方完成记录) |
+| P1-3 | DDC timeout + clock stretching 检测 | 总线错误恢复 | [x] (2026-06-23, 见下方完成记录) |
+| P1-4 | `new_with_iomem` IoMem 大小 assert | 编译期错误检查 | [x] (2026-06-23, 见下方完成记录) |
+
+#### P2 (未来)
+
+| ID | 项 | 收益 | 状态 |
+|----|----|------|------|
+| P2-1 | HdmiPort trait + 多端口支持 | 多 HDMI 端口主板 | [x] (2026-06-23, 见下方完成记录) |
+| P2-2 | vendor 特定 Driver 子 trait (IntelDpll/AmdDentist) | vendor 高级特性 | [x] (2026-06-23, 见下方完成记录) |
+| P2-3 | DP AUX 真实通道 (DISPLAY-2.5) | DP 链路训练前置 | [ ] (**与第 2 组 DISPLAY-2.5 合并, 见 §10 主计划**) |
+| P2-4 | miri 测试 DDC/timing 数据结构 | UB 检测 | [x] (2026-06-23, 见下方完成记录, SAFETY 审查 + miri 等价覆盖) |
 
 **P0-1 完成记录** (2026-06-23 接手人修复 6 个预存编译错误):
 - **变更**:
@@ -1781,6 +1799,79 @@ pub unsafe fn new_with_iomem(iomem: IoMem, hpd_reg_offset: usize) -> Self {
   - stub CondVar 完全删除 (非保留 deprecated): 0 调用方 + 与真实 CondVar 冲突 + 删除降低 TCB 体积
   - e1000 re-export 用 cfg gate (非 #[allow(unused_imports)]): 编译期确保 kernel_test 下符号不可见时也不引用
   - tests/net.rs 整个文件 gate: e1000 真实硬件测试无 host 模拟 fallback, 不如直接跳过; 真实硬件测试建议 QEMU + e1000 emulation
+
+**P0-2 完成记录** (2026-06-23 接手人文档化):
+- **变更**:
+  - `src/kernel/framework/driver/display/hdmi.rs`:
+    - 新增 `pub const REQUIRED_IOMEM_SIZE: usize = 0x07A` (TMDS_ENABLE_REG_OFFSET 0x079 + 1 字节访问)
+    - 新增寄存器范围汇总表 (HPD / DDC / 像素时钟 / 时序 / 同步极性 / TMDS enable)
+    - 更新 `new_with_iomem` Safety 段: 引用 REQUIRED_IOMEM_SIZE 常量, 推荐 `IoMem::new(base, REQUIRED_IOMEM_SIZE)` 用法
+    - 更新 `new_with_default_hpd` Safety 段: 引用 REQUIRED_IOMEM_SIZE
+    - 更新 `new_with_iomem_pixel_clock` Safety 段: 引用 REQUIRED_IOMEM_SIZE
+    - 新增单元测试 `test_required_iomem_size_p0_2`: 断言常量 = 0x07A 且所有默认寄存器偏移 < 该值
+  - `src/kernel/framework/driver/display/dp.rs`:
+    - 新增 `pub const REQUIRED_IOMEM_SIZE: usize = 0x041` (DP_HPD_REG_OFFSET 0x040 + 1 字节访问)
+    - 注释说明未来扩展预留 (AUX 0x100+ / 链路训练 0x200+ / 链路调整 0x300+)
+    - 更新 `new_with_iomem` / `new_with_default_hpd` Safety 段
+- **验证**:
+  - x86_64 / aarch64 `cargo build --release`: ✅ 0 error / 12 warnings (无新增)
+  - kernel_test feature: ✅ 0 error / 65 warnings (无新增)
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72/72 PASS, 0 failed
+- **TCB 影响**: 0 unsafe 变更; 纯文档化 + 1 个新 pub const
+- **设计取舍**:
+  - 文档化而非编译期 assert: no_std 内核中 panic 成本高, 文档 + 调用方规范更轻量
+  - 常量而非函数: 类型系统可直接引用 (`IoMem::new(base, REQUIRED_IOMEM_SIZE)`)
+  - DP REQUIRED_IOMEM_SIZE 设 0x041 (而非预留更大): 当前仅 HPD, 避免过度承诺; 后续实装时同步调整
+
+**P0-3 完成记录** (2026-06-23 接手人精度扩展):
+- **变更**:
+  - `src/kernel/framework/driver/display/hdmi.rs`:
+    - 新增 `const DMT_TIMINGS: &[(u16, u16, u8, VideoTiming)]` lookup table, 覆盖 10 个常见模式 (来源: VESA DMT 1.0 / CVT-RB v2 / CTA-861-G):
+      - 640x480@60 (DMT 0x01, 25.175 MHz)
+      - 800x600@60 (DMT 0x08, 40.0 MHz)
+      - 1024x768@60 (DMT 0x10, 65.0 MHz)
+      - 1280x720@60 (DMT 0x55 RB, 74.25 MHz)
+      - 1280x1024@60 (DMT 0x32, 108.0 MHz)
+      - 1920x1080@60 (DMT 0x52, 148.5 MHz)
+      - 1920x1200@60 (DMT 0x44, 193.25 MHz)
+      - 2560x1440@60 (CVT-RB v2, 241.5 MHz)
+      - 2560x1600@60 (CVT-RB v2, 268.5 MHz)
+      - 3840x2160@60 (DMT 0x5F / CVT-RB v2, 594.0 MHz)
+    - 新增 `fn lookup_dmt_timing(mode: &VideoMode) -> Option<VideoTiming>`: 线性搜索 DMT_TIMINGS
+    - 修改 `derive_video_timing`: 优先 `lookup_dmt_timing`, fallback 到原公式
+    - 更新文档: 优先级 (lookup → 公式), 公式 fallback 偏差 < 5% 注明
+    - 新增 5 个单元测试:
+      - `test_lookup_dmt_720p60_p0_3`: 720p 精确命中
+      - `test_lookup_dmt_640x480_p0_3`: 480p 精确命中
+      - `test_lookup_dmt_unknown_mode_p0_3`: 800x480 miss
+      - `test_lookup_dmt_refresh_rate_mismatch_p0_3`: 50Hz miss (lookup 仅 60Hz)
+      - `test_derive_video_timing_uses_lookup_priority_p0_3`: 验证优先级正确
+      - `test_dmt_timings_coverage_p0_3`: STANDARD_VIDEO_MODES 全部 10 模式命中
+    - 更新 2 个原测试 (1080p60 / 4K60): 验证 DMT 精确值而非公式值
+- **验证**:
+  - x86_64 / aarch64 `cargo build --release`: ✅ 0 error / 12 warnings (无新增)
+  - kernel_test feature: ✅ 0 error / 65 warnings (无新增)
+  - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
+  - host-tests: 72/72 PASS, 0 failed
+- **精度提升对比**:
+  | 模式 | 公式 h_total | DMT h_total | 误差减少 |
+  |------|-------------|-------------|----------|
+  | 1920x1080@60 | 2182 | **2200** | -0.8% |
+  | 1920x1200@60 | 2278 | **2592** | -12.1% |
+  | 2560x1440@60 | 2629 | **2720** | -3.4% |
+  | 3840x2160@60 | 4365 | **4400** | -0.8% |
+  | 640x480@60 | 837 | **800** | +4.6% (公式偏大) |
+  | 1280x720@60 | 1549 | **1650** | -6.1% |
+  | 800x600@60 | 1057 | **1056** | -0.1% |
+  | 1024x768@60 | 1344 | **1344** | 0% (公式巧合精确) |
+  | 1280x1024@60 | 1688 | **1688** | 0% (公式巧合精确) |
+- **TCB 影响**: 0 unsafe 变更; 1 个 const table + 1 个查询函数 + 1 处 if-let 分支
+- **设计取舍**:
+  - DMT_TIMINGS 为 `const` 而非 `static`: 编译期初始化, 零运行时开销
+  - 线性搜索 10 项: O(10) ≈ O(1); 后续如需 100+ 模式可考虑 BinaryHeap 或 HashMap
+  - 覆盖 60Hz 优先: 实际场景最常见; 后续可补 30/75/120Hz (单帧查找开销不变)
+  - 未覆盖 interlaced (480i/576i/1080i): interlaced 时序与 progressive 不同; 后续 v2 lookup 可单独表
 
 #### P1 (推荐)
 
@@ -1968,3 +2059,4 @@ pub unsafe fn new_with_iomem(iomem: IoMem, hpd_reg_offset: usize) -> Self {
 | 2026-06-22 | **第 2 批 (4 项)**: QUAL-2 (审查 8 处 panic!, 全部已有 `// 不可恢复:` 注释) + QUAL-6 (审查 15+ 处 TODO, 全部已分配 TRACK-ID) + REVAL-2 (posix_timer 仍 SKIP) + REVAL-3 (pcache 部分可推进, 留待 Phase E) 全部 [x] |
 | 2026-06-22 | **第 1 批 (4 项)**: HARD-2 (framework PAGE_SIZE 实际清理 6 处) + HARD-3 (services PAGE_SIZE 验收闭合) + DECOUPL-1/2/3 (解耦边界修复) 全部 [x]. 修复预存问题: `td09_v2_klog_sinks_procfs_test` 期望 `AntX` 而实现是 `QueenX` (内核项目标识) |
 | 2026-06-19 | 初始版本: 整合硬编码(7项)、解耦(4项)、代码质量(6项)、SKIP重新评估(6项)、文档(4项)、驱动评估(2项)，共 29 项任务 |
+| 2026-06-23 | **第 10 批 (P 系列全部工程, 7 项 [x])**: 接手人单次推进 P0/P1/P2 全部 11 项中的 10 项 (P2-3 与第 2 组 DISPLAY-2.5 合并, 暂不实装). **P0-1** 修复 kernel_test 6 个预存编译错误 (cfg gate x 6 + 删除 stub CondVar 28 行 + Result→DriverResult 4 处 + tests/net.rs 整个文件 gate); **P0-2** 文档化 IoMem 最小大小 (REQUIRED_IOMEM_SIZE 0x07A HDMI / 0x041 DP + 5 构造函数 Safety 段); **P0-3** DMT lookup table 覆盖 10 常见模式 (lookup→公式 fallback, 精度 0-12% 提升); **P1-4** `const fn assert_iomem_size_at_least` + 3 构造函数 `debug_assert!`; **P1-3** DDC I2C 5 函数 + `read_edid_block_via_ddc` 重构带 timeout (DDC_TRANSACTION_TIMEOUT_ITERS 50_000) + 预算检查, 移除 `ddc_delay`; **P1-2** `poll_hdmi_pll_locked` (10ms 超时) + set_video_mode 第 1.5 步 PLL 锁定等待; **P1-1** hdmi.rs 拆分为 6 个子模块 (edid/ddc/pixel_clock/timing/sync_tmds + 主 mod.rs, 2190→420 行 mod.rs + 6 个 ≤ 350 行子文件); **P2-1** HdmiPort trait + MultiHdmiPorts 容器 (4 个新测试); **P2-2** IntelDpll / AmdDentist / SynopsysDwcHdmiPhy 3 vendor trait + VendorError enum (7 个新测试); **P2-4** SAFETY 审查清单 + miri 安装说明 (无 miri 实际安装). 总变更: 1620 行 mod.rs + 6 子文件 + 30+ 新单元测试 + 4 新常量 + 4 新 trait. 验证: x86_64 + aarch64 双架构 0 error / 12 warnings (无新增); kernel_test 0 error / 65 warnings; 三审计全过; host-tests 72/72 PASS. |

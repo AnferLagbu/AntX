@@ -64,6 +64,17 @@
   - 标准编译: 0 新 warning (x86_64 + aarch64)
   - 三审计: services-boundary 0/0, safety-coverage 100% (55/55), deadlock-matrix 0/0
   - host-tests: 72 test groups, 705 测试 0 failed
+- **P0-2 IoMem 最小大小文档化** (接手人实装, 2026-06-23)
+  - `src/kernel/framework/driver/display/hdmi.rs`: 新增 `pub const REQUIRED_IOMEM_SIZE: usize = 0x07A` (TMDS enable 寄存器结尾) + 寄存器范围汇总表 + 3 个构造函数 Safety 文档更新
+  - `src/kernel/framework/driver/display/dp.rs`: 新增 `pub const REQUIRED_IOMEM_SIZE: usize = 0x041` + 未来扩展预留注释 + 2 个构造函数 Safety 文档更新
+  - 新增单元测试 `test_required_iomem_size_p0_2`: 断言常量 = 0x07A 且所有默认寄存器偏移 < 该值
+  - TCB 影响: 0 unsafe 变更
+- **P0-3 DMT lookup table 精度扩展** (接手人实装, 2026-06-23)
+  - `src/kernel/framework/driver/display/hdmi.rs`: 新增 `const DMT_TIMINGS` lookup table (10 个常见模式 VESA DMT/CVT-RB v2 精确值) + `lookup_dmt_timing()` 查询函数 + `derive_video_timing()` 优先级改为 lookup → 公式 fallback
+  - 覆盖模式: 640x480 / 800x600 / 1024x768 / 1280x720 / 1280x1024 / 1920x1080 / 1920x1200 / 2560x1440 / 2560x1600 / 3840x2160 全部 @60Hz
+  - 新增 5 个单元测试 + 更新 2 个原测试 (1080p60 / 4K60): 验证 DMT 精确值而非公式值
+  - 精度提升: 1920x1080 公式 2182 → DMT 2200 (-0.8%); 1920x1200 公式 2278 → DMT 2592 (-12.1%); 2560x1440 公式 2629 → DMT 2720 (-3.4%)
+  - TCB 影响: 0 unsafe 变更
 
 ### 修复
 - **DISPLAY-2.1 关联预存问题修复** (CLAUDE.md 预存问题即修规则, 接手人同步修复)

@@ -49,6 +49,32 @@ mod aux_address {
 /// 与 HDMI 共享 HPD 的厂商应通过 [`DpController::new_with_iomem`] 显式指定偏移。
 const DP_HPD_REG_OFFSET: usize = 0x040;
 
+/// 当前实装阶段 (仅 HPD) DP 控制器所需的最小 IoMem 大小.
+///
+/// P0-2: 文档化 IoMem 最小大小, 消除隐式约定风险.
+/// P1-4: 提供 [`assert_iomem_size_at_least`] 编译期检查辅助函数.
+///
+/// 实际映射需求: HPD 寄存器 (0x040, 1 字节) → 至少 0x041.
+///
+/// 未来扩展预留 (DISPLAY-2.5 / 2.6 / 2.7 实装时同步增大):
+/// - AUX 通道: 0x100..=0x110 (16 字节, 含 CMD/STA/DAT0-7)
+/// - 链路训练状态: 0x200..=0x210
+/// - 链路训练调整: 0x300..=0x310
+///
+/// 当前常量 0x041 已满足 HPD-only 阶段; 后续实装会同步调整.
+pub const REQUIRED_IOMEM_SIZE: usize = 0x041;
+
+/// 编译期检查 IoMem 大小 (P1-4).
+///
+/// 当 `size` 是 const 表达式且 `size < REQUIRED_IOMEM_SIZE` 时, 编译期 panic;
+/// 否则零运行时开销. 用法见 hdmi.rs 对应函数.
+#[inline]
+pub const fn assert_iomem_size_at_least(size: usize) {
+    if size < REQUIRED_IOMEM_SIZE {
+        panic!("IoMem size must be >= DpController::REQUIRED_IOMEM_SIZE");
+    }
+}
+
 /// DP HPD 状态位 (bit 0)
 const DP_HPD_STATUS_BIT: u8 = 0x01;
 
@@ -250,11 +276,21 @@ impl DpController {
     ///
     /// - `iomem` 必须指向有效 DP 控制器 MMIO 区域;
     /// - 调用方负责 `iomem` 的生命周期管理 (在 `DpController` 存活期间不得释放);
+    /// - `iomem.len() >= REQUIRED_IOMEM_SIZE` (0x041), 当前仅覆盖 HPD 寄存器;
     /// - `hpd_reg_offset + 1` 必须落在 `iomem` 范围内。
+    ///
+    /// 推荐: `DpController::new_with_iomem(IoMem::new(base, REQUIRED_IOMEM_SIZE), DP_HPD_REG_OFFSET)`。
     pub unsafe fn new_with_iomem(
         iomem: IoMem,
         hpd_reg_offset: usize,
     ) -> Self {
+        // P1-4: debug 构建 IoMem 大小检查 (release 零开销).
+        debug_assert!(
+            iomem.len() >= REQUIRED_IOMEM_SIZE,
+            "DpController 需要 IoMem >= {} 字节, got {}",
+            REQUIRED_IOMEM_SIZE,
+            iomem.len()
+        );
         Self {
             iomem: Some(iomem),
             hpd_reg_offset,
@@ -273,6 +309,7 @@ impl DpController {
     /// # Safety
     ///
     /// 同 [`DpController::new_with_iomem`], 默认偏移见 [`DP_HPD_REG_OFFSET`].
+    /// 即 `iomem.len() >= REQUIRED_IOMEM_SIZE` (0x041).
     pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self {
         Self::new_with_iomem(iomem, DP_HPD_REG_OFFSET)
     }
