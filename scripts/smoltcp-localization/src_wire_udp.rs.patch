@@ -1,0 +1,10 @@
+--- a/src/wire/udp.rs	2026-06-24 23:16:09.016137802 +0800
++++ b/src/wire/udp.rs	2026-06-17 10:32:35.714006356 +0800
+@@ -272,6 +272,7 @@
+     /// This never calculates the checksum, and is intended for internal-use only,
+     /// not for packets that are going to be actually sent over the network. For
+     /// example, when decompressing 6lowpan.
++    #[allow(dead_code)]
+     pub(crate) fn emit_header<T>(&self, packet: &mut Packet<&mut T>, payload_len: usize)
+     where
+         T: AsRef<[u8]> + AsMut<[u8]> + ?Sized,

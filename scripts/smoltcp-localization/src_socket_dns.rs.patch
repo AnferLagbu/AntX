@@ -1,0 +1,10 @@
+--- a/src/socket/dns.rs	2026-06-24 23:16:09.012461036 +0800
++++ b/src/socket/dns.rs	2026-06-17 10:32:35.695019843 +0800
+@@ -246,6 +246,7 @@
+ 
+         let mut raw_name: Vec<u8, DNS_MAX_NAME_SIZE> = Vec::new();
+ 
++        #[allow(unused_mut)]
+         let mut mdns = MulticastDns::Disabled;
+         #[cfg(feature = "socket-mdns")]
+         if name.split(|&c| c == b'.').next_back().unwrap() == b"local" {

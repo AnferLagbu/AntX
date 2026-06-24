@@ -12,6 +12,9 @@ pub mod init;
 pub mod route;
 /// C5: Netfilter 包过滤框架
 pub mod netfilter;
+/// REVAL-W: 网络协议栈抽象 — Framekernel Safe API (W1 子任务, 2026-06-24)
+/// 设计见 [docs/plan/smoltcp-framekernel-wrapper.md]
+pub mod iface_trait;
 #[cfg(not(feature = "kernel_test"))]
 pub mod smoltcp_impl;
 /// AF_UNIX 子系统 (Phase C.3)

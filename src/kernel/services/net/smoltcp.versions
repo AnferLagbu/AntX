@@ -1,0 +1,37 @@
+# smoltcp vendored 锁文件
+# 由 scripts/vendor_smoltcp.sh lock 自动生成
+# 用于 CI 验证 vendored 源与上游 byte-level 一致 (排除本地化部分)
+#
+# 关联: docs/plan/smoltcp-framekernel-wrapper.md §同步机制
+# 模式: LOCALIZED_VENDORED (上游版本 + 12 个本地化 lint/SAFETY 注释)
+
+# 上游 tag (semver, 形如 v0.13.1)
+SMOLTCP_TAG=v0.13.1
+
+# 上游 tag 对应 commit SHA (实测, 2026-06-24)
+SMOLTCP_SHA=e347a1e2d3ac33c5ce2c0c114e24b85ae23c4897
+
+# 上游 src/ 目录下所有 .rs 文件的合并 SHA256
+# 计算方法: LC_ALL=C find src -name '*.rs' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum
+SMOLTCP_UPSTREAM_SRC_HASH=73b9bfae7e0763cb5864d0ca9a10f24fa21121dcf4f49a562024616e1478ec06
+
+# 本地 vendored 实际 src/ 合并 SHA256 (含 12 个本地化)
+# 计算方法: LC_ALL=C find src/kernel/framework/net/smoltcp/src -name '*.rs' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum
+SMOLTCP_LOCAL_SRC_HASH=b6eff20e35fa98c4eb25116398950d01f32c85586217679654d63eebb45d0121
+
+# 锁定时间 (ISO 8601, 仅供人类阅读, CI 不读取)
+SMOLTCP_LOCKED_AT=2026-06-24T15:30:00Z
+
+# 锁定模式 (LOCALIZED_VENDORED)
+# 含义: vendored 副本在上游基础上包含本地化 (lint + SAFETY 注释)
+# CI 校验: 验证 LOCAL_SRC_HASH 与本地计算一致, UPSTREAM_SRC_HASH 验证上游 tag 字节级一致
+SMOLTCP_LOCK_MODE=LOCALIZED_VENDORED
+
+# 本地化文件清单 (12 个)
+# 全部为 lint/SAFETY 注释层, 0 功能性修改
+# 维护方式: scripts/smoltcp-localization/ 目录提供 patch 文件
+SMOLTCP_LOCALIZED_FILES="src/iface/interface/ipv4.rs src/iface/interface/ipv6.rs src/iface/interface/mod.rs src/iface/packet.rs src/phy/sys/bpf.rs src/phy/sys/mod.rs src/phy/sys/raw_socket.rs src/phy/sys/tuntap_interface.rs src/socket/dhcpv4.rs src/socket/dns.rs src/wire/ipv6.rs src/wire/udp.rs"
+
+# 升级历史 (倒序)
+# 2026-06-24: v0.13.0 → v0.13.1 (1 commit, 5 上游文件 + 12 本地化保留)
+# 2026-06-04: v0.13.0 首次 vendored (commit 34ee52b)

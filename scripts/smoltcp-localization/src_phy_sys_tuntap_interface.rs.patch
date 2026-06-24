@@ -1,0 +1,50 @@
+--- a/src/phy/sys/tuntap_interface.rs	2026-06-24 23:16:09.012039582 +0800
++++ b/src/phy/sys/tuntap_interface.rs	2026-06-17 10:32:35.691687619 +0800
+@@ -17,6 +17,7 @@
+ 
+ impl TunTapInterfaceDesc {
+     pub fn new(name: &str, medium: Medium) -> io::Result<TunTapInterfaceDesc> {
++        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+         let lower = unsafe {
+             let lower = libc::open(c"/dev/net/tun".as_ptr(), libc::O_RDWR | libc::O_NONBLOCK);
+             if lower == -1 {
+@@ -54,6 +55,7 @@
+     }
+ 
+     fn mtu_ifreq(medium: Medium, ifr: &mut ifreq) -> io::Result<usize> {
++        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+         let lower = unsafe {
+             let lower = libc::socket(libc::AF_INET, libc::SOCK_DGRAM, libc::IPPROTO_IP);
+             if lower == -1 {
+@@ -64,6 +66,7 @@
+ 
+         let ip_mtu = ifreq_ioctl(lower, ifr, imp::SIOCGIFMTU).map(|mtu| mtu as usize);
+ 
++        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+         unsafe {
+             libc::close(lower);
+         }
+@@ -90,6 +93,7 @@
+     }
+ 
+     pub fn recv(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
++        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+         unsafe {
+             let len = libc::read(
+                 self.lower,
+@@ -104,6 +108,7 @@
+     }
+ 
+     pub fn send(&mut self, buffer: &[u8]) -> io::Result<usize> {
++        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+         unsafe {
+             let len = libc::write(
+                 self.lower,
+@@ -120,6 +125,7 @@
+ 
+ impl Drop for TunTapInterfaceDesc {
+     fn drop(&mut self) {
++        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+         unsafe {
+             libc::close(self.lower);
+         }

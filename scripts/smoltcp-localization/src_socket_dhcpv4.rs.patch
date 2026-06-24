@@ -1,0 +1,18 @@
+--- a/src/socket/dhcpv4.rs	2026-06-24 23:16:09.012039582 +0800
++++ b/src/socket/dhcpv4.rs	2026-06-17 10:32:35.694431152 +0800
+@@ -329,6 +329,7 @@
+             }
+         };
+ 
++        #[allow(irrefutable_let_patterns)]
+         let HardwareAddress::Ethernet(ethernet_addr) = cx.hardware_addr() else {
+             panic!("using DHCPv4 socket with a non-ethernet hardware address.");
+         };
+@@ -566,6 +567,7 @@
+     {
+         // note: Dhcpv4Socket is only usable in ethernet mediums, so the
+         // unwrap can never fail.
++        #[allow(irrefutable_let_patterns)]
+         let HardwareAddress::Ethernet(ethernet_addr) = cx.hardware_addr() else {
+             panic!("using DHCPv4 socket with a non-ethernet hardware address.");
+         };
