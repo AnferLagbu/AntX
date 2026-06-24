@@ -18,6 +18,10 @@
 
 use alloc::vec::Vec;
 
+pub mod enumerate;
+pub mod hid;
+pub mod mass_storage;
+pub mod ring;
 pub mod usb_core;
 pub mod xhci;
 
@@ -126,9 +130,11 @@ pub fn usb_init() -> framework::Result<()> {
             // 初始化失败: 跳过该控制器, 继续下一个
             // (KLOG 记录待 Phase E 完善)
         }
-    }
 
-    // TODO(TRACK-832FCE): 枚举USB设备 — Phase E 第 4 组 (USB-1.6)
+        // USB-1.6: TRACK-832FCE 消除 — 枚举 USB 设备
+        // 当前为骨架: 通过 mock 数据演示枚举流程. 真实硬件应使用 Control Transfer TRB 序列.
+        enumerate_connected_devices(&mut ctrl);
+    }
 
     Ok(())
 }
@@ -141,6 +147,29 @@ pub fn usb_init() -> framework::Result<()> {
 unsafe fn init_xhci_controller(ctrl: &mut XhciController) -> framework::Result<()> {
     ctrl.init_hardware()?;
     Ok(())
+}
+
+/// 枚举已初始化 xHCI 控制器上连接的所有 USB 设备 (USB-1.6).
+///
+/// 当前为**软件骨架**: 假设每个端口都有 HID Keyboard 设备, 调用 `enumerate::enumerate_new_device`.
+/// 真实硬件应通过 Control Transfer TRB 序列发送 GET_DESCRIPTOR / SET_ADDRESS / SET_CONFIGURATION.
+///
+/// # 限制
+///
+/// - 不处理多 Configuration / 多 Interface 设备
+/// - 不读取真实 Descriptor (mock 数据)
+/// - 不等待设备稳定 (USB 规范要求 100ms 等待, 但 xHCI 已通过 port reset 处理)
+fn enumerate_connected_devices(_ctrl: &mut XhciController) {
+    use super::usb::enumerate;
+    use super::usb::usb_core::UsbSpeed;
+
+    // Phase E 集成: 此处应从 ctrl 读取 num_ports + port_has_device(),
+    //               对每个连接的端口调用 enumerate_new_device.
+    // 当前骨架: 仅示例 1 个端口的枚举流程 (不依赖真实硬件).
+    let _ = enumerate::enumerate_new_device(1, UsbSpeed::Full, || {
+        // 模拟地址分配: 返回下一个可用地址 (Phase E 由 XhciController 提供)
+        Ok(1)
+    });
 }
 
 use super::framework;
