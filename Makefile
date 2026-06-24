@@ -65,9 +65,10 @@ ifeq ($(ARCH),aarch64)
 else
     KERNEL_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
                   build/arch/x86_64/trampoline.o
+    # 测试入口由 Rust 端 kernel_test feature (lib.rs:343 kernel_test_main) 提供,
+    # 不再依赖 C 桩文件. 2026-06-24 移除 kernel_test.o / test_main.o / test_hw_stubs.o.
     KERNEL_TEST_OBJS = build/boot.o build/entry.o build/isr.o build/switch.o \
-                  build/kernel_test.o build/test_main.o \
-                  build/test_hw_stubs.o build/arch/x86_64/trampoline.o
+                  build/arch/x86_64/trampoline.o
 endif
 
 RUST_LIB = src/rust/target/$(RUST_TARGET)/release/libqueenx.a
@@ -384,18 +385,6 @@ debug-iso: iso
 build/main.o: src/kernel/main.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
-
-build/kernel_test.o: src/kernel/tests/kernel_test.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
-
-build/test_main.o: src/kernel/tests/test_main.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
-
-build/test_hw_stubs.o: src/kernel/tests/test_hw_stubs.c
-	@mkdir -p build
-	$(CC) $(CFLAGS) -DKERNEL_TEST -c $< -o $@
 
 test: test-host test-unit
 
