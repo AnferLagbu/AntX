@@ -14,6 +14,15 @@ use smoltcp::socket::dhcpv4;
 use smoltcp::socket::{tcp, udp};
 use smoltcp::wire::{IpCidr, IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address};
 
+// REVAL-W W4.1 (2026-06-25): 引入 SmoltcpNetStack 实例, 这是 NetStack
+// trait 的 smoltcp 实现 (W3.2 产物). 重构后, init.rs 中的 smoltcp 直接
+// 使用将逐步替换为 `SmoltcpNetStack` 的 trait 方法. 此处先添加静态实例,
+// 暂不修改现有逻辑, 仅做小步实装 + 编译验证.
+use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;
+use crate::kernel::framework::net::iface_trait::{
+    NetConfig as TraitNetConfig, NetStack, SocketHandle as TraitSocketHandle, SocketKind,
+};
+
 // I-46: 引用本目录 types 模块的 fallback 常量
 use crate::kernel::framework::net as types;
 
@@ -60,6 +69,13 @@ static NET_LOCK: Mutex<()> = Mutex::new(());
 
 static mut NET_DEVICE: Option<ChitinNetDevice> = None;
 static mut NET_STACK: Option<NetworkStack> = None;
+
+// REVAL-W W4.1: SmoltcpNetStack 实例 (W3.2 产物的 trait 翻译层).
+// `static mut` 与现有 NET_DEVICE/NET_STACK 一致 (framework 允许 unsafe).
+// 此实例暂未被任何代码使用 — 实际接入留给 W4.2-W4.4 替换现有 smoltcp
+// 直接调用. 现阶段仅做小步实装 + 编译验证.
+#[allow(dead_code)] // W4.2+ 接入后移除此 allow
+static mut NET_STACK_TRAIT: Option<SmoltcpNetStack> = None;
 
 // I-47: 编译期容量上限, 默认 256 (此前硬编码 8 严重限制并发).
 // 编译期覆盖: 修改本常量或通过未来 build.rs 注入 cfg_flag 覆盖.
@@ -145,6 +161,79 @@ fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
             }
         }
     }
+}
+
+// ============================================================================
+// REVAL-W W4.1: SmoltcpNetStack helper
+//
+// 提供一个 helper 函数构造和初始化 SmoltcpNetStack 实例. W4.2-W4.4 整合
+// 时, init_sockets / process_dhcp_events / save_net_state 等函数将
+// 改用本 helper 提供的 trait 接口.
+//
+// ## W4.1 阶段定位
+//
+// 当前 (W4.1) 仅添加 helper 入口 + 编译验证, 实际调用方替换在 W4.2-W4.4.
+// 不修改现有 init_sockets / process_dhcp_events 的 smoltcp 直接使用.
+//
+// ## 线程安全
+//
+// 与现有 NET_DEVICE/NET_STACK 一致, 在 NET_LOCK 保护下访问.
+// ============================================================================
+
+/// 构造并初始化 NET_STACK_TRAIT (W3.2 SmoltcpNetStack 实例).
+///
+/// ## 调用方契约
+///
+/// - 必须在 NET_LOCK 保护下调用
+/// - 仅 init 阶段调用一次
+/// - 失败时回滚 (NET_STACK_TRAIT 仍为 None)
+/// - 成功时填充 NET_STACK_TRAIT
+///
+/// ## W4.2+ 整合点
+///
+/// 现有 `init_sockets` + 后续 `init_device` + `configure_interfaces` 等
+/// 将改用本函数返回的 `SmoltcpNetStack` (通过 trait 调用).
+#[allow(dead_code)] // W4.2+ 接入后移除此 allow
+pub unsafe fn init_net_stack_trait(cfg: TraitNetConfig) -> Result<(), ()> {
+    let mut stack = SmoltcpNetStack::new();
+    match stack.init(cfg) {
+        Ok(()) => {
+            // SAFETY: 调用方持有 NET_LOCK, 独占访问 NET_STACK_TRAIT
+            // write/read 在 no_std 不稳定, 用裸指针替换
+            let ptr = &mut NET_STACK_TRAIT as *mut Option<SmoltcpNetStack>;
+            core::ptr::write(ptr, Some(stack));
+            Ok(())
+        }
+        Err(_e) => {
+            // 失败时保持 None, 不修改状态
+            Err(())
+        }
+    }
+}
+
+/// 查询 NET_STACK_TRAIT 是否已初始化.
+#[allow(dead_code)] // W4.2+ 接入后移除此 allow
+pub fn is_net_stack_trait_ready() -> bool {
+    // SAFETY: 仅检查 Some/None, 不解引用 Some 内值
+    // 可变 static 的引用需要 unsafe
+    let ptr = unsafe { &NET_STACK_TRAIT as *const Option<SmoltcpNetStack> };
+    unsafe { (*ptr).is_some() }
+}
+
+/// 获取 NET_STACK_TRAIT 的可变引用 (供 trait 方法调用).
+///
+/// ## 调用方契约
+///
+/// - 必须在 NET_LOCK 保护下调用
+/// - 必须先调用 is_net_stack_trait_ready() 确认已初始化
+///
+/// ## 安全性
+///
+/// 通过裸指针解引用获取 &mut, 调用方保证 NET_LOCK 互斥.
+#[allow(dead_code)] // W4.2+ 接入后移除此 allow
+pub unsafe fn net_stack_trait_mut() -> Option<&'static mut SmoltcpNetStack> {
+    let ptr = &mut NET_STACK_TRAIT as *mut Option<SmoltcpNetStack>;
+    (*ptr).as_mut()
 }
 
 fn set_failed() {
