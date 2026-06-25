@@ -2086,6 +2086,90 @@ pub(crate) mod raw {
         unsafe { super::process_dhcp_events(sockets) }
     }
 
+    // ========================================================================
+    // REVAL-W W4.2 桥接 raw helpers (2026-06-25)
+    //
+    // 为 SmoltcpNetStack (W3.2) 提供 smoltcp 实际操作入口. 桥接方案:
+    //   - SmoltcpNetStack 是 services 层 trait 翻译骨架, 不持 smoltcp 状态
+    //   - 实际 smoltcp 操作由 init.rs (framework 层, 允许 unsafe) 提供
+    //   - SmoltcpNetStack::socket_open 等方法内部委托给本 raw 模块
+    //
+    // 阶段 1 (本次): 声明函数签名 + 0 逻辑, 验证编译. 实际逻辑在 W4.2.2+
+    // ========================================================================
+
+    /// 实际打开一个 socket (W4.2 桥接 stub).
+    ///
+    /// ## W4.2 阶段 1 (本次)
+    ///
+    /// 0 逻辑实现, 仅声明签名. 实际 smoltcp socket 构造在 W4.2.2+ 阶段.
+    /// 当前 SmoltcpNetStack::socket_open 不调用本函数, 故 0 行为变更.
+    ///
+    /// ## 调用方契约
+    ///
+    /// - 必须在 NET_LOCK 保护下调用
+    /// - sockets 来自本模块的 socket_set()
+    ///
+    /// ## W4.2.2+ 实装
+    ///
+    /// ```ignore
+    /// match kind {
+    ///     SocketKind::Tcp => {
+    ///         let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(...);
+    ///         let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(...);
+    ///         let socket = smoltcp::socket::tcp::Socket::new(rx_buffer, tx_buffer);
+    ///         sockets.add(socket)
+    ///     }
+    ///     // ...
+    /// }
+    /// ```
+    #[allow(dead_code)] // W4.2.2+ 接入后移除
+    pub fn socket_open_stub(
+        sockets: &mut SocketSet<'_>,
+        _kind: crate::kernel::framework::net::iface_trait::SocketKind,
+    ) -> Option<smoltcp::iface::SocketHandle> {
+        // W4.2 阶段 1: 0 逻辑, 返回 None (表示未实现)
+        let _ = sockets;
+        None
+    }
+
+    /// 实际关闭一个 socket (W4.2 桥接 stub).
+    ///
+    /// 阶段 1 stub: 0 逻辑. W4.2.2+ 实装 `sockets.remove(smol_handle)`.
+    #[allow(dead_code)] // W4.2.2+ 接入后移除
+    pub fn socket_close_stub(
+        sockets: &mut SocketSet<'_>,
+        smol_handle: smoltcp::iface::SocketHandle,
+    ) -> bool {
+        let _ = sockets;
+        sockets_remove_helper(smol_handle)
+    }
+
+    /// 实际获取 DHCP 状态 (W4.2 桥接 stub).
+    ///
+    /// 阶段 1 stub: 0 逻辑, 返回 Idle. W4.2.2+ 实装 dhcp.poll() 翻译.
+    #[allow(dead_code)] // W4.2.2+ 接入后移除
+    pub fn dhcp_state_stub(
+        sockets: &mut SocketSet<'_>,
+        dhcp_handle: Option<smoltcp::iface::SocketHandle>,
+    ) -> crate::kernel::framework::net::iface_trait::DhcpState {
+        let _ = sockets;
+        let _ = dhcp_handle;
+        crate::kernel::framework::net::iface_trait::DhcpState::Idle
+    }
+
+    /// smoltcp SocketSet::remove 辅助 (W4.2 阶段 1 stub).
+    ///
+    /// 阶段 1 简化: 仅返回 false (未实现), 不实际修改 SocketSet.
+    /// 阶段 2+ 实装: 调用 `sockets.remove(handle)` 并返回 true.
+    fn sockets_remove_helper(_smol_handle: smoltcp::iface::SocketHandle) -> bool {
+        // W4.2 阶段 1: 0 逻辑, 返回 false (未实现)
+        // W4.2.2+ 实装: 
+        //   let smol_socket = sockets.remove(_smol_handle);
+        //   // smoltcp SocketSet::remove 返回 Socket enum, 实际删除已发生
+        //   true
+        false
+    }
+
     /// klog 网络消息 (C 字符串) - 安全包装
     pub fn klog_msg(s: &str) {
         let mut buf = [0u8; 256];
