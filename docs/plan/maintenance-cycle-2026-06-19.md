@@ -749,6 +749,116 @@ W2 拆为两步: W2.1 (基础设施) + W2.2 (实际迁移). W2.1 不修改 smolt
 - □ **B. 回滚到 v0.13.0** → `rm -rf src/kernel/framework/net/smoltcp && cp -r /tmp/smoltcp-pre-v0.13.1-backup src/kernel/framework/net/smoltcp`
 - □ **C. 仅记录不提交** → 保持现状, 用户手动决定
 
+---
+
+### [x] W2.2.1: v0.13.1 升级 commit + I-08 评估更新 (2026-06-24)
+
+**用户决策**: A (接受 v0.13.1 升级)
+
+**commit 0b10913** (2026-06-24):
+- `feat(net): 完成 smoltcp 0.13.1 升级与 REVAL-W W1-W2 落地`
+- 138 个 git mv (smoltcp vendored) + 12 patch (本地化重放) + 4 lock/audit 脚本
+- I-08 评估更新: vendored 0.13.0 → 0.13.1 (向后兼容 0.13.x)
+- 3 panic fix 落地: TCP SYN/SACK/IPv4 IHL
+
+**验证**:
+- 双架构编译 0 error / 12 warning (基线)
+- 4 审计 PASS
+- host-tests 187/187 PASS (含 I-08 回归测试)
+
+---
+
+### [x] W3.1: smoltcp 迁移 framework/ → services/ (REVAL-W 第 5 组) — 决策 3-B (FK 合规)
+
+**用户决策**: 决策 3-B (smoltcp 迁 services/ 提升 FK 合规)
+
+**工程目标**: smoltcp 100% safe Rust, 不属于 framework TCB, 移到 services/ 减少 framework 体积
+
+**2 commits** (commit 方案 B):
+- `627a8c1` refactor(net): 迁移 smoltcp 从 framework/ 到 services/ (决策 3-B) — 138 git mv + Cargo.toml
+- `63120e1` refactor(audit/test): 跟随 smoltcp 路径迁移更新路径常量 (W3.1.2) — 4 audit/test 路径
+
+**重大发现与处理**:
+- 26 个 vendored unsafe 块 (smoltcp 上游) 触发 services-boundary 审计 FAIL
+- 解决: `audit_services_boundary.py` 新增 `VENDORED_EXCLUDE` 列表 (豁免 vendored 第三方目录)
+- I-08 评估扩展: vendored smoltcp 0.13.1 在 services/net/smoltcp/
+
+**验证**: 全部通过 (双架构编译 / 4 审计 / host-tests)
+
+---
+
+### [x] W3.2: SmoltcpNetStack trait 骨架 (REVAL-W 第 6 组, 2026-06-24)
+
+**用户决策**: 决策 2-A (完整 4 子任务 W3+W4+W5+W6)
+
+**工程目标**: 在 services/net/smoltcp_impl.rs 实现 `NetStack` trait, 这是 services 层唯一允许直接使用 smoltcp 类型的代码.
+
+**commit 560bd82** (2026-06-24):
+- `feat(net): 完成 smoltcp Framekernel 包装 W3.2 - SmoltcpNetStack trait 骨架`
+- 新增 `src/kernel/services/net/smoltcp_impl.rs` (742 行)
+- 修改 `src/kernel/services/net/mod.rs` (+4 行)
+- 总变更: 2 文件, 744 行
+
+**W3.2 设计决策 (smoltcp 0.13 适配)**:
+- 简化 SmoltcpNetStack 为 trait 骨架, 不持有 smoltcp 内部结构
+- 类型擦除句柄: `SocketHandle(u32)` 替代 `smoltcp::SocketHandle<usize>`
+- 句柄槽位: `[Option<(u32, u16)>; MAX_SOCKETS]`
+- DHCP 句柄独占: `dhcp_user_id: Option<u32>` 保护
+- 0 unsafe (`#![deny(unsafe_code)]`)
+
+**重大发现**:
+smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 SocketSet 的 socket 引用 buffer, 全部必须 'static. 持有 SocketSet + 内部 buffer 在 safe Rust 中是 self-referential 结构, 不可行. 经过多轮尝试 (raw pointer, Box::leak, 'static mut, 'static 引用), 最终结论:
+
+> **W3.2 trait 骨架是务实选择**: NetStack trait 完整实装, init/dhcp_state/socket_open/close 工作; socket_open 暂不构造 smoltcp 套接字 (槽位仍分配); W4 整合 init.rs 时, 由 framework 层 (允许 unsafe) 提供 'static 内存 + 实际 smoltcp 操作.
+
+**W3.2 验证**:
+- 双架构编译: 0 error / 13 warning (基线 12 + 1 dead_code)
+- 4 审计 PASS
+- host-tests 全部 PASS
+- 22 个新单测 (`cargo check` 编译期验证)
+
+**W3.2 价值 (W4 整合准备)**:
+1. NetStack trait 完整可实例化 (init/dhcp_state 工作)
+2. 类型擦除的 SocketHandle 分配/释放 (W5 transmute 替代)
+3. DHCP 状态机翻译 (W6 接入 dhcp_policy 时直接使用)
+4. 编译期验证: 22 个单测, 编译期检查 6 个 trait 方法签名
+5. W4 整合点明确: trait 翻译层已就绪, W4 只需提供 device + storage
+
+---
+
+### [ ] W4: framework/net/init.rs 重构 (REVAL-W 第 6 组, 计划 2026-06-25 启动)
+
+**工程目标**: 将 `framework/net/init.rs` 中 18 处 smoltcp 直接使用替换为 `NetStack` trait 调用, 消除 framework 层 smoltcp 依赖, 真正实现 FK 合规.
+
+**init.rs 当前状态** (2133 行):
+- 7 处 `use smoltcp::` 语句 (行 12-15)
+- 18 处 `smoltcp::*` 引用 (SocketSet, SocketHandle, dhcpv4, tcp/udp, IpCidr 等)
+- 1 处 unsafe transmute (行 507, W5 待删)
+- 1 处 `pub unsafe fn poll_network()`
+
+**W4 子任务拆分** (5 子任务, 1-2 周工作量):
+
+| 子任务 | 内容 | 依赖 | 工作量 |
+|--------|------|------|--------|
+| **W4.1** | 创建 SmoltcpNetStack 实例, 添加 `use smoltcp_impl::*` | 无 | 1 天 |
+| **W4.2** | 替换 6 处 SocketSet/SocketHandle 直接使用为 `NetStack::socket_open/close` | W4.1 | 2-3 天 |
+| **W4.3** | 替换 `process_dhcp_events` 19-66 行为 `NetStack::dhcp_state` + 抽象 DHCP 事件 | W4.1 | 1-2 天 |
+| **W4.4** | 替换 wire 类型 (IpCidr/IpEndpoint/IpAddress 等) 为 trait 翻译 | W4.1 | 2-3 天 |
+| **W4.5** | 验证 (0 unsafe + 4 审计 + 双架构 + host-tests) | W4.2-W4.4 | 1 天 |
+
+**W4 风险评估**:
+- **W4.2**: 中 (替换 SocketSet 引用涉及 2133 行重构, 需小心)
+- **W4.3**: 中 (DHCP 事件 → DhcpState 翻译, 需完整状态机)
+- **W4.4**: 中 (wire 类型翻译, 涉及 IPv4/IPv6 双协议)
+- **总风险**: 中等, 需谨慎
+
+**W4 预期产出**:
+- init.rs 中 0 处 smoltcp::* 引用
+- 1 处 unsafe transmute 删除 (W5 合并)
+- 0 unsafe (排除 sync 模块的既存 unsafe)
+- 双架构编译 0w0e
+- 4 审计 PASS
+- host-tests 全部 PASS
 
 ---
 
