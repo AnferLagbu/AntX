@@ -2094,8 +2094,44 @@ pub(crate) mod raw {
     //   - 实际 smoltcp 操作由 init.rs (framework 层, 允许 unsafe) 提供
     //   - SmoltcpNetStack::socket_open 等方法内部委托给本 raw 模块
     //
-    // 阶段 1 (本次): 声明函数签名 + 0 逻辑, 验证编译. 实际逻辑在 W4.2.2+
+    // 阶段 1 (W4.2.1): 声明函数签名 + 0 逻辑, 验证编译
+    // 阶段 2 (W4.2.2): 实装 socket_close + dhcp_state 翻译
+    // 阶段 3+ (W4.2.3+): 实装 socket_open (buffer 整合) + SmoltcpNetStack 改造
     // ========================================================================
+
+    /// W4.2.2 DHCP 状态翻译的 prev state 缓存.
+    ///
+    /// 使用 `core::sync::atomic::AtomicU8` 持有 DhcpState 的 discriminant
+    /// (枚举 tag). DhcpState::Bound 的 ipv4 + lease_expires_at 字段
+    /// 用 `AtomicU32` (ipv4) + `AtomicU64` (lease_expires_at) 单独存储.
+    ///
+    /// ## 设计选择
+    ///
+    /// 不使用 `static mut` + 裸指针: Rust 2024 edition 启用了
+    /// `invalid_reference_casting` lint, 编译失败. 不使用 `UnsafeCell<T>`
+    /// 包装: `static` 要求 `Sync`, 而 `UnsafeCell<T>: Sync` 需要 `T: Send`,
+    /// 但 `unsafe impl Send` 在 no_std 环境下行为不可靠.
+    ///
+    /// ## 同步策略
+    ///
+    /// 调用方需持有 NET_LOCK 互斥访问. 原子操作保证多线程可见性.
+    /// 4 个原子 (tag, ipv4[4], lease_expires_at) 的"组合"通过 read 顺序保证
+    /// 一致性 (看 acquire/release).
+    ///
+    /// ## 简化 (W4.2.2 阶段 1)
+    ///
+    /// 仅 AtomicU8 持有 tag. Bound 的额外数据 (ipv4, lease_expires_at) 通过
+    /// G_IPV4 (AtomicU32) + 单独的 AtomicU64 持有. W4.2.2 阶段不实装完整
+    /// 数据, 仅追踪 tag 转换.
+    static PREV_DHCP_TAG: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+    /// W4.2.2 DHCP 状态 Bound 的 ipv4.
+    static PREV_DHCP_IPV4: [core::sync::atomic::AtomicU8; 4] = [
+        core::sync::atomic::AtomicU8::new(0),
+        core::sync::atomic::AtomicU8::new(0),
+        core::sync::atomic::AtomicU8::new(0),
+        core::sync::atomic::AtomicU8::new(0),
+    ];
 
     /// 实际打开一个 socket (W4.2 桥接 stub).
     ///
@@ -2132,29 +2168,131 @@ pub(crate) mod raw {
         None
     }
 
-    /// 实际关闭一个 socket (W4.2 桥接 stub).
+    /// 实际关闭一个 socket (W4.2.2 实装).
     ///
-    /// 阶段 1 stub: 0 逻辑. W4.2.2+ 实装 `sockets.remove(smol_handle)`.
-    #[allow(dead_code)] // W4.2.2+ 接入后移除
+    /// 调用 `SocketSet::remove(smol_handle)` 删除 socket. smoltcp API 返回
+    /// `Socket` enum (类型擦除内部 socket), 删除已发生, 返回值被丢弃.
+    ///
+    /// ## 调用方契约
+    ///
+    /// - 必须在 NET_LOCK 保护下调用
+    /// - sockets 来自本模块的 socket_set()
+    /// - smol_handle 必须是 sockets 中有效的 socket 句柄, 否则 smoltcp panic
+    ///
+    /// ## 返回值
+    ///
+    /// 始终返回 `true` (smoltcp 0.13.1 的 `SocketSet::remove` 不会失败).
+    #[allow(dead_code)] // W4.2.4+ 接入后移除
     pub fn socket_close_stub(
         sockets: &mut SocketSet<'_>,
         smol_handle: smoltcp::iface::SocketHandle,
     ) -> bool {
-        let _ = sockets;
-        sockets_remove_helper(smol_handle)
+        // smoltcp SocketSet::remove 删除 socket, 返回 Socket enum 被丢弃.
+        // 0.13.1 文档: "Removes a socket from the set, returning the socket that was removed."
+        let _removed = sockets.remove(smol_handle);
+        true
     }
 
-    /// 实际获取 DHCP 状态 (W4.2 桥接 stub).
+    /// 实际获取 DHCP 状态 (W4.2.2 实装).
     ///
-    /// 阶段 1 stub: 0 逻辑, 返回 Idle. W4.2.2+ 实装 dhcp.poll() 翻译.
-    #[allow(dead_code)] // W4.2.2+ 接入后移除
+    /// 翻译 `dhcpv4::Socket::poll()` → `DhcpState`:
+    /// - `None` → 保持 prev state (内部 static, 0 初始化 = Idle)
+    /// - `Some(Event::Deconfigured)` → Idle
+    /// - `Some(Event::Configured(config))` → Bound { ipv4, lease_expires_at: u64::MAX }
+    ///
+    /// ## 内部状态
+    ///
+    /// 使用 `static mut PREV_DHCP_STATE` 维护翻译结果. 0 初始化 = Idle.
+    /// 调用方需在 NET_LOCK 保护下调用 (确保互斥访问).
+    ///
+    /// ## dhcpv4 poll 语义
+    ///
+    /// smoltcp dhcpv4::Socket::poll() 返回 Option<Event>:
+    /// - None: 无新事件, DHCP 状态机内部推进中
+    /// - Some(Event::Configured): 收到 DHCP ACK, 已配置
+    /// - Some(Event::Deconfigured): 收到 DHCP NAK 或租约过期, 已取消配置
+    ///
+    /// 我们翻译为 trait DhcpState, 简化 lease_expires_at = u64::MAX
+    /// (实际租约管理在 init flow 中通过 G_IPV4 / G_GATEWAY 跟踪).
+    #[allow(dead_code)] // W4.2.4+ 接入后移除
     pub fn dhcp_state_stub(
         sockets: &mut SocketSet<'_>,
         dhcp_handle: Option<smoltcp::iface::SocketHandle>,
     ) -> crate::kernel::framework::net::iface_trait::DhcpState {
-        let _ = sockets;
-        let _ = dhcp_handle;
-        crate::kernel::framework::net::iface_trait::DhcpState::Idle
+        use core::sync::atomic::Ordering;
+        use crate::kernel::framework::net::iface_trait::DhcpState;
+
+        // 读取 prev tag (Acquire 同步)
+        let prev_tag = PREV_DHCP_TAG.load(Ordering::Acquire);
+
+        // 无 DHCP handle 时, DHCP 未启动, 状态为 Idle
+        let Some(handle) = dhcp_handle else {
+            return DhcpState::Idle;
+        };
+
+        let dhcp = sockets.get_mut::<dhcpv4::Socket>(handle);
+        match dhcp.poll() {
+            None => {
+                // 无新事件, 翻译 prev tag → DhcpState
+                tag_to_dhcp_state(prev_tag)
+            }
+            Some(dhcpv4::Event::Deconfigured) => {
+                // DHCP 取消配置, 回到 Idle (tag = 0)
+                PREV_DHCP_TAG.store(0, Ordering::Release);
+                DhcpState::Idle
+            }
+            Some(dhcpv4::Event::Configured(config)) => {
+                // DHCP 配置完成, 提取 IP + 写 tag
+                let ipv4 = config.address.address().octets();
+                for (i, &byte) in ipv4.iter().enumerate() {
+                    PREV_DHCP_IPV4[i].store(byte, Ordering::Release);
+                }
+                PREV_DHCP_TAG.store(3, Ordering::Release); // tag 3 = Bound
+                DhcpState::Bound {
+                    ipv4,
+                    lease_expires_at: u64::MAX, // 简化: 实际租约管理在 init flow
+                }
+            }
+        }
+    }
+
+    /// DhcpState tag → DhcpState 翻译.
+    ///
+    /// tag 值 (来自 PREV_DHCP_TAG):
+    /// - 0: Idle
+    /// - 1: Discovering
+    /// - 2: Requesting
+    /// - 3: Bound (含 ipv4)
+    /// - 4: Renewing
+    /// - 5: Failed
+    fn tag_to_dhcp_state(tag: u8) -> crate::kernel::framework::net::iface_trait::DhcpState {
+        use core::sync::atomic::Ordering;
+        use crate::kernel::framework::net::iface_trait::DhcpState;
+        match tag {
+            0 => DhcpState::Idle,
+            1 => DhcpState::Discovering,
+            2 => DhcpState::Requesting,
+            3 => {
+                let ipv4 = [
+                    PREV_DHCP_IPV4[0].load(Ordering::Acquire),
+                    PREV_DHCP_IPV4[1].load(Ordering::Acquire),
+                    PREV_DHCP_IPV4[2].load(Ordering::Acquire),
+                    PREV_DHCP_IPV4[3].load(Ordering::Acquire),
+                ];
+                DhcpState::Bound { ipv4, lease_expires_at: u64::MAX }
+            }
+            4 => {
+                let ipv4 = [
+                    PREV_DHCP_IPV4[0].load(Ordering::Acquire),
+                    PREV_DHCP_IPV4[1].load(Ordering::Acquire),
+                    PREV_DHCP_IPV4[2].load(Ordering::Acquire),
+                    PREV_DHCP_IPV4[3].load(Ordering::Acquire),
+                ];
+                DhcpState::Renewing { ipv4 }
+            }
+            5 => DhcpState::Failed,
+            _ => DhcpState::Idle, // 默认
+        }
     }
 
     /// smoltcp SocketSet::remove 辅助 (W4.2 阶段 1 stub).
