@@ -24,7 +24,6 @@
 //! - trait dispatch (无 thunk)
 //! - 编译期类型安全 (实现方必须 impl ZapStore)
 
-use alloc::string::String;
 use alloc::vec::Vec;
 use super::zap::{HvZap, HvZapType};
 
@@ -239,7 +238,7 @@ mod tests {
         assert_eq!(normal.zap_type(), HvZapType::Normal);
     }
 
-    /// 9. trait object dispatch (dyn ZapStore)
+    /// 9. trait 对象分发 (dyn ZapStore)
     #[test]
     fn test_zap_trait_object() {
         let zap: alloc::sync::Arc<dyn ZapStore> = alloc::sync::Arc::new(StandardZap::new());

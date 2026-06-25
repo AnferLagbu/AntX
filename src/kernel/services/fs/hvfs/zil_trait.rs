@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(replayed.len(), 8);
     }
 
-    /// 10. trait object dispatch (dyn ZilLog)
+    /// 10. trait 对象分发 (dyn ZilLog)
     #[test]
     fn test_zil_trait_object() {
         let zil: alloc::boxed::Box<dyn ZilLog> = alloc::boxed::Box::new(StandardZil::new());

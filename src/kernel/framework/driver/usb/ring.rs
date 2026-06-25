@@ -1,4 +1,4 @@
-//! xHCI Ring Buffers (Command Ring + Event Ring) - USB-1.5
+//! xHCI 环形缓冲区 (Command Ring 命令环 + Event Ring 事件环) - USB-1.5
 //!
 //! 实现 xHCI 规范 §4.9 + §4.10 定义的两种核心环形缓冲区:
 //!

@@ -80,7 +80,7 @@ impl ZilPersist for StandardZilPersist {
         // 委托 HvZilPersist::serialize_zil_to_block (需要 &HvZil, 但 trait 接受 records slice)
         // 这里我们构造一个临时 HvZil 来满足签名
         use super::zil::HvZil;
-        let mut temp_zil = HvZil::new();
+        let temp_zil = HvZil::new();
         temp_zil.init();
         for rec in zil_records {
             // 跳过自动分配 seq, 直接 push (HvZilRecord 不可 Copy, 需 clone)
@@ -119,7 +119,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    /// 2. serialize + deserialize round-trip
+    /// 2. 序列化 + 反序列化往返一致性
     #[test]
     fn test_zil_persist_roundtrip() {
         // 准备 ZIL
@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(records.len(), 10);
     }
 
-    /// 8. trait object dispatch (dyn ZilPersist)
+    /// 8. trait 对象分发 (dyn ZilPersist)
     #[test]
     fn test_zil_persist_trait_object() {
         let persist: alloc::boxed::Box<dyn ZilPersist> = alloc::boxed::Box::new(StandardZilPersist::new());
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(records.len(), 0);
     }
 
-    /// 9. integration: serialize → deserialize → verify records
+    /// 9. 集成: 序列化 → 反序列化 → 校验记录
     #[test]
     fn test_zil_persist_integration() {
         let mut zil = HvZil::new();
@@ -235,7 +235,7 @@ mod tests {
         }
     }
 
-    /// 10. round-trip preserves txg
+    /// 10. 往返一致性保留 txg 字段
     #[test]
     fn test_zil_persist_preserves_txg() {
         let mut zil = HvZil::new();

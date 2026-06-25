@@ -167,14 +167,6 @@ impl SmoltcpNetStack {
         self.handle_map.iter().position(|slot| slot.is_none())
     }
 
-    /// 找 DHCP 句柄占用的槽位.
-    fn find_dhcp_slot(&self) -> Option<usize> {
-        let dhcp_id = self.dhcp_user_id?;
-        self.handle_map.iter().position(|slot| {
-            matches!(slot, Some((u, _)) if *u == dhcp_id)
-        })
-    }
-
     /// 分配下一个 user 句柄 ID.
     fn alloc_user_id(&mut self) -> u32 {
         let id = self.next_user_id;
@@ -533,7 +525,7 @@ mod tests {
         assert!(stack.poll_at().is_none());
     }
 
-    // ---- 4. socket_open() / socket_close() ----
+    // ---- 4. socket_open() / socket_close() 测试 ----
 
     #[test]
     fn test_socket_open_before_init_fails() {

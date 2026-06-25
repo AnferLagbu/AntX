@@ -27,10 +27,17 @@ FW_LINES=$(find src/kernel/framework -name "*.rs" -exec cat {} \; 2>/dev/null | 
 #
 # 过滤策略: 仅丢弃行首是 `//`(行注释) / `*`/`/*` (块注释延续) 的行。
 # 错误地把 `unsafe impl<T: Send>` 误判为注释是上次 bug, 这里改用更稳的判定。
+#
+# Vendored 第三方库豁免: smoltcp 0.13.1 vendored 在 services/net/smoltcp/,
+# 上游承诺 100% safe Rust, 但实际包含 26 处 unsafe (phy/sys/raw_socket 等),
+# 路径与 services/ 重叠. 检查时使用 --exclude-dir 跳过 vendored 目录.
+# 与 scripts/audit_services_boundary.py 的 VENDORED_EXCLUDE 保持一致.
 SV_UNSAFE=0
 SV_LINES=0
 if [ -d "src/kernel/services" ]; then
-    SV_UNSAFE=$(grep -rPn '\bunsafe\b' src/kernel/services/ --include='*.rs' 2>/dev/null \
+    SV_UNSAFE=$(grep -rPn '\bunsafe\b' src/kernel/services/ \
+        --include='*.rs' \
+        --exclude-dir='smoltcp' 2>/dev/null \
         | awk -F: '{
             # 跳过行注释和块注释
             code=$0; sub(/^[^:]+:[^:]+:/, "", code);
@@ -40,7 +47,8 @@ if [ -d "src/kernel/services" ]; then
             print
         }' \
         | wc -l || echo 0)
-    SV_LINES=$(find src/kernel/services -name "*.rs" -exec cat {} \; 2>/dev/null | wc -l || echo 0)
+    SV_LINES=$(find src/kernel/services -name "*.rs" \
+        -not -path "*/smoltcp/*" -exec cat {} \; 2>/dev/null | wc -l || echo 0)
 fi
 
 # 内核总行数 (排除 smoltcp vendored)
@@ -64,7 +72,9 @@ echo ""
 if [ -d "src/kernel/services" ]; then
     if [ "$SV_UNSAFE" -gt 0 ]; then
         echo -e "${RED}FAIL${NC}: services/ 中发现 unsafe 块:"
-        grep -rPn '\bunsafe\b' src/kernel/services/ --include='*.rs' 2>/dev/null \
+        grep -rPn '\bunsafe\b' src/kernel/services/ \
+            --include='*.rs' \
+            --exclude-dir='smoltcp' 2>/dev/null \
             | awk -F: '{ code=$0; sub(/^[^:]+:[^:]+:/, "", code); if (code !~ /^[[:space:]]*(\/\/|\*)/) print }'
         exit 1
     else

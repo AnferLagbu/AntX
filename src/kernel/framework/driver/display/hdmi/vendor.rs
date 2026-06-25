@@ -19,7 +19,7 @@
 use crate::kernel::framework::iomem::IoMem;
 
 // ============================================================================
-// Intel IGP DPLL trait
+// Intel IGP DPLL trait 接口
 // ============================================================================
 
 /// Intel IGP (Integrated Graphics Processor) DPLL (Display PLL) 高级算法 trait (P2-2).
@@ -79,11 +79,11 @@ pub trait IntelDpll {
 // AMD DCN DENTIST trait
 // ============================================================================
 
-/// AMD DCN (Display Core Next) DENTIST clock generator trait (P2-2).
+/// AMD DCN (Display Core Next) DENTIST 时钟发生器 trait (P2-2).
 ///
 /// 覆盖 AMD Raven Ridge / Navi / RDNA 系列 APU 与独立显卡.
 /// 真实硬件使用 DENTIST + DISPCLK 架构, 涉及:
-/// - DENTIST frequency synthesis (decimal feedback divider)
+/// - DENTIST 频率合成 (decimal feedback divider 小数反馈分频)
 /// - DISPCLK 与 DENTIST 链路
 /// - HDMI 输出 PHY 配置
 /// - Spread spectrum 可选
@@ -121,10 +121,10 @@ pub trait AmdDentist {
 }
 
 // ============================================================================
-// Synopsys DesignWare HDMI PHY trait
+// Synopsys DesignWare HDMI PHY trait 接口
 // ============================================================================
 
-/// Synopsys DesignWare HDMI PHY trait (P2-2).
+/// Synopsys DesignWare HDMI PHY trait 接口 (P2-2).
 ///
 /// 覆盖多数 ARM SoC (i.MX8 / Rockchip / Allwinner / Amlogic 等).
 /// 真实硬件使用 phy_clock + tmds_clock 寄存器架构, 实装相对简单.

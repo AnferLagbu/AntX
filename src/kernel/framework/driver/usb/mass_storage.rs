@@ -1,4 +1,4 @@
-//! USB Mass Storage Class Driver (BBB / Bulk-Only Transport) - USB-1.8
+//! USB 大容量存储类驱动 (BBB / Bulk-Only Transport 仅批量传输) - USB-1.8
 //!
 //! 实现 USB Mass Storage Class - Bulk-Only Transport (BBB) 1.0 + SCSI 透明命令集:
 //!
@@ -56,7 +56,7 @@ pub const SCSI_CB_MAX_LENGTH: usize = 16;
 /// - byte 12:      bmCBWFlags (bit 7: 0=OUT, 1=IN)
 /// - byte 13:      bCBWLUN (Logical Unit Number, 通常为 0)
 /// - byte 14:      bCBWCBLength (SCSI CB 长度, 1-16)
-/// - bytes 15..=30: CBWCB (SCSI Command Block)
+/// - bytes 15..=30: CBWCB (SCSI 命令块)
 #[derive(Debug, Clone, Copy)]
 pub struct CommandBlockWrapper {
     /// Host 分配的唯一 tag, 必须与对应 CSW 的 dCSWTag 匹配
@@ -111,7 +111,7 @@ impl CommandBlockWrapper {
 /// - bytes 0..=3:  dCSWSignature (固定 0x53425553 = "USBS")
 /// - bytes 4..=7:  dCSWTag (必须匹配 CBW dCBWTag)
 /// - bytes 8..=11: dCSWDataResidue (数据阶段未传输字节数)
-/// - byte 12:      bCSWStatus (0=Success, 1=Failure, 2=Phase Error)
+/// - byte 12:      bCSWStatus (0=成功, 1=失败, 2=阶段错误)
 #[derive(Debug, Clone, Copy)]
 pub struct CommandStatusWrapper {
     /// CSW tag (应匹配对应 CBW 的 tag)
@@ -176,9 +176,9 @@ pub mod scsi_op {
 /// 字节布局:
 /// - byte 0: 0x28 (READ_10)
 /// - byte 1: bit 4 = DPO, bit 3 = FUA, bit 2 = RDPROTECT, bit 1..=0 = LBA[31..24]
-/// - bytes 2..=5: LBA[23..0] (big-endian)
-/// - byte 6: Group Number
-/// - bytes 7..=8: Transfer Length (blocks, big-endian)
+/// - bytes 2..=5: LBA[23..0] (大端字节序)
+/// - byte 6: Group Number 分组号
+/// - bytes 7..=8: Transfer Length 块数 (blocks, big-endian)
 /// - byte 9: Control
 pub fn build_read_10_cmd(lba: u32, blocks: u16) -> [u8; 10] {
     [
@@ -201,7 +201,7 @@ pub fn build_read_10_cmd(lba: u32, blocks: u16) -> [u8; 10] {
 /// - byte 0: 0x12 (INQUIRY)
 /// - byte 1: bit 0 = EVPD
 /// - byte 2: Page Code
-/// - bytes 3..=4: Allocation Length (big-endian)
+/// - bytes 3..=4: Allocation Length 分配长度 (大端)
 /// - byte 5: Control
 pub fn build_inquiry_cmd(allocation_length: u16) -> [u8; 6] {
     [
@@ -253,11 +253,11 @@ pub struct MassStorageDriver {
     /// Interface number (用于 CBW index 字段; 当前骨架未发送, Phase E 集成时使用)
     #[allow(dead_code)] // 保留字段, Phase E Bulk Transfer 集成时启用
     interface_number: u8,
-    /// Bulk-IN endpoint (e.g. 0x81 for EP1 IN)
-    bulk_in_endpoint: u8,
-    /// Bulk-OUT endpoint (e.g. 0x02 for EP2 OUT)
-    bulk_out_endpoint: u8,
-    /// Bulk max packet size (typically 512)
+    /// Bulk-IN 批量输入端点 (例如 0x81 表示 EP1 IN)
+    bulk_in: u8,
+    /// Bulk-OUT 批量输出端点 (例如 0x02 表示 EP2 OUT)
+    bulk_out: u8,
+    /// Bulk 最大包大小 (通常 512)
     bulk_max_packet: u16,
     /// 当前 CBW tag (单调递增)
     next_tag: u32,
@@ -292,8 +292,8 @@ impl MassStorageDriver {
         Ok(MassStorageDriver {
             device_address: device.address,
             interface_number: iface.interface_number,
-            bulk_in_endpoint: bulk_in.endpoint_address,
-            bulk_out_endpoint: bulk_out.endpoint_address,
+            bulk_in: bulk_in.endpoint_address,
+            bulk_out: bulk_out.endpoint_address,
             bulk_max_packet: bulk_in.max_packet_size,
             next_tag: 1,
         })
@@ -301,12 +301,12 @@ impl MassStorageDriver {
 
     /// 获取 Bulk-IN endpoint.
     pub fn bulk_in_endpoint(&self) -> u8 {
-        self.bulk_in_endpoint
+        self.bulk_in
     }
 
     /// 获取 Bulk-OUT endpoint.
     pub fn bulk_out_endpoint(&self) -> u8 {
-        self.bulk_out_endpoint
+        self.bulk_out
     }
 
     /// 获取 Bulk max packet size.
@@ -335,7 +335,7 @@ impl MassStorageDriver {
     ///
     /// - `lba`: Logical Block Address (起始扇区)
     /// - `blocks`: 读取扇区数
-    /// - `lun`: Logical Unit Number
+    /// - `lun`: 逻辑单元号 LUN
     pub fn build_read_10_cbw(&mut self, lba: u32, blocks: u16, lun: u8) -> Result<CommandBlockWrapper> {
         let cmd = build_read_10_cmd(lba, blocks);
         let data_len = (blocks as u32) * 512; // 假设 512 字节/扇区
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(&buf[0..4], &CBW_SIGNATURE.to_le_bytes());
         // Tag
         assert_eq!(&buf[4..8], &0x1234_5678_u32.to_le_bytes());
-        // Data transfer length
+        // 数据传输长度
         assert_eq!(&buf[8..12], &512_u32.to_le_bytes());
         // Flags (bit 7 = direction IN)
         assert_eq!(buf[12], 0x80);
@@ -472,7 +472,7 @@ mod tests {
         assert!(!csw.is_success());
     }
 
-    // ----------------- SCSI Command Builder Tests -----------------
+    // ----------------- SCSI 命令构造器测试 -----------------
 
     #[test]
     fn test_build_read_10_cmd_lba_zero() {
@@ -632,7 +632,7 @@ mod tests {
     #[test]
     fn test_msc_driver_rejects_non_msc_device() {
         let mut device = make_test_msc_device();
-        // Override device_class to non-MassStorage
+        // 改写 device_class 为非 MassStorage
         device.descriptor.device_class = 0xFF;
         let result = MassStorageDriver::from_usb_device(&device, 0);
         assert!(matches!(result, Err(DriverError::InvalidParameter)));
@@ -641,7 +641,7 @@ mod tests {
     #[test]
     fn test_msc_driver_requires_bulk_endpoints() {
         let mut device = make_test_msc_device();
-        // Remove bulk endpoints
+        // 移除批量端点
         device.endpoints.clear();
         let result = MassStorageDriver::from_usb_device(&device, 0);
         assert!(matches!(result, Err(DriverError::InvalidParameter)));

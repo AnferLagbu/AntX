@@ -1,4 +1,4 @@
-//! USB HID (Human Interface Device) Class Driver - USB-1.7
+//! USB HID (Human Interface Device 人机接口设备) 类驱动 - USB-1.7
 //!
 //! 实现 USB HID 1.11 规范的最小可用骨架:
 //!
@@ -244,7 +244,7 @@ pub mod mouse_button {
 pub enum HidDeviceType {
     /// 无 Subclass (1.0 兼容)
     None,
-    /// Boot Interface Subclass (1.1+)
+    /// Boot 接口子类 (1.1+)
     Boot,
     /// 其他 Subclass
     Other(u8),
@@ -409,7 +409,7 @@ mod tests {
     use crate::kernel::framework::driver::usb::usb_core::InterfaceDescriptor;
     use crate::kernel::framework::driver::usb::usb_core::UsbSpeed;
 
-    // ----------------- HID Descriptor Parser Tests -----------------
+    // ----------------- HID 描述符解析器测试 -----------------
 
     #[test]
     fn test_parse_hid_descriptor_valid() {
@@ -445,7 +445,7 @@ mod tests {
         assert!(parse_hid_descriptor(&data).is_err());
     }
 
-    // ----------------- Boot Keyboard Report Tests -----------------
+    // ----------------- Boot 键盘报告测试 -----------------
 
     #[test]
     fn test_boot_keyboard_report_parse_no_keys() {
@@ -481,7 +481,7 @@ mod tests {
         assert!(!lshift.alt_pressed());
     }
 
-    // ----------------- Boot Mouse Report Tests -----------------
+    // ----------------- Boot 鼠标报告测试 -----------------
 
     #[test]
     fn test_boot_mouse_report_parse_no_movement() {
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn test_boot_mouse_report_parse_with_movement_and_buttons() {
-        // Left button pressed, +10 X, -5 Y
+        // 左键按下, X 移动 +10, Y 移动 -5
         let data = [mouse_button::LEFT, 10, (-5i8) as u8];
         let report = BootMouseReport::parse(&data).unwrap();
         assert!(report.left_pressed());
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_boot_mouse_report_negative_displacement() {
-        // Test signed conversion: 0xFF -> -1
+        // 测试有符号转换: 0xFF → -1
         let data = [0x00, 0xFF, 0xFF];
         let report = BootMouseReport::parse(&data).unwrap();
         assert_eq!(report.x, -1);
@@ -519,7 +519,7 @@ mod tests {
         assert!(BootMouseReport::parse(&[0u8; 2]).is_err());
     }
 
-    // ----------------- HidDeviceType / HidProtocolType Tests -----------------
+    // ----------------- HidDeviceType / HidProtocolType 类型测试 -----------------
 
     #[test]
     fn test_hid_device_type_from_subclass() {
@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn test_hid_driver_rejects_non_hid_device() {
         let mut device = make_test_hid_device();
-        // Override device_class to non-HID
+        // 改写 device_class 为非 HID
         device.descriptor.device_class = 0xFF; // not HID
         let result = HidDriver::from_usb_device(&device, 0);
         assert!(matches!(result, Err(DriverError::InvalidParameter)));

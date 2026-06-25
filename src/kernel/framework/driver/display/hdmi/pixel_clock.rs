@@ -7,7 +7,7 @@
 //! ## 厂商差异
 //!
 //! - **Intel IGP (IBX/HSW/SKL)**: DPLL (Display PLL) 通过 PCH transcoder, 内部 MMIO 寄存器
-//! - **AMD DCN**: DENTIST clock generator + DISPCLK
+//! - **AMD DCN**: DENTIST 时钟发生器 + DISPCLK
 //! - **Synopsys DesignWare HDMI**: phy_clock + tmds_clock 寄存器
 //! - **QEMU Bochs DISPI**: 不使用像素时钟寄存器 (走 index/data port I/O)
 //!

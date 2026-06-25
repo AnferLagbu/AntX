@@ -82,6 +82,10 @@ pub use proto_char::CharOps;
 pub use proto_input::InputOps;
 
 // proto_block 公共接口 re-export — 避免跨子系统直接访问 chitin::proto_block 内部
+// LEGACY-4: 标记 `#[allow(deprecated)]` 是因为 re-export 会沿用源头 `#[deprecated]` 属性.
+//            两个遗留 API (register_block_device_with_ops / register_block_raw) 仍向
+//            旧驱动暴露, Phase E 移除前需要保持公开; 新驱动应使用 `register_block_device` + `impl BlockDevice`.
+#[allow(deprecated)]
 pub use proto_block::{register_block_device, register_block_device_with_ops, register_block_raw};
 pub mod firmware;
 
@@ -245,7 +249,7 @@ pub struct ChitinDevice {
     /// `&'static mut` 是因为 `BlockDevice::blk_read/blk_write` 需要 `&mut self`.
     /// 通过 `&mut ChitinDevice` 借用得到 (CHITIN_DEVICES 锁保护),
     /// 不存在数据竞争 (持有锁时此引用唯一).
-    pub block_dev: Option<&'static mut (dyn BlockDevice)>,
+    pub block_dev: Option<&'static mut dyn BlockDevice>,
 }
 
 // SAFETY: ChitinDevice 含一个原始指针 (`driver_data`), 其不
@@ -457,7 +461,7 @@ pub fn chitin_register_block_dev(
     name: &'static str,
     io_base: Option<u64>,
     irq: Option<u8>,
-    dev: &'static mut (dyn BlockDevice),
+    dev: &'static mut dyn BlockDevice,
 ) -> u32 {
     let id = NEXT_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
     let chitin_dev = ChitinDevice {
@@ -1208,7 +1212,7 @@ mod tests {
         CHITIN_DEVICES.lock().clear();
     }
 
-    /// 4. trait dispatch: chitin_blk_is_present / total_sectors
+    /// 4. trait 分发: chitin_blk_is_present / total_sectors
     #[test]
     fn test_t4_1_chitin_blk_metadata_via_trait() {
         CHITIN_DEVICES.lock().clear();

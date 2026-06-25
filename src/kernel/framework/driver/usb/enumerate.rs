@@ -298,7 +298,7 @@ where
 {
     let _ = port; // 当前未使用 (mock 数据无 port 信息), 真实硬件应通过 port 发送 Setup TRB.
 
-    // 1. GET_DESCRIPTOR Device (mock)
+    // 1. 获取描述符 Device (mock 模拟)
     let _req1 = make_get_descriptor_request(1, 0, 18);
     let device_data = mock_get_device_descriptor_response();
     let descriptor = parse_device_descriptor(&device_data)?;
@@ -312,7 +312,7 @@ where
     // 3. SET_ADDRESS (mock: 仅构造请求, 真实硬件通过 Setup TRB 发送)
     let _req2 = make_set_address_request(address);
 
-    // 4. GET_DESCRIPTOR Configuration (mock)
+    // 4. 获取描述符 Configuration (mock 模拟)
     let _req3 = make_get_descriptor_request(2, 0, 25);
     let config_data = mock_get_configuration_descriptor_response();
     let (config_desc, interfaces, endpoints) = parse_configuration_descriptor(&config_data)?;
@@ -386,7 +386,7 @@ mod tests {
 
     #[test]
     fn test_parse_configuration_descriptor_valid() {
-        // 9 (config) + 9 (interface) + 7 (endpoint) = 25
+        // 9 (config 配置描述符) + 9 (interface 接口描述符) + 7 (endpoint 端点描述符) = 25
         let mut data = vec![0u8; 25];
         data[0] = 9;
         data[1] = 2;

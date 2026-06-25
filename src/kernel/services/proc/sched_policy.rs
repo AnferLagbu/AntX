@@ -407,9 +407,9 @@ pub fn register_mlfq_policy() -> Result<(), ()> {
 // 覆盖:
 // - nice_to_weight / weight_to_nice: NICE 双向转换 (含 -20..19 边界 + clamp)
 // - mlfq_level_to_nice: MLFQ 层级 → nice
-// - DeadlineParams: is_valid + utilization_pct
+// - DeadlineParams 校验: is_valid + utilization_pct
 // - CfsRunQueue: enqueue/dequeue/pick_next + 时间片计算
-// - MlfqPolicy: time_slice + should_reschedule
+// - MlfqPolicy 调度: time_slice + should_reschedule
 
 #[cfg(test)]
 mod tests {
@@ -476,16 +476,16 @@ mod tests {
         // runtime >= MIN, deadline >= runtime, period >= deadline, period >= MIN_PERIOD → valid
         p.runtime = DL_MIN_RUNTIME_TICKS;
         assert!(p.is_valid());
-        // period < MIN_PERIOD → invalid
+        // period 小于 MIN_PERIOD → 无效
         p.period = 1;
         assert!(!p.is_valid());
-        // period < deadline → invalid
+        // period 小于 deadline → 无效
         p.period = 50;
         p.deadline = 100;
         assert!(!p.is_valid());
     }
 
-    /// 5. DeadlineParams: utilization_pct
+    /// 5. DeadlineParams: utilization_pct 利用率
     #[test]
     fn test_sched_deadline_utilization() {
         assert_eq!(DeadlineParams::new().utilization_pct(), 0);  // period=0 → 0
@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(p.utilization_pct(), 100);  // 100%
     }
 
-    /// 6. CfsRunQueue: enqueue/pick_next/dequeue
+    /// 6. CfsRunQueue: 入队/选下一个/出队
     #[test]
     fn test_sched_cfs_basic_ops() {
         let mut q = CfsRunQueue::new();
@@ -575,7 +575,7 @@ mod tests {
         assert_eq!(p.time_slice(ThreadPriority::Idle), u32::MAX);
     }
 
-    /// 10. MlfqPolicy: should_reschedule
+    /// 10. MlfqPolicy: 是否需要重新调度
     #[test]
     fn test_sched_mlfq_should_reschedule() {
         let p = MlfqPolicy;

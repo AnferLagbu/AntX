@@ -22,7 +22,6 @@
 //!
 //! 注: HvArcKey 包含 vdev_id/offset/birth_txg, 用于唯一标识缓存条目.
 
-use alloc::vec::Vec;
 use super::arc::{HvArc, HvArcBufType, HvArcKey};
 
 // ============================================================================
@@ -290,7 +289,7 @@ mod tests {
         assert!(mru + mfu <= arc.max_size());
     }
 
-    /// 10. trait object dispatch (dyn ArcCache)
+    /// 10. trait 对象分发 (dyn ArcCache)
     #[test]
     fn test_arc_trait_object() {
         let arc: alloc::boxed::Box<dyn ArcCache> = alloc::boxed::Box::new(StandardArc::new());

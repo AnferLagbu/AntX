@@ -451,7 +451,7 @@ impl HvArc {
         self.initialized.load(Ordering::Acquire)
     }
 
-    // ====== LEGACY-5.8: Public accessors for ArcCache trait ======
+    // ====== LEGACY-5.8: ArcCache trait 公开访问器 ======
     // 允许 arc_trait.rs 读取 stats 字段, 不暴露字段本身
 
     /// 当前缓存总大小

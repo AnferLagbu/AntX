@@ -37,17 +37,17 @@ pub use xhci::XhciController;
 // xHCI PCI 发现 (USB-1.2)
 // ============================================================================
 //
-// PCI class code 0x0C (Serial Bus), subclass 0x03 (USB), prog_if 0x30 (xHCI)
+// PCI class code 0x0C (Serial Bus 串行总线), subclass 0x03 (USB), prog_if 0x30 (xHCI)
 // 来源: PCI Code and ID Assignment Specification §6
 //
 // 注: 不强制依赖 ACPI MCFG / 物理 MMIO base, 直接从 PciDevice.bars[0] 读取
 //      xHCI 控制器的 BAR0 (MMIO 32-bit 或 64-bit).
 
-/// PCI class code for Serial Bus controllers
+/// PCI class code 串行总线控制器
 const PCI_CLASS_SERIAL_BUS: u8 = 0x0C;
-/// PCI subclass code for USB controllers
+/// PCI subclass code USB 控制器
 const PCI_SUBCLASS_USB: u8 = 0x03;
-/// PCI programming interface for xHCI (USB 3.0)
+/// PCI 编程接口 xHCI (USB 3.0)
 const PCI_PROGIF_XHCI: u8 = 0x30;
 
 /// 默认 xHCI MMIO 映射大小 (xHCI 规范要求至少 256 字节; 现代控制器通常 64 KiB).
@@ -89,7 +89,10 @@ pub fn discover_xhci_controllers() -> framework::Result<Vec<XhciController>> {
             }
         };
 
-        // 4. 创建 IoMem (unsafe: 调用方保证 MMIO 物理地址合法)
+        // 4. 创建 IoMem
+        // SAFETY: BAR0 由 PCI 枚举保证为 xHCI 设备 MMIO 区域; bar_base..bar_base+mmio_size
+        // 已通过 PCI BAR 配置 + 4KB 对齐映射到内核空间. ALIAS_REGISTRY 通过 Mutex
+        // 保护, 与其他设备枚举路径无竞争 (PCI 枚举在 SMP 启动前完成).
         let mmio_size = bar_size.min(XHCI_DEFAULT_MMIO_SIZE as u64) as usize;
         let iomem = unsafe {
             match IoMem::new(PhysAddr(bar_base), mmio_size, "xhci-pci") {

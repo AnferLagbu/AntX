@@ -43,8 +43,7 @@ use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::ipc::{WaitQueue, WaitQueueItem};
 use crate::kernel::framework::fs::vfs_poll_trait::{
-    VfsPollContext, current_vfs_poll_policy, VfsPollPolicyRef,
-    EPOLLIN as EPOLLIN_RE, EPOLLOUT as EPOLLOUT_RE, EPOLLHUP as EPOLLHUP_RE, EPOLLERR as EPOLLERR_RE,
+    VfsPollContext, current_vfs_poll_policy,
 };
 
 // ============================================================================

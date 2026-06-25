@@ -20,7 +20,7 @@
 //!
 //! ## 与 LEGACY-5.1 (ZAP) 范式一致
 
-use super::txg::{HvTxg, HvTxgGroup, HvTxgState, HvIo};
+use super::txg::{HvTxgGroup, HvTxgState, HvIo};
 use super::bp::HvBlockPointer;
 
 // ============================================================================
@@ -264,7 +264,7 @@ mod tests {
         // 不抛错即可
     }
 
-    /// 7. trait object dispatch (dyn TxgManager)
+    /// 7. trait 对象分发 (dyn TxgManager)
     #[test]
     fn test_txg_trait_object() {
         let mut txg: alloc::boxed::Box<dyn TxgManager> = alloc::boxed::Box::new(StandardTxg::new());

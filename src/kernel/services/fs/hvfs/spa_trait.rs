@@ -18,7 +18,6 @@
 //!
 //! ## 与 LEGACY-5.1/5.2/5.4 范式一致
 
-use super::bp::HvBlockPointer;
 use super::spa::{HvSpa, HvUberblock};
 use super::vdev::HvVdevConfig;
 
@@ -273,7 +272,7 @@ mod tests {
         let _ = spa2;
     }
 
-    /// 9. trait object dispatch (dyn SpaManager)
+    /// 9. trait 对象分发 (dyn SpaManager)
     #[test]
     fn test_spa_trait_object() {
         let spa: alloc::boxed::Box<dyn SpaManager> = alloc::boxed::Box::new(StandardSpa::new());

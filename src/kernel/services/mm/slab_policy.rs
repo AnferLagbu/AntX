@@ -159,7 +159,7 @@ mod tests {
         // objects = 3967/2048 = 1
         assert_eq!(policy.calculate_objects_per_slab(4096, 128, 2048), 1);
         // 边界: obj == slab - header (无空间)
-        // usable = slab - header, estimated = 1, bitmap = 1, actual_usable = slab - header - 1
+        // 可用 = 总 - 头, 预估 = 1, 位图 = 1, 实际可用 = 总 - 头 - 1
         // objects = (slab - header - 1) / obj, obj=slab-header 时为 0
         assert_eq!(policy.calculate_objects_per_slab(1024, 512, 512), 0);
     }
@@ -213,7 +213,7 @@ mod tests {
         let norm = policy.normalize_object_size(100).unwrap();
         assert_eq!(norm, 100);
         // 3. 计算 objects per slab (4096 slab, 128 header, 100 obj)
-        // usable = 3968, estimated = 39, bitmap = 5, actual = 3963, objects = 39
+        // 可用 = 3968, 预估 = 39, 位图 = 5, 实际 = 3963, 对象 = 39
         let objects = policy.calculate_objects_per_slab(4096, 128, 100);
         assert_eq!(objects, 39);
         // 4. partial > 0 → 选 Partial

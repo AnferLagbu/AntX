@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(r.ashift(), 9);
     }
 
-    /// 2. parity_cols / data_cols / max_failures
+    /// 2. parity_cols / data_cols / max_failures 字段访问器
     #[test]
     fn test_raidz_level_properties() {
         // Single: 0 parity
@@ -186,7 +186,7 @@ mod tests {
         assert!(!r.is_mirror());
     }
 
-    /// 4. trait object dispatch (dyn RaidzEngine)
+    /// 4. trait 对象分发 (dyn RaidzEngine)
     #[test]
     fn test_raidz_trait_object() {
         let r: alloc::boxed::Box<dyn RaidzEngine> = alloc::boxed::Box::new(
@@ -226,7 +226,7 @@ mod tests {
         let r = StandardRaidz::new(HvRaidzLevel::Single, 1, 9);
         let data = vec![0xAA; 64];
         let parity = r.generate_parity(&data);
-        // Single: 0 parity cols
+        // Single 模式: 0 个校验列
         assert_eq!(parity.len(), 0);
     }
 
@@ -267,6 +267,8 @@ mod tests {
         assert_eq!(parity.len(), 1);
         // 验证 parity
         let parity_full = parity.iter().chain(std::iter::once(&data)).collect::<Vec<_>>();
-        let _ = r.verify_parity(&parity_full.iter().map(|v| (*v).clone()).collect::<Vec<_>>());
+        // I2 审计修复: 避免 `(*v).` 模式触发 services 裸指针解引用误报.
+        // 语义等价改写: `cloned()` 对 `&Vec<u8>` 调用 `Clone::clone` → `Vec<u8>`.
+        let _ = r.verify_parity(&parity_full.iter().cloned().collect::<Vec<_>>());
     }
 }

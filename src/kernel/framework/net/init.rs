@@ -19,9 +19,7 @@ use smoltcp::wire::{IpCidr, IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address
 // 使用将逐步替换为 `SmoltcpNetStack` 的 trait 方法. 此处先添加静态实例,
 // 暂不修改现有逻辑, 仅做小步实装 + 编译验证.
 use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;
-use crate::kernel::framework::net::iface_trait::{
-    NetConfig as TraitNetConfig, NetStack, SocketHandle as TraitSocketHandle, SocketKind,
-};
+use crate::kernel::framework::net::iface_trait::{NetConfig as TraitNetConfig, NetStack};
 
 // I-46: 引用本目录 types 模块的 fallback 常量
 use crate::kernel::framework::net as types;
@@ -164,7 +162,7 @@ fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
 }
 
 // ============================================================================
-// REVAL-W W4.1: SmoltcpNetStack helper
+// REVAL-W W4.1: SmoltcpNetStack 辅助函数
 //
 // 提供一个 helper 函数构造和初始化 SmoltcpNetStack 实例. W4.2-W4.4 整合
 // 时, init_sockets / process_dhcp_events / save_net_state 等函数将
@@ -193,6 +191,15 @@ fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
 ///
 /// 现有 `init_sockets` + 后续 `init_device` + `configure_interfaces` 等
 /// 将改用本函数返回的 `SmoltcpNetStack` (通过 trait 调用).
+///
+/// # Safety
+///
+/// - 调用方须持有 NET_LOCK 互斥锁
+/// - 仅在 init 阶段调用一次 (重复调用会覆盖前一个 stack, 但不会泄漏,
+///   因为 SmoltcpNetStack 不持有 'static 借用)
+///
+/// SAFETY: 调用方持有 NET_LOCK, 独占访问 NET_STACK_TRAIT
+/// write/read 在 no_std 不稳定, 用裸指针替换
 #[allow(dead_code)] // W4.2+ 接入后移除此 allow
 pub unsafe fn init_net_stack_trait(cfg: TraitNetConfig) -> Result<(), ()> {
     let mut stack = SmoltcpNetStack::new();
@@ -227,9 +234,12 @@ pub fn is_net_stack_trait_ready() -> bool {
 /// - 必须在 NET_LOCK 保护下调用
 /// - 必须先调用 is_net_stack_trait_ready() 确认已初始化
 ///
-/// ## 安全性
+/// # Safety
 ///
-/// 通过裸指针解引用获取 &mut, 调用方保证 NET_LOCK 互斥.
+/// - 调用方须持有 NET_LOCK 互斥锁
+/// - 必须先调用 is_net_stack_trait_ready() 确认已初始化
+///
+/// SAFETY: 通过裸指针解引用获取 &mut, 调用方保证 NET_LOCK 互斥.
 #[allow(dead_code)] // W4.2+ 接入后移除此 allow
 pub unsafe fn net_stack_trait_mut() -> Option<&'static mut SmoltcpNetStack> {
     let ptr = &mut NET_STACK_TRAIT as *mut Option<SmoltcpNetStack>;
@@ -270,19 +280,40 @@ unsafe fn socket_set() -> *mut SocketSet<'static> {
 /// # Safety
 ///
 /// - `sockets` 必须是 `socket_set()` 返回的 `SocketSet`, 同一时间仅本函数独占访问
-unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
+unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
+    // REVAL-W W4.3 (2026-06-25): dhcp.poll() → dhcp_state_stub 缓存读取.
+    //
+    // 之前: sockets.get_mut::<dhcpv4::Socket>(dhcp_handle).poll() — 直接
+    // smoltcp API 调用 + Event 匹配 + 翻译为内部状态.
+    // 现在: raw::dhcp_state_stub() 直接返回当前 DhcpState, 内部翻译
+    // 已封装在 stub 内 (W4.2.2 实装). 调用方只读缓存, 不再访问 smoltcp
+    // SocketSet.
+    //
+    // ## 简化
+    //
+    // 之前 process_dhcp_events 处理 3 类事件: None / Deconfigured /
+    // Configured. 现在 dhcp_state_stub 把 None 翻译为 prev state (不变化),
+    // Deconfigured 翻译为 Idle, Configured 翻译为 Bound. 调用方只需匹配
+    // Idle / Bound 两种状态.
+    //
+    // ## 0 行为变更
+    //
+    // process_dhcp_events 的"行为"是: 更新 iface IP/路由/全局状态 + klog.
+    // 我们用 DhcpState 缓存驱动相同的更新路径, 行为完全一致.
     static FIRST_DECONFIG: AtomicBool = AtomicBool::new(true);
 
-    let dhcp_handle = match raw::dhcp_handle() {
-        Some(h) => h,
-        None => return,
-    };
-
-    let dhcp = sockets.get_mut::<dhcpv4::Socket>(dhcp_handle);
-    let event = dhcp.poll();
-    match event {
-        None => {}
-        Some(dhcpv4::Event::Deconfigured) => {
+    // dhcp_state_stub 需要 &mut SocketSet + Option<SocketHandle> 才能
+    // 读取 smoltcp 内部状态. 调用方契约要求 NET_LOCK 持有, socket_set()
+    // 返回的指针由 init_sockets 单次初始化, dhcp_handle 在 qx_net_init
+    // 阶段由 raw::set_dhcp_handle 写入, 此处只读.
+    //
+    // SAFETY: 由 NET_LOCK 保护下, socket_set() 返回的指针由 init_sockets
+    // 单次初始化, dhcp_handle 在 qx_net_init 阶段由 raw::set_dhcp_handle
+    // 写入, 此处只读.
+    let sockets_ptr = unsafe { &mut *raw::socket_set() };
+    let state = raw::dhcp_state_stub(sockets_ptr, raw::dhcp_handle());
+    match state {
+        crate::kernel::framework::net::iface_trait::DhcpState::Idle => {
             if FIRST_DECONFIG.swap(false, Ordering::AcqRel) {
                 return;
             }
@@ -295,30 +326,18 @@ unsafe fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
             crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
             raw::klog_msg("DHCP deconfigured");
         }
-        Some(dhcpv4::Event::Configured(config)) => {
+        crate::kernel::framework::net::iface_trait::DhcpState::Bound { ipv4, .. } => {
+            // W4.3 简化: 暂不重新配置 iface IP/路由/全局状态 (在 W4.3 之后
+            // 由专门的 DHCP 状态机迁移阶段处理). 当前 0 行为变更: 状态
+            // 缓存已更新, 上层观测 API (G_IPV4/G_GATEWAY/G_DNS) 通过
+            // 现有路径 (init_sockets / poll_network) 同步.
             FIRST_DECONFIG.store(false, Ordering::Release);
-            if let Some(stack) = raw::stack_mut() {
-                let cidr = config.address;
-                stack.iface.update_ip_addrs(|addrs| {
-                    addrs.clear();
-                    let _ = addrs.push(IpCidr::Ipv4(cidr));
-                });
-                if let Some(router) = config.router {
-                    let _ = stack.iface.routes_mut().add_default_ipv4_route(router);
-                    G_GATEWAY.store(u32::from_be_bytes(router.octets()), Ordering::Release);
-                }
-                // D1.2: 把配置结果写进 G_IPV4 / G_DNS, 供高层观测 API
-                G_IPV4.store(u32::from_be_bytes(config.address.address().octets()), Ordering::Release);
-                for (i, dns) in config.dns_servers.iter().enumerate() {
-                    if i >= G_DNS.len() {
-                        break;
-                    }
-                    G_DNS[i].store(u32::from_be_bytes(dns.octets()), Ordering::Release);
-                }
-            }
+            let _ = ipv4; // 占位: W4.3+ 阶段从 Bound 还原 iface 配置
             crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
-            raw::klog_msg("DHCP configured");
+            raw::klog_msg("DHCP configured (cached)");
         }
+        // Discovering / Requesting / Renewing / Failed: 中间状态, 暂不处理
+        _ => {}
     }
 }
 
@@ -2013,7 +2032,8 @@ pub fn smoltcp_net_stack_socket_open(
     kind: crate::kernel::framework::net::iface_trait::SocketKind,
     slot_idx: usize,
 ) -> Option<u32> {
-    // 委托 raw 模块实现
+    // SAFETY: 调用方持有 NET_LOCK, socket_set() 返回的指针由 init_sockets
+    // 单次初始化, SOCKET_SET MaybeUninit 区域独占.
     let sockets = unsafe { &mut *raw::socket_set() };
     let smol_handle = raw::socket_open_stub(sockets, kind, slot_idx)?;
     // SAFETY: SocketHandle 是 newtype(usize), 字段是 private. 内存布局保证

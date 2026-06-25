@@ -136,7 +136,7 @@ pub const DMT_TIMINGS: &[(u16, u16, u8, VideoTiming)] = &[
             v_active: 1080, v_total: 1125, v_sync_offset: 4, v_sync_pulse_width: 5,
         },
     ),
-    // 1920x1200@60 (DMT ID 0x44): 193.25 MHz, full blanking
+    // 1920x1200@60 (DMT ID 0x44): 193.25 MHz, 全消隐
     (
         1920, 1200, 60,
         VideoTiming {
@@ -206,7 +206,7 @@ pub fn lookup_dmt_timing(mode: &VideoMode) -> Option<VideoTiming> {
 /// - 误差 < 5%, 对真实显示器可能略偏, 但大多数现代显示器容忍.
 ///
 /// 对于 refresh_rate == 0 或 pixel_clock_khz == 0 的边界情况, 使用 fallback
-/// (v_total = v_active + 50, h_total = h_active + 200).
+/// (v_total = v_active + 50, h_total = h_active + 200 整行整列扩展规则).
 pub(super) fn derive_video_timing(mode: &VideoMode) -> VideoTiming {
     // P0-3 精度扩展: DMT lookup 优先
     if let Some(timing) = lookup_dmt_timing(mode) {
@@ -273,7 +273,8 @@ pub(super) unsafe fn write_timing_register_u16(iomem: &IoMem, reg_offset: usize,
 /// 配置 HDMI 时序参数 (8 个 16-bit 寄存器)。
 ///
 /// 写入顺序: H_TOTAL → H_ACTIVE → V_TOTAL → V_ACTIVE →
-/// H_SYNC_OFFSET → H_SYNC_PW → V_SYNC_OFFSET → V_SYNC_PW
+/// H_SYNC_OFFSET 水平同步偏移 → H_SYNC_PW 水平同步脉宽 →
+/// V_SYNC_OFFSET 垂直同步偏移 → V_SYNC_PW 垂直同步脉宽
 ///
 /// # Safety
 /// 调用方必须保证:

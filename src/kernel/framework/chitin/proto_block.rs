@@ -34,7 +34,7 @@ pub fn register_block_device(
     io_base: Option<u64>,
 ) -> u32 {
     // T-4.1: Box::leak → &'static mut dyn BlockDevice, 走新注册路径
-    let leaked: &'static mut (dyn BlockDevice) = alloc::boxed::Box::leak(alloc::boxed::Box::new(dev));
+    let leaked: &'static mut dyn BlockDevice = alloc::boxed::Box::leak(alloc::boxed::Box::new(dev));
     crate::kernel::framework::chitin::chitin_register_block_dev(name, io_base, None, leaked)
 }
 

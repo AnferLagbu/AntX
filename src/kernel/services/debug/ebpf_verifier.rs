@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_valid_helper_call() {
-        // CALL ktime_get_ns; EXIT
+        // 调用 ktime_get_ns helper, 然后 EXIT
         let insns = vec![
             make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::KTIME_GET_NS as i32),
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
@@ -542,8 +542,8 @@ mod tests {
     /// 5. 多 helper 连续调用: 合法
     #[test]
     fn test_multiple_helper_calls() {
-        // R0 = 0; CALL ktime_get_ns (R0 = tsc); CALL trace_printk (R0 保持);
-        // CALL get_smp_processor; EXIT
+        // R0 = 0; 调用 ktime_get_ns (R0 = tsc); 调用 trace_printk (R0 保持);
+        // 调用 get_smp_processor; EXIT
         let insns = vec![
             make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 0),
             make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::KTIME_GET_NS as i32),

@@ -30,9 +30,10 @@ use alloc::vec::Vec;
 
 /// DisplayPort DPCD 地址 — VESA DP 规范 §2.4
 ///
-/// 当前使用: TRAINING_PTN_SET, LINK_BW_SET, LANE_COUNT_SET,
-///           LANE0_1_STATUS, LANE2_3_STATUS, LANE_ALIGN_STATUS_UPDATED,
-///           ADJUST_REQ_LANE0/1/2/3
+/// 当前使用: TRAINING_PTN_SET 训练图样设置, LINK_BW_SET 链路带宽设置,
+///           LANE_COUNT_SET 通道数设置, LANE0_1_STATUS / LANE2_3_STATUS
+///           通道状态, LANE_ALIGN_STATUS_UPDATED 对齐状态,
+///           ADJUST_REQ_LANE0/1/2/3 各通道请求调整
 mod aux_address {
     pub const TRAINING_PTN_SET: u16 = 0x0106;
     pub const LINK_BW_SET: u16 = 0x0100;
@@ -115,10 +116,10 @@ const DP_HPD_STATUS_BIT: u8 = 0x01;
 //                              bit 0:    busy
 //                              bit 1:    reply ready
 //                              bit 2-3:  reply error (00=OK, 01=NACK, 10=DEFER, 11=INVALID)
-//   0x102   4     AUX_DAT0     data[0..3] (W: request, R: reply)
-//   0x106   4     AUX_DAT1     data[4..7]
-//   0x10A   4     AUX_DAT2     data[8..11]
-//   0x10E   4     AUX_DAT3     data[12..15]
+//   0x102   4     AUX_DAT0     data[0..3] 写入: 请求数据, 读取: 应答数据
+//   0x106   4     AUX_DAT1     data[4..7]  辅助数据字节 4-7
+//   0x10A   4     AUX_DAT2     data[8..11] 辅助数据字节 8-11
+//   0x10E   4     AUX_DAT3     data[12..15] 辅助数据字节 12-15
 //
 // 厂商差异:
 // - Synopsys DWC DP-TX: 上述布局
@@ -168,14 +169,14 @@ pub(super) const AUX_DELAY_ITERS: usize = 50;
 //
 //   偏移     大小  名称
 //   ----     ----  ----
-//   0x300    2     H_TOTAL_REG       (h_total 16-bit)
-//   0x302    2     H_ACTIVE_REG      (h_active 16-bit)
-//   0x304    2     V_TOTAL_REG       (v_total 16-bit)
-//   0x306    2     V_ACTIVE_REG      (v_active 16-bit)
-//   0x308    2     H_SYNC_OFFSET_REG (h_sync_offset 16-bit)
-//   0x30A    2     H_SYNC_PW_REG     (h_sync_pulse_width 16-bit)
-//   0x30C    2     V_SYNC_OFFSET_REG (v_sync_offset 16-bit)
-//   0x30E    2     V_SYNC_PW_REG     (v_sync_pulse_width 16-bit)
+//   0x300    2     H_TOTAL_REG       水平总像素 (h_total 16-bit)
+//   0x302    2     H_ACTIVE_REG      水平有效像素 (h_active 16-bit)
+//   0x304    2     V_TOTAL_REG       垂直总行数 (v_total 16-bit)
+//   0x306    2     V_ACTIVE_REG      垂直有效行数 (v_active 16-bit)
+//   0x308    2     H_SYNC_OFFSET_REG 水平同步偏移 (h_sync_offset 16-bit)
+//   0x30A    2     H_SYNC_PW_REG     水平同步脉冲宽度 (h_sync_pulse_width 16-bit)
+//   0x30C    2     V_SYNC_OFFSET_REG 垂直同步偏移 (v_sync_offset 16-bit)
+//   0x30E    2     V_SYNC_PW_REG     垂直同步脉冲宽度 (v_sync_pulse_width 16-bit)
 //   0x310    1     SYNC_POL_REG      (bit 0=H 极性, bit 1=V 极性, 0=negative, 1=positive)
 //   0x311    1     OUTPUT_ENABLE_REG (bit 0=输出使能, 1=enabled)
 //
@@ -1327,7 +1328,7 @@ mod tests {
         // 我们调用 internal 行为: 通过 link_train 完整路径验证
         // 这里直接测试: aux_write + aux_read fallback 都正确, 链路训练参数正确
         let data = ctrl.aux_read(0x0000, 16).unwrap();
-        // fallback DPCD rev 1.2: max_link_rate = Hbr2 = 0x14
+        // 后备路径 DPCD rev 1.2: max_link_rate = Hbr2 = 0x14
         assert_eq!(data[1], LinkRate::Hbr2 as u8);
     }
 

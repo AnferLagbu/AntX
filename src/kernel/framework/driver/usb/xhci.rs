@@ -789,12 +789,22 @@ mod tests {
     // 注: 地址分配不需要硬件 (仅操作 address_bitmap), 可单测.
     //     submit_urb / cancel_urb 需要真实硬件, 不在此单测.
 
-    #[test]
-    fn test_address_allocate_returns_first_free_slot() {
-        let mut ctrl = XhciController::new(unsafe {
+    /// 单元测试用 XhciController 构造器 (fake MMIO region).
+    ///
+    /// SAFETY: fake 物理地址 0xFE000000 + identity-map 测试脚手架保证
+    /// phys..phys+len 已被映射, ALIAS_REGISTRY 在测试进程下独占.
+    fn make_test_ctrl() -> XhciController {
+        // SAFETY: 测试脚手架, 详见函数 doc.
+        let iomem = unsafe {
             IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
                 .expect("test IoMem")
-        });
+        };
+        XhciController::new(iomem)
+    }
+
+    #[test]
+    fn test_address_allocate_returns_first_free_slot() {
+        let mut ctrl = make_test_ctrl();
         // 初始 next_address_hint = 1, 应分配到 1
         assert_eq!(ctrl.allocate_address().unwrap(), 1);
         // 再分配应得 2
@@ -805,10 +815,7 @@ mod tests {
 
     #[test]
     fn test_address_free_then_reallocate() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         let addr1 = ctrl.allocate_address().unwrap();
         ctrl.free_address(addr1);
         // 释放后重新分配, 因 next_address_hint 已更新, 不一定回到 addr1
@@ -820,10 +827,7 @@ mod tests {
 
     #[test]
     fn test_address_free_zero_and_255_are_noops() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         // 地址 0 和 255 是保留地址, 静默忽略
         ctrl.free_address(0);
         ctrl.free_address(255);
@@ -833,10 +837,7 @@ mod tests {
 
     #[test]
     fn test_address_allocate_exhaustion_returns_busy() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         // 分配所有 254 个地址 (1..=254)
         for _ in 0..254 {
             ctrl.allocate_address().expect("should have free slot");
@@ -848,10 +849,7 @@ mod tests {
 
     #[test]
     fn test_address_reuse_after_free() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         // 分配 1, 2, 3
         let _a = ctrl.allocate_address().unwrap();
         let _b = ctrl.allocate_address().unwrap();
@@ -867,10 +865,7 @@ mod tests {
 
     #[test]
     fn test_submit_urb_fails_when_not_initialized() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         // 未 init_hardware, initialized=false
         let mut buf = [0u8; 16];
         let urb = Urb {
@@ -890,10 +885,7 @@ mod tests {
 
     #[test]
     fn test_submit_urb_fails_with_device_zero() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         ctrl.initialized = true; // 绕过 init_hardware (无硬件环境)
         let mut buf = [0u8; 16];
         let urb = Urb {
@@ -913,10 +905,7 @@ mod tests {
 
     #[test]
     fn test_submit_urb_fails_with_invalid_endpoint() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         ctrl.initialized = true;
         let mut buf = [0u8; 16];
         let urb = Urb {
@@ -936,10 +925,7 @@ mod tests {
 
     #[test]
     fn test_submit_urb_fails_with_null_buffer() {
-        let mut ctrl = XhciController::new(unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
-        });
+        let mut ctrl = make_test_ctrl();
         ctrl.initialized = true;
         let urb = Urb {
             id: 1,

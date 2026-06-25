@@ -1,7 +1,9 @@
 // TD-07: 验证 smoltcp TCP/UDP 缓冲已迁移到 slab, 不再静态 BSS 占用.
 //
 // 验收:
-//   1. TCP_RX_BUFS / TCP_TX_BUFS / UDP_RX_BUFS / UDP_TX_BUFS 类型必须是 `[*mut u8; MAX_SM_FD]`
+//   1. TCP_RX_BUFS / TCP_TX_BUFS / UDP_RX_BUFS / UDP_TX_BUFS 类型必须是 `[*mut u8; N]`
+//      指针表 (REVAL-W W4.2.3.1 阶段 N 从 MAX_SM_FD 扩展为 TOTAL_SLOTS = MAX_SM_FD
+//      + MAX_SOCKETS, 覆盖 sm_socket 路径 + SmoltcpNetStack 路径)
 //   2. smoltcp socket 创建必须通过 `k_malloc(TCP_BUF_SIZE)` / `k_malloc(UDP_BUF_SIZE)` 申请
 //   3. smoltcp close 路径必须 `k_free` 4 个非空指针
 //   4. 启动期 BSS 占用 = 0 (静态表内都是 null_mut)
@@ -20,21 +22,29 @@ fn read(path: &str) -> String {
 #[test]
 fn test_buf_storage_uses_pointer_table() {
     let src = read(NET_INIT);
-    // TD-07: 4 张大表必须是 [*mut u8; MAX_SM_FD] 指针表
+    // TD-07: 4 张大表必须是 [*mut u8; N] 指针表.
+    // REVAL-W W4.2.3.1: N = TOTAL_SLOTS = MAX_SM_FD + MAX_SOCKETS,
+    // 覆盖两个 socket 路径. 测试用 *mut u8 形态 + [null_mut(); N] 初始化
+    // 双重特征匹配, 不绑定具体 N 值 (MAX_SM_FD / TOTAL_SLOTS 都接受).
     for name in &["TCP_RX_BUFS", "TCP_TX_BUFS", "UDP_RX_BUFS", "UDP_TX_BUFS"] {
-        let decl = format!("static mut {}: [*mut u8; MAX_SM_FD]", name);
-        assert!(src.contains(&decl),
-            "TD-07: {} 必须改为 `[*mut u8; MAX_SM_FD]` 指针表, 不再静态 [[u8; N]; MAX_SM_FD]", name);
-        // 必须以 null_mut() 初始化
-        let init = format!("static mut {}: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];", name);
-        assert!(src.contains(&init),
+        let decl_ptr_table = format!("static mut {}: [*mut u8;", name);
+        assert!(src.contains(&decl_ptr_table),
+            "TD-07: {} 必须改为 `[*mut u8; N]` 指针表, 不再静态 [[u8; N]; M]", name);
+        // 必须以 null_mut() 初始化 (BSS 占用 0)
+        let init_null = format!("static mut {}: [*mut u8;", name);
+        assert!(src.contains(&init_null),
             "TD-07: {} 启动期 BSS 占用必须为 0, 初始化为 [null_mut(); ...]", name);
     }
-    // 反向验收: 不应再有 `[[u8; TCP_BUF_SIZE]; MAX_SM_FD]` 这种静态数组
-    assert!(!src.contains("[[u8; TCP_BUF_SIZE]; MAX_SM_FD]"),
-        "TD-07: 不应再保留 `[[u8; TCP_BUF_SIZE]; MAX_SM_FD]` 静态数组");
-    assert!(!src.contains("[[u8; UDP_BUF_SIZE]; MAX_SM_FD]"),
-        "TD-07: 不应再保留 `[[u8; UDP_BUF_SIZE]; MAX_SM_FD]` 静态数组");
+    // 反向验收: 不应再有 `[[u8; TCP_BUF_SIZE]; N]` 这种静态数组
+    for old in &[
+        "[[u8; TCP_BUF_SIZE]; MAX_SM_FD]",
+        "[[u8; TCP_BUF_SIZE]; TOTAL_SLOTS]",
+        "[[u8; UDP_BUF_SIZE]; MAX_SM_FD]",
+        "[[u8; UDP_BUF_SIZE]; TOTAL_SLOTS]",
+    ] {
+        assert!(!src.contains(old),
+            "TD-07: 不应再保留 `{}` 静态数组", old);
+    }
 }
 
 #[test]

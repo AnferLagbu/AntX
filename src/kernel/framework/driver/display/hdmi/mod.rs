@@ -339,6 +339,9 @@ impl HdmiController {
     /// - `hpd_reg_offset + 1` 必须落在 `iomem` 范围内。
     ///
     /// 推荐: `HdmiController::new_with_iomem(IoMem::new(base, REQUIRED_IOMEM_SIZE), HPD_STATUS_REG_OFFSET)`。
+    ///
+    /// SAFETY: iomem 指向有效 MMIO 区域 + iomem.len() >= REQUIRED_IOMEM_SIZE +
+    /// hpd_reg_offset + 1 在 iomem 范围内, 调用方负责 iomem 生命周期管理.
     pub unsafe fn new_with_iomem(
         iomem: IoMem,
         hpd_reg_offset: usize,
@@ -432,6 +435,7 @@ impl HdmiController {
 
         if let Some(iomem) = &self.iomem {
             // 真实硬件路径: 通过 DDC/I2C bitbang 读 EDID block 0 (128 字节)
+            // SAFETY: iomem 是 self.iomem 字段, 已通过 new_with_iomem 保证 MMIO 区域合法.
             match unsafe {
                 ddc::read_edid_block_via_ddc(
                     iomem,

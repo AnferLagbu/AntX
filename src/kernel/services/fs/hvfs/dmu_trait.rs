@@ -20,7 +20,6 @@
 //!
 //! ## 与 LEGACY-5.1/5.2 范式一致
 
-use super::bp::HvBlockPointer;
 use super::dmu::{HvDmuObject, HvObjSet, HvObjType};
 
 // ============================================================================
@@ -271,7 +270,7 @@ mod tests {
         assert_eq!(dmu.obj_count(), 5);  // alloc 1 + free 1 = 0 净变化
     }
 
-    /// 9. trait object dispatch (dyn DmuManager)
+    /// 9. trait 对象分发 (dyn DmuManager)
     #[test]
     fn test_dmu_trait_object() {
         let dmu: alloc::boxed::Box<dyn DmuManager> = alloc::boxed::Box::new(StandardDmu::new());
