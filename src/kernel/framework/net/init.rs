@@ -2146,39 +2146,127 @@ pub(crate) mod raw {
         core::sync::atomic::AtomicU8::new(0),
     ];
 
-    /// 实际打开一个 socket (W4.2 桥接 stub).
+    /// 实际打开一个 socket (W4.2.3.2 实装).
     ///
-    /// ## W4.2 阶段 1 (本次)
+    /// 根据 `kind` 构造 smoltcp socket (Tcp/Udp), 加入 `sockets`, 记录 buffer
+    /// 指针到 SOCKET_TABLE / TCP_RX_BUFS / TCP_TX_BUFS / UDP_RX_BUFS /
+    /// UDP_TX_BUFS / FD_TYPES, 返回 smol_handle.
     ///
-    /// 0 逻辑实现, 仅声明签名. 实际 smoltcp socket 构造在 W4.2.2+ 阶段.
-    /// 当前 SmoltcpNetStack::socket_open 不调用本函数, 故 0 行为变更.
+    /// ## 索引空间分配 (W4.2.3.1)
     ///
-    /// ## 调用方契约
+    /// `slot_idx` ∈ [0, TOTAL_SLOTS):
+    /// - 0..MAX_SM_FD:           sm_socket 路径 (现有 sm_socket 调用)
+    /// - MAX_SM_FD..TOTAL_SLOTS: SmoltcpNetStack 路径 (W4.2.4 整合后)
     ///
-    /// - 必须在 NET_LOCK 保护下调用
-    /// - sockets 来自本模块的 socket_set()
+    /// 两个范围严格隔离, 不冲突.
     ///
-    /// ## W4.2.2+ 实装
+    /// ## buffer 来源 (W4.2.3.2 实装)
     ///
-    /// ```ignore
-    /// match kind {
-    ///     SocketKind::Tcp => {
-    ///         let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(...);
-    ///         let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(...);
-    ///         let socket = smoltcp::socket::tcp::Socket::new(rx_buffer, tx_buffer);
-    ///         sockets.add(socket)
-    ///     }
-    ///     // ...
-    /// }
-    /// ```
-    #[allow(dead_code)] // W4.2.2+ 接入后移除
+    /// Tcp/Udp RX/TX buffer 走 `k_malloc` (slab), 与现有 sm_socket 路径一致.
+    /// buffer 指针记入 TCP_RX_BUFS / TCP_TX_BUFS / UDP_RX_BUFS / UDP_TX_BUFS
+    /// (索引 = slot_idx). close 时通过 socket_close_stub + sm_close 归还.
+    ///
+    /// ## 安全性
+    ///
+    /// buffer 'static 借用: smoltcp SocketSet<'static> 要求 socket 借用
+    /// 'static. 我们用 `unsafe { core::slice::from_raw_parts_mut(ptr, size) }`
+    /// 强制 'static (与现有 sm_socket 模式一致). 安全性依赖于:
+    ///   - k_malloc 不会在进程生命周期内释放 (slab 进程级)
+    ///   - socket_close 时通过 `k_free` 归还 (W4.2.3.3 迁移时实装)
+    ///
+    /// ## 简化 (W4.2.3.2 阶段)
+    ///
+    /// - 暂不实装 Icmp/Raw/Dhcpv4/Dns (返回 None)
+    /// - sm_socket 路径暂不调用本函数 (W4.2.3.3 迁移)
+    /// - SmoltcpNetStack 路径暂不调用本函数 (W4.2.3.4 整合)
+    #[allow(dead_code)] // W4.2.3.3+ 接入后移除
     pub fn socket_open_stub(
         sockets: &mut SocketSet<'_>,
-        _kind: crate::kernel::framework::net::iface_trait::SocketKind,
+        kind: crate::kernel::framework::net::iface_trait::SocketKind,
+        slot_idx: usize,
     ) -> Option<smoltcp::iface::SocketHandle> {
-        // W4.2 阶段 1: 0 逻辑, 返回 None (表示未实现)
-        let _ = sockets;
-        None
+        use crate::kernel::framework::net::iface_trait::SocketKind;
+
+        // SAFETY: 整个函数体访问多个 static mut (SOCKET_TABLE, FD_TYPES, TCP_RX_BUFS,
+        // TCP_TX_BUFS, UDP_RX_BUFS, UDP_TX_BUFS, UDP_RX_METAS, UDP_TX_METAS). 调用方
+        // 持有 NET_LOCK 保护 (与现有 sm_socket 路径一致).
+        unsafe {
+            // 1. 校验 slot_idx 范围
+            if slot_idx >= TOTAL_SLOTS {
+                return None;
+            }
+            // 2. 校验槽位空闲
+            if SOCKET_TABLE.0[slot_idx].is_some() {
+                return None;
+            }
+
+            match kind {
+                SocketKind::Tcp => {
+                    // TD-07: TCP RX/TX 缓冲走 slab, 与 sm_socket 路径一致.
+                    // SAFETY: k_malloc 在初始化后可用, 返回非空或 null. null 时立即返回 None.
+                    let rx_ptr = crate::kernel::framework::mm::k_malloc(TCP_BUF_SIZE);
+                    if rx_ptr.is_null() {
+                        return None;
+                    }
+                    let tx_ptr = crate::kernel::framework::mm::k_malloc(TCP_BUF_SIZE);
+                    if tx_ptr.is_null() {
+                        crate::kernel::framework::mm::k_free(rx_ptr);
+                        return None;
+                    }
+                    // SAFETY: rx_ptr/tx_ptr 来自 k_malloc(TCP_BUF_SIZE), 长度合法, 唯一别名.
+                    //         'static 借用基于: slab 进程级 + 索引化生命周期管理.
+                    let rx_slice =
+                        core::slice::from_raw_parts_mut(rx_ptr, TCP_BUF_SIZE);
+                    let tx_slice =
+                        core::slice::from_raw_parts_mut(tx_ptr, TCP_BUF_SIZE);
+                    let tcp_sock = smoltcp::socket::tcp::Socket::new(
+                        smoltcp::socket::tcp::SocketBuffer::new(rx_slice),
+                        smoltcp::socket::tcp::SocketBuffer::new(tx_slice),
+                    );
+                    let handle = sockets.add(tcp_sock);
+                    SOCKET_TABLE.0[slot_idx] = Some(handle);
+                    FD_TYPES.0[slot_idx] = 1;
+                    TCP_RX_BUFS[slot_idx] = rx_ptr;
+                    TCP_TX_BUFS[slot_idx] = tx_ptr;
+                    Some(handle)
+                }
+                SocketKind::Udp => {
+                    // TD-07: UDP RX/TX 缓冲走 slab. metas 仍静态 (16 KB).
+                    let rx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
+                    if rx_ptr.is_null() {
+                        return None;
+                    }
+                    let tx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
+                    if tx_ptr.is_null() {
+                        crate::kernel::framework::mm::k_free(rx_ptr);
+                        return None;
+                    }
+                    // SAFETY: 同 TCP 注释, 'static 借用基于 slab 进程级 + 索引化管理.
+                    let rx_slice =
+                        core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE);
+                    let tx_slice =
+                        core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE);
+                    let udp_sock = smoltcp::socket::udp::Socket::new(
+                        smoltcp::socket::udp::PacketBuffer::new(
+                            &mut UDP_RX_METAS[slot_idx][..],
+                            rx_slice,
+                        ),
+                        smoltcp::socket::udp::PacketBuffer::new(
+                            &mut UDP_TX_METAS[slot_idx][..],
+                            tx_slice,
+                        ),
+                    );
+                    let handle = sockets.add(udp_sock);
+                    SOCKET_TABLE.0[slot_idx] = Some(handle);
+                    FD_TYPES.0[slot_idx] = 2;
+                    UDP_RX_BUFS[slot_idx] = rx_ptr;
+                    UDP_TX_BUFS[slot_idx] = tx_ptr;
+                    Some(handle)
+                }
+                // Icmp / Raw / Dhcpv4 / Dns 暂不实装 (W4.2.4+ 阶段)
+                _ => None,
+            }
+        }
     }
 
     /// 实际关闭一个 socket (W4.2.2 实装).
