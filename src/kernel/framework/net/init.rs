@@ -935,65 +935,24 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
     }
     let fd_idx = fd as usize;
 
+    // REVAL-W W4.2.3.3 (2026-06-25): sm_socket 路径迁移到 raw::socket_open_stub.
+    // 删除 75 行重复 socket 构造代码, 统一走 raw 模块 (与 SmoltcpNetStack 共享).
+    // 0 行为变更: sm_socket 仍返回 fd, k_malloc 失败仍返回 -E_NOMEM.
     if domain == 2 && sock_type == 1 {
-        // TD-07: TCP RX/TX 缓冲走 slab, 不再静态 BSS 占用.
-        // SAFETY: k_malloc 在初始化后可用, 返回非空或 null. null 时立即归还 fd.
-        let rx_ptr = crate::kernel::framework::mm::k_malloc(TCP_BUF_SIZE);
-        if rx_ptr.is_null() {
-            return -E_NOMEM;
-        }
-        let tx_ptr = crate::kernel::framework::mm::k_malloc(TCP_BUF_SIZE);
-        if tx_ptr.is_null() {
-            crate::kernel::framework::mm::k_free(rx_ptr);
-            return -E_NOMEM;
-        }
-        // SAFETY: rx_ptr/tx_ptr 来自 k_malloc(TCP_BUF_SIZE), 长度合法, 唯一别名.
-        let rx_slice = unsafe { core::slice::from_raw_parts_mut(rx_ptr, TCP_BUF_SIZE) };
-        let tx_slice = unsafe { core::slice::from_raw_parts_mut(tx_ptr, TCP_BUF_SIZE) };
-        let tcp_sock = tcp::Socket::new(
-            tcp::SocketBuffer::new(rx_slice),
-            tcp::SocketBuffer::new(tx_slice),
-        );
+        // TCP — 委托 raw::socket_open_stub
         let sockets = &mut *socket_set();
-        let handle = sockets.add(tcp_sock);
-        SOCKET_TABLE.0[fd_idx] = Some(handle);
-        FD_TYPES.0[fd_idx] = 1;
-        // TD-07: buf 指针记入静态表, close 时按指针归还 slab.
-        TCP_RX_BUFS[fd_idx] = rx_ptr;
-        TCP_TX_BUFS[fd_idx] = tx_ptr;
+        let kind = crate::kernel::framework::net::iface_trait::SocketKind::Tcp;
+        if raw::socket_open_stub(sockets, kind, fd_idx).is_none() {
+            return -E_NOMEM;
+        }
         fd
     } else if domain == 2 && sock_type == 2 {
-        // TD-07: UDP RX/TX 缓冲走 slab. metas 仍静态 (小, 16 KB).
-        let rx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
-        if rx_ptr.is_null() {
-            return -E_NOMEM;
-        }
-        let tx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
-        if tx_ptr.is_null() {
-            crate::kernel::framework::mm::k_free(rx_ptr);
-            return -E_NOMEM;
-        }
-        // SAFETY: rx_ptr/tx_ptr 由 k_alloc 分配, 已 null 检查并保证 4K 对齐;
-        // UDP_BUF_SIZE 来自 cfg_smoltcp_cap, 适配 PacketBuffer 容量上限.
-        let rx_slice = unsafe { core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE) };
-        // SAFETY: 同上, tx_ptr 由 k_alloc 分配, 已 null 检查.
-        let tx_slice = unsafe { core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE) };
-        let udp_sock = udp::Socket::new(
-            udp::PacketBuffer::new(
-                &mut UDP_RX_METAS[fd_idx][..],
-                rx_slice,
-            ),
-            udp::PacketBuffer::new(
-                &mut UDP_TX_METAS[fd_idx][..],
-                tx_slice,
-            ),
-        );
+        // UDP — 委托 raw::socket_open_stub
         let sockets = &mut *socket_set();
-        let handle = sockets.add(udp_sock);
-        SOCKET_TABLE.0[fd_idx] = Some(handle);
-        FD_TYPES.0[fd_idx] = 2;
-        UDP_RX_BUFS[fd_idx] = rx_ptr;
-        UDP_TX_BUFS[fd_idx] = tx_ptr;
+        let kind = crate::kernel::framework::net::iface_trait::SocketKind::Udp;
+        if raw::socket_open_stub(sockets, kind, fd_idx).is_none() {
+            return -E_NOMEM;
+        }
         fd
     } else {
         -E_AFNOSUPPORT
