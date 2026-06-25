@@ -52,6 +52,9 @@ pub mod socket;
 pub mod syscall;
 /// T6-9: 网络子系统公共类型 (原 framework/net/types.rs)
 pub mod types;
+/// REVAL-W 第 6 组 W3.2 (2026-06-24): NetStack trait 的 smoltcp 实现
+/// 设计: docs/plan/smoltcp-framekernel-wrapper.md §3.2
+pub mod smoltcp_impl;
 /// T6-9: Socket 等待队列 (原 framework/net/wait_queue.rs)
 pub mod wait_queue;
 pub mod unix;
