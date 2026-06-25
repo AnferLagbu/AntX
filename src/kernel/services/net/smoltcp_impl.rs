@@ -311,23 +311,25 @@ impl NetStack for SmoltcpNetStack {
             return Err(NetError::NotReady);
         }
 
-        // REVAL-W W4.2.3.4 步骤 3: 实际化 socket_open.
+        // REVAL-W W4.2.3.5 (2026-06-25): 启用 next_smol_idx 严格分配.
         //
-        // 1. 找 SmoltcpNetStack 范围内的空 handle_map 索引
-        // 2. 计算 smol 槽位索引 = MAX_SM_FD + handle_map_idx
-        // 3. 调用 fw_init::smoltcp_net_stack_socket_open 实际构造 socket
-        // 4. 记录 (user_id, smol_handle_u32) 到 handle_map
-        let handle_map_idx = match self.find_free_slot() {
-            Some(i) => i,
-            None => return Err(NetError::NoFreeSocket),
-        };
+        // 之前用 find_free_slot 扫描 None 位置 (O(n) + 复用风险). 现在用
+        // next_smol_idx 单调分配 (O(1) + 0 复用). next_smol_idx 处的
+        // handle_map 槽位必为 None (单次分配永不回收).
+        let handle_map_idx = self.next_smol_idx as usize;
+        if handle_map_idx >= MAX_SOCKETS {
+            return Err(NetError::NoFreeSocket);
+        }
+        // 不变式检查: 严格分配路径下, 槽位必为 None
+        if self.handle_map[handle_map_idx].is_some() {
+            // 不变式违反, 直接返回错误 (不静默修复, 0 隐藏 bug)
+            return Err(NetError::NoFreeSocket);
+        }
 
         // SmoltcpNetStack 专属范围: [MAX_SM_FD, TOTAL_SLOTS)
-        // 实际 smol 槽位索引 = MAX_SM_FD + handle_map_idx
         let smol_slot_idx = fw_init::smoltcp_net_stack_slot_base() + handle_map_idx;
 
         // 调用 framework safe wrapper 实际构造 smoltcp socket
-        // 失败回滚: handle_map 仍空闲, user_id 浪费 (可接受, 下次 alloc 跳过)
         let smol_handle_u32 = fw_init::smoltcp_net_stack_socket_open(kind, smol_slot_idx)
             .ok_or(NetError::NoFreeSocket)?;
 
@@ -336,6 +338,10 @@ impl NetStack for SmoltcpNetStack {
 
         // 记录 (user_id, smol_handle_u32) 到 handle_map
         self.handle_map[handle_map_idx] = Some((user_id, smol_handle_u32));
+
+        // 单调递增, 永不回收. u16 上限 65535 次分配, 远超 SmoltcpNetStack
+        // 实际使用 (几十个 socket 足够). 永不回滚 (避免 double-alloc).
+        self.next_smol_idx += 1;
 
         Ok(SocketHandle::from_raw(user_id))
     }
