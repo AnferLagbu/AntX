@@ -45,6 +45,11 @@
 use crate::kernel::framework::net::iface_trait::{
     DhcpState, NetConfig, NetError, NetStack, PollOutcome, Result, SocketHandle, SocketKind,
 };
+// REVAL-W W4.2.3.4 步骤 3: 调用 framework::init 的 safe wrapper, 实现
+// 实际 smoltcp socket 创建. smoltcp_impl 是 services 层唯一允许直接使用
+// smoltcp 类型的文件, 但 socket_open 的实际 smoltcp 操作 (k_malloc +
+// SocketBuffer::new + sockets.add) 由 framework 层 (允许 unsafe) 提供.
+use crate::kernel::framework::net::init as fw_init;
 
 // ============================================================================
 // 编译期常量
@@ -63,14 +68,24 @@ pub const MAX_SOCKETS: usize = 32;
 /// Socket 句柄的内部表示.
 ///
 /// smoltcp 的 `SocketHandle(usize)` 直接暴露数组索引, 任何 `usize` 都可能被
-/// 误用. 本类型用 `(user_id, slot_idx)` 二元组把句柄分配与 smoltcp 内部
-/// 索引解耦. 句柄槽位的存在性 = 句柄有效性.
+/// 误用. 本类型用 `(user_id, smol_handle_u32)` 三元组把句柄分配与 smoltcp
+/// 内部索引解耦. 句柄槽位的存在性 = 句柄有效性.
 ///
-/// ## 内存布局
+/// ## 内存布局 (W4.2.3.4 变化)
 ///
-/// - `Some((u, s))` = 句柄已分配, u 是用户态 ID, s 是槽位索引
+/// - `Some((u, h))` = 句柄已分配, u 是用户态 ID, h 是 smol_handle (u32,
+///   从 smoltcp::iface::SocketHandle 通过 transmute + as cast 提取)
 /// - `None` = 句柄槽位空闲
-type HandleSlot = Option<(u32, u16)>;
+///
+/// ## 为什么从 `(u32, u16)` 改为 `(u32, u32)`
+///
+/// 旧设计: smoltcp 句柄 = 槽位索引, 用 u16 即可
+/// 新设计: SmoltcpNetStack 范围 `[MAX_SM_FD, TOTAL_SLOTS)`, 实际
+/// smoltcp SocketHandle index 是 0..MAX_SOCKETS (≤ 1024) 用 u16 够.
+/// 但跨 crate 翻译 (framework → services) 用 u32 简化, 统一 smol_handle
+/// 表示 (无论 sm_socket 路径还是 SmoltcpNetStack 路径, smol_handle index
+/// 都用 u32 表达).
+type HandleSlot = Option<(u32, u32)>;
 
 // ============================================================================
 // SmoltcpNetStack
@@ -109,6 +124,13 @@ pub struct SmoltcpNetStack {
     config: NetConfig,
     handle_map: [HandleSlot; MAX_SOCKETS],
     next_user_id: u32,
+    /// 下一个 SmoltcpNetStack 专属范围的 smol 槽位索引 (W4.2.3.4 阶段新增).
+    ///
+    /// SmoltcpNetStack 范围: `[MAX_SM_FD, TOTAL_SLOTS)` (由 framework
+    /// `init.rs` 静态数组大小决定, W4.2.3.1 阶段实装). 我们用相对索引
+    /// `[0, MAX_SOCKETS)` 简化 SmoltcpNetStack 内部逻辑, 实际 smol 槽位
+    /// 索引 = `MAX_SM_FD + next_smol_idx`.
+    next_smol_idx: u16,
     dhcp_user_id: Option<u32>,
     dhcp_state: DhcpState,
     initialized: bool,
@@ -121,6 +143,7 @@ impl SmoltcpNetStack {
             config: NetConfig::empty(),
             handle_map: [None; MAX_SOCKETS],
             next_user_id: 1, // 0 = INVALID
+            next_smol_idx: 0,
             dhcp_user_id: None,
             dhcp_state: DhcpState::Idle,
             initialized: false,
@@ -214,7 +237,7 @@ impl NetStack for SmoltcpNetStack {
             let slot_idx = self
                 .find_free_slot()
                 .expect("刚才检查过有空槽位, 现在应该有");
-            self.handle_map[slot_idx] = Some((user_id, slot_idx as u16));
+            self.handle_map[slot_idx] = Some((user_id, slot_idx as u32));
             self.dhcp_user_id = Some(user_id);
             self.dhcp_state = DhcpState::Discovering;
         } else {
@@ -288,22 +311,33 @@ impl NetStack for SmoltcpNetStack {
             return Err(NetError::NotReady);
         }
 
-        // W3.2 占位: 仅分配槽位 + 句柄, 不实际构造 smoltcp socket
-        // 真实的 smoltcp socket 构造留给 W4 整合 device 时实装
-        let slot_idx = match self.find_free_slot() {
+        // REVAL-W W4.2.3.4 步骤 3: 实际化 socket_open.
+        //
+        // 1. 找 SmoltcpNetStack 范围内的空 handle_map 索引
+        // 2. 计算 smol 槽位索引 = MAX_SM_FD + handle_map_idx
+        // 3. 调用 fw_init::smoltcp_net_stack_socket_open 实际构造 socket
+        // 4. 记录 (user_id, smol_handle_u32) 到 handle_map
+        let handle_map_idx = match self.find_free_slot() {
             Some(i) => i,
             None => return Err(NetError::NoFreeSocket),
         };
 
-        // 分配 user 句柄
+        // SmoltcpNetStack 专属范围: [MAX_SM_FD, TOTAL_SLOTS)
+        // 实际 smol 槽位索引 = MAX_SM_FD + handle_map_idx
+        let smol_slot_idx = fw_init::smoltcp_net_stack_slot_base() + handle_map_idx;
+
+        // 调用 framework safe wrapper 实际构造 smoltcp socket
+        // 失败回滚: handle_map 仍空闲, user_id 浪费 (可接受, 下次 alloc 跳过)
+        let smol_handle_u32 = fw_init::smoltcp_net_stack_socket_open(kind, smol_slot_idx)
+            .ok_or(NetError::NoFreeSocket)?;
+
+        // 分配 user 句柄 (W3.2 alloc_user_id 跳过 0 = INVALID)
         let user_id = self.alloc_user_id();
-        self.handle_map[slot_idx] = Some((user_id, slot_idx as u16));
-        let user_handle = SocketHandle::from_raw(user_id);
 
-        // W3.2 显式标注: socket 类型尚未实装
-        let _ = kind;
+        // 记录 (user_id, smol_handle_u32) 到 handle_map
+        self.handle_map[handle_map_idx] = Some((user_id, smol_handle_u32));
 
-        Ok(user_handle)
+        Ok(SocketHandle::from_raw(user_id))
     }
 
     /// 关闭一个 Socket.
