@@ -1749,6 +1749,17 @@ const TCP_BUF_SIZE: usize = 4096;
 const UDP_BUF_SIZE: usize = 2048;
 const UDP_META_COUNT: usize = 4;
 
+// REVAL-W W4.2.3.1 (2026-06-25): 总槽位数 = sm_socket 范围 (0..MAX_SM_FD) +
+// SmoltcpNetStack 范围 (MAX_SM_FD..TOTAL_SLOTS). 范围严格隔离, 不冲突.
+//
+// 索引空间分配:
+//   - 0..MAX_SM_FD:           sm_socket fd (不变)
+//   - MAX_SM_FD..TOTAL_SLOTS: SmoltcpNetStack (新增, 留给 W4.2.3.2+ 整合)
+//
+// BSS 增长: 8 张数组 × (TOTAL_SLOTS - MAX_SM_FD) 槽位. MAX_SOCKETS=1024
+// 时增长约 169 KB (主要是 UDP_RX_METAS / UDP_TX_METAS).
+const TOTAL_SLOTS: usize = MAX_SM_FD + MAX_SOCKETS;
+
 // TD-05: 8 张 smoltcp 大表, 小型热表按 64 字节 cache line 对齐, 减少多核 false sharing.
 // 大型 buffer (TCP/UDP buf) 单 fd 独占一整片区域, 默认不会被相邻 fd 抢用, 仅需保持页对齐即可.
 //
@@ -1757,31 +1768,33 @@ const UDP_META_COUNT: usize = 4;
 struct Align64<T>(T);
 
 #[allow(non_camel_case_types)]
-type SOCKET_TABLE_T = Align64<[Option<SocketHandle>; MAX_SM_FD]>;
+type SOCKET_TABLE_T = Align64<[Option<SocketHandle>; TOTAL_SLOTS]>;
 #[allow(non_camel_case_types)]
-type FD_TYPES_T = Align64<[u8; MAX_SM_FD]>;
+type FD_TYPES_T = Align64<[u8; TOTAL_SLOTS]>;
 
-static mut SOCKET_TABLE: SOCKET_TABLE_T = Align64([None; MAX_SM_FD]);
+static mut SOCKET_TABLE: SOCKET_TABLE_T = Align64([None; TOTAL_SLOTS]);
 // Per-fd 类型标记: 0=free, 1=tcp, 2=udp.
 // 64 字节对齐: 8 核机器下每核独立访问自己 fd 对应的 cache line, 不会因 1 字节写触发整行 invalidation.
-static mut FD_TYPES: FD_TYPES_T = Align64([0u8; MAX_SM_FD]);
+static mut FD_TYPES: FD_TYPES_T = Align64([0u8; TOTAL_SLOTS]);
 
 // TCP buffer storage (per fd)
 // TD-07: 由 4 张 [[u8; N]; MAX_SM_FD] 静态数组 (≈3 MB BSS) 改为 [*mut u8; MAX_SM_FD] 指针表.
 // 启动时 0 占用; socket alloc 时通过 `k_malloc` (slab) 申请; close 时 `k_free` 归还.
 // 省下的 3 MB BSS 改为按需占用, 与 smoltcp `MAX_SM_FD` 解耦 (见 TD-06).
-static mut TCP_RX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
-static mut TCP_TX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
+// REVAL-W W4.2.3.1: 数组大小扩展为 [T; TOTAL_SLOTS] (sm_socket + SmoltcpNetStack 共享).
+static mut TCP_RX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
+static mut TCP_TX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
 
 // UDP buffer storage (per fd) — 同样 TD-07 改造
-static mut UDP_RX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
-static mut UDP_TX_BUFS: [*mut u8; MAX_SM_FD] = [null_mut(); MAX_SM_FD];
+static mut UDP_RX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
+static mut UDP_TX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
 
 // UDP metas 仍保留静态 (16 KB, 256 × 4 × 16B, 不值得动); td 改 metas 走 heap 是 V2 任务.
-static mut UDP_RX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; MAX_SM_FD] =
-    [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; MAX_SM_FD];
-static mut UDP_TX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; MAX_SM_FD] =
-    [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; MAX_SM_FD];
+// REVAL-W W4.2.3.1: 数组大小扩展为 [T; TOTAL_SLOTS].
+static mut UDP_RX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS] =
+    [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS];
+static mut UDP_TX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS] =
+    [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS];
 
 /// # Safety
 ///
