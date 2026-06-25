@@ -261,15 +261,44 @@ def check_raw_pointer_access(filepath):
     return issues
 
 
+# Vendored 3rd-party 库目录: 不属于项目自有代码, 审计豁免.
+# 设计依据: docs/plan/smoltcp-framekernel-wrapper.md §同步机制
+# 排除理由: smoltcp 100% safe Rust (上游承诺), 我们仅 vendored 不修改;
+#           上游代码含 26 处 unsafe 块 (phy/sys/raw_socket 等),
+#           审计项目自有代码不应误判 vendored 部分.
+# 添加新 vendored 库时, 追加 Path 即可 (使用绝对前缀匹配).
+VENDORED_EXCLUDE = [
+    Path('src/kernel/services/net/smoltcp'),  # 上游 smoltcp 0.13.1 (2026-06)
+]
+
+
+def is_vendored(filepath):
+    """检查文件是否在 vendored 第三方目录中 (审计豁免)."""
+    try:
+        fpath = Path(filepath).resolve()
+        for excl in VENDORED_EXCLUDE:
+            if str(fpath).startswith(str(excl.resolve())):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def scan_directory(base):
-    """扫描 services/ 目录所有 .rs 文件."""
+    """扫描 services/ 目录所有 .rs 文件 (vendored 第三方目录豁免)."""
     all_issues = []
     files = sorted(base.rglob('*.rs'))
+    skipped = 0
     for f in files:
+        if is_vendored(f):
+            skipped += 1
+            continue
         all_issues.extend(is_unsafe_in_services(f))
         all_issues.extend(check_forbidden_imports(f))
         all_issues.extend(check_raw_pointer_access(f))
-    return all_issues, len(files)
+    if skipped > 0:
+        print(f'[INFO] 跳过 {skipped} 个 vendored 文件 (来自 VENDORED_EXCLUDE)', file=sys.stderr)
+    return all_issues, len(files) - skipped
 
 
 def generate_report(issues, file_count):

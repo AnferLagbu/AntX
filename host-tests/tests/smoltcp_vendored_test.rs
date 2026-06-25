@@ -1,9 +1,10 @@
-//! I-08: smoltcp 0.13.0 vendored 决策保持
+//! I-08: smoltcp vendored 决策保持
 //!
-//! 验证 maintenance-2026-06-11.md I-08 评估结论:
-//!   - vendored 副本的版本 = 0.13.0 (Cargo.toml)
+//! 验证 maintenance-2026-06-11.md I-08 评估结论 + 2026-06-24 升级:
+//!   - vendored 副本的版本 = 0.13.x (Cargo.toml) — 当前 0.13.1 (升级于 2026-06-24)
 //!   - queenx 通过 path 依赖消费, 不用 crates.io
 //!   - 上游一致性 — 未做 vendored 之外的本地 patch (git log 验证)
+//!   - REVAL-W W3.1: smoltcp 从 framework/ 迁到 services/ (决策 3-B, FK 合规)
 //!
 //! 任何变更需要更新 I-08 评估并说明理由.
 
@@ -19,8 +20,9 @@ fn repo_root() -> std::path::PathBuf {
 
 #[test]
 fn test_smoltcp_vendored_version_is_0_13() {
+    // W3.1 (2026-06-24): smoltcp 从 framework/ 迁到 services/ (决策 3-B)
     let manifest = repo_root()
-        .join("src/kernel/framework/net/smoltcp/Cargo.toml");
+        .join("src/kernel/services/net/smoltcp/Cargo.toml");
     let content = fs::read_to_string(&manifest)
         .unwrap_or_else(|e| panic!("无法读取 {}: {}", manifest.display(), e));
 
@@ -30,7 +32,7 @@ fn test_smoltcp_vendored_version_is_0_13() {
         .expect("smoltcp/Cargo.toml 缺少 version 字段");
     assert!(
         version_line.contains("0.13"),
-        "smoltcp vendored 版本已变更为: {} (I-08 决策保持 0.13.0)",
+        "smoltcp vendored 版本已变更为: {} (I-08 决策保持 0.13.x)",
         version_line
     );
 }
@@ -89,7 +91,7 @@ fn test_no_uncommitted_local_patch_to_vendored_smoltcp() {
     let root = repo_root();
     let status = Command::new("git")
         .args(["status", "--porcelain", "--",
-               "src/kernel/framework/net/smoltcp/"])
+               "src/kernel/services/net/smoltcp/"])
         .current_dir(&root)
         .output()
         .expect("git status 失败");

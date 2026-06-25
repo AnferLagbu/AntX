@@ -24,7 +24,7 @@ set -euo pipefail
 # ============================================================================
 # 常量 (避免硬编码, 与 smoltcp-framekernel-wrapper.md 保持单一来源)
 # ============================================================================
-SMOLTCP_VENDORED="src/kernel/framework/net/smoltcp"
+SMOLTCP_VENDORED="src/kernel/services/net/smoltcp"
 SMOLTCP_LOCKFILE="src/kernel/services/net/smoltcp.versions"
 SMOLTCP_UPSTREAM="https://github.com/smoltcp-rs/smoltcp.git"
 
