@@ -380,6 +380,70 @@ impl NetStack for SmoltcpNetStack {
 }
 
 // ============================================================================
+// W6: DHCP 策略接入点
+//
+// 协议栈把"下一步该做什么"的决策委托给 `DhcpPolicy::decide()`, 自身不
+// 保留策略逻辑. 调用方可以是:
+// - `framework/net/init.rs::poll_network()`: 每次 poll 走一次 decide
+// - tests/host: 单测覆盖策略分支
+// ============================================================================
+
+use super::dhcp_policy::{DefaultDhcpPolicy, DhcpAction, DhcpPolicy, DhcpPolicyConfig};
+
+impl SmoltcpNetStack {
+    /// DHCP 决策接入: 委托给传入的 `DhcpPolicy` 实现.
+    ///
+    /// ## 调用方契约
+    ///
+    /// - `policy`: 策略实现, 默认用 `DefaultDhcpPolicy` (RFC 2131)
+    /// - `policy_cfg`: 策略可调字段 (重试次数, 续约阈值)
+    /// - `retry_count`: 当前 Discover/Request 已重试次数
+    /// - `elapsed_ms`: 自 Bound 以来的毫秒数 (Bound 状态前传 0)
+    /// - `lease_duration_ms`: 租期总长 (ms, Bound 状态专用)
+    ///
+    /// ## 返回
+    ///
+    /// `DhcpAction` 由调用方决定如何推进 (e.g. 协议栈在 `Continue` 时
+    /// 保持现状, 在 `Renew` 时启动续约, 在 `FallbackToStatic` 时切换
+    /// 到静态 IP, 在 `GiveUp` 时停机).
+    pub fn dhcp_decide<P: DhcpPolicy>(
+        &self,
+        policy: &P,
+        policy_cfg: &DhcpPolicyConfig,
+        retry_count: u32,
+        elapsed_ms: u64,
+        lease_duration_ms: u64,
+    ) -> DhcpAction {
+        policy.decide(
+            &self.dhcp_state,
+            &self.config,
+            policy_cfg,
+            retry_count,
+            elapsed_ms,
+            lease_duration_ms,
+        )
+    }
+
+    /// 便捷方法: 用默认策略决策.
+    #[inline]
+    pub fn dhcp_decide_default(
+        &self,
+        retry_count: u32,
+        elapsed_ms: u64,
+        lease_duration_ms: u64,
+    ) -> DhcpAction {
+        static POLICY: DefaultDhcpPolicy = DefaultDhcpPolicy;
+        static CFG: DhcpPolicyConfig = DhcpPolicyConfig {
+            max_retries: 4,
+            renew_t1_ratio: 5000,
+            renew_t2_ratio: 8750,
+            fallback_to_static: true,
+        };
+        self.dhcp_decide(&POLICY, &CFG, retry_count, elapsed_ms, lease_duration_ms)
+    }
+}
+
+// ============================================================================
 // 单元测试
 // ============================================================================
 
@@ -769,5 +833,144 @@ mod tests {
         // next_user_id 从 1 开始 (跳过 0 = INVALID)
         let h1 = stack.socket_open(SocketKind::Tcp).unwrap();
         assert_eq!(h1.raw(), 1);
+    }
+
+    // ---- 8. W6: DHCP 策略接入 ----
+
+    use super::dhcp_policy::{DefaultDhcpPolicy, DhcpPolicy, DhcpPolicyConfig};
+    use crate::kernel::framework::net::iface_trait::Ipv4Addr;
+
+    /// 验证: Idle 状态接入默认策略 → Continue.
+    #[test]
+    fn test_dhcp_decide_idle_continue() {
+        let stack = SmoltcpNetStack::new();
+        let action = stack.dhcp_decide_default(0, 0, 0);
+        assert_eq!(action, DhcpAction::Continue);
+    }
+
+    /// 验证: Discovering 状态接入默认策略 (重试 < 上限) → Continue.
+    #[test]
+    fn test_dhcp_decide_discovering_under_limit() {
+        let mut stack = SmoltcpNetStack::new();
+        let cfg = NetConfig {
+            mac_address: [0; 6],
+            static_ipv4: None,
+            prefix_len: 24,
+            gateway: [0, 0, 0, 0],
+            random_seed: 0,
+        };
+        stack.init(cfg).unwrap(); // DHCP 模式 → Discovering
+        let action = stack.dhcp_decide_default(2, 0, 0); // 2 < 4 (max_retries)
+        assert_eq!(action, DhcpAction::Continue);
+    }
+
+    /// 验证: Discovering 状态 (重试 >= 上限, 有静态 IP) → FallbackToStatic.
+    #[test]
+    fn test_dhcp_decide_discovering_over_limit_fallback() {
+        let mut stack = SmoltcpNetStack::new();
+        // 配置静态 IP 但不实际 init 静态 (强制 DHCP 路径)
+        let cfg = NetConfig {
+            mac_address: [0; 6],
+            static_ipv4: Some([10, 0, 2, 5]), // 提供静态 IP 作为 fallback
+            prefix_len: 24,
+            gateway: [10, 0, 2, 1],
+            random_seed: 0,
+        };
+        // 用静态 IP init, 然后手动把状态切回 Discovering 模拟 DHCP 模式
+        stack.init(cfg).unwrap();
+        // 重置 dhcp_state 为 Discovering 模拟 DHCP 重试
+        // (测试用, 不通过 unsafe; 直接覆盖 DhcpState)
+        stack.dhcp_state = DhcpState::Discovering;
+        let action = stack.dhcp_decide_default(5, 0, 0); // 5 >= 4
+        assert_eq!(
+            action,
+            DhcpAction::FallbackToStatic(Ipv4Addr::from_octets([10, 0, 2, 5]))
+        );
+    }
+
+    /// 验证: Bound 状态 (T1 之前) → Continue.
+    #[test]
+    fn test_dhcp_decide_bound_before_t1_continue() {
+        let mut stack = SmoltcpNetStack::new();
+        let cfg = NetConfig {
+            mac_address: [0; 6],
+            static_ipv4: Some([10, 0, 0, 1]),
+            prefix_len: 24,
+            gateway: [10, 0, 0, 1],
+            random_seed: 0,
+        };
+        stack.init(cfg).unwrap();
+        // 静态 IP init → Bound, lease_expires_at = u64::MAX (永不过期)
+        // dhcp_decide_default 接收 lease_duration_ms = 0 → 内部视为未知, 永不续约
+        let action = stack.dhcp_decide_default(0, 1_000_000, 0);
+        assert_eq!(action, DhcpAction::Continue);
+    }
+
+    /// 验证: 自定义策略可注入: 测试用 "永远 Continue" 策略.
+    #[test]
+    fn test_dhcp_decide_custom_policy_always_continue() {
+        struct AlwaysContinue;
+        impl DhcpPolicy for AlwaysContinue {
+            fn decide(
+                &self,
+                _state: &DhcpState,
+                _cfg: &NetConfig,
+                _pc: &DhcpPolicyConfig,
+                _retry: u32,
+                _elapsed: u64,
+                _lease: u64,
+            ) -> DhcpAction {
+                DhcpAction::Continue
+            }
+        }
+
+        let mut stack = SmoltcpNetStack::new();
+        let cfg = NetConfig {
+            mac_address: [0; 6],
+            static_ipv4: None,
+            prefix_len: 24,
+            gateway: [0, 0, 0, 0],
+            random_seed: 0,
+        };
+        stack.init(cfg).unwrap();
+        // 即便 retry 远超上限, 自定义策略仍返回 Continue
+        let policy = AlwaysContinue;
+        let pc = DhcpPolicyConfig::default();
+        let action = stack.dhcp_decide(&policy, &pc, 100, 0, 0);
+        assert_eq!(action, DhcpAction::Continue);
+    }
+
+    /// 验证: 策略对 Discovering 状态正确给出 GiveUp (无静态 IP + 超过重试).
+    #[test]
+    fn test_dhcp_decide_discovering_giveup_no_static() {
+        let mut stack = SmoltcpNetStack::new();
+        // DHCP init 走非分支: 先用占位静态 init, 再清空 static_ipv4
+        stack
+            .init(NetConfig {
+                mac_address: [0; 6],
+                static_ipv4: Some([1, 2, 3, 4]),
+                prefix_len: 24,
+                gateway: [0, 0, 0, 0],
+                random_seed: 0,
+            })
+            .unwrap();
+        // 然后清空 config.static_ipv4, 强制 fallback_to_static → None 路径
+        stack.config.static_ipv4 = None;
+        stack.dhcp_state = DhcpState::Discovering;
+        let action = stack.dhcp_decide_default(10, 0, 0);
+        assert_eq!(action, DhcpAction::GiveUp);
+    }
+
+    /// 验证: DefaultDhcpPolicy 单元可单独使用 (不依赖 stack).
+    #[test]
+    fn test_default_policy_alone_works() {
+        let policy = DefaultDhcpPolicy;
+        let cfg = NetConfig::empty();
+        let pc = DhcpPolicyConfig::default();
+        // 纯策略调用, 不经过 stack
+        assert_eq!(
+            policy.decide(&DhcpState::Idle, &cfg, &pc, 0, 0, 0),
+            DhcpAction::Continue
+        );
     }
 }

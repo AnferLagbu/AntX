@@ -55,6 +55,9 @@ pub mod types;
 /// REVAL-W 第 6 组 W3.2 (2026-06-24): NetStack trait 的 smoltcp 实现
 /// 设计: docs/plan/smoltcp-framekernel-wrapper.md §3.2
 pub mod smoltcp_impl;
+/// REVAL-W 第 6 组 W6 (2026-06-25): DHCP 策略 trait 抽象
+/// (何时重试/续约/fallback), 机制与策略分离.
+pub mod dhcp_policy;
 /// T6-9: Socket 等待队列 (原 framework/net/wait_queue.rs)
 pub mod wait_queue;
 pub mod unix;

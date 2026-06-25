@@ -54,8 +54,9 @@ use core::fmt;
 /// ## 设计动机
 ///
 /// smoltcp 的 `SocketHandle(usize)` 直接暴露数组索引语义, 任何 `usize` 值
-/// 都可能被误认作合法句柄. 此外 `raw::process_dhcp_events` 中存在的
-/// `transmute<usize, SocketHandle>` 是 UB 风险 (REVAL-4 历史包袱).
+/// 都可能被误认作合法句柄. 此外 `as_u32_handle` (W5 移除) 中曾存在的
+/// `transmute<usize, SocketHandle>` 是 UB 风险 (REVAL-4 历史包袱),
+/// 已被替换为 `core::mem::transmute_copy`.
 ///
 /// 本类型采用**新类型 (newtype) 模式**, 内部 `u32` 索引被外部不可见,
 /// 句柄只能通过 `NetStack::socket_open()` 获取, 无 unsafe 构造路径.
@@ -568,5 +569,201 @@ mod tests {
         assert_eq!(mock.socket_open(SocketKind::Tcp), Err(NetError::NotReady));
         assert_eq!(mock.socket_close(SocketHandle::INVALID), Ok(()));
         assert_eq!(mock.dhcp_state(), DhcpState::Idle);
+    }
+}
+
+// ============================================================================
+// W4.4: 线协议类型 newtype 包装 (替代 smoltcp::wire::Ipv4Address / IpCidr / IpEndpoint)
+//
+// 全部使用 `[u8; 4]` / `(addr, port)` 元组, 不引入 IPv6 路径.
+// 仅 IPv4 域足够覆盖 QEMU/QueenX 目标环境的现有需求.
+//
+// ## 设计动机
+//
+// smoltcp 的 wire 模块是**协议栈实现的内部细节**, 包含:
+// - `Ipv4Address::new(a, b, c, d)` (4 元组)
+// - `Ipv4Cidr::new(addr, prefix)`
+// - `IpEndpoint { addr, port }`
+//
+// 这些类型在 smoltcp::iface / socket API 中作为参数/返回值反复出现.
+// 直接使用意味着:
+// 1. services 间接依赖 smoltcp 公开 wire API
+// 2. 切换协议栈实现 (e.g. 未来换 smoltcp-new / 其它) 需要替换全部调用方
+// 3. 与 NetStack trait 类型擦除的"无 smoltcp 内部类型"不变式冲突
+//
+// 本模块把 wire 类型全部用新类型 (newtype) 包装, 实现层
+// (smoltcp_impl.rs) 提供与 smoltcp wire 类型的翻译.
+//
+// ## 与 SmoltcpNetStack trait 方法的关系
+//
+// 抽象类型 → smoltcp wire 类型 的转换由 SmoltcpNetStack 的方法提供.
+// 调用方从不直接构造 smoltcp::wire::* 类型的值.
+//
+// ## 线程 / 锁约束
+//
+// 全部 Copy, 0 分配, 0 unsafe.
+// ============================================================================
+
+/// IPv4 地址 (替代 smoltcp::wire::Ipv4Address / IpAddress::Ipv4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct Ipv4Addr(pub [u8; 4]);
+
+impl Ipv4Addr {
+    /// 任意地址 (0.0.0.0) — 用于"未指定"语义.
+    pub const UNSPECIFIED: Self = Self([0, 0, 0, 0]);
+    /// 255.255.255.255 广播地址.
+    pub const BROADCAST: Self = Self([255, 255, 255, 255]);
+
+    /// 构造一个 IPv4 地址.
+    #[inline(always)]
+    pub const fn new(o0: u8, o1: u8, o2: u8, o3: u8) -> Self {
+        Self([o0, o1, o2, o3])
+    }
+
+    /// 从 4 元组数组构造.
+    #[inline(always)]
+    pub const fn from_octets(octets: [u8; 4]) -> Self {
+        Self(octets)
+    }
+
+    /// 获取 4 元组数组.
+    #[inline(always)]
+    pub const fn octets(self) -> [u8; 4] {
+        self.0
+    }
+
+    /// 是否为未指定地址 (0.0.0.0).
+    #[inline(always)]
+    pub const fn is_unspecified(self) -> bool {
+        self.0[0] == 0 && self.0[1] == 0 && self.0[2] == 0 && self.0[3] == 0
+    }
+}
+
+impl From<[u8; 4]> for Ipv4Addr {
+    #[inline(always)]
+    fn from(o: [u8; 4]) -> Self {
+        Self(o)
+    }
+}
+
+impl From<Ipv4Addr> for [u8; 4] {
+    #[inline(always)]
+    fn from(a: Ipv4Addr) -> Self {
+        a.0
+    }
+}
+
+/// IPv4 CIDR (地址 + 前缀长度), 替代 smoltcp::wire::Ipv4Cidr / IpCidr::Ipv4.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Ipv4Cidr {
+    /// 网络地址 (主机字节序, 大端视图)
+    pub address: Ipv4Addr,
+    /// 前缀长度 (0-32)
+    pub prefix_len: u8,
+}
+
+impl Ipv4Cidr {
+    /// 构造一个 CIDR.
+    #[inline(always)]
+    pub const fn new(address: Ipv4Addr, prefix_len: u8) -> Self {
+        Self { address, prefix_len }
+    }
+}
+
+/// IP 端点 (地址 + 端口), 替代 smoltcp::wire::IpEndpoint.
+///
+/// 当前仅支持 IPv4 (与 Ipv4Addr 配对), 不引入 IPv6 路径.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NetEndpoint {
+    /// IPv4 地址
+    pub addr: Ipv4Addr,
+    /// 端口 (主机字节序)
+    pub port: u16,
+}
+
+impl NetEndpoint {
+    /// 构造一个端点.
+    #[inline(always)]
+    pub const fn new(addr: Ipv4Addr, port: u16) -> Self {
+        Self { addr, port }
+    }
+
+    /// 未指定端点 (0.0.0.0:0).
+    pub const UNSPECIFIED: Self = Self {
+        addr: Ipv4Addr::UNSPECIFIED,
+        port: 0,
+    };
+}
+
+/// IP 监听端点 (地址可通配 + 端口), 替代 smoltcp::wire::IpListenEndpoint.
+///
+/// 与 NetEndpoint 区别: addr 可为 `None` (通配, 接受任何地址).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NetListenEndpoint {
+    /// 监听地址 (None = 通配)
+    pub addr: Option<Ipv4Addr>,
+    /// 监听端口
+    pub port: u16,
+}
+
+impl NetListenEndpoint {
+    /// 通配地址监听 (0.0.0.0:port).
+    #[inline(always)]
+    pub const fn wildcard(port: u16) -> Self {
+        Self { addr: None, port }
+    }
+
+    /// 指定地址监听.
+    #[inline(always)]
+    pub const fn new(addr: Ipv4Addr, port: u16) -> Self {
+        Self { addr: Some(addr), port }
+    }
+}
+
+#[cfg(test)]
+mod wire_type_tests {
+    use super::*;
+
+    #[test]
+    fn test_ipv4_addr_constructors() {
+        let a = Ipv4Addr::new(192, 168, 1, 100);
+        assert_eq!(a.octets(), [192, 168, 1, 100]);
+        assert_eq!(Ipv4Addr::from_octets([10, 0, 0, 1]).octets(), [10, 0, 0, 1]);
+        assert!(Ipv4Addr::UNSPECIFIED.is_unspecified());
+        assert!(!a.is_unspecified());
+    }
+
+    #[test]
+    fn test_ipv4_addr_conversions() {
+        let octets = [10, 0, 0, 1];
+        let a: Ipv4Addr = octets.into();
+        let back: [u8; 4] = a.into();
+        assert_eq!(octets, back);
+    }
+
+    #[test]
+    fn test_ipv4_cidr() {
+        let c = Ipv4Cidr::new(Ipv4Addr::new(10, 0, 0, 0), 8);
+        assert_eq!(c.address.octets(), [10, 0, 0, 0]);
+        assert_eq!(c.prefix_len, 8);
+    }
+
+    #[test]
+    fn test_net_endpoint() {
+        let e = NetEndpoint::new(Ipv4Addr::new(192, 168, 1, 1), 8080);
+        assert_eq!(e.addr.octets(), [192, 168, 1, 1]);
+        assert_eq!(e.port, 8080);
+        assert_eq!(NetEndpoint::UNSPECIFIED.port, 0);
+    }
+
+    #[test]
+    fn test_net_listen_endpoint() {
+        let wc = NetListenEndpoint::wildcard(80);
+        assert!(wc.addr.is_none());
+        assert_eq!(wc.port, 80);
+
+        let sp = NetListenEndpoint::new(Ipv4Addr::new(127, 0, 0, 1), 22);
+        assert_eq!(sp.addr.unwrap().octets(), [127, 0, 0, 1]);
+        assert_eq!(sp.port, 22);
     }
 }

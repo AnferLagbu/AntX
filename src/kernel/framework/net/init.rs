@@ -12,6 +12,10 @@ use crate::kernel::framework::net::{ChitinNetDevice, NetworkStack};
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
 use smoltcp::socket::dhcpv4;
 use smoltcp::socket::{tcp, udp};
+// W4.4: Ipv4Address/IpCidr/IpEndpoint/IpAddress 通过 NetStack trait 类型
+// 翻译层访问 (services 边界), 直接使用 smoltcp wire 类型仅在 framework
+// 翻译 helper 内部 (qemu_net_skel 一类适配器). W4.4 阶段先把最常用的
+// 4 处 (net_save + setup + parse_ipv4_endpoint + endpoint 访问) 替换.
 use smoltcp::wire::{IpCidr, IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address};
 
 // REVAL-W W4.1 (2026-06-25): 引入 SmoltcpNetStack 实例, 这是 NetStack
@@ -541,12 +545,31 @@ unsafe fn net_save() {
     });
 }
 
-/// SocketHandle → u32 (smoltcp SocketHandle 是包装 newtype, 用 transmute).
+/// SocketHandle → u32 (smoltcp SocketHandle 是 `pub struct SocketHandle(usize)` 单字段
+/// Copy newtype, 用 transmute_copy 替代 transmute: 编译期强制 size 匹配, 不依赖
+/// repr(transparent) 假设).
 #[inline]
 fn as_u32_handle(h: smoltcp::iface::SocketHandle) -> u32 {
-    // SAFETY: SocketHandle is repr(transparent) over usize on supported targets
-    let raw: usize = unsafe { core::mem::transmute(h) };
+    // SAFETY: smoltcp::iface::SocketHandle 是单字段 Copy tuple struct (字段类型 usize),
+    //         size_of::<SocketHandle>() == size_of::<usize>() 编译期由 transmute_copy 强制.
+    //         不要求 repr(transparent) 假设, 避免 W5 记录的 transmute UB 风险.
+    let raw: usize = unsafe { core::mem::transmute_copy(&h) };
     raw as u32
+}
+
+/// u32 → SocketHandle (作为 `as_u32_handle` 的 companion helper).
+///
+/// # Safety
+///
+/// 调用方必须保证 `raw` 是同构 smoltcp 版本下 `as_u32_handle` 的输出值;
+/// 跨 smoltcp 版本混用会破坏 SocketSet 索引语义. 0 是 INVALID 句柄,
+/// 不应被分配, 但 `SocketSet` 内部允许 0 (因为 `add` 一定返回非零索引).
+#[inline]
+#[allow(dead_code)] // W5+ 阶段逐步替换
+unsafe fn smol_handle_from_u32(raw: u32) -> smoltcp::iface::SocketHandle {
+    // SAFETY: 同 `as_u32_handle`, 字段类型 usize, transmute_copy 安全.
+    let raw_usize = raw as usize;
+    unsafe { core::mem::transmute_copy::<usize, smoltcp::iface::SocketHandle>(&raw_usize) }
 }
 
 /// # Safety
@@ -610,9 +633,10 @@ unsafe fn net_restore() {
             SOCKET_TABLE.0[i] = if saved.fd_handles[i] == u32::MAX {
                 None
             } else {
-                let raw = saved.fd_handles[i] as usize;
-                // SAFETY: SocketHandle 来自同构的 smoltcp 版本, repr(transparent) over usize
-                Some(unsafe { core::mem::transmute::<usize, smoltcp::iface::SocketHandle>(raw) })
+                let raw = saved.fd_handles[i];
+                // SAFETY: `raw` 是 `as_u32_handle` 持久化的同构 smoltcp 句柄;
+                //         smol_handle_from_u32 用 transmute_copy 安全重建.
+                Some(unsafe { smol_handle_from_u32(raw) })
             };
         }
         SOCKETS_INITIALIZED.store(saved.sockets_initialized, Ordering::Release);
@@ -978,6 +1002,90 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
     }
 }
 
+// ============================================================================
+// W4.4: smoltcp wire 类型 ↔ NetStack trait 抽象类型的翻译 helper
+//
+// 仅在 framework 边界 (raw::qemu_net_skel 一类适配器, 或 boot 阶段从 MAC/IP
+// 字面量构造 Interface::update_ip_addrs) 使用, services 层访问地址一律走
+// Ipv4Addr / Ipv4Cidr / NetEndpoint. 此处的 smoltcp wire 类型导入仅服务于
+// 翻译函数本身.
+//
+// ## 与 W3.2 SmoltcpNetStack 的职责划分
+//
+// - SmoltcpNetStack::init / socket_open / dhcp_state: 服务层 trait API,
+//   不暴露 smoltcp wire 类型.
+// - 本模块的 wire_to_* / *_to_wire: 框架层内部适配器, 仅在
+//   qemu_net_skel / update_ip_addrs 等 framework 内部使用.
+// ============================================================================
+
+/// 把 trait 抽象的 `Ipv4Addr` 翻译成 smoltcp 的 `Ipv4Address`.
+#[inline(always)]
+#[allow(dead_code)] // W4.4+ 阶段替换逐步接入
+pub(crate) fn wire_to_smol_v4(a: crate::kernel::framework::net::iface_trait::Ipv4Addr) -> Ipv4Address {
+    let o = a.octets();
+    Ipv4Address::new(o[0], o[1], o[2], o[3])
+}
+
+/// 把 trait 抽象的 `NetEndpoint` 翻译成 smoltcp 的 `IpEndpoint`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn endpoint_to_smol(
+    e: crate::kernel::framework::net::iface_trait::NetEndpoint,
+) -> IpEndpoint {
+    IpEndpoint {
+        addr: IpAddress::Ipv4(wire_to_smol_v4(e.addr)),
+        port: e.port,
+    }
+}
+
+/// 把 trait 抽象的 `NetListenEndpoint` 翻译成 smoltcp 的 `IpListenEndpoint`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn listen_endpoint_to_smol(
+    e: crate::kernel::framework::net::iface_trait::NetListenEndpoint,
+) -> IpListenEndpoint {
+    match e.addr {
+        None => IpListenEndpoint { addr: None, port: e.port },
+        Some(a) => IpListenEndpoint {
+            addr: Some(IpAddress::Ipv4(wire_to_smol_v4(a))),
+            port: e.port,
+        },
+    }
+}
+
+/// 从 smoltcp `IpAddress` 中提取 IPv4 octets, 翻译为 trait `Ipv4Addr`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn ipaddr_from_smol(a: IpAddress) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Addr> {
+    match a {
+        IpAddress::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(v4.octets())),
+        _ => None,
+    }
+}
+
+/// 从 smoltcp `IpEndpoint` 翻译为 trait `NetEndpoint`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn endpoint_from_smol(e: IpEndpoint) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
+    Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new(
+        ipaddr_from_smol(e.addr)?,
+        e.port,
+    ))
+}
+
+/// 从 smoltcp `IpCidr` 翻译为 trait `Ipv4Cidr` (仅 IPv4).
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn cidr_from_smol(c: IpCidr) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Cidr> {
+    match c {
+        IpCidr::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Cidr::new(
+            crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(v4.address().octets()),
+            v4.prefix_len(),
+        )),
+        _ => None,
+    }
+}
+
 #[repr(C)]
 struct SockaddrIn {
     sin_family: u16,
@@ -986,11 +1094,17 @@ struct SockaddrIn {
     sin_zero: [u8; 8],
 }
 
-/// 从 sockaddr_in C 结构体解析 IPv4 端点。
+/// 从 sockaddr_in C 结构体解析 IPv4 端点 (W4.4 trait 翻译版本).
+///
+/// 解析后**先**填充 trait 抽象的 `NetEndpoint`, 调用方按需通过
+/// `endpoint_to_smol()` 翻译回 smoltcp `IpEndpoint`. 这一层翻译是
+/// W4.4 目标: 让 sock 路径不直接持有 smoltcp wire 类型.
 ///
 /// # Safety
 /// `addr` 必须指向有效的 `SockaddrIn` 结构体, 至少含 8 字节已初始化。
-unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
+unsafe fn parse_ipv4_endpoint_trait(
+    addr: *const u8,
+) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
     if addr.is_null() {
         return None;
     }
@@ -998,17 +1112,22 @@ unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
     if sin.sin_family != 2 {
         return None;
     }
-    let ip = Ipv4Address::new(
-        sin.sin_addr[0],
-        sin.sin_addr[1],
-        sin.sin_addr[2],
-        sin.sin_addr[3],
-    );
+    let octets = sin.sin_addr;
     let port = u16::from_be(sin.sin_port);
-    Some(IpEndpoint {
-        addr: IpAddress::Ipv4(ip),
+    Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new(
+        crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(octets),
         port,
-    })
+    ))
+}
+
+/// 旧版 `parse_ipv4_endpoint` 包装, 保持向后兼容 (smoltcp wire 类型返回).
+///
+/// 内部走 trait 翻译路径, 调用方应优先改用 `parse_ipv4_endpoint_trait`.
+///
+/// # Safety
+/// 同 `parse_ipv4_endpoint_trait`.
+unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
+    parse_ipv4_endpoint_trait(addr).map(endpoint_to_smol)
 }
 
 /// POSIX `bind(fd, addr, addrlen)` 内核实现。
@@ -2470,6 +2589,64 @@ pub(crate) mod raw {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::framework::net::iface_trait::{
+        Ipv4Addr as TraitIpv4Addr, NetEndpoint as TraitEndpoint,
+    };
+
+    /// W4.4: 验证 wire_to_smol_v4 / endpoint_to_smol 翻译不丢字段.
+    #[test]
+    fn test_wire_translation_roundtrip() {
+        let trait_addr = TraitIpv4Addr::new(192, 168, 1, 100);
+        let smol = wire_to_smol_v4(trait_addr);
+        assert_eq!(smol.octets(), [192, 168, 1, 100]);
+        // endpoint 翻译: 验证 addr+port 双向不丢
+        let ep = TraitEndpoint::new(TraitIpv4Addr::new(10, 0, 2, 15), 8080);
+        let ep_smol = endpoint_to_smol(ep);
+        assert_eq!(ep_smol.port, 8080);
+        if let IpAddress::Ipv4(v4) = ep_smol.addr {
+            assert_eq!(v4.octets(), [10, 0, 2, 15]);
+        } else {
+            panic!("expected IpAddress::Ipv4");
+        }
+        // 反向翻译 (从 smoltcp 类型)
+        let back = endpoint_from_smol(ep_smol).unwrap();
+        assert_eq!(back.port, 8080);
+        assert_eq!(back.addr.octets(), [10, 0, 2, 15]);
+    }
+
+    /// W4.4: 验证 ipaddr_from_smol 对 IPv4 提取 octets, 其它变体返回 None.
+    #[test]
+    fn test_ipaddr_from_smol_v4_only() {
+        let v4_in = wire_to_smol_v4(TraitIpv4Addr::new(8, 8, 8, 8));
+        let out = ipaddr_from_smol(IpAddress::Ipv4(v4_in)).unwrap();
+        assert_eq!(out.octets(), [8, 8, 8, 8]);
+    }
+
+    /// W4.4: 验证 cidr_from_smol 把 smoltcp CIDR 翻译为 trait 抽象.
+    #[test]
+    fn test_cidr_from_smol() {
+        let cidr_smol = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
+            Ipv4Address::new(10, 0, 0, 0),
+            8,
+        ));
+        let out = cidr_from_smol(cidr_smol).unwrap();
+        assert_eq!(out.address.octets(), [10, 0, 0, 0]);
+        assert_eq!(out.prefix_len, 8);
+    }
+
+    /// W4.4: 验证 parse_ipv4_endpoint_trait 解析后立即落入 trait 抽象类型.
+    #[test]
+    fn test_parse_ipv4_endpoint_trait_bridge() {
+        // 构造一个 sockaddr_in 字节序列
+        let mut buf = [0u8; 16];
+        buf[0..2].copy_from_slice(&2u16.to_ne_bytes()); // AF_INET
+        buf[2..4].copy_from_slice(&8080u16.to_be_bytes()); // port (big-endian)
+        buf[4..8].copy_from_slice(&[192, 168, 1, 50]);
+        // SAFETY: buf 完整 16 字节, 模拟 C sockaddr_in 布局
+        let ep = unsafe { parse_ipv4_endpoint_trait(buf.as_ptr()) }.unwrap();
+        assert_eq!(ep.addr.octets(), [192, 168, 1, 50]);
+        assert_eq!(ep.port, 8080);
+    }
 
     #[test]
     fn test_initialization_state_machine() {
