@@ -2059,6 +2059,58 @@ pub(crate) mod raw {
     }
 
     // ========================================================================
+    // REVAL-W W4.2.3.4 (2026-06-25): SmoltcpNetStack 桥接 safe wrapper
+    //
+    // 为 services 层 SmoltcpNetStack::socket_open 提供安全入口. 内部:
+    //   1. 获取 NET_LOCK
+    //   2. 获取 SocketSet 指针
+    //   3. 调用 raw::socket_open_stub
+    //   4. 翻译 smoltcp::iface::SocketHandle → u32
+    //
+    // ## u32 翻译理由
+    //
+    // smoltcp::iface::SocketHandle 是 newtype(usize), 直接在 services 层传
+    // 递涉及 vendored 类型跨 crate 边界 (尽管类型相同). u32 在 services
+    // 层是简单 Copy, 跨 crate 安全. smoltcp 0.13.1 的 SocketSet 容量上限
+    // 远低于 u32::MAX, 高 32 位不会用到.
+    // ========================================================================
+
+    /// SmoltcpNetStack::socket_open 的 safe wrapper (W4.2.3.4).
+    ///
+    /// ## 调用方契约
+    ///
+    /// - `kind`: 要创建的 socket 类型 (Tcp/Udp/...)
+    /// - `slot_idx`: 槽位索引, 必须在 `[MAX_SM_FD, TOTAL_SLOTS)` 范围
+    ///   (SmoltcpNetStack 专属范围, 不与 sm_socket 冲突)
+    ///
+    /// ## 返回
+    ///
+    /// - `Some(u32)`: smoltcp handle (0 索引, 用于 smol_socket_get)
+    /// - `None`: 创建失败 (k_malloc 失败 / 槽位已占用 / slot_idx 越界)
+    #[allow(dead_code)] // W4.2.3.4+ 整合后移除
+    pub fn smoltcp_net_stack_socket_open(
+        kind: crate::kernel::framework::net::iface_trait::SocketKind,
+        slot_idx: usize,
+    ) -> Option<u32> {
+        // 获取 NET_LOCK 互斥访问
+        let _guard = super::NET_LOCK.lock();
+        let sockets = unsafe { &mut *super::raw::socket_set() };
+        let smol_handle = super::raw::socket_open_stub(sockets, kind, slot_idx)?;
+        // smoltcp 0.13.1: `SocketHandle(usize)` 是 newtype, 字段是 private
+        // 不可访问. 用 transmute 提取内部 usize. SocketSet 容量远低于
+        // u32::MAX, 安全转 u32.
+        //
+        // SAFETY: SocketHandle 是 `pub struct SocketHandle(usize)` 且
+        // 字段是 private. 但其内存布局保证是 usize. 我们做:
+        //   1. SocketHandle → usize (transmute via usize, 因是 newtype)
+        //   2. usize → u32 (as cast, 截断高 32 位)
+        // SocketSet 容量上限 (MAX_SOCKETS = 1024) 远低于 u32::MAX,
+        // 高 32 位不会用到.
+        let raw: usize = unsafe { core::mem::transmute(smol_handle) };
+        Some(raw as u32)
+    }
+
+    // ========================================================================
     // REVAL-W W4.2 桥接 raw helpers (2026-06-25)
     //
     // 为 SmoltcpNetStack (W3.2) 提供 smoltcp 实际操作入口. 桥接方案:
