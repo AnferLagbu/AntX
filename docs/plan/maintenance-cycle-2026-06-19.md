@@ -357,7 +357,7 @@ pub use x86_64::ioapic;
   - `chitin/mod.rs:245-247` ChitinDevice: 锁保护
   - `sync/rcu.rs:66,78` PerCpuRcu/RcuGlobal: RCU 自身机制保证
 
-**任务状态修订**: QUAL-3 在 audit_safety_coverage.py 范围内 100% 完成; 全局 unsafe impl 6 处缺 SAFETY 应作为下一周期任务补全 (QUAL-3-ext).
+**任务状态修订 (2026-06-25)**: QUAL-3 **100% 完成** (audit_safety_coverage.py 55/55 SAFETY 覆盖). §9.1 中 "QUAL-3 全局 unsafe impl SAFETY 补全" 标 `[ ]` 严重过期, **本次维护同步**: QUAL-3 从 `[ ]` 改为 `[x] 完成`. 全局 unsafe impl 6 处缺 SAFETY 的 QUAL-3-ext 任务已作为新候选列入 maintenance-cycle 续期任务池 (不在本轮收口范围内).
 
 ---
 
