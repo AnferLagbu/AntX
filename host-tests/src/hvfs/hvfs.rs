@@ -183,7 +183,7 @@ impl HvfsData {
             self.spa.formatted.store(false, Ordering::Release);
             return;
         }
-        // 读取 ANTX 配置扇区获取 HvFS 分区起始 LBA
+        // 读取 QueenX 配置扇区获取 HvFS 分区起始 LBA
         let part_start = self.read_partition_start();
         self.partition_start.store(part_start, Ordering::Release);
         self.spa
@@ -248,7 +248,7 @@ impl HvfsData {
         if !self.check_disk() {
             return false;
         }
-        // 读取 ANTX 配置获取分区起始 LBA
+        // 读取 QueenX 配置获取分区起始 LBA
         let part_start = self.read_partition_start();
         self.partition_start.store(part_start, Ordering::Release);
         self.spa
