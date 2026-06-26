@@ -1263,7 +1263,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 ---
 
-### [x] LEGACY-4: BlockOps thunk 移除优化 — **已完成 2026-06-25 (BlockOps 移除 + chitin block_dev trait + 8 单测 + QEMU virtio-blk 集成)**
+### [ ] LEGACY-4: BlockOps thunk 移除优化 — **未完成 (DEFERRED 到 Phase E)**
 
 **来源**: maintenance-2026-06-11.md I-43 剩余工作
 **当前**: 内核全部为内部 trait dispatch，BlockOps thunk 可在未来移除
@@ -1322,7 +1322,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 > 以下为 USB/Display 驱动占位 TODO，当前标记为"保留占位"。维护周期应评估是否可推进。
 
-### [x] DRIVER-1: USB 驱动占位评估 — **已完成 2026-06-25 (QEMU qemu-xhci 集成验证 + 静态 + 1 xHCI 控制器发现)**
+### [ ] DRIVER-1: USB 驱动占位评估 — **未完成 (保留占位, Phase E 范围)**
 
 **当前**: 6 处 TRACK 标记
 - `TRACK-558BA7`: 扫描 PCI 总线查找 xHCI 控制器
@@ -1348,7 +1348,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 ---
 
-### [x] DRIVER-2: Display 驱动占位评估 — **已完成 2026-06-25 (QEMU virtio-vga 增强验证 + 6/6 display_init 路径 + framebuffer self_test ALL PASSED)**
+### [ ] DRIVER-2: Display 驱动占位评估 — **未完成 (保留占位, Phase E 范围)**
 
 **当前**: 8 处 TRACK 标记
 - `TRACK-599EDA`: 读取 HPD 引脚状态 (DP)
