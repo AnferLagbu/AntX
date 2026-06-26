@@ -15,20 +15,45 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 BUILD_DIR = PROJECT_ROOT / "build"
 
 def run_qemu_test(timeout: int = 60) -> str:
+    # ARCH 环境变量支持 x86_64 (默认) / aarch64
+    arch = os.environ.get("ARCH", "x86_64")
+    qemu_bin = f"qemu-system-{arch}"
     iso_path = BUILD_DIR / "antx.iso"
-    if not iso_path.exists():
+    kernel_path = BUILD_DIR / "kernel.bin"
+    if arch == "x86_64" and not iso_path.exists():
         print(f"  [SKIP] ISO not found, run 'make iso' first")
+        return ""
+    if arch == "aarch64" and not kernel_path.exists():
+        print(f"  [SKIP] kernel.bin not found, run 'make ARCH=aarch64 all' first")
         return ""
 
     cmd = [
-        "qemu-system-x86_64",
-        "-cdrom", str(iso_path),
+        qemu_bin,
         "-serial", "stdio",
         "-display", "none",
         "-no-reboot",
         "-m", "512M",
-        "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
+
+    # 架构特定选项
+    if arch == "x86_64":
+        # x86_64: 通过 ISO + grub 启动, isa-debug-exit 设备触发 clean exit
+        cmd += [
+            "-cdrom", str(iso_path),
+            "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+        ]
+    elif arch == "aarch64":
+        # aarch64: 通过 -kernel 直接启动 (multiboot2 不支持 aarch64)
+        # QEMU virt 机器 + GIC v3 + max CPU, 无 NIC 隔离网络子系统 (e1000 已知挂起)
+        cmd += [
+            "-machine", "virt,gic-version=3",
+            "-cpu", "max",
+            "-kernel", str(kernel_path),
+            "-nic", "none",
+        ]
+    else:
+        print(f"  [SKIP] Unknown ARCH={arch}, expected x86_64 or aarch64")
+        return ""
 
     try:
         result = subprocess.run(
