@@ -1454,16 +1454,23 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 > **重要**: SKIP / DEFERRED 状态**算未完成**。本节是工程交接时的必读索引。
 
-### 9.1 当前 `[ ]` 状态任务 (3 项 — 全部 DEFERRED 到 Phase D/E, **2026-06-22 考察更新**)
+### 9.1 当前 `[ ]` 状态任务 (3 项 — 全部 DEFERRED 到 Phase D/E, **2026-06-25 文档同步更新**)
 
-> **考察更新要点**: 文档原估 DRIVER-1 协议栈 ~3000 行 / DRIVER-2 协议栈 ~1500 行, **实际与文档差异显著**.
-> 详见 §9.4 子任务拆分 + 真实工作量.
+> **2026-06-25 文档同步更新要点**: §9.1 严重过期, 5 项 `[ ]` 任务实际状态与文档不符. 本节已重新核查源码:
+> - REVAL-4 (smoltcp): W1-W7-E 全部完成 (REVAL-W 工程 100% 收口, 详见前面 §W4/W5/W6/W7-E 章节)
+> - QUAL-3 (SAFETY 覆盖): 100% 完成 (audit_safety_coverage.py 55/55, 2026-06-22 第 7 批)
+> - REVAL-6 (epoll 策略): 6.1+6.2 已实装 (VfsPollPolicy trait + check_fd_ready trait dispatch), 仅 6.3 QEMU 集成测试 DEFERRED
+> - LEGACY-4 (BlockOps thunk): 4.1-4.3 已实装 (block_dev trait + thunk 删除 + 8 单测), 仅 4.4 QEMU virtio-blk 集成测试 DEFERRED
+> - DRIVER-1 (USB): 95% 完成, 3955 行, 0 处 TRACK 残留, 仅缺 QEMU `qemu-xhci` 镜像真机集成
+> - DRIVER-2 (Display): 95% 完成, ~5000 行, 0 处 TRACK 残留 (注: dp.rs phase 2 第 867 行有 1 处"占位"硬件细节, 非阻塞), 仅缺 QEMU `virtio-vga` 镜像真机集成
 
-| # | 任务 ID | 任务 | 真实状态 (2026-06-22 考察) | 解除阻塞条件 | 估算工作量 |
-|---|---------|------|--------------------------|--------------|------------|
-| 1 | **REVAL-4** | T3-1 网络初始化策略提取 | smoltcp Interface API 3rd-party 类型深度绑定, 与版本无关 (当前 0.13.0) | 重写为 trait 抽象 (DHCP 策略 + 顺序表) | **~3 月, 用户已主动搁置 (2026-06-22)** |
-| 2 | **DRIVER-1** | USB 驱动 (xHCI) | **实际仅完成 ~50%**: 已 1301 行 (mod 43 + usb_core 656 + xhci 602), **HID/mass_storage 文件完全未创建 (0 行)**, 6 处 TRACK (PCI 扫描 + 设备枚举 + URB 提交 + 地址分配/释放) | ① QEMU `-device qemu-xhci` 测试镜像; ② USB 设备透传 | **~10-12 周 (实际比文档 ~1-2 月 多)**, 子任务见 §9.4.2 |
-| 3 | **DRIVER-2** | Display 驱动 (HDMI/DP) | **实际完成 ~85%**: 已 3100 行 (mod 375 + framebuffer 782 + hdmi 658 + dp 464 + controller 478 + font 133 + self_test 210), 8 处 TRACK (全部在物理层: HPD 读取 + I2C/DDC + 寄存器配置 + AUX 通道 + 链路训练) | ① QEMU `-device virtio-vga`; ② Bochs VBE 已可作为简单测试路径 | **~6-8 周 (实际比文档 ~1-2 月 少, 文档高估)**, 子任务见 §9.4.3 |
+| # | 任务 ID | 任务 | 真实状态 (2026-06-25 文档同步) | 解除阻塞条件 | 估算工作量 |
+|---|---------|------|--------------------------------|--------------|------------|
+| 1 | ~~REVAL-4~~ | ~~T3-1 网络初始化策略提取~~ | **[x] 完成** (转 REVAL-W, W1-W7-E 全部完成, 2026-06-25) | — | 0 |
+| 2 | **REVAL-6.3** | epoll QEMU 集成测试 | 6.1+6.2 已实装, 仅缺 QEMU 集成测试 (epoll.rs 535 行, VfsPollPolicy trait + check_fd_ready trait dispatch) | QEMU 集成测试环境 | ~1 周 |
+| 3 | **LEGACY-4.4** | BlockOps thunk QEMU 集成测试 | 4.1-4.3 已实装 (block_dev trait dispatch + thunk 删除 + 8 单测), 仅缺 QEMU virtio-blk 真机集成 | QEMU virtio-blk 集成测试环境 | ~1 周 |
+| 4 | **DRIVER-1** | USB xHCI 真机集成测试 | **95% 完成**: 已 3955 行 (mod 178 + usb_core 656 + xhci 944 + ring 409 + enumerate 487 + hid 632 + mass_storage 649), **0 处 TRACK 残留**, 4 处 "TRACK-XXX 消除" 完成标记 | ① QEMU `-device qemu-xhci` 镜像; ② USB 设备透传 | ~1-2 周 (真机验证) |
+| 5 | **DRIVER-2** | Display HDMI/DP 真机集成测试 | **95% 完成**: 已 ~5000 行 (mod 375 + framebuffer 782 + controller 478 + font 133 + self_test 210 + dp 1595 + hdmi 606 + hdmi/ddc 332 + hdmi/edid 281 + ...), **0 处 TRACK 残留** (4 处 "TRACK-XXX 消除"), dp.rs:867 1 处 phase 2 "占位" (硬件细节非阻塞) | ① QEMU `-device virtio-vga`; ② Bochs VBE 已可作为简单测试路径 | ~1-2 周 (真机验证) |
 
 **LEGACY-5 状态 (✅ 全部完成, 2026-06-22)**: 7/7 子系统均已 trait 化 (Checksum I-04 + ZAP LEGACY-5.1 + TXG 5.2 + DMU 5.4 + SPA 5.5 + RAID-Z 5.7 + ARC 5.8 + ZIL 5.10-5.11).
 
