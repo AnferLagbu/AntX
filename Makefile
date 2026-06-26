@@ -79,7 +79,7 @@ RUST_USER_DIR = src/user
 RUST_USER_TARGET = $(RUST_USER_DIR)/target/$(RUST_TARGET)/release
 
 USER_INIT_ELF = $(RUST_USER_TARGET)/init
-USER_SHELL_ELF = $(RUST_USER_TARGET)/axsh
+USER_SHELL_ELF = $(RUST_USER_TARGET)/eash
 USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 USER_FBTERM_ELF = $(RUST_USER_TARGET)/fbterm
 USER_HTTPSRV_ELF = $(RUST_USER_TARGET)/httpsrv
@@ -124,7 +124,7 @@ ifeq ($(ARCH),x86_64)
 user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF)
 	@mkdir -p build/user
 	@cp $(USER_INIT_ELF) build/user/init.bin
-	@cp $(USER_SHELL_ELF) build/user/axsh.bin
+	@cp $(USER_SHELL_ELF) build/user/eash.bin
 	@cp $(USER_INSTALL_ELF) build/user/install.bin
 	@cp $(USER_FBTERM_ELF) build/user/fbterm.bin
 	@cp $(USER_HTTPSRV_ELF) build/user/httpsrv.bin
@@ -138,7 +138,7 @@ build/user/init.bin: $(USER_INIT_ELF)
 	@mkdir -p build/user
 	@cp $< $@
 
-build/user/axsh.bin: $(USER_SHELL_ELF)
+build/user/eash.bin: $(USER_SHELL_ELF)
 	@mkdir -p build/user
 	@cp $< $@
 
@@ -168,7 +168,7 @@ ifeq ($(ARCH),aarch64)
 user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF)
 	@mkdir -p build/user
 	@cp $(USER_INIT_ELF) build/user/init.bin
-	@cp $(USER_SHELL_ELF) build/user/axsh.bin
+	@cp $(USER_SHELL_ELF) build/user/eash.bin
 	@cp $(USER_INSTALL_ELF) build/user/install.bin
 	@cp $(USER_FBTERM_ELF) build/user/fbterm.bin
 	@cp $(USER_HTTPSRV_ELF) build/user/httpsrv.bin
@@ -249,7 +249,7 @@ iso: all user
 	cp build/kernel.bin isodir/boot/kernel.bin
 	mkdir -p isodir/bin
 	cp build/user/init.bin isodir/bin/init
-	cp build/user/axsh.bin isodir/bin/axsh
+	cp build/user/eash.bin isodir/bin/eash
 	cp build/user/install.bin isodir/bin/install
 	cp build/user/fbterm.bin isodir/bin/fbterm
 	cp build/user/httpsrv.bin isodir/bin/httpsrv
@@ -408,7 +408,7 @@ test-unit: build/kernel_test.bin user
 	@cp build/kernel_test.bin isodir/boot/kernel.bin
 	@mkdir -p isodir/bin
 	@cp build/user/init.bin isodir/bin/init
-	@cp build/user/axsh.bin isodir/bin/axsh
+	@cp build/user/eash.bin isodir/bin/eash
 	@cp build/user/install.bin isodir/bin/install
 	@cp build/user/fbterm.bin isodir/bin/fbterm
 	@cp build/user/httpsrv.bin isodir/bin/httpsrv
@@ -485,7 +485,7 @@ test-chaos: build/kernel_chaos.bin user
 	@cp build/kernel_chaos.bin isodir/boot/kernel.bin
 	@mkdir -p isodir/bin
 	@cp build/user/init.bin isodir/bin/init
-	@cp build/user/axsh.bin isodir/bin/axsh
+	@cp build/user/eash.bin isodir/bin/eash
 	@cp build/user/install.bin isodir/bin/install
 	@cp build/user/fbterm.bin isodir/bin/fbterm
 	@cp build/user/httpsrv.bin isodir/bin/httpsrv
