@@ -2155,11 +2155,10 @@ pub fn smoltcp_net_stack_socket_open(
     // 单次初始化, SOCKET_SET MaybeUninit 区域独占.
     let sockets = unsafe { &mut *raw::socket_set() };
     let smol_handle = raw::socket_open_stub(sockets, kind, slot_idx)?;
-    // SAFETY: SocketHandle 是 newtype(usize), 字段是 private. 内存布局保证
-    // 是 usize. SocketSet 容量上限 (MAX_SOCKETS = 1024) 远低于 u32::MAX,
-    // usize → u32 截断安全.
-    let raw: usize = unsafe { core::mem::transmute(smol_handle) };
-    Some(raw as u32)
+    // W5 transmute_copy 路径: 复用 `as_u32_handle` helper (编译期强制
+    // size 匹配, 不依赖 SocketHandle repr 假设). SocketSet 容量上限
+    // (MAX_SOCKETS = 1024) 远低于 u32::MAX, usize → u32 截断安全.
+    Some(as_u32_handle(smol_handle))
 }
 
 /// SmoltcpNetStack 专属范围的 smol 槽位基址 (W4.2.3.4 步骤 2).
