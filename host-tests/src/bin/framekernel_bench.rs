@@ -10,7 +10,7 @@
 
 use std::process::ExitCode;
 
-use antx_host_tests::framekernel_bench;
+use queenx_host_tests::framekernel_bench;
 
 fn main() -> ExitCode {
     let report = framekernel_bench::run_all();

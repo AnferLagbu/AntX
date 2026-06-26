@@ -120,13 +120,13 @@ impl HvfsData {
             return;
         }
         log("[HvFS] Initializing...\n");
-        self.spa.init("antx-pool");
+        self.spa.init("queenx-pool");
         let has_disk = self.check_disk();
         self.spa.disk_present.store(has_disk, Ordering::Release);
         if has_disk {
             log("[HvFS] Disk detected, mounting from disk...\n");
             if self.mount_disk() {
-                log("[HvFS] Initialized: pool=antx-pool (disk)\n");
+                log("[HvFS] Initialized: pool=queenx-pool (disk)\n");
                 return;
             }
             log("[HvFS] Mount from disk failed, formatting and starting fresh...\n");
@@ -147,7 +147,7 @@ impl HvfsData {
         if !self.is_disk_mode() {
             self.mode.store(HvfsMode::Memory as u8, Ordering::Release);
         }
-        log("[HvFS] Initialized: pool=antx-pool (memory)\n");
+        log("[HvFS] Initialized: pool=queenx-pool (memory)\n");
     }
 
     fn setup_zil_datasets(&self) {

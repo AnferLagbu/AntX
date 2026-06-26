@@ -84,7 +84,7 @@
   - 状态: [X]
 - **测试与审计**
   - 描述: host-tests + 4 项审计脚本
-  - 方案: `cargo test -p antx-host-tests` 全通过; `audit_safety_coverage.py` 100% SAFETY 覆盖; `audit_services_boundary.py` services 不越界; `ci_check_services_unsafe.py` services 0 unsafe; `audit_deadlock_matrix.py` PI mutex 锁链登记
+  - 方案: `cargo test -p queenx-host-tests` 全通过; `audit_safety_coverage.py` 100% SAFETY 覆盖; `audit_services_boundary.py` services 不越界; `ci_check_services_unsafe.py` services 0 unsafe; `audit_deadlock_matrix.py` PI mutex 锁链登记
   - 状态: [X]
 
 ## 决策记录

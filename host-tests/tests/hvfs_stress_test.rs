@@ -14,7 +14,7 @@
 //! - `framekernel_bench` 测量 ns_per_op 微基准
 //! - 本文件验证 `assert!(rc >= 1)` 等业务正确性约束
 
-use antx_host_tests::hvfs::{bp, dedup, zap, zil};
+use queenx_host_tests::hvfs::{bp, dedup, zap, zil};
 
 #[test]
 fn stress_cas_insert_lookup_100() {

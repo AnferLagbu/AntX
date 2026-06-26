@@ -10,9 +10,9 @@
 
 | 类型 | 位置 | 入口 |
 |------|------|------|
-| 单元测试 | `host-tests/src/<module>.rs` 内联 `#[cfg(test)] mod tests` | `cargo test -p antx-host-tests --lib` |
-| 集成测试 | `host-tests/tests/<scope>_<feature>_<kind>_test.rs` (70 个文件) | `cargo test -p antx-host-tests --test <name>` |
-| 性能基准 | `host-tests/benches/<scope>_bench.rs` (Cargo 官方, 待迁移) | `cargo bench -p antx-host-tests` |
+| 单元测试 | `host-tests/src/<module>.rs` 内联 `#[cfg(test)] mod tests` | `cargo test -p queenx-host-tests --lib` |
+| 集成测试 | `host-tests/tests/<scope>_<feature>_<kind>_test.rs` (70 个文件) | `cargo test -p queenx-host-tests --test <name>` |
+| 性能基准 | `host-tests/benches/<scope>_bench.rs` (Cargo 官方, 待迁移) | `cargo bench -p queenx-host-tests` |
 
 > **不要**把单元测试 + 集成测试 + 性能基准混放在一个 `tests/*.rs` 文件, Cargo 自动发现会让 `tests/*.rs` 编译为独立 binary, 极慢.
 
@@ -268,19 +268,19 @@ criterion_main!(benches);
 make test-host
 
 # 跑单个集成测试
-cargo test -p antx-host-tests --test vfs_close_atomic_test
+cargo test -p queenx-host-tests --test vfs_close_atomic_test
 
 # 跑单个单元测试
-cargo test -p antx-host-tests --lib buddy
+cargo test -p queenx-host-tests --lib buddy
 
 # 跑特定测试函数
-cargo test -p antx-host-tests --test net_socket_wait_queue_test socket_wait_queue_basic
+cargo test -p queenx-host-tests --test net_socket_wait_queue_test socket_wait_queue_basic
 
 # 性能基准
-cargo bench -p antx-host-tests
+cargo bench -p queenx-host-tests
 
 # 静态契约测试 (依赖源文件存在)
-cargo test -p antx-host-tests --test audit_comment_language_test
+cargo test -p queenx-host-tests --test audit_comment_language_test
 ```
 
 ## 添加新测试流程

@@ -11,10 +11,10 @@
 //!
 //! ## 测试组织
 //! 集成测试置于 `tests/` 目录, 由 Cargo 自动发现. 通过
-//! `use antx_host_tests::hvfs::hvfs::{get_hvfs, HVFS_DATA}` 访问
+//! `use queenx_host_tests::hvfs::hvfs::{get_hvfs, HVFS_DATA}` 访问
 //! lib 暴露的 HvFS API, 取代原 `src/persist_test.rs` 内联版本.
 
-use antx_host_tests::hvfs::hvfs::{get_hvfs, HVFS_DATA};
+use queenx_host_tests::hvfs::hvfs::{get_hvfs, HVFS_DATA};
 
 #[test]
 fn hvfs_persistence_roundtrip() {

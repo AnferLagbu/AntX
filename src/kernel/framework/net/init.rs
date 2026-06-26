@@ -2043,7 +2043,7 @@ const STATIC_HOSTS: &[HostEntry] = &[
     HostEntry { name: "router",          ip: types::FALLBACK_GATEWAY },
     HostEntry { name: "host",            ip: types::FALLBACK_IPV4 },
     HostEntry { name: "qemu-gateway",    ip: types::FALLBACK_GATEWAY },
-    HostEntry { name: "antx-gateway",    ip: types::FALLBACK_GATEWAY },
+    HostEntry { name: "queenx-gateway",    ip: types::FALLBACK_GATEWAY },
 ];
 
 /// 简单 DNS 解析 (静态 hosts 表)
@@ -2690,7 +2690,7 @@ mod tests {
         assert_eq!(dns_resolve("LOCALHOST"), Some([127, 0, 0, 1]));   // 大小写不敏感
         assert_eq!(dns_resolve("Router"), Some([10, 0, 2, 2]));
         assert_eq!(dns_resolve("qemu-gateway"), Some([10, 0, 2, 2]));
-        assert_eq!(dns_resolve("antx-gateway"), Some([10, 0, 2, 2]));
+        assert_eq!(dns_resolve("queenx-gateway"), Some([10, 0, 2, 2]));
     }
 
     #[test]

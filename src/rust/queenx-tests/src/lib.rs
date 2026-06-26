@@ -847,7 +847,7 @@ const STATIC_HOSTS: &[HostEntry] = &[
     HostEntry { name: "router",          ip: [10, 0, 2, 2]  },
     HostEntry { name: "host",            ip: [10, 0, 2, 15] },
     HostEntry { name: "qemu-gateway",    ip: [10, 0, 2, 2]  },
-    HostEntry { name: "antx-gateway",    ip: [10, 0, 2, 2]  },
+    HostEntry { name: "queenx-gateway",    ip: [10, 0, 2, 2]  },
 ];
 
 /// 简单 DNS 解析 (等价于 `framework::net::init::dns_resolve`)

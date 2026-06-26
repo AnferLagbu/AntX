@@ -23,7 +23,7 @@ fn hvfs_restore() {
     let hvfs = get_hvfs();
     hvfs.initialized.store(false, Ordering::Release);
     hvfs.mounted.store(false, Ordering::Release);
-    hvfs.spa.init("antx-pool");
+    hvfs.spa.init("queenx-pool");
     hvfs.setup_zil_datasets();
     hvfs.root_ds_id.store(0, Ordering::Release);
     hvfs.current_dir.store(HV_DMU_OBJ_ROOT, Ordering::Release);
@@ -69,7 +69,7 @@ pub struct HvfsData {
     pub initialized: AtomicBool,
     pub root_ds_id: AtomicU64,
     pub mode: AtomicU8,
-    /// 已发现的 ANTX/HvFS 磁盘驱动器列表 (drive_id, partition_start_lba)
+    /// 已发现的 QueenX/HvFS 磁盘驱动器列表 (drive_id, partition_start_lba)
     pub drives_discovered: Mutex<Vec<(u8, u32)>>,
     pub disk_drive: AtomicU8,
     pub partition_start: AtomicU32,
@@ -141,7 +141,7 @@ impl HvfsData {
     }
 
     /// 扫描所有已注册的块设备，返回检测到的驱动器列表 (drive_id, partition_start_lba)
-    /// 对于已格式化的磁盘读取 ANTX 签名，对于空白磁盘使用默认分区起始偏移
+    /// 对于已格式化的磁盘读取 QueenX 签名，对于空白磁盘使用默认分区起始偏移
     fn scan_all_drives(&self) -> Vec<(u8, u32)> {
         let mut discovered = Vec::new();
         // 扫描 0..8 号驱动器 (足够覆盖当前硬件)
@@ -151,7 +151,7 @@ impl HvfsData {
             }
             let mut cfg = [0u8; 512];
             let r = block::hdd_read_sector(drive, 2046, &mut cfg);
-            // 检查 ANTX/HvFS 签名扇区 (LBA 2046)
+            // 检查 QueenX/HvFS 签名扇区 (LBA 2046)
             let part_start =
                 if r >= 0 && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X' {
                     u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]])
@@ -168,7 +168,7 @@ impl HvfsData {
     pub fn init(&self) {
         crate::slog_info!(FS, "[HvFS] Initializing...");
 
-        // Step 1: 扫描所有块设备, 发现 ANTX/HvFS 磁盘
+        // Step 1: 扫描所有块设备, 发现 QueenX/HvFS 磁盘
         let discovered = self.scan_all_drives();
         let has_any_disk = !discovered.is_empty();
 
@@ -179,7 +179,7 @@ impl HvfsData {
         }
 
         // 初始化 SPA (根据是否有磁盘选择 disk / memory 模式)
-        self.spa.init("antx-pool");
+        self.spa.init("queenx-pool");
 
         if has_any_disk {
             // Step 2: 尝试从已发现的磁盘挂载 HvFS (uberblock 验证)
@@ -224,7 +224,7 @@ impl HvfsData {
             self.disk_drive.store(discovered[0].0, Ordering::Release);
             self.partition_start
                 .store(discovered[0].1, Ordering::Release);
-            crate::slog_info!(FS, "[HvFS] Initialized: pool=antx-pool (disk, {} drive(s))", discovered.len());
+            crate::slog_info!(FS, "[HvFS] Initialized: pool=queenx-pool (disk, {} drive(s))", discovered.len());
         } else {
             crate::slog_info!(FS, "[HvFS] No disk, running in memory mode");
             self.spa
@@ -242,7 +242,7 @@ impl HvfsData {
             self.mode.store(HvfsMode::Memory as u8, Ordering::Release);
         }
         if !has_any_disk {
-            crate::slog_info!(FS, "[HvFS] Initialized: pool=antx-pool (memory)");
+            crate::slog_info!(FS, "[HvFS] Initialized: pool=queenx-pool (memory)");
         }
 
         crate::kernel::framework::barrier::recovery::recovery_domain_register(
@@ -290,7 +290,7 @@ impl HvfsData {
             self.spa.formatted.store(false, Ordering::Release);
             return;
         }
-        // 读取 ANTX 配置扇区获取 HvFS 分区起始 LBA
+        // 读取 QueenX 配置扇区获取 HvFS 分区起始 LBA
         self.partition_start.store(part_start, Ordering::Release);
         self.spa
             .partition_start
@@ -310,7 +310,7 @@ impl HvfsData {
 
     /// 热插拔: 新磁盘插入后将其添加为 vdev。
     ///
-    /// 自动探测 ANTX 签名以获取 partition_start。如果磁盘未格式化则使用默认值。
+    /// 自动探测 QueenX 签名以获取 partition_start。如果磁盘未格式化则使用默认值。
     /// 返回 true 表示成功添加。
     pub fn hotplug_add_disk(&self, drive: u8) -> bool {
         if !block::hdd_is_present(drive) {

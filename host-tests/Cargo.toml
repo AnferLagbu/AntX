@@ -1,5 +1,5 @@
 [package]
-name = "antx-host-tests"
+name = "queenx-host-tests"
 version = "0.1.0"
 edition = "2021"
 description = "QueenX host-side tests + microbenchmarks"

@@ -82,7 +82,7 @@ fn test_dns_resolve_router() {
 fn test_dns_resolve_aliases() {
     assert_eq!(dns_resolve("host"), Some([10, 0, 2, 15]));
     assert_eq!(dns_resolve("qemu-gateway"), Some([10, 0, 2, 2]));
-    assert_eq!(dns_resolve("antx-gateway"), Some([10, 0, 2, 2]));
+    assert_eq!(dns_resolve("queenx-gateway"), Some([10, 0, 2, 2]));
 }
 
 #[test]

@@ -15,11 +15,11 @@
 //!   - HvZil::commit(txg): 移除所有 txg <= txg 的 records
 //!   - HvZil::replay(): 返回当前 records (模拟"重启后重放未提交日志")
 
-use antx_host_tests::hvfs::bp::HvDva;
-use antx_host_tests::hvfs::dataset::HvDataset;
-use antx_host_tests::hvfs::snapshot::HvSnapshotManager;
-use antx_host_tests::hvfs::zil::{HvZil, HvZilRecord, HvZilRecordType};
-use antx_host_tests::hvfs::zap::HvZap;
+use queenx_host_tests::hvfs::bp::HvDva;
+use queenx_host_tests::hvfs::dataset::HvDataset;
+use queenx_host_tests::hvfs::snapshot::HvSnapshotManager;
+use queenx_host_tests::hvfs::zil::{HvZil, HvZilRecord, HvZilRecordType};
+use queenx_host_tests::hvfs::zap::HvZap;
 use std::time::Instant;
 
 const ROOT_OWNER: u64 = 0;
@@ -44,7 +44,7 @@ fn fresh_dataset(name: &str) -> HvDataset {
 fn e2e_format_write_snapshot_restore() {
     // 1) 格式化: 创建根 dataset + ZIL
     let zil = fresh_zil();
-    let root = fresh_dataset("antx-root");
+    let root = fresh_dataset("queenx-root");
 
     // 2) 创建文件
     let file_obj = root

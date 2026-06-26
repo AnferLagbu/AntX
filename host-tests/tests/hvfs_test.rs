@@ -10,11 +10,11 @@
 //!
 //! ## 测试组织
 //! 集成测试置于 `tests/` 目录, 由 Cargo 自动发现. 通过
-//! `use antx_host_tests::hvfs::hvfs::get_hvfs` 访问 lib 暴露的
+//! `use queenx_host_tests::hvfs::hvfs::get_hvfs` 访问 lib 暴露的
 //! HvFS API, 取代原 `src/hvfs_test.rs` 内联版本, 避免双重编译.
 
-use antx_host_tests::hvfs::hvfs::get_hvfs;
-use antx_host_tests::hvfs_mock::KernelError;
+use queenx_host_tests::hvfs::hvfs::get_hvfs;
+use queenx_host_tests::hvfs_mock::KernelError;
 use std::sync::Once;
 
 static HVFS_TEST_INIT: Once = Once::new();
@@ -530,7 +530,7 @@ fn hvfs_snapshot_clone() {
         let snaps = snap_mgr.list_snapshots(0);
         if !snaps.is_empty() {
             let snap_id = snaps[0].snap_id;
-            let fake_ds = antx_host_tests::hvfs::dataset::HvDataset::new(999, "fake", 0);
+            let fake_ds = queenx_host_tests::hvfs::dataset::HvDataset::new(999, "fake", 0);
             let r = snap_mgr.rollback(snap_id, &fake_ds);
             assert_eq_hvfs!(r, false, "rollback with wrong ds_id should fail");
         }

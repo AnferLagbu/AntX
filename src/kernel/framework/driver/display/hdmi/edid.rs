@@ -248,7 +248,7 @@ impl Edid {
 pub(super) fn fill_mock_edid(edid_data: &mut [u8; EDID_MAX_LENGTH]) {
     edid_data[0..8].copy_from_slice(&EDID_HEADER);
 
-    // 厂商 ID (示例: "ANTX")
+    // 厂商 ID (示例: "QUEENX")
     edid_data[8] = 0x04; // 'A'
     edid_data[9] = 0x5D; // 'NTX' packed
 

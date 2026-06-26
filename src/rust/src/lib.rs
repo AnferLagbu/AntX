@@ -524,7 +524,7 @@ pub extern "C" fn kernel_init() {
         #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
         {
             let hvfs = crate::kernel::framework::fs::hvfs::hvfs::get_hvfs();
-            // init() 会自动扫描所有块设备, 发现 ANTX 签名的磁盘并挂载
+            // init() 会自动扫描所有块设备, 发现 QueenX 签名的磁盘并挂载
             hvfs.init();
 
             if hvfs.is_disk_mode() {

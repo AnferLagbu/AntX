@@ -1,6 +1,6 @@
-# AntX 工程进度跟踪
+# QueenX 工程进度跟踪
 
-> 本文档记录 AntX/QueenX 内核项目所有工程阶段的实际完成状态与关键产出. 配合 kernel-roadmap.md (规划) 与 CHANGELOG.md (变更日志) 使用. 2026-06-26 同步.
+> 本文档记录 QueenX 内核项目所有工程阶段的实际完成状态与关键产出. 配合 kernel-roadmap.md (规划) 与 CHANGELOG.md (变更日志) 使用. 2026-06-26 同步.
 
 ## 工程计划 A: 主线工程 Phase A-D
 
