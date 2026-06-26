@@ -2312,7 +2312,7 @@ pub unsafe fn new_with_iomem(iomem: IoMem, hpd_reg_offset: usize) -> Self {
 | P2-1 | HdmiPort trait + 多端口支持 | 多 HDMI 端口主板 |
 | P2-2 | vendor 特定 Driver 子 trait (IntelDpll, AmdDentist) | vendor 高级特性 |
 | P2-3 | DP AUX 真实通道 (DISPLAY-2.5) | DP 链路训练前置 |
-| P2-4 | miri 测试 DDC/timing 数据结构 | UB 检测 |
+| P2-4 | miri 测试 DDC/timing 数据结构 (注: miri-tests 已于 2026-06-26 删除) | UB 检测 |
 
 ### 10.2.7 与 AGENTS.md 规范对照
 
